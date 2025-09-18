@@ -3,14 +3,11 @@
 package ingester
 
 import (
-	"context"
 	"testing"
-	"time"
 
 	"github.com/go-kit/log"
 	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/prometheus/tsdb"
-	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -19,9 +16,6 @@ import (
 )
 
 func TestStatisticsService_Integration(t *testing.T) {
-	// Create a real repository
-	repo := lookupplan.NewInMemoryPlannerRepository()
-
 	// Create test data
 	blockID := ulid.MustNew(1, nil)
 
@@ -30,97 +24,83 @@ func TestStatisticsService_Integration(t *testing.T) {
 	mockFactory := &MockPlannerFactory{}
 	mockFactory.On("CreatePlanner", mockAnyBlockMeta(), mockAnyIndexReader()).Return(expectedPlanner)
 
-	// Create mock provider
-	mockProvider := &MockTSDBProvider{}
 	blockMeta := tsdb.BlockMeta{
 		ULID: blockID,
 		Stats: tsdb.BlockStats{
 			NumSeries: 15000,
 		},
 	}
-	mockProvider.On("getTSDBUsers").Return([]string{"test-user"})
-	mockProvider.On("openHeadBlock", "test-user").Return(blockMeta, &mockIndexReader{}, repo, nil)
 
 	// Create the statistics service
 	logger := log.NewNopLogger()
-	service := NewStatisticsService(logger, mockFactory, time.Minute, mockProvider)
+	service := NewStatisticsService(logger, mockFactory, "test-user")
 
-	// Initially, repository should be empty
-	cachedPlanner := repo.GetPlanner(blockID)
-	assert.Nil(t, cachedPlanner, "repository should be empty initially")
+	// Initially, service should not have the planner
+	cachedPlanner := service.getPlanner(blockID)
+	assert.Nil(t, cachedPlanner, "service should not have planner initially")
 
-	// Generate stats for the user by calling iteration
-	ctx := context.Background()
-	err := service.iteration(ctx)
-	require.NoError(t, err)
+	// Generate stats with block metadata
+	mockReader := &mockIndexReader{}
+	service.generateStats(blockMeta, mockReader)
 
-	// Now repository should have the planner
-	cachedPlanner = repo.GetPlanner(blockID)
-	require.NotNil(t, cachedPlanner, "repository should contain the generated planner")
+	// Now service should have the planner
+	cachedPlanner = service.getPlanner(blockID)
+	require.NotNil(t, cachedPlanner, "service should contain the generated planner")
 	assert.Equal(t, expectedPlanner, cachedPlanner, "cached planner should match the generated one")
 
 	// Verify mock expectations
 	mockFactory.AssertExpectations(t)
-	mockProvider.AssertExpectations(t)
 }
 
-func TestIndexLookupPlannerFunc_Integration(t *testing.T) {
-	// Setup: Create an ingester-like structure
+func TestUserTSDB_getIndexLookupPlanner_WithCache(t *testing.T) {
+	// Setup: Create a userTSDB with a pre-populated statistics service
 	blockID := ulid.MustNew(1, nil)
-	repo := lookupplan.NewInMemoryPlannerRepository()
 
-	// Pre-populate repository with a cached planner
+	// Create cached planner
 	cachedPlanner := &lookupplan.CostBasedPlanner{}
-	repo.StorePlanner(blockID, cachedPlanner)
+	logger := log.NewNopLogger()
+	mockFactory := &MockPlannerFactory{}
 
-	// Create user TSDB with the repository
-	userTSDB := &testUserTSDB{
-		plannerRepo: repo,
+	statisticsService := NewStatisticsService(logger, mockFactory, "test-user")
+	statisticsService.storePlanner(blockID, cachedPlanner)
+
+	// Create user TSDB with the statistics service
+	userTSDB := &userTSDB{
+		userID:            "test-user",
+		plannerFactory:    mockFactory,
+		statisticsService: statisticsService,
 	}
-
-	// Create a mock ingester-like struct
-	ingester := &testIngesterForPlannerFunc{
-		tsdbs: map[string]*testUserTSDB{
-			"test-user": userTSDB,
-		},
-		planningEnabled: true,
-		logger:          log.NewNopLogger(),
-	}
-
-	// Get the planner function
-	plannerFunc := ingester.getIndexLookupPlannerFunc(nil, "test-user")
 
 	// Test that it returns the cached planner
 	meta := tsdb.BlockMeta{ULID: blockID}
 	mockReader := &mockIndexReader{}
 
-	resultPlanner := plannerFunc(meta, mockReader)
+	resultPlanner := userTSDB.getIndexLookupPlanner(meta, mockReader)
 
 	// Should return the cached planner, not generate a new one
-	assert.Equal(t, cachedPlanner, resultPlanner, "should return cached planner from repository")
+	assert.Equal(t, cachedPlanner, resultPlanner, "should return cached planner from statistics service")
 }
 
-func TestIndexLookupPlannerFunc_FallbackToGeneration(t *testing.T) {
-	// Setup: Create an ingester-like structure with empty repository
+func TestUserTSDB_getIndexLookupPlanner_FallbackToGeneration(t *testing.T) {
+	// Setup: Create a userTSDB with empty statistics service
 	blockID := ulid.MustNew(1, nil)
-	repo := lookupplan.NewInMemoryPlannerRepository() // Empty repository
 
-	// Create user TSDB with the empty repository
-	userTSDB := &testUserTSDB{
-		plannerRepo: repo,
+	logger := log.NewNopLogger()
+	mockFactory := &MockPlannerFactory{}
+
+	// Set up fallback factory to return a CostBasedPlanner
+	expectedPlanner := &lookupplan.CostBasedPlanner{}
+	mockFactory.On("CreatePlanner", mock.AnythingOfType("tsdb.BlockMeta"), mock.AnythingOfType("*ingester.mockIndexReader")).Return(expectedPlanner)
+
+	// Empty statistics service
+	statisticsService := NewStatisticsService(logger, mockFactory, "test-user")
+
+	// Create user TSDB
+	userTSDB := &userTSDB{
+		userID:            "test-user",
+		plannerFactory:    mockFactory,
+		statisticsService: statisticsService,
 	}
-
-	// Create a mock ingester-like struct
-	ingester := &testIngesterForPlannerFunc{
-		tsdbs: map[string]*testUserTSDB{
-			"test-user": userTSDB,
-		},
-		planningEnabled: true,
-		logger:          log.NewNopLogger(),
-	}
-
-	// Get the planner function
-	plannerFunc := ingester.getIndexLookupPlannerFunc(nil, "test-user")
 
 	// Test that it falls back to generation when no cached planner exists
 	meta := tsdb.BlockMeta{
@@ -131,50 +111,14 @@ func TestIndexLookupPlannerFunc_FallbackToGeneration(t *testing.T) {
 	}
 	mockReader := &mockIndexReader{}
 
-	resultPlanner := plannerFunc(meta, mockReader)
+	resultPlanner := userTSDB.getIndexLookupPlanner(meta, mockReader)
 
-	// Should generate a new planner (CostBasedPlanner for large blocks)
+	// Should generate a new planner from factory
 	require.NotNil(t, resultPlanner, "should generate a planner")
-	assert.IsType(t, &lookupplan.CostBasedPlanner{}, resultPlanner, "should generate CostBasedPlanner for large blocks")
-}
+	assert.Equal(t, expectedPlanner, resultPlanner, "should return planner from factory")
 
-// Helper structs for testing
-type testUserTSDB struct {
-	plannerRepo lookupplan.PlannerRepository
-}
-
-type testIngesterForPlannerFunc struct {
-	tsdbs           map[string]*testUserTSDB
-	planningEnabled bool
-	logger          log.Logger
-}
-
-func (i *testIngesterForPlannerFunc) getTSDB(userID string) *testUserTSDB {
-	return i.tsdbs[userID]
-}
-
-func (i *testIngesterForPlannerFunc) getIndexLookupPlannerFunc(r interface{}, userID string) func(tsdb.BlockMeta, tsdb.IndexReader) index.LookupPlanner {
-	if !i.planningEnabled {
-		return func(tsdb.BlockMeta, tsdb.IndexReader) index.LookupPlanner { return lookupplan.NoopPlanner{} }
-	}
-
-	// Create fallback planner factory for when repository doesn't have the planner
-	metrics := lookupplan.NewMetrics(nil)
-	statsGenerator := lookupplan.NewStatisticsGenerator(i.logger)
-	fallbackFactory := lookupplan.NewPlannerFactory(metrics, i.logger, statsGenerator)
-
-	return func(meta tsdb.BlockMeta, reader tsdb.IndexReader) index.LookupPlanner {
-		// First, try to get the planner from the repository
-		userTSDB := i.getTSDB(userID)
-		if userTSDB != nil && userTSDB.plannerRepo != nil {
-			if cachedPlanner := userTSDB.plannerRepo.GetPlanner(meta.ULID); cachedPlanner != nil {
-				return cachedPlanner
-			}
-		}
-
-		// Fall back to generating planner on-demand
-		return fallbackFactory.CreatePlanner(meta, reader)
-	}
+	// Verify factory was called
+	mockFactory.AssertExpectations(t)
 }
 
 // Mock helpers for tests

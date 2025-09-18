@@ -3,16 +3,13 @@
 package ingester
 
 import (
-	"context"
-	"time"
+	"sync"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/grafana/dskit/services"
+	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/index"
-
-	"github.com/grafana/mimir/pkg/ingester/lookupplan"
 )
 
 // IPlannerFactory defines the interface for creating planners
@@ -20,79 +17,48 @@ type IPlannerFactory interface {
 	CreatePlanner(meta tsdb.BlockMeta, reader tsdb.IndexReader) index.LookupPlanner
 }
 
-// TSDBProvider defines the interface for providing TSDB operations
-type TSDBProvider interface {
-	getTSDBUsers() []string
-	openHeadBlock(userID string) (tsdb.BlockMeta, tsdb.IndexReader, lookupplan.PlannerRepository, error)
-}
-
-// StatisticsService manages the background generation of statistics for head blocks.
-// It periodically iterates through all user TSDBs and generates statistics for their head blocks,
-// storing them in per-tenant repositories for later use during query planning.
+// StatisticsService manages the generation of statistics for a single tenant's head blocks.
+// It stores pre-computed planners for later use during query planning.
 type StatisticsService struct {
-	services.Service
-
 	logger         log.Logger
 	plannerFactory IPlannerFactory
-	tsdbProvider   TSDBProvider
+	userID         string
+
+	// In-memory planner storage by block ULID
+	mtx      sync.RWMutex
+	planners map[ulid.ULID]index.LookupPlanner // map[blockULID] -> planner
 }
 
-// NewStatisticsService creates a new StatisticsService.
-func NewStatisticsService(logger log.Logger, plannerFactory IPlannerFactory, statsFrequency time.Duration, tsdbProvider TSDBProvider) *StatisticsService {
-	s := &StatisticsService{
+// NewStatisticsService creates a new StatisticsService for a single tenant.
+func NewStatisticsService(logger log.Logger, plannerFactory IPlannerFactory, userID string) *StatisticsService {
+	return &StatisticsService{
 		logger:         logger,
 		plannerFactory: plannerFactory,
-		tsdbProvider:   tsdbProvider,
-	}
-
-	// Skip if statistics frequency is not configured (0 duration)
-	if statsFrequency <= 0 {
-		level.Debug(logger).Log("msg", "statistics collection disabled (frequency not configured)")
-		s.Service = services.NewIdleService(nil, nil)
-	} else {
-		s.Service = services.NewTimerService(statsFrequency, nil, s.iteration, nil).WithName("headBlockStatisticsService")
-	}
-
-	return s
-}
-
-// iteration is called periodically by the timer service to generate statistics.
-func (s *StatisticsService) iteration(ctx context.Context) error {
-	s.generateStats(ctx)
-	return nil
-}
-
-// generateStats processes all user TSDBs and generates statistics for their head blocks.
-func (s *StatisticsService) generateStats(ctx context.Context) {
-	if ctx.Err() != nil {
-		return
-	}
-
-	userIDs := s.tsdbProvider.getTSDBUsers()
-	for _, userID := range userIDs {
-		if ctx.Err() != nil {
-			return
-		}
-
-		s.generateStatsForUser(userID)
+		userID:         userID,
+		planners:       make(map[ulid.ULID]index.LookupPlanner),
 	}
 }
 
-// generateStatsForUser generates statistics for a single user's TSDB head block.
-func (s *StatisticsService) generateStatsForUser(userID string) {
-	logger := log.With(s.logger, "user", userID)
+// getPlanner returns a cached planner for the given block ULID.
+// Returns nil if no planner is cached for this block.
+func (s *StatisticsService) getPlanner(blockULID ulid.ULID) index.LookupPlanner {
+	s.mtx.RLock()
+	defer s.mtx.RUnlock()
 
-	// Get block metadata, index reader, and repository from the provider
-	blockMeta, indexReader, repo, err := s.tsdbProvider.openHeadBlock(userID)
-	if err != nil {
-		level.Warn(logger).Log("msg", "failed to open head block", "err", err)
-		return
-	}
-	defer func() {
-		if closeErr := indexReader.Close(); closeErr != nil {
-			level.Warn(logger).Log("msg", "failed to close index reader while generating head block statistics", "err", closeErr)
-		}
-	}()
+	return s.planners[blockULID]
+}
+
+// storePlanner stores a planner for the given block ULID.
+func (s *StatisticsService) storePlanner(blockULID ulid.ULID, planner index.LookupPlanner) {
+	s.mtx.Lock()
+	defer s.mtx.Unlock()
+
+	s.planners[blockULID] = planner
+}
+
+// generateStats generates statistics for the given head block metadata and index reader.
+func (s *StatisticsService) generateStats(blockMeta tsdb.BlockMeta, indexReader tsdb.IndexReader) {
+	logger := log.With(s.logger, "user", s.userID)
 
 	blockULID := blockMeta.ULID
 
@@ -100,6 +66,6 @@ func (s *StatisticsService) generateStatsForUser(userID string) {
 	level.Info(logger).Log("msg", "generating statistics for head block", "block", blockULID.String(), "series_count", blockMeta.Stats.NumSeries)
 	planner := s.plannerFactory.CreatePlanner(blockMeta, indexReader)
 
-	// Store the planner in the repository
-	repo.StorePlanner(blockULID, planner)
+	// Store the planner in our internal storage
+	s.storePlanner(blockULID, planner)
 }
