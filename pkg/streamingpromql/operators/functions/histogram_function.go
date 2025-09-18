@@ -47,6 +47,7 @@ type HistogramFunction struct {
 	currentInnerSeriesIndex  int
 	memoryConsumptionTracker *limiter.MemoryConsumptionTracker
 	timeRange                types.QueryTimeRange
+	enableDelayedNameRemoval bool
 
 	annotations            *annotations.Annotations
 	expressionPosition     posrange.PositionRange
@@ -124,6 +125,7 @@ func NewHistogramQuantileFunction(
 	annotations *annotations.Annotations,
 	expressionPosition posrange.PositionRange,
 	timeRange types.QueryTimeRange,
+	enableDelayedNameRemoval bool,
 ) *HistogramFunction {
 	innerSeriesMetricNames := &operators.MetricNames{}
 
@@ -141,6 +143,7 @@ func NewHistogramQuantileFunction(
 		innerSeriesMetricNames:   innerSeriesMetricNames,
 		expressionPosition:       expressionPosition,
 		timeRange:                timeRange,
+		enableDelayedNameRemoval: enableDelayedNameRemoval,
 	}
 }
 
@@ -152,6 +155,7 @@ func NewHistogramFractionFunction(
 	annotations *annotations.Annotations,
 	expressionPosition posrange.PositionRange,
 	timeRange types.QueryTimeRange,
+	enableDelayedNameRemoval bool,
 ) *HistogramFunction {
 	innerSeriesMetricNames := &operators.MetricNames{}
 
@@ -169,6 +173,7 @@ func NewHistogramFractionFunction(
 		innerSeriesMetricNames:   innerSeriesMetricNames,
 		expressionPosition:       expressionPosition,
 		timeRange:                timeRange,
+		enableDelayedNameRemoval: enableDelayedNameRemoval,
 	}
 }
 
@@ -176,12 +181,12 @@ func (h *HistogramFunction) ExpressionPosition() posrange.PositionRange {
 	return h.expressionPosition
 }
 
-func (h *HistogramFunction) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
+func (h *HistogramFunction) SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
 	if err := h.f.LoadArguments(ctx); err != nil {
 		return nil, err
 	}
 
-	innerSeries, err := h.inner.SeriesMetadata(ctx)
+	innerSeries, err := h.inner.SeriesMetadata(ctx, matchers)
 	if err != nil {
 		return nil, err
 	}
@@ -245,7 +250,13 @@ func (h *HistogramFunction) SeriesMetadata(ctx context.Context) ([]types.SeriesM
 
 	h.remainingGroups = make([]*bucketGroup, 0, len(groups))
 	for _, g := range groups {
-		seriesMetadata, err = types.AppendSeriesMetadata(h.memoryConsumptionTracker, seriesMetadata, types.SeriesMetadata{Labels: g.labels.DropMetricName()})
+		var labelsMetadata types.SeriesMetadata
+		if h.enableDelayedNameRemoval {
+			labelsMetadata = types.SeriesMetadata{Labels: g.labels, DropName: true}
+		} else {
+			labelsMetadata = types.SeriesMetadata{Labels: g.labels.DropMetricName()}
+		}
+		seriesMetadata, err = types.AppendSeriesMetadata(h.memoryConsumptionTracker, seriesMetadata, labelsMetadata)
 		if err != nil {
 			return nil, err
 		}

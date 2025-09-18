@@ -7,25 +7,29 @@ package querier
 
 import (
 	"context"
-	"encoding/binary"
-	"errors"
 	"fmt"
-	"io"
-	"mime"
-	"net/http"
+	"strings"
+	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/gogo/protobuf/proto"
 	prototypes "github.com/gogo/protobuf/types"
+	"github.com/grafana/dskit/server"
+	"github.com/grafana/dskit/tenant"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/annotations"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/querierpb"
+	querier_stats "github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/streamingpromql"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/limiter"
@@ -37,100 +41,67 @@ type Dispatcher struct {
 	engine    *streamingpromql.Engine
 	queryable storage.Queryable
 	logger    log.Logger
+
+	// We need to report two kinds of metrics, to mirror those emitted by HTTP requests:
+	// cortex_querier_... (eg. cortex_querier_inflight_requests), and
+	// cortex_... (eg. cortex_inflight_requests).
+	querierMetrics *RequestMetrics
+	serverMetrics  *server.Metrics
+
+	// This will usually be time.Now(), but is replaced in some tests.
+	timeNow func() time.Time
 }
 
-func NewDispatcher(logger log.Logger, engine *streamingpromql.Engine, queryable storage.Queryable) *Dispatcher {
+func NewDispatcher(engine *streamingpromql.Engine, queryable storage.Queryable, querierMetrics *RequestMetrics, serverMetrics *server.Metrics, logger log.Logger) *Dispatcher {
 	return &Dispatcher{
-		engine:    engine,
-		queryable: queryable,
-		logger:    logger,
+		engine:         engine,
+		queryable:      queryable,
+		logger:         logger,
+		querierMetrics: querierMetrics,
+		serverMetrics:  serverMetrics,
+		timeNow:        time.Now,
 	}
 }
 
-// ServeHTTP responds to requests made to the evaluation HTTP endpoint.
-// This is primarily used for debugging: most requests will arrive from query-frontends via
-// the query-scheduler over gRPC and therefore be handled by HandleProtobuf.
-func (d *Dispatcher) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	defer r.Body.Close()
-	contentType := r.Header.Get("Content-Type")
-
-	mediaType, params, err := mime.ParseMediaType(contentType)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-	}
-
-	if mediaType != "application/protobuf" {
-		http.Error(w, "unsupported content type", http.StatusUnsupportedMediaType)
-		return
-	}
-
-	protoType := params["proto"]
-	if protoType == "" {
-		http.Error(w, "missing proto parameter in Content-Type header", http.StatusBadRequest)
-		return
-	}
-
-	switch protoType {
-	case evaluateQueryRequestMessageName:
-		body, err := io.ReadAll(r.Body)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		w.WriteHeader(http.StatusAccepted)
-		stream := &httpResultStream{w: w}
-		writer := &queryResponseWriter{
-			stream: stream,
-			logger: d.logger,
-		}
-		d.evaluateQuery(r.Context(), body, writer)
-	default:
-		http.Error(w, "unknown request type", http.StatusUnsupportedMediaType)
-	}
-}
-
-// Why do we call this method "HandleProtobuf", and the other "ServeHTTP"?
-// We want to satisfy the http.Handler interface, which requires a method called ServeHTTP,
-// and the querier/worker.RequestHandler interface that uses the verb "handle"
-// in its method name, so we've made the querier/worker.ProtobufRequestHandler interface use "handle" as well.
 func (d *Dispatcher) HandleProtobuf(ctx context.Context, req *prototypes.Any, stream frontendv2pb.QueryResultStream) {
+	writer := &queryResponseWriter{
+		stream:         stream,
+		querierMetrics: d.querierMetrics,
+		serverMetrics:  d.serverMetrics,
+		logger:         d.logger,
+	}
+
 	messageName, err := prototypes.AnyMessageName(req)
+	writer.Start(messageName, len(req.Value)) // We deliberately call this before checking the error below, so that we still get stats for malformed requests.
+	defer writer.Finish()
+
 	if err != nil {
-		writeErrorToStream(ctx, stream, mimirpb.QUERY_ERROR_TYPE_BAD_DATA, fmt.Sprintf("malformed query request type %q: %v", req.TypeUrl, err), d.logger)
+		writer.WriteError(ctx, mimirpb.QUERY_ERROR_TYPE_BAD_DATA, fmt.Sprintf("malformed query request type %q: %v", req.TypeUrl, err))
 		return
 	}
+
+	tenantID, err := tenant.TenantID(ctx)
+	if err != nil {
+		writer.WriteError(ctx, mimirpb.QUERY_ERROR_TYPE_BAD_DATA, err.Error())
+		return
+	}
+
+	writer.tenantID = tenantID
 
 	switch messageName {
 	case evaluateQueryRequestMessageName:
-		writer := &queryResponseWriter{
-			stream: stream,
-			logger: d.logger,
-		}
-
 		d.evaluateQuery(ctx, req.Value, writer)
 
 	default:
-		writeErrorToStream(ctx, stream, mimirpb.QUERY_ERROR_TYPE_BAD_DATA, fmt.Sprintf("unknown query request type %q", req.TypeUrl), d.logger)
-	}
-}
-
-func writeErrorToStream(ctx context.Context, stream frontendv2pb.QueryResultStream, t mimirpb.QueryErrorType, msg string, logger log.Logger) {
-	err := stream.Write(ctx, &frontendv2pb.QueryResultStreamRequest{
-		Data: &frontendv2pb.QueryResultStreamRequest_Error{
-			Error: &querierpb.Error{
-				Type:    t,
-				Message: msg,
-			},
-		},
-	})
-
-	if err != nil {
-		level.Debug(logger).Log("msg", "failed to write error", "writeErr", err, "originalErr", msg)
+		writer.WriteError(ctx, mimirpb.QUERY_ERROR_TYPE_BAD_DATA, fmt.Sprintf("unknown query request type %q", req.TypeUrl))
 	}
 }
 
 func (d *Dispatcher) evaluateQuery(ctx context.Context, body []byte, resp *queryResponseWriter) {
+	startTime := d.timeNow()
+	span := trace.SpanFromContext(ctx)
+	span.SetAttributes(attribute.String("request.type", evaluateQueryRequestMessageName))
+
 	if d.engine == nil {
 		resp.WriteError(ctx, mimirpb.QUERY_ERROR_TYPE_NOT_FOUND, "MQE is not enabled on this querier")
 		return
@@ -155,7 +126,8 @@ func (d *Dispatcher) evaluateQuery(ctx context.Context, body []byte, resp *query
 		return
 	}
 
-	e, err := d.engine.NewEvaluator(ctx, d.queryable, nil, plan, nodes[0], evaluationNode.TimeRange.ToDecodedTimeRange())
+	opts := promql.NewPrometheusQueryOpts(req.EnablePerStepStats, 0)
+	e, err := d.engine.NewEvaluator(ctx, d.queryable, opts, plan, nodes[0], evaluationNode.TimeRange.ToDecodedTimeRange())
 	if err != nil {
 		resp.WriteError(ctx, mimirpb.QUERY_ERROR_TYPE_BAD_DATA, fmt.Sprintf("could not materialize query: %s", err.Error()))
 		return
@@ -163,92 +135,131 @@ func (d *Dispatcher) evaluateQuery(ctx context.Context, body []byte, resp *query
 
 	defer e.Close()
 
-	if err := e.Evaluate(ctx, &evaluationObserver{resp, evaluationNode.NodeIndex, req.Plan.OriginalExpression}); err != nil {
-		resp.WriteError(ctx, errorTypeForError(err), err.Error())
+	observer := &evaluationObserver{
+		w:                  resp,
+		nodeIndex:          evaluationNode.NodeIndex,
+		startTime:          startTime,
+		timeNow:            d.timeNow,
+		originalExpression: req.Plan.OriginalExpression,
 	}
+
+	if err := e.Evaluate(ctx, observer); err != nil {
+		resp.WriteError(ctx, errorTypeForError(err), err.Error())
+		return
+	}
+
+	span.SetStatus(codes.Ok, "evaluation completed successfully")
 }
 
 func errorTypeForError(err error) mimirpb.QueryErrorType {
-	// This method mirrors the behaviour of Prometheus' returnAPIError (https://github.com/prometheus/prometheus/blob/1ada3ced5a91fb4a6e5df473ac360ad99e62209e/web/api/v1/api.go#L682).
-	if errors.Is(err, context.Canceled) {
-		return mimirpb.QUERY_ERROR_TYPE_CANCELED
-	}
+	apiErrorType := apierror.TypeForError(err, apierror.TypeExec)
+	t, conversionErr := mimirpb.ErrorTypeFromAPIErrorType(apiErrorType)
 
-	if errors.Is(err, context.DeadlineExceeded) {
-		return mimirpb.QUERY_ERROR_TYPE_TIMEOUT
-	}
-
-	var queryCanceledErr promql.ErrQueryCanceled
-	if errors.As(err, &queryCanceledErr) {
-		return mimirpb.QUERY_ERROR_TYPE_CANCELED
-	}
-
-	var queryTimeoutErr promql.ErrQueryTimeout
-	if errors.As(err, &queryTimeoutErr) {
-		return mimirpb.QUERY_ERROR_TYPE_TIMEOUT
-	}
-
-	var storageError promql.ErrStorage
-	if errors.As(err, &storageError) {
+	// ErrorTypeFromAPIErrorType should never fail, as the APIError and QueryErrorType enums should remain
+	// in sync (and this is enforced with a test).
+	// If this does fail, it's a bug and should be fixed.
+	if conversionErr != nil {
 		return mimirpb.QUERY_ERROR_TYPE_INTERNAL
 	}
 
-	var apiError *apierror.APIError
-	if errors.As(err, &apiError) {
-		t, conversionErr := mimirpb.ErrorTypeFromAPIErrorType(apiError.Type)
-
-		// ErrorTypeFromAPIErrorType should never fail, as the APIError and QueryErrorType enums should remain
-		// in sync (and this is enforced with a test).
-		// If this does fail, it's a bug and should be fixed.
-		if conversionErr == nil {
-			return t
-		}
-	}
-
-	return mimirpb.QUERY_ERROR_TYPE_EXECUTION
-}
-
-type httpResultStream struct {
-	w http.ResponseWriter
-}
-
-func (s *httpResultStream) Write(ctx context.Context, r *frontendv2pb.QueryResultStreamRequest) error {
-	b, err := r.Marshal()
-	if err != nil {
-		return err
-	}
-
-	if err := binary.Write(s.w, binary.LittleEndian, uint64(len(b))); err != nil {
-		return err
-	}
-
-	if _, err := s.w.Write(b); err != nil {
-		return err
-	}
-
-	return nil
+	return t
 }
 
 type queryResponseWriter struct {
-	stream frontendv2pb.QueryResultStream
-	logger log.Logger
+	stream         frontendv2pb.QueryResultStream
+	querierMetrics *RequestMetrics
+	serverMetrics  *server.Metrics
+	logger         log.Logger
+
+	querierInflightRequests     prometheus.Gauge
+	serverInflightRequests      prometheus.Gauge
+	querierResponseMessageBytes prometheus.Observer
+	serverResponseMessageBytes  prometheus.Observer
+	startTime                   time.Time
+	routeName                   string
+	status                      string
+	tenantID                    string
+}
+
+// Start emits metrics at the start of request processing.
+// It should only be called once per instance.
+func (w *queryResponseWriter) Start(routeName string, payloadSize int) {
+	if routeName == "" {
+		routeName = "<invalid>"
+	}
+
+	w.routeName = routeName
+	w.status = "OK"
+	w.startTime = time.Now()
+
+	w.querierInflightRequests = w.querierMetrics.InflightRequests.WithLabelValues("gRPC", routeName)
+	w.querierInflightRequests.Inc()
+	w.serverInflightRequests = w.serverMetrics.InflightRequests.WithLabelValues("gRPC", routeName)
+	w.serverInflightRequests.Inc()
+
+	w.querierMetrics.ReceivedMessageSize.WithLabelValues("gRPC", routeName).Observe(float64(payloadSize))
+	w.serverMetrics.ReceivedMessageSize.WithLabelValues("gRPC", routeName).Observe(float64(payloadSize))
+	w.querierResponseMessageBytes = w.querierMetrics.SentMessageSize.WithLabelValues("gRPC", routeName)
+	w.serverResponseMessageBytes = w.serverMetrics.SentMessageSize.WithLabelValues("gRPC", routeName)
+}
+
+// Finish emits metrics at the end of request processing.
+// It should only be called after Start is called, and should only be called once per instance.
+func (w *queryResponseWriter) Finish() {
+	duration := time.Since(w.startTime)
+	w.querierMetrics.RequestDuration.WithLabelValues("gRPC", w.routeName, w.status, "false").Observe(duration.Seconds())
+	w.serverMetrics.RequestDuration.WithLabelValues("gRPC", w.routeName, w.status, "false").Observe(duration.Seconds())
+	w.serverMetrics.PerTenantRequestDuration.WithLabelValues("gRPC", w.routeName, w.status, "false", w.tenantID).Observe(duration.Seconds())
+	w.serverMetrics.PerTenantRequestTotal.WithLabelValues("gRPC", w.routeName, w.status, "false", w.tenantID).Inc()
+
+	w.querierInflightRequests.Dec()
+	w.serverInflightRequests.Dec()
 }
 
 func (w *queryResponseWriter) Write(ctx context.Context, r querierpb.EvaluateQueryResponse) error {
-	return w.stream.Write(ctx, &frontendv2pb.QueryResultStreamRequest{
+	resp := &frontendv2pb.QueryResultStreamRequest{
 		Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
 			EvaluateQueryResponse: &r,
 		},
-	})
+	}
+
+	return w.write(ctx, resp)
 }
 
 func (w *queryResponseWriter) WriteError(ctx context.Context, typ mimirpb.QueryErrorType, msg string) {
-	writeErrorToStream(ctx, w.stream, typ, msg, w.logger)
+	span := trace.SpanFromContext(ctx)
+	span.SetStatus(codes.Error, msg)
+	span.AddEvent("returning error", trace.WithAttributes(attribute.String("type", typ.String()), attribute.String("msg", msg)))
+
+	w.status = "ERROR_" + strings.TrimPrefix(typ.String(), "QUERY_ERROR_TYPE_")
+
+	resp := &frontendv2pb.QueryResultStreamRequest{
+		Data: &frontendv2pb.QueryResultStreamRequest_Error{
+			Error: &querierpb.Error{
+				Type:    typ,
+				Message: msg,
+			},
+		},
+	}
+
+	if err := w.write(ctx, resp); err != nil {
+		level.Debug(w.logger).Log("msg", "failed to write error", "writeErr", err, "originalErr", msg)
+	}
+}
+
+func (w *queryResponseWriter) write(ctx context.Context, resp *frontendv2pb.QueryResultStreamRequest) error {
+	size := float64(resp.Size())
+	w.querierResponseMessageBytes.Observe(size)
+	w.serverResponseMessageBytes.Observe(size)
+
+	return w.stream.Write(ctx, resp)
 }
 
 type evaluationObserver struct {
 	w         *queryResponseWriter
 	nodeIndex int64 // FIXME: remove this once Evaluator supports multiple nodes and passes the node index to the methods below
+	startTime time.Time
+	timeNow   func() time.Time
 
 	originalExpression string
 }
@@ -386,7 +397,7 @@ func (o *evaluationObserver) StringEvaluated(ctx context.Context, evaluator *str
 	})
 }
 
-func (o *evaluationObserver) EvaluationCompleted(ctx context.Context, evaluator *streamingpromql.Evaluator, annotations *annotations.Annotations, stats *types.QueryStats) error {
+func (o *evaluationObserver) EvaluationCompleted(ctx context.Context, evaluator *streamingpromql.Evaluator, annotations *annotations.Annotations, evaluationStats *types.QueryStats) error {
 	var annos querierpb.Annotations
 
 	if annotations != nil {
@@ -397,11 +408,37 @@ func (o *evaluationObserver) EvaluationCompleted(ctx context.Context, evaluator 
 		Message: &querierpb.EvaluateQueryResponse_EvaluationCompleted{
 			EvaluationCompleted: &querierpb.EvaluateQueryResponseEvaluationCompleted{
 				Annotations: annos,
-				Stats: querierpb.QueryStats{
-					TotalSamples:        stats.TotalSamples,
-					TotalSamplesPerStep: stats.TotalSamplesPerStep,
-				},
+				Stats:       o.populateStats(ctx, evaluator, evaluationStats),
 			},
 		},
 	})
+}
+
+func (o *evaluationObserver) populateStats(ctx context.Context, evaluator *streamingpromql.Evaluator, evaluationStats *types.QueryStats) querier_stats.Stats {
+	querierStats := querier_stats.FromContext(ctx)
+	if querierStats == nil {
+		return querier_stats.Stats{}
+	}
+
+	querierStats.AddSamplesProcessed(uint64(evaluationStats.TotalSamples))
+
+	if evaluationStats.EnablePerStepStats {
+		stepStats := make([]querier_stats.StepStat, 0, len(evaluationStats.TotalSamplesPerStep))
+		timeRange := evaluator.GetQueryTimeRange()
+
+		for i, count := range evaluationStats.TotalSamplesPerStep {
+			stepStats = append(stepStats, querier_stats.StepStat{
+				Timestamp: timeRange.IndexTime(int64(i)),
+				Value:     count,
+			})
+		}
+
+		querierStats.AddSamplesProcessedPerStep(stepStats)
+	}
+
+	querierStats.AddWallTime(o.timeNow().Sub(o.startTime))
+
+	// Return a copy of the stats to avoid race conditions if anything is still modifying the
+	// stats after we return them for serialization.
+	return querierStats.Copy().Stats
 }

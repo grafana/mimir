@@ -47,7 +47,6 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/hashcache"
 	"github.com/prometheus/prometheus/tsdb/index"
-	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/prometheus/prometheus/util/zeropool"
 	"github.com/thanos-io/objstore"
 	"go.opentelemetry.io/otel"
@@ -812,12 +811,17 @@ func (i *Ingester) updateActiveSeries(now time.Time) {
 			// Active series config has been reloaded, exposing loading metric until MetricsIdleTimeout passes.
 			i.metrics.activeSeriesLoading.WithLabelValues(userID).Set(1)
 		} else {
-			allActive, activeMatching, allActiveHistograms, activeMatchingHistograms, allActiveBuckets, activeMatchingBuckets := userDB.activeSeries.ActiveWithMatchers()
+			allActive, activeMatching, allActiveOTLP, allActiveHistograms, activeMatchingHistograms, allActiveBuckets, activeMatchingBuckets := userDB.activeSeries.ActiveWithMatchers()
 			i.metrics.activeSeriesLoading.DeleteLabelValues(userID)
 			if allActive > 0 {
 				i.metrics.activeSeriesPerUser.WithLabelValues(userID).Set(float64(allActive))
 			} else {
 				i.metrics.activeSeriesPerUser.DeleteLabelValues(userID)
+			}
+			if allActiveOTLP > 0 {
+				i.metrics.activeSeriesPerUserOTLP.WithLabelValues(userID).Set(float64(allActiveOTLP))
+			} else {
+				i.metrics.activeSeriesPerUserOTLP.DeleteLabelValues(userID)
 			}
 			if allActiveHistograms > 0 {
 				i.metrics.activeSeriesPerUserNativeHistograms.WithLabelValues(userID).Set(float64(allActiveHistograms))
@@ -882,7 +886,7 @@ func (i *Ingester) updateUsageStats() {
 		memoryUsersCount++
 		memorySeriesCount += int64(numSeries)
 
-		activeSeries, _, _ := userDB.activeSeries.Active()
+		activeSeries, _, _, _ := userDB.activeSeries.Active()
 		activeSeriesCount += int64(activeSeries)
 
 		oooWindow := i.limits.OutOfOrderTimeWindow(userID)
@@ -967,19 +971,6 @@ func (i *Ingester) updateLimitMetrics() {
 		localLimit := i.limiter.maxSeriesPerUser(userID, minLocalSeriesLimit)
 		i.metrics.maxLocalSeriesPerUser.WithLabelValues(userID).Set(float64(localLimit))
 	}
-}
-
-func (i *Ingester) UserTSDBStatistics(ctx context.Context) (index.Statistics, error) {
-	user, err := tenant.TenantID(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("error extracting tenant ID from context: %w", err)
-	}
-	db := i.getTSDB(user)
-	// If no user TSDB is found, we should not run lookup planning.
-	if db == nil {
-		return nil, fmt.Errorf("no TSDB found for user %s", user)
-	}
-	return db.Head().PostingsStats(), nil
 }
 
 // GetRef() is an extra method added to TSDB to let Mimir check before calling Add()
@@ -1381,7 +1372,20 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 
 	minAppendTime, minAppendTimeAvailable := db.Head().AppendableMinValidTime()
 
-	if pushSamplesToAppenderErr := i.pushSamplesToAppender(userID, req.Timeseries, app, startAppend, &stats, &errProcessor, updateFirstPartial, activeSeries, i.limits.OutOfOrderTimeWindow(userID), minAppendTimeAvailable, minAppendTime); pushSamplesToAppenderErr != nil {
+	if pushSamplesToAppenderErr := i.pushSamplesToAppender(
+		userID,
+		req.Timeseries,
+		app,
+		startAppend,
+		&stats,
+		&errProcessor,
+		updateFirstPartial,
+		activeSeries,
+		i.limits.OutOfOrderTimeWindow(userID),
+		minAppendTimeAvailable,
+		minAppendTime,
+		req.Source == mimirpb.OTLP,
+	); pushSamplesToAppenderErr != nil {
 		if err := app.Rollback(); err != nil {
 			level.Warn(i.logger).Log("msg", "failed to rollback appender on error", "user", userID, "err", err)
 		}
@@ -1474,9 +1478,20 @@ func (i *Ingester) updateMetricsFromPushStats(userID string, group string, stats
 // pushSamplesToAppender appends samples and exemplars to the appender. Most errors are handled via updateFirstPartial function,
 // but in case of unhandled errors, appender is rolled back and such error is returned. Errors handled by updateFirstPartial
 // must be of type softError.
-func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.PreallocTimeseries, app extendedAppender, startAppend time.Time,
-	stats *pushStats, errProcessor *mimir_storage.SoftAppendErrorProcessor, updateFirstPartial func(sampler *util_log.Sampler, errFn softErrorFunction), activeSeries *activeseries.ActiveSeries,
-	outOfOrderWindow time.Duration, minAppendTimeAvailable bool, minAppendTime int64) error {
+func (i *Ingester) pushSamplesToAppender(
+	userID string,
+	timeseries []mimirpb.PreallocTimeseries,
+	app extendedAppender,
+	startAppend time.Time,
+	stats *pushStats,
+	errProcessor *mimir_storage.SoftAppendErrorProcessor,
+	updateFirstPartial func(sampler *util_log.Sampler, errFn softErrorFunction),
+	activeSeries *activeseries.ActiveSeries,
+	outOfOrderWindow time.Duration,
+	minAppendTimeAvailable bool,
+	minAppendTime int64,
+	isOTLP bool,
+) error {
 	// Fetch limits once per push request both to avoid processing half the request differently.
 	var (
 		nativeHistogramsIngestionEnabled = i.limits.NativeHistogramsIngestionEnabled(userID)
@@ -1574,7 +1589,13 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 				}
 				if err == nil {
 					stats.succeededSamplesCount++
-				} else if !errors.Is(err, storage.ErrOutOfOrderCT) && !errors.Is(err, storage.ErrOutOfOrderSample) {
+				} else if !errors.Is(err, storage.ErrDuplicateSampleForTimestamp) && !errors.Is(err, storage.ErrOutOfOrderCT) && !errors.Is(err, storage.ErrOutOfOrderSample) {
+					// According to OTEL spec: https://opentelemetry.io/docs/specs/otel/metrics/data-model/#cumulative-streams-handling-unknown-start-time
+					// if the start time is unknown, then it should equal to the timestamp of the first sample,
+					// which will mean a created timestamp equal to the timestamp of the first sample for later
+					// samples. Thus we ignore if zero sample would cause duplicate.
+					// We also ignore out of order sample as created timestamp is out of order most of the time,
+					// except when written before the first sample.
 					errProcessor.ProcessErr(err, ts.CreatedTimestamp, ts.Labels)
 				}
 				ingestCreatedTimestamp = false // Only try to append created timestamp once per series.
@@ -1639,7 +1660,13 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 					}
 					if err == nil {
 						stats.succeededSamplesCount++
-					} else if !errors.Is(err, storage.ErrOutOfOrderCT) && !errors.Is(err, storage.ErrOutOfOrderSample) {
+					} else if !errors.Is(err, storage.ErrDuplicateSampleForTimestamp) && !errors.Is(err, storage.ErrOutOfOrderCT) && !errors.Is(err, storage.ErrOutOfOrderSample) {
+						// According to OTEL spec: https://opentelemetry.io/docs/specs/otel/metrics/data-model/#cumulative-streams-handling-unknown-start-time
+						// if the start time is unknown, then it should equal to the timestamp of the first sample,
+						// which will mean a created timestamp equal to the timestamp of the first sample for later
+						// samples. Thus we ignore if zero sample would cause duplicate.
+						// We also ignore out of order sample as created timestamp is out of order most of the time,
+						// except when written before the first sample.
 						errProcessor.ProcessErr(err, ts.CreatedTimestamp, ts.Labels)
 					}
 					ingestCreatedTimestamp = false // Only try to append created timestamp once per series.
@@ -1679,7 +1706,7 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 		}
 
 		if activeSeries != nil && stats.succeededSamplesCount > oldSucceededSamplesCount {
-			activeSeries.UpdateSeries(nonCopiedLabels, ref, startAppend, numNativeHistogramBuckets, idx)
+			activeSeries.UpdateSeries(nonCopiedLabels, ref, startAppend, numNativeHistogramBuckets, isOTLP, idx)
 		}
 
 		if len(ts.Exemplars) > 0 && i.limits.MaxGlobalExemplarsPerUser(userID) > 0 {
@@ -2225,7 +2252,7 @@ func createUserStats(db *userTSDB, req *client.UserStatsRequest) (*client.UserSt
 	case client.IN_MEMORY:
 		series = db.Head().NumSeries()
 	case client.ACTIVE:
-		activeSeries, _, _ := db.activeSeries.Active()
+		activeSeries, _, _, _ := db.activeSeries.Active()
 		series = uint64(activeSeries)
 	default:
 		return nil, fmt.Errorf("unknown count method %q", req.GetCountMethod())
@@ -2629,15 +2656,22 @@ func (i *Ingester) getTSDB(userID string) *userTSDB {
 	return db
 }
 
-// getIndexLookupPlanner returns the appropriate index lookup planner based on configuration.
-// When index lookup planning is enabled, it uses the CostBasedPlanner,
-// which calculates cost for several plans based on label name/value statistics, and picks the optimal one.
+// getIndexLookupPlannerFunc returns the appropriate index lookup planner function based on configuration.
+// When index lookup planning is enabled, it creates a CostBasedPlanner for each block,
+// which calculates cost for several plans based on that block's specific statistics, and picks the optimal one.
 // When disabled, it uses NoopPlanner which performs no optimization.
-func (i *Ingester) getIndexLookupPlanner(r prometheus.Registerer) index.LookupPlanner {
-	if i.cfg.BlocksStorageConfig.TSDB.IndexLookupPlanningEnabled {
-		return lookupplan.NewCostBasedPlanner(lookupplan.NewMetrics(r), i)
+func (i *Ingester) getIndexLookupPlannerFunc(r prometheus.Registerer, userID string) tsdb.IndexLookupPlannerFunc {
+	if !i.cfg.BlocksStorageConfig.TSDB.IndexLookupPlanningEnabled {
+		return func(tsdb.BlockMeta, tsdb.IndexReader) index.LookupPlanner { return lookupplan.NoopPlanner{} }
 	}
-	return lookupplan.NoopPlanner{}
+
+	metrics := lookupplan.NewMetrics(r)
+	logger := log.With(i.logger, "user", userID)
+	statsGenerator := lookupplan.NewStatisticsGenerator(logger)
+
+	provider := lookupplan.NewPlannerFactory(metrics, logger, statsGenerator)
+
+	return provider.CreatePlanner
 }
 
 // List all users for which we have a TSDB. We do it here in order
@@ -2781,7 +2815,7 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 		BlockPostingsForMatchersCacheMetrics:     i.tsdbMetrics.blockPostingsForMatchersCacheMetrics,
 		EnableNativeHistograms:                   i.limits.NativeHistogramsIngestionEnabled(userID),
 		SecondaryHashFunction:                    secondaryTSDBHashFunctionForUser(userID),
-		IndexLookupPlanner:                       i.getIndexLookupPlanner(tsdbPromReg),
+		IndexLookupPlannerFunc:                   i.getIndexLookupPlannerFunc(tsdbPromReg, userID),
 		BlockChunkQuerierFunc: func(b tsdb.BlockReader, mint, maxt int64) (storage.ChunkQuerier, error) {
 			return i.createBlockChunkQuerier(userID, b, mint, maxt)
 		},
@@ -2850,47 +2884,11 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 	return userDB, nil
 }
 
-// disabledPlanningChunkQuerier wraps a storage.ChunkQuerier and disables lookup planning for all operations
-type disabledPlanningChunkQuerier struct {
-	delegate storage.ChunkQuerier
-}
-
-func (q *disabledPlanningChunkQuerier) LabelValues(ctx context.Context, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
-	ctxWithoutPlanning := lookupplan.ContextWithDisabledPlanning(ctx)
-	return q.delegate.LabelValues(ctxWithoutPlanning, name, hints, matchers...)
-}
-
-func (q *disabledPlanningChunkQuerier) LabelNames(ctx context.Context, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
-	ctxWithoutPlanning := lookupplan.ContextWithDisabledPlanning(ctx)
-	return q.delegate.LabelNames(ctxWithoutPlanning, hints, matchers...)
-}
-
-func (q *disabledPlanningChunkQuerier) Close() error {
-	return q.delegate.Close()
-}
-
-func (q *disabledPlanningChunkQuerier) Select(ctx context.Context, sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.ChunkSeriesSet {
-	ctxWithoutPlanning := lookupplan.ContextWithDisabledPlanning(ctx)
-	return q.delegate.Select(ctxWithoutPlanning, sortSeries, hints, matchers...)
-}
-
 // createBlockChunkQuerier creates a BlockChunkQuerier that optionally wraps the default querier with mirroring
 func (i *Ingester) createBlockChunkQuerier(userID string, b tsdb.BlockReader, mint, maxt int64) (storage.ChunkQuerier, error) {
 	defaultQuerier, err := tsdb.NewBlockChunkQuerier(b, mint, maxt)
 	if err != nil {
 		return nil, err
-	}
-
-	blockMeta := b.Meta()
-
-	// Check if block is older than 3 hours.
-	// 1h in memory + 2h for compaction - only use stats for very recent (mostly in-memory) blocks
-	threeHoursAgo := time.Now().Add(-3 * time.Hour).UnixMilli()
-	if blockMeta.MaxTime < threeHoursAgo {
-		// For old blocks, use a querier with disabled lookup planning to avoid using outdated statistics
-		return &disabledPlanningChunkQuerier{
-			delegate: defaultQuerier,
-		}, nil
 	}
 
 	if rand.Float64() > i.cfg.BlocksStorageConfig.TSDB.IndexLookupPlanningComparisonPortion {
@@ -2901,7 +2899,7 @@ func (i *Ingester) createBlockChunkQuerier(userID string, b tsdb.BlockReader, mi
 		userID,
 		i.metrics.indexLookupComparisonOutcomes,
 		mint, maxt,
-		blockMeta,
+		b.Meta(),
 		i.logger,
 		defaultQuerier,
 	)
@@ -3486,7 +3484,7 @@ func (i *Ingester) compactBlocksToReduceInMemorySeries(ctx context.Context, now 
 
 		// Estimate the number of series that would be dropped from the TSDB Head if we would
 		// compact the head up until "now - active series idle timeout".
-		totalActiveSeries, _, _ := db.activeSeries.Active()
+		totalActiveSeries, _, _, _ := db.activeSeries.Active()
 		estimatedSeriesReduction := max(0, int64(userMemorySeries)-int64(totalActiveSeries))
 		estimations = append(estimations, seriesReductionEstimation{
 			userID:              userID,

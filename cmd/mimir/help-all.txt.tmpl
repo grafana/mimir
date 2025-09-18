@@ -272,7 +272,7 @@ Usage of ./cmd/mimir/mimir:
   -alertmanager.notification-rate-limit float
     	Per-tenant rate limit for sending notifications from Alertmanager in notifications/sec. 0 = rate limit disabled. Negative value = no notifications are allowed.
   -alertmanager.notification-rate-limit-per-integration value
-    	Per-integration notification rate limits. Value is a map, where each key is integration name and value is a rate-limit (float). On command line, this map is given in JSON format. Rate limit has the same meaning as -alertmanager.notification-rate-limit, but only applies for specific integration. Allowed integration names: webhook, email, pagerduty, opsgenie, wechat, slack, victorops, pushover, sns, webex, telegram, discord, msteams. (default {})
+    	Per-integration notification rate limits. Value is a map, where each key is integration name and value is a rate-limit (float). On command line, this map is given in JSON format. Rate limit has the same meaning as -alertmanager.notification-rate-limit, but only applies for specific integration. Allowed integration names: webhook, email, pagerduty, opsgenie, wechat, slack, victorops, pushover, sns, webex, telegram, discord, msteams, msteamsv2. (default {})
   -alertmanager.notify-hook-receivers comma-separated-list-of-strings
     	List of receivers to enable notify hooks for. empty = all receivers.
   -alertmanager.notify-hook-timeout duration
@@ -2043,6 +2043,8 @@ Usage of ./cmd/mimir/mimir:
     	The default evaluation interval or step size for subqueries. This config option should be set on query-frontend too when query sharding is enabled. (default 1m0s)
   -querier.dns-lookup-period duration
     	How often to query DNS for query-frontend or query-scheduler address. (default 10s)
+  -querier.enable-delayed-name-removal
+    	[experimental] Enable the experimental Prometheus feature for delayed name removal.
   -querier.enable-query-engine-fallback
     	[experimental] If set to true and the Mimir query engine is in use, fall back to using the Prometheus query engine for any queries not supported by the Mimir query engine. (default true)
   -querier.filter-queryables-enabled
@@ -2129,6 +2131,8 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Enable common subexpression elimination when evaluating queries. (default true)
   -querier.mimir-query-engine.enable-common-subexpression-elimination-for-range-vector-expressions-in-instant-queries
     	[experimental] Enable common subexpression elimination for range vector expressions when evaluating instant queries. This has no effect if common subexpression elimination is disabled. (default true)
+  -querier.mimir-query-engine.enable-narrow-binary-selectors
+    	[experimental] Enable generating selectors for one side of a binary expression based on results from the other side.
   -querier.mimir-query-engine.enable-prune-toggles
     	[experimental] Enable pruning query expressions that are toggled off with constants. (default true)
   -querier.mimir-query-engine.enable-skipping-histogram-decoding
@@ -2263,6 +2267,8 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Optionally define the cluster validation label.
   -query-frontend.enable-query-engine-fallback
     	[experimental] If set to true and the Mimir query engine is in use, fall back to using the Prometheus query engine for any queries not supported by the Mimir query engine. (default true)
+  -query-frontend.enable-remote-execution
+    	[experimental] If set to true and the Mimir query engine is in use, use remote execution to evaluate queries in queriers.
   -query-frontend.enabled-promql-experimental-functions comma-separated-list-of-strings
     	Enable certain experimental PromQL functions, which are subject to being changed or removed at any time, on a per-tenant basis. Defaults to empty which means all experimental functions are disabled. Set to 'all' to enable all experimental functions.
   -query-frontend.extra-propagated-headers comma-separated-list-of-strings
@@ -2322,7 +2328,7 @@ Usage of ./cmd/mimir/mimir:
   -query-frontend.instance-port int
     	Port to advertise to querier (via scheduler) (defaults to server.grpc-listen-port).
   -query-frontend.labels-query-optimizer-enabled
-    	[experimental] Enable labels query optimizations. When enabled, the query-frontend may rewrite labels queries to improve their performance.
+    	Enable labels query optimizations. When enabled, the query-frontend may rewrite labels queries to improve their performance. (default true)
   -query-frontend.log-queries-longer-than duration
     	Log queries that are slower than the specified duration. Set to 0 to disable. Set to < 0 to enable on all queries.
   -query-frontend.log-query-request-headers comma-separated-list-of-strings
@@ -3921,6 +3927,8 @@ Usage of ./cmd/mimir/mimir:
     	Controls how far into the future incoming samples and exemplars are accepted compared to the wall clock. Any sample or exemplar will be rejected if its timestamp is greater than '(now + creation_grace_period)'. This configuration is enforced in the distributor and ingester. (default 10m)
   -validation.enforce-metadata-metric-name
     	Enforce every metadata has a metric name. (default true)
+  -validation.label-value-length-over-limit-strategy value
+    	[experimental] What to do for label values over the length limit. Options are: 'error', 'truncate', 'drop'. For 'truncate', the hash of the full value replaces the end portion of the value. For 'drop', the hash fully replaces the value.
   -validation.max-cost-attribution-cardinality int
     	[experimental] Maximum cardinality of cost attribution labels allowed per user. (default 2000)
   -validation.max-label-names-per-info-series int

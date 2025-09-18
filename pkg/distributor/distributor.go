@@ -264,6 +264,9 @@ type Config struct {
 	// These functions will only receive samples that don't get dropped by HA deduplication.
 	PushWrappers []PushWrapper `yaml:"-"`
 
+	// OTLPPushMiddlewares are wrappers that are called when an OTLP push request is received.
+	OTLPPushMiddlewares []OTLPPushMiddleware `yaml:"-"`
+
 	WriteRequestsBufferPoolingEnabled bool `yaml:"write_requests_buffer_pooling_enabled" category:"experimental"`
 	ReusableIngesterPushWorkers       int  `yaml:"reusable_ingester_push_workers" category:"advanced"`
 
@@ -352,7 +355,7 @@ func newPushMetrics(reg prometheus.Registerer) *PushMetrics {
 			NativeHistogramBucketFactor:     1.1,
 			NativeHistogramMinResetDuration: 1 * time.Hour,
 			NativeHistogramMaxBucketNumber:  100,
-		}, []string{"user"}),
+		}, []string{"user", "handler"}),
 	}
 }
 
@@ -374,9 +377,9 @@ func (m *PushMetrics) IncOTLPRequest(user string) {
 	}
 }
 
-func (m *PushMetrics) ObserveUncompressedBodySize(user string, size float64) {
+func (m *PushMetrics) ObserveUncompressedBodySize(user string, handler string, size float64) {
 	if m != nil {
-		m.uncompressedBodySize.WithLabelValues(user).Observe(size)
+		m.uncompressedBodySize.WithLabelValues(user, handler).Observe(size)
 	}
 }
 
@@ -1537,23 +1540,29 @@ func (d *Distributor) metricsMiddleware(next PushFunc) PushFunc {
 		}
 
 		numSamples := 0
+		numHistograms := 0
 		numExemplars := 0
 		for _, ts := range req.Timeseries {
-			numSamples += len(ts.Samples) + len(ts.Histograms)
+			numSamples += len(ts.Samples)
+			numHistograms += len(ts.Histograms)
 			numExemplars += len(ts.Exemplars)
 		}
 
 		span := trace.SpanFromContext(ctx)
 		span.SetAttributes(
-			attribute.Int("write.samples", numSamples),
+			attribute.Int("write.samples", numSamples+numHistograms),
 			attribute.Int("write.exemplars", numExemplars),
 			attribute.Int("write.metadata", len(req.Metadata)),
 		)
 
 		d.incomingRequests.WithLabelValues(userID, req.ProtocolVersion()).Inc()
-		d.incomingSamples.WithLabelValues(userID).Add(float64(numSamples))
+		d.incomingSamples.WithLabelValues(userID).Add(float64(numSamples + numHistograms))
 		d.incomingExemplars.WithLabelValues(userID).Add(float64(numExemplars))
 		d.incomingMetadata.WithLabelValues(userID).Add(float64(len(req.Metadata)))
+
+		// Update the write response stats, which are returned to callers using remote write
+		// version 2.0.
+		updateWriteResponseStatsCtx(ctx, numSamples, numHistograms, numExemplars)
 
 		return next(ctx, pushReq)
 	}
@@ -1852,7 +1861,7 @@ func (d *Distributor) push(ctx context.Context, pushReq *Request) error {
 		return err
 	}
 
-	d.updateReceivedMetrics(ctx, req, userID)
+	d.updateReceivedMetrics(req, userID)
 
 	if len(req.Timeseries) == 0 && len(req.Metadata) == 0 {
 		return nil
@@ -2107,7 +2116,7 @@ func tokenForMetadata(userID string, metricName string) uint32 {
 	return mimirpb.ShardByMetricName(userID, metricName)
 }
 
-func (d *Distributor) updateReceivedMetrics(ctx context.Context, req *mimirpb.WriteRequest, userID string) {
+func (d *Distributor) updateReceivedMetrics(req *mimirpb.WriteRequest, userID string) {
 	var receivedSamples, receivedHistograms, receivedHistogramBuckets, receivedExemplars, receivedMetadata int
 	for _, ts := range req.Timeseries {
 		receivedSamples += len(ts.Samples)
@@ -2125,8 +2134,6 @@ func (d *Distributor) updateReceivedMetrics(ctx context.Context, req *mimirpb.Wr
 	d.receivedNativeHistogramBuckets.WithLabelValues(userID).Add(float64(receivedHistogramBuckets))
 	d.receivedExemplars.WithLabelValues(userID).Add(float64(receivedExemplars))
 	d.receivedMetadata.WithLabelValues(userID).Add(float64(receivedMetadata))
-
-	updateWriteResponseStatsCtx(ctx, receivedSamples, receivedHistograms, receivedExemplars)
 }
 
 // forReplicationSets runs f, in parallel, for all ingesters in the input replicationSets.

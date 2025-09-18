@@ -245,7 +245,7 @@ func (t *IngestStorageRecordTest) Run(ctx context.Context, now time.Time) error 
 		if ctx.Err() != nil {
 			return err
 		}
-		fetches := t.client.PollFetches(ctx)
+		fetches := t.client.PollRecords(ctx, t.cfg.MaxRecordsPerRun)
 		if errs := fetches.Errors(); len(errs) > 0 {
 			level.Error(t.logger).Log("msg", "fetch errors", "err", fetches.Err())
 			break
@@ -478,7 +478,7 @@ metaLoop:
 	return result
 }
 
-// TimeseriesEqual is a copy of mimirpb.TimeSeries.Equal that calls SampleEqual instead.
+// TimeseriesEqual is a copy of mimirpb.TimeSeries.Equal that calls SampleEqual, ExemplarEqual, and HistogramEqual instead.
 func TimeseriesEqual(this *mimirpb.TimeSeries, that interface{}) bool {
 	if that == nil {
 		return this == nil
@@ -521,7 +521,7 @@ func TimeseriesEqual(this *mimirpb.TimeSeries, that interface{}) bool {
 		return false
 	}
 	for i := range this.Exemplars {
-		if !this.Exemplars[i].Equal(&that1.Exemplars[i]) {
+		if !ExemplarEqual(&this.Exemplars[i], &that1.Exemplars[i]) {
 			return false
 		}
 	}
@@ -529,7 +529,7 @@ func TimeseriesEqual(this *mimirpb.TimeSeries, that interface{}) bool {
 		return false
 	}
 	for i := range this.Histograms {
-		if !this.Histograms[i].Equal(&that1.Histograms[i]) {
+		if !HistogramEqual(&this.Histograms[i], &that1.Histograms[i]) {
 			return false
 		}
 	}
@@ -559,11 +559,165 @@ func SampleEqual(this *mimirpb.Sample, that interface{}) bool {
 	if this.TimestampMs != that1.TimestampMs {
 		return false
 	}
-	if math.IsNaN(this.Value) && math.IsNaN(that1.Value) {
-		return true
-	}
-	if this.Value != that1.Value {
+	if !floatEqualsEquateNaN(this.Value, that1.Value) {
 		return false
 	}
 	return true
+}
+
+// ExemplarEqual is a copy of mimirpb.Exemplar.Equal but equates NaN values.
+func ExemplarEqual(this *mimirpb.Exemplar, that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*mimirpb.Exemplar)
+	if !ok {
+		that2, ok := that.(mimirpb.Exemplar)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if len(this.Labels) != len(that1.Labels) {
+		return false
+	}
+	for i := range this.Labels {
+		if !this.Labels[i].Equal(that1.Labels[i]) {
+			return false
+		}
+	}
+	if !floatEqualsEquateNaN(this.Value, that1.Value) {
+		return false
+	}
+	if this.TimestampMs != that1.TimestampMs {
+		return false
+	}
+	return true
+}
+
+// HistogramEqual is a copy of mimirpb.Histogram.Equal but equates NaN values.
+func HistogramEqual(this *mimirpb.Histogram, that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*mimirpb.Histogram)
+	if !ok {
+		that2, ok := that.(mimirpb.Histogram)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if that1.Count == nil {
+		if this.Count != nil {
+			return false
+		}
+	} else if this.Count == nil {
+		return false
+	} else if !this.Count.Equal(that1.Count) {
+		return false
+	}
+	if !floatEqualsEquateNaN(this.Sum, that1.Sum) {
+		return false
+	}
+	if this.Schema != that1.Schema {
+		return false
+	}
+	if !floatEqualsEquateNaN(this.ZeroThreshold, that1.ZeroThreshold) {
+		return false
+	}
+	if that1.ZeroCount == nil {
+		if this.ZeroCount != nil {
+			return false
+		}
+	} else if this.ZeroCount == nil {
+		return false
+	} else if !this.ZeroCount.Equal(that1.ZeroCount) {
+		return false
+	}
+	if len(this.NegativeSpans) != len(that1.NegativeSpans) {
+		return false
+	}
+	for i := range this.NegativeSpans {
+		if !this.NegativeSpans[i].Equal(&that1.NegativeSpans[i]) {
+			return false
+		}
+	}
+	if len(this.NegativeDeltas) != len(that1.NegativeDeltas) {
+		return false
+	}
+	for i := range this.NegativeDeltas {
+		if this.NegativeDeltas[i] != that1.NegativeDeltas[i] {
+			return false
+		}
+	}
+	if len(this.NegativeCounts) != len(that1.NegativeCounts) {
+		return false
+	}
+	for i := range this.NegativeCounts {
+		if !floatEqualsEquateNaN(this.NegativeCounts[i], that1.NegativeCounts[i]) {
+			return false
+		}
+	}
+	if len(this.PositiveSpans) != len(that1.PositiveSpans) {
+		return false
+	}
+	for i := range this.PositiveSpans {
+		if !this.PositiveSpans[i].Equal(&that1.PositiveSpans[i]) {
+			return false
+		}
+	}
+	if len(this.PositiveDeltas) != len(that1.PositiveDeltas) {
+		return false
+	}
+	for i := range this.PositiveDeltas {
+		if this.PositiveDeltas[i] != that1.PositiveDeltas[i] {
+			return false
+		}
+	}
+	if len(this.PositiveCounts) != len(that1.PositiveCounts) {
+		return false
+	}
+	for i := range this.PositiveCounts {
+		if !floatEqualsEquateNaN(this.PositiveCounts[i], that1.PositiveCounts[i]) {
+			return false
+		}
+	}
+	if this.ResetHint != that1.ResetHint {
+		return false
+	}
+	if this.Timestamp != that1.Timestamp {
+		return false
+	}
+	if len(this.CustomValues) != len(that1.CustomValues) {
+		return false
+	}
+	for i := range this.CustomValues {
+		if !floatEqualsEquateNaN(this.CustomValues[i], that1.CustomValues[i]) {
+			return false
+		}
+	}
+	return true
+}
+
+func floatEqualsEquateNaN(a, b float64) bool {
+	if math.IsNaN(a) && math.IsNaN(b) {
+		return true
+	}
+
+	return a == b
 }

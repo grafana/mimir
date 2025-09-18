@@ -46,6 +46,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/testutils"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/globalerror"
+	"github.com/grafana/mimir/pkg/util/limiter"
 	syncutil "github.com/grafana/mimir/pkg/util/sync"
 )
 
@@ -181,6 +182,7 @@ func TestNewInstantQuery_Strings(t *testing.T) {
 // Once the streaming engine supports all PromQL features exercised by Prometheus' test cases, we can remove these files and instead call promql.RunBuiltinTests here instead.
 func TestUpstreamTestCases(t *testing.T) {
 	opts := NewTestEngineOpts()
+	opts.CommonOpts.EnableDelayedNameRemoval = true
 	planner, err := NewQueryPlanner(opts)
 	require.NoError(t, err)
 	engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), planner)
@@ -206,13 +208,23 @@ func TestUpstreamTestCases(t *testing.T) {
 }
 
 func TestOurTestCases(t *testing.T) {
-	opts := NewTestEngineOpts()
-	planner, err := NewQueryPlanner(opts)
-	require.NoError(t, err)
-	mimirEngine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), planner)
-	require.NoError(t, err)
+	makeEngines := func(t *testing.T, opts EngineOpts) (promql.QueryEngine, promql.QueryEngine) {
+		planner, err := NewQueryPlanner(opts)
+		require.NoError(t, err)
+		mimirEngine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), planner)
+		require.NoError(t, err)
 
-	prometheusEngine := promql.NewEngine(opts.CommonOpts)
+		prometheusEngine := promql.NewEngine(opts.CommonOpts)
+
+		return mimirEngine, prometheusEngine
+	}
+
+	opts := NewTestEngineOpts()
+	mimirEngine, prometheusEngine := makeEngines(t, opts)
+
+	optsWithDelayedNameRemoval := NewTestEngineOpts()
+	optsWithDelayedNameRemoval.CommonOpts.EnableDelayedNameRemoval = true
+	mimirEngineWithDelayedNameRemoval, prometheusEngineWithDelayedNameRemoval := makeEngines(t, optsWithDelayedNameRemoval)
 
 	testdataFS := os.DirFS("./testdata")
 	testFiles, err := fs.Glob(testdataFS, "ours*/*.test")
@@ -230,6 +242,11 @@ func TestOurTestCases(t *testing.T) {
 			testScript := string(b)
 
 			t.Run("Mimir's engine", func(t *testing.T) {
+				if strings.Contains(testFile, "name_label_dropping") {
+					promqltest.RunTest(t, testScript, mimirEngineWithDelayedNameRemoval)
+					return
+				}
+
 				promqltest.RunTest(t, testScript, mimirEngine)
 			})
 
@@ -237,6 +254,11 @@ func TestOurTestCases(t *testing.T) {
 			t.Run("Prometheus' engine", func(t *testing.T) {
 				if strings.HasPrefix(testFile, "ours-only") {
 					t.Skip("disabled for Prometheus' engine due to bug in Prometheus' engine")
+				}
+
+				if strings.Contains(testFile, "name_label_dropping") {
+					promqltest.RunTest(t, testScript, prometheusEngineWithDelayedNameRemoval)
+					return
 				}
 
 				promqltest.RunTest(t, testScript, prometheusEngine)
@@ -1551,7 +1573,7 @@ func TestMemoryConsumptionLimit_SingleQueries(t *testing.T) {
 	ctx := context.Background()
 
 	for name, testCase := range testCases {
-		assertEstimatedPeakMemoryConsumption := func(t *testing.T, reg *prometheus.Registry, span tracetest.SpanStub, expectedMemoryConsumptionEstimate uint64, queryType string) {
+		assertEstimatedPeakMemoryConsumption := func(t *testing.T, reg *prometheus.Registry, span tracetest.SpanStub, memoryConsumptionLimit, expectedMemoryConsumptionEstimate uint64, queryType string, shouldSucceed bool) {
 			peakMemoryConsumptionHistogram := getHistogram(t, reg, "cortex_mimir_query_engine_estimated_query_peak_memory_consumption")
 			require.Equal(t, float64(expectedMemoryConsumptionEstimate), peakMemoryConsumptionHistogram.GetSampleSum())
 
@@ -1585,28 +1607,37 @@ func TestMemoryConsumptionLimit_SingleQueries(t *testing.T) {
 				panic(fmt.Sprintf("unknown query type: %s", queryType))
 			}
 
-			require.Equal(t, expectedFields, logEvent.Attributes)
+			if shouldSucceed {
+				expectedFields = append(expectedFields, attribute.String("status", "success"))
+			} else {
+				expectedFields = append(expectedFields,
+					attribute.String("status", "failed"),
+					attribute.String("err", limiter.NewMaxEstimatedMemoryConsumptionPerQueryLimitError(memoryConsumptionLimit).Error()),
+				)
+			}
+
+			require.ElementsMatch(t, expectedFields, logEvent.Attributes)
 		}
 
 		t.Run(name, func(t *testing.T) {
-			queryTypes := map[string]func(t *testing.T) (promql.Query, *prometheus.Registry, uint64){
-				"range": func(t *testing.T) (promql.Query, *prometheus.Registry, uint64) {
+			queryTypes := map[string]func(t *testing.T) (promql.Query, *prometheus.Registry, uint64, uint64){
+				"range": func(t *testing.T) (promql.Query, *prometheus.Registry, uint64, uint64) {
 					engine, reg := createEngine(t, testCase.rangeQueryLimit)
 					q, err := engine.NewRangeQuery(ctx, storage, nil, testCase.expr, start, end, step)
 					require.NoError(t, err)
-					return q, reg, testCase.rangeQueryExpectedPeak
+					return q, reg, testCase.rangeQueryLimit, testCase.rangeQueryExpectedPeak
 				},
-				"instant": func(t *testing.T) (promql.Query, *prometheus.Registry, uint64) {
+				"instant": func(t *testing.T) (promql.Query, *prometheus.Registry, uint64, uint64) {
 					engine, reg := createEngine(t, testCase.instantQueryLimit)
 					q, err := engine.NewInstantQuery(ctx, storage, nil, testCase.expr, start)
 					require.NoError(t, err)
-					return q, reg, testCase.instantQueryExpectedPeak
+					return q, reg, testCase.instantQueryLimit, testCase.instantQueryExpectedPeak
 				},
 			}
 
 			for queryType, createQuery := range queryTypes {
 				t.Run(queryType, func(t *testing.T) {
-					q, reg, expectedPeakMemoryConsumption := createQuery(t)
+					q, reg, memoryConsumptionLimit, expectedPeakMemoryConsumption := createQuery(t)
 					t.Cleanup(q.Close)
 
 					res := q.Exec(ctx)
@@ -1623,7 +1654,7 @@ func TestMemoryConsumptionLimit_SingleQueries(t *testing.T) {
 						return stub.Name == "Query.Exec"
 					})
 					require.Len(t, spanStubs, 1)
-					assertEstimatedPeakMemoryConsumption(t, reg, spanStubs[0], expectedPeakMemoryConsumption, queryType)
+					assertEstimatedPeakMemoryConsumption(t, reg, spanStubs[0], memoryConsumptionLimit, expectedPeakMemoryConsumption, queryType, testCase.shouldSucceed)
 				})
 			}
 		})

@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-kit/log"
 	"github.com/gogo/protobuf/proto"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql/parser"
@@ -146,6 +147,9 @@ type OperatorParameters struct {
 	Annotations              *annotations.Annotations
 	LookbackDelta            time.Duration
 	EagerLoadSelectors       bool
+	Plan                     *QueryPlan
+	EnableDelayedNameRemoval bool
+	Logger                   log.Logger
 }
 
 func (p *QueryPlan) ToEncodedPlan(includeDescriptions bool, includeDetails bool) (*EncodedQueryPlan, error) {

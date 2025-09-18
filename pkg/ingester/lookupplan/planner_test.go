@@ -15,28 +15,28 @@ import (
 	"github.com/grafana/mimir/pkg/util"
 )
 
+type plannerTestCase struct {
+	name                  string
+	inputMatchers         []*labels.Matcher
+	expectedIndexMatchers []*labels.Matcher
+	expectedScanMatchers  []*labels.Matcher
+}
+
 func TestCostBasedPlannerPlanIndexLookup(t *testing.T) {
 	ctx := context.Background()
-
-	type testCase struct {
-		name                  string
-		inputMatchers         []*labels.Matcher
-		expectedIndexMatchers []*labels.Matcher
-		expectedScanMatchers  []*labels.Matcher
-	}
 
 	data := newCSVTestData(
 		[]string{"testName", "inputMatchers", "expectedIndexMatchers", "expectedScanMatchers"},
 		filepath.Join("testdata", "planner_test_cases.csv"),
-		func(record []string) testCase {
-			return testCase{
+		func(record []string) plannerTestCase {
+			return plannerTestCase{
 				name:                  record[0],
 				inputMatchers:         parseVectorSelector(t, record[1]),
 				expectedIndexMatchers: parseVectorSelector(t, record[2]),
 				expectedScanMatchers:  parseVectorSelector(t, record[3]),
 			}
 		},
-		func(tc testCase) []string {
+		func(tc plannerTestCase) []string {
 			return []string{
 				tc.name,
 				fmt.Sprintf("{%s}", util.MatchersStringer(tc.inputMatchers)),
@@ -82,6 +82,52 @@ func TestCostBasedPlannerPlanIndexLookup(t *testing.T) {
 
 			testCases[tcIdx].expectedIndexMatchers = result.IndexMatchers()
 			testCases[tcIdx].expectedScanMatchers = result.ScanMatchers()
+		})
+	}
+}
+
+func BenchmarkCostBasedPlannerPlanIndexLookup(b *testing.B) {
+	ctx := context.Background()
+
+	data := newCSVTestData(
+		[]string{"testName", "inputMatchers", "expectedIndexMatchers", "expectedScanMatchers"},
+		filepath.Join("testdata", "planner_test_cases.csv"),
+		func(record []string) plannerTestCase {
+			return plannerTestCase{
+				name:                  record[0],
+				inputMatchers:         parseVectorSelector(b, record[1]),
+				expectedIndexMatchers: parseVectorSelector(b, record[2]),
+				expectedScanMatchers:  parseVectorSelector(b, record[3]),
+			}
+		},
+		func(tc plannerTestCase) []string {
+			require.FailNow(b, "benchmark shouldn't change test cases")
+			return nil
+		},
+	)
+
+	// Load test cases for benchmarking
+	testCases := data.ParseTestCases(b)
+
+	stats := newHighCardinalityMockStatistics()
+	metrics := NewMetrics(nil)
+	planner := NewCostBasedPlanner(metrics, stats)
+
+	for _, tc := range testCases {
+		b.Run(tc.name, func(b *testing.B) {
+			// Create a basic lookup plan with the input matchers
+			inputPlan := &basicLookupPlan{
+				indexMatchers: tc.inputMatchers,
+			}
+
+			b.ReportAllocs()
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				_, err := planner.PlanIndexLookup(ctx, inputPlan, 0, 0)
+				if err != nil {
+					b.Fatal(err)
+				}
+			}
 		})
 	}
 }

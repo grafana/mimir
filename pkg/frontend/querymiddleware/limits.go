@@ -17,10 +17,14 @@ import (
 	"github.com/grafana/dskit/cancellation"
 	"github.com/grafana/dskit/tenant"
 	"github.com/prometheus/prometheus/model/timestamp"
+	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/storage"
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sync/semaphore"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
+	"github.com/grafana/mimir/pkg/querier/stats"
+	"github.com/grafana/mimir/pkg/streamingpromql"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -284,9 +288,14 @@ type httpQueryRequestRoundTripperHandler struct {
 	codec  Codec
 }
 
-func (rth httpQueryRequestRoundTripperHandler) Do(ctx context.Context, r MetricsQueryRequest) (Response, error) {
+func (rth httpQueryRequestRoundTripperHandler) Do(ctx context.Context, r MetricsQueryRequest) (resp Response, err error) {
 	spanLogger, ctx := spanlogger.New(ctx, rth.logger, tracer, "httpQueryRequestRoundTripperHandler.Do")
-	defer spanLogger.Finish()
+	defer func() {
+		if err != nil {
+			spanLogger.Error(err)
+		}
+		spanLogger.Finish()
+	}()
 
 	request, err := rth.codec.EncodeMetricsQueryRequest(ctx, r)
 	if err != nil {
@@ -300,6 +309,110 @@ func (rth httpQueryRequestRoundTripperHandler) Do(ctx context.Context, r Metrics
 	defer func() { _ = response.Body.Close() }()
 
 	return rth.codec.DecodeMetricsQueryResponse(ctx, response, r, rth.logger)
+}
+
+type engineQueryRequestRoundTripperHandler struct {
+	engine  *streamingpromql.Engine
+	storage storage.Queryable
+	logger  log.Logger
+}
+
+func NewEngineQueryRequestRoundTripperHandler(engine *streamingpromql.Engine, logger log.Logger) MetricsQueryHandler {
+	return &engineQueryRequestRoundTripperHandler{
+		engine:  engine,
+		storage: unqueryableQueryable{},
+		logger:  logger,
+	}
+}
+
+func (rth *engineQueryRequestRoundTripperHandler) Do(ctx context.Context, r MetricsQueryRequest) (resp Response, err error) {
+	spanLogger, ctx := spanlogger.New(ctx, rth.logger, tracer, "engineQueryRequestRoundTripperHandler.Do")
+	defer func() {
+		if err != nil {
+			spanLogger.Error(err)
+		}
+		spanLogger.Finish()
+	}()
+
+	opts := promql.NewPrometheusQueryOpts(r.GetStats() == "all", 0)
+
+	var q promql.Query
+
+	switch r := r.(type) {
+	case *PrometheusRangeQueryRequest:
+		q, err = rth.engine.NewRangeQuery(ctx, rth.storage, opts, r.GetQuery(), timestamp.Time(r.GetStart()), timestamp.Time(r.GetEnd()), time.Duration(r.GetStep())*time.Millisecond)
+	case *PrometheusInstantQueryRequest:
+		q, err = rth.engine.NewInstantQuery(ctx, rth.storage, opts, r.GetQuery(), timestamp.Time(r.GetTime()))
+	default:
+		return nil, fmt.Errorf("unknown metrics query request type: %T", r)
+	}
+
+	if err != nil {
+		err = convertToAPIError(err, apierror.TypeInternal)
+		return nil, err
+	}
+
+	res := q.Exec(ctx)
+	if res.Err != nil {
+		err := convertToAPIError(res.Err, apierror.TypeExec)
+		return nil, err
+	}
+
+	data, err := promqlResultToSamples(res)
+	if err != nil {
+		err = convertToAPIError(err, apierror.TypeInternal)
+		return nil, err
+	}
+
+	warnings, infos := res.Warnings.AsStrings(r.GetQuery(), 0, 0)
+
+	if localStats := stats.FromContext(ctx); localStats != nil {
+		engineStats := q.Stats()
+		localStats.AddSamplesProcessed(uint64(engineStats.Samples.TotalSamples))
+
+		stepStats := make([]stats.StepStat, 0, len(engineStats.Samples.TotalSamplesPerStep))
+		for i, count := range engineStats.Samples.TotalSamplesPerStep {
+			stepStats = append(stepStats, stats.StepStat{
+				Timestamp: r.GetStart() + int64(i)*r.GetStep(),
+				Value:     count,
+			})
+		}
+
+		localStats.AddSamplesProcessedPerStep(stepStats)
+	}
+
+	resp = &PrometheusResponseWithFinalizer{
+		PrometheusResponse: &PrometheusResponse{
+			Status: statusSuccess,
+			Data: &PrometheusData{
+				ResultType: string(res.Value.Type()),
+				Result:     data,
+			},
+			Warnings: warnings,
+			Infos:    infos,
+		},
+		finalizer: q.Close,
+	}
+
+	return resp, nil
+}
+
+func convertToAPIError(err error, fallbackErrorType apierror.Type) error {
+	var apiError *apierror.APIError
+	if errors.As(err, &apiError) {
+		return apiError
+	}
+
+	t := apierror.TypeForError(err, fallbackErrorType)
+	return apierror.New(t, err.Error())
+}
+
+type unqueryableQueryable struct{}
+
+var errShouldNeverBeQueried = errors.New("this Queryable should never be queried as all selectors should be evaluated remotely: if you are seeing this, this is a bug")
+
+func (u unqueryableQueryable) Querier(mint, maxt int64) (storage.Querier, error) {
+	return nil, errShouldNeverBeQueried
 }
 
 // smallestPositiveNonZeroDuration returns the smallest positive and non-zero value

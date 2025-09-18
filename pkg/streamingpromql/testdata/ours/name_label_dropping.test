@@ -1,0 +1,104 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+
+# Test for __name__ label drop.
+load 1m
+  up{foo="bar"} 0+1x10
+  down{foo="bar"} 0+2x10
+  up{foo="bar2"} 0+3x10
+  down{foo="bar2"} 0+4x10
+  up{foo="bar3"} 0+5x10
+
+eval instant at 10m rate(up[5m]) or rate(down[5m])
+  {foo="bar"} 0.016666666666666666
+  {foo="bar2"} 0.05
+  {foo="bar3"} 0.08333333333333333
+
+eval instant at 10m rate(up[5m]) or down
+  {foo="bar"} 0.016666666666666666
+  {foo="bar2"} 0.05
+  {foo="bar3"} 0.08333333333333333
+
+eval instant at 10m up or rate(down[5m])
+  up{foo="bar"} 10
+  up{foo="bar2"} 30
+  up{foo="bar3"} 50
+
+eval instant at 10m up or down
+  up{foo="bar"} 10
+  up{foo="bar2"} 30
+  up{foo="bar3"} 50
+
+eval instant at 10m rate(up[5m]) and rate(down[5m])
+  {foo="bar"} 0.016666666666666666
+  {foo="bar2"} 0.05
+
+eval instant at 10m rate(up[5m]) and down
+  {foo="bar"} 0.016666666666666666
+  {foo="bar2"} 0.05
+
+eval instant at 10m up and rate(down[5m])
+  up{foo="bar"} 10
+  up{foo="bar2"} 30
+
+eval instant at 10m up and down
+  up{foo="bar"} 10
+  up{foo="bar2"} 30
+
+eval instant at 10m rate(up[5m]) unless rate(down[5m])
+  {foo="bar3"} 0.08333333333333333
+
+eval instant at 10m rate(up[5m]) unless down
+  {foo="bar3"} 0.08333333333333333
+
+eval instant at 10m up unless rate(down[5m])
+  up{foo="bar3"} 50
+
+eval instant at 10m up unless down
+  up{foo="bar3"} 50
+
+eval instant at 10m up == 10
+  up{foo="bar"} 10
+
+eval instant at 10m label_replace(3 * {foo="bar"}, "__name__", "mul_$1", "__name__", "(.+)")
+  mul_up{foo="bar"} 30
+  mul_down{foo="bar"} 60
+
+eval instant at 10m absent(up{foo="bar3"}) * absent(down{foo="bar3"})
+
+eval instant at 10m absent(up{foo="bar4"}) * absent(down{foo="bar4"})
+  {foo="bar4"} 1
+
+eval instant at 10m label_replace(absent(up{foo="bar4"}), "__name__", "ab_$1", "__name__", "(.+)")
+  {foo="bar4"} 1
+
+eval instant at 10m absent_over_time(up{foo="bar4"}[10m]) / absent_over_time(down{foo="bar4"}[10m])
+  {foo="bar4"} 1
+
+eval instant at 10m label_replace(absent_over_time(up{foo="bar4"}[10m]), "__name__", "ab_$1", "__name__", "(.+)")
+  {foo="bar4"} 1
+
+eval instant at 10m count_values("value_count", up)
+  {value_count="10"} 1
+  {value_count="30"} 1
+  {value_count="50"} 1
+
+eval instant at 10m count_values("value_count", {foo="bar"})
+  {value_count="10"} 1
+  {value_count="20"} 1
+
+eval instant at 10m up / on(foo) group_right() down
+  {foo="bar"} 0.5
+  {foo="bar2"} 0.75
+
+eval instant at 10m sum by (__name__, foo) (down or rate(up[5m]))
+  down{foo="bar"} 20
+  down{foo="bar2"} 40
+  {foo="bar3"} 0.08333333333333334
+
+# Temporarily comment out tests that are consistent in Mimir but flaky in Prometheus
+# until they are fixed, see https://github.com/prometheus/prometheus/pull/17161
+#eval instant at 10m sum by (__name__) (up{foo="bar"} or rate(up{foo="bar2"}[5m]))
+#  up 10.05
+
+#eval instant at 10m sum by (__name__) (rate(up{foo="bar2"}[5m]) or up{foo="bar"})
+#  {} 10.05
