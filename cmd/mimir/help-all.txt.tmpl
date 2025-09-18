@@ -1043,8 +1043,6 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Maximum backoff time for compaction executor retries when sending scheduler status updates. (default 32s)
   -compactor.executor-min-retry-backoff duration
     	[experimental] Minimum backoff time for compaction executor retries when sending scheduler status updates. (default 1s)
-  -compactor.executor-retry-backoff-factor float
-    	[experimental] Backoff factor for compaction executor retries when sending scheduler status updates. (default 2)
   -compactor.first-level-compaction-wait-period duration
     	How long the compactor waits before compacting first-level blocks that are uploaded by the ingesters. This configuration option allows for the reduction of cases where the compactor begins to compact blocks before all ingesters have uploaded their blocks to the storage. (default 25m0s)
   -compactor.max-block-upload-validation-concurrency int

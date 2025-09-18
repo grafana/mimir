@@ -8,9 +8,7 @@ import (
 	"testing"
 	"time"
 
-	//"github.com/failsafe-go/failsafe-go/retrypolicy"
 	"github.com/go-kit/log"
-	//"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/kv/consul"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
@@ -120,7 +118,6 @@ func (m *mockCompactorSchedulerClient) GetUpdateJobCallCount() int {
 }
 
 func TestSchedulerExecutor_JobStatusUpdates(t *testing.T) {
-
 	testCases := map[string]struct {
 		setupMock           func(*mockCompactorSchedulerClient)
 		expectedFinalStatus schedulerpb.UpdateType
@@ -393,7 +390,6 @@ func TestSchedulerExecutor_UnreachableScheduler(t *testing.T) {
 }
 
 func TestSchedulerExecutor_PlannedJobsRetryBehavior(t *testing.T) {
-
 	callCount := 0
 	failuresBeforeSuccess := 3
 

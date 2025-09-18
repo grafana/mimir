@@ -5222,11 +5222,6 @@ sharding_ring:
 # sending scheduler status updates.
 # CLI flag: -compactor.executor-max-retry-backoff
 [executor_retry_max_backoff: <duration> | default = 32s]
-
-# (experimental) Backoff factor for compaction executor retries when sending
-# scheduler status updates.
-# CLI flag: -compactor.executor-retry-backoff-factor
-[executor_retry_backoff_factor: <float> | default = 2]
 ```
 
 ### store_gateway

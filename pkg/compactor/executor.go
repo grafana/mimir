@@ -97,7 +97,7 @@ func newSchedulerExecutor(cfg Config, logger log.Logger, invalidClusterValidatio
 				return false
 			}
 		}).
-		WithBackoffFactor(cfg.ExecutorRetryMinBackoff, cfg.ExecutorRetryMaxBackoff, float32(cfg.ExecutorRetryBackoffFactor)).
+		WithBackoffFactor(cfg.ExecutorRetryMinBackoff, cfg.ExecutorRetryMaxBackoff, 2.0).
 		WithJitter(500 * time.Millisecond).
 		WithMaxAttempts(-1).
 		Build()

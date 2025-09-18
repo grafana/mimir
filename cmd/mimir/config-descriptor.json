@@ -11589,17 +11589,6 @@
           "fieldFlag": "compactor.executor-max-retry-backoff",
           "fieldType": "duration",
           "fieldCategory": "experimental"
-        },
-        {
-          "kind": "field",
-          "name": "executor_retry_backoff_factor",
-          "required": false,
-          "desc": "Backoff factor for compaction executor retries when sending scheduler status updates.",
-          "fieldValue": null,
-          "fieldDefaultValue": 2,
-          "fieldFlag": "compactor.executor-retry-backoff-factor",
-          "fieldType": "float",
-          "fieldCategory": "experimental"
         }
       ],
       "fieldValue": null,

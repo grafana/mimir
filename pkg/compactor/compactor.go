@@ -157,7 +157,6 @@ type Config struct {
 	GRPCClientConfig           grpcclient.Config `yaml:"grpc_client_config" category:"experimental"`
 	ExecutorRetryMinBackoff    time.Duration     `yaml:"executor_retry_min_backoff" category:"experimental"`
 	ExecutorRetryMaxBackoff    time.Duration     `yaml:"executor_retry_max_backoff" category:"experimental"`
-	ExecutorRetryBackoffFactor float64           `yaml:"executor_retry_backoff_factor" category:"experimental"`
 }
 
 // RegisterFlags registers the MultitenantCompactor flags.
@@ -187,7 +186,6 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.DurationVar(&cfg.SchedulerMaxLeasingBackoff, "compactor.scheduler-max-leasing-backoff", 2*time.Minute, "Maximum backoff time between scheduler job lease requests.")
 	f.DurationVar(&cfg.ExecutorRetryMinBackoff, "compactor.executor-min-retry-backoff", 1*time.Second, "Minimum backoff time for compaction executor retries when sending scheduler status updates.")
 	f.DurationVar(&cfg.ExecutorRetryMaxBackoff, "compactor.executor-max-retry-backoff", 32*time.Second, "Maximum backoff time for compaction executor retries when sending scheduler status updates.")
-	f.Float64Var(&cfg.ExecutorRetryBackoffFactor, "compactor.executor-retry-backoff-factor", 2.0, "Backoff factor for compaction executor retries when sending scheduler status updates.")
 	cfg.GRPCClientConfig.RegisterFlagsWithPrefix("compactor.scheduler", f)
 	f.DurationVar(&cfg.DeletionDelay, "compactor.deletion-delay", 12*time.Hour, "Time before a block marked for deletion is deleted from bucket. "+
 		"If not 0, blocks will be marked for deletion and the compactor component will permanently delete blocks marked for deletion from the bucket. "+
