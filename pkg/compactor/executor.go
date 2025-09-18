@@ -29,7 +29,7 @@ import (
 // compactionExecutor defines how compaction work is executed.
 type compactionExecutor interface {
 	run(ctx context.Context, compactor *MultitenantCompactor) error
-	createShardingStrategy(enabledTenants, disabledTenants []string, ring *ring.Ring, ringLifecycler *ring.BasicLifecycler, cfgProvider ConfigProvider) shardingStrategy
+	createShardingStrategy(allowedTenants *util.AllowList, ring *ring.Ring, ringLifecycler *ring.BasicLifecycler, cfgProvider ConfigProvider) shardingStrategy
 	stop() error
 }
 
@@ -37,7 +37,6 @@ type compactionExecutor interface {
 type standaloneExecutor struct{}
 
 func (e *standaloneExecutor) run(ctx context.Context, c *MultitenantCompactor) error {
-
 	c.compactUsers(ctx)
 
 	ticker := time.NewTicker(util.DurationWithJitter(c.compactorCfg.CompactionInterval, 0.05))
@@ -59,9 +58,13 @@ func (e *standaloneExecutor) stop() error {
 	return nil
 }
 
-func (e *standaloneExecutor) createShardingStrategy(enabledTenants, disabledTenants []string, ring *ring.Ring, ringLifecycler *ring.BasicLifecycler, cfgProvider ConfigProvider) shardingStrategy {
-	allowedTenants := util.NewAllowList(enabledTenants, disabledTenants)
-	return newSplitAndMergeShardingStrategy(allowedTenants, ring, ringLifecycler, cfgProvider)
+func (e *standaloneExecutor) createShardingStrategy(allowedTenants *util.AllowList, ring *ring.Ring, ringLifecycler *ring.BasicLifecycler, cfgProvider ConfigProvider) shardingStrategy {
+	return &splitAndMergeShardingStrategy{
+		allowedTenants: allowedTenants,
+		ring:           ring,
+		ringLifecycler: ringLifecycler,
+		configProvider: cfgProvider,
+	}
 }
 
 // schedulerExecutor requests compaction jobs from an external scheduler.
@@ -75,7 +78,6 @@ type schedulerExecutor struct {
 }
 
 func newSchedulerExecutor(cfg Config, logger log.Logger, invalidClusterValidation *prometheus.CounterVec) (*schedulerExecutor, error) {
-
 	executor := &schedulerExecutor{
 		cfg:                      cfg,
 		logger:                   logger,
@@ -89,7 +91,7 @@ func newSchedulerExecutor(cfg Config, logger log.Logger, invalidClusterValidatio
 				return false
 			}
 			switch code := errStatus.Code(); code {
-			case codes.Unavailable:
+			case codes.Unavailable, codes.DeadlineExceeded, codes.ResourceExhausted:
 				// client will generate UNAVAILABLE if some data transmitted (e.g., request metadata written
 				// to TCP connection) before connection breaks.
 				return true
@@ -178,16 +180,18 @@ func (e *schedulerExecutor) sendFinalJobStatus(ctx context.Context, key *schedul
 	switch spec.JobType {
 	case schedulerpb.COMPACTION:
 		req := &schedulerpb.UpdateCompactionJobRequest{Key: key, Tenant: spec.Tenant, Update: status}
-		err = failsafe.Run(func() error {
+		err = failsafe.NewExecutor(e.retryPol).WithContext(ctx).Run(func() error {
 			_, err := e.schedulerClient.UpdateCompactionJob(ctx, req)
 			return err
-		}, e.retryPol)
-	default: // PLANNING
+		})
+	case schedulerpb.PLANNING:
 		req := &schedulerpb.UpdatePlanJobRequest{Key: key, Update: status}
-		err = failsafe.Run(func() error {
+		err = failsafe.NewExecutor(e.retryPol).WithContext(ctx).Run(func() error {
 			_, err := e.schedulerClient.UpdatePlanJob(ctx, req)
 			return err
-		}, e.retryPol)
+		})
+	default:
+		err = fmt.Errorf("unsupported job type %q, only COMPACTION and PLANNING are supported", spec.JobType.String())
 	}
 
 	if err != nil {
@@ -195,8 +199,7 @@ func (e *schedulerExecutor) sendFinalJobStatus(ctx context.Context, key *schedul
 	}
 }
 
-func (e *schedulerExecutor) createShardingStrategy(enabledTenants, disabledTenants []string, ring *ring.Ring, ringLifecycler *ring.BasicLifecycler, cfgProvider ConfigProvider) shardingStrategy {
-	allowedTenants := util.NewAllowList(enabledTenants, disabledTenants)
+func (e *schedulerExecutor) createShardingStrategy(allowedTenants *util.AllowList, ring *ring.Ring, ringLifecycler *ring.BasicLifecycler, cfgProvider ConfigProvider) shardingStrategy {
 	return &schedulerShardingStrategy{
 		allowedTenants: allowedTenants,
 		ring:           ring,
@@ -313,8 +316,8 @@ func (e *schedulerExecutor) sendPlannedJobs(ctx context.Context, spec *scheduler
 		Jobs: plannedJobs,
 	}
 
-	return failsafe.Run(func() error {
+	return failsafe.NewExecutor(e.retryPol).WithContext(ctx).Run(func() error {
 		_, err := e.schedulerClient.PlannedJobs(ctx, req)
 		return err
-	}, e.retryPol)
+	})
 }

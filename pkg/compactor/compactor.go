@@ -598,9 +598,9 @@ func (c *MultitenantCompactor) starting(ctx context.Context) error {
 		}
 	}
 
+	allowedTenants := util.NewAllowList(c.compactorCfg.EnabledTenants, c.compactorCfg.DisabledTenants)
 	c.shardingStrategy = c.executor.createShardingStrategy(
-		c.compactorCfg.EnabledTenants,
-		c.compactorCfg.DisabledTenants,
+		allowedTenants,
 		c.ring,
 		c.ringLifecycler,
 		c.cfgProvider,
@@ -979,15 +979,6 @@ type splitAndMergeShardingStrategy struct {
 	ring           *ring.Ring
 	ringLifecycler *ring.BasicLifecycler
 	configProvider ConfigProvider
-}
-
-func newSplitAndMergeShardingStrategy(allowedTenants *util.AllowList, ring *ring.Ring, ringLifecycler *ring.BasicLifecycler, configProvider ConfigProvider) *splitAndMergeShardingStrategy {
-	return &splitAndMergeShardingStrategy{
-		allowedTenants: allowedTenants,
-		ring:           ring,
-		ringLifecycler: ringLifecycler,
-		configProvider: configProvider,
-	}
 }
 
 // Only a single instance in the subring can run the blocks cleaner for the given user. blocksCleanerOwnsUser is concurrency-safe.
