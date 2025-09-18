@@ -2721,27 +2721,6 @@ func (i *Ingester) getTSDBUsers() []string {
 	return ids
 }
 
-func (i *Ingester) openHeadBlock(userID string) (tsdb.BlockMeta, tsdb.IndexReader, error) {
-	userTSDB := i.getTSDB(userID)
-	if userTSDB == nil {
-		return tsdb.BlockMeta{}, nil, fmt.Errorf("user TSDB not found")
-	}
-
-	if userTSDB.db == nil {
-		return tsdb.BlockMeta{}, nil, fmt.Errorf("user TSDB database is nil")
-	}
-
-	head := userTSDB.db.Head()
-	blockMeta := head.Meta()
-
-	indexReader, err := head.Index()
-	if err != nil {
-		return tsdb.BlockMeta{}, nil, err
-	}
-
-	return blockMeta, indexReader, nil
-}
-
 func (i *Ingester) getOrCreateTSDB(userID string) (*userTSDB, error) {
 	db := i.getTSDB(userID)
 	if db != nil {
