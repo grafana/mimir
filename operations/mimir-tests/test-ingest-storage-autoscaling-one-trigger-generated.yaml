@@ -333,19 +333,19 @@ rules:
 - apiGroups:
   - rollout-operator.grafana.com
   resources:
-  - zoneawarepoddisruptionbudgets
-  verbs:
-  - get
-  - list
-  - watch
-- apiGroups:
-  - rollout-operator.grafana.com
-  resources:
   - replicatemplates/scale
   - replicatemplates/status
   verbs:
   - get
   - patch
+- apiGroups:
+  - rollout-operator.grafana.com
+  resources:
+  - zoneawarepoddisruptionbudgets
+  verbs:
+  - get
+  - list
+  - watch
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
