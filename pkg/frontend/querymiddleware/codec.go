@@ -849,8 +849,8 @@ func (c Codec) EncodeLabelsSeriesQueryRequest(ctx context.Context, req LabelsSer
 		return nil, fmt.Errorf("unknown query result response format '%s'", c.preferredQueryResultResponseFormat)
 	}
 
-	if level, ok := api.ReadConsistencyLevelFromContext(ctx); ok {
-		r.Header.Add(api.ReadConsistencyHeader, level)
+	if err := c.injector.InjectToCarrier(ctx, propagation.HttpHeaderCarrier(r.Header)); err != nil {
+		return nil, err
 	}
 
 	// Propagate allowed HTTP headers.
