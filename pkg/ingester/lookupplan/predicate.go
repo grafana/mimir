@@ -4,7 +4,6 @@ package lookupplan
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/index"
@@ -27,22 +26,18 @@ type planPredicate struct {
 	indexScanCost float64
 }
 
-func newPlanPredicate(ctx context.Context, m *labels.Matcher, stats index.Statistics) (planPredicate, error) {
-	var err error
+func newPlanPredicate(ctx context.Context, m *labels.Matcher, stats index.Statistics) planPredicate {
 	pred := planPredicate{
 		matcher:         m,
 		singleMatchCost: m.SingleMatchCost(),
 	}
 	pred.labelNameUniqueVals = stats.LabelValuesCount(ctx, m.Name)
-	if err != nil {
-		return planPredicate{}, fmt.Errorf("error getting label values count for label %s: %w", m.Name, err)
-	}
 	pred.selectivity = m.EstimateSelectivity(pred.labelNameUniqueVals)
 
 	pred.cardinality = estimatePredicateCardinality(ctx, m, stats, pred.selectivity)
 	pred.indexScanCost = estimatePredicateIndexScanCost(pred, m)
 
-	return pred, nil
+	return pred
 }
 
 func estimatePredicateIndexScanCost(pred planPredicate, m *labels.Matcher) float64 {
