@@ -159,19 +159,27 @@ func Upload(ctx context.Context, logger log.Logger, bkt objstore.Bucket, blockDi
 		return nil
 	})
 
-	if err := eg.Wait(); err != nil {
-		return cleanUp(logger, bkt, id, err)
+	hasSparseHeaderInfo := false
+	for _, f := range meta.Thanos.Files {
+		if f.RelPath == SparseIndexHeaderFilename {
+			hasSparseHeaderInfo = true
+			break
+		}
 	}
 
-	var oerr error
-	src := filepath.Join(blockDir, SparseIndexHeaderFilename)
-	dst := filepath.Join(id.String(), SparseIndexHeaderFilename)
-	if _, err := os.Stat(src); err == nil {
-		if err := objstore.UploadFile(ctx, logger, bkt, src, dst); err != nil {
-			// Don't call cleanUp. Uploading sparse index headers is best effort.
-			level.Warn(logger).Log("msg", "failed to upload sparse index headers", "block", id.String(), "err", err)
-			oerr = &UploadError{err, FileTypeSparseIndexHeader}
-		}
+	if hasSparseHeaderInfo {
+		eg.Go(func() (err error) {
+			if err := objstore.UploadFile(uctx, logger, bkt, filepath.Join(blockDir, SparseIndexHeaderFilename), path.Join(id.String(), SparseIndexHeaderFilename)); err != nil {
+				return &UploadError{err, FileTypeSparseIndexHeader}
+			}
+			return nil
+		})
+	} else {
+		level.Debug(logger).Log("msg", "sparse index header entry not found, skipping upload", "block", id.String())
+	}
+
+	if err := eg.Wait(); err != nil {
+		return cleanUp(logger, bkt, id, err)
 	}
 
 	// Meta.json always need to be uploaded as a last item. This will allow to assume block directories without meta file to be pending uploads.
@@ -182,7 +190,7 @@ func Upload(ctx context.Context, logger log.Logger, bkt objstore.Bucket, blockDi
 		// If meta.json is not uploaded, this will produce partial blocks, but such blocks will be cleaned later.
 		return &UploadError{err, FileTypeMeta}
 	}
-	return oerr
+	return nil
 }
 
 func cleanUp(logger log.Logger, bkt objstore.Bucket, id ulid.ULID, origErr error) error {
@@ -364,6 +372,17 @@ func GatherFileStats(blockDir string) (res []File, _ error) {
 		SizeBytes: indexFile.Size(),
 	}
 	res = append(res, mf)
+
+	// sparse index headers are optional, ingester does not compute them while the compactor does
+	// not adding sparse header entry if file does not exist, Upload of sparse index header is skipped in this case
+	sparseHeaderInfo, err := os.Stat(filepath.Join(blockDir, SparseIndexHeaderFilename))
+	if err != nil {
+		if !os.IsNotExist(err) {
+			return nil, errors.Wrapf(err, "stat %v", filepath.Join(blockDir, SparseIndexHeaderFilename))
+		}
+	} else {
+		res = append(res, File{RelPath: sparseHeaderInfo.Name(), SizeBytes: sparseHeaderInfo.Size()})
+	}
 
 	metaFile, err := os.Stat(filepath.Join(blockDir, MetaFilename))
 	if err != nil {

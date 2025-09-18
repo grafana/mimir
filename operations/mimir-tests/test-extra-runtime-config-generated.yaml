@@ -528,6 +528,7 @@ spec:
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
         - -runtime-config.file=/etc/mimir/overrides.yaml,/etc/another-config/runtimeconfig.yaml
+        - -server.grpc-max-concurrent-streams=1000
         - -server.grpc.keepalive.max-connection-age=60s
         - -server.grpc.keepalive.max-connection-age-grace=5m
         - -server.grpc.keepalive.max-connection-idle=1m

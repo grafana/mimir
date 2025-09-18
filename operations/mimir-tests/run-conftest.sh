@@ -34,6 +34,6 @@ fi
 for FILE_PATH in "$MANIFESTS_PATH"/*.yaml; do
    TEST_NAME=$(basename -s '.yaml' "$FILE_PATH")
    echo "Testing $TEST_NAME"
-   conftest test "$FILE_PATH" -p "$POLICIES_PATH" --data "$POLICIES_PATH/jsonnet.yaml" --combine
+   conftest --rego-version=v0 test "$FILE_PATH" -p "$POLICIES_PATH" --data "$POLICIES_PATH/jsonnet.yaml" --combine
    echo ""
 done

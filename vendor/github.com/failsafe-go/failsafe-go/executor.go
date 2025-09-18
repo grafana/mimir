@@ -57,6 +57,9 @@ func GetWithExecutionAsync[R any](fn func(exec Execution[R]) (R, error), policie
 //
 // This type is concurrency safe.
 type Executor[R any] interface {
+	// Context returns the configured Context, else context.Background() by default.
+	Context() context.Context
+
 	// WithContext returns a new copy of the Executor with the ctx configured. Any executions created with the resulting
 	// Executor will be canceled when the ctx is done. Executions can cooperate with cancellation by checking
 	// Execution.Canceled or Execution.IsCanceled.
@@ -140,6 +143,10 @@ func NewExecutor[R any](policies ...Policy[R]) Executor[R] {
 		policies: policies,
 		ctx:      context.Background(),
 	}
+}
+
+func (e *executor[R]) Context() context.Context {
+	return e.ctx
 }
 
 func (e *executor[R]) WithContext(ctx context.Context) Executor[R] {
