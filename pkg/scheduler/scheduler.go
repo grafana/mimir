@@ -273,7 +273,7 @@ func (s *Scheduler) FrontendLoop(frontend schedulerpb.SchedulerForFrontend_Front
 			case *schedulerpb.FrontendToScheduler_HttpRequest:
 				parentSpanContext, _ = httpgrpcutil.ContextWithSpanFromRequest(frontendCtx, req.HttpRequest)
 			case *schedulerpb.FrontendToScheduler_ProtobufRequest:
-				carrier := schedulerpb.MetadataMapCarrier(schedulerpb.MetadataSliceToMap(req.ProtobufRequest.Metadata))
+				carrier := schedulerpb.MetadataMapTracingCarrier(schedulerpb.MetadataSliceToMap(req.ProtobufRequest.Metadata))
 				parentSpanContext = otel.GetTextMapPropagator().Extract(frontendCtx, carrier)
 			default:
 				level.Debug(s.log).Log("msg", "received a message that contained neither a HTTP nor a Protobuf payload, tracing information may be incomplete")

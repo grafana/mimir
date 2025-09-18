@@ -33,9 +33,9 @@ func MapToMetadataSlice(m map[string][]string) []MetadataItem {
 	return metadataSlice
 }
 
-type MetadataMapCarrier map[string][]string
+type MetadataMapTracingCarrier map[string][]string
 
-func (m MetadataMapCarrier) Get(key string) string {
+func (m MetadataMapTracingCarrier) Get(key string) string {
 	if values := m[key]; len(values) > 0 {
 		return values[0]
 	}
@@ -43,11 +43,11 @@ func (m MetadataMapCarrier) Get(key string) string {
 	return ""
 }
 
-func (m MetadataMapCarrier) Set(key, value string) {
+func (m MetadataMapTracingCarrier) Set(key, value string) {
 	m[key] = []string{value}
 }
 
-func (m MetadataMapCarrier) Keys() []string {
+func (m MetadataMapTracingCarrier) Keys() []string {
 	keys := make([]string, 0, len(m))
 	for k := range m {
 		keys = append(keys, k)
