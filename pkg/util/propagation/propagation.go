@@ -14,6 +14,12 @@ type Propagator interface {
 	ReadFromCarrier(ctx context.Context, carrier Carrier) (context.Context, error)
 }
 
+type NoopPropagator struct{}
+
+func (p *NoopPropagator) ReadFromCarrier(ctx context.Context, carrier Carrier) (context.Context, error) {
+	return ctx, nil
+}
+
 type MultiPropagator struct {
 	Propagators []Propagator
 }

@@ -275,10 +275,12 @@ func (sp *schedulerProcessor) querierLoop(execCtx context.Context, c schedulerpb
 
 			switch payload := request.Payload.(type) {
 			case *schedulerpb.SchedulerToQuerier_HttpRequest:
+				// We might have created a new span above, so reset the trace ID and span ID in the embedded HTTP request so
+				// the HTTP tracing middleware creates its span beneath the one created above.
 				otel.GetTextMapPropagator().Inject(ctx, (*httpgrpcutil.HttpgrpcHeadersCarrier)(request.GetHttpRequest()))
 				sp.runHttpRequest(ctx, logger, request.QueryID, request.FrontendAddress, stats, payload.HttpRequest)
 			case *schedulerpb.SchedulerToQuerier_ProtobufRequest:
-				sp.runProtobufRequest(ctx, logger, request.QueryID, request.FrontendAddress, payload.ProtobufRequest.Payload)
+				sp.runProtobufRequest(ctx, logger, request.QueryID, request.FrontendAddress, payload.ProtobufRequest)
 			default:
 				response := &httpgrpc.HTTPResponse{
 					Code: http.StatusBadRequest,
@@ -471,9 +473,9 @@ sendBody:
 	return nil
 }
 
-func (sp *schedulerProcessor) runProtobufRequest(ctx context.Context, logger log.Logger, queryID uint64, frontendAddress string, request *types.Any) {
+func (sp *schedulerProcessor) runProtobufRequest(ctx context.Context, logger log.Logger, queryID uint64, frontendAddress string, request *schedulerpb.ProtobufRequest) {
 	writer := newGrpcStreamWriter(queryID, frontendAddress, sp.frontendPool, logger)
-	sp.protobufHandler.HandleProtobuf(ctx, request, writer)
+	sp.protobufHandler.HandleProtobuf(ctx, request.Payload, request.Metadata, writer)
 	writer.Close(ctx)
 }
 
