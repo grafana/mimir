@@ -5,7 +5,6 @@ package ingester
 import (
 	"sync"
 
-	"github.com/go-kit/log"
 	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/index"
@@ -16,20 +15,18 @@ type IPlannerFactory interface {
 	CreatePlanner(meta tsdb.BlockMeta, reader tsdb.IndexReader) index.LookupPlanner
 }
 
-// StatisticsService manages the generation of statistics for a single tenant's head blocks.
+// plannerProvider manages the generation of statistics for a single tenant's head blocks.
 // It stores pre-computed planners for later use during query planning.
-type StatisticsService struct {
-	logger         log.Logger
+type plannerProvider struct {
 	plannerFactory IPlannerFactory
 
 	plannersMtx sync.RWMutex
 	planners    map[ulid.ULID]index.LookupPlanner
 }
 
-// NewStatisticsService creates a new StatisticsService for a single tenant.
-func NewStatisticsService(logger log.Logger, plannerFactory IPlannerFactory) *StatisticsService {
-	return &StatisticsService{
-		logger:         logger,
+// newPlannerProvider creates a new plannerProvider for a single tenant.
+func newPlannerProvider(plannerFactory IPlannerFactory) *plannerProvider {
+	return &plannerProvider{
 		plannerFactory: plannerFactory,
 		planners:       make(map[ulid.ULID]index.LookupPlanner),
 	}
@@ -37,35 +34,29 @@ func NewStatisticsService(logger log.Logger, plannerFactory IPlannerFactory) *St
 
 // getPlanner returns a cached planner for the given block ULID.
 // Returns nil if no planner is cached for this block.
-func (s *StatisticsService) getPlanner(blockMeta tsdb.BlockMeta, indexReader tsdb.IndexReader) index.LookupPlanner {
+func (s *plannerProvider) getPlanner(blockMeta tsdb.BlockMeta, indexReader tsdb.IndexReader) index.LookupPlanner {
 	s.plannersMtx.RLock()
 	planner, ok := s.planners[blockMeta.ULID]
 	s.plannersMtx.RUnlock()
 	if ok {
 		return planner
 	}
-	s.generateStats(blockMeta, indexReader)
-
-	s.plannersMtx.RLock()
-	planner, ok = s.planners[blockMeta.ULID]
-	s.plannersMtx.RUnlock()
-	if !ok {
-		panic("planner should have been created after stats generation")
-	}
-	return planner
-
+	// Planner not found in cache, create a new one.
+	// We do not store it here because sometimes the block it refers to may be deleted, and we don't want to retain planners for deleted blocks.
+	// We relay on the caller of generateAndStorePlanner to create a planner and store it when needed.
+	return s.plannerFactory.CreatePlanner(blockMeta, indexReader)
 }
 
 // storePlanner stores a planner for the given block ULID.
-func (s *StatisticsService) storePlanner(blockULID ulid.ULID, planner index.LookupPlanner) {
+func (s *plannerProvider) storePlanner(blockULID ulid.ULID, planner index.LookupPlanner) {
 	s.plannersMtx.Lock()
 	defer s.plannersMtx.Unlock()
 
 	s.planners[blockULID] = planner
 }
 
-// generateStats generates statistics for the given head block metadata and index reader.
-func (s *StatisticsService) generateStats(blockMeta tsdb.BlockMeta, indexReader tsdb.IndexReader) {
+// generateAndStorePlanner generates a planner for the given block metadata and index reader, and stores it in the cache.
+func (s *plannerProvider) generateAndStorePlanner(blockMeta tsdb.BlockMeta, indexReader tsdb.IndexReader) {
 	planner := s.plannerFactory.CreatePlanner(blockMeta, indexReader)
 	s.storePlanner(blockMeta.ULID, planner)
 }
