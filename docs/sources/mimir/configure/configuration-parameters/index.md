@@ -4490,7 +4490,7 @@ The `limits` block configures default and per-tenant limits imposed by component
 # replaces the end portion of the value. For 'drop', the hash fully replaces the
 # value.
 # CLI flag: -validation.label-value-length-over-limit-strategy
-[label_value_length_over_limit_strategy: <int> | default = error]
+[label_value_length_over_limit_strategy: <string> | default = "error"]
 
 # Maximum number of label names per series.
 # CLI flag: -validation.max-label-names-per-series

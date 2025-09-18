@@ -27,6 +27,7 @@ import (
 	"github.com/grafana/mimir/pkg/ruler/notifier"
 	"github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/util/configdoc"
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 var (
@@ -384,6 +385,8 @@ func getFieldCustomType(t reflect.Type) (string, bool) {
 		return "relabel_config...", true
 	case reflect.TypeOf(asmodel.CustomTrackersConfig{}).String():
 		return "map of tracker name (string) to matcher (string)", true
+	case reflect.TypeOf(validation.LabelValueLengthOverLimitStrategy(0)).String():
+		return "string", true
 	default:
 		return "", false
 	}
