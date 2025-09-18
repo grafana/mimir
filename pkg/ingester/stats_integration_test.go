@@ -3,6 +3,7 @@
 package ingester
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -21,29 +22,37 @@ func TestStatisticsService_Integration(t *testing.T) {
 	// Create a real repository
 	repo := lookupplan.NewInMemoryPlannerRepository()
 
-	// Create a mock TSDB with head
+	// Create test data
 	blockID := ulid.MustNew(1, nil)
-	mockTSDB := &MockTSDB{
-		head: &MockHead{
-			ulid: blockID,
-		},
-	}
 
 	// Create a mock factory that returns a specific planner
 	expectedPlanner := &lookupplan.CostBasedPlanner{}
 	mockFactory := &MockPlannerFactory{}
 	mockFactory.On("CreatePlanner", mockAnyBlockMeta(), mockAnyIndexReader()).Return(expectedPlanner)
 
+	// Create mock provider
+	mockProvider := &MockTSDBProvider{}
+	blockMeta := tsdb.BlockMeta{
+		ULID: blockID,
+		Stats: tsdb.BlockStats{
+			NumSeries: 15000,
+		},
+	}
+	mockProvider.On("getTSDBUsers").Return([]string{"test-user"})
+	mockProvider.On("openHeadBlock", "test-user").Return(blockMeta, &mockIndexReader{}, repo, nil)
+
 	// Create the statistics service
 	logger := log.NewNopLogger()
-	service := NewStatisticsService(logger, mockFactory, time.Minute)
+	service := NewStatisticsService(logger, mockFactory, time.Minute, mockProvider)
 
 	// Initially, repository should be empty
 	cachedPlanner := repo.GetPlanner(blockID)
 	assert.Nil(t, cachedPlanner, "repository should be empty initially")
 
-	// Generate stats for the user
-	service.generateStatsForUser("test-user", mockTSDB, repo)
+	// Generate stats for the user by calling iteration
+	ctx := context.Background()
+	err := service.iteration(ctx)
+	require.NoError(t, err)
 
 	// Now repository should have the planner
 	cachedPlanner = repo.GetPlanner(blockID)
@@ -52,6 +61,7 @@ func TestStatisticsService_Integration(t *testing.T) {
 
 	// Verify mock expectations
 	mockFactory.AssertExpectations(t)
+	mockProvider.AssertExpectations(t)
 }
 
 func TestIndexLookupPlannerFunc_Integration(t *testing.T) {

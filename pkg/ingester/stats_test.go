@@ -48,35 +48,19 @@ func (m *MockPlannerRepository) StorePlanner(blockULID ulid.ULID, planner index.
 	m.Called(blockULID, planner)
 }
 
-// MockTSDB is a mock implementation for testing
-type MockTSDB struct {
-	headULID ulid.ULID
-	head     *MockHead
+// MockTSDBProvider is a mock implementation of TSDBProvider for testing
+type MockTSDBProvider struct {
+	mock.Mock
 }
 
-func (m *MockTSDB) Head() HeadInterface {
-	return m.head
+func (m *MockTSDBProvider) getTSDBUsers() []string {
+	args := m.Called()
+	return args.Get(0).([]string)
 }
 
-type MockHead struct {
-	ulid ulid.ULID
-}
-
-func (m *MockHead) ULID() ulid.ULID {
-	return m.ulid
-}
-
-func (m *MockHead) IndexReader() (tsdb.IndexReader, error) {
-	return &mockIndexReader{}, nil
-}
-
-func (m *MockHead) BlockMeta() tsdb.BlockMeta {
-	return tsdb.BlockMeta{
-		ULID: m.ulid,
-		Stats: tsdb.BlockStats{
-			NumSeries: 15000, // Above the threshold for planning
-		},
-	}
+func (m *MockTSDBProvider) openHeadBlock(userID string) (tsdb.BlockMeta, tsdb.IndexReader, lookupplan.PlannerRepository, error) {
+	args := m.Called(userID)
+	return args.Get(0).(tsdb.BlockMeta), args.Get(1).(tsdb.IndexReader), args.Get(2).(lookupplan.PlannerRepository), args.Error(3)
 }
 
 type mockIndexReader struct{}
@@ -137,12 +121,6 @@ func TestStatisticsService_generateStatsForUser(t *testing.T) {
 	// Create test data
 	blockID := ulid.MustNew(1, nil)
 	expectedPlanner := lookupplan.NoopPlanner{}
-	mockTSDB := &MockTSDB{
-		headULID: blockID,
-		head: &MockHead{
-			ulid: blockID,
-		},
-	}
 
 	// Set up expectations
 	mockRepo.On("GetPlanner", blockID).Return(nil) // No existing planner
@@ -150,52 +128,70 @@ func TestStatisticsService_generateStatsForUser(t *testing.T) {
 		Return(expectedPlanner)
 	mockRepo.On("StorePlanner", blockID, expectedPlanner).Return()
 
-	// Create service
-	service := NewStatisticsService(logger, mockFactory, time.Minute)
+	// Create mock provider
+	mockProvider := &MockTSDBProvider{}
+	blockMeta := tsdb.BlockMeta{
+		ULID: blockID,
+		Stats: tsdb.BlockStats{
+			NumSeries: 15000,
+		},
+	}
+	mockProvider.On("getTSDBUsers").Return([]string{"test-user"})
+	mockProvider.On("openHeadBlock", "test-user").Return(blockMeta, &mockIndexReader{}, mockRepo, nil)
 
-	// Test generateStatsForUser
-	service.generateStatsForUser("test-user", mockTSDB, mockRepo)
+	// Create service
+	service := NewStatisticsService(logger, mockFactory, time.Minute, mockProvider)
+
+	// Test generateStatsForUser by calling iteration which will call generateStats
+	ctx := context.Background()
+	err := service.iteration(ctx)
+	require.NoError(t, err)
 
 	// Verify expectations
 	mockFactory.AssertExpectations(t)
 	mockRepo.AssertExpectations(t)
+	mockProvider.AssertExpectations(t)
 }
 
 func TestStatisticsService_Interface(t *testing.T) {
 	logger := log.NewNopLogger()
 	mockFactory := &MockPlannerFactory{}
 
+	// Create mock provider
+	mockProvider := &MockTSDBProvider{}
+
 	// Test that StatisticsService implements the expected interface
-	service := NewStatisticsService(logger, mockFactory, time.Minute)
+	service := NewStatisticsService(logger, mockFactory, time.Minute, mockProvider)
 
 	// Should be able to call service methods
 	require.NotNil(t, service)
 }
 
-func TestStatisticsService_statsLoop_Context(t *testing.T) {
+func TestStatisticsService_Context(t *testing.T) {
 	logger := log.NewNopLogger()
 	mockFactory := &MockPlannerFactory{}
 
-	service := NewStatisticsService(logger, mockFactory, 10*time.Millisecond)
+	// Create mock provider
+	mockProvider := &MockTSDBProvider{}
+	mockProvider.On("getTSDBUsers").Return([]string{})
+
+	service := NewStatisticsService(logger, mockFactory, 10*time.Millisecond, mockProvider)
 
 	// Test context cancellation
 	ctx, cancel := context.WithCancel(context.Background())
 
 	// Start the service
-	done := make(chan error, 1)
-	go func() {
-		done <- service.statsLoop(ctx, func() map[string]*userTSDB { return make(map[string]*userTSDB) })
-	}()
+	err := service.StartAsync(ctx)
+	require.NoError(t, err)
+
+	// Wait for it to be running
+	err = service.AwaitRunning(ctx)
+	require.NoError(t, err)
 
 	// Cancel context quickly
-	time.Sleep(5 * time.Millisecond)
 	cancel()
 
 	// Should exit quickly
-	select {
-	case err := <-done:
-		assert.NoError(t, err)
-	case <-time.After(100 * time.Millisecond):
-		t.Fatal("statsLoop should have exited after context cancellation")
-	}
+	err = service.AwaitTerminated(context.Background())
+	assert.NoError(t, err)
 }
