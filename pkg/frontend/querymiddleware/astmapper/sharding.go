@@ -79,7 +79,7 @@ type shardSummer struct {
 
 	shardLabeller ShardLabeller
 
-	canShardAllVectorSelectorsCache map[string]bool
+	canShardAllVectorSelectorsCache map[parser.Expr]bool
 }
 
 func newShardSummer(shards int, inspectOnly bool, squasher Squasher, logger log.Logger, stats *MapperStats, shardLabeller ShardLabeller) *shardSummer {
@@ -97,7 +97,7 @@ func newShardSummer(shards int, inspectOnly bool, squasher Squasher, logger log.
 
 		shardLabeller: shardLabeller,
 
-		canShardAllVectorSelectorsCache: make(map[string]bool),
+		canShardAllVectorSelectorsCache: make(map[parser.Expr]bool),
 	}
 }
 
@@ -173,15 +173,14 @@ func (summer *shardSummer) MapExpr(ctx context.Context, expr parser.Expr) (mappe
 		// to be pessimistic and not parallelize at all the two legs unless we're able to
 		// parallelize all vector selectors in the legs.
 		canShardAllVectorSelectors := func(expr parser.Expr) (can bool, err error) {
-			query := expr.String()
 			// We need to cache the results of this function to avoid processing it again and again
 			// in queries like `a or b or c or d`, which would lead to exponential processing time.
-			if can, ok := summer.canShardAllVectorSelectorsCache[query]; ok {
+			if can, ok := summer.canShardAllVectorSelectorsCache[expr]; ok {
 				return can, nil
 			}
 			defer func() {
 				if err == nil {
-					summer.canShardAllVectorSelectorsCache[query] = can
+					summer.canShardAllVectorSelectorsCache[expr] = can
 				}
 			}()
 
