@@ -16,7 +16,7 @@ import (
 	"google.golang.org/grpc/codes"
 
 	"github.com/grafana/mimir/pkg/compactor"
-	"github.com/grafana/mimir/pkg/compactor/scheduler/schedulerpb"
+	"github.com/grafana/mimir/pkg/compactor/scheduler/compactorschedulerpb"
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/util"
@@ -136,7 +136,7 @@ func (s *Scheduler) stop(err error) error {
 	return services.StopManagerAndAwaitStopped(context.Background(), s.subservicesManager)
 }
 
-func (s *Scheduler) LeaseJob(ctx context.Context, req *schedulerpb.LeaseJobRequest) (*schedulerpb.LeaseJobResponse, error) {
+func (s *Scheduler) LeaseJob(ctx context.Context, req *compactorschedulerpb.LeaseJobRequest) (*compactorschedulerpb.LeaseJobResponse, error) {
 	// Plan jobs are checked first
 	tenant, _, epoch, ok := s.planTracker.Lease(func(tenant string, _ struct{}) bool {
 		// TODO: Using req.WorkerId, can this worker plan for this tenant?
@@ -144,12 +144,14 @@ func (s *Scheduler) LeaseJob(ctx context.Context, req *schedulerpb.LeaseJobReque
 		return true
 	})
 	if ok {
-		return &schedulerpb.LeaseJobResponse{
-			Key: &schedulerpb.JobKey{
+		return &compactorschedulerpb.LeaseJobResponse{
+			Key: &compactorschedulerpb.JobKey{
 				Id:    tenant,
 				Epoch: epoch,
 			},
-			Spec: &schedulerpb.JobSpec{},
+			Spec: &compactorschedulerpb.JobSpec{
+				JobType: compactorschedulerpb.PLANNING,
+			},
 		}, nil
 	}
 
@@ -164,7 +166,7 @@ func (s *Scheduler) LeaseJob(ctx context.Context, req *schedulerpb.LeaseJobReque
 	return nil, status.Error(codes.NotFound, "no jobs were available to be leased")
 }
 
-func (s *Scheduler) PlannedJobs(ctx context.Context, req *schedulerpb.PlannedJobsRequest) (*schedulerpb.PlannedJobsResponse, error) {
+func (s *Scheduler) PlannedJobs(ctx context.Context, req *compactorschedulerpb.PlannedJobsRequest) (*compactorschedulerpb.PlannedJobsResponse, error) {
 	if removed, _ := s.planTracker.Remove(req.Key.Id, req.Key.Epoch); removed {
 		now := time.Now()
 		jobs := make([]*Job[string, *CompactionJob], 0, len(req.Jobs))
@@ -185,19 +187,19 @@ func (s *Scheduler) PlannedJobs(ctx context.Context, req *schedulerpb.PlannedJob
 	return nil, status.Error(codes.NotFound, "plan job was not found")
 }
 
-func (s *Scheduler) UpdatePlanJob(ctx context.Context, req *schedulerpb.UpdatePlanJobRequest) (*schedulerpb.UpdateJobResponse, error) {
+func (s *Scheduler) UpdatePlanJob(ctx context.Context, req *compactorschedulerpb.UpdatePlanJobRequest) (*compactorschedulerpb.UpdateJobResponse, error) {
 	switch req.Update {
-	case schedulerpb.IN_PROGRESS:
+	case compactorschedulerpb.IN_PROGRESS:
 		if s.planTracker.RenewLease(req.Key.Id, req.Key.Epoch) {
 			return ok()
 		}
-	case schedulerpb.COMPLETE:
+	case compactorschedulerpb.COMPLETE:
 		fallthrough
-	case schedulerpb.ABANDON:
+	case compactorschedulerpb.ABANDON:
 		if removed, _ := s.planTracker.Remove(req.Key.Id, req.Key.Epoch); removed {
 			return ok()
 		}
-	case schedulerpb.REASSIGN:
+	case compactorschedulerpb.REASSIGN:
 		if canceled, _ := s.planTracker.CancelLease(req.Key.Id, req.Key.Epoch); canceled {
 			return ok()
 		}
@@ -208,19 +210,19 @@ func (s *Scheduler) UpdatePlanJob(ctx context.Context, req *schedulerpb.UpdatePl
 	return notFound()
 }
 
-func (s *Scheduler) UpdateCompactionJob(ctx context.Context, req *schedulerpb.UpdateCompactionJobRequest) (*schedulerpb.UpdateJobResponse, error) {
+func (s *Scheduler) UpdateCompactionJob(ctx context.Context, req *compactorschedulerpb.UpdateCompactionJobRequest) (*compactorschedulerpb.UpdateJobResponse, error) {
 	switch req.Update {
-	case schedulerpb.IN_PROGRESS:
+	case compactorschedulerpb.IN_PROGRESS:
 		if s.rotator.RenewJobLease(req.Tenant, req.Key.Id, req.Key.Epoch) {
 			return ok()
 		}
-	case schedulerpb.COMPLETE:
+	case compactorschedulerpb.COMPLETE:
 		fallthrough
-	case schedulerpb.ABANDON:
+	case compactorschedulerpb.ABANDON:
 		if s.rotator.RemoveJob(req.Tenant, req.Key.Id, req.Key.Epoch) {
 			return ok()
 		}
-	case schedulerpb.REASSIGN:
+	case compactorschedulerpb.REASSIGN:
 		if s.rotator.CancelJobLease(req.Tenant, req.Key.Id, req.Key.Epoch) {
 			return ok()
 		}
@@ -231,10 +233,10 @@ func (s *Scheduler) UpdateCompactionJob(ctx context.Context, req *schedulerpb.Up
 	return notFound()
 }
 
-func ok() (*schedulerpb.UpdateJobResponse, error) {
-	return &schedulerpb.UpdateJobResponse{}, nil
+func ok() (*compactorschedulerpb.UpdateJobResponse, error) {
+	return &compactorschedulerpb.UpdateJobResponse{}, nil
 }
 
-func notFound() (*schedulerpb.UpdateJobResponse, error) {
+func notFound() (*compactorschedulerpb.UpdateJobResponse, error) {
 	return nil, status.Error(codes.NotFound, "lease was not found")
 }
