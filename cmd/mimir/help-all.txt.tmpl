@@ -2065,6 +2065,8 @@ Usage of ./cmd/mimir/mimir:
     	Maximum number of blocks that can be queued for conversion at once. This helps distribute work evenly across replicas. (default 5)
   -parquet-converter.max-rows-per-group int
     	Maximum number of rows per row group in Parquet files. (default 1000000)
+  -parquet-converter.min-block-timestamp int
+    	Minimum block timestamp (based on ULID) to convert. Set to 0 to disable timestamp filtering.
   -parquet-converter.min-compaction-level int
     	Minimum compaction level required for blocks to be converted to Parquet. Blocks equal or greater than this level will be converted. (default 2)
   -parquet-converter.ring.consul.acl-token string

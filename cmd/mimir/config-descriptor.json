@@ -22760,6 +22760,16 @@
         },
         {
           "kind": "field",
+          "name": "min_block_timestamp",
+          "required": false,
+          "desc": "Minimum block timestamp (based on ULID) to convert. Set to 0 to disable timestamp filtering.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "parquet-converter.min-block-timestamp",
+          "fieldType": "int"
+        },
+        {
+          "kind": "field",
           "name": "sorting_labels",
           "required": false,
           "desc": "Comma-separated list of labels to sort by when converting to Parquet format. If not the file will be sorted by '__name__'.",

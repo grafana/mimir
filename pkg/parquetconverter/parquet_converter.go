@@ -89,6 +89,7 @@ type Config struct {
 	ConversionInterval time.Duration `yaml:"conversion_interval"`
 	DiscoveryInterval  time.Duration `yaml:"discovery_interval"`
 	MaxBlockAge        time.Duration `yaml:"max_block_age"`
+	MinBlockTimestamp  int64         `yaml:"min_block_timestamp"`
 
 	SortingLabels      flagext.StringSliceCSV `yaml:"sorting_labels" category:"advanced"`
 	ColDuration        time.Duration          `yaml:"col_duration" category:"advanced"`
@@ -109,6 +110,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.DurationVar(&cfg.ConversionInterval, "parquet-converter.conversion-interval", time.Minute, "The frequency at which the conversion runs.")
 	f.DurationVar(&cfg.DiscoveryInterval, "parquet-converter.discovery-interval", 5*time.Minute, "The frequency at which user and block discovery runs.")
 	f.DurationVar(&cfg.MaxBlockAge, "parquet-converter.max-block-age", 0, "Maximum age of blocks to convert. Blocks older than this will be skipped. Set to 0 to disable age filtering.")
+	f.Int64Var(&cfg.MinBlockTimestamp, "parquet-converter.min-block-timestamp", 0, "Minimum block timestamp (based on ULID) to convert. Set to 0 to disable timestamp filtering.")
 	f.StringVar(&cfg.DataDir, "parquet-converter.data-dir", "./data-parquet-converter/", "Directory to temporarily store blocks during conversion. This directory is not required to persist between restarts.")
 	f.Var(&cfg.SortingLabels, "parquet-converter.sorting-labels", "Comma-separated list of labels to sort by when converting to Parquet format. If not the file will be sorted by '__name__'.")
 	f.DurationVar(&cfg.ColDuration, "parquet-converter.col-duration", 8*time.Hour, "Duration for column chunks in Parquet files.")
@@ -437,6 +439,15 @@ func (c *ParquetConverter) discoverAndEnqueueBlocks(ctx context.Context) {
 			if c.Cfg.MaxBlockAge > 0 {
 				blockAge := time.Since(time.UnixMilli(m.MinTime))
 				if blockAge > c.Cfg.MaxBlockAge {
+					level.Debug(c.logger).Log("msg", "skipping block older than max age", "id", m.ULID, "age", blockAge.String(), "max_age", c.Cfg.MaxBlockAge.String())
+					continue
+				}
+			}
+
+			if c.Cfg.MinBlockTimestamp > 0 {
+				blockTimestamp := int64(m.ULID.Time())
+				if blockTimestamp <= c.Cfg.MinBlockTimestamp {
+					level.Debug(c.logger).Log("msg", "skipping block older than min block timestamp", "id", m.ULID, "ulid_timestamp_ms", m.ULID.Time(), "min_block_timestamp", c.Cfg.MinBlockTimestamp)
 					continue
 				}
 			}
