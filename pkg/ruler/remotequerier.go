@@ -178,7 +178,10 @@ func (q *RemoteQuerier) Read(ctx context.Context, query *prompb.Query, sortSerie
 	req.Header.Set("Content-Type", "application/x-protobuf")
 	req.Header.Set("User-Agent", version.UserAgent())
 	req.Header.Set("X-Prometheus-Remote-Read-Version", "0.1.0")
-	api.InjectHTTPReadConsistencyHeaders(ctx, req)
+	consistencyInjector := &api.ConsistencyInjector{}
+	if err := consistencyInjector.InjectToCarrier(ctx, propagation.HttpHeaderCarrier(req.Header)); err != nil {
+		return nil, err
+	}
 
 	for _, mdw := range q.middlewares {
 		if err := mdw(ctx, req); err != nil {

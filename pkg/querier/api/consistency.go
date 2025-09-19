@@ -22,7 +22,7 @@ import (
 const (
 	ReadConsistencyHeader         = "X-Read-Consistency"
 	ReadConsistencyOffsetsHeader  = "X-Read-Consistency-Offsets"
-	ReadConsistencyMaxDelayHeader = "X-Read-Max-Delay"
+	ReadConsistencyMaxDelayHeader = "X-Read-Consistency-Max-Delay"
 
 	// ReadConsistencyStrong means that a query sent by the same client will always observe the writes
 	// that have completed before issuing the query.
