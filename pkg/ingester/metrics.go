@@ -30,7 +30,7 @@ type ingesterMetrics struct {
 	queries          prometheus.Counter
 	queriedSamples   prometheus.Histogram
 	queriedExemplars prometheus.Histogram
-	queriedSeries    prometheus.Histogram
+	queriedSeries    *prometheus.HistogramVec
 
 	memMetadata             prometheus.Gauge
 	memUsers                prometheus.Gauge
@@ -172,12 +172,13 @@ func newIngesterMetrics(
 			// A reasonable upper bound is around 6k - 10*(5^(5-1)) = 6250.
 			Buckets: prometheus.ExponentialBuckets(10, 5, 5),
 		}),
-		queriedSeries: promauto.With(r).NewHistogram(prometheus.HistogramOpts{
+		queriedSeries: promauto.With(r).NewHistogramVec(prometheus.HistogramOpts{
 			Name: "cortex_ingester_queried_series",
 			Help: "The total number of series returned from queries.",
 			// A reasonable upper bound is around 100k - 10*(8^(6-1)) = 327k.
-			Buckets: prometheus.ExponentialBuckets(10, 8, 6),
-		}),
+			Buckets:                     prometheus.ExponentialBuckets(10, 8, 6),
+			NativeHistogramBucketFactor: 1.1,
+		}, []string{"stage"}),
 		memMetadata: promauto.With(r).NewGauge(prometheus.GaugeOpts{
 			Name: "cortex_ingester_memory_metadata",
 			Help: "The current number of metadata in memory.",

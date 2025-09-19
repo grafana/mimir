@@ -2353,7 +2353,7 @@ func (i *Ingester) QueryStream(req *client.QueryRequest, stream client.Ingester_
 		return err
 	}
 
-	i.metrics.queriedSeries.Observe(float64(numSeries))
+	i.metrics.queriedSeries.WithLabelValues("returned").Observe(float64(numSeries))
 	i.metrics.queriedSamples.Observe(float64(numSamples))
 	spanlog.DebugLog("series", numSeries, "samples", numSamples)
 	return nil
