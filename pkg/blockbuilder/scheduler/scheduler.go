@@ -232,7 +232,14 @@ type partitionState struct {
 	committed *advancingOffset
 	planned   *advancingOffset
 
-	pendingJobs *list.List
+	pendingJobs   *list.List
+	activeJobs    []*jobState
+	activeJobsMap map[string]*jobState
+}
+type jobState struct {
+	jobID    string
+	spec     schedulerpb.JobSpec
+	complete bool
 }
 
 const (
@@ -291,6 +298,36 @@ func (s *partitionState) addPendingJob(job *schedulerpb.JobSpec) {
 	s.pendingJobs.PushBack(job)
 }
 
+func (s *partitionState) addActiveJob(j *jobState) {
+	s.activeJobs = append(s.activeJobs, j)
+	s.activeJobsMap[j.jobID] = j
+	// Keep it sorted.
+	slices.SortFunc(s.activeJobs, func(a, b *jobState) int {
+		return cmp.Compare(a.spec.StartOffset, b.spec.StartOffset)
+	})
+}
+
+func (s *partitionState) completeJob(jobID string) {
+	j, ok := s.activeJobsMap[jobID]
+	if !ok {
+		return
+	}
+	j.complete = true
+
+	// Now we both advance the committed offset and garbage collect completed jobs.
+
+	for len(s.activeJobs) > 0 {
+		first := s.activeJobs[0]
+		if first.complete && s.committed.validNextSpec(first.spec) {
+			s.committed.advance(jobKey{first.jobID, 0}, first.spec)
+			s.activeJobs = s.activeJobs[1:]
+			delete(s.activeJobsMap, first.jobID)
+		} else {
+			break
+		}
+	}
+}
+
 // enqueuePendingJobsWorker is a worker method that enqueues pending jobs at a regular interval.
 func (s *BlockBuilderScheduler) enqueuePendingJobsWorker(ctx context.Context) {
 	enqueueTick := time.NewTicker(s.cfg.EnqueueInterval)
@@ -345,8 +382,10 @@ func (s *BlockBuilderScheduler) enqueuePendingJobs() {
 				// Move onto the next partition.
 				break
 			}
-			// Otherwise, it was successful.
+
+			// Otherwise, it was successful. Move it to the active jobs slice.
 			ps.pendingJobs.Remove(e)
+			ps.addActiveJob(&jobState{jobID: jobID, spec: *spec, complete: false})
 			// (In the case of a newly planned job, we don't have an epoch yet.)
 			ps.planned.advance(jobKey{jobID, 0}, *spec)
 		}
@@ -405,9 +444,10 @@ func (s *BlockBuilderScheduler) getPartitionState(topic string, partition int32)
 	}
 
 	ps := &partitionState{
-		topic:       topic,
-		partition:   partition,
-		pendingJobs: list.New(),
+		topic:         topic,
+		partition:     partition,
+		pendingJobs:   list.New(),
+		activeJobsMap: make(map[string]*jobState),
 		planned: &advancingOffset{
 			name:    offsetNamePlanned,
 			off:     offsetEmpty,
@@ -817,7 +857,7 @@ func (s *BlockBuilderScheduler) updateJob(key jobKey, workerID string, complete 
 			return fmt.Errorf("complete job: %w", err)
 		}
 
-		ps.committed.advance(key, j)
+		ps.completeJob(key.id)
 		level.Info(logger).Log("msg", "completed job")
 	} else {
 		// It's an in-progress job whose lease we need to renew.
