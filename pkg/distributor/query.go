@@ -264,7 +264,7 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSets [
 		streamingSeriesCount := 0
 
 		for {
-			labelsBatch, isEOS, err := result.receiveResponse(stream, queryLimiter)
+			labelsBatch, isEOS, err := result.receiveResponse(stream, queryLimiter, memoryTracker)
 			if errors.Is(err, io.EOF) {
 				// We will never get an EOF here from an ingester that is streaming chunks, so we don't need to do anything to set up streaming here.
 				return result, nil
@@ -394,7 +394,7 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSets [
 // * If the response has Chunkseries, they are added to r.chunkseriesBatches.
 // * If the response has StreamingSeries, a slice is returned with the label sets of each series.
 // A bool is also returned to indicate whether the end of the stream has been reached.
-func (r *ingesterQueryResult) receiveResponse(stream ingester_client.Ingester_QueryStreamClient, queryLimiter *limiter.QueryLimiter) ([]labels.Labels, bool, error) {
+func (r *ingesterQueryResult) receiveResponse(stream ingester_client.Ingester_QueryStreamClient, queryLimiter *limiter.QueryLimiter, memoryTracker *limiter.MemoryConsumptionTracker) ([]labels.Labels, bool, error) {
 	resp, err := stream.Recv()
 	if err != nil {
 		return nil, false, err
@@ -403,7 +403,13 @@ func (r *ingesterQueryResult) receiveResponse(stream ingester_client.Ingester_Qu
 
 	if len(resp.Timeseries) > 0 {
 		for _, series := range resp.Timeseries {
-			if limitErr := queryLimiter.AddSeries(mimirpb.FromLabelAdaptersToLabels(series.Labels)); limitErr != nil {
+			ls := mimirpb.FromLabelAdaptersToLabels(series.Labels)
+
+			if err := memoryTracker.IncreaseMemoryConsumptionForLabels(ls); err != nil {
+				return nil, false, err
+			}
+
+			if limitErr := queryLimiter.AddSeries(ls); limitErr != nil {
 				return nil, false, limitErr
 			}
 		}
@@ -423,7 +429,13 @@ func (r *ingesterQueryResult) receiveResponse(stream ingester_client.Ingester_Qu
 		}
 
 		for _, series := range resp.Chunkseries {
-			if err := queryLimiter.AddSeries(mimirpb.FromLabelAdaptersToLabels(series.Labels)); err != nil {
+			ls := mimirpb.FromLabelAdaptersToLabels(series.Labels)
+
+			if err := memoryTracker.IncreaseMemoryConsumptionForLabels(ls); err != nil {
+				return nil, false, err
+			}
+
+			if err := queryLimiter.AddSeries(ls); err != nil {
 				return nil, false, err
 			}
 		}
@@ -439,9 +451,13 @@ func (r *ingesterQueryResult) receiveResponse(stream ingester_client.Ingester_Qu
 	} else if len(resp.StreamingSeries) > 0 {
 		labelsBatch := make([]labels.Labels, 0, len(resp.StreamingSeries))
 		for _, s := range resp.StreamingSeries {
-			l := mimirpb.FromLabelAdaptersToLabelsWithCopy(s.Labels)
+			ls := mimirpb.FromLabelAdaptersToLabelsWithCopy(s.Labels)
 
-			if err := queryLimiter.AddSeries(l); err != nil {
+			if err := memoryTracker.IncreaseMemoryConsumptionForLabels(ls); err != nil {
+				return nil, false, err
+			}
+
+			if err := queryLimiter.AddSeries(ls); err != nil {
 				return nil, false, err
 			}
 
@@ -454,7 +470,7 @@ func (r *ingesterQueryResult) receiveResponse(stream ingester_client.Ingester_Qu
 				return nil, false, err
 			}
 
-			labelsBatch = append(labelsBatch, l)
+			labelsBatch = append(labelsBatch, ls)
 		}
 
 		return labelsBatch, resp.IsEndOfSeriesStream, nil
