@@ -93,13 +93,13 @@ var DefaultPostingsForMatchersCacheFactory = NewPostingsForMatchersCacheFactory(
 //   - `force` indicates that all requests should go through cache, regardless of the `concurrent` param provided to the PostingsForMatchers method.
 //   - `metrics` the metrics that should be used by the produced caches.
 func NewPostingsForMatchersCacheFactory(shared bool, keyFunc CacheKeyFunc, invalidation bool, cacheVersions int, ttl time.Duration, maxItems int, maxBytes int64, force bool, metrics *PostingsForMatchersCacheMetrics) PostingsForMatchersCacheFactory {
-	var mv *metricVersions
-	if shared && invalidation {
-		mv = &metricVersions{
-			versions: make([]atomic.Int64, cacheVersions),
-		}
-	}
 	factoryFunc := func(tracingKV []attribute.KeyValue) *PostingsForMatchersCache {
+		var mv *metricVersions
+		if shared && invalidation {
+			mv = &metricVersions{
+				versions: make([]atomic.Int64, cacheVersions),
+			}
+		}
 		return &PostingsForMatchersCache{
 			calls:            &sync.Map{},
 			cached:           list.New(),
@@ -451,11 +451,12 @@ func (c *PostingsForMatchersCache) postingsForMatchersPromise(ctx context.Contex
 	promise.callersCtxTracker.Close()
 
 	sizeBytes := int64(len(key) + size.Of(promise))
+	numPostings := 0
 	if promise.cloner != nil {
-		sizeBytes += promise.cloner.EstimateSize()
+		numPostings = promise.cloner.NumPostings()
 	}
 
-	c.onPromiseExecutionDone(ctx, key, promise.evaluationCompletedAt, sizeBytes, promise.err)
+	c.onPromiseExecutionDone(ctx, key, promise.evaluationCompletedAt, sizeBytes, numPostings, promise.err)
 	return promise.result
 }
 
@@ -563,7 +564,7 @@ func (c *PostingsForMatchersCache) evictHead(now time.Time) (reason int) {
 // onPromiseExecutionDone must be called once the execution of PostingsForMatchers promise has done.
 // The input err contains details about any error that could have occurred when executing it.
 // The input ts is the function call time.
-func (c *PostingsForMatchersCache) onPromiseExecutionDone(ctx context.Context, key string, completedAt time.Time, sizeBytes int64, err error) {
+func (c *PostingsForMatchersCache) onPromiseExecutionDone(ctx context.Context, key string, completedAt time.Time, sizeBytes int64, numPostings int, err error) {
 	span := trace.SpanFromContext(ctx)
 
 	// Call the registered hook, if any. It's used only for testing purposes.
@@ -608,6 +609,7 @@ func (c *PostingsForMatchersCache) onPromiseExecutionDone(ctx context.Context, k
 		trace.WithAttributes(
 			attribute.Stringer("evaluation completed at", completedAt),
 			attribute.Int64("size in bytes", sizeBytes),
+			attribute.Int("num postings", numPostings),
 			attribute.Int64("cached bytes", lastCachedBytes),
 		),
 		trace.WithAttributes(c.additionalAttributes...),
