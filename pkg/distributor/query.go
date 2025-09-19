@@ -399,21 +399,7 @@ func (r *ingesterQueryResult) receiveResponse(stream ingester_client.Ingester_Qu
 	if err != nil {
 		return nil, false, err
 	}
-	defer func() {
-		for _, series := range resp.Timeseries {
-			ls := mimirpb.FromLabelAdaptersToLabels(series.Labels)
-			memoryTracker.DecreaseMemoryConsumptionForLabels(ls)
-		}
-		for _, series := range resp.Chunkseries {
-			ls := mimirpb.FromLabelAdaptersToLabels(series.Labels)
-			memoryTracker.DecreaseMemoryConsumptionForLabels(ls)
-		}
-		for _, series := range resp.StreamingSeries {
-			ls := mimirpb.FromLabelAdaptersToLabels(series.Labels)
-			memoryTracker.DecreaseMemoryConsumptionForLabels(ls)
-		}
-		resp.FreeBuffer()
-	}()
+	defer resp.FreeBuffer()
 
 	if len(resp.Timeseries) > 0 {
 		for _, series := range resp.Timeseries {
