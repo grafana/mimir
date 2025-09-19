@@ -56,6 +56,11 @@ func (s *SkipHistogramDecodingOptimizationPass) applyToNode(node planning.Node, 
 		return
 	}
 
+	// If we see a subquery, don't skip buckets. We need the buckets for correct counter reset detection.
+	if _, ok := node.(*core.Subquery); ok {
+		skipHistogramBuckets = false
+	}
+
 	if f, ok := node.(*core.FunctionCall); ok {
 		switch f.Function {
 		case functions.FUNCTION_HISTOGRAM_COUNT, functions.FUNCTION_HISTOGRAM_SUM, functions.FUNCTION_HISTOGRAM_AVG:

@@ -250,6 +250,11 @@ type Options struct {
 	// PostingsForMatchersCacheKeyFunc allows additional cache key information to be provided for shared caches.
 	PostingsForMatchersCacheKeyFunc CacheKeyFunc
 
+	// HeadPostingsForMatchersCacheFactory returns a factory for creating PostingsForMatchersCache instances for head
+	// blocks. If this is provided, it will be used to provide head cache instances, otherwise a factory will be constructed
+	// with the head cache settings below.
+	HeadPostingsForMatchersCacheFactory PostingsForMatchersCacheFactory
+
 	// HeadPostingsForMatchersCacheInvalidation indicates whether postings should be tracked and invalidated when they
 	// change. This setting is only valid when SharedPostingsForMatchersCache is also true.
 	HeadPostingsForMatchersCacheInvalidation bool
@@ -278,6 +283,11 @@ type Options struct {
 	// HeadStatisticsCollectionFrequency determines how often label name cardinality statistics should be calculated
 	// from postings in the Head. These statistics are used for optimization of query execution. 0 to disable.
 	HeadStatisticsCollectionFrequency time.Duration
+
+	// BlockPostingsForMatchersCacheFactory returns a factory for creating PostingsForMatchersCache instances for compacted
+	// blocks. If this is provided, it will be used to provide block cache instances, otherwise a factory will be constructed
+	// with the block cache settings below.
+	BlockPostingsForMatchersCacheFactory PostingsForMatchersCacheFactory
 
 	// BlockPostingsForMatchersCacheTTL is the TTL of the postings for matchers cache of each compacted block.
 	// If it's 0, the cache will only deduplicate in-flight requests, deleting the results once the first request has finished.
@@ -1044,7 +1054,9 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 		db.blockChunkQuerierFunc = opts.BlockChunkQuerierFunc
 	}
 
-	if db.blockPostingsForMatchersCacheFactory == nil {
+	if opts.BlockPostingsForMatchersCacheFactory != nil {
+		db.blockPostingsForMatchersCacheFactory = opts.BlockPostingsForMatchersCacheFactory
+	} else {
 		db.blockPostingsForMatchersCacheFactory = NewPostingsForMatchersCacheFactory(
 			opts.SharedPostingsForMatchersCache,
 			opts.PostingsForMatchersCacheKeyFunc,
@@ -1101,17 +1113,21 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 	headOpts.OutOfOrderCapMax.Store(opts.OutOfOrderCapMax)
 	headOpts.EnableSharding = opts.EnableSharding
 	headOpts.TimelyCompaction = opts.TimelyCompaction
-	headOpts.PostingsForMatchersCacheFactory = NewPostingsForMatchersCacheFactory(
-		opts.SharedPostingsForMatchersCache,
-		opts.PostingsForMatchersCacheKeyFunc,
-		opts.HeadPostingsForMatchersCacheInvalidation,
-		opts.HeadPostingsForMatchersCacheVersions,
-		opts.HeadPostingsForMatchersCacheTTL,
-		opts.HeadPostingsForMatchersCacheMaxItems,
-		opts.HeadPostingsForMatchersCacheMaxBytes,
-		opts.HeadPostingsForMatchersCacheForce,
-		opts.HeadPostingsForMatchersCacheMetrics,
-	)
+	if opts.HeadPostingsForMatchersCacheFactory != nil {
+		headOpts.PostingsForMatchersCacheFactory = opts.HeadPostingsForMatchersCacheFactory
+	} else {
+		headOpts.PostingsForMatchersCacheFactory = NewPostingsForMatchersCacheFactory(
+			opts.SharedPostingsForMatchersCache,
+			opts.PostingsForMatchersCacheKeyFunc,
+			opts.HeadPostingsForMatchersCacheInvalidation,
+			opts.HeadPostingsForMatchersCacheVersions,
+			opts.HeadPostingsForMatchersCacheTTL,
+			opts.HeadPostingsForMatchersCacheMaxItems,
+			opts.HeadPostingsForMatchersCacheMaxBytes,
+			opts.HeadPostingsForMatchersCacheForce,
+			opts.HeadPostingsForMatchersCacheMetrics,
+		)
+	}
 	headOpts.SecondaryHashFunction = opts.SecondaryHashFunction
 	if opts.IndexLookupPlannerFunc != nil {
 		headOpts.IndexLookupPlannerFunc = opts.IndexLookupPlannerFunc
