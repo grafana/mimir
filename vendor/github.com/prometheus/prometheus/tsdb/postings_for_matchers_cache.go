@@ -36,6 +36,7 @@ const (
 	DefaultPostingsForMatchersCacheForce        = false
 	DefaultPostingsForMatchersCacheInvalidation = false
 	DefaultPostingsForMatchersCacheVersions     = 2 * 1024 * 1024 // The number of metric versions to store across all metric names
+	DefaultPostingsForMatchersCacheShared       = false
 )
 
 const (
@@ -75,44 +76,65 @@ func (f *nonSharedPostingsForMatchersCacheFactory) NewPostingsForMatchersCache(t
 	return f.factoryFunc(tracingKV)
 }
 
-var DefaultPostingsForMatchersCacheFactory = NewPostingsForMatchersCacheFactory(false, DefaultPostingsForMatchersCacheKeyFunc, DefaultPostingsForMatchersCacheInvalidation, DefaultPostingsForMatchersCacheVersions,
-	DefaultPostingsForMatchersCacheTTL, DefaultPostingsForMatchersCacheMaxItems, DefaultPostingsForMatchersCacheMaxBytes, DefaultPostingsForMatchersCacheForce, NewPostingsForMatchersCacheMetrics(nil))
+var DefaultPostingsForMatchersCacheConfig = PostingsForMatchersCacheConfig{
+	Shared:        DefaultPostingsForMatchersCacheShared,
+	KeyFunc:       DefaultPostingsForMatchersCacheKeyFunc,
+	Invalidation:  DefaultPostingsForMatchersCacheInvalidation,
+	CacheVersions: DefaultPostingsForMatchersCacheVersions,
+	TTL:           DefaultPostingsForMatchersCacheTTL,
+	MaxItems:      DefaultPostingsForMatchersCacheMaxItems,
+	MaxBytes:      DefaultPostingsForMatchersCacheMaxBytes,
+	Force:         DefaultPostingsForMatchersCacheForce,
+	Metrics:       NewPostingsForMatchersCacheMetrics(nil),
+}
+
+var DefaultPostingsForMatchersCacheFactory = NewPostingsForMatchersCacheFactory(DefaultPostingsForMatchersCacheConfig)
+
+type PostingsForMatchersCacheConfig struct {
+	// Shared indicates whether the factory will return a cache that is shared across all invocations.
+	Shared bool
+	// KeyFunc allows `shared` caches to provide a key that better distinguishes entries.
+	KeyFunc CacheKeyFunc
+	// Invalidation can be enabled for `shared` caches to invalidate head block cache entries when postings change for a metric.
+	Invalidation bool
+	// CacheVersions determines the size of the metric versions cache when `invalidation` is enabled.
+	CacheVersions int
+	// TTL indicates the time-to-live for cache entries, else when 0, only in-flight requests are de-duplicated.
+	TTL      time.Duration
+	MaxItems int
+	MaxBytes int64
+	// Force indicates that all requests should go through cache, regardless of the `concurrent` param provided to the PostingsForMatchers method.
+	Force bool
+	// Metrics the metrics that should be used by the produced caches.
+	Metrics *PostingsForMatchersCacheMetrics
+}
 
 // NewPostingsForMatchersCacheFactory creates a factory for building PostingsForMatchersCache instances. A few
 // configurations are possible for the resulting cache:
 //   - Not shared - A cache is created for each call, and entries are not invalidated when postings change.
 //   - Shared without invalidation - A single cache is shared for all factory callers, and entries are not invalidated when postings change.
 //   - Shared with invalidation - A cache is shared for all factory callers, and entries are invalidated when postings change.
-//
-// Params:
-//   - `shared` indicates whether the factory will return a cache that is shared across all invocations.
-//   - `keyFunc` allows `shared` caches to provide a key that better distinguishes entries.
-//   - `invalidation` can be enabled for `shared` caches to invalidate head block cache entries when postings change for a metric.
-//   - `cacheVersions` determines the size of the metric versions cache when `invalidation` is enabled.
-//   - `ttl` indicates the time-to-live for cache entries, else when 0, only in-flight requests are de-duplicated.
-//   - `force` indicates that all requests should go through cache, regardless of the `concurrent` param provided to the PostingsForMatchers method.
-//   - `metrics` the metrics that should be used by the produced caches.
-func NewPostingsForMatchersCacheFactory(shared bool, keyFunc CacheKeyFunc, invalidation bool, cacheVersions int, ttl time.Duration, maxItems int, maxBytes int64, force bool, metrics *PostingsForMatchersCacheMetrics) PostingsForMatchersCacheFactory {
-	var mv *metricVersions
-	if shared && invalidation {
-		mv = &metricVersions{
-			versions: make([]atomic.Int64, cacheVersions),
-		}
-	}
+func NewPostingsForMatchersCacheFactory(config PostingsForMatchersCacheConfig) PostingsForMatchersCacheFactory {
 	factoryFunc := func(tracingKV []attribute.KeyValue) *PostingsForMatchersCache {
+		var mv *metricVersions
+		if config.Shared && config.Invalidation {
+			mv = &metricVersions{
+				versions: make([]atomic.Int64, config.CacheVersions),
+			}
+		}
 		return &PostingsForMatchersCache{
 			calls:            &sync.Map{},
 			cached:           list.New(),
 			expireInProgress: atomic.NewBool(false),
 
-			shared:         shared,
-			keyFunc:        keyFunc,
-			ttl:            ttl,
-			maxItems:       maxItems,
-			maxBytes:       maxBytes,
-			force:          force,
+			shared:         config.Shared,
+			keyFunc:        config.KeyFunc,
+			ttl:            config.TTL,
+			maxItems:       config.MaxItems,
+			maxBytes:       config.MaxBytes,
+			force:          config.Force,
 			metricVersions: mv,
-			metrics:        metrics,
+			metrics:        config.Metrics,
 
 			timeNow: func() time.Time {
 				// Ensure it is UTC, so that it's faster to compute the cache entry size.
@@ -120,10 +142,10 @@ func NewPostingsForMatchersCacheFactory(shared bool, keyFunc CacheKeyFunc, inval
 			},
 			postingsForMatchers: PostingsForMatchers,
 			// Clone the slice so we don't end up sharding it with the parent.
-			additionalAttributes: append(slices.Clone(tracingKV), attribute.Bool("shared", shared), attribute.Stringer("ttl", ttl), attribute.Bool("force", force)),
+			additionalAttributes: append(slices.Clone(tracingKV), attribute.Bool("shared", config.Shared), attribute.Stringer("ttl", config.TTL), attribute.Bool("force", config.Force)),
 		}
 	}
-	if shared {
+	if config.Shared {
 		return &sharedPostingsForMatchersCacheFactory{instance: factoryFunc([]attribute.KeyValue{})}
 	}
 	return &nonSharedPostingsForMatchersCacheFactory{factoryFunc: factoryFunc}
@@ -451,11 +473,12 @@ func (c *PostingsForMatchersCache) postingsForMatchersPromise(ctx context.Contex
 	promise.callersCtxTracker.Close()
 
 	sizeBytes := int64(len(key) + size.Of(promise))
+	numPostings := 0
 	if promise.cloner != nil {
-		sizeBytes += promise.cloner.EstimateSize()
+		numPostings = promise.cloner.NumPostings()
 	}
 
-	c.onPromiseExecutionDone(ctx, key, promise.evaluationCompletedAt, sizeBytes, promise.err)
+	c.onPromiseExecutionDone(ctx, key, promise.evaluationCompletedAt, sizeBytes, numPostings, promise.err)
 	return promise.result
 }
 
@@ -563,7 +586,7 @@ func (c *PostingsForMatchersCache) evictHead(now time.Time) (reason int) {
 // onPromiseExecutionDone must be called once the execution of PostingsForMatchers promise has done.
 // The input err contains details about any error that could have occurred when executing it.
 // The input ts is the function call time.
-func (c *PostingsForMatchersCache) onPromiseExecutionDone(ctx context.Context, key string, completedAt time.Time, sizeBytes int64, err error) {
+func (c *PostingsForMatchersCache) onPromiseExecutionDone(ctx context.Context, key string, completedAt time.Time, sizeBytes int64, numPostings int, err error) {
 	span := trace.SpanFromContext(ctx)
 
 	// Call the registered hook, if any. It's used only for testing purposes.
@@ -608,6 +631,7 @@ func (c *PostingsForMatchersCache) onPromiseExecutionDone(ctx context.Context, k
 		trace.WithAttributes(
 			attribute.Stringer("evaluation completed at", completedAt),
 			attribute.Int64("size in bytes", sizeBytes),
+			attribute.Int("num postings", numPostings),
 			attribute.Int64("cached bytes", lastCachedBytes),
 		),
 		trace.WithAttributes(c.additionalAttributes...),
