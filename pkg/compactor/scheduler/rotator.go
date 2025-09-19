@@ -5,11 +5,12 @@ package scheduler
 import (
 	"context"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/grafana/dskit/services"
-	"github.com/grafana/mimir/pkg/compactor/scheduler/schedulerpb"
+	"go.uber.org/atomic"
+
+	"github.com/grafana/mimir/pkg/compactor/scheduler/compactorschedulerpb"
 )
 
 const outsideRotation int = -1
@@ -47,7 +48,7 @@ func NewRotator(planTracker *JobTracker[string, struct{}], leaseDuration time.Du
 		tenantStateMap:       make(map[string]*TenantRotationState),
 		rotation:             make([]string, 0, 10), // initial size doesn't really matter
 		mtx:                  &sync.RWMutex{},
-		rotationIndexCounter: &atomic.Int32{},
+		rotationIndexCounter: atomic.NewInt32(0),
 		planTracker:          planTracker,
 		leaseDuration:        leaseDuration,
 		leaseCheckInterval:   leaseCheckInterval,
@@ -62,7 +63,7 @@ func (r *Rotator) iter(_ context.Context) error {
 	return nil
 }
 
-func (r *Rotator) LeaseJob(ctx context.Context, canAccept func(string, *CompactionJob) bool) (*schedulerpb.LeaseJobResponse, bool) {
+func (r *Rotator) LeaseJob(ctx context.Context, canAccept func(string, *CompactionJob) bool) (*compactorschedulerpb.LeaseJobResponse, bool) {
 	r.mtx.RLock()
 
 	length := len(r.rotation)
@@ -85,14 +86,15 @@ func (r *Rotator) LeaseJob(ctx context.Context, canAccept func(string, *Compacti
 			if transition {
 				r.possiblyRemoveFromRotation(tenant)
 			}
-			return &schedulerpb.LeaseJobResponse{
-				Key: &schedulerpb.JobKey{
+			return &compactorschedulerpb.LeaseJobResponse{
+				Key: &compactorschedulerpb.JobKey{
 					Id:    k,
 					Epoch: epoch,
 				},
-				Spec: &schedulerpb.JobSpec{
-					Tenant: tenant,
-					Job: &schedulerpb.CompactionJob{
+				Spec: &compactorschedulerpb.JobSpec{
+					JobType: compactorschedulerpb.COMPACTION,
+					Tenant:  tenant,
+					Job: &compactorschedulerpb.CompactionJob{
 						BlockIds: job.blocks,
 						Split:    job.isSplit,
 					},
