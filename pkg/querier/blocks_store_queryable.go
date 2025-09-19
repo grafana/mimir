@@ -850,6 +850,17 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 				if err != nil {
 					return err
 				}
+				// Decrease memory consumption for labels which was tracked when receiving response from ingester.
+				defer func() {
+					for _, ms := range mySeries {
+						ls := mimirpb.FromLabelAdaptersToLabels(ms.Labels)
+						memoryTracker.DecreaseMemoryConsumptionForLabels(ls)
+					}
+					for _, ms := range myStreamingSeriesLabels {
+						memoryTracker.DecreaseMemoryConsumptionForLabels(ms)
+					}
+				}()
+
 				if shouldRetry {
 					level.Warn(clientSpanLog).Log("msg", "failed to receive series", "remote", c.RemoteAddress(), "err", err)
 					return nil
@@ -1008,19 +1019,7 @@ func (q *blocksStoreQuerier) receiveMessage(c BlocksStoreClient, stream storegat
 
 		return mySeries, myWarnings, myQueriedBlocks, myStreamingSeriesLabels, indexBytesFetched, false, false, err
 	}
-	defer func() {
-		if ss := resp.GetSeries(); ss != nil {
-			ls := mimirpb.FromLabelAdaptersToLabels(ss.Labels)
-			memoryTracker.DecreaseMemoryConsumptionForLabels(ls)
-		}
-		if sss := resp.GetStreamingSeries(); sss != nil {
-			for _, ss := range sss.Series {
-				ls := mimirpb.FromLabelAdaptersToLabels(ss.Labels)
-				memoryTracker.DecreaseMemoryConsumptionForLabels(ls)
-			}
-		}
-		resp.FreeBuffer()
-	}()
+	defer resp.FreeBuffer()
 
 	// Response may either contain series, streaming series, warning or hints.
 	if s := resp.GetSeries(); s != nil {
