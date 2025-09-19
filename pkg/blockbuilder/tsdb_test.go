@@ -791,7 +791,6 @@ func TestBuilderCreatedTimestamp(t *testing.T) {
 				{TS: lastEnd + 100, Val: 7},
 				{TS: lastEnd + 200, Val: 8},
 			},
-			expectDiscarded: 1,
 		},
 		"histogram created sample duplicates previous sample": {
 			input: []mimirpb.TimeSeries{
@@ -811,7 +810,6 @@ func TestBuilderCreatedTimestamp(t *testing.T) {
 				expectedHistogram(lastEnd+100, 7),
 				expectedHistogram(lastEnd+200, 8),
 			},
-			expectDiscarded: 1,
 		},
 	}
 

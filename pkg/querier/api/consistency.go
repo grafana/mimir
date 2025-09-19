@@ -4,18 +4,18 @@ package api
 
 import (
 	"context"
-	"net/http"
 	"slices"
 	"strconv"
 	"strings"
 	"unsafe"
 
-	"github.com/grafana/dskit/middleware"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 
 	//lint:ignore faillint Allow to import the math util package, since it's an isolated package (doesn't come with many other deps).
 	"github.com/grafana/mimir/pkg/util/math"
+	//lint:ignore faillint Allow importing the propagation package, since it's an isolated package (doesn't come with many other dependencies).
+	"github.com/grafana/mimir/pkg/util/propagation"
 )
 
 const (
@@ -74,22 +74,33 @@ func ReadConsistencyEncodedOffsetsFromContext(ctx context.Context) (EncodedOffse
 	return encoded, true
 }
 
-// ConsistencyMiddleware takes the consistency level from the X-Read-Consistency header and sets it in the context.
+// ConsistencyExtractor takes the consistency level from the X-Read-Consistency header and sets it in the context.
 // It can be retrieved with ReadConsistencyLevelFromContext.
-func ConsistencyMiddleware() middleware.Interface {
-	return middleware.Func(func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if level := r.Header.Get(ReadConsistencyHeader); IsValidReadConsistency(level) {
-				r = r.WithContext(ContextWithReadConsistencyLevel(r.Context(), level))
-			}
+type ConsistencyExtractor struct{}
 
-			if offsets := r.Header.Get(ReadConsistencyOffsetsHeader); len(offsets) > 0 {
-				r = r.WithContext(ContextWithReadConsistencyEncodedOffsets(r.Context(), EncodedOffsets(offsets)))
-			}
+func (e *ConsistencyExtractor) ExtractFromCarrier(ctx context.Context, carrier propagation.Carrier) (context.Context, error) {
+	if level := carrier.Get(ReadConsistencyHeader); IsValidReadConsistency(level) {
+		ctx = ContextWithReadConsistencyLevel(ctx, level)
+	}
 
-			next.ServeHTTP(w, r)
-		})
-	})
+	if offsets := carrier.Get(ReadConsistencyOffsetsHeader); len(offsets) > 0 {
+		ctx = ContextWithReadConsistencyEncodedOffsets(ctx, EncodedOffsets(offsets))
+	}
+
+	return ctx, nil
+}
+
+// ConsistencyLevelInjector injects the consistency level from the context (if any) into the carrier.
+//
+// It does not add the offsets to the carrier, as these are handled by the query-frontend's list of HTTP headers to propagate.
+type ConsistencyLevelInjector struct{}
+
+func (i *ConsistencyLevelInjector) InjectToCarrier(ctx context.Context, carrier propagation.Carrier) error {
+	if level, ok := ReadConsistencyLevelFromContext(ctx); ok {
+		carrier.Add(ReadConsistencyHeader, level)
+	}
+
+	return nil
 }
 
 const (

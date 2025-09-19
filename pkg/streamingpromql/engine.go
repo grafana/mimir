@@ -249,6 +249,7 @@ func (e *Engine) materializeAndCreateEvaluator(ctx context.Context, queryable st
 		EagerLoadSelectors:       e.eagerLoadSelectors,
 		Plan:                     plan,
 		EnableDelayedNameRemoval: plan.EnableDelayedNameRemoval,
+		Logger:                   e.logger,
 	}
 
 	materializer := planning.NewMaterializer(operatorParams, e.nodeMaterializers)

@@ -22,6 +22,8 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql/promqltest"
+	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
@@ -30,6 +32,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/streamingpromql"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
+	"github.com/grafana/mimir/pkg/util/propagation"
 )
 
 func TestDispatcher_HandleProtobuf(t *testing.T) {
@@ -42,13 +45,14 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 	t.Cleanup(func() { require.NoError(t, storage.Close()) })
 
 	opts := streamingpromql.NewTestEngineOpts()
+	opts.CommonOpts.EnablePerStepStats = true
 	ctx := context.Background()
 	planner, err := streamingpromql.NewQueryPlanner(opts)
 	require.NoError(t, err)
 	engine, err := streamingpromql.NewEngine(opts, streamingpromql.NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), planner)
 	require.NoError(t, err)
 
-	createQueryRequestForSpecificNode := func(expr string, timeRange types.QueryTimeRange, nodeIndex int64) *prototypes.Any {
+	createQueryRequestForSpecificNode := func(expr string, timeRange types.QueryTimeRange, nodeIndex int64, enablePerStepStats bool) *prototypes.Any {
 		plan, err := planner.NewQueryPlan(ctx, expr, timeRange, streamingpromql.NoopPlanningObserver{})
 		require.NoError(t, err)
 
@@ -67,6 +71,7 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 					NodeIndex: nodeIndex,
 				},
 			},
+			EnablePerStepStats: enablePerStepStats,
 		}
 
 		req, err := prototypes.MarshalAny(body)
@@ -75,16 +80,22 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 	}
 
 	createQueryRequest := func(expr string, timeRange types.QueryTimeRange) *prototypes.Any {
-		return createQueryRequestForSpecificNode(expr, timeRange, -1)
+		return createQueryRequestForSpecificNode(expr, timeRange, -1, false)
+	}
+
+	createQueryRequestWithPerStepStats := func(expr string, timeRange types.QueryTimeRange) *prototypes.Any {
+		return createQueryRequestForSpecificNode(expr, timeRange, -1, true)
 	}
 
 	startT := timestamp.Time(0)
+	expectedQueryWallTime := 2 * time.Second
 
 	testCases := map[string]struct {
-		req                      *prototypes.Any
-		dontSetTenantID          bool
-		expectedResponseMessages []*frontendv2pb.QueryResultStreamRequest
-		expectedStatusCode       string
+		req                                          *prototypes.Any
+		dontSetTenantID                              bool
+		expectedResponseMessages                     []*frontendv2pb.QueryResultStreamRequest
+		expectedStatusCode                           string
+		expectStorageToBeCalledWithPropagatedHeaders bool
 	}{
 		"unknown payload type": {
 			req: &prototypes.Any{
@@ -192,8 +203,13 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
 							Message: &querierpb.EvaluateQueryResponse_EvaluationCompleted{
 								EvaluationCompleted: &querierpb.EvaluateQueryResponseEvaluationCompleted{
-									Stats: querierpb.QueryStats{
-										TotalSamples: 6,
+									Stats: stats.Stats{
+										SamplesProcessed:   6,
+										QueueTime:          3 * time.Second,
+										WallTime:           expectedQueryWallTime,
+										FetchedSeriesCount: 123,
+										FetchedChunksCount: 456,
+										FetchedChunkBytes:  789,
 									},
 								},
 							},
@@ -201,7 +217,8 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 					},
 				},
 			},
-			expectedStatusCode: "OK",
+			expectedStatusCode:                           "OK",
+			expectStorageToBeCalledWithPropagatedHeaders: true,
 		},
 
 		"query that returns a range vector": {
@@ -209,6 +226,7 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 				`max_over_time(my_series[11s:10s])`,
 				types.NewRangeQueryTimeRange(startT, startT.Add(20*time.Second), 10*time.Second),
 				1, // Evaluate the subquery expression (my_series[11s:10s])
+				false,
 			),
 			expectedResponseMessages: []*frontendv2pb.QueryResultStreamRequest{
 				{
@@ -343,8 +361,13 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
 							Message: &querierpb.EvaluateQueryResponse_EvaluationCompleted{
 								EvaluationCompleted: &querierpb.EvaluateQueryResponseEvaluationCompleted{
-									Stats: querierpb.QueryStats{
-										TotalSamples: 10,
+									Stats: stats.Stats{
+										SamplesProcessed:   10,
+										QueueTime:          3 * time.Second,
+										WallTime:           expectedQueryWallTime,
+										FetchedSeriesCount: 123,
+										FetchedChunksCount: 456,
+										FetchedChunkBytes:  789,
 									},
 								},
 							},
@@ -352,7 +375,8 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 					},
 				},
 			},
-			expectedStatusCode: "OK",
+			expectedStatusCode:                           "OK",
+			expectStorageToBeCalledWithPropagatedHeaders: true,
 		},
 
 		"query that returns a scalar": {
@@ -378,7 +402,15 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
 						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
 							Message: &querierpb.EvaluateQueryResponse_EvaluationCompleted{
-								EvaluationCompleted: &querierpb.EvaluateQueryResponseEvaluationCompleted{},
+								EvaluationCompleted: &querierpb.EvaluateQueryResponseEvaluationCompleted{
+									Stats: stats.Stats{
+										QueueTime:          3 * time.Second,
+										WallTime:           expectedQueryWallTime,
+										FetchedSeriesCount: 123,
+										FetchedChunksCount: 456,
+										FetchedChunkBytes:  789,
+									},
+								},
 							},
 						},
 					},
@@ -406,7 +438,15 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
 						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
 							Message: &querierpb.EvaluateQueryResponse_EvaluationCompleted{
-								EvaluationCompleted: &querierpb.EvaluateQueryResponseEvaluationCompleted{},
+								EvaluationCompleted: &querierpb.EvaluateQueryResponseEvaluationCompleted{
+									Stats: stats.Stats{
+										QueueTime:          3 * time.Second,
+										WallTime:           expectedQueryWallTime,
+										FetchedSeriesCount: 123,
+										FetchedChunksCount: 456,
+										FetchedChunkBytes:  789,
+									},
+								},
 							},
 						},
 					},
@@ -455,8 +495,13 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 										Infos:    []string{`PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: "my_series" (1:20)`},
 										Warnings: []string{`PromQL warning: quantile value should be between 0 and 1, got 2 (1:67)`},
 									},
-									Stats: querierpb.QueryStats{
-										TotalSamples: 3,
+									Stats: stats.Stats{
+										SamplesProcessed:   3,
+										QueueTime:          3 * time.Second,
+										WallTime:           expectedQueryWallTime,
+										FetchedSeriesCount: 123,
+										FetchedChunksCount: 456,
+										FetchedChunkBytes:  789,
 									},
 								},
 							},
@@ -464,7 +509,86 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 					},
 				},
 			},
-			expectedStatusCode: "OK",
+			expectedStatusCode:                           "OK",
+			expectStorageToBeCalledWithPropagatedHeaders: true,
+		},
+
+		"query with per-step stats enabled": {
+			req: createQueryRequestWithPerStepStats(`my_series + 0.123`, types.NewRangeQueryTimeRange(startT, startT.Add(20*time.Second), 10*time.Second)),
+			expectedResponseMessages: []*frontendv2pb.QueryResultStreamRequest{
+				{
+					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
+						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
+							Message: &querierpb.EvaluateQueryResponse_SeriesMetadata{
+								SeriesMetadata: &querierpb.EvaluateQueryResponseSeriesMetadata{
+									NodeIndex: 3,
+									Series: []querierpb.SeriesMetadata{
+										{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("idx", "0"))},
+										{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("idx", "1"))},
+									},
+								},
+							},
+						},
+					},
+				},
+				{
+					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
+						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
+							Message: &querierpb.EvaluateQueryResponse_InstantVectorSeriesData{
+								InstantVectorSeriesData: &querierpb.EvaluateQueryResponseInstantVectorSeriesData{
+									NodeIndex: 3,
+									Floats: []mimirpb.Sample{
+										{TimestampMs: 0, Value: 0.123},
+										{TimestampMs: 10_000, Value: 1.123},
+										{TimestampMs: 20_000, Value: 2.123},
+									},
+								},
+							},
+						},
+					},
+				},
+				{
+					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
+						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
+							Message: &querierpb.EvaluateQueryResponse_InstantVectorSeriesData{
+								InstantVectorSeriesData: &querierpb.EvaluateQueryResponseInstantVectorSeriesData{
+									NodeIndex: 3,
+									Floats: []mimirpb.Sample{
+										{TimestampMs: 0, Value: 1.123},
+										{TimestampMs: 10_000, Value: 3.123},
+										{TimestampMs: 20_000, Value: 5.123},
+									},
+								},
+							},
+						},
+					},
+				},
+				{
+					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
+						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
+							Message: &querierpb.EvaluateQueryResponse_EvaluationCompleted{
+								EvaluationCompleted: &querierpb.EvaluateQueryResponseEvaluationCompleted{
+									Stats: stats.Stats{
+										SamplesProcessed: 6,
+										SamplesProcessedPerStep: []stats.StepStat{
+											{Timestamp: 0, Value: 2},
+											{Timestamp: 10000, Value: 2},
+											{Timestamp: 20000, Value: 2},
+										},
+										QueueTime:          3 * time.Second,
+										WallTime:           expectedQueryWallTime,
+										FetchedSeriesCount: 123,
+										FetchedChunksCount: 456,
+										FetchedChunkBytes:  789,
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			expectedStatusCode:                           "OK",
+			expectStorageToBeCalledWithPropagatedHeaders: true,
 		},
 
 		"query that fails with an error": {
@@ -494,13 +618,24 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 					},
 				},
 			},
-			expectedStatusCode: "ERROR_EXECUTION",
+			expectedStatusCode:                           "ERROR_EXECUTION",
+			expectStorageToBeCalledWithPropagatedHeaders: true,
 		},
 	}
 
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
-			ctx := context.Background()
+			stats, ctx := stats.ContextWithEmptyStats(context.Background())
+
+			// This value should be set by the querier's scheduler processor (ie. the thing that calls Dispatcher.HandleProtobuf).
+			stats.QueueTime = 3 * time.Second
+
+			// These values are populated by the ingester and store-gateway Queryable implementations, which
+			// aren't used in this test, so emulate them here.
+			stats.FetchedSeriesCount = 123
+			stats.FetchedChunksCount = 456
+			stats.FetchedChunkBytes = 789
+
 			tenantID := ""
 
 			if !testCase.dontSetTenantID {
@@ -515,8 +650,13 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 
 			reg, requestMetrics, serverMetrics := newMetrics()
 			stream := &mockQueryResultStream{t: t, route: route, reg: reg}
-			dispatcher := NewDispatcher(engine, storage, requestMetrics, serverMetrics, opts.Logger)
-			dispatcher.HandleProtobuf(ctx, testCase.req, stream)
+			storage := &contextCapturingStorage{inner: storage}
+			dispatcher := NewDispatcher(engine, storage, requestMetrics, serverMetrics, &testExtractor{}, opts.Logger)
+			dispatcher.timeNow = replaceTimeNow(timestamp.Time(4000), timestamp.Time(4000).Add(expectedQueryWallTime))
+			metadata := &propagation.MapCarrier{}
+			metadata.Add(testExtractorHeaderName, "some-value-from-the-request")
+
+			dispatcher.HandleProtobuf(ctx, testCase.req, metadata, stream)
 			require.Equal(t, testCase.expectedResponseMessages, stream.messages)
 
 			expectedMetrics := fmt.Sprintf(`
@@ -573,6 +713,11 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 			}
 
 			requireMetricsIgnoringHistogramBucketsAndDurationSums(t, reg, expectedMetrics, metricNames...)
+
+			if testCase.expectStorageToBeCalledWithPropagatedHeaders {
+				require.NotNil(t, storage.ctx)
+				require.Equal(t, "some-value-from-the-request", storage.ctx.Value(testExtractorKey))
+			}
 		})
 	}
 }
@@ -615,6 +760,7 @@ func TestDispatcher_HandleProtobuf_WithDelayedNameRemovalEnabled(t *testing.T) {
 	}
 
 	startT := timestamp.Time(0)
+	expectedQueryWallTime := 3 * time.Second
 
 	testCases := map[string]struct {
 		req                      *prototypes.Any
@@ -660,8 +806,9 @@ func TestDispatcher_HandleProtobuf_WithDelayedNameRemovalEnabled(t *testing.T) {
 						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
 							Message: &querierpb.EvaluateQueryResponse_EvaluationCompleted{
 								EvaluationCompleted: &querierpb.EvaluateQueryResponseEvaluationCompleted{
-									Stats: querierpb.QueryStats{
-										TotalSamples: 5,
+									Stats: stats.Stats{
+										SamplesProcessed: 5,
+										WallTime:         expectedQueryWallTime,
 									},
 								},
 							},
@@ -710,8 +857,9 @@ func TestDispatcher_HandleProtobuf_WithDelayedNameRemovalEnabled(t *testing.T) {
 						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
 							Message: &querierpb.EvaluateQueryResponse_EvaluationCompleted{
 								EvaluationCompleted: &querierpb.EvaluateQueryResponseEvaluationCompleted{
-									Stats: querierpb.QueryStats{
-										TotalSamples: 5,
+									Stats: stats.Stats{
+										SamplesProcessed: 5,
+										WallTime:         expectedQueryWallTime,
 									},
 								},
 							},
@@ -726,13 +874,16 @@ func TestDispatcher_HandleProtobuf_WithDelayedNameRemovalEnabled(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			tenantID := "tenant-1"
 			ctx = user.InjectOrgID(context.Background(), tenantID)
+			_, ctx := stats.ContextWithEmptyStats(ctx)
 			route, err := prototypes.AnyMessageName(testCase.req)
 			require.NoError(t, err)
 
 			reg, requestMetrics, serverMetrics := newMetrics()
 			stream := &mockQueryResultStream{t: t, route: route, reg: reg}
-			dispatcher := NewDispatcher(engine, storage, requestMetrics, serverMetrics, opts.Logger)
-			dispatcher.HandleProtobuf(ctx, testCase.req, stream)
+			dispatcher := NewDispatcher(engine, storage, requestMetrics, serverMetrics, &propagation.NoopExtractor{}, opts.Logger)
+			dispatcher.timeNow = replaceTimeNow(timestamp.Time(4000), timestamp.Time(4000).Add(expectedQueryWallTime))
+
+			dispatcher.HandleProtobuf(ctx, testCase.req, propagation.MapCarrier{}, stream)
 			require.Equal(t, testCase.expectedResponseMessages, stream.messages)
 		})
 	}
@@ -782,14 +933,14 @@ func (m *mockQueryResultStream) Write(_ context.Context, request *frontendv2pb.Q
 
 func TestDispatcher_MQEDisabled(t *testing.T) {
 	reg, requestMetrics, serverMetrics := newMetrics()
-	dispatcher := NewDispatcher(nil, nil, requestMetrics, serverMetrics, log.NewNopLogger())
+	dispatcher := NewDispatcher(nil, nil, requestMetrics, serverMetrics, &propagation.NoopExtractor{}, log.NewNopLogger())
 
 	req, err := prototypes.MarshalAny(&querierpb.EvaluateQueryRequest{})
 	require.NoError(t, err)
 
 	stream := &mockQueryResultStream{t: t, route: "querierpb.EvaluateQueryRequest", reg: reg}
 	ctx := user.InjectOrgID(context.Background(), "test")
-	dispatcher.HandleProtobuf(ctx, req, stream)
+	dispatcher.HandleProtobuf(ctx, req, nil, stream)
 
 	expected := []*frontendv2pb.QueryResultStreamRequest{
 		{
@@ -826,4 +977,74 @@ func requireMetricsIgnoringHistogramBucketsAndDurationSums(t *testing.T, reg *pr
 	expected = removeLeadingWhitespace.ReplaceAllString(expected, "")
 
 	require.Equal(t, expected, filteredText)
+}
+
+func replaceTimeNow(times ...time.Time) func() time.Time {
+	return func() time.Time {
+		t := times[0]
+		times = times[1:]
+		return t
+	}
+}
+
+type contextCapturingStorage struct {
+	inner storage.Storage
+	ctx   context.Context
+}
+
+func (s *contextCapturingStorage) Querier(mint, maxt int64) (storage.Querier, error) {
+	q, err := s.inner.Querier(mint, maxt)
+	if err != nil {
+		return nil, err
+	}
+	return &contextCapturingQuerier{q, s}, nil
+}
+
+func (s *contextCapturingStorage) ChunkQuerier(mint, maxt int64) (storage.ChunkQuerier, error) {
+	panic("not supported")
+}
+
+func (s *contextCapturingStorage) Appender(ctx context.Context) storage.Appender {
+	panic("not supported")
+}
+
+func (s *contextCapturingStorage) StartTime() (int64, error) {
+	panic("not supported")
+}
+
+func (s *contextCapturingStorage) Close() error {
+	return s.inner.Close()
+}
+
+type contextCapturingQuerier struct {
+	inner   storage.Querier
+	storage *contextCapturingStorage
+}
+
+func (c *contextCapturingQuerier) Select(ctx context.Context, sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
+	c.storage.ctx = ctx
+	return c.inner.Select(ctx, sortSeries, hints, matchers...)
+}
+
+func (c *contextCapturingQuerier) Close() error {
+	return c.inner.Close()
+}
+
+func (c *contextCapturingQuerier) LabelValues(ctx context.Context, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	panic("not supported")
+}
+
+func (c *contextCapturingQuerier) LabelNames(ctx context.Context, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	panic("not supported")
+}
+
+type testExtractor struct{}
+
+type testExtractorKeyType int
+
+const testExtractorHeaderName = "The-Test-Header"
+const testExtractorKey testExtractorKeyType = iota
+
+func (p *testExtractor) ExtractFromCarrier(ctx context.Context, carrier propagation.Carrier) (context.Context, error) {
+	return context.WithValue(ctx, testExtractorKey, carrier.Get(testExtractorHeaderName)), nil
 }

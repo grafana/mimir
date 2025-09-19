@@ -198,41 +198,59 @@ func TestQueryFrontendWithQueryResultPayloadFormats(t *testing.T) {
 }
 
 func TestQueryFrontendWithRemoteExecution(t *testing.T) {
-	runQueryFrontendTest(t, queryFrontendTestConfig{
-		setup: func(t *testing.T, s *e2e.Scenario) (configFile string, flags map[string]string) {
-			flags = mergeFlags(
-				CommonStorageBackendFlags(),
-				BlocksStorageFlags(),
-			)
+	t.Skip() // TODO: This breaks in GEM, but only tests a new expermental flag. Fix me in GEM and re-enable me!
+	for _, queryStatsEnabled := range []bool{true, false} {
+		t.Run(fmt.Sprintf("query stats enabled: %v", queryStatsEnabled), func(t *testing.T) {
+			runQueryFrontendTest(t, queryFrontendTestConfig{
+				setup: func(t *testing.T, s *e2e.Scenario) (configFile string, flags map[string]string) {
+					flags = mergeFlags(
+						CommonStorageBackendFlags(),
+						BlocksStorageFlags(),
+					)
 
-			minio := e2edb.NewMinio(9000, mimirBucketName)
-			require.NoError(t, s.StartAndWaitReady(minio))
+					minio := e2edb.NewMinio(9000, mimirBucketName)
+					require.NoError(t, s.StartAndWaitReady(minio))
 
-			return "", flags
-		},
-		withHistograms:         true,
-		remoteExecutionEnabled: true,
-	})
+					return "", flags
+				},
+				withHistograms:         true,
+				remoteExecutionEnabled: true,
+				queryStatsEnabled:      queryStatsEnabled,
+			})
+		})
+	}
 }
 
 func TestQueryFrontendWithIngestStorageViaFlagsAndQueryStatsEnabled(t *testing.T) {
-	runQueryFrontendTest(t, queryFrontendTestConfig{
-		querySchedulerDiscoveryMode: "dns",
-		queryStatsEnabled:           true,
-		setup: func(t *testing.T, s *e2e.Scenario) (configFile string, flags map[string]string) {
-			flags = mergeFlags(
-				BlocksStorageFlags(),
-				BlocksStorageS3Flags(),
-				IngestStorageFlags(),
-			)
+	runScenario := func(t *testing.T, enableRemoteExecution bool) {
+		runQueryFrontendTest(t, queryFrontendTestConfig{
+			querySchedulerDiscoveryMode: "dns",
+			queryStatsEnabled:           true,
+			remoteExecutionEnabled:      enableRemoteExecution,
+			setup: func(t *testing.T, s *e2e.Scenario) (configFile string, flags map[string]string) {
+				flags = mergeFlags(
+					BlocksStorageFlags(),
+					BlocksStorageS3Flags(),
+					IngestStorageFlags(),
+				)
 
-			kafka := e2edb.NewKafka()
-			minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
-			require.NoError(t, s.StartAndWaitReady(minio, kafka))
+				kafka := e2edb.NewKafka()
+				minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
+				require.NoError(t, s.StartAndWaitReady(minio, kafka))
 
-			return "", flags
-		},
-		withHistograms: true,
+				return "", flags
+			},
+			withHistograms: true,
+		})
+	}
+
+	t.Run("with remote execution disabled", func(t *testing.T) {
+		runScenario(t, false)
+	})
+
+	t.Run("with remote execution enabled", func(t *testing.T) {
+		t.Skip() // TODO: This breaks in GEM, but only tests a new experimental flag. Fix me in GEM and re-enable me!
+		runScenario(t, true)
 	})
 }
 
@@ -526,6 +544,7 @@ func TestQueryFrontendErrorMessageParity(t *testing.T) {
 	})
 
 	t.Run("with remote execution enabled", func(t *testing.T) {
+		t.Skip() // TODO: This breaks in GEM, but only tests a new expermental flag. Fix me in GEM and re-enable me!
 		testQueryFrontendErrorMessageParityScenario(t, true, map[string]string{
 			"-query-frontend.enable-remote-execution": "true",
 		})

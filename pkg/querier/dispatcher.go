@@ -16,8 +16,9 @@ import (
 	"github.com/gogo/protobuf/proto"
 	prototypes "github.com/gogo/protobuf/types"
 	"github.com/grafana/dskit/server"
-	"github.com/grafana/dskit/tenant"
+	"github.com/grafana/dskit/user"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/annotations"
 	"go.opentelemetry.io/otel/attribute"
@@ -28,9 +29,11 @@ import (
 	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/querierpb"
+	querier_stats "github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/streamingpromql"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/limiter"
+	"github.com/grafana/mimir/pkg/util/propagation"
 )
 
 var evaluateQueryRequestMessageName = proto.MessageName(&querierpb.EvaluateQueryRequest{})
@@ -38,6 +41,7 @@ var evaluateQueryRequestMessageName = proto.MessageName(&querierpb.EvaluateQuery
 type Dispatcher struct {
 	engine    *streamingpromql.Engine
 	queryable storage.Queryable
+	extractor propagation.Extractor
 	logger    log.Logger
 
 	// We need to report two kinds of metrics, to mirror those emitted by HTTP requests:
@@ -45,19 +49,24 @@ type Dispatcher struct {
 	// cortex_... (eg. cortex_inflight_requests).
 	querierMetrics *RequestMetrics
 	serverMetrics  *server.Metrics
+
+	// This will usually be time.Now(), but is replaced in some tests.
+	timeNow func() time.Time
 }
 
-func NewDispatcher(engine *streamingpromql.Engine, queryable storage.Queryable, querierMetrics *RequestMetrics, serverMetrics *server.Metrics, logger log.Logger) *Dispatcher {
+func NewDispatcher(engine *streamingpromql.Engine, queryable storage.Queryable, querierMetrics *RequestMetrics, serverMetrics *server.Metrics, extractor propagation.Extractor, logger log.Logger) *Dispatcher {
 	return &Dispatcher{
 		engine:         engine,
 		queryable:      queryable,
+		extractor:      extractor,
 		logger:         logger,
 		querierMetrics: querierMetrics,
 		serverMetrics:  serverMetrics,
+		timeNow:        time.Now,
 	}
 }
 
-func (d *Dispatcher) HandleProtobuf(ctx context.Context, req *prototypes.Any, stream frontendv2pb.QueryResultStream) {
+func (d *Dispatcher) HandleProtobuf(ctx context.Context, req *prototypes.Any, metadata propagation.Carrier, stream frontendv2pb.QueryResultStream) {
 	writer := &queryResponseWriter{
 		stream:         stream,
 		querierMetrics: d.querierMetrics,
@@ -74,7 +83,13 @@ func (d *Dispatcher) HandleProtobuf(ctx context.Context, req *prototypes.Any, st
 		return
 	}
 
-	tenantID, err := tenant.TenantID(ctx)
+	tenantID, err := user.ExtractOrgID(ctx)
+	if err != nil {
+		writer.WriteError(ctx, mimirpb.QUERY_ERROR_TYPE_BAD_DATA, err.Error())
+		return
+	}
+
+	ctx, err = d.extractor.ExtractFromCarrier(ctx, metadata)
 	if err != nil {
 		writer.WriteError(ctx, mimirpb.QUERY_ERROR_TYPE_BAD_DATA, err.Error())
 		return
@@ -92,6 +107,7 @@ func (d *Dispatcher) HandleProtobuf(ctx context.Context, req *prototypes.Any, st
 }
 
 func (d *Dispatcher) evaluateQuery(ctx context.Context, body []byte, resp *queryResponseWriter) {
+	startTime := d.timeNow()
 	span := trace.SpanFromContext(ctx)
 	span.SetAttributes(attribute.String("request.type", evaluateQueryRequestMessageName))
 
@@ -119,7 +135,8 @@ func (d *Dispatcher) evaluateQuery(ctx context.Context, body []byte, resp *query
 		return
 	}
 
-	e, err := d.engine.NewEvaluator(ctx, d.queryable, nil, plan, nodes[0], evaluationNode.TimeRange.ToDecodedTimeRange())
+	opts := promql.NewPrometheusQueryOpts(req.EnablePerStepStats, 0)
+	e, err := d.engine.NewEvaluator(ctx, d.queryable, opts, plan, nodes[0], evaluationNode.TimeRange.ToDecodedTimeRange())
 	if err != nil {
 		resp.WriteError(ctx, mimirpb.QUERY_ERROR_TYPE_BAD_DATA, fmt.Sprintf("could not materialize query: %s", err.Error()))
 		return
@@ -127,7 +144,15 @@ func (d *Dispatcher) evaluateQuery(ctx context.Context, body []byte, resp *query
 
 	defer e.Close()
 
-	if err := e.Evaluate(ctx, &evaluationObserver{resp, evaluationNode.NodeIndex, req.Plan.OriginalExpression}); err != nil {
+	observer := &evaluationObserver{
+		w:                  resp,
+		nodeIndex:          evaluationNode.NodeIndex,
+		startTime:          startTime,
+		timeNow:            d.timeNow,
+		originalExpression: req.Plan.OriginalExpression,
+	}
+
+	if err := e.Evaluate(ctx, observer); err != nil {
 		resp.WriteError(ctx, errorTypeForError(err), err.Error())
 		return
 	}
@@ -242,6 +267,8 @@ func (w *queryResponseWriter) write(ctx context.Context, resp *frontendv2pb.Quer
 type evaluationObserver struct {
 	w         *queryResponseWriter
 	nodeIndex int64 // FIXME: remove this once Evaluator supports multiple nodes and passes the node index to the methods below
+	startTime time.Time
+	timeNow   func() time.Time
 
 	originalExpression string
 }
@@ -380,7 +407,7 @@ func (o *evaluationObserver) StringEvaluated(ctx context.Context, evaluator *str
 	})
 }
 
-func (o *evaluationObserver) EvaluationCompleted(ctx context.Context, evaluator *streamingpromql.Evaluator, annotations *annotations.Annotations, stats *types.QueryStats) error {
+func (o *evaluationObserver) EvaluationCompleted(ctx context.Context, evaluator *streamingpromql.Evaluator, annotations *annotations.Annotations, evaluationStats *types.QueryStats) error {
 	var annos querierpb.Annotations
 
 	if annotations != nil {
@@ -391,11 +418,37 @@ func (o *evaluationObserver) EvaluationCompleted(ctx context.Context, evaluator 
 		Message: &querierpb.EvaluateQueryResponse_EvaluationCompleted{
 			EvaluationCompleted: &querierpb.EvaluateQueryResponseEvaluationCompleted{
 				Annotations: annos,
-				Stats: querierpb.QueryStats{
-					TotalSamples:        stats.TotalSamples,
-					TotalSamplesPerStep: stats.TotalSamplesPerStep,
-				},
+				Stats:       o.populateStats(ctx, evaluator, evaluationStats),
 			},
 		},
 	})
+}
+
+func (o *evaluationObserver) populateStats(ctx context.Context, evaluator *streamingpromql.Evaluator, evaluationStats *types.QueryStats) querier_stats.Stats {
+	querierStats := querier_stats.FromContext(ctx)
+	if querierStats == nil {
+		return querier_stats.Stats{}
+	}
+
+	querierStats.AddSamplesProcessed(uint64(evaluationStats.TotalSamples))
+
+	if evaluationStats.EnablePerStepStats {
+		stepStats := make([]querier_stats.StepStat, 0, len(evaluationStats.TotalSamplesPerStep))
+		timeRange := evaluator.GetQueryTimeRange()
+
+		for i, count := range evaluationStats.TotalSamplesPerStep {
+			stepStats = append(stepStats, querier_stats.StepStat{
+				Timestamp: timeRange.IndexTime(int64(i)),
+				Value:     count,
+			})
+		}
+
+		querierStats.AddSamplesProcessedPerStep(stepStats)
+	}
+
+	querierStats.AddWallTime(o.timeNow().Sub(o.startTime))
+
+	// Return a copy of the stats to avoid race conditions if anything is still modifying the
+	// stats after we return them for serialization.
+	return querierStats.Copy().Stats
 }

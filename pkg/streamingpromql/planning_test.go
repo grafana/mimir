@@ -1247,6 +1247,32 @@ func TestDeduplicateAndMergePlanning(t *testing.T) {
 					- MatrixSelector: {__name__="some_metric"}[5m0s]
 			`,
 		},
+		"aritmetic vector-scalar operation - should deduplicate and merge": {
+			expr: `some_metric * 2`,
+			expectedPlan: `
+				- DeduplicateAndMerge
+					- BinaryExpression: LHS * RHS
+						- LHS: VectorSelector: {__name__="some_metric"}
+						- RHS: NumberLiteral: 2
+			`,
+		},
+		"comparison vector-scalar operation - should NOT deduplicate and merge": {
+			expr: `some_metric > 2`,
+			expectedPlan: `
+				- BinaryExpression: LHS > RHS
+					- LHS: VectorSelector: {__name__="some_metric"}
+					- RHS: NumberLiteral: 2
+			`,
+		},
+		"comparison vector-scalar operation with bool modifier - should deduplicate and merge": {
+			expr: `some_metric > bool 2`,
+			expectedPlan: `
+				- DeduplicateAndMerge
+					- BinaryExpression: LHS > bool RHS
+						- LHS: VectorSelector: {__name__="some_metric"}
+						- RHS: NumberLiteral: 2
+			`,
+		},
 	}
 
 	ctx := context.Background()

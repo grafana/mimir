@@ -394,7 +394,7 @@ func TestTopKBottomKInstantQuery_GroupingAndSorting(t *testing.T) {
 				posrange.PositionRange{Start: 0, End: 10},
 			)
 
-			outputSeries, err := o.SeriesMetadata(context.Background())
+			outputSeries, err := o.SeriesMetadata(context.Background(), nil)
 			require.NoError(t, err)
 
 			require.ElementsMatch(t, outputSeries, testutils.LabelsToSeriesMetadata(testCase.inputSeries), "output does not contain same series as input")

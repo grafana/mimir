@@ -4,10 +4,9 @@ package querier
 
 import (
 	"context"
-	"net/http"
 	"strings"
 
-	"github.com/grafana/dskit/middleware"
+	"github.com/grafana/mimir/pkg/util/propagation"
 )
 
 type (
@@ -33,16 +32,14 @@ func (f filterQueryables) use(name string) bool {
 	return ok
 }
 
-func FilterQueryablesMiddleware() middleware.Interface {
-	return middleware.Func(func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-			if filterQueryables := req.Header.Get(FilterQueryablesHeader); len(filterQueryables) > 0 {
-				req = req.WithContext(addFilterQueryablesToContext(req.Context(), filterQueryables))
-			}
+type FilterQueryablesExtractor struct{}
 
-			next.ServeHTTP(w, req)
-		})
-	})
+func (f *FilterQueryablesExtractor) ExtractFromCarrier(ctx context.Context, carrier propagation.Carrier) (context.Context, error) {
+	if filterQueryables := carrier.Get(FilterQueryablesHeader); len(filterQueryables) > 0 {
+		ctx = addFilterQueryablesToContext(ctx, filterQueryables)
+	}
+
+	return ctx, nil
 }
 
 func addFilterQueryablesToContext(ctx context.Context, value string) context.Context {
