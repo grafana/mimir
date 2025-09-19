@@ -140,7 +140,7 @@ func (e *schedulerExecutor) stop() error {
 }
 
 // startJobStatusUpdater starts a goroutine that sends periodic IN_PROGRESS keep-alive updates
-func (e *schedulerExecutor) startJobStatusUpdater(ctx context.Context, key *schedulerpb.JobKey, spec *schedulerpb.JobSpec) {
+func (e *schedulerExecutor) startJobStatusUpdater(ctx context.Context, key *schedulerpb.JobKey, spec *schedulerpb.JobSpec, cancelJob context.CancelFunc) {
 	ticker := time.NewTicker(e.cfg.SchedulerUpdateInterval)
 	defer ticker.Stop()
 
@@ -151,6 +151,12 @@ func (e *schedulerExecutor) startJobStatusUpdater(ctx context.Context, key *sche
 		select {
 		case <-ticker.C:
 			if err := e.updateJobStatus(ctx, key, spec, schedulerpb.IN_PROGRESS); err != nil {
+				// Check if the job was canceled from the scheduler side (not found response)
+				if errStatus, ok := grpcutil.ErrorToStatus(err); ok && errStatus.Code() == codes.NotFound {
+					level.Info(e.logger).Log("msg", "job canceled by scheduler, stopping work", "job_id", jobId, "tenant", jobTenant)
+					cancelJob() // Cancel the job context to stop the main work
+					return
+				}
 				level.Warn(e.logger).Log("msg", "failed to send keep-alive update", "job_id", jobId, "tenant", jobTenant, "err", err)
 			}
 		case <-ctx.Done():
@@ -220,12 +226,16 @@ func (e *schedulerExecutor) leaseAndExecuteJob(ctx context.Context, c *Multitena
 	jobTenant := resp.Spec.Tenant
 	jobType := resp.Spec.JobType
 
+	// Create a cancellable context for this job that can be canceled if the scheduler cancels the job
+	jobCtx, cancelJob := context.WithCancel(ctx)
+	defer cancelJob()
+
 	// Start async keep-alive updater for periodic IN_PROGRESS messages
-	go e.startJobStatusUpdater(context.WithoutCancel(ctx), resp.Key, resp.Spec)
+	go e.startJobStatusUpdater(jobCtx, resp.Key, resp.Spec, cancelJob)
 
 	switch jobType {
 	case schedulerpb.COMPACTION:
-		status, err := e.executeCompactionJob(ctx, c, resp.Spec)
+		status, err := e.executeCompactionJob(jobCtx, c, resp.Spec)
 		if err != nil {
 			level.Warn(e.logger).Log("msg", "failed to execute job", "job_id", jobID, "tenant", jobTenant, "job_type", jobType, "err", err)
 			e.sendFinalJobStatus(ctx, resp.Key, resp.Spec, schedulerpb.REASSIGN)
@@ -234,7 +244,7 @@ func (e *schedulerExecutor) leaseAndExecuteJob(ctx context.Context, c *Multitena
 		e.sendFinalJobStatus(ctx, resp.Key, resp.Spec, status)
 		return true, nil
 	case schedulerpb.PLANNING:
-		plannedJobs, planErr := e.executePlanningJob(ctx, c, resp.Spec)
+		plannedJobs, planErr := e.executePlanningJob(jobCtx, c, resp.Spec)
 		if planErr != nil {
 			level.Warn(e.logger).Log("msg", "failed to execute planning job", "job_id", jobID, "tenant", jobTenant, "job_type", jobType, "err", planErr)
 			// Planning jobs only send final status updates on failure

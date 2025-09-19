@@ -17,6 +17,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore"
+	"go.uber.org/goleak"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/connectivity"
@@ -25,6 +26,7 @@ import (
 	"github.com/grafana/mimir/pkg/compactor/scheduler/schedulerpb"
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
+	testutil "github.com/grafana/mimir/pkg/util/test"
 )
 
 func makeTestCompactorConfig(PlanningMode, schedulerAddress string) Config {
@@ -409,4 +411,100 @@ func TestSchedulerExecutor_PlannedJobsRetryBehavior(t *testing.T) {
 	require.NoError(t, err, "should eventually succeed with plannedJobs retry policy")
 	require.True(t, gotWork)
 	require.Equal(t, failuresBeforeSuccess+1, callCount)
+}
+
+func TestSchedulerExecutor_NoGoRoutineLeak(t *testing.T) {
+	defer testutil.VerifyNoLeak(t, goleak.IgnoreCurrent())
+
+	mockSchedulerClient := &mockCompactorSchedulerClient{
+		LeaseJobFunc: func(_ context.Context, _ *schedulerpb.LeaseJobRequest) (*schedulerpb.LeaseJobResponse, error) {
+			return &schedulerpb.LeaseJobResponse{
+				Key:  &schedulerpb.JobKey{Id: "compaction-job"},
+				Spec: &schedulerpb.JobSpec{Tenant: "test-tenant", Job: &schedulerpb.CompactionJob{}, JobType: schedulerpb.COMPACTION},
+			}, nil
+		},
+		UpdateJobFunc: func(_ context.Context, in *schedulerpb.UpdateCompactionJobRequest) (*schedulerpb.UpdateJobResponse, error) {
+			return &schedulerpb.UpdateJobResponse{}, nil
+		},
+	}
+
+	cfg := makeTestCompactorConfig(planningModeScheduler, "localhost:9095")
+	cfg.SchedulerUpdateInterval = 10 * time.Millisecond // Short interval to trigger the updater quickly
+
+	bucketClient := &bucket.ClientMock{}
+	bucketClient.MockIter("test-tenant/", []string{}, nil)
+	bucketClient.MockIter("test-tenant/markers/", []string{}, nil)
+
+	schedulerExec, err := newSchedulerExecutor(cfg, log.NewNopLogger(), nil)
+	require.NoError(t, err)
+	schedulerExec.schedulerClient = mockSchedulerClient
+
+	defer func(t *testing.T) {
+		if schedulerExec.schedulerConn != nil {
+			schedulerExec.schedulerConn.Close()
+		}
+	}(t)
+
+	c, _, _, _, _ := prepareWithConfigProvider(t, cfg, bucketClient, newMockConfigProvider())
+	c.bucketClient = bucketClient
+
+	ctx, cancel := context.WithCancel(context.Background())
+	gotWork, err := schedulerExec.leaseAndExecuteJob(ctx, c, "compactor-1")
+	require.NoError(t, err)
+	require.True(t, gotWork)
+
+	// wait for leaseAndExecuteJob internal updater to start, cancel the context, and then wait
+	// to verify no goroutine leak, goleak.VerifyNone will fail if there are any leaked goroutines
+	time.Sleep(50 * time.Millisecond)
+	cancel()
+	time.Sleep(50 * time.Millisecond)
+}
+
+func TestSchedulerExecutor_JobCancellationOn_NotFoundResponse(t *testing.T) {
+
+	updateCallCount := 0
+	jobCanceled := make(chan struct{})
+
+	mockSchedulerClient := &mockCompactorSchedulerClient{
+		UpdateJobFunc: func(_ context.Context, in *schedulerpb.UpdateCompactionJobRequest) (*schedulerpb.UpdateJobResponse, error) {
+			updateCallCount++
+			// Return NOT_FOUND after first heartbeat to simulate job cancellation by scheduler
+			if updateCallCount > 1 {
+				return nil, status.Error(codes.NotFound, "job not found")
+			}
+			return &schedulerpb.UpdateJobResponse{}, nil
+		},
+	}
+
+	cfg := makeTestCompactorConfig(planningModeScheduler, "localhost:9095")
+	cfg.SchedulerUpdateInterval = 10 * time.Millisecond // Short interval for fast test
+
+	schedulerExec, err := newSchedulerExecutor(cfg, log.NewNopLogger(), nil)
+	require.NoError(t, err)
+	defer schedulerExec.schedulerConn.Close()
+	schedulerExec.schedulerClient = mockSchedulerClient
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	jobCancelFunc := func() {
+		cancel()
+		close(jobCanceled)
+	}
+
+	// Test the startJobStatusUpdater directly
+	jobKey := &schedulerpb.JobKey{Id: "test-job"}
+	jobSpec := &schedulerpb.JobSpec{Tenant: "test-tenant", JobType: schedulerpb.COMPACTION}
+
+	go schedulerExec.startJobStatusUpdater(ctx, jobKey, jobSpec, jobCancelFunc)
+
+	// Wait for the job to cancel after NOT_FOUND
+	select {
+	case <-jobCanceled:
+	case <-time.After(50 * time.Millisecond):
+		t.Fatal("job was not canceled")
+	}
+
+	// check that exactly 2 updates were sent. First recv OK, next recv NOT_FOUND to trigge cancel
+	require.Equal(t, 2, updateCallCount, "should have sent exactly 2 updates: one successful, then one NOT_FOUND")
 }
