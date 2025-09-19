@@ -1,10 +1,18 @@
 std.manifestYamlDoc({
   // We explicitely list all important services here, so that it's easy to disable them by commenting out.
   services:
-    self.write +
-    self.read +
-    self.backend +
-    self.usage_tracker +
+    self.distributors +
+    self.ingesters +
+    self.query_frontend +
+    self.query_schedulers +
+    self.querier +
+    self.store_gateways(1) +
+    self.compactor +
+    self.block_builder +
+    self.block_builder_scheduler +
+    self.rulers(1) +
+    self.alertmanagers(1) +
+    self.usage_trackers +
     self.nginx +
     self.minio +
     self.grafana +
@@ -15,104 +23,121 @@ std.manifestYamlDoc({
     self.kafka_3 +
     self.redpanda_console +
     self.tempo +
-    self.blockbuilder +
-    self.blockbuilderscheduler +
     {},
 
-  write:: {
-    // Zone-a.
-    'mimir-write-zone-a-0': mimirService({
-      name: 'mimir-write-zone-a-0',
-      target: 'write',
-      publishedHttpPort: 8001,
-      extraArguments: ['-ingester.ring.instance-availability-zone=zone-a'],
-      extraVolumes: ['.data-mimir-write-zone-a-0:/data:delegated'],
-    }),
-    'mimir-write-zone-a-1': mimirService({
-      name: 'mimir-write-zone-a-1',
-      target: 'write',
-      publishedHttpPort: 8002,
-      extraArguments: ['-ingester.ring.instance-availability-zone=zone-a'],
-      extraVolumes: ['.data-mimir-write-zone-a-1:/data:delegated'],
-    }),
-    'mimir-write-zone-a-2': mimirService({
-      name: 'mimir-write-zone-a-2',
-      target: 'write',
-      publishedHttpPort: 8003,
-      extraArguments: ['-ingester.ring.instance-availability-zone=zone-a'],
-      extraVolumes: ['.data-mimir-write-zone-a-2:/data:delegated'],
-    }),
-    // mimir-write-zone-c-61 is an instance that's not connected to the rest of the cluster.
-    // The idea is that it can be used to test replay speed on a kafka partition without affecting the
-    // availability of the rest of the cluster (for example by using `kafkatool dump`).
-    // The rest of the cluster can be used to monitor c-61 and ingest metrics as usual.
-    // c-61 deployed in its own hash ring. For complete disambiguation, it's deployed in a separate zone and has a separate instance ID.
-    'mimir-write-zone-c-61': mimirService({
-      name: 'mimir-write-zone-c-61',
-      target: 'ingester',
-      publishedHttpPort: 8064,
-      extraArguments: [
-        '-ingester.ring.instance-availability-zone=zone-c',
-        '-ingester.ring.instance-id=ingester-zone-c-61',
-        '-ingester.partition-ring.prefix=exclusive-prefix',
-        '-ingester.ring.prefix=exclusive-prefix',
-        '-ingest-storage.kafka.consume-from-position-at-startup=end',
-        '-ingest-storage.kafka.consume-from-timestamp-at-startup=0',
-        '-ingest-storage.kafka.fetch-concurrency-max=2',
-        '-ingest-storage.kafka.ingestion-concurrency-max=2',
-        '-ingest-storage.kafka.ingestion-concurrency-batch-size=150',
-      ],
-      extraVolumes: ['.data-mimir-write-zone-c-61:/data:delegated'],
+  distributors:: {
+    'distributor-1': mimirService({
+      name: 'distributor-1',
+      target: 'distributor',
+      publishedHttpPort: 8000,
     }),
   },
 
-  read:: {
-    'mimir-read-0': mimirService({
-      name: 'mimir-read-0',
-      target: 'read',
-      publishedHttpPort: 8004,
+  ingesters:: {
+    'ingester-zone-a-1': mimirService({
+      name: 'ingester-zone-a-1',
+      target: 'ingester',
+      publishedHttpPort: 8002,
+      jaegerApp: 'ingester-zone-a-1',
+      extraArguments: ['-ingester.ring.instance-availability-zone=zone-a'],
+      extraVolumes: ['.data-ingester-zone-a-1:/data:delegated'],
     }),
-    'mimir-read-1': mimirService({
-      name: 'mimir-read-1',
-      target: 'read',
+
+    'ingester-zone-b-1': mimirService({
+      name: 'ingester-zone-b-1',
+      target: 'ingester',
+      publishedHttpPort: 8003,
+      jaegerApp: 'ingester-zone-b-1',
+      extraArguments: ['-ingester.ring.instance-availability-zone=zone-b'],
+      extraVolumes: ['.data-ingester-zone-b-1:/data:delegated'],
+    }),
+  },
+
+  querier:: {
+    querier: mimirService({
+      name: 'querier',
+      target: 'querier',
       publishedHttpPort: 8005,
     }),
   },
 
-  backend:: {
-    'mimir-backend-0': mimirService({
-      name: 'mimir-backend-0',
-      target: 'backend',
-      publishedHttpPort: 8006,
-    }),
-    'mimir-backend-1': mimirService({
-      name: 'mimir-backend-1',
-      target: 'backend',
+  query_frontend:: {
+    'query-frontend': mimirService({
+      name: 'query-frontend',
+      target: 'query-frontend',
       publishedHttpPort: 8007,
+      jaegerApp: 'query-frontend',
     }),
   },
 
-  blockbuilder:: {
-    'mimir-block-builder-0': mimirService({
-      name: 'mimir-block-builder-0',
-      target: 'block-builder',
+  query_schedulers:: {
+    'query-scheduler': mimirService({
+      name: 'query-scheduler',
+      target: 'query-scheduler',
       publishedHttpPort: 8008,
     }),
   },
 
-  blockbuilderscheduler:: {
-    'mimir-block-builder-scheduler-0': mimirService({
-      name: 'mimir-block-builder-scheduler-0',
-      target: 'block-builder-scheduler',
-      publishedHttpPort: 8019,
+  compactor:: {
+    compactor: mimirService({
+      name: 'compactor',
+      target: 'compactor',
+      publishedHttpPort: 8006,
     }),
   },
 
-  usage_tracker:: {
+  store_gateways(count):: {
+    ['store-gateway-%d' % id]: mimirService({
+      name: 'store-gateway-' + id,
+      target: 'store-gateway',
+      publishedHttpPort: 8020 + id,
+      jaegerApp: 'store-gateway-%d' % id,
+    })
+    for id in std.range(1, count)
+  },
+
+  rulers(count):: if count <= 0 then {} else {
+    ['ruler-%d' % id]: mimirService({
+      name: 'ruler-' + id,
+      target: 'ruler',
+      publishedHttpPort: 8030 + id,
+      jaegerApp: 'ruler-%d' % id,
+    })
+    for id in std.range(1, count)
+  },
+
+  alertmanagers(count):: if count <= 0 then {} else {
+    ['alertmanager-%d' % id]: mimirService({
+      name: 'alertmanager-' + id,
+      target: 'alertmanager',
+      publishedHttpPort: 8040 + id,
+      extraArguments: ['-alertmanager.web.external-url=http://localhost:%d/alertmanager' % (8040 + id)],
+      jaegerApp: 'alertmanager-%d' % id,
+    })
+    for id in std.range(1, count)
+  },
+
+  block_builder:: {
+    'block-builder-0': mimirService({
+      name: 'block-builder-0',
+      target: 'block-builder',
+      publishedHttpPort: 8009,
+    }),
+  },
+
+  block_builder_scheduler:: {
+    'block-builder-scheduler-0': mimirService({
+      name: 'block-builder-scheduler-0',
+      target: 'block-builder-scheduler',
+      publishedHttpPort: 8010,
+    }),
+  },
+
+  usage_trackers:: {
     'usage-tracker-zone-a-0': mimirService({
       name: 'usage-tracker-zone-a-0',
       target: 'usage-tracker',
-      publishedHttpPort: 8010,
+      publishedHttpPort: 8011,
       extraArguments: [
         '-usage-tracker.instance-ring.instance-availability-zone=zone-a',
         '-usage-tracker.partitions=16',
@@ -123,7 +148,7 @@ std.manifestYamlDoc({
     'usage-tracker-zone-a-1': mimirService({
       name: 'usage-tracker-zone-a-1',
       target: 'usage-tracker',
-      publishedHttpPort: 8011,
+      publishedHttpPort: 8012,
       extraArguments: [
         '-usage-tracker.instance-ring.instance-availability-zone=zone-a',
         '-usage-tracker.partitions=16',
@@ -134,7 +159,7 @@ std.manifestYamlDoc({
     'usage-tracker-zone-b-0': mimirService({
       name: 'usage-tracker-zone-b-0',
       target: 'usage-tracker',
-      publishedHttpPort: 8012,
+      publishedHttpPort: 8013,
       extraArguments: [
         '-usage-tracker.instance-ring.instance-availability-zone=zone-b',
         '-usage-tracker.partitions=16',
@@ -149,18 +174,20 @@ std.manifestYamlDoc({
       hostname: 'nginx',
       image: 'nginxinc/nginx-unprivileged:1.22-alpine',
       depends_on: [
-        'mimir-write-zone-a-0',
-        'mimir-backend-1',
-        'mimir-read-1',
+        'ingester-zone-a-1',
+        'alertmanager-1',
+        'ruler-1',
+        'query-frontend',
+        'compactor',
         'grafana',
       ],
       environment: [
         'NGINX_ENVSUBST_OUTPUT_DIR=/etc/nginx',
-        'DISTRIBUTOR_HOST=mimir-write-zone-a-0:8080',
-        'ALERT_MANAGER_HOST=mimir-backend-1:8080',
-        'RULER_HOST=mimir-backend-1:8080',
-        'QUERY_FRONTEND_HOST=mimir-read-1:8080',
-        'COMPACTOR_HOST=mimir-backend-1:8080',
+        'DISTRIBUTOR_HOST=ingester-zone-a-1:8080',
+        'ALERT_MANAGER_HOST=alertmanager-1:8080',
+        'RULER_HOST=ruler-1:8080',
+        'QUERY_FRONTEND_HOST=query-frontend:8080',
+        'COMPACTOR_HOST=compactor:8080',
       ],
       ports: ['8080:8080'],
       volumes: ['../common/config:/etc/nginx/templates'],
