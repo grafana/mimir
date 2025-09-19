@@ -3251,6 +3251,7 @@ The `ingester_client` block configures how the distributors connect to the inges
 
 The `grpc_client` block configures the gRPC client used to communicate between two Mimir components. The supported CLI flags `<prefix>` used to reference this configuration block are:
 
+- `compactor.scheduler`
 - `ingester.client`
 - `querier.scheduler-client`
 - `query-frontend.grpc-client-config`
@@ -6024,6 +6025,44 @@ sharding_ring:
 # smallest-range-oldest-blocks-first, newest-blocks-first.
 # CLI flag: -compactor.compaction-jobs-order
 [compaction_jobs_order: <string> | default = "smallest-range-oldest-blocks-first"]
+
+# (experimental) Compactor operation mode. Supported values are: standalone
+# (plan and execute compactions), scheduler (request jobs from a remote
+# scheduler).
+# CLI flag: -compactor.planning-mode
+[planning_mode: <string> | default = "standalone"]
+
+# (experimental) Compactor scheduler endpoint. Required when compactor mode is
+# 'scheduler'.
+# CLI flag: -compactor.scheduler-endpoint
+[scheduler_address: <string> | default = ""]
+
+# (experimental) Interval between scheduler job lease updates.
+# CLI flag: -compactor.scheduler-update-interval
+[scheduler_update_interval: <duration> | default = 15s]
+
+# (experimental) Minimum backoff time between scheduler job lease requests.
+# CLI flag: -compactor.scheduler-min-leasing-backoff
+[scheduler_min_backoff: <duration> | default = 100ms]
+
+# (experimental) Maximum backoff time between scheduler job lease requests.
+# CLI flag: -compactor.scheduler-max-leasing-backoff
+[scheduler_max_backoff: <duration> | default = 2m]
+
+# The grpc_client block configures the gRPC client used to communicate between
+# two Mimir components.
+# The CLI flags prefix for this block configuration is: compactor.scheduler
+[grpc_client_config: <grpc_client>]
+
+# (experimental) Minimum backoff time for compaction executor retries when
+# sending scheduler status updates.
+# CLI flag: -compactor.executor-min-retry-backoff
+[executor_retry_min_backoff: <duration> | default = 1s]
+
+# (experimental) Maximum backoff time for compaction executor retries when
+# sending scheduler status updates.
+# CLI flag: -compactor.executor-max-retry-backoff
+[executor_retry_max_backoff: <duration> | default = 32s]
 ```
 
 ### store_gateway
