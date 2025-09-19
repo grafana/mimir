@@ -72,6 +72,14 @@ The following features are currently experimental:
     - `-compactor.max-lookback`
   - Enable the compactor to upload sparse index headers to object storage during compaction cycles.
     - `-compactor.upload-sparse-index-headers`
+  - Scheduler mode for requesting compaction jobs from an external scheduler service instead of local planning
+    - `-compactor.planning-mode`
+    - `-compactor.scheduler-endpoint`
+    - `-compactor.scheduler-update-interval`
+    - `-compactor.scheduler-min-leasing-backoff`
+    - `-compactor.scheduler-max-leasing-backoff`
+    - `-compactor.executor-min-retry-backoff`
+    - `-compactor.executor-max-retry-backoff`
 - Ruler
   - Aligning of evaluation timestamp on interval (`align_evaluation_time_on_interval`)
   - Allow defining limits on the maximum number of rules allowed in a rule group by namespace and the maximum number of rule groups by namespace. If set, this supersedes the `-ruler.max-rules-per-rule-group` and `-ruler.max-rule-groups-per-tenant` limits.
