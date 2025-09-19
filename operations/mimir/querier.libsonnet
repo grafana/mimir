@@ -35,6 +35,28 @@
   // Values take precedence over querier_args.
   querier_only_args:: {},
 
+  // Timeout validation for querier
+  local validateQuerierTimeouts() =
+    local q_timeout = if 'querier.timeout' in $.querier_args then
+      $.util.parseDuration($.querier_args['querier.timeout'])
+    else null;
+
+    local q_write_timeout = if 'server.http-write-timeout' in $.querier_args then
+      $.util.parseDuration($.querier_args['server.http-write-timeout'])
+    else null;
+
+    assert q_timeout == null || q_write_timeout == null || q_timeout <= q_write_timeout :
+           'querier: querier.timeout (%s) must be less than or equal to server.http-write-timeout (%s)' %
+           [
+      if 'querier.timeout' in $.querier_args then $.querier_args['querier.timeout'] else 'unset',
+      if 'server.http-write-timeout' in $.querier_args then $.querier_args['server.http-write-timeout'] else 'unset',
+    ];
+
+    true,
+
+  // Execute validation
+  querier_timeout_validation:: validateQuerierTimeouts(),
+
   querier_ports:: $.util.defaultPorts,
 
   newQuerierContainer(name, args, envmap={})::

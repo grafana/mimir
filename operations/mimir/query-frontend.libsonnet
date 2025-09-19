@@ -34,6 +34,28 @@
   // Values take precedence over query_frontend_args.
   query_frontend_only_args:: {},
 
+  // Timeout validation for query-frontend
+  local validateQueryFrontendTimeouts() =
+    local qf_timeout = if 'querier.timeout' in $.query_frontend_args then
+      $.util.parseDuration($.query_frontend_args['querier.timeout'])
+    else null;
+
+    local qf_write_timeout = if 'server.http-write-timeout' in $.query_frontend_args then
+      $.util.parseDuration($.query_frontend_args['server.http-write-timeout'])
+    else null;
+
+    assert qf_timeout == null || qf_write_timeout == null || qf_timeout <= qf_write_timeout :
+           'query-frontend: querier.timeout (%s) must be less than or equal to server.http-write-timeout (%s)' %
+           [
+      if 'querier.timeout' in $.query_frontend_args then $.query_frontend_args['querier.timeout'] else 'unset',
+      if 'server.http-write-timeout' in $.query_frontend_args then $.query_frontend_args['server.http-write-timeout'] else 'unset',
+    ];
+
+    true,
+
+  // Execute validation
+  query_frontend_timeout_validation:: validateQueryFrontendTimeouts(),
+
   query_frontend_ports:: $.util.defaultPorts,
 
   newQueryFrontendContainer(name, args, envmap={})::
