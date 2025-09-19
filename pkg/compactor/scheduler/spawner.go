@@ -43,7 +43,7 @@ func NewSpawner(
 	logger log.Logger) *Spawner {
 	s := &Spawner{
 		allowedTenants:       allowList,
-		rotator: rotator,
+		rotator:              rotator,
 		planTracker:          planTracker,
 		bkt:                  bkt,
 		planningInterval:     cfg.planningInterval,
