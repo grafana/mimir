@@ -1077,6 +1077,10 @@ Usage of ./cmd/mimir/mimir:
     	Comma separated list of tenants that cannot be compacted by the compactor. If specified, and the compactor would normally pick a given tenant for compaction (via -compactor.enabled-tenants or sharding), it will be ignored instead.
   -compactor.enabled-tenants comma-separated-list-of-strings
     	Comma separated list of tenants that can be compacted. If specified, only these tenants will be compacted by the compactor, otherwise all tenants can be compacted. Subject to sharding.
+  -compactor.executor-max-retry-backoff duration
+    	[experimental] Maximum backoff time for compaction executor retries when sending scheduler status updates. (default 32s)
+  -compactor.executor-min-retry-backoff duration
+    	[experimental] Minimum backoff time for compaction executor retries when sending scheduler status updates. (default 1s)
   -compactor.first-level-compaction-skip-future-max-time
     	[experimental] When enabled, the compactor skips first-level compaction jobs if any source block has a MaxTime more recent than the wait period threshold. This prevents premature compaction of blocks that may still receive late-arriving data.
   -compactor.first-level-compaction-wait-period duration
@@ -1097,6 +1101,8 @@ Usage of ./cmd/mimir/mimir:
     	Number of goroutines to use when syncing block meta files from the long term storage. (default 20)
   -compactor.partial-block-deletion-delay duration
     	If a partial block (unfinished block without meta.json file) hasn't been modified for this time, it will be marked for deletion. The minimum accepted value is 4h0m0s: a lower value will be ignored and the feature disabled. 0 to disable. (default 1d)
+  -compactor.planning-mode string
+    	[experimental] Compactor operation mode. Supported values are: standalone (plan and execute compactions), scheduler (request jobs from a remote scheduler). (default "standalone")
   -compactor.ring.auto-forget-unhealthy-periods int
     	Number of consecutive timeout periods after which Mimir automatically removes an unhealthy instance in the ring. Set to 0 to disable auto-forget. (default 10)
   -compactor.ring.consul.acl-token string
@@ -1171,6 +1177,60 @@ Usage of ./cmd/mimir/mimir:
     	Maximum time to wait for ring stability at startup. If the compactor ring keeps changing after this period of time, the compactor will start anyway. (default 5m0s)
   -compactor.ring.wait-stability-min-duration duration
     	Minimum time to wait for ring stability at startup. 0 to disable.
+  -compactor.scheduler-endpoint string
+    	[experimental] Compactor scheduler endpoint. Required when compactor mode is 'scheduler'.
+  -compactor.scheduler-max-leasing-backoff duration
+    	[experimental] Maximum backoff time between scheduler job lease requests. (default 2m0s)
+  -compactor.scheduler-min-leasing-backoff duration
+    	[experimental] Minimum backoff time between scheduler job lease requests. (default 100ms)
+  -compactor.scheduler-update-interval duration
+    	[experimental] Interval between scheduler job lease updates. (default 15s)
+  -compactor.scheduler.backoff-max-period duration
+    	Maximum delay when backing off. (default 10s)
+  -compactor.scheduler.backoff-min-period duration
+    	Minimum delay when backing off. (default 100ms)
+  -compactor.scheduler.backoff-on-ratelimits
+    	Enable backoff and retry when we hit rate limits.
+  -compactor.scheduler.backoff-retries int
+    	Number of times to backoff and retry before failing. (default 10)
+  -compactor.scheduler.cluster-validation.label string
+    	[experimental] Primary cluster validation label.
+  -compactor.scheduler.connect-backoff-base-delay duration
+    	Initial backoff delay after first connection failure. Only relevant if ConnectTimeout > 0. (default 1s)
+  -compactor.scheduler.connect-backoff-max-delay duration
+    	Maximum backoff delay when establishing a connection. Only relevant if ConnectTimeout > 0. (default 5s)
+  -compactor.scheduler.connect-timeout duration
+    	The maximum amount of time to establish a connection. A value of 0 means default gRPC client connect timeout and backoff. (default 5s)
+  -compactor.scheduler.grpc-client-rate-limit float
+    	Rate limit for gRPC client; 0 means disabled.
+  -compactor.scheduler.grpc-client-rate-limit-burst int
+    	Rate limit burst for gRPC client.
+  -compactor.scheduler.grpc-compression string
+    	Use compression when sending messages. Supported values are: 'gzip', 'snappy' and '' (disable compression)
+  -compactor.scheduler.grpc-max-recv-msg-size int
+    	gRPC client max receive message size (bytes). (default 104857600)
+  -compactor.scheduler.grpc-max-send-msg-size int
+    	gRPC client max send message size (bytes). (default 104857600)
+  -compactor.scheduler.initial-connection-window-size value
+    	[experimental] Initial connection window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator. (default 63KiB1023B)
+  -compactor.scheduler.initial-stream-window-size value
+    	[experimental] Initial stream window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator. (default 63KiB1023B)
+  -compactor.scheduler.tls-ca-path string
+    	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
+  -compactor.scheduler.tls-cert-path string
+    	Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.
+  -compactor.scheduler.tls-cipher-suites string
+    	Override the default cipher suite list (separated by commas).
+  -compactor.scheduler.tls-enabled
+    	Enable TLS in the gRPC client. This flag needs to be enabled when any other TLS flag is set. If set to false, insecure connection to gRPC server will be used.
+  -compactor.scheduler.tls-insecure-skip-verify
+    	Skip validating server certificate.
+  -compactor.scheduler.tls-key-path string
+    	Path to the key for the client certificate. Also requires the client certificate to be configured.
+  -compactor.scheduler.tls-min-version string
+    	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
+  -compactor.scheduler.tls-server-name string
+    	Override the expected name on the server certificate.
   -compactor.split-and-merge-shards int
     	The number of shards to use when splitting blocks. 0 to disable splitting.
   -compactor.split-groups int

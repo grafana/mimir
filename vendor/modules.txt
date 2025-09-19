@@ -460,6 +460,7 @@ github.com/failsafe-go/failsafe-go/internal
 github.com/failsafe-go/failsafe-go/internal/util
 github.com/failsafe-go/failsafe-go/policy
 github.com/failsafe-go/failsafe-go/priority
+github.com/failsafe-go/failsafe-go/retrypolicy
 # github.com/fatih/color v1.18.0
 ## explicit; go 1.17
 github.com/fatih/color
