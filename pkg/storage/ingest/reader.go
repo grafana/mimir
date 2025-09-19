@@ -90,7 +90,7 @@ type PartitionReader struct {
 
 	// The highest record timestamp consumed so far, or zero if no record was consumed yet or we've
 	// consumed up until the end of the partition. This timestamp is used the compute the consumption delay.
-	highestConsumedTimestamp *atomic.Time
+	highestConsumedTimestampBeforePartitionEnd *atomic.Time
 
 	logger         log.Logger
 	reg            prometheus.Registerer
@@ -113,9 +113,9 @@ func newPartitionReader(kafkaCfg KafkaConfig, partitionID int32, instanceID stri
 		consumerGroup:                         kafkaCfg.GetConsumerGroup(instanceID, partitionID),
 		consumedOffsetWatcher:                 NewPartitionOffsetWatcher(),
 		concurrentFetchersMinBytesMaxWaitTime: kafkaCfg.FetchMaxWait,
-		highestConsumedTimestamp:              atomic.NewTime(time.Time{}),
-		logger:                                log.With(logger, "partition", partitionID),
-		reg:                                   reg,
+		highestConsumedTimestampBeforePartitionEnd: atomic.NewTime(time.Time{}),
+		logger: log.With(logger, "partition", partitionID),
+		reg:    reg,
 	}
 
 	r.metrics = NewReaderMetrics(reg, r, kafkaCfg.Topic, nil)
@@ -648,7 +648,7 @@ func (r *PartitionReader) updateHighestConsumedTimestampBeforeConsumption(fetche
 	// However, if the consumption was paused and this is the first record after resume, then if we keep
 	// the previous timestamp we end up with a brief period of time during which we incorrectly compute the delay.
 	// To stay on the safer side, we do pick the next batch's first record timestamp instead.
-	if r.highestConsumedTimestamp.Load().IsZero() {
+	if r.highestConsumedTimestampBeforePartitionEnd.Load().IsZero() {
 		fetches.EachPartition(func(partition kgo.FetchTopicPartition) {
 			// We expect all records to belong to the partition consumed by this reader,
 			// but we double check it here.
@@ -661,7 +661,7 @@ func (r *PartitionReader) updateHighestConsumedTimestampBeforeConsumption(fetche
 			}
 
 			firstRecord := partition.Records[0]
-			r.highestConsumedTimestamp.Store(firstRecord.Timestamp)
+			r.highestConsumedTimestampBeforePartitionEnd.Store(firstRecord.Timestamp)
 		})
 	}
 }
@@ -697,9 +697,9 @@ func (r *PartitionReader) updateHighestConsumedTimestampAfterConsumption(fetches
 		consumedUntilPartitionEnd := lastRecord.Offset+1 >= partition.HighWatermark
 
 		if consumedUntilPartitionEnd {
-			r.highestConsumedTimestamp.Store(time.Time{})
+			r.highestConsumedTimestampBeforePartitionEnd.Store(time.Time{})
 		} else {
-			r.highestConsumedTimestamp.Store(highestTimestamp)
+			r.highestConsumedTimestampBeforePartitionEnd.Store(highestTimestamp)
 		}
 	})
 }
@@ -876,7 +876,7 @@ func (r *PartitionReader) EnforceReadMaxDelay(maxDelay time.Duration) error {
 		return nil
 	}
 
-	highestConsumedTimestamp := r.highestConsumedTimestamp.Load()
+	highestConsumedTimestamp := r.highestConsumedTimestampBeforePartitionEnd.Load()
 	if highestConsumedTimestamp.IsZero() {
 		// We consumed until partition end.
 		return nil
