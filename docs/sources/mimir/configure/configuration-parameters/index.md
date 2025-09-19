@@ -2112,6 +2112,73 @@ usage_tracker_client:
 # Disabled if 0.
 # CLI flag: -distributor.artificial-latency-workers
 [artificial_latency_workers: <int> | default = 0]
+
+rejection_prioritizer:
+  # (experimental) The interval at which the rejection threshold is calibrated
+  # CLI flag: -distributor.rejection-prioritizer.calibration-interval
+  [calibration_interval: <duration> | default = 1s]
+
+reactive_limiter:
+  # (experimental) Enable reactive limiting when making requests to a service
+  # CLI flag: -distributor.push-reactive-limiter.enabled
+  [enabled: <boolean> | default = false]
+
+  # (experimental) Minimum duration of the window that is used to determine the
+  # recent, short-term load on the system
+  # CLI flag: -distributor.push-reactive-limiter.short-window-min-duration
+  [short_window_min_duration: <duration> | default = 1s]
+
+  # (experimental) Maximum duration of the window that is used to determine the
+  # recent, short-term load on the system
+  # CLI flag: -distributor.push-reactive-limiter.short-window-max-duration
+  [short_window_max_duration: <duration> | default = 30s]
+
+  # (experimental) Minimum number of samples that must be recorded in the window
+  # CLI flag: -distributor.push-reactive-limiter.short-window-min-samples
+  [short_window_min_samples: <int> | default = 50]
+
+  # (experimental) Short-term window measurements that are stored in an
+  # exponentially weighted moving average window, representing the long-term
+  # baseline inflight time
+  # CLI flag: -distributor.push-reactive-limiter.long-window
+  [long_window: <int> | default = 60]
+
+  # (experimental) The quantile of recorded response times to consider when
+  # adjusting the concurrency limit
+  # CLI flag: -distributor.push-reactive-limiter.sample-quantile
+  [sample_quantile: <float> | default = 0.9]
+
+  # (experimental) Minimum inflight requests limit
+  # CLI flag: -distributor.push-reactive-limiter.min-inflight-limit
+  [min_inflight_limit: <int> | default = 2]
+
+  # (experimental) Maximum inflight requests limit
+  # CLI flag: -distributor.push-reactive-limiter.max-inflight-limit
+  [max_inflight_limit: <int> | default = 200]
+
+  # (experimental) Initial inflight requests limit
+  # CLI flag: -distributor.push-reactive-limiter.initial-inflight-limit
+  [initial_inflight_limit: <int> | default = 20]
+
+  # (experimental) The maximum limit as a multiple of current inflight requests
+  # CLI flag: -distributor.push-reactive-limiter.max-limit-factor
+  [max_limit_factor: <float> | default = 5]
+
+  # (experimental) How many recent limit and inflight time measurements are
+  # stored to detect whether increases in limits correlate with increases in
+  # inflight times
+  # CLI flag: -distributor.push-reactive-limiter.correlation-window
+  [correlation_window: <int> | default = 50]
+
+  # (experimental) The number of allowed queued requests, as a multiple of
+  # current inflight requests, after which rejections start
+  # CLI flag: -distributor.push-reactive-limiter.initial-rejection-factor
+  [initial_rejection_factor: <float> | default = 2]
+
+  # (experimental) The number of allowed queued requests, as a multiple of
+  # current inflight requests, after which all requests are rejected
+  # CLI flag: -distributor.push-reactive-limiter.max-rejection-factor
+  [max_rejection_factor: <float> | default = 3]
 ```
 
 ### ingester
@@ -2495,7 +2562,7 @@ rejection_prioritizer:
   [calibration_interval: <duration> | default = 1s]
 
 push_reactive_limiter:
-  # (experimental) Enable reactive limiting when making requests to ingesters
+  # (experimental) Enable reactive limiting when making requests to a service
   # CLI flag: -ingester.push-reactive-limiter.enabled
   [enabled: <boolean> | default = false]
 
@@ -2557,7 +2624,7 @@ push_reactive_limiter:
   [max_rejection_factor: <float> | default = 3]
 
 read_reactive_limiter:
-  # (experimental) Enable reactive limiting when making requests to ingesters
+  # (experimental) Enable reactive limiting when making requests to a service
   # CLI flag: -ingester.read-reactive-limiter.enabled
   [enabled: <boolean> | default = false]
 
