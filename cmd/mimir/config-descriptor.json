@@ -10825,7 +10825,7 @@
               "required": false,
               "desc": "How frequently to collect head statistics, which are used in query execution optimization. 0 to disable.",
               "fieldValue": null,
-              "fieldDefaultValue": 0,
+              "fieldDefaultValue": 3600000000000,
               "fieldFlag": "blocks-storage.tsdb.head-statistics-collection-frequency",
               "fieldType": "duration",
               "fieldCategory": "experimental"
