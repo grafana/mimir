@@ -16,7 +16,7 @@ import (
 	"github.com/gogo/protobuf/proto"
 	prototypes "github.com/gogo/protobuf/types"
 	"github.com/grafana/dskit/server"
-	"github.com/grafana/dskit/tenant"
+	"github.com/grafana/dskit/user"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage"
@@ -83,7 +83,7 @@ func (d *Dispatcher) HandleProtobuf(ctx context.Context, req *prototypes.Any, me
 		return
 	}
 
-	tenantID, err := tenant.TenantID(ctx)
+	tenantID, err := user.ExtractOrgID(ctx)
 	if err != nil {
 		writer.WriteError(ctx, mimirpb.QUERY_ERROR_TYPE_BAD_DATA, err.Error())
 		return
