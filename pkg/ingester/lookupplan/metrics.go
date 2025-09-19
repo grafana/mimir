@@ -10,7 +10,7 @@ import (
 )
 
 type Metrics struct {
-	planningDuration *prometheus.HistogramVec
+	planningDuration prometheus.ObserverVec
 }
 
 func NewMetrics(reg prometheus.Registerer) Metrics {
@@ -21,6 +21,12 @@ func NewMetrics(reg prometheus.Registerer) Metrics {
 			NativeHistogramBucketFactor:     1.1,
 			NativeHistogramMaxBucketNumber:  100,
 			NativeHistogramMinResetDuration: 1 * time.Hour,
-		}, []string{"outcome"}),
+		}, []string{"outcome", "user"}),
+	}
+}
+
+func (m Metrics) ForUser(userID string) Metrics {
+	return Metrics{
+		planningDuration: m.planningDuration.MustCurryWith(prometheus.Labels{"user": userID}),
 	}
 }

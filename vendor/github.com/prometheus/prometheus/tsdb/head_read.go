@@ -324,10 +324,7 @@ func (h *headIndexReader) LabelNamesFor(ctx context.Context, series index.Postin
 
 // IndexLookupPlanner returns the index lookup planner for this reader.
 func (h *headIndexReader) IndexLookupPlanner() index.LookupPlanner {
-	if p := h.head.planner.Load(); p != nil {
-		return *p
-	}
-	return &index.ScanEmptyMatchersLookupPlanner{}
+	return h.head.opts.IndexLookupPlannerFunc(h.head.Meta(), h)
 }
 
 // Chunks returns a ChunkReader against the block.

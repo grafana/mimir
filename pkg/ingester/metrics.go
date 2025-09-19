@@ -561,7 +561,6 @@ type tsdbMetrics struct {
 	regs                           *dskit_metrics.TenantRegistries
 	tsdbHeadStatisticsLastUpdate   *prometheus.Desc
 	tsdbHeadStatisticsTimeToUpdate *prometheus.Desc
-	lookupPlanningDurationSeconds  *prometheus.Desc
 }
 
 func newTSDBMetrics(r prometheus.Registerer, logger log.Logger) *tsdbMetrics {
@@ -760,10 +759,6 @@ func newTSDBMetrics(r prometheus.Registerer, logger log.Logger) *tsdbMetrics {
 			"Time spent updating head statistics.",
 			[]string{"user"}, nil,
 		),
-		lookupPlanningDurationSeconds: prometheus.NewDesc(
-			"cortex_ingester_lookup_planning_duration_seconds",
-			"Time spent planning query requests.",
-			[]string{"outcome"}, nil),
 
 		headPostingsForMatchersCacheMetrics:  tsdb.NewPostingsForMatchersCacheMetrics(prometheus.WrapRegistererWithPrefix("cortex_ingester_tsdb_head_", r)),
 		blockPostingsForMatchersCacheMetrics: tsdb.NewPostingsForMatchersCacheMetrics(prometheus.WrapRegistererWithPrefix("cortex_ingester_tsdb_block_", r)),
@@ -826,7 +821,6 @@ func (sm *tsdbMetrics) Describe(out chan<- *prometheus.Desc) {
 
 	out <- sm.tsdbHeadStatisticsLastUpdate
 	out <- sm.tsdbHeadStatisticsTimeToUpdate
-	out <- sm.lookupPlanningDurationSeconds
 }
 
 func (sm *tsdbMetrics) Collect(out chan<- prometheus.Metric) {
@@ -877,7 +871,6 @@ func (sm *tsdbMetrics) Collect(out chan<- prometheus.Metric) {
 	data.SendSumOfCountersPerTenant(out, sm.tsdbWblReplayUnknownRefsTotal, "prometheus_tsdb_wbl_replay_unknown_refs_total", dskit_metrics.WithLabels("type"))
 	data.SendMaxOfGaugesPerTenant(out, sm.tsdbHeadStatisticsLastUpdate, "prometheus_tsdb_head_statistics_last_update_timestamp_seconds")
 	data.SendMaxOfGaugesPerTenant(out, sm.tsdbHeadStatisticsTimeToUpdate, "prometheus_tsdb_head_statistics_time_to_update_seconds")
-	data.SendSumOfHistogramsWithLabels(out, sm.lookupPlanningDurationSeconds, "cortex_ingester_lookup_planning_duration_seconds", "outcome")
 }
 
 func (sm *tsdbMetrics) setRegistryForUser(userID string, registry *prometheus.Registry) {
