@@ -35,9 +35,7 @@ Calculate the infix for naming
 Calculate the gateway url
 */}}
 {{- define "mimir.gatewayUrl" -}}
-{{- if eq (include "mimir.gateway.isEnabled" . ) "true" -}}
 http://{{ include "mimir.gateway.service.name" . }}.{{ .Release.Namespace }}.svc:{{ .Values.gateway.service.port | default (include "mimir.serverHttpListenPort" . ) }}
-{{- end -}}
 {{- end -}}
 
 {{/*
@@ -547,28 +545,20 @@ Return if we should create a SecurityContextConstraints. Takes into account user
 {{- and .Values.rbac.create (eq .Values.rbac.type "scc") -}}
 {{- end -}}
 
-{{- define "mimir.remoteWriteUrl" -}}
-{{- if (eq (include "mimir.gateway.isEnabled" . ) "true") -}}
-{{ include "mimir.gatewayUrl" . }}
-{{- else -}}
-http://{{ template "mimir.fullname" . }}-distributor-headless.{{ .Release.Namespace }}.svc:{{ include "mimir.serverHttpListenPort" . }}
-{{- end -}}
-{{- end -}}
-
-{{- define "mimir.remoteReadUrl" -}}
-{{- if (eq (include "mimir.gateway.isEnabled" . ) "true") -}}
-{{ include "mimir.gatewayUrl" . }}
-{{- else -}}
-http://{{ template "mimir.fullname" . }}-query-frontend.{{ .Release.Namespace }}.svc:{{ include "mimir.serverHttpListenPort" . }}
-{{- end -}}
-{{- end -}}
-
 {{- define "mimir.remoteWriteUrl.inCluster" -}}
-{{ include "mimir.remoteWriteUrl" . }}/api/v1/push
+{{- if (eq (include "mimir.gateway.isEnabled" . ) "true") -}}
+{{ include "mimir.gatewayUrl" . }}/api/v1/push
+{{- else -}}
+http://{{ template "mimir.fullname" . }}-distributor-headless.{{ .Release.Namespace }}.svc:{{ include "mimir.serverHttpListenPort" . }}/api/v1/push
+{{- end -}}
 {{- end -}}
 
 {{- define "mimir.remoteReadUrl.inCluster" -}}
-{{ include "mimir.remoteReadUrl" . }}{{ include "mimir.prometheusHttpPrefix" . }}
+{{- if (eq (include "mimir.gateway.isEnabled" . ) "true") -}}
+{{ include "mimir.gatewayUrl" . }}{{ include "mimir.prometheusHttpPrefix" . }}
+{{- else -}}
+http://{{ template "mimir.fullname" . }}-query-frontend.{{ .Release.Namespace }}.svc:{{ include "mimir.serverHttpListenPort" . }}{{ include "mimir.prometheusHttpPrefix" . }}
+{{- end -}}
 {{- end -}}
 
 {{/*
