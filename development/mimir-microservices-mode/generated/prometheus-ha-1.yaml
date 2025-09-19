@@ -1,0 +1,38 @@
+global:
+  always_scrape_classic_histograms: true
+  external_labels:
+    scraped_by: "prometheus-ha-1"
+  scrape_interval: "5s"
+remote_write:
+  - send_exemplars: true
+    send_native_histograms: true
+    url: "http://envoy:8080/api/v1/push"
+scrape_configs:
+  - job_name: "prometheus-ha-1"
+    relabel_configs:
+      - regex: "([^:]+)(:[0-9]+)?"
+        replacement: "${1}"
+        source_labels:
+          - "__address__"
+        target_label: "pod"
+      - regex: "(.+?)(-\\d+)?"
+        replacement: "${1}"
+        separator: "/"
+        source_labels:
+          - "namespace"
+          - "pod"
+        target_label: "job"
+      - regex: "(.+?)(-\\d+)?"
+        replacement: "${1}"
+        source_labels:
+          - "pod"
+        target_label: "container"
+    static_configs:
+      - labels:
+          cluster: "docker-compose"
+          namespace: "mimir-microservices-mode"
+        targets:
+          - "envoy:9901"
+          - "memcached-exporter:9150"
+          - "continuous-test:8090"
+          - "load-generator:9900"

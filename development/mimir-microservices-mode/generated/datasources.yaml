@@ -1,0 +1,40 @@
+apiVersion: 1
+datasources:
+  - access: "proxy"
+    isDefault: true
+    jsonData:
+      exemplarTraceIdDestinations:
+        - datasourceUid: "jaeger"
+          name: "traceID"
+      prometheusType: "Mimir"
+    name: "Mimir"
+    orgID: 1
+    type: "prometheus"
+    uid: "mimir"
+    url: "http://envoy:8080/prometheus"
+  - access: "proxy"
+    name: "Prometheus"
+    orgID: 1
+    type: "prometheus"
+    uid: "prometheus"
+    url: "http://prometheus:9090"
+  - access: "proxy"
+    jsonData:
+      exemplarTraceIdDestinations:
+        - datasourceUid: "jaeger"
+          name: "traceID"
+      httpHeaderName1: "Cache-Control"
+      prometheusType: "Mimir"
+    name: "Mimir (with query result cache disabled)"
+    orgID: 1
+    secureJsonData:
+      httpHeaderValue1: "no-store"
+    type: "prometheus"
+    uid: "mimir-no-caching"
+    url: "http://envoy:8080/prometheus"
+  - access: "proxy"
+    name: "Jaeger"
+    orgID: 1
+    type: "jaeger"
+    uid: "jaeger"
+    url: "http://jaeger:16686/"

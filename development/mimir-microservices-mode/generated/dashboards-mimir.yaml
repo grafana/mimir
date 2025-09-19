@@ -1,0 +1,11 @@
+apiVersion: 1
+providers:
+  - allowUiUpdates: false
+    disableDeletion: true
+    name: "Mimir"
+    options:
+      foldersFromFilesStructure: true
+      path: "/var/lib/grafana/dashboards"
+    orgId: 1
+    type: "file"
+    updateIntervalSeconds: 10
