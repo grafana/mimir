@@ -31,19 +31,10 @@ func TestIngester_PrepareInstanceRingDownscaleHandler(t *testing.T) {
 		cfg := defaultIngesterTestConfig(t)
 		ingestersRing := createAndStartRing(t, cfg.IngesterRing.ToRingConfig())
 
-		i, err := prepareIngesterWithBlocksStorage(t, cfg, ingestersRing, nil)
+		i, _, err := prepareIngesterWithBlocksStorage(t, cfg, ingestersRing, nil)
 		require.NoError(t, err)
 		if startIngester {
-			require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
-			t.Cleanup(func() {
-				require.NoError(t, services.StopAndAwaitTerminated(context.Background(), i))
-			})
-
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-
-			// Tests require that we've joined the ring so ensure that here.
-			require.NoError(t, ring.WaitInstanceState(ctx, ingestersRing, cfg.IngesterRing.InstanceID, ring.ACTIVE))
+			startAndWaitHealthy(t, i, ingestersRing)
 		}
 
 		return i, ingestersRing

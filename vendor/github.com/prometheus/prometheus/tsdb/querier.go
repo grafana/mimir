@@ -131,12 +131,16 @@ func selectSeriesSet(ctx context.Context, sortSeries bool, hints *storage.Select
 	}
 
 	// Use the planner to decide which matchers to apply during index lookup vs scanning
+	var (
+		indexMatchers = ms
+		scanMatchers  []*labels.Matcher
+	)
 	plan, err := ix.IndexLookupPlanner().PlanIndexLookup(ctx, index.NewIndexOnlyLookupPlan(ms), mint, maxt)
-	if err != nil {
-		return storage.ErrSeriesSet(fmt.Errorf("creating index lookup plan: %w", err))
+	// We ignore errors from the planner because we prefer returning a result even if it's not optimally executed.
+	if err == nil {
+		indexMatchers = plan.IndexMatchers()
+		scanMatchers = plan.ScanMatchers()
 	}
-	indexMatchers := plan.IndexMatchers()
-	scanMatchers := plan.ScanMatchers()
 
 	p, err := ix.PostingsForMatchers(ctx, sharded, indexMatchers...)
 	if err != nil {
@@ -188,12 +192,16 @@ func selectChunkSeriesSet(ctx context.Context, sortSeries bool, hints *storage.S
 	}
 
 	// Use the planner to decide which matchers to apply during index lookup vs scanning
+	var (
+		indexMatchers = ms
+		scanMatchers  []*labels.Matcher
+	)
 	plan, err := ix.IndexLookupPlanner().PlanIndexLookup(ctx, index.NewIndexOnlyLookupPlan(ms), mint, maxt)
-	if err != nil {
-		return storage.ErrChunkSeriesSet(fmt.Errorf("creating index lookup plan: %w", err))
+	// We ignore errors from the planner because we prefer returning a result even if it's not optimally executed.
+	if err == nil {
+		indexMatchers = plan.IndexMatchers()
+		scanMatchers = plan.ScanMatchers()
 	}
-	indexMatchers := plan.IndexMatchers()
-	scanMatchers := plan.ScanMatchers()
 
 	p, err := ix.PostingsForMatchers(ctx, sharded, indexMatchers...)
 	if err != nil {

@@ -49,6 +49,10 @@
       // Issue: https://github.com/grafana/mimir-squad/issues/454
       'shutdown-delay': shutdown_delay_seconds + 's',
       'server.grpc.keepalive.max-connection-age': grpc_max_connection_age_seconds + 's',
+
+      // In cases where the latency is high, and a large number of tenants are writing,
+      // the 100 default limit can be hit.
+      'server.grpc-max-concurrent-streams': 1000,
     } + $.mimirRuntimeConfigFile,
 
   distributor_ports:: $.util.defaultPorts,

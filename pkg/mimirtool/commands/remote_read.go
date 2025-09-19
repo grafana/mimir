@@ -36,8 +36,10 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
 	"github.com/prometheus/prometheus/model/histogram"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/model/value"
+	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/remote"
@@ -46,8 +48,35 @@ import (
 	log "github.com/sirupsen/logrus"
 
 	"github.com/grafana/mimir/pkg/mimirtool/backfill"
-	"github.com/grafana/mimir/pkg/mimirtool/client"
+	mimirtool_client "github.com/grafana/mimir/pkg/mimirtool/client"
+	"github.com/grafana/mimir/pkg/util"
 )
+
+// selectorFlag implements kingpin.Value for parsing metric selectors into label matchers
+type selectorFlag struct {
+	selectors *[][]*labels.Matcher
+}
+
+func (s *selectorFlag) Set(value string) error {
+	matchers, err := parser.ParseMetricSelector(value)
+	if err != nil {
+		return fmt.Errorf("error parsing selector '%s': %w", value, err)
+	}
+	*s.selectors = append(*s.selectors, matchers)
+	return nil
+}
+
+func (s *selectorFlag) String() string {
+	var result []string
+	for _, selectorMatchers := range *s.selectors {
+		var matcherStrs []string
+		for _, matcher := range selectorMatchers {
+			matcherStrs = append(matcherStrs, matcher.String())
+		}
+		result = append(result, "{"+strings.Join(matcherStrs, ",")+"}")
+	}
+	return strings.Join(result, ",")
+}
 
 // DefaultChunkedReadLimit is the default value for the maximum size of the protobuf frame client allows.
 // 50MB is the default. This is equivalent to ~100k full XOR chunks and average labelset.
@@ -64,11 +93,12 @@ type RemoteReadCommand struct {
 	readTimeout time.Duration
 	tsdbPath    string
 
-	selector      string
+	selectors     [][]*labels.Matcher
 	from          string
 	to            string
 	readSizeLimit uint64
 	blockDuration time.Duration
+	useChunks     bool
 }
 
 func (c *RemoteReadCommand) Register(app *kingpin.Application, envVars EnvVarNames) {
@@ -103,9 +133,9 @@ func (c *RemoteReadCommand) Register(app *kingpin.Application, envVars EnvVarNam
 			Default("30s").
 			DurationVar(&c.readTimeout)
 
-		cmd.Flag("selector", `PromQL selector to filter metrics on. To return all metrics '{__name__!=""}' can be used.`).
-			Default("up").
-			StringVar(&c.selector)
+		flag := cmd.Flag("selector", `PromQL selector to filter metrics on. To return all metrics '{__name__!=""}' can be used. Can be specified multiple times to send multiple queries in a single remote read request.`)
+		flag.SetValue(&selectorFlag{selectors: &c.selectors})
+		flag.Default("up")
 
 		cmd.Flag("from", "Start of the time window to select metrics (inclusive).").
 			Default(now.Add(-time.Hour).Format(time.RFC3339)).
@@ -116,6 +146,9 @@ func (c *RemoteReadCommand) Register(app *kingpin.Application, envVars EnvVarNam
 		cmd.Flag("read-size-limit", "Maximum number of bytes to read.").
 			Default(strconv.Itoa(DefaultChunkedReadLimit)).
 			Uint64Var(&c.readSizeLimit)
+		cmd.Flag("use-chunks", "Request chunked streaming response (STREAMED_XOR_CHUNKS) instead of samples response (SAMPLES).").
+			Default("true").
+			BoolVar(&c.useChunks)
 	}
 
 	exportCmd.Flag("tsdb-path", "Path to the folder where to store the TSDB blocks, if not set a new directory in $TEMP is created.").
@@ -177,7 +210,7 @@ func (c *RemoteReadCommand) readClient() (remote.ReadClient, error) {
 		},
 		ChunkedReadLimit: c.readSizeLimit,
 		Headers: map[string]string{
-			"User-Agent": client.UserAgent(),
+			"User-Agent": mimirtool_client.UserAgent(),
 		},
 	})
 	if err != nil {
@@ -212,9 +245,8 @@ func (c *RemoteReadCommand) parseArgsAndPrepareClient() (query func(context.Cont
 		return nil, time.Time{}, time.Time{}, fmt.Errorf("error parsing to: '%s' value: %w", c.to, err)
 	}
 
-	matchers, err := parser.ParseMetricSelector(c.selector)
-	if err != nil {
-		return nil, time.Time{}, time.Time{}, err
+	if len(c.selectors) == 0 {
+		return nil, time.Time{}, time.Time{}, fmt.Errorf("at least one selector must be specified")
 	}
 
 	readClient, err := c.readClient()
@@ -222,42 +254,43 @@ func (c *RemoteReadCommand) parseArgsAndPrepareClient() (query func(context.Cont
 		return nil, time.Time{}, time.Time{}, err
 	}
 
-	return func(ctx context.Context, from, to time.Time) (storage.SeriesSet, error) {
-		log.Infof("Querying time from=%s to=%s with selector=%s", from.Format(time.RFC3339Nano), to.Format(time.RFC3339Nano), c.selector)
-		pbQuery, err := remote.ToQuery(
-			int64(model.TimeFromUnixNano(from.UnixNano())),
-			int64(model.TimeFromUnixNano(to.UnixNano())),
-			matchers,
-			nil,
-		)
-		if err != nil {
-			return nil, err
+	return func(ctx context.Context, queryFrom, queryTo time.Time) (storage.SeriesSet, error) {
+		log.Infof("Querying time from=%s to=%s with %d selectors", queryFrom.Format(time.RFC3339), queryTo.Format(time.RFC3339), len(c.selectors))
+		// Use already parsed selectors
+		var pbQueries []*prompb.Query
+		for i, matchers := range c.selectors {
+			log.Debugf("Selector %d: %v", i+1, matchers)
+
+			pbQuery, err := remote.ToQuery(
+				int64(model.TimeFromUnixNano(queryFrom.UnixNano())),
+				int64(model.TimeFromUnixNano(queryTo.UnixNano())),
+				matchers,
+				nil,
+			)
+			if err != nil {
+				return nil, fmt.Errorf("error creating query for selector %s: %w", util.MatchersStringer(matchers), err)
+			}
+			pbQueries = append(pbQueries, pbQuery)
 		}
 
-		resp, err := readClient.Read(ctx, pbQuery, false)
-		if err != nil {
-			return nil, err
-		}
-
-		return resp, nil
-
+		return readClient.ReadMultiple(ctx, pbQueries, true)
 	}, from, to, nil
 }
 
 // prepare() validates the input and prepares the client to query remote read endpoints
-func (c *RemoteReadCommand) prepare() (func(context.Context) (storage.SeriesSet, error), error) {
+func (c *RemoteReadCommand) prepare() (func(context.Context) (storage.SeriesSet, error), time.Time, time.Time, error) {
 	query, from, to, err := c.parseArgsAndPrepareClient()
 	if err != nil {
-		return nil, err
+		return nil, time.Time{}, time.Time{}, err
 	}
 
 	return func(ctx context.Context) (storage.SeriesSet, error) {
 		return query(ctx, from, to)
-	}, nil
+	}, from, to, nil
 }
 
 func (c *RemoteReadCommand) dump(_ *kingpin.ParseContext) error {
-	query, err := c.prepare()
+	query, _, _, err := c.prepare()
 	if err != nil {
 		return err
 	}
@@ -310,7 +343,7 @@ func (c *RemoteReadCommand) dump(_ *kingpin.ParseContext) error {
 }
 
 func (c *RemoteReadCommand) stats(_ *kingpin.ParseContext) error {
-	query, err := c.prepare()
+	query, _, _, err := c.prepare()
 	if err != nil {
 		return err
 	}

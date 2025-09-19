@@ -10,7 +10,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/labels"
 	v1 "github.com/prometheus/prometheus/web/api/v1"
 	"github.com/stretchr/testify/assert"
@@ -141,8 +140,7 @@ func TestDefaultCacheKeyGenerator_LabelValuesCacheKey(t *testing.T) {
 		},
 	}
 
-	reg := prometheus.NewPedanticRegistry()
-	codec := NewCodec(reg, 0*time.Minute, formatJSON, nil)
+	codec := newTestCodec()
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {

@@ -120,6 +120,8 @@ type PostingsEncoder func(*encoding.Encbuf, []uint32) error
 
 type PostingsDecoder func(encoding.Decbuf) (int, Postings, error)
 
+type LookupPlannerFunc func(*Reader) LookupPlanner
+
 // Writer implements the IndexWriter interface for the standard
 // serialization format.
 type Writer struct {
@@ -789,7 +791,7 @@ func (w *Writer) writePostingsToTmpFiles() error {
 
 			// See if label names we want are in the series.
 			numLabels := d.Uvarint()
-			for i := 0; i < numLabels; i++ {
+			for range numLabels {
 				lno := uint32(d.Uvarint())
 				lvo := uint32(d.Uvarint())
 
@@ -1017,29 +1019,31 @@ func (b realByteSlice) Sub(start, end int) ByteSlice {
 	return b[start:end]
 }
 
+var defaultLookupPlannerFunc = func(*Reader) LookupPlanner { return &ScanEmptyMatchersLookupPlanner{} }
+
 // NewReader returns a new index reader on the given byte slice. It automatically
 // handles different format versions.
 func NewReader(b ByteSlice, decoder PostingsDecoder) (*Reader, error) {
-	return newReader(b, io.NopCloser(nil), decoder, &ScanEmptyMatchersLookupPlanner{}, nil)
+	return newReader(b, io.NopCloser(nil), decoder, defaultLookupPlannerFunc, nil)
 }
 
 // NewReaderWithCache is like NewReader but allows to pass a cache provider.
 func NewReaderWithCache(b ByteSlice, decoder PostingsDecoder, cacheProvider ReaderCacheProvider) (*Reader, error) {
-	return newReader(b, io.NopCloser(nil), decoder, &ScanEmptyMatchersLookupPlanner{}, cacheProvider)
+	return newReader(b, io.NopCloser(nil), decoder, defaultLookupPlannerFunc, cacheProvider)
 }
 
 // NewFileReader returns a new index reader against the given index file.
 func NewFileReader(path string, decoder PostingsDecoder) (*Reader, error) {
-	return NewFileReaderWithOptions(path, decoder, &ScanEmptyMatchersLookupPlanner{}, nil)
+	return NewFileReaderWithOptions(path, decoder, defaultLookupPlannerFunc, nil)
 }
 
 // NewFileReaderWithOptions is like NewFileReader but allows to pass a cache provider.
-func NewFileReaderWithOptions(path string, decoder PostingsDecoder, planner LookupPlanner, cacheProvider ReaderCacheProvider) (*Reader, error) {
+func NewFileReaderWithOptions(path string, decoder PostingsDecoder, plannerFunc LookupPlannerFunc, cacheProvider ReaderCacheProvider) (*Reader, error) {
 	f, err := fileutil.OpenMmapFile(path)
 	if err != nil {
 		return nil, err
 	}
-	r, err := newReader(realByteSlice(f.Bytes()), f, decoder, planner, cacheProvider)
+	r, err := newReader(realByteSlice(f.Bytes()), f, decoder, plannerFunc, cacheProvider)
 	if err != nil {
 		return nil, tsdb_errors.NewMulti(
 			err,
@@ -1050,14 +1054,13 @@ func NewFileReaderWithOptions(path string, decoder PostingsDecoder, planner Look
 	return r, nil
 }
 
-func newReader(b ByteSlice, c io.Closer, postingsDecoder PostingsDecoder, planner LookupPlanner, cacheProvider ReaderCacheProvider) (*Reader, error) {
+func newReader(b ByteSlice, c io.Closer, postingsDecoder PostingsDecoder, plannerFunc LookupPlannerFunc, cacheProvider ReaderCacheProvider) (*Reader, error) {
 	r := &Reader{
 		b:             b,
 		c:             c,
 		postings:      map[string][]postingOffset{},
 		cacheProvider: cacheProvider,
 		st:            labels.NewSymbolTable(),
-		lookupPlanner: planner,
 	}
 
 	// Verify header.
@@ -1152,6 +1155,7 @@ func newReader(b ByteSlice, c io.Closer, postingsDecoder PostingsDecoder, planne
 	}
 
 	r.dec = &Decoder{LookupSymbol: r.lookupSymbol, DecodePostings: postingsDecoder}
+	r.lookupPlanner = plannerFunc(r)
 
 	return r, nil
 }
@@ -1865,7 +1869,7 @@ func (*Decoder) LabelNamesOffsetsFor(b []byte) ([]uint32, error) {
 	k := d.Uvarint()
 
 	offsets := make([]uint32, k)
-	for i := 0; i < k; i++ {
+	for i := range k {
 		offsets[i] = uint32(d.Uvarint())
 		_ = d.Uvarint() // skip the label value
 
@@ -1882,7 +1886,7 @@ func (dec *Decoder) LabelValueFor(ctx context.Context, b []byte, label string) (
 	d := encoding.Decbuf{B: b}
 	k := d.Uvarint()
 
-	for i := 0; i < k; i++ {
+	for range k {
 		lno := uint32(d.Uvarint())
 		lvo := uint32(d.Uvarint())
 

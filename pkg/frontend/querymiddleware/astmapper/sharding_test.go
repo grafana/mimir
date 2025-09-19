@@ -58,7 +58,7 @@ func TestShardSummer(t *testing.T) {
 		{
 			`sum by (foo,bar) (min_over_time(bar1{baz="blip"}[1m]))`,
 			`sum by(foo, bar) (` +
-				concatShards(3, `sum by (foo,bar) (min_over_time(bar1{__query_shard__="x_of_y",baz="blip"}[1m]))`) +
+				concatShards(t, 3, `sum by (foo,bar) (min_over_time(bar1{__query_shard__="x_of_y",baz="blip"}[1m]))`) +
 				`)`,
 			3,
 		},
@@ -71,13 +71,13 @@ func TestShardSummer(t *testing.T) {
 		},
 		{
 			"sum(rate(bar1[1m])) or sum(rate(bar2[1m]))",
-			`sum(` + concatShards(3, `sum(rate(bar1{__query_shard__="x_of_y"}[1m]))`) + `)` +
-				` or sum(` + concatShards(3, `sum(rate(bar2{__query_shard__="x_of_y"}[1m]))`) + `)`,
+			`sum(` + concatShards(t, 3, `sum(rate(bar1{__query_shard__="x_of_y"}[1m]))`) + `)` +
+				` or sum(` + concatShards(t, 3, `sum(rate(bar2{__query_shard__="x_of_y"}[1m]))`) + `)`,
 			6,
 		},
 		{
 			`histogram_quantile(0.5, sum(rate(cortex_cache_value_size_bytes_bucket[5m])) by (le))`,
-			`histogram_quantile(0.5,sum  by (le) (` + concatShards(3, `sum  by (le) (rate(cortex_cache_value_size_bytes_bucket{__query_shard__="x_of_y"}[5m]))`) + `))`,
+			`histogram_quantile(0.5,sum  by (le) (` + concatShards(t, 3, `sum  by (le) (rate(cortex_cache_value_size_bytes_bucket{__query_shard__="x_of_y"}[5m]))`) + `))`,
 			3,
 		},
 		{
@@ -90,7 +90,7 @@ func TestShardSummer(t *testing.T) {
 				)`,
 			`sum(
 				count(
-				  sum(` + concatShards(3, `count(bar1{__query_shard__="x_of_y"})  by (drive,instance)`) + `
+				  sum(` + concatShards(t, 3, `count(bar1{__query_shard__="x_of_y"})  by (drive,instance)`) + `
 				  )  by (drive,instance)
 				)  by (instance)
 			  )`,
@@ -98,83 +98,83 @@ func TestShardSummer(t *testing.T) {
 		},
 		{
 			`sum(rate(foo[1m]))`,
-			`sum(` + concatShards(3, `sum(rate(foo{__query_shard__="x_of_y"}[1m]))`) + `)`,
+			`sum(` + concatShards(t, 3, `sum(rate(foo{__query_shard__="x_of_y"}[1m]))`) + `)`,
 			3,
 		},
 		{
 			`count(rate(foo[1m]))`,
 			`sum(` +
-				concatShards(3, `count(rate(foo{__query_shard__="x_of_y"}[1m]))`) + `)`,
+				concatShards(t, 3, `count(rate(foo{__query_shard__="x_of_y"}[1m]))`) + `)`,
 			3,
 		},
 		{
 			`count(up)`,
-			`sum(` + concatShards(3, `count(up{__query_shard__="x_of_y"})`) + `)`,
+			`sum(` + concatShards(t, 3, `count(up{__query_shard__="x_of_y"})`) + `)`,
 			3,
 		},
 		{
 			`avg(count(test))`,
-			`avg(sum(` + concatShards(3, `count(test{__query_shard__="x_of_y"})`) + `))`,
+			`avg(sum(` + concatShards(t, 3, `count(test{__query_shard__="x_of_y"})`) + `))`,
 			3,
 		},
 		{
 			`count by (foo) (rate(foo[1m]))`,
-			`sum by (foo) (` + concatShards(3, `count by (foo) (rate(foo{__query_shard__="x_of_y"}[1m]))`) + `)`,
+			`sum by (foo) (` + concatShards(t, 3, `count by (foo) (rate(foo{__query_shard__="x_of_y"}[1m]))`) + `)`,
 			3,
 		},
 		{
 			`count without (foo) (rate(foo[1m]))`,
-			`sum without (foo) (` + concatShards(3, `count without (foo) (rate(foo{__query_shard__="x_of_y"}[1m]))`) + `)`,
+			`sum without (foo) (` + concatShards(t, 3, `count without (foo) (rate(foo{__query_shard__="x_of_y"}[1m]))`) + `)`,
 			3,
 		},
 		{
 			`max(rate(foo[1m]))`,
-			`max(` + concatShards(3, `max(rate(foo{__query_shard__="x_of_y"}[1m]))`) + `)`,
+			`max(` + concatShards(t, 3, `max(rate(foo{__query_shard__="x_of_y"}[1m]))`) + `)`,
 			3,
 		},
 		{
 			`max by (foo) (rate(foo[1m]))`,
-			`max by (foo) (` + concatShards(3, `max by (foo) (rate(foo{__query_shard__="x_of_y"}[1m]))`) + `)`,
+			`max by (foo) (` + concatShards(t, 3, `max by (foo) (rate(foo{__query_shard__="x_of_y"}[1m]))`) + `)`,
 			3,
 		},
 		{
 			`max without (foo) (rate(foo[1m]))`,
-			`max without (foo) (` + concatShards(3, `max without (foo) (rate(foo{__query_shard__="x_of_y"}[1m]))`) + `)`,
+			`max without (foo) (` + concatShards(t, 3, `max without (foo) (rate(foo{__query_shard__="x_of_y"}[1m]))`) + `)`,
 			3,
 		},
 		{
 			`sum by (foo) (rate(foo[1m]))`,
-			`sum by (foo) (` + concatShards(3, `sum by  (foo) (rate(foo{__query_shard__="x_of_y"}[1m]))`) + `)`,
+			`sum by (foo) (` + concatShards(t, 3, `sum by  (foo) (rate(foo{__query_shard__="x_of_y"}[1m]))`) + `)`,
 			3,
 		},
 		{
 			`sum without (foo) (rate(foo[1m]))`,
-			`sum without (foo) (` + concatShards(3, `sum without  (foo) (rate(foo{__query_shard__="x_of_y"}[1m]))`) + `)`,
+			`sum without (foo) (` + concatShards(t, 3, `sum without  (foo) (rate(foo{__query_shard__="x_of_y"}[1m]))`) + `)`,
 			3,
 		},
 		{
 			`avg without (foo) (rate(foo[1m]))`,
-			`(sum without (foo) (` + concatShards(3, `sum without  (foo) (rate(foo{__query_shard__="x_of_y"}[1m]))`) + `) ` +
-				`/ sum without (foo) (` + concatShards(3, `count without  (foo) (rate(foo{__query_shard__="x_of_y"}[1m]))`) + `))`,
+			`(sum without (foo) (` + concatShards(t, 3, `sum without  (foo) (rate(foo{__query_shard__="x_of_y"}[1m]))`) + `) ` +
+				`/ sum without (foo) (` + concatShards(t, 3, `count without  (foo) (rate(foo{__query_shard__="x_of_y"}[1m]))`) + `))`,
 			6,
 		},
 		{
 			`avg by (foo) (rate(foo[1m]))`,
-			`(sum by (foo)(` + concatShards(3, `sum by  (foo) (rate(foo{__query_shard__="x_of_y"}[1m]))`) + `) ` +
-				`/ sum by (foo) (` + concatShards(3, `count by  (foo) (rate(foo{__query_shard__="x_of_y"}[1m]))`) + `))`,
+			`(sum by (foo)(` + concatShards(t, 3, `sum by  (foo) (rate(foo{__query_shard__="x_of_y"}[1m]))`) + `) ` +
+				`/ sum by (foo) (` + concatShards(t, 3, `count by  (foo) (rate(foo{__query_shard__="x_of_y"}[1m]))`) + `))`,
 			6,
 		},
 		{
 			`avg(rate(foo[1m]))`,
-			`(sum(` + concatShards(3, `sum(rate(foo{__query_shard__="x_of_y"}[1m]))`) + `) / ` +
-				`sum(` + concatShards(3, `count(rate(foo{__query_shard__="x_of_y"}[1m]))`) + `))`,
+			`(sum(` + concatShards(t, 3, `sum(rate(foo{__query_shard__="x_of_y"}[1m]))`) + `) / ` +
+				`sum(` + concatShards(t, 3, `count(rate(foo{__query_shard__="x_of_y"}[1m]))`) + `))`,
 			6,
 		},
 		{
 			`topk(10,avg by (foo)(rate(foo[1m])))`,
 			`topk(10, (sum by (foo)(` +
-				concatShards(3, `sum by (foo) (rate(foo{__query_shard__="x_of_y"}[1m]))`) + `) / ` +
-				`sum by (foo)(` + concatShards(3, `count by (foo) (rate(foo{__query_shard__="x_of_y"}[1m]))`) + `))` +
+				concatShards(t, 3, `sum by (foo) (rate(foo{__query_shard__="x_of_y"}[1m]))`) + `) / ` +
+				`sum by (foo)(` + concatShards(t, 3, `count by (foo) (rate(foo{__query_shard__="x_of_y"}[1m]))`) + `))` +
 				`)`,
 			6,
 		},
@@ -186,7 +186,7 @@ func TestShardSummer(t *testing.T) {
 		{
 			`sum by (user, cluster, namespace) (quantile_over_time(0.99, cortex_ingester_active_series[7d]))`,
 			`sum by (user, cluster, namespace)(` +
-				concatShards(3, `sum by (user, cluster, namespace) (quantile_over_time(0.99, cortex_ingester_active_series{__query_shard__="x_of_y"}[7d]))`) +
+				concatShards(t, 3, `sum by (user, cluster, namespace) (quantile_over_time(0.99, cortex_ingester_active_series{__query_shard__="x_of_y"}[7d]))`) +
 				`)`,
 			3,
 		},
@@ -213,7 +213,7 @@ func TestShardSummer(t *testing.T) {
 					[5m:1m])
 				[2m:])
 			[10m:])`,
-			concatShards(3, `max_over_time(
+			concatShards(t, 3, `max_over_time(
 					stddev_over_time(
 						deriv(
 							rate(metric_counter{__query_shard__="x_of_y"}[10m])
@@ -231,7 +231,7 @@ func TestShardSummer(t *testing.T) {
 					[5m:1m])
 				[2m:])
 			[10m:]))`,
-			concatShards(3, `max_over_time((
+			concatShards(t, 3, `max_over_time((
 					stddev_over_time(
 						deriv(
 							rate(metric_counter{__query_shard__="x_of_y"}[10m])
@@ -309,7 +309,7 @@ func TestShardSummer(t *testing.T) {
 		},
 		{
 			`ceil(sum by (foo) (rate(cortex_ingester_active_series[1w])))`,
-			`ceil(sum by (foo) (` + concatShards(3, `sum by (foo) (rate(cortex_ingester_active_series{__query_shard__="x_of_y"}[1w]))`) + `))`,
+			`ceil(sum by (foo) (` + concatShards(t, 3, `sum by (foo) (rate(cortex_ingester_active_series{__query_shard__="x_of_y"}[1w]))`) + `))`,
 			3,
 		},
 		{
@@ -341,49 +341,49 @@ func TestShardSummer(t *testing.T) {
 			`ln(
 				label_replace(
 					sum by (cluster) ( ` +
-				concatShards(3, `sum by (cluster) (up{__query_shard__="x_of_y",job="api-server",service="a:c"})`) + `)
+				concatShards(t, 3, `sum by (cluster) (up{__query_shard__="x_of_y",job="api-server",service="a:c"})`) + `)
 				, "foo", "$1", "service", "(.*):.*")
 			)`,
 			3,
 		},
 		{
 			`sum by (job)(rate(http_requests_total[1h] @ end()))`,
-			`sum by (job)(` + concatShards(3, `sum by (job)(rate(http_requests_total{__query_shard__="x_of_y"}[1h] @ end()))`) + `)`,
+			`sum by (job)(` + concatShards(t, 3, `sum by (job)(rate(http_requests_total{__query_shard__="x_of_y"}[1h] @ end()))`) + `)`,
 			3,
 		},
 		{
 			`sum by (job)(rate(http_requests_total[1h] offset 1w @ 10))`,
-			`sum by (job)(` + concatShards(3, `sum by (job)(rate(http_requests_total{__query_shard__="x_of_y"}[1h] offset 1w @ 10))`) + `)`,
+			`sum by (job)(` + concatShards(t, 3, `sum by (job)(rate(http_requests_total{__query_shard__="x_of_y"}[1h] offset 1w @ 10))`) + `)`,
 			3,
 		},
 		{
 			`sum by (job)(rate(http_requests_total[1h] offset 1w @ 10)) / 2`,
-			`sum by (job)(` + concatShards(3, `sum by (job)(rate(http_requests_total{__query_shard__="x_of_y"}[1h] offset 1w @ 10))`) + `) / 2`,
+			`sum by (job)(` + concatShards(t, 3, `sum by (job)(rate(http_requests_total{__query_shard__="x_of_y"}[1h] offset 1w @ 10))`) + `) / 2`,
 			3,
 		},
 		{
 			`sum by (job)(rate(http_requests_total[1h] offset 1w @ 10)) / 2 ^ 2`,
-			`sum by (job)(` + concatShards(3, `sum by (job)(rate(http_requests_total{__query_shard__="x_of_y"}[1h] offset 1w @ 10))`) + `) / 2 ^ 2`,
+			`sum by (job)(` + concatShards(t, 3, `sum by (job)(rate(http_requests_total{__query_shard__="x_of_y"}[1h] offset 1w @ 10))`) + `) / 2 ^ 2`,
 			3,
 		},
 		{
 			`sum by (group_1) (rate(metric_counter[1m]) / time() * 2)`,
-			`sum by (group_1) (` + concatShards(3, `sum by (group_1) (rate(metric_counter{__query_shard__="x_of_y"}[1m]) / time() * 2)`) + `)`,
+			`sum by (group_1) (` + concatShards(t, 3, `sum by (group_1) (rate(metric_counter{__query_shard__="x_of_y"}[1m]) / time() * 2)`) + `)`,
 			3,
 		},
 		{
 			`sum by (group_1) (rate(metric_counter[1m])) / time() *2`,
-			`sum by (group_1) (` + concatShards(3, `sum by (group_1) (rate(metric_counter{__query_shard__="x_of_y"}[1m]))`) + `) / time() *2`,
+			`sum by (group_1) (` + concatShards(t, 3, `sum by (group_1) (rate(metric_counter{__query_shard__="x_of_y"}[1m]))`) + `) / time() *2`,
 			3,
 		},
 		{
 			`sum by (group_1) (rate(metric_counter[1m])) / time()`,
-			`sum by (group_1) (` + concatShards(3, `sum by (group_1) (rate(metric_counter{__query_shard__="x_of_y"}[1m]))`) + `) / time()`,
+			`sum by (group_1) (` + concatShards(t, 3, `sum by (group_1) (rate(metric_counter{__query_shard__="x_of_y"}[1m]))`) + `) / time()`,
 			3,
 		},
 		{
 			`sum by (group_1) (rate(metric_counter[1m])) / vector(3) ^ month()`,
-			`sum by (group_1) (` + concatShards(3, `sum by (group_1) (rate(metric_counter{__query_shard__="x_of_y"}[1m]))`) + `)` +
+			`sum by (group_1) (` + concatShards(t, 3, `sum by (group_1) (rate(metric_counter{__query_shard__="x_of_y"}[1m]))`) + `)` +
 				`/ vector(3) ^ month()`,
 			3,
 		},
@@ -413,32 +413,32 @@ func TestShardSummer(t *testing.T) {
 		},
 		{
 			`foo > 0`,
-			concatShards(3, `foo{__query_shard__="x_of_y"} > 0`),
+			concatShards(t, 3, `foo{__query_shard__="x_of_y"} > 0`),
 			3,
 		},
 		{
 			`0 <= foo`,
-			concatShards(3, `0 <= foo{__query_shard__="x_of_y"}`),
+			concatShards(t, 3, `0 <= foo{__query_shard__="x_of_y"}`),
 			3,
 		},
 		{
 			`foo > (2 * 2)`,
-			concatShards(3, `foo{__query_shard__="x_of_y"} > (2 * 2)`),
+			concatShards(t, 3, `foo{__query_shard__="x_of_y"} > (2 * 2)`),
 			3,
 		},
 		{
 			`sum by (label) (foo > 0)`,
-			`sum by(label) (` + concatShards(3, `sum by (label) (foo{__query_shard__="x_of_y"} > 0)`) + `)`,
+			`sum by(label) (` + concatShards(t, 3, `sum by (label) (foo{__query_shard__="x_of_y"} > 0)`) + `)`,
 			3,
 		},
 		{
 			`sum by (label) (foo > 0) > 0`,
-			`sum by (label) (` + concatShards(3, `sum by (label) (foo{__query_shard__="x_of_y"} > 0)`) + `) > 0`,
+			`sum by (label) (` + concatShards(t, 3, `sum by (label) (foo{__query_shard__="x_of_y"} > 0)`) + `) > 0`,
 			3,
 		},
 		{
 			`sum_over_time(foo[1m]) > (2 * 2)`,
-			concatShards(3, `sum_over_time(foo{__query_shard__="x_of_y"}[1m]) > (2 * 2)`),
+			concatShards(t, 3, `sum_over_time(foo{__query_shard__="x_of_y"}[1m]) > (2 * 2)`),
 			3,
 		},
 		{
@@ -457,8 +457,8 @@ func TestShardSummer(t *testing.T) {
 		},
 		{
 			`scalar(min(foo)) > bool scalar(sum(bar))`,
-			`scalar(min(` + concatShards(3, `min(foo{__query_shard__="x_of_y"})`) + `)) ` +
-				`> bool scalar(sum(` + concatShards(3, `sum(bar{__query_shard__="x_of_y"})`) + `))`,
+			`scalar(min(` + concatShards(t, 3, `min(foo{__query_shard__="x_of_y"})`) + `)) ` +
+				`> bool scalar(sum(` + concatShards(t, 3, `sum(bar{__query_shard__="x_of_y"})`) + `))`,
 			6,
 		},
 		{
@@ -475,7 +475,7 @@ func TestShardSummer(t *testing.T) {
 		},
 		{
 			in:                     `sum(foo) > 0 and vector(1)`,
-			out:                    `sum(` + concatShards(3, `sum(foo{__query_shard__="x_of_y"})`) + `) > 0 and vector(1)`,
+			out:                    `sum(` + concatShards(t, 3, `sum(foo{__query_shard__="x_of_y"})`) + `) > 0 and vector(1)`,
 			expectedShardedQueries: 3,
 		},
 		{
@@ -495,27 +495,27 @@ func TestShardSummer(t *testing.T) {
 		},
 		{
 			in:                     `sum(rate(metric[1m])) and max(metric) > 0`,
-			out:                    `sum(` + concatShards(3, `sum(rate(metric{__query_shard__="x_of_y"}[1m]))`) + `) and max(` + concatShards(3, `max(metric{__query_shard__="x_of_y"})`) + `) > 0`,
+			out:                    `sum(` + concatShards(t, 3, `sum(rate(metric{__query_shard__="x_of_y"}[1m]))`) + `) and max(` + concatShards(t, 3, `max(metric{__query_shard__="x_of_y"})`) + `) > 0`,
 			expectedShardedQueries: 6,
 		},
 		{
 			in:                     `sum(rate(metric[1m])) > avg(rate(metric[1m]))`,
-			out:                    `sum(` + concatShards(3, `sum(rate(metric{__query_shard__="x_of_y"}[1m]))`) + `) > (sum(` + concatShards(3, `sum(rate(metric{__query_shard__="x_of_y"}[1m]))`) + `) / sum(` + concatShards(3, `count(rate(metric{__query_shard__="x_of_y"}[1m]))`) + `))`,
+			out:                    `sum(` + concatShards(t, 3, `sum(rate(metric{__query_shard__="x_of_y"}[1m]))`) + `) > (sum(` + concatShards(t, 3, `sum(rate(metric{__query_shard__="x_of_y"}[1m]))`) + `) / sum(` + concatShards(t, 3, `count(rate(metric{__query_shard__="x_of_y"}[1m]))`) + `))`,
 			expectedShardedQueries: 9,
 		},
 		{
 			in:                     `group by (a, b) (metric)`,
-			out:                    `group by (a, b) (` + concatShards(3, `group by (a, b) (metric{__query_shard__="x_of_y"})`) + `)`,
+			out:                    `group by (a, b) (` + concatShards(t, 3, `group by (a, b) (metric{__query_shard__="x_of_y"})`) + `)`,
 			expectedShardedQueries: 3,
 		},
 		{
 			in:                     `count by (a) (group by (a, b) (metric))`,
-			out:                    `count by (a) (group by (a, b) (` + concatShards(3, `group by (a, b) (metric{__query_shard__="x_of_y"})`) + `))`,
+			out:                    `count by (a) (group by (a, b) (` + concatShards(t, 3, `group by (a, b) (metric{__query_shard__="x_of_y"})`) + `))`,
 			expectedShardedQueries: 3,
 		},
 		{
 			in:                     `count(group without () ({namespace="foo"}))`,
-			out:                    `count(group without() (` + concatShards(3, `group without() ({namespace="foo",__query_shard__="x_of_y"})`) + `))`,
+			out:                    `count(group without() (` + concatShards(t, 3, `group without() ({namespace="foo",__query_shard__="x_of_y"})`) + `))`,
 			expectedShardedQueries: 3,
 		},
 	} {
@@ -523,10 +523,10 @@ func TestShardSummer(t *testing.T) {
 
 		t.Run(tt.in, func(t *testing.T) {
 			stats := NewMapperStats()
-			summer, err := NewQueryShardSummer(3, VectorSquasher, log.NewNopLogger(), stats)
+			summer, err := NewQueryShardSummer(3, EmbeddedQueriesSquasher, log.NewNopLogger(), stats)
 			ctx := context.Background()
 			require.NoError(t, err)
-			mapper := NewSharding(summer)
+			mapper := NewSharding(summer, EmbeddedQueriesSquasher)
 			expr, err := parser.ParseExpr(tt.in)
 			require.NoError(t, err)
 			out, err := parser.ParseExpr(tt.out)
@@ -540,11 +540,13 @@ func TestShardSummer(t *testing.T) {
 	}
 }
 
-func concatShards(shards int, queryTemplate string) string {
+func concatShards(t *testing.T, shards int, queryTemplate string) string {
 	queries := make([]EmbeddedQuery, shards)
 	for shard := range queries {
 		queryStr := strings.ReplaceAll(queryTemplate, "x_of_y", sharding.FormatShardIDLabelValue(uint64(shard), uint64(shards)))
-		queries[shard] = NewEmbeddedQuery(queryStr, nil)
+		expr, err := parser.ParseExpr(queryStr)
+		require.NoError(t, err)
+		queries[shard] = NewEmbeddedQuery(expr, nil)
 	}
 	return concatInner(queries...)
 }
@@ -552,21 +554,17 @@ func concatShards(shards int, queryTemplate string) string {
 func concat(queryStrs ...string) string {
 	queries := make([]EmbeddedQuery, len(queryStrs))
 	for i, query := range queryStrs {
-		queries[i] = NewEmbeddedQuery(query, nil)
+		expr, err := parser.ParseExpr(query)
+		if err != nil {
+			panic(err)
+		}
+		queries[i] = NewEmbeddedQuery(expr, nil)
 	}
 	return concatInner(queries...)
 }
 
 func concatInner(rawQueries ...EmbeddedQuery) string {
-	queries := make([]EmbeddedQuery, len(rawQueries))
-	for i, q := range rawQueries {
-		n, err := parser.ParseExpr(q.Expr)
-		if err != nil {
-			panic(err)
-		}
-		queries[i] = NewEmbeddedQuery(n.String(), q.Params)
-	}
-	mapped, err := VectorSquasher(queries...)
+	mapped, err := EmbeddedQueriesSquasher.Squash(rawQueries...)
 	if err != nil {
 		panic(err)
 	}
@@ -587,7 +585,7 @@ func TestShardSummerWithEncoding(t *testing.T) {
 	} {
 		t.Run(fmt.Sprintf("[%d]", i), func(t *testing.T) {
 			stats := NewMapperStats()
-			summer, err := NewQueryShardSummer(c.shards, VectorSquasher, log.NewNopLogger(), stats)
+			summer, err := NewQueryShardSummer(c.shards, EmbeddedQueriesSquasher, log.NewNopLogger(), stats)
 			ctx := context.Background()
 			require.Nil(t, err)
 			expr, err := parser.ParseExpr(c.input)

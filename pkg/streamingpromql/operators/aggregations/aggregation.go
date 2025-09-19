@@ -91,8 +91,9 @@ func NewAggregation(
 }
 
 type groupWithLabels struct {
-	labels labels.Labels
-	group  *group
+	labels   labels.Labels
+	group    *group
+	dropName bool
 }
 
 type group struct {
@@ -117,9 +118,25 @@ func (a *Aggregation) ExpressionPosition() posrange.PositionRange {
 	return a.expressionPosition
 }
 
-func (a *Aggregation) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
+func (a *Aggregation) SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
+	// If we've been passed extra matchers at runtime when grouping by a label, make sure
+	// the matchers only apply to the fields we are grouping by. It shouldn't be the case
+	// that we are given matchers that apply to other labels since the matchers are
+	// created based hints applied to binary operations which come from aggregations but
+	// this prevents misuse.
+	if len(matchers) != 0 && len(a.Grouping) != 0 {
+		if !a.Without {
+			matchers = matchers.With(a.Grouping...)
+		} else {
+			// We don't set hints for aggregations using "without" and we don't (yet) support
+			// excluding matchers so drop any extra matchers passed at runtime if this is a
+			// "without" aggregation.
+			matchers = nil
+		}
+	}
+
 	// Fetch the source series
-	innerSeries, err := a.Inner.SeriesMetadata(ctx)
+	innerSeries, err := a.Inner.SeriesMetadata(ctx, matchers)
 	if err != nil {
 		return nil, err
 	}
@@ -157,6 +174,10 @@ func (a *Aggregation) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadat
 		g.group.remainingSeriesCount++
 		g.group.lastSeriesIndex = seriesIdx
 		a.remainingInnerSeriesToGroup = append(a.remainingInnerSeriesToGroup, g.group)
+		if g.dropName != series.DropName {
+			g.dropName = series.DropName
+			groups[string(groupLabelsString)] = g
+		}
 	}
 
 	// Sort the list of series we'll return, and maintain the order of the corresponding groups at the same time
@@ -168,7 +189,7 @@ func (a *Aggregation) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadat
 	a.remainingGroups = make([]*group, 0, len(groups))
 
 	for _, g := range groups {
-		seriesMetadata, err = types.AppendSeriesMetadata(a.MemoryConsumptionTracker, seriesMetadata, types.SeriesMetadata{Labels: g.labels})
+		seriesMetadata, err = types.AppendSeriesMetadata(a.MemoryConsumptionTracker, seriesMetadata, types.SeriesMetadata{Labels: g.labels, DropName: g.dropName})
 		if err != nil {
 			return nil, err
 		}
@@ -313,4 +334,8 @@ func (g groupSorter) Less(i, j int) bool {
 func (g groupSorter) Swap(i, j int) {
 	g.metadata[i], g.metadata[j] = g.metadata[j], g.metadata[i]
 	g.groups[i], g.groups[j] = g.groups[j], g.groups[i]
+}
+
+func newAggregationCounterResetCollisionWarning(_ string, expressionPosition posrange.PositionRange) error {
+	return annotations.NewHistogramCounterResetCollisionWarning(expressionPosition, annotations.HistogramAgg)
 }

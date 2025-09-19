@@ -5,7 +5,7 @@
 
 FROM registry.k8s.io/kustomize/kustomize:v5.4.3 AS kustomize
 FROM alpine/helm:3.17.2 AS helm
-FROM golang:1.24.6-bookworm
+FROM golang:1.25.1-trixie
 ARG goproxyValue
 ENV GOPROXY=${goproxyValue}
 ENV SKOPEO_DEPS="libgpgme-dev libassuan-dev libbtrfs-dev libdevmapper-dev pkg-config"
@@ -39,7 +39,7 @@ RUN GOARCH=$(go env GOARCH) && \
     curl -fSL -o "/usr/bin/tk" "https://github.com/grafana/tanka/releases/download/v${TANKA_VERSION}/tk-linux-${GOARCH}" && \
     chmod a+x /usr/bin/tk
 
-RUN curl -sfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh| sh -s -- -b /usr/bin v2.0.2
+RUN curl -sfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh| sh -s -- -b /usr/bin v2.4.0
 
 ENV SKOPEO_VERSION=v1.15.1
 RUN git clone --depth 1 --branch ${SKOPEO_VERSION} https://github.com/containers/skopeo /go/src/github.com/containers/skopeo && \
@@ -59,7 +59,7 @@ RUN GO111MODULE=on \
 	go install github.com/google/go-jsonnet/cmd/jsonnet@v0.19.1 && \
 	go install github.com/google/go-jsonnet/cmd/jsonnetfmt@v0.19.1 && \
 	go install github.com/norwoodj/helm-docs/cmd/helm-docs@v1.8.1 && \
-	go install github.com/open-policy-agent/conftest@v0.42.1 && \
+	go install github.com/open-policy-agent/conftest@v0.62.0 && \
 	go install github.com/uber-go/gopatch@v0.4.0 && \
 	go install github.com/bufbuild/buf/cmd/buf@v1.55.1 && \
 	rm -rf /go/pkg /go/src /root/.cache

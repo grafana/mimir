@@ -9,6 +9,7 @@ import (
 	"context"
 	"fmt"
 	"math/rand"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -66,6 +67,9 @@ type BlocksCleaner struct {
 	// Keep track of the last owned users.
 	lastOwnedUsers []string
 
+	// Whether the bucket supports UpdatedAt iteration option.
+	supportsUpdatedAtIter bool
+
 	// Metrics.
 	runsStarted                         prometheus.Counter
 	runsCompleted                       prometheus.Counter
@@ -85,12 +89,13 @@ type BlocksCleaner struct {
 
 func NewBlocksCleaner(cfg BlocksCleanerConfig, bucketClient objstore.Bucket, ownUser func(userID string) (bool, error), cfgProvider ConfigProvider, logger log.Logger, reg prometheus.Registerer) *BlocksCleaner {
 	c := &BlocksCleaner{
-		cfg:          cfg,
-		bucketClient: bucketClient,
-		usersScanner: mimir_tsdb.NewUsersScanner(bucketClient, ownUser, logger),
-		cfgProvider:  cfgProvider,
-		singleFlight: concurrency.NewLimitedConcurrencySingleFlight(cfg.CleanupConcurrency),
-		logger:       log.With(logger, "component", "cleaner"),
+		cfg:                   cfg,
+		bucketClient:          bucketClient,
+		usersScanner:          mimir_tsdb.NewUsersScanner(bucketClient, ownUser, logger),
+		cfgProvider:           cfgProvider,
+		singleFlight:          concurrency.NewLimitedConcurrencySingleFlight(cfg.CleanupConcurrency),
+		logger:                log.With(logger, "component", "cleaner"),
+		supportsUpdatedAtIter: slices.Contains(bucketClient.SupportedIterOptions(), objstore.UpdatedAt),
 		runsStarted: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_compactor_block_cleanup_started_total",
 			Help: "Total number of blocks cleanup runs started.",
@@ -622,7 +627,7 @@ func (c *BlocksCleaner) cleanUserPartialBlocks(ctx context.Context, partials map
 	// Check if partial blocks are older than delay period, and mark for deletion
 	if !partialDeletionCutoffTime.IsZero() {
 		for _, blockID := range partialBlocksWithoutDeletionMarker {
-			lastModified, err := stalePartialBlockLastModifiedTime(ctx, blockID, userBucket, partialDeletionCutoffTime)
+			lastModified, err := c.stalePartialBlockLastModifiedTime(ctx, blockID, userBucket, partialDeletionCutoffTime)
 			if err != nil {
 				level.Warn(userLogger).Log("msg", "failed while determining if partial block should be marked for deletion", "block", blockID, "err", err)
 				continue
@@ -683,26 +688,46 @@ func listBlocksOutsideRetentionPeriod(idx *bucketindex.Index, threshold time.Tim
 var errStopIter = errors.New("stop iteration")
 
 // stalePartialBlockLastModifiedTime returns the most recent last modified time of a stale partial block, or the zero value of time.Time if the provided block wasn't a stale partial block
-func stalePartialBlockLastModifiedTime(ctx context.Context, blockID ulid.ULID, userBucket objstore.InstrumentedBucket, partialDeletionCutoffTime time.Time) (time.Time, error) {
+func (c *BlocksCleaner) stalePartialBlockLastModifiedTime(ctx context.Context, blockID ulid.ULID, userBucket objstore.InstrumentedBucket, partialDeletionCutoffTime time.Time) (time.Time, error) {
 	var lastModified time.Time
-	err := userBucket.WithExpectedErrs(func(err error) bool {
+	var err error
+
+	instrumentedBucket := userBucket.WithExpectedErrs(func(err error) bool {
 		return errors.Is(err, errStopIter) // sentinel error
-	}).Iter(ctx, blockID.String(), func(name string) error {
-		if strings.HasSuffix(name, objstore.DirDelim) {
-			return nil
-		}
-		attrib, err := userBucket.Attributes(ctx, name)
-		if err != nil {
-			return errors.Wrapf(err, "failed to get attributes for %s", name)
-		}
-		if attrib.LastModified.After(partialDeletionCutoffTime) {
+	})
+
+	checkModifiedTime := func(modified time.Time) error {
+		if modified.After(partialDeletionCutoffTime) {
 			return errStopIter
 		}
-		if attrib.LastModified.After(lastModified) {
-			lastModified = attrib.LastModified
+		if modified.After(lastModified) {
+			lastModified = modified
 		}
 		return nil
-	}, objstore.WithRecursiveIter())
+	}
+
+	// If bucket supports UpdatedAt IterOptionType, use IterWithAttributes
+	// to reduce the amount of object attributes calls.
+	if c.supportsUpdatedAtIter {
+		err = instrumentedBucket.IterWithAttributes(ctx, blockID.String(), func(attrs objstore.IterObjectAttributes) error {
+			if strings.HasSuffix(attrs.Name, objstore.DirDelim) {
+				return nil
+			}
+			modified, _ := attrs.LastModified()
+			return checkModifiedTime(modified)
+		}, objstore.WithRecursiveIter(), objstore.WithUpdatedAt())
+	} else {
+		err = instrumentedBucket.Iter(ctx, blockID.String(), func(name string) error {
+			if strings.HasSuffix(name, objstore.DirDelim) {
+				return nil
+			}
+			attrib, err := userBucket.Attributes(ctx, name)
+			if err != nil {
+				return errors.Wrapf(err, "failed to get attributes for %s", name)
+			}
+			return checkModifiedTime(attrib.LastModified)
+		}, objstore.WithRecursiveIter())
+	}
 
 	if errors.Is(err, errStopIter) {
 		return time.Time{}, nil

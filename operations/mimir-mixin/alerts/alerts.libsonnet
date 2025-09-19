@@ -468,6 +468,25 @@ local utils = import 'mixin-utils/utils.libsonnet';
             ||| % { alert_aggregation_variables: $._config.alert_aggregation_variables, product: $._config.product },
           },
         },
+
+        {
+          alert: $.alertName('HighGRPCConcurrentStreamsPerConnection'),
+          expr: |||
+            max(avg_over_time(grpc_concurrent_streams_by_conn_max[10m])) by (%(alert_aggregation_labels)s, container)
+            /
+            min(cortex_grpc_concurrent_streams_limit) by (%(alert_aggregation_labels)s, container) > 0.9
+          ||| % {
+            alert_aggregation_labels: $._config.alert_aggregation_labels,
+          },
+          labels: {
+            severity: 'warning',
+          },
+          annotations: {
+            message: |||
+              Container {{ $labels.container }} in %(alert_aggregation_variables)s is experiencing high GRPC concurrent streams per connection.
+            ||| % $._config,
+          },
+        },
       ],
     },
     {

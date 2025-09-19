@@ -71,6 +71,7 @@ type seriesStripe struct {
 	mu                                   sync.RWMutex
 	refs                                 map[storage.SeriesRef]seriesEntry
 	active                               uint32   // Number of active entries in this stripe. Only decreased during purge or clear.
+	activeOTLP                           uint32   // Number of active entries in this stripe with source OTLP. Only decreased during purge or clear.
 	activeMatching                       []uint32 // Number of active entries in this stripe matching each matcher of the configured Matchers.
 	activeNativeHistograms               uint32   // Number of active entries (only native histograms) in this stripe. Only decreased during purge or clear.
 	activeMatchingNativeHistograms       []uint32 // Number of active entries (only native histograms) in this stripe matching each matcher of the configured Matchers.
@@ -81,13 +82,43 @@ type seriesStripe struct {
 	activeSeriesAttributionFailureCounter atomic.Float64
 }
 
+// seriesEntryFlag contains boolean flags that can be set on seriesEntry.
+type seriesEntryFlag uint8
+
+const (
+	// flagIsDeleted indicates this series was marked as deleted, so before purging we need to remove the refence to it from the deletedSeries.
+	flagIsDeleted seriesEntryFlag = 1 << iota
+	// flagIsOTLP indicates that this series was ingested using OTLP.
+	flagIsOTLP
+)
+
 // seriesEntry holds a timestamp for single series.
 type seriesEntry struct {
 	nanos                     *atomic.Int64                // Unix timestamp in nanoseconds. Needs to be a pointer because we don't store pointers to entries in the stripe.
 	matches                   asmodel.PreAllocDynamicSlice //  Index of the matcher matching
 	numNativeHistogramBuckets int                          // Number of buckets in native histogram series, -1 if not a native histogram.
 
-	deleted bool // This series was marked as deleted, so before purging we need to remove the refence to it from the deletedSeries.
+	flags seriesEntryFlag
+}
+
+// markAsDeleted sets flagIsDeleted and indicates that this series needs to be removed from deletedSeries before purging.
+func (s *seriesEntry) markAsDeleted() {
+	s.flags |= flagIsDeleted
+}
+
+// isDeleted checks whether this series is marked for deletion.
+func (s seriesEntry) isDeleted() bool {
+	return s.flags&flagIsDeleted > 0
+}
+
+// markAsOTLP sets flagIsOTLP and indicates that the series was ingested using OTLP.
+func (s *seriesEntry) markAsOTLP() {
+	s.flags |= flagIsOTLP
+}
+
+// isOTLP checks whether this seriesEntry was ingested using OTLP.
+func (s seriesEntry) isOTLP() bool {
+	return s.flags&flagIsOTLP > 0
 }
 
 func NewActiveSeries(asm *asmodel.Matchers, timeout time.Duration, cat *costattribution.ActiveSeriesTracker) *ActiveSeries {
@@ -126,10 +157,10 @@ func (c *ActiveSeries) ReloadMatchersAndTrackers(asm *asmodel.Matchers, cat *cos
 
 // UpdateSeries updates series timestamp to 'now'. Function is called to make a copy of labels if entry doesn't exist yet.
 // Pass -1 in numNativeHistogramBuckets if the series is not a native histogram series.
-func (c *ActiveSeries) UpdateSeries(series labels.Labels, ref storage.SeriesRef, now time.Time, numNativeHistogramBuckets int, idx tsdb.IndexReader) {
+func (c *ActiveSeries) UpdateSeries(series labels.Labels, ref storage.SeriesRef, now time.Time, numNativeHistogramBuckets int, isOTLP bool, idx tsdb.IndexReader) {
 	stripeID := ref % numStripes
 
-	created := c.stripes[stripeID].updateSeriesTimestamp(now, series, ref, numNativeHistogramBuckets)
+	created := c.stripes[stripeID].updateSeriesTimestamp(now, series, ref, numNativeHistogramBuckets, isOTLP)
 	if created {
 		if deleted, ok := c.deleted.find(series); ok {
 			deletedStripeID := deleted.ref % numStripes
@@ -181,14 +212,15 @@ func (c *ActiveSeries) NativeHistogramBuckets(ref storage.SeriesRef) (int, bool)
 	return c.stripes[stripeID].nativeHistogramBuckets(ref)
 }
 
-// Active returns the total numbers of active series, active native
-// histogram series, and buckets of those native histogram series.
-// This method does not purge expired entries, so Purge should be
-// called periodically.
-func (c *ActiveSeries) Active() (total, totalNativeHistograms, totalNativeHistogramBuckets int) {
+// Active returns the total numbers of active series, active series ingested via
+// OTLP, active native histogram series, and buckets of those native histogram
+// series. This method does not purge expired entries, so Purge should be called
+// periodically.
+func (c *ActiveSeries) Active() (total, totalOTLP, totalNativeHistograms, totalNativeHistogramBuckets int) {
 	for s := 0; s < numStripes; s++ {
-		all, histograms, buckets := c.stripes[s].getTotal()
+		all, allOTLP, histograms, buckets := c.stripes[s].getTotal()
 		total += int(all)
+		totalOTLP += int(allOTLP)
 		totalNativeHistograms += int(histograms)
 		totalNativeHistogramBuckets += int(buckets)
 	}
@@ -197,11 +229,14 @@ func (c *ActiveSeries) Active() (total, totalNativeHistograms, totalNativeHistog
 
 // ActiveWithMatchers returns the total number of active series, as well as a
 // slice of active series matching each one of the custom trackers provided (in
-// the same order as custom trackers are defined), and then the same thing for
-// only active series that are native histograms, then the same for the number
-// of buckets in those active native histogram series. This method does not purge
-// expired entries, so Purge should be called periodically.
-func (c *ActiveSeries) ActiveWithMatchers() (total int, totalMatching []int, totalNativeHistograms int, totalMatchingNativeHistograms []int, totalNativeHistogramBuckets int, totalMatchingNativeHistogramBuckets []int) {
+// the same order as custom trackers are defined), the total number of active
+// series ingested using OTLP, and then the total number of active series that
+// are native histograms and a slice of active native histogram series matching
+// each one of the custom trackers provided (in the same order as custom trackers
+// are defined), and then the same for the number of buckets in those active
+// native histogram series. This method does not purge expired entries, so Purge
+// should be called periodically.
+func (c *ActiveSeries) ActiveWithMatchers() (total int, totalMatching []int, totalOTLP int, totalNativeHistograms int, totalMatchingNativeHistograms []int, totalNativeHistogramBuckets int, totalMatchingNativeHistogramBuckets []int) {
 	c.configMutex.RLock()
 	defer c.configMutex.RUnlock()
 
@@ -209,8 +244,9 @@ func (c *ActiveSeries) ActiveWithMatchers() (total int, totalMatching []int, tot
 	totalMatchingNativeHistograms = make([]int, len(c.matchers.MatcherNames()))
 	totalMatchingNativeHistogramBuckets = make([]int, len(c.matchers.MatcherNames()))
 	for s := 0; s < numStripes; s++ {
-		all, histograms, buckets := c.stripes[s].getTotalAndUpdateMatching(totalMatching, totalMatchingNativeHistograms, totalMatchingNativeHistogramBuckets)
+		all, allOTLP, histograms, buckets := c.stripes[s].getTotalAndUpdateMatching(totalMatching, totalMatchingNativeHistograms, totalMatchingNativeHistogramBuckets)
 		total += int(all)
+		totalOTLP += int(allOTLP)
 		totalNativeHistograms += int(histograms)
 		totalNativeHistogramBuckets += int(buckets)
 	}
@@ -270,25 +306,28 @@ func (s *seriesStripe) markDeleted(ref storage.SeriesRef, lbls labels.Labels) {
 	}
 
 	series := s.refs[ref]
-	series.deleted = true
+	series.markAsDeleted()
 	s.refs[ref] = series
 
 	s.deleted.add(ref, lbls)
 }
 
-// getTotal will return the total active series in the stripe
-// and the total active series that are native histograms
-// and the total number of buckets in active native histogram series
-func (s *seriesStripe) getTotal() (uint32, uint32, uint32) {
+// getTotal will return the total active series, active series ingested via OTLP,
+// total active series that are native histograms and the total number of buckets
+// in active native histogram series in the stripe.
+func (s *seriesStripe) getTotal() (uint32, uint32, uint32, uint32) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return s.active, s.activeNativeHistograms, s.activeNativeHistogramBuckets
+	return s.active, s.activeOTLP, s.activeNativeHistograms, s.activeNativeHistogramBuckets
 }
 
-// getTotalAndUpdateMatching will return the total active series in the stripe and also update the slice provided
-// with each matcher's total, and will also do the same for total active series that are native histograms
-// as well as the total number of buckets in active native histogram series
-func (s *seriesStripe) getTotalAndUpdateMatching(matching []int, matchingNativeHistograms []int, matchingNativeHistogramBuckets []int) (uint32, uint32, uint32) {
+// getTotalAndUpdateMatching updates the slice provided with each matcher's
+// total, and will also do the same for total active series that are native
+// histograms as well as the total number of buckets in active native histogram
+// series.
+//
+// Returns total active series, active OTLP series, active native histograms, and sum of native histogram buckets.
+func (s *seriesStripe) getTotalAndUpdateMatching(matching []int, matchingNativeHistograms []int, matchingNativeHistogramBuckets []int) (uint32, uint32, uint32, uint32) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -303,16 +342,16 @@ func (s *seriesStripe) getTotalAndUpdateMatching(matching []int, matchingNativeH
 		matchingNativeHistogramBuckets[i] += int(a)
 	}
 
-	return s.active, s.activeNativeHistograms, s.activeNativeHistogramBuckets
+	return s.active, s.activeOTLP, s.activeNativeHistograms, s.activeNativeHistogramBuckets
 }
 
-func (s *seriesStripe) updateSeriesTimestamp(now time.Time, series labels.Labels, ref storage.SeriesRef, numNativeHistogramBuckets int) bool {
+func (s *seriesStripe) updateSeriesTimestamp(now time.Time, series labels.Labels, ref storage.SeriesRef, numNativeHistogramBuckets int, isOTLP bool) bool {
 	nowNanos := now.UnixNano()
 
 	e, needsUpdating := s.findEntryForSeries(ref, numNativeHistogramBuckets)
 	created := false
 	if e == nil || needsUpdating {
-		e, created = s.findAndUpdateOrCreateEntryForSeries(ref, series, nowNanos, numNativeHistogramBuckets)
+		e, created = s.findAndUpdateOrCreateEntryForSeries(ref, series, nowNanos, numNativeHistogramBuckets, isOTLP)
 	}
 
 	entryTimeSet := created
@@ -342,7 +381,7 @@ func (s *seriesStripe) findEntryForSeries(ref storage.SeriesRef, numNativeHistog
 	return entry.nanos, entry.numNativeHistogramBuckets != numNativeHistogramBuckets
 }
 
-func (s *seriesStripe) findAndUpdateOrCreateEntryForSeries(ref storage.SeriesRef, series labels.Labels, nowNanos int64, numNativeHistogramBuckets int) (entryTime *atomic.Int64, created bool) {
+func (s *seriesStripe) findAndUpdateOrCreateEntryForSeries(ref storage.SeriesRef, series labels.Labels, nowNanos int64, numNativeHistogramBuckets int, isOTLP bool) (entryTime *atomic.Int64, created bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -391,6 +430,9 @@ func (s *seriesStripe) findAndUpdateOrCreateEntryForSeries(ref storage.SeriesRef
 	matchesLen := matches.Len()
 
 	s.active++
+	if isOTLP {
+		s.activeOTLP++
+	}
 	if numNativeHistogramBuckets >= 0 {
 		s.activeNativeHistograms++
 		s.activeNativeHistogramBuckets += uint32(numNativeHistogramBuckets)
@@ -409,6 +451,9 @@ func (s *seriesStripe) findAndUpdateOrCreateEntryForSeries(ref storage.SeriesRef
 		matches:                   matches,
 		numNativeHistogramBuckets: numNativeHistogramBuckets,
 	}
+	if isOTLP {
+		e.markAsOTLP()
+	}
 
 	s.cat.Increment(series, time.Unix(0, nowNanos), numNativeHistogramBuckets)
 	s.refs[ref] = e
@@ -422,6 +467,7 @@ func (s *seriesStripe) clear() {
 	s.oldestEntryTs.Store(0)
 	s.refs = map[storage.SeriesRef]seriesEntry{}
 	s.active = 0
+	s.activeOTLP = 0
 	s.activeNativeHistograms = 0
 	s.activeNativeHistogramBuckets = 0
 	for i := range s.activeMatching {
@@ -439,6 +485,7 @@ func (s *seriesStripe) reinitialize(asm *asmodel.Matchers, deleted *deletedSerie
 	s.oldestEntryTs.Store(0)
 	s.refs = map[storage.SeriesRef]seriesEntry{}
 	s.active = 0
+	s.activeOTLP = 0
 	s.activeNativeHistograms = 0
 	s.activeNativeHistogramBuckets = 0
 	s.matchers = asm
@@ -459,6 +506,7 @@ func (s *seriesStripe) purge(keepUntil time.Time, idx tsdb.IndexReader) {
 	defer s.mu.Unlock()
 
 	s.active = 0
+	s.activeOTLP = 0
 	s.activeNativeHistograms = 0
 	s.activeNativeHistogramBuckets = 0
 	s.activeMatching = resizeAndClear(len(s.activeMatching), s.activeMatching)
@@ -477,7 +525,7 @@ func (s *seriesStripe) purge(keepUntil time.Time, idx tsdb.IndexReader) {
 					s.cat.Decrement(buf.Labels(), entry.numNativeHistogramBuckets)
 				}
 			}
-			if entry.deleted {
+			if entry.isDeleted() {
 				s.deleted.purge(ref)
 			}
 			delete(s.refs, ref)
@@ -485,6 +533,9 @@ func (s *seriesStripe) purge(keepUntil time.Time, idx tsdb.IndexReader) {
 		}
 
 		s.active++
+		if entry.isOTLP() {
+			s.activeOTLP++
+		}
 		if entry.numNativeHistogramBuckets >= 0 {
 			s.activeNativeHistograms++
 			s.activeNativeHistogramBuckets += uint32(entry.numNativeHistogramBuckets)

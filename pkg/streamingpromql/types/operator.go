@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 )
 
@@ -47,10 +48,12 @@ type SeriesOperator interface {
 	Operator
 
 	// SeriesMetadata returns a list of all series that will be returned by this operator.
+	// Additional matchers determined during query evaluation may be passed to further limit
+	// the series produced by this operator. Implementations may ignore these extra matchers.
 	// The returned []SeriesMetadata can be modified by the caller or returned to a pool.
 	// SeriesMetadata may return series in any order, but the same order must be used by both SeriesMetadata and NextSeries.
 	// SeriesMetadata should be called no more than once.
-	SeriesMetadata(ctx context.Context) ([]SeriesMetadata, error)
+	SeriesMetadata(ctx context.Context, matchers Matchers) ([]SeriesMetadata, error)
 }
 
 // InstantVectorOperator represents all operators that produce instant vectors.
@@ -92,6 +95,71 @@ type StringOperator interface {
 
 	// GetValue returns the string
 	GetValue() string
+}
+
+// Matcher is a value type version of the Prometheus labels.Matcher type.
+// It exists so that we can use matchers as map keys and compare them with
+// equals operators (this is not possible with labels.Matcher types because
+// they include a pointer to a regular expression).
+type Matcher struct {
+	Type  labels.MatchType
+	Name  string
+	Value string
+}
+
+func (m Matcher) ToPrometheusType() (*labels.Matcher, error) {
+	return labels.NewMatcher(m.Type, m.Name, m.Value)
+}
+
+type Matchers []Matcher
+
+func (s Matchers) ToPrometheusType() ([]*labels.Matcher, error) {
+	if len(s) == 0 {
+		return []*labels.Matcher{}, nil
+	}
+
+	out := make([]*labels.Matcher, 0, len(s))
+	for _, m := range s {
+		prom, err := m.ToPrometheusType()
+		if err != nil {
+			return nil, err
+		}
+
+		out = append(out, prom)
+	}
+
+	return out, nil
+}
+
+// Append appends other Matchers to this matcher if both are non-nil.
+// If this Matchers is nil, other is returned unchanged.
+// If other is nil, this Matchers is returned unchanged.
+func (s Matchers) Append(other Matchers) Matchers {
+	if s == nil {
+		return other
+	}
+
+	if other == nil {
+		return s
+	}
+
+	return append(s, other...)
+}
+
+// With returns a new Matchers that only contains matchers targeting labels
+// with the given names.
+func (s Matchers) With(names ...string) Matchers {
+	out := make([]Matcher, 0, len(s))
+
+	for _, m := range s {
+		for _, name := range names {
+			if m.Name == name {
+				out = append(out, m)
+			}
+		}
+	}
+
+	return out
 }
 
 var EOS = errors.New("operator stream exhausted") //nolint:revive,staticcheck

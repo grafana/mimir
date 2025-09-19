@@ -10,7 +10,6 @@ import (
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/util"
 )
@@ -74,8 +73,7 @@ func TestPlanCosts(t *testing.T) {
 			allMatchers = append(allMatchers, tc.scanMatchers...)
 
 			// Create a scan-only plan with all matchers
-			p, err := newScanOnlyPlan(ctx, stats, allMatchers)
-			require.NoError(t, err)
+			p := newScanOnlyPlan(ctx, stats, allMatchers)
 
 			// Use index for the first N predicates (corresponding to index matchers)
 			for i := 0; i < len(tc.indexMatchers); i++ {

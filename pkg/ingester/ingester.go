@@ -44,7 +44,6 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
-	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/hashcache"
 	"github.com/prometheus/prometheus/tsdb/index"
@@ -167,15 +166,6 @@ type BlocksUploader interface {
 	Sync(ctx context.Context) (uploaded int, err error)
 }
 
-// QueryStreamType defines type of function to use when doing query-stream operation.
-type QueryStreamType int
-
-const (
-	QueryStreamDefault QueryStreamType = iota // Use default configured value.
-	QueryStreamSamples                        // Stream individual samples.
-	QueryStreamChunks                         // Stream entire chunks.
-)
-
 type requestWithUsersAndCallback struct {
 	users    *util.AllowList // if nil, all tenants are allowed.
 	callback chan<- struct{} // when compaction/shipping is finished, this channel is closed
@@ -195,10 +185,7 @@ type Config struct {
 
 	TSDBConfigUpdatePeriod time.Duration `yaml:"tsdb_config_update_period" category:"experimental"`
 
-	BlocksStorageConfig         mimir_tsdb.BlocksStorageConfig `yaml:"-"`
-	StreamChunksWhenUsingBlocks bool                           `yaml:"-" category:"deprecated"`
-	// Runtime-override for type of streaming query to use (chunks or samples).
-	StreamTypeFn func() QueryStreamType `yaml:"-"`
+	BlocksStorageConfig mimir_tsdb.BlocksStorageConfig `yaml:"-"`
 
 	DefaultLimits    InstanceLimits         `yaml:"instance_limits"`
 	InstanceLimitsFn func() *InstanceLimits `yaml:"-"`
@@ -245,7 +232,6 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 
 	f.DurationVar(&cfg.MetadataRetainPeriod, "ingester.metadata-retain-period", 10*time.Minute, "Period at which metadata we have not seen will remain in memory before being deleted.")
 	f.DurationVar(&cfg.RateUpdatePeriod, "ingester.rate-update-period", 15*time.Second, "Period with which to update the per-tenant ingestion rates.")
-	f.BoolVar(&cfg.StreamChunksWhenUsingBlocks, "ingester.stream-chunks-when-using-blocks", true, "Stream chunks from ingesters to queriers.")
 	f.DurationVar(&cfg.TSDBConfigUpdatePeriod, "ingester.tsdb-config-update-period", 15*time.Second, "Period with which to update the per-tenant TSDB configuration.")
 	f.StringVar(&cfg.IgnoreSeriesLimitForMetricNames, "ingester.ignore-series-limit-for-metric-names", "", "Comma-separated list of metric names, for which the -ingester.max-global-series-per-metric limit will be ignored. Does not affect the -ingester.max-global-series-per-user limit.")
 	f.Float64Var(&cfg.ReadPathCPUUtilizationLimit, "ingester.read-path-cpu-utilization-limit", 0, "CPU utilization limit, as CPU cores, for CPU/memory utilization based read request limiting. Use 0 to disable it.")
@@ -825,12 +811,17 @@ func (i *Ingester) updateActiveSeries(now time.Time) {
 			// Active series config has been reloaded, exposing loading metric until MetricsIdleTimeout passes.
 			i.metrics.activeSeriesLoading.WithLabelValues(userID).Set(1)
 		} else {
-			allActive, activeMatching, allActiveHistograms, activeMatchingHistograms, allActiveBuckets, activeMatchingBuckets := userDB.activeSeries.ActiveWithMatchers()
+			allActive, activeMatching, allActiveOTLP, allActiveHistograms, activeMatchingHistograms, allActiveBuckets, activeMatchingBuckets := userDB.activeSeries.ActiveWithMatchers()
 			i.metrics.activeSeriesLoading.DeleteLabelValues(userID)
 			if allActive > 0 {
 				i.metrics.activeSeriesPerUser.WithLabelValues(userID).Set(float64(allActive))
 			} else {
 				i.metrics.activeSeriesPerUser.DeleteLabelValues(userID)
+			}
+			if allActiveOTLP > 0 {
+				i.metrics.activeSeriesPerUserOTLP.WithLabelValues(userID).Set(float64(allActiveOTLP))
+			} else {
+				i.metrics.activeSeriesPerUserOTLP.DeleteLabelValues(userID)
 			}
 			if allActiveHistograms > 0 {
 				i.metrics.activeSeriesPerUserNativeHistograms.WithLabelValues(userID).Set(float64(allActiveHistograms))
@@ -895,7 +886,7 @@ func (i *Ingester) updateUsageStats() {
 		memoryUsersCount++
 		memorySeriesCount += int64(numSeries)
 
-		activeSeries, _, _ := userDB.activeSeries.Active()
+		activeSeries, _, _, _ := userDB.activeSeries.Active()
 		activeSeriesCount += int64(activeSeries)
 
 		oooWindow := i.limits.OutOfOrderTimeWindow(userID)
@@ -980,19 +971,6 @@ func (i *Ingester) updateLimitMetrics() {
 		localLimit := i.limiter.maxSeriesPerUser(userID, minLocalSeriesLimit)
 		i.metrics.maxLocalSeriesPerUser.WithLabelValues(userID).Set(float64(localLimit))
 	}
-}
-
-func (i *Ingester) UserTSDBStatistics(ctx context.Context) (index.Statistics, error) {
-	user, err := tenant.TenantID(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("error extracting tenant ID from context: %w", err)
-	}
-	db := i.getTSDB(user)
-	// If no user TSDB is found, we should not run lookup planning.
-	if db == nil {
-		return nil, fmt.Errorf("no TSDB found for user %s", user)
-	}
-	return db.Head().PostingsStats(), nil
 }
 
 // GetRef() is an extra method added to TSDB to let Mimir check before calling Add()
@@ -1394,7 +1372,20 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 
 	minAppendTime, minAppendTimeAvailable := db.Head().AppendableMinValidTime()
 
-	if pushSamplesToAppenderErr := i.pushSamplesToAppender(userID, req.Timeseries, app, startAppend, &stats, &errProcessor, updateFirstPartial, activeSeries, i.limits.OutOfOrderTimeWindow(userID), minAppendTimeAvailable, minAppendTime); pushSamplesToAppenderErr != nil {
+	if pushSamplesToAppenderErr := i.pushSamplesToAppender(
+		userID,
+		req.Timeseries,
+		app,
+		startAppend,
+		&stats,
+		&errProcessor,
+		updateFirstPartial,
+		activeSeries,
+		i.limits.OutOfOrderTimeWindow(userID),
+		minAppendTimeAvailable,
+		minAppendTime,
+		req.Source == mimirpb.OTLP,
+	); pushSamplesToAppenderErr != nil {
 		if err := app.Rollback(); err != nil {
 			level.Warn(i.logger).Log("msg", "failed to rollback appender on error", "user", userID, "err", err)
 		}
@@ -1487,9 +1478,20 @@ func (i *Ingester) updateMetricsFromPushStats(userID string, group string, stats
 // pushSamplesToAppender appends samples and exemplars to the appender. Most errors are handled via updateFirstPartial function,
 // but in case of unhandled errors, appender is rolled back and such error is returned. Errors handled by updateFirstPartial
 // must be of type softError.
-func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.PreallocTimeseries, app extendedAppender, startAppend time.Time,
-	stats *pushStats, errProcessor *mimir_storage.SoftAppendErrorProcessor, updateFirstPartial func(sampler *util_log.Sampler, errFn softErrorFunction), activeSeries *activeseries.ActiveSeries,
-	outOfOrderWindow time.Duration, minAppendTimeAvailable bool, minAppendTime int64) error {
+func (i *Ingester) pushSamplesToAppender(
+	userID string,
+	timeseries []mimirpb.PreallocTimeseries,
+	app extendedAppender,
+	startAppend time.Time,
+	stats *pushStats,
+	errProcessor *mimir_storage.SoftAppendErrorProcessor,
+	updateFirstPartial func(sampler *util_log.Sampler, errFn softErrorFunction),
+	activeSeries *activeseries.ActiveSeries,
+	outOfOrderWindow time.Duration,
+	minAppendTimeAvailable bool,
+	minAppendTime int64,
+	isOTLP bool,
+) error {
 	// Fetch limits once per push request both to avoid processing half the request differently.
 	var (
 		nativeHistogramsIngestionEnabled = i.limits.NativeHistogramsIngestionEnabled(userID)
@@ -1587,7 +1589,13 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 				}
 				if err == nil {
 					stats.succeededSamplesCount++
-				} else if !errors.Is(err, storage.ErrOutOfOrderCT) && !errors.Is(err, storage.ErrOutOfOrderSample) {
+				} else if !errors.Is(err, storage.ErrDuplicateSampleForTimestamp) && !errors.Is(err, storage.ErrOutOfOrderCT) && !errors.Is(err, storage.ErrOutOfOrderSample) {
+					// According to OTEL spec: https://opentelemetry.io/docs/specs/otel/metrics/data-model/#cumulative-streams-handling-unknown-start-time
+					// if the start time is unknown, then it should equal to the timestamp of the first sample,
+					// which will mean a created timestamp equal to the timestamp of the first sample for later
+					// samples. Thus we ignore if zero sample would cause duplicate.
+					// We also ignore out of order sample as created timestamp is out of order most of the time,
+					// except when written before the first sample.
 					errProcessor.ProcessErr(err, ts.CreatedTimestamp, ts.Labels)
 				}
 				ingestCreatedTimestamp = false // Only try to append created timestamp once per series.
@@ -1652,7 +1660,13 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 					}
 					if err == nil {
 						stats.succeededSamplesCount++
-					} else if !errors.Is(err, storage.ErrOutOfOrderCT) && !errors.Is(err, storage.ErrOutOfOrderSample) {
+					} else if !errors.Is(err, storage.ErrDuplicateSampleForTimestamp) && !errors.Is(err, storage.ErrOutOfOrderCT) && !errors.Is(err, storage.ErrOutOfOrderSample) {
+						// According to OTEL spec: https://opentelemetry.io/docs/specs/otel/metrics/data-model/#cumulative-streams-handling-unknown-start-time
+						// if the start time is unknown, then it should equal to the timestamp of the first sample,
+						// which will mean a created timestamp equal to the timestamp of the first sample for later
+						// samples. Thus we ignore if zero sample would cause duplicate.
+						// We also ignore out of order sample as created timestamp is out of order most of the time,
+						// except when written before the first sample.
 						errProcessor.ProcessErr(err, ts.CreatedTimestamp, ts.Labels)
 					}
 					ingestCreatedTimestamp = false // Only try to append created timestamp once per series.
@@ -1692,7 +1706,7 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 		}
 
 		if activeSeries != nil && stats.succeededSamplesCount > oldSucceededSamplesCount {
-			activeSeries.UpdateSeries(nonCopiedLabels, ref, startAppend, numNativeHistogramBuckets, idx)
+			activeSeries.UpdateSeries(nonCopiedLabels, ref, startAppend, numNativeHistogramBuckets, isOTLP, idx)
 		}
 
 		if len(ts.Exemplars) > 0 && i.limits.MaxGlobalExemplarsPerUser(userID) > 0 {
@@ -2238,7 +2252,7 @@ func createUserStats(db *userTSDB, req *client.UserStatsRequest) (*client.UserSt
 	case client.IN_MEMORY:
 		series = db.Head().NumSeries()
 	case client.ACTIVE:
-		activeSeries, _, _ := db.activeSeries.Active()
+		activeSeries, _, _, _ := db.activeSeries.Active()
 		series = uint64(activeSeries)
 	default:
 		return nil, fmt.Errorf("unknown count method %q", req.GetCountMethod())
@@ -2293,35 +2307,14 @@ func (i *Ingester) QueryStream(req *client.QueryRequest, stream client.Ingester_
 	numSamples := 0
 	numSeries := 0
 
-	streamType := QueryStreamSamples
-	if i.cfg.StreamChunksWhenUsingBlocks {
-		streamType = QueryStreamChunks
-	}
-
-	if i.cfg.StreamTypeFn != nil {
-		runtimeType := i.cfg.StreamTypeFn()
-		switch runtimeType {
-		case QueryStreamChunks:
-			streamType = QueryStreamChunks
-		case QueryStreamSamples:
-			streamType = QueryStreamSamples
-		default:
-			// no change from config value.
-		}
-	}
-
-	if streamType == QueryStreamChunks {
-		if req.StreamingChunksBatchSize > 0 {
-			spanlog.DebugLog("msg", "using executeStreamingQuery")
-			numSeries, numSamples, err = i.executeStreamingQuery(ctx, db, int64(from), int64(through), matchers, shard, stream, req.StreamingChunksBatchSize, spanlog)
-		} else {
-			spanlog.DebugLog("msg", "using executeChunksQuery")
-			numSeries, numSamples, err = i.executeChunksQuery(ctx, db, int64(from), int64(through), matchers, shard, stream)
-		}
+	if req.StreamingChunksBatchSize > 0 {
+		spanlog.DebugLog("msg", "using executeStreamingQuery")
+		numSeries, numSamples, err = i.executeStreamingQuery(ctx, db, int64(from), int64(through), matchers, shard, stream, req.StreamingChunksBatchSize, spanlog)
 	} else {
-		spanlog.DebugLog("msg", "using executeSamplesQuery")
-		numSeries, numSamples, err = i.executeSamplesQuery(ctx, db, int64(from), int64(through), matchers, shard, stream)
+		spanlog.DebugLog("msg", "using executeChunksQuery")
+		numSeries, numSamples, err = i.executeChunksQuery(ctx, db, int64(from), int64(through), matchers, shard, stream)
 	}
+
 	if err != nil {
 		return err
 	}
@@ -2330,96 +2323,6 @@ func (i *Ingester) QueryStream(req *client.QueryRequest, stream client.Ingester_
 	i.metrics.queriedSamples.Observe(float64(numSamples))
 	spanlog.DebugLog("series", numSeries, "samples", numSamples)
 	return nil
-}
-
-func (i *Ingester) executeSamplesQuery(ctx context.Context, db *userTSDB, from, through int64, matchers []*labels.Matcher, shard *sharding.ShardSelector, stream client.Ingester_QueryStreamServer) (numSeries, numSamples int, _ error) {
-	q, err := db.Querier(from, through)
-	if err != nil {
-		return 0, 0, err
-	}
-	defer q.Close()
-
-	var hints *storage.SelectHints
-	if shard != nil {
-		hints = configSelectHintsWithShard(initSelectHints(from, through), shard)
-	}
-
-	// It's not required to return sorted series because series are sorted by the Mimir querier.
-	ss := q.Select(ctx, false, hints, matchers...)
-	if ss.Err() != nil {
-		return 0, 0, ss.Err()
-	}
-
-	timeseries := make([]mimirpb.TimeSeries, 0, queryStreamBatchSize)
-	batchSizeBytes := 0
-	var it chunkenc.Iterator
-	for ss.Next() {
-		series := ss.At()
-
-		// convert labels to LabelAdapter
-		ts := mimirpb.TimeSeries{
-			Labels: mimirpb.FromLabelsToLabelAdapters(series.Labels()),
-		}
-
-		it = series.Iterator(it)
-		for valType := it.Next(); valType != chunkenc.ValNone; valType = it.Next() {
-			switch valType {
-			case chunkenc.ValFloat:
-				t, v := it.At()
-				ts.Samples = append(ts.Samples, mimirpb.Sample{Value: v, TimestampMs: t})
-			case chunkenc.ValHistogram:
-				t, v := it.AtHistogram(nil) // Nil argument as we pass the data to the protobuf as-is without copy.
-				ts.Histograms = append(ts.Histograms, mimirpb.FromHistogramToHistogramProto(t, v))
-			case chunkenc.ValFloatHistogram:
-				t, v := it.AtFloatHistogram(nil) // Nil argument as we pass the data to the protobuf as-is without copy.
-				ts.Histograms = append(ts.Histograms, mimirpb.FromFloatHistogramToHistogramProto(t, v))
-			default:
-				return 0, 0, fmt.Errorf("unsupported value type: %v", valType)
-			}
-		}
-
-		if err := it.Err(); err != nil {
-			return 0, 0, err
-		}
-
-		numSamples += len(ts.Samples) + len(ts.Histograms)
-		numSeries++
-		tsSize := ts.Size()
-
-		if (batchSizeBytes > 0 && batchSizeBytes+tsSize > queryStreamBatchMessageSize) || len(timeseries) >= queryStreamBatchSize {
-			// Adding this series to the batch would make it too big,
-			// flush the data and add it to new batch instead.
-			err = client.SendQueryStream(stream, &client.QueryStreamResponse{
-				Timeseries: timeseries,
-			})
-			if err != nil {
-				return 0, 0, err
-			}
-
-			batchSizeBytes = 0
-			timeseries = timeseries[:0]
-		}
-
-		timeseries = append(timeseries, ts)
-		batchSizeBytes += tsSize
-	}
-
-	// Ensure no error occurred while iterating the series set.
-	if err := ss.Err(); err != nil {
-		return 0, 0, err
-	}
-
-	// Finally flush any existing metrics
-	if batchSizeBytes != 0 {
-		err = client.SendQueryStream(stream, &client.QueryStreamResponse{
-			Timeseries: timeseries,
-		})
-		if err != nil {
-			return 0, 0, err
-		}
-	}
-
-	return numSeries, numSamples, nil
 }
 
 // executeChunksQuery streams metrics from a TSDB. This implements the client.IngesterServer interface
@@ -2753,15 +2656,22 @@ func (i *Ingester) getTSDB(userID string) *userTSDB {
 	return db
 }
 
-// getIndexLookupPlanner returns the appropriate index lookup planner based on configuration.
-// When index lookup planning is enabled, it uses the CostBasedPlanner,
-// which calculates cost for several plans based on label name/value statistics, and picks the optimal one.
+// getIndexLookupPlannerFunc returns the appropriate index lookup planner function based on configuration.
+// When index lookup planning is enabled, it creates a CostBasedPlanner for each block,
+// which calculates cost for several plans based on that block's specific statistics, and picks the optimal one.
 // When disabled, it uses NoopPlanner which performs no optimization.
-func (i *Ingester) getIndexLookupPlanner(r prometheus.Registerer) index.LookupPlanner {
-	if i.cfg.BlocksStorageConfig.TSDB.IndexLookupPlanningEnabled {
-		return lookupplan.NewCostBasedPlanner(lookupplan.NewMetrics(r), i)
+func (i *Ingester) getIndexLookupPlannerFunc(r prometheus.Registerer, userID string) tsdb.IndexLookupPlannerFunc {
+	if !i.cfg.BlocksStorageConfig.TSDB.IndexLookupPlanningEnabled {
+		return func(tsdb.BlockMeta, tsdb.IndexReader) index.LookupPlanner { return lookupplan.NoopPlanner{} }
 	}
-	return lookupplan.NoopPlanner{}
+
+	metrics := lookupplan.NewMetrics(r)
+	logger := log.With(i.logger, "user", userID)
+	statsGenerator := lookupplan.NewStatisticsGenerator(logger)
+
+	provider := lookupplan.NewPlannerFactory(metrics, logger, statsGenerator)
+
+	return provider.CreatePlanner
 }
 
 // List all users for which we have a TSDB. We do it here in order
@@ -2905,7 +2815,7 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 		BlockPostingsForMatchersCacheMetrics:     i.tsdbMetrics.blockPostingsForMatchersCacheMetrics,
 		EnableNativeHistograms:                   i.limits.NativeHistogramsIngestionEnabled(userID),
 		SecondaryHashFunction:                    secondaryTSDBHashFunctionForUser(userID),
-		IndexLookupPlanner:                       i.getIndexLookupPlanner(tsdbPromReg),
+		IndexLookupPlannerFunc:                   i.getIndexLookupPlannerFunc(tsdbPromReg, userID),
 		BlockChunkQuerierFunc: func(b tsdb.BlockReader, mint, maxt int64) (storage.ChunkQuerier, error) {
 			return i.createBlockChunkQuerier(userID, b, mint, maxt)
 		},
@@ -3574,7 +3484,7 @@ func (i *Ingester) compactBlocksToReduceInMemorySeries(ctx context.Context, now 
 
 		// Estimate the number of series that would be dropped from the TSDB Head if we would
 		// compact the head up until "now - active series idle timeout".
-		totalActiveSeries, _, _ := db.activeSeries.Active()
+		totalActiveSeries, _, _, _ := db.activeSeries.Active()
 		estimatedSeriesReduction := max(0, int64(userMemorySeries)-int64(totalActiveSeries))
 		estimations = append(estimations, seriesReductionEstimation{
 			userID:              userID,

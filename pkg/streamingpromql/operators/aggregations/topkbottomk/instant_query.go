@@ -47,7 +47,7 @@ type InstantQuery struct {
 
 var _ types.InstantVectorOperator = &InstantQuery{}
 
-func (t *InstantQuery) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
+func (t *InstantQuery) SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
 	if err := t.getK(ctx); err != nil {
 		return nil, err
 	}
@@ -57,7 +57,7 @@ func (t *InstantQuery) SeriesMetadata(ctx context.Context) ([]types.SeriesMetada
 		return nil, nil
 	}
 
-	innerSeries, err := t.Inner.SeriesMetadata(ctx)
+	innerSeries, err := t.Inner.SeriesMetadata(ctx, matchers)
 	if err != nil {
 		return nil, err
 	}

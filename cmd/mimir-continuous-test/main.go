@@ -32,6 +32,7 @@ func main() {
 	)
 	flag.CommandLine.IntVar(&serverMetricsPort, "server.metrics-port", 9900, "The port where metrics are exposed.")
 	cfg.RegisterFlags(flag.CommandLine)
+	cfg.IngestStorageRecordTest.Kafka.RegisterFlagsWithPrefix("ingest-storage.kafka.", flag.CommandLine)
 	logLevel.RegisterFlags(flag.CommandLine)
 
 	if err := flagext.ParseFlagsWithoutArguments(flag.CommandLine); err != nil {
@@ -74,6 +75,7 @@ func main() {
 	// Run continuous testing.
 	m := continuoustest.NewManager(cfg.Manager, logger)
 	m.AddTest(continuoustest.NewWriteReadSeriesTest(cfg.WriteReadSeriesTest, client, logger, registry))
+	m.AddTest(continuoustest.NewIngestStorageRecordTest(cfg.IngestStorageRecordTest, logger, registry))
 	if err := m.Run(context.Background()); err != nil {
 		if !errors.Is(err, modules.ErrStopProcess) {
 			level.Error(logger).Log("msg", "Failed to run continuous test", "err", err.Error())

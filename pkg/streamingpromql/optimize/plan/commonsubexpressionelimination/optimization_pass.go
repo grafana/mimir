@@ -37,23 +37,26 @@ type OptimizationPass struct {
 	duplicationNodesIntroduced prometheus.Counter
 	selectorsEliminated        prometheus.Counter
 	selectorsInspected         prometheus.Counter
+
+	logger log.Logger
 }
 
-func NewOptimizationPass(enableEliminatingDuplicateRangeVectorExpressionsInInstantQueries bool, reg prometheus.Registerer) *OptimizationPass {
+func NewOptimizationPass(enableEliminatingDuplicateRangeVectorExpressionsInInstantQueries bool, reg prometheus.Registerer, logger log.Logger) *OptimizationPass {
 	return &OptimizationPass{
 		enableEliminatingDuplicateRangeVectorExpressionsInInstantQueries: enableEliminatingDuplicateRangeVectorExpressionsInInstantQueries,
 		duplicationNodesIntroduced: promauto.With(reg).NewCounter(prometheus.CounterOpts{
-			Name: "cortex_mimir_query_engine_common_subexpression_elimination_duplication_nodes_introduced",
+			Name: "cortex_mimir_query_engine_common_subexpression_elimination_duplication_nodes_introduced_total",
 			Help: "Number of duplication nodes introduced by the common subexpression elimination optimization pass.",
 		}),
 		selectorsEliminated: promauto.With(reg).NewCounter(prometheus.CounterOpts{
-			Name: "cortex_mimir_query_engine_common_subexpression_elimination_selectors_eliminated",
+			Name: "cortex_mimir_query_engine_common_subexpression_elimination_selectors_eliminated_total",
 			Help: "Number of selectors eliminated by the common subexpression elimination optimization pass.",
 		}),
 		selectorsInspected: promauto.With(reg).NewCounter(prometheus.CounterOpts{
-			Name: "cortex_mimir_query_engine_common_subexpression_elimination_selectors_inspected",
+			Name: "cortex_mimir_query_engine_common_subexpression_elimination_selectors_inspected_total",
 			Help: "Number of selectors inspected by the common subexpression elimination optimization pass, before elimination.",
 		}),
+		logger: logger,
 	}
 }
 
@@ -74,7 +77,7 @@ func (e *OptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan) 
 	e.selectorsInspected.Add(float64(len(paths)))
 	e.selectorsEliminated.Add(float64(selectorsEliminated))
 
-	spanLog := spanlogger.FromContext(ctx, log.NewNopLogger())
+	spanLog := spanlogger.FromContext(ctx, e.logger)
 	spanLog.DebugLog("msg", "attempted common subexpression elimination", "selectors_inspected", len(paths), "selectors_eliminated", selectorsEliminated)
 
 	return plan, nil

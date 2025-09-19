@@ -7,12 +7,14 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"net/http"
 	"strconv"
 	"testing"
 	"time"
 
 	"github.com/grafana/e2e"
 	e2edb "github.com/grafana/e2e/db"
+	"github.com/grafana/regexp"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/otlptranslator"
 	"github.com/prometheus/prometheus/model/labels"
@@ -20,6 +22,11 @@ import (
 	v1 "github.com/prometheus/prometheus/web/api/v1"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	colmetricpb "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
+	commonpb "go.opentelemetry.io/proto/otlp/common/v1"
+	metricspb "go.opentelemetry.io/proto/otlp/metrics/v1"
+	resourcepb "go.opentelemetry.io/proto/otlp/resource/v1"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/grafana/mimir/integration/e2emimir"
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -103,11 +110,11 @@ func testOTLPIngestion(t *testing.T, opts testOTLPIngestionOpts) {
 	metadata := []mimirpb.MetricMetadata{
 		{
 			Help: "foo",
-			Unit: "By",
+			Unit: "bytes",
 		},
 	}
 
-	res, err := c.PushOTLP(series, metadata)
+	res, _, err := c.PushOTLP(series, metadata)
 	require.NoError(t, err)
 	require.Equal(t, 200, res.StatusCode)
 
@@ -130,7 +137,7 @@ func testOTLPIngestion(t *testing.T, opts testOTLPIngestionOpts) {
 
 	labelNames, err := c.LabelNames(v1.MinTime, v1.MaxTime, nil)
 	require.NoError(t, err)
-	require.Equal(t, model.LabelNames{"__name__", "foo"}, labelNames)
+	require.Equal(t, []string{"__name__", "foo"}, labelNames)
 
 	rangeResult, err := c.QueryRange(metricQuery, now.Add(-15*time.Minute), now, 15*time.Second)
 	require.NoError(t, err)
@@ -153,7 +160,7 @@ func testOTLPIngestion(t *testing.T, opts testOTLPIngestionOpts) {
 			 {
 				"type":"gauge",
 				"help":"foo",
-				"unit":"By"
+				"unit":"bytes"
 			 }
 		  ]
 	   }
@@ -169,7 +176,7 @@ func testOTLPIngestion(t *testing.T, opts testOTLPIngestionOpts) {
 
 	// Push series with histograms to Mimir
 	series, expectedVector, _ = generateHistogramSeries("series.histogram", now)
-	res, err = c.PushOTLP(series, metadata)
+	res, _, err = c.PushOTLP(series, metadata)
 	require.NoError(t, err)
 	require.Equal(t, 200, res.StatusCode)
 
@@ -198,14 +205,14 @@ func testOTLPIngestion(t *testing.T, opts testOTLPIngestionOpts) {
 				 {
 					"type":"histogram",
 					"help":"foo",
-					"unit":"By"
+					"unit":"bytes"
 				 }
 			  ],
 			  "%s":[
 				 {
 					"type":"gauge",
 					"help":"foo",
-					"unit":"By"
+					"unit":"bytes"
 				 }
 			  ]
 		   }
@@ -266,73 +273,84 @@ func testOTLPHistogramIngestion(t *testing.T, enableExplicitHistogramToNHCB bool
 	now := time.Now()
 	nowUnix := uint64(now.UnixNano())
 
-	jsonPayload := []byte(fmt.Sprintf(`{
-		"resourceMetrics": [
+	float64Ptr := func(f float64) *float64 {
+		return &f
+	}
+
+	req := &metricspb.MetricsData{
+		ResourceMetrics: []*metricspb.ResourceMetrics{
 			{
-				"resource": {
-					"attributes": [
-						{ "key": "resource.attr", "value": { "stringValue": "value" } }
-					]
+				Resource: &resourcepb.Resource{
+					Attributes: []*commonpb.KeyValue{
+						{Key: "resource.attr", Value: &commonpb.AnyValue{Value: &commonpb.AnyValue_StringValue{StringValue: "value"}}},
+					},
 				},
-				"scopeMetrics": [
+				ScopeMetrics: []*metricspb.ScopeMetrics{
 					{
-						"metrics": [
+						Metrics: []*metricspb.Metric{
 							{
-								"name": "explicit_bucket_histogram_series",
-								"description": "Explicit bucket histogram series",
-								"unit": "s",
-								"histogram": {
-									"aggregationTemporality": "AGGREGATION_TEMPORALITY_CUMULATIVE",
-									"dataPoints": [
-										{
-											"attributes": [
-												{ "key": "metric-attr", "value": { "stringValue": "metric value" } }
-											],
-											"bucketCounts": [0, 4, 3, 0, 3],
-											"explicitBounds": [0, 5, 10, 15],
-											"count": 10,
-											"sum": 20,
-											"timeUnixNano": "%d"
-										}
-									]
-								}
+								Name:        "explicit_bucket_histogram_series",
+								Description: "Explicit bucket histogram series",
+								Unit:        "s",
+								Data: &metricspb.Metric_Histogram{
+									Histogram: &metricspb.Histogram{
+										AggregationTemporality: metricspb.AggregationTemporality_AGGREGATION_TEMPORALITY_CUMULATIVE,
+										DataPoints: []*metricspb.HistogramDataPoint{
+											{
+												Attributes: []*commonpb.KeyValue{
+													{Key: "metric-attr", Value: &commonpb.AnyValue{Value: &commonpb.AnyValue_StringValue{StringValue: "metric value"}}},
+												},
+												BucketCounts:   []uint64{0, 4, 3, 0, 3},
+												ExplicitBounds: []float64{0, 5, 10, 15},
+												Count:          10,
+												Sum:            float64Ptr(20),
+												TimeUnixNano:   nowUnix,
+											},
+										},
+									},
+								},
 							},
 							{
-								"name": "exponential_histogram_series",
-								"description": "Exponential histogram series",
-								"unit": "s",
-								"exponentialHistogram": {
-									"aggregationTemporality": "AGGREGATION_TEMPORALITY_CUMULATIVE",
-									"dataPoints": [
-										{
-											"attributes": [
-												{ "key": "metric-attr", "value": { "stringValue": "metric value" } }
-											],
-											"scale": 0,
-											"count": 15,
-											"sum": 25,
-											"zeroCount": 1,
-											"positive": {
-												"offset": 1,
-												"bucketCounts": [1, 0, 3, 2, 0, 3]
+								Name:        "exponential_histogram_series",
+								Description: "Exponential histogram series",
+								Unit:        "s",
+								Data: &metricspb.Metric_ExponentialHistogram{
+									ExponentialHistogram: &metricspb.ExponentialHistogram{
+										AggregationTemporality: metricspb.AggregationTemporality_AGGREGATION_TEMPORALITY_CUMULATIVE,
+										DataPoints: []*metricspb.ExponentialHistogramDataPoint{
+											{
+												Attributes: []*commonpb.KeyValue{
+													{Key: "metric-attr", Value: &commonpb.AnyValue{Value: &commonpb.AnyValue_StringValue{StringValue: "metric value"}}},
+												},
+												Scale:     0,
+												Count:     15,
+												Sum:       float64Ptr(25),
+												ZeroCount: 1,
+												Positive: &metricspb.ExponentialHistogramDataPoint_Buckets{
+													Offset:       1,
+													BucketCounts: []uint64{1, 0, 3, 2, 0, 3},
+												},
+												Negative: &metricspb.ExponentialHistogramDataPoint_Buckets{
+													Offset:       0,
+													BucketCounts: []uint64{4, 0, 0, 1},
+												},
+												TimeUnixNano: nowUnix,
 											},
-											"negative": {
-												"offset": 0,
-												"bucketCounts": [4, 0, 0, 1]
-											},
-											"timeUnixNano": "%d"
-										}
-									]
-								}
-							}
-						]
-					}
-				]
-			}
-		]
-	}`, nowUnix, nowUnix))
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
 
-	res, err := c.PushOTLPPayload(jsonPayload, "application/json")
+	protoPayload, err := proto.Marshal(req)
+	require.NoError(t, err)
+
+	res, _, err := c.PushOTLPPayload(protoPayload, "application/x-protobuf")
 	require.NoError(t, err)
 	require.Equal(t, 200, res.StatusCode)
 
@@ -392,4 +410,223 @@ func testOTLPHistogramIngestion(t *testing.T, enableExplicitHistogramToNHCB bool
 	require.NoError(t, err)
 	require.Equal(t, result.(model.Vector)[0].Histogram.Count, model.FloatString(15))
 	require.Equal(t, result.(model.Vector)[0].Histogram.Sum, model.FloatString(25))
+}
+
+// TestStartTimeHandling implements E2E test for OTel start time to
+// zero sample ingestion.
+func TestStartTimeHandling(t *testing.T) {
+	t.Run("enableCTzero=false", func(t *testing.T) {
+		testStartTimeHandling(t, false)
+	})
+
+	t.Run("enableCTzero=true", func(t *testing.T) {
+		testStartTimeHandling(t, true)
+	})
+}
+
+func testStartTimeHandling(t *testing.T, enableCTzero bool) {
+	t.Helper()
+
+	var zeroTs time.Time
+	now := time.Now()
+
+	testCases := map[string]struct {
+		startTs      time.Time
+		expectCTzero bool
+	}{
+		"zero start time": {
+			startTs:      zeroTs,
+			expectCTzero: false,
+		},
+		"start time too old": {
+			startTs:      now.Add(-1 * time.Hour),
+			expectCTzero: false,
+		},
+		"start time ok": {
+			startTs:      now.Add(-30 * time.Second),
+			expectCTzero: true,
+		},
+		"start time equal to sample timestamp": {
+			startTs:      now,
+			expectCTzero: false,
+		},
+		"start time in the future": {
+			startTs:      now.Add(30 * time.Second),
+			expectCTzero: false,
+		},
+	}
+
+	s, err := e2e.NewScenario(networkName)
+	require.NoError(t, err)
+	defer s.Close()
+
+	// Start dependencies.
+	minio := e2edb.NewMinio(9000, blocksBucketName, rulesBucketName)
+	require.NoError(t, s.StartAndWaitReady(minio))
+
+	// Start Mimir components.
+	require.NoError(t, copyFileToSharedDir(s, "docs/configurations/single-process-config-blocks.yaml", mimirConfigFile))
+
+	// Start Mimir in single binary mode, reading the config from file and overwriting
+	// the backend config to make it work with Minio.
+	flags := mergeFlags(
+		DefaultSingleBinaryFlags(),
+		BlocksStorageFlags(),
+		BlocksStorageS3Flags(),
+		RulerStorageS3Flags(),
+		map[string]string{
+			"-distributor.otel-created-timestamp-zero-ingestion-enabled": strconv.FormatBool(enableCTzero),
+		},
+	)
+
+	mimir := e2emimir.NewSingleBinary("mimir-1", flags, e2emimir.WithConfigFile(mimirConfigFile), e2emimir.WithPorts(9009, 9095))
+	require.NoError(t, s.StartAndWaitReady(mimir))
+
+	c, err := e2emimir.NewClient(mimir.HTTPEndpoint(), mimir.HTTPEndpoint(), "", "", "user-1")
+	require.NoError(t, err)
+
+	count := int64(0)
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			metric := "http_requests_" + strconv.FormatInt(count, 10)
+			req := &metricspb.MetricsData{
+				ResourceMetrics: []*metricspb.ResourceMetrics{
+					{
+						Resource: &resourcepb.Resource{
+							Attributes: []*commonpb.KeyValue{
+								{Key: "resource.attr", Value: &commonpb.AnyValue{Value: &commonpb.AnyValue_StringValue{StringValue: "value"}}},
+							},
+						},
+						ScopeMetrics: []*metricspb.ScopeMetrics{
+							{
+								Metrics: []*metricspb.Metric{
+									{
+										Name:        metric,
+										Description: "Number of HTTP requests",
+										Unit:        "1",
+										Data: &metricspb.Metric_Sum{
+											Sum: &metricspb.Sum{
+												AggregationTemporality: metricspb.AggregationTemporality_AGGREGATION_TEMPORALITY_CUMULATIVE,
+												IsMonotonic:            true,
+												DataPoints: []*metricspb.NumberDataPoint{
+													{
+														Attributes: []*commonpb.KeyValue{
+															{Key: "method", Value: &commonpb.AnyValue{Value: &commonpb.AnyValue_StringValue{StringValue: "GET"}}},
+														},
+														Value:             &metricspb.NumberDataPoint_AsDouble{AsDouble: 100.0},
+														StartTimeUnixNano: uint64(tc.startTs.UnixNano()),
+														TimeUnixNano:      uint64(now.UnixNano()),
+													},
+												},
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			}
+			protoPayload, err := proto.Marshal(req)
+			require.NoError(t, err)
+
+			res, _, err := c.PushOTLPPayload(protoPayload, "application/x-protobuf")
+			require.NoError(t, err)
+			require.Equal(t, 200, res.StatusCode)
+
+			result, err := c.Query(metric+"[1h]", now.Add(30*time.Minute))
+			require.NoError(t, err)
+
+			m, ok := result.(model.Matrix)
+			require.True(t, ok, "result is a Matrix")
+
+			s := m[0]
+			sampleIdx := 0
+			if enableCTzero && tc.expectCTzero {
+				sampleIdx = 1
+				require.Len(t, s.Values, 2)
+				require.Equal(t, tc.startTs.UnixMilli(), s.Values[0].Timestamp.Time().UnixMilli())
+				require.Equal(t, 0.0, float64(s.Values[0].Value))
+			} else {
+				require.Len(t, s.Values, 1)
+			}
+			require.Equal(t, now.UnixMilli(), s.Values[sampleIdx].Timestamp.Time().UnixMilli())
+			require.Equal(t, 100.0, float64(s.Values[sampleIdx].Value))
+		})
+		count++
+	}
+}
+
+// This test validates that the responses from Mimir's OTLP ingestion endpoint adhere to spec:
+// https://opentelemetry.io/docs/specs/otlp/#otlphttp-response.
+func TestOTLPResponseStatusCodeSpecifications(t *testing.T) {
+	s, err := e2e.NewScenario(networkName)
+	require.NoError(t, err)
+	defer s.Close()
+
+	// Start dependencies.
+	minio := e2edb.NewMinio(9000, blocksBucketName, rulesBucketName)
+	require.NoError(t, s.StartAndWaitReady(minio))
+
+	// Start Mimir components.
+	require.NoError(t, copyFileToSharedDir(s, "docs/configurations/single-process-config-blocks.yaml", mimirConfigFile))
+
+	// Start Mimir in single binary mode, reading the config from file and overwriting
+	// the backend config to make it work with Minio.
+	flags := mergeFlags(
+		DefaultSingleBinaryFlags(),
+		BlocksStorageFlags(),
+		BlocksStorageS3Flags(),
+		RulerStorageS3Flags(),
+		map[string]string{
+			"-ingester.max-global-exemplars-per-user": "1000",
+		},
+	)
+
+	mimir := e2emimir.NewSingleBinary("mimir-1", flags, e2emimir.WithConfigFile(mimirConfigFile), e2emimir.WithPorts(9009, 9095))
+	require.NoError(t, s.StartAndWaitReady(mimir))
+
+	c, err := e2emimir.NewClient(mimir.HTTPEndpoint(), mimir.HTTPEndpoint(), "", "", "user-1")
+	require.NoError(t, err)
+
+	now := time.Now()
+
+	t.Run("should return 200 on partial success due to out of order exemplars", func(t *testing.T) {
+		// Send a first request with an exemplar.
+		req1, _, _ := generateHistogramSeries("series_with_out_of_order_exemplars", now)
+		req1[0].Exemplars = []prompb.Exemplar{
+			{
+				Labels:    []prompb.Label{{Name: "trace_id", Value: "xxx"}},
+				Value:     1,
+				Timestamp: now.UnixMilli(),
+			},
+		}
+
+		res, body, err := c.PushOTLP(req1, nil)
+		require.NoError(t, err)
+		require.Equal(t, http.StatusOK, res.StatusCode)
+		require.Empty(t, body)
+		require.NoError(t, mimir.WaitSumMetrics(e2e.Equals(1), "cortex_ingester_ingested_exemplars_total"))
+
+		// Send a second request with an out of order exemplar. The response should be 200 but the exemplar should not be ingested.
+		req2, _, _ := generateHistogramSeries("series_with_out_of_order_exemplars", now.Add(time.Second))
+		req2[0].Exemplars = []prompb.Exemplar{
+			{
+				Labels:    []prompb.Label{{Name: "trace_id", Value: "xxx"}},
+				Value:     2,
+				Timestamp: now.Add(-time.Second).UnixMilli(),
+			},
+		}
+
+		res, body, err = c.PushOTLP(req2, nil)
+		require.NoError(t, err)
+		require.Equal(t, http.StatusOK, res.StatusCode)
+		assert.Equal(t, "application/x-protobuf", res.Header.Get("Content-Type"))
+		assert.Equal(t, strconv.Itoa(len(body)), res.Header.Get("Content-Length"))
+		var expResp colmetricpb.ExportMetricsServiceResponse
+		require.NoError(t, proto.Unmarshal(body, &expResp))
+		assert.Equal(t, int64(0), expResp.PartialSuccess.RejectedDataPoints)
+		assert.Regexp(t, regexp.MustCompile(`failed pushing to ingester mimir-1: user=user-1: err: out of order exemplar. timestamp=[^,]+, series=series_with_out_of_order_exemplars, exemplar=\{trace_id="xxx"\}`), expResp.PartialSuccess.ErrorMessage)
+		require.NoError(t, mimir.WaitSumMetrics(e2e.Equals(1), "cortex_ingester_ingested_exemplars_total"))
+	})
 }

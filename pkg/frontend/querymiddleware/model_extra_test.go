@@ -18,6 +18,8 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/grafana/mimir/pkg/util/propagation"
 )
 
 func TestEncodeAndDecodeCachedHTTPResponse(t *testing.T) {
@@ -118,7 +120,7 @@ func TestMetricQueryRequestCloneHeaders(t *testing.T) {
 			httpReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 			httpReq.Header.Set("X-Test-Header", "test-value")
 
-			c := NewCodec(prometheus.NewPedanticRegistry(), time.Minute*5, "json", nil)
+			c := NewCodec(prometheus.NewPedanticRegistry(), time.Minute*5, "json", nil, &propagation.NoopInjector{})
 			originalReq, err := c.DecodeMetricsQueryRequest(context.Background(), httpReq)
 			require.NoError(t, err)
 

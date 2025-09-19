@@ -76,26 +76,27 @@ var ErrNotReady = errors.New("TSDB not ready")
 // millisecond precision timestamps.
 func DefaultOptions() *Options {
 	return &Options{
-		WALSegmentSize:              wlog.DefaultSegmentSize,
-		MaxBlockChunkSegmentSize:    chunks.DefaultChunkSegmentSize,
-		RetentionDuration:           int64(15 * 24 * time.Hour / time.Millisecond),
-		MinBlockDuration:            DefaultBlockDuration,
-		MaxBlockDuration:            DefaultBlockDuration,
-		NoLockfile:                  false,
-		SamplesPerChunk:             DefaultSamplesPerChunk,
-		WALCompression:              compression.None,
-		StripeSize:                  DefaultStripeSize,
-		HeadChunksWriteBufferSize:   chunks.DefaultWriteBufferSize,
-		IsolationDisabled:           defaultIsolationDisabled,
-		HeadChunksWriteQueueSize:    chunks.DefaultWriteQueueSize,
-		OutOfOrderCapMax:            DefaultOutOfOrderCapMax,
-		EnableOverlappingCompaction: true,
-		EnableSharding:              false,
-		EnableDelayedCompaction:     false,
-		CompactionDelayMaxPercent:   DefaultCompactionDelayMaxPercent,
-		CompactionDelay:             time.Duration(0),
-		PostingsDecoderFactory:      DefaultPostingsDecoderFactory,
-		IndexLookupPlanner:          &index.ScanEmptyMatchersLookupPlanner{}, HeadChunksEndTimeVariance: 0,
+		WALSegmentSize:                           wlog.DefaultSegmentSize,
+		MaxBlockChunkSegmentSize:                 chunks.DefaultChunkSegmentSize,
+		RetentionDuration:                        int64(15 * 24 * time.Hour / time.Millisecond),
+		MinBlockDuration:                         DefaultBlockDuration,
+		MaxBlockDuration:                         DefaultBlockDuration,
+		NoLockfile:                               false,
+		SamplesPerChunk:                          DefaultSamplesPerChunk,
+		WALCompression:                           compression.None,
+		StripeSize:                               DefaultStripeSize,
+		HeadChunksWriteBufferSize:                chunks.DefaultWriteBufferSize,
+		IsolationDisabled:                        defaultIsolationDisabled,
+		HeadChunksWriteQueueSize:                 chunks.DefaultWriteQueueSize,
+		OutOfOrderCapMax:                         DefaultOutOfOrderCapMax,
+		EnableOverlappingCompaction:              true,
+		EnableSharding:                           false,
+		EnableDelayedCompaction:                  false,
+		CompactionDelayMaxPercent:                DefaultCompactionDelayMaxPercent,
+		CompactionDelay:                          time.Duration(0),
+		PostingsDecoderFactory:                   DefaultPostingsDecoderFactory,
+		IndexLookupPlannerFunc:                   DefaultIndexLookupPlannerFunc,
+		HeadChunksEndTimeVariance:                0,
 		HeadPostingsForMatchersCacheInvalidation: DefaultPostingsForMatchersCacheInvalidation,
 		HeadPostingsForMatchersCacheVersions:     DefaultPostingsForMatchersCacheVersions,
 		HeadPostingsForMatchersCacheTTL:          DefaultPostingsForMatchersCacheTTL,
@@ -314,8 +315,11 @@ type Options struct {
 	// UseUncachedIO allows bypassing the page cache when appropriate.
 	UseUncachedIO bool
 
-	// IndexLookupPlanner can be optionally used when querying the index of blocks.
-	IndexLookupPlanner index.LookupPlanner
+	// IndexLookupPlannerFunc is a function to return index.LookupPlanner from a BlockReader.
+	// Similar to BlockChunkQuerierFunc, this allows per-block planner creation.
+	// For on-disk blocks, IndexLookupPlannerFunc is invoked once when they are opened.
+	// For in-memory blocks IndexLookupPlannerFunc is invoked every time statistics are generated, which happens according to HeadStatisticsCollectionFrequency.
+	IndexLookupPlannerFunc IndexLookupPlannerFunc
 }
 
 type NewCompactorFunc func(ctx context.Context, r prometheus.Registerer, l *slog.Logger, ranges []int64, pool chunkenc.Pool, opts *Options) (Compactor, error)
@@ -325,6 +329,10 @@ type BlocksToDeleteFunc func(blocks []*Block) map[ulid.ULID]struct{}
 type BlockQuerierFunc func(b BlockReader, mint, maxt int64) (storage.Querier, error)
 
 type BlockChunkQuerierFunc func(b BlockReader, mint, maxt int64) (storage.ChunkQuerier, error)
+
+type IndexLookupPlannerFunc func(meta BlockMeta, reader IndexReader) index.LookupPlanner
+
+var DefaultIndexLookupPlannerFunc IndexLookupPlannerFunc = func(BlockMeta, IndexReader) index.LookupPlanner { return &index.ScanEmptyMatchersLookupPlanner{} }
 
 // DB handles reads and writes of time series falling into
 // a hashed partition of a seriedb.
@@ -733,7 +741,7 @@ func (db *DBReadOnly) Blocks() ([]BlockReader, error) {
 		return nil, ErrClosed
 	default:
 	}
-	loadable, corrupted, err := openBlocks(db.logger, db.dir, nil, nil, DefaultPostingsDecoderFactory, &index.ScanEmptyMatchersLookupPlanner{}, nil, DefaultPostingsForMatchersCacheFactory)
+	loadable, corrupted, err := openBlocks(db.logger, db.dir, nil, nil, DefaultPostingsDecoderFactory, DefaultIndexLookupPlannerFunc, nil, DefaultPostingsForMatchersCacheFactory)
 	if err != nil {
 		return nil, err
 	}
@@ -912,8 +920,8 @@ func validateOpts(opts *Options, rngs []int64) (*Options, []int64) {
 	if opts.OutOfOrderTimeWindow < 0 {
 		opts.OutOfOrderTimeWindow = 0
 	}
-	if opts.IndexLookupPlanner == nil {
-		opts.IndexLookupPlanner = &index.ScanEmptyMatchersLookupPlanner{}
+	if opts.IndexLookupPlannerFunc == nil {
+		opts.IndexLookupPlannerFunc = DefaultIndexLookupPlannerFunc
 	}
 	if opts.PostingsForMatchersCacheKeyFunc == nil {
 		opts.PostingsForMatchersCacheKeyFunc = DefaultPostingsForMatchersCacheKeyFunc
@@ -1105,8 +1113,8 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 		opts.HeadPostingsForMatchersCacheMetrics,
 	)
 	headOpts.SecondaryHashFunction = opts.SecondaryHashFunction
-	if opts.IndexLookupPlanner != nil {
-		headOpts.IndexLookupPlanner = opts.IndexLookupPlanner
+	if opts.IndexLookupPlannerFunc != nil {
+		headOpts.IndexLookupPlannerFunc = opts.IndexLookupPlannerFunc
 	}
 	if opts.WALReplayConcurrency > 0 {
 		headOpts.WALReplayConcurrency = opts.WALReplayConcurrency
@@ -1276,7 +1284,9 @@ func (db *DB) run(ctx context.Context) {
 		case <-headStatsUpdateTicker:
 			// If needed, this could instead be spun off concurrently as an optimization to allow
 			// head compaction to interrupt statistics collection (by taking the postings mutex).
-			db.head.updateHeadStatistics()
+			if err := db.head.updateHeadStatistics(); err != nil {
+				db.logger.Error("update head statistics", "err", err)
+			}
 		case <-db.stopc:
 			return
 		}
@@ -1584,6 +1594,7 @@ func (db *DB) compactOOOHead(ctx context.Context) error {
 // Each ULID in the result corresponds to a block in a unique time range.
 // The db.cmtx mutex should be held before calling this method.
 func (db *DB) compactOOO(dest string, oooHead *OOOCompactionHead) (_ []ulid.ULID, err error) {
+	db.logger.Info("out-of-order compaction started")
 	start := time.Now()
 
 	blockSize := oooHead.ChunkRange()
@@ -1762,7 +1773,7 @@ func (db *DB) reloadBlocks() (err error) {
 	}()
 
 	db.mtx.RLock()
-	loadable, corrupted, err := openBlocks(db.logger, db.dir, db.blocks, db.chunkPool, db.opts.PostingsDecoderFactory, db.opts.IndexLookupPlanner, db.opts.SeriesHashCache, db.blockPostingsForMatchersCacheFactory)
+	loadable, corrupted, err := openBlocks(db.logger, db.dir, db.blocks, db.chunkPool, db.opts.PostingsDecoderFactory, db.opts.IndexLookupPlannerFunc, db.opts.SeriesHashCache, db.blockPostingsForMatchersCacheFactory)
 	db.mtx.RUnlock()
 	if err != nil {
 		return err
@@ -1862,7 +1873,7 @@ func (db *DB) reloadBlocks() (err error) {
 	return nil
 }
 
-func openBlocks(l *slog.Logger, dir string, loaded []*Block, chunkPool chunkenc.Pool, postingsDecoderFactory PostingsDecoderFactory, planner index.LookupPlanner, cache *hashcache.SeriesHashCache, postingsCacheFactory PostingsForMatchersCacheFactory) (blocks []*Block, corrupted map[ulid.ULID]error, err error) {
+func openBlocks(l *slog.Logger, dir string, loaded []*Block, chunkPool chunkenc.Pool, postingsDecoderFactory PostingsDecoderFactory, plannerFunc IndexLookupPlannerFunc, cache *hashcache.SeriesHashCache, postingsCacheFactory PostingsForMatchersCacheFactory) (blocks []*Block, corrupted map[ulid.ULID]error, err error) {
 	bDirs, err := blockDirs(dir)
 	if err != nil {
 		return nil, nil, fmt.Errorf("find blocks: %w", err)
@@ -1884,7 +1895,7 @@ func openBlocks(l *slog.Logger, dir string, loaded []*Block, chunkPool chunkenc.
 				cacheProvider = cache.GetBlockCacheProvider(meta.ULID.String())
 			}
 
-			block, err = OpenBlockWithOptions(l, bDir, chunkPool, postingsDecoderFactory, planner, cacheProvider, postingsCacheFactory)
+			block, err = OpenBlockWithOptions(l, bDir, chunkPool, postingsDecoderFactory, plannerFunc, cacheProvider, postingsCacheFactory)
 			if err != nil {
 				corrupted[meta.ULID] = err
 				continue

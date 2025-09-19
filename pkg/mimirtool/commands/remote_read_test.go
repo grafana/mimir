@@ -20,11 +20,24 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/prompb"
+	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// parseSelectors converts string selectors to matchers for testing
+func parseSelectors(t *testing.T, selectors ...string) [][]*labels.Matcher {
+	var result [][]*labels.Matcher
+	for _, selector := range selectors {
+		matchers, err := parser.ParseMetricSelector(selector)
+		require.NoError(t, err)
+		result = append(result, matchers)
+	}
+	return result
+}
 
 type exportTestCase struct {
 	queryFrom      time.Time
@@ -257,7 +270,7 @@ func TestExport(t *testing.T) {
 					c := &RemoteReadCommand{
 						address:       server.URL,
 						tsdbPath:      tsdbPath,
-						selector:      metricName,
+						selectors:     parseSelectors(t, metricName),
 						from:          testCase.queryFrom.Format(time.RFC3339Nano),
 						to:            testCase.queryTo.Format(time.RFC3339Nano),
 						readTimeout:   30 * time.Second,
@@ -480,4 +493,425 @@ func sampleCountInAllBlocks(db *tsdb.DB) uint64 {
 	}
 
 	return total
+}
+
+func TestRemoteReadCommand_prepare(t *testing.T) {
+	tests := []struct {
+		name        string
+		selectors   []string
+		from        string
+		to          string
+		expectError bool
+		errorMsg    string
+	}{
+		{
+			name:        "single selector",
+			selectors:   []string{"up"},
+			from:        "2023-01-01T00:00:00Z",
+			to:          "2023-01-01T01:00:00Z",
+			expectError: false,
+		},
+		{
+			name:        "multiple selectors",
+			selectors:   []string{"up", "go_memstats_alloc_bytes", "prometheus_build_info"},
+			from:        "2023-01-01T00:00:00Z",
+			to:          "2023-01-01T01:00:00Z",
+			expectError: false,
+		},
+		{
+			name:        "empty selectors",
+			selectors:   []string{},
+			from:        "2023-01-01T00:00:00Z",
+			to:          "2023-01-01T01:00:00Z",
+			expectError: true,
+			errorMsg:    "at least one selector must be specified",
+		},
+		{
+			name:        "invalid from time",
+			selectors:   []string{"up"},
+			from:        "invalid-time",
+			to:          "2023-01-01T01:00:00Z",
+			expectError: true,
+			errorMsg:    "error parsing from",
+		},
+		{
+			name:        "invalid to time",
+			selectors:   []string{"up"},
+			from:        "2023-01-01T00:00:00Z",
+			to:          "invalid-time",
+			expectError: true,
+			errorMsg:    "error parsing to",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cmd := &RemoteReadCommand{
+				address:        "invalid.com", // we only test validation
+				remoteReadPath: "/api/v1/read",
+				selectors:      parseSelectors(t, tt.selectors...),
+				from:           tt.from,
+				to:             tt.to,
+				readTimeout:    30 * time.Second,
+				useChunks:      true,
+			}
+
+			_, _, _, err := cmd.parseArgsAndPrepareClient()
+			if tt.expectError {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.errorMsg)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestSelectorFlag(t *testing.T) {
+	tests := []struct {
+		name           string
+		selectors      []string
+		expectError    bool
+		expectedString string
+	}{
+		{
+			name:           "single simple selector",
+			selectors:      []string{"up"},
+			expectError:    false,
+			expectedString: "{__name__=\"up\"}",
+		},
+		{
+			name:           "multiple selectors",
+			selectors:      []string{"up", "go_memstats_alloc_bytes"},
+			expectError:    false,
+			expectedString: "{__name__=\"up\"},{__name__=\"go_memstats_alloc_bytes\"}",
+		},
+		{
+			name:           "complex selector",
+			selectors:      []string{`{__name__="http_requests_total", job="prometheus"}`},
+			expectError:    false,
+			expectedString: `{__name__="http_requests_total",job="prometheus"}`,
+		},
+		{
+			name:        "invalid selector",
+			selectors:   []string{"invalid{selector"},
+			expectError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var selectors [][]*labels.Matcher
+			flag := &selectorFlag{selectors: &selectors}
+
+			var err error
+			for _, selector := range tt.selectors {
+				err = flag.Set(selector)
+				if tt.expectError {
+					require.Error(t, err)
+					assert.Contains(t, err.Error(), "error parsing selector")
+					return
+				}
+				require.NoError(t, err)
+			}
+
+			if !tt.expectError {
+				assert.Equal(t, len(tt.selectors), len(selectors))
+				assert.Equal(t, tt.expectedString, flag.String())
+			}
+		})
+	}
+}
+
+func TestParseArgsAndPrepareClient(t *testing.T) {
+	alignedToBlockStart := time.Date(2025, 5, 1, 0, 0, 0, 0, time.UTC)
+	metricNames := []string{"metric_one", "metric_two"}
+
+	testCases := map[string]struct {
+		selectors      []string
+		expectedSeries []*prompb.TimeSeries
+	}{
+		"single selector": {
+			selectors: []string{metricNames[0]},
+			expectedSeries: []*prompb.TimeSeries{
+				{
+					Labels: []prompb.Label{
+						{Name: labels.MetricName, Value: metricNames[0]},
+						{Name: "job", Value: "test"},
+					},
+					Samples: []prompb.Sample{
+						{Timestamp: timestamp.FromTime(alignedToBlockStart), Value: 1.0},
+						{Timestamp: timestamp.FromTime(alignedToBlockStart.Add(time.Minute)), Value: 2.0},
+					},
+				},
+			},
+		},
+		"multiple selectors": {
+			selectors: metricNames,
+			expectedSeries: []*prompb.TimeSeries{
+				{
+					Labels: []prompb.Label{
+						{Name: labels.MetricName, Value: metricNames[0]},
+						{Name: "job", Value: "test"},
+					},
+					Samples: []prompb.Sample{
+						{Timestamp: timestamp.FromTime(alignedToBlockStart), Value: 1.0},
+						{Timestamp: timestamp.FromTime(alignedToBlockStart.Add(time.Minute)), Value: 2.0},
+					},
+				},
+				{
+					Labels: []prompb.Label{
+						{Name: labels.MetricName, Value: metricNames[1]},
+						{Name: "instance", Value: "localhost:8080"},
+					},
+					Samples: []prompb.Sample{
+						{Timestamp: timestamp.FromTime(alignedToBlockStart), Value: 10.0},
+						{Timestamp: timestamp.FromTime(alignedToBlockStart.Add(2 * time.Minute)), Value: 20.0},
+					},
+				},
+			},
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			// Set up test server that handles multiple queries
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				serveMultiQuery(t, exportTestCase{
+					queryFrom: alignedToBlockStart,
+					queryTo:   alignedToBlockStart.Add(time.Hour),
+					series:    testCase.expectedSeries,
+				}, false, r, w)
+			}))
+			t.Cleanup(server.Close)
+
+			// Create RemoteReadCommand with test configuration
+			c := &RemoteReadCommand{
+				address:        server.URL,
+				remoteReadPath: "/api/v1/read",
+				selectors:      parseSelectors(t, testCase.selectors...),
+				from:           alignedToBlockStart.Format(time.RFC3339Nano),
+				to:             alignedToBlockStart.Add(time.Hour).Format(time.RFC3339Nano),
+				readTimeout:    30 * time.Second,
+			}
+
+			// Test parseArgsAndPrepareClient
+			query, from, to, err := c.parseArgsAndPrepareClient()
+			require.NoError(t, err, "parseArgsAndPrepareClient should succeed")
+
+			// Verify returned times
+			assert.Equal(t, alignedToBlockStart, from, "from time should match")
+			assert.Equal(t, alignedToBlockStart.Add(time.Hour), to, "to time should match")
+
+			// Test the returned query function
+			ctx := context.Background()
+			queryFrom := alignedToBlockStart
+			queryTo := alignedToBlockStart.Add(time.Hour)
+
+			seriesSet, err := query(ctx, queryFrom, queryTo)
+			require.NoError(t, err, "query function should succeed")
+
+			// Collect all series from the result
+			var actualSeries []*prompb.TimeSeries
+			var it chunkenc.Iterator
+
+			for seriesSet.Next() {
+				series := seriesSet.At()
+				var samples []prompb.Sample
+
+				it = series.Iterator(it)
+				for vt := it.Next(); vt != chunkenc.ValNone; vt = it.Next() {
+					switch vt {
+					case chunkenc.ValFloat:
+						ts, v := it.At()
+						samples = append(samples, prompb.Sample{
+							Timestamp: ts,
+							Value:     v,
+						})
+					}
+				}
+				require.NoError(t, it.Err())
+
+				actualSeries = append(actualSeries, &prompb.TimeSeries{
+					Labels:  prompb.FromLabels(series.Labels(), nil),
+					Samples: samples,
+				})
+			}
+			require.NoError(t, seriesSet.Err())
+
+			// Verify we got the expected series back
+			require.ElementsMatch(t, testCase.expectedSeries, actualSeries,
+				"query function should return expected series for %d selectors", len(testCase.selectors))
+		})
+	}
+}
+
+func serveMultiQuery(t *testing.T, testCase exportTestCase, sendChunks bool, r *http.Request, w http.ResponseWriter) {
+	body, err := io.ReadAll(r.Body)
+	require.NoError(t, err)
+
+	decompressed, err := snappy.Decode(nil, body)
+	require.NoError(t, err)
+
+	msg := &prompb.ReadRequest{}
+	require.NoError(t, proto.Unmarshal(decompressed, msg))
+
+	queries := msg.GetQueries()
+	require.True(t, len(queries) >= 1, "expected at least one query")
+
+	if sendChunks {
+		serveMultiQueryChunks(t, testCase, queries, w)
+	} else {
+		serveMultiQuerySamples(t, testCase, queries, w)
+	}
+}
+
+func filterSeriesForQuery(series []*prompb.TimeSeries, matchers []*prompb.LabelMatcher, startT, endT int64) []*prompb.TimeSeries {
+	var filtered []*prompb.TimeSeries
+
+	for _, s := range series {
+		if seriesMatchesMatchers(s, matchers) {
+			samples := []prompb.Sample{}
+			for _, sample := range s.Samples {
+				if sample.Timestamp >= startT && sample.Timestamp <= endT {
+					samples = append(samples, sample)
+				}
+			}
+
+			if len(samples) > 0 {
+				filtered = append(filtered, &prompb.TimeSeries{
+					Labels:  s.Labels,
+					Samples: samples,
+				})
+			}
+		}
+	}
+	return filtered
+}
+
+func seriesMatchesMatchers(series *prompb.TimeSeries, matchers []*prompb.LabelMatcher) bool {
+	labelMap := make(map[string]string)
+	for _, label := range series.Labels {
+		labelMap[label.Name] = label.Value
+	}
+
+	for _, matcher := range matchers {
+		labelValue, exists := labelMap[matcher.Name]
+		switch matcher.Type {
+		case prompb.LabelMatcher_EQ:
+			if !exists || labelValue != matcher.Value {
+				return false
+			}
+		case prompb.LabelMatcher_NEQ:
+			if exists && labelValue == matcher.Value {
+				return false
+			}
+		case prompb.LabelMatcher_RE:
+			// For simplicity in tests, assume regex matches are exact matches
+			if !exists || labelValue != matcher.Value {
+				return false
+			}
+		case prompb.LabelMatcher_NRE:
+			// For simplicity in tests, assume regex non-matches are exact non-matches
+			if exists && labelValue == matcher.Value {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func serveMultiQuerySamples(t *testing.T, testCase exportTestCase, queries []*prompb.Query, w http.ResponseWriter) {
+	w.Header().Set("Content-Type", "application/x-protobuf")
+
+	var results []*prompb.QueryResult
+
+	for _, query := range queries {
+		startT := query.GetStartTimestampMs()
+		endT := query.GetEndTimestampMs()
+		matchers := query.GetMatchers()
+
+		start := timestamp.Time(startT)
+		end := timestamp.Time(endT)
+
+		require.Truef(t, start.Equal(testCase.queryFrom) || start.After(testCase.queryFrom), "query request starts at %v, but query range is from %v to %v", start, testCase.queryFrom, testCase.queryTo)
+		require.Truef(t, end.Equal(testCase.queryTo) || end.Before(testCase.queryTo), "query request ends at %v, but query range is from %v to %v", end, testCase.queryFrom, testCase.queryTo)
+
+		filteredSeries := filterSeriesForQuery(testCase.series, matchers, startT, endT)
+		results = append(results, &prompb.QueryResult{
+			Timeseries: filteredSeries,
+		})
+	}
+
+	resp := &prompb.ReadResponse{
+		Results: results,
+	}
+	msg, err := proto.Marshal(resp)
+	require.NoError(t, err)
+
+	_, err = w.Write(snappy.Encode(nil, msg))
+	require.NoError(t, err)
+}
+
+func serveMultiQueryChunks(t *testing.T, testCase exportTestCase, queries []*prompb.Query, w http.ResponseWriter) {
+	w.Header().Set("Content-Type", "application/x-streamed-protobuf; proto=prometheus.ChunkedReadResponse")
+
+	flusher, ok := w.(http.Flusher)
+	require.True(t, ok)
+
+	chunkedWriter := remote.NewChunkedWriter(w, flusher)
+
+	for _, query := range queries {
+		startT := query.GetStartTimestampMs()
+		endT := query.GetEndTimestampMs()
+		matchers := query.GetMatchers()
+
+		start := timestamp.Time(startT)
+		end := timestamp.Time(endT)
+
+		require.Truef(t, start.Equal(testCase.queryFrom) || start.After(testCase.queryFrom), "query request starts at %v, but query range is from %v to %v", start, testCase.queryFrom, testCase.queryTo)
+		require.Truef(t, end.Equal(testCase.queryTo) || end.Before(testCase.queryTo), "query request ends at %v, but query range is from %v to %v", end, testCase.queryFrom, testCase.queryTo)
+
+		filteredSeries := filterSeriesForQuery(testCase.series, matchers, startT, endT)
+
+		for _, s := range filteredSeries {
+			if len(s.Samples) == 0 {
+				continue
+			}
+
+			chunk := chunkenc.NewXORChunk()
+			a, err := chunk.Appender()
+			require.NoError(t, err)
+
+			minTime := int64(math.MaxInt64)
+			maxTime := int64(math.MinInt64)
+
+			for _, sample := range s.Samples {
+				minTime = min(minTime, sample.Timestamp)
+				maxTime = max(maxTime, sample.Timestamp)
+				a.Append(sample.Timestamp, sample.Value)
+			}
+
+			resp := prompb.ChunkedReadResponse{
+				ChunkedSeries: []*prompb.ChunkedSeries{
+					{
+						Labels: s.Labels,
+						Chunks: []prompb.Chunk{
+							{
+								MinTimeMs: minTime,
+								MaxTimeMs: maxTime,
+								Type:      prompb.Chunk_XOR,
+								Data:      chunk.Bytes(),
+							},
+						},
+					},
+				},
+			}
+
+			msg, err := proto.Marshal(&resp)
+			require.NoError(t, err)
+			_, err = chunkedWriter.Write(msg)
+			require.NoError(t, err)
+		}
+	}
 }

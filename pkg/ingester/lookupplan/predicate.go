@@ -4,7 +4,6 @@ package lookupplan
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/index"
@@ -27,26 +26,18 @@ type planPredicate struct {
 	indexScanCost float64
 }
 
-func newPlanPredicate(ctx context.Context, m *labels.Matcher, stats index.Statistics) (planPredicate, error) {
-	var err error
+func newPlanPredicate(ctx context.Context, m *labels.Matcher, stats index.Statistics) planPredicate {
 	pred := planPredicate{
 		matcher:         m,
 		singleMatchCost: m.SingleMatchCost(),
 	}
 	pred.labelNameUniqueVals = stats.LabelValuesCount(ctx, m.Name)
-	if err != nil {
-		return planPredicate{}, fmt.Errorf("error getting label values count for label %s: %w", m.Name, err)
-	}
 	pred.selectivity = m.EstimateSelectivity(pred.labelNameUniqueVals)
 
-	pred.cardinality, err = estimatePredicateCardinality(ctx, m, stats, pred.selectivity)
-	if err != nil {
-		return planPredicate{}, fmt.Errorf("error estimating cardinality for label %s: %w", m.Name, err)
-	}
-
+	pred.cardinality = estimatePredicateCardinality(ctx, m, stats, pred.selectivity)
 	pred.indexScanCost = estimatePredicateIndexScanCost(pred, m)
 
-	return pred, nil
+	return pred
 }
 
 func estimatePredicateIndexScanCost(pred planPredicate, m *labels.Matcher) float64 {
@@ -75,11 +66,10 @@ func estimatePredicateIndexScanCost(pred planPredicate, m *labels.Matcher) float
 	panic("estimatePredicateIndexScanCost called with unhandled matcher type: " + m.Type.String() + m.String())
 }
 
-func estimatePredicateCardinality(ctx context.Context, m *labels.Matcher, stats index.Statistics, selectivity float64) (uint64, error) {
+func estimatePredicateCardinality(ctx context.Context, m *labels.Matcher, stats index.Statistics, selectivity float64) uint64 {
 	var (
 		seriesBehindSelectedValues uint64
 		matchesAnyValues           bool
-		err                        error
 	)
 
 	switch m.Type {
@@ -107,18 +97,15 @@ func estimatePredicateCardinality(ctx context.Context, m *labels.Matcher, stats 
 			seriesBehindSelectedValues += uint64(float64(labelNameCardinality) * selectivity)
 		}
 	}
-	if err != nil {
-		return 0, fmt.Errorf("error getting series per label value for label %s: %w", m.Name, err)
-	}
 	switch m.Type {
 	case labels.MatchNotEqual, labels.MatchNotRegexp:
 		if !matchesAnyValues {
 			// This label name doesn't exist. This means that negating this will select everything.
-			return stats.TotalSeries(), nil
+			return stats.TotalSeries()
 		}
-		return stats.TotalSeries() - seriesBehindSelectedValues, nil
+		return stats.TotalSeries() - seriesBehindSelectedValues
 	}
-	return seriesBehindSelectedValues, nil
+	return seriesBehindSelectedValues
 }
 
 func (pr planPredicate) indexLookupCost() float64 {

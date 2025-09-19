@@ -47,4 +47,15 @@ echo "$GROUP_TESTS"
 echo ""
 
 # shellcheck disable=SC2086 # we *want* word splitting of GROUP_TESTS.
-exec go test -tags=netgo,stringlabels -timeout 30m -race ${GROUP_TESTS}
+go test -tags=netgo,stringlabels -timeout 30m -race ${GROUP_TESTS} 2>&1 | tee /tmp/test-output.log
+EXIT_CODE=${PIPESTATUS[0]}
+
+# Extract all failed packages
+FAILED_PACKAGES=$(grep "FAIL\s*github.com/grafana/mimir/.*" /tmp/test-output.log | awk '{print $2}' | sort -u | tr '\n' ' ')
+
+# Store in GitHub environment variable if any packages failed
+if [[ -n "$FAILED_PACKAGES" ]]; then
+    echo "FAILED_PACKAGES=${FAILED_PACKAGES}" >> "$GITHUB_ENV"
+fi
+
+exit $EXIT_CODE

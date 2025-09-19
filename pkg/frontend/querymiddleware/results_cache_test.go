@@ -15,7 +15,6 @@ import (
 	"github.com/gogo/protobuf/types"
 	"github.com/grafana/dskit/cache"
 	"github.com/grafana/dskit/flagext"
-	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -763,8 +762,7 @@ func TestPartitionCacheExtentsSamplesProcessed(t *testing.T) {
 
 func TestDefaultSplitter_QueryRequest(t *testing.T) {
 	t.Parallel()
-	reg := prometheus.NewPedanticRegistry()
-	codec := NewCodec(reg, 0*time.Minute, formatJSON, nil)
+	codec := newTestCodec()
 
 	ctx := context.Background()
 

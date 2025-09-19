@@ -320,7 +320,7 @@ func (p *PreallocTimeseries) MarshalToSizedBuffer(buf []byte) (int, error) {
 
 // LabelAdapter is a labels.Label that can be marshalled to/from protos.
 type LabelAdapter struct {
-	Name, Value unsafeMutableString
+	Name, Value UnsafeMutableString
 }
 
 // Marshal implements proto.Marshaller.
@@ -523,8 +523,8 @@ func (bs *LabelAdapter) Compare(other LabelAdapter) int {
 // references may change once the timeseries is returned to the shared pool.
 type UnsafeMutableLabel = LabelAdapter
 
-// A unsafeMutableString is a string that may violate the invariant that it's
-// immutable. Contrary to string, holding a value of unsafeMutableString may
+// An UnsafeMutableString is a string that may violate the invariant that it's
+// immutable. Contrary to string, holding a value of UnsafeMutableString may
 // later refer to different data than it originally did: it's effectively
 // a []byte with a string-like (and thus read-only) API and implicit capacity.
 //
@@ -532,7 +532,7 @@ type UnsafeMutableLabel = LabelAdapter
 //
 // When a LabelAdapter is referenced from a PreallocTimeseries, the data it
 // references may change once the timeseries is returned to the shared pool.
-type unsafeMutableString = string
+type UnsafeMutableString = string
 
 // PreallocTimeseriesSliceFromPool retrieves a slice of PreallocTimeseries from a sync.Pool.
 // ReuseSlice should be called once done.
@@ -595,6 +595,8 @@ func ReuseTimeseries(ts *TimeSeries) {
 	} else {
 		ts.Histograms = ts.Histograms[:0]
 	}
+
+	ts.CreatedTimestamp = 0
 
 	ClearExemplars(ts)
 	timeSeriesPool.Put(ts)

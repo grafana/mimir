@@ -22,7 +22,7 @@ internal, development environment.
 
 ## Before you begin
 
-Meet all the follow prerequisites:
+Meet all the following prerequisites:
 
 - You are familiar with [Helm 3.x](https://helm.sh/docs/intro/quickstart/).
 
@@ -42,11 +42,19 @@ Meet all the follow prerequisites:
   or OpenStack Swift. Alternatively, to deploy MinIO yourself, see [MinIO High
   Performance Object Storage](https://min.io/docs/minio/kubernetes/upstream/index.html).
 
-- {{% admonition type="note" %}}
+  {{% admonition type="note" %}}
   Like Amazon S3, the chosen object storage implementation must not create directories.
   Grafana Mimir doesn't have any notion of object storage directories, and so will leave
   empty directories behind when removing blocks. For example, if you use Azure Blob Storage, you must disable
   [hierarchical namespace](https://learn.microsoft.com/en-us/azure/storage/blobs/data-lake-storage-namespace).
+  {{% /admonition %}}
+
+- You have an external Apache Kafka or Kafka-compatible backend for production use. The Helm chart deploys a single-node Kafka cluster for demo purposes only and is not suitable for production.
+
+  The [ingest storage](https://grafana.com/docs/mimir/<MIMIR_VERSION>/get-started/about-grafana-mimir-architecture/) is the next generation architecture of Grafana Mimir. With this architecture, the Mimir read and write paths are decoupled using an Apache Kafka or Kafka-compatible backend. To run Grafana Mimir in production you must configure Mimir with the credentials of a production-grade Kafka cluster.
+
+  {{% admonition type="note" %}}
+  For backwards compatibility with the existing Mimir installations, the `mimir-distributed` Helm chart includes a [`classic-architecture`](https://github.com/grafana/mimir/blob/main/operations/helm/charts/mimir-distributed/classic-architecture.yaml) preset, that deploys Grafana Mimir with ingest storage disabled.
   {{% /admonition %}}
 
 ## Plan capacity
@@ -58,7 +66,7 @@ The `mimir-distributed` Helm chart comes with two sizing plans:
 
 These sizing plans are estimated based on experience from operating Grafana
 Mimir at Grafana Labs. The ideal size for your cluster depends on your
-usage patterns. Therefore, use the sizing plans as starting
+usage patterns. Therefore, use the sizing plans as a starting
 point for sizing your Grafana Mimir cluster, rather than as strict guidelines.
 To get a better idea of how to plan capacity, refer to the YAML comments at
 the beginning of `small.yaml` and `large.yaml` files, which relate to read and write workloads.
@@ -204,6 +212,38 @@ see [Configure Grafana Mimir object storage backend](https://grafana.com/docs/mi
        #      bucket_name: gem-admin
    ```
 
+## Configure Mimir to use Kafka-compatible backend
+
+1. Add the following YAML to your values file, if you are not using the classic architecture
+   preset that is [noted above](#before-you-begin):
+
+   ```yaml
+   kafka:
+     enabled: false
+   ```
+
+   The configuration disables deployment of the Apache Kafka cluster, that the Helm chart embeds. This single-node cluster is intended for demo purposes only, and isn't recommended for production use-cases.
+
+2. Add the credentials and configuration for your production Apache Kafka or Kafka-compatible cluster
+   to the Helm chart values. Nest the configuration under the `mimir.structuredConfig`:
+
+   ```yaml
+   mimir:
+     structuredConfig:
+       ingest_storage:
+         kafka:
+           # Address of Kafka broker to bootstrap the connection
+           address: kafka:9092
+           # (optional) SASL credentials provisioned for communications with clients within the cluster
+           sasl_username: "${KAFKA_SASL_USERNAME}" # This is a secret injected via an environment variable
+           sasl_password: "${KAFKA_SASL_PASSWORD}" # This is a secret injected via an environment variable
+           # Mimir will auto-create the topic on start up.
+           # The topic MUST be provisioned with no fewer partitions than the maximum number of ingester replicas. The value of 1000 here is arbitrarily large to guarantee that.
+           topic: mimir-ingest
+           auto_create_topic_enabled: true
+           auto_create_topic_default_partitions: 1000
+   ```
+
 ## Meet security compliance regulations
 
 Grafana Mimir does not require any special permissions on the hosts that it
@@ -286,7 +326,7 @@ Metrics) server.
 
        metrics:
          remote:
-           url: "https://prometehus.prometheus.svc.cluster.local./api/v1/push"
+           url: "https://prometheus.prometheus.svc.cluster.local./api/v1/push"
            headers:
              X-Scope-OrgID: metamonitoring
    ```

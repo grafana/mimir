@@ -23,6 +23,7 @@ import (
 	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/prometheus/prometheus/notifier"
 	promRules "github.com/prometheus/prometheus/rules"
+	"github.com/spf13/afero"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/propagation"
@@ -63,7 +64,7 @@ type DefaultMultiTenantManager struct {
 	rulerIsRunning atomic.Bool
 }
 
-func NewDefaultMultiTenantManager(cfg Config, managerFactory ManagerFactory, reg prometheus.Registerer, logger log.Logger, dnsResolver AddressProvider, limits RulesLimits) (*DefaultMultiTenantManager, error) {
+func NewDefaultMultiTenantManager(cfg Config, managerFactory ManagerFactory, reg prometheus.Registerer, logger log.Logger, dnsResolver AddressProvider, limits RulesLimits, rulesFS afero.Fs) (*DefaultMultiTenantManager, error) {
 	refreshMetrics := discovery.NewRefreshMetrics(reg)
 
 	userManagerMetrics := NewManagerMetrics(logger)
@@ -78,7 +79,7 @@ func NewDefaultMultiTenantManager(cfg Config, managerFactory ManagerFactory, reg
 		dnsResolver:        dnsResolver,
 		refreshMetrics:     refreshMetrics,
 		notifiers:          map[string]*rulerNotifier{},
-		mapper:             newMapper(cfg.RulePath, logger),
+		mapper:             newMapper(cfg.RulePath, rulesFS, logger),
 		userManagers:       map[string]RulesManager{},
 		userManagerMetrics: userManagerMetrics,
 		managersTotal: promauto.With(reg).NewGauge(prometheus.GaugeOpts{

@@ -117,6 +117,7 @@ type Head struct {
 	postings      *index.MemPostings // Postings lists for terms.
 	postingsStats atomic.Pointer[index.Statistics]
 	pfmc          *PostingsForMatchersCache
+	planner       atomic.Pointer[index.LookupPlanner]
 
 	tombstones *tombstones.MemTombstones
 
@@ -195,8 +196,8 @@ type HeadOptions struct {
 	// EnableSharding enables ShardedPostings() support in the Head.
 	EnableSharding bool
 
-	// IndexLookupPlanner can be optionally used when querying the index of the Head.
-	IndexLookupPlanner index.LookupPlanner
+	// IndexLookupPlannerFunc can be optionally used when querying the index of the Head.
+	IndexLookupPlannerFunc IndexLookupPlannerFunc
 
 	// Timely compaction allows head compaction to happen when min block range can no longer be appended,
 	// without requiring 1.5x the chunk range worth of data in the head.
@@ -231,7 +232,7 @@ func DefaultHeadOptions() *HeadOptions {
 		IsolationDisabled:               defaultIsolationDisabled,
 		PostingsForMatchersCacheFactory: DefaultPostingsForMatchersCacheFactory,
 		WALReplayConcurrency:            defaultWALReplayConcurrency,
-		IndexLookupPlanner:              &index.ScanEmptyMatchersLookupPlanner{},
+		IndexLookupPlannerFunc:          DefaultIndexLookupPlannerFunc,
 	}
 	ho.OutOfOrderCapMax.Store(DefaultOutOfOrderCapMax)
 	return ho
@@ -298,7 +299,7 @@ func NewHead(r prometheus.Registerer, l *slog.Logger, wal, wbl *wlog.WL, opts *H
 		logger: l,
 		opts:   opts,
 		memChunkPool: sync.Pool{
-			New: func() interface{} {
+			New: func() any {
 				return &memChunk{}
 			},
 		},
@@ -397,10 +398,17 @@ func (h *Head) resetWLReplayResources() {
 
 // updateHeadStatistics generates a new set of Statistics for the head, which consists of label cardinality,
 // and the total number of series in the head. It then updates postingsStats to point to the new statistics.
-func (h *Head) updateHeadStatistics() {
+func (h *Head) updateHeadStatistics() error {
 	start := time.Now()
 	stats := index.Statistics(newFullHeadStatistics(h))
 	h.postingsStats.Store(&stats)
+
+	iReader, err := h.Index()
+	if err != nil {
+		return fmt.Errorf("failed to get head index reader: %w", err)
+	}
+	planner := h.opts.IndexLookupPlannerFunc(h.Meta(), iReader)
+	h.planner.Store(&planner)
 	h.metrics.headStatisticsTimeToUpdate.Set(time.Since(start).Seconds())
 	h.metrics.headStatisticsLastUpdate.Set(float64(time.Now().Unix()))
 	h.logger.Info("successfully updated head statistics",
@@ -408,6 +416,7 @@ func (h *Head) updateHeadStatistics() {
 		"num_series", stats.TotalSeries(),
 		"num_label_names", len(h.postings.LabelNames()),
 	)
+	return nil
 }
 
 type headMetrics struct {
@@ -739,7 +748,11 @@ const cardinalityCacheExpirationTime = time.Duration(30) * time.Second
 func (h *Head) Init(minValidTime int64) error {
 	h.minValidTime.Store(minValidTime)
 	// We wait to calculate head statistics until after the WAL is replayed.
-	defer h.updateHeadStatistics()
+	defer func() {
+		if err := h.updateHeadStatistics(); err != nil {
+			h.logger.Error("Failed to update head statistics", "err", err)
+		}
+	}()
 	defer h.resetWLReplayResources()
 	defer func() {
 		h.postings.EnsureOrder(h.opts.WALReplayConcurrency)
@@ -793,8 +806,7 @@ func (h *Head) Init(minValidTime int64) error {
 				snapshotLoaded = true
 				chunkSnapshotLoadDuration = time.Since(start)
 				h.logger.Info("Chunk snapshot loading time", "duration", chunkSnapshotLoadDuration.String())
-			}
-			if err != nil {
+			} else {
 				snapIdx, snapOffset = -1, 0
 				refSeries = make(map[chunks.HeadSeriesRef]*memSeries)
 
@@ -1511,6 +1523,7 @@ func (h *Head) truncateOOO(lastWBLFile int, newMinOOOMmapRef chunks.ChunkDiskMap
 // truncateSeriesAndChunkDiskMapper is a helper function for truncateMemory and truncateOOO.
 // It runs GC on the Head and truncates the ChunkDiskMapper accordingly.
 func (h *Head) truncateSeriesAndChunkDiskMapper(caller string) error {
+	h.logger.Info("Head GC started", "caller", caller)
 	start := time.Now()
 	headMaxt := h.MaxTime()
 	actualMint, minOOOTime, minMmapFile := h.gc()

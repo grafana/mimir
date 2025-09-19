@@ -25,6 +25,7 @@ import (
 	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/prometheus/prometheus/notifier"
 	promRules "github.com/prometheus/prometheus/rules"
+	"github.com/spf13/afero"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
@@ -49,7 +50,7 @@ func TestDefaultMultiTenantManager_SyncFullRuleGroups(t *testing.T) {
 		user2Group1 = createRuleGroup("group-1", user2, createRecordingRule("sum:metric_1", "sum(metric_1)"))
 	)
 
-	m, err := NewDefaultMultiTenantManager(Config{RulePath: t.TempDir()}, managerMockFactory, nil, logger, nil, validation.MockOverrides(nil))
+	m, err := NewDefaultMultiTenantManager(Config{RulePath: t.TempDir()}, managerMockFactory, nil, logger, nil, validation.MockOverrides(nil), afero.NewOsFs())
 	require.NoError(t, err)
 
 	// Initialise the manager with some rules and start it.
@@ -135,7 +136,7 @@ func TestDefaultMultiTenantManager_SyncPartialRuleGroups(t *testing.T) {
 		user2Group1 = createRuleGroup("group-1", user2, createRecordingRule("sum:metric_1", "sum(metric_1)"))
 	)
 
-	m, err := NewDefaultMultiTenantManager(Config{RulePath: t.TempDir()}, managerMockFactory, nil, logger, nil, validation.MockOverrides(nil))
+	m, err := NewDefaultMultiTenantManager(Config{RulePath: t.TempDir()}, managerMockFactory, nil, logger, nil, validation.MockOverrides(nil), afero.NewOsFs())
 	require.NoError(t, err)
 	t.Cleanup(m.Stop)
 
@@ -325,7 +326,7 @@ func TestDefaultMultiTenantManager_NotifierConfiguration(t *testing.T) {
 	})
 
 	// Start a manager.
-	m, err := NewDefaultMultiTenantManager(cfg, managerMockFactory, nil, logger, nil, overrides)
+	m, err := NewDefaultMultiTenantManager(cfg, managerMockFactory, nil, logger, nil, overrides, afero.NewOsFs())
 	require.NoError(t, err)
 	defer m.Stop()
 	m.SyncFullRuleGroups(ctx, map[string]rulespb.RuleGroupList{
@@ -425,7 +426,7 @@ func TestDefaultMultiTenantManager_WaitsToDrainPendingNotificationsOnShutdown(t 
 		defaults.RulerAlertmanagerClientConfig.AlertmanagerURL = server.URL
 	})
 
-	m, err := NewDefaultMultiTenantManager(cfg, managerMockFactory, nil, logger, nil, limits)
+	m, err := NewDefaultMultiTenantManager(cfg, managerMockFactory, nil, logger, nil, limits, afero.NewOsFs())
 	require.NoError(t, err)
 
 	m.SyncFullRuleGroups(ctx, map[string]rulespb.RuleGroupList{

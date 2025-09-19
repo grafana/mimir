@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
+// Different test package name to break import cycle
 package plan_test
 
 import (
@@ -448,7 +449,7 @@ func TestSkipHistogramDecodingOptimizationPass(t *testing.T) {
 	opts := streamingpromql.NewTestEngineOpts()
 	planner, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts)
 	require.NoError(t, err)
-	planner.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(true, nil))
+	planner.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(true, nil, opts.Logger))
 	planner.RegisterQueryPlanOptimizationPass(plan.NewSkipHistogramDecodingOptimizationPass())
 
 	for name, testCase := range testCases {

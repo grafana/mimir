@@ -78,7 +78,7 @@ func newCSVTestData[T any](columnNames []string, filePath string, fromCSVRecord 
 }
 
 // ParseTestCases reads and parses test cases from the CSV file
-func (d *csvTestData[T]) ParseTestCases(t *testing.T) []T {
+func (d *csvTestData[T]) ParseTestCases(t testing.TB) []T {
 	file, err := os.Open(d.filePath)
 	require.NoError(t, err)
 	defer file.Close()
@@ -157,7 +157,7 @@ func parseUint(t *testing.T, str string) uint64 {
 	return u
 }
 
-func parseVectorSelector(t *testing.T, str string) []*labels.Matcher {
+func parseVectorSelector(t testing.TB, str string) []*labels.Matcher {
 	matchers, err := parser.ParseMetricSelector(str)
 	require.NoError(t, err)
 	return matchers

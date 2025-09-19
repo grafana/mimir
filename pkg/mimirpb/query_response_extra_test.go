@@ -11,6 +11,7 @@ import (
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/stretchr/testify/require"
 
+	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/util/test"
 )
 
@@ -37,6 +38,9 @@ func TestAllPrometheusErrorTypeValues(t *testing.T) {
 		actualErrorTypeString, err := errorType.ToPrometheusString()
 		require.NoError(t, err)
 		require.Equal(t, prometheusErrorTypeString, actualErrorTypeString)
+
+		_, err = ErrorTypeFromAPIErrorType(apierror.Type(prometheusErrorTypeString))
+		require.NoError(t, err, "should be able to convert all error types to Protobuf error constants")
 	}
 }
 

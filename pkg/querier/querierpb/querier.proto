@@ -5,6 +5,7 @@ syntax = "proto3";
 package querierpb;
 
 import "github.com/grafana/mimir/pkg/mimirpb/mimir.proto";
+import "github.com/grafana/mimir/pkg/querier/stats/stats.proto";
 import "github.com/grafana/mimir/pkg/streamingpromql/planning/plan.proto";
 import "gogoproto/gogo.proto";
 
@@ -15,6 +16,7 @@ option (gogoproto.unmarshaler_all) = true;
 message EvaluateQueryRequest {
   planning.EncodedQueryPlan plan = 1 [(gogoproto.nullable) = false];
   repeated EvaluationNode nodes = 2 [(gogoproto.nullable) = false];
+  bool enablePerStepStats = 3;
 }
 
 message EvaluationNode {
@@ -43,6 +45,7 @@ message SeriesMetadata {
     (gogoproto.nullable) = false,
     (gogoproto.customtype) = "github.com/grafana/mimir/pkg/mimirpb.LabelAdapter"
   ];
+  bool dropName = 2;
 }
 
 message EvaluateQueryResponseStringValue {
@@ -81,15 +84,10 @@ message Error {
 
 message EvaluateQueryResponseEvaluationCompleted {
   Annotations annotations = 1 [(gogoproto.nullable) = false];
-  QueryStats stats = 2 [(gogoproto.nullable) = false];
+  stats.Stats stats = 2 [(gogoproto.nullable) = false];
 }
 
 message Annotations {
   repeated string warnings = 1;
   repeated string infos = 2;
-}
-
-message QueryStats {
-  int64 totalSamples = 1;
-  repeated int64 totalSamplesPerStep = 2;
 }

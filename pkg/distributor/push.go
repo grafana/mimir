@@ -108,7 +108,7 @@ func Handler(
 		if err != nil {
 			return err
 		}
-		pushMetrics.ObserveUncompressedBodySize(tenantID, float64(protoBodySize))
+		pushMetrics.ObserveUncompressedBodySize(tenantID, "push", float64(protoBodySize))
 
 		return nil
 	})

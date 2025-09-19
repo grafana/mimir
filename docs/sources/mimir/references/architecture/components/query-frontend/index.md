@@ -11,47 +11,27 @@ weight: 60
 
 # Grafana Mimir query-frontend
 
-The query-frontend is a stateless component that provides the same API as the [querier](../querier/) and can be used to accelerate the read path.
-Although the query-frontend is not required, we recommend that you deploy it.
-When you deploy the query-frontend, you should make query requests to the query-frontend instead of the queriers.
-The queriers are required within the cluster to execute the queries.
-
-The query-frontend internally holds queries in an internal queue.
-In this situation, queriers act as workers that pull jobs from the queue, execute them, and return the results to the query-frontend for aggregation.
-To connect the queriers with the query-frontends, configure queriers with the query-frontend address via the `-querier.frontend-address` flag.
+The query-frontend is a stateless component that provides a [Prometheus compatible API](https://prometheus.io/docs/prometheus/latest/querying/api/) with a number of features to accelerate the read path.
+The query-frontend is the primary entry point for the read path of Mimir.
+The query-scheduler and queriers are required within the cluster to execute the queries.
 
 We recommend that you run at least two query-frontend replicas for high-availability reasons.
 
-![Query-frontend architecture](query-frontend-architecture.png)
+![Query-frontend architecture](../query-scheduler/query-scheduler-architecture.png)
 
 [//]: # "Diagram source at https://docs.google.com/presentation/d/1bHp8_zcoWCYoNU2AhO2lSagQyuIrghkCncViSqn14cU/edit"
 
-The following steps describe how a query moves through the query-frontend.
+The following flow describes how a query moves through a Grafana Mimir cluster:
 
-{{< admonition type="note" >}}
-This scenario doesn't deploy a query-scheduler.
-{{< /admonition >}}
-
-1. A query-frontend receives a query.
-1. If the query is a range query, the query-frontend [splits it by time](#splitting) into multiple smaller queries that can be parallelized.
-1. The query-frontend checks the results cache. If the query result is in the cache, the query-frontend returns the cached result. If not, query execution continues according to the steps below.
-1. If [query-sharding](#about-query-sharding) is enabled, the query-frontend attempts to shard the query for further parallelization.
-1. The query-frontend places the query (or _queries_ if splitting or sharding of the initial query occurred) in an in-memory queue, where it waits to be picked up by a querier.
-1. A querier picks up the query from the queue and executes it. If the query was split or sharded into multiple subqueries, different queriers can pick up each of the individual queries.
-1. A querier or queriers return the result to query-frontend, which then aggregates and forwards the results to the client.
+1. The query-frontend receives queries, and then either splits and shards them, or serves them from the cache.
+1. The query-frontend enqueues the queries into a [query-scheduler](../query-scheduler/).
+1. The query-scheduler stores the queries in an in-memory queue where they wait for a querier to pick them up.
+1. Queriers pick up the queries, and executes them.
+1. The querier sends results back to query-frontend, which then forwards the results to the client.
 
 ## Functions
 
 This section describes the functions of the query-frontend.
-
-### Queueing
-
-The query-frontend uses a queuing mechanism to:
-
-- Ensure that large queries that might cause an out-of-memory (OOM) error in the querier are retried if a query fails.
-  This enables administrators to under-provision memory for queries, or run more small queries in parallel, which helps to reduce the total cost of ownership.
-- Prevent multiple large requests from being picked up by a single querier by distributing queries among all queriers using a first-in, first-out queue.
-- Prevent a single tenant from denial-of-service-ing other tenants by fairly scheduling queries between tenants.
 
 ### Splitting
 
@@ -67,33 +47,14 @@ If the cached results are incomplete, the query-frontend calculates the required
 The query-frontend can optionally align queries with their step parameter to improve the cacheability of the query results.
 The result cache is backed by Memcached.
 
-Although aligning the step parameter to the query time range increases the performance of Grafana Mimir, it violates the [PromQL conformance](https://prometheus.io/blog/2021/05/03/introducing-prometheus-conformance-program/) of Grafana Mimir. If PromQL conformance is not a priority to you, you can enable step alignment by setting `-query-frontend.align-queries-with-step=true`.
+Although aligning the step parameter to the query time range increases the performance of Grafana Mimir, it violates the [PromQL conformance](https://prometheus.io/blog/2021/05/03/introducing-prometheus-conformance-program/) of Grafana Mimir. If PromQL conformance is not a priority to you, you can enable step alignment by setting `-query-frontend.align-queries-with-step=true` or the equivalent per-tenant setting `align_queries_with_step`.
 
 ### About query sharding
 
 The query-frontend also provides [query sharding](../../query-sharding/).
 
-## Why query-frontend scalability is limited
-
-The query-frontend scalability is limited by the configured number of workers per querier.
-
-When you don't use the [query-scheduler](../query-scheduler/), the query-frontend stores a queue of queries to execute.
-A querier runs `-querier.max-concurrent` workers and each worker connects to one of the query-frontend replicas to pull queries to execute.
-A querier worker executes one query at a time.
-
-The connection between a querier worker and query-frontend is persistent.
-After a connection is established, multiple queries are delivered through the connection, one by one.
-To balance the number of workers connected to each query-frontend, the querier workers use a round-robin method to select the query-frontend replicas to connect to.
-
-If you run more query-frontend replicas than the number of workers per querier, the querier increases the number of internal workers to match the query-frontend replicas.
-This ensures that all query-frontends have some of the workers connected, but introduces a scalability limit because the more query-frontend replicas you run, the higher is the number of workers running for each querier, regardless of the configured `-querier.max-concurrent`.
-
-The [query-scheduler](../query-scheduler/) is an optional component that you can deploy to overcome the query-frontend scalability limitations.
-
 ## DNS configuration and readiness
 
-When a query-frontend starts up, it does not immediately have queriers attached to it.
-The [`/ready` endpoint](../../../http-api/#readiness-probe) returns an HTTP 200 status code only when the query-frontend has at least one querier attached to it, and is then ready to serve queries.
-Configure the `/ready` endpoint as a healthcheck in your load balancer; otherwise, a query-frontend scale-out event might result in failed queries or high latency until queriers connect to the query-frontend.
-
-If you use query-frontend with query-scheduler, the `/ready` endpoint reports an HTTP 200 status code only after the query-frontend connects to at least one query-scheduler.
+When a query-frontend starts up, it is not immediately able to serve queries.
+The [`/ready` endpoint](../../../http-api/#readiness-probe) reports an HTTP 200 status code only after the query-frontend connects to at least one query-scheduler, and is then ready to serve queries.
+Configure the `/ready` endpoint as a healthcheck in your load balancer; otherwise, a query-frontend scale-out event might result in failed queries or high latency until the query-frontend connects to a query-scheduler.

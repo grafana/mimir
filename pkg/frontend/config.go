@@ -36,6 +36,7 @@ type CombinedFrontendConfig struct {
 
 	QueryEngine               string `yaml:"query_engine" category:"experimental"`
 	EnableQueryEngineFallback bool   `yaml:"enable_query_engine_fallback" category:"experimental"`
+	EnableRemoteExecution     bool   `yaml:"enable_remote_execution" category:"experimental"`
 }
 
 func (cfg *CombinedFrontendConfig) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
@@ -46,6 +47,7 @@ func (cfg *CombinedFrontendConfig) RegisterFlags(f *flag.FlagSet, logger log.Log
 
 	f.StringVar(&cfg.QueryEngine, "query-frontend.query-engine", querier.MimirEngine, fmt.Sprintf("Query engine to use, either '%v' or '%v'", querier.PrometheusEngine, querier.MimirEngine))
 	f.BoolVar(&cfg.EnableQueryEngineFallback, "query-frontend.enable-query-engine-fallback", true, "If set to true and the Mimir query engine is in use, fall back to using the Prometheus query engine for any queries not supported by the Mimir query engine.")
+	f.BoolVar(&cfg.EnableRemoteExecution, "query-frontend.enable-remote-execution", false, "If set to true and the Mimir query engine is in use, use remote execution to evaluate queries in queriers.")
 }
 
 func (cfg *CombinedFrontendConfig) Validate() error {
@@ -55,6 +57,11 @@ func (cfg *CombinedFrontendConfig) Validate() error {
 	if err := cfg.QueryMiddleware.Validate(); err != nil {
 		return err
 	}
+
+	if cfg.EnableRemoteExecution && cfg.QueryEngine != querier.MimirEngine {
+		return errors.New("remote execution is only supported when the Mimir query engine is in use")
+	}
+
 	return nil
 }
 

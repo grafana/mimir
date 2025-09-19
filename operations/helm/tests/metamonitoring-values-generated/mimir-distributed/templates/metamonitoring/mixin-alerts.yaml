@@ -280,6 +280,17 @@ spec:
             labels:
               component: ingester
               severity: warning
+          - alert: MimirHighGRPCConcurrentStreamsPerConnection
+            annotations:
+              message: |
+                  Container {{ $labels.container }} in {{ $labels.cluster }}/{{ $labels.namespace }} is experiencing high GRPC concurrent streams per connection.
+              runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirhighgrpcconcurrentstreamsperconnection
+            expr: |
+              max(avg_over_time(grpc_concurrent_streams_by_conn_max[10m])) by (cluster, namespace, container)
+              /
+              min(cortex_grpc_concurrent_streams_limit) by (cluster, namespace, container) > 0.9
+            labels:
+              severity: warning
       - name: mimir_instance_limits_alerts
         rules:
           - alert: MimirIngesterReachingSeriesLimit
@@ -1335,36 +1346,15 @@ spec:
             for: 5m
             labels:
               severity: critical
-          - alert: MimirBlockBuilderLagging
+          - alert: MimirBlockBuilderSchedulerPendingJobs
             annotations:
-              message: Mimir {{ $labels.pod }} in {{ $labels.cluster }}/{{ $labels.namespace }} reports partition lag of {{ printf "%.2f" $value }}.
-              runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirblockbuilderlagging
+              message: Mimir {{ $labels.pod }} in {{ $labels.cluster }}/{{ $labels.namespace }} reports {{ printf "%.2f" $value }} pending jobs.
+              runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirblockbuilderschedulerpendingjobs
             expr: |
-              max by(cluster, namespace, pod) (
-              max_over_time(
-              (
-              cortex_blockbuilder_scheduler_partition_end_offset offset 1h
-              -
-              cortex_blockbuilder_scheduler_partition_committed_offset
-              )[10m:])) > 4e6
-            for: 75m
+              sum by (cluster, namespace, pod) (cortex_blockbuilder_scheduler_pending_jobs) > 0
+            for: 40m
             labels:
               severity: warning
-          - alert: MimirBlockBuilderLagging
-            annotations:
-              message: Mimir {{ $labels.pod }} in {{ $labels.cluster }}/{{ $labels.namespace }} reports partition lag of {{ printf "%.2f" $value }}.
-              runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirblockbuilderlagging
-            expr: |
-              max by(cluster, namespace, pod) (
-              max_over_time(
-              (
-              cortex_blockbuilder_scheduler_partition_end_offset offset 1h
-              -
-              cortex_blockbuilder_scheduler_partition_committed_offset
-              )[10m:])) > 4e6
-            for: 140m
-            labels:
-              severity: critical
           - alert: MimirBlockBuilderCompactAndUploadFailed
             annotations:
               message: Mimir {{ $labels.pod }} in {{ $labels.cluster }}/{{ $labels.namespace }} fails to compact and upload blocks.

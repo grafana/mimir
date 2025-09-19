@@ -14,6 +14,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
+	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/limiter"
 )
@@ -26,6 +27,7 @@ type VectorScalarBinaryOperation struct {
 	Op                       parser.ItemType
 	ReturnBool               bool
 	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
+	EnableDelayedNameRemoval bool
 
 	timeRange types.QueryTimeRange
 	opFunc    vectorScalarBinaryOperationFunc
@@ -45,8 +47,7 @@ func NewVectorScalarBinaryOperation(
 	op parser.ItemType,
 	returnBool bool,
 	timeRange types.QueryTimeRange,
-	memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
-	annotations *annotations.Annotations,
+	opParams *planning.OperatorParameters,
 	expressionPosition posrange.PositionRange,
 ) (*VectorScalarBinaryOperation, error) {
 	var f binaryOperationFunc
@@ -67,10 +68,11 @@ func NewVectorScalarBinaryOperation(
 		ScalarIsLeftSide:         scalarIsLeftSide,
 		Op:                       op,
 		ReturnBool:               returnBool,
-		MemoryConsumptionTracker: memoryConsumptionTracker,
+		MemoryConsumptionTracker: opParams.MemoryConsumptionTracker,
+		EnableDelayedNameRemoval: opParams.EnableDelayedNameRemoval,
 
 		timeRange:          timeRange,
-		annotations:        annotations,
+		annotations:        opParams.Annotations,
 		expressionPosition: expressionPosition,
 	}
 
@@ -94,7 +96,7 @@ func NewVectorScalarBinaryOperation(
 	return b, nil
 }
 
-func (v *VectorScalarBinaryOperation) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
+func (v *VectorScalarBinaryOperation) SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
 	// Get the scalar values once, now, rather than having to do this later in NextSeries.
 	var err error
 	v.scalarData, err = v.Scalar.GetValues(ctx)
@@ -102,7 +104,7 @@ func (v *VectorScalarBinaryOperation) SeriesMetadata(ctx context.Context) ([]typ
 		return nil, err
 	}
 
-	metadata, err := v.Vector.SeriesMetadata(ctx)
+	metadata, err := v.Vector.SeriesMetadata(ctx, matchers)
 	if err != nil {
 		return nil, err
 	}
@@ -110,10 +112,7 @@ func (v *VectorScalarBinaryOperation) SeriesMetadata(ctx context.Context) ([]typ
 	if !v.Op.IsComparisonOperator() || v.ReturnBool {
 		// We don't need to do deduplication and merging of series in this operator: we expect that this operator
 		// is wrapped in a DeduplicateAndMerge.
-		metadata, err = functions.DropSeriesName.Func(metadata, v.MemoryConsumptionTracker)
-		if err != nil {
-			return nil, err
-		}
+		return functions.DropSeriesName.Func(metadata, v.MemoryConsumptionTracker, v.EnableDelayedNameRemoval)
 	}
 
 	return metadata, nil

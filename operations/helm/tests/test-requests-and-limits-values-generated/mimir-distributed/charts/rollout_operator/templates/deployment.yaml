@@ -6,13 +6,14 @@ metadata:
   name: test-requests-and-limits-values-rollout-operator
   namespace: "citestns"
   labels:
-    helm.sh/chart: rollout-operator-0.30.0
+    helm.sh/chart: rollout-operator-0.33.0
     app.kubernetes.io/name: rollout-operator
     app.kubernetes.io/instance: test-requests-and-limits-values
-    app.kubernetes.io/version: "v0.28.0"
+    app.kubernetes.io/version: "v0.29.0"
     app.kubernetes.io/managed-by: Helm
 spec:
   replicas: 1
+  revisionHistoryLimit: 10
   minReadySeconds: 10
   selector:
     matchLabels:
@@ -45,13 +46,18 @@ spec:
               drop:
               - ALL
             readOnlyRootFilesystem: true
-          image: "grafana/rollout-operator:v0.28.0"
+          image: "grafana/rollout-operator:v0.29.0"
           imagePullPolicy: IfNotPresent
           args:
           - -kubernetes.namespace=citestns
+          - -server-tls.enabled=true
+          - -server-tls.self-signed-cert.secret-name=certificate
           ports:
             - name: http-metrics
               containerPort: 8001
+              protocol: TCP
+            - name: https
+              containerPort: 8443
               protocol: TCP
           readinessProbe:
             httpGet:

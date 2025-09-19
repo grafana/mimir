@@ -1110,7 +1110,7 @@ type chunkBuffer struct {
 
 func newChunkBuffer() *chunkBuffer {
 	cb := &chunkBuffer{}
-	for i := 0; i < inBufferShards; i++ {
+	for i := range inBufferShards {
 		cb.inBufferChunks[i] = make(map[ChunkDiskMapperRef]chunkenc.Chunk)
 	}
 	return cb
@@ -1134,7 +1134,7 @@ func (cb *chunkBuffer) get(ref ChunkDiskMapperRef) chunkenc.Chunk {
 }
 
 func (cb *chunkBuffer) clear() {
-	for i := 0; i < inBufferShards; i++ {
+	for i := range inBufferShards {
 		cb.inBufferChunksMtxs[i].Lock()
 		cb.inBufferChunks[i] = make(map[ChunkDiskMapperRef]chunkenc.Chunk)
 		cb.inBufferChunksMtxs[i].Unlock()

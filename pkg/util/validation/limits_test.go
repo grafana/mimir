@@ -1777,6 +1777,46 @@ func TestLimits_Validate(t *testing.T) {
 			}(),
 			expectedErr: fmt.Errorf("OTLP translation strategy NoTranslation is not allowed unless metric suffixes are disabled"),
 		},
+		"should fail if label_value_length_over_limit_strategy=truncate and hash suffix would be longer than max label value limit": {
+			cfg: func() Limits {
+				cfg := Limits{}
+				flagext.DefaultValues(&cfg)
+				cfg.LabelValueLengthOverLimitStrategy = LabelValueLengthOverLimitStrategyTruncate
+				cfg.MaxLabelValueLength = LabelValueHashLen - 1
+				return cfg
+			}(),
+			expectedErr: errors.New(`cannot set -validation.label-value-length-over-limit-strategy to "truncate": label value hash suffix would exceed max label value length of 70`),
+		},
+		"should fail if label_value_length_over_limit_strategy=drop and hash suffix would be longer than max label value limit": {
+			cfg: func() Limits {
+				cfg := Limits{}
+				flagext.DefaultValues(&cfg)
+				cfg.LabelValueLengthOverLimitStrategy = LabelValueLengthOverLimitStrategyDrop
+				cfg.MaxLabelValueLength = LabelValueHashLen - 1
+				return cfg
+			}(),
+			expectedErr: errors.New(`cannot set -validation.label-value-length-over-limit-strategy to "drop": label value hash suffix would exceed max label value length of 70`),
+		},
+		"should pass if label_value_length_over_limit_strategy=truncate and hash suffix would be shorter than or equal to max label value limit": {
+			cfg: func() Limits {
+				cfg := Limits{}
+				flagext.DefaultValues(&cfg)
+				cfg.LabelValueLengthOverLimitStrategy = LabelValueLengthOverLimitStrategyTruncate
+				cfg.MaxLabelValueLength = LabelValueHashLen
+				return cfg
+			}(),
+			expectedErr: nil,
+		},
+		"should pass if label_value_length_over_limit_strategy=drop and hash suffix would be shorter than or equal to max label value limit": {
+			cfg: func() Limits {
+				cfg := Limits{}
+				flagext.DefaultValues(&cfg)
+				cfg.LabelValueLengthOverLimitStrategy = LabelValueLengthOverLimitStrategyDrop
+				cfg.MaxLabelValueLength = LabelValueHashLen + 1
+				return cfg
+			}(),
+			expectedErr: nil,
+		},
 	}
 
 	for testName, testData := range tests {

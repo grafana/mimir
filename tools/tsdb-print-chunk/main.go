@@ -8,7 +8,6 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/go-kit/log"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/tsdb"
@@ -18,7 +17,7 @@ import (
 	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
-var logger = log.NewLogfmtLogger(os.Stderr)
+var logger = util_log.MakeLeveledLogger(os.Stderr, "info")
 
 func main() {
 	args := os.Args

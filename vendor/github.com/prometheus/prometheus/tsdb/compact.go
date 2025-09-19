@@ -46,7 +46,7 @@ import (
 func ExponentialBlockRanges(minSize int64, steps, stepSize int) []int64 {
 	ranges := make([]int64, 0, steps)
 	curRange := minSize
-	for i := 0; i < steps; i++ {
+	for range steps {
 		ranges = append(ranges, curRange)
 		curRange *= int64(stepSize)
 	}
@@ -742,6 +742,7 @@ func (c *LeveledCompactor) Write(dest string, b BlockReader, mint, maxt int64, b
 	start := time.Now()
 
 	uid := ulid.MustNew(ulid.Now(), rand.Reader)
+	c.logger.Info("write block started", "mint", mint, "maxt", maxt, "ulid", uid)
 
 	meta := &BlockMeta{
 		ULID:    uid,
@@ -776,7 +777,7 @@ func (c *LeveledCompactor) Write(dest string, b BlockReader, mint, maxt int64, b
 	}
 
 	c.logger.Info(
-		"write block",
+		"write block completed",
 		"mint", meta.MinTime,
 		"maxt", meta.MaxTime,
 		"ulid", meta.ULID,

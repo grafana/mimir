@@ -24,6 +24,7 @@ import (
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/util/propagation"
 )
 
 func TestCodec_JSONResponse_Metrics(t *testing.T) {
@@ -166,7 +167,7 @@ func TestCodec_JSONResponse_Metrics(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			reg := prometheus.NewPedanticRegistry()
-			codec := NewCodec(reg, 0*time.Minute, formatJSON, nil)
+			codec := NewCodec(reg, 0*time.Minute, formatJSON, nil, &propagation.NoopInjector{})
 
 			body, err := json.Marshal(tc.resp)
 			require.NoError(t, err)
@@ -318,8 +319,7 @@ func TestCodec_JSONResponse_Labels(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			reg := prometheus.NewPedanticRegistry()
-			codec := NewCodec(reg, 0*time.Minute, formatJSON, nil)
+			codec := newTestCodec()
 
 			body, err := json.Marshal(tc.resp)
 			require.NoError(t, err)
@@ -479,7 +479,7 @@ func TestCodec_JSONEncoding_Metrics(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			reg := prometheus.NewPedanticRegistry()
-			codec := NewCodec(reg, 0*time.Minute, formatJSON, nil)
+			codec := NewCodec(reg, 0*time.Minute, formatJSON, nil, &propagation.NoopInjector{})
 			httpRequest := &http.Request{
 				Header: http.Header{"Accept": []string{jsonMimeType}},
 			}
@@ -563,8 +563,7 @@ func TestCodec_JSONEncoding_Labels(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			reg := prometheus.NewPedanticRegistry()
-			codec := NewCodec(reg, 0*time.Minute, formatJSON, nil)
+			codec := newTestCodec()
 			httpRequest := &http.Request{
 				Header: http.Header{"Accept": []string{jsonMimeType}},
 			}

@@ -39,6 +39,7 @@ type ingesterMetrics struct {
 
 	activeSeriesLoading                               *prometheus.GaugeVec
 	activeSeriesPerUser                               *prometheus.GaugeVec
+	activeSeriesPerUserOTLP                           *prometheus.GaugeVec
 	activeSeriesCustomTrackersPerUser                 *prometheus.GaugeVec
 	activeSeriesPerUserNativeHistograms               *prometheus.GaugeVec
 	activeSeriesCustomTrackersPerUserNativeHistograms *prometheus.GaugeVec
@@ -316,6 +317,12 @@ func newIngesterMetrics(
 		}, []string{"user"}),
 
 		// Not registered automatically, but only if activeSeriesEnabled is true.
+		activeSeriesPerUserOTLP: promauto.With(activeSeriesReg).NewGaugeVec(prometheus.GaugeOpts{
+			Name: "cortex_ingester_active_otlp_series",
+			Help: "Number of currently active series per user ingested via OTLP.",
+		}, []string{"user"}),
+
+		// Not registered automatically, but only if activeSeriesEnabled is true.
 		activeSeriesCustomTrackersPerUser: promauto.With(activeSeriesReg).NewGaugeVec(prometheus.GaugeOpts{
 			Name: "cortex_ingester_active_series_custom_tracker",
 			Help: "Number of currently active series matching a pre-configured label matchers per user.",
@@ -431,6 +438,7 @@ func (m *ingesterMetrics) deletePerGroupMetricsForUser(userID, group string) {
 func (m *ingesterMetrics) deletePerUserCustomTrackerMetrics(userID string, customTrackerMetrics []string) {
 	m.activeSeriesLoading.DeleteLabelValues(userID)
 	m.activeSeriesPerUser.DeleteLabelValues(userID)
+	m.activeSeriesPerUserOTLP.DeleteLabelValues(userID)
 	m.activeSeriesPerUserNativeHistograms.DeleteLabelValues(userID)
 	m.activeNativeHistogramBucketsPerUser.DeleteLabelValues(userID)
 	for _, name := range customTrackerMetrics {

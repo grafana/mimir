@@ -37,15 +37,45 @@ type EmbeddedQueries struct {
 }
 
 type EmbeddedQuery struct {
-	Expr   string            `json:"Expr"`
-	Params map[string]string `json:"Params,omitempty"`
+	Expr   parser.Expr
+	Params map[string]string
 }
 
-func NewEmbeddedQuery(expr string, params map[string]string) EmbeddedQuery {
+func NewEmbeddedQuery(expr parser.Expr, params map[string]string) EmbeddedQuery {
 	return EmbeddedQuery{
 		Expr:   expr,
 		Params: params,
 	}
+}
+
+type jsonEmbeddedQuery struct {
+	Expr   string            `json:"Expr"`
+	Params map[string]string `json:"Params,omitempty"`
+}
+
+func (e *EmbeddedQuery) MarshalJSON() ([]byte, error) {
+	v := jsonEmbeddedQuery{
+		Expr:   e.Expr.String(),
+		Params: e.Params,
+	}
+
+	return json.Marshal(v)
+}
+
+func (e *EmbeddedQuery) UnmarshalJSON(b []byte) error {
+	var v jsonEmbeddedQuery
+	if err := json.Unmarshal(b, &v); err != nil {
+		return err
+	}
+
+	expr, err := parser.ParseExpr(v.Expr)
+	if err != nil {
+		return err
+	}
+
+	e.Expr = expr
+	e.Params = v.Params
+	return nil
 }
 
 // JSONCodec is a Codec that uses JSON representations of EmbeddedQueries structs
@@ -71,10 +101,14 @@ func (c jsonCodec) Decode(encoded string) (queries []EmbeddedQuery, err error) {
 	return embedded.Concat, nil
 }
 
-// VectorSquash reduces multiple EmbeddedQueries into a single vector query which can be hijacked by a Queryable impl.
+// embeddedQueriesSquasher reduces multiple EmbeddedQueries into a single vector query which can be hijacked by a Queryable impl.
 // It always uses a VectorSelector as the substitution expr.
 // This is important because logical/set binops can only be applied against vectors and not matrices.
-func VectorSquasher(exprs ...EmbeddedQuery) (parser.Expr, error) {
+type embeddedQueriesSquasher struct{}
+
+var EmbeddedQueriesSquasher Squasher = &embeddedQueriesSquasher{}
+
+func (s *embeddedQueriesSquasher) Squash(exprs ...EmbeddedQuery) (parser.Expr, error) {
 	encoded, err := JSONCodec.Encode(exprs)
 	if err != nil {
 		return nil, err
@@ -89,4 +123,14 @@ func VectorSquasher(exprs ...EmbeddedQuery) (parser.Expr, error) {
 		Name:          EmbeddedQueriesMetricName,
 		LabelMatchers: []*labels.Matcher{embeddedQuery},
 	}, nil
+}
+
+func (s *embeddedQueriesSquasher) ContainsSquashedExpression(node parser.Node) (bool, error) {
+	switch n := node.(type) {
+	case *parser.VectorSelector:
+		if n.Name == EmbeddedQueriesMetricName {
+			return true, nil
+		}
+	}
+	return false, nil
 }

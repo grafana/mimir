@@ -6,10 +6,10 @@ metadata:
   name: test-ingest-storage-values-rollout-operator
   namespace: "citestns"
   labels:
-    helm.sh/chart: rollout-operator-0.30.0
+    helm.sh/chart: rollout-operator-0.33.0
     app.kubernetes.io/name: rollout-operator
     app.kubernetes.io/instance: test-ingest-storage-values
-    app.kubernetes.io/version: "v0.28.0"
+    app.kubernetes.io/version: "v0.29.0"
     app.kubernetes.io/managed-by: Helm
 rules:
 - apiGroups:
@@ -36,3 +36,19 @@ rules:
   - statefulsets/status
   verbs:
   - update
+- apiGroups:
+  - rollout-operator.grafana.com
+  resources:
+  - zoneawarepoddisruptionbudgets
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+    - rollout-operator.grafana.com
+  resources:
+    - replicatemplates/scale
+    - replicatemplates/status
+  verbs:
+    - get
+    - patch

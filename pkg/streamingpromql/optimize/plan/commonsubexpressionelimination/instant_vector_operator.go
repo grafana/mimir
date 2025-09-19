@@ -52,11 +52,14 @@ func (b *InstantVectorDuplicationBuffer) AddConsumer() *InstantVectorDuplication
 	}
 }
 
-func (b *InstantVectorDuplicationBuffer) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
+func (b *InstantVectorDuplicationBuffer) SeriesMetadata(ctx context.Context, _ types.Matchers) ([]types.SeriesMetadata, error) {
 	if b.seriesMetadataCount == 0 {
 		// Haven't loaded series metadata yet, load it now.
 		var err error
-		b.seriesMetadata, err = b.Inner.SeriesMetadata(ctx)
+		// Note that we are ignoring the matchers passed at runtime and not passing them to the inner
+		// operator. This is because this operator is being used for multiple parts of the query and
+		// the matchers may filter out results needed for other uses of this operator.
+		b.seriesMetadata, err = b.Inner.SeriesMetadata(ctx, nil)
 		if err != nil {
 			return nil, err
 		}
@@ -234,8 +237,8 @@ type InstantVectorDuplicationConsumer struct {
 
 var _ types.InstantVectorOperator = &InstantVectorDuplicationConsumer{}
 
-func (d *InstantVectorDuplicationConsumer) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
-	return d.Buffer.SeriesMetadata(ctx)
+func (d *InstantVectorDuplicationConsumer) SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
+	return d.Buffer.SeriesMetadata(ctx, matchers)
 }
 
 func (d *InstantVectorDuplicationConsumer) NextSeries(ctx context.Context) (types.InstantVectorSeriesData, error) {

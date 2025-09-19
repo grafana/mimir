@@ -7,7 +7,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-kit/log"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/promqltest"
@@ -31,7 +30,7 @@ func TestFunctionDeduplicateAndMerge(t *testing.T) {
 	opts := NewTestEngineOpts()
 	planner, err := NewQueryPlanner(opts)
 	require.NoError(t, err)
-	engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), planner, log.NewNopLogger())
+	engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), planner)
 	require.NoError(t, err)
 
 	ctx := context.Background()
@@ -68,6 +67,7 @@ func TestFunctionDeduplicateAndMerge(t *testing.T) {
 		"deriv":                        `deriv({__name__=~"float.*"}[1m])`,
 		"double_exponential_smoothing": `double_exponential_smoothing({__name__=~"float.*"}[1m], 0.01, 0.1)`,
 		"exp":                          `exp({__name__=~"float.*"})`,
+		"first_over_time":              `<skip>`, // first_over_time() doesn't drop the metric name, so this test doesn't apply.
 		"floor":                        `floor({__name__=~"float.*"})`,
 		"histogram_avg":                `histogram_avg({__name__=~"histogram.*"})`,
 		"histogram_count":              `histogram_count({__name__=~"histogram.*"})`,

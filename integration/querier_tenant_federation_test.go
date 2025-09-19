@@ -8,6 +8,7 @@ package integration
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -26,6 +27,7 @@ import (
 
 type querierTenantFederationConfig struct {
 	shuffleShardingEnabled bool
+	remoteExecutionEnabled bool
 }
 
 func TestQuerierTenantFederation(t *testing.T) {
@@ -35,6 +37,12 @@ func TestQuerierTenantFederation(t *testing.T) {
 func TestQuerierTenantFederationWithShuffleSharding(t *testing.T) {
 	runQuerierTenantFederationTest(t, querierTenantFederationConfig{
 		shuffleShardingEnabled: true,
+	})
+}
+
+func TestQuerierTenantFederationWithRemoteExecution(t *testing.T) {
+	runQuerierTenantFederationTest(t, querierTenantFederationConfig{
+		remoteExecutionEnabled: true,
 	})
 }
 
@@ -53,6 +61,7 @@ func runQuerierTenantFederationTest(t *testing.T, cfg querierTenantFederationCon
 		"-query-frontend.cache-results":                     "true",
 		"-query-frontend.results-cache.backend":             "memcached",
 		"-query-frontend.results-cache.memcached.addresses": "dns+" + memcached.NetworkEndpoint(e2ecache.MemcachedPort),
+		"-query-frontend.enable-remote-execution":           strconv.FormatBool(cfg.remoteExecutionEnabled),
 		"-tenant-federation.enabled":                        "true",
 		"-ingester.max-global-exemplars-per-user":           "10000",
 	})

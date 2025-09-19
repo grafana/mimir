@@ -42,8 +42,9 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 	rangeQueryEncodedTimeRange := planning.EncodedQueryTimeRange{StartT: 3000, EndT: 5000, IntervalMilliseconds: 1000}
 
 	testCases := map[string]struct {
-		expr      string
-		timeRange types.QueryTimeRange
+		expr                     string
+		timeRange                types.QueryTimeRange
+		enableDelayedNameRemoval bool
 
 		expectedPlan *planning.EncodedQueryPlan
 	}{
@@ -1090,6 +1091,38 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 				},
 			},
 		},
+		"query with delayed name removal enabled": {
+			expr:                     `some_metric`,
+			timeRange:                instantQuery,
+			enableDelayedNameRemoval: true,
+
+			expectedPlan: &planning.EncodedQueryPlan{
+				TimeRange:                instantQueryEncodedTimeRange,
+				RootNode:                 1,
+				EnableDelayedNameRemoval: true,
+				Nodes: []*planning.EncodedNode{
+					{
+						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
+						Details: marshalDetails(&core.VectorSelectorDetails{
+							Matchers: []*core.LabelMatcher{
+								{Type: 0, Name: "__name__", Value: "some_metric"},
+							},
+							ExpressionPosition: core.PositionRange{Start: 0, End: 11},
+						}),
+						Type:        "VectorSelector",
+						Description: `{__name__="some_metric"}`,
+					},
+					{
+						NodeType:       planning.NODE_TYPE_DEDUPLICATE_AND_MERGE,
+						Details:        marshalDetails(&core.DeduplicateAndMergeDetails{RunDelayedNameRemoval: true}),
+						Type:           "DeduplicateAndMerge",
+						Description:    "with delayed name removal",
+						Children:       []int64{0},
+						ChildrenLabels: []string{""},
+					},
+				},
+			},
+		},
 	}
 
 	ctx := context.Background()
@@ -1104,6 +1137,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 				return (23 * time.Second).Milliseconds()
 			}
 			opts.CommonOpts.Reg = reg
+			opts.CommonOpts.EnableDelayedNameRemoval = testCase.enableDelayedNameRemoval
 			planner, err := NewQueryPlannerWithoutOptimizationPasses(opts)
 			require.NoError(t, err)
 
@@ -1211,6 +1245,32 @@ func TestDeduplicateAndMergePlanning(t *testing.T) {
 			expectedPlan: `
 				- FunctionCall: absent_over_time(...)
 					- MatrixSelector: {__name__="some_metric"}[5m0s]
+			`,
+		},
+		"aritmetic vector-scalar operation - should deduplicate and merge": {
+			expr: `some_metric * 2`,
+			expectedPlan: `
+				- DeduplicateAndMerge
+					- BinaryExpression: LHS * RHS
+						- LHS: VectorSelector: {__name__="some_metric"}
+						- RHS: NumberLiteral: 2
+			`,
+		},
+		"comparison vector-scalar operation - should NOT deduplicate and merge": {
+			expr: `some_metric > 2`,
+			expectedPlan: `
+				- BinaryExpression: LHS > RHS
+					- LHS: VectorSelector: {__name__="some_metric"}
+					- RHS: NumberLiteral: 2
+			`,
+		},
+		"comparison vector-scalar operation with bool modifier - should deduplicate and merge": {
+			expr: `some_metric > bool 2`,
+			expectedPlan: `
+				- DeduplicateAndMerge
+					- BinaryExpression: LHS > bool RHS
+						- LHS: VectorSelector: {__name__="some_metric"}
+						- RHS: NumberLiteral: 2
 			`,
 		},
 	}

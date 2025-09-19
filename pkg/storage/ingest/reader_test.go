@@ -2221,7 +2221,7 @@ func TestPartitionReader_ShouldNotMissRecordsIfKafkaReturnsAFetchBothWithAnError
 				reg                  = prometheus.NewPedanticRegistry()
 			)
 
-			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 			t.Cleanup(cancel)
 
 			// Produce records.

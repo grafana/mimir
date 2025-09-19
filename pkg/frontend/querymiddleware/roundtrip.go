@@ -27,6 +27,7 @@ import (
 	"go.opentelemetry.io/otel"
 
 	"github.com/grafana/mimir/pkg/storage/ingest"
+	"github.com/grafana/mimir/pkg/streamingpromql"
 	"github.com/grafana/mimir/pkg/util"
 )
 
@@ -220,9 +221,11 @@ func NewTripperware(
 	engine promql.QueryEngine,
 	engineOpts promql.EngineOpts,
 	ingestStorageTopicOffsetsReaders map[string]*ingest.TopicOffsetsReader,
+	useRemoteExecution bool,
+	streamingEngine *streamingpromql.Engine,
 	registerer prometheus.Registerer,
 ) (Tripperware, error) {
-	queryRangeTripperware, err := newQueryTripperware(cfg, log, limits, codec, cacheExtractor, engine, engineOpts, ingestStorageTopicOffsetsReaders, registerer)
+	queryRangeTripperware, err := newQueryTripperware(cfg, log, limits, codec, cacheExtractor, engine, engineOpts, ingestStorageTopicOffsetsReaders, useRemoteExecution, streamingEngine, registerer)
 	if err != nil {
 		return nil, err
 	}
@@ -241,6 +244,8 @@ func newQueryTripperware(
 	engine promql.QueryEngine,
 	engineOpts promql.EngineOpts,
 	ingestStorageTopicOffsetsReaders map[string]*ingest.TopicOffsetsReader,
+	useRemoteExecution bool,
+	streamingEngine *streamingpromql.Engine,
 	registerer prometheus.Registerer,
 ) (Tripperware, error) {
 	// Experimental functions are always enabled globally for all engines. Access to them
@@ -288,7 +293,13 @@ func newQueryTripperware(
 		// It means that the first roundtrippers defined in this function will be the last to be
 		// executed.
 
-		queryHandler := NewHTTPQueryRequestRoundTripperHandler(next, codec, log)
+		var queryHandler MetricsQueryHandler
+
+		if useRemoteExecution {
+			queryHandler = NewEngineQueryRequestRoundTripperHandler(streamingEngine, codec, log)
+		} else {
+			queryHandler = NewHTTPQueryRequestRoundTripperHandler(next, codec, log)
+		}
 		queryrange := NewLimitedParallelismRoundTripper(queryHandler, codec, limits, queryRangeMiddleware...)
 		instant := NewLimitedParallelismRoundTripper(queryHandler, codec, limits, queryInstantMiddleware...)
 		remoteRead := NewRemoteReadRoundTripper(next, remoteReadMiddleware...)
