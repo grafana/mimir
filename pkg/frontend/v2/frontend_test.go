@@ -1655,5 +1655,5 @@ func TestQueryDecoding(t *testing.T) {
 }
 
 func newTestCodec() querymiddleware.Codec {
-	return querymiddleware.NewCodec(prometheus.NewPedanticRegistry(), 0*time.Minute, "json", nil, &api.ConsistencyLevelInjector{})
+	return querymiddleware.NewCodec(prometheus.NewPedanticRegistry(), 0*time.Minute, "json", nil, &api.ConsistencyInjector{})
 }
