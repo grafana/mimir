@@ -129,7 +129,7 @@ type Config struct {
 	BlockBuilderScheduler          blockbuilderscheduler.Config    `yaml:"block_builder_scheduler" doc:"hidden"`
 	BlocksStorage                  tsdb.BlocksStorageConfig        `yaml:"blocks_storage"`
 	Compactor                      compactor.Config                `yaml:"compactor"`
-  CompactorScheduler             compactorscheduler.Config       `yaml:"compactor_scheduler" doc:"hidden"`
+	CompactorScheduler             compactorscheduler.Config       `yaml:"compactor_scheduler" doc:"hidden"`
 	StoreGateway                   storegateway.Config             `yaml:"store_gateway"`
 	TenantFederation               tenantfederation.Config         `yaml:"tenant_federation"`
 	ActivityTracker                activitytracker.Config          `yaml:"activity_tracker"`

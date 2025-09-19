@@ -128,6 +128,40 @@ func TestConfig_Validate(t *testing.T) {
 			setup:    func(cfg *Config) { cfg.SymbolsFlushersConcurrency = 0 },
 			expected: errInvalidSymbolFlushersConcurrency.Error(),
 		},
+		"should pass with standalone planning mode": {
+			setup: func(cfg *Config) {
+				cfg.PlanningMode = planningModeStandalone
+			},
+			expected: "",
+		},
+		"should pass with scheduler mode and valid address": {
+			setup: func(cfg *Config) {
+				cfg.PlanningMode = planningModeScheduler
+				cfg.SchedulerAddress = "localhost:9095"
+			},
+			expected: "",
+		},
+		"should fail with scheduler mode but no address": {
+			setup: func(cfg *Config) {
+				cfg.PlanningMode = planningModeScheduler
+				cfg.SchedulerAddress = ""
+			},
+			expected: errInvalidSchedulerAddress.Error(),
+		},
+		"should fail with invalid planning mode": {
+			setup: func(cfg *Config) {
+				cfg.PlanningMode = "invalid-mode"
+			},
+			expected: errInvalidPlanningMode.Error(),
+		},
+		"should fail with scheduler mode and zero update interval": {
+			setup: func(cfg *Config) {
+				cfg.PlanningMode = planningModeScheduler
+				cfg.SchedulerAddress = "localhost:9095"
+				cfg.SchedulerUpdateInterval = 0
+			},
+			expected: errInvalidSchedulerUpdateInterval.Error(),
+		},
 	}
 
 	for testName, testData := range tests {

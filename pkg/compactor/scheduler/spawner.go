@@ -4,13 +4,13 @@ package scheduler
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/backoff"
 	"github.com/grafana/dskit/services"
-	"github.com/pkg/errors"
 	"github.com/thanos-io/objstore"
 
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
@@ -43,7 +43,7 @@ func NewSpawner(
 	logger log.Logger) *Spawner {
 	s := &Spawner{
 		allowedTenants:       allowList,
-		rotator: rotator,
+		rotator:              rotator,
 		planTracker:          planTracker,
 		bkt:                  bkt,
 		planningInterval:     cfg.planningInterval,
@@ -64,7 +64,7 @@ func (s *Spawner) start(ctx context.Context) error {
 		}
 		b.Wait()
 	}
-	return errors.Wrap(err, "failed to discover users for the compactor scheduler")
+	return fmt.Errorf("failed to discover users for the compactor scheduler: %w", err)
 }
 
 func (s *Spawner) iter(ctx context.Context) error {
