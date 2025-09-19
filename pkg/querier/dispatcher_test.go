@@ -722,6 +722,173 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 	}
 }
 
+func TestDispatcher_HandleProtobuf_WithDelayedNameRemovalEnabled(t *testing.T) {
+	storage := promqltest.LoadedStorage(t, `
+		load 1s
+			some_total{"idx"="0"} 0+1x10
+	`)
+	t.Cleanup(func() { require.NoError(t, storage.Close()) })
+
+	opts := streamingpromql.NewTestEngineOpts()
+	opts.CommonOpts.EnableDelayedNameRemoval = true
+	ctx := context.Background()
+	planner, err := streamingpromql.NewQueryPlanner(opts)
+	require.NoError(t, err)
+	engine, err := streamingpromql.NewEngine(opts, streamingpromql.NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), planner)
+	require.NoError(t, err)
+
+	createQueryRequestForSpecificNode := func(expr string, timeRange types.QueryTimeRange, nodeIndex int64) *prototypes.Any {
+		plan, err := planner.NewQueryPlan(ctx, expr, timeRange, streamingpromql.NoopPlanningObserver{})
+		require.NoError(t, err)
+
+		encodedPlan, err := plan.ToEncodedPlan(false, true)
+		require.NoError(t, err)
+
+		body := &querierpb.EvaluateQueryRequest{
+			Plan: *encodedPlan,
+			Nodes: []querierpb.EvaluationNode{
+				{
+					TimeRange: encodedPlan.TimeRange,
+					NodeIndex: nodeIndex,
+				},
+			},
+		}
+
+		req, err := prototypes.MarshalAny(body)
+		require.NoError(t, err)
+		return req
+	}
+
+	startT := timestamp.Time(0)
+	expectedQueryWallTime := 3 * time.Second
+
+	testCases := map[string]struct {
+		req                      *prototypes.Any
+		expectedResponseMessages []*frontendv2pb.QueryResultStreamRequest
+	}{
+		"inner part of query": {
+			req: createQueryRequestForSpecificNode(
+				`rate(some_total[5s])`,
+				types.NewInstantQueryTimeRange(startT.Add(9*time.Second)),
+				1, // Evaluate the rate() directly, rather than the root node, which is the deduplicate and merge operation that removes the metric name.
+			),
+			expectedResponseMessages: []*frontendv2pb.QueryResultStreamRequest{
+				{
+					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
+						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
+							Message: &querierpb.EvaluateQueryResponse_SeriesMetadata{
+								SeriesMetadata: &querierpb.EvaluateQueryResponseSeriesMetadata{
+									NodeIndex: 1,
+									Series: []querierpb.SeriesMetadata{
+										{DropName: true, Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(labels.MetricName, "some_total", "idx", "0"))},
+									},
+								},
+							},
+						},
+					},
+				},
+				{
+					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
+						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
+							Message: &querierpb.EvaluateQueryResponse_InstantVectorSeriesData{
+								InstantVectorSeriesData: &querierpb.EvaluateQueryResponseInstantVectorSeriesData{
+									NodeIndex: 1,
+									Floats: []mimirpb.Sample{
+										{TimestampMs: 9_000, Value: 1},
+									},
+								},
+							},
+						},
+					},
+				},
+				{
+					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
+						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
+							Message: &querierpb.EvaluateQueryResponse_EvaluationCompleted{
+								EvaluationCompleted: &querierpb.EvaluateQueryResponseEvaluationCompleted{
+									Stats: stats.Stats{
+										SamplesProcessed: 5,
+										WallTime:         expectedQueryWallTime,
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		"root of query": {
+			req: createQueryRequestForSpecificNode(
+				`rate(some_total[5s])`,
+				types.NewInstantQueryTimeRange(startT.Add(9*time.Second)),
+				2, // The root of the query (0=selector, 1=rate(), 2=deduplicate and merge operation).
+			),
+			expectedResponseMessages: []*frontendv2pb.QueryResultStreamRequest{
+				{
+					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
+						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
+							Message: &querierpb.EvaluateQueryResponse_SeriesMetadata{
+								SeriesMetadata: &querierpb.EvaluateQueryResponseSeriesMetadata{
+									NodeIndex: 2,
+									Series: []querierpb.SeriesMetadata{
+										{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("idx", "0"))},
+									},
+								},
+							},
+						},
+					},
+				},
+				{
+					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
+						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
+							Message: &querierpb.EvaluateQueryResponse_InstantVectorSeriesData{
+								InstantVectorSeriesData: &querierpb.EvaluateQueryResponseInstantVectorSeriesData{
+									NodeIndex: 2,
+									Floats: []mimirpb.Sample{
+										{TimestampMs: 9_000, Value: 1},
+									},
+								},
+							},
+						},
+					},
+				},
+				{
+					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
+						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
+							Message: &querierpb.EvaluateQueryResponse_EvaluationCompleted{
+								EvaluationCompleted: &querierpb.EvaluateQueryResponseEvaluationCompleted{
+									Stats: stats.Stats{
+										SamplesProcessed: 5,
+										WallTime:         expectedQueryWallTime,
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			tenantID := "tenant-1"
+			ctx = user.InjectOrgID(context.Background(), tenantID)
+			_, ctx := stats.ContextWithEmptyStats(ctx)
+			route, err := prototypes.AnyMessageName(testCase.req)
+			require.NoError(t, err)
+
+			reg, requestMetrics, serverMetrics := newMetrics()
+			stream := &mockQueryResultStream{t: t, route: route, reg: reg}
+			dispatcher := NewDispatcher(engine, storage, requestMetrics, serverMetrics, &propagation.NoopExtractor{}, opts.Logger)
+			dispatcher.timeNow = replaceTimeNow(timestamp.Time(4000), timestamp.Time(4000).Add(expectedQueryWallTime))
+
+			dispatcher.HandleProtobuf(ctx, testCase.req, propagation.MapCarrier{}, stream)
+			require.Equal(t, testCase.expectedResponseMessages, stream.messages)
+		})
+	}
+}
+
 func totalResponseBytes(msgs []*frontendv2pb.QueryResultStreamRequest) int {
 	total := 0
 

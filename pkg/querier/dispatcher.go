@@ -280,7 +280,8 @@ func (o *evaluationObserver) SeriesMetadataEvaluated(ctx context.Context, evalua
 
 	for _, s := range series {
 		protoSeries = append(protoSeries, querierpb.SeriesMetadata{
-			Labels: mimirpb.FromLabelsToLabelAdapters(s.Labels),
+			Labels:   mimirpb.FromLabelsToLabelAdapters(s.Labels),
+			DropName: s.DropName,
 		})
 	}
 

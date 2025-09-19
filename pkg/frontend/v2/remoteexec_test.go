@@ -67,6 +67,7 @@ func TestInstantVectorExecutionResponse(t *testing.T) {
 		responses: []mockResponse{
 			{
 				msg: newSeriesMetadata(
+					false,
 					labels.FromStrings("series", "1"),
 					labels.FromStrings("series", "2"),
 				),
@@ -130,11 +131,42 @@ func TestInstantVectorExecutionResponse(t *testing.T) {
 	require.True(t, stream.closed)
 }
 
+func TestInstantVectorExecutionResponse_DelayedNameRemoval(t *testing.T) {
+	stream := &mockResponseStream{
+		responses: []mockResponse{
+			{
+				msg: newSeriesMetadata(
+					true,
+					labels.FromStrings("series", "1"),
+					labels.FromStrings("series", "2"),
+				),
+			},
+		},
+	}
+
+	ctx := context.Background()
+	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
+
+	response := &instantVectorExecutionResponse{stream: stream, memoryConsumptionTracker: memoryConsumptionTracker}
+	series, err := response.GetSeriesMetadata(ctx)
+	require.NoError(t, err)
+
+	expectedSeries := []types.SeriesMetadata{
+		{Labels: labels.FromStrings("series", "1"), DropName: true},
+		{Labels: labels.FromStrings("series", "2"), DropName: true},
+	}
+	require.Equal(t, expectedSeries, series)
+	require.NotZero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
+	types.SeriesMetadataSlicePool.Put(&series, memoryConsumptionTracker)
+	require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
+}
+
 func TestRangeVectorExecutionResponse(t *testing.T) {
 	stream := &mockResponseStream{
 		responses: []mockResponse{
 			{
 				msg: newSeriesMetadata(
+					false,
 					labels.FromStrings("series", "1"),
 					labels.FromStrings("series", "2"),
 				),
@@ -241,11 +273,42 @@ func TestRangeVectorExecutionResponse(t *testing.T) {
 	require.Zerof(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes(), "buffers should be released when closing response, have: %v", memoryConsumptionTracker.DescribeCurrentMemoryConsumption())
 }
 
+func TestRangeVectorExecutionResponse_DelayedNameRemoval(t *testing.T) {
+	stream := &mockResponseStream{
+		responses: []mockResponse{
+			{
+				msg: newSeriesMetadata(
+					true,
+					labels.FromStrings("series", "1"),
+					labels.FromStrings("series", "2"),
+				),
+			},
+		},
+	}
+
+	ctx := context.Background()
+	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
+
+	response := newRangeVectorExecutionResponse(stream, memoryConsumptionTracker)
+	series, err := response.GetSeriesMetadata(ctx)
+	require.NoError(t, err)
+
+	expectedSeries := []types.SeriesMetadata{
+		{Labels: labels.FromStrings("series", "1"), DropName: true},
+		{Labels: labels.FromStrings("series", "2"), DropName: true},
+	}
+	require.Equal(t, expectedSeries, series)
+	require.NotZero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
+	types.SeriesMetadataSlicePool.Put(&series, memoryConsumptionTracker)
+	require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
+}
+
 func TestRangeVectorExecutionResponse_ExpectedSeriesMismatch(t *testing.T) {
 	stream := &mockResponseStream{
 		responses: []mockResponse{
 			{
 				msg: newSeriesMetadata(
+					false,
 					labels.FromStrings("series", "1"),
 					labels.FromStrings("series", "2"),
 				),
@@ -445,11 +508,12 @@ func newScalarValue(samples ...mimirpb.Sample) *frontendv2pb.QueryResultStreamRe
 	}
 }
 
-func newSeriesMetadata(series ...labels.Labels) *frontendv2pb.QueryResultStreamRequest {
+func newSeriesMetadata(dropName bool, series ...labels.Labels) *frontendv2pb.QueryResultStreamRequest {
 	protoSeries := make([]querierpb.SeriesMetadata, 0, len(series))
 	for _, series := range series {
 		protoSeries = append(protoSeries, querierpb.SeriesMetadata{
-			Labels: mimirpb.FromLabelsToLabelAdapters(series),
+			Labels:   mimirpb.FromLabelsToLabelAdapters(series),
+			DropName: dropName,
 		})
 	}
 

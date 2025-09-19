@@ -45,6 +45,7 @@ message SeriesMetadata {
     (gogoproto.nullable) = false,
     (gogoproto.customtype) = "github.com/grafana/mimir/pkg/mimirpb.LabelAdapter"
   ];
+  bool dropName = 2;
 }
 
 message EvaluateQueryResponseStringValue {
