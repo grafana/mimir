@@ -411,10 +411,7 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
 		if isVectorScalar {
 			// Comparison vector-scalar operations without bool modifier don't drop the __name__ label.
 			// So don't need to wrap in DeduplicateAndMerge.
-			isComparison := expr.Op == parser.EQLC || expr.Op == parser.NEQ ||
-				expr.Op == parser.LTE || expr.Op == parser.LSS ||
-				expr.Op == parser.GTE || expr.Op == parser.GTR
-			if isComparison && !expr.ReturnBool {
+			if expr.Op.IsComparisonOperator() && !expr.ReturnBool {
 				return binExpr, nil
 			}
 
