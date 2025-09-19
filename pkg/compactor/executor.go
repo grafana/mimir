@@ -140,7 +140,7 @@ func (e *schedulerExecutor) stop() error {
 }
 
 // startJobStatusUpdater starts a goroutine that sends periodic IN_PROGRESS keep-alive updates
-func (e *schedulerExecutor) startJobStatusUpdater(ctx context.Context, key *schedulerpb.JobKey, spec *schedulerpb.JobSpec, cancelJob context.CancelFunc) {
+func (e *schedulerExecutor) startJobStatusUpdater(ctx context.Context, key *schedulerpb.JobKey, spec *schedulerpb.JobSpec, cancelJob context.CancelCauseFunc) {
 	ticker := time.NewTicker(e.cfg.SchedulerUpdateInterval)
 	defer ticker.Stop()
 
@@ -154,7 +154,7 @@ func (e *schedulerExecutor) startJobStatusUpdater(ctx context.Context, key *sche
 				// Check if the job was canceled from the scheduler side (not found response)
 				if errStatus, ok := grpcutil.ErrorToStatus(err); ok && errStatus.Code() == codes.NotFound {
 					level.Info(e.logger).Log("msg", "job canceled by scheduler, stopping work", "job_id", jobId, "tenant", jobTenant)
-					cancelJob() // Cancel the job context to stop the main work
+					cancelJob(err) // Cancel the job context to stop the main work
 					return
 				}
 				level.Warn(e.logger).Log("msg", "failed to send keep-alive update", "job_id", jobId, "tenant", jobTenant, "err", err)

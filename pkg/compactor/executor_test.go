@@ -484,11 +484,11 @@ func TestSchedulerExecutor_JobCancellationOn_NotFoundResponse(t *testing.T) {
 	defer schedulerExec.schedulerConn.Close()
 	schedulerExec.schedulerClient = mockSchedulerClient
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx, cancel := context.WithCancelCause(context.Background())
+	defer cancel(nil)
 
-	jobCancelFunc := func() {
-		cancel()
+	jobCancelFunc := func(cause error) {
+		cancel(cause)
 		close(jobCanceled)
 	}
 
