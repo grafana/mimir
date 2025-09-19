@@ -228,14 +228,14 @@ func (e *schedulerExecutor) leaseAndExecuteJob(ctx context.Context, c *Multitena
 
 	// Create a cancellable context for this job that can be canceled if the scheduler cancels the job
 	jobCtx, cancelJob := context.WithCancelCause(ctx)
-	defer cancelJob(nil)
-
+	
 	// Start async keep-alive updater for periodic IN_PROGRESS messages
 	go e.startJobStatusUpdater(jobCtx, resp.Key, resp.Spec, cancelJob)
 
 	switch jobType {
 	case schedulerpb.COMPACTION:
 		status, err := e.executeCompactionJob(jobCtx, c, resp.Spec)
+		cancelJob(err)
 		if err != nil {
 			level.Warn(e.logger).Log("msg", "failed to execute job", "job_id", jobID, "tenant", jobTenant, "job_type", jobType, "err", err)
 			e.sendFinalJobStatus(ctx, resp.Key, resp.Spec, schedulerpb.REASSIGN)
@@ -245,6 +245,7 @@ func (e *schedulerExecutor) leaseAndExecuteJob(ctx context.Context, c *Multitena
 		return true, nil
 	case schedulerpb.PLANNING:
 		plannedJobs, planErr := e.executePlanningJob(jobCtx, c, resp.Spec)
+		cancelJob(planErr)
 		if planErr != nil {
 			level.Warn(e.logger).Log("msg", "failed to execute planning job", "job_id", jobID, "tenant", jobTenant, "job_type", jobType, "err", planErr)
 			// Planning jobs only send final status updates on failure
