@@ -558,7 +558,7 @@ func TestPartitionReader_EnforceReadMaxDelay(t *testing.T) {
 
 		reader, _ := setup(t, consumer)
 
-		assert.Zero(t, reader.highestConsumedTimestamp.Load())
+		assert.Zero(t, reader.highestConsumedTimestampBeforePartitionEnd.Load())
 		assert.NoError(t, reader.EnforceReadMaxDelay(time.Minute))
 	})
 
@@ -599,7 +599,7 @@ func TestPartitionReader_EnforceReadMaxDelay(t *testing.T) {
 				// Wait until highest consumed timestamp is reset to the zero value because we reached the
 				// end of the partition.
 				test.Poll(t, 5*time.Second, true, func() interface{} {
-					return reader.highestConsumedTimestamp.Load().IsZero()
+					return reader.highestConsumedTimestampBeforePartitionEnd.Load().IsZero()
 				})
 
 				assert.NoError(t, reader.EnforceReadMaxDelay(time.Minute))
@@ -649,11 +649,11 @@ func TestPartitionReader_EnforceReadMaxDelay(t *testing.T) {
 		// At this point we expect the max delay to not be honored. Due to async consumption it may not be immediate,
 		// so we wait until a timestamp is stored.
 		test.Poll(t, 5*time.Second, true, func() interface{} {
-			return !reader.highestConsumedTimestamp.Load().IsZero()
+			return !reader.highestConsumedTimestampBeforePartitionEnd.Load().IsZero()
 		})
 
-		require.NotZero(t, reader.highestConsumedTimestamp.Load())
-		assert.Greater(t, time.Since(reader.highestConsumedTimestamp.Load()), time.Minute)
+		require.NotZero(t, reader.highestConsumedTimestampBeforePartitionEnd.Load())
+		assert.Greater(t, time.Since(reader.highestConsumedTimestampBeforePartitionEnd.Load()), time.Minute)
 		assert.Error(t, reader.EnforceReadMaxDelay(time.Minute))
 	})
 }
