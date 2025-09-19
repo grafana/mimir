@@ -409,6 +409,12 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
 			(lhsType == parser.ValueTypeScalar && rhsType == parser.ValueTypeVector)
 
 		if isVectorScalar {
+			// Comparison vector-scalar operations without bool modifier don't drop the __name__ label.
+			// So don't need to wrap in DeduplicateAndMerge.
+			if expr.Op.IsComparisonOperator() && !expr.ReturnBool {
+				return binExpr, nil
+			}
+
 			return &core.DeduplicateAndMerge{
 				Inner:                      binExpr,
 				DeduplicateAndMergeDetails: &core.DeduplicateAndMergeDetails{},
