@@ -202,7 +202,8 @@ func (s *shipper) upload(ctx context.Context, logger log.Logger, meta *block.Met
 	}
 
 	// Upload block with custom metadata.
-	return block.Upload(ctx, logger, s.bucket, blockDir, meta)
+	_, err := block.Upload(ctx, logger, s.bucket, blockDir, meta)
+	return err
 }
 
 // blockMetasFromOldest returns the block meta of each block found in dir
