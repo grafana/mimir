@@ -649,16 +649,12 @@ func (u *userTSDB) computeOwnedSeries() (int, int) {
 	idx := u.Head().MustIndex()
 	defer idx.Close()
 
-	lb := labels.NewScratchBuilder(128)
 	u.Head().ForEachSecondaryHash(func(refs []chunks.HeadSeriesRef, secondaryHashes []uint32) {
 		for i, sh := range secondaryHashes {
 			if u.ownedTokenRanges.IncludesKey(sh) {
 				count++
-				lb.Reset()
-				if err := idx.Series(storage.SeriesRef(refs[i]), &lb, nil); err != nil {
-					panic(fmt.Errorf("obtain owned series labels: %w", err))
-				}
-				if lb.Labels().Get(model.MetricNameLabel) == "target_info" {
+				name, err := idx.LabelValueFor(context.Background(), storage.SeriesRef(refs[i]), model.MetricNameLabel)
+				if err == nil && name == "target_info" {
 					targetInfoCount++
 				}
 			} else {
