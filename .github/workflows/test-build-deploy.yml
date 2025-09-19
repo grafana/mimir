@@ -162,6 +162,8 @@ jobs:
         uses: actions/checkout@v4
         with:
           persist-credentials: false
+      - name: Install GitHub CLI
+        run: ./.github/workflows/scripts/install-gh.sh
       - name: Run Git Config
         run: git config --global --add safe.directory '*'
       - name: Symlink Expected Path to Workspace
