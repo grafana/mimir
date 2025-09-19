@@ -13,7 +13,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/index"
-	"github.com/tylertreat/BoomFilters"
+	boom "github.com/tylertreat/BoomFilters"
 )
 
 // countPostings counts the number of series in the given postings
