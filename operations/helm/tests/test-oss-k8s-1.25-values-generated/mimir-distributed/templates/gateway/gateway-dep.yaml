@@ -1,36 +1,37 @@
 ---
-# Source: mimir-distributed/templates/nginx/nginx-dep.yaml
+# Source: mimir-distributed/templates/gateway/gateway-dep.yaml
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: test-oss-k8s-1.25-values-mimir-nginx
+  annotations:
+    {}
   labels:
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: test-oss-k8s-1.25-values
-    app.kubernetes.io/component: nginx
+    app.kubernetes.io/component: gateway
     app.kubernetes.io/managed-by: Helm
-  annotations:
-    {}
+  name: test-oss-k8s-1.25-values-mimir-gateway
   namespace: "citestns"
 spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: mimir
+      app.kubernetes.io/instance: test-oss-k8s-1.25-values
+      app.kubernetes.io/component: gateway
   strategy:
     rollingUpdate:
       maxSurge: 15%
       maxUnavailable: 0
     type: RollingUpdate
-  selector:
-    matchLabels:
-      app.kubernetes.io/name: mimir
-      app.kubernetes.io/instance: test-oss-k8s-1.25-values
-      app.kubernetes.io/component: nginx
   template:
     metadata:
-      annotations:
       labels:
         app.kubernetes.io/name: mimir
         app.kubernetes.io/instance: test-oss-k8s-1.25-values
         app.kubernetes.io/managed-by: Helm
-        app.kubernetes.io/component: nginx
+        app.kubernetes.io/component: gateway
+      annotations:
       namespace: "citestns"
     spec:
       serviceAccountName: test-oss-k8s-1.25-values-mimir
@@ -41,38 +42,36 @@ spec:
         runAsUser: 10001
         seccompProfile:
           type: RuntimeDefault
-      terminationGracePeriodSeconds: 30
       containers:
-        - name: nginx
+        - name: gateway
           image: docker.io/nginxinc/nginx-unprivileged:1.28-alpine
           imagePullPolicy: IfNotPresent
-          ports:
-            - name: http-metric
-              containerPort: 8080
-              protocol: TCP
-          readinessProbe:
-            httpGet:
-              path: /
-              port: http-metric
-            initialDelaySeconds: 15
-            timeoutSeconds: 1
-          securityContext:
-            allowPrivilegeEscalation: false
-            capabilities:
-              drop:
-              - ALL
-            readOnlyRootFilesystem: true
           volumeMounts:
-            - name: config
+            - name: nginx-config
               mountPath: /etc/nginx/nginx.conf
               subPath: nginx.conf
             - name: tmp
               mountPath: /tmp
             - name: docker-entrypoint-d-override
               mountPath: /docker-entrypoint.d
+          ports:
+            - name: http-metrics
+              containerPort: 8080
+              protocol: TCP
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: http-metrics
+            initialDelaySeconds: 15
+            timeoutSeconds: 1
           resources:
-            requests:
-              cpu: 1
+            {}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
+            readOnlyRootFilesystem: true
       topologySpreadConstraints:
       - maxSkew: 1
         topologyKey: kubernetes.io/hostname
@@ -81,12 +80,22 @@ spec:
           matchLabels:
             app.kubernetes.io/name: mimir
             app.kubernetes.io/instance: test-oss-k8s-1.25-values
-            app.kubernetes.io/component: nginx
+            app.kubernetes.io/component: gateway
+      terminationGracePeriodSeconds: 30
       volumes:
         - name: config
           configMap:
-            name: test-oss-k8s-1.25-values-mimir-nginx
-        - name: tmp
-          emptyDir: {}
+            name: test-oss-k8s-1.25-values-mimir-config
+            items:
+              - key: "mimir.yaml"
+                path: "mimir.yaml"
+        - name: runtime-config
+          configMap:
+            name: test-oss-k8s-1.25-values-mimir-runtime
+        - name: nginx-config
+          configMap:
+            name: test-oss-k8s-1.25-values-mimir-gateway-nginx
         - name: docker-entrypoint-d-override
+          emptyDir: {}
+        - name: tmp
           emptyDir: {}

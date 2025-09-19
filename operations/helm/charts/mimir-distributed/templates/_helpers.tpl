@@ -35,11 +35,7 @@ Calculate the infix for naming
 Calculate the gateway url
 */}}
 {{- define "mimir.gatewayUrl" -}}
-{{- if eq (include "mimir.gateway.isEnabled" . ) "true" -}}
 http://{{ include "mimir.gateway.service.name" . }}.{{ .Release.Namespace }}.svc:{{ .Values.gateway.service.port | default (include "mimir.serverHttpListenPort" . ) }}
-{{- else -}}
-http://{{ template "mimir.fullname" . }}-nginx.{{ .Release.Namespace }}.svc:{{ .Values.nginx.service.port }}
-{{- end -}}
 {{- end -}}
 
 {{/*
@@ -467,7 +463,6 @@ Examples:
   "memcached" "memcached"
   "meta-monitoring" "metaMonitoring.grafanaAgent"
   "metadata-cache" "metadata-cache"
-  "nginx" "nginx"
   "overrides-exporter" "overrides_exporter"
   "querier" "querier"
   "query-frontend" "query_frontend"
@@ -551,7 +546,7 @@ Return if we should create a SecurityContextConstraints. Takes into account user
 {{- end -}}
 
 {{- define "mimir.remoteWriteUrl.inCluster" -}}
-{{- if or (eq (include "mimir.gateway.isEnabled" . ) "true") .Values.nginx.enabled -}}
+{{- if (eq (include "mimir.gateway.isEnabled" . ) "true") -}}
 {{ include "mimir.gatewayUrl" . }}/api/v1/push
 {{- else -}}
 http://{{ template "mimir.fullname" . }}-distributor-headless.{{ .Release.Namespace }}.svc:{{ include "mimir.serverHttpListenPort" . }}/api/v1/push
@@ -559,7 +554,7 @@ http://{{ template "mimir.fullname" . }}-distributor-headless.{{ .Release.Namesp
 {{- end -}}
 
 {{- define "mimir.remoteReadUrl.inCluster" -}}
-{{- if or (eq (include "mimir.gateway.isEnabled" . ) "true") .Values.nginx.enabled -}}
+{{- if (eq (include "mimir.gateway.isEnabled" . ) "true") -}}
 {{ include "mimir.gatewayUrl" . }}{{ include "mimir.prometheusHttpPrefix" . }}
 {{- else -}}
 http://{{ template "mimir.fullname" . }}-query-frontend.{{ .Release.Namespace }}.svc:{{ include "mimir.serverHttpListenPort" . }}{{ include "mimir.prometheusHttpPrefix" . }}
