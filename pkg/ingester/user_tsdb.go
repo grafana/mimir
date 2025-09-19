@@ -332,18 +332,22 @@ func (u *userTSDB) getSeriesCountAndMinLocalLimit() (int, int) {
 func (u *userTSDB) PostCreation(metric labels.Labels) {
 	u.instanceSeriesCount.Inc()
 
+	metricName, err := extract.MetricNameFromLabels(metric)
+	if err != nil {
+		// This should never happen because it has already been checked in PreCreation().
+		metricName = ""
+	}
+
 	// If series was just created, it must belong to this ingester. (Unless it was created while replaying WAL,
 	// but we will recompute owned series when ingester joins the ring.)
 	u.ownedStateMtx.Lock()
 	u.ownedState.ownedSeriesCount++
-	if metric.Get(model.MetricNameLabel) == "target_info" {
+	if metricName == "target_info" {
 		u.ownedState.ownedTargetInfoSeriesCount++
 	}
 	u.ownedStateMtx.Unlock()
 
-	metricName, err := extract.MetricNameFromLabels(metric)
-	if err != nil {
-		// This should never happen because it has already been checked in PreCreation().
+	if metricName == "" {
 		return
 	}
 	u.seriesInMetric.increaseSeriesForMetric(metricName)
