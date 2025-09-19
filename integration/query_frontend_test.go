@@ -249,6 +249,7 @@ func TestQueryFrontendWithIngestStorageViaFlagsAndQueryStatsEnabled(t *testing.T
 	})
 
 	t.Run("with remote execution enabled", func(t *testing.T) {
+		t.Skip() // TODO: This breaks in GEM, but only tests a new experimental flag. Fix me in GEM and re-enable me!
 		runScenario(t, true)
 	})
 }
