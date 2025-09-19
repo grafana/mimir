@@ -4,6 +4,9 @@ package parquetconverter
 
 import (
 	"container/heap"
+	"fmt"
+	"math/rand"
+	"strings"
 	"sync"
 	"time"
 
@@ -12,8 +15,44 @@ import (
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 )
 
-// conversionTask represents a block conversion task with a set priority. The Priority is based on the ULID timestamp,
-// allowing for prioritization of more recent blocks.
+// PriorityCriteria defines how blocks should be prioritized in the conversion queue.
+type PriorityCriteria string
+
+const (
+	// OlderFirst processes older blocks first (default behavior, based on ULID timestamp).
+	OlderFirst PriorityCriteria = "older-first"
+	// NewerFirst processes newer blocks first (reverse of ULID timestamp).
+	NewerFirst PriorityCriteria = "newer-first"
+	// Random processes blocks in random order.
+	Random PriorityCriteria = "random"
+	// FIFO processes blocks in first-in-first-out order (based on enqueue time).
+	FIFO PriorityCriteria = "fifo"
+)
+
+// String returns the string representation of the priority criteria.
+func (pc PriorityCriteria) String() string {
+	return string(pc)
+}
+
+// Set implements the flag.Value interface for CLI flag parsing.
+func (pc *PriorityCriteria) Set(s string) error {
+	value := strings.ToLower(s)
+	switch PriorityCriteria(value) {
+	case OlderFirst:
+		*pc = OlderFirst
+	case NewerFirst:
+		*pc = NewerFirst
+	case Random:
+		*pc = Random
+	case FIFO:
+		*pc = FIFO
+	default:
+		return fmt.Errorf("invalid priority criteria %q, valid options are: older-first, newer-first, random, fifo", s)
+	}
+	return nil
+}
+
+// conversionTask represents a block conversion task with a set priority. The Priority is calculated based on the configured criteria.
 type conversionTask struct {
 	UserID     string
 	Meta       *block.Meta
@@ -22,30 +61,44 @@ type conversionTask struct {
 	EnqueuedAt time.Time
 }
 
-func newConversionTask(userID string, meta *block.Meta, bucket objstore.InstrumentedBucket) *conversionTask {
-	return &conversionTask{
+func newConversionTask(userID string, meta *block.Meta, bucket objstore.InstrumentedBucket, criteria PriorityCriteria) *conversionTask {
+	task := &conversionTask{
 		UserID:     userID,
 		Meta:       meta,
 		Bucket:     bucket,
-		Priority:   int64(meta.ULID.Time()),
 		EnqueuedAt: time.Now(),
 	}
+
+	switch criteria {
+	case OlderFirst:
+		task.Priority = int64(meta.ULID.Time())
+	case NewerFirst:
+		task.Priority = -int64(meta.ULID.Time()) // Negate to reverse order
+	case Random:
+		task.Priority = rand.Int63()
+	case FIFO:
+		task.Priority = task.EnqueuedAt.UnixNano()
+	default:
+		// Default to older-first behavior
+		task.Priority = int64(meta.ULID.Time())
+	}
+
+	return task
 }
 
 // conversionHeap implements heap.Interface for conversionTask priority queue see https://pkg.go.dev/container/heap
-// for more details. The heap is a min-heap, meaning that the task with the lowest priority (oldest ULID
-// timestamp) is at the top.
+// for more details. The heap is a min-heap, meaning that the task with the lowest priority value is at the top.
 type conversionHeap []*conversionTask
 
 func (h *conversionHeap) Len() int           { return len(*h) }
-func (h *conversionHeap) Less(i, j int) bool { return (*h)[i].Priority < (*h)[j].Priority } // Min-heap: lower priority first. The priority is based on ULID timestamp, so we want the oldest (lowest timestamp) first.
+func (h *conversionHeap) Less(i, j int) bool { return (*h)[i].Priority < (*h)[j].Priority } // Min-heap: lower priority value first.
 func (h *conversionHeap) Swap(i, j int)      { (*h)[i], (*h)[j] = (*h)[j], (*h)[i] }
 
-func (h *conversionHeap) Push(x interface{}) {
+func (h *conversionHeap) Push(x any) {
 	*h = append(*h, x.(*conversionTask))
 }
 
-func (h *conversionHeap) Pop() interface{} {
+func (h *conversionHeap) Pop() any {
 	old := *h
 	n := len(old)
 	item := old[n-1]

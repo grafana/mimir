@@ -98,6 +98,8 @@ type Config struct {
 
 	CompressionEnabled bool `yaml:"compression_enabled" category:"advanced"`
 	MaxQueueSize       int  `yaml:"max_queue_size" category:"advanced"`
+	
+	PriorityCriteria PriorityCriteria `yaml:"priority_criteria" category:"advanced"`
 
 	ShardingRing RingConfig `yaml:"sharding_ring"`
 }
@@ -118,6 +120,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.IntVar(&cfg.MinCompactionLevel, "parquet-converter.min-compaction-level", 2, "Minimum compaction level required for blocks to be converted to Parquet. Blocks equal or greater than this level will be converted.")
 	f.BoolVar(&cfg.CompressionEnabled, "parquet-converter.compression-enabled", true, "Whether compression is enabled for labels and chunks parquet files. When disabled, parquet files will be converted and stored uncompressed.")
 	f.IntVar(&cfg.MaxQueueSize, "parquet-converter.max-queue-size", 5, "Maximum number of blocks that can be queued for conversion at once. This helps distribute work evenly across replicas.")
+	f.Var(&cfg.PriorityCriteria, "parquet-converter.priority-criteria", "Criteria for prioritizing blocks in the conversion queue. Options: older-first, newer-first, random, fifo. Default is older-first.")
 }
 
 type ParquetConverter struct {
@@ -182,6 +185,11 @@ func newParquetConverter(
 	blockConverter blockConverter,
 ) (*ParquetConverter, error) {
 	cfg.allowedTenants = util.NewAllowList(cfg.EnabledTenants, cfg.DisabledTenants)
+	
+	// Set default priority criteria if not specified  
+	if cfg.PriorityCriteria == "" {
+		cfg.PriorityCriteria = OlderFirst
+	}
 
 	c := &ParquetConverter{
 		Cfg:                  cfg,
@@ -463,7 +471,7 @@ func (c *ParquetConverter) discoverAndEnqueueBlocks(ctx context.Context) {
 				continue
 			}
 
-			task := newConversionTask(u, m, uBucket)
+			task := newConversionTask(u, m, uBucket, c.Cfg.PriorityCriteria)
 
 			if c.conversionQueue.Push(task) {
 				c.metrics.queueItemsEnqueued.WithLabelValues(u).Inc()

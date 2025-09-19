@@ -31,9 +31,9 @@ func TestConversionTask(t *testing.T) {
 	userID := "user-123"
 	var bucket objstore.InstrumentedBucket
 
-	task := newConversionTask(userID, meta, bucket)
-
-	t.Run("constructor sets fields correctly", func(t *testing.T) {
+	t.Run("older-first criteria sets priority correctly", func(t *testing.T) {
+		task := newConversionTask(userID, meta, bucket, OlderFirst)
+		
 		assert.Equal(t, userID, task.UserID)
 		assert.Equal(t, meta, task.Meta)
 		assert.Equal(t, bucket, task.Bucket)
@@ -41,16 +41,61 @@ func TestConversionTask(t *testing.T) {
 		assert.WithinDuration(t, time.Now(), task.EnqueuedAt, time.Second)
 	})
 
-	t.Run("priority matches ULID timestamp", func(t *testing.T) {
-		expectedPriority := int64(blockULID.Time())
+	t.Run("newer-first criteria sets priority correctly", func(t *testing.T) {
+		task := newConversionTask(userID, meta, bucket, NewerFirst)
+		
+		expectedPriority := -int64(blockULID.Time())
 		assert.Equal(t, expectedPriority, task.Priority)
 	})
 
-	t.Run("enqueued time is recent", func(t *testing.T) {
-		enqueuedAt := task.EnqueuedAt
-		delta := time.Since(enqueuedAt)
-		assert.True(t, delta >= 0, "enqueued time should not be in the future")
-		assert.True(t, delta < time.Second, "enqueued time should be very recent (within 1 second)")
+	t.Run("fifo criteria sets priority correctly", func(t *testing.T) {
+		task := newConversionTask(userID, meta, bucket, FIFO)
+		
+		// Priority should be based on enqueue time
+		assert.True(t, task.Priority > 0)
+		// Should be close to current nanosecond timestamp
+		assert.True(t, task.Priority <= time.Now().UnixNano())
+	})
+
+	t.Run("random criteria sets priority correctly", func(t *testing.T) {
+		task1 := newConversionTask(userID, meta, bucket, Random)
+		task2 := newConversionTask(userID, meta, bucket, Random)
+		
+		// Random priorities should be positive and different (with high probability)
+		assert.True(t, task1.Priority > 0)
+		assert.True(t, task2.Priority > 0)
+		// Note: There's a small chance they could be equal, but it's extremely unlikely
+	})
+
+	t.Run("invalid criteria returns error during flag parsing", func(t *testing.T) {
+		var pc PriorityCriteria
+		err := pc.Set("invalid-criteria")
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "invalid priority criteria")
+		assert.Contains(t, err.Error(), "older-first, newer-first, random, fifo")
+	})
+
+	t.Run("valid criteria are parsed correctly", func(t *testing.T) {
+		testCases := []struct {
+			input    string
+			expected PriorityCriteria
+		}{
+			{"older-first", OlderFirst},
+			{"OLDER-FIRST", OlderFirst}, // Test case-insensitive
+			{"newer-first", NewerFirst},
+			{"NEWER-FIRST", NewerFirst},
+			{"random", Random},
+			{"RANDOM", Random},
+			{"fifo", FIFO},
+			{"FIFO", FIFO},
+		}
+
+		for _, tc := range testCases {
+			var pc PriorityCriteria
+			err := pc.Set(tc.input)
+			assert.NoError(t, err)
+			assert.Equal(t, tc.expected, pc)
+		}
 	})
 }
 
@@ -235,6 +280,110 @@ func TestPriorityQueue_ClosedQueue(t *testing.T) {
 	})
 }
 
+func TestPriorityQueue_PriorityCriteria(t *testing.T) {
+	baseTime := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
+
+	t.Run("newer-first criteria processes newest blocks first", func(t *testing.T) {
+		pq := newPriorityQueue()
+
+		// Create tasks with different ages
+		task1 := createTestTaskWithCriteria(t, "user-1", baseTime.Add(-2*time.Hour), NewerFirst) // Oldest
+		task2 := createTestTaskWithCriteria(t, "user-2", baseTime.Add(-1*time.Hour), NewerFirst) // Middle
+		task3 := createTestTaskWithCriteria(t, "user-3", baseTime, NewerFirst)                   // Newest
+
+		// Add in random order
+		require.True(t, pq.Push(task2))
+		require.True(t, pq.Push(task1))
+		require.True(t, pq.Push(task3))
+
+		// Should pop newest first (task3), then task2, then task1
+		poppedTask1, ok := pq.Pop()
+		require.True(t, ok)
+		assert.Equal(t, "user-3", poppedTask1.UserID) // Newest first
+
+		poppedTask2, ok := pq.Pop()
+		require.True(t, ok)
+		assert.Equal(t, "user-2", poppedTask2.UserID)
+
+		poppedTask3, ok := pq.Pop()
+		require.True(t, ok)
+		assert.Equal(t, "user-1", poppedTask3.UserID) // Oldest last
+	})
+
+	t.Run("fifo criteria processes blocks in enqueue order", func(t *testing.T) {
+		pq := newPriorityQueue()
+
+		// Create tasks at the same timestamp but with slight delays between enqueues
+		tasks := make([]*conversionTask, 3)
+		for i := 0; i < 3; i++ {
+			tasks[i] = createTestTaskWithCriteria(t, fmt.Sprintf("user-%d", i), baseTime, FIFO)
+			require.True(t, pq.Push(tasks[i]))
+			time.Sleep(1 * time.Millisecond) // Small delay to ensure different enqueue times
+		}
+
+		// Should pop in FIFO order
+		for i := 0; i < 3; i++ {
+			poppedTask, ok := pq.Pop()
+			require.True(t, ok)
+			assert.Equal(t, fmt.Sprintf("user-%d", i), poppedTask.UserID)
+		}
+	})
+
+	t.Run("random criteria produces different orderings", func(t *testing.T) {
+		// Run multiple times to verify randomness (though this test could be flaky)
+		orderings := make([][]string, 3)
+		
+		for run := 0; run < 3; run++ {
+			pq := newPriorityQueue()
+			
+			// Create multiple tasks with random criteria
+			userIDs := []string{"user-a", "user-b", "user-c", "user-d"}
+			for _, userID := range userIDs {
+				task := createTestTaskWithCriteria(t, userID, baseTime, Random)
+				require.True(t, pq.Push(task))
+			}
+			
+			// Record the order they come out
+			var order []string
+			for pq.Size() > 0 {
+				task, ok := pq.Pop()
+				require.True(t, ok)
+				order = append(order, task.UserID)
+			}
+			
+			orderings[run] = order
+		}
+		
+		// At least one ordering should be different (high probability, not guaranteed)
+		// This is a probabilistic test that could theoretically fail
+		differentOrderingFound := false
+		for i := 1; i < len(orderings); i++ {
+			if !slicesEqual(orderings[0], orderings[i]) {
+				differentOrderingFound = true
+				break
+			}
+		}
+		
+		// Note: This assertion could fail with very low probability due to randomness
+		// In practice, with 4! = 24 possible orderings, the chance of getting the same
+		// ordering 3 times is 1/24^2 = 1/576, which is very low
+		assert.True(t, differentOrderingFound, "Expected at least one different ordering from random criteria")
+	})
+}
+
+// Helper function to compare slices
+func slicesEqual(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i, v := range a {
+		if v != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
 func TestPriorityQueue_ConcurrentAccess(t *testing.T) {
 	pq := newPriorityQueue()
 
@@ -294,6 +443,10 @@ func TestPriorityQueue_ConcurrentAccess(t *testing.T) {
 }
 
 func createTestTask(t *testing.T, userID string, timestamp time.Time) *conversionTask {
+	return createTestTaskWithCriteria(t, userID, timestamp, OlderFirst)
+}
+
+func createTestTaskWithCriteria(t *testing.T, userID string, timestamp time.Time, criteria PriorityCriteria) *conversionTask {
 	entropy := ulid.Monotonic(rand.New(rand.NewSource(timestamp.UnixNano())), 0)
 	blockULID := ulid.MustNew(ulid.Timestamp(timestamp), entropy)
 
@@ -304,7 +457,7 @@ func createTestTask(t *testing.T, userID string, timestamp time.Time) *conversio
 	}
 
 	var bucket objstore.InstrumentedBucket
-	task := newConversionTask(userID, meta, bucket)
+	task := newConversionTask(userID, meta, bucket, criteria)
 
 	return task
 }
