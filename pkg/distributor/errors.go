@@ -143,6 +143,24 @@ func (e validationError) IsSoft() bool {
 	return false
 }
 
+type reactiveLimiterExceededError struct {
+	error
+}
+
+func newReactiveLimiterExceededError(err error) reactiveLimiterExceededError {
+	return reactiveLimiterExceededError{err}
+}
+
+func (e reactiveLimiterExceededError) Cause() mimirpb.ErrorCause {
+	return mimirpb.ERROR_CAUSE_REQUEST_RATE_LIMITED
+}
+
+func (e reactiveLimiterExceededError) IsSoft() bool {
+	return false
+}
+
+var _ Error = reactiveLimiterExceededError{}
+
 // Ensure that validationError implements Error.
 var _ Error = validationError{}
 

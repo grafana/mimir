@@ -48,6 +48,8 @@ import (
 	"go.uber.org/atomic"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/grafana/mimir/pkg/util/reactivelimiter"
+
 	"github.com/grafana/mimir/pkg/cardinality"
 	"github.com/grafana/mimir/pkg/costattribution"
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
@@ -203,6 +205,8 @@ type Distributor struct {
 	// is disabled.
 	usageTrackerClient usageTrackerGenericClient
 
+	reactiveLimiter *distributorReactiveLimiter
+
 	// For testing functionality that relies on timing without having to sleep in unit tests.
 	sleep func(time.Duration)
 	now   func() time.Time
@@ -286,6 +290,9 @@ type Config struct {
 	ArtificialLatencyMin     time.Duration `yaml:"artificial_latency_min" category:"experimental"`
 	ArtificialLatencyMax     time.Duration `yaml:"artificial_latency_max" category:"experimental"`
 	ArtificialLatencyWorkers int           `yaml:"artificial_latency_workers" category:"experimental"`
+
+	RejectionPrioritizer reactivelimiter.RejectionPrioritizerConfig `yaml:"rejection_prioritizer"`
+	ReactiveLimiter      reactivelimiter.Config                     `yaml:"reactive_limiter"`
 }
 
 // PushWrapper wraps around a push. It is similar to middleware.Interface.
@@ -298,6 +305,8 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	cfg.DistributorRing.RegisterFlags(f, logger)
 	cfg.RetryConfig.RegisterFlags(f)
 	cfg.UsageTrackerClient.RegisterFlagsWithPrefix("distributor.usage-tracker-client.", f)
+	cfg.RejectionPrioritizer.RegisterFlagsWithPrefix("distributor.rejection-prioritizer.", f)
+	cfg.ReactiveLimiter.RegisterFlagsWithPrefix("distributor.push-reactive-limiter.", f)
 
 	f.IntVar(&cfg.MaxRecvMsgSize, "distributor.max-recv-msg-size", 100<<20, "Max message size in bytes that the distributors will accept for incoming push requests to the remote write API. If exceeded, the request will be rejected.")
 	f.IntVar(&cfg.MaxOTLPRequestSize, maxOTLPRequestSizeFlag, 100<<20, "Maximum OTLP request size in bytes that the distributors accept. Requests exceeding this limit are rejected.")
@@ -627,6 +636,7 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 
 	d.requestRateLimiter = limiter.NewRateLimiter(requestRateStrategy, 10*time.Second)
 	d.ingestionRateLimiter = limiter.NewRateLimiter(ingestionRateStrategy, 10*time.Second)
+	d.reactiveLimiter = newDistributorReactiveLimiter(&d.cfg.ReactiveLimiter, &d.cfg.RejectionPrioritizer, log, reg)
 	d.distributorsLifecycler = distributorsLifecycler
 	d.distributorsRing = distributorsRing
 	d.HATracker = haTrackerImpl
@@ -665,6 +675,10 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 
 		d.usageTrackerClient = usagetrackerclient.NewUsageTrackerClient("distributor", d.cfg.UsageTrackerClient, usageTrackerPartitionRing, usageTrackerInstanceRing, log, reg)
 		subservices = append(subservices, d.usageTrackerClient)
+	}
+
+	if d.reactiveLimiter.service != nil {
+		subservices = append(subservices, d.reactiveLimiter.service)
 	}
 
 	// Register each metric only if the corresponding storage is enabled.
@@ -1628,7 +1642,22 @@ func (d *Distributor) StartPushRequest(ctx context.Context, httpgrpcRequestSize 
 	return ctx, err
 }
 
-func (d *Distributor) PreparePushRequest(_ context.Context) (func(error), error) {
+func (d *Distributor) PreparePushRequest(ctx context.Context) (func(error), error) {
+	if d.reactiveLimiter.limiter != nil {
+		// Acquire a permit, blocking if needed
+		permit, err := d.reactiveLimiter.limiter.AcquirePermit(ctx)
+		if err != nil {
+			d.rejectedRequests.WithLabelValues(reasonDistributorMaxInflightPushRequests).Inc()
+			return nil, newReactiveLimiterExceededError(err)
+		}
+		return func(err error) {
+			if errors.Is(err, context.Canceled) {
+				permit.Drop()
+			} else {
+				permit.Record()
+			}
+		}, nil
+	}
 	return nil, nil
 }
 
@@ -1650,8 +1679,12 @@ func (d *Distributor) startPushRequest(ctx context.Context, httpgrpcRequestSize 
 		return ctx, rs, nil
 	}
 
-	rs = &requestState{}
+	if d.reactiveLimiter.limiter != nil && !d.reactiveLimiter.limiter.CanAcquirePermit() {
+		d.rejectedRequests.WithLabelValues(reasonDistributorMaxInflightPushRequests).Inc()
+		return ctx, nil, newReactiveLimiterExceededError(reactivelimiter.ErrExceeded)
+	}
 
+	rs = &requestState{}
 	cleanupInDefer := true
 
 	// Increment number of requests and bytes before doing the checks, so that we hit error if this request crosses the limits.

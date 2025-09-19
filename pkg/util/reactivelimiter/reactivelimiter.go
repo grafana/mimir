@@ -77,7 +77,7 @@ type Config struct {
 }
 
 func (cfg *Config) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
-	f.BoolVar(&cfg.Enabled, prefix+"enabled", false, "Enable reactive limiting when making requests to ingesters")
+	f.BoolVar(&cfg.Enabled, prefix+"enabled", false, "Enable reactive limiting when making requests to a service")
 	f.DurationVar(&cfg.ShortWindowMinDuration, prefix+"short-window-min-duration", time.Second, "Minimum duration of the window that is used to determine the recent, short-term load on the system")
 	f.DurationVar(&cfg.ShortWindowMaxDuration, prefix+"short-window-max-duration", 30*time.Second, "Maximum duration of the window that is used to determine the recent, short-term load on the system")
 	f.UintVar(&cfg.ShortWindowMinSamples, prefix+"short-window-min-samples", 50, "Minimum number of samples that must be recorded in the window")
