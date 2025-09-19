@@ -180,9 +180,9 @@ jobs:
           command: |
             echo "Running unit tests (group ${{ matrix.test_group_id }} of ${{ matrix.test_group_total }}) with Go version: $(go version)"
             ./.github/workflows/scripts/run-unit-tests-group.sh --index ${{ matrix.test_group_id }} --total ${{ matrix.test_group_total }}
-      - name: Setup GitHub CLI
+      - name: Install GitHub CLI
         if: failure() && env.FAILED_PACKAGES != '' && contains(github.event.pull_request.labels.*.name, 'vendored-mimir-prometheus-update')
-        uses: actions4gh/setup-gh@v1
+        run: ./.github/workflows/scripts/install-gh.sh
       - name: Notify on streamingpromql failures
         if: failure() && env.FAILED_PACKAGES != '' && contains(github.event.pull_request.labels.*.name, 'vendored-mimir-prometheus-update')
         run: |
