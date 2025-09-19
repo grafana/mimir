@@ -646,7 +646,7 @@ func (r *PartitionReader) updateHighestConsumedTimestampBeforeConsumption(fetche
 	//
 	// In this case you may think that the right thing to do would be keeping the previous timestamp.
 	// However, if the consumption was paused and this is the first record after resume, then if we keep
-	// the previous timestamp we end up with a brief period of during which we incorrectly compute the delay.
+	// the previous timestamp we end up with a brief period of time during which we incorrectly compute the delay.
 	// To stay on the safer side, we do pick the next batch's first record timestamp instead.
 	if r.highestConsumedTimestamp.Load().IsZero() {
 		fetches.EachPartition(func(partition kgo.FetchTopicPartition) {
