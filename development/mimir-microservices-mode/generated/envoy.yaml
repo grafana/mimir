@@ -1,0 +1,219 @@
+admin:
+  address:
+    socket_address:
+      address: "0.0.0.0"
+      port_value: 9901
+static_resources:
+  clusters:
+    - connect_timeout: "10s"
+      lb_policy: "ROUND_ROBIN"
+      load_assignment:
+        cluster_name: "distributor"
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: "distributor-1"
+                      port_value: 8000
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: "distributor-2"
+                      port_value: 8001
+      name: "distributor"
+      type: "STRICT_DNS"
+    - connect_timeout: "10s"
+      lb_policy: "ROUND_ROBIN"
+      load_assignment:
+        cluster_name: "query_frontend"
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: "query_frontend-1"
+                      port_value: 8007
+      name: "query_frontend"
+      type: "STRICT_DNS"
+    - connect_timeout: "10s"
+      lb_policy: "ROUND_ROBIN"
+      load_assignment:
+        cluster_name: "compactor"
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: "compactor-1"
+                      port_value: 8006
+      name: "compactor"
+      type: "STRICT_DNS"
+    - connect_timeout: "10s"
+      lb_policy: "ROUND_ROBIN"
+      load_assignment:
+        cluster_name: "ruler"
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: "ruler-1"
+                      port_value: 8022
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: "ruler-2"
+                      port_value: 8023
+      name: "ruler"
+      type: "STRICT_DNS"
+    - connect_timeout: "10s"
+      lb_policy: "ROUND_ROBIN"
+      load_assignment:
+        cluster_name: "alertmanager"
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: "alertmanager-1"
+                      port_value: 18040
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: "alertmanager-2"
+                      port_value: 18041
+      name: "alertmanager"
+      type: "STRICT_DNS"
+    - connect_timeout: "10s"
+      lb_policy: "ROUND_ROBIN"
+      load_assignment:
+        cluster_name: "jaeger"
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: "jaeger"
+                      port_value: 16686
+      name: "jaeger"
+      type: "STRICT_DNS"
+  listeners:
+    - address:
+        socket_address:
+          address: "0.0.0.0"
+          port_value: 8080
+      filter_chains:
+        - filters:
+            - name: "envoy.filters.network.http_connection_manager"
+              typed_config:
+                "@type": "type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager"
+                generate_request_id: true
+                http_filters:
+                  - name: "envoy.filters.http.router"
+                    typed_config:
+                      "@type": "type.googleapis.com/envoy.extensions.filters.http.router.v3.Router"
+                route_config:
+                  name: "mimir-microservices-mode"
+                  virtual_hosts:
+                    - domains:
+                        - "*"
+                      name: "mimir-microservices-mode"
+                      routes:
+                        - match:
+                            prefix: "/distributor"
+                          route:
+                            cluster: "distributor"
+                        - match:
+                            prefix: "/api/v1/push"
+                          route:
+                            cluster: "distributor"
+                        - match:
+                            prefix: "/otlp/v1/metrics"
+                          route:
+                            cluster: "distributor"
+                        - match:
+                            prefix: "/alertmanager"
+                          route:
+                            cluster: "alertmanager"
+                        - match:
+                            prefix: "/multitenant_alertmanager/status"
+                          route:
+                            cluster: "alertmanager"
+                        - match:
+                            prefix: "/multitenant_alertmanager/configs"
+                          route:
+                            cluster: "alertmanager"
+                        - match:
+                            prefix: "/api/v1/alerts"
+                          route:
+                            cluster: "alertmanager"
+                        - match:
+                            prefix: "/api/v1/grafana/config"
+                          route:
+                            cluster: "alertmanager"
+                        - match:
+                            prefix: "/api/v1/grafana/config/status"
+                          route:
+                            cluster: "alertmanager"
+                        - match:
+                            prefix: "/api/v1/grafana/full_state"
+                          route:
+                            cluster: "alertmanager"
+                        - match:
+                            prefix: "/api/v1/grafana/state"
+                          route:
+                            cluster: "alertmanager"
+                        - match:
+                            prefix: "/api/v1/grafana/receivers"
+                          route:
+                            cluster: "alertmanager"
+                        - match:
+                            prefix: "/api/v1/grafana/receivers/test"
+                          route:
+                            cluster: "alertmanager"
+                        - match:
+                            prefix: "/api/v1/grafana/templates/test"
+                          route:
+                            cluster: "alertmanager"
+                        - match:
+                            prefix: "/prometheus/config/v1/rules"
+                          route:
+                            cluster: "alertmanager"
+                        - match:
+                            prefix: "/prometheus/api/v1/rules"
+                          route:
+                            cluster: "alertmanager"
+                        - match:
+                            prefix: "/prometheus/api/v1/alerts"
+                          route:
+                            cluster: "alertmanager"
+                        - match:
+                            prefix: "/ruler/ring"
+                          route:
+                            cluster: "alertmanager"
+                        - match:
+                            prefix: "/prometheus"
+                          route:
+                            cluster: "query_frontend"
+                        - match:
+                            prefix: "/api/v1/status/buildinfo"
+                          route:
+                            cluster: "query_frontend"
+                        - match:
+                            prefix: "/api/v1/upload/block/"
+                          route:
+                            cluster: "compactor"
+                stat_prefix: "ingress_http"
+                tracing:
+                  provider:
+                    name: "envoy.tracers.zipkin"
+                    typed_config:
+                      "@type": "type.googleapis.com/envoy.config.trace.v3.ZipkinConfig"
+                      collector_cluster: "jaeger"
+                      collector_endpoint: "/api/v2/spans"
+                      collector_endpoint_version: "HTTP_JSON"
+                      shared_span_context: false
+                  random_sampling:
+                    value: 50
+      name: "mimir-microservices-mode"

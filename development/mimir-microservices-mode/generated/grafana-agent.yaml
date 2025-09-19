@@ -1,0 +1,56 @@
+prometheus:
+  configs:
+    - global:
+        always_scrape_classic_histograms: true
+        external_labels:
+          scraped_by: "grafana-agent"
+        scrape_interval: "5s"
+      remote_write:
+        - send_exemplars: true
+          send_native_histograms: true
+          url: "http://distributor-1:8000/api/v1/push"
+      scrape_configs:
+        - job_name: "grafana-agent"
+          relabel_configs:
+            - regex: "([^:]+)(:[0-9]+)?"
+              replacement: "${1}"
+              source_labels:
+                - "__address__"
+              target_label: "pod"
+            - regex: "(.+?)(-\\d+)?"
+              replacement: "${1}"
+              separator: "/"
+              source_labels:
+                - "namespace"
+                - "pod"
+              target_label: "job"
+            - regex: "(.+?)(-\\d+)?"
+              replacement: "${1}"
+              source_labels:
+                - "pod"
+              target_label: "container"
+          static_configs:
+            - labels:
+                cluster: "docker-compose"
+                namespace: "mimir-microservices-mode"
+              targets:
+                - "distributor-1:8000"
+                - "distributor-2:8001"
+                - "ingester-1:8002"
+                - "ingester-2:8003"
+                - "ingester-3:8004"
+                - "querier-1:8005"
+                - "ruler-1:8022"
+                - "ruler-2:8023"
+                - "compactor-1:8006"
+                - "query_frontend-1:8007"
+                - "query_scheduler-1:8008"
+                - "store-gateway-1:8011"
+                - "store-gateway-2:8012"
+                - "store-gateway-3:8013"
+                - "envoy:9901"
+                - "memcached-exporter:9150"
+                - "continuous-test:8090"
+                - "load-generator:9900"
+server:
+  log_level: "debug"
