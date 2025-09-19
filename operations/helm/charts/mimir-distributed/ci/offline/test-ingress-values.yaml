@@ -3,3 +3,93 @@ kubeVersionOverride: "1.29"
 
 ingress:
   enabled: true
+
+global:
+  dnsConfig:
+    options:
+      - name: ndots
+        value: "3"
+
+alertmanager:
+  dnsConfig:
+    options:
+      - name: ndots
+        value: "3"
+
+compactor:
+  dnsConfig:
+    options:
+      - name: ndots
+        value: "3"
+
+store_gateway:
+  dnsConfig:
+    options:
+      - name: ndots
+        value: "3"
+
+memcached:
+  dnsConfig:
+    options:
+      - name: ndots
+        value: "3"
+
+ingester:
+  dnsConfig:
+    options:
+      - name: ndots
+        value: "3"
+
+distributor:
+  dnsConfig:
+    options:
+      - name: ndots
+        value: "3"
+
+overrides_exporter:
+  dnsConfig:
+    options:
+      - name: ndots
+        value: "3"
+
+querier:
+  dnsConfig:
+    options:
+      - name: ndots
+        value: "3"
+
+query_frontend:
+  dnsConfig:
+    options:
+      - name: ndots
+        value: "3"
+
+query_scheduler:
+  dnsConfig:
+    options:
+      - name: ndots
+        value: "3"
+
+ruler_querier:
+  dnsConfig:
+    options:
+      - name: ndots
+        value: "3"
+
+ruler_query_frontend:
+  dnsConfig:
+    options:
+      - name: ndots
+        value: "3"
+
+ruler_query_scheduler:
+  dnsConfig:
+    options:
+      - name: ndots
+        value: "3"
+
+ruler:
+  dnsConfig:
+    options:
+      - name: ndots
+        value: "4"
