@@ -49,7 +49,7 @@ scrape_configs:
           - "store-gateway-1:8011"
           - "store-gateway-2:8012"
           - "store-gateway-3:8013"
-          - "envoy:9901"
+          - "envoy:8080"
           - "memcached-exporter:9150"
           - "continuous-test:8090"
           - "load-generator:9900"

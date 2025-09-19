@@ -98,6 +98,19 @@ static_resources:
                       port_value: 16686
       name: "jaeger"
       type: "STRICT_DNS"
+    - connect_timeout: "10s"
+      lb_policy: "ROUND_ROBIN"
+      load_assignment:
+        cluster_name: "envoy-admin"
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: "envoy"
+                      port_value: 9901
+      name: "envoy-admin"
+      type: "STRICT_DNS"
   listeners:
     - address:
         socket_address:
@@ -204,6 +217,11 @@ static_resources:
                             prefix: "/api/v1/upload/block/"
                           route:
                             cluster: "compactor"
+                        - match:
+                            prefix: "/metrics"
+                          route:
+                            cluster: "envoy-admin"
+                            prefix_rewrite: "/stats/prometheus"
                 stat_prefix: "ingress_http"
                 tracing:
                   provider:

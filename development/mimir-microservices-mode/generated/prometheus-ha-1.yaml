@@ -32,7 +32,7 @@ scrape_configs:
           cluster: "docker-compose"
           namespace: "mimir-microservices-mode"
         targets:
-          - "envoy:9901"
+          - "envoy:8080"
           - "memcached-exporter:9150"
           - "continuous-test:8090"
           - "load-generator:9900"

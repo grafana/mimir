@@ -198,7 +198,7 @@ local utils = import 'libs/utils.libsonnet';
 
   secondary_scrape_targets::
     [
-      'envoy:%(port)d' % $._config.envoy.metrics_port,
+      'envoy:%(port)d' % $._config.envoy.traffic_port,
       'memcached-exporter:9150',
       'continuous-test:8090',
       'load-generator:9900',

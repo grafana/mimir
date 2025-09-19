@@ -73,6 +73,15 @@ local docker = import 'docker.libsonnet';
                             
                             // Compactor Routes
                             $._envoy_route("/api/v1/upload/block/", "compactor"),
+                            
+                            // Meta Monitoring for Envoy
+                            {
+                              match: { prefix: "/metrics" },
+                              route: {
+                                  cluster: "envoy-admin",
+                                  prefix_rewrite: "/stats/prometheus"
+                                }
+                            }
                           ]
                         }
                       ]
@@ -111,6 +120,22 @@ local docker = import 'docker.libsonnet';
                 {
                   lb_endpoints: [
                     $._envoy_endpoint("jaeger", options.config.jaeger.port)
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            name: "envoy-admin",
+            connect_timeout: "10s",
+            type: "STRICT_DNS",
+            lb_policy: "ROUND_ROBIN",
+            load_assignment: {
+              cluster_name: "envoy-admin",
+              endpoints: [
+                {
+                  lb_endpoints: [
+                    $._envoy_endpoint("envoy", options.config.envoy.metrics_port)
                   ]
                 }
               ]
