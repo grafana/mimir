@@ -554,13 +554,14 @@ func TestOffsetMovement(t *testing.T) {
 
 	e := sched.jobs.add("ingest/1/5524", spec)
 	require.NoError(t, e)
+	ps.addActiveJob(&jobState{jobID: "ingest/1/5524", spec: spec, complete: false})
 	key, _, err := sched.jobs.assign("w0")
 	require.NoError(t, err)
 
 	require.NoError(t, sched.updateJob(key, "w0", false, spec))
 	sched.requireOffset(t, "ingest", 1, 5000, "ingest/1 is in progress, so we should not move the offset")
 	require.NoError(t, sched.updateJob(key, "w0", true, spec))
-	sched.requireOffset(t, "ingest", 1, 6000, "ingest/1 is in progress, so we should be advanced")
+	sched.requireOffset(t, "ingest", 1, 6000, "ingest/1 is complete, so we should advance")
 	require.NoError(t, sched.updateJob(key, "w0", true, spec))
 	sched.requireOffset(t, "ingest", 1, 6000, "re-completing the same job shouldn't change the commit")
 

@@ -301,7 +301,7 @@ func (s *partitionState) addPendingJob(job *schedulerpb.JobSpec) {
 func (s *partitionState) addActiveJob(j *jobState) {
 	s.activeJobs = append(s.activeJobs, j)
 	s.activeJobsMap[j.jobID] = j
-	// Keep it sorted.
+	// Keep it sorted by start offset.
 	slices.SortFunc(s.activeJobs, func(a, b *jobState) int {
 		return cmp.Compare(a.spec.StartOffset, b.spec.StartOffset)
 	})
@@ -314,17 +314,16 @@ func (s *partitionState) completeJob(jobID string) {
 	}
 	j.complete = true
 
-	// Now we both advance the committed offset and garbage collect completed jobs.
+	// Now we both advance the committed offset and garbage collect completed
+	// jobs. As the active jobs list knows about all active jobs for this
+	// partition and its order is maintained, we can advance the committed
+	// offset and GC any completed job(s) at the front of this slice.
 
-	for len(s.activeJobs) > 0 {
+	for len(s.activeJobs) > 0 && s.activeJobs[0].complete {
 		first := s.activeJobs[0]
-		if first.complete && s.committed.validNextSpec(first.spec) {
-			s.committed.advance(jobKey{first.jobID, 0}, first.spec)
-			s.activeJobs = s.activeJobs[1:]
-			delete(s.activeJobsMap, first.jobID)
-		} else {
-			break
-		}
+		s.committed.advance(jobKey{first.jobID, 0}, first.spec)
+		s.activeJobs = s.activeJobs[1:]
+		delete(s.activeJobsMap, first.jobID)
 	}
 }
 
