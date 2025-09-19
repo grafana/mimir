@@ -227,8 +227,8 @@ func (e *schedulerExecutor) leaseAndExecuteJob(ctx context.Context, c *Multitena
 	jobType := resp.Spec.JobType
 
 	// Create a cancellable context for this job that can be canceled if the scheduler cancels the job
-	jobCtx, cancelJob := context.WithCancel(ctx)
-	defer cancelJob()
+	jobCtx, cancelJob := context.WithCancelCause(ctx)
+	defer cancelJob(nil)
 
 	// Start async keep-alive updater for periodic IN_PROGRESS messages
 	go e.startJobStatusUpdater(jobCtx, resp.Key, resp.Spec, cancelJob)
