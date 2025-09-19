@@ -12,3 +12,6 @@ metadata-cache:
 
 results-cache:
   enabled: true
+
+gateway:
+  enabledNonEnterprise: true
