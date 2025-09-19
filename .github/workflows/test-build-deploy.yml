@@ -182,7 +182,7 @@ jobs:
             ./.github/workflows/scripts/run-unit-tests-group.sh --index ${{ matrix.test_group_id }} --total ${{ matrix.test_group_total }}
       - name: Setup GitHub CLI
         if: failure() && env.FAILED_PACKAGES != '' && contains(github.event.pull_request.labels.*.name, 'vendored-mimir-prometheus-update')
-        uses: actions4gh/setup-gh@v1
+        uses: actions4gh/setup-gh@10aaae734648c536041e1bce50fc8c5541806255 # v1
       - name: Notify on streamingpromql failures
         if: failure() && env.FAILED_PACKAGES != '' && contains(github.event.pull_request.labels.*.name, 'vendored-mimir-prometheus-update')
         run: |
