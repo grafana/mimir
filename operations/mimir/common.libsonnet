@@ -99,6 +99,26 @@
       else
         '%dm%ds' % [seconds / 60, seconds % 60],
 
+    // Load flag defaults from the generated JSON file
+    flagDefaults:: std.parseJson(importstr './mimir-flags-defaults.json'),
+
+    // Get raw flag default value (no conversion)
+    getFlagDefault(flagName)::
+      if flagName in self.flagDefaults then
+        self.flagDefaults[flagName]
+      else
+        null,
+
+    // Get flag default value converted from nanoseconds to seconds
+    getFlagDefaultSeconds(flagName)::
+      local defaultValue = self.getFlagDefault(flagName);
+      if defaultValue == null then
+        null
+      else if std.type(defaultValue) != 'number' then
+        error 'Flag %s default value is not a number (got %s)' % [flagName, std.type(defaultValue)]
+      else
+        defaultValue / 1000000000,
+
     // Similar to std.prune() but only remove fields whose value is explicitly set to "null".
     removeNulls(obj)::
       if std.type(obj) == 'object' then {
