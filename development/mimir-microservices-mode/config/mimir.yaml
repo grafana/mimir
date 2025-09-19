@@ -4,7 +4,7 @@ distributor:
   ha_tracker:
     enable_ha_tracker: true
     kvstore:
-      store: consul
+      store: memberlist
   pool:
     health_check_ingesters: true
   ring:
@@ -30,6 +30,7 @@ ingester:
 memberlist:
   join_members:
     - distributor-1:10000
+    - ingester-1:10002
   rejoin_interval: 10s
 
 blocks_storage:
@@ -174,6 +175,8 @@ querier:
 query_scheduler:
   # Change to "dns" to switch to query-scheduler DNS-based service discovery.
   service_discovery_mode: "ring"
+  # This is raised because sometimes queries get stuck in flight when the local stack is restarted
+  max_outstanding_requests_per_tenant: 1000
 
 limits:
   # Limit max query time range to 31d
