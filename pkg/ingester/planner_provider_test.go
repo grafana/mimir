@@ -15,7 +15,7 @@ import (
 	"github.com/grafana/mimir/pkg/ingester/lookupplan"
 )
 
-// MockPlannerFactory is a mock implementation of IPlannerFactory
+// MockPlannerFactory is a mock implementation of iPlannerFactory
 type MockPlannerFactory struct {
 	mock.Mock
 }

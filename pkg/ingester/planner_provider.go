@@ -10,30 +10,31 @@ import (
 	"github.com/prometheus/prometheus/tsdb/index"
 )
 
-// IPlannerFactory defines the interface for creating planners
-type IPlannerFactory interface {
+// iPlannerFactory defines the interface for creating planners
+type iPlannerFactory interface {
 	CreatePlanner(meta tsdb.BlockMeta, reader tsdb.IndexReader) index.LookupPlanner
 }
 
 // plannerProvider manages the generation of statistics for a single tenant's head blocks.
 // It stores pre-computed planners for later use during query planning.
 type plannerProvider struct {
-	plannerFactory IPlannerFactory
+	plannerFactory iPlannerFactory
 
 	plannersMtx sync.RWMutex
 	planners    map[ulid.ULID]index.LookupPlanner
 }
 
 // newPlannerProvider creates a new plannerProvider for a single tenant.
-func newPlannerProvider(plannerFactory IPlannerFactory) *plannerProvider {
+func newPlannerProvider(plannerFactory iPlannerFactory) *plannerProvider {
 	return &plannerProvider{
 		plannerFactory: plannerFactory,
 		planners:       make(map[ulid.ULID]index.LookupPlanner),
 	}
 }
 
-// getPlanner returns a cached planner for the given block ULID.
-// Returns nil if no planner is cached for this block.
+// getPlanner retrieves a planner for the given block metadata and index reader.
+// If a planner is not found in the cache, it creates a new one using the planner factory.
+// Note that it does not store the newly created planner in the cache; the caller is responsible for that if needed.
 func (s *plannerProvider) getPlanner(blockMeta tsdb.BlockMeta, indexReader tsdb.IndexReader) index.LookupPlanner {
 	s.plannersMtx.RLock()
 	planner, ok := s.planners[blockMeta.ULID]

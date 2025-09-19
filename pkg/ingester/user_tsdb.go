@@ -172,6 +172,7 @@ func (u *userTSDB) generateHeadStatistics() error {
 }
 
 // getIndexLookupPlanner returns a cached planner or generates one on-demand.
+// Not all planners are cached after being created, see plannerProvider.getPlanner() for details.
 func (u *userTSDB) getIndexLookupPlanner(blockMeta tsdb.BlockMeta, indexReader tsdb.IndexReader) index.LookupPlanner {
 	return u.plannerProvider.getPlanner(blockMeta, indexReader)
 }
