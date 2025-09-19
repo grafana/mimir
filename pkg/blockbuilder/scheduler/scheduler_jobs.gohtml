@@ -1,0 +1,71 @@
+{{- /*gotype: github.com/grafana/mimir/pkg/blockbuilder/scheduler.schedulerJobsContents */ -}}
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Block Builder Scheduler: Jobs</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        table { border-collapse: collapse; width: 100%; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        th { background-color: #f2f2f2; }
+        .status-assigned { color: #28a745; }
+        .status-pending { color: #ffc107; }
+        .status-failed { color: #dc3545; }
+        .summary { background-color: #f8f9fa; padding: 10px; margin-bottom: 20px; border-radius: 5px; }
+    </style>
+</head>
+<body>
+<h1>Block Builder Scheduler: Jobs</h1>
+<p>Current time: {{ .Now }}</p>
+
+<div class="summary">
+    <h3>Summary</h3>
+    <p><strong>Total Jobs:</strong> {{ .TotalJobs }}</p>
+    <p><strong>Assigned Jobs:</strong> {{ .AssignedJobs }}</p>
+    <p><strong>Pending Jobs:</strong> {{ .PendingJobs }}</p>
+    <p><strong>Completed Jobs:</strong> {{ .CompletedJobs }}</p>
+</div>
+
+<table>
+    <thead>
+    <tr>
+        <th>Job ID</th>
+        <th>Epoch</th>
+        <th>Topic</th>
+        <th>Partition</th>
+        <th>Start Offset</th>
+        <th>End Offset</th>
+        <th>Assignee</th>
+        <th>Status</th>
+        <th>Created At</th>
+        <th>Lease Expiry</th>
+        <th>Fail Count</th>
+    </tr>
+    </thead>
+    <tbody style="font-family: monospace;">
+    {{ range .Jobs }}
+        <tr>
+            <td>{{ .ID }}</td>
+            <td>{{ .Epoch }}</td>
+            <td>{{ .Topic }}</td>
+            <td>{{ .Partition }}</td>
+            <td>{{ .StartOffset }}</td>
+            <td>{{ .EndOffset }}</td>
+            <td>{{ .Assignee }}</td>
+            <td class="status-{{ if eq .Status "assigned" }}assigned{{ else if eq .Status "pending" }}pending{{ else }}failed{{ end }}">{{ .Status }}</td>
+            <td>{{ .CreatedAt }}</td>
+            <td>{{ if .LeaseExpiry.IsZero }}-{{ else }}{{ .LeaseExpiry }}{{ end }}</td>
+            <td>{{ .FailCount }}</td>
+        </tr>
+    {{ else }}
+        <tr>
+            <td colspan="11" style="text-align: center; color: #666;">No jobs found</td>
+        </tr>
+    {{ end }}
+    </tbody>
+</table>
+
+<p><a href="../partitions">View Partitions</a> | <a href="../status">View Status</a></p>
+</body>
+</html>
