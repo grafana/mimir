@@ -444,11 +444,13 @@ github.com/facette/natsort
 # github.com/failsafe-go/failsafe-go v0.8.2
 ## explicit; go 1.21
 github.com/failsafe-go/failsafe-go
+github.com/failsafe-go/failsafe-go/adaptivelimiter
 github.com/failsafe-go/failsafe-go/circuitbreaker
 github.com/failsafe-go/failsafe-go/common
 github.com/failsafe-go/failsafe-go/internal
 github.com/failsafe-go/failsafe-go/internal/util
 github.com/failsafe-go/failsafe-go/policy
+github.com/failsafe-go/failsafe-go/priority
 # github.com/fatih/color v1.16.0
 ## explicit; go 1.17
 github.com/fatih/color
