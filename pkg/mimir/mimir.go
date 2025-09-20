@@ -424,6 +424,10 @@ func (c *Config) isUsageTrackerEnabled() bool {
 	return c.isAnyModuleExplicitlyTargeted(UsageTracker)
 }
 
+func (c *Config) isParquetConverterEnabled() bool {
+	return c.isAnyModuleExplicitlyTargeted(ParquetConverter)
+}
+
 func (c *Config) validateBucketConfigs() error {
 	errs := multierror.New()
 
@@ -494,8 +498,7 @@ func (c *Config) validateFilesystemPaths(logger log.Logger) error {
 	var paths []pathConfig
 
 	// Blocks storage (check only for components using it).
-	// TODO(jesus.vazquez) Add parquet converter
-	if (c.isIngesterEnabled() || c.isQuerierEnabled() || c.isStoreGatewayEnabled() || c.isCompactorEnabled() || c.isRulerEnabled()) && c.BlocksStorage.Bucket.Backend == bucket.Filesystem {
+	if (c.isIngesterEnabled() || c.isQuerierEnabled() || c.isStoreGatewayEnabled() || c.isCompactorEnabled() || c.isRulerEnabled() || c.isParquetConverterEnabled()) && c.BlocksStorage.Bucket.Backend == bucket.Filesystem {
 		// Add the optional prefix to the path, because that's the actual location where blocks will be stored.
 		paths = append(paths, pathConfig{
 			name:       "blocks storage filesystem directory",
