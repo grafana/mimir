@@ -35,11 +35,11 @@ To enable Grafana Mimir ingester push and read reactive limiters, set `-ingester
 
 ### Primary configuration
 
-When enabled, reactive limiters come with some default configurations that work well for many workloads. First among these are configurations for the short and long response time windows. These track how changes in recent, short-term response times compare to long-term response times.
+When enabled, reactive limiters come with some default configurations that work well for many workloads. First among these are configurations for the recent and baseline response time windows. These track how changes in recent, short-term response times compare to long-term baseline response times.
 
-When requests are processed by ingesters, their response times are first aggregated in the short window. A quantile from these is regularly taken once the window is full and added to the long window. By default, the minimum duration of the short window is `1s`, the minimum number of responses that must be observed is `50`, and the aggregated response time quantile that's taken is `.9`. The long window defaults to `60` measurements, which are smoothed over time. These values can be changed via `short-window-min-duration`, `short-window-max-duration`, `short-window-min-samples`, `sample-quantile`, and `long-window`.
+When requests are processed by ingesters, their response times are first aggregated in the recent window. A quantile from these is regularly taken once the window is full and added to the baseline window. By default, the minimum duration of the recent window is `1s`, the minimum number of responses that must be observed is `50`, and the aggregated response time quantile that's taken is `.9`. The baseline window defaults to an age of `10` measurements, which are smoothed over time. These values can be changed via `recent-window-min-duration`, `recent-window-max-duration`, `recent-window-min-samples`, `recent-quantile`, and `baseline-window-age`.
 
-The inflight request limit has a default range of `2` to `200`, and an initial value of `20`. You can change these values via `min-inflight-limit`, `max-inflight-limit`, and `initial-inflight-limit`. Additionally, the inflight limit only increases to a multiple of the current inflight requests, which defaults to `5.0`. You can change this value via `max-limit-factor`.
+The inflight request limit has a default range of `2` to `200`, and an initial value of `20`. You can change these values via `min-limit`, `max-limit`, and `initial-limit`. Additionally, the inflight limit only increases to a multiple of the current inflight requests, which defaults to `5.0`. You can change this value via `max-limit-factor`.
 
 ### Additional configurations
 
@@ -55,5 +55,5 @@ Grafana Mimir ingester reactive limiters add the following metrics. These metric
 
 - `cortex_ingester_reactive_limiter_inflight_requests`: Gauge showing the current number of requests that are inflight within the reactive limiter. It contains the `request_type` label, which is either `push` or `read`.
 - `cortex_ingester_reactive_limiter_inflight_limit`: Gauge showing the current inflight request limit. It contains the `request_type` label, which is either `push` or `read`.
-- `cortex_ingester_reactive_limiter_blocked_requests`: Gauge showing the current number of requests that are queued waiting on the limiter. It contains the `request_type` label, which is either `push` or `read`.
+- `cortex_ingester_reactive_limiter_queued_requests`: Gauge showing the current number of requests that are queued waiting on the limiter. It contains the `request_type` label, which is either `push` or `read`.
 - `cortex_ingester_rejection_rate`: Gauge showing the current rate that new requests are rejected at.
