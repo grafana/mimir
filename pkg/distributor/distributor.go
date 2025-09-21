@@ -1648,8 +1648,11 @@ func (d *Distributor) StartPushRequest(ctx context.Context, httpgrpcRequestSize 
 func (d *Distributor) PreparePushRequest(ctx context.Context) (func(error), error) {
 	if d.reactiveLimiter.getLimiter() != nil {
 		// Acquire a permit, blocking if needed
-		permit, err := d.reactiveLimiter.getLimiter().AcquirePermit(ctx)
+		permit, err := d.reactiveLimiter.AcquirePermit(ctx)
 		if err != nil {
+			kv := d.reactiveLimiter.getStat()
+			kv = append(kv, "msg", "it was impossible to acquire a reactive limiter permit during PreparePushRequest")
+			level.Debug(d.log).Log(kv...)
 			d.rejectedRequests.WithLabelValues(reasonDistributorMaxInflightPushRequests).Inc()
 			return nil, newReactiveLimiterExceededError(err)
 		}
@@ -1682,8 +1685,10 @@ func (d *Distributor) startPushRequest(ctx context.Context, httpgrpcRequestSize 
 		return ctx, rs, nil
 	}
 
-	limiter := d.reactiveLimiter.getLimiter()
-	if limiter != nil && !limiter.CanAcquirePermit() {
+	if !d.reactiveLimiter.CanAcquirePermit() {
+		kv := d.reactiveLimiter.getStat()
+		kv = append(kv, "msg", "it was impossible to acquire a reactive limiter permit during startPushRequest")
+		level.Debug(d.log).Log(kv...)
 		d.rejectedRequests.WithLabelValues(reasonDistributorMaxInflightPushRequests).Inc()
 		return ctx, nil, newReactiveLimiterExceededError(reactivelimiter.ErrExceeded)
 	}

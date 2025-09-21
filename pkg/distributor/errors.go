@@ -143,6 +143,9 @@ func (e validationError) IsSoft() bool {
 	return false
 }
 
+// Ensure that validationError implements Error.
+var _ Error = validationError{}
+
 type reactiveLimiterExceededError struct {
 	error
 }
@@ -160,9 +163,6 @@ func (e reactiveLimiterExceededError) IsSoft() bool {
 }
 
 var _ Error = reactiveLimiterExceededError{}
-
-// Ensure that validationError implements Error.
-var _ Error = validationError{}
 
 func newActiveSeriesLimitedError(totalSeriesInThisRequest, rejectedSeriesFromThisRequest, limit int) activeSeriesLimitedError {
 	return activeSeriesLimitedError{

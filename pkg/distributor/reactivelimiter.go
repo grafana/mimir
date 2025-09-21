@@ -4,8 +4,10 @@ package distributor
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -23,6 +25,8 @@ type rejectionPrioritizer struct {
 // decides the priority of requests to reject.
 type distributorReactiveLimiter struct {
 	service services.Service
+
+	logger log.Logger
 
 	prioritizer *rejectionPrioritizer
 	limiter     reactivelimiter.BlockingLimiter
@@ -70,6 +74,7 @@ func newDistributorReactiveLimiter(cfg Config, logger log.Logger, registerer pro
 	distributorLimiter := &distributorReactiveLimiter{
 		prioritizer: prioritizer,
 		limiter:     limiter,
+		logger:      logger,
 	}
 
 	if distributorLimiter.prioritizer != nil {
@@ -96,6 +101,46 @@ func (l *distributorReactiveLimiter) getLimiter() reactivelimiter.BlockingLimite
 		return nil
 	}
 	return l.limiter
+}
+
+func (l *distributorReactiveLimiter) CanAcquirePermit() bool {
+	if l == nil {
+		return true
+	}
+	result := l.limiter.CanAcquirePermit()
+	kv := l.getStat()
+	kv = append(kv, "msg", "CanAcquirePermit called", "result", result)
+	level.Debug(l.logger).Log(kv...)
+	return result
+}
+
+func (l *distributorReactiveLimiter) AcquirePermit(ctx context.Context) (reactivelimiter.Permit, error) {
+	if l == nil {
+		return nil, nil
+	}
+	permit, err := l.limiter.AcquirePermit(ctx)
+	kv := l.getStat()
+	kv = append(kv, "msg", "AcquirePermit called", "permit", fmt.Sprintf("%v", permit), "err", err)
+	level.Debug(l.logger).Log(kv...)
+	return permit, err
+}
+
+func (l *distributorReactiveLimiter) Reset() {
+	if l == nil {
+		return
+	}
+	l.limiter.Reset()
+}
+
+func (l *distributorReactiveLimiter) getStat() []interface{} {
+	if l == nil {
+		return nil
+	}
+	inflight := l.limiter.Inflight()
+	limit := l.limiter.Limit()
+	blocked := l.limiter.Blocked()
+	rejectionRate := l.limiter.RejectionRate()
+	return []interface{}{"inflight", fmt.Sprintf("%d", inflight), "limit", fmt.Sprintf("%d", limit), "blocked", fmt.Sprintf("%d", blocked), "rejection_rate", fmt.Sprintf("%7.3f", rejectionRate)}
 }
 
 // A limiter that acquires permits for a specific priority.
