@@ -850,7 +850,7 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 				if err != nil {
 					return err
 				}
-				// Decrease memory consumption for labels which was tracked when receiving response from ingester.
+				// Decrease memory consumption for labels which was tracked when receiving response from store gateway.
 				defer func() {
 					for _, ms := range mySeries {
 						ls := mimirpb.FromLabelAdaptersToLabels(ms.Labels)
