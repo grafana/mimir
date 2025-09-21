@@ -1646,24 +1646,6 @@ func (d *Distributor) StartPushRequest(ctx context.Context, httpgrpcRequestSize 
 }
 
 func (d *Distributor) PreparePushRequest(ctx context.Context) (func(error), error) {
-	if d.reactiveLimiter.getLimiter() != nil {
-		// Acquire a permit, blocking if needed
-		permit, err := d.reactiveLimiter.AcquirePermit(ctx)
-		if err != nil {
-			kv := d.reactiveLimiter.getStat()
-			kv = append(kv, "msg", "it was impossible to acquire a reactive limiter permit during PreparePushRequest")
-			level.Debug(d.log).Log(kv...)
-			d.rejectedRequests.WithLabelValues(reasonDistributorMaxInflightPushRequests).Inc()
-			return nil, newReactiveLimiterExceededError(err)
-		}
-		return func(err error) {
-			if errors.Is(err, context.Canceled) {
-				permit.Drop()
-			} else {
-				permit.Record()
-			}
-		}, nil
-	}
 	return nil, nil
 }
 
@@ -1678,19 +1660,30 @@ func (d *Distributor) PreparePushRequest(ctx context.Context) (func(error), erro
 // This method creates requestState object and stores it in the context.
 // This object describes which checks were already performed on the request,
 // and which component is responsible for doing a cleanup.
-func (d *Distributor) startPushRequest(ctx context.Context, httpgrpcRequestSize int64) (context.Context, *requestState, error) {
+func (d *Distributor) startPushRequest(ctx context.Context, httpgrpcRequestSize int64) (_ context.Context, _ *requestState, returnErr error) {
 	// If requestState is already in context, it means that StartPushRequest already ran for this request.
 	rs, alreadyInContext := ctx.Value(requestStateKey).(*requestState)
 	if alreadyInContext {
 		return ctx, rs, nil
 	}
 
-	if !d.reactiveLimiter.CanAcquirePermit() {
-		kv := d.reactiveLimiter.getStat()
-		kv = append(kv, "msg", "it was impossible to acquire a reactive limiter permit during startPushRequest")
-		level.Debug(d.log).Log(kv...)
-		d.rejectedRequests.WithLabelValues(reasonDistributorMaxInflightPushRequests).Inc()
-		return ctx, nil, newReactiveLimiterExceededError(reactivelimiter.ErrExceeded)
+	if d.reactiveLimiter.getLimiter() != nil {
+		// Acquire a permit, blocking if needed
+		permit, err := d.reactiveLimiter.AcquirePermit(ctx)
+		if err != nil {
+			kv := d.reactiveLimiter.getStat()
+			kv = append(kv, "msg", "it was impossible to acquire a reactive limiter permit during startPushRequest")
+			level.Debug(d.log).Log(kv...)
+			d.rejectedRequests.WithLabelValues(reasonDistributorMaxInflightPushRequests).Inc()
+			return ctx, nil, newReactiveLimiterExceededError(reactivelimiter.ErrExceeded)
+		}
+		defer func() {
+			if errors.Is(returnErr, context.Canceled) {
+				permit.Drop()
+			} else {
+				permit.Record()
+			}
+		}()
 	}
 
 	rs = &requestState{}
