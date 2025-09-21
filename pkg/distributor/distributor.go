@@ -1638,6 +1638,9 @@ type requestState struct {
 
 	// If positive, it means that size of mimirpb.WriteRequest has been checked and added to inflightPushRequestsBytes.
 	writeRequestSize int64
+
+	requestErr    error
+	requestFinish func(error)
 }
 
 func (d *Distributor) StartPushRequest(ctx context.Context, httpgrpcRequestSize int64) (context.Context, error) {
@@ -1667,6 +1670,7 @@ func (d *Distributor) startPushRequest(ctx context.Context, httpgrpcRequestSize 
 		return ctx, rs, nil
 	}
 
+	requestFinish := func(err error) {}
 	if d.reactiveLimiter.getLimiter() != nil {
 		// Acquire a permit, blocking if needed
 		permit, err := d.reactiveLimiter.AcquirePermit(ctx)
@@ -1677,21 +1681,22 @@ func (d *Distributor) startPushRequest(ctx context.Context, httpgrpcRequestSize 
 			d.rejectedRequests.WithLabelValues(reasonDistributorMaxInflightPushRequests).Inc()
 			return ctx, nil, newReactiveLimiterExceededError(reactivelimiter.ErrExceeded)
 		}
-		defer func() {
-			if errors.Is(returnErr, context.Canceled) {
+		requestFinish = func(err error) {
+			if errors.Is(err, context.Canceled) {
 				permit.Drop()
 			} else {
 				permit.Record()
 			}
-		}()
+		}
 	}
 
-	rs = &requestState{}
+	rs = &requestState{requestFinish: requestFinish}
 	cleanupInDefer := true
 
 	// Increment number of requests and bytes before doing the checks, so that we hit error if this request crosses the limits.
 	inflight := d.inflightPushRequests.Inc()
 	defer func() {
+		rs.requestErr = returnErr
 		if cleanupInDefer {
 			d.cleanupAfterPushFinished(rs)
 		}
@@ -1777,11 +1782,12 @@ func (d *Distributor) cleanupAfterPushFinished(rs *requestState) {
 	if rs.writeRequestSize > 0 {
 		d.inflightPushRequestsBytes.Sub(rs.writeRequestSize)
 	}
+	rs.requestFinish(rs.requestErr)
 }
 
 // limitsMiddleware checks for instance limits and rejects request if this instance cannot process it at the moment.
 func (d *Distributor) limitsMiddleware(next PushFunc) PushFunc {
-	return func(ctx context.Context, pushReq *Request) error {
+	return func(ctx context.Context, pushReq *Request) (returnErr error) {
 		// Make sure the distributor service and all its dependent services have been
 		// started. The following checks in this middleware depend on the runtime config
 		// service having been started.
@@ -1793,6 +1799,10 @@ func (d *Distributor) limitsMiddleware(next PushFunc) PushFunc {
 		if err != nil {
 			return middleware.DoNotLogError{Err: err}
 		}
+
+		defer func() {
+			rs.requestErr = returnErr
+		}()
 
 		rs.pushHandlerPerformsCleanup = true
 		// Decrement counter after all ingester calls have finished or been cancelled.
