@@ -28,41 +28,55 @@ type distributorReactiveLimiter struct {
 	limiter     reactivelimiter.BlockingLimiter
 }
 
-func newDistributorReactiveLimiter(limiterCfg *reactivelimiter.Config, prioritizerCfg *reactivelimiter.RejectionPrioritizerConfig, logger log.Logger, registerer prometheus.Registerer) *distributorReactiveLimiter {
-	if !limiterCfg.Enabled {
+func newDistributorReactiveLimiter(cfg Config, logger log.Logger, registerer prometheus.Registerer) *distributorReactiveLimiter {
+	if !cfg.ReactiveLimiter.Enabled {
 		return nil
 	}
 
-	// Create prioritizer to prioritize the rejection threshold between limiter and read limiters
-	prioritizer := &rejectionPrioritizer{
-		cfg:         prioritizerCfg,
-		Prioritizer: reactivelimiter.NewPrioritizer(logger),
+	limiterCfg := &cfg.ReactiveLimiter
+	var (
+		prioritizer *rejectionPrioritizer
+		limiter     reactivelimiter.BlockingLimiter
+	)
+	if cfg.RejectionPrioritizerEnabled {
+		prioritizerCfg := &cfg.RejectionPrioritizer
+		// Create prioritizer to prioritize the rejection threshold between limiter and read limiters
+		prioritizer := &rejectionPrioritizer{
+			cfg:         prioritizerCfg,
+			Prioritizer: reactivelimiter.NewPrioritizer(logger),
+		}
+
+		// Capture rejection metrics from the prioritizer
+		promauto.With(registerer).NewGaugeFunc(prometheus.GaugeOpts{
+			Name: "cortex_distributor_rejection_rate",
+			Help: "The prioritized rate at which requests should be rejected.",
+		}, func() float64 {
+			return prioritizer.RejectionRate()
+		})
+		promauto.With(registerer).NewGaugeFunc(prometheus.GaugeOpts{
+			Name: "cortex_distributor_rejection_threshold",
+			Help: "The priority threshold below which requests should be rejected.",
+		}, func() float64 {
+			return float64(prioritizer.RejectionThreshold())
+		})
+
+		// Create limiters that use prioritizer
+		limiter = newPriorityLimiter(limiterCfg, prioritizer, reactivelimiter.PriorityHigh, logger, registerer)
+	} else {
+		limiter = reactivelimiter.NewBlockingLimiter(limiterCfg, logger)
 	}
 
-	// Capture rejection metrics from the prioritizer
-	promauto.With(registerer).NewGaugeFunc(prometheus.GaugeOpts{
-		Name: "cortex_distributor_rejection_rate",
-		Help: "The prioritized rate at which requests should be rejected.",
-	}, func() float64 {
-		return prioritizer.RejectionRate()
-	})
-	promauto.With(registerer).NewGaugeFunc(prometheus.GaugeOpts{
-		Name: "cortex_distributor_rejection_threshold",
-		Help: "The priority threshold below which requests should be rejected.",
-	}, func() float64 {
-		return float64(prioritizer.RejectionThreshold())
-	})
-
-	// Create limiters that use prioritizer
-	limiter := newPriorityLimiter(limiterCfg, prioritizer, reactivelimiter.PriorityHigh, logger, registerer)
-
-	reactiveLimiter := &distributorReactiveLimiter{
+	registerReactiveLimiterMetrics(limiter, registerer)
+	distributorLimiter := &distributorReactiveLimiter{
 		prioritizer: prioritizer,
 		limiter:     limiter,
 	}
 
-	reactiveLimiter.service = services.NewTimerService(prioritizerCfg.CalibrationInterval, nil, reactiveLimiter.update, nil)
-	return reactiveLimiter
+	if distributorLimiter.prioritizer != nil {
+		distributorLimiter.service = services.NewTimerService(distributorLimiter.prioritizer.cfg.CalibrationInterval, nil, distributorLimiter.update, nil)
+	}
+
+	return distributorLimiter
 }
 
 func (l *distributorReactiveLimiter) update(_ context.Context) error {

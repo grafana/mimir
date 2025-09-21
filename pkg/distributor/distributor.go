@@ -291,8 +291,9 @@ type Config struct {
 	ArtificialLatencyMax     time.Duration `yaml:"artificial_latency_max" category:"experimental"`
 	ArtificialLatencyWorkers int           `yaml:"artificial_latency_workers" category:"experimental"`
 
-	RejectionPrioritizer reactivelimiter.RejectionPrioritizerConfig `yaml:"rejection_prioritizer"`
-	ReactiveLimiter      reactivelimiter.Config                     `yaml:"reactive_limiter"`
+	ReactiveLimiter             reactivelimiter.Config                     `yaml:"reactive_limiter"`
+	RejectionPrioritizerEnabled bool                                       `yaml:"rejection_prioritizer_enabled"`
+	RejectionPrioritizer        reactivelimiter.RejectionPrioritizerConfig `yaml:"rejection_prioritizer"`
 }
 
 // PushWrapper wraps around a push. It is similar to middleware.Interface.
@@ -305,8 +306,6 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	cfg.DistributorRing.RegisterFlags(f, logger)
 	cfg.RetryConfig.RegisterFlags(f)
 	cfg.UsageTrackerClient.RegisterFlagsWithPrefix("distributor.usage-tracker-client.", f)
-	cfg.RejectionPrioritizer.RegisterFlagsWithPrefix("distributor.rejection-prioritizer.", f)
-	cfg.ReactiveLimiter.RegisterFlagsWithPrefix("distributor.push-reactive-limiter.", f)
 
 	f.IntVar(&cfg.MaxRecvMsgSize, "distributor.max-recv-msg-size", 100<<20, "Max message size in bytes that the distributors will accept for incoming push requests to the remote write API. If exceeded, the request will be rejected.")
 	f.IntVar(&cfg.MaxOTLPRequestSize, maxOTLPRequestSizeFlag, 100<<20, "Maximum OTLP request size in bytes that the distributors accept. Requests exceeding this limit are rejected.")
@@ -320,6 +319,10 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.DurationVar(&cfg.ArtificialLatencyMin, "distributor.artificial-latency-min", 0, "Min artificial latency to be added to distributor's push. Will be ignored if higher than distributor.artificial-latency-max")
 	f.DurationVar(&cfg.ArtificialLatencyMax, "distributor.artificial-latency-max", 0, "Max artificial latency to be added to distributor's push. Will be ignored if lower than distributor.artificial-latency-min")
 	f.IntVar(&cfg.ArtificialLatencyWorkers, "distributor.artificial-latency-workers", 0, "Number of workers to be used to simulate artificial latency. Disabled if 0.")
+
+	f.BoolVar(&cfg.RejectionPrioritizerEnabled, "distributor.rejection-prioritizer.enabled", false, "Enable rejection prioritizer.")
+	cfg.ReactiveLimiter.RegisterFlagsWithPrefix("distributor.reactive-limiter.", f)
+	cfg.RejectionPrioritizer.RegisterFlagsWithPrefix("distributor.rejection-prioritizer.", f)
 
 	cfg.DefaultLimits.RegisterFlags(f)
 }
@@ -636,7 +639,7 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 
 	d.requestRateLimiter = limiter.NewRateLimiter(requestRateStrategy, 10*time.Second)
 	d.ingestionRateLimiter = limiter.NewRateLimiter(ingestionRateStrategy, 10*time.Second)
-	d.reactiveLimiter = newDistributorReactiveLimiter(&d.cfg.ReactiveLimiter, &d.cfg.RejectionPrioritizer, log, reg)
+	d.reactiveLimiter = newDistributorReactiveLimiter(d.cfg, log, reg)
 	d.distributorsLifecycler = distributorsLifecycler
 	d.distributorsRing = distributorsRing
 	d.HATracker = haTrackerImpl
