@@ -20,6 +20,10 @@ message PositionRange {
   int64 end = 2 [(gogoproto.casttype) = "github.com/prometheus/prometheus/promql/parser/posrange.Pos"];
 }
 
+message BinaryExpressionHints {
+  repeated string include = 1;
+}
+
 message AggregateExpressionDetails {
   AggregationOperation op = 1;
   repeated string grouping = 2;
@@ -53,6 +57,7 @@ message BinaryExpressionDetails {
   VectorMatching vectorMatching = 2;
   bool returnBool = 3;
   PositionRange expressionPosition = 4 [(gogoproto.nullable) = false];
+  BinaryExpressionHints hints = 5;
 }
 
 // Why don't we just use the parser.ItemType values?
@@ -175,5 +180,5 @@ message LabelMatcher {
 }
 
 message DeduplicateAndMergeDetails {
-  // No fields needed - this operator just wraps another node
+  bool runDelayedNameRemoval = 1;
 }

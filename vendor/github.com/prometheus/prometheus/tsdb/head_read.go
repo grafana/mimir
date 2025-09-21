@@ -324,7 +324,10 @@ func (h *headIndexReader) LabelNamesFor(ctx context.Context, series index.Postin
 
 // IndexLookupPlanner returns the index lookup planner for this reader.
 func (h *headIndexReader) IndexLookupPlanner() index.LookupPlanner {
-	return h.head.opts.IndexLookupPlanner
+	if p := h.head.planner.Load(); p != nil {
+		return *p
+	}
+	return &index.ScanEmptyMatchersLookupPlanner{}
 }
 
 // Chunks returns a ChunkReader against the block.
@@ -580,7 +583,7 @@ func (s *memSeries) iterator(id chunks.HeadChunkID, c chunkenc.Chunk, isoState *
 		// Iterate over the appendIDs, find the first one that the isolation state says not
 		// to return.
 		it := s.txs.iterator()
-		for index := 0; index < appendIDsToConsider; index++ {
+		for index := range appendIDsToConsider {
 			appendID := it.At()
 			if appendID <= isoState.maxAppendID { // Easy check first.
 				if _, ok := isoState.incompleteAppends[appendID]; !ok {

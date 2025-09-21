@@ -39,6 +39,7 @@ type ingesterMetrics struct {
 
 	activeSeriesLoading                               *prometheus.GaugeVec
 	activeSeriesPerUser                               *prometheus.GaugeVec
+	activeSeriesPerUserOTLP                           *prometheus.GaugeVec
 	activeSeriesCustomTrackersPerUser                 *prometheus.GaugeVec
 	activeSeriesPerUserNativeHistograms               *prometheus.GaugeVec
 	activeSeriesCustomTrackersPerUserNativeHistograms *prometheus.GaugeVec
@@ -49,6 +50,8 @@ type ingesterMetrics struct {
 
 	// Owned series
 	ownedSeriesPerUser *prometheus.GaugeVec
+	// Owned target_info series
+	ownedTargetInfoSeriesPerUser *prometheus.GaugeVec
 
 	// Global limit metrics
 	maxUsersGauge                prometheus.GaugeFunc
@@ -200,6 +203,10 @@ func newIngesterMetrics(
 			Name: "cortex_ingester_owned_series",
 			Help: "Number of currently owned series per user.",
 		}, []string{"user"}),
+		ownedTargetInfoSeriesPerUser: promauto.With(r).NewGaugeVec(prometheus.GaugeOpts{
+			Name: "cortex_ingester_owned_target_info_series",
+			Help: "Number of currently owned target_info series per user.",
+		}, []string{"user"}),
 		attributedActiveSeriesFailuresPerUser: promauto.With(r).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_ingester_attributed_active_series_failure",
 			Help: "The total number of failed active series decrement per user",
@@ -316,6 +323,12 @@ func newIngesterMetrics(
 		}, []string{"user"}),
 
 		// Not registered automatically, but only if activeSeriesEnabled is true.
+		activeSeriesPerUserOTLP: promauto.With(activeSeriesReg).NewGaugeVec(prometheus.GaugeOpts{
+			Name: "cortex_ingester_active_otlp_series",
+			Help: "Number of currently active series per user ingested via OTLP.",
+		}, []string{"user"}),
+
+		// Not registered automatically, but only if activeSeriesEnabled is true.
 		activeSeriesCustomTrackersPerUser: promauto.With(activeSeriesReg).NewGaugeVec(prometheus.GaugeOpts{
 			Name: "cortex_ingester_active_series_custom_tracker",
 			Help: "Number of currently active series matching a pre-configured label matchers per user.",
@@ -426,6 +439,7 @@ func (m *ingesterMetrics) deletePerUserMetrics(userID string) {
 
 	m.maxLocalSeriesPerUser.DeleteLabelValues(userID)
 	m.ownedSeriesPerUser.DeleteLabelValues(userID)
+	m.ownedTargetInfoSeriesPerUser.DeleteLabelValues(userID)
 	m.attributedActiveSeriesFailuresPerUser.DeleteLabelValues(userID)
 }
 
@@ -436,6 +450,7 @@ func (m *ingesterMetrics) deletePerGroupMetricsForUser(userID, group string) {
 func (m *ingesterMetrics) deletePerUserCustomTrackerMetrics(userID string, customTrackerMetrics []string) {
 	m.activeSeriesLoading.DeleteLabelValues(userID)
 	m.activeSeriesPerUser.DeleteLabelValues(userID)
+	m.activeSeriesPerUserOTLP.DeleteLabelValues(userID)
 	m.activeSeriesPerUserNativeHistograms.DeleteLabelValues(userID)
 	m.activeNativeHistogramBucketsPerUser.DeleteLabelValues(userID)
 	for _, name := range customTrackerMetrics {

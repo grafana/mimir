@@ -17,7 +17,8 @@ import (
 )
 
 type SeriesMetadata struct {
-	Labels labels.Labels
+	Labels   labels.Labels
+	DropName bool
 }
 
 // AppendSeriesMetadata appends base SeriesMetadataSlice with the provided otherSeriesMetadata.

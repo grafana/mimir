@@ -28,7 +28,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/atomic"
 	"google.golang.org/grpc"
@@ -43,6 +42,7 @@ import (
 	utilgrpcutil "github.com/grafana/mimir/pkg/util/grpcutil"
 	"github.com/grafana/mimir/pkg/util/httpgrpcutil"
 	util_log "github.com/grafana/mimir/pkg/util/log"
+	"github.com/grafana/mimir/pkg/util/propagation"
 )
 
 const (
@@ -250,18 +250,38 @@ func (sp *schedulerProcessor) querierLoop(execCtx context.Context, c schedulerpb
 
 			// Ignore errors here. If we cannot get parent span, we just don't create new one.
 			if parentSpanContext, valid := contextWithSpanFromRequest(ctx, request); valid {
+				var spanDescription string
+
+				if request.GetProtobufRequest() != nil {
+					if messageName, err := types.AnyMessageName(request.GetProtobufRequest().Payload); err == nil {
+						spanDescription = messageName
+					} else {
+						spanDescription = request.GetProtobufRequest().Payload.TypeUrl
+					}
+				} else {
+					spanDescription = "HTTP-over-gRPC"
+				}
+
 				var queueSpan trace.Span
-				ctx, queueSpan = tracer.Start(parentSpanContext, "querier_processor_runRequest")
+				ctx, queueSpan = tracer.Start(parentSpanContext, fmt.Sprintf("runRequest: %v", spanDescription))
 				defer queueSpan.End()
 			}
 			logger := util_log.WithContext(ctx, sp.log)
 
+			var stats *querier_stats.SafeStats
+			if request.StatsEnabled {
+				stats, ctx = querier_stats.ContextWithEmptyStats(ctx)
+				stats.AddQueueTime(time.Duration(request.QueueTimeNanos))
+			}
+
 			switch payload := request.Payload.(type) {
 			case *schedulerpb.SchedulerToQuerier_HttpRequest:
+				// We might have created a new span above, so reset the trace ID and span ID in the embedded HTTP request so
+				// the HTTP tracing middleware creates its span beneath the one created above.
 				otel.GetTextMapPropagator().Inject(ctx, (*httpgrpcutil.HttpgrpcHeadersCarrier)(request.GetHttpRequest()))
-				sp.runHttpRequest(ctx, logger, request.QueryID, request.FrontendAddress, request.StatsEnabled, payload.HttpRequest, time.Duration(request.QueueTimeNanos))
+				sp.runHttpRequest(ctx, logger, request.QueryID, request.FrontendAddress, stats, payload.HttpRequest)
 			case *schedulerpb.SchedulerToQuerier_ProtobufRequest:
-				sp.runProtobufRequest(ctx, logger, request.QueryID, request.FrontendAddress, payload.ProtobufRequest.Payload)
+				sp.runProtobufRequest(ctx, logger, request.QueryID, request.FrontendAddress, payload.ProtobufRequest)
 			default:
 				response := &httpgrpc.HTTPResponse{
 					Code: http.StatusBadRequest,
@@ -295,20 +315,15 @@ func contextWithSpanFromRequest(ctx context.Context, request *schedulerpb.Schedu
 	case *schedulerpb.SchedulerToQuerier_HttpRequest:
 		return httpgrpcutil.ContextWithSpanFromRequest(ctx, request.GetHttpRequest())
 	case *schedulerpb.SchedulerToQuerier_ProtobufRequest:
-		ctx := otel.GetTextMapPropagator().Extract(ctx, propagation.MapCarrier(request.GetProtobufRequest().TraceHeaders))
+		carrier := schedulerpb.MetadataMapTracingCarrier(schedulerpb.MetadataSliceToMap(request.GetProtobufRequest().Metadata))
+		ctx = otel.GetTextMapPropagator().Extract(ctx, carrier)
 		return ctx, trace.SpanFromContext(ctx).SpanContext().IsValid()
 	default:
 		return ctx, false
 	}
 }
 
-func (sp *schedulerProcessor) runHttpRequest(ctx context.Context, logger log.Logger, queryID uint64, frontendAddress string, statsEnabled bool, request *httpgrpc.HTTPRequest, queueTime time.Duration) {
-	var stats *querier_stats.SafeStats
-	if statsEnabled {
-		stats, ctx = querier_stats.ContextWithEmptyStats(ctx)
-		stats.AddQueueTime(queueTime)
-	}
-
+func (sp *schedulerProcessor) runHttpRequest(ctx context.Context, logger log.Logger, queryID uint64, frontendAddress string, stats *querier_stats.SafeStats, request *httpgrpc.HTTPRequest) {
 	response, err := sp.httpHandler.Handle(ctx, request)
 	if err != nil {
 		var ok bool
@@ -460,11 +475,10 @@ sendBody:
 	return nil
 }
 
-func (sp *schedulerProcessor) runProtobufRequest(ctx context.Context, logger log.Logger, queryID uint64, frontendAddress string, request *types.Any) {
-	// TODO: if stats are enabled, create stats and add queue time, make sure this is sent back to querier
-
+func (sp *schedulerProcessor) runProtobufRequest(ctx context.Context, logger log.Logger, queryID uint64, frontendAddress string, request *schedulerpb.ProtobufRequest) {
 	writer := newGrpcStreamWriter(queryID, frontendAddress, sp.frontendPool, logger)
-	sp.protobufHandler.HandleProtobuf(ctx, request, writer)
+	metadataMap := schedulerpb.MetadataSliceToMap(request.Metadata)
+	sp.protobufHandler.HandleProtobuf(ctx, request.Payload, propagation.MapCarrier(metadataMap), writer)
 	writer.Close(ctx)
 }
 

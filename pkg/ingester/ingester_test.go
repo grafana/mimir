@@ -4045,7 +4045,7 @@ func TestIngester_Push(t *testing.T) {
 				cortex_ingester_tsdb_out_of_order_samples_appended_total{user="test"} 0
 			`,
 		},
-		"should soft error on created timestamp causing an error": {
+		"should succeed on created timestamp being duplicate sample": {
 			allowOOO:         true,
 			nativeHistograms: true,
 			reqs: []*mimirpb.WriteRequest{
@@ -4075,7 +4075,7 @@ func TestIngester_Push(t *testing.T) {
 					},
 				},
 			},
-			expectedErr: newErrorWithStatus(wrapOrAnnotateWithUser(newSampleDuplicateTimestampError("duplicate sample for timestamp 400; overrides not allowed: existing 1, new value 0", model.Time(400), metricLabelAdapters), userID), codes.InvalidArgument),
+			expectedErr: nil,
 			expectedIngested: model.Matrix{
 				&model.SampleStream{
 					Metric: metricLabelSet,
@@ -4087,15 +4087,12 @@ func TestIngester_Push(t *testing.T) {
 			},
 			additionalMetrics: []string{"cortex_ingester_tsdb_out_of_order_samples_appended_total"},
 			expectedMetrics: `
-				# HELP cortex_discarded_samples_total The total number of samples that were discarded.
-				# TYPE cortex_discarded_samples_total counter
-				cortex_discarded_samples_total{group="",reason="new-value-for-timestamp",user="test"} 1
 				# HELP cortex_ingester_active_series Number of currently active series per user.
 				# TYPE cortex_ingester_active_series gauge
 				cortex_ingester_active_series{user="test"} 1
 				# HELP cortex_ingester_ingested_samples_failures_total The total number of samples that errored on ingestion per user.
 				# TYPE cortex_ingester_ingested_samples_failures_total counter
-				cortex_ingester_ingested_samples_failures_total{user="test"} 1
+				cortex_ingester_ingested_samples_failures_total{user="test"} 0
 				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
 				# TYPE cortex_ingester_ingested_samples_total counter
 				cortex_ingester_ingested_samples_total{user="test"} 2
@@ -4122,7 +4119,7 @@ func TestIngester_Push(t *testing.T) {
 				cortex_ingester_tsdb_out_of_order_samples_appended_total{user="test"} 0
 			`,
 		},
-		"should soft error with histograms on created timestamp causing an error": {
+		"should succeed with histograms on created timestamp causing an error": {
 			allowOOO:         true,
 			nativeHistograms: true,
 			reqs: []*mimirpb.WriteRequest{
@@ -4152,7 +4149,7 @@ func TestIngester_Push(t *testing.T) {
 					},
 				},
 			},
-			expectedErr: newErrorWithStatus(wrapOrAnnotateWithUser(newSampleDuplicateTimestampError("duplicate sample for timestamp", model.Time(400), metricLabelAdapters), userID), codes.InvalidArgument),
+			expectedErr: nil,
 			expectedIngested: model.Matrix{
 				&model.SampleStream{
 					Metric: metricLabelSet,
@@ -4164,9 +4161,6 @@ func TestIngester_Push(t *testing.T) {
 			},
 			additionalMetrics: []string{"cortex_ingester_tsdb_out_of_order_samples_appended_total"},
 			expectedMetrics: `
-				# HELP cortex_discarded_samples_total The total number of samples that were discarded.
-				# TYPE cortex_discarded_samples_total counter
-				cortex_discarded_samples_total{group="",reason="new-value-for-timestamp",user="test"} 1
 				# HELP cortex_ingester_active_native_histogram_buckets Number of currently active native histogram buckets per user.
 				# TYPE cortex_ingester_active_native_histogram_buckets gauge
 				cortex_ingester_active_native_histogram_buckets{user="test"} 8
@@ -4178,7 +4172,7 @@ func TestIngester_Push(t *testing.T) {
 				cortex_ingester_active_series{user="test"} 1
 				# HELP cortex_ingester_ingested_samples_failures_total The total number of samples that errored on ingestion per user.
 				# TYPE cortex_ingester_ingested_samples_failures_total counter
-				cortex_ingester_ingested_samples_failures_total{user="test"} 1
+				cortex_ingester_ingested_samples_failures_total{user="test"} 0
 				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
 				# TYPE cortex_ingester_ingested_samples_total counter
 				cortex_ingester_ingested_samples_total{user="test"} 2
@@ -9585,6 +9579,12 @@ func TestIngesterActiveSeries(t *testing.T) {
 		{{Name: labels.MetricName, Value: "test_metric"}, {Name: "bool", Value: "true"}, {Name: "team", Value: "a"}},
 		{{Name: labels.MetricName, Value: "test_metric"}, {Name: "bool", Value: "true"}, {Name: "team", Value: "b"}},
 	}
+	labelsToPushOTLP := [][]mimirpb.LabelAdapter{
+		{{Name: labels.MetricName, Value: "test_metric_otlp"}, {Name: "bool", Value: "false"}, {Name: "team", Value: "a"}},
+		{{Name: labels.MetricName, Value: "test_metric_otlp"}, {Name: "bool", Value: "false"}, {Name: "team", Value: "b"}},
+		{{Name: labels.MetricName, Value: "test_metric_otlp"}, {Name: "bool", Value: "true"}, {Name: "team", Value: "a"}},
+		{{Name: labels.MetricName, Value: "test_metric_otlp"}, {Name: "bool", Value: "true"}, {Name: "team", Value: "b"}},
+	}
 	labelsToPushHist := [][]mimirpb.LabelAdapter{
 		{{Name: labels.MetricName, Value: "test_histogram_metric"}, {Name: "bool", Value: "false"}, {Name: "team", Value: "a"}},
 		{{Name: labels.MetricName, Value: "test_histogram_metric"}, {Name: "bool", Value: "false"}, {Name: "team", Value: "b"}},
@@ -9601,6 +9601,11 @@ func TestIngesterActiveSeries(t *testing.T) {
 			mimirpb.API,
 		)
 	}
+	reqOTLP := func(lbls []mimirpb.LabelAdapter, t time.Time) *mimirpb.WriteRequest {
+		r := req(lbls, t)
+		r.Source = mimirpb.OTLP
+		return r
+	}
 	reqHist := func(lbls []mimirpb.LabelAdapter, t time.Time) *mimirpb.WriteRequest {
 		return mimirpb.NewWriteRequest(nil, mimirpb.API).AddHistogramSeries([][]mimirpb.LabelAdapter{lbls},
 			[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(t.UnixMilli(), util_test.GenerateTestGaugeHistogram(1))}, nil)
@@ -9608,6 +9613,7 @@ func TestIngesterActiveSeries(t *testing.T) {
 
 	metricNames := []string{
 		"cortex_ingester_active_series",
+		"cortex_ingester_active_otlp_series",
 		"cortex_ingester_active_series_custom_tracker",
 		"cortex_ingester_active_native_histogram_series",
 		"cortex_ingester_active_native_histogram_series_custom_tracker",
@@ -9641,6 +9647,8 @@ func TestIngesterActiveSeries(t *testing.T) {
 			test: func(t *testing.T, ingester *Ingester, gatherer prometheus.Gatherer) {
 				pushWithUser(t, ingester, labelsToPush, userID, req)
 				pushWithUser(t, ingester, labelsToPush, userID2, req)
+				pushWithUser(t, ingester, labelsToPushOTLP, userID, reqOTLP)
+				pushWithUser(t, ingester, labelsToPushOTLP, userID2, reqOTLP)
 				pushWithUser(t, ingester, labelsToPushHist, userID, reqHist)
 				pushWithUser(t, ingester, labelsToPushHist, userID2, reqHist)
 
@@ -9650,14 +9658,18 @@ func TestIngesterActiveSeries(t *testing.T) {
 				expectedMetrics := `
 					# HELP cortex_ingester_active_series Number of currently active series per user.
 					# TYPE cortex_ingester_active_series gauge
-					cortex_ingester_active_series{user="other_test_user"} 8
-					cortex_ingester_active_series{user="test_user"} 8
+					cortex_ingester_active_series{user="other_test_user"} 12
+					cortex_ingester_active_series{user="test_user"} 12
+					# HELP cortex_ingester_active_otlp_series Number of currently active series per user ingested via OTLP.
+					# TYPE cortex_ingester_active_otlp_series gauge
+					cortex_ingester_active_otlp_series{user="other_test_user"} 4
+					cortex_ingester_active_otlp_series{user="test_user"} 4
 					# HELP cortex_ingester_active_series_custom_tracker Number of currently active series matching a pre-configured label matchers per user.
 					# TYPE cortex_ingester_active_series_custom_tracker gauge
-					cortex_ingester_active_series_custom_tracker{name="team_a",user="test_user"} 4
-					cortex_ingester_active_series_custom_tracker{name="team_b",user="test_user"} 4
-					cortex_ingester_active_series_custom_tracker{name="bool_is_true_flagbased",user="other_test_user"} 4
-					cortex_ingester_active_series_custom_tracker{name="bool_is_false_flagbased",user="other_test_user"} 4
+					cortex_ingester_active_series_custom_tracker{name="team_a",user="test_user"} 6
+					cortex_ingester_active_series_custom_tracker{name="team_b",user="test_user"} 6
+					cortex_ingester_active_series_custom_tracker{name="bool_is_true_flagbased",user="other_test_user"} 6
+					cortex_ingester_active_series_custom_tracker{name="bool_is_false_flagbased",user="other_test_user"} 6
 					# HELP cortex_ingester_active_native_histogram_series Number of currently active native histogram series per user.
 					# TYPE cortex_ingester_active_native_histogram_series gauge
 					cortex_ingester_active_native_histogram_series{user="other_test_user"} 4
@@ -9688,6 +9700,8 @@ func TestIngesterActiveSeries(t *testing.T) {
 			test: func(t *testing.T, ingester *Ingester, gatherer prometheus.Gatherer) {
 				pushWithUser(t, ingester, labelsToPush, userID, req)
 				pushWithUser(t, ingester, labelsToPush, userID2, req)
+				pushWithUser(t, ingester, labelsToPushOTLP, userID, reqOTLP)
+				pushWithUser(t, ingester, labelsToPushOTLP, userID2, reqOTLP)
 				pushWithUser(t, ingester, labelsToPushHist, userID, reqHist)
 				pushWithUser(t, ingester, labelsToPushHist, userID2, reqHist)
 
@@ -9697,14 +9711,18 @@ func TestIngesterActiveSeries(t *testing.T) {
 				expectedMetrics := `
 					# HELP cortex_ingester_active_series Number of currently active series per user.
 					# TYPE cortex_ingester_active_series gauge
-					cortex_ingester_active_series{user="other_test_user"} 8
-					cortex_ingester_active_series{user="test_user"} 8
+					cortex_ingester_active_series{user="other_test_user"} 12
+					cortex_ingester_active_series{user="test_user"} 12
+					# HELP cortex_ingester_active_otlp_series Number of currently active series per user ingested via OTLP.
+					# TYPE cortex_ingester_active_otlp_series gauge
+					cortex_ingester_active_otlp_series{user="other_test_user"} 4
+					cortex_ingester_active_otlp_series{user="test_user"} 4
 					# HELP cortex_ingester_active_series_custom_tracker Number of currently active series matching a pre-configured label matchers per user.
 					# TYPE cortex_ingester_active_series_custom_tracker gauge
-					cortex_ingester_active_series_custom_tracker{name="team_a",user="test_user"} 4
-					cortex_ingester_active_series_custom_tracker{name="team_b",user="test_user"} 4
-					cortex_ingester_active_series_custom_tracker{name="bool_is_true_flagbased",user="other_test_user"} 4
-					cortex_ingester_active_series_custom_tracker{name="bool_is_false_flagbased",user="other_test_user"} 4
+					cortex_ingester_active_series_custom_tracker{name="team_a",user="test_user"} 6
+					cortex_ingester_active_series_custom_tracker{name="team_b",user="test_user"} 6
+					cortex_ingester_active_series_custom_tracker{name="bool_is_true_flagbased",user="other_test_user"} 6
+					cortex_ingester_active_series_custom_tracker{name="bool_is_false_flagbased",user="other_test_user"} 6
 					# HELP cortex_ingester_active_native_histogram_series Number of currently active native histogram series per user.
 					# TYPE cortex_ingester_active_native_histogram_series gauge
 					cortex_ingester_active_native_histogram_series{user="other_test_user"} 4
@@ -9740,6 +9758,8 @@ func TestIngesterActiveSeries(t *testing.T) {
 				currentTime := time.Now()
 				pushWithUser(t, ingester, labelsToPush, userID, req)
 				pushWithUser(t, ingester, labelsToPush, userID2, req)
+				pushWithUser(t, ingester, labelsToPushOTLP, userID, reqOTLP)
+				pushWithUser(t, ingester, labelsToPushOTLP, userID2, reqOTLP)
 				pushWithUser(t, ingester, labelsToPushHist, userID, reqHist)
 				pushWithUser(t, ingester, labelsToPushHist, userID2, reqHist)
 
@@ -9749,14 +9769,18 @@ func TestIngesterActiveSeries(t *testing.T) {
 				expectedMetrics := `
 					# HELP cortex_ingester_active_series Number of currently active series per user.
 					# TYPE cortex_ingester_active_series gauge
-					cortex_ingester_active_series{user="other_test_user"} 8
-					cortex_ingester_active_series{user="test_user"} 8
+					cortex_ingester_active_series{user="other_test_user"} 12
+					cortex_ingester_active_series{user="test_user"} 12
+					# HELP cortex_ingester_active_otlp_series Number of currently active series per user ingested via OTLP.
+					# TYPE cortex_ingester_active_otlp_series gauge
+					cortex_ingester_active_otlp_series{user="other_test_user"} 4
+					cortex_ingester_active_otlp_series{user="test_user"} 4
 					# HELP cortex_ingester_active_series_custom_tracker Number of currently active series matching a pre-configured label matchers per user.
 					# TYPE cortex_ingester_active_series_custom_tracker gauge
-					cortex_ingester_active_series_custom_tracker{name="team_a",user="test_user"} 4
-					cortex_ingester_active_series_custom_tracker{name="team_b",user="test_user"} 4
-					cortex_ingester_active_series_custom_tracker{name="bool_is_true_flagbased",user="other_test_user"} 4
-					cortex_ingester_active_series_custom_tracker{name="bool_is_false_flagbased",user="other_test_user"} 4
+					cortex_ingester_active_series_custom_tracker{name="team_a",user="test_user"} 6
+					cortex_ingester_active_series_custom_tracker{name="team_b",user="test_user"} 6
+					cortex_ingester_active_series_custom_tracker{name="bool_is_true_flagbased",user="other_test_user"} 6
+					cortex_ingester_active_series_custom_tracker{name="bool_is_false_flagbased",user="other_test_user"} 6
 					# HELP cortex_ingester_active_native_histogram_series Number of currently active native histogram series per user.
 					# TYPE cortex_ingester_active_native_histogram_series gauge
 					cortex_ingester_active_native_histogram_series{user="other_test_user"} 4
@@ -9782,9 +9806,10 @@ func TestIngesterActiveSeries(t *testing.T) {
 				// Check tracked Prometheus metrics
 				require.NoError(t, testutil.GatherAndCompare(gatherer, strings.NewReader(expectedMetrics), metricNames...))
 
-				// Pushing second time to have entires which are not going to be purged
+				// Pushing second time to have entries which are not going to be purged
 				currentTime = time.Now()
 				pushWithUser(t, ingester, labelsToPush, userID, req)
+				pushWithUser(t, ingester, labelsToPushOTLP, userID, reqOTLP)
 				pushWithUser(t, ingester, labelsToPushHist, userID, reqHist)
 
 				// Adding time to make the first batch of pushes idle.
@@ -9796,11 +9821,14 @@ func TestIngesterActiveSeries(t *testing.T) {
 				expectedMetrics = `
 					# HELP cortex_ingester_active_series Number of currently active series per user.
 					# TYPE cortex_ingester_active_series gauge
-					cortex_ingester_active_series{user="test_user"} 8
+					cortex_ingester_active_series{user="test_user"} 12
+					# HELP cortex_ingester_active_otlp_series Number of currently active series per user ingested via OTLP.
+					# TYPE cortex_ingester_active_otlp_series gauge
+					cortex_ingester_active_otlp_series{user="test_user"} 4
 					# HELP cortex_ingester_active_series_custom_tracker Number of currently active series matching a pre-configured label matchers per user.
 					# TYPE cortex_ingester_active_series_custom_tracker gauge
-					cortex_ingester_active_series_custom_tracker{name="team_a",user="test_user"} 4
-					cortex_ingester_active_series_custom_tracker{name="team_b",user="test_user"} 4
+					cortex_ingester_active_series_custom_tracker{name="team_a",user="test_user"} 6
+					cortex_ingester_active_series_custom_tracker{name="team_b",user="test_user"} 6
 					# HELP cortex_ingester_active_native_histogram_series Number of currently active native histogram series per user.
 					# TYPE cortex_ingester_active_native_histogram_series gauge
 					cortex_ingester_active_native_histogram_series{user="test_user"} 4
@@ -9831,6 +9859,8 @@ func TestIngesterActiveSeries(t *testing.T) {
 			test: func(t *testing.T, ingester *Ingester, gatherer prometheus.Gatherer) {
 				pushWithUser(t, ingester, labelsToPush, userID, req)
 				pushWithUser(t, ingester, labelsToPush, userID2, req)
+				pushWithUser(t, ingester, labelsToPushOTLP, userID, reqOTLP)
+				pushWithUser(t, ingester, labelsToPushOTLP, userID2, reqOTLP)
 				pushWithUser(t, ingester, labelsToPushHist, userID, reqHist)
 				pushWithUser(t, ingester, labelsToPushHist, userID2, reqHist)
 
@@ -10854,7 +10884,7 @@ func testIngesterOutOfOrderCompactHeadStillActive(t *testing.T,
 	// Head should have 3 series, all 3 active
 	db := i.getTSDB(userID)
 	require.Equal(t, uint64(3), db.Head().NumSeries())
-	active, _, _ := db.activeSeries.Active()
+	active, _, _, _ := db.activeSeries.Active()
 	require.Equal(t, 3, active)
 
 	// Run a regular compaction.
@@ -10866,7 +10896,7 @@ func testIngesterOutOfOrderCompactHeadStillActive(t *testing.T,
 	require.Equal(t, uint64(1), db.Head().NumSeries())
 
 	// There should be still 3 active series.
-	active, _, _ = db.activeSeries.Active()
+	active, _, _, _ = db.activeSeries.Active()
 	require.Equal(t, 3, active)
 
 	// Send more samples to both series.
@@ -10880,7 +10910,7 @@ func testIngesterOutOfOrderCompactHeadStillActive(t *testing.T,
 	require.Equal(t, uint64(1), db.Head().NumSeries())
 
 	// There should be still 3 active series.
-	active, _, _ = db.activeSeries.Active()
+	active, _, _, _ = db.activeSeries.Active()
 	require.Equal(t, 3, active)
 }
 

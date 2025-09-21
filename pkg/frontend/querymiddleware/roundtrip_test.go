@@ -86,6 +86,8 @@ func TestTripperware_RangeQuery(t *testing.T) {
 		engine,
 		engineOpts,
 		nil,
+		false,
+		nil,
 		nil,
 	)
 	if err != nil {
@@ -134,6 +136,8 @@ func TestTripperware_InstantQuery(t *testing.T) {
 		nil,
 		engine,
 		engineOpts,
+		nil,
+		false,
 		nil,
 		nil,
 	)
@@ -461,6 +465,8 @@ func TestTripperware_Metrics(t *testing.T) {
 				engine,
 				engineOpts,
 				nil,
+				false,
+				nil,
 				reg,
 			)
 			require.NoError(t, err)
@@ -522,6 +528,8 @@ func TestTripperware_BlockedRequests(t *testing.T) {
 		nil,
 		engine,
 		engineOpts,
+		nil,
+		false,
 		nil,
 		nil,
 	)
@@ -812,6 +820,8 @@ func TestTripperware_RemoteRead(t *testing.T) {
 				engine,
 				engineOpts,
 				nil,
+				false,
+				nil,
 				reg,
 			)
 
@@ -939,11 +949,13 @@ func TestTripperware_ShouldSupportReadConsistencyOffsetsInjection(t *testing.T) 
 		}),
 		log.NewNopLogger(),
 		mockLimits{},
-		NewCodec(nil, 0, formatJSON, nil),
+		newTestCodec(),
 		nil,
 		promEngine,
 		promOpts,
 		map[string]*ingest.TopicOffsetsReader{querierapi.ReadConsistencyOffsetsHeader: offsetsReader},
+		false,
+		nil,
 		nil,
 	)
 	require.NoError(t, err)

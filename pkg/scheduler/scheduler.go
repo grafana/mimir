@@ -32,7 +32,6 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	otelcodes "go.opentelemetry.io/otel/codes"
-	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -275,7 +274,8 @@ func (s *Scheduler) FrontendLoop(frontend schedulerpb.SchedulerForFrontend_Front
 			case *schedulerpb.FrontendToScheduler_HttpRequest:
 				parentSpanContext, _ = httpgrpcutil.ContextWithSpanFromRequest(frontendCtx, req.HttpRequest)
 			case *schedulerpb.FrontendToScheduler_ProtobufRequest:
-				parentSpanContext = otel.GetTextMapPropagator().Extract(frontendCtx, propagation.MapCarrier(req.ProtobufRequest.TraceHeaders))
+				carrier := schedulerpb.MetadataMapTracingCarrier(schedulerpb.MetadataSliceToMap(req.ProtobufRequest.Metadata))
+				parentSpanContext = otel.GetTextMapPropagator().Extract(frontendCtx, carrier)
 			default:
 				level.Debug(s.log).Log("msg", "received a message that contained neither a HTTP nor a Protobuf payload, tracing information may be incomplete")
 			}

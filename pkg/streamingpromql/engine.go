@@ -50,10 +50,6 @@ func NewEngine(opts EngineOpts, limitsProvider QueryLimitsProvider, metrics *sta
 		return nil, errors.New("disabling negative offsets not supported by Mimir query engine")
 	}
 
-	if opts.CommonOpts.EnableDelayedNameRemoval {
-		return nil, errors.New("enabling delayed name removal not supported by Mimir query engine")
-	}
-
 	if planner == nil {
 		return nil, errors.New("no query planner provided")
 	}
@@ -251,6 +247,9 @@ func (e *Engine) materializeAndCreateEvaluator(ctx context.Context, queryable st
 		Annotations:              annotations.New(),
 		LookbackDelta:            lookbackDelta,
 		EagerLoadSelectors:       e.eagerLoadSelectors,
+		Plan:                     plan,
+		EnableDelayedNameRemoval: plan.EnableDelayedNameRemoval,
+		Logger:                   e.logger,
 	}
 
 	materializer := planning.NewMaterializer(operatorParams, e.nodeMaterializers)

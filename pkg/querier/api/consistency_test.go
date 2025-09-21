@@ -8,7 +8,6 @@ import (
 	"math"
 	"math/rand"
 	"net/http"
-	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -17,6 +16,9 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
+
+	//lint:ignore faillint Allow importing the propagation package, since it's an isolated package (doesn't come with many other dependencies).
+	"github.com/grafana/mimir/pkg/util/propagation"
 )
 
 var (
@@ -31,31 +33,22 @@ var (
 	})
 )
 
-func TestConsistencyMiddleware(t *testing.T) {
-	// Create an HTTP handler that captures the downstream request.
-	var downstreamReq *http.Request
-	downstreamHandler := http.HandlerFunc(func(_ http.ResponseWriter, req *http.Request) {
-		downstreamReq = req
-	})
-
+func TestConsistencyExtractor(t *testing.T) {
 	encodedOffsets := EncodeOffsets(map[int32]int64{0: 1, 1: 2})
-	inputReq := httptest.NewRequest(http.MethodGet, "/", nil)
-	inputReq.Header.Set(ReadConsistencyHeader, ReadConsistencyStrong)
-	inputReq.Header.Set(ReadConsistencyOffsetsHeader, string(encodedOffsets))
+	headers := http.Header{}
+	headers.Set(ReadConsistencyHeader, ReadConsistencyStrong)
+	headers.Set(ReadConsistencyOffsetsHeader, string(encodedOffsets))
 
-	middleware := ConsistencyMiddleware()
-	middleware.Wrap(downstreamHandler).ServeHTTP(httptest.NewRecorder(), inputReq)
-
-	require.NotNil(t, downstreamReq)
-	assert.Equal(t, ReadConsistencyStrong, downstreamReq.Header.Get(ReadConsistencyHeader))
-	assert.Equal(t, string(encodedOffsets), downstreamReq.Header.Get(ReadConsistencyOffsetsHeader))
+	extractor := ConsistencyExtractor{}
+	ctx, err := extractor.ExtractFromCarrier(context.Background(), propagation.HttpHeaderCarrier(headers))
+	require.NoError(t, err)
 
 	// Should inject consistency settings in the context.
-	actualLevel, ok := ReadConsistencyLevelFromContext(downstreamReq.Context())
+	actualLevel, ok := ReadConsistencyLevelFromContext(ctx)
 	require.True(t, ok)
 	assert.Equal(t, ReadConsistencyStrong, actualLevel)
 
-	actualOffsets, ok := ReadConsistencyEncodedOffsetsFromContext(downstreamReq.Context())
+	actualOffsets, ok := ReadConsistencyEncodedOffsetsFromContext(ctx)
 	require.True(t, ok)
 	assert.Equal(t, encodedOffsets, actualOffsets)
 }

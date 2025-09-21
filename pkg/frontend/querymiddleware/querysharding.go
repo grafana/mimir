@@ -242,30 +242,7 @@ func mapEngineError(err error) error {
 		cause = err
 	}
 
-	// The engine sometimes returns context.Canceled or context.DeadlineExceeded without mapping it
-	// to one of the expected error types. Handle those cases specially here since we rely on the error
-	// type for errors being accurate.
-	if errors.Is(cause, context.Canceled) {
-		return apierror.New(apierror.TypeCanceled, cause.Error())
-	}
-	if errors.Is(cause, context.DeadlineExceeded) {
-		return apierror.New(apierror.TypeTimeout, cause.Error())
-	}
-
-	// By default, all errors returned by engine.Eval() are execution errors,
-	// This is the same as Prometheus API does: http://github.com/prometheus/prometheus/blob/076109fa1910ad2198bf2c447a174fee31114982/web/api/v1/api.go#L550-L550
-	errorType := apierror.TypeExec
-	switch cause.(type) {
-	case promql.ErrQueryCanceled:
-		errorType = apierror.TypeCanceled
-	case promql.ErrQueryTimeout:
-		errorType = apierror.TypeTimeout
-	case promql.ErrStorage:
-		errorType = apierror.TypeInternal
-	case promql.ErrTooManySamples:
-		errorType = apierror.TypeExec
-	}
-
+	errorType := apierror.TypeForError(cause, apierror.TypeExec)
 	return apierror.New(errorType, cause.Error())
 }
 
@@ -277,11 +254,12 @@ func (s *querySharding) shardQuery(ctx context.Context, query string, totalShard
 	ctx, cancel := context.WithTimeout(ctx, shardingTimeout)
 	defer cancel()
 
-	summer, err := astmapper.NewQueryShardSummer(totalShards, astmapper.VectorSquasher, s.logger, stats)
+	squasher := astmapper.EmbeddedQueriesSquasher
+	summer, err := astmapper.NewQueryShardSummer(totalShards, squasher, s.logger, stats)
 	if err != nil {
 		return "", nil, err
 	}
-	mapper := astmapper.NewSharding(summer)
+	mapper := astmapper.NewSharding(summer, squasher)
 
 	// The mapper can modify the input expression in-place, so we must re-parse the original query
 	// each time before passing it to the mapper.

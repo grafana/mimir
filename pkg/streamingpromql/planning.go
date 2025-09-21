@@ -11,7 +11,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/grafana/dskit/tracing"
+	"github.com/go-kit/log"
 	jsoniter "github.com/json-iterator/go"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -31,6 +31,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
+	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
 // Replaced during testing to ensure timing produces consistent results.
@@ -39,9 +40,12 @@ var timeSince = time.Since
 type QueryPlanner struct {
 	activeQueryTracker       QueryTracker
 	noStepSubqueryIntervalFn func(rangeMillis int64) int64
+	enableDelayedNameRemoval bool
 	astOptimizationPasses    []optimize.ASTOptimizationPass
 	planOptimizationPasses   []optimize.QueryPlanOptimizationPass
 	planStageLatency         *prometheus.HistogramVec
+
+	logger log.Logger
 }
 
 func NewQueryPlanner(opts EngineOpts) (*QueryPlanner, error) {
@@ -70,6 +74,10 @@ func NewQueryPlanner(opts EngineOpts) (*QueryPlanner, error) {
 		planner.RegisterQueryPlanOptimizationPass(plan.NewSkipHistogramDecodingOptimizationPass())
 	}
 
+	if opts.EnableNarrowBinarySelectors {
+		planner.RegisterQueryPlanOptimizationPass(plan.NewNarrowSelectorsOptimizationPass(opts.Logger))
+	}
+
 	return planner, nil
 }
 
@@ -89,11 +97,14 @@ func NewQueryPlannerWithoutOptimizationPasses(opts EngineOpts) (*QueryPlanner, e
 	return &QueryPlanner{
 		activeQueryTracker:       activeQueryTracker,
 		noStepSubqueryIntervalFn: opts.CommonOpts.NoStepSubqueryIntervalFn,
+		enableDelayedNameRemoval: opts.CommonOpts.EnableDelayedNameRemoval,
 		planStageLatency: promauto.With(opts.CommonOpts.Reg).NewHistogramVec(prometheus.HistogramOpts{
 			Name:                        "cortex_mimir_query_engine_plan_stage_latency_seconds",
 			Help:                        "Latency of each stage of the query planning process.",
 			NativeHistogramBucketFactor: 1.1,
 		}, []string{"stage_type", "stage"}),
+
+		logger: opts.Logger,
 	}, nil
 }
 
@@ -119,9 +130,9 @@ type PlanningObserver interface {
 }
 
 func (p *QueryPlanner) NewQueryPlan(ctx context.Context, qs string, timeRange types.QueryTimeRange, observer PlanningObserver) (*planning.QueryPlan, error) {
-	span, ctx := tracing.StartSpanFromContext(ctx, "QueryPlanner.NewQueryPlan")
-	defer span.Finish()
-	span.SetTag("query", qs)
+	spanLogger, ctx := spanlogger.New(ctx, p.logger, tracer, "QueryPlanner.NewQueryPlan")
+	defer spanLogger.Finish()
+	spanLogger.SetTag("query", qs)
 
 	queryID, err := p.activeQueryTracker.InsertWithDetails(ctx, qs, "planning", timeRange)
 	if err != nil {
@@ -129,6 +140,8 @@ func (p *QueryPlanner) NewQueryPlan(ctx context.Context, qs string, timeRange ty
 	}
 
 	defer p.activeQueryTracker.Delete(queryID)
+
+	spanLogger.DebugLog("msg", "starting planning", "expression", qs)
 
 	expr, err := p.runASTStage("Parsing", observer, func() (parser.Expr, error) { return parser.ParseExpr(qs) })
 	if err != nil {
@@ -168,17 +181,39 @@ func (p *QueryPlanner) NewQueryPlan(ctx context.Context, qs string, timeRange ty
 		return nil, err
 	}
 
+	spanLogger.DebugLog("msg", "AST optimisation passes completed", "expression", expr)
+
 	plan, err := p.runPlanningStage("Original plan", observer, func() (*planning.QueryPlan, error) {
 		root, err := p.nodeFromExpr(expr)
 		if err != nil {
 			return nil, err
 		}
 
+		if p.enableDelayedNameRemoval {
+			if dedupAndMerge, ok := root.(*core.DeduplicateAndMerge); ok {
+				dedupAndMerge.RunDelayedNameRemoval = true
+			} else {
+				// Don't run delayed name removal or deduplicate and merge where there are no
+				// vector selectors.
+				shouldWrap, err := shouldWrapInDedupAndMerge(root)
+				if err != nil {
+					return nil, err
+				}
+				if shouldWrap {
+					root = &core.DeduplicateAndMerge{
+						Inner:                      root,
+						DeduplicateAndMergeDetails: &core.DeduplicateAndMergeDetails{RunDelayedNameRemoval: true},
+					}
+				}
+			}
+		}
+
 		plan := &planning.QueryPlan{
 			TimeRange: timeRange,
 			Root:      root,
 
-			OriginalExpression: qs,
+			OriginalExpression:       qs,
+			EnableDelayedNameRemoval: p.enableDelayedNameRemoval,
 		}
 
 		return plan, nil
@@ -187,6 +222,8 @@ func (p *QueryPlanner) NewQueryPlan(ctx context.Context, qs string, timeRange ty
 	if err != nil {
 		return nil, err
 	}
+
+	spanLogger.DebugLog("msg", "original plan completed", "plan", plan)
 
 	for _, o := range p.planOptimizationPasses {
 		plan, err = p.runPlanningStage(o.Name(), observer, func() (*planning.QueryPlan, error) { return o.Apply(ctx, plan) })
@@ -200,7 +237,37 @@ func (p *QueryPlanner) NewQueryPlan(ctx context.Context, qs string, timeRange ty
 		return nil, err
 	}
 
+	spanLogger.DebugLog("msg", "planning completed", "plan", plan)
+
 	return plan, err
+}
+
+func shouldWrapInDedupAndMerge(root planning.Node) (bool, error) {
+	switch node := root.(type) {
+	case *core.NumberLiteral, *core.StringLiteral:
+		return false, nil
+	case *core.BinaryExpression:
+		resL, err := node.LHS.ResultType()
+		if err != nil {
+			return false, err
+		}
+		if resL != parser.ValueTypeScalar {
+			break
+		}
+		resR, err := node.RHS.ResultType()
+		if err != nil {
+			return false, err
+		}
+		if resR == parser.ValueTypeScalar {
+			return false, nil
+		}
+	case *core.FunctionCall:
+		res, err := root.ResultType()
+		if err == nil && res == parser.ValueTypeScalar {
+			return false, nil
+		}
+	}
+	return true, nil
 }
 
 func (p *QueryPlanner) runASTStage(stageName string, observer PlanningObserver, stage func() (parser.Expr, error)) (parser.Expr, error) {
@@ -242,7 +309,7 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
 	case *parser.VectorSelector:
 		return &core.VectorSelector{
 			VectorSelectorDetails: &core.VectorSelectorDetails{
-				Matchers:           core.LabelMatchersFrom(expr.LabelMatchers),
+				Matchers:           core.LabelMatchersFromPrometheusType(expr.LabelMatchers),
 				Timestamp:          core.TimeFromTimestamp(expr.Timestamp),
 				Offset:             expr.OriginalOffset,
 				ExpressionPosition: core.PositionRangeFrom(expr.PositionRange()),
@@ -261,7 +328,7 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
 
 		return &core.MatrixSelector{
 			MatrixSelectorDetails: &core.MatrixSelectorDetails{
-				Matchers:           core.LabelMatchersFrom(vs.LabelMatchers),
+				Matchers:           core.LabelMatchersFromPrometheusType(vs.LabelMatchers),
 				Timestamp:          core.TimeFromTimestamp(vs.Timestamp),
 				Offset:             vs.OriginalOffset,
 				Range:              expr.Range,
@@ -343,6 +410,12 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
 			(lhsType == parser.ValueTypeScalar && rhsType == parser.ValueTypeVector)
 
 		if isVectorScalar {
+			// Comparison vector-scalar operations without bool modifier don't drop the __name__ label.
+			// So don't need to wrap in DeduplicateAndMerge.
+			if expr.Op.IsComparisonOperator() && !expr.ReturnBool {
+				return binExpr, nil
+			}
+
 			return &core.DeduplicateAndMerge{
 				Inner:                      binExpr,
 				DeduplicateAndMergeDetails: &core.DeduplicateAndMergeDetails{},
@@ -518,7 +591,7 @@ func functionNeedsDeduplication(fnc functions.Function) bool {
 		functions.FUNCTION_IDELTA,
 		functions.FUNCTION_INCREASE,
 		functions.FUNCTION_IRATE,
-		functions.FUNCTION_LAST_OVER_TIME,
+		functions.FUNCTION_MAD_OVER_TIME,
 		functions.FUNCTION_MAX_OVER_TIME,
 		functions.FUNCTION_MIN_OVER_TIME,
 		functions.FUNCTION_PRESENT_OVER_TIME,
@@ -528,6 +601,10 @@ func functionNeedsDeduplication(fnc functions.Function) bool {
 		functions.FUNCTION_STDDEV_OVER_TIME,
 		functions.FUNCTION_STDVAR_OVER_TIME,
 		functions.FUNCTION_SUM_OVER_TIME,
+		functions.FUNCTION_TS_OF_FIRST_OVER_TIME,
+		functions.FUNCTION_TS_OF_LAST_OVER_TIME,
+		functions.FUNCTION_TS_OF_MAX_OVER_TIME,
+		functions.FUNCTION_TS_OF_MIN_OVER_TIME,
 		// Instant vector transformations
 		functions.FUNCTION_ABS,
 		functions.FUNCTION_ACOS,
@@ -579,6 +656,11 @@ func functionNeedsDeduplication(fnc functions.Function) bool {
 	case
 		functions.FUNCTION_ABSENT,
 		functions.FUNCTION_ABSENT_OVER_TIME,
+		functions.FUNCTION_FIRST_OVER_TIME,
+		functions.FUNCTION_INFO,
+		functions.FUNCTION_LAST_OVER_TIME,
+		functions.FUNCTION_LIMITK,
+		functions.FUNCTION_LIMIT_RATIO,
 		functions.FUNCTION_PI,
 		functions.FUNCTION_SCALAR,
 		functions.FUNCTION_SORT,

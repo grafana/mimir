@@ -6472,7 +6472,18 @@ func (i *mockIngester) Close() error {
 }
 
 func (i *mockIngester) Push(ctx context.Context, req *mimirpb.WriteRequest, _ ...grpc.CallOption) (*mimirpb.WriteResponse, error) {
-	i.trackCall("Push", ctx, req)
+	// Clone req by marshalling and unmarshalling. Otherwise tests cannot
+	// inspect it, because it gets cleared for reuse after push is finished.
+	breq, err := req.Marshal()
+	if err != nil {
+		return nil, err
+	}
+	var reqCopy mimirpb.WriteRequest
+	err = reqCopy.Unmarshal(breq)
+	if err != nil {
+		return nil, err
+	}
+	i.trackCall("Push", ctx, &reqCopy)
 
 	time.Sleep(i.pushDelay)
 
@@ -8195,7 +8206,21 @@ func checkGRPCError(t *testing.T, expectedStatus *status.Status, expectedDetails
 
 func createStatusWithDetails(t *testing.T, code codes.Code, message string, cause mimirpb.ErrorCause) *status.Status {
 	stat := status.New(code, message)
-	statWithDetails, err := stat.WithDetails(&mimirpb.ErrorDetails{Cause: cause})
+	statWithDetails, err := stat.WithDetails(&mimirpb.ErrorDetails{
+		Cause: cause,
+	})
+
+	require.NoError(t, err)
+	return statWithDetails
+}
+
+func createSoftStatusWithDetails(t *testing.T, code codes.Code, message string, cause mimirpb.ErrorCause) *status.Status {
+	stat := status.New(code, message)
+	statWithDetails, err := stat.WithDetails(&mimirpb.ErrorDetails{
+		Cause: cause,
+		Soft:  true,
+	})
+
 	require.NoError(t, err)
 	return statWithDetails
 }

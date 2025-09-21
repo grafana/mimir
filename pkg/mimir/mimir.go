@@ -79,6 +79,7 @@ import (
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/noauth"
 	"github.com/grafana/mimir/pkg/util/process"
+	"github.com/grafana/mimir/pkg/util/propagation"
 	"github.com/grafana/mimir/pkg/util/validation"
 	"github.com/grafana/mimir/pkg/util/validation/exporter"
 	"github.com/grafana/mimir/pkg/vault"
@@ -837,6 +838,7 @@ type Mimir struct {
 
 	API                              *api.API
 	Server                           *server.Server
+	ServerMetrics                    *server.Metrics
 	IngesterRing                     *ring.Ring
 	IngesterPartitionRingWatcher     *ring.PartitionRingWatcher
 	IngesterPartitionInstanceRing    *ring.PartitionInstanceRing
@@ -853,6 +855,7 @@ type Mimir struct {
 	MetadataSupplier                 querier.MetadataSupplier
 	QuerierEngine                    promql.QueryEngine
 	QuerierStreamingEngine           *streamingpromql.Engine // The MQE instance in QuerierEngine (without fallback wrapper), or nil if MQE is disabled.
+	QueryFrontendStreamingEngine     *streamingpromql.Engine // The MQE instance used by the query-frontend (without fallback wrapper), or nil if MQE is disabled.
 	QueryFrontendTripperware         querymiddleware.Tripperware
 	QueryFrontendTopicOffsetsReaders map[string]*ingest.TopicOffsetsReader
 	QueryFrontendCodec               querymiddleware.Codec
@@ -873,6 +876,14 @@ type Mimir struct {
 	ContinuousTestManager            *continuoustest.Manager
 	BuildInfoHandler                 http.Handler
 	CostAttributionManager           *costattribution.Manager
+
+	// Extractors are used by queriers to extract HTTP headers / metadata from incoming requests.
+	// We use an abstraction here to support both httpgrpc requests and Protobuf requests.
+	Extractors []propagation.Extractor
+
+	// Injectors are used by query-frontends to inject HTTP headers / metadata into outgoing requests to queriers.
+	// We use an abstraction here to support both httpgrpc requests and Protobuf requests.
+	Injectors []propagation.Injector
 
 	QueryFrontendQueryPlanner *streamingpromql.QueryPlanner
 	// The separate planner for queriers is a temporary thing until all query planning is happening solely in query-frontends,

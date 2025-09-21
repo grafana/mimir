@@ -28,7 +28,8 @@ import (
 	"github.com/grafana/mimir/pkg/scheduler/schedulerdiscovery"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/grpcencoding/s2"
-	utilgrpcutil "github.com/grafana/mimir/pkg/util/grpcutil"
+	"github.com/grafana/mimir/pkg/util/propagation"
+  utilgrpcutil "github.com/grafana/mimir/pkg/util/grpcutil"
 )
 
 type Config struct {
@@ -82,7 +83,7 @@ type RequestHandler interface {
 }
 
 type ProtobufRequestHandler interface {
-	HandleProtobuf(context.Context, *types.Any, frontendv2pb.QueryResultStream)
+	HandleProtobuf(context.Context, *types.Any, propagation.Carrier, frontendv2pb.QueryResultStream)
 }
 
 // Single processor handles all streaming operations to query-frontend or query-scheduler to fetch queries

@@ -79,7 +79,7 @@ type PartitionReader struct {
 	fetcher atomic.Pointer[fetcher]
 
 	newConsumer consumerFactory
-	metrics     readerMetrics
+	metrics     ReaderMetrics
 
 	committer *partitionCommitter
 
@@ -113,7 +113,9 @@ func newPartitionReader(kafkaCfg KafkaConfig, partitionID int32, instanceID stri
 		reg:                                   reg,
 	}
 
-	r.metrics = newReaderMetrics(partitionID, reg, r, kafkaCfg.Topic)
+	r.metrics = NewReaderMetrics(reg, r, kafkaCfg.Topic, nil)
+	// Initialize the last consumed offset metric to -1 to signal no offset has been consumed yet (0 is a valid offset).
+	r.metrics.lastConsumedOffset.WithLabelValues(strconv.Itoa(int(partitionID))).Set(-1)
 
 	r.Service = services.NewBasicService(r.start, r.run, r.stop)
 	return r, nil
@@ -210,7 +212,7 @@ func (r *PartitionReader) start(ctx context.Context) (returnErr error) {
 	getPartitionStart := func(ctx context.Context) (int64, error) {
 		return offsetsClient.FetchPartitionStartOffset(ctx, r.partitionID)
 	}
-	startOffsetReader := newGenericOffsetReader(getPartitionStart, startOffsetReaderRefreshDuration, r.logger)
+	startOffsetReader := NewGenericOffsetReader(getPartitionStart, startOffsetReaderRefreshDuration, r.logger)
 
 	r.offsetReader = newPartitionOffsetReaderWithOffsetClient(offsetsClient, r.partitionID, r.kafkaCfg.LastProducedOffsetPollInterval, r.logger)
 
@@ -240,7 +242,10 @@ func (r *PartitionReader) start(ctx context.Context) (returnErr error) {
 			r.kafkaCfg.Topic: {r.partitionID: kgo.NewOffset().At(startOffset)},
 		})
 
-		f, err := newConcurrentFetchers(ctx, r.client.Load(), r.logger, r.kafkaCfg.Topic, r.partitionID, startOffset, r.kafkaCfg.FetchConcurrencyMax, int32(r.kafkaCfg.MaxBufferedBytes), r.kafkaCfg.UseCompressedBytesAsFetchMaxBytes, r.concurrentFetchersMinBytesMaxWaitTime, offsetsClient, startOffsetReader, r.kafkaCfg.concurrentFetchersFetchBackoffConfig, &r.metrics)
+		f, err := NewConcurrentFetchers(ctx, r.client.Load(), r.logger, r.kafkaCfg.Topic, r.partitionID, startOffset,
+			r.kafkaCfg.FetchConcurrencyMax, int32(r.kafkaCfg.MaxBufferedBytes), r.kafkaCfg.UseCompressedBytesAsFetchMaxBytes,
+			r.concurrentFetchersMinBytesMaxWaitTime, offsetsClient, OnRangeErrorResumeFromStart, startOffsetReader,
+			r.kafkaCfg.concurrentFetchersFetchBackoffConfig, &r.metrics)
 		if err != nil {
 			return errors.Wrap(err, "creating concurrent fetchers during startup")
 		}
@@ -608,7 +613,7 @@ func (r *PartitionReader) notifyLastConsumedOffset(fetches kgo.Fetches) {
 		rec := partition.Records[len(partition.Records)-1]
 		r.consumedOffsetWatcher.Notify(rec.Offset)
 
-		r.metrics.lastConsumedOffset.Set(float64(rec.Offset))
+		r.metrics.lastConsumedOffset.WithLabelValues(strconv.Itoa(int(r.partitionID))).Set(float64(rec.Offset))
 	})
 }
 
@@ -942,7 +947,7 @@ func (r *partitionCommitter) stop(error) error {
 	return nil
 }
 
-type readerMetrics struct {
+type ReaderMetrics struct {
 	services.Service
 
 	bufferedFetchedRecords           prometheus.GaugeFunc
@@ -957,19 +962,19 @@ type readerMetrics struct {
 	fetchMaxBytes                    prometheus.Histogram
 	fetchedDiscardedRecordBytes      prometheus.Counter
 	strongConsistencyInstrumentation *StrongReadConsistencyInstrumentation[struct{}]
-	lastConsumedOffset               prometheus.Gauge
+	lastConsumedOffset               *prometheus.GaugeVec
 	consumeLatency                   prometheus.Histogram
 	kprom                            *kprom.Metrics
 	missedRecords                    prometheus.Counter
 }
 
-type readerMetricsSource interface {
+type ReaderMetricsSource interface {
 	BufferedBytes() int64
 	BufferedRecords() int64
 	EstimatedBytesPerRecord() int64
 }
 
-func newReaderMetrics(partitionID int32, reg prometheus.Registerer, metricsSource readerMetricsSource, topic string) readerMetrics {
+func NewReaderMetrics(reg prometheus.Registerer, metricsSource ReaderMetricsSource, topic string, kpromMetrics *kprom.Metrics) ReaderMetrics {
 	const component = "partition-reader"
 
 	receiveDelay := promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
@@ -982,16 +987,17 @@ func newReaderMetrics(partitionID int32, reg prometheus.Registerer, metricsSourc
 		Buckets:                         prometheus.ExponentialBuckets(0.125, 2, 18), // Buckets between 125ms and 9h.
 	}, []string{"phase"})
 
-	lastConsumedOffset := promauto.With(reg).NewGauge(prometheus.GaugeOpts{
-		Name:        "cortex_ingest_storage_reader_last_consumed_offset",
-		Help:        "The last offset successfully consumed by the partition reader. Set to -1 if not offset has been consumed yet.",
-		ConstLabels: prometheus.Labels{"partition": strconv.Itoa(int(partitionID))},
-	})
+	lastConsumedOffset := promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
+		Name: "cortex_ingest_storage_reader_last_consumed_offset",
+		Help: "The last offset successfully consumed by the partition reader. Set to -1 if not offset has been consumed yet.",
+	}, []string{"partition"})
 
-	// Initialise the last consumed offset metric to -1 to signal no offset has been consumed yet (0 is a valid offset).
-	lastConsumedOffset.Set(-1)
+	kpm := kpromMetrics
+	if kpm == nil {
+		kpm = NewKafkaReaderClientMetrics(ReaderMetricsPrefix, component, reg)
+	}
 
-	m := readerMetrics{
+	m := ReaderMetrics{
 		bufferedFetchedRecords: promauto.With(reg).NewGaugeFunc(prometheus.GaugeOpts{
 			Name: "cortex_ingest_storage_reader_buffered_fetched_records",
 			Help: "The number of records fetched from Kafka by both concurrent fetchers and the Kafka client but not yet processed.",
@@ -1041,7 +1047,7 @@ func newReaderMetrics(partitionID int32, reg prometheus.Registerer, metricsSourc
 		}),
 		strongConsistencyInstrumentation: NewStrongReadConsistencyInstrumentation[struct{}](component, reg, []string{topic}),
 		lastConsumedOffset:               lastConsumedOffset,
-		kprom:                            NewKafkaReaderClientMetrics(ReaderMetricsPrefix, component, reg),
+		kprom:                            kpm,
 		missedRecords: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_ingest_storage_reader_missed_records_total",
 			Help: "The number of offsets that were never consumed by the reader because they weren't fetched.",

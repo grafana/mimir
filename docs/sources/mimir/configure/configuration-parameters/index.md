@@ -2705,6 +2705,11 @@ The `querier` block configures the querier.
 # CLI flag: -querier.lookback-delta
 [lookback_delta: <duration> | default = 5m]
 
+# (experimental) Enable the experimental Prometheus feature for delayed name
+# removal.
+# CLI flag: -querier.enable-delayed-name-removal
+[enable_delayed_name_removal: <boolean> | default = false]
+
 mimir_query_engine:
   # (experimental) Enable pruning query expressions that are toggled off with
   # constants.
@@ -2726,6 +2731,11 @@ mimir_query_engine:
   # queries that do not require full histograms.
   # CLI flag: -querier.mimir-query-engine.enable-skipping-histogram-decoding
   [enable_skipping_histogram_decoding: <boolean> | default = true]
+
+  # (experimental) Enable generating selectors for one side of a binary
+  # expression based on results from the other side.
+  # CLI flag: -querier.mimir-query-engine.enable-narrow-binary-selectors
+  [enable_narrow_binary_selectors: <boolean> | default = false]
 ```
 
 ### frontend
@@ -2900,6 +2910,11 @@ client_cluster_validation:
 # Mimir query engine.
 # CLI flag: -query-frontend.enable-query-engine-fallback
 [enable_query_engine_fallback: <boolean> | default = true]
+
+# (experimental) If set to true and the Mimir query engine is in use, use remote
+# execution to evaluate queries in queriers.
+# CLI flag: -query-frontend.enable-remote-execution
+[enable_remote_execution: <boolean> | default = false]
 ```
 
 ### query_scheduler
@@ -4475,6 +4490,13 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -validation.max-length-label-value
 [max_label_value_length: <int> | default = 2048]
 
+# (experimental) What to do for label values over the length limit. Options are:
+# 'error', 'truncate', 'drop'. For 'truncate', the hash of the full value
+# replaces the end portion of the value. For 'drop', the hash fully replaces the
+# value.
+# CLI flag: -validation.label-value-length-over-limit-strategy
+[label_value_length_over_limit_strategy: <string> | default = "error"]
+
 # Maximum number of label names per series.
 # CLI flag: -validation.max-label-names-per-series
 [max_label_names_per_series: <int> | default = 30]
@@ -5213,7 +5235,8 @@ ruler_alertmanager_client_config:
 # is given in JSON format. Rate limit has the same meaning as
 # -alertmanager.notification-rate-limit, but only applies for specific
 # integration. Allowed integration names: webhook, email, pagerduty, opsgenie,
-# wechat, slack, victorops, pushover, sns, webex, telegram, discord, msteams.
+# wechat, slack, victorops, pushover, sns, webex, telegram, discord, msteams,
+# msteamsv2.
 # CLI flag: -alertmanager.notification-rate-limit-per-integration
 [alertmanager_notification_rate_limit_per_integration: <map of string to float64> | default = {}]
 
@@ -5971,7 +5994,7 @@ tsdb:
   # (experimental) How frequently to collect head statistics, which are used in
   # query execution optimization. 0 to disable.
   # CLI flag: -blocks-storage.tsdb.head-statistics-collection-frequency
-  [head_statistics_collection_frequency: <duration> | default = 0s]
+  [head_statistics_collection_frequency: <duration> | default = 1h]
 
   # (advanced) Max size - in bytes - of the in-memory series hash cache. The
   # cache is shared across all tenants and it's used only when query sharding is
