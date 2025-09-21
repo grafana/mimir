@@ -66,8 +66,10 @@ func newDistributorReactiveLimiter(cfg Config, logger log.Logger, registerer pro
 
 		// Create limiters that use prioritizer
 		limiter = newPriorityLimiter(limiterCfg, prioritizer, reactivelimiter.PriorityHigh, logger, registerer)
+		level.Info(logger).Log("msg", "a priority limiter has been created")
 	} else {
 		limiter = reactivelimiter.NewBlockingLimiter(limiterCfg, logger)
+		level.Info(logger).Log("msg", "a blocking limiter has been created")
 	}
 
 	registerReactiveLimiterMetrics(limiter, registerer)
@@ -81,6 +83,7 @@ func newDistributorReactiveLimiter(cfg Config, logger log.Logger, registerer pro
 		distributorLimiter.service = services.NewTimerService(distributorLimiter.prioritizer.cfg.CalibrationInterval, nil, distributorLimiter.update, nil)
 	}
 
+	level.Info(logger).Log("msg", "a distributorLimiter limiter has been created")
 	return distributorLimiter
 }
 
@@ -105,6 +108,7 @@ func (l *distributorReactiveLimiter) getLimiter() reactivelimiter.BlockingLimite
 
 func (l *distributorReactiveLimiter) CanAcquirePermit() bool {
 	if l == nil {
+		level.Debug(l.logger).Log("msg", "CanAcquirePermit called on a nil distributorReactiveLimiter")
 		return true
 	}
 	result := l.limiter.CanAcquirePermit()
@@ -116,6 +120,7 @@ func (l *distributorReactiveLimiter) CanAcquirePermit() bool {
 
 func (l *distributorReactiveLimiter) AcquirePermit(ctx context.Context) (reactivelimiter.Permit, error) {
 	if l == nil {
+		level.Debug(l.logger).Log("msg", "AcquirePermit called on a nil distributorReactiveLimiter")
 		return nil, nil
 	}
 	permit, err := l.limiter.AcquirePermit(ctx)
