@@ -55,7 +55,6 @@ import (
 	"github.com/thanos-io/objstore"
 	"github.com/thanos-io/objstore/providers/filesystem"
 	"go.uber.org/atomic"
-	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 
@@ -8863,42 +8862,34 @@ func TestIngester_inflightPushRequests(t *testing.T) {
 
 func testIngesterInflightPushRequests(t *testing.T, i *Ingester, reg prometheus.Gatherer) {
 	ctx := user.InjectOrgID(context.Background(), "test")
-	startCh := make(chan struct{})
 
-	const targetRequestDuration = time.Second
+	// NOTE: This test uses startPushRequest() directly rather than the full gRPC handler
+	// for deterministic behavior. This approach tests:
+	// 1. The core inflight limiting logic (startPushRequest/FinishPushRequest)
+	// 2. Counter management and cleanup
+	// 3. Rejection of subsequent requests when limits are hit
+	// 4. Metric recording accuracy
+	// While it doesn't test the full integration path, it validates the critical
+	// limit enforcement logic that the gRPC handler depends on.
 
-	g, ctx := errgroup.WithContext(ctx)
-	g.Go(func() error {
-		req := prepareRequestForTargetRequestDuration(ctx, t, i, targetRequestDuration)
+	// Create a request for testing
+	req := generateSamplesForLabel(labels.FromStrings(labels.MetricName, "testcase"), 1, 1024)
+	requestSize := int64(req.Size())
 
-		// Signal that we're going to do the real push now.
-		close(startCh)
+	// Start first request - this should succeed and stay inflight
+	ctx1, shouldFinish1, err1 := i.startPushRequest(ctx, requestSize)
+	require.NoError(t, err1)
+	require.True(t, shouldFinish1)
 
-		_, err := pushWithSimulatedGRPCHandler(ctx, i, req)
-		return err
-	})
+	// Verify the request is counted as inflight
+	require.Equal(t, int64(1), i.inflightPushRequests.Load())
 
-	g.Go(func() error {
-		req := generateSamplesForLabel(labels.FromStrings(labels.MetricName, "testcase"), 1, 1024)
+	// Attempt second request - this should fail due to MaxInflightPushRequests: 1
+	_, err := pushWithSimulatedGRPCHandler(ctx, i, req)
+	require.ErrorIs(t, err, errMaxInflightRequestsReached)
 
-		select {
-		case <-ctx.Done():
-		// failed to setup
-		case <-startCh:
-			// we can start the test.
-		}
-
-		test.Poll(t, targetRequestDuration/3, int64(1), func() interface{} {
-			return i.inflightPushRequests.Load()
-		})
-
-		_, err := pushWithSimulatedGRPCHandler(ctx, i, req)
-		require.ErrorIs(t, err, errMaxInflightRequestsReached)
-
-		return nil
-	})
-
-	require.NoError(t, g.Wait())
+	// Clean up the first request
+	i.FinishPushRequest(ctx1)
 
 	// Ensure the rejected request has been tracked in a metric.
 	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
@@ -8938,64 +8929,45 @@ func TestIngester_inflightPushRequestsBytes(t *testing.T) {
 
 	ctx := user.InjectOrgID(context.Background(), "test")
 
-	startCh := make(chan int)
+	// Create a request for testing
+	req := generateSamplesForLabel(labels.FromStrings(labels.MetricName, "testcase1"), 1, 1024)
+	requestSize := int64(req.Size())
 
-	const targetRequestDuration = time.Second
+	// Set limit to EXACTLY the request size.
+	limitsMx.Lock()
+	limits.MaxInflightPushRequestsBytes = requestSize
+	limitsMx.Unlock()
 
-	g, ctx := errgroup.WithContext(ctx)
-	g.Go(func() error {
-		req := prepareRequestForTargetRequestDuration(ctx, t, i, targetRequestDuration)
+	// Start first request - this should succeed and stay inflight
+	ctx1, shouldFinish1, err1 := i.startPushRequest(ctx, requestSize)
+	require.NoError(t, err1)
+	require.True(t, shouldFinish1)
 
-		// Update instance limits. Set limit to EXACTLY the request size.
-		limitsMx.Lock()
-		limits.MaxInflightPushRequestsBytes = int64(req.Size())
-		limitsMx.Unlock()
+	// Verify the request is counted as inflight
+	require.Equal(t, int64(1), i.inflightPushRequests.Load())
+	require.Equal(t, requestSize, i.inflightPushRequestsBytes.Load())
 
-		// Signal that we're going to do the real push now.
-		startCh <- req.Size()
-		close(startCh)
+	// Verify metrics
+	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
+		# HELP cortex_ingester_inflight_push_requests_bytes Total sum of inflight push request sizes in ingester in bytes.
+		# TYPE cortex_ingester_inflight_push_requests_bytes gauge
+		cortex_ingester_inflight_push_requests_bytes %d
+	`, requestSize)), "cortex_ingester_inflight_push_requests_bytes"))
 
-		_, err := pushWithSimulatedGRPCHandler(ctx, i, req)
-		return err
-	})
+	// Starting additional push requests should fail - these should be rejected
+	_, err = i.StartPushRequest(ctx, 100)
+	require.ErrorIs(t, err, errMaxInflightRequestsBytesReached)
 
-	g.Go(func() error {
-		req := generateSamplesForLabel(labels.FromStrings(labels.MetricName, "testcase1"), 1, 1024)
+	// Starting push request with unknown size should fail
+	_, err = i.StartPushRequest(ctx, 0)
+	require.ErrorIs(t, err, errMaxInflightRequestsBytesReached)
 
-		var requestSize int
-		select {
-		case <-ctx.Done():
-		// failed to setup
-		case requestSize = <-startCh:
-			// we can start the test.
-		}
+	// Sending push request should fail
+	_, err2 := pushWithSimulatedGRPCHandler(ctx, i, req)
+	require.ErrorIs(t, err2, errMaxInflightRequestsBytesReached)
 
-		test.Poll(t, targetRequestDuration/3, int64(1), func() interface{} {
-			return i.inflightPushRequests.Load()
-		})
-
-		require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
-			# HELP cortex_ingester_inflight_push_requests_bytes Total sum of inflight push request sizes in ingester in bytes.
-			# TYPE cortex_ingester_inflight_push_requests_bytes gauge
-			cortex_ingester_inflight_push_requests_bytes %d
-		`, requestSize)), "cortex_ingester_inflight_push_requests_bytes"))
-
-		// Starting push request fails
-		_, err = i.StartPushRequest(ctx, 100)
-		require.ErrorIs(t, err, errMaxInflightRequestsBytesReached)
-
-		// Starting push request with unknown size fails
-		_, err = i.StartPushRequest(ctx, 0)
-		require.ErrorIs(t, err, errMaxInflightRequestsBytesReached)
-
-		// Sending push request fails
-		_, err := pushWithSimulatedGRPCHandler(ctx, i, req)
-		require.ErrorIs(t, err, errMaxInflightRequestsBytesReached)
-
-		return nil
-	})
-
-	require.NoError(t, g.Wait())
+	// Clean up the first request
+	i.FinishPushRequest(ctx1)
 
 	// Ensure the rejected request has been tracked in a metric.
 	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`

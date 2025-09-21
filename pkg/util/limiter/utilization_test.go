@@ -70,6 +70,9 @@ func TestUtilizationBasedLimiter(t *testing.T) {
             	           	# HELP utilization_limiter_current_memory_usage_bytes Current memory usage calculated by utilization based limiter.
             	           	# TYPE utilization_limiter_current_memory_usage_bytes gauge
             	           	utilization_limiter_current_memory_usage_bytes 0
+            	           	# HELP utilization_limiter_rejection_rate Current rejection rate (0.0 to 1.0) calculated by utilization based limiter.
+            	           	# TYPE utilization_limiter_rejection_rate gauge
+            	           	utilization_limiter_rejection_rate 0
 	`)))
 	})
 
@@ -95,6 +98,9 @@ func TestUtilizationBasedLimiter(t *testing.T) {
             	           	# HELP utilization_limiter_current_memory_usage_bytes Current memory usage calculated by utilization based limiter.
             	           	# TYPE utilization_limiter_current_memory_usage_bytes gauge
             	           	utilization_limiter_current_memory_usage_bytes 0
+            	           	# HELP utilization_limiter_rejection_rate Current rejection rate (0.0 to 1.0) calculated by utilization based limiter.
+            	           	# TYPE utilization_limiter_rejection_rate gauge
+            	           	utilization_limiter_rejection_rate 0
 		`)))
 	})
 
@@ -154,6 +160,9 @@ func TestUtilizationBasedLimiter(t *testing.T) {
             	           	# HELP utilization_limiter_current_memory_usage_bytes Current memory usage calculated by utilization based limiter.
             	           	# TYPE utilization_limiter_current_memory_usage_bytes gauge
             	           	utilization_limiter_current_memory_usage_bytes 1.073741823e+09
+            	           	# HELP utilization_limiter_rejection_rate Current rejection rate (0.0 to 1.0) calculated by utilization based limiter.
+            	           	# TYPE utilization_limiter_rejection_rate gauge
+            	           	utilization_limiter_rejection_rate 0
 		`)))
 	})
 
@@ -175,6 +184,9 @@ func TestUtilizationBasedLimiter(t *testing.T) {
             	           	# HELP utilization_limiter_current_memory_usage_bytes Current memory usage calculated by utilization based limiter.
             	           	# TYPE utilization_limiter_current_memory_usage_bytes gauge
             	           	utilization_limiter_current_memory_usage_bytes 1.073741824e+09
+            	           	# HELP utilization_limiter_rejection_rate Current rejection rate (0.0 to 1.0) calculated by utilization based limiter.
+            	           	# TYPE utilization_limiter_rejection_rate gauge
+            	           	utilization_limiter_rejection_rate 0
 		`)))
 	})
 
