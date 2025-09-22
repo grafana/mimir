@@ -12,11 +12,13 @@ import (
 	"math/rand"
 	"sort"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
@@ -394,6 +396,83 @@ func TestDistributor_QueryStream_ShouldReturnErrorIfMaxChunkBytesPerQueryLimitIs
 	_, err = ds[0].QueryStream(ctx, queryMetrics, math.MinInt32, math.MaxInt32, allSeriesMatchers...)
 	require.Error(t, err)
 	assert.Equal(t, err, limiter.NewMaxChunkBytesHitLimitError(uint64(maxBytesLimit)))
+}
+
+func TestDistributor_QueryStream_ShouldReturnErrorIfMaxMemoryConsumptionPerQueryLimitIsReached(t *testing.T) {
+	const maxMemoryConsumptionLimit = 100
+
+	now := time.Now().Unix()
+
+	for _, disableStreamingResponse := range []bool{true, false} {
+		for _, minimizeIngesterRequests := range []bool{true, false} {
+			t.Run(fmt.Sprintf("streaming response disabled: %v, request minimization enabled: %v", disableStreamingResponse, minimizeIngesterRequests), func(t *testing.T) {
+				userCtx := user.InjectOrgID(context.Background(), "user")
+				limits := prepareDefaultLimits()
+
+				// Prepare distributors.
+				ds, ingesters, reg, _ := prepare(t, prepConfig{
+					numIngesters:             3,
+					happyIngesters:           3,
+					numDistributors:          1,
+					limits:                   limits,
+					disableStreamingResponse: disableStreamingResponse,
+					configure: func(config *Config) {
+						config.MinimizeIngesterRequests = minimizeIngesterRequests
+					},
+				})
+
+				initialSeries := 1
+				writeReq := makeWriteRequestWith(makeTimeseries([]string{labels.MetricName, "series_1", "foo", strings.Repeat("x", 10)}, makeSamples(now, 1), nil, nil))
+				writeRes, err := ds[0].Push(userCtx, writeReq)
+				assert.Equal(t, &mimirpb.WriteResponse{}, writeRes)
+				assert.Nil(t, err)
+
+				allSeriesMatchers := []*labels.Matcher{
+					labels.MustNewMatcher(labels.MatchRegexp, model.MetricNameLabel, ".+"),
+				}
+
+				queryMetrics := stats.NewQueryMetrics(reg[0])
+
+				queryCtx := limiter.AddQueryLimiterToContext(userCtx, limiter.NewQueryLimiter(0, 0, 0, 0, stats.NewQueryMetrics(prometheus.NewPedanticRegistry())))
+
+				counter := promauto.With(nil).NewCounter(prometheus.CounterOpts{
+					Name: "cortex_test_rejections_total",
+				})
+				memoryTracker := limiter.NewMemoryConsumptionTracker(queryCtx, maxMemoryConsumptionLimit, counter, "test query")
+				queryCtx = limiter.AddMemoryTrackerToContext(userCtx, memoryTracker)
+				queryRes, err := ds[0].QueryStream(queryCtx, queryMetrics, math.MinInt32, math.MaxInt32, allSeriesMatchers...)
+				require.NoError(t, err)
+				if disableStreamingResponse {
+					assert.Len(t, queryRes.Chunkseries, initialSeries)
+				} else {
+					assert.Len(t, queryRes.StreamingSeries, initialSeries)
+				}
+
+				firstRequestIngesterQueryCount := countCalls(ingesters, "QueryStream")
+
+				if minimizeIngesterRequests {
+					require.LessOrEqual(t, firstRequestIngesterQueryCount, 2, "should not call third ingester if request minimisation is enabled and first two ingesters return a successful response")
+				}
+
+				// Push more series that will exceed the memory limit
+				writeReq = makeWriteRequestWith(makeTimeseries([]string{labels.MetricName, "series_2", "foo", strings.Repeat("x", 100)}, makeSamples(now, 1), nil, nil))
+
+				writeRes, err = ds[0].Push(userCtx, writeReq)
+				assert.Equal(t, &mimirpb.WriteResponse{}, writeRes)
+				assert.Nil(t, err)
+
+				// We will query all series. Since the series will be streamed, the second series will exceed the maximum memory consumption due the labels.
+				_, err = ds[0].QueryStream(queryCtx, queryMetrics, math.MinInt32, math.MaxInt32, allSeriesMatchers...)
+				require.Error(t, err)
+				assert.ErrorContains(t, err, "the query exceeded the maximum allowed estimated amount of memory consumed by a single query")
+
+				if minimizeIngesterRequests {
+					secondRequestIngesterQueryCallCount := countCalls(ingesters, "QueryStream") - firstRequestIngesterQueryCount
+					require.LessOrEqual(t, secondRequestIngesterQueryCallCount, 2, "should not call third ingester if request minimisation is enabled and either of first two ingesters fail with limits error")
+				}
+			})
+		}
+	}
 }
 
 func TestDistributor_QueryStream_ShouldSuccessfullyRunOnSlowIngesterWithStreamingChunksIsEnabled(t *testing.T) {
