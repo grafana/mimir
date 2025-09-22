@@ -435,10 +435,9 @@ func TestDistributor_QueryStream_ShouldReturnErrorIfMaxMemoryConsumptionPerQuery
 
 				queryCtx := limiter.AddQueryLimiterToContext(userCtx, limiter.NewQueryLimiter(0, 0, 0, 0, stats.NewQueryMetrics(prometheus.NewPedanticRegistry())))
 
-				counter := promauto.With(nil).NewCounter(prometheus.CounterOpts{
+				memoryTracker := limiter.NewMemoryConsumptionTracker(queryCtx, maxMemoryConsumptionLimit, promauto.With(nil).NewCounter(prometheus.CounterOpts{
 					Name: "cortex_test_rejections_total",
-				})
-				memoryTracker := limiter.NewMemoryConsumptionTracker(queryCtx, maxMemoryConsumptionLimit, counter, "test query")
+				}), "test query")
 				queryCtx = limiter.AddMemoryTrackerToContext(userCtx, memoryTracker)
 				queryRes, err := ds[0].QueryStream(queryCtx, queryMetrics, math.MinInt32, math.MaxInt32, allSeriesMatchers...)
 				require.NoError(t, err)
