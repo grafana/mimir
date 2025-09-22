@@ -281,7 +281,7 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSets [
 		streamingSeriesCount := 0
 
 		for {
-			labelsBatch, isEOS, err := result.receiveResponse(stream, queryLimiter, ctx)
+			labelsBatch, isEOS, err := result.receiveResponse(ctx, stream, queryLimiter)
 			if errors.Is(err, io.EOF) {
 				// We will never get an EOF here from an ingester that is streaming chunks, so we don't need to do anything to set up streaming here.
 				return result, nil
@@ -411,7 +411,7 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSets [
 // * If the response has Chunkseries, they are added to r.chunkseriesBatches.
 // * If the response has StreamingSeries, a slice is returned with the label sets of each series.
 // A bool is also returned to indicate whether the end of the stream has been reached.
-func (r *ingesterQueryResult) receiveResponse(stream ingester_client.Ingester_QueryStreamClient, queryLimiter *limiter.QueryLimiter, ctx context.Context) ([]labels.Labels, bool, error) {
+func (r *ingesterQueryResult) receiveResponse(ctx context.Context, stream ingester_client.Ingester_QueryStreamClient, queryLimiter *limiter.QueryLimiter) ([]labels.Labels, bool, error) {
 	memoryTracker := limiter.MemoryTrackerFromContextWithFallback(ctx)
 
 	resp, err := stream.Recv()
