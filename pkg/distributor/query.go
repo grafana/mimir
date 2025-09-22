@@ -86,7 +86,6 @@ func (d *Distributor) QueryStream(ctx context.Context, queryMetrics *stats.Query
 	var result ingester_client.CombinedQueryStreamResponse
 	err := instrument.CollectedRequest(ctx, "Distributor.QueryStream", d.queryDuration, instrument.ErrorCode, func(ctx context.Context) error {
 		memoryTracker := limiter.MemoryTrackerFromContextWithFallback(ctx)
-		ctx = limiter.AddMemoryTrackerToContext(ctx, memoryTracker)
 
 		req, err := ingester_client.ToQueryRequest(from, to, matchers)
 		if err != nil {
