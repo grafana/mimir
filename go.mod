@@ -255,7 +255,7 @@ require (
 	github.com/facette/natsort v0.0.0-20181210072756-2cd4dd1e2dcb
 	github.com/fatih/color v1.16.0 // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
-	github.com/fsnotify/fsnotify v1.8.0 // indirect
+	github.com/fsnotify/fsnotify v1.9.0 // indirect
 	github.com/go-errors/errors v1.4.2 // indirect
 	github.com/go-logfmt/logfmt v0.6.0
 	github.com/go-logr/logr v1.4.3 // indirect
@@ -349,7 +349,7 @@ require (
 	sigs.k8s.io/yaml v1.4.0 // indirect
 )
 
-replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v1.8.2-0.20250909183748-fc14b528375c
+replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v1.8.2-0.20250922100257-763e2c75e83f
 
 // Replace memberlist with our fork which includes some fixes that haven't been
 // merged upstream yet:
