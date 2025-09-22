@@ -14,8 +14,8 @@ type MedianFilter struct {
 	size   int
 }
 
-func NewMedianFilter(size int) *MedianFilter {
-	return &MedianFilter{
+func NewMedianFilter(size int) MedianFilter {
+	return MedianFilter{
 		values: make([]float64, size),
 		sorted: make([]float64, size),
 	}

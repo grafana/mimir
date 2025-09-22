@@ -75,15 +75,6 @@ type Execution[R any] interface {
 	Canceled() <-chan struct{}
 }
 
-// A closed channel that can be used as a canceled channel where the canceled channel would have been closed before it
-// was accessed.
-var closedChan chan any
-
-func init() {
-	closedChan = make(chan any, 1)
-	close(closedChan)
-}
-
 type execution[R any] struct {
 	// Shared state across instances
 	mu         *sync.Mutex
