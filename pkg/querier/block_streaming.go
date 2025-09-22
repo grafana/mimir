@@ -144,13 +144,6 @@ func (bqs *blockStreamingQuerierSeries) Iterator(reuse chunkenc.Iterator) chunke
 	return newBlockQuerierSeriesIterator(reuse, bqs.Labels(), allChunks)
 }
 
-type memoryConsumptionTracker interface {
-	IncreaseMemoryConsumption(b uint64, source limiter.MemoryConsumptionSource) error
-	DecreaseMemoryConsumption(b uint64, source limiter.MemoryConsumptionSource)
-	IncreaseMemoryConsumptionForLabels(ls labels.Labels) error
-	DecreaseMemoryConsumptionForLabels(ls labels.Labels)
-}
-
 // storeGatewayStreamReader is responsible for managing the streaming of chunks from a storegateway and buffering
 // chunks in memory until they are consumed by the PromQL engine.
 type storeGatewayStreamReader struct {
@@ -158,7 +151,7 @@ type storeGatewayStreamReader struct {
 	client              storegatewaypb.StoreGateway_SeriesClient
 	expectedSeriesCount int
 	queryLimiter        *limiter.QueryLimiter
-	memoryTracker       memoryConsumptionTracker
+	memoryTracker       limiter.MemoryTracker
 	stats               *stats.SafeStats
 	metrics             *blocksStoreQueryableMetrics
 	log                 log.Logger
@@ -171,7 +164,7 @@ type storeGatewayStreamReader struct {
 	err                    error
 }
 
-func newStoreGatewayStreamReader(ctx context.Context, client storegatewaypb.StoreGateway_SeriesClient, expectedSeriesCount int, queryLimiter *limiter.QueryLimiter, memoryTracker memoryConsumptionTracker, stats *stats.SafeStats, metrics *blocksStoreQueryableMetrics, log log.Logger) *storeGatewayStreamReader {
+func newStoreGatewayStreamReader(ctx context.Context, client storegatewaypb.StoreGateway_SeriesClient, expectedSeriesCount int, queryLimiter *limiter.QueryLimiter, memoryTracker limiter.MemoryTracker, stats *stats.SafeStats, metrics *blocksStoreQueryableMetrics, log log.Logger) *storeGatewayStreamReader {
 	return &storeGatewayStreamReader{
 		ctx:                 ctx,
 		client:              client,

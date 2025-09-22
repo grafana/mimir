@@ -111,6 +111,14 @@ func (s MemoryConsumptionSource) String() string {
 	}
 }
 
+// MemoryTracker interface defines the methods needed for memory tracking.
+type MemoryTracker interface {
+	IncreaseMemoryConsumption(b uint64, source MemoryConsumptionSource) error
+	DecreaseMemoryConsumption(b uint64, source MemoryConsumptionSource)
+	IncreaseMemoryConsumptionForLabels(ls labels.Labels) error
+	DecreaseMemoryConsumptionForLabels(ls labels.Labels)
+}
+
 // MemoryConsumptionTracker tracks the current memory utilisation of a single query, and applies any max in-memory bytes limit.
 //
 // It also tracks the peak number of in-memory bytes for use in query statistics.
