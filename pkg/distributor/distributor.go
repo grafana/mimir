@@ -22,6 +22,7 @@ import (
 	"github.com/failsafe-go/failsafe-go/adaptivelimiter"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/gorilla/mux"
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/httpgrpc"
@@ -211,6 +212,72 @@ type Distributor struct {
 	sleep     func(time.Duration)
 	now       func() time.Time
 	startTime time.Time
+
+	latency *artificialLatency
+}
+
+type artificialLatency struct {
+	min       time.Duration
+	max       time.Duration
+	duration  time.Duration
+	workers   int
+	startTime time.Time
+}
+
+func newArtificialLatency(min time.Duration, max time.Duration, duration time.Duration, workers int) *artificialLatency {
+	return &artificialLatency{
+		min:       min,
+		max:       max,
+		duration:  duration,
+		workers:   workers,
+		startTime: time.Now(),
+	}
+}
+
+func (a *artificialLatency) isActive() bool {
+	if a == nil {
+		return false
+	}
+	if time.Since(a.startTime) >= a.duration {
+		return false
+	}
+	if a.min > a.max {
+		return false
+	}
+	return true
+}
+
+func (a *artificialLatency) add() {
+	if a == nil || !a.isActive() {
+		return
+	}
+
+	// Pick random duration in [min, max].
+	duration := a.min + time.Duration(rand.Int63n(int64(a.max-a.min)))
+	end := time.Now().Add(duration)
+
+	if a.workers == 0 {
+		time.Sleep(duration)
+		return
+	}
+
+	var wg sync.WaitGroup
+	wg.Add(a.workers)
+
+	for i := 0; i < a.workers; i++ {
+		go func() {
+			defer wg.Done()
+			x := 0
+			for time.Now().Before(end) {
+				// Do some meaningless work
+				x++
+				if x > 1_000_000 {
+					x = 0
+				}
+			}
+		}()
+	}
+	wg.Wait()
 }
 
 func defaultSleep(d time.Duration) { time.Sleep(d) }
@@ -551,7 +618,7 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 		PushMetrics: newPushMetrics(reg),
 		now:         defaultNow,
 		sleep:       defaultSleep,
-		startTime:   defaultNow(),
+		latency:     newArtificialLatency(cfg.ArtificialLatencyMin, cfg.ArtificialLatencyMax, cfg.ArtificialLatencyDuration, cfg.ArtificialLatencyWorkers),
 	}
 
 	// Initialize expected rejected request labels
@@ -1897,43 +1964,57 @@ func (d *Distributor) handlePushError(ctx context.Context, pushErr error) error 
 }
 
 func (d *Distributor) addArtificialLatency() {
-	if time.Since(d.startTime) >= d.cfg.ArtificialLatencyDuration {
-		return
+	d.latency.add()
+}
+
+func (d *Distributor) StartArtificialLatencyHandler(w http.ResponseWriter, r *http.Request) {
+	level.Info(d.log).Log("msg", "received a request to start artificial latency")
+	vars := mux.Vars(r)
+
+	// Extract path parameters
+	latencyMinStr := vars["latencyMin"]
+	latencyMaxStr := vars["latencyMax"]
+	latencyDurationStr := vars["latencyDuration"]
+	latencyWorkersStr := vars["latencyWorkers"]
+
+	// Defaults
+	latencyMin, _ := time.ParseDuration(defaultIfEmpty(latencyMinStr, "100ms"))
+	latencyMax, _ := time.ParseDuration(defaultIfEmpty(latencyMaxStr, "500ms"))
+	latencyDuration, _ := time.ParseDuration(defaultIfEmpty(latencyDurationStr, "300s"))
+	latencyWorkers, _ := strconv.Atoi(defaultIfEmpty(latencyWorkersStr, "1"))
+
+	level.Info(d.log).Log("msg", "artificial latency parameters retrieved", "latencyMin", latencyMin, "latencyMax", latencyMax, "latencyDuration", latencyDuration, "latencyWorkers", latencyWorkers)
+
+	d.latency = &artificialLatency{
+		min:       latencyMin,
+		max:       latencyMax,
+		duration:  latencyDuration,
+		workers:   latencyWorkers,
+		startTime: time.Now(),
 	}
 
-	if d.cfg.ArtificialLatencyWorkers <= 0 {
-		return
-	}
-	if d.cfg.ArtificialLatencyMin > d.cfg.ArtificialLatencyMax {
-		return
-	}
+	level.Info(d.log).Log("msg", "artificial latency setup completed")
 
-	// Pick random duration in [min, max].
-	duration := d.cfg.ArtificialLatencyMin + time.Duration(rand.Int63n(int64(d.cfg.ArtificialLatencyMax-d.cfg.ArtificialLatencyMin)))
-	end := time.Now().Add(duration)
+	// Build response
+	response := fmt.Sprintf("Artificial latency with parameters min=%v, max=%v, duration=%v, workers=%d", latencyMin, latencyMax, latencyDuration, latencyWorkers)
+	util.WriteHTMLResponse(w, response)
+}
 
-	if d.cfg.ArtificialLatencyWorkers == 0 {
-		time.Sleep(duration)
-		return
+func (d *Distributor) StopArtificialLatencyHandler(w http.ResponseWriter, r *http.Request) {
+	level.Info(d.log).Log("msg", "received a request to stop artificial latency")
+	d.latency = nil
+
+	level.Info(d.log).Log("msg", "artificial latency stopped")
+	// Build response
+	response := "Artificial latency has been stopped"
+	util.WriteHTMLResponse(w, response)
+}
+
+func defaultIfEmpty(value, def string) string {
+	if value == "" {
+		return def
 	}
-
-	var wg sync.WaitGroup
-	wg.Add(d.cfg.ArtificialLatencyWorkers)
-
-	for i := 0; i < d.cfg.ArtificialLatencyWorkers; i++ {
-		go func() {
-			defer wg.Done()
-			x := 0
-			for time.Now().Before(end) {
-				// Do some meaningless work
-				x++
-				if x > 1_000_000 {
-					x = 0
-				}
-			}
-		}()
-	}
-	wg.Wait()
+	return value
 }
 
 // push takes a write request and distributes it to ingesters using the ring.
