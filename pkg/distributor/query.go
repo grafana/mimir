@@ -33,6 +33,13 @@ import (
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
+type memoryConsumptionTracker interface {
+	IncreaseMemoryConsumption(b uint64, source limiter.MemoryConsumptionSource) error
+	DecreaseMemoryConsumption(b uint64, source limiter.MemoryConsumptionSource)
+	IncreaseMemoryConsumptionForLabels(ls labels.Labels) error
+	DecreaseMemoryConsumptionForLabels(ls labels.Labels)
+}
+
 var (
 	// readNoExtend is a ring.Operation that only selects instances marked as ring.ACTIVE.
 	// This should mirror the operation used when choosing ingesters to write series to (ring.WriteNoExtend).
@@ -99,13 +106,13 @@ func (d *Distributor) QueryStream(ctx context.Context, queryMetrics *stats.Query
 			return err
 		}
 
-		result, err = d.queryIngesterStream(ctx, replicationSets, req, queryMetrics, memoryTracker)
+		result, err = d.queryIngesterStream(ctx, replicationSets, req, queryMetrics, memoryConsumptionTracker(memoryTracker))
 		if err != nil {
 			return err
 		}
 
 		defer func() {
-			cleanupTracker := limiter.MemoryTrackerFromContextWithFallback(ctx)
+			cleanupTracker := memoryConsumptionTracker(limiter.MemoryTrackerFromContextWithFallback(ctx))
 			for _, ts := range result.Timeseries {
 				ls := mimirpb.FromLabelAdaptersToLabels(ts.Labels)
 				cleanupTracker.DecreaseMemoryConsumptionForLabels(ls)
@@ -232,7 +239,7 @@ type ingesterQueryResult struct {
 }
 
 // queryIngesterStream queries the ingesters using the gRPC streaming API.
-func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSets []ring.ReplicationSet, req *ingester_client.QueryRequest, queryMetrics *stats.QueryMetrics, memoryTracker *limiter.MemoryConsumptionTracker) (ingester_client.CombinedQueryStreamResponse, error) {
+func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSets []ring.ReplicationSet, req *ingester_client.QueryRequest, queryMetrics *stats.QueryMetrics, memoryTracker memoryConsumptionTracker) (ingester_client.CombinedQueryStreamResponse, error) {
 	queryLimiter := limiter.QueryLimiterFromContextWithFallback(ctx)
 	reqStats := stats.FromContext(ctx)
 
@@ -299,7 +306,7 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSets [
 						result.streamingSeries.Series = append(result.streamingSeries.Series, batch...)
 					}
 
-					streamReader := ingester_client.NewSeriesChunksStreamReader(ctx, stream, ing.Id, streamingSeriesCount, queryLimiter, limiter.MemoryTrackerFromContextWithFallback(ctx), cleanup, d.log)
+					streamReader := ingester_client.NewSeriesChunksStreamReader(ctx, stream, ing.Id, streamingSeriesCount, queryLimiter, memoryTracker, cleanup, d.log)
 					closeStream = false
 					result.streamingSeries.StreamReader = streamReader
 				}
@@ -412,7 +419,7 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSets [
 // * If the response has StreamingSeries, a slice is returned with the label sets of each series.
 // A bool is also returned to indicate whether the end of the stream has been reached.
 func (r *ingesterQueryResult) receiveResponse(stream ingester_client.Ingester_QueryStreamClient, queryLimiter *limiter.QueryLimiter, ctx context.Context) ([]labels.Labels, bool, error) {
-	memoryTracker := limiter.MemoryTrackerFromContextWithFallback(ctx)
+	memoryTracker := memoryConsumptionTracker(limiter.MemoryTrackerFromContextWithFallback(ctx))
 
 	resp, err := stream.Recv()
 	if err != nil {

@@ -147,6 +147,8 @@ func (bqs *blockStreamingQuerierSeries) Iterator(reuse chunkenc.Iterator) chunke
 type memoryConsumptionTracker interface {
 	IncreaseMemoryConsumption(b uint64, source limiter.MemoryConsumptionSource) error
 	DecreaseMemoryConsumption(b uint64, source limiter.MemoryConsumptionSource)
+	IncreaseMemoryConsumptionForLabels(ls labels.Labels) error
+	DecreaseMemoryConsumptionForLabels(ls labels.Labels)
 }
 
 // storeGatewayStreamReader is responsible for managing the streaming of chunks from a storegateway and buffering
