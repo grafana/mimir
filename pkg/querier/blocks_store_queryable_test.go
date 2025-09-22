@@ -81,6 +81,7 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 		metricNameLabel  = labels.FromStrings(labels.MetricName, metricName)
 		series1Label     = labels.FromStrings(labels.MetricName, metricName, "series", "1")
 		series2Label     = labels.FromStrings(labels.MetricName, metricName, "series", "2")
+		series3BigLabel  = labels.FromStrings(labels.MetricName, metricName, "series", strings.Repeat("x", 100))
 		noOpQueryLimiter = limiter.NewQueryLimiter(0, 0, 0, 0, nil)
 	)
 
@@ -96,15 +97,16 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 	}
 
 	tests := map[string]struct {
-		finderResult      bucketindex.Blocks
-		finderErr         error
-		storeSetResponses []interface{}
-		limits            BlocksStoreLimits
-		queryLimiter      *limiter.QueryLimiter
-		expectedSeries    []seriesResult
-		expectedErr       error
-		expectedMetrics   func(streamingEnabled bool) string
-		queryShardID      string
+		finderResult           bucketindex.Blocks
+		finderErr              error
+		storeSetResponses      []interface{}
+		limits                 BlocksStoreLimits
+		queryLimiter           *limiter.QueryLimiter
+		memoryConsumptionLimit uint64
+		expectedSeries         []seriesResult
+		expectedErr            error
+		expectedMetrics        func(streamingEnabled bool) string
+		queryShardID           string
 	}{
 		"no block in the storage matching the query time range": {
 			finderResult: nil,
@@ -1375,6 +1377,25 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 			queryLimiter: limiter.NewQueryLimiter(0, 8, 0, 0, stats.NewQueryMetrics(prometheus.NewPedanticRegistry())),
 			expectedErr:  limiter.NewMaxChunkBytesHitLimitError(8),
 		},
+		"max memory consumption per query limit hit": {
+			finderResult: bucketindex.Blocks{
+				{ID: block1},
+				{ID: block2},
+			},
+			storeSetResponses: []interface{}{
+				map[BlocksStoreClient][]ulid.ULID{
+					&storeGatewayClientMock{remoteAddr: "1.1.1.1", mockedSeriesResponses: []*storepb.SeriesResponse{
+						mockSeriesResponse(series1Label, minT, 1),
+						mockSeriesResponse(series3BigLabel, minT+1, 2),
+						mockHintsResponse(block1, block2),
+					}}: {block1, block2},
+				},
+			},
+			limits:                 &blocksStoreLimitsMock{},
+			queryLimiter:           noOpQueryLimiter,
+			memoryConsumptionLimit: 100,
+			expectedErr:            limiter.NewMaxEstimatedMemoryConsumptionPerQueryLimitError(100),
+		},
 		"blocks with non-matching shard are filtered out": {
 			finderResult: bucketindex.Blocks{
 				{ID: block1, CompactorShardID: "1_of_4"},
@@ -1743,6 +1764,12 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 					ctx, cancel := context.WithCancel(context.Background())
 					t.Cleanup(cancel)
 					ctx = limiter.AddQueryLimiterToContext(ctx, testData.queryLimiter)
+					if testData.memoryConsumptionLimit > 0 {
+						memoryTracker := limiter.NewMemoryConsumptionTracker(ctx, testData.memoryConsumptionLimit, promauto.With(nil).NewCounter(prometheus.CounterOpts{
+							Name: "cortex_test_rejections_total",
+						}), "test query")
+						ctx = limiter.AddMemoryTrackerToContext(ctx, memoryTracker)
+					}
 					st, ctx := stats.ContextWithEmptyStats(ctx)
 					const tenantID = "user-1"
 					ctx = user.InjectOrgID(ctx, tenantID)
