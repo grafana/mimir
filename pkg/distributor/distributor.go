@@ -208,9 +208,8 @@ type Distributor struct {
 	reactiveLimiter reactivelimiter.ReactiveLimiter
 
 	// For testing functionality that relies on timing without having to sleep in unit tests.
-	sleep         func(time.Duration)
-	now           func() time.Time
-	memoryTracker *mimir_limiter.MemoryConsumptionTracker
+	sleep func(time.Duration)
+	now   func() time.Time
 }
 
 func defaultSleep(d time.Duration) { time.Sleep(d) }

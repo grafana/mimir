@@ -86,7 +86,6 @@ func (d *Distributor) QueryStream(ctx context.Context, queryMetrics *stats.Query
 	var result ingester_client.CombinedQueryStreamResponse
 	err := instrument.CollectedRequest(ctx, "Distributor.QueryStream", d.queryDuration, instrument.ErrorCode, func(ctx context.Context) error {
 		memoryTracker := limiter.MemoryTrackerFromContextWithFallback(ctx)
-		d.memoryTracker = memoryTracker
 		req, err := ingester_client.ToQueryRequest(from, to, matchers)
 		if err != nil {
 			return err
@@ -98,7 +97,7 @@ func (d *Distributor) QueryStream(ctx context.Context, queryMetrics *stats.Query
 			return err
 		}
 
-		result, err = d.queryIngesterStream(ctx, replicationSets, req, queryMetrics)
+		result, err = d.queryIngesterStream(ctx, replicationSets, req, queryMetrics, memoryTracker)
 		if err != nil {
 			return err
 		}
@@ -106,14 +105,14 @@ func (d *Distributor) QueryStream(ctx context.Context, queryMetrics *stats.Query
 		defer func() {
 			for _, ts := range result.Timeseries {
 				ls := mimirpb.FromLabelAdaptersToLabels(ts.Labels)
-				d.memoryTracker.DecreaseMemoryConsumptionForLabels(ls)
+				memoryTracker.DecreaseMemoryConsumptionForLabels(ls)
 			}
 			for _, cs := range result.Chunkseries {
 				ls := mimirpb.FromLabelAdaptersToLabels(cs.Labels)
-				d.memoryTracker.DecreaseMemoryConsumptionForLabels(ls)
+				memoryTracker.DecreaseMemoryConsumptionForLabels(ls)
 			}
 			for _, ss := range result.StreamingSeries {
-				d.memoryTracker.DecreaseMemoryConsumptionForLabels(ss.Labels)
+				memoryTracker.DecreaseMemoryConsumptionForLabels(ss.Labels)
 			}
 		}()
 
@@ -230,7 +229,7 @@ type ingesterQueryResult struct {
 }
 
 // queryIngesterStream queries the ingesters using the gRPC streaming API.
-func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSets []ring.ReplicationSet, req *ingester_client.QueryRequest, queryMetrics *stats.QueryMetrics) (ingester_client.CombinedQueryStreamResponse, error) {
+func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSets []ring.ReplicationSet, req *ingester_client.QueryRequest, queryMetrics *stats.QueryMetrics, memoryTracker *limiter.MemoryConsumptionTracker) (ingester_client.CombinedQueryStreamResponse, error) {
 	queryLimiter := limiter.QueryLimiterFromContextWithFallback(ctx)
 	reqStats := stats.FromContext(ctx)
 
@@ -279,7 +278,7 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSets [
 		streamingSeriesCount := 0
 
 		for {
-			labelsBatch, isEOS, err := result.receiveResponse(stream, queryLimiter, d.memoryTracker)
+			labelsBatch, isEOS, err := result.receiveResponse(stream, queryLimiter, memoryTracker)
 			if errors.Is(err, io.EOF) {
 				// We will never get an EOF here from an ingester that is streaming chunks, so we don't need to do anything to set up streaming here.
 				return result, nil
@@ -297,7 +296,7 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSets [
 						result.streamingSeries.Series = append(result.streamingSeries.Series, batch...)
 					}
 
-					streamReader := ingester_client.NewSeriesChunksStreamReader(ctx, stream, ing.Id, streamingSeriesCount, queryLimiter, d.memoryTracker, cleanup, d.log)
+					streamReader := ingester_client.NewSeriesChunksStreamReader(ctx, stream, ing.Id, streamingSeriesCount, queryLimiter, memoryTracker, cleanup, d.log)
 					closeStream = false
 					result.streamingSeries.StreamReader = streamReader
 				}
