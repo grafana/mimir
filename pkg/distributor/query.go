@@ -105,17 +105,16 @@ func (d *Distributor) QueryStream(ctx context.Context, queryMetrics *stats.Query
 		}
 
 		defer func() {
-			cleanupTracker := limiter.MemoryTrackerFromContextWithFallback(ctx)
 			for _, ts := range result.Timeseries {
 				ls := mimirpb.FromLabelAdaptersToLabels(ts.Labels)
-				cleanupTracker.DecreaseMemoryConsumptionForLabels(ls)
+				memoryTracker.DecreaseMemoryConsumptionForLabels(ls)
 			}
 			for _, cs := range result.Chunkseries {
 				ls := mimirpb.FromLabelAdaptersToLabels(cs.Labels)
-				cleanupTracker.DecreaseMemoryConsumptionForLabels(ls)
+				memoryTracker.DecreaseMemoryConsumptionForLabels(ls)
 			}
 			for _, ss := range result.StreamingSeries {
-				cleanupTracker.DecreaseMemoryConsumptionForLabels(ss.Labels)
+				memoryTracker.DecreaseMemoryConsumptionForLabels(ss.Labels)
 			}
 		}()
 
