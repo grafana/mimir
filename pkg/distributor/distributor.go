@@ -19,6 +19,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/failsafe-go/failsafe-go/adaptivelimiter"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/concurrency"
@@ -61,6 +62,7 @@ import (
 	mimir_limiter "github.com/grafana/mimir/pkg/util/limiter"
 	util_math "github.com/grafana/mimir/pkg/util/math"
 	"github.com/grafana/mimir/pkg/util/pool"
+	"github.com/grafana/mimir/pkg/util/reactivelimiter"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -203,6 +205,8 @@ type Distributor struct {
 	// is disabled.
 	usageTrackerClient usageTrackerGenericClient
 
+	reactiveLimiter *distributorReactiveLimiter
+
 	// For testing functionality that relies on timing without having to sleep in unit tests.
 	sleep     func(time.Duration)
 	now       func() time.Time
@@ -288,6 +292,10 @@ type Config struct {
 	ArtificialLatencyMin      time.Duration `yaml:"artificial_latency_min" category:"experimental"`
 	ArtificialLatencyMax      time.Duration `yaml:"artificial_latency_max" category:"experimental"`
 	ArtificialLatencyWorkers  int           `yaml:"artificial_latency_workers" category:"experimental"`
+
+	ReactiveLimiter             reactivelimiter.Config            `yaml:"reactive_limiter"`
+	RejectionPrioritizerEnabled bool                              `yaml:"rejection_prioritizer_enabled"`
+	RejectionPrioritizer        reactivelimiter.PrioritizerConfig `yaml:"rejection_prioritizer"`
 }
 
 // PushWrapper wraps around a push. It is similar to middleware.Interface.
@@ -315,6 +323,10 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.DurationVar(&cfg.ArtificialLatencyMin, "distributor.artificial-latency-min", 0, "Min artificial latency to be added to distributor's push. Will be ignored if higher than distributor.artificial-latency-max")
 	f.DurationVar(&cfg.ArtificialLatencyMax, "distributor.artificial-latency-max", 0, "Max artificial latency to be added to distributor's push. Will be ignored if lower than distributor.artificial-latency-min")
 	f.IntVar(&cfg.ArtificialLatencyWorkers, "distributor.artificial-latency-workers", 0, "Number of workers to be used to simulate artificial latency. Disabled if 0.")
+
+	f.BoolVar(&cfg.RejectionPrioritizerEnabled, "distributor.rejection-prioritizer.enabled", false, "Enable rejection prioritizer.")
+	cfg.ReactiveLimiter.RegisterFlagsWithPrefix("distributor.reactive-limiter.", f)
+	cfg.RejectionPrioritizer.RegisterFlagsWithPrefix("distributor.rejection-prioritizer.", f)
 
 	cfg.DefaultLimits.RegisterFlags(f)
 }
@@ -632,6 +644,7 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 
 	d.requestRateLimiter = limiter.NewRateLimiter(requestRateStrategy, 10*time.Second)
 	d.ingestionRateLimiter = limiter.NewRateLimiter(ingestionRateStrategy, 10*time.Second)
+	d.reactiveLimiter = newDistributorReactiveLimiter(d.cfg, log, reg)
 	d.distributorsLifecycler = distributorsLifecycler
 	d.distributorsRing = distributorsRing
 	d.HATracker = haTrackerImpl
@@ -670,6 +683,10 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 
 		d.usageTrackerClient = usagetrackerclient.NewUsageTrackerClient("distributor", d.cfg.UsageTrackerClient, usageTrackerPartitionRing, usageTrackerInstanceRing, log, reg)
 		subservices = append(subservices, d.usageTrackerClient)
+	}
+
+	if cfg.RejectionPrioritizerEnabled {
+		subservices = append(subservices, d.reactiveLimiter.getService())
 	}
 
 	// Register each metric only if the corresponding storage is enabled.
@@ -1626,6 +1643,9 @@ type requestState struct {
 
 	// If positive, it means that size of mimirpb.WriteRequest has been checked and added to inflightPushRequestsBytes.
 	writeRequestSize int64
+
+	requestErr    error
+	requestFinish func(error)
 }
 
 func (d *Distributor) StartPushRequest(ctx context.Context, httpgrpcRequestSize int64) (context.Context, error) {
@@ -1648,20 +1668,40 @@ func (d *Distributor) PreparePushRequest(_ context.Context) (func(error), error)
 // This method creates requestState object and stores it in the context.
 // This object describes which checks were already performed on the request,
 // and which component is responsible for doing a cleanup.
-func (d *Distributor) startPushRequest(ctx context.Context, httpgrpcRequestSize int64) (context.Context, *requestState, error) {
+func (d *Distributor) startPushRequest(ctx context.Context, httpgrpcRequestSize int64) (_ context.Context, _ *requestState, returnErr error) {
 	// If requestState is already in context, it means that StartPushRequest already ran for this request.
 	rs, alreadyInContext := ctx.Value(requestStateKey).(*requestState)
 	if alreadyInContext {
 		return ctx, rs, nil
 	}
 
-	rs = &requestState{}
+	requestFinish := func(err error) {}
+	if d.reactiveLimiter.getLimiter() != nil {
+		// Acquire a permit, blocking if needed
+		permit, err := d.reactiveLimiter.AcquirePermit(ctx)
+		if err != nil {
+			kv := d.reactiveLimiter.getStat()
+			kv = append(kv, "msg", "it was impossible to acquire a reactive limiter permit during startPushRequest")
+			level.Debug(d.log).Log(kv...)
+			d.rejectedRequests.WithLabelValues(reasonDistributorMaxInflightPushRequests).Inc()
+			return ctx, nil, newReactiveLimiterExceededError(adaptivelimiter.ErrExceeded)
+		}
+		requestFinish = func(err error) {
+			if errors.Is(err, context.Canceled) {
+				permit.Drop()
+			} else {
+				permit.Record()
+			}
+		}
+	}
 
+	rs = &requestState{requestFinish: requestFinish}
 	cleanupInDefer := true
 
 	// Increment number of requests and bytes before doing the checks, so that we hit error if this request crosses the limits.
 	inflight := d.inflightPushRequests.Inc()
 	defer func() {
+		rs.requestErr = returnErr
 		if cleanupInDefer {
 			d.cleanupAfterPushFinished(rs)
 		}
@@ -1747,11 +1787,12 @@ func (d *Distributor) cleanupAfterPushFinished(rs *requestState) {
 	if rs.writeRequestSize > 0 {
 		d.inflightPushRequestsBytes.Sub(rs.writeRequestSize)
 	}
+	rs.requestFinish(rs.requestErr)
 }
 
 // limitsMiddleware checks for instance limits and rejects request if this instance cannot process it at the moment.
 func (d *Distributor) limitsMiddleware(next PushFunc) PushFunc {
-	return func(ctx context.Context, pushReq *Request) error {
+	return func(ctx context.Context, pushReq *Request) (returnErr error) {
 		// Make sure the distributor service and all its dependent services have been
 		// started. The following checks in this middleware depend on the runtime config
 		// service having been started.
@@ -1763,6 +1804,10 @@ func (d *Distributor) limitsMiddleware(next PushFunc) PushFunc {
 		if err != nil {
 			return middleware.DoNotLogError{Err: err}
 		}
+
+		defer func() {
+			rs.requestErr = returnErr
+		}()
 
 		rs.pushHandlerPerformsCleanup = true
 		// Decrement counter after all ingester calls have finished or been cancelled.

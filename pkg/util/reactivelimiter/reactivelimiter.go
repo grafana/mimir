@@ -34,7 +34,7 @@ type Config struct {
 }
 
 func (cfg *Config) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
-	f.BoolVar(&cfg.Enabled, prefix+"enabled", false, "Enable reactive limiting when making requests to ingesters")
+	f.BoolVar(&cfg.Enabled, prefix+"enabled", false, "Enable reactive limiting when making requests to a service")
 
 	f.UintVar(&cfg.MinLimit, prefix+"min-limit", 2, "Minimum inflight requests limit")
 	f.UintVar(&cfg.MaxLimit, prefix+"max-limit", 200, "Maximum inflight requests limit")
