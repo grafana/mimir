@@ -99,7 +99,7 @@ func (d *Distributor) QueryStream(ctx context.Context, queryMetrics *stats.Query
 			return err
 		}
 
-		result, err = d.queryIngesterStream(ctx, replicationSets, req, queryMetrics)
+		result, err = d.queryIngesterStream(ctx, replicationSets, req, queryMetrics, memoryTracker)
 		if err != nil {
 			return err
 		}
@@ -231,9 +231,8 @@ type ingesterQueryResult struct {
 }
 
 // queryIngesterStream queries the ingesters using the gRPC streaming API.
-func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSets []ring.ReplicationSet, req *ingester_client.QueryRequest, queryMetrics *stats.QueryMetrics) (ingester_client.CombinedQueryStreamResponse, error) {
+func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSets []ring.ReplicationSet, req *ingester_client.QueryRequest, queryMetrics *stats.QueryMetrics, memoryTracker limiter.MemoryTracker) (ingester_client.CombinedQueryStreamResponse, error) {
 	queryLimiter := limiter.QueryLimiterFromContextWithFallback(ctx)
-	memoryTracker := limiter.MemoryTrackerFromContextWithFallback(ctx)
 	reqStats := stats.FromContext(ctx)
 
 	// queryIngester MUST call cancelContext once processing is completed in order to release resources. It's required
