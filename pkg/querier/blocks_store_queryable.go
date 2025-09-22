@@ -830,6 +830,18 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 			myQueriedBlocks := []ulid.ULID(nil)
 			indexBytesFetched := uint64(0)
 
+			// Decrease memory consumption for labels which was tracked when receiving response from store gateway.
+			defer func() {
+				tracker := memoryConsumptionTracker(memoryTracker)
+				for _, ms := range mySeries {
+					ls := mimirpb.FromLabelAdaptersToLabels(ms.Labels)
+					tracker.DecreaseMemoryConsumptionForLabels(ls)
+				}
+				for _, ms := range myStreamingSeriesLabels {
+					tracker.DecreaseMemoryConsumptionForLabels(ms)
+				}
+			}()
+
 			for {
 				// Ensure the context hasn't been canceled in the meanwhile (eg. an error occurred
 				// in another goroutine).
@@ -841,7 +853,7 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 				var isEOS bool
 				var shouldRetry bool
 				mySeries, myWarnings, myQueriedBlocks, myStreamingSeriesLabels, indexBytesFetched, isEOS, shouldRetry, err = q.receiveMessage(
-					c, stream, queryLimiter, memoryTracker, mySeries, myWarnings, myQueriedBlocks, myStreamingSeriesLabels, indexBytesFetched,
+					c, stream, queryLimiter, memoryConsumptionTracker(memoryTracker), mySeries, myWarnings, myQueriedBlocks, myStreamingSeriesLabels, indexBytesFetched,
 				)
 				if errors.Is(err, io.EOF) {
 					util.CloseAndExhaust[*storepb.SeriesResponse](stream) //nolint:errcheck
@@ -850,16 +862,6 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 				if err != nil {
 					return err
 				}
-				// Decrease memory consumption for labels which was tracked when receiving response from store gateway.
-				defer func() {
-					for _, ms := range mySeries {
-						ls := mimirpb.FromLabelAdaptersToLabels(ms.Labels)
-						memoryTracker.DecreaseMemoryConsumptionForLabels(ls)
-					}
-					for _, ms := range myStreamingSeriesLabels {
-						memoryTracker.DecreaseMemoryConsumptionForLabels(ms)
-					}
-				}()
 
 				if shouldRetry {
 					level.Warn(clientSpanLog).Log("msg", "failed to receive series", "remote", c.RemoteAddress(), "err", err)
@@ -1006,7 +1008,7 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 	return seriesSets, queriedBlocks, warnings, streamReaders, estimateChunks, nil //nolint:govet // It's OK to return without cancelling reqCtx, see comment above.
 }
 
-func (q *blocksStoreQuerier) receiveMessage(c BlocksStoreClient, stream storegatewaypb.StoreGateway_SeriesClient, queryLimiter *limiter.QueryLimiter, memoryTracker *limiter.MemoryConsumptionTracker, mySeries []*storepb.Series, myWarnings annotations.Annotations, myQueriedBlocks []ulid.ULID, myStreamingSeriesLabels []labels.Labels, indexBytesFetched uint64) ([]*storepb.Series, annotations.Annotations, []ulid.ULID, []labels.Labels, uint64, bool, bool, error) {
+func (q *blocksStoreQuerier) receiveMessage(c BlocksStoreClient, stream storegatewaypb.StoreGateway_SeriesClient, queryLimiter *limiter.QueryLimiter, memoryTracker memoryConsumptionTracker, mySeries []*storepb.Series, myWarnings annotations.Annotations, myQueriedBlocks []ulid.ULID, myStreamingSeriesLabels []labels.Labels, indexBytesFetched uint64) ([]*storepb.Series, annotations.Annotations, []ulid.ULID, []labels.Labels, uint64, bool, bool, error) {
 	resp, err := stream.Recv()
 	if err != nil {
 		if errors.Is(err, io.EOF) {
