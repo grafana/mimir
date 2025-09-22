@@ -1901,8 +1901,13 @@ func (d *Distributor) addArtificialLatency() {
 
 	// Pick random duration in [min, max].
 	duration := d.cfg.ArtificialLatencyMin + time.Duration(rand.Int63n(int64(d.cfg.ArtificialLatencyMax-d.cfg.ArtificialLatencyMin)))
-	end := time.Now().Add(duration)
 
+	if d.cfg.ArtificialLatencyWorkers == 0 {
+		time.Sleep(duration)
+		return
+	}
+
+	end := time.Now().Add(duration)
 	var wg sync.WaitGroup
 	wg.Add(d.cfg.ArtificialLatencyWorkers)
 
