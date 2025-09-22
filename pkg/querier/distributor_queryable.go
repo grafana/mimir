@@ -28,7 +28,6 @@ import (
 	"github.com/grafana/mimir/pkg/storage/series"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/chunkinfologger"
-	"github.com/grafana/mimir/pkg/util/limiter"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
@@ -127,26 +126,10 @@ func (q *distributorQuerier) Select(ctx context.Context, _ bool, sp *storage.Sel
 }
 
 func (q *distributorQuerier) streamingSelect(ctx context.Context, minT, maxT int64, matchers []*labels.Matcher) storage.SeriesSet {
-	memoryTracker := limiter.MemoryTrackerFromContextWithFallback(ctx)
 	results, err := q.distributor.QueryStream(ctx, q.queryMetrics, model.Time(minT), model.Time(maxT), matchers...)
 	if err != nil {
 		return storage.ErrSeriesSet(err)
 	}
-
-	// Decrease memory consumption for labels which was tracked when receiving response from ingester.
-	defer func() {
-		for _, cs := range results.Chunkseries {
-			ls := mimirpb.FromLabelAdaptersToLabels(cs.Labels)
-			memoryTracker.DecreaseMemoryConsumptionForLabels(ls)
-		}
-		for _, ts := range results.Timeseries {
-			ls := mimirpb.FromLabelAdaptersToLabels(ts.Labels)
-			memoryTracker.DecreaseMemoryConsumptionForLabels(ls)
-		}
-		for _, ss := range results.StreamingSeries {
-			memoryTracker.DecreaseMemoryConsumptionForLabels(ss.Labels)
-		}
-	}()
 
 	sets := []storage.SeriesSet(nil)
 	if len(results.Timeseries) > 0 {
