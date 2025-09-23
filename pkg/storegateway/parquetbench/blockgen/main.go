@@ -49,7 +49,10 @@ var (
 )
 
 func main() {
-	flagext.ParseFlagsWithoutArguments(flag.CommandLine)
+	err := flagext.ParseFlagsWithoutArguments(flag.CommandLine)
+	if err != nil {
+		log.Fatalf("Error parsing flags: %v", err)
+	}
 
 	// Validate dimension counts
 	if *metricsCount <= 0 || *instancesCount <= 0 || *regionsCount <= 0 || *zonesCount <= 0 || *servicesCount <= 0 || *environmentsCount <= 0 {
