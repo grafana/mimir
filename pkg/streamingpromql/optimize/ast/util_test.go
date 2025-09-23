@@ -28,7 +28,7 @@ func preprocessQuery(t *testing.T, expr parser.Expr) (parser.Expr, error) {
 	return promql.PreprocessExpr(expr, timestamp.Time(dummyTimeRange.StartT), timestamp.Time(dummyTimeRange.EndT), 0)
 }
 
-func getOutputFromASTOptimizationPassWithQueryPlan(t *testing.T, ctx context.Context, input string, createOptimizerFunc func(prometheus.Registerer) optimize.ASTOptimizationPass) (*prometheus.Registry, optimize.ASTOptimizationPass, parser.Expr) {
+func getOutputFromASTOptimizationPassWithQueryPlan(t *testing.T, ctx context.Context, input string, createOptimizerFunc func(prometheus.Registerer) optimize.ASTOptimizationPass) (*prometheus.Registry, parser.Expr) {
 	dummyTimeRange := types.NewInstantQueryTimeRange(timestamp.Time(1000))
 	reg := prometheus.NewPedanticRegistry()
 	opts := streamingpromql.NewTestEngineOpts()
@@ -40,7 +40,7 @@ func getOutputFromASTOptimizationPassWithQueryPlan(t *testing.T, ctx context.Con
 	observer := streamingpromql.NoopPlanningObserver{}
 	outputExpr, err := planner.ParseAndApplyASTOptimizationPasses(ctx, input, dummyTimeRange, observer)
 	require.NoError(t, err)
-	return reg, optimizer, outputExpr
+	return reg, outputExpr
 }
 
 func testASTOptimizationPassWithData(t *testing.T, loadTemplate string, testCases map[string]string) {

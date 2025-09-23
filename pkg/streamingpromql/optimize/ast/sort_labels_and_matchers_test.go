@@ -64,7 +64,7 @@ func TestSortLabelsAndMatchers_AggregateAndBinaryExpressions(t *testing.T) {
 
 	for input, expected := range testCases {
 		t.Run(input, func(t *testing.T) {
-			_, _, result := getOutputFromASTOptimizationPassWithQueryPlan(t, ctx, input, func(prometheus.Registerer) optimize.ASTOptimizationPass {
+			_, result := getOutputFromASTOptimizationPassWithQueryPlan(t, ctx, input, func(prometheus.Registerer) optimize.ASTOptimizationPass {
 				return sortLabelsAndMatchers
 			})
 
@@ -161,7 +161,7 @@ func TestSortLabelsAndMatchers_Selectors(t *testing.T) {
 	sortLabelsAndMatchers := &ast.SortLabelsAndMatchers{}
 
 	run := func(t *testing.T, input string, expected parser.Expr) {
-		_, _, result := getOutputFromASTOptimizationPassWithQueryPlan(t, ctx, input, func(prometheus.Registerer) optimize.ASTOptimizationPass {
+		_, result := getOutputFromASTOptimizationPassWithQueryPlan(t, ctx, input, func(prometheus.Registerer) optimize.ASTOptimizationPass {
 			return sortLabelsAndMatchers
 		})
 
