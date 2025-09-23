@@ -39,7 +39,7 @@ func TestShardSummer(t *testing.T) {
 	const shardCount = 3
 
 	for _, tt := range []struct {
-		in                     string
+		in                       string
 		out                      string
 		expectedShardableQueries int
 	}{
