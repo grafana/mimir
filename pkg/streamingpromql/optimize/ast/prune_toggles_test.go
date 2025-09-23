@@ -108,11 +108,11 @@ func TestPruneTogglesWithQueryPlan(t *testing.T) {
 	observer := streamingpromql.NoopPlanningObserver{}
 
 	for input, expected := range testCasesPruneToggles {
-		t.Run("input", func(t *testing.T) {
+		t.Run(input, func(t *testing.T) {
 			expectedExpr, err := parser.ParseExpr(expected)
 			require.NoError(t, err)
 
-			outputExpr, err := planner.RunPrePlanningStages(ctx, input, instantQueryTimeRange, observer)
+			outputExpr, err := planner.ParseAndApplyASTOptimizationPasses(ctx, input, dummyTimeRange, observer)
 			require.NoError(t, err)
 			require.Equal(t, expectedExpr.String(), outputExpr.String())
 		})

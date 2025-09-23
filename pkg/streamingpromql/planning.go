@@ -129,7 +129,7 @@ type PlanningObserver interface {
 	OnAllPlanningStagesComplete(finalPlan *planning.QueryPlan) error
 }
 
-func (p *QueryPlanner) RunPrePlanningStages(ctx context.Context, qs string, timeRange types.QueryTimeRange, observer PlanningObserver) (parser.Expr, error) {
+func (p *QueryPlanner) ParseAndApplyASTOptimizationPasses(ctx context.Context, qs string, timeRange types.QueryTimeRange, observer PlanningObserver) (parser.Expr, error) {
 	expr, err := p.runASTStage("Parsing", observer, func() (parser.Expr, error) { return parser.ParseExpr(qs) })
 	if err != nil {
 		return nil, err
@@ -185,7 +185,7 @@ func (p *QueryPlanner) NewQueryPlan(ctx context.Context, qs string, timeRange ty
 
 	spanLogger.DebugLog("msg", "starting planning", "expression", qs)
 
-	expr, err := p.RunPrePlanningStages(ctx, qs, timeRange, observer)
+	expr, err := p.ParseAndApplyASTOptimizationPasses(ctx, qs, timeRange, observer)
 	if err != nil {
 		return nil, err
 	}
