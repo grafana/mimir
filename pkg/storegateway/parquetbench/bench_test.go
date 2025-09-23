@@ -2,11 +2,8 @@ package parquetbench
 
 import (
 	"context"
-	"encoding/json"
 	"flag"
-	"fmt"
 	"io"
-	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -23,8 +20,6 @@ import (
 	"google.golang.org/grpc"
 	grpc_metadata "google.golang.org/grpc/metadata"
 
-	"github.com/grafana/mimir/pkg/storage/bucket/common"
-	"github.com/grafana/mimir/pkg/storage/bucket/s3"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storegateway"
@@ -259,43 +254,6 @@ func runBenchmark(b *testing.B, ctx context.Context, bkt objstore.Bucket, operat
 	b.ReportMetric(float64(benchBkt.getCount)/float64(b.N), "bucket-get/op")
 	b.ReportMetric(float64(benchBkt.getRangeCount)/float64(b.N), "bucket-get-range/op")
 	b.StopTimer()
-}
-
-func createTestBucketClient(endpoint, bucketName, accessKey, secretKey string, insecure bool) (objstore.Bucket, error) {
-	cfg := s3.Config{
-		Endpoint:        endpoint,
-		BucketName:      bucketName,
-		AccessKeyID:     accessKey,
-		SecretAccessKey: flagext.SecretWithValue(secretKey),
-		Insecure:        insecure,
-		HTTP: common.HTTPConfig{
-			IdleConnTimeout:       time.Second * 90,
-			ResponseHeaderTimeout: time.Second * 2,
-			TLSHandshakeTimeout:   time.Second * 10,
-			ExpectContinueTimeout: time.Second * 1,
-		},
-	}
-
-	return s3.NewBucketClient(cfg, "benchmark", log.NewNopLogger())
-}
-
-// loadBenchmarkRequests loads and parses the requests file
-func loadBenchmarkRequests(filePath string) (*BenchmarkRequests, error) {
-	if filePath == "" {
-		return &BenchmarkRequests{}, nil
-	}
-
-	data, err := os.ReadFile(filePath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read requests file: %w", err)
-	}
-
-	var requests BenchmarkRequests
-	if err := json.Unmarshal(data, &requests); err != nil {
-		return nil, fmt.Errorf("failed to parse requests file: %w", err)
-	}
-
-	return &requests, nil
 }
 
 func defaultLimitsConfig() validation.Limits {
