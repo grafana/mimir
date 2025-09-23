@@ -13,7 +13,7 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/stretchr/testify/require"
 
-	"github.com/grafana/mimir/pkg/streamingpromql"
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/ast"
 )
 
@@ -63,15 +63,10 @@ func TestPruneToggles(t *testing.T) {
 		t.Run(input, func(t *testing.T) {
 			expectedExpr, err := parser.ParseExpr(expected)
 			require.NoError(t, err)
-			inputExpr, err := parser.ParseExpr(input)
-			require.NoError(t, err)
-			inputExpr, err = preprocessQuery(t, inputExpr)
-			require.NoError(t, err)
 
-			reg := prometheus.NewPedanticRegistry()
-			optimizer := ast.NewPruneToggles(reg)
-			outputExpr, err := optimizer.Apply(ctx, inputExpr)
-			require.NoError(t, err)
+			reg, _, outputExpr := getOutputFromASTOptimizationPassWithQueryPlan(t, ctx, input, func(reg prometheus.Registerer) optimize.ASTOptimizationPass {
+				return ast.NewPruneToggles(reg)
+			})
 
 			require.Equal(t, expectedExpr.String(), outputExpr.String())
 			expectedChanged := 0
@@ -94,29 +89,6 @@ func checkPruneTogglesMetrics(t *testing.T, g prometheus.Gatherer, expectedTotal
 %[3]v %[4]v
 `, metricNameTotal, expectedTotal, metricNameChanged, expectedChanged)
 	require.NoError(t, testutil.GatherAndCompare(g, strings.NewReader(expectedMetrics), metricNameTotal, metricNameChanged))
-}
-
-func TestPruneTogglesWithQueryPlan(t *testing.T) {
-	ctx := context.Background()
-	reg := prometheus.NewPedanticRegistry()
-	opts := streamingpromql.NewTestEngineOpts()
-	opts.CommonOpts.Reg = reg
-	planner, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts)
-	require.NoError(t, err)
-	o := ast.NewPruneToggles(opts.CommonOpts.Reg)
-	planner.RegisterASTOptimizationPass(o)
-	observer := streamingpromql.NoopPlanningObserver{}
-
-	for input, expected := range testCasesPruneToggles {
-		t.Run(input, func(t *testing.T) {
-			expectedExpr, err := parser.ParseExpr(expected)
-			require.NoError(t, err)
-
-			outputExpr, err := planner.ParseAndApplyASTOptimizationPasses(ctx, input, dummyTimeRange, observer)
-			require.NoError(t, err)
-			require.Equal(t, expectedExpr.String(), outputExpr.String())
-		})
-	}
 }
 
 func TestPruneTogglesWithData(t *testing.T) {
