@@ -135,7 +135,7 @@ var benchmarkCases = []struct {
 }
 
 func BenchmarkBucketStores_Series(b *testing.B) {
-	flag.Parse()
+	flagext.ParseFlagsWithoutArguments(flag.CommandLine)
 	const user = "benchmark-user"
 	var sortByFields []string
 	if *benchmarkSortBy != "" {

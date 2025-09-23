@@ -12,6 +12,7 @@ import (
 	"time"
 
 	kitlog "github.com/go-kit/log"
+	"github.com/grafana/dskit/flagext"
 	"github.com/oklog/ulid/v2"
 	"github.com/prometheus-community/parquet-common/convert"
 	"github.com/prometheus-community/parquet-common/schema"
@@ -48,7 +49,7 @@ var (
 )
 
 func main() {
-	flag.Parse()
+	flagext.ParseFlagsWithoutArguments(flag.CommandLine)
 
 	// Validate dimension counts
 	if *metricsCount <= 0 || *instancesCount <= 0 || *regionsCount <= 0 || *zonesCount <= 0 || *servicesCount <= 0 || *environmentsCount <= 0 {
