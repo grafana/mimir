@@ -40,8 +40,8 @@ func TestShardSummer(t *testing.T) {
 
 	for _, tt := range []struct {
 		in                     string
-		out                    string
-		expectedShardedQueries int
+		out                      string
+		expectedShardableQueries int
 	}{
 		{
 			`quantile(0.9,foo)`,
@@ -482,19 +482,19 @@ func TestShardSummer(t *testing.T) {
 		{
 			// This query is not parallelized because the leg "foo" is not aggregated and
 			// could result in high cardinality results.
-			in:                     `foo * on(a, b) group_left(c) avg by(a, b, c) (bar)`,
-			out:                    concat(`foo * on(a, b) group_left(c) avg by(a, b, c) (bar)`),
-			expectedShardedQueries: 0,
+			in:                       `foo * on(a, b) group_left(c) avg by(a, b, c) (bar)`,
+			out:                      concat(`foo * on(a, b) group_left(c) avg by(a, b, c) (bar)`),
+			expectedShardableQueries: 0,
 		},
 		{
-			in:                     `vector(1) > 0 and vector(1)`,
-			out:                    `vector(1) > 0 and vector(1)`,
-			expectedShardedQueries: 0,
+			in:                       `vector(1) > 0 and vector(1)`,
+			out:                      `vector(1) > 0 and vector(1)`,
+			expectedShardableQueries: 0,
 		},
 		{
-			in:                     `sum(foo) > 0 and vector(1)`,
-			out:                    `sum(` + concatShards(t, shardCount, `sum(foo{__query_shard__="x_of_y"})`) + `) > 0 and vector(1)`,
-			expectedShardedQueries: 1,
+			in:                       `sum(foo) > 0 and vector(1)`,
+			out:                      `sum(` + concatShards(t, shardCount, `sum(foo{__query_shard__="x_of_y"})`) + `) > 0 and vector(1)`,
+			expectedShardableQueries: 1,
 		},
 		{
 			// This query is not parallelized because the leg "pod:container_cpu_usage:sum" is not aggregated and
@@ -509,41 +509,41 @@ func TestShardSummer(t *testing.T) {
                     *
                     on(cluster, pod, namespace) group_right() pod:container_cpu_usage:sum
             )`),
-			expectedShardedQueries: 0,
+			expectedShardableQueries: 0,
 		},
 		{
-			in:                     `sum(rate(metric[1m])) and max(metric) > 0`,
-			out:                    `sum(` + concatShards(t, shardCount, `sum(rate(metric{__query_shard__="x_of_y"}[1m]))`) + `) and max(` + concatShards(t, shardCount, `max(metric{__query_shard__="x_of_y"})`) + `) > 0`,
-			expectedShardedQueries: 2,
+			in:                       `sum(rate(metric[1m])) and max(metric) > 0`,
+			out:                      `sum(` + concatShards(t, shardCount, `sum(rate(metric{__query_shard__="x_of_y"}[1m]))`) + `) and max(` + concatShards(t, shardCount, `max(metric{__query_shard__="x_of_y"})`) + `) > 0`,
+			expectedShardableQueries: 2,
 		},
 		{
-			in:                     `sum(rate(metric[1m])) > avg(rate(metric[1m]))`,
-			out:                    `sum(` + concatShards(t, shardCount, `sum(rate(metric{__query_shard__="x_of_y"}[1m]))`) + `) > (sum(` + concatShards(t, shardCount, `sum(rate(metric{__query_shard__="x_of_y"}[1m]))`) + `) / sum(` + concatShards(t, shardCount, `count(rate(metric{__query_shard__="x_of_y"}[1m]))`) + `))`,
-			expectedShardedQueries: 3,
+			in:                       `sum(rate(metric[1m])) > avg(rate(metric[1m]))`,
+			out:                      `sum(` + concatShards(t, shardCount, `sum(rate(metric{__query_shard__="x_of_y"}[1m]))`) + `) > (sum(` + concatShards(t, shardCount, `sum(rate(metric{__query_shard__="x_of_y"}[1m]))`) + `) / sum(` + concatShards(t, shardCount, `count(rate(metric{__query_shard__="x_of_y"}[1m]))`) + `))`,
+			expectedShardableQueries: 3,
 		},
 		{
-			in:                     `group by (a, b) (metric)`,
-			out:                    `group by (a, b) (` + concatShards(t, shardCount, `group by (a, b) (metric{__query_shard__="x_of_y"})`) + `)`,
-			expectedShardedQueries: 1,
+			in:                       `group by (a, b) (metric)`,
+			out:                      `group by (a, b) (` + concatShards(t, shardCount, `group by (a, b) (metric{__query_shard__="x_of_y"})`) + `)`,
+			expectedShardableQueries: 1,
 		},
 		{
-			in:                     `count by (a) (group by (a, b) (metric))`,
-			out:                    `count by (a) (group by (a, b) (` + concatShards(t, shardCount, `group by (a, b) (metric{__query_shard__="x_of_y"})`) + `))`,
-			expectedShardedQueries: 1,
+			in:                       `count by (a) (group by (a, b) (metric))`,
+			out:                      `count by (a) (group by (a, b) (` + concatShards(t, shardCount, `group by (a, b) (metric{__query_shard__="x_of_y"})`) + `))`,
+			expectedShardableQueries: 1,
 		},
 		{
-			in:                     `count(group without () ({namespace="foo"}))`,
-			out:                    `count(group without() (` + concatShards(t, shardCount, `group without() ({namespace="foo",__query_shard__="x_of_y"})`) + `))`,
-			expectedShardedQueries: 1,
+			in:                       `count(group without () ({namespace="foo"}))`,
+			out:                      `count(group without() (` + concatShards(t, shardCount, `group without() ({namespace="foo",__query_shard__="x_of_y"})`) + `))`,
+			expectedShardableQueries: 1,
 		},
 	} {
 		t.Run(tt.in, func(t *testing.T) {
-			runTest(t, tt.in, tt.out, shardCount, false, tt.expectedShardedQueries*shardCount)
+			runTest(t, tt.in, tt.out, shardCount, false, tt.expectedShardableQueries*shardCount)
 		})
 
 		t.Run(tt.in+" with 'inspect only' set", func(t *testing.T) {
 			// The query should be unchanged, but the number of sharded queries should still be reported.
-			runTest(t, tt.in, tt.in, 1, true, tt.expectedShardedQueries)
+			runTest(t, tt.in, tt.in, 1, true, tt.expectedShardableQueries)
 		})
 	}
 }
