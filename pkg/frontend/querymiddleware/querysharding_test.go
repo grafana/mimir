@@ -2131,6 +2131,152 @@ func BenchmarkQuerySharding(b *testing.B) {
 	}
 }
 
+func BenchmarkQueryShardingRewriting(b *testing.B) {
+	testCases := []string{
+		`quantile(0.9,foo)`,
+		`absent(foo)`,
+		`absent_over_time(foo[1m])`,
+		`histogram_quantile(0.5, rate(bar1{baz="blip"}[30s]))`,
+		`sum by (foo) (histogram_quantile(0.9, rate(http_request_duration_seconds_bucket[10m])))`,
+		`sum by (foo,bar) (min_over_time(bar1{baz="blip"}[1m]))`,
+		`sum(rate(bar1[1m])) or rate(bar2[1m])`,
+		`sum(rate(bar1[1m])) or sum(rate(bar2[1m]))`,
+		`histogram_quantile(0.5, sum(rate(cortex_cache_value_size_bytes_bucket[5m])) by (le))`,
+		`sum(
+				  count(
+				    count(
+				      bar1
+				    )  by (drive,instance)
+				  )  by (instance)
+				)`,
+		`sum(rate(foo[1m]))`,
+		`count(rate(foo[1m]))`,
+		`count(up)`,
+		`avg(count(test))`,
+		`count by (foo) (rate(foo[1m]))`,
+		`count without (foo) (rate(foo[1m]))`,
+		`max(rate(foo[1m]))`,
+		`max by (foo) (rate(foo[1m]))`,
+		`max without (foo) (rate(foo[1m]))`,
+		`sum by (foo) (rate(foo[1m]))`,
+		`sum without (foo) (rate(foo[1m]))`,
+		`avg without (foo) (rate(foo[1m]))`,
+		`avg by (foo) (rate(foo[1m]))`,
+		`avg(rate(foo[1m]))`,
+		`topk(10,avg by (foo)(rate(foo[1m])))`,
+		`min_over_time(metric_counter[5m])`,
+		`sum by (user, cluster, namespace) (quantile_over_time(0.99, cortex_ingester_active_series[7d]))`,
+		`min_over_time(
+				sum by(group_1) (
+					rate(metric_counter[5m])
+				)[10m:2m]
+			)`,
+		`max_over_time(
+				stddev_over_time(
+					deriv(
+						rate(metric_counter[10m])
+					[5m:1m])
+				[2m:])
+			[10m:])`,
+		`max_over_time((
+				stddev_over_time(
+					deriv(
+						rate(metric_counter[10m])
+					[5m:1m])
+				[2m:])
+			[10m:]))`,
+		`rate(
+				sum by(group_1) (
+					rate(metric_counter[5m])
+				)[10m:]
+			)`,
+		`absent_over_time(rate(metric_counter[5m])[10m:])`,
+		`max_over_time(
+				stddev_over_time(
+					deriv(
+						sort(metric_counter)
+					[5m:1m])
+				[2m:])
+			[10m:])`,
+		`max_over_time(
+				absent_over_time(
+					deriv(
+						rate(metric_counter[1m])
+					[5m:1m])
+				[2m:])
+			[10m:])`,
+		`quantile_over_time(0.99, cortex_ingester_active_series[1w])`,
+		`ceil(sum by (foo) (rate(cortex_ingester_active_series[1w])))`,
+		`ln(bar) - resets(foo[1d])`,
+		`predict_linear(foo[10m],3600)`,
+		`label_replace(up{job="api-server",service="a:c"}, "foo", "$1", "service", "(.*):.*")`,
+		`ln(exp(label_replace(up{job="api-server",service="a:c"}, "foo", "$1", "service", "(.*):.*")))`,
+		`ln(
+				label_replace(
+					sum by (cluster) (up{job="api-server",service="a:c"})
+				, "foo", "$1", "service", "(.*):.*")
+			)`,
+		`sum by (job)(rate(http_requests_total[1h] @ end()))`,
+		`sum by (job)(rate(http_requests_total[1h] offset 1w @ 10))`,
+		`sum by (job)(rate(http_requests_total[1h] offset 1w @ 10)) / 2`,
+		`sum by (job)(rate(http_requests_total[1h] offset 1w @ 10)) / 2 ^ 2`,
+		`sum by (group_1) (rate(metric_counter[1m]) / time() * 2)`,
+		`sum by (group_1) (rate(metric_counter[1m])) / time() *2`,
+		`sum by (group_1) (rate(metric_counter[1m])) / time()`,
+		`sum by (group_1) (rate(metric_counter[1m])) / vector(3) ^ month()`,
+		`vector(3) ^ month()`,
+		`sum(rate(metric_counter[1m])) / vector(3) ^ year(foo)`,
+		`foo > bar`,
+		`foo * 2`,
+		`foo > 0`,
+		`0 <= foo`,
+		`foo > (2 * 2)`,
+		`sum by (label) (foo > 0)`,
+		`sum by (label) (foo > 0) > 0`,
+		`sum_over_time(foo[1m]) > (2 * 2)`,
+		`foo > sum(bar)`,
+		`foo > scalar(sum(bar))`,
+		`scalar(min(foo)) > bool scalar(sum(bar))`,
+		`foo * on(a, b) group_left(c) avg by(a, b, c) (bar)`,
+		`vector(1) > 0 and vector(1)`,
+		`sum(foo) > 0 and vector(1)`,
+		`max by(pod) (
+                    max without(prometheus_replica, instance, node) (kube_pod_labels{namespace="test"})
+                    *
+                    on(cluster, pod, namespace) group_right() pod:container_cpu_usage:sum
+            )`,
+		`sum(rate(metric[1m])) and max(metric) > 0`,
+		`sum(rate(metric[1m])) > avg(rate(metric[1m]))`,
+		`group by (a, b) (metric)`,
+		`count by (a) (group by (a, b) (metric))`,
+		`count(group without () ({namespace="foo"}))`,
+		`label_replace(vector(1), "label_0", "value_0", "", "") or label_replace(vector(1), "label_1", "value_1", "", "") or label_replace(vector(1), "label_2", "value_2", "", "") or label_replace(vector(1), "label_3", "value_3", "", "") or label_replace(vector(1), "label_4", "value_4", "", "") or label_replace(vector(1), "label_5", "value_5", "", "") or label_replace(vector(1), "label_6", "value_6", "", "") or label_replace(vector(1), "label_7", "value_7", "", "") or label_replace(vector(1), "label_8", "value_8", "", "") or label_replace(vector(1), "label_9", "value_9", "", "") or label_replace(vector(1), "label_10", "value_10", "", "") or label_replace(vector(1), "label_11", "value_11", "", "") or label_replace(vector(1), "label_12", "value_12", "", "") or label_replace(vector(1), "label_13", "value_13", "", "") or label_replace(vector(1), "label_14", "value_14", "", "") or label_replace(vector(1), "label_15", "value_15", "", "") or label_replace(vector(1), "label_16", "value_16", "", "") or label_replace(vector(1), "label_17", "value_17", "", "") or label_replace(vector(1), "label_18", "value_18", "", "") or label_replace(vector(1), "label_19", "value_19", "", "") or label_replace(vector(1), "label_20", "value_20", "", "") or label_replace(vector(1), "label_21", "value_21", "", "") or label_replace(vector(1), "label_22", "value_22", "", "") or label_replace(vector(1), "label_23", "value_23", "", "") or label_replace(vector(1), "label_24", "value_24", "", "") or label_replace(vector(1), "label_25", "value_25", "", "") or label_replace(vector(1), "label_26", "value_26", "", "") or label_replace(vector(1), "label_27", "value_27", "", "") or label_replace(vector(1), "label_28", "value_28", "", "") or label_replace(vector(1), "label_29", "value_29", "", "") or label_replace(vector(1), "label_30", "value_30", "", "") or label_replace(vector(1), "label_31", "value_31", "", "") or label_replace(vector(1), "label_32", "value_32", "", "") or label_replace(vector(1), "label_33", "value_33", "", "") or label_replace(vector(1), "label_34", "value_34", "", "") or label_replace(vector(1), "label_35", "value_35", "", "") or label_replace(vector(1), "label_36", "value_36", "", "") or label_replace(vector(1), "label_37", "value_37", "", "") or label_replace(vector(1), "label_38", "value_38", "", "") or label_replace(vector(1), "label_39", "value_39", "", "") or label_replace(vector(1), "label_40", "value_40", "", "") or label_replace(vector(1), "label_41", "value_41", "", "") or label_replace(vector(1), "label_42", "value_42", "", "") or label_replace(vector(1), "label_43", "value_43", "", "") or label_replace(vector(1), "label_44", "value_44", "", "") or label_replace(vector(1), "label_45", "value_45", "", "") or label_replace(vector(1), "label_46", "value_46", "", "") or label_replace(vector(1), "label_47", "value_47", "", "") or label_replace(vector(1), "label_48", "value_48", "", "") or label_replace(vector(1), "label_49", "value_49", "", "") or label_replace(vector(1), "label_50", "value_50", "", "") or label_replace(vector(1), "label_51", "value_51", "", "") or label_replace(vector(1), "label_52", "value_52", "", "") or label_replace(vector(1), "label_53", "value_53", "", "") or label_replace(vector(1), "label_54", "value_54", "", "") or label_replace(vector(1), "label_55", "value_55", "", "") or label_replace(vector(1), "label_56", "value_56", "", "") or label_replace(vector(1), "label_57", "value_57", "", "") or label_replace(vector(1), "label_58", "value_58", "", "") or label_replace(vector(1), "label_59", "value_59", "", "") or label_replace(vector(1), "label_60", "value_60", "", "") or label_replace(vector(1), "label_61", "value_61", "", "") or label_replace(vector(1), "label_62", "value_62", "", "") or label_replace(vector(1), "label_63", "value_63", "", "") or label_replace(vector(1), "label_64", "value_64", "", "") or label_replace(vector(1), "label_65", "value_65", "", "") or label_replace(vector(1), "label_66", "value_66", "", "") or label_replace(vector(1), "label_67", "value_67", "", "") or label_replace(vector(1), "label_68", "value_68", "", "") or label_replace(vector(1), "label_69", "value_69", "", "") or label_replace(vector(1), "label_70", "value_70", "", "") or label_replace(vector(1), "label_71", "value_71", "", "") or label_replace(vector(1), "label_72", "value_72", "", "") or label_replace(vector(1), "label_73", "value_73", "", "") or label_replace(vector(1), "label_74", "value_74", "", "") or label_replace(vector(1), "label_75", "value_75", "", "") or label_replace(vector(1), "label_76", "value_76", "", "") or label_replace(vector(1), "label_77", "value_77", "", "") or label_replace(vector(1), "label_78", "value_78", "", "") or label_replace(vector(1), "label_79", "value_79", "", "") or label_replace(vector(1), "label_80", "value_80", "", "") or label_replace(vector(1), "label_81", "value_81", "", "") or label_replace(vector(1), "label_82", "value_82", "", "") or label_replace(vector(1), "label_83", "value_83", "", "") or label_replace(vector(1), "label_84", "value_84", "", "") or label_replace(vector(1), "label_85", "value_85", "", "") or label_replace(vector(1), "label_86", "value_86", "", "") or label_replace(vector(1), "label_87", "value_87", "", "") or label_replace(vector(1), "label_88", "value_88", "", "") or label_replace(vector(1), "label_89", "value_89", "", "") or label_replace(vector(1), "label_90", "value_90", "", "") or label_replace(vector(1), "label_91", "value_91", "", "") or label_replace(vector(1), "label_92", "value_92", "", "") or label_replace(vector(1), "label_93", "value_93", "", "") or label_replace(vector(1), "label_94", "value_94", "", "") or label_replace(vector(1), "label_95", "value_95", "", "") or label_replace(vector(1), "label_96", "value_96", "", "") or label_replace(vector(1), "label_97", "value_97", "", "") or label_replace(vector(1), "label_98", "value_98", "", "") or label_replace(vector(1), "label_99", "value_99", "", "") > 0`,
+	}
+
+	limits := mockLimits{totalShards: 3}
+	reg := prometheus.NewPedanticRegistry()
+	sharder := newQuerySharder(limits, 0, reg, log.NewNopLogger())
+	tenants := []string{"tenant-1"}
+	ctx := context.Background()
+
+	for _, expr := range testCases {
+		b.Run(expr, func(b *testing.B) {
+			for b.Loop() {
+				// We must parse the expression each time as shard() mutates the expression.
+				parsedExpr, err := parser.ParseExpr(expr)
+				if err != nil {
+					require.NoError(b, err)
+				}
+
+				_, err = sharder.shard(ctx, tenants, parsedExpr, 0, nil, 1)
+				if err != nil {
+					require.NoError(b, err)
+				}
+			}
+		})
+	}
+}
+
 func TestPromqlResultToSampleStreams(t *testing.T) {
 	var testExpr = []struct {
 		input    *promql.Result
