@@ -396,6 +396,9 @@ func (t *Mimir) initIngesterPartitionRing() (services.Service, error) {
 	// Expose a web page to view the partitions ring state.
 	t.API.RegisterIngesterPartitionRing(ring.NewPartitionRingPageHandler(t.IngesterPartitionRingWatcher, ring.NewPartitionRingEditor(ingester.PartitionRingKey, kvClient)))
 
+	// Track anonymous usage statistics.
+	usagestats.SetMode(usagestats.ModeIngestStorage)
+
 	return t.IngesterPartitionRingWatcher, nil
 }
 
