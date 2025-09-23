@@ -37,9 +37,7 @@ type Label struct {
 func (l Label) Name() string {
 	name, err := base64.StdEncoding.DecodeString(l.EncodedName)
 	if err != nil {
-		// For backward compatibility, return empty string on decode error
-		// This is safer than panic for malformed data
-		return ""
+		panic(err)
 	}
 
 	return string(name)
@@ -48,9 +46,7 @@ func (l Label) Name() string {
 func (l Label) Value() string {
 	value, err := base64.StdEncoding.DecodeString(l.EncodedValue)
 	if err != nil {
-		// For backward compatibility, return empty string on decode error
-		// This is safer than panic for malformed data
-		return ""
+		panic(err)
 	}
 
 	return string(value)
@@ -66,8 +62,7 @@ type Chunk struct {
 func (c Chunk) StartTimestamp() int64 {
 	value, err := strconv.ParseInt(c.StartTimestampMs, 10, 64)
 	if err != nil {
-		// Return 0 for invalid timestamps instead of panicking
-		return 0
+		panic(err)
 	}
 
 	return value
@@ -76,8 +71,7 @@ func (c Chunk) StartTimestamp() int64 {
 func (c Chunk) EndTimestamp() int64 {
 	value, err := strconv.ParseInt(c.EndTimestampMs, 10, 64)
 	if err != nil {
-		// Return 0 for invalid timestamps instead of panicking
-		return 0
+		panic(err)
 	}
 
 	return value

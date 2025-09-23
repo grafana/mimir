@@ -35,38 +35,33 @@ const (
 )
 
 func main() {
-	if len(os.Args) > 1 && os.Args[1] == "download-chunks" {
-		app := kingpin.New("grpcurl-query-ingesters", "Download chunks from Kubernetes ingesters")
-		k8sContext := app.Arg("context", "Kubernetes context").Required().String()
-		k8sNamespace := app.Arg("namespace", "Kubernetes namespace").Required().String()
-		tenantID := app.Arg("tenant-id", "Mimir tenant ID").Required().String()
-		queryFile := app.Arg("query-file", "JSON query file").Required().String()
+	app := kingpin.New("grpcurl-query-ingesters", "Tool to download chunks from ingesters and dump their content")
 
-		kingpin.MustParse(app.Parse(os.Args[2:]))
+	// Download chunks command
+	downloadCmd := app.Command("download-chunks", "Download chunks from Kubernetes ingesters")
+	k8sContext := downloadCmd.Arg("context", "Kubernetes context").Required().String()
+	k8sNamespace := downloadCmd.Arg("namespace", "Kubernetes namespace").Required().String()
+	tenantID := downloadCmd.Arg("tenant-id", "Mimir tenant ID").Required().String()
+	queryFile := downloadCmd.Arg("query-file", "JSON query file").Required().String()
+
+	// Dump command (default command when no subcommand specified)
+	dumpCmd := app.Command("dump", "Dump content of downloaded chunk files").Default()
+	dumpFiles := dumpCmd.Arg("files", "Chunk dump files to parse").Required().Strings()
+
+	switch kingpin.MustParse(app.Parse(os.Args[1:])) {
+	case downloadCmd.FullCommand():
 		downloadChunks(*k8sContext, *k8sNamespace, *tenantID, *queryFile)
-		return
-	}
+	case dumpCmd.FullCommand():
+		for _, file := range *dumpFiles {
+			resps, err := parseFile(file)
+			if err != nil {
+				fmt.Println("Failed to parse file:", err.Error())
+				os.Exit(1)
+			}
 
-	if len(os.Args) == 1 {
-		fmt.Println("Error: no files specified")
-		fmt.Println("Usage:")
-		fmt.Println("  go run . <dump-files>...                              # Dump content of chunk files")
-		fmt.Println("  go run . download-chunks <context> <namespace> <tenant> <query-file>  # Download chunks")
-		fmt.Println()
-		fmt.Println("For more help:")
-		fmt.Println("  go run . download-chunks --help")
-		os.Exit(1)
-	}
-
-	for _, file := range os.Args[1:] {
-		resps, err := parseFile(file)
-		if err != nil {
-			fmt.Println("Failed to parse file:", err.Error())
-			os.Exit(1)
-		}
-
-		for _, res := range resps {
-			dumpResponse(res)
+			for _, res := range resps {
+				dumpResponse(res)
+			}
 		}
 	}
 }
