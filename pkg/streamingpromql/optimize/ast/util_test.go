@@ -21,9 +21,8 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
-var dummyTimeRange = types.NewInstantQueryTimeRange(timestamp.Time(1000))
-
 func preprocessQuery(t *testing.T, expr parser.Expr) (parser.Expr, error) {
+	dummyTimeRange := types.NewInstantQueryTimeRange(timestamp.Time(1000))
 	return promql.PreprocessExpr(expr, timestamp.Time(dummyTimeRange.StartT), timestamp.Time(dummyTimeRange.EndT), 0)
 }
 
