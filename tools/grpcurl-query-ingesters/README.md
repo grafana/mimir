@@ -1,30 +1,20 @@
 # What is this?
 
-A tool to download chunks from ingesters and dump their content. This tool is similar to the tool for dumping chunks from store-gateways: [grpcurl-query-store-gateways](../grpcurl-query-store-gateways).
+A tool to query chunks from ingesters and immediately dump their content. This tool connects directly to Kubernetes ingesters using gRPC and outputs parsed samples in real-time, without creating intermediate JSON files.
 
 # How to use it
 
-1. Edit `pkg/ingester/client/ingester.proto` and change the `import "github.com/grafana/mimir/pkg/mimirpb/mimir.proto"` statement to `import "pkg/mimirpb/mimir.proto"`
-1. Edit `pkg/ingester/client/ingester.proto` and change the `import "gogoproto/gogo.proto"` statement to `import "github.com/gogo/protobuf/gogoproto/gogo.proto"`
-1. Edit `pkg/mimirpb/mimir.proto` and change the `import "gogoproto/gogo.proto"` statement to `import "github.com/gogo/protobuf/gogoproto/gogo.proto"`
 1. Edit `download-chunks-from-ingesters-query.json` with the label matchers and time range to query.
-1. Run `go run . download-chunks <k8s-context> <k8s-namespace> <tenant-id> download-chunks-from-ingesters-query.json` from this directory to download the chunks.
-1. Once you've got the dump (1 file per ingester), run `go run . chunks-dump/*` to print the dump content of 1+ files.
+1. Run `go run . <k8s-context> <k8s-namespace> <tenant-id> download-chunks-from-ingesters-query.json` from this directory to query ingesters and dump chunk content directly.
 
 ## Examples
 
-Download chunks from ingesters:
+Query ingesters and dump chunk content:
 ```bash
-go run . download-chunks my-k8s-context mimir-namespace my-tenant-id download-chunks-from-ingesters-query.json
-```
-
-Dump content of downloaded chunks:
-```bash
-go run . chunks-dump/*
+go run . my-k8s-context mimir-namespace my-tenant-id download-chunks-from-ingesters-query.json
 ```
 
 Get help:
 ```bash
 go run . --help
-go run . download-chunks --help
 ```
