@@ -34,7 +34,7 @@ func NewSharding(shardSummer ASTMapper, inspectOnly bool, squasher Squasher) AST
 
 type Squasher interface {
 	Squash(...EmbeddedQuery) (parser.Expr, error)
-	ContainsSquashedExpression(node parser.Node) (bool, error)
+	ContainsSquashedExpression(node parser.Node) bool
 }
 
 type ShardLabeller interface {

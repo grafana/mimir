@@ -26,23 +26,13 @@ func newSubtreeFolder(squasher Squasher) ASTMapper {
 
 // MapExpr implements ExprMapper.
 func (f *subtreeFolder) MapExpr(ctx context.Context, expr parser.Expr) (mapped parser.Expr, finished bool, err error) {
-	hasEmbeddedQueries, err := anyNode(expr, f.squasher.ContainsSquashedExpression)
-	if err != nil {
-		return nil, true, err
-	}
-
 	// Don't change the expr if it already contains embedded queries.
-	if hasEmbeddedQueries {
+	if anyNode(expr, f.squasher.ContainsSquashedExpression) {
 		return expr, false, nil
 	}
 
-	hasVectorSelector, err := anyNode(expr, isVectorSelector)
-	if err != nil {
-		return nil, true, err
-	}
-
 	// Change the expr if it contains vector selectors, as only those need to be embedded.
-	if hasVectorSelector {
+	if anyNode(expr, isVectorSelector) {
 		expr, err := f.squasher.Squash(NewEmbeddedQuery(expr, nil))
 		return expr, true, err
 	}
@@ -50,56 +40,24 @@ func (f *subtreeFolder) MapExpr(ctx context.Context, expr parser.Expr) (mapped p
 }
 
 // isVectorSelector returns whether the expr is a vector selector.
-//
-// It will never return an error, but does so to satisfy the predicate function signature for anyNode.
-func isVectorSelector(n parser.Node) (bool, error) {
+func isVectorSelector(n parser.Node) bool {
 	_, ok := n.(*parser.VectorSelector)
-	return ok, nil
+	return ok
 }
 
 // anyNode is a helper which walks the input node and returns true if any node in the subtree
 // returns true for the specified predicate function.
-func anyNode(node parser.Node, fn predicate) (bool, error) {
-	v := &visitor{
-		fn: fn,
+func anyNode(node parser.Node, fn predicate) bool {
+	if fn(node) {
+		return true
 	}
 
-	if err := parser.Walk(v, node, nil); err != nil {
-		return false, err
+	for node := range parser.ChildrenIter(node) {
+		if anyNode(node, fn) {
+			return true
+		}
 	}
-	return v.result, nil
+	return false
 }
 
-// visitNode recursively traverse the node's subtree and call fn for each node encountered.
-func visitNode(node parser.Node, fn func(node parser.Node)) {
-	_ = parser.Walk(&visitor{fn: func(node parser.Node) (bool, error) {
-		fn(node)
-		return false, nil
-	}}, node, nil)
-}
-
-type predicate = func(parser.Node) (bool, error)
-
-type visitor struct {
-	fn     predicate
-	result bool
-}
-
-// Visit implements parser.Visitor
-func (v *visitor) Visit(node parser.Node, _ []parser.Node) (parser.Visitor, error) {
-	// if the visitor has already seen a predicate success, don't overwrite
-	if v.result {
-		return nil, nil
-	}
-
-	var err error
-
-	v.result, err = v.fn(node)
-	if err != nil {
-		return nil, err
-	}
-	if v.result {
-		return nil, nil
-	}
-	return v, nil
-}
+type predicate = func(parser.Node) bool

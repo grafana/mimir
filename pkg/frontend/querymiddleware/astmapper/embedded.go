@@ -125,12 +125,12 @@ func (s *embeddedQueriesSquasher) Squash(exprs ...EmbeddedQuery) (parser.Expr, e
 	}, nil
 }
 
-func (s *embeddedQueriesSquasher) ContainsSquashedExpression(node parser.Node) (bool, error) {
+func (s *embeddedQueriesSquasher) ContainsSquashedExpression(node parser.Node) bool {
 	switch n := node.(type) {
 	case *parser.VectorSelector:
 		if n.Name == EmbeddedQueriesMetricName {
-			return true, nil
+			return true
 		}
 	}
-	return false, nil
+	return false
 }
