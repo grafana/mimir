@@ -133,6 +133,8 @@ func (mapper *pruneToggles) isVectorAndNumberEqual(lhs, rhs parser.Expr) (bool, 
 
 func (mapper *pruneToggles) isConstVector(expr parser.Expr) (isVector bool, value float64) {
 	switch e := expr.(type) {
+	case *parser.StepInvariantExpr:
+		return mapper.isConstVector(e.Expr)
 	case *parser.ParenExpr:
 		return mapper.isConstVector(e.Expr)
 	case *parser.Call:
@@ -150,6 +152,8 @@ func (mapper *pruneToggles) isConstVector(expr parser.Expr) (isVector bool, valu
 
 func (mapper *pruneToggles) isNumber(expr parser.Expr) (isNumber bool, value float64) {
 	switch e := expr.(type) {
+	case *parser.StepInvariantExpr:
+		return mapper.isNumber(e.Expr)
 	case *parser.ParenExpr:
 		return mapper.isNumber(e.Expr)
 	case *parser.NumberLiteral:
