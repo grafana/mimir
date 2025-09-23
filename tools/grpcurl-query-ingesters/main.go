@@ -43,19 +43,19 @@ func main() {
 	k8sNamespace := downloadCmd.Arg("namespace", "Kubernetes namespace").Required().String()
 	tenantID := downloadCmd.Arg("tenant-id", "Mimir tenant ID").Required().String()
 	queryFile := downloadCmd.Arg("query-file", "JSON query file").Required().String()
+	downloadCmd.Action(func(c *kingpin.ParseContext) error {
+		downloadChunks(*k8sContext, *k8sNamespace, *tenantID, *queryFile)
+		return nil
+	})
 
 	// Dump command (default command when no subcommand specified)
 	dumpCmd := app.Command("dump", "Dump content of downloaded chunk files").Default()
 	dumpFiles := dumpCmd.Arg("files", "Chunk dump files to parse").Required().Strings()
-
-	switch kingpin.MustParse(app.Parse(os.Args[1:])) {
-	case downloadCmd.FullCommand():
-		downloadChunks(*k8sContext, *k8sNamespace, *tenantID, *queryFile)
-	case dumpCmd.FullCommand():
+	dumpCmd.Action(func(c *kingpin.ParseContext) error {
 		for _, file := range *dumpFiles {
 			resps, err := parseFile(file)
 			if err != nil {
-				fmt.Println("Failed to parse file:", err.Error())
+				fmt.Printf("Failed to parse file: %v\n", err)
 				os.Exit(1)
 			}
 
@@ -63,7 +63,10 @@ func main() {
 				dumpResponse(res)
 			}
 		}
-	}
+		return nil
+	})
+
+	kingpin.MustParse(app.Parse(os.Args[1:]))
 }
 
 func parseFile(file string) ([]QueryStreamResponse, error) {
@@ -172,7 +175,9 @@ func downloadChunks(k8sContext, k8sNamespace, tenantID, queryFile string) {
 	fmt.Printf("Found %d ingester pods\n", len(pods))
 
 	failures := queryAllIngesters(k8sContext, k8sNamespace, tenantID, queryFile, pods)
-	handleResults(failures)
+	if hasFailures := handleResults(failures); hasFailures {
+		os.Exit(1)
+	}
 }
 
 func setupOutputDirectory() error {
@@ -220,28 +225,27 @@ func queryAllIngesters(k8sContext, k8sNamespace, tenantID, queryFile string, pod
 	return failures
 }
 
-func handleResults(failures []string) {
+func handleResults(failures []string) bool {
 	// Write failures file for backward compatibility
 	failuresFile := filepath.Join(outputDir, ".failures")
+	var failureData []byte
 	if len(failures) > 0 {
-		failureData := strings.Join(failures, "\n") + "\n"
-		os.WriteFile(failuresFile, []byte(failureData), 0644)
-	} else {
-		os.WriteFile(failuresFile, []byte{}, 0644)
+		failureData = []byte(strings.Join(failures, "\n") + "\n")
 	}
+	os.WriteFile(failuresFile, failureData, 0644)
 
 	fmt.Println()
 	fmt.Println()
 
 	if len(failures) == 0 {
 		printSuccess("Successfully queried all ingesters")
+		return false
 	} else {
 		printFailure(fmt.Sprintf("Failed to query %d ingesters:", len(failures)))
-
 		for _, failure := range failures {
 			fmt.Printf("- %s\n", failure)
 		}
-		os.Exit(1)
+		return true
 	}
 }
 
