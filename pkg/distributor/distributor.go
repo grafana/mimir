@@ -241,13 +241,13 @@ func (a *artificialLatency) isActive() bool {
 	if time.Since(a.startTime) >= a.duration {
 		return false
 	}
-	if a.min > a.max {
+	if a.min >= a.max {
 		return false
 	}
 	return true
 }
 
-func (a *artificialLatency) add() {
+func (a *artificialLatency) add(logger log.Logger) {
 	if a == nil || !a.isActive() {
 		return
 	}
@@ -255,6 +255,7 @@ func (a *artificialLatency) add() {
 	// Pick random duration in [min, max].
 	duration := a.min + time.Duration(rand.Int63n(int64(a.max-a.min)))
 	end := time.Now().Add(duration)
+	level.Debug(logger).Log("msg", "adding artificial latency", "min", a.min, "max", a.max, "duration", a.duration, "workers", a.workers, "start_time", a.startTime, "artificial_latency_duration", duration)
 
 	if a.workers == 0 {
 		time.Sleep(duration)
@@ -355,11 +356,6 @@ type Config struct {
 	UsageTrackerEnabled bool                      `yaml:"-"` // Injected internally.
 	UsageTrackerClient  usagetrackerclient.Config `yaml:"usage_tracker_client"`
 
-	ArtificialLatencyDuration time.Duration `yaml:"artificial_latency_duration" category:"experimental"`
-	ArtificialLatencyMin      time.Duration `yaml:"artificial_latency_min" category:"experimental"`
-	ArtificialLatencyMax      time.Duration `yaml:"artificial_latency_max" category:"experimental"`
-	ArtificialLatencyWorkers  int           `yaml:"artificial_latency_workers" category:"experimental"`
-
 	ReactiveLimiter             reactivelimiter.Config            `yaml:"reactive_limiter"`
 	RejectionPrioritizerEnabled bool                              `yaml:"rejection_prioritizer_enabled"`
 	RejectionPrioritizer        reactivelimiter.PrioritizerConfig `yaml:"rejection_prioritizer"`
@@ -385,11 +381,6 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.BoolVar(&cfg.EnableInfluxEndpoint, "distributor.influx-endpoint-enabled", false, "Enable Influx endpoint.")
 	f.IntVar(&cfg.ReusableIngesterPushWorkers, "distributor.reusable-ingester-push-workers", 2000, "Number of pre-allocated workers used to forward push requests to the ingesters. If 0, no workers will be used and a new goroutine will be spawned for each ingester push request. If not enough workers available, new goroutine will be spawned. (Note: this is a performance optimization, not a limiting feature.)")
 	f.BoolVar(&cfg.EnableStartTimeQuietZero, "distributor.otel-start-time-quiet-zero", false, "Change the implementation of OTel startTime from a real zero to a special NaN value.")
-
-	f.DurationVar(&cfg.ArtificialLatencyDuration, "distributor.artificial-latency-duration", 5*time.Minute, "Total duration of artificial latency from the start of the service.")
-	f.DurationVar(&cfg.ArtificialLatencyMin, "distributor.artificial-latency-min", 0, "Min artificial latency to be added to distributor's push. Will be ignored if higher than distributor.artificial-latency-max")
-	f.DurationVar(&cfg.ArtificialLatencyMax, "distributor.artificial-latency-max", 0, "Max artificial latency to be added to distributor's push. Will be ignored if lower than distributor.artificial-latency-min")
-	f.IntVar(&cfg.ArtificialLatencyWorkers, "distributor.artificial-latency-workers", 0, "Number of workers to be used to simulate artificial latency. Disabled if 0.")
 
 	f.BoolVar(&cfg.RejectionPrioritizerEnabled, "distributor.rejection-prioritizer.enabled", false, "Enable rejection prioritizer.")
 	cfg.ReactiveLimiter.RegisterFlagsWithPrefix("distributor.reactive-limiter.", f)
@@ -618,7 +609,6 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 		PushMetrics: newPushMetrics(reg),
 		now:         defaultNow,
 		sleep:       defaultSleep,
-		latency:     newArtificialLatency(cfg.ArtificialLatencyMin, cfg.ArtificialLatencyMax, cfg.ArtificialLatencyDuration, cfg.ArtificialLatencyWorkers),
 	}
 
 	// Initialize expected rejected request labels
@@ -1964,7 +1954,7 @@ func (d *Distributor) handlePushError(ctx context.Context, pushErr error) error 
 }
 
 func (d *Distributor) addArtificialLatency() {
-	d.latency.add()
+	d.latency.add(d.log)
 }
 
 func (d *Distributor) StartArtificialLatencyHandler(w http.ResponseWriter, r *http.Request) {

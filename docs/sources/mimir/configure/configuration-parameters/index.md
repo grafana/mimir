@@ -2098,26 +2098,6 @@ usage_tracker_client:
   # (advanced)
   [tls_min_version: <string> | default = ""]
 
-# (experimental) Total duration of artificial latency from the start of the
-# service.
-# CLI flag: -distributor.artificial-latency-duration
-[artificial_latency_duration: <duration> | default = 5m]
-
-# (experimental) Min artificial latency to be added to distributor's push. Will
-# be ignored if higher than distributor.artificial-latency-max
-# CLI flag: -distributor.artificial-latency-min
-[artificial_latency_min: <duration> | default = 0s]
-
-# (experimental) Max artificial latency to be added to distributor's push. Will
-# be ignored if lower than distributor.artificial-latency-min
-# CLI flag: -distributor.artificial-latency-max
-[artificial_latency_max: <duration> | default = 0s]
-
-# (experimental) Number of workers to be used to simulate artificial latency.
-# Disabled if 0.
-# CLI flag: -distributor.artificial-latency-workers
-[artificial_latency_workers: <int> | default = 0]
-
 reactive_limiter:
   # (experimental) Enable reactive limiting when making requests to a service
   # CLI flag: -distributor.reactive-limiter.enabled
