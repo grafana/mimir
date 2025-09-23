@@ -103,20 +103,6 @@ func (d *Distributor) QueryStream(ctx context.Context, queryMetrics *stats.Query
 			return err
 		}
 
-		defer func() {
-			for _, ts := range result.Timeseries {
-				ls := mimirpb.FromLabelAdaptersToLabels(ts.Labels)
-				memoryTracker.DecreaseMemoryConsumptionForLabels(ls)
-			}
-			for _, cs := range result.Chunkseries {
-				ls := mimirpb.FromLabelAdaptersToLabels(cs.Labels)
-				memoryTracker.DecreaseMemoryConsumptionForLabels(ls)
-			}
-			for _, ss := range result.StreamingSeries {
-				memoryTracker.DecreaseMemoryConsumptionForLabels(ss.Labels)
-			}
-		}()
-
 		s := trace.SpanFromContext(ctx)
 		s.SetAttributes(
 			attribute.Int("chunk-series", len(result.Chunkseries)),
