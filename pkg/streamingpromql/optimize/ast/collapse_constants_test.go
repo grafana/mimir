@@ -1,11 +1,14 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-package ast
+package ast_test
 
 import (
 	"context"
 	"testing"
 
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize"
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize/ast"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/stretchr/testify/require"
 )
@@ -51,15 +54,15 @@ func TestCollapseConstants(t *testing.T) {
 		`"abc"`:         `"abc"`,
 	}
 
-	collapseConstants := &CollapseConstants{}
+	ctx := context.Background()
+	collapseConstants := &ast.CollapseConstants{}
 
 	for input, expected := range testCases {
 		t.Run(input, func(t *testing.T) {
-			expr, err := parser.ParseExpr(input)
-			require.NoError(t, err)
+			_, _, result := getOutputFromASTOptimizationPassWithQueryPlan(t, ctx, input, func(prometheus.Registerer) optimize.ASTOptimizationPass {
+				return collapseConstants
+			})
 
-			result, err := collapseConstants.Apply(context.Background(), expr)
-			require.NoError(t, err)
 			require.Equal(t, expected, result.String())
 
 			// Check for unnecessary unary expressions.
