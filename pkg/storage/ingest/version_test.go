@@ -341,7 +341,6 @@ func BenchmarkDeserializeRecordContent(b *testing.B) {
 			if err != nil {
 				b.Fatal(err)
 			}
-			mimirpb.ReuseSlice(wr.Timeseries)
 		}
 	})
 
@@ -352,7 +351,6 @@ func BenchmarkDeserializeRecordContent(b *testing.B) {
 			if err != nil {
 				b.Fatal(err)
 			}
-			mimirpb.ReuseSlice(wr.Timeseries)
 		}
 	})
 }

@@ -30,6 +30,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/arena"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	utillog "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -46,7 +47,7 @@ var (
 )
 
 // parserFunc defines how to read the body the request from an HTTP request. It takes an optional RequestBuffers.
-type parserFunc func(ctx context.Context, r *http.Request, maxSize int, buffers *util.RequestBuffers, req *mimirpb.PreallocWriteRequest, logger log.Logger) error
+type parserFunc func(ctx context.Context, r *http.Request, maxSize int, req *mimirpb.PreallocWriteRequest, logger log.Logger) error
 
 var (
 	errNonPositiveMinBackoffDuration = errors.New("min-backoff should be greater than or equal to 1s")
@@ -96,8 +97,8 @@ func Handler(
 	pushMetrics *PushMetrics,
 	logger log.Logger,
 ) http.Handler {
-	return handler(maxRecvMsgSize, newRequestBuffers, sourceIPs, allowSkipLabelNameValidation, allowSkipLabelCountValidation, limits, retryCfg, push, logger, func(ctx context.Context, r *http.Request, maxRecvMsgSize int, buffers *util.RequestBuffers, req *mimirpb.PreallocWriteRequest, _ log.Logger) error {
-		protoBodySize, err := util.ParseProtoReader(ctx, r.Body, int(r.ContentLength), maxRecvMsgSize, buffers, req, util.RawSnappy)
+	return handler(maxRecvMsgSize, newRequestBuffers, sourceIPs, allowSkipLabelNameValidation, allowSkipLabelCountValidation, limits, retryCfg, push, logger, func(ctx context.Context, r *http.Request, maxRecvMsgSize int, req *mimirpb.PreallocWriteRequest, _ log.Logger) error {
+		protoBodySize, err := util.ParseProtoReader(ctx, r.Body, int(r.ContentLength), maxRecvMsgSize, req, util.RawSnappy)
 		if errors.Is(err, util.MsgSizeTooLargeErr{}) {
 			err = distributorMaxWriteMessageSizeErr{actual: int(r.ContentLength), limit: maxRecvMsgSize}
 		}
@@ -152,6 +153,11 @@ func handler(
 ) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
+
+		a := arena.NewArena()
+		defer a.Free()
+		ctx = arena.ContextWithArena(ctx, a)
+
 		logger := utillog.WithContext(ctx, logger)
 		if sourceIPs != nil {
 			source := sourceIPs.Get(r)
@@ -164,20 +170,14 @@ func handler(
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 		}
-		supplier := func() (*mimirpb.WriteRequest, func(), error) {
-			var rb *util.RequestBuffers
-			if newRequestBuffers != nil {
-				rb = newRequestBuffers()
-			} else {
-				rb = util.NewRequestBuffers(nil)
-			}
-			var req mimirpb.PreallocWriteRequest
+		supplier := func() (*mimirpb.WriteRequest, error) {
+			req := mimirpb.NewPreallocWriteRequest(a)
 
 			req.UnmarshalFromRW2 = isRW2
 
 			userID, err := tenant.TenantID(ctx)
 			if err != nil && !errors.Is(err, user.ErrNoOrgID) { // ignore user.ErrNoOrgID
-				return nil, nil, errors.Wrap(err, "failed to get tenant ID")
+				return nil, errors.Wrap(err, "failed to get tenant ID")
 			}
 
 			// userID might be empty if none was in the ctx, in this case just use the default setting.
@@ -187,14 +187,13 @@ func handler(
 				req.SkipUnmarshalingExemplars = true
 			}
 
-			if err := parser(ctx, r, maxRecvMsgSize, rb, &req, logger); err != nil {
+			if err := parser(ctx, r, maxRecvMsgSize, req, logger); err != nil {
 				// Check for httpgrpc error, default to client error if parsing failed
 				if _, ok := httpgrpc.HTTPResponseFromError(err); !ok {
 					err = httpgrpc.Error(http.StatusBadRequest, err.Error())
 				}
 
-				rb.CleanUp()
-				return nil, nil, err
+				return nil, err
 			}
 
 			if allowSkipLabelNameValidation {
@@ -209,11 +208,7 @@ func handler(
 				req.SkipLabelCountValidation = false
 			}
 
-			cleanup := func() {
-				mimirpb.ReuseSlice(req.Timeseries)
-				rb.CleanUp()
-			}
-			return &req.WriteRequest, cleanup, nil
+			return &req.WriteRequest, nil
 		}
 		req := newRequest(supplier)
 		req.contentLength = r.ContentLength

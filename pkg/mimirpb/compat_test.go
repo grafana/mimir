@@ -385,7 +385,7 @@ func TestRemoteWriteContainsHistogram(t *testing.T) {
 
 	// Mimir
 	receivedRemoteWrite := &WriteRequest{}
-	err = receivedRemoteWrite.Unmarshal(data)
+	err = receivedRemoteWrite.Unmarshal(nil, data)
 	assert.NoError(t, err, "marshal to protbuf")
 
 	assert.NotEmpty(t, receivedRemoteWrite.Timeseries)

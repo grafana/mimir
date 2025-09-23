@@ -42,6 +42,7 @@ import (
 	"github.com/grafana/mimir/pkg/distributor/otlpappender"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/arena"
 	utillog "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -87,6 +88,11 @@ func OTLPHandler(
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
+
+		a := arena.NewArena()
+		defer a.Free()
+		ctx = arena.ContextWithArena(ctx, a)
+
 		logger := utillog.WithContext(ctx, logger)
 		if sourceIPs != nil {
 			source := sourceIPs.Get(r)
@@ -95,28 +101,22 @@ func OTLPHandler(
 			}
 		}
 
-		otlpConverter := newOTLPMimirConverter(otlpappender.NewCombinedAppender())
+		otlpConverter := newOTLPMimirConverter(a)
 
 		parser := newOTLPParser(limits, resourceAttributePromotionConfig, otlpConverter, pushMetrics, discardedDueToOtelParseError, OTLPPushMiddlewares)
 
-		supplier := func() (*mimirpb.WriteRequest, func(), error) {
-			rb := util.NewRequestBuffers(requestBufferPool)
-			var req mimirpb.PreallocWriteRequest
-			if err := parser(ctx, r, maxRecvMsgSize, rb, &req, logger); err != nil {
+		supplier := func() (*mimirpb.WriteRequest, error) {
+			req := mimirpb.NewPreallocWriteRequest(a)
+			if err := parser(ctx, r, maxRecvMsgSize, req, logger); err != nil {
 				// Check for httpgrpc error, default to client error if parsing failed
 				if _, ok := httpgrpc.HTTPResponseFromError(err); !ok {
 					err = httpgrpc.Error(http.StatusBadRequest, err.Error())
 				}
 
-				rb.CleanUp()
-				return nil, nil, err
+				return nil, err
 			}
 
-			cleanup := func() {
-				mimirpb.ReuseSlice(req.Timeseries)
-				rb.CleanUp()
-			}
-			return &req.WriteRequest, cleanup, nil
+			return &req.WriteRequest, nil
 		}
 		req := newRequest(supplier)
 		req.contentLength = r.ContentLength
@@ -208,7 +208,7 @@ func newOTLPParser(
 	discardedDueToOtelParseError *prometheus.CounterVec,
 	OTLPPushMiddlewares []OTLPPushMiddleware,
 ) parserFunc {
-	return func(ctx context.Context, r *http.Request, maxRecvMsgSize int, buffers *util.RequestBuffers, req *mimirpb.PreallocWriteRequest, logger log.Logger) error {
+	return func(ctx context.Context, r *http.Request, maxRecvMsgSize int, req *mimirpb.PreallocWriteRequest, logger log.Logger) error {
 		contentType := r.Header.Get("Content-Type")
 		contentEncoding := r.Header.Get("Content-Encoding")
 		var compression util.CompressionType
@@ -225,6 +225,8 @@ func newOTLPParser(
 			return httpgrpc.Errorf(http.StatusUnsupportedMediaType, "unsupported compression: %s. Only \"gzip\", \"lz4\", \"zstd\", or no compression supported", contentEncoding)
 		}
 
+		a := arena.FromContext(ctx)
+
 		var decoderFunc func(io.Reader) (req pmetricotlp.ExportRequest, uncompressedBodySize int, err error)
 		switch contentType {
 		case pbContentType:
@@ -233,7 +235,7 @@ func newOTLPParser(
 				unmarshaler := otlpProtoUnmarshaler{
 					request: &exportReq,
 				}
-				protoBodySize, err := util.ParseProtoReader(ctx, reader, int(r.ContentLength), maxRecvMsgSize, buffers, unmarshaler, compression)
+				protoBodySize, err := util.ParseProtoReader(ctx, reader, int(r.ContentLength), maxRecvMsgSize, unmarshaler, compression)
 				var tooLargeErr util.MsgSizeTooLargeErr
 				if errors.As(err, &tooLargeErr) {
 					return exportReq, 0, httpgrpc.Error(http.StatusRequestEntityTooLarge, distributorMaxOTLPRequestSizeErr{
@@ -252,7 +254,7 @@ func newOTLPParser(
 					// Extra space guarantees no reallocation
 					sz += bytes.MinRead
 				}
-				buf := buffers.Get(sz)
+				buf := arena.MakeSlice[byte](a, sz, sz)
 				switch compression {
 				case util.Gzip:
 					gzReader, err := gzip.NewReader(reader)
@@ -271,7 +273,7 @@ func newOTLPParser(
 				}
 
 				reader = http.MaxBytesReader(nil, io.NopCloser(reader), int64(maxRecvMsgSize))
-				if _, err := buf.ReadFrom(reader); err != nil {
+				if _, err := reader.Read(buf); err != nil {
 					if util.IsRequestBodyTooLarge(err) {
 						return exportReq, 0, httpgrpc.Error(http.StatusRequestEntityTooLarge, distributorMaxOTLPRequestSizeErr{
 							actual: -1,
@@ -282,7 +284,7 @@ func newOTLPParser(
 					return exportReq, 0, errors.Wrap(err, "read write request")
 				}
 
-				return exportReq, buf.Len(), exportReq.UnmarshalJSON(buf.Bytes())
+				return exportReq, len(buf), exportReq.UnmarshalJSON(buf)
 			}
 
 		default:
@@ -569,7 +571,8 @@ type otlpMimirConverter struct {
 	err error
 }
 
-func newOTLPMimirConverter(appender *otlpappender.MimirAppender) *otlpMimirConverter {
+func newOTLPMimirConverter(a *arena.Arena) *otlpMimirConverter {
+	appender := otlpappender.NewCombinedAppender(a)
 	return &otlpMimirConverter{
 		appender:  appender,
 		converter: prometheusremotewrite.NewPrometheusConverter(appender),

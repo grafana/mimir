@@ -23,6 +23,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/ingest"
+	"github.com/grafana/mimir/pkg/util/arena"
 )
 
 type IngestStorageRecordTestConfig struct {
@@ -335,16 +336,18 @@ func (b batchReport) Observe(metrics *IngestStorageRecordTestMetrics) {
 }
 
 func (t *IngestStorageRecordTest) testRec(rec *kgo.Record, report batchReport) batchReport {
+	a := arena.NewArena()
+	defer a.Free()
+
 	tenantID := string(rec.Key)
-	req := mimirpb.PreallocWriteRequest{}
-	defer mimirpb.ReuseSlice(req.Timeseries)
+	req := mimirpb.NewPreallocWriteRequest(a)
 
 	version := ingest.ParseRecordVersion(rec)
 	if version > ingest.LatestRecordVersion {
 		return report.Error(fmt.Errorf("received a record with an unsupported version: %d, max supported version: %d", version, ingest.LatestRecordVersion))
 	}
 
-	err := ingest.DeserializeRecordContent(rec.Value, &req, version)
+	err := ingest.DeserializeRecordContent(rec.Value, req, version)
 	if err != nil {
 		return report.Error(fmt.Errorf("failed to unmarshal record from ingest topic: %w", err))
 	}
@@ -372,9 +375,8 @@ func (t *IngestStorageRecordTest) testRec(rec *kgo.Record, report batchReport) b
 		}
 	}
 
-	v2Req := mimirpb.PreallocWriteRequest{}
-	defer mimirpb.ReuseSlice(v2Req.Timeseries)
-	err = ingest.DeserializeRecordContent(v2Rec.Value, &v2Req, 2)
+	v2Req := mimirpb.NewPreallocWriteRequest(a)
+	err = ingest.DeserializeRecordContent(v2Rec.Value, v2Req, 2)
 	if err != nil {
 		return report.Error(fmt.Errorf("failed to unmarshal V2 record: %w", err))
 	}

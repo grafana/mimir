@@ -53,7 +53,7 @@ func remoteReadHandler(q storage.SampleAndChunkQueryable, maxBytesInFrame int, m
 		ctx := r.Context()
 		var req prompb.ReadRequest
 		logger := util_log.WithContext(r.Context(), lg)
-		if _, err := util.ParseProtoReader(ctx, r.Body, int(r.ContentLength), MaxRemoteReadQuerySize, nil, &req, util.RawSnappy); err != nil {
+		if _, err := util.ParseProtoReader(ctx, r.Body, int(r.ContentLength), MaxRemoteReadQuerySize, &req, util.RawSnappy); err != nil {
 			level.Error(logger).Log("msg", "failed to parse proto", "err", err.Error())
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return

@@ -11,6 +11,7 @@ import (
 	otlpappender "github.com/prometheus/prometheus/storage/remote/otlptranslator/prometheusremotewrite"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/util/arena"
 )
 
 type labelsIdx struct {
@@ -28,6 +29,8 @@ type MimirAppender struct {
 	EnableCreatedTimestampZeroIngestion        bool
 	ValidIntervalCreatedTimestampZeroIngestion int64
 
+	a *arena.Arena
+
 	series   []mimirpb.PreallocTimeseries
 	metadata []*mimirpb.MetricMetadata
 	// To avoid creating extra time series when the same label set is used
@@ -41,10 +44,11 @@ type MimirAppender struct {
 	metricFamilies map[string]metadata.Metadata
 }
 
-func NewCombinedAppender() *MimirAppender {
+func NewCombinedAppender(a *arena.Arena) *MimirAppender {
 	return &MimirAppender{
 		ValidIntervalCreatedTimestampZeroIngestion: defaultIntervalForStartTimestamps,
-		series:         mimirpb.PreallocTimeseriesSliceFromPool(),
+		a:              a,
+		series:         mimirpb.AllocPreallocTimeseriesSlice(a),
 		refs:           make(map[uint64]labelsIdx),
 		collisionRefs:  make(map[uint64][]labelsIdx),
 		metricFamilies: make(map[string]metadata.Metadata),
@@ -142,7 +146,7 @@ func (c *MimirAppender) processLabelsAndMetadata(ls labels.Labels) (hash uint64,
 }
 
 func (c *MimirAppender) createNewSeries(idx *labelsIdx, collisionIdx int, hash uint64, ls labels.Labels, ct int64) {
-	ts := mimirpb.TimeseriesFromPool()
+	ts := mimirpb.AllocTimeSeries(c.a)
 	ts.Labels = mimirpb.FromLabelsToLabelAdapters(ls)
 	ts.CreatedTimestamp = ct
 	c.series = append(c.series, mimirpb.PreallocTimeseries{TimeSeries: ts})

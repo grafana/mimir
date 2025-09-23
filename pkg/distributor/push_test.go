@@ -53,7 +53,6 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
 
-	"github.com/grafana/mimir/pkg/distributor/otlpappender"
 	"github.com/grafana/mimir/pkg/ingester"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -130,7 +129,7 @@ func TestOTelMetricsToMetadata(t *testing.T) {
 					MetricFamilyName: "test" + countSfx,
 				},
 			}
-			converter := newOTLPMimirConverter(otlpappender.NewCombinedAppender())
+			converter := newOTLPMimirConverter(nil)
 			_, res, _, err := otelMetricsToSeriesAndMetadata(context.Background(), converter, otelMetrics, conversionOptions{
 				addSuffixes: tc.enableSuffixes,
 			}, log.NewNopLogger())
@@ -702,7 +701,7 @@ func TestHandler_ErrorTranslation(t *testing.T) {
 	}
 	for _, tc := range parserTestCases {
 		t.Run(tc.name, func(t *testing.T) {
-			parserFunc := func(context.Context, *http.Request, int, *util.RequestBuffers, *mimirpb.PreallocWriteRequest, log.Logger) error {
+			parserFunc := func(context.Context, *http.Request, int, *mimirpb.PreallocWriteRequest, log.Logger) error {
 				return tc.err
 			}
 			pushFunc := func(_ context.Context, req *Request) error {
@@ -789,7 +788,7 @@ func TestHandler_ErrorTranslation(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			parserFunc := func(context.Context, *http.Request, int, *util.RequestBuffers, *mimirpb.PreallocWriteRequest, log.Logger) error {
+			parserFunc := func(context.Context, *http.Request, int, *mimirpb.PreallocWriteRequest, log.Logger) error {
 				return nil
 			}
 			pushFunc := func(_ context.Context, req *Request) error {

@@ -148,7 +148,7 @@ func parseRemoteReadRequestWithoutConsumingBody(req *http.Request) (*prompb.Read
 func unmarshalRemoteReadRequest(ctx context.Context, reader io.ReadCloser, contentLength int) (*prompb.ReadRequest, error) {
 	remoteReadRequest := &prompb.ReadRequest{}
 
-	_, err := util.ParseProtoReader(ctx, reader, contentLength, querier.MaxRemoteReadQuerySize, nil, remoteReadRequest, util.RawSnappy)
+	_, err := util.ParseProtoReader(ctx, reader, contentLength, querier.MaxRemoteReadQuerySize, remoteReadRequest, util.RawSnappy)
 	if err != nil {
 		return nil, err
 	}

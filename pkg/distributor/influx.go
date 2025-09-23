@@ -24,11 +24,12 @@ import (
 	"github.com/grafana/mimir/pkg/distributor/influxpush"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/arena"
 	utillog "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
-func influxRequestParser(ctx context.Context, r *http.Request, maxSize int, _ *util.RequestBuffers, req *mimirpb.PreallocWriteRequest, logger log.Logger) (int, error) {
+func influxRequestParser(ctx context.Context, r *http.Request, maxSize int, req *mimirpb.PreallocWriteRequest, logger log.Logger) (int, error) {
 	spanLogger, ctx := spanlogger.New(ctx, logger, tracer, "Distributor.InfluxHandler.decodeAndConvert")
 	defer spanLogger.Finish()
 
@@ -59,6 +60,11 @@ func InfluxHandler(
 ) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
+
+		a := arena.NewArena()
+		defer a.Free()
+		ctx = arena.ContextWithArena(ctx, a)
+
 		logger := utillog.WithContext(ctx, logger)
 		if sourceIPs != nil {
 			source := sourceIPs.Get(r)
@@ -77,21 +83,15 @@ func InfluxHandler(
 
 		var bytesRead int
 
-		supplier := func() (*mimirpb.WriteRequest, func(), error) {
-			rb := util.NewRequestBuffers(requestBufferPool)
-			var req mimirpb.PreallocWriteRequest
+		supplier := func() (*mimirpb.WriteRequest, error) {
+			req := mimirpb.NewPreallocWriteRequest(a)
 
-			if bytesRead, err = influxRequestParser(ctx, r, maxRecvMsgSize, rb, &req, logger); err != nil {
+			if bytesRead, err = influxRequestParser(ctx, r, maxRecvMsgSize, req, logger); err != nil {
 				err = httpgrpc.Error(http.StatusBadRequest, err.Error())
-				rb.CleanUp()
-				return nil, nil, err
+				return nil, err
 			}
 
-			cleanup := func() {
-				mimirpb.ReuseSlice(req.Timeseries)
-				rb.CleanUp()
-			}
-			return &req.WriteRequest, cleanup, nil
+			return &req.WriteRequest, nil
 		}
 
 		pushMetrics.ObserveInfluxUncompressedBodySize(tenantID, float64(bytesRead))

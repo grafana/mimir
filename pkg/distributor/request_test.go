@@ -10,8 +10,8 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
-var noopParser = supplierFunc(func() (*mimirpb.WriteRequest, func(), error) {
-	return &mimirpb.WriteRequest{}, nil, nil
+var noopParser = supplierFunc(func() (*mimirpb.WriteRequest, error) {
+	return &mimirpb.WriteRequest{}, nil
 })
 
 // TestRequest_CleanUpOrder tests that the semantics of cleanups is similar to stacking defer statements:
@@ -49,9 +49,9 @@ func TestRequest_CleanUpDoubleCalling(t *testing.T) {
 
 func TestRequest_WriteRequestIsParsedOnlyOnce(t *testing.T) {
 	parseCount := 0
-	p := supplierFunc(func() (*mimirpb.WriteRequest, func(), error) {
+	p := supplierFunc(func() (*mimirpb.WriteRequest, error) {
 		parseCount++
-		return &mimirpb.WriteRequest{}, nil, nil
+		return &mimirpb.WriteRequest{}, nil
 	})
 
 	r := newRequest(p)

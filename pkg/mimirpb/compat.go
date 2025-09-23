@@ -35,7 +35,7 @@ func ToWriteRequest(lbls [][]LabelAdapter, samples []Sample, exemplars []*Exempl
 // NewWriteRequest creates a new empty WriteRequest with metadata
 func NewWriteRequest(metadata []*MetricMetadata, source WriteRequest_SourceEnum) *WriteRequest {
 	return &WriteRequest{
-		Timeseries: PreallocTimeseriesSliceFromPool(),
+		Timeseries: AllocPreallocTimeseriesSlice(nil),
 		Metadata:   metadata,
 		Source:     source,
 	}
@@ -46,7 +46,7 @@ func NewWriteRequest(metadata []*MetricMetadata, source WriteRequest_SourceEnum)
 // method implies that only a single sample and optionally exemplar can be set for each series.
 func (m *WriteRequest) AddFloatSeries(lbls [][]LabelAdapter, samples []Sample, exemplars []*Exemplar) *WriteRequest {
 	for i, s := range samples {
-		ts := TimeseriesFromPool()
+		ts := AllocTimeSeries(nil)
 		ts.Labels = append(ts.Labels, lbls[i]...)
 		ts.Samples = append(ts.Samples, s)
 
@@ -68,7 +68,7 @@ func (m *WriteRequest) AddFloatSeries(lbls [][]LabelAdapter, samples []Sample, e
 // method implies that only a single sample and optionally exemplar can be set for each series.
 func (m *WriteRequest) AddHistogramSeries(lbls [][]LabelAdapter, histograms []Histogram, exemplars []*Exemplar) *WriteRequest {
 	for i, s := range histograms {
-		ts := TimeseriesFromPool()
+		ts := AllocTimeSeries(nil)
 		ts.Labels = append(ts.Labels, lbls[i]...)
 		ts.Histograms = append(ts.Histograms, s)
 

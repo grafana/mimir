@@ -7,9 +7,6 @@ import (
 	bytes "bytes"
 	encoding_binary "encoding/binary"
 	fmt "fmt"
-	_ "github.com/gogo/protobuf/gogoproto"
-	proto "github.com/gogo/protobuf/proto"
-	github_com_prometheus_prometheus_model_histogram "github.com/prometheus/prometheus/model/histogram"
 	io "io"
 	math "math"
 	math_bits "math/bits"
@@ -17,6 +14,11 @@ import (
 	slices "slices"
 	strconv "strconv"
 	strings "strings"
+
+	_ "github.com/gogo/protobuf/gogoproto"
+	proto "github.com/gogo/protobuf/proto"
+	"github.com/grafana/mimir/pkg/util/arena"
+	github_com_prometheus_prometheus_model_histogram "github.com/prometheus/prometheus/model/histogram"
 )
 
 // Reference imports to suppress errors if they are not otherwise used.
@@ -318,7 +320,7 @@ func (*WriteRequest) Descriptor() ([]byte, []int) {
 	return fileDescriptor_86d4d7485f544059, []int{0}
 }
 func (m *WriteRequest) XXX_Unmarshal(b []byte) error {
-	return m.Unmarshal(b)
+	return m.Unmarshal(nil, b)
 }
 func (m *WriteRequest) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
 	if deterministic {
@@ -7384,7 +7386,7 @@ func valueToStringMimir(v interface{}) string {
 	pv := reflect.Indirect(rv).Interface()
 	return fmt.Sprintf("*%v", pv)
 }
-func (m *WriteRequest) Unmarshal(dAtA []byte) error {
+func (m *WriteRequest) Unmarshal(a *arena.Arena, dAtA []byte) error {
 	var metadata map[string]*orderAwareMetricMetadata
 	seenFirstSymbol := false
 
@@ -7450,7 +7452,7 @@ func (m *WriteRequest) Unmarshal(dAtA []byte) error {
 			}
 			m.Timeseries = append(m.Timeseries, PreallocTimeseries{})
 			m.Timeseries[len(m.Timeseries)-1].skipUnmarshalingExemplars = m.skipUnmarshalingExemplars
-			if err := m.Timeseries[len(m.Timeseries)-1].Unmarshal(dAtA[iNdEx:postIndex], nil, nil, m.skipNormalizeMetadataMetricName); err != nil {
+			if err := m.Timeseries[len(m.Timeseries)-1].Unmarshal(a, dAtA[iNdEx:postIndex], nil, nil, m.skipNormalizeMetadataMetricName); err != nil {
 				return err
 			}
 			iNdEx = postIndex
@@ -7586,7 +7588,7 @@ func (m *WriteRequest) Unmarshal(dAtA []byte) error {
 			if metadata == nil {
 				metadata = make(map[string]*orderAwareMetricMetadata)
 			}
-			if err := m.Timeseries[len(m.Timeseries)-1].Unmarshal(dAtA[iNdEx:postIndex], &m.rw2symbols, metadata, m.skipNormalizeMetadataMetricName); err != nil {
+			if err := m.Timeseries[len(m.Timeseries)-1].Unmarshal(a, dAtA[iNdEx:postIndex], &m.rw2symbols, metadata, m.skipNormalizeMetadataMetricName); err != nil {
 				return err
 			}
 			iNdEx = postIndex

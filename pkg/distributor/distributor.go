@@ -1160,9 +1160,6 @@ func (d *Distributor) prePushRelabelMiddleware(next PushFunc) PushFunc {
 		}
 
 		if len(removeTsIndexes) > 0 {
-			for _, removeTsIndex := range removeTsIndexes {
-				mimirpb.ReusePreallocTimeseries(&req.Timeseries[removeTsIndex])
-			}
 			req.Timeseries = util.RemoveSliceIndexes(req.Timeseries, removeTsIndexes)
 		}
 
@@ -1205,9 +1202,6 @@ func (d *Distributor) prePushSortAndFilterMiddleware(next PushFunc) PushFunc {
 		}
 
 		if len(removeTsIndexes) > 0 {
-			for _, removeTsIndex := range removeTsIndexes {
-				mimirpb.ReusePreallocTimeseries(&req.Timeseries[removeTsIndex])
-			}
 			req.Timeseries = util.RemoveSliceIndexes(req.Timeseries, removeTsIndexes)
 		}
 
@@ -1363,9 +1357,6 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 		d.incomingExemplarsPerRequest.WithLabelValues(userID).Observe(float64(totalExemplars))
 
 		if len(removeIndexes) > 0 {
-			for _, removeIndex := range removeIndexes {
-				mimirpb.ReusePreallocTimeseries(&req.Timeseries[removeIndex])
-			}
 			req.Timeseries = util.RemoveSliceIndexes(req.Timeseries, removeIndexes)
 			removeIndexes = removeIndexes[:0]
 		}
@@ -1494,9 +1485,6 @@ func (d *Distributor) prePushMaxSeriesLimitMiddleware(next PushFunc) PushFunc {
 
 				// Keep track of the discarded samples and histograms.
 				discardedSamples += len(req.Timeseries[i].Samples) + len(req.Timeseries[i].Histograms)
-
-				// This series has been rejected and filtered out from the WriteRequest. We can reuse its memory.
-				mimirpb.ReusePreallocTimeseries(&req.Timeseries[i])
 			}
 
 			req.Timeseries = req.Timeseries[:o]
@@ -1811,7 +1799,6 @@ func (d *Distributor) Push(ctx context.Context, req *mimirpb.WriteRequest) (*mim
 	pushReq := NewParsedRequest(req)
 	pushReq.AddCleanup(func() {
 		req.FreeBuffer()
-		mimirpb.ReuseSlice(req.Timeseries)
 	})
 
 	pushErr := d.PushWithMiddlewares(ctx, pushReq)

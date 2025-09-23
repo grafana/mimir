@@ -13,7 +13,6 @@ import (
 	"slices"
 	"strings"
 	"testing"
-	"time"
 	"unsafe"
 
 	"github.com/stretchr/testify/assert"
@@ -38,44 +37,6 @@ func TestLabelAdapter_Marshal(t *testing.T) {
 			require.EqualValues(t, tt.bs, lbs)
 		})
 	}
-}
-
-func TestPreallocTimeseriesSliceFromPool(t *testing.T) {
-	t.Run("new instance is provided when not available to reuse", func(t *testing.T) {
-		first := PreallocTimeseriesSliceFromPool()
-		second := PreallocTimeseriesSliceFromPool()
-
-		assert.NotSame(t, unsafe.SliceData(first), unsafe.SliceData(second))
-	})
-
-	t.Run("instance is cleaned before reusing", func(t *testing.T) {
-		slice := PreallocTimeseriesSliceFromPool()
-		slice = append(slice, PreallocTimeseries{TimeSeries: &TimeSeries{}})
-		ReuseSlice(slice)
-
-		reused := PreallocTimeseriesSliceFromPool()
-		assert.Len(t, reused, 0)
-	})
-}
-
-func TestTimeseriesFromPool(t *testing.T) {
-	t.Run("new instance is provided when not available to reuse", func(t *testing.T) {
-		first := TimeseriesFromPool()
-		second := TimeseriesFromPool()
-
-		assert.NotSame(t, first, second)
-	})
-
-	t.Run("instance is cleaned before reusing", func(t *testing.T) {
-		ts := TimeseriesFromPool()
-		ts.Labels = []LabelAdapter{{Name: "foo", Value: "bar"}}
-		ts.Samples = []Sample{{Value: 1, TimestampMs: 2}}
-		ReuseTimeseries(ts)
-
-		reused := TimeseriesFromPool()
-		assert.Len(t, reused.Labels, 0)
-		assert.Len(t, reused.Samples, 0)
-	})
 }
 
 func TestCopyToYoloString(t *testing.T) {
@@ -111,172 +72,6 @@ func TestCopyToYoloString(t *testing.T) {
 	assert.Equal(t, int(safeCopyByteArray)+len(newBuf), int(remainingBufArray))
 }
 
-func TestDeepCopyTimeseries(t *testing.T) {
-	src := PreallocTimeseries{
-		TimeSeries: &TimeSeries{
-			Labels: []LabelAdapter{
-				{Name: "sampleLabel1", Value: "sampleValue1"},
-				{Name: "sampleLabel2", Value: "sampleValue2"},
-			},
-			Samples: []Sample{
-				{Value: 1, TimestampMs: 2},
-				{Value: 3, TimestampMs: 4},
-			},
-			Histograms: []Histogram{
-				{
-					Timestamp:      4*time.Minute.Milliseconds() - 1,
-					Count:          &Histogram_CountInt{CountInt: 35},
-					Sum:            108,
-					ZeroCount:      &Histogram_ZeroCountInt{ZeroCountInt: 2},
-					ZeroThreshold:  0.01,
-					NegativeSpans:  []BucketSpan{{Offset: -1, Length: 1}, {Offset: -2, Length: 1}},
-					NegativeDeltas: []int64{7, 3},
-					PositiveSpans:  []BucketSpan{{Offset: 0, Length: 1}, {Offset: 2, Length: 1}},
-					PositiveDeltas: []int64{2, 21},
-					ResetHint:      Histogram_UNKNOWN,
-				},
-			},
-			Exemplars: []Exemplar{{
-				Value:       1,
-				TimestampMs: 2,
-				Labels: []LabelAdapter{
-					{Name: "exemplarLabel1", Value: "exemplarValue1"},
-					{Name: "exemplarLabel2", Value: "exemplarValue2"},
-				},
-			}},
-		},
-	}
-	dst := PreallocTimeseries{}
-	dst = DeepCopyTimeseries(dst, src, true, true)
-
-	// Check that the values in src and dst are the same.
-	assert.Equal(t, src.TimeSeries, dst.TimeSeries)
-
-	// Check that the TimeSeries in dst refers to a different address than the one in src.
-	assert.NotSame(t, src.TimeSeries, dst.TimeSeries)
-
-	// Check all the slices in the struct to ensure that
-	// none of them refer to the same underlying array.
-	assert.NotEqual(t,
-		// Ignore deprecation warning for now
-		//nolint:staticcheck
-		(*reflect.SliceHeader)(unsafe.Pointer(&src.Labels)).Data,
-		// Ignore deprecation warning for now
-		//nolint:staticcheck
-		(*reflect.SliceHeader)(unsafe.Pointer(&dst.Labels)).Data,
-	)
-	assert.NotEqual(t,
-		// Ignore deprecation warning for now
-		//nolint:staticcheck
-		(*reflect.SliceHeader)(unsafe.Pointer(&src.Samples)).Data,
-		// Ignore deprecation warning for now
-		//nolint:staticcheck
-		(*reflect.SliceHeader)(unsafe.Pointer(&dst.Samples)).Data,
-	)
-	assert.NotEqual(t,
-		// Ignore deprecation warning for now
-		//nolint:staticcheck
-		(*reflect.SliceHeader)(unsafe.Pointer(&src.Histograms)).Data,
-		// Ignore deprecation warning for now
-		//nolint:staticcheck
-		(*reflect.SliceHeader)(unsafe.Pointer(&dst.Histograms)).Data,
-	)
-	assert.NotEqual(t,
-		// Ignore deprecation warning for now
-		//nolint:staticcheck
-		(*reflect.SliceHeader)(unsafe.Pointer(&src.Exemplars)).Data,
-		// Ignore deprecation warning for now
-		//nolint:staticcheck
-		(*reflect.SliceHeader)(unsafe.Pointer(&dst.Exemplars)).Data,
-	)
-	for histogramIdx := range src.Histograms {
-		assert.NotEqual(t,
-			// Ignore deprecation warning for now
-			//nolint:staticcheck
-			(*reflect.SliceHeader)(unsafe.Pointer(&src.Histograms[histogramIdx].NegativeSpans)).Data,
-			// Ignore deprecation warning for now
-			//nolint:staticcheck
-			(*reflect.SliceHeader)(unsafe.Pointer(&dst.Histograms[histogramIdx].NegativeSpans)).Data,
-		)
-		assert.NotEqual(t,
-			// Ignore deprecation warning for now
-			//nolint:staticcheck
-			(*reflect.SliceHeader)(unsafe.Pointer(&src.Histograms[histogramIdx].NegativeDeltas)).Data,
-			// Ignore deprecation warning for now
-			//nolint:staticcheck
-			(*reflect.SliceHeader)(unsafe.Pointer(&dst.Histograms[histogramIdx].NegativeDeltas)).Data,
-		)
-		assert.NotEqual(t,
-			// Ignore deprecation warning for now
-			//nolint:staticcheck
-			(*reflect.SliceHeader)(unsafe.Pointer(&src.Histograms[histogramIdx].PositiveSpans)).Data,
-			// Ignore deprecation warning for now
-			//nolint:staticcheck
-			(*reflect.SliceHeader)(unsafe.Pointer(&dst.Histograms[histogramIdx].PositiveSpans)).Data,
-		)
-		assert.NotEqual(t,
-			// Ignore deprecation warning for now
-			//nolint:staticcheck
-			(*reflect.SliceHeader)(unsafe.Pointer(&src.Histograms[histogramIdx].PositiveDeltas)).Data,
-			// Ignore deprecation warning for now
-			//nolint:staticcheck
-			(*reflect.SliceHeader)(unsafe.Pointer(&dst.Histograms[histogramIdx].PositiveDeltas)).Data,
-		)
-	}
-
-	for exemplarIdx := range src.Exemplars {
-		assert.NotEqual(t,
-			// Ignore deprecation warning for now
-			//nolint:staticcheck
-			(*reflect.SliceHeader)(unsafe.Pointer(&src.Exemplars[exemplarIdx].Labels)).Data,
-			// Ignore deprecation warning for now
-			//nolint:staticcheck
-			(*reflect.SliceHeader)(unsafe.Pointer(&dst.Exemplars[exemplarIdx].Labels)).Data,
-		)
-	}
-
-	dst = PreallocTimeseries{}
-	dst = DeepCopyTimeseries(dst, src, false, false)
-	assert.NotNil(t, dst.Exemplars)
-	assert.Len(t, dst.Exemplars, 0)
-	assert.Len(t, dst.Histograms, 0)
-}
-
-func TestDeepCopyTimeseriesExemplars(t *testing.T) {
-	src := PreallocTimeseries{
-		TimeSeries: &TimeSeries{
-			Labels: []LabelAdapter{
-				{Name: "sampleLabel1", Value: "sampleValue1"},
-				{Name: "sampleLabel2", Value: "sampleValue2"},
-			},
-			Samples: []Sample{
-				{Value: 1, TimestampMs: 2},
-				{Value: 3, TimestampMs: 4},
-			},
-		},
-	}
-
-	for i := 0; i < 100; i++ {
-		src.Exemplars = append(src.Exemplars, Exemplar{
-			Value:       1,
-			TimestampMs: 2,
-			Labels: []LabelAdapter{
-				{Name: "exemplarLabel1", Value: "exemplarValue1"},
-				{Name: "exemplarLabel2", Value: "exemplarValue2"},
-			},
-		})
-	}
-
-	dst1 := PreallocTimeseries{}
-	dst1 = DeepCopyTimeseries(dst1, src, false, false)
-
-	dst2 := PreallocTimeseries{}
-	dst2 = DeepCopyTimeseries(dst2, src, false, true)
-
-	// dst1 should use much smaller buffer than dst2.
-	assert.Less(t, cap(*dst1.yoloSlice), cap(*dst2.yoloSlice))
-}
-
 func TestPreallocTimeseries_Unmarshal(t *testing.T) {
 	defer func() {
 		TimeseriesUnmarshalCachingEnabled = true
@@ -303,13 +98,13 @@ func TestPreallocTimeseries_Unmarshal(t *testing.T) {
 
 		TimeseriesUnmarshalCachingEnabled = false
 
-		require.NoError(t, msg.Unmarshal(data, nil, nil, false))
+		require.NoError(t, msg.Unmarshal(nil, data, nil, nil, false))
 		require.True(t, src.Equal(msg.TimeSeries))
 		require.Nil(t, msg.marshalledData)
 
 		TimeseriesUnmarshalCachingEnabled = true
 
-		require.NoError(t, msg.Unmarshal(data, nil, nil, false))
+		require.NoError(t, msg.Unmarshal(nil, data, nil, nil, false))
 		require.True(t, src.Equal(msg.TimeSeries))
 		require.NotNil(t, msg.marshalledData)
 	}

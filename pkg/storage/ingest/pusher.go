@@ -21,6 +21,7 @@ import (
 	"github.com/twmb/franz-go/pkg/kgo"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/util/arena"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
@@ -67,15 +68,6 @@ func (c PusherConsumer) Consume(ctx context.Context, records iter.Seq[*kgo.Recor
 		c.metrics.processingTimeSeconds.Observe(time.Since(processingStart).Seconds())
 	}(time.Now())
 
-	type parsedRecord struct {
-		*mimirpb.PreallocWriteRequest
-		// ctx holds the tracing baggage for this record/request.
-		ctx      context.Context
-		tenantID string
-		err      error
-		offset   int64
-	}
-
 	recordsChannel := make(chan parsedRecord)
 
 	// Create a cancellable context to let the unmarshalling goroutine know when to stop.
@@ -94,11 +86,12 @@ func (c PusherConsumer) Consume(ctx context.Context, records iter.Seq[*kgo.Recor
 			default:
 			}
 
+			a := arena.NewArena()
 			parsed := parsedRecord{
-				PreallocWriteRequest: &mimirpb.PreallocWriteRequest{},
+				PreallocWriteRequest: mimirpb.NewPreallocWriteRequest(a),
 				// This context carries the tracing data for this individual record;
 				// kotel populates this data when it fetches the messages.
-				ctx:      rec.Context,
+				ctx:      arena.ContextWithArena(rec.Context, a),
 				tenantID: string(rec.Key),
 				offset:   rec.Offset,
 			}
@@ -114,6 +107,7 @@ func (c PusherConsumer) Consume(ctx context.Context, records iter.Seq[*kgo.Recor
 			// Now that we're done, check again before we send it to the channel.
 			select {
 			case <-unmarshalCtx.Done():
+				a.Free()
 				return
 			case ch <- parsed:
 			}
@@ -142,13 +136,7 @@ func (c PusherConsumer) Consume(ctx context.Context, records iter.Seq[*kgo.Recor
 	}()
 
 	for r := range recordsChannel {
-		if r.err != nil {
-			level.Error(spanlogger.FromContext(ctx, c.logger)).Log("msg", "failed to parse write request; skipping", "err", r.err)
-			continue
-		}
-
-		// If we get an error at any point, we need to stop processing the records. They will be retried at some point.
-		err := c.pushToStorage(r.ctx, r.tenantID, &r.WriteRequest, writer)
+		err := c.handleRecord(ctx, writer, r)
 		if err != nil {
 			cancel(cancellation.NewErrorf("error while pushing to storage")) // Stop the unmarshalling goroutine.
 			return fmt.Errorf("consuming record at offset %d for tenant %s: %w", r.offset, r.tenantID, err)
@@ -157,6 +145,27 @@ func (c PusherConsumer) Consume(ctx context.Context, records iter.Seq[*kgo.Recor
 
 	cancel(cancellation.NewErrorf("done unmarshalling records"))
 	return nil
+}
+
+type parsedRecord struct {
+	*mimirpb.PreallocWriteRequest
+	// ctx holds the tracing baggage for this record/request.
+	ctx      context.Context
+	tenantID string
+	err      error
+	offset   int64
+}
+
+func (c PusherConsumer) handleRecord(ctx context.Context, writer PusherCloser, r parsedRecord) error {
+	defer arena.FromContext(ctx).Free()
+
+	if r.err != nil {
+		level.Error(spanlogger.FromContext(ctx, c.logger)).Log("msg", "failed to parse write request; skipping", "err", r.err)
+		return nil
+	}
+
+	// If we get an error at any point, we need to stop processing the records. They will be retried at some point.
+	return c.pushToStorage(r.ctx, r.tenantID, &r.WriteRequest, writer)
 }
 
 func (c PusherConsumer) newStorageWriter(bytesPerTenant map[string]int) PusherCloser {
@@ -279,7 +288,7 @@ func (c *parallelStoragePusher) PushToStorageAndReleaseRequest(ctx context.Conte
 		level.Error(c.logger).Log("msg", "failed to extract tenant ID from context", "err", err)
 	}
 
-	shards := c.shardsFor(userID, wr.Source)
+	shards := c.shardsFor(arena.FromContext(ctx), userID, wr.Source)
 	return shards.PushToStorageAndReleaseRequest(ctx, wr)
 }
 
@@ -297,7 +306,7 @@ func (c *parallelStoragePusher) Close() []error {
 
 // shardsFor returns the parallelStorageShards for the given userID. Once created the same shards are re-used for the same userID.
 // We create a shard for each tenantID to parallelize the writes.
-func (c *parallelStoragePusher) shardsFor(userID string, requestSource mimirpb.WriteRequest_SourceEnum) PusherCloser {
+func (c *parallelStoragePusher) shardsFor(a *arena.Arena, userID string, requestSource mimirpb.WriteRequest_SourceEnum) PusherCloser {
 	// Construct the string inline so that it doesn't escape to the heap. Go doesn't escape strings that are used to only look up map keys.
 	// We can use "|" because that cannot be part of a tenantID in Mimir.
 	if p := c.pushers[userID+"|"+requestSource.String()]; p != nil {
@@ -314,7 +323,7 @@ func (c *parallelStoragePusher) shardsFor(userID string, requestSource mimirpb.W
 		// So we choose the lower overhead and simpler sequential pusher.
 		p = newSequentialStoragePusherWithErrorHandler(c.metrics, c.upstreamPusher, c.errorHandler)
 	} else {
-		p = newParallelStorageShards(c.metrics, c.errorHandler, idealShards, c.batchSize, c.queueCapacity, c.upstreamPusher)
+		p = newParallelStorageShards(a, c.metrics, c.errorHandler, idealShards, c.batchSize, c.queueCapacity, c.upstreamPusher)
 	}
 	c.pushers[userID+"|"+requestSource.String()] = p
 	return p
@@ -363,7 +372,7 @@ type flushableWriteRequest struct {
 }
 
 // newParallelStorageShards creates a new parallelStorageShards instance.
-func newParallelStorageShards(metrics *storagePusherMetrics, errorHandler *pushErrorHandler, numShards int, batchSize int, capacity int, pusher Pusher) *parallelStorageShards {
+func newParallelStorageShards(a *arena.Arena, metrics *storagePusherMetrics, errorHandler *pushErrorHandler, numShards int, batchSize int, capacity int, pusher Pusher) *parallelStorageShards {
 	p := &parallelStorageShards{
 		numShards:    numShards,
 		pusher:       pusher,
@@ -374,7 +383,7 @@ func newParallelStorageShards(metrics *storagePusherMetrics, errorHandler *pushE
 		wg:           &sync.WaitGroup{},
 	}
 
-	p.start()
+	p.start(a)
 
 	return p
 }
@@ -410,9 +419,8 @@ func (p *parallelStorageShards) PushToStorageAndReleaseRequest(ctx context.Conte
 		// We're transferring ownership of the timeseries to the batch, clear the slice as we go so we can reuse it.
 		request.Timeseries[i] = mimirpb.PreallocTimeseries{}
 	}
-	// The slice no longer owns any timeseries, so we can re-use it.
+	// The slice no longer owns any timeseries.
 	// Nil-out the slice to make any use-after-free attempts fail in an obvious way.
-	mimirpb.ReuseSliceOnly(request.Timeseries)
 	request.Timeseries = nil
 
 	// Push metadata to every shard in a round-robin fashion.
@@ -446,12 +454,12 @@ func (p *parallelStorageShards) Close() []error {
 }
 
 // start starts the shards, each in its own goroutine.
-func (p *parallelStorageShards) start() {
+func (p *parallelStorageShards) start(a *arena.Arena) {
 	shards := make([]*batchingQueue, p.numShards)
 	p.wg.Add(p.numShards)
 
 	for i := range shards {
-		shards[i] = newBatchingQueue(p.capacity, p.batchSize, p.metrics.batchingQueueMetrics)
+		shards[i] = newBatchingQueue(a, p.capacity, p.batchSize, p.metrics.batchingQueueMetrics)
 		go p.run(shards[i])
 	}
 
@@ -568,6 +576,7 @@ func (p *pushErrorHandler) shouldLogClientError(ctx context.Context, err error) 
 // Contract:
 // - The queue must always be drained by the consumer.
 type batchingQueue struct {
+	a       *arena.Arena
 	metrics *batchingQueueMetrics
 
 	ch chan flushableWriteRequest
@@ -587,12 +596,13 @@ type batchingQueue struct {
 }
 
 // newBatchingQueue creates a new batchingQueue instance.
-func newBatchingQueue(capacity int, batchSize int, metrics *batchingQueueMetrics) *batchingQueue {
+func newBatchingQueue(a *arena.Arena, capacity int, batchSize int, metrics *batchingQueueMetrics) *batchingQueue {
 	return &batchingQueue{
+		a:            a,
 		metrics:      metrics,
 		ch:           make(chan flushableWriteRequest, capacity),
 		done:         make(chan struct{}),
-		currentBatch: flushableWriteRequest{WriteRequest: &mimirpb.WriteRequest{Timeseries: mimirpb.PreallocTimeseriesSliceFromPool()}},
+		currentBatch: flushableWriteRequest{WriteRequest: &mimirpb.WriteRequest{Timeseries: mimirpb.AllocPreallocTimeseriesSlice(a)}},
 		batchSize:    batchSize,
 	}
 }
@@ -687,7 +697,7 @@ func (q *batchingQueue) push() error {
 // resetCurrentBatch resets the current batch to an empty state.
 func (q *batchingQueue) resetCurrentBatch() {
 	q.currentBatch = flushableWriteRequest{
-		WriteRequest: &mimirpb.WriteRequest{Timeseries: mimirpb.PreallocTimeseriesSliceFromPool()},
+		WriteRequest: &mimirpb.WriteRequest{Timeseries: mimirpb.AllocPreallocTimeseriesSlice(q.a)},
 	}
 }
 

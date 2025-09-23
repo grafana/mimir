@@ -860,7 +860,7 @@ func TestParallelStorageShards_ShardWriteRequest(t *testing.T) {
 							Unit:             "seconds",
 						},
 					},
-					Timeseries: mimirpb.PreallocTimeseriesSliceFromPool(),
+					Timeseries: mimirpb.AllocPreallocTimeseriesSlice(nil),
 				},
 			},
 			upstreamPushErrs: []error{nil, nil},
@@ -939,7 +939,7 @@ func TestParallelStorageShards_ShardWriteRequest(t *testing.T) {
 			reg := prometheus.NewPedanticRegistry()
 			metrics := newStoragePusherMetrics(reg)
 			errorHandler := newPushErrorHandler(metrics, nil, log.NewNopLogger())
-			shardingP := newParallelStorageShards(metrics, errorHandler, tc.shardCount, tc.batchSize, buffer, pusher)
+			shardingP := newParallelStorageShards(nil, metrics, errorHandler, tc.shardCount, tc.batchSize, buffer, pusher)
 
 			upstreamPushErrsCount := 0
 			for i, req := range tc.expectedUpstreamPushes {
@@ -1342,7 +1342,7 @@ func TestBatchingQueue_NoDeadlock(t *testing.T) {
 	batchSize := 3
 	reg := prometheus.NewPedanticRegistry()
 	m := newBatchingQueueMetrics(reg)
-	queue := newBatchingQueue(capacity, batchSize, m)
+	queue := newBatchingQueue(nil, capacity, batchSize, m)
 
 	ctx := context.Background()
 	series := mockPreallocTimeseries("series_1")
@@ -1616,7 +1616,7 @@ func setupQueue(t *testing.T, capacity, batchSize int, series []mimirpb.Prealloc
 
 	reg := prometheus.NewPedanticRegistry()
 	m := newBatchingQueueMetrics(reg)
-	queue := newBatchingQueue(capacity, batchSize, m)
+	queue := newBatchingQueue(nil, capacity, batchSize, m)
 
 	for _, s := range series {
 		require.NoError(t, queue.AddToBatch(context.Background(), mimirpb.API, s))
@@ -1627,7 +1627,6 @@ func setupQueue(t *testing.T, capacity, batchSize int, series []mimirpb.Prealloc
 
 func BenchmarkPusherConsumer(b *testing.B) {
 	pusher := pusherFunc(func(ctx context.Context, request *mimirpb.WriteRequest) error {
-		mimirpb.ReuseSlice(request.Timeseries)
 		return nil
 	})
 

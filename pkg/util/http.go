@@ -23,6 +23,7 @@ import (
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
 	"github.com/grafana/dskit/flagext"
+	"github.com/grafana/mimir/pkg/util/arena"
 	"github.com/klauspost/compress/zstd"
 	"github.com/pierrec/lz4/v4"
 	"github.com/pkg/errors"
@@ -151,10 +152,10 @@ const (
 // ParseProtoReader parses a compressed proto from an io.Reader.
 // You can pass in an optional RequestBuffers.
 // If no error is returned, the returned actualSize is the size of the uncompressed proto.
-func ParseProtoReader(ctx context.Context, reader io.Reader, expectedSize, maxSize int, buffers *RequestBuffers, req proto.Message, compression CompressionType) (actualSize int, err error) {
+func ParseProtoReader(ctx context.Context, reader io.Reader, expectedSize, maxSize int, req proto.Message, compression CompressionType) (actualSize int, err error) {
 	sp := trace.SpanFromContext(ctx)
 	sp.AddEvent("util.ParseProtoReader[start reading]")
-	body, err := decompressRequest(buffers, reader, expectedSize, maxSize, compression, sp)
+	body, err := decompressRequest(arena.FromContext(ctx), reader, expectedSize, maxSize, compression, sp)
 	if err != nil {
 		return 0, err
 	}
@@ -193,7 +194,7 @@ func (e MsgSizeTooLargeErr) Is(err error) bool {
 	return ok1 || ok2
 }
 
-func decompressRequest(buffers *RequestBuffers, reader io.Reader, expectedSize, maxSize int, compression CompressionType, sp trace.Span) ([]byte, error) {
+func decompressRequest(a *arena.Arena, reader io.Reader, expectedSize, maxSize int, compression CompressionType, sp trace.Span) ([]byte, error) {
 	if expectedSize > maxSize {
 		return nil, MsgSizeTooLargeErr{Actual: expectedSize, Limit: maxSize}
 	}
@@ -209,7 +210,7 @@ func decompressRequest(buffers *RequestBuffers, reader io.Reader, expectedSize, 
 				return buf.Bytes(), nil
 			}
 
-			return decompressSnappyFromBuffer(buffers, buf, maxSize, sp)
+			return decompressSnappyFromBuffer(a, buf.Bytes(), maxSize, sp)
 		}
 	case Gzip:
 		gzReader, err := gzip.NewReader(reader)
@@ -243,10 +244,11 @@ func decompressRequest(buffers *RequestBuffers, reader io.Reader, expectedSize, 
 		// Extra space guarantees no reallocation
 		sz += bytes.MinRead
 	}
-	buf := buffers.Get(sz)
+	buf := arena.MakeSlice[byte](a, sz, sz)
 	sp.AddEvent("util.ParseProtoReader[started_reading]")
 
-	if _, err := buf.ReadFrom(reader); err != nil {
+	n, err := reader.Read(buf)
+	if err != nil {
 		if compression == Gzip {
 			return nil, errors.Wrap(err, "decompress gzip")
 		}
@@ -258,22 +260,23 @@ func decompressRequest(buffers *RequestBuffers, reader io.Reader, expectedSize, 
 		}
 		return nil, errors.Wrap(err, "read body")
 	}
+	buf = buf[:n]
 	sp.AddEvent("util.ParseProtoReader[finished_reading]")
 
 	if compression == RawSnappy {
-		return decompressSnappyFromBuffer(buffers, buf, maxSize, sp)
+		return decompressSnappyFromBuffer(a, buf, maxSize, sp)
 	}
 
-	if buf.Len() > maxSize {
+	if len(buf) > maxSize {
 		return nil, MsgSizeTooLargeErr{Actual: -1, Limit: maxSize}
 	}
-	return buf.Bytes(), nil
+	return buf, nil
 }
 
-func decompressSnappyFromBuffer(buffers *RequestBuffers, buffer *bytes.Buffer, maxSize int, sp trace.Span) ([]byte, error) {
-	sp.AddEvent("util.ParseProtoReader[decompressSnappy]", trace.WithAttributes(attribute.Int("size", buffer.Len())))
+func decompressSnappyFromBuffer(a *arena.Arena, buffer []byte, maxSize int, sp trace.Span) ([]byte, error) {
+	sp.AddEvent("util.ParseProtoReader[decompressSnappy]", trace.WithAttributes(attribute.Int("size", len(buffer))))
 
-	size, err := snappy.DecodedLen(buffer.Bytes())
+	size, err := snappy.DecodedLen(buffer)
 	if err != nil {
 		return nil, errors.Wrap(err, "getting snappy decoded length")
 	}
@@ -281,11 +284,9 @@ func decompressSnappyFromBuffer(buffers *RequestBuffers, buffer *bytes.Buffer, m
 		return nil, MsgSizeTooLargeErr{Actual: size, Limit: maxSize}
 	}
 
-	decBuf := buffers.Get(size)
-	// Snappy bases itself on the target buffer's length, not capacity
-	decBufBytes := decBuf.Bytes()[0:size]
+	decBuf := arena.MakeSlice[byte](a, size, size)
 
-	decoded, err := snappy.Decode(decBufBytes, buffer.Bytes())
+	decoded, err := snappy.Decode(decBuf, buffer)
 	if err != nil {
 		return nil, errors.Wrap(err, "decompress snappy")
 	}

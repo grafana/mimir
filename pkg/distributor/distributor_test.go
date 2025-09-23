@@ -1442,7 +1442,7 @@ func TestDistributor_Push_ExemplarValidation(t *testing.T) {
 			reqBytes, err := tc.req.Marshal()
 			require.NoError(t, err)
 			reqCopy := &mimirpb.WriteRequest{}
-			require.NoError(t, reqCopy.Unmarshal(reqBytes))
+			require.NoError(t, reqCopy.Unmarshal(nil, reqBytes))
 
 			expectedSamples := tc.req.Timeseries[0].Samples
 			expectedExemplars := tc.req.Timeseries[0].Exemplars
@@ -6479,7 +6479,7 @@ func (i *mockIngester) Push(ctx context.Context, req *mimirpb.WriteRequest, _ ..
 		return nil, err
 	}
 	var reqCopy mimirpb.WriteRequest
-	err = reqCopy.Unmarshal(breq)
+	err = reqCopy.Unmarshal(nil, breq)
 	if err != nil {
 		return nil, err
 	}
