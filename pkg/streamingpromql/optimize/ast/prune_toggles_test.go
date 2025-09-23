@@ -13,6 +13,7 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/stretchr/testify/require"
 
+	"github.com/grafana/mimir/pkg/streamingpromql"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/ast"
 )
 
@@ -93,6 +94,29 @@ func checkPruneTogglesMetrics(t *testing.T, g prometheus.Gatherer, expectedTotal
 %[3]v %[4]v
 `, metricNameTotal, expectedTotal, metricNameChanged, expectedChanged)
 	require.NoError(t, testutil.GatherAndCompare(g, strings.NewReader(expectedMetrics), metricNameTotal, metricNameChanged))
+}
+
+func TestPruneTogglesWithQueryPlan(t *testing.T) {
+	ctx := context.Background()
+	reg := prometheus.NewPedanticRegistry()
+	opts := streamingpromql.NewTestEngineOpts()
+	opts.CommonOpts.Reg = reg
+	planner, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts)
+	require.NoError(t, err)
+	o := ast.NewPruneToggles(opts.CommonOpts.Reg)
+	planner.RegisterASTOptimizationPass(o)
+	observer := streamingpromql.NoopPlanningObserver{}
+
+	for input, expected := range testCasesPruneToggles {
+		t.Run("input", func(t *testing.T) {
+			expectedExpr, err := parser.ParseExpr(expected)
+			require.NoError(t, err)
+
+			outputExpr, err := planner.RunPrePlanningStages(ctx, input, instantQueryTimeRange, observer)
+			require.NoError(t, err)
+			require.Equal(t, expectedExpr.String(), outputExpr.String())
+		})
+	}
 }
 
 func TestPruneTogglesWithData(t *testing.T) {
