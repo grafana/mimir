@@ -29,13 +29,13 @@ func TestCloneExpr(t *testing.T) {
 		{
 			&parser.BinaryExpr{
 				Op:  parser.ADD,
-				LHS: &parser.NumberLiteral{Val: 1},
-				RHS: &parser.NumberLiteral{Val: 1},
+				LHS: &parser.NumberLiteral{Val: 1, PosRange: posrange.PositionRange{Start: 10, End: 11}},
+				RHS: &parser.NumberLiteral{Val: 1, PosRange: posrange.PositionRange{Start: 14, End: 15}},
 			},
 			&parser.BinaryExpr{
 				Op:  parser.ADD,
-				LHS: &parser.NumberLiteral{Val: 1, PosRange: posrange.PositionRange{Start: 0, End: 1}},
-				RHS: &parser.NumberLiteral{Val: 1, PosRange: posrange.PositionRange{Start: 4, End: 5}},
+				LHS: &parser.NumberLiteral{Val: 1, PosRange: posrange.PositionRange{Start: 10, End: 11}},
+				RHS: &parser.NumberLiteral{Val: 1, PosRange: posrange.PositionRange{Start: 14, End: 15}},
 			},
 		},
 		{
@@ -45,10 +45,12 @@ func TestCloneExpr(t *testing.T) {
 				Expr: &parser.VectorSelector{
 					Name: "some_metric",
 					LabelMatchers: []*labels.Matcher{
-						mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "some_metric"),
+						mustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "some_metric"),
 					},
+					PosRange: posrange.PositionRange{Start: 119, End: 130},
 				},
 				Grouping: []string{"foo"},
+				PosRange: posrange.PositionRange{Start: 100, End: 131},
 			},
 			&parser.AggregateExpr{
 				Op:      parser.SUM,
@@ -56,17 +58,17 @@ func TestCloneExpr(t *testing.T) {
 				Expr: &parser.VectorSelector{
 					Name: "some_metric",
 					LabelMatchers: []*labels.Matcher{
-						mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "some_metric"),
+						mustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "some_metric"),
 					},
 					PosRange: posrange.PositionRange{
-						Start: 19,
-						End:   30,
+						Start: 119,
+						End:   130,
 					},
 				},
 				Grouping: []string{"foo"},
 				PosRange: posrange.PositionRange{
-					Start: 0,
-					End:   31,
+					Start: 100,
+					End:   131,
 				},
 			},
 		},
@@ -77,6 +79,7 @@ func TestCloneExpr(t *testing.T) {
 			res, err := cloneExpr(c.input)
 			require.NoError(t, err)
 			require.Equal(t, c.expected, res)
+			require.NotSame(t, res, c.input, "cloneExpr should return a new expression")
 		})
 	}
 }
