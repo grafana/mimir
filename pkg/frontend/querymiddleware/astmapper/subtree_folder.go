@@ -6,48 +6,8 @@
 package astmapper
 
 import (
-	"context"
-
 	"github.com/prometheus/prometheus/promql/parser"
 )
-
-// subtreeFolder is a ExprMapper which embeds an entire parser.Expr in an embedded query,
-// if it does not contain any previously embedded queries. This allows the query-frontend
-// to "zip up" entire subtrees of an AST that have not already been parallelized.
-type subtreeFolder struct {
-	squasher Squasher
-}
-
-// newSubtreeFolder creates a subtreeFolder which can reduce an AST
-// to one embedded query if it contains no embedded queries yet.
-func newSubtreeFolder(squasher Squasher) ASTMapper {
-	return NewASTExprMapper(&subtreeFolder{squasher: squasher})
-}
-
-// MapExpr implements ExprMapper.
-func (f *subtreeFolder) MapExpr(ctx context.Context, expr parser.Expr) (mapped parser.Expr, finished bool, err error) {
-	hasEmbeddedQueries, err := anyNode(expr, f.squasher.ContainsSquashedExpression)
-	if err != nil {
-		return nil, true, err
-	}
-
-	// Don't change the expr if it already contains embedded queries.
-	if hasEmbeddedQueries {
-		return expr, false, nil
-	}
-
-	hasVectorSelector, err := anyNode(expr, isVectorSelector)
-	if err != nil {
-		return nil, true, err
-	}
-
-	// Change the expr if it contains vector selectors, as only those need to be embedded.
-	if hasVectorSelector {
-		expr, err := f.squasher.Squash(NewEmbeddedQuery(expr, nil))
-		return expr, true, err
-	}
-	return expr, false, nil
-}
 
 // isVectorSelector returns whether the expr is a vector selector.
 //

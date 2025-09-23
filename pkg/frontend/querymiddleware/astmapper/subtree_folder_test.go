@@ -6,7 +6,6 @@
 package astmapper
 
 import (
-	"context"
 	"testing"
 
 	"github.com/pkg/errors"
@@ -68,47 +67,6 @@ func TestEvalPredicate(t *testing.T) {
 			}
 
 			require.Equal(t, tc.expectedRes, res)
-		})
-	}
-}
-
-func TestSubtreeFolder(t *testing.T) {
-	for testName, tc := range map[string]struct {
-		input    string
-		expected string
-	}{
-		"embed an entire histogram": {
-			input:    "histogram_quantile(0.5, rate(alertmanager_http_request_duration_seconds_bucket[1m]))",
-			expected: `__embedded_queries__{__queries__="{\"Concat\":[{\"Expr\":\"histogram_quantile(0.5, rate(alertmanager_http_request_duration_seconds_bucket[1m]))\"}]}"}`,
-		},
-		"embed a binary expression across two functions": {
-			input:    `rate(http_requests_total{cluster="eu-west2"}[5m]) or rate(http_requests_total{cluster="us-central1"}[5m])`,
-			expected: `__embedded_queries__{__queries__="{\"Concat\":[{\"Expr\":\"rate(http_requests_total{cluster=\\\"eu-west2\\\"}[5m]) or rate(http_requests_total{cluster=\\\"us-central1\\\"}[5m])\"}]}"}`,
-		},
-		"embed one out of two legs of the query (right leg has already been embedded)": {
-			input: `sum(histogram_quantile(0.5, rate(selector[1m]))) +
-				sum without(__query_shard__) (__embedded_queries__{__queries__="tstquery"})`,
-			expected: `
-			  __embedded_queries__{__queries__="{\"Concat\":[{\"Expr\":\"sum(histogram_quantile(0.5, rate(selector[1m])))\"}]}"} + sum without (__query_shard__) (__embedded_queries__{__queries__="tstquery"})`,
-		},
-		"should not embed scalars": {
-			input:    `histogram_quantile(0.5, __embedded_queries__{__queries__="tstquery"})`,
-			expected: `histogram_quantile(0.5, __embedded_queries__{__queries__="tstquery"})`,
-		},
-	} {
-		t.Run(testName, func(t *testing.T) {
-			mapper := newSubtreeFolder(EmbeddedQueriesSquasher)
-			ctx := context.Background()
-
-			expr, err := parser.ParseExpr(tc.input)
-			require.Nil(t, err)
-			res, err := mapper.Map(ctx, expr)
-			require.Nil(t, err)
-
-			expected, err := parser.ParseExpr(tc.expected)
-			require.Nil(t, err)
-
-			require.Equal(t, expected.String(), res.String())
 		})
 	}
 }

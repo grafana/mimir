@@ -19,17 +19,7 @@ import (
 
 // NewSharding creates a new query sharding mapper.
 func NewSharding(shardSummer ASTMapper, inspectOnly bool, squasher Squasher) ASTMapper {
-	if inspectOnly {
-		// If we only want to inspect the query, then we don't need the subtree folder, as we just want to
-		// count the number of shardable legs in the expression, which the shardSummer does.
-		return shardSummer
-	}
-
-	subtreeFolder := newSubtreeFolder(squasher)
-	return NewMultiMapper(
-		shardSummer,
-		subtreeFolder,
-	)
+	return shardSummer
 }
 
 type Squasher interface {
