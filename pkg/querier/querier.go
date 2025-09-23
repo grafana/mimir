@@ -442,6 +442,10 @@ func (mq *multiQuerier) Select(ctx context.Context, _ bool, sp *storage.SelectHi
 		return queriers[0].Select(ctx, true, sp, matchers...)
 	}
 
+	// Initiate memory tracker and add them back to the context to be used downstream
+	memoryTracker := limiter.MemoryTrackerFromContextWithFallback(ctx)
+	ctx = limiter.AddMemoryTrackerToContext(ctx, memoryTracker)
+
 	sets := make(chan storage.SeriesSet, len(queriers))
 	for _, querier := range queriers {
 		go func(querier storage.Querier) {
@@ -458,8 +462,6 @@ func (mq *multiQuerier) Select(ctx context.Context, _ bool, sp *storage.SelectHi
 			return storage.ErrSeriesSet(ctx.Err())
 		}
 	}
-
-	memoryTracker := limiter.MemoryTrackerFromContextWithFallback(ctx)
 
 	// we have all the sets from different sources (chunk from store, chunks from ingesters,
 	// time series from store and time series from ingesters).
