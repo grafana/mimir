@@ -452,6 +452,8 @@ type MarshalerWithSize interface {
 	MarshalWithSize(size int) ([]byte, error)
 }
 
+// metadataSet is the collection of metadata within a request.
+// It keeps the order at which metadata is added. Metadata may optionally be deduplicated by family name.
 type metadataSet interface {
 	add(family string, mm MetricMetadata)
 	len() int
@@ -460,11 +462,9 @@ type metadataSet interface {
 
 var _ metadataSet = dedupingMetadataSet{}
 
-// metadataSet is the collection of metadata within a request.
-// It keeps the order at which metadata is added. Metadata may optionally be deduplicated by family name.
+// dedupingMetadataSet is a metadataSet that only stores one metadata per metric family.
+// Only the first metadata seen for a given family is kept.
 type dedupingMetadataSet struct {
-	// We avoid unifying this into a map[string][]*Metadata or some equivalent for perf reasons.
-	// It reduces allocations and allows us to take a shortcut when not deduplicating.
 	deduplicated map[string]*orderAwareMetricMetadata
 }
 
@@ -481,7 +481,7 @@ func (m dedupingMetadataSet) add(family string, mm MetricMetadata) {
 		// metric family name, we ignore this metadata.
 		return
 	}
-	m.deduplicated[family] = &orderAwareMetricMetadata{MetricMetadata: mm, order: m.len()} // TODO: Make orderAware wrap the ptr and remove the inner *
+	m.deduplicated[family] = &orderAwareMetricMetadata{MetricMetadata: mm, order: m.len()}
 }
 
 func (m dedupingMetadataSet) len() int {
