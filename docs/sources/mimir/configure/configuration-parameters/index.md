@@ -1468,6 +1468,11 @@ parquet_converter:
   # CLI flag: -parquet-converter.max-block-age
   [max_block_age: <duration> | default = 0s]
 
+  # Minimum block timestamp (based on ULID) to convert. Set to 0 to disable
+  # timestamp filtering.
+  # CLI flag: -parquet-converter.min-block-timestamp
+  [min_block_timestamp: <int> | default = 0]
+
   # (advanced) Comma-separated list of labels to sort by when converting to
   # Parquet format. If not the file will be sorted by '__name__'.
   # CLI flag: -parquet-converter.sorting-labels
