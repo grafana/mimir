@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 package main
 
 import (
@@ -12,6 +14,7 @@ import (
 	"time"
 
 	kitlog "github.com/go-kit/log"
+	"github.com/grafana/dskit/flagext"
 	"github.com/oklog/ulid/v2"
 	"github.com/prometheus-community/parquet-common/convert"
 	"github.com/prometheus-community/parquet-common/schema"
@@ -30,25 +33,28 @@ import (
 )
 
 var (
-	outputDir        = flag.String("output", "./benchmark-data", "Output directory for generated blocks")
-	userID           = flag.String("user", "benchmark-user", "User ID for the generated blocks")
-	compression      = flag.Bool("compression", true, "Enable compression for parquet data")
-	sortBy           = flag.String("sort-by", "", "Comma-separated list of fields to sort by in parquet data. If unset it still sorts by __name__.")
-	storeType        = flag.String("store", "both", "Store type to generate: 'parquet', 'tsdb', or 'both'")
-	metricsCount     = flag.Int("metrics", 5, "Number of different metrics to generate")
-	instancesCount   = flag.Int("instances", 100, "Number of different instances to generate")
-	regionsCount     = flag.Int("regions", 5, "Number of different regions to generate")
-	zonesCount       = flag.Int("zones", 10, "Number of different zones to generate")
-	servicesCount    = flag.Int("services", 20, "Number of different services to generate")
+	outputDir         = flag.String("output", "./benchmark-data", "Output directory for generated blocks")
+	userID            = flag.String("user", "benchmark-user", "User ID for the generated blocks")
+	compression       = flag.Bool("compression", true, "Enable compression for parquet data")
+	sortBy            = flag.String("sort-by", "", "Comma-separated list of fields to sort by in parquet data. If unset it still sorts by __name__.")
+	storeType         = flag.String("store", "both", "Store type to generate: 'parquet', 'tsdb', or 'both'")
+	metricsCount      = flag.Int("metrics", 5, "Number of different metrics to generate")
+	instancesCount    = flag.Int("instances", 100, "Number of different instances to generate")
+	regionsCount      = flag.Int("regions", 5, "Number of different regions to generate")
+	zonesCount        = flag.Int("zones", 10, "Number of different zones to generate")
+	servicesCount     = flag.Int("services", 20, "Number of different services to generate")
 	environmentsCount = flag.Int("environments", 3, "Number of different environments to generate")
-	sampleValue      = flag.Float64("sample-value", 0, "Fixed sample value (0 = random)")
-	samplesPerSeries = flag.Int("samples", 10, "Number of samples per series")
-	timeRangeHours   = flag.Int("time-range", 2, "Time range in hours for the generated block")
-	verboseLogging   = flag.Bool("verbose", false, "Verbose logging")
+	sampleValue       = flag.Float64("sample-value", 0, "Fixed sample value (0 = random)")
+	samplesPerSeries  = flag.Int("samples", 10, "Number of samples per series")
+	timeRangeHours    = flag.Int("time-range", 2, "Time range in hours for the generated block")
+	verboseLogging    = flag.Bool("verbose", false, "Verbose logging")
 )
 
 func main() {
-	flag.Parse()
+	err := flagext.ParseFlagsWithoutArguments(flag.CommandLine)
+	if err != nil {
+		log.Fatalf("Error parsing flags: %v", err)
+	}
 
 	// Validate dimension counts
 	if *metricsCount <= 0 || *instancesCount <= 0 || *regionsCount <= 0 || *zonesCount <= 0 || *servicesCount <= 0 || *environmentsCount <= 0 {
@@ -87,7 +93,7 @@ func generateBlocks(outputDir, userID string, dims dimensions, compression bool,
 	ctx := context.Background()
 
 	totalSeries := int64(dims.metrics * dims.instances * dims.regions * dims.zones * dims.services * dims.environments)
-	
+
 	if verbose {
 		log.Printf("Generating %d series for user %s", totalSeries, userID)
 		log.Printf("Dimensions: %d metrics × %d instances × %d regions × %d zones × %d services × %d environments",
@@ -252,7 +258,6 @@ type dimensions struct {
 	services     int
 	environments int
 }
-
 
 func convertToParquet(ctx context.Context, userBkt objstore.InstrumentedBucket, head *tsdb.Head, blockID ulid.ULID,
 	compression bool, sortByLabels []string) error {
