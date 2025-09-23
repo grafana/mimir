@@ -118,7 +118,12 @@ func (s *querySharding) Do(ctx context.Context, r MetricsQueryRequest) (Response
 		}
 	}
 
-	shardedQuery, err := s.sharder.shard(ctx, queryExpr, requestedShardCount, seriesCount, totalQueries)
+	tenantIDs, err := tenant.TenantIDs(ctx)
+	if err != nil {
+		return nil, apierror.New(apierror.TypeBadData, err.Error())
+	}
+
+	shardedQuery, err := s.sharder.shard(ctx, tenantIDs, queryExpr, requestedShardCount, seriesCount, totalQueries)
 	if err != nil {
 		return nil, err
 	}
@@ -255,14 +260,9 @@ func newQuerySharder(
 // expr may be modified in place, including if an error is returned.
 //
 // If the query can't be sharded, shard returns nil and no error, and expr is unchanged.
-func (s *querySharder) shard(ctx context.Context, expr parser.Expr, requestedShardCount int, seriesCount *EstimatedSeriesCount, totalQueries int32) (parser.Expr, error) {
+func (s *querySharder) shard(ctx context.Context, tenantIDs []string, expr parser.Expr, requestedShardCount int, seriesCount *EstimatedSeriesCount, totalQueries int32) (parser.Expr, error) {
 	log := spanlogger.FromContext(ctx, s.logger)
 	log.DebugLog("msg", "attempting query sharding", "query", expr)
-
-	tenantIDs, err := tenant.TenantIDs(ctx)
-	if err != nil {
-		return nil, apierror.New(apierror.TypeBadData, err.Error())
-	}
 
 	totalShards, err := s.getShardsForQuery(ctx, tenantIDs, expr, requestedShardCount, seriesCount, totalQueries, log)
 	if err != nil {

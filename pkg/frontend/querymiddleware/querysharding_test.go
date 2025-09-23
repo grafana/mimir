@@ -2256,7 +2256,8 @@ func BenchmarkQueryShardingRewriting(b *testing.B) {
 	limits := mockLimits{totalShards: 3}
 	reg := prometheus.NewPedanticRegistry()
 	sharder := newQuerySharder(limits, 0, reg, log.NewNopLogger())
-	ctx := user.InjectOrgID(context.Background(), "tenant-1")
+	tenants := []string{"tenant-1"}
+	ctx := context.Background()
 
 	for _, expr := range testCases {
 		b.Run(expr, func(b *testing.B) {
@@ -2267,7 +2268,7 @@ func BenchmarkQueryShardingRewriting(b *testing.B) {
 					require.NoError(b, err)
 				}
 
-				_, err = sharder.shard(ctx, parsedExpr, 0, nil, 1)
+				_, err = sharder.shard(ctx, tenants, parsedExpr, 0, nil, 1)
 				if err != nil {
 					require.NoError(b, err)
 				}
