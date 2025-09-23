@@ -10,8 +10,6 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
-	"github.com/prometheus/prometheus/model/timestamp"
-	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/stretchr/testify/require"
 
@@ -66,7 +64,7 @@ func TestPruneToggles(t *testing.T) {
 			require.NoError(t, err)
 			inputExpr, err := parser.ParseExpr(input)
 			require.NoError(t, err)
-			inputExpr, err = promql.PreprocessExpr(inputExpr, timestamp.Time(instantQueryTimeRange.StartT), timestamp.Time(instantQueryTimeRange.EndT), 0)
+			inputExpr, err = preprocessQuery(t, inputExpr)
 			require.NoError(t, err)
 
 			reg := prometheus.NewPedanticRegistry()

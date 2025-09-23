@@ -12,6 +12,7 @@ import (
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/promqltest"
 	"github.com/stretchr/testify/require"
 
@@ -20,7 +21,11 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
-var instantQueryTimeRange = types.NewInstantQueryTimeRange(timestamp.Time(1000))
+var dummyTimeRange = types.NewInstantQueryTimeRange(timestamp.Time(1000))
+
+func preprocessQuery(t *testing.T, expr parser.Expr) (parser.Expr, error) {
+	return promql.PreprocessExpr(expr, timestamp.Time(dummyTimeRange.StartT), timestamp.Time(dummyTimeRange.EndT), 0)
+}
 
 func testASTOptimizationPassWithData(t *testing.T, loadTemplate string, testCases map[string]string) {
 	numSamples := 100
