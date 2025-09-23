@@ -62,7 +62,7 @@ func NewMultiMapper(xs ...ASTMapper) *MultiMapper {
 	return m
 }
 
-// cloneExpr is a helper function to clone an expr.
+// cloneExpr is a helper function to clone an expression.
 func cloneExpr(expr parser.Expr) (parser.Expr, error) {
 	return parser.ParseExpr(expr.String())
 }
