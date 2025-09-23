@@ -24,6 +24,16 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 )
 
+const (
+	outputDir           = "chunks-dump"
+	portForwardWaitTime = 5 * time.Second
+	goroutineStartDelay = 250 * time.Millisecond
+	minPort             = 16384
+	maxPortRange        = 49152 - 16384
+	defaultTimeout      = 30 * time.Second
+	ingesterPort        = 9095
+)
+
 func main() {
 	if len(os.Args) > 1 && os.Args[1] == "download-chunks" {
 		app := kingpin.New("grpcurl-query-ingesters", "Download chunks from Kubernetes ingesters")
@@ -153,19 +163,8 @@ func counterResetHintString(crh histogram.CounterResetHint) string {
 }
 
 func downloadChunks(k8sContext, k8sNamespace, tenantID, queryFile string) {
-
-	outputDir := "chunks-dump"
-	failuresFile := filepath.Join(outputDir, ".failures")
-
-	err := os.MkdirAll(outputDir, 0755)
-	if err != nil {
-		fmt.Printf("Failed to create output directory: %v\n", err)
-		os.Exit(1)
-	}
-
-	err = os.WriteFile(failuresFile, []byte{}, 0644)
-	if err != nil {
-		fmt.Printf("Failed to create failures file: %v\n", err)
+	if err := setupOutputDirectory(); err != nil {
+		fmt.Printf("Failed to setup output directory: %v\n", err)
 		os.Exit(1)
 	}
 
@@ -177,8 +176,27 @@ func downloadChunks(k8sContext, k8sNamespace, tenantID, queryFile string) {
 
 	fmt.Printf("Found %d ingester pods\n", len(pods))
 
-	basePort := 16384 + rand.Intn(49152-16384)
+	failures := queryAllIngesters(k8sContext, k8sNamespace, tenantID, queryFile, pods)
+	handleResults(failures)
+}
+
+func setupOutputDirectory() error {
+	if err := os.MkdirAll(outputDir, 0755); err != nil {
+		return fmt.Errorf("failed to create output directory: %w", err)
+	}
+
+	failuresFile := filepath.Join(outputDir, ".failures")
+	if err := os.WriteFile(failuresFile, []byte{}, 0644); err != nil {
+		return fmt.Errorf("failed to create failures file: %w", err)
+	}
+
+	return nil
+}
+
+func queryAllIngesters(k8sContext, k8sNamespace, tenantID, queryFile string, pods []string) []string {
+	basePort := minPort + rand.Intn(maxPortRange)
 	var wg sync.WaitGroup
+	var failures []string
 	failuresMutex := &sync.Mutex{}
 
 	for i, pod := range pods {
@@ -188,43 +206,45 @@ func downloadChunks(k8sContext, k8sNamespace, tenantID, queryFile string) {
 		go func(podName string, port int) {
 			defer wg.Done()
 
-			err := queryIngester(k8sContext, k8sNamespace, podName, tenantID, queryFile, outputDir, port)
+			err := queryIngester(k8sContext, k8sNamespace, podName, tenantID, queryFile, port)
 			if err != nil {
 				printFailure(fmt.Sprintf("Failed to query %s", podName))
 
 				failuresMutex.Lock()
-				f, _ := os.OpenFile(failuresFile, os.O_APPEND|os.O_WRONLY, 0644)
-				if f != nil {
-					f.WriteString(podName + "\n")
-					f.Close()
-				}
+				failures = append(failures, podName)
 				failuresMutex.Unlock()
 			} else {
 				printSuccess(fmt.Sprintf("Successfully queried %s", podName))
 			}
 		}(pod, localPort)
 
-		time.Sleep(250 * time.Millisecond)
+		time.Sleep(goroutineStartDelay)
 	}
 
 	wg.Wait()
+	return failures
+}
 
-	failuresData, _ := os.ReadFile(failuresFile)
-	failuresList := strings.TrimSpace(string(failuresData))
+func handleResults(failures []string) {
+	// Write failures file for backward compatibility
+	failuresFile := filepath.Join(outputDir, ".failures")
+	if len(failures) > 0 {
+		failureData := strings.Join(failures, "\n") + "\n"
+		os.WriteFile(failuresFile, []byte(failureData), 0644)
+	} else {
+		os.WriteFile(failuresFile, []byte{}, 0644)
+	}
 
 	fmt.Println()
 	fmt.Println()
 
-	if failuresList == "" {
+	if len(failures) == 0 {
 		printSuccess("Successfully queried all ingesters")
 	} else {
-		failures := strings.Split(failuresList, "\n")
 		printFailure(fmt.Sprintf("Failed to query %d ingesters:", len(failures)))
 
 		for _, failure := range failures {
-			if failure != "" {
-				fmt.Printf("- %s\n", failure)
-			}
+			fmt.Printf("- %s\n", failure)
 		}
 		os.Exit(1)
 	}
@@ -250,24 +270,33 @@ func getIngesterPods(k8sContext, k8sNamespace string) ([]string, error) {
 	return ingesterPods, nil
 }
 
-func queryIngester(k8sContext, k8sNamespace, podName, tenantID, queryFile, outputDir string, localPort int) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+func queryIngester(k8sContext, k8sNamespace, podName, tenantID, queryFile string, localPort int) error {
+	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
 	defer cancel()
 
 	portForwardCmd := exec.CommandContext(ctx, "kubectl", "port-forward",
 		"--context", k8sContext, "-n", k8sNamespace, podName,
-		fmt.Sprintf("%d:9095", localPort))
+		fmt.Sprintf("%d:%d", localPort, ingesterPort))
 
 	err := portForwardCmd.Start()
 	if err != nil {
 		return fmt.Errorf("failed to start port-forward: %w", err)
 	}
 
-	time.Sleep(5 * time.Second)
+	defer func() {
+		if portForwardCmd.Process != nil {
+			portForwardCmd.Process.Kill()
+			if waitErr := portForwardCmd.Wait(); waitErr != nil {
+				// Log but don't fail on cleanup errors
+				fmt.Fprintf(os.Stderr, "Warning: error waiting for port-forward cleanup: %v\n", waitErr)
+			}
+		}
+	}()
+
+	time.Sleep(portForwardWaitTime)
 
 	queryData, err := os.ReadFile(queryFile)
 	if err != nil {
-		portForwardCmd.Process.Kill()
 		return fmt.Errorf("failed to read query file: %w", err)
 	}
 
@@ -284,11 +313,8 @@ func queryIngester(k8sContext, k8sNamespace, podName, tenantID, queryFile, outpu
 	outputFile := filepath.Join(outputDir, podName)
 	output, err := grpcurlCmd.Output()
 
-	portForwardCmd.Process.Kill()
-	portForwardCmd.Wait()
-
 	if err != nil {
-		return fmt.Errorf("grpcurl failed: %w", err)
+		return fmt.Errorf("grpcurl query failed for pod %s on port %d: %w", podName, localPort, err)
 	}
 
 	err = os.WriteFile(outputFile, output, 0644)
