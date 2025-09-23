@@ -309,9 +309,7 @@ func (s *querySharder) shardQuery(ctx context.Context, expr parser.Expr, totalSh
 	defer cancel()
 
 	summer := astmapper.NewQueryShardSummer(totalShards, inspectOnly, s.squasher, s.logger, stats)
-	mapper := astmapper.NewSharding(summer, inspectOnly, s.squasher)
-
-	shardedQuery, err := mapper.Map(ctx, expr)
+	shardedQuery, err := summer.Map(ctx, expr)
 	if err != nil {
 		return nil, nil, err
 	}

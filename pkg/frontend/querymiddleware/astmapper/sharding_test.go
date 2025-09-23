@@ -23,14 +23,13 @@ func TestShardSummer(t *testing.T) {
 	runTest := func(t *testing.T, input string, expected string, shardCount int, inspectOnly bool, expectedShardedQueries int) {
 		stats := NewMapperStats()
 		summer := NewQueryShardSummer(shardCount, inspectOnly, EmbeddedQueriesSquasher, log.NewNopLogger(), stats)
-		mapper := NewSharding(summer, inspectOnly, EmbeddedQueriesSquasher)
 		expr, err := parser.ParseExpr(input)
 		require.NoError(t, err)
 		expectedExpr, err := parser.ParseExpr(expected)
 		require.NoError(t, err)
 
 		ctx := context.Background()
-		mapped, err := mapper.Map(ctx, expr)
+		mapped, err := summer.Map(ctx, expr)
 		require.NoError(t, err)
 		require.Equal(t, expectedExpr.String(), mapped.String())
 		require.Equal(t, expectedShardedQueries, stats.GetShardedQueries())
@@ -45,32 +44,28 @@ func TestShardSummer(t *testing.T) {
 	}{
 		{
 			`quantile(0.9,foo)`,
-			concat(`quantile(0.9,foo)`),
+			`quantile(0.9,foo)`,
 			0,
 		},
 		{
 			`absent(foo)`,
-			concat(`absent(foo)`),
+			`absent(foo)`,
 			0,
 		},
 		{
 			`absent_over_time(foo[1m])`,
-			concat(`absent_over_time(foo[1m])`),
+			`absent_over_time(foo[1m])`,
 			0,
 		},
 		{
 
 			`histogram_quantile(0.5, rate(bar1{baz="blip"}[30s]))`,
-			concat(
-				`histogram_quantile(0.5, rate(bar1{baz="blip"}[30s]))`,
-			),
+			`histogram_quantile(0.5, rate(bar1{baz="blip"}[30s]))`,
 			0,
 		},
 		{
 			`sum by (foo) (histogram_quantile(0.9, rate(http_request_duration_seconds_bucket[10m])))`,
-			concat(
-				`sum by (foo) (histogram_quantile(0.9, rate(http_request_duration_seconds_bucket[10m])))`,
-			),
+			`sum by (foo) (histogram_quantile(0.9, rate(http_request_duration_seconds_bucket[10m])))`,
 			0,
 		},
 		{
@@ -84,7 +79,7 @@ func TestShardSummer(t *testing.T) {
 			// This query is not parallelized because the leg "rate(bar2[1m])" is not aggregated and
 			// could result in high cardinality results.
 			`sum(rate(bar1[1m])) or rate(bar2[1m])`,
-			concat(`sum(rate(bar1[1m])) or rate(bar2[1m])`),
+			`sum(rate(bar1[1m])) or rate(bar2[1m])`,
 			0,
 		},
 		{
@@ -198,7 +193,7 @@ func TestShardSummer(t *testing.T) {
 		},
 		{
 			`min_over_time(metric_counter[5m])`,
-			concat(`min_over_time(metric_counter[5m])`),
+			`min_over_time(metric_counter[5m])`,
 			0,
 		},
 		{
@@ -214,13 +209,11 @@ func TestShardSummer(t *testing.T) {
 					rate(metric_counter[5m])
 				)[10m:2m]
 			)`,
-			concat(
-				`min_over_time(
-					sum by(group_1) (
-						rate(metric_counter[5m])
-					)[10m:2m]
-				)`,
-			),
+			`min_over_time(
+				sum by(group_1) (
+					rate(metric_counter[5m])
+				)[10m:2m]
+			)`,
 			0,
 		},
 		{
@@ -264,20 +257,16 @@ func TestShardSummer(t *testing.T) {
 					rate(metric_counter[5m])
 				)[10m:]
 			)`,
-			concat(
-				`rate(
-						sum by(group_1) (
-							rate(metric_counter[5m])
-						)[10m:]
-					)`,
-			),
+			`rate(
+				sum by(group_1) (
+					rate(metric_counter[5m])
+				)[10m:]
+			)`,
 			0,
 		},
 		{
 			`absent_over_time(rate(metric_counter[5m])[10m:])`,
-			concat(
-				`absent_over_time(rate(metric_counter[5m])[10m:])`,
-			),
+			`absent_over_time(rate(metric_counter[5m])[10m:])`,
 			0,
 		},
 		{
@@ -288,15 +277,13 @@ func TestShardSummer(t *testing.T) {
 					[5m:1m])
 				[2m:])
 			[10m:])`,
-			concat(
-				`max_over_time(
-					stddev_over_time(
-						deriv(
-							sort(metric_counter)
-						[5m:1m])
-					[2m:])
-				[10m:])`,
-			),
+			`max_over_time(
+				stddev_over_time(
+					deriv(
+						sort(metric_counter)
+					[5m:1m])
+				[2m:])
+			[10m:])`,
 			0,
 		},
 		{
@@ -307,22 +294,18 @@ func TestShardSummer(t *testing.T) {
 					[5m:1m])
 				[2m:])
 			[10m:])`,
-			concat(
-				`max_over_time(
-					absent_over_time(
-						deriv(
-							rate(metric_counter[1m])
-						[5m:1m])
-					[2m:])
-				[10m:])`,
-			),
+			`max_over_time(
+				absent_over_time(
+					deriv(
+						rate(metric_counter[1m])
+					[5m:1m])
+				[2m:])
+			[10m:])`,
 			0,
 		},
 		{
 			`quantile_over_time(0.99, cortex_ingester_active_series[1w])`,
-			concat(
-				`quantile_over_time(0.99, cortex_ingester_active_series{}[1w])`,
-			),
+			`quantile_over_time(0.99, cortex_ingester_active_series{}[1w])`,
 			0,
 		},
 		{
@@ -332,22 +315,22 @@ func TestShardSummer(t *testing.T) {
 		},
 		{
 			`ln(bar) - resets(foo[1d])`,
-			concat(`ln(bar) - resets(foo[1d]) `),
+			`ln(bar) - resets(foo[1d]) `,
 			0,
 		},
 		{
 			`predict_linear(foo[10m],3600)`,
-			concat(`predict_linear(foo[10m],3600)`),
+			`predict_linear(foo[10m],3600)`,
 			0,
 		},
 		{
 			`label_replace(up{job="api-server",service="a:c"}, "foo", "$1", "service", "(.*):.*")`,
-			concat(`label_replace(up{job="api-server",service="a:c"}, "foo", "$1", "service", "(.*):.*")`),
+			`label_replace(up{job="api-server",service="a:c"}, "foo", "$1", "service", "(.*):.*")`,
 			0,
 		},
 		{
 			`ln(exp(label_replace(up{job="api-server",service="a:c"}, "foo", "$1", "service", "(.*):.*")))`,
-			concat(`ln(exp(label_replace(up{job="api-server",service="a:c"}, "foo", "$1", "service", "(.*):.*")))`),
+			`ln(exp(label_replace(up{job="api-server",service="a:c"}, "foo", "$1", "service", "(.*):.*")))`,
 			0,
 		},
 		{
@@ -413,20 +396,20 @@ func TestShardSummer(t *testing.T) {
 		{
 			// This query is not parallelized because the leg "year(foo)" could result in high cardinality results.
 			`sum(rate(metric_counter[1m])) / vector(3) ^ year(foo)`,
-			concat(`sum(rate(metric_counter[1m])) / vector(3) ^ year(foo)`),
+			`sum(rate(metric_counter[1m])) / vector(3) ^ year(foo)`,
 			0,
 		},
 		{
 			// can't shard foo > bar,
 			// because foo{__query_shard__="1_of_3"} won't have the matching labels in bar{__query_shard__="1_of_3"}
 			`foo > bar`,
-			concat(`foo > bar`),
+			`foo > bar`,
 			0,
 		},
 		{
 			// we could shard foo * 2, but since it doesn't reduce the data set, we don't.
 			`foo * 2`,
-			concat(`foo * 2`),
+			`foo * 2`,
 			0,
 		},
 		{
@@ -463,14 +446,14 @@ func TestShardSummer(t *testing.T) {
 			// This query is not parallelized because the leg "foo" is not aggregated and
 			// could result in high cardinality results.
 			`foo > sum(bar)`,
-			concat(`foo > sum(bar)`),
+			`foo > sum(bar)`,
 			0,
 		},
 		{
 			// This query is not parallelized because the leg "foo" is not aggregated and
 			// could result in high cardinality results.
 			`foo > scalar(sum(bar))`,
-			concat(`foo > scalar(sum(bar))`),
+			`foo > scalar(sum(bar))`,
 			0,
 		},
 		{
@@ -483,7 +466,7 @@ func TestShardSummer(t *testing.T) {
 			// This query is not parallelized because the leg "foo" is not aggregated and
 			// could result in high cardinality results.
 			in:                       `foo * on(a, b) group_left(c) avg by(a, b, c) (bar)`,
-			out:                      concat(`foo * on(a, b) group_left(c) avg by(a, b, c) (bar)`),
+			out:                      `foo * on(a, b) group_left(c) avg by(a, b, c) (bar)`,
 			expectedShardableQueries: 0,
 		},
 		{
@@ -504,11 +487,11 @@ func TestShardSummer(t *testing.T) {
                     *
                     on(cluster, pod, namespace) group_right() pod:container_cpu_usage:sum
             )`,
-			out: concat(`max by(pod) (
+			out: `max by(pod) (
                     max without(prometheus_replica, instance, node) (kube_pod_labels{namespace="test"})
                     *
                     on(cluster, pod, namespace) group_right() pod:container_cpu_usage:sum
-            )`),
+            )`,
 			expectedShardableQueries: 0,
 		},
 		{
@@ -555,18 +538,6 @@ func concatShards(t *testing.T, shards int, queryTemplate string) string {
 		expr, err := parser.ParseExpr(queryStr)
 		require.NoError(t, err)
 		queries[shard] = NewEmbeddedQuery(expr, nil)
-	}
-	return concatInner(queries...)
-}
-
-func concat(queryStrs ...string) string {
-	queries := make([]EmbeddedQuery, len(queryStrs))
-	for i, query := range queryStrs {
-		expr, err := parser.ParseExpr(query)
-		if err != nil {
-			panic(err)
-		}
-		queries[i] = NewEmbeddedQuery(expr, nil)
 	}
 	return concatInner(queries...)
 }
