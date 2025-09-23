@@ -7,7 +7,7 @@ metadata:
   labels:
     grafana.com/inject-rollout-operator-ca: "true"
     grafana.com/namespace: "citestns"
-    helm.sh/chart: rollout-operator-0.33.0
+    helm.sh/chart: rollout-operator-0.33.1
     app.kubernetes.io/name: rollout-operator
     app.kubernetes.io/instance: classic-architecture-values
     app.kubernetes.io/version: "v0.29.0"
