@@ -6,6 +6,8 @@ import (
 	"context"
 	"testing"
 
+	"github.com/prometheus/prometheus/model/timestamp"
+	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/stretchr/testify/require"
 
@@ -138,6 +140,9 @@ func TestPropagateMatchers(t *testing.T) {
 
 			inputExpr, err := parser.ParseExpr(input)
 			require.NoError(t, err)
+			inputExpr, err = promql.PreprocessExpr(inputExpr, timestamp.Time(instantQueryTimeRange.StartT), timestamp.Time(instantQueryTimeRange.EndT), 0)
+			require.NoError(t, err)
+
 			optimizer := ast.NewPropagateMatchersMapper()
 			outputExpr, err := optimizer.Map(ctx, inputExpr)
 			require.NoError(t, err)

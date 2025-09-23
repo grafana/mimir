@@ -17,7 +17,10 @@ import (
 
 	"github.com/grafana/mimir/pkg/streamingpromql"
 	"github.com/grafana/mimir/pkg/streamingpromql/testutils"
+	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
+
+var instantQueryTimeRange = types.NewInstantQueryTimeRange(timestamp.Time(1000))
 
 func testASTOptimizationPassWithData(t *testing.T, loadTemplate string, testCases map[string]string) {
 	numSamples := 100

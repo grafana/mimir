@@ -93,6 +93,8 @@ func (mapper *pruneToggles) MapExpr(ctx context.Context, expr parser.Expr) (mapp
 func (mapper *pruneToggles) isConst(expr parser.Expr) (isConst, isEmpty bool) {
 	var lhs, rhs parser.Expr
 	switch e := expr.(type) {
+	case *parser.StepInvariantExpr:
+		return mapper.isConst(e.Expr)
 	case *parser.ParenExpr:
 		return mapper.isConst(e.Expr)
 	case *parser.BinaryExpr:
