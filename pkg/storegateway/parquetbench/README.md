@@ -12,7 +12,7 @@ The benchmark can generate test data automatically during the test run:
 # Run with Parquet storage
 go test -bench=BenchmarkBucketStores_Series -benchmark-store=parquet
 
-# Run with TSDB storage  
+# Run with TSDB storage
 go test -bench=BenchmarkBucketStores_Series -benchmark-store=tsdb
 
 # Run specific test case
@@ -36,9 +36,9 @@ go test -bench=BenchmarkBucketStores_Series -benchmark-store=tsdb -benchmark-tsd
 
 ## Benchmark Flags
 
-| Flag | Default | Description                                                                                               |
-|------|---------|-----------------------------------------------------------------------------------------------------------|
-| `-benchmark-store` | `parquet` | Store type to benchmark: 'parquet' or 'tsdb'                                                              |
-| `-benchmark-compression` | `true` | Enable compression for parquet data                                                                       |
-| `-benchmark-sort-by` | `""` | Comma-separated list of fields to sort by in parquet data                                                 |
-| `-benchmark-tsdb-dir` | `""` | Path to pre-generated TSDB blocks (optional) If set the above compression and sort-by options are ignored |
+| Flag                     | Default   | Description                                                                                               |
+| ------------------------ | --------- | --------------------------------------------------------------------------------------------------------- |
+| `-benchmark-store`       | `parquet` | Store type to benchmark: 'parquet' or 'tsdb'                                                              |
+| `-benchmark-compression` | `true`    | Enable compression for parquet data                                                                       |
+| `-benchmark-sort-by`     | `""`      | Comma-separated list of fields to sort by in parquet data                                                 |
+| `-benchmark-tsdb-dir`    | `""`      | Path to pre-generated TSDB blocks (optional) If set the above compression and sort-by options are ignored |
