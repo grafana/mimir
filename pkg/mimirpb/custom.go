@@ -452,35 +452,43 @@ type MarshalerWithSize interface {
 	MarshalWithSize(size int) ([]byte, error)
 }
 
+type metadataSet interface {
+	add(family string, mm MetricMetadata)
+	len() int
+	slice() []*MetricMetadata
+}
+
+var _ metadataSet = dedupingMetadataSet{}
+
 // metadataSet is the collection of metadata within a request.
 // It keeps the order at which metadata is added. Metadata may optionally be deduplicated by family name.
-type orderedMetadataSet struct {
-	dedupe bool
+type dedupingMetadataSet struct {
 	// We avoid unifying this into a map[string][]*Metadata or some equivalent for perf reasons.
 	// It reduces allocations and allows us to take a shortcut when not deduplicating.
 	deduplicated map[string]*orderAwareMetricMetadata
-	unmodified   []*MetricMetadata
 }
 
-func (m *orderedMetadataSet) add(family string, mm *MetricMetadata) {
-	if m.dedupe {
-		m.deduplicated[family] = &orderAwareMetricMetadata{MetricMetadata: *mm} // TODO: Make orderAware wrap the ptr and remove the inner *
+func newDedupingMetadataSet() dedupingMetadataSet {
+	return dedupingMetadataSet{
+		deduplicated: make(map[string]*orderAwareMetricMetadata),
+	}
+}
+
+func (m dedupingMetadataSet) add(family string, mm MetricMetadata) {
+	if _, ok := m.deduplicated[family]; ok {
+		// Already have metadata for this metric familiy name.
+		// Since we cannot have multiple definitions of the same
+		// metric family name, we ignore this metadata.
 		return
 	}
-	m.unmodified = append(m.unmodified, mm)
+	m.deduplicated[family] = &orderAwareMetricMetadata{MetricMetadata: mm, order: m.len()} // TODO: Make orderAware wrap the ptr and remove the inner *
 }
 
-func (m *orderedMetadataSet) len() int {
-	if m.dedupe {
-		return len(m.deduplicated)
-	}
-	return len(m.unmodified)
+func (m dedupingMetadataSet) len() int {
+	return len(m.deduplicated)
 }
 
-func (m *orderedMetadataSet) toSlice() []*MetricMetadata {
-	if !m.dedupe {
-		return m.unmodified
-	}
+func (m dedupingMetadataSet) slice() []*MetricMetadata {
 	result := make([]*MetricMetadata, m.len())
 	for _, meta := range m.deduplicated {
 		result[meta.order] = &meta.MetricMetadata
