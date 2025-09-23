@@ -143,11 +143,6 @@ func rewriteForQuerySharding(ctx context.Context, expr string) (string, error) {
 		return "", err
 	}
 
-	if stats.GetShardedQueries() == 0 {
-		// If no part of the query was shardable, then the query-frontend will use the original expression as-is.
-		return expr, nil
-	}
-
 	return shardedQuery.String(), nil
 }
 
