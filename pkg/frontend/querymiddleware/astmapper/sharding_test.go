@@ -23,14 +23,13 @@ func TestShardSummer(t *testing.T) {
 	runTest := func(t *testing.T, input string, expected string, shardCount int, inspectOnly bool, expectedShardedQueries int) {
 		stats := NewMapperStats()
 		summer := NewQueryShardSummer(shardCount, inspectOnly, EmbeddedQueriesSquasher, log.NewNopLogger(), stats)
-		mapper := NewSharding(summer, inspectOnly, EmbeddedQueriesSquasher)
 		expr, err := parser.ParseExpr(input)
 		require.NoError(t, err)
 		expectedExpr, err := parser.ParseExpr(expected)
 		require.NoError(t, err)
 
 		ctx := context.Background()
-		mapped, err := mapper.Map(ctx, expr)
+		mapped, err := summer.Map(ctx, expr)
 		require.NoError(t, err)
 		require.Equal(t, expectedExpr.String(), mapped.String())
 		require.Equal(t, expectedShardedQueries, stats.GetShardedQueries())

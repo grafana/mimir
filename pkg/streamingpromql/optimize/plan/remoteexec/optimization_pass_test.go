@@ -133,13 +133,12 @@ func rewriteForQuerySharding(ctx context.Context, expr string) (string, error) {
 	stats := astmapper.NewMapperStats()
 	squasher := astmapper.EmbeddedQueriesSquasher
 	summer := astmapper.NewQueryShardSummer(maxShards, false, squasher, log.NewNopLogger(), stats)
-	mapper := astmapper.NewSharding(summer, false, squasher)
 	ast, err := parser.ParseExpr(expr)
 	if err != nil {
 		return "", err
 	}
 
-	shardedQuery, err := mapper.Map(ctx, ast)
+	shardedQuery, err := summer.Map(ctx, ast)
 	if err != nil {
 		return "", err
 	}

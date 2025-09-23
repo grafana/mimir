@@ -17,11 +17,6 @@ import (
 	"github.com/grafana/mimir/pkg/storage/sharding"
 )
 
-// NewSharding creates a new query sharding mapper.
-func NewSharding(shardSummer ASTMapper, inspectOnly bool, squasher Squasher) ASTMapper {
-	return shardSummer
-}
-
 type Squasher interface {
 	Squash(...EmbeddedQuery) (parser.Expr, error)
 	ContainsSquashedExpression(node parser.Node) (bool, error)
