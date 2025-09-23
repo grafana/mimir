@@ -93,13 +93,13 @@ var DefaultPostingsForMatchersCacheFactory = NewPostingsForMatchersCacheFactory(
 //   - `force` indicates that all requests should go through cache, regardless of the `concurrent` param provided to the PostingsForMatchers method.
 //   - `metrics` the metrics that should be used by the produced caches.
 func NewPostingsForMatchersCacheFactory(shared bool, keyFunc CacheKeyFunc, invalidation bool, cacheVersions int, ttl time.Duration, maxItems int, maxBytes int64, force bool, metrics *PostingsForMatchersCacheMetrics) PostingsForMatchersCacheFactory {
-	var mv *metricVersions
-	if shared && invalidation {
-		mv = &metricVersions{
-			versions: make([]atomic.Int64, cacheVersions),
-		}
-	}
 	factoryFunc := func(tracingKV []attribute.KeyValue) *PostingsForMatchersCache {
+		var mv *metricVersions
+		if shared && invalidation {
+			mv = &metricVersions{
+				versions: make([]atomic.Int64, cacheVersions),
+			}
+		}
 		return &PostingsForMatchersCache{
 			calls:            &sync.Map{},
 			cached:           list.New(),
