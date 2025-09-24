@@ -86,14 +86,6 @@ func newShardSummer(shards int, inspectOnly bool, squasher Squasher, logger log.
 	}
 }
 
-// Clone returns a clone of shardSummer with stats and current shard index reset to default.
-func (summer *shardSummer) Clone() *shardSummer {
-	s := *summer
-	s.stats = NewMapperStats()
-	s.currentShard = nil
-	return &s
-}
-
 // CopyWithCurShard clones a shardSummer with a new current shard.
 func (summer *shardSummer) CopyWithCurShard(curshard int) *shardSummer {
 	s := *summer
