@@ -1764,12 +1764,12 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 					ctx, cancel := context.WithCancel(context.Background())
 					t.Cleanup(cancel)
 					ctx = limiter.AddQueryLimiterToContext(ctx, testData.queryLimiter)
-					if testData.memoryConsumptionLimit > 0 {
-						memoryTracker := limiter.NewMemoryConsumptionTracker(ctx, testData.memoryConsumptionLimit, promauto.With(nil).NewCounter(prometheus.CounterOpts{
-							Name: "cortex_test_rejections_total",
-						}), "test query")
-						ctx = limiter.AddMemoryTrackerToContext(ctx, memoryTracker)
-					}
+
+					memoryTracker := limiter.NewMemoryConsumptionTracker(ctx, testData.memoryConsumptionLimit, promauto.With(nil).NewCounter(prometheus.CounterOpts{
+						Name: "cortex_test_rejections_total",
+					}), "test query")
+					ctx = limiter.AddMemoryTrackerToContext(ctx, memoryTracker)
+
 					st, ctx := stats.ContextWithEmptyStats(ctx)
 					const tenantID = "user-1"
 					ctx = user.InjectOrgID(ctx, tenantID)
