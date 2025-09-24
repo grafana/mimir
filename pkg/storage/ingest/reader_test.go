@@ -95,7 +95,7 @@ func TestPartitionReader_ShouldHonorConfiguredFetchMaxWait(t *testing.T) {
 	cfg := defaultReaderTestConfig(t, "", topicName, partitionID, nil)
 	cfg.kafka.FetchMaxWait = fetchMaxWait
 
-	reader, err := newPartitionReader(cfg.kafka, cfg.partitionID, "test-group", cfg.consumer, cfg.logger, cfg.registry)
+	reader, err := newPartitionReader(cfg.kafka, cfg.partitionID, "test-group", cfg.consumer, &NoOpPreCommitNotifier{}, cfg.logger, cfg.registry)
 	require.NoError(t, err)
 	require.Equal(t, fetchMaxWait, reader.concurrentFetchersMinBytesMaxWaitTime)
 }
@@ -107,7 +107,7 @@ func TestPartitionReader_logFetchErrors(t *testing.T) {
 	)
 
 	cfg := defaultReaderTestConfig(t, "", topicName, partitionID, nil)
-	reader, err := newPartitionReader(cfg.kafka, cfg.partitionID, "test-group", cfg.consumer, cfg.logger, cfg.registry)
+	reader, err := newPartitionReader(cfg.kafka, cfg.partitionID, "test-group", cfg.consumer, &NoOpPreCommitNotifier{}, cfg.logger, cfg.registry)
 	require.NoError(t, err)
 
 	reader.logFetchErrors(kgo.Fetches{
@@ -2646,7 +2646,7 @@ func TestPartitionCommitter(t *testing.T) {
 		adm := kadm.NewClient(client)
 		reg := prometheus.NewPedanticRegistry()
 
-		committer := newPartitionCommitter(cfg, adm, partitionID, consumerGroup, logger, reg)
+		committer := newPartitionCommitter(cfg, adm, partitionID, consumerGroup, &NoOpPreCommitNotifier{}, logger, reg)
 		require.NoError(t, services.StartAndAwaitRunning(context.Background(), committer))
 		t.Cleanup(func() {
 			require.NoError(t, services.StopAndAwaitTerminated(context.Background(), committer))
@@ -2712,7 +2712,7 @@ func TestPartitionCommitter_commit(t *testing.T) {
 
 		adm := kadm.NewClient(client)
 		reg := prometheus.NewPedanticRegistry()
-		committer := newPartitionCommitter(cfg, adm, partitionID, consumerGroup, log.NewNopLogger(), reg)
+		committer := newPartitionCommitter(cfg, adm, partitionID, consumerGroup, &NoOpPreCommitNotifier{}, log.NewNopLogger(), reg)
 
 		require.NoError(t, committer.commit(context.Background(), 123))
 
@@ -2752,7 +2752,7 @@ func TestPartitionCommitter_commit(t *testing.T) {
 
 		adm := kadm.NewClient(client)
 		reg := prometheus.NewPedanticRegistry()
-		committer := newPartitionCommitter(cfg, adm, partitionID, consumerGroup, log.NewNopLogger(), reg)
+		committer := newPartitionCommitter(cfg, adm, partitionID, consumerGroup, &NoOpPreCommitNotifier{}, log.NewNopLogger(), reg)
 
 		require.Error(t, committer.commit(context.Background(), 123))
 
@@ -2772,6 +2772,63 @@ func TestPartitionCommitter_commit(t *testing.T) {
 			"cortex_ingest_storage_reader_offset_commit_requests_total",
 			"cortex_ingest_storage_reader_offset_commit_failures_total",
 			"cortex_ingest_storage_reader_last_committed_offset"))
+	})
+
+	t.Run("should call pre-commit notifier before commiting", func(t *testing.T) {
+		t.Parallel()
+
+		_, clusterAddr := testkafka.CreateCluster(t, partitionID+1, topicName)
+
+		cfg := createTestKafkaConfig(clusterAddr, topicName)
+
+		committed := atomic.NewBool(false)
+
+		notifier := &testPreCommitNotifier{
+			onNotify: func() {
+				if committed.Load() {
+					t.Error("Commit happened before notification")
+				}
+			},
+		}
+
+		mockAdmin := &mockAdminClient{
+			onCommit: func() {
+				committed.Store(true)
+			},
+		}
+
+		committer := newPartitionCommitter(cfg, mockAdmin, partitionID, consumerGroup, notifier, log.NewNopLogger(), prometheus.NewPedanticRegistry())
+
+		require.NoError(t, committer.commit(context.Background(), 123))
+	})
+
+	t.Run("should proceed with commit even if notifier fails", func(t *testing.T) {
+		t.Parallel()
+
+		_, clusterAddr := testkafka.CreateCluster(t, partitionID+1, topicName)
+
+		cfg := createTestKafkaConfig(clusterAddr, topicName)
+
+		committed := atomic.NewBool(false)
+
+		notifier := &testPreCommitNotifier{
+			err: errors.New("notification failed"),
+			onNotify: func() {
+				if committed.Load() {
+					t.Error("Commit happened before notification")
+				}
+			},
+		}
+
+		mockAdmin := &mockAdminClient{
+			onCommit: func() {
+				committed.Store(true)
+			},
+		}
+
+		committer := newPartitionCommitter(cfg, mockAdmin, partitionID, consumerGroup, notifier, log.NewNopLogger(), prometheus.NewPedanticRegistry())
+
+		require.NoError(t, committer.commit(context.Background(), 123))
 	})
 }
 
@@ -2851,11 +2908,12 @@ func produceRandomRecord(ctx context.Context, t *testing.T, writeClient *kgo.Cli
 }
 
 type readerTestCfg struct {
-	kafka       KafkaConfig
-	partitionID int32
-	consumer    consumerFactory
-	registry    *prometheus.Registry
-	logger      log.Logger
+	kafka             KafkaConfig
+	partitionID       int32
+	consumer          consumerFactory
+	registry          *prometheus.Registry
+	logger            log.Logger
+	preCommitNotifier PreCommitNotifier
 }
 
 type readerTestCfgOpt func(cfg *readerTestCfg)
@@ -2895,6 +2953,12 @@ func withConsumeFromTimestampAtStartup(ts int64) func(cfg *readerTestCfg) {
 func withWaitStrongReadConsistencyTimeout(timeout time.Duration) func(cfg *readerTestCfg) {
 	return func(cfg *readerTestCfg) {
 		cfg.kafka.WaitStrongReadConsistencyTimeout = timeout
+	}
+}
+
+func withPreCommitNotifier(notifier PreCommitNotifier) func(cfg *readerTestCfg) {
+	return func(cfg *readerTestCfg) {
+		cfg.preCommitNotifier = notifier
 	}
 }
 
@@ -2954,7 +3018,12 @@ func createReader(t *testing.T, addr string, topicName string, partitionID int32
 	// Ensure the config is valid.
 	require.NoError(t, cfg.kafka.Validate())
 
-	reader, err := newPartitionReader(cfg.kafka, cfg.partitionID, "test-group", cfg.consumer, cfg.logger, cfg.registry)
+	notifier := cfg.preCommitNotifier
+	if notifier == nil {
+		notifier = &NoOpPreCommitNotifier{}
+	}
+
+	reader, err := newPartitionReader(cfg.kafka, cfg.partitionID, "test-group", cfg.consumer, notifier, cfg.logger, cfg.registry)
 	require.NoError(t, err)
 
 	// Reduce the time the fake kafka would wait for new records. Sometimes this blocks startup.
@@ -3009,6 +3078,31 @@ func TestPartitionReader_Commit(t *testing.T) {
 		records, err := consumer.waitRecords(1, time.Second, 0)
 		assert.NoError(t, err)
 		assert.Equal(t, [][]byte{recordsSentAfterShutdown}, records)
+	})
+
+	t.Run("pre-commit notifier is called", func(t *testing.T) {
+		t.Parallel()
+		const commitInterval = 100 * time.Millisecond
+		ctx, cancel := context.WithCancelCause(context.Background())
+		t.Cleanup(func() { cancel(errors.New("test done")) })
+
+		_, clusterAddr := testkafka.CreateCluster(t, partitionID+1, topicName)
+
+		baseConsumer := newTestConsumer(1)
+
+		notifier := &testPreCommitNotifier{}
+
+		createAndStartReader(ctx, t, clusterAddr, topicName, partitionID, baseConsumer,
+			withCommitInterval(commitInterval),
+			withPreCommitNotifier(notifier),
+		)
+
+		produceRecord(ctx, t, newKafkaProduceClient(t, clusterAddr), topicName, partitionID, []byte("1"))
+
+		_, err := baseConsumer.waitRecords(1, time.Second, 2*commitInterval)
+		require.NoError(t, err)
+
+		assert.Greater(t, notifier.notifyCount.Load(), int32(0))
 	})
 
 	t.Run("commit at shutdown", func(t *testing.T) {
@@ -3212,3 +3306,30 @@ func fetchSmallestRecordsBatchForEachOffset(t *testing.T, client *kgo.Client, to
 
 	return fetchResponseByRequestedOffset
 }
+
+type testPreCommitNotifier struct {
+	notifyCount atomic.Int32
+	err         error
+	onNotify    func()
+}
+
+func (t *testPreCommitNotifier) NotifyPreCommit() error {
+	t.notifyCount.Inc()
+	if t.onNotify != nil {
+		t.onNotify()
+	}
+	return t.err
+}
+
+type mockAdminClient struct {
+	onCommit func()
+}
+
+func (m *mockAdminClient) CommitOffsets(ctx context.Context, group string, offsets kadm.Offsets) (kadm.OffsetResponses, error) {
+	if m.onCommit != nil {
+		m.onCommit()
+	}
+	return kadm.OffsetResponses{}, nil
+}
+
+func (m *mockAdminClient) Close() {}

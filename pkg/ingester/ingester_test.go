@@ -12294,3 +12294,70 @@ var ingesterSampleTypeScenarios = map[string]struct {
 		},
 	},
 }
+
+func TestIngester_NotifyPreCommit(t *testing.T) {
+	// Simple test that checks NotifyPreCommit doesn't fail, and fsync count increases when it's called.
+	cfg := defaultIngesterTestConfig(t)
+	limits := defaultLimitsTestConfig()
+	overrides := validation.NewOverrides(limits, nil)
+
+	tempDir := t.TempDir()
+	cfg.BlocksStorageConfig.TSDB.Dir = tempDir
+	cfg.BlocksStorageConfig.Bucket.Backend = "s3"
+	cfg.BlocksStorageConfig.Bucket.S3.Endpoint = "localhost"
+	cfg.IngestStorageConfig.WriteLogsFsyncBeforeKafkaCommit = true
+
+	reg := prometheus.NewRegistry()
+	ingester, err := New(cfg, overrides, createAndStartRing(t, cfg.IngesterRing.ToRingConfig()), nil, nil, nil, reg, log.NewNopLogger())
+	require.NoError(t, err)
+
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), ingester))
+	defer services.StopAndAwaitTerminated(context.Background(), ingester) //nolint:errcheck
+
+	// Push some data to create a TSDB
+	userID := "test"
+	ctx := user.InjectOrgID(context.Background(), userID)
+	req := &mimirpb.WriteRequest{
+		Source: mimirpb.API,
+		Timeseries: []mimirpb.PreallocTimeseries{
+			{
+				TimeSeries: &mimirpb.TimeSeries{
+					Labels: []mimirpb.LabelAdapter{
+						{Name: labels.MetricName, Value: "test_metric"},
+					},
+					Samples: []mimirpb.Sample{
+						{Value: 1, TimestampMs: time.Now().UnixMilli()},
+						{Value: 2, TimestampMs: time.Now().Add(time.Second).UnixMilli()},
+						{Value: 3, TimestampMs: time.Now().Add(2 * time.Second).UnixMilli()},
+					},
+				},
+			},
+		},
+	}
+
+	_, err = ingester.Push(ctx, req)
+	require.NoError(t, err)
+
+	getFsyncCount := func() uint64 {
+		metrics, err := reg.Gather()
+		require.NoError(t, err)
+		for _, mf := range metrics {
+			if mf.GetName() == "cortex_ingester_tsdb_wal_fsync_duration_seconds" {
+				for _, m := range mf.GetMetric() {
+					if m.GetSummary() != nil {
+						return m.GetSummary().GetSampleCount()
+					}
+				}
+			}
+		}
+		return 0
+	}
+
+	fsyncCountBefore := getFsyncCount()
+
+	err = ingester.NotifyPreCommit()
+	require.NoError(t, err)
+
+	fsyncCountAfter := getFsyncCount()
+	assert.Greater(t, fsyncCountAfter, fsyncCountBefore)
+}

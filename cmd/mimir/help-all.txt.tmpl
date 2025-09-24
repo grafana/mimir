@@ -1519,6 +1519,8 @@ Usage of ./cmd/mimir/mimir:
     	The maximum time a write request that goes through the ingest storage waits before it times out. Set to `0` to disable the timeout.
   -ingest-storage.read-consistency string
     	[experimental] The default consistency level to enforce for queries when using the ingest storage. Supports values: strong, eventual. (default "eventual")
+  -ingest-storage.write-logs-fsync-before-kafka-commit-enabled
+    	[experimental] Experimental: Enable fsyncing of WAL and WBL before Kafka offsets are committed.
   -ingester.active-series-custom-trackers value
     	Additional active series metrics, matching the provided matchers. Matchers should be in form <name>:<matcher>, like 'foobar:{foo="bar"}'. Multiple matchers can be provided either providing the flag multiple times or providing multiple semicolon-separated values to a single flag.
   -ingester.active-series-metrics-enabled
