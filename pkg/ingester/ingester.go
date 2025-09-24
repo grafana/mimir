@@ -47,6 +47,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/hashcache"
 	"github.com/prometheus/prometheus/tsdb/index"
+	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/prometheus/prometheus/util/zeropool"
 	"github.com/thanos-io/objstore"
 	"go.opentelemetry.io/otel"
@@ -2948,27 +2949,157 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 	return userDB, nil
 }
 
-// createBlockChunkQuerier creates a BlockChunkQuerier that optionally wraps the default querier with mirroring
+// createBlockChunkQuerier creates a BlockChunkQuerier that wraps the default querier with stats tracking
+// and optionally with mirroring for comparison.
 func (i *Ingester) createBlockChunkQuerier(userID string, b tsdb.BlockReader, mint, maxt int64) (storage.ChunkQuerier, error) {
 	defaultQuerier, err := tsdb.NewBlockChunkQuerier(b, mint, maxt)
 	if err != nil {
 		return nil, err
 	}
 
+	// Create query stats and add to context - one instance per block querier
+	queryStats, _ := lookupplan.ContextWithEmptyQueryStats(context.Background())
+
+	// Wrap with stats tracking querier
+	statsQuerier := newStatsTrackingChunkQuerier(defaultQuerier, queryStats, i.metrics)
+
 	if rand.Float64() > i.cfg.BlocksStorageConfig.TSDB.IndexLookupPlanningComparisonPortion {
-		return defaultQuerier, nil
+		return statsQuerier, nil
 	}
 
+	// If mirroring is enabled, wrap the stats querier with mirrored querier
 	mirroredQuerier := newMirroredChunkQuerierWithMeta(
 		userID,
 		i.metrics.indexLookupComparisonOutcomes,
 		mint, maxt,
 		b.Meta(),
 		i.logger,
-		defaultQuerier,
+		statsQuerier,
 	)
 
 	return mirroredQuerier, nil
+}
+
+// statsTrackingChunkQuerier wraps a ChunkQuerier to track query statistics.
+type statsTrackingChunkQuerier struct {
+	delegate   storage.ChunkQuerier
+	queryStats *lookupplan.QueryStats
+	metrics    *ingesterMetrics
+}
+
+// newStatsTrackingChunkQuerier creates a new stats-tracking chunk querier.
+func newStatsTrackingChunkQuerier(delegate storage.ChunkQuerier, queryStats *lookupplan.QueryStats, metrics *ingesterMetrics) *statsTrackingChunkQuerier {
+	return &statsTrackingChunkQuerier{
+		delegate:   delegate,
+		queryStats: queryStats,
+		metrics:    metrics,
+	}
+}
+
+func (q *statsTrackingChunkQuerier) LabelValues(ctx context.Context, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	return q.delegate.LabelValues(ctx, name, hints, matchers...)
+}
+
+func (q *statsTrackingChunkQuerier) LabelNames(ctx context.Context, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	return q.delegate.LabelNames(ctx, hints, matchers...)
+}
+
+func (q *statsTrackingChunkQuerier) Close() error {
+	return q.delegate.Close()
+}
+
+func (q *statsTrackingChunkQuerier) Select(ctx context.Context, sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.ChunkSeriesSet {
+	seriesSet := q.delegate.Select(ctx, sortSeries, hints, matchers...)
+
+	// Create a tracking series set that will count series and observe metrics
+	trackingSet := &statsTrackingChunkSeriesSet{
+		delegate:   seriesSet,
+		queryStats: q.queryStats,
+		metrics:    q.metrics,
+	}
+
+	return trackingSet
+}
+
+// statsTrackingChunkSeriesSet wraps a ChunkSeriesSet to track series count and record stats.
+type statsTrackingChunkSeriesSet struct {
+	delegate           storage.ChunkSeriesSet
+	queryStats         *lookupplan.QueryStats
+	metrics            *ingesterMetrics
+	seriesCount        uint64
+	exhausted          bool
+	indexStageObserved bool
+}
+
+func (s *statsTrackingChunkSeriesSet) Next() bool {
+	hasNext := s.delegate.Next()
+
+	// On first call, observe the index stage with actual selected postings
+	if !s.indexStageObserved {
+		s.indexStageObserved = true
+		if s.queryStats != nil && s.metrics != nil && s.metrics.queriedSeries != nil {
+			actualPostings := s.queryStats.LoadActualSelectedPostings()
+			s.metrics.queriedSeries.WithLabelValues("index").Observe(float64(actualPostings))
+		}
+	}
+
+	if hasNext {
+		s.seriesCount++
+	} else if !s.exhausted {
+		// When the series set is exhausted, record the actual final cardinality
+		s.exhausted = true
+		if s.queryStats != nil {
+			s.queryStats.SetActualFinalCardinality(s.seriesCount)
+			s.recordStatsToMetrics()
+		}
+		// Observe the actual final cardinality in queriedSeries with "filter" stage
+		if s.metrics != nil && s.metrics.queriedSeries != nil {
+			s.metrics.queriedSeries.WithLabelValues("filter").Observe(float64(s.seriesCount))
+		}
+	}
+	return hasNext
+}
+
+func (s *statsTrackingChunkSeriesSet) At() storage.ChunkSeries {
+	return s.delegate.At()
+}
+
+func (s *statsTrackingChunkSeriesSet) Err() error {
+	return s.delegate.Err()
+}
+
+func (s *statsTrackingChunkSeriesSet) Warnings() annotations.Annotations {
+	return s.delegate.Warnings()
+}
+
+// recordStatsToMetrics records the collected stats to the ingester metrics.
+func (s *statsTrackingChunkSeriesSet) recordStatsToMetrics() {
+	if s.queryStats == nil || s.metrics == nil {
+		return
+	}
+
+	actualPostings := s.queryStats.LoadActualSelectedPostings()
+	actualFinal := s.queryStats.LoadActualFinalCardinality()
+	estimatedPostings := s.queryStats.LoadEstimatedSelectedPostings()
+	estimatedFinal := s.queryStats.LoadEstimatedFinalCardinality()
+
+	// Record ratio between actual postings cardinality and actual final cardinality
+	if actualFinal > 0 && s.metrics.actualPostingsToFinalCardinalityRatio != nil {
+		ratio := float64(actualPostings) / float64(actualFinal)
+		s.metrics.actualPostingsToFinalCardinalityRatio.WithLabelValues().Observe(ratio)
+	}
+
+	// Record ratio between estimated and actual postings cardinality
+	if actualPostings > 0 && s.metrics.estimatedToActualPostingsCardinalityRatio != nil {
+		ratio := float64(estimatedPostings) / float64(actualPostings)
+		s.metrics.estimatedToActualPostingsCardinalityRatio.WithLabelValues().Observe(ratio)
+	}
+
+	// Record ratio between estimated and actual final cardinality
+	if actualFinal > 0 && s.metrics.estimatedToActualFinalCardinalityRatio != nil {
+		ratio := float64(estimatedFinal) / float64(actualFinal)
+		s.metrics.estimatedToActualFinalCardinalityRatio.WithLabelValues().Observe(ratio)
+	}
 }
 
 func (i *Ingester) closeAllTSDB() {
