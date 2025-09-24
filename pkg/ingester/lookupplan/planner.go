@@ -151,7 +151,6 @@ func (p CostBasedPlanner) recordPlanningOutcome(ctx context.Context, start time.
 		if traceSampled {
 			// Avoid logging overhead if the events aren't going to make it into a span.
 			p.addSpanEvents(span, start, selectedPlan, allPlans)
-			break
 		}
 	}
 	p.metrics.planningDuration.WithLabelValues(outcome).Observe(time.Since(start).Seconds())
