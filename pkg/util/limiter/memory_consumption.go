@@ -22,7 +22,7 @@ const (
 	memoryConsumptionTracker contextKey = 0
 )
 
-// memoryTrackingSeriesSet is storage.SeriesSet that track the wrapped SeriesSet memory consumption.
+// memoryTrackingSeriesSet is storage.SeriesSet that tracks the wrapped SeriesSet memory consumption.
 type memoryTrackingSeriesSet struct {
 	wrapper                  storage.SeriesSet
 	memoryConsumptionTracker *MemoryConsumptionTracker
@@ -242,13 +242,11 @@ func (l *MemoryConsumptionTracker) IncreaseMemoryConsumptionForLabels(lbls label
 	if err := l.IncreaseMemoryConsumption(uint64(lbls.ByteSize()), Labels); err != nil {
 		return err
 	}
-	fmt.Println("increasing for", lbls.String())
 	return nil
 }
 
 // DecreaseMemoryConsumptionForLabels decreases the current memory consumption based on labels.
 func (l *MemoryConsumptionTracker) DecreaseMemoryConsumptionForLabels(lbls labels.Labels) {
-	fmt.Println("decreaseing for", lbls.String())
 	l.DecreaseMemoryConsumption(uint64(lbls.ByteSize()), Labels)
 }
 
