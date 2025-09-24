@@ -301,15 +301,16 @@ func (s *partitionState) addPendingJob(job *schedulerpb.JobSpec) {
 	s.pendingJobs.PushBack(job)
 }
 
-func (s *partitionState) addPlannedJob(j *jobState) {
-	s.plannedJobs = append(s.plannedJobs, j)
-	s.plannedJobsMap[j.jobID] = j
+func (s *partitionState) addPlannedJob(id string, spec schedulerpb.JobSpec) {
+	js := &jobState{jobID: id, spec: spec, complete: false}
+	s.plannedJobs = append(s.plannedJobs, js)
+	s.plannedJobsMap[js.jobID] = js
 	// Keep it sorted by start offset.
 	slices.SortFunc(s.plannedJobs, func(a, b *jobState) int {
 		return cmp.Compare(a.spec.StartOffset, b.spec.StartOffset)
 	})
 
-	s.planned.advance(j.jobID, j.spec)
+	s.planned.advance(id, spec)
 }
 
 func (s *partitionState) completeJob(jobID string) {
@@ -387,9 +388,9 @@ func (s *BlockBuilderScheduler) enqueuePendingJobs() {
 				break
 			}
 
-			// Otherwise, it was successful. Move it to the active jobs slice.
+			// Otherwise, it was successful. Move it to the planned jobs slice.
 			ps.pendingJobs.Remove(e)
-			ps.addPlannedJob(&jobState{jobID: jobID, spec: *spec, complete: false})
+			ps.addPlannedJob(jobID, *spec)
 		}
 	}
 
@@ -963,10 +964,9 @@ func (s *BlockBuilderScheduler) finalizeObservations() {
 				continue
 			}
 
-			ps.addPlannedJob(&jobState{jobID: obs.key.id, spec: obs.spec, complete: false})
-
 			if obs.complete {
-				// Completed.
+				// Completed. Add it to the plan and mark it as such.
+				ps.addPlannedJob(obs.key.id, obs.spec)
 				ps.completeJob(obs.key.id)
 			} else {
 				// An in-progress job that's part of our continuous coverage.
@@ -976,8 +976,8 @@ func (s *BlockBuilderScheduler) finalizeObservations() {
 					contiguous = false
 					continue
 				}
+				ps.addPlannedJob(obs.key.id, obs.spec)
 			}
-
 		}
 	}
 

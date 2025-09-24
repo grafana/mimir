@@ -554,7 +554,7 @@ func TestOffsetMovement(t *testing.T) {
 
 	e := sched.jobs.add("ingest/1/5524", spec)
 	require.NoError(t, e)
-	ps.addPlannedJob(&jobState{jobID: "ingest/1/5524", spec: spec, complete: false})
+	ps.addPlannedJob("ingest/1/5524", spec)
 	key, _, err := sched.jobs.assign("w0")
 	require.NoError(t, err)
 
