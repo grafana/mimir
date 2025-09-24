@@ -80,6 +80,7 @@
 * [BUGFIX] Store-gateway: Fix a panic in BucketChunkReader when chunk loading encounter a broken chunk length. #12693 #12729
 * [BUGFIX] Ingester, Block-builder: silently ignore duplicate sample if it's due to zero sample from created timestamp. Created timestamp equal to the timestamp of the first sample of series is a common case if created timestamp comes from OTLP where start time equal to timestamp of the first sample simply means unknown start time. #12726
 * [BUGFIX] Distributor: Fix error when native histograms bucket limit is set then no NHCB passes validation. #12741
+* [BUGFIX] Distributor: Report correct size in `err-mimir-distributor-max-write-message-size` error. #12799
 
 ### Mixin
 
