@@ -13,11 +13,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/grafana/mimir/pkg/util/limiter"
-
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/stretchr/testify/require"
+
+	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
 // This file contains the details of the benchmarks so that tools/benchmark-query-engine can use the same information.
