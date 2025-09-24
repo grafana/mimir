@@ -1703,8 +1703,9 @@ type requestState struct {
 
 	requestStart  time.Time
 	requestID     int64
+	requestCtx    context.Context
 	requestErr    error
-	requestFinish func(time.Duration, error)
+	requestFinish func(context.Context, time.Duration, error)
 }
 
 func (d *Distributor) StartPushRequest(ctx context.Context, httpgrpcRequestSize int64) (context.Context, error) {
@@ -1736,7 +1737,7 @@ func (d *Distributor) startPushRequest(ctx context.Context, httpgrpcRequestSize 
 
 	requestStart := time.Now()
 	requestID := rand.Int63()
-	requestFinish := func(duration time.Duration, err error) {}
+	requestFinish := func(ctx context.Context, duration time.Duration, err error) {}
 	if d.reactiveLimiter.getLimiter() != nil {
 		// Acquire a permit, blocking if needed
 		permit, err := d.reactiveLimiter.AcquirePermit(ctx)
@@ -1747,7 +1748,7 @@ func (d *Distributor) startPushRequest(ctx context.Context, httpgrpcRequestSize 
 			d.rejectedRequests.WithLabelValues(reasonDistributorMaxInflightPushRequests).Inc()
 			return ctx, nil, newReactiveLimiterExceededError(adaptivelimiter.ErrExceeded)
 		}
-		requestFinish = func(duration time.Duration, err error) {
+		requestFinish = func(ctx context.Context, duration time.Duration, err error) {
 			kv := make([]interface{}, 0, 14)
 			kv = append(kv, "msg", "request has been finished")
 			kv = append(kv, "request_id", requestID)
@@ -1773,6 +1774,7 @@ func (d *Distributor) startPushRequest(ctx context.Context, httpgrpcRequestSize 
 	rs = &requestState{
 		requestStart:  requestStart,
 		requestID:     requestID,
+		requestCtx:    ctx,
 		requestFinish: requestFinish,
 	}
 	cleanupInDefer := true
@@ -1866,7 +1868,7 @@ func (d *Distributor) cleanupAfterPushFinished(rs *requestState) {
 	if rs.writeRequestSize > 0 {
 		d.inflightPushRequestsBytes.Sub(rs.writeRequestSize)
 	}
-	rs.requestFinish(time.Since(rs.requestStart), rs.requestErr)
+	rs.requestFinish(rs.requestCtx, time.Since(rs.requestStart), rs.requestErr)
 }
 
 // limitsMiddleware checks for instance limits and rejects request if this instance cannot process it at the moment.
