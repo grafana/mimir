@@ -96,9 +96,9 @@ type ingesterMetrics struct {
 	indexLookupComparisonOutcomes *prometheus.CounterVec
 
 	// Query cardinality estimation metrics
-	actualPostingsToFinalCardinalityRatio     *prometheus.HistogramVec
-	estimatedToActualPostingsCardinalityRatio *prometheus.HistogramVec
-	estimatedToActualFinalCardinalityRatio    *prometheus.HistogramVec
+	actualPostingsToFinalCardinalityRatio     prometheus.Observer
+	estimatedToActualPostingsCardinalityRatio prometheus.Observer
+	estimatedToActualFinalCardinalityRatio    prometheus.Observer
 }
 
 func newIngesterMetrics(
@@ -420,21 +420,21 @@ func newIngesterMetrics(
 			Help: "Total number of index lookup planning comparison outcomes when using mirrored chunk querier.",
 		}, []string{"outcome", "user"}),
 
-		actualPostingsToFinalCardinalityRatio: promauto.With(r).NewHistogramVec(prometheus.HistogramOpts{
+		actualPostingsToFinalCardinalityRatio: promauto.With(r).NewHistogram(prometheus.HistogramOpts{
 			Name:                        "cortex_ingester_actual_postings_to_final_cardinality_ratio",
 			Help:                        "Ratio between actual postings cardinality and actual final cardinality.",
 			NativeHistogramBucketFactor: 1.1,
-		}, []string{}),
-		estimatedToActualPostingsCardinalityRatio: promauto.With(r).NewHistogramVec(prometheus.HistogramOpts{
+		}),
+		estimatedToActualPostingsCardinalityRatio: promauto.With(r).NewHistogram(prometheus.HistogramOpts{
 			Name:                        "cortex_ingester_estimated_to_actual_postings_cardinality_ratio",
 			Help:                        "Ratio between estimated postings cardinality and actual postings cardinality.",
 			NativeHistogramBucketFactor: 1.1,
-		}, []string{}),
-		estimatedToActualFinalCardinalityRatio: promauto.With(r).NewHistogramVec(prometheus.HistogramOpts{
+		}),
+		estimatedToActualFinalCardinalityRatio: promauto.With(r).NewHistogram(prometheus.HistogramOpts{
 			Name:                        "cortex_ingester_estimated_to_actual_final_cardinality_ratio",
 			Help:                        "Ratio between estimated final cardinality and actual final cardinality.",
 			NativeHistogramBucketFactor: 1.1,
-		}, []string{}),
+		}),
 	}
 
 	// Initialize expected rejected request labels

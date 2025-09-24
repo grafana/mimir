@@ -11,7 +11,7 @@ import (
 
 func TestQueryStats_EstimatedFinalCardinality(t *testing.T) {
 	t.Run("set and load estimated final cardinality", func(t *testing.T) {
-		stats, _ := ContextWithEmptyQueryStats(context.Background())
+		stats := &QueryStats{}
 		stats.SetEstimatedFinalCardinality(100)
 		stats.SetEstimatedFinalCardinality(50)
 
@@ -28,7 +28,7 @@ func TestQueryStats_EstimatedFinalCardinality(t *testing.T) {
 
 func TestQueryStats_EstimatedSelectedPostings(t *testing.T) {
 	t.Run("set and load estimated selected postings", func(t *testing.T) {
-		stats, _ := ContextWithEmptyQueryStats(context.Background())
+		stats := &QueryStats{}
 		stats.SetEstimatedSelectedPostings(200)
 		stats.SetEstimatedSelectedPostings(150)
 
@@ -45,7 +45,7 @@ func TestQueryStats_EstimatedSelectedPostings(t *testing.T) {
 
 func TestQueryStats_ActualSelectedPostings(t *testing.T) {
 	t.Run("set and load actual selected postings", func(t *testing.T) {
-		stats, _ := ContextWithEmptyQueryStats(context.Background())
+		stats := &QueryStats{}
 		stats.SetActualSelectedPostings(180)
 		stats.SetActualSelectedPostings(120)
 
@@ -62,7 +62,7 @@ func TestQueryStats_ActualSelectedPostings(t *testing.T) {
 
 func TestQueryStats_ActualFinalCardinality(t *testing.T) {
 	t.Run("set and load actual final cardinality", func(t *testing.T) {
-		stats, _ := ContextWithEmptyQueryStats(context.Background())
+		stats := &QueryStats{}
 		stats.SetActualFinalCardinality(80)
 		stats.SetActualFinalCardinality(60)
 
@@ -79,7 +79,8 @@ func TestQueryStats_ActualFinalCardinality(t *testing.T) {
 
 func TestQueryStats_Context(t *testing.T) {
 	t.Run("context with empty stats", func(t *testing.T) {
-		stats, ctx := ContextWithEmptyQueryStats(context.Background())
+		stats := &QueryStats{}
+		ctx := ContextWithQueryStats(context.Background(), stats)
 
 		assert.NotNil(t, stats)
 		assert.True(t, IsQueryStatsEnabled(ctx))
@@ -98,7 +99,7 @@ func TestQueryStats_Context(t *testing.T) {
 
 func TestQueryStats_AllFields(t *testing.T) {
 	t.Run("comprehensive test with all fields", func(t *testing.T) {
-		stats, _ := ContextWithEmptyQueryStats(context.Background())
+		stats := &QueryStats{}
 
 		stats.SetEstimatedFinalCardinality(1000)
 		stats.SetEstimatedSelectedPostings(2000)

@@ -11,11 +11,9 @@ type queryStatsContextKey int
 
 const queryStatsCtxKey = queryStatsContextKey(1)
 
-// ContextWithEmptyQueryStats returns a context with empty QueryStats.
-func ContextWithEmptyQueryStats(ctx context.Context) (*QueryStats, context.Context) {
-	stats := &QueryStats{}
-	ctx = context.WithValue(ctx, queryStatsCtxKey, stats)
-	return stats, ctx
+// ContextWithQueryStats returns a context with empty QueryStats.
+func ContextWithQueryStats(ctx context.Context, stats *QueryStats) context.Context {
+	return context.WithValue(ctx, queryStatsCtxKey, stats)
 }
 
 // QueryStatsFromContext gets the QueryStats out of the Context. Returns nil if stats have not
