@@ -9,7 +9,7 @@ import (
 
 type queryStatsContextKey int
 
-var queryStatsCtxKey = queryStatsContextKey(1)
+const queryStatsCtxKey = queryStatsContextKey(1)
 
 // ContextWithEmptyQueryStats returns a context with empty QueryStats.
 func ContextWithEmptyQueryStats(ctx context.Context) (*QueryStats, context.Context) {
