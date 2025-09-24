@@ -182,6 +182,18 @@ type MsgSizeTooLargeErr struct {
 	Compressed, Actual, Limit int
 }
 
+func NewMsgCompressedSizeTooLargeErr(size, limit int) MsgSizeTooLargeErr {
+	return MsgSizeTooLargeErr{Compressed: size}
+}
+
+func NewMsgUncompressedSizeTooLargeErr(size, limit int) MsgSizeTooLargeErr {
+	return MsgSizeTooLargeErr{Actual: size, Limit: limit}
+}
+
+func NewMsgUnknownSizeTooLargeErr(limit int) MsgSizeTooLargeErr {
+	return MsgSizeTooLargeErr{Limit: limit}
+}
+
 func (e MsgSizeTooLargeErr) Error() string {
 	msgSizeDesc := ""
 	if e.Actual > 0 {
@@ -201,7 +213,10 @@ func (e MsgSizeTooLargeErr) Is(err error) bool {
 
 func decompressRequest(buffers *RequestBuffers, reader io.Reader, expectedSize, maxSize int, compression CompressionType, sp trace.Span) ([]byte, error) {
 	if expectedSize > maxSize {
-		return nil, MsgSizeTooLargeErr{Compressed: expectedSize, Limit: maxSize}
+		if compression == NoCompression {
+			return nil, NewMsgUncompressedSizeTooLargeErr(expectedSize, maxSize)
+		}
+		return nil, NewMsgCompressedSizeTooLargeErr(expectedSize, maxSize)
 	}
 
 	switch compression {
@@ -271,7 +286,7 @@ func decompressRequest(buffers *RequestBuffers, reader io.Reader, expectedSize, 
 	}
 
 	if buf.Len() > maxSize {
-		return nil, MsgSizeTooLargeErr{Actual: -1, Limit: maxSize}
+		return nil, NewMsgUnknownSizeTooLargeErr(maxSize)
 	}
 	return buf.Bytes(), nil
 }
