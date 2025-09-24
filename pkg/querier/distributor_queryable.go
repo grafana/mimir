@@ -14,6 +14,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/tenant"
 	"github.com/grafana/dskit/tracing"
+	"github.com/grafana/mimir/pkg/util/limiter"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/labels"
@@ -126,6 +127,7 @@ func (q *distributorQuerier) Select(ctx context.Context, _ bool, sp *storage.Sel
 }
 
 func (q *distributorQuerier) streamingSelect(ctx context.Context, minT, maxT int64, matchers []*labels.Matcher) storage.SeriesSet {
+	memoryTracker := limiter.MemoryTrackerFromContextWithFallback(ctx)
 	results, err := q.distributor.QueryStream(ctx, q.queryMetrics, model.Time(minT), model.Time(maxT), matchers...)
 	if err != nil {
 		return storage.ErrSeriesSet(err)
@@ -133,7 +135,7 @@ func (q *distributorQuerier) streamingSelect(ctx context.Context, minT, maxT int
 
 	sets := []storage.SeriesSet(nil)
 	if len(results.Timeseries) > 0 {
-		sets = append(sets, newTimeSeriesSeriesSet(results.Timeseries))
+		sets = append(sets, limiter.NewMemoryTrackingSeriesSet(newTimeSeriesSeriesSet(results.Timeseries), memoryTracker))
 	}
 
 	var chunkInfo *chunkinfologger.ChunkInfoLogger
@@ -170,7 +172,7 @@ func (q *distributorQuerier) streamingSelect(ctx context.Context, minT, maxT int
 	}
 
 	if len(serieses) > 0 {
-		sets = append(sets, series.NewConcreteSeriesSetFromUnsortedSeries(serieses))
+		sets = append(sets, limiter.NewMemoryTrackingSeriesSet(series.NewConcreteSeriesSetFromUnsortedSeries(serieses), memoryTracker))
 	}
 
 	if len(results.StreamingSeries) > 0 {
@@ -194,7 +196,7 @@ func (q *distributorQuerier) streamingSelect(ctx context.Context, minT, maxT int
 			})
 		}
 
-		sets = append(sets, series.NewConcreteSeriesSetFromSortedSeries(streamingSeries))
+		sets = append(sets, limiter.NewMemoryTrackingSeriesSet(series.NewConcreteSeriesSetFromSortedSeries(streamingSeries), memoryTracker))
 	}
 
 	q.streamReadersMtx.Lock()

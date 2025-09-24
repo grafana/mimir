@@ -936,7 +936,7 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 			// Store the result.
 			mtx.Lock()
 			if len(mySeries) > 0 {
-				seriesSets = append(seriesSets, &blockQuerierSeriesSet{series: mySeries})
+				seriesSets = append(seriesSets, limiter.NewMemoryTrackingSeriesSet(&blockQuerierSeriesSet{series: mySeries}, memoryTracker))
 			} else if len(myStreamingSeriesLabels) > 0 {
 				if chunkInfo != nil {
 					chunkInfo.SetMsg("store-gateway streaming")
