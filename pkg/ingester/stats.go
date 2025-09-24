@@ -14,28 +14,24 @@ import (
 // statsTrackingChunkQuerier wraps a ChunkQuerier to track query statistics.
 type statsTrackingChunkQuerier struct {
 	delegate          storage.ChunkQuerier
-	queryStats        *lookupplan.QueryStats
 	ingesterMetrics   *ingesterMetrics
 	lookupPlanMetrics lookupplan.Metrics
 }
 
 // newStatsTrackingChunkQuerier creates a new stats-tracking chunk querier.
-func newStatsTrackingChunkQuerier(delegate storage.ChunkQuerier, queryStats *lookupplan.QueryStats, metrics *ingesterMetrics, planMetrics lookupplan.Metrics) *statsTrackingChunkQuerier {
+func newStatsTrackingChunkQuerier(delegate storage.ChunkQuerier, metrics *ingesterMetrics, planMetrics lookupplan.Metrics) *statsTrackingChunkQuerier {
 	return &statsTrackingChunkQuerier{
 		delegate:          delegate,
-		queryStats:        queryStats,
 		ingesterMetrics:   metrics,
 		lookupPlanMetrics: planMetrics,
 	}
 }
 
 func (q *statsTrackingChunkQuerier) LabelValues(ctx context.Context, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
-	ctx = lookupplan.ContextWithQueryStats(ctx, q.queryStats)
 	return q.delegate.LabelValues(ctx, name, hints, matchers...)
 }
 
 func (q *statsTrackingChunkQuerier) LabelNames(ctx context.Context, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
-	ctx = lookupplan.ContextWithQueryStats(ctx, q.queryStats)
 	return q.delegate.LabelNames(ctx, hints, matchers...)
 }
 
@@ -44,13 +40,14 @@ func (q *statsTrackingChunkQuerier) Close() error {
 }
 
 func (q *statsTrackingChunkQuerier) Select(ctx context.Context, sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.ChunkSeriesSet {
-	ctx = lookupplan.ContextWithQueryStats(ctx, q.queryStats)
+	stats := &lookupplan.QueryStats{}
+	ctx = lookupplan.ContextWithQueryStats(ctx, stats)
 	seriesSet := q.delegate.Select(ctx, sortSeries, hints, matchers...)
 
 	trackingSet := &statsTrackingChunkSeriesSet{
 		ctx:               ctx,
 		delegate:          seriesSet,
-		queryStats:        q.queryStats,
+		queryStats:        stats,
 		ingesterMetrics:   q.ingesterMetrics,
 		lookupPlanMetrics: q.lookupPlanMetrics,
 	}
@@ -79,7 +76,6 @@ func (s *statsTrackingChunkSeriesSet) Next() bool {
 		s.exhausted = true
 		s.queryStats.SetActualFinalCardinality(s.seriesCount)
 		s.recordStatsToMetrics()
-		s.ingesterMetrics.queriedSeries.WithLabelValues("block_filter").Observe(float64(s.seriesCount))
 	}
 	return hasNext
 }
@@ -103,14 +99,14 @@ func (s *statsTrackingChunkSeriesSet) recordStatsToMetrics() {
 	estimatedPostings := s.queryStats.LoadEstimatedSelectedPostings()
 	estimatedFinal := s.queryStats.LoadEstimatedFinalCardinality()
 
-	s.ingesterMetrics.queriedSeries.WithLabelValues("block_index").Observe(float64(actualPostings))
+	s.ingesterMetrics.queriedSeries.WithLabelValues("single_block_index").Observe(float64(actualPostings))
+	s.ingesterMetrics.queriedSeries.WithLabelValues("single_block_filter").Observe(float64(actualFinal))
+
 	if actualFinal > 0 {
 		instrument.ObserveWithExemplar(s.ctx, s.lookupPlanMetrics.FilteredRatio.WithLabelValues(), float64(actualPostings)/float64(actualFinal))
+		instrument.ObserveWithExemplar(s.ctx, s.lookupPlanMetrics.FinalCardinalityRatio.WithLabelValues(), float64(estimatedFinal)/float64(actualFinal))
 	}
 	if actualPostings > 0 {
 		instrument.ObserveWithExemplar(s.ctx, s.lookupPlanMetrics.IntersectionSizeRatio.WithLabelValues(), float64(estimatedPostings)/float64(actualPostings))
-	}
-	if actualFinal > 0 {
-		instrument.ObserveWithExemplar(s.ctx, s.lookupPlanMetrics.FinalCardinalityRatio.WithLabelValues(), float64(estimatedFinal)/float64(actualFinal))
 	}
 }
