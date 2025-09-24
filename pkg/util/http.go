@@ -179,11 +179,17 @@ func ParseProtoReader(ctx context.Context, reader io.Reader, expectedSize, maxSi
 }
 
 type MsgSizeTooLargeErr struct {
-	Actual, Limit int
+	Compressed, Actual, Limit int
 }
 
 func (e MsgSizeTooLargeErr) Error() string {
-	return fmt.Sprintf("the request has been rejected because its size of %d bytes exceeds the limit of %d bytes", e.Actual, e.Limit)
+	msgSizeDesc := ""
+	if e.Actual > 0 {
+		msgSizeDesc = fmt.Sprintf(" of %d bytes (decompressed)", e.Actual)
+	} else if e.Compressed > 0 {
+		msgSizeDesc = fmt.Sprintf(" of %d bytes (compressed)", e.Compressed)
+	}
+	return fmt.Sprintf("the request has been rejected because its size%s exceeds the limit of %d bytes", msgSizeDesc, e.Limit)
 }
 
 // Needed for errors.Is to work properly.
@@ -195,7 +201,7 @@ func (e MsgSizeTooLargeErr) Is(err error) bool {
 
 func decompressRequest(buffers *RequestBuffers, reader io.Reader, expectedSize, maxSize int, compression CompressionType, sp trace.Span) ([]byte, error) {
 	if expectedSize > maxSize {
-		return nil, MsgSizeTooLargeErr{Actual: expectedSize, Limit: maxSize}
+		return nil, MsgSizeTooLargeErr{Compressed: expectedSize, Limit: maxSize}
 	}
 
 	switch compression {
