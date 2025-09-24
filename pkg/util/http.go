@@ -183,7 +183,7 @@ type MsgSizeTooLargeErr struct {
 }
 
 func NewMsgCompressedSizeTooLargeErr(size, limit int) MsgSizeTooLargeErr {
-	return MsgSizeTooLargeErr{Compressed: size}
+	return MsgSizeTooLargeErr{Compressed: size, Limit: limit}
 }
 
 func NewMsgUncompressedSizeTooLargeErr(size, limit int) MsgSizeTooLargeErr {
