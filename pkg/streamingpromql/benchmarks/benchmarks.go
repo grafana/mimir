@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/grafana/mimir/pkg/util/limiter"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/stretchr/testify/require"
@@ -59,6 +60,10 @@ func (c BenchCase) Run(ctx context.Context, t testing.TB, start, end time.Time, 
 		require.NoError(t, err)
 		return nil, nil
 	}
+
+	// Initiate memoryConsumptionTracker in context so that downstream read path, including query via prometheus engine will see the same memoryConsumptionTracker
+	memoryConsumptionTracker := limiter.MemoryTrackerFromContextWithFallback(ctx)
+	ctx = limiter.AddMemoryTrackerToContext(ctx, memoryConsumptionTracker)
 
 	res := qry.Exec(ctx)
 
