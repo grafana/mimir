@@ -232,9 +232,12 @@ type partitionState struct {
 	committed *advancingOffset
 	planned   *advancingOffset
 
-	pendingJobs   *list.List
-	activeJobs    []*jobState
-	activeJobsMap map[string]*jobState
+	// pendingJobs are jobs that are waiting to be enqueued. The job creation policy is what allows them to advance to the plannedJobs list.
+	pendingJobs *list.List
+	// plannedJobs are jobs that are either ready to be assigned, in-progress, or completed.
+	plannedJobs []*jobState
+	// plannedJobsMap is a map of jobID to jobState for quick lookup.
+	plannedJobsMap map[string]*jobState
 }
 type jobState struct {
 	jobID    string
@@ -298,17 +301,19 @@ func (s *partitionState) addPendingJob(job *schedulerpb.JobSpec) {
 	s.pendingJobs.PushBack(job)
 }
 
-func (s *partitionState) addActiveJob(j *jobState) {
-	s.activeJobs = append(s.activeJobs, j)
-	s.activeJobsMap[j.jobID] = j
+func (s *partitionState) addPlannedJob(j *jobState) {
+	s.plannedJobs = append(s.plannedJobs, j)
+	s.plannedJobsMap[j.jobID] = j
 	// Keep it sorted by start offset.
-	slices.SortFunc(s.activeJobs, func(a, b *jobState) int {
+	slices.SortFunc(s.plannedJobs, func(a, b *jobState) int {
 		return cmp.Compare(a.spec.StartOffset, b.spec.StartOffset)
 	})
+
+	s.planned.advance(j.jobID, j.spec)
 }
 
 func (s *partitionState) completeJob(jobID string) {
-	j, ok := s.activeJobsMap[jobID]
+	j, ok := s.plannedJobsMap[jobID]
 	if !ok {
 		return
 	}
@@ -319,11 +324,11 @@ func (s *partitionState) completeJob(jobID string) {
 	// partition and its order is maintained, we can advance the committed
 	// offset and GC any completed job(s) at the front of this slice.
 
-	for len(s.activeJobs) > 0 && s.activeJobs[0].complete {
-		first := s.activeJobs[0]
-		s.committed.advance(jobKey{first.jobID, 0}, first.spec)
-		s.activeJobs = s.activeJobs[1:]
-		delete(s.activeJobsMap, first.jobID)
+	for len(s.plannedJobs) > 0 && s.plannedJobs[0].complete {
+		first := s.plannedJobs[0]
+		s.committed.advance(first.jobID, first.spec)
+		s.plannedJobs = s.plannedJobs[1:]
+		delete(s.plannedJobsMap, first.jobID)
 	}
 }
 
@@ -384,9 +389,7 @@ func (s *BlockBuilderScheduler) enqueuePendingJobs() {
 
 			// Otherwise, it was successful. Move it to the active jobs slice.
 			ps.pendingJobs.Remove(e)
-			ps.addActiveJob(&jobState{jobID: jobID, spec: *spec, complete: false})
-			// (In the case of a newly planned job, we don't have an epoch yet.)
-			ps.planned.advance(jobKey{jobID, 0}, *spec)
+			ps.addPlannedJob(&jobState{jobID: jobID, spec: *spec, complete: false})
 		}
 	}
 
@@ -443,10 +446,10 @@ func (s *BlockBuilderScheduler) getPartitionState(topic string, partition int32)
 	}
 
 	ps := &partitionState{
-		topic:         topic,
-		partition:     partition,
-		pendingJobs:   list.New(),
-		activeJobsMap: make(map[string]*jobState),
+		topic:          topic,
+		partition:      partition,
+		pendingJobs:    list.New(),
+		plannedJobsMap: make(map[string]*jobState),
 		planned: &advancingOffset{
 			name:    offsetNamePlanned,
 			off:     offsetEmpty,
@@ -960,9 +963,11 @@ func (s *BlockBuilderScheduler) finalizeObservations() {
 				continue
 			}
 
+			ps.addPlannedJob(&jobState{jobID: obs.key.id, spec: obs.spec, complete: false})
+
 			if obs.complete {
 				// Completed.
-				ps.committed.advance(obs.key, obs.spec)
+				ps.completeJob(obs.key.id)
 			} else {
 				// An in-progress job that's part of our continuous coverage.
 				if err := s.jobs.importJob(obs.key, obs.workerID, obs.spec); err != nil {
@@ -973,7 +978,6 @@ func (s *BlockBuilderScheduler) finalizeObservations() {
 				}
 			}
 
-			ps.planned.advance(obs.key, obs.spec)
 		}
 	}
 
@@ -1034,17 +1038,17 @@ const (
 // expected to be monotonically increasing and contiguous. Advance will not
 // allow backwards movement. If a gap is detected, a warning is logged and a
 // metric is incremented.
-func (o *advancingOffset) advance(key jobKey, spec schedulerpb.JobSpec) {
+func (o *advancingOffset) advance(jobID string, spec schedulerpb.JobSpec) {
 	if o.beyondSpec(spec) {
 		// Frequent, and expected.
-		level.Debug(o.logger).Log("msg", "ignoring historical job", "offset_name", o.name, "job_id", key.id, "epoch", key.epoch,
+		level.Debug(o.logger).Log("msg", "ignoring historical job", "offset_name", o.name, "job_id", jobID,
 			"partition", spec.Partition, "start_offset", spec.StartOffset, "end_offset", spec.EndOffset, "committed", o.off)
 		return
 	}
 
 	if !o.validNextSpec(spec) {
 		// Gap detected.
-		level.Warn(o.logger).Log("msg", "gap detected in offset advancement", "offset_name", o.name, "job_id", key.id, "epoch", key.epoch,
+		level.Warn(o.logger).Log("msg", "gap detected in offset advancement", "offset_name", o.name, "job_id", jobID,
 			"partition", spec.Partition, "start_offset", spec.StartOffset, "end_offset", spec.EndOffset, "committed", o.off)
 		o.metrics.jobGapDetected.WithLabelValues(o.name).Inc()
 	}

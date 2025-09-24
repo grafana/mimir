@@ -554,7 +554,7 @@ func TestOffsetMovement(t *testing.T) {
 
 	e := sched.jobs.add("ingest/1/5524", spec)
 	require.NoError(t, e)
-	ps.addActiveJob(&jobState{jobID: "ingest/1/5524", spec: spec, complete: false})
+	ps.addPlannedJob(&jobState{jobID: "ingest/1/5524", spec: spec, complete: false})
 	key, _, err := sched.jobs.assign("w0")
 	require.NoError(t, err)
 
@@ -566,7 +566,7 @@ func TestOffsetMovement(t *testing.T) {
 	sched.requireOffset(t, "ingest", 1, 6000, "re-completing the same job shouldn't change the commit")
 
 	p1 := sched.getPartitionState("ingest", 1)
-	p1.committed.advance(jobKey{"ancient_job", 29}, schedulerpb.JobSpec{
+	p1.committed.advance("ancient_job", schedulerpb.JobSpec{
 		Topic:       "ingest",
 		Partition:   1,
 		StartOffset: 1000,
@@ -575,7 +575,7 @@ func TestOffsetMovement(t *testing.T) {
 	sched.requireOffset(t, "ingest", 1, 6000, "committed offsets cannot rewind")
 
 	p2 := sched.getPartitionState("ingest", 2)
-	p2.committed.advance(jobKey{"ancient_job2", 30}, schedulerpb.JobSpec{
+	p2.committed.advance("ancient_job2", schedulerpb.JobSpec{
 		Topic:       "ingest",
 		Partition:   2,
 		StartOffset: 6000,
@@ -1358,10 +1358,10 @@ func TestBlockBuilderScheduler_NoCommit_NoGap(t *testing.T) {
 		EndOffset:   20,
 	}
 
-	pp.planned.advance(k, spec)
+	pp.planned.advance(k.id, spec)
 	requireGaps(t, reg, 0, 0, "advancing an empty planned offset should not register a gap")
 
-	pp.committed.advance(k, spec)
+	pp.committed.advance(k.id, spec)
 	requireGaps(t, reg, 0, 0, "advancing an empty committed offset should not register a gap")
 
 	// Now create a gap:
@@ -1373,9 +1373,9 @@ func TestBlockBuilderScheduler_NoCommit_NoGap(t *testing.T) {
 		EndOffset:   50,
 	}
 
-	pp.planned.advance(k2, spec2)
+	pp.planned.advance(k2.id, spec2)
 	requireGaps(t, reg, 1, 0, "a gap after a non-empty planned offset should register a gap")
 
-	pp.committed.advance(k2, spec2)
+	pp.committed.advance(k2.id, spec2)
 	requireGaps(t, reg, 1, 1, "a gap after a non-empty committed offset should register a gap")
 }
