@@ -197,7 +197,7 @@ func NewMsgUnknownSizeTooLargeErr(limit int) MsgSizeTooLargeErr {
 func (e MsgSizeTooLargeErr) Error() string {
 	msgSizeDesc := ""
 	if e.Actual > 0 {
-		msgSizeDesc = fmt.Sprintf(" of %d bytes (decompressed)", e.Actual)
+		msgSizeDesc = fmt.Sprintf(" of %d bytes (uncompressed)", e.Actual)
 	} else if e.Compressed > 0 {
 		msgSizeDesc = fmt.Sprintf(" of %d bytes (compressed)", e.Compressed)
 	}

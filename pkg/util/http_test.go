@@ -246,13 +246,18 @@ func TestIsRequestBodyTooLargeRegression(t *testing.T) {
 }
 
 func TestNewMsgSizeTooLargeErr(t *testing.T) {
-	err := MsgSizeTooLargeErr{Actual: 100, Limit: 50}
-	msg := `the request has been rejected because its size of 100 bytes (decompressed) exceeds the limit of 50 bytes`
+	err := NewMsgUncompressedSizeTooLargeErr(100, 50)
+	msg := `the request has been rejected because its size of 100 bytes (uncompressed) exceeds the limit of 50 bytes`
 
 	assert.Equal(t, msg, err.Error())
 
-	err = MsgSizeTooLargeErr{Compressed: 100, Limit: 50}
+	err = NewMsgCompressedSizeTooLargeErr(100, 50)
 	msg = `the request has been rejected because its size of 100 bytes (compressed) exceeds the limit of 50 bytes`
+
+	assert.Equal(t, msg, err.Error())
+
+	err = NewMsgUnknownSizeTooLargeErr(50)
+	msg = `the request has been rejected because its size exceeds the limit of 50 bytes`
 
 	assert.Equal(t, msg, err.Error())
 }

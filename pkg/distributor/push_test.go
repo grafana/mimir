@@ -671,7 +671,7 @@ func (n bufCloser) BytesBuffer() *bytes.Buffer { return n.Buffer }
 
 func TestNewDistributorMaxWriteMessageSizeErr(t *testing.T) {
 	err := distributorMaxWriteMessageSizeErr{actual: 100, limit: 50}
-	msg := `the incoming push request has been rejected because its message size of 100 bytes (decompressed) is larger than the allowed limit of 50 bytes (err-mimir-distributor-max-write-message-size). To adjust the related limit, configure -distributor.max-recv-msg-size, or contact your service administrator.`
+	msg := `the incoming push request has been rejected because its message size of 100 bytes (uncompressed) is larger than the allowed limit of 50 bytes (err-mimir-distributor-max-write-message-size). To adjust the related limit, configure -distributor.max-recv-msg-size, or contact your service administrator.`
 
 	assert.Equal(t, msg, err.Error())
 }

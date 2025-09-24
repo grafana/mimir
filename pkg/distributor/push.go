@@ -121,7 +121,7 @@ type distributorMaxWriteMessageSizeErr struct {
 func (e distributorMaxWriteMessageSizeErr) Error() string {
 	msgSizeDesc := ""
 	if e.actual > 0 {
-		msgSizeDesc = fmt.Sprintf(" of %d bytes (decompressed)", e.actual)
+		msgSizeDesc = fmt.Sprintf(" of %d bytes (uncompressed)", e.actual)
 	} else if e.compressed > 0 {
 		msgSizeDesc = fmt.Sprintf(" of %d bytes (compressed)", e.compressed)
 	}
@@ -135,7 +135,7 @@ type distributorMaxOTLPRequestSizeErr struct {
 func (e distributorMaxOTLPRequestSizeErr) Error() string {
 	msgSizeDesc := ""
 	if e.actual > 0 {
-		msgSizeDesc = fmt.Sprintf(" of %d bytes (decompressed)", e.actual)
+		msgSizeDesc = fmt.Sprintf(" of %d bytes (uncompressed)", e.actual)
 	} else if e.compressed > 0 {
 		msgSizeDesc = fmt.Sprintf(" of %d bytes (compressed)", e.compressed)
 	}
