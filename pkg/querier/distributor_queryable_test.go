@@ -253,7 +253,14 @@ func TestDistributorQuerier_Select_MixedChunkseriesTimeseriesAndStreamingResults
 		{SeriesIndex: 1, Chunks: convertToChunks(t, samplesToInterface(s3), false)},
 	})
 
-	d := &mockDistributor{}
+	ctx := user.InjectOrgID(context.Background(), "0")
+
+	memoryTracker := limiter.MemoryTrackerFromContextWithFallback(ctx)
+	ctx = limiter.AddMemoryTrackerToContext(ctx, memoryTracker)
+
+	d := &mockDistributor{
+		memoryConsumptionTracker: memoryTracker,
+	}
 	d.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(
 		client.CombinedQueryStreamResponse{
 			Chunkseries: []client.TimeSeriesChunk{
@@ -295,7 +302,6 @@ func TestDistributorQuerier_Select_MixedChunkseriesTimeseriesAndStreamingResults
 		},
 		nil)
 
-	ctx := user.InjectOrgID(context.Background(), "0")
 	queryable := NewDistributorQueryable(d, newMockConfigProvider(0), stats.NewQueryMetrics(prometheus.NewPedanticRegistry()), log.NewNopLogger())
 	querier, err := queryable.Querier(mint, maxt)
 	require.NoError(t, err)
@@ -337,7 +343,13 @@ func TestDistributorQuerier_Select_ClosedBeforeSelectFinishes(t *testing.T) {
 		{SeriesIndex: 1, Chunks: convertToChunks(t, samplesToInterface(s2), false)},
 	})
 
-	d := &mockDistributor{}
+	ctx := user.InjectOrgID(context.Background(), "0")
+	memoryTracker := limiter.MemoryTrackerFromContextWithFallback(ctx)
+	ctx = limiter.AddMemoryTrackerToContext(ctx, memoryTracker)
+
+	d := &mockDistributor{
+		memoryConsumptionTracker: memoryTracker,
+	}
 	d.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(
 		client.CombinedQueryStreamResponse{
 			StreamingSeries: []client.StreamingSeries{
@@ -357,7 +369,6 @@ func TestDistributorQuerier_Select_ClosedBeforeSelectFinishes(t *testing.T) {
 		},
 		nil)
 
-	ctx := user.InjectOrgID(context.Background(), "0")
 	queryable := NewDistributorQueryable(d, newMockConfigProvider(0), stats.NewQueryMetrics(prometheus.NewPedanticRegistry()), log.NewNopLogger())
 	querier, err := queryable.Querier(mint, maxt)
 	require.NoError(t, err)
@@ -433,7 +444,13 @@ func TestDistributorQuerier_Select_MixedFloatAndIntegerHistograms(t *testing.T) 
 		genTestHistogram(5500, 55),
 	}
 
-	d := &mockDistributor{}
+	ctx := user.InjectOrgID(context.Background(), "0")
+	memoryTracker := limiter.MemoryTrackerFromContextWithFallback(ctx)
+	ctx = limiter.AddMemoryTrackerToContext(ctx, memoryTracker)
+
+	d := &mockDistributor{
+		memoryConsumptionTracker: memoryTracker,
+	}
 	d.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(
 		client.CombinedQueryStreamResponse{
 			Chunkseries: []client.TimeSeriesChunk{
@@ -460,7 +477,6 @@ func TestDistributorQuerier_Select_MixedFloatAndIntegerHistograms(t *testing.T) 
 		},
 		nil)
 
-	ctx := user.InjectOrgID(context.Background(), "0")
 	queryable := NewDistributorQueryable(d, newMockConfigProvider(0), nil, log.NewNopLogger())
 	querier, err := queryable.Querier(mint, maxt)
 	require.NoError(t, err)
@@ -532,7 +548,13 @@ func TestDistributorQuerier_Select_MixedHistogramsAndFloatSamples(t *testing.T) 
 		genTestFloatHistogram(8000, 80),
 	}
 
-	d := &mockDistributor{}
+	ctx := user.InjectOrgID(context.Background(), "0")
+	memoryTracker := limiter.MemoryTrackerFromContextWithFallback(ctx)
+	ctx = limiter.AddMemoryTrackerToContext(ctx, memoryTracker)
+
+	d := &mockDistributor{
+		memoryConsumptionTracker: memoryTracker,
+	}
 	d.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(
 		client.CombinedQueryStreamResponse{
 			Chunkseries: []client.TimeSeriesChunk{
@@ -561,7 +583,6 @@ func TestDistributorQuerier_Select_MixedHistogramsAndFloatSamples(t *testing.T) 
 		},
 		nil)
 
-	ctx := user.InjectOrgID(context.Background(), "0")
 	queryable := NewDistributorQueryable(d, newMockConfigProvider(0), nil, log.NewNopLogger())
 	querier, err := queryable.Querier(mint, maxt)
 	require.NoError(t, err)
@@ -679,10 +700,15 @@ func TestDistributorQuerier_Select_CounterResets(t *testing.T) {
 
 			for responseName, responseType := range responseTypes {
 				t.Run(responseName, func(t *testing.T) {
-					d := &mockDistributor{}
+					ctx := user.InjectOrgID(context.Background(), "0")
+					memoryTracker := limiter.MemoryTrackerFromContextWithFallback(ctx)
+					ctx = limiter.AddMemoryTrackerToContext(ctx, memoryTracker)
+
+					d := &mockDistributor{
+						memoryConsumptionTracker: memoryTracker,
+					}
 					d.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(responseType.combinedResponse, nil)
 
-					ctx := user.InjectOrgID(context.Background(), "0")
 					queryable := NewDistributorQueryable(d, newMockConfigProvider(0), stats.NewQueryMetrics(prometheus.NewPedanticRegistry()), log.NewNopLogger())
 					querier, err := queryable.Querier(tc.queryStart, tc.queryEnd)
 					require.NoError(t, err)
