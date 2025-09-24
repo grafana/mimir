@@ -1172,16 +1172,16 @@ func TestPartitionState_ParallelJobs(t *testing.T) {
 			EndOffset:   200,
 		}
 		ps.addPlannedJob("job1", jobSpec)
-		require.Equal(t, 1, len(ps.plannedJobs))
-		require.Equal(t, 1, len(ps.plannedJobsMap))
+		require.Equal(t, 1, ps.plannedJobs.Len())
+		require.Len(t, ps.plannedJobsMap, 1)
 		require.Equal(t, int64(100), ps.committed.offset())
 
 		err := ps.completeJob("job1")
 		require.NoError(t, err)
 
 		// Verify job was completed and garbage collected
-		require.Equal(t, 0, len(ps.plannedJobs))
-		require.Equal(t, 0, len(ps.plannedJobsMap))
+		require.Equal(t, 0, ps.plannedJobs.Len())
+		require.Len(t, ps.plannedJobsMap, 0)
 		require.Equal(t, int64(200), ps.committed.offset())
 	})
 
@@ -1222,29 +1222,29 @@ func TestPartitionState_ParallelJobs(t *testing.T) {
 		})
 
 		// Verify initial state
-		require.Equal(t, 3, len(ps.plannedJobs))
-		require.Equal(t, 3, len(ps.plannedJobsMap))
+		require.Equal(t, 3, ps.plannedJobs.Len())
+		require.Len(t, ps.plannedJobsMap, 3)
 		require.Equal(t, int64(100), ps.committed.offset())
 
 		// Complete first job - should be garbage collected
 		err := ps.completeJob("job1")
 		require.NoError(t, err)
-		require.Equal(t, 2, len(ps.plannedJobs))
-		require.Equal(t, 2, len(ps.plannedJobsMap))
+		require.Equal(t, 2, ps.plannedJobs.Len())
+		require.Len(t, ps.plannedJobsMap, 2)
 		require.Equal(t, int64(200), ps.committed.offset())
 
 		// Complete second job - should be garbage collected
 		err = ps.completeJob("job2")
 		require.NoError(t, err)
-		require.Equal(t, 1, len(ps.plannedJobs))
-		require.Equal(t, 1, len(ps.plannedJobsMap))
+		require.Equal(t, 1, ps.plannedJobs.Len())
+		require.Len(t, ps.plannedJobsMap, 1)
 		require.Equal(t, int64(300), ps.committed.offset())
 
 		// Complete third job - should be garbage collected
 		err = ps.completeJob("job3")
 		require.NoError(t, err)
-		require.Equal(t, 0, len(ps.plannedJobs))
-		require.Equal(t, 0, len(ps.plannedJobsMap))
+		require.Equal(t, 0, ps.plannedJobs.Len())
+		require.Len(t, ps.plannedJobsMap, 0)
 		require.Equal(t, int64(400), ps.committed.offset())
 	})
 
@@ -1279,17 +1279,17 @@ func TestPartitionState_ParallelJobs(t *testing.T) {
 		require.NoError(t, err)
 
 		// Job2 should be marked complete but not garbage collected yet
-		require.Equal(t, 3, len(ps.plannedJobs), "expecting no garbage collection yet")
-		require.Equal(t, 3, len(ps.plannedJobsMap), "expecting no garbage collection yet")
+		require.Equal(t, 3, ps.plannedJobs.Len(), "expecting no garbage collection yet")
+		require.Len(t, ps.plannedJobsMap, 3, "expecting no garbage collection yet")
 		require.Equal(t, int64(100), ps.committed.offset(), "should be no advancement yet")
 
 		// Complete job1 - should garbage collect both job1 and job2
 		err = ps.completeJob("job1")
 		require.NoError(t, err)
-		require.Equal(t, 1, len(ps.plannedJobs), "expecting garbage collection of job1 and job2")
-		require.Equal(t, 1, len(ps.plannedJobsMap), "expecting garbage collection of job1 and job2")
+		require.Equal(t, 1, ps.plannedJobs.Len(), "expecting garbage collection of job1 and job2")
+		require.Len(t, ps.plannedJobsMap, 1, "expecting garbage collection of job1 and job2")
 		require.Equal(t, int64(300), ps.committed.offset(), "should be advanced commit to the end of job3")
-		require.Equal(t, "job3", ps.plannedJobs[0].jobID, "expecting job3 to be the remaining planned job")
+		require.Equal(t, "job3", ps.plannedJobs.Front().Value.(*jobState).jobID, "expecting job3 to be the remaining planned job")
 	})
 
 	// Test 5: Complete job with empty partition state
@@ -1304,8 +1304,8 @@ func TestPartitionState_ParallelJobs(t *testing.T) {
 		require.ErrorIs(t, err, errJobNotFound)
 
 		// Verify state remains unchanged
-		require.Equal(t, 0, len(ps.plannedJobs))
-		require.Equal(t, 0, len(ps.plannedJobsMap))
+		require.Equal(t, 0, ps.plannedJobs.Len())
+		require.Len(t, ps.plannedJobsMap, 0)
 		require.Equal(t, int64(100), ps.committed.offset())
 	})
 }

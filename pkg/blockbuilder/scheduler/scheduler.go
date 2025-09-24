@@ -235,7 +235,7 @@ type partitionState struct {
 	// pendingJobs are jobs that are waiting to be enqueued. The job creation policy is what allows them to advance to the plannedJobs list.
 	pendingJobs *list.List
 	// plannedJobs are jobs that are either ready to be assigned, in-progress, or completed.
-	plannedJobs []*jobState
+	plannedJobs *list.List
 	// plannedJobsMap is a map of jobID to jobState for quick lookup.
 	plannedJobsMap map[string]*jobState
 }
@@ -310,7 +310,7 @@ func (s *partitionState) addPlannedJob(id string, spec schedulerpb.JobSpec) {
 	}
 
 	js := &jobState{jobID: id, spec: spec, complete: false}
-	s.plannedJobs = append(s.plannedJobs, js)
+	s.plannedJobs.PushBack(js)
 	s.plannedJobsMap[js.jobID] = js
 	s.planned.advance(id, spec)
 }
@@ -325,13 +325,16 @@ func (s *partitionState) completeJob(jobID string) error {
 	// Now we both advance the committed offset and garbage collect completed
 	// jobs. As the active jobs list knows about all active jobs for this
 	// partition and its order is maintained, we can advance the committed
-	// offset and GC any completed job(s) at the front of this slice.
+	// offset and GC any completed job(s) at the front of this list.
 
-	for len(s.plannedJobs) > 0 && s.plannedJobs[0].complete {
-		first := s.plannedJobs[0]
-		s.committed.advance(first.jobID, first.spec)
-		s.plannedJobs = s.plannedJobs[1:]
-		delete(s.plannedJobsMap, first.jobID)
+	for elem := s.plannedJobs.Front(); elem != nil; elem = s.plannedJobs.Front() {
+		js := elem.Value.(*jobState)
+		if !js.complete {
+			break
+		}
+		s.plannedJobs.Remove(elem)
+		delete(s.plannedJobsMap, js.jobID)
+		s.committed.advance(js.jobID, js.spec)
 	}
 	return nil
 }
@@ -391,7 +394,7 @@ func (s *BlockBuilderScheduler) enqueuePendingJobs() {
 				break
 			}
 
-			// Otherwise, it was successful. Move it to the planned jobs slice.
+			// Otherwise, it was successful. Move it to the planned jobs list.
 			ps.pendingJobs.Remove(e)
 			ps.addPlannedJob(jobID, *spec)
 		}
@@ -453,6 +456,7 @@ func (s *BlockBuilderScheduler) getPartitionState(topic string, partition int32)
 		topic:          topic,
 		partition:      partition,
 		pendingJobs:    list.New(),
+		plannedJobs:    list.New(),
 		plannedJobsMap: make(map[string]*jobState),
 		planned: &advancingOffset{
 			name:    offsetNamePlanned,
