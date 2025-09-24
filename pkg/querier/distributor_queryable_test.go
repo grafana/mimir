@@ -15,6 +15,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/user"
+	"github.com/grafana/mimir/pkg/util/limiter"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
@@ -175,10 +176,16 @@ func TestDistributorQuerier_Select(t *testing.T) {
 
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
-			d := &mockDistributor{}
+			ctx := user.InjectOrgID(context.Background(), "0")
+
+			memoryTracker := limiter.MemoryTrackerFromContextWithFallback(ctx)
+			ctx = limiter.AddMemoryTrackerToContext(ctx, memoryTracker)
+
+			d := &mockDistributor{
+				memoryConsumptionTracker: memoryTracker,
+			}
 			d.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(testCase.response, nil)
 
-			ctx := user.InjectOrgID(context.Background(), "0")
 			queryable := NewDistributorQueryable(d, newMockConfigProvider(0), nil, log.NewNopLogger())
 			querier, err := queryable.Querier(mint, maxt)
 			require.NoError(t, err)
@@ -895,6 +902,7 @@ func convertToChunks(t *testing.T, samples []interface{}, allowOverflow bool) []
 
 type mockDistributor struct {
 	mock.Mock
+	memoryConsumptionTracker *limiter.MemoryConsumptionTracker
 }
 
 func (m *mockDistributor) QueryExemplars(ctx context.Context, from, to model.Time, matchers ...[]*labels.Matcher) (*client.ExemplarQueryResponse, error) {
@@ -903,7 +911,18 @@ func (m *mockDistributor) QueryExemplars(ctx context.Context, from, to model.Tim
 }
 func (m *mockDistributor) QueryStream(ctx context.Context, queryMetrics *stats.QueryMetrics, from, to model.Time, matchers ...*labels.Matcher) (client.CombinedQueryStreamResponse, error) {
 	args := m.Called(ctx, queryMetrics, from, to, matchers)
-	return args.Get(0).(client.CombinedQueryStreamResponse), args.Error(1)
+	response := args.Get(0).(client.CombinedQueryStreamResponse)
+	// Simulate how memoryConsumptionTracker track memory utilisation as we process response from ingester
+	for _, ts := range response.Timeseries {
+		m.memoryConsumptionTracker.IncreaseMemoryConsumptionForLabels(mimirpb.FromLabelAdaptersToLabels(ts.Labels))
+	}
+	for _, cs := range response.Chunkseries {
+		m.memoryConsumptionTracker.IncreaseMemoryConsumptionForLabels(mimirpb.FromLabelAdaptersToLabels(cs.Labels))
+	}
+	for _, ss := range response.StreamingSeries {
+		m.memoryConsumptionTracker.IncreaseMemoryConsumptionForLabels(ss.Labels)
+	}
+	return response, args.Error(1)
 }
 func (m *mockDistributor) LabelValuesForLabelName(ctx context.Context, from, to model.Time, lbl model.LabelName, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, error) {
 	args := m.Called(ctx, from, to, lbl, hints, matchers)
