@@ -1128,7 +1128,37 @@ func TestPartitionState_PartitionBecomesInactive(t *testing.T) {
 	assert.NoError(t, err)
 }
 
-func TestPartitionState_CompleteJob(t *testing.T) {
+func TestPartitionState_ParallelJobs(t *testing.T) {
+
+	t.Run("planned job order required", func(t *testing.T) {
+		sched, _ := mustScheduler(t, 4)
+		ps := sched.getPartitionState("ingest", 1)
+		ps.initCommit(100)
+
+		// It is a logical error to add a job to the planned list out of order. The safe completion logic requires it.
+
+		ps.addPlannedJob("job1", schedulerpb.JobSpec{
+			Topic:       "ingest",
+			Partition:   1,
+			StartOffset: 100,
+			EndOffset:   200,
+		})
+		ps.addPlannedJob("job3", schedulerpb.JobSpec{
+			Topic:       "ingest",
+			Partition:   1,
+			StartOffset: 300,
+			EndOffset:   400,
+		})
+		require.Panics(t, func() {
+			ps.addPlannedJob("job2", schedulerpb.JobSpec{
+				Topic:       "ingest",
+				Partition:   1,
+				StartOffset: 200,
+				EndOffset:   300,
+			})
+		})
+	})
+
 	// Test 1: Complete a single job at the front of the queue
 	t.Run("complete_single_job_at_front", func(t *testing.T) {
 		sched, _ := mustScheduler(t, 4)

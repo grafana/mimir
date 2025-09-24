@@ -302,14 +302,16 @@ func (s *partitionState) addPendingJob(job *schedulerpb.JobSpec) {
 }
 
 func (s *partitionState) addPlannedJob(id string, spec schedulerpb.JobSpec) {
+	if s.planned.beyondSpec(spec) {
+		// This shouldn't happen. All callers of addPlannedJob must do so in
+		// increasing offset order.
+		panic(fmt.Sprintf("given spec %d [%d, %d) is behind the current planned offset %d",
+			spec.Partition, spec.StartOffset, spec.EndOffset, s.planned.offset()))
+	}
+
 	js := &jobState{jobID: id, spec: spec, complete: false}
 	s.plannedJobs = append(s.plannedJobs, js)
 	s.plannedJobsMap[js.jobID] = js
-	// Keep it sorted by start offset.
-	slices.SortFunc(s.plannedJobs, func(a, b *jobState) int {
-		return cmp.Compare(a.spec.StartOffset, b.spec.StartOffset)
-	})
-
 	s.planned.advance(id, spec)
 }
 
