@@ -442,10 +442,6 @@ func (mq *multiQuerier) Select(ctx context.Context, _ bool, sp *storage.SelectHi
 		return queriers[0].Select(ctx, true, sp, matchers...)
 	}
 
-	// Initiate memory tracker and add them back to the context to be used downstream
-	memoryTracker := limiter.MemoryTrackerFromContextWithFallback(ctx)
-	ctx = limiter.AddMemoryTrackerToContext(ctx, memoryTracker)
-
 	sets := make(chan storage.SeriesSet, len(queriers))
 	for _, querier := range queriers {
 		go func(querier storage.Querier) {
@@ -466,7 +462,7 @@ func (mq *multiQuerier) Select(ctx context.Context, _ bool, sp *storage.SelectHi
 	// we have all the sets from different sources (chunk from store, chunks from ingesters,
 	// time series from store and time series from ingesters).
 	// mergeSeriesSets will return sorted set.
-	return mq.mergeSeriesSets(result, memoryTracker)
+	return mq.mergeSeriesSets(result)
 }
 
 func clampToMaxLabelQueryLength(spanLog *spanlogger.SpanLogger, startMs, endMs, nowMs, maxLabelQueryLengthMs int64) int64 {
@@ -639,7 +635,7 @@ func (mq *multiQuerier) Close() error {
 	return me.Err()
 }
 
-func (mq *multiQuerier) mergeSeriesSets(sets []storage.SeriesSet, memoryTracker *limiter.MemoryConsumptionTracker) storage.SeriesSet {
+func (mq *multiQuerier) mergeSeriesSets(sets []storage.SeriesSet) storage.SeriesSet {
 	// Here we deal with sets that are based on chunks and build single set from them.
 	// Remaining sets are merged with chunks-based one using storage.NewMergeSeriesSet
 
@@ -658,8 +654,6 @@ func (mq *multiQuerier) mergeSeriesSets(sets []storage.SeriesSet, memoryTracker 
 			} else {
 				nonChunkSeries = append(nonChunkSeries, s)
 			}
-			// Clearing memory consumption tracker for labels that was allocated when processing response from ingester and store-gateway
-			memoryTracker.DecreaseMemoryConsumptionForLabels(s.Labels())
 		}
 
 		if err := set.Err(); err != nil {
