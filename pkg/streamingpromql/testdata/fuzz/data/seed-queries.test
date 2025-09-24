@@ -57,7 +57,6 @@ some_metric{} @ end() offset -2m55s
 --min without (__name__) (deriv({__name__="some_metric"}[3m]))
 ({__name__="some_metric",env!="2"} @ end() offset 4m46s / {__name__="some_metric"} offset 2m30s)
 some_metric{,env!="2"}[5m] @ start() offset 1m15s
-andrewhall@Andrews-MacBook-Pro-2 demo % go run main.go
 avg_over_time({__name__="some_metric",env=~".*"}[1h:1m] offset 4m35s)
 some_metric{}[1h:1m]
 time()
@@ -117,7 +116,6 @@ count_values without (group) ("value", rate({__name__="http_requests",instance="
 {__name__="http_requests",group=~"produ.*"} @ start()
 {__name__="http_requests",instance="0",job!~"api-s.*"} offset -2m26s
 {__name__="http_requests",group!="production"}
-andrewhall@Andrews-MacBook-Pro-2 demo % go run main.go
 {__name__="http_requests",group=~"can.*"}
 (    bottomk by (instance, job) (      2,      (          -{__name__="http_requests",instance="0"}        ^          ({__name__="http_requests"} @ end() != {__name__="http_requests",instance!~".*"} @ 1471739052.731)      )    )  or    avg without (__name__, group, instance) (      (          histogram_stddev({__name__="http_requests",group!="canary",instance="1"} @ start() offset 8s)        +          (              {__name__="http_requests"} @ end()            or              {__name__="http_requests",group!="canary",job!="api-server"} @ 795082010.031 offset 2m22s          )      )    ))
 histogram_avg(({__name__="http_requests"} > -{__name__="http_requests"} offset 2m7s))
