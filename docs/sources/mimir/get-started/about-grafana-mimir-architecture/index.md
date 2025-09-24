@@ -65,7 +65,11 @@ For more information, refer to [Compactor](../../references/architecture/compone
 
 Queries coming into Grafana Mimir arrive at the [query-frontend](../../references/architecture/components/query-frontend/). The query-frontend then splits queries over longer time ranges into multiple, smaller queries.
 
-The query-frontend next checks the results cache. If the result of a query has been cached, the query-frontend returns the cached results. Queries that cannot be answered from the results cache are submitted to the query-scheduler component which maintains an in-memory queue of requests.
+The query-frontend next checks the results cache. If the result of a query has been cached, the query-frontend returns the cached results. Queries that cannot be answered from the results cache are put into an in-memory queue within the query-frontend.
+
+{{< admonition type="note" >}}
+If you run the optional [query-scheduler](../../references/architecture/components/query-scheduler/) component, the query-schedule maintains the queue instead of the query-frontend.
+{{< /admonition >}}
 
 The queriers act as workers, pulling queries from the queue.
 
