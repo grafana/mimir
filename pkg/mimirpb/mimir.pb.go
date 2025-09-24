@@ -7586,7 +7586,7 @@ func (m *WriteRequest) Unmarshal(dAtA []byte) error {
 			m.Timeseries = append(m.Timeseries, PreallocTimeseries{})
 			m.Timeseries[len(m.Timeseries)-1].skipUnmarshalingExemplars = m.skipUnmarshalingExemplars
 			if metadata == nil {
-				metadata = newDedupingMetadataSet()
+				metadata = metadataSetFromSettings(m.skipDeduplicateMetadata)
 			}
 			if err := m.Timeseries[len(m.Timeseries)-1].Unmarshal(dAtA[iNdEx:postIndex], &m.rw2symbols, metadata, m.skipNormalizeMetadataMetricName); err != nil {
 				return err

@@ -452,6 +452,13 @@ type MarshalerWithSize interface {
 	MarshalWithSize(size int) ([]byte, error)
 }
 
+func metadataSetFromSettings(skipDeduplicateMetadata bool) metadataSet {
+	if skipDeduplicateMetadata {
+		return newPassthroughMetadataSet()
+	}
+	return newDedupingMetadataSet()
+}
+
 // metadataSet is the collection of metadata within a request.
 // It keeps the order at which metadata is added. Metadata may optionally be deduplicated by family name.
 type metadataSet interface {
@@ -501,8 +508,8 @@ type passthroughMetadataSet struct {
 	metadata []*MetricMetadata
 }
 
-func newPassthroughMetadataSet() passthroughMetadataSet {
-	return passthroughMetadataSet{
+func newPassthroughMetadataSet() *passthroughMetadataSet {
+	return &passthroughMetadataSet{
 		metadata: make([]*MetricMetadata, 0),
 	}
 }
