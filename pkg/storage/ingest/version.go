@@ -190,6 +190,7 @@ func deserializeRecordContentV2(content []byte, wr *mimirpb.PreallocWriteRequest
 	wr.RW2SymbolOffset = V2RecordSymbolOffset
 	wr.RW2CommonSymbols = V2CommonSymbols
 	wr.SkipNormalizeMetadataMetricName = true
+	// TODO: wr.SkipDeduplicateMetadata = true
 	return wr.Unmarshal(content)
 }
 

@@ -76,6 +76,11 @@ type PreallocWriteRequest struct {
 	// SkipNormalizeMetadataMetricName skips normalization of metric name in metadata on unmarshal. E.g., don't remove `_count` suffixes from histograms.
 	// Has no effect on marshalled or existing structs; must be set prior to Unmarshal calls.
 	SkipNormalizeMetadataMetricName bool
+	// SkipDeduplicateMetadata skips deduplication of RW2 metadata by metric family name.
+	// Normally this is done because RW2 requests to repeat metadata as it's embedded in timeseries.
+	// Some applications, like RW1->RW2 translation, might choose to disable it.
+	// Has no effect on marshalled or existing strucs; must be set prior to Unmarshal calls.
+	SkipDeduplicateMetadata bool
 }
 
 // Unmarshal implements proto.Message.
@@ -85,6 +90,7 @@ func (p *PreallocWriteRequest) Unmarshal(dAtA []byte) error {
 	p.Timeseries = PreallocTimeseriesSliceFromPool()
 	p.skipUnmarshalingExemplars = p.SkipUnmarshalingExemplars
 	p.skipNormalizeMetadataMetricName = p.SkipNormalizeMetadataMetricName
+	p.skipDeduplicateMetadata = p.SkipDeduplicateMetadata
 	p.unmarshalFromRW2 = p.UnmarshalFromRW2
 	p.rw2symbols.offset = p.RW2SymbolOffset
 	p.rw2symbols.commonSymbols = p.RW2CommonSymbols
