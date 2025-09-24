@@ -12,6 +12,8 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/annotations"
+
+	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
 // LazyQueryable wraps a storage.Queryable
@@ -47,6 +49,10 @@ func NewLazyQuerier(next storage.Querier) storage.Querier {
 
 // Select implements Storage.Querier
 func (l LazyQuerier) Select(ctx context.Context, selectSorted bool, params *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
+	// Remote read call this directly hence it is better to initiate a memory tracker here.
+	memoryTracker := limiter.MemoryTrackerFromContextWithFallback(ctx)
+	ctx = limiter.AddMemoryTrackerToContext(ctx, memoryTracker)
+
 	// make sure there is space in the buffer, to unblock the goroutine and let it die even if nobody is
 	// waiting for the result yet (or anymore).
 	future := make(chan storage.SeriesSet, 1)
