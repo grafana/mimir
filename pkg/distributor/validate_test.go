@@ -39,7 +39,6 @@ import (
 	"github.com/grafana/mimir/pkg/costattribution"
 	"github.com/grafana/mimir/pkg/costattribution/testutils"
 	"github.com/grafana/mimir/pkg/mimirpb"
-	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -142,10 +141,6 @@ func TestValidateLabels(t *testing.T) {
 		costAttributionMgr: manager,
 	})
 	d := ds[0]
-
-	newRequestBuffers := func() *util.RequestBuffers {
-		return util.NewRequestBuffers(d.RequestBufferPool, util.TaintBuffersOnCleanUp([]byte("The beef is dead.")))
-	}
 
 	validationSchemes := []model.ValidationScheme{
 		model.LegacyValidation,
@@ -519,7 +514,7 @@ func TestValidateLabels(t *testing.T) {
 						}
 					}
 
-					handler := Handler(100000, newRequestBuffers, nil, true, true, d.limits, RetryConfig{},
+					handler := Handler(100000, nil, true, true, d.limits, RetryConfig{},
 						d.PushWithMiddlewares,
 						nil, log.NewNopLogger(),
 					)

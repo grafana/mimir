@@ -23,7 +23,6 @@ import (
 
 	"github.com/grafana/mimir/pkg/distributor/influxpush"
 	"github.com/grafana/mimir/pkg/mimirpb"
-	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/arena"
 	utillog "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
@@ -51,7 +50,6 @@ func influxRequestParser(ctx context.Context, r *http.Request, maxSize int, req 
 // InfluxHandler is a http.Handler which accepts Influx Line protocol and converts it to WriteRequests.
 func InfluxHandler(
 	maxRecvMsgSize int,
-	requestBufferPool util.Pool,
 	sourceIPs *middleware.SourceIPExtractor,
 	retryCfg RetryConfig,
 	push PushFunc,

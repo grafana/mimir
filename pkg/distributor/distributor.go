@@ -182,8 +182,6 @@ type Distributor struct {
 
 	PushWithMiddlewares PushFunc
 
-	RequestBufferPool util.Pool
-
 	// Pool of []byte used when marshalling write requests.
 	writeRequestBytePool sync.Pool
 
@@ -401,13 +399,11 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 
 	cfg.PoolConfig.RemoteTimeout = cfg.RemoteTimeout
 	subservices := []services.Service(nil)
-	requestBufferPool := util.NewBufferPool(cfg.MaxRequestPoolBufferSize)
 
 	d := &Distributor{
 		cfg:                   cfg,
 		log:                   log,
 		ingestersRing:         ingestersRing,
-		RequestBufferPool:     requestBufferPool,
 		partitionsRing:        partitionsRing,
 		ingesterPool:          NewPool(cfg.PoolConfig, ingestersRing, cfg.IngesterClientFactory, log),
 		healthyInstancesCount: atomic.NewUint32(0),

@@ -87,7 +87,6 @@ func (cfg *RetryConfig) Validate() error {
 // Handler is a http.Handler which accepts WriteRequests.
 func Handler(
 	maxRecvMsgSize int,
-	newRequestBuffers func() *util.RequestBuffers,
 	sourceIPs *middleware.SourceIPExtractor,
 	allowSkipLabelNameValidation bool,
 	allowSkipLabelCountValidation bool,
@@ -97,7 +96,7 @@ func Handler(
 	pushMetrics *PushMetrics,
 	logger log.Logger,
 ) http.Handler {
-	return handler(maxRecvMsgSize, newRequestBuffers, sourceIPs, allowSkipLabelNameValidation, allowSkipLabelCountValidation, limits, retryCfg, push, logger, func(ctx context.Context, r *http.Request, maxRecvMsgSize int, req *mimirpb.PreallocWriteRequest, _ log.Logger) error {
+	return handler(maxRecvMsgSize, sourceIPs, allowSkipLabelNameValidation, allowSkipLabelCountValidation, limits, retryCfg, push, logger, func(ctx context.Context, r *http.Request, maxRecvMsgSize int, req *mimirpb.PreallocWriteRequest, _ log.Logger) error {
 		protoBodySize, err := util.ParseProtoReader(ctx, r.Body, int(r.ContentLength), maxRecvMsgSize, req, util.RawSnappy)
 		if errors.Is(err, util.MsgSizeTooLargeErr{}) {
 			err = distributorMaxWriteMessageSizeErr{actual: int(r.ContentLength), limit: maxRecvMsgSize}
@@ -141,7 +140,6 @@ func (e distributorMaxOTLPRequestSizeErr) Error() string {
 
 func handler(
 	maxRecvMsgSize int,
-	newRequestBuffers func() *util.RequestBuffers,
 	sourceIPs *middleware.SourceIPExtractor,
 	allowSkipLabelNameValidation bool,
 	allowSkipLabelCountValidation bool,

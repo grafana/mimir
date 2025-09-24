@@ -137,7 +137,7 @@ func TestInfluxHandleSeriesPush(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			handler := InfluxHandler(tt.maxRequestSizeBytes, nil, nil, RetryConfig{}, tt.push(t), nil, log.NewNopLogger())
+			handler := InfluxHandler(tt.maxRequestSizeBytes, nil, RetryConfig{}, tt.push(t), nil, log.NewNopLogger())
 			req := httptest.NewRequest("POST", tt.url, bytes.NewReader([]byte(tt.data)))
 			const tenantID = "test"
 			req.Header.Set("X-Scope-OrgID", tenantID)

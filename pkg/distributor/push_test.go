@@ -56,7 +56,6 @@ import (
 	"github.com/grafana/mimir/pkg/ingester"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
-	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -64,7 +63,7 @@ import (
 func TestHandler_remoteWrite(t *testing.T) {
 	req := createRequest(t, createPrometheusRemoteWriteProtobuf(t))
 	resp := httptest.NewRecorder()
-	handler := Handler(100000, nil, nil, false, false, validation.MockDefaultOverrides(), RetryConfig{}, verifyWritePushFunc(t, mimirpb.API), nil, log.NewNopLogger())
+	handler := Handler(100000, nil, false, false, validation.MockDefaultOverrides(), RetryConfig{}, verifyWritePushFunc(t, mimirpb.API), nil, log.NewNopLogger())
 	handler.ServeHTTP(resp, req)
 	assert.Equal(t, 200, resp.Code)
 }
@@ -72,7 +71,7 @@ func TestHandler_remoteWrite(t *testing.T) {
 func TestHandler_remoteWriteWithMalformedRequest(t *testing.T) {
 	req := createMalformedRW1Request(t, createPrometheusRemoteWriteProtobuf(t))
 	resp := httptest.NewRecorder()
-	handler := Handler(100000, nil, nil, false, false, validation.MockDefaultOverrides(), RetryConfig{}, verifyWritePushFunc(t, mimirpb.API), nil, log.NewNopLogger())
+	handler := Handler(100000, nil, false, false, validation.MockDefaultOverrides(), RetryConfig{}, verifyWritePushFunc(t, mimirpb.API), nil, log.NewNopLogger())
 	handler.ServeHTTP(resp, req)
 	assert.Equal(t, 200, resp.Code)
 }
@@ -143,7 +142,7 @@ func TestHandler_mimirWriteRequest(t *testing.T) {
 	req := createRequest(t, createMimirWriteRequestProtobuf(t, false, false))
 	resp := httptest.NewRecorder()
 	sourceIPs, _ := middleware.NewSourceIPs("SomeField", "(.*)", false)
-	handler := Handler(100000, nil, sourceIPs, false, false, validation.MockDefaultOverrides(), RetryConfig{}, verifyWritePushFunc(t, mimirpb.RULE), nil, log.NewNopLogger())
+	handler := Handler(100000, sourceIPs, false, false, validation.MockDefaultOverrides(), RetryConfig{}, verifyWritePushFunc(t, mimirpb.RULE), nil, log.NewNopLogger())
 	handler.ServeHTTP(resp, req)
 	assert.Equal(t, 200, resp.Code)
 }
@@ -152,7 +151,7 @@ func TestHandler_contextCanceledRequest(t *testing.T) {
 	req := createRequest(t, createMimirWriteRequestProtobuf(t, false, false))
 	resp := httptest.NewRecorder()
 	sourceIPs, _ := middleware.NewSourceIPs("SomeField", "(.*)", false)
-	handler := Handler(100000, nil, sourceIPs, false, false, validation.MockDefaultOverrides(), RetryConfig{}, func(_ context.Context, req *Request) error {
+	handler := Handler(100000, sourceIPs, false, false, validation.MockDefaultOverrides(), RetryConfig{}, func(_ context.Context, req *Request) error {
 		defer req.CleanUp()
 		return fmt.Errorf("the request failed: %w", context.Canceled)
 	}, nil, log.NewNopLogger())
@@ -261,7 +260,7 @@ func TestHandler_EnsureSkipLabelNameValidationBehaviour(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			resp := httptest.NewRecorder()
-			handler := Handler(100000, nil, nil, tc.allowSkipLabelNameValidation, false, validation.MockDefaultOverrides(), RetryConfig{}, tc.verifyReqHandler, nil, log.NewNopLogger())
+			handler := Handler(100000, nil, tc.allowSkipLabelNameValidation, false, validation.MockDefaultOverrides(), RetryConfig{}, tc.verifyReqHandler, nil, log.NewNopLogger())
 			if !tc.includeAllowSkiplabelNameValidationHeader {
 				tc.req.Header.Set(SkipLabelNameValidationHeader, "true")
 			}
@@ -363,7 +362,7 @@ func TestHandler_EnsureSkipLabelCountValidationBehaviour(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			resp := httptest.NewRecorder()
 			limits := validation.MockDefaultOverrides()
-			handler := Handler(100000, nil, nil, false, tc.allowSkipLabelCountValidation, limits, RetryConfig{}, tc.verifyReqHandler, nil, log.NewNopLogger())
+			handler := Handler(100000, nil, false, tc.allowSkipLabelCountValidation, limits, RetryConfig{}, tc.verifyReqHandler, nil, log.NewNopLogger())
 			if !tc.includeAllowSkipLabelCountValidationHeader {
 				tc.req.Header.Set(SkipLabelCountValidationHeader, "true")
 			}
@@ -482,7 +481,7 @@ func TestHandler_SkipExemplarUnmarshalingBasedOnLimits(t *testing.T) {
 			limits := validation.NewOverrides(*defaults, nil)
 
 			var gotReqEncoded *Request
-			handler := Handler(100000, nil, nil, true, false, limits, RetryConfig{}, func(_ context.Context, pushReq *Request) error {
+			handler := Handler(100000, nil, true, false, limits, RetryConfig{}, func(_ context.Context, pushReq *Request) error {
 				gotReqEncoded = pushReq
 				return nil
 			}, nil, log.NewNopLogger())
@@ -589,7 +588,7 @@ func createPrometheusRemoteWriteProtobuf(t testing.TB, timeseries ...prompb.Time
 	return inputBytes
 }
 
-func createMimirWriteRequestProtobuf(t *testing.T, skipLabelNameValidation, skipLabelCountValidation bool, timeseries ...mimirpb.PreallocTimeseries) []byte {
+func createMimirWriteRequestProtobuf(t testing.TB, skipLabelNameValidation, skipLabelCountValidation bool, timeseries ...mimirpb.PreallocTimeseries) []byte {
 	t.Helper()
 	h := prompb.FromIntHistogram(1337, test.GenerateTestHistogram(1))
 
@@ -650,7 +649,7 @@ func BenchmarkPushHandler(b *testing.B) {
 		pushReq.CleanUp()
 		return nil
 	}
-	handler := Handler(100000, nil, nil, false, false, validation.MockDefaultOverrides(), RetryConfig{}, pushFunc, nil, log.NewNopLogger())
+	handler := Handler(100000, nil, false, false, validation.MockDefaultOverrides(), RetryConfig{}, pushFunc, nil, log.NewNopLogger())
 	b.ResetTimer()
 	for iter := 0; iter < b.N; iter++ {
 		req.Body = bufCloser{Buffer: buf} // reset Body so it can be read each time round the loop
@@ -710,7 +709,7 @@ func TestHandler_ErrorTranslation(t *testing.T) {
 			}
 
 			logs := &concurrency.SyncBuffer{}
-			h := handler(10, nil, nil, false, false, validation.MockDefaultOverrides(), RetryConfig{}, pushFunc, log.NewLogfmtLogger(logs), parserFunc)
+			h := handler(10, nil, false, false, validation.MockDefaultOverrides(), RetryConfig{}, pushFunc, log.NewLogfmtLogger(logs), parserFunc)
 
 			recorder := httptest.NewRecorder()
 			ctxWithUser := user.InjectOrgID(context.Background(), "testuser")
@@ -800,7 +799,7 @@ func TestHandler_ErrorTranslation(t *testing.T) {
 			}
 
 			logs := &concurrency.SyncBuffer{}
-			h := handler(10, nil, nil, false, false, validation.MockDefaultOverrides(), RetryConfig{}, pushFunc, log.NewLogfmtLogger(logs), parserFunc)
+			h := handler(10, nil, false, false, validation.MockDefaultOverrides(), RetryConfig{}, pushFunc, log.NewLogfmtLogger(logs), parserFunc)
 			recorder := httptest.NewRecorder()
 			ctxWithUser := user.InjectOrgID(context.Background(), "testuser")
 			h.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/push", bufCloser{&bytes.Buffer{}}).WithContext(ctxWithUser))
@@ -1196,7 +1195,6 @@ func TestHandler_ServerTiming(t *testing.T) {
 			handler := Handler(
 				1024*1024,
 				nil,
-				nil,
 				false,
 				false,
 				overrides,
@@ -1380,7 +1378,7 @@ cortex_distributor_uncompressed_request_body_size_bytes_count{handler="push",use
 			req := httptest.NewRequest("POST", "/api/v1/push", bytes.NewReader(inoutBytes)).WithContext(ctx)
 
 			reg := prometheus.NewRegistry()
-			handler := Handler(MiB, nil, nil, false, false, distr.limits, RetryConfig{}, distr.limitsMiddleware(dummyPushFunc), newPushMetrics(reg), log.NewNopLogger())
+			handler := Handler(MiB, nil, false, false, distr.limits, RetryConfig{}, distr.limitsMiddleware(dummyPushFunc), newPushMetrics(reg), log.NewNopLogger())
 
 			resp := httptest.NewRecorder()
 			handler.ServeHTTP(resp, req)
@@ -1426,7 +1424,7 @@ func TestHandler_EnforceInflightBytesLimitInfluxPush(t *testing.T) {
 			ctx := user.InjectOrgID(context.Background(), "test")
 			req := httptest.NewRequest("POST", "/api/v1/push/influx/write", bytes.NewReader(inoutBytes)).WithContext(ctx)
 
-			handler := InfluxHandler(MiB, distr.RequestBufferPool, nil, RetryConfig{}, distr.limitsMiddleware(dummyPushFunc), nil, log.NewNopLogger())
+			handler := InfluxHandler(MiB, nil, RetryConfig{}, distr.limitsMiddleware(dummyPushFunc), nil, log.NewNopLogger())
 
 			resp := httptest.NewRecorder()
 			handler.ServeHTTP(resp, req)
@@ -1562,7 +1560,7 @@ cortex_distributor_uncompressed_request_body_size_bytes_count{handler="otlp",use
 			require.NoError(t, err)
 
 			reg := prometheus.NewRegistry()
-			handler := OTLPHandler(MiB, util.NewBufferPool(0), nil, otlpLimitsMock{}, nil, RetryConfig{}, nil, distr.limitsMiddleware(dummyPushFunc), newPushMetrics(reg), reg, log.NewNopLogger())
+			handler := OTLPHandler(MiB, nil, otlpLimitsMock{}, nil, RetryConfig{}, nil, distr.limitsMiddleware(dummyPushFunc), newPushMetrics(reg), reg, log.NewNopLogger())
 
 			resp := httptest.NewRecorder()
 			handler.ServeHTTP(resp, req)
@@ -1605,7 +1603,7 @@ func TestOTLPPushHandlerErrorsAreReportedCorrectlyViaHttpgrpc(t *testing.T) {
 
 		return nil
 	}
-	h := OTLPHandler(200, util.NewBufferPool(0), nil, otlpLimitsMock{}, nil, RetryConfig{}, nil, push, newPushMetrics(reg), reg, log.NewNopLogger())
+	h := OTLPHandler(200, nil, otlpLimitsMock{}, nil, RetryConfig{}, nil, push, newPushMetrics(reg), reg, log.NewNopLogger())
 	srv.HTTP.Handle("/otlp", h)
 
 	// start the server

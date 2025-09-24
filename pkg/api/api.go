@@ -42,7 +42,6 @@ import (
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
 	"github.com/grafana/mimir/pkg/usagetracker"
 	"github.com/grafana/mimir/pkg/usagetracker/usagetrackerpb"
-	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/gziphandler"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/propagation"
@@ -268,23 +267,20 @@ const InfluxPushEndpoint = "/api/v1/push/influx/write"
 func (a *API) RegisterDistributor(d *distributor.Distributor, pushConfig distributor.Config, reg prometheus.Registerer, limits *validation.Overrides) {
 	distributorpb.RegisterDistributorServer(a.server.GRPC, d)
 
-	newRequestBuffers := func() *util.RequestBuffers {
-		return util.NewRequestBuffers(d.RequestBufferPool)
-	}
 	a.RegisterRoute(PrometheusPushEndpoint, distributor.Handler(
-		pushConfig.MaxRecvMsgSize, newRequestBuffers, a.sourceIPs, a.cfg.SkipLabelNameValidationHeader,
+		pushConfig.MaxRecvMsgSize, a.sourceIPs, a.cfg.SkipLabelNameValidationHeader,
 		a.cfg.SkipLabelCountValidationHeader, limits, pushConfig.RetryConfig, d.PushWithMiddlewares, d.PushMetrics, a.logger,
 	), true, false, "POST")
 
 	if pushConfig.EnableInfluxEndpoint {
 		// The Influx Push endpoint is experimental.
 		a.RegisterRoute(InfluxPushEndpoint, distributor.InfluxHandler(
-			pushConfig.MaxInfluxRequestSize, d.RequestBufferPool, a.sourceIPs, pushConfig.RetryConfig, d.PushWithMiddlewares, d.PushMetrics, a.logger,
+			pushConfig.MaxInfluxRequestSize, a.sourceIPs, pushConfig.RetryConfig, d.PushWithMiddlewares, d.PushMetrics, a.logger,
 		), true, false, "POST")
 	}
 
 	a.RegisterRoute(OTLPPushEndpoint, distributor.OTLPHandler(
-		pushConfig.MaxOTLPRequestSize, d.RequestBufferPool, a.sourceIPs, limits, pushConfig.OTelResourceAttributePromotionConfig,
+		pushConfig.MaxOTLPRequestSize, a.sourceIPs, limits, pushConfig.OTelResourceAttributePromotionConfig,
 		pushConfig.RetryConfig, pushConfig.OTLPPushMiddlewares, d.PushWithMiddlewares, d.PushMetrics, reg, a.logger,
 	), true, false, "POST")
 

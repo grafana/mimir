@@ -73,7 +73,6 @@ type OTLPPushMiddleware func(ctx context.Context, req *pmetricotlp.ExportRequest
 // OTLPHandler is an http.Handler accepting OTLP write requests.
 func OTLPHandler(
 	maxRecvMsgSize int,
-	requestBufferPool util.Pool,
 	sourceIPs *middleware.SourceIPExtractor,
 	limits OTLPHandlerLimits,
 	resourceAttributePromotionConfig OTelResourceAttributePromotionConfig,
