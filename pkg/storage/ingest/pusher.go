@@ -44,19 +44,22 @@ type PusherConsumer struct {
 
 	kafkaConfig KafkaConfig
 
+	tenantSyncer TenantSyncer
+
 	pusher Pusher
 }
 
 // NewPusherConsumer creates a new PusherConsumer instance.
-func NewPusherConsumer(pusher Pusher, kafkaCfg KafkaConfig, metrics *PusherConsumerMetrics, logger log.Logger) *PusherConsumer {
+func NewPusherConsumer(pusher Pusher, kafkaCfg KafkaConfig, tenantSyncer TenantSyncer, metrics *PusherConsumerMetrics, logger log.Logger) *PusherConsumer {
 	// The layer below (parallelStoragePusher, parallelStorageShards, sequentialStoragePusher) will return all errors they see
 	// and potentially ingesting a batch if they encounter any error.
 	// We can safely ignore client errors and continue ingesting. We abort ingesting if we get any other error.
 	return &PusherConsumer{
-		pusher:      pusher,
-		kafkaConfig: kafkaCfg,
-		metrics:     metrics,
-		logger:      logger,
+		pusher:       pusher,
+		kafkaConfig:  kafkaCfg,
+		tenantSyncer: tenantSyncer,
+		metrics:      metrics,
+		logger:       logger,
 	}
 }
 
@@ -125,6 +128,7 @@ func (c PusherConsumer) Consume(ctx context.Context, records iter.Seq[*kgo.Recor
 	var bytesPerTenant = make(map[string]int)
 	for rec := range records {
 		bytesPerTenant[string(rec.Key)] += len(rec.Value)
+		c.tenantSyncer.TrackLatestAttemptedOffset(string(rec.Key), rec.Offset)
 	}
 
 	// Create and start the storage writer.

@@ -1046,3 +1046,19 @@ func (r *segmentBufReader) Read(b []byte) (n int, err error) {
 func (w *WL) Size() (int64, error) {
 	return fileutil.DirSize(w.Dir())
 }
+
+func (w *WL) SyncSegmentsUntilCurrent() {
+	w.mtx.Lock()
+	// fsync current segment within mutex to avoid race conditions where the segment could be updated or closed
+	// TODO: skip if segment is empty or closed (is that possible?)
+	w.fsync(w.segment)
+	w.mtx.Unlock()
+
+	done := make(chan struct{})
+	// all previous segments before w.segment should either have been fsynced and closed or still in the actorc queue
+	// waiting for all previous segments to complete fsync before marking as done
+	w.actorc <- func() {
+		close(done)
+	}
+	<-done
+}

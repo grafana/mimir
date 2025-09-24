@@ -1865,6 +1865,11 @@ func (h *Head) mmapHeadChunks() {
 	h.metrics.mmapChunksTotal.Add(float64(count))
 }
 
+func (h *Head) SyncWLSegments() {
+	h.wal.SyncSegmentsUntilCurrent()
+	h.wbl.SyncSegmentsUntilCurrent()
+}
+
 // seriesHashmap lets TSDB find a memSeries by its label set, via a 64-bit hash.
 // There is one map for the common case where the hash value is unique, and a
 // second map for the case that two series have the same hash value.

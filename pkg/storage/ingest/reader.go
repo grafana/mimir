@@ -81,7 +81,8 @@ type PartitionReader struct {
 	newConsumer consumerFactory
 	metrics     ReaderMetrics
 
-	committer *partitionCommitter
+	tenantSyncer TenantSyncer
+	committer    *partitionCommitter
 
 	// consumedOffsetWatcher is used to wait until a given offset has been consumed.
 	// This gets initialised with -1 which means nothing has been consumed from the partition yet.
@@ -97,15 +98,15 @@ type PartitionReader struct {
 	lastSeenOffset int64
 }
 
-func NewPartitionReaderForPusher(kafkaCfg KafkaConfig, partitionID int32, instanceID string, pusher Pusher, logger log.Logger, reg prometheus.Registerer) (*PartitionReader, error) {
+func NewPartitionReaderForPusher(kafkaCfg KafkaConfig, partitionID int32, instanceID string, pusher Pusher, tenantSyncer TenantSyncer, logger log.Logger, reg prometheus.Registerer) (*PartitionReader, error) {
 	metrics := NewPusherConsumerMetrics(reg)
 	factory := consumerFactoryFunc(func() RecordConsumer {
-		return NewPusherConsumer(pusher, kafkaCfg, metrics, logger)
+		return NewPusherConsumer(pusher, kafkaCfg, tenantSyncer, metrics, logger)
 	})
-	return newPartitionReader(kafkaCfg, partitionID, instanceID, factory, logger, reg)
+	return newPartitionReader(kafkaCfg, partitionID, instanceID, factory, tenantSyncer, logger, reg)
 }
 
-func newPartitionReader(kafkaCfg KafkaConfig, partitionID int32, instanceID string, consumer consumerFactory, logger log.Logger, reg prometheus.Registerer) (*PartitionReader, error) {
+func newPartitionReader(kafkaCfg KafkaConfig, partitionID int32, instanceID string, consumer consumerFactory, tenantSyncer TenantSyncer, logger log.Logger, reg prometheus.Registerer) (*PartitionReader, error) {
 	r := &PartitionReader{
 		kafkaCfg:                              kafkaCfg,
 		partitionID:                           partitionID,
@@ -113,9 +114,15 @@ func newPartitionReader(kafkaCfg KafkaConfig, partitionID int32, instanceID stri
 		consumerGroup:                         kafkaCfg.GetConsumerGroup(instanceID, partitionID),
 		consumedOffsetWatcher:                 NewPartitionOffsetWatcher(),
 		concurrentFetchersMinBytesMaxWaitTime: kafkaCfg.FetchMaxWait,
+<<<<<<< HEAD
 		highestConsumedTimestampBeforePartitionEnd: atomic.NewTime(time.Time{}),
 		logger: log.With(logger, "partition", partitionID),
 		reg:    reg,
+=======
+		tenantSyncer:                          tenantSyncer,
+		logger:                                log.With(logger, "partition", partitionID),
+		reg:                                   reg,
+>>>>>>> da5b043ade (First attempt at syncing before commit)
 	}
 
 	r.metrics = NewReaderMetrics(reg, r, kafkaCfg.Topic, nil)
@@ -205,7 +212,7 @@ func (r *PartitionReader) start(ctx context.Context) (returnErr error) {
 	}
 	r.client.Store(client)
 
-	r.committer = newPartitionCommitter(r.kafkaCfg, kadm.NewClient(r.client.Load()), r.partitionID, r.consumerGroup, r.logger, r.reg)
+	r.committer = newPartitionCommitter(r.kafkaCfg, kadm.NewClient(r.client.Load()), r.partitionID, r.consumerGroup, r.tenantSyncer, r.logger, r.reg)
 
 	offsetsClient := newPartitionOffsetClient(r.client.Load(), r.kafkaCfg.Topic, r.reg, r.logger)
 
@@ -920,6 +927,8 @@ type partitionCommitter struct {
 	toCommit  *atomic.Int64
 	admClient *kadm.Client
 
+	tenantSyncer TenantSyncer
+
 	logger log.Logger
 
 	// Metrics.
@@ -929,7 +938,7 @@ type partitionCommitter struct {
 	lastCommittedOffset   prometheus.Gauge
 }
 
-func newPartitionCommitter(kafkaCfg KafkaConfig, admClient *kadm.Client, partitionID int32, consumerGroup string, logger log.Logger, reg prometheus.Registerer) *partitionCommitter {
+func newPartitionCommitter(kafkaCfg KafkaConfig, admClient *kadm.Client, partitionID int32, consumerGroup string, tenantSyncer TenantSyncer, logger log.Logger, reg prometheus.Registerer) *partitionCommitter {
 	c := &partitionCommitter{
 		logger:        logger,
 		kafkaCfg:      kafkaCfg,
@@ -937,6 +946,8 @@ func newPartitionCommitter(kafkaCfg KafkaConfig, admClient *kadm.Client, partiti
 		consumerGroup: consumerGroup,
 		toCommit:      atomic.NewInt64(-1),
 		admClient:     admClient,
+
+		tenantSyncer: tenantSyncer,
 
 		commitRequestsTotal: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name:        "cortex_ingest_storage_reader_offset_commit_requests_total",
@@ -1000,6 +1011,9 @@ func (r *partitionCommitter) run(ctx context.Context) error {
 func (r *partitionCommitter) commit(ctx context.Context, offset int64) (returnErr error) {
 	startTime := time.Now()
 	r.commitRequestsTotal.Inc()
+	if r.tenantSyncer != nil {
+		r.tenantSyncer.SyncPreCommit(offset)
+	}
 
 	defer func() {
 		r.commitRequestsLatency.Observe(time.Since(startTime).Seconds())
