@@ -347,6 +347,11 @@ func (b *TSDBBuilder) newTSDB(tenant tsdbTenant) (*userTSDB, error) {
 	return udb, nil
 }
 
+func (b *TSDBBuilder) NotifyPreCommit() error {
+	//TODO: is it necessary to sync anything before commit?
+	return nil
+}
+
 // Function to upload the blocks.
 type blockUploader func(_ context.Context, tenantID, dbDir string, metas []tsdb.BlockMeta) error
 

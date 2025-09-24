@@ -7192,6 +7192,10 @@ func (c *mockIngesterPusherAdapter) PushToStorageAndReleaseRequest(ctx context.C
 	return err
 }
 
+func (c *mockIngesterPusherAdapter) NotifyPreCommit() error {
+	return nil
+}
+
 // noopIngester is a mocked ingester which does nothing.
 type noopIngester struct {
 	client.IngesterClient

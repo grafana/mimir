@@ -27,6 +27,18 @@ import (
 
 type Pusher interface {
 	PushToStorageAndReleaseRequest(context.Context, *mimirpb.WriteRequest) error
+	PreCommitNotifier
+}
+
+type PreCommitNotifier interface {
+	NotifyPreCommit() error
+}
+
+type NoOpPreCommitNotifier struct {
+}
+
+func (n *NoOpPreCommitNotifier) NotifyPreCommit() error {
+	return nil
 }
 
 type PusherCloser interface {
