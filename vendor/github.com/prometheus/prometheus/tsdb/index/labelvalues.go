@@ -14,6 +14,8 @@
 package index
 
 import (
+	"container/heap"
+	"context"
 	"fmt"
 	"slices"
 
@@ -109,11 +111,11 @@ func (it *intersectLabelValuesV1) Next() bool {
 
 		isMatch := false
 		if it.includeMatches {
-			isMatch = intersect(it.postings.Clone(), curPostings)
+			isMatch = intersect(it.postings.Clone(context.TODO()), curPostings)
 		} else {
 			// We only want to include this value if curPostings is not fully contained
 			// by the postings iterator (which is to be excluded).
-			isMatch = !contains(it.postings.Clone(), curPostings)
+			isMatch = !contains(it.postings.Clone(context.TODO()), curPostings)
 		}
 		if isMatch {
 			it.cur = val
@@ -185,11 +187,11 @@ func (it *intersectLabelValues) Next() bool {
 		it.exhausted = string(val) == it.lastVal
 		isMatch := false
 		if it.includeMatches {
-			isMatch = intersect(it.postings.Clone(), curPostings)
+			isMatch = intersect(it.postings.Clone(context.TODO()), curPostings)
 		} else {
 			// We only want to include this value if curPostings is not fully contained
 			// by the postings iterator (which is to be excluded).
-			isMatch = !contains(it.postings.Clone(), curPostings)
+			isMatch = !contains(it.postings.Clone(context.TODO()), curPostings)
 		}
 		if isMatch {
 			// Make sure to allocate a new string
@@ -320,4 +322,40 @@ func contains(p, subp Postings) bool {
 
 	// Couldn't find any value in subp which is not in p.
 	return true
+}
+
+// findNonContainedPostings checks whether candidates[i] for each i in candidates is contained in p.
+// If not contained, i is added to the indexes returned.
+// The idea is the need to find postings iterators not fully contained in a set you wish to exclude.
+// Returned indexes are not sorted.
+func findNonContainedPostings(p Postings, candidates []Postings) (indexes []int, err error) {
+	h := make(postingsWithIndexHeap, 0, len(candidates))
+	for idx, it := range candidates {
+		switch {
+		case it.Next():
+			h = append(h, postingsWithIndex{index: idx, p: it})
+		case it.Err() != nil:
+			return nil, it.Err()
+		}
+	}
+	if h.empty() {
+		return nil, nil
+	}
+	heap.Init(&h)
+
+	for !h.empty() {
+		// Find the first posting >= h.at()
+		if !p.Seek(h.at()) && p.Err() != nil {
+			return nil, p.Err()
+		}
+
+		// If p.At() != h.at(), we can keep h.at(), otherwise we skip past it
+		if p.At() != h.at() {
+			indexes = append(indexes, h.popIndex())
+		} else if err := h.next(); err != nil {
+			return nil, err
+		}
+	}
+
+	return indexes, nil
 }
