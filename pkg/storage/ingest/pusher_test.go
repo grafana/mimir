@@ -46,6 +46,10 @@ func (p pusherFunc) PushToStorageAndReleaseRequest(ctx context.Context, request 
 	return p(ctx, request)
 }
 
+func (p pusherFunc) NotifyPreCommit() error {
+	return nil
+}
+
 func TestPusherConsumer(t *testing.T) {
 	const tenantID = "t1"
 	writeReqs := []*mimirpb.WriteRequest{
@@ -606,6 +610,11 @@ type mockPusher struct {
 
 func (m *mockPusher) PushToStorageAndReleaseRequest(ctx context.Context, request *mimirpb.WriteRequest) error {
 	args := m.Called(ctx, request)
+	return args.Error(0)
+}
+
+func (m *mockPusher) NotifyPreCommit() error {
+	args := m.Called()
 	return args.Error(0)
 }
 

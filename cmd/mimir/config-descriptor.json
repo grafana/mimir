@@ -8379,6 +8379,17 @@
           ],
           "fieldValue": null,
           "fieldDefaultValue": null
+        },
+        {
+          "kind": "field",
+          "name": "write_logs_fsync_before_kafka_commit_enabled",
+          "required": false,
+          "desc": "Experimental: Enable fsyncing of WAL and WBL before Kafka offsets are committed.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "ingest-storage.write-logs-fsync-before-kafka-commit-enabled",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
         }
       ],
       "fieldValue": null,
