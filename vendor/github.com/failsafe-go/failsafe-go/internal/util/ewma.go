@@ -17,8 +17,8 @@ type Ewma struct {
 // Ewma effectively "remembers" - smaller ages adapt faster to recent changes, while larger ages provide
 // more stability by retaining influence from older samples. The warmupSamples parameter controls how many
 // samples must be recorded before exponential decay begins, during which a simple average is used instead.
-func NewEwma(age uint, warmupSamples uint8) *Ewma {
-	return &Ewma{
+func NewEwma(age uint, warmupSamples uint8) Ewma {
+	return Ewma{
 		warmupSamples:   warmupSamples,
 		smoothingFactor: 2 / (float64(age) + 1),
 	}

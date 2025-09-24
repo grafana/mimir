@@ -155,6 +155,9 @@ jobs:
         test_group_total: [4]
     needs:
       - prepare
+    permissions:
+      contents: read
+      pull-requests: write
     container:
       image: ${{ needs.prepare.outputs.build_image }} # zizmor: ignore[unpinned-images] The image output produced by the prepare step is pinned
     steps:

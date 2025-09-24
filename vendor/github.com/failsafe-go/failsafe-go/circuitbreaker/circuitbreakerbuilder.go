@@ -88,8 +88,8 @@ type Builder[R any] interface {
 }
 
 type config[R any] struct {
-	*policy.BaseFailurePolicy[R]
-	*policy.BaseDelayablePolicy[R]
+	policy.BaseFailurePolicy[R]
+	policy.BaseDelayablePolicy[R]
 	clock                util.Clock
 	stateChangedListener func(StateChangedEvent)
 	openListener         func(StateChangedEvent)
@@ -122,8 +122,8 @@ func NewWithDefaults[R any]() CircuitBreaker[R] {
 // otherwise.
 func NewBuilder[R any]() Builder[R] {
 	return &config[R]{
-		BaseFailurePolicy: &policy.BaseFailurePolicy[R]{},
-		BaseDelayablePolicy: &policy.BaseDelayablePolicy[R]{
+		BaseFailurePolicy: policy.BaseFailurePolicy[R]{},
+		BaseDelayablePolicy: policy.BaseDelayablePolicy[R]{
 			Delay: time.Minute,
 		},
 		clock:                       util.WallClock,
@@ -133,9 +133,8 @@ func NewBuilder[R any]() Builder[R] {
 }
 
 func (c *config[R]) Build() CircuitBreaker[R] {
-	cCopy := *c
 	breaker := &circuitBreaker[R]{
-		config: &cCopy, // TODO copy base fields
+		config: *c, // TODO copy base fields
 	}
 	breaker.state = newClosedState[R](breaker)
 	return breaker
