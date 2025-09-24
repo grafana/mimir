@@ -38,6 +38,35 @@ func MustNewCustomTrackersConfigFromMap(t require.TestingT, source map[string]st
 	return m
 }
 
+// assertMatcherCounts verifies that the actual counts match expected counts by matcher name
+func assertMatcherCounts(t *testing.T, expectedCounts map[string]int, actualCounts []int, names []string) {
+	t.Helper()
+
+	// Convert actual counts to a map by matcher name
+	actualCountsMap := make(map[string]int)
+	for i, count := range actualCounts {
+		if i < len(names) {
+			actualCountsMap[names[i]] = count
+		}
+	}
+
+	// Check that all expected matchers have the correct counts
+	for name, expectedCount := range expectedCounts {
+		actualCount, exists := actualCountsMap[name]
+		if !exists {
+			actualCount = 0
+		}
+		assert.Equal(t, expectedCount, actualCount, "Matcher %s count mismatch", name)
+	}
+
+	// Check that no unexpected matchers have non-zero counts
+	for name, actualCount := range actualCountsMap {
+		if _, expected := expectedCounts[name]; !expected && actualCount > 0 {
+			t.Errorf("Unexpected matcher %s has count %d, expected 0", name, actualCount)
+		}
+	}
+}
+
 const DefaultTimeout = 5 * time.Minute
 
 func TestActiveSeries_UpdateSeries_NoMatchers(t *testing.T) {
@@ -580,11 +609,11 @@ func testUpdateSeries(t *testing.T, c *ActiveSeries) {
 	allActive, activeMatching, allActiveOTLP, allActiveHistograms, activeMatchingHistograms, allActiveBuckets, activeMatchingBuckets := c.ActiveWithMatchers()
 	assert.Equal(t, 0, allActive)
 	assert.Equal(t, 0, allActiveOTLP)
-	assert.Equal(t, []int{0}, activeMatching)
+	assertMatcherCounts(t, map[string]int{"foo": 0}, activeMatching, c.CurrentMatcherNames())
 	assert.Equal(t, 0, allActiveHistograms)
-	assert.Equal(t, []int{0}, activeMatchingHistograms)
+	assertMatcherCounts(t, map[string]int{"foo": 0}, activeMatchingHistograms, c.CurrentMatcherNames())
 	assert.Equal(t, 0, allActiveBuckets)
-	assert.Equal(t, []int{0}, activeMatchingBuckets)
+	assertMatcherCounts(t, map[string]int{"foo": 0}, activeMatchingBuckets, c.CurrentMatcherNames())
 	allActive, allActiveOTLP, allActiveHistograms, allActiveBuckets = c.Active()
 	assert.Equal(t, 0, allActive)
 	assert.Equal(t, 0, allActiveOTLP)
@@ -597,11 +626,11 @@ func testUpdateSeries(t *testing.T, c *ActiveSeries) {
 	allActive, activeMatching, allActiveOTLP, allActiveHistograms, activeMatchingHistograms, allActiveBuckets, activeMatchingBuckets = c.ActiveWithMatchers()
 	assert.Equal(t, 1, allActive)
 	assert.Equal(t, 0, allActiveOTLP)
-	assert.Equal(t, []int{0}, activeMatching)
+	assertMatcherCounts(t, map[string]int{"foo": 0}, activeMatching, c.CurrentMatcherNames())
 	assert.Equal(t, 0, allActiveHistograms)
-	assert.Equal(t, []int{0}, activeMatchingHistograms)
+	assertMatcherCounts(t, map[string]int{"foo": 0}, activeMatchingHistograms, c.CurrentMatcherNames())
 	assert.Equal(t, 0, allActiveBuckets)
-	assert.Equal(t, []int{0}, activeMatchingBuckets)
+	assertMatcherCounts(t, map[string]int{"foo": 0}, activeMatchingBuckets, c.CurrentMatcherNames())
 	allActive, allActiveOTLP, allActiveHistograms, allActiveBuckets = c.Active()
 	assert.Equal(t, 1, allActive)
 	assert.Equal(t, 0, allActiveOTLP)
@@ -614,11 +643,11 @@ func testUpdateSeries(t *testing.T, c *ActiveSeries) {
 	allActive, activeMatching, allActiveOTLP, allActiveHistograms, activeMatchingHistograms, allActiveBuckets, activeMatchingBuckets = c.ActiveWithMatchers()
 	assert.Equal(t, 2, allActive)
 	assert.Equal(t, 0, allActiveOTLP)
-	assert.Equal(t, []int{1}, activeMatching)
+	assertMatcherCounts(t, map[string]int{"foo": 1}, activeMatching, c.CurrentMatcherNames())
 	assert.Equal(t, 0, allActiveHistograms)
-	assert.Equal(t, []int{0}, activeMatchingHistograms)
+	assertMatcherCounts(t, map[string]int{"foo": 0}, activeMatchingHistograms, c.CurrentMatcherNames())
 	assert.Equal(t, 0, allActiveBuckets)
-	assert.Equal(t, []int{0}, activeMatchingBuckets)
+	assertMatcherCounts(t, map[string]int{"foo": 0}, activeMatchingBuckets, c.CurrentMatcherNames())
 	allActive, allActiveOTLP, allActiveHistograms, allActiveBuckets = c.Active()
 	assert.Equal(t, 2, allActive)
 	assert.Equal(t, 0, allActiveOTLP)
@@ -631,11 +660,11 @@ func testUpdateSeries(t *testing.T, c *ActiveSeries) {
 	allActive, activeMatching, allActiveOTLP, allActiveHistograms, activeMatchingHistograms, allActiveBuckets, activeMatchingBuckets = c.ActiveWithMatchers()
 	assert.Equal(t, 3, allActive)
 	assert.Equal(t, 0, allActiveOTLP)
-	assert.Equal(t, []int{2}, activeMatching)
+	assertMatcherCounts(t, map[string]int{"foo": 2}, activeMatching, c.CurrentMatcherNames())
 	assert.Equal(t, 0, allActiveHistograms)
-	assert.Equal(t, []int{0}, activeMatchingHistograms)
+	assertMatcherCounts(t, map[string]int{"foo": 0}, activeMatchingHistograms, c.CurrentMatcherNames())
 	assert.Equal(t, 0, allActiveBuckets)
-	assert.Equal(t, []int{0}, activeMatchingBuckets)
+	assertMatcherCounts(t, map[string]int{"foo": 0}, activeMatchingBuckets, c.CurrentMatcherNames())
 	allActive, allActiveOTLP, allActiveHistograms, allActiveBuckets = c.Active()
 	assert.Equal(t, 3, allActive)
 	assert.Equal(t, 0, allActiveOTLP)
@@ -648,11 +677,11 @@ func testUpdateSeries(t *testing.T, c *ActiveSeries) {
 	allActive, activeMatching, allActiveOTLP, allActiveHistograms, activeMatchingHistograms, allActiveBuckets, activeMatchingBuckets = c.ActiveWithMatchers()
 	assert.Equal(t, 3, allActive)
 	assert.Equal(t, 0, allActiveOTLP)
-	assert.Equal(t, []int{2}, activeMatching)
+	assertMatcherCounts(t, map[string]int{"foo": 2}, activeMatching, c.CurrentMatcherNames())
 	assert.Equal(t, 0, allActiveHistograms)
-	assert.Equal(t, []int{0}, activeMatchingHistograms)
+	assertMatcherCounts(t, map[string]int{"foo": 0}, activeMatchingHistograms, c.CurrentMatcherNames())
 	assert.Equal(t, 0, allActiveBuckets)
-	assert.Equal(t, []int{0}, activeMatchingBuckets)
+	assertMatcherCounts(t, map[string]int{"foo": 0}, activeMatchingBuckets, c.CurrentMatcherNames())
 	allActive, allActiveOTLP, allActiveHistograms, allActiveBuckets = c.Active()
 	assert.Equal(t, 3, allActive)
 	assert.Equal(t, 0, allActiveOTLP)
@@ -665,11 +694,11 @@ func testUpdateSeries(t *testing.T, c *ActiveSeries) {
 	allActive, activeMatching, allActiveOTLP, allActiveHistograms, activeMatchingHistograms, allActiveBuckets, activeMatchingBuckets = c.ActiveWithMatchers()
 	assert.Equal(t, 4, allActive)
 	assert.Equal(t, 0, allActiveOTLP)
-	assert.Equal(t, []int{3}, activeMatching)
+	assertMatcherCounts(t, map[string]int{"foo": 3}, activeMatching, c.CurrentMatcherNames())
 	assert.Equal(t, 1, allActiveHistograms)
-	assert.Equal(t, []int{1}, activeMatchingHistograms)
+	assertMatcherCounts(t, map[string]int{"foo": 1}, activeMatchingHistograms, c.CurrentMatcherNames())
 	assert.Equal(t, 3, allActiveBuckets)
-	assert.Equal(t, []int{3}, activeMatchingBuckets)
+	assertMatcherCounts(t, map[string]int{"foo": 3}, activeMatchingBuckets, c.CurrentMatcherNames())
 	allActive, allActiveOTLP, allActiveHistograms, allActiveBuckets = c.Active()
 	assert.Equal(t, 4, allActive)
 	assert.Equal(t, 0, allActiveOTLP)
@@ -682,11 +711,11 @@ func testUpdateSeries(t *testing.T, c *ActiveSeries) {
 	allActive, activeMatching, allActiveOTLP, allActiveHistograms, activeMatchingHistograms, allActiveBuckets, activeMatchingBuckets = c.ActiveWithMatchers()
 	assert.Equal(t, 5, allActive)
 	assert.Equal(t, 0, allActiveOTLP)
-	assert.Equal(t, []int{3}, activeMatching)
+	assertMatcherCounts(t, map[string]int{"foo": 3}, activeMatching, c.CurrentMatcherNames())
 	assert.Equal(t, 2, allActiveHistograms)
-	assert.Equal(t, []int{1}, activeMatchingHistograms)
+	assertMatcherCounts(t, map[string]int{"foo": 1}, activeMatchingHistograms, c.CurrentMatcherNames())
 	assert.Equal(t, 8, allActiveBuckets)
-	assert.Equal(t, []int{3}, activeMatchingBuckets)
+	assertMatcherCounts(t, map[string]int{"foo": 3}, activeMatchingBuckets, c.CurrentMatcherNames())
 	allActive, allActiveOTLP, allActiveHistograms, allActiveBuckets = c.Active()
 	assert.Equal(t, 5, allActive)
 	assert.Equal(t, 0, allActiveOTLP)
@@ -700,11 +729,11 @@ func testUpdateSeries(t *testing.T, c *ActiveSeries) {
 	allActive, activeMatching, allActiveOTLP, allActiveHistograms, activeMatchingHistograms, allActiveBuckets, activeMatchingBuckets = c.ActiveWithMatchers()
 	assert.Equal(t, 5, allActive)
 	assert.Equal(t, 0, allActiveOTLP)
-	assert.Equal(t, []int{3}, activeMatching)
+	assertMatcherCounts(t, map[string]int{"foo": 3}, activeMatching, c.CurrentMatcherNames())
 	assert.Equal(t, 3, allActiveHistograms)
-	assert.Equal(t, []int{2}, activeMatchingHistograms)
+	assertMatcherCounts(t, map[string]int{"foo": 2}, activeMatchingHistograms, c.CurrentMatcherNames())
 	assert.Equal(t, 14, allActiveBuckets)
-	assert.Equal(t, []int{9}, activeMatchingBuckets)
+	assertMatcherCounts(t, map[string]int{"foo": 9}, activeMatchingBuckets, c.CurrentMatcherNames())
 	allActive, allActiveOTLP, allActiveHistograms, allActiveBuckets = c.Active()
 	assert.Equal(t, 5, allActive)
 	assert.Equal(t, 0, allActiveOTLP)
@@ -718,11 +747,11 @@ func testUpdateSeries(t *testing.T, c *ActiveSeries) {
 	allActive, activeMatching, allActiveOTLP, allActiveHistograms, activeMatchingHistograms, allActiveBuckets, activeMatchingBuckets = c.ActiveWithMatchers()
 	assert.Equal(t, 5, allActive)
 	assert.Equal(t, 0, allActiveOTLP)
-	assert.Equal(t, []int{3}, activeMatching)
+	assertMatcherCounts(t, map[string]int{"foo": 3}, activeMatching, c.CurrentMatcherNames())
 	assert.Equal(t, 3, allActiveHistograms)
-	assert.Equal(t, []int{2}, activeMatchingHistograms)
+	assertMatcherCounts(t, map[string]int{"foo": 2}, activeMatchingHistograms, c.CurrentMatcherNames())
 	assert.Equal(t, 11, allActiveBuckets)
-	assert.Equal(t, []int{6}, activeMatchingBuckets)
+	assertMatcherCounts(t, map[string]int{"foo": 6}, activeMatchingBuckets, c.CurrentMatcherNames())
 	allActive, allActiveOTLP, allActiveHistograms, allActiveBuckets = c.Active()
 	assert.Equal(t, 5, allActive)
 	assert.Equal(t, 0, allActiveOTLP)
@@ -737,11 +766,11 @@ func testUpdateSeries(t *testing.T, c *ActiveSeries) {
 	allActive, activeMatching, allActiveOTLP, allActiveHistograms, activeMatchingHistograms, allActiveBuckets, activeMatchingBuckets = c.ActiveWithMatchers()
 	assert.Equal(t, 5, allActive)
 	assert.Equal(t, 0, allActiveOTLP)
-	assert.Equal(t, []int{3}, activeMatching)
+	assertMatcherCounts(t, map[string]int{"foo": 3}, activeMatching, c.CurrentMatcherNames())
 	assert.Equal(t, 3, allActiveHistograms)
-	assert.Equal(t, []int{2}, activeMatchingHistograms)
+	assertMatcherCounts(t, map[string]int{"foo": 2}, activeMatchingHistograms, c.CurrentMatcherNames())
 	assert.Equal(t, 11, allActiveBuckets)
-	assert.Equal(t, []int{6}, activeMatchingBuckets)
+	assertMatcherCounts(t, map[string]int{"foo": 6}, activeMatchingBuckets, c.CurrentMatcherNames())
 	allActive, allActiveOTLP, allActiveHistograms, allActiveBuckets = c.Active()
 	assert.Equal(t, 5, allActive)
 	assert.Equal(t, 0, allActiveOTLP)
@@ -754,11 +783,11 @@ func testUpdateSeries(t *testing.T, c *ActiveSeries) {
 	allActive, activeMatching, allActiveOTLP, allActiveHistograms, activeMatchingHistograms, allActiveBuckets, activeMatchingBuckets = c.ActiveWithMatchers()
 	assert.Equal(t, 5, allActive)
 	assert.Equal(t, 0, allActiveOTLP)
-	assert.Equal(t, []int{3}, activeMatching)
+	assertMatcherCounts(t, map[string]int{"foo": 3}, activeMatching, c.CurrentMatcherNames())
 	assert.Equal(t, 3, allActiveHistograms)
-	assert.Equal(t, []int{2}, activeMatchingHistograms)
+	assertMatcherCounts(t, map[string]int{"foo": 2}, activeMatchingHistograms, c.CurrentMatcherNames())
 	assert.Equal(t, 11, allActiveBuckets)
-	assert.Equal(t, []int{6}, activeMatchingBuckets)
+	assertMatcherCounts(t, map[string]int{"foo": 6}, activeMatchingBuckets, c.CurrentMatcherNames())
 	allActive, allActiveOTLP, allActiveHistograms, allActiveBuckets = c.Active()
 	assert.Equal(t, 5, allActive)
 	assert.Equal(t, 0, allActiveOTLP)
@@ -771,11 +800,11 @@ func testUpdateSeries(t *testing.T, c *ActiveSeries) {
 	allActive, activeMatching, allActiveOTLP, allActiveHistograms, activeMatchingHistograms, allActiveBuckets, activeMatchingBuckets = c.ActiveWithMatchers()
 	assert.Equal(t, 5, allActive)
 	assert.Equal(t, 0, allActiveOTLP)
-	assert.Equal(t, []int{3}, activeMatching)
+	assertMatcherCounts(t, map[string]int{"foo": 3}, activeMatching, c.CurrentMatcherNames())
 	assert.Equal(t, 3, allActiveHistograms)
-	assert.Equal(t, []int{2}, activeMatchingHistograms)
+	assertMatcherCounts(t, map[string]int{"foo": 2}, activeMatchingHistograms, c.CurrentMatcherNames())
 	assert.Equal(t, 11, allActiveBuckets)
-	assert.Equal(t, []int{6}, activeMatchingBuckets)
+	assertMatcherCounts(t, map[string]int{"foo": 6}, activeMatchingBuckets, c.CurrentMatcherNames())
 	allActive, allActiveOTLP, allActiveHistograms, allActiveBuckets = c.Active()
 	assert.Equal(t, 5, allActive)
 	assert.Equal(t, 0, allActiveOTLP)
@@ -788,11 +817,11 @@ func testUpdateSeries(t *testing.T, c *ActiveSeries) {
 	allActive, activeMatching, allActiveOTLP, allActiveHistograms, activeMatchingHistograms, allActiveBuckets, activeMatchingBuckets = c.ActiveWithMatchers()
 	assert.Equal(t, 5, allActive)
 	assert.Equal(t, 0, allActiveOTLP)
-	assert.Equal(t, []int{3}, activeMatching)
+	assertMatcherCounts(t, map[string]int{"foo": 3}, activeMatching, c.CurrentMatcherNames())
 	assert.Equal(t, 3, allActiveHistograms)
-	assert.Equal(t, []int{2}, activeMatchingHistograms)
+	assertMatcherCounts(t, map[string]int{"foo": 2}, activeMatchingHistograms, c.CurrentMatcherNames())
 	assert.Equal(t, 11, allActiveBuckets)
-	assert.Equal(t, []int{6}, activeMatchingBuckets)
+	assertMatcherCounts(t, map[string]int{"foo": 6}, activeMatchingBuckets, c.CurrentMatcherNames())
 	allActive, allActiveOTLP, allActiveHistograms, allActiveBuckets = c.Active()
 	assert.Equal(t, 5, allActive)
 	assert.Equal(t, 0, allActiveOTLP)
@@ -813,11 +842,11 @@ func TestActiveSeries_UpdateSeries_Clear(t *testing.T) {
 	allActive, activeMatching, allActiveOTLP, allActiveHistograms, activeMatchingHistograms, allActiveBuckets, activeMatchingBuckets := c.ActiveWithMatchers()
 	assert.Equal(t, 0, allActive)
 	assert.Equal(t, 0, allActiveOTLP)
-	assert.Equal(t, []int{0}, activeMatching)
+	assertMatcherCounts(t, map[string]int{}, activeMatching, c.CurrentMatcherNames())
 	assert.Equal(t, 0, allActiveHistograms)
-	assert.Equal(t, []int{0}, activeMatchingHistograms)
+	assertMatcherCounts(t, map[string]int{"foo": 0}, activeMatchingHistograms, c.CurrentMatcherNames())
 	assert.Equal(t, 0, allActiveBuckets)
-	assert.Equal(t, []int{0}, activeMatchingBuckets)
+	assertMatcherCounts(t, map[string]int{"foo": 0}, activeMatchingBuckets, c.CurrentMatcherNames())
 	allActive, allActiveOTLP, allActiveHistograms, allActiveBuckets = c.Active()
 	assert.Equal(t, 0, allActive)
 	assert.Equal(t, 0, allActiveOTLP)
@@ -945,7 +974,13 @@ func TestActiveSeries_Purge_WithMatchers(t *testing.T) {
 			assert.True(t, valid)
 			allActive, activeMatching, _, _, _, _, _ := c.ActiveWithMatchers()
 			assert.Equal(t, exp, allActive)
-			assert.Equal(t, []int{expMatchingSeries}, activeMatching)
+			// For this dynamic test, we use the count directly since there's only one matcher "foo"
+			names := c.CurrentMatcherNames()
+			if len(names) > 0 && len(activeMatching) > 0 {
+				assertMatcherCounts(t, map[string]int{names[0]: expMatchingSeries}, activeMatching, names)
+			} else {
+				assertMatcherCounts(t, map[string]int{}, activeMatching, names)
+			}
 		})
 	}
 }
@@ -1034,14 +1069,14 @@ func TestActiveSeries_ReloadSeriesMatchersAndTrackers(t *testing.T) {
 	assert.True(t, valid)
 	allActive, activeMatching, _, _, _, _, _ := c.ActiveWithMatchers()
 	assert.Equal(t, 0, allActive)
-	assert.Equal(t, []int{0}, activeMatching)
+	assertMatcherCounts(t, map[string]int{}, activeMatching, c.CurrentMatcherNames())
 
 	c.UpdateSeries(ls1, ref1, currentTime, -1, false, nil)
 	valid = c.Purge(currentTime, nil)
 	assert.True(t, valid)
 	allActive, activeMatching, _, _, _, _, _ = c.ActiveWithMatchers()
 	assert.Equal(t, 1, allActive)
-	assert.Equal(t, []int{1}, activeMatching)
+	assertMatcherCounts(t, map[string]int{"foo": 1}, activeMatching, c.CurrentMatcherNames())
 
 	c.ReloadMatchersAndTrackers(asm, nil, currentTime)
 	valid = c.Purge(currentTime, nil)
@@ -1055,7 +1090,7 @@ func TestActiveSeries_ReloadSeriesMatchersAndTrackers(t *testing.T) {
 	assert.True(t, valid)
 	allActive, activeMatching, _, _, _, _, _ = c.ActiveWithMatchers()
 	assert.Equal(t, 2, allActive)
-	assert.Equal(t, []int{2}, activeMatching)
+	assertMatcherCounts(t, map[string]int{"foo": 2}, activeMatching, c.CurrentMatcherNames())
 
 	asmWithLessMatchers := asmodel.NewMatchers(MustNewCustomTrackersConfigFromMap(t, map[string]string{}))
 	c.ReloadMatchersAndTrackers(asmWithLessMatchers, nil, currentTime)
@@ -1082,7 +1117,7 @@ func TestActiveSeries_ReloadSeriesMatchersAndTrackers(t *testing.T) {
 	assert.True(t, valid)
 	allActive, activeMatching, _, _, _, _, _ = c.ActiveWithMatchers()
 	assert.Equal(t, 1, allActive)
-	assert.Equal(t, []int{0, 1}, activeMatching)
+	assertMatcherCounts(t, map[string]int{"a": 0, "b": 1}, activeMatching, c.CurrentMatcherNames())
 }
 
 func TestActiveSeries_ReloadSeriesMatchers_LessMatchers(t *testing.T) {
@@ -1100,7 +1135,7 @@ func TestActiveSeries_ReloadSeriesMatchers_LessMatchers(t *testing.T) {
 	assert.True(t, valid)
 	allActive, activeMatching, _, _, _, _, _ := c.ActiveWithMatchers()
 	assert.Equal(t, 0, allActive)
-	assert.Equal(t, []int{0, 0}, activeMatching)
+	assertMatcherCounts(t, map[string]int{"foo": 0, "bar": 0}, activeMatching, c.CurrentMatcherNames())
 	assert.Equal(t, cat, c.cat)
 
 	c.UpdateSeries(ls1, ref1, currentTime, -1, false, nil)
@@ -1108,7 +1143,7 @@ func TestActiveSeries_ReloadSeriesMatchers_LessMatchers(t *testing.T) {
 	assert.True(t, valid)
 	allActive, activeMatching, _, _, _, _, _ = c.ActiveWithMatchers()
 	assert.Equal(t, 1, allActive)
-	assert.Equal(t, []int{1, 1}, activeMatching)
+	assertMatcherCounts(t, map[string]int{"foo": 1, "bar": 1}, activeMatching, c.CurrentMatcherNames())
 	assert.Equal(t, cat, c.cat)
 	asm = asmodel.NewMatchers(MustNewCustomTrackersConfigFromMap(t, map[string]string{
 		"foo": `{a=~.+}`,
@@ -1122,7 +1157,7 @@ func TestActiveSeries_ReloadSeriesMatchers_LessMatchers(t *testing.T) {
 	assert.True(t, valid)
 	allActive, activeMatching, _, _, _, _, _ = c.ActiveWithMatchers()
 	assert.Equal(t, 0, allActive)
-	assert.Equal(t, []int{0}, activeMatching)
+	assertMatcherCounts(t, map[string]int{}, activeMatching, c.CurrentMatcherNames())
 }
 
 func TestActiveSeries_ReloadSeriesMatchers_SameSizeNewLabels(t *testing.T) {
@@ -1139,14 +1174,14 @@ func TestActiveSeries_ReloadSeriesMatchers_SameSizeNewLabels(t *testing.T) {
 	assert.True(t, valid)
 	allActive, activeMatching, _, _, _, _, _ := c.ActiveWithMatchers()
 	assert.Equal(t, 0, allActive)
-	assert.Equal(t, []int{0, 0}, activeMatching)
+	assertMatcherCounts(t, map[string]int{"foo": 0, "bar": 0}, activeMatching, c.CurrentMatcherNames())
 
 	c.UpdateSeries(ls1, ref1, currentTime, -1, false, nil)
 	valid = c.Purge(currentTime, nil)
 	assert.True(t, valid)
 	allActive, activeMatching, _, _, _, _, _ = c.ActiveWithMatchers()
 	assert.Equal(t, 1, allActive)
-	assert.Equal(t, []int{1, 1}, activeMatching)
+	assertMatcherCounts(t, map[string]int{"foo": 1, "bar": 1}, activeMatching, c.CurrentMatcherNames())
 
 	asm = asmodel.NewMatchers(MustNewCustomTrackersConfigFromMap(t, map[string]string{
 		"foo": `{b=~.+}`,
@@ -1162,7 +1197,7 @@ func TestActiveSeries_ReloadSeriesMatchers_SameSizeNewLabels(t *testing.T) {
 	assert.True(t, valid)
 	allActive, activeMatching, _, _, _, _, _ = c.ActiveWithMatchers()
 	assert.Equal(t, 0, allActive)
-	assert.Equal(t, []int{0, 0}, activeMatching)
+	assertMatcherCounts(t, map[string]int{"foo": 0, "bar": 0}, activeMatching, c.CurrentMatcherNames())
 }
 
 func BenchmarkActiveSeries_UpdateSeriesConcurrency(b *testing.B) {

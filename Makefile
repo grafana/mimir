@@ -411,13 +411,6 @@ lint: check-makefiles check-merge-conflicts
 		github.com/prometheus/client_golang/prometheus.{NewCounter,NewCounterVec,NewCounterFunc,NewGauge,NewGaugeVec,NewGaugeFunc,NewSummary,NewSummaryVec,NewHistogram,NewHistogramVec}=github.com/prometheus/client_golang/prometheus/promauto.With" \
 		./pkg/...
 
-	# Use the faster slices.Sort where we can.
-	# Note that we don't automatically suggest replacing sort.Float64s() with slices.Sort() as the documentation for slices.Sort()
-	# at the time of writing warns that slices.Sort() may not correctly handle NaN values.
-	faillint -paths \
-		"sort.{Strings,Ints}=slices.Sort" \
-		./pkg/... ./cmd/... ./tools/... ./integration/...
-
 	# Use the faster slices.IsSortedFunc where we can.
 	faillint -paths \
 		"sort.{SliceIsSorted}=slices.IsSortedFunc" \
@@ -684,6 +677,7 @@ reference-help: cmd/mimir/mimir tools/config-inspector/config-inspector
 	@(./cmd/mimir/mimir -h || true) > cmd/mimir/help.txt.tmpl
 	@(./cmd/mimir/mimir -help-all || true) > cmd/mimir/help-all.txt.tmpl
 	@(./tools/config-inspector/config-inspector || true) > cmd/mimir/config-descriptor.json
+	@jq -f ./tools/config-descriptor-extract-flag-defaults.jq cmd/mimir/config-descriptor.json > operations/mimir/mimir-flags-defaults.json
 
 clean-white-noise: ## Clean the white noise in the markdown files.
 	@find . -path ./.pkg -prune -o -path ./.cache -prune -o -path "*/vendor/*" -prune -or -type f -name "*.md" -print | \

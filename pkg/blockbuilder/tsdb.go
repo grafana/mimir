@@ -334,6 +334,7 @@ func (b *TSDBBuilder) newTSDB(tenant tsdbTenant) (*userTSDB, error) {
 		SeriesLifecycleCallback:              udb,
 		HeadPostingsForMatchersCacheMetrics:  tsdb.NewPostingsForMatchersCacheMetrics(nil),
 		BlockPostingsForMatchersCacheMetrics: tsdb.NewPostingsForMatchersCacheMetrics(nil),
+		PostingsClonerFactory:                tsdb.DefaultPostingsClonerFactory{},
 	}, nil)
 	if err != nil {
 		return nil, err

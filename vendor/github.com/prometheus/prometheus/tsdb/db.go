@@ -330,6 +330,8 @@ type Options struct {
 	// For on-disk blocks, IndexLookupPlannerFunc is invoked once when they are opened.
 	// For in-memory blocks IndexLookupPlannerFunc is invoked every time statistics are generated, which happens according to HeadStatisticsCollectionFrequency.
 	IndexLookupPlannerFunc IndexLookupPlannerFunc
+
+	PostingsClonerFactory PostingsClonerFactory
 }
 
 type NewCompactorFunc func(ctx context.Context, r prometheus.Registerer, l *slog.Logger, ranges []int64, pool chunkenc.Pool, opts *Options) (Compactor, error)
@@ -1057,17 +1059,19 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 	if opts.BlockPostingsForMatchersCacheFactory != nil {
 		db.blockPostingsForMatchersCacheFactory = opts.BlockPostingsForMatchersCacheFactory
 	} else {
-		db.blockPostingsForMatchersCacheFactory = NewPostingsForMatchersCacheFactory(
-			opts.SharedPostingsForMatchersCache,
-			opts.PostingsForMatchersCacheKeyFunc,
-			false,
-			0,
-			opts.BlockPostingsForMatchersCacheTTL,
-			opts.BlockPostingsForMatchersCacheMaxItems,
-			opts.BlockPostingsForMatchersCacheMaxBytes,
-			opts.BlockPostingsForMatchersCacheForce,
-			opts.BlockPostingsForMatchersCacheMetrics,
-		)
+		config := PostingsForMatchersCacheConfig{
+			Shared:                opts.SharedPostingsForMatchersCache,
+			KeyFunc:               opts.PostingsForMatchersCacheKeyFunc,
+			Invalidation:          false,
+			CacheVersions:         0,
+			TTL:                   opts.BlockPostingsForMatchersCacheTTL,
+			MaxItems:              opts.BlockPostingsForMatchersCacheMaxItems,
+			MaxBytes:              opts.BlockPostingsForMatchersCacheMaxBytes,
+			Force:                 opts.BlockPostingsForMatchersCacheForce,
+			Metrics:               opts.BlockPostingsForMatchersCacheMetrics,
+			PostingsClonerFactory: opts.PostingsClonerFactory,
+		}
+		db.blockPostingsForMatchersCacheFactory = NewPostingsForMatchersCacheFactory(config)
 	}
 
 	var wal, wbl *wlog.WL
@@ -1116,17 +1120,19 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 	if opts.HeadPostingsForMatchersCacheFactory != nil {
 		headOpts.PostingsForMatchersCacheFactory = opts.HeadPostingsForMatchersCacheFactory
 	} else {
-		headOpts.PostingsForMatchersCacheFactory = NewPostingsForMatchersCacheFactory(
-			opts.SharedPostingsForMatchersCache,
-			opts.PostingsForMatchersCacheKeyFunc,
-			opts.HeadPostingsForMatchersCacheInvalidation,
-			opts.HeadPostingsForMatchersCacheVersions,
-			opts.HeadPostingsForMatchersCacheTTL,
-			opts.HeadPostingsForMatchersCacheMaxItems,
-			opts.HeadPostingsForMatchersCacheMaxBytes,
-			opts.HeadPostingsForMatchersCacheForce,
-			opts.HeadPostingsForMatchersCacheMetrics,
-		)
+		config := PostingsForMatchersCacheConfig{
+			Shared:                opts.SharedPostingsForMatchersCache,
+			KeyFunc:               opts.PostingsForMatchersCacheKeyFunc,
+			Invalidation:          opts.HeadPostingsForMatchersCacheInvalidation,
+			CacheVersions:         opts.HeadPostingsForMatchersCacheVersions,
+			TTL:                   opts.HeadPostingsForMatchersCacheTTL,
+			MaxItems:              opts.HeadPostingsForMatchersCacheMaxItems,
+			MaxBytes:              opts.HeadPostingsForMatchersCacheMaxBytes,
+			Force:                 opts.HeadPostingsForMatchersCacheForce,
+			Metrics:               opts.HeadPostingsForMatchersCacheMetrics,
+			PostingsClonerFactory: opts.PostingsClonerFactory,
+		}
+		headOpts.PostingsForMatchersCacheFactory = NewPostingsForMatchersCacheFactory(config)
 	}
 	headOpts.SecondaryHashFunction = opts.SecondaryHashFunction
 	if opts.IndexLookupPlannerFunc != nil {
