@@ -330,6 +330,8 @@ type Options struct {
 	// For on-disk blocks, IndexLookupPlannerFunc is invoked once when they are opened.
 	// For in-memory blocks IndexLookupPlannerFunc is invoked every time statistics are generated, which happens according to HeadStatisticsCollectionFrequency.
 	IndexLookupPlannerFunc IndexLookupPlannerFunc
+
+	PostingsClonerFactory PostingsClonerFactory
 }
 
 type NewCompactorFunc func(ctx context.Context, r prometheus.Registerer, l *slog.Logger, ranges []int64, pool chunkenc.Pool, opts *Options) (Compactor, error)
@@ -1058,15 +1060,16 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 		db.blockPostingsForMatchersCacheFactory = opts.BlockPostingsForMatchersCacheFactory
 	} else {
 		config := PostingsForMatchersCacheConfig{
-			Shared:        opts.SharedPostingsForMatchersCache,
-			KeyFunc:       opts.PostingsForMatchersCacheKeyFunc,
-			Invalidation:  false,
-			CacheVersions: 0,
-			TTL:           opts.BlockPostingsForMatchersCacheTTL,
-			MaxItems:      opts.BlockPostingsForMatchersCacheMaxItems,
-			MaxBytes:      opts.BlockPostingsForMatchersCacheMaxBytes,
-			Force:         opts.BlockPostingsForMatchersCacheForce,
-			Metrics:       opts.BlockPostingsForMatchersCacheMetrics,
+			Shared:                opts.SharedPostingsForMatchersCache,
+			KeyFunc:               opts.PostingsForMatchersCacheKeyFunc,
+			Invalidation:          false,
+			CacheVersions:         0,
+			TTL:                   opts.BlockPostingsForMatchersCacheTTL,
+			MaxItems:              opts.BlockPostingsForMatchersCacheMaxItems,
+			MaxBytes:              opts.BlockPostingsForMatchersCacheMaxBytes,
+			Force:                 opts.BlockPostingsForMatchersCacheForce,
+			Metrics:               opts.BlockPostingsForMatchersCacheMetrics,
+			PostingsClonerFactory: opts.PostingsClonerFactory,
 		}
 		db.blockPostingsForMatchersCacheFactory = NewPostingsForMatchersCacheFactory(config)
 	}
@@ -1118,15 +1121,16 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 		headOpts.PostingsForMatchersCacheFactory = opts.HeadPostingsForMatchersCacheFactory
 	} else {
 		config := PostingsForMatchersCacheConfig{
-			Shared:        opts.SharedPostingsForMatchersCache,
-			KeyFunc:       opts.PostingsForMatchersCacheKeyFunc,
-			Invalidation:  opts.HeadPostingsForMatchersCacheInvalidation,
-			CacheVersions: opts.HeadPostingsForMatchersCacheVersions,
-			TTL:           opts.HeadPostingsForMatchersCacheTTL,
-			MaxItems:      opts.HeadPostingsForMatchersCacheMaxItems,
-			MaxBytes:      opts.HeadPostingsForMatchersCacheMaxBytes,
-			Force:         opts.HeadPostingsForMatchersCacheForce,
-			Metrics:       opts.HeadPostingsForMatchersCacheMetrics,
+			Shared:                opts.SharedPostingsForMatchersCache,
+			KeyFunc:               opts.PostingsForMatchersCacheKeyFunc,
+			Invalidation:          opts.HeadPostingsForMatchersCacheInvalidation,
+			CacheVersions:         opts.HeadPostingsForMatchersCacheVersions,
+			TTL:                   opts.HeadPostingsForMatchersCacheTTL,
+			MaxItems:              opts.HeadPostingsForMatchersCacheMaxItems,
+			MaxBytes:              opts.HeadPostingsForMatchersCacheMaxBytes,
+			Force:                 opts.HeadPostingsForMatchersCacheForce,
+			Metrics:               opts.HeadPostingsForMatchersCacheMetrics,
+			PostingsClonerFactory: opts.PostingsClonerFactory,
 		}
 		headOpts.PostingsForMatchersCacheFactory = NewPostingsForMatchersCacheFactory(config)
 	}
