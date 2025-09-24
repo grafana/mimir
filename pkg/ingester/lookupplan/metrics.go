@@ -10,7 +10,10 @@ import (
 )
 
 type Metrics struct {
-	planningDuration prometheus.ObserverVec
+	planningDuration      prometheus.ObserverVec
+	FilteredRatio         prometheus.ObserverVec
+	IntersectionSizeRatio prometheus.ObserverVec
+	FinalCardinalityRatio prometheus.ObserverVec
 }
 
 func NewMetrics(reg prometheus.Registerer) Metrics {
@@ -22,11 +25,31 @@ func NewMetrics(reg prometheus.Registerer) Metrics {
 			NativeHistogramMaxBucketNumber:  100,
 			NativeHistogramMinResetDuration: 1 * time.Hour,
 		}, []string{"outcome", "user"}),
+
+		FilteredRatio: promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
+			Name:                        "cortex_ingester_lookup_planning_filtered_ratio",
+			Help:                        "Ratio of series retrieved from the index which were also matching the vector selectors from the query. This should always be 1.0 when index_lookup_planning_enabled: true.",
+			NativeHistogramBucketFactor: 1.1,
+		}, []string{"user"}),
+		IntersectionSizeRatio: promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
+			Name:                        "cortex_ingester_lookup_planning_index_selection_accuracy_ratio",
+			Help:                        "Ratio between estimated number of series selected from the index and the actual number of series selected from the index.",
+			NativeHistogramBucketFactor: 1.1,
+		}, []string{"user"}),
+		FinalCardinalityRatio: promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
+			Name:                        "cortex_ingester_lookup_planning_block_cardinality_accuracy_ratio",
+			Help:                        "Ratio between estimated final number of series after all filtering and the actual final number of series after all filtering.",
+			NativeHistogramBucketFactor: 1.1,
+		}, []string{"user"}),
 	}
 }
 
 func (m Metrics) ForUser(userID string) Metrics {
+	userLabel := prometheus.Labels{"user": userID}
 	return Metrics{
-		planningDuration: m.planningDuration.MustCurryWith(prometheus.Labels{"user": userID}),
+		planningDuration:      m.planningDuration.MustCurryWith(userLabel),
+		FilteredRatio:         m.FilteredRatio.MustCurryWith(userLabel),
+		IntersectionSizeRatio: m.IntersectionSizeRatio.MustCurryWith(userLabel),
+		FinalCardinalityRatio: m.FinalCardinalityRatio.MustCurryWith(userLabel),
 	}
 }

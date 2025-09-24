@@ -2956,7 +2956,7 @@ func (i *Ingester) createBlockChunkQuerier(userID string, b tsdb.BlockReader, mi
 		return nil, err
 	}
 
-	statsQuerier := newStatsTrackingChunkQuerier(defaultQuerier, &lookupplan.QueryStats{}, i.metrics)
+	statsQuerier := newStatsTrackingChunkQuerier(defaultQuerier, &lookupplan.QueryStats{}, i.metrics, i.lookupPlanMetrics.ForUser(userID))
 
 	if rand.Float64() > i.cfg.BlocksStorageConfig.TSDB.IndexLookupPlanningComparisonPortion {
 		return statsQuerier, nil

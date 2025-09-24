@@ -94,11 +94,6 @@ type ingesterMetrics struct {
 
 	// Index lookup planning comparison outcomes.
 	indexLookupComparisonOutcomes *prometheus.CounterVec
-
-	// Query cardinality estimation metrics
-	actualPostingsToFinalCardinalityRatio     prometheus.Observer
-	estimatedToActualPostingsCardinalityRatio prometheus.Observer
-	estimatedToActualFinalCardinalityRatio    prometheus.Observer
 }
 
 func newIngesterMetrics(
@@ -419,22 +414,6 @@ func newIngesterMetrics(
 			Name: "cortex_ingester_index_lookup_planning_comparison_outcomes_total",
 			Help: "Total number of index lookup planning comparison outcomes when using mirrored chunk querier.",
 		}, []string{"outcome", "user"}),
-
-		actualPostingsToFinalCardinalityRatio: promauto.With(r).NewHistogram(prometheus.HistogramOpts{
-			Name:                        "cortex_ingester_actual_postings_to_final_cardinality_ratio",
-			Help:                        "Ratio between actual postings cardinality and actual final cardinality.",
-			NativeHistogramBucketFactor: 1.1,
-		}),
-		estimatedToActualPostingsCardinalityRatio: promauto.With(r).NewHistogram(prometheus.HistogramOpts{
-			Name:                        "cortex_ingester_estimated_to_actual_postings_cardinality_ratio",
-			Help:                        "Ratio between estimated postings cardinality and actual postings cardinality.",
-			NativeHistogramBucketFactor: 1.1,
-		}),
-		estimatedToActualFinalCardinalityRatio: promauto.With(r).NewHistogram(prometheus.HistogramOpts{
-			Name:                        "cortex_ingester_estimated_to_actual_final_cardinality_ratio",
-			Help:                        "Ratio between estimated final cardinality and actual final cardinality.",
-			NativeHistogramBucketFactor: 1.1,
-		}),
 	}
 
 	// Initialize expected rejected request labels
