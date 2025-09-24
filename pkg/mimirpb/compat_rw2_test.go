@@ -797,6 +797,50 @@ func TestRW2Unmarshal(t *testing.T) {
 		require.Equal(t, received.Metadata[0].Help, "It's a cool series, but old description.")
 		require.Equal(t, received.Metadata[0].Unit, "megawatts")
 	})
+
+	t.Run("conflicting metadata, skipDeduplicateMetadata is true, both metadata and their order is preserved", func(t *testing.T) {
+		writeRequest := &WriteRequest{
+			SymbolsRW2: []string{"", "__name__", "my_cool_series", "It's a cool series, but old description.", "It's a cool series, but new description.", "megawatts"},
+			TimeseriesRW2: []TimeSeriesRW2{
+				{
+					LabelsRefs: []uint32{1, 2},
+					Metadata: MetadataRW2{
+						Type:    METRIC_TYPE_COUNTER,
+						HelpRef: 3,
+						UnitRef: 5,
+					},
+				},
+				{
+					LabelsRefs: []uint32{1, 2},
+					Metadata: MetadataRW2{
+						Type:    METRIC_TYPE_COUNTER,
+						HelpRef: 4,
+						UnitRef: 5,
+					},
+				},
+			},
+		}
+		data, err := writeRequest.Marshal()
+		require.NoError(t, err)
+
+		// Unmarshal the data back into Mimir's WriteRequest.
+		received := PreallocWriteRequest{
+			SkipDeduplicateMetadata: true,
+		}
+		received.UnmarshalFromRW2 = true
+		err = received.Unmarshal(data)
+		require.NoError(t, err)
+
+		require.Len(t, received.Metadata, 2)
+		require.Equal(t, received.Metadata[0].MetricFamilyName, "my_cool_series")
+		require.Equal(t, received.Metadata[0].Type, COUNTER)
+		require.Equal(t, received.Metadata[0].Help, "It's a cool series, but old description.")
+		require.Equal(t, received.Metadata[0].Unit, "megawatts")
+		require.Equal(t, received.Metadata[1].MetricFamilyName, "my_cool_series")
+		require.Equal(t, received.Metadata[1].Type, COUNTER)
+		require.Equal(t, received.Metadata[1].Help, "It's a cool series, but new description.")
+		require.Equal(t, received.Metadata[1].Unit, "megawatts")
+	})
 }
 
 func makeTestRW2WriteRequest(syms *test.SymbolTableBuilder) *WriteRequest {
