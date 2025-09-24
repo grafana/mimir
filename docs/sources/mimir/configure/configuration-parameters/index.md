@@ -2097,6 +2097,77 @@ usage_tracker_client:
 
   # (advanced)
   [tls_min_version: <string> | default = ""]
+
+reactive_limiter:
+  # (experimental) Enable reactive limiting when making requests to a service
+  # CLI flag: -distributor.reactive-limiter.enabled
+  [enabled: <boolean> | default = false]
+
+  # (experimental) Minimum inflight requests limit
+  # CLI flag: -distributor.reactive-limiter.min-limit
+  [min_limit: <int> | default = 2]
+
+  # (experimental) Maximum inflight requests limit
+  # CLI flag: -distributor.reactive-limiter.max-limit
+  [max_limit: <int> | default = 200]
+
+  # (experimental) Initial inflight requests limit
+  # CLI flag: -distributor.reactive-limiter.initial-limit
+  [initial_limit: <int> | default = 20]
+
+  # (experimental) The maximum limit as a multiple of current inflight requests
+  # CLI flag: -distributor.reactive-limiter.max-limit-factor
+  [max_limit_factor: <float> | default = 5]
+
+  # (experimental) Minimum duration of the window that is used to determine the
+  # recent, short-term load on the system
+  # CLI flag: -distributor.reactive-limiter.recent-window-min-duration
+  [recent_window_min_duration: <duration> | default = 1s]
+
+  # (experimental) Maximum duration of the window that is used to determine the
+  # recent, short-term load on the system
+  # CLI flag: -distributor.reactive-limiter.recent-window-max-duration
+  [recent_window_max_duration: <duration> | default = 30s]
+
+  # (experimental) Minimum number of samples that must be recorded in the recent
+  # window
+  # CLI flag: -distributor.reactive-limiter.recent-window-min-samples
+  [recent_window_min_samples: <int> | default = 50]
+
+  # (experimental) The quantile of recent recorded response times to consider
+  # when adjusting the concurrency limit
+  # CLI flag: -distributor.reactive-limiter.recent-quantile
+  [recent_quantile: <float> | default = 0.9]
+
+  # (experimental) The long-term average age of aggregated recent samples that
+  # are stored
+  # CLI flag: -distributor.reactive-limiter.baseline-window-age
+  [baseline_window_age: <int> | default = 10]
+
+  # (experimental) How many recent limit and inflight time measurements are
+  # stored to detect whether increases in limits correlate with increases in
+  # inflight times
+  # CLI flag: -distributor.reactive-limiter.correlation-window
+  [correlation_window: <int> | default = 50]
+
+  # (experimental) The number of allowed queued requests, as a multiple of
+  # current inflight requests, after which rejections start
+  # CLI flag: -distributor.reactive-limiter.initial-rejection-factor
+  [initial_rejection_factor: <float> | default = 2]
+
+  # (experimental) The number of allowed queued requests, as a multiple of
+  # current inflight requests, after which all requests are rejected
+  # CLI flag: -distributor.reactive-limiter.max-rejection-factor
+  [max_rejection_factor: <float> | default = 3]
+
+# Enable rejection prioritizer.
+# CLI flag: -distributor.rejection-prioritizer.enabled
+[rejection_prioritizer_enabled: <boolean> | default = false]
+
+rejection_prioritizer:
+  # (experimental) The interval at which the rejection threshold is calibrated
+  # CLI flag: -distributor.rejection-prioritizer.calibration-interval
+  [calibration_interval: <duration> | default = 1s]
 ```
 
 ### ingester
@@ -2480,7 +2551,7 @@ rejection_prioritizer:
   [calibration_interval: <duration> | default = 1s]
 
 push_reactive_limiter:
-  # (experimental) Enable reactive limiting when making requests to ingesters
+  # (experimental) Enable reactive limiting when making requests to a service
   # CLI flag: -ingester.push-reactive-limiter.enabled
   [enabled: <boolean> | default = false]
 
@@ -2542,7 +2613,7 @@ push_reactive_limiter:
   [max_rejection_factor: <float> | default = 3]
 
 read_reactive_limiter:
-  # (experimental) Enable reactive limiting when making requests to ingesters
+  # (experimental) Enable reactive limiting when making requests to a service
   # CLI flag: -ingester.read-reactive-limiter.enabled
   [enabled: <boolean> | default = false]
 

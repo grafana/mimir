@@ -126,6 +126,14 @@ func (g *grpcInflightMethodLimiter) RPCCallProcessing(ctx context.Context, _ str
 				}
 				return fn, nil
 			}
+		case rpcCallDistributorPush:
+			if dist := g.getDistributor(); dist != nil {
+				fn, err := dist.PreparePushRequest(ctx)
+				if err != nil {
+					return nil, status.Error(codes.Unavailable, err.Error())
+				}
+				return fn, nil
+			}
 		}
 	}
 	return nil, nil
