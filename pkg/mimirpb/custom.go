@@ -461,6 +461,7 @@ type metadataSet interface {
 }
 
 var _ metadataSet = dedupingMetadataSet{}
+var _ metadataSet = &passthroughMetadataSet{}
 
 // dedupingMetadataSet is a metadataSet that only stores one metadata per metric family.
 // Only the first metadata seen for a given family is kept.
@@ -494,6 +495,28 @@ func (m dedupingMetadataSet) slice() []*MetricMetadata {
 		result[meta.order] = &meta.MetricMetadata
 	}
 	return result
+}
+
+type passthroughMetadataSet struct {
+	metadata []*MetricMetadata
+}
+
+func newPassthroughMetadataSet() passthroughMetadataSet {
+	return passthroughMetadataSet{
+		metadata: make([]*MetricMetadata, 0),
+	}
+}
+
+func (m *passthroughMetadataSet) add(family string, mm MetricMetadata) {
+	m.metadata = append(m.metadata, &mm)
+}
+
+func (m *passthroughMetadataSet) len() int {
+	return len(m.metadata)
+}
+
+func (m *passthroughMetadataSet) slice() []*MetricMetadata {
+	return m.metadata
 }
 
 // orderAwareMetricMetadata is a tuple (index, metadata) that knows its own position in a metadata slice.
