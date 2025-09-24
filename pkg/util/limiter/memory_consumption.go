@@ -12,6 +12,8 @@ import (
 	"github.com/grafana/dskit/tracing"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/util/annotations"
 )
 
 type contextKey int
@@ -19,6 +21,39 @@ type contextKey int
 const (
 	memoryConsumptionTracker contextKey = 0
 )
+
+// memoryTrackingSeriesSet is storage.SeriesSet that track the wrapped SeriesSet memory consumption.
+type memoryTrackingSeriesSet struct {
+	wrapper                  storage.SeriesSet
+	memoryConsumptionTracker *MemoryConsumptionTracker
+}
+
+func NewMemoryTrackingSeriesSet(wrapper storage.SeriesSet, memoryConsumptionTracker *MemoryConsumptionTracker) storage.SeriesSet {
+	return memoryTrackingSeriesSet{
+		wrapper:                  wrapper,
+		memoryConsumptionTracker: memoryConsumptionTracker,
+	}
+}
+
+func (m memoryTrackingSeriesSet) Next() bool {
+	return m.wrapper.Next()
+}
+
+func (m memoryTrackingSeriesSet) At() storage.Series {
+	at := m.wrapper.At()
+	if m.memoryConsumptionTracker != nil {
+		defer m.memoryConsumptionTracker.DecreaseMemoryConsumptionForLabels(at.Labels())
+	}
+	return at
+}
+
+func (m memoryTrackingSeriesSet) Err() error {
+	return m.wrapper.Err()
+}
+
+func (m memoryTrackingSeriesSet) Warnings() annotations.Annotations {
+	return m.wrapper.Warnings()
+}
 
 // MemoryTrackerFromContextWithFallback returns a MemoryConsumptionTracker that has been added to this
 // context. If there is no MemoryConsumptionTracker in this context, a new no-op tracker that
@@ -207,11 +242,13 @@ func (l *MemoryConsumptionTracker) IncreaseMemoryConsumptionForLabels(lbls label
 	if err := l.IncreaseMemoryConsumption(uint64(lbls.ByteSize()), Labels); err != nil {
 		return err
 	}
+	fmt.Println("increasing for", lbls.String())
 	return nil
 }
 
 // DecreaseMemoryConsumptionForLabels decreases the current memory consumption based on labels.
 func (l *MemoryConsumptionTracker) DecreaseMemoryConsumptionForLabels(lbls labels.Labels) {
+	fmt.Println("decreaseing for", lbls.String())
 	l.DecreaseMemoryConsumption(uint64(lbls.ByteSize()), Labels)
 }
 
