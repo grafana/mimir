@@ -11,6 +11,7 @@ common:
 
 ingest_storage:
   enabled:       true
+  write_logs_fsync_before_kafka_commit_enabled: true
   kafka:
     address: kafka_1:9092
     topic:   mimir-ingest

@@ -1046,3 +1046,35 @@ func (r *segmentBufReader) Read(b []byte) (n int, err error) {
 func (w *WL) Size() (int64, error) {
 	return fileutil.DirSize(w.Dir())
 }
+
+// FsyncSegmentsUntilCurrent ensures all segments up to and including the current segment are fsynced.
+func (w *WL) FsyncSegmentsUntilCurrent() error {
+	w.mtx.Lock()
+
+	if w.closed {
+		w.mtx.Unlock()
+		return errors.New("unable to fsync segments: write log is closed")
+	}
+
+	done := make(chan struct{})
+	// All previous segments before w.segment should either have been fsynced and closed or still in the actorc channel.
+	// The function we are adding below will only execute when all previous segments have been fsynced.
+	if w.segment != nil {
+		currSegment := w.segment
+		w.actorc <- func() {
+			if err := w.fsync(currSegment); err != nil {
+				w.logger.Error("unable to fsync current segment", "err", err)
+			}
+			close(done)
+		}
+	} else {
+		w.actorc <- func() {
+			close(done)
+		}
+	}
+
+	w.mtx.Unlock()
+
+	<-done
+	return nil
+}

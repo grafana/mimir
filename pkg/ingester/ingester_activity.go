@@ -36,8 +36,12 @@ func (i *ActivityTrackerWrapper) Push(ctx context.Context, request *mimirpb.Writ
 }
 
 func (i *ActivityTrackerWrapper) PushToStorageAndReleaseRequest(ctx context.Context, request *mimirpb.WriteRequest) error {
-	// No tracking in PushToStorageAndReleaseRequest because it is called very frequently
+	// No tracking in PushToStorageAndReleaseRgoequest because it is called very frequently
 	return i.ing.PushToStorageAndReleaseRequest(ctx, request)
+}
+
+func (i *ActivityTrackerWrapper) NotifyPreCommit() error {
+	return i.ing.NotifyPreCommit()
 }
 
 func (i *ActivityTrackerWrapper) QueryStream(request *client.QueryRequest, server client.Ingester_QueryStreamServer) error {
