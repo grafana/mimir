@@ -5,6 +5,10 @@ package lookupplan
 import (
 	"context"
 	"sync/atomic" //lint:ignore faillint we can't use go.uber.org/atomic with a protobuf struct without wrapping it.
+
+	"github.com/oklog/ulid/v2"
+	"github.com/prometheus/prometheus/tsdb"
+	"github.com/prometheus/prometheus/tsdb/index"
 )
 
 type queryStatsContextKey int
@@ -105,4 +109,26 @@ func (q *QueryStats) LoadActualFinalCardinality() uint64 {
 		return 0
 	}
 	return atomic.LoadUint64(&q.actualFinalCardinality)
+}
+
+type ActualSelectedPostingsClonerFactory struct{}
+
+func (p ActualSelectedPostingsClonerFactory) PostingsCloner(_ ulid.ULID, postings index.Postings) tsdb.PostingsCloner {
+	return actualSelectedPostingsCloner{index.NewPostingsCloner(postings)}
+}
+
+type actualSelectedPostingsCloner struct {
+	cloner tsdb.PostingsCloner
+}
+
+func (p actualSelectedPostingsCloner) Clone(ctx context.Context) index.Postings {
+	stats := QueryStatsFromContext(ctx)
+	if stats != nil {
+		stats.SetActualSelectedPostings(uint64(p.cloner.NumPostings()))
+	}
+	return p.cloner.Clone(ctx)
+}
+
+func (p actualSelectedPostingsCloner) NumPostings() int {
+	return p.cloner.NumPostings()
 }

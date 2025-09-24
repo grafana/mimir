@@ -2859,7 +2859,7 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 				MaxBytes:              i.cfg.BlocksStorageConfig.TSDB.HeadPostingsForMatchersCacheMaxBytes,
 				Force:                 i.cfg.BlocksStorageConfig.TSDB.HeadPostingsForMatchersCacheForce,
 				Metrics:               i.tsdbMetrics.headPostingsForMatchersCacheMetrics,
-				PostingsClonerFactory: tsdb.DefaultPostingsClonerFactory{},
+				PostingsClonerFactory: lookupplan.ActualSelectedPostingsClonerFactory{},
 			},
 		),
 		BlockPostingsForMatchersCacheFactory: tsdb.NewPostingsForMatchersCacheFactory(
@@ -2873,10 +2873,10 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 				MaxBytes:              i.cfg.BlocksStorageConfig.TSDB.BlockPostingsForMatchersCacheMaxBytes,
 				Force:                 i.cfg.BlocksStorageConfig.TSDB.BlockPostingsForMatchersCacheForce,
 				Metrics:               i.tsdbMetrics.blockPostingsForMatchersCacheMetrics,
-				PostingsClonerFactory: tsdb.DefaultPostingsClonerFactory{},
+				PostingsClonerFactory: lookupplan.ActualSelectedPostingsClonerFactory{},
 			},
 		),
-		PostingsClonerFactory:  tsdb.DefaultPostingsClonerFactory{},
+		PostingsClonerFactory:  lookupplan.ActualSelectedPostingsClonerFactory{},
 		EnableNativeHistograms: i.limits.NativeHistogramsIngestionEnabled(userID),
 		SecondaryHashFunction:  secondaryTSDBHashFunctionForUser(userID),
 		IndexLookupPlannerFunc: i.getIndexLookupPlannerFunc(userID),
@@ -2956,7 +2956,7 @@ func (i *Ingester) createBlockChunkQuerier(userID string, b tsdb.BlockReader, mi
 		return nil, err
 	}
 
-	statsQuerier := newStatsTrackingChunkQuerier(defaultQuerier, &lookupplan.QueryStats{}, i.metrics, i.lookupPlanMetrics.ForUser(userID))
+	statsQuerier := newStatsTrackingChunkQuerier(defaultQuerier, i.metrics, i.lookupPlanMetrics.ForUser(userID))
 
 	if rand.Float64() > i.cfg.BlocksStorageConfig.TSDB.IndexLookupPlanningComparisonPortion {
 		return statsQuerier, nil
