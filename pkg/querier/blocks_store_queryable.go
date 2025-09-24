@@ -919,17 +919,17 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 			// Store the result.
 			mtx.Lock()
 			if len(mySeries) > 0 {
-				seriesSets = append(seriesSets, &blockQuerierSeriesSet{series: mySeries})
+				seriesSets = append(seriesSets, limiter.NewMemoryTrackingSeriesSet(&blockQuerierSeriesSet{series: mySeries}, memoryTracker))
 			} else if len(myStreamingSeriesLabels) > 0 {
 				if chunkInfo != nil {
 					chunkInfo.SetMsg("store-gateway streaming")
 				}
-				seriesSets = append(seriesSets, &blockStreamingQuerierSeriesSet{
+				seriesSets = append(seriesSets, limiter.NewMemoryTrackingSeriesSet(&blockStreamingQuerierSeriesSet{
 					series:        myStreamingSeriesLabels,
 					streamReader:  streamReader,
 					chunkInfo:     chunkInfo,
 					remoteAddress: c.RemoteAddress(),
-				})
+				}, memoryTracker))
 				streamReaders = append(streamReaders, streamReader)
 			}
 			warnings.Merge(myWarnings)
