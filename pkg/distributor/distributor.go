@@ -1702,6 +1702,7 @@ type requestState struct {
 	writeRequestSize int64
 
 	requestStart  time.Time
+	requestID     int64
 	requestErr    error
 	requestFinish func(time.Duration, error)
 }
@@ -1733,6 +1734,8 @@ func (d *Distributor) startPushRequest(ctx context.Context, httpgrpcRequestSize 
 		return ctx, rs, nil
 	}
 
+	requestStart := time.Now()
+	requestID := rand.Int63()
 	requestFinish := func(duration time.Duration, err error) {}
 	if d.reactiveLimiter.getLimiter() != nil {
 		// Acquire a permit, blocking if needed
@@ -1745,8 +1748,10 @@ func (d *Distributor) startPushRequest(ctx context.Context, httpgrpcRequestSize 
 			return ctx, nil, newReactiveLimiterExceededError(adaptivelimiter.ErrExceeded)
 		}
 		requestFinish = func(duration time.Duration, err error) {
-			kv := make([]interface{}, 0, 10)
+			kv := make([]interface{}, 0, 14)
 			kv = append(kv, "msg", "request has been finished")
+			kv = append(kv, "request_id", requestID)
+			kv = append(kv, "started_at", requestStart.Format(time.RFC3339))
 			kv = append(kv, "duration", duration.String())
 			if err != nil {
 				kv = append(kv, "err", err.Error())
@@ -1766,7 +1771,8 @@ func (d *Distributor) startPushRequest(ctx context.Context, httpgrpcRequestSize 
 	}
 
 	rs = &requestState{
-		requestStart:  time.Now(),
+		requestStart:  requestStart,
+		requestID:     requestID,
 		requestFinish: requestFinish,
 	}
 	cleanupInDefer := true
@@ -2096,9 +2102,11 @@ func (d *Distributor) push(ctx context.Context, pushReq *Request) error {
 // The input cleanup function is guaranteed to be called after all requests to all backends have completed.
 func (d *Distributor) sendWriteRequestToBackends(ctx context.Context, tenantID string, req *mimirpb.WriteRequest, keys []uint32, initialMetadataIndex int, ingestersSubring, partitionsSubring ring.DoBatchRing, cleanup func()) error {
 	var (
-		wg            = sync.WaitGroup{}
-		partitionsErr error
-		ingestersErr  error
+		wg             = sync.WaitGroup{}
+		partitionsErr  error
+		ingestersErr   error
+		startTime      = time.Now()
+		originalCtxErr = ctx.Err()
 	)
 
 	// Ensure at least one ring has been provided.
@@ -2143,12 +2151,20 @@ func (d *Distributor) sendWriteRequestToBackends(ctx context.Context, tenantID s
 		cleanup()
 
 		// All requests have completed, so it's now safe to cancel the requests context to release resources.
-		_, cancel := remoteRequestContextAndCancel()
+		remoteCtx, cancel := remoteRequestContextAndCancel()
 		cancel()
 		if partitionsRequestContextAndCancel != nil {
 			_, cancel = partitionsRequestContextAndCancel()
 			cancel()
 		}
+		var startedAt time.Time
+		requestID := int64(-1)
+		rs, ok := ctx.Value(requestStateKey).(*requestState)
+		if ok {
+			startedAt = rs.requestStart
+			requestID = rs.requestID
+		}
+		level.Info(d.log).Log("msg", "sendWriteRequestToBackends executed", "request_id", requestID, "started_at", startedAt.Format(time.RFC3339Nano), "current_duration", time.Since(startedAt), "push_started_at", startTime.Format(time.RFC3339Nano), "push_duration", time.Since(startTime), "remote_ctx_err", remoteCtx.Err(), "ctx_err_start", originalCtxErr, "ctx_err_end", ctx.Err())
 	}
 
 	batchOptions := ring.DoBatchOptions{
