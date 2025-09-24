@@ -293,6 +293,10 @@ type Ingester struct {
 	compactionService     services.Service
 	metricsUpdaterService services.Service
 	metadataPurgerService services.Service
+	statisticsService     services.Service
+
+	// Index lookup planning
+	lookupPlanMetrics lookupplan.Metrics
 
 	// Mimir blocks storage.
 	tsdbsMtx sync.RWMutex
@@ -399,6 +403,8 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 	i.circuitBreaker = newIngesterCircuitBreaker(i.cfg.PushCircuitBreaker, i.cfg.ReadCircuitBreaker, logger, registerer)
 
 	i.reactiveLimiter = newIngesterReactiveLimiter(&i.cfg.RejectionPrioritizer, &i.cfg.PushReactiveLimiter, &i.cfg.ReadReactiveLimiter, logger, registerer)
+
+	i.lookupPlanMetrics = lookupplan.NewMetrics(registerer)
 
 	if registerer != nil {
 		promauto.With(registerer).NewGaugeFunc(prometheus.GaugeOpts{
@@ -508,8 +514,31 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 	}, nil)
 	i.subservicesWatcher.WatchService(i.metadataPurgerService)
 
+	// Init head statistics generation service if enabled
+	if cfg.BlocksStorageConfig.TSDB.IndexLookupPlanningEnabled {
+		i.statisticsService = services.NewTimerService(cfg.BlocksStorageConfig.TSDB.HeadStatisticsCollectionFrequency, nil, i.generateHeadStatisticsForAllUsers, nil)
+		i.subservicesWatcher.WatchService(i.statisticsService)
+	}
+
 	i.BasicService = services.NewBasicService(i.starting, i.ingesterRunning, i.stopping)
 	return i, nil
+}
+
+// generateHeadStatisticsForAllUsers iterates over all user TSDBs and generates head statistics.
+func (i *Ingester) generateHeadStatisticsForAllUsers(context.Context) error {
+	for _, userID := range i.getTSDBUsers() {
+		userDB := i.getTSDB(userID)
+		if userDB == nil {
+			// A race with a user TSDB being removed, just skip it.
+			continue
+		}
+		err := userDB.generateHeadStatistics()
+		if err != nil {
+			level.Warn(i.logger).Log("msg", "failed to generate head statistics; previous statistics will be used for queries if have been computed since startup", "user", userID, "err", err)
+			continue
+		}
+	}
+	return nil
 }
 
 // NewForFlusher is a special version of ingester used by Flusher. This
@@ -615,6 +644,10 @@ func (i *Ingester) starting(ctx context.Context) (err error) {
 	if i.cfg.BlocksStorageConfig.TSDB.IsBlocksShippingEnabled() {
 		shippingService := services.NewBasicService(nil, i.shipBlocksLoop, nil)
 		servs = append(servs, shippingService)
+	}
+
+	if i.cfg.BlocksStorageConfig.TSDB.IndexLookupPlanningEnabled {
+		servs = append(servs, i.statisticsService)
 	}
 
 	if i.cfg.BlocksStorageConfig.TSDB.CloseIdleTSDBTimeout > 0 {
@@ -2658,21 +2691,24 @@ func (i *Ingester) getTSDB(userID string) *userTSDB {
 }
 
 // getIndexLookupPlannerFunc returns the appropriate index lookup planner function based on configuration.
-// When index lookup planning is enabled, it creates a CostBasedPlanner for each block,
-// which calculates cost for several plans based on that block's specific statistics, and picks the optimal one.
+// When index lookup planning is enabled, it first checks if a pre-computed planner exists in the repository.
+// If found, it uses the cached planner; otherwise, it falls back to generating statistics on-demand.
 // When disabled, it uses NoopPlanner which performs no optimization.
-func (i *Ingester) getIndexLookupPlannerFunc(r prometheus.Registerer, userID string) tsdb.IndexLookupPlannerFunc {
+func (i *Ingester) getIndexLookupPlannerFunc(userID string) tsdb.IndexLookupPlannerFunc {
 	if !i.cfg.BlocksStorageConfig.TSDB.IndexLookupPlanningEnabled {
 		return func(tsdb.BlockMeta, tsdb.IndexReader) index.LookupPlanner { return lookupplan.NoopPlanner{} }
 	}
 
-	metrics := lookupplan.NewMetrics(r)
-	logger := log.With(i.logger, "user", userID)
-	statsGenerator := lookupplan.NewStatisticsGenerator(logger)
+	return func(meta tsdb.BlockMeta, reader tsdb.IndexReader) index.LookupPlanner {
+		// Get the userTSDB for this tenant
+		userDB := i.getTSDB(userID)
+		if userDB == nil {
+			// This might happen if a query runs while we're initializing the TSDB for a user.
+			return lookupplan.NoopPlanner{}
+		}
 
-	provider := lookupplan.NewPlannerFactory(metrics, logger, statsGenerator)
-
-	return provider.CreatePlanner
+		return userDB.getIndexLookupPlanner(meta, reader)
+	}
 }
 
 // List all users for which we have a TSDB. We do it here in order
@@ -2764,6 +2800,17 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 	}
 	userDB.triggerRecomputeOwnedSeries(recomputeOwnedSeriesReasonNewUser)
 
+	if i.cfg.BlocksStorageConfig.TSDB.IndexLookupPlanningEnabled {
+		plannerFactory := lookupplan.NewPlannerFactory(i.lookupPlanMetrics.ForUser(userID), userLogger, lookupplan.NewStatisticsGenerator(userLogger))
+		userDB.plannerProvider = newPlannerProvider(plannerFactory)
+		// Generate initial statistics only after the TSDB has been opened and initialized.
+		defer func() {
+			if err := userDB.generateHeadStatistics(); err != nil {
+				level.Error(userLogger).Log("msg", "failed to generate initial TSDB head statistics", "err", err)
+			}
+		}()
+	}
+
 	userDBHasDB := atomic.NewBool(false)
 	blocksToDelete := func(blocks []*tsdb.Block) map[ulid.ULID]struct{} {
 		if !userDBHasDB.Load() {
@@ -2782,7 +2829,6 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 		StripeSize:                        i.cfg.BlocksStorageConfig.TSDB.StripeSize,
 		HeadChunksWriteBufferSize:         i.cfg.BlocksStorageConfig.TSDB.HeadChunksWriteBufferSize,
 		HeadChunksEndTimeVariance:         i.cfg.BlocksStorageConfig.TSDB.HeadChunksEndTimeVariance,
-		HeadStatisticsCollectionFrequency: i.cfg.BlocksStorageConfig.TSDB.HeadStatisticsCollectionFrequency,
 		WALCompression:                    i.cfg.BlocksStorageConfig.TSDB.WALCompressionType(),
 		WALSegmentSize:                    i.cfg.BlocksStorageConfig.TSDB.WALSegmentSizeBytes,
 		WALReplayConcurrency:              walReplayConcurrency,
@@ -2833,7 +2879,7 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 		PostingsClonerFactory:  tsdb.DefaultPostingsClonerFactory{},
 		EnableNativeHistograms: i.limits.NativeHistogramsIngestionEnabled(userID),
 		SecondaryHashFunction:  secondaryTSDBHashFunctionForUser(userID),
-		IndexLookupPlannerFunc: i.getIndexLookupPlannerFunc(tsdbPromReg, userID),
+		IndexLookupPlannerFunc: i.getIndexLookupPlannerFunc(userID),
 		BlockChunkQuerierFunc: func(b tsdb.BlockReader, mint, maxt int64) (storage.ChunkQuerier, error) {
 			return i.createBlockChunkQuerier(userID, b, mint, maxt)
 		},
