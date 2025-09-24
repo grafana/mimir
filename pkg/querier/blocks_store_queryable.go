@@ -850,7 +850,6 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 				if err != nil {
 					return err
 				}
-
 				if shouldRetry {
 					level.Warn(clientSpanLog).Log("msg", "failed to receive series", "remote", c.RemoteAddress(), "err", err)
 					return nil
