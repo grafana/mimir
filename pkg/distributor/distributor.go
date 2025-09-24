@@ -1759,7 +1759,7 @@ func (d *Distributor) startPushRequest(ctx context.Context, httpgrpcRequestSize 
 			if ctxErr := ctx.Err(); ctxErr != nil {
 				kv = append(kv, "ctx_err", ctxErr.Error())
 			}
-			if errors.Is(err, context.Canceled) {
+			if errors.Is(err, context.Canceled) || ctx.Err() != nil {
 				permit.Drop()
 				kv = append(kv, "permit_action", "dropped")
 			} else {
