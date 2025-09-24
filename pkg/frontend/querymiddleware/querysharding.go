@@ -234,14 +234,21 @@ func mapEngineError(err error) error {
 
 type QuerySharder struct {
 	squasher          astmapper.Squasher
-	limit             Limits
+	limit             ShardingLimits
 	maxSeriesPerShard uint64
 	logger            log.Logger
 	metrics           queryShardingMetrics
 }
 
+type ShardingLimits interface {
+	QueryShardingTotalShards(userID string) int
+	QueryShardingMaxRegexpSizeBytes(userID string) int
+	QueryShardingMaxShardedQueries(userID string) int
+	CompactorSplitAndMergeShards(userID string) int
+}
+
 func NewQuerySharder(
-	limit Limits,
+	limit ShardingLimits,
 	maxSeriesPerShard uint64,
 	reg prometheus.Registerer,
 	logger log.Logger,
