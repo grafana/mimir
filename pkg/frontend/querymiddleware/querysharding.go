@@ -83,7 +83,7 @@ func newQueryShardingMiddleware(
 	maxSeriesPerShard uint64,
 	reg prometheus.Registerer,
 ) MetricsQueryMiddleware {
-	sharder := NewQuerySharder(limit, maxSeriesPerShard, reg, logger)
+	sharder := NewQuerySharder(astmapper.EmbeddedQueriesSquasher, limit, maxSeriesPerShard, reg, logger)
 
 	return MetricsQueryMiddlewareFunc(func(next MetricsQueryHandler) MetricsQueryHandler {
 		return &querySharding{
@@ -248,13 +248,14 @@ type ShardingLimits interface {
 }
 
 func NewQuerySharder(
+	squasher astmapper.Squasher,
 	limit ShardingLimits,
 	maxSeriesPerShard uint64,
 	reg prometheus.Registerer,
 	logger log.Logger,
 ) *QuerySharder {
 	return &QuerySharder{
-		squasher:          astmapper.EmbeddedQueriesSquasher,
+		squasher:          squasher,
 		limit:             limit,
 		maxSeriesPerShard: maxSeriesPerShard,
 		metrics:           newQueryShardingMetrics(reg),

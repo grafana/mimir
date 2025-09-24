@@ -2255,7 +2255,7 @@ func BenchmarkQueryShardingRewriting(b *testing.B) {
 
 	limits := mockLimits{totalShards: 3}
 	reg := prometheus.NewPedanticRegistry()
-	sharder := NewQuerySharder(limits, 0, reg, log.NewNopLogger())
+	sharder := NewQuerySharder(astmapper.EmbeddedQueriesSquasher, limits, 0, reg, log.NewNopLogger())
 	tenants := []string{"tenant-1"}
 	ctx := context.Background()
 

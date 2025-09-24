@@ -4,6 +4,7 @@ package sharding
 
 import (
 	"context"
+	"errors"
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/tenant"
@@ -12,6 +13,7 @@ import (
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
+	"github.com/grafana/mimir/pkg/frontend/querymiddleware/astmapper"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize"
 )
 
@@ -21,7 +23,7 @@ type OptimizationPass struct {
 
 func NewOptimizationPass(limits querymiddleware.ShardingLimits, maxSeriesPerShard uint64, reg prometheus.Registerer, logger log.Logger) optimize.ASTOptimizationPass {
 	return &OptimizationPass{
-		sharder: querymiddleware.NewQuerySharder(limits, maxSeriesPerShard, reg, logger),
+		sharder: querymiddleware.NewQuerySharder(ConcatSquasher, limits, maxSeriesPerShard, reg, logger),
 	}
 }
 
@@ -50,4 +52,28 @@ func (o *OptimizationPass) Apply(ctx context.Context, expr parser.Expr) (parser.
 	}
 
 	return shardedExpr, nil
+}
+
+var ConcatSquasher astmapper.Squasher = &concatSquasher{}
+
+type concatSquasher struct{}
+
+func (c *concatSquasher) Squash(exprs ...astmapper.EmbeddedQuery) (parser.Expr, error) {
+	args := make([]parser.Expr, 0, len(exprs))
+
+	for _, expr := range exprs {
+		if len(expr.Params) > 0 {
+			return nil, errors.New("concatSquasher does not support squashing embedded queries with params")
+		}
+
+		args = append(args, expr.Expr)
+	}
+
+	return &parser.Call{
+		// TODO: store this parser.Function value somewhere so we don't have to create a new one every time
+		Func: &parser.Function{
+			Name: "__sharded_concat__",
+		},
+		Args: args,
+	}, nil
 }
