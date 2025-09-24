@@ -381,6 +381,8 @@ Usage of ./cmd/mimir/mimir:
     	The tenant's shard size used by shuffle-sharding. This value is the total size of the shard (ie. it is not the number of ingesters in the shard per zone, but the number of ingesters in the shard across all zones, if zone-awareness is enabled). Must be set both on ingesters and distributors. 0 disables shuffle sharding.
   -distributor.max-active-series-per-user int
     	Maximum number of active series per user. 0 means no limit. This limit only applies with ingest storage enabled.
+  -distributor.rejection-prioritizer.enabled
+    	Enable rejection prioritizer.
   -distributor.request-burst-size int
     	Per-tenant allowed push request burst size. 0 to disable.
   -distributor.request-rate-limit float

@@ -19,8 +19,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/failsafe-go/failsafe-go/adaptivelimiter"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/gorilla/mux"
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/httpgrpc"
@@ -61,6 +63,7 @@ import (
 	mimir_limiter "github.com/grafana/mimir/pkg/util/limiter"
 	util_math "github.com/grafana/mimir/pkg/util/math"
 	"github.com/grafana/mimir/pkg/util/pool"
+	"github.com/grafana/mimir/pkg/util/reactivelimiter"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -203,9 +206,78 @@ type Distributor struct {
 	// is disabled.
 	usageTrackerClient usageTrackerGenericClient
 
+	reactiveLimiter *distributorReactiveLimiter
+
 	// For testing functionality that relies on timing without having to sleep in unit tests.
 	sleep func(time.Duration)
 	now   func() time.Time
+
+	latency *artificialLatency
+}
+
+type artificialLatency struct {
+	min       time.Duration
+	max       time.Duration
+	duration  time.Duration
+	workers   int
+	startTime time.Time
+}
+
+func newArtificialLatency(min time.Duration, max time.Duration, duration time.Duration, workers int) *artificialLatency {
+	return &artificialLatency{
+		min:       min,
+		max:       max,
+		duration:  duration,
+		workers:   workers,
+		startTime: time.Now(),
+	}
+}
+
+func (a *artificialLatency) isActive() bool {
+	if a == nil {
+		return false
+	}
+	if time.Since(a.startTime) >= a.duration {
+		return false
+	}
+	if a.min >= a.max {
+		return false
+	}
+	return true
+}
+
+func (a *artificialLatency) add(logger log.Logger) {
+	if a == nil || !a.isActive() {
+		return
+	}
+
+	// Pick random duration in [min, max].
+	duration := a.min + time.Duration(rand.Int63n(int64(a.max-a.min)))
+	end := time.Now().Add(duration)
+	level.Debug(logger).Log("msg", "adding artificial latency", "min", a.min, "max", a.max, "duration", a.duration, "workers", a.workers, "start_time", a.startTime, "artificial_latency_duration", duration)
+
+	if a.workers == 0 {
+		time.Sleep(duration)
+		return
+	}
+
+	var wg sync.WaitGroup
+	wg.Add(a.workers)
+
+	for i := 0; i < a.workers; i++ {
+		go func() {
+			defer wg.Done()
+			x := 0
+			for time.Now().Before(end) {
+				// Do some meaningless work
+				x++
+				if x > 1_000_000 {
+					x = 0
+				}
+			}
+		}()
+	}
+	wg.Wait()
 }
 
 func defaultSleep(d time.Duration) { time.Sleep(d) }
@@ -282,6 +354,10 @@ type Config struct {
 	// Usage-tracker (optional).
 	UsageTrackerEnabled bool                      `yaml:"-"` // Injected internally.
 	UsageTrackerClient  usagetrackerclient.Config `yaml:"usage_tracker_client"`
+
+	ReactiveLimiter             reactivelimiter.Config            `yaml:"reactive_limiter"`
+	RejectionPrioritizerEnabled bool                              `yaml:"rejection_prioritizer_enabled"`
+	RejectionPrioritizer        reactivelimiter.PrioritizerConfig `yaml:"rejection_prioritizer"`
 }
 
 // PushWrapper wraps around a push. It is similar to middleware.Interface.
@@ -304,6 +380,10 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.BoolVar(&cfg.EnableInfluxEndpoint, "distributor.influx-endpoint-enabled", false, "Enable Influx endpoint.")
 	f.IntVar(&cfg.ReusableIngesterPushWorkers, "distributor.reusable-ingester-push-workers", 2000, "Number of pre-allocated workers used to forward push requests to the ingesters. If 0, no workers will be used and a new goroutine will be spawned for each ingester push request. If not enough workers available, new goroutine will be spawned. (Note: this is a performance optimization, not a limiting feature.)")
 	f.BoolVar(&cfg.EnableStartTimeQuietZero, "distributor.otel-start-time-quiet-zero", false, "Change the implementation of OTel startTime from a real zero to a special NaN value.")
+
+	f.BoolVar(&cfg.RejectionPrioritizerEnabled, "distributor.rejection-prioritizer.enabled", false, "Enable rejection prioritizer.")
+	cfg.ReactiveLimiter.RegisterFlagsWithPrefix("distributor.reactive-limiter.", f)
+	cfg.RejectionPrioritizer.RegisterFlagsWithPrefix("distributor.rejection-prioritizer.", f)
 
 	cfg.DefaultLimits.RegisterFlags(f)
 }
@@ -620,6 +700,7 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 
 	d.requestRateLimiter = limiter.NewRateLimiter(requestRateStrategy, 10*time.Second)
 	d.ingestionRateLimiter = limiter.NewRateLimiter(ingestionRateStrategy, 10*time.Second)
+	d.reactiveLimiter = newDistributorReactiveLimiter(d.cfg, log, reg)
 	d.distributorsLifecycler = distributorsLifecycler
 	d.distributorsRing = distributorsRing
 	d.HATracker = haTrackerImpl
@@ -658,6 +739,10 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 
 		d.usageTrackerClient = usagetrackerclient.NewUsageTrackerClient("distributor", d.cfg.UsageTrackerClient, usageTrackerPartitionRing, usageTrackerInstanceRing, log, reg)
 		subservices = append(subservices, d.usageTrackerClient)
+	}
+
+	if cfg.RejectionPrioritizerEnabled {
+		subservices = append(subservices, d.reactiveLimiter.getService())
 	}
 
 	// Register each metric only if the corresponding storage is enabled.
@@ -1621,7 +1706,41 @@ func (d *Distributor) StartPushRequest(ctx context.Context, httpgrpcRequestSize 
 	return ctx, err
 }
 
-func (d *Distributor) PreparePushRequest(_ context.Context) (func(error), error) {
+func (d *Distributor) PreparePushRequest(ctx context.Context) (func(error), error) {
+	if d.reactiveLimiter.getLimiter() != nil {
+		// Acquire a permit, blocking if needed
+		permit, err := d.reactiveLimiter.AcquirePermit(ctx)
+		if err != nil {
+			kv := d.reactiveLimiter.getStat()
+			kv = append(kv, "msg", "it was impossible to acquire a reactive limiter permit during startPushRequest")
+			level.Debug(d.log).Log(kv...)
+			d.rejectedRequests.WithLabelValues(reasonDistributorMaxInflightPushRequests).Inc()
+			return nil, newReactiveLimiterExceededError(adaptivelimiter.ErrExceeded)
+		}
+		requestStart := time.Now()
+		requestID := rand.Int63()
+		return func(err error) {
+			kv := make([]interface{}, 0, 14)
+			kv = append(kv, "msg", "request has been finished")
+			kv = append(kv, "request_id", requestID)
+			kv = append(kv, "started_at", requestStart.Format(time.RFC3339))
+			kv = append(kv, "duration", time.Since(requestStart).String())
+			if err != nil {
+				kv = append(kv, "err", err.Error())
+			}
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				kv = append(kv, "ctx_err", ctxErr.Error())
+			}
+			if errors.Is(err, context.Canceled) || ctx.Err() != nil {
+				permit.Drop()
+				kv = append(kv, "permit_action", "dropped")
+			} else {
+				permit.Record()
+				kv = append(kv, "permit_action", "recorded")
+			}
+			level.Info(d.log).Log(kv...)
+		}, nil
+	}
 	return nil, nil
 }
 
@@ -1637,6 +1756,11 @@ func (d *Distributor) PreparePushRequest(_ context.Context) (func(error), error)
 // This object describes which checks were already performed on the request,
 // and which component is responsible for doing a cleanup.
 func (d *Distributor) startPushRequest(ctx context.Context, httpgrpcRequestSize int64) (context.Context, *requestState, error) {
+	if d.reactiveLimiter.getLimiter() != nil && !d.reactiveLimiter.CanAcquirePermit() {
+		d.rejectedRequests.WithLabelValues(reasonDistributorMaxInflightPushRequests).Inc()
+		return nil, nil, newReactiveLimiterExceededError(adaptivelimiter.ErrExceeded)
+	}
+
 	// If requestState is already in context, it means that StartPushRequest already ran for this request.
 	rs, alreadyInContext := ctx.Value(requestStateKey).(*requestState)
 	if alreadyInContext {
@@ -1839,6 +1963,67 @@ func (d *Distributor) handlePushError(ctx context.Context, pushErr error) error 
 	return toErrorWithGRPCStatus(pushErr, serviceOverloadErrorEnabled)
 }
 
+func (d *Distributor) addArtificialLatency() {
+	if d.latency == nil {
+		return
+	}
+	if time.Since(d.latency.startTime) >= d.latency.duration {
+		d.latency = nil
+		return
+	}
+	d.latency.add(d.log)
+}
+
+func (d *Distributor) StartArtificialLatencyHandler(w http.ResponseWriter, r *http.Request) {
+	level.Info(d.log).Log("msg", "received a request to start artificial latency")
+	vars := mux.Vars(r)
+
+	// Extract path parameters
+	latencyMinStr := vars["latencyMin"]
+	latencyMaxStr := vars["latencyMax"]
+	latencyDurationStr := vars["latencyDuration"]
+	latencyWorkersStr := vars["latencyWorkers"]
+
+	// Defaults
+	latencyMin, _ := time.ParseDuration(defaultIfEmpty(latencyMinStr, "100ms"))
+	latencyMax, _ := time.ParseDuration(defaultIfEmpty(latencyMaxStr, "500ms"))
+	latencyDuration, _ := time.ParseDuration(defaultIfEmpty(latencyDurationStr, "300s"))
+	latencyWorkers, _ := strconv.Atoi(defaultIfEmpty(latencyWorkersStr, "1"))
+
+	level.Info(d.log).Log("msg", "artificial latency parameters retrieved", "latencyMin", latencyMin, "latencyMax", latencyMax, "latencyDuration", latencyDuration, "latencyWorkers", latencyWorkers)
+
+	d.latency = &artificialLatency{
+		min:       latencyMin,
+		max:       latencyMax,
+		duration:  latencyDuration,
+		workers:   latencyWorkers,
+		startTime: time.Now(),
+	}
+
+	level.Info(d.log).Log("msg", "artificial latency setup completed")
+
+	// Build response
+	response := fmt.Sprintf("Artificial latency with parameters min=%v, max=%v, duration=%v, workers=%d", latencyMin, latencyMax, latencyDuration, latencyWorkers)
+	util.WriteHTMLResponse(w, response)
+}
+
+func (d *Distributor) StopArtificialLatencyHandler(w http.ResponseWriter, r *http.Request) {
+	level.Info(d.log).Log("msg", "received a request to stop artificial latency")
+	d.latency = nil
+
+	level.Info(d.log).Log("msg", "artificial latency stopped")
+	// Build response
+	response := "Artificial latency has been stopped"
+	util.WriteHTMLResponse(w, response)
+}
+
+func defaultIfEmpty(value, def string) string {
+	if value == "" {
+		return def
+	}
+	return value
+}
+
 // push takes a write request and distributes it to ingesters using the ring.
 // Strings in pushReq may be pointers into the gRPC buffer which will be reused, so must be copied if retained.
 // push does not check limits like ingestion rate and inflight requests.
@@ -2024,6 +2209,7 @@ func (d *Distributor) sendWriteRequestToBackends(ctx context.Context, tenantID s
 func (d *Distributor) sendWriteRequestToIngesters(ctx context.Context, tenantRing ring.DoBatchRing, req *mimirpb.WriteRequest, keys []uint32, initialMetadataIndex int, remoteRequestContext func() context.Context, batchOptions ring.DoBatchOptions) error {
 	err := ring.DoBatchWithOptions(ctx, ring.WriteNoExtend, tenantRing, keys,
 		func(ingester ring.InstanceDesc, indexes []int) error {
+			d.addArtificialLatency()
 			req := req.ForIndexes(indexes, initialMetadataIndex)
 
 			h, err := d.ingesterPool.GetClientForInstance(ingester)
@@ -2049,6 +2235,7 @@ func (d *Distributor) sendWriteRequestToIngesters(ctx context.Context, tenantRin
 func (d *Distributor) sendWriteRequestToPartitions(ctx context.Context, tenantID string, tenantRing ring.DoBatchRing, req *mimirpb.WriteRequest, keys []uint32, initialMetadataIndex int, remoteRequestContext func() context.Context, batchOptions ring.DoBatchOptions) error {
 	err := ring.DoBatchWithOptions(ctx, ring.WriteNoExtend, tenantRing, keys,
 		func(partition ring.InstanceDesc, indexes []int) error {
+			d.addArtificialLatency()
 			req := req.ForIndexes(indexes, initialMetadataIndex)
 
 			// The partition ID is stored in the ring.InstanceDesc Id.
