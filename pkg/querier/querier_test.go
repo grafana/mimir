@@ -15,6 +15,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/user"
+	"github.com/grafana/mimir/pkg/util/limiter"
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
@@ -268,8 +269,14 @@ func TestQuerier_QueryableReturnsChunksOutsideQueriedRange(t *testing.T) {
 	var cfg Config
 	flagext.DefaultValues(&cfg)
 
+	ctx := user.InjectOrgID(context.Background(), "user-1")
+	memoryTracker := limiter.MemoryTrackerFromContextWithFallback(ctx)
+	ctx = limiter.AddMemoryTrackerToContext(ctx, memoryTracker)
+
 	// Mock distributor to return chunks containing samples outside the queried range.
-	distributor := &mockDistributor{}
+	distributor := &mockDistributor{
+		memoryConsumptionTracker: memoryTracker,
+	}
 	distributor.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(
 		client.CombinedQueryStreamResponse{
 			Chunkseries: []client.TimeSeriesChunk{
@@ -329,7 +336,6 @@ func TestQuerier_QueryableReturnsChunksOutsideQueriedRange(t *testing.T) {
 	queryable, _, _, _, err := New(cfg, overrides, distributor, nil, nil, logger, nil, planner)
 	require.NoError(t, err)
 
-	ctx := user.InjectOrgID(context.Background(), "user-1")
 	query, err := engine.NewRangeQuery(ctx, queryable, nil, `sum({__name__=~".+"})`, queryStart, queryEnd, queryStep)
 	require.NoError(t, err)
 
@@ -387,8 +393,14 @@ func TestBatchMergeChunks(t *testing.T) {
 	chunks21 = append(chunks21, c2...)
 	chunks21 = append(chunks21, c1...)
 
+	ctx := user.InjectOrgID(context.Background(), "user-1")
+	memoryTracker := limiter.MemoryTrackerFromContextWithFallback(ctx)
+	ctx = limiter.AddMemoryTrackerToContext(ctx, memoryTracker)
+
 	// Mock distributor to return chunks that need merging.
-	distributor := &mockDistributor{}
+	distributor := &mockDistributor{
+		memoryConsumptionTracker: memoryTracker,
+	}
 	distributor.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(
 		client.CombinedQueryStreamResponse{
 			Chunkseries: []client.TimeSeriesChunk{
@@ -417,7 +429,6 @@ func TestBatchMergeChunks(t *testing.T) {
 	queryable, _, _, _, err := New(cfg, overrides, distributor, nil, nil, logger, nil, planner)
 	require.NoError(t, err)
 
-	ctx := user.InjectOrgID(context.Background(), "user-1")
 	query, err := engine.NewRangeQuery(ctx, queryable, nil, `rate({__name__=~".+"}[10s])`, queryStart, queryEnd, queryStep)
 	require.NoError(t, err)
 
