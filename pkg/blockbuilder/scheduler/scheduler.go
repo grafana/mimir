@@ -313,12 +313,12 @@ func (s *partitionState) addPlannedJob(id string, spec schedulerpb.JobSpec) {
 	s.planned.advance(id, spec)
 }
 
-func (s *partitionState) completeJob(jobID string) {
-	j, ok := s.plannedJobsMap[jobID]
-	if !ok {
-		return
+func (s *partitionState) completeJob(jobID string) error {
+	if j, ok := s.plannedJobsMap[jobID]; !ok {
+		return errJobNotFound
+	} else {
+		j.complete = true
 	}
-	j.complete = true
 
 	// Now we both advance the committed offset and garbage collect completed
 	// jobs. As the active jobs list knows about all active jobs for this
@@ -331,6 +331,7 @@ func (s *partitionState) completeJob(jobID string) {
 		s.plannedJobs = s.plannedJobs[1:]
 		delete(s.plannedJobsMap, first.jobID)
 	}
+	return nil
 }
 
 // enqueuePendingJobsWorker is a worker method that enqueues pending jobs at a regular interval.
@@ -860,7 +861,9 @@ func (s *BlockBuilderScheduler) updateJob(key jobKey, workerID string, complete 
 			return fmt.Errorf("complete job: %w", err)
 		}
 
-		ps.completeJob(key.id)
+		if err := ps.completeJob(key.id); err != nil {
+			return fmt.Errorf("complete scheduler job: %w", err)
+		}
 		level.Info(logger).Log("msg", "completed job")
 	} else {
 		// It's an in-progress job whose lease we need to renew.
@@ -967,7 +970,9 @@ func (s *BlockBuilderScheduler) finalizeObservations() {
 			if obs.complete {
 				// Completed. Add it to the plan and mark it as such.
 				ps.addPlannedJob(obs.key.id, obs.spec)
-				ps.completeJob(obs.key.id)
+				if err := ps.completeJob(obs.key.id); err != nil {
+					panic(fmt.Sprintf("unable to complete previously planned job %s, %s", obs.key.id, err.Error()))
+				}
 			} else {
 				// An in-progress job that's part of our continuous coverage.
 				if err := s.jobs.importJob(obs.key, obs.workerID, obs.spec); err != nil {
