@@ -1701,8 +1701,9 @@ type requestState struct {
 	// If positive, it means that size of mimirpb.WriteRequest has been checked and added to inflightPushRequestsBytes.
 	writeRequestSize int64
 
+	requestStart  time.Time
 	requestErr    error
-	requestFinish func(error)
+	requestFinish func(time.Duration, error)
 }
 
 func (d *Distributor) StartPushRequest(ctx context.Context, httpgrpcRequestSize int64) (context.Context, error) {
@@ -1732,7 +1733,7 @@ func (d *Distributor) startPushRequest(ctx context.Context, httpgrpcRequestSize 
 		return ctx, rs, nil
 	}
 
-	requestFinish := func(err error) {}
+	requestFinish := func(duration time.Duration, err error) {}
 	if d.reactiveLimiter.getLimiter() != nil {
 		// Acquire a permit, blocking if needed
 		permit, err := d.reactiveLimiter.AcquirePermit(ctx)
@@ -1743,16 +1744,31 @@ func (d *Distributor) startPushRequest(ctx context.Context, httpgrpcRequestSize 
 			d.rejectedRequests.WithLabelValues(reasonDistributorMaxInflightPushRequests).Inc()
 			return ctx, nil, newReactiveLimiterExceededError(adaptivelimiter.ErrExceeded)
 		}
-		requestFinish = func(err error) {
+		requestFinish = func(duration time.Duration, err error) {
+			kv := make([]interface{}, 0, 10)
+			kv = append(kv, "msg", "request has been finished")
+			kv = append(kv, "duration", duration.String())
+			if err != nil {
+				kv = append(kv, "err", err.Error())
+			}
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				kv = append(kv, "ctx_err", ctxErr.Error())
+			}
 			if errors.Is(err, context.Canceled) {
 				permit.Drop()
+				kv = append(kv, "permit_action", "dropped")
 			} else {
 				permit.Record()
+				kv = append(kv, "permit_action", "recorded")
 			}
+			level.Info(d.log).Log(kv...)
 		}
 	}
 
-	rs = &requestState{requestFinish: requestFinish}
+	rs = &requestState{
+		requestStart:  time.Now(),
+		requestFinish: requestFinish,
+	}
 	cleanupInDefer := true
 
 	// Increment number of requests and bytes before doing the checks, so that we hit error if this request crosses the limits.
@@ -1844,7 +1860,7 @@ func (d *Distributor) cleanupAfterPushFinished(rs *requestState) {
 	if rs.writeRequestSize > 0 {
 		d.inflightPushRequestsBytes.Sub(rs.writeRequestSize)
 	}
-	rs.requestFinish(rs.requestErr)
+	rs.requestFinish(time.Since(rs.requestStart), rs.requestErr)
 }
 
 // limitsMiddleware checks for instance limits and rejects request if this instance cannot process it at the moment.
