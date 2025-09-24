@@ -25,19 +25,35 @@ const (
 type memoryTrackingSeriesSet struct {
 	storage.SeriesSet
 	memoryConsumptionTracker *MemoryConsumptionTracker
+	currentSeries            storage.Series
+	memoryDecreased          bool
 }
 
 func NewMemoryTrackingSeriesSet(embed storage.SeriesSet, memoryConsumptionTracker *MemoryConsumptionTracker) storage.SeriesSet {
-	return memoryTrackingSeriesSet{
+	return &memoryTrackingSeriesSet{
 		SeriesSet:                embed,
 		memoryConsumptionTracker: memoryConsumptionTracker,
 	}
 }
 
-func (m memoryTrackingSeriesSet) At() storage.Series {
+func (m *memoryTrackingSeriesSet) Next() bool {
+	// Reset tracking state when moving to next series
+	m.currentSeries = nil
+	m.memoryDecreased = false
+	return m.SeriesSet.Next()
+}
+
+func (m *memoryTrackingSeriesSet) At() storage.Series {
 	at := m.SeriesSet.At()
-	if m.memoryConsumptionTracker != nil {
-		defer m.memoryConsumptionTracker.DecreaseMemoryConsumptionForLabels(at.Labels())
+
+	// Only decrease memory once per series position
+	if m.memoryConsumptionTracker != nil && !m.memoryDecreased {
+		if m.currentSeries != at {
+			// New series at this position
+			m.currentSeries = at
+			m.memoryDecreased = true
+			defer m.memoryConsumptionTracker.DecreaseMemoryConsumptionForLabels(at.Labels())
+		}
 	}
 	return at
 }
