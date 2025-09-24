@@ -392,38 +392,36 @@ func (h *Head) resetWLReplayResources() {
 }
 
 type headMetrics struct {
-	activeAppenders            prometheus.Gauge
-	series                     prometheus.GaugeFunc
-	staleSeries                prometheus.GaugeFunc
-	seriesCreated              prometheus.Counter
-	seriesRemoved              prometheus.Counter
-	seriesNotFound             prometheus.Counter
-	chunks                     prometheus.Gauge
-	chunksCreated              prometheus.Counter
-	chunksRemoved              prometheus.Counter
-	gcDuration                 prometheus.Summary
-	samplesAppended            *prometheus.CounterVec
-	outOfOrderSamplesAppended  *prometheus.CounterVec
-	outOfBoundSamples          *prometheus.CounterVec
-	outOfOrderSamples          *prometheus.CounterVec
-	tooOldSamples              *prometheus.CounterVec
-	walTruncateDuration        prometheus.Summary
-	walCorruptionsTotal        prometheus.Counter
-	dataTotalReplayDuration    prometheus.Gauge
-	headTruncateFail           prometheus.Counter
-	headTruncateTotal          prometheus.Counter
-	checkpointDeleteFail       prometheus.Counter
-	checkpointDeleteTotal      prometheus.Counter
-	checkpointCreationFail     prometheus.Counter
-	checkpointCreationTotal    prometheus.Counter
-	mmapChunkCorruptionTotal   prometheus.Counter
-	snapshotReplayErrorTotal   prometheus.Counter // Will be either 0 or 1.
-	oooHistogram               prometheus.Histogram
-	mmapChunksTotal            prometheus.Counter
-	walReplayUnknownRefsTotal  *prometheus.CounterVec
-	wblReplayUnknownRefsTotal  *prometheus.CounterVec
-	headStatisticsLastUpdate   prometheus.Gauge
-	headStatisticsTimeToUpdate prometheus.Gauge
+	activeAppenders           prometheus.Gauge
+	series                    prometheus.GaugeFunc
+	staleSeries               prometheus.GaugeFunc
+	seriesCreated             prometheus.Counter
+	seriesRemoved             prometheus.Counter
+	seriesNotFound            prometheus.Counter
+	chunks                    prometheus.Gauge
+	chunksCreated             prometheus.Counter
+	chunksRemoved             prometheus.Counter
+	gcDuration                prometheus.Summary
+	samplesAppended           *prometheus.CounterVec
+	outOfOrderSamplesAppended *prometheus.CounterVec
+	outOfBoundSamples         *prometheus.CounterVec
+	outOfOrderSamples         *prometheus.CounterVec
+	tooOldSamples             *prometheus.CounterVec
+	walTruncateDuration       prometheus.Summary
+	walCorruptionsTotal       prometheus.Counter
+	dataTotalReplayDuration   prometheus.Gauge
+	headTruncateFail          prometheus.Counter
+	headTruncateTotal         prometheus.Counter
+	checkpointDeleteFail      prometheus.Counter
+	checkpointDeleteTotal     prometheus.Counter
+	checkpointCreationFail    prometheus.Counter
+	checkpointCreationTotal   prometheus.Counter
+	mmapChunkCorruptionTotal  prometheus.Counter
+	snapshotReplayErrorTotal  prometheus.Counter // Will be either 0 or 1.
+	oooHistogram              prometheus.Histogram
+	mmapChunksTotal           prometheus.Counter
+	walReplayUnknownRefsTotal *prometheus.CounterVec
+	wblReplayUnknownRefsTotal *prometheus.CounterVec
 }
 
 const (
@@ -569,14 +567,6 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 			Name: "prometheus_tsdb_wbl_replay_unknown_refs_total",
 			Help: "Total number of unknown series references encountered during WBL replay.",
 		}, []string{"type"}),
-		headStatisticsLastUpdate: prometheus.NewGauge(prometheus.GaugeOpts{
-			Name: "prometheus_tsdb_head_statistics_last_update_timestamp_seconds",
-			Help: "Timestamp of the last update of head statistics",
-		}),
-		headStatisticsTimeToUpdate: prometheus.NewGauge(prometheus.GaugeOpts{
-			Name: "prometheus_tsdb_head_statistics_time_to_update_seconds",
-			Help: "Time spent updating head statistics",
-		}),
 	}
 
 	if r != nil {
@@ -648,37 +638,12 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 			}),
 			m.walReplayUnknownRefsTotal,
 			m.wblReplayUnknownRefsTotal,
-			m.headStatisticsLastUpdate,
-			m.headStatisticsTimeToUpdate,
 		)
 	}
 	return m
 }
 
 func mmappedChunksDir(dir string) string { return filepath.Join(dir, "chunks_head") }
-
-// fullHeadStatistics embeds count-min sketches for the values of all labels in the head,
-// as well as a count of the number of series in the head. Together, they implement index.Statistics.
-// fullHeadStatistics represents the state of the head at a point in time and should be treated as immutable.
-// If/when updated statistics are required, a new fullHeadStatistics should be created.
-type fullHeadStatistics struct {
-	numSeries uint64
-	index.LabelsValuesSketches
-	lastUpdated time.Time
-}
-
-func newFullHeadStatistics(h *Head) *fullHeadStatistics {
-	return &fullHeadStatistics{
-		numSeries:            h.NumSeries(),
-		LabelsValuesSketches: h.postings.LabelsValuesSketches(),
-		lastUpdated:          time.Now(),
-	}
-}
-
-// TotalSeries returns the number of series in the head.
-func (fhs *fullHeadStatistics) TotalSeries() uint64 {
-	return fhs.numSeries
-}
 
 // HeadStats are the statistics for the head component of the DB.
 type HeadStats struct {
