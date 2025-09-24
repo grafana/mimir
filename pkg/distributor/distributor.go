@@ -1700,12 +1700,6 @@ type requestState struct {
 
 	// If positive, it means that size of mimirpb.WriteRequest has been checked and added to inflightPushRequestsBytes.
 	writeRequestSize int64
-
-	requestStart  time.Time
-	requestID     int64
-	requestCtx    context.Context
-	requestErr    error
-	requestFinish func(context.Context, time.Duration, error)
 }
 
 func (d *Distributor) StartPushRequest(ctx context.Context, httpgrpcRequestSize int64) (context.Context, error) {
@@ -1713,31 +1707,7 @@ func (d *Distributor) StartPushRequest(ctx context.Context, httpgrpcRequestSize 
 	return ctx, err
 }
 
-func (d *Distributor) PreparePushRequest(_ context.Context) (func(error), error) {
-	return nil, nil
-}
-
-// startPushRequest does limits checks at the beginning of Push request in distributor.
-// This can be called from different places, even multiple times for the same request:
-//
-//   - from gRPC Method limit check. This only applies if request arrived as httpgrpc.HTTPRequest, and request metadata
-//     in gRPC request provided enough information to do the check. Errors are not logged on this path, only returned to client.
-//
-//   - from Distributor's limitsMiddleware method. If error is returned, limitsMiddleware will wrap the error using util_log.DoNotLogError.
-//
-// This method creates requestState object and stores it in the context.
-// This object describes which checks were already performed on the request,
-// and which component is responsible for doing a cleanup.
-func (d *Distributor) startPushRequest(ctx context.Context, httpgrpcRequestSize int64) (_ context.Context, _ *requestState, returnErr error) {
-	// If requestState is already in context, it means that StartPushRequest already ran for this request.
-	rs, alreadyInContext := ctx.Value(requestStateKey).(*requestState)
-	if alreadyInContext {
-		return ctx, rs, nil
-	}
-
-	requestStart := time.Now()
-	requestID := rand.Int63()
-	requestFinish := func(ctx context.Context, duration time.Duration, err error) {}
+func (d *Distributor) PreparePushRequest(ctx context.Context) (func(error), error) {
 	if d.reactiveLimiter.getLimiter() != nil {
 		// Acquire a permit, blocking if needed
 		permit, err := d.reactiveLimiter.AcquirePermit(ctx)
@@ -1746,14 +1716,16 @@ func (d *Distributor) startPushRequest(ctx context.Context, httpgrpcRequestSize 
 			kv = append(kv, "msg", "it was impossible to acquire a reactive limiter permit during startPushRequest")
 			level.Debug(d.log).Log(kv...)
 			d.rejectedRequests.WithLabelValues(reasonDistributorMaxInflightPushRequests).Inc()
-			return ctx, nil, newReactiveLimiterExceededError(adaptivelimiter.ErrExceeded)
+			return nil, newReactiveLimiterExceededError(adaptivelimiter.ErrExceeded)
 		}
-		requestFinish = func(ctx context.Context, duration time.Duration, err error) {
+		requestStart := time.Now()
+		requestID := rand.Int63()
+		return func(err error) {
 			kv := make([]interface{}, 0, 14)
 			kv = append(kv, "msg", "request has been finished")
 			kv = append(kv, "request_id", requestID)
 			kv = append(kv, "started_at", requestStart.Format(time.RFC3339))
-			kv = append(kv, "duration", duration.String())
+			kv = append(kv, "duration", time.Since(requestStart).String())
 			if err != nil {
 				kv = append(kv, "err", err.Error())
 			}
@@ -1768,21 +1740,41 @@ func (d *Distributor) startPushRequest(ctx context.Context, httpgrpcRequestSize 
 				kv = append(kv, "permit_action", "recorded")
 			}
 			level.Info(d.log).Log(kv...)
-		}
+		}, nil
+	}
+	return nil, nil
+}
+
+// startPushRequest does limits checks at the beginning of Push request in distributor.
+// This can be called from different places, even multiple times for the same request:
+//
+//   - from gRPC Method limit check. This only applies if request arrived as httpgrpc.HTTPRequest, and request metadata
+//     in gRPC request provided enough information to do the check. Errors are not logged on this path, only returned to client.
+//
+//   - from Distributor's limitsMiddleware method. If error is returned, limitsMiddleware will wrap the error using util_log.DoNotLogError.
+//
+// This method creates requestState object and stores it in the context.
+// This object describes which checks were already performed on the request,
+// and which component is responsible for doing a cleanup.
+func (d *Distributor) startPushRequest(ctx context.Context, httpgrpcRequestSize int64) (context.Context, *requestState, error) {
+	if d.reactiveLimiter.getLimiter() != nil && !d.reactiveLimiter.CanAcquirePermit() {
+		d.rejectedRequests.WithLabelValues(reasonDistributorMaxInflightPushRequests).Inc()
+		return nil, nil, newReactiveLimiterExceededError(adaptivelimiter.ErrExceeded)
 	}
 
-	rs = &requestState{
-		requestStart:  requestStart,
-		requestID:     requestID,
-		requestCtx:    ctx,
-		requestFinish: requestFinish,
+	// If requestState is already in context, it means that StartPushRequest already ran for this request.
+	rs, alreadyInContext := ctx.Value(requestStateKey).(*requestState)
+	if alreadyInContext {
+		return ctx, rs, nil
 	}
+
+	rs = &requestState{}
+
 	cleanupInDefer := true
 
 	// Increment number of requests and bytes before doing the checks, so that we hit error if this request crosses the limits.
 	inflight := d.inflightPushRequests.Inc()
 	defer func() {
-		rs.requestErr = returnErr
 		if cleanupInDefer {
 			d.cleanupAfterPushFinished(rs)
 		}
@@ -1868,12 +1860,11 @@ func (d *Distributor) cleanupAfterPushFinished(rs *requestState) {
 	if rs.writeRequestSize > 0 {
 		d.inflightPushRequestsBytes.Sub(rs.writeRequestSize)
 	}
-	rs.requestFinish(rs.requestCtx, time.Since(rs.requestStart), rs.requestErr)
 }
 
 // limitsMiddleware checks for instance limits and rejects request if this instance cannot process it at the moment.
 func (d *Distributor) limitsMiddleware(next PushFunc) PushFunc {
-	return func(ctx context.Context, pushReq *Request) (returnErr error) {
+	return func(ctx context.Context, pushReq *Request) error {
 		// Make sure the distributor service and all its dependent services have been
 		// started. The following checks in this middleware depend on the runtime config
 		// service having been started.
@@ -1885,10 +1876,6 @@ func (d *Distributor) limitsMiddleware(next PushFunc) PushFunc {
 		if err != nil {
 			return middleware.DoNotLogError{Err: err}
 		}
-
-		defer func() {
-			rs.requestErr = returnErr
-		}()
 
 		rs.pushHandlerPerformsCleanup = true
 		// Decrement counter after all ingester calls have finished or been cancelled.
@@ -1978,6 +1965,13 @@ func (d *Distributor) handlePushError(ctx context.Context, pushErr error) error 
 }
 
 func (d *Distributor) addArtificialLatency() {
+	if d.latency == nil {
+		return
+	}
+	if time.Since(d.latency.startTime) >= d.latency.duration {
+		d.latency = nil
+		return
+	}
 	d.latency.add(d.log)
 }
 
@@ -2104,11 +2098,9 @@ func (d *Distributor) push(ctx context.Context, pushReq *Request) error {
 // The input cleanup function is guaranteed to be called after all requests to all backends have completed.
 func (d *Distributor) sendWriteRequestToBackends(ctx context.Context, tenantID string, req *mimirpb.WriteRequest, keys []uint32, initialMetadataIndex int, ingestersSubring, partitionsSubring ring.DoBatchRing, cleanup func()) error {
 	var (
-		wg             = sync.WaitGroup{}
-		partitionsErr  error
-		ingestersErr   error
-		startTime      = time.Now()
-		originalCtxErr = ctx.Err()
+		wg            = sync.WaitGroup{}
+		partitionsErr error
+		ingestersErr  error
 	)
 
 	// Ensure at least one ring has been provided.
@@ -2153,20 +2145,12 @@ func (d *Distributor) sendWriteRequestToBackends(ctx context.Context, tenantID s
 		cleanup()
 
 		// All requests have completed, so it's now safe to cancel the requests context to release resources.
-		remoteCtx, cancel := remoteRequestContextAndCancel()
+		_, cancel := remoteRequestContextAndCancel()
 		cancel()
 		if partitionsRequestContextAndCancel != nil {
 			_, cancel = partitionsRequestContextAndCancel()
 			cancel()
 		}
-		var startedAt time.Time
-		requestID := int64(-1)
-		rs, ok := ctx.Value(requestStateKey).(*requestState)
-		if ok {
-			startedAt = rs.requestStart
-			requestID = rs.requestID
-		}
-		level.Info(d.log).Log("msg", "sendWriteRequestToBackends executed", "request_id", requestID, "started_at", startedAt.Format(time.RFC3339Nano), "current_duration", time.Since(startedAt), "push_started_at", startTime.Format(time.RFC3339Nano), "push_duration", time.Since(startTime), "remote_ctx_err", remoteCtx.Err(), "ctx_err_start", originalCtxErr, "ctx_err_end", ctx.Err())
 	}
 
 	batchOptions := ring.DoBatchOptions{
