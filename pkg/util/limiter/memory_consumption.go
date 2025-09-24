@@ -13,7 +13,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
-	"github.com/prometheus/prometheus/util/annotations"
 )
 
 type contextKey int
@@ -24,35 +23,23 @@ const (
 
 // memoryTrackingSeriesSet is storage.SeriesSet that tracks the wrapped SeriesSet memory consumption.
 type memoryTrackingSeriesSet struct {
-	wrapper                  storage.SeriesSet
+	storage.SeriesSet
 	memoryConsumptionTracker *MemoryConsumptionTracker
 }
 
-func NewMemoryTrackingSeriesSet(wrapper storage.SeriesSet, memoryConsumptionTracker *MemoryConsumptionTracker) storage.SeriesSet {
+func NewMemoryTrackingSeriesSet(embed storage.SeriesSet, memoryConsumptionTracker *MemoryConsumptionTracker) storage.SeriesSet {
 	return memoryTrackingSeriesSet{
-		wrapper:                  wrapper,
+		SeriesSet:                embed,
 		memoryConsumptionTracker: memoryConsumptionTracker,
 	}
 }
 
-func (m memoryTrackingSeriesSet) Next() bool {
-	return m.wrapper.Next()
-}
-
 func (m memoryTrackingSeriesSet) At() storage.Series {
-	at := m.wrapper.At()
+	at := m.SeriesSet.At()
 	if m.memoryConsumptionTracker != nil {
 		defer m.memoryConsumptionTracker.DecreaseMemoryConsumptionForLabels(at.Labels())
 	}
 	return at
-}
-
-func (m memoryTrackingSeriesSet) Err() error {
-	return m.wrapper.Err()
-}
-
-func (m memoryTrackingSeriesSet) Warnings() annotations.Annotations {
-	return m.wrapper.Warnings()
 }
 
 // MemoryTrackerFromContextWithFallback returns a MemoryConsumptionTracker that has been added to this
