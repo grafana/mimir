@@ -18,7 +18,7 @@ type Metrics struct {
 
 func NewMetrics(reg prometheus.Registerer) Metrics {
 	// We want a scale of 2 so we represent better ratios between 0 and 1. 2^(2^-n) for n=2 gives us 1.189207115.
-	// Prometheus picks the smallest scale such that it's factor is still smaller than our constant, so we choose a value slightly higher than 1.89207115.
+	// Prometheus picks the smallest scale such that its factor is still smaller than our constant, so we choose a value slightly higher than 1.189207115.
 	const ratioHistogramBucketFactor = 1.19
 
 	return Metrics{
