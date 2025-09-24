@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/grafana/mimir/pkg/util/limiter"
+
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/stretchr/testify/require"
