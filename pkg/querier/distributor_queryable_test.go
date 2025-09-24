@@ -940,13 +940,13 @@ func (m *mockDistributor) QueryStream(ctx context.Context, queryMetrics *stats.Q
 	response := args.Get(0).(client.CombinedQueryStreamResponse)
 	// Simulate how memoryConsumptionTracker track memory utilisation as we process response from ingester
 	for _, ts := range response.Timeseries {
-		m.memoryConsumptionTracker.IncreaseMemoryConsumptionForLabels(mimirpb.FromLabelAdaptersToLabels(ts.Labels))
+		m.memoryConsumptionTracker.IncreaseMemoryConsumptionForLabels(mimirpb.FromLabelAdaptersToLabels(ts.Labels)) //nolint:errcheck
 	}
 	for _, cs := range response.Chunkseries {
-		m.memoryConsumptionTracker.IncreaseMemoryConsumptionForLabels(mimirpb.FromLabelAdaptersToLabels(cs.Labels))
+		m.memoryConsumptionTracker.IncreaseMemoryConsumptionForLabels(mimirpb.FromLabelAdaptersToLabels(cs.Labels)) //nolint:errcheck
 	}
 	for _, ss := range response.StreamingSeries {
-		m.memoryConsumptionTracker.IncreaseMemoryConsumptionForLabels(ss.Labels)
+		m.memoryConsumptionTracker.IncreaseMemoryConsumptionForLabels(ss.Labels) //nolint:errcheck
 	}
 	return response, args.Error(1)
 }
