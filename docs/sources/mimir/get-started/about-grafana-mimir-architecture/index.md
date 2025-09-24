@@ -11,16 +11,19 @@ weight: 5
 
 # Grafana Mimir architecture
 
-Grafana Mimir has a microservices-based architecture.
-The system has multiple horizontally scalable microservices that can run separately and in parallel.
-Grafana Mimir microservices are called components.
+Grafana Mimir has a microservices-based architecture. The system has multiple horizontally scalable microservices that can run separately and in parallel. Grafana Mimir microservices are called components.
 
-Grafana Mimir's design compiles the code for all components into a single binary.
-The `-target` parameter controls which component(s) that single binary will behave as.
+Grafana Mimir's design compiles the code for all components into a single binary. The `-target` parameter controls which components that single binary behaves as.
 
-To get started easily, run Grafana Mimir in [monolithic mode](../../references/architecture/deployment-modes/#monolithic-mode) with all components running simultaneously in one process, or in [read-write mode](../../references/architecture/deployment-modes/#read-write-mode), which groups components into _read_, _write_, and _backend_ paths.
+To get started, you can run Grafana Mimir in [monolithic mode](../../references/architecture/deployment-modes/#monolithic-mode) with all components running simultaneously in one process. For more information, refer to [Deployment modes](../../references/architecture/deployment-modes/).
 
-For more information, refer to [Deployment modes](../../references/architecture/deployment-modes/).
+Starting with version 3.0, you can deploy Grafana Mimir using the following architectures:
+
+- Ingest storage (default): This architecture uses Kafka as a central pipeline to decouple read and write operations. Refer to [About ingest storage architecture](about-ingest-storage-architecture/).
+- Classic: This architecture uses stateful ingesters with local write-ahead logs to manage both the ingestion of new data and serving recent data for queries. Refer to [About classic architecture](about-classic-architecture/).
+
+{{< admonition type="note" >}}
+Classic architecture is still supported in Grafana Mimir version 3.0. However, this architecture is set to be deprecated in a future release. As a best practice, use ingest storage architecture when setting up a new Grafana Mimir deployment.{{< /admonition >}}
 
 ## Grafana Mimir components
 
@@ -65,7 +68,11 @@ For more information, refer to [Compactor](../../references/architecture/compone
 
 Queries coming into Grafana Mimir arrive at the [query-frontend](../../references/architecture/components/query-frontend/). The query-frontend then splits queries over longer time ranges into multiple, smaller queries.
 
-The query-frontend next checks the results cache. If the result of a query has been cached, the query-frontend returns the cached results. Queries that cannot be answered from the results cache are submitted to the query-scheduler component which maintains an in-memory queue of requests.
+The query-frontend next checks the results cache. If the result of a query has been cached, the query-frontend returns the cached results. Queries that cannot be answered from the results cache are put into an in-memory queue within the query-frontend.
+
+{{< admonition type="note" >}}
+If you run the optional [query-scheduler](../../references/architecture/components/query-scheduler/) component, the query-schedule maintains the queue instead of the query-frontend.
+{{< /admonition >}}
 
 The queriers act as workers, pulling queries from the queue.
 
@@ -78,7 +85,7 @@ After the querier executes the query, it returns the results to the query-fronte
 Prometheus instances scrape samples from various targets and push them to Grafana Mimir by using Prometheus’ [remote write API](https://prometheus.io/docs/prometheus/latest/storage/#remote-storage-integrations).
 The remote write API emits batched [Snappy](https://google.github.io/snappy/)-compressed [Protocol Buffer](https://protobuf.dev/) messages inside the body of an HTTP `PUT` request.
 
-Mimir requires that each HTTP request has a header that specifies a tenant ID for the request. Request [authentication and authorization](../../manage/secure/authentication-and-authorization/) are handled by an external reverse proxy.
+Grafana Mimir requires that each HTTP request has a header that specifies a tenant ID for the request. Request [authentication and authorization](../../manage/secure/authentication-and-authorization/) are handled by an external reverse proxy.
 
 Incoming samples (writes from Prometheus) are handled by the [distributor](../../references/architecture/components/distributor/), and incoming reads (PromQL queries) are handled by the [query frontend](../../references/architecture/components/query-frontend/).
 
