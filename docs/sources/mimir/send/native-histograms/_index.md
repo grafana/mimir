@@ -343,7 +343,23 @@ where the `schema` is chosen as above.
 
 ## Limit the number of buckets
 
-The server scraping or receiving native histograms over remote write may limit the number of native histogram buckets it accepts. The server may reject or downscale (reduce resolution and merge adjacent buckets). Even if that wasn't the case, storing and emitting potentially unlimited number of buckets isn't practical.
+Emitting and storing potentially unlimited number of buckets isn't practical as higher and higher resolution increases the storage costs with diminishing returns.
+
+There are different places where the number of buckets may be limited.
+
+### Limit the number of buckets in Mimir or Grafana Cloud
+
+To limit the number of buckets in _all_ native histograms ingested by Mimir or Grafana Cloud, set the tenant limit [`max_native_histogram_buckets`](../../configure/configure-native-histograms-ingestion/#configure-native-histograms-per-tenant) in Mimir or submit a support request for Grafana Cloud.
+
+Native histograms that have a higher bucket count than the limit will be converted to a native histogram with a lower resolution by merging buckets to reduce the number of buckets. In some rare cases, if the buckets are too widely spread out, merging them may not be possible and the native histogram will be rejected.
+
+### Limit the number of buckets in Prometheus
+
+To limit the number of buckets in native histograms scraped by a [scrape configuration](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#scrape_config), set the parameter `native_histogram_bucket_limit` in the scrape configuration.
+
+Native histograms that have a higher bucket count than the limit will be converted to a native histogram with a lower resolution by merging buckets to reduce the number of buckets. In some rare cases, if the buckets are too widely spread out, merging them may not be possible and the native histogram will be rejected.
+
+### Limit the number of buckets in application instrumentation
 
 The instrumentation libraries of Prometheus have automation to keep the number of buckets down, provided that the maximum bucket number option is used, such as `NativeHistogramMaxBucketNumber` in Go.
 
