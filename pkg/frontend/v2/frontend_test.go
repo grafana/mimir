@@ -48,6 +48,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerdiscovery"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerpb"
+	"github.com/grafana/mimir/pkg/util/grpcutil"
 	"github.com/grafana/mimir/pkg/util/httpgrpcutil"
 	utiltest "github.com/grafana/mimir/pkg/util/test"
 )
@@ -1397,6 +1398,151 @@ func (l limits) QueryIngestersWithin(string) time.Duration {
 	return l.queryIngestersWithin
 }
 
+func TestFrontendPriorityIntegration(t *testing.T) {
+	cfg := Config{
+		Priority: querymiddleware.PriorityConfig{Enabled: true},
+	}
+
+	// Create a proper frontend instance for priority assignment testing only
+	priorityFrontend := &Frontend{
+		cfg:              cfg,
+		log:              log.NewNopLogger(),
+		priorityAssigner: querymiddleware.NewPriorityAssigner(cfg.Priority, log.NewNopLogger()),
+	}
+
+	// Create a frontend instance for integration testing
+	integrationFrontend := &Frontend{
+		Service:          services.NewIdleService(nil, nil),
+		cfg:              cfg,
+		log:              log.NewNopLogger(),
+		priorityAssigner: querymiddleware.NewPriorityAssigner(cfg.Priority, log.NewNopLogger()),
+	}
+	// Start the service so State() returns Running
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), integrationFrontend))
+	defer func() {
+		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), integrationFrontend))
+	}()
+
+	t.Run("ruler requests get high priority", func(t *testing.T) {
+		req := &httpgrpc.HTTPRequest{
+			Method: "GET",
+			Url:    "/api/v1/query?query=up",
+			Headers: []*httpgrpc.Header{
+				{Key: "User-Agent", Values: []string{"mimir-ruler/2.11.0"}},
+			},
+		}
+
+		// Convert headers
+		headers := make(map[string]string)
+		for _, header := range req.Headers {
+			if len(header.Values) > 0 {
+				headers[header.Key] = header.Values[0]
+			}
+		}
+
+		ctx := priorityFrontend.priorityAssigner.AssignPriorityLevel(context.Background(), req.Method, req.Url, headers)
+		level := grpcutil.GetPriorityLevel(ctx)
+		assert.GreaterOrEqual(t, level, 400)
+		assert.Less(t, level, 500)
+	})
+
+	t.Run("dashboard requests get medium priority", func(t *testing.T) {
+		req := &httpgrpc.HTTPRequest{
+			Method: "GET",
+			Url:    "/api/v1/query?query=up",
+			Headers: []*httpgrpc.Header{
+				{Key: "User-Agent", Values: []string{"Grafana/8.0.0"}},
+			},
+		}
+
+		headers := make(map[string]string)
+		for _, header := range req.Headers {
+			if len(header.Values) > 0 {
+				headers[header.Key] = header.Values[0]
+			}
+		}
+
+		ctx := priorityFrontend.priorityAssigner.AssignPriorityLevel(context.Background(), req.Method, req.Url, headers)
+		level := grpcutil.GetPriorityLevel(ctx)
+		assert.GreaterOrEqual(t, level, 300)
+		assert.Less(t, level, 400)
+	})
+
+	// End-to-end integration tests that ensure the priority assignment works
+	// through the actual createNewHTTPRequest and createNewProtobufRequest functions
+	t.Run("createNewHTTPRequest integrates priority assignment", func(t *testing.T) {
+		req := &httpgrpc.HTTPRequest{
+			Method: "GET",
+			Url:    "/api/v1/query?query=up",
+			Headers: []*httpgrpc.Header{
+				{Key: "User-Agent", Values: []string{"mimir-ruler/2.11.0"}},
+			},
+		}
+
+		ctx := user.InjectOrgID(context.Background(), "test")
+		_, newCtx, cancel, err := integrationFrontend.createNewHTTPRequest(ctx, req)
+		require.NoError(t, err)
+		defer cancel(nil)
+
+		// Verify priority was assigned to the context
+		level := grpcutil.GetPriorityLevel(newCtx)
+		assert.GreaterOrEqual(t, level, 400, "Ruler requests should get VeryHigh priority")
+		assert.Less(t, level, 500)
+	})
+
+	t.Run("createNewProtobufRequest does not assign priority", func(t *testing.T) {
+		// Create a frontend without priority assignment enabled for this test
+		protobufFrontend := &Frontend{
+			Service: services.NewIdleService(nil, nil),
+			cfg:     Config{Priority: querymiddleware.PriorityConfig{Enabled: false}},
+			log:     log.NewNopLogger(),
+		}
+		require.NoError(t, services.StartAndAwaitRunning(context.Background(), protobufFrontend))
+		defer func() {
+			require.NoError(t, services.StopAndAwaitTerminated(context.Background(), protobufFrontend))
+		}()
+
+		ctx := user.InjectOrgID(context.Background(), "test-protobuf")
+		_, newCtx, cancel, err := protobufFrontend.createNewProtobufRequest(ctx)
+		require.NoError(t, err)
+		defer cancel(nil)
+
+		// Verify no priority was assigned (should use default Medium priority)
+		level := grpcutil.GetPriorityLevel(newCtx)
+		assert.Equal(t, 200, level, "Protobuf requests should use default Medium priority when no priority assignment is made")
+	})
+
+	t.Run("createNewHTTPRequest handles nil priority assigner gracefully", func(t *testing.T) {
+		frontendWithoutPriority := &Frontend{
+			Service:          services.NewIdleService(nil, nil),
+			cfg:              Config{},
+			log:              log.NewNopLogger(),
+			priorityAssigner: nil,
+		}
+		require.NoError(t, services.StartAndAwaitRunning(context.Background(), frontendWithoutPriority))
+		defer func() {
+			require.NoError(t, services.StopAndAwaitTerminated(context.Background(), frontendWithoutPriority))
+		}()
+
+		req := &httpgrpc.HTTPRequest{
+			Method: "GET",
+			Url:    "/api/v1/query?query=up",
+			Headers: []*httpgrpc.Header{
+				{Key: "User-Agent", Values: []string{"mimir-ruler/2.11.0"}},
+			},
+		}
+
+		ctx := user.InjectOrgID(context.Background(), "test")
+		_, newCtx, cancel, err := frontendWithoutPriority.createNewHTTPRequest(ctx, req)
+		require.NoError(t, err)
+		defer cancel(nil)
+
+		// Should not panic and should have default Medium priority
+		level := grpcutil.GetPriorityLevel(newCtx)
+		assert.Equal(t, 200, level, "Should have default Medium priority when priority assigner is nil")
+	})
+}
+
 func newStringMessage(s string) *frontendv2pb.QueryResultStreamRequest {
 	return &frontendv2pb.QueryResultStreamRequest{
 		Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
@@ -1657,3 +1803,4 @@ func TestQueryDecoding(t *testing.T) {
 func newTestCodec() querymiddleware.Codec {
 	return querymiddleware.NewCodec(prometheus.NewPedanticRegistry(), 0*time.Minute, "json", nil, &api.ConsistencyLevelInjector{})
 }
+

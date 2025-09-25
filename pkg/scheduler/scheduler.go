@@ -43,6 +43,7 @@ import (
 	"github.com/grafana/mimir/pkg/scheduler/schedulerpb"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/grpcencoding/s2"
+	utilgrpcutil "github.com/grafana/mimir/pkg/util/grpcutil"
 	"github.com/grafana/mimir/pkg/util/httpgrpcutil"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -611,6 +612,9 @@ func (s *Scheduler) forwardErrorToFrontend(ctx context.Context, req *queue.Sched
 		level.Warn(s.log).Log("msg", "failed to create gRPC options for the connection to frontend to report error", "frontend", req.FrontendAddr, "err", err, "requestErr", requestErr)
 		return
 	}
+
+	// Add priority interceptor
+	opts = append(opts, grpc.WithUnaryInterceptor(utilgrpcutil.PriorityClientInterceptor(s.log)))
 
 	// nolint:staticcheck // grpc.DialContext() has been deprecated; we'll address it before upgrading to gRPC 2.
 	conn, err := grpc.DialContext(ctx, req.FrontendAddr, opts...)

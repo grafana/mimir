@@ -43,6 +43,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/ruler/rulespb"
 	"github.com/grafana/mimir/pkg/storage/series"
+	"github.com/grafana/mimir/pkg/util/grpcutil"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/test"
 )
@@ -904,4 +905,31 @@ func mustStatusWithDetails(code codes.Code, cause mimirpb.ErrorCause) *status.St
 		panic(err)
 	}
 	return s
+}
+
+func TestSetRulerPriorityContext(t *testing.T) {
+	ctx := setRulerPriorityContext(context.Background())
+	
+	level := grpcutil.GetPriorityLevel(ctx)
+	assert.GreaterOrEqual(t, level, 400) // VeryHigh priority base
+	assert.Less(t, level, 500)           // Within VeryHigh range
+}
+
+func TestMetricsQueryFuncWithPriority(t *testing.T) {
+	queries := prometheus.NewCounterVec(prometheus.CounterOpts{Name: "test_queries"}, []string{"user"})
+	failedQueries := prometheus.NewCounterVec(prometheus.CounterOpts{Name: "test_failed"}, []string{"user"})
+	
+	mockQueryFunc := func(ctx context.Context, query string, ts time.Time) (promql.Vector, error) {
+		// Verify that ruler priority context was set
+		level := grpcutil.GetPriorityLevel(ctx)
+		assert.GreaterOrEqual(t, level, 400)
+		assert.Less(t, level, 500)
+		
+		return promql.Vector{}, nil
+	}
+	
+	wrappedFunc := MetricsQueryFunc(mockQueryFunc, "test-user", queries, failedQueries, true)
+	
+	_, err := wrappedFunc(context.Background(), "up", time.Now())
+	require.NoError(t, err)
 }

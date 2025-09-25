@@ -197,7 +197,7 @@ func newIngesterMetrics(
 		utilizationLimitedRequests: promauto.With(r).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_ingester_utilization_limited_read_requests_total",
 			Help: "Total number of times read requests have been rejected due to utilization based limiting.",
-		}, []string{"reason"}),
+		}, []string{"reason", "priority"}),
 
 		ownedSeriesPerUser: promauto.With(r).NewGaugeVec(prometheus.GaugeOpts{
 			Name: "cortex_ingester_owned_series",
@@ -409,13 +409,18 @@ func newIngesterMetrics(
 		}, []string{"outcome", "user"}),
 	}
 
-	// Initialize expected rejected request labels
-	m.rejected.WithLabelValues(reasonIngesterMaxIngestionRate)
-	m.rejected.WithLabelValues(reasonIngesterMaxTenants)
-	m.rejected.WithLabelValues(reasonIngesterMaxInMemorySeries)
-	m.rejected.WithLabelValues(reasonIngesterMaxInflightPushRequests)
-	m.rejected.WithLabelValues(reasonIngesterMaxInflightPushRequestsBytes)
-	m.rejected.WithLabelValues(reasonIngesterMaxInflightReadRequests)
+	// Initialize expected rejected request labels 
+	reasons := []string{
+		reasonIngesterMaxIngestionRate,
+		reasonIngesterMaxTenants, 
+		reasonIngesterMaxInMemorySeries,
+		reasonIngesterMaxInflightPushRequests,
+		reasonIngesterMaxInflightPushRequestsBytes,
+		reasonIngesterMaxInflightReadRequests,
+	}
+	for _, reason := range reasons {
+		m.rejected.WithLabelValues(reason)
+	}
 
 	return m
 }

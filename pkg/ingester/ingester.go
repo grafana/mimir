@@ -69,6 +69,7 @@ import (
 	"github.com/grafana/mimir/pkg/usagestats"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/globalerror"
+	utilgrpcutil "github.com/grafana/mimir/pkg/util/grpcutil"
 	"github.com/grafana/mimir/pkg/util/limiter"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	util_math "github.com/grafana/mimir/pkg/util/math"
@@ -1069,8 +1070,9 @@ func (i *Ingester) StartPushRequest(ctx context.Context, reqSize int64) (context
 // PreparePushRequest implements pushReceiver.
 func (i *Ingester) PreparePushRequest(ctx context.Context) (finishFn func(error), err error) {
 	if i.reactiveLimiter.push != nil {
-		// Acquire a permit, blocking if needed
-		permit, err := i.reactiveLimiter.push.AcquirePermit(ctx)
+		// Extract priority from context and use priority-aware permit acquisition
+		priority := utilgrpcutil.GetPriorityFromContext(ctx)
+		permit, err := i.reactiveLimiter.push.AcquirePermitWithPriority(ctx, priority)
 		if err != nil {
 			i.metrics.rejected.WithLabelValues(reasonIngesterMaxInflightPushRequests).Inc()
 			return nil, newReactiveLimiterExceededError(err)
@@ -1131,9 +1133,12 @@ func (i *Ingester) startPushRequest(ctx context.Context, reqSize int64) (context
 	}
 	ctx = context.WithValue(ctx, pushReqCtxKey, st)
 
-	if i.reactiveLimiter.push != nil && !i.reactiveLimiter.push.CanAcquirePermit() {
-		i.metrics.rejected.WithLabelValues(reasonIngesterMaxInflightPushRequests).Inc()
-		return nil, false, newReactiveLimiterExceededError(reactivelimiter.ErrExceeded)
+	if i.reactiveLimiter.push != nil {
+		priority := utilgrpcutil.GetPriorityFromContext(ctx)
+		if !i.reactiveLimiter.push.CanAcquirePermitWithPriority(priority) {
+			i.metrics.rejected.WithLabelValues(reasonIngesterMaxInflightPushRequests).Inc()
+			return nil, false, newReactiveLimiterExceededError(reactivelimiter.ErrExceeded)
+		}
 	}
 
 	inflight := i.inflightPushRequests.Inc()
@@ -1146,7 +1151,7 @@ func (i *Ingester) startPushRequest(ctx context.Context, reqSize int64) (context
 		rejectEqualInflightBytes = true // if inflightBytes == limit, reject new request
 	}
 
-	instanceLimitsErr := i.checkInstanceLimits(inflight, inflightBytes, rejectEqualInflightBytes)
+	instanceLimitsErr := i.checkInstanceLimits(ctx, inflight, inflightBytes, rejectEqualInflightBytes)
 	if instanceLimitsErr == nil {
 		// In this case a pull request has been successfully started, and we return
 		// the context enriched with the corresponding pushRequestState object.
@@ -1161,7 +1166,7 @@ func (i *Ingester) startPushRequest(ctx context.Context, reqSize int64) (context
 	return nil, false, instanceLimitsErr
 }
 
-func (i *Ingester) checkInstanceLimits(inflight int64, inflightBytes int64, rejectEqualInflightBytes bool) error {
+func (i *Ingester) checkInstanceLimits(ctx context.Context, inflight int64, inflightBytes int64, rejectEqualInflightBytes bool) error {
 	il := i.getInstanceLimits()
 	if il == nil {
 		return nil
@@ -1819,16 +1824,19 @@ func (i *Ingester) StartReadRequest(ctx context.Context) (resultCtx context.Cont
 		return nil, err
 	}
 
-	if err := i.checkReadOverloaded(); err != nil {
+	if err := i.checkReadOverloaded(ctx); err != nil {
 		return nil, err
 	}
 
 	// When this is not the only replica handling a request, limit reads for overloads
 	if !client.IsOnlyReplicaContext(ctx) {
 		// Check that a permit can be later acquired
-		if i.reactiveLimiter.read != nil && !i.reactiveLimiter.read.CanAcquirePermit() {
-			i.metrics.rejected.WithLabelValues(reasonIngesterMaxInflightReadRequests).Inc()
-			return nil, newReactiveLimiterExceededError(reactivelimiter.ErrExceeded)
+		if i.reactiveLimiter.read != nil {
+			priority := utilgrpcutil.GetPriorityFromContext(ctx)
+			if !i.reactiveLimiter.read.CanAcquirePermitWithPriority(priority) {
+				i.metrics.rejected.WithLabelValues(reasonIngesterMaxInflightReadRequests).Inc()
+				return nil, newReactiveLimiterExceededError(reactivelimiter.ErrExceeded)
+			}
 		}
 		finish, err := i.circuitBreaker.tryAcquireReadPermit()
 		if err != nil {
@@ -1856,7 +1864,8 @@ func (i *Ingester) PrepareReadRequest(ctx context.Context) (finishFn func(error)
 	// When this is not the only replica handling a request, limit reads for overloads
 	if !client.IsOnlyReplicaContext(ctx) && i.reactiveLimiter.read != nil {
 		// Acquire a permit, blocking if needed
-		permit, err := i.reactiveLimiter.read.AcquirePermit(ctx)
+		priority := utilgrpcutil.GetPriorityFromContext(ctx)
+		permit, err := i.reactiveLimiter.read.AcquirePermitWithPriority(ctx, priority)
 		if err != nil {
 			i.metrics.rejected.WithLabelValues(reasonIngesterMaxInflightReadRequests).Inc()
 			return nil, newReactiveLimiterExceededError(err)
@@ -4378,24 +4387,31 @@ func (i *Ingester) UserRegistryHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 // checkReadOverloaded checks whether the ingester read path is overloaded wrt. CPU and/or memory.
-func (i *Ingester) checkReadOverloaded() error {
+func (i *Ingester) checkReadOverloaded(ctx context.Context) error {
 	if i.utilizationBasedLimiter == nil {
 		return nil
 	}
 
-	reason := i.utilizationBasedLimiter.LimitingReason()
-	if reason == "" {
-		return nil
+	// Extract priority from context (set by priority interceptors)
+	priority := utilgrpcutil.GetPriorityFromContext(ctx)
+	
+	// Use priority-aware rejection
+	if i.utilizationBasedLimiter.ShouldRejectRequest(priority) {
+		reason := i.utilizationBasedLimiter.LimitingReason()
+		priorityLabel := utilgrpcutil.GetPriorityLabel(priority)
+		i.metrics.utilizationLimitedRequests.WithLabelValues(reason, priorityLabel).Inc()
+		return errTooBusy
 	}
 
-	i.metrics.utilizationLimitedRequests.WithLabelValues(reason).Inc()
-	return errTooBusy
+	return nil
 }
 
 type utilizationBasedLimiter interface {
 	services.Service
 
 	LimitingReason() string
+	GetRejectionRate() float64
+	ShouldRejectRequest(priority int) bool
 }
 
 func (i *Ingester) enforceReadConsistency(ctx context.Context, tenantID string) error {

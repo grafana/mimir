@@ -73,6 +73,9 @@ type Config struct {
 	QuerySchedulerDiscovery schedulerdiscovery.Config `yaml:"-"`
 	LookBackDelta           time.Duration             `yaml:"-"`
 	QueryStoreAfter         time.Duration             `yaml:"-"`
+
+	// Add priority configuration
+	Priority querymiddleware.PriorityConfig `yaml:"priority"`
 }
 
 func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
@@ -88,6 +91,8 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 
 	cfg.GRPCClientConfig.CustomCompressors = []string{s2.Name}
 	cfg.GRPCClientConfig.RegisterFlagsWithPrefix("query-frontend.grpc-client-config", f)
+
+	f.BoolVar(&cfg.Priority.Enabled, "query-frontend.priority-levels.enabled", false, "Enable priority level assignment and propagation")
 }
 
 func (cfg *Config) Validate() error {
@@ -126,6 +131,9 @@ type Frontend struct {
 	schedulerWorkersWatcher *services.FailureWatcher
 	requests                *requestsInProgress
 	inflightRequestCount    prometheus.Gauge
+
+	// Add priority assigner
+	priorityAssigner *querymiddleware.PriorityAssigner
 }
 
 // queryResultWithBody contains the result for a query and optionally a streaming version of the response body.
@@ -205,6 +213,7 @@ func NewFrontend(cfg Config, limits Limits, log log.Logger, reg prometheus.Regis
 		schedulerWorkers:        schedulerWorkers,
 		schedulerWorkersWatcher: services.NewFailureWatcher(),
 		requests:                newRequestsInProgress(),
+		priorityAssigner:        querymiddleware.NewPriorityAssigner(cfg.Priority, log),
 		inflightRequestCount: promauto.With(reg).NewGauge(prometheus.GaugeOpts{
 			Name: "cortex_query_frontend_queries_in_progress",
 			Help: "Number of queries in progress handled by this frontend.",
@@ -245,7 +254,8 @@ func (f *Frontend) stopping(_ error) error {
 	return errors.Wrap(services.StopAndAwaitTerminated(context.Background(), f.schedulerWorkers), "failed to stop frontend scheduler workers")
 }
 
-func (f *Frontend) createNewRequest(ctx context.Context) (*frontendRequest, context.Context, context.CancelCauseFunc, error) {
+// createNewRequestInternal contains the shared logic for creating frontend requests
+func (f *Frontend) createNewRequestInternal(ctx context.Context) (*frontendRequest, context.Context, context.CancelCauseFunc, error) {
 	if s := f.State(); s != services.Running {
 		// This should never happen: requests should be blocked by frontendRunningRoundTripper before they get here.
 		return nil, nil, nil, fmt.Errorf("frontend not running: %v", s)
@@ -276,9 +286,30 @@ func (f *Frontend) createNewRequest(ctx context.Context) (*frontendRequest, cont
 	return freq, ctx, cancel, nil
 }
 
+// createNewHTTPRequest creates a new frontend request with priority assignment for HTTP/gRPC requests
+func (f *Frontend) createNewHTTPRequest(ctx context.Context, httpRequest *httpgrpc.HTTPRequest) (*frontendRequest, context.Context, context.CancelCauseFunc, error) {
+	// Apply priority assignment for HTTP requests
+	if f.priorityAssigner != nil {
+		// Convert httpgrpc headers to map for priority assignment
+		headers := make(map[string]string)
+		for _, header := range httpRequest.Headers {
+			if len(header.Values) > 0 {
+				headers[header.Key] = header.Values[0]
+			}
+		}
+		ctx = f.priorityAssigner.AssignPriorityLevel(ctx, httpRequest.Method, httpRequest.Url, headers)
+	}
+	return f.createNewRequestInternal(ctx)
+}
+
+// createNewProtobufRequest creates a new frontend request for protobuf requests (no priority assignment)
+func (f *Frontend) createNewProtobufRequest(ctx context.Context) (*frontendRequest, context.Context, context.CancelCauseFunc, error) {
+	return f.createNewRequestInternal(ctx)
+}
+
 // RoundTripGRPC round trips a httpgrpc request.
 func (f *Frontend) RoundTripGRPC(ctx context.Context, httpRequest *httpgrpc.HTTPRequest) (*httpgrpc.HTTPResponse, io.ReadCloser, error) {
-	freq, ctx, cancel, err := f.createNewRequest(ctx)
+	freq, ctx, cancel, err := f.createNewHTTPRequest(ctx, httpRequest)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -361,7 +392,7 @@ func (f *Frontend) DoProtobufRequest(ctx context.Context, req proto.Message, min
 	logger, ctx := spanlogger.New(ctx, f.log, tracer, "frontend.DoProtobufRequest")
 	logger.SetTag("request.type", proto.MessageName(req))
 
-	freq, ctx, cancel, err := f.createNewRequest(ctx)
+	freq, ctx, cancel, err := f.createNewProtobufRequest(ctx)
 	if err != nil {
 		logger.Finish()
 		return nil, err

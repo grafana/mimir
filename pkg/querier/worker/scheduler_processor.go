@@ -39,6 +39,7 @@ import (
 	querier_stats "github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerpb"
 	"github.com/grafana/mimir/pkg/util"
+	utilgrpcutil "github.com/grafana/mimir/pkg/util/grpcutil"
 	"github.com/grafana/mimir/pkg/util/httpgrpcutil"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/propagation"
@@ -597,6 +598,7 @@ func (g *grpcStreamWriter) Close(ctx context.Context) {
 
 func (sp *schedulerProcessor) createFrontendClient(addr string) (client.PoolClient, error) {
 	unary, stream := grpcclient.Instrument(sp.frontendClientRequestDuration)
+	unary = append(unary, utilgrpcutil.PriorityClientInterceptor(sp.log))
 	opts, err := sp.grpcConfig.DialOption(unary, stream, util.NewInvalidClusterValidationReporter(sp.grpcConfig.ClusterValidation.Label, sp.invalidClusterValidation, sp.log))
 	if err != nil {
 		return nil, err

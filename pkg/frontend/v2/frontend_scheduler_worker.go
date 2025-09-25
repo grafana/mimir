@@ -24,6 +24,7 @@ import (
 	"github.com/grafana/mimir/pkg/scheduler/schedulerdiscovery"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerpb"
 	"github.com/grafana/mimir/pkg/util"
+	utilgrpcutil "github.com/grafana/mimir/pkg/util/grpcutil"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
@@ -223,6 +224,8 @@ func (f *frontendSchedulerWorkers) connectToScheduler(ctx context.Context, addre
 		return nil, err
 	}
 
+    // Add priority interceptor
+    opts = append(opts, grpc.WithUnaryInterceptor(utilgrpcutil.PriorityClientInterceptor(f.log)))
 	// nolint:staticcheck // grpc.DialContext() has been deprecated; we'll address it before upgrading to gRPC 2.
 	conn, err := grpc.DialContext(ctx, address, opts...)
 	if err != nil {
