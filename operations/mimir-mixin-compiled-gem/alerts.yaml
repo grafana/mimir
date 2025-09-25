@@ -79,16 +79,6 @@ groups:
           for: 5m
           labels:
             severity: critical
-        - alert: MimirFrontendQueriesStuck
-          annotations:
-            message: |
-                There are {{ $value }} queued up queries in {{ $labels.cluster }}/{{ $labels.namespace }} {{ $labels.job }}.
-            runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirfrontendqueriesstuck
-          expr: |
-            sum by (cluster, namespace, job) (min_over_time(cortex_query_frontend_queue_length[1m])) > 0
-          for: 5m
-          labels:
-            severity: critical
         - alert: MimirSchedulerQueriesStuck
           annotations:
             message: |
