@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"hash/crc32"
 	"io"
+	"math"
 	"slices"
 	"sync"
 
@@ -156,6 +157,10 @@ func (r *bucketChunkReader) loadChunks(ctx context.Context, res []seriesChunks, 
 		// Such a large chunk data len is unrealistic.
 		if chunkDataLen > uint64(maxChunkDataLen) {
 			return fmt.Errorf("chunk seq %d: parsed data length %d exceeds expected maximum chunk size %d", seq, chunkDataLen, maxChunkDataLen)
+		}
+
+		if chunkDataLen > uint64(math.MaxInt-chunks.ChunkEncodingSize) {
+			return fmt.Errorf("chunk seq %d: chunk data length %d too large for safe allocation", seq, chunkDataLen)
 		}
 
 		// We ignore the crc32 after the chunk data.
