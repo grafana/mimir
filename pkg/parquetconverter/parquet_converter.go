@@ -436,6 +436,11 @@ func (c *ParquetConverter) discoverAndEnqueueBlocks(ctx context.Context) {
 				continue
 			}
 
+			if shard_id, found := m.Thanos.Labels[mimir_tsdb.CompactorShardIDExternalLabel]; found && shard_id != "" {
+				level.Debug(ulogger).Log("msg", "skipping block with labeled shard ID", "id", m.ULID, "shard_id", shard_id)
+				continue
+			}
+
 			if c.Cfg.MaxBlockAge > 0 {
 				blockAge := time.Since(time.UnixMilli(m.MinTime))
 				if blockAge > c.Cfg.MaxBlockAge {
