@@ -4473,13 +4473,19 @@ func timeUntilCompaction(now time.Time, compactionInterval, zoneOffset time.Dura
 }
 
 func (i *Ingester) NotifyPreCommit() error {
+	level.Info(i.logger).Log("msg", "fsyncing tsdbs")
 	// fsync all tsdbs before commit
+
+	// TODO: log errs and move on?
 	for _, u := range i.getTSDBUsers() {
 		db, err := i.getOrCreateTSDB(u)
 		if err != nil {
 			return err
 		}
-		db.Head().SyncWLSegments()
+		err = db.Head().SyncWLSegments()
+		if err != nil {
+			return err
+		}
 	}
 	return nil
 }
