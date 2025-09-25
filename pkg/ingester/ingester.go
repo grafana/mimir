@@ -2956,10 +2956,10 @@ func (i *Ingester) createBlockChunkQuerier(userID string, b tsdb.BlockReader, mi
 		return nil, err
 	}
 
-	statsQuerier := newStatsTrackingChunkQuerier(defaultQuerier, i.metrics, i.lookupPlanMetrics.ForUser(userID))
+	lookupStatsQuerier := newStatsTrackingChunkQuerier(defaultQuerier, i.metrics, i.lookupPlanMetrics.ForUser(userID))
 
 	if rand.Float64() > i.cfg.BlocksStorageConfig.TSDB.IndexLookupPlanningComparisonPortion {
-		return statsQuerier, nil
+		return lookupStatsQuerier, nil
 	}
 
 	// If mirroring is enabled, wrap the stats querier with mirrored querier
@@ -2969,7 +2969,7 @@ func (i *Ingester) createBlockChunkQuerier(userID string, b tsdb.BlockReader, mi
 		mint, maxt,
 		b.Meta(),
 		i.logger,
-		statsQuerier,
+		lookupStatsQuerier,
 	)
 
 	return mirroredQuerier, nil
