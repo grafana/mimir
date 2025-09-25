@@ -242,7 +242,7 @@ func TestPusherConsumer(t *testing.T) {
 
 			logs := &concurrency.SyncBuffer{}
 			metrics := NewPusherConsumerMetrics(prometheus.NewPedanticRegistry())
-			c := NewPusherConsumer(pusher, KafkaConfig{}, &NoOpTenantSyncer{}, metrics, log.NewLogfmtLogger(logs))
+			c := NewPusherConsumer(pusher, KafkaConfig{}, NoOpPreCommitFunc, metrics, log.NewLogfmtLogger(logs))
 			err := c.Consume(context.Background(), kafkaRecordsAll(t, tc.records))
 			if tc.expErr == "" {
 				assert.NoError(t, err)
@@ -360,7 +360,7 @@ func TestPusherConsumer_Consume_ShouldLogErrorsHonoringOptionalLogging(t *testin
 
 		reg := prometheus.NewPedanticRegistry()
 		logs := &concurrency.SyncBuffer{}
-		consumer := NewPusherConsumer(pusher, KafkaConfig{}, &NoOpTenantSyncer{}, NewPusherConsumerMetrics(reg), log.NewLogfmtLogger(logs))
+		consumer := NewPusherConsumer(pusher, KafkaConfig{}, NoOpPreCommitFunc, NewPusherConsumerMetrics(reg), log.NewLogfmtLogger(logs))
 
 		return consumer, logs, reg
 	}
@@ -521,7 +521,7 @@ func TestPusherConsumer_Consume_ShouldNotLeakGoroutinesOnServerError(t *testing.
 		}
 
 		metrics := NewPusherConsumerMetrics(prometheus.NewPedanticRegistry())
-		consumer := NewPusherConsumer(pusher, cfg, &NoOpTenantSyncer{}, metrics, log.NewNopLogger())
+		consumer := NewPusherConsumer(pusher, cfg, NoOpPreCommitFunc, metrics, log.NewNopLogger())
 
 		// We expect consumption to fail.
 		err := consumer.Consume(context.Background(), kafkaRecordsAll(t, records))
@@ -1648,7 +1648,7 @@ func BenchmarkPusherConsumer(b *testing.B) {
 		flagext.DefaultValues(&kcfg)
 		kcfg.IngestionConcurrencyMax = 0
 		metrics := NewPusherConsumerMetrics(prometheus.NewPedanticRegistry())
-		c := NewPusherConsumer(pusher, kcfg, &NoOpTenantSyncer{}, metrics, log.NewNopLogger())
+		c := NewPusherConsumer(pusher, kcfg, NoOpPreCommitFunc, metrics, log.NewNopLogger())
 		b.ResetTimer()
 
 		for range b.N {
@@ -1662,7 +1662,7 @@ func BenchmarkPusherConsumer(b *testing.B) {
 		flagext.DefaultValues(&kcfg)
 		kcfg.IngestionConcurrencyMax = 2
 		metrics := NewPusherConsumerMetrics(prometheus.NewPedanticRegistry())
-		c := NewPusherConsumer(pusher, kcfg, &NoOpTenantSyncer{}, metrics, log.NewNopLogger())
+		c := NewPusherConsumer(pusher, kcfg, NoOpPreCommitFunc, metrics, log.NewNopLogger())
 		b.ResetTimer()
 
 		for range b.N {

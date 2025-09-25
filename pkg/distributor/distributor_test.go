@@ -5794,7 +5794,7 @@ func prepareIngesterZone(t testing.TB, zone string, state ingesterZoneState, cfg
 			kafkaCfg.LastProducedOffsetPollInterval = 100 * time.Millisecond
 			kafkaCfg.LastProducedOffsetRetryTimeout = 100 * time.Millisecond
 
-			ingester.partitionReader, err = ingest.NewPartitionReaderForPusher(kafkaCfg, ingester.partitionID(), ingester.instanceID(), newMockIngesterPusherAdapter(ingester), log.NewNopLogger(), nil)
+			ingester.partitionReader, err = ingest.NewPartitionReaderForPusher(kafkaCfg, ingester.partitionID(), ingester.instanceID(), newMockIngesterPusherAdapter(ingester), ingest.NoOpPreCommitFunc, log.NewNopLogger(), nil)
 			require.NoError(t, err)
 
 			// We start it async, and then we wait until running in a defer so that multiple partition

@@ -95,7 +95,7 @@ func TestPartitionReader_ShouldHonorConfiguredFetchMaxWait(t *testing.T) {
 	cfg := defaultReaderTestConfig(t, "", topicName, partitionID, nil)
 	cfg.kafka.FetchMaxWait = fetchMaxWait
 
-	reader, err := newPartitionReader(cfg.kafka, cfg.partitionID, "test-group", cfg.consumer, &NoOpTenantSyncer{}, cfg.logger, cfg.registry)
+	reader, err := newPartitionReader(cfg.kafka, cfg.partitionID, "test-group", cfg.consumer, NoOpPreCommitFunc, cfg.logger, cfg.registry)
 	require.NoError(t, err)
 	require.Equal(t, fetchMaxWait, reader.concurrentFetchersMinBytesMaxWaitTime)
 }
@@ -107,7 +107,7 @@ func TestPartitionReader_logFetchErrors(t *testing.T) {
 	)
 
 	cfg := defaultReaderTestConfig(t, "", topicName, partitionID, nil)
-	reader, err := newPartitionReader(cfg.kafka, cfg.partitionID, "test-group", cfg.consumer, &NoOpTenantSyncer{}, cfg.logger, cfg.registry)
+	reader, err := newPartitionReader(cfg.kafka, cfg.partitionID, "test-group", cfg.consumer, NoOpPreCommitFunc, cfg.logger, cfg.registry)
 	require.NoError(t, err)
 
 	reader.logFetchErrors(kgo.Fetches{
@@ -2646,7 +2646,7 @@ func TestPartitionCommitter(t *testing.T) {
 		adm := kadm.NewClient(client)
 		reg := prometheus.NewPedanticRegistry()
 
-		committer := newPartitionCommitter(cfg, adm, partitionID, consumerGroup, &NoOpTenantSyncer{}, logger, reg)
+		committer := newPartitionCommitter(cfg, adm, partitionID, consumerGroup, NoOpPreCommitFunc, logger, reg)
 		require.NoError(t, services.StartAndAwaitRunning(context.Background(), committer))
 		t.Cleanup(func() {
 			require.NoError(t, services.StopAndAwaitTerminated(context.Background(), committer))
@@ -2712,7 +2712,7 @@ func TestPartitionCommitter_commit(t *testing.T) {
 
 		adm := kadm.NewClient(client)
 		reg := prometheus.NewPedanticRegistry()
-		committer := newPartitionCommitter(cfg, adm, partitionID, consumerGroup, &NoOpTenantSyncer{}, log.NewNopLogger(), reg)
+		committer := newPartitionCommitter(cfg, adm, partitionID, consumerGroup, NoOpPreCommitFunc, log.NewNopLogger(), reg)
 
 		require.NoError(t, committer.commit(context.Background(), 123))
 
@@ -2752,7 +2752,7 @@ func TestPartitionCommitter_commit(t *testing.T) {
 
 		adm := kadm.NewClient(client)
 		reg := prometheus.NewPedanticRegistry()
-		committer := newPartitionCommitter(cfg, adm, partitionID, consumerGroup, &NoOpTenantSyncer{}, log.NewNopLogger(), reg)
+		committer := newPartitionCommitter(cfg, adm, partitionID, consumerGroup, NoOpPreCommitFunc, log.NewNopLogger(), reg)
 
 		require.Error(t, committer.commit(context.Background(), 123))
 
@@ -2954,7 +2954,7 @@ func createReader(t *testing.T, addr string, topicName string, partitionID int32
 	// Ensure the config is valid.
 	require.NoError(t, cfg.kafka.Validate())
 
-	reader, err := newPartitionReader(cfg.kafka, cfg.partitionID, "test-group", cfg.consumer, &NoOpTenantSyncer{}, cfg.logger, cfg.registry)
+	reader, err := newPartitionReader(cfg.kafka, cfg.partitionID, "test-group", cfg.consumer, NoOpPreCommitFunc, cfg.logger, cfg.registry)
 	require.NoError(t, err)
 
 	// Reduce the time the fake kafka would wait for new records. Sometimes this blocks startup.
