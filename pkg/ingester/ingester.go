@@ -462,7 +462,7 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 		// This is injected already higher up for methods invoked via the network.
 		// Here we use it so that pushes from kafka also get a tenant assigned since the PartitionReader invokes the ingester.
 		profilingIngester := NewIngesterProfilingWrapper(i)
-		i.ingestReader, err = ingest.NewPartitionReaderForPusher(kafkaCfg, i.ingestPartitionID, cfg.IngesterRing.InstanceID, profilingIngester, i.fsyncWLs, log.With(logger, "component", "ingest_reader"), registerer)
+		i.ingestReader, err = ingest.NewPartitionReaderForPusher(kafkaCfg, i.ingestPartitionID, cfg.IngesterRing.InstanceID, profilingIngester, log.With(logger, "component", "ingest_reader"), registerer)
 		if err != nil {
 			return nil, errors.Wrap(err, "creating ingest storage reader")
 		}
@@ -4472,7 +4472,8 @@ func timeUntilCompaction(now time.Time, compactionInterval, zoneOffset time.Dura
 	return compactionInterval - timeSinceLastCompaction
 }
 
-func (i *Ingester) fsyncWLs() error {
+func (i *Ingester) NotifyPreCommit() error {
+	// fsync all tsdbs before commit
 	for _, u := range i.getTSDBUsers() {
 		db, err := i.getOrCreateTSDB(u)
 		if err != nil {

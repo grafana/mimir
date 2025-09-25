@@ -27,6 +27,18 @@ import (
 
 type Pusher interface {
 	PushToStorageAndReleaseRequest(context.Context, *mimirpb.WriteRequest) error
+	PreCommitNotifier
+}
+
+type PreCommitNotifier interface {
+	NotifyPreCommit() error
+}
+
+type NoOpPreCommitNotifier struct {
+}
+
+func (n *NoOpPreCommitNotifier) NotifyPreCommit() error {
+	return nil
 }
 
 type PusherCloser interface {
@@ -44,22 +56,19 @@ type PusherConsumer struct {
 
 	kafkaConfig KafkaConfig
 
-	preCommitFunc PreCommitFunc
-
 	pusher Pusher
 }
 
 // NewPusherConsumer creates a new PusherConsumer instance.
-func NewPusherConsumer(pusher Pusher, kafkaCfg KafkaConfig, preCommitFunc PreCommitFunc, metrics *PusherConsumerMetrics, logger log.Logger) *PusherConsumer {
+func NewPusherConsumer(pusher Pusher, kafkaCfg KafkaConfig, metrics *PusherConsumerMetrics, logger log.Logger) *PusherConsumer {
 	// The layer below (parallelStoragePusher, parallelStorageShards, sequentialStoragePusher) will return all errors they see
 	// and potentially ingesting a batch if they encounter any error.
 	// We can safely ignore client errors and continue ingesting. We abort ingesting if we get any other error.
 	return &PusherConsumer{
-		pusher:        pusher,
-		kafkaConfig:   kafkaCfg,
-		preCommitFunc: preCommitFunc,
-		metrics:       metrics,
-		logger:        logger,
+		pusher:      pusher,
+		kafkaConfig: kafkaCfg,
+		metrics:     metrics,
+		logger:      logger,
 	}
 }
 
