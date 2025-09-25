@@ -117,6 +117,7 @@ func (s *Spawner) discoverTenants(ctx context.Context) error {
 
 	for tenant := range s.planMap {
 		if _, ok := seen[tenant]; !ok {
+			level.Info(s.logger).Log("msg", "removing empty tenant from compactor scheduler", "tenant", tenant)
 			s.planTracker.RemoveForcefully(tenant)
 			s.rotator.RemoveTenant(tenant)
 			delete(s.planMap, tenant)
