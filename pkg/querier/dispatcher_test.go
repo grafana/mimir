@@ -4,6 +4,7 @@ package querier
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"strings"
@@ -26,6 +27,7 @@ import (
 	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/stretchr/testify/require"
 
+	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/querierpb"
@@ -1047,4 +1049,53 @@ const testExtractorKey testExtractorKeyType = iota
 
 func (p *testExtractor) ExtractFromCarrier(ctx context.Context, carrier propagation.Carrier) (context.Context, error) {
 	return context.WithValue(ctx, testExtractorKey, carrier.Get(testExtractorHeaderName)), nil
+}
+
+func TestQueryResponseWriter_WriteError(t *testing.T) {
+	testCases := map[string]struct {
+		err             error
+		expectedMessage string
+		expectedType    mimirpb.QueryErrorType
+	}{
+		"generic error": {
+			err:             errors.New("error with no type"),
+			expectedMessage: "error with no type",
+			expectedType:    mimirpb.QUERY_ERROR_TYPE_NOT_FOUND,
+		},
+		"APIError instance": {
+			err:             apierror.New(apierror.TypeTooManyRequests, "error with 'too many requests' type"),
+			expectedMessage: "error with 'too many requests' type",
+			expectedType:    mimirpb.QUERY_ERROR_TYPE_TOO_MANY_REQUESTS,
+		},
+		"wrapped APIError instance": {
+			err:             fmt.Errorf("wrapped: %w", apierror.New(apierror.TypeTooLargeEntry, "error with 'too large entry' type")),
+			expectedMessage: "wrapped: error with 'too large entry' type",
+			expectedType:    mimirpb.QUERY_ERROR_TYPE_TOO_LARGE_ENTRY,
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			reg, requestMetrics, serverMetrics := newMetrics()
+			stream := &mockQueryResultStream{t: t, route: "test-route", reg: reg}
+			writer := newQueryResponseWriter(stream, requestMetrics, serverMetrics, log.NewNopLogger())
+			writer.Start("test-route", 123)
+			ctx := context.Background()
+
+			writer.WriteError(ctx, apierror.TypeNotFound, testCase.err)
+
+			expectedMessages := []*frontendv2pb.QueryResultStreamRequest{
+				{
+					Data: &frontendv2pb.QueryResultStreamRequest_Error{
+						Error: &querierpb.Error{
+							Type:    testCase.expectedType,
+							Message: testCase.expectedMessage,
+						},
+					},
+				},
+			}
+
+			require.Equal(t, expectedMessages, stream.messages)
+		})
+	}
 }
