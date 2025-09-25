@@ -149,7 +149,7 @@ func (p CostBasedPlanner) recordPlanningOutcome(ctx context.Context, start time.
 
 		outcome = "success"
 		if traceSampled {
-			// Avoid logging overhead if the events aren't going to make it into a span.
+			// Only add span events when tracing is sampled to avoid unnecessary overhead.
 			p.addSpanEvents(span, start, selectedPlan, allPlans)
 		}
 	}

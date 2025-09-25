@@ -182,7 +182,7 @@ func newIngesterMetrics(
 		}, []string{"stage"}),
 		discardedSeriesRatio: promauto.With(r).NewHistogram(prometheus.HistogramOpts{
 			Name:                        "cortex_ingester_discarded_series_ratio",
-			Help:                        `Ratio of discarded series during query processing. These are series fetched form the index, but then discarded because they don't match the vector selector. This is the ratio of cortex_ingester_queried_series{stage="index"} over {stage="send"}.`,
+			Help:                        `Ratio of discarded series during query processing. These are series fetched from the index, but then discarded because they don't match the vector selector. This is the ratio of cortex_ingester_queried_series{stage="index"} over {stage="send"}.`,
 			NativeHistogramBucketFactor: 1.1,
 		}),
 		memMetadata: promauto.With(r).NewGauge(prometheus.GaugeOpts{
