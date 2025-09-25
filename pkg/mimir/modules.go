@@ -1508,6 +1508,7 @@ func (t *Mimir) setupModuleManager() error {
 		BlockBuilder:                     {API, Overrides},
 		BlockBuilderScheduler:            {API},
 		Compactor:                        {API, MemberlistKV, Overrides, Vault},
+		CompactorScheduler:               {API},
 		ContinuousTest:                   {API},
 		CostAttributionService:           {API, Overrides},
 		Distributor:                      {DistributorService, API, ActiveGroupsCleanupService, Vault, UsageTrackerInstanceRing, UsageTrackerPartitionRing},
