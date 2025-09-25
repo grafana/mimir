@@ -438,8 +438,8 @@ func testBucketStore_e2e(t *testing.T, ctx context.Context, s *storeSuite, addit
 		},
 	}
 	for i, tcase := range append(testCases, additionalCases...) {
-		for _, streamingBatchSize := range []int{0, 1, 5, 256} {
-			if ok := t.Run(fmt.Sprintf("%d,streamingBatchSize=%d", i, streamingBatchSize), func(t *testing.T) {
+		for _, streamingBatchSize := range []int{1, 5, 256} {
+			t.Run(fmt.Sprintf("%d,streamingBatchSize=%d", i, streamingBatchSize), func(t *testing.T) {
 				tcase.req.StreamingChunksBatchSize = uint64(streamingBatchSize)
 				seriesSet, _, _, _, err := srv.Series(context.Background(), tcase.req)
 				require.NoError(t, err)
@@ -451,9 +451,7 @@ func testBucketStore_e2e(t *testing.T, ctx context.Context, s *storeSuite, addit
 					assert.Equal(t, tcase.expectedChunkLen, len(s.Chunks))
 				}
 				assertQueryStatsMetricsRecorded(t, len(tcase.expected), tcase.expectedChunkLen, s.metricsRegistry)
-			}); !ok {
-				return
-			}
+			})
 		}
 	}
 }

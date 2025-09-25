@@ -143,11 +143,6 @@ func (s *storeTestServer) Series(ctx context.Context, req *storepb.SeriesRequest
 		}
 
 		if recvSeries := res.GetStreamingSeries(); recvSeries != nil {
-			if req.StreamingChunksBatchSize == 0 || req.SkipChunks {
-				err = errors.New("got a streaming series when streaming was disabled")
-				return
-			}
-
 			var recvSeriesData []byte
 
 			// We prefer to stay on the safest side at this stage
@@ -172,7 +167,7 @@ func (s *storeTestServer) Series(ctx context.Context, req *storepb.SeriesRequest
 		}
 	}
 
-	if req.StreamingChunksBatchSize > 0 && !req.SkipChunks {
+	if !req.SkipChunks {
 		res, err = stream.Recv()
 		if err != nil {
 			if errors.Is(err, io.EOF) {
@@ -249,6 +244,14 @@ func (s *storeTestServer) Series(ctx context.Context, req *storepb.SeriesRequest
 		}
 		if errors.Is(err, io.EOF) {
 			err = nil
+		}
+	} else {
+		// The store-gateway returns a streaming response even when SkipChunks = true. In that
+		// case, convert the streaming series responses into the expected series set.
+		for _, streamingSeries := range streamingSeriesSet {
+			seriesSet = append(seriesSet, &storepb.Series{
+				Labels: streamingSeries.Labels,
+			})
 		}
 	}
 
