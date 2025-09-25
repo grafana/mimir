@@ -95,7 +95,7 @@ After the ingester recovers from the downtime and has replayed the local WAL,
 it resumes consuming from Kafka from the offset stored in its consumer group.
 Using this technique, the ingester never misses a sample written to Kafka and observes samples in the same order as other ingesters consuming the same partition.
 
-The in-memory samples are periodically flushed to disk, and the WAL is truncated, when a new TSDB block is created.
+The in-memory samples are periodically flushed to disk, and the WAL is truncated when a new TSDB block is created.
 By default, this occurs every two hours.
 Each newly created block is uploaded to long-term storage and kept in the ingester until the configured `-blocks-storage.tsdb.retention-period` expires.
 This gives [queriers](../../../references/architecture/components/querier/) and [store-gateways](../../../references/architecture/components/store-gateway/) enough time to discover the new block and download its index-header.
@@ -129,18 +129,15 @@ After the querier executes the query, it returns the results to the query-fronte
 
 #### Data freshness on the read path
 
-Ingesters consume from Kafka asynchronously while serving queries. By default, ingesters don't ensure that samples written to Kafka are appended to the in-memory TSDB and on-disk WAL before receiving a query.
+Ingesters consume from Kafka asynchronously while serving queries. By default, ingesters don't ensure that samples written to Kafka are appended to the in-memory TSDB and on-disk WAL before receiving a query. This allows ingesters to whitstand Kafka outages without rejecting queries. The impact of Kafka outages is that
+queries that ingesters serve may return stale data and don't provide a read-after-write guarantee.
 
 During normal operations, the delay in ingesting data in ingesters should be below 1 second. This is also known as the end-to-end latency of ingestion.
 
 While this latency is usually insignificant for interactive queries, it can challenge applications that need queries to observe all previous writes.
 For example, the Mimir [ruler](../../../references/architecture/components/ruler) needs samples from earlier rules in a rule group to be available when evaluating later rules in the same group.
 
-To preserve the read-after-write guarantee, clients can add the `X-Read-Consistency: strong` HTTP header to queries.
-
-When a query includes this header, the query-frontend fetches the latest offsets from Kafka for all active partitions and propagates these offsets to ingesters. Each ingester waits until it has consumed up to the specified offset for its partition before running the query.
-
-This ensures the query observes all samples written to Kafka before the query-frontend received the query, providing strong read consistency at the cost of increased query latency.
+To preserve the read-after-write guarantee, clients can add the `X-Read-Consistency: strong` HTTP header to queries. When a query includes this header, the query-frontend fetches the latest offsets from Kafka for all active partitions and propagates these offsets to ingesters. Each ingester waits until it has consumed up to the specified offset for its partition before running the query. This ensures the query observes all samples written to Kafka before the query-frontend received the query, providing strong read consistency at the cost of increased query latency.
 
 By default, the ingester waits up to 20 seconds for the record to be consumed before rejecting the strong read consistency query.
 
@@ -149,20 +146,18 @@ By default, the ingester waits up to 20 seconds for the record to be consumed be
 Kafka is a central part of ingest storage architecture. It's responsible for replicating and durably persisting incoming data
 and for making this data available to ingesters.
 
-Mimir's use of the Kafka protocol is limited, which allows you to use many Kafka-compatible solutions.
+The use of the Kafka protocol is limited in Grafana Mimir. This allows you to use many Kafka-compatible solutions.
 
 ### How Mimir uses Kafka
 
-<!-- TODO dimitarvdimitrov: here' i'm not sure about the best way to structure this content. Would a table be better? -->
-
 On the write path, the distributor requires the Kafka cluster to be available for push requests to succeed.
-The distributor issues direct **Produce API** calls to the Kafka brokers and doesn't produce in **transactions** or need support for **idempotent writes**.
+The distributor issues direct Produce API calls to the Kafka brokers and doesn't produce in transactions or need support for idempotent writes.
 
-Both the ingester and the distributor use the **Metadata API** to discover the leaders for a topic-partition.
+Both the ingester and the distributor use the Metadata API to discover the leaders for a topic-partition.
 
-The Mimir ingester uses Kafka **consumer groups** to persist how far an ingester has consumed from its assigned partition. Each ingester maintains its own consumer group. Each Kafka record is consumed exactly once by each ingester zone and records aren't replayed after being consumed.
+The Mimir ingester uses Kafka consumer groups to persist how far an ingester has consumed from its assigned partition. Each ingester maintains its own consumer group. Each Kafka record is consumed exactly once by each ingester zone and records aren't replayed after being consumed.
 
-There are two exceptions to this:
+The following exceptions exist:
 
 - Abrupt termination: When an ingester terminates abruptly without persisting its offset in the consumer group, the ingester resumes from where the consumer group offset points.
-- Manual configuration: Ingesters can be configured to start consuming from the earliest offset, the latest offset, or a specific timestamp of the Kafka topic-partition. In these cases, the ingester uses the **ListOffsets API** to discover the target offset.
+- Manual configuration: You can configure ingesters to start consuming from the earliest offset, the latest offset, or a specific timestamp of the Kafka topic-partition. In these cases, the ingester uses the ListOffsets API to discover the target offset.
