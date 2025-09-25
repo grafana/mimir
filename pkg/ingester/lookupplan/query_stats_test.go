@@ -83,8 +83,6 @@ func TestQueryStats_Context(t *testing.T) {
 		ctx := ContextWithQueryStats(context.Background(), stats)
 
 		assert.NotNil(t, stats)
-		assert.True(t, IsQueryStatsEnabled(ctx))
-
 		retrievedStats := QueryStatsFromContext(ctx)
 		assert.Equal(t, stats, retrievedStats)
 	})
@@ -92,7 +90,8 @@ func TestQueryStats_Context(t *testing.T) {
 	t.Run("context without stats", func(t *testing.T) {
 		ctx := context.Background()
 
-		assert.False(t, IsQueryStatsEnabled(ctx))
+		// When query statistics are enabled, the stats object is already initialised
+		// within the context, so we can just check it.
 		assert.Nil(t, QueryStatsFromContext(ctx))
 	})
 }

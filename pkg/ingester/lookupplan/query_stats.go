@@ -31,13 +31,6 @@ func QueryStatsFromContext(ctx context.Context) *QueryStats {
 	return o.(*QueryStats)
 }
 
-// IsQueryStatsEnabled returns whether query stats tracking is enabled in the context.
-func IsQueryStatsEnabled(ctx context.Context) bool {
-	// When query statistics are enabled, the stats object is already initialised
-	// within the context, so we can just check it.
-	return QueryStatsFromContext(ctx) != nil
-}
-
 // QueryStats tracks query execution statistics for lookup planning.
 // All fields use atomic types for thread safety.
 type QueryStats struct {
