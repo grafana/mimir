@@ -554,18 +554,19 @@ func TestOffsetMovement(t *testing.T) {
 
 	e := sched.jobs.add("ingest/1/5524", spec)
 	require.NoError(t, e)
+	ps.addPlannedJob("ingest/1/5524", spec)
 	key, _, err := sched.jobs.assign("w0")
 	require.NoError(t, err)
 
 	require.NoError(t, sched.updateJob(key, "w0", false, spec))
 	sched.requireOffset(t, "ingest", 1, 5000, "ingest/1 is in progress, so we should not move the offset")
 	require.NoError(t, sched.updateJob(key, "w0", true, spec))
-	sched.requireOffset(t, "ingest", 1, 6000, "ingest/1 is in progress, so we should be advanced")
+	sched.requireOffset(t, "ingest", 1, 6000, "ingest/1 is complete, so we should advance")
 	require.NoError(t, sched.updateJob(key, "w0", true, spec))
 	sched.requireOffset(t, "ingest", 1, 6000, "re-completing the same job shouldn't change the commit")
 
 	p1 := sched.getPartitionState("ingest", 1)
-	p1.committed.advance(jobKey{"ancient_job", 29}, schedulerpb.JobSpec{
+	p1.committed.advance("ancient_job", schedulerpb.JobSpec{
 		Topic:       "ingest",
 		Partition:   1,
 		StartOffset: 1000,
@@ -574,7 +575,7 @@ func TestOffsetMovement(t *testing.T) {
 	sched.requireOffset(t, "ingest", 1, 6000, "committed offsets cannot rewind")
 
 	p2 := sched.getPartitionState("ingest", 2)
-	p2.committed.advance(jobKey{"ancient_job2", 30}, schedulerpb.JobSpec{
+	p2.committed.advance("ancient_job2", schedulerpb.JobSpec{
 		Topic:       "ingest",
 		Partition:   2,
 		StartOffset: 6000,
@@ -1127,6 +1128,188 @@ func TestPartitionState_PartitionBecomesInactive(t *testing.T) {
 	assert.NoError(t, err)
 }
 
+func TestPartitionState_ParallelJobs(t *testing.T) {
+
+	t.Run("planned job order required", func(t *testing.T) {
+		sched, _ := mustScheduler(t, 4)
+		ps := sched.getPartitionState("ingest", 1)
+		ps.initCommit(100)
+
+		// It is a logical error to add a job to the planned list out of order. The safe completion logic requires it.
+
+		ps.addPlannedJob("job1", schedulerpb.JobSpec{
+			Topic:       "ingest",
+			Partition:   1,
+			StartOffset: 100,
+			EndOffset:   200,
+		})
+		ps.addPlannedJob("job3", schedulerpb.JobSpec{
+			Topic:       "ingest",
+			Partition:   1,
+			StartOffset: 300,
+			EndOffset:   400,
+		})
+		require.Panics(t, func() {
+			ps.addPlannedJob("job2", schedulerpb.JobSpec{
+				Topic:       "ingest",
+				Partition:   1,
+				StartOffset: 200,
+				EndOffset:   300,
+			})
+		})
+	})
+
+	// Test 1: Complete a single job at the front of the queue
+	t.Run("complete_single_job_at_front", func(t *testing.T) {
+		sched, _ := mustScheduler(t, 4)
+		ps := sched.getPartitionState("ingest", 1)
+		ps.initCommit(100)
+
+		jobSpec := schedulerpb.JobSpec{
+			Topic:       "ingest",
+			Partition:   1,
+			StartOffset: 100,
+			EndOffset:   200,
+		}
+		ps.addPlannedJob("job1", jobSpec)
+		require.Equal(t, 1, ps.plannedJobs.Len())
+		require.Len(t, ps.plannedJobsMap, 1)
+		require.Equal(t, int64(100), ps.committed.offset())
+
+		err := ps.completeJob("job1")
+		require.NoError(t, err)
+
+		// Verify job was completed and garbage collected
+		require.Equal(t, 0, ps.plannedJobs.Len())
+		require.Len(t, ps.plannedJobsMap, 0)
+		require.Equal(t, int64(200), ps.committed.offset())
+	})
+
+	t.Run("complete_nonexistent_job", func(t *testing.T) {
+		sched, _ := mustScheduler(t, 4)
+		ps := sched.getPartitionState("ingest", 1)
+		ps.initCommit(100)
+		// Try to complete a job that doesn't exist
+		err := ps.completeJob("nonexistent_job")
+		require.Error(t, err)
+		require.ErrorIs(t, err, errJobNotFound)
+	})
+
+	// Test 3: Complete multiple jobs in order (garbage collection)
+	t.Run("complete_multiple_jobs_in_order", func(t *testing.T) {
+		sched, _ := mustScheduler(t, 4)
+		ps := sched.getPartitionState("ingest", 1)
+		ps.initCommit(100)
+
+		// Add multiple planned jobs
+		ps.addPlannedJob("job1", schedulerpb.JobSpec{
+			Topic:       "ingest",
+			Partition:   1,
+			StartOffset: 100,
+			EndOffset:   200,
+		})
+		ps.addPlannedJob("job2", schedulerpb.JobSpec{
+			Topic:       "ingest",
+			Partition:   1,
+			StartOffset: 200,
+			EndOffset:   300,
+		})
+		ps.addPlannedJob("job3", schedulerpb.JobSpec{
+			Topic:       "ingest",
+			Partition:   1,
+			StartOffset: 300,
+			EndOffset:   400,
+		})
+
+		// Verify initial state
+		require.Equal(t, 3, ps.plannedJobs.Len())
+		require.Len(t, ps.plannedJobsMap, 3)
+		require.Equal(t, int64(100), ps.committed.offset())
+
+		// Complete first job - should be garbage collected
+		err := ps.completeJob("job1")
+		require.NoError(t, err)
+		require.Equal(t, 2, ps.plannedJobs.Len())
+		require.Len(t, ps.plannedJobsMap, 2)
+		require.Equal(t, int64(200), ps.committed.offset())
+
+		// Complete second job - should be garbage collected
+		err = ps.completeJob("job2")
+		require.NoError(t, err)
+		require.Equal(t, 1, ps.plannedJobs.Len())
+		require.Len(t, ps.plannedJobsMap, 1)
+		require.Equal(t, int64(300), ps.committed.offset())
+
+		// Complete third job - should be garbage collected
+		err = ps.completeJob("job3")
+		require.NoError(t, err)
+		require.Equal(t, 0, ps.plannedJobs.Len())
+		require.Len(t, ps.plannedJobsMap, 0)
+		require.Equal(t, int64(400), ps.committed.offset())
+	})
+
+	// Test 4: Complete jobs out of order (only front jobs get garbage collected)
+	t.Run("complete_jobs_out_of_order", func(t *testing.T) {
+		sched, _ := mustScheduler(t, 4)
+		ps := sched.getPartitionState("ingest", 1)
+		ps.initCommit(100)
+
+		// Add multiple planned jobs
+		ps.addPlannedJob("job1", schedulerpb.JobSpec{
+			Topic:       "ingest",
+			Partition:   1,
+			StartOffset: 100,
+			EndOffset:   200,
+		})
+		ps.addPlannedJob("job2", schedulerpb.JobSpec{
+			Topic:       "ingest",
+			Partition:   1,
+			StartOffset: 200,
+			EndOffset:   300,
+		})
+		ps.addPlannedJob("job3", schedulerpb.JobSpec{
+			Topic:       "ingest",
+			Partition:   1,
+			StartOffset: 300,
+			EndOffset:   400,
+		})
+
+		// Complete job2 first (out of order)
+		err := ps.completeJob("job2")
+		require.NoError(t, err)
+
+		// Job2 should be marked complete but not garbage collected yet
+		require.Equal(t, 3, ps.plannedJobs.Len(), "expecting no garbage collection yet")
+		require.Len(t, ps.plannedJobsMap, 3, "expecting no garbage collection yet")
+		require.Equal(t, int64(100), ps.committed.offset(), "should be no advancement yet")
+
+		// Complete job1 - should garbage collect both job1 and job2
+		err = ps.completeJob("job1")
+		require.NoError(t, err)
+		require.Equal(t, 1, ps.plannedJobs.Len(), "expecting garbage collection of job1 and job2")
+		require.Len(t, ps.plannedJobsMap, 1, "expecting garbage collection of job1 and job2")
+		require.Equal(t, int64(300), ps.committed.offset(), "should be advanced commit to the end of job3")
+		require.Equal(t, "job3", ps.plannedJobs.Front().Value.(*jobState).jobID, "expecting job3 to be the remaining planned job")
+	})
+
+	// Test 5: Complete job with empty partition state
+	t.Run("complete_job_empty_partition", func(t *testing.T) {
+		sched, _ := mustScheduler(t, 4)
+		ps := sched.getPartitionState("ingest", 1)
+		ps.initCommit(100)
+
+		// Try to complete a job when no jobs exist
+		err := ps.completeJob("any_job")
+		require.Error(t, err)
+		require.ErrorIs(t, err, errJobNotFound)
+
+		// Verify state remains unchanged
+		require.Equal(t, 0, ps.plannedJobs.Len())
+		require.Len(t, ps.plannedJobsMap, 0)
+		require.Equal(t, int64(100), ps.committed.offset())
+	})
+}
+
 func TestBlockBuilderScheduler_EnqueuePendingJobs(t *testing.T) {
 	// Test that job detection and enqueueing work as expected w/r/t the
 	// job creation policy.
@@ -1357,10 +1540,10 @@ func TestBlockBuilderScheduler_NoCommit_NoGap(t *testing.T) {
 		EndOffset:   20,
 	}
 
-	pp.planned.advance(k, spec)
+	pp.planned.advance(k.id, spec)
 	requireGaps(t, reg, 0, 0, "advancing an empty planned offset should not register a gap")
 
-	pp.committed.advance(k, spec)
+	pp.committed.advance(k.id, spec)
 	requireGaps(t, reg, 0, 0, "advancing an empty committed offset should not register a gap")
 
 	// Now create a gap:
@@ -1372,9 +1555,9 @@ func TestBlockBuilderScheduler_NoCommit_NoGap(t *testing.T) {
 		EndOffset:   50,
 	}
 
-	pp.planned.advance(k2, spec2)
+	pp.planned.advance(k2.id, spec2)
 	requireGaps(t, reg, 1, 0, "a gap after a non-empty planned offset should register a gap")
 
-	pp.committed.advance(k2, spec2)
+	pp.committed.advance(k2.id, spec2)
 	requireGaps(t, reg, 1, 1, "a gap after a non-empty committed offset should register a gap")
 }
