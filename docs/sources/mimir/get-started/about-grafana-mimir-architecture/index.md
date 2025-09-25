@@ -62,7 +62,9 @@ For more information, refer to [Compactor](../../references/architecture/compone
 
 ### The read path
 
-![Ingest storage architecture of Grafana Mimir's read path](/media/docs/mimir/ingest_storage_reads.png)
+[//]: # "Diagram source of read path at https://docs.google.com/presentation/d/1LemaTVqa4Lf_tpql060vVoDGXrthp-Pie_SQL7qwHjc/edit#slide=id.g11658e7e4c6_2_6"
+
+![Architecture of Grafana Mimir's read path](read-path.svg)
 
 Queries coming into Grafana Mimir arrive at the [query-frontend](../../references/architecture/components/query-frontend/). The query-frontend then splits queries over longer time ranges into multiple, smaller queries.
 
