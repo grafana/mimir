@@ -76,6 +76,7 @@ func OTLPHandler(
 	sourceIPs *middleware.SourceIPExtractor,
 	limits OTLPHandlerLimits,
 	resourceAttributePromotionConfig OTelResourceAttributePromotionConfig,
+	keepIdentifyingOTelResourceAttributesConfig KeepIdentifyingOTelResourceAttributesConfig,
 	retryCfg RetryConfig,
 	OTLPPushMiddlewares []OTLPPushMiddleware,
 	push PushFunc,
@@ -97,7 +98,11 @@ func OTLPHandler(
 
 		otlpConverter := newOTLPMimirConverter(otlpappender.NewCombinedAppender())
 
-		parser := newOTLPParser(limits, resourceAttributePromotionConfig, otlpConverter, pushMetrics, discardedDueToOtelParseError, OTLPPushMiddlewares)
+		parser := newOTLPParser(
+			limits, resourceAttributePromotionConfig, keepIdentifyingOTelResourceAttributesConfig,
+			otlpConverter, pushMetrics, discardedDueToOtelParseError,
+			OTLPPushMiddlewares,
+		)
 
 		supplier := func() (*mimirpb.WriteRequest, func(), error) {
 			rb := util.NewRequestBuffers(requestBufferPool)
@@ -203,6 +208,7 @@ func handlePartialOTLPPush(pushErr error, w http.ResponseWriter, r *http.Request
 func newOTLPParser(
 	limits OTLPHandlerLimits,
 	resourceAttributePromotionConfig OTelResourceAttributePromotionConfig,
+	keepIdentifyingOTelResourceAttributesConfig KeepIdentifyingOTelResourceAttributesConfig,
 	otlpConverter *otlpMimirConverter,
 	pushMetrics *PushMetrics,
 	discardedDueToOtelParseError *prometheus.CounterVec,
@@ -328,8 +334,11 @@ func newOTLPParser(
 		if resourceAttributePromotionConfig == nil {
 			resourceAttributePromotionConfig = limits
 		}
+		if keepIdentifyingOTelResourceAttributesConfig == nil {
+			keepIdentifyingOTelResourceAttributesConfig = limits
+		}
 		promoteResourceAttributes := resourceAttributePromotionConfig.PromoteOTelResourceAttributes(tenantID)
-		keepIdentifyingResourceAttributes := limits.OTelKeepIdentifyingResourceAttributes(tenantID)
+		keepIdentifyingResourceAttributes := keepIdentifyingOTelResourceAttributesConfig.OTelKeepIdentifyingResourceAttributes(tenantID)
 		convertHistogramsToNHCB := limits.OTelConvertHistogramsToNHCB(tenantID)
 		promoteScopeMetadata := limits.OTelPromoteScopeMetadata(tenantID)
 		allowDeltaTemporality := limits.OTelNativeDeltaIngestion(tenantID)
