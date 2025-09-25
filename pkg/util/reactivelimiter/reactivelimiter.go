@@ -34,18 +34,18 @@ type Config struct {
 }
 
 func (cfg *Config) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
-	f.BoolVar(&cfg.Enabled, prefix+"enabled", false, "Enable reactive limiting when making requests to ingesters")
+	f.BoolVar(&cfg.Enabled, prefix+"enabled", false, "Enable reactive limiting when making requests to a service")
 
 	f.UintVar(&cfg.MinLimit, prefix+"min-limit", 2, "Minimum inflight requests limit")
 	f.UintVar(&cfg.MaxLimit, prefix+"max-limit", 200, "Maximum inflight requests limit")
 	f.UintVar(&cfg.InitialLimit, prefix+"initial-limit", 20, "Initial inflight requests limit")
-	f.Float64Var(&cfg.MaxLimitFactor, prefix+"max-limit-factor", 5, "The maximum limit as a multiple of current inflight requests")
+	f.Float64Var(&cfg.MaxLimitFactor, prefix+"max-limit-factor", 5, "The maximum inflight limit as a multiple of current inflight requests")
 
-	f.DurationVar(&cfg.RecentWindowMinDuration, prefix+"recent-window-min-duration", time.Second, "Minimum duration of the window that is used to determine the recent, short-term load on the system")
-	f.DurationVar(&cfg.RecentWindowMaxDuration, prefix+"recent-window-max-duration", 30*time.Second, "Maximum duration of the window that is used to determine the recent, short-term load on the system")
-	f.UintVar(&cfg.RecentWindowMinSamples, prefix+"recent-window-min-samples", 50, "Minimum number of samples that must be recorded in the recent window")
+	f.DurationVar(&cfg.RecentWindowMinDuration, prefix+"recent-window-min-duration", time.Second, "Minimum duration of the window that is used to collect recent response time samples")
+	f.DurationVar(&cfg.RecentWindowMaxDuration, prefix+"recent-window-max-duration", 30*time.Second, "Maximum duration of the window that is used to collect recent response time samples")
+	f.UintVar(&cfg.RecentWindowMinSamples, prefix+"recent-window-min-samples", 50, "Minimum number of samples that must be recorded in the recent window before updating the limit")
 	f.Float64Var(&cfg.RecentQuantile, prefix+"recent-quantile", .9, "The quantile of recent recorded response times to consider when adjusting the concurrency limit")
-	f.UintVar(&cfg.BaselienWindowAge, prefix+"baseline-window-age", 10, "The long-term average age of aggregated recent samples that are stored")
+	f.UintVar(&cfg.BaselienWindowAge, prefix+"baseline-window-age", 10, "The average age of baseline samples aggregated recent samples are added to")
 	f.UintVar(&cfg.CorrelationWindow, prefix+"correlation-window", 50, "How many recent limit and inflight time measurements are stored to detect whether increases in limits correlate with increases in inflight times")
 
 	f.Float64Var(&cfg.InitialRejectionFactor, prefix+"initial-rejection-factor", 2, "The number of allowed queued requests, as a multiple of current inflight requests, after which rejections start")

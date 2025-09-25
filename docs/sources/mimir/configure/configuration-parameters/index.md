@@ -2480,7 +2480,7 @@ rejection_prioritizer:
   [calibration_interval: <duration> | default = 1s]
 
 push_reactive_limiter:
-  # (experimental) Enable reactive limiting when making requests to ingesters
+  # (experimental) Enable reactive limiting when making requests to a service
   # CLI flag: -ingester.push-reactive-limiter.enabled
   [enabled: <boolean> | default = false]
 
@@ -2496,22 +2496,23 @@ push_reactive_limiter:
   # CLI flag: -ingester.push-reactive-limiter.initial-limit
   [initial_limit: <int> | default = 20]
 
-  # (experimental) The maximum limit as a multiple of current inflight requests
+  # (experimental) The maximum inflight limit as a multiple of current inflight
+  # requests
   # CLI flag: -ingester.push-reactive-limiter.max-limit-factor
   [max_limit_factor: <float> | default = 5]
 
-  # (experimental) Minimum duration of the window that is used to determine the
-  # recent, short-term load on the system
+  # (experimental) Minimum duration of the window that is used to collect recent
+  # response time samples
   # CLI flag: -ingester.push-reactive-limiter.recent-window-min-duration
   [recent_window_min_duration: <duration> | default = 1s]
 
-  # (experimental) Maximum duration of the window that is used to determine the
-  # recent, short-term load on the system
+  # (experimental) Maximum duration of the window that is used to collect recent
+  # response time samples
   # CLI flag: -ingester.push-reactive-limiter.recent-window-max-duration
   [recent_window_max_duration: <duration> | default = 30s]
 
   # (experimental) Minimum number of samples that must be recorded in the recent
-  # window
+  # window before updating the limit
   # CLI flag: -ingester.push-reactive-limiter.recent-window-min-samples
   [recent_window_min_samples: <int> | default = 50]
 
@@ -2520,8 +2521,8 @@ push_reactive_limiter:
   # CLI flag: -ingester.push-reactive-limiter.recent-quantile
   [recent_quantile: <float> | default = 0.9]
 
-  # (experimental) The long-term average age of aggregated recent samples that
-  # are stored
+  # (experimental) The average age of baseline samples aggregated recent samples
+  # are added to
   # CLI flag: -ingester.push-reactive-limiter.baseline-window-age
   [baseline_window_age: <int> | default = 10]
 
@@ -2542,7 +2543,7 @@ push_reactive_limiter:
   [max_rejection_factor: <float> | default = 3]
 
 read_reactive_limiter:
-  # (experimental) Enable reactive limiting when making requests to ingesters
+  # (experimental) Enable reactive limiting when making requests to a service
   # CLI flag: -ingester.read-reactive-limiter.enabled
   [enabled: <boolean> | default = false]
 
@@ -2558,22 +2559,23 @@ read_reactive_limiter:
   # CLI flag: -ingester.read-reactive-limiter.initial-limit
   [initial_limit: <int> | default = 20]
 
-  # (experimental) The maximum limit as a multiple of current inflight requests
+  # (experimental) The maximum inflight limit as a multiple of current inflight
+  # requests
   # CLI flag: -ingester.read-reactive-limiter.max-limit-factor
   [max_limit_factor: <float> | default = 5]
 
-  # (experimental) Minimum duration of the window that is used to determine the
-  # recent, short-term load on the system
+  # (experimental) Minimum duration of the window that is used to collect recent
+  # response time samples
   # CLI flag: -ingester.read-reactive-limiter.recent-window-min-duration
   [recent_window_min_duration: <duration> | default = 1s]
 
-  # (experimental) Maximum duration of the window that is used to determine the
-  # recent, short-term load on the system
+  # (experimental) Maximum duration of the window that is used to collect recent
+  # response time samples
   # CLI flag: -ingester.read-reactive-limiter.recent-window-max-duration
   [recent_window_max_duration: <duration> | default = 30s]
 
   # (experimental) Minimum number of samples that must be recorded in the recent
-  # window
+  # window before updating the limit
   # CLI flag: -ingester.read-reactive-limiter.recent-window-min-samples
   [recent_window_min_samples: <int> | default = 50]
 
@@ -2582,8 +2584,8 @@ read_reactive_limiter:
   # CLI flag: -ingester.read-reactive-limiter.recent-quantile
   [recent_quantile: <float> | default = 0.9]
 
-  # (experimental) The long-term average age of aggregated recent samples that
-  # are stored
+  # (experimental) The average age of baseline samples aggregated recent samples
+  # are added to
   # CLI flag: -ingester.read-reactive-limiter.baseline-window-age
   [baseline_window_age: <int> | default = 10]
 

@@ -1682,11 +1682,11 @@ Usage of ./cmd/mimir/mimir:
   -ingester.push-circuit-breaker.thresholding-period duration
     	[experimental] Moving window of time that the percentage of failed requests is computed over (default 1m0s)
   -ingester.push-reactive-limiter.baseline-window-age uint
-    	[experimental] The long-term average age of aggregated recent samples that are stored (default 10)
+    	[experimental] The average age of baseline samples aggregated recent samples are added to (default 10)
   -ingester.push-reactive-limiter.correlation-window uint
     	[experimental] How many recent limit and inflight time measurements are stored to detect whether increases in limits correlate with increases in inflight times (default 50)
   -ingester.push-reactive-limiter.enabled
-    	[experimental] Enable reactive limiting when making requests to ingesters
+    	[experimental] Enable reactive limiting when making requests to a service
   -ingester.push-reactive-limiter.initial-limit uint
     	[experimental] Initial inflight requests limit (default 20)
   -ingester.push-reactive-limiter.initial-rejection-factor float
@@ -1694,7 +1694,7 @@ Usage of ./cmd/mimir/mimir:
   -ingester.push-reactive-limiter.max-limit uint
     	[experimental] Maximum inflight requests limit (default 200)
   -ingester.push-reactive-limiter.max-limit-factor float
-    	[experimental] The maximum limit as a multiple of current inflight requests (default 5)
+    	[experimental] The maximum inflight limit as a multiple of current inflight requests (default 5)
   -ingester.push-reactive-limiter.max-rejection-factor float
     	[experimental] The number of allowed queued requests, as a multiple of current inflight requests, after which all requests are rejected (default 3)
   -ingester.push-reactive-limiter.min-limit uint
@@ -1702,11 +1702,11 @@ Usage of ./cmd/mimir/mimir:
   -ingester.push-reactive-limiter.recent-quantile float
     	[experimental] The quantile of recent recorded response times to consider when adjusting the concurrency limit (default 0.9)
   -ingester.push-reactive-limiter.recent-window-max-duration duration
-    	[experimental] Maximum duration of the window that is used to determine the recent, short-term load on the system (default 30s)
+    	[experimental] Maximum duration of the window that is used to collect recent response time samples (default 30s)
   -ingester.push-reactive-limiter.recent-window-min-duration duration
-    	[experimental] Minimum duration of the window that is used to determine the recent, short-term load on the system (default 1s)
+    	[experimental] Minimum duration of the window that is used to collect recent response time samples (default 1s)
   -ingester.push-reactive-limiter.recent-window-min-samples uint
-    	[experimental] Minimum number of samples that must be recorded in the recent window (default 50)
+    	[experimental] Minimum number of samples that must be recorded in the recent window before updating the limit (default 50)
   -ingester.rate-update-period duration
     	Period with which to update the per-tenant ingestion rates. (default 15s)
   -ingester.read-circuit-breaker.cooldown-period duration
@@ -1728,11 +1728,11 @@ Usage of ./cmd/mimir/mimir:
   -ingester.read-path-memory-utilization-limit uint
     	[experimental] Memory limit, in bytes, for CPU/memory utilization based read request limiting. Use 0 to disable it.
   -ingester.read-reactive-limiter.baseline-window-age uint
-    	[experimental] The long-term average age of aggregated recent samples that are stored (default 10)
+    	[experimental] The average age of baseline samples aggregated recent samples are added to (default 10)
   -ingester.read-reactive-limiter.correlation-window uint
     	[experimental] How many recent limit and inflight time measurements are stored to detect whether increases in limits correlate with increases in inflight times (default 50)
   -ingester.read-reactive-limiter.enabled
-    	[experimental] Enable reactive limiting when making requests to ingesters
+    	[experimental] Enable reactive limiting when making requests to a service
   -ingester.read-reactive-limiter.initial-limit uint
     	[experimental] Initial inflight requests limit (default 20)
   -ingester.read-reactive-limiter.initial-rejection-factor float
@@ -1740,7 +1740,7 @@ Usage of ./cmd/mimir/mimir:
   -ingester.read-reactive-limiter.max-limit uint
     	[experimental] Maximum inflight requests limit (default 200)
   -ingester.read-reactive-limiter.max-limit-factor float
-    	[experimental] The maximum limit as a multiple of current inflight requests (default 5)
+    	[experimental] The maximum inflight limit as a multiple of current inflight requests (default 5)
   -ingester.read-reactive-limiter.max-rejection-factor float
     	[experimental] The number of allowed queued requests, as a multiple of current inflight requests, after which all requests are rejected (default 3)
   -ingester.read-reactive-limiter.min-limit uint
@@ -1748,11 +1748,11 @@ Usage of ./cmd/mimir/mimir:
   -ingester.read-reactive-limiter.recent-quantile float
     	[experimental] The quantile of recent recorded response times to consider when adjusting the concurrency limit (default 0.9)
   -ingester.read-reactive-limiter.recent-window-max-duration duration
-    	[experimental] Maximum duration of the window that is used to determine the recent, short-term load on the system (default 30s)
+    	[experimental] Maximum duration of the window that is used to collect recent response time samples (default 30s)
   -ingester.read-reactive-limiter.recent-window-min-duration duration
-    	[experimental] Minimum duration of the window that is used to determine the recent, short-term load on the system (default 1s)
+    	[experimental] Minimum duration of the window that is used to collect recent response time samples (default 1s)
   -ingester.read-reactive-limiter.recent-window-min-samples uint
-    	[experimental] Minimum number of samples that must be recorded in the recent window (default 50)
+    	[experimental] Minimum number of samples that must be recorded in the recent window before updating the limit (default 50)
   -ingester.rejection-prioritizer.calibration-interval duration
     	[experimental] The interval at which the rejection threshold is calibrated (default 1s)
   -ingester.ring.consul.acl-token string
