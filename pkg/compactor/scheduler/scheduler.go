@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/gogo/status"
 	"github.com/grafana/dskit/backoff"
 	"github.com/grafana/dskit/services"
@@ -68,14 +69,11 @@ type CompactionJob struct {
 type Scheduler struct {
 	services.Service
 
-	compactorCfg compactor.Config
-	cfg          Config
-
+	cfg                Config
 	rotator            *Rotator
 	planTracker        *JobTracker[string, struct{}]
 	subservicesManager *services.Manager
-
-	logger log.Logger
+	logger             log.Logger
 }
 
 func NewCompactorScheduler(
@@ -88,11 +86,10 @@ func NewCompactorScheduler(
 	planTracker := NewJobTracker[string, struct{}](INFINITE_LEASES)
 
 	scheduler := &Scheduler{
-		compactorCfg: compactorCfg,
-		cfg:          cfg,
-		rotator:      NewRotator(planTracker, cfg.leaseDuration, cfg.leaseCheckInterval, cfg.maxLeases),
-		planTracker:  planTracker,
-		logger:       logger,
+		cfg:         cfg,
+		rotator:     NewRotator(planTracker, cfg.leaseDuration, cfg.leaseCheckInterval, cfg.maxLeases),
+		planTracker: planTracker,
+		logger:      logger,
 	}
 
 	// TODO: This will need to be moved for testing
@@ -145,6 +142,7 @@ func (s *Scheduler) LeaseJob(ctx context.Context, req *compactorschedulerpb.Leas
 		return true
 	})
 	if ok {
+		level.Info(s.logger).Log("msg", "leasing plan job", "tenant", tenant, "epoch", epoch, "worker", req.WorkerId)
 		return &compactorschedulerpb.LeaseJobResponse{
 			Key: &compactorschedulerpb.JobKey{
 				Id:    tenant,
@@ -162,13 +160,17 @@ func (s *Scheduler) LeaseJob(ctx context.Context, req *compactorschedulerpb.Leas
 	})
 
 	if ok {
+		level.Info(s.logger).Log("msg", "leasing compaction job", "tenant", response.Spec.Tenant, "id", response.Key.Id, "epoch", response.Key.Epoch, "worker", req.WorkerId)
 		return response, nil
 	}
+
+	level.Info(s.logger).Log("msg", "no jobs available to be leased", "worker", req.WorkerId)
 	return nil, status.Error(codes.NotFound, "no jobs were available to be leased")
 }
 
 func (s *Scheduler) PlannedJobs(ctx context.Context, req *compactorschedulerpb.PlannedJobsRequest) (*compactorschedulerpb.PlannedJobsResponse, error) {
 	if removed, _ := s.planTracker.Remove(req.Key.Id, req.Key.Epoch); removed {
+		level.Info(s.logger).Log("msg", "received plan results", "tenant", req.Key.Id, "epoch", req.Key.Epoch, "job_count", len(req.Jobs))
 		now := time.Now()
 		jobs := make([]*Job[string, *CompactionJob], 0, len(req.Jobs))
 		for _, job := range req.Jobs {
@@ -185,10 +187,13 @@ func (s *Scheduler) PlannedJobs(ctx context.Context, req *compactorschedulerpb.P
 			return true
 		})
 	}
+
+	level.Error(s.logger).Log("msg", "received results for unknown plan job", "tenant", req.Key.Id, "epoch", req.Key.Epoch, "job_count", len(req.Jobs))
 	return nil, status.Error(codes.NotFound, "plan job was not found")
 }
 
 func (s *Scheduler) UpdatePlanJob(ctx context.Context, req *compactorschedulerpb.UpdatePlanJobRequest) (*compactorschedulerpb.UpdateJobResponse, error) {
+	level.Info(s.logger).Log("msg", "received plan job lease update request", "update_type", compactorschedulerpb.UpdateType_name[int32(req.Update)], "id", req.Key.Id, "epoch", req.Key.Epoch)
 	switch req.Update {
 	case compactorschedulerpb.IN_PROGRESS:
 		if s.planTracker.RenewLease(req.Key.Id, req.Key.Epoch) {
@@ -208,10 +213,12 @@ func (s *Scheduler) UpdatePlanJob(ctx context.Context, req *compactorschedulerpb
 		return nil, status.Error(codes.InvalidArgument, "unrecognized update type")
 	}
 
+	level.Info(s.logger).Log("msg", "could not find lease during update for plan job", "update_type", compactorschedulerpb.UpdateType_name[int32(req.Update)], "id", req.Key.Id, "epoch", req.Key.Epoch)
 	return notFound()
 }
 
 func (s *Scheduler) UpdateCompactionJob(ctx context.Context, req *compactorschedulerpb.UpdateCompactionJobRequest) (*compactorschedulerpb.UpdateJobResponse, error) {
+	level.Info(s.logger).Log("msg", "received compaction lease update request", "update_type", compactorschedulerpb.UpdateType_name[int32(req.Update)], "id", req.Key.Id, "epoch", req.Key.Epoch)
 	switch req.Update {
 	case compactorschedulerpb.IN_PROGRESS:
 		if s.rotator.RenewJobLease(req.Tenant, req.Key.Id, req.Key.Epoch) {
@@ -231,6 +238,7 @@ func (s *Scheduler) UpdateCompactionJob(ctx context.Context, req *compactorsched
 		return nil, status.Error(codes.InvalidArgument, "unrecognized update type")
 	}
 
+	level.Info(s.logger).Log("msg", "could not find lease during update for compaction job", "update_type", compactorschedulerpb.UpdateType_name[int32(req.Update)], "id", req.Key.Id, "epoch", req.Key.Epoch)
 	return notFound()
 }
 
