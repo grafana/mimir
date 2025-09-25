@@ -36,7 +36,7 @@ func TestCloneExpr_ExplicitTestCases(t *testing.T) {
 			Expr: &parser.VectorSelector{
 				Name: "some_metric",
 				LabelMatchers: []*labels.Matcher{
-					mustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "some_metric"),
+					labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "some_metric"),
 				},
 				PosRange: posrange.PositionRange{Start: 119, End: 130},
 			},
@@ -226,14 +226,6 @@ func isTypeSafeToShare(o any) bool {
 	default:
 		return false
 	}
-}
-
-func mustLabelMatcher(mt labels.MatchType, name, val string) *labels.Matcher {
-	m, err := labels.NewMatcher(mt, name, val)
-	if err != nil {
-		panic(err)
-	}
-	return m
 }
 
 func TestSharding_BinaryExpressionsDontTakeExponentialTime(t *testing.T) {
