@@ -19,19 +19,14 @@ import (
 
 type Spawner struct {
 	services.Service
-
-	planMap map[string]time.Time
-
-	allowedTenants *util.AllowList
-	planTracker    *JobTracker[string, struct{}]
-	rotator        *Rotator
-	bkt            objstore.Bucket
-
-	planningInterval time.Duration
-
+	planMap              map[string]time.Time
+	allowedTenants       *util.AllowList
+	planTracker          *JobTracker[string, struct{}]
+	rotator              *Rotator
+	bkt                  objstore.Bucket
+	planningInterval     time.Duration
 	userDiscoveryBackoff backoff.Config
-
-	logger log.Logger
+	logger               log.Logger
 }
 
 func NewSpawner(
@@ -42,12 +37,14 @@ func NewSpawner(
 	bkt objstore.Bucket,
 	logger log.Logger) *Spawner {
 	s := &Spawner{
+		planMap:              make(map[string]time.Time),
 		allowedTenants:       allowList,
 		rotator:              rotator,
 		planTracker:          planTracker,
 		bkt:                  bkt,
 		planningInterval:     cfg.planningInterval,
 		userDiscoveryBackoff: cfg.userDiscoveryBackoff,
+		logger:               logger,
 	}
 	s.Service = services.NewTimerService(cfg.planningCheckInterval, s.start, s.iter, nil)
 	return s
