@@ -246,9 +246,11 @@ func (oss *ownedSeriesService) updateTenant(userID string, db *userTSDB, ringCha
 	return false
 }
 
-func secondaryTSDBHashFunctionForUser(userID string) func(labels.Labels) uint32 {
+func secondaryTSDBHashFunctionForUser(userID string, cfg mimirpb.ShardingConfig) func(labels.Labels) uint32 {
 	return func(ls labels.Labels) uint32 {
-		return mimirpb.ShardByAllLabels(userID, ls)
+		// The TSDB secondary hash is just used to compute the series owned by the ingester, and it's not used
+		// by query sharding, so it's safe – and desired - to use the same sharding config used by distributors.
+		return mimirpb.ShardBySeriesLabels(userID, ls, cfg)
 	}
 }
 

@@ -2003,6 +2003,15 @@ instance_limits:
   # CLI flag: -distributor.instance-limits.max-inflight-push-requests-bytes
   [max_inflight_push_requests_bytes: <int> | default = 0]
 
+sharding:
+  # (experimental) When set to true, the distributor computes the series hash –
+  # used for sharding – excluding the 'le' label. This means that, when this
+  # configuration option is set to true, all buckets of a classic histogram
+  # metric are stored in the same shard. This configuration option should be set
+  # for distributors, rulers and ingesters.
+  # CLI flag: -distributor.sharding.exclude-classic-histogram-bucket-label
+  [exclude_classic_histogram_bucket_label: <boolean> | default = false]
+
 # (experimental) Enable pooling of buffers used for marshaling write requests.
 # CLI flag: -distributor.write-requests-buffer-pooling-enabled
 [write_requests_buffer_pooling_enabled: <boolean> | default = true]

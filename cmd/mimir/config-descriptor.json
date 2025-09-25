@@ -1795,6 +1795,27 @@
           "fieldDefaultValue": null
         },
         {
+          "kind": "block",
+          "name": "sharding",
+          "required": false,
+          "desc": "",
+          "blockEntries": [
+            {
+              "kind": "field",
+              "name": "exclude_classic_histogram_bucket_label",
+              "required": false,
+              "desc": "When set to true, the distributor computes the series hash – used for sharding – excluding the 'le' label. This means that, when this configuration option is set to true, all buckets of a classic histogram metric are stored in the same shard. This configuration option should be set for distributors, rulers and ingesters.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "distributor.sharding.exclude-classic-histogram-bucket-label",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            }
+          ],
+          "fieldValue": null,
+          "fieldDefaultValue": null
+        },
+        {
           "kind": "field",
           "name": "write_requests_buffer_pooling_enabled",
           "required": false,

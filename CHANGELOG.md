@@ -64,6 +64,7 @@
 * [ENHANCEMENT] Ingester: Improved the performance of active series custom trackers matchers. #12663
 * [ENHANCEMENT] Compactor: Log sizes of downloaded and uploaded blocks. #12656
 * [ENHANCEMENT] Ingester: Add `cortex_ingest_storage_reader_receive_and_consume_delay_seconds` metric tracking the time between when a write request is received in the distributor and its content is ingested in ingesters, when the ingest storage is enabled. #12751
+* [ENHANCEMENT] Distributor: Add experimental configuration option `-distributor.sharding.exclude-classic-histogram-bucket-label` to compute the series hash – used for sharding – excluding the 'le' label. When this configuration option is set to true, all buckets of a classic histogram metric are stored in the same shard. #12815
 * [ENHANCEMENT] Ruler: Add `ruler_evaluation_consistency_max_delay` per-tenant configuration option support, to specify the maximum tolerated ingestion delay for eventually consistent rule evaluations. This feature is used only when ingest storage is enabled. By default, no maximum delay is enforced. #12751
 * [BUGFIX] Distributor: Calculate `WriteResponseStats` before validation and `PushWrappers`. This prevents clients using Remote-Write 2.0 from seeing a diff in written samples, histograms and exemplars. #12682
 * [BUGFIX] Compactor: Fix cortex_compactor_block_uploads_failed_total metric showing type="unknown". #12477

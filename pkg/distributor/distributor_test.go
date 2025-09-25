@@ -6526,7 +6526,7 @@ func (i *mockIngester) Push(ctx context.Context, req *mimirpb.WriteRequest, _ ..
 			return nil, err
 		}
 
-		hash := mimirpb.ShardByAllLabelAdapters(orgid, series.Labels)
+		hash := mimirpb.ShardBySeriesLabelAdapters(orgid, series.Labels, mimirpb.ShardingConfig{})
 		existing, ok := i.timeseries[hash]
 		if !ok {
 			i.timeseries[hash] = &series
@@ -8083,7 +8083,7 @@ func TestSeriesAreShardedToCorrectIngesters(t *testing.T) {
 		totalMetadata += len(ing.metadata)
 
 		for _, ts := range ing.timeseries {
-			token := tokenForLabels(userName, ts.Labels)
+			token := tokenForLabels(userName, ts.Labels, distrib.cfg.ShardingConfig)
 			ingIx := getIngesterIndexForToken(token, ingesters)
 			assert.Equal(t, ix, ingIx)
 		}
@@ -8099,7 +8099,7 @@ func TestSeriesAreShardedToCorrectIngesters(t *testing.T) {
 
 	// Verify that all timeseries were forwarded to ingesters.
 	for _, ts := range req.Timeseries {
-		token := tokenForLabels(userName, ts.Labels)
+		token := tokenForLabels(userName, ts.Labels, distrib.cfg.ShardingConfig)
 		ingIx := getIngesterIndexForToken(token, ingesters)
 
 		assert.Equal(t, ts.Labels, ingesters[ingIx].timeseries[token].Labels)

@@ -6,8 +6,18 @@
 package mimirpb
 
 import (
+	"flag"
+
 	"github.com/prometheus/prometheus/model/labels"
 )
+
+type ShardingConfig struct {
+	ExcludeClassicHistogramBucketLabel bool `yaml:"exclude_classic_histogram_bucket_label" category:"experimental"`
+}
+
+func (l *ShardingConfig) RegisterFlags(f *flag.FlagSet) {
+	f.BoolVar(&l.ExcludeClassicHistogramBucketLabel, "distributor.sharding.exclude-classic-histogram-bucket-label", false, "When set to true, the distributor computes the series hash – used for sharding – excluding the 'le' label. This means that, when this configuration option is set to true, all buckets of a classic histogram metric are stored in the same shard. This configuration option should be set for distributors, rulers and ingesters.")
+}
 
 // ShardByMetricName returns the token for the given metric. The provided metricName
 // is guaranteed to not be retained.
@@ -23,22 +33,30 @@ func ShardByUser(userID string) uint32 {
 	return h
 }
 
-// ShardByAllLabels returns the token for given user and series.
+// ShardBySeriesLabels returns the token that must be used to shard a series across ingesters / partitions for given user.
 //
-// ShardByAllLabels generates different values for different order of same labels.
-func ShardByAllLabels(userID string, ls labels.Labels) uint32 {
+// ShardBySeriesLabels generates different values for different order of same labels.
+func ShardBySeriesLabels(userID string, ls labels.Labels, cfg ShardingConfig) uint32 {
 	h := ShardByUser(userID)
 	ls.Range(func(l labels.Label) {
+		if cfg.ExcludeClassicHistogramBucketLabel && l.Name == "le" {
+			return
+		}
+
 		h = HashAdd32(h, l.Name)
 		h = HashAdd32(h, l.Value)
 	})
 	return h
 }
 
-// ShardByAllLabelAdapters is like ShardByAllLabel, but uses LabelAdapter type.
-func ShardByAllLabelAdapters(userID string, ls []LabelAdapter) uint32 {
+// ShardBySeriesLabelAdapters is like ShardByAllLabel, but uses LabelAdapter type.
+func ShardBySeriesLabelAdapters(userID string, ls []LabelAdapter, cfg ShardingConfig) uint32 {
 	h := ShardByUser(userID)
 	for _, l := range ls {
+		if cfg.ExcludeClassicHistogramBucketLabel && l.Name == "le" {
+			continue
+		}
+
 		h = HashAdd32(h, l.Name)
 		h = HashAdd32(h, l.Value)
 	}

@@ -190,6 +190,9 @@ type Config struct {
 	DefaultLimits    InstanceLimits         `yaml:"instance_limits"`
 	InstanceLimitsFn func() *InstanceLimits `yaml:"-"`
 
+	// DistributorShardingConfig is the configuration used by distributors to shard series across ingesters / partitions.
+	DistributorShardingConfig mimirpb.ShardingConfig `yaml:"-"`
+
 	IgnoreSeriesLimitForMetricNames string `yaml:"ignore_series_limit_for_metric_names" category:"advanced"`
 
 	ReadPathCPUUtilizationLimit    float64 `yaml:"read_path_cpu_utilization_limit" category:"experimental"`
@@ -2878,7 +2881,7 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 		),
 		PostingsClonerFactory:  tsdb.DefaultPostingsClonerFactory{},
 		EnableNativeHistograms: i.limits.NativeHistogramsIngestionEnabled(userID),
-		SecondaryHashFunction:  secondaryTSDBHashFunctionForUser(userID),
+		SecondaryHashFunction:  secondaryTSDBHashFunctionForUser(userID, i.cfg.DistributorShardingConfig),
 		IndexLookupPlannerFunc: i.getIndexLookupPlannerFunc(userID),
 		BlockChunkQuerierFunc: func(b tsdb.BlockReader, mint, maxt int64) (storage.ChunkQuerier, error) {
 			return i.createBlockChunkQuerier(userID, b, mint, maxt)
