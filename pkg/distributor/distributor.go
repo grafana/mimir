@@ -221,6 +221,12 @@ type OTelResourceAttributePromotionConfig interface {
 	PromoteOTelResourceAttributes(id string) []string
 }
 
+// KeepIdentifyingOTelResourceAttributesConfig contains methods for configuring keeping of identifying OTel resource attributes.
+type KeepIdentifyingOTelResourceAttributesConfig interface {
+	// OTelKeepIdentifyingResourceAttributes returns whether to keep identifying OTel resource attributes.
+	OTelKeepIdentifyingResourceAttributes(id string) bool
+}
+
 // Config contains the configuration required to
 // create a Distributor
 type Config struct {
@@ -276,6 +282,9 @@ type Config struct {
 
 	// OTelResourceAttributePromotionConfig allows for specializing OTel resource attribute promotion.
 	OTelResourceAttributePromotionConfig OTelResourceAttributePromotionConfig `yaml:"-"`
+
+	// KeepIdentifyingOTelResourceAttributesConfig allows for specializing keeping of identifying OTel resource attributes.
+	KeepIdentifyingOTelResourceAttributesConfig KeepIdentifyingOTelResourceAttributesConfig `yaml:"-"`
 
 	// Influx endpoint disabled by default
 	EnableInfluxEndpoint bool `yaml:"influx_endpoint_enabled" category:"experimental" doc:"hidden"`
