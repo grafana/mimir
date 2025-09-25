@@ -77,7 +77,9 @@ For more information, refer to [Compactor](../../../references/architecture/comp
 
 ### The read path
 
-<img src="/media/docs/mimir/ingest_storage_reads.png" alt="Ingest storage architecture of Grafana Mimir's read path" width="600">
+<div align="center">
+  <img src="/media/docs/mimir/ingest_storage_reads.png" alt="Ingest storage architecture of Grafana Mimir's read path" width="400">
+</div>
 
 Distributors write samples to Kafka on the write path, and ingesters consume them on the read path. Each partition is assigned to a single ingester from each zone, and each ingester consumes from exactly one partition. Multiple ingester zones provide high availability on the read path.
 
