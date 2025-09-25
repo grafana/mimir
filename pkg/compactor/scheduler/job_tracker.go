@@ -56,10 +56,11 @@ type JobTracker[K comparable, V any] struct {
 
 func NewJobTracker[K comparable, V any](maxLeases int) *JobTracker[K, V] {
 	return &JobTracker[K, V]{
-		q:         list.New(),
-		leased:    list.New(),
-		maxLeases: maxLeases,
-		mtx:       &sync.Mutex{},
+		q:          list.New(),
+		leased:     list.New(),
+		elementMap: make(map[K]*list.Element),
+		maxLeases:  maxLeases,
+		mtx:        &sync.Mutex{},
 	}
 }
 
