@@ -4,11 +4,11 @@ package lookupplan
 
 import (
 	"context"
-	"sync/atomic" //lint:ignore faillint we can't use go.uber.org/atomic with a protobuf struct without wrapping it.
 
 	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/index"
+	"go.uber.org/atomic"
 )
 
 type queryStatsContextKey int
@@ -39,12 +39,12 @@ func IsQueryStatsEnabled(ctx context.Context) bool {
 }
 
 // QueryStats tracks query execution statistics for lookup planning.
-// All fields must be accessed using atomic operations for thread safety.
+// All fields use atomic types for thread safety.
 type QueryStats struct {
-	estimatedFinalCardinality uint64
-	estimatedSelectedPostings uint64
-	actualSelectedPostings    uint64
-	actualFinalCardinality    uint64
+	estimatedFinalCardinality atomic.Uint64
+	estimatedSelectedPostings atomic.Uint64
+	actualSelectedPostings    atomic.Uint64
+	actualFinalCardinality    atomic.Uint64
 }
 
 // SetEstimatedFinalCardinality sets the estimated final cardinality.
@@ -52,7 +52,7 @@ func (q *QueryStats) SetEstimatedFinalCardinality(cardinality uint64) {
 	if q == nil {
 		return
 	}
-	atomic.StoreUint64(&q.estimatedFinalCardinality, cardinality)
+	q.estimatedFinalCardinality.Store(cardinality)
 }
 
 // LoadEstimatedFinalCardinality returns the estimated final cardinality.
@@ -60,7 +60,7 @@ func (q *QueryStats) LoadEstimatedFinalCardinality() uint64 {
 	if q == nil {
 		return 0
 	}
-	return atomic.LoadUint64(&q.estimatedFinalCardinality)
+	return q.estimatedFinalCardinality.Load()
 }
 
 // SetEstimatedSelectedPostings sets the estimated selected postings count.
@@ -68,7 +68,7 @@ func (q *QueryStats) SetEstimatedSelectedPostings(postings uint64) {
 	if q == nil {
 		return
 	}
-	atomic.StoreUint64(&q.estimatedSelectedPostings, postings)
+	q.estimatedSelectedPostings.Store(postings)
 }
 
 // LoadEstimatedSelectedPostings returns the estimated selected postings count.
@@ -76,7 +76,7 @@ func (q *QueryStats) LoadEstimatedSelectedPostings() uint64 {
 	if q == nil {
 		return 0
 	}
-	return atomic.LoadUint64(&q.estimatedSelectedPostings)
+	return q.estimatedSelectedPostings.Load()
 }
 
 // SetActualSelectedPostings sets the actual selected postings count.
@@ -84,7 +84,7 @@ func (q *QueryStats) SetActualSelectedPostings(postings uint64) {
 	if q == nil {
 		return
 	}
-	atomic.StoreUint64(&q.actualSelectedPostings, postings)
+	q.actualSelectedPostings.Store(postings)
 }
 
 // LoadActualSelectedPostings returns the actual selected postings count.
@@ -92,7 +92,7 @@ func (q *QueryStats) LoadActualSelectedPostings() uint64 {
 	if q == nil {
 		return 0
 	}
-	return atomic.LoadUint64(&q.actualSelectedPostings)
+	return q.actualSelectedPostings.Load()
 }
 
 // SetActualFinalCardinality sets the actual final cardinality.
@@ -100,7 +100,7 @@ func (q *QueryStats) SetActualFinalCardinality(cardinality uint64) {
 	if q == nil {
 		return
 	}
-	atomic.StoreUint64(&q.actualFinalCardinality, cardinality)
+	q.actualFinalCardinality.Store(cardinality)
 }
 
 // LoadActualFinalCardinality returns the actual final cardinality.
@@ -108,7 +108,7 @@ func (q *QueryStats) LoadActualFinalCardinality() uint64 {
 	if q == nil {
 		return 0
 	}
-	return atomic.LoadUint64(&q.actualFinalCardinality)
+	return q.actualFinalCardinality.Load()
 }
 
 type ActualSelectedPostingsClonerFactory struct{}
