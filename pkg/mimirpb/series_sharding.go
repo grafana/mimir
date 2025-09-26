@@ -39,7 +39,7 @@ func ShardByUser(userID string) uint32 {
 func ShardBySeriesLabels(userID string, ls labels.Labels, cfg ShardingConfig) uint32 {
 	h := ShardByUser(userID)
 	ls.Range(func(l labels.Label) {
-		if cfg.ExcludeClassicHistogramBucketLabel && l.Name == "le" {
+		if cfg.ExcludeClassicHistogramBucketLabel && l.Name == labels.BucketLabel {
 			return
 		}
 
@@ -53,7 +53,7 @@ func ShardBySeriesLabels(userID string, ls labels.Labels, cfg ShardingConfig) ui
 func ShardBySeriesLabelAdapters(userID string, ls []LabelAdapter, cfg ShardingConfig) uint32 {
 	h := ShardByUser(userID)
 	for _, l := range ls {
-		if cfg.ExcludeClassicHistogramBucketLabel && l.Name == "le" {
+		if cfg.ExcludeClassicHistogramBucketLabel && l.Name == labels.BucketLabel {
 			continue
 		}
 
