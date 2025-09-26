@@ -2589,6 +2589,10 @@ compactor:
   env: []
   extraEnvFrom: []
 
+gossipRing:
+  service:
+    annotations: {}
+
 memcached:
   image:
     # -- Memcached Docker image repository
