@@ -107,6 +107,7 @@
 ### Documentation
 
 * [ENHANCEMENT] Improve the MimirIngesterReachingSeriesLimit runbook. #12356
+* [ENHANCEMENT] Improve the description of how to limit the number of buckets in native histograms. #12797
 * [BUGFIX] Add a missing attribute to the list of default promoted OTel resource attributes in the docs: deployment.environment. #12181
 
 ## 2.17.1
