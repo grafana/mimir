@@ -113,6 +113,10 @@ func TestFunctionDeduplicateAndMerge(t *testing.T) {
 		"timestamp":                    `timestamp({__name__=~"float.*"})`,
 		"vector":                       `<skip>`, // vector() takes a scalar, so this test doesn't apply.
 		"year":                         `year({__name__=~"float.*"})`,
+		"ts_of_first_over_time":        `ts_of_first_over_time({__name__=~"float.*"}[1m])`,
+		"ts_of_last_over_time":         `ts_of_last_over_time({__name__=~"float.*"}[1m])`,
+		"ts_of_min_over_time":          `ts_of_min_over_time({__name__=~"float.*"}[1m])`,
+		"ts_of_max_over_time":          `ts_of_max_over_time({__name__=~"float.*"}[1m])`,
 	}
 
 	for f, functionMetadata := range functions.RegisteredFunctions {
