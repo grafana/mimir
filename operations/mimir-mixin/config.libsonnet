@@ -28,7 +28,7 @@
     // The name for the rollout-operator. This is also used as the container name
     rollout_operator_dashboard_enable: true,
     rollout_operator_dashboard_title: 'rollout-operator',
-    // This is the md5 of the mimir-rollout-operator dashboard name.
+    // This is the md5 of the rollout-operator dashboard name.
     // This is set such that if the name / uid was to change an error will be raised in dashboard generation.
     // This ensures that the uid is consistent and can be reliably linked to.
     rollout_operator_dashboard_uid: 'f40e8042a6be71a98444a29b2c4e9421',
