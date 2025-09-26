@@ -95,7 +95,7 @@ func TestPartitionReader_ShouldHonorConfiguredFetchMaxWait(t *testing.T) {
 	cfg := defaultReaderTestConfig(t, "", topicName, partitionID, nil)
 	cfg.kafka.FetchMaxWait = fetchMaxWait
 
-	reader, err := newPartitionReader(cfg.kafka, cfg.partitionID, "test-group", cfg.consumer, cfg.logger, cfg.registry)
+	reader, err := newPartitionReader(cfg.kafka, cfg.partitionID, "test-group", cfg.consumer, &NoOpPreCommitNotifier{}, cfg.logger, cfg.registry)
 	require.NoError(t, err)
 	require.Equal(t, fetchMaxWait, reader.concurrentFetchersMinBytesMaxWaitTime)
 }
@@ -107,7 +107,7 @@ func TestPartitionReader_logFetchErrors(t *testing.T) {
 	)
 
 	cfg := defaultReaderTestConfig(t, "", topicName, partitionID, nil)
-	reader, err := newPartitionReader(cfg.kafka, cfg.partitionID, "test-group", cfg.consumer, cfg.logger, cfg.registry)
+	reader, err := newPartitionReader(cfg.kafka, cfg.partitionID, "test-group", cfg.consumer, &NoOpPreCommitNotifier{}, cfg.logger, cfg.registry)
 	require.NoError(t, err)
 
 	reader.logFetchErrors(kgo.Fetches{
@@ -232,7 +232,7 @@ func TestPartitionReader_ConsumerStopping(t *testing.T) {
 
 				return err
 			})
-			reader := createReader(t, clusterAddr, topicName, partitionID, consumer, concurrencyVariant...)
+			reader := createReader(t, clusterAddr, topicName, partitionID, consumer, &NoOpPreCommitNotifier{}, concurrencyVariant...)
 			require.NoError(t, services.StartAndAwaitRunning(ctx, reader))
 
 			// Write to Kafka.
@@ -693,7 +693,7 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 					withRegistry(reg),
 				}, concurrencyVariant...)
 
-				reader := createReader(t, clusterAddr, topicName, partitionID, consumer, readerOpts...)
+				reader := createReader(t, clusterAddr, topicName, partitionID, consumer, &NoOpPreCommitNotifier{}, readerOpts...)
 				require.NoError(t, services.StartAndAwaitRunning(ctx, reader))
 				require.NoError(t, services.StopAndAwaitTerminated(ctx, reader))
 
@@ -741,7 +741,7 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 					withRegistry(reg),
 				}, concurrencyVariant...)
 
-				reader := createReader(t, clusterAddr, topicName, partitionID, consumer, readerOpts...)
+				reader := createReader(t, clusterAddr, topicName, partitionID, consumer, &NoOpPreCommitNotifier{}, readerOpts...)
 				require.NoError(t, services.StartAndAwaitRunning(ctx, reader))
 				require.NoError(t, services.StopAndAwaitTerminated(ctx, reader))
 
@@ -802,7 +802,7 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 					withLogger(log.NewLogfmtLogger(logs)),
 				}, concurrencyVariant...)
 
-				reader := createReader(t, clusterAddr, topicName, partitionID, consumer, readerOpts...)
+				reader := createReader(t, clusterAddr, topicName, partitionID, consumer, &NoOpPreCommitNotifier{}, readerOpts...)
 				require.NoError(t, reader.StartAsync(ctx))
 				t.Cleanup(func() {
 					require.NoError(t, services.StopAndAwaitTerminated(ctx, reader))
@@ -900,7 +900,7 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 					withLogger(log.NewLogfmtLogger(logs)),
 				}, concurrencyVariant...)
 
-				reader := createReader(t, clusterAddr, topicName, partitionID, consumer, readerOpts...)
+				reader := createReader(t, clusterAddr, topicName, partitionID, consumer, &NoOpPreCommitNotifier{}, readerOpts...)
 				require.NoError(t, reader.StartAsync(ctx))
 				t.Cleanup(func() {
 					require.NoError(t, services.StopAndAwaitTerminated(ctx, reader))
@@ -997,7 +997,7 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 					withRegistry(reg),
 				}, concurrencyVariant...)
 
-				reader := createReader(t, clusterAddr, topicName, partitionID, consumer, readerOpts...)
+				reader := createReader(t, clusterAddr, topicName, partitionID, consumer, &NoOpPreCommitNotifier{}, readerOpts...)
 				require.NoError(t, reader.StartAsync(ctx))
 				t.Cleanup(func() {
 					require.NoError(t, services.StopAndAwaitTerminated(ctx, reader))
@@ -1109,7 +1109,7 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 							withLogger(log.NewLogfmtLogger(logs)),
 						}, concurrencyVariant...)
 
-						reader := createReader(t, clusterAddr, topicName, partitionID, consumer, readerOpts...)
+						reader := createReader(t, clusterAddr, topicName, partitionID, consumer, &NoOpPreCommitNotifier{}, readerOpts...)
 						require.NoError(t, reader.StartAsync(ctx))
 						t.Cleanup(func() {
 							require.NoError(t, services.StopAndAwaitTerminated(ctx, reader))
@@ -1222,7 +1222,7 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 					withLogger(log.NewLogfmtLogger(logs)),
 				}, concurrencyVariant...)
 
-				reader := createReader(t, clusterAddr, topicName, partitionID, consumer, readerOpts...)
+				reader := createReader(t, clusterAddr, topicName, partitionID, consumer, &NoOpPreCommitNotifier{}, readerOpts...)
 				require.NoError(t, reader.StartAsync(ctx))
 				t.Cleanup(func() {
 					require.NoError(t, services.StopAndAwaitTerminated(ctx, reader))
@@ -1357,7 +1357,7 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 					withLogger(log.NewLogfmtLogger(logs)),
 				}, concurrencyVariant...)
 
-				reader := createReader(t, clusterAddr, topicName, partitionID, consumer, readerOpts...)
+				reader := createReader(t, clusterAddr, topicName, partitionID, consumer, &NoOpPreCommitNotifier{}, readerOpts...)
 				require.NoError(t, reader.StartAsync(ctx))
 				t.Cleanup(func() {
 					require.NoError(t, services.StopAndAwaitTerminated(ctx, reader))
@@ -1470,7 +1470,7 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 							withLogger(log.NewLogfmtLogger(logs)),
 						}, concurrencyVariant...)
 
-						reader := createReader(t, clusterAddr, topicName, partitionID, consumer, readerOpts...)
+						reader := createReader(t, clusterAddr, topicName, partitionID, consumer, &NoOpPreCommitNotifier{}, readerOpts...)
 						require.NoError(t, reader.StartAsync(ctx))
 						t.Cleanup(func() {
 							require.NoError(t, services.StopAndAwaitTerminated(ctx, reader))
@@ -1603,7 +1603,7 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 					withLogger(log.NewLogfmtLogger(logs)),
 				}, concurrencyVariant...)
 
-				reader := createReader(t, clusterAddr, topicName, partitionID, consumer, readerOpts...)
+				reader := createReader(t, clusterAddr, topicName, partitionID, consumer, &NoOpPreCommitNotifier{}, readerOpts...)
 				require.NoError(t, reader.StartAsync(ctx))
 				t.Cleanup(func() {
 					require.NoError(t, services.StopAndAwaitTerminated(ctx, reader))
@@ -1664,7 +1664,7 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 				readerOpts := append([]readerTestCfgOpt{
 					withTargetAndMaxConsumerLagAtStartup(time.Second, time.Second),
 				}, concurrencyVariant...)
-				reader := createReader(t, clusterAddr, topicName, partitionID, consumer, readerOpts...)
+				reader := createReader(t, clusterAddr, topicName, partitionID, consumer, &NoOpPreCommitNotifier{}, readerOpts...)
 
 				readerCtx, cancelReaderCtx := context.WithCancel(ctx)
 				require.NoError(t, reader.StartAsync(readerCtx))
@@ -1728,7 +1728,7 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 				readerOpts := append([]readerTestCfgOpt{
 					withTargetAndMaxConsumerLagAtStartup(time.Second, time.Second),
 				}, concurrencyVariant...)
-				reader := createReader(t, clusterAddr, topicName, partitionID, consumer, readerOpts...)
+				reader := createReader(t, clusterAddr, topicName, partitionID, consumer, &NoOpPreCommitNotifier{}, readerOpts...)
 
 				readerCtx, cancelReaderCtx := context.WithCancel(ctx)
 				require.NoError(t, reader.StartAsync(readerCtx))
@@ -1819,7 +1819,7 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 							withRegistry(reg),
 						}, concurrencyVariant...)
 
-						reader := createReader(t, clusterAddr, topicName, partitionID, consumer, readerOpts...)
+						reader := createReader(t, clusterAddr, topicName, partitionID, consumer, &NoOpPreCommitNotifier{}, readerOpts...)
 
 						require.NoError(t, services.StartAndAwaitRunning(ctx, reader))
 						t.Cleanup(func() {
@@ -1888,6 +1888,7 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 		reg := prometheus.NewPedanticRegistry()
 		logs := &concurrency.SyncBuffer{}
 		reader := createReader(t, clusterAddr, topicName, partitionID, consumer,
+			&NoOpPreCommitNotifier{},
 			withConsumeFromPositionAtStartup(consumeFromStart),
 			withTargetAndMaxConsumerLagAtStartup(time.Second, 2*time.Second),
 			withRegistry(reg),
@@ -2066,7 +2067,7 @@ func TestPartitionReader_ShouldNotBufferRecordsInTheKafkaClientWhenDone(t *testi
 				withMaxBufferedBytes(maxBufferedBytes),
 			}, concurrencyVariant...)
 
-			reader := createReader(t, clusterAddr, topicName, partitionID, consumer, readerOpts...)
+			reader := createReader(t, clusterAddr, topicName, partitionID, consumer, &NoOpPreCommitNotifier{}, readerOpts...)
 			require.NoError(t, reader.StartAsync(ctx))
 			t.Cleanup(func() {
 				require.NoError(t, services.StopAndAwaitTerminated(ctx, reader))
@@ -2179,7 +2180,7 @@ func TestPartitionReader_ShouldNotPanicIfBufferedRecordsIsCalledBeforeStarting(t
 	)
 
 	_, clusterAddr := testkafka.CreateCluster(t, partitionID+1, topicName)
-	reader := createReader(t, clusterAddr, topicName, partitionID, nil)
+	reader := createReader(t, clusterAddr, topicName, partitionID, nil, &NoOpPreCommitNotifier{})
 
 	require.Zero(t, reader.BufferedRecords())
 }
@@ -2300,7 +2301,7 @@ func TestPartitionReader_ShouldNotMissRecordsIfFetchRequestContainPartialFailure
 		withFetchConcurrency(concurrency),
 	}
 
-	reader := createReader(t, clusterAddr, topicName, partitionID, consumer, readerOpts...)
+	reader := createReader(t, clusterAddr, topicName, partitionID, consumer, &NoOpPreCommitNotifier{}, readerOpts...)
 	require.NoError(t, reader.StartAsync(ctx))
 	t.Cleanup(func() {
 		require.NoError(t, services.StopAndAwaitTerminated(ctx, reader))
@@ -2439,7 +2440,7 @@ func TestPartitionReader_ShouldNotMissRecordsIfKafkaReturnsAFetchBothWithAnError
 				withLogger(log.NewNopLogger()),
 			}, concurrencyVariant...)
 
-			reader := createReader(t, clusterAddr, topicName, partitionID, consumer, readerOpts...)
+			reader := createReader(t, clusterAddr, topicName, partitionID, consumer, &NoOpPreCommitNotifier{}, readerOpts...)
 			require.NoError(t, reader.StartAsync(ctx))
 			t.Cleanup(func() {
 				require.NoError(t, services.StopAndAwaitTerminated(ctx, reader))
@@ -2488,7 +2489,7 @@ func TestPartitionReader_fetchLastCommittedOffset(t *testing.T) {
 		var (
 			cluster, clusterAddr = testkafka.CreateClusterWithoutCustomConsumerGroupsSupport(t, partitionID+1, topicName)
 			consumer             = consumerFunc(func(context.Context, iter.Seq[*kgo.Record]) error { return nil })
-			reader               = createReader(t, clusterAddr, topicName, partitionID, consumer, withTargetAndMaxConsumerLagAtStartup(time.Second, time.Second))
+			reader               = createReader(t, clusterAddr, topicName, partitionID, consumer, &NoOpPreCommitNotifier{}, withTargetAndMaxConsumerLagAtStartup(time.Second, time.Second))
 		)
 
 		cluster.ControlKey(int16(kmsg.OffsetFetch), func(request kmsg.Request) (kmsg.Response, error, bool) {
@@ -2519,7 +2520,7 @@ func TestPartitionReader_fetchLastCommittedOffset(t *testing.T) {
 		var (
 			cluster, clusterAddr = testkafka.CreateClusterWithoutCustomConsumerGroupsSupport(t, partitionID+1, topicName)
 			consumer             = consumerFunc(func(context.Context, iter.Seq[*kgo.Record]) error { return nil })
-			reader               = createReader(t, clusterAddr, topicName, partitionID, consumer, withTargetAndMaxConsumerLagAtStartup(time.Second, time.Second))
+			reader               = createReader(t, clusterAddr, topicName, partitionID, consumer, &NoOpPreCommitNotifier{}, withTargetAndMaxConsumerLagAtStartup(time.Second, time.Second))
 		)
 
 		cluster.ControlKey(int16(kmsg.OffsetFetch), func(request kmsg.Request) (kmsg.Response, error, bool) {
@@ -2560,7 +2561,7 @@ func TestPartitionReader_fetchLastCommittedOffset(t *testing.T) {
 		var (
 			cluster, clusterAddr = testkafka.CreateClusterWithoutCustomConsumerGroupsSupport(t, partitionID+1, topicName)
 			consumer             = consumerFunc(func(context.Context, iter.Seq[*kgo.Record]) error { return nil })
-			reader               = createReader(t, clusterAddr, topicName, partitionID, consumer, withTargetAndMaxConsumerLagAtStartup(time.Second, time.Second))
+			reader               = createReader(t, clusterAddr, topicName, partitionID, consumer, &NoOpPreCommitNotifier{}, withTargetAndMaxConsumerLagAtStartup(time.Second, time.Second))
 		)
 
 		cluster.ControlKey(int16(kmsg.OffsetFetch), func(request kmsg.Request) (kmsg.Response, error, bool) {
@@ -2646,7 +2647,7 @@ func TestPartitionCommitter(t *testing.T) {
 		adm := kadm.NewClient(client)
 		reg := prometheus.NewPedanticRegistry()
 
-		committer := newPartitionCommitter(cfg, adm, partitionID, consumerGroup, logger, reg)
+		committer := newPartitionCommitter(cfg, adm, partitionID, consumerGroup, &NoOpPreCommitNotifier{}, logger, reg)
 		require.NoError(t, services.StartAndAwaitRunning(context.Background(), committer))
 		t.Cleanup(func() {
 			require.NoError(t, services.StopAndAwaitTerminated(context.Background(), committer))
@@ -2712,7 +2713,7 @@ func TestPartitionCommitter_commit(t *testing.T) {
 
 		adm := kadm.NewClient(client)
 		reg := prometheus.NewPedanticRegistry()
-		committer := newPartitionCommitter(cfg, adm, partitionID, consumerGroup, log.NewNopLogger(), reg)
+		committer := newPartitionCommitter(cfg, adm, partitionID, consumerGroup, &NoOpPreCommitNotifier{}, log.NewNopLogger(), reg)
 
 		require.NoError(t, committer.commit(context.Background(), 123))
 
@@ -2752,7 +2753,7 @@ func TestPartitionCommitter_commit(t *testing.T) {
 
 		adm := kadm.NewClient(client)
 		reg := prometheus.NewPedanticRegistry()
-		committer := newPartitionCommitter(cfg, adm, partitionID, consumerGroup, log.NewNopLogger(), reg)
+		committer := newPartitionCommitter(cfg, adm, partitionID, consumerGroup, &NoOpPreCommitNotifier{}, log.NewNopLogger(), reg)
 
 		require.Error(t, committer.commit(context.Background(), 123))
 
@@ -2936,7 +2937,7 @@ func defaultReaderTestConfig(t *testing.T, addr string, topicName string, partit
 	}
 }
 
-func createReader(t *testing.T, addr string, topicName string, partitionID int32, consumer RecordConsumer, opts ...readerTestCfgOpt) *PartitionReader {
+func createReader(t *testing.T, addr string, topicName string, partitionID int32, consumer RecordConsumer, pusher PreCommitNotifier, opts ...readerTestCfgOpt) *PartitionReader {
 	cfg := defaultReaderTestConfig(t, addr, topicName, partitionID, consumer)
 	for _, o := range opts {
 		o(cfg)
@@ -2954,7 +2955,7 @@ func createReader(t *testing.T, addr string, topicName string, partitionID int32
 	// Ensure the config is valid.
 	require.NoError(t, cfg.kafka.Validate())
 
-	reader, err := newPartitionReader(cfg.kafka, cfg.partitionID, "test-group", cfg.consumer, cfg.logger, cfg.registry)
+	reader, err := newPartitionReader(cfg.kafka, cfg.partitionID, "test-group", cfg.consumer, pusher, cfg.logger, cfg.registry)
 	require.NoError(t, err)
 
 	// Reduce the time the fake kafka would wait for new records. Sometimes this blocks startup.
@@ -2964,7 +2965,7 @@ func createReader(t *testing.T, addr string, topicName string, partitionID int32
 }
 
 func createAndStartReader(ctx context.Context, t *testing.T, addr string, topicName string, partitionID int32, consumer RecordConsumer, opts ...readerTestCfgOpt) *PartitionReader {
-	reader := createReader(t, addr, topicName, partitionID, consumer, opts...)
+	reader := createReader(t, addr, topicName, partitionID, consumer, &NoOpPreCommitNotifier{}, opts...)
 
 	require.NoError(t, services.StartAndAwaitRunning(ctx, reader))
 	t.Cleanup(func() {
