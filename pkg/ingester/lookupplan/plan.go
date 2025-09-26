@@ -15,7 +15,12 @@ import (
 )
 
 const (
-	costPerIteratedPosting = 0.01
+	// estimatedRetrievedSeriesCost accounts for retrieving a series from the index.
+	// This includes iterating postings and retrieving series from the index, and checking if a series belongs to the query's shard.
+	// Iterating postings is normally very cheap.
+	// Most of the cost comes from retrieving the labels and checking/hashing the series for query sharding.
+	// For comparison, you can see that vendor/github.com/prometheus/prometheus/model/labels/cost.go, estimatedStringEqualityCost=1.1.
+	estimatedRetrievedSeriesCost = 10
 )
 
 // plan is a representation of one way of executing a vector selector.
@@ -98,6 +103,7 @@ func (p plan) indexLookupCost() float64 {
 }
 
 // intersectionCost returns the cost of intersecting posting lists from multiple index predicates
+// This includes retrieving the series' labels from the index.
 func (p plan) intersectionCost() float64 {
 	iteratedPostings := uint64(0)
 	for i, pred := range p.predicates {
@@ -108,7 +114,7 @@ func (p plan) intersectionCost() float64 {
 		iteratedPostings += pred.cardinality
 	}
 
-	return float64(iteratedPostings) * costPerIteratedPosting
+	return float64(iteratedPostings) * estimatedRetrievedSeriesCost
 }
 
 // filterCost returns the cost of applying scan predicates to the fetched series
