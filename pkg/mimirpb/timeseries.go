@@ -275,7 +275,7 @@ var TimeseriesUnmarshalCachingEnabled = true
 //   - in case 3 the exemplars don't get unmarshaled if
 //     p.skipUnmarshalingExemplars is false,
 //   - is symbols is not nil, we unmarshal from Remote Write 2.0 format.
-func (p *PreallocTimeseries) Unmarshal(dAtA []byte, symbols *rw2PagedSymbols, metadata map[string]*orderAwareMetricMetadata, skipNormalizeMetricName bool) error {
+func (p *PreallocTimeseries) Unmarshal(dAtA []byte, symbols *rw2PagedSymbols, metadata metadataSet, skipNormalizeMetricName bool) error {
 	if TimeseriesUnmarshalCachingEnabled && symbols == nil {
 		// TODO(krajorama): check if it makes sense for RW2 as well.
 		p.marshalledData = dAtA
