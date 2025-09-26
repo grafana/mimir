@@ -9,11 +9,17 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
+	"os"
+	"path/filepath"
 	"reflect"
+	"slices"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/regexp"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
@@ -64,14 +70,7 @@ func TestCloneExpr_ExplicitTestCases(t *testing.T) {
 }
 
 func TestCloneExpr(t *testing.T) {
-	oldDurationExpressions := parser.ExperimentalDurationExpr
-	oldExperimentalFunctions := parser.EnableExperimentalFunctions
-	parser.ExperimentalDurationExpr = true
-	parser.EnableExperimentalFunctions = true
-	t.Cleanup(func() {
-		parser.ExperimentalDurationExpr = oldDurationExpressions
-		parser.EnableExperimentalFunctions = oldExperimentalFunctions
-	})
+	enableExperimentalParserFeaturesDuringTest(t)
 
 	testCases := []string{
 		// Vector selectors
@@ -92,6 +91,7 @@ func TestCloneExpr(t *testing.T) {
 		`foo{env="bar"}[1m] @ end()`,
 		`foo{env="bar"}[1m] @ 1234`,
 		`foo{env="bar"}[1m+3m]`,
+		`foo{env="bar"}[step()+1]`,
 
 		// Literals
 		`123`,
@@ -116,6 +116,7 @@ func TestCloneExpr(t *testing.T) {
 		// Functions
 		`abs(foo)`,
 		`label_replace(foo, "bar", "$1", "foo", "(.*)")`,
+		`day_of_month()`,
 		`info(foo, {env="prod"})`, // Test VectorSelector.BypassEmptyMatcherCheck used by info().
 
 		// Subqueries
@@ -149,9 +150,107 @@ func TestCloneExpr(t *testing.T) {
 			require.Equal(t, originalExpression, clonedExpression)
 			require.Equal(t, originalExpression.String(), clonedExpression.String())
 			requireNoSharedPointers(t, originalExpression, clonedExpression)
-
 		})
 	}
+}
+
+// This test supplements TestCloneExpr by running all of the engine test cases through cloneExpr.
+// The goal of this is to detect cases not covered by TestCloneExpr.
+func TestCloneExpr_EngineTestCases(t *testing.T) {
+	enableExperimentalParserFeaturesDuringTest(t)
+
+	testCases := loadTestExpressions(t)
+
+	for _, testCase := range testCases {
+		t.Run(testCase, func(t *testing.T) {
+			originalExpression, err := parser.ParseExpr(testCase)
+			require.NoError(t, err)
+
+			clonedExpression, err := cloneExpr(originalExpression)
+			require.NoError(t, err)
+			require.Equal(t, originalExpression, clonedExpression)
+			require.Equal(t, originalExpression.String(), clonedExpression.String())
+			requireNoSharedPointers(t, originalExpression, clonedExpression)
+		})
+	}
+}
+
+func loadTestExpressions(t *testing.T) []string {
+	testDir := filepath.Join(".", "..", "..", "..", "streamingpromql", "testdata")
+	testDir, err := filepath.Abs(testDir)
+	require.NoError(t, err)
+	require.DirExists(t, testDir, "could not find streamingpromql testdata directory")
+
+	contents, err := os.ReadDir(testDir)
+	require.NoError(t, err)
+
+	accumulatedExpressions := map[string]struct{}{} // Use a map to deduplicate repeated expressions.
+
+	for _, path := range contents {
+		if !path.IsDir() || path.Name() == "fuzz" {
+			continue
+		}
+
+		loadTestExpressionsFromDirectory(t, filepath.Join(testDir, path.Name()), accumulatedExpressions)
+	}
+
+	return slices.Collect(maps.Keys(accumulatedExpressions))
+}
+
+var testExpressionPattern = regexp.MustCompile(`(?m)^eval.*(instant at [^ ]+|range from [^ ]+ to [^ ]+ step [^ ]+) (?P<expression>.*)$`)
+var testExpressionPatternSubmatchIndex = testExpressionPattern.SubexpIndex("expression")
+
+func loadTestExpressionsFromDirectory(t *testing.T, dir string, accumulatedExpressions map[string]struct{}) {
+	testFiles, err := filepath.Glob(filepath.Join(dir, "*.test"))
+	require.NoError(t, err)
+
+	for _, testFile := range testFiles {
+		contents, err := os.ReadFile(testFile)
+		require.NoError(t, err)
+
+		matches := testExpressionPattern.FindAllStringSubmatch(string(contents), -1)
+		require.NotEmptyf(t, matches, "expected to find at least one expression in %v", testFile)
+
+		for _, match := range matches {
+			expr := match[testExpressionPatternSubmatchIndex]
+
+			// Prometheus uses a Ristretto cache for caching parsed regexp matchers, but Set calls into the cache are
+			// eventually consistent.
+			//
+			// Regexp matchers contain function pointers, and require.Equal can't check these for equality.
+			// However, the patterns themselves are pointers, so if both the original and cloned expression
+			// get the same regexp matcher from the cache, then this isn't an issue, as the pattern pointers
+			// will be the same and there's no need to inspect inside the pattern struct.
+			//
+			// This creates a race condition where the test can fail if the cache isn't populated by the time
+			// cloneExpr is called.
+			//
+			// So, for now, we skip any expressions that contain a regexp matcher.
+			// In the future, we should be able to use synctest to reliably wait for the Set to complete.
+			if strings.Contains(expr, "=~") || strings.Contains(expr, "!~") {
+				continue
+			}
+
+			// require.Equal treats NaN values the same as == which means they never compare equal.
+			// So, skip these test cases.
+			if strings.Contains(strings.ToLower(expr), "nan") {
+				continue
+			}
+
+			accumulatedExpressions[expr] = struct{}{}
+		}
+	}
+}
+
+func enableExperimentalParserFeaturesDuringTest(t *testing.T) {
+	oldDurationExpressions := parser.ExperimentalDurationExpr
+	oldExperimentalFunctions := parser.EnableExperimentalFunctions
+	parser.ExperimentalDurationExpr = true
+	parser.EnableExperimentalFunctions = true
+	t.Cleanup(func() {
+		parser.ExperimentalDurationExpr = oldDurationExpressions
+		parser.EnableExperimentalFunctions = oldExperimentalFunctions
+	})
 }
 
 func requireNoSharedPointers(t *testing.T, objA, objB any) {
@@ -193,6 +292,12 @@ func requireNoSharedPointers(t *testing.T, objA, objB any) {
 					continue
 				}
 
+				if _, isMatcher := objA.(labels.Matcher); isMatcher && field.Name == "re" {
+					// We can't read unexported fields, but we also don't care about the re field of a matcher as
+					// we expect it might be shared between multiple matcher instances.
+					continue
+				}
+
 				requireNoSharedPointers(t, fieldA.Interface(), fieldB.Interface())
 
 			case reflect.Slice:
@@ -200,8 +305,12 @@ func requireNoSharedPointers(t *testing.T, objA, objB any) {
 					continue
 				}
 
+				if fieldA.Len() == 0 && fieldA.Cap() == 0 && fieldB.Len() == 0 && fieldB.Cap() == 0 {
+					continue
+				}
+
 				require.NotEqualf(t, fieldA.Pointer(), fieldB.Pointer(), "shared slice detected for field %v", field.Name)
-				require.Equal(t, fieldA.Len(), fieldB.Len(), "slice lengths should be the same for field %v", field.Name)
+				require.Equalf(t, fieldA.Len(), fieldB.Len(), "slice lengths should be the same for field %v", field.Name)
 
 				for i := range fieldA.Len() {
 					requireNoSharedPointers(t, fieldA.Index(i).Interface(), fieldB.Index(i).Interface())
