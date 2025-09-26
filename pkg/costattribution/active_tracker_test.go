@@ -27,6 +27,8 @@ func TestActiveTracker_IncrementDecrement(t *testing.T) {
 	lbls1 := labels.FromStrings("department", "foo", "service", "bar")
 	lbls2 := labels.FromStrings("department", "bar", "service", "baz")
 	lbls3 := labels.FromStrings("department", "baz", "service", "foo")
+	lbls4 := labels.FromStrings("department", "baz", "service", "foo4")
+	lbls5 := labels.FromStrings("department", "baz5", "service", "foo")
 
 	ast.Increment(lbls1, time.Unix(1, 0), -1)
 	assert.True(t, ast.overflowSince.IsZero(), "First observation, should not overflow")
@@ -42,12 +44,19 @@ func TestActiveTracker_IncrementDecrement(t *testing.T) {
 	assert.Equal(t, 2, len(ast.observed))
 
 	ast.Increment(lbls3, time.Unix(3, 0), -1)
-	assert.Equal(t, time.Unix(3, 0), ast.overflowSince, "Third observation, should overflow")
-	assert.Equal(t, 2, len(ast.observed))
+	assert.Equal(t, time.Unix(3, 0), ast.overflowSince, "Third observation, should overflow but still tracked in observed.")
+	assert.Equal(t, 3, len(ast.observed))
+	assert.Zero(t, ast.overflowCounter.activeSeries.Load(), "Overflow counter should be zero because we tracked in observed.")
 
-	ast.Increment(lbls3, time.Unix(4, 0), -1)
-	assert.Equal(t, time.Unix(3, 0), ast.overflowSince, "Fourth observation, should stay overflow")
-	assert.Equal(t, 2, len(ast.observed))
+	ast.Increment(lbls4, time.Unix(4, 0), -1)
+	assert.Equal(t, time.Unix(3, 0), ast.overflowSince, "Fourth observation, should stay overflow and still tracked in observed.")
+	assert.Equal(t, 4, len(ast.observed))
+	assert.Zero(t, ast.overflowCounter.activeSeries.Load(), "Overflow counter should be zero because we tracked in observed.")
+
+	ast.Increment(lbls5, time.Unix(4, 0), -1)
+	assert.Equal(t, time.Unix(3, 0), ast.overflowSince, "Fifth observation, should not be tracked in observed anymore, should go into overflow counter.")
+	assert.Equal(t, 4, len(ast.observed))
+	assert.Equal(t, int64(1), ast.overflowCounter.activeSeries.Load(), "Overflow counter should track the fifth series.")
 }
 
 func TestActiveTracker_Concurrency(t *testing.T) {
@@ -68,7 +77,7 @@ func TestActiveTracker_Concurrency(t *testing.T) {
 
 	// Verify no data races or inconsistencies
 	assert.True(t, len(ast.observed) > 0, "Observed set should not be empty after concurrent updates")
-	assert.LessOrEqual(t, len(ast.observed), ast.maxCardinality, "Observed count should not exceed max cardinality")
+	assert.LessOrEqual(t, len(ast.observed), trackedSeriesFactor*ast.maxCardinality, "Observed count should not exceed max cardinality multiplied by trackedSeriesFactor")
 	assert.False(t, ast.overflowSince.IsZero(), "Expected state to be Overflow")
 
 	expectedMetrics := `
