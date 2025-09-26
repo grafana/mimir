@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"reflect"
 	"testing"
 	"time"
 
@@ -20,107 +21,211 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestCloneExpr(t *testing.T) {
-	var testExpr = []struct {
-		input    parser.Expr
-		expected parser.Expr
-	}{
-		// simple unmodified case
-		{
-			&parser.BinaryExpr{
-				Op:  parser.ADD,
-				LHS: &parser.NumberLiteral{Val: 1},
-				RHS: &parser.NumberLiteral{Val: 1},
-			},
-			&parser.BinaryExpr{
-				Op:  parser.ADD,
-				LHS: &parser.NumberLiteral{Val: 1, PosRange: posrange.PositionRange{Start: 0, End: 1}},
-				RHS: &parser.NumberLiteral{Val: 1, PosRange: posrange.PositionRange{Start: 4, End: 5}},
-			},
+func TestCloneExpr_ExplicitTestCases(t *testing.T) {
+	testCases := []parser.Expr{
+
+		&parser.BinaryExpr{
+			Op:  parser.ADD,
+			LHS: &parser.NumberLiteral{Val: 1, PosRange: posrange.PositionRange{Start: 10, End: 11}},
+			RHS: &parser.NumberLiteral{Val: 1, PosRange: posrange.PositionRange{Start: 14, End: 15}},
 		},
-		{
-			&parser.AggregateExpr{
-				Op:      parser.SUM,
-				Without: true,
-				Expr: &parser.VectorSelector{
-					Name: "some_metric",
-					LabelMatchers: []*labels.Matcher{
-						mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "some_metric"),
-					},
+
+		&parser.AggregateExpr{
+			Op:      parser.SUM,
+			Without: true,
+			Expr: &parser.VectorSelector{
+				Name: "some_metric",
+				LabelMatchers: []*labels.Matcher{
+					labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "some_metric"),
 				},
-				Grouping: []string{"foo"},
+				PosRange: posrange.PositionRange{Start: 119, End: 130},
 			},
-			&parser.AggregateExpr{
-				Op:      parser.SUM,
-				Without: true,
-				Expr: &parser.VectorSelector{
-					Name: "some_metric",
-					LabelMatchers: []*labels.Matcher{
-						mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "some_metric"),
-					},
-					PosRange: posrange.PositionRange{
-						Start: 19,
-						End:   30,
-					},
-				},
-				Grouping: []string{"foo"},
-				PosRange: posrange.PositionRange{
-					Start: 0,
-					End:   31,
-				},
+			Grouping: []string{"foo"},
+			PosRange: posrange.PositionRange{Start: 100, End: 131},
+		},
+
+		&parser.StepInvariantExpr{
+			Expr: &parser.NumberLiteral{
+				Val:      123,
+				PosRange: posrange.PositionRange{Start: 10, End: 14},
 			},
 		},
 	}
 
-	for i, c := range testExpr {
-		t.Run(fmt.Sprintf("[%d]", i), func(t *testing.T) {
-			res, err := cloneExpr(c.input)
+	for i, originalExpression := range testCases {
+		t.Run(fmt.Sprintf("%d: %s", i, originalExpression.String()), func(t *testing.T) {
+			clonedExpression, err := cloneExpr(originalExpression)
 			require.NoError(t, err)
-			require.Equal(t, c.expected, res)
+			require.Equal(t, originalExpression, clonedExpression)
+			require.NotSame(t, clonedExpression, originalExpression, "cloneExpr should return a new expression")
+			requireNoSharedPointers(t, originalExpression, clonedExpression)
 		})
 	}
 }
 
-func TestCloneExpr_String(t *testing.T) {
-	var testExpr = []struct {
-		input    string
-		expected string
-	}{
-		{
-			input:    `rate(http_requests_total{cluster="us-central1"}[1m])`,
-			expected: `rate(http_requests_total{cluster="us-central1"}[1m])`,
-		},
-		{
-			input: `sum(
-sum(rate(http_requests_total{cluster="us-central1"}[1m]))
-/
-sum(rate(http_requests_total{cluster="ops-tools1"}[1m]))
-)`,
-			expected: `sum(sum(rate(http_requests_total{cluster="us-central1"}[1m])) / sum(rate(http_requests_total{cluster="ops-tools1"}[1m])))`,
-		},
-		{
-			input:    `sum({__name__="",a="x"})`,
-			expected: `sum({__name__="",a="x"})`,
-		},
+func TestCloneExpr(t *testing.T) {
+	oldDurationExpressions := parser.ExperimentalDurationExpr
+	oldExperimentalFunctions := parser.EnableExperimentalFunctions
+	parser.ExperimentalDurationExpr = true
+	parser.EnableExperimentalFunctions = true
+	t.Cleanup(func() {
+		parser.ExperimentalDurationExpr = oldDurationExpressions
+		parser.EnableExperimentalFunctions = oldExperimentalFunctions
+	})
+
+	testCases := []string{
+		// Vector selectors
+		`foo`,
+		`foo{env="bar"}`,
+		`foo{env="bar"} offset 3m`,
+		`foo{env="bar"} offset (3m+5m)`,
+		`foo{env="bar"} @ start()`,
+		`foo{env="bar"} @ end()`,
+		`foo{env="bar"} @ 1234`,
+
+		// Matrix selector
+		`foo[1m]`,
+		`foo{env="bar"}[1m]`,
+		`foo{env="bar"}[1m] offset 3m`,
+		`foo{env="bar"}[1m] offset (3m+5m)`,
+		`foo{env="bar"}[1m] @ start()`,
+		`foo{env="bar"}[1m] @ end()`,
+		`foo{env="bar"}[1m] @ 1234`,
+		`foo{env="bar"}[1m+3m]`,
+
+		// Literals
+		`123`,
+		`-123`,
+		`"foo"`,
+
+		// Unary expressions
+		`-foo`,
+		`+foo`,
+
+		// Parentheses
+		`(foo)`,
+		`(((foo)))`,
+		`(1)`,
+
+		// Aggregations
+		`sum(foo)`,
+		`sum by (env, region) (foo)`,
+		`sum without (cluster, pod) (foo)`,
+		`topk(10, foo)`,
+
+		// Functions
+		`abs(foo)`,
+		`label_replace(foo, "bar", "$1", "foo", "(.*)")`,
+		`info(foo, {env="prod"})`, // Test VectorSelector.BypassEmptyMatcherCheck used by info().
+
+		// Subqueries
+		`foo[1m:10s]`,
+		`foo[1m+2m:10s]`,
+		`foo[1m:10s+3s]`,
+		`foo[1m:10s] offset 3m`,
+		`foo[1m:10s] offset (3m+5m)`,
+		`foo[1m:10s] @ start()`,
+		`foo[1m:10s] @ end()`,
+		`foo[1m:10s] @ 1234`,
+
+		// Binary expressions
+		`1 + 2`,
+		`foo + bar`,
+		`foo + on (env, region) bar`,
+		`foo + ignoring (cluster, pod) bar`,
+		`foo + on (env, region) group_left(version) bar`,
+		`foo + on (env, region) group_right(version) bar`,
+		`foo and bar`,
+		`foo == bar`,
+		`foo == bool bar`,
 	}
 
-	for i, c := range testExpr {
-		t.Run(fmt.Sprintf("[%d]", i), func(t *testing.T) {
-			expr, err := parser.ParseExpr(c.input)
-			require.Nil(t, err)
-			res, err := cloneExpr(expr)
-			require.Nil(t, err)
-			require.Equal(t, c.expected, res.String())
+	for i, tc := range testCases {
+		t.Run(fmt.Sprintf("%d: %s", i, tc), func(t *testing.T) {
+			originalExpression, err := parser.ParseExpr(tc)
+			require.NoError(t, err)
+			clonedExpression, err := cloneExpr(originalExpression)
+			require.NoError(t, err)
+			require.Equal(t, originalExpression, clonedExpression)
+			require.Equal(t, originalExpression.String(), clonedExpression.String())
+			requireNoSharedPointers(t, originalExpression, clonedExpression)
+
 		})
 	}
 }
 
-func mustLabelMatcher(mt labels.MatchType, name, val string) *labels.Matcher {
-	m, err := labels.NewMatcher(mt, name, val)
-	if err != nil {
-		panic(err)
+func requireNoSharedPointers(t *testing.T, objA, objB any) {
+	if isTypeSafeToShare(objA) {
+		return
 	}
-	return m
+
+	typA := reflect.TypeOf(objA)
+	typB := reflect.TypeOf(objB)
+	require.Equal(t, typA, typB, "types should be the same")
+
+	valueA := reflect.ValueOf(objA)
+	valueB := reflect.ValueOf(objB)
+
+	switch typA.Kind() {
+	case reflect.Bool:
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+	case reflect.Float32, reflect.Float64:
+	case reflect.Complex64, reflect.Complex128:
+	case reflect.String:
+		// Value types with no nested values, nothing to check.
+		return
+
+	case reflect.Pointer:
+		require.NotSame(t, objA, objB, "shared pointer detected")
+		requireNoSharedPointers(t, valueA.Elem().Interface(), valueB.Elem().Interface())
+
+	case reflect.Struct:
+		for fieldIdx := range typA.NumField() {
+			field := typA.Field(fieldIdx)
+			fieldA := valueA.Field(fieldIdx)
+			fieldB := valueB.Field(fieldIdx)
+
+			switch field.Type.Kind() {
+			case reflect.Interface:
+			case reflect.Pointer:
+				if fieldA.IsNil() && fieldB.IsNil() {
+					continue
+				}
+
+				requireNoSharedPointers(t, fieldA.Interface(), fieldB.Interface())
+
+			case reflect.Slice:
+				if fieldA.IsNil() && fieldB.IsNil() {
+					continue
+				}
+
+				require.NotEqualf(t, fieldA.Pointer(), fieldB.Pointer(), "shared slice detected for field %v", field.Name)
+				require.Equal(t, fieldA.Len(), fieldB.Len(), "slice lengths should be the same for field %v", field.Name)
+
+				for i := range fieldA.Len() {
+					requireNoSharedPointers(t, fieldA.Index(i).Interface(), fieldB.Index(i).Interface())
+				}
+
+			default:
+				requireNoSharedPointers(t, fieldA.Interface(), fieldB.Interface())
+			}
+		}
+
+	default:
+		require.Failf(t, "requireNoSharedPointers: don't know how to check value kind", "value kind %v", typA.Kind())
+	}
+}
+
+func isTypeSafeToShare(o any) bool {
+	switch o.(type) {
+	case *parser.Function:
+		// parser.Function stores information about a function like its name and return type.
+		// It is safe to share this object between cloned parser.Call instances.
+		return true
+	default:
+		return false
+	}
 }
 
 func TestSharding_BinaryExpressionsDontTakeExponentialTime(t *testing.T) {
@@ -140,11 +245,9 @@ func TestSharding_BinaryExpressionsDontTakeExponentialTime(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
-	summer, err := NewQueryShardSummer(2, EmbeddedQueriesSquasher, log.NewNopLogger(), NewMapperStats())
-	require.NoError(t, err)
-	mapper := NewSharding(summer, EmbeddedQueriesSquasher)
-
-	_, err = mapper.Map(ctx, expr)
+	shardCount := 2
+	summer := NewQueryShardSummer(shardCount, false, EmbeddedQueriesSquasher, log.NewNopLogger(), NewMapperStats())
+	_, err = summer.Map(ctx, expr)
 	require.NoError(t, err)
 }
 

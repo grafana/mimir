@@ -312,7 +312,7 @@ func TestGenericPartitionReader_Caching(t *testing.T) {
 			return 42, nil
 		}
 
-		reader := newGenericOffsetReader[int64](mockFetch, time.Second, logger)
+		reader := NewGenericOffsetReader[int64](mockFetch, time.Second, logger)
 		require.NoError(t, services.StartAndAwaitRunning(ctx, reader))
 		t.Cleanup(func() {
 			require.NoError(t, services.StopAndAwaitTerminated(ctx, reader))
@@ -330,7 +330,7 @@ func TestGenericPartitionReader_Caching(t *testing.T) {
 			return 0, expectedErr
 		}
 
-		reader := newGenericOffsetReader[int64](mockFetch, time.Second, logger)
+		reader := NewGenericOffsetReader[int64](mockFetch, time.Second, logger)
 		require.NoError(t, services.StartAndAwaitRunning(ctx, reader))
 		t.Cleanup(func() {
 			require.NoError(t, services.StopAndAwaitTerminated(ctx, reader))
@@ -354,7 +354,7 @@ func TestGenericPartitionReader_Caching(t *testing.T) {
 			return int64(fetchCount), nil
 		}
 
-		reader := newGenericOffsetReader[int64](mockFetch, 10*time.Millisecond, logger)
+		reader := NewGenericOffsetReader[int64](mockFetch, 10*time.Millisecond, logger)
 		require.NoError(t, services.StartAndAwaitRunning(ctx, reader))
 		t.Cleanup(func() {
 			require.NoError(t, services.StopAndAwaitTerminated(ctx, reader))
@@ -376,7 +376,7 @@ func TestGenericPartitionReader_Caching(t *testing.T) {
 			return 42, nil
 		}
 
-		reader := newGenericOffsetReader[int64](mockFetch, time.Second, logger)
+		reader := NewGenericOffsetReader[int64](mockFetch, time.Second, logger)
 		require.NoError(t, services.StartAndAwaitRunning(ctx, reader))
 		t.Cleanup(func() {
 			cancel()
@@ -395,7 +395,7 @@ func TestGenericPartitionReader_Caching(t *testing.T) {
 			return 42, nil
 		}
 
-		reader := newGenericOffsetReader[int64](mockFetch, time.Second, logger)
+		reader := NewGenericOffsetReader[int64](mockFetch, time.Second, logger)
 		require.NoError(t, services.StartAndAwaitRunning(ctx, reader))
 		t.Cleanup(func() {
 			require.NoError(t, services.StopAndAwaitTerminated(ctx, reader))

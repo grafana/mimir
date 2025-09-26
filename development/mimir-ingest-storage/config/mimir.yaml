@@ -29,7 +29,7 @@ ingester:
 
 block_builder:
   scheduler_config:
-    address: mimir-block-builder-scheduler-0:9095
+    address: block-builder-scheduler-0:9095
     update_interval: 5s
     max_update_age: 30m
 
@@ -42,7 +42,7 @@ blocks_storage:
   s3:
     bucket_name:       mimir-blocks
   tsdb:
-    dir: /data/ingester
+    dir: /data
     head_postings_for_matchers_cache_force: true
     block_postings_for_matchers_cache_force: true
 
@@ -64,24 +64,18 @@ blocks_storage:
 
 
 memberlist:
-  # Use write replicas as seed nodes.
   join_members:
-    - mimir-write-zone-a-0
-    - mimir-write-zone-b-0
-    - mimir-write-zone-a-1
-    - mimir-write-zone-b-1
-    - mimir-write-zone-a-2
-    - mimir-write-zone-b-2
+    - distributor-1
+    - localhost
+  rejoin_interval: 10s
 
 ruler:
-  rule_path: /data/ruler
-  # Each ruler is configured to route alerts to the Alertmanager running within the same component.
-  alertmanager_url: http://localhost:8080/alertmanager
+  alertmanager_url: http://alertmanager-1:8041/alertmanager,http://alertmanager-2:8042/alertmanager,http://alertmanager-3:8043/alertmanager
   # Force the ruler to restore the state of any alert with a "for" period longer than 1s.
   for_grace_period: 1s
   # Evaluate rules via query-frontend (remote rule evaluation).
   query_frontend:
-    address: dns:///mimir-read-0:9095
+    address: dns:///query-frontend:9095
 
 ruler_storage:
   s3:
@@ -95,9 +89,7 @@ query_scheduler:
   service_discovery_mode: "ring"
 
 alertmanager:
-  data_dir: /data/alertmanager
   fallback_config_file: ./config/alertmanager-fallback-config.yaml
-  external_url: http://localhost:8006/alertmanager
 
 alertmanager_storage:
   s3:
@@ -111,7 +103,7 @@ overrides_exporter:
     wait_stability_min_duration: 30s
 
 usage_tracker:
-  enabled: true
+  enabled: false
   snapshots_storage:
     s3:
       bucket_name: usage-tracker-snapshots
@@ -140,5 +132,5 @@ runtime_config:
   file: ./config/runtime.yaml
 
 server:
-  log_level: debug
+  log_level: info
   trace_request_headers: true

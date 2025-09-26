@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/failsafe-go/failsafe-go"
+	"github.com/failsafe-go/failsafe-go/internal/util"
 	"github.com/failsafe-go/failsafe-go/policy"
 )
 
@@ -58,7 +59,7 @@ A circuit breaker can be count based or time based:
     of the failureThresholdingPeriod. As time progresses, statistics for old time slices are gradually discarded, which
     smoothes the calculation of success and failure rates.
 
-This type is concurrency safe.
+R is the execution result type. This type is concurrency safe.
 */
 type CircuitBreaker[R any] interface {
 	failsafe.Policy[R]
@@ -122,11 +123,11 @@ type Metrics interface {
 	// the number of failures may vary within the failure thresholding period.
 	Failures() uint
 
-	// FailureRate returns the percentage rate of failed executions, from 0 to 100, in the current state when in a
-	// ClosedState or HalfOpenState. When in OpenState, this returns the rate recorded during the previous ClosedState.
+	// FailureRate returns the rate of failed executions in the current state when in a ClosedState or HalfOpenState. When
+	// in OpenState, this returns the rate recorded during the previous ClosedState.
 	//
 	// The rate is based on the configured failure thresholding capacity.
-	FailureRate() uint
+	FailureRate() float64
 
 	// Successes returns the number of successes recorded in the current state when in a ClosedState or HalfOpenState.
 	// When in OpenState, this returns the successes recorded during the previous ClosedState.
@@ -134,11 +135,11 @@ type Metrics interface {
 	// The max number of successes is based on the success threshold.
 	Successes() uint
 
-	// SuccessRate returns percentage rate of successful executions, from 0 to 100, in the current state when in a
-	// ClosedState or HalfOpenState. When in OpenState, this returns the successes recorded during the previous ClosedState.
+	// SuccessRate returns rate of successful executions in the current state when in a ClosedState or HalfOpenState. When
+	// in OpenState, this returns the successes recorded during the previous ClosedState.
 	//
 	// The rate is based on the configured success thresholding capacity.
-	SuccessRate() uint
+	SuccessRate() float64
 }
 
 // StateChangedEvent indicates a CircuitBreaker's state has changed.
@@ -161,45 +162,46 @@ func (e *StateChangedEvent) Context() context.Context {
 }
 
 type circuitBreaker[R any] struct {
-	*config[R]
-	mtx sync.Mutex
-	// Guarded by mtx
+	config[R]
+	mu sync.Mutex
+
+	// Guarded by mu
 	state circuitState[R]
 }
 
 func (cb *circuitBreaker[R]) TryAcquirePermit() bool {
-	cb.mtx.Lock()
-	defer cb.mtx.Unlock()
+	cb.mu.Lock()
+	defer cb.mu.Unlock()
 	return cb.tryAcquirePermit()
 }
 
 func (cb *circuitBreaker[R]) Open() {
-	cb.mtx.Lock()
-	defer cb.mtx.Unlock()
+	cb.mu.Lock()
+	defer cb.mu.Unlock()
 	cb.open(nil)
 }
 
 func (cb *circuitBreaker[R]) HalfOpen() {
-	cb.mtx.Lock()
-	defer cb.mtx.Unlock()
+	cb.mu.Lock()
+	defer cb.mu.Unlock()
 	cb.halfOpen()
 }
 
 func (cb *circuitBreaker[R]) Close() {
-	cb.mtx.Lock()
-	defer cb.mtx.Unlock()
+	cb.mu.Lock()
+	defer cb.mu.Unlock()
 	cb.close()
 }
 
 func (cb *circuitBreaker[R]) State() State {
-	cb.mtx.Lock()
-	defer cb.mtx.Unlock()
+	cb.mu.Lock()
+	defer cb.mu.Unlock()
 	return cb.state.state()
 }
 
 func (cb *circuitBreaker[R]) RemainingDelay() time.Duration {
-	cb.mtx.Lock()
-	defer cb.mtx.Unlock()
+	cb.mu.Lock()
+	defer cb.mu.Unlock()
 	return cb.state.remainingDelay()
 }
 
@@ -220,63 +222,63 @@ func (cb *circuitBreaker[R]) IsClosed() bool {
 }
 
 func (cb *circuitBreaker[R]) Executions() uint {
-	cb.mtx.Lock()
-	defer cb.mtx.Unlock()
-	return cb.state.executionCount()
+	cb.mu.Lock()
+	defer cb.mu.Unlock()
+	return cb.state.ExecutionCount()
 }
 
 func (cb *circuitBreaker[R]) Failures() uint {
-	cb.mtx.Lock()
-	defer cb.mtx.Unlock()
-	return cb.state.failureCount()
+	cb.mu.Lock()
+	defer cb.mu.Unlock()
+	return cb.state.FailureCount()
 }
 
-func (cb *circuitBreaker[R]) FailureRate() uint {
-	cb.mtx.Lock()
-	defer cb.mtx.Unlock()
-	return cb.state.failureRate()
+func (cb *circuitBreaker[R]) FailureRate() float64 {
+	cb.mu.Lock()
+	defer cb.mu.Unlock()
+	return cb.state.FailureRate()
 }
 
 func (cb *circuitBreaker[R]) Successes() uint {
-	cb.mtx.Lock()
-	defer cb.mtx.Unlock()
-	return cb.state.successCount()
+	cb.mu.Lock()
+	defer cb.mu.Unlock()
+	return cb.state.SuccessCount()
 }
 
-func (cb *circuitBreaker[R]) SuccessRate() uint {
-	cb.mtx.Lock()
-	defer cb.mtx.Unlock()
-	return cb.state.successRate()
+func (cb *circuitBreaker[R]) SuccessRate() float64 {
+	cb.mu.Lock()
+	defer cb.mu.Unlock()
+	return cb.state.SuccessRate()
 }
 
 func (cb *circuitBreaker[R]) RecordFailure() {
-	cb.mtx.Lock()
-	defer cb.mtx.Unlock()
+	cb.mu.Lock()
+	defer cb.mu.Unlock()
 	cb.recordFailure(nil)
 }
 
 func (cb *circuitBreaker[R]) RecordError(err error) {
-	cb.mtx.Lock()
-	defer cb.mtx.Unlock()
+	cb.mu.Lock()
+	defer cb.mu.Unlock()
 	cb.recordResult(*new(R), err)
 }
 
 func (cb *circuitBreaker[R]) RecordResult(result R) {
-	cb.mtx.Lock()
-	defer cb.mtx.Unlock()
+	cb.mu.Lock()
+	defer cb.mu.Unlock()
 	cb.recordResult(result, nil)
 }
 
 func (cb *circuitBreaker[R]) RecordSuccess() {
-	cb.mtx.Lock()
-	defer cb.mtx.Unlock()
+	cb.mu.Lock()
+	defer cb.mu.Unlock()
 	cb.recordSuccess()
 }
 
 func (cb *circuitBreaker[R]) ToExecutor(_ R) any {
 	cbe := &executor[R]{
 		BaseExecutor: &policy.BaseExecutor[R]{
-			BaseFailurePolicy: cb.BaseFailurePolicy,
+			BaseFailurePolicy: &cb.BaseFailurePolicy,
 		},
 		circuitBreaker: cb,
 	}
@@ -327,27 +329,27 @@ func (cb *circuitBreaker[R]) transitionTo(newState State, exec failsafe.Executio
 }
 
 type eventMetrics struct {
-	stats stats
+	stats util.ExecutionStats
 }
 
 func (m *eventMetrics) Executions() uint {
-	return m.stats.executionCount()
+	return m.stats.ExecutionCount()
 }
 
 func (m *eventMetrics) Failures() uint {
-	return m.stats.failureCount()
+	return m.stats.FailureCount()
 }
 
-func (m *eventMetrics) FailureRate() uint {
-	return m.stats.failureRate()
+func (m *eventMetrics) FailureRate() float64 {
+	return m.stats.FailureRate()
 }
 
 func (m *eventMetrics) Successes() uint {
-	return m.stats.successCount()
+	return m.stats.SuccessCount()
 }
 
-func (m *eventMetrics) SuccessRate() uint {
-	return m.stats.successRate()
+func (m *eventMetrics) SuccessRate() float64 {
+	return m.stats.SuccessRate()
 }
 
 // Requires external locking.
@@ -384,17 +386,17 @@ func (cb *circuitBreaker[R]) recordResult(result R, err error) {
 
 // Requires external locking.
 func (cb *circuitBreaker[R]) recordSuccess() {
-	cb.state.recordSuccess()
+	cb.state.RecordSuccess()
 	cb.state.checkThresholdAndReleasePermit(nil)
 }
 
 // Requires external locking.
 func (cb *circuitBreaker[R]) recordFailure(exec failsafe.Execution[R]) {
-	cb.state.recordFailure()
+	cb.state.RecordFailure()
 	cb.state.checkThresholdAndReleasePermit(exec)
 }
 
 func (cb *circuitBreaker[R]) Reset() {
 	cb.close()
-	cb.state.reset()
+	cb.state.Reset()
 }

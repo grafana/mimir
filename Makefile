@@ -243,7 +243,7 @@ mimir-build-image/$(UPTODATE): mimir-build-image/*
 # All the boiler plate for building golang follows:
 SUDO := $(shell docker info >/dev/null 2>&1 || echo "sudo -E")
 BUILD_IN_CONTAINER ?= true
-LATEST_BUILD_IMAGE_TAG ?= pr12645-9da5b49515
+LATEST_BUILD_IMAGE_TAG ?= pr12712-28f11b4f26
 
 # TTY is parameterized to allow CI and scripts to run builds,
 # as it currently disallows TTY devices.
@@ -410,13 +410,6 @@ lint: check-makefiles check-merge-conflicts
 		github.com/prometheus/client_golang/prometheus.{MustRegister,Register,DefaultRegisterer}=github.com/prometheus/client_golang/prometheus/promauto.With,\
 		github.com/prometheus/client_golang/prometheus.{NewCounter,NewCounterVec,NewCounterFunc,NewGauge,NewGaugeVec,NewGaugeFunc,NewSummary,NewSummaryVec,NewHistogram,NewHistogramVec}=github.com/prometheus/client_golang/prometheus/promauto.With" \
 		./pkg/...
-
-	# Use the faster slices.Sort where we can.
-	# Note that we don't automatically suggest replacing sort.Float64s() with slices.Sort() as the documentation for slices.Sort()
-	# at the time of writing warns that slices.Sort() may not correctly handle NaN values.
-	faillint -paths \
-		"sort.{Strings,Ints}=slices.Sort" \
-		./pkg/... ./cmd/... ./tools/... ./integration/...
 
 	# Use the faster slices.IsSortedFunc where we can.
 	faillint -paths \
@@ -612,13 +605,13 @@ HELM_RAW_MANIFESTS_PATH=operations/helm/manifests-intermediate
 HELM_REFERENCE_MANIFESTS=operations/helm/tests
 
 conftest-fmt:
-	@conftest fmt $(REGO_POLICIES_PATH)
+	@conftest --rego-version=v0 fmt $(REGO_POLICIES_PATH)
 
 check-conftest-fmt: conftest-fmt
 	@./tools/find-diff-or-untracked.sh $(REGO_POLICIES_PATH) || (echo "Format the rego policies by running 'make conftest-fmt' and commit the changes" && false)
 
 conftest-verify:
-	@conftest verify -p $(REGO_POLICIES_PATH) --report notes
+	@conftest --rego-version=v0 verify -p $(REGO_POLICIES_PATH) --report notes
 
 update-helm-dependencies:
 	@./$(HELM_SCRIPTS_PATH)/update-helm-dependencies.sh operations/helm/charts/mimir-distributed
@@ -684,6 +677,7 @@ reference-help: cmd/mimir/mimir tools/config-inspector/config-inspector
 	@(./cmd/mimir/mimir -h || true) > cmd/mimir/help.txt.tmpl
 	@(./cmd/mimir/mimir -help-all || true) > cmd/mimir/help-all.txt.tmpl
 	@(./tools/config-inspector/config-inspector || true) > cmd/mimir/config-descriptor.json
+	@jq -f ./tools/config-descriptor-extract-flag-defaults.jq cmd/mimir/config-descriptor.json > operations/mimir/mimir-flags-defaults.json
 
 clean-white-noise: ## Clean the white noise in the markdown files.
 	@find . -path ./.pkg -prune -o -path ./.cache -prune -o -path "*/vendor/*" -prune -or -type f -name "*.md" -print | \

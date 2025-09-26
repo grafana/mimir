@@ -33,11 +33,11 @@ func (r *RangeVectorRemoteExec) Prepare(ctx context.Context, params *types.Prepa
 	r.QueryStats = params.QueryStats
 
 	var err error
-	r.resp, err = r.RemoteExecutor.StartRangeVectorExecution(ctx, r.RootPlan, r.Node, r.TimeRange, r.MemoryConsumptionTracker)
+	r.resp, err = r.RemoteExecutor.StartRangeVectorExecution(ctx, r.RootPlan, r.Node, r.TimeRange, r.MemoryConsumptionTracker, r.QueryStats.EnablePerStepStats)
 	return err
 }
 
-func (r *RangeVectorRemoteExec) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
+func (r *RangeVectorRemoteExec) SeriesMetadata(ctx context.Context, _ types.Matchers) ([]types.SeriesMetadata, error) {
 	return r.resp.GetSeriesMetadata(ctx)
 }
 

@@ -1484,6 +1484,41 @@ func TestQuerier_QueryStoreAfterConfig(t *testing.T) {
 	}
 }
 
+func TestConfig_Validate(t *testing.T) {
+	tests := map[string]struct {
+		setup    func(cfg *Config)
+		expected error
+	}{
+		"should pass with default config": {
+			setup: func(*Config) {},
+		},
+		"should fail if ingester streaming buffer size is 0": {
+			setup: func(cfg *Config) {
+				cfg.StreamingChunksPerIngesterSeriesBufferSize = 0
+			},
+			expected: errStreamingIngesterBufferSize,
+		},
+		"should fail if store-gateway streaming buffer size is 0": {
+			setup: func(cfg *Config) {
+				cfg.StreamingChunksPerStoreGatewaySeriesBufferSize = 0
+			},
+			expected: errStreamingStoreGatewayBufferSize,
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			cfg := &Config{}
+			flagext.DefaultValues(cfg)
+
+			testData.setup(cfg)
+			err := cfg.Validate()
+
+			require.ErrorIs(t, err, testData.expected)
+		})
+	}
+}
+
 func TestConfig_ValidateLimits(t *testing.T) {
 	tests := map[string]struct {
 		setup    func(cfg *Config, limits *validation.Limits)

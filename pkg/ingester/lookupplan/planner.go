@@ -18,13 +18,6 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-// UserTSDBStats is used to access index.Statistics for a particular user.
-type UserTSDBStats interface {
-
-	// UserTSDBStatistics pulls a user from the given context, and returns statistics for that user's TSDB
-	UserTSDBStatistics(ctx context.Context) (index.Statistics, error)
-}
-
 type NoopPlanner struct{}
 
 func (i NoopPlanner) PlanIndexLookup(_ context.Context, plan index.LookupPlan, _, _ int64) (index.LookupPlan, error) {
@@ -32,11 +25,11 @@ func (i NoopPlanner) PlanIndexLookup(_ context.Context, plan index.LookupPlan, _
 }
 
 type CostBasedPlanner struct {
-	stats   UserTSDBStats
+	stats   index.Statistics
 	metrics Metrics
 }
 
-func NewCostBasedPlanner(metrics Metrics, statistics UserTSDBStats) *CostBasedPlanner {
+func NewCostBasedPlanner(metrics Metrics, statistics index.Statistics) *CostBasedPlanner {
 	return &CostBasedPlanner{
 		metrics: metrics,
 		stats:   statistics,
@@ -62,15 +55,7 @@ func (p CostBasedPlanner) PlanIndexLookup(ctx context.Context, inPlan index.Look
 		return inPlan, errTooManyMatchers
 	}
 
-	statistics, err := p.stats.UserTSDBStatistics(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("error retrieving statistics: %w", err)
-	}
-
-	allPlansUnordered, err := p.generatePlans(ctx, statistics, matchers)
-	if err != nil {
-		return nil, fmt.Errorf("error generating plans: %w", err)
-	}
+	allPlansUnordered := p.generatePlans(ctx, p.stats, matchers)
 
 	type planWithCost struct {
 		plan
@@ -105,14 +90,11 @@ func (p CostBasedPlanner) PlanIndexLookup(ctx context.Context, inPlan index.Look
 
 var errTooManyMatchers = errors.New("too many matchers to generate plans")
 
-func (p CostBasedPlanner) generatePlans(ctx context.Context, statistics index.Statistics, matchers []*labels.Matcher) ([]plan, error) {
-	noopPlan, err := newScanOnlyPlan(ctx, statistics, matchers)
-	if err != nil {
-		return nil, fmt.Errorf("error generating index lookup plan: %w", err)
-	}
+func (p CostBasedPlanner) generatePlans(ctx context.Context, statistics index.Statistics, matchers []*labels.Matcher) []plan {
+	noopPlan := newScanOnlyPlan(ctx, statistics, matchers)
 	allPlans := make([]plan, 0, 1<<uint(len(matchers)))
 
-	return generatePredicateCombinations(allPlans, noopPlan, 0), nil
+	return generatePredicateCombinations(allPlans, noopPlan, 0)
 }
 
 // generatePredicateCombinations recursively generates all possible plans with their predicates toggled as index or as scan predicates.
@@ -168,6 +150,7 @@ func (p CostBasedPlanner) recordPlanningOutcome(ctx context.Context, start time.
 			attribute.Stringer("duration", time.Since(start)),
 		))
 		const topKPlans = 2
+		allPlans[0].addPredicatesToSpan(span)
 		for i, plan := range allPlans[:min(topKPlans, len(allPlans))] {
 			planName := "selected_plan"
 			if i > 0 {

@@ -43,6 +43,7 @@ import (
 	"github.com/prometheus/alertmanager/notify/discord"
 	"github.com/prometheus/alertmanager/notify/email"
 	"github.com/prometheus/alertmanager/notify/msteams"
+	"github.com/prometheus/alertmanager/notify/msteamsv2"
 	"github.com/prometheus/alertmanager/notify/opsgenie"
 	"github.com/prometheus/alertmanager/notify/pagerduty"
 	"github.com/prometheus/alertmanager/notify/pushover"
@@ -667,10 +668,9 @@ func (am *Alertmanager) buildIntegrationsMap(emailCfg alertingReceivers.EmailSen
 	var cached *alertingTemplates.CachedFactory
 	integrationsMap := make(map[string][]*nfstatus.Integration, len(nc))
 	for _, rcv := range nc {
-		var integrations []*nfstatus.Integration
+		var grafana, mimir []*nfstatus.Integration
 		var err error
-		switch rcv.Type() {
-		case definition.GrafanaReceiverType:
+		if rcv.HasGrafanaIntegrations() {
 			if cached == nil {
 				factory, err := alertingTemplates.NewFactory(tmpls, am.logger, tmplExternalURL.String(), am.cfg.UserID)
 				if err != nil {
@@ -678,8 +678,12 @@ func (am *Alertmanager) buildIntegrationsMap(emailCfg alertingReceivers.EmailSen
 				}
 				cached = alertingTemplates.NewCachedFactory(factory)
 			}
-			integrations, err = buildGrafanaReceiverIntegrations(emailCfg, alertingNotify.PostableAPIReceiverToAPIReceiver(rcv), cached, am.logger, am.wrapNotifier, grafanaOpts...)
-		case definition.AlertmanagerReceiverType:
+			grafana, err = buildGrafanaReceiverIntegrations(emailCfg, alertingNotify.PostableAPIReceiverToAPIReceiver(rcv), cached, am.logger, am.wrapNotifier, grafanaOpts...)
+			if err != nil {
+				return nil, err
+			}
+		}
+		if rcv.HasMimirIntegrations() {
 			if tmpl == nil {
 				tmpl, err = loadTemplates(tmpls, WithCustomFunctions(am.cfg.UserID))
 				if err != nil {
@@ -687,15 +691,12 @@ func (am *Alertmanager) buildIntegrationsMap(emailCfg alertingReceivers.EmailSen
 				}
 				tmpl.ExternalURL = tmplExternalURL
 			}
-			integrations, err = buildReceiverIntegrations(rcv.Receiver, tmpl, firewallDialer, am.logger, am.wrapNotifier)
-		case definition.EmptyReceiverType:
-			// Empty receiver, no integrations to build.
+			mimir, err = buildReceiverIntegrations(rcv.Receiver, tmpl, firewallDialer, am.logger, am.wrapNotifier)
+			if err != nil {
+				return nil, err
+			}
 		}
-		if err != nil {
-			return nil, err
-		}
-
-		integrationsMap[rcv.Name] = integrations
+		integrationsMap[rcv.Name] = append(grafana, mimir...)
 	}
 
 	// Template validation shouldn't be dependent on whether receivers exist. So, in case we didn't hot-load any
@@ -763,6 +764,7 @@ func buildGrafanaReceiverIntegrations(emailCfg alertingReceivers.EmailSenderConf
 		wrapper,
 		1, // orgID is always 1.
 		version.Version,
+		nil,
 		opts...,
 	)
 	if err != nil {
@@ -779,13 +781,14 @@ func buildReceiverIntegrations(nc config.Receiver, tmpl *template.Template, fire
 		errs         types.MultiError
 		integrations []*nfstatus.Integration
 		add          = func(name string, i int, rs notify.ResolvedSender, f func(l log.Logger) (notify.Notifier, error)) {
-			n, err := f(log.With(logger, "integration", name))
+			integrationLogger := log.With(logger, "integration", name)
+			n, err := f(integrationLogger)
 			if err != nil {
 				errs.Add(err)
 				return
 			}
 			n = wrapper(name, n)
-			integrations = append(integrations, nfstatus.NewIntegration(n, rs, name, i, nc.Name))
+			integrations = append(integrations, nfstatus.NewIntegration(n, rs, name, i, nc.Name, nil, integrationLogger))
 		}
 	)
 
@@ -832,6 +835,9 @@ func buildReceiverIntegrations(nc config.Receiver, tmpl *template.Template, fire
 	}
 	for i, c := range nc.MSTeamsConfigs {
 		add("msteams", i, c, func(l log.Logger) (notify.Notifier, error) { return msteams.New(c, tmpl, l, httpOps...) })
+	}
+	for i, c := range nc.MSTeamsV2Configs {
+		add("msteamsv2", i, c, func(l log.Logger) (notify.Notifier, error) { return msteamsv2.New(c, tmpl, l, httpOps...) })
 	}
 	// If we add support for more integrations, we need to add them to validation as well. See validation.allowedIntegrationNames field.
 	if errs.Len() > 0 {

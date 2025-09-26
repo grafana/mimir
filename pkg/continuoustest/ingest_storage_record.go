@@ -37,7 +37,7 @@ type IngestStorageRecordTestConfig struct {
 func (cfg *IngestStorageRecordTestConfig) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.Enabled, "tests.ingest-storage-record.enabled", false, "Whether the test for ingest-storage record correctness is enabled.")
 	f.StringVar(&cfg.ConsumerGroup, "tests.ingest-storage-record.consumer-group", "ingest-storage-record", "The Kafka consumer group used for getting/setting commmitted offsets.")
-	f.IntVar(&cfg.MaxJumpLimitPerPartition, "tests.ingest-storage-record.max-jump-size", 100000000, "If a partition increases by this many offsets in a run, we skip processing it, to protect against downloading unexpectedly huge batches.")
+	f.IntVar(&cfg.MaxJumpLimitPerPartition, "tests.ingest-storage-record.max-jump-size", 500000000, "If a partition increases by this many offsets in a run, we skip processing it, to protect against downloading unexpectedly huge batches.")
 	f.IntVar(&cfg.MaxRecordsPerRun, "tests.ingest-storage-record.max-records-per-run", 200000, "Limit on the number of total records to be processed in a run, to keep memory bounded in large cells. This limit is approximate, we might go over by a partial fetch.")
 	f.IntVar(&cfg.RecordsProcessedPercent, "tests.ingest-storage-record.records-processed-percent", 5, "The approximate percent of records to actually fetch and compare.")
 }
@@ -53,6 +53,7 @@ type IngestStorageRecordTestMetrics struct {
 	histogramsProcessedTotal *prometheus.CounterVec
 	avgCompressionRatio      prometheus.Gauge
 	throughputBytes          prometheus.Counter
+	recordsWithGrowth        prometheus.Counter
 }
 
 func NewIngestStorageRecordTestMetrics(reg prometheus.Registerer) *IngestStorageRecordTestMetrics {
@@ -97,6 +98,10 @@ func NewIngestStorageRecordTestMetrics(reg prometheus.Registerer) *IngestStorage
 			Name: "mimir_continuous_test_ingest_storage_v2_throughput_bytes_total",
 			Help: "The total number of bytes of v2 records generated.",
 		}),
+		recordsWithGrowth: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "mimir_continuous_test_ingest_storage_records_processed_with_v2_growth_total",
+			Help: "The number of records processed that were larger in the V2 format than they were in V1.",
+		}),
 	}
 }
 
@@ -135,12 +140,17 @@ func (t *IngestStorageRecordTest) Init(ctx context.Context, now time.Time) error
 
 	level.Info(t.logger).Log("msg", "starting kafka client")
 
+	// One tenth of the normal ingest-storage max bytes per fetch, hardcoded.
+	// Smaller fetches reduce memory variance.
+	const fetchMaxBytes = 10_000_000
+
 	kc, err := ingest.NewKafkaReaderClient(
 		t.cfg.Kafka,
 		ingest.NewKafkaReaderClientMetrics(ingest.ReaderMetricsPrefix, "record-continuous-test", t.reg),
 		t.logger,
 		kgo.ConsumeTopics(t.cfg.Kafka.Topic),
 		kgo.ConsumerGroup(t.cfg.ConsumerGroup),
+		kgo.FetchMaxBytes(fetchMaxBytes),
 	)
 	if err != nil {
 		return fmt.Errorf("creating kafka reader: %w", err)
@@ -198,7 +208,7 @@ func (t *IngestStorageRecordTest) Run(ctx context.Context, now time.Time) error 
 		// If there are a huge number of records written to a partition, skip it. We'll seek to the end and process it next run.
 		diff := endOffset.At - committedOffset.At
 		if diff > int64(t.cfg.MaxJumpLimitPerPartition) {
-			level.Warn(t.logger).Log(
+			level.Debug(t.logger).Log(
 				"msg", "skipping partition because it jumped by an amount greater than the limit per run",
 				"partition", partition,
 				"limit", t.cfg.MaxJumpLimitPerPartition,
@@ -245,7 +255,7 @@ func (t *IngestStorageRecordTest) Run(ctx context.Context, now time.Time) error 
 		if ctx.Err() != nil {
 			return err
 		}
-		fetches := t.client.PollFetches(ctx)
+		fetches := t.client.PollRecords(ctx, t.cfg.MaxRecordsPerRun)
 		if errs := fetches.Errors(); len(errs) > 0 {
 			level.Error(t.logger).Log("msg", "fetch errors", "err", fetches.Err())
 			break
@@ -298,10 +308,11 @@ func (t *IngestStorageRecordTest) testBatch(fetches kgo.Fetches) error {
 
 // batchReport contains the running results of testing a batch.
 type batchReport struct {
-	err                 error
-	avgCompressionRatio float64
-	throughputBytes     int64
-	recordsSeen         int
+	err                   error
+	avgCompressionRatio   float64
+	throughputBytes       int64
+	recordsSeen           int
+	recordsSizeMismatched int
 }
 
 func (b batchReport) Error(err error) batchReport {
@@ -320,11 +331,16 @@ func (b batchReport) Track(v1buf, v2buf []byte) batchReport {
 
 	b.throughputBytes += int64(len(v2buf))
 
+	if len(v2buf) > len(v1buf) {
+		b.recordsSizeMismatched++
+	}
+
 	return b
 }
 
 func (b batchReport) Observe(metrics *IngestStorageRecordTestMetrics) {
 	metrics.batchesProcessedTotal.Inc()
+	metrics.recordsWithGrowth.Add(float64(b.recordsSizeMismatched))
 	if b.err != nil {
 		metrics.batchesFailedTotal.Inc()
 	}
@@ -364,12 +380,6 @@ func (t *IngestStorageRecordTest) testRec(rec *kgo.Record, report batchReport) b
 
 	if string(rec.Key) != string(v2Rec.Key) {
 		return report.Error(fmt.Errorf("key did not match, got: %s, expected: %s", string(v2Rec.Key), string(rec.Key)))
-	}
-
-	if version != 2 {
-		if len(v2Rec.Value) > len(rec.Value) {
-			level.Warn(t.logger).Log("msg", "a v2 record was larger than its v1 counterpart", "user", string(rec.Key), "v1size", len(rec.Value), "v2size", len(v2Rec.Value))
-		}
 	}
 
 	v2Req := mimirpb.PreallocWriteRequest{}

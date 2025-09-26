@@ -63,15 +63,16 @@ func (c *ownedSeriesTestContextBase) checkUpdateReasonForUser(t *testing.T, expe
 	require.Equal(t, expectedReason, c.db.requiresOwnedSeriesUpdate.Load())
 }
 
-func (c *ownedSeriesTestContextBase) checkTestedIngesterOwnedSeriesState(t *testing.T, series, shards, limit int) {
+func (c *ownedSeriesTestContextBase) checkTestedIngesterOwnedSeriesState(t *testing.T, series, targetInfoSeries, shards, limit int) {
 	os := c.db.ownedSeriesState()
 	require.Equal(t, series, os.ownedSeriesCount, "owned series")
+	require.Equal(t, targetInfoSeries, os.ownedTargetInfoSeriesCount, "owned target_info series")
 	require.Equal(t, shards, os.shardSize, "shard size")
 	require.Equal(t, limit, os.localSeriesLimit, "local series limit")
 }
 
 func (c *ownedSeriesTestContextBase) checkActiveSeriesCount(t *testing.T, expected int) {
-	totalSeries, _, _ := c.db.activeSeries.Active()
+	totalSeries, _, _, _ := c.db.activeSeries.Active()
 	require.Equal(t, expected, totalSeries, "total active series")
 }
 
@@ -175,7 +176,7 @@ func TestOwnedSeriesServiceWithIngesterRing(t *testing.T) {
 				c.pushUserSeries(t)
 
 				// first ingester owns all the series, even without any ownedSeries run. this is because each created series is automatically counted as "owned".
-				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 0, ownedServiceTestUserSeriesLimit)
+				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 0, 0, ownedServiceTestUserSeriesLimit)
 				c.checkActiveSeriesCount(t, ownedServiceSeriesCount)
 
 				// run initial owned series check
@@ -184,15 +185,50 @@ func TestOwnedSeriesServiceWithIngesterRing(t *testing.T) {
 				c.checkUpdateReasonForUser(t, "")
 
 				// first ingester still owns all the series
-				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 0, ownedServiceTestUserSeriesLimit)
+				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 0, 0, ownedServiceTestUserSeriesLimit)
 				c.checkActiveSeriesCount(t, ownedServiceSeriesCount)
 
 				// re-running shouldn't trigger a recompute, since no reason is set
 				c.updateOwnedSeriesAndCheckResult(t, false, 0, "")
 
 				// first ingester still owns all the series
-				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 0, ownedServiceTestUserSeriesLimit)
+				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 0, 0, ownedServiceTestUserSeriesLimit)
 				c.checkActiveSeriesCount(t, ownedServiceSeriesCount)
+			},
+		},
+		"new user trigger with target_info series": {
+			limits: map[string]*validation.Limits{
+				ownedServiceTestUser: {
+					MaxGlobalSeriesPerUser:   ownedServiceTestUserSeriesLimit,
+					IngestionTenantShardSize: 0,
+				},
+			},
+			testFunc: func(t *testing.T, c *ownedSeriesWithIngesterRingTestContext, _ map[string]*validation.Limits) {
+				// Generate series with 2 target_info series using a timestamp that won't be rejected
+				const targetInfoCount = 2
+				baseTime := time.Now().Add(-time.Minute) // Use a time in the past to avoid "too far in future" errors
+				c.seriesToWrite, c.seriesTokens = generateSeriesWithTargetInfoAt(ownedServiceTestUser, baseTime, targetInfoCount)
+				c.pushUserSeries(t)
+
+				// first ingester owns all the series, even without any ownedSeries run. this is because each created series is automatically counted as "owned".
+				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount+targetInfoCount, targetInfoCount, 0, ownedServiceTestUserSeriesLimit)
+				c.checkActiveSeriesCount(t, ownedServiceSeriesCount+targetInfoCount)
+
+				// run initial owned series check
+				c.checkUpdateReasonForUser(t, recomputeOwnedSeriesReasonNewUser)
+				c.updateOwnedSeriesAndCheckResult(t, false, 1, recomputeOwnedSeriesReasonNewUser)
+				c.checkUpdateReasonForUser(t, "")
+
+				// first ingester still owns all the series including target_info
+				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount+targetInfoCount, targetInfoCount, 0, ownedServiceTestUserSeriesLimit)
+				c.checkActiveSeriesCount(t, ownedServiceSeriesCount+targetInfoCount)
+
+				// re-running shouldn't trigger a recompute, since no reason is set
+				c.updateOwnedSeriesAndCheckResult(t, false, 0, "")
+
+				// first ingester still owns all the series
+				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount+targetInfoCount, targetInfoCount, 0, ownedServiceTestUserSeriesLimit)
+				c.checkActiveSeriesCount(t, ownedServiceSeriesCount+targetInfoCount)
 			},
 		},
 		"new user trigger from WAL replay": {
@@ -208,7 +244,7 @@ func TestOwnedSeriesServiceWithIngesterRing(t *testing.T) {
 				c.checkUpdateReasonForUser(t, "")
 
 				// initial state: all series are owned by the first ingester
-				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 0, ownedServiceTestUserSeriesLimit)
+				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 0, 0, ownedServiceTestUserSeriesLimit)
 				c.checkActiveSeriesCount(t, ownedServiceSeriesCount)
 
 				dataDir := c.ing.cfg.BlocksStorageConfig.TSDB.Dir
@@ -223,7 +259,7 @@ func TestOwnedSeriesServiceWithIngesterRing(t *testing.T) {
 
 				// the owned series will be counted during WAL replay and reason set to "new user"
 				// shard size and local limit are initialized to correct values
-				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 0, ownedServiceTestUserSeriesLimit)
+				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 0, 0, ownedServiceTestUserSeriesLimit)
 				c.checkUpdateReasonForUser(t, recomputeOwnedSeriesReasonNewUser)
 				c.checkActiveSeriesCount(t, 0) // active series do not get restored after a restart
 			},
@@ -241,25 +277,25 @@ func TestOwnedSeriesServiceWithIngesterRing(t *testing.T) {
 				c.checkUpdateReasonForUser(t, "")
 
 				// initial state: all series are owned by the first ingester
-				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 1, ownedServiceTestUserSeriesLimit)
+				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 0, 1, ownedServiceTestUserSeriesLimit)
 				c.checkActiveSeriesCount(t, ownedServiceSeriesCount)
 
 				// add an ingester
 				c.registerSecondIngesterOwningHalfOfTheTokens(t)
 
 				// verify no change in state before owned series run
-				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 1, ownedServiceTestUserSeriesLimit)
+				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 0, 1, ownedServiceTestUserSeriesLimit)
 				c.checkActiveSeriesCount(t, ownedServiceSeriesCount)
 
 				// since no reason set, shard size and local limit are unchanged, and we pass ringChanged=false, no recompute will happen
 				c.updateOwnedSeriesAndCheckResult(t, false, 0, "")
-				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 1, ownedServiceTestUserSeriesLimit)
+				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 0, 1, ownedServiceTestUserSeriesLimit)
 				c.checkUpdateReasonForUser(t, "")
 				c.checkActiveSeriesCount(t, ownedServiceSeriesCount)
 
 				// passing ringChanged=true won't trigger a recompute either, because the user's subring hasn't changed
 				c.updateOwnedSeriesAndCheckResult(t, true, 0, "")
-				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 1, ownedServiceTestUserSeriesLimit)
+				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 0, 1, ownedServiceTestUserSeriesLimit)
 				c.checkUpdateReasonForUser(t, "")
 				c.checkActiveSeriesCount(t, ownedServiceSeriesCount)
 
@@ -267,18 +303,18 @@ func TestOwnedSeriesServiceWithIngesterRing(t *testing.T) {
 				c.removeSecondIngester(t)
 
 				// verify no change in state before owned series run
-				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 1, ownedServiceTestUserSeriesLimit)
+				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 0, 1, ownedServiceTestUserSeriesLimit)
 				c.checkActiveSeriesCount(t, ownedServiceSeriesCount)
 
 				// since no reason set, shard size and local limit are unchanged, and we pass ringChanged=false, no recompute will happen
 				c.updateOwnedSeriesAndCheckResult(t, false, 0, "")
-				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 1, ownedServiceTestUserSeriesLimit)
+				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 0, 1, ownedServiceTestUserSeriesLimit)
 				c.checkUpdateReasonForUser(t, "")
 				c.checkActiveSeriesCount(t, ownedServiceSeriesCount)
 
 				// passing ringChanged=true won't trigger a recompute either, because the user's subring hasn't changed
 				c.updateOwnedSeriesAndCheckResult(t, true, 0, "")
-				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 1, ownedServiceTestUserSeriesLimit)
+				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 0, 1, ownedServiceTestUserSeriesLimit)
 				c.checkUpdateReasonForUser(t, "")
 				c.checkActiveSeriesCount(t, ownedServiceSeriesCount)
 			},
@@ -297,25 +333,25 @@ func TestOwnedSeriesServiceWithIngesterRing(t *testing.T) {
 				c.checkUpdateReasonForUser(t, "")
 
 				// initial state: all series are owned by the first ingester
-				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 1, ownedServiceTestUserSeriesLimit)
+				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 0, 1, ownedServiceTestUserSeriesLimit)
 				c.checkActiveSeriesCount(t, ownedServiceSeriesCount)
 
 				// add an ingester (it will become the first ingester in the shuffle shard)
 				c.registerSecondIngesterOwningHalfOfTheTokens(t)
 
 				// verify no change in state before owned series run
-				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 1, ownedServiceTestUserSeriesLimit)
+				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 0, 1, ownedServiceTestUserSeriesLimit)
 				c.checkActiveSeriesCount(t, ownedServiceSeriesCount)
 
 				// since no reason set, shard size and local limit are unchanged, and we pass ringChanged=false, no recompute will happen
 				c.updateOwnedSeriesAndCheckResult(t, false, 0, "")
-				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 1, ownedServiceTestUserSeriesLimit)
+				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 0, 1, ownedServiceTestUserSeriesLimit)
 				c.checkUpdateReasonForUser(t, "")
 				c.checkActiveSeriesCount(t, ownedServiceSeriesCount)
 
 				// passing ringChanged=true will trigger recompute because the token ownership has changed
 				c.updateOwnedSeriesAndCheckResult(t, true, 1, recomputeOwnedSeriesReasonRingChanged)
-				c.checkTestedIngesterOwnedSeriesState(t, 0, 1, ownedServiceTestUserSeriesLimit)
+				c.checkTestedIngesterOwnedSeriesState(t, 0, 0, 1, ownedServiceTestUserSeriesLimit)
 				c.checkUpdateReasonForUser(t, "")
 				c.checkActiveSeriesCount(t, 0)
 
@@ -323,18 +359,18 @@ func TestOwnedSeriesServiceWithIngesterRing(t *testing.T) {
 				c.removeSecondIngester(t)
 
 				// verify no change in state before owned series run
-				c.checkTestedIngesterOwnedSeriesState(t, 0, 1, ownedServiceTestUserSeriesLimit)
+				c.checkTestedIngesterOwnedSeriesState(t, 0, 0, 1, ownedServiceTestUserSeriesLimit)
 				c.checkActiveSeriesCount(t, 0)
 
 				// since no reason set, shard size and local limit are unchanged, and we pass ringChanged=false, no recompute will happen
 				c.updateOwnedSeriesAndCheckResult(t, false, 0, "")
-				c.checkTestedIngesterOwnedSeriesState(t, 0, 1, ownedServiceTestUserSeriesLimit)
+				c.checkTestedIngesterOwnedSeriesState(t, 0, 0, 1, ownedServiceTestUserSeriesLimit)
 				c.checkUpdateReasonForUser(t, "")
 				c.checkActiveSeriesCount(t, 0)
 
 				// passing ringChanged=true will trigger recompute because the token ownership has changed
 				c.updateOwnedSeriesAndCheckResult(t, true, 1, recomputeOwnedSeriesReasonRingChanged)
-				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 1, ownedServiceTestUserSeriesLimit)
+				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 0, 1, ownedServiceTestUserSeriesLimit)
 				c.checkUpdateReasonForUser(t, "")
 
 				// active series stay reduced until more pushes come in
@@ -356,19 +392,19 @@ func TestOwnedSeriesServiceWithIngesterRing(t *testing.T) {
 				c.checkUpdateReasonForUser(t, "")
 
 				// initial state: all series are owned by the first ingester.
-				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 0, ownedServiceTestUserSeriesLimit)
+				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 0, 0, ownedServiceTestUserSeriesLimit)
 				c.checkActiveSeriesCount(t, ownedServiceSeriesCount)
 
 				// add an ingester
 				c.registerSecondIngesterOwningHalfOfTheTokens(t)
 
 				// verify no change in state before owned series run
-				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 0, ownedServiceTestUserSeriesLimit)
+				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 0, 0, ownedServiceTestUserSeriesLimit)
 				c.checkActiveSeriesCount(t, ownedServiceSeriesCount)
 
 				// will recompute because the local limit has changed (takes precedence over ring change)
 				c.updateOwnedSeriesAndCheckResult(t, true, 1, recomputeOwnedSeriesReasonLocalLimitChanged)
-				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount/2, 0, ownedServiceTestUserSeriesLimit/2)
+				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount/2, 0, 0, ownedServiceTestUserSeriesLimit/2)
 				c.checkUpdateReasonForUser(t, "")
 				c.checkActiveSeriesCount(t, ownedServiceSeriesCount/2)
 
@@ -376,12 +412,12 @@ func TestOwnedSeriesServiceWithIngesterRing(t *testing.T) {
 				c.removeSecondIngester(t)
 
 				// verify no change in state before owned series run
-				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount/2, 0, ownedServiceTestUserSeriesLimit/2)
+				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount/2, 0, 0, ownedServiceTestUserSeriesLimit/2)
 				c.checkActiveSeriesCount(t, ownedServiceSeriesCount/2)
 
 				// will recompute because the local limit has changed (takes precedence over ring change)
 				c.updateOwnedSeriesAndCheckResult(t, true, 1, recomputeOwnedSeriesReasonLocalLimitChanged)
-				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 0, ownedServiceTestUserSeriesLimit)
+				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 0, 0, ownedServiceTestUserSeriesLimit)
 				c.checkUpdateReasonForUser(t, "")
 
 				// active series stay reduced until more pushes come in
@@ -403,7 +439,7 @@ func TestOwnedSeriesServiceWithIngesterRing(t *testing.T) {
 				c.checkUpdateReasonForUser(t, "")
 
 				// initial state: all series are owned by the first ingester.
-				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 0, ownedServiceTestUserSeriesLimit)
+				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 0, 0, ownedServiceTestUserSeriesLimit)
 				c.checkActiveSeriesCount(t, ownedServiceSeriesCount)
 
 				// add a PENDING ingester with no tokens
@@ -412,12 +448,12 @@ func TestOwnedSeriesServiceWithIngesterRing(t *testing.T) {
 				})
 
 				// verify no change in state before owned series run
-				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 0, ownedServiceTestUserSeriesLimit)
+				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 0, 0, ownedServiceTestUserSeriesLimit)
 				c.checkActiveSeriesCount(t, ownedServiceSeriesCount)
 
 				// the ring has changed but the token ranges have not, so no recompute should happen
 				c.updateOwnedSeriesAndCheckResult(t, true, 0, "")
-				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 0, ownedServiceTestUserSeriesLimit)
+				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 0, 0, ownedServiceTestUserSeriesLimit)
 				c.checkUpdateReasonForUser(t, "")
 				c.checkActiveSeriesCount(t, ownedServiceSeriesCount)
 			},
@@ -439,7 +475,7 @@ func TestOwnedSeriesServiceWithIngesterRing(t *testing.T) {
 
 				// will recompute because the local limit has changed (takes precedence over ring change)
 				c.updateOwnedSeriesAndCheckResult(t, true, 1, recomputeOwnedSeriesReasonLocalLimitChanged)
-				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount/2, 0, ownedServiceTestUserSeriesLimit/2)
+				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount/2, 0, 0, ownedServiceTestUserSeriesLimit/2)
 				c.checkUpdateReasonForUser(t, "")
 				c.checkActiveSeriesCount(t, ownedServiceSeriesCount/2)
 
@@ -448,11 +484,11 @@ func TestOwnedSeriesServiceWithIngesterRing(t *testing.T) {
 				limits[ownedServiceTestUser].IngestionTenantShardSize = 2
 
 				// verify no change in state before owned series run
-				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount/2, 0, ownedServiceTestUserSeriesLimit/2)
+				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount/2, 0, 0, ownedServiceTestUserSeriesLimit/2)
 				c.checkActiveSeriesCount(t, ownedServiceSeriesCount/2)
 
 				c.updateOwnedSeriesAndCheckResult(t, false, 1, recomputeOwnedSeriesReasonShardSizeChanged)
-				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount/2, 2, ownedServiceTestUserSeriesLimit/2)
+				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount/2, 0, 2, ownedServiceTestUserSeriesLimit/2)
 				c.checkUpdateReasonForUser(t, "")
 				c.checkActiveSeriesCount(t, ownedServiceSeriesCount/2)
 			},
@@ -473,18 +509,18 @@ func TestOwnedSeriesServiceWithIngesterRing(t *testing.T) {
 				c.registerSecondIngesterOwningHalfOfTheTokens(t)
 
 				// initial state: all series are owned by the first ingester
-				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 1, ownedServiceTestUserSeriesLimit)
+				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 0, 1, ownedServiceTestUserSeriesLimit)
 				c.checkActiveSeriesCount(t, ownedServiceSeriesCount)
 
 				// change shard size to 2, splitting the series between ingesters
 				limits[ownedServiceTestUser].IngestionTenantShardSize = 2
 
 				// verify no change in state before owned series run
-				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 1, ownedServiceTestUserSeriesLimit)
+				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 0, 1, ownedServiceTestUserSeriesLimit)
 				c.checkActiveSeriesCount(t, ownedServiceSeriesCount)
 
 				c.updateOwnedSeriesAndCheckResult(t, false, 1, recomputeOwnedSeriesReasonShardSizeChanged)
-				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount/2, 2, ownedServiceTestUserSeriesLimit/2)
+				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount/2, 0, 2, ownedServiceTestUserSeriesLimit/2)
 				c.checkUpdateReasonForUser(t, "")
 				c.checkActiveSeriesCount(t, ownedServiceSeriesCount/2)
 
@@ -492,11 +528,11 @@ func TestOwnedSeriesServiceWithIngesterRing(t *testing.T) {
 				limits[ownedServiceTestUser].IngestionTenantShardSize = 1
 
 				// verify no change in state before owned series run
-				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount/2, 2, ownedServiceTestUserSeriesLimit/2)
+				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount/2, 0, 2, ownedServiceTestUserSeriesLimit/2)
 				c.checkActiveSeriesCount(t, ownedServiceSeriesCount/2)
 
 				c.updateOwnedSeriesAndCheckResult(t, false, 1, recomputeOwnedSeriesReasonShardSizeChanged)
-				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 1, ownedServiceTestUserSeriesLimit)
+				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 0, 1, ownedServiceTestUserSeriesLimit)
 				c.checkUpdateReasonForUser(t, "")
 
 				// active series stay reduced until more pushes come in
@@ -524,18 +560,18 @@ func TestOwnedSeriesServiceWithIngesterRing(t *testing.T) {
 				c.checkUpdateReasonForUser(t, "")
 
 				// initial state: all series are owned by the second ingester
-				c.checkTestedIngesterOwnedSeriesState(t, 0, 1, ownedServiceTestUserSeriesLimit)
+				c.checkTestedIngesterOwnedSeriesState(t, 0, 0, 1, ownedServiceTestUserSeriesLimit)
 				c.checkActiveSeriesCount(t, 0)
 
 				// change shard size to 2, splitting the series between ingesters
 				limits[ownedServiceTestUser].IngestionTenantShardSize = 2
 
 				// verify no change in state before owned series run
-				c.checkTestedIngesterOwnedSeriesState(t, 0, 1, ownedServiceTestUserSeriesLimit)
+				c.checkTestedIngesterOwnedSeriesState(t, 0, 0, 1, ownedServiceTestUserSeriesLimit)
 				c.checkActiveSeriesCount(t, 0)
 
 				c.updateOwnedSeriesAndCheckResult(t, false, 1, recomputeOwnedSeriesReasonShardSizeChanged)
-				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount/2, 2, ownedServiceTestUserSeriesLimit/2)
+				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount/2, 0, 2, ownedServiceTestUserSeriesLimit/2)
 				c.checkUpdateReasonForUser(t, "")
 				c.checkActiveSeriesCount(t, 0) // active series stay reduced until more pushes come in
 
@@ -543,11 +579,11 @@ func TestOwnedSeriesServiceWithIngesterRing(t *testing.T) {
 				limits[ownedServiceTestUser].IngestionTenantShardSize = 1
 
 				// verify no change in state before owned series run
-				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount/2, 2, ownedServiceTestUserSeriesLimit/2)
+				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount/2, 0, 2, ownedServiceTestUserSeriesLimit/2)
 				c.checkActiveSeriesCount(t, 0) // active series stay reduced until more pushes come in
 
 				c.updateOwnedSeriesAndCheckResult(t, false, 1, recomputeOwnedSeriesReasonShardSizeChanged)
-				c.checkTestedIngesterOwnedSeriesState(t, 0, 1, ownedServiceTestUserSeriesLimit)
+				c.checkTestedIngesterOwnedSeriesState(t, 0, 0, 1, ownedServiceTestUserSeriesLimit)
 				c.checkUpdateReasonForUser(t, "")
 				c.checkActiveSeriesCount(t, 0) // active series stay reduced until more pushes come in
 			},
@@ -565,18 +601,18 @@ func TestOwnedSeriesServiceWithIngesterRing(t *testing.T) {
 				c.checkUpdateReasonForUser(t, "")
 
 				// initial state: all series are owned by the first ingester
-				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 0, ownedServiceTestUserSeriesLimit)
+				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 0, 0, ownedServiceTestUserSeriesLimit)
 				c.checkActiveSeriesCount(t, ownedServiceSeriesCount)
 
 				// increase series limit
 				limits[ownedServiceTestUser].MaxGlobalSeriesPerUser = ownedServiceTestUserSeriesLimit * 2
 
 				// verify no change in state before owned series run
-				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 0, ownedServiceTestUserSeriesLimit)
+				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 0, 0, ownedServiceTestUserSeriesLimit)
 				c.checkActiveSeriesCount(t, ownedServiceSeriesCount)
 
 				c.updateOwnedSeriesAndCheckResult(t, false, 1, recomputeOwnedSeriesReasonLocalLimitChanged)
-				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 0, ownedServiceTestUserSeriesLimit*2)
+				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 0, 0, ownedServiceTestUserSeriesLimit*2)
 				c.checkUpdateReasonForUser(t, "")
 				c.checkActiveSeriesCount(t, ownedServiceSeriesCount)
 
@@ -584,11 +620,11 @@ func TestOwnedSeriesServiceWithIngesterRing(t *testing.T) {
 				limits[ownedServiceTestUser].MaxGlobalSeriesPerUser = ownedServiceTestUserSeriesLimit
 
 				// verify no change in state before owned series run
-				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 0, ownedServiceTestUserSeriesLimit*2)
+				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 0, 0, ownedServiceTestUserSeriesLimit*2)
 				c.checkActiveSeriesCount(t, ownedServiceSeriesCount)
 
 				c.updateOwnedSeriesAndCheckResult(t, false, 1, recomputeOwnedSeriesReasonLocalLimitChanged)
-				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 0, ownedServiceTestUserSeriesLimit)
+				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 0, 0, ownedServiceTestUserSeriesLimit)
 				c.checkUpdateReasonForUser(t, "")
 				c.checkActiveSeriesCount(t, ownedServiceSeriesCount)
 			},
@@ -609,7 +645,7 @@ func TestOwnedSeriesServiceWithIngesterRing(t *testing.T) {
 				c.registerSecondIngesterOwningHalfOfTheTokens(t)
 
 				// initial state: all series are owned by the first ingester
-				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 1, ownedServiceTestUserSeriesLimit)
+				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 0, 1, ownedServiceTestUserSeriesLimit)
 				c.checkActiveSeriesCount(t, ownedServiceSeriesCount)
 
 				// double series limit and shard size
@@ -617,11 +653,11 @@ func TestOwnedSeriesServiceWithIngesterRing(t *testing.T) {
 				limits[ownedServiceTestUser].IngestionTenantShardSize = 2
 
 				// verify no change in state before owned series run
-				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 1, ownedServiceTestUserSeriesLimit)
+				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 0, 1, ownedServiceTestUserSeriesLimit)
 				c.checkActiveSeriesCount(t, ownedServiceSeriesCount)
 
 				c.updateOwnedSeriesAndCheckResult(t, false, 1, recomputeOwnedSeriesReasonShardSizeChanged)
-				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount/2, 2, ownedServiceTestUserSeriesLimit)
+				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount/2, 0, 2, ownedServiceTestUserSeriesLimit)
 				c.checkUpdateReasonForUser(t, "")
 				c.checkActiveSeriesCount(t, ownedServiceSeriesCount/2)
 
@@ -630,11 +666,11 @@ func TestOwnedSeriesServiceWithIngesterRing(t *testing.T) {
 				limits[ownedServiceTestUser].IngestionTenantShardSize = 1
 
 				// verify no change in state before owned series run
-				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount/2, 2, ownedServiceTestUserSeriesLimit)
+				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount/2, 0, 2, ownedServiceTestUserSeriesLimit)
 				c.checkActiveSeriesCount(t, ownedServiceSeriesCount/2)
 
 				c.updateOwnedSeriesAndCheckResult(t, false, 1, recomputeOwnedSeriesReasonShardSizeChanged)
-				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 1, ownedServiceTestUserSeriesLimit)
+				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 0, 1, ownedServiceTestUserSeriesLimit)
 				c.checkUpdateReasonForUser(t, "")
 				c.checkActiveSeriesCount(t, ownedServiceSeriesCount/2) // active series stay reduced until more pushes come in
 			},
@@ -652,7 +688,7 @@ func TestOwnedSeriesServiceWithIngesterRing(t *testing.T) {
 				c.checkUpdateReasonForUser(t, "")
 
 				// initial state: all series are owned by the first ingester
-				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 0, ownedServiceTestUserSeriesLimit)
+				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 0, 0, ownedServiceTestUserSeriesLimit)
 				c.checkActiveSeriesCount(t, ownedServiceSeriesCount)
 
 				// run early compaction removing all series from the head
@@ -661,12 +697,12 @@ func TestOwnedSeriesServiceWithIngesterRing(t *testing.T) {
 				require.Equal(t, uint64(0), c.db.Head().NumSeries())
 
 				// verify no change in state before owned series run
-				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 0, ownedServiceTestUserSeriesLimit)
+				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 0, 0, ownedServiceTestUserSeriesLimit)
 				c.checkActiveSeriesCount(t, ownedServiceSeriesCount)
 
 				c.checkUpdateReasonForUser(t, recomputeOwnedSeriesReasonEarlyCompaction)
 				c.updateOwnedSeriesAndCheckResult(t, false, 1, recomputeOwnedSeriesReasonEarlyCompaction)
-				c.checkTestedIngesterOwnedSeriesState(t, 0, 0, ownedServiceTestUserSeriesLimit)
+				c.checkTestedIngesterOwnedSeriesState(t, 0, 0, 0, ownedServiceTestUserSeriesLimit)
 				c.checkUpdateReasonForUser(t, "")
 
 				// series should be marked as deleted, but are still active
@@ -691,12 +727,12 @@ func TestOwnedSeriesServiceWithIngesterRing(t *testing.T) {
 				c.checkUpdateReasonForUser(t, "")
 
 				// initial state: all series are owned by the first ingester
-				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 0, ownedServiceTestUserSeriesLimit)
+				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 0, 0, ownedServiceTestUserSeriesLimit)
 				c.checkActiveSeriesCount(t, ownedServiceSeriesCount)
 
 				c.db.requiresOwnedSeriesUpdate.Store(recomputeOwnedSeriesReasonGetTokenRangesFailed)
 				c.updateOwnedSeriesAndCheckResult(t, false, 1, recomputeOwnedSeriesReasonGetTokenRangesFailed)
-				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 0, ownedServiceTestUserSeriesLimit)
+				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 0, 0, ownedServiceTestUserSeriesLimit)
 				c.checkUpdateReasonForUser(t, "")
 				c.checkActiveSeriesCount(t, ownedServiceSeriesCount)
 			},
@@ -769,6 +805,21 @@ func generateSeriesWithTokensAt(testUser string, startTime time.Time) ([]util_te
 		s := util_test.Series{
 			Labels:  labels.FromStrings(labels.MetricName, "test", fmt.Sprintf("lbl_%05d", seriesIdx), "value"),
 			Samples: []util_test.Sample{{TS: startTime.Add(time.Duration(seriesIdx) * time.Millisecond).UnixMilli(), Val: float64(0)}},
+		}
+		seriesToWrite = append(seriesToWrite, s)
+		seriesTokens = append(seriesTokens, mimirpb.ShardByAllLabels(testUser, s.Labels))
+	}
+	return seriesToWrite, seriesTokens
+}
+
+func generateSeriesWithTargetInfoAt(testUser string, startTime time.Time, targetInfoCount int) ([]util_test.Series, []uint32) {
+	seriesToWrite, seriesTokens := generateSeriesWithTokensAt(testUser, startTime)
+
+	// Generate target_info series
+	for i := range targetInfoCount {
+		s := util_test.Series{
+			Labels:  labels.FromStrings(labels.MetricName, "target_info", "instance", fmt.Sprintf("instance_%d", i), "job", "test_job"),
+			Samples: []util_test.Sample{{TS: startTime.Add(time.Duration(i) * time.Millisecond).UnixMilli(), Val: float64(1)}},
 		}
 		seriesToWrite = append(seriesToWrite, s)
 		seriesTokens = append(seriesTokens, mimirpb.ShardByAllLabels(testUser, s.Labels))
@@ -929,7 +980,7 @@ func TestOwnedSeriesServiceWithPartitionsRing(t *testing.T) {
 				c.pushUserSeries(t)
 
 				// first ingester owns all the series, even without any ownedSeries run. this is because each created series is automatically counted as "owned".
-				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 0, ownedServiceTestUserSeriesLimit)
+				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 0, 0, ownedServiceTestUserSeriesLimit)
 				c.checkActiveSeriesCount(t, ownedServiceSeriesCount)
 
 				// run initial owned series check
@@ -938,15 +989,50 @@ func TestOwnedSeriesServiceWithPartitionsRing(t *testing.T) {
 				c.checkUpdateReasonForUser(t, "")
 
 				// first ingester still owns all the series
-				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 0, ownedServiceTestUserSeriesLimit)
+				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 0, 0, ownedServiceTestUserSeriesLimit)
 				c.checkActiveSeriesCount(t, ownedServiceSeriesCount)
 
 				// re-running shouldn't trigger a recompute, since no reason is set
 				c.updateOwnedSeriesAndCheckResult(t, false, 0, "")
 
 				// first ingester still owns all the series
-				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 0, ownedServiceTestUserSeriesLimit)
+				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 0, 0, ownedServiceTestUserSeriesLimit)
 				c.checkActiveSeriesCount(t, ownedServiceSeriesCount)
+			},
+		},
+		"new user trigger with target_info series": {
+			limits: map[string]*validation.Limits{
+				ownedServiceTestUserPartitionsRing: {
+					MaxGlobalSeriesPerUser:             ownedServiceTestUserSeriesLimit,
+					IngestionPartitionsTenantShardSize: 0,
+				},
+			},
+			testFunc: func(t *testing.T, c *ownedSeriesWithPartitionsRingTestContext, _ map[string]*validation.Limits) {
+				// Generate series with 2 target_info series using a timestamp that won't be rejected
+				const targetInfoCount = 2
+				baseTime := time.Now().Add(-time.Minute) // Use a time in the past to avoid "too far in future" errors
+				c.seriesToWrite, _ = generateSeriesWithTargetInfoAt(ownedServiceTestUserPartitionsRing, baseTime, targetInfoCount)
+				c.pushUserSeries(t)
+
+				// first ingester owns all the series, even without any ownedSeries run. this is because each created series is automatically counted as "owned".
+				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount+targetInfoCount, targetInfoCount, 0, ownedServiceTestUserSeriesLimit)
+				c.checkActiveSeriesCount(t, ownedServiceSeriesCount+targetInfoCount)
+
+				// run initial owned series check
+				c.checkUpdateReasonForUser(t, recomputeOwnedSeriesReasonNewUser)
+				c.updateOwnedSeriesAndCheckResult(t, false, 1, recomputeOwnedSeriesReasonNewUser)
+				c.checkUpdateReasonForUser(t, "")
+
+				// first ingester still owns all the series including target_info
+				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount+targetInfoCount, targetInfoCount, 0, ownedServiceTestUserSeriesLimit)
+				c.checkActiveSeriesCount(t, ownedServiceSeriesCount+targetInfoCount)
+
+				// re-running shouldn't trigger a recompute, since no reason is set
+				c.updateOwnedSeriesAndCheckResult(t, false, 0, "")
+
+				// first ingester still owns all the series
+				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount+targetInfoCount, targetInfoCount, 0, ownedServiceTestUserSeriesLimit)
+				c.checkActiveSeriesCount(t, ownedServiceSeriesCount+targetInfoCount)
 			},
 		},
 		"new user trigger from WAL replay": {
@@ -962,7 +1048,7 @@ func TestOwnedSeriesServiceWithPartitionsRing(t *testing.T) {
 				c.checkUpdateReasonForUser(t, "")
 
 				// initial state: all series are owned by the first ingester
-				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 0, ownedServiceTestUserSeriesLimit)
+				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 0, 0, ownedServiceTestUserSeriesLimit)
 				c.checkActiveSeriesCount(t, ownedServiceSeriesCount)
 
 				// stop the ingester
@@ -975,7 +1061,7 @@ func TestOwnedSeriesServiceWithPartitionsRing(t *testing.T) {
 
 				// the owned series will be counted during WAL replay and reason set to "new user"
 				// shard size and local limit are initialized to correct values
-				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 0, ownedServiceTestUserSeriesLimit)
+				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 0, 0, ownedServiceTestUserSeriesLimit)
 				c.checkUpdateReasonForUser(t, recomputeOwnedSeriesReasonNewUser)
 				c.checkActiveSeriesCount(t, 0) // active series do not get restored after a restart
 			},
@@ -995,25 +1081,25 @@ func TestOwnedSeriesServiceWithPartitionsRing(t *testing.T) {
 				c.checkUpdateReasonForUser(t, "")
 
 				// initial state: all series are owned by the first ingester
-				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 1, ownedServiceTestUserSeriesLimit)
+				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 0, 1, ownedServiceTestUserSeriesLimit)
 				c.checkActiveSeriesCount(t, ownedServiceSeriesCount)
 
 				// Partition 2 was added at first, now we add partition 1. However partition 2 will still "own" the test user (see TestOwnedSeriesPartitionsTestUserShuffleSharding).
 				c.addPartition(t, 1, ring.PartitionActive)
 
 				// verify no change in state before owned series run
-				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 1, ownedServiceTestUserSeriesLimit)
+				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 0, 1, ownedServiceTestUserSeriesLimit)
 				c.checkActiveSeriesCount(t, ownedServiceSeriesCount)
 
 				// since no reason set, shard size and local limit are unchanged, and we pass ringChanged=false, no recompute will happen
 				c.updateOwnedSeriesAndCheckResult(t, false, 0, "")
-				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 1, ownedServiceTestUserSeriesLimit)
+				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 0, 1, ownedServiceTestUserSeriesLimit)
 				c.checkUpdateReasonForUser(t, "")
 				c.checkActiveSeriesCount(t, ownedServiceSeriesCount)
 
 				// passing ringChanged=true won't trigger a recompute either, because the user's partition subring hasn't changed
 				c.updateOwnedSeriesAndCheckResult(t, true, 0, "")
-				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 1, ownedServiceTestUserSeriesLimit)
+				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 0, 1, ownedServiceTestUserSeriesLimit)
 				c.checkUpdateReasonForUser(t, "")
 				c.checkActiveSeriesCount(t, ownedServiceSeriesCount)
 
@@ -1021,18 +1107,18 @@ func TestOwnedSeriesServiceWithPartitionsRing(t *testing.T) {
 				c.removePartition(t, 1)
 
 				// verify no change in state before owned series run
-				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 1, ownedServiceTestUserSeriesLimit)
+				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 0, 1, ownedServiceTestUserSeriesLimit)
 				c.checkActiveSeriesCount(t, ownedServiceSeriesCount)
 
 				// since no reason set, shard size and local limit are unchanged, and we pass ringChanged=false, no recompute will happen
 				c.updateOwnedSeriesAndCheckResult(t, false, 0, "")
-				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 1, ownedServiceTestUserSeriesLimit)
+				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 0, 1, ownedServiceTestUserSeriesLimit)
 				c.checkUpdateReasonForUser(t, "")
 				c.checkActiveSeriesCount(t, ownedServiceSeriesCount)
 
 				// passing ringChanged=true won't trigger a recompute either, because the user's subring hasn't changed
 				c.updateOwnedSeriesAndCheckResult(t, true, 0, "")
-				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 1, ownedServiceTestUserSeriesLimit)
+				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 0, 1, ownedServiceTestUserSeriesLimit)
 				c.checkUpdateReasonForUser(t, "")
 				c.checkActiveSeriesCount(t, ownedServiceSeriesCount)
 			},
@@ -1052,25 +1138,25 @@ func TestOwnedSeriesServiceWithPartitionsRing(t *testing.T) {
 				c.checkUpdateReasonForUser(t, "")
 
 				// initial state: all series are owned by the first ingester
-				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 1, ownedServiceTestUserSeriesLimit)
+				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 0, 1, ownedServiceTestUserSeriesLimit)
 				c.checkActiveSeriesCount(t, ownedServiceSeriesCount)
 
 				// Add new partition. This will become the only partition in the shuffle shard for the test user. See TestOwnedSeriesPartitionsTestUserShuffleSharding.
 				c.addPartition(t, 2, ring.PartitionActive)
 
 				// verify no change in state before owned series run
-				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 1, ownedServiceTestUserSeriesLimit)
+				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 0, 1, ownedServiceTestUserSeriesLimit)
 				c.checkActiveSeriesCount(t, ownedServiceSeriesCount)
 
 				// since no reason set, shard size and local limit are unchanged, and we pass ringChanged=false, no recompute will happen
 				c.updateOwnedSeriesAndCheckResult(t, false, 0, "")
-				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 1, ownedServiceTestUserSeriesLimit)
+				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 0, 1, ownedServiceTestUserSeriesLimit)
 				c.checkUpdateReasonForUser(t, "")
 				c.checkActiveSeriesCount(t, ownedServiceSeriesCount)
 
 				// passing ringChanged=true will trigger recompute because the token ownership has changed
 				c.updateOwnedSeriesAndCheckResult(t, true, 1, recomputeOwnedSeriesReasonRingChanged)
-				c.checkTestedIngesterOwnedSeriesState(t, 0, 1, ownedServiceTestUserSeriesLimit)
+				c.checkTestedIngesterOwnedSeriesState(t, 0, 0, 1, ownedServiceTestUserSeriesLimit)
 				c.checkUpdateReasonForUser(t, "")
 				c.checkActiveSeriesCount(t, 0)
 
@@ -1078,17 +1164,17 @@ func TestOwnedSeriesServiceWithPartitionsRing(t *testing.T) {
 				c.removePartition(t, 2)
 
 				// verify no change in state before owned series run
-				c.checkTestedIngesterOwnedSeriesState(t, 0, 1, ownedServiceTestUserSeriesLimit)
+				c.checkTestedIngesterOwnedSeriesState(t, 0, 0, 1, ownedServiceTestUserSeriesLimit)
 
 				// since no reason set, shard size and local limit are unchanged, and we pass ringChanged=false, no recompute will happen
 				c.updateOwnedSeriesAndCheckResult(t, false, 0, "")
-				c.checkTestedIngesterOwnedSeriesState(t, 0, 1, ownedServiceTestUserSeriesLimit)
+				c.checkTestedIngesterOwnedSeriesState(t, 0, 0, 1, ownedServiceTestUserSeriesLimit)
 				c.checkUpdateReasonForUser(t, "")
 				c.checkActiveSeriesCount(t, 0)
 
 				// passing ringChanged=true will trigger recompute because the token ownership has changed
 				c.updateOwnedSeriesAndCheckResult(t, true, 1, recomputeOwnedSeriesReasonRingChanged)
-				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 1, ownedServiceTestUserSeriesLimit)
+				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 0, 1, ownedServiceTestUserSeriesLimit)
 				c.checkUpdateReasonForUser(t, "")
 
 				// active series stay reduced until more pushes come in
@@ -1110,19 +1196,19 @@ func TestOwnedSeriesServiceWithPartitionsRing(t *testing.T) {
 				c.checkUpdateReasonForUser(t, "")
 
 				// initial state: all series are owned by the first partition.
-				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 0, ownedServiceTestUserSeriesLimit)
+				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 0, 0, ownedServiceTestUserSeriesLimit)
 				c.checkActiveSeriesCount(t, ownedServiceSeriesCount)
 
 				// add new partition. Since shard size = 0, tenant will use both partitions.
 				c.addPartition(t, 1, ring.PartitionActive)
 
 				// verify no change in state before owned series run
-				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 0, ownedServiceTestUserSeriesLimit)
+				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 0, 0, ownedServiceTestUserSeriesLimit)
 				c.checkActiveSeriesCount(t, ownedServiceSeriesCount)
 
 				// will recompute because the local limit has changed (takes precedence over ring change)
 				c.updateOwnedSeriesAndCheckResult(t, true, 1, recomputeOwnedSeriesReasonLocalLimitChanged)
-				c.checkTestedIngesterOwnedSeriesState(t, seriesSplitForPartitions0And1[0], 0, ownedServiceTestUserSeriesLimit/2)
+				c.checkTestedIngesterOwnedSeriesState(t, seriesSplitForPartitions0And1[0], 0, 0, ownedServiceTestUserSeriesLimit/2)
 				c.checkUpdateReasonForUser(t, "")
 				c.checkActiveSeriesCount(t, seriesSplitForPartitions0And1[0])
 
@@ -1130,12 +1216,12 @@ func TestOwnedSeriesServiceWithPartitionsRing(t *testing.T) {
 				c.removePartition(t, 1)
 
 				// verify no change in state before owned series run
-				c.checkTestedIngesterOwnedSeriesState(t, seriesSplitForPartitions0And1[0], 0, ownedServiceTestUserSeriesLimit/2)
+				c.checkTestedIngesterOwnedSeriesState(t, seriesSplitForPartitions0And1[0], 0, 0, ownedServiceTestUserSeriesLimit/2)
 				c.checkActiveSeriesCount(t, seriesSplitForPartitions0And1[0])
 
 				// will recompute because the local limit has changed (takes precedence over ring change)
 				c.updateOwnedSeriesAndCheckResult(t, true, 1, recomputeOwnedSeriesReasonLocalLimitChanged)
-				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 0, ownedServiceTestUserSeriesLimit)
+				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 0, 0, ownedServiceTestUserSeriesLimit)
 				c.checkUpdateReasonForUser(t, "")
 				c.checkActiveSeriesCount(t, seriesSplitForPartitions0And1[0]) // active series stay reduced until more pushes come in
 			},
@@ -1157,7 +1243,7 @@ func TestOwnedSeriesServiceWithPartitionsRing(t *testing.T) {
 
 				// will recompute because the local limit has changed (takes precedence over ring change)
 				c.updateOwnedSeriesAndCheckResult(t, true, 1, recomputeOwnedSeriesReasonLocalLimitChanged)
-				c.checkTestedIngesterOwnedSeriesState(t, seriesSplitForPartitions0And1[0], 0, ownedServiceTestUserSeriesLimit/2)
+				c.checkTestedIngesterOwnedSeriesState(t, seriesSplitForPartitions0And1[0], 0, 0, ownedServiceTestUserSeriesLimit/2)
 				c.checkUpdateReasonForUser(t, "")
 				c.checkActiveSeriesCount(t, seriesSplitForPartitions0And1[0])
 
@@ -1166,11 +1252,11 @@ func TestOwnedSeriesServiceWithPartitionsRing(t *testing.T) {
 				limits[ownedServiceTestUserPartitionsRing].IngestionPartitionsTenantShardSize = 2
 
 				// verify no change in state before owned series run
-				c.checkTestedIngesterOwnedSeriesState(t, seriesSplitForPartitions0And1[0], 0, ownedServiceTestUserSeriesLimit/2)
+				c.checkTestedIngesterOwnedSeriesState(t, seriesSplitForPartitions0And1[0], 0, 0, ownedServiceTestUserSeriesLimit/2)
 				c.checkActiveSeriesCount(t, seriesSplitForPartitions0And1[0])
 
 				c.updateOwnedSeriesAndCheckResult(t, false, 1, recomputeOwnedSeriesReasonShardSizeChanged)
-				c.checkTestedIngesterOwnedSeriesState(t, seriesSplitForPartitions0And1[0], 2, ownedServiceTestUserSeriesLimit/2)
+				c.checkTestedIngesterOwnedSeriesState(t, seriesSplitForPartitions0And1[0], 0, 2, ownedServiceTestUserSeriesLimit/2)
 				c.checkUpdateReasonForUser(t, "")
 				c.checkActiveSeriesCount(t, seriesSplitForPartitions0And1[0])
 			},
@@ -1193,18 +1279,18 @@ func TestOwnedSeriesServiceWithPartitionsRing(t *testing.T) {
 				c.addPartition(t, 1, ring.PartitionActive)
 
 				// initial state: all series are owned by the first ingester (partition 0)
-				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 1, ownedServiceTestUserSeriesLimit)
+				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 0, 1, ownedServiceTestUserSeriesLimit)
 				c.checkActiveSeriesCount(t, ownedServiceSeriesCount)
 
 				// change shard size to 2, splitting the series between two partitions.
 				limits[ownedServiceTestUserPartitionsRing].IngestionPartitionsTenantShardSize = 2
 
 				// verify no change in state before owned series run
-				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 1, ownedServiceTestUserSeriesLimit)
+				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 0, 1, ownedServiceTestUserSeriesLimit)
 				c.checkActiveSeriesCount(t, ownedServiceSeriesCount)
 
 				c.updateOwnedSeriesAndCheckResult(t, false, 1, recomputeOwnedSeriesReasonShardSizeChanged)
-				c.checkTestedIngesterOwnedSeriesState(t, seriesSplitForPartitions1And2[2], 2, ownedServiceTestUserSeriesLimit/2)
+				c.checkTestedIngesterOwnedSeriesState(t, seriesSplitForPartitions1And2[2], 0, 2, ownedServiceTestUserSeriesLimit/2)
 				c.checkUpdateReasonForUser(t, "")
 				c.checkActiveSeriesCount(t, seriesSplitForPartitions1And2[2])
 
@@ -1212,11 +1298,11 @@ func TestOwnedSeriesServiceWithPartitionsRing(t *testing.T) {
 				limits[ownedServiceTestUserPartitionsRing].IngestionPartitionsTenantShardSize = 1
 
 				// verify no change in state before owned series run
-				c.checkTestedIngesterOwnedSeriesState(t, seriesSplitForPartitions1And2[2], 2, ownedServiceTestUserSeriesLimit/2)
+				c.checkTestedIngesterOwnedSeriesState(t, seriesSplitForPartitions1And2[2], 0, 2, ownedServiceTestUserSeriesLimit/2)
 				c.checkActiveSeriesCount(t, seriesSplitForPartitions1And2[2])
 
 				c.updateOwnedSeriesAndCheckResult(t, false, 1, recomputeOwnedSeriesReasonShardSizeChanged)
-				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 1, ownedServiceTestUserSeriesLimit)
+				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 0, 1, ownedServiceTestUserSeriesLimit)
 				c.checkUpdateReasonForUser(t, "")
 				c.checkActiveSeriesCount(t, seriesSplitForPartitions1And2[2]) // active series stay reduced until more pushes come in
 			},
@@ -1243,18 +1329,18 @@ func TestOwnedSeriesServiceWithPartitionsRing(t *testing.T) {
 				c.checkUpdateReasonForUser(t, "")
 
 				// initial state: all series are owned by partition 2.
-				c.checkTestedIngesterOwnedSeriesState(t, 0, 1, ownedServiceTestUserSeriesLimit)
+				c.checkTestedIngesterOwnedSeriesState(t, 0, 0, 1, ownedServiceTestUserSeriesLimit)
 				c.checkActiveSeriesCount(t, 0)
 
 				// change shard size to 2, splitting the series between ingesters
 				limits[ownedServiceTestUserPartitionsRing].IngestionPartitionsTenantShardSize = 2
 
 				// verify no change in state before owned series run
-				c.checkTestedIngesterOwnedSeriesState(t, 0, 1, ownedServiceTestUserSeriesLimit)
+				c.checkTestedIngesterOwnedSeriesState(t, 0, 0, 1, ownedServiceTestUserSeriesLimit)
 				c.checkActiveSeriesCount(t, 0)
 
 				c.updateOwnedSeriesAndCheckResult(t, false, 1, recomputeOwnedSeriesReasonShardSizeChanged)
-				c.checkTestedIngesterOwnedSeriesState(t, seriesSplitForPartitions1And2[1], 2, ownedServiceTestUserSeriesLimit/2)
+				c.checkTestedIngesterOwnedSeriesState(t, seriesSplitForPartitions1And2[1], 0, 2, ownedServiceTestUserSeriesLimit/2)
 				c.checkUpdateReasonForUser(t, "")
 				c.checkActiveSeriesCount(t, 0)
 
@@ -1262,11 +1348,11 @@ func TestOwnedSeriesServiceWithPartitionsRing(t *testing.T) {
 				limits[ownedServiceTestUserPartitionsRing].IngestionPartitionsTenantShardSize = 1
 
 				// verify no change in state before owned series run
-				c.checkTestedIngesterOwnedSeriesState(t, seriesSplitForPartitions1And2[1], 2, ownedServiceTestUserSeriesLimit/2)
+				c.checkTestedIngesterOwnedSeriesState(t, seriesSplitForPartitions1And2[1], 0, 2, ownedServiceTestUserSeriesLimit/2)
 				c.checkActiveSeriesCount(t, 0)
 
 				c.updateOwnedSeriesAndCheckResult(t, false, 1, recomputeOwnedSeriesReasonShardSizeChanged)
-				c.checkTestedIngesterOwnedSeriesState(t, 0, 1, ownedServiceTestUserSeriesLimit)
+				c.checkTestedIngesterOwnedSeriesState(t, 0, 0, 1, ownedServiceTestUserSeriesLimit)
 				c.checkUpdateReasonForUser(t, "")
 
 				// active series stay reduced until more pushes come in
@@ -1288,18 +1374,18 @@ func TestOwnedSeriesServiceWithPartitionsRing(t *testing.T) {
 				c.checkUpdateReasonForUser(t, "")
 
 				// initial state: all series are owned by the partition 0.
-				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 0, ownedServiceTestUserSeriesLimit)
+				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 0, 0, ownedServiceTestUserSeriesLimit)
 				c.checkActiveSeriesCount(t, ownedServiceSeriesCount)
 
 				// increase series limit
 				limits[ownedServiceTestUserPartitionsRing].MaxGlobalSeriesPerUser = ownedServiceTestUserSeriesLimit * 2
 
 				// verify no change in state before owned series run
-				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 0, ownedServiceTestUserSeriesLimit)
+				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 0, 0, ownedServiceTestUserSeriesLimit)
 				c.checkActiveSeriesCount(t, ownedServiceSeriesCount)
 
 				c.updateOwnedSeriesAndCheckResult(t, false, 1, recomputeOwnedSeriesReasonLocalLimitChanged)
-				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 0, ownedServiceTestUserSeriesLimit*2)
+				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 0, 0, ownedServiceTestUserSeriesLimit*2)
 				c.checkUpdateReasonForUser(t, "")
 				c.checkActiveSeriesCount(t, ownedServiceSeriesCount)
 
@@ -1307,11 +1393,11 @@ func TestOwnedSeriesServiceWithPartitionsRing(t *testing.T) {
 				limits[ownedServiceTestUserPartitionsRing].MaxGlobalSeriesPerUser = ownedServiceTestUserSeriesLimit
 
 				// verify no change in state before owned series run
-				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 0, ownedServiceTestUserSeriesLimit*2)
+				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 0, 0, ownedServiceTestUserSeriesLimit*2)
 				c.checkActiveSeriesCount(t, ownedServiceSeriesCount)
 
 				c.updateOwnedSeriesAndCheckResult(t, false, 1, recomputeOwnedSeriesReasonLocalLimitChanged)
-				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 0, ownedServiceTestUserSeriesLimit)
+				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 0, 0, ownedServiceTestUserSeriesLimit)
 				c.checkUpdateReasonForUser(t, "")
 				c.checkActiveSeriesCount(t, ownedServiceSeriesCount)
 			},
@@ -1334,7 +1420,7 @@ func TestOwnedSeriesServiceWithPartitionsRing(t *testing.T) {
 				c.addPartition(t, 0, ring.PartitionActive)
 
 				// initial state: all series are owned by the first ingester
-				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 1, ownedServiceTestUserSeriesLimit)
+				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 0, 1, ownedServiceTestUserSeriesLimit)
 				c.checkActiveSeriesCount(t, ownedServiceSeriesCount)
 
 				// double series limit and shard size
@@ -1342,11 +1428,11 @@ func TestOwnedSeriesServiceWithPartitionsRing(t *testing.T) {
 				limits[ownedServiceTestUserPartitionsRing].IngestionPartitionsTenantShardSize = 2
 
 				// verify no change in state before owned series run
-				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 1, ownedServiceTestUserSeriesLimit)
+				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 0, 1, ownedServiceTestUserSeriesLimit)
 				c.checkActiveSeriesCount(t, ownedServiceSeriesCount)
 
 				c.updateOwnedSeriesAndCheckResult(t, false, 1, recomputeOwnedSeriesReasonShardSizeChanged)
-				c.checkTestedIngesterOwnedSeriesState(t, seriesSplitForPartitions0And1[1], 2, ownedServiceTestUserSeriesLimit)
+				c.checkTestedIngesterOwnedSeriesState(t, seriesSplitForPartitions0And1[1], 0, 2, ownedServiceTestUserSeriesLimit)
 				c.checkUpdateReasonForUser(t, "")
 				c.checkActiveSeriesCount(t, seriesSplitForPartitions0And1[1])
 
@@ -1355,11 +1441,11 @@ func TestOwnedSeriesServiceWithPartitionsRing(t *testing.T) {
 				limits[ownedServiceTestUserPartitionsRing].IngestionPartitionsTenantShardSize = 1
 
 				// verify no change in state before owned series run
-				c.checkTestedIngesterOwnedSeriesState(t, seriesSplitForPartitions0And1[1], 2, ownedServiceTestUserSeriesLimit)
+				c.checkTestedIngesterOwnedSeriesState(t, seriesSplitForPartitions0And1[1], 0, 2, ownedServiceTestUserSeriesLimit)
 				c.checkActiveSeriesCount(t, seriesSplitForPartitions0And1[1])
 
 				c.updateOwnedSeriesAndCheckResult(t, false, 1, recomputeOwnedSeriesReasonShardSizeChanged)
-				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 1, ownedServiceTestUserSeriesLimit)
+				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 0, 1, ownedServiceTestUserSeriesLimit)
 				c.checkUpdateReasonForUser(t, "")
 				c.checkActiveSeriesCount(t, seriesSplitForPartitions0And1[1]) // active series stay reduced until more pushes come in
 			},
@@ -1377,7 +1463,7 @@ func TestOwnedSeriesServiceWithPartitionsRing(t *testing.T) {
 				c.checkUpdateReasonForUser(t, "")
 
 				// initial state: all series are owned by the first ingester
-				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 0, ownedServiceTestUserSeriesLimit)
+				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 0, 0, ownedServiceTestUserSeriesLimit)
 				c.checkActiveSeriesCount(t, ownedServiceSeriesCount)
 
 				// run early compaction removing all series from the head
@@ -1386,12 +1472,12 @@ func TestOwnedSeriesServiceWithPartitionsRing(t *testing.T) {
 				require.Equal(t, uint64(0), c.db.Head().NumSeries())
 
 				// verify no change in state before owned series run
-				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 0, ownedServiceTestUserSeriesLimit)
+				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 0, 0, ownedServiceTestUserSeriesLimit)
 				c.checkActiveSeriesCount(t, ownedServiceSeriesCount)
 
 				c.checkUpdateReasonForUser(t, recomputeOwnedSeriesReasonEarlyCompaction)
 				c.updateOwnedSeriesAndCheckResult(t, false, 1, recomputeOwnedSeriesReasonEarlyCompaction)
-				c.checkTestedIngesterOwnedSeriesState(t, 0, 0, ownedServiceTestUserSeriesLimit)
+				c.checkTestedIngesterOwnedSeriesState(t, 0, 0, 0, ownedServiceTestUserSeriesLimit)
 				c.checkUpdateReasonForUser(t, "")
 
 				// series should be marked as deleted, but are still active
@@ -1416,12 +1502,12 @@ func TestOwnedSeriesServiceWithPartitionsRing(t *testing.T) {
 				c.checkUpdateReasonForUser(t, "")
 
 				// initial state: all series are owned by the first ingester
-				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 0, ownedServiceTestUserSeriesLimit)
+				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 0, 0, ownedServiceTestUserSeriesLimit)
 				c.checkActiveSeriesCount(t, ownedServiceSeriesCount)
 
 				c.db.requiresOwnedSeriesUpdate.Store(recomputeOwnedSeriesReasonGetTokenRangesFailed)
 				c.updateOwnedSeriesAndCheckResult(t, false, 1, recomputeOwnedSeriesReasonGetTokenRangesFailed)
-				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 0, ownedServiceTestUserSeriesLimit)
+				c.checkTestedIngesterOwnedSeriesState(t, ownedServiceSeriesCount, 0, 0, ownedServiceTestUserSeriesLimit)
 				c.checkUpdateReasonForUser(t, "")
 				c.checkActiveSeriesCount(t, ownedServiceSeriesCount)
 			},

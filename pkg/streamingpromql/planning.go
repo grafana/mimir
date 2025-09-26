@@ -74,6 +74,10 @@ func NewQueryPlanner(opts EngineOpts) (*QueryPlanner, error) {
 		planner.RegisterQueryPlanOptimizationPass(plan.NewSkipHistogramDecodingOptimizationPass())
 	}
 
+	if opts.EnableNarrowBinarySelectors {
+		planner.RegisterQueryPlanOptimizationPass(plan.NewNarrowSelectorsOptimizationPass(opts.Logger))
+	}
+
 	return planner, nil
 }
 
@@ -208,7 +212,8 @@ func (p *QueryPlanner) NewQueryPlan(ctx context.Context, qs string, timeRange ty
 			TimeRange: timeRange,
 			Root:      root,
 
-			OriginalExpression: qs,
+			OriginalExpression:       qs,
+			EnableDelayedNameRemoval: p.enableDelayedNameRemoval,
 		}
 
 		return plan, nil
@@ -239,7 +244,7 @@ func (p *QueryPlanner) NewQueryPlan(ctx context.Context, qs string, timeRange ty
 
 func shouldWrapInDedupAndMerge(root planning.Node) (bool, error) {
 	switch node := root.(type) {
-	case *core.NumberLiteral, *core.StringLiteral:
+	case *core.NumberLiteral, *core.StringLiteral, *core.MatrixSelector:
 		return false, nil
 	case *core.BinaryExpression:
 		resL, err := node.LHS.ResultType()
@@ -304,7 +309,7 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
 	case *parser.VectorSelector:
 		return &core.VectorSelector{
 			VectorSelectorDetails: &core.VectorSelectorDetails{
-				Matchers:           core.LabelMatchersFrom(expr.LabelMatchers),
+				Matchers:           core.LabelMatchersFromPrometheusType(expr.LabelMatchers),
 				Timestamp:          core.TimeFromTimestamp(expr.Timestamp),
 				Offset:             expr.OriginalOffset,
 				ExpressionPosition: core.PositionRangeFrom(expr.PositionRange()),
@@ -323,7 +328,7 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
 
 		return &core.MatrixSelector{
 			MatrixSelectorDetails: &core.MatrixSelectorDetails{
-				Matchers:           core.LabelMatchersFrom(vs.LabelMatchers),
+				Matchers:           core.LabelMatchersFromPrometheusType(vs.LabelMatchers),
 				Timestamp:          core.TimeFromTimestamp(vs.Timestamp),
 				Offset:             vs.OriginalOffset,
 				Range:              expr.Range,
@@ -405,6 +410,12 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
 			(lhsType == parser.ValueTypeScalar && rhsType == parser.ValueTypeVector)
 
 		if isVectorScalar {
+			// Comparison vector-scalar operations without bool modifier don't drop the __name__ label.
+			// So don't need to wrap in DeduplicateAndMerge.
+			if expr.Op.IsComparisonOperator() && !expr.ReturnBool {
+				return binExpr, nil
+			}
+
 			return &core.DeduplicateAndMerge{
 				Inner:                      binExpr,
 				DeduplicateAndMergeDetails: &core.DeduplicateAndMergeDetails{},

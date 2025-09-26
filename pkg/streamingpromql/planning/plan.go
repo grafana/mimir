@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-kit/log"
 	"github.com/gogo/protobuf/proto"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql/parser"
@@ -23,7 +24,8 @@ type QueryPlan struct {
 	TimeRange types.QueryTimeRange
 	Root      Node
 
-	OriginalExpression string
+	OriginalExpression       string
+	EnableDelayedNameRemoval bool
 }
 
 // Node represents a node in the query plan graph.
@@ -148,6 +150,7 @@ type OperatorParameters struct {
 	EagerLoadSelectors       bool
 	Plan                     *QueryPlan
 	EnableDelayedNameRemoval bool
+	Logger                   log.Logger
 }
 
 func (p *QueryPlan) ToEncodedPlan(includeDescriptions bool, includeDetails bool) (*EncodedQueryPlan, error) {
@@ -158,10 +161,11 @@ func (p *QueryPlan) ToEncodedPlan(includeDescriptions bool, includeDetails bool)
 	}
 
 	encoded := &EncodedQueryPlan{
-		TimeRange:          toEncodedTimeRange(p.TimeRange),
-		Nodes:              encoder.nodes,
-		RootNode:           rootNode,
-		OriginalExpression: p.OriginalExpression,
+		TimeRange:                toEncodedTimeRange(p.TimeRange),
+		Nodes:                    encoder.nodes,
+		RootNode:                 rootNode,
+		OriginalExpression:       p.OriginalExpression,
+		EnableDelayedNameRemoval: p.EnableDelayedNameRemoval,
 	}
 
 	return encoded, nil
@@ -278,9 +282,10 @@ func (p *EncodedQueryPlan) ToDecodedPlan(nodeIndices ...int64) (*QueryPlan, []No
 	}
 
 	return &QueryPlan{
-		TimeRange:          p.TimeRange.ToDecodedTimeRange(),
-		Root:               root,
-		OriginalExpression: p.OriginalExpression,
+		TimeRange:                p.TimeRange.ToDecodedTimeRange(),
+		Root:                     root,
+		OriginalExpression:       p.OriginalExpression,
+		EnableDelayedNameRemoval: p.EnableDelayedNameRemoval,
 	}, nodes, nil
 }
 

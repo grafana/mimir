@@ -22,6 +22,7 @@ import (
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/user"
+	"github.com/klauspost/compress/zstd"
 	"github.com/pierrec/lz4/v4"
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
@@ -41,6 +42,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/distributor/otlpappender"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/mimirpb/testutil"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -699,6 +701,7 @@ func TestOTelDeltaIngestion(t *testing.T) {
 				require.Equal(t, 1, dropped)
 			} else {
 				require.NoError(t, err)
+				mimirTS = testutil.RemoveEmptyObjectFromSeries(mimirTS)
 				require.Len(t, mimirTS, 1)
 				require.Equal(t, 0, dropped)
 				require.Equal(t, tc.expected, *mimirTS[0].TimeSeries)
@@ -784,6 +787,7 @@ func TestOTelCTZeroIngestion(t *testing.T) {
 				log.NewNopLogger(),
 			)
 			require.NoError(t, err)
+			mimirTS = testutil.RemoveEmptyObjectFromSeries(mimirTS)
 			require.Len(t, mimirTS, 1)
 			require.Equal(t, 0, dropped)
 			require.Equal(t, tc.expected, *mimirTS[0].TimeSeries)
@@ -937,22 +941,22 @@ func createOTLPJSONRequest(tb testing.TB, metricRequest pmetricotlp.ExportReques
 func createOTLPRequest(tb testing.TB, body []byte, compression, contentType string) *http.Request {
 	tb.Helper()
 
+	var b bytes.Buffer
+	var compressor io.WriteCloser
 	switch compression {
 	case "gzip":
-		var b bytes.Buffer
-		gz := gzip.NewWriter(&b)
-		_, err := gz.Write(body)
-		require.NoError(tb, err)
-		require.NoError(tb, gz.Close())
-
-		body = b.Bytes()
+		compressor = gzip.NewWriter(&b)
 	case "lz4":
-		var b bytes.Buffer
-		lz4Writer := lz4.NewWriter(&b)
-		_, err := lz4Writer.Write(body)
+		compressor = lz4.NewWriter(&b)
+	case "zstd":
+		var err error
+		compressor, err = zstd.NewWriter(&b)
 		require.NoError(tb, err)
-		require.NoError(tb, lz4Writer.Close())
-
+	}
+	if compressor != nil {
+		_, err := compressor.Write(body)
+		require.NoError(tb, err)
+		require.NoError(tb, compressor.Close())
 		body = b.Bytes()
 	}
 
@@ -1046,6 +1050,7 @@ func TestHandlerOTLPPush(t *testing.T) {
 
 		request, err := pushReq.WriteRequest()
 		require.NoError(t, err)
+		require.Equal(t, mimirpb.OTLP, request.Source)
 
 		series := request.Timeseries
 		require.Len(t, series, 1)
@@ -1139,6 +1144,16 @@ func TestHandlerOTLPPush(t *testing.T) {
 			responseContentType: pbContentType,
 		},
 		{
+			name:                "Write samples. With zstd compression",
+			compression:         "zstd",
+			maxMsgSize:          100000,
+			verifyFunc:          samplesVerifierFunc,
+			series:              sampleSeries,
+			metadata:            sampleMetadata,
+			responseCode:        http.StatusOK,
+			responseContentType: pbContentType,
+		},
+		{
 			name:       "Write samples. No compression, request too big",
 			maxMsgSize: 30,
 			series:     sampleSeries,
@@ -1164,10 +1179,10 @@ func TestHandlerOTLPPush(t *testing.T) {
 				return err
 			},
 			responseCode:          http.StatusUnsupportedMediaType,
-			responseContentLength: 85,
+			responseContentLength: 93,
 			responseContentType:   pbContentType,
-			errMessage:            "Only \"gzip\", \"lz4\", or no compression supported",
-			expectedLogs:          []string{`level=warn user=test msg="detected an error while ingesting OTLP metrics request (the request may have been partially ingested)" httpCode=415 err="rpc error: code = Code(415) desc = unsupported compression: snappy. Only \"gzip\", \"lz4\", or no compression supported" insight=true`},
+			errMessage:            "Only \"gzip\", \"lz4\", \"zstd\", or no compression supported",
+			expectedLogs:          []string{`level=warn user=test msg="detected an error while ingesting OTLP metrics request (the request may have been partially ingested)" httpCode=415 err="rpc error: code = Code(415) desc = unsupported compression: snappy. Only \"gzip\", \"lz4\", \"zstd\", or no compression supported" insight=true`},
 		},
 		{
 			name:        "Write samples. Unsupported compression. JSON format",
@@ -1181,10 +1196,10 @@ func TestHandlerOTLPPush(t *testing.T) {
 			},
 			requestContentType:    jsonContentType,
 			responseCode:          http.StatusUnsupportedMediaType,
-			responseContentLength: 109,
+			responseContentLength: 119,
 			responseContentType:   jsonContentType,
-			errMessage:            "Only \"gzip\", \"lz4\", or no compression supported",
-			expectedLogs:          []string{`level=warn user=test msg="detected an error while ingesting OTLP metrics request (the request may have been partially ingested)" httpCode=415 err="rpc error: code = Code(415) desc = unsupported compression: snappy. Only \"gzip\", \"lz4\", or no compression supported" insight=true`},
+			errMessage:            "Only \"gzip\", \"lz4\", \"zstd\", or no compression supported",
+			expectedLogs:          []string{`level=warn user=test msg="detected an error while ingesting OTLP metrics request (the request may have been partially ingested)" httpCode=415 err="rpc error: code = Code(415) desc = unsupported compression: snappy. Only \"gzip\", \"lz4\", \"zstd\", or no compression supported" insight=true`},
 		},
 		{
 			name:        "Write samples. With gzip compression, request too big",

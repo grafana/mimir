@@ -5,8 +5,6 @@ package lookupplan
 import (
 	"context"
 	"fmt"
-
-	"github.com/prometheus/prometheus/tsdb/index"
 )
 
 // mockStatistics implements the index.Statistics interface with hardcoded data for testing
@@ -55,10 +53,6 @@ func newMockStatistics() *mockStatistics {
 		},
 		totalSeries: 2100,
 	}
-}
-
-func (m *mockStatistics) UserTSDBStatistics(_ context.Context) (index.Statistics, error) {
-	return m, nil
 }
 
 func (m *mockStatistics) TotalSeries() uint64 {

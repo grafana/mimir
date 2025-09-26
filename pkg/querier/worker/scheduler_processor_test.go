@@ -38,6 +38,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier/querierpb"
 	querier_stats "github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerpb"
+	"github.com/grafana/mimir/pkg/util/propagation"
 	"github.com/grafana/mimir/pkg/util/test"
 )
 
@@ -138,7 +139,7 @@ func TestSchedulerProcessor_processQueriesOnSingleStream(t *testing.T) {
 
 		workerCtx, workerCancel := context.WithCancel(context.Background())
 
-		protobufRequestHandler.On("HandleProtobuf", mock.Anything, mock.Anything, mock.Anything).Run(func(mock.Arguments) {
+		protobufRequestHandler.On("HandleProtobuf", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Run(func(mock.Arguments) {
 			// Cancel the worker context while the query execution is in progress.
 			workerCancel()
 
@@ -248,7 +249,7 @@ func TestSchedulerProcessor_processQueriesOnSingleStream(t *testing.T) {
 			}
 		})
 
-		protobufRequestHandler.On("HandleProtobuf", mock.Anything, mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
+		protobufRequestHandler.On("HandleProtobuf", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
 			ctx := args.Get(0).(context.Context)
 
 			// Trigger the shutdown of the scheduler.
@@ -368,8 +369,8 @@ func TestSchedulerProcessor_processQueriesOnSingleStream(t *testing.T) {
 }
 
 func TestSchedulerProcessor_QueryTime(t *testing.T) {
-	runTest := func(t *testing.T, statsEnabled bool, statsRace bool) {
-		fp, processClient, httpRequestHandler, _, frontend := prepareSchedulerProcessor(t)
+	runTest := func(t *testing.T, statsEnabled bool, statsRace bool, useHTTPGRPC bool) {
+		fp, processClient, httpRequestHandler, protobufRequestHandler, frontend := prepareSchedulerProcessor(t)
 
 		recvCount := atomic.NewInt64(0)
 		queueTime := 3 * time.Second
@@ -377,14 +378,23 @@ func TestSchedulerProcessor_QueryTime(t *testing.T) {
 		processClient.On("Recv").Return(func() (*schedulerpb.SchedulerToQuerier, error) {
 			switch recvCount.Inc() {
 			case 1:
-				return &schedulerpb.SchedulerToQuerier{
+				msg := &schedulerpb.SchedulerToQuerier{
 					QueryID:         1,
-					Payload:         &schedulerpb.SchedulerToQuerier_HttpRequest{},
 					FrontendAddress: frontend.addr,
 					UserID:          "user-1",
 					StatsEnabled:    statsEnabled,
 					QueueTimeNanos:  queueTime.Nanoseconds(),
-				}, nil
+				}
+
+				if useHTTPGRPC {
+					msg.Payload = &schedulerpb.SchedulerToQuerier_HttpRequest{}
+				} else {
+					msg.Payload = &schedulerpb.SchedulerToQuerier_ProtobufRequest{
+						ProtobufRequest: &schedulerpb.ProtobufRequest{},
+					}
+				}
+
+				return msg, nil
 			default:
 				// No more messages to process, so waiting until terminated.
 				<-processClient.Context().Done()
@@ -394,10 +404,10 @@ func TestSchedulerProcessor_QueryTime(t *testing.T) {
 
 		workerCtx, workerCancel := context.WithCancel(context.Background())
 
-		httpRequestHandler.On("Handle", mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
+		handle := func(ctx context.Context) {
 			workerCancel()
 
-			stat := querier_stats.FromContext(args.Get(0).(context.Context))
+			stat := querier_stats.FromContext(ctx)
 
 			if statsEnabled {
 				require.Equal(t, queueTime, stat.LoadQueueTime())
@@ -409,7 +419,17 @@ func TestSchedulerProcessor_QueryTime(t *testing.T) {
 			} else {
 				require.Equal(t, time.Duration(0), stat.LoadQueueTime())
 			}
+		}
+
+		httpRequestHandler.On("Handle", mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
+			ctx := args.Get(0).(context.Context)
+			handle(ctx)
 		}).Return(&httpgrpc.HTTPResponse{}, nil)
+
+		protobufRequestHandler.On("HandleProtobuf", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
+			ctx := args.Get(0).(context.Context)
+			handle(ctx)
+		})
 
 		fp.processQueriesOnSingleStream(workerCtx, nil, "127.0.0.1")
 
@@ -417,20 +437,28 @@ func TestSchedulerProcessor_QueryTime(t *testing.T) {
 		// and then to send the query result.
 		processClient.AssertNumberOfCalls(t, "Send", 2)
 
-		require.Equal(t, 1, int(frontend.queryResultCalls.Load()), "expected frontend to be informed of query result exactly once")
+		if useHTTPGRPC {
+			require.Equal(t, 1, int(frontend.queryResultCalls.Load()), "expected frontend to be informed of query result exactly once")
+		} else {
+			require.Equal(t, 1, int(frontend.queryResultStreamReturned.Load()), "expected frontend to be informed of query result exactly once")
+		}
 	}
 
-	t.Run("query stats enabled should record queue time", func(t *testing.T) {
-		runTest(t, true, false)
-	})
+	for name, useHTTPGRPC := range map[string]bool{"Protobuf": false, "HTTP-over-gRPC": true} {
+		t.Run(name, func(t *testing.T) {
+			t.Run("query stats enabled should record queue time", func(t *testing.T) {
+				runTest(t, true, false, useHTTPGRPC)
+			})
 
-	t.Run("query stats enabled should not trigger race detector", func(t *testing.T) {
-		runTest(t, true, true)
-	})
+			t.Run("query stats enabled should not trigger race detector", func(t *testing.T) {
+				runTest(t, true, true, useHTTPGRPC)
+			})
 
-	t.Run("query stats disabled will not record queue time", func(t *testing.T) {
-		runTest(t, false, false)
-	})
+			t.Run("query stats disabled will not record queue time", func(t *testing.T) {
+				runTest(t, false, false, useHTTPGRPC)
+			})
+		})
+	}
 }
 
 func TestCreateSchedulerProcessor(t *testing.T) {
@@ -951,8 +979,8 @@ type protobufRequestHandlerMock struct {
 	mock.Mock
 }
 
-func (m *protobufRequestHandlerMock) HandleProtobuf(ctx context.Context, t *types.Any, stream frontendv2pb.QueryResultStream) {
-	m.Called(ctx, t, stream)
+func (m *protobufRequestHandlerMock) HandleProtobuf(ctx context.Context, t *types.Any, metadata propagation.Carrier, stream frontendv2pb.QueryResultStream) {
+	m.Called(ctx, t, metadata, stream)
 }
 
 type frontendForQuerierMockServer struct {

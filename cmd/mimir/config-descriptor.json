@@ -2747,6 +2747,17 @@
               "fieldFlag": "querier.mimir-query-engine.enable-skipping-histogram-decoding",
               "fieldType": "boolean",
               "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "enable_narrow_binary_selectors",
+              "required": false,
+              "desc": "Enable generating selectors for one side of a binary expression based on results from the other side.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "querier.mimir-query-engine.enable-narrow-binary-selectors",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
             }
           ],
           "fieldValue": null,
@@ -4871,6 +4882,17 @@
         },
         {
           "kind": "field",
+          "name": "label_value_length_over_limit_strategy",
+          "required": false,
+          "desc": "What to do for label values over the length limit. Options are: 'error', 'truncate', 'drop'. For 'truncate', the hash of the full value replaces the end portion of the value. For 'drop', the hash fully replaces the value.",
+          "fieldValue": null,
+          "fieldDefaultValue": "error",
+          "fieldFlag": "validation.label-value-length-over-limit-strategy",
+          "fieldType": "string",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "max_label_names_per_series",
           "required": false,
           "desc": "Maximum number of label names per series.",
@@ -5720,6 +5742,17 @@
         },
         {
           "kind": "field",
+          "name": "ruler_evaluation_consistency_max_delay",
+          "required": false,
+          "desc": "The maximum tolerated ingestion delay for eventually consistent rule evaluations. Set to 0 to disable the enforcement.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "ruler.evaluation-consistency-max-delay",
+          "fieldType": "duration",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "ruler_tenant_shard_size",
           "required": false,
           "desc": "The tenant's shard size when sharding is used by ruler. Value of 0 disables shuffle sharding for the tenant, and tenant rules will be sharded across all ruler replicas.",
@@ -6218,7 +6251,7 @@
           "kind": "field",
           "name": "alertmanager_notification_rate_limit_per_integration",
           "required": false,
-          "desc": "Per-integration notification rate limits. Value is a map, where each key is integration name and value is a rate-limit (float). On command line, this map is given in JSON format. Rate limit has the same meaning as -alertmanager.notification-rate-limit, but only applies for specific integration. Allowed integration names: webhook, email, pagerduty, opsgenie, wechat, slack, victorops, pushover, sns, webex, telegram, discord, msteams.",
+          "desc": "Per-integration notification rate limits. Value is a map, where each key is integration name and value is a rate-limit (float). On command line, this map is given in JSON format. Rate limit has the same meaning as -alertmanager.notification-rate-limit, but only applies for specific integration. Allowed integration names: webhook, email, pagerduty, opsgenie, wechat, slack, victorops, pushover, sns, webex, telegram, discord, msteams, msteamsv2.",
           "fieldValue": null,
           "fieldDefaultValue": {},
           "fieldFlag": "alertmanager.notification-rate-limit-per-integration",
@@ -10803,7 +10836,7 @@
               "required": false,
               "desc": "How frequently to collect head statistics, which are used in query execution optimization. 0 to disable.",
               "fieldValue": null,
-              "fieldDefaultValue": 0,
+              "fieldDefaultValue": 3600000000000,
               "fieldFlag": "blocks-storage.tsdb.head-statistics-collection-frequency",
               "fieldType": "duration",
               "fieldCategory": "experimental"

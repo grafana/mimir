@@ -172,25 +172,6 @@ local utils = import 'mixin-utils/utils.libsonnet';
           },
         },
         {
-          alert: $.alertName('FrontendQueriesStuck'),
-          expr: |||
-            sum by (%(group_by)s, %(job_label)s) (min_over_time(cortex_query_frontend_queue_length[%(range_interval)s])) > 0
-          ||| % {
-            group_by: $._config.alert_aggregation_labels,
-            job_label: $._config.per_job_label,
-            range_interval: $.alertRangeInterval(1),
-          },
-          'for': '5m',  // We don't want to block for longer.
-          labels: {
-            severity: 'critical',
-          },
-          annotations: {
-            message: |||
-              There are {{ $value }} queued up queries in %(alert_aggregation_variables)s {{ $labels.%(per_job_label)s }}.
-            ||| % $._config,
-          },
-        },
-        {
           alert: $.alertName('SchedulerQueriesStuck'),
           expr: |||
             sum by (%(group_by)s, %(job_label)s) (min_over_time(cortex_query_scheduler_queue_length[%(range_interval)s])) > 0
@@ -466,6 +447,25 @@ local utils = import 'mixin-utils/utils.libsonnet';
             message: |||
               Number of members in %(product)s ingester hash ring does not match the expected number in %(alert_aggregation_variables)s.
             ||| % { alert_aggregation_variables: $._config.alert_aggregation_variables, product: $._config.product },
+          },
+        },
+
+        {
+          alert: $.alertName('HighGRPCConcurrentStreamsPerConnection'),
+          expr: |||
+            max(avg_over_time(grpc_concurrent_streams_by_conn_max[10m])) by (%(alert_aggregation_labels)s, container)
+            /
+            min(cortex_grpc_concurrent_streams_limit) by (%(alert_aggregation_labels)s, container) > 0.9
+          ||| % {
+            alert_aggregation_labels: $._config.alert_aggregation_labels,
+          },
+          labels: {
+            severity: 'warning',
+          },
+          annotations: {
+            message: |||
+              Container {{ $labels.container }} in %(alert_aggregation_variables)s is experiencing high GRPC concurrent streams per connection.
+            ||| % $._config,
           },
         },
       ],

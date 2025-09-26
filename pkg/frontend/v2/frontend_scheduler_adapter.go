@@ -7,7 +7,6 @@ import (
 
 	"github.com/gogo/protobuf/types"
 	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/propagation"
 
 	"github.com/grafana/mimir/pkg/scheduler/schedulerpb"
 	"github.com/grafana/mimir/pkg/util/httpgrpcutil"
@@ -51,13 +50,13 @@ func (a *frontendToSchedulerAdapter) frontendToSchedulerEnqueueRequest(
 		// Propagate trace context for this query in the request payload.
 		// We can't use the trace headers from the gRPC request, as it is a long-running stream from the frontend to the scheduler
 		// that handles many queries.
-		traceHeaders := map[string]string{}
-		otel.GetTextMapPropagator().Inject(req.ctx, propagation.MapCarrier(traceHeaders))
+		metadata := req.protobufRequestHeaders
+		otel.GetTextMapPropagator().Inject(req.ctx, schedulerpb.MetadataMapTracingCarrier(metadata))
 
 		msg.Payload = &schedulerpb.FrontendToScheduler_ProtobufRequest{
 			ProtobufRequest: &schedulerpb.ProtobufRequest{
-				Payload:      encodedRequest,
-				TraceHeaders: traceHeaders,
+				Payload:  encodedRequest,
+				Metadata: schedulerpb.MapToMetadataSlice(metadata),
 			},
 		}
 	}

@@ -144,7 +144,7 @@ func (e *Evaluator) Evaluate(ctx context.Context, observer EvaluationObserver) e
 }
 
 func (e *Evaluator) evaluateInstantVectorOperator(ctx context.Context, op types.InstantVectorOperator, observer EvaluationObserver) error {
-	series, err := op.SeriesMetadata(ctx)
+	series, err := op.SeriesMetadata(ctx, nil)
 	if err != nil {
 		return err
 	}
@@ -174,7 +174,7 @@ func (e *Evaluator) evaluateInstantVectorOperator(ctx context.Context, op types.
 }
 
 func (e *Evaluator) evaluateRangeVectorOperator(ctx context.Context, op types.RangeVectorOperator, observer EvaluationObserver) error {
-	series, err := op.SeriesMetadata(ctx)
+	series, err := op.SeriesMetadata(ctx, nil)
 	if err != nil {
 		return err
 	}
@@ -232,6 +232,10 @@ func (e *Evaluator) evaluateStringOperator(ctx context.Context, op types.StringO
 	v := op.GetValue()
 
 	return observer.StringEvaluated(ctx, e, v)
+}
+
+func (e *Evaluator) GetQueryTimeRange() types.QueryTimeRange {
+	return e.timeRange
 }
 
 func (e *Evaluator) Cancel() {

@@ -39,6 +39,7 @@ type ingesterMetrics struct {
 
 	activeSeriesLoading                               *prometheus.GaugeVec
 	activeSeriesPerUser                               *prometheus.GaugeVec
+	activeSeriesPerUserOTLP                           *prometheus.GaugeVec
 	activeSeriesCustomTrackersPerUser                 *prometheus.GaugeVec
 	activeSeriesPerUserNativeHistograms               *prometheus.GaugeVec
 	activeSeriesCustomTrackersPerUserNativeHistograms *prometheus.GaugeVec
@@ -49,6 +50,8 @@ type ingesterMetrics struct {
 
 	// Owned series
 	ownedSeriesPerUser *prometheus.GaugeVec
+	// Owned target_info series
+	ownedTargetInfoSeriesPerUser *prometheus.GaugeVec
 
 	// Global limit metrics
 	maxUsersGauge                prometheus.GaugeFunc
@@ -200,6 +203,10 @@ func newIngesterMetrics(
 			Name: "cortex_ingester_owned_series",
 			Help: "Number of currently owned series per user.",
 		}, []string{"user"}),
+		ownedTargetInfoSeriesPerUser: promauto.With(r).NewGaugeVec(prometheus.GaugeOpts{
+			Name: "cortex_ingester_owned_target_info_series",
+			Help: "Number of currently owned target_info series per user.",
+		}, []string{"user"}),
 		attributedActiveSeriesFailuresPerUser: promauto.With(r).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_ingester_attributed_active_series_failure",
 			Help: "The total number of failed active series decrement per user",
@@ -316,6 +323,12 @@ func newIngesterMetrics(
 		}, []string{"user"}),
 
 		// Not registered automatically, but only if activeSeriesEnabled is true.
+		activeSeriesPerUserOTLP: promauto.With(activeSeriesReg).NewGaugeVec(prometheus.GaugeOpts{
+			Name: "cortex_ingester_active_otlp_series",
+			Help: "Number of currently active series per user ingested via OTLP.",
+		}, []string{"user"}),
+
+		// Not registered automatically, but only if activeSeriesEnabled is true.
 		activeSeriesCustomTrackersPerUser: promauto.With(activeSeriesReg).NewGaugeVec(prometheus.GaugeOpts{
 			Name: "cortex_ingester_active_series_custom_tracker",
 			Help: "Number of currently active series matching a pre-configured label matchers per user.",
@@ -421,6 +434,7 @@ func (m *ingesterMetrics) deletePerUserMetrics(userID string) {
 
 	m.maxLocalSeriesPerUser.DeleteLabelValues(userID)
 	m.ownedSeriesPerUser.DeleteLabelValues(userID)
+	m.ownedTargetInfoSeriesPerUser.DeleteLabelValues(userID)
 	m.attributedActiveSeriesFailuresPerUser.DeleteLabelValues(userID)
 }
 
@@ -431,6 +445,7 @@ func (m *ingesterMetrics) deletePerGroupMetricsForUser(userID, group string) {
 func (m *ingesterMetrics) deletePerUserCustomTrackerMetrics(userID string, customTrackerMetrics []string) {
 	m.activeSeriesLoading.DeleteLabelValues(userID)
 	m.activeSeriesPerUser.DeleteLabelValues(userID)
+	m.activeSeriesPerUserOTLP.DeleteLabelValues(userID)
 	m.activeSeriesPerUserNativeHistograms.DeleteLabelValues(userID)
 	m.activeNativeHistogramBucketsPerUser.DeleteLabelValues(userID)
 	for _, name := range customTrackerMetrics {
@@ -546,7 +561,6 @@ type tsdbMetrics struct {
 	regs                           *dskit_metrics.TenantRegistries
 	tsdbHeadStatisticsLastUpdate   *prometheus.Desc
 	tsdbHeadStatisticsTimeToUpdate *prometheus.Desc
-	lookupPlanningDurationSeconds  *prometheus.Desc
 }
 
 func newTSDBMetrics(r prometheus.Registerer, logger log.Logger) *tsdbMetrics {
@@ -745,10 +759,6 @@ func newTSDBMetrics(r prometheus.Registerer, logger log.Logger) *tsdbMetrics {
 			"Time spent updating head statistics.",
 			[]string{"user"}, nil,
 		),
-		lookupPlanningDurationSeconds: prometheus.NewDesc(
-			"cortex_ingester_lookup_planning_duration_seconds",
-			"Time spent planning query requests.",
-			[]string{"outcome"}, nil),
 
 		headPostingsForMatchersCacheMetrics:  tsdb.NewPostingsForMatchersCacheMetrics(prometheus.WrapRegistererWithPrefix("cortex_ingester_tsdb_head_", r)),
 		blockPostingsForMatchersCacheMetrics: tsdb.NewPostingsForMatchersCacheMetrics(prometheus.WrapRegistererWithPrefix("cortex_ingester_tsdb_block_", r)),
@@ -811,7 +821,6 @@ func (sm *tsdbMetrics) Describe(out chan<- *prometheus.Desc) {
 
 	out <- sm.tsdbHeadStatisticsLastUpdate
 	out <- sm.tsdbHeadStatisticsTimeToUpdate
-	out <- sm.lookupPlanningDurationSeconds
 }
 
 func (sm *tsdbMetrics) Collect(out chan<- prometheus.Metric) {
@@ -862,7 +871,6 @@ func (sm *tsdbMetrics) Collect(out chan<- prometheus.Metric) {
 	data.SendSumOfCountersPerTenant(out, sm.tsdbWblReplayUnknownRefsTotal, "prometheus_tsdb_wbl_replay_unknown_refs_total", dskit_metrics.WithLabels("type"))
 	data.SendMaxOfGaugesPerTenant(out, sm.tsdbHeadStatisticsLastUpdate, "prometheus_tsdb_head_statistics_last_update_timestamp_seconds")
 	data.SendMaxOfGaugesPerTenant(out, sm.tsdbHeadStatisticsTimeToUpdate, "prometheus_tsdb_head_statistics_time_to_update_seconds")
-	data.SendSumOfHistogramsWithLabels(out, sm.lookupPlanningDurationSeconds, "cortex_ingester_lookup_planning_duration_seconds", "outcome")
 }
 
 func (sm *tsdbMetrics) setRegistryForUser(userID string, registry *prometheus.Registry) {
