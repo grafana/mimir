@@ -685,6 +685,8 @@ type AnalysisResult struct {
 
 	ASTStages      []ASTStage      `json:"astStages"`
 	PlanningStages []PlanningStage `json:"planningStages"`
+
+	PlanVersion int64 `json:"planVersion"`
 }
 
 type ASTStage struct {

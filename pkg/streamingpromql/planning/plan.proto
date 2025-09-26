@@ -19,6 +19,8 @@ message EncodedQueryPlan {
   string originalExpression = 4;
 
   bool enableDelayedNameRemoval = 5;
+
+  int64 version = 6;
 }
 
 message EncodedQueryTimeRange {
