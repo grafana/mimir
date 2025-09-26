@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/efficientgo/core/errors"
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/services"
@@ -166,7 +167,7 @@ func BenchmarkBucketStores_Series(b *testing.B) {
 				Matchers:                 matchers,
 				SkipChunks:               false,
 				Hints:                    nil,
-				StreamingChunksBatchSize: 0,
+				StreamingChunksBatchSize: 64,
 			}
 			runBenchmark(tb, ctx, bkt, func(store storegatewaypb.StoreGatewayServer) {
 				mockServer := newMockSeriesServer(ctx)
@@ -274,6 +275,7 @@ func createTestParquetBucketStores(b *testing.B, bkt objstore.Bucket) *storegate
 	flagext.DefaultValues(&cfg)
 	cfg.BucketStore.SyncDir = b.TempDir()
 	cfg.BucketStore.IgnoreBlocksWithin = 0 // Load all blocks
+	cfg.BucketStore.ParquetStreamingEnabled = true
 
 	allowedTenants := util.NewAllowList(nil, nil)
 	shardingStrategy := newNoShardingStrategy()
@@ -334,6 +336,37 @@ func (m *mockSeriesServer) Send(resp *storepb.SeriesResponse) error {
 		m.seriesCount++
 		m.chunksCount += len(resp.GetSeries().Chunks)
 	}
+	if recvSeries := resp.GetStreamingSeries(); recvSeries != nil {
+		recvSeriesData, err := recvSeries.Marshal()
+		if err != nil {
+			return errors.Wrap(err, "marshal received series")
+		}
+
+		copiedSeries := &storepb.StreamingSeriesBatch{}
+		if err := copiedSeries.Unmarshal(recvSeriesData); err != nil {
+			return errors.Wrap(err, "unmarshal received series")
+		}
+
+		for range copiedSeries.Series {
+			m.seriesCount++
+		}
+	}
+	if chnksBatch := resp.GetStreamingChunks(); chnksBatch != nil {
+		chnksBatchData, err := chnksBatch.Marshal()
+		if err != nil {
+			return errors.Wrap(err, "marshal received chunks")
+		}
+
+		copiedChunks := &storepb.StreamingChunksBatch{}
+		if err := copiedChunks.Unmarshal(chnksBatchData); err != nil {
+			return errors.Wrap(err, "unmarshal received chunks")
+		}
+
+		for _, chks := range copiedChunks.Series {
+			m.chunksCount += len(chks.Chunks)
+		}
+	}
+
 	return nil
 }
 
