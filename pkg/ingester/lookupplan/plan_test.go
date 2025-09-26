@@ -6,9 +6,13 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"strconv"
 	"testing"
+	"time"
 
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/stretchr/testify/assert"
 
 	"github.com/grafana/mimir/pkg/util"
@@ -98,6 +102,60 @@ func TestPlanCosts(t *testing.T) {
 			testCases[tcIdx].intersectionCost = p.intersectionCost()
 			testCases[tcIdx].filterCost = p.filterCost()
 			testCases[tcIdx].totalCost = p.totalCost()
+		})
+	}
+}
+
+// Benchmark iterating over postings lists of different sizes
+func BenchmarkIteratePostings(b *testing.B) {
+	benchmarks := []struct {
+		name string
+		size int
+	}{
+		{"size=128", 128},
+		{"size=128K", 128 * 1024},
+		{"size=1M", 1024 * 1024},
+	}
+
+	for _, bm := range benchmarks {
+		b.Run(bm.name, func(b *testing.B) {
+			// Create and populate mock index reader in benchmark setup
+			mockReader := newMockIndexReader()
+			for i := 0; i < bm.size; i++ {
+				// Create diverse labels for each series
+				labelName := fmt.Sprintf("label_%d", i%10) // 10 different label names
+				labelValue := fmt.Sprintf("value_%d", i)
+				ls := labels.FromStrings("__name__", fmt.Sprintf("metric_%d", i), labelName, labelValue)
+				mockReader.add(storage.SeriesRef(i+1), ls) // SeriesRef 0 is invalid, start from 1
+			}
+
+			for _, sharded := range []bool{false, true} {
+				b.Run("sharded="+strconv.FormatBool(sharded), func(b *testing.B) {
+					startTime := time.Now()
+					b.ResetTimer()
+					var count int
+					for i := 0; i < b.N; i++ {
+						// Get all postings by using the special empty label name
+						labelName, labelValue := index.AllPostingsKey()
+						allPostings, err := mockReader.Postings(context.Background(), labelName, labelValue)
+						if err != nil {
+							b.Fatal(err)
+						}
+
+						p := allPostings
+						if sharded {
+							p = mockReader.ShardedPostings(allPostings, 0, 2)
+						}
+
+						count = 0
+						for p.Next() {
+							_ = p.At()
+							count++
+						}
+					}
+					b.ReportMetric(float64(time.Since(startTime).Nanoseconds())/float64(b.N*bm.size), "ns/posting")
+				})
+			}
 		})
 	}
 }
