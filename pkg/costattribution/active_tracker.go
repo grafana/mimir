@@ -18,6 +18,8 @@ import (
 	"github.com/grafana/mimir/pkg/costattribution/costattributionmodel"
 )
 
+const trackedSeriesFactor = 2
+
 type counters struct {
 	activeSeries           atomic.Int64
 	nativeHistograms       atomic.Int64
@@ -34,6 +36,8 @@ type ActiveSeriesTracker struct {
 	labels         []costattributionmodel.Label
 	overflowLabels []string
 
+	// maxCardinality is the cardinality at which tracker enters the overflow state.
+	// There are up to trackedSeriesFactor*maxCardinality series in observed map.
 	maxCardinality   int
 	cooldownDuration time.Duration
 
@@ -98,9 +102,12 @@ func (at *ActiveSeriesTracker) Increment(lbls labels.Labels, now time.Time, nati
 	defer bufferPool.Put(buf)
 	at.fillKeyFromLabels(lbls, buf)
 
+	// Happy path, maybe we're already tracking this cost-attribution labels combination.
+	// First try just with a read lock.
 	at.observedMtx.RLock()
 	c, ok := at.observed[string(buf.Bytes())]
 	if ok {
+		// We have this combination already tracked, just increase the counter for it.
 		c.activeSeries.Inc()
 		if nativeHistogramBucketNum >= 0 {
 			c.nativeHistograms.Inc()
@@ -110,13 +117,15 @@ func (at *ActiveSeriesTracker) Increment(lbls labels.Labels, now time.Time, nati
 		return
 	}
 
-	if !at.overflowSince.IsZero() {
-		at.observedMtx.RUnlock()
+	// We don't have this combination tracked.
+	// If we are at capacity, there's no need to grab the write lock to try to add a new series.
+	if len(at.observed) >= trackedSeriesFactor*at.maxCardinality {
 		at.overflowCounter.activeSeries.Inc()
 		if nativeHistogramBucketNum >= 0 {
 			at.overflowCounter.nativeHistograms.Inc()
 			at.overflowCounter.nativeHistogramBuckets.Add(int64(nativeHistogramBucketNum))
 		}
+		at.observedMtx.RUnlock()
 		return
 	}
 	at.observedMtx.RUnlock()
@@ -124,6 +133,7 @@ func (at *ActiveSeriesTracker) Increment(lbls labels.Labels, now time.Time, nati
 	at.observedMtx.Lock()
 	defer at.observedMtx.Unlock()
 
+	// Are we alredy tracking this series?
 	c, ok = at.observed[string(buf.Bytes())]
 	if ok {
 		c.activeSeries.Inc()
@@ -134,7 +144,8 @@ func (at *ActiveSeriesTracker) Increment(lbls labels.Labels, now time.Time, nati
 		return
 	}
 
-	if !at.overflowSince.IsZero() {
+	// If we can't store more series, we count this series in the overflow counter.
+	if len(at.observed) >= trackedSeriesFactor*at.maxCardinality {
 		at.overflowCounter.activeSeries.Inc()
 		if nativeHistogramBucketNum >= 0 {
 			at.overflowCounter.nativeHistograms.Inc()
@@ -143,16 +154,7 @@ func (at *ActiveSeriesTracker) Increment(lbls labels.Labels, now time.Time, nati
 		return
 	}
 
-	if len(at.observed) >= at.maxCardinality {
-		at.overflowSince = now
-		at.overflowCounter.activeSeries.Inc()
-		if nativeHistogramBucketNum >= 0 {
-			at.overflowCounter.nativeHistograms.Inc()
-			at.overflowCounter.nativeHistogramBuckets.Add(int64(nativeHistogramBucketNum))
-		}
-		return
-	}
-
+	// We still can store more series, add it to the map.
 	counter := &counters{}
 	counter.activeSeries.Inc()
 	if nativeHistogramBucketNum >= 0 {
@@ -160,6 +162,11 @@ func (at *ActiveSeriesTracker) Increment(lbls labels.Labels, now time.Time, nati
 		counter.nativeHistogramBuckets.Add(int64(nativeHistogramBucketNum))
 	}
 	at.observed[string(buf.Bytes())] = counter
+
+	// Check whether we entered the overflow state.
+	if len(at.observed) > at.maxCardinality && at.overflowSince.IsZero() {
+		at.overflowSince = now
+	}
 }
 
 func (at *ActiveSeriesTracker) Decrement(lbls labels.Labels, nativeHistogramBucketNum int) {
@@ -192,9 +199,6 @@ func (at *ActiveSeriesTracker) Decrement(lbls labels.Labels, nativeHistogramBuck
 		at.observedMtx.Unlock()
 		return
 	}
-	at.observedMtx.RUnlock()
-
-	at.observedMtx.RLock()
 	defer at.observedMtx.RUnlock()
 
 	if !at.overflowSince.IsZero() {

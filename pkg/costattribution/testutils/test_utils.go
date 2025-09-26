@@ -3,10 +3,16 @@
 package testutils
 
 import (
+	"time"
+
+	"github.com/prometheus/common/model"
+
 	"github.com/grafana/mimir/pkg/costattribution/costattributionmodel"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
+
+const TestAttributionCooldown = 20 * time.Minute
 
 func NewMockCostAttributionLimits(idx int, userLabels ...[]string) *validation.Overrides {
 	return NewMockCostAttributionOverrides(validation.Limits{}, nil, idx, userLabels...)
@@ -24,6 +30,7 @@ func NewMockCostAttributionOverrides(limits validation.Limits, overrides map[str
 		"user5": {MaxCostAttributionCardinality: 10, CostAttributionLabels: []string{"a"}},
 		// user6 has opted to rename team to eng_team.
 		"user6": {MaxCostAttributionCardinality: 5, CostAttributionLabelsStructured: []costattributionmodel.Label{{Input: "team", Output: "eng_team"}}},
+		"user7": {MaxCostAttributionCardinality: 2, CostAttributionLabels: []string{"team"}, CostAttributionCooldown: model.Duration(TestAttributionCooldown)},
 	}
 	for _, uls := range userLabels {
 		baseLimits[uls[0]] = &validation.Limits{
