@@ -259,6 +259,9 @@ type Config struct {
 	DefaultLimits    InstanceLimits         `yaml:"instance_limits"`
 	InstanceLimitsFn func() *InstanceLimits `yaml:"-"`
 
+	// ShardingConfig is the configuration used by distributors to shard series across ingesters / partitions.
+	ShardingConfig mimirpb.ShardingConfig `yaml:"sharding"`
+
 	// This allows downstream projects to wrap the distributor push function
 	// and access the deserialized write requests before/after they are pushed.
 	// These functions will only receive samples that don't get dropped by HA deduplication.
@@ -294,6 +297,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	cfg.DistributorRing.RegisterFlags(f, logger)
 	cfg.RetryConfig.RegisterFlags(f)
 	cfg.UsageTrackerClient.RegisterFlagsWithPrefix("distributor.usage-tracker-client.", f)
+	cfg.ShardingConfig.RegisterFlags(f)
 
 	f.IntVar(&cfg.MaxRecvMsgSize, "distributor.max-recv-msg-size", 100<<20, "Max message size in bytes that the distributors will accept for incoming push requests to the remote write API. If exceeded, the request will be rejected.")
 	f.IntVar(&cfg.MaxOTLPRequestSize, maxOTLPRequestSizeFlag, 100<<20, "Maximum OTLP request size in bytes that the distributors accept. Requests exceeding this limit are rejected.")
@@ -1876,7 +1880,7 @@ func (d *Distributor) push(ctx context.Context, pushReq *Request) error {
 	}
 
 	// Get both series and metadata keys in one slice.
-	keys, initialMetadataIndex := getSeriesAndMetadataTokens(userID, req)
+	keys, initialMetadataIndex := getSeriesAndMetadataTokens(userID, req, d.cfg.ShardingConfig)
 
 	var (
 		ingestersSubring  ring.DoBatchRing
@@ -2072,8 +2076,8 @@ func (d *Distributor) sendWriteRequestToPartitions(ctx context.Context, tenantID
 
 // getSeriesAndMetadataTokens returns a slice of tokens for the series and metadata from the request in this specific order.
 // Metadata tokens start at initialMetadataIndex.
-func getSeriesAndMetadataTokens(userID string, req *mimirpb.WriteRequest) (keys []uint32, initialMetadataIndex int) {
-	seriesKeys := getTokensForSeries(userID, req.Timeseries)
+func getSeriesAndMetadataTokens(userID string, req *mimirpb.WriteRequest, cfg mimirpb.ShardingConfig) (keys []uint32, initialMetadataIndex int) {
+	seriesKeys := getTokensForSeries(userID, req.Timeseries, cfg)
 	metadataKeys := getTokensForMetadata(userID, req.Metadata)
 
 	// All tokens, stored in order: series, metadata.
@@ -2084,14 +2088,14 @@ func getSeriesAndMetadataTokens(userID string, req *mimirpb.WriteRequest) (keys 
 	return keys, initialMetadataIndex
 }
 
-func getTokensForSeries(userID string, series []mimirpb.PreallocTimeseries) []uint32 {
+func getTokensForSeries(userID string, series []mimirpb.PreallocTimeseries, cfg mimirpb.ShardingConfig) []uint32 {
 	if len(series) == 0 {
 		return nil
 	}
 
 	result := make([]uint32, 0, len(series))
 	for _, ts := range series {
-		result = append(result, tokenForLabels(userID, ts.Labels))
+		result = append(result, tokenForLabels(userID, ts.Labels, cfg))
 	}
 	return result
 }
@@ -2108,8 +2112,8 @@ func getTokensForMetadata(userID string, metadata []*mimirpb.MetricMetadata) []u
 	return metadataKeys
 }
 
-func tokenForLabels(userID string, labels []mimirpb.LabelAdapter) uint32 {
-	return mimirpb.ShardByAllLabelAdapters(userID, labels)
+func tokenForLabels(userID string, labels []mimirpb.LabelAdapter, cfg mimirpb.ShardingConfig) uint32 {
+	return mimirpb.ShardBySeriesLabelAdapters(userID, labels, cfg)
 }
 
 func tokenForMetadata(userID string, metricName string) uint32 {

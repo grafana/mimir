@@ -807,7 +807,7 @@ func generateSeriesWithTokensAt(testUser string, startTime time.Time) ([]util_te
 			Samples: []util_test.Sample{{TS: startTime.Add(time.Duration(seriesIdx) * time.Millisecond).UnixMilli(), Val: float64(0)}},
 		}
 		seriesToWrite = append(seriesToWrite, s)
-		seriesTokens = append(seriesTokens, mimirpb.ShardByAllLabels(testUser, s.Labels))
+		seriesTokens = append(seriesTokens, mimirpb.ShardBySeriesLabels(testUser, s.Labels, mimirpb.ShardingConfig{}))
 	}
 	return seriesToWrite, seriesTokens
 }
@@ -822,7 +822,7 @@ func generateSeriesWithTargetInfoAt(testUser string, startTime time.Time, target
 			Samples: []util_test.Sample{{TS: startTime.Add(time.Duration(i) * time.Millisecond).UnixMilli(), Val: float64(1)}},
 		}
 		seriesToWrite = append(seriesToWrite, s)
-		seriesTokens = append(seriesTokens, mimirpb.ShardByAllLabels(testUser, s.Labels))
+		seriesTokens = append(seriesTokens, mimirpb.ShardBySeriesLabels(testUser, s.Labels, mimirpb.ShardingConfig{}))
 	}
 	return seriesToWrite, seriesTokens
 }

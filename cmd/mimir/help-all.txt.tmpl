@@ -1373,6 +1373,8 @@ Usage of ./cmd/mimir/mimir:
     	Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi. (default "memberlist")
   -distributor.service-overload-status-code-on-rate-limit-enabled
     	[experimental] If enabled, rate limit errors will be reported to the client with HTTP status code 529 (Service is overloaded). If disabled, status code 429 (Too Many Requests) is used. Enabling -distributor.retry-after-header.enabled before utilizing this option is strongly recommended as it helps prevent premature request retries by the client.
+  -distributor.sharding.exclude-classic-histogram-bucket-label
+    	[experimental] When set to true, the distributor computes the series hash – used for sharding – excluding the 'le' label. This means that, when this configuration option is set to true, all buckets of a classic histogram metric are stored in the same shard. This configuration option should be set for distributors, rulers and ingesters.
   -distributor.usage-tracker-client.grpc-client-config.backoff-max-period duration
     	Maximum delay when backing off. (default 10s)
   -distributor.usage-tracker-client.grpc-client-config.backoff-min-period duration
