@@ -1236,9 +1236,13 @@ func createSeriesRequest(minT, maxT int64, matchers []storepb.LabelMatcher, skip
 	}
 
 	if skipChunks {
-		// We don't do the streaming call if we are not requesting the chunks.
+		// We don't do the streaming call if we are not requesting the chunks. Note that setting
+		// a batch size of 0 is ignored in newer store-gateways as the streaming code path is always
+		// used. We set this to 0 anyway here so that newer queriers will continue to work with
+		// older store-gateways that have not been updated to ignore the value 0.
 		streamingBatchSize = 0
 	}
+
 	return &storepb.SeriesRequest{
 		MinTime:                  minT,
 		MaxTime:                  maxT,
