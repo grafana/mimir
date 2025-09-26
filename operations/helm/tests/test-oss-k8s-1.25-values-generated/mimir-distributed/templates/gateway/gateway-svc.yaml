@@ -1,13 +1,13 @@
 ---
-# Source: mimir-distributed/templates/nginx/nginx-svc.yaml
+# Source: mimir-distributed/templates/gateway/gateway-svc.yaml
 apiVersion: v1
 kind: Service
 metadata:
-  name: test-oss-k8s-1.25-values-mimir-nginx
+  name: test-oss-k8s-1.25-values-mimir-gateway
   labels:
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: test-oss-k8s-1.25-values
-    app.kubernetes.io/component: nginx
+    app.kubernetes.io/component: gateway
     app.kubernetes.io/managed-by: Helm
   annotations:
     {}
@@ -16,11 +16,15 @@ spec:
   type: ClusterIP
   internalTrafficPolicy: Cluster
   ports:
-    - name: http-metric
-      port: 80
-      targetPort: http-metric
+    - port: 80
       protocol: TCP
+      name: http-metrics
+      targetPort: http-metrics
+    - port: 8080
+      protocol: TCP
+      name: legacy-http-metrics
+      targetPort: http-metrics
   selector:
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: test-oss-k8s-1.25-values
-    app.kubernetes.io/component: nginx
+    app.kubernetes.io/component: gateway
