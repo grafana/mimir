@@ -826,6 +826,128 @@ func TestHandler_ErrorTranslation(t *testing.T) {
 	}
 }
 
+func TestHandler_ContentEncoding(t *testing.T) {
+	parserTestCases := []struct {
+		name           string
+		req            *http.Request
+		wantStatusCode int
+		isRW2          bool
+	}{
+		{
+			name: "accept unknown content-types",
+			req: &http.Request{
+				Method: "GET",
+				Header: http.Header{
+					"Content-Type": []string{"unknown"},
+				},
+			},
+			wantStatusCode: http.StatusOK,
+			isRW2:          false,
+		},
+		{
+			name: "RW1 request, no proto segments",
+			req: &http.Request{
+				Method: "GET",
+				Header: http.Header{
+					"Content-Type": []string{"application/x-protobuf"},
+				},
+			},
+			wantStatusCode: http.StatusOK,
+			isRW2:          false,
+		},
+		{
+			name: "malformed content-types (invalid segments)",
+			req: &http.Request{
+				Method: "GET",
+				Header: http.Header{
+					"Content-Type": []string{"application/x-protobuf;proto=a=b"},
+				},
+			},
+			wantStatusCode: http.StatusUnsupportedMediaType,
+			isRW2:          false,
+		},
+		{
+			name: "malformed content-types (invalid protobuf message)",
+			req: &http.Request{
+				Method: "GET",
+				Header: http.Header{
+					"Content-Type": []string{"application/x-protobuf;proto=unsupported"},
+				},
+			},
+			wantStatusCode: http.StatusUnsupportedMediaType,
+			isRW2:          false,
+		},
+		{
+			name: "RW1 request, no content-encoding",
+			req: &http.Request{
+				Method: "GET",
+				Header: http.Header{
+					"Content-Type": []string{"application/x-protobuf;proto=prometheus.WriteRequest"},
+				},
+			},
+			wantStatusCode: http.StatusOK,
+			isRW2:          false,
+		},
+		{
+			name: "RW1 request, invalid content-encoding",
+			req: &http.Request{
+				Method: "GET",
+				Header: http.Header{
+					"Content-Type":     []string{"application/x-protobuf;proto=prometheus.WriteRequest"},
+					"Content-Encoding": []string{"unsupported"},
+				},
+			},
+			wantStatusCode: http.StatusUnsupportedMediaType,
+			isRW2:          false,
+		},
+		{
+			name: "RW2 request, invalid content-encoding",
+			req: &http.Request{
+				Method: "GET",
+				Header: http.Header{
+					"Content-Type":     []string{"application/x-protobuf;proto=io.prometheus.write.v2.Request"},
+					"Content-Encoding": []string{"unsupported"},
+				},
+			},
+			wantStatusCode: http.StatusUnsupportedMediaType,
+			isRW2:          true,
+		},
+		{
+			name: "RW2 request, snappy content-encoding",
+			req: &http.Request{
+				Method: "GET",
+				Header: http.Header{
+					"Content-Type":     []string{"application/x-protobuf;proto=io.prometheus.write.v2.Request"},
+					"Content-Encoding": []string{"snappy"},
+				},
+			},
+			wantStatusCode: http.StatusOK,
+			isRW2:          true,
+		},
+	}
+	for _, tc := range parserTestCases {
+		t.Run(tc.name, func(t *testing.T) {
+			pushFunc := func(_ context.Context, req *Request) error {
+				_, err := req.WriteRequest() // just read the body so we can trigger the parser
+				return err
+			}
+			parser := func(context.Context, *http.Request, int, *util.RequestBuffers, *mimirpb.PreallocWriteRequest, log.Logger) error {
+				return nil
+			}
+			h := handler(10, nil, nil, false, false, validation.MockDefaultOverrides(), RetryConfig{}, pushFunc, log.NewNopLogger(), parser)
+
+			recorder := httptest.NewRecorder()
+			ctxWithUser := user.InjectOrgID(context.Background(), "testuser")
+			h.ServeHTTP(recorder, tc.req.WithContext(ctxWithUser))
+
+			assert.Equal(t, tc.wantStatusCode, recorder.Code)
+
+			isRW2, _ := isRemoteWrite2(tc.req)
+			assert.Equal(t, isRW2, tc.isRW2)
+		})
+	}
+}
+
 func TestHandler_HandleRetryAfterHeader(t *testing.T) {
 	testCases := []struct {
 		name          string
