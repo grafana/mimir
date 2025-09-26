@@ -64,6 +64,9 @@ func TestReorderHistogramAggregation(t *testing.T) {
 
 			inputExpr, err := parser.ParseExpr(input)
 			require.NoError(t, err)
+			inputExpr, err = preprocessQuery(t, inputExpr)
+			require.NoError(t, err)
+
 			optimizer := ast.NewReorderHistogramAggregationMapper()
 			outputExpr, err := optimizer.Map(ctx, inputExpr)
 			require.NoError(t, err)
