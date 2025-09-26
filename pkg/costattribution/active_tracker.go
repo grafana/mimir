@@ -119,27 +119,6 @@ func (at *ActiveSeriesTracker) Increment(lbls labels.Labels, now time.Time, nati
 		}
 		return
 	}
-
-	c, ok = at.observed[string(buf.Bytes())]
-	if ok {
-		c.activeSeries.Inc()
-		if nativeHistogramBucketNum >= 0 {
-			c.nativeHistograms.Inc()
-			c.nativeHistogramBuckets.Add(int64(nativeHistogramBucketNum))
-		}
-		at.observedMtx.RUnlock()
-		return
-	}
-
-	if !at.overflowSince.IsZero() {
-		at.observedMtx.RUnlock()
-		at.overflowCounter.activeSeries.Inc()
-		if nativeHistogramBucketNum >= 0 {
-			at.overflowCounter.nativeHistograms.Inc()
-			at.overflowCounter.nativeHistogramBuckets.Add(int64(nativeHistogramBucketNum))
-		}
-		return
-	}
 	at.observedMtx.RUnlock()
 
 	at.observedMtx.Lock()
