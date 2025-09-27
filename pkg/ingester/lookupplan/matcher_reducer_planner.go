@@ -75,34 +75,21 @@ func filterDuplicateLabelNameNonemptyMatchers(ms []*labels.Matcher) []*labels.Ma
 		}
 		matchersByName[m.Name] = append(matchersByName[m.Name], m)
 	}
-	matcherNamesReturned := make(map[string]bool, len(matchersByName))
 	filteredMatchers := make([]*labels.Matcher, 0)
 
-	for name, matchers := range matchersByName {
-		if len(matchers) > 1 {
-			for i, matcherForName := range matchers {
-				// If this is the last matcher for the label name,
-				// and we haven't added any matchers for this label name to the result set,
-				// add this matcher to the result set.
-				if (i == len(matchers)-1) && !matcherNamesReturned[name] {
-					filteredMatchers = append(filteredMatchers, matcherForName)
-					matcherNamesReturned[name] = true
-					continue
-				}
-				// Otherwise, check for nonempty matchers and skip them
-				if matcherForName.Type == labels.MatchRegexp && matcherForName.Value == ".*" {
-					continue
-				}
-				if (matcherForName.Type == labels.MatchNotRegexp || matcherForName.Type == labels.MatchNotEqual) && matcherForName.Value == "" {
-					continue
-				}
-				filteredMatchers = append(filteredMatchers, matcherForName)
-				matcherNamesReturned[name] = true
+	for _, matchers := range matchersByName {
+		matchersToAddForName := make([]*labels.Matcher, 0)
+		for i, m := range matchers {
+			if i == len(matchers)-1 && len(matchersToAddForName) == 0 {
+				matchersToAddForName = append(matchersToAddForName, m)
+			} else if !(
+			// If the matcher matches all non-empty values, we skip this block
+			(m.Type == labels.MatchRegexp && m.Value == ".*") ||
+				((m.Type == labels.MatchNotRegexp || m.Type == labels.MatchNotEqual) && m.Value == "")) {
+				matchersToAddForName = append(matchersToAddForName, m)
 			}
-		} else {
-			filteredMatchers = append(filteredMatchers, matchers...)
-			matcherNamesReturned[name] = true
 		}
+		filteredMatchers = append(filteredMatchers, matchersToAddForName...)
 	}
 	return filteredMatchers
 }
