@@ -45,5 +45,6 @@ func (p *PlannerFactory) CreatePlanner(meta tsdb.BlockMeta, reader tsdb.IndexRea
 		level.Warn(logger).Log("msg", "failed to generate statistics; queries for this block won't use query planning", "err", err)
 		return NoopPlanner{}
 	}
-	return NewCostBasedPlanner(p.metrics, stats)
+
+	return index.ChainLookupPlanners(MatcherReducerPlanner{}, NewCostBasedPlanner(p.metrics, stats))
 }
