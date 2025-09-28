@@ -50,6 +50,8 @@ message RuleGroupDesc {
     (gogoproto.nullable) = false,
     (gogoproto.customtype) = "github.com/grafana/mimir/pkg/mimirpb.LabelAdapter"
   ];
+
+  int32 limit = 15;
 }
 
 // RuleDesc is a proto representation of a Prometheus Rule
