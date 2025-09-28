@@ -73,6 +73,9 @@ Deploying Grafana Mimir clusters to fewer zones than the configured replication 
 
 A Grafana Mimir deployment should have at least `floor(replication factor / 2) + 1` healthy zones to operate.
 
+{{% admonition type="note" %}}For ingest storage architecture, only two zones are required, regardless of the replication factor. Refer to [About Grafana Mimir architecture](https://grafana.com/docs/mimir/<MIMIR_VERSION>/get-started/about-grafana-mimir-architecture/).
+{{% /admonition %}}
+
 ## Unbalanced zones
 
 To ensure that the workload across zones is balanced, run the same number of replicas of each component in each zone.
