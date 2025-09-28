@@ -2575,6 +2575,74 @@ func TestApplyRuleGroupLimits(t *testing.T) {
 				},
 			},
 		},
+		{
+			name: "no limit set when tenant max rule evaluation results is 0",
+			configs: map[string]rulespb.RuleGroupList{
+				"user1": {
+					createRuleGroup("group1", "user1", createAlertingRule("record:1", "1"), createRecordingRule("alert2", "2")),
+				},
+			},
+			limits: validation.MockOverrides(func(_ *validation.Limits, tenantLimits map[string]*validation.Limits) {
+				tenantLimits["user1"] = validation.MockDefaultLimits()
+				tenantLimits["user1"].RulerMaxRuleEvaluationResults = 0
+			}),
+			expected: map[string]rulespb.RuleGroupList{
+				"user1": {
+					createRuleGroup("group1", "user1", createAlertingRule("record:1", "1"), createRecordingRule("alert2", "2")),
+				},
+			},
+		},
+		{
+			name: "limit set when tenant max rule evaluation results is > 0",
+			configs: map[string]rulespb.RuleGroupList{
+				"user1": {
+					createRuleGroup("group1", "user1", createAlertingRule("record:1", "1"), createRecordingRule("alert2", "2")),
+				},
+			},
+			limits: validation.MockOverrides(func(_ *validation.Limits, tenantLimits map[string]*validation.Limits) {
+				tenantLimits["user1"] = validation.MockDefaultLimits()
+				tenantLimits["user1"].RulerMaxRuleEvaluationResults = 100
+			}),
+			expected: map[string]rulespb.RuleGroupList{
+				"user1": {
+					createRuleGroupWithLimit("group1", "user1", 100, createAlertingRule("record:1", "1"), createRecordingRule("alert2", "2")),
+				},
+			},
+		},
+		{
+			name: "tenant limit overrides higher group limit",
+			configs: map[string]rulespb.RuleGroupList{
+				"user1": {
+					createRuleGroupWithLimit("group1", "user1", 200, createAlertingRule("record:1", "1"), createRecordingRule("alert2", "2")),
+				},
+			},
+			limits: validation.MockOverrides(func(_ *validation.Limits, tenantLimits map[string]*validation.Limits) {
+				tenantLimits["user1"] = validation.MockDefaultLimits()
+				tenantLimits["user1"].RulerMaxRuleEvaluationResults = 100
+			}),
+			expected: map[string]rulespb.RuleGroupList{
+				"user1": {
+					createRuleGroupWithLimit("group1", "user1", 100, createAlertingRule("record:1", "1"), createRecordingRule("alert2", "2")),
+				},
+			},
+		},
+		{
+			name: "group limit preserved when lower than tenant limit",
+			configs: map[string]rulespb.RuleGroupList{
+				"user1": {
+					createRuleGroupWithLimit("group1", "user1", 50, createAlertingRule("record:1", "1"), createRecordingRule("alert2", "2")),
+				},
+			},
+			limits: validation.MockOverrides(func(_ *validation.Limits, tenantLimits map[string]*validation.Limits) {
+				tenantLimits["user1"] = validation.MockDefaultLimits()
+				tenantLimits["user1"].RulerMaxRuleEvaluationResults = 100
+			}),
+			expected: map[string]rulespb.RuleGroupList{
+				"user1": {
+					createRuleGroupWithLimit("group1", "user1", 50, createAlertingRule("record:1", "1"), createRecordingRule("alert2", "2")),
+				},
+			},
+		},
 	}
 
 	for _, tc := range tcs {
@@ -2705,6 +2773,12 @@ func createRuleGroup(name, user string, rules ...*rulespb.RuleDesc) *rulespb.Rul
 func createRuleGroupWithInterval(name, user string, interval time.Duration, rules ...*rulespb.RuleDesc) *rulespb.RuleGroupDesc {
 	rg := createRuleGroup(name, user, rules...)
 	rg.Interval = interval
+	return rg
+}
+
+func createRuleGroupWithLimit(name, user string, limit int, rules ...*rulespb.RuleDesc) *rulespb.RuleGroupDesc {
+	rg := createRuleGroup(name, user, rules...)
+	rg.Limit = int32(limit)
 	return rg
 }
 
