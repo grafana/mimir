@@ -22,8 +22,6 @@ type rejectionPrioritizer struct {
 	reactivelimiter.Prioritizer
 }
 
-// The ingester reactive limiter consists of two limiters: one for push requests and one for read requests.
-// It also includes a rejectionPrioritizer which, based on recent latencies in both limiters, decides the priority of requests to reject.
 type ingesterReactiveLimiter struct {
 	service services.Service
 
@@ -32,21 +30,17 @@ type ingesterReactiveLimiter struct {
 	read        reactivelimiter.BlockingLimiter
 }
 
-// Returns an ingesterReactiveLimiter that uses reactivelimiter.PriorityLimiters with a Prioritizer when push and read
-// limiting is enabled, else that uses reactivelimiter.BlockingLimiter if only one of these is enabled.
 func newIngesterReactiveLimiter(prioritizerConfig *reactivelimiter.RejectionPrioritizerConfig, pushConfig *reactivelimiter.Config, readConfig *reactivelimiter.Config, logger log.Logger, registerer prometheus.Registerer) *ingesterReactiveLimiter {
 	var prioritizer *rejectionPrioritizer
 	var pushLimiter reactivelimiter.BlockingLimiter
 	var readLimiter reactivelimiter.BlockingLimiter
 
 	if pushConfig.Enabled && readConfig.Enabled {
-		// Create prioritizer to prioritize the rejection threshold between push and read limiters
 		prioritizer = &rejectionPrioritizer{
 			cfg:         prioritizerConfig,
 			Prioritizer: reactivelimiter.NewPrioritizer(logger),
 		}
 
-		// Capture rejection metrics from the prioritizer
 		promauto.With(registerer).NewGaugeFunc(prometheus.GaugeOpts{
 			Name: "cortex_ingester_rejection_rate",
 			Help: "The prioritized rate at which requests should be rejected.",
@@ -60,7 +54,6 @@ func newIngesterReactiveLimiter(prioritizerConfig *reactivelimiter.RejectionPrio
 			return float64(prioritizer.RejectionThreshold())
 		})
 
-		// Create limiters that use prioritizer
 		pushLimiter = newPriorityLimiter(pushConfig, prioritizer, reactivelimiter.PriorityHigh, "push", logger, registerer)
 		readLimiter = newPriorityLimiter(readConfig, prioritizer, reactivelimiter.PriorityLow, "read", logger, registerer)
 	} else {
@@ -96,13 +89,11 @@ func newBlockingLimiter(cfg *reactivelimiter.Config, requestType string, logger 
 	return limiter
 }
 
-// A limiter that acquires permits for a specific priority.
 type priorityLimiter struct {
 	reactivelimiter.PriorityLimiter
 	priority reactivelimiter.Priority
 }
 
-// Returns a BlockingLimiter that uses a fixed priority to threshold all requests against the limiter.
 func newPriorityLimiter(cfg *reactivelimiter.Config, prioritizer reactivelimiter.Prioritizer, priority reactivelimiter.Priority, requestType string, logger log.Logger, registerer prometheus.Registerer) reactivelimiter.BlockingLimiter {
 	if !cfg.Enabled || prioritizer == nil {
 		return nil
@@ -125,18 +116,15 @@ func (l *priorityLimiter) AcquirePermit(ctx context.Context) (reactivelimiter.Pe
 }
 
 func (l *priorityLimiter) AcquirePermitWithPriority(ctx context.Context, priority int) (reactivelimiter.Permit, error) {
-	// Convert int priority to Priority enum and use the standard AcquirePermit method
 	priorityEnum := convertIntToPriority(priority)
 	return l.PriorityLimiter.AcquirePermit(ctx, priorityEnum)
 }
 
 func (l *priorityLimiter) CanAcquirePermitWithPriority(priority int) bool {
-	// Convert int priority to Priority enum and use the standard CanAcquirePermit method
 	priorityEnum := convertIntToPriority(priority)
 	return l.PriorityLimiter.CanAcquirePermit(priorityEnum)
 }
 
-// convertIntToPriority converts int priority (0-499) to Priority enum
 func convertIntToPriority(priority int) reactivelimiter.Priority {
 	switch {
 	case priority >= 400:

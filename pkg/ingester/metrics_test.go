@@ -908,7 +908,6 @@ func populateTSDBMetrics(base float64) *prometheus.Registry {
 	return r
 }
 
-// Test that priority labels are correctly computed from priority values
 func TestGetPriorityLabel(t *testing.T) {
 	testCases := []struct {
 		priority      int
@@ -938,11 +937,9 @@ func TestGetPriorityLabel(t *testing.T) {
 	}
 }
 
-// Test that ingester metrics can collect metrics with priority labels
 func TestIngesterMetricsPriorityLabels(t *testing.T) {
 	reg := prometheus.NewRegistry()
 	
-	// Create dummy parameters for the metrics constructor
 	instanceLimitsFn := func() *InstanceLimits {
 		return &InstanceLimits{
 			MaxIngestionRate:                100,
@@ -956,18 +953,13 @@ func TestIngesterMetricsPriorityLabels(t *testing.T) {
 	inflightRequests := atomic.NewInt64(0)
 	inflightRequestsBytes := atomic.NewInt64(0)
 	
-	// Create ingester metrics
 	m := newIngesterMetrics(reg, true, instanceLimitsFn, ingestionRate, inflightRequests, inflightRequestsBytes)
 	
-	// Test that we can record metrics with simple rejected metric
 	m.rejected.WithLabelValues("max_inflight_push_requests").Inc()
 	
-	// Verify that the metrics are recorded with correct priority labels
-	// Instead of comparing the entire output, let's verify specific metrics exist
 	metrics, err := reg.Gather()
 	require.NoError(t, err)
 	
-	// Find the rejected requests metric
 	var rejectedMetric *dto.MetricFamily
 	for _, metric := range metrics {
 		if metric.GetName() == "cortex_ingester_instance_rejected_requests_total" {
@@ -977,7 +969,6 @@ func TestIngesterMetricsPriorityLabels(t *testing.T) {
 	}
 	require.NotNil(t, rejectedMetric, "Should find rejected requests metric")
 	
-	// Verify we have the expected metric with correct value
 	found := false
 	for _, metric := range rejectedMetric.GetMetric() {
 		labels := make(map[string]string)
