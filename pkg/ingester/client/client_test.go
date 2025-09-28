@@ -7,6 +7,7 @@ package client
 
 import (
 	"context"
+	"flag"
 	"net/http/httptest"
 	"strconv"
 	"testing"
@@ -66,7 +67,7 @@ func TestMarshall(t *testing.T) {
 // by creating a client and verifying it compiles with the interceptor
 func TestMakeIngesterClientIncludesPriorityInterceptor(t *testing.T) {
 	cfg := Config{}
-	cfg.RegisterFlags(nil)
+	cfg.RegisterFlags(flag.NewFlagSet("test", flag.ContinueOnError))
 
 	metrics := NewMetrics(nil)
 	logger := log.NewNopLogger()
