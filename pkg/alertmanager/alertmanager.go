@@ -668,10 +668,9 @@ func (am *Alertmanager) buildIntegrationsMap(emailCfg alertingReceivers.EmailSen
 	var cached *alertingTemplates.CachedFactory
 	integrationsMap := make(map[string][]*nfstatus.Integration, len(nc))
 	for _, rcv := range nc {
-		var integrations []*nfstatus.Integration
+		var grafana, mimir []*nfstatus.Integration
 		var err error
-		switch rcv.Type() {
-		case definition.GrafanaReceiverType:
+		if rcv.HasGrafanaIntegrations() {
 			if cached == nil {
 				factory, err := alertingTemplates.NewFactory(tmpls, am.logger, tmplExternalURL.String(), am.cfg.UserID)
 				if err != nil {
@@ -679,8 +678,12 @@ func (am *Alertmanager) buildIntegrationsMap(emailCfg alertingReceivers.EmailSen
 				}
 				cached = alertingTemplates.NewCachedFactory(factory)
 			}
-			integrations, err = buildGrafanaReceiverIntegrations(emailCfg, alertingNotify.PostableAPIReceiverToAPIReceiver(rcv), cached, am.logger, am.wrapNotifier, grafanaOpts...)
-		case definition.AlertmanagerReceiverType:
+			grafana, err = buildGrafanaReceiverIntegrations(emailCfg, alertingNotify.PostableAPIReceiverToAPIReceiver(rcv), cached, am.logger, am.wrapNotifier, grafanaOpts...)
+			if err != nil {
+				return nil, err
+			}
+		}
+		if rcv.HasMimirIntegrations() {
 			if tmpl == nil {
 				tmpl, err = loadTemplates(tmpls, WithCustomFunctions(am.cfg.UserID))
 				if err != nil {
@@ -688,15 +691,12 @@ func (am *Alertmanager) buildIntegrationsMap(emailCfg alertingReceivers.EmailSen
 				}
 				tmpl.ExternalURL = tmplExternalURL
 			}
-			integrations, err = buildReceiverIntegrations(rcv.Receiver, tmpl, firewallDialer, am.logger, am.wrapNotifier)
-		case definition.EmptyReceiverType:
-			// Empty receiver, no integrations to build.
+			mimir, err = buildReceiverIntegrations(rcv.Receiver, tmpl, firewallDialer, am.logger, am.wrapNotifier)
+			if err != nil {
+				return nil, err
+			}
 		}
-		if err != nil {
-			return nil, err
-		}
-
-		integrationsMap[rcv.Name] = integrations
+		integrationsMap[rcv.Name] = append(grafana, mimir...)
 	}
 
 	// Template validation shouldn't be dependent on whether receivers exist. So, in case we didn't hot-load any

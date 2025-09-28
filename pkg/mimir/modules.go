@@ -787,7 +787,7 @@ func (t *Mimir) initFlusher() (serv services.Service, err error) {
 // NOTE: Grafana Enterprise Metrics depends on this.
 func (t *Mimir) initQueryFrontendCodec() (services.Service, error) {
 	// Add our default injectors.
-	t.Injectors = append(t.Injectors, &querierapi.ConsistencyLevelInjector{})
+	t.Injectors = append(t.Injectors, &querierapi.ConsistencyInjector{})
 
 	t.QueryFrontendCodec = querymiddleware.NewCodec(
 		t.Registerer,

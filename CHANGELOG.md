@@ -21,6 +21,7 @@
 * [CHANGE] Store-gateway: Update default value of `-store-gateway.dynamic-replication.multiple` to `5` to increase replication of recent blocks. #12433
 * [CHANGE] Cost attribution: Reduce the default maximum per-user cardinality of cost attribution labels to 2000. #12625
 * [CHANGE] Querier, query-frontend: Add `_total` suffix to `cortex_mimir_query_engine_common_subexpression_elimination_duplication_nodes_introduced`, `cortex_mimir_query_engine_common_subexpression_elimination_selectors_eliminated` and `cortex_mimir_query_engine_common_subexpression_elimination_selectors_inspected` metric names. #12636
+* [CHANGE] Alertmanager: Change the severity for InitialSyncFailed from 'critical' to 'warning'. #12824
 * [FEATURE] Ingester: Expose the number of active series ingested via OTLP as `cortex_ingester_active_otlp_series`. #12678
 * [FEATURE] Distributor, ruler: Add experimental `-validation.name-validation-scheme` flag to specify the validation scheme for metric and label names. #12215
 * [FEATURE] Ruler: Add support to use a Prometheus-compatible HTTP endpoint for remote rule evaluation. See [remote evaluation mode](https://grafana.com/docs/mimir/latest/operators-guide/architecture/components/ruler/#remote-over-http-https) for more details. This feature can be used to federate data from multiple Mimir instances. #11415
@@ -35,7 +36,7 @@
 * [FEATURE] Ingester: Add experimental `blocks-storage.tsdb.index-lookup-planning-enabled` flag to configure use of a cost-based index lookup planner. #12530
 * [FEATURE] MQE: Add support for applying extra selectors to one side of a binary operation to reduce data fetched. #12577
 * [FEATURE] Query-frontend: Add a native histogram presenting the length of query expressions handled by the query-frontend #12571
-* [FEATURE] Query-frontend and querier: Add experimental support for performing query planning in query-frontends and distributing portions of the plan to queriers for execution. #12302 #12551 #12665 #12687 #12745 #12757 #12798 #12808
+* [FEATURE] Query-frontend and querier: Add experimental support for performing query planning in query-frontends and distributing portions of the plan to queriers for execution. #12302 #12551 #12665 #12687 #12745 #12757 #12798 #12808 #12809
 * [FEATURE] Alertmanager: add Microsoft Teams V2 as a supported integration. #12680
 * [FEATURE] Distributor: Add experimental flag `-validation.label-value-length-over-limit-strategy` to configure how to handle label values over the length limit. #12627
 * [FEATURE] Ingester: Introduce metric `cortex_ingester_owned_target_info_series` for counting the number of owned `target_info` series by tenant. #12681
@@ -63,6 +64,8 @@
 * [ENHANCEMENT] Distributor: Support zstd decompression of OTLP messages. #12229
 * [ENHANCEMENT] Ingester: Improved the performance of active series custom trackers matchers. #12663
 * [ENHANCEMENT] Compactor: Log sizes of downloaded and uploaded blocks. #12656
+* [ENHANCEMENT] Ingester: Add `cortex_ingest_storage_reader_receive_and_consume_delay_seconds` metric tracking the time between when a write request is received in the distributor and its content is ingested in ingesters, when the ingest storage is enabled. #12751
+* [ENHANCEMENT] Ruler: Add `ruler_evaluation_consistency_max_delay` per-tenant configuration option support, to specify the maximum tolerated ingestion delay for eventually consistent rule evaluations. This feature is used only when ingest storage is enabled. By default, no maximum delay is enforced. #12751
 * [BUGFIX] Distributor: Calculate `WriteResponseStats` before validation and `PushWrappers`. This prevents clients using Remote-Write 2.0 from seeing a diff in written samples, histograms and exemplars. #12682
 * [BUGFIX] Compactor: Fix cortex_compactor_block_uploads_failed_total metric showing type="unknown". #12477
 * [BUGFIX] Querier: Samples with the same timestamp are merged deterministically. Previously, this could lead to flapping query results when an out-of-order sample is ingested that conflicts with a previously ingested in-order sample's value. #8673
@@ -81,9 +84,11 @@
 * [BUGFIX] Store-gateway: Fix a panic in BucketChunkReader when chunk loading encounter a broken chunk length. #12693 #12729
 * [BUGFIX] Ingester, Block-builder: silently ignore duplicate sample if it's due to zero sample from created timestamp. Created timestamp equal to the timestamp of the first sample of series is a common case if created timestamp comes from OTLP where start time equal to timestamp of the first sample simply means unknown start time. #12726
 * [BUGFIX] Distributor: Fix error when native histograms bucket limit is set then no NHCB passes validation. #12741
+* [BUGFIX] Ingester: Fix continous reload of active series counters when cost-attribution labels are above the max cardinality. #12822
 
 ### Mixin
 
+* [CHANGE] Alerts: Removed `MimirFrontendQueriesStuck` alert given this is not relevant when the query-scheduler is running and the query-scheduler is now a required component. #12810
 * [ENHANCEMENT] Rollout progress dashboard: make panels higher to fit more components. #12429
 * [ENHANCEMENT] Add `max_series` limit to Writes Resources > Ingester > In-memory series panel. #12476
 * [ENHANCEMENT] Alerts: Add `MimirHighGRPCConcurrentStreamsPerConnection` alert. #11947
@@ -104,6 +109,7 @@
 ### Documentation
 
 * [ENHANCEMENT] Improve the MimirIngesterReachingSeriesLimit runbook. #12356
+* [ENHANCEMENT] Improve the description of how to limit the number of buckets in native histograms. #12797
 * [BUGFIX] Add a missing attribute to the list of default promoted OTel resource attributes in the docs: deployment.environment. #12181
 
 ## 2.17.1
