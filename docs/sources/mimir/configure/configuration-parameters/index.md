@@ -4162,6 +4162,11 @@ ruler_alertmanager_client_config:
 # CLI flag: -ruler.min-rule-evaluation-interval
 [ruler_min_rule_evaluation_interval: <duration> | default = 0s]
 
+# (experimental) Maximum number of alerts an alerting rule or series a recording
+# rule can produce for rule groups. 0 is no limit.
+# CLI flag: -ruler.max-rule-evaluation-results
+[ruler_max_rule_evaluation_results: <int> | default = 0]
+
 # The tenant's shard size, used when store-gateway sharding is enabled. Value of
 # 0 disables shuffle sharding for the tenant, that is all tenant blocks are
 # sharded across all store-gateway replicas.

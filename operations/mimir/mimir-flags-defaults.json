@@ -400,6 +400,7 @@
   "ruler.alertmanager-client.oauth.endpoint-params": {},
   "ruler.alertmanager-client.proxy-url": "",
   "ruler.min-rule-evaluation-interval": 0,
+  "ruler.max-rule-evaluation-results": 0,
   "store-gateway.tenant-shard-size": 0,
   "compactor.blocks-retention-period": 0,
   "compactor.split-and-merge-shards": 0,
