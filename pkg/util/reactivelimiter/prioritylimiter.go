@@ -19,12 +19,10 @@ const (
 	PriorityVeryHigh
 )
 
-// priorityRange provides a wider range of priorities that allow for rejecting a subset of requests within a Priority.
 type priorityRange struct {
 	lower, upper int
 }
 
-// Defining the priority ranges as a map
 var priorityRanges = map[Priority]priorityRange{
 	PriorityVeryLow:  {0, 99},
 	PriorityLow:      {100, 199},
@@ -68,7 +66,6 @@ type priorityLimiter struct {
 }
 
 func (l *priorityLimiter) AcquirePermit(ctx context.Context, priority Priority) (Permit, error) {
-	// Generate a granular priority for the request and check if we can acquire a permit
 	granularPriority := randomGranularPriority(priority)
 	if !l.canAcquirePermit(granularPriority) {
 		return nil, ErrExceeded
@@ -83,13 +80,11 @@ func (l *priorityLimiter) CanAcquirePermit(priority Priority) bool {
 }
 
 func (l *priorityLimiter) canAcquirePermit(granularPriority int) bool {
-	// Threshold against the limiter's max capacity
 	_, _, _, maxBlocked := l.queueStats()
 	if l.Blocked() >= maxBlocked {
 		return false
 	}
 
-	// Threshold against the prioritizer's rejection threshold
 	return granularPriority >= l.prioritizer.RejectionThreshold()
 }
 
@@ -97,19 +92,19 @@ func (l *priorityLimiter) RejectionRate() float64 {
 	return l.prioritizer.RejectionRate()
 }
 
-// AcquirePermitWithPriority adapts int priority to Priority enum for BlockingLimiter interface
+// AcquirePermitWithPriority adapts int priority to Priority enum
 func (l *priorityLimiter) AcquirePermitWithPriority(ctx context.Context, priority int) (Permit, error) {
 	priorityEnum := convertIntToPriority(priority)
 	return l.AcquirePermit(ctx, priorityEnum)
 }
 
-// CanAcquirePermitWithPriority adapts int priority to Priority enum for BlockingLimiter interface  
+// CanAcquirePermitWithPriority adapts int priority to Priority enum  
 func (l *priorityLimiter) CanAcquirePermitWithPriority(priority int) bool {
 	priorityEnum := convertIntToPriority(priority)
 	return l.CanAcquirePermit(priorityEnum)
 }
 
-// convertIntToPriority converts int priority (0-499) to Priority enum
+func convertIntToPriority(priority int) Priority {
 func convertIntToPriority(priority int) Priority {
 	switch {
 	case priority >= 400:

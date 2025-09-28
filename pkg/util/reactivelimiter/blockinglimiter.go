@@ -49,7 +49,6 @@ func (l *blockingLimiter) AcquirePermit(ctx context.Context) (Permit, error) {
 		return nil, ErrExceeded
 	}
 
-	// Acquire a permit, blocking if needed
 	return l.reactiveLimiter.AcquirePermit(ctx)
 }
 
@@ -73,7 +72,6 @@ func (l *blockingLimiter) AcquirePermitWithPriority(ctx context.Context, priorit
 		return nil, ErrExceeded
 	}
 
-	// Acquire a permit, blocking if needed
 	return l.reactiveLimiter.AcquirePermit(ctx)
 }
 
@@ -87,22 +85,20 @@ func (l *blockingLimiter) CanAcquirePermitWithPriority(priority int) bool {
 		return true
 	}
 
-	// Priority-based rejection thresholds (same as CPU limiter)
 	var priorityThreshold float64
 	switch {
-	case priority >= 400: // VeryHigh (ruler)
-		priorityThreshold = 0.95 // Only reject at 95%+ rejection rate
-	case priority >= 300: // High (dashboard)
+	case priority >= 400:
+		priorityThreshold = 0.95
+	case priority >= 300:
 		priorityThreshold = 0.80
-	case priority >= 200: // Medium (API)
+	case priority >= 200:
 		priorityThreshold = 0.60
-	case priority >= 100: // Low (background)
+	case priority >= 100:
 		priorityThreshold = 0.40
-	default: // VeryLow (unknown)
-		priorityThreshold = 0.20 // First to be rejected
+	default:
+		priorityThreshold = 0.20
 	}
 
-	// If rejection rate is above the priority threshold, reject this request
 	if rejectionRate > priorityThreshold {
 		return false
 	}

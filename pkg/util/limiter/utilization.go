@@ -153,19 +153,18 @@ func (l *UtilizationBasedLimiter) ShouldRejectRequest(priority int) bool {
 		return false
 	}
 	
-	// Priority-based rejection thresholds
 	var priorityThreshold float64
 	switch {
-	case priority >= 400: // VeryHigh (ruler)
-		priorityThreshold = 0.95 // Only reject at 95%+ rejection rate
-	case priority >= 300: // High (dashboard)
+	case priority >= 400:
+		priorityThreshold = 0.95
+	case priority >= 300:
 		priorityThreshold = 0.80
-	case priority >= 200: // Medium (API)
+	case priority >= 200:
 		priorityThreshold = 0.60
-	case priority >= 100: // Low (background)
+	case priority >= 100:
 		priorityThreshold = 0.40
-	default: // VeryLow (unknown)
-		priorityThreshold = 0.20 // First to be rejected
+	default:
+		priorityThreshold = 0.20
 	}
 	
 	return rejectionRate > priorityThreshold
@@ -329,25 +328,19 @@ func (b *cpuSampleBuffer) String() string {
 	return sb.String()
 }
 
-// updateRejectionRate calculates and updates the rejection rate based on how long
-// the limiter has been above the threshold
 func (l *UtilizationBasedLimiter) updateRejectionRate(now time.Time, isAboveThreshold bool) {
-	const maxRejectionTime = 5 * time.Minute // Time to reach 100% rejection rate
-	
+	const maxRejectionTime = 5 * time.Minute
+
 	if isAboveThreshold {
-		// We're above the threshold
 		if l.thresholdExceededSince.IsZero() {
 			l.thresholdExceededSince = now
 		}
-		
-		// Calculate rejection rate based on time above threshold
-		// Linear increase from 0% to 100% over maxRejectionTime
+
 		timeAboveThreshold := now.Sub(l.thresholdExceededSince)
 		rejectionRate := math.Min(1.0, timeAboveThreshold.Seconds()/maxRejectionTime.Seconds())
-		
+
 		l.rejectionRate.Store(rejectionRate)
 	} else {
-		// We're back to normal, reset everything
 		l.thresholdExceededSince = time.Time{}
 		l.rejectionRate.Store(0.0)
 	}
