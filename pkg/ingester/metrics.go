@@ -39,6 +39,7 @@ type ingesterMetrics struct {
 
 	activeSeriesLoading                               *prometheus.GaugeVec
 	activeSeriesPerUser                               *prometheus.GaugeVec
+	activeSeriesPerUserOTLP                           *prometheus.GaugeVec
 	activeSeriesCustomTrackersPerUser                 *prometheus.GaugeVec
 	activeSeriesPerUserNativeHistograms               *prometheus.GaugeVec
 	activeSeriesCustomTrackersPerUserNativeHistograms *prometheus.GaugeVec
@@ -49,6 +50,8 @@ type ingesterMetrics struct {
 
 	// Owned series
 	ownedSeriesPerUser *prometheus.GaugeVec
+	// Owned target_info series
+	ownedTargetInfoSeriesPerUser *prometheus.GaugeVec
 
 	// Global limit metrics
 	maxUsersGauge                prometheus.GaugeFunc
@@ -194,11 +197,15 @@ func newIngesterMetrics(
 		utilizationLimitedRequests: promauto.With(r).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_ingester_utilization_limited_read_requests_total",
 			Help: "Total number of times read requests have been rejected due to utilization based limiting.",
-		}, []string{"reason"}),
+		}, []string{"reason", "priority"}),
 
 		ownedSeriesPerUser: promauto.With(r).NewGaugeVec(prometheus.GaugeOpts{
 			Name: "cortex_ingester_owned_series",
 			Help: "Number of currently owned series per user.",
+		}, []string{"user"}),
+		ownedTargetInfoSeriesPerUser: promauto.With(r).NewGaugeVec(prometheus.GaugeOpts{
+			Name: "cortex_ingester_owned_target_info_series",
+			Help: "Number of currently owned target_info series per user.",
 		}, []string{"user"}),
 		attributedActiveSeriesFailuresPerUser: promauto.With(r).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_ingester_attributed_active_series_failure",
@@ -316,6 +323,12 @@ func newIngesterMetrics(
 		}, []string{"user"}),
 
 		// Not registered automatically, but only if activeSeriesEnabled is true.
+		activeSeriesPerUserOTLP: promauto.With(activeSeriesReg).NewGaugeVec(prometheus.GaugeOpts{
+			Name: "cortex_ingester_active_otlp_series",
+			Help: "Number of currently active series per user ingested via OTLP.",
+		}, []string{"user"}),
+
+		// Not registered automatically, but only if activeSeriesEnabled is true.
 		activeSeriesCustomTrackersPerUser: promauto.With(activeSeriesReg).NewGaugeVec(prometheus.GaugeOpts{
 			Name: "cortex_ingester_active_series_custom_tracker",
 			Help: "Number of currently active series matching a pre-configured label matchers per user.",
@@ -396,13 +409,18 @@ func newIngesterMetrics(
 		}, []string{"outcome", "user"}),
 	}
 
-	// Initialize expected rejected request labels
-	m.rejected.WithLabelValues(reasonIngesterMaxIngestionRate)
-	m.rejected.WithLabelValues(reasonIngesterMaxTenants)
-	m.rejected.WithLabelValues(reasonIngesterMaxInMemorySeries)
-	m.rejected.WithLabelValues(reasonIngesterMaxInflightPushRequests)
-	m.rejected.WithLabelValues(reasonIngesterMaxInflightPushRequestsBytes)
-	m.rejected.WithLabelValues(reasonIngesterMaxInflightReadRequests)
+	// Initialize expected rejected request labels 
+	reasons := []string{
+		reasonIngesterMaxIngestionRate,
+		reasonIngesterMaxTenants, 
+		reasonIngesterMaxInMemorySeries,
+		reasonIngesterMaxInflightPushRequests,
+		reasonIngesterMaxInflightPushRequestsBytes,
+		reasonIngesterMaxInflightReadRequests,
+	}
+	for _, reason := range reasons {
+		m.rejected.WithLabelValues(reason)
+	}
 
 	return m
 }
@@ -421,6 +439,7 @@ func (m *ingesterMetrics) deletePerUserMetrics(userID string) {
 
 	m.maxLocalSeriesPerUser.DeleteLabelValues(userID)
 	m.ownedSeriesPerUser.DeleteLabelValues(userID)
+	m.ownedTargetInfoSeriesPerUser.DeleteLabelValues(userID)
 	m.attributedActiveSeriesFailuresPerUser.DeleteLabelValues(userID)
 }
 
@@ -431,6 +450,7 @@ func (m *ingesterMetrics) deletePerGroupMetricsForUser(userID, group string) {
 func (m *ingesterMetrics) deletePerUserCustomTrackerMetrics(userID string, customTrackerMetrics []string) {
 	m.activeSeriesLoading.DeleteLabelValues(userID)
 	m.activeSeriesPerUser.DeleteLabelValues(userID)
+	m.activeSeriesPerUserOTLP.DeleteLabelValues(userID)
 	m.activeSeriesPerUserNativeHistograms.DeleteLabelValues(userID)
 	m.activeNativeHistogramBucketsPerUser.DeleteLabelValues(userID)
 	for _, name := range customTrackerMetrics {
