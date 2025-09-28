@@ -212,55 +212,70 @@ type Distributor struct {
 	sleep func(time.Duration)
 	now   func() time.Time
 
-	latency *artificialLatency
+	latency *artificialLatencyWithErrors
 }
 
-type artificialLatency struct {
-	min       time.Duration
-	max       time.Duration
-	duration  time.Duration
-	workers   int
+type artificialLatencyWithErrors struct {
+	minDelay       time.Duration
+	maxDelay       time.Duration
+	workers        int
+	totalDuration  time.Duration
+	errorFrequency time.Duration
+
+	lastError time.Time
 	startTime time.Time
 }
 
-func newArtificialLatency(min time.Duration, max time.Duration, duration time.Duration, workers int) *artificialLatency {
-	return &artificialLatency{
-		min:       min,
-		max:       max,
-		duration:  duration,
-		workers:   workers,
-		startTime: time.Now(),
-	}
-}
-
-func (a *artificialLatency) isActive() bool {
+func (a *artificialLatencyWithErrors) isActive() bool {
 	if a == nil {
 		return false
 	}
-	if time.Since(a.startTime) >= a.duration {
+	if time.Since(a.startTime) >= a.totalDuration {
 		return false
 	}
-	if a.min >= a.max {
+	if a.minDelay >= a.maxDelay {
 		return false
 	}
 	return true
 }
 
-func (a *artificialLatency) add(logger log.Logger) {
+func (a *artificialLatencyWithErrors) shouldReturnError(delay time.Duration) bool {
+	if a.errorFrequency == 0 {
+		return false
+	}
+	if a.lastError.IsZero() {
+		return true
+	}
+	nextError := a.lastError.Add(a.errorFrequency)
+	if a.lastError.Add(delay).After(nextError) {
+		return false
+	}
+	return true
+}
+
+var errArtificial = fmt.Errorf("artificial error")
+
+func (a *artificialLatencyWithErrors) sleep(logger log.Logger) error {
 	if a == nil || !a.isActive() {
-		return
+		return nil
 	}
 
-	// Pick random duration in [min, max].
-	duration := a.min + time.Duration(rand.Int63n(int64(a.max-a.min)))
-	end := time.Now().Add(duration)
-	level.Debug(logger).Log("msg", "adding artificial latency", "min", a.min, "max", a.max, "duration", a.duration, "workers", a.workers, "start_time", a.startTime, "artificial_latency_duration", duration)
+	// Pick random delay in [minDelay, maxDelay].
+	delay := a.minDelay + time.Duration(rand.Int63n(int64(a.maxDelay-a.minDelay)))
+	var err error
+	if a.shouldReturnError(delay) {
+		err = errArtificial
+	}
+	defer func() {
+		level.Debug(logger).Log("msg", "artificial latency with error", "min_next_error_delay", a.minDelay, "max_next_error_delay", a.maxDelay, "random_delay", delay, "total_duration", a.totalDuration, "start_time", a.startTime, "last_error", a.lastError, "err", err)
+	}()
 
 	if a.workers == 0 {
-		time.Sleep(duration)
-		return
+		time.Sleep(delay)
+		return err
 	}
 
+	end := time.Now().Add(delay)
 	var wg sync.WaitGroup
 	wg.Add(a.workers)
 
@@ -278,6 +293,7 @@ func (a *artificialLatency) add(logger log.Logger) {
 		}()
 	}
 	wg.Wait()
+	return err
 }
 
 func defaultSleep(d time.Duration) { time.Sleep(d) }
@@ -1963,19 +1979,22 @@ func (d *Distributor) handlePushError(ctx context.Context, pushErr error) error 
 	return toErrorWithGRPCStatus(pushErr, serviceOverloadErrorEnabled)
 }
 
-func (d *Distributor) addArtificialLatency() {
+func (d *Distributor) addArtificialLatencyWithError() error {
 	if d.latency == nil {
-		return
+		return nil
 	}
-	if time.Since(d.latency.startTime) >= d.latency.duration {
+	if time.Since(d.latency.startTime) >= d.latency.totalDuration {
 		d.latency = nil
-		return
+		return nil
 	}
-	d.latency.add(d.log)
+	if d.latency.lastError.IsZero() || time.Since(d.latency.lastError) >= d.latency.errorFrequency {
+		d.latency.lastError = time.Now()
+	}
+	return d.latency.sleep(d.log)
 }
 
 func (d *Distributor) StartArtificialLatencyHandler(w http.ResponseWriter, r *http.Request) {
-	level.Info(d.log).Log("msg", "received a request to start artificial latency")
+	level.Info(d.log).Log("msg", "received a request to start artificial latency with errors")
 	vars := mux.Vars(r)
 
 	// Extract path parameters
@@ -1983,27 +2002,30 @@ func (d *Distributor) StartArtificialLatencyHandler(w http.ResponseWriter, r *ht
 	latencyMaxStr := vars["latencyMax"]
 	latencyDurationStr := vars["latencyDuration"]
 	latencyWorkersStr := vars["latencyWorkers"]
+	latencyErrorFrequencyStr := vars["latencyErrorFrequency"]
 
 	// Defaults
 	latencyMin, _ := time.ParseDuration(defaultIfEmpty(latencyMinStr, "100ms"))
 	latencyMax, _ := time.ParseDuration(defaultIfEmpty(latencyMaxStr, "500ms"))
 	latencyDuration, _ := time.ParseDuration(defaultIfEmpty(latencyDurationStr, "300s"))
 	latencyWorkers, _ := strconv.Atoi(defaultIfEmpty(latencyWorkersStr, "1"))
+	latencyErrorFrequency, _ := time.ParseDuration(defaultIfEmpty(latencyErrorFrequencyStr, "0"))
 
-	level.Info(d.log).Log("msg", "artificial latency parameters retrieved", "latencyMin", latencyMin, "latencyMax", latencyMax, "latencyDuration", latencyDuration, "latencyWorkers", latencyWorkers)
+	level.Info(d.log).Log("msg", "artificial latency parameters retrieved", "latencyMin", latencyMin, "latencyMax", latencyMax, "latencyDuration", latencyDuration, "latencyWorkers", latencyWorkers, "latencyErrorFrequency", latencyErrorFrequency)
 
-	d.latency = &artificialLatency{
-		min:       latencyMin,
-		max:       latencyMax,
-		duration:  latencyDuration,
-		workers:   latencyWorkers,
-		startTime: time.Now(),
+	d.latency = &artificialLatencyWithErrors{
+		minDelay:       latencyMin,
+		maxDelay:       latencyMax,
+		totalDuration:  latencyDuration,
+		workers:        latencyWorkers,
+		errorFrequency: latencyErrorFrequency,
+		startTime:      time.Now(),
 	}
 
-	level.Info(d.log).Log("msg", "artificial latency setup completed")
+	level.Info(d.log).Log("msg", "artificial latency with error setup completed")
 
 	// Build response
-	response := fmt.Sprintf("Artificial latency with parameters min=%v, max=%v, duration=%v, workers=%d", latencyMin, latencyMax, latencyDuration, latencyWorkers)
+	response := fmt.Sprintf("Artificial latency with error with parameters min=%v, max=%v, duration=%v, workers=%d", latencyMin, latencyMax, latencyDuration, latencyWorkers)
 	util.WriteHTMLResponse(w, response)
 }
 
@@ -2209,7 +2231,9 @@ func (d *Distributor) sendWriteRequestToBackends(ctx context.Context, tenantID s
 func (d *Distributor) sendWriteRequestToIngesters(ctx context.Context, tenantRing ring.DoBatchRing, req *mimirpb.WriteRequest, keys []uint32, initialMetadataIndex int, remoteRequestContext func() context.Context, batchOptions ring.DoBatchOptions) error {
 	err := ring.DoBatchWithOptions(ctx, ring.WriteNoExtend, tenantRing, keys,
 		func(ingester ring.InstanceDesc, indexes []int) error {
-			d.addArtificialLatency()
+			if err := d.addArtificialLatencyWithError(); err != nil {
+				return err
+			}
 			req := req.ForIndexes(indexes, initialMetadataIndex)
 
 			h, err := d.ingesterPool.GetClientForInstance(ingester)
@@ -2235,7 +2259,9 @@ func (d *Distributor) sendWriteRequestToIngesters(ctx context.Context, tenantRin
 func (d *Distributor) sendWriteRequestToPartitions(ctx context.Context, tenantID string, tenantRing ring.DoBatchRing, req *mimirpb.WriteRequest, keys []uint32, initialMetadataIndex int, remoteRequestContext func() context.Context, batchOptions ring.DoBatchOptions) error {
 	err := ring.DoBatchWithOptions(ctx, ring.WriteNoExtend, tenantRing, keys,
 		func(partition ring.InstanceDesc, indexes []int) error {
-			d.addArtificialLatency()
+			if err := d.addArtificialLatencyWithError(); err != nil {
+				return err
+			}
 			req := req.ForIndexes(indexes, initialMetadataIndex)
 
 			// The partition ID is stored in the ring.InstanceDesc Id.
