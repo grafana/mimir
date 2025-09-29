@@ -3,6 +3,7 @@ package definition
 import (
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"reflect"
 	"sort"
@@ -540,6 +541,44 @@ func (r *PostableApiReceiver) HasGrafanaIntegrations() bool {
 
 func (r *PostableApiReceiver) GetName() string {
 	return r.Receiver.Name
+}
+
+// CopyIntegrations appends all integrations, Mimir and Grafana, from source receiver to destination.
+func CopyIntegrations(src, dest *PostableApiReceiver) error {
+	if src == nil || dest == nil {
+		return errors.New("both source and destination receivers should be non-nil")
+	}
+	// Get the reflect.Value of src and dest
+	srcVal := reflect.ValueOf(&src.Receiver).Elem()
+	destVal := reflect.ValueOf(&dest.Receiver).Elem()
+
+	// Iterate through all fields of the struct
+	for i := 0; i < srcVal.NumField(); i++ {
+		srcField := srcVal.Field(i)
+		destField := destVal.Field(i)
+
+		// Only process slice fields (skip Name field)
+		if srcField.Kind() != reflect.Slice {
+			continue
+		}
+
+		// Get the length of the source slice
+		srcLen := srcField.Len()
+
+		// Append each element from source to destination
+		for j := 0; j < srcLen; j++ {
+			// Get the element from source slice
+			elem := srcField.Index(j)
+
+			// Append to destination slice
+			destField.Set(reflect.Append(destField, elem))
+		}
+	}
+
+	if src.GrafanaManagedReceivers != nil {
+		dest.GrafanaManagedReceivers = append(dest.GrafanaManagedReceivers, src.GrafanaManagedReceivers...)
+	}
+	return nil
 }
 
 type PostableGrafanaReceivers struct {
