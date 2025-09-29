@@ -82,10 +82,7 @@ func (c *concatSquasher) Squash(exprs ...astmapper.EmbeddedQuery) (parser.Expr, 
 	}
 
 	return &parser.Call{
-		// TODO: store this parser.Function value somewhere so we don't have to create a new one every time
-		Func: &parser.Function{
-			Name: "__sharded_concat__",
-		},
+		Func: ConcatFunction,
 		Args: args,
 	}, nil
 }
