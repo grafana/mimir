@@ -206,10 +206,6 @@ func TestNotifyHooksNotifier(t *testing.T) {
 		_, err := f.notifier.Notify(ctx, makeAlert("foo")...)
 		require.NoError(t, err)
 
-		type testExtraData struct {
-			Foo string `json:"foo"`
-		}
-
 		extraDataRaw, ok := f.upstream.ctxForTesting.Value(webhookV1.ExtraDataKey).([]json.RawMessage)
 		require.True(t, ok)
 		require.Equal(t, 2, len(extraDataRaw))
