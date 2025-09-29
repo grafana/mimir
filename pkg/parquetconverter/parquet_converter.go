@@ -95,6 +95,7 @@ type Config struct {
 	ColDuration        time.Duration          `yaml:"col_duration" category:"advanced"`
 	MaxRowsPerGroup    int                    `yaml:"max_rows_per_group" category:"advanced"`
 	MinCompactionLevel int                    `yaml:"min_compaction_level" category:"advanced"`
+	MinBlockDuration   time.Duration          `yaml:"min_block_duration" category:"advanced"`
 
 	CompressionEnabled bool `yaml:"compression_enabled" category:"advanced"`
 	MaxQueueSize       int  `yaml:"max_queue_size" category:"advanced"`
@@ -116,6 +117,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.DurationVar(&cfg.ColDuration, "parquet-converter.col-duration", 8*time.Hour, "Duration for column chunks in Parquet files.")
 	f.IntVar(&cfg.MaxRowsPerGroup, "parquet-converter.max-rows-per-group", 1e6, "Maximum number of rows per row group in Parquet files.")
 	f.IntVar(&cfg.MinCompactionLevel, "parquet-converter.min-compaction-level", 2, "Minimum compaction level required for blocks to be converted to Parquet. Blocks equal or greater than this level will be converted.")
+	f.DurationVar(&cfg.MinBlockDuration, "parquet-converter.min-block-duration", 0, "Minimum duration of blocks to convert. Blocks with a duration shorter than this will be skipped. Set to 0 to disable duration filtering.")
 	f.BoolVar(&cfg.CompressionEnabled, "parquet-converter.compression-enabled", true, "Whether compression is enabled for labels and chunks parquet files. When disabled, parquet files will be converted and stored uncompressed.")
 	f.IntVar(&cfg.MaxQueueSize, "parquet-converter.max-queue-size", 5, "Maximum number of blocks that can be queued for conversion at once. This helps distribute work evenly across replicas.")
 }
@@ -424,6 +426,11 @@ func (c *ParquetConverter) discoverAndEnqueueBlocks(ctx context.Context) {
 
 			if m.Compaction.Level < c.Cfg.MinCompactionLevel {
 				level.Debug(c.logger).Log("msg", "skipping block below min compaction level", "id", m.ULID, "meta", m)
+				continue
+			}
+
+			if c.Cfg.MinBlockDuration > 0 && (m.MaxTime-m.MinTime) < c.Cfg.MinBlockDuration.Milliseconds() {
+				level.Debug(c.logger).Log("msg", "skipping block below min duration", "id", m.ULID, "duration", (m.MaxTime - m.MinTime), "min_duration", c.Cfg.MinBlockDuration.String())
 				continue
 			}
 
