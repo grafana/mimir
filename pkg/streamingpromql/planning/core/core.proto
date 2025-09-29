@@ -184,5 +184,4 @@ message DeduplicateAndMergeDetails {
   reserved "runDelayedNameRemoval";
 }
 
-message NameDropDetails {
-}
+message NameDropDetails {}
