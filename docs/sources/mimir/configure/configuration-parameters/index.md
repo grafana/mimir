@@ -1491,6 +1491,11 @@ parquet_converter:
   # CLI flag: -parquet-converter.min-compaction-level
   [min_compaction_level: <int> | default = 2]
 
+  # (advanced) Minimum duration of blocks to convert. Blocks with a duration
+  # shorter than this will be skipped. Set to 0 to disable duration filtering.
+  # CLI flag: -parquet-converter.min-block-duration
+  [min_block_duration: <duration> | default = 0s]
+
   # (advanced) Whether compression is enabled for labels and chunks parquet
   # files. When disabled, parquet files will be converted and stored
   # uncompressed.

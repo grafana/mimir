@@ -22814,6 +22814,17 @@
         },
         {
           "kind": "field",
+          "name": "min_block_duration",
+          "required": false,
+          "desc": "Minimum duration of blocks to convert. Blocks with a duration shorter than this will be skipped. Set to 0 to disable duration filtering.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "parquet-converter.min-block-duration",
+          "fieldType": "duration",
+          "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
           "name": "compression_enabled",
           "required": false,
           "desc": "Whether compression is enabled for labels and chunks parquet files. When disabled, parquet files will be converted and stored uncompressed.",
