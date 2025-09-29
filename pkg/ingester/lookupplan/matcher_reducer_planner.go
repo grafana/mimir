@@ -82,14 +82,22 @@ func filterDuplicateLabelNameNonemptyMatchers(ms []*labels.Matcher) []*labels.Ma
 		for i, m := range matchers {
 			if i == len(matchers)-1 && len(matchersToAddForName) == 0 {
 				matchersToAddForName = append(matchersToAddForName, m)
-			} else if !(
-			// If the matcher matches all non-empty values, we skip this block
-			(m.Type == labels.MatchRegexp && m.Value == ".*") ||
-				((m.Type == labels.MatchNotRegexp || m.Type == labels.MatchNotEqual) && m.Value == "")) {
+			} else if !isNonSelectiveMatcher(m) {
 				matchersToAddForName = append(matchersToAddForName, m)
 			}
 		}
 		filteredMatchers = append(filteredMatchers, matchersToAddForName...)
 	}
 	return filteredMatchers
+}
+
+func isNonSelectiveMatcher(m *labels.Matcher) bool {
+	switch m.Type {
+	case labels.MatchRegexp:
+		return m.Value == ".*"
+	case labels.MatchNotRegexp, labels.MatchNotEqual:
+		return m.Value == ""
+	default:
+		return false
+	}
 }
