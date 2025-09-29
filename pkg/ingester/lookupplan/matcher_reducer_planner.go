@@ -1,8 +1,9 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 package lookupplan
 
 import (
 	"context"
-	"fmt"
 	"slices"
 
 	"github.com/grafana/dskit/tracing"
@@ -50,7 +51,6 @@ func (p MatcherReducerPlanner) PlanIndexLookup(ctx context.Context, inPlan index
 	}
 	droppedMatchers := make([]*labels.Matcher, 0)
 	outIndexMatchers, dedupedMatchers, droppedMatchers := buildOutMatchers(inPlan.IndexMatchers(), dedupedMatchers, droppedMatchers)
-	fmt.Println("outIndexMatchers: ", outIndexMatchers)
 	outScanMatchers, _, droppedMatchers := buildOutMatchers(inPlan.ScanMatchers(), dedupedMatchers, droppedMatchers)
 
 	if traceSampled && len(droppedMatchers) > 0 {
@@ -71,13 +71,10 @@ func (p MatcherReducerPlanner) PlanIndexLookup(ctx context.Context, inPlan index
 func buildOutMatchers(inMatchers []*labels.Matcher, dedupedMatchers map[labels.Matcher]bool, droppedMatchers []*labels.Matcher) ([]*labels.Matcher, map[labels.Matcher]bool, []*labels.Matcher) {
 	outMatchers := make([]*labels.Matcher, 0)
 	for _, m := range inMatchers {
-		val, ok := dedupedMatchers[*m]
-		fmt.Println(m, val, ok)
 		// dedupedMatchers is used to both keep track of all unique matchers (evidenced by existence in the map),
 		// and whether the matcher has already been added to a set of output matchers (evidenced by the value in the map).
 		// We only want to add the matcher if it hasn't already been added to an output slice.
-		if _, ok = dedupedMatchers[*m]; ok && !dedupedMatchers[*m] {
-			fmt.Println("appended matcher: ", m)
+		if _, ok := dedupedMatchers[*m]; ok && !dedupedMatchers[*m] {
 			outMatchers = append(outMatchers, m)
 			dedupedMatchers[*m] = true
 		} else {
