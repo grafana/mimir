@@ -6,7 +6,7 @@ metadata:
   name: test-oss-emptydir-values-rollout-operator
   namespace: "citestns"
   labels:
-    helm.sh/chart: rollout-operator-0.33.1
+    helm.sh/chart: rollout-operator-0.33.2
     app.kubernetes.io/name: rollout-operator
     app.kubernetes.io/instance: test-oss-emptydir-values
     app.kubernetes.io/version: "v0.29.0"
