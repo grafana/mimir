@@ -5,13 +5,40 @@ package sharding
 import (
 	"context"
 	"errors"
+	"fmt"
 
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 
+	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
+	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/limiter"
 )
+
+func init() {
+	parser.Functions[ConcatFunction.Name] = ConcatFunction
+
+	if err := functions.RegisterFunction(functions.FUNCTION_SHARDING_CONCAT, ConcatFunction.Name, ConcatFunction.ReturnType, concatFactory); err != nil {
+		panic(err)
+	}
+}
+
+func concatFactory(args []types.Operator, _ labels.Labels, params *planning.OperatorParameters, _ posrange.PositionRange, _ types.QueryTimeRange) (types.Operator, error) {
+	operators := make([]types.InstantVectorOperator, 0, len(args))
+
+	for _, arg := range args {
+		instantVectorOperator, ok := arg.(types.InstantVectorOperator)
+		if !ok {
+			return nil, fmt.Errorf("expected InstantVectorOperator for %s, but got %T", ConcatFunction.Name, arg)
+		}
+
+		operators = append(operators, instantVectorOperator)
+	}
+
+	return NewConcat(operators, params.MemoryConsumptionTracker)
+}
 
 var ConcatFunction = &parser.Function{
 	Name:       "__sharded_concat__",

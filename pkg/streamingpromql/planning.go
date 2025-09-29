@@ -663,6 +663,7 @@ func functionNeedsDeduplication(fnc functions.Function) bool {
 		functions.FUNCTION_LIMIT_RATIO,
 		functions.FUNCTION_PI,
 		functions.FUNCTION_SCALAR,
+		functions.FUNCTION_SHARDING_CONCAT, // Might return duplicate series, but this is OK and desired, and aggregation operators will handle this correctly.
 		functions.FUNCTION_SORT,
 		functions.FUNCTION_SORT_BY_LABEL,
 		functions.FUNCTION_SORT_BY_LABEL_DESC,
