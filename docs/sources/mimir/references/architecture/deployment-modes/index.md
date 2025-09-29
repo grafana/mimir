@@ -20,14 +20,9 @@ Configure the deployment mode using the `-target` parameter, which you can set v
 
 ## About monolithic mode
 
-Monolithic mode runs all required components in a single process and is the default deployment mode. You enable monolithic mode by setting `-target=all`.
+Monolithic mode runs all required components in a single process. This mode is ideal for getting started or running Grafana Mimir in a development environment.
 
-This mode is ideal when you want to:
-
-- Get started quickly with Mimir
-- Run Mimir in a development environment
-- Deploy with minimal operational complexity
-- Scale all components together
+To enable monolithic mode, set `-target=all`.
 
 To see the complete list of components that run in monolithic mode, use the `-modules` flag:
 
@@ -55,7 +50,7 @@ Because monolithic mode requires scaling all Grafana Mimir components together, 
 
 ## About microservices mode
 
-Microservices mode deploys each component in separate processes, enabling independent scaling and creating granular failure domains. This deployment mode is recommended for production environments that require high availability and flexible scaling.
+Microservices mode deploys each component in separate processes, enabling independent scaling and creating granular failure domains. Microservices mode is recommended for production environments.
 
 The following diagrams show how Mimir works in microservices mode using ingest storage and classic architectures. For more information about the two supported architectures in Grafana Mimir, refer to [Grafana Mimir architecture](https://grafana.com/docs/mimir/<MIMIR_VERSION>/get-started/about-grafana-mimir-architecture/).
 
