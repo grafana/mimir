@@ -8,6 +8,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+	"math"
 	"testing"
 
 	"github.com/go-kit/log"
@@ -87,6 +88,36 @@ func TestBucketChunkReader_refetchChunks(t *testing.T) {
 			assert.Equal(t, loadedChunksCorrectLen, loadedChunksModifiedLen)
 		})
 	}
+}
+
+func TestBucketChunkReader_loadChunks_brokenChunkSize(t *testing.T) {
+	brokenChunkSize := uint64(math.MaxInt32)
+
+	// This is a mocked chunk, that only contains the len portion; it doesn't include any data or checksum. This is enough for this test.
+	b := make([]byte, 20)
+	n := binary.PutUvarint(b, brokenChunkSize)
+	b = b[:n]
+	bucketReader := mockObjectStoreBucketReader{b: b}
+
+	block := &bucketBlock{
+		bkt:          bucketReader,
+		partitioners: blockPartitioners{naivePartitioner{}, naivePartitioner{}, naivePartitioner{}},
+		chunkObjs:    []string{"test-chunk"},
+	}
+
+	reader := newBucketChunkReader(t.Context(), block)
+
+	err := reader.addLoad(chunks.ChunkRef(0), 0, 0, 0)
+	require.NoError(t, err)
+
+	// The actual loadedChunks buffer isn't relevant for this test.
+	loadedChunks := make([]seriesChunks, 1)
+	loadedChunks[0].chks = make([]storepb.AggrChunk, 1)
+
+	chunksPool := pool.NewSafeSlabPool[byte](chunkBytesSlicePool, seriesChunksSlabSize)
+
+	err = reader.load(loadedChunks, chunksPool, newSafeQueryStats())
+	require.Error(t, err)
 }
 
 func BenchmarkBucketChunkReader_loadChunks(b *testing.B) {
