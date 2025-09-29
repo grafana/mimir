@@ -80,6 +80,10 @@ func TestManager_CreateDeleteTracker(t *testing.T) {
 		# HELP cortex_ingester_attributed_active_series The total number of active series per user and attribution.
         # TYPE cortex_ingester_attributed_active_series gauge
         cortex_ingester_attributed_active_series{team="bar",tenant="user1",tracker="cost-attribution"} 3
+		# HELP cortex_attributed_series_overflow_labels The overflow labels for this tenant. This metric is always 1 for tenants with active series, it is only used to have the overflow labels available in the recording rules without knowing their names.
+		# TYPE cortex_attributed_series_overflow_labels gauge
+		cortex_attributed_series_overflow_labels{team="__overflow__",tenant="user1",tracker="cost-attribution"} 1
+		cortex_attributed_series_overflow_labels{department="__overflow__",service="__overflow__",tenant="user3",tracker="cost-attribution"} 1
 		`
 		assert.NoError(t, testutil.GatherAndCompare(costAttributionReg,
 			strings.NewReader(expectedMetrics),
@@ -88,6 +92,7 @@ func TestManager_CreateDeleteTracker(t *testing.T) {
 			"cortex_ingester_attributed_active_series",
 			"cortex_ingester_attributed_active_native_histogram_series",
 			"cortex_ingester_attributed_active_native_histogram_buckets",
+			"cortex_attributed_series_overflow_labels",
 		))
 
 		manager.ActiveSeriesTracker("user1").Decrement(labels.FromStrings("team", "bar"), 50)
