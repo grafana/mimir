@@ -29,7 +29,8 @@ Since inflight limits are, at most, a multiple of the current inflight ingester 
 
 Ingesters support separate reactive limiters for push and read requests, since these requests may be overloaded by different resources at different times. When ingesters are heavily loaded, these limiters may be full, and when the load is sustained, queues might fill up as well. When this happens, requests may be rejected, with a preference for rejecting read requests before rejecting push requests.
 
-{{% admonition type="note" %}}Push request reactive limiters aren't available in ingest storage architecture. Refer to [Grafana Mimir architecture](https://grafana.com/docs/mimir/<MIMIR_VERSION>/get-started/about-grafana-mimir-architecture/).
+{{% admonition type="note" %}}
+Push request reactive limiters aren't available in ingest storage architecture. Refer to [Grafana Mimir architecture](https://grafana.com/docs/mimir/<MIMIR_VERSION>/get-started/about-grafana-mimir-architecture/).
 {{% /admonition %}}
 
 ## Configure Grafana Mimir reactive limiters
