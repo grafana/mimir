@@ -80,9 +80,9 @@ func filterDuplicateLabelNameNonemptyMatchers(ms []*labels.Matcher) []*labels.Ma
 	for _, matchers := range matchersByName {
 		matchersToAddForName := make([]*labels.Matcher, 0)
 		for i, m := range matchers {
-			if i == len(matchers)-1 && len(matchersToAddForName) == 0 {
-				matchersToAddForName = append(matchersToAddForName, m)
-			} else if !isNonSelectiveMatcher(m) {
+			// If we're on the last element and haven't kept any matchers for this label name yet, keep this one.
+			// Otherwise, only keep selective matchers.
+			if (i == len(matchers)-1 && len(matchersToAddForName) == 0) || !isNonSelectiveMatcher(m) {
 				matchersToAddForName = append(matchersToAddForName, m)
 			}
 		}
