@@ -68,6 +68,7 @@ var testCasesPropagateMatchers = map[string]string{
 	`rate(up{foo="bar"}[2m]) + delta(down{baz="fob"}[4m])`:                     `rate(up{foo="bar", baz="fob"}[2m]) + delta(down{foo="bar", baz="fob"}[4m])`,
 	`up * -down{foo="bar"}`:                                                    `up{foo="bar"} * -down{foo="bar"}`,
 	`up{foo="bar"} @ 1 + down @ 2`:                                             `up{foo="bar"} @ 1 + down{foo="bar"} @ 2`,
+	`up{foo="bar"} @ 1 + down`:                                                 `up{foo="bar"} @ 1 + down{foo="bar"}`,
 	`minute() * down{baz="fob"}`:                                               `minute() * down{baz="fob"}`,
 	`minute(up{foo="bar"}) * down{baz="fob"}`:                                  `minute(up{foo="bar", baz="fob"}) * down{foo="bar", baz="fob"}`,
 	`round(up{foo="bar"}) * down{baz="fob"}`:                                   `round(up{foo="bar", baz="fob"}) * down{foo="bar", baz="fob"}`,
