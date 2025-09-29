@@ -180,5 +180,9 @@ message LabelMatcher {
 }
 
 message DeduplicateAndMergeDetails {
-  bool runDelayedNameRemoval = 1;
+  reserved 1;
+  reserved "runDelayedNameRemoval";
+}
+
+message NameDropDetails {
 }

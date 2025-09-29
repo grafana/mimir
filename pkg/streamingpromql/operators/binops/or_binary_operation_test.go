@@ -306,7 +306,7 @@ func TestOrBinaryOperationSorting(t *testing.T) {
 			)
 
 			// Wrap OrBinaryOperation in a DeduplicateAndMerge as would happen at the planning level
-			op = operators.NewDeduplicateAndMerge(op, memoryConsumptionTracker, false)
+			op = operators.NewDeduplicateAndMerge(op, memoryConsumptionTracker)
 			actualSeriesMetadata, err := op.SeriesMetadata(ctx, nil)
 			require.NoError(t, err)
 

@@ -209,8 +209,11 @@ func (p *QueryPlanner) NewQueryPlan(ctx context.Context, qs string, timeRange ty
 		}
 
 		if p.enableDelayedNameRemoval {
-			if dedupAndMerge, ok := root.(*core.DeduplicateAndMerge); ok {
-				dedupAndMerge.RunDelayedNameRemoval = true
+			if _, ok := root.(*core.DeduplicateAndMerge); ok {
+				root = &core.NameDrop{
+					Inner:           root,
+					NameDropDetails: &core.NameDropDetails{},
+				}
 			} else {
 				// Don't run delayed name removal or deduplicate and merge where there are no
 				// vector selectors.
@@ -220,8 +223,11 @@ func (p *QueryPlanner) NewQueryPlan(ctx context.Context, qs string, timeRange ty
 				}
 				if shouldWrap {
 					root = &core.DeduplicateAndMerge{
-						Inner:                      root,
-						DeduplicateAndMergeDetails: &core.DeduplicateAndMergeDetails{RunDelayedNameRemoval: true},
+						Inner: &core.NameDrop{
+							Inner:           root,
+							NameDropDetails: &core.NameDropDetails{},
+						},
+						DeduplicateAndMergeDetails: &core.DeduplicateAndMergeDetails{},
 					}
 				}
 			}

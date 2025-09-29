@@ -22,10 +22,9 @@ func TestDeduplicateAndMerge(t *testing.T) {
 	// the number of buffered series.
 
 	testCases := map[string]struct {
-		inputSeries           []labels.Labels
-		inputData             []types.InstantVectorSeriesData
-		inputDropName         []bool
-		runDelayedNameRemoval bool
+		inputSeries   []labels.Labels
+		inputData     []types.InstantVectorSeriesData
+		inputDropName []bool
 
 		expectConflict         bool
 		expectedOutputSeries   []labels.Labels
@@ -189,7 +188,7 @@ func TestDeduplicateAndMerge(t *testing.T) {
 				true,
 			},
 		},
-		"with dropName set partially and runDelayedNameRemoval=true": {
+		"with dropName set partially (DeduplicateAndMerge no longer handles name removal)": {
 			inputSeries: []labels.Labels{
 				labels.FromStrings(labels.MetricName, "metric", "foo", "1"),
 				labels.FromStrings(labels.MetricName, "metric", "foo", "2"),
@@ -205,12 +204,11 @@ func TestDeduplicateAndMerge(t *testing.T) {
 				false,
 				true,
 			},
-			runDelayedNameRemoval: true,
 
 			expectedOutputSeries: []labels.Labels{
-				labels.FromStrings("foo", "1"),
+				labels.FromStrings(labels.MetricName, "metric", "foo", "1"),
 				labels.FromStrings(labels.MetricName, "metric", "foo", "2"),
-				labels.FromStrings("foo", "3"),
+				labels.FromStrings(labels.MetricName, "metric", "foo", "3"),
 			},
 			expectedOutputData: []types.InstantVectorSeriesData{
 				{Floats: []promql.FPoint{{T: 0, F: 0}, {T: 1, F: 1}}},
@@ -218,9 +216,9 @@ func TestDeduplicateAndMerge(t *testing.T) {
 				{Floats: []promql.FPoint{{T: 0, F: 20}, {T: 1, F: 21}}},
 			},
 			expectedOutputDropName: []bool{
+				true,
 				false,
-				false,
-				false,
+				true,
 			},
 		},
 	}
@@ -230,7 +228,7 @@ func TestDeduplicateAndMerge(t *testing.T) {
 			ctx := context.Background()
 			memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
 			inner := &TestOperator{Series: testCase.inputSeries, Data: testCase.inputData, DropName: testCase.inputDropName, MemoryConsumptionTracker: memoryConsumptionTracker}
-			o := NewDeduplicateAndMerge(inner, memoryConsumptionTracker, testCase.runDelayedNameRemoval)
+			o := NewDeduplicateAndMerge(inner, memoryConsumptionTracker)
 
 			outputSeriesMetadata, err := o.SeriesMetadata(ctx, nil)
 			require.NoError(t, err)
