@@ -343,6 +343,7 @@ func (rth *engineQueryRequestRoundTripperHandler) Do(ctx context.Context, r Metr
 	}
 
 	ctx = ContextWithHeadersToPropagate(ctx, headers)
+	ctx = ContextWithRequestHintsAndOptions(ctx, r.GetHints(), r.GetOptions())
 	opts := promql.NewPrometheusQueryOpts(r.GetStats() == "all", 0)
 
 	var q promql.Query
@@ -438,4 +439,33 @@ func smallestPositiveNonZeroDuration(values ...time.Duration) time.Duration {
 
 	return smallest
 
+}
+
+type requestContextKeyType int
+
+const (
+	requestHintsKey requestContextKeyType = iota
+	requestOptionsKey
+)
+
+func ContextWithRequestHintsAndOptions(ctx context.Context, hints *Hints, options Options) context.Context {
+	ctx = context.WithValue(ctx, requestHintsKey, hints)
+	ctx = context.WithValue(ctx, requestOptionsKey, options)
+	return ctx
+}
+
+func RequestHintsFromContext(ctx context.Context) *Hints {
+	if v := ctx.Value(requestHintsKey); v != nil {
+		return v.(*Hints)
+	}
+
+	return nil
+}
+
+func RequestOptionsFromContext(ctx context.Context) Options {
+	if v := ctx.Value(requestOptionsKey); v != nil {
+		return v.(Options)
+	}
+
+	return Options{}
 }

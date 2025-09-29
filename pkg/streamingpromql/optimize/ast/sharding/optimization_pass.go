@@ -32,15 +32,27 @@ func (o *OptimizationPass) Name() string {
 }
 
 func (o *OptimizationPass) Apply(ctx context.Context, expr parser.Expr) (parser.Expr, error) {
+	options := querymiddleware.RequestOptionsFromContext(ctx)
+	if options.ShardingDisabled {
+		return expr, nil
+	}
+
 	tenantIDs, err := tenant.TenantIDs(ctx)
 	if err != nil {
 		return nil, apierror.New(apierror.TypeBadData, err.Error())
 	}
 
-	// TODO: get these from the request
-	requestedShardCount := 0
+	requestedShardCount := int(options.TotalShards)
+	totalQueries := int32(1)
 	var seriesCount *querymiddleware.EstimatedSeriesCount
-	totalQueries := int32(0)
+
+	if hints := querymiddleware.RequestHintsFromContext(ctx); hints != nil {
+		seriesCount = hints.GetCardinalityEstimate()
+
+		if hints.TotalQueries > 0 {
+			totalQueries = hints.TotalQueries
+		}
+	}
 
 	shardedExpr, err := o.sharder.Shard(ctx, tenantIDs, expr, requestedShardCount, seriesCount, totalQueries)
 	if err != nil {
