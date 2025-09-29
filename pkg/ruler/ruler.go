@@ -1012,33 +1012,52 @@ func applyRuleGroupLimits(configs map[string]rulespb.RuleGroupList, limits Rules
 		adjusted[userID] = groups
 
 		tenantMinInterval := limits.RulerMinRuleEvaluationInterval(userID)
-		if tenantMinInterval <= 0 {
+		tenantMaxRuleEvaluationResults := limits.RulerMaxRuleEvaluationResults(userID)
+
+		if tenantMinInterval <= 0 && tenantMaxRuleEvaluationResults <= 0 {
+			// Fast-path when no rule group limits were set for the tenant.
 			continue
-		}
-		if tenantMinInterval > rulerCfg.EvaluationInterval {
-			level.Warn(logger).Log(
-				"msg", "tenant min evaluation interval is higher than ruler default evaluation interval, this is a misconfiguration. the min evaluation interval will take precedence",
-				"user", userID,
-				"min_interval", tenantMinInterval,
-				"default_interval", rulerCfg.EvaluationInterval,
-			)
 		}
 
 		for _, group := range adjusted[userID] {
-			// 0 indicates to fall back to the default "ruler.evaluation-interval"
-			// If that's smaller than the min interval, we respect the min interval over everything and stop allowing blank intervals through.
-			if group.Interval == 0 && (tenantMinInterval <= rulerCfg.EvaluationInterval) {
-				continue
+			// Apply minimum evaluation interval limit
+			if tenantMinInterval > 0 {
+				if tenantMinInterval > rulerCfg.EvaluationInterval {
+					level.Warn(logger).Log(
+						"msg", "tenant min evaluation interval is higher than ruler default evaluation interval, this is a misconfiguration. the min evaluation interval will take precedence",
+						"user", userID,
+						"min_interval", tenantMinInterval,
+						"default_interval", rulerCfg.EvaluationInterval,
+					)
+				}
+
+				// 0 indicates to fall back to the default "ruler.evaluation-interval"
+				// If that's smaller than the min interval, we respect the min interval over everything and stop allowing blank intervals through.
+				if group.Interval != 0 || tenantMinInterval > rulerCfg.EvaluationInterval {
+					if group.Interval < tenantMinInterval {
+						level.Info(logger).Log(
+							"msg", "adjusting rule group interval because it's below the tenant's evaluation interval",
+							"user", userID,
+							"rule_group", group.Name,
+							"interval", group.Interval,
+							"min_interval", tenantMinInterval,
+						)
+						group.Interval = tenantMinInterval
+					}
+				}
 			}
-			if group.Interval < tenantMinInterval {
-				level.Info(logger).Log(
-					"msg", "adjusting rule group interval because it's below the tenant's evaluation interval",
-					"user", userID,
-					"rule_group", group.Name,
-					"interval", group.Interval,
-					"min_interval", tenantMinInterval,
-				)
-				group.Interval = tenantMinInterval
+
+			// Apply rule evaluation results limit.
+			if tenantMaxRuleEvaluationResults > 0 {
+				if group.Limit == 0 || int32(tenantMaxRuleEvaluationResults) < group.Limit {
+					level.Info(logger).Log(
+						"msg", "applying rule evaluation results limit to rule group",
+						"user", userID,
+						"rule_group", group.Name,
+						"limit", tenantMaxRuleEvaluationResults,
+					)
+					group.Limit = int32(tenantMaxRuleEvaluationResults)
+				}
 			}
 		}
 	}

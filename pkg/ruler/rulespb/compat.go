@@ -27,6 +27,7 @@ func ToProto(user string, namespace string, rl rulefmt.RuleGroup) *RuleGroupDesc
 		SourceTenants:                 rl.SourceTenants,
 		AlignEvaluationTimeOnInterval: rl.AlignEvaluationTimeOnInterval,
 		Labels:                        mimirpb.FromLabelsToLabelAdapters(labels.FromMap(rl.Labels)),
+		Limit:                         int32(rl.Limit),
 	}
 
 	// This function is designed to do a 1:1 mapping between the data models, so we
@@ -70,6 +71,7 @@ func FromProto(rg *RuleGroupDesc) rulefmt.RuleGroup {
 		SourceTenants:                 rg.GetSourceTenants(),
 		AlignEvaluationTimeOnInterval: rg.GetAlignEvaluationTimeOnInterval(),
 		Labels:                        mimirpb.FromLabelAdaptersToLabels(rg.Labels).Map(),
+		Limit:                         int(rg.Limit),
 	}
 
 	// This function is designed to do a 1:1 mapping between the data models, so we
