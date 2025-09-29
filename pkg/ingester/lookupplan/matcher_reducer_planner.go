@@ -2,6 +2,7 @@ package lookupplan
 
 import (
 	"context"
+	"fmt"
 	"slices"
 
 	"github.com/grafana/dskit/tracing"
@@ -43,12 +44,13 @@ func (p MatcherReducerPlanner) PlanIndexLookup(ctx context.Context, inPlan index
 	matchers := slices.Concat(inPlan.IndexMatchers(), inPlan.ScanMatchers())
 	matchers = filterDuplicateLabelNameNonemptyMatchers(matchers)
 
-	dedupedMatchers := make(map[labels.Matcher][]bool, len(matchers))
+	dedupedMatchers := make(map[labels.Matcher]bool, len(matchers))
 	for _, m := range matchers {
-		dedupedMatchers[*m] = []bool{true}
+		dedupedMatchers[*m] = false
 	}
 	droppedMatchers := make([]*labels.Matcher, 0)
 	outIndexMatchers, dedupedMatchers, droppedMatchers := buildOutMatchers(inPlan.IndexMatchers(), dedupedMatchers, droppedMatchers)
+	fmt.Println("outIndexMatchers: ", outIndexMatchers)
 	outScanMatchers, _, droppedMatchers := buildOutMatchers(inPlan.ScanMatchers(), dedupedMatchers, droppedMatchers)
 
 	if traceSampled && len(droppedMatchers) > 0 {
@@ -62,13 +64,22 @@ func (p MatcherReducerPlanner) PlanIndexLookup(ctx context.Context, inPlan index
 	}, nil
 }
 
-func buildOutMatchers(inMatchers []*labels.Matcher, dedupedMatchers map[labels.Matcher][]bool, droppedMatchers []*labels.Matcher) ([]*labels.Matcher, map[labels.Matcher][]bool, []*labels.Matcher) {
+// buildOutMatchers takes a slice of index or scan matchers, and returns the same slice in order,
+// less any duplicate matchers. dedupedMatchers contains the set of deduplicated matchers
+// with nonselective matchers removed. If dedupedMatchers[*m] is false, the matcher has not been added to any result set.
+// droppedMatchers is used for logging purposes to record which matchers have been removed from the plan.
+func buildOutMatchers(inMatchers []*labels.Matcher, dedupedMatchers map[labels.Matcher]bool, droppedMatchers []*labels.Matcher) ([]*labels.Matcher, map[labels.Matcher]bool, []*labels.Matcher) {
 	outMatchers := make([]*labels.Matcher, 0)
 	for _, m := range inMatchers {
-		// We only want to add the matcher if it hasn't already been added to an output slice
-		if _, ok := dedupedMatchers[*m]; ok && len(dedupedMatchers[*m]) < 2 {
+		val, ok := dedupedMatchers[*m]
+		fmt.Println(m, val, ok)
+		// dedupedMatchers is used to both keep track of all unique matchers (evidenced by existence in the map),
+		// and whether the matcher has already been added to a set of output matchers (evidenced by the value in the map).
+		// We only want to add the matcher if it hasn't already been added to an output slice.
+		if _, ok = dedupedMatchers[*m]; ok && !dedupedMatchers[*m] {
+			fmt.Println("appended matcher: ", m)
 			outMatchers = append(outMatchers, m)
-			dedupedMatchers[*m] = append(dedupedMatchers[*m], true)
+			dedupedMatchers[*m] = true
 		} else {
 			droppedMatchers = append(droppedMatchers, m)
 		}
@@ -89,10 +100,10 @@ func filterDuplicateLabelNameNonemptyMatchers(ms []*labels.Matcher) []*labels.Ma
 		}
 		matchersByName[m.Name] = append(matchersByName[m.Name], m)
 	}
-	filteredMatchers := make([]*labels.Matcher, 0)
+	filteredMatchers := make([]*labels.Matcher, 0, len(ms))
 
 	for _, matchers := range matchersByName {
-		matchersToAddForName := make([]*labels.Matcher, 0)
+		matchersToAddForName := make([]*labels.Matcher, 0, len(matchers))
 		for i, m := range matchers {
 			// If we're on the last element and haven't kept any matchers for this label name yet, keep this one.
 			// Otherwise, only keep selective matchers.

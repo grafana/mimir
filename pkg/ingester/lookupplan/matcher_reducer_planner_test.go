@@ -135,6 +135,18 @@ func TestMatcherReducerPlanner_PlanIndexLookup(t *testing.T) {
 				scanMatchers:  []*labels.Matcher{nonSelectiveNotRegexMatcher, otherLabelSelectiveMatcher},
 			},
 		},
+		{
+			name: "nonselective matcher for another label name should not be dropped",
+			ctx:  context.Background(),
+			inPlan: concreteLookupPlan{
+				indexMatchers: []*labels.Matcher{otherLabelSelectiveMatcher, nonSelectiveNotEqualsMatcher},
+				scanMatchers:  []*labels.Matcher{},
+			},
+			expectedPlan: concreteLookupPlan{
+				indexMatchers: []*labels.Matcher{otherLabelSelectiveMatcher, nonSelectiveNotEqualsMatcher},
+				scanMatchers:  []*labels.Matcher{},
+			},
+		},
 	}
 
 	for _, tt := range tests {
