@@ -224,7 +224,7 @@ func (at *ActiveSeriesTracker) Collect(out chan<- prometheus.Metric) {
 		var activeSeries int64
 		var nativeHistogram int64
 		var nhBucketNum int64
-		for _, c := range at.observed { // x1, y1
+		for _, c := range at.observed {
 			activeSeries += c.activeSeries.Load()
 			nativeHistogram += c.nativeHistograms.Load()
 			nhBucketNum += c.nativeHistogramBuckets.Load()
