@@ -29,6 +29,7 @@ type counters struct {
 type ActiveSeriesTracker struct {
 	userID                                         string
 	activeSeriesPerUserAttribution                 *prometheus.Desc
+	attributedOverflowLabels                       *prometheus.Desc
 	activeNativeHistogramSeriesPerUserAttribution  *prometheus.Desc
 	activeNativeHistogramBucketsPerUserAttribution *prometheus.Desc
 	logger                                         log.Logger
@@ -76,6 +77,9 @@ func NewActiveSeriesTracker(userID string, trackedLabels []costattributionmodel.
 
 	ast.activeSeriesPerUserAttribution = prometheus.NewDesc("cortex_ingester_attributed_active_series",
 		"The total number of active series per user and attribution.", variableLabels[:len(variableLabels)-1],
+		prometheus.Labels{trackerLabel: defaultTrackerName})
+	ast.attributedOverflowLabels = prometheus.NewDesc("cortex_attributed_series_overflow_labels",
+		"The overflow labels for this tenant. This metric is always 1 for tenants with active series, it is only used to have the overflow labels available in the recording rules without knowing their names.", variableLabels[:len(variableLabels)-1],
 		prometheus.Labels{trackerLabel: defaultTrackerName})
 	ast.activeNativeHistogramSeriesPerUserAttribution = prometheus.NewDesc("cortex_ingester_attributed_active_native_histogram_series",
 		"The total number of active native histogram series per user and attribution.", variableLabels[:len(variableLabels)-1],
@@ -213,6 +217,8 @@ func (at *ActiveSeriesTracker) Decrement(lbls labels.Labels, nativeHistogramBuck
 }
 
 func (at *ActiveSeriesTracker) Collect(out chan<- prometheus.Metric) {
+	out <- prometheus.MustNewConstMetric(at.attributedOverflowLabels, prometheus.GaugeValue, 1, at.overflowLabels[:len(at.overflowLabels)-1]...)
+
 	at.observedMtx.RLock()
 	if !at.overflowSince.IsZero() {
 		var activeSeries int64
