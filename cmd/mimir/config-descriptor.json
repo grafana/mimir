@@ -7861,6 +7861,17 @@
         },
         {
           "kind": "field",
+          "name": "use_mimir_query_engine_for_sharding",
+          "required": false,
+          "desc": "True to enable performing query sharding inside the Mimir query engine (MQE). Has no effect if sharding is disabled. Requires remote execution and MQE to be enabled.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "query-frontend.use-mimir-query-engine-for-sharding",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "rewrite_histogram_queries",
           "required": false,
           "desc": "Set to true to enable rewriting histogram queries for a more efficient order of execution.",

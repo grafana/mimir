@@ -2855,6 +2855,12 @@ results_cache:
 # CLI flag: -query-frontend.parallelize-shardable-queries
 [parallelize_shardable_queries: <boolean> | default = false]
 
+# (experimental) True to enable performing query sharding inside the Mimir query
+# engine (MQE). Has no effect if sharding is disabled. Requires remote execution
+# and MQE to be enabled.
+# CLI flag: -query-frontend.use-mimir-query-engine-for-sharding
+[use_mimir_query_engine_for_sharding: <boolean> | default = false]
+
 # (experimental) Set to true to enable rewriting histogram queries for a more
 # efficient order of execution.
 # CLI flag: -query-frontend.rewrite-histogram-queries

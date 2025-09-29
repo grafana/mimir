@@ -67,6 +67,7 @@ type Config struct {
 	MaxRetries                      int                `yaml:"max_retries" category:"advanced"`
 	NotRunningTimeout               time.Duration      `yaml:"not_running_timeout" category:"advanced"`
 	ShardedQueries                  bool               `yaml:"parallelize_shardable_queries"`
+	UseMQEForSharding               bool               `yaml:"use_mimir_query_engine_for_sharding" category:"experimental"`
 	RewriteQueriesHistogram         bool               `yaml:"rewrite_histogram_queries" category:"experimental"`
 	RewriteQueriesPropagateMatchers bool               `yaml:"rewrite_propagate_matchers" category:"experimental"`
 	TargetSeriesPerShard            uint64             `yaml:"query_sharding_target_series_per_shard" category:"advanced"`
@@ -100,6 +101,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.CacheResults, "query-frontend.cache-results", false, "Cache query results.")
 	f.BoolVar(&cfg.CacheErrors, "query-frontend.cache-errors", false, "Cache non-transient errors from queries.")
 	f.BoolVar(&cfg.ShardedQueries, "query-frontend.parallelize-shardable-queries", false, "True to enable query sharding.")
+	f.BoolVar(&cfg.UseMQEForSharding, "query-frontend.use-mimir-query-engine-for-sharding", false, "True to enable performing query sharding inside the Mimir query engine (MQE). Has no effect if sharding is disabled. Requires remote execution and MQE to be enabled.")
 	f.BoolVar(&cfg.RewriteQueriesHistogram, "query-frontend.rewrite-histogram-queries", false, "Set to true to enable rewriting histogram queries for a more efficient order of execution.")
 	f.BoolVar(&cfg.RewriteQueriesPropagateMatchers, "query-frontend.rewrite-propagate-matchers", false, "Set to true to enable rewriting queries to propagate label matchers across binary expressions.")
 	f.Uint64Var(&cfg.TargetSeriesPerShard, "query-frontend.query-sharding-target-series-per-shard", 0, "How many series a single sharded partial query should load at most. This is not a strict requirement guaranteed to be honoured by query sharding, but a hint given to the query sharding when the query execution is initially planned. 0 to disable cardinality-based hints.")
@@ -543,24 +545,26 @@ func newQueryMiddlewares(
 			)
 		}
 
-		queryshardingMiddleware := newQueryShardingMiddleware(
-			log,
-			engine,
-			limits,
-			cfg.TargetSeriesPerShard,
-			registerer,
-		)
+		if !cfg.UseMQEForSharding {
+			queryShardingMiddleware := newQueryShardingMiddleware(
+				log,
+				engine,
+				limits,
+				cfg.TargetSeriesPerShard,
+				registerer,
+			)
 
-		queryRangeMiddleware = append(
-			queryRangeMiddleware,
-			newInstrumentMiddleware("querysharding", metrics),
-			queryshardingMiddleware,
-		)
-		queryInstantMiddleware = append(
-			queryInstantMiddleware,
-			newInstrumentMiddleware("querysharding", metrics),
-			queryshardingMiddleware,
-		)
+			queryRangeMiddleware = append(
+				queryRangeMiddleware,
+				newInstrumentMiddleware("querysharding", metrics),
+				queryShardingMiddleware,
+			)
+			queryInstantMiddleware = append(
+				queryInstantMiddleware,
+				newInstrumentMiddleware("querysharding", metrics),
+				queryShardingMiddleware,
+			)
+		}
 	}
 
 	if cfg.MaxRetries > 0 {

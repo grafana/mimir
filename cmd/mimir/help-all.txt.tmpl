@@ -2435,6 +2435,8 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Enable spinning off subqueries from instant queries as range queries to optimize their performance.
   -query-frontend.use-active-series-decoder
     	[experimental] Set to true to use the zero-allocation response decoder for active series queries.
+  -query-frontend.use-mimir-query-engine-for-sharding
+    	[experimental] True to enable performing query sharding inside the Mimir query engine (MQE). Has no effect if sharding is disabled. Requires remote execution and MQE to be enabled.
   -query-scheduler.grpc-client-config.backoff-max-period duration
     	Maximum delay when backing off. (default 10s)
   -query-scheduler.grpc-client-config.backoff-min-period duration
