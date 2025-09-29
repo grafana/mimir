@@ -13,9 +13,9 @@ import (
 type InspectResult struct {
 	// HasSelectors indicates if any node in the tree has matrix or vector selectors.
 	HasSelectors bool
-	// IsRewritten indicates if the query has been rewritten by query sharding or by
+	// IsRewrittenByMiddleware indicates if the query has been rewritten by query sharding or by
 	// subquery spin-off middlewares.
-	IsRewritten bool
+	IsRewrittenByMiddleware bool
 }
 
 // Inspect traverses a tree of Nodes and returns a result that indicates if the query
@@ -25,23 +25,23 @@ func Inspect(node planning.Node) InspectResult {
 	switch e := node.(type) {
 	case *core.MatrixSelector:
 		return InspectResult{
-			HasSelectors: true,
-			IsRewritten:  isSpunOff(e.Matchers),
+			HasSelectors:            true,
+			IsRewrittenByMiddleware: isSpunOff(e.Matchers),
 		}
 	case *core.VectorSelector:
 		return InspectResult{
-			HasSelectors: true,
-			IsRewritten:  isSharded(e),
+			HasSelectors:            true,
+			IsRewrittenByMiddleware: isSharded(e),
 		}
 	default:
 		anyChildContainsSelectors := false
 
 		for _, c := range e.Children() {
 			res := Inspect(c)
-			if res.IsRewritten {
+			if res.IsRewrittenByMiddleware {
 				return InspectResult{
-					HasSelectors: true,
-					IsRewritten:  true,
+					HasSelectors:            true,
+					IsRewrittenByMiddleware: true,
 				}
 			}
 
@@ -49,8 +49,8 @@ func Inspect(node planning.Node) InspectResult {
 		}
 
 		return InspectResult{
-			HasSelectors: anyChildContainsSelectors,
-			IsRewritten:  false,
+			HasSelectors:            anyChildContainsSelectors,
+			IsRewrittenByMiddleware: false,
 		}
 	}
 }
