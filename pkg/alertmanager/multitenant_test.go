@@ -4371,7 +4371,7 @@ func TestMultitenantAlertmanager_ClusterValidation(t *testing.T) {
 				},
 			},
 			clientClusterValidation: clusterutil.ClusterValidationConfig{Label: "client-cluster"},
-			expectedError:           grpcutil.Status(codes.Internal, `request rejected by the server: rejected request with wrong cluster validation label "client-cluster" - it should be "server-cluster"`),
+			expectedError:           grpcutil.Status(codes.Internal, `request rejected by the server: rejected request with wrong cluster validation label "client-cluster" - it should be one of [server-cluster]`),
 			expectedMetrics: `
 				# HELP cortex_client_invalid_cluster_validation_label_requests_total Number of requests with invalid cluster validation label.
         	    # TYPE cortex_client_invalid_cluster_validation_label_requests_total counter
@@ -4398,7 +4398,7 @@ func TestMultitenantAlertmanager_ClusterValidation(t *testing.T) {
 				},
 			},
 			clientClusterValidation: clusterutil.ClusterValidationConfig{},
-			expectedError:           grpcutil.Status(codes.FailedPrecondition, `rejected request with empty cluster validation label - it should be "server-cluster"`),
+			expectedError:           grpcutil.Status(codes.FailedPrecondition, `rejected request with empty cluster validation label - it should be one of [server-cluster]`),
 		},
 	}
 	for testName, testCase := range testCases {
@@ -4408,7 +4408,7 @@ func TestMultitenantAlertmanager_ClusterValidation(t *testing.T) {
 				reg := prometheus.NewPedanticRegistry()
 				grpcOptions = []grpc.ServerOption{
 					grpc.ChainUnaryInterceptor(middleware.ClusterUnaryServerInterceptor(
-						testCase.serverClusterValidation.Label, testCase.serverClusterValidation.GRPC.SoftValidation,
+						[]string{testCase.serverClusterValidation.Label}, testCase.serverClusterValidation.GRPC.SoftValidation,
 						middleware.NewInvalidClusterRequests(reg, "cortex"), log.NewNopLogger(),
 					)),
 				}
