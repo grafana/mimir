@@ -4,8 +4,13 @@ import (
 	"context"
 	"slices"
 
+	"github.com/grafana/dskit/tracing"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/index"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
+
+	"github.com/grafana/mimir/pkg/util"
 )
 
 // MatcherReducerPlanner deduplicates matchers from the input plan,
@@ -29,37 +34,46 @@ func (p concreteLookupPlan) IndexMatchers() []*labels.Matcher {
 }
 
 func (p MatcherReducerPlanner) PlanIndexLookup(ctx context.Context, inPlan index.LookupPlan, minT, maxT int64) (index.LookupPlan, error) {
+	span, _, traceSampled := tracing.SpanFromContext(ctx)
 	if planningDisabled(ctx) {
 		return inPlan, nil
 	}
 
 	// For the purpose of deduping, we'll treat all matchers the same for now
 	matchers := slices.Concat(inPlan.IndexMatchers(), inPlan.ScanMatchers())
-
 	matchers = filterDuplicateLabelNameNonemptyMatchers(matchers)
+
 	dedupedMatchers := make(map[labels.Matcher][]bool, len(matchers))
 	for _, m := range matchers {
 		dedupedMatchers[*m] = []bool{true}
 	}
-	outIndexMatchers := make([]*labels.Matcher, 0)
-	outScanMatchers := make([]*labels.Matcher, 0)
-	for _, m := range inPlan.IndexMatchers() {
-		// We only want to add the matcher if it hasn't already been added to an output slice
-		if _, ok := dedupedMatchers[*m]; ok && len(dedupedMatchers[*m]) < 2 {
-			outIndexMatchers = append(outIndexMatchers, m)
-			dedupedMatchers[*m] = append(dedupedMatchers[*m], true)
-		}
-	}
-	for _, m := range inPlan.ScanMatchers() {
-		if _, ok := dedupedMatchers[*m]; ok && len(dedupedMatchers[*m]) < 2 {
-			outScanMatchers = append(outScanMatchers, m)
-			dedupedMatchers[*m] = append(dedupedMatchers[*m], true)
-		}
+	droppedMatchers := make([]*labels.Matcher, 0)
+	outIndexMatchers, dedupedMatchers, droppedMatchers := buildOutMatchers(inPlan.IndexMatchers(), dedupedMatchers, droppedMatchers)
+	outScanMatchers, _, droppedMatchers := buildOutMatchers(inPlan.ScanMatchers(), dedupedMatchers, droppedMatchers)
+
+	if traceSampled && len(droppedMatchers) > 0 {
+		span.AddEvent("dropped matchers", trace.WithAttributes(
+			attribute.Stringer("matchers", util.MatchersStringer(droppedMatchers)),
+		))
 	}
 	return &concreteLookupPlan{
 		indexMatchers: outIndexMatchers,
 		scanMatchers:  outScanMatchers,
 	}, nil
+}
+
+func buildOutMatchers(inMatchers []*labels.Matcher, dedupedMatchers map[labels.Matcher][]bool, droppedMatchers []*labels.Matcher) ([]*labels.Matcher, map[labels.Matcher][]bool, []*labels.Matcher) {
+	outMatchers := make([]*labels.Matcher, 0)
+	for _, m := range inMatchers {
+		// We only want to add the matcher if it hasn't already been added to an output slice
+		if _, ok := dedupedMatchers[*m]; ok && len(dedupedMatchers[*m]) < 2 {
+			outMatchers = append(outMatchers, m)
+			dedupedMatchers[*m] = append(dedupedMatchers[*m], true)
+		} else {
+			droppedMatchers = append(droppedMatchers, m)
+		}
+	}
+	return outMatchers, dedupedMatchers, droppedMatchers
 }
 
 // filterDuplicateLabelNameNonemptyMatchers returns a slice of the input matchers,
