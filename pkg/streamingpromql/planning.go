@@ -209,10 +209,14 @@ func (p *QueryPlanner) NewQueryPlan(ctx context.Context, qs string, timeRange ty
 		}
 
 		if p.enableDelayedNameRemoval {
-			if _, ok := root.(*core.DeduplicateAndMerge); ok {
-				root = &core.NameDrop{
-					Inner:           root,
-					NameDropDetails: &core.NameDropDetails{},
+			if dedupAndMerge, ok := root.(*core.DeduplicateAndMerge); ok {
+				// If root is already DeduplicateAndMerge, insert NameDrop between it and its inner node
+				root = &core.DeduplicateAndMerge{
+					Inner: &core.NameDrop{
+						Inner:           dedupAndMerge.Inner,
+						NameDropDetails: &core.NameDropDetails{},
+					},
+					DeduplicateAndMergeDetails: dedupAndMerge.DeduplicateAndMergeDetails,
 				}
 			} else {
 				// Don't run delayed name removal or deduplicate and merge where there are no
@@ -546,7 +550,8 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
 		}
 
 		// Unary negation of vectors drops the __name__ label, so wrap in DeduplicateAndMerge.
-		if expr.Op == parser.SUB && expr.Expr.Type() == parser.ValueTypeVector {
+		// However, if delayed name removal is enabled, let the delayed name removal logic handle the wrapping.
+		if expr.Op == parser.SUB && expr.Expr.Type() == parser.ValueTypeVector && !p.enableDelayedNameRemoval {
 			return &core.DeduplicateAndMerge{
 				Inner:                      unaryExpr,
 				DeduplicateAndMergeDetails: &core.DeduplicateAndMergeDetails{},
