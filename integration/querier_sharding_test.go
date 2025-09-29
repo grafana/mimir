@@ -27,26 +27,44 @@ type querierShardingTestConfig struct {
 	shuffleShardingEnabled bool
 	sendHistograms         bool
 	querierResponseFormat  string
+	enableRemoteExecution  bool
 }
 
 func TestQuerySharding(t *testing.T) {
 	for _, shuffleShardingEnabled := range []bool{false, true} {
 		for _, sendHistograms := range []bool{false, true} {
-			for _, querierResponseFormat := range []string{"json", "protobuf"} {
-				if sendHistograms && querierResponseFormat == "json" {
-					// histograms over json are not supported
-					continue
-				}
-				testName := fmt.Sprintf("shuffle shard=%v/histograms=%v/format=%v",
-					shuffleShardingEnabled, sendHistograms, querierResponseFormat,
-				)
+			testName := fmt.Sprintf("shuffle shard=%v/histograms=%v", shuffleShardingEnabled, sendHistograms)
+
+			var formats []string
+
+			if sendHistograms {
+				// Histograms over JSON are not supported.
+				formats = []string{"protobuf"}
+			} else {
+				formats = []string{"json", "protobuf"}
+			}
+
+			for _, querierResponseFormat := range formats {
+				t.Run(testName+fmt.Sprintf("/format=%v", querierResponseFormat), func(t *testing.T) {
+					cfg := querierShardingTestConfig{
+						shuffleShardingEnabled: shuffleShardingEnabled,
+						sendHistograms:         sendHistograms,
+						querierResponseFormat:  querierResponseFormat,
+					}
+
+					runQuerierShardingTest(t, cfg)
+				})
+			}
+
+			t.Run(testName+"/remote execution", func(t *testing.T) {
 				cfg := querierShardingTestConfig{
 					shuffleShardingEnabled: shuffleShardingEnabled,
 					sendHistograms:         sendHistograms,
-					querierResponseFormat:  querierResponseFormat,
+					enableRemoteExecution:  true,
 				}
-				t.Run(testName, func(t *testing.T) { runQuerierShardingTest(t, cfg) })
-			}
+
+				runQuerierShardingTest(t, cfg)
+			})
 		}
 	}
 }
@@ -69,6 +87,8 @@ func runQuerierShardingTest(t *testing.T, cfg querierShardingTestConfig) {
 		"-query-frontend.results-cache.memcached.addresses":    "dns+" + memcached.NetworkEndpoint(e2ecache.MemcachedPort),
 		"-query-frontend.results-cache.compression":            "snappy",
 		"-query-scheduler.max-outstanding-requests-per-tenant": strconv.Itoa(numQueries), // To avoid getting errors.
+		"-query-frontend.enable-remote-execution":              strconv.FormatBool(cfg.enableRemoteExecution),
+		"-query-frontend.use-mimir-query-engine-for-sharding":  strconv.FormatBool(cfg.enableRemoteExecution),
 	})
 
 	minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
