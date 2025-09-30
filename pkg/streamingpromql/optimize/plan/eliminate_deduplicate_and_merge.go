@@ -5,14 +5,15 @@ package plan
 import (
 	"context"
 
+	"github.com/prometheus/prometheus/model/labels"
+
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
-	"github.com/prometheus/prometheus/model/labels"
 )
 
 // EliminateDeduplicateAndMergeOptimizationPass removes redundant DeduplicateAndMerge nodes from the plan.
-// DeduplicateAndMerge by default are wrapped around operations which manipulate labels (name-dropping functions, some binary operations, etc).
+// DeduplicateAndMerge by default are wrapped around operations which manipulate labels (name-dropping functions, some binary operations, etc) and therefore could produce duplicate series.
 // These nodes are unnecessary if it can be proven that each input series will produce a unique output series.
 // For example, the expression `rate(foo[5m])` produces only unique series because each input series has the same metric name `foo`,
 // and each series with the name 'foo' must have a unique set of labels.
