@@ -1,4 +1,4 @@
-name: Deploy pr preview
+name: Deploy pr preview (Mimir)
 
 on:
   pull_request:
@@ -7,7 +7,7 @@ on:
       - synchronize
       - closed
     paths:
-      - "docs/sources/**"
+      - "docs/sources/mimir/**"
 
 jobs:
   deploy-pr-preview:
@@ -27,17 +27,10 @@ jobs:
         [
           {
             "index_file": null,
-            "relative_prefix": "/docs/mimir/v2.17.x/",
+            "relative_prefix": "/docs/mimir/next/",
             "repo": "mimir",
             "source_directory": "docs/sources/mimir",
-            "website_directory": "content/docs/mimir/v2.17.x"
-          },
-          {
-            "index_file": "content/docs/helm-charts/mimir-distributed/_index.md",
-            "relative_prefix": "/docs/helm-charts/mimir-distributed/latest/",
-            "repo": "mimir",
-            "source_directory": "docs/sources/helm-charts/mimir-distributed",
-            "website_directory": "content/docs/helm-charts/mimir-distributed/latest"
+            "website_directory": "content/docs/mimir/next"
           }
         ]
       title: ${{ github.event.pull_request.title }}
