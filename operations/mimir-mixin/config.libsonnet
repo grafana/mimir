@@ -25,7 +25,6 @@
     // Added default flag for GEM-specific dashboards and alerts.
     gem_enabled: false,
 
-    // The name for the rollout-operator. This is also used as the container name
     rollout_operator_dashboard_enable: true,
     rollout_operator_dashboard_title: 'rollout-operator',
     // This is the md5 of the rollout-operator dashboard name.

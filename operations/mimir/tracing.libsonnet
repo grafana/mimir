@@ -21,7 +21,7 @@
   otel_tracing_mixin:: {
     local constructOtelResourceAttributes(fields) =
       local values = std.map(
-        function(k) if std.get(k, 'key') == null then null else k.key + '=' + k.value,
+        function(k) k.key + '=' + k.value,
         fields
       );
       std.join(',', values),
