@@ -70,7 +70,13 @@ func TestParquetConverter(t *testing.T) {
 		require.NoError(t, err)
 		return parquetFiles == 2 && mark.Version == CurrentVersion
 	})
+}
 
+// mockBlockDownloader implements the downloader interface by calling block.Download over the test bucket.
+type mockBlockDownloader struct{}
+
+func (d *mockBlockDownloader) download(ctx context.Context, logger log.Logger, bucket objstore.Bucket, id ulid.ULID, dst string, options ...downloadOption) error {
+	return block.Download(ctx, logger, bucket, id, dst)
 }
 
 func prepare(t *testing.T, cfg Config, bucketClient objstore.Bucket) (*ParquetConverter, *prometheus.Registry) {
@@ -86,7 +92,10 @@ func prepare(t *testing.T, cfg Config, bucketClient objstore.Bucket) (*ParquetCo
 	bucketClientFactory := func(ctx context.Context) (objstore.Bucket, error) {
 		return bucketClient, nil
 	}
-	c, err := newParquetConverter(cfg, log.NewLogfmtLogger(logs), registry, bucketClientFactory, nil, overrides, defaultBlockConverter{})
+	downloaderFactory := func(ctx context.Context) (downloader, error) {
+		return &mockBlockDownloader{}, nil
+	}
+	c, err := newParquetConverter(cfg, log.NewLogfmtLogger(logs), registry, bucketClientFactory, downloaderFactory, overrides, defaultBlockConverter{})
 	require.NoError(t, err)
 
 	return c, registry

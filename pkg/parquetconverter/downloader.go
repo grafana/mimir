@@ -25,7 +25,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 )
 
-func downloaderFromConfig(ctx context.Context, cfg s3.Config) (*fastDownloader, error) {
+func downloaderFromConfig(ctx context.Context, cfg s3.Config) (downloader, error) {
 	awsConfig, err := config.LoadDefaultConfig(ctx, config.WithRegion(cfg.Region))
 	if err != nil {
 		return nil, err
@@ -62,6 +62,12 @@ type fastDownloader struct {
 	downloader *s3mgr.Downloader
 	bucketName string
 }
+
+type downloader interface {
+	download(context.Context, log.Logger, objstore.Bucket, ulid.ULID, string, ...downloadOption) error
+}
+
+var _ downloader = &fastDownloader{}
 
 // Download downloads a directory meant to be a block directory. If any one of the files
 // has a hash calculated in the meta file and it matches with what is in the destination path then

@@ -132,10 +132,10 @@ type ParquetConverter struct {
 	logger              log.Logger
 	limits              *validation.Overrides
 	bucketClientFactory func(ctx context.Context) (objstore.Bucket, error)
-	downloaderFactory   func(ctx context.Context) (*fastDownloader, error)
+	downloaderFactory   func(ctx context.Context) (downloader, error)
 
 	bucketClient objstore.Bucket
-	s3dl         *fastDownloader
+	s3dl         downloader
 
 	ringLifecycler         *ring.BasicLifecycler
 	ring                   *ring.Ring
@@ -177,7 +177,7 @@ func NewParquetConverter(cfg Config, storageCfg mimir_tsdb.BlocksStorageConfig, 
 	bucketClientFactory := func(ctx context.Context) (objstore.Bucket, error) {
 		return bucket.NewClient(ctx, storageCfg.Bucket, "parquet-converter", logger, registerer)
 	}
-	downloaderFactory := func(ctx context.Context) (*fastDownloader, error) {
+	downloaderFactory := func(ctx context.Context) (downloader, error) {
 		return downloaderFromConfig(ctx, storageCfg.Bucket.S3)
 	}
 	return newParquetConverter(cfg, logger, registerer, bucketClientFactory, downloaderFactory, limits, defaultBlockConverter{})
@@ -188,7 +188,7 @@ func newParquetConverter(
 	logger log.Logger,
 	registerer prometheus.Registerer,
 	bucketClientFactory func(ctx context.Context) (objstore.Bucket, error),
-	downloaderFactory func(ctx context.Context) (*fastDownloader, error),
+	downloaderFactory func(ctx context.Context) (downloader, error),
 	limits *validation.Overrides,
 	blockConverter blockConverter,
 ) (*ParquetConverter, error) {
@@ -218,11 +218,9 @@ func (c *ParquetConverter) starting(ctx context.Context) error {
 		return errors.Wrap(err, "failed to create bucket client")
 	}
 
-	if c.downloaderFactory != nil {
-		c.s3dl, err = c.downloaderFactory(ctx)
-		if err != nil {
-			return errors.Wrap(err, "failed to create s3 downloader")
-		}
+	c.s3dl, err = c.downloaderFactory(ctx)
+	if err != nil {
+		return errors.Wrap(err, "failed to create s3 downloader")
 	}
 
 	// Initialize the parquet-converters ring if sharding is enabled.

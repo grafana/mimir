@@ -57,7 +57,10 @@ func prepareWithMockConverter(t *testing.T, cfg Config, bucketClient objstore.Bu
 	bucketClientFactory := func(ctx context.Context) (objstore.Bucket, error) {
 		return bucketClient, nil
 	}
-	c, err := newParquetConverter(cfg, log.NewLogfmtLogger(logs), registry, bucketClientFactory, nil, overrides, mockBlockConverter{})
+	downloaderFactory := func(ctx context.Context) (downloader, error) {
+		return &mockBlockDownloader{}, nil
+	}
+	c, err := newParquetConverter(cfg, log.NewLogfmtLogger(logs), registry, bucketClientFactory, downloaderFactory, overrides, mockBlockConverter{})
 	require.NoError(t, err)
 
 	return c, registry
