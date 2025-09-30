@@ -132,7 +132,6 @@ type ParquetConverter struct {
 	bucketClientFactory func(ctx context.Context) (objstore.Bucket, error)
 
 	bucketClient objstore.Bucket
-	s3dl         s3.Downloader
 
 	ringLifecycler         *ring.BasicLifecycler
 	ring                   *ring.Ring
@@ -207,11 +206,6 @@ func (c *ParquetConverter) starting(ctx context.Context) error {
 	c.bucketClient, err = c.bucketClientFactory(ctx)
 	if err != nil {
 		return errors.Wrap(err, "failed to create bucket client")
-	}
-
-	c.s3dl, err = manager.NewDownloader(c.bucketClient, manager.WithBaseDownloader(c.bucketClient))
-	if err != nil {
-		return errors.Wrap(err, "failed to create s3 downloader")
 	}
 
 	// Initialize the parquet-converters ring if sharding is enabled.
