@@ -227,34 +227,47 @@ func TestFrontend_Protobuf_HappyPath(t *testing.T) {
 }
 
 func TestFrontend_Protobuf_ShouldNotCancelRequestAfterSuccess(t *testing.T) {
-	const userID = "test"
-	cancellations := atomic.NewInt64(0)
+	for _, exhaustStream := range []bool{true, false} {
+		t.Run(fmt.Sprintf("exhaust stream=%v", exhaustStream), func(t *testing.T) {
+			const userID = "test"
+			cancellations := atomic.NewInt64(0)
 
-	f, _ := setupFrontend(t, nil, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
-		switch msg.Type {
-		case schedulerpb.ENQUEUE:
-			go sendStreamingResponse(t, f, userID, msg.QueryID, newStringMessage("first message"))
-		case schedulerpb.CANCEL:
-			cancellations.Inc()
-		default:
-			return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.ERROR, Error: fmt.Sprintf("unexpected message type %v sent to scheduler", msg.Type)}
-		}
+			f, _ := setupFrontend(t, nil, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
+				switch msg.Type {
+				case schedulerpb.ENQUEUE:
+					go sendStreamingResponse(t, f, userID, msg.QueryID, newStringMessage("first message"))
+				case schedulerpb.CANCEL:
+					cancellations.Inc()
+				default:
+					return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.ERROR, Error: fmt.Sprintf("unexpected message type %v sent to scheduler", msg.Type)}
+				}
 
-		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
-	})
+				return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
+			})
 
-	for range 1000 { // Send many requests to try to trigger the race condition that previously caused this test to fail.
-		ctx := user.InjectOrgID(context.Background(), userID)
-		req := &querierpb.EvaluateQueryRequest{}
-		resp, err := f.DoProtobufRequest(ctx, req, time.Now().Add(-5*time.Hour), time.Now())
-		require.NoError(t, err)
+			for range 10000 { // Send many requests to try to trigger the race condition that previously caused this test to fail.
+				ctx := user.InjectOrgID(context.Background(), userID)
+				req := &querierpb.EvaluateQueryRequest{}
+				resp, err := f.DoProtobufRequest(ctx, req, time.Now().Add(-5*time.Hour), time.Now())
+				require.NoError(t, err)
 
-		msg, err := resp.Next(ctx)
-		require.NoError(t, err)
-		require.Equal(t, "first message", msg.GetEvaluateQueryResponse().GetStringValue().Value)
+				msg, err := resp.Next(ctx)
+				require.NoError(t, err)
+				require.Equal(t, "first message", msg.GetEvaluateQueryResponse().GetStringValue().Value)
+
+				if exhaustStream {
+					// Response stream exhausted.
+					msg, err = resp.Next(ctx)
+					require.NoError(t, err)
+					require.Nil(t, msg)
+				}
+
+				resp.Close()
+			}
+
+			require.Zero(t, cancellations.Load(), "expected no cancellations to be sent to the scheduler, but at least one was")
+		})
 	}
-
-	require.Zero(t, cancellations.Load(), "expected no cancellations to be sent to the scheduler, but at least one was")
 }
 
 func TestFrontend_Protobuf_QuerierResponseReceivedBeforeSchedulerResponse(t *testing.T) {
