@@ -319,7 +319,7 @@ func (f *Frontend) RoundTripGRPC(ctx context.Context, httpRequest *httpgrpc.HTTP
 
 	select {
 	case <-ctx.Done():
-		freq.spanLogger.DebugLog("msg", "request context cancelled after enqueuing request, aborting", "err", context.Cause(ctx))
+		freq.spanLogger.DebugLog("msg", "request context cancelled after enqueuing request, aborting", "cause", context.Cause(ctx))
 
 		select {
 		case cancelCh <- freq.queryID:
@@ -407,7 +407,7 @@ func (f *Frontend) DoProtobufRequest(ctx context.Context, req proto.Message, min
 			return
 		}
 
-		freq.spanLogger.DebugLog("msg", "request context cancelled after enqueuing request, aborting", "err", context.Cause(ctx))
+		freq.spanLogger.DebugLog("msg", "request context cancelled or response stream closed by caller after enqueuing request, aborting", "cause", context.Cause(ctx))
 
 		select {
 		case cancelCh <- freq.queryID:
@@ -528,7 +528,7 @@ func (f *Frontend) enqueueRequestWithRetries(ctx context.Context, freq *frontend
 
 		select {
 		case <-ctx.Done():
-			freq.spanLogger.DebugLog("msg", "request context cancelled while enqueuing request, aborting", "err", context.Cause(ctx))
+			freq.spanLogger.DebugLog("msg", "request context cancelled while enqueuing request, aborting", "cause", context.Cause(ctx))
 			return nil, context.Cause(ctx)
 
 		case f.requestsCh <- freq:
