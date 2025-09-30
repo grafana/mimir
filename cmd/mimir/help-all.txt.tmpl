@@ -2071,6 +2071,8 @@ Usage of ./cmd/mimir/mimir:
     	Minimum block timestamp (based on ULID) to convert. Set to 0 to disable timestamp filtering.
   -parquet-converter.min-compaction-level int
     	Minimum compaction level required for blocks to be converted to Parquet. Blocks equal or greater than this level will be converted. (default 2)
+  -parquet-converter.min-data-age duration
+    	Minimum age of data in blocks to convert. Only convert blocks containing data older than this duration from now, based on their MinTime. Set to 0 to disable age filtering.
   -parquet-converter.ring.consul.acl-token string
     	ACL Token used to interact with Consul.
   -parquet-converter.ring.consul.cas-retry-delay duration
