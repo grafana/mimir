@@ -39,6 +39,7 @@ func TestBuildReport(t *testing.T) {
 	assert.Equal(t, runtime.GOOS, report.Os)
 	assert.Equal(t, runtime.GOARCH, report.Arch)
 	assert.Equal(t, "oss", report.Edition)
+	assert.Equal(t, "classic", report.Mode)
 	assert.NotNil(t, report.Metrics["memstats"])
 	assert.Equal(t, "dev-version", report.Version.Version)
 	assert.Equal(t, "dev-branch", report.Version.Branch)

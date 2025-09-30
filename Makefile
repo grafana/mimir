@@ -677,6 +677,7 @@ reference-help: cmd/mimir/mimir tools/config-inspector/config-inspector
 	@(./cmd/mimir/mimir -h || true) > cmd/mimir/help.txt.tmpl
 	@(./cmd/mimir/mimir -help-all || true) > cmd/mimir/help-all.txt.tmpl
 	@(./tools/config-inspector/config-inspector || true) > cmd/mimir/config-descriptor.json
+	@jq -f ./tools/config-descriptor-extract-flag-defaults.jq cmd/mimir/config-descriptor.json > operations/mimir/mimir-flags-defaults.json
 
 clean-white-noise: ## Clean the white noise in the markdown files.
 	@find . -path ./.pkg -prune -o -path ./.cache -prune -o -path "*/vendor/*" -prune -or -type f -name "*.md" -print | \

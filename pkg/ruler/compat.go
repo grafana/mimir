@@ -207,7 +207,8 @@ func (t *NoopAppendable) Appender(_ context.Context) storage.Appender {
 
 // RulesLimits defines limits used by Ruler.
 type RulesLimits interface {
-	EvaluationDelay(userID string) time.Duration
+	RulerEvaluationDelay(userID string) time.Duration
+	RulerEvaluationConsistencyMaxDelay(userID string) time.Duration
 	RulerTenantShardSize(userID string) int
 	RulerMaxRuleGroupsPerTenant(userID, namespace string) int
 	RulerMaxRulesPerRuleGroup(userID, namespace string) int
@@ -392,7 +393,7 @@ func DefaultTenantManagerFactory(
 		}
 
 		// Wrap the query function with our custom logic.
-		wrappedQueryFunc := WrapQueryFuncWithReadConsistency(queryFunc, logger)
+		wrappedQueryFunc := WrapQueryFuncWithReadConsistency(queryFunc, overrides, userID, logger)
 		remoteQuerier := cfg.QueryFrontend.Address != ""
 		wrappedQueryFunc = MetricsQueryFunc(wrappedQueryFunc, userID, totalQueries, failedQueries, remoteQuerier)
 		wrappedQueryFunc = RecordAndReportRuleQueryMetrics(wrappedQueryFunc, queryTime, zeroFetchedSeriesCount, remoteQuerier, logger)
@@ -425,7 +426,7 @@ func DefaultTenantManagerFactory(
 			DefaultRuleQueryOffset: func() time.Duration {
 				// Delay the evaluation of all rules by a set interval to give a buffer
 				// to metric that haven't been forwarded to Mimir yet.
-				return overrides.EvaluationDelay(userID)
+				return overrides.RulerEvaluationDelay(userID)
 			},
 			RuleConcurrencyController: concurrencyController.NewTenantConcurrencyControllerFor(userID),
 		})

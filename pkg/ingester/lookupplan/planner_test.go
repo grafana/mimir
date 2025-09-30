@@ -49,7 +49,7 @@ func TestCostBasedPlannerPlanIndexLookup(t *testing.T) {
 	testCases := data.ParseTestCases(t)
 
 	stats := newHighCardinalityMockStatistics()
-	metrics := NewMetrics(nil)
+	metrics := NewMetrics(nil).ForUser("test-user")
 	planner := NewCostBasedPlanner(metrics, stats)
 
 	const writeOutNewResults = false
@@ -110,7 +110,7 @@ func BenchmarkCostBasedPlannerPlanIndexLookup(b *testing.B) {
 	testCases := data.ParseTestCases(b)
 
 	stats := newHighCardinalityMockStatistics()
-	metrics := NewMetrics(nil)
+	metrics := NewMetrics(nil).ForUser("test-user")
 	planner := NewCostBasedPlanner(metrics, stats)
 
 	for _, tc := range testCases {
@@ -143,7 +143,7 @@ func matchersStrings(ms []*labels.Matcher) []string {
 func TestCostBasedPlannerTooManyMatchers(t *testing.T) {
 	ctx := context.Background()
 	stats := newMockStatistics()
-	metrics := NewMetrics(nil)
+	metrics := NewMetrics(nil).ForUser("test-user")
 	planner := NewCostBasedPlanner(metrics, stats)
 
 	// Create more than 10 matchers to trigger the limit
@@ -183,7 +183,7 @@ func (p *basicLookupPlan) ScanMatchers() []*labels.Matcher {
 func TestCostBasedPlannerPreservesAllMatchers(t *testing.T) {
 	ctx := context.Background()
 	stats := newHighCardinalityMockStatistics()
-	metrics := NewMetrics(nil)
+	metrics := NewMetrics(nil).ForUser("test-user")
 	planner := NewCostBasedPlanner(metrics, stats)
 
 	t.Run("mixed_index_and_scan_matchers", func(t *testing.T) {
@@ -252,7 +252,7 @@ func TestCostBasedPlannerPreservesAllMatchers(t *testing.T) {
 func TestCostBasedPlannerPrefersIndexMatchersOverCheapestPlan(t *testing.T) {
 	ctx := context.Background()
 	stats := newSingleValueStatistics()
-	metrics := NewMetrics(nil)
+	metrics := NewMetrics(nil).ForUser("test-user")
 	planner := NewCostBasedPlanner(metrics, stats)
 
 	matchers := []*labels.Matcher{
@@ -272,7 +272,7 @@ func TestCostBasedPlannerPrefersIndexMatchersOverCheapestPlan(t *testing.T) {
 func TestCostBasedPlannerDoesntAllowNoMatcherLookups(t *testing.T) {
 	ctx := context.Background()
 	stats := newMockStatistics()
-	metrics := NewMetrics(nil)
+	metrics := NewMetrics(nil).ForUser("test-user")
 	planner := NewCostBasedPlanner(metrics, stats)
 
 	result, err := planner.PlanIndexLookup(ctx, &basicLookupPlan{}, 0, 0)
@@ -282,7 +282,7 @@ func TestCostBasedPlannerDoesntAllowNoMatcherLookups(t *testing.T) {
 
 func TestCostBasedPlannerWithDisabledPlanning(t *testing.T) {
 	stats := newHighCardinalityMockStatistics()
-	metrics := NewMetrics(nil)
+	metrics := NewMetrics(nil).ForUser("test-user")
 	planner := NewCostBasedPlanner(metrics, stats)
 
 	inputPlan := &basicLookupPlan{

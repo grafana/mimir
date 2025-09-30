@@ -90,18 +90,35 @@ func (f *nonSharedPostingsForMatchersCacheFactory) NewPostingsForMatchersCache(t
 }
 
 var DefaultPostingsForMatchersCacheConfig = PostingsForMatchersCacheConfig{
-	Shared:        DefaultPostingsForMatchersCacheShared,
-	KeyFunc:       DefaultPostingsForMatchersCacheKeyFunc,
-	Invalidation:  DefaultPostingsForMatchersCacheInvalidation,
-	CacheVersions: DefaultPostingsForMatchersCacheVersions,
-	TTL:           DefaultPostingsForMatchersCacheTTL,
-	MaxItems:      DefaultPostingsForMatchersCacheMaxItems,
-	MaxBytes:      DefaultPostingsForMatchersCacheMaxBytes,
-	Force:         DefaultPostingsForMatchersCacheForce,
-	Metrics:       NewPostingsForMatchersCacheMetrics(nil),
+	Shared:                DefaultPostingsForMatchersCacheShared,
+	KeyFunc:               DefaultPostingsForMatchersCacheKeyFunc,
+	Invalidation:          DefaultPostingsForMatchersCacheInvalidation,
+	CacheVersions:         DefaultPostingsForMatchersCacheVersions,
+	TTL:                   DefaultPostingsForMatchersCacheTTL,
+	MaxItems:              DefaultPostingsForMatchersCacheMaxItems,
+	MaxBytes:              DefaultPostingsForMatchersCacheMaxBytes,
+	Force:                 DefaultPostingsForMatchersCacheForce,
+	Metrics:               NewPostingsForMatchersCacheMetrics(nil),
+	PostingsClonerFactory: DefaultPostingsClonerFactory{},
 }
 
 var DefaultPostingsForMatchersCacheFactory = NewPostingsForMatchersCacheFactory(DefaultPostingsForMatchersCacheConfig)
+
+type PostingsClonerFactory interface {
+	PostingsCloner(id ulid.ULID, postings index.Postings) PostingsCloner
+}
+
+type PostingsCloner interface {
+	Clone(context.Context) index.Postings
+	NumPostings() int
+}
+
+// DefaultPostingsClonerFactory is the default implementation of PostingsClonerFactory.
+type DefaultPostingsClonerFactory struct{}
+
+func (DefaultPostingsClonerFactory) PostingsCloner(_ ulid.ULID, postings index.Postings) PostingsCloner {
+	return index.NewPostingsCloner(postings)
+}
 
 type PostingsForMatchersCacheConfig struct {
 	// Shared indicates whether the factory will return a cache that is shared across all invocations.
@@ -120,6 +137,8 @@ type PostingsForMatchersCacheConfig struct {
 	Force bool
 	// Metrics the metrics that should be used by the produced caches.
 	Metrics *PostingsForMatchersCacheMetrics
+	// PostingsClonerFactory is used to create PostingsCloner instances for cloning postings when returning cached results.
+	PostingsClonerFactory PostingsClonerFactory
 }
 
 // NewPostingsForMatchersCacheFactory creates a factory for building PostingsForMatchersCache instances. A few
@@ -140,14 +159,15 @@ func NewPostingsForMatchersCacheFactory(config PostingsForMatchersCacheConfig) P
 			cached:           list.New(),
 			expireInProgress: atomic.NewBool(false),
 
-			shared:         config.Shared,
-			keyFunc:        config.KeyFunc,
-			ttl:            config.TTL,
-			maxItems:       config.MaxItems,
-			maxBytes:       config.MaxBytes,
-			force:          config.Force,
-			metricVersions: mv,
-			metrics:        config.Metrics,
+			shared:                config.Shared,
+			keyFunc:               config.KeyFunc,
+			ttl:                   config.TTL,
+			maxItems:              config.MaxItems,
+			maxBytes:              config.MaxBytes,
+			force:                 config.Force,
+			postingsClonerFactory: config.PostingsClonerFactory,
+			metricVersions:        mv,
+			metrics:               config.Metrics,
 
 			timeNow: func() time.Time {
 				// Ensure it is UTC, so that it's faster to compute the cache entry size.
@@ -191,12 +211,13 @@ type IndexPostingsReader interface {
 // name. Invalidation is lazy, where expired series become orphaned until they're later evicted.
 type PostingsForMatchersCache struct {
 	// Config
-	shared   bool
-	keyFunc  CacheKeyFunc
-	ttl      time.Duration
-	maxItems int
-	maxBytes int64
-	force    bool
+	shared                bool
+	keyFunc               CacheKeyFunc
+	ttl                   time.Duration
+	maxItems              int
+	maxBytes              int64
+	force                 bool
+	postingsClonerFactory PostingsClonerFactory
 
 	// Mutable state
 	calls                *sync.Map // Tracks calls that are in progress so they can be coalesced
@@ -335,7 +356,7 @@ type postingsForMatcherPromise struct {
 	// The result of the promise is stored either in cloner or err (only of the two is valued).
 	// Do not access these fields until the done channel is closed.
 	done   chan struct{}
-	cloner *index.PostingsCloner
+	cloner PostingsCloner
 	err    error
 
 	// Keep track of the time this promise completed evaluation.
@@ -365,7 +386,7 @@ func (p *postingsForMatcherPromise) result(ctx context.Context) (index.Postings,
 			attribute.String("block", "unknown"),
 		))
 
-		return p.cloner.Clone(), nil
+		return p.cloner.Clone(ctx), nil
 	}
 }
 
@@ -475,7 +496,7 @@ func (c *PostingsForMatchersCache) postingsForMatchersPromise(ctx context.Contex
 	if postings, err := c.postingsForMatchers(promiseExecCtx, ix, ms...); err != nil {
 		promise.err = err
 	} else {
-		promise.cloner = index.NewPostingsCloner(postings)
+		promise.cloner = c.postingsClonerFactory.PostingsCloner(blockID, postings)
 	}
 
 	// Keep track of when the evaluation completed.

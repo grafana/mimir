@@ -688,7 +688,7 @@ github.com/gosimple/slug
 # github.com/grafana-tools/sdk v0.0.0-20220919052116-6562121319fc
 ## explicit; go 1.13
 github.com/grafana-tools/sdk
-# github.com/grafana/alerting v0.0.0-20250915130141-a8ee25091876
+# github.com/grafana/alerting v0.0.0-20250929135149-815060950eaa
 ## explicit; go 1.23.0
 github.com/grafana/alerting/cluster
 github.com/grafana/alerting/definition
@@ -700,29 +700,69 @@ github.com/grafana/alerting/notify/nfstatus
 github.com/grafana/alerting/notify/stages
 github.com/grafana/alerting/receivers
 github.com/grafana/alerting/receivers/alertmanager
-github.com/grafana/alerting/receivers/dinding
+github.com/grafana/alerting/receivers/alertmanager/v1
+github.com/grafana/alerting/receivers/dingding
+github.com/grafana/alerting/receivers/dingding/v1
 github.com/grafana/alerting/receivers/discord
+github.com/grafana/alerting/receivers/discord/v0mimir1
+github.com/grafana/alerting/receivers/discord/v1
 github.com/grafana/alerting/receivers/email
+github.com/grafana/alerting/receivers/email/v0mimir1
+github.com/grafana/alerting/receivers/email/v1
 github.com/grafana/alerting/receivers/googlechat
+github.com/grafana/alerting/receivers/googlechat/v1
 github.com/grafana/alerting/receivers/jira
+github.com/grafana/alerting/receivers/jira/v0mimir1
+github.com/grafana/alerting/receivers/jira/v1
 github.com/grafana/alerting/receivers/kafka
+github.com/grafana/alerting/receivers/kafka/v1
 github.com/grafana/alerting/receivers/line
+github.com/grafana/alerting/receivers/line/v1
 github.com/grafana/alerting/receivers/mqtt
+github.com/grafana/alerting/receivers/mqtt/v1
 github.com/grafana/alerting/receivers/oncall
+github.com/grafana/alerting/receivers/oncall/v1
 github.com/grafana/alerting/receivers/opsgenie
+github.com/grafana/alerting/receivers/opsgenie/v0mimir1
+github.com/grafana/alerting/receivers/opsgenie/v1
 github.com/grafana/alerting/receivers/pagerduty
+github.com/grafana/alerting/receivers/pagerduty/v0mimir1
+github.com/grafana/alerting/receivers/pagerduty/v1
 github.com/grafana/alerting/receivers/pushover
+github.com/grafana/alerting/receivers/pushover/v0mimir1
+github.com/grafana/alerting/receivers/pushover/v1
+github.com/grafana/alerting/receivers/schema
 github.com/grafana/alerting/receivers/sensugo
+github.com/grafana/alerting/receivers/sensugo/v1
 github.com/grafana/alerting/receivers/slack
+github.com/grafana/alerting/receivers/slack/v0mimir1
+github.com/grafana/alerting/receivers/slack/v1
 github.com/grafana/alerting/receivers/sns
+github.com/grafana/alerting/receivers/sns/v0mimir1
+github.com/grafana/alerting/receivers/sns/v1
 github.com/grafana/alerting/receivers/teams
+github.com/grafana/alerting/receivers/teams/v0mimir1
+github.com/grafana/alerting/receivers/teams/v0mimir2
+github.com/grafana/alerting/receivers/teams/v1
 github.com/grafana/alerting/receivers/telegram
+github.com/grafana/alerting/receivers/telegram/v0mimir1
+github.com/grafana/alerting/receivers/telegram/v1
 github.com/grafana/alerting/receivers/testing
 github.com/grafana/alerting/receivers/threema
+github.com/grafana/alerting/receivers/threema/v1
 github.com/grafana/alerting/receivers/victorops
+github.com/grafana/alerting/receivers/victorops/v0mimir1
+github.com/grafana/alerting/receivers/victorops/v1
 github.com/grafana/alerting/receivers/webex
+github.com/grafana/alerting/receivers/webex/v0mimir1
+github.com/grafana/alerting/receivers/webex/v1
 github.com/grafana/alerting/receivers/webhook
+github.com/grafana/alerting/receivers/webhook/v0mimir1
+github.com/grafana/alerting/receivers/webhook/v1
+github.com/grafana/alerting/receivers/wechat
+github.com/grafana/alerting/receivers/wechat/v0mimir1
 github.com/grafana/alerting/receivers/wecom
+github.com/grafana/alerting/receivers/wecom/v1
 github.com/grafana/alerting/templates
 github.com/grafana/alerting/templates/gomplate
 github.com/grafana/alerting/templates/mimir
@@ -1205,7 +1245,7 @@ github.com/prometheus/otlptranslator
 github.com/prometheus/procfs
 github.com/prometheus/procfs/internal/fs
 github.com/prometheus/procfs/internal/util
-# github.com/prometheus/prometheus v1.99.0 => github.com/grafana/mimir-prometheus v1.8.2-0.20250923234436-1f07ee975ce7
+# github.com/prometheus/prometheus v1.99.0 => github.com/grafana/mimir-prometheus v1.8.2-0.20250924201526-db04b234e447
 ## explicit; go 1.24.0
 github.com/prometheus/prometheus/config
 github.com/prometheus/prometheus/discovery
@@ -1386,7 +1426,7 @@ github.com/twmb/franz-go/pkg/sasl/plain
 # github.com/twmb/franz-go/pkg/kadm v1.15.0
 ## explicit; go 1.21
 github.com/twmb/franz-go/pkg/kadm
-# github.com/twmb/franz-go/pkg/kfake v0.0.0-20250912190729-636f37bf0943
+# github.com/twmb/franz-go/pkg/kfake v0.0.0-20250926035925-db9ee7648fab
 ## explicit; go 1.24.0
 github.com/twmb/franz-go/pkg/kfake
 # github.com/twmb/franz-go/pkg/kmsg v1.11.2
@@ -1859,12 +1899,12 @@ google.golang.org/genproto/googleapis/api/httpbody
 google.golang.org/genproto/googleapis/api/label
 google.golang.org/genproto/googleapis/api/metric
 google.golang.org/genproto/googleapis/api/monitoredres
-# google.golang.org/genproto/googleapis/rpc v0.0.0-20250908214217-97024824d090
+# google.golang.org/genproto/googleapis/rpc v0.0.0-20250922171735-9219d122eba9
 ## explicit; go 1.24.0
 google.golang.org/genproto/googleapis/rpc/code
 google.golang.org/genproto/googleapis/rpc/errdetails
 google.golang.org/genproto/googleapis/rpc/status
-# google.golang.org/grpc v1.75.0
+# google.golang.org/grpc v1.75.1
 ## explicit; go 1.23.0
 google.golang.org/grpc
 google.golang.org/grpc/attributes
@@ -2147,7 +2187,7 @@ sigs.k8s.io/kustomize/kyaml/yaml/walk
 sigs.k8s.io/yaml
 sigs.k8s.io/yaml/goyaml.v2
 sigs.k8s.io/yaml/goyaml.v3
-# github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v1.8.2-0.20250923234436-1f07ee975ce7
+# github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v1.8.2-0.20250924201526-db04b234e447
 # github.com/hashicorp/memberlist => github.com/grafana/memberlist v0.3.1-0.20250428154222-f7d51a6f6700
 # gopkg.in/yaml.v3 => github.com/colega/go-yaml-yaml v0.0.0-20220720105220-255a8d16d094
 # github.com/grafana/regexp => github.com/grafana/regexp v0.0.0-20240531075221-3685f1377d7b

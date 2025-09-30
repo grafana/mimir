@@ -5742,6 +5742,17 @@
         },
         {
           "kind": "field",
+          "name": "ruler_evaluation_consistency_max_delay",
+          "required": false,
+          "desc": "The maximum tolerated ingestion delay for eventually consistent rule evaluations. Set to 0 to disable the enforcement.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "ruler.evaluation-consistency-max-delay",
+          "fieldType": "duration",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "ruler_tenant_shard_size",
           "required": false,
           "desc": "The tenant's shard size when sharding is used by ruler. Value of 0 disables shuffle sharding for the tenant, and tenant rules will be sharded across all ruler replicas.",

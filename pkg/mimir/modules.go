@@ -396,6 +396,9 @@ func (t *Mimir) initIngesterPartitionRing() (services.Service, error) {
 	// Expose a web page to view the partitions ring state.
 	t.API.RegisterIngesterPartitionRing(ring.NewPartitionRingPageHandler(t.IngesterPartitionRingWatcher, ring.NewPartitionRingEditor(ingester.PartitionRingKey, kvClient)))
 
+	// Track anonymous usage statistics.
+	usagestats.SetMode(usagestats.ModeIngestStorage)
+
 	return t.IngesterPartitionRingWatcher, nil
 }
 
@@ -787,7 +790,7 @@ func (t *Mimir) initFlusher() (serv services.Service, err error) {
 // NOTE: Grafana Enterprise Metrics depends on this.
 func (t *Mimir) initQueryFrontendCodec() (services.Service, error) {
 	// Add our default injectors.
-	t.Injectors = append(t.Injectors, &querierapi.ConsistencyLevelInjector{})
+	t.Injectors = append(t.Injectors, &querierapi.ConsistencyInjector{})
 
 	t.QueryFrontendCodec = querymiddleware.NewCodec(
 		t.Registerer,
