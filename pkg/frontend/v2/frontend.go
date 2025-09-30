@@ -756,11 +756,12 @@ func (f *Frontend) receiveResultForHTTPRequest(req *frontendRequest, firstMessag
 
 func (f *Frontend) receiveResultForProtobufRequest(req *frontendRequest, firstMessage *frontendv2pb.QueryResultStreamRequest, stream frontendv2pb.FrontendForQuerier_QueryResultStreamServer) error {
 	defer func() {
-		close(req.protobufResponseStream.messages)
-
 		// Signal that DoProtobufRequest can stop monitoring the request context for cancellation.
 		req.protobufResponseDone.Store(true)
 		req.protobufResponseStream.cancel(errFinishedReceivingResponse)
+
+		// Signal that there are no more messages coming.
+		close(req.protobufResponseStream.messages)
 	}()
 
 	req.spanLogger.DebugLog("msg", "got first response message")
