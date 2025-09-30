@@ -83,6 +83,11 @@ func NewQueryPlanner(opts EngineOpts) (*QueryPlanner, error) {
 		planner.RegisterQueryPlanOptimizationPass(plan.NewNarrowSelectorsOptimizationPass(opts.Logger))
 	}
 
+	// EliminateDeduplicateAndMerge doesn't support delayed name removal yet.
+	if !opts.CommonOpts.EnableDelayedNameRemoval {
+		planner.RegisterQueryPlanOptimizationPass(plan.NewEliminateDeduplicateAndMergeOptimizationPass())
+	}
+
 	return planner, nil
 }
 
