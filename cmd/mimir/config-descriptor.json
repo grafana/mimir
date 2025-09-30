@@ -2118,17 +2118,6 @@
                       "fieldFlag": "distributor.usage-tracker-client.grpc-client-config.cluster-validation.label",
                       "fieldType": "string",
                       "fieldCategory": "experimental"
-                    },
-                    {
-                      "kind": "field",
-                      "name": "additional_labels",
-                      "required": false,
-                      "desc": "Comma-separated list of additional cluster validation labels that the server will accept from incoming requests.",
-                      "fieldValue": null,
-                      "fieldDefaultValue": "",
-                      "fieldFlag": "distributor.usage-tracker-client.grpc-client-config.cluster-validation.additional-labels",
-                      "fieldType": "string",
-                      "fieldCategory": "experimental"
                     }
                   ],
                   "fieldValue": null,
@@ -2547,17 +2536,6 @@
                   "fieldValue": null,
                   "fieldDefaultValue": "",
                   "fieldFlag": "querier.store-gateway-client.cluster-validation.label",
-                  "fieldType": "string",
-                  "fieldCategory": "experimental"
-                },
-                {
-                  "kind": "field",
-                  "name": "additional_labels",
-                  "required": false,
-                  "desc": "Comma-separated list of additional cluster validation labels that the server will accept from incoming requests.",
-                  "fieldValue": null,
-                  "fieldDefaultValue": "",
-                  "fieldFlag": "querier.store-gateway-client.cluster-validation.additional-labels",
                   "fieldType": "string",
                   "fieldCategory": "experimental"
                 }
@@ -3078,17 +3056,6 @@
                   "fieldValue": null,
                   "fieldDefaultValue": "",
                   "fieldFlag": "ingester.client.cluster-validation.label",
-                  "fieldType": "string",
-                  "fieldCategory": "experimental"
-                },
-                {
-                  "kind": "field",
-                  "name": "additional_labels",
-                  "required": false,
-                  "desc": "Comma-separated list of additional cluster validation labels that the server will accept from incoming requests.",
-                  "fieldValue": null,
-                  "fieldDefaultValue": "",
-                  "fieldFlag": "ingester.client.cluster-validation.additional-labels",
                   "fieldType": "string",
                   "fieldCategory": "experimental"
                 }
@@ -6868,17 +6835,6 @@
                   "fieldFlag": "querier.frontend-client.cluster-validation.label",
                   "fieldType": "string",
                   "fieldCategory": "experimental"
-                },
-                {
-                  "kind": "field",
-                  "name": "additional_labels",
-                  "required": false,
-                  "desc": "Comma-separated list of additional cluster validation labels that the server will accept from incoming requests.",
-                  "fieldValue": null,
-                  "fieldDefaultValue": "",
-                  "fieldFlag": "querier.frontend-client.cluster-validation.additional-labels",
-                  "fieldType": "string",
-                  "fieldCategory": "experimental"
                 }
               ],
               "fieldValue": null,
@@ -7160,17 +7116,6 @@
                   "fieldValue": null,
                   "fieldDefaultValue": "",
                   "fieldFlag": "querier.scheduler-client.cluster-validation.label",
-                  "fieldType": "string",
-                  "fieldCategory": "experimental"
-                },
-                {
-                  "kind": "field",
-                  "name": "additional_labels",
-                  "required": false,
-                  "desc": "Comma-separated list of additional cluster validation labels that the server will accept from incoming requests.",
-                  "fieldValue": null,
-                  "fieldDefaultValue": "",
-                  "fieldFlag": "querier.scheduler-client.cluster-validation.additional-labels",
                   "fieldType": "string",
                   "fieldCategory": "experimental"
                 }
@@ -7561,17 +7506,6 @@
                   "fieldValue": null,
                   "fieldDefaultValue": "",
                   "fieldFlag": "query-frontend.grpc-client-config.cluster-validation.label",
-                  "fieldType": "string",
-                  "fieldCategory": "experimental"
-                },
-                {
-                  "kind": "field",
-                  "name": "additional_labels",
-                  "required": false,
-                  "desc": "Comma-separated list of additional cluster validation labels that the server will accept from incoming requests.",
-                  "fieldValue": null,
-                  "fieldDefaultValue": "",
-                  "fieldFlag": "query-frontend.grpc-client-config.cluster-validation.additional-labels",
                   "fieldType": "string",
                   "fieldCategory": "experimental"
                 }
@@ -8036,17 +7970,6 @@
               "fieldValue": null,
               "fieldDefaultValue": "",
               "fieldFlag": "query-frontend.client-cluster-validation.label",
-              "fieldType": "string",
-              "fieldCategory": "experimental"
-            },
-            {
-              "kind": "field",
-              "name": "additional_labels",
-              "required": false,
-              "desc": "Comma-separated list of additional cluster validation labels that the server will accept from incoming requests.",
-              "fieldValue": null,
-              "fieldDefaultValue": "",
-              "fieldFlag": "query-frontend.client-cluster-validation.additional-labels",
               "fieldType": "string",
               "fieldCategory": "experimental"
             }
@@ -13044,17 +12967,6 @@
                   "fieldFlag": "ruler.client.cluster-validation.label",
                   "fieldType": "string",
                   "fieldCategory": "experimental"
-                },
-                {
-                  "kind": "field",
-                  "name": "additional_labels",
-                  "required": false,
-                  "desc": "Comma-separated list of additional cluster validation labels that the server will accept from incoming requests.",
-                  "fieldValue": null,
-                  "fieldDefaultValue": "",
-                  "fieldFlag": "ruler.client.cluster-validation.additional-labels",
-                  "fieldType": "string",
-                  "fieldCategory": "experimental"
                 }
               ],
               "fieldValue": null,
@@ -14115,17 +14027,6 @@
                       "fieldValue": null,
                       "fieldDefaultValue": "",
                       "fieldFlag": "ruler.query-frontend.grpc-client-config.cluster-validation.label",
-                      "fieldType": "string",
-                      "fieldCategory": "experimental"
-                    },
-                    {
-                      "kind": "field",
-                      "name": "additional_labels",
-                      "required": false,
-                      "desc": "Comma-separated list of additional cluster validation labels that the server will accept from incoming requests.",
-                      "fieldValue": null,
-                      "fieldDefaultValue": "",
-                      "fieldFlag": "ruler.query-frontend.grpc-client-config.cluster-validation.additional-labels",
                       "fieldType": "string",
                       "fieldCategory": "experimental"
                     }
@@ -16440,17 +16341,6 @@
                   "fieldFlag": "alertmanager.alertmanager-client.cluster-validation.label",
                   "fieldType": "string",
                   "fieldCategory": "experimental"
-                },
-                {
-                  "kind": "field",
-                  "name": "additional_labels",
-                  "required": false,
-                  "desc": "Comma-separated list of additional cluster validation labels that the server will accept from incoming requests.",
-                  "fieldValue": null,
-                  "fieldDefaultValue": "",
-                  "fieldFlag": "alertmanager.alertmanager-client.cluster-validation.additional-labels",
-                  "fieldType": "string",
-                  "fieldCategory": "experimental"
                 }
               ],
               "fieldValue": null,
@@ -18408,17 +18298,6 @@
                   "fieldValue": null,
                   "fieldDefaultValue": "",
                   "fieldFlag": "query-scheduler.grpc-client-config.cluster-validation.label",
-                  "fieldType": "string",
-                  "fieldCategory": "experimental"
-                },
-                {
-                  "kind": "field",
-                  "name": "additional_labels",
-                  "required": false,
-                  "desc": "Comma-separated list of additional cluster validation labels that the server will accept from incoming requests.",
-                  "fieldValue": null,
-                  "fieldDefaultValue": "",
-                  "fieldFlag": "query-scheduler.grpc-client-config.cluster-validation.additional-labels",
                   "fieldType": "string",
                   "fieldCategory": "experimental"
                 }
@@ -23762,17 +23641,6 @@
               "fieldValue": null,
               "fieldDefaultValue": "",
               "fieldFlag": "common.client-cluster-validation.label",
-              "fieldType": "string",
-              "fieldCategory": "experimental"
-            },
-            {
-              "kind": "field",
-              "name": "additional_labels",
-              "required": false,
-              "desc": "Comma-separated list of additional cluster validation labels that the server will accept from incoming requests.",
-              "fieldValue": null,
-              "fieldDefaultValue": "",
-              "fieldFlag": "common.client-cluster-validation.additional-labels",
               "fieldType": "string",
               "fieldCategory": "experimental"
             }

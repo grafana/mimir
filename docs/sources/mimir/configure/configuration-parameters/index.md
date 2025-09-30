@@ -1503,11 +1503,6 @@ client_cluster_validation:
   # (experimental) Primary cluster validation label.
   # CLI flag: -common.client-cluster-validation.label
   [label: <string> | default = ""]
-
-  # (experimental) Comma-separated list of additional cluster validation labels
-  # that the server will accept from incoming requests.
-  # CLI flag: -common.client-cluster-validation.additional-labels
-  [additional_labels: <string> | default = ""]
 ```
 
 ### server
@@ -2911,11 +2906,6 @@ client_cluster_validation:
   # CLI flag: -query-frontend.client-cluster-validation.label
   [label: <string> | default = ""]
 
-  # (experimental) Comma-separated list of additional cluster validation labels
-  # that the server will accept from incoming requests.
-  # CLI flag: -query-frontend.client-cluster-validation.additional-labels
-  [additional_labels: <string> | default = ""]
-
 # (experimental) Query engine to use, either 'prometheus' or 'mimir'
 # CLI flag: -query-frontend.query-engine
 [query_engine: <string> | default = "mimir"]
@@ -3713,11 +3703,6 @@ alertmanager_client:
     # CLI flag: -alertmanager.alertmanager-client.cluster-validation.label
     [label: <string> | default = ""]
 
-    # (experimental) Comma-separated list of additional cluster validation
-    # labels that the server will accept from incoming requests.
-    # CLI flag: -alertmanager.alertmanager-client.cluster-validation.additional-labels
-    [additional_labels: <string> | default = ""]
-
 # (advanced) The interval between persisting the current alertmanager state
 # (notification log and silences) to object storage. This is only used when
 # sharding is enabled. This state is read when all replicas for a shard can not
@@ -3989,11 +3974,6 @@ cluster_validation:
   # (experimental) Primary cluster validation label.
   # CLI flag: -<prefix>.cluster-validation.label
   [label: <string> | default = ""]
-
-  # (experimental) Comma-separated list of additional cluster validation labels
-  # that the server will accept from incoming requests.
-  # CLI flag: -<prefix>.cluster-validation.additional-labels
-  [additional_labels: <string> | default = ""]
 ```
 
 ### frontend_worker

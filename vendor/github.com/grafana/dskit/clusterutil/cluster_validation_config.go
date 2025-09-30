@@ -8,15 +8,13 @@ import (
 )
 
 type ClusterValidationConfig struct {
-	Label            string                  `yaml:"label" category:"experimental"`
-	AdditionalLabels flagext.StringSliceCSV  `yaml:"additional_labels" category:"experimental"`
-	registeredFlags  flagext.RegisteredFlags `yaml:"-"`
+	Label           string                  `yaml:"label" category:"experimental"`
+	registeredFlags flagext.RegisteredFlags `yaml:"-"`
 }
 
 func (cfg *ClusterValidationConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 	cfg.registeredFlags = flagext.TrackRegisteredFlags(prefix, f, func(prefix string, f *flag.FlagSet) {
 		f.StringVar(&cfg.Label, prefix+"label", "", "Primary cluster validation label.")
-		f.Var(&cfg.AdditionalLabels, prefix+"additional-labels", "Comma-separated list of additional cluster validation labels that the server will accept from incoming requests.")
 	})
 }
 
@@ -24,10 +22,18 @@ func (cfg *ClusterValidationConfig) RegisteredFlags() flagext.RegisteredFlags {
 	return cfg.registeredFlags
 }
 
+type ServerClusterValidationConfig struct {
+	ClusterValidationConfig `yaml:",inline"`
+	AdditionalLabels        flagext.StringSliceCSV                 `yaml:"additional_labels" category:"experimental"`
+	GRPC                    ClusterValidationProtocolConfig        `yaml:"grpc" category:"experimental"`
+	HTTP                    ClusterValidationProtocolConfigForHTTP `yaml:"http" category:"experimental"`
+	registeredFlags         flagext.RegisteredFlags                `yaml:"-"`
+}
+
 // GetAllowedClusterLabels returns the effective cluster validation labels.
 // It combines the primary Label with any AdditionalLabels.
 // The primary Label is always first if present, followed by AdditionalLabels.
-func (cfg *ClusterValidationConfig) GetAllowedClusterLabels() []string {
+func (cfg *ServerClusterValidationConfig) GetAllowedClusterLabels() []string {
 	if cfg.Label == "" && len(cfg.AdditionalLabels) == 0 {
 		return nil
 	}
@@ -40,26 +46,10 @@ func (cfg *ClusterValidationConfig) GetAllowedClusterLabels() []string {
 	return labels
 }
 
-// Validate ensures the cluster validation configuration is valid.
-// AdditionalLabels requires Label to be set.
-func (cfg *ClusterValidationConfig) Validate() error {
+func (cfg *ServerClusterValidationConfig) Validate() error {
+	// Validate that additional labels require primary label to be set
 	if len(cfg.AdditionalLabels) > 0 && cfg.Label == "" {
 		return fmt.Errorf("additional cluster validation labels require primary label to be set")
-	}
-	return nil
-}
-
-type ServerClusterValidationConfig struct {
-	ClusterValidationConfig `yaml:",inline"`
-	GRPC                    ClusterValidationProtocolConfig        `yaml:"grpc" category:"experimental"`
-	HTTP                    ClusterValidationProtocolConfigForHTTP `yaml:"http" category:"experimental"`
-	registeredFlags         flagext.RegisteredFlags                `yaml:"-"`
-}
-
-func (cfg *ServerClusterValidationConfig) Validate() error {
-	// First validate the base cluster validation config
-	if err := cfg.ClusterValidationConfig.Validate(); err != nil {
-		return err
 	}
 
 	// Protocol validation only checks against the primary label
@@ -73,6 +63,7 @@ func (cfg *ServerClusterValidationConfig) Validate() error {
 func (cfg *ServerClusterValidationConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 	cfg.registeredFlags = flagext.TrackRegisteredFlags(prefix, f, func(prefix string, f *flag.FlagSet) {
 		cfg.ClusterValidationConfig.RegisterFlagsWithPrefix(prefix, f)
+		f.Var(&cfg.AdditionalLabels, prefix+"additional-labels", "Comma-separated list of additional cluster validation labels that the server will accept from incoming requests.")
 		cfg.GRPC.RegisterFlagsWithPrefix(prefix+"grpc.", f)
 		cfg.HTTP.RegisterFlagsWithPrefix(prefix+"http.", f)
 	})

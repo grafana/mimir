@@ -191,8 +191,6 @@ Usage of ./cmd/mimir/mimir:
     	Enable backoff and retry when we hit rate limits.
   -alertmanager.alertmanager-client.backoff-retries int
     	Number of times to backoff and retry before failing. (default 10)
-  -alertmanager.alertmanager-client.cluster-validation.additional-labels comma-separated-list-of-strings
-    	[experimental] Comma-separated list of additional cluster validation labels that the server will accept from incoming requests.
   -alertmanager.alertmanager-client.cluster-validation.label string
     	[experimental] Primary cluster validation label.
   -alertmanager.alertmanager-client.connect-backoff-base-delay duration
@@ -839,8 +837,6 @@ Usage of ./cmd/mimir/mimir:
     	Maximum number of CPUs that can simultaneously processes WAL replay. If it is set to 0, then each TSDB is replayed with a concurrency equal to the number of CPU cores available on the machine.
   -blocks-storage.tsdb.wal-segment-size-bytes int
     	TSDB WAL segments files max size (bytes). (default 134217728)
-  -common.client-cluster-validation.additional-labels comma-separated-list-of-strings
-    	[experimental] Comma-separated list of additional cluster validation labels that the server will accept from incoming requests.
   -common.client-cluster-validation.label string
     	[experimental] Primary cluster validation label.
   -common.storage.azure.account-key string
@@ -1385,8 +1381,6 @@ Usage of ./cmd/mimir/mimir:
     	Enable backoff and retry when we hit rate limits.
   -distributor.usage-tracker-client.grpc-client-config.backoff-retries int
     	Number of times to backoff and retry before failing. (default 10)
-  -distributor.usage-tracker-client.grpc-client-config.cluster-validation.additional-labels comma-separated-list-of-strings
-    	[experimental] Comma-separated list of additional cluster validation labels that the server will accept from incoming requests.
   -distributor.usage-tracker-client.grpc-client-config.cluster-validation.label string
     	[experimental] Primary cluster validation label.
   -distributor.usage-tracker-client.grpc-client-config.connect-backoff-base-delay duration
@@ -1541,8 +1535,6 @@ Usage of ./cmd/mimir/mimir:
     	Enable backoff and retry when we hit rate limits.
   -ingester.client.backoff-retries int
     	Number of times to backoff and retry before failing. (default 10)
-  -ingester.client.cluster-validation.additional-labels comma-separated-list-of-strings
-    	[experimental] Comma-separated list of additional cluster validation labels that the server will accept from incoming requests.
   -ingester.client.cluster-validation.label string
     	[experimental] Primary cluster validation label.
   -ingester.client.connect-backoff-base-delay duration
@@ -2065,8 +2057,6 @@ Usage of ./cmd/mimir/mimir:
     	Enable backoff and retry when we hit rate limits.
   -querier.frontend-client.backoff-retries int
     	Number of times to backoff and retry before failing. (default 10)
-  -querier.frontend-client.cluster-validation.additional-labels comma-separated-list-of-strings
-    	[experimental] Comma-separated list of additional cluster validation labels that the server will accept from incoming requests.
   -querier.frontend-client.cluster-validation.label string
     	[experimental] Primary cluster validation label.
   -querier.frontend-client.connect-backoff-base-delay duration
@@ -2169,8 +2159,6 @@ Usage of ./cmd/mimir/mimir:
     	Enable backoff and retry when we hit rate limits.
   -querier.scheduler-client.backoff-retries int
     	Number of times to backoff and retry before failing. (default 10)
-  -querier.scheduler-client.cluster-validation.additional-labels comma-separated-list-of-strings
-    	[experimental] Comma-separated list of additional cluster validation labels that the server will accept from incoming requests.
   -querier.scheduler-client.cluster-validation.label string
     	[experimental] Primary cluster validation label.
   -querier.scheduler-client.connect-backoff-base-delay duration
@@ -2219,8 +2207,6 @@ Usage of ./cmd/mimir/mimir:
     	Enable backoff and retry when we hit rate limits.
   -querier.store-gateway-client.backoff-retries int
     	Number of times to backoff and retry before failing. (default 10)
-  -querier.store-gateway-client.cluster-validation.additional-labels comma-separated-list-of-strings
-    	[experimental] Comma-separated list of additional cluster validation labels that the server will accept from incoming requests.
   -querier.store-gateway-client.cluster-validation.label string
     	[experimental] Primary cluster validation label.
   -querier.store-gateway-client.connect-backoff-base-delay duration
@@ -2277,8 +2263,6 @@ Usage of ./cmd/mimir/mimir:
     	Cache statistics of processed samples on results cache.
   -query-frontend.cache-unaligned-requests
     	Cache requests that are not step-aligned.
-  -query-frontend.client-cluster-validation.additional-labels comma-separated-list-of-strings
-    	[experimental] Comma-separated list of additional cluster validation labels that the server will accept from incoming requests.
   -query-frontend.client-cluster-validation.label string
     	[experimental] Primary cluster validation label.
   -query-frontend.enable-query-engine-fallback
@@ -2297,8 +2281,6 @@ Usage of ./cmd/mimir/mimir:
     	Enable backoff and retry when we hit rate limits.
   -query-frontend.grpc-client-config.backoff-retries int
     	Number of times to backoff and retry before failing. (default 10)
-  -query-frontend.grpc-client-config.cluster-validation.additional-labels comma-separated-list-of-strings
-    	[experimental] Comma-separated list of additional cluster validation labels that the server will accept from incoming requests.
   -query-frontend.grpc-client-config.cluster-validation.label string
     	[experimental] Primary cluster validation label.
   -query-frontend.grpc-client-config.connect-backoff-base-delay duration
@@ -2461,8 +2443,6 @@ Usage of ./cmd/mimir/mimir:
     	Enable backoff and retry when we hit rate limits.
   -query-scheduler.grpc-client-config.backoff-retries int
     	Number of times to backoff and retry before failing. (default 10)
-  -query-scheduler.grpc-client-config.cluster-validation.additional-labels comma-separated-list-of-strings
-    	[experimental] Comma-separated list of additional cluster validation labels that the server will accept from incoming requests.
   -query-scheduler.grpc-client-config.cluster-validation.label string
     	[experimental] Primary cluster validation label.
   -query-scheduler.grpc-client-config.connect-backoff-base-delay duration
@@ -2843,8 +2823,6 @@ Usage of ./cmd/mimir/mimir:
     	Enable backoff and retry when we hit rate limits.
   -ruler.client.backoff-retries int
     	Number of times to backoff and retry before failing. (default 10)
-  -ruler.client.cluster-validation.additional-labels comma-separated-list-of-strings
-    	[experimental] Comma-separated list of additional cluster validation labels that the server will accept from incoming requests.
   -ruler.client.cluster-validation.label string
     	[experimental] Primary cluster validation label.
   -ruler.client.connect-backoff-base-delay duration
@@ -2941,8 +2919,6 @@ Usage of ./cmd/mimir/mimir:
     	Enable backoff and retry when we hit rate limits.
   -ruler.query-frontend.grpc-client-config.backoff-retries int
     	Number of times to backoff and retry before failing. (default 10)
-  -ruler.query-frontend.grpc-client-config.cluster-validation.additional-labels comma-separated-list-of-strings
-    	[experimental] Comma-separated list of additional cluster validation labels that the server will accept from incoming requests.
   -ruler.query-frontend.grpc-client-config.cluster-validation.label string
     	[experimental] Primary cluster validation label.
   -ruler.query-frontend.grpc-client-config.connect-backoff-base-delay duration
