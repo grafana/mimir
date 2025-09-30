@@ -814,25 +814,13 @@ func TestCodec_EncodeMetricsQueryRequest_AcceptHeader(t *testing.T) {
 
 func TestCodec_EncodeMetricsQueryRequest_ReadConsistency(t *testing.T) {
 	for _, consistencyLevel := range api.ReadConsistencies {
-		for _, maxDelay := range []time.Duration{0, time.Minute} {
-			t.Run(fmt.Sprintf("level: %s max delay: %s", consistencyLevel, maxDelay.String()), func(t *testing.T) {
-				codec := newTestCodecWithFormat(formatProtobuf)
-				ctx := api.ContextWithReadConsistencyLevel(user.InjectOrgID(context.Background(), "user-1"), consistencyLevel)
-				if maxDelay > 0 {
-					ctx = api.ContextWithReadConsistencyMaxDelay(ctx, maxDelay)
-				}
-
-				encodedRequest, err := codec.EncodeMetricsQueryRequest(ctx, &PrometheusInstantQueryRequest{})
-				require.NoError(t, err)
-				require.Equal(t, consistencyLevel, encodedRequest.Header.Get(api.ReadConsistencyHeader))
-
-				if maxDelay > 0 {
-					require.Equal(t, maxDelay.String(), encodedRequest.Header.Get(api.ReadConsistencyMaxDelayHeader))
-				} else {
-					require.Empty(t, encodedRequest.Header.Get(api.ReadConsistencyMaxDelayHeader))
-				}
-			})
-		}
+		t.Run(consistencyLevel, func(t *testing.T) {
+			codec := newTestCodecWithFormat(formatProtobuf)
+			ctx := api.ContextWithReadConsistencyLevel(user.InjectOrgID(context.Background(), "user-1"), consistencyLevel)
+			encodedRequest, err := codec.EncodeMetricsQueryRequest(ctx, &PrometheusInstantQueryRequest{})
+			require.NoError(t, err)
+			require.Equal(t, consistencyLevel, encodedRequest.Header.Get(api.ReadConsistencyHeader))
+		})
 	}
 }
 
@@ -2122,7 +2110,7 @@ func newTestCodecWithHeaders(propagateHeaders []string) Codec {
 }
 
 func newTestCodecWithFormatAndHeaders(format string, propagateHeaders []string) Codec {
-	return NewCodec(prometheus.NewPedanticRegistry(), 0*time.Minute, format, propagateHeaders, &api.ConsistencyInjector{})
+	return NewCodec(prometheus.NewPedanticRegistry(), 0*time.Minute, format, propagateHeaders, &api.ConsistencyLevelInjector{})
 }
 
 func mustSucceed[T any](value T, err error) T {

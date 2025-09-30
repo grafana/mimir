@@ -103,17 +103,6 @@ func TestSkipHistogramDecodingOptimizationPass(t *testing.T) {
 							- RHS: VectorSelector: {__name__="some_other_metric"}, skip histogram buckets
 			`,
 		},
-		"subquery not eligible for skipping decoding to ensure counter reset detection": {
-			expr: `histogram_count(increase(some_metric[5m:1m]))`,
-			expectedPlan: `
-				- DeduplicateAndMerge
-					- FunctionCall: histogram_count(...)
-						- DeduplicateAndMerge
-							- FunctionCall: increase(...)
-								- Subquery: [5m0s:1m0s]
-									- VectorSelector: {__name__="some_metric"}
-			`,
-		},
 		"inner vector selector not eligible for skipping decoding due to nesting": {
 			expr: `histogram_sum(some_metric * histogram_quantile(0.5, some_other_metric))`,
 			expectedPlan: `

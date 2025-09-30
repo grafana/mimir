@@ -10,8 +10,8 @@ import (
 
 // Just a dummy.
 var (
-	ErrSyscallEACCES = errors.New("dummy")
-	ErrUnixEACCES    = errors.New("dummy")
+	SyscallEACCES = errors.New("dummy")
+	UnixEACCES    = errors.New("dummy")
 )
 
 func SetRlimit()                                    {}

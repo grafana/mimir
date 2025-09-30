@@ -42,8 +42,8 @@ var (
 	configTypesMu sync.Mutex
 	configTypes   = make(map[reflect.Type]reflect.Type)
 
-	emptyStructType = reflect.TypeFor[struct{}]()
-	configsType     = reflect.TypeFor[Configs]()
+	emptyStructType = reflect.TypeOf(struct{}{})
+	configsType     = reflect.TypeOf(Configs{})
 )
 
 // RegisterConfig registers the given Config type for YAML marshaling and unmarshaling.
@@ -54,7 +54,7 @@ func RegisterConfig(config Config) {
 func init() {
 	// N.B.: static_configs is the only Config type implemented by default.
 	// All other types are registered at init by their implementing packages.
-	elemTyp := reflect.TypeFor[*targetgroup.Group]()
+	elemTyp := reflect.TypeOf(&targetgroup.Group{})
 	registerConfig(staticConfigsKey, elemTyp, StaticConfig{})
 }
 

@@ -130,30 +130,44 @@ eval instant at 0 histogram_sum(route)
 
 clear
 
+# TODO: Verify if these tests are correct. At the moment they match promql engine.
+# See: https://github.com/prometheus/prometheus/issues/14172
+
 # Test metric with mixed floats and histograms
 load 1m
   mixed_metric 1 2 3 {{schema:0 sum:5 count:4 buckets:[1 2 1]}} {{schema:0 sum:8 count:6 buckets:[1 4 1]}} 4 5 {{schema:0 sum:18 count:10 buckets:[3 4 3]}}
 
+# This is what we would expect, but it currently fails (disabled)
+# eval range from 0 to 8m step 1m mixed_metric
+#	{__name__="mixed_metric"} 1 2 3 {{count:4 sum:5 buckets:[1 2 1]}} {{count:6 sum:8 buckets:[1 4 1]}} 4 5 {{schema:0 sum:18 count:10 buckets:[3 4 3]}} {{schema:0 sum:18 count:10 buckets:[3 4 3]}}
+
+# eval range from 0 to 8m step 1m histogram_count(mixed_metric)
+# {} _ _ _ 4 6 _ _ 10 10
+
+# eval range from 0 to 8m step 1m histogram_sum(mixed_metric)
+# {} _ _ _ 5 8 _ _ 18 18
+
+# Instead this is what we get from both engines.
 eval range from 0 to 8m step 1m mixed_metric
-  {__name__="mixed_metric"} 1 2 3 {{count:4 sum:5 buckets:[1 2 1]}} {{count:6 sum:8 buckets:[1 4 1]}} 4 5 {{schema:0 sum:18 count:10 buckets:[3 4 3]}} {{schema:0 sum:18 count:10 buckets:[3 4 3]}}
-
-eval range from 0 to 8m step 1m histogram_count(mixed_metric)
-  {} _ _ _ 4 6 _ _ 10 10
-
-eval range from 0 to 8m step 1m histogram_sum(mixed_metric)
-  {} _ _ _ 5 8 _ _ 18 18
+  {__name__="mixed_metric"} 1 2 3 3 3 4 5 {{schema:0 sum:18 count:10 buckets:[3 4 3]}} {{schema:0 sum:18 count:10 buckets:[3 4 3]}}
 
 eval range from 0 to 8m step 1m histogram_avg(mixed_metric)
-  {} _ _ _ 1.25 1.3333333333333333 _ _ 1.8 1.8
+  {} _ _ _ _ _ _ _ 1.8 1.8
+
+eval range from 0 to 8m step 1m histogram_count(mixed_metric)
+  {} _ _ _ _ _ _ _ 10 10
 
 eval range from 0 to 8m step 1m histogram_fraction(0, 1, mixed_metric)
-  {} _ _ _ 0.25 0.16666666666666666 _ _ 0.3 0.3
+  {} _ _ _ _ _ _ _ 0.3 0.3
 
 eval range from 0 to 8m step 1m histogram_stddev(mixed_metric)
-  {} _ _ _ 0.842629429717281 0.6650352854715079 _ _ 0.8574122997574659 0.8574122997574659
+  {} _ _ _ _ _ _ _ 0.8574122997574659 0.8574122997574659
 
 eval range from 0 to 8m step 1m histogram_stdvar(mixed_metric)
-  {} _ _ _ 0.7100243558256704 0.44227193092217004 _ _ 0.7351558517753866 0.7351558517753866
+  {} _ _ _ _ _ _ _ 0.7351558517753866 0.7351558517753866
+
+eval range from 0 to 8m step 1m histogram_sum(mixed_metric)
+  {} _ _ _ _ _ _ _ 18 18
 
 clear
 

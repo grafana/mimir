@@ -1157,6 +1157,7 @@ func TestEngineQueryRequestRoundTripperHandler(t *testing.T) {
 		{Name: compat.ForceFallbackHeaderName, Values: []string{"true"}},
 		{Name: chunkinfologger.ChunkInfoLoggingHeader, Values: []string{"chunk-info-logging-enabled"}},
 		{Name: api.ReadConsistencyOffsetsHeader, Values: []string{encodedOffsets}},
+
 		{Name: "Some-Other-Ignored-Header", Values: []string{"some-value"}},
 	}
 
@@ -1166,9 +1167,8 @@ func TestEngineQueryRequestRoundTripperHandler(t *testing.T) {
 		chunkinfologger.ChunkInfoLoggingHeader: {"chunk-info-logging-enabled"},
 		api.ReadConsistencyOffsetsHeader:       {encodedOffsets},
 
-		// From read consistency settings in context:
-		api.ReadConsistencyHeader:         {api.ReadConsistencyStrong},
-		api.ReadConsistencyMaxDelayHeader: {time.Minute.String()},
+		// From read consistency level in context:
+		api.ReadConsistencyHeader: {api.ReadConsistencyStrong},
 	}
 
 	testCases := map[string]struct {
@@ -1337,7 +1337,6 @@ func TestEngineQueryRequestRoundTripperHandler(t *testing.T) {
 			handler.(*engineQueryRequestRoundTripperHandler).storage = contextCapturingStorage
 
 			ctx := api.ContextWithReadConsistencyLevel(context.Background(), api.ReadConsistencyStrong)
-			ctx = api.ContextWithReadConsistencyMaxDelay(ctx, time.Minute)
 			stats, ctx := stats.ContextWithEmptyStats(ctx)
 			response, err := handler.Do(ctx, testCase.req)
 			require.Equal(t, testCase.expectedErr, err)

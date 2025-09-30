@@ -51,7 +51,7 @@ func TestMetaFetcher_Fetch_ShouldReturnDiscoveredBlocksIncludingMarkedForDeletio
 			# HELP blocks_meta_sync_failures_total Total blocks metadata synchronization failures
 			# TYPE blocks_meta_sync_failures_total counter
 			blocks_meta_sync_failures_total 0
-
+			
 			# HELP blocks_meta_synced Number of block metadata synced
 			# TYPE blocks_meta_synced gauge
 			blocks_meta_synced{state="corrupted-meta-json"} 0
@@ -73,13 +73,11 @@ func TestMetaFetcher_Fetch_ShouldReturnDiscoveredBlocksIncludingMarkedForDeletio
 
 	// Upload a block.
 	block1ID, block1Dir := createTestBlock(t)
-	_, err = Upload(ctx, logger, bkt, block1Dir, nil)
-	require.NoError(t, err)
+	require.NoError(t, Upload(ctx, logger, bkt, block1Dir, nil))
 
 	// Upload a partial block.
 	block2ID, block2Dir := createTestBlock(t)
-	_, err = Upload(ctx, logger, bkt, block2Dir, nil)
-	require.NoError(t, err)
+	require.NoError(t, Upload(ctx, logger, bkt, block2Dir, nil))
 	require.NoError(t, bkt.Delete(ctx, path.Join(block2ID.String(), MetaFilename)))
 
 	t.Run("should return metas and partials on some blocks in the storage", func(t *testing.T) {
@@ -94,7 +92,7 @@ func TestMetaFetcher_Fetch_ShouldReturnDiscoveredBlocksIncludingMarkedForDeletio
 			# HELP blocks_meta_sync_failures_total Total blocks metadata synchronization failures
 			# TYPE blocks_meta_sync_failures_total counter
 			blocks_meta_sync_failures_total 0
-
+			
 			# HELP blocks_meta_synced Number of block metadata synced
 			# TYPE blocks_meta_synced gauge
 			blocks_meta_synced{state="corrupted-meta-json"} 0
@@ -116,8 +114,7 @@ func TestMetaFetcher_Fetch_ShouldReturnDiscoveredBlocksIncludingMarkedForDeletio
 
 	// Upload a block and mark it for deletion.
 	block3ID, block3Dir := createTestBlock(t)
-	_, err = Upload(ctx, logger, bkt, block3Dir, nil)
-	require.NoError(t, err)
+	require.NoError(t, Upload(ctx, logger, bkt, block3Dir, nil))
 	require.NoError(t, MarkForDeletion(ctx, logger, bkt, block3ID, "", promauto.With(nil).NewCounter(prometheus.CounterOpts{})))
 
 	t.Run("should include blocks marked for deletion", func(t *testing.T) {
@@ -133,7 +130,7 @@ func TestMetaFetcher_Fetch_ShouldReturnDiscoveredBlocksIncludingMarkedForDeletio
 			# HELP blocks_meta_sync_failures_total Total blocks metadata synchronization failures
 			# TYPE blocks_meta_sync_failures_total counter
 			blocks_meta_sync_failures_total 0
-
+			
 			# HELP blocks_meta_synced Number of block metadata synced
 			# TYPE blocks_meta_synced gauge
 			blocks_meta_synced{state="corrupted-meta-json"} 0
@@ -179,7 +176,7 @@ func TestMetaFetcher_FetchWithoutMarkedForDeletion_ShouldReturnDiscoveredBlocksE
 			# HELP blocks_meta_sync_failures_total Total blocks metadata synchronization failures
 			# TYPE blocks_meta_sync_failures_total counter
 			blocks_meta_sync_failures_total 0
-
+			
 			# HELP blocks_meta_synced Number of block metadata synced
 			# TYPE blocks_meta_synced gauge
 			blocks_meta_synced{state="corrupted-meta-json"} 0
@@ -201,13 +198,11 @@ func TestMetaFetcher_FetchWithoutMarkedForDeletion_ShouldReturnDiscoveredBlocksE
 
 	// Upload a block.
 	block1ID, block1Dir := createTestBlock(t)
-	_, err = Upload(ctx, logger, bkt, block1Dir, nil)
-	require.NoError(t, err)
+	require.NoError(t, Upload(ctx, logger, bkt, block1Dir, nil))
 
 	// Upload a partial block.
 	block2ID, block2Dir := createTestBlock(t)
-	_, err = Upload(ctx, logger, bkt, block2Dir, nil)
-	require.NoError(t, err)
+	require.NoError(t, Upload(ctx, logger, bkt, block2Dir, nil))
 	require.NoError(t, bkt.Delete(ctx, path.Join(block2ID.String(), MetaFilename)))
 
 	t.Run("should return metas and partials on some blocks in the storage", func(t *testing.T) {
@@ -222,7 +217,7 @@ func TestMetaFetcher_FetchWithoutMarkedForDeletion_ShouldReturnDiscoveredBlocksE
 			# HELP blocks_meta_sync_failures_total Total blocks metadata synchronization failures
 			# TYPE blocks_meta_sync_failures_total counter
 			blocks_meta_sync_failures_total 0
-
+			
 			# HELP blocks_meta_synced Number of block metadata synced
 			# TYPE blocks_meta_synced gauge
 			blocks_meta_synced{state="corrupted-meta-json"} 0
@@ -244,8 +239,7 @@ func TestMetaFetcher_FetchWithoutMarkedForDeletion_ShouldReturnDiscoveredBlocksE
 
 	// Upload a block and mark it for deletion.
 	block3ID, block3Dir := createTestBlock(t)
-	_, err = Upload(ctx, logger, bkt, block3Dir, nil)
-	require.NoError(t, err)
+	require.NoError(t, Upload(ctx, logger, bkt, block3Dir, nil))
 	require.NoError(t, MarkForDeletion(ctx, logger, bkt, block3ID, "", promauto.With(nil).NewCounter(prometheus.CounterOpts{})))
 
 	t.Run("should include blocks marked for deletion", func(t *testing.T) {
@@ -260,7 +254,7 @@ func TestMetaFetcher_FetchWithoutMarkedForDeletion_ShouldReturnDiscoveredBlocksE
 			# HELP blocks_meta_sync_failures_total Total blocks metadata synchronization failures
 			# TYPE blocks_meta_sync_failures_total counter
 			blocks_meta_sync_failures_total 0
-
+			
 			# HELP blocks_meta_synced Number of block metadata synced
 			# TYPE blocks_meta_synced gauge
 			blocks_meta_synced{state="corrupted-meta-json"} 0
@@ -294,11 +288,9 @@ func TestMetaFetcher_ShouldNotIssueAnyAPICallToObjectStorageIfAllBlockMetasAreCa
 
 	// Upload few blocks.
 	block1ID, block1Dir := createTestBlock(t)
-	_, err = Upload(ctx, logger, bkt, block1Dir, nil)
-	require.NoError(t, err)
+	require.NoError(t, Upload(ctx, logger, bkt, block1Dir, nil))
 	block2ID, block2Dir := createTestBlock(t)
-	_, err = Upload(ctx, logger, bkt, block2Dir, nil)
-	require.NoError(t, err)
+	require.NoError(t, Upload(ctx, logger, bkt, block2Dir, nil))
 
 	// Create a fetcher and fetch block metas to populate the cache on disk.
 	reg1 := prometheus.NewPedanticRegistry()
@@ -358,11 +350,9 @@ func TestMetaFetcher_ShouldNotParseMetaJsonFilesAgain(t *testing.T) {
 
 	// Upload few blocks.
 	block1ID, block1Dir := createTestBlock(t)
-	_, err = Upload(ctx, logger, bkt, block1Dir, nil)
-	require.NoError(t, err)
+	require.NoError(t, Upload(ctx, logger, bkt, block1Dir, nil))
 	block2ID, block2Dir := createTestBlock(t)
-	_, err = Upload(ctx, logger, bkt, block2Dir, nil)
-	require.NoError(t, err)
+	require.NoError(t, Upload(ctx, logger, bkt, block2Dir, nil))
 
 	// We disable min compaction level and sources, to cache ALL parsed meta json files.
 	metaCache := NewMetaCache(100, 0, 0)
@@ -416,16 +406,13 @@ func TestMetaFetcher_Fetch_ShouldReturnDiscoveredBlocksWithinCompactorLookback(t
 
 	// Upload recent blocks.
 	block1ID, block1Dir := createTestBlock(t)
-	_, err = Upload(ctx, logger, bkt, block1Dir, nil)
-	require.NoError(t, err)
+	require.NoError(t, Upload(ctx, logger, bkt, block1Dir, nil))
 
 	block2ID, block2Dir := createTestBlock(t)
-	_, err = Upload(ctx, logger, bkt, block2Dir, nil)
-	require.NoError(t, err)
+	require.NoError(t, Upload(ctx, logger, bkt, block2Dir, nil))
 
 	block3ID, block3Dir := createTestBlock(t)
-	_, err = Upload(ctx, logger, bkt, block3Dir, nil)
-	require.NoError(t, err)
+	require.NoError(t, Upload(ctx, logger, bkt, block3Dir, nil))
 	require.NoError(t, bkt.Delete(ctx, path.Join(block3ID.String(), MetaFilename)))
 
 	// Simulate a block uploaded before than MetaFetchers' maximum lookback period by creating a new block,
@@ -661,7 +648,6 @@ func generateBlockUploadedAtTimestamp(t *testing.T, bkt objstore.Bucket, l log.L
 			Version:    1,
 		},
 	}
-	_, err = Upload(context.Background(), l, bkt, fixedTimeULIDDir, meta)
-	require.NoError(t, err)
+	require.NoError(t, Upload(context.Background(), l, bkt, fixedTimeULIDDir, meta))
 	return fixedTimeULID
 }

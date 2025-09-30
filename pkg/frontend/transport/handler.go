@@ -403,9 +403,6 @@ func (f *Handler) reportQueryStats(
 	if consistency, ok := querierapi.ReadConsistencyLevelFromContext(r.Context()); ok {
 		logMessage = append(logMessage, "read_consistency", consistency)
 	}
-	if delay, ok := querierapi.ReadConsistencyMaxDelayFromContext(r.Context()); ok {
-		logMessage = append(logMessage, "read_consistency_max_delay", delay)
-	}
 
 	logMessage = append(logMessage, formatRequestHeaders(&r.Header, f.headersToLog)...)
 

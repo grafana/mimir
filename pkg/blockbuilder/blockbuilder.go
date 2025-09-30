@@ -490,7 +490,7 @@ func (b *BlockBuilder) uploadBlocks(ctx context.Context, tenantID, dbDir string,
 			MaxRetries: 10,
 		})
 		for boff.Ongoing() {
-			_, err := block.Upload(ctx, b.logger, buc, blockDir, meta)
+			err := block.Upload(ctx, b.logger, buc, blockDir, meta)
 			if err == nil {
 				break
 			}

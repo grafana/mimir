@@ -28,16 +28,18 @@ type readDirChangesW struct {
 
 	port  windows.Handle // Handle to completion port
 	input chan *input    // Inputs to the reader are sent on this channel
-	done  chan chan<- error
+	quit  chan chan<- error
 
 	mu      sync.Mutex // Protects access to watches, closed
 	watches watchMap   // Map of watches (key: i-number)
 	closed  bool       // Set to true when Close() is first called
 }
 
-var defaultBufferSize = 50
-
 func newBackend(ev chan Event, errs chan error) (backend, error) {
+	return newBufferedBackend(50, ev, errs)
+}
+
+func newBufferedBackend(sz uint, ev chan Event, errs chan error) (backend, error) {
 	port, err := windows.CreateIoCompletionPort(windows.InvalidHandle, 0, 0, 0)
 	if err != nil {
 		return nil, os.NewSyscallError("CreateIoCompletionPort", err)
@@ -48,7 +50,7 @@ func newBackend(ev chan Event, errs chan error) (backend, error) {
 		port:    port,
 		watches: make(watchMap),
 		input:   make(chan *input, 1),
-		done:    make(chan chan<- error, 1),
+		quit:    make(chan chan<- error, 1),
 	}
 	go w.readEvents()
 	return w, nil
@@ -68,8 +70,8 @@ func (w *readDirChangesW) sendEvent(name, renamedFrom string, mask uint64) bool 
 	event := w.newEvent(name, uint32(mask))
 	event.renamedFrom = renamedFrom
 	select {
-	case ch := <-w.done:
-		w.done <- ch
+	case ch := <-w.quit:
+		w.quit <- ch
 	case w.Events <- event:
 	}
 	return true
@@ -81,10 +83,10 @@ func (w *readDirChangesW) sendError(err error) bool {
 		return true
 	}
 	select {
-	case <-w.done:
-		return false
 	case w.Errors <- err:
 		return true
+	case <-w.quit:
+		return false
 	}
 }
 
@@ -97,9 +99,9 @@ func (w *readDirChangesW) Close() error {
 	w.closed = true
 	w.mu.Unlock()
 
-	// Send "done" message to the reader goroutine
+	// Send "quit" message to the reader goroutine
 	ch := make(chan error)
-	w.done <- ch
+	w.quit <- ch
 	if err := w.wakeupReader(); err != nil {
 		return err
 	}
@@ -493,7 +495,7 @@ func (w *readDirChangesW) readEvents() {
 		watch := (*watch)(unsafe.Pointer(ov))
 		if watch == nil {
 			select {
-			case ch := <-w.done:
+			case ch := <-w.quit:
 				w.mu.Lock()
 				var indexes []indexMap
 				for _, index := range w.watches {

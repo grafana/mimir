@@ -13,20 +13,18 @@ weight: 20
 
 # Deploying the Grafana Mimir monitoring mixin
 
-Grafana Mimir exposes a `/metrics` endpoint returning Prometheus metrics.
-You can configure your Prometheus server to scrape Grafana Mimir or you can use the built-in functionality of the [Helm chart to automatically send these metrics to a remote](https://grafana.com/docs/mimir/<MIMIR_VERSION>/manage/monitor-grafana-mimir/monitor-system-health/).
-The endpoint is exposed on the Mimir HTTP server address / port which can be customized through `-server.http-listen-address` and `-server.http-listen-port` CLI flags or their respective YAML [config options](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/configuration-parameters/).
+Grafana Mimir exposes a `/metrics` endpoint returning Prometheus metrics. You can configure your Prometheus server to scrape Grafana Mimir or you can use the built-in functionality of the [Helm chart to automatically send these metrics to a remote](../collecting-metrics-and-logs/).
+The endpoint is exposed on the Mimir HTTP server address / port which can be customized through `-server.http-listen-address` and `-server.http-listen-port` CLI flags or their respective YAML [config options](../../../configure/configuration-parameters/).
 
 ## Dashboards and alerts
 
 Grafana Mimir is shipped with a comprehensive set of production-ready Grafana dashboards and alerts to monitor the state and health of a Mimir cluster.
 
 Dashboards provide both a high-level and in-depth view of every aspect of a Grafana Mimir cluster.
-You can take a look at all the available dashboards in [this overview](https://grafana.com/docs/mimir/<MIMIR_VERSION>/manage/monitor-grafana-mimir/dashboards/).
+You can take a look at all the available dashboards in [this overview](../dashboards/).
 
-Alerts allow you to monitor the health of a Mimir cluster.
-For each alert, we provide detailed [runbooks](https://grafana.com/docs/mimir/<MIMIR_VERSION>/manage/mimir-runbooks/) to further investigate and fix the issue.
+Alerts allow you to monitor the health of a Mimir cluster. For each alert, we provide detailed [runbooks](../../mimir-runbooks/) to further investigate and fix the issue.
 
-The [requirements documentation](https://grafana.com/docs/mimir/<MIMIR_VERSION>/manage/monitor-grafana-mimir/requirements/) lists prerequisites for using the Grafana Mimir dashboards and alerts.
+The [requirements documentation](../requirements/) lists prerequisites for using the Grafana Mimir dashboards and alerts.
 
-The [installation instructions](https://grafana.com/docs/mimir/<MIMIR_VERSION>/manage/monitor-grafana-mimir/installing-dashboards-and-alerts/) show available options to install Grafana Mimir dashboards and alerts.
+The [installation instructions](../installing-dashboards-and-alerts/) show available options to install Grafana Mimir dashboards and alerts.

@@ -547,8 +547,7 @@ func TestBucketStore_Series_ShouldQueryBlockWithOutOfOrderChunks(t *testing.T) {
 		blockID, err := ulid.Parse(entry.Name())
 		require.NoErrorf(t, err, "parsing block ID from directory name %q", entry.Name())
 
-		_, err = block.Upload(ctx, log.NewNopLogger(), userBkt, filepath.Join(fixtureDir, blockID.String()), nil)
-		require.NoError(t, err)
+		require.NoError(t, block.Upload(ctx, log.NewNopLogger(), userBkt, filepath.Join(fixtureDir, blockID.String()), nil))
 	}
 
 	createBucketIndex(t, bkt, userID)

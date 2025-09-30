@@ -1731,8 +1731,7 @@ func TestMultitenantCompactor_ValidateBlock(t *testing.T) {
 			}
 
 			// upload the block
-			_, err = block.Upload(ctx, log.NewNopLogger(), bkt, testDir, nil)
-			require.NoError(t, err)
+			require.NoError(t, block.Upload(ctx, log.NewNopLogger(), bkt, testDir, nil))
 			// remove meta.json as we will be uploading a new one with the uploading meta name
 			require.NoError(t, bkt.Delete(ctx, path.Join(blockID.String(), block.MetaFilename)))
 

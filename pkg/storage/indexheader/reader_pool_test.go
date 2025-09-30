@@ -163,8 +163,7 @@ func prepareReaderPool(t *testing.T) (context.Context, string, objstore.Instrume
 		labels.FromStrings("a", "3"),
 	}, 100, 0, 1000, labels.FromStrings("ext1", "1"))
 	require.NoError(t, err)
-	_, err = block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(tmpDir, blockID.String()), nil)
-	require.NoError(t, err)
+	require.NoError(t, block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(tmpDir, blockID.String()), nil))
 
 	metrics := NewReaderPoolMetrics(nil)
 	return ctx, tmpDir, bkt, blockID, metrics

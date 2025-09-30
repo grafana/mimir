@@ -120,9 +120,8 @@ func (mapper *propagateMatchers) extractVectorSelectors(expr parser.Expr) ([]*en
 		return mapper.propagateMatchersInBinaryExpr(e)
 	// Explicitly define what is not handled to avoid confusion.
 	case *parser.StepInvariantExpr:
-		// Used only for optimizations and not produced directly by parser,
-		// but may be added in preprocessing step.
-		return mapper.extractVectorSelectors(e.Expr)
+		// Used only for optimizations and not produced directly by parser.
+		return nil, nil
 	default:
 		return nil, nil
 	}

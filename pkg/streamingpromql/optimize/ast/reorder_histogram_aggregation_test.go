@@ -37,7 +37,6 @@ var testCasesReorderHistogramAggregation = map[string]string{
 	"histogram_sum(rate(foo[2m]))":              "histogram_sum(rate(foo[2m]))",
 	`3 + (((histogram_sum(sum(foo)))))`:         `3 + (((sum(histogram_sum(foo)))))`,
 	`vector(3) + (((histogram_sum(sum(foo)))))`: `vector(3) + (((sum(histogram_sum(foo)))))`,
-	`histogram_sum(sum(foo @ 1234 * bar))`:      `sum(histogram_sum(foo @ 1234 * bar))`,
 
 	// Unsupported aggregations
 	`histogram_sum(max(foo))`:     `histogram_sum(max(foo))`,
@@ -65,9 +64,6 @@ func TestReorderHistogramAggregation(t *testing.T) {
 
 			inputExpr, err := parser.ParseExpr(input)
 			require.NoError(t, err)
-			inputExpr, err = preprocessQuery(t, inputExpr)
-			require.NoError(t, err)
-
 			optimizer := ast.NewReorderHistogramAggregationMapper()
 			outputExpr, err := optimizer.Map(ctx, inputExpr)
 			require.NoError(t, err)

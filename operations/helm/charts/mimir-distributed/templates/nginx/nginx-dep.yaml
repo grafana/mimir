@@ -122,10 +122,6 @@ spec:
       tolerations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- with .Values.nginx.dnsConfig }}
-      dnsConfig:
-        {{- toYaml . | nindent 8 }}
-      {{- end }}
       volumes:
         - name: config
           configMap:

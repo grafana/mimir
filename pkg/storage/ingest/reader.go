@@ -88,10 +88,6 @@ type PartitionReader struct {
 	consumedOffsetWatcher *PartitionOffsetWatcher
 	offsetReader          *partitionOffsetReader
 
-	// The highest record timestamp consumed so far, or zero if no record was consumed yet or we've
-	// consumed up until the end of the partition. This timestamp is used the compute the consumption delay.
-	highestConsumedTimestampBeforePartitionEnd *atomic.Time
-
 	logger         log.Logger
 	reg            prometheus.Registerer
 	lastSeenOffset int64
@@ -113,9 +109,8 @@ func newPartitionReader(kafkaCfg KafkaConfig, partitionID int32, instanceID stri
 		consumerGroup:                         kafkaCfg.GetConsumerGroup(instanceID, partitionID),
 		consumedOffsetWatcher:                 NewPartitionOffsetWatcher(),
 		concurrentFetchersMinBytesMaxWaitTime: kafkaCfg.FetchMaxWait,
-		highestConsumedTimestampBeforePartitionEnd: atomic.NewTime(time.Time{}),
-		logger: log.With(logger, "partition", partitionID),
-		reg:    reg,
+		logger:                                log.With(logger, "partition", partitionID),
+		reg:                                   reg,
 	}
 
 	r.metrics = NewReaderMetrics(reg, r, kafkaCfg.Topic, nil)
@@ -307,7 +302,7 @@ func (r *PartitionReader) stopDependencies() error {
 
 func (r *PartitionReader) run(ctx context.Context) error {
 	for ctx.Err() == nil {
-		err := r.processNextFetches(ctx, r.metrics.receiveDelayWhenRunning, r.metrics.receiveAndConsumeDelayWhenRunning)
+		err := r.processNextFetches(ctx, r.metrics.receiveDelayWhenRunning)
 		if err != nil && !errors.Is(err, context.Canceled) {
 			// Fail the whole service in case of a non-recoverable error.
 			return err
@@ -317,11 +312,11 @@ func (r *PartitionReader) run(ctx context.Context) error {
 	return nil
 }
 
-func (r *PartitionReader) processNextFetches(ctx context.Context, receiveDelayObserver, receiveAndConsumeDelayObserver prometheus.Observer) error {
+func (r *PartitionReader) processNextFetches(ctx context.Context, delayObserver prometheus.Observer) error {
 	fetches, fetchCtx := r.getFetcher().PollFetches(ctx)
 	// Propagate the fetching span to consuming the records.
 	ctx = trace.ContextWithSpan(ctx, trace.SpanFromContext(fetchCtx))
-	r.recordFetchesMetrics(fetches, receiveDelayObserver)
+	r.recordFetchesMetrics(fetches, delayObserver)
 	r.logFetchErrors(fetches)
 	fetches = filterOutErrFetches(fetches)
 
@@ -329,14 +324,12 @@ func (r *PartitionReader) processNextFetches(ctx context.Context, receiveDelayOb
 	instrumentGaps(findGapsInRecords(fetches, r.lastSeenOffset), r.metrics.missedRecords, r.logger)
 	r.lastSeenOffset = max(r.lastSeenOffset, lastOffset(fetches))
 
-	r.updateHighestConsumedTimestampBeforeConsumption(fetches)
 	err := r.consumeFetches(ctx, fetches)
 	if err != nil {
 		return fmt.Errorf("consume %d records: %w", fetches.NumRecords(), err)
 	}
 	r.enqueueCommit(fetches)
 	r.notifyLastConsumedOffset(fetches)
-	r.updateHighestConsumedTimestampAfterConsumption(fetches, receiveAndConsumeDelayObserver)
 	return nil
 }
 
@@ -454,7 +447,7 @@ func (r *PartitionReader) processNextFetchesUntilLagHonored(ctx context.Context,
 				break
 			}
 
-			err := r.processNextFetches(ctx, r.metrics.receiveDelayWhenStarting, r.metrics.receiveAndConsumeDelayWhenStarting)
+			err := r.processNextFetches(ctx, r.metrics.receiveDelayWhenStarting)
 			if err != nil {
 				return 0, err
 			}
@@ -624,7 +617,7 @@ func (r *PartitionReader) notifyLastConsumedOffset(fetches kgo.Fetches) {
 	})
 }
 
-func (r *PartitionReader) recordFetchesMetrics(fetches kgo.Fetches, receiveDelayObserver prometheus.Observer) {
+func (r *PartitionReader) recordFetchesMetrics(fetches kgo.Fetches, delayObserver prometheus.Observer) {
 	var (
 		now        = time.Now()
 		numRecords = 0
@@ -632,76 +625,11 @@ func (r *PartitionReader) recordFetchesMetrics(fetches kgo.Fetches, receiveDelay
 
 	fetches.EachRecord(func(record *kgo.Record) {
 		numRecords++
-		receiveDelayObserver.Observe(now.Sub(record.Timestamp).Seconds())
+		delayObserver.Observe(now.Sub(record.Timestamp).Seconds())
 	})
 
 	r.metrics.fetchesTotal.Add(float64(len(fetches)))
 	r.metrics.recordsPerFetch.Observe(float64(numRecords))
-}
-
-func (r *PartitionReader) updateHighestConsumedTimestampBeforeConsumption(fetches kgo.Fetches) {
-	// The only case we want to update the highest consumed timestamp before actually consuming the records
-	// is in the case we don't have any timestamp stored yet. This is used to detect a stuck consumption
-	// after a previous consumption up until the partition end.
-	//
-	// In this case you may think that the right thing to do would be keeping the previous timestamp.
-	// However, if the consumption was paused and this is the first record after resume, then if we keep
-	// the previous timestamp we end up with a brief period of time during which we incorrectly compute the delay.
-	// To stay on the safer side, we do pick the next batch's first record timestamp instead.
-	if r.highestConsumedTimestampBeforePartitionEnd.Load().IsZero() {
-		fetches.EachPartition(func(partition kgo.FetchTopicPartition) {
-			// We expect all records to belong to the partition consumed by this reader,
-			// but we double check it here.
-			if partition.Partition != r.partitionID {
-				return
-			}
-
-			if len(partition.Records) == 0 {
-				return
-			}
-
-			firstRecord := partition.Records[0]
-			r.highestConsumedTimestampBeforePartitionEnd.Store(firstRecord.Timestamp)
-		})
-	}
-}
-
-func (r *PartitionReader) updateHighestConsumedTimestampAfterConsumption(fetches kgo.Fetches, receiveAndConsumeDelayObserver prometheus.Observer) {
-	var (
-		now              = time.Now()
-		highestTimestamp = time.Time{}
-	)
-
-	fetches.EachPartition(func(partition kgo.FetchTopicPartition) {
-		// We expect all records to belong to the partition consumed by this reader,
-		// but we double check it here.
-		if partition.Partition != r.partitionID {
-			return
-		}
-
-		if len(partition.Records) == 0 {
-			return
-		}
-
-		partition.EachRecord(func(record *kgo.Record) {
-			receiveAndConsumeDelayObserver.Observe(now.Sub(record.Timestamp).Seconds())
-
-			if record.Timestamp.After(highestTimestamp) {
-				highestTimestamp = record.Timestamp
-			}
-		})
-
-		// Records are expected to be sorted by offsets, so we can simply look at the last one
-		// to check if we consumed until the partition end.
-		lastRecord := partition.Records[len(partition.Records)-1]
-		consumedUntilPartitionEnd := lastRecord.Offset+1 >= partition.HighWatermark
-
-		if consumedUntilPartitionEnd {
-			r.highestConsumedTimestampBeforePartitionEnd.Store(time.Time{})
-		} else {
-			r.highestConsumedTimestampBeforePartitionEnd.Store(highestTimestamp)
-		}
-	})
 }
 
 func (r *PartitionReader) getStartOffset(ctx context.Context) (startOffset, lastConsumedOffset int64, err error) {
@@ -869,27 +797,6 @@ func (r *PartitionReader) waitReadConsistency(ctx context.Context, withOffset bo
 	return err
 }
 
-// EnforceReadMaxDelay returns an error if the PartitionReader is lagging behind more than the
-// input maxDelay.
-func (r *PartitionReader) EnforceReadMaxDelay(maxDelay time.Duration) error {
-	if maxDelay <= 0 {
-		return nil
-	}
-
-	highestConsumedTimestamp := r.highestConsumedTimestampBeforePartitionEnd.Load()
-	if highestConsumedTimestamp.IsZero() {
-		// We consumed until partition end.
-		return nil
-	}
-
-	if time.Since(highestConsumedTimestamp) <= maxDelay {
-		// The consumption delay is within the allowed max.
-		return nil
-	}
-
-	return fmt.Errorf("partition reader is lagging behind more than the allowed max delay")
-}
-
 func (r *PartitionReader) setFetcher(f fetcher) {
 	r.fetcher.Store(&f)
 }
@@ -1043,24 +950,22 @@ func (r *partitionCommitter) stop(error) error {
 type ReaderMetrics struct {
 	services.Service
 
-	bufferedFetchedRecords             prometheus.GaugeFunc
-	bufferedFetchedBytes               prometheus.GaugeFunc
-	estimatedBytesPerRecord            prometheus.Histogram
-	receiveDelayWhenStarting           prometheus.Observer
-	receiveDelayWhenRunning            prometheus.Observer
-	receiveAndConsumeDelayWhenStarting prometheus.Observer
-	receiveAndConsumeDelayWhenRunning  prometheus.Observer
-	recordsPerFetch                    prometheus.Histogram
-	fetchesErrors                      prometheus.Counter
-	fetchesTotal                       prometheus.Counter
-	fetchWaitDuration                  prometheus.Histogram
-	fetchMaxBytes                      prometheus.Histogram
-	fetchedDiscardedRecordBytes        prometheus.Counter
-	strongConsistencyInstrumentation   *StrongReadConsistencyInstrumentation[struct{}]
-	lastConsumedOffset                 *prometheus.GaugeVec
-	consumeLatency                     prometheus.Histogram
-	kprom                              *kprom.Metrics
-	missedRecords                      prometheus.Counter
+	bufferedFetchedRecords           prometheus.GaugeFunc
+	bufferedFetchedBytes             prometheus.GaugeFunc
+	estimatedBytesPerRecord          prometheus.Histogram
+	receiveDelayWhenStarting         prometheus.Observer
+	receiveDelayWhenRunning          prometheus.Observer
+	recordsPerFetch                  prometheus.Histogram
+	fetchesErrors                    prometheus.Counter
+	fetchesTotal                     prometheus.Counter
+	fetchWaitDuration                prometheus.Histogram
+	fetchMaxBytes                    prometheus.Histogram
+	fetchedDiscardedRecordBytes      prometheus.Counter
+	strongConsistencyInstrumentation *StrongReadConsistencyInstrumentation[struct{}]
+	lastConsumedOffset               *prometheus.GaugeVec
+	consumeLatency                   prometheus.Histogram
+	kprom                            *kprom.Metrics
+	missedRecords                    prometheus.Counter
 }
 
 type ReaderMetricsSource interface {
@@ -1075,16 +980,6 @@ func NewReaderMetrics(reg prometheus.Registerer, metricsSource ReaderMetricsSour
 	receiveDelay := promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
 		Name:                            "cortex_ingest_storage_reader_receive_delay_seconds",
 		Help:                            "Delay between producing a record and receiving it in the consumer.",
-		NativeHistogramZeroThreshold:    math.Pow(2, -10), // Values below this will be considered to be 0. Equals to 0.0009765625, or about 1ms.
-		NativeHistogramBucketFactor:     1.2,              // We use higher factor (scheme=2) to have wider spread of buckets.
-		NativeHistogramMaxBucketNumber:  100,
-		NativeHistogramMinResetDuration: 1 * time.Hour,
-		Buckets:                         prometheus.ExponentialBuckets(0.125, 2, 18), // Buckets between 125ms and 9h.
-	}, []string{"phase"})
-
-	receiveAndConsumeDelay := promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
-		Name:                            "cortex_ingest_storage_reader_receive_and_consume_delay_seconds",
-		Help:                            "Delay between producing a record and consuming it in the consumer.",
 		NativeHistogramZeroThreshold:    math.Pow(2, -10), // Values below this will be considered to be 0. Equals to 0.0009765625, or about 1ms.
 		NativeHistogramBucketFactor:     1.2,              // We use higher factor (scheme=2) to have wider spread of buckets.
 		NativeHistogramMaxBucketNumber:  100,
@@ -1116,10 +1011,8 @@ func NewReaderMetrics(reg prometheus.Registerer, metricsSource ReaderMetricsSour
 			Help:                        "Observations with the current size estimation of records fetched from Kafka. Sampled at 10Hz.",
 			NativeHistogramBucketFactor: 1.1,
 		}),
-		receiveDelayWhenStarting:           receiveDelay.WithLabelValues("starting"),
-		receiveDelayWhenRunning:            receiveDelay.WithLabelValues("running"),
-		receiveAndConsumeDelayWhenStarting: receiveAndConsumeDelay.WithLabelValues("starting"),
-		receiveAndConsumeDelayWhenRunning:  receiveAndConsumeDelay.WithLabelValues("running"),
+		receiveDelayWhenStarting: receiveDelay.WithLabelValues("starting"),
+		receiveDelayWhenRunning:  receiveDelay.WithLabelValues("running"),
 		recordsPerFetch: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
 			Name:    "cortex_ingest_storage_reader_records_per_fetch",
 			Help:    "The number of records received by the consumer in a single fetch operation.",

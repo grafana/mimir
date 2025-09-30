@@ -85,18 +85,17 @@ func TestHandler_ServeHTTP(t *testing.T) {
 	}
 
 	for _, tt := range []struct {
-		name                            string
-		cfg                             HandlerConfig
-		request                         func() *http.Request
-		downstreamResponse              *http.Response
-		downstreamErr                   error
-		expectedStatusCode              int
-		expectedParams                  url.Values
-		expectedMetrics                 int
-		expectedActivity                string
-		expectedReadConsistencyLevel    string
-		expectedReadConsistencyMaxDelay time.Duration
-		assertHeaders                   func(t *testing.T, headers http.Header)
+		name                    string
+		cfg                     HandlerConfig
+		request                 func() *http.Request
+		downstreamResponse      *http.Response
+		downstreamErr           error
+		expectedStatusCode      int
+		expectedParams          url.Values
+		expectedMetrics         int
+		expectedActivity        string
+		expectedReadConsistency string
+		assertHeaders           func(t *testing.T, headers http.Header)
 	}{
 		{
 			name: "handler with stats enabled, POST request with params",
@@ -117,9 +116,9 @@ func TestHandler_ServeHTTP(t *testing.T) {
 				"query": []string{"some_metric"},
 				"time":  []string{"42"},
 			},
-			expectedMetrics:              6,
-			expectedActivity:             "user:12345 UA:test-user-agent req:POST /api/v1/query query=some_metric&time=42",
-			expectedReadConsistencyLevel: "",
+			expectedMetrics:         6,
+			expectedActivity:        "user:12345 UA:test-user-agent req:POST /api/v1/query query=some_metric&time=42",
+			expectedReadConsistency: "",
 		},
 		{
 			name: "handler with stats enabled, GET request with params",
@@ -135,12 +134,12 @@ func TestHandler_ServeHTTP(t *testing.T) {
 				"query": []string{"some_metric"},
 				"time":  []string{"42"},
 			},
-			expectedMetrics:              6,
-			expectedActivity:             "user:12345 UA:test-user-agent req:GET /api/v1/query query=some_metric&time=42",
-			expectedReadConsistencyLevel: "",
+			expectedMetrics:         6,
+			expectedActivity:        "user:12345 UA:test-user-agent req:GET /api/v1/query query=some_metric&time=42",
+			expectedReadConsistency: "",
 		},
 		{
-			name: "handler with stats enabled, GET request with params and read consistency level specified",
+			name: "handler with stats enabled, GET request with params and read consistency specified",
 			cfg:  HandlerConfig{QueryStatsEnabled: true},
 			request: func() *http.Request {
 				r := httptest.NewRequest("GET", "/api/v1/query?query=some_metric&time=42", nil)
@@ -153,32 +152,9 @@ func TestHandler_ServeHTTP(t *testing.T) {
 				"query": []string{"some_metric"},
 				"time":  []string{"42"},
 			},
-			expectedMetrics:              6,
-			expectedActivity:             "user:12345 UA:test-user-agent req:GET /api/v1/query query=some_metric&time=42",
-			expectedReadConsistencyLevel: api.ReadConsistencyStrong,
-		},
-		{
-			name: "handler with stats enabled, GET request with params and read consistency level and max delay specified",
-			cfg:  HandlerConfig{QueryStatsEnabled: true},
-			request: func() *http.Request {
-				r := httptest.NewRequest("GET", "/api/v1/query?query=some_metric&time=42", nil)
-				r.Header.Add("User-Agent", "test-user-agent")
-				return r.WithContext(
-					api.ContextWithReadConsistencyMaxDelay(
-						api.ContextWithReadConsistencyLevel(context.Background(), api.ReadConsistencyEventual),
-						time.Minute),
-				)
-			},
-			downstreamResponse: makeSuccessfulDownstreamResponse(),
-			expectedStatusCode: 200,
-			expectedParams: url.Values{
-				"query": []string{"some_metric"},
-				"time":  []string{"42"},
-			},
-			expectedMetrics:                 6,
-			expectedActivity:                "user:12345 UA:test-user-agent req:GET /api/v1/query query=some_metric&time=42",
-			expectedReadConsistencyLevel:    api.ReadConsistencyEventual,
-			expectedReadConsistencyMaxDelay: time.Minute,
+			expectedMetrics:         6,
+			expectedActivity:        "user:12345 UA:test-user-agent req:GET /api/v1/query query=some_metric&time=42",
+			expectedReadConsistency: api.ReadConsistencyStrong,
 		},
 		{
 			name: "handler with stats enabled, GET request without params",
@@ -188,12 +164,12 @@ func TestHandler_ServeHTTP(t *testing.T) {
 				r.Header.Add("User-Agent", "test-user-agent")
 				return r
 			},
-			downstreamResponse:           makeSuccessfulDownstreamResponse(),
-			expectedStatusCode:           200,
-			expectedParams:               url.Values{},
-			expectedMetrics:              6,
-			expectedActivity:             "user:12345 UA:test-user-agent req:GET /api/v1/query (no params)",
-			expectedReadConsistencyLevel: "",
+			downstreamResponse:      makeSuccessfulDownstreamResponse(),
+			expectedStatusCode:      200,
+			expectedParams:          url.Values{},
+			expectedMetrics:         6,
+			expectedActivity:        "user:12345 UA:test-user-agent req:GET /api/v1/query (no params)",
+			expectedReadConsistency: "",
 		},
 		{
 			name: "handler with stats disabled, GET request with params",
@@ -209,9 +185,9 @@ func TestHandler_ServeHTTP(t *testing.T) {
 				"query": []string{"some_metric"},
 				"time":  []string{"42"},
 			},
-			expectedMetrics:              0,
-			expectedActivity:             "user:12345 UA:test-user-agent req:GET /api/v1/query query=some_metric&time=42",
-			expectedReadConsistencyLevel: "",
+			expectedMetrics:         0,
+			expectedActivity:        "user:12345 UA:test-user-agent req:GET /api/v1/query query=some_metric&time=42",
+			expectedReadConsistency: "",
 		},
 		{
 			name: "handler with stats enabled, serving remote read query with snappy compression",
@@ -274,9 +250,9 @@ func TestHandler_ServeHTTP(t *testing.T) {
 				"query": []string{"some_metric"},
 				"time":  []string{"42"},
 			},
-			expectedMetrics:              6,
-			expectedActivity:             "user:12345 UA: req:GET /api/v1/query query=some_metric&time=42",
-			expectedReadConsistencyLevel: "",
+			expectedMetrics:         6,
+			expectedActivity:        "user:12345 UA: req:GET /api/v1/query query=some_metric&time=42",
+			expectedReadConsistency: "",
 		},
 		{
 			name: "downstream returns a gRPC error with 4xx status code",
@@ -290,9 +266,9 @@ func TestHandler_ServeHTTP(t *testing.T) {
 				"query": []string{"some_metric"},
 				"time":  []string{"42"},
 			},
-			expectedMetrics:              6,
-			expectedActivity:             "user:12345 UA: req:GET /api/v1/query query=some_metric&time=42",
-			expectedReadConsistencyLevel: "",
+			expectedMetrics:         6,
+			expectedActivity:        "user:12345 UA: req:GET /api/v1/query query=some_metric&time=42",
+			expectedReadConsistency: "",
 		},
 		{
 			name: "downstream returns a generic error",
@@ -306,9 +282,9 @@ func TestHandler_ServeHTTP(t *testing.T) {
 				"query": []string{"some_metric"},
 				"time":  []string{"42"},
 			},
-			expectedMetrics:              6,
-			expectedActivity:             "user:12345 UA: req:GET /api/v1/query query=some_metric&time=42",
-			expectedReadConsistencyLevel: "",
+			expectedMetrics:         6,
+			expectedActivity:        "user:12345 UA: req:GET /api/v1/query query=some_metric&time=42",
+			expectedReadConsistency: "",
 		},
 		{
 			name: "handler with stats enabled, check ServiceTimingHeader",
@@ -324,9 +300,9 @@ func TestHandler_ServeHTTP(t *testing.T) {
 				"query": []string{"some_metric"},
 				"time":  []string{"42"},
 			},
-			expectedMetrics:              6,
-			expectedActivity:             "user:12345 UA: req:POST /api/v1/query query=some_metric&time=42",
-			expectedReadConsistencyLevel: "",
+			expectedMetrics:         6,
+			expectedActivity:        "user:12345 UA: req:POST /api/v1/query query=some_metric&time=42",
+			expectedReadConsistency: "",
 			assertHeaders: func(t *testing.T, headers http.Header) {
 				assert.Contains(t, headers.Get(ServiceTimingHeaderName), "querier_wall_time;dur=0")
 				assert.Contains(t, headers.Get(ServiceTimingHeaderName), "response_time;dur=")
@@ -349,9 +325,9 @@ func TestHandler_ServeHTTP(t *testing.T) {
 				"query": []string{"some_metric"},
 				"time":  []string{"42"},
 			},
-			expectedMetrics:              6,
-			expectedActivity:             "user:12345 UA: req:POST /api/v1/query query=some_metric&time=42",
-			expectedReadConsistencyLevel: "",
+			expectedMetrics:         6,
+			expectedActivity:        "user:12345 UA: req:POST /api/v1/query query=some_metric&time=42",
+			expectedReadConsistency: "",
 			assertHeaders: func(t *testing.T, headers http.Header) {
 				assert.Contains(t, headers.Get(ServiceTimingHeaderName), "querier_wall_time;dur=0")
 				assert.Contains(t, headers.Get(ServiceTimingHeaderName), "response_time;dur=")
@@ -388,9 +364,9 @@ func TestHandler_ServeHTTP(t *testing.T) {
 				"query": []string{"some_metric"},
 				"time":  []string{"42"},
 			},
-			expectedMetrics:              0,
-			expectedActivity:             "user:12345 UA: req:POST /api/v1/query query=some_metric&time=42",
-			expectedReadConsistencyLevel: "",
+			expectedMetrics:         0,
+			expectedActivity:        "user:12345 UA: req:POST /api/v1/query query=some_metric&time=42",
+			expectedReadConsistency: "",
 			assertHeaders: func(t *testing.T, headers http.Header) {
 				assert.Contains(t, headers.Get(ServiceTimingHeaderName), "encode_time_seconds;dur=0")
 				assert.Contains(t, headers.Get(ServiceTimingHeaderName), "estimated_series_count;val=0")
@@ -511,17 +487,10 @@ func TestHandler_ServeHTTP(t *testing.T) {
 					require.Equal(t, value[0], msg["param_"+key])
 				}
 
-				if tt.expectedReadConsistencyLevel != "" {
-					require.Equal(t, tt.expectedReadConsistencyLevel, msg["read_consistency"])
+				if tt.expectedReadConsistency != "" {
+					require.Equal(t, tt.expectedReadConsistency, msg["read_consistency"])
 				} else {
 					_, ok := msg["read_consistency"]
-					require.False(t, ok)
-				}
-
-				if tt.expectedReadConsistencyMaxDelay > 0 {
-					require.Equal(t, tt.expectedReadConsistencyMaxDelay, msg["read_consistency_max_delay"])
-				} else {
-					_, ok := msg["read_consistency_max_delay"]
 					require.False(t, ok)
 				}
 			} else {

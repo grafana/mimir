@@ -112,10 +112,6 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       terminationGracePeriodSeconds: {{ .Values.alertmanager.terminationGracePeriodSeconds }}
-      {{- with .Values.alertmanager.dnsConfig }}
-      dnsConfig:
-        {{- toYaml . | nindent 8 }}
-      {{- end }}
       volumes:
         - name: config
           {{- include "mimir.configVolume" . | nindent 10 }}

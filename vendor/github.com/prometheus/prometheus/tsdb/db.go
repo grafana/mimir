@@ -250,11 +250,6 @@ type Options struct {
 	// PostingsForMatchersCacheKeyFunc allows additional cache key information to be provided for shared caches.
 	PostingsForMatchersCacheKeyFunc CacheKeyFunc
 
-	// HeadPostingsForMatchersCacheFactory returns a factory for creating PostingsForMatchersCache instances for head
-	// blocks. If this is provided, it will be used to provide head cache instances, otherwise a factory will be constructed
-	// with the head cache settings below.
-	HeadPostingsForMatchersCacheFactory PostingsForMatchersCacheFactory
-
 	// HeadPostingsForMatchersCacheInvalidation indicates whether postings should be tracked and invalidated when they
 	// change. This setting is only valid when SharedPostingsForMatchersCache is also true.
 	HeadPostingsForMatchersCacheInvalidation bool
@@ -280,10 +275,9 @@ type Options struct {
 	// HeadPostingsForMatchersCacheMetrics holds the metrics tracked by PostingsForMatchers cache when querying the Head.
 	HeadPostingsForMatchersCacheMetrics *PostingsForMatchersCacheMetrics
 
-	// BlockPostingsForMatchersCacheFactory returns a factory for creating PostingsForMatchersCache instances for compacted
-	// blocks. If this is provided, it will be used to provide block cache instances, otherwise a factory will be constructed
-	// with the block cache settings below.
-	BlockPostingsForMatchersCacheFactory PostingsForMatchersCacheFactory
+	// HeadStatisticsCollectionFrequency determines how often label name cardinality statistics should be calculated
+	// from postings in the Head. These statistics are used for optimization of query execution. 0 to disable.
+	HeadStatisticsCollectionFrequency time.Duration
 
 	// BlockPostingsForMatchersCacheTTL is the TTL of the postings for matchers cache of each compacted block.
 	// If it's 0, the cache will only deduplicate in-flight requests, deleting the results once the first request has finished.
@@ -324,10 +318,8 @@ type Options struct {
 	// IndexLookupPlannerFunc is a function to return index.LookupPlanner from a BlockReader.
 	// Similar to BlockChunkQuerierFunc, this allows per-block planner creation.
 	// For on-disk blocks, IndexLookupPlannerFunc is invoked once when they are opened.
-	// For in-memory blocks IndexLookupPlannerFunc is invoked on every query.
+	// For in-memory blocks IndexLookupPlannerFunc is invoked every time statistics are generated, which happens according to HeadStatisticsCollectionFrequency.
 	IndexLookupPlannerFunc IndexLookupPlannerFunc
-
-	PostingsClonerFactory PostingsClonerFactory
 }
 
 type NewCompactorFunc func(ctx context.Context, r prometheus.Registerer, l *slog.Logger, ranges []int64, pool chunkenc.Pool, opts *Options) (Compactor, error)
@@ -1052,22 +1044,18 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 		db.blockChunkQuerierFunc = opts.BlockChunkQuerierFunc
 	}
 
-	if opts.BlockPostingsForMatchersCacheFactory != nil {
-		db.blockPostingsForMatchersCacheFactory = opts.BlockPostingsForMatchersCacheFactory
-	} else {
-		config := PostingsForMatchersCacheConfig{
-			Shared:                opts.SharedPostingsForMatchersCache,
-			KeyFunc:               opts.PostingsForMatchersCacheKeyFunc,
-			Invalidation:          false,
-			CacheVersions:         0,
-			TTL:                   opts.BlockPostingsForMatchersCacheTTL,
-			MaxItems:              opts.BlockPostingsForMatchersCacheMaxItems,
-			MaxBytes:              opts.BlockPostingsForMatchersCacheMaxBytes,
-			Force:                 opts.BlockPostingsForMatchersCacheForce,
-			Metrics:               opts.BlockPostingsForMatchersCacheMetrics,
-			PostingsClonerFactory: opts.PostingsClonerFactory,
-		}
-		db.blockPostingsForMatchersCacheFactory = NewPostingsForMatchersCacheFactory(config)
+	if db.blockPostingsForMatchersCacheFactory == nil {
+		db.blockPostingsForMatchersCacheFactory = NewPostingsForMatchersCacheFactory(
+			opts.SharedPostingsForMatchersCache,
+			opts.PostingsForMatchersCacheKeyFunc,
+			false,
+			0,
+			opts.BlockPostingsForMatchersCacheTTL,
+			opts.BlockPostingsForMatchersCacheMaxItems,
+			opts.BlockPostingsForMatchersCacheMaxBytes,
+			opts.BlockPostingsForMatchersCacheForce,
+			opts.BlockPostingsForMatchersCacheMetrics,
+		)
 	}
 
 	var wal, wbl *wlog.WL
@@ -1113,23 +1101,17 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 	headOpts.OutOfOrderCapMax.Store(opts.OutOfOrderCapMax)
 	headOpts.EnableSharding = opts.EnableSharding
 	headOpts.TimelyCompaction = opts.TimelyCompaction
-	if opts.HeadPostingsForMatchersCacheFactory != nil {
-		headOpts.PostingsForMatchersCacheFactory = opts.HeadPostingsForMatchersCacheFactory
-	} else {
-		config := PostingsForMatchersCacheConfig{
-			Shared:                opts.SharedPostingsForMatchersCache,
-			KeyFunc:               opts.PostingsForMatchersCacheKeyFunc,
-			Invalidation:          opts.HeadPostingsForMatchersCacheInvalidation,
-			CacheVersions:         opts.HeadPostingsForMatchersCacheVersions,
-			TTL:                   opts.HeadPostingsForMatchersCacheTTL,
-			MaxItems:              opts.HeadPostingsForMatchersCacheMaxItems,
-			MaxBytes:              opts.HeadPostingsForMatchersCacheMaxBytes,
-			Force:                 opts.HeadPostingsForMatchersCacheForce,
-			Metrics:               opts.HeadPostingsForMatchersCacheMetrics,
-			PostingsClonerFactory: opts.PostingsClonerFactory,
-		}
-		headOpts.PostingsForMatchersCacheFactory = NewPostingsForMatchersCacheFactory(config)
-	}
+	headOpts.PostingsForMatchersCacheFactory = NewPostingsForMatchersCacheFactory(
+		opts.SharedPostingsForMatchersCache,
+		opts.PostingsForMatchersCacheKeyFunc,
+		opts.HeadPostingsForMatchersCacheInvalidation,
+		opts.HeadPostingsForMatchersCacheVersions,
+		opts.HeadPostingsForMatchersCacheTTL,
+		opts.HeadPostingsForMatchersCacheMaxItems,
+		opts.HeadPostingsForMatchersCacheMaxBytes,
+		opts.HeadPostingsForMatchersCacheForce,
+		opts.HeadPostingsForMatchersCacheMetrics,
+	)
 	headOpts.SecondaryHashFunction = opts.SecondaryHashFunction
 	if opts.IndexLookupPlannerFunc != nil {
 		headOpts.IndexLookupPlannerFunc = opts.IndexLookupPlannerFunc
@@ -1253,6 +1235,13 @@ func (db *DB) BlockMetas() []BlockMeta {
 func (db *DB) run(ctx context.Context) {
 	defer close(db.donec)
 
+	var headStatsUpdateTicker <-chan time.Time
+	if db.opts.HeadStatisticsCollectionFrequency > 0 {
+		t := time.NewTicker(db.opts.HeadStatisticsCollectionFrequency)
+		defer t.Stop()
+		headStatsUpdateTicker = t.C
+	}
+
 	backoff := time.Duration(0)
 
 	for {
@@ -1292,6 +1281,12 @@ func (db *DB) run(ctx context.Context) {
 			}
 			db.autoCompactMtx.Unlock()
 
+		case <-headStatsUpdateTicker:
+			// If needed, this could instead be spun off concurrently as an optimization to allow
+			// head compaction to interrupt statistics collection (by taking the postings mutex).
+			if err := db.head.updateHeadStatistics(); err != nil {
+				db.logger.Error("update head statistics", "err", err)
+			}
 		case <-db.stopc:
 			return
 		}

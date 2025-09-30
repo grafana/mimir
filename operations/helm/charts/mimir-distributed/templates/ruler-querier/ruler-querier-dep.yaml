@@ -133,10 +133,6 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       terminationGracePeriodSeconds: {{ .Values.ruler_querier.terminationGracePeriodSeconds }}
-      {{- with .Values.ruler_querier.dnsConfig }}
-      dnsConfig:
-        {{- toYaml . | nindent 8 }}
-      {{- end }}
       volumes:
         - name: config
           {{- include "mimir.configVolume" . | nindent 10 }}

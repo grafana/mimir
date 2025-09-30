@@ -49,14 +49,6 @@ func Test_MaxSeriesAndChunksPerQueryLimitHit(t *testing.T) {
 		},
 	)
 
-	querierFlags := map[string]string{
-		// The querier uses a multiple of this period to allow the store-gateway to sync the bucket.
-		// If the period is too low (like it is - 1s), it leads to flaky CI tests
-		// because the store-gateway may delay syncing the bucket. A multiple of 1s doesn't give it enough leeway.
-		// So we keep the store-gateway synching frequently, but lower the querier's expectations.
-		"-blocks-storage.bucket-store.sync-interval": "5s",
-	}
-
 	consul := e2edb.NewConsul()
 	minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
 	require.NoError(t, scenario.StartAndWaitReady(consul, minio))
@@ -156,13 +148,11 @@ func Test_MaxSeriesAndChunksPerQueryLimitHit(t *testing.T) {
 			compactor := e2emimir.NewCompactor("compactor", consul.NetworkHTTPEndpoint(), flags)
 			require.NoError(t, scenario.StartAndWaitReady(compactor))
 
-			querierFlags := mergeFlags(flags, querierFlags, testData.additionalQuerierFlags)
-
 			// The querier and store-gateway will be ready after they discovered the blocks in the storage.
-			t.Logf("Starting querier with flags: %v", querierFlags)
+			t.Logf("Starting querier with flags: %v", testData.additionalQuerierFlags)
 			t.Logf("Starting store-gateways with flags: %v", testData.additionalStoreGatewayFlags)
 
-			querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), mergeFlags(flags, querierFlags))
+			querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), mergeFlags(flags, testData.additionalQuerierFlags))
 			storeGateway1 := e2emimir.NewStoreGateway("store-gateway-1", consul.NetworkHTTPEndpoint(), mergeFlags(flags, testData.additionalStoreGatewayFlags))
 			storeGateway2 := e2emimir.NewStoreGateway("store-gateway-2", consul.NetworkHTTPEndpoint(), mergeFlags(flags, testData.additionalStoreGatewayFlags))
 			require.NoError(t, scenario.StartAndWaitReady(querier, storeGateway1, storeGateway2))

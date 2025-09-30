@@ -72,10 +72,6 @@ spec:
         - name: {{ . }}
       {{- end }}
       {{- end }}
-      {{- with .dnsConfig }}
-      dnsConfig:
-        {{- toYaml . | nindent 8 }}
-      {{- end }}
       volumes:
         {{- with .extraVolumes }}
         {{- toYaml . | nindent 8 }}

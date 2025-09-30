@@ -388,12 +388,7 @@ func (h *writeHandler) appendV2(app storage.Appender, req *writev2.Request, rs *
 		b = labels.NewScratchBuilder(0)
 	)
 	for _, ts := range req.Timeseries {
-		ls, err := ts.ToLabels(&b, req.Symbols)
-		if err != nil {
-			badRequestErrs = append(badRequestErrs, fmt.Errorf("parsing labels for series %v: %w", ts.LabelsRefs, err))
-			samplesWithInvalidLabels += len(ts.Samples) + len(ts.Histograms)
-			continue
-		}
+		ls := ts.ToLabels(&b, req.Symbols)
 		// Validate series labels early.
 		// NOTE(bwplotka): While spec allows UTF-8, Prometheus Receiver may impose
 		// specific limits and follow https://prometheus.io/docs/specs/remote_write_spec_2_0/#invalid-samples case.
@@ -479,11 +474,7 @@ func (h *writeHandler) appendV2(app storage.Appender, req *writev2.Request, rs *
 
 		// Exemplars.
 		for _, ep := range ts.Exemplars {
-			e, err := ep.ToExemplar(&b, req.Symbols)
-			if err != nil {
-				badRequestErrs = append(badRequestErrs, fmt.Errorf("parsing exemplar for series %v: %w", ls.String(), err))
-				continue
-			}
+			e := ep.ToExemplar(&b, req.Symbols)
 			ref, err = app.AppendExemplar(ref, ls, e)
 			if err == nil {
 				rs.Exemplars++

@@ -95,10 +95,6 @@ spec:
         {{- with .Values.admin_api.extraContainers }}
         {{ toYaml . | nindent 8 }}
         {{- end }}
-      {{- with .Values.admin_api.dnsConfig | default .Values.global.dnsConfig }}
-      dnsConfig:
-        {{- toYaml . | nindent 8 }}
-      {{- end }}
       {{- with .Values.admin_api.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

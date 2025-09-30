@@ -244,13 +244,12 @@ var (
 
 	// ErrUnsupported is returned by AddWith() when WithOps() specified an
 	// Unportable event that's not supported on this platform.
-	//lint:ignore ST1012 not relevant
 	xErrUnsupported = errors.New("fsnotify: not supported with this backend")
 )
 
 // NewWatcher creates a new Watcher.
 func NewWatcher() (*Watcher, error) {
-	ev, errs := make(chan Event, defaultBufferSize), make(chan error)
+	ev, errs := make(chan Event), make(chan error)
 	b, err := newBackend(ev, errs)
 	if err != nil {
 		return nil, err
@@ -267,8 +266,8 @@ func NewWatcher() (*Watcher, error) {
 // cases, and whenever possible you will be better off increasing the kernel
 // buffers instead of adding a large userspace buffer.
 func NewBufferedWatcher(sz uint) (*Watcher, error) {
-	ev, errs := make(chan Event, sz), make(chan error)
-	b, err := newBackend(ev, errs)
+	ev, errs := make(chan Event), make(chan error)
+	b, err := newBufferedBackend(sz, ev, errs)
 	if err != nil {
 		return nil, err
 	}
@@ -338,8 +337,7 @@ func (w *Watcher) Close() error { return w.b.Close() }
 // WatchList returns all paths explicitly added with [Watcher.Add] (and are not
 // yet removed).
 //
-// The order is undefined, and may differ per call. Returns nil if
-// [Watcher.Close] was called.
+// Returns nil if [Watcher.Close] was called.
 func (w *Watcher) WatchList() []string { return w.b.WatchList() }
 
 // Supports reports if all the listed operations are supported by this platform.

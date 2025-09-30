@@ -505,8 +505,7 @@ func createAndUpload(t testing.TB, bkt objstore.Bucket, blocks []blockgenSpec) (
 	for _, b := range blocks {
 		id, meta := createBlock(ctx, t, prepareDir, b)
 		metas = append(metas, meta)
-		_, err := block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(prepareDir, id.String()), nil)
-		require.NoError(t, err)
+		require.NoError(t, block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(prepareDir, id.String()), nil))
 	}
 
 	return metas

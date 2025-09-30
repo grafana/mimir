@@ -93,8 +93,7 @@ func NewManager(cleanupInterval, inactiveTimeout time.Duration, logger log.Logge
 }
 
 func (m *Manager) iteration(_ context.Context) error {
-	m.purgeInactiveAttributionsUntil(time.Now())
-	return nil
+	return m.purgeInactiveAttributionsUntil(time.Now().Add(-m.inactiveTimeout))
 }
 
 func (m *Manager) enabledForUser(userID string) bool {
@@ -308,19 +307,15 @@ func (m *Manager) updateTracker(userID string) (*SampleTracker, *ActiveSeriesTra
 	return st, at
 }
 
-func (m *Manager) purgeInactiveAttributionsUntil(now time.Time) {
-	deadline := now.Add(-m.inactiveTimeout)
+func (m *Manager) purgeInactiveAttributionsUntil(deadline time.Time) error {
 	m.stmtx.RLock()
-	userIDs := make(map[string]struct{}, len(m.sampleTrackersByUserID)+len(m.activeTrackersByUserID))
+	userIDs := make([]string, 0, len(m.sampleTrackersByUserID))
 	for userID := range m.sampleTrackersByUserID {
-		userIDs[userID] = struct{}{}
-	}
-	for userID := range m.activeTrackersByUserID {
-		userIDs[userID] = struct{}{}
+		userIDs = append(userIDs, userID)
 	}
 	m.stmtx.RUnlock()
 
-	for userID := range userIDs {
+	for _, userID := range userIDs {
 		st, at := m.updateTracker(userID)
 		if st == nil || at == nil {
 			continue
@@ -334,27 +329,15 @@ func (m *Manager) purgeInactiveAttributionsUntil(now time.Time) {
 		}
 
 		at.observedMtx.RLock()
-		// If the activeseries tracker has been in overflow for more than the cooldown duration,
-		// check if it recovered. If it recovered, delete the tracker to reset its state (and account the overflown series correctly),
-		// If it didn't recover, reset the overflowSince to now to start a new cooldown period.
-		isOverflowedAndShouldCheck := !at.overflowSince.IsZero() && at.overflowSince.Add(at.cooldownDuration).Before(deadline)
-
-		// NOTE: If there are still series in the overflow counter we can't tell how much cardinality those add.
-		// The best we can say is "it's at least 1", so we just ignore here (with a limit set to thousands, doing this plus one won't change much).
-		// If we wanted to be more accurate, we should do "(len(at.observed) + (at.overflowCounter.activeSeries.Load() > 0 ? 1 : 0)) < at.maxCardinality".
-		recovered := len(at.observed) <= at.maxCardinality
-		at.observedMtx.RUnlock()
-
-		if isOverflowedAndShouldCheck {
-			if recovered {
-				m.deleteActiveTracker(userID)
-			} else {
-				at.observedMtx.Lock()
-				at.overflowSince = now
-				at.observedMtx.Unlock()
-			}
+		// if the activeseries tracker has been in overflow for more than the cooldown duration, delete it
+		if !at.overflowSince.IsZero() && at.overflowSince.Add(at.cooldownDuration).Before(deadline) {
+			at.observedMtx.RUnlock()
+			m.deleteActiveTracker(userID)
+		} else {
+			at.observedMtx.RUnlock()
 		}
 	}
+	return nil
 }
 
 var _ prometheus.Collector = (*costAttributionCollector)(nil)

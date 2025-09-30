@@ -1,4 +1,4 @@
-//go:build !windows && !darwin && !freebsd && !plan9
+//go:build !windows && !darwin && !freebsd
 
 package internal
 
@@ -9,8 +9,8 @@ import (
 )
 
 var (
-	ErrSyscallEACCES = syscall.EACCES
-	ErrUnixEACCES    = unix.EACCES
+	SyscallEACCES = syscall.EACCES
+	UnixEACCES    = unix.EACCES
 )
 
 var maxfiles uint64

@@ -132,15 +132,25 @@ func rewriteForQuerySharding(ctx context.Context, expr string) (string, error) {
 	const maxShards = 2
 	stats := astmapper.NewMapperStats()
 	squasher := astmapper.EmbeddedQueriesSquasher
-	summer := astmapper.NewQueryShardSummer(maxShards, false, squasher, log.NewNopLogger(), stats)
+	summer, err := astmapper.NewQueryShardSummer(maxShards, squasher, log.NewNopLogger(), stats)
+	if err != nil {
+		return "", err
+	}
+
+	mapper := astmapper.NewSharding(summer, squasher)
 	ast, err := parser.ParseExpr(expr)
 	if err != nil {
 		return "", err
 	}
 
-	shardedQuery, err := summer.Map(ctx, ast)
+	shardedQuery, err := mapper.Map(ctx, ast)
 	if err != nil {
 		return "", err
+	}
+
+	if stats.GetShardedQueries() == 0 {
+		// If no part of the query was shardable, then the query-frontend will use the original expression as-is.
+		return expr, nil
 	}
 
 	return shardedQuery.String(), nil

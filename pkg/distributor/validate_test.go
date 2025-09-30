@@ -132,7 +132,6 @@ func TestValidateLabels(t *testing.T) {
 	manager, err := costattribution.NewManager(5*time.Second, 10*time.Second, log.NewNopLogger(), overrides(limits), reg, careg)
 	require.NoError(t, err)
 
-	var logged logRecorder
 	ds, ingesters, _, _ := prepare(t, prepConfig{
 		numIngesters:       2,
 		happyIngesters:     2,
@@ -141,7 +140,6 @@ func TestValidateLabels(t *testing.T) {
 		overrides:          overrides,
 		reg:                reg,
 		costAttributionMgr: manager,
-		logger:             log.NewLogfmtLogger(&logged),
 	})
 	d := ds[0]
 
@@ -179,7 +177,6 @@ func TestValidateLabels(t *testing.T) {
 		customUserID             string
 		wantErr                  func(model.ValidationScheme) error
 		wantLabels               map[model.LabelName]model.LabelValue
-		wantLog                  []string
 	}{
 		{
 			name:                     "missing metric name",
@@ -264,38 +261,28 @@ func TestValidateLabels(t *testing.T) {
 		},
 		{
 			name:                     "label value too long gets truncated",
-			metric:                   map[model.LabelName]model.LabelValue{model.MetricNameLabel: "badLabelValueToTruncate", "much_shorter_name": model.LabelValue(strings.Repeat("x", 80)), "team": "biz"},
+			metric:                   map[model.LabelName]model.LabelValue{model.MetricNameLabel: "badLabelValue", "much_shorter_name": model.LabelValue(strings.Repeat("x", 80)), "team": "biz"},
 			skipLabelNameValidation:  false,
 			skipLabelCountValidation: false,
 			customUserID:             truncatingUserID,
 			wantLabels: map[model.LabelName]model.LabelValue{
-				model.MetricNameLabel: "badLabelValueToTruncate",
+				model.MetricNameLabel: "badLabelValue",
 				"team":                "biz",
 				"group":               "custom label",
 				"much_shorter_name":   "xxxx(hash:bd28a84572ce022f806b2cdc3942ce1aaf094d36062b83dc0f7557e0f995b359)",
 			},
-			wantLog: []string{
-				"badLabelValueToTruncate",
-				"label value was truncated and appended its hash value",
-				"insight=true",
-			},
 		},
 		{
 			name:                     "label value too long gets dropped",
-			metric:                   map[model.LabelName]model.LabelValue{model.MetricNameLabel: "badLabelValueToDrop", "much_shorter_name": model.LabelValue(strings.Repeat("x", 80)), "team": "biz"},
+			metric:                   map[model.LabelName]model.LabelValue{model.MetricNameLabel: "badLabelValue", "much_shorter_name": model.LabelValue(strings.Repeat("x", 80)), "team": "biz"},
 			skipLabelNameValidation:  false,
 			skipLabelCountValidation: false,
 			customUserID:             droppingUserID,
 			wantLabels: map[model.LabelName]model.LabelValue{
-				model.MetricNameLabel: "badLabelValueToDrop",
+				model.MetricNameLabel: "badLabelValue",
 				"team":                "biz",
 				"group":               "custom label",
 				"much_shorter_name":   "(hash:bd28a84572ce022f806b2cdc3942ce1aaf094d36062b83dc0f7557e0f995b359)",
-			},
-			wantLog: []string{
-				"badLabelValueToDrop",
-				"label value was replaced by its hash value",
-				"insight=true",
 			},
 		},
 		{
@@ -613,20 +600,6 @@ func TestValidateLabels(t *testing.T) {
 								}
 								require.Equal(t, c.wantLabels, gotLabels)
 							}
-
-							if len(c.wantLog) > 0 {
-								found := false
-								for _, line := range logged.Writes() {
-									if stringContainsAll(line, c.wantLog) {
-										found = true
-										break
-									}
-								}
-								if !found {
-									t.Log(logged.Writes())
-									require.Fail(t, "Expected logs to contain line with parts", "parts: %q", c.wantLog)
-								}
-							}
 						}()
 					}
 
@@ -812,7 +785,7 @@ func TestValidateLabelDuplication(t *testing.T) {
 	actual := validateLabels(newSampleValidationMetrics(nil), cfg, userID, "", []mimirpb.LabelAdapter{
 		{Name: model.MetricNameLabel, Value: "a"},
 		{Name: model.MetricNameLabel, Value: "b"},
-	}, false, false, nil, ts, log.NewNopLogger())
+	}, false, false, nil, ts)
 	expected := fmt.Errorf(
 		duplicateLabelMsgFormat,
 		model.MetricNameLabel,
@@ -829,7 +802,7 @@ func TestValidateLabelDuplication(t *testing.T) {
 		{Name: model.MetricNameLabel, Value: "a"},
 		{Name: "a", Value: "a"},
 		{Name: "a", Value: "a"},
-	}, false, false, nil, ts, log.NewNopLogger())
+	}, false, false, nil, ts)
 	expected = fmt.Errorf(
 		duplicateLabelMsgFormat,
 		"a",
@@ -872,7 +845,7 @@ func TestValidateLabel_UseAfterRelease(t *testing.T) {
 	careg := prometheus.NewRegistry()
 	manager, err := costattribution.NewManager(5*time.Second, 10*time.Second, log.NewNopLogger(), limits, reg, careg)
 	require.NoError(t, err)
-	err = validateLabels(s, cfg, userID, "custom label", ts.Labels, true, true, manager.SampleTracker(userID), time.Now(), log.NewNopLogger())
+	err = validateLabels(s, cfg, userID, "custom label", ts.Labels, true, true, manager.SampleTracker(userID), time.Now())
 	var lengthErr labelValueTooLongError
 	require.ErrorAs(t, err, &lengthErr)
 
@@ -1258,31 +1231,4 @@ func TestHashLabelValueInto(t *testing.T) {
 	require.Len(t, result, validation.LabelValueHashLen)
 	// Check that input's underlying array was kept.
 	require.Equal(t, unsafe.StringData(input), unsafe.StringData(result))
-}
-
-type logRecorder struct {
-	mtx    sync.Mutex
-	writes []string
-}
-
-func (b *logRecorder) Write(buf []byte) (int, error) {
-	b.mtx.Lock()
-	defer b.mtx.Unlock()
-	b.writes = append(b.writes, string(buf))
-	return len(buf), nil
-}
-
-func (b *logRecorder) Writes() []string {
-	b.mtx.Lock()
-	defer b.mtx.Unlock()
-	return b.writes
-}
-
-func stringContainsAll(s string, parts []string) bool {
-	for _, part := range parts {
-		if !strings.Contains(s, part) {
-			return false
-		}
-	}
-	return true
 }

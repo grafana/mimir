@@ -2248,8 +2248,7 @@ func TestMultitenantCompactor_OutOfOrderCompaction(t *testing.T) {
 		meta, err := block.ReadMetaFromDir(blockDir)
 		require.NoErrorf(t, err, "reading meta from block at &s", blockDir)
 
-		_, err = block.Upload(ctx, log.NewNopLogger(), userBkt, filepath.Join(fixtureDir, blockID.String()), meta)
-		require.NoError(t, err)
+		require.NoError(t, block.Upload(ctx, log.NewNopLogger(), userBkt, filepath.Join(fixtureDir, blockID.String()), meta))
 
 		metas = append(metas, meta)
 	}

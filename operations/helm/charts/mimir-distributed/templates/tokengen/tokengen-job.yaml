@@ -117,10 +117,6 @@ spec:
             {{- toYaml .Values.tokengenJob.containerSecurityContext | nindent 12 }}
       {{- end }}
       restartPolicy: OnFailure
-      {{- with .Values.tokengenJob.dnsConfig }}
-      dnsConfig:
-        {{- toYaml . | nindent 8 }}
-      {{- end }}
       volumes:
         - name: config
           {{- include "mimir.configVolume" . | nindent 10 }}

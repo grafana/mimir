@@ -98,8 +98,7 @@ func TestCompactBlocksContainingNativeHistograms(t *testing.T) {
 		meta, err := block.GenerateBlockFromSpec(inDir, []*block.SeriesSpec{&spec})
 		require.NoError(t, err)
 
-		_, err = block.Upload(context.Background(), log.NewNopLogger(), bktClient, filepath.Join(inDir, meta.ULID.String()), meta)
-		require.NoError(t, err)
+		require.NoError(t, block.Upload(context.Background(), log.NewNopLogger(), bktClient, filepath.Join(inDir, meta.ULID.String()), meta))
 
 		metas = append(metas, meta)
 	}

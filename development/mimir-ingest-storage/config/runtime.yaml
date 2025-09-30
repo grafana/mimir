@@ -2,4 +2,3 @@
 overrides:
   anonymous:
     labels_query_optimizer_enabled: true
-    ruler_evaluation_consistency_max_delay: 1m

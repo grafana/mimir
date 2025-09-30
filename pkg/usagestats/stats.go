@@ -15,18 +15,13 @@ const (
 	statsPrefix = "github.com/grafana/mimir/"
 	targetKey   = "target"
 	editionKey  = "edition"
-	modeKey     = "mode"
 
 	EditionOSS        = "oss"
 	EditionEnterprise = "enterprise"
-
-	ModeClassic       = "classic"
-	ModeIngestStorage = "ingest_storage"
 )
 
 func init() {
 	SetEdition(EditionOSS)
-	SetMode(ModeClassic)
 }
 
 // SetTarget sets the target name.
@@ -37,11 +32,6 @@ func SetTarget(target string) {
 // SetEdition sets the edition name.
 func SetEdition(edition string) {
 	GetString(editionKey).Set(edition)
-}
-
-// SetMode sets mimir architecture.
-func SetMode(name string) {
-	GetString(modeKey).Set(name)
 }
 
 // GetString returns the String stats object for the given name.

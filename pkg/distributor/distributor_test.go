@@ -5613,7 +5613,6 @@ type prepConfig struct {
 	overrides          func(*validation.Limits) *validation.Overrides
 	reg                *prometheus.Registry
 	costAttributionMgr *costattribution.Manager
-	logger             log.Logger
 	numDistributors    int
 
 	replicationFactor                  int
@@ -5879,10 +5878,7 @@ func prepare(t testing.TB, cfg prepConfig) ([]*Distributor, []*mockIngester, []*
 
 	cfg.validate(t)
 
-	logger := cfg.logger
-	if logger == nil {
-		logger = log.NewNopLogger()
-	}
+	logger := log.NewNopLogger()
 
 	// Init a fake Kafka cluster if ingest storage is enabled.
 	if cfg.ingestStorageEnabled && cfg.ingestStorageKafka == nil {
@@ -6015,7 +6011,7 @@ func prepare(t testing.TB, cfg prepConfig) ([]*Distributor, []*mockIngester, []*
 		if reg == nil {
 			reg = prometheus.NewPedanticRegistry()
 		}
-		d, err := New(distributorCfg, clientConfig, overrides, nil, cfg.costAttributionMgr, ingestersRing, partitionsRing, true, nil, nil, reg, logger)
+		d, err := New(distributorCfg, clientConfig, overrides, nil, cfg.costAttributionMgr, ingestersRing, partitionsRing, true, nil, nil, reg, log.NewNopLogger())
 		require.NoError(t, err)
 		require.NoError(t, services.StartAndAwaitRunning(ctx, d))
 		t.Cleanup(func() {

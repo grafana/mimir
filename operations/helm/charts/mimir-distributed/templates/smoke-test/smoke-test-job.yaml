@@ -82,10 +82,6 @@ spec:
             {{- end }}
           {{- end }}
       restartPolicy: OnFailure
-      {{- with .Values.smoke_test.dnsConfig }}
-      dnsConfig:
-        {{- toYaml . | nindent 8 }}
-      {{- end }}
       volumes:
         {{- if .Values.smoke_test.extraVolumes }}
         {{ toYaml .Values.smoke_test.extraVolumes | nindent 8 }}

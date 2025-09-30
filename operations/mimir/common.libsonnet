@@ -58,36 +58,14 @@
     ),
 
     parseDuration(duration)::
-      // Enhanced parseDuration to handle milliseconds and combined formats like "4m30s"
-      local parseSimpleDuration(d) =
-        if std.endsWith(d, 'ms') then
-          std.parseJson(std.substr(d, 0, std.length(d) - 2)) / 1000
-        else if std.endsWith(d, 's') then
-          std.parseJson(std.substr(d, 0, std.length(d) - 1))
-        else if std.endsWith(d, 'm') then
-          std.parseJson(std.substr(d, 0, std.length(d) - 1)) * 60
-        else if std.endsWith(d, 'h') then
-          std.parseJson(std.substr(d, 0, std.length(d) - 1)) * 3600
-        else
-          error 'unable to parse duration %s' % d;
-
-      // Check for combined format (e.g., "4m30s")
-      local mIndex = std.findSubstr('m', duration);
-      local hIndex = std.findSubstr('h', duration);
-
-      if mIndex != [] && std.length(duration) > mIndex[0] + 1 && std.endsWith(duration, 's') && !std.endsWith(duration, 'ms') then
-        // Format like "4m30s"
-        local minutes = std.substr(duration, 0, mIndex[0]);
-        local secondsPart = std.substr(duration, mIndex[0] + 1, std.length(duration) - mIndex[0] - 1);
-        local seconds = std.substr(secondsPart, 0, std.length(secondsPart) - 1);
-        std.parseJson(minutes) * 60 + std.parseJson(seconds)
-      else if hIndex != [] && std.length(duration) > hIndex[0] + 1 && std.endsWith(duration, 'm') then
-        // Format like "1h30m"
-        local hours = std.substr(duration, 0, hIndex[0]);
-        local minutes = std.substr(duration, hIndex[0] + 1, std.length(duration) - hIndex[0] - 2);
-        std.parseJson(hours) * 3600 + std.parseJson(minutes) * 60
+      if std.endsWith(duration, 's') then
+        std.parseInt(std.substr(duration, 0, std.length(duration) - 1))
+      else if std.endsWith(duration, 'm') then
+        std.parseInt(std.substr(duration, 0, std.length(duration) - 1)) * 60
+      else if std.endsWith(duration, 'h') then
+        std.parseInt(std.substr(duration, 0, std.length(duration) - 1)) * 3600
       else
-        parseSimpleDuration(duration),
+        error 'unable to parse duration %s' % duration,
 
     formatDuration(seconds)::
       if seconds <= 60 then
@@ -98,26 +76,6 @@
         '%dh' % (seconds / 3600)
       else
         '%dm%ds' % [seconds / 60, seconds % 60],
-
-    // Load flag defaults from the generated JSON file
-    flagDefaults:: std.parseJson(importstr './mimir-flags-defaults.json'),
-
-    // Get raw flag default value (no conversion)
-    getFlagDefault(flagName)::
-      if flagName in self.flagDefaults then
-        self.flagDefaults[flagName]
-      else
-        null,
-
-    // Get flag default value converted from nanoseconds to seconds
-    getFlagDefaultSeconds(flagName)::
-      local defaultValue = self.getFlagDefault(flagName);
-      if defaultValue == null then
-        null
-      else if std.type(defaultValue) != 'number' then
-        error 'Flag %s default value is not a number (got %s)' % [flagName, std.type(defaultValue)]
-      else
-        defaultValue / 1000000000,
 
     // Similar to std.prune() but only remove fields whose value is explicitly set to "null".
     removeNulls(obj)::

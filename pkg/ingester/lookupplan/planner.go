@@ -141,35 +141,25 @@ func (p CostBasedPlanner) recordPlanningOutcome(ctx context.Context, start time.
 			))
 		}
 	default:
-		selectedPlan := allPlans[0]
-		if queryStats := QueryStatsFromContext(ctx); queryStats != nil {
-			queryStats.SetEstimatedSelectedPostings(selectedPlan.intersectionSize())
-			queryStats.SetEstimatedFinalCardinality(selectedPlan.cardinality())
-		}
-
 		outcome = "success"
-		if traceSampled {
-			// Only add span events when tracing is sampled to avoid unnecessary overhead.
-			p.addSpanEvents(span, start, selectedPlan, allPlans)
+		if !traceSampled {
+			// Avoid logging overhead if the events aren't going to make it into a span.
+			break
+		}
+		span.AddEvent("selected lookup plan", trace.WithAttributes(
+			attribute.Stringer("duration", time.Since(start)),
+		))
+		const topKPlans = 2
+		allPlans[0].addPredicatesToSpan(span)
+		for i, plan := range allPlans[:min(topKPlans, len(allPlans))] {
+			planName := "selected_plan"
+			if i > 0 {
+				planName = strconv.Itoa(i + 1)
+			}
+			plan.addSpanEvent(span, planName)
 		}
 	}
 	p.metrics.planningDuration.WithLabelValues(outcome).Observe(time.Since(start).Seconds())
-}
-
-func (p CostBasedPlanner) addSpanEvents(span trace.Span, start time.Time, selectedPlan plan, allPlans []plan) {
-	span.AddEvent("selected lookup plan", trace.WithAttributes(
-		attribute.Stringer("duration", time.Since(start)),
-	))
-	selectedPlan.addPredicatesToSpan(span)
-
-	const topKPlans = 2
-	for i, plan := range allPlans[:min(topKPlans, len(allPlans))] {
-		planName := "selected_plan"
-		if i > 0 {
-			planName = strconv.Itoa(i + 1)
-		}
-		plan.addSpanEvent(span, planName)
-	}
 }
 
 type contextKey string

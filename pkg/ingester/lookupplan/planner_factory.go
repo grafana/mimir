@@ -37,7 +37,7 @@ func (p *PlannerFactory) CreatePlanner(meta tsdb.BlockMeta, reader tsdb.IndexRea
 		// For very small blocks, the planning overhead is likely not worth it.
 		// This also prevents problems when we've gathered stats on an empty head block,
 		// but then the ingester starts receiving series for that tenant.
-		level.Info(logger).Log("msg", "skipping query planning for small block", "planning_threshold_series", minSeriesPerBlockForQueryPlanning)
+		level.Debug(logger).Log("msg", "skipping query planning for small block", "planning_threshold_series", minSeriesPerBlockForQueryPlanning)
 		return NoopPlanner{}
 	}
 	stats, err := p.statsGenerator.Stats(meta, reader)

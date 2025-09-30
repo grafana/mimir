@@ -23,7 +23,6 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunks"
-	"github.com/prometheus/prometheus/tsdb/index"
 	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/ingester/activeseries"
@@ -147,34 +146,6 @@ type userTSDB struct {
 	requiresOwnedSeriesUpdate atomic.String // Non-empty string means that we need to recompute "owned series" for the user. Value will be used in the log message.
 
 	postingsCache *tsdb.PostingsForMatchersCache
-
-	// plannerProvider is optional; if set, it will be used to generate and cache statistics for the user's head block.
-	// Other blocks' stats are immutable and the prometheus TSDB caches them itself.
-	plannerProvider *plannerProvider
-}
-
-// generateHeadStatistics generates statistics for this user's head block.
-func (u *userTSDB) generateHeadStatistics() error {
-	// Open head block
-	head := u.db.Head()
-	indexReader, err := head.Index()
-	if err != nil {
-		return fmt.Errorf("failed to open TSDB head index reader: %w", err)
-	}
-	defer indexReader.Close()
-
-	// Get block metadata
-	blockMeta := head.Meta()
-
-	// Generate statistics
-	u.plannerProvider.generateAndStorePlanner(blockMeta, indexReader)
-	return nil
-}
-
-// getIndexLookupPlanner returns a cached planner or generates one on-demand.
-// Not all planners are cached after being created, see plannerProvider.getPlanner() for details.
-func (u *userTSDB) getIndexLookupPlanner(blockMeta tsdb.BlockMeta, indexReader tsdb.IndexReader) index.LookupPlanner {
-	return u.plannerProvider.getPlanner(blockMeta, indexReader)
 }
 
 func (u *userTSDB) Appender(ctx context.Context) storage.Appender {

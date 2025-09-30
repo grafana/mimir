@@ -237,7 +237,6 @@ type Limits struct {
 
 	// Ruler defaults and limits.
 	RulerEvaluationDelay                                  model.Duration                    `yaml:"ruler_evaluation_delay_duration" json:"ruler_evaluation_delay_duration"`
-	RulerEvaluationConsistencyMaxDelay                    model.Duration                    `yaml:"ruler_evaluation_consistency_max_delay" json:"ruler_evaluation_consistency_max_delay" category:"experimental"`
 	RulerTenantShardSize                                  int                               `yaml:"ruler_tenant_shard_size" json:"ruler_tenant_shard_size"`
 	RulerMaxRulesPerRuleGroup                             int                               `yaml:"ruler_max_rules_per_rule_group" json:"ruler_max_rules_per_rule_group"`
 	RulerMaxRuleGroupsPerTenant                           int                               `yaml:"ruler_max_rule_groups_per_tenant" json:"ruler_max_rule_groups_per_tenant"`
@@ -414,8 +413,6 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 
 	_ = l.RulerEvaluationDelay.Set("1m")
 	f.Var(&l.RulerEvaluationDelay, "ruler.evaluation-delay-duration", "Duration to delay the evaluation of rules to ensure the underlying metrics have been pushed.")
-	_ = l.RulerEvaluationConsistencyMaxDelay.Set("0s")
-	f.Var(&l.RulerEvaluationConsistencyMaxDelay, "ruler.evaluation-consistency-max-delay", "The maximum tolerated ingestion delay for eventually consistent rule evaluations. Set to 0 to disable the enforcement.")
 	f.IntVar(&l.RulerTenantShardSize, "ruler.tenant-shard-size", 0, "The tenant's shard size when sharding is used by ruler. Value of 0 disables shuffle sharding for the tenant, and tenant rules will be sharded across all ruler replicas.")
 	f.IntVar(&l.RulerMaxRulesPerRuleGroup, "ruler.max-rules-per-rule-group", 20, "Maximum number of rules per rule group per-tenant. 0 to disable.")
 	f.IntVar(&l.RulerMaxRuleGroupsPerTenant, "ruler.max-rule-groups-per-tenant", 70, "Maximum number of rule groups per-tenant. 0 to disable.")
@@ -1094,15 +1091,9 @@ func (o *Overrides) CompactorMaxPerBlockUploadConcurrency(userID string) int {
 	return o.getOverridesForUser(userID).CompactorMaxPerBlockUploadConcurrency
 }
 
-// RulerEvaluationDelay returns the rules evaluation delay for a given user.
-func (o *Overrides) RulerEvaluationDelay(userID string) time.Duration {
+// EvaluationDelay returns the rules evaluation delay for a given user.
+func (o *Overrides) EvaluationDelay(userID string) time.Duration {
 	return time.Duration(o.getOverridesForUser(userID).RulerEvaluationDelay)
-}
-
-// RulerEvaluationConsistencyMaxDelay returns the maximum tolerated ingestion delay for eventually consistent
-// rule evaluations, or 0 if it shouldn't be enforced.
-func (o *Overrides) RulerEvaluationConsistencyMaxDelay(userID string) time.Duration {
-	return time.Duration(o.getOverridesForUser(userID).RulerEvaluationConsistencyMaxDelay)
 }
 
 // CompactorMaxLookback returns the duration of the compactor lookback period, blocks uploaded before the lookback period aren't

@@ -62,8 +62,8 @@ Randomly picking two tenants yields the following probabilities:
 
 Grafana Mimir supports shuffle sharding in the following components:
 
-- [Partitions (ingest storage architecture, write and read path)](#partitions-shuffle-sharding-in-ingest-storage-architecture)
-- [Ingesters (classic architecture)](#ingesters-shuffle-sharding-in-classic-architecture)
+- [Partitions (write and read path)](#partitions-shuffle-sharding-in-ingest-storage-architecture)
+- [Ingesters](#ingesters-shuffle-sharding-in-classic-architecture)
 - [Query-frontend / Query-scheduler](#query-frontend-and-query-scheduler-shuffle-sharding)
 - [Store-gateway](#store-gateway-shuffle-sharding)
 - [Ruler](#ruler-shuffle-sharding)
@@ -90,10 +90,6 @@ The Grafana Mimir shuffle sharding implementation provides the following benefit
   When you enable [zone-aware replication](../configure-zone-aware-replication/), the subset of instances selected for each tenant contains a balanced number of instances for each availability zone.
 
 ### Partitions shuffle sharding in ingest storage architecture
-
-{{< admonition type="note" >}}
-This guidance applies to ingest storage architecture. For more information about the supported architectures in Grafana Mimir, refer to [Grafana Mimir architecture](https://grafana.com/docs/mimir/<MIMIR_VERSION>/get-started/about-grafana-mimir-architecture/).
-{{< /admonition >}}
 
 Without shuffle sharding when using ingest storage, the Grafana Mimir distributor divides the received series among all active partitions. With shuffle sharding, the distributor divides each tenant's series among multiple partitions.
 
@@ -143,10 +139,6 @@ The procedure for decreasing the tenant shard size is the same as for enabling s
 {{< /admonition >}}
 
 ### Ingesters shuffle sharding in classic architecture
-
-{{< admonition type="note" >}}
-This guidance applies to classic architecture. For more information about the supported architectures in Grafana Mimir, refer to [Grafana Mimir architecture](https://grafana.com/docs/mimir/<MIMIR_VERSION>/get-started/about-grafana-mimir-architecture/).
-{{< /admonition >}}
 
 By default, the Grafana Mimir distributor divides the received series among all running ingesters.
 

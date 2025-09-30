@@ -40,7 +40,7 @@ func TestSplitBlocks(t *testing.T) {
 	meta, err := block.GenerateBlockFromSpec(blocksDir, specs)
 	require.NoError(t, err)
 
-	_, err = block.Upload(context.Background(), logger, bkt, path.Join(blocksDir, meta.ULID.String()), meta)
+	err = block.Upload(context.Background(), logger, bkt, path.Join(blocksDir, meta.ULID.String()), meta)
 	require.NoError(t, err)
 
 	for _, dryRun := range []bool{true, false} {

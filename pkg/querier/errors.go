@@ -13,10 +13,8 @@ import (
 )
 
 var (
-	errBadLookbackConfigs              = fmt.Errorf("the -%s setting must be greater than -%s otherwise queries might return partial results", validation.QueryIngestersWithinFlag, queryStoreAfterFlag)
-	errStreamingIngesterBufferSize     = fmt.Errorf("the -%s setting must be greater than 0", streamingChunksPerIngesterBufferSizeFlag)
-	errStreamingStoreGatewayBufferSize = fmt.Errorf("the -%s setting must be greater than 0", streamingChunksPerStoreGatewayBufferSizeFlag)
-	errEmptyTimeRange                  = errors.New("empty time range")
+	errBadLookbackConfigs = fmt.Errorf("the -%s setting must be greater than -%s otherwise queries might return partial results", validation.QueryIngestersWithinFlag, queryStoreAfterFlag)
+	errEmptyTimeRange     = errors.New("empty time range")
 )
 
 func NewMaxQueryLengthError(actualQueryLen, maxQueryLength time.Duration) validation.LimitError {
