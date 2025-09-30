@@ -162,7 +162,7 @@ func (e *StateChangedEvent) Context() context.Context {
 }
 
 type circuitBreaker[R any] struct {
-	*config[R]
+	config[R]
 	mu sync.Mutex
 
 	// Guarded by mu
@@ -278,7 +278,7 @@ func (cb *circuitBreaker[R]) RecordSuccess() {
 func (cb *circuitBreaker[R]) ToExecutor(_ R) any {
 	cbe := &executor[R]{
 		BaseExecutor: &policy.BaseExecutor[R]{
-			BaseFailurePolicy: cb.BaseFailurePolicy,
+			BaseFailurePolicy: &cb.BaseFailurePolicy,
 		},
 		circuitBreaker: cb,
 	}

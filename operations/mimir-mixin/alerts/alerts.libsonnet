@@ -172,25 +172,6 @@ local utils = import 'mixin-utils/utils.libsonnet';
           },
         },
         {
-          alert: $.alertName('FrontendQueriesStuck'),
-          expr: |||
-            sum by (%(group_by)s, %(job_label)s) (min_over_time(cortex_query_frontend_queue_length[%(range_interval)s])) > 0
-          ||| % {
-            group_by: $._config.alert_aggregation_labels,
-            job_label: $._config.per_job_label,
-            range_interval: $.alertRangeInterval(1),
-          },
-          'for': '5m',  // We don't want to block for longer.
-          labels: {
-            severity: 'critical',
-          },
-          annotations: {
-            message: |||
-              There are {{ $value }} queued up queries in %(alert_aggregation_variables)s {{ $labels.%(per_job_label)s }}.
-            ||| % $._config,
-          },
-        },
-        {
           alert: $.alertName('SchedulerQueriesStuck'),
           expr: |||
             sum by (%(group_by)s, %(job_label)s) (min_over_time(cortex_query_scheduler_queue_length[%(range_interval)s])) > 0

@@ -5116,6 +5116,11 @@ cost_attribution_labels_structured:
 # CLI flag: -ruler.evaluation-delay-duration
 [ruler_evaluation_delay_duration: <duration> | default = 1m]
 
+# (experimental) The maximum tolerated ingestion delay for eventually consistent
+# rule evaluations. Set to 0 to disable the enforcement.
+# CLI flag: -ruler.evaluation-consistency-max-delay
+[ruler_evaluation_consistency_max_delay: <duration> | default = 0s]
+
 # The tenant's shard size when sharding is used by ruler. Value of 0 disables
 # shuffle sharding for the tenant, and tenant rules will be sharded across all
 # ruler replicas.
@@ -6195,7 +6200,7 @@ tsdb:
   # (experimental) How frequently to collect head statistics, which are used in
   # query execution optimization. 0 to disable.
   # CLI flag: -blocks-storage.tsdb.head-statistics-collection-frequency
-  [head_statistics_collection_frequency: <duration> | default = 0s]
+  [head_statistics_collection_frequency: <duration> | default = 1h]
 
   # (advanced) Max size - in bytes - of the in-memory series hash cache. The
   # cache is shared across all tenants and it's used only when query sharding is

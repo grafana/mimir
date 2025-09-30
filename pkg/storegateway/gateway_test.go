@@ -232,7 +232,7 @@ func TestStoreGateway_InitialSyncWithWaitRingTokensStability(t *testing.T) {
 		userBucketClient := bucket.NewUserBucketClient(userID, bucketClient, nil)
 		require.NoError(t, bucketClientOnDisk.Iter(context.Background(), userID, func(key string) error {
 			dir := strings.TrimSuffix(path.Join(storageDir, key), "/")
-			err := block.Upload(context.Background(), log.NewNopLogger(), userBucketClient, dir, nil)
+			_, err := block.Upload(context.Background(), log.NewNopLogger(), userBucketClient, dir, nil)
 			if err != nil {
 				return err
 			}

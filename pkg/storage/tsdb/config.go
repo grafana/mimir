@@ -357,7 +357,7 @@ func (cfg *TSDBConfig) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.TimelyHeadCompaction, "blocks-storage.tsdb.timely-head-compaction-enabled", false, "Allows head compaction to happen when the min block range can no longer be appended, without requiring 1.5x the chunk range worth of data in the head.")
 	f.BoolVar(&cfg.BiggerOutOfOrderBlocksForOldSamples, "blocks-storage.tsdb.bigger-out-of-order-blocks-for-old-samples", false, "When enabled, ingester produces 24h blocks for out-of-order data that is before the current day, instead of the usual 2h blocks.")
 	f.BoolVar(&cfg.IndexLookupPlanningEnabled, "blocks-storage.tsdb.index-lookup-planning-enabled", false, "Controls the collection of statistics and whether to defer some vector selector matchers to sequential scans. This leads to better performance.")
-	f.DurationVar(&cfg.HeadStatisticsCollectionFrequency, "blocks-storage.tsdb.head-statistics-collection-frequency", 0, "How frequently to collect head statistics, which are used in query execution optimization. 0 to disable.")
+	f.DurationVar(&cfg.HeadStatisticsCollectionFrequency, "blocks-storage.tsdb.head-statistics-collection-frequency", time.Hour, "How frequently to collect head statistics, which are used in query execution optimization. 0 to disable.")
 	f.Float64Var(&cfg.IndexLookupPlanningComparisonPortion, "blocks-storage.tsdb.index-lookup-planning-comparison-portion", 0.0, "Portion of queries where a mirrored chunk querier compares results with and without index lookup planning. Value between 0 (disabled) and 1 (all queries).")
 
 	cfg.HeadCompactionIntervalJitterEnabled = true
@@ -406,7 +406,7 @@ func (cfg *TSDBConfig) Validate(activeSeriesCfg activeseries.Config) error {
 		return errInvalidEarlyHeadCompactionMinSeriesReduction
 	}
 
-	if cfg.HeadStatisticsCollectionFrequency < 0 {
+	if cfg.IndexLookupPlanningEnabled && cfg.HeadStatisticsCollectionFrequency <= 0 {
 		return errors.Errorf("head statistics collection frequency must be a non-negative duration. 0 to disable")
 	}
 

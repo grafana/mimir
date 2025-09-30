@@ -244,7 +244,7 @@ func (p *QueryPlanner) NewQueryPlan(ctx context.Context, qs string, timeRange ty
 
 func shouldWrapInDedupAndMerge(root planning.Node) (bool, error) {
 	switch node := root.(type) {
-	case *core.NumberLiteral, *core.StringLiteral:
+	case *core.NumberLiteral, *core.StringLiteral, *core.MatrixSelector:
 		return false, nil
 	case *core.BinaryExpression:
 		resL, err := node.LHS.ResultType()
@@ -685,6 +685,8 @@ type AnalysisResult struct {
 
 	ASTStages      []ASTStage      `json:"astStages"`
 	PlanningStages []PlanningStage `json:"planningStages"`
+
+	PlanVersion int64 `json:"planVersion"`
 }
 
 type ASTStage struct {
