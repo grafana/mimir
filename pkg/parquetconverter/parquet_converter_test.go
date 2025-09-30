@@ -86,7 +86,7 @@ func prepare(t *testing.T, cfg Config, bucketClient objstore.Bucket) (*ParquetCo
 	bucketClientFactory := func(ctx context.Context) (objstore.Bucket, error) {
 		return bucketClient, nil
 	}
-	c, err := newParquetConverter(cfg, log.NewLogfmtLogger(logs), registry, bucketClientFactory, overrides, defaultBlockConverter{})
+	c, err := newParquetConverter(cfg, log.NewLogfmtLogger(logs), registry, bucketClientFactory, nil, overrides, defaultBlockConverter{})
 	require.NoError(t, err)
 
 	return c, registry

@@ -57,7 +57,7 @@ func prepareWithMockConverter(t *testing.T, cfg Config, bucketClient objstore.Bu
 	bucketClientFactory := func(ctx context.Context) (objstore.Bucket, error) {
 		return bucketClient, nil
 	}
-	c, err := newParquetConverter(cfg, log.NewLogfmtLogger(logs), registry, bucketClientFactory, overrides, mockBlockConverter{})
+	c, err := newParquetConverter(cfg, log.NewLogfmtLogger(logs), registry, bucketClientFactory, nil, overrides, mockBlockConverter{})
 	require.NoError(t, err)
 
 	return c, registry

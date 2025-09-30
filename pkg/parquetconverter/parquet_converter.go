@@ -217,9 +217,11 @@ func (c *ParquetConverter) starting(ctx context.Context) error {
 		return errors.Wrap(err, "failed to create bucket client")
 	}
 
-	c.s3dl, err = c.downloaderFactory(ctx)
-	if err != nil {
-		return errors.Wrap(err, "failed to create s3 downloader")
+	if c.downloaderFactory != nil {
+		c.s3dl, err = c.downloaderFactory(ctx)
+		if err != nil {
+			return errors.Wrap(err, "failed to create s3 downloader")
+		}
 	}
 
 	// Initialize the parquet-converters ring if sharding is enabled.
