@@ -570,7 +570,7 @@ func (c *ParquetConverter) processBlock(ctx context.Context, userID string, meta
 		panic("nil s3 downloader")
 	}
 
-	err = downloadFaster(ctx, logger, uBucket, meta.ULID, localBlockDir)
+	err = c.s3dl.download(ctx, logger, uBucket, meta.ULID, localBlockDir)
 	if err != nil {
 		level.Error(logger).Log("msg", "error downloading block", "err", err)
 		return
