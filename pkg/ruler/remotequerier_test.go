@@ -76,7 +76,7 @@ func TestRemoteQuerier_Read(t *testing.T) {
 		require.Equal(t, "/prometheus/api/v1/read", inReq.Url)
 	})
 
-	t.Run("should not inject the read consistency header if none is defined in the context", func(t *testing.T) {
+	t.Run("should not inject the read consistency headers if not defined in the context", func(t *testing.T) {
 		client, inReq := setup()
 
 		q := NewRemoteQuerier(newGrpcRoundTripper(client), time.Minute, 1, formatJSON, prometheusGrpcURL, log.NewNopLogger())
@@ -84,9 +84,10 @@ func TestRemoteQuerier_Read(t *testing.T) {
 		require.NoError(t, err)
 
 		require.Equal(t, "", getGrpcHeader(inReq.Headers, api.ReadConsistencyHeader))
+		require.Equal(t, "", getGrpcHeader(inReq.Headers, api.ReadConsistencyMaxDelayHeader))
 	})
 
-	t.Run("should inject the read consistency header if it is defined in the context", func(t *testing.T) {
+	t.Run("should inject the read consistency level header if it is defined in the context", func(t *testing.T) {
 		client, inReq := setup()
 
 		q := NewRemoteQuerier(newGrpcRoundTripper(client), time.Minute, 1, formatJSON, prometheusGrpcURL, log.NewNopLogger())
@@ -96,6 +97,21 @@ func TestRemoteQuerier_Read(t *testing.T) {
 		require.NoError(t, err)
 
 		require.Equal(t, api.ReadConsistencyStrong, getGrpcHeader(inReq.Headers, api.ReadConsistencyHeader))
+		require.Equal(t, "", getGrpcHeader(inReq.Headers, api.ReadConsistencyMaxDelayHeader))
+	})
+
+	t.Run("should inject the read consistency max delay header if it is defined in the context", func(t *testing.T) {
+		client, inReq := setup()
+
+		q := NewRemoteQuerier(newGrpcRoundTripper(client), time.Minute, 1, formatJSON, prometheusGrpcURL, log.NewNopLogger())
+
+		ctx := api.ContextWithReadConsistencyLevel(context.Background(), api.ReadConsistencyEventual)
+		ctx = api.ContextWithReadConsistencyMaxDelay(ctx, time.Minute)
+		_, err := q.Read(ctx, &prompb.Query{}, false)
+		require.NoError(t, err)
+
+		require.Equal(t, api.ReadConsistencyEventual, getGrpcHeader(inReq.Headers, api.ReadConsistencyHeader))
+		require.Equal(t, "1m0s", getGrpcHeader(inReq.Headers, api.ReadConsistencyMaxDelayHeader))
 	})
 }
 
@@ -165,7 +181,7 @@ func TestRemoteQuerier_Query(t *testing.T) {
 		}
 	})
 
-	t.Run("should not inject the read consistency header if none is defined in the context", func(t *testing.T) {
+	t.Run("should not inject the read consistency headers if not defined in the context", func(t *testing.T) {
 		client, inReq := setup()
 
 		q := NewRemoteQuerier(newGrpcRoundTripper(client), time.Minute, 1, formatJSON, prometheusGrpcURL, log.NewNopLogger())
@@ -173,9 +189,10 @@ func TestRemoteQuerier_Query(t *testing.T) {
 		require.NoError(t, err)
 
 		require.Equal(t, "", getGrpcHeader(inReq.Headers, api.ReadConsistencyHeader))
+		require.Equal(t, "", getGrpcHeader(inReq.Headers, api.ReadConsistencyMaxDelayHeader))
 	})
 
-	t.Run("should inject the read consistency header if it is defined in the context", func(t *testing.T) {
+	t.Run("should inject the read consistency level header if it is defined in the context", func(t *testing.T) {
 		client, inReq := setup()
 
 		q := NewRemoteQuerier(newGrpcRoundTripper(client), time.Minute, 1, formatJSON, prometheusGrpcURL, log.NewNopLogger())
@@ -185,6 +202,21 @@ func TestRemoteQuerier_Query(t *testing.T) {
 		require.NoError(t, err)
 
 		require.Equal(t, api.ReadConsistencyStrong, getGrpcHeader(inReq.Headers, api.ReadConsistencyHeader))
+		require.Equal(t, "", getGrpcHeader(inReq.Headers, api.ReadConsistencyMaxDelayHeader))
+	})
+
+	t.Run("should inject the read consistency max delay header if it is defined in the context", func(t *testing.T) {
+		client, inReq := setup()
+
+		q := NewRemoteQuerier(newGrpcRoundTripper(client), time.Minute, 1, formatJSON, prometheusGrpcURL, log.NewNopLogger())
+
+		ctx := api.ContextWithReadConsistencyLevel(context.Background(), api.ReadConsistencyEventual)
+		ctx = api.ContextWithReadConsistencyMaxDelay(ctx, time.Minute)
+		_, err := q.Query(ctx, "qs", tm)
+		require.NoError(t, err)
+
+		require.Equal(t, api.ReadConsistencyEventual, getGrpcHeader(inReq.Headers, api.ReadConsistencyHeader))
+		require.Equal(t, "1m0s", getGrpcHeader(inReq.Headers, api.ReadConsistencyMaxDelayHeader))
 	})
 }
 

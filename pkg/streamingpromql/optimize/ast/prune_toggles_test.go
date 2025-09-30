@@ -64,6 +64,8 @@ func TestPruneToggles(t *testing.T) {
 			require.NoError(t, err)
 			inputExpr, err := parser.ParseExpr(input)
 			require.NoError(t, err)
+			inputExpr, err = preprocessQuery(t, inputExpr)
+			require.NoError(t, err)
 
 			reg := prometheus.NewPedanticRegistry()
 			optimizer := ast.NewPruneToggles(reg)

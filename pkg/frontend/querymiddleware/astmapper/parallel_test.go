@@ -31,7 +31,7 @@ func TestCanParallel(t *testing.T) {
 				Expr: &parser.VectorSelector{
 					Name: "some_metric",
 					LabelMatchers: []*labels.Matcher{
-						mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "some_metric"),
+						labels.MustNewMatcher(labels.MatchEqual, string(model.MetricNameLabel), "some_metric"),
 					},
 				},
 				Grouping: []string{"foo"},
@@ -46,7 +46,7 @@ func TestCanParallel(t *testing.T) {
 				Expr: &parser.VectorSelector{
 					Name: "some_metric",
 					LabelMatchers: []*labels.Matcher{
-						mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "some_metric"),
+						labels.MustNewMatcher(labels.MatchEqual, string(model.MetricNameLabel), "some_metric"),
 					},
 				},
 				Grouping: []string{"foo"},
@@ -71,7 +71,7 @@ func TestCanParallel(t *testing.T) {
 						Expr: &parser.VectorSelector{
 							Name: "idk",
 							LabelMatchers: []*labels.Matcher{
-								mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "bar1"),
+								labels.MustNewMatcher(labels.MatchEqual, string(model.MetricNameLabel), "bar1"),
 							},
 						},
 					},
@@ -81,7 +81,7 @@ func TestCanParallel(t *testing.T) {
 						Expr: &parser.VectorSelector{
 							Name: "idk",
 							LabelMatchers: []*labels.Matcher{
-								mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "bar2"),
+								labels.MustNewMatcher(labels.MatchEqual, string(model.MetricNameLabel), "bar2"),
 							},
 						},
 					},
@@ -97,7 +97,7 @@ func TestCanParallel(t *testing.T) {
 				Expr: &parser.VectorSelector{
 					Name: "idk",
 					LabelMatchers: []*labels.Matcher{
-						mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "bar1"),
+						labels.MustNewMatcher(labels.MatchEqual, string(model.MetricNameLabel), "bar1"),
 					},
 				},
 			},

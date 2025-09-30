@@ -265,6 +265,9 @@ func cloneExpr(expr parser.Expr) (parser.Expr, error) {
 			Expr: expr,
 		}, nil
 
+	case *parser.DurationExpr:
+		return cloneDurationExpr(e)
+
 	default:
 		return nil, fmt.Errorf("cloneExpr: unknown expression type %T", expr)
 	}
