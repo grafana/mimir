@@ -112,7 +112,7 @@ func NewCompactorScheduler(
 	}
 	scheduler.subservicesManager = subservicesManager
 
-	svc := services.NewBasicService(scheduler.start, nil, scheduler.stop)
+	svc := services.NewBasicService(scheduler.start, scheduler.run, scheduler.stop)
 	scheduler.Service = svc
 
 	return scheduler, nil
@@ -126,6 +126,11 @@ func (s *Scheduler) start(ctx context.Context) error {
 	if err := s.subservicesManager.AwaitHealthy(ctx); err != nil {
 		return errors.Wrap(err, "compactor scheduler subservices not healthy")
 	}
+	return nil
+}
+
+func (s *Scheduler) run(ctx context.Context) error {
+	<-ctx.Done()
 	return nil
 }
 
