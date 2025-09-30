@@ -68,7 +68,7 @@ type schedulerExecutor struct {
 	schedulerClient          compactorschedulerpb.CompactorSchedulerClient
 	schedulerConn            *grpc.ClientConn
 	invalidClusterValidation *prometheus.CounterVec
-	retryPol                 failsafe.Policy[any]
+	retryable                failsafe.Executor[any]
 }
 
 func newSchedulerExecutor(cfg Config, logger log.Logger, invalidClusterValidation *prometheus.CounterVec) (*schedulerExecutor, error) {
@@ -78,25 +78,22 @@ func newSchedulerExecutor(cfg Config, logger log.Logger, invalidClusterValidatio
 		invalidClusterValidation: invalidClusterValidation,
 	}
 
-	executor.retryPol = retrypolicy.NewBuilder[any]().
+	executor.retryable = failsafe.With(retrypolicy.NewBuilder[any]().
 		HandleIf(func(_ any, err error) bool {
-			errStatus, ok := grpcutil.ErrorToStatus(err)
-			if !ok {
-				return false
+			if errStatus, ok := grpcutil.ErrorToStatus(err); ok {
+				switch errStatus.Code() {
+				case codes.Unavailable, codes.DeadlineExceeded, codes.ResourceExhausted:
+					// client will generate UNAVAILABLE if some data transmitted (e.g., request metadata written
+					// to TCP connection) before connection breaks.
+					return true
+				}
 			}
-			switch code := errStatus.Code(); code {
-			case codes.Unavailable, codes.DeadlineExceeded, codes.ResourceExhausted:
-				// client will generate UNAVAILABLE if some data transmitted (e.g., request metadata written
-				// to TCP connection) before connection breaks.
-				return true
-			default:
-				return false
-			}
+			return false
 		}).
-		WithBackoffFactor(cfg.ExecutorRetryMinBackoff, cfg.ExecutorRetryMaxBackoff, 2.0).
+		WithBackoff(cfg.ExecutorRetryMinBackoff, cfg.ExecutorRetryMaxBackoff).
 		WithJitter(500 * time.Millisecond).
 		WithMaxAttempts(-1).
-		Build()
+		Build())
 
 	// Initialize scheduler client. This call will succeed even if scheduler is unreachable
 	// since grpc.Dial() creates the connection immediately and connects lazily.
@@ -180,13 +177,13 @@ func (e *schedulerExecutor) sendFinalJobStatus(ctx context.Context, key *compact
 	switch spec.JobType {
 	case compactorschedulerpb.COMPACTION:
 		req := &compactorschedulerpb.UpdateCompactionJobRequest{Key: key, Tenant: spec.Tenant, Update: status}
-		err = failsafe.With(e.retryPol).WithContext(ctx).Run(func() error {
+		err = e.retryable.WithContext(ctx).Run(func() error {
 			_, err := e.schedulerClient.UpdateCompactionJob(ctx, req)
 			return err
 		})
 	case compactorschedulerpb.PLANNING:
 		req := &compactorschedulerpb.UpdatePlanJobRequest{Key: key, Update: status}
-		err = failsafe.With(e.retryPol).WithContext(ctx).Run(func() error {
+		err = e.retryable.WithContext(ctx).Run(func() error {
 			_, err := e.schedulerClient.UpdatePlanJob(ctx, req)
 			return err
 		})
@@ -312,7 +309,7 @@ func (e *schedulerExecutor) sendPlannedJobs(ctx context.Context, spec *compactor
 		Jobs: plannedJobs,
 	}
 
-	return failsafe.With(e.retryPol).WithContext(ctx).Run(func() error {
+	return e.retryable.WithContext(ctx).Run(func() error {
 		_, err := e.schedulerClient.PlannedJobs(ctx, req)
 		return err
 	})
