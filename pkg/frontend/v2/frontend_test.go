@@ -312,6 +312,10 @@ func TestFrontend_Protobuf_ResponseClosedBeforeStreamExhausted(t *testing.T) {
 	}
 
 	f, _ := setupFrontend(t, nil, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
+		if msg.Type != schedulerpb.ENQUEUE {
+			return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.ERROR, Error: fmt.Sprintf("unexpected message type %v sent to scheduler", msg.Type)}
+		}
+
 		go sendStreamingResponse(t, f, userID, msg.QueryID, expectedMessages...)
 
 		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
@@ -332,6 +336,10 @@ func TestFrontend_Protobuf_ErrorReturnedByQuerier(t *testing.T) {
 	const userID = "test"
 
 	f, _ := setupFrontend(t, nil, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
+		if msg.Type != schedulerpb.ENQUEUE {
+			return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.ERROR, Error: fmt.Sprintf("unexpected message type %v sent to scheduler", msg.Type)}
+		}
+
 		errorMessage := newErrorMessage(mimirpb.QUERY_ERROR_TYPE_BAD_DATA, "something went wrong")
 		go sendStreamingResponse(t, f, userID, msg.QueryID, errorMessage)
 
@@ -399,6 +407,10 @@ func TestFrontend_ShouldTrackPerRequestMetrics(t *testing.T) {
 			reg := prometheus.NewRegistry()
 
 			f, _ := setupFrontend(t, reg, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
+				if msg.Type != schedulerpb.ENQUEUE {
+					return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.ERROR, Error: fmt.Sprintf("unexpected message type %v sent to scheduler", msg.Type)}
+				}
+
 				testCase.sendQuerierResponse(t, f, msg.QueryID)
 				return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
 			})
@@ -475,6 +487,10 @@ func TestFrontend_Protobuf_RetryEnqueue(t *testing.T) {
 	}
 
 	f, _ := setupFrontend(t, nil, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
+		if msg.Type != schedulerpb.ENQUEUE {
+			return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.ERROR, Error: fmt.Sprintf("unexpected message type %v sent to scheduler", msg.Type)}
+		}
+
 		fail := failures.Dec()
 		if fail >= 0 {
 			return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.SHUTTING_DOWN}
@@ -522,6 +538,10 @@ func TestFrontend_Protobuf_ReadingResponseAfterAllMessagesReceived(t *testing.T)
 	}
 
 	f, _ := setupFrontend(t, nil, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
+		if msg.Type != schedulerpb.ENQUEUE {
+			return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.ERROR, Error: fmt.Sprintf("unexpected message type %v sent to scheduler", msg.Type)}
+		}
+
 		go sendStreamingResponse(t, f, userID, msg.QueryID, expectedMessages...)
 
 		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
@@ -578,6 +598,10 @@ func TestFrontend_HTTPGRPC_TooManyRequests(t *testing.T) {
 func TestFrontend_Protobuf_TooManyRequests(t *testing.T) {
 	schedulerEnqueueAttempts := atomic.NewInt64(0)
 	f, _ := setupFrontend(t, nil, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
+		if msg.Type != schedulerpb.ENQUEUE {
+			return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.ERROR, Error: fmt.Sprintf("unexpected message type %v sent to scheduler", msg.Type)}
+		}
+
 		schedulerEnqueueAttempts.Inc()
 		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.TOO_MANY_REQUESTS_PER_TENANT}
 	})
@@ -616,6 +640,10 @@ func TestFrontend_HTTPGRPC_SchedulerError(t *testing.T) {
 func TestFrontend_Protobuf_SchedulerError(t *testing.T) {
 	schedulerEnqueueAttempts := atomic.NewInt64(0)
 	f, _ := setupFrontend(t, nil, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
+		if msg.Type != schedulerpb.ENQUEUE {
+			return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.ERROR, Error: fmt.Sprintf("unexpected message type %v sent to scheduler", msg.Type)}
+		}
+
 		schedulerEnqueueAttempts.Inc()
 		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.ERROR, Error: "something went wrong inside the scheduler"}
 	})
@@ -874,6 +902,10 @@ func TestFrontend_Protobuf_ReadingResponseWithCanceledContext(t *testing.T) {
 	signal := make(chan struct{})
 
 	f, _ := setupFrontend(t, nil, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
+		if msg.Type != schedulerpb.ENQUEUE {
+			return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.ERROR, Error: fmt.Sprintf("unexpected message type %v sent to scheduler", msg.Type)}
+		}
+
 		<-signal // Don't respond until the test has attempted to read from the stream.
 		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
 	})
@@ -901,6 +933,10 @@ func TestFrontend_Protobuf_ReadingCancelledRequest(t *testing.T) {
 	cancellationError := cancellation.NewErrorf("the request has been canceled")
 
 	f, _ := setupFrontend(t, nil, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
+		if msg.Type != schedulerpb.ENQUEUE {
+			return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.ERROR, Error: fmt.Sprintf("unexpected message type %v sent to scheduler", msg.Type)}
+		}
+
 		cancel(cancellationError)
 		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
 	})
