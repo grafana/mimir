@@ -6,11 +6,12 @@ import (
 	"context"
 	"testing"
 
-	"github.com/grafana/mimir/pkg/streamingpromql/optimize"
-	"github.com/grafana/mimir/pkg/streamingpromql/optimize/ast"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/stretchr/testify/require"
+
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize"
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize/ast"
 )
 
 func TestCollapseConstants(t *testing.T) {

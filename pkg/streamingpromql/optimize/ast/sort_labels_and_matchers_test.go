@@ -8,13 +8,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/grafana/mimir/pkg/streamingpromql/optimize"
-	"github.com/grafana/mimir/pkg/streamingpromql/optimize/ast"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/stretchr/testify/require"
+
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize"
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize/ast"
 )
 
 func TestSortLabelsAndMatchers_AggregateAndBinaryExpressions(t *testing.T) {
