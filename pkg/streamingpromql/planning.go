@@ -6,16 +6,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"math"
-	"net/http"
-	"strconv"
 	"time"
 
 	"github.com/go-kit/log"
-	jsoniter "github.com/json-iterator/go"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
-	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
@@ -34,9 +29,6 @@ import (
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
-// Replaced during testing to ensure timing produces consistent results.
-var timeSince = time.Since
-
 type QueryPlanner struct {
 	activeQueryTracker       QueryTracker
 	noStepSubqueryIntervalFn func(rangeMillis int64) int64
@@ -46,6 +38,9 @@ type QueryPlanner struct {
 	planStageLatency         *prometheus.HistogramVec
 
 	logger log.Logger
+
+	// Replaced during testing to ensure timing produces consistent results.
+	TimeSince func(time.Time) time.Duration
 }
 
 func NewQueryPlanner(opts EngineOpts) (*QueryPlanner, error) {
@@ -104,7 +99,8 @@ func NewQueryPlannerWithoutOptimizationPasses(opts EngineOpts) (*QueryPlanner, e
 			NativeHistogramBucketFactor: 1.1,
 		}, []string{"stage_type", "stage"}),
 
-		logger: opts.Logger,
+		logger:    opts.Logger,
+		TimeSince: time.Since,
 	}, nil
 }
 
@@ -277,7 +273,7 @@ func (p *QueryPlanner) runASTStage(stageName string, observer PlanningObserver, 
 		return nil, err
 	}
 
-	duration := timeSince(start)
+	duration := p.TimeSince(start)
 	p.planStageLatency.WithLabelValues("AST", stageName).Observe(duration.Seconds())
 
 	if err := observer.OnASTStageComplete(stageName, expr, duration); err != nil {
@@ -294,7 +290,7 @@ func (p *QueryPlanner) runPlanningStage(stageName string, observer PlanningObser
 		return nil, err
 	}
 
-	duration := timeSince(start)
+	duration := p.TimeSince(start)
 	p.planStageLatency.WithLabelValues("Plan", stageName).Observe(duration.Seconds())
 
 	if err := observer.OnPlanningStageComplete(stageName, plan, duration); err != nil {
@@ -680,39 +676,6 @@ func functionNeedsDeduplication(fnc functions.Function) bool {
 	}
 }
 
-type AnalysisResult struct {
-	OriginalExpression string               `json:"originalExpression"`
-	TimeRange          types.QueryTimeRange `json:"timeRange"`
-
-	ASTStages      []ASTStage      `json:"astStages"`
-	PlanningStages []PlanningStage `json:"planningStages"`
-
-	PlanVersion int64 `json:"planVersion"`
-}
-
-type ASTStage struct {
-	Name             string         `json:"name"`
-	Duration         *time.Duration `json:"duration"` // nil if this stage has no associated duration (eg. represents final AST)
-	OutputExpression string         `json:"outputExpression"`
-}
-
-type PlanningStage struct {
-	Name       string              `json:"name"`
-	Duration   *time.Duration      `json:"duration"`   // nil if this stage has no associated duration (eg. represents final plan)
-	OutputPlan jsoniter.RawMessage `json:"outputPlan"` // Store the encoded JSON so we don't have to deal with cloning the entire query plan each time.
-}
-
-// Analyze performs query planning and produces a report on the query planning process.
-func (p *QueryPlanner) Analyze(ctx context.Context, qs string, timeRange types.QueryTimeRange) (*AnalysisResult, error) {
-	observer := NewAnalysisPlanningObserver(qs, timeRange)
-	_, err := p.NewQueryPlan(ctx, qs, timeRange, observer)
-	if err != nil {
-		return nil, err
-	}
-
-	return observer.Result, nil
-}
-
 type NoopPlanningObserver struct{}
 
 func (n NoopPlanningObserver) OnASTStageComplete(string, parser.Expr, time.Duration) error {
@@ -733,194 +696,4 @@ func (n NoopPlanningObserver) OnPlanningStageComplete(string, *planning.QueryPla
 func (n NoopPlanningObserver) OnAllPlanningStagesComplete(*planning.QueryPlan) error {
 	// Nothing to do.
 	return nil
-}
-
-type AnalysisPlanningObserver struct {
-	Result *AnalysisResult
-}
-
-func NewAnalysisPlanningObserver(expr string, timeRange types.QueryTimeRange) *AnalysisPlanningObserver {
-	return &AnalysisPlanningObserver{
-		Result: &AnalysisResult{
-			OriginalExpression: expr,
-			TimeRange:          timeRange,
-		},
-	}
-}
-
-func (o *AnalysisPlanningObserver) OnASTStageComplete(stageName string, updatedExpr parser.Expr, duration time.Duration) error {
-	o.Result.ASTStages = append(o.Result.ASTStages, ASTStage{
-		Name:             stageName,
-		Duration:         &duration,
-		OutputExpression: updatedExpr.Pretty(0),
-	})
-
-	return nil
-}
-
-func (o *AnalysisPlanningObserver) OnAllASTStagesComplete(finalExpr parser.Expr) error {
-	o.Result.ASTStages = append(o.Result.ASTStages, ASTStage{
-		Name:             "Final expression",
-		OutputExpression: finalExpr.Pretty(0),
-	})
-
-	return nil
-}
-
-func (o *AnalysisPlanningObserver) OnPlanningStageComplete(stageName string, updatedPlan *planning.QueryPlan, duration time.Duration) error {
-	plan, err := updatedPlan.ToEncodedPlan(true, false)
-	if err != nil {
-		return err
-	}
-
-	planBytes, err := jsoniter.Marshal(plan)
-	if err != nil {
-		return err
-	}
-
-	o.Result.PlanningStages = append(o.Result.PlanningStages, PlanningStage{
-		Name:       stageName,
-		Duration:   &duration,
-		OutputPlan: planBytes,
-	})
-
-	return nil
-}
-
-func (o *AnalysisPlanningObserver) OnAllPlanningStagesComplete(finalPlan *planning.QueryPlan) error {
-	plan, err := finalPlan.ToEncodedPlan(true, false)
-	if err != nil {
-		return err
-	}
-
-	planBytes, err := jsoniter.Marshal(plan)
-	if err != nil {
-		return err
-	}
-
-	o.Result.PlanningStages = append(o.Result.PlanningStages, PlanningStage{
-		Name:       "Final plan",
-		OutputPlan: planBytes,
-	})
-
-	return nil
-}
-
-func AnalysisHandler(planner *QueryPlanner) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		body, status, err := handleAnalysis(w, r, planner)
-
-		if err != nil {
-			body = []byte(err.Error())
-			w.Header().Set("Content-Type", "text/plain")
-		}
-
-		w.Header().Set("Content-Length", strconv.Itoa(len(body)))
-		w.WriteHeader(status)
-		_, _ = w.Write(body)
-	})
-}
-
-func handleAnalysis(w http.ResponseWriter, r *http.Request, planner *QueryPlanner) ([]byte, int, error) {
-	if planner == nil {
-		// Handle the case where query planning is disabled.
-		return nil, http.StatusNotFound, errors.New("query planning is disabled, analysis is not available")
-	}
-
-	if err := r.ParseForm(); err != nil {
-		return nil, http.StatusBadRequest, fmt.Errorf("could not parse request: %w", err)
-	}
-
-	qs := r.Form.Get("query")
-	if qs == "" {
-		return nil, http.StatusBadRequest, errors.New("missing 'query' parameter")
-	}
-
-	var timeRange types.QueryTimeRange
-
-	if r.Form.Has("time") && (r.Form.Has("start") || r.Form.Has("end") || r.Form.Has("step")) {
-		return nil, http.StatusBadRequest, errors.New("cannot provide a mixture of parameters for instant query ('time') and range query ('start', 'end' and 'step')")
-	}
-
-	if r.Form.Has("time") {
-		t, err := parseTime(r.Form.Get("time"))
-		if err != nil {
-			return nil, http.StatusBadRequest, fmt.Errorf("could not parse 'time' parameter: %w", err)
-		}
-
-		timeRange = types.NewInstantQueryTimeRange(t)
-	} else if r.Form.Has("start") && r.Form.Has("end") && r.Form.Has("step") {
-		start, err := parseTime(r.Form.Get("start"))
-		if err != nil {
-			return nil, http.StatusBadRequest, fmt.Errorf("could not parse 'start' parameter: %w", err)
-		}
-
-		end, err := parseTime(r.Form.Get("end"))
-		if err != nil {
-			return nil, http.StatusBadRequest, fmt.Errorf("could not parse 'end' parameter: %w", err)
-		}
-
-		step, err := parseDuration(r.Form.Get("step"))
-		if err != nil {
-			return nil, http.StatusBadRequest, fmt.Errorf("could not parse 'step' parameter: %w", err)
-		}
-
-		if end.Before(start) {
-			return nil, http.StatusBadRequest, errors.New("end time must be not be before start time")
-		}
-
-		if step <= 0 {
-			return nil, http.StatusBadRequest, errors.New("step must be greater than 0")
-		}
-
-		timeRange = types.NewRangeQueryTimeRange(start, end, step)
-	} else {
-		return nil, http.StatusBadRequest, errors.New("missing 'time' parameter for instant query or 'start', 'end' and 'step' parameters for range query")
-	}
-
-	result, err := planner.Analyze(r.Context(), qs, timeRange)
-	if err != nil {
-		var perr parser.ParseErrors
-		if errors.As(err, &perr) {
-			return nil, http.StatusBadRequest, fmt.Errorf("parsing expression failed: %w", perr)
-		}
-
-		return nil, http.StatusInternalServerError, fmt.Errorf("analysis failed: %w", err)
-	}
-
-	b, err := jsoniter.Marshal(result)
-	if err != nil {
-		return nil, http.StatusInternalServerError, fmt.Errorf("could not marshal response: %w", err)
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	return b, http.StatusOK, nil
-}
-
-// Based on Prometheus' web/api/v1/api.go
-func parseTime(s string) (time.Time, error) {
-	if t, err := strconv.ParseFloat(s, 64); err == nil {
-		s, ns := math.Modf(t)
-		ns = math.Round(ns*1000) / 1000
-		return time.Unix(int64(s), int64(ns*float64(time.Second))).UTC(), nil
-	}
-	if t, err := time.Parse(time.RFC3339Nano, s); err == nil {
-		return t, nil
-	}
-
-	return time.Time{}, fmt.Errorf("cannot parse %q to a valid timestamp", s)
-}
-
-func parseDuration(s string) (time.Duration, error) {
-	if d, err := strconv.ParseFloat(s, 64); err == nil {
-		ts := d * float64(time.Second)
-		if ts > float64(math.MaxInt64) || ts < float64(math.MinInt64) {
-			return 0, fmt.Errorf("cannot parse %q to a valid duration. It overflows int64", s)
-		}
-		return time.Duration(ts), nil
-	}
-	if d, err := model.ParseDuration(s); err == nil {
-		return time.Duration(d), nil
-	}
-	return 0, fmt.Errorf("cannot parse %q to a valid duration", s)
 }
