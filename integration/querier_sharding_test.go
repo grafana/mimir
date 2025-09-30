@@ -185,15 +185,16 @@ func runQuerierShardingTest(t *testing.T, cfg querierShardingTestConfig) {
 	require.NoError(t, err)
 	require.Len(t, q2Values, 1)
 
-	q1Count := q1Values[0]
-	q2Count := q2Values[0]
+	q1Count := q1Values[0] - 1 // -1: Remove request used for metrics initialization.
+	q2Count := q2Values[0] - 1
+
 	total := q1Count + q2Count
 	diff := q1Count - q2Count
 	if diff < 0 {
 		diff = -diff
 	}
 
-	require.Equal(t, float64(numQueries), total-2) // Remove 2 requests used for metrics initialization.
+	require.Equal(t, float64(numQueries), total)
 
 	if cfg.shuffleShardingEnabled {
 		require.Equalf(t, float64(numQueries), diff, "expected all queries to be handled by single querier, but one querier got %v requests and the other got %v requests", q1Count, q2Count)
