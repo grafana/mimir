@@ -286,6 +286,10 @@ type MultitenantCompactor struct {
 	ringSubservices        *services.Manager
 	ringSubservicesWatcher *services.FailureWatcher
 
+	// Health check service which ensures local storage is read/writable
+	healthSubservice        *services.Manager
+	healthSubserviceWatcher *services.FailureWatcher
+
 	shardingStrategy shardingStrategy
 	jobsOrder        JobsOrderFunc
 
@@ -495,6 +499,17 @@ func (c *MultitenantCompactor) starting(ctx context.Context) error {
 	c.ringSubservicesWatcher.WatchManager(c.ringSubservices)
 	if err = c.ringSubservices.StartAsync(ctx); err != nil {
 		return errors.Wrap(err, "unable to start compactor ring dependencies")
+	}
+
+	c.healthSubservice, err = services.NewManager(NewHealthCheck(c.compactorCfg.DataDir, c.logger))
+	if err != nil {
+		return errors.Wrap(err, "unable to create compactor health check dependencies")
+	}
+
+	c.healthSubserviceWatcher = services.NewFailureWatcher()
+	c.healthSubserviceWatcher.WatchManager(c.healthSubservice)
+	if err = c.healthSubservice.StartAsync(ctx); err != nil {
+		return errors.Wrap(err, "unable to start compactor health check dependencies")
 	}
 
 	ctxTimeout, cancel := context.WithTimeout(ctx, c.compactorCfg.ShardingRing.WaitActiveInstanceTimeout)
@@ -801,7 +816,7 @@ func (c *MultitenantCompactor) compactUser(ctx context.Context, userID string) e
 
 	// Disable maxLookback (set to 0s) when block upload is enabled, block upload enabled implies there will be blocks
 	// beyond the lookback period, we don't want the compactor to skip these
-	var maxLookback = c.cfgProvider.CompactorMaxLookback(userID)
+	maxLookback := c.cfgProvider.CompactorMaxLookback(userID)
 	if c.cfgProvider.CompactorBlockUploadEnabled(userID) {
 		maxLookback = 0
 	}
