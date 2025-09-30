@@ -550,8 +550,7 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
 		}
 
 		// Unary negation of vectors drops the __name__ label, so wrap in DeduplicateAndMerge.
-		// However, if delayed name removal is enabled, let the delayed name removal logic handle the wrapping.
-		if expr.Op == parser.SUB && expr.Expr.Type() == parser.ValueTypeVector && !p.enableDelayedNameRemoval {
+		if expr.Op == parser.SUB && expr.Expr.Type() == parser.ValueTypeVector {
 			return &core.DeduplicateAndMerge{
 				Inner:                      unaryExpr,
 				DeduplicateAndMergeDetails: &core.DeduplicateAndMergeDetails{},
