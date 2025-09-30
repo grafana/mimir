@@ -34,6 +34,10 @@ spec:
 {{- end }}
     spec:
       restartPolicy: OnFailure
+{{- with .Values.minio.makeBucketJob.dnsConfig }}
+      dnsConfig:
+        {{- toYaml . | nindent 8 }}
+{{- end }}
 {{- include "minio.imagePullSecrets" . | indent 6 }}
 {{- if .Values.minio.nodeSelector }}
       nodeSelector:

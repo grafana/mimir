@@ -27,10 +27,11 @@ type ingesterMetrics struct {
 	ingestedExemplarsFail prometheus.Counter
 	ingestedMetadataFail  prometheus.Counter
 
-	queries          prometheus.Counter
-	queriedSamples   prometheus.Histogram
-	queriedExemplars prometheus.Histogram
-	queriedSeries    prometheus.Histogram
+	queries              prometheus.Counter
+	queriedSamples       prometheus.Histogram
+	queriedExemplars     prometheus.Histogram
+	queriedSeries        *prometheus.HistogramVec
+	discardedSeriesRatio prometheus.Histogram
 
 	memMetadata             prometheus.Gauge
 	memUsers                prometheus.Gauge
@@ -172,11 +173,17 @@ func newIngesterMetrics(
 			// A reasonable upper bound is around 6k - 10*(5^(5-1)) = 6250.
 			Buckets: prometheus.ExponentialBuckets(10, 5, 5),
 		}),
-		queriedSeries: promauto.With(r).NewHistogram(prometheus.HistogramOpts{
+		queriedSeries: promauto.With(r).NewHistogramVec(prometheus.HistogramOpts{
 			Name: "cortex_ingester_queried_series",
 			Help: "The total number of series returned from queries.",
 			// A reasonable upper bound is around 100k - 10*(8^(6-1)) = 327k.
-			Buckets: prometheus.ExponentialBuckets(10, 8, 6),
+			Buckets:                     prometheus.ExponentialBuckets(10, 8, 6),
+			NativeHistogramBucketFactor: 1.1,
+		}, []string{"stage"}),
+		discardedSeriesRatio: promauto.With(r).NewHistogram(prometheus.HistogramOpts{
+			Name:                        "cortex_ingester_discarded_series_ratio",
+			Help:                        `Ratio of discarded series during query processing. These are series fetched from the index, but then discarded because they don't match the vector selector. This is the ratio of cortex_ingester_queried_series{stage="index"} over {stage="send"}.`,
+			NativeHistogramBucketFactor: 1.1,
 		}),
 		memMetadata: promauto.With(r).NewGauge(prometheus.GaugeOpts{
 			Name: "cortex_ingester_memory_metadata",

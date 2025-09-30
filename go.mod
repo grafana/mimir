@@ -45,7 +45,7 @@ require (
 	golang.org/x/net v0.44.0
 	golang.org/x/sync v0.17.0
 	golang.org/x/time v0.12.0
-	google.golang.org/grpc v1.75.0
+	google.golang.org/grpc v1.75.1
 	gopkg.in/yaml.v2 v2.4.0
 	gopkg.in/yaml.v3 v3.0.1
 )
@@ -63,7 +63,7 @@ require (
 	github.com/google/go-github/v57 v57.0.0
 	github.com/google/uuid v1.6.0
 	github.com/grafana-tools/sdk v0.0.0-20220919052116-6562121319fc
-	github.com/grafana/alerting v0.0.0-20250915130141-a8ee25091876
+	github.com/grafana/alerting v0.0.0-20250929135149-815060950eaa
 	github.com/grafana/regexp v0.0.0-20240607082908-2cb410fa05da
 	github.com/hashicorp/golang-lru/v2 v2.0.7
 	github.com/hashicorp/vault/api v1.20.0
@@ -81,7 +81,7 @@ require (
 	github.com/tjhop/slog-gokit v0.1.4
 	github.com/twmb/franz-go v1.19.5
 	github.com/twmb/franz-go/pkg/kadm v1.15.0
-	github.com/twmb/franz-go/pkg/kfake v0.0.0-20250912190729-636f37bf0943
+	github.com/twmb/franz-go/pkg/kfake v0.0.0-20250926035925-db9ee7648fab
 	github.com/twmb/franz-go/pkg/kmsg v1.11.2
 	github.com/twmb/franz-go/plugin/kotel v1.5.0
 	github.com/twmb/franz-go/plugin/kprom v1.1.0
@@ -343,7 +343,7 @@ require (
 	golang.org/x/tools v0.37.0 // indirect
 	google.golang.org/genproto v0.0.0-20250505200425-f936aa4a68b2 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20250707201910-8d1bb00bc6a7 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20250908214217-97024824d090
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20250922171735-9219d122eba9
 	k8s.io/kube-openapi v0.0.0-20241105132330-32ad38e42d3f // indirect
 	k8s.io/utils v0.0.0-20241104100929-3ea5e8cea738 // indirect
 	sigs.k8s.io/yaml v1.4.0 // indirect

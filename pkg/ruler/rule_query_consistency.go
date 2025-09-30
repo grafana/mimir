@@ -23,20 +23,30 @@ const alertForStateMetricName = "ALERTS_FOR_STATE"
 // WrapQueryFuncWithReadConsistency wraps rules.QueryFunc with a function that injects strong read consistency
 // requirement in the context if the query is originated from a rule which depends on other rules in the same
 // rule group.
-func WrapQueryFuncWithReadConsistency(fn rules.QueryFunc, logger log.Logger) rules.QueryFunc {
+func WrapQueryFuncWithReadConsistency(fn rules.QueryFunc, limits RulesLimits, userID string, logger log.Logger) rules.QueryFunc {
 	return func(ctx context.Context, qs string, t time.Time) (promql.Vector, error) {
 
-		// Get details about the rule.
+		// Get details about the rule and tenant's settings.
 		detail := rules.FromOriginContext(ctx)
+		maxConsistencyDelay := limits.RulerEvaluationConsistencyMaxDelay(userID)
 
-		// If the rule has dependencies then we should enforce strong read consistency,
-		// otherwise we leave it empty to have Mimir falling back to the per-tenant default.
 		if !detail.NoDependencyRules {
+			// If the rule has dependencies then we should enforce strong read consistency.
 			spanLog := spanlogger.FromContext(ctx, logger)
 			spanLog.SetTag("read_consistency", api.ReadConsistencyStrong)
 			spanLog.DebugLog("msg", "forced strong read consistency because the rule depends on other rules in the same rule group")
 
 			ctx = api.ContextWithReadConsistencyLevel(ctx, api.ReadConsistencyStrong)
+		} else if maxConsistencyDelay > 0 {
+			// The rule doesn't request strong read consistency, but the tenant has a max delay enforcement
+			// configured for eventually consistent rule evaluations. We intentionally don't set the consistency level
+			// because the default consistency level could have been overridden on a per-tenant basis, so
+			// we just let the query run with whatever consistency level it was configured for the tenant.
+			spanLog := spanlogger.FromContext(ctx, logger)
+			spanLog.SetTag("read_consistency_max_delay", maxConsistencyDelay)
+			spanLog.DebugLog("msg", "configured read consistency max delay")
+
+			ctx = api.ContextWithReadConsistencyMaxDelay(ctx, maxConsistencyDelay)
 		}
 
 		return fn(ctx, qs, t)

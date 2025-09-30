@@ -34,29 +34,29 @@ import (
 	"github.com/grafana/alerting/images"
 	"github.com/grafana/alerting/notify/nfstatus"
 	"github.com/grafana/alerting/receivers"
-	"github.com/grafana/alerting/receivers/alertmanager"
-	"github.com/grafana/alerting/receivers/dinding"
-	"github.com/grafana/alerting/receivers/discord"
-	"github.com/grafana/alerting/receivers/email"
-	"github.com/grafana/alerting/receivers/googlechat"
-	"github.com/grafana/alerting/receivers/jira"
-	"github.com/grafana/alerting/receivers/kafka"
-	"github.com/grafana/alerting/receivers/line"
-	"github.com/grafana/alerting/receivers/mqtt"
-	"github.com/grafana/alerting/receivers/oncall"
-	"github.com/grafana/alerting/receivers/opsgenie"
-	"github.com/grafana/alerting/receivers/pagerduty"
-	"github.com/grafana/alerting/receivers/pushover"
-	"github.com/grafana/alerting/receivers/sensugo"
-	"github.com/grafana/alerting/receivers/slack"
-	"github.com/grafana/alerting/receivers/sns"
-	"github.com/grafana/alerting/receivers/teams"
-	"github.com/grafana/alerting/receivers/telegram"
-	"github.com/grafana/alerting/receivers/threema"
-	"github.com/grafana/alerting/receivers/victorops"
-	"github.com/grafana/alerting/receivers/webex"
-	"github.com/grafana/alerting/receivers/webhook"
-	"github.com/grafana/alerting/receivers/wecom"
+	alertmanager "github.com/grafana/alerting/receivers/alertmanager/v1"
+	dingding "github.com/grafana/alerting/receivers/dingding/v1"
+	discord "github.com/grafana/alerting/receivers/discord/v1"
+	email "github.com/grafana/alerting/receivers/email/v1"
+	googlechat "github.com/grafana/alerting/receivers/googlechat/v1"
+	jira "github.com/grafana/alerting/receivers/jira/v1"
+	kafka "github.com/grafana/alerting/receivers/kafka/v1"
+	line "github.com/grafana/alerting/receivers/line/v1"
+	mqtt "github.com/grafana/alerting/receivers/mqtt/v1"
+	oncall "github.com/grafana/alerting/receivers/oncall/v1"
+	opsgenie "github.com/grafana/alerting/receivers/opsgenie/v1"
+	pagerduty "github.com/grafana/alerting/receivers/pagerduty/v1"
+	pushover "github.com/grafana/alerting/receivers/pushover/v1"
+	sensugo "github.com/grafana/alerting/receivers/sensugo/v1"
+	slack "github.com/grafana/alerting/receivers/slack/v1"
+	sns "github.com/grafana/alerting/receivers/sns/v1"
+	teams "github.com/grafana/alerting/receivers/teams/v1"
+	telegram "github.com/grafana/alerting/receivers/telegram/v1"
+	threema "github.com/grafana/alerting/receivers/threema/v1"
+	victorops "github.com/grafana/alerting/receivers/victorops/v1"
+	webex "github.com/grafana/alerting/receivers/webex/v1"
+	webhook "github.com/grafana/alerting/receivers/webhook/v1"
+	wecom "github.com/grafana/alerting/receivers/wecom/v1"
 	"github.com/grafana/alerting/templates"
 )
 
@@ -105,7 +105,7 @@ func BuildGrafanaReceiverIntegrations(
 	}
 	for i, cfg := range receiver.DingdingConfigs {
 		ci(i, cfg.Metadata, cfg.HTTPClientConfig, func(cli *http.Client) notificationChannel {
-			return dinding.New(cfg.Settings, cfg.Metadata, tmpl, cli, logger)
+			return dingding.New(cfg.Settings, cfg.Metadata, tmpl, cli, logger)
 		})
 	}
 	for i, cfg := range receiver.DiscordConfigs {
