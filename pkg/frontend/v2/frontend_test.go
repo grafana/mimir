@@ -194,9 +194,7 @@ func TestFrontend_Protobuf_HappyPath(t *testing.T) {
 
 	f, _ := setupFrontend(t, nil, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
 		if msg.Type != schedulerpb.ENQUEUE {
-			// If the test closes the response before the goroutine in DoProtobufRequest returns, it will try to send a cancellation
-			// notification to the scheduler. We don't want to spawn a goroutine to send a mock querier response in this case.
-			return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
+			return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.ERROR, Error: fmt.Sprintf("unexpected message type %v sent to scheduler", msg.Type)}
 		}
 
 		require.Equal(t, []string{ingesterQueryComponent}, msg.AdditionalQueueDimensions)
@@ -226,6 +224,37 @@ func TestFrontend_Protobuf_HappyPath(t *testing.T) {
 	msg, err = resp.Next(ctx)
 	require.NoError(t, err)
 	require.Nil(t, msg)
+}
+
+func TestFrontend_Protobuf_ShouldNotCancelRequestAfterSuccess(t *testing.T) {
+	const userID = "test"
+	cancellations := atomic.NewInt64(0)
+
+	f, _ := setupFrontend(t, nil, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
+		switch msg.Type {
+		case schedulerpb.ENQUEUE:
+			go sendStreamingResponse(t, f, userID, msg.QueryID, newStringMessage("first message"))
+		case schedulerpb.CANCEL:
+			cancellations.Inc()
+		default:
+			return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.ERROR, Error: fmt.Sprintf("unexpected message type %v sent to scheduler", msg.Type)}
+		}
+
+		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
+	})
+
+	for range 1000 { // Send many requests to try to trigger the race condition that previously caused this test to fail.
+		ctx := user.InjectOrgID(context.Background(), userID)
+		req := &querierpb.EvaluateQueryRequest{}
+		resp, err := f.DoProtobufRequest(ctx, req, time.Now().Add(-5*time.Hour), time.Now())
+		require.NoError(t, err)
+
+		msg, err := resp.Next(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "first message", msg.GetEvaluateQueryResponse().GetStringValue().Value)
+	}
+
+	require.Zero(t, cancellations.Load(), "expected no cancellations to be sent to the scheduler, but at least one was")
 }
 
 func TestFrontend_Protobuf_QuerierResponseReceivedBeforeSchedulerResponse(t *testing.T) {
@@ -947,9 +976,7 @@ func TestFrontend_Protobuf_ResponseSentTwice(t *testing.T) {
 
 	f, _ := setupFrontend(t, nil, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
 		if msg.Type != schedulerpb.ENQUEUE {
-			// If the test closes the response before the goroutine in DoProtobufRequest returns, it will try to send a cancellation
-			// notification to the scheduler, which we should ignore.
-			return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
+			return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.ERROR, Error: fmt.Sprintf("unexpected message type %v sent to scheduler", msg.Type)}
 		}
 
 		queryID.Store(msg.QueryID)
@@ -1011,10 +1038,9 @@ func TestFrontend_Protobuf_ResponseWithUnexpectedUserID(t *testing.T) {
 
 	f, _ := setupFrontend(t, nil, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
 		if msg.Type != schedulerpb.ENQUEUE {
-			// If the test closes the response before the goroutine in DoProtobufRequest returns, it will try to send a cancellation
-			// notification to the scheduler. We don't want to spawn a goroutine to send a mock querier response in this case.
-			return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
+			return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.ERROR, Error: fmt.Sprintf("unexpected message type %v sent to scheduler", msg.Type)}
 		}
+
 		go func() {
 			queryID.Store(msg.QueryID)
 			errChan <- sendStreamingResponseWithErrorCapture(f, "some-other-user", msg.QueryID, newStringMessage("first message"), newStringMessage("second message"))

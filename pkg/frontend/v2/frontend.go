@@ -51,6 +51,7 @@ import (
 var tracer = otel.Tracer("pkg/frontend/v2")
 
 var errExecutingQueryRoundTripFinished = cancellation.NewErrorf("executing query round trip finished")
+var errFinishedReceivingResponse = cancellation.NewErrorf("finished receiving response from querier")
 var errStreamClosed = cancellation.NewErrorf("stream closed")
 var errUnexpectedHTTPResponse = errors.New("unexpected HTTP response to non-HTTP request")
 
@@ -155,7 +156,7 @@ type frontendRequest struct {
 	protobufRequest        proto.Message
 	protobufRequestHeaders map[string][]string
 	protobufResponseStream *ProtobufResponseStream
-	protobufResponseDone   chan struct{} // Used to signal when the response has been completely read (but possibly not yet consumed) and we can stop monitoring the request context for cancellation.
+	protobufResponseDone   *atomic.Bool
 }
 
 type enqueueStatus int
@@ -370,7 +371,7 @@ func (f *Frontend) DoProtobufRequest(ctx context.Context, req proto.Message, min
 	freq.touchedQueryComponents = f.queryComponentQueueDimensionFromTimeParams([]string{freq.userID}, timestamp.FromTime(minT), timestamp.FromTime(maxT), time.Now())
 	freq.protobufRequest = req
 	freq.protobufRequestHeaders = maps.Clone(querymiddleware.HeadersToPropagateFromContext(ctx)) // Take a shallow copy of the headers, so that we don't mutate the shared map when adding trace headers later.
-	freq.protobufResponseDone = make(chan struct{})
+	freq.protobufResponseDone = atomic.NewBool(false)
 	freq.protobufResponseStream = &ProtobufResponseStream{
 		ctx:        ctx,
 		cancel:     cancel,
@@ -399,25 +400,24 @@ func (f *Frontend) DoProtobufRequest(ctx context.Context, req proto.Message, min
 		}
 
 		freq.spanLogger.DebugLog("msg", "request enqueued successfully, waiting for response")
+		<-ctx.Done() // The context will be cancelled if the request is cancelled by DoProtobufRequest's caller, if the response has been completely read, or if the stream is closed by the caller.
 
-		// Wait until either the response is completely read, or the request is cancelled.
-		select {
-		case <-ctx.Done():
-			freq.spanLogger.DebugLog("msg", "request context cancelled after enqueuing request, aborting", "err", context.Cause(ctx))
-
-			select {
-			case cancelCh <- freq.queryID:
-				// cancellation sent.
-			default:
-				// failed to cancel, ignore.
-				level.Warn(freq.spanLogger).Log("msg", "failed to send cancellation request to scheduler, queue full")
-			}
-
-			freq.protobufResponseStream.writeEnqueueError(context.Cause(ctx))
-
-		case <-freq.protobufResponseDone:
+		if freq.protobufResponseDone.Load() {
 			freq.spanLogger.DebugLog("msg", "finished receiving response")
+			return
 		}
+
+		freq.spanLogger.DebugLog("msg", "request context cancelled after enqueuing request, aborting", "err", context.Cause(ctx))
+
+		select {
+		case cancelCh <- freq.queryID:
+			// cancellation sent.
+		default:
+			// failed to cancel, ignore.
+			level.Warn(freq.spanLogger).Log("msg", "failed to send cancellation request to scheduler, queue full")
+		}
+
+		freq.protobufResponseStream.writeEnqueueError(context.Cause(ctx))
 	}()
 
 	return freq.protobufResponseStream, nil
@@ -757,7 +757,10 @@ func (f *Frontend) receiveResultForHTTPRequest(req *frontendRequest, firstMessag
 func (f *Frontend) receiveResultForProtobufRequest(req *frontendRequest, firstMessage *frontendv2pb.QueryResultStreamRequest, stream frontendv2pb.FrontendForQuerier_QueryResultStreamServer) error {
 	defer func() {
 		close(req.protobufResponseStream.messages)
-		close(req.protobufResponseDone)
+
+		// Signal that DoProtobufRequest can stop monitoring the request context for cancellation.
+		req.protobufResponseDone.Store(true)
+		req.protobufResponseStream.cancel(errFinishedReceivingResponse)
 	}()
 
 	req.spanLogger.DebugLog("msg", "got first response message")
