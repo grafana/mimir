@@ -383,6 +383,7 @@ func newOTLPParser(
 			"promoted_resource_attributes", promoteResourceAttributes,
 		)
 
+		req.Source = mimirpb.OTLP
 		req.Timeseries = metrics
 		req.Metadata = metadata
 		return nil

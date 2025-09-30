@@ -55,10 +55,7 @@ func (p CostBasedPlanner) PlanIndexLookup(ctx context.Context, inPlan index.Look
 		return inPlan, errTooManyMatchers
 	}
 
-	allPlansUnordered, err := p.generatePlans(ctx, p.stats, matchers)
-	if err != nil {
-		return nil, fmt.Errorf("error generating plans: %w", err)
-	}
+	allPlansUnordered := p.generatePlans(ctx, p.stats, matchers)
 
 	type planWithCost struct {
 		plan
@@ -93,14 +90,11 @@ func (p CostBasedPlanner) PlanIndexLookup(ctx context.Context, inPlan index.Look
 
 var errTooManyMatchers = errors.New("too many matchers to generate plans")
 
-func (p CostBasedPlanner) generatePlans(ctx context.Context, statistics index.Statistics, matchers []*labels.Matcher) ([]plan, error) {
-	noopPlan, err := newScanOnlyPlan(ctx, statistics, matchers)
-	if err != nil {
-		return nil, fmt.Errorf("error generating index lookup plan: %w", err)
-	}
+func (p CostBasedPlanner) generatePlans(ctx context.Context, statistics index.Statistics, matchers []*labels.Matcher) []plan {
+	noopPlan := newScanOnlyPlan(ctx, statistics, matchers)
 	allPlans := make([]plan, 0, 1<<uint(len(matchers)))
 
-	return generatePredicateCombinations(allPlans, noopPlan, 0), nil
+	return generatePredicateCombinations(allPlans, noopPlan, 0)
 }
 
 // generatePredicateCombinations recursively generates all possible plans with their predicates toggled as index or as scan predicates.
@@ -147,25 +141,35 @@ func (p CostBasedPlanner) recordPlanningOutcome(ctx context.Context, start time.
 			))
 		}
 	default:
-		outcome = "success"
-		if !traceSampled {
-			// Avoid logging overhead if the events aren't going to make it into a span.
-			break
+		selectedPlan := allPlans[0]
+		if queryStats := QueryStatsFromContext(ctx); queryStats != nil {
+			queryStats.SetEstimatedSelectedPostings(selectedPlan.intersectionSize())
+			queryStats.SetEstimatedFinalCardinality(selectedPlan.cardinality())
 		}
-		span.AddEvent("selected lookup plan", trace.WithAttributes(
-			attribute.Stringer("duration", time.Since(start)),
-		))
-		const topKPlans = 2
-		allPlans[0].addPredicatesToSpan(span)
-		for i, plan := range allPlans[:min(topKPlans, len(allPlans))] {
-			planName := "selected_plan"
-			if i > 0 {
-				planName = strconv.Itoa(i + 1)
-			}
-			plan.addSpanEvent(span, planName)
+
+		outcome = "success"
+		if traceSampled {
+			// Only add span events when tracing is sampled to avoid unnecessary overhead.
+			p.addSpanEvents(span, start, selectedPlan, allPlans)
 		}
 	}
 	p.metrics.planningDuration.WithLabelValues(outcome).Observe(time.Since(start).Seconds())
+}
+
+func (p CostBasedPlanner) addSpanEvents(span trace.Span, start time.Time, selectedPlan plan, allPlans []plan) {
+	span.AddEvent("selected lookup plan", trace.WithAttributes(
+		attribute.Stringer("duration", time.Since(start)),
+	))
+	selectedPlan.addPredicatesToSpan(span)
+
+	const topKPlans = 2
+	for i, plan := range allPlans[:min(topKPlans, len(allPlans))] {
+		planName := "selected_plan"
+		if i > 0 {
+			planName = strconv.Itoa(i + 1)
+		}
+		plan.addSpanEvent(span, planName)
+	}
 }
 
 type contextKey string

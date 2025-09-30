@@ -41,7 +41,7 @@ func newClosedState[R any](breaker *circuitBreaker[R]) *closedState[R] {
 	}
 	return &closedState[R]{
 		breaker:        breaker,
-		ExecutionStats: newStats(breaker.config, true, capacity),
+		ExecutionStats: newStats(&breaker.config, true, capacity),
 	}
 }
 
@@ -122,7 +122,7 @@ func newHalfOpenState[R any](breaker *circuitBreaker[R]) *halfOpenState[R] {
 	}
 	return &halfOpenState[R]{
 		breaker:             breaker,
-		ExecutionStats:      newStats[R](breaker.config, false, capacity),
+		ExecutionStats:      newStats[R](&breaker.config, false, capacity),
 		permittedExecutions: capacity,
 	}
 }

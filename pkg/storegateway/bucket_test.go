@@ -1116,7 +1116,8 @@ func uploadTestBlock(t testing.TB, tmpDir string, bkt objstore.Bucket, dataSetup
 		Source: block.TestSource,
 	}, nil)
 	assert.NoError(t, err)
-	assert.NoError(t, block.Upload(context.Background(), logger, bkt, filepath.Join(tmpDir, "tmp", id.String()), nil))
+	_, err = block.Upload(context.Background(), logger, bkt, filepath.Join(tmpDir, "tmp", id.String()), nil)
+	assert.NoError(t, err)
 
 	return id, h.MinTime(), h.MaxTime()
 }
@@ -1434,7 +1435,8 @@ func benchBucketSeries(t test.TB, skipChunk bool, samplesPerSeries, totalSeries 
 		assert.NoError(t, err)
 
 		assert.NoError(t, meta.WriteToDir(logger, filepath.Join(blockDir, id.String())))
-		assert.NoError(t, block.Upload(context.Background(), logger, bkt, filepath.Join(blockDir, id.String()), nil))
+		_, err = block.Upload(context.Background(), logger, bkt, filepath.Join(blockDir, id.String()), nil)
+		assert.NoError(t, err)
 	}
 
 	ibkt := objstore.WithNoopInstr(bkt)
@@ -1625,7 +1627,8 @@ func TestBucketStore_Series_Concurrency(t *testing.T) {
 		expectedSeries = append(expectedSeries, blockSeries...)
 		expectedBlockIDs = append(expectedBlockIDs, blockID.String())
 
-		require.NoError(t, block.Upload(ctx, logger, bucket, filepath.Join(blockDir, blockID.String()), nil))
+		_, err = block.Upload(ctx, logger, bucket, filepath.Join(blockDir, blockID.String()), nil)
+		require.NoError(t, err)
 	}
 	t.Log("generated test blocks")
 
@@ -1795,7 +1798,8 @@ func TestBucketStore_Series_OneBlock_InMemIndexCacheSegfault(t *testing.T) {
 
 		meta, err := block.InjectThanosMeta(log.NewNopLogger(), filepath.Join(blockDir, id.String()), thanosMeta, nil)
 		assert.NoError(t, err)
-		assert.NoError(t, block.Upload(context.Background(), logger, bkt, filepath.Join(blockDir, id.String()), nil))
+		_, err = block.Upload(context.Background(), logger, bkt, filepath.Join(blockDir, id.String()), nil)
+		assert.NoError(t, err)
 
 		b1 = &bucketBlock{
 			indexCache:   indexCache,
@@ -1833,7 +1837,8 @@ func TestBucketStore_Series_OneBlock_InMemIndexCacheSegfault(t *testing.T) {
 
 		meta, err := block.InjectThanosMeta(log.NewNopLogger(), filepath.Join(blockDir, id.String()), thanosMeta, nil)
 		assert.NoError(t, err)
-		assert.NoError(t, block.Upload(context.Background(), logger, bkt, filepath.Join(blockDir, id.String()), nil))
+		_, err = block.Upload(context.Background(), logger, bkt, filepath.Join(blockDir, id.String()), nil)
+		assert.NoError(t, err)
 
 		b2 = &bucketBlock{
 			indexCache:   indexCache,
@@ -2336,7 +2341,8 @@ func testBucketStoreSeriesBlockWithMultipleChunks(
 
 	instrBkt := objstore.WithNoopInstr(bkt)
 	logger := log.NewNopLogger()
-	assert.NoError(t, block.Upload(context.Background(), logger, bkt, filepath.Join(headOpts.ChunkDirRoot, blk.String()), nil))
+	_, err = block.Upload(context.Background(), logger, bkt, filepath.Join(headOpts.ChunkDirRoot, blk.String()), nil)
+	assert.NoError(t, err)
 
 	// Instance a real bucket store we'll use to query the series.
 	fetcher, err := block.NewMetaFetcher(logger, 10, instrBkt, tmpDir, nil, nil, nil, 0)

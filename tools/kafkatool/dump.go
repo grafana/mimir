@@ -28,6 +28,7 @@ type DumpCommand struct {
 	inOutFile         *os.File
 	getKafkaClient    func() *kgo.Client
 	printer           Printer
+	printFormat       string
 }
 
 // Register is used to register the command to a parent command.
@@ -36,16 +37,21 @@ func (c *DumpCommand) Register(app *kingpin.Application, getKafkaClient func() *
 	c.printer = printer
 
 	cmd := app.Command("dump", "Dump Kafka topic contents")
-	cmd.Flag("topic", "Kafka topic to dump").Required().StringVar(&c.topic)
-	cmd.Flag("partition", "Kafka partition to dump or import into").Required().IntVar(&c.partition)
 	cmd.Flag("skip-first", "Skip until input record with offset N").Default("0").IntVar(&c.skipFirst)
-	cmd.Flag("offset", "Offset to start exporting from").Default("0").Int64Var(&c.exportOffsetStart)
-	cmd.Flag("export-max-records", "Maximum number of records to export").Default("1000000").IntVar(&c.exportMaxRecords)
 	cmd.Flag("file", "File to read from or write to.").Required().OpenFileVar(&c.inOutFile, os.O_RDWR|os.O_CREATE, 0600)
 
-	cmd.Command("import", "Import records from a file into a Kafka topic").Action(c.doImport)
-	cmd.Command("export", "Export records from a Kafka topic into a file").Action(c.doExport)
-	cmd.Command("print", "Print the write requests inside records dumped using this tool").Action(c.doPrint)
+	importCmd := cmd.Command("import", "Import records from a file into a Kafka topic").Action(c.doImport)
+	importCmd.Flag("topic", "Kafka topic to import into.").Required().StringVar(&c.topic)
+	importCmd.Flag("partition", "Kafka partition to import into").Required().IntVar(&c.partition)
+
+	exportCmd := cmd.Command("export", "Export records from a Kafka topic into a file").Action(c.doExport)
+	exportCmd.Flag("topic", "Kafka topic to dump.").Required().StringVar(&c.topic)
+	exportCmd.Flag("partition", "Kafka partition to dump.").Required().IntVar(&c.partition)
+	exportCmd.Flag("offset", "Offset to start exporting from.").Default("0").Int64Var(&c.exportOffsetStart)
+	exportCmd.Flag("export-max-records", "Maximum number of records to export.").Default("1000000").IntVar(&c.exportMaxRecords)
+
+	printCmd := cmd.Command("print", "Print the write requests inside records dumped using this tool").Action(c.doPrint)
+	printCmd.Flag("format", "Output format").Default("pretty").EnumVar(&c.printFormat, "pretty", "json")
 }
 
 type key int
@@ -173,18 +179,32 @@ func (c *DumpCommand) doPrint(*kingpin.ParseContext) error {
 				return
 			}
 
-			// Print the time series in the write request.
-			c.printer.PrintLine(fmt.Sprintf("Record #%d (offset: %d)", recordIdx, record.Offset))
-			for _, series := range req.Timeseries {
-				for _, sample := range series.Samples {
-					c.printer.PrintLine(fmt.Sprintf("%s %d %f",
-						mimirpb.FromLabelAdaptersToLabels(series.Labels).String(),
-						sample.TimestampMs,
-						sample.Value,
-					))
+			switch c.printFormat {
+			case "json":
+				// Print the entire write request as json.
+				lineBytes, err := json.Marshal(req)
+				if err != nil {
+					c.printer.PrintLine(fmt.Sprintf("failed to marshal write request: %v", err))
+					return
 				}
+				c.printer.PrintLine(string(lineBytes))
+			case "pretty":
+				// Print the time series in the write request.
+				c.printer.PrintLine(fmt.Sprintf("Record #%d (offset: %d)", recordIdx, record.Offset))
+				for _, series := range req.Timeseries {
+					for _, sample := range series.Samples {
+						c.printer.PrintLine(fmt.Sprintf("%s %d %f",
+							mimirpb.FromLabelAdaptersToLabels(series.Labels).String(),
+							sample.TimestampMs,
+							sample.Value,
+						))
+					}
+				}
+				c.printer.PrintLine("")
+			default:
+				c.printer.PrintLine(fmt.Sprintf("Invalid print format: %q", c.printFormat))
+				return
 			}
-			c.printer.PrintLine("")
 		},
 		func(recordIdx int, err error) {
 			c.printer.PrintLine(fmt.Sprintf("corrupted JSON record %d: %v", recordIdx, err))

@@ -38,6 +38,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier/querierpb"
 	querier_stats "github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerpb"
+	"github.com/grafana/mimir/pkg/util/propagation"
 	"github.com/grafana/mimir/pkg/util/test"
 )
 
@@ -138,7 +139,7 @@ func TestSchedulerProcessor_processQueriesOnSingleStream(t *testing.T) {
 
 		workerCtx, workerCancel := context.WithCancel(context.Background())
 
-		protobufRequestHandler.On("HandleProtobuf", mock.Anything, mock.Anything, mock.Anything).Run(func(mock.Arguments) {
+		protobufRequestHandler.On("HandleProtobuf", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Run(func(mock.Arguments) {
 			// Cancel the worker context while the query execution is in progress.
 			workerCancel()
 
@@ -248,7 +249,7 @@ func TestSchedulerProcessor_processQueriesOnSingleStream(t *testing.T) {
 			}
 		})
 
-		protobufRequestHandler.On("HandleProtobuf", mock.Anything, mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
+		protobufRequestHandler.On("HandleProtobuf", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
 			ctx := args.Get(0).(context.Context)
 
 			// Trigger the shutdown of the scheduler.
@@ -425,7 +426,7 @@ func TestSchedulerProcessor_QueryTime(t *testing.T) {
 			handle(ctx)
 		}).Return(&httpgrpc.HTTPResponse{}, nil)
 
-		protobufRequestHandler.On("HandleProtobuf", mock.Anything, mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
+		protobufRequestHandler.On("HandleProtobuf", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
 			ctx := args.Get(0).(context.Context)
 			handle(ctx)
 		})
@@ -978,8 +979,8 @@ type protobufRequestHandlerMock struct {
 	mock.Mock
 }
 
-func (m *protobufRequestHandlerMock) HandleProtobuf(ctx context.Context, t *types.Any, stream frontendv2pb.QueryResultStream) {
-	m.Called(ctx, t, stream)
+func (m *protobufRequestHandlerMock) HandleProtobuf(ctx context.Context, t *types.Any, metadata propagation.Carrier, stream frontendv2pb.QueryResultStream) {
+	m.Called(ctx, t, metadata, stream)
 }
 
 type frontendForQuerierMockServer struct {

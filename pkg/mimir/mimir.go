@@ -79,6 +79,7 @@ import (
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/noauth"
 	"github.com/grafana/mimir/pkg/util/process"
+	"github.com/grafana/mimir/pkg/util/propagation"
 	"github.com/grafana/mimir/pkg/util/validation"
 	"github.com/grafana/mimir/pkg/util/validation/exporter"
 	"github.com/grafana/mimir/pkg/vault"
@@ -875,6 +876,14 @@ type Mimir struct {
 	ContinuousTestManager            *continuoustest.Manager
 	BuildInfoHandler                 http.Handler
 	CostAttributionManager           *costattribution.Manager
+
+	// Extractors are used by queriers to extract HTTP headers / metadata from incoming requests.
+	// We use an abstraction here to support both httpgrpc requests and Protobuf requests.
+	Extractors []propagation.Extractor
+
+	// Injectors are used by query-frontends to inject HTTP headers / metadata into outgoing requests to queriers.
+	// We use an abstraction here to support both httpgrpc requests and Protobuf requests.
+	Injectors []propagation.Injector
 
 	QueryFrontendQueryPlanner *streamingpromql.QueryPlanner
 	// The separate planner for queriers is a temporary thing until all query planning is happening solely in query-frontends,

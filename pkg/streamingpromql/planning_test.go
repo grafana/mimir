@@ -4,6 +4,7 @@ package streamingpromql
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -42,8 +43,9 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 	rangeQueryEncodedTimeRange := planning.EncodedQueryTimeRange{StartT: 3000, EndT: 5000, IntervalMilliseconds: 1000}
 
 	testCases := map[string]struct {
-		expr      string
-		timeRange types.QueryTimeRange
+		expr                     string
+		timeRange                types.QueryTimeRange
+		enableDelayedNameRemoval bool
 
 		expectedPlan *planning.EncodedQueryPlan
 	}{
@@ -1090,6 +1092,38 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 				},
 			},
 		},
+		"query with delayed name removal enabled": {
+			expr:                     `some_metric`,
+			timeRange:                instantQuery,
+			enableDelayedNameRemoval: true,
+
+			expectedPlan: &planning.EncodedQueryPlan{
+				TimeRange:                instantQueryEncodedTimeRange,
+				RootNode:                 1,
+				EnableDelayedNameRemoval: true,
+				Nodes: []*planning.EncodedNode{
+					{
+						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
+						Details: marshalDetails(&core.VectorSelectorDetails{
+							Matchers: []*core.LabelMatcher{
+								{Type: 0, Name: "__name__", Value: "some_metric"},
+							},
+							ExpressionPosition: core.PositionRange{Start: 0, End: 11},
+						}),
+						Type:        "VectorSelector",
+						Description: `{__name__="some_metric"}`,
+					},
+					{
+						NodeType:       planning.NODE_TYPE_DEDUPLICATE_AND_MERGE,
+						Details:        marshalDetails(&core.DeduplicateAndMergeDetails{RunDelayedNameRemoval: true}),
+						Type:           "DeduplicateAndMerge",
+						Description:    "with delayed name removal",
+						Children:       []int64{0},
+						ChildrenLabels: []string{""},
+					},
+				},
+			},
+		},
 	}
 
 	ctx := context.Background()
@@ -1104,6 +1138,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 				return (23 * time.Second).Milliseconds()
 			}
 			opts.CommonOpts.Reg = reg
+			opts.CommonOpts.EnableDelayedNameRemoval = testCase.enableDelayedNameRemoval
 			planner, err := NewQueryPlannerWithoutOptimizationPasses(opts)
 			require.NoError(t, err)
 
@@ -1127,6 +1162,31 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 			require.Equal(t, originalPlan, decodedPlan)
 		})
 	}
+}
+
+func TestPlanVersioning(t *testing.T) {
+	originalMaximumPlanVersion := planning.MaximumSupportedQueryPlanVersion
+	planning.MaximumSupportedQueryPlanVersion = 9001
+	t.Cleanup(func() { planning.MaximumSupportedQueryPlanVersion = originalMaximumPlanVersion })
+
+	plan := &planning.QueryPlan{
+		TimeRange: types.NewInstantQueryTimeRange(time.Now()),
+		Root: &core.NumberLiteral{
+			NumberLiteralDetails: &core.NumberLiteralDetails{
+				Value: 123,
+			},
+		},
+		OriginalExpression: "123",
+		Version:            9000,
+	}
+
+	encoded, err := plan.ToEncodedPlan(false, true)
+	require.NoError(t, err)
+	require.Equal(t, int64(9000), encoded.Version)
+
+	decoded, _, err := encoded.ToDecodedPlan()
+	require.NoError(t, err)
+	require.Equal(t, plan, decoded)
 }
 
 func TestDeduplicateAndMergePlanning(t *testing.T) {
@@ -1211,6 +1271,32 @@ func TestDeduplicateAndMergePlanning(t *testing.T) {
 			expectedPlan: `
 				- FunctionCall: absent_over_time(...)
 					- MatrixSelector: {__name__="some_metric"}[5m0s]
+			`,
+		},
+		"aritmetic vector-scalar operation - should deduplicate and merge": {
+			expr: `some_metric * 2`,
+			expectedPlan: `
+				- DeduplicateAndMerge
+					- BinaryExpression: LHS * RHS
+						- LHS: VectorSelector: {__name__="some_metric"}
+						- RHS: NumberLiteral: 2
+			`,
+		},
+		"comparison vector-scalar operation - should NOT deduplicate and merge": {
+			expr: `some_metric > 2`,
+			expectedPlan: `
+				- BinaryExpression: LHS > RHS
+					- LHS: VectorSelector: {__name__="some_metric"}
+					- RHS: NumberLiteral: 2
+			`,
+		},
+		"comparison vector-scalar operation with bool modifier - should deduplicate and merge": {
+			expr: `some_metric > bool 2`,
+			expectedPlan: `
+				- DeduplicateAndMerge
+					- BinaryExpression: LHS > bool RHS
+						- LHS: VectorSelector: {__name__="some_metric"}
+						- RHS: NumberLiteral: 2
 			`,
 		},
 	}
@@ -1372,7 +1458,8 @@ func TestAnalysisHandler(t *testing.T) {
 					"originalExpression": "up"
 				  }
 				}
-			  ]
+			  ],
+			  "planVersion": 0
 			}`,
 			expectedStatusCode: http.StatusOK,
 		},
@@ -1415,7 +1502,8 @@ func TestAnalysisHandler(t *testing.T) {
 					"originalExpression": "up"
 				  }
 				}
-			  ]
+			  ],
+			  "planVersion": 0
 			}`,
 			expectedStatusCode: http.StatusOK,
 		},
@@ -1741,6 +1829,21 @@ func TestDecodingInvalidPlan(t *testing.T) {
 				},
 			},
 			expectedError: "node of type BinaryExpression expects 2 children, but got 1",
+		},
+		"query plan version is too high": {
+			input: &planning.EncodedQueryPlan{
+				OriginalExpression: "123",
+				Nodes: []*planning.EncodedNode{
+					{
+						NodeType: planning.NODE_TYPE_NUMBER_LITERAL,
+						Details: marshalDetails(&core.NumberLiteralDetails{
+							Value: 123,
+						}),
+					},
+				},
+				Version: planning.MaximumSupportedQueryPlanVersion + 1,
+			},
+			expectedError: fmt.Sprintf("query plan has version %v, but the maximum supported query plan version is %v", planning.MaximumSupportedQueryPlanVersion+1, planning.MaximumSupportedQueryPlanVersion),
 		},
 	}
 

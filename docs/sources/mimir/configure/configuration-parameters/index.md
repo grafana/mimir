@@ -2731,6 +2731,11 @@ mimir_query_engine:
   # queries that do not require full histograms.
   # CLI flag: -querier.mimir-query-engine.enable-skipping-histogram-decoding
   [enable_skipping_histogram_decoding: <boolean> | default = true]
+
+  # (experimental) Enable generating selectors for one side of a binary
+  # expression based on results from the other side.
+  # CLI flag: -querier.mimir-query-engine.enable-narrow-binary-selectors
+  [enable_narrow_binary_selectors: <boolean> | default = false]
 ```
 
 ### frontend
@@ -4485,6 +4490,13 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -validation.max-length-label-value
 [max_label_value_length: <int> | default = 2048]
 
+# (experimental) What to do for label values over the length limit. Options are:
+# 'error', 'truncate', 'drop'. For 'truncate', the hash of the full value
+# replaces the end portion of the value. For 'drop', the hash fully replaces the
+# value.
+# CLI flag: -validation.label-value-length-over-limit-strategy
+[label_value_length_over_limit_strategy: <string> | default = "error"]
+
 # Maximum number of label names per series.
 # CLI flag: -validation.max-label-names-per-series
 [max_label_names_per_series: <int> | default = 30]
@@ -4939,6 +4951,11 @@ cost_attribution_labels_structured:
 # have been pushed.
 # CLI flag: -ruler.evaluation-delay-duration
 [ruler_evaluation_delay_duration: <duration> | default = 1m]
+
+# (experimental) The maximum tolerated ingestion delay for eventually consistent
+# rule evaluations. Set to 0 to disable the enforcement.
+# CLI flag: -ruler.evaluation-consistency-max-delay
+[ruler_evaluation_consistency_max_delay: <duration> | default = 0s]
 
 # The tenant's shard size when sharding is used by ruler. Value of 0 disables
 # shuffle sharding for the tenant, and tenant rules will be sharded across all
@@ -5982,7 +5999,7 @@ tsdb:
   # (experimental) How frequently to collect head statistics, which are used in
   # query execution optimization. 0 to disable.
   # CLI flag: -blocks-storage.tsdb.head-statistics-collection-frequency
-  [head_statistics_collection_frequency: <duration> | default = 0s]
+  [head_statistics_collection_frequency: <duration> | default = 1h]
 
   # (advanced) Max size - in bytes - of the in-memory series hash cache. The
   # cache is shared across all tenants and it's used only when query sharding is

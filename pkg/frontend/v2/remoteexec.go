@@ -293,7 +293,11 @@ func readSeriesMetadata(ctx context.Context, stream responseStream, memoryConsum
 	}
 
 	for _, s := range seriesMetadata.Series {
-		mqeSeries, err = types.AppendSeriesMetadata(memoryConsumptionTracker, mqeSeries, types.SeriesMetadata{Labels: mimirpb.FromLabelAdaptersToLabels(s.Labels)})
+		m := types.SeriesMetadata{
+			Labels:   mimirpb.FromLabelAdaptersToLabels(s.Labels),
+			DropName: s.DropName,
+		}
+		mqeSeries, err = types.AppendSeriesMetadata(memoryConsumptionTracker, mqeSeries, m)
 		if err != nil {
 			return nil, err
 		}

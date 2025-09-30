@@ -26,6 +26,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/streamingpromql"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/propagation"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -288,9 +289,14 @@ type httpQueryRequestRoundTripperHandler struct {
 	codec  Codec
 }
 
-func (rth httpQueryRequestRoundTripperHandler) Do(ctx context.Context, r MetricsQueryRequest) (Response, error) {
+func (rth httpQueryRequestRoundTripperHandler) Do(ctx context.Context, r MetricsQueryRequest) (resp Response, err error) {
 	spanLogger, ctx := spanlogger.New(ctx, rth.logger, tracer, "httpQueryRequestRoundTripperHandler.Do")
-	defer spanLogger.Finish()
+	defer func() {
+		if err != nil {
+			spanLogger.Error(err)
+		}
+		spanLogger.Finish()
+	}()
 
 	request, err := rth.codec.EncodeMetricsQueryRequest(ctx, r)
 	if err != nil {
@@ -309,25 +315,37 @@ func (rth httpQueryRequestRoundTripperHandler) Do(ctx context.Context, r Metrics
 type engineQueryRequestRoundTripperHandler struct {
 	engine  *streamingpromql.Engine
 	storage storage.Queryable
+	codec   Codec
 	logger  log.Logger
 }
 
-func NewEngineQueryRequestRoundTripperHandler(engine *streamingpromql.Engine, logger log.Logger) MetricsQueryHandler {
+func NewEngineQueryRequestRoundTripperHandler(engine *streamingpromql.Engine, codec Codec, logger log.Logger) MetricsQueryHandler {
 	return &engineQueryRequestRoundTripperHandler{
 		engine:  engine,
 		storage: unqueryableQueryable{},
+		codec:   codec,
 		logger:  logger,
 	}
 }
 
-func (rth *engineQueryRequestRoundTripperHandler) Do(ctx context.Context, r MetricsQueryRequest) (Response, error) {
+func (rth *engineQueryRequestRoundTripperHandler) Do(ctx context.Context, r MetricsQueryRequest) (resp Response, err error) {
 	spanLogger, ctx := spanlogger.New(ctx, rth.logger, tracer, "engineQueryRequestRoundTripperHandler.Do")
-	defer spanLogger.Finish()
+	defer func() {
+		if err != nil {
+			spanLogger.Error(err)
+		}
+		spanLogger.Finish()
+	}()
 
+	headers := map[string][]string{}
+	if err := rth.codec.AddHeadersForMetricQueryRequest(ctx, r, propagation.MapCarrier(headers)); err != nil {
+		return nil, err
+	}
+
+	ctx = ContextWithHeadersToPropagate(ctx, headers)
 	opts := promql.NewPrometheusQueryOpts(r.GetStats() == "all", 0)
 
 	var q promql.Query
-	var err error
 
 	switch r := r.(type) {
 	case *PrometheusRangeQueryRequest:
@@ -340,21 +358,18 @@ func (rth *engineQueryRequestRoundTripperHandler) Do(ctx context.Context, r Metr
 
 	if err != nil {
 		err = convertToAPIError(err, apierror.TypeInternal)
-		spanLogger.Error(err)
 		return nil, err
 	}
 
 	res := q.Exec(ctx)
 	if res.Err != nil {
 		err := convertToAPIError(res.Err, apierror.TypeExec)
-		spanLogger.Error(err)
 		return nil, err
 	}
 
 	data, err := promqlResultToSamples(res)
 	if err != nil {
 		err = convertToAPIError(err, apierror.TypeInternal)
-		spanLogger.Error(err)
 		return nil, err
 	}
 
@@ -375,7 +390,7 @@ func (rth *engineQueryRequestRoundTripperHandler) Do(ctx context.Context, r Metr
 		localStats.AddSamplesProcessedPerStep(stepStats)
 	}
 
-	resp := &PrometheusResponseWithFinalizer{
+	resp = &PrometheusResponseWithFinalizer{
 		PrometheusResponse: &PrometheusResponse{
 			Status: statusSuccess,
 			Data: &PrometheusData{

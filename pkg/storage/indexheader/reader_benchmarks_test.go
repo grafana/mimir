@@ -36,7 +36,8 @@ func BenchmarkLookupSymbol(b *testing.B) {
 	valueSymbols := generateSymbols("value", 1000)
 	idIndexV2, err := block.CreateBlock(ctx, bucketDir, generateLabels(nameSymbols, valueSymbols), 100, 0, 1000, labels.FromStrings("ext1", "1"))
 	require.NoError(b, err)
-	require.NoError(b, block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(bucketDir, idIndexV2.String()), nil))
+	_, err = block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(bucketDir, idIndexV2.String()), nil)
+	require.NoError(b, err)
 
 	indexName := filepath.Join(bucketDir, idIndexV2.String(), block.IndexHeaderFilename)
 	require.NoError(b, WriteBinary(ctx, bkt, idIndexV2, indexName))
@@ -117,7 +118,8 @@ func BenchmarkLabelNames(b *testing.B) {
 			valueSymbols := generateSymbols("value", valueCount)
 			idIndexV2, err := block.CreateBlock(ctx, bucketDir, generateLabels(nameSymbols, valueSymbols), 100, 0, 1000, labels.FromStrings("ext1", "1"))
 			require.NoError(b, err)
-			require.NoError(b, block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(bucketDir, idIndexV2.String()), nil))
+			_, err = block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(bucketDir, idIndexV2.String()), nil)
+			require.NoError(b, err)
 
 			indexName := filepath.Join(bucketDir, idIndexV2.String(), block.IndexHeaderFilename)
 			require.NoError(b, WriteBinary(ctx, bkt, idIndexV2, indexName))
@@ -159,7 +161,8 @@ func BenchmarkLabelValuesOffsetsIndexV1(b *testing.B) {
 	}, &metaIndexV1.BlockMeta)
 
 	require.NoError(b, err)
-	require.NoError(b, block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(bucketDir, metaIndexV1.ULID.String()), nil))
+	_, err = block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(bucketDir, metaIndexV1.ULID.String()), nil)
+	require.NoError(b, err)
 
 	indexName := filepath.Join(bucketDir, metaIndexV1.ULID.String(), block.IndexHeaderFilename)
 	require.NoError(b, WriteBinary(ctx, bkt, metaIndexV1.ULID, indexName))
@@ -201,7 +204,8 @@ func BenchmarkLabelValuesOffsetsIndexV2(b *testing.B) {
 	valueSymbols := generateSymbols("value", 100)
 	idIndexV2, err := block.CreateBlock(ctx, bucketDir, generateLabels(nameSymbols, valueSymbols), 100, 0, 1000, labels.FromStrings("ext1", "1"))
 	require.NoError(b, err)
-	require.NoError(b, block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(bucketDir, idIndexV2.String()), nil))
+	_, err = block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(bucketDir, idIndexV2.String()), nil)
+	require.NoError(b, err)
 
 	indexName := filepath.Join(bucketDir, idIndexV2.String(), block.IndexHeaderFilename)
 	require.NoError(b, WriteBinary(ctx, bkt, idIndexV2, indexName))
@@ -268,7 +272,8 @@ func BenchmarkPostingsOffset(b *testing.B) {
 		valueSymbols := generateSymbols("value", valueCount)
 		idIndexV2, err := block.CreateBlock(ctx, bucketDir, generateLabels(nameSymbols, valueSymbols), 100, 0, 1000, labels.FromStrings("ext1", "1"))
 		require.NoError(b, err)
-		require.NoError(b, block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(bucketDir, idIndexV2.String()), nil))
+		_, err = block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(bucketDir, idIndexV2.String()), nil)
+		require.NoError(b, err)
 
 		indexName := filepath.Join(bucketDir, idIndexV2.String(), block.IndexHeaderFilename)
 		require.NoError(b, WriteBinary(ctx, bkt, idIndexV2, indexName))
@@ -323,7 +328,8 @@ func BenchmarkNewStreamBinaryReader(b *testing.B) {
 			valueSymbols := generateSymbols("value", valueCount)
 			idIndexV2, err := block.CreateBlock(ctx, bucketDir, generateLabels(nameSymbols, valueSymbols), 100, 0, 1000, labels.FromStrings("ext1", "1"))
 			require.NoError(b, err)
-			require.NoError(b, block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(bucketDir, idIndexV2.String()), nil))
+			_, err = block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(bucketDir, idIndexV2.String()), nil)
+			require.NoError(b, err)
 
 			indexName := filepath.Join(bucketDir, idIndexV2.String(), block.IndexHeaderFilename)
 			require.NoError(b, WriteBinary(ctx, bkt, idIndexV2, indexName))

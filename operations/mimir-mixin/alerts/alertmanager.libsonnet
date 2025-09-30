@@ -84,7 +84,7 @@
             increase(cortex_alertmanager_state_initial_sync_completed_total{outcome="failed"}[%s]) > 0
           ||| % $.alertRangeInterval(1),
           labels: {
-            severity: 'critical',
+            severity: 'warning',
           },
           annotations: {
             message: |||

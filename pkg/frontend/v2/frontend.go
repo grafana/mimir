@@ -11,6 +11,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"maps"
 	"math/rand"
 	"net"
 	"net/http"
@@ -152,6 +153,7 @@ type frontendRequest struct {
 
 	// If this is a Protobuf request, then these fields will be populated:
 	protobufRequest        proto.Message
+	protobufRequestHeaders map[string][]string
 	protobufResponseStream *ProtobufResponseStream
 	protobufResponseDone   chan struct{} // Used to signal when the response has been completely read (but possibly not yet consumed) and we can stop monitoring the request context for cancellation.
 }
@@ -367,6 +369,7 @@ func (f *Frontend) DoProtobufRequest(ctx context.Context, req proto.Message, min
 
 	freq.touchedQueryComponents = f.queryComponentQueueDimensionFromTimeParams([]string{freq.userID}, timestamp.FromTime(minT), timestamp.FromTime(maxT), time.Now())
 	freq.protobufRequest = req
+	freq.protobufRequestHeaders = maps.Clone(querymiddleware.HeadersToPropagateFromContext(ctx)) // Take a shallow copy of the headers, so that we don't mutate the shared map when adding trace headers later.
 	freq.protobufResponseDone = make(chan struct{})
 	freq.protobufResponseStream = &ProtobufResponseStream{
 		ctx:        ctx,

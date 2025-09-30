@@ -4,7 +4,7 @@ Helm chart for deploying [Grafana Mimir](https://grafana.com/docs/mimir/latest/)
 
 For the full documentation, visit [Grafana mimir-distributed Helm chart documentation](https://grafana.com/docs/helm-charts/mimir-distributed/latest/).
 
-> **Note:** The documentation version is derived from the Helm chart version which is 5.9.0-weekly.360.
+> **Note:** The documentation version is derived from the Helm chart version which is 5.9.0-weekly.361.
 
 When upgrading from Helm chart version 4.X, please see [Migrate the Helm chart from version 4.x to 5.0](https://grafana.com/docs/helm-charts/mimir-distributed/latest/migration-guides/migrate-helm-chart-4.x-to-5.0/).
 When upgrading from Helm chart version 3.x, please see [Migrate from single zone to zone-aware replication with Helm](https://grafana.com/docs/helm-charts/mimir-distributed/latest/migration-guides/migrate-from-single-zone-with-helm/).
@@ -14,7 +14,7 @@ When upgrading from Helm chart version 2.1, please see [Upgrade the Grafana Mimi
 
 # mimir-distributed
 
-![Version: 5.9.0-weekly.360](https://img.shields.io/badge/Version-5.9.0--weekly.360-informational?style=flat-square) ![AppVersion: r360](https://img.shields.io/badge/AppVersion-r360-informational?style=flat-square)
+![Version: 5.9.0-weekly.361](https://img.shields.io/badge/Version-5.9.0--weekly.361-informational?style=flat-square) ![AppVersion: r361](https://img.shields.io/badge/AppVersion-r361-informational?style=flat-square)
 
 Grafana Mimir
 
@@ -26,7 +26,7 @@ Kubernetes: `^1.29.0-0`
 |------------|------|---------|
 | https://charts.min.io/ | minio(minio) | 5.4.0 |
 | https://grafana.github.io/helm-charts | grafana-agent-operator(grafana-agent-operator) | 0.5.1 |
-| https://grafana.github.io/helm-charts | rollout_operator(rollout-operator) | 0.33.0 |
+| https://grafana.github.io/helm-charts | rollout_operator(rollout-operator) | 0.33.2 |
 
 # Contributing and releasing
 

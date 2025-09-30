@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-kit/log"
 	"github.com/gogo/protobuf/proto"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql/parser"
@@ -15,15 +16,25 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/annotations"
 
+	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/limiter"
 )
+
+var MaximumSupportedQueryPlanVersion = int64(0)
 
 type QueryPlan struct {
 	TimeRange types.QueryTimeRange
 	Root      Node
 
-	OriginalExpression string
+	OriginalExpression       string
+	EnableDelayedNameRemoval bool
+
+	// The version of this query plan.
+	//
+	// Queriers use this to ensure they do not attempt to execute a query plan that contains features they
+	// cannot safely or correctly execute (eg. new nodes or new meaning for existing node details).
+	Version int64
 }
 
 // Node represents a node in the query plan graph.
@@ -148,6 +159,7 @@ type OperatorParameters struct {
 	EagerLoadSelectors       bool
 	Plan                     *QueryPlan
 	EnableDelayedNameRemoval bool
+	Logger                   log.Logger
 }
 
 func (p *QueryPlan) ToEncodedPlan(includeDescriptions bool, includeDetails bool) (*EncodedQueryPlan, error) {
@@ -158,10 +170,12 @@ func (p *QueryPlan) ToEncodedPlan(includeDescriptions bool, includeDetails bool)
 	}
 
 	encoded := &EncodedQueryPlan{
-		TimeRange:          toEncodedTimeRange(p.TimeRange),
-		Nodes:              encoder.nodes,
-		RootNode:           rootNode,
-		OriginalExpression: p.OriginalExpression,
+		TimeRange:                toEncodedTimeRange(p.TimeRange),
+		Nodes:                    encoder.nodes,
+		RootNode:                 rootNode,
+		OriginalExpression:       p.OriginalExpression,
+		EnableDelayedNameRemoval: p.EnableDelayedNameRemoval,
+		Version:                  p.Version,
 	}
 
 	return encoded, nil
@@ -257,8 +271,12 @@ func NodeTypeName(n Node) string {
 // ToDecodedPlan converts this encoded plan to its decoded form.
 // It returns references to the specified nodeIndices.
 func (p *EncodedQueryPlan) ToDecodedPlan(nodeIndices ...int64) (*QueryPlan, []Node, error) {
+	if p.Version > MaximumSupportedQueryPlanVersion {
+		return nil, nil, apierror.Newf(apierror.TypeBadData, "query plan has version %v, but the maximum supported query plan version is %v", p.Version, MaximumSupportedQueryPlanVersion)
+	}
+
 	if p.RootNode < 0 || p.RootNode >= int64(len(p.Nodes)) {
-		return nil, nil, fmt.Errorf("root node index %v out of range with %v nodes in plan", p.RootNode, len(p.Nodes))
+		return nil, nil, apierror.Newf(apierror.TypeBadData, "root node index %v out of range with %v nodes in plan", p.RootNode, len(p.Nodes))
 	}
 
 	decoder := newQueryPlanDecoder(p.Nodes)
@@ -278,9 +296,11 @@ func (p *EncodedQueryPlan) ToDecodedPlan(nodeIndices ...int64) (*QueryPlan, []No
 	}
 
 	return &QueryPlan{
-		TimeRange:          p.TimeRange.ToDecodedTimeRange(),
-		Root:               root,
-		OriginalExpression: p.OriginalExpression,
+		TimeRange:                p.TimeRange.ToDecodedTimeRange(),
+		Root:                     root,
+		OriginalExpression:       p.OriginalExpression,
+		EnableDelayedNameRemoval: p.EnableDelayedNameRemoval,
+		Version:                  p.Version,
 	}, nodes, nil
 }
 

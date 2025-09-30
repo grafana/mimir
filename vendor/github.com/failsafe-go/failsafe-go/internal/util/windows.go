@@ -2,7 +2,6 @@ package util
 
 import (
 	"math"
-	"time"
 )
 
 type RollingSum struct {
@@ -16,8 +15,8 @@ type RollingSum struct {
 	sumSquares float64
 }
 
-func NewRollingSum(capacity uint) *RollingSum {
-	return &RollingSum{samples: make([]float64, capacity)}
+func NewRollingSum(capacity uint) RollingSum {
+	return RollingSum{samples: make([]float64, capacity)}
 }
 
 // Add adds the value to the window if it's non-zero, updates the sums, and returns the old value along with whether the
@@ -81,13 +80,13 @@ type CorrelationWindow struct {
 	warmupSamples uint8
 
 	// Mutable state
-	xSamples  *RollingSum
-	ySamples  *RollingSum
+	xSamples  RollingSum
+	ySamples  RollingSum
 	corrSumXY float64
 }
 
-func NewCorrelationWindow(capacity uint, warmupSamples uint8) *CorrelationWindow {
-	return &CorrelationWindow{
+func NewCorrelationWindow(capacity uint, warmupSamples uint8) CorrelationWindow {
+	return CorrelationWindow{
 		warmupSamples: warmupSamples,
 		xSamples:      NewRollingSum(capacity),
 		ySamples:      NewRollingSum(capacity),
@@ -144,83 +143,45 @@ func (w *CorrelationWindow) Reset() {
 	w.corrSumXY = 0
 }
 
-type UsageWindow struct {
-	clock       Clock
-	bucketCount int64
-	bucketNanos int64
+// BucketedWindow is a time based bucketed sliding window.
+type BucketedWindow[T any] struct {
+	Clock
+	BucketCount int64
+	BucketNanos int64
+
+	// Use function references instead of having T constrained by an interface.
+	// This allows users to provide T as a value type rather than pointer, which saves on allocations.
+	AddFn    func(summary *T, bucket *T)
+	RemoveFn func(summary *T, bucket *T)
+	ResetFn  func(bucket *T)
 
 	// Mutable state
-	buckets  []usageStat
-	summary  usageStat
-	headTime int64
+	Buckets  []T
+	Summary  T
+	HeadTime int64
 }
 
-func NewUsageWindow(bucketCount int, thresholdingPeriod time.Duration, clock Clock) *UsageWindow {
-	buckets := make([]usageStat, bucketCount)
-	return &UsageWindow{
-		clock:       clock,
-		bucketCount: int64(bucketCount),
-		bucketNanos: (thresholdingPeriod / time.Duration(bucketCount)).Nanoseconds(),
-		buckets:     buckets,
-		summary:     usageStat{},
-	}
-}
+// ExpireBuckets resets any old Buckets and returns the current bucket, sliding the window as needed.
+func (w *BucketedWindow[T]) ExpireBuckets() *T {
+	newHead := w.Clock.Now().UnixNano() / w.BucketNanos
 
-type usageStat struct {
-	totalUsage int64
-	samples    uint32
-}
-
-func (s *usageStat) reset() {
-	s.totalUsage = 0
-	s.samples = 0
-}
-
-func (s *usageStat) remove(bucket *usageStat) {
-	s.totalUsage -= bucket.totalUsage
-	s.samples -= bucket.samples
-}
-
-func (w *UsageWindow) currentBucket() *usageStat {
-	newHead := w.clock.Now().UnixNano() / w.bucketNanos
-
-	if newHead > w.headTime {
-		bucketsToMove := min(w.bucketCount, newHead-w.headTime)
+	if newHead > w.HeadTime {
+		bucketsToMove := min(w.BucketCount, newHead-w.HeadTime)
 		for i := int64(0); i < bucketsToMove; i++ {
-			currentBucket := &w.buckets[(w.headTime+i+1)%w.bucketCount]
-			w.summary.remove(currentBucket)
-			currentBucket.reset()
+			bucket := &w.Buckets[(w.HeadTime+i+1)%w.BucketCount]
+			w.RemoveFn(&w.Summary, bucket)
+			w.ResetFn(bucket)
 		}
-		w.headTime = newHead
+		w.HeadTime = newHead
 	}
 
-	return &w.buckets[w.headTime%w.bucketCount]
+	return &w.Buckets[w.HeadTime%w.BucketCount]
 }
 
-func (w *UsageWindow) RecordUsage(usage int64) {
-	bucket := w.currentBucket()
-	bucket.totalUsage += usage
-	bucket.samples++
-	w.summary.totalUsage += usage
-	w.summary.samples++
-}
-
-func (w *UsageWindow) ExpireBuckets() {
-	w.currentBucket()
-}
-
-func (w *UsageWindow) TotalUsage() int64 {
-	return w.summary.totalUsage
-}
-
-func (w *UsageWindow) Samples() uint32 {
-	return w.summary.samples
-}
-
-func (w *UsageWindow) Reset() {
-	for i := range w.buckets {
-		(&w.buckets[i]).reset()
+func (w *BucketedWindow[T]) Reset() {
+	for i := range w.Buckets {
+		w.ResetFn(&w.Buckets[i])
 	}
-	w.summary.reset()
-	w.headTime = 0
+	w.ResetFn(&w.Summary)
+	w.HeadTime = 0
 }

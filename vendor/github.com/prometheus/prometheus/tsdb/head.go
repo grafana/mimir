@@ -87,7 +87,8 @@ type Head struct {
 	exemplarMetrics     *ExemplarMetrics
 	exemplars           ExemplarStorage
 	logger              *slog.Logger
-	appendPool          zeropool.Pool[[]record.RefSample]
+	refSeriesPool       zeropool.Pool[[]record.RefSeries]
+	floatsPool          zeropool.Pool[[]record.RefSample]
 	exemplarsPool       zeropool.Pool[[]exemplarWithSeriesRef]
 	histogramsPool      zeropool.Pool[[]record.RefHistogramSample]
 	floatHistogramsPool zeropool.Pool[[]record.RefFloatHistogramSample]
@@ -114,10 +115,8 @@ type Head struct {
 	walExpiries    map[chunks.HeadSeriesRef]int64 // Series no longer in the head, and what time they must be kept until.
 
 	// TODO(codesome): Extend MemPostings to return only OOOPostings, Set OOOStatus, ... Like an additional map of ooo postings.
-	postings      *index.MemPostings // Postings lists for terms.
-	postingsStats atomic.Pointer[index.Statistics]
-	pfmc          *PostingsForMatchersCache
-	planner       atomic.Pointer[index.LookupPlanner]
+	postings *index.MemPostings // Postings lists for terms.
+	pfmc     *PostingsForMatchersCache
 
 	tombstones *tombstones.MemTombstones
 
@@ -335,10 +334,6 @@ func NewHead(r prometheus.Registerer, l *slog.Logger, wal, wbl *wlog.WL, opts *H
 	return h, nil
 }
 
-func (h *Head) PostingsStats() index.Statistics {
-	return *h.postingsStats.Load()
-}
-
 func (h *Head) resetInMemoryState() error {
 	var err error
 	var em *ExemplarMetrics
@@ -396,62 +391,37 @@ func (h *Head) resetWLReplayResources() {
 	h.wlReplayMmapMarkersPool = zeropool.Pool[[]record.RefMmapMarker]{}
 }
 
-// updateHeadStatistics generates a new set of Statistics for the head, which consists of label cardinality,
-// and the total number of series in the head. It then updates postingsStats to point to the new statistics.
-func (h *Head) updateHeadStatistics() error {
-	start := time.Now()
-	stats := index.Statistics(newFullHeadStatistics(h))
-	h.postingsStats.Store(&stats)
-
-	iReader, err := h.Index()
-	if err != nil {
-		return fmt.Errorf("failed to get head index reader: %w", err)
-	}
-	planner := h.opts.IndexLookupPlannerFunc(h.Meta(), iReader)
-	h.planner.Store(&planner)
-	h.metrics.headStatisticsTimeToUpdate.Set(time.Since(start).Seconds())
-	h.metrics.headStatisticsLastUpdate.Set(float64(time.Now().Unix()))
-	h.logger.Info("successfully updated head statistics",
-		"duration", time.Since(start),
-		"num_series", stats.TotalSeries(),
-		"num_label_names", len(h.postings.LabelNames()),
-	)
-	return nil
-}
-
 type headMetrics struct {
-	activeAppenders            prometheus.Gauge
-	series                     prometheus.GaugeFunc
-	staleSeries                prometheus.GaugeFunc
-	seriesCreated              prometheus.Counter
-	seriesRemoved              prometheus.Counter
-	seriesNotFound             prometheus.Counter
-	chunks                     prometheus.Gauge
-	chunksCreated              prometheus.Counter
-	chunksRemoved              prometheus.Counter
-	gcDuration                 prometheus.Summary
-	samplesAppended            *prometheus.CounterVec
-	outOfOrderSamplesAppended  *prometheus.CounterVec
-	outOfBoundSamples          *prometheus.CounterVec
-	outOfOrderSamples          *prometheus.CounterVec
-	tooOldSamples              *prometheus.CounterVec
-	walTruncateDuration        prometheus.Summary
-	walCorruptionsTotal        prometheus.Counter
-	dataTotalReplayDuration    prometheus.Gauge
-	headTruncateFail           prometheus.Counter
-	headTruncateTotal          prometheus.Counter
-	checkpointDeleteFail       prometheus.Counter
-	checkpointDeleteTotal      prometheus.Counter
-	checkpointCreationFail     prometheus.Counter
-	checkpointCreationTotal    prometheus.Counter
-	mmapChunkCorruptionTotal   prometheus.Counter
-	snapshotReplayErrorTotal   prometheus.Counter // Will be either 0 or 1.
-	oooHistogram               prometheus.Histogram
-	mmapChunksTotal            prometheus.Counter
-	walReplayUnknownRefsTotal  *prometheus.CounterVec
-	wblReplayUnknownRefsTotal  *prometheus.CounterVec
-	headStatisticsLastUpdate   prometheus.Gauge
-	headStatisticsTimeToUpdate prometheus.Gauge
+	activeAppenders           prometheus.Gauge
+	series                    prometheus.GaugeFunc
+	staleSeries               prometheus.GaugeFunc
+	seriesCreated             prometheus.Counter
+	seriesRemoved             prometheus.Counter
+	seriesNotFound            prometheus.Counter
+	chunks                    prometheus.Gauge
+	chunksCreated             prometheus.Counter
+	chunksRemoved             prometheus.Counter
+	gcDuration                prometheus.Summary
+	samplesAppended           *prometheus.CounterVec
+	outOfOrderSamplesAppended *prometheus.CounterVec
+	outOfBoundSamples         *prometheus.CounterVec
+	outOfOrderSamples         *prometheus.CounterVec
+	tooOldSamples             *prometheus.CounterVec
+	walTruncateDuration       prometheus.Summary
+	walCorruptionsTotal       prometheus.Counter
+	dataTotalReplayDuration   prometheus.Gauge
+	headTruncateFail          prometheus.Counter
+	headTruncateTotal         prometheus.Counter
+	checkpointDeleteFail      prometheus.Counter
+	checkpointDeleteTotal     prometheus.Counter
+	checkpointCreationFail    prometheus.Counter
+	checkpointCreationTotal   prometheus.Counter
+	mmapChunkCorruptionTotal  prometheus.Counter
+	snapshotReplayErrorTotal  prometheus.Counter // Will be either 0 or 1.
+	oooHistogram              prometheus.Histogram
+	mmapChunksTotal           prometheus.Counter
+	walReplayUnknownRefsTotal *prometheus.CounterVec
+	wblReplayUnknownRefsTotal *prometheus.CounterVec
 }
 
 const (
@@ -597,14 +567,6 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 			Name: "prometheus_tsdb_wbl_replay_unknown_refs_total",
 			Help: "Total number of unknown series references encountered during WBL replay.",
 		}, []string{"type"}),
-		headStatisticsLastUpdate: prometheus.NewGauge(prometheus.GaugeOpts{
-			Name: "prometheus_tsdb_head_statistics_last_update_timestamp_seconds",
-			Help: "Timestamp of the last update of head statistics",
-		}),
-		headStatisticsTimeToUpdate: prometheus.NewGauge(prometheus.GaugeOpts{
-			Name: "prometheus_tsdb_head_statistics_time_to_update_seconds",
-			Help: "Time spent updating head statistics",
-		}),
 	}
 
 	if r != nil {
@@ -676,37 +638,12 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 			}),
 			m.walReplayUnknownRefsTotal,
 			m.wblReplayUnknownRefsTotal,
-			m.headStatisticsLastUpdate,
-			m.headStatisticsTimeToUpdate,
 		)
 	}
 	return m
 }
 
 func mmappedChunksDir(dir string) string { return filepath.Join(dir, "chunks_head") }
-
-// fullHeadStatistics embeds count-min sketches for the values of all labels in the head,
-// as well as a count of the number of series in the head. Together, they implement index.Statistics.
-// fullHeadStatistics represents the state of the head at a point in time and should be treated as immutable.
-// If/when updated statistics are required, a new fullHeadStatistics should be created.
-type fullHeadStatistics struct {
-	numSeries uint64
-	index.LabelsValuesSketches
-	lastUpdated time.Time
-}
-
-func newFullHeadStatistics(h *Head) *fullHeadStatistics {
-	return &fullHeadStatistics{
-		numSeries:            h.NumSeries(),
-		LabelsValuesSketches: h.postings.LabelsValuesSketches(),
-		lastUpdated:          time.Now(),
-	}
-}
-
-// TotalSeries returns the number of series in the head.
-func (fhs *fullHeadStatistics) TotalSeries() uint64 {
-	return fhs.numSeries
-}
 
 // HeadStats are the statistics for the head component of the DB.
 type HeadStats struct {
@@ -747,12 +684,6 @@ const cardinalityCacheExpirationTime = time.Duration(30) * time.Second
 // limits the ingested samples to the head min valid time.
 func (h *Head) Init(minValidTime int64) error {
 	h.minValidTime.Store(minValidTime)
-	// We wait to calculate head statistics until after the WAL is replayed.
-	defer func() {
-		if err := h.updateHeadStatistics(); err != nil {
-			h.logger.Error("Failed to update head statistics", "err", err)
-		}
-	}()
 	defer h.resetWLReplayResources()
 	defer func() {
 		h.postings.EnsureOrder(h.opts.WALReplayConcurrency)

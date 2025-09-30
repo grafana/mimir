@@ -232,7 +232,7 @@ func TestDeduplicateAndMerge(t *testing.T) {
 			inner := &TestOperator{Series: testCase.inputSeries, Data: testCase.inputData, DropName: testCase.inputDropName, MemoryConsumptionTracker: memoryConsumptionTracker}
 			o := NewDeduplicateAndMerge(inner, memoryConsumptionTracker, testCase.runDelayedNameRemoval)
 
-			outputSeriesMetadata, err := o.SeriesMetadata(ctx)
+			outputSeriesMetadata, err := o.SeriesMetadata(ctx, nil)
 			require.NoError(t, err)
 
 			if !testCase.expectConflict {

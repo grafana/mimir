@@ -28,11 +28,11 @@ type EngineOpts struct {
 	// but for now, we use this option to change the behavior of selectors.
 	EagerLoadSelectors bool `yaml:"-"`
 
-	EnablePruneToggles bool `yaml:"enable_prune_toggles" category:"experimental"`
-
+	EnablePruneToggles                                                            bool `yaml:"enable_prune_toggles" category:"experimental"`
 	EnableCommonSubexpressionElimination                                          bool `yaml:"enable_common_subexpression_elimination" category:"experimental"`
 	EnableCommonSubexpressionEliminationForRangeVectorExpressionsInInstantQueries bool `yaml:"enable_common_subexpression_elimination_for_range_vector_expressions_in_instant_queries" category:"experimental"`
 	EnableSkippingHistogramDecoding                                               bool `yaml:"enable_skipping_histogram_decoding" category:"experimental"`
+	EnableNarrowBinarySelectors                                                   bool `yaml:"enable_narrow_binary_selectors" category:"experimental"`
 }
 
 func (o *EngineOpts) RegisterFlags(f *flag.FlagSet) {
@@ -40,6 +40,7 @@ func (o *EngineOpts) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&o.EnableCommonSubexpressionElimination, "querier.mimir-query-engine.enable-common-subexpression-elimination", true, "Enable common subexpression elimination when evaluating queries.")
 	f.BoolVar(&o.EnableCommonSubexpressionEliminationForRangeVectorExpressionsInInstantQueries, "querier.mimir-query-engine.enable-common-subexpression-elimination-for-range-vector-expressions-in-instant-queries", true, "Enable common subexpression elimination for range vector expressions when evaluating instant queries. This has no effect if common subexpression elimination is disabled.")
 	f.BoolVar(&o.EnableSkippingHistogramDecoding, "querier.mimir-query-engine.enable-skipping-histogram-decoding", true, "Enable skipping decoding native histograms when evaluating queries that do not require full histograms.")
+	f.BoolVar(&o.EnableNarrowBinarySelectors, "querier.mimir-query-engine.enable-narrow-binary-selectors", false, "Enable generating selectors for one side of a binary expression based on results from the other side.")
 }
 
 func NewTestEngineOpts() EngineOpts {
@@ -57,10 +58,10 @@ func NewTestEngineOpts() EngineOpts {
 		Pedantic: true,
 		Logger:   log.NewNopLogger(),
 
-		EnablePruneToggles: true,
-
-		EnableCommonSubexpressionElimination:                                          true,
+		EnablePruneToggles:                   true,
+		EnableCommonSubexpressionElimination: true,
 		EnableCommonSubexpressionEliminationForRangeVectorExpressionsInInstantQueries: true,
 		EnableSkippingHistogramDecoding:                                               true,
+		EnableNarrowBinarySelectors:                                                   true,
 	}
 }
