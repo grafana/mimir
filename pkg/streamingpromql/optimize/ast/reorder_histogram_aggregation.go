@@ -90,6 +90,8 @@ func vectorSelectorContainsNonExactMetricNameMatcher(expr parser.Expr) bool {
 		return false
 	case *parser.MatrixSelector:
 		return vectorSelectorContainsNonExactMetricNameMatcher(e.VectorSelector)
+	case *parser.StepInvariantExpr:
+		return vectorSelectorContainsNonExactMetricNameMatcher(e.Expr)
 	case *parser.ParenExpr:
 		return vectorSelectorContainsNonExactMetricNameMatcher(e.Expr)
 	case *parser.UnaryExpr:
