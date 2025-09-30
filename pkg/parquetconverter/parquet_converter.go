@@ -16,7 +16,6 @@ import (
 	"sync"
 	"time"
 
-	s3mgr "github.com/aws/aws-sdk-go-v2/feature/s3/manager"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/flagext"
@@ -133,10 +132,10 @@ type ParquetConverter struct {
 	logger              log.Logger
 	limits              *validation.Overrides
 	bucketClientFactory func(ctx context.Context) (objstore.Bucket, error)
-	downloaderFactory   func(ctx context.Context) (*s3mgr.Downloader, error)
+	downloaderFactory   func(ctx context.Context) (*fastDownloader, error)
 
 	bucketClient objstore.Bucket
-	s3dl         *s3mgr.Downloader
+	s3dl         *fastDownloader
 
 	ringLifecycler         *ring.BasicLifecycler
 	ring                   *ring.Ring
@@ -178,7 +177,7 @@ func NewParquetConverter(cfg Config, storageCfg mimir_tsdb.BlocksStorageConfig, 
 	bucketClientFactory := func(ctx context.Context) (objstore.Bucket, error) {
 		return bucket.NewClient(ctx, storageCfg.Bucket, "parquet-converter", logger, registerer)
 	}
-	downloaderFactory := func(ctx context.Context) (*s3mgr.Downloader, error) {
+	downloaderFactory := func(ctx context.Context) (*fastDownloader, error) {
 		return downloaderFromConfig(ctx, storageCfg.Bucket.S3)
 	}
 	return newParquetConverter(cfg, logger, registerer, bucketClientFactory, downloaderFactory, limits, defaultBlockConverter{})
@@ -189,7 +188,7 @@ func newParquetConverter(
 	logger log.Logger,
 	registerer prometheus.Registerer,
 	bucketClientFactory func(ctx context.Context) (objstore.Bucket, error),
-	downloaderFactory func(ctx context.Context) (*s3mgr.Downloader, error),
+	downloaderFactory func(ctx context.Context) (*fastDownloader, error),
 	limits *validation.Overrides,
 	blockConverter blockConverter,
 ) (*ParquetConverter, error) {

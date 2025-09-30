@@ -3,7 +3,6 @@ package parquetconverter
 import (
 	"context"
 	"crypto/tls"
-	"io"
 	"net/http"
 	"os"
 	"path"
@@ -12,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	s3mgr "github.com/aws/aws-sdk-go-v2/feature/s3/manager"
@@ -28,7 +28,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 )
 
-func downloaderFromConfig(ctx context.Context, cfg s3.Config) (*s3mgr.Downloader, error) {
+func downloaderFromConfig(ctx context.Context, cfg s3.Config) (*fastDownloader, error) {
 
 	// Create AWS config
 	awsConfig, err := config.LoadDefaultConfig(ctx, config.WithRegion(cfg.Region))
@@ -81,23 +81,28 @@ func downloaderFromConfig(ctx context.Context, cfg s3.Config) (*s3mgr.Downloader
 		//d.BufferProvider = s3mgr.NewBufferedReadSeekerWriteToPool(25 * 1024 * 1024) // 25MB buffer
 	})
 
-	return downloader, nil
+	return &fastDownloader{downloader: downloader, bucketName: cfg.BucketName}, nil
+}
+
+type fastDownloader struct {
+	downloader *s3mgr.Downloader
+	bucketName string
 }
 
 // Download downloads a directory meant to be a block directory. If any one of the files
 // has a hash calculated in the meta file and it matches with what is in the destination path then
 // we do not download it. We always re-download the meta file.
-func downloadFaster(ctx context.Context, logger log.Logger, bucket objstore.Bucket, id ulid.ULID, dst string, options ...objstore.DownloadOption) error {
+func (d *fastDownloader) download(ctx context.Context, logger log.Logger, bucket objstore.Bucket, id ulid.ULID, dst string, options ...downloadOption) error {
 	if err := os.MkdirAll(dst, 0750); err != nil {
 		return errors.Wrap(err, "create dir")
 	}
 
-	if err := objstore.DownloadFile(ctx, logger, bucket, path.Join(id.String(), block.MetaFilename), filepath.Join(dst, block.MetaFilename)); err != nil {
+	if err := d.downloadFile(ctx, logger, bucket, path.Join(id.String(), block.MetaFilename), filepath.Join(dst, block.MetaFilename)); err != nil {
 		return err
 	}
 
 	ignoredPaths := []string{block.MetaFilename}
-	if err := objstore.DownloadDir(ctx, logger, bucket, id.String(), id.String(), dst, append(options, objstore.WithDownloadIgnoredPaths(ignoredPaths...))...); err != nil {
+	if err := d.downloadDir(ctx, logger, bucket, id.String(), id.String(), dst, append(options, withDownloadIgnoredPaths(ignoredPaths...))...); err != nil {
 		return err
 	}
 
@@ -117,7 +122,7 @@ func downloadFaster(ctx context.Context, logger log.Logger, bucket objstore.Buck
 // DownloadFile downloads the src file from the bucket to dst. If dst is an existing
 // directory, a file with the same name as the source is created in dst.
 // If destination file is already existing, download file will overwrite it.
-func downloadFile(ctx context.Context, logger log.Logger, bkt objstore.BucketReader, src, dst string) (err error) {
+func (d *fastDownloader) downloadFile(ctx context.Context, logger log.Logger, bkt objstore.BucketReader, src, dst string) (err error) {
 	if fi, err := os.Stat(dst); err == nil {
 		if fi.IsDir() {
 			dst = filepath.Join(dst, filepath.Base(src))
@@ -125,12 +130,6 @@ func downloadFile(ctx context.Context, logger log.Logger, bkt objstore.BucketRea
 	} else if !os.IsNotExist(err) {
 		return err
 	}
-
-	rc, err := bkt.Get(ctx, src)
-	if err != nil {
-		return errors.Wrapf(err, "get file %s", src)
-	}
-	defer logerrcapture.Do(logger, rc.Close, "close block's file reader")
 
 	f, err := os.Create(dst)
 	if err != nil {
@@ -145,14 +144,24 @@ func downloadFile(ctx context.Context, logger log.Logger, bkt objstore.BucketRea
 	}()
 	defer logerrcapture.Do(logger, f.Close, "close block's output file")
 
-	if _, err = io.Copy(f, rc); err != nil {
-		return errors.Wrapf(err, "copy object to file %s", src)
+	_, err = d.downloader.Download(ctx, f, &s3svc.GetObjectInput{
+		Bucket: aws.String(d.bucketName),
+		Key:    aws.String(src),
+	})
+	if err != nil {
+		return errors.Wrapf(err, "download file %s", src)
 	}
 	return nil
 }
 
 // DownloadOption configures the provided params.
 type downloadOption func(params *downloadParams)
+
+func withDownloadIgnoredPaths(ignoredPaths ...string) downloadOption {
+	return func(params *downloadParams) {
+		params.ignoredPaths = ignoredPaths
+	}
+}
 
 // downloadParams holds the DownloadDir() parameters and is used by objstore clients implementations.
 type downloadParams struct {
@@ -171,7 +180,7 @@ func applyDownloadOptions(options ...downloadOption) downloadParams {
 }
 
 // DownloadDir downloads all object found in the directory into the local directory.
-func downloadDir(ctx context.Context, logger log.Logger, bkt objstore.BucketReader, originalSrc, src, dst string, options ...downloadOption) error {
+func (d *fastDownloader) downloadDir(ctx context.Context, logger log.Logger, bkt objstore.BucketReader, originalSrc, src, dst string, options ...downloadOption) error {
 	if err := os.MkdirAll(dst, 0750); err != nil {
 		return errors.Wrap(err, "create dir")
 	}
@@ -189,7 +198,7 @@ func downloadDir(ctx context.Context, logger log.Logger, bkt objstore.BucketRead
 		g.Go(func() error {
 			dst := filepath.Join(dst, filepath.Base(name))
 			if strings.HasSuffix(name, objstore.DirDelim) {
-				if err := downloadDir(ctx, logger, bkt, originalSrc, name, dst, options...); err != nil {
+				if err := d.downloadDir(ctx, logger, bkt, originalSrc, name, dst, options...); err != nil {
 					return err
 				}
 				m.Lock()
@@ -203,7 +212,7 @@ func downloadDir(ctx context.Context, logger log.Logger, bkt objstore.BucketRead
 					return nil
 				}
 			}
-			if err := downloadFile(ctx, logger, bkt, name, dst); err != nil {
+			if err := d.downloadFile(ctx, logger, bkt, name, dst); err != nil {
 				return err
 			}
 
