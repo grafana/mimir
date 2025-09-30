@@ -131,6 +131,7 @@ type ParquetConverter struct {
 	logger              log.Logger
 	limits              *validation.Overrides
 	bucketClientFactory func(ctx context.Context) (objstore.Bucket, error)
+	downloaderFactory   func(ctx context.Context) (*s3mgr.Downloader, error)
 
 	bucketClient objstore.Bucket
 	s3dl         *s3mgr.Downloader
@@ -175,7 +176,10 @@ func NewParquetConverter(cfg Config, storageCfg mimir_tsdb.BlocksStorageConfig, 
 	bucketClientFactory := func(ctx context.Context) (objstore.Bucket, error) {
 		return bucket.NewClient(ctx, storageCfg.Bucket, "parquet-converter", logger, registerer)
 	}
-	return newParquetConverter(cfg, logger, registerer, bucketClientFactory, limits, defaultBlockConverter{})
+	downloaderFactory := func(ctx context.Context) (*s3mgr.Downloader, error) {
+		return downloaderFromConfig(ctx, storageCfg.Bucket.S3)
+	}
+	return newParquetConverter(cfg, logger, registerer, bucketClientFactory, downloaderFactory, limits, defaultBlockConverter{})
 }
 
 func newParquetConverter(
@@ -183,6 +187,7 @@ func newParquetConverter(
 	logger log.Logger,
 	registerer prometheus.Registerer,
 	bucketClientFactory func(ctx context.Context) (objstore.Bucket, error),
+	downloaderFactory func(ctx context.Context) (*s3mgr.Downloader, error),
 	limits *validation.Overrides,
 	blockConverter blockConverter,
 ) (*ParquetConverter, error) {
@@ -191,6 +196,7 @@ func newParquetConverter(
 	c := &ParquetConverter{
 		Cfg:                  cfg,
 		bucketClientFactory:  bucketClientFactory,
+		downloaderFactory:    downloaderFactory,
 		logger:               log.With(logger, "component", "parquet-converter"),
 		registerer:           registerer,
 		limits:               limits,
@@ -211,7 +217,7 @@ func (c *ParquetConverter) starting(ctx context.Context) error {
 		return errors.Wrap(err, "failed to create bucket client")
 	}
 
-	c.s3dl, err = downloaderFromConfig(ctx, storageCfg.Bucket, c.Cfg.St)
+	c.s3dl, err = c.downloaderFactory(ctx)
 	if err != nil {
 		return errors.Wrap(err, "failed to create s3 downloader")
 	}

@@ -6,10 +6,10 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/credentials"
 	s3mgr "github.com/aws/aws-sdk-go-v2/feature/s3/manager"
 	s3svc "github.com/aws/aws-sdk-go-v2/service/s3"
-	"github.com/aws/aws-sdk-go-v2/service/s3/config"
-	"github.com/aws/aws-sdk-go-v2/service/s3/credentials"
 	"github.com/grafana/mimir/pkg/storage/bucket/s3"
 )
 
@@ -63,7 +63,7 @@ func downloaderFromConfig(ctx context.Context, cfg s3.Config) (*s3mgr.Downloader
 		d.Concurrency = 10
 
 		// Set buffer size for better performance
-		d.BufferProvider = s3mgr.NewBufferedReadSeekerWriteToPool(25 * 1024 * 1024) // 25MB buffer
+		//d.BufferProvider = s3mgr.NewBufferedReadSeekerWriteToPool(25 * 1024 * 1024) // 25MB buffer
 	})
 
 	return downloader, nil
