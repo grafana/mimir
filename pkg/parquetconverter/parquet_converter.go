@@ -16,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	s3mgr "github.com/aws/aws-sdk-go-v2/feature/s3/manager"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/flagext"
@@ -132,6 +133,7 @@ type ParquetConverter struct {
 	bucketClientFactory func(ctx context.Context) (objstore.Bucket, error)
 
 	bucketClient objstore.Bucket
+	s3dl         *s3mgr.Downloader
 
 	ringLifecycler         *ring.BasicLifecycler
 	ring                   *ring.Ring
@@ -175,6 +177,7 @@ func NewParquetConverter(cfg Config, storageCfg mimir_tsdb.BlocksStorageConfig, 
 	}
 	return newParquetConverter(cfg, logger, registerer, bucketClientFactory, limits, defaultBlockConverter{})
 }
+
 func newParquetConverter(
 	cfg Config,
 	logger log.Logger,
@@ -206,6 +209,11 @@ func (c *ParquetConverter) starting(ctx context.Context) error {
 	c.bucketClient, err = c.bucketClientFactory(ctx)
 	if err != nil {
 		return errors.Wrap(err, "failed to create bucket client")
+	}
+
+	c.s3dl, err = downloaderFromConfig(ctx, storageCfg.Bucket, c.Cfg.St)
+	if err != nil {
+		return errors.Wrap(err, "failed to create s3 downloader")
 	}
 
 	// Initialize the parquet-converters ring if sharding is enabled.
