@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/grafana/dskit/user"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
@@ -17,6 +18,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/streamingpromql"
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize"
 	"github.com/grafana/mimir/pkg/streamingpromql/testutils"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
@@ -24,6 +26,21 @@ import (
 func preprocessQuery(t *testing.T, expr parser.Expr) (parser.Expr, error) {
 	dummyTimeRange := types.NewInstantQueryTimeRange(timestamp.Time(1000))
 	return promql.PreprocessExpr(expr, timestamp.Time(dummyTimeRange.StartT), timestamp.Time(dummyTimeRange.EndT), 0)
+}
+
+func getOutputFromASTOptimizationPassWithQueryPlan(t *testing.T, ctx context.Context, input string, createOptimizerFunc func(prometheus.Registerer) optimize.ASTOptimizationPass) (*prometheus.Registry, optimize.ASTOptimizationPass, parser.Expr) {
+	dummyTimeRange := types.NewInstantQueryTimeRange(timestamp.Time(1000))
+	reg := prometheus.NewPedanticRegistry()
+	opts := streamingpromql.NewTestEngineOpts()
+	opts.CommonOpts.Reg = reg
+	planner, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts)
+	require.NoError(t, err)
+	optimizer := createOptimizerFunc(opts.CommonOpts.Reg)
+	planner.RegisterASTOptimizationPass(optimizer)
+	observer := streamingpromql.NoopPlanningObserver{}
+	outputExpr, err := planner.ParseAndApplyASTOptimizationPasses(ctx, input, dummyTimeRange, observer)
+	require.NoError(t, err)
+	return reg, optimizer, outputExpr
 }
 
 func testASTOptimizationPassWithData(t *testing.T, loadTemplate string, testCases map[string]string) {
