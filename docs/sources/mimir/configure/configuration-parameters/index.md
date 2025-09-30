@@ -1473,6 +1473,12 @@ parquet_converter:
   # CLI flag: -parquet-converter.min-block-timestamp
   [min_block_timestamp: <int> | default = 0]
 
+  # (advanced) Minimum age of data in blocks to convert. Only convert blocks
+  # containing data older than this duration from now, based on their MinTime.
+  # Set to 0 to disable age filtering.
+  # CLI flag: -parquet-converter.min-data-age
+  [min_data_age: <duration> | default = 0s]
+
   # (advanced) Comma-separated list of labels to sort by when converting to
   # Parquet format. If not the file will be sorted by '__name__'.
   # CLI flag: -parquet-converter.sorting-labels
