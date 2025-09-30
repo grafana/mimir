@@ -21,11 +21,11 @@ Grafana Mimir requires a key-value store for the following features:
 
 Grafana Mimir supports the following key-value (KV) store backends:
 
-- Gossip-based [memberlist](https://github.com/hashicorp/memberlist) protocol (default)
-- [Consul](https://www.consul.io)
-- [Etcd](https://etcd.io)
+- Gossip-based [memberlist](https://github.com/hashicorp/memberlist) protocol
 
-### Gossip-based memberlist protocol (default)
+[Consul](https://www.consul.io) and [Etcd](https://etcd.io) backends are deprecated as of 2.17.
+
+### Gossip-based memberlist protocol
 
 By default, Grafana Mimir instances use a Gossip-based protocol to join a memberlist cluster.
 The data is shared between the instances using peer-to-peer communication and no external dependency is required.
@@ -34,20 +34,4 @@ We recommend that you use memberlist to run Grafana Mimir.
 
 To configure memberlist, refer to [configuring hash rings](../../../configure/configure-hash-rings/).
 
-{{< admonition type="note" >}}
-The Gossip-based memberlist protocol isn't supported for the [optional distributor high-availability tracker](../../../configure/configure-high-availability-deduplication/).
-{{< /admonition >}}
-
-### Consul
-
-Grafana Mimir supports [Consul](https://www.consul.io) as a backend KV store.
-If you want to use Consul, you must install it. The Grafana Mimir installation does not include Consul.
-
-To configure Consul, refer to [configuring hash rings](../../../configure/configure-hash-rings/).
-
-### Etcd
-
-Grafana Mimir supports [etcd](https://etcd.io) as a backend KV store.
-If you want to use etcd, you must install it. The Grafana Mimir installation does not include etcd.
-
-To configure etcd, refer to [configuring hash rings](../../../configure/configure-hash-rings/).
+As of [Grafana Mimir versions 2.17](https://github.com/grafana/mimir/releases/tag/mimir-2.17.0), the Gossip-based memberlist protocol is supported for the [optional distributor high-availability tracker](../../../configure/configure-high-availability-deduplication/).
