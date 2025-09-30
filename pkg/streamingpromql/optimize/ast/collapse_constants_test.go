@@ -59,7 +59,7 @@ func TestCollapseConstants(t *testing.T) {
 
 	for input, expected := range testCases {
 		t.Run(input, func(t *testing.T) {
-			_, _, result := getOutputFromASTOptimizationPassWithQueryPlan(t, ctx, input, func(prometheus.Registerer) optimize.ASTOptimizationPass {
+			_, result := getOutputFromASTOptimizationPassWithQueryPlan(t, ctx, input, func(prometheus.Registerer) optimize.ASTOptimizationPass {
 				return collapseConstants
 			})
 
