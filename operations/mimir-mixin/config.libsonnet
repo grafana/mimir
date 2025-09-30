@@ -25,6 +25,19 @@
     // Added default flag for GEM-specific dashboards and alerts.
     gem_enabled: false,
 
+    mimir_dashboard_links: [
+      {
+        asDropdown: true,
+        icon: 'external link',
+        includeVars: true,
+        keepTime: true,
+        tags: $._config.tags,
+        targetBlank: false,
+        title: '%(product)s dashboards' % $._config,
+        type: 'dashboards',
+      },
+    ],
+
     rollout_operator_dashboard_enable: true,
     rollout_operator_dashboard_title: 'rollout-operator',
     // This is the md5 of the rollout-operator dashboard name.
@@ -32,16 +45,7 @@
     // This ensures that the uid is consistent and can be reliably linked to.
     rollout_operator_dashboard_uid: 'f40e8042a6be71a98444a29b2c4e9421',
     rollout_operator_container_name: 'rollout-operator',
-    rollout_operator_links: [{
-      asDropdown: true,
-      icon: 'external link',
-      includeVars: true,
-      keepTime: true,
-      tags: $._config.tags,
-      targetBlank: false,
-      title: '%(product)s dashboards' % $._config,
-      type: 'dashboards',
-    }],
+    rollout_operator_links: $._config.mimir_dashboard_links,
     rollout_operator_instance_matcher:
       if std.get($._config, 'helm', '') == '' then $._config.rollout_operator_container_name + '.*' else '(.*%g-)?%g.*' % [$._config.helm, $._config.rollout_operator_container_name],
     rollout_operator_resources_panel_queries: self.resources_panel_queries.kubernetes,
