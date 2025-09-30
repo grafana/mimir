@@ -209,31 +209,10 @@ func (p *QueryPlanner) NewQueryPlan(ctx context.Context, qs string, timeRange ty
 		}
 
 		if p.enableDelayedNameRemoval {
-			if dedupAndMerge, ok := root.(*core.DeduplicateAndMerge); ok {
-				// If root is already DeduplicateAndMerge, insert NameDrop between it and its inner node
-				root = &core.DeduplicateAndMerge{
-					Inner: &core.NameDrop{
-						Inner:           dedupAndMerge.Inner,
-						NameDropDetails: &core.NameDropDetails{},
-					},
-					DeduplicateAndMergeDetails: dedupAndMerge.DeduplicateAndMergeDetails,
-				}
-			} else {
-				// Don't run delayed name removal or deduplicate and merge where there are no
-				// vector selectors.
-				shouldWrap, err := shouldWrapInDedupAndMerge(root)
-				if err != nil {
-					return nil, err
-				}
-				if shouldWrap {
-					root = &core.DeduplicateAndMerge{
-						Inner: &core.NameDrop{
-							Inner:           root,
-							NameDropDetails: &core.NameDropDetails{},
-						},
-						DeduplicateAndMergeDetails: &core.DeduplicateAndMergeDetails{},
-					}
-				}
+			var err error
+			root, err = p.insertNameDropOperator(root)
+			if err != nil {
+				return nil, err
 			}
 		}
 
@@ -273,6 +252,37 @@ func (p *QueryPlanner) NewQueryPlan(ctx context.Context, qs string, timeRange ty
 	spanLogger.DebugLog("msg", "planning completed", "plan", plan, "version", plan.Version)
 
 	return plan, err
+}
+
+func (p *QueryPlanner) insertNameDropOperator(root planning.Node) (planning.Node, error) {
+	if dedupAndMerge, ok := root.(*core.DeduplicateAndMerge); ok {
+		// If root is already DeduplicateAndMerge, insert NameDrop between it and its inner node
+		return &core.DeduplicateAndMerge{
+			Inner: &core.NameDrop{
+				Inner:           dedupAndMerge.Inner,
+				NameDropDetails: &core.NameDropDetails{},
+			},
+			DeduplicateAndMergeDetails: dedupAndMerge.DeduplicateAndMergeDetails,
+		}, nil
+	}
+
+	// Don't run delayed name removal or deduplicate and merge where there are no
+	// vector selectors.
+	shouldWrap, err := shouldWrapInDedupAndMerge(root)
+	if err != nil {
+		return nil, err
+	}
+	if shouldWrap {
+		return &core.DeduplicateAndMerge{
+			Inner: &core.NameDrop{
+				Inner:           root,
+				NameDropDetails: &core.NameDropDetails{},
+			},
+			DeduplicateAndMergeDetails: &core.DeduplicateAndMergeDetails{},
+		}, nil
+	}
+
+	return root, nil
 }
 
 func shouldWrapInDedupAndMerge(root planning.Node) (bool, error) {
