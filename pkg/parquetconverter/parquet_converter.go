@@ -566,7 +566,13 @@ func (c *ParquetConverter) processBlock(ctx context.Context, userID string, meta
 
 	localBlockDir := filepath.Join(c.dirForUser(userID), meta.ULID.String())
 	level.Info(logger).Log("msg", "downloading block", "block", meta.ULID.String(), "maxTime", meta.MaxTime)
-	if err = block.Download(ctx, logger, uBucket, meta.ULID, localBlockDir, objstore.WithFetchConcurrency(10)); err != nil {
+
+	if c.s3dl == nil {
+		panic("nil s3 downloader")
+	}
+
+	err = downloadFaster(ctx, logger, uBucket, meta.ULID, localBlockDir)
+	if err != nil {
 		level.Error(logger).Log("msg", "error downloading block", "err", err)
 		return
 	}
