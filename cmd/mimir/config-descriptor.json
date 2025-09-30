@@ -22739,7 +22739,7 @@
           "kind": "field",
           "name": "min_data_age",
           "required": false,
-          "desc": "Minimum age of data in blocks to convert. Only convert blocks containing data older than this duration from now. Set to 0 to disable age filtering.",
+          "desc": "Minimum age of data in blocks to convert. Only convert blocks containing data older than this duration from now, based on their MinTime. Set to 0 to disable age filtering.",
           "fieldValue": null,
           "fieldDefaultValue": 0,
           "fieldFlag": "parquet-converter.min-data-age",
