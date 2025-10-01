@@ -25,6 +25,7 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/spf13/afero"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier"
@@ -206,7 +207,8 @@ func (t *NoopAppendable) Appender(_ context.Context) storage.Appender {
 
 // RulesLimits defines limits used by Ruler.
 type RulesLimits interface {
-	EvaluationDelay(userID string) time.Duration
+	RulerEvaluationDelay(userID string) time.Duration
+	RulerEvaluationConsistencyMaxDelay(userID string) time.Duration
 	RulerTenantShardSize(userID string) int
 	RulerMaxRuleGroupsPerTenant(userID, namespace string) int
 	RulerMaxRulesPerRuleGroup(userID, namespace string) int
@@ -348,6 +350,7 @@ func DefaultTenantManagerFactory(
 	pusher Pusher,
 	queryable storage.Queryable,
 	queryFunc rules.QueryFunc,
+	rulesFS afero.Fs,
 	concurrencyController MultiTenantRuleConcurrencyController,
 	overrides RulesLimits,
 	reg prometheus.Registerer,
@@ -390,7 +393,7 @@ func DefaultTenantManagerFactory(
 		}
 
 		// Wrap the query function with our custom logic.
-		wrappedQueryFunc := WrapQueryFuncWithReadConsistency(queryFunc, logger)
+		wrappedQueryFunc := WrapQueryFuncWithReadConsistency(queryFunc, overrides, userID, logger)
 		remoteQuerier := cfg.QueryFrontend.Address != ""
 		wrappedQueryFunc = MetricsQueryFunc(wrappedQueryFunc, userID, totalQueries, failedQueries, remoteQuerier)
 		wrappedQueryFunc = RecordAndReportRuleQueryMetrics(wrappedQueryFunc, queryTime, zeroFetchedSeriesCount, remoteQuerier, logger)
@@ -418,11 +421,12 @@ func DefaultTenantManagerFactory(
 			OutageTolerance:            cfg.OutageTolerance,
 			ForGracePeriod:             cfg.ForGracePeriod,
 			ResendDelay:                cfg.ResendDelay,
+			GroupLoader:                NewFSLoader(rulesFS),
 			RestoreNewRuleGroups:       true,
 			DefaultRuleQueryOffset: func() time.Duration {
 				// Delay the evaluation of all rules by a set interval to give a buffer
 				// to metric that haven't been forwarded to Mimir yet.
-				return overrides.EvaluationDelay(userID)
+				return overrides.RulerEvaluationDelay(userID)
 			},
 			RuleConcurrencyController: concurrencyController.NewTenantConcurrencyControllerFor(userID),
 		})

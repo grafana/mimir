@@ -302,6 +302,22 @@ eval range from 0 to 10m step 5m label_join(series, "(export)", "-", "label", "o
   series{"(export)"="b-2", label="b", opt="2", this="there"} 2.9 {{sum:4 count:23 buckets:[1 2 4]}}
   series{"(export)"="c-3", label="c", opt="3"} NaN _
 
+# Empty destination label name
+eval instant at 0m label_join(series, "", "-", "label")
+  expect fail regex:^invalid destination label name in label_join\(\): $
+
+# Empty source label name
+eval instant at 0m label_join(series, "joined", "-", "valid", "")
+  expect fail regex:^invalid source label name in label_join\(\): $
+
+# Invalid UTF-8 in destination label name
+eval instant at 0m label_join(series, "\x80", "-", "label")
+  expect fail regex:^invalid destination label name in label_join\(\): �$
+
+# Invalid UTF-8 in source label name
+eval instant at 0m label_join(series, "joined", "-", "valid", "\x80")
+  expect fail regex:^invalid source label name in label_join\(\): �$
+
 clear
 
 # The following tests pass prometheus' engine when promql-delayed-name-removal is enabled.
@@ -671,9 +687,7 @@ eval range from 0 to 8m step 1m idelta(metric[3m1s])
   expect warn
   {case="2 floats"} _ 4 4 4
   {case="2 floats and nh last sample"} _ 4
-  {case="2 floats and nh middle sample"} _ _ 4 4
   {case="2 floats and nhcb last sample"} _ 4
-  {case="2 floats and nhcb middle sample"} _ _ 4 4
   {case="2 floats with Inf 2 middle samples"} _ Inf NaN -Inf -Inf -Inf
   {case="2 floats with Inf last sample"} _ 4 Inf Inf Inf
   {case="2 floats with Inf middle sample"} _ Inf -Inf -Inf -Inf
@@ -694,9 +708,7 @@ eval range from 0 to 8m step 1m irate(metric[3m1s])
   expect warn
   {case="2 floats"} _ 0.06666666666666667 0.06666666666666667 0.06666666666666667
   {case="2 floats and nh last sample"} _ 0.06666666666666667
-  {case="2 floats and nh middle sample"} _ _ 0.03333333333333333 0.03333333333333333
   {case="2 floats and nhcb last sample"} _ 0.06666666666666667
-  {case="2 floats and nhcb middle sample"} _ _ 0.03333333333333333 0.03333333333333333
   {case="2 floats with Inf 2 middle samples"} _ Inf NaN 0.08333333333333333 0.08333333333333333 0.08333333333333333
   {case="2 floats with Inf last sample"} _ 0.06666666666666667 Inf Inf Inf
   {case="2 floats with Inf middle sample"} _ Inf 0.08333333333333333 0.08333333333333333 0.08333333333333333
@@ -891,14 +903,14 @@ load 1m
 eval range from 0 to 7m step 1m year(some_metric)
   {case="gap1"} _ 2006 2006 2017 2017 2022 2022 2022
   {case="gap2"} 2006 2006 2006 2017 2017 2017 2022 2022
-  {case="histogram-float"} 2006 2006 2017
+  {case="histogram-float"} 2006 _ 2017
   {case="series1"} 1970 2006 2042 2078 2114 2150 2186 2222
   {case="series2"} 1970 2022 2075 2128 2181 2234 2287 2340
 
 eval range from 0 to 7m step 1m month(some_metric)
   {case="gap1"} _ 1 1 2 2 12 12 12
   {case="gap2"} 1 1 1 2 2 2 12 12
-  {case="histogram-float"} 1 1 2
+  {case="histogram-float"} 1 _ 2
   {case="series1"} 1 1 1 1 1 1 1 1
   {case="series2"} 1 12 12 12 12 12 12 12
 

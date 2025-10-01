@@ -34,12 +34,13 @@ func TestFunctionOverInstantVector(t *testing.T) {
 	}
 
 	metadataFuncCalled := false
-	mustBeCalledMetadata := func(seriesMetadata []types.SeriesMetadata, _ *limiter.MemoryConsumptionTracker) ([]types.SeriesMetadata, error) {
+	mustBeCalledMetadata := func(seriesMetadata []types.SeriesMetadata, _ *limiter.MemoryConsumptionTracker, _ bool) ([]types.SeriesMetadata, error) {
 		require.Equal(t, len(inner.Series), len(seriesMetadata))
 		metadataFuncCalled = true
 		return nil, nil
 	}
 
+	expectedSeriesDataFuncCalledTimes := 0
 	seriesDataFuncCalledTimes := 0
 	mustBeCalledSeriesData := func(types.InstantVectorSeriesData, []types.ScalarData, types.QueryTimeRange, *limiter.MemoryConsumptionTracker) (types.InstantVectorSeriesData, error) {
 		seriesDataFuncCalledTimes++
@@ -57,12 +58,15 @@ func TestFunctionOverInstantVector(t *testing.T) {
 		},
 	}
 
-	_, err := operator.SeriesMetadata(ctx)
+	_, err := operator.SeriesMetadata(ctx, nil)
 	require.NoError(t, err)
+
 	_, err = operator.NextSeries(ctx)
 	require.NoError(t, err)
+	expectedSeriesDataFuncCalledTimes++
+
 	require.True(t, metadataFuncCalled, "Supplied MetadataFunc must be called matching the signature")
-	require.Equal(t, len(inner.Data), seriesDataFuncCalledTimes, "Supplied SeriesDataFunc was called once for each Series")
+	require.Equal(t, expectedSeriesDataFuncCalledTimes, seriesDataFuncCalledTimes, "Supplied SeriesDataFunc was called once for each Series")
 }
 
 func TestFunctionOverInstantVectorWithScalarArgs(t *testing.T) {
@@ -88,6 +92,7 @@ func TestFunctionOverInstantVectorWithScalarArgs(t *testing.T) {
 		value: types.ScalarData{Samples: []promql.FPoint{{T: 60, F: 4}}},
 	}
 
+	expectedSeriesDataFuncCalledTimes := 0
 	seriesDataFuncCalledTimes := 0
 	mustBeCalledSeriesData := func(_ types.InstantVectorSeriesData, scalarArgs []types.ScalarData, _ types.QueryTimeRange, _ *limiter.MemoryConsumptionTracker) (types.InstantVectorSeriesData, error) {
 		seriesDataFuncCalledTimes++
@@ -109,13 +114,15 @@ func TestFunctionOverInstantVectorWithScalarArgs(t *testing.T) {
 	}
 
 	// SeriesMetadata should process scalar args
-	_, err := operator.SeriesMetadata(ctx)
+	_, err := operator.SeriesMetadata(ctx, nil)
 	require.NoError(t, err)
 
 	// NextSeries should pass scalarArgsData to SeriesDataFunc, which validates the arguments
 	_, err = operator.NextSeries(ctx)
 	require.NoError(t, err)
-	require.Equal(t, len(inner.Data), seriesDataFuncCalledTimes, "Supplied SeriesDataFunc was called once for each Series")
+	expectedSeriesDataFuncCalledTimes++
+
+	require.Equal(t, expectedSeriesDataFuncCalledTimes, seriesDataFuncCalledTimes, "Supplied SeriesDataFunc was called once for each Series")
 }
 
 type testScalarOperator struct {
@@ -131,6 +138,10 @@ func (t *testScalarOperator) ExpressionPosition() posrange.PositionRange {
 }
 
 func (t *testScalarOperator) Prepare(_ context.Context, _ *types.PrepareParams) error {
+	return nil
+}
+
+func (t *testScalarOperator) Finalize(_ context.Context) error {
 	return nil
 }
 

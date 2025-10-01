@@ -131,6 +131,51 @@ How to **fix** it:
 3. **Scale up ingesters**<br />
    Scaling up ingesters will lower the number of series per ingester. However, the effect of this change will take up to 4h, because after the scale up we need to wait until all stale series are dropped from memory as the effect of TSDB head compaction, which could take up to 4h (with the default config, TSDB keeps in-memory series up to 3h old and it gets compacted every 2h).
 
+4. **Ensure that per-tenant maximum series limits are close to actual utilization levels**<br />
+   When investigating this alert, ensure that each per-tenant maximum series limit is not significantly higher than the actual utilization level. If the per-tenant `max_global_series_per_user` limit is close to the actual utilization level and ingesters are autoscaled based on owned active series, the `max_series` per ingester instance limit should rarely be reached.
+
+   1. Run the following instant query to identify tenants with a maximum series limit that is significantly above the utilization level and can put the Mimir cluster at risk:
+
+      ```
+      (
+          # How many more series can each tenant send per ingester with current ingesters and limits.
+          (
+              (
+                  # Difference between usage and limits
+                  max by(namespace, user) (cortex_limits_overrides{namespace=~"(cortex|mimir).*", limit_name="max_global_series_per_user"})
+                  -
+                  max by (namespace, user) (namespace_user:cortex_ingester_owned_series:sum{namespace=~"(cortex|mimir).*"})
+              )
+              / on (namespace) group_left
+              max by (namespace) (sum by(namespace, job) (up{namespace=~"(cortex|mimir).*", container="ingester"}))
+          )
+
+          > on (namespace) group_left
+
+          # How many series per ingester can a namespace take without going into risk.
+          # This is: "target series * 1.25 - current owned series" on the ingester with most usage.
+          min by(namespace) (
+              min by(namespace) (
+                  0.8 * cortex_ingester_instance_limits{namespace=~"(cortex|mimir).*", limit="max_series"} > 0
+              )
+              -
+              max by(namespace) (
+                  sum by (namespace, pod) (cortex_ingester_owned_series{namespace=~"(cortex|mimir).*"})
+              )
+          )
+      )
+      ```
+
+   2. Decrease the max-series limit for the tenants that can put a Mimir cluster at risk. For each tenant:
+      - Decrease the `max_global_series_per_user` limit.
+      - Ensure that the `ingestion_tenant_shard_size` and `ingestion_partitions_tenant_shard_size` values are not set below a safe value:
+        - If the experimental ingest storage is enabled:
+          - Ensure that the `ingestion_partitions_tenant_shard_size` setting is configured to a value equal to or greater than the value of `min(current setting, current number of partitions)`.
+          - Ensure that the `ingestion_tenant_shard_size` setting is configured to the value of `ingestion_partitions_tenant_shard_size * 3`.
+        - If the experimental ingest storage is disabled:
+          - Ensure that the `ingestion_tenant_shard_size` setting is configured to a value equal to or greater than the value of `min(current setting, current number of ingesters across all zones)`.
+          - Ensure that the `ingestion_partitions_tenant_shard_size` setting is configured to the value of `ingestion_tenant_shard_size / 3`.
+
 ### MimirIngesterReachingTenantsLimit
 
 This alert fires when the `max_tenants` per ingester instance limit is enabled and the actual number of tenants in an ingester is reaching the limit. Once the limit is reached, write requests to the ingester will fail (5xx) for new tenants, while they will continue to succeed for previously existing ones.
@@ -813,12 +858,6 @@ How to **investigate**:
 
 - Check the latest runtime config update (it's likely to be broken)
 - Check Mimir logs to get more details about what's wrong with the config
-
-### MimirFrontendQueriesStuck
-
-This alert fires if Mimir is running without query-scheduler and queries are piling up in the query-frontend queue.
-
-The procedure to investigate it is the same as the one for [`MimirSchedulerQueriesStuck`](#MimirSchedulerQueriesStuck): please see the other runbook for more details.
 
 ### MimirSchedulerQueriesStuck
 
@@ -1532,6 +1571,20 @@ How to **investigate** and **fix** it:
 
   - After the resizing process finishes, revert this change.
 
+### MimirHighGRPCConcurrentStreamsPerConnection
+
+How it **works**:
+
+This alert fires when GRPC connections are getting close to maxing out their maximum number of concurrent streams. By default, each component accepts up to 100 concurrent streams on each GRPC connection.
+
+When the number of concurrent streams is maxed out, it causes hard-to-explain latency increases between components.
+
+How to **investigate**:
+
+- Check the `grpc_concurrent_streams_by_conn_max` metric to see if a sudden increase in streams per connection can be attributed to another issue.
+- If the number of streams has grown organically, consider setting the `-server.grpc-max-concurrent-streams` flag to a value higher than the current setting. Refer to the `cortex_grpc_concurrent_streams_limit` metric for the current value.
+- You can also horizontally scale up the component to reduce the number of concurrent streams on each replica.
+
 ## Mimir ingest storage (experimental)
 
 This section contains runbooks for alerts related to experimental Mimir ingest storage.
@@ -1757,22 +1810,25 @@ How to **fix**:
 
   1. Once ingesters are stable, revert the temporarily config applied in the previous step.
 
-### MimirBlockBuilderLagging
+### MimirBlockBuilderSchedulerPendingJobs
 
-This alert fires when the block-builder reports a large number of unprocessed records in Kafka partitions.
+This alert fires when the block-builder-scheduler reports pending jobs for an extended period of time.
 
 How it **works**:
 
-- The block-builder-scheduler watches the Kafka topic backlog. The lag is calculated per-partition as the difference between the partition's end and its last committed offset.
-- The block-builder-scheduler chops the backlog into jobs, and distributes the jobs between the block-builder instances.
-- A block-builder must consume and process the records in a job into TSDB blocks.
+- The block-builder-scheduler watches the Kafka topic backlog.
+- The block-builder-scheduler divides the backlog into jobs, and distributes the jobs between the block-builder instances.
+- A block-builder must consume records from a job's start offset to its end offset, and process the records into TSDB blocks.
 - When the job is processed, the block-builder-scheduler commits the offset of the last record from this job into Kafka.
+- The jobs that haven't been yet assigned to any block-builder instance are reported as "pending" jobs.
 
-If the block-builder reports high values in the lag, this could indicate that the block-builder cannot fully process and commit Kafka record.
+When the block-builder-scheduler reports that it has pending jobs, this can mean either that all block-builder instances are busy, and can't pick the pending jobs;
+or there are no block-builder instances running.
 
 How to **investigate**:
 
-- Check if the per-partition lag has been growing over the past hours.
+- Check if the block-builder instances are healthy, and that they progress with the assigned jobs.
+- Check if the per-partition lag has been growing over the previous hours.
 - Explore the block-builder logs for any errors reported while it processed the partition.
 
 ### MimirBlockBuilderCompactAndUploadFailed
@@ -2363,6 +2419,24 @@ How to **fix** it:
 
 - Check the read requests latency through the `Mimir / Reads` dashboard and come back to investigate the root cause of high latency (the higher the latency, the higher the number of in-flight read requests).
 - Consider scaling out the ingesters.
+
+### err-mimir-max-active-series
+
+This error occurs when the number of active series for a given tenant exceeds the configured limit.
+
+This limit is applied before the series are ingested into Kafka.
+
+The limit is used to protect ingesters from overloading in case a tenant writes a high number of active series, as well as to protect the whole system’s stability from potential abuse or mistakes.
+To configure the limit on a per-tenant basis, use the `-distributor.max-active-series-per-user` option or `max_active_series_per_user` in the runtime configuration.
+
+How to **fix** it:
+
+- Ensure the actual number of active series written by the affected tenant is legit.
+- Consider increasing the per-tenant limit by using the `-distributor.max-active-series-per-user` option or `max_active_series_per_user` in the runtime configuration.
+
+{{< admonition type="note" >}}
+When you configure `-ingester.error-sample-rate` to a value of `N` that is greater than `0`, only every `Nth` error is logged.
+{{< /admonition >}}
 
 ### err-mimir-max-series-per-user
 

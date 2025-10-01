@@ -81,12 +81,12 @@ var countValuesSeriesPool = sync.Pool{
 	},
 }
 
-func (c *CountValues) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
+func (c *CountValues) SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
 	if err := c.loadLabelName(); err != nil {
 		return nil, err
 	}
 
-	innerMetadata, err := c.Inner.SeriesMetadata(ctx)
+	innerMetadata, err := c.Inner.SeriesMetadata(ctx, matchers)
 	if err != nil {
 		return nil, err
 	}
@@ -154,7 +154,7 @@ func (c *CountValues) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadat
 
 func (c *CountValues) loadLabelName() error {
 	c.resolvedLabelName = c.LabelName.GetValue()
-	if !model.LabelName(c.resolvedLabelName).IsValid() {
+	if !model.UTF8Validation.IsValidLabelName(c.resolvedLabelName) {
 		return fmt.Errorf("invalid label name %q", c.resolvedLabelName)
 	}
 
@@ -250,6 +250,10 @@ func (c *CountValues) ExpressionPosition() posrange.PositionRange {
 
 func (c *CountValues) Prepare(ctx context.Context, params *types.PrepareParams) error {
 	return c.Inner.Prepare(ctx, params)
+}
+
+func (c *CountValues) Finalize(ctx context.Context) error {
+	return c.Inner.Finalize(ctx)
 }
 
 func (c *CountValues) Close() {

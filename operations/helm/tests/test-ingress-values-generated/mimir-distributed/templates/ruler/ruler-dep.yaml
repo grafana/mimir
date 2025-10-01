@@ -88,6 +88,8 @@ spec:
               drop:
               - ALL
             readOnlyRootFilesystem: true
+          env:
+            []
       topologySpreadConstraints:
       - maxSkew: 1
         topologyKey: kubernetes.io/hostname
@@ -98,6 +100,10 @@ spec:
             app.kubernetes.io/instance: test-ingress-values
             app.kubernetes.io/component: ruler
       terminationGracePeriodSeconds: 600
+      dnsConfig:
+        options:
+        - name: ndots
+          value: "4"
       volumes:
         - name: config
           configMap:

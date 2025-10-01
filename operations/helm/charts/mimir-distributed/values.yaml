@@ -34,7 +34,7 @@ image:
   # -- Grafana Mimir container image repository. Note: for Grafana Enterprise Metrics use the value 'enterprise.image.repository'
   repository: grafana/mimir
   # -- Grafana Mimir container image tag. Note: for Grafana Enterprise Metrics use the value 'enterprise.image.tag'
-  tag: r354-d48a2220
+  tag: r361-71d546bb
   # -- Container pull policy - shared between Grafana Mimir and Grafana Enterprise Metrics
   pullPolicy: IfNotPresent
   # -- Optionally specify an array of imagePullSecrets - shared between Grafana Mimir and Grafana Enterprise Metrics
@@ -48,6 +48,7 @@ global:
   dnsService: kube-dns
   dnsNamespace: kube-system
   clusterDomain: cluster.local.
+  dnsConfig: {}
 
   # -- Common environment variables to add to all pods directly managed by this chart.
   # scope: admin-api, alertmanager, compactor, continuous-test, distributor, gateway, graphite-proxy, ingester, memcached, nginx, overrides-exporter, querier, query-frontend, query-scheduler, ruler, store-gateway, smoke-test, tokengen, federation-frontend
@@ -246,6 +247,9 @@ mimir:
         heartbeat_timeout: 4m
 
     distributor:
+      # Increase the default remote write timeout (applied to writing to Kafka too) because writing
+      # to Kafka-compatible backend may be slower than writing directly to ingesters.
+      remote_timeout: 5s
       ring:
         heartbeat_period: 1m
         heartbeat_timeout: 4m
@@ -309,7 +313,23 @@ mimir:
         {{- end}}
     {{- end }}
 
+    ingest_storage:
+      enabled: true
+      kafka:
+        {{- if .Values.kafka.enabled }}
+        # Address of Kafka broker to bootstrap the connection.
+        address: {{ template "mimir.fullname" . }}-kafka.{{ .Release.Namespace }}.svc.{{ $.Values.global.clusterDomain }}:{{ $.Values.kafka.service.port }}
+        {{- end }}
+        # Topic name.
+        topic: mimir-ingest
+        # Mimir will auto-create the topic on start up.
+        # The topic MUST be provisioned with no fewer partitions than the maximum number of ingester replicas. The value of 100 is for demo purposes.
+        auto_create_topic_enabled: true
+        auto_create_topic_default_partitions: 100
+
     ingester:
+      # Disallow Push gRPC API; everything comes through Kafka in the ingest storage architecture.
+      push_grpc_method_enabled: false
       ring:
         final_sleep: 0s
         num_tokens: 512
@@ -566,6 +586,7 @@ alertmanager:
   # Otherwise each zone starts `ceil(replicas / number_of_zones)` number of pods.
   #   E.g. if 'replicas' is set to 4 and there are 3 zones, then 4/3=1.33 and after rounding up it means 2 pods per zone are started.
   replicas: 1
+  revisionHistoryLimit: null
 
   # -- Allows to override the container image of the alertmanager component.
   # When set it takes precedence over what is defined in global "image" or "enterprise.image" sections.
@@ -630,6 +651,7 @@ alertmanager:
   # -- The name of the PriorityClass for alertmanager pods
   priorityClassName: null
 
+  dnsConfig: {}
   # -- NodeSelector to pin alertmanager pods to certain set of nodes. This is ignored when alertmanager.zoneAwareReplication.enabled=true.
   nodeSelector: {}
   # -- Pod affinity settings for the alertmanager. This is ignored when alertmanager.zoneAwareReplication.enabled=true.
@@ -870,6 +892,7 @@ distributor:
 
   # Setting it to null will produce a deployment without replicas set, allowing you to use autoscaling with the deployment
   replicas: 1
+  revisionHistoryLimit: null
 
   # -- [Experimental] Configure autoscaling via KEDA (https://keda.sh). This requires having
   # KEDA already installed in the Kubernetes cluster. The metrics for scaling are read
@@ -904,6 +927,9 @@ distributor:
     internalTrafficPolicy: Cluster
     type: ClusterIP
     extraPorts: []
+    # -- https://kubernetes.io/docs/concepts/services-networking/service/#traffic-distribution
+    trafficDistribution: ""
+
 
   resources:
     requests:
@@ -926,6 +952,7 @@ distributor:
   # -- The name of the PriorityClass for distributor pods
   priorityClassName: null
 
+  dnsConfig: {}
   nodeSelector: {}
   affinity: {}
 
@@ -1004,6 +1031,9 @@ ingester:
     internalTrafficPolicy: Cluster
     type: ClusterIP
     extraPorts: []
+    # -- https://kubernetes.io/docs/concepts/services-networking/service/#traffic-distribution
+    # Note: This service is only used for admin endpoints like TSDB statistics, not for write or read path traffic.
+    trafficDistribution: ""
 
   # -- Optionally set the scheduler for pods of the ingester
   schedulerName: ""
@@ -1034,6 +1064,7 @@ ingester:
   nodeSelector: {}
   # -- Pod affinity settings for the ingester. This is ignored when ingester.zoneAwareReplication.enabled=true.
   affinity: {}
+  dnsConfig: {}
 
   # -- topologySpreadConstraints allows to customize the default topologySpreadConstraints. This can be either a single dict as shown below or a slice of topologySpreadConstraints.
   # labelSelector is taken from the constraint itself (if it exists) or is generated by the chart using the same selectors as for services.
@@ -1096,6 +1127,7 @@ ingester:
     #
     # storageClass: "-"
 
+  livenessProbe: null
   readinessProbe:
     httpGet:
       path: /ready
@@ -1249,6 +1281,7 @@ overrides_exporter:
     # tag: 2.16.0
 
   replicas: 1
+  revisionHistoryLimit: null
 
   annotations: {}
 
@@ -1277,6 +1310,7 @@ overrides_exporter:
   # -- The name of the PriorityClass for overrides-exporter pods
   priorityClassName: null
 
+  dnsConfig: {}
   nodeSelector: {}
   affinity: {}
 
@@ -1342,6 +1376,7 @@ ruler:
     # tag: 2.16.0
 
   replicas: 1
+  revisionHistoryLimit: null
 
   # -- [Experimental] Configure autoscaling via KEDA (https://keda.sh). This requires having
   # KEDA already installed in the Kubernetes cluster. The metrics for scaling are read
@@ -1407,6 +1442,7 @@ ruler:
   podDisruptionBudget:
     maxUnavailable: 1
 
+  dnsConfig: {}
   nodeSelector: {}
   affinity: {}
 
@@ -1471,6 +1507,7 @@ ruler_querier:
     # tag: 2.16.0
 
   replicas: 2
+  revisionHistoryLimit: null
 
   # -- [Experimental] Configure autoscaling via KEDA (https://keda.sh). This requires having
   # KEDA already installed in the Kubernetes cluster. The metrics for scaling are read
@@ -1532,6 +1569,7 @@ ruler_querier:
   # -- The name of the PriorityClass for ruler-querier pods
   priorityClassName: null
 
+  dnsConfig: {}
   nodeSelector: {}
   affinity: {}
 
@@ -1593,6 +1631,7 @@ ruler_query_frontend:
 
   # Setting it to null will produce a deployment without replicas set, allowing you to use autoscaling with the deployment
   replicas: 1
+  revisionHistoryLimit: null
 
   # -- [Experimental] Configure autoscaling via KEDA (https://keda.sh). This requires having
   # KEDA already installed in the Kubernetes cluster. The metrics for scaling are read
@@ -1649,6 +1688,7 @@ ruler_query_frontend:
   # -- The name of the PriorityClass for ruler-query-frontend pods
   priorityClassName: null
 
+  dnsConfig: {}
   nodeSelector: {}
   affinity: {}
 
@@ -1709,6 +1749,7 @@ ruler_query_scheduler:
     # tag: 2.16.0
 
   replicas: 2
+  revisionHistoryLimit: null
 
   service:
     annotations: {}
@@ -1739,6 +1780,7 @@ ruler_query_scheduler:
   # -- The name of the PriorityClass for ruler-query-scheduler pods
   priorityClassName: null
 
+  dnsConfig: {}
   nodeSelector: {}
   affinity: {}
 
@@ -1801,6 +1843,7 @@ querier:
     # tag: 2.16.0
 
   replicas: 2
+  revisionHistoryLimit: null
 
   # -- [Experimental] Configure autoscaling via KEDA (https://keda.sh). This requires having
   # KEDA already installed in the Kubernetes cluster. The metrics for scaling are read
@@ -1851,6 +1894,8 @@ querier:
     internalTrafficPolicy: Cluster
     type: ClusterIP
     extraPorts: []
+    # -- https://kubernetes.io/docs/concepts/services-networking/service/#traffic-distribution
+    trafficDistribution: ""
 
   resources:
     requests:
@@ -1873,6 +1918,7 @@ querier:
   # -- The name of the PriorityClass for querier pods
   priorityClassName: null
 
+  dnsConfig: {}
   nodeSelector: {}
   affinity: {}
 
@@ -1936,6 +1982,7 @@ query_frontend:
 
   # Setting it to null will produce a deployment without replicas set, allowing you to use autoscaling with the deployment
   replicas: 1
+  revisionHistoryLimit: null
 
   # -- [Experimental] Configure autoscaling via KEDA (https://keda.sh). This requires having
   # KEDA already installed in the Kubernetes cluster. The metrics for scaling are read
@@ -1970,6 +2017,8 @@ query_frontend:
     internalTrafficPolicy: Cluster
     type: ClusterIP
     extraPorts: []
+    # -- https://kubernetes.io/docs/concepts/services-networking/service/#traffic-distribution
+    trafficDistribution: ""
 
   resources:
     requests:
@@ -1992,6 +2041,7 @@ query_frontend:
   # -- The name of the PriorityClass for query-frontend pods
   priorityClassName: null
 
+  dnsConfig: {}
   nodeSelector: {}
   affinity: {}
 
@@ -2053,6 +2103,7 @@ query_scheduler:
     # tag: 2.16.0
 
   replicas: 2
+  revisionHistoryLimit: null
 
   service:
     annotations: {}
@@ -2061,6 +2112,8 @@ query_scheduler:
     internalTrafficPolicy: Cluster
     type: ClusterIP
     extraPorts: []
+    # -- https://kubernetes.io/docs/concepts/services-networking/service/#traffic-distribution
+    trafficDistribution: ""
 
   resources:
     requests:
@@ -2083,6 +2136,7 @@ query_scheduler:
   # -- The name of the PriorityClass for query-scheduler pods
   priorityClassName: null
 
+  dnsConfig: {}
   nodeSelector: {}
   affinity: {}
 
@@ -2157,6 +2211,9 @@ store_gateway:
     internalTrafficPolicy: Cluster
     type: ClusterIP
     extraPorts: []
+    # -- https://kubernetes.io/docs/concepts/services-networking/service/#traffic-distribution
+    # Note: This service is not responsible for read path traffic.
+    trafficDistribution: ""
 
   # -- Optionally set the scheduler for pods of the store-gateway
   schedulerName: ""
@@ -2187,6 +2244,7 @@ store_gateway:
   # -- The name of the PriorityClass for store-gateway pods
   priorityClassName: null
 
+  dnsConfig: {}
   # -- NodeSelector to pin store-gateway pods to certain set of nodes. This is ignored when store_gateway.zoneAwareReplication.enabled=true.
   nodeSelector: {}
   # -- Pod affinity settings for the store_gateway. This is ignored when store_gateway.zoneAwareReplication.enabled=true.
@@ -2440,6 +2498,7 @@ compactor:
   # -- The name of the PriorityClass for compactor pods
   priorityClassName: null
 
+  dnsConfig: {}
   nodeSelector: {}
   affinity: {}
 
@@ -2614,6 +2673,7 @@ chunks-cache:
   nodeSelector: {}
   # -- Affinity for chunks-cache pods
   affinity: {}
+  dnsConfig: {}
 
   # -- topologySpreadConstraints allows to customize the default topologySpreadConstraints. This can be either a single dict as shown below or a slice of topologySpreadConstraints.
   # labelSelector is taken from the constraint itself (if it exists) or is generated by the chart using the same selectors as for services.
@@ -2715,6 +2775,7 @@ index-cache:
   nodeSelector: {}
   # -- Affinity for index-cache pods
   affinity: {}
+  dnsConfig: {}
 
   # -- topologySpreadConstraints allows to customize the default topologySpreadConstraints. This can be either a single dict as shown below or a slice of topologySpreadConstraints.
   # labelSelector is taken from the constraint itself (if it exists) or is generated by the chart using the same selectors as for services.
@@ -2816,6 +2877,7 @@ metadata-cache:
   nodeSelector: {}
   # -- Affinity for metadata-cache pods
   affinity: {}
+  dnsConfig: {}
 
   # -- topologySpreadConstraints allows to customize the default topologySpreadConstraints. This can be either a single dict as shown below or a slice of topologySpreadConstraints.
   # labelSelector is taken from the constraint itself (if it exists) or is generated by the chart using the same selectors as for services.
@@ -2917,6 +2979,7 @@ results-cache:
   nodeSelector: {}
   # -- Affinity for results-cache pods
   affinity: {}
+  dnsConfig: {}
 
   # -- topologySpreadConstraints allows to customize the default topologySpreadConstraints. This can be either a single dict as shown below or a slice of topologySpreadConstraints.
   # labelSelector is taken from the constraint itself (if it exists) or is generated by the chart using the same selectors as for services.
@@ -3047,6 +3110,82 @@ minio:
   # Changed the mc config path to '/tmp' from '/etc' as '/etc' is only writable by root and OpenShift will not permit this.
   configPathmc: "/tmp/minio/mc/"
 
+kafka:
+  # -- Enable Kafka for ingest-storage architecture
+  enabled: true
+
+  image:
+    # -- The container image registry
+    registry: docker.io
+    # -- The container image repository
+    repository: apache/kafka-native
+    # -- The container image tag
+    tag: 4.1.0
+    # -- The container image pull policy
+    pullPolicy: IfNotPresent
+
+  # -- Kafka service port
+  service:
+    port: 9092
+    controllerPort: 9093
+    # -- Service type
+    type: ClusterIP
+    # -- Service annotations
+    annotations: {}
+    # -- Service labels
+    labels: {}
+  # -- Kafka persistence configuration
+  persistence:
+    # If false, use emptyDir
+    enabled: true
+    size: 5Gi
+    storageClassName: ""
+    # Additional settings for emptyDir if persistence is disabled
+    emptyDir: {}
+  # -- Resource requests and limits for Kafka
+  resources:
+    requests:
+      cpu: 1
+      memory: 1Gi
+    limits: {}
+  # -- DNS configuration for Kafka pods
+  dnsConfig: {}
+  # -- Node selector for Kafka pods
+  nodeSelector: {}
+  # -- Tolerations for Kafka pods
+  tolerations: []
+  # -- Affinity for Kafka pods
+  affinity: {}
+  # -- Pod Disruption Budget
+  podDisruptionBudget:
+    maxUnavailable: 1
+  # -- The name of the PriorityClass for Kafka pods
+  priorityClassName: null
+  # -- Labels for Kafka pods
+  podLabels: {}
+  # -- Annotations for Kafka pods
+  podAnnotations: {}
+  # -- Security context for Kafka pods
+  securityContext:
+    fsGroup: 1001
+    runAsGroup: 1001
+    runAsNonRoot: true
+    runAsUser: 1001
+    seccompProfile:
+      type: RuntimeDefault
+  # -- Container security context for Kafka containers
+  containerSecurityContext:
+    readOnlyRootFilesystem: true
+    capabilities:
+      drop: [ALL]
+    allowPrivilegeEscalation: false
+  # -- Grace period to allow Kafka to shutdown before it is killed
+  terminationGracePeriodSeconds: 30
+  # -- Additional environment variables for Kafka
+  extraEnv: []
+  # -- Additional environment variables from secrets or configmaps
+  extraEnvFrom: []
+
 # -- DEPRECATED: use the 'gateway' section instead. For a migration guide refer to
 # https://grafana.com/docs/helm-charts/mimir-distributed/latest/migration-guides/migrate-to-unified-proxy-deployment/
 #
@@ -3057,6 +3196,7 @@ nginx:
   enabled: true
   # -- Number of replicas for nginx
   replicas: 1
+  revisionHistoryLimit: null
   # -- Enable logging of 2xx and 3xx HTTP requests
   verboseLogging: true
   autoscaling:
@@ -3136,6 +3276,7 @@ nginx:
 
   annotations: {}
 
+  dnsConfig: {}
   # -- Node selector for nginx pods
   nodeSelector: {}
   # -- Tolerations for nginx pods
@@ -3453,6 +3594,8 @@ gateway:
 
   # -- Number of replicas for the Deployment
   replicas: 1
+  revisionHistoryLimit: null
+  dnsConfig: {}
 
   # -- HorizontalPodAutoscaler
   autoscaling:
@@ -3570,6 +3713,9 @@ gateway:
     # -- https://kubernetes.io/docs/concepts/services-networking/service-traffic-policy/
     internalTrafficPolicy: Cluster
     extraPorts: []
+    # -- https://kubernetes.io/docs/concepts/services-networking/service/#traffic-distribution
+    trafficDistribution: ""
+
 
   ingress:
     enabled: false
@@ -3847,7 +3993,7 @@ metaMonitoring:
     labels:
       grafana_dashboard: "1"
 
-  # ServiceMonitor configuration for monitoring Kubernetes Services with Prometheus Operator and/or Grafana Agent
+  # ServiceMonitor configuration for monitoring Kubernetes Services with Prometheus Operator, Grafana Agent (deprecated), and/or Grafana Alloy
   serviceMonitor:
     # -- If enabled, ServiceMonitor resources for Prometheus Operator are created
     enabled: false
@@ -3916,7 +4062,9 @@ metaMonitoring:
   #    - expr: sum(rate(cortex_request_duration_seconds_count[1m])) by (cluster, job)
   #      record: cluster_job:cortex_request_duration_seconds_count:sum_rate
 
-  # metaMonitoringAgent configures the built in Grafana Agent that can scrape metrics and logs and send them to a local or remote destination
+  # -- DEPRECATED: Grafana Agent is deprecated and will reach the End-of-Support in the end of 2025.
+  # Users are recommended to switch to Grafana k8s-monitoring, that orchestrates the lifecycle of Grafana Alloy instances, and comes with built-in support for monitoring Grafana LGTM stacks (https://github.com/grafana/k8s-monitoring-helm/tree/k8s-monitoring-3.2.2/charts/k8s-monitoring)
+  # metaMonitoring.grafanaAgent configures the built in Grafana Agent that can scrape metrics and logs and send them to a local or remote destination
   grafanaAgent:
     # -- Controls whether to create PodLogs, MetricsInstance, LogsInstance, and GrafanaAgent CRs to scrape the
     # ServiceMonitors of the chart and ship metrics and logs to the remote endpoints below.
@@ -4114,6 +4262,8 @@ metaMonitoring:
         # matchLabelKeys:
         #   - pod-template-hash
 
+# -- DEPRECATED: Grafana Agent is deprecated and will reach the End-of-Support in the end of 2025.
+# Users are recommended to switch to Grafana k8s-monitoring (https://github.com/grafana/k8s-monitoring-helm/tree/k8s-monitoring-3.2.2/charts/k8s-monitoring)
 # -- Values exposed by the [Grafana agent-operator chart](https://github.com/grafana/helm-charts/blob/main/charts/agent-operator/values.yaml)
 grafana-agent-operator:
   podSecurityContext:
@@ -4146,7 +4296,7 @@ enterprise:
     # -- Grafana Enterprise Metrics container image repository. Note: for Grafana Mimir use the value 'image.repository'
     repository: grafana/enterprise-metrics
     # -- Grafana Enterprise Metrics container image tag. Note: for Grafana Mimir use the value 'image.tag'
-    tag: r354-b6fd979a
+    tag: r361-040d8052
     # Note: pullPolicy and optional pullSecrets are set in toplevel 'image' section, not here
 
 # In order to use Grafana Enterprise Metrics features, you will need to provide the contents of your Grafana Enterprise Metrics
@@ -4184,13 +4334,12 @@ tokengenJob:
 
   # -- The name of the PriorityClass for tokenjobgen pods
   priorityClassName: null
+  dnsConfig: {}
 
 # -- kubetclImage is used in the enterprise provisioner and tokengen jobs
 kubectlImage:
-  # -- The Docker registry for the kubectl image
-  registry: docker.io
   # -- The kubectl image repository
-  repository: bitnami/kubectl
+  repository: alpine/kubectl
   # -- The kubectl image tag
   tag: latest
   # -- The kubectl image pull policy
@@ -4251,6 +4400,8 @@ provisioner:
   extraVolumeMounts: []
   # -- Volumes to add to the provisioner pods
   extraVolumes: []
+  # -- DNS config for the provisioner pods
+  dnsConfig: {}
 
 # Settings for the admin_api service providing authentication and authorization service.
 # Can only be enabled if enterprise.enabled is true - requires license.
@@ -4265,6 +4416,7 @@ admin_api:
     # tag: 2.16.0
 
   replicas: 1
+  revisionHistoryLimit: null
 
   annotations: {}
   service:
@@ -4286,6 +4438,7 @@ admin_api:
   podLabels: {}
   podAnnotations: {}
 
+  dnsConfig: {}
   nodeSelector: {}
   affinity: {}
 
@@ -4402,6 +4555,7 @@ admin-cache:
   podManagementPolicy: Parallel
   # -- Grace period to allow the admin-cache to shutdown before it is killed
   terminationGracePeriodSeconds: 60
+  dnsConfig: {}
 
   # -- Stateful admin-cache strategy
   statefulStrategy:
@@ -4431,6 +4585,7 @@ graphite:
   querier:
     # Setting it to null will produce a deployment without replicas set, allowing you to use autoscaling with the deployment
     replicas: 2
+    revisionHistoryLimit: null
 
     schemasConfiguration:
       storageSchemas: |-
@@ -4464,6 +4619,7 @@ graphite:
     # -- Annotations for graphite-querier pods
     podAnnotations: {}
 
+    dnsConfig: {}
     nodeSelector: {}
     affinity:
       podAntiAffinity:
@@ -4522,6 +4678,8 @@ graphite:
 
   write_proxy:
     replicas: 2
+    revisionHistoryLimit: null
+    dnsConfig: {}
 
     service:
       annotations: {}
@@ -4645,6 +4803,7 @@ gr-aggr-cache:
   podManagementPolicy: Parallel
   # -- Grace period to allow the graphite-aggregation-cache to shutdown before it is killed
   terminationGracePeriodSeconds: 60
+  dnsConfig: {}
 
   # -- Stateful graphite-aggregation-cache strategy
   statefulStrategy:
@@ -4711,6 +4870,7 @@ gr-metricname-cache:
   podManagementPolicy: Parallel
   # -- Grace period to allow the graphite-metric-name-cache to shutdown before it is killed
   terminationGracePeriodSeconds: 60
+  dnsConfig: {}
 
   # -- Stateful graphite-metric-name-cache strategy
   statefulStrategy:
@@ -4748,6 +4908,7 @@ federation_frontend:
 
   # -- Number of replicas for the federation-frontend
   replicas: 2
+  revisionHistoryLimit: null
   # -- Deployment strategy for the federation-frontend pods
   strategy:
     type: RollingUpdate
@@ -4761,6 +4922,7 @@ federation_frontend:
       cpu: 100m
       memory: 128Mi
 
+  dnsConfig: {}
   initContainers: []
 
   # -- Additional CLI arguments for the federation-frontend container
@@ -4851,6 +5013,7 @@ smoke_test:
   resources: {}
   # -- The name of the PriorityClass for smoke-test pods
   priorityClassName: null
+  dnsConfig: {}
 
 # -- Settings for mimir-continuous-test.
 # This continuously writes and reads metrics from Mimir.
@@ -4864,6 +5027,7 @@ continuous_test:
     # tag: 2.16.0
   # -- Number of replicas to start of continuous test
   replicas: 1
+  revisionHistoryLimit: null
   # The image section has been removed as continuous test is now a module of the regular Mimir image.
   # See settings for the image at the top image section.
   # -- The endpoints to use for writing to and reading metrics from your instance.
@@ -4941,6 +5105,7 @@ continuous_test:
       maxSurge: 0
       maxUnavailable: 1
 
+  dnsConfig: {}
   tolerations: []
   terminationGracePeriodSeconds: 30
 

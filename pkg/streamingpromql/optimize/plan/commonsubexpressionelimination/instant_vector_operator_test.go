@@ -30,9 +30,9 @@ func TestInstantVectorOperator_Buffering(t *testing.T) {
 	consumer2 := buffer.AddConsumer()
 
 	// Both consumers should get the same series metadata.
-	metadata1, err := consumer1.SeriesMetadata(ctx)
+	metadata1, err := consumer1.SeriesMetadata(ctx, nil)
 	require.NoError(t, err)
-	metadata2, err := consumer2.SeriesMetadata(ctx)
+	metadata2, err := consumer2.SeriesMetadata(ctx, nil)
 	require.NoError(t, err)
 	require.Equal(t, testutils.LabelsToSeriesMetadata(inner.Series), metadata1, "first consumer should get expected series metadata")
 	require.Equal(t, testutils.LabelsToSeriesMetadata(inner.Series), metadata2, "second consumer should get expected series metadata")
@@ -101,6 +101,18 @@ func TestInstantVectorOperator_Buffering(t *testing.T) {
 	require.Equal(t, 0, buffer.buffer.Size())
 	types.PutInstantVectorSeriesData(d, memoryConsumptionTracker)
 
+	// Check that the inner operator hasn't been closed or finalized yet.
+	require.False(t, inner.Finalized)
+	require.False(t, inner.Closed)
+
+	// Finalize each consumer, and check that the inner operator was only finalized after the last consumer is finalized.
+	require.NoError(t, consumer1.Finalize(ctx))
+	require.False(t, inner.Finalized)
+	require.NoError(t, consumer2.Finalize(ctx))
+	require.True(t, inner.Finalized)
+	require.NoError(t, consumer1.Finalize(ctx), "it should be safe to finalize either consumer a second time")
+	require.NoError(t, consumer2.Finalize(ctx), "it should be safe to finalize either consumer a second time")
+
 	// Close the second consumer, and check that the inner operator was closed.
 	consumer2.Close()
 	require.True(t, inner.Closed)
@@ -121,9 +133,9 @@ func TestInstantVectorOperator_ClosedWithBufferedData(t *testing.T) {
 	consumer1 := buffer.AddConsumer()
 	consumer2 := buffer.AddConsumer()
 
-	metadata1, err := consumer1.SeriesMetadata(ctx)
+	metadata1, err := consumer1.SeriesMetadata(ctx, nil)
 	require.NoError(t, err)
-	metadata2, err := consumer2.SeriesMetadata(ctx)
+	metadata2, err := consumer2.SeriesMetadata(ctx, nil)
 	require.NoError(t, err)
 	require.Equal(t, testutils.LabelsToSeriesMetadata(inner.Series), metadata1, "first consumer should get expected series metadata")
 	require.Equal(t, testutils.LabelsToSeriesMetadata(inner.Series), metadata2, "second consumer should get expected series metadata")
@@ -196,9 +208,9 @@ func TestInstantVectorOperator_Cloning(t *testing.T) {
 	consumer2 := buffer.AddConsumer()
 
 	// Both consumers should get the same series metadata, but not the same slice.
-	metadata1, err := consumer1.SeriesMetadata(ctx)
+	metadata1, err := consumer1.SeriesMetadata(ctx, nil)
 	require.NoError(t, err)
-	metadata2, err := consumer2.SeriesMetadata(ctx)
+	metadata2, err := consumer2.SeriesMetadata(ctx, nil)
 	require.NoError(t, err)
 	require.Equal(t, testutils.LabelsToSeriesMetadata(inner.Series), metadata1, "first consumer should get expected series metadata")
 	require.Equal(t, testutils.LabelsToSeriesMetadata(inner.Series), metadata2, "second consumer should get expected series metadata")
@@ -267,7 +279,7 @@ func TestInstantVectorOperator_ClosingAfterFirstReadFails(t *testing.T) {
 	consumer1 := buffer.AddConsumer()
 	consumer2 := buffer.AddConsumer()
 
-	metadata1, err := consumer1.SeriesMetadata(ctx)
+	metadata1, err := consumer1.SeriesMetadata(ctx, nil)
 	require.NoError(t, err)
 	require.Equal(t, series, metadata1, "first consumer should get expected series metadata")
 	types.SeriesMetadataSlicePool.Put(&metadata1, memoryConsumptionTracker)
@@ -296,7 +308,7 @@ func TestInstantVectorOperator_ClosingAfterSubsequentReadFails(t *testing.T) {
 	consumer1 := buffer.AddConsumer()
 	consumer2 := buffer.AddConsumer()
 
-	metadata1, err := consumer1.SeriesMetadata(ctx)
+	metadata1, err := consumer1.SeriesMetadata(ctx, nil)
 	require.NoError(t, err)
 	require.Equal(t, series, metadata1, "first consumer should get expected series metadata")
 	types.SeriesMetadataSlicePool.Put(&metadata1, memoryConsumptionTracker)
@@ -325,7 +337,7 @@ type failingInstantVectorOperator struct {
 	seriesRead int
 }
 
-func (o *failingInstantVectorOperator) SeriesMetadata(_ context.Context) ([]types.SeriesMetadata, error) {
+func (o *failingInstantVectorOperator) SeriesMetadata(_ context.Context, _ types.Matchers) ([]types.SeriesMetadata, error) {
 	return o.series, nil
 }
 
@@ -344,6 +356,10 @@ func (o *failingInstantVectorOperator) ExpressionPosition() posrange.PositionRan
 
 func (o *failingInstantVectorOperator) Prepare(_ context.Context, _ *types.PrepareParams) error {
 	// Nothing to do.
+	return nil
+}
+
+func (o *failingInstantVectorOperator) Finalize(_ context.Context) error {
 	return nil
 }
 

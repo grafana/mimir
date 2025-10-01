@@ -40,12 +40,13 @@ func NewInstantVectorSelector(selector *Selector, memoryConsumptionTracker *limi
 		ReturnSampleTimestamps:   returnSampleTimestamps,
 	}
 }
+
 func (v *InstantVectorSelector) ExpressionPosition() posrange.PositionRange {
 	return v.Selector.ExpressionPosition
 }
 
-func (v *InstantVectorSelector) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
-	return v.Selector.SeriesMetadata(ctx)
+func (v *InstantVectorSelector) SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
+	return v.Selector.SeriesMetadata(ctx, matchers)
 }
 
 func (v *InstantVectorSelector) NextSeries(ctx context.Context) (types.InstantVectorSeriesData, error) {
@@ -189,6 +190,11 @@ func (v *InstantVectorSelector) NextSeries(ctx context.Context) (types.InstantVe
 func (v *InstantVectorSelector) Prepare(ctx context.Context, params *types.PrepareParams) error {
 	v.Stats = params.QueryStats
 	return v.Selector.Prepare(ctx, params)
+}
+
+func (v *InstantVectorSelector) Finalize(ctx context.Context) error {
+	// Nothing to do.
+	return nil
 }
 
 func (v *InstantVectorSelector) Close() {

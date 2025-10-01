@@ -5,6 +5,7 @@ package selectors
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"time"
 
@@ -23,7 +24,7 @@ type Selector struct {
 	TimeRange            types.QueryTimeRange
 	Timestamp            *int64 // Milliseconds since Unix epoch, only set if selector uses @ modifier (eg. metric{...} @ 123)
 	Offset               int64  // In milliseconds
-	Matchers             []*labels.Matcher
+	Matchers             types.Matchers
 	EagerLoad            bool // If true, Select() call is made when Prepare() is called. This is used by query-frontends when evaluating shardable queries so that all selectors are evaluated in parallel.
 	SkipHistogramBuckets bool
 
@@ -46,13 +47,13 @@ type Selector struct {
 
 func (s *Selector) Prepare(ctx context.Context, _ *types.PrepareParams) error {
 	if s.EagerLoad {
-		return s.loadSeriesSet(ctx)
+		return s.loadSeriesSet(ctx, s.Matchers)
 	}
 
 	return nil
 }
 
-func (s *Selector) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
+func (s *Selector) SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
 	defer func() {
 		// Release our reference to the series set so it can be garbage collected as soon as possible.
 		s.seriesSet = nil
@@ -63,7 +64,7 @@ func (s *Selector) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, 
 	}
 
 	if !s.EagerLoad {
-		if err := s.loadSeriesSet(ctx); err != nil {
+		if err := s.loadSeriesSet(ctx, s.mergeMatchers(s.Matchers, matchers)); err != nil {
 			return nil, err
 		}
 	}
@@ -88,34 +89,43 @@ func (s *Selector) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, 
 	return metadata, s.seriesSet.Err()
 }
 
-func (s *Selector) loadSeriesSet(ctx context.Context) error {
+func (s *Selector) mergeMatchers(m1, m2 types.Matchers) types.Matchers {
+	if m1 == nil {
+		return m2
+	}
+
+	if m2 == nil {
+		return m1
+	}
+
+	unique := make(map[types.Matcher]struct{})
+	for _, m := range m1 {
+		unique[m] = struct{}{}
+	}
+	for _, m := range m2 {
+		unique[m] = struct{}{}
+	}
+
+	out := make([]types.Matcher, 0, len(unique))
+	for m := range unique {
+		out = append(out, m)
+	}
+
+	return out
+}
+
+func (s *Selector) loadSeriesSet(ctx context.Context, matchers types.Matchers) error {
 	if s.seriesSet != nil {
 		return errors.New("should not call Selector.loadSeriesSet() multiple times")
 	}
 
-	if s.LookbackDelta != 0 && s.Range != 0 {
-		return errors.New("invalid Selector configuration: both LookbackDelta and Range are non-zero")
-	}
-
-	startTimestamp := s.TimeRange.StartT
-	endTimestamp := s.TimeRange.EndT
-
-	if s.Timestamp != nil {
-		// Timestamp from @ modifier takes precedence over query evaluation timestamp.
-		startTimestamp = *s.Timestamp
-		endTimestamp = *s.Timestamp
-	}
-
-	// Apply lookback delta, range and offset after adjusting for timestamp from @ modifier.
-	rangeMilliseconds := s.Range.Milliseconds()
-	startTimestamp = startTimestamp - s.LookbackDelta.Milliseconds() - rangeMilliseconds - s.Offset + 1 // +1 to exclude samples on the lower boundary of the range (queriers work with closed intervals, we use left-open).
-	endTimestamp = endTimestamp - s.Offset
+	startTimestamp, endTimestamp := ComputeQueriedTimeRange(s.TimeRange, s.Timestamp, s.Range, s.Offset, s.LookbackDelta)
 
 	hints := &storage.SelectHints{
 		Start: startTimestamp,
 		End:   endTimestamp,
 		Step:  s.TimeRange.IntervalMilliseconds,
-		Range: rangeMilliseconds,
+		Range: s.Range.Milliseconds(),
 
 		// Mimir doesn't use Grouping or By, so there's no need to include them here.
 		//
@@ -127,14 +137,43 @@ func (s *Selector) loadSeriesSet(ctx context.Context) error {
 		// label matcher is present, and ingesters set DisableTrimming to true.
 	}
 
-	var err error
+	// Convert our operator type matchers to Prometheus matchers. This parses any regular
+	// expressions contained in the matchers but this should never fail because they are
+	// parsed when the query is initially parsed.
+	promMatchers, err := matchers.ToPrometheusType()
+	if err != nil {
+		return err
+	}
+
 	s.querier, err = s.Queryable.Querier(startTimestamp, endTimestamp)
 	if err != nil {
 		return err
 	}
 
-	s.seriesSet = s.querier.Select(ctx, true, hints, s.Matchers...)
+	s.seriesSet = s.querier.Select(ctx, true, hints, promMatchers...)
 	return nil
+}
+
+func ComputeQueriedTimeRange(timeRange types.QueryTimeRange, timestamp *int64, selectorRange time.Duration, offset int64, lookbackDelta time.Duration) (int64, int64) {
+	if lookbackDelta != 0 && selectorRange != 0 {
+		panic(fmt.Sprintf("both lookback delta (%s) and selector range (%s) are non-zero", lookbackDelta, selectorRange))
+	}
+
+	startTimestamp := timeRange.StartT
+	endTimestamp := timeRange.EndT
+
+	if timestamp != nil {
+		// Timestamp from @ modifier takes precedence over query evaluation timestamp.
+		startTimestamp = *timestamp
+		endTimestamp = *timestamp
+	}
+
+	// Apply lookback delta, range and offset after adjusting for timestamp from @ modifier.
+	rangeMilliseconds := selectorRange.Milliseconds()
+	startTimestamp = startTimestamp - lookbackDelta.Milliseconds() - rangeMilliseconds - offset + 1 // +1 to exclude samples on the lower boundary of the range (queriers work with closed intervals, we use left-open).
+	endTimestamp = endTimestamp - offset
+
+	return startTimestamp, endTimestamp
 }
 
 func (s *Selector) Next(ctx context.Context, existing chunkenc.Iterator) (chunkenc.Iterator, error) {

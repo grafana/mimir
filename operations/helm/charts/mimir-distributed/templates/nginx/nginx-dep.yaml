@@ -13,6 +13,9 @@ spec:
 {{- if not .Values.nginx.autoscaling.enabled }}
   replicas: {{ .Values.nginx.replicas }}
 {{- end }}
+{{- with .Values.nginx.revisionHistoryLimit }}
+  revisionHistoryLimit: {{ . }}
+{{- end }}
 {{- with .Values.nginx.deploymentStrategy }}
   strategy:
 {{ toYaml . | trim | indent 4 }}
@@ -117,6 +120,10 @@ spec:
       {{- end }}
       {{- with .Values.nginx.tolerations }}
       tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.nginx.dnsConfig }}
+      dnsConfig:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       volumes:

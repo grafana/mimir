@@ -5,10 +5,13 @@ package binops
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"math"
 	"slices"
+	"strings"
 	"time"
 
+	"github.com/grafana/regexp"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
@@ -461,13 +464,14 @@ var arithmeticAndComparisonOperationFuncs = map[parser.ItemType]binaryOperationF
 		if lH != nil && rH != nil {
 			var res *histogram.FloatHistogram
 			var err error
+			var _ bool
 
 			if canMutateLeft {
-				res, err = lH.Add(rH)
+				res, _, err = lH.Add(rH)
 			} else if canMutateRight {
-				res, err = rH.Add(lH)
+				res, _, err = rH.Add(lH)
 			} else {
-				res, err = lH.Copy().Add(rH)
+				res, _, err = lH.Copy().Add(rH)
 			}
 
 			if err != nil {
@@ -486,13 +490,14 @@ var arithmeticAndComparisonOperationFuncs = map[parser.ItemType]binaryOperationF
 		if lH != nil && rH != nil {
 			var res *histogram.FloatHistogram
 			var err error
+			var _ bool
 
 			if canMutateLeft {
-				res, err = lH.Sub(rH)
+				res, _, err = lH.Sub(rH)
 			} else if canMutateRight {
-				res, err = rH.Mul(-1).Add(lH)
+				res, _, err = rH.Mul(-1).Add(lH)
 			} else {
-				res, err = lH.Copy().Sub(rH)
+				res, _, err = lH.Copy().Sub(rH)
 			}
 
 			if err != nil {
@@ -743,4 +748,64 @@ var boolComparisonOperationFuncs = map[parser.ItemType]binaryOperationFunc{
 
 		return 0, nil, true, true, nil
 	},
+}
+
+// Hints are hints that can be applied to binary operations to avoid doing unnecessary work.
+type Hints struct {
+	Include []string
+}
+
+const (
+	maxHintMatcherValues = 64
+)
+
+// BuildMatchers builds matchers to limit the data selected on one side of binary operation
+// based on the series returned by the other side and QueryHints as determined by the query
+// planner. If there are more than a hard-coded maximum number of values for the hinted labels
+// matchers for that label are skipped.
+func BuildMatchers(metadata []types.SeriesMetadata, hints *Hints) types.Matchers {
+	var matchers []types.Matcher
+
+	for _, label := range hints.Include {
+		values := getUniqueLabelValues(metadata, label, maxHintMatcherValues)
+
+		if len(values) > 0 {
+			ordered := make([]string, 0, len(values))
+			for k := range maps.Keys(values) {
+				ordered = append(ordered, regexp.QuoteMeta(k))
+			}
+
+			// It's important that the values we're matching against for each matcher are in the
+			// same order because we deduplicate matchers before passing them to a queryable.
+			slices.Sort(ordered)
+
+			matchers = append(matchers, types.Matcher{
+				Type:  labels.MatchRegexp,
+				Name:  label,
+				Value: strings.Join(ordered, "|"),
+			})
+		}
+	}
+
+	return matchers
+}
+
+func getUniqueLabelValues(metadata []types.SeriesMetadata, label string, maxValues int) map[string]struct{} {
+	values := make(map[string]struct{})
+
+	for _, series := range metadata {
+		// Stop getting values from each series if we're past the max number of
+		// values that we'll include in a matcher. In this case, we can't use the
+		// values collected so far to build a matcher.
+		if len(values) >= maxValues {
+			return map[string]struct{}{}
+		}
+
+		val := series.Labels.Get(label)
+		if val != "" {
+			values[val] = struct{}{}
+		}
+	}
+
+	return values
 }

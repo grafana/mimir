@@ -7,6 +7,7 @@ import (
 	crypto_rand "crypto/rand"
 	"errors"
 	"fmt"
+	"iter"
 	"math/rand"
 	"slices"
 	"strconv"
@@ -74,14 +75,14 @@ func TestPartitionReader(t *testing.T) {
 
 	assert.NoError(t, err)
 	assert.Len(t, records, 4)
-	assert.Equal(t, []byte("record 1"), records[0].content)
-	assert.Equal(t, 1, records[0].version)
-	assert.Equal(t, []byte("record 2"), records[1].content)
-	assert.Equal(t, 1, records[1].version)
-	assert.Equal(t, []byte("record 3"), records[2].content)
-	assert.Equal(t, 0, records[2].version)
-	assert.Equal(t, []byte("record 4"), records[3].content)
-	assert.Equal(t, 2, records[3].version)
+	assert.Equal(t, []byte("record 1"), records[0].Value)
+	assert.Equal(t, 1, ParseRecordVersion(records[0]))
+	assert.Equal(t, []byte("record 2"), records[1].Value)
+	assert.Equal(t, 1, ParseRecordVersion(records[1]))
+	assert.Equal(t, []byte("record 3"), records[2].Value)
+	assert.Equal(t, 0, ParseRecordVersion(records[2]))
+	assert.Equal(t, []byte("record 4"), records[3].Value)
+	assert.Equal(t, 2, ParseRecordVersion(records[3]))
 }
 
 func TestPartitionReader_ShouldHonorConfiguredFetchMaxWait(t *testing.T) {
@@ -157,13 +158,14 @@ func TestPartitionReader_ConsumerError(t *testing.T) {
 			invocations := atomic.NewInt64(0)
 			returnErrors := atomic.NewBool(true)
 			trackingConsumer := newTestConsumer(2)
-			consumer := consumerFunc(func(ctx context.Context, records []record) error {
+			consumer := consumerFunc(func(ctx context.Context, records iter.Seq[*kgo.Record]) error {
 				invocations.Inc()
 				if !returnErrors.Load() {
 					return trackingConsumer.Consume(ctx, records)
 				}
 				// There may be more records, but we only care that the one we failed to consume in the first place is still there.
-				assert.Equal(t, "1", string(records[0].content))
+				recs := slices.Collect(records)
+				assert.Equal(t, "1", string(recs[0].Value))
 				return errors.New("consumer error")
 			})
 			createAndStartReader(ctx, t, clusterAddr, topicName, partitionID, consumer, concurrencyVariant...)
@@ -212,15 +214,15 @@ func TestPartitionReader_ConsumerStopping(t *testing.T) {
 			// consumerErrs will store the last error returned by the consumer; its initial value doesn't matter, but it must be non-nil.
 			consumerErrs := atomic.NewError(errors.New("dummy error"))
 			type consumerCall struct {
-				f    func() []record
+				f    func() []*kgo.Record
 				resp chan error
 			}
 			consumeCalls := make(chan consumerCall)
-			consumer := consumerFunc(func(ctx context.Context, records []record) (err error) {
+			consumer := consumerFunc(func(ctx context.Context, records iter.Seq[*kgo.Record]) (err error) {
 				defer consumerErrs.Store(err)
 
 				call := consumerCall{
-					f:    func() []record { return records },
+					f:    func() []*kgo.Record { return slices.Collect(records) },
 					resp: make(chan error),
 				}
 				consumeCalls <- call
@@ -250,7 +252,7 @@ func TestPartitionReader_ConsumerStopping(t *testing.T) {
 
 				records := call.f()
 				require.Len(t, records, 1)
-				require.Equal(t, []byte("1"), records[0].content)
+				require.Equal(t, []byte("1"), records[0].Value)
 			}()
 
 			// Wait for the reader to stop completely.
@@ -267,11 +269,9 @@ func TestPartitionReader_WaitReadConsistencyUntilLastProducedOffset_And_WaitRead
 		partitionID = 0
 	)
 
-	var (
-		ctx = context.Background()
-	)
+	ctx := t.Context()
 
-	setup := func(t *testing.T, consumer recordConsumer, opts ...readerTestCfgOpt) (*PartitionReader, *kgo.Client, *prometheus.Registry) {
+	setup := func(t *testing.T, consumer RecordConsumer, opts ...readerTestCfgOpt) (*PartitionReader, *kgo.Client, *prometheus.Registry) {
 		reg := prometheus.NewPedanticRegistry()
 
 		_, clusterAddr := testkafka.CreateCluster(t, partitionID+1, topicName)
@@ -300,8 +300,8 @@ func TestPartitionReader_WaitReadConsistencyUntilLastProducedOffset_And_WaitRead
 				// We define a custom consume function which introduces a delay once the 2nd record
 				// has been consumed but before the function returns. From the PartitionReader perspective,
 				// the 2nd record consumption will be delayed.
-				consumer := consumerFunc(func(_ context.Context, records []record) error {
-					for _, record := range records {
+				consumer := consumerFunc(func(_ context.Context, records iter.Seq[*kgo.Record]) error {
+					for record := range records {
 						// Introduce a delay before returning from the consume function once
 						// the 2nd record has been consumed.
 						if consumedRecords.Load()+1 == 2 {
@@ -309,8 +309,8 @@ func TestPartitionReader_WaitReadConsistencyUntilLastProducedOffset_And_WaitRead
 						}
 
 						consumedRecords.Inc()
-						assert.Equal(t, fmt.Sprintf("record-%d", consumedRecords.Load()), string(record.content))
-						t.Logf("consumed record: %s", string(record.content))
+						assert.Equal(t, fmt.Sprintf("record-%d", consumedRecords.Load()), string(record.Value))
+						t.Logf("consumed record: %s", string(record.Value))
 					}
 
 					return nil
@@ -530,6 +530,134 @@ func TestPartitionReader_WaitReadConsistencyUntilLastProducedOffset_And_WaitRead
 	})
 }
 
+func TestPartitionReader_EnforceReadMaxDelay(t *testing.T) {
+	const (
+		topicName   = "test"
+		partitionID = 0
+	)
+
+	ctx := t.Context()
+
+	setup := func(t *testing.T, consumer RecordConsumer) (*PartitionReader, *kgo.Client) {
+		_, clusterAddr := testkafka.CreateCluster(t, partitionID+1, topicName)
+		reader := createAndStartReader(ctx, t, clusterAddr, topicName, partitionID, consumer)
+
+		// In this test we produce records with an old timestamp. We need to set a very high write timeout
+		// otherwise records expire before the Kafka client even try to send them on the wire.
+		writeClient := newKafkaProduceClient(t, clusterAddr, withWriteTimeout(10*time.Minute))
+
+		return reader, writeClient
+	}
+
+	t.Run("should succeed if no record has been consumed yet", func(t *testing.T) {
+		t.Parallel()
+
+		consumer := consumerFunc(func(_ context.Context, records iter.Seq[*kgo.Record]) error {
+			return nil
+		})
+
+		reader, _ := setup(t, consumer)
+
+		assert.Zero(t, reader.highestConsumedTimestampBeforePartitionEnd.Load())
+		assert.NoError(t, reader.EnforceReadMaxDelay(time.Minute))
+	})
+
+	t.Run("should succeed if the partition has been consumed until the end", func(t *testing.T) {
+		t.Parallel()
+
+		for _, recordTimestampAge := range []time.Duration{0, 5 * time.Minute} {
+			t.Run(fmt.Sprintf("record timestamp age: %s", recordTimestampAge.String()), func(t *testing.T) {
+				var (
+					consumedRecordsMx sync.Mutex
+					consumedRecords   []string
+				)
+
+				consumer := consumerFunc(func(_ context.Context, records iter.Seq[*kgo.Record]) error {
+					consumedRecordsMx.Lock()
+					defer consumedRecordsMx.Unlock()
+
+					for r := range records {
+						consumedRecords = append(consumedRecords, string(r.Value))
+					}
+					return nil
+				})
+
+				reader, writeClient := setup(t, consumer)
+
+				// Produce records.
+				produceRecordWithTimestamp(ctx, t, writeClient, topicName, partitionID, []byte("record-1"), time.Now().Add(-recordTimestampAge))
+				produceRecordWithTimestamp(ctx, t, writeClient, topicName, partitionID, []byte("record-2"), time.Now().Add(-recordTimestampAge))
+				t.Log("produced 2 records")
+
+				// Wait until they've been consumed.
+				test.Poll(t, time.Second, []string{"record-1", "record-2"}, func() interface{} {
+					consumedRecordsMx.Lock()
+					defer consumedRecordsMx.Unlock()
+					return slices.Clone(consumedRecords)
+				})
+
+				// Wait until highest consumed timestamp is reset to the zero value because we reached the
+				// end of the partition.
+				test.Poll(t, 5*time.Second, true, func() interface{} {
+					return reader.highestConsumedTimestampBeforePartitionEnd.Load().IsZero()
+				})
+
+				assert.NoError(t, reader.EnforceReadMaxDelay(time.Minute))
+			})
+		}
+	})
+
+	t.Run("should fail if the partition has not been consumed until the end and the current consumption delay is above the max delay", func(t *testing.T) {
+		t.Parallel()
+
+		var (
+			firstRecordConsumed     = atomic.NewBool(false)
+			firstRecordConsumedWait = make(chan struct{})
+		)
+
+		// Mock the customer to stop processing records after the first one, to reproduce the case
+		// there are more records in Kafka and consumption hasn't reached the end of the partition.
+		consumer := consumerFunc(func(_ context.Context, records iter.Seq[*kgo.Record]) error {
+			if firstRecordConsumed.CompareAndSwap(false, true) {
+				close(firstRecordConsumedWait)
+				return nil
+			}
+
+			return errors.New("mocked error to stop consuming records")
+		})
+
+		reader, writeClient := setup(t, consumer)
+
+		// Produce a large number of records with an old timestamp (total 1GB of data to make sure records end up in
+		// different fetches).
+		payload, err := generateRandomBytes(1024 * 1024)
+		require.NoError(t, err)
+
+		const numRecords = 1024
+		for range numRecords {
+			produceRecordWithTimestamp(ctx, t, writeClient, topicName, partitionID, payload, time.Now().Add(-5*time.Minute))
+		}
+		t.Logf("produced %d records", numRecords)
+
+		// Wait until the first record is consumed.
+		select {
+		case <-firstRecordConsumedWait:
+		case <-t.Context().Done():
+			t.Fatal("test timed out")
+		}
+
+		// At this point we expect the max delay to not be honored. Due to async consumption it may not be immediate,
+		// so we wait until a timestamp is stored.
+		test.Poll(t, 5*time.Second, true, func() interface{} {
+			return !reader.highestConsumedTimestampBeforePartitionEnd.Load().IsZero()
+		})
+
+		require.NotZero(t, reader.highestConsumedTimestampBeforePartitionEnd.Load())
+		assert.Greater(t, time.Since(reader.highestConsumedTimestampBeforePartitionEnd.Load()), time.Minute)
+		assert.Error(t, reader.EnforceReadMaxDelay(time.Minute))
+	})
+}
+
 func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 	const (
 		topicName   = "test"
@@ -555,7 +683,7 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 
 				var (
 					_, clusterAddr = testkafka.CreateCluster(t, partitionID+1, topicName)
-					consumer       = consumerFunc(func(context.Context, []record) error { return nil })
+					consumer       = consumerFunc(func(context.Context, iter.Seq[*kgo.Record]) error { return nil })
 					reg            = prometheus.NewPedanticRegistry()
 				)
 
@@ -590,7 +718,7 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 
 				var (
 					cluster, clusterAddr = testkafka.CreateCluster(t, partitionID+1, topicName)
-					consumer             = consumerFunc(func(context.Context, []record) error { return nil })
+					consumer             = consumerFunc(func(context.Context, iter.Seq[*kgo.Record]) error { return nil })
 					reg                  = prometheus.NewPedanticRegistry()
 				)
 
@@ -643,8 +771,8 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 					consumedRecordsCount = atomic.NewInt64(0)
 				)
 
-				consumer := consumerFunc(func(_ context.Context, records []record) error {
-					consumedRecordsCount.Add(int64(len(records)))
+				consumer := consumerFunc(func(_ context.Context, records iter.Seq[*kgo.Record]) error {
+					consumedRecordsCount.Add(int64(len(slices.Collect(records))))
 					return nil
 				})
 
@@ -735,8 +863,8 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 					consumedRecordsCount     = atomic.NewInt64(0)
 				)
 
-				consumer := consumerFunc(func(_ context.Context, records []record) error {
-					consumedRecordsCount.Add(int64(len(records)))
+				consumer := consumerFunc(func(_ context.Context, records iter.Seq[*kgo.Record]) error {
+					consumedRecordsCount.Add(int64(len(slices.Collect(records))))
 					return nil
 				})
 
@@ -835,12 +963,12 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 					consumedRecords      []string
 				)
 
-				consumer := consumerFunc(func(_ context.Context, records []record) error {
+				consumer := consumerFunc(func(_ context.Context, records iter.Seq[*kgo.Record]) error {
 					consumedRecordsMx.Lock()
 					defer consumedRecordsMx.Unlock()
 
-					for _, r := range records {
-						consumedRecords = append(consumedRecords, string(r.content))
+					for r := range records {
+						consumedRecords = append(consumedRecords, string(r.Value))
 					}
 					return nil
 				})
@@ -934,12 +1062,12 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 					consumedRecords      []string
 				)
 
-				consumer := consumerFunc(func(_ context.Context, records []record) error {
+				consumer := consumerFunc(func(_ context.Context, records iter.Seq[*kgo.Record]) error {
 					consumedRecordsMx.Lock()
 					defer consumedRecordsMx.Unlock()
 
-					for _, r := range records {
-						consumedRecords = append(consumedRecords, string(r.content))
+					for r := range records {
+						consumedRecords = append(consumedRecords, string(r.Value))
 					}
 					return nil
 				})
@@ -1049,12 +1177,12 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 					consumedRecords      []string
 				)
 
-				consumer := consumerFunc(func(_ context.Context, records []record) error {
+				consumer := consumerFunc(func(_ context.Context, records iter.Seq[*kgo.Record]) error {
 					consumedRecordsMx.Lock()
 					defer consumedRecordsMx.Unlock()
 
-					for _, r := range records {
-						consumedRecords = append(consumedRecords, string(r.content))
+					for r := range records {
+						consumedRecords = append(consumedRecords, string(r.Value))
 					}
 					return nil
 				})
@@ -1180,12 +1308,12 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 					consumedRecords      []string
 				)
 
-				consumer := consumerFunc(func(_ context.Context, records []record) error {
+				consumer := consumerFunc(func(_ context.Context, records iter.Seq[*kgo.Record]) error {
 					consumedRecordsMx.Lock()
 					defer consumedRecordsMx.Unlock()
 
-					for _, r := range records {
-						consumedRecords = append(consumedRecords, string(r.content))
+					for r := range records {
+						consumedRecords = append(consumedRecords, string(r.Value))
 					}
 					return nil
 				})
@@ -1296,12 +1424,12 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 					consumedRecords      []string
 				)
 
-				consumer := consumerFunc(func(_ context.Context, records []record) error {
+				consumer := consumerFunc(func(_ context.Context, records iter.Seq[*kgo.Record]) error {
 					consumedRecordsMx.Lock()
 					defer consumedRecordsMx.Unlock()
 
-					for _, r := range records {
-						consumedRecords = append(consumedRecords, string(r.content))
+					for r := range records {
+						consumedRecords = append(consumedRecords, string(r.Value))
 					}
 					return nil
 				})
@@ -1418,9 +1546,7 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 					close(testDone)
 				})
 
-				consumer := consumerFunc(func(_ context.Context, _ []record) error {
-					return nil
-				})
+				consumer := consumerFunc(func(context.Context, iter.Seq[*kgo.Record]) error { return nil })
 
 				cluster.ControlKey(int16(kmsg.ListOffsets), func(kreq kmsg.Request) (kmsg.Response, error, bool) {
 					cluster.KeepControl()
@@ -1506,7 +1632,7 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 
 				var (
 					cluster, clusterAddr     = testkafka.CreateCluster(t, partitionID+1, topicName)
-					consumer                 = consumerFunc(func(context.Context, []record) error { return nil })
+					consumer                 = consumerFunc(func(context.Context, iter.Seq[*kgo.Record]) error { return nil })
 					listOffsetsRequestsCount = atomic.NewInt64(0)
 					contextCancelled         = atomic.NewBool(false)
 				)
@@ -1580,7 +1706,7 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 
 				var (
 					cluster, clusterAddr = testkafka.CreateCluster(t, partitionID+1, topicName)
-					consumer             = consumerFunc(func(context.Context, []record) error { return nil })
+					consumer             = consumerFunc(func(context.Context, iter.Seq[*kgo.Record]) error { return nil })
 					fetchRequestsCount   = atomic.NewInt64(0)
 				)
 
@@ -1646,9 +1772,7 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 						ctx, cancel := context.WithCancel(context.Background())
 						t.Cleanup(cancel)
 
-						consumer := consumerFunc(func(context.Context, []record) error {
-							return nil
-						})
+						consumer := consumerFunc(func(context.Context, iter.Seq[*kgo.Record]) error { return nil })
 
 						cluster, clusterAddr := testkafka.CreateCluster(t, partitionID+1, topicName)
 						cluster.ControlKey(int16(kmsg.Fetch), func(kmsg.Request) (kmsg.Response, error, bool) {
@@ -1733,12 +1857,12 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 			consumedRecords      []string
 		)
 
-		consumer := consumerFunc(func(_ context.Context, records []record) error {
+		consumer := consumerFunc(func(_ context.Context, records iter.Seq[*kgo.Record]) error {
 			consumedRecordsMx.Lock()
 			defer consumedRecordsMx.Unlock()
 
-			for _, r := range records {
-				consumedRecords = append(consumedRecords, string(r.content))
+			for r := range records {
+				consumedRecords = append(consumedRecords, string(r.Value))
 			}
 			return nil
 		})
@@ -1893,7 +2017,7 @@ func TestPartitionReader_ShouldNotBufferRecordsInTheKafkaClientWhenDone(t *testi
 				blocked           = atomic.NewBool(false)
 			)
 
-			consumer := consumerFunc(func(_ context.Context, records []record) error {
+			consumer := consumerFunc(func(_ context.Context, records iter.Seq[*kgo.Record]) error {
 				if blocked.Load() {
 					blockedTicker := time.NewTicker(100 * time.Millisecond)
 					defer blockedTicker.Stop()
@@ -1918,8 +2042,8 @@ func TestPartitionReader_ShouldNotBufferRecordsInTheKafkaClientWhenDone(t *testi
 
 				consumedRecordsMx.Lock()
 				defer consumedRecordsMx.Unlock()
-				for _, r := range records {
-					consumedRecords = append(consumedRecords, string(r.content))
+				for r := range records {
+					consumedRecords = append(consumedRecords, string(r.Value))
 				}
 				return nil
 			})
@@ -2154,12 +2278,12 @@ func TestPartitionReader_ShouldNotMissRecordsIfFetchRequestContainPartialFailure
 		consumedRecordIDs    = sync.Map{}
 	)
 
-	consumer := consumerFunc(func(_ context.Context, records []record) error {
-		for _, rec := range records {
+	consumer := consumerFunc(func(_ context.Context, records iter.Seq[*kgo.Record]) error {
+		for rec := range records {
 			totalConsumedRecords.Inc()
 
 			// Parse the record ID from the actual record data.
-			recordID, err := strconv.ParseInt(string(rec.content[7:12]), 10, 64)
+			recordID, err := strconv.ParseInt(string(rec.Value[7:12]), 10, 64)
 			require.NoError(t, err)
 			consumedRecordIDs.Store(recordID, struct{}{})
 		}
@@ -2225,7 +2349,7 @@ func TestPartitionReader_ShouldNotMissRecordsIfKafkaReturnsAFetchBothWithAnError
 				reg                  = prometheus.NewPedanticRegistry()
 			)
 
-			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 			t.Cleanup(cancel)
 
 			// Produce records.
@@ -2294,12 +2418,12 @@ func TestPartitionReader_ShouldNotMissRecordsIfKafkaReturnsAFetchBothWithAnError
 				consumedRecordIDs    = sync.Map{}
 			)
 
-			consumer := consumerFunc(func(_ context.Context, records []record) error {
-				for _, rec := range records {
+			consumer := consumerFunc(func(_ context.Context, records iter.Seq[*kgo.Record]) error {
+				for rec := range records {
 					totalConsumedRecords.Inc()
 
 					// Parse the record ID from the actual record data.
-					recordID, err := strconv.ParseInt(string(rec.content[7:12]), 10, 64)
+					recordID, err := strconv.ParseInt(string(rec.Value[7:12]), 10, 64)
 					require.NoError(t, err)
 					consumedRecordIDs.Store(recordID, struct{}{})
 				}
@@ -2363,7 +2487,7 @@ func TestPartitionReader_fetchLastCommittedOffset(t *testing.T) {
 
 		var (
 			cluster, clusterAddr = testkafka.CreateClusterWithoutCustomConsumerGroupsSupport(t, partitionID+1, topicName)
-			consumer             = consumerFunc(func(context.Context, []record) error { return nil })
+			consumer             = consumerFunc(func(context.Context, iter.Seq[*kgo.Record]) error { return nil })
 			reader               = createReader(t, clusterAddr, topicName, partitionID, consumer, withTargetAndMaxConsumerLagAtStartup(time.Second, time.Second))
 		)
 
@@ -2394,7 +2518,7 @@ func TestPartitionReader_fetchLastCommittedOffset(t *testing.T) {
 
 		var (
 			cluster, clusterAddr = testkafka.CreateClusterWithoutCustomConsumerGroupsSupport(t, partitionID+1, topicName)
-			consumer             = consumerFunc(func(context.Context, []record) error { return nil })
+			consumer             = consumerFunc(func(context.Context, iter.Seq[*kgo.Record]) error { return nil })
 			reader               = createReader(t, clusterAddr, topicName, partitionID, consumer, withTargetAndMaxConsumerLagAtStartup(time.Second, time.Second))
 		)
 
@@ -2435,7 +2559,7 @@ func TestPartitionReader_fetchLastCommittedOffset(t *testing.T) {
 
 		var (
 			cluster, clusterAddr = testkafka.CreateClusterWithoutCustomConsumerGroupsSupport(t, partitionID+1, topicName)
-			consumer             = consumerFunc(func(context.Context, []record) error { return nil })
+			consumer             = consumerFunc(func(context.Context, iter.Seq[*kgo.Record]) error { return nil })
 			reader               = createReader(t, clusterAddr, topicName, partitionID, consumer, withTargetAndMaxConsumerLagAtStartup(time.Second, time.Second))
 		)
 
@@ -2651,13 +2775,25 @@ func TestPartitionCommitter_commit(t *testing.T) {
 	})
 }
 
-func newKafkaProduceClient(t *testing.T, addrs string) *kgo.Client {
+type writerTestCfgOpt func(cfg *KafkaConfig)
+
+func withWriteTimeout(timeout time.Duration) writerTestCfgOpt {
+	return func(cfg *KafkaConfig) {
+		cfg.WriteTimeout = timeout
+	}
+}
+
+func newKafkaProduceClient(t *testing.T, addrs string, opts ...writerTestCfgOpt) *kgo.Client {
 	// Configure it close to the writer client we use in the real producers, but
 	// do not configure the linger to keep tests running fast.
 	cfg := KafkaConfig{}
 	flagext.DefaultValues(&cfg)
 	cfg.Address = addrs
 	cfg.disableLinger = true
+
+	for _, opt := range opts {
+		opt(&cfg)
+	}
 
 	writeClient, err := NewKafkaWriterClient(cfg, defaultMaxInflightProduceRequests, testingLogger.WithT(t), prometheus.NewPedanticRegistry())
 
@@ -2687,6 +2823,16 @@ func produceRecord(ctx context.Context, t *testing.T, writeClient *kgo.Client, t
 
 func produceRecordWithVersion(ctx context.Context, t *testing.T, writeClient *kgo.Client, topicName string, partitionID int32, content []byte, version int) int64 {
 	rec := createRecord(topicName, partitionID, content, version)
+	produceResult := writeClient.ProduceSync(ctx, rec)
+	require.NoError(t, produceResult.FirstErr())
+
+	return rec.Offset
+}
+
+func produceRecordWithTimestamp(ctx context.Context, t *testing.T, writeClient *kgo.Client, topicName string, partitionID int32, content []byte, timestamp time.Time) int64 {
+	rec := createRecord(topicName, partitionID, content, 1)
+	rec.Timestamp = timestamp
+
 	produceResult := writeClient.ProduceSync(ctx, rec)
 	require.NoError(t, produceResult.FirstErr())
 
@@ -2778,19 +2924,19 @@ func withMaxBufferedBytes(i int) readerTestCfgOpt {
 
 var testingLogger = mimirtest.NewTestingLogger(nil)
 
-func defaultReaderTestConfig(t *testing.T, addr string, topicName string, partitionID int32, consumer recordConsumer) *readerTestCfg {
+func defaultReaderTestConfig(t *testing.T, addr string, topicName string, partitionID int32, consumer RecordConsumer) *readerTestCfg {
 	return &readerTestCfg{
 		registry:    prometheus.NewPedanticRegistry(),
 		logger:      testingLogger.WithT(t),
 		kafka:       createTestKafkaConfig(addr, topicName),
 		partitionID: partitionID,
-		consumer: consumerFactoryFunc(func() recordConsumer {
+		consumer: consumerFactoryFunc(func() RecordConsumer {
 			return consumer
 		}),
 	}
 }
 
-func createReader(t *testing.T, addr string, topicName string, partitionID int32, consumer recordConsumer, opts ...readerTestCfgOpt) *PartitionReader {
+func createReader(t *testing.T, addr string, topicName string, partitionID int32, consumer RecordConsumer, opts ...readerTestCfgOpt) *PartitionReader {
 	cfg := defaultReaderTestConfig(t, addr, topicName, partitionID, consumer)
 	for _, o := range opts {
 		o(cfg)
@@ -2817,7 +2963,7 @@ func createReader(t *testing.T, addr string, topicName string, partitionID int32
 	return reader
 }
 
-func createAndStartReader(ctx context.Context, t *testing.T, addr string, topicName string, partitionID int32, consumer recordConsumer, opts ...readerTestCfgOpt) *PartitionReader {
+func createAndStartReader(ctx context.Context, t *testing.T, addr string, topicName string, partitionID int32, consumer RecordConsumer, opts ...readerTestCfgOpt) *PartitionReader {
 	reader := createReader(t, addr, topicName, partitionID, consumer, opts...)
 
 	require.NoError(t, services.StartAndAwaitRunning(ctx, reader))
@@ -2932,17 +3078,17 @@ func TestPartitionReader_Commit(t *testing.T) {
 }
 
 type testConsumer struct {
-	records chan record
+	records chan *kgo.Record
 }
 
 func newTestConsumer(capacity int) testConsumer {
 	return testConsumer{
-		records: make(chan record, capacity),
+		records: make(chan *kgo.Record, capacity),
 	}
 }
 
-func (t testConsumer) Consume(ctx context.Context, records []record) error {
-	for _, r := range records {
+func (t testConsumer) Consume(ctx context.Context, records iter.Seq[*kgo.Record]) error {
+	for r := range records {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
@@ -2961,13 +3107,13 @@ func (t testConsumer) waitRecords(numRecords int, waitTimeout, drainPeriod time.
 	recs, err := t.waitRecordsAndMetadata(numRecords, waitTimeout, drainPeriod)
 	var content [][]byte
 	for _, rec := range recs {
-		content = append(content, rec.content)
+		content = append(content, rec.Value)
 	}
 	return content, err
 }
 
-func (t testConsumer) waitRecordsAndMetadata(numRecords int, waitTimeout, drainPeriod time.Duration) ([]record, error) {
-	var records []record
+func (t testConsumer) waitRecordsAndMetadata(numRecords int, waitTimeout, drainPeriod time.Duration) ([]*kgo.Record, error) {
+	var records []*kgo.Record
 	timeout := time.After(waitTimeout)
 	for {
 		select {
@@ -2989,9 +3135,9 @@ func (t testConsumer) waitRecordsAndMetadata(numRecords int, waitTimeout, drainP
 	}
 }
 
-type consumerFunc func(ctx context.Context, records []record) error
+type consumerFunc func(ctx context.Context, records iter.Seq[*kgo.Record]) error
 
-func (c consumerFunc) Consume(ctx context.Context, records []record) error {
+func (c consumerFunc) Consume(ctx context.Context, records iter.Seq[*kgo.Record]) error {
 	return c(ctx, records)
 }
 

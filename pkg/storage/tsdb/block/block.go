@@ -102,32 +102,33 @@ func Download(ctx context.Context, logger log.Logger, bucket objstore.Bucket, id
 	return nil
 }
 
-// Upload uploads a TSDB block to the object storage. Notes:
+// Upload uploads a TSDB block to the object storage and returns the block's metadata.
 //
-// - If meta parameter is supplied (not nil), then uploaded meta.json file reflects meta parameter. However local
-// meta.json file must still exist.
-//
-// - Meta struct is updated with gatherFileStats
-func Upload(ctx context.Context, logger log.Logger, bkt objstore.Bucket, blockDir string, meta *Meta, opts ...objstore.UploadOption) error {
+// Notes:
+// - If meta parameter is supplied (not nil), then uploaded meta.json file reflects meta parameter. However local meta.json file must still exist.
+// - If meta parameter is nil, metadata is read from the local meta.json file.
+// - The Meta struct is updated with file stats gathered from the block directory.
+// - If meta parameter is supplied (not nil), then returned *Meta points to the same object as the meta parameter.
+func Upload(ctx context.Context, logger log.Logger, bkt objstore.Bucket, blockDir string, meta *Meta, opts ...objstore.UploadOption) (*Meta, error) {
 	df, err := os.Stat(blockDir)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if !df.IsDir() {
-		return errors.Errorf("%s is not a directory", blockDir)
+		return nil, errors.Errorf("%s is not a directory", blockDir)
 	}
 
 	// Verify dir.
 	id, err := ulid.Parse(df.Name())
 	if err != nil {
-		return errors.Wrap(err, "not a block dir")
+		return nil, errors.Wrap(err, "not a block dir")
 	}
 
 	if meta == nil {
 		meta, err = ReadMetaFromDir(blockDir)
 		if err != nil {
 			// No meta or broken meta file.
-			return errors.Wrap(err, "read meta")
+			return nil, errors.Wrap(err, "read meta")
 		}
 	}
 
@@ -135,43 +136,51 @@ func Upload(ctx context.Context, logger log.Logger, bkt objstore.Bucket, blockDi
 	// not updated Meta struct.
 	meta.Thanos.Files, err = GatherFileStats(blockDir)
 	if err != nil {
-		return errors.Wrap(err, "gather meta file stats")
+		return nil, errors.Wrap(err, "gather meta file stats")
 	}
 
 	metaEncoded := strings.Builder{}
 	if err := meta.Write(&metaEncoded); err != nil {
-		return errors.Wrap(err, "encode meta file")
+		return nil, errors.Wrap(err, "encode meta file")
 	}
 
 	// upload TSDB block segments and block index concurrently
 	eg, uctx := errgroup.WithContext(ctx)
 	eg.Go(func() (err error) {
 		if err := objstore.UploadDir(uctx, logger, bkt, filepath.Join(blockDir, ChunksDirname), path.Join(id.String(), ChunksDirname), opts...); err != nil {
-			return UploadError{err, FileTypeChunks}
+			return &UploadError{err, FileTypeChunks}
 		}
 		return nil
 	})
 
 	eg.Go(func() (err error) {
 		if err := objstore.UploadFile(uctx, logger, bkt, filepath.Join(blockDir, IndexFilename), path.Join(id.String(), IndexFilename)); err != nil {
-			return UploadError{err, FileTypeIndex}
+			return &UploadError{err, FileTypeIndex}
 		}
 		return nil
 	})
 
-	if err := eg.Wait(); err != nil {
-		return cleanUp(logger, bkt, id, err)
+	hasSparseHeaderInfo := false
+	for _, f := range meta.Thanos.Files {
+		if f.RelPath == SparseIndexHeaderFilename {
+			hasSparseHeaderInfo = true
+			break
+		}
 	}
 
-	var oerr error
-	src := filepath.Join(blockDir, SparseIndexHeaderFilename)
-	dst := filepath.Join(id.String(), SparseIndexHeaderFilename)
-	if _, err := os.Stat(src); err == nil {
-		if err := objstore.UploadFile(ctx, logger, bkt, src, dst); err != nil {
-			// Don't call cleanUp. Uploading sparse index headers is best effort.
-			level.Warn(logger).Log("msg", "failed to upload sparse index headers", "block", id.String(), "err", err)
-			oerr = UploadError{err, FileTypeSparseIndexHeader}
-		}
+	if hasSparseHeaderInfo {
+		eg.Go(func() (err error) {
+			if err := objstore.UploadFile(uctx, logger, bkt, filepath.Join(blockDir, SparseIndexHeaderFilename), path.Join(id.String(), SparseIndexHeaderFilename)); err != nil {
+				return &UploadError{err, FileTypeSparseIndexHeader}
+			}
+			return nil
+		})
+	} else {
+		level.Debug(logger).Log("msg", "sparse index header entry not found, skipping upload", "block", id.String())
+	}
+
+	if err := eg.Wait(); err != nil {
+		return nil, cleanUp(logger, bkt, id, err)
 	}
 
 	// Meta.json always need to be uploaded as a last item. This will allow to assume block directories without meta file to be pending uploads.
@@ -180,16 +189,16 @@ func Upload(ctx context.Context, logger log.Logger, bkt objstore.Bucket, blockDi
 		// and even though cleanUp will not see it yet, meta.json may appear in the bucket later.
 		// (Eg. S3 is known to behave this way when it returns 503 "SlowDown" error).
 		// If meta.json is not uploaded, this will produce partial blocks, but such blocks will be cleaned later.
-		return UploadError{err, FileTypeMeta}
+		return nil, &UploadError{err, FileTypeMeta}
 	}
-	return oerr
+	return meta, nil
 }
 
 func cleanUp(logger log.Logger, bkt objstore.Bucket, id ulid.ULID, origErr error) error {
 	// Cleanup the dir with an uncancelable context.
 	cleanErr := Delete(context.Background(), logger, bkt, id)
 	if cleanErr != nil {
-		return errors.Wrapf(origErr, "failed to clean block after upload issue. Partial block in system. Err: %s", cleanErr.Error())
+		return fmt.Errorf("failed to clean block after upload issue. Partial block in system. Err: %s: %w", cleanErr.Error(), origErr)
 	}
 	return origErr
 }
@@ -364,6 +373,17 @@ func GatherFileStats(blockDir string) (res []File, _ error) {
 		SizeBytes: indexFile.Size(),
 	}
 	res = append(res, mf)
+
+	// sparse index headers are optional, ingester does not compute them while the compactor does
+	// not adding sparse header entry if file does not exist, Upload of sparse index header is skipped in this case
+	sparseHeaderInfo, err := os.Stat(filepath.Join(blockDir, SparseIndexHeaderFilename))
+	if err != nil {
+		if !os.IsNotExist(err) {
+			return nil, errors.Wrapf(err, "stat %v", filepath.Join(blockDir, SparseIndexHeaderFilename))
+		}
+	} else {
+		res = append(res, File{RelPath: sparseHeaderInfo.Name(), SizeBytes: sparseHeaderInfo.Size()})
+	}
 
 	metaFile, err := os.Stat(filepath.Join(blockDir, MetaFilename))
 	if err != nil {

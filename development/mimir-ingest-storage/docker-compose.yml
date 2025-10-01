@@ -1,4 +1,129 @@
 "services":
+  "alertmanager-1":
+    "build":
+      "context": "."
+      "dockerfile": "dev.dockerfile"
+    "command":
+      - "sh"
+      - "-c"
+      - "exec ./mimir -config.file=./config/mimir.yaml -target=alertmanager -activity-tracker.filepath=/activity/alertmanager-1 -alertmanager.web.external-url=http://localhost:8041/alertmanager"
+    "depends_on":
+      "kafka_1":
+        "condition": "service_healthy"
+      "kafka_2":
+        "condition": "service_healthy"
+      "minio":
+        "condition": "service_started"
+    "environment":
+      - "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://tempo:4318/v1/traces"
+    "hostname": "alertmanager-1"
+    "image": "mimir"
+    "ports":
+      - "8041:8080"
+      - "11041:11041"
+    "volumes":
+      - "./config:/mimir/config"
+      - "./activity:/activity"
+  "block-builder-0":
+    "build":
+      "context": "."
+      "dockerfile": "dev.dockerfile"
+    "command":
+      - "sh"
+      - "-c"
+      - "exec ./mimir -config.file=./config/mimir.yaml -target=block-builder -activity-tracker.filepath=/activity/block-builder-0"
+    "depends_on":
+      "kafka_1":
+        "condition": "service_healthy"
+      "kafka_2":
+        "condition": "service_healthy"
+      "minio":
+        "condition": "service_started"
+    "environment":
+      - "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://tempo:4318/v1/traces"
+    "hostname": "block-builder-0"
+    "image": "mimir"
+    "ports":
+      - "8009:8080"
+      - "11009:11009"
+    "volumes":
+      - "./config:/mimir/config"
+      - "./activity:/activity"
+  "block-builder-scheduler-0":
+    "build":
+      "context": "."
+      "dockerfile": "dev.dockerfile"
+    "command":
+      - "sh"
+      - "-c"
+      - "exec ./mimir -config.file=./config/mimir.yaml -target=block-builder-scheduler -activity-tracker.filepath=/activity/block-builder-scheduler-0"
+    "depends_on":
+      "kafka_1":
+        "condition": "service_healthy"
+      "kafka_2":
+        "condition": "service_healthy"
+      "minio":
+        "condition": "service_started"
+    "environment":
+      - "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://tempo:4318/v1/traces"
+    "hostname": "block-builder-scheduler-0"
+    "image": "mimir"
+    "ports":
+      - "8010:8080"
+      - "11010:11010"
+    "volumes":
+      - "./config:/mimir/config"
+      - "./activity:/activity"
+  "compactor":
+    "build":
+      "context": "."
+      "dockerfile": "dev.dockerfile"
+    "command":
+      - "sh"
+      - "-c"
+      - "exec ./mimir -config.file=./config/mimir.yaml -target=compactor -activity-tracker.filepath=/activity/compactor"
+    "depends_on":
+      "kafka_1":
+        "condition": "service_healthy"
+      "kafka_2":
+        "condition": "service_healthy"
+      "minio":
+        "condition": "service_started"
+    "environment":
+      - "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://tempo:4318/v1/traces"
+    "hostname": "compactor"
+    "image": "mimir"
+    "ports":
+      - "8006:8080"
+      - "11006:11006"
+    "volumes":
+      - "./config:/mimir/config"
+      - "./activity:/activity"
+  "distributor-1":
+    "build":
+      "context": "."
+      "dockerfile": "dev.dockerfile"
+    "command":
+      - "sh"
+      - "-c"
+      - "exec ./mimir -config.file=./config/mimir.yaml -target=distributor -activity-tracker.filepath=/activity/distributor-1"
+    "depends_on":
+      "kafka_1":
+        "condition": "service_healthy"
+      "kafka_2":
+        "condition": "service_healthy"
+      "minio":
+        "condition": "service_started"
+    "environment":
+      - "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://tempo:4318/v1/traces"
+    "hostname": "distributor-1"
+    "image": "mimir"
+    "ports":
+      - "8000:8080"
+      - "11000:11000"
+    "volumes":
+      - "./config:/mimir/config"
+      - "./activity:/activity"
   "grafana":
     "environment":
       - "GF_AUTH_ANONYMOUS_ENABLED=true"
@@ -23,6 +148,58 @@
       - "9091:9091"
     "volumes":
       - "./config:/etc/agent-config"
+  "ingester-zone-a-1":
+    "build":
+      "context": "."
+      "dockerfile": "dev.dockerfile"
+    "command":
+      - "sh"
+      - "-c"
+      - "exec ./mimir -config.file=./config/mimir.yaml -target=ingester -activity-tracker.filepath=/activity/ingester-zone-a-1 -ingester.ring.instance-availability-zone=zone-a"
+    "depends_on":
+      "kafka_1":
+        "condition": "service_healthy"
+      "kafka_2":
+        "condition": "service_healthy"
+      "minio":
+        "condition": "service_started"
+    "environment":
+      - "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://tempo:4318/v1/traces"
+    "hostname": "ingester-zone-a-1"
+    "image": "mimir"
+    "ports":
+      - "8002:8080"
+      - "11002:11002"
+    "volumes":
+      - "./config:/mimir/config"
+      - "./activity:/activity"
+      - ".data-ingester-zone-a-1:/data:delegated"
+  "ingester-zone-b-1":
+    "build":
+      "context": "."
+      "dockerfile": "dev.dockerfile"
+    "command":
+      - "sh"
+      - "-c"
+      - "exec ./mimir -config.file=./config/mimir.yaml -target=ingester -activity-tracker.filepath=/activity/ingester-zone-b-1 -ingester.ring.instance-availability-zone=zone-b"
+    "depends_on":
+      "kafka_1":
+        "condition": "service_healthy"
+      "kafka_2":
+        "condition": "service_healthy"
+      "minio":
+        "condition": "service_started"
+    "environment":
+      - "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://tempo:4318/v1/traces"
+    "hostname": "ingester-zone-b-1"
+    "image": "mimir"
+    "ports":
+      - "8003:8080"
+      - "11003:11003"
+    "volumes":
+      - "./config:/mimir/config"
+      - "./activity:/activity"
+      - ".data-ingester-zone-b-1:/data:delegated"
   "kafka_1":
     "environment":
       - "CLUSTER_ID=zH1GDqcNTzGMDCXm5VZQdg"
@@ -97,260 +274,6 @@
       - "29094:29094"
   "memcached":
     "image": "memcached:1.6.19-alpine"
-  "mimir-backend-0":
-    "build":
-      "context": "."
-      "dockerfile": "dev.dockerfile"
-    "command":
-      - "sh"
-      - "-c"
-      - "exec ./mimir -config.file=./config/mimir.yaml -target=backend -activity-tracker.filepath=/activity/mimir-backend-0"
-    "depends_on":
-      "kafka_1":
-        "condition": "service_healthy"
-      "kafka_2":
-        "condition": "service_healthy"
-      "minio":
-        "condition": "service_started"
-    "environment":
-      - "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://tempo:4318/v1/traces"
-    "hostname": "mimir-backend-0"
-    "image": "mimir"
-    "ports":
-      - "8006:8080"
-      - "11006:11006"
-    "volumes":
-      - "./config:/mimir/config"
-      - "./activity:/activity"
-  "mimir-backend-1":
-    "build":
-      "context": "."
-      "dockerfile": "dev.dockerfile"
-    "command":
-      - "sh"
-      - "-c"
-      - "exec ./mimir -config.file=./config/mimir.yaml -target=backend -activity-tracker.filepath=/activity/mimir-backend-1"
-    "depends_on":
-      "kafka_1":
-        "condition": "service_healthy"
-      "kafka_2":
-        "condition": "service_healthy"
-      "minio":
-        "condition": "service_started"
-    "environment":
-      - "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://tempo:4318/v1/traces"
-    "hostname": "mimir-backend-1"
-    "image": "mimir"
-    "ports":
-      - "8007:8080"
-      - "11007:11007"
-    "volumes":
-      - "./config:/mimir/config"
-      - "./activity:/activity"
-  "mimir-block-builder-0":
-    "build":
-      "context": "."
-      "dockerfile": "dev.dockerfile"
-    "command":
-      - "sh"
-      - "-c"
-      - "exec ./mimir -config.file=./config/mimir.yaml -target=block-builder -activity-tracker.filepath=/activity/mimir-block-builder-0"
-    "depends_on":
-      "kafka_1":
-        "condition": "service_healthy"
-      "kafka_2":
-        "condition": "service_healthy"
-      "minio":
-        "condition": "service_started"
-    "environment":
-      - "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://tempo:4318/v1/traces"
-    "hostname": "mimir-block-builder-0"
-    "image": "mimir"
-    "ports":
-      - "8008:8080"
-      - "11008:11008"
-    "volumes":
-      - "./config:/mimir/config"
-      - "./activity:/activity"
-  "mimir-block-builder-scheduler-0":
-    "build":
-      "context": "."
-      "dockerfile": "dev.dockerfile"
-    "command":
-      - "sh"
-      - "-c"
-      - "exec ./mimir -config.file=./config/mimir.yaml -target=block-builder-scheduler -activity-tracker.filepath=/activity/mimir-block-builder-scheduler-0"
-    "depends_on":
-      "kafka_1":
-        "condition": "service_healthy"
-      "kafka_2":
-        "condition": "service_healthy"
-      "minio":
-        "condition": "service_started"
-    "environment":
-      - "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://tempo:4318/v1/traces"
-    "hostname": "mimir-block-builder-scheduler-0"
-    "image": "mimir"
-    "ports":
-      - "8019:8080"
-      - "11019:11019"
-    "volumes":
-      - "./config:/mimir/config"
-      - "./activity:/activity"
-  "mimir-read-0":
-    "build":
-      "context": "."
-      "dockerfile": "dev.dockerfile"
-    "command":
-      - "sh"
-      - "-c"
-      - "exec ./mimir -config.file=./config/mimir.yaml -target=read -activity-tracker.filepath=/activity/mimir-read-0"
-    "depends_on":
-      "kafka_1":
-        "condition": "service_healthy"
-      "kafka_2":
-        "condition": "service_healthy"
-      "minio":
-        "condition": "service_started"
-    "environment":
-      - "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://tempo:4318/v1/traces"
-    "hostname": "mimir-read-0"
-    "image": "mimir"
-    "ports":
-      - "8004:8080"
-      - "11004:11004"
-    "volumes":
-      - "./config:/mimir/config"
-      - "./activity:/activity"
-  "mimir-read-1":
-    "build":
-      "context": "."
-      "dockerfile": "dev.dockerfile"
-    "command":
-      - "sh"
-      - "-c"
-      - "exec ./mimir -config.file=./config/mimir.yaml -target=read -activity-tracker.filepath=/activity/mimir-read-1"
-    "depends_on":
-      "kafka_1":
-        "condition": "service_healthy"
-      "kafka_2":
-        "condition": "service_healthy"
-      "minio":
-        "condition": "service_started"
-    "environment":
-      - "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://tempo:4318/v1/traces"
-    "hostname": "mimir-read-1"
-    "image": "mimir"
-    "ports":
-      - "8005:8080"
-      - "11005:11005"
-    "volumes":
-      - "./config:/mimir/config"
-      - "./activity:/activity"
-  "mimir-write-zone-a-0":
-    "build":
-      "context": "."
-      "dockerfile": "dev.dockerfile"
-    "command":
-      - "sh"
-      - "-c"
-      - "exec ./mimir -config.file=./config/mimir.yaml -target=write -activity-tracker.filepath=/activity/mimir-write-zone-a-0 -ingester.ring.instance-availability-zone=zone-a"
-    "depends_on":
-      "kafka_1":
-        "condition": "service_healthy"
-      "kafka_2":
-        "condition": "service_healthy"
-      "minio":
-        "condition": "service_started"
-    "environment":
-      - "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://tempo:4318/v1/traces"
-    "hostname": "mimir-write-zone-a-0"
-    "image": "mimir"
-    "ports":
-      - "8001:8080"
-      - "11001:11001"
-    "volumes":
-      - "./config:/mimir/config"
-      - "./activity:/activity"
-      - ".data-mimir-write-zone-a-0:/data:delegated"
-  "mimir-write-zone-a-1":
-    "build":
-      "context": "."
-      "dockerfile": "dev.dockerfile"
-    "command":
-      - "sh"
-      - "-c"
-      - "exec ./mimir -config.file=./config/mimir.yaml -target=write -activity-tracker.filepath=/activity/mimir-write-zone-a-1 -ingester.ring.instance-availability-zone=zone-a"
-    "depends_on":
-      "kafka_1":
-        "condition": "service_healthy"
-      "kafka_2":
-        "condition": "service_healthy"
-      "minio":
-        "condition": "service_started"
-    "environment":
-      - "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://tempo:4318/v1/traces"
-    "hostname": "mimir-write-zone-a-1"
-    "image": "mimir"
-    "ports":
-      - "8002:8080"
-      - "11002:11002"
-    "volumes":
-      - "./config:/mimir/config"
-      - "./activity:/activity"
-      - ".data-mimir-write-zone-a-1:/data:delegated"
-  "mimir-write-zone-a-2":
-    "build":
-      "context": "."
-      "dockerfile": "dev.dockerfile"
-    "command":
-      - "sh"
-      - "-c"
-      - "exec ./mimir -config.file=./config/mimir.yaml -target=write -activity-tracker.filepath=/activity/mimir-write-zone-a-2 -ingester.ring.instance-availability-zone=zone-a"
-    "depends_on":
-      "kafka_1":
-        "condition": "service_healthy"
-      "kafka_2":
-        "condition": "service_healthy"
-      "minio":
-        "condition": "service_started"
-    "environment":
-      - "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://tempo:4318/v1/traces"
-    "hostname": "mimir-write-zone-a-2"
-    "image": "mimir"
-    "ports":
-      - "8003:8080"
-      - "11003:11003"
-    "volumes":
-      - "./config:/mimir/config"
-      - "./activity:/activity"
-      - ".data-mimir-write-zone-a-2:/data:delegated"
-  "mimir-write-zone-c-61":
-    "build":
-      "context": "."
-      "dockerfile": "dev.dockerfile"
-    "command":
-      - "sh"
-      - "-c"
-      - "exec ./mimir -config.file=./config/mimir.yaml -target=ingester -activity-tracker.filepath=/activity/mimir-write-zone-c-61 -ingester.ring.instance-availability-zone=zone-c -ingester.ring.instance-id=ingester-zone-c-61 -ingester.partition-ring.prefix=exclusive-prefix -ingester.ring.prefix=exclusive-prefix -ingest-storage.kafka.consume-from-position-at-startup=end -ingest-storage.kafka.consume-from-timestamp-at-startup=0 -ingest-storage.kafka.fetch-concurrency-max=2 -ingest-storage.kafka.ingestion-concurrency-max=2 -ingest-storage.kafka.ingestion-concurrency-batch-size=150"
-    "depends_on":
-      "kafka_1":
-        "condition": "service_healthy"
-      "kafka_2":
-        "condition": "service_healthy"
-      "minio":
-        "condition": "service_started"
-    "environment":
-      - "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://tempo:4318/v1/traces"
-    "hostname": "mimir-write-zone-c-61"
-    "image": "mimir"
-    "ports":
-      - "8064:8080"
-      - "11064:11064"
-    "volumes":
-      - "./config:/mimir/config"
-      - "./activity:/activity"
-      - ".data-mimir-write-zone-c-61:/data:delegated"
   "minio":
     "command":
       - "server"
@@ -367,25 +290,157 @@
     "volumes":
       - ".data-minio:/data:delegated"
   "nginx":
+    "depends_on":
+      - "ingester-zone-a-1"
+      - "alertmanager-1"
+      - "ruler-1"
+      - "query-frontend"
+      - "compactor"
+      - "grafana"
     "environment":
       - "NGINX_ENVSUBST_OUTPUT_DIR=/etc/nginx"
-      - "DISTRIBUTOR_HOST=mimir-write-1:8080"
-      - "ALERT_MANAGER_HOST=mimir-backend-1:8080"
-      - "RULER_HOST=mimir-backend-1:8080"
-      - "QUERY_FRONTEND_HOST=mimir-read-1:8080"
-      - "COMPACTOR_HOST=mimir-backend-1:8080"
+      - "DISTRIBUTOR_HOST=ingester-zone-a-1:8080"
+      - "ALERT_MANAGER_HOST=alertmanager-1:8080"
+      - "RULER_HOST=ruler-1:8080"
+      - "QUERY_FRONTEND_HOST=query-frontend:8080"
+      - "COMPACTOR_HOST=compactor:8080"
     "hostname": "nginx"
     "image": "nginxinc/nginx-unprivileged:1.22-alpine"
     "ports":
       - "8080:8080"
     "volumes":
       - "../common/config:/etc/nginx/templates"
+  "querier":
+    "build":
+      "context": "."
+      "dockerfile": "dev.dockerfile"
+    "command":
+      - "sh"
+      - "-c"
+      - "exec ./mimir -config.file=./config/mimir.yaml -target=querier -activity-tracker.filepath=/activity/querier"
+    "depends_on":
+      "kafka_1":
+        "condition": "service_healthy"
+      "kafka_2":
+        "condition": "service_healthy"
+      "minio":
+        "condition": "service_started"
+    "environment":
+      - "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://tempo:4318/v1/traces"
+    "hostname": "querier"
+    "image": "mimir"
+    "ports":
+      - "8005:8080"
+      - "11005:11005"
+    "volumes":
+      - "./config:/mimir/config"
+      - "./activity:/activity"
+  "query-frontend":
+    "build":
+      "context": "."
+      "dockerfile": "dev.dockerfile"
+    "command":
+      - "sh"
+      - "-c"
+      - "exec ./mimir -config.file=./config/mimir.yaml -target=query-frontend -activity-tracker.filepath=/activity/query-frontend"
+    "depends_on":
+      "kafka_1":
+        "condition": "service_healthy"
+      "kafka_2":
+        "condition": "service_healthy"
+      "minio":
+        "condition": "service_started"
+    "environment":
+      - "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://tempo:4318/v1/traces"
+    "hostname": "query-frontend"
+    "image": "mimir"
+    "ports":
+      - "8007:8080"
+      - "11007:11007"
+    "volumes":
+      - "./config:/mimir/config"
+      - "./activity:/activity"
+  "query-scheduler":
+    "build":
+      "context": "."
+      "dockerfile": "dev.dockerfile"
+    "command":
+      - "sh"
+      - "-c"
+      - "exec ./mimir -config.file=./config/mimir.yaml -target=query-scheduler -activity-tracker.filepath=/activity/query-scheduler"
+    "depends_on":
+      "kafka_1":
+        "condition": "service_healthy"
+      "kafka_2":
+        "condition": "service_healthy"
+      "minio":
+        "condition": "service_started"
+    "environment":
+      - "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://tempo:4318/v1/traces"
+    "hostname": "query-scheduler"
+    "image": "mimir"
+    "ports":
+      - "8008:8080"
+      - "11008:11008"
+    "volumes":
+      - "./config:/mimir/config"
+      - "./activity:/activity"
   "redpanda_console":
     "environment":
       - "KAFKA_BROKERS=kafka_1:9092,kafka_2:9092,kafka_3:9092"
     "image": "docker.redpanda.com/redpandadata/console:latest"
     "ports":
       - "8090:8080"
+  "ruler-1":
+    "build":
+      "context": "."
+      "dockerfile": "dev.dockerfile"
+    "command":
+      - "sh"
+      - "-c"
+      - "exec ./mimir -config.file=./config/mimir.yaml -target=ruler -activity-tracker.filepath=/activity/ruler-1"
+    "depends_on":
+      "kafka_1":
+        "condition": "service_healthy"
+      "kafka_2":
+        "condition": "service_healthy"
+      "minio":
+        "condition": "service_started"
+    "environment":
+      - "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://tempo:4318/v1/traces"
+    "hostname": "ruler-1"
+    "image": "mimir"
+    "ports":
+      - "8032:8080"
+      - "11032:11032"
+    "volumes":
+      - "./config:/mimir/config"
+      - "./activity:/activity"
+  "store-gateway-1":
+    "build":
+      "context": "."
+      "dockerfile": "dev.dockerfile"
+    "command":
+      - "sh"
+      - "-c"
+      - "exec ./mimir -config.file=./config/mimir.yaml -target=store-gateway -activity-tracker.filepath=/activity/store-gateway-1"
+    "depends_on":
+      "kafka_1":
+        "condition": "service_healthy"
+      "kafka_2":
+        "condition": "service_healthy"
+      "minio":
+        "condition": "service_started"
+    "environment":
+      - "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://tempo:4318/v1/traces"
+    "hostname": "store-gateway-1"
+    "image": "mimir"
+    "ports":
+      - "8021:8080"
+      - "11021:11021"
+    "volumes":
+      - "./config:/mimir/config"
+      - "./activity:/activity"
   "tempo":
     "command":
       - "-config.file=/etc/config/tempo.yaml"
@@ -397,3 +452,78 @@
       - "4318"
     "volumes":
       - "./config:/etc/config"
+  "usage-tracker-zone-a-0":
+    "build":
+      "context": "."
+      "dockerfile": "dev.dockerfile"
+    "command":
+      - "sh"
+      - "-c"
+      - "exec ./mimir -config.file=./config/mimir.yaml -target=usage-tracker -activity-tracker.filepath=/activity/usage-tracker-zone-a-0 -usage-tracker.instance-ring.instance-availability-zone=zone-a -usage-tracker.partitions=16 -usage-tracker.partition-reconcile-interval=10s -usage-tracker.lost-partitions-shutdown-grace-period=30s"
+    "depends_on":
+      "kafka_1":
+        "condition": "service_healthy"
+      "kafka_2":
+        "condition": "service_healthy"
+      "minio":
+        "condition": "service_started"
+    "environment":
+      - "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://tempo:4318/v1/traces"
+    "hostname": "usage-tracker-zone-a-0"
+    "image": "mimir"
+    "ports":
+      - "8011:8080"
+      - "11011:11011"
+    "volumes":
+      - "./config:/mimir/config"
+      - "./activity:/activity"
+  "usage-tracker-zone-a-1":
+    "build":
+      "context": "."
+      "dockerfile": "dev.dockerfile"
+    "command":
+      - "sh"
+      - "-c"
+      - "exec ./mimir -config.file=./config/mimir.yaml -target=usage-tracker -activity-tracker.filepath=/activity/usage-tracker-zone-a-1 -usage-tracker.instance-ring.instance-availability-zone=zone-a -usage-tracker.partitions=16 -usage-tracker.partition-reconcile-interval=10s -usage-tracker.lost-partitions-shutdown-grace-period=30s"
+    "depends_on":
+      "kafka_1":
+        "condition": "service_healthy"
+      "kafka_2":
+        "condition": "service_healthy"
+      "minio":
+        "condition": "service_started"
+    "environment":
+      - "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://tempo:4318/v1/traces"
+    "hostname": "usage-tracker-zone-a-1"
+    "image": "mimir"
+    "ports":
+      - "8012:8080"
+      - "11012:11012"
+    "volumes":
+      - "./config:/mimir/config"
+      - "./activity:/activity"
+  "usage-tracker-zone-b-0":
+    "build":
+      "context": "."
+      "dockerfile": "dev.dockerfile"
+    "command":
+      - "sh"
+      - "-c"
+      - "exec ./mimir -config.file=./config/mimir.yaml -target=usage-tracker -activity-tracker.filepath=/activity/usage-tracker-zone-b-0 -usage-tracker.instance-ring.instance-availability-zone=zone-b -usage-tracker.partitions=16 -usage-tracker.partition-reconcile-interval=10s -usage-tracker.lost-partitions-shutdown-grace-period=30s"
+    "depends_on":
+      "kafka_1":
+        "condition": "service_healthy"
+      "kafka_2":
+        "condition": "service_healthy"
+      "minio":
+        "condition": "service_started"
+    "environment":
+      - "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://tempo:4318/v1/traces"
+    "hostname": "usage-tracker-zone-b-0"
+    "image": "mimir"
+    "ports":
+      - "8013:8080"
+      - "11013:11013"
+    "volumes":
+      - "./config:/mimir/config"
+      - "./activity:/activity"

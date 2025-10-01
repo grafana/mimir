@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-kit/log"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
@@ -625,10 +626,10 @@ func TestOneToOneVectorVectorBinaryOperation_ClosesInnerOperatorsAsSoonAsPossibl
 			left := &operators.TestOperator{Series: testCase.leftSeries, Data: make([]types.InstantVectorSeriesData, len(testCase.leftSeries)), MemoryConsumptionTracker: memoryConsumptionTracker}
 			right := &operators.TestOperator{Series: testCase.rightSeries, Data: make([]types.InstantVectorSeriesData, len(testCase.rightSeries)), MemoryConsumptionTracker: memoryConsumptionTracker}
 			vectorMatching := parser.VectorMatching{On: true, MatchingLabels: []string{"group"}}
-			o, err := NewOneToOneVectorVectorBinaryOperation(left, right, vectorMatching, parser.ADD, false, memoryConsumptionTracker, annotations.New(), posrange.PositionRange{}, timeRange)
+			o, err := NewOneToOneVectorVectorBinaryOperation(left, right, vectorMatching, parser.ADD, false, memoryConsumptionTracker, annotations.New(), posrange.PositionRange{}, timeRange, nil, log.NewNopLogger())
 			require.NoError(t, err)
 
-			outputSeries, err := o.SeriesMetadata(ctx)
+			outputSeries, err := o.SeriesMetadata(ctx, nil)
 			require.NoError(t, err)
 
 			if len(testCase.expectedOutputSeries) == 0 {
@@ -638,14 +639,18 @@ func TestOneToOneVectorVectorBinaryOperation_ClosesInnerOperatorsAsSoonAsPossibl
 			}
 
 			if testCase.expectLeftSideClosedAfterOutputSeriesIndex == -1 {
+				require.True(t, left.Finalized, "left side should be finalized after SeriesMetadata, but it is not")
 				require.True(t, left.Closed, "left side should be closed after SeriesMetadata, but it is not")
 			} else {
+				require.False(t, left.Finalized, "left side should not be finalized after SeriesMetadata, but it is")
 				require.False(t, left.Closed, "left side should not be closed after SeriesMetadata, but it is")
 			}
 
 			if testCase.expectRightSideClosedAfterOutputSeriesIndex == -1 {
+				require.True(t, right.Finalized, "right side should be finalized after SeriesMetadata, but it is not")
 				require.True(t, right.Closed, "right side should be closed after SeriesMetadata, but it is not")
 			} else {
+				require.False(t, right.Finalized, "right side should not be finalized after SeriesMetadata, but it is")
 				require.False(t, right.Closed, "right side should not be closed after SeriesMetadata, but it is")
 			}
 
@@ -654,14 +659,18 @@ func TestOneToOneVectorVectorBinaryOperation_ClosesInnerOperatorsAsSoonAsPossibl
 				require.NoErrorf(t, err, "got error while reading series at index %v", outputSeriesIdx)
 
 				if outputSeriesIdx >= testCase.expectLeftSideClosedAfterOutputSeriesIndex {
+					require.Truef(t, left.Finalized, "left side should be finalized after output series at index %v, but it is not", outputSeriesIdx)
 					require.Truef(t, left.Closed, "left side should be closed after output series at index %v, but it is not", outputSeriesIdx)
 				} else {
+					require.Falsef(t, left.Finalized, "left side should not be finalized after output series at index %v, but it is", outputSeriesIdx)
 					require.Falsef(t, left.Closed, "left side should not be closed after output series at index %v, but it is", outputSeriesIdx)
 				}
 
 				if outputSeriesIdx >= testCase.expectRightSideClosedAfterOutputSeriesIndex {
+					require.Truef(t, right.Finalized, "right side should be finalized after output series at index %v, but it is not", outputSeriesIdx)
 					require.Truef(t, right.Closed, "right side should be closed after output series at index %v, but it is not", outputSeriesIdx)
 				} else {
+					require.Falsef(t, right.Finalized, "right side should not be finalized after output series at index %v, but it is", outputSeriesIdx)
 					require.Falsef(t, right.Closed, "right side should not be closed after output series at index %v, but it is", outputSeriesIdx)
 				}
 			}
@@ -714,10 +723,10 @@ func TestOneToOneVectorVectorBinaryOperation_ReleasesIntermediateStateIfClosedEa
 			left := &operators.TestOperator{Series: leftSeries, Data: []types.InstantVectorSeriesData{left1Data, left2Data}, MemoryConsumptionTracker: memoryConsumptionTracker}
 			right := &operators.TestOperator{Series: rightSeries, Data: []types.InstantVectorSeriesData{rightData}, MemoryConsumptionTracker: memoryConsumptionTracker}
 			vectorMatching := parser.VectorMatching{On: false}
-			o, err := NewOneToOneVectorVectorBinaryOperation(left, right, vectorMatching, parser.LTE, false, memoryConsumptionTracker, annotations.New(), posrange.PositionRange{}, timeRange)
+			o, err := NewOneToOneVectorVectorBinaryOperation(left, right, vectorMatching, parser.LTE, false, memoryConsumptionTracker, annotations.New(), posrange.PositionRange{}, timeRange, nil, log.NewNopLogger())
 			require.NoError(t, err)
 
-			metadata, err := o.SeriesMetadata(ctx)
+			metadata, err := o.SeriesMetadata(ctx, nil)
 			require.NoError(t, err)
 			require.Equal(t, testutils.LabelsToSeriesMetadata(leftSeries), metadata)
 			types.SeriesMetadataSlicePool.Put(&metadata, memoryConsumptionTracker)

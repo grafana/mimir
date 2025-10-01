@@ -39,6 +39,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/rulefmt"
+	promnotifier "github.com/prometheus/prometheus/notifier"
 	promRules "github.com/prometheus/prometheus/rules"
 	"go.opentelemetry.io/otel"
 	"golang.org/x/sync/errgroup"
@@ -120,6 +121,8 @@ type Config struct {
 	AlertmanagerRefreshInterval time.Duration `yaml:"alertmanager_refresh_interval" category:"advanced"`
 	// Capacity of the queue for notifications to be sent to the Alertmanager.
 	NotificationQueueCapacity int `yaml:"notification_queue_capacity" category:"advanced"`
+	// Maximum number of notifications to send to Alertmanager in one request.
+	MaxNotificationBatchSize int `yaml:"max_notification_batch_size" category:"advanced"`
 	// HTTP timeout duration when sending notifications to the Alertmanager.
 	NotificationTimeout time.Duration `yaml:"notification_timeout" category:"advanced"`
 	// Client configs for interacting with the Alertmanager
@@ -196,6 +199,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	cfg.DeprecatedAlertmanagerURL = ""
 	f.DurationVar(&cfg.AlertmanagerRefreshInterval, "ruler.alertmanager-refresh-interval", 1*time.Minute, "How long to wait between refreshing DNS resolutions of Alertmanager hosts.")
 	f.IntVar(&cfg.NotificationQueueCapacity, "ruler.notification-queue-capacity", 10000, "Capacity of the queue for notifications to be sent to the Alertmanager.")
+	f.IntVar(&cfg.MaxNotificationBatchSize, "ruler.max-notification-batch-size", promnotifier.DefaultMaxBatchSize, "Maximum number of notifications to send to Alertmanager in one request.")
 	f.DurationVar(&cfg.NotificationTimeout, "ruler.notification-timeout", 10*time.Second, "HTTP timeout duration when sending notifications to the Alertmanager.")
 
 	f.StringVar(&cfg.RulePath, "ruler.rule-path", "./data-ruler/", "Directory to store temporary rule files loaded by the Prometheus rule managers. This directory is not required to be persisted between restarts.")
@@ -253,9 +257,12 @@ func newRulerMetrics(reg prometheus.Registerer) *rulerMetrics {
 			Help: "Total number of times the ruler sync operation triggered.",
 		}, []string{"reason"}),
 		rulerSyncDuration: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
-			Name:    "cortex_ruler_sync_rules_duration_seconds",
-			Help:    "Time spent syncing all rule groups owned by this ruler instance. This metric tracks the timing of both full and partial sync, and includes the time spent loading rule groups from the storage.",
-			Buckets: []float64{1, 5, 10, 30, 60, 300, 600, 1800, 3600},
+			Name:                            "cortex_ruler_sync_rules_duration_seconds",
+			Help:                            "Time spent syncing all rule groups owned by this ruler instance. This metric tracks the timing of both full and partial sync, and includes the time spent loading rule groups from the storage.",
+			Buckets:                         []float64{1, 5, 10, 30, 60, 300, 600, 1800, 3600},
+			NativeHistogramBucketFactor:     1.1,
+			NativeHistogramMinResetDuration: 1 * time.Hour,
+			NativeHistogramMaxBucketNumber:  100,
 		}),
 	}
 

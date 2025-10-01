@@ -59,19 +59,6 @@ apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
   labels:
-    name: ingester-rollout
-  name: ingester-rollout
-  namespace: default
-spec:
-  maxUnavailable: 1
-  selector:
-    matchLabels:
-      rollout-group: ingester
----
-apiVersion: policy/v1
-kind: PodDisruptionBudget
-metadata:
-  labels:
     name: memcached
   name: memcached
   namespace: default
@@ -184,19 +171,6 @@ spec:
   selector:
     matchLabels:
       name: ruler
----
-apiVersion: policy/v1
-kind: PodDisruptionBudget
-metadata:
-  labels:
-    name: store-gateway-rollout
-  name: store-gateway-rollout
-  namespace: default
-spec:
-  maxUnavailable: 1
-  selector:
-    matchLabels:
-      rollout-group: store-gateway
 ---
 apiVersion: v1
 kind: ServiceAccount
@@ -433,6 +407,34 @@ metadata:
   namespace: default
 ---
 apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: rollout-operator-default-webhook-cert-update-role
+rules:
+- apiGroups:
+  - admissionregistration.k8s.io
+  resources:
+  - validatingwebhookconfigurations
+  - mutatingwebhookconfigurations
+  verbs:
+  - list
+  - patch
+  - watch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: rollout-operator-default-webhook-cert-secret-rolebinding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: rollout-operator-default-webhook-cert-update-role
+subjects:
+- kind: ServiceAccount
+  name: rollout-operator
+  namespace: default
+---
+apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
   name: consul-sidekick
@@ -488,6 +490,36 @@ rules:
   - get
   - update
   - create
+- apiGroups:
+  - rollout-operator.grafana.com
+  resources:
+  - zoneawarepoddisruptionbudgets
+  verbs:
+  - get
+  - list
+  - watch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: rollout-operator-webhook-cert-secret-role
+  namespace: default
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - secrets
+  verbs:
+  - create
+- apiGroups:
+  - ""
+  resourceNames:
+  - rollout-operator-self-signed-certificate
+  resources:
+  - secrets
+  verbs:
+  - update
+  - get
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
@@ -512,6 +544,20 @@ roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
   name: rollout-operator-role
+subjects:
+- kind: ServiceAccount
+  name: rollout-operator
+  namespace: default
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: rollout-operator-webhook-cert-secret-rolebinding
+  namespace: default
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: rollout-operator-webhook-cert-secret-role
 subjects:
 - kind: ServiceAccount
   name: rollout-operator
@@ -817,6 +863,20 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
+  name: rollout-operator
+  namespace: default
+spec:
+  ports:
+  - name: https
+    port: 443
+    protocol: TCP
+    targetPort: 8443
+  selector:
+    name: rollout-operator
+---
+apiVersion: v1
+kind: Service
+metadata:
   labels:
     name: ruler
   name: ruler
@@ -1081,6 +1141,7 @@ spec:
         - -ingester.ring.zone-awareness-enabled=true
         - -mem-ballast-size-bytes=1073741824
         - -runtime-config.file=/etc/mimir/overrides.yaml
+        - -server.grpc-max-concurrent-streams=1000
         - -server.grpc.keepalive.max-connection-age=60s
         - -server.grpc.keepalive.max-connection-age-grace=5m
         - -server.grpc.keepalive.max-connection-idle=1m
@@ -1093,7 +1154,7 @@ spec:
         env:
         - name: GOMAXPROCS
           value: "8"
-        image: grafana/mimir:2.16.1
+        image: grafana/mimir:2.17.1
         imagePullPolicy: IfNotPresent
         name: distributor
         ports:
@@ -1188,7 +1249,7 @@ spec:
         env:
         - name: GOMAXPROCS
           value: "5"
-        image: grafana/mimir:2.16.1
+        image: grafana/mimir:2.17.1
         imagePullPolicy: IfNotPresent
         name: querier
         ports:
@@ -1264,7 +1325,7 @@ spec:
         - -shutdown-delay=90s
         - -target=query-frontend
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.16.1
+        image: grafana/mimir:2.17.1
         imagePullPolicy: IfNotPresent
         name: query-frontend
         ports:
@@ -1336,7 +1397,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=query-scheduler
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.16.1
+        image: grafana/mimir:2.17.1
         imagePullPolicy: IfNotPresent
         name: query-scheduler
         ports:
@@ -1389,14 +1450,17 @@ spec:
       containers:
       - args:
         - -kubernetes.namespace=default
+        - -server-tls.enabled=true
         - -use-zone-tracker=true
         - -zone-tracker.config-map-name=rollout-operator-zone-tracker
-        image: grafana/rollout-operator:v0.28.0
+        image: grafana/rollout-operator:v0.29.0
         imagePullPolicy: IfNotPresent
         name: rollout-operator
         ports:
         - containerPort: 8001
           name: http-metrics
+        - containerPort: 8443
+          name: https
         readinessProbe:
           httpGet:
             path: /ready
@@ -1475,7 +1539,7 @@ spec:
         - -store-gateway.sharding-ring.zone-awareness-enabled=true
         - -target=ruler
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.16.1
+        image: grafana/mimir:2.17.1
         imagePullPolicy: IfNotPresent
         name: ruler
         ports:
@@ -1551,7 +1615,7 @@ spec:
           valueFrom:
             fieldRef:
               fieldPath: status.podIP
-        image: grafana/mimir:2.16.1
+        image: grafana/mimir:2.17.1
         imagePullPolicy: IfNotPresent
         name: alertmanager
         ports:
@@ -1646,7 +1710,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=compactor
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.16.1
+        image: grafana/mimir:2.17.1
         imagePullPolicy: IfNotPresent
         name: compactor
         ports:
@@ -1764,7 +1828,7 @@ spec:
         env:
         - name: GOMAXPROCS
           value: "9"
-        image: grafana/mimir:2.16.1
+        image: grafana/mimir:2.17.1
         imagePullPolicy: IfNotPresent
         name: ingester
         ports:
@@ -1882,7 +1946,7 @@ spec:
         env:
         - name: GOMAXPROCS
           value: "9"
-        image: grafana/mimir:2.16.1
+        image: grafana/mimir:2.17.1
         imagePullPolicy: IfNotPresent
         name: ingester
         ports:
@@ -2000,7 +2064,7 @@ spec:
         env:
         - name: GOMAXPROCS
           value: "9"
-        image: grafana/mimir:2.16.1
+        image: grafana/mimir:2.17.1
         imagePullPolicy: IfNotPresent
         name: ingester
         ports:
@@ -2369,7 +2433,7 @@ spec:
           value: "5"
         - name: GOMEMLIMIT
           value: "12884901888"
-        image: grafana/mimir:2.16.1
+        image: grafana/mimir:2.17.1
         imagePullPolicy: IfNotPresent
         name: store-gateway
         ports:
@@ -2502,7 +2566,7 @@ spec:
           value: "5"
         - name: GOMEMLIMIT
           value: "12884901888"
-        image: grafana/mimir:2.16.1
+        image: grafana/mimir:2.17.1
         imagePullPolicy: IfNotPresent
         name: store-gateway
         ports:
@@ -2635,7 +2699,7 @@ spec:
           value: "5"
         - name: GOMEMLIMIT
           value: "12884901888"
-        image: grafana/mimir:2.16.1
+        image: grafana/mimir:2.17.1
         imagePullPolicy: IfNotPresent
         name: store-gateway
         ports:
@@ -2714,3 +2778,168 @@ spec:
         memory: 512Mi
   size: 3
   version: 3.3.13
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingWebhookConfiguration
+metadata:
+  labels:
+    grafana.com/inject-rollout-operator-ca: "true"
+    grafana.com/namespace: default
+  name: prepare-downscale-default
+webhooks:
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: rollout-operator
+      namespace: default
+      path: /admission/prepare-downscale
+      port: 443
+  failurePolicy: Fail
+  matchPolicy: Equivalent
+  name: prepare-downscale-default.grafana.com
+  namespaceSelector:
+    matchLabels:
+      kubernetes.io/metadata.name: default
+  rules:
+  - apiGroups:
+    - apps
+    apiVersions:
+    - v1
+    operations:
+    - UPDATE
+    resources:
+    - statefulsets
+    - statefulsets/scale
+    scope: Namespaced
+  sideEffects: NoneOnDryRun
+  timeoutSeconds: 10
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata:
+  labels:
+    grafana.com/inject-rollout-operator-ca: "true"
+    grafana.com/namespace: default
+  name: no-downscale-default
+webhooks:
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: rollout-operator
+      namespace: default
+      path: /admission/no-downscale
+      port: 443
+  failurePolicy: Fail
+  matchPolicy: Equivalent
+  name: no-downscale-default.grafana.com
+  namespaceSelector:
+    matchLabels:
+      kubernetes.io/metadata.name: default
+  rules:
+  - apiGroups:
+    - apps
+    apiVersions:
+    - v1
+    operations:
+    - UPDATE
+    resources:
+    - statefulsets
+    - statefulsets/scale
+    scope: Namespaced
+  sideEffects: None
+  timeoutSeconds: 10
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata:
+  labels:
+    grafana.com/inject-rollout-operator-ca: "true"
+    grafana.com/namespace: default
+  name: pod-eviction-default
+webhooks:
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: rollout-operator
+      namespace: default
+      path: /admission/pod-eviction
+      port: 443
+  failurePolicy: Fail
+  name: pod-eviction-default.grafana.com
+  namespaceSelector:
+    matchLabels:
+      kubernetes.io/metadata.name: default
+  rules:
+  - apiGroups:
+    - ""
+    apiVersions:
+    - v1
+    operations:
+    - CREATE
+    resources:
+    - pods/eviction
+    scope: Namespaced
+  sideEffects: None
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata:
+  labels:
+    grafana.com/inject-rollout-operator-ca: "true"
+    grafana.com/namespace: default
+  name: zpdb-validation-default
+webhooks:
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: rollout-operator
+      namespace: default
+      path: /admission/zpdb-validation
+      port: 443
+  failurePolicy: Fail
+  name: zpdb-validation-default.grafana.com
+  namespaceSelector:
+    matchLabels:
+      kubernetes.io/metadata.name: default
+  rules:
+  - apiGroups:
+    - rollout-operator.grafana.com
+    apiVersions:
+    - v1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - zoneawarepoddisruptionbudgets
+    scope: Namespaced
+  sideEffects: None
+---
+apiVersion: rollout-operator.grafana.com/v1
+kind: ZoneAwarePodDisruptionBudget
+metadata:
+  labels:
+    name: ingester-rollout
+  name: ingester-rollout
+  namespace: default
+spec:
+  maxUnavailable: 50
+  selector:
+    matchLabels:
+      rollout-group: ingester
+---
+apiVersion: rollout-operator.grafana.com/v1
+kind: ZoneAwarePodDisruptionBudget
+metadata:
+  labels:
+    name: store-gateway-rollout
+  name: store-gateway-rollout
+  namespace: default
+spec:
+  maxUnavailable: 50
+  selector:
+    matchLabels:
+      rollout-group: store-gateway

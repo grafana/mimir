@@ -7,9 +7,6 @@ std.manifestYamlDoc({
     // How long should Mimir docker containers sleep before Mimir is started.
     sleep_seconds: 3,
 
-    // Whether query-frontend and querier should use query-scheduler. If set to true, query-scheduler is started as well.
-    use_query_scheduler: true,
-
     // Whether ruler should use the query-frontend and queriers to execute queries, rather than executing them in-process
     ruler_use_remote_execution: false,
 
@@ -41,7 +38,7 @@ std.manifestYamlDoc({
   services:
     self.distributor +
     self.ingesters +
-    self.read_components +  // Querier, Frontend and query-scheduler, if enabled.
+    self.read_components +  // querier, query-frontend, and query-scheduler.
     self.store_gateways(3) +
     self.compactor +
     self.rulers(2) +
@@ -102,37 +99,26 @@ std.manifestYamlDoc({
     }),
   },
 
-  read_components::
-    {
-      querier: mimirService({
-        name: 'querier',
-        target: 'querier',
-        httpPort: 8005,
-        extraArguments:
-          // Use of scheduler is activated by `-querier.scheduler-address` option and setting -querier.frontend-address option to nothing.
-          if $._config.use_query_scheduler then '-querier.scheduler-address=query-scheduler:9008 -querier.frontend-address=' else '',
-      }),
+  read_components:: {
+    querier: mimirService({
+      name: 'querier',
+      target: 'querier',
+      httpPort: 8005,
+    }),
 
-      'query-frontend': mimirService({
-        name: 'query-frontend',
-        target: 'query-frontend',
-        httpPort: 8007,
-        jaegerApp: 'query-frontend',
-        extraArguments:
-          '-query-frontend.max-total-query-length=8760h' +
-          // Use of scheduler is activated by `-query-frontend.scheduler-address` option.
-          (if $._config.use_query_scheduler then ' -query-frontend.scheduler-address=query-scheduler:9008' else ''),
-      }),
-    } + (
-      if $._config.use_query_scheduler then {
-        'query-scheduler': mimirService({
-          name: 'query-scheduler',
-          target: 'query-scheduler',
-          httpPort: 8008,
-          extraArguments: '-query-frontend.max-total-query-length=8760h',
-        }),
-      } else {}
-    ),
+    'query-frontend': mimirService({
+      name: 'query-frontend',
+      target: 'query-frontend',
+      httpPort: 8007,
+      jaegerApp: 'query-frontend',
+    }),
+
+    'query-scheduler': mimirService({
+      name: 'query-scheduler',
+      target: 'query-scheduler',
+      httpPort: 8008,
+    }),
+  },
 
   compactor:: {
     compactor: mimirService({
@@ -273,13 +259,21 @@ std.manifestYamlDoc({
     nginx: {
       hostname: 'nginx',
       image: 'nginxinc/nginx-unprivileged:1.22-alpine',
+      depends_on: [
+        'distributor-1',
+        'alertmanager-1',
+        'ruler-1',
+        'query-frontend',
+        'compactor',
+        'grafana',
+      ],
       environment: [
         'NGINX_ENVSUBST_OUTPUT_DIR=/etc/nginx',
         'DISTRIBUTOR_HOST=distributor-1:8000',
         'ALERT_MANAGER_HOST=alertmanager-1:8031',
         'RULER_HOST=ruler-1:8022',
         'QUERY_FRONTEND_HOST=query-frontend:8007',
-        'COMPACTOR_HOST=compactor:8007',
+        'COMPACTOR_HOST=compactor:8006',
       ],
       ports: ['8080:8080'],
       volumes: ['../common/config:/etc/nginx/templates'],
@@ -367,7 +361,7 @@ std.manifestYamlDoc({
 
   grafana:: {
     grafana: {
-      image: 'grafana/grafana:10.4.3',
+      image: 'grafana/grafana:12.1.1',
       environment: [
         'GF_AUTH_ANONYMOUS_ENABLED=true',
         'GF_AUTH_ANONYMOUS_ORG_ROLE=Admin',

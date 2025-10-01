@@ -46,8 +46,8 @@ func NewSortByLabel(
 	}
 }
 
-func (s *SortByLabel) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
-	innerMetadata, err := s.inner.SeriesMetadata(ctx)
+func (s *SortByLabel) SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
+	innerMetadata, err := s.inner.SeriesMetadata(ctx, matchers)
 	if err != nil {
 		return nil, err
 	}
@@ -147,6 +147,10 @@ func (s *SortByLabel) ExpressionPosition() posrange.PositionRange {
 
 func (s *SortByLabel) Prepare(ctx context.Context, params *types.PrepareParams) error {
 	return s.inner.Prepare(ctx, params)
+}
+
+func (s *SortByLabel) Finalize(ctx context.Context) error {
+	return s.inner.Finalize(ctx)
 }
 
 func (s *SortByLabel) Close() {

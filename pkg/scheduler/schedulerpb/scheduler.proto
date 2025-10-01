@@ -9,6 +9,7 @@ package schedulerpb;
 
 import "github.com/grafana/dskit/httpgrpc/httpgrpc.proto";
 import "gogoproto/gogo.proto";
+import "google/protobuf/any.proto";
 
 option go_package = "schedulerpb";
 option (gogoproto.marshaler_all) = true;
@@ -38,7 +39,11 @@ message SchedulerToQuerier {
   // Query ID as reported by frontend. When querier sends the response back to frontend (using frontendAddress),
   // it identifies the query by using this ID.
   uint64 queryID = 1;
-  httpgrpc.HTTPRequest httpRequest = 2;
+
+  oneof payload {
+    httpgrpc.HTTPRequest httpRequest = 2;
+    ProtobufRequest protobufRequest = 7;
+  }
 
   // Where should querier send HTTP Response to (using FrontendForQuerier interface).
   string frontendAddress = 3;
@@ -52,6 +57,20 @@ message SchedulerToQuerier {
 
   // How much time did query spend in the queue.
   int64 queueTimeNanos = 6;
+}
+
+message ProtobufRequest {
+  google.protobuf.Any payload = 1;
+
+  // Metadata is metadata orthogonal to the request itself, analogous to HTTP headers or gRPC metadata.
+  // We can't use gRPC metadata in this context because this message is sent over long-lived streams, rather
+  // than as an individual request.
+  repeated MetadataItem metadata = 2 [(gogoproto.nullable) = false];
+}
+
+message MetadataItem {
+  string key = 1;
+  repeated string value = 2;
 }
 
 // Scheduler interface exposed to Frontend. Frontend can enqueue and cancel requests.
@@ -83,7 +102,10 @@ message FrontendToScheduler {
 
   // Following are used by ENQUEUE only.
   string userID = 4;
-  httpgrpc.HTTPRequest httpRequest = 5;
+  oneof payload {
+    httpgrpc.HTTPRequest httpRequest = 5;
+    ProtobufRequest protobufRequest = 8;
+  }
   bool statsEnabled = 6;
   repeated string additionalQueueDimensions = 7;
 }

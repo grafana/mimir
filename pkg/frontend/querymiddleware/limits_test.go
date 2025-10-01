@@ -18,15 +18,26 @@ import (
 	"github.com/grafana/dskit/tenant"
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/prometheus/prometheus/promql/promqltest"
+	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/remote"
+	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
 
+	apierror "github.com/grafana/mimir/pkg/api/error"
+	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/querier/api"
+	"github.com/grafana/mimir/pkg/querier/stats"
+	"github.com/grafana/mimir/pkg/streamingpromql"
+	"github.com/grafana/mimir/pkg/streamingpromql/compat"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/chunkinfologger"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
@@ -902,7 +913,8 @@ func TestLimitedRoundTripper_MaxQueryParallelism(t *testing.T) {
 	})
 	require.Nil(t, err)
 
-	_, err = NewLimitedParallelismRoundTripper(downstream, codec, mockLimits{maxQueryParallelism: maxQueryParallelism},
+	handler := NewHTTPQueryRequestRoundTripperHandler(downstream, codec, log.NewNopLogger())
+	_, err = NewLimitedParallelismRoundTripper(handler, codec, mockLimits{maxQueryParallelism: maxQueryParallelism},
 		MetricsQueryMiddlewareFunc(func(next MetricsQueryHandler) MetricsQueryHandler {
 			return HandlerFunc(func(c context.Context, _ MetricsQueryRequest) (Response, error) {
 				var wg sync.WaitGroup
@@ -946,7 +958,8 @@ func TestLimitedRoundTripper_MaxQueryParallelismLateScheduling(t *testing.T) {
 	})
 	require.Nil(t, err)
 
-	_, err = NewLimitedParallelismRoundTripper(downstream, codec, mockLimits{maxQueryParallelism: maxQueryParallelism},
+	handler := NewHTTPQueryRequestRoundTripperHandler(downstream, codec, log.NewNopLogger())
+	_, err = NewLimitedParallelismRoundTripper(handler, codec, mockLimits{maxQueryParallelism: maxQueryParallelism},
 		MetricsQueryMiddlewareFunc(func(next MetricsQueryHandler) MetricsQueryHandler {
 			return HandlerFunc(func(c context.Context, _ MetricsQueryRequest) (Response, error) {
 				// fire up work and we don't wait.
@@ -987,7 +1000,8 @@ func TestLimitedRoundTripper_OriginalRequestContextCancellation(t *testing.T) {
 	})
 	require.Nil(t, err)
 
-	_, err = NewLimitedParallelismRoundTripper(downstream, codec, mockLimits{maxQueryParallelism: maxQueryParallelism},
+	handler := NewHTTPQueryRequestRoundTripperHandler(downstream, codec, log.NewNopLogger())
+	_, err = NewLimitedParallelismRoundTripper(handler, codec, mockLimits{maxQueryParallelism: maxQueryParallelism},
 		MetricsQueryMiddlewareFunc(func(next MetricsQueryHandler) MetricsQueryHandler {
 			return HandlerFunc(func(c context.Context, _ MetricsQueryRequest) (Response, error) {
 				var wg sync.WaitGroup
@@ -1046,7 +1060,8 @@ func BenchmarkLimitedParallelismRoundTripper(b *testing.B) {
 
 	for _, concurrentRequestCount := range []int{1, 10, 100} {
 		for _, subRequestCount := range []int{1, 2, 5, 10, 20, 50, 100} {
-			tripper := NewLimitedParallelismRoundTripper(downstream, codec, mockLimits{maxQueryParallelism: maxParallelism},
+			handler := NewHTTPQueryRequestRoundTripperHandler(downstream, codec, log.NewNopLogger())
+			tripper := NewLimitedParallelismRoundTripper(handler, codec, mockLimits{maxQueryParallelism: maxParallelism},
 				MetricsQueryMiddlewareFunc(func(next MetricsQueryHandler) MetricsQueryHandler {
 					return HandlerFunc(func(c context.Context, _ MetricsQueryRequest) (Response, error) {
 						wg := sync.WaitGroup{}
@@ -1107,4 +1122,298 @@ func (v *findVectorSelectorsVisitor) Visit(node parser.Node, _ []parser.Node) (p
 
 	v.selectors = append(v.selectors, selector)
 	return v, nil
+}
+
+func TestEngineQueryRequestRoundTripperHandler(t *testing.T) {
+	opts := streamingpromql.NewTestEngineOpts()
+	opts.CommonOpts.EnablePerStepStats = true
+	planner, err := streamingpromql.NewQueryPlanner(opts)
+	require.NoError(t, err)
+	logger := log.NewNopLogger()
+	engine, err := streamingpromql.NewEngine(opts, streamingpromql.NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), planner)
+	require.NoError(t, err)
+	codec := newTestCodec()
+	handler := NewEngineQueryRequestRoundTripperHandler(engine, codec, logger)
+
+	storage := promqltest.LoadedStorage(t, `
+		load 1s
+			some_metric{foo="bar"} 0+1x50
+			some_other_metric{foo="bar", idx="0"} 0+1x50
+			some_other_metric{foo="bar", idx="1"} 0+1x50
+	`)
+	t.Cleanup(func() { storage.Close() })
+
+	lookbackDelta := 5 * time.Minute
+
+	mustParseExpr := func(s string) parser.Expr {
+		expr, err := parser.ParseExpr(s)
+		require.NoError(t, err)
+		return expr
+	}
+
+	encodedOffsets := string(api.EncodeOffsets(map[int32]int64{0: 1, 1: 2}))
+
+	requestHeaders := []*PrometheusHeader{
+		{Name: compat.ForceFallbackHeaderName, Values: []string{"true"}},
+		{Name: chunkinfologger.ChunkInfoLoggingHeader, Values: []string{"chunk-info-logging-enabled"}},
+		{Name: api.ReadConsistencyOffsetsHeader, Values: []string{encodedOffsets}},
+		{Name: "Some-Other-Ignored-Header", Values: []string{"some-value"}},
+	}
+
+	expectedHeaders := map[string][]string{
+		// From request headers:
+		compat.ForceFallbackHeaderName:         {"true"},
+		chunkinfologger.ChunkInfoLoggingHeader: {"chunk-info-logging-enabled"},
+		api.ReadConsistencyOffsetsHeader:       {encodedOffsets},
+
+		// From read consistency settings in context:
+		api.ReadConsistencyHeader:         {api.ReadConsistencyStrong},
+		api.ReadConsistencyMaxDelayHeader: {time.Minute.String()},
+	}
+
+	testCases := map[string]struct {
+		req                             MetricsQueryRequest
+		expectedResponse                Response
+		expectedErr                     error
+		expectedSamplesProcessed        uint64
+		expectedSamplesProcessedPerStep []stats.StepStat
+		expectedPropagatedHeaders       map[string][]string
+	}{
+		"range query": {
+			req:                      NewPrometheusRangeQueryRequest("/", requestHeaders, 1000, 7000, 2000, lookbackDelta, mustParseExpr(`5*some_metric`), Options{}, nil, ""),
+			expectedSamplesProcessed: 4,
+			expectedResponse: &PrometheusResponse{
+				Status: statusSuccess,
+				Data: &PrometheusData{
+					ResultType: model.ValMatrix.String(),
+					Result: []SampleStream{
+						{
+							Labels: []mimirpb.LabelAdapter{
+								{Name: "foo", Value: "bar"},
+							},
+							Samples: []mimirpb.Sample{
+								{TimestampMs: 1000, Value: 5},
+								{TimestampMs: 3000, Value: 15},
+								{TimestampMs: 5000, Value: 25},
+								{TimestampMs: 7000, Value: 35},
+							},
+						},
+					},
+				},
+				Warnings: []string{},
+				Infos:    []string{},
+			},
+			expectedPropagatedHeaders: expectedHeaders,
+		},
+
+		"instant query": {
+			req:                      NewPrometheusInstantQueryRequest("/", requestHeaders, 3000, lookbackDelta, mustParseExpr(`5*some_metric`), Options{}, nil, ""),
+			expectedSamplesProcessed: 1,
+			expectedResponse: &PrometheusResponse{
+				Status: statusSuccess,
+				Data: &PrometheusData{
+					ResultType: model.ValVector.String(),
+					Result: []SampleStream{
+						{
+							Labels: []mimirpb.LabelAdapter{
+								{Name: "foo", Value: "bar"},
+							},
+							Samples: []mimirpb.Sample{
+								{TimestampMs: 3000, Value: 15},
+							},
+						},
+					},
+				},
+				Warnings: []string{},
+				Infos:    []string{},
+			},
+			expectedPropagatedHeaders: expectedHeaders,
+		},
+
+		"scalar result": {
+			req: NewPrometheusInstantQueryRequest("/", nil, 3000, lookbackDelta, mustParseExpr(`5`), Options{}, nil, ""),
+			expectedResponse: &PrometheusResponse{
+				Status: statusSuccess,
+				Data: &PrometheusData{
+					ResultType: model.ValScalar.String(),
+					Result: []SampleStream{
+						{
+							Samples: []mimirpb.Sample{
+								{TimestampMs: 3000, Value: 5},
+							},
+						},
+					},
+				},
+				Warnings: []string{},
+				Infos:    []string{},
+			},
+		},
+
+		"string result": {
+			req: NewPrometheusInstantQueryRequest("/", nil, 3000, lookbackDelta, mustParseExpr(`"foo"`), Options{}, nil, ""),
+			expectedResponse: &PrometheusResponse{
+				Status: statusSuccess,
+				Data: &PrometheusData{
+					ResultType: model.ValString.String(),
+					Result: []SampleStream{
+						{
+							Labels: []mimirpb.LabelAdapter{
+								{Name: "value", Value: "foo"},
+							},
+							Samples: []mimirpb.Sample{
+								{TimestampMs: 3000, Value: 0},
+							},
+						},
+					},
+				},
+				Warnings: []string{},
+				Infos:    []string{},
+			},
+		},
+
+		"execution error": {
+			req:         NewPrometheusInstantQueryRequest("/", nil, 3000, lookbackDelta, mustParseExpr(`some_metric * on(foo) some_other_metric`), Options{}, nil, ""),
+			expectedErr: apierror.New(apierror.TypeExec, `found duplicate series for the match group {foo="bar"} on the right side of the operation at timestamp 1970-01-01T00:00:03Z: {__name__="some_other_metric", foo="bar", idx="0"} and {__name__="some_other_metric", foo="bar", idx="1"}`),
+		},
+
+		"annotations": {
+			req:                      NewPrometheusInstantQueryRequest("/", requestHeaders, 3000, lookbackDelta, mustParseExpr(`histogram_quantile(0.1, rate(some_metric[2s]))`), Options{}, nil, ""),
+			expectedSamplesProcessed: 2,
+			expectedResponse: &PrometheusResponse{
+				Status: statusSuccess,
+				Data: &PrometheusData{
+					ResultType: model.ValVector.String(),
+					Result:     []SampleStream{},
+				},
+				Warnings: []string{
+					`PromQL warning: bucket label "le" is missing or has a malformed value of "" (1:25)`,
+				},
+				Infos: []string{
+					`PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: "some_metric" (1:30)`,
+				},
+			},
+			expectedPropagatedHeaders: expectedHeaders,
+		},
+
+		"query with per-step stats enabled": {
+			req:                      NewPrometheusRangeQueryRequest("/", requestHeaders, 1000, 7000, 2000, lookbackDelta, mustParseExpr(`5*some_metric`), Options{}, nil, "all"),
+			expectedSamplesProcessed: 4,
+			expectedSamplesProcessedPerStep: []stats.StepStat{
+				{Timestamp: 1000, Value: 1},
+				{Timestamp: 3000, Value: 1},
+				{Timestamp: 5000, Value: 1},
+				{Timestamp: 7000, Value: 1},
+			},
+			expectedResponse: &PrometheusResponse{
+				Status: statusSuccess,
+				Data: &PrometheusData{
+					ResultType: model.ValMatrix.String(),
+					Result: []SampleStream{
+						{
+							Labels: []mimirpb.LabelAdapter{
+								{Name: "foo", Value: "bar"},
+							},
+							Samples: []mimirpb.Sample{
+								{TimestampMs: 1000, Value: 5},
+								{TimestampMs: 3000, Value: 15},
+								{TimestampMs: 5000, Value: 25},
+								{TimestampMs: 7000, Value: 35},
+							},
+						},
+					},
+				},
+				Warnings: []string{},
+				Infos:    []string{},
+			},
+			expectedPropagatedHeaders: expectedHeaders,
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			// Replace the handler's storage with our test storage so we can test specific scenarios that depend on data,
+			// and check that the expected headers have been captured for propagation to queriers, including the read consistency level.
+			contextCapturingStorage := &contextCapturingStorage{inner: storage}
+			handler.(*engineQueryRequestRoundTripperHandler).storage = contextCapturingStorage
+
+			ctx := api.ContextWithReadConsistencyLevel(context.Background(), api.ReadConsistencyStrong)
+			ctx = api.ContextWithReadConsistencyMaxDelay(ctx, time.Minute)
+			stats, ctx := stats.ContextWithEmptyStats(ctx)
+			response, err := handler.Do(ctx, testCase.req)
+			require.Equal(t, testCase.expectedErr, err)
+
+			if testCase.expectedErr != nil {
+				require.Nil(t, response)
+				return
+			}
+
+			responseWithFinalizer, ok := response.(*PrometheusResponseWithFinalizer)
+			require.True(t, ok)
+			require.Equal(t, testCase.expectedResponse, responseWithFinalizer.PrometheusResponse)
+			require.NotNil(t, responseWithFinalizer.finalizer, "expected response to have a finalizer")
+
+			responseWithFinalizer.Close()
+
+			require.Equal(t, testCase.expectedSamplesProcessed, stats.SamplesProcessed)
+			require.Equal(t, testCase.expectedSamplesProcessedPerStep, stats.SamplesProcessedPerStep)
+
+			var propagatedHeaders map[string][]string
+			if contextCapturingStorage.ctx != nil {
+				propagatedHeaders = HeadersToPropagateFromContext(contextCapturingStorage.ctx)
+			}
+
+			require.Equal(t, testCase.expectedPropagatedHeaders, propagatedHeaders)
+		})
+	}
+}
+
+type contextCapturingStorage struct {
+	inner storage.Storage
+	ctx   context.Context
+}
+
+func (s *contextCapturingStorage) Querier(mint, maxt int64) (storage.Querier, error) {
+	q, err := s.inner.Querier(mint, maxt)
+	if err != nil {
+		return nil, err
+	}
+	return &contextCapturingQuerier{q, s}, nil
+}
+
+func (s *contextCapturingStorage) ChunkQuerier(mint, maxt int64) (storage.ChunkQuerier, error) {
+	panic("not supported")
+}
+
+func (s *contextCapturingStorage) Appender(ctx context.Context) storage.Appender {
+	panic("not supported")
+}
+
+func (s *contextCapturingStorage) StartTime() (int64, error) {
+	panic("not supported")
+}
+
+func (s *contextCapturingStorage) Close() error {
+	return s.inner.Close()
+}
+
+type contextCapturingQuerier struct {
+	inner   storage.Querier
+	storage *contextCapturingStorage
+}
+
+func (c *contextCapturingQuerier) Select(ctx context.Context, sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
+	c.storage.ctx = ctx
+	return c.inner.Select(ctx, sortSeries, hints, matchers...)
+}
+
+func (c *contextCapturingQuerier) Close() error {
+	return c.inner.Close()
+}
+
+func (c *contextCapturingQuerier) LabelValues(ctx context.Context, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	panic("not supported")
+}
+
+func (c *contextCapturingQuerier) LabelNames(ctx context.Context, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	panic("not supported")
 }

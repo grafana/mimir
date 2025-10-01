@@ -103,7 +103,11 @@ func ParseRecordVersion(rec *kgo.Record) int {
 }
 
 func recordSerializerFromCfg(cfg KafkaConfig) recordSerializer {
-	switch cfg.ProducerRecordVersion {
+	return RecordSerializerFromVersion(cfg.ProducerRecordVersion)
+}
+
+func RecordSerializerFromVersion(version int) recordSerializer {
+	switch version {
 	case 0:
 		return versionZeroRecordSerializer{}
 	case 1:
@@ -185,6 +189,7 @@ func deserializeRecordContentV2(content []byte, wr *mimirpb.PreallocWriteRequest
 	wr.UnmarshalFromRW2 = true
 	wr.RW2SymbolOffset = V2RecordSymbolOffset
 	wr.RW2CommonSymbols = V2CommonSymbols
+	wr.SkipNormalizeMetadataMetricName = true
 	return wr.Unmarshal(content)
 }
 

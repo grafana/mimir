@@ -55,20 +55,35 @@ func NewAndUnlessBinaryOperation(
 	}
 }
 
-func (a *AndUnlessBinaryOperation) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
-	defer func() {
-		if a.lastLeftSeriesIndexToRead == -1 {
-			// We're not going to read anything from the left side, close it now.
-			a.Left.Close()
+func (a *AndUnlessBinaryOperation) SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
+	series, err := a.computeSeriesMetadata(ctx, matchers)
+	if err != nil {
+		return nil, err
+	}
+
+	if a.lastLeftSeriesIndexToRead == -1 {
+		// We're not going to read anything from the left side, close it now.
+		if err := a.Left.Finalize(ctx); err != nil {
+			return nil, err
 		}
 
-		if a.lastRightSeriesIndexToRead == -1 {
-			// We're not going to read anything from the right side, close it now.
-			a.Right.Close()
-		}
-	}()
+		a.Left.Close()
+	}
 
-	leftMetadata, err := a.Left.SeriesMetadata(ctx)
+	if a.lastRightSeriesIndexToRead == -1 {
+		// We're not going to read anything from the right side, close it now.
+		if err := a.Right.Finalize(ctx); err != nil {
+			return nil, err
+		}
+
+		a.Right.Close()
+	}
+
+	return series, nil
+}
+
+func (a *AndUnlessBinaryOperation) computeSeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
+	leftMetadata, err := a.Left.SeriesMetadata(ctx, matchers)
 	if err != nil {
 		return nil, err
 	}
@@ -79,7 +94,7 @@ func (a *AndUnlessBinaryOperation) SeriesMetadata(ctx context.Context) ([]types.
 		return nil, nil
 	}
 
-	rightMetadata, err := a.Right.SeriesMetadata(ctx)
+	rightMetadata, err := a.Right.SeriesMetadata(ctx, matchers)
 	if err != nil {
 		return nil, err
 	}
@@ -172,14 +187,25 @@ func (a *AndUnlessBinaryOperation) computeUnlessSeriesMetadata(leftMetadata []ty
 }
 
 func (a *AndUnlessBinaryOperation) NextSeries(ctx context.Context) (types.InstantVectorSeriesData, error) {
-	defer func() {
-		// If we're done reading the left side, close it so it can release any resources as early as possible.
-		// We do the same thing for the right side in readRightSideUntilGroupComplete.
-		if a.nextLeftSeriesIndex > a.lastLeftSeriesIndexToRead {
-			a.Left.Close()
-		}
-	}()
+	d, err := a.computeNextSeries(ctx)
+	if err != nil {
+		return types.InstantVectorSeriesData{}, err
+	}
 
+	// If we're done reading the left side, close it so it can release any resources as early as possible.
+	// We do the same thing for the right side in readRightSideUntilGroupComplete.
+	if a.nextLeftSeriesIndex > a.lastLeftSeriesIndexToRead {
+		if err := a.Left.Finalize(ctx); err != nil {
+			return types.InstantVectorSeriesData{}, err
+		}
+
+		a.Left.Close()
+	}
+
+	return d, nil
+}
+
+func (a *AndUnlessBinaryOperation) computeNextSeries(ctx context.Context) (types.InstantVectorSeriesData, error) {
 	for {
 		if len(a.leftSeriesGroups) == 0 {
 			// No more series to return.
@@ -258,6 +284,10 @@ func (a *AndUnlessBinaryOperation) readRightSideUntilGroupComplete(ctx context.C
 
 	// If we're done reading the right side, close it so it can release any resources as early as possible.
 	if a.nextRightSeriesIndex > a.lastRightSeriesIndexToRead {
+		if err := a.Right.Finalize(ctx); err != nil {
+			return err
+		}
+
 		a.Right.Close()
 	}
 
@@ -269,11 +299,19 @@ func (a *AndUnlessBinaryOperation) ExpressionPosition() posrange.PositionRange {
 }
 
 func (a *AndUnlessBinaryOperation) Prepare(ctx context.Context, params *types.PrepareParams) error {
-	err := a.Left.Prepare(ctx, params)
-	if err != nil {
+	if err := a.Left.Prepare(ctx, params); err != nil {
 		return err
 	}
+
 	return a.Right.Prepare(ctx, params)
+}
+
+func (a *AndUnlessBinaryOperation) Finalize(ctx context.Context) error {
+	if err := a.Left.Finalize(ctx); err != nil {
+		return err
+	}
+
+	return a.Right.Finalize(ctx)
 }
 
 func (a *AndUnlessBinaryOperation) Close() {

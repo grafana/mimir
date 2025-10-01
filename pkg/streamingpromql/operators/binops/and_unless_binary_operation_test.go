@@ -317,7 +317,7 @@ func TestAndUnlessBinaryOperation_ClosesInnerOperatorsAsSoonAsPossible(t *testin
 			vectorMatching := parser.VectorMatching{On: true, MatchingLabels: []string{"group"}}
 			o := NewAndUnlessBinaryOperation(left, right, vectorMatching, memoryConsumptionTracker, testCase.isUnless, timeRange, posrange.PositionRange{})
 
-			outputSeries, err := o.SeriesMetadata(ctx)
+			outputSeries, err := o.SeriesMetadata(ctx, nil)
 			require.NoError(t, err)
 
 			if len(testCase.expectedOutputSeries) == 0 {
@@ -327,14 +327,18 @@ func TestAndUnlessBinaryOperation_ClosesInnerOperatorsAsSoonAsPossible(t *testin
 			}
 
 			if testCase.expectLeftSideClosedAfterOutputSeriesIndex == -1 {
+				require.True(t, left.Finalized, "left side should be finalized after SeriesMetadata, but it is not")
 				require.True(t, left.Closed, "left side should be closed after SeriesMetadata, but it is not")
 			} else {
+				require.False(t, left.Finalized, "left side should not be finalized after SeriesMetadata, but it is")
 				require.False(t, left.Closed, "left side should not be closed after SeriesMetadata, but it is")
 			}
 
 			if testCase.expectRightSideClosedAfterOutputSeriesIndex == -1 {
+				require.True(t, right.Finalized, "right side should be finalized after SeriesMetadata, but it is not")
 				require.True(t, right.Closed, "right side should be closed after SeriesMetadata, but it is not")
 			} else {
+				require.False(t, right.Finalized, "right side should not be finalized after SeriesMetadata, but it is")
 				require.False(t, right.Closed, "right side should not be closed after SeriesMetadata, but it is")
 			}
 
@@ -343,14 +347,18 @@ func TestAndUnlessBinaryOperation_ClosesInnerOperatorsAsSoonAsPossible(t *testin
 				require.NoErrorf(t, err, "got error while reading series at index %v", outputSeriesIdx)
 
 				if outputSeriesIdx >= testCase.expectLeftSideClosedAfterOutputSeriesIndex {
+					require.Truef(t, left.Finalized, "left side should be finalized after output series at index %v, but it is not", outputSeriesIdx)
 					require.Truef(t, left.Closed, "left side should be closed after output series at index %v, but it is not", outputSeriesIdx)
 				} else {
+					require.Falsef(t, left.Finalized, "left side should not be finalized after output series at index %v, but it is", outputSeriesIdx)
 					require.Falsef(t, left.Closed, "left side should not be closed after output series at index %v, but it is", outputSeriesIdx)
 				}
 
 				if outputSeriesIdx >= testCase.expectRightSideClosedAfterOutputSeriesIndex {
+					require.Truef(t, right.Finalized, "right side should be finalized after output series at index %v, but it is not", outputSeriesIdx)
 					require.Truef(t, right.Closed, "right side should be closed after output series at index %v, but it is not", outputSeriesIdx)
 				} else {
+					require.Falsef(t, right.Finalized, "right side should not be finalized after output series at index %v, but it is", outputSeriesIdx)
 					require.Falsef(t, right.Closed, "right side should not be closed after output series at index %v, but it is", outputSeriesIdx)
 				}
 			}
@@ -440,7 +448,7 @@ func TestAndUnlessBinaryOperation_ReleasesIntermediateStateIfClosedEarly(t *test
 					vectorMatching := parser.VectorMatching{On: true, MatchingLabels: []string{"group"}}
 					o := NewAndUnlessBinaryOperation(left, right, vectorMatching, memoryConsumptionTracker, isUnless, timeRange, posrange.PositionRange{})
 
-					outputSeries, err := o.SeriesMetadata(ctx)
+					outputSeries, err := o.SeriesMetadata(ctx, nil)
 					require.NoError(t, err)
 
 					if isUnless {

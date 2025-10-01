@@ -9,6 +9,7 @@ package querymiddleware
 import (
 	"context"
 	"math"
+	"slices"
 	"sync"
 
 	"github.com/grafana/dskit/concurrency"
@@ -23,7 +24,6 @@ import (
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware/astmapper"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/series"
-	"github.com/grafana/mimir/pkg/util"
 )
 
 var (
@@ -116,7 +116,7 @@ func (q *shardedQuerier) Select(ctx context.Context, _ bool, hints *storage.Sele
 }
 
 func defaultHandleEmbeddedQueryFunc(ctx context.Context, queryExpr astmapper.EmbeddedQuery, query MetricsQueryRequest, handler MetricsQueryHandler) ([]SampleStream, Response, error) {
-	query, err := query.WithQuery(queryExpr.Expr)
+	query, err := query.WithExpr(queryExpr.Expr)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -206,7 +206,7 @@ func (t *responseHeadersTracker) mergeHeaders(headers []*PrometheusHeader) {
 	for _, header := range headers {
 		for _, value := range header.Values {
 			// Ensure no duplicates.
-			if !util.StringsContain(t.headers[header.Name], value) {
+			if !slices.Contains(t.headers[header.Name], value) {
 				t.headers[header.Name] = append(t.headers[header.Name], value)
 			}
 		}

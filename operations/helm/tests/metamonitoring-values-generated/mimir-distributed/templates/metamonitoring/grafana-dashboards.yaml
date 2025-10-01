@@ -12486,6 +12486,101 @@ data:
                       "datasource": "$datasource",
                       "fieldConfig": {
                          "defaults": {
+                            "unit": "bytes"
+                         }
+                      },
+                      "id": 13,
+                      "options": {
+                         "calculate": true
+                      },
+                      "span": 6,
+                      "targets": [
+                         {
+                            "expr": "sum(rate(cortex_query_frontend_queries_expression_bytes{namespace=\"$namespace\"}[$__rate_interval]))",
+                            "format": "time_series",
+                            "legendFormat": "Bytes",
+                            "legendLink": null
+                         }
+                      ],
+                      "title": "Query Expression Length",
+                      "type": "heatmap"
+                   },
+                   {
+                      "datasource": "$datasource",
+                      "fieldConfig": {
+                         "defaults": {
+                            "custom": {
+                               "drawStyle": "line",
+                               "fillOpacity": 1,
+                               "lineWidth": 1,
+                               "pointSize": 5,
+                               "showPoints": "never",
+                               "spanNulls": false,
+                               "stacking": {
+                                  "group": "A",
+                                  "mode": "none"
+                               }
+                            },
+                            "min": 0,
+                            "thresholds": {
+                               "mode": "absolute",
+                               "steps": [ ]
+                            },
+                            "unit": "bytes"
+                         },
+                         "overrides": [ ]
+                      },
+                      "id": 14,
+                      "links": [ ],
+                      "options": {
+                         "legend": {
+                            "showLegend": true
+                         },
+                         "tooltip": {
+                            "mode": "multi",
+                            "sort": "none"
+                         }
+                      },
+                      "span": 6,
+                      "targets": [
+                         {
+                            "expr": "histogram_quantile(0.99, sum(rate(cortex_query_frontend_queries_expression_bytes{namespace=\"$namespace\"}[$__rate_interval])))",
+                            "format": "time_series",
+                            "legendFormat": "99th Percentile",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "histogram_quantile(0.90, sum(rate(cortex_query_frontend_queries_expression_bytes{namespace=\"$namespace\"}[$__rate_interval])))",
+                            "format": "time_series",
+                            "legendFormat": "90th Percentile",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "histogram_avg(sum(rate(cortex_query_frontend_queries_expression_bytes{namespace=\"$namespace\"}[$__rate_interval])))",
+                            "format": "time_series",
+                            "legendFormat": "Average",
+                            "legendLink": null
+                         }
+                      ],
+                      "title": "Query Expression Percentiles",
+                      "type": "timeseries"
+                   }
+                ],
+                "repeat": null,
+                "repeatIteration": null,
+                "repeatRowId": null,
+                "showTitle": true,
+                "title": "Query-frontend - Query Lengths",
+                "titleSize": "h6"
+             },
+             {
+                "collapse": false,
+                "height": "250px",
+                "panels": [
+                   {
+                      "datasource": "$datasource",
+                      "fieldConfig": {
+                         "defaults": {
                             "custom": {
                                "drawStyle": "line",
                                "fillOpacity": 1,
@@ -12507,7 +12602,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 13,
+                      "id": 15,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -12568,7 +12663,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 14,
+                      "id": 16,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -12629,7 +12724,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 15,
+                      "id": 17,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -12702,7 +12797,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 16,
+                      "id": 18,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -12781,7 +12876,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 17,
+                      "id": 19,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -12878,7 +12973,7 @@ data:
                             }
                          ]
                       },
-                      "id": 18,
+                      "id": 20,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -12940,7 +13035,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 19,
+                      "id": 21,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -12966,7 +13061,7 @@ data:
                    {
                       "datasource": "$datasource",
                       "description": "### Estimated per-query memory consumption\nThe esimated memory consumption of all queries evaluated by queriers. Only applicable if the Mimir query engine (MQE) is enabled and the query was evaluated with MQE.\n\n",
-                      "id": 20,
+                      "id": 22,
                       "options": {
                          "calculate": true,
                          "calculation": {
@@ -13032,7 +13127,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 21,
+                      "id": 23,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -13092,7 +13187,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 22,
+                      "id": 24,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -13183,7 +13278,7 @@ data:
                             }
                          ]
                       },
-                      "id": 23,
+                      "id": 25,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -13237,7 +13332,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 24,
+                      "id": 26,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -13329,7 +13424,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 25,
+                      "id": 27,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -13383,7 +13478,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 26,
+                      "id": 28,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -13431,7 +13526,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 27,
+                      "id": 29,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -13491,7 +13586,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 28,
+                      "id": 30,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -13539,7 +13634,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 29,
+                      "id": 31,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -13589,7 +13684,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 30,
+                      "id": 32,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -13650,7 +13745,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 31,
+                      "id": 33,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -13729,7 +13824,7 @@ data:
                             }
                          ]
                       },
-                      "id": 32,
+                      "id": 34,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -13814,7 +13909,7 @@ data:
                             }
                          ]
                       },
-                      "id": 33,
+                      "id": 35,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -13880,7 +13975,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 34,
+                      "id": 36,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -13928,7 +14023,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 35,
+                      "id": 37,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -14008,7 +14103,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 36,
+                      "id": 38,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -14100,7 +14195,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 37,
+                      "id": 39,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -14149,7 +14244,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 38,
+                      "id": 40,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -14198,7 +14293,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 39,
+                      "id": 41,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -20123,7 +20218,7 @@ data:
                       "span": 4,
                       "targets": [
                          {
-                            "expr": "sum by (status) (\n  label_replace(label_replace(rate(cortex_querier_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((querier.*|cortex|mimir))\", route=~\"(prometheus|api_prom)_api_v1_.+\"}[$__rate_interval]),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-zA-Z]+)\"))\n",
+                            "expr": "sum by (status) (\n  label_replace(label_replace(rate(cortex_querier_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((querier.*|cortex|mimir))\", route=~\"((prometheus|api_prom)_api_v1_.+|querierpb.EvaluateQueryRequest)\"}[$__rate_interval]),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-zA-Z]+)\"))\n",
                             "format": "time_series",
                             "legendFormat": "{{status}}",
                             "refId": "A"
@@ -20172,19 +20267,19 @@ data:
                       "span": 4,
                       "targets": [
                          {
-                            "expr": "histogram_quantile(0.99, sum by (le) (cluster_job_route:cortex_querier_request_duration_seconds_bucket:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((querier.*|cortex|mimir))\", route=~\"(prometheus|api_prom)_api_v1_.+\"})) * 1e3",
+                            "expr": "histogram_quantile(0.99, sum by (le) (cluster_job_route:cortex_querier_request_duration_seconds_bucket:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((querier.*|cortex|mimir))\", route=~\"((prometheus|api_prom)_api_v1_.+|querierpb.EvaluateQueryRequest)\"})) * 1e3",
                             "format": "time_series",
                             "legendFormat": "99th percentile",
                             "refId": "A"
                          },
                          {
-                            "expr": "histogram_quantile(0.50, sum by (le) (cluster_job_route:cortex_querier_request_duration_seconds_bucket:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((querier.*|cortex|mimir))\", route=~\"(prometheus|api_prom)_api_v1_.+\"})) * 1e3",
+                            "expr": "histogram_quantile(0.50, sum by (le) (cluster_job_route:cortex_querier_request_duration_seconds_bucket:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((querier.*|cortex|mimir))\", route=~\"((prometheus|api_prom)_api_v1_.+|querierpb.EvaluateQueryRequest)\"})) * 1e3",
                             "format": "time_series",
                             "legendFormat": "50th percentile",
                             "refId": "B"
                          },
                          {
-                            "expr": "1e3 * sum(cluster_job_route:cortex_querier_request_duration_seconds_sum:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((querier.*|cortex|mimir))\", route=~\"(prometheus|api_prom)_api_v1_.+\"}) / sum(cluster_job_route:cortex_querier_request_duration_seconds_count:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((querier.*|cortex|mimir))\", route=~\"(prometheus|api_prom)_api_v1_.+\"})",
+                            "expr": "1e3 * sum(cluster_job_route:cortex_querier_request_duration_seconds_sum:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((querier.*|cortex|mimir))\", route=~\"((prometheus|api_prom)_api_v1_.+|querierpb.EvaluateQueryRequest)\"}) / sum(cluster_job_route:cortex_querier_request_duration_seconds_count:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((querier.*|cortex|mimir))\", route=~\"((prometheus|api_prom)_api_v1_.+|querierpb.EvaluateQueryRequest)\"})",
                             "format": "time_series",
                             "legendFormat": "Average",
                             "refId": "C"
@@ -20234,7 +20329,7 @@ data:
                       "targets": [
                          {
                             "exemplar": true,
-                            "expr": "histogram_quantile(0.99, sum by(le, pod) (rate(cortex_querier_request_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((querier.*|cortex|mimir))\", route=~\"(prometheus|api_prom)_api_v1_.+\"}[$__rate_interval])))",
+                            "expr": "histogram_quantile(0.99, sum by(le, pod) (rate(cortex_querier_request_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((querier.*|cortex|mimir))\", route=~\"((prometheus|api_prom)_api_v1_.+|querierpb.EvaluateQueryRequest)\"}[$__rate_interval])))",
                             "format": "time_series",
                             "legendFormat": "",
                             "legendLink": null
@@ -28101,7 +28196,7 @@ data:
                       "span": 4,
                       "targets": [
                          {
-                            "expr": "sum by (status) (\n  label_replace(label_replace(rate(cortex_querier_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-querier.*))\", route=~\"(prometheus|api_prom)_api_v1_.+\"}[$__rate_interval]),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-zA-Z]+)\"))\n",
+                            "expr": "sum by (status) (\n  label_replace(label_replace(rate(cortex_querier_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-querier.*))\", route=~\"((prometheus|api_prom)_api_v1_.+|querierpb.EvaluateQueryRequest)\"}[$__rate_interval]),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-zA-Z]+)\"))\n",
                             "format": "time_series",
                             "legendFormat": "{{status}}",
                             "refId": "A"
@@ -28150,19 +28245,19 @@ data:
                       "span": 4,
                       "targets": [
                          {
-                            "expr": "histogram_quantile(0.99, sum by (le) (cluster_job_route:cortex_querier_request_duration_seconds_bucket:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-querier.*))\", route=~\"(prometheus|api_prom)_api_v1_.+\"})) * 1e3",
+                            "expr": "histogram_quantile(0.99, sum by (le) (cluster_job_route:cortex_querier_request_duration_seconds_bucket:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-querier.*))\", route=~\"((prometheus|api_prom)_api_v1_.+|querierpb.EvaluateQueryRequest)\"})) * 1e3",
                             "format": "time_series",
                             "legendFormat": "99th percentile",
                             "refId": "A"
                          },
                          {
-                            "expr": "histogram_quantile(0.50, sum by (le) (cluster_job_route:cortex_querier_request_duration_seconds_bucket:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-querier.*))\", route=~\"(prometheus|api_prom)_api_v1_.+\"})) * 1e3",
+                            "expr": "histogram_quantile(0.50, sum by (le) (cluster_job_route:cortex_querier_request_duration_seconds_bucket:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-querier.*))\", route=~\"((prometheus|api_prom)_api_v1_.+|querierpb.EvaluateQueryRequest)\"})) * 1e3",
                             "format": "time_series",
                             "legendFormat": "50th percentile",
                             "refId": "B"
                          },
                          {
-                            "expr": "1e3 * sum(cluster_job_route:cortex_querier_request_duration_seconds_sum:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-querier.*))\", route=~\"(prometheus|api_prom)_api_v1_.+\"}) / sum(cluster_job_route:cortex_querier_request_duration_seconds_count:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-querier.*))\", route=~\"(prometheus|api_prom)_api_v1_.+\"})",
+                            "expr": "1e3 * sum(cluster_job_route:cortex_querier_request_duration_seconds_sum:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-querier.*))\", route=~\"((prometheus|api_prom)_api_v1_.+|querierpb.EvaluateQueryRequest)\"}) / sum(cluster_job_route:cortex_querier_request_duration_seconds_count:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-querier.*))\", route=~\"((prometheus|api_prom)_api_v1_.+|querierpb.EvaluateQueryRequest)\"})",
                             "format": "time_series",
                             "legendFormat": "Average",
                             "refId": "C"
@@ -28212,7 +28307,7 @@ data:
                       "targets": [
                          {
                             "exemplar": true,
-                            "expr": "histogram_quantile(0.99, sum by(le, pod) (rate(cortex_querier_request_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-querier.*))\", route=~\"(prometheus|api_prom)_api_v1_.+\"}[$__rate_interval])))",
+                            "expr": "histogram_quantile(0.99, sum by(le, pod) (rate(cortex_querier_request_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-querier.*))\", route=~\"((prometheus|api_prom)_api_v1_.+|querierpb.EvaluateQueryRequest)\"}[$__rate_interval])))",
                             "format": "time_series",
                             "legendFormat": "",
                             "legendLink": null
@@ -30775,7 +30870,7 @@ data:
                    ]
                 },
                 "gridPos": {
-                   "h": 13,
+                   "h": 20,
                    "w": 10,
                    "x": 0,
                    "y": 0
@@ -31848,10 +31943,10 @@ data:
                 },
                 "fill": 1,
                 "gridPos": {
-                   "h": 3,
-                   "w": 10,
-                   "x": 0,
-                   "y": 13
+                   "h": 4,
+                   "w": 8,
+                   "x": 16,
+                   "y": 16
                 },
                 "id": 10,
                 "legend": {
@@ -31960,7 +32055,7 @@ data:
                    ]
                 },
                 "gridPos": {
-                   "h": 8,
+                   "h": 12,
                    "w": 6,
                    "x": 10,
                    "y": 8
@@ -39452,7 +39547,7 @@ data:
                             "sort": "none"
                          }
                       },
-                      "span": 6,
+                      "span": 4,
                       "targets": [
                          {
                             "expr": "sum(rate(cortex_query_frontend_queries_total{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir))\", user=\"$user\"}[$__rate_interval]))",
@@ -39501,7 +39596,7 @@ data:
                             "sort": "none"
                          }
                       },
-                      "span": 6,
+                      "span": 4,
                       "targets": [
                          {
                             "expr": "sum(cortex_query_scheduler_queue_length{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*))\", user=\"$user\"})",
@@ -39511,6 +39606,66 @@ data:
                          }
                       ],
                       "title": "Number of Queries Queued - query-scheduler",
+                      "type": "timeseries"
+                   },
+                   {
+                      "datasource": "$datasource",
+                      "fieldConfig": {
+                         "defaults": {
+                            "custom": {
+                               "drawStyle": "line",
+                               "fillOpacity": 1,
+                               "lineWidth": 1,
+                               "pointSize": 5,
+                               "showPoints": "never",
+                               "spanNulls": false,
+                               "stacking": {
+                                  "group": "A",
+                                  "mode": "none"
+                               }
+                            },
+                            "min": 0,
+                            "thresholds": {
+                               "mode": "absolute",
+                               "steps": [ ]
+                            },
+                            "unit": "bytes"
+                         },
+                         "overrides": [ ]
+                      },
+                      "id": 37,
+                      "links": [ ],
+                      "options": {
+                         "legend": {
+                            "showLegend": true
+                         },
+                         "tooltip": {
+                            "mode": "multi",
+                            "sort": "none"
+                         }
+                      },
+                      "span": 4,
+                      "targets": [
+                         {
+                            "expr": "histogram_quantile(0.99, sum(rate(cortex_query_frontend_queries_expression_bytes{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir))\", user=\"$user\"}[$__rate_interval])))",
+                            "format": "time_series",
+                            "legendFormat": "99th Percentile",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "histogram_quantile(0.90, sum(rate(cortex_query_frontend_queries_expression_bytes{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir))\", user=\"$user\"}[$__rate_interval])))",
+                            "format": "time_series",
+                            "legendFormat": "90th Percentile",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "histogram_avg(sum(rate(cortex_query_frontend_queries_expression_bytes{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir))\", user=\"$user\"}[$__rate_interval])))",
+                            "format": "time_series",
+                            "legendFormat": "Average",
+                            "legendLink": null
+                         }
+                      ],
+                      "title": "Query Expression Length - query-frontend",
                       "type": "timeseries"
                    }
                 ],
@@ -39550,7 +39705,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 37,
+                      "id": 38,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -39561,7 +39716,7 @@ data:
                             "sort": "none"
                          }
                       },
-                      "span": 6,
+                      "span": 4,
                       "targets": [
                          {
                             "expr": "sum(rate(cortex_query_frontend_queries_total{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-frontend.*))\", user=\"$user\"}[$__rate_interval]))",
@@ -39599,7 +39754,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 38,
+                      "id": 39,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -39610,7 +39765,7 @@ data:
                             "sort": "none"
                          }
                       },
-                      "span": 6,
+                      "span": 4,
                       "targets": [
                          {
                             "expr": "sum(cortex_query_scheduler_queue_length{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-scheduler.*))\", user=\"$user\"})",
@@ -39620,6 +39775,66 @@ data:
                          }
                       ],
                       "title": "Number of Queries Queued - ruler-query-scheduler",
+                      "type": "timeseries"
+                   },
+                   {
+                      "datasource": "$datasource",
+                      "fieldConfig": {
+                         "defaults": {
+                            "custom": {
+                               "drawStyle": "line",
+                               "fillOpacity": 1,
+                               "lineWidth": 1,
+                               "pointSize": 5,
+                               "showPoints": "never",
+                               "spanNulls": false,
+                               "stacking": {
+                                  "group": "A",
+                                  "mode": "none"
+                               }
+                            },
+                            "min": 0,
+                            "thresholds": {
+                               "mode": "absolute",
+                               "steps": [ ]
+                            },
+                            "unit": "bytes"
+                         },
+                         "overrides": [ ]
+                      },
+                      "id": 40,
+                      "links": [ ],
+                      "options": {
+                         "legend": {
+                            "showLegend": true
+                         },
+                         "tooltip": {
+                            "mode": "multi",
+                            "sort": "none"
+                         }
+                      },
+                      "span": 4,
+                      "targets": [
+                         {
+                            "expr": "histogram_quantile(0.99, sum(rate(cortex_query_frontend_queries_expression_bytes{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-frontend.*))\", user=\"$user\"}[$__rate_interval])))",
+                            "format": "time_series",
+                            "legendFormat": "99th Percentile",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "histogram_quantile(0.90, sum(rate(cortex_query_frontend_queries_expression_bytes{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-frontend.*))\", user=\"$user\"}[$__rate_interval])))",
+                            "format": "time_series",
+                            "legendFormat": "90th Percentile",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "histogram_avg(sum(rate(cortex_query_frontend_queries_expression_bytes{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-frontend.*))\", user=\"$user\"}[$__rate_interval])))",
+                            "format": "time_series",
+                            "legendFormat": "Average",
+                            "legendLink": null
+                         }
+                      ],
+                      "title": "Query Expression Length - ruler-query-frontend",
                       "type": "timeseries"
                    }
                 ],
@@ -39660,7 +39875,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 39,
+                      "id": 41,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -39709,7 +39924,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 40,
+                      "id": 42,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -40595,6 +40810,154 @@ data:
                                "properties": [
                                   {
                                      "id": "displayName",
+                                     "value": "Bytes (99th Percentile)"
+                                  },
+                                  {
+                                     "id": "decimals",
+                                     "value": 2
+                                  },
+                                  {
+                                     "id": "unit",
+                                     "value": "bytes"
+                                  }
+                               ]
+                            },
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "user"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "displayName",
+                                     "value": "User"
+                                  },
+                                  {
+                                     "id": "decimals",
+                                     "value": 2
+                                  },
+                                  {
+                                     "id": "unit",
+                                     "value": "string"
+                                  }
+                               ]
+                            }
+                         ]
+                      },
+                      "fill": 1,
+                      "id": 7,
+                      "legend": {
+                         "avg": false,
+                         "current": false,
+                         "max": false,
+                         "min": false,
+                         "show": true,
+                         "total": false,
+                         "values": false
+                      },
+                      "lines": true,
+                      "linewidth": 1,
+                      "links": [ ],
+                      "nullPointMode": "null as zero",
+                      "percentage": false,
+                      "pointradius": 5,
+                      "points": false,
+                      "renderer": "flot",
+                      "seriesOverrides": [ ],
+                      "spaceLength": 10,
+                      "span": 12,
+                      "stack": false,
+                      "steppedLine": false,
+                      "targets": [
+                         {
+                            "expr": "topk($limit, \n  histogram_quantile(\n    0.99,\n    sum by(user) (rate(cortex_query_frontend_queries_expression_bytes{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir))\"}[$__rate_interval]))\n  )\n)\n",
+                            "format": "table",
+                            "instant": true,
+                            "legendFormat": "",
+                            "refId": "A"
+                         }
+                      ],
+                      "thresholds": [ ],
+                      "timeFrom": null,
+                      "timeShift": null,
+                      "title": "Top $limit users by query expression length",
+                      "tooltip": {
+                         "shared": false,
+                         "sort": 0,
+                         "value_type": "individual"
+                      },
+                      "transform": "table",
+                      "type": "table",
+                      "xaxis": {
+                         "buckets": null,
+                         "mode": "time",
+                         "name": null,
+                         "show": true,
+                         "values": [ ]
+                      },
+                      "yaxes": [
+                         {
+                            "format": "short",
+                            "label": null,
+                            "logBase": 1,
+                            "max": null,
+                            "min": 0,
+                            "show": true
+                         },
+                         {
+                            "format": "short",
+                            "label": null,
+                            "logBase": 1,
+                            "max": null,
+                            "min": null,
+                            "show": false
+                         }
+                      ]
+                   }
+                ],
+                "repeat": null,
+                "repeatIteration": null,
+                "repeatRowId": null,
+                "showTitle": true,
+                "title": "By query expression length",
+                "titleSize": "h6"
+             },
+             {
+                "collapse": true,
+                "height": "250px",
+                "panels": [
+                   {
+                      "aliasColors": { },
+                      "bars": false,
+                      "dashLength": 10,
+                      "dashes": false,
+                      "datasource": "$datasource",
+                      "fieldConfig": {
+                         "overrides": [
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "Time"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "displayName",
+                                     "value": "Time"
+                                  },
+                                  {
+                                     "id": "custom.hidden",
+                                     "value": true
+                                  }
+                               ]
+                            },
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "Value"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "displayName",
                                      "value": "samples/s"
                                   },
                                   {
@@ -40630,7 +40993,7 @@ data:
                          ]
                       },
                       "fill": 1,
-                      "id": 7,
+                      "id": 8,
                       "legend": {
                          "avg": false,
                          "current": false,
@@ -40740,7 +41103,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 8,
+                      "id": 9,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -40842,7 +41205,7 @@ data:
                          ]
                       },
                       "fill": 1,
-                      "id": 9,
+                      "id": 10,
                       "legend": {
                          "avg": false,
                          "current": false,
@@ -40994,7 +41357,7 @@ data:
                          ]
                       },
                       "fill": 1,
-                      "id": 10,
+                      "id": 11,
                       "legend": {
                          "avg": false,
                          "current": false,
@@ -41146,7 +41509,7 @@ data:
                          ]
                       },
                       "fill": 1,
-                      "id": 11,
+                      "id": 12,
                       "legend": {
                          "avg": false,
                          "current": false,
@@ -41298,7 +41661,7 @@ data:
                          ]
                       },
                       "fill": 1,
-                      "id": 12,
+                      "id": 13,
                       "legend": {
                          "avg": false,
                          "current": false,
@@ -41450,7 +41813,7 @@ data:
                          ]
                       },
                       "fill": 1,
-                      "id": 13,
+                      "id": 14,
                       "legend": {
                          "avg": false,
                          "current": false,
@@ -43022,7 +43385,33 @@ data:
                             },
                             "unit": "short"
                          },
-                         "overrides": [ ]
+                         "overrides": [
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "limit"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "color",
+                                     "value": {
+                                        "fixedColor": "#E02F44",
+                                        "mode": "fixed"
+                                     }
+                                  },
+                                  {
+                                     "id": "custom.fillOpacity",
+                                     "value": 0
+                                  },
+                                  {
+                                     "id": "custom.lineStyle",
+                                     "value": {
+                                        "fill": "dash"
+                                     }
+                                  }
+                               ]
+                            }
+                         ]
                       },
                       "id": 7,
                       "links": [ ],
@@ -43041,6 +43430,12 @@ data:
                             "expr": "sum by(pod) (cortex_ingester_memory_series{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"})",
                             "format": "time_series",
                             "legendFormat": "{{pod}}",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "min by(namespace) (cortex_ingester_instance_limits{namespace=\"$namespace\", limit=\"max_series\"})",
+                            "format": "time_series",
+                            "legendFormat": "limit",
                             "legendLink": null
                          }
                       ],
@@ -47414,5 +47809,1371 @@ data:
           "timezone": "utc",
           "title": "Mimir / Writes",
           "uid": "8280707b8f16e7b87b840fc1cc92d4c5",
+          "version": 0
+       }
+---
+# Source: mimir-distributed/templates/metamonitoring/grafana-dashboards.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: rollout-operator-dashboard
+  namespace: citestns
+  labels:
+    app.kubernetes.io/name: mimir
+    app.kubernetes.io/instance: metamonitoring-values
+    app.kubernetes.io/managed-by: Helm
+    grafana_dashboard: "1"
+  annotations:
+    k8s-sidecar-target-directory: /tmp/dashboards/Mimir Dashboards
+data:
+  rollout-operator.json: |-
+    {
+          "__requires": [
+             {
+                "id": "grafana",
+                "name": "Grafana",
+                "type": "grafana",
+                "version": "8.0.0"
+             }
+          ],
+          "annotations": {
+             "list": [ ]
+          },
+          "editable": true,
+          "gnetId": null,
+          "graphTooltip": 1,
+          "hideControls": false,
+          "links": [
+             {
+                "asDropdown": true,
+                "icon": "external link",
+                "includeVars": true,
+                "keepTime": true,
+                "tags": [
+                   "mimir"
+                ],
+                "targetBlank": false,
+                "title": "Mimir dashboards",
+                "type": "dashboards"
+             }
+          ],
+          "refresh": "5m",
+          "rows": [
+             {
+                "collapse": false,
+                "height": "250px",
+                "panels": [
+                   {
+                      "datasource": "$datasource",
+                      "fieldConfig": {
+                         "defaults": {
+                            "custom": {
+                               "drawStyle": "line",
+                               "fillOpacity": 100,
+                               "lineWidth": 0,
+                               "pointSize": 5,
+                               "showPoints": "never",
+                               "spanNulls": false,
+                               "stacking": {
+                                  "group": "A",
+                                  "mode": "normal"
+                               }
+                            },
+                            "min": 0,
+                            "thresholds": {
+                               "mode": "absolute",
+                               "steps": [ ]
+                            },
+                            "unit": "reqps"
+                         },
+                         "overrides": [
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "1xx"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "color",
+                                     "value": {
+                                        "fixedColor": "#EAB839",
+                                        "mode": "fixed"
+                                     }
+                                  }
+                               ]
+                            },
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "2xx"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "color",
+                                     "value": {
+                                        "fixedColor": "#7EB26D",
+                                        "mode": "fixed"
+                                     }
+                                  }
+                               ]
+                            },
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "3xx"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "color",
+                                     "value": {
+                                        "fixedColor": "#6ED0E0",
+                                        "mode": "fixed"
+                                     }
+                                  }
+                               ]
+                            },
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "4xx"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "color",
+                                     "value": {
+                                        "fixedColor": "#EF843C",
+                                        "mode": "fixed"
+                                     }
+                                  }
+                               ]
+                            },
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "5xx"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "color",
+                                     "value": {
+                                        "fixedColor": "#E24D42",
+                                        "mode": "fixed"
+                                     }
+                                  }
+                               ]
+                            },
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "Canceled"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "color",
+                                     "value": {
+                                        "fixedColor": "#A9A9A9",
+                                        "mode": "fixed"
+                                     }
+                                  }
+                               ]
+                            },
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "OK"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "color",
+                                     "value": {
+                                        "fixedColor": "#7EB26D",
+                                        "mode": "fixed"
+                                     }
+                                  }
+                               ]
+                            },
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "cancel"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "color",
+                                     "value": {
+                                        "fixedColor": "#A9A9A9",
+                                        "mode": "fixed"
+                                     }
+                                  }
+                               ]
+                            },
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "error"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "color",
+                                     "value": {
+                                        "fixedColor": "#E24D42",
+                                        "mode": "fixed"
+                                     }
+                                  }
+                               ]
+                            },
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "success"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "color",
+                                     "value": {
+                                        "fixedColor": "#7EB26D",
+                                        "mode": "fixed"
+                                     }
+                                  }
+                               ]
+                            }
+                         ]
+                      },
+                      "id": 1,
+                      "links": [ ],
+                      "options": {
+                         "legend": {
+                            "showLegend": true
+                         },
+                         "tooltip": {
+                            "mode": "multi",
+                            "sort": "none"
+                         }
+                      },
+                      "span": 3,
+                      "targets": [
+                         {
+                            "expr": "sum by (status) (\n  label_replace(label_replace(rate(rollout_operator_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/(rollout-operator)\", route=~\"admission.*\"}[$__rate_interval]),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-zA-Z]+)\"))\n",
+                            "format": "time_series",
+                            "legendFormat": "{{status}}",
+                            "refId": "A"
+                         }
+                      ],
+                      "title": "Throughput by status",
+                      "type": "timeseries"
+                   },
+                   {
+                      "datasource": "$datasource",
+                      "fieldConfig": {
+                         "defaults": {
+                            "custom": {
+                               "drawStyle": "line",
+                               "fillOpacity": 1,
+                               "lineWidth": 1,
+                               "pointSize": 5,
+                               "showPoints": "never",
+                               "spanNulls": false,
+                               "stacking": {
+                                  "group": "A",
+                                  "mode": "none"
+                               }
+                            },
+                            "min": 0,
+                            "thresholds": {
+                               "mode": "absolute",
+                               "steps": [ ]
+                            },
+                            "unit": "reqps"
+                         },
+                         "overrides": [ ]
+                      },
+                      "id": 2,
+                      "links": [ ],
+                      "options": {
+                         "legend": {
+                            "showLegend": true
+                         },
+                         "tooltip": {
+                            "mode": "multi",
+                            "sort": "none"
+                         }
+                      },
+                      "span": 3,
+                      "targets": [
+                         {
+                            "expr": "sum by (route) (rate(rollout_operator_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/(rollout-operator)\", route=~\"admission.*\"}[$__rate_interval]))",
+                            "format": "time_series",
+                            "legendFormat": "__auto",
+                            "legendLink": null
+                         }
+                      ],
+                      "title": "Throughput by webhook",
+                      "type": "timeseries"
+                   },
+                   {
+                      "datasource": "$datasource",
+                      "fieldConfig": {
+                         "defaults": {
+                            "custom": {
+                               "drawStyle": "line",
+                               "fillOpacity": 1,
+                               "lineWidth": 1,
+                               "pointSize": 5,
+                               "showPoints": "never",
+                               "spanNulls": false,
+                               "stacking": {
+                                  "group": "A",
+                                  "mode": "none"
+                               }
+                            },
+                            "min": 0,
+                            "thresholds": {
+                               "mode": "absolute",
+                               "steps": [ ]
+                            },
+                            "unit": "ms"
+                         },
+                         "overrides": [ ]
+                      },
+                      "id": 3,
+                      "links": [ ],
+                      "nullPointMode": "null as zero",
+                      "options": {
+                         "legend": {
+                            "showLegend": true
+                         },
+                         "tooltip": {
+                            "mode": "multi",
+                            "sort": "none"
+                         }
+                      },
+                      "span": 3,
+                      "targets": [
+                         {
+                            "expr": "histogram_quantile(0.99, sum(rate(rollout_operator_request_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/(rollout-operator)\", route=~\"admission.*\"}[$__rate_interval])) by (le)) * 1e3",
+                            "format": "time_series",
+                            "legendFormat": "99th Percentile",
+                            "refId": "A"
+                         },
+                         {
+                            "expr": "histogram_quantile(0.50, sum(rate(rollout_operator_request_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/(rollout-operator)\", route=~\"admission.*\"}[$__rate_interval])) by (le)) * 1e3",
+                            "format": "time_series",
+                            "legendFormat": "50th Percentile",
+                            "refId": "B"
+                         },
+                         {
+                            "expr": "sum(rate(rollout_operator_request_duration_seconds_sum{cluster=~\"$cluster\", job=~\"($namespace)/(rollout-operator)\", route=~\"admission.*\"}[$__rate_interval])) * 1e3 / sum(rate(rollout_operator_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/(rollout-operator)\", route=~\"admission.*\"}[$__rate_interval]))",
+                            "format": "time_series",
+                            "legendFormat": "Average",
+                            "refId": "C"
+                         }
+                      ],
+                      "title": "Latency (all webhooks)",
+                      "type": "timeseries",
+                      "yaxes": [
+                         {
+                            "format": "ms",
+                            "label": null,
+                            "logBase": 1,
+                            "max": null,
+                            "min": 0,
+                            "show": true
+                         },
+                         {
+                            "format": "short",
+                            "label": null,
+                            "logBase": 1,
+                            "max": null,
+                            "min": null,
+                            "show": false
+                         }
+                      ]
+                   },
+                   {
+                      "datasource": "$datasource",
+                      "fieldConfig": {
+                         "defaults": {
+                            "custom": {
+                               "drawStyle": "line",
+                               "fillOpacity": 1,
+                               "lineWidth": 1,
+                               "pointSize": 5,
+                               "showPoints": "never",
+                               "spanNulls": false,
+                               "stacking": {
+                                  "group": "A",
+                                  "mode": "none"
+                               }
+                            },
+                            "min": 0,
+                            "thresholds": {
+                               "mode": "absolute",
+                               "steps": [ ]
+                            },
+                            "unit": "ms"
+                         },
+                         "overrides": [ ]
+                      },
+                      "id": 4,
+                      "links": [ ],
+                      "options": {
+                         "legend": {
+                            "showLegend": true
+                         },
+                         "tooltip": {
+                            "mode": "multi",
+                            "sort": "none"
+                         }
+                      },
+                      "span": 3,
+                      "targets": [
+                         {
+                            "expr": "histogram_quantile(0.99, sum by (le, route) (rate(rollout_operator_request_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/(rollout-operator)\", route=~\"admission.*\"}[$__rate_interval]))) * 1e3",
+                            "format": "time_series",
+                            "legendFormat": "__auto",
+                            "legendLink": null
+                         }
+                      ],
+                      "title": "p99 latency by webhook",
+                      "type": "timeseries"
+                   }
+                ],
+                "repeat": null,
+                "repeatIteration": null,
+                "repeatRowId": null,
+                "showTitle": true,
+                "title": "Incoming webhook requests",
+                "titleSize": "h6"
+             },
+             {
+                "collapse": false,
+                "height": "250px",
+                "panels": [
+                   {
+                      "datasource": "$datasource",
+                      "description": "### Reconciliation attempts by rollout group\nThis panel includes both successful and failed reconciliation attempts.\n",
+                      "fieldConfig": {
+                         "defaults": {
+                            "custom": {
+                               "drawStyle": "line",
+                               "fillOpacity": 1,
+                               "lineWidth": 1,
+                               "pointSize": 5,
+                               "showPoints": "never",
+                               "spanNulls": false,
+                               "stacking": {
+                                  "group": "A",
+                                  "mode": "none"
+                               }
+                            },
+                            "min": 0,
+                            "thresholds": {
+                               "mode": "absolute",
+                               "steps": [ ]
+                            },
+                            "unit": "reqps"
+                         },
+                         "overrides": [ ]
+                      },
+                      "id": 5,
+                      "links": [ ],
+                      "options": {
+                         "legend": {
+                            "showLegend": true
+                         },
+                         "tooltip": {
+                            "mode": "multi",
+                            "sort": "none"
+                         }
+                      },
+                      "span": 3,
+                      "targets": [
+                         {
+                            "expr": "sum by (namespace, rollout_group) (rate(rollout_operator_group_reconciles_total{cluster=~\"$cluster\", job=~\"($namespace)/(rollout-operator)\"}[$__rate_interval]))",
+                            "format": "time_series",
+                            "legendFormat": "{{namespace}}/{{rollout_group}}",
+                            "legendLink": null
+                         }
+                      ],
+                      "title": "Reconciliation attempts by rollout group",
+                      "type": "timeseries"
+                   },
+                   {
+                      "datasource": "$datasource",
+                      "fieldConfig": {
+                         "defaults": {
+                            "custom": {
+                               "drawStyle": "line",
+                               "fillOpacity": 1,
+                               "lineWidth": 1,
+                               "pointSize": 5,
+                               "showPoints": "never",
+                               "spanNulls": false,
+                               "stacking": {
+                                  "group": "A",
+                                  "mode": "none"
+                               }
+                            },
+                            "min": 0,
+                            "thresholds": {
+                               "mode": "absolute",
+                               "steps": [ ]
+                            },
+                            "unit": "reqps"
+                         },
+                         "overrides": [ ]
+                      },
+                      "id": 6,
+                      "links": [ ],
+                      "options": {
+                         "legend": {
+                            "showLegend": true
+                         },
+                         "tooltip": {
+                            "mode": "multi",
+                            "sort": "none"
+                         }
+                      },
+                      "span": 3,
+                      "targets": [
+                         {
+                            "expr": "sum by (namespace, rollout_group) (rate(rollout_operator_group_reconciles_failed_total{cluster=~\"$cluster\", job=~\"($namespace)/(rollout-operator)\"}[$__rate_interval]))",
+                            "format": "time_series",
+                            "legendFormat": "{{namespace}}/{{rollout_group}}",
+                            "legendLink": null
+                         }
+                      ],
+                      "title": "Reconciliation failures by rollout group",
+                      "type": "timeseries"
+                   },
+                   {
+                      "datasource": "$datasource",
+                      "fieldConfig": {
+                         "defaults": {
+                            "custom": {
+                               "drawStyle": "line",
+                               "fillOpacity": 1,
+                               "lineWidth": 1,
+                               "pointSize": 5,
+                               "showPoints": "never",
+                               "spanNulls": false,
+                               "stacking": {
+                                  "group": "A",
+                                  "mode": "none"
+                               }
+                            },
+                            "min": 0,
+                            "thresholds": {
+                               "mode": "absolute",
+                               "steps": [ ]
+                            },
+                            "unit": "ms"
+                         },
+                         "overrides": [ ]
+                      },
+                      "id": 7,
+                      "links": [ ],
+                      "options": {
+                         "legend": {
+                            "showLegend": true
+                         },
+                         "tooltip": {
+                            "mode": "multi",
+                            "sort": "none"
+                         }
+                      },
+                      "span": 3,
+                      "targets": [
+                         {
+                            "expr": "1e3 * sum by (namespace, rollout_group) (rate(rollout_operator_group_reconcile_duration_seconds_sum{cluster=~\"$cluster\", job=~\"($namespace)/(rollout-operator)\"}[$__rate_interval])) / sum by (namespace, rollout_group) (rate(rollout_operator_group_reconcile_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/(rollout-operator)\"}[$__rate_interval]))",
+                            "format": "time_series",
+                            "legendFormat": "{{namespace}}/{{rollout_group}}",
+                            "legendLink": null
+                         }
+                      ],
+                      "title": "Average reconcile duration by rollout group",
+                      "type": "timeseries"
+                   },
+                   {
+                      "datasource": "$datasource",
+                      "fieldConfig": {
+                         "defaults": {
+                            "custom": {
+                               "drawStyle": "line",
+                               "fillOpacity": 1,
+                               "lineWidth": 1,
+                               "pointSize": 5,
+                               "showPoints": "never",
+                               "spanNulls": false,
+                               "stacking": {
+                                  "group": "A",
+                                  "mode": "none"
+                               }
+                            },
+                            "min": 0,
+                            "thresholds": {
+                               "mode": "absolute",
+                               "steps": [ ]
+                            },
+                            "unit": "s"
+                         },
+                         "overrides": [ ]
+                      },
+                      "id": 8,
+                      "links": [ ],
+                      "options": {
+                         "legend": {
+                            "showLegend": true
+                         },
+                         "tooltip": {
+                            "mode": "multi",
+                            "sort": "none"
+                         }
+                      },
+                      "span": 3,
+                      "targets": [
+                         {
+                            "expr": "time() - max by (namespace, rollout_group) (rollout_operator_last_successful_group_reconcile_timestamp_seconds{cluster=~\"$cluster\", job=~\"($namespace)/(rollout-operator)\"})",
+                            "format": "time_series",
+                            "legendFormat": "{{namespace}}/{{rollout_group}}",
+                            "legendLink": null
+                         }
+                      ],
+                      "title": "Time since last successful reconcile",
+                      "type": "timeseries"
+                   }
+                ],
+                "repeat": null,
+                "repeatIteration": null,
+                "repeatRowId": null,
+                "showTitle": true,
+                "title": "Reconciliation loop",
+                "titleSize": "h6"
+             },
+             {
+                "collapse": false,
+                "height": "250px",
+                "panels": [
+                   {
+                      "datasource": "$datasource",
+                      "fieldConfig": {
+                         "defaults": {
+                            "custom": {
+                               "drawStyle": "line",
+                               "fillOpacity": 100,
+                               "lineWidth": 0,
+                               "pointSize": 5,
+                               "showPoints": "never",
+                               "spanNulls": false,
+                               "stacking": {
+                                  "group": "A",
+                                  "mode": "normal"
+                               }
+                            },
+                            "min": 0,
+                            "thresholds": {
+                               "mode": "absolute",
+                               "steps": [ ]
+                            },
+                            "unit": "reqps"
+                         },
+                         "overrides": [
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "1xx"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "color",
+                                     "value": {
+                                        "fixedColor": "#EAB839",
+                                        "mode": "fixed"
+                                     }
+                                  }
+                               ]
+                            },
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "2xx"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "color",
+                                     "value": {
+                                        "fixedColor": "#7EB26D",
+                                        "mode": "fixed"
+                                     }
+                                  }
+                               ]
+                            },
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "3xx"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "color",
+                                     "value": {
+                                        "fixedColor": "#6ED0E0",
+                                        "mode": "fixed"
+                                     }
+                                  }
+                               ]
+                            },
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "4xx"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "color",
+                                     "value": {
+                                        "fixedColor": "#EF843C",
+                                        "mode": "fixed"
+                                     }
+                                  }
+                               ]
+                            },
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "5xx"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "color",
+                                     "value": {
+                                        "fixedColor": "#E24D42",
+                                        "mode": "fixed"
+                                     }
+                                  }
+                               ]
+                            },
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "Canceled"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "color",
+                                     "value": {
+                                        "fixedColor": "#A9A9A9",
+                                        "mode": "fixed"
+                                     }
+                                  }
+                               ]
+                            },
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "OK"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "color",
+                                     "value": {
+                                        "fixedColor": "#7EB26D",
+                                        "mode": "fixed"
+                                     }
+                                  }
+                               ]
+                            },
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "cancel"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "color",
+                                     "value": {
+                                        "fixedColor": "#A9A9A9",
+                                        "mode": "fixed"
+                                     }
+                                  }
+                               ]
+                            },
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "error"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "color",
+                                     "value": {
+                                        "fixedColor": "#E24D42",
+                                        "mode": "fixed"
+                                     }
+                                  }
+                               ]
+                            },
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "success"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "color",
+                                     "value": {
+                                        "fixedColor": "#7EB26D",
+                                        "mode": "fixed"
+                                     }
+                                  }
+                               ]
+                            }
+                         ]
+                      },
+                      "id": 9,
+                      "links": [ ],
+                      "options": {
+                         "legend": {
+                            "showLegend": true
+                         },
+                         "tooltip": {
+                            "mode": "multi",
+                            "sort": "none"
+                         }
+                      },
+                      "span": 4,
+                      "targets": [
+                         {
+                            "expr": "sum by (status) (\n  label_replace(label_replace(rate(rollout_operator_kubernetes_api_client_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/(rollout-operator)\"}[$__rate_interval]),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-zA-Z]+)\"))\n",
+                            "format": "time_series",
+                            "legendFormat": "{{status}}",
+                            "refId": "A"
+                         }
+                      ],
+                      "title": "Throughput by status",
+                      "type": "timeseries"
+                   },
+                   {
+                      "datasource": "$datasource",
+                      "fieldConfig": {
+                         "defaults": {
+                            "custom": {
+                               "drawStyle": "line",
+                               "fillOpacity": 1,
+                               "lineWidth": 1,
+                               "pointSize": 5,
+                               "showPoints": "never",
+                               "spanNulls": false,
+                               "stacking": {
+                                  "group": "A",
+                                  "mode": "none"
+                               }
+                            },
+                            "min": 0,
+                            "thresholds": {
+                               "mode": "absolute",
+                               "steps": [ ]
+                            },
+                            "unit": "reqps"
+                         },
+                         "overrides": [ ]
+                      },
+                      "id": 10,
+                      "links": [ ],
+                      "options": {
+                         "legend": {
+                            "showLegend": true
+                         },
+                         "tooltip": {
+                            "mode": "multi",
+                            "sort": "none"
+                         }
+                      },
+                      "span": 4,
+                      "targets": [
+                         {
+                            "expr": "sum by (method, path) (rate(rollout_operator_kubernetes_api_client_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/(rollout-operator)\"}[$__rate_interval]))",
+                            "format": "time_series",
+                            "legendFormat": "{{method}} {{path}}",
+                            "legendLink": null
+                         }
+                      ],
+                      "title": "Throughput by route",
+                      "type": "timeseries"
+                   },
+                   {
+                      "datasource": "$datasource",
+                      "fieldConfig": {
+                         "defaults": {
+                            "custom": {
+                               "drawStyle": "line",
+                               "fillOpacity": 1,
+                               "lineWidth": 1,
+                               "pointSize": 5,
+                               "showPoints": "never",
+                               "spanNulls": false,
+                               "stacking": {
+                                  "group": "A",
+                                  "mode": "none"
+                               }
+                            },
+                            "min": 0,
+                            "thresholds": {
+                               "mode": "absolute",
+                               "steps": [ ]
+                            },
+                            "unit": "ms"
+                         },
+                         "overrides": [
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "All routes"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "custom.lineStyle",
+                                     "value": {
+                                        "dash": [
+                                           10,
+                                           10
+                                        ],
+                                        "fill": "dash"
+                                     }
+                                  },
+                                  {
+                                     "id": "color",
+                                     "value": {
+                                        "fixedColor": "#808080",
+                                        "mode": "fixed"
+                                     }
+                                  }
+                               ]
+                            }
+                         ]
+                      },
+                      "id": 11,
+                      "links": [ ],
+                      "options": {
+                         "legend": {
+                            "showLegend": true
+                         },
+                         "tooltip": {
+                            "mode": "multi",
+                            "sort": "none"
+                         }
+                      },
+                      "span": 4,
+                      "targets": [
+                         {
+                            "expr": "sum by (method, path) (rate(rollout_operator_kubernetes_api_client_request_duration_seconds_sum{cluster=~\"$cluster\", job=~\"($namespace)/(rollout-operator)\"}[$__rate_interval])) / sum by (method, path) (rate(rollout_operator_kubernetes_api_client_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/(rollout-operator)\"}[$__rate_interval])) * 1e3",
+                            "format": "time_series",
+                            "legendFormat": "{{method}} {{path}}",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "sum(rate(rollout_operator_kubernetes_api_client_request_duration_seconds_sum{cluster=~\"$cluster\", job=~\"($namespace)/(rollout-operator)\"}[$__rate_interval])) / sum(rate(rollout_operator_kubernetes_api_client_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/(rollout-operator)\"}[$__rate_interval])) * 1e3",
+                            "format": "time_series",
+                            "legendFormat": "All routes",
+                            "legendLink": null
+                         }
+                      ],
+                      "title": "Average latency (by route)",
+                      "type": "timeseries"
+                   }
+                ],
+                "repeat": null,
+                "repeatIteration": null,
+                "repeatRowId": null,
+                "showTitle": true,
+                "title": "Outgoing Kubernetes control plane API requests",
+                "titleSize": "h6"
+             },
+             {
+                "collapse": false,
+                "height": "250px",
+                "panels": [
+                   {
+                      "datasource": "$datasource",
+                      "fieldConfig": {
+                         "defaults": {
+                            "custom": {
+                               "drawStyle": "line",
+                               "fillOpacity": 0,
+                               "lineWidth": 1,
+                               "pointSize": 5,
+                               "showPoints": "never",
+                               "spanNulls": false,
+                               "stacking": {
+                                  "group": "A",
+                                  "mode": "none"
+                               }
+                            },
+                            "min": 0,
+                            "thresholds": {
+                               "mode": "absolute",
+                               "steps": [ ]
+                            },
+                            "unit": "short"
+                         },
+                         "overrides": [
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "request"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "color",
+                                     "value": {
+                                        "fixedColor": "#FFC000",
+                                        "mode": "fixed"
+                                     }
+                                  },
+                                  {
+                                     "id": "custom.fillOpacity",
+                                     "value": 0
+                                  },
+                                  {
+                                     "id": "custom.lineStyle",
+                                     "value": {
+                                        "fill": "dash"
+                                     }
+                                  }
+                               ]
+                            },
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "limit"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "color",
+                                     "value": {
+                                        "fixedColor": "#E02F44",
+                                        "mode": "fixed"
+                                     }
+                                  },
+                                  {
+                                     "id": "custom.fillOpacity",
+                                     "value": 0
+                                  },
+                                  {
+                                     "id": "custom.lineStyle",
+                                     "value": {
+                                        "fill": "dash"
+                                     }
+                                  }
+                               ]
+                            }
+                         ]
+                      },
+                      "id": 12,
+                      "links": [ ],
+                      "options": {
+                         "legend": {
+                            "showLegend": true
+                         },
+                         "tooltip": {
+                            "mode": "multi",
+                            "sort": "desc"
+                         }
+                      },
+                      "span": 4,
+                      "targets": [
+                         {
+                            "expr": "sum by(pod) (rate(container_cpu_usage_seconds_total{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"rollout-operator\"}[$__rate_interval]))",
+                            "format": "time_series",
+                            "legendFormat": "{{pod}}",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "min(container_spec_cpu_quota{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"rollout-operator\"} / container_spec_cpu_period{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"rollout-operator\"})",
+                            "format": "time_series",
+                            "legendFormat": "limit",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "min(kube_pod_container_resource_requests{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"rollout-operator\",resource=\"cpu\"})",
+                            "format": "time_series",
+                            "legendFormat": "request",
+                            "legendLink": null
+                         }
+                      ],
+                      "title": "CPU",
+                      "type": "timeseries"
+                   },
+                   {
+                      "datasource": "$datasource",
+                      "fieldConfig": {
+                         "defaults": {
+                            "custom": {
+                               "drawStyle": "line",
+                               "fillOpacity": 0,
+                               "lineWidth": 1,
+                               "pointSize": 5,
+                               "showPoints": "never",
+                               "spanNulls": false,
+                               "stacking": {
+                                  "group": "A",
+                                  "mode": "none"
+                               }
+                            },
+                            "min": 0,
+                            "thresholds": {
+                               "mode": "absolute",
+                               "steps": [ ]
+                            },
+                            "unit": "bytes"
+                         },
+                         "overrides": [
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "request"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "color",
+                                     "value": {
+                                        "fixedColor": "#FFC000",
+                                        "mode": "fixed"
+                                     }
+                                  },
+                                  {
+                                     "id": "custom.fillOpacity",
+                                     "value": 0
+                                  },
+                                  {
+                                     "id": "custom.lineStyle",
+                                     "value": {
+                                        "fill": "dash"
+                                     }
+                                  }
+                               ]
+                            },
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "limit"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "color",
+                                     "value": {
+                                        "fixedColor": "#E02F44",
+                                        "mode": "fixed"
+                                     }
+                                  },
+                                  {
+                                     "id": "custom.fillOpacity",
+                                     "value": 0
+                                  },
+                                  {
+                                     "id": "custom.lineStyle",
+                                     "value": {
+                                        "fill": "dash"
+                                     }
+                                  }
+                               ]
+                            }
+                         ]
+                      },
+                      "id": 13,
+                      "links": [ ],
+                      "options": {
+                         "legend": {
+                            "showLegend": true
+                         },
+                         "tooltip": {
+                            "mode": "multi",
+                            "sort": "desc"
+                         }
+                      },
+                      "span": 4,
+                      "targets": [
+                         {
+                            "expr": "max by(pod) (container_memory_working_set_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"rollout-operator\"})",
+                            "format": "time_series",
+                            "legendFormat": "{{pod}}",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "min(container_spec_memory_limit_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"rollout-operator\"} > 0)",
+                            "format": "time_series",
+                            "legendFormat": "limit",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "min(kube_pod_container_resource_requests{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"rollout-operator\",resource=\"memory\"})",
+                            "format": "time_series",
+                            "legendFormat": "request",
+                            "legendLink": null
+                         }
+                      ],
+                      "title": "Memory (workingset)",
+                      "type": "timeseries"
+                   },
+                   {
+                      "datasource": "$datasource",
+                      "fieldConfig": {
+                         "defaults": {
+                            "custom": {
+                               "drawStyle": "line",
+                               "fillOpacity": 1,
+                               "lineWidth": 1,
+                               "pointSize": 5,
+                               "showPoints": "never",
+                               "spanNulls": false,
+                               "stacking": {
+                                  "group": "A",
+                                  "mode": "none"
+                               }
+                            },
+                            "min": 0,
+                            "thresholds": {
+                               "mode": "absolute",
+                               "steps": [ ]
+                            },
+                            "unit": "instance"
+                         },
+                         "overrides": [ ]
+                      },
+                      "id": 14,
+                      "links": [ ],
+                      "options": {
+                         "legend": {
+                            "showLegend": false
+                         },
+                         "tooltip": {
+                            "mode": "multi",
+                            "sort": "none"
+                         }
+                      },
+                      "span": 4,
+                      "targets": [
+                         {
+                            "expr": "sum(up{cluster=~\"$cluster\", job=~\"($namespace)/(rollout-operator)\"})",
+                            "format": "time_series",
+                            "legendFormat": "Instances",
+                            "legendLink": null
+                         }
+                      ],
+                      "title": "Running instances",
+                      "type": "timeseries"
+                   }
+                ],
+                "repeat": null,
+                "repeatIteration": null,
+                "repeatRowId": null,
+                "showTitle": true,
+                "title": "Resources",
+                "titleSize": "h6"
+             }
+          ],
+          "schemaVersion": 14,
+          "style": "dark",
+          "tags": [
+             "mimir"
+          ],
+          "templating": {
+             "list": [
+                {
+                   "current": {
+                      "text": "default",
+                      "value": "default"
+                   },
+                   "hide": 0,
+                   "label": "Data source",
+                   "name": "datasource",
+                   "options": [ ],
+                   "query": "prometheus",
+                   "refresh": 1,
+                   "regex": "",
+                   "type": "datasource"
+                },
+                {
+                   "allValue": ".+",
+                   "current": {
+                      "selected": true,
+                      "text": "All",
+                      "value": "$__all"
+                   },
+                   "datasource": "$datasource",
+                   "hide": 0,
+                   "includeAll": true,
+                   "label": "cluster",
+                   "multi": true,
+                   "name": "cluster",
+                   "options": [ ],
+                   "query": "label_values(cortex_build_info, cluster)",
+                   "refresh": 1,
+                   "regex": "",
+                   "sort": 1,
+                   "tagValuesQuery": "",
+                   "tags": [ ],
+                   "tagsQuery": "",
+                   "type": "query",
+                   "useTags": false
+                },
+                {
+                   "allValue": ".+",
+                   "current": {
+                      "selected": true,
+                      "text": "All",
+                      "value": "$__all"
+                   },
+                   "datasource": "$datasource",
+                   "hide": 0,
+                   "includeAll": false,
+                   "label": "namespace",
+                   "multi": true,
+                   "name": "namespace",
+                   "options": [ ],
+                   "query": "label_values(cortex_build_info{cluster=~\"$cluster\"}, namespace)",
+                   "refresh": 1,
+                   "regex": "",
+                   "sort": 1,
+                   "tagValuesQuery": "",
+                   "tags": [ ],
+                   "tagsQuery": "",
+                   "type": "query",
+                   "useTags": false
+                }
+             ]
+          },
+          "time": {
+             "from": "now-1h",
+             "to": "now"
+          },
+          "timepicker": {
+             "refresh_intervals": [
+                "5s",
+                "10s",
+                "30s",
+                "1m",
+                "5m",
+                "15m",
+                "30m",
+                "1h",
+                "2h",
+                "1d"
+             ],
+             "time_options": [
+                "5m",
+                "15m",
+                "1h",
+                "6h",
+                "12h",
+                "24h",
+                "2d",
+                "7d",
+                "30d"
+             ]
+          },
+          "timezone": "utc",
+          "title": "Mimir / rollout-operator",
+          "uid": "f40e8042a6be71a98444a29b2c4e9421",
           "version": 0
        }

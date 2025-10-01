@@ -46,7 +46,7 @@ import (
 func ExponentialBlockRanges(minSize int64, steps, stepSize int) []int64 {
 	ranges := make([]int64, 0, steps)
 	curRange := minSize
-	for i := 0; i < steps; i++ {
+	for range steps {
 		ranges = append(ranges, curRange)
 		curRange *= int64(stepSize)
 	}
@@ -187,7 +187,7 @@ type LeveledCompactorOptions struct {
 
 type PostingsDecoderFactory func(meta *BlockMeta) index.PostingsDecoder
 
-func DefaultPostingsDecoderFactory(_ *BlockMeta) index.PostingsDecoder {
+func DefaultPostingsDecoderFactory(*BlockMeta) index.PostingsDecoder {
 	return index.DecodePostingsRaw
 }
 
@@ -742,6 +742,7 @@ func (c *LeveledCompactor) Write(dest string, b BlockReader, mint, maxt int64, b
 	start := time.Now()
 
 	uid := ulid.MustNew(ulid.Now(), rand.Reader)
+	c.logger.Info("write block started", "mint", mint, "maxt", maxt, "ulid", uid)
 
 	meta := &BlockMeta{
 		ULID:    uid,
@@ -776,7 +777,7 @@ func (c *LeveledCompactor) Write(dest string, b BlockReader, mint, maxt int64, b
 	}
 
 	c.logger.Info(
-		"write block",
+		"write block completed",
 		"mint", meta.MinTime,
 		"maxt", meta.MaxTime,
 		"ulid", meta.ULID,
@@ -1026,7 +1027,7 @@ type DefaultBlockPopulator struct{}
 // It expects sorted blocks input by mint.
 // If there is more than 1 output block, each output block will only contain series that hash into its shard
 // (based on total number of output blocks).
-func (c DefaultBlockPopulator) PopulateBlock(ctx context.Context, metrics *CompactorMetrics, logger *slog.Logger, chunkPool chunkenc.Pool, mergeFunc storage.VerticalChunkSeriesMergeFunc, concurrencyOpts LeveledCompactorConcurrencyOptions, blocks []BlockReader, minT, maxT int64, outBlocks []shardedBlock, postingsFunc IndexReaderPostingsFunc) (err error) {
+func (DefaultBlockPopulator) PopulateBlock(ctx context.Context, metrics *CompactorMetrics, logger *slog.Logger, chunkPool chunkenc.Pool, mergeFunc storage.VerticalChunkSeriesMergeFunc, concurrencyOpts LeveledCompactorConcurrencyOptions, blocks []BlockReader, minT, maxT int64, outBlocks []shardedBlock, postingsFunc IndexReaderPostingsFunc) (err error) {
 	if len(blocks) == 0 {
 		return errors.New("cannot populate block(s) from no readers")
 	}

@@ -243,28 +243,22 @@ func TestStartup(t *testing.T) {
 	require.NotZero(t, a1spec)
 	require.Equal(t, "ingest/65/300", a1key.id)
 
-	requireGaps(t, sched.register.(*prometheus.Registry), 65, 0, 0)
+	requireGaps(t, sched.register.(*prometheus.Registry), 0, 0)
 }
 
-func requireGaps(t *testing.T, reg *prometheus.Registry, partition int32, planned, committed int, msgAndArgs ...any) {
+func requireGaps(t *testing.T, reg *prometheus.Registry, planned, committed int, msgAndArgs ...any) {
 	t.Helper()
 
 	var b strings.Builder
 
-	if planned != 0 || committed != 0 {
-		b.WriteString(`# HELP cortex_blockbuilder_scheduler_job_gap_detected The number of times an unexpected gap was detected between jobs.
+	b.WriteString(`# HELP cortex_blockbuilder_scheduler_job_gap_detected The number of times an unexpected gap was detected between jobs.
 		# TYPE cortex_blockbuilder_scheduler_job_gap_detected counter
 		`)
 
-		if planned != 0 {
-			b.WriteString(fmt.Sprintf(
-				"cortex_blockbuilder_scheduler_job_gap_detected{offset_type=\"planned\",partition=\"%d\"} %d\n", partition, planned))
-		}
-		if committed != 0 {
-			b.WriteString(fmt.Sprintf(
-				"cortex_blockbuilder_scheduler_job_gap_detected{offset_type=\"committed\",partition=\"%d\"} %d\n", partition, committed))
-		}
-	}
+	b.WriteString(fmt.Sprintf(
+		"cortex_blockbuilder_scheduler_job_gap_detected{offset_type=\"planned\"} %d\n", planned))
+	b.WriteString(fmt.Sprintf(
+		"cortex_blockbuilder_scheduler_job_gap_detected{offset_type=\"committed\"} %d\n", committed))
 
 	require.NoError(t,
 		promtest.GatherAndCompare(reg, strings.NewReader(b.String()),
@@ -906,8 +900,8 @@ func TestConsumptionRanges(t *testing.T) {
 
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
-			f := &mockOffsetFinder{offsets: tt.offsets, end: tt.end}
-			j, err := probeInitialJobOffsets(ctx, f, "topic", 0, tt.start, tt.resume, tt.end, tt.endTime, tt.jobSize, tt.minScanTime, test.NewTestingLogger(t))
+			f := &mockOffsetFinder{offsets: tt.offsets, end: tt.end, distinctTimes: make(map[time.Time]struct{})}
+			j, err := probeInitialOffsets(ctx, f, "topic", 0, tt.start, tt.resume, tt.end, tt.endTime, tt.jobSize, tt.minScanTime, test.NewTestingLogger(t))
 			assert.NoError(t, err)
 			assert.EqualValues(t, tt.expectedRanges, j, tt.msg)
 		})
@@ -916,11 +910,13 @@ func TestConsumptionRanges(t *testing.T) {
 
 // Create an offset finder that we can prepopulate with offset scenarios.
 type mockOffsetFinder struct {
-	offsets []*offsetTime
-	end     int64
+	offsets       []*offsetTime
+	end           int64
+	distinctTimes map[time.Time]struct{}
 }
 
 func (o *mockOffsetFinder) offsetAfterTime(_ context.Context, _ string, _ int32, t time.Time) (int64, time.Time, error) {
+	o.distinctTimes[t] = struct{}{}
 	// scan the offsets slice and return the lowest offset whose time is after t.
 	mint := time.Time{}
 	maxt := time.Time{}
@@ -944,6 +940,33 @@ func (o *mockOffsetFinder) offsetAfterTime(_ context.Context, _ string, _ int32,
 }
 
 var _ offsetStore = (*mockOffsetFinder)(nil)
+
+func TestPopulateInitialJobs_ProbeTimesReused(t *testing.T) {
+	// Ensure that the probe times are reused across partitions, which is a
+	// necessary condition for cached offset reuse in the offsetFinder.
+	sched, _ := mustScheduler(t, 4)
+	sched.cfg.MaxScanAge = 1 * time.Hour
+
+	finder := &mockOffsetFinder{
+		offsets: []*offsetTime{
+			{offset: 100, time: time.Date(2025, 3, 1, 10, 0, 0, 0, time.UTC)},
+			{offset: 200, time: time.Date(2025, 3, 1, 10, 0, 0, 0, time.UTC)},
+			{offset: 300, time: time.Date(2025, 3, 1, 10, 0, 0, 0, time.UTC)},
+		},
+		end:           1000,
+		distinctTimes: make(map[time.Time]struct{}),
+	}
+
+	consumeOffs := []partitionOffsets{
+		{topic: "topic", partition: 0, start: 100, resume: 100, end: 1000},
+		{topic: "topic", partition: 1, start: 100, resume: 100, end: 1000},
+		{topic: "topic", partition: 2, start: 100, resume: 100, end: 1000},
+		{topic: "topic", partition: 3, start: 100, resume: 100, end: 1000},
+	}
+
+	sched.populateInitialJobs(context.Background(), consumeOffs, finder)
+	require.Len(t, finder.distinctTimes, 4, "four partitions will each be probed four times, but the probe times should be the same across each partition")
+}
 
 func TestLimitNPolicy(t *testing.T) {
 	allow1 := limitPerPartitionJobCreationPolicy{partitionLimit: 1}
@@ -1263,7 +1286,7 @@ func TestBlockBuilderScheduler_EnqueuePendingJobs_GapDetection(t *testing.T) {
 	assert.Equal(t, 3, sched.jobs.count())
 	assert.Equal(t, int64(50), pt.planned.offset())
 
-	requireGaps(t, reg, part, 0, 0)
+	requireGaps(t, reg, 0, 0)
 
 	// this one introduces a gap:
 	pt.addPendingJob(&schedulerpb.JobSpec{Topic: "ingest", Partition: part, StartOffset: 60, EndOffset: 70})
@@ -1276,7 +1299,7 @@ func TestBlockBuilderScheduler_EnqueuePendingJobs_GapDetection(t *testing.T) {
 	assert.Equal(t, 4, sched.jobs.count(), "a gap should not interfere with job queueing")
 	assert.Equal(t, int64(70), pt.planned.offset())
 
-	requireGaps(t, reg, part, 1, 0)
+	requireGaps(t, reg, 1, 0)
 
 	// the gap may not be the first job:
 	pt.addPendingJob(&schedulerpb.JobSpec{Topic: "ingest", Partition: part, StartOffset: 70, EndOffset: 80})
@@ -1292,7 +1315,7 @@ func TestBlockBuilderScheduler_EnqueuePendingJobs_GapDetection(t *testing.T) {
 	assert.Equal(t, 7, sched.jobs.count(), "a gap should not interfere with job queueing")
 	assert.Equal(t, int64(120), pt.planned.offset())
 
-	requireGaps(t, reg, part, 2, 0)
+	requireGaps(t, reg, 2, 0)
 
 	// Now simulate completing these jobs and expect commit gaps where appropriate.
 	expectedStart := int64(0)
@@ -1311,7 +1334,7 @@ func TestBlockBuilderScheduler_EnqueuePendingJobs_GapDetection(t *testing.T) {
 		}
 
 		expectedStart = spec.EndOffset
-		requireGaps(t, reg, part, 2, commitGaps, "expected %d commit gaps at job %d", commitGaps, j)
+		requireGaps(t, reg, 2, commitGaps, "expected %d commit gaps at job %d", commitGaps, j)
 	}
 }
 
@@ -1320,7 +1343,7 @@ func TestBlockBuilderScheduler_NoCommit_NoGap(t *testing.T) {
 	reg := sched.register.(*prometheus.Registry)
 
 	const part int32 = 1
-	requireGaps(t, reg, part, 0, 0)
+	requireGaps(t, reg, 0, 0)
 
 	pp := sched.getPartitionState("ingest", part)
 	require.True(t, pp.planned.empty())
@@ -1335,10 +1358,10 @@ func TestBlockBuilderScheduler_NoCommit_NoGap(t *testing.T) {
 	}
 
 	pp.planned.advance(k, spec)
-	requireGaps(t, reg, part, 0, 0, "advancing an empty planned offset should not register a gap")
+	requireGaps(t, reg, 0, 0, "advancing an empty planned offset should not register a gap")
 
 	pp.committed.advance(k, spec)
-	requireGaps(t, reg, part, 0, 0, "advancing an empty committed offset should not register a gap")
+	requireGaps(t, reg, 0, 0, "advancing an empty committed offset should not register a gap")
 
 	// Now create a gap:
 	k2 := jobKey{"myjob7", 23}
@@ -1350,8 +1373,8 @@ func TestBlockBuilderScheduler_NoCommit_NoGap(t *testing.T) {
 	}
 
 	pp.planned.advance(k2, spec2)
-	requireGaps(t, reg, part, 1, 0, "a gap after a non-empty planned offset should register a gap")
+	requireGaps(t, reg, 1, 0, "a gap after a non-empty planned offset should register a gap")
 
 	pp.committed.advance(k2, spec2)
-	requireGaps(t, reg, part, 1, 1, "a gap after a non-empty committed offset should register a gap")
+	requireGaps(t, reg, 1, 1, "a gap after a non-empty committed offset should register a gap")
 }

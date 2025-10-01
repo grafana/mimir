@@ -39,7 +39,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: prepare
     container:
-      image: ${{ needs.prepare.outputs.build_image }}
+      image: ${{ needs.prepare.outputs.build_image }} # zizmor: ignore[unpinned-images] The image output produced by the prepare step is pinned
     steps:
       - uses: actions/checkout@v4
         with:
@@ -57,7 +57,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: prepare
     container:
-      image: ${{ needs.prepare.outputs.build_image }}
+      image: ${{ needs.prepare.outputs.build_image }} # zizmor: ignore[unpinned-images] The image output produced by the prepare step is pinned
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -84,16 +84,14 @@ jobs:
       - name: Check License Header
         run: make BUILD_IN_CONTAINER=false check-license
       - name: Check Docker-Compose YAML
-        run: make BUILD_IN_CONTAINER=false check-mimir-microservices-mode-docker-compose-yaml check-mimir-read-write-mode-docker-compose-yaml
-      - name: Check Generated OTLP Code
-        run: make BUILD_IN_CONTAINER=false check-generated-otlp-code
+        run: make BUILD_IN_CONTAINER=false check-mimir-microservices-mode-docker-compose-yaml
 
   lint-jsonnet:
     runs-on: ubuntu-latest
     needs:
       - prepare
     container:
-      image: ${{ needs.prepare.outputs.build_image }}
+      image: ${{ needs.prepare.outputs.build_image }} # zizmor: ignore[unpinned-images] The image output produced by the prepare step is pinned
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -125,7 +123,7 @@ jobs:
     needs:
       - prepare
     container:
-      image: ${{ needs.prepare.outputs.build_image }}
+      image: ${{ needs.prepare.outputs.build_image }} # zizmor: ignore[unpinned-images] The image output produced by the prepare step is pinned
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -140,7 +138,7 @@ jobs:
           mkdir -p /go/src/github.com/grafana/mimir
           ln -s $GITHUB_WORKSPACE/* /go/src/github.com/grafana/mimir
       - name: Set up Helm
-        uses: azure/setup-helm@b9e51907a09c216f16ebe8536097933489208112 # v4.3.0
+        uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4 # v4.3.1
         with:
           version: v3.17.2
       - name: Check Helm Tests
@@ -157,13 +155,18 @@ jobs:
         test_group_total: [4]
     needs:
       - prepare
+    permissions:
+      contents: read
+      pull-requests: write
     container:
-      image: ${{ needs.prepare.outputs.build_image }}
+      image: ${{ needs.prepare.outputs.build_image }} # zizmor: ignore[unpinned-images] The image output produced by the prepare step is pinned
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
         with:
           persist-credentials: false
+      - name: Install GitHub CLI
+        run: ./.github/workflows/scripts/install-gh.sh
       - name: Run Git Config
         run: git config --global --add safe.directory '*'
       - name: Symlink Expected Path to Workspace
@@ -182,16 +185,134 @@ jobs:
           command: |
             echo "Running unit tests (group ${{ matrix.test_group_id }} of ${{ matrix.test_group_total }}) with Go version: $(go version)"
             ./.github/workflows/scripts/run-unit-tests-group.sh --index ${{ matrix.test_group_id }} --total ${{ matrix.test_group_total }}
+      - name: Notify on streamingpromql failures
+        if: failure() && env.FAILED_PACKAGES != '' && contains(github.event.pull_request.labels.*.name, 'vendored-mimir-prometheus-update')
+        run: |
+          if echo "${{ env.FAILED_PACKAGES }}" | grep -q "pkg/streamingpromql"; then
+            gh pr comment ${{ github.event.pull_request.number }} --body \
+              "⚠️ Test failures detected in \`pkg/streamingpromql\` (test group ${{ matrix.test_group_id }}/${{ matrix.test_group_total }})
+              
+          Failed packages in this test group:
+          \`\`\`
+          ${{ env.FAILED_PACKAGES }}
+          \`\`\`
+              
+          cc @charleskorn @56quarters @lamida @zenador @Konstantinov-Innokentii 
+              
+          Please review the [test logs](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) and push fixes to this PR."
+          fi
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   test-docs:
     uses: ./.github/workflows/test-docs.yml
 
-  build:
+  build-metaconvert-image:
     runs-on: ubuntu-latest
     needs:
       - prepare
     container:
-      image: ${{ needs.prepare.outputs.build_image }}
+      image: ${{ needs.prepare.outputs.build_image }} # zizmor: ignore[unpinned-images] The image output produced by the prepare step is pinned
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Build
+        uses: ./.github/actions/build-image
+        with:
+          artifact_name: docker-image-metaconvert
+          target: "./cmd/metaconvert/.uptodate"
+
+  build-mimir-image:
+    runs-on: ubuntu-latest
+    needs:
+      - prepare
+    container:
+      image: ${{ needs.prepare.outputs.build_image }} # zizmor: ignore[unpinned-images] The image output produced by the prepare step is pinned
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Build
+        uses: ./.github/actions/build-image
+        with:
+          artifact_name: docker-image-mimir
+          target: "./cmd/mimir/.uptodate"
+
+  build-query-tee-image:
+    runs-on: ubuntu-latest
+    needs:
+      - prepare
+    container:
+      image: ${{ needs.prepare.outputs.build_image }} # zizmor: ignore[unpinned-images] The image output produced by the prepare step is pinned
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Build
+        uses: ./.github/actions/build-image
+        with:
+          artifact_name: docker-image-query-tee
+          target: "./cmd/query-tee/.uptodate"
+
+  build-mimirtool-image:
+    runs-on: ubuntu-latest
+    needs:
+      - prepare
+    container:
+      image: ${{ needs.prepare.outputs.build_image }} # zizmor: ignore[unpinned-images] The image output produced by the prepare step is pinned
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Build
+        uses: ./.github/actions/build-image
+        with:
+          artifact_name: docker-image-mimirtool
+          target: "./cmd/mimirtool/.uptodate"
+
+  build-copyblocks-image:
+    runs-on: ubuntu-latest
+    needs:
+      - prepare
+    container:
+      image: ${{ needs.prepare.outputs.build_image }} # zizmor: ignore[unpinned-images] The image output produced by the prepare step is pinned
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Build
+        uses: ./.github/actions/build-image
+        with:
+          artifact_name: docker-image-copyblocks
+          target: "./tools/copyblocks/.uptodate"
+
+  # This job does not do anything - it exists to simplify the "needs" condition of the "deploy" job,
+  # and to make it easier to configure the required passing checks in branch protection rules in GitHub,
+  # as we have to specify each required passing job there. This job won't be considered successful unless
+  # all the jobs it needs have succeeded.
+  build:
+    runs-on: ubuntu-latest
+    needs:
+      - build-metaconvert-image
+      - build-mimir-image
+      - build-query-tee-image
+      - build-mimirtool-image
+      - build-copyblocks-image
+    steps:
+      - run: echo "All dependencies succeeded!"
+
+  build-race-enabled-image:
+    runs-on: ubuntu-latest
+    needs:
+      - prepare
+    container:
+      image: ${{ needs.prepare.outputs.build_image }} # zizmor: ignore[unpinned-images] The image output produced by the prepare step is pinned
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -210,18 +331,6 @@ jobs:
         run: |
           mkdir -p /go/src/github.com/grafana/mimir
           ln -s $GITHUB_WORKSPACE/* /go/src/github.com/grafana/mimir
-      - name: Build Multiarch Docker Images Locally
-        # Ignore mimir-build-image and mimir-rules-action.
-        run: |
-          ./.github/workflows/scripts/build-images.sh /tmp/images $(make list-image-targets | grep -v -E '/mimir-build-image/|/mimir-rules-action/')
-      - name: Build Archive With Docker Images
-        run: |
-          tar cvf images.tar /tmp/images
-      - name: Upload Archive with Docker Images
-        uses: actions/upload-artifact@v4
-        with:
-          name: Docker Images
-          path: ./images.tar
       - name: Build Mimir with race-detector
         run: |
           make BUILD_IN_CONTAINER=false cmd/mimir/.uptodate_race
@@ -231,12 +340,13 @@ jobs:
       - name: Upload archive with race-enabled Mimir
         uses: actions/upload-artifact@v4
         with:
-          name: Race-enabled Mimir
+          # We deliberately don't use the "docker-image" prefix here, as that is used to find all images published as part of a release, and we don't want this image included in the release.
+          name: test-docker-image-race-enabled-mimir
           path: |
             ./mimir_race_image_distroless
 
   integration:
-    needs: [goversion, build, prepare]
+    needs: [goversion, build-mimirtool-image, build-race-enabled-image, prepare]
     runs-on: ubuntu-latest
     strategy:
       # Do not abort other groups when one fails.
@@ -261,12 +371,12 @@ jobs:
         run: |
           sudo mkdir -p /go/src/github.com/grafana/mimir
           sudo ln -s $GITHUB_WORKSPACE/* /go/src/github.com/grafana/mimir
-      - name: Download Archive with Docker Images
+      - name: Download mimirtool Docker Image
         uses: actions/download-artifact@v4
         with:
-          name: Docker Images
-      - name: Extract Docker Images from Archive
-        run: tar xvf images.tar -C /
+          name: docker-image-mimirtool
+      - name: Extract Docker Image from Archive
+        run: mkdir /tmp/images && tar xvf images.tar -C /tmp/images
       - name: Load Mimirtool Image into Docker
         run: |
           export IMAGE_TAG=$(make image-tag)
@@ -277,7 +387,7 @@ jobs:
       - name: Download Archive with Docker Images
         uses: actions/download-artifact@v4
         with:
-          name: Race-enabled Mimir
+          name: test-docker-image-race-enabled-mimir
       - name: Load race-enabled mimir into Docker
         run: |
           export IMAGE_TAG_RACE=$(make image-tag-race)
@@ -309,12 +419,20 @@ jobs:
             ./.github/workflows/scripts/run-integration-tests-group.sh --index ${{ matrix.test_group_id }} --total ${{ matrix.test_group_total }}
 
   deploy:
-    needs: [prepare, build, test, lint, integration]
+    needs:
+      - prepare
+      - build
+      - test
+      - test-docs
+      - lint
+      - lint-jsonnet
+      - lint-helm
+      - integration
     # Only deploy images on pushes to the grafana/mimir repo, which either are tag pushes or weekly release branch pushes.
     if: needs.prepare.outputs.is_deploy == 'true'
     runs-on: ubuntu-latest
     container:
-      image: ${{ needs.prepare.outputs.build_image }}
+      image: ${{ needs.prepare.outputs.build_image }} # zizmor: ignore[unpinned-images] The image output produced by the prepare step is pinned
     permissions:
       contents: read
       id-token: write
@@ -334,9 +452,15 @@ jobs:
       - name: Download Archive with Docker Images
         uses: actions/download-artifact@v4
         with:
-          name: Docker Images
+          pattern: docker-image-*
+          path: built-images
+          merge-multiple: false
       - name: Extract Docker Images from Archive
-        run: tar xvf images.tar -C /
+        run: |
+          mkdir /tmp/images
+          for f in built-images/**/images.tar; do
+            tar xvf $f -C /tmp/images
+          done
       - name: Login to DockerHub
         uses: grafana/shared-workflows/actions/dockerhub-login@13fb504e3bfe323c1188bf244970d94b2d336e86 # v1.0.1
       - name: Push Docker Images

@@ -45,7 +45,7 @@ import (
 	"github.com/grafana/mimir/pkg/compactor"
 	"github.com/grafana/mimir/pkg/distributor"
 	"github.com/grafana/mimir/pkg/frontend"
-	"github.com/grafana/mimir/pkg/frontend/v1/frontendv1pb"
+	v2 "github.com/grafana/mimir/pkg/frontend/v2"
 	"github.com/grafana/mimir/pkg/ingester"
 	"github.com/grafana/mimir/pkg/querier"
 	"github.com/grafana/mimir/pkg/ruler"
@@ -169,6 +169,9 @@ func TestMimir(t *testing.T) {
 		},
 		Frontend: frontend.CombinedFrontendConfig{
 			QueryEngine: "prometheus",
+			FrontendV2: v2.Config{
+				SchedulerAddress: "localhost",
+			},
 		},
 		MemberlistKV: memberlist.KVConfig{
 			WatchPrefixBufferSize: 128,
@@ -190,21 +193,6 @@ func TestMimir(t *testing.T) {
 				// Check that Alertmanager is configured which is not part of Target=All.
 				AlertManager,
 			},
-		},
-		"-target=write": {
-			target:                  []string{Write},
-			expectedEnabledModules:  []string{DistributorService, IngesterService},
-			expectedDisabledModules: []string{Querier, Ruler, StoreGateway, Compactor, AlertManager},
-		},
-		"-target=read": {
-			target:                  []string{Read},
-			expectedEnabledModules:  []string{QueryFrontend, Querier},
-			expectedDisabledModules: []string{IngesterService, Ruler, StoreGateway, Compactor, AlertManager},
-		},
-		"-target=backend": {
-			target:                  []string{Backend},
-			expectedEnabledModules:  []string{QueryScheduler, Ruler, StoreGateway, Compactor, AlertManager},
-			expectedDisabledModules: []string{IngesterService, QueryFrontend, Querier},
 		},
 	}
 
@@ -535,14 +523,6 @@ func TestConfig_validateFilesystemPaths(t *testing.T) {
 		"should succeed with the default configuration": {
 			setup: func(*Config) {},
 		},
-		"should fail if alertmanager data directory contains bucket store sync directory when running mimir-backend": {
-			setup: func(cfg *Config) {
-				cfg.Target = flagext.StringSliceCSV{Backend}
-				cfg.Alertmanager.DataDir = "/data"
-				cfg.BlocksStorage.BucketStore.SyncDir = "/data/tsdb"
-			},
-			expectedErr: `the configured bucket store sync directory "/data/tsdb" cannot overlap with the configured alertmanager data directory "/data"`,
-		},
 		"should fail if alertmanager filesystem backend directory is equal to alertmanager data directory": {
 			setup: func(cfg *Config) {
 				cfg.Target = flagext.StringSliceCSV{AlertManager}
@@ -777,7 +757,6 @@ func TestGrpcAuthMiddleware(t *testing.T) {
 		require.NoError(t, err)
 
 		schedulerpb.RegisterSchedulerForQuerierServer(c.Server.GRPC, msch)
-		frontendv1pb.RegisterFrontendServer(c.Server.GRPC, msch)
 		ruler.RegisterRulerServer(c.Server.GRPC, msch)
 
 		require.NoError(t, services.StartAndAwaitRunning(ctx, serv))
@@ -792,15 +771,6 @@ func TestGrpcAuthMiddleware(t *testing.T) {
 	defer func() {
 		require.NoError(t, conn.Close())
 	}()
-
-	{
-		// Verify that we can call frontendClient.NotifyClientShutdown without user in the context, and we don't get any error.
-		require.False(t, msch.clientShutdownCalled.Load())
-		frontendClient := frontendv1pb.NewFrontendClient(conn)
-		_, err = frontendClient.NotifyClientShutdown(ctx, &frontendv1pb.NotifyClientShutdownRequest{ClientID: "random-client-id"})
-		require.NoError(t, err)
-		require.True(t, msch.clientShutdownCalled.Load())
-	}
 
 	{
 		// Verify that we can call schedulerClient.NotifyQuerierShutdown without user in the context, and we don't get any error.
@@ -1008,14 +978,8 @@ func getHostnameAndRandomPort(t *testing.T) (string, int) {
 }
 
 type mockGrpcServiceHandler struct {
-	clientShutdownCalled  atomic.Bool
 	querierShutdownCalled atomic.Bool
 	rulerSyncRulesCalled  atomic.Bool
-}
-
-func (m *mockGrpcServiceHandler) NotifyClientShutdown(_ context.Context, _ *frontendv1pb.NotifyClientShutdownRequest) (*frontendv1pb.NotifyClientShutdownResponse, error) {
-	m.clientShutdownCalled.Store(true)
-	return &frontendv1pb.NotifyClientShutdownResponse{}, nil
 }
 
 func (m *mockGrpcServiceHandler) NotifyQuerierShutdown(_ context.Context, _ *schedulerpb.NotifyQuerierShutdownRequest) (*schedulerpb.NotifyQuerierShutdownResponse, error) {
@@ -1030,10 +994,6 @@ func (m *mockGrpcServiceHandler) SyncRules(_ context.Context, _ *ruler.SyncRules
 
 func (m *mockGrpcServiceHandler) Rules(_ context.Context, _ *ruler.RulesRequest) (*ruler.RulesResponse, error) {
 	return &ruler.RulesResponse{}, nil
-}
-
-func (m *mockGrpcServiceHandler) Process(_ frontendv1pb.Frontend_ProcessServer) error {
-	panic("implement me")
 }
 
 func (m *mockGrpcServiceHandler) QuerierLoop(_ schedulerpb.SchedulerForQuerier_QuerierLoopServer) error {

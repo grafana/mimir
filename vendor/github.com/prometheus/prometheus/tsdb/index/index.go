@@ -15,7 +15,6 @@ package index
 
 import (
 	"bufio"
-	"bytes"
 	"context"
 	"encoding/binary"
 	"fmt"
@@ -121,6 +120,8 @@ type PostingsEncoder func(*encoding.Encbuf, []uint32) error
 
 type PostingsDecoder func(encoding.Decbuf) (int, Postings, error)
 
+type LookupPlannerFunc func(*Reader) LookupPlanner
+
 // Writer implements the IndexWriter interface for the standard
 // serialization format.
 type Writer struct {
@@ -149,8 +150,7 @@ type Writer struct {
 	lastSymbol  string
 	symbolCache map[string]symbolCacheEntry
 
-	labelIndexes []labelIndexHashEntry // Label index offsets.
-	labelNames   map[string]uint64     // Label names, and their usage.
+	labelNames map[string]uint64 // Label names, and their usage.
 
 	// Hold last series to validate that clients insert new series in order.
 	lastSeries    labels.Labels
@@ -400,9 +400,6 @@ func (w *Writer) ensureStage(s indexWriterStage) error {
 		if err := w.writePostingsToTmpFiles(); err != nil {
 			return err
 		}
-		if err := w.writeLabelIndices(); err != nil {
-			return err
-		}
 
 		w.toc.Postings = w.f.pos
 		if err := w.writePostings(); err != nil {
@@ -410,9 +407,6 @@ func (w *Writer) ensureStage(s indexWriterStage) error {
 		}
 
 		w.toc.LabelIndicesTable = w.f.pos
-		if err := w.writeLabelIndexesOffsetTable(); err != nil {
-			return err
-		}
 
 		w.toc.PostingsTable = w.f.pos
 		if err := w.writePostingsOffsetTable(); err != nil {
@@ -611,147 +605,6 @@ func (w *Writer) finishSymbols() error {
 	return nil
 }
 
-func (w *Writer) writeLabelIndices() error {
-	if err := w.fPO.Flush(); err != nil {
-		return err
-	}
-
-	// Find all the label values in the tmp posting offset table.
-	f, err := fileutil.OpenMmapFile(w.fPO.name)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-
-	d := encoding.NewDecbufRaw(realByteSlice(f.Bytes()), int(w.fPO.pos))
-	cnt := w.cntPO
-	current := []byte{}
-	values := []uint32{}
-	for d.Err() == nil && cnt > 0 {
-		cnt--
-		d.Uvarint()                           // Keycount.
-		name := d.UvarintBytes()              // Label name.
-		value := yoloString(d.UvarintBytes()) // Label value.
-		d.Uvarint64()                         // Offset.
-		if len(name) == 0 {
-			continue // All index is ignored.
-		}
-
-		if !bytes.Equal(name, current) && len(values) > 0 {
-			// We've reached a new label name.
-			if err := w.writeLabelIndex(string(current), values); err != nil {
-				return err
-			}
-			values = values[:0]
-		}
-		current = name
-		sid, err := w.symbols.ReverseLookup(value)
-		if err != nil {
-			return err
-		}
-		values = append(values, sid)
-	}
-	if d.Err() != nil {
-		return d.Err()
-	}
-
-	// Handle the last label.
-	if len(values) > 0 {
-		if err := w.writeLabelIndex(string(current), values); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func (w *Writer) writeLabelIndex(name string, values []uint32) error {
-	// Align beginning to 4 bytes for more efficient index list scans.
-	if err := w.addPadding(4); err != nil {
-		return err
-	}
-
-	w.labelIndexes = append(w.labelIndexes, labelIndexHashEntry{
-		keys:   []string{name},
-		offset: w.f.pos,
-	})
-
-	startPos := w.f.pos
-	// Leave 4 bytes of space for the length, which will be calculated later.
-	if err := w.write([]byte("alen")); err != nil {
-		return err
-	}
-	w.crc32.Reset()
-
-	w.buf1.Reset()
-	w.buf1.PutBE32int(1) // Number of names.
-	w.buf1.PutBE32int(len(values))
-	w.buf1.WriteToHash(w.crc32)
-	if err := w.write(w.buf1.Get()); err != nil {
-		return err
-	}
-
-	for _, v := range values {
-		w.buf1.Reset()
-		w.buf1.PutBE32(v)
-		w.buf1.WriteToHash(w.crc32)
-		if err := w.write(w.buf1.Get()); err != nil {
-			return err
-		}
-	}
-
-	// Write out the length.
-	w.buf1.Reset()
-	l := w.f.pos - startPos - 4
-	if l > math.MaxUint32 {
-		return fmt.Errorf("label index size exceeds 4 bytes: %d", l)
-	}
-	w.buf1.PutBE32int(int(l))
-	if err := w.writeAt(w.buf1.Get(), startPos); err != nil {
-		return err
-	}
-
-	w.buf1.Reset()
-	w.buf1.PutHashSum(w.crc32)
-	return w.write(w.buf1.Get())
-}
-
-// writeLabelIndexesOffsetTable writes the label indices offset table.
-func (w *Writer) writeLabelIndexesOffsetTable() error {
-	startPos := w.f.pos
-	// Leave 4 bytes of space for the length, which will be calculated later.
-	if err := w.write([]byte("alen")); err != nil {
-		return err
-	}
-	w.crc32.Reset()
-
-	w.buf1.Reset()
-	w.buf1.PutBE32int(len(w.labelIndexes))
-	w.buf1.WriteToHash(w.crc32)
-	if err := w.write(w.buf1.Get()); err != nil {
-		return err
-	}
-
-	for _, e := range w.labelIndexes {
-		w.buf1.Reset()
-		w.buf1.PutUvarint(len(e.keys))
-		for _, k := range e.keys {
-			w.buf1.PutUvarintStr(k)
-		}
-		w.buf1.PutUvarint64(e.offset)
-		w.buf1.WriteToHash(w.crc32)
-		if err := w.write(w.buf1.Get()); err != nil {
-			return err
-		}
-	}
-
-	// Write out the length.
-	err := w.writeLengthAndHash(startPos)
-	if err != nil {
-		return fmt.Errorf("label indexes offset table length/crc32 write error: %w", err)
-	}
-	return nil
-}
-
 // writePostingsOffsetTable writes the postings offset table.
 func (w *Writer) writePostingsOffsetTable() error {
 	// Ensure everything is in the temporary file.
@@ -938,7 +791,7 @@ func (w *Writer) writePostingsToTmpFiles() error {
 
 			// See if label names we want are in the series.
 			numLabels := d.Uvarint()
-			for i := 0; i < numLabels; i++ {
+			for range numLabels {
 				lno := uint32(d.Uvarint())
 				lvo := uint32(d.Uvarint())
 
@@ -1068,11 +921,6 @@ func (w *Writer) writePostings() error {
 	return nil
 }
 
-type labelIndexHashEntry struct {
-	keys   []string
-	offset uint64
-}
-
 func (w *Writer) Close() error {
 	// Even if this fails, we need to close all the files.
 	ensureErr := w.ensureStage(idxStageDone)
@@ -1171,29 +1019,31 @@ func (b realByteSlice) Sub(start, end int) ByteSlice {
 	return b[start:end]
 }
 
+var defaultLookupPlannerFunc = func(*Reader) LookupPlanner { return &ScanEmptyMatchersLookupPlanner{} }
+
 // NewReader returns a new index reader on the given byte slice. It automatically
 // handles different format versions.
 func NewReader(b ByteSlice, decoder PostingsDecoder) (*Reader, error) {
-	return newReader(b, io.NopCloser(nil), decoder, &ScanEmptyMatchersLookupPlanner{}, nil)
+	return newReader(b, io.NopCloser(nil), decoder, defaultLookupPlannerFunc, nil)
 }
 
 // NewReaderWithCache is like NewReader but allows to pass a cache provider.
 func NewReaderWithCache(b ByteSlice, decoder PostingsDecoder, cacheProvider ReaderCacheProvider) (*Reader, error) {
-	return newReader(b, io.NopCloser(nil), decoder, &ScanEmptyMatchersLookupPlanner{}, cacheProvider)
+	return newReader(b, io.NopCloser(nil), decoder, defaultLookupPlannerFunc, cacheProvider)
 }
 
 // NewFileReader returns a new index reader against the given index file.
 func NewFileReader(path string, decoder PostingsDecoder) (*Reader, error) {
-	return NewFileReaderWithOptions(path, decoder, &ScanEmptyMatchersLookupPlanner{}, nil)
+	return NewFileReaderWithOptions(path, decoder, defaultLookupPlannerFunc, nil)
 }
 
 // NewFileReaderWithOptions is like NewFileReader but allows to pass a cache provider.
-func NewFileReaderWithOptions(path string, decoder PostingsDecoder, planner LookupPlanner, cacheProvider ReaderCacheProvider) (*Reader, error) {
+func NewFileReaderWithOptions(path string, decoder PostingsDecoder, plannerFunc LookupPlannerFunc, cacheProvider ReaderCacheProvider) (*Reader, error) {
 	f, err := fileutil.OpenMmapFile(path)
 	if err != nil {
 		return nil, err
 	}
-	r, err := newReader(realByteSlice(f.Bytes()), f, decoder, planner, cacheProvider)
+	r, err := newReader(realByteSlice(f.Bytes()), f, decoder, plannerFunc, cacheProvider)
 	if err != nil {
 		return nil, tsdb_errors.NewMulti(
 			err,
@@ -1204,14 +1054,13 @@ func NewFileReaderWithOptions(path string, decoder PostingsDecoder, planner Look
 	return r, nil
 }
 
-func newReader(b ByteSlice, c io.Closer, postingsDecoder PostingsDecoder, planner LookupPlanner, cacheProvider ReaderCacheProvider) (*Reader, error) {
+func newReader(b ByteSlice, c io.Closer, postingsDecoder PostingsDecoder, plannerFunc LookupPlannerFunc, cacheProvider ReaderCacheProvider) (*Reader, error) {
 	r := &Reader{
 		b:             b,
 		c:             c,
 		postings:      map[string][]postingOffset{},
 		cacheProvider: cacheProvider,
 		st:            labels.NewSymbolTable(),
-		lookupPlanner: planner,
 	}
 
 	// Verify header.
@@ -1306,6 +1155,7 @@ func newReader(b ByteSlice, c io.Closer, postingsDecoder PostingsDecoder, planne
 	}
 
 	r.dec = &Decoder{LookupSymbol: r.lookupSymbol, DecodePostings: postingsDecoder}
+	r.lookupPlanner = plannerFunc(r)
 
 	return r, nil
 }
@@ -1889,7 +1739,7 @@ func (r *Reader) postingsForLabelMatchingV1(ctx context.Context, name string, ma
 
 // SortedPostings returns the given postings list reordered so that the backing series
 // are sorted.
-func (r *Reader) SortedPostings(p Postings) Postings {
+func (*Reader) SortedPostings(p Postings) Postings {
 	return p
 }
 
@@ -1988,7 +1838,7 @@ func (s *stringListIter) Next() bool {
 	return true
 }
 func (s stringListIter) At() string { return s.cur }
-func (s stringListIter) Err() error { return nil }
+func (stringListIter) Err() error   { return nil }
 
 // Decoder provides decoding methods for the v1 and v2 index file format.
 //
@@ -2014,12 +1864,12 @@ func DecodePostingsRaw(d encoding.Decbuf) (int, Postings, error) {
 
 // LabelNamesOffsetsFor decodes the offsets of the name symbols for a given series.
 // They are returned in the same order they're stored, which should be sorted lexicographically.
-func (dec *Decoder) LabelNamesOffsetsFor(b []byte) ([]uint32, error) {
+func (*Decoder) LabelNamesOffsetsFor(b []byte) ([]uint32, error) {
 	d := encoding.Decbuf{B: b}
 	k := d.Uvarint()
 
 	offsets := make([]uint32, k)
-	for i := 0; i < k; i++ {
+	for i := range k {
 		offsets[i] = uint32(d.Uvarint())
 		_ = d.Uvarint() // skip the label value
 
@@ -2036,7 +1886,7 @@ func (dec *Decoder) LabelValueFor(ctx context.Context, b []byte, label string) (
 	d := encoding.Decbuf{B: b}
 	k := d.Uvarint()
 
-	for i := 0; i < k; i++ {
+	for range k {
 		lno := uint32(d.Uvarint())
 		lvo := uint32(d.Uvarint())
 

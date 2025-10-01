@@ -4,6 +4,8 @@
 (import 'tracing.libsonnet') +
 (import 'config.libsonnet') +
 (import 'consul.libsonnet') +
+(import 'rollout-operator/rollout-operator.libsonnet') +
+(import 'rollout-operator.libsonnet') +
 
 // Mimir services
 (import 'distributor.libsonnet') +
@@ -24,7 +26,6 @@
 // Mimir features
 (import 'shuffle-sharding.libsonnet') +
 (import 'query-sharding.libsonnet') +
-(import 'rollout-operator.libsonnet') +
 (import 'ruler-remote-evaluation.libsonnet') +
 (import 'continuous-test.libsonnet') +
 
@@ -36,9 +37,6 @@
 // Import autoscaling after other features because it overrides deployments.
 (import 'autoscaling.libsonnet') +
 
-// mTLS client configuration for Memcached
-(import 'memcached-client-mtls.libsonnet') +
-
 // Automated downscale of ingesters and store-gateways
 (import 'ingester-automated-downscale.libsonnet') +
 (import 'ingester-automated-downscale-v2.libsonnet') +
@@ -46,9 +44,6 @@
 
 // Automatic cleanup of unused PVCs after scaling down
 (import 'pvc-auto-deletion.libsonnet') +
-
-// Support for ReplicaTemplate objects.
-(import 'replica-template.libsonnet') +
 
 // Experimental ingest storage. Keep this at the end, because we need to override components on top of other changes.
 (import 'ingest-storage.libsonnet') +

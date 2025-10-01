@@ -3,7 +3,6 @@
 package lookupplan
 
 import (
-	"context"
 	"fmt"
 	"path/filepath"
 	"testing"
@@ -47,8 +46,7 @@ func TestFilterCost(t *testing.T) {
 	for _, tc := range testCases {
 		testName := fmt.Sprintf("%d_series_%s", tc.seriesCount, tc.matcher)
 		t.Run(testName, func(t *testing.T) {
-			pred, err := newPlanPredicate(ctx, tc.matcher, stats)
-			assert.NoError(t, err)
+			pred := newPlanPredicate(ctx, tc.matcher, stats)
 
 			cost := pred.filterCost(tc.seriesCount)
 			assert.GreaterOrEqual(t, cost, 0.0, "can't have negative costs")
@@ -90,8 +88,7 @@ func TestIndexLookupCost(t *testing.T) {
 
 	for tcIdx, tc := range testCases {
 		t.Run(tc.matcher.String(), func(t *testing.T) {
-			pred, err := newPlanPredicate(ctx, tc.matcher, stats)
-			assert.NoError(t, err)
+			pred := newPlanPredicate(ctx, tc.matcher, stats)
 
 			actualCost := pred.indexLookupCost()
 			assert.GreaterOrEqual(t, actualCost, 0.0, "can't have negative cost")
@@ -136,9 +133,7 @@ func TestCardinalityEstimation(t *testing.T) {
 
 	for tcIdx, tc := range testCases {
 		t.Run(tc.matcher.String(), func(t *testing.T) {
-			pred, err := newPlanPredicate(ctx, tc.matcher, stats)
-			assert.NoError(t, err)
-
+			pred := newPlanPredicate(ctx, tc.matcher, stats)
 			actualCardinality := pred.cardinality
 
 			if tc.deltaTolerance > 0 {
@@ -149,90 +144,4 @@ func TestCardinalityEstimation(t *testing.T) {
 			testCases[tcIdx].actualCardinality = actualCardinality
 		})
 	}
-}
-
-// mockStatistics implements the Statistics interface with hardcoded data for testing
-type mockStatistics struct {
-	// seriesPerValue maps label name -> label value -> number of series
-	seriesPerValue map[string]map[string]uint64
-	totalSeries    uint64
-}
-
-func newMockStatistics() *mockStatistics {
-	return &mockStatistics{
-		seriesPerValue: map[string]map[string]uint64{
-			"__name__": {
-				"http_requests_total": 1000,
-				"cpu_usage_percent":   500,
-				"memory_usage_bytes":  300,
-				"disk_io_operations":  200,
-				"network_bytes_sent":  150,
-			},
-			"job": {
-				"prometheus":   800,
-				"grafana":      600,
-				"alertmanager": 400,
-				"node":         300,
-			},
-			"instance": {
-				"localhost:9090": 200,
-				"localhost:3000": 150,
-				"localhost:9093": 100,
-				"localhost:9100": 80,
-				"prod-server-1":  300,
-				"prod-server-2":  250,
-				"prod-server-3":  200,
-			},
-			"status": {
-				"200": 800,
-				"404": 300,
-				"500": 100,
-			},
-			"method": {
-				"GET":    600,
-				"POST":   300,
-				"PUT":    150,
-				"DELETE": 50,
-			},
-		},
-		totalSeries: 2100,
-	}
-}
-
-func (m *mockStatistics) TotalSeries() uint64 {
-	return m.totalSeries
-}
-
-func (m *mockStatistics) LabelValuesCount(_ context.Context, name string) (uint64, error) {
-	values := m.seriesPerValue[name]
-
-	count := uint64(0)
-	for _, seriesCount := range values {
-		if seriesCount > 0 {
-			count++
-		}
-	}
-	return count, nil
-}
-
-func (m *mockStatistics) LabelValuesCardinality(_ context.Context, name string, values ...string) (uint64, error) {
-	labelValues := m.seriesPerValue[name]
-
-	if len(values) == 0 {
-		// Return total cardinality for all values of this label
-		total := uint64(0)
-		for _, seriesCount := range labelValues {
-			total += seriesCount
-		}
-		return total, nil
-	}
-
-	// Return cardinality for specific values
-	total := uint64(0)
-	for _, value := range values {
-		if seriesCount, exists := labelValues[value]; exists {
-			total += seriesCount
-		}
-	}
-	return total, nil
 }

@@ -28,6 +28,16 @@ import (
 	"github.com/grafana/mimir/pkg/util/pool"
 )
 
+const (
+	// intentionallyEmptyMetricName exists for annotations compatibility with prometheus.
+	// Now prometheus has delayed __name__ removal. Mimir doesn't yet, and we always remove __name__.
+	// Because of complication in implementing this in prometheus (see https://github.com/prometheus/prometheus/pull/16794),
+	// the name is always dropped if delayed __name__ removal is disabled.
+	// The name is dropped even if the function is the first one invoked on the vector selector.
+	// Mimir doesn't have delayed __name__ removal, so to stay close to prometheus, we never display the label in some annotations and warnings.
+	intentionallyEmptyMetricName = ""
+)
+
 // HistogramFunction performs a function over each series in an instant vector,
 // with special handling for classic and native histograms.
 // At the moment, it supports only histogram_quantile and histogram_fraction.
@@ -37,6 +47,7 @@ type HistogramFunction struct {
 	currentInnerSeriesIndex  int
 	memoryConsumptionTracker *limiter.MemoryConsumptionTracker
 	timeRange                types.QueryTimeRange
+	enableDelayedNameRemoval bool
 
 	annotations            *annotations.Annotations
 	expressionPosition     posrange.PositionRange
@@ -114,6 +125,7 @@ func NewHistogramQuantileFunction(
 	annotations *annotations.Annotations,
 	expressionPosition posrange.PositionRange,
 	timeRange types.QueryTimeRange,
+	enableDelayedNameRemoval bool,
 ) *HistogramFunction {
 	innerSeriesMetricNames := &operators.MetricNames{}
 
@@ -131,6 +143,7 @@ func NewHistogramQuantileFunction(
 		innerSeriesMetricNames:   innerSeriesMetricNames,
 		expressionPosition:       expressionPosition,
 		timeRange:                timeRange,
+		enableDelayedNameRemoval: enableDelayedNameRemoval,
 	}
 }
 
@@ -142,6 +155,7 @@ func NewHistogramFractionFunction(
 	annotations *annotations.Annotations,
 	expressionPosition posrange.PositionRange,
 	timeRange types.QueryTimeRange,
+	enableDelayedNameRemoval bool,
 ) *HistogramFunction {
 	innerSeriesMetricNames := &operators.MetricNames{}
 
@@ -159,6 +173,7 @@ func NewHistogramFractionFunction(
 		innerSeriesMetricNames:   innerSeriesMetricNames,
 		expressionPosition:       expressionPosition,
 		timeRange:                timeRange,
+		enableDelayedNameRemoval: enableDelayedNameRemoval,
 	}
 }
 
@@ -166,12 +181,12 @@ func (h *HistogramFunction) ExpressionPosition() posrange.PositionRange {
 	return h.expressionPosition
 }
 
-func (h *HistogramFunction) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
+func (h *HistogramFunction) SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
 	if err := h.f.LoadArguments(ctx); err != nil {
 		return nil, err
 	}
 
-	innerSeries, err := h.inner.SeriesMetadata(ctx)
+	innerSeries, err := h.inner.SeriesMetadata(ctx, matchers)
 	if err != nil {
 		return nil, err
 	}
@@ -235,7 +250,13 @@ func (h *HistogramFunction) SeriesMetadata(ctx context.Context) ([]types.SeriesM
 
 	h.remainingGroups = make([]*bucketGroup, 0, len(groups))
 	for _, g := range groups {
-		seriesMetadata, err = types.AppendSeriesMetadata(h.memoryConsumptionTracker, seriesMetadata, types.SeriesMetadata{Labels: g.labels.DropMetricName()})
+		var labelsMetadata types.SeriesMetadata
+		if h.enableDelayedNameRemoval {
+			labelsMetadata = types.SeriesMetadata{Labels: g.labels, DropName: true}
+		} else {
+			labelsMetadata = types.SeriesMetadata{Labels: g.labels.DropMetricName()}
+		}
+		seriesMetadata, err = types.AppendSeriesMetadata(h.memoryConsumptionTracker, seriesMetadata, labelsMetadata)
 		if err != nil {
 			return nil, err
 		}
@@ -324,7 +345,7 @@ func (h *HistogramFunction) saveFloatsToGroup(fPoints []promql.FPoint, le string
 	if err != nil {
 		// The le label was invalid. Record it:
 		h.annotations.Add(annotations.NewBadBucketLabelWarning(
-			h.innerSeriesMetricNames.GetMetricNameForSeries(h.currentInnerSeriesIndex),
+			intentionallyEmptyMetricName,
 			le,
 			h.inner.ExpressionPosition(),
 		))
@@ -405,7 +426,7 @@ func (h *HistogramFunction) computeOutputSeriesForGroup(g *bucketGroup) (types.I
 			// At this data point, we have classic histogram buckets and a native histogram with the same name and labels.
 			// No value is returned, so emit an annotation and continue.
 			h.annotations.Add(annotations.NewMixedClassicNativeHistogramsWarning(
-				h.innerSeriesMetricNames.GetMetricNameForSeries(g.lastInputSeriesIdx), h.inner.ExpressionPosition(),
+				intentionallyEmptyMetricName, h.inner.ExpressionPosition(),
 			))
 			continue
 		}
@@ -465,11 +486,19 @@ func (h *HistogramFunction) computeOutputSeriesForGroup(g *bucketGroup) (types.I
 }
 
 func (h *HistogramFunction) Prepare(ctx context.Context, params *types.PrepareParams) error {
-	err := h.f.Prepare(ctx, params)
-	if err != nil {
+	if err := h.f.Prepare(ctx, params); err != nil {
 		return err
 	}
+
 	return h.inner.Prepare(ctx, params)
+}
+
+func (h *HistogramFunction) Finalize(ctx context.Context) error {
+	if err := h.inner.Finalize(ctx); err != nil {
+		return err
+	}
+
+	return h.inner.Finalize(ctx)
 }
 
 func (h *HistogramFunction) Close() {
@@ -543,7 +572,7 @@ func (q *histogramQuantile) ComputeClassicHistogramResult(pointIndex int, series
 
 	if forcedMonotonicity {
 		q.annotations.Add(annotations.NewHistogramQuantileForcedMonotonicityInfo(
-			q.innerSeriesMetricNames.GetMetricNameForSeries(seriesIndex),
+			intentionallyEmptyMetricName,
 			q.innerExpressionPosition,
 		))
 	}

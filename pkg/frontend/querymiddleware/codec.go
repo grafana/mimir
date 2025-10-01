@@ -43,6 +43,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/chunkinfologger"
+	"github.com/grafana/mimir/pkg/util/propagation"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
@@ -53,9 +54,9 @@ var (
 	allFormats        = []string{formatJSON, formatProtobuf}
 
 	// List of HTTP headers to propagate when a Prometheus request is encoded into a HTTP request.
-	// api.ReadConsistencyHeader is propagated as HTTP header -> Request.Context -> Request.Header, so there's no need to explicitly propagate it here.
+	// Read consistency level and max delay headers are propagated as HTTP header -> Request.Context -> Request.Header, so there's no need to explicitly propagate it here.
 	codecPropagateHeadersMetrics = []string{compat.ForceFallbackHeaderName, chunkinfologger.ChunkInfoLoggingHeader, api.ReadConsistencyOffsetsHeader, querier.FilterQueryablesHeader}
-	// api.ReadConsistencyHeader is propagated as HTTP header -> Request.Context -> Request.Header, so there's no need to explicitly propagate it here.
+	// Read consistency level and max delay headers are propagated as HTTP header -> Request.Context -> Request.Header, so there's no need to explicitly propagate it here.
 	codecPropagateHeadersLabels = []string{api.ReadConsistencyOffsetsHeader, querier.FilterQueryablesHeader}
 )
 
@@ -218,6 +219,7 @@ type Codec struct {
 	lookbackDelta                                   time.Duration
 	preferredQueryResultResponseFormat              string
 	propagateHeadersMetrics, propagateHeadersLabels []string
+	injector                                        propagation.Injector
 }
 
 type formatter interface {
@@ -243,6 +245,7 @@ func NewCodec(
 	lookbackDelta time.Duration,
 	queryResultResponseFormat string,
 	propagateHeaders []string,
+	injector propagation.Injector,
 ) Codec {
 	return Codec{
 		metrics:                            newCodecMetrics(registerer),
@@ -250,6 +253,7 @@ func NewCodec(
 		preferredQueryResultResponseFormat: queryResultResponseFormat,
 		propagateHeadersMetrics:            append(codecPropagateHeadersMetrics, propagateHeaders...),
 		propagateHeadersLabels:             append(codecPropagateHeadersLabels, propagateHeaders...),
+		injector:                           injector,
 	}
 }
 
@@ -731,8 +735,22 @@ func (c Codec) EncodeMetricsQueryRequest(ctx context.Context, r MetricsQueryRequ
 		return nil, fmt.Errorf("unknown query result response format '%s'", c.preferredQueryResultResponseFormat)
 	}
 
-	if level, ok := api.ReadConsistencyLevelFromContext(ctx); ok {
-		req.Header.Add(api.ReadConsistencyHeader, level)
+	if err := c.AddHeadersForMetricQueryRequest(ctx, r, propagation.HttpHeaderCarrier(req.Header)); err != nil {
+		return nil, err
+	}
+
+	// Inject auth from context.
+	// This isn't included in AddHeadersForMetricQueryRequest as it's not needed for Protobuf requests to queriers.
+	if err := user.InjectOrgIDIntoHTTPRequest(ctx, req); err != nil {
+		return nil, err
+	}
+
+	return req.WithContext(ctx), nil
+}
+
+func (c Codec) AddHeadersForMetricQueryRequest(ctx context.Context, r MetricsQueryRequest, headers propagation.Carrier) error {
+	if err := c.injector.InjectToCarrier(ctx, headers); err != nil {
+		return nil
 	}
 
 	// Propagate allowed HTTP headers.
@@ -742,17 +760,11 @@ func (c Codec) EncodeMetricsQueryRequest(ctx context.Context, r MetricsQueryRequ
 		}
 
 		for _, v := range h.Values {
-			// There should only be one value, but add all of them for completeness.
-			req.Header.Add(h.Name, v)
+			headers.Add(h.Name, v)
 		}
 	}
 
-	// Inject auth from context.
-	if err := user.InjectOrgIDIntoHTTPRequest(ctx, req); err != nil {
-		return nil, err
-	}
-
-	return req.WithContext(ctx), nil
+	return nil
 }
 
 // EncodeLabelsSeriesQueryRequest encodes a LabelsSeriesQueryRequest into an http request.
@@ -837,8 +849,8 @@ func (c Codec) EncodeLabelsSeriesQueryRequest(ctx context.Context, req LabelsSer
 		return nil, fmt.Errorf("unknown query result response format '%s'", c.preferredQueryResultResponseFormat)
 	}
 
-	if level, ok := api.ReadConsistencyLevelFromContext(ctx); ok {
-		r.Header.Add(api.ReadConsistencyHeader, level)
+	if err := c.injector.InjectToCarrier(ctx, propagation.HttpHeaderCarrier(r.Header)); err != nil {
+		return nil, err
 	}
 
 	// Propagate allowed HTTP headers.
@@ -1305,4 +1317,20 @@ func DecorateWithParamName(err error, field string) error {
 		return apierror.Newf(apierror.TypeBadData, errTmpl, field, status.Message())
 	}
 	return apierror.Newf(apierror.TypeBadData, errTmpl, field, err)
+}
+
+type headersContextKeyType int
+
+const headersContextKey headersContextKeyType = iota
+
+func ContextWithHeadersToPropagate(ctx context.Context, headers map[string][]string) context.Context {
+	return context.WithValue(ctx, headersContextKey, headers)
+}
+
+func HeadersToPropagateFromContext(ctx context.Context) map[string][]string {
+	if v := ctx.Value(headersContextKey); v != nil {
+		return v.(map[string][]string)
+	}
+
+	return nil
 }

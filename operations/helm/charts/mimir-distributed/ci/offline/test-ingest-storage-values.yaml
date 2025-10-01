@@ -1,0 +1,28 @@
+# Pin kube version so results are the same for running in CI and locally where the installed kube version may be different.
+kubeVersionOverride: "1.29"
+
+kafka:
+  enabled: true
+
+mimir:
+  structuredConfig:
+    ingest_storage:
+      enabled: true
+      kafka:
+        # Address of Kafka broker to bootstrap the connection.
+        address: '{{ template "mimir.fullname" . }}-kafka.{{ .Release.Namespace }}.svc.{{ $.Values.global.clusterDomain }}:9092'
+        # Topic name.
+        topic: mimir-ingest
+        # Mimir will auto-create the topic on start up.
+        # The topic MUST be provisioned with no fewer partitions than the maximum number of ingester replicas. The value of 100 is for demo purposes.
+        auto_create_topic_enabled: true
+        auto_create_topic_default_partitions: 100
+
+    ingester:
+      # Disallow Push gRPC API; everything must come from Kafka consumers.
+      push_grpc_method_enabled: false
+
+      ring:
+        kvstore:
+          # Run partition ingesters on a dedicated hash ring, so they never clash with classic ingesters.
+          prefix: "partition-ingesters/"

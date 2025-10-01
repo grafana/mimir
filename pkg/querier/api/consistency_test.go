@@ -8,7 +8,6 @@ import (
 	"math"
 	"math/rand"
 	"net/http"
-	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -17,6 +16,9 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
+
+	//lint:ignore faillint Allow importing the propagation package, since it's an isolated package (doesn't come with many other dependencies).
+	"github.com/grafana/mimir/pkg/util/propagation"
 )
 
 var (
@@ -31,33 +33,47 @@ var (
 	})
 )
 
-func TestConsistencyMiddleware(t *testing.T) {
-	// Create an HTTP handler that captures the downstream request.
-	var downstreamReq *http.Request
-	downstreamHandler := http.HandlerFunc(func(_ http.ResponseWriter, req *http.Request) {
-		downstreamReq = req
-	})
-
+func TestConsistencyExtractor(t *testing.T) {
 	encodedOffsets := EncodeOffsets(map[int32]int64{0: 1, 1: 2})
-	inputReq := httptest.NewRequest(http.MethodGet, "/", nil)
-	inputReq.Header.Set(ReadConsistencyHeader, ReadConsistencyStrong)
-	inputReq.Header.Set(ReadConsistencyOffsetsHeader, string(encodedOffsets))
+	headers := http.Header{}
+	headers.Set(ReadConsistencyHeader, ReadConsistencyStrong)
+	headers.Set(ReadConsistencyOffsetsHeader, string(encodedOffsets))
+	headers.Set(ReadConsistencyMaxDelayHeader, "1m")
 
-	middleware := ConsistencyMiddleware()
-	middleware.Wrap(downstreamHandler).ServeHTTP(httptest.NewRecorder(), inputReq)
-
-	require.NotNil(t, downstreamReq)
-	assert.Equal(t, ReadConsistencyStrong, downstreamReq.Header.Get(ReadConsistencyHeader))
-	assert.Equal(t, string(encodedOffsets), downstreamReq.Header.Get(ReadConsistencyOffsetsHeader))
+	extractor := ConsistencyExtractor{}
+	ctx, err := extractor.ExtractFromCarrier(context.Background(), propagation.HttpHeaderCarrier(headers))
+	require.NoError(t, err)
 
 	// Should inject consistency settings in the context.
-	actualLevel, ok := ReadConsistencyLevelFromContext(downstreamReq.Context())
+	actualLevel, ok := ReadConsistencyLevelFromContext(ctx)
 	require.True(t, ok)
 	assert.Equal(t, ReadConsistencyStrong, actualLevel)
 
-	actualOffsets, ok := ReadConsistencyEncodedOffsetsFromContext(downstreamReq.Context())
+	actualOffsets, ok := ReadConsistencyEncodedOffsetsFromContext(ctx)
 	require.True(t, ok)
 	assert.Equal(t, encodedOffsets, actualOffsets)
+
+	actualDelay, ok := ReadConsistencyMaxDelayFromContext(ctx)
+	require.True(t, ok)
+	assert.Equal(t, time.Minute, actualDelay)
+}
+
+func TestConsistencyInjector(t *testing.T) {
+	ctx := context.Background()
+	ctx = ContextWithReadConsistencyLevel(ctx, ReadConsistencyStrong)
+	ctx = ContextWithReadConsistencyMaxDelay(ctx, time.Minute)
+	ctx = ContextWithReadConsistencyEncodedOffsets(ctx, EncodeOffsets(map[int32]int64{0: 1, 1: 2}))
+
+	headers := http.Header{}
+
+	injector := &ConsistencyInjector{}
+	require.NoError(t, injector.InjectToCarrier(ctx, propagation.HttpHeaderCarrier(headers)))
+
+	assert.Equal(t, ReadConsistencyStrong, headers.Get(ReadConsistencyHeader))
+	assert.Equal(t, time.Minute.String(), headers.Get(ReadConsistencyMaxDelayHeader))
+
+	// Offsets should not be propagated, because internally we propagate them differently when required.
+	assert.Empty(t, headers.Get(ReadConsistencyOffsetsHeader))
 }
 
 func TestReadConsistencyClientUnaryInterceptor_And_ReadConsistencyServerUnaryInterceptor(t *testing.T) {
@@ -67,6 +83,7 @@ func TestReadConsistencyClientUnaryInterceptor_And_ReadConsistencyServerUnaryInt
 	clientIncomingCtx := context.Background()
 	clientIncomingCtx = ContextWithReadConsistencyLevel(clientIncomingCtx, ReadConsistencyStrong)
 	clientIncomingCtx = ContextWithReadConsistencyEncodedOffsets(clientIncomingCtx, encodedOffsets)
+	clientIncomingCtx = ContextWithReadConsistencyMaxDelay(clientIncomingCtx, time.Minute)
 
 	var clientOutgoingCtx context.Context
 	clientHandler := func(ctx context.Context, _ string, _, _ any, _ *grpc.ClientConn, _ ...grpc.CallOption) error {
@@ -100,6 +117,10 @@ func TestReadConsistencyClientUnaryInterceptor_And_ReadConsistencyServerUnaryInt
 	actualOffsets, ok := ReadConsistencyEncodedOffsetsFromContext(serverOutgoingCtx)
 	require.True(t, ok)
 	assert.Equal(t, encodedOffsets, actualOffsets)
+
+	actualDelay, ok := ReadConsistencyMaxDelayFromContext(serverOutgoingCtx)
+	require.True(t, ok)
+	assert.Equal(t, time.Minute, actualDelay)
 }
 
 func TestReadConsistencyClientStreamInterceptor_And_ReadConsistencyServerStreamInterceptor(t *testing.T) {
@@ -109,6 +130,7 @@ func TestReadConsistencyClientStreamInterceptor_And_ReadConsistencyServerStreamI
 	clientIncomingCtx := context.Background()
 	clientIncomingCtx = ContextWithReadConsistencyLevel(clientIncomingCtx, ReadConsistencyStrong)
 	clientIncomingCtx = ContextWithReadConsistencyEncodedOffsets(clientIncomingCtx, encodedOffsets)
+	clientIncomingCtx = ContextWithReadConsistencyMaxDelay(clientIncomingCtx, time.Minute)
 
 	var clientOutgoingCtx context.Context
 	clientHandler := func(ctx context.Context, _ *grpc.StreamDesc, _ *grpc.ClientConn, _ string, _ ...grpc.CallOption) (grpc.ClientStream, error) {
@@ -142,6 +164,10 @@ func TestReadConsistencyClientStreamInterceptor_And_ReadConsistencyServerStreamI
 	actualOffsets, ok := ReadConsistencyEncodedOffsetsFromContext(serverOutgoingCtx)
 	require.True(t, ok)
 	assert.Equal(t, encodedOffsets, actualOffsets)
+
+	actualDelay, ok := ReadConsistencyMaxDelayFromContext(serverOutgoingCtx)
+	require.True(t, ok)
+	assert.Equal(t, time.Minute, actualDelay)
 }
 
 func BenchmarkReadConsistencyServerUnaryInterceptor(b *testing.B) {
@@ -152,8 +178,9 @@ func BenchmarkReadConsistencyServerUnaryInterceptor(b *testing.B) {
 			md := exampleIncomingMetadata
 			if withReadConsistency {
 				md = metadata.Join(md, metadata.New(map[string]string{
-					consistencyLevelGrpcMdKey:   ReadConsistencyStrong,
-					consistencyOffsetsGrpcMdKey: string(EncodeOffsets(generateTestOffsets(numPartitions))),
+					consistencyLevelGrpcMdKey:    ReadConsistencyStrong,
+					consistencyOffsetsGrpcMdKey:  string(EncodeOffsets(generateTestOffsets(numPartitions))),
+					consistencyMaxDelayGrpcMdKey: "1m",
 				}))
 			}
 
@@ -177,8 +204,9 @@ func BenchmarkReadConsistencyServerStreamInterceptor(b *testing.B) {
 			md := exampleIncomingMetadata
 			if withReadConsistency {
 				md = metadata.Join(md, metadata.New(map[string]string{
-					consistencyLevelGrpcMdKey:   ReadConsistencyStrong,
-					consistencyOffsetsGrpcMdKey: string(EncodeOffsets(generateTestOffsets(numPartitions))),
+					consistencyLevelGrpcMdKey:    ReadConsistencyStrong,
+					consistencyOffsetsGrpcMdKey:  string(EncodeOffsets(generateTestOffsets(numPartitions))),
+					consistencyMaxDelayGrpcMdKey: "1m",
 				}))
 			}
 

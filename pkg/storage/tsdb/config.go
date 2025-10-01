@@ -78,9 +78,12 @@ const (
 	// posting list in the index. Each posting is 4 bytes (uint32) which are the offset of the series in the index file.
 	BytesPerPostingInAPostingList = 4
 
-	// DefaultPostingOffsetInMemorySampling represents default value for --store.index-header-posting-offsets-in-mem-sampling.
+	// DefaultPostingOffsetInMemorySampling represents default value for -blocks-storage.bucket-store.posting-offsets-in-mem-sampling.
 	// 32 value is chosen as it's a good balance for common setups. Sampling that is not too large (too many CPU cycles) and
 	// not too small (too much memory).
+	//
+	// This also matches the in-memory sampling of postings offsets of the prometheus TSDB for on-disk blocks.
+	// At the time of writing, this is the symbolFactor (misnomer) in /prometheus/tsdb/index/index.go.
 	DefaultPostingOffsetInMemorySampling = 32
 
 	// DefaultPostingsForMatchersCacheMaxBytes setting puts a limit cap on the per-TSDB head/block max PostingsForMatchers() cache size in bytes.
@@ -225,6 +228,7 @@ type TSDBConfig struct {
 	MemorySnapshotOnShutdown            bool          `yaml:"memory_snapshot_on_shutdown" category:"experimental"`
 	HeadChunksWriteQueueSize            int           `yaml:"head_chunks_write_queue_size" category:"advanced"`
 	BiggerOutOfOrderBlocksForOldSamples bool          `yaml:"bigger_out_of_order_blocks_for_old_samples" category:"experimental"`
+	HeadStatisticsCollectionFrequency   time.Duration `yaml:"head_statistics_collection_frequency" category:"experimental"`
 
 	// Series hash cache.
 	SeriesHashCacheMaxBytes uint64 `yaml:"series_hash_cache_max_size_bytes" category:"advanced"`
@@ -238,6 +242,16 @@ type TSDBConfig struct {
 
 	// For experimental out of order metrics support.
 	OutOfOrderCapacityMax int `yaml:"out_of_order_capacity_max" category:"experimental"`
+
+	// SharedPostingsForMatchersCache indicates whether the PostingsForMatchersCache should be shared across blocks, as
+	// opposed to instantiated per block. With a shared cache, one cache is created for head blocks, and one for non-head blocks.
+	SharedPostingsForMatchersCache bool `yaml:"shared_postings_for_matchers_cache" category:"experimental"`
+
+	// HeadPostingsForMatchersCacheInvalidation indicates whether postings should be tracked and invalidated when they change.
+	HeadPostingsForMatchersCacheInvalidation bool `yaml:"head_postings_for_matchers_cache_invalidation" category:"experimental"`
+
+	// HeadPostingsForMatchersCacheVersions is the number of metricVersions to store in the cache
+	HeadPostingsForMatchersCacheVersions int `yaml:"head_postings_for_matchers_cache_versions" category:"experimental"`
 
 	// HeadPostingsForMatchersCacheTTL is the TTL of the postings for matchers cache in the Head.
 	// If it's 0, the cache will only deduplicate in-flight requests, deleting the results once the first request has finished.
@@ -288,6 +302,11 @@ type TSDBConfig struct {
 	// IndexLookupPlanningEnabled controls the collection of statistics and whether to defer some vector selector matchers to sequential scans.
 	// This leads to better performance.
 	IndexLookupPlanningEnabled bool `yaml:"index_lookup_planning_enabled" category:"experimental"`
+
+	// IndexLookupPlanningComparisonPortion controls the portion of queries where a mirrored chunk querier is used to compare
+	// results between queries with and without index lookup planning enabled. The value must be between 0 and 1, where 0
+	// disables comparison and 1 enables it for all queries.
+	IndexLookupPlanningComparisonPortion float64 `yaml:"index_lookup_planning_comparison_portion" category:"experimental"`
 }
 
 // RegisterFlags registers the TSDBConfig flags.
@@ -322,6 +341,9 @@ func (cfg *TSDBConfig) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.MemorySnapshotOnShutdown, "blocks-storage.tsdb.memory-snapshot-on-shutdown", false, "True to enable snapshotting of in-memory TSDB data on disk when shutting down.")
 	f.IntVar(&cfg.HeadChunksWriteQueueSize, "blocks-storage.tsdb.head-chunks-write-queue-size", 1000000, headChunksWriteQueueSizeHelp)
 	f.IntVar(&cfg.OutOfOrderCapacityMax, "blocks-storage.tsdb.out-of-order-capacity-max", 32, "Maximum capacity for out of order chunks, in samples between 1 and 255.")
+	f.BoolVar(&cfg.SharedPostingsForMatchersCache, "blocks-storage.tsdb.shared-postings-for-matchers-cache", false, "Whether postings for matchers cache should be shared across blocks, as opposed to instantiated per block. With a shared cache, one cache is created for head blocks, and one for compacted blocks.")
+	f.BoolVar(&cfg.HeadPostingsForMatchersCacheInvalidation, "blocks-storage.tsdb.head-postings-for-matchers-cache-invalidation", false, "Whether head block postings should be tracked and invalidated when they change, allowing higher TTLs to be used. When not using invalidation, cache entries will be used until removed.")
+	f.IntVar(&cfg.HeadPostingsForMatchersCacheVersions, "blocks-storage.tsdb.head-postings-for-matchers-cache-versions", tsdb.DefaultPostingsForMatchersCacheVersions, "The size of the metric versions cache in each ingester when invalidation is enabled.")
 	f.DurationVar(&cfg.HeadPostingsForMatchersCacheTTL, "blocks-storage.tsdb.head-postings-for-matchers-cache-ttl", tsdb.DefaultPostingsForMatchersCacheTTL, "How long to cache postings for matchers in the Head and OOOHead. 0 disables the cache and just deduplicates the in-flight calls.")
 	f.IntVar(&cfg.HeadPostingsForMatchersCacheMaxItems, "blocks-storage.tsdb.head-postings-for-matchers-cache-size", tsdb.DefaultPostingsForMatchersCacheMaxItems, "Maximum number of entries in the cache for postings for matchers in the Head and OOOHead when TTL is greater than 0.")
 	f.Int64Var(&cfg.HeadPostingsForMatchersCacheMaxBytes, "blocks-storage.tsdb.head-postings-for-matchers-cache-max-bytes", DefaultPostingsForMatchersCacheMaxBytes, "Maximum size in bytes of the cache for postings for matchers in the Head and OOOHead when TTL is greater than 0.")
@@ -335,6 +357,8 @@ func (cfg *TSDBConfig) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.TimelyHeadCompaction, "blocks-storage.tsdb.timely-head-compaction-enabled", false, "Allows head compaction to happen when the min block range can no longer be appended, without requiring 1.5x the chunk range worth of data in the head.")
 	f.BoolVar(&cfg.BiggerOutOfOrderBlocksForOldSamples, "blocks-storage.tsdb.bigger-out-of-order-blocks-for-old-samples", false, "When enabled, ingester produces 24h blocks for out-of-order data that is before the current day, instead of the usual 2h blocks.")
 	f.BoolVar(&cfg.IndexLookupPlanningEnabled, "blocks-storage.tsdb.index-lookup-planning-enabled", false, "Controls the collection of statistics and whether to defer some vector selector matchers to sequential scans. This leads to better performance.")
+	f.DurationVar(&cfg.HeadStatisticsCollectionFrequency, "blocks-storage.tsdb.head-statistics-collection-frequency", time.Hour, "How frequently to collect head statistics, which are used in query execution optimization. 0 to disable.")
+	f.Float64Var(&cfg.IndexLookupPlanningComparisonPortion, "blocks-storage.tsdb.index-lookup-planning-comparison-portion", 0.0, "Portion of queries where a mirrored chunk querier compares results with and without index lookup planning. Value between 0 (disabled) and 1 (all queries).")
 
 	cfg.HeadCompactionIntervalJitterEnabled = true
 	cfg.HeadCompactionIntervalWhileStarting = 30 * time.Second
@@ -380,6 +404,10 @@ func (cfg *TSDBConfig) Validate(activeSeriesCfg activeseries.Config) error {
 
 	if cfg.EarlyHeadCompactionMinEstimatedSeriesReductionPercentage < 0 || cfg.EarlyHeadCompactionMinEstimatedSeriesReductionPercentage > 100 {
 		return errInvalidEarlyHeadCompactionMinSeriesReduction
+	}
+
+	if cfg.IndexLookupPlanningEnabled && cfg.HeadStatisticsCollectionFrequency <= 0 {
+		return errors.Errorf("head statistics collection frequency must be a non-negative duration. 0 to disable")
 	}
 
 	return nil

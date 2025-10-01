@@ -10,6 +10,9 @@ metadata:
   namespace: {{ .Release.Namespace | quote }}
 spec:
   replicas: {{ .Values.admin_api.replicas }}
+  {{- with .Values.admin_api.revisionHistoryLimit }}
+  revisionHistoryLimit: {{ . }}
+  {{- end }}
   selector:
     matchLabels:
       {{- include "mimir.selectorLabels" (dict "ctx" . "component" "admin-api" "memberlist" true) | nindent 6 }}
@@ -88,27 +91,14 @@ spec:
             {{- toYaml .Values.admin_api.resources | nindent 12 }}
           securityContext:
             {{- toYaml .Values.admin_api.containerSecurityContext | nindent 12 }}
-          {{- if or .Values.global.extraEnv .Values.admin_api.env }}
-          env:
-            {{- with .Values.global.extraEnv }}
-              {{ toYaml . | nindent 12 }}
-            {{- end }}
-            {{- with .Values.admin_api.env }}
-              {{ toYaml . | nindent 12 }}
-            {{- end }}
-          {{- end }}
-          {{- if or .Values.global.extraEnvFrom .Values.admin_api.extraEnvFrom }}
-          envFrom:
-            {{- with .Values.global.extraEnvFrom }}
-              {{- toYaml . | nindent 12 }}
-            {{- end }}
-            {{- with .Values.admin_api.extraEnvFrom }}
-              {{- toYaml . | nindent 12 }}
-            {{- end }}
-          {{- end }}
+          {{- include "mimir.lib.containerEnv" (dict "ctx" . "component" "admin-api") | nindent 10 }}
         {{- with .Values.admin_api.extraContainers }}
         {{ toYaml . | nindent 8 }}
         {{- end }}
+      {{- with .Values.admin_api.dnsConfig | default .Values.global.dnsConfig }}
+      dnsConfig:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       {{- with .Values.admin_api.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

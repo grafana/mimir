@@ -15,6 +15,9 @@ spec:
   replicas: {{ .Values.ruler_query_frontend.replicas }}
   {{- end }}
   {{- end }}
+  {{- with .Values.ruler_query_frontend.revisionHistoryLimit }}
+  revisionHistoryLimit: {{ . }}
+  {{- end }}
   selector:
     matchLabels:
       {{- include "mimir.selectorLabels" (dict "ctx" . "component" "ruler-query-frontend") | nindent 6 }}
@@ -97,20 +100,7 @@ spec:
             {{- toYaml .Values.ruler_query_frontend.resources | nindent 12 }}
           securityContext:
             {{- toYaml .Values.ruler_query_frontend.containerSecurityContext | nindent 12 }}
-          env:
-            {{- with .Values.global.extraEnv }}
-              {{- toYaml . | nindent 12 }}
-            {{- end }}
-            {{- with .Values.ruler_query_frontend.env }}
-              {{- toYaml . | nindent 12 }}
-            {{- end }}
-          envFrom:
-            {{- with .Values.global.extraEnvFrom }}
-              {{- toYaml . | nindent 12 }}
-            {{- end }}
-            {{- with .Values.ruler_query_frontend.extraEnvFrom }}
-              {{- toYaml . | nindent 12 }}
-            {{- end }}
+          {{- include "mimir.lib.containerEnv" (dict "ctx" . "component" "ruler-query-frontend") | nindent 10 }}
 {{- if .Values.ruler_query_frontend.extraContainers }}
 {{ toYaml .Values.ruler_query_frontend.extraContainers | indent 8}}
 {{- end }}
@@ -128,6 +118,10 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       terminationGracePeriodSeconds: {{ .Values.ruler_query_frontend.terminationGracePeriodSeconds }}
+      {{- with .Values.ruler_query_frontend.dnsConfig }}
+      dnsConfig:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       volumes:
         - name: config
           {{- include "mimir.configVolume" . | nindent 10 }}

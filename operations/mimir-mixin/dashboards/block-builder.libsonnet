@@ -56,7 +56,7 @@ local filename = 'mimir-block-builder.json';
           [
             'sum(increase(cortex_blockbuilder_scheduler_fetch_offsets_failed_total{%(job)s}[$__rate_interval]))' % { job: $.jobMatcher($._config.job_names.block_builder_scheduler) },
             'sum(increase(cortex_blockbuilder_scheduler_flush_failed_total{%(job)s}[$__rate_interval]))' % { job: $.jobMatcher($._config.job_names.block_builder_scheduler) },
-            'sum(increase(cortex_blockbuilder_scheduler_job_gap_detected_total{%(job)s}[$__rate_interval]))' % { job: $.jobMatcher($._config.job_names.block_builder_scheduler) },
+            'sum(increase(cortex_blockbuilder_scheduler_job_gap_detected{%(job)s}[$__rate_interval]))' % { job: $.jobMatcher($._config.job_names.block_builder_scheduler) },
           ],
           [
             'fetch offsets failed',
@@ -126,42 +126,7 @@ local filename = 'mimir-block-builder.json';
         $.queryPanel(
           'sum by (pod) (rate(cortex_ingest_storage_reader_fetch_records_total{%(job)s}[$__rate_interval]))' % { job: $.jobMatcher($._config.job_names.block_builder) },
           '{{pod}}'
-        ) +
-        $.stack,
-      )
-    )
-    .addRow(
-      $.row('')
-      .addPanel(
-        $.timeseriesPanel('Partition processing / sec') +
-        $.panelDescription(
-          'Partition processing / sec',
-          'Per-partition rate of consumption cycles.',
-        ) +
-        $.queryPanel(
-          'sum by (partition) (histogram_count(increase(cortex_blockbuilder_process_partition_duration_seconds{%(job)s}[1m])))' % [$.jobMatcher($._config.job_names.block_builder)],
-          '{{partition}}'
-        )
-      )
-      .addPanel(
-        $.timeseriesPanel('Partition processing duration') +
-        $.panelDescription(
-          'Partition processing duration',
-          'Amount of time that it takes to process a partition.'
-        ) +
-        $.queryPanel(
-          [
-            'histogram_quantile(0.50, sum (rate(cortex_blockbuilder_process_partition_duration_seconds{%(job)s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.block_builder)],
-            'histogram_quantile(0.99, sum (rate(cortex_blockbuilder_process_partition_duration_seconds{%(job)s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.block_builder)],
-            'histogram_avg(sum (rate(cortex_blockbuilder_process_partition_duration_seconds{%(job)s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.block_builder)],
-          ],
-          [
-            '50th percentile',
-            '99th percentile',
-            'average',
-          ],
-        ) +
-        { fieldConfig+: { defaults+: { unit: 's' } } },
+        ),
       )
       .addPanel(
         $.timeseriesPanel('Job processing duration') +
@@ -183,7 +148,6 @@ local filename = 'mimir-block-builder.json';
         ) +
         { fieldConfig+: { defaults+: { unit: 's' } } },
       )
-
     )
     .addRow(
       $.row('TSDB')

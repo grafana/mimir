@@ -53,6 +53,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
 
+	"github.com/grafana/mimir/pkg/distributor/otlpappender"
 	"github.com/grafana/mimir/pkg/ingester"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -129,10 +130,10 @@ func TestOTelMetricsToMetadata(t *testing.T) {
 					MetricFamilyName: "test" + countSfx,
 				},
 			}
-
-			res, err := otelMetricsToMetadata(otelMetrics, conversionOptions{
+			converter := newOTLPMimirConverter(otlpappender.NewCombinedAppender())
+			_, res, _, err := otelMetricsToSeriesAndMetadata(context.Background(), converter, otelMetrics, conversionOptions{
 				addSuffixes: tc.enableSuffixes,
-			})
+			}, log.NewNopLogger())
 			require.NoError(t, err)
 			assert.Equal(t, sampleMetadata, res)
 		})
@@ -1319,7 +1320,7 @@ func setupTestDistributor(t *testing.T) (*Distributor, func()) {
 	})
 
 	overrides := validation.NewOverrides(limits, nil)
-	distributor, err := New(distributorConfig, clientConfig, overrides, nil, nil, ingestersRing, nil, true, nil, log.NewNopLogger())
+	distributor, err := New(distributorConfig, clientConfig, overrides, nil, nil, ingestersRing, nil, true, nil, nil, nil, log.NewNopLogger())
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), distributor))
 
@@ -1341,9 +1342,9 @@ func TestHandler_EnforceInflightBytesLimitHTTPPush(t *testing.T) {
 	uncompBytesMetrics := `
 # HELP cortex_distributor_uncompressed_request_body_size_bytes Size of uncompressed request body in bytes.
 # TYPE cortex_distributor_uncompressed_request_body_size_bytes histogram
-cortex_distributor_uncompressed_request_body_size_bytes_bucket{user="test",le="+Inf"} 1
-cortex_distributor_uncompressed_request_body_size_bytes_sum{user="test"} 101
-cortex_distributor_uncompressed_request_body_size_bytes_count{user="test"} 1
+cortex_distributor_uncompressed_request_body_size_bytes_bucket{handler="push",user="test",le="+Inf"} 1
+cortex_distributor_uncompressed_request_body_size_bytes_sum{handler="push",user="test"} 101
+cortex_distributor_uncompressed_request_body_size_bytes_count{handler="push",user="test"} 1
 `
 
 	cases := map[string]struct {
@@ -1446,7 +1447,7 @@ func TestHandler_EnforceInflightBytesLimitOTLP(t *testing.T) {
 	}
 
 	var samples []prompb.Sample
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		ts := time.Date(2020, 4, 1, 0, 0, 0, 0, time.UTC).Add(time.Duration(i) * time.Second)
 		samples = append(samples, prompb.Sample{
 			Value:     1,
@@ -1488,17 +1489,17 @@ func TestHandler_EnforceInflightBytesLimitOTLP(t *testing.T) {
 	okMetrics := `
 # HELP cortex_distributor_uncompressed_request_body_size_bytes Size of uncompressed request body in bytes.
 # TYPE cortex_distributor_uncompressed_request_body_size_bytes histogram
-cortex_distributor_uncompressed_request_body_size_bytes_bucket{user="test",le="+Inf"} 1
-cortex_distributor_uncompressed_request_body_size_bytes_sum{user="test"} 163
-cortex_distributor_uncompressed_request_body_size_bytes_count{user="test"} 1
+cortex_distributor_uncompressed_request_body_size_bytes_bucket{handler="otlp",user="test",le="+Inf"} 1
+cortex_distributor_uncompressed_request_body_size_bytes_sum{handler="otlp",user="test"} 163
+cortex_distributor_uncompressed_request_body_size_bytes_count{handler="otlp",user="test"} 1
 `
 
 	okMetricsProto := `
 # HELP cortex_distributor_uncompressed_request_body_size_bytes Size of uncompressed request body in bytes.
 # TYPE cortex_distributor_uncompressed_request_body_size_bytes histogram
-cortex_distributor_uncompressed_request_body_size_bytes_bucket{user="test",le="+Inf"} 1
-cortex_distributor_uncompressed_request_body_size_bytes_sum{user="test"} 376
-cortex_distributor_uncompressed_request_body_size_bytes_count{user="test"} 1
+cortex_distributor_uncompressed_request_body_size_bytes_bucket{handler="otlp",user="test",le="+Inf"} 1
+cortex_distributor_uncompressed_request_body_size_bytes_sum{handler="otlp",user="test"} 376
+cortex_distributor_uncompressed_request_body_size_bytes_count{handler="otlp",user="test"} 1
 `
 
 	cases := map[string]struct {
@@ -1562,7 +1563,7 @@ cortex_distributor_uncompressed_request_body_size_bytes_count{user="test"} 1
 			require.NoError(t, err)
 
 			reg := prometheus.NewRegistry()
-			handler := OTLPHandler(MiB, util.NewBufferPool(0), nil, otlpLimitsMock{}, nil, RetryConfig{}, false, distr.limitsMiddleware(dummyPushFunc), newPushMetrics(reg), reg, log.NewNopLogger())
+			handler := OTLPHandler(MiB, util.NewBufferPool(0), nil, otlpLimitsMock{}, nil, RetryConfig{}, nil, distr.limitsMiddleware(dummyPushFunc), newPushMetrics(reg), reg, log.NewNopLogger())
 
 			resp := httptest.NewRecorder()
 			handler.ServeHTTP(resp, req)
@@ -1605,7 +1606,7 @@ func TestOTLPPushHandlerErrorsAreReportedCorrectlyViaHttpgrpc(t *testing.T) {
 
 		return nil
 	}
-	h := OTLPHandler(200, util.NewBufferPool(0), nil, otlpLimitsMock{}, nil, RetryConfig{}, false, push, newPushMetrics(reg), reg, log.NewNopLogger())
+	h := OTLPHandler(200, util.NewBufferPool(0), nil, otlpLimitsMock{}, nil, RetryConfig{}, nil, push, newPushMetrics(reg), reg, log.NewNopLogger())
 	srv.HTTP.Handle("/otlp", h)
 
 	// start the server
@@ -1660,13 +1661,13 @@ func TestOTLPPushHandlerErrorsAreReportedCorrectlyViaHttpgrpc(t *testing.T) {
 			},
 			expectedResponse: &httpgrpc.HTTPResponse{Code: 400,
 				Headers: []*httpgrpc.Header{
-					{Key: "Content-Length", Values: []string{"140"}},
+					{Key: "Content-Length", Values: []string{"148"}},
 					{Key: "Content-Type", Values: []string{"application/json"}},
 					{Key: "X-Content-Type-Options", Values: []string{"nosniff"}},
 				},
-				Body: jsonMarshalStatus(t, 400, "ReadObjectCB: expect { or n, but found i, error found in #1 byte of ...|invalid|..., bigger context ...|invalid|..."),
+				Body: jsonMarshalStatus(t, 400, "ReadObject: expect { or , or } or n, but found i, error found in #1 byte of ...|invalid|..., bigger context ...|invalid|..."),
 			},
-			expectedGrpcErrorMessage: "rpc error: code = Code(400) desc = ReadObjectCB: expect { or n, but found i, error found in #1 byte of ...|invalid|..., bigger context ...|invalid|...",
+			expectedGrpcErrorMessage: "rpc error: code = Code(400) desc = ReadObject: expect { or , or } or n, but found i, error found in #1 byte of ...|invalid|..., bigger context ...|invalid|...",
 		},
 		"invalid protobuf request returns 400": {
 			request: &httpgrpc.HTTPRequest{
@@ -1699,13 +1700,13 @@ func TestOTLPPushHandlerErrorsAreReportedCorrectlyViaHttpgrpc(t *testing.T) {
 			},
 			expectedResponse: &httpgrpc.HTTPResponse{Code: 400,
 				Headers: []*httpgrpc.Header{
-					{Key: "Content-Length", Values: []string{"267"}},
+					{Key: "Content-Length", Values: []string{"275"}},
 					{Key: "Content-Type", Values: []string{"application/json"}},
 					{Key: "X-Content-Type-Options", Values: []string{"nosniff"}},
 				},
-				Body: jsonMarshalStatus(t, 400, "ReadObjectCB: expect { or n, but found \ufffd, error found in #2 byte of ...|\n\ufffd\u0016\n\ufffd\u0002\n\u001d\n\u0011co|..., bigger context ...|\n\ufffd\u0016\n\ufffd\u0002\n\u001d\n\u0011container.runtime\u0012\u0008\n\u0006docker\n'\n\u0012container.h|..."),
+				Body: jsonMarshalStatus(t, 400, "ReadObject: expect { or , or } or n, but found \ufffd, error found in #2 byte of ...|\n\ufffd\u0016\n\ufffd\u0002\n\u001d\n\u0011co|..., bigger context ...|\n\ufffd\u0016\n\ufffd\u0002\n\u001d\n\u0011container.runtime\u0012\u0008\n\u0006docker\n'\n\u0012container.h|..."),
 			},
-			expectedGrpcErrorMessage: "rpc error: code = Code(400) desc = ReadObjectCB: expect { or n, but found \ufffd, error found in #2 byte of ...|\n\ufffd\u0016\n\ufffd\u0002\n\u001d\n\u0011co|..., bigger context ...|\n\ufffd\u0016\n\ufffd\u0002\n\u001d\n\u0011container.runtime\u0012\u0008\n\u0006docker\n'\n\u0012container.h|...",
+			expectedGrpcErrorMessage: "rpc error: code = Code(400) desc = ReadObject: expect { or , or } or n, but found \ufffd, error found in #2 byte of ...|\n\ufffd\u0016\n\ufffd\u0002\n\u001d\n\u0011co|..., bigger context ...|\n\ufffd\u0016\n\ufffd\u0002\n\u001d\n\u0011container.runtime\u0012\u0008\n\u0006docker\n'\n\u0012container.h|...",
 		},
 		"empty JSON is good request, with 200 status code": {
 			request: &httpgrpc.HTTPRequest{

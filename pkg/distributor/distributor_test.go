@@ -977,7 +977,7 @@ func TestDistributor_PushHAInstances(t *testing.T) {
 			testReplica:     "instance1234567890123456789012345678901234567890",
 			cluster:         "cluster0",
 			samples:         5,
-			expectedError:   status.New(codes.InvalidArgument, fmt.Sprintf(labelValueTooLongMsgFormat, "__replica__", "instance1234567890123456789012345678901234567890", mimirpb.FromLabelAdaptersToString(labelSetGenWithReplicaAndCluster("instance1234567890123456789012345678901234567890", "cluster0")(0)))),
+			expectedError:   status.New(codes.InvalidArgument, fmt.Sprintf(labelValueTooLongMsgFormat, 48, 15, "__replica__", "instance1234567890123456789012345678901234567890", mimirpb.FromLabelAdaptersToString(labelSetGenWithReplicaAndCluster("instance1234567890123456789012345678901234567890", "cluster0")(0)))),
 			expectedDetails: &mimirpb.ErrorDetails{Cause: mimirpb.ERROR_CAUSE_BAD_DATA},
 		},
 	} {
@@ -2463,7 +2463,7 @@ func BenchmarkDistributor_Push(b *testing.B) {
 					}
 
 					// Start the distributor.
-					distributor, err := New(distributorCfg, clientConfig, overrides, nil, cam, ingestersRing, nil, true, nil, log.NewNopLogger())
+					distributor, err := New(distributorCfg, clientConfig, overrides, nil, cam, ingestersRing, nil, true, nil, nil, nil, log.NewNopLogger())
 					require.NoError(b, err)
 					require.NoError(b, services.StartAndAwaitRunning(context.Background(), distributor))
 
@@ -5613,6 +5613,7 @@ type prepConfig struct {
 	overrides          func(*validation.Limits) *validation.Overrides
 	reg                *prometheus.Registry
 	costAttributionMgr *costattribution.Manager
+	logger             log.Logger
 	numDistributors    int
 
 	replicationFactor                  int
@@ -5878,7 +5879,10 @@ func prepare(t testing.TB, cfg prepConfig) ([]*Distributor, []*mockIngester, []*
 
 	cfg.validate(t)
 
-	logger := log.NewNopLogger()
+	logger := cfg.logger
+	if logger == nil {
+		logger = log.NewNopLogger()
+	}
 
 	// Init a fake Kafka cluster if ingest storage is enabled.
 	if cfg.ingestStorageEnabled && cfg.ingestStorageKafka == nil {
@@ -6011,7 +6015,7 @@ func prepare(t testing.TB, cfg prepConfig) ([]*Distributor, []*mockIngester, []*
 		if reg == nil {
 			reg = prometheus.NewPedanticRegistry()
 		}
-		d, err := New(distributorCfg, clientConfig, overrides, nil, cfg.costAttributionMgr, ingestersRing, partitionsRing, true, reg, log.NewNopLogger())
+		d, err := New(distributorCfg, clientConfig, overrides, nil, cfg.costAttributionMgr, ingestersRing, partitionsRing, true, nil, nil, reg, logger)
 		require.NoError(t, err)
 		require.NoError(t, services.StartAndAwaitRunning(ctx, d))
 		t.Cleanup(func() {
@@ -6472,7 +6476,18 @@ func (i *mockIngester) Close() error {
 }
 
 func (i *mockIngester) Push(ctx context.Context, req *mimirpb.WriteRequest, _ ...grpc.CallOption) (*mimirpb.WriteResponse, error) {
-	i.trackCall("Push", ctx, req)
+	// Clone req by marshalling and unmarshalling. Otherwise tests cannot
+	// inspect it, because it gets cleared for reuse after push is finished.
+	breq, err := req.Marshal()
+	if err != nil {
+		return nil, err
+	}
+	var reqCopy mimirpb.WriteRequest
+	err = reqCopy.Unmarshal(breq)
+	if err != nil {
+		return nil, err
+	}
+	i.trackCall("Push", ctx, &reqCopy)
 
 	time.Sleep(i.pushDelay)
 
@@ -8195,7 +8210,21 @@ func checkGRPCError(t *testing.T, expectedStatus *status.Status, expectedDetails
 
 func createStatusWithDetails(t *testing.T, code codes.Code, message string, cause mimirpb.ErrorCause) *status.Status {
 	stat := status.New(code, message)
-	statWithDetails, err := stat.WithDetails(&mimirpb.ErrorDetails{Cause: cause})
+	statWithDetails, err := stat.WithDetails(&mimirpb.ErrorDetails{
+		Cause: cause,
+	})
+
+	require.NoError(t, err)
+	return statWithDetails
+}
+
+func createSoftStatusWithDetails(t *testing.T, code codes.Code, message string, cause mimirpb.ErrorCause) *status.Status {
+	stat := status.New(code, message)
+	statWithDetails, err := stat.WithDetails(&mimirpb.ErrorDetails{
+		Cause: cause,
+		Soft:  true,
+	})
+
 	require.NoError(t, err)
 	return statWithDetails
 }
@@ -8726,7 +8755,7 @@ func TestCheckStartedMiddleware(t *testing.T) {
 	})
 
 	overrides := validation.NewOverrides(limits, nil)
-	distributor, err := New(distributorConfig, clientConfig, overrides, nil, nil, ingestersRing, nil, true, nil, log.NewNopLogger())
+	distributor, err := New(distributorConfig, clientConfig, overrides, nil, nil, ingestersRing, nil, true, nil, nil, nil, log.NewNopLogger())
 	require.NoError(t, err)
 
 	ctx := user.InjectOrgID(context.Background(), "user")

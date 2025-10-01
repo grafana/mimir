@@ -17,9 +17,12 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/grpcclient"
+	"github.com/grafana/dskit/instrument"
+	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/multierror"
 	"github.com/grafana/dskit/tenant"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
@@ -75,7 +78,10 @@ type Config struct {
 }
 
 const (
-	queryStoreAfterFlag = "querier.query-store-after"
+	queryStoreAfterFlag                          = "querier.query-store-after"
+	minimiseIngesterRequestsFlag                 = "querier.minimize-ingester-requests"
+	streamingChunksPerIngesterBufferSizeFlag     = "querier.streaming-chunks-per-ingester-buffer-size"
+	streamingChunksPerStoreGatewayBufferSizeFlag = "querier.streaming-chunks-per-store-gateway-buffer-size"
 
 	PrometheusEngine = "prometheus"
 	MimirEngine      = "mimir"
@@ -89,14 +95,13 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.ShuffleShardingIngestersEnabled, "querier.shuffle-sharding-ingesters-enabled", true, fmt.Sprintf("Fetch in-memory series from the minimum set of required ingesters, selecting only ingesters which may have received series since -%s. If this setting is false or -%s is '0', queriers always query all ingesters (ingesters shuffle sharding on read path is disabled).", validation.QueryIngestersWithinFlag, validation.QueryIngestersWithinFlag))
 	f.StringVar(&cfg.PreferAvailabilityZone, "querier.prefer-availability-zone", "", "Preferred availability zone to query ingesters from when using the ingest storage.")
 
-	const minimiseIngesterRequestsFlagName = "querier.minimize-ingester-requests"
-	f.BoolVar(&cfg.MinimizeIngesterRequests, minimiseIngesterRequestsFlagName, true, "If true, when querying ingesters, only the minimum required ingesters required to reach quorum will be queried initially, with other ingesters queried only if needed due to failures from the initial set of ingesters. Enabling this option reduces resource consumption for the happy path at the cost of increased latency for the unhappy path.")
-	f.DurationVar(&cfg.MinimiseIngesterRequestsHedgingDelay, minimiseIngesterRequestsFlagName+"-hedging-delay", 3*time.Second, "Delay before initiating requests to further ingesters when request minimization is enabled and the initially selected set of ingesters have not all responded. Ignored if -"+minimiseIngesterRequestsFlagName+" is not enabled.")
+	f.BoolVar(&cfg.MinimizeIngesterRequests, minimiseIngesterRequestsFlag, true, "If true, when querying ingesters, only the minimum required ingesters required to reach quorum will be queried initially, with other ingesters queried only if needed due to failures from the initial set of ingesters. Enabling this option reduces resource consumption for the happy path at the cost of increased latency for the unhappy path.")
+	f.DurationVar(&cfg.MinimiseIngesterRequestsHedgingDelay, minimiseIngesterRequestsFlag+"-hedging-delay", 3*time.Second, "Delay before initiating requests to further ingesters when request minimization is enabled and the initially selected set of ingesters have not all responded. Ignored if -"+minimiseIngesterRequestsFlag+" is not enabled.")
 
 	// Why 256 series / ingester/store-gateway?
 	// Based on our testing, 256 series / ingester was a good balance between memory consumption and the CPU overhead of managing a batch of series.
-	f.Uint64Var(&cfg.StreamingChunksPerIngesterSeriesBufferSize, "querier.streaming-chunks-per-ingester-buffer-size", 256, "Number of series to buffer per ingester when streaming chunks from ingesters.")
-	f.Uint64Var(&cfg.StreamingChunksPerStoreGatewaySeriesBufferSize, "querier.streaming-chunks-per-store-gateway-buffer-size", 256, "Number of series to buffer per store-gateway when streaming chunks from store-gateways.")
+	f.Uint64Var(&cfg.StreamingChunksPerIngesterSeriesBufferSize, streamingChunksPerIngesterBufferSizeFlag, 256, "Number of series to buffer per ingester when streaming chunks from ingesters.")
+	f.Uint64Var(&cfg.StreamingChunksPerStoreGatewaySeriesBufferSize, streamingChunksPerStoreGatewayBufferSizeFlag, 256, "Number of series to buffer per store-gateway when streaming chunks from store-gateways.")
 
 	f.StringVar(&cfg.QueryEngine, "querier.query-engine", MimirEngine, fmt.Sprintf("Query engine to use, either '%v' or '%v'", PrometheusEngine, MimirEngine))
 	f.BoolVar(&cfg.EnableQueryEngineFallback, "querier.enable-query-engine-fallback", true, "If set to true and the Mimir query engine is in use, fall back to using the Prometheus query engine for any queries not supported by the Mimir query engine.")
@@ -111,6 +116,14 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 func (cfg *Config) Validate() error {
 	if cfg.QueryEngine != PrometheusEngine && cfg.QueryEngine != MimirEngine {
 		return fmt.Errorf("unknown PromQL engine '%s'", cfg.QueryEngine)
+	}
+
+	if cfg.StreamingChunksPerIngesterSeriesBufferSize == 0 {
+		return errStreamingIngesterBufferSize
+	}
+
+	if cfg.StreamingChunksPerStoreGatewaySeriesBufferSize == 0 {
+		return errStreamingStoreGatewayBufferSize
 	}
 
 	return nil
@@ -150,7 +163,7 @@ func ShouldQueryBlockStore(queryStoreAfter time.Duration, now time.Time, queryMi
 }
 
 // New builds a queryable and promql engine.
-func New(cfg Config, limits *validation.Overrides, distributor Distributor, queryables []TimeRangeQueryable, reg prometheus.Registerer, logger log.Logger, tracker *activitytracker.ActivityTracker, planner *streamingpromql.QueryPlanner) (storage.SampleAndChunkQueryable, storage.ExemplarQueryable, promql.QueryEngine, error) {
+func New(cfg Config, limits *validation.Overrides, distributor Distributor, queryables []TimeRangeQueryable, reg prometheus.Registerer, logger log.Logger, tracker *activitytracker.ActivityTracker, planner *streamingpromql.QueryPlanner) (storage.SampleAndChunkQueryable, storage.ExemplarQueryable, promql.QueryEngine, *streamingpromql.Engine, error) {
 	queryMetrics := stats.NewQueryMetrics(reg)
 
 	queryables = append(queryables, TimeRangeQueryable{
@@ -182,15 +195,17 @@ func New(cfg Config, limits *validation.Overrides, distributor Distributor, quer
 	parser.ExperimentalDurationExpr = true
 
 	var eng promql.QueryEngine
+	var streamingEngine *streamingpromql.Engine
 
 	switch cfg.QueryEngine {
 	case PrometheusEngine:
 		eng = promql.NewEngine(opts)
 	case MimirEngine:
 		limitsProvider := NewTenantQueryLimitsProvider(limits)
-		streamingEngine, err := streamingpromql.NewEngine(mqeOpts, limitsProvider, queryMetrics, planner, logger)
+		var err error
+		streamingEngine, err = streamingpromql.NewEngine(mqeOpts, limitsProvider, queryMetrics, planner)
 		if err != nil {
-			return nil, nil, nil, err
+			return nil, nil, nil, nil, err
 		}
 
 		if cfg.EnableQueryEngineFallback {
@@ -203,7 +218,7 @@ func New(cfg Config, limits *validation.Overrides, distributor Distributor, quer
 		panic(fmt.Sprintf("invalid config not caught by validation: unknown PromQL engine '%s'", cfg.QueryEngine))
 	}
 
-	return NewSampleAndChunkQueryable(lazyQueryable), exemplarQueryable, eng, nil
+	return NewSampleAndChunkQueryable(lazyQueryable), exemplarQueryable, eng, streamingEngine, nil
 }
 
 // NewSampleAndChunkQueryable creates a SampleAndChunkQueryable from a Queryable.
@@ -792,4 +807,38 @@ func (p *TenantQueryLimitsProvider) GetMaxEstimatedMemoryConsumptionPerQuery(ctx
 	}
 
 	return totalLimit, nil
+}
+
+type RequestMetrics struct {
+	RequestDuration     *prometheus.HistogramVec
+	ReceivedMessageSize *prometheus.HistogramVec
+	SentMessageSize     *prometheus.HistogramVec
+	InflightRequests    *prometheus.GaugeVec
+}
+
+func NewRequestMetrics(reg prometheus.Registerer) *RequestMetrics {
+	return &RequestMetrics{
+		RequestDuration: promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
+			Name:    "cortex_querier_request_duration_seconds",
+			Help:    "Time (in seconds) spent serving HTTP requests to the querier.",
+			Buckets: instrument.DefBuckets,
+		}, []string{"method", "route", "status_code", "ws"}),
+
+		ReceivedMessageSize: promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
+			Name:    "cortex_querier_request_message_bytes",
+			Help:    "Size (in bytes) of messages received in the request to the querier.",
+			Buckets: middleware.BodySizeBuckets,
+		}, []string{"method", "route"}),
+
+		SentMessageSize: promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
+			Name:    "cortex_querier_response_message_bytes",
+			Help:    "Size (in bytes) of messages sent in response by the querier.",
+			Buckets: middleware.BodySizeBuckets,
+		}, []string{"method", "route"}),
+
+		InflightRequests: promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
+			Name: "cortex_querier_inflight_requests",
+			Help: "Current number of inflight requests to the querier.",
+		}, []string{"method", "route"}),
+	}
 }

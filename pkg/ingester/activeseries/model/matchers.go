@@ -37,27 +37,35 @@ func NewMatchers(matchersConfig CustomTrackersConfig) *Matchers {
 		}
 
 		optimized := false
+	matcherLoop:
 		for _, m := range ms {
-			if m.Type == labels.MatchEqual && m.Value != "" {
-				matchersForExactValue = append(matchersForExactValue, indexedMatchers{labelsMatchers: ms, index: index})
-				if valuesMatchedPerLabelName[m.Name] == nil {
-					valuesMatchedPerLabelName[m.Name] = make(map[string]struct{})
+			switch m.Type {
+			case labels.MatchEqual:
+				if m.Value != "" {
+					matchersForExactValue = append(matchersForExactValue, indexedMatchers{labelsMatchers: ms, index: index})
+					if valuesMatchedPerLabelName[m.Name] == nil {
+						valuesMatchedPerLabelName[m.Name] = make(map[string]struct{})
+					}
+					valuesMatchedPerLabelName[m.Name][m.Value] = struct{}{}
+					optimized = true
+					break matcherLoop
 				}
-				valuesMatchedPerLabelName[m.Name][m.Value] = struct{}{}
-				optimized = true
-				break
-			} else if sm := m.SetMatches(); len(sm) > 0 {
-				matchersForExactValue = append(matchersForExactValue, indexedMatchers{labelsMatchers: ms, index: index})
-				if valuesMatchedPerLabelName[m.Name] == nil {
-					valuesMatchedPerLabelName[m.Name] = make(map[string]struct{})
+			case labels.MatchRegexp:
+				sm := m.SetMatches()
+				if len(sm) > 0 {
+					matchersForExactValue = append(matchersForExactValue, indexedMatchers{labelsMatchers: ms, index: index})
+					if valuesMatchedPerLabelName[m.Name] == nil {
+						valuesMatchedPerLabelName[m.Name] = make(map[string]struct{})
+					}
+					for _, v := range sm {
+						valuesMatchedPerLabelName[m.Name][v] = struct{}{}
+					}
+					optimized = true
+					break matcherLoop
 				}
-				for _, v := range sm {
-					valuesMatchedPerLabelName[m.Name][v] = struct{}{}
-				}
-				optimized = true
-				break
 			}
 		}
+
 		if !optimized {
 			unoptimized = append(unoptimized, indexedMatchers{labelsMatchers: ms, index: index})
 		}

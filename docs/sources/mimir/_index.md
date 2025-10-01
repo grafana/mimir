@@ -18,7 +18,7 @@ cascade:
 menuTitle: Grafana Mimir
 title: Grafana Mimir documentation
 hero:
-  title: Grafana Mimir
+  title: Mimir
   level: 1
   image: /media/docs/mimir/GrafanaLogo_Mimir_icon.png
   width: 100
@@ -27,6 +27,10 @@ hero:
 cards:
   title_class: pt-0 lh-1s
   items:
+    - title: Introduction to Grafana Mimir
+      href: ./introduction/
+      description: Learn about Grafana Mimir's core concepts and key features for handling metric data.
+      height: 24
     - title: Get started
       href: ./get-started/
       description: Get started quickly with Grafana Mimir's extensive documentation, tutorials, and deployment tooling. Use the monolithic mode to get up and running with just one binary and no added dependencies.

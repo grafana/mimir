@@ -20,16 +20,17 @@ import (
 
 func TestMatcher_MatchesSeries(t *testing.T) {
 	asm := NewMatchers(mustNewCustomTrackersConfigFromMap(t, map[string]string{
-		"bar_starts_with_1":             `{bar=~"1.*"}`,
-		"does_not_have_foo_label":       `{foo=""}`,
-		"has_foo_and_bar_starts_with_1": `{foo!="", bar=~"1.*"}`,
-		"has_foo_label":                 `{foo!=""}`,
-		"foo_is_true":                   `{foo="true"}`,
-		"foo_is_false":                  `{foo="false"}`,
-		"foo_is_true_bar_starts_with_1": `{foo="true", bar=~"1.*"}`,
-		"foo_is_true_bar_is_100":        `{foo="true", bar="100"}`,
-		"baz_is_boolean":                `{baz=~"true|false"}`,
-		"baz_is_boolean_zzz_is_ok":      `{baz=~"true|false", zzz="ok"}`,
+		"bar_starts_with_1":                `{bar=~"1.*"}`,
+		"does_not_have_foo_label":          `{foo=""}`,
+		"has_foo_and_bar_starts_with_1":    `{foo!="", bar=~"1.*"}`,
+		"has_foo_label":                    `{foo!=""}`,
+		"has_foo_and_is_not_true_or_false": `{foo!="", foo!~"(true|false)"}`,
+		"foo_is_true":                      `{foo="true"}`,
+		"foo_is_false":                     `{foo="false"}`,
+		"foo_is_true_bar_starts_with_1":    `{foo="true", bar=~"1.*"}`,
+		"foo_is_true_bar_is_100":           `{foo="true", bar="100"}`,
+		"baz_is_boolean":                   `{baz=~"true|false"}`,
+		"baz_is_boolean_zzz_is_ok":         `{baz=~"true|false", zzz="ok"}`,
 	}))
 
 	for _, tc := range []struct {
@@ -216,12 +217,14 @@ func TestMatcher_MatchesSeries(t *testing.T) {
 				"bar_starts_with_1",
 				"has_foo_and_bar_starts_with_1",
 				"has_foo_label",
+				"has_foo_and_is_not_true_or_false",
 			},
 		},
 		{
 			series: labels.FromStrings("foo", "other_value"),
 			expected: []string{
 				"has_foo_label",
+				"has_foo_and_is_not_true_or_false",
 			},
 		},
 		// Edge cases

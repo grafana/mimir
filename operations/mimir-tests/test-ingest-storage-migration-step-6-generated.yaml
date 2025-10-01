@@ -46,19 +46,6 @@ apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
   labels:
-    name: ingester-rollout
-  name: ingester-rollout
-  namespace: default
-spec:
-  maxUnavailable: 1
-  selector:
-    matchLabels:
-      rollout-group: ingester
----
-apiVersion: policy/v1
-kind: PodDisruptionBudget
-metadata:
-  labels:
     name: memcached
   name: memcached
   namespace: default
@@ -211,19 +198,6 @@ spec:
     matchLabels:
       name: ruler-query-scheduler
 ---
-apiVersion: policy/v1
-kind: PodDisruptionBudget
-metadata:
-  labels:
-    name: store-gateway-rollout
-  name: store-gateway-rollout
-  namespace: default
-spec:
-  maxUnavailable: 1
-  selector:
-    matchLabels:
-      rollout-group: store-gateway
----
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -237,6 +211,103 @@ data:
 kind: ConfigMap
 metadata:
   name: overrides
+  namespace: default
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: zoneawarepoddisruptionbudgets.rollout-operator.grafana.com
+spec:
+  group: rollout-operator.grafana.com
+  names:
+    kind: ZoneAwarePodDisruptionBudget
+    plural: zoneawarepoddisruptionbudgets
+    shortNames:
+    - zpdb
+    singular: zoneawarepoddisruptionbudget
+  scope: Namespaced
+  versions:
+  - name: v1
+    schema:
+      openAPIV3Schema:
+        properties:
+          spec:
+            properties:
+              maxUnavailable:
+                description: The number of pods that can be unavailable within a zone
+                  or partition.
+                minimum: 0
+                type: integer
+              maxUnavailablePercentage:
+                description: Calculate the maxUnavailable value as a percentage of
+                  the StatefulSet's spec.Replica count. This option is not supported
+                  when using podNamePartitionRegex.
+                maximum: 100
+                minimum: 0
+                type: integer
+              podNamePartitionRegex:
+                description: A regular expression for returning a partition name given
+                  a pod name. This field is optional and should only be used when
+                  the ZoneAwarePodDisruptionBudget is to be scoped to a partition,
+                  such as a multi-zone ingester deployment with ingest_storage_enabled.
+                  Enabling this changes the ZPDB functionality such that minAvailability
+                  is applied across ALL zones for a given partition. When not enabled,
+                  the minAvailability is applied to pods within the eviction zone
+                  assuming there are no disruptions in the other zones.
+                type: string
+              podNameRegexGroup:
+                description: The regular expression capture group number that contains
+                  the partition name. This field is only required when the podNamePartitionRegex
+                  field is set and has more then one grouping. The default value is
+                  1 and 1-based indexing is used.
+                minimum: 1
+                type: integer
+              selector:
+                description: A selector for finding pods and statefulsets that this
+                  ZoneAwarePodDisruptionBudget applies to.
+                properties:
+                  matchLabels:
+                    additionalProperties:
+                      type: string
+                    type: object
+                required:
+                - matchLabels
+                type: object
+            required:
+            - selector
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: rollout-operator-default-webhook-cert-update-role
+rules:
+- apiGroups:
+  - admissionregistration.k8s.io
+  resources:
+  - validatingwebhookconfigurations
+  - mutatingwebhookconfigurations
+  verbs:
+  - list
+  - patch
+  - watch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: rollout-operator-default-webhook-cert-secret-rolebinding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: rollout-operator-default-webhook-cert-update-role
+subjects:
+- kind: ServiceAccount
+  name: rollout-operator
   namespace: default
 ---
 apiVersion: rbac.authorization.k8s.io/v1
@@ -277,6 +348,36 @@ rules:
   - get
   - update
   - create
+- apiGroups:
+  - rollout-operator.grafana.com
+  resources:
+  - zoneawarepoddisruptionbudgets
+  verbs:
+  - get
+  - list
+  - watch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: rollout-operator-webhook-cert-secret-role
+  namespace: default
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - secrets
+  verbs:
+  - create
+- apiGroups:
+  - ""
+  resourceNames:
+  - rollout-operator-self-signed-certificate
+  resources:
+  - secrets
+  verbs:
+  - update
+  - get
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
@@ -287,6 +388,20 @@ roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
   name: rollout-operator-role
+subjects:
+- kind: ServiceAccount
+  name: rollout-operator
+  namespace: default
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: rollout-operator-webhook-cert-secret-rolebinding
+  namespace: default
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: rollout-operator-webhook-cert-secret-role
 subjects:
 - kind: ServiceAccount
   name: rollout-operator
@@ -599,6 +714,20 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
+  name: rollout-operator
+  namespace: default
+spec:
+  ports:
+  - name: https
+    port: 443
+    protocol: TCP
+    targetPort: 8443
+  selector:
+    name: rollout-operator
+---
+apiVersion: v1
+kind: Service
+metadata:
   labels:
     name: ruler
   name: ruler
@@ -831,6 +960,7 @@ spec:
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
         - -runtime-config.file=/etc/mimir/overrides.yaml
+        - -server.grpc-max-concurrent-streams=1000
         - -server.grpc.keepalive.max-connection-age=60s
         - -server.grpc.keepalive.max-connection-age-grace=5m
         - -server.grpc.keepalive.max-connection-idle=1m
@@ -843,7 +973,7 @@ spec:
         env:
         - name: GOMAXPROCS
           value: "8"
-        image: grafana/mimir:2.16.1
+        image: grafana/mimir:2.17.1
         imagePullPolicy: IfNotPresent
         name: distributor
         ports:
@@ -949,7 +1079,7 @@ spec:
         env:
         - name: GOMAXPROCS
           value: "5"
-        image: grafana/mimir:2.16.1
+        image: grafana/mimir:2.17.1
         imagePullPolicy: IfNotPresent
         name: querier
         ports:
@@ -1034,7 +1164,7 @@ spec:
         - -shutdown-delay=90s
         - -target=query-frontend
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.16.1
+        image: grafana/mimir:2.17.1
         imagePullPolicy: IfNotPresent
         name: query-frontend
         ports:
@@ -1107,7 +1237,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=query-scheduler
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.16.1
+        image: grafana/mimir:2.17.1
         imagePullPolicy: IfNotPresent
         name: query-scheduler
         ports:
@@ -1160,14 +1290,17 @@ spec:
       containers:
       - args:
         - -kubernetes.namespace=default
+        - -server-tls.enabled=true
         - -use-zone-tracker=true
         - -zone-tracker.config-map-name=rollout-operator-zone-tracker
-        image: grafana/rollout-operator:v0.28.0
+        image: grafana/rollout-operator:v0.29.0
         imagePullPolicy: IfNotPresent
         name: rollout-operator
         ports:
         - containerPort: 8001
           name: http-metrics
+        - containerPort: 8443
+          name: https
         readinessProbe:
           httpGet:
             path: /ready
@@ -1258,7 +1391,7 @@ spec:
         - -store-gateway.tenant-shard-size=3
         - -target=ruler
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.16.1
+        image: grafana/mimir:2.17.1
         imagePullPolicy: IfNotPresent
         name: ruler
         ports:
@@ -1361,7 +1494,7 @@ spec:
         - -target=querier
         - -usage-stats.installation-mode=jsonnet
         env: []
-        image: grafana/mimir:2.16.1
+        image: grafana/mimir:2.17.1
         imagePullPolicy: IfNotPresent
         name: ruler-querier
         ports:
@@ -1439,6 +1572,7 @@ spec:
         - -query-frontend.results-cache.memcached.timeout=500ms
         - -query-frontend.scheduler-address=ruler-query-scheduler-discovery.default.svc.cluster.local.:9095
         - -runtime-config.file=/etc/mimir/overrides.yaml
+        - -server.grpc-max-concurrent-streams=300
         - -server.grpc-max-recv-msg-size-bytes=104857600
         - -server.grpc-max-send-msg-size-bytes=104857600
         - -server.grpc.keepalive.max-connection-age=30s
@@ -1450,7 +1584,7 @@ spec:
         - -shutdown-delay=90s
         - -target=query-frontend
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.16.1
+        image: grafana/mimir:2.17.1
         imagePullPolicy: IfNotPresent
         name: ruler-query-frontend
         ports:
@@ -1523,7 +1657,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=query-scheduler
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.16.1
+        image: grafana/mimir:2.17.1
         imagePullPolicy: IfNotPresent
         name: ruler-query-scheduler
         ports:
@@ -1593,7 +1727,7 @@ spec:
           valueFrom:
             fieldRef:
               fieldPath: status.podIP
-        image: grafana/mimir:2.16.1
+        image: grafana/mimir:2.17.1
         imagePullPolicy: IfNotPresent
         name: alertmanager
         ports:
@@ -1692,7 +1826,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=compactor
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.16.1
+        image: grafana/mimir:2.17.1
         imagePullPolicy: IfNotPresent
         name: compactor
         ports:
@@ -1840,7 +1974,7 @@ spec:
           value: 1Gi
         - name: Z
           value: "123"
-        image: grafana/mimir:2.16.1
+        image: grafana/mimir:2.17.1
         imagePullPolicy: IfNotPresent
         name: ingester
         ports:
@@ -1982,7 +2116,7 @@ spec:
           value: all-ingesters
         - name: GOMAXPROCS
           value: "9"
-        image: grafana/mimir:2.16.1
+        image: grafana/mimir:2.17.1
         imagePullPolicy: IfNotPresent
         name: ingester
         ports:
@@ -2124,7 +2258,7 @@ spec:
           value: all-ingesters
         - name: GOMAXPROCS
           value: "9"
-        image: grafana/mimir:2.16.1
+        image: grafana/mimir:2.17.1
         imagePullPolicy: IfNotPresent
         name: ingester
         ports:
@@ -2500,7 +2634,7 @@ spec:
           value: "5"
         - name: GOMEMLIMIT
           value: "12884901888"
-        image: grafana/mimir:2.16.1
+        image: grafana/mimir:2.17.1
         imagePullPolicy: IfNotPresent
         name: store-gateway
         ports:
@@ -2642,7 +2776,7 @@ spec:
           value: "5"
         - name: GOMEMLIMIT
           value: "12884901888"
-        image: grafana/mimir:2.16.1
+        image: grafana/mimir:2.17.1
         imagePullPolicy: IfNotPresent
         name: store-gateway
         ports:
@@ -2782,7 +2916,7 @@ spec:
           value: "5"
         - name: GOMEMLIMIT
           value: "12884901888"
-        image: grafana/mimir:2.16.1
+        image: grafana/mimir:2.17.1
         imagePullPolicy: IfNotPresent
         name: store-gateway
         ports:
@@ -2863,3 +2997,168 @@ spec:
         memory: 512Mi
   size: 3
   version: 3.3.13
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingWebhookConfiguration
+metadata:
+  labels:
+    grafana.com/inject-rollout-operator-ca: "true"
+    grafana.com/namespace: default
+  name: prepare-downscale-default
+webhooks:
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: rollout-operator
+      namespace: default
+      path: /admission/prepare-downscale
+      port: 443
+  failurePolicy: Fail
+  matchPolicy: Equivalent
+  name: prepare-downscale-default.grafana.com
+  namespaceSelector:
+    matchLabels:
+      kubernetes.io/metadata.name: default
+  rules:
+  - apiGroups:
+    - apps
+    apiVersions:
+    - v1
+    operations:
+    - UPDATE
+    resources:
+    - statefulsets
+    - statefulsets/scale
+    scope: Namespaced
+  sideEffects: NoneOnDryRun
+  timeoutSeconds: 10
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata:
+  labels:
+    grafana.com/inject-rollout-operator-ca: "true"
+    grafana.com/namespace: default
+  name: no-downscale-default
+webhooks:
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: rollout-operator
+      namespace: default
+      path: /admission/no-downscale
+      port: 443
+  failurePolicy: Fail
+  matchPolicy: Equivalent
+  name: no-downscale-default.grafana.com
+  namespaceSelector:
+    matchLabels:
+      kubernetes.io/metadata.name: default
+  rules:
+  - apiGroups:
+    - apps
+    apiVersions:
+    - v1
+    operations:
+    - UPDATE
+    resources:
+    - statefulsets
+    - statefulsets/scale
+    scope: Namespaced
+  sideEffects: None
+  timeoutSeconds: 10
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata:
+  labels:
+    grafana.com/inject-rollout-operator-ca: "true"
+    grafana.com/namespace: default
+  name: pod-eviction-default
+webhooks:
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: rollout-operator
+      namespace: default
+      path: /admission/pod-eviction
+      port: 443
+  failurePolicy: Fail
+  name: pod-eviction-default.grafana.com
+  namespaceSelector:
+    matchLabels:
+      kubernetes.io/metadata.name: default
+  rules:
+  - apiGroups:
+    - ""
+    apiVersions:
+    - v1
+    operations:
+    - CREATE
+    resources:
+    - pods/eviction
+    scope: Namespaced
+  sideEffects: None
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata:
+  labels:
+    grafana.com/inject-rollout-operator-ca: "true"
+    grafana.com/namespace: default
+  name: zpdb-validation-default
+webhooks:
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: rollout-operator
+      namespace: default
+      path: /admission/zpdb-validation
+      port: 443
+  failurePolicy: Fail
+  name: zpdb-validation-default.grafana.com
+  namespaceSelector:
+    matchLabels:
+      kubernetes.io/metadata.name: default
+  rules:
+  - apiGroups:
+    - rollout-operator.grafana.com
+    apiVersions:
+    - v1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - zoneawarepoddisruptionbudgets
+    scope: Namespaced
+  sideEffects: None
+---
+apiVersion: rollout-operator.grafana.com/v1
+kind: ZoneAwarePodDisruptionBudget
+metadata:
+  labels:
+    name: ingester-rollout
+  name: ingester-rollout
+  namespace: default
+spec:
+  maxUnavailable: 50
+  selector:
+    matchLabels:
+      rollout-group: ingester
+---
+apiVersion: rollout-operator.grafana.com/v1
+kind: ZoneAwarePodDisruptionBudget
+metadata:
+  labels:
+    name: store-gateway-rollout
+  name: store-gateway-rollout
+  namespace: default
+spec:
+  maxUnavailable: 50
+  selector:
+    matchLabels:
+      rollout-group: store-gateway

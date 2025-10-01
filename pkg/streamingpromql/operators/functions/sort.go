@@ -40,8 +40,8 @@ func NewSort(
 	}
 }
 
-func (s *Sort) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
-	allSeries, err := s.inner.SeriesMetadata(ctx)
+func (s *Sort) SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
+	allSeries, err := s.inner.SeriesMetadata(ctx, matchers)
 	if err != nil {
 		return nil, err
 	}
@@ -160,6 +160,10 @@ func (s *Sort) ExpressionPosition() posrange.PositionRange {
 
 func (s *Sort) Prepare(ctx context.Context, params *types.PrepareParams) error {
 	return s.inner.Prepare(ctx, params)
+}
+
+func (s *Sort) Finalize(ctx context.Context) error {
+	return s.inner.Finalize(ctx)
 }
 
 func (s *Sort) Close() {

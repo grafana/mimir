@@ -15,6 +15,9 @@ spec:
   replicas: {{ .Values.distributor.replicas }}
   {{- end }}
   {{- end }}
+  {{- with .Values.distributor.revisionHistoryLimit }}
+  revisionHistoryLimit: {{ . }}
+  {{- end }}
   selector:
     matchLabels:
       {{- include "mimir.selectorLabels" (dict "ctx" . "component" "distributor" "memberlist" true) | nindent 6 }}
@@ -110,30 +113,13 @@ spec:
             {{- toYaml .Values.distributor.resources | nindent 12 }}
           securityContext:
             {{- toYaml .Values.distributor.containerSecurityContext | nindent 12 }}
+          {{- $defaultEnv := list }}
           {{- $cpu_request := dig "requests" "cpu" nil .Values.distributor.resources }}
-          {{- if or .Values.global.extraEnv .Values.distributor.env $cpu_request }}
-          env:
-            {{- with .Values.global.extraEnv }}
-              {{- toYaml . | nindent 12 }}
-            {{- end }}
-            {{- with .Values.distributor.env }}
-              {{- toYaml . | nindent 12 }}
-            {{- end }}
-            {{- if $cpu_request }}
-            {{- $calculated_max_procs := include "mimir.parseCPU" (dict "value" $cpu_request) | float64 | addf 2 | ceil }}
-            - name: "GOMAXPROCS"
-              value: {{ max $calculated_max_procs 8 | toString | toYaml }}
-            {{- end }}
+          {{- if $cpu_request }}
+            {{- $cpu_request_doubled := include "mimir.parseCPU" (dict "value" $cpu_request) | float64 | mulf 2 | ceil }}
+            {{- $defaultEnv = mustAppend $defaultEnv (dict "name" "GOMAXPROCS" "value" (max $cpu_request_doubled 8 | toString)) }}
           {{- end }}
-          {{- if or .Values.global.extraEnvFrom .Values.distributor.extraEnvFrom }}
-          envFrom:
-            {{- with .Values.global.extraEnvFrom }}
-              {{- toYaml . | nindent 12 }}
-            {{- end }}
-            {{- with .Values.distributor.extraEnvFrom }}
-              {{- toYaml . | nindent 12 }}
-            {{- end }}
-          {{- end }}
+          {{- include "mimir.lib.containerEnv" (dict "ctx" . "component" "distributor" "env" $defaultEnv) | nindent 10 }}
 {{- if .Values.distributor.extraContainers }}
 {{ toYaml .Values.distributor.extraContainers | indent 8}}
 {{- end }}
@@ -151,6 +137,10 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       terminationGracePeriodSeconds: {{ .Values.distributor.terminationGracePeriodSeconds }}
+      {{- with .Values.distributor.dnsConfig }}
+      dnsConfig:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       volumes:
         - name: config
           {{- include "mimir.configVolume" . | nindent 10 }}

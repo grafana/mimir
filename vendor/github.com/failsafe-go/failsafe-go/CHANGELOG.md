@@ -1,5 +1,54 @@
 ## Upcoming Release
 
+## 0.8.4
+
+### Improvements
+
+- `Budget` can be configured directly on retry and hedge policies.
+
+## 0.8.3
+
+### Improvements
+
+- New `Budget` policy, which can set a max budget for retries or hedges across a system.
+
+## 0.8.2
+
+### Improvements
+
+- Improve `UsageTracker` performance.
+
+## 0.8.1
+
+### Improvements
+
+- New `UsageTracker` which can track usage and enforce fairness when prioritizing executions.
+
+## 0.8.0
+
+### Improvements
+
+- New `AdaptiveThrottler` policy.
+- Improved gRPC `tap.ServerInHandle` support to perform `CanAcquirePermit` checks on policies, when possible, so as to not block execution.
+
+### API Changes
+
+- Breaking change: the `circuitbreaker.Builder` `WithFailureRateThreshold` method now expects the `failureRateThreshold` parameter to be a `float64`, rather than an int representing a percentage. This brings the circuit breaker's API inline with the rest of the library, where rates are represented with `float64`. The `WithFailureRateThreshold` method will panic if a value > 1 is provided.
+- Similarly, the `circuitbreaker.Metrics` `SuccessRate` and `FailureRate` methods now return a `float64` instead of an int representing a percentage.
+
+## 0.7.0
+
+### Improvements
+
+- New `AdaptiveLimiter` policy.
+- Added grpc and http integration for adaptive limiters.
+- Added support for failsafehttp server Handlers.
+
+### API Changes
+
+- The builder creation methods through the library had their names changed from `Builder()` to `NewBuilder()`, and so on.
+- The policy builder types were renamed from, for example: `RetryPolicyBuilder` to `Builder`.
+
 ## 0.6.9
 
 ### Bug Fixes
@@ -10,7 +59,7 @@
 
 ### Bug Fixes
 
-- Fixed #65 - Mixing failsafehttp.RetryPolicy with HedgePolicy causes contexts to be canceled early.
+- Fixed #65 - Mixing `failsafehttp.RetryPolicy` with `HedgePolicy` causes contexts to be canceled early.
 
 ### Improvements
 
@@ -39,7 +88,7 @@
 ### Improvements
 
 - Added gRPC unary client, unary server, and server inHandle support.
-- Expose Context() in event listeners.
+- Expose `Context()` in event listeners.
 - Improve HTTP context cancellation.
 - Add `Metrics()` to `circuitbreaker.StateChangedEvent`.
 - Default `failsafehttp.RetryPolicyBuilder()` to abort on `context.Canceled`.
@@ -66,7 +115,7 @@
 
 ### Improvements
 
-- Better support for HedgePolicy and Timeout composition
+- Better support for `HedgePolicy` and `Timeout` composition
 
 ## 0.6.0
 
@@ -76,7 +125,7 @@
 
 ### Bug Fixes
 
-- Fixed #32 - RetryPolicy with no max retries.
+- Fixed #32 - `RetryPolicy` with no max retries.
 
 ## 0.5.0
 
@@ -88,7 +137,7 @@
 
 ### Bug Fixes
 
-- Fixed #29 - RetryPolicy `WithMaxDuration` not working
+- Fixed #29 - `RetryPolicy` `WithMaxDuration` not working
 
 ## 0.4.4
 
@@ -110,13 +159,13 @@
 
 ### Bug Fixes
 
-- Fixed #23 - RetryPolicy backoff not computing
+- Fixed #23 - `RetryPolicy` backoff not computing
 
 ## 0.4.1
 
 ### Bug Fixes
 
-- Fixed #22 - RetryPolicy with ReturnLastFailure returning too late
+- Fixed #22 - `RetryPolicy` with `ReturnLastFailure` returning too late
 
 ## 0.4.0
 

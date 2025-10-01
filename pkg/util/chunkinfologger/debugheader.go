@@ -4,10 +4,9 @@ package chunkinfologger
 
 import (
 	"context"
-	"net/http"
 	"strings"
 
-	"github.com/grafana/dskit/middleware"
+	"github.com/grafana/mimir/pkg/util/propagation"
 )
 
 type chunkInfoLoggingContextType int
@@ -16,18 +15,16 @@ const chunkInfoLoggingContextKey = chunkInfoLoggingContextType(1)
 
 const ChunkInfoLoggingHeader = "X-Mimir-Chunk-Info-Logger"
 
-func Middleware() middleware.Interface {
-	return middleware.Func(func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			ctx := r.Context()
-			if value := r.Header.Get(ChunkInfoLoggingHeader); value != "" {
-				// Split along commas
-				labels := strings.Split(value, ",")
-				ctx = ContextWithChunkInfoLogging(ctx, labels)
-			}
-			next.ServeHTTP(w, r.WithContext(ctx))
-		})
-	})
+type Extractor struct{}
+
+func (p *Extractor) ExtractFromCarrier(ctx context.Context, carrier propagation.Carrier) (context.Context, error) {
+	if value := carrier.Get(ChunkInfoLoggingHeader); value != "" {
+		// Split along commas
+		labels := strings.Split(value, ",")
+		ctx = ContextWithChunkInfoLogging(ctx, labels)
+	}
+
+	return ctx, nil
 }
 
 func ContextWithChunkInfoLogging(ctx context.Context, labels []string) context.Context {

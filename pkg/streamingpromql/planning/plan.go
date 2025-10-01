@@ -8,21 +8,33 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-kit/log"
 	"github.com/gogo/protobuf/proto"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/annotations"
 
+	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/limiter"
 )
+
+var MaximumSupportedQueryPlanVersion = int64(0)
 
 type QueryPlan struct {
 	TimeRange types.QueryTimeRange
 	Root      Node
 
-	OriginalExpression string
+	OriginalExpression       string
+	EnableDelayedNameRemoval bool
+
+	// The version of this query plan.
+	//
+	// Queriers use this to ensure they do not attempt to execute a query plan that contains features they
+	// cannot safely or correctly execute (eg. new nodes or new meaning for existing node details).
+	Version int64
 }
 
 // Node represents a node in the query plan graph.
@@ -75,15 +87,68 @@ type Node interface {
 	// Most nodes will return timeRange as is, with the exception of subqueries.
 	ChildrenTimeRange(timeRange types.QueryTimeRange) types.QueryTimeRange
 
-	// OperatorFactory returns a factory that produces operators for this node.
-	OperatorFactory(children []types.Operator, timeRange types.QueryTimeRange, params *OperatorParameters) (OperatorFactory, error)
-
 	// ResultType returns the kind of result this node produces.
 	//
 	// May return an error if the kind of result cannot be determined (eg. because the node references an unknown function).
 	ResultType() (parser.ValueType, error)
 
+	// QueriedTimeRange returns the range of data queried from ingesters and store-gateways by this node
+	// and its children.
+	//
+	// If no data is queried by this node and its children, QueriedTimeRange.AnyDataQueried will be false.
+	QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) QueriedTimeRange
+
+	// ExpressionPosition returns the position of the subexpression this node represents in the original
+	// expression.
+	ExpressionPosition() posrange.PositionRange
+
 	// FIXME: implementations for many of the above methods can be generated automatically
+}
+
+type QueriedTimeRange struct {
+	// The earliest timestamp queried, or a zero time.Time value if AnyDataQueried is false.
+	MinT time.Time
+
+	// The latest timestamp queried, or a zero time.Time value if AnyDataQueried is false.
+	MaxT time.Time
+
+	// If false, the node does not query any data (eg. a number literal).
+	AnyDataQueried bool
+}
+
+func NewQueriedTimeRange(minT time.Time, maxT time.Time) QueriedTimeRange {
+	return QueriedTimeRange{
+		MinT:           minT,
+		MaxT:           maxT,
+		AnyDataQueried: true,
+	}
+}
+
+func NoDataQueried() QueriedTimeRange {
+	return QueriedTimeRange{AnyDataQueried: false}
+}
+
+func (t QueriedTimeRange) Union(other QueriedTimeRange) QueriedTimeRange {
+	if !t.AnyDataQueried {
+		return other
+	}
+
+	if !other.AnyDataQueried {
+		return t
+	}
+
+	minT := t.MinT
+	maxT := t.MaxT
+
+	if other.MinT.Before(t.MinT) {
+		minT = other.MinT
+	}
+
+	if other.MaxT.After(t.MaxT) {
+		maxT = other.MaxT
+	}
+
+	return NewQueriedTimeRange(minT, maxT)
 }
 
 type OperatorParameters struct {
@@ -92,6 +157,9 @@ type OperatorParameters struct {
 	Annotations              *annotations.Annotations
 	LookbackDelta            time.Duration
 	EagerLoadSelectors       bool
+	Plan                     *QueryPlan
+	EnableDelayedNameRemoval bool
+	Logger                   log.Logger
 }
 
 func (p *QueryPlan) ToEncodedPlan(includeDescriptions bool, includeDetails bool) (*EncodedQueryPlan, error) {
@@ -102,10 +170,12 @@ func (p *QueryPlan) ToEncodedPlan(includeDescriptions bool, includeDetails bool)
 	}
 
 	encoded := &EncodedQueryPlan{
-		TimeRange:          toEncodedTimeRange(p.TimeRange),
-		Nodes:              encoder.nodes,
-		RootNode:           rootNode,
-		OriginalExpression: p.OriginalExpression,
+		TimeRange:                toEncodedTimeRange(p.TimeRange),
+		Nodes:                    encoder.nodes,
+		RootNode:                 rootNode,
+		OriginalExpression:       p.OriginalExpression,
+		EnableDelayedNameRemoval: p.EnableDelayedNameRemoval,
+		Version:                  p.Version,
 	}
 
 	return encoded, nil
@@ -120,7 +190,7 @@ func toEncodedTimeRange(t types.QueryTimeRange) EncodedQueryTimeRange {
 	}
 }
 
-func fromEncodedTimeRange(e EncodedQueryTimeRange) types.QueryTimeRange {
+func (e EncodedQueryTimeRange) ToDecodedTimeRange() types.QueryTimeRange {
 	if e.IsInstant {
 		return types.NewInstantQueryTimeRange(timestamp.Time(e.StartT))
 	}
@@ -198,23 +268,40 @@ func NodeTypeName(n Node) string {
 	return reflect.TypeOf(n).Elem().Name()
 }
 
-func (p *EncodedQueryPlan) ToDecodedPlan() (*QueryPlan, error) {
+// ToDecodedPlan converts this encoded plan to its decoded form.
+// It returns references to the specified nodeIndices.
+func (p *EncodedQueryPlan) ToDecodedPlan(nodeIndices ...int64) (*QueryPlan, []Node, error) {
+	if p.Version > MaximumSupportedQueryPlanVersion {
+		return nil, nil, apierror.Newf(apierror.TypeBadData, "query plan has version %v, but the maximum supported query plan version is %v", p.Version, MaximumSupportedQueryPlanVersion)
+	}
+
 	if p.RootNode < 0 || p.RootNode >= int64(len(p.Nodes)) {
-		return nil, fmt.Errorf("root node index %v out of range with %v nodes in plan", p.RootNode, len(p.Nodes))
+		return nil, nil, apierror.Newf(apierror.TypeBadData, "root node index %v out of range with %v nodes in plan", p.RootNode, len(p.Nodes))
 	}
 
 	decoder := newQueryPlanDecoder(p.Nodes)
 	root, err := decoder.decodeNode(p.RootNode)
 
 	if err != nil {
-		return nil, err
+		return nil, nil, err
+	}
+
+	nodes := make([]Node, 0, len(nodeIndices))
+	for _, idx := range nodeIndices {
+		n, err := decoder.decodeNode(idx)
+		if err != nil {
+			return nil, nil, err
+		}
+		nodes = append(nodes, n)
 	}
 
 	return &QueryPlan{
-		TimeRange:          fromEncodedTimeRange(p.TimeRange),
-		Root:               root,
-		OriginalExpression: p.OriginalExpression,
-	}, nil
+		TimeRange:                p.TimeRange.ToDecodedTimeRange(),
+		Root:                     root,
+		OriginalExpression:       p.OriginalExpression,
+		EnableDelayedNameRemoval: p.EnableDelayedNameRemoval,
+		Version:                  p.Version,
+	}, nodes, nil
 }
 
 type queryPlanDecoder struct {

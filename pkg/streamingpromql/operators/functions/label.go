@@ -19,17 +19,17 @@ import (
 )
 
 func LabelJoinFactory(dstLabelOp, separatorOp types.StringOperator, srcLabelOps []types.StringOperator) SeriesMetadataFunction {
-	return func(seriesMetadata []types.SeriesMetadata, tracker *limiter.MemoryConsumptionTracker) ([]types.SeriesMetadata, error) {
+	return func(seriesMetadata []types.SeriesMetadata, tracker *limiter.MemoryConsumptionTracker, enableDelayedNameRemoval bool) ([]types.SeriesMetadata, error) {
 		dst := dstLabelOp.GetValue()
-		if !model.LabelName(dst).IsValid() {
+		if !model.UTF8Validation.IsValidLabelName(dst) {
 			return nil, fmt.Errorf("invalid destination label name in label_join(): %s", dst)
 		}
 		separator := separatorOp.GetValue()
 		srcLabels := make([]string, len(srcLabelOps))
 		for i, op := range srcLabelOps {
 			src := op.GetValue()
-			if !model.LabelName(src).IsValid() {
-				return nil, fmt.Errorf("invalid source label name in label_join(): %s", dst)
+			if !model.UTF8Validation.IsValidLabelName(src) {
+				return nil, fmt.Errorf("invalid source label name in label_join(): %s", src)
 			}
 			srcLabels[i] = src
 		}
@@ -59,19 +59,25 @@ func LabelJoinFactory(dstLabelOp, separatorOp types.StringOperator, srcLabelOps 
 			}
 		}
 
+		if enableDelayedNameRemoval && dst == labels.MetricName {
+			for i := range seriesMetadata {
+				seriesMetadata[i].DropName = false
+			}
+		}
+
 		return seriesMetadata, nil
 	}
 }
 
 func LabelReplaceFactory(dstLabelOp, replacementOp, srcLabelOp, regexOp types.StringOperator) SeriesMetadataFunction {
-	return func(seriesMetadata []types.SeriesMetadata, tracker *limiter.MemoryConsumptionTracker) ([]types.SeriesMetadata, error) {
+	return func(seriesMetadata []types.SeriesMetadata, tracker *limiter.MemoryConsumptionTracker, enableDelayedNameRemoval bool) ([]types.SeriesMetadata, error) {
 		regexStr := regexOp.GetValue()
 		regex, err := regexp.Compile("^(?s:" + regexStr + ")$")
 		if err != nil {
 			return nil, fmt.Errorf("invalid regular expression in label_replace(): %s", regexStr)
 		}
 		dst := dstLabelOp.GetValue()
-		if !model.LabelName(dst).IsValid() {
+		if !model.UTF8Validation.IsValidLabelName(dst) {
 			return nil, fmt.Errorf("invalid destination label name in label_replace(): %s", dst)
 		}
 		repl := replacementOp.GetValue()
@@ -92,6 +98,12 @@ func LabelReplaceFactory(dstLabelOp, replacementOp, srcLabelOp, regexOp types.St
 				if err != nil {
 					return nil, err
 				}
+			}
+		}
+
+		if enableDelayedNameRemoval && dst == labels.MetricName {
+			for i := range seriesMetadata {
+				seriesMetadata[i].DropName = false
 			}
 		}
 

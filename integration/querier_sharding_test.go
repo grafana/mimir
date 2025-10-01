@@ -25,31 +25,27 @@ import (
 
 type querierShardingTestConfig struct {
 	shuffleShardingEnabled bool
-	querySchedulerEnabled  bool
 	sendHistograms         bool
 	querierResponseFormat  string
 }
 
 func TestQuerySharding(t *testing.T) {
 	for _, shuffleShardingEnabled := range []bool{false, true} {
-		for _, querySchedulerEnabled := range []bool{false, true} {
-			for _, sendHistograms := range []bool{false, true} {
-				for _, querierResponseFormat := range []string{"json", "protobuf"} {
-					if sendHistograms && querierResponseFormat == "json" {
-						// histograms over json are not supported
-						continue
-					}
-					testName := fmt.Sprintf("shuffle shard=%v/query scheduler=%v/histograms=%v/format=%v",
-						shuffleShardingEnabled, querySchedulerEnabled, sendHistograms, querierResponseFormat,
-					)
-					cfg := querierShardingTestConfig{
-						shuffleShardingEnabled: shuffleShardingEnabled,
-						querySchedulerEnabled:  querySchedulerEnabled,
-						sendHistograms:         sendHistograms,
-						querierResponseFormat:  querierResponseFormat,
-					}
-					t.Run(testName, func(t *testing.T) { runQuerierShardingTest(t, cfg) })
+		for _, sendHistograms := range []bool{false, true} {
+			for _, querierResponseFormat := range []string{"json", "protobuf"} {
+				if sendHistograms && querierResponseFormat == "json" {
+					// histograms over json are not supported
+					continue
 				}
+				testName := fmt.Sprintf("shuffle shard=%v/histograms=%v/format=%v",
+					shuffleShardingEnabled, sendHistograms, querierResponseFormat,
+				)
+				cfg := querierShardingTestConfig{
+					shuffleShardingEnabled: shuffleShardingEnabled,
+					sendHistograms:         sendHistograms,
+					querierResponseFormat:  querierResponseFormat,
+				}
+				t.Run(testName, func(t *testing.T) { runQuerierShardingTest(t, cfg) })
 			}
 		}
 	}
@@ -68,11 +64,11 @@ func runQuerierShardingTest(t *testing.T, cfg querierShardingTestConfig) {
 	require.NoError(t, s.StartAndWaitReady(consul, memcached))
 
 	flags := mergeFlags(BlocksStorageFlags(), BlocksStorageS3Flags(), map[string]string{
-		"-query-frontend.cache-results":                     "true",
-		"-query-frontend.results-cache.backend":             "memcached",
-		"-query-frontend.results-cache.memcached.addresses": "dns+" + memcached.NetworkEndpoint(e2ecache.MemcachedPort),
-		"-query-frontend.results-cache.compression":         "snappy",
-		"-querier.max-outstanding-requests-per-tenant":      strconv.Itoa(numQueries), // To avoid getting errors.
+		"-query-frontend.cache-results":                        "true",
+		"-query-frontend.results-cache.backend":                "memcached",
+		"-query-frontend.results-cache.memcached.addresses":    "dns+" + memcached.NetworkEndpoint(e2ecache.MemcachedPort),
+		"-query-frontend.results-cache.compression":            "snappy",
+		"-query-scheduler.max-outstanding-requests-per-tenant": strconv.Itoa(numQueries), // To avoid getting errors.
 	})
 
 	minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
@@ -83,22 +79,15 @@ func runQuerierShardingTest(t *testing.T, cfg querierShardingTestConfig) {
 		flags["-query-frontend.max-queriers-per-tenant"] = "1"
 	}
 
-	// Start the query-scheduler if enabled.
-	var queryScheduler *e2emimir.MimirService
-	if cfg.querySchedulerEnabled {
-		queryScheduler = e2emimir.NewQueryScheduler("query-scheduler", flags)
-		require.NoError(t, s.StartAndWaitReady(queryScheduler))
-		flags["-query-frontend.scheduler-address"] = queryScheduler.NetworkGRPCEndpoint()
-		flags["-querier.scheduler-address"] = queryScheduler.NetworkGRPCEndpoint()
-	}
+	// Start the query-scheduler.
+	queryScheduler := e2emimir.NewQueryScheduler("query-scheduler", flags)
+	require.NoError(t, s.StartAndWaitReady(queryScheduler))
+	flags["-query-frontend.scheduler-address"] = queryScheduler.NetworkGRPCEndpoint()
+	flags["-querier.scheduler-address"] = queryScheduler.NetworkGRPCEndpoint()
 
 	// Start the query-frontend.
 	queryFrontend := e2emimir.NewQueryFrontend("query-frontend", consul.NetworkHTTPEndpoint(), flags)
 	require.NoError(t, s.Start(queryFrontend))
-
-	if !cfg.querySchedulerEnabled {
-		flags["-querier.frontend-address"] = queryFrontend.NetworkGRPCEndpoint()
-	}
 
 	// Start all other services.
 	ingester := e2emimir.NewIngester("ingester", consul.NetworkHTTPEndpoint(), flags)
@@ -142,12 +131,8 @@ func runQuerierShardingTest(t *testing.T, cfg querierShardingTestConfig) {
 		require.NoError(t, err)
 	}
 
-	// Wait until both workers connect to the query-frontend or query-scheduler, each with the minimum 4 connections.
-	if cfg.querySchedulerEnabled {
-		require.NoError(t, queryScheduler.WaitSumMetrics(e2e.Equals(8), "cortex_query_scheduler_connected_querier_clients"))
-	} else {
-		require.NoError(t, queryFrontend.WaitSumMetrics(e2e.Equals(8), "cortex_query_frontend_connected_clients"))
-	}
+	// Wait until both workers connect to the query-scheduler, each with the minimum 4 connections.
+	require.NoError(t, queryScheduler.WaitSumMetrics(e2e.Equals(8), "cortex_query_scheduler_connected_querier_clients"))
 
 	wg := sync.WaitGroup{}
 

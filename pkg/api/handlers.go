@@ -18,13 +18,11 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/gorilla/mux"
-	"github.com/grafana/dskit/instrument"
 	"github.com/grafana/dskit/kv/memberlist"
 	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/regexp"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
 	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/route"
 	"github.com/prometheus/prometheus/config"
@@ -33,13 +31,11 @@ import (
 	v1 "github.com/prometheus/prometheus/web/api/v1"
 
 	"github.com/grafana/mimir/pkg/querier"
-	querierapi "github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/querier/stats"
-	"github.com/grafana/mimir/pkg/streamingpromql/compat"
 	"github.com/grafana/mimir/pkg/usagestats"
 	"github.com/grafana/mimir/pkg/util"
-	"github.com/grafana/mimir/pkg/util/chunkinfologger"
 	util_log "github.com/grafana/mimir/pkg/util/log"
+	"github.com/grafana/mimir/pkg/util/propagation"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
@@ -219,34 +215,12 @@ func NewQuerierHandler(
 	metadataSupplier querier.MetadataSupplier,
 	engine promql.QueryEngine,
 	distributor Distributor,
+	metrics *querier.RequestMetrics,
 	reg prometheus.Registerer,
 	logger log.Logger,
 	limits *validation.Overrides,
+	extractor propagation.Extractor,
 ) http.Handler {
-	// Prometheus histograms for requests to the querier.
-	querierRequestDuration := promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
-		Name:    "cortex_querier_request_duration_seconds",
-		Help:    "Time (in seconds) spent serving HTTP requests to the querier.",
-		Buckets: instrument.DefBuckets,
-	}, []string{"method", "route", "status_code", "ws"})
-
-	receivedMessageSize := promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
-		Name:    "cortex_querier_request_message_bytes",
-		Help:    "Size (in bytes) of messages received in the request to the querier.",
-		Buckets: middleware.BodySizeBuckets,
-	}, []string{"method", "route"})
-
-	sentMessageSize := promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
-		Name:    "cortex_querier_response_message_bytes",
-		Help:    "Size (in bytes) of messages sent in response by the querier.",
-		Buckets: middleware.BodySizeBuckets,
-	}, []string{"method", "route"})
-
-	inflightRequests := promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
-		Name: "cortex_querier_inflight_requests",
-		Help: "Current number of inflight requests to the querier.",
-	}, []string{"method", "route"})
-
 	const (
 		remoteWriteEnabled = false
 		otlpEnabled        = false
@@ -286,34 +260,30 @@ func NewQuerierHandler(
 		false,
 		false,
 		true,
-		0,
 		querierCfg.EngineConfig.LookbackDelta,
 		false,
+		nil,
 	)
 
 	api.InstallCodec(protobufCodec{})
 
 	router := mux.NewRouter()
 	routeInjector := middleware.RouteInjector{RouteMatcher: router}
-	fallbackInjector := compat.EngineFallbackInjector{}
-	router.Use(routeInjector.Wrap, fallbackInjector.Wrap, chunkinfologger.Middleware().Wrap)
+	router.Use(routeInjector.Wrap, propagation.Middleware(extractor).Wrap)
 
 	// Use a separate metric for the querier in order to differentiate requests from the query-frontend when
 	// running Mimir in monolithic mode.
 	instrumentMiddleware := middleware.Instrument{
-		Duration:         querierRequestDuration,
-		RequestBodySize:  receivedMessageSize,
-		ResponseBodySize: sentMessageSize,
-		InflightRequests: inflightRequests,
+		Duration:         metrics.RequestDuration,
+		RequestBodySize:  metrics.ReceivedMessageSize,
+		ResponseBodySize: metrics.SentMessageSize,
+		InflightRequests: metrics.InflightRequests,
 	}
 	router.Use(instrumentMiddleware.Wrap)
-	// Since we don't use the regular RegisterQueryAPI, we need to add the consistency middleware manually.
-	router.Use(querierapi.ConsistencyMiddleware().Wrap)
 
 	// Define the prefixes for all routes
-	prefix := path.Join(cfg.ServerPrefix, cfg.PrometheusHTTPPrefix)
-
-	promRouter := route.New().WithPrefix(path.Join(prefix, "/api/v1"))
+	promPrefix := path.Join(cfg.ServerPrefix, cfg.PrometheusHTTPPrefix, "/api/v1")
+	promRouter := route.New().WithPrefix(path.Join(promPrefix))
 	api.Register(promRouter)
 
 	// Track the requests count in the anonymous usage stats.
@@ -329,19 +299,19 @@ func NewQuerierHandler(
 
 	// TODO(gotjosh): This custom handler is temporary until we're able to vendor the changes in:
 	// https://github.com/prometheus/prometheus/pull/7125/files
-	router.Path(path.Join(prefix, "/api/v1/read")).Methods("POST").Handler(remoteReadStats.Wrap(querier.RemoteReadHandler(queryable, logger, querierCfg)))
-	router.Path(path.Join(prefix, "/api/v1/query")).Methods("GET", "POST").Handler(instantQueryStats.Wrap(promRouter))
-	router.Path(path.Join(prefix, "/api/v1/query_range")).Methods("GET", "POST").Handler(rangeQueryStats.Wrap(promRouter))
-	router.Path(path.Join(prefix, "/api/v1/query_exemplars")).Methods("GET", "POST").Handler(exemplarsQueryStats.Wrap(promRouter))
-	router.Path(path.Join(prefix, "/api/v1/labels")).Methods("GET", "POST").Handler(labelsQueryStats.Wrap(promRouter))
-	router.Path(path.Join(prefix, "/api/v1/label/{name}/values")).Methods("GET").Handler(labelsQueryStats.Wrap(promRouter))
-	router.Path(path.Join(prefix, "/api/v1/series")).Methods("GET", "POST", "DELETE").Handler(seriesQueryStats.Wrap(promRouter))
-	router.Path(path.Join(prefix, "/api/v1/metadata")).Methods("GET").Handler(metadataQueryStats.Wrap(querier.NewMetadataHandler(metadataSupplier)))
-	router.Path(path.Join(prefix, "/api/v1/cardinality/label_names")).Methods("GET", "POST").Handler(cardinalityQueryStats.Wrap(querier.LabelNamesCardinalityHandler(distributor, limits)))
-	router.Path(path.Join(prefix, "/api/v1/cardinality/label_values")).Methods("GET", "POST").Handler(cardinalityQueryStats.Wrap(querier.LabelValuesCardinalityHandler(distributor, limits)))
-	router.Path(path.Join(prefix, "/api/v1/cardinality/active_series")).Methods("GET", "POST").Handler(cardinalityQueryStats.Wrap(querier.ActiveSeriesCardinalityHandler(distributor, limits)))
-	router.Path(path.Join(prefix, "/api/v1/cardinality/active_native_histogram_metrics")).Methods("GET", "POST").Handler(cardinalityQueryStats.Wrap(querier.ActiveNativeHistogramMetricsHandler(distributor, limits)))
-	router.Path(path.Join(prefix, "/api/v1/format_query")).Methods("GET", "POST").Handler(formattingQueryStats.Wrap(promRouter))
+	router.Path(path.Join(promPrefix, "/read")).Methods("POST").Handler(remoteReadStats.Wrap(querier.RemoteReadHandler(queryable, logger, querierCfg)))
+	router.Path(path.Join(promPrefix, "/query")).Methods("GET", "POST").Handler(instantQueryStats.Wrap(promRouter))
+	router.Path(path.Join(promPrefix, "/query_range")).Methods("GET", "POST").Handler(rangeQueryStats.Wrap(promRouter))
+	router.Path(path.Join(promPrefix, "/query_exemplars")).Methods("GET", "POST").Handler(exemplarsQueryStats.Wrap(promRouter))
+	router.Path(path.Join(promPrefix, "/labels")).Methods("GET", "POST").Handler(labelsQueryStats.Wrap(promRouter))
+	router.Path(path.Join(promPrefix, "/label/{name}/values")).Methods("GET").Handler(labelsQueryStats.Wrap(promRouter))
+	router.Path(path.Join(promPrefix, "/series")).Methods("GET", "POST", "DELETE").Handler(seriesQueryStats.Wrap(promRouter))
+	router.Path(path.Join(promPrefix, "/metadata")).Methods("GET").Handler(metadataQueryStats.Wrap(querier.NewMetadataHandler(metadataSupplier)))
+	router.Path(path.Join(promPrefix, "/cardinality/label_names")).Methods("GET", "POST").Handler(cardinalityQueryStats.Wrap(querier.LabelNamesCardinalityHandler(distributor, limits)))
+	router.Path(path.Join(promPrefix, "/cardinality/label_values")).Methods("GET", "POST").Handler(cardinalityQueryStats.Wrap(querier.LabelValuesCardinalityHandler(distributor, limits)))
+	router.Path(path.Join(promPrefix, "/cardinality/active_series")).Methods("GET", "POST").Handler(cardinalityQueryStats.Wrap(querier.ActiveSeriesCardinalityHandler(distributor, limits)))
+	router.Path(path.Join(promPrefix, "/cardinality/active_native_histogram_metrics")).Methods("GET", "POST").Handler(cardinalityQueryStats.Wrap(querier.ActiveNativeHistogramMetricsHandler(distributor, limits)))
+	router.Path(path.Join(promPrefix, "/format_query")).Methods("GET", "POST").Handler(formattingQueryStats.Wrap(promRouter))
 
 	// Track execution time.
 	return stats.NewWallTimeMiddleware().Wrap(router)

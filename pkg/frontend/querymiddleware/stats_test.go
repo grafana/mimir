@@ -43,6 +43,11 @@ func Test_queryStatsMiddleware_Do(t *testing.T) {
 				}},
 			},
 			expectedMetrics: `
+			# HELP cortex_query_frontend_queries_expression_bytes Histogram of the length of query expressions requested.
+			# TYPE cortex_query_frontend_queries_expression_bytes histogram
+			cortex_query_frontend_queries_expression_bytes_bucket{user="test",le="+Inf"} 1
+			cortex_query_frontend_queries_expression_bytes_sum{user="test"} 61
+			cortex_query_frontend_queries_expression_bytes_count{user="test"} 1
 			# HELP cortex_query_frontend_regexp_matcher_count Total number of regexp matchers
 			# TYPE cortex_query_frontend_regexp_matcher_count counter
 			cortex_query_frontend_regexp_matcher_count 1
@@ -71,6 +76,11 @@ func Test_queryStatsMiddleware_Do(t *testing.T) {
 				}},
 			},
 			expectedMetrics: `
+			# HELP cortex_query_frontend_queries_expression_bytes Histogram of the length of query expressions requested.
+			# TYPE cortex_query_frontend_queries_expression_bytes histogram
+			cortex_query_frontend_queries_expression_bytes_bucket{user="test",le="+Inf"} 1
+			cortex_query_frontend_queries_expression_bytes_sum{user="test"} 61
+			cortex_query_frontend_queries_expression_bytes_count{user="test"} 1
 			# HELP cortex_query_frontend_regexp_matcher_count Total number of regexp matchers
 			# TYPE cortex_query_frontend_regexp_matcher_count counter
 			cortex_query_frontend_regexp_matcher_count 1
@@ -104,6 +114,11 @@ func Test_queryStatsMiddleware_Do(t *testing.T) {
 				)},
 			},
 			expectedMetrics: `
+			# HELP cortex_query_frontend_queries_expression_bytes Histogram of the length of query expressions requested.
+			# TYPE cortex_query_frontend_queries_expression_bytes histogram
+			cortex_query_frontend_queries_expression_bytes_bucket{user="test",le="+Inf"} 1
+			cortex_query_frontend_queries_expression_bytes_sum{user="test"} 42
+			cortex_query_frontend_queries_expression_bytes_count{user="test"} 1
 			# HELP cortex_query_frontend_regexp_matcher_count Total number of regexp matchers
 			# TYPE cortex_query_frontend_regexp_matcher_count counter
 			cortex_query_frontend_regexp_matcher_count 1
@@ -153,6 +168,11 @@ func Test_queryStatsMiddleware_Do(t *testing.T) {
 				},
 			},
 			expectedMetrics: `
+			# HELP cortex_query_frontend_queries_expression_bytes Histogram of the length of query expressions requested.
+			# TYPE cortex_query_frontend_queries_expression_bytes histogram
+			cortex_query_frontend_queries_expression_bytes_bucket{user="test",le="+Inf"} 2
+			cortex_query_frontend_queries_expression_bytes_sum{user="test"} 26
+			cortex_query_frontend_queries_expression_bytes_count{user="test"} 2
 			# HELP cortex_query_frontend_regexp_matcher_count Total number of regexp matchers
 			# TYPE cortex_query_frontend_regexp_matcher_count counter
 			cortex_query_frontend_regexp_matcher_count 2
@@ -193,6 +213,11 @@ func Test_queryStatsMiddleware_Do(t *testing.T) {
 				},
 			},
 			expectedMetrics: `
+			# HELP cortex_query_frontend_queries_expression_bytes Histogram of the length of query expressions requested.
+			# TYPE cortex_query_frontend_queries_expression_bytes histogram
+			cortex_query_frontend_queries_expression_bytes_bucket{user="test",le="+Inf"} 1
+			cortex_query_frontend_queries_expression_bytes_sum{user="test"} 13
+			cortex_query_frontend_queries_expression_bytes_count{user="test"} 1
 			# HELP cortex_query_frontend_regexp_matcher_count Total number of regexp matchers
 			# TYPE cortex_query_frontend_regexp_matcher_count counter
 			cortex_query_frontend_regexp_matcher_count 1

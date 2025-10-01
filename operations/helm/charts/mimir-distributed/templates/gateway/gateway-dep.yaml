@@ -14,6 +14,9 @@ spec:
 {{- if not .autoscaling.enabled }}
   replicas: {{ .replicas }}
 {{- end }}
+  {{- with .revisionHistoryLimit }}
+  revisionHistoryLimit: {{ . }}
+  {{- end }}
   selector:
     matchLabels:
       {{- include "mimir.selectorLabels" (dict "ctx" $ "component" "gateway") | nindent 6 }}
@@ -152,6 +155,10 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       terminationGracePeriodSeconds: {{ .terminationGracePeriodSeconds }}
+      {{- with .dnsConfig }}
+      dnsConfig:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       volumes:
         - name: config
           {{- include "mimir.configVolume" $ | nindent 10 }}

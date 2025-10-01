@@ -4,6 +4,7 @@ package streamingpromql
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -21,6 +22,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
+	"github.com/grafana/mimir/pkg/streamingpromql/testutils"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
@@ -41,8 +43,9 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 	rangeQueryEncodedTimeRange := planning.EncodedQueryTimeRange{StartT: 3000, EndT: 5000, IntervalMilliseconds: 1000}
 
 	testCases := map[string]struct {
-		expr      string
-		timeRange types.QueryTimeRange
+		expr                     string
+		timeRange                types.QueryTimeRange
+		enableDelayedNameRemoval bool
 
 		expectedPlan *planning.EncodedQueryPlan
 	}{
@@ -243,7 +246,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 
 			expectedPlan: &planning.EncodedQueryPlan{
 				TimeRange: rangeQueryEncodedTimeRange,
-				RootNode:  1,
+				RootNode:  2,
 				Nodes: []*planning.EncodedNode{
 					{
 						NodeType: planning.NODE_TYPE_MATRIX_SELECTOR,
@@ -262,11 +265,19 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 						NodeType: planning.NODE_TYPE_FUNCTION_CALL,
 						Details: marshalDetails(&core.FunctionCallDetails{
 							Function:           functions.FUNCTION_RATE,
-							ExpressionPosition: core.PositionRange{Start: 0, End: 30},
+							ExpressionPosition: core.PositionRange{Start: 0, End: 31},
 						}),
 						Type:           "FunctionCall",
 						Description:    `rate(...)`,
 						Children:       []int64{0},
+						ChildrenLabels: []string{""},
+					},
+					{
+						NodeType:       planning.NODE_TYPE_DEDUPLICATE_AND_MERGE,
+						Details:        marshalDetails(&core.DeduplicateAndMergeDetails{}),
+						Type:           "DeduplicateAndMerge",
+						Children:       []int64{1},
+						Description:    ``,
 						ChildrenLabels: []string{""},
 					},
 				},
@@ -278,7 +289,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 
 			expectedPlan: &planning.EncodedQueryPlan{
 				TimeRange: rangeQueryEncodedTimeRange,
-				RootNode:  1,
+				RootNode:  2,
 				Nodes: []*planning.EncodedNode{
 					{
 						NodeType: planning.NODE_TYPE_MATRIX_SELECTOR,
@@ -297,11 +308,19 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 						NodeType: planning.NODE_TYPE_FUNCTION_CALL,
 						Details: marshalDetails(&core.FunctionCallDetails{
 							Function:           functions.FUNCTION_RATE,
-							ExpressionPosition: core.PositionRange{Start: 0, End: 28},
+							ExpressionPosition: core.PositionRange{Start: 0, End: 29},
 						}),
 						Type:           "FunctionCall",
 						Description:    `rate(...)`,
 						Children:       []int64{0},
+						ChildrenLabels: []string{""},
+					},
+					{
+						NodeType:       planning.NODE_TYPE_DEDUPLICATE_AND_MERGE,
+						Details:        marshalDetails(&core.DeduplicateAndMergeDetails{}),
+						Type:           "DeduplicateAndMerge",
+						Children:       []int64{1},
+						Description:    ``,
 						ChildrenLabels: []string{""},
 					},
 				},
@@ -395,7 +414,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 
 			expectedPlan: &planning.EncodedQueryPlan{
 				TimeRange: instantQueryEncodedTimeRange,
-				RootNode:  0,
+				RootNode:  1,
 				Nodes: []*planning.EncodedNode{
 					{
 						NodeType: planning.NODE_TYPE_FUNCTION_CALL,
@@ -406,6 +425,14 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 						Type:        "FunctionCall",
 						Description: `year(...)`,
 					},
+					{
+						NodeType:       planning.NODE_TYPE_DEDUPLICATE_AND_MERGE,
+						Details:        marshalDetails(&core.DeduplicateAndMergeDetails{}),
+						Type:           "DeduplicateAndMerge",
+						Children:       []int64{0},
+						Description:    ``,
+						ChildrenLabels: []string{""},
+					},
 				},
 			},
 		},
@@ -415,7 +442,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 
 			expectedPlan: &planning.EncodedQueryPlan{
 				TimeRange: instantQueryEncodedTimeRange,
-				RootNode:  1,
+				RootNode:  2,
 				Nodes: []*planning.EncodedNode{
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
@@ -439,42 +466,18 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 						Description:    `year(...)`,
 						ChildrenLabels: []string{""},
 					},
-				},
-			},
-		},
-		"unary expression": {
-			expr:      `-some_metric`,
-			timeRange: instantQuery,
-
-			expectedPlan: &planning.EncodedQueryPlan{
-				TimeRange: instantQueryEncodedTimeRange,
-				RootNode:  1,
-				Nodes: []*planning.EncodedNode{
 					{
-						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
-						Details: marshalDetails(&core.VectorSelectorDetails{
-							Matchers: []*core.LabelMatcher{
-								{Type: 0, Name: "__name__", Value: "some_metric"},
-							},
-							ExpressionPosition: core.PositionRange{Start: 1, End: 12},
-						}),
-						Type:        "VectorSelector",
-						Description: `{__name__="some_metric"}`,
-					},
-					{
-						NodeType: planning.NODE_TYPE_UNARY_EXPRESSION,
-						Details: marshalDetails(&core.UnaryExpressionDetails{
-							Op:                 core.UNARY_SUB,
-							ExpressionPosition: core.PositionRange{Start: 0, End: 12},
-						}),
-						Type:           "UnaryExpression",
-						Children:       []int64{0},
-						Description:    `-`,
+						NodeType:       planning.NODE_TYPE_DEDUPLICATE_AND_MERGE,
+						Details:        marshalDetails(&core.DeduplicateAndMergeDetails{}),
+						Type:           "DeduplicateAndMerge",
+						Children:       []int64{1},
+						Description:    ``,
 						ChildrenLabels: []string{""},
 					},
 				},
 			},
 		},
+
 		"basic aggregation": {
 			expr:      `sum(some_metric)`,
 			timeRange: instantQuery,
@@ -665,7 +668,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 
 			expectedPlan: &planning.EncodedQueryPlan{
 				TimeRange: instantQueryEncodedTimeRange,
-				RootNode:  2,
+				RootNode:  3,
 				Nodes: []*planning.EncodedNode{
 					{
 						NodeType: planning.NODE_TYPE_NUMBER_LITERAL,
@@ -698,6 +701,14 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 						Description:    `LHS * RHS`,
 						ChildrenLabels: []string{"LHS", "RHS"},
 					},
+					{
+						NodeType:       planning.NODE_TYPE_DEDUPLICATE_AND_MERGE,
+						Details:        marshalDetails(&core.DeduplicateAndMergeDetails{}),
+						Type:           "DeduplicateAndMerge",
+						Children:       []int64{2},
+						Description:    ``,
+						ChildrenLabels: []string{""},
+					},
 				},
 			},
 		},
@@ -707,7 +718,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 
 			expectedPlan: &planning.EncodedQueryPlan{
 				TimeRange: instantQueryEncodedTimeRange,
-				RootNode:  2,
+				RootNode:  3,
 				Nodes: []*planning.EncodedNode{
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
@@ -740,6 +751,14 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 						Children:       []int64{0, 1},
 						Description:    `LHS > bool RHS`,
 						ChildrenLabels: []string{"LHS", "RHS"},
+					},
+					{
+						NodeType:       planning.NODE_TYPE_DEDUPLICATE_AND_MERGE,
+						Details:        marshalDetails(&core.DeduplicateAndMergeDetails{}),
+						Type:           "DeduplicateAndMerge",
+						Children:       []int64{2},
+						Description:    ``,
+						ChildrenLabels: []string{""},
 					},
 				},
 			},
@@ -1073,6 +1092,38 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 				},
 			},
 		},
+		"query with delayed name removal enabled": {
+			expr:                     `some_metric`,
+			timeRange:                instantQuery,
+			enableDelayedNameRemoval: true,
+
+			expectedPlan: &planning.EncodedQueryPlan{
+				TimeRange:                instantQueryEncodedTimeRange,
+				RootNode:                 1,
+				EnableDelayedNameRemoval: true,
+				Nodes: []*planning.EncodedNode{
+					{
+						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
+						Details: marshalDetails(&core.VectorSelectorDetails{
+							Matchers: []*core.LabelMatcher{
+								{Type: 0, Name: "__name__", Value: "some_metric"},
+							},
+							ExpressionPosition: core.PositionRange{Start: 0, End: 11},
+						}),
+						Type:        "VectorSelector",
+						Description: `{__name__="some_metric"}`,
+					},
+					{
+						NodeType:       planning.NODE_TYPE_DEDUPLICATE_AND_MERGE,
+						Details:        marshalDetails(&core.DeduplicateAndMergeDetails{RunDelayedNameRemoval: true}),
+						Type:           "DeduplicateAndMerge",
+						Description:    "with delayed name removal",
+						Children:       []int64{0},
+						ChildrenLabels: []string{""},
+					},
+				},
+			},
+		},
 	}
 
 	ctx := context.Background()
@@ -1087,7 +1138,9 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 				return (23 * time.Second).Milliseconds()
 			}
 			opts.CommonOpts.Reg = reg
-			planner := NewQueryPlannerWithoutOptimizationPasses(opts)
+			opts.CommonOpts.EnableDelayedNameRemoval = testCase.enableDelayedNameRemoval
+			planner, err := NewQueryPlannerWithoutOptimizationPasses(opts)
+			require.NoError(t, err)
 
 			originalPlan, err := planner.NewQueryPlan(ctx, testCase.expr, testCase.timeRange, NoopPlanningObserver{})
 			require.NoError(t, err)
@@ -1104,9 +1157,164 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 			require.Equal(t, testCase.expectedPlan, encoded)
 
 			// Decode plan, confirm it matches the original plan
-			decodedPlan, err := encoded.ToDecodedPlan()
+			decodedPlan, _, err := encoded.ToDecodedPlan()
 			require.NoError(t, err)
 			require.Equal(t, originalPlan, decodedPlan)
+		})
+	}
+}
+
+func TestPlanVersioning(t *testing.T) {
+	originalMaximumPlanVersion := planning.MaximumSupportedQueryPlanVersion
+	planning.MaximumSupportedQueryPlanVersion = 9001
+	t.Cleanup(func() { planning.MaximumSupportedQueryPlanVersion = originalMaximumPlanVersion })
+
+	plan := &planning.QueryPlan{
+		TimeRange: types.NewInstantQueryTimeRange(time.Now()),
+		Root: &core.NumberLiteral{
+			NumberLiteralDetails: &core.NumberLiteralDetails{
+				Value: 123,
+			},
+		},
+		OriginalExpression: "123",
+		Version:            9000,
+	}
+
+	encoded, err := plan.ToEncodedPlan(false, true)
+	require.NoError(t, err)
+	require.Equal(t, int64(9000), encoded.Version)
+
+	decoded, _, err := encoded.ToDecodedPlan()
+	require.NoError(t, err)
+	require.Equal(t, plan, decoded)
+}
+
+func TestDeduplicateAndMergePlanning(t *testing.T) {
+	testCases := map[string]struct {
+		expr         string
+		expectedPlan string
+	}{
+		"unary negation - should deduplicate and merge": {
+			expr: `-some_metric`,
+			expectedPlan: `
+				- DeduplicateAndMerge
+					- UnaryExpression: -
+						- VectorSelector: {__name__="some_metric"}
+			`,
+		},
+		"OR binary operation - should deduplicate and merge": {
+			expr: `metric_a or metric_b`,
+			expectedPlan: `
+				- DeduplicateAndMerge
+					- BinaryExpression: LHS or RHS
+						- LHS: VectorSelector: {__name__="metric_a"}
+						- RHS: VectorSelector: {__name__="metric_b"}
+			`,
+		},
+		"time transformation - should deduplicate and merge": {
+			expr: `hour(some_metric)`,
+			expectedPlan: `
+				- DeduplicateAndMerge
+					- FunctionCall: hour(...)
+						- VectorSelector: {__name__="some_metric"}
+			`,
+		},
+		"range vector function which drops __name__ - should deduplicate and merge": {
+			expr: `rate(some_metric[5m])`,
+			expectedPlan: `
+				- DeduplicateAndMerge
+					- FunctionCall: rate(...)
+						- MatrixSelector: {__name__="some_metric"}[5m0s]
+			`,
+		},
+		"instant vector function which drops __name__ - should deduplicate and merge": {
+			expr: `abs(some_metric)`,
+			expectedPlan: `
+				- DeduplicateAndMerge
+					- FunctionCall: abs(...)
+						- VectorSelector: {__name__="some_metric"}
+			`,
+		},
+		"label_join - should deduplicate and merge": {
+			expr: `label_join(some_metric, "new_label", "-", "label1", "label2")`,
+			expectedPlan: `
+				- DeduplicateAndMerge
+					- FunctionCall: label_join(...)
+						- param 0: VectorSelector: {__name__="some_metric"}
+						- param 1: StringLiteral: "new_label"
+						- param 2: StringLiteral: "-"
+						- param 3: StringLiteral: "label1"
+						- param 4: StringLiteral: "label2"
+			`,
+		},
+		"label_replace - should deduplicate and merge": {
+			expr: `label_replace(some_metric, "dst", "$1", "src", "(.+)")`,
+			expectedPlan: `
+				- DeduplicateAndMerge
+					- FunctionCall: label_replace(...)
+						- param 0: VectorSelector: {__name__="some_metric"}
+						- param 1: StringLiteral: "dst"
+						- param 2: StringLiteral: "$1"
+						- param 3: StringLiteral: "src"
+						- param 4: StringLiteral: "(.+)"
+			`,
+		},
+		"instant vector function which doesn't drop __name__  - should NOT deduplicate and merge": {
+			expr: `sort(some_metric)`,
+			expectedPlan: `
+				- FunctionCall: sort(...)
+					- VectorSelector: {__name__="some_metric"}
+			`,
+		},
+		"range  vector function which doesn't drop __name__- should NOT deduplicate and merge": {
+			expr: `absent_over_time(some_metric[5m])`,
+			expectedPlan: `
+				- FunctionCall: absent_over_time(...)
+					- MatrixSelector: {__name__="some_metric"}[5m0s]
+			`,
+		},
+		"aritmetic vector-scalar operation - should deduplicate and merge": {
+			expr: `some_metric * 2`,
+			expectedPlan: `
+				- DeduplicateAndMerge
+					- BinaryExpression: LHS * RHS
+						- LHS: VectorSelector: {__name__="some_metric"}
+						- RHS: NumberLiteral: 2
+			`,
+		},
+		"comparison vector-scalar operation - should NOT deduplicate and merge": {
+			expr: `some_metric > 2`,
+			expectedPlan: `
+				- BinaryExpression: LHS > RHS
+					- LHS: VectorSelector: {__name__="some_metric"}
+					- RHS: NumberLiteral: 2
+			`,
+		},
+		"comparison vector-scalar operation with bool modifier - should deduplicate and merge": {
+			expr: `some_metric > bool 2`,
+			expectedPlan: `
+				- DeduplicateAndMerge
+					- BinaryExpression: LHS > bool RHS
+						- LHS: VectorSelector: {__name__="some_metric"}
+						- RHS: NumberLiteral: 2
+			`,
+		},
+	}
+
+	ctx := context.Background()
+	timeRange := types.NewInstantQueryTimeRange(timestamp.Time(1000))
+	observer := NoopPlanningObserver{}
+
+	opts := NewTestEngineOpts()
+	planner, err := NewQueryPlannerWithoutOptimizationPasses(opts)
+	require.NoError(t, err)
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			p, err := planner.NewQueryPlan(ctx, testCase.expr, timeRange, observer)
+			require.NoError(t, err)
+			actual := p.String()
+			require.Equal(t, testutils.TrimIndent(testCase.expectedPlan), actual)
 		})
 	}
 }
@@ -1133,7 +1341,8 @@ func BenchmarkPlanEncodingAndDecoding(b *testing.B) {
 	}
 
 	opts := NewTestEngineOpts()
-	planner := NewQueryPlanner(opts)
+	planner, err := NewQueryPlanner(opts)
+	require.NoError(b, err)
 	ctx := context.Background()
 
 	for _, expr := range testCases {
@@ -1173,7 +1382,7 @@ func BenchmarkPlanEncodingAndDecoding(b *testing.B) {
 						require.NoError(b, err)
 					}
 
-					_, err = unmarshalled.ToDecodedPlan()
+					_, _, err = unmarshalled.ToDecodedPlan()
 					if err != nil {
 						require.NoError(b, err)
 					}
@@ -1186,16 +1395,17 @@ func BenchmarkPlanEncodingAndDecoding(b *testing.B) {
 func TestQueryPlanner_ActivityTracking(t *testing.T) {
 	opts := NewTestEngineOpts()
 	tracker := &testQueryTracker{}
-	opts.CommonOpts.ActiveQueryTracker = tracker
-	planner := NewQueryPlanner(opts)
+	opts.ActiveQueryTracker = tracker
+	planner, err := NewQueryPlanner(opts)
+	require.NoError(t, err)
 
 	expr := "test"
 	timeRange := types.NewInstantQueryTimeRange(time.Now())
-	_, err := planner.NewQueryPlan(context.Background(), expr, timeRange, NoopPlanningObserver{})
+	_, err = planner.NewQueryPlan(context.Background(), expr, timeRange, NoopPlanningObserver{})
 	require.NoError(t, err)
 
 	expectedPlanningActivities := []trackedQuery{
-		{expr: "test # (planning)", deleted: true},
+		{expr: "test", stage: "planning", timeRange: timeRange, deleted: true},
 	}
 
 	require.Equal(t, expectedPlanningActivities, tracker.queries)
@@ -1248,7 +1458,8 @@ func TestAnalysisHandler(t *testing.T) {
 					"originalExpression": "up"
 				  }
 				}
-			  ]
+			  ],
+			  "planVersion": 0
 			}`,
 			expectedStatusCode: http.StatusOK,
 		},
@@ -1291,7 +1502,8 @@ func TestAnalysisHandler(t *testing.T) {
 					"originalExpression": "up"
 				  }
 				}
-			  ]
+			  ],
+			  "planVersion": 0
 			}`,
 			expectedStatusCode: http.StatusOK,
 		},
@@ -1440,7 +1652,8 @@ func TestAnalysisHandler(t *testing.T) {
 		},
 	}
 
-	planner := NewQueryPlannerWithoutOptimizationPasses(NewTestEngineOpts())
+	planner, err := NewQueryPlannerWithoutOptimizationPasses(NewTestEngineOpts())
+	require.NoError(t, err)
 	handler := AnalysisHandler(planner)
 
 	for name, testCase := range testCases {
@@ -1617,11 +1830,26 @@ func TestDecodingInvalidPlan(t *testing.T) {
 			},
 			expectedError: "node of type BinaryExpression expects 2 children, but got 1",
 		},
+		"query plan version is too high": {
+			input: &planning.EncodedQueryPlan{
+				OriginalExpression: "123",
+				Nodes: []*planning.EncodedNode{
+					{
+						NodeType: planning.NODE_TYPE_NUMBER_LITERAL,
+						Details: marshalDetails(&core.NumberLiteralDetails{
+							Value: 123,
+						}),
+					},
+				},
+				Version: planning.MaximumSupportedQueryPlanVersion + 1,
+			},
+			expectedError: fmt.Sprintf("query plan has version %v, but the maximum supported query plan version is %v", planning.MaximumSupportedQueryPlanVersion+1, planning.MaximumSupportedQueryPlanVersion),
+		},
 	}
 
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
-			output, err := testCase.input.ToDecodedPlan()
+			output, _, err := testCase.input.ToDecodedPlan()
 			require.EqualError(t, err, testCase.expectedError)
 			require.Nil(t, output)
 		})
@@ -1660,4 +1888,14 @@ func requireHistogramCounts(t *testing.T, reg *prometheus.Registry, name string,
 
 func timestampOf(ts int64) *time.Time {
 	return core.TimeFromTimestamp(&ts)
+}
+
+func TestFunctionNeedsDeduplicationHandlesAllKnownFunctions(t *testing.T) {
+	for fnc, name := range functions.Function_name {
+		t.Run(name, func(t *testing.T) {
+			require.NotPanics(t, func() {
+				functionNeedsDeduplication(functions.Function(fnc))
+			}, "functionNeedsDeduplication should handle %s", name)
+		})
+	}
 }
