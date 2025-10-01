@@ -13,6 +13,10 @@ import (
 
 type noopMemoryConsumptionTracker struct{}
 
+func NewNoopMemoryConsumptionTracker() MemoryConsumptionOperation {
+	return &noopMemoryConsumptionTracker{}
+}
+
 func (n noopMemoryConsumptionTracker) IncreaseMemoryConsumption(_ uint64, _ MemoryConsumptionSource) error {
 	return nil
 }
