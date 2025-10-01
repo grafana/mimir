@@ -173,7 +173,7 @@ func TestShouldProcessBlock(t *testing.T) {
 	tests := []struct {
 		name     string
 		cfg      func(Config) Config
-		setup    func(*ParquetConverter, objstore.InstrumentedBucket, *block.Meta)
+		setup    func(*testing.T, *ParquetConverter, objstore.InstrumentedBucket, *block.Meta)
 		wantSkip bool
 	}{
 		{
@@ -226,15 +226,16 @@ func TestShouldProcessBlock(t *testing.T) {
 		},
 		{
 			name: "already queued",
-			setup: func(c *ParquetConverter, bucket objstore.InstrumentedBucket, meta *block.Meta) {
+			setup: func(t *testing.T, c *ParquetConverter, bucket objstore.InstrumentedBucket, meta *block.Meta) {
 				c.queuedBlocks.Store(meta.ULID, time.Now())
 			},
 			wantSkip: true,
 		},
 		{
 			name: "already converted",
-			setup: func(c *ParquetConverter, bucket objstore.InstrumentedBucket, meta *block.Meta) {
-				WriteConversionMark(context.Background(), meta.ULID, bucket)
+			setup: func(t *testing.T, c *ParquetConverter, bucket objstore.InstrumentedBucket, meta *block.Meta) {
+				err := WriteConversionMark(context.Background(), meta.ULID, bucket)
+				require.NoError(t, err)
 			},
 			wantSkip: true,
 		},
@@ -267,7 +268,7 @@ func TestShouldProcessBlock(t *testing.T) {
 
 			// Apply test-specific setup
 			if tt.setup != nil {
-				tt.setup(c, bucket, meta)
+				tt.setup(t, c, bucket, meta)
 			}
 
 			// Test the function
