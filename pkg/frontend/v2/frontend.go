@@ -545,7 +545,16 @@ func (s *ProtobufResponseStream) errorFromMessage(msg *frontendv2pb.QueryResultS
 }
 
 func (s *ProtobufResponseStream) Close() {
-	defer close(s.closed) // Unblock any pending write() calls.
+	defer func() {
+		// Unblock any pending write() calls, if we haven't already.
+
+		select {
+		case <-s.closed:
+			// Already closed, nothing to do.
+		default:
+			close(s.closed)
+		}
+	}()
 
 	select {
 	case <-s.responseStarted:

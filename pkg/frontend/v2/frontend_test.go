@@ -212,6 +212,7 @@ func TestFrontend_Protobuf_HappyPath(t *testing.T) {
 	resp, err := f.DoProtobufRequest(ctx, req, time.Now().Add(-5*time.Hour), time.Now())
 	require.NoError(t, err)
 	defer resp.Close()
+	defer resp.Close() // Closing a response stream multiple times should not panic.
 
 	msg, err := resp.Next(ctx)
 	require.NoError(t, err)
