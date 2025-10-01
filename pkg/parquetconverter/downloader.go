@@ -129,7 +129,7 @@ func (d *fastDownloader) downloadFile(ctx context.Context, logger log.Logger, bk
 		Key:    aws.String(src),
 	})
 	if err != nil {
-		return errors.Wrapf(err, "download file %s", src)
+		return errors.Wrapf(err, "download file %s -> %s", d.bucketName, src)
 	}
 	return nil
 }
