@@ -194,11 +194,11 @@ func tsOverTime(compareFn func(promql.FPoint, promql.FPoint) bool, step *types.R
 
 var TsOfLastOverTime = FunctionOverRangeVectorDefinition{
 	SeriesMetadataFunction:         DropSeriesName,
-	StepFunc:                       tsOflastOverTime,
+	StepFunc:                       tsOfLastOverTime,
 	NeedsSeriesNamesForAnnotations: true,
 }
 
-func tsOflastOverTime(step *types.RangeVectorStepData, _ []types.ScalarData, _ types.QueryTimeRange, _ types.EmitAnnotationFunc, _ *limiter.MemoryConsumptionTracker) (float64, bool, *histogram.FloatHistogram, error) {
+func tsOfLastOverTime(step *types.RangeVectorStepData, _ []types.ScalarData, _ types.QueryTimeRange, _ types.EmitAnnotationFunc, _ *limiter.MemoryConsumptionTracker) (float64, bool, *histogram.FloatHistogram, error) {
 	lastFloat, floatAvailable := step.Floats.Last()
 	lastHistogram, histogramAvailable := step.Histograms.Last()
 
