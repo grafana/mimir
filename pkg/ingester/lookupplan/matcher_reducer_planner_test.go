@@ -19,9 +19,9 @@ func TestMatcherReducerPlanner_PlanIndexLookup(t *testing.T) {
 	nonSelectiveRegexMatcher, _ := labels.NewMatcher(labels.MatchRegexp, "foo", ".*")
 	nonSelectiveNotRegexMatcher, _ := labels.NewMatcher(labels.MatchNotRegexp, "foo", "")
 	nonSelectiveNotEqualsMatcher, _ := labels.NewMatcher(labels.MatchNotEqual, "foo", "")
+	selectiveNotEqualsMatcher, _ := labels.NewMatcher(labels.MatchNotEqual, "foo", "bar")
 
 	otherLabelNonSelectiveNotRegexMatcher, _ := labels.NewMatcher(labels.MatchNotRegexp, "baz", "")
-	otherLabelSelectiveMatcher, _ := labels.NewMatcher(labels.MatchNotEqual, "baz", "bananas")
 
 	tests := []struct {
 		name         string
@@ -90,6 +90,18 @@ func TestMatcherReducerPlanner_PlanIndexLookup(t *testing.T) {
 			},
 		},
 		{
+			name: "keep broadest non-selective matcher if it is the only matcher",
+			ctx:  context.Background(),
+			inPlan: concreteLookupPlan{
+				indexMatchers: []*labels.Matcher{nonSelectiveRegexMatcher},
+				scanMatchers:  []*labels.Matcher{},
+			},
+			expectedPlan: concreteLookupPlan{
+				indexMatchers: []*labels.Matcher{nonSelectiveRegexMatcher},
+				scanMatchers:  []*labels.Matcher{},
+			},
+		},
+		{
 			name: "remove all non-selective matchers if a selective matcher exists",
 			ctx:  context.Background(),
 			inPlan: concreteLookupPlan{
@@ -102,7 +114,7 @@ func TestMatcherReducerPlanner_PlanIndexLookup(t *testing.T) {
 			},
 		},
 		{
-			name: "keep one non-selective matcher if no selective matcher exists",
+			name: "keep the matcher that excludes empty strings if no selective matcher exists",
 			ctx:  context.Background(),
 			inPlan: concreteLookupPlan{
 				indexMatchers: []*labels.Matcher{nonSelectiveRegexMatcher},
@@ -126,26 +138,14 @@ func TestMatcherReducerPlanner_PlanIndexLookup(t *testing.T) {
 			},
 		},
 		{
-			name: "keep at least one matcher for each label name, keep selective matchers over non-selective matchers",
+			name: "nonselective matcher should not be dropped if selective matchers match empty strings",
 			ctx:  context.Background(),
 			inPlan: concreteLookupPlan{
-				indexMatchers: []*labels.Matcher{nonSelectiveRegexMatcher, otherLabelNonSelectiveNotRegexMatcher},
-				scanMatchers:  []*labels.Matcher{nonSelectiveNotRegexMatcher, nonSelectiveNotRegexMatcher, otherLabelSelectiveMatcher},
-			},
-			expectedPlan: concreteLookupPlan{
-				indexMatchers: []*labels.Matcher{},
-				scanMatchers:  []*labels.Matcher{nonSelectiveNotRegexMatcher, otherLabelSelectiveMatcher},
-			},
-		},
-		{
-			name: "nonselective matcher for another label name should not be dropped",
-			ctx:  context.Background(),
-			inPlan: concreteLookupPlan{
-				indexMatchers: []*labels.Matcher{otherLabelSelectiveMatcher, nonSelectiveNotEqualsMatcher},
+				indexMatchers: []*labels.Matcher{selectiveNotEqualsMatcher, nonSelectiveNotEqualsMatcher},
 				scanMatchers:  []*labels.Matcher{},
 			},
 			expectedPlan: concreteLookupPlan{
-				indexMatchers: []*labels.Matcher{otherLabelSelectiveMatcher, nonSelectiveNotEqualsMatcher},
+				indexMatchers: []*labels.Matcher{selectiveNotEqualsMatcher, nonSelectiveNotEqualsMatcher},
 				scanMatchers:  []*labels.Matcher{},
 			},
 		},
