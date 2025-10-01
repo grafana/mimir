@@ -97,7 +97,18 @@ local utils = import 'mixin-utils/utils.libsonnet';
       addClusterSelectorTemplates(multi=true)::
         local d = self {
           tags: $._config.tags,
-          links: $._config.mimir_dashboard_links,
+          links: [
+            {
+              asDropdown: true,
+              icon: 'external link',
+              includeVars: true,
+              keepTime: true,
+              tags: $._config.tags,
+              targetBlank: false,
+              title: '%(product)s dashboards' % $._config,
+              type: 'dashboards',
+            },
+          ],
         };
 
         if multi then
