@@ -583,8 +583,8 @@ github.com/grafana/prometheus-alertmanager v0.25.1-0.20250911094103-5456b6e45604
 github.com/grafana/prometheus-alertmanager v0.25.1-0.20250911094103-5456b6e45604/go.mod h1:O/QP1BCm0HHIzbKvgMzqb5sSyH88rzkFk84F4TfJjBU=
 github.com/grafana/pyroscope-go/godeltaprof v0.1.8 h1:iwOtYXeeVSAeYefJNaxDytgjKtUuKQbJqgAIjlnicKg=
 github.com/grafana/pyroscope-go/godeltaprof v0.1.8/go.mod h1:2+l7K7twW49Ct4wFluZD3tZ6e0SjanjcUUBPVD/UuGU=
-github.com/grafana/regexp v0.0.0-20240531075221-3685f1377d7b h1:oMAq12GxTpwo9jxbnG/M4F/HdpwbibTaVoxNA0NZprY=
-github.com/grafana/regexp v0.0.0-20240531075221-3685f1377d7b/go.mod h1:+JKpmjMGhpgPL+rXZ5nsZieVzvarn86asRlBg4uNGnk=
+github.com/grafana/regexp v0.0.0-20250905101755-5eb4f3acbf71 h1:A4D22zZV7+EeQk9TeATDDY/PG2wnzdqKcj4IZq+PcwA=
+github.com/grafana/regexp v0.0.0-20250905101755-5eb4f3acbf71/go.mod h1:+JKpmjMGhpgPL+rXZ5nsZieVzvarn86asRlBg4uNGnk=
 github.com/grpc-ecosystem/go-grpc-prometheus v1.2.0/go.mod h1:8NvIoxWQoOIhqOTXgfV/d3M/q6VIi02HzZEHgUlZvzk=
 github.com/grpc-ecosystem/grpc-gateway v1.16.0/go.mod h1:BDjrQk3hbvj6Nolgz8mAMFbcEtjT1g+wF4CSlocrBnw=
 github.com/grpc-ecosystem/grpc-gateway/v2 v2.27.2 h1:8Tjv8EJ+pM1xP8mK6egEbD1OgnVTyacbefKhmbLhIhU=
