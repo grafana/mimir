@@ -4,6 +4,7 @@ package v2
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -262,10 +263,15 @@ func (r *rangeVectorExecutionResponse) Close() {
 	r.stream.Close()
 }
 
+var errUnexpectedEndOfStream = errors.New("expected EvaluateQueryResponse, got end of stream")
+
 func readNextEvaluateQueryResponse(ctx context.Context, stream responseStream) (*querierpb.EvaluateQueryResponse, error) {
 	msg, err := stream.Next(ctx)
 	if err != nil {
 		return nil, err
+	}
+	if msg == nil {
+		return nil, errUnexpectedEndOfStream
 	}
 
 	resp := msg.GetEvaluateQueryResponse()
