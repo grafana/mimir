@@ -590,7 +590,7 @@ func TestFrontend_Protobuf_ReadingResponseAfterAllMessagesReceived(t *testing.T)
 
 	// Wait until the last message has been buffered into the stream channel and the stream's context has been cancelled by DoProtobufRequest.
 	select {
-	case <-resp.ctx.Done():
+	case <-resp.streamContext.Done():
 		// Context cancelled, continue.
 	case <-time.After(time.Second):
 		require.Fail(t, "gave up waiting for stream context to be cancelled")
@@ -955,7 +955,7 @@ func TestFrontend_Protobuf_ReadingResponseWithCanceledContext(t *testing.T) {
 	close(signal)
 }
 
-func TestFrontend_Protobuf_ReadingCancelledRequest(t *testing.T) {
+func TestFrontend_Protobuf_ReadingCancelledRequestBeforeResponseReceivedFromQuerier(t *testing.T) {
 	ctx, cancel := context.WithCancelCause(user.InjectOrgID(context.Background(), "test"))
 	cancellationError := cancellation.NewErrorf("the request has been canceled")
 
@@ -977,6 +977,66 @@ func TestFrontend_Protobuf_ReadingCancelledRequest(t *testing.T) {
 	msg, err := resp.Next(uncancelledContext)
 	require.ErrorIs(t, err, cancellationError)
 	require.Nil(t, msg)
+}
+
+func TestFrontend_Protobuf_ReadingCancelledRequestAfterResponseReceivedFromQuerier(t *testing.T) {
+	ctx, cancel := context.WithCancelCause(user.InjectOrgID(context.Background(), "test"))
+
+	f, _ := setupFrontend(t, nil, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
+		switch msg.Type {
+		case schedulerpb.ENQUEUE:
+			go sendStreamingResponse(t, f, msg.UserID, msg.QueryID, newStringMessage("first message"), newStringMessage("second message"), newStringMessage("third message"))
+			return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
+		case schedulerpb.CANCEL:
+			return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
+		default:
+			return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.ERROR, Error: fmt.Sprintf("unexpected message type %v sent to scheduler", msg.Type)}
+		}
+	})
+
+	req := &querierpb.EvaluateQueryRequest{}
+	resp, err := f.DoProtobufRequest(ctx, req, time.Now(), time.Now())
+	require.NoError(t, err)
+
+	uncancelledContext := context.Background()
+	msg, err := resp.Next(uncancelledContext)
+	require.NoError(t, err)
+	require.Equal(t, "first message", msg.GetEvaluateQueryResponse().GetStringValue().Value)
+
+	// At this point, the next message should be waiting in the stream's channel, and receiveResultForProtobufRequest will be reading the next message from the gRPC stream.
+	// Cancel the original request, and confirm that we never receive a nil message and no error from a call to Next:
+	// we should either receive the cancellation error or the next remaining message.
+	// Once we've seen a cancellation error, then that's all we should get.
+	cancellationError := cancellation.NewErrorf("the request has been canceled")
+	cancel(cancellationError)
+
+	seenSecondMessage := false
+	seenThirdMessage := false
+	seenCancellationError := false
+
+	for range 10 {
+		msg, err := resp.Next(uncancelledContext)
+		if err != nil {
+			require.ErrorIs(t, err, cancellationError)
+			seenCancellationError = true
+			continue
+		}
+
+		require.NotNil(t, msg)
+		require.False(t, seenCancellationError, "got a non-nil message after already observing the cancellation")
+
+		if !seenSecondMessage {
+			require.Equal(t, "second message", msg.GetEvaluateQueryResponse().GetStringValue().Value)
+			seenSecondMessage = true
+		} else if !seenThirdMessage {
+			require.Equal(t, "second message", msg.GetEvaluateQueryResponse().GetStringValue().Value)
+			seenThirdMessage = true
+		} else {
+			require.Failf(t, "received unexpected message", "received message %v", msg)
+		}
+	}
+
+	require.True(t, seenCancellationError)
 }
 
 func TestFrontend_HTTPGRPC_ResponseSentTwice(t *testing.T) {
