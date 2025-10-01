@@ -64,7 +64,7 @@ type fastDownloader struct {
 }
 
 type downloader interface {
-	download(context.Context, log.Logger, objstore.Bucket, ulid.ULID, string, ...downloadOption) error
+	download(context.Context, log.Logger, objstore.Bucket, string, ulid.ULID, string, ...downloadOption) error
 }
 
 var _ downloader = &fastDownloader{}
@@ -72,17 +72,18 @@ var _ downloader = &fastDownloader{}
 // Download downloads a directory meant to be a block directory. If any one of the files
 // has a hash calculated in the meta file and it matches with what is in the destination path then
 // we do not download it. We always re-download the meta file.
-func (d *fastDownloader) download(ctx context.Context, logger log.Logger, bucket objstore.Bucket, id ulid.ULID, dst string, options ...downloadOption) error {
+func (d *fastDownloader) download(ctx context.Context, logger log.Logger, bucket objstore.Bucket, prefix string, id ulid.ULID, dst string, options ...downloadOption) error {
 	if err := os.MkdirAll(dst, 0750); err != nil {
 		return errors.Wrap(err, "create dir")
 	}
 
-	if err := d.downloadFile(ctx, logger, bucket, path.Join(id.String(), block.MetaFilename), filepath.Join(dst, block.MetaFilename)); err != nil {
+	if err := d.downloadFile(ctx, logger, bucket, path.Join(prefix, id.String(), block.MetaFilename), filepath.Join(dst, block.MetaFilename)); err != nil {
 		return err
 	}
 
 	ignoredPaths := []string{block.MetaFilename}
-	if err := d.downloadDir(ctx, logger, bucket, id.String(), id.String(), dst, append(options, withDownloadIgnoredPaths(ignoredPaths...))...); err != nil {
+	src := path.Join(prefix, id.String())
+	if err := d.downloadDir(ctx, logger, bucket, src, src, dst, append(options, withDownloadIgnoredPaths(ignoredPaths...))...); err != nil {
 		return err
 	}
 

@@ -75,7 +75,7 @@ func TestParquetConverter(t *testing.T) {
 // mockBlockDownloader implements the downloader interface by calling block.Download over the test bucket.
 type mockBlockDownloader struct{}
 
-func (d *mockBlockDownloader) download(ctx context.Context, logger log.Logger, bucket objstore.Bucket, id ulid.ULID, dst string, options ...downloadOption) error {
+func (d *mockBlockDownloader) download(ctx context.Context, logger log.Logger, bucket objstore.Bucket, prefix string, id ulid.ULID, dst string, options ...downloadOption) error {
 	return block.Download(ctx, logger, bucket, id, dst)
 }
 
