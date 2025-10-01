@@ -332,7 +332,12 @@ func (rth *engineQueryRequestRoundTripperHandler) Do(ctx context.Context, r Metr
 	spanLogger, ctx := spanlogger.New(ctx, rth.logger, tracer, "engineQueryRequestRoundTripperHandler.Do")
 	defer func() {
 		if err != nil {
-			spanLogger.Error(err)
+			// TypeForError handles both apierror.APIError instances as well as context.Canceled instances, so we don't need to check for both below.
+			if apierror.TypeForError(err, apierror.TypeNone) == apierror.TypeCanceled {
+				spanLogger.DebugLog("msg", "request returned cancellation error", "err", err)
+			} else {
+				spanLogger.Error(err)
+			}
 		}
 		spanLogger.Finish()
 	}()

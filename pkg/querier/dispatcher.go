@@ -244,9 +244,12 @@ func (w *queryResponseWriter) Write(ctx context.Context, r querierpb.EvaluateQue
 func (w *queryResponseWriter) WriteError(ctx context.Context, fallbackType apierror.Type, err error) {
 	typ := errorTypeForError(err, fallbackType)
 	msg := err.Error()
-
 	span := trace.SpanFromContext(ctx)
-	span.SetStatus(codes.Error, msg)
+
+	if typ != mimirpb.QUERY_ERROR_TYPE_CANCELED {
+		span.SetStatus(codes.Error, msg)
+	}
+
 	span.AddEvent("returning error", trace.WithAttributes(attribute.String("type", typ.String()), attribute.String("msg", msg)))
 
 	w.status = "ERROR_" + strings.TrimPrefix(typ.String(), "QUERY_ERROR_TYPE_")
