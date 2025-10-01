@@ -303,6 +303,8 @@ func (c *ParquetConverter) running(ctx context.Context) error {
 			}
 		}()
 
+		c.discoverAndEnqueueBlocks(gCtx)
+
 		discoveryTicker := time.NewTicker(c.Cfg.DiscoveryInterval)
 		defer discoveryTicker.Stop()
 
