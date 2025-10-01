@@ -467,11 +467,11 @@ func (c *ParquetConverter) processBlock(ctx context.Context, userID string, meta
 		c.queuedBlocks.Delete(meta.ULID)
 
 		duration := time.Since(start)
-		c.metrics.conversionDuration.WithLabelValues(userID).Observe(duration.Seconds())
 		if err != nil {
 			c.metrics.blocksConvertedFailed.WithLabelValues(userID).Inc()
 		} else if !skipped {
 			c.metrics.blocksConverted.WithLabelValues(userID).Inc()
+			c.metrics.conversionDuration.WithLabelValues(userID).Observe(duration.Seconds())
 		}
 	}()
 
