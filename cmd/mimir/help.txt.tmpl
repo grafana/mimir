@@ -555,7 +555,7 @@ Usage of ./cmd/mimir/mimir:
     	The frequency at which user and block discovery runs. (default 5m0s)
   -parquet-converter.max-block-age duration
     	Maximum age of blocks to convert. Blocks older than this will be skipped. Set to 0 to disable age filtering.
-  -parquet-converter.min-block-timestamp int
+  -parquet-converter.min-block-timestamp uint
     	Minimum block timestamp (based on ULID) to convert. Set to 0 to disable timestamp filtering.
   -parquet-converter.ring.consul.hostname string
     	Hostname and port of Consul. (default "localhost:8500")
