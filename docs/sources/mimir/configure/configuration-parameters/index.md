@@ -1500,7 +1500,7 @@ storage:
   [filesystem: <filesystem_storage_backend>]
 
 client_cluster_validation:
-  # (experimental) Optionally define the cluster validation label.
+  # (experimental) Primary cluster validation label.
   # CLI flag: -common.client-cluster-validation.label
   [label: <string> | default = ""]
 ```
@@ -1764,9 +1764,14 @@ grpc_tls_config:
 [http_path_prefix: <string> | default = ""]
 
 cluster_validation:
-  # (experimental) Optionally define the cluster validation label.
+  # (experimental) Primary cluster validation label.
   # CLI flag: -server.cluster-validation.label
   [label: <string> | default = ""]
+
+  # (experimental) Comma-separated list of additional cluster validation labels
+  # that the server will accept from incoming requests.
+  # CLI flag: -server.cluster-validation.additional-labels
+  [additional_labels: <string> | default = ""]
 
   grpc:
     # (experimental) When enabled, cluster label validation is executed:
@@ -2897,7 +2902,7 @@ results_cache:
 [cache_samples_processed_stats: <boolean> | default = false]
 
 client_cluster_validation:
-  # (experimental) Optionally define the cluster validation label.
+  # (experimental) Primary cluster validation label.
   # CLI flag: -query-frontend.client-cluster-validation.label
   [label: <string> | default = ""]
 
@@ -3694,7 +3699,7 @@ alertmanager_client:
   [connect_backoff_max_delay: <duration> | default = 5s]
 
   cluster_validation:
-    # (experimental) Optionally define the cluster validation label.
+    # (experimental) Primary cluster validation label.
     # CLI flag: -alertmanager.alertmanager-client.cluster-validation.label
     [label: <string> | default = ""]
 
@@ -3966,7 +3971,7 @@ backoff_config:
 [connect_backoff_max_delay: <duration> | default = 5s]
 
 cluster_validation:
-  # (experimental) Optionally define the cluster validation label.
+  # (experimental) Primary cluster validation label.
   # CLI flag: -<prefix>.cluster-validation.label
   [label: <string> | default = ""]
 ```
