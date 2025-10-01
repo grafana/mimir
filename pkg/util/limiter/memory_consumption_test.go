@@ -39,6 +39,13 @@ func TestFromContextWithFallback(t *testing.T) {
 	})
 }
 
+func TestMustFromContext(t *testing.T) {
+	t.Run("does not exist", func(t *testing.T) {
+		ctx := context.Background()
+		require.Panics(t, func() { MustMemoryTrackerFromContext(ctx) })
+	})
+}
+
 func TestAddToContext(t *testing.T) {
 	ctx := context.Background()
 	existing := NewMemoryConsumptionTracker(ctx, 0, nil, "")

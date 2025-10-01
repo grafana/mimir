@@ -32,6 +32,17 @@ func MemoryTrackerFromContextWithFallback(ctx context.Context) *MemoryConsumptio
 	return tracker
 }
 
+// MustMemoryTrackerFromContext returns a MemoryConsumptionTracker that has been added to this
+// context. If there is no MemoryConsumptionTracker in this context, this will panic.
+func MustMemoryTrackerFromContext(ctx context.Context) *MemoryConsumptionTracker {
+	tracker, ok := ctx.Value(memoryConsumptionTracker).(*MemoryConsumptionTracker)
+	if !ok {
+		panic("memory tracker not found in context")
+	}
+
+	return tracker
+}
+
 // AddMemoryTrackerToContext adds a MemoryConsumptionTracker to this context. This is used to propagate
 // per-query memory consumption tracking to parts of the read path that cannot be modified
 // to accept extra parameters.
