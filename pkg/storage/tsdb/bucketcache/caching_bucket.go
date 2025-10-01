@@ -522,7 +522,8 @@ func (cb *CachingBucket) cachedGetRange(ctx context.Context, name string, keyGen
 
 		// Try to get all subranges from the cache.
 		totalCachedBytes := int64(0)
-		hits = cfg.cache.GetMulti(ctx, keys, cacheOpts...)
+		// Don't pass a cancellable context, while we investigate the cause of https://github.com/grafana/mimir/issues/12691
+		hits = cfg.cache.GetMulti(context.WithoutCancel(ctx), keys, cacheOpts...)
 		for _, b := range hits {
 			totalCachedBytes += int64(len(b))
 		}
