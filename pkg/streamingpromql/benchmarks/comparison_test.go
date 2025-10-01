@@ -20,6 +20,7 @@ import (
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/test"
 	"github.com/grafana/dskit/user"
+	"github.com/grafana/mimir/pkg/util/limiter"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage"
@@ -105,6 +106,8 @@ func TestBothEnginesReturnSameResultsForBenchmarkQueries(t *testing.T) {
 	require.NoError(t, err)
 
 	ctx := user.InjectOrgID(context.Background(), UserID)
+	memoryTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
+	ctx = limiter.AddMemoryTrackerToContext(ctx, memoryTracker)
 
 	for _, c := range cases {
 		t.Run(c.Name(), func(t *testing.T) {
