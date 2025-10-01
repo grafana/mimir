@@ -27,6 +27,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/limiter"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -50,9 +51,11 @@ func RemoteReadHandler(q storage.SampleAndChunkQueryable, logger log.Logger, cfg
 
 func remoteReadHandler(q storage.SampleAndChunkQueryable, maxBytesInFrame int, maxConcurrency int, lg log.Logger) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ctx := r.Context()
+		// We don't do memory tracking for remote read, therefore we use NoopMemoryConsumptionTracker
+		memoryTracker := limiter.NewNoopMemoryConsumptionTracker()
+		ctx := limiter.AddMemoryTrackerToContext(r.Context(), memoryTracker)
 		var req prompb.ReadRequest
-		logger := util_log.WithContext(r.Context(), lg)
+		logger := util_log.WithContext(ctx, lg)
 		if _, err := util.ParseProtoReader(ctx, r.Body, int(r.ContentLength), MaxRemoteReadQuerySize, nil, &req, util.RawSnappy); err != nil {
 			level.Error(logger).Log("msg", "failed to parse proto", "err", err.Error())
 			http.Error(w, err.Error(), http.StatusBadRequest)
