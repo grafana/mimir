@@ -226,6 +226,19 @@ func TestFrontend_Protobuf_HappyPath(t *testing.T) {
 	require.Nil(t, msg)
 }
 
+// This test checks that we don't send unnecessary cancellation messages to the query-scheduler
+// when a request has been completely read successfully.
+//
+// Previously, there was a race between calling Close() on the stream returned by DoProtobufRequest()
+// and receiveResultForProtobufRequest() observing that the stream was finished.
+// If Close() won the race, it would cause the cancellation monitoring goroutine started by
+// DoProtobufRequest() to send a cancellation message to the scheduler, even though that was unnecessary.
+//
+// While this had no user-visible impact, cancelling a request causes the scheduler to close its stream
+// with the querier (to signal the cancellation). This means queriers had to reestablish the stream,
+// which takes time. If all querier workers were closed due to this, then scheduler would then
+// reshuffle querier tenant assignments for shuffle sharding, which would reduce the effectiveness of
+// shuffle sharding.
 func TestFrontend_Protobuf_ShouldNotCancelRequestAfterSuccess(t *testing.T) {
 	for _, exhaustStream := range []bool{true, false} {
 		t.Run(fmt.Sprintf("exhaust stream=%v", exhaustStream), func(t *testing.T) {
