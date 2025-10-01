@@ -476,7 +476,7 @@ func (s *ProtobufResponseStream) write(msg *frontendv2pb.QueryResultStreamReques
 		}
 	}
 
-	if err != nil && !errors.Is(err, errStreamClosed) {
+	if err != nil && !errors.Is(err, errStreamClosed) && !errors.Is(err, context.Canceled) {
 		_ = s.spanLogger.Error(err)
 	}
 
@@ -493,7 +493,7 @@ func (s *ProtobufResponseStream) write(msg *frontendv2pb.QueryResultStreamReques
 // writeEnqueueError writes an error message to the stream.
 // This method must only be called once per ProtobufResponseStream instance to ensure it does not block.
 func (s *ProtobufResponseStream) writeEnqueueError(err error) {
-	if !errors.Is(err, errStreamClosed) {
+	if !errors.Is(err, errStreamClosed) && !errors.Is(err, context.Canceled) {
 		_ = s.spanLogger.Error(err)
 	}
 
