@@ -209,7 +209,7 @@ type ingesterQueryResult struct {
 // queryIngesterStream queries the ingesters using the gRPC streaming API.
 func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSets []ring.ReplicationSet, req *ingester_client.QueryRequest, queryMetrics *stats.QueryMetrics) (ingester_client.CombinedQueryStreamResponse, error) {
 	queryLimiter := limiter.QueryLimiterFromContextWithFallback(ctx)
-	memoryTracker := limiter.MemoryTrackerFromContextWithFallback(ctx)
+	memoryTracker := limiter.MustMemoryTrackerFromContext(ctx)
 	reqStats := stats.FromContext(ctx)
 
 	// queryIngester MUST call cancelContext once processing is completed in order to release resources. It's required
