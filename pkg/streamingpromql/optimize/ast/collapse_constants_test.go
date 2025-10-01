@@ -6,11 +6,9 @@ import (
 	"context"
 	"testing"
 
-	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/stretchr/testify/require"
 
-	"github.com/grafana/mimir/pkg/streamingpromql/optimize"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/ast"
 )
 
@@ -60,10 +58,7 @@ func TestCollapseConstants(t *testing.T) {
 
 	for input, expected := range testCases {
 		t.Run(input, func(t *testing.T) {
-			_, result := getOutputFromASTOptimizationPassWithQueryPlan(t, ctx, input, func(prometheus.Registerer) optimize.ASTOptimizationPass {
-				return collapseConstants
-			})
-
+			result := runASTOptimizationPassWithoutMetrics(t, ctx, input, collapseConstants)
 			require.Equal(t, expected, result.String())
 
 			// Check for unnecessary unary expressions.

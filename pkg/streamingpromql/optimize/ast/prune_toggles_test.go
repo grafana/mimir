@@ -64,7 +64,7 @@ func TestPruneToggles(t *testing.T) {
 			expectedExpr, err := parser.ParseExpr(expected)
 			require.NoError(t, err)
 
-			reg, outputExpr := getOutputFromASTOptimizationPassWithQueryPlan(t, ctx, input, func(reg prometheus.Registerer) optimize.ASTOptimizationPass {
+			reg, outputExpr := runASTOptimizationPass(t, ctx, input, func(reg prometheus.Registerer) optimize.ASTOptimizationPass {
 				return ast.NewPruneToggles(reg)
 			})
 

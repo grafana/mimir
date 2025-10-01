@@ -28,19 +28,29 @@ func preprocessQuery(t *testing.T, expr parser.Expr) (parser.Expr, error) {
 	return promql.PreprocessExpr(expr, timestamp.Time(dummyTimeRange.StartT), timestamp.Time(dummyTimeRange.EndT), 0)
 }
 
-func getOutputFromASTOptimizationPassWithQueryPlan(t *testing.T, ctx context.Context, input string, createOptimizerFunc func(prometheus.Registerer) optimize.ASTOptimizationPass) (*prometheus.Registry, parser.Expr) {
-	dummyTimeRange := types.NewInstantQueryTimeRange(timestamp.Time(1000))
-	reg := prometheus.NewPedanticRegistry()
+func runASTOptimizationPass(t *testing.T, ctx context.Context, input string, createOptimizerFunc func(prometheus.Registerer) optimize.ASTOptimizationPass) (*prometheus.Registry, parser.Expr) {
 	opts := streamingpromql.NewTestEngineOpts()
+	reg := prometheus.NewPedanticRegistry()
 	opts.CommonOpts.Reg = reg
+	optimizer := createOptimizerFunc(opts.CommonOpts.Reg)
+	outputExpr := runASTOptimizationPassInner(t, ctx, input, optimizer, opts)
+	return reg, outputExpr
+}
+
+func runASTOptimizationPassWithoutMetrics(t *testing.T, ctx context.Context, input string, optimizer optimize.ASTOptimizationPass) parser.Expr {
+	opts := streamingpromql.NewTestEngineOpts()
+	return runASTOptimizationPassInner(t, ctx, input, optimizer, opts)
+}
+
+func runASTOptimizationPassInner(t *testing.T, ctx context.Context, input string, optimizer optimize.ASTOptimizationPass, opts streamingpromql.EngineOpts) parser.Expr {
+	dummyTimeRange := types.NewInstantQueryTimeRange(timestamp.Time(1000))
 	planner, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts)
 	require.NoError(t, err)
-	optimizer := createOptimizerFunc(opts.CommonOpts.Reg)
 	planner.RegisterASTOptimizationPass(optimizer)
 	observer := streamingpromql.NoopPlanningObserver{}
 	outputExpr, err := planner.ParseAndApplyASTOptimizationPasses(ctx, input, dummyTimeRange, observer)
 	require.NoError(t, err)
-	return reg, outputExpr
+	return outputExpr
 }
 
 func testASTOptimizationPassWithData(t *testing.T, loadTemplate string, testCases map[string]string) {
