@@ -89,7 +89,7 @@ type Config struct {
 	ConversionInterval time.Duration `yaml:"conversion_interval"`
 	DiscoveryInterval  time.Duration `yaml:"discovery_interval"`
 	MaxBlockAge        time.Duration `yaml:"max_block_age"`
-	MinBlockTimestamp  int64         `yaml:"min_block_timestamp"`
+	MinBlockTimestamp  uint64        `yaml:"min_block_timestamp"`
 	MinDataAge         time.Duration `yaml:"min_data_age" category:"advanced"`
 
 	SortingLabels      flagext.StringSliceCSV `yaml:"sorting_labels" category:"advanced"`
@@ -99,7 +99,6 @@ type Config struct {
 	MinBlockDuration   time.Duration          `yaml:"min_block_duration" category:"advanced"`
 
 	CompressionEnabled bool `yaml:"compression_enabled" category:"advanced"`
-	MaxQueueSize       int  `yaml:"max_queue_size" category:"advanced"`
 
 	ShardingRing RingConfig `yaml:"sharding_ring"`
 }
@@ -112,7 +111,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.DurationVar(&cfg.ConversionInterval, "parquet-converter.conversion-interval", time.Minute, "The frequency at which the conversion runs.")
 	f.DurationVar(&cfg.DiscoveryInterval, "parquet-converter.discovery-interval", 5*time.Minute, "The frequency at which user and block discovery runs.")
 	f.DurationVar(&cfg.MaxBlockAge, "parquet-converter.max-block-age", 0, "Maximum age of blocks to convert. Blocks older than this will be skipped. Set to 0 to disable age filtering.")
-	f.Int64Var(&cfg.MinBlockTimestamp, "parquet-converter.min-block-timestamp", 0, "Minimum block timestamp (based on ULID) to convert. Set to 0 to disable timestamp filtering.")
+	f.Uint64Var(&cfg.MinBlockTimestamp, "parquet-converter.min-block-timestamp", 0, "Minimum block timestamp (based on ULID) to convert. Set to 0 to disable timestamp filtering.")
 	f.DurationVar(&cfg.MinDataAge, "parquet-converter.min-data-age", 0, "Minimum age of data in blocks to convert. Only convert blocks containing data older than this duration from now, based on their MinTime. Set to 0 to disable age filtering.")
 	f.StringVar(&cfg.DataDir, "parquet-converter.data-dir", "./data-parquet-converter/", "Directory to temporarily store blocks during conversion. This directory is not required to persist between restarts.")
 	f.Var(&cfg.SortingLabels, "parquet-converter.sorting-labels", "Comma-separated list of labels to sort by when converting to Parquet format. If not the file will be sorted by '__name__'.")
@@ -121,7 +120,6 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.IntVar(&cfg.MinCompactionLevel, "parquet-converter.min-compaction-level", 2, "Minimum compaction level required for blocks to be converted to Parquet. Blocks equal or greater than this level will be converted.")
 	f.DurationVar(&cfg.MinBlockDuration, "parquet-converter.min-block-duration", 0, "Minimum duration of blocks to convert. Blocks with a duration shorter than this will be skipped. Set to 0 to disable duration filtering.")
 	f.BoolVar(&cfg.CompressionEnabled, "parquet-converter.compression-enabled", true, "Whether compression is enabled for labels and chunks parquet files. When disabled, parquet files will be converted and stored uncompressed.")
-	f.IntVar(&cfg.MaxQueueSize, "parquet-converter.max-queue-size", 5, "Maximum number of blocks that can be queued for conversion at once. This helps distribute work evenly across replicas.")
 }
 
 type ParquetConverter struct {
@@ -381,10 +379,7 @@ func (c *ParquetConverter) running(ctx context.Context) error {
 
 // discoverAndEnqueueBlocks discovers blocks and adds them to the priority queue
 func (c *ParquetConverter) discoverAndEnqueueBlocks(ctx context.Context) {
-	if c.conversionQueue.Size() >= c.Cfg.MaxQueueSize {
-		return
-	}
-
+	level.Info(c.logger).Log("msg", "starting block discovery")
 	users, err := c.discoverUsers(ctx)
 	if err != nil {
 		level.Error(c.logger).Log("msg", "error scanning users", "err", err)
@@ -419,67 +414,25 @@ func (c *ParquetConverter) discoverAndEnqueueBlocks(ctx context.Context) {
 			level.Error(ulogger).Log("msg", "error fetching metas", "err", err)
 			continue
 		}
+		level.Info(ulogger).Log("msg", "discovered blocks", "count", len(metas))
 
 		for _, m := range metas {
 			if ctx.Err() != nil {
 				return
 			}
-			level.Debug(c.logger).Log("msg", "syncing block", "id", m.ULID, "meta", m)
+			blogger := log.With(ulogger, "block", m.ULID.String(), "ulid_timestamp_ms", m.ULID.Time())
 
-			if m.Compaction.Level < c.Cfg.MinCompactionLevel {
-				level.Debug(c.logger).Log("msg", "skipping block below min compaction level", "id", m.ULID, "meta", m)
-				continue
-			}
-
-			if c.Cfg.MinBlockDuration > 0 && (m.MaxTime-m.MinTime) < c.Cfg.MinBlockDuration.Milliseconds() {
-				level.Debug(c.logger).Log("msg", "skipping block below min duration", "id", m.ULID, "duration", (m.MaxTime - m.MinTime), "min_duration", c.Cfg.MinBlockDuration.String())
-				continue
-			}
-
-			ok, err := c.ownBlock(m.ULID.String())
+			skipReason, err := c.shouldProcessBlock(ctx, m, uBucket)
 			if err != nil {
-				level.Error(ulogger).Log("msg", "error checking if block is owned", "err", err)
+				level.Error(blogger).Log("msg", "error checking if block should be processed", "err", err)
 				continue
 			}
-			if !ok {
-				continue
-			}
-
-			if c.Cfg.MaxBlockAge > 0 {
-				blockAge := time.Since(time.UnixMilli(m.MinTime))
-				if blockAge > c.Cfg.MaxBlockAge {
-					level.Debug(c.logger).Log("msg", "skipping block older than max age", "id", m.ULID, "age", blockAge.String(), "max_age", c.Cfg.MaxBlockAge.String())
-					continue
-				}
-			}
-
-			if c.Cfg.MinBlockTimestamp > 0 {
-				blockTimestamp := int64(m.ULID.Time())
-				if blockTimestamp <= c.Cfg.MinBlockTimestamp {
-					level.Debug(c.logger).Log("msg", "skipping block older than min block timestamp", "id", m.ULID, "ulid_timestamp_ms", m.ULID.Time(), "min_block_timestamp", c.Cfg.MinBlockTimestamp)
-					continue
-				}
-			}
-
-			if c.Cfg.MinDataAge > 0 {
-				blockMinTime := time.UnixMilli(m.MinTime)
-				cutoffTime := time.Now().Add(-c.Cfg.MinDataAge)
-				if blockMinTime.After(cutoffTime) {
-					level.Debug(c.logger).Log("msg", "skipping block with data newer than min age", "id", m.ULID, "block_min_time", blockMinTime.UTC().Format(time.RFC3339), "cutoff_time", cutoffTime.UTC().Format(time.RFC3339), "min_data_age", c.Cfg.MinDataAge.String())
-					continue
-				}
-			}
-
-			if _, alreadyQueued := c.queuedBlocks.Load(m.ULID); alreadyQueued {
+			if skipReason != "" {
+				level.Debug(blogger).Log("msg", "skipping block", "reason", skipReason)
 				continue
 			}
 
-			mark, err := ReadConversionMark(ctx, m.ULID, uBucket, ulogger)
-			if err != nil {
-				level.Debug(ulogger).Log("msg", "failed to read conversion mark, assuming not converted", "block", m.ULID.String(), "err", err)
-			} else if mark.Version == CurrentVersion {
-				continue
-			}
+			level.Debug(blogger).Log("msg", "block selected for processing")
 
 			task := newConversionTask(u, m, uBucket)
 
@@ -488,12 +441,9 @@ func (c *ParquetConverter) discoverAndEnqueueBlocks(ctx context.Context) {
 				// Mark block as queued to prevent duplicate queuing
 				c.queuedBlocks.Store(m.ULID, time.Now())
 
-				ulidTime := time.UnixMilli(int64(m.ULID.Time()))
-				level.Info(ulogger).Log(
+				level.Info(blogger).Log(
 					"msg", "enqueued block for conversion",
 					"block", m.ULID.String(),
-					"ulid_timestamp_ms", m.ULID.Time(),
-					"ulid_time_human", ulidTime.UTC().Format(time.RFC3339),
 					"queue_size", c.conversionQueue.Size(),
 				)
 			} else {
@@ -651,4 +601,54 @@ func (c *ParquetConverter) ownBlock(id string) (bool, error) {
 	}
 
 	return rs.Instances[0].Addr == c.ringLifecycler.GetInstanceAddr(), nil
+}
+
+// shouldProcessBlock determines whether a block should be processed for conversion to parquet.
+// It returns a reason string if the block should NOT be processed, an empty string means should process.
+func (c *ParquetConverter) shouldProcessBlock(ctx context.Context, meta *block.Meta, uBucket objstore.InstrumentedBucket) (string, error) {
+	owned, err := c.ownBlock(meta.ULID.String())
+	if err != nil {
+		return "", fmt.Errorf("error checking block ownership: %w", err)
+	}
+	if !owned {
+		return "not owned", nil
+	}
+
+	if _, alreadyQueued := c.queuedBlocks.Load(meta.ULID); alreadyQueued {
+		return "already queued", nil
+	}
+
+	if meta.Compaction.Level < c.Cfg.MinCompactionLevel {
+		return fmt.Sprintf("compaction level %d below minimum %d", meta.Compaction.Level, c.Cfg.MinCompactionLevel), nil
+	}
+
+	if c.Cfg.MinBlockTimestamp > 0 && meta.ULID.Time() < c.Cfg.MinBlockTimestamp {
+		return fmt.Sprintf("ULID timestamp %d below minimum %d", meta.ULID.Time(), c.Cfg.MinBlockTimestamp), nil
+	}
+
+	if blockAge := time.Since(time.UnixMilli(meta.MinTime)); c.Cfg.MaxBlockAge > 0 && blockAge > c.Cfg.MaxBlockAge {
+		return fmt.Sprintf("block age %s exceeds maximum %s", blockAge.String(), c.Cfg.MaxBlockAge.String()), nil
+	}
+
+	if dataAge := time.Since(time.UnixMilli(meta.MinTime)); c.Cfg.MinDataAge > 0 && dataAge < c.Cfg.MinDataAge {
+		return fmt.Sprintf("data age %s below minimum %s", dataAge.String(), c.Cfg.MinDataAge.String()), nil
+	}
+
+	if c.Cfg.MinBlockDuration > 0 {
+		blockDurationMs := meta.MaxTime - meta.MinTime
+		minDurationMs := c.Cfg.MinBlockDuration.Milliseconds()
+		if blockDurationMs < minDurationMs {
+			return fmt.Sprintf("block duration %d below minimum %d", blockDurationMs, minDurationMs), nil
+		}
+	}
+
+	// Make this the last check as it requires an object storage operation
+	mark, err := ReadConversionMark(ctx, meta.ULID, uBucket, nil)
+	if err != nil {
+		return "", fmt.Errorf("error reading conversion mark: %w", err)
+	} else if mark.Version == CurrentVersion {
+		return "conversion mark found", nil
+	}
+
+	return "", nil
 }

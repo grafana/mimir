@@ -4,7 +4,10 @@ package parquetconverter
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -118,6 +121,10 @@ func prepareConfig(t *testing.T) Config {
 }
 
 func uploadTestBlock(ctx context.Context, t *testing.T, bucket objstore.Bucket) ulid.ULID {
+	return uploadTestBlockWithLevel(ctx, t, bucket, 2) // Default level 2
+}
+
+func uploadTestBlockWithLevel(ctx context.Context, t *testing.T, bucket objstore.Bucket, level int) ulid.ULID {
 	dir := t.TempDir()
 
 	bid, err := block.CreateBlock(ctx, dir,
@@ -130,9 +137,149 @@ func uploadTestBlock(ctx context.Context, t *testing.T, bucket objstore.Bucket) 
 
 	require.NoError(t, err)
 
+	// Manually set the compaction level in the meta.json
+	metaFile := filepath.Join(dir, bid.String(), "meta.json")
+	metaBytes, err := os.ReadFile(metaFile)
+	require.NoError(t, err)
+
+	var meta block.Meta
+	require.NoError(t, json.Unmarshal(metaBytes, &meta))
+	meta.Compaction.Level = level
+
+	updatedMetaBytes, err := json.Marshal(&meta)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(metaFile, updatedMetaBytes, 0644))
+
 	b, err := tsdb.OpenBlock(nil, fmt.Sprintf("%s/%s", dir, bid.String()), nil, nil)
 	require.NoError(t, err)
 	err = block.Upload(ctx, log.NewNopLogger(), bucket, b.Dir(), nil)
 	require.NoError(t, err)
 	return bid
+}
+
+func TestShouldProcessBlock(t *testing.T) {
+	now := time.Now()
+	baseTime := now.Add(-2 * time.Hour)
+
+	meta := &block.Meta{
+		BlockMeta: tsdb.BlockMeta{
+			ULID:       ulid.MustNew(uint64(baseTime.UnixMilli()), nil),
+			MinTime:    baseTime.UnixMilli(),
+			MaxTime:    baseTime.Add(1 * time.Hour).UnixMilli(),
+			Compaction: tsdb.BlockMetaCompaction{Level: 2},
+		},
+	}
+
+	tests := []struct {
+		name     string
+		cfg      func(Config) Config
+		setup    func(*testing.T, *ParquetConverter, objstore.InstrumentedBucket, *block.Meta)
+		wantSkip bool
+	}{
+		{
+			name:     "no filtering",
+			wantSkip: false,
+		},
+		{
+			name: "should process",
+			cfg: func(c Config) Config {
+				c.MinCompactionLevel = meta.Compaction.Level - 1
+				c.MinBlockDuration = time.Duration(meta.MaxTime-meta.MinTime) - time.Hour
+				c.MaxBlockAge = time.Since(time.UnixMilli(meta.MinTime)) + time.Hour
+				c.MinDataAge = time.Since(time.UnixMilli(meta.MinTime)) - time.Hour
+				c.MinBlockTimestamp = meta.ULID.Time() - 1000
+				return c
+			},
+			wantSkip: false,
+		},
+		{
+			name: "compaction level too low",
+			cfg: func(c Config) Config {
+				c.MinCompactionLevel = meta.Compaction.Level + 1
+				return c
+			},
+			wantSkip: true,
+		},
+		{
+			name: "block duration too short",
+			cfg: func(c Config) Config {
+				c.MinBlockDuration = time.Duration(meta.MaxTime-meta.MinTime) + time.Hour
+				return c
+			},
+			wantSkip: true,
+		},
+		{
+			name: "block too old",
+			cfg: func(c Config) Config {
+				c.MaxBlockAge = time.Since(time.UnixMilli(meta.MinTime)) - time.Nanosecond
+				return c
+			},
+			wantSkip: true,
+		},
+		{
+			name: "data too recent",
+			cfg: func(c Config) Config {
+				c.MinDataAge = time.Since(time.UnixMilli(meta.MinTime)) + time.Hour
+				return c
+			},
+			wantSkip: true,
+		},
+		{
+			name: "already queued",
+			setup: func(t *testing.T, c *ParquetConverter, bucket objstore.InstrumentedBucket, meta *block.Meta) {
+				c.queuedBlocks.Store(meta.ULID, time.Now())
+			},
+			wantSkip: true,
+		},
+		{
+			name: "already converted",
+			setup: func(t *testing.T, c *ParquetConverter, bucket objstore.InstrumentedBucket, meta *block.Meta) {
+				err := WriteConversionMark(context.Background(), meta.ULID, bucket)
+				require.NoError(t, err)
+			},
+			wantSkip: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Setup bucket
+			bucketClient, err := filesystem.NewBucket(t.TempDir())
+			require.NoError(t, err)
+			bucket := bucket.NewUserBucketClient("test", objstore.WithNoopInstr(bucketClient), nil)
+
+			// Setup ring (same pattern as TestParquetConverter)
+			ringStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
+			defer closer.Close()
+
+			cfg := prepareConfig(t)
+			if tt.cfg != nil {
+				cfg = tt.cfg(cfg)
+			}
+			cfg.ShardingRing.Common.InstanceID = "test-converter"
+			cfg.ShardingRing.Common.InstanceAddr = "1.2.3.4"
+			cfg.ShardingRing.Common.KVStore.Mock = ringStore
+
+			c, _ := prepare(t, cfg, bucketClient)
+
+			// Start services for ring functionality
+			require.NoError(t, services.StartAndAwaitRunning(context.Background(), c))
+			defer func() { assert.NoError(t, services.StopAndAwaitTerminated(context.Background(), c)) }()
+
+			// Apply test-specific setup
+			if tt.setup != nil {
+				tt.setup(t, c, bucket, meta)
+			}
+
+			// Test the function
+			reason, err := c.shouldProcessBlock(context.Background(), meta, bucket)
+			require.NoError(t, err)
+
+			if tt.wantSkip {
+				assert.NotEmpty(t, reason)
+			} else {
+				assert.Empty(t, reason)
+			}
+		})
+	}
 }
