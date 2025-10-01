@@ -20,12 +20,15 @@ import (
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/stats"
+	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
 func TestDistributor_QueryStream_ShouldSupportIngestStorage(t *testing.T) {
 	const tenantID = "user"
 
 	ctx := user.InjectOrgID(context.Background(), tenantID)
+	memoryTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
+	ctx = limiter.AddMemoryTrackerToContext(ctx, memoryTracker)
 	selectAllSeriesMatcher := mustEqualMatcher("bar", "baz")
 
 	tests := map[string]struct {

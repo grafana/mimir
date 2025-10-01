@@ -183,6 +183,8 @@ func TestDistributor_QueryStream_ShouldReturnErrorIfMaxChunksPerQueryLimitIsReac
 			for _, minimizeIngesterRequests := range []bool{true, false} {
 				t.Run(fmt.Sprintf("request minimization enabled: %v", minimizeIngesterRequests), func(t *testing.T) {
 					userCtx := user.InjectOrgID(context.Background(), "user")
+					memoryTracker := limiter.NewMemoryConsumptionTracker(userCtx, 0, nil, "")
+					userCtx = limiter.AddMemoryTrackerToContext(userCtx, memoryTracker)
 					limits := prepareDefaultLimits()
 					limits.MaxChunksPerQuery = limit
 
@@ -262,6 +264,8 @@ func TestDistributor_QueryStream_ShouldReturnErrorIfMaxSeriesPerQueryLimitIsReac
 	for _, minimizeIngesterRequests := range []bool{true, false} {
 		t.Run(fmt.Sprintf("request minimization enabled: %v", minimizeIngesterRequests), func(t *testing.T) {
 			userCtx := user.InjectOrgID(context.Background(), "user")
+			memoryTracker := limiter.NewMemoryConsumptionTracker(userCtx, 0, nil, "")
+			userCtx = limiter.AddMemoryTrackerToContext(userCtx, memoryTracker)
 			limits := prepareDefaultLimits()
 
 			// Prepare distributors.
@@ -291,6 +295,7 @@ func TestDistributor_QueryStream_ShouldReturnErrorIfMaxSeriesPerQueryLimitIsReac
 			// Since the number of series is equal to the limit (but doesn't
 			// exceed it), we expect a query running on all series to succeed.
 			queryCtx := limiter.AddQueryLimiterToContext(userCtx, limiter.NewQueryLimiter(maxSeriesLimit, 0, 0, 0, stats.NewQueryMetrics(prometheus.NewPedanticRegistry())))
+			queryCtx = limiter.AddMemoryTrackerToContext(queryCtx, memoryTracker)
 			queryRes, err := ds[0].QueryStream(queryCtx, queryMetrics, math.MinInt32, math.MaxInt32, allSeriesMatchers...)
 			require.NoError(t, err)
 
@@ -330,6 +335,8 @@ func TestDistributor_QueryStream_ShouldReturnErrorIfMaxChunkBytesPerQueryLimitIs
 	const seriesToAdd = 10
 
 	ctx := user.InjectOrgID(context.Background(), "user")
+	memoryTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
+	ctx = limiter.AddMemoryTrackerToContext(ctx, memoryTracker)
 	limits := prepareDefaultLimits()
 
 	// Prepare distributors.
@@ -441,6 +448,8 @@ func TestDistributor_QueryStream_ShouldSuccessfullyRunOnSlowIngesterWithStreamin
 
 			// Ensure strong read consistency, required to have no flaky tests when ingest storage is enabled.
 			ctx := user.InjectOrgID(context.Background(), "test")
+			memoryTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
+			ctx = limiter.AddMemoryTrackerToContext(ctx, memoryTracker)
 			ctx = api.ContextWithReadConsistencyLevel(ctx, api.ReadConsistencyStrong)
 
 			// Push series.

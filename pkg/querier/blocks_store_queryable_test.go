@@ -1743,6 +1743,8 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 					ctx, cancel := context.WithCancel(context.Background())
 					t.Cleanup(cancel)
 					ctx = limiter.AddQueryLimiterToContext(ctx, testData.queryLimiter)
+					memoryTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
+					ctx = limiter.AddMemoryTrackerToContext(ctx, memoryTracker)
 					st, ctx := stats.ContextWithEmptyStats(ctx)
 					const tenantID = "user-1"
 					ctx = user.InjectOrgID(ctx, tenantID)
@@ -1871,6 +1873,8 @@ func TestBlocksStoreQuerier_Select_ClosedBeforeSelectFinishes(t *testing.T) {
 
 	reg := prometheus.NewPedanticRegistry()
 	ctx := user.InjectOrgID(context.Background(), "user-1")
+	memoryTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
+	ctx = limiter.AddMemoryTrackerToContext(ctx, memoryTracker)
 	querier := &blocksStoreQuerier{
 		minT:               minT,
 		maxT:               maxT,
@@ -1970,6 +1974,8 @@ func TestBlocksStoreQuerier_ShouldReturnContextCanceledIfContextWasCanceledWhile
 			waitExecution     = make(chan struct{})
 			continueExecution = make(chan struct{})
 		)
+		memoryTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
+		ctx = limiter.AddMemoryTrackerToContext(ctx, memoryTracker)
 
 		srv, q, reg := prepareTestCase(t)
 
@@ -2155,6 +2161,8 @@ func TestBlocksStoreQuerier_Select_cancelledContext(t *testing.T) {
 			defer cancel()
 
 			ctx = limiter.AddQueryLimiterToContext(ctx, noOpQueryLimiter)
+			memoryTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
+			ctx = limiter.AddMemoryTrackerToContext(ctx, memoryTracker)
 			reg := prometheus.NewPedanticRegistry()
 
 			const tenantID = "user-1"
@@ -3068,6 +3076,8 @@ func TestBlocksStoreQuerier_PromQLExecution(t *testing.T) {
 			for _, streaming := range []bool{true, false} {
 				t.Run(fmt.Sprintf("streaming=%t", streaming), func(t *testing.T) {
 					ctx := context.Background()
+					memoryTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
+					ctx = limiter.AddMemoryTrackerToContext(ctx, memoryTracker)
 
 					block1 := ulid.MustNew(1, nil)
 					block2 := ulid.MustNew(2, nil)
