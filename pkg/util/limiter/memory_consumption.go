@@ -20,18 +20,6 @@ const (
 	memoryConsumptionTracker contextKey = 0
 )
 
-// MemoryTrackerFromContextWithFallback returns a MemoryConsumptionTracker that has been added to this
-// context. If there is no MemoryConsumptionTracker in this context, a new no-op tracker that
-// does not enforce any limits is returned.
-func MemoryTrackerFromContextWithFallback(ctx context.Context) *MemoryConsumptionTracker {
-	tracker, ok := ctx.Value(memoryConsumptionTracker).(*MemoryConsumptionTracker)
-	if !ok {
-		return NewMemoryConsumptionTracker(ctx, 0, nil, "")
-	}
-
-	return tracker
-}
-
 // MustMemoryTrackerFromContext returns a MemoryConsumptionOperation that has been added to this
 // context. If there is no MemoryConsumptionOperation in this context, this will panic.
 func MustMemoryTrackerFromContext(ctx context.Context) MemoryConsumptionOperation {
