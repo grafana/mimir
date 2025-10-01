@@ -2061,13 +2061,11 @@ Usage of ./cmd/mimir/mimir:
     	Comma-separated list of tenants that can have their TSDB blocks converted into Parquet. If specified, the Parquet-converter only converts these tenants. Otherwise, it converts all tenants. Subject to sharding.
   -parquet-converter.max-block-age duration
     	Maximum age of blocks to convert. Blocks older than this will be skipped. Set to 0 to disable age filtering.
-  -parquet-converter.max-queue-size int
-    	Maximum number of blocks that can be queued for conversion at once. This helps distribute work evenly across replicas. (default 5)
   -parquet-converter.max-rows-per-group int
     	Maximum number of rows per row group in Parquet files. (default 1000000)
   -parquet-converter.min-block-duration duration
     	Minimum duration of blocks to convert. Blocks with a duration shorter than this will be skipped. Set to 0 to disable duration filtering.
-  -parquet-converter.min-block-timestamp int
+  -parquet-converter.min-block-timestamp uint
     	Minimum block timestamp (based on ULID) to convert. Set to 0 to disable timestamp filtering.
   -parquet-converter.min-compaction-level int
     	Minimum compaction level required for blocks to be converted to Parquet. Blocks equal or greater than this level will be converted. (default 2)
