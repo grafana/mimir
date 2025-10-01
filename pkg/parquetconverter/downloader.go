@@ -77,13 +77,12 @@ func (d *fastDownloader) download(ctx context.Context, logger log.Logger, bucket
 		return errors.Wrap(err, "create dir")
 	}
 
-	if err := d.downloadFile(ctx, logger, bucket, path.Join(prefix, id.String(), block.MetaFilename), filepath.Join(dst, block.MetaFilename)); err != nil {
+	if err := d.downloadFile(ctx, logger, bucket, prefix, path.Join(id.String(), block.MetaFilename), filepath.Join(dst, block.MetaFilename)); err != nil {
 		return err
 	}
 
 	ignoredPaths := []string{block.MetaFilename}
-	src := path.Join(prefix, id.String())
-	if err := d.downloadDir(ctx, logger, bucket, src, src, dst, append(options, withDownloadIgnoredPaths(ignoredPaths...))...); err != nil {
+	if err := d.downloadDir(ctx, logger, bucket, prefix, id.String(), id.String(), dst, append(options, withDownloadIgnoredPaths(ignoredPaths...))...); err != nil {
 		return err
 	}
 
@@ -103,7 +102,7 @@ func (d *fastDownloader) download(ctx context.Context, logger log.Logger, bucket
 // DownloadFile downloads the src file from the bucket to dst. If dst is an existing
 // directory, a file with the same name as the source is created in dst.
 // If destination file is already existing, download file will overwrite it.
-func (d *fastDownloader) downloadFile(ctx context.Context, logger log.Logger, bkt objstore.BucketReader, src, dst string) (err error) {
+func (d *fastDownloader) downloadFile(ctx context.Context, logger log.Logger, bkt objstore.BucketReader, prefix, src, dst string) (err error) {
 	if fi, err := os.Stat(dst); err == nil {
 		if fi.IsDir() {
 			dst = filepath.Join(dst, filepath.Base(src))
@@ -125,12 +124,14 @@ func (d *fastDownloader) downloadFile(ctx context.Context, logger log.Logger, bk
 	}()
 	defer logerrcapture.Do(logger, f.Close, "close block's output file")
 
+	prefixedSrc := path.Join(prefix, src)
+
 	_, err = d.downloader.Download(ctx, f, &s3svc.GetObjectInput{
 		Bucket: aws.String(d.bucketName),
-		Key:    aws.String(src),
+		Key:    aws.String(prefixedSrc),
 	})
 	if err != nil {
-		return errors.Wrapf(err, "download file %s -> %s", d.bucketName, src)
+		return errors.Wrapf(err, "download file %s -> %s", d.bucketName, prefixedSrc)
 	}
 	return nil
 }
@@ -161,7 +162,7 @@ func applyDownloadOptions(options ...downloadOption) downloadParams {
 }
 
 // DownloadDir downloads all object found in the directory into the local directory.
-func (d *fastDownloader) downloadDir(ctx context.Context, logger log.Logger, bkt objstore.BucketReader, originalSrc, src, dst string, options ...downloadOption) error {
+func (d *fastDownloader) downloadDir(ctx context.Context, logger log.Logger, bkt objstore.BucketReader, prefix, originalSrc, src, dst string, options ...downloadOption) error {
 	if err := os.MkdirAll(dst, 0750); err != nil {
 		return errors.Wrap(err, "create dir")
 	}
@@ -179,7 +180,7 @@ func (d *fastDownloader) downloadDir(ctx context.Context, logger log.Logger, bkt
 		g.Go(func() error {
 			dst := filepath.Join(dst, filepath.Base(name))
 			if strings.HasSuffix(name, objstore.DirDelim) {
-				if err := d.downloadDir(ctx, logger, bkt, originalSrc, name, dst, options...); err != nil {
+				if err := d.downloadDir(ctx, logger, bkt, prefix, originalSrc, name, dst, options...); err != nil {
 					return err
 				}
 				m.Lock()
@@ -193,7 +194,7 @@ func (d *fastDownloader) downloadDir(ctx context.Context, logger log.Logger, bkt
 					return nil
 				}
 			}
-			if err := d.downloadFile(ctx, logger, bkt, name, dst); err != nil {
+			if err := d.downloadFile(ctx, logger, bkt, prefix, name, dst); err != nil {
 				return err
 			}
 
