@@ -42,6 +42,7 @@ import (
 	"github.com/prometheus/alertmanager/notify"
 	"github.com/prometheus/alertmanager/notify/discord"
 	"github.com/prometheus/alertmanager/notify/email"
+	"github.com/prometheus/alertmanager/notify/jira"
 	"github.com/prometheus/alertmanager/notify/msteams"
 	"github.com/prometheus/alertmanager/notify/msteamsv2"
 	"github.com/prometheus/alertmanager/notify/opsgenie"
@@ -838,6 +839,9 @@ func buildReceiverIntegrations(nc config.Receiver, tmpl *template.Template, fire
 	}
 	for i, c := range nc.MSTeamsV2Configs {
 		add("msteamsv2", i, c, func(l log.Logger) (notify.Notifier, error) { return msteamsv2.New(c, tmpl, l, httpOps...) })
+	}
+	for i, c := range nc.JiraConfigs {
+		add("jira", i, c, func(l log.Logger) (notify.Notifier, error) { return jira.New(c, tmpl, l, httpOps...) })
 	}
 	// If we add support for more integrations, we need to add them to validation as well. See validation.allowedIntegrationNames field.
 	if errs.Len() > 0 {

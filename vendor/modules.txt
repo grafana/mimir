@@ -1178,6 +1178,7 @@ github.com/prometheus/alertmanager/nflog/nflogpb
 github.com/prometheus/alertmanager/notify
 github.com/prometheus/alertmanager/notify/discord
 github.com/prometheus/alertmanager/notify/email
+github.com/prometheus/alertmanager/notify/jira
 github.com/prometheus/alertmanager/notify/msteams
 github.com/prometheus/alertmanager/notify/msteamsv2
 github.com/prometheus/alertmanager/notify/opsgenie
@@ -1412,6 +1413,10 @@ github.com/tklauser/go-sysconf
 # github.com/tklauser/numcpus v0.6.1
 ## explicit; go 1.13
 github.com/tklauser/numcpus
+# github.com/trivago/tgo v1.0.7
+## explicit
+github.com/trivago/tgo/tcontainer
+github.com/trivago/tgo/treflect
 # github.com/twmb/franz-go v1.19.5
 ## explicit; go 1.23.8
 github.com/twmb/franz-go/pkg/kbin
