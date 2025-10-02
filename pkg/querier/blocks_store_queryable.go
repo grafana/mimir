@@ -904,15 +904,15 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 				// FetchedChunks and FetchedChunkBytes are added by the SeriesChunksStreamReader.
 				reqStats.AddFetchedSeries(uint64(len(myStreamingSeriesLabels)))
 
-				if !req.SkipChunks {
-					streamReader = newStoreGatewayStreamReader(clientCtx, stream, len(myStreamingSeriesLabels), queryLimiter, memoryTracker, reqStats, q.metrics, q.logger)
-				} else {
+				if req.SkipChunks {
 					// If we aren't creating a stream reader for reading chunks, we need to close the stream
 					// ourselves. It's safe to close the stream multiple times so we don't worry about closing
 					// all streams below when there's an error.
 					if err := util.CloseAndExhaust[*storepb.SeriesResponse](stream); err != nil {
 						level.Warn(clientSpanLog).Log("msg", "closing store-gateway client stream failed", "err", err)
 					}
+				} else {
+					streamReader = newStoreGatewayStreamReader(clientCtx, stream, len(myStreamingSeriesLabels), queryLimiter, memoryTracker, reqStats, q.metrics, q.logger)
 				}
 
 				clientSpanLog.DebugLog(
@@ -941,7 +941,14 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 					chunkInfo.SetMsg("store-gateway streaming")
 				}
 
-				if !req.SkipChunks {
+				if req.SkipChunks {
+					noChunkSeries := make([]storage.Series, 0, len(myStreamingSeriesLabels))
+					for _, lbls := range myStreamingSeriesLabels {
+						noChunkSeries = append(noChunkSeries, series.NewConcreteSeries(lbls, nil, nil))
+					}
+
+					seriesSets = append(seriesSets, series.NewConcreteSeriesSetFromSortedSeries(noChunkSeries))
+				} else {
 					seriesSets = append(seriesSets, &blockStreamingQuerierSeriesSet{
 						series:        myStreamingSeriesLabels,
 						streamReader:  streamReader,
@@ -949,13 +956,6 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 						remoteAddress: c.RemoteAddress(),
 					})
 					streamReaders = append(streamReaders, streamReader)
-				} else {
-					noChunkSeries := make([]storage.Series, 0, len(myStreamingSeriesLabels))
-					for _, lbls := range myStreamingSeriesLabels {
-						noChunkSeries = append(noChunkSeries, series.NewConcreteSeries(lbls, nil, nil))
-					}
-
-					seriesSets = append(seriesSets, series.NewConcreteSeriesSetFromSortedSeries(noChunkSeries))
 				}
 			}
 			warnings.Merge(myWarnings)

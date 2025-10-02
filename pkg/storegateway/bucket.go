@@ -605,8 +605,7 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storegatewaypb.Stor
 		for _, r := range indexReaders {
 			runutil.CloseWithLogOnErr(s.logger, r, "close block index reader")
 		}
-	}()
-	defer func() {
+
 		for _, r := range chunkReaders {
 			runutil.CloseWithLogOnErr(s.logger, r, "close block chunk reader")
 		}
@@ -650,34 +649,32 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storegatewaypb.Stor
 		"duration", time.Since(seriesLoadStart),
 	)
 
-	if streamingSeriesCount == 0 {
-		// There are no series to send chunks for.
+	if streamingSeriesCount == 0 || req.SkipChunks {
+		// There are no series to send chunks for, or we aren't sending chunks.
 		return nil
 	}
 
-	if !req.SkipChunks {
-		// We create the limiter twice in the case of streaming so that we don't double count the series
-		// and hit the limit prematurely.
-		chunksLimiter = s.chunksLimiterFactory(s.metrics.queriesDropped.WithLabelValues("chunks"))
-		seriesLimiter = s.seriesLimiterFactory(s.metrics.queriesDropped.WithLabelValues("series"))
+	// We create the limiter twice in the case of streaming so that we don't double count the series
+	// and hit the limit prematurely.
+	chunksLimiter = s.chunksLimiterFactory(s.metrics.queriesDropped.WithLabelValues("chunks"))
+	seriesLimiter = s.seriesLimiterFactory(s.metrics.queriesDropped.WithLabelValues("series"))
 
-		readers := newChunkReaders(chunkReaders)
-		chunksLoadStart := time.Now()
+	readers := newChunkReaders(chunkReaders)
+	chunksLoadStart := time.Now()
 
-		seriesChunkIt := s.createIteratorForChunksStreamingChunksPhase(ctx, readers, stats, chunksLimiter, seriesLimiter, streamingIterators)
-		err = s.sendStreamingChunks(req, srv, seriesChunkIt, stats, streamingSeriesCount)
-		if err != nil {
-			return err
-		}
-
-		numSeries, numChunks := stats.seriesAndChunksCount()
-		spanLogger.DebugLog(
-			"msg", "sent streaming chunks",
-			"num_series", numSeries,
-			"num_chunks", numChunks,
-			"duration", time.Since(chunksLoadStart),
-		)
+	seriesChunkIt := s.createIteratorForChunksStreamingChunksPhase(ctx, readers, stats, chunksLimiter, seriesLimiter, streamingIterators)
+	err = s.sendStreamingChunks(req, srv, seriesChunkIt, stats, streamingSeriesCount)
+	if err != nil {
+		return err
 	}
+
+	numSeries, numChunks := stats.seriesAndChunksCount()
+	spanLogger.DebugLog(
+		"msg", "sent streaming chunks",
+		"num_series", numSeries,
+		"num_chunks", numChunks,
+		"duration", time.Since(chunksLoadStart),
+	)
 
 	return nil
 }
