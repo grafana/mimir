@@ -70,7 +70,7 @@ func CanParallelize(expr parser.Expr, logger log.Logger) bool {
 		}
 
 		// Ensure there are no nested aggregations
-		nestedAggrs, err := anyNode(e.Expr, isAggregateExpr)
+		nestedAggrs, err := AnyNode(e.Expr, isAggregateExpr)
 
 		return err == nil && !nestedAggrs && CanParallelize(e.Expr, logger)
 
@@ -131,7 +131,7 @@ func CanParallelize(expr parser.Expr, logger log.Logger) bool {
 
 // containsAggregateExpr returns true if the given expr contains an aggregate expression within its children.
 func containsAggregateExpr(e parser.Expr) bool {
-	containsAggregate, _ := anyNode(e, isAggregateExpr)
+	containsAggregate, _ := AnyNode(e, isAggregateExpr)
 	return containsAggregate
 }
 
@@ -176,12 +176,12 @@ func argsWithDefaults(call *parser.Call) parser.Expressions {
 }
 
 func noAggregates(n parser.Node) bool {
-	hasAggregates, _ := anyNode(n, isAggregateExpr)
+	hasAggregates, _ := AnyNode(n, isAggregateExpr)
 	return !hasAggregates
 }
 
 func isConstantScalar(n parser.Node) bool {
-	isNot, _ := anyNode(n, isNotConstantNumber)
+	isNot, _ := AnyNode(n, isNotConstantNumber)
 	return !isNot
 }
 
@@ -205,15 +205,15 @@ func isNotConstantNumber(n parser.Node) (bool, error) {
 
 // isVectorSelector returns whether the expr is a vector selector.
 //
-// It will never return an error, but does so to satisfy the predicate function signature for anyNode.
+// It will never return an error, but does so to satisfy the predicate function signature for AnyNode.
 func isVectorSelector(n parser.Node) (bool, error) {
 	_, ok := n.(*parser.VectorSelector)
 	return ok, nil
 }
 
-// anyNode is a helper which walks the input node and returns true if any node in the subtree
+// AnyNode is a helper which walks the input node and returns true if any node in the subtree
 // returns true for the specified predicate function.
-func anyNode(node parser.Node, fn predicate) (bool, error) {
+func AnyNode(node parser.Node, fn Predicate) (bool, error) {
 	v := &visitor{
 		fn: fn,
 	}
@@ -232,10 +232,10 @@ func visitNode(node parser.Node, fn func(node parser.Node)) {
 	}}, node, nil)
 }
 
-type predicate = func(parser.Node) (bool, error)
+type Predicate = func(parser.Node) (bool, error)
 
 type visitor struct {
-	fn     predicate
+	fn     Predicate
 	result bool
 }
 
