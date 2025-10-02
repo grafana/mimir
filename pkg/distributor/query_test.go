@@ -264,7 +264,6 @@ func TestDistributor_QueryStream_ShouldReturnErrorIfMaxSeriesPerQueryLimitIsReac
 		for _, minimizeIngesterRequests := range []bool{true, false} {
 			t.Run(fmt.Sprintf("streaming response disabled: %v, request minimization enabled: %v", disableStreamingResponse, minimizeIngesterRequests), func(t *testing.T) {
 				userCtx := user.InjectOrgID(context.Background(), "user")
-				memoryTracker := limiter.NewMemoryConsumptionTracker(userCtx, 0, nil, "")
 				userCtx = limiter.ContextWithNewUnlimitedMemoryConsumptionTracker(userCtx)
 				limits := prepareDefaultLimits()
 
