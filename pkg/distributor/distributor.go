@@ -241,16 +241,16 @@ func (a *artificialLatencyWithErrors) isActive() bool {
 
 func (a *artificialLatencyWithErrors) shouldReturnError(delay time.Duration) bool {
 	if a.errorFrequency == 0 {
-		return false
+		return true
 	}
 	if a.lastError.IsZero() {
 		return true
 	}
 	nextError := a.lastError.Add(a.errorFrequency)
-	if a.lastError.Add(delay).After(nextError) {
-		return false
+	if time.Now().Add(delay).After(nextError) {
+		return true
 	}
-	return true
+	return false
 }
 
 var errArtificial = fmt.Errorf("artificial error")
@@ -2009,7 +2009,12 @@ func (d *Distributor) StartArtificialLatencyHandler(w http.ResponseWriter, r *ht
 	latencyMax, _ := time.ParseDuration(defaultIfEmpty(latencyMaxStr, "500ms"))
 	latencyDuration, _ := time.ParseDuration(defaultIfEmpty(latencyDurationStr, "300s"))
 	latencyWorkers, _ := strconv.Atoi(defaultIfEmpty(latencyWorkersStr, "1"))
-	latencyErrorFrequency, _ := time.ParseDuration(defaultIfEmpty(latencyErrorFrequencyStr, "0"))
+	var latencyErrorFrequency time.Duration
+	if latencyErrorFrequencyStr == "" {
+		latencyErrorFrequency = time.Duration(1<<63 - 1)
+	} else {
+		latencyErrorFrequency, _ = time.ParseDuration(latencyErrorFrequencyStr)
+	}
 
 	level.Info(d.log).Log("msg", "artificial latency parameters retrieved", "latencyMin", latencyMin, "latencyMax", latencyMax, "latencyDuration", latencyDuration, "latencyWorkers", latencyWorkers, "latencyErrorFrequency", latencyErrorFrequency)
 
