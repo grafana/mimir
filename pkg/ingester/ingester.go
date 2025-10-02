@@ -838,40 +838,42 @@ func (i *Ingester) updateActiveSeries(now time.Time) {
 
 		idx := userDB.Head().MustIndex()
 		valid := userDB.activeSeries.Purge(now, idx)
-		idx.Close()
+
+		// Always collect and report attribution failures
+		AttributedActiveSeriesFailure := userDB.activeSeries.ActiveSeriesAttributionFailureCount()
 
 		if !valid {
+			// When not valid, we only need the total counts, not the per-matcher counts
+			allActive, allActiveOTLP, allActiveHistograms, allActiveBuckets := userDB.activeSeries.Active()
+			idx.Close()
+
+			// Update the total active series count metrics
+			i.updateActiveSeriesTotals(userID, allActive, allActiveOTLP, allActiveHistograms, allActiveBuckets)
+
 			// Active series config has been reloaded, exposing loading metric until MetricsIdleTimeout passes.
 			i.metrics.activeSeriesLoading.WithLabelValues(userID).Set(1)
-		} else {
-			allActive, activeMatching, allActiveOTLP, allActiveHistograms, activeMatchingHistograms, allActiveBuckets, activeMatchingBuckets := userDB.activeSeries.ActiveWithMatchers()
-			i.metrics.activeSeriesLoading.DeleteLabelValues(userID)
-			if allActive > 0 {
-				i.metrics.activeSeriesPerUser.WithLabelValues(userID).Set(float64(allActive))
-			} else {
-				i.metrics.activeSeriesPerUser.DeleteLabelValues(userID)
-			}
-			if allActiveOTLP > 0 {
-				i.metrics.activeSeriesPerUserOTLP.WithLabelValues(userID).Set(float64(allActiveOTLP))
-			} else {
-				i.metrics.activeSeriesPerUserOTLP.DeleteLabelValues(userID)
-			}
-			if allActiveHistograms > 0 {
-				i.metrics.activeSeriesPerUserNativeHistograms.WithLabelValues(userID).Set(float64(allActiveHistograms))
-			} else {
-				i.metrics.activeSeriesPerUserNativeHistograms.DeleteLabelValues(userID)
-			}
-			if allActiveBuckets > 0 {
-				i.metrics.activeNativeHistogramBucketsPerUser.WithLabelValues(userID).Set(float64(allActiveBuckets))
-			} else {
-				i.metrics.activeNativeHistogramBucketsPerUser.DeleteLabelValues(userID)
-			}
 
-			AttributedActiveSeriesFailure := userDB.activeSeries.ActiveSeriesAttributionFailureCount()
+			// Report attribution failures
+			if AttributedActiveSeriesFailure > 0 {
+				i.metrics.attributedActiveSeriesFailuresPerUser.WithLabelValues(userID).Add(AttributedActiveSeriesFailure)
+			}
+		} else {
+			// When valid, get all counts including per-matcher counts
+			allActive, activeMatching, allActiveOTLP, allActiveHistograms, activeMatchingHistograms, allActiveBuckets, activeMatchingBuckets := userDB.activeSeries.ActiveWithMatchers()
+			idx.Close()
+
+			// Update the total active series count metrics
+			i.updateActiveSeriesTotals(userID, allActive, allActiveOTLP, allActiveHistograms, allActiveBuckets)
+
+			// Clear loading metric
+			i.metrics.activeSeriesLoading.DeleteLabelValues(userID)
+
+			// Report attribution failures
 			if AttributedActiveSeriesFailure > 0 {
 				i.metrics.attributedActiveSeriesFailuresPerUser.WithLabelValues(userID).Add(AttributedActiveSeriesFailure)
 			}
 
+			// Update custom tracker metrics
 			for idx, name := range userDB.activeSeries.CurrentMatcherNames() {
 				// We only set the metrics for matchers that actually exist, to avoid increasing cardinality with zero valued metrics.
 				if activeMatching[idx] > 0 {
@@ -891,6 +893,29 @@ func (i *Ingester) updateActiveSeries(now time.Time) {
 				}
 			}
 		}
+	}
+}
+
+func (i *Ingester) updateActiveSeriesTotals(userID string, allActive, allActiveOTLP, allActiveHistograms, allActiveBuckets int) {
+	if allActive > 0 {
+		i.metrics.activeSeriesPerUser.WithLabelValues(userID).Set(float64(allActive))
+	} else {
+		i.metrics.activeSeriesPerUser.DeleteLabelValues(userID)
+	}
+	if allActiveOTLP > 0 {
+		i.metrics.activeSeriesPerUserOTLP.WithLabelValues(userID).Set(float64(allActiveOTLP))
+	} else {
+		i.metrics.activeSeriesPerUserOTLP.DeleteLabelValues(userID)
+	}
+	if allActiveHistograms > 0 {
+		i.metrics.activeSeriesPerUserNativeHistograms.WithLabelValues(userID).Set(float64(allActiveHistograms))
+	} else {
+		i.metrics.activeSeriesPerUserNativeHistograms.DeleteLabelValues(userID)
+	}
+	if allActiveBuckets > 0 {
+		i.metrics.activeNativeHistogramBucketsPerUser.WithLabelValues(userID).Set(float64(allActiveBuckets))
+	} else {
+		i.metrics.activeNativeHistogramBucketsPerUser.DeleteLabelValues(userID)
 	}
 }
 
