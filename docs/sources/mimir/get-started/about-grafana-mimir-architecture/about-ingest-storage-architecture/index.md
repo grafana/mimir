@@ -11,7 +11,7 @@ Ingest storage architecture uses Kafka as a central pipeline to decouple read an
 
 Starting with Grafana Mimir 3.0, ingest storage architecture is stable and the default architecture for running Mimir.
 
-Ingest storage architecture enhances reliability, supports growth, and enables larger-scale use cases. It helps you run more robust and cost-effective Mimir deployments.
+Ingest storage architecture enhances reliability, supports growth, and enables larger-scale use cases, helping you to run more robust deployments of Grafana Mimir.
 
 ## How ingest storage architecture works
 
@@ -32,7 +32,7 @@ Here's an overview of how ingest storage architecture works:
 - Distributors receive write requests and validate them, apply transformations, and forward samples to the storage layer.
 - Distributors connect to a Kafka topic and shard each write request across multiple partitions, briefly buffering requests before sending them to the Kafka broker.
 - Kafka brokers persist the write requests durably and optionally replicate them to other brokers before acknowledging the write.
-- Distributors acknowledge the write requests back to the client after Kafka confirms persistence.
+- Distributors acknowledge the write requests back to the client, for exmaple, the OTel collector, after Kafka confirms persistence.
 - Ingesters consume write requests from Kafka partitions continuously, with each ingester consuming from a single partition.
 - Multiple ingesters across different zones consume from the same partition to provide high availability on the read path.
 - Ingesters add the fetched write requests to in-memory state and persist them to disk, making the samples available for queries.
@@ -43,8 +43,6 @@ Ingest storage architecture offers the following advantages over classic archite
 
 - Increased reliability and resilience in the event of sudden spikes in query traffic or ingest volume
 - Decoupled read and write paths to prevent performance interference
-- Less stateful, easier to manage ingesters
-- Reduced cross-availability zone data transfer costs through the use of object storage
 
 ## Grafana Mimir components in ingest storage architecture
 
@@ -115,11 +113,11 @@ Queries coming into Grafana Mimir arrive at the [query-frontend](../../../refere
 
 The query-frontend next checks the results cache. If the result of a query has been cached, the query-frontend returns the cached results. Queries that cannot be answered from the results cache are put into an in-memory queue within the query-frontend.
 
-For queries requiring strong read consistency, with the `X-Read-Consistency: strong` HTTP header, the query-frontend retrieves the offsets of each partition from the Kafka topic and propagates it through the read path to ingesters. For more information, refer to [Data freshness on the read path](#data-freshness-on-the-read-path).
-
 {{< admonition type="note" >}}
 If you run the optional [query-scheduler](../../../references/architecture/components/query-scheduler/) component, the query-schedule maintains the queue instead of the query-frontend.
 {{< /admonition >}}
+
+For queries requiring strong read consistency, with the `X-Read-Consistency: strong` HTTP header, the query-frontend retrieves the offsets of each partition from the Kafka topic and propagates it through the read path to ingesters. For more information, refer to [Data freshness on the read path](#data-freshness-on-the-read-path).
 
 The queriers act as workers, pulling queries from the queue.
 
@@ -129,7 +127,7 @@ After the querier executes the query, it returns the results to the query-fronte
 
 #### Data freshness on the read path
 
-Ingesters consume from Kafka asynchronously while serving queries. By default, ingesters don't ensure that samples written to Kafka are appended to the in-memory TSDB and on-disk WAL before receiving a query. This allows ingesters to whitstand Kafka outages without rejecting queries. The impact of Kafka outages is that
+Ingesters consume from Kafka asynchronously while serving queries. By default, ingesters don't ensure that samples written to Kafka are appended to the in-memory TSDB and on-disk WAL before receiving a query. This allows ingesters to withstand Kafka outages without rejecting queries. The impact of Kafka outages is that
 queries that ingesters serve may return stale data and don't provide a read-after-write guarantee.
 
 During normal operations, the delay in ingesting data in ingesters should be below 1 second. This is also known as the end-to-end latency of ingestion.
@@ -137,7 +135,7 @@ During normal operations, the delay in ingesting data in ingesters should be bel
 While this latency is usually insignificant for interactive queries, it can challenge applications that need queries to observe all previous writes.
 For example, the Mimir [ruler](../../../references/architecture/components/ruler) needs samples from earlier rules in a rule group to be available when evaluating later rules in the same group.
 
-To preserve the read-after-write guarantee, clients can add the `X-Read-Consistency: strong` HTTP header to queries. When a query includes this header, the query-frontend fetches the latest offsets from Kafka for all active partitions and propagates these offsets to ingesters. Each ingester waits until it has consumed up to the specified offset for its partition before running the query. This ensures the query observes all samples written to Kafka before the query-frontend received the query, providing strong read consistency at the cost of increased query latency.
+To preserve the read-after-write guarantee, clients can add the `X-Read-Consistency: strong` HTTP header to queries. The ruler automatically adds this header for rules that depend on the results of previous rules within the same rule group. When a query includes this header, the query-frontend fetches the latest offsets from Kafka for all active partitions and propagates these offsets to ingesters. Each ingester waits until it has consumed up to the specified offset for its partition before running the query. This ensures the query observes all samples written to Kafka before the query-frontend received the query, providing strong read consistency at the cost of increased query latency.
 
 By default, the ingester waits up to 20 seconds for the record to be consumed before rejecting the strong read consistency query.
 
@@ -155,9 +153,11 @@ The distributor issues direct Produce API calls to the Kafka brokers and doesn't
 
 Both the ingester and the distributor use the Metadata API to discover the leaders for a topic-partition.
 
-The Mimir ingester uses Kafka consumer groups to persist how far an ingester has consumed from its assigned partition. Each ingester maintains its own consumer group. Each Kafka record is consumed exactly once by each ingester zone and records aren't replayed after being consumed.
+The Mimir ingester uses Kafka consumer groups to persist how far an ingester has consumed from its assigned partition. Each ingester maintains its own consumer group. Each Kafka record is consumed at least once by each ingester zone. Records usually aren't replayed after being consumed, unless the ingester abruptly shuts down before managing to commit to its consumer group.
+
+For more information, refer to [Message delivery semantics](https://kafka.apache.org/documentation/#semantics) in the Apache Kafka documentation.
 
 The following exceptions exist:
 
 - Abrupt termination: When an ingester terminates abruptly without persisting its offset in the consumer group, the ingester resumes from where the consumer group offset points.
-- Manual configuration: You can configure ingesters to start consuming from the earliest offset, the latest offset, or a specific timestamp of the Kafka topic-partition. In these cases, the ingester uses the ListOffsets API to discover the target offset.
+- Manual configuration: You can configure ingesters to start consuming from the earliest offset, the latest offset, or a specific timestamp of the Kafka topic-partition using the `-ingest-storage.kafka.consume-from-position-at-startup` and `-ingest-storage.kafka.consume-from-timestamp-at-startup` flags. In these cases, the ingester uses the ListOffsets API to discover the target offset.
