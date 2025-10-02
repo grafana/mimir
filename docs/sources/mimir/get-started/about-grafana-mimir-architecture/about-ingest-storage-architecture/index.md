@@ -52,9 +52,9 @@ For details about each component, refer to [Components](../../../references/arch
 
 ### The write path
 
-[//]: # "Diagram source of write path at https://docs.google.com/presentation/d/1LemaTVqa4Lf_tpql060vVoDGXrthp-Pie_SQL7qwHjc/edit#slide=id.g11658e7e4c6_0_899"
-
-![Architecture of Grafana Mimir's write path](../write-path.svg)
+<div align="center">
+  <img src="/media/docs/mimir/ingest-storage-write-path.png" alt="Ingest storage architecture of Grafana Mimir's write path" width="400">
+</div>
 
 Distributors receive incoming samples in the form of push requests.
 Each push request belongs to a tenant, and distributors shard incoming push requests across multiple Kafka partitions within the same Kafka topic.
