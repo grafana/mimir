@@ -57,7 +57,11 @@ func prepareWithMockConverter(t *testing.T, cfg Config, bucketClient objstore.Bu
 	bucketClientFactory := func(ctx context.Context) (objstore.Bucket, error) {
 		return bucketClient, nil
 	}
-	c, err := newParquetConverter(cfg, log.NewLogfmtLogger(logs), registry, bucketClientFactory, overrides, mockBlockConverter{})
+
+	ringLB, err := newRingLoadBalancer(cfg.ShardingRing, log.NewLogfmtLogger(logs), registry)
+	require.NoError(t, err)
+
+	c, err := newParquetConverter(cfg, log.NewLogfmtLogger(logs), registry, bucketClientFactory, overrides, mockBlockConverter{}, ringLB)
 	require.NoError(t, err)
 
 	return c, registry
@@ -113,7 +117,8 @@ func TestParquetConverter_InitialSyncWithWaitRing(t *testing.T) {
 			for i := 1; i <= numConverters; i++ {
 				instanceID := fmt.Sprintf("converter-%d", i)
 
-				converterCfg := prepareConfig(t)
+				converterCfg := prepareConfig()
+				converterCfg.ShardingRing = prepareRingConfig(t)
 				converterCfg.ShardingRing.Common.KVStore.Mock = ringStore
 				converterCfg.ShardingRing.Common.InstanceID = instanceID
 				converterCfg.ShardingRing.Common.InstanceAddr = fmt.Sprintf("127.0.0.%d", i)
@@ -203,12 +208,11 @@ func mockTSDB(t *testing.T, dir string, numSeries, numBlocks int, minT, maxT int
 			i++
 		}
 	} else {
-		for i := 0; i < numSeries; i++ {
+		for i := range numSeries {
 			addSample(i)
 		}
 	}
 
 	require.NoError(t, db.Snapshot(dir, true))
-
 	require.NoError(t, db.Close())
 }

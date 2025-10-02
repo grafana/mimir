@@ -2059,6 +2059,48 @@ Usage of ./cmd/mimir/mimir:
     	The frequency at which user and block discovery runs. (default 5m0s)
   -parquet-converter.enabled-tenants comma-separated-list-of-strings
     	Comma-separated list of tenants that can have their TSDB blocks converted into Parquet. If specified, the Parquet-converter only converts these tenants. Otherwise, it converts all tenants. Subject to sharding.
+  -parquet-converter.load-balancing-strategy string
+    	The strategy to use to balance blocks to convert across multiple parquet-converter instances. Supported values: ring, locking. (default "ring")
+  -parquet-converter.locking.backend string
+    	Backend for parquet-converter locking cache (used when load-balancing-strategy is 'locking'). Supported values: memcached.
+  -parquet-converter.locking.memcached.addresses comma-separated-list-of-strings
+    	Comma-separated list of memcached addresses. Each address can be an IP address, hostname, or an entry specified in the DNS Service Discovery format.
+  -parquet-converter.locking.memcached.connect-timeout duration
+    	The connection timeout. (default 200ms)
+  -parquet-converter.locking.memcached.dns-ignore-startup-failures
+    	[experimental] Allow client creation even if initial DNS resolution fails. (default true)
+  -parquet-converter.locking.memcached.max-async-buffer-size int
+    	The maximum number of enqueued asynchronous operations allowed. (default 25000)
+  -parquet-converter.locking.memcached.max-async-concurrency int
+    	The maximum number of concurrent asynchronous operations can occur. (default 50)
+  -parquet-converter.locking.memcached.max-get-multi-batch-size int
+    	The maximum number of keys a single underlying get operation should run. If more keys are specified, internally keys are split into multiple batches and fetched concurrently, honoring the max concurrency. If set to 0, the max batch size is unlimited. (default 100)
+  -parquet-converter.locking.memcached.max-get-multi-concurrency int
+    	The maximum number of concurrent connections running get operations. If set to 0, concurrency is unlimited. (default 100)
+  -parquet-converter.locking.memcached.max-idle-connections int
+    	The maximum number of idle connections that will be maintained per address. (default 100)
+  -parquet-converter.locking.memcached.max-item-size int
+    	The maximum size of an item stored in memcached, in bytes. Bigger items are not stored. If set to 0, no maximum size is enforced. (default 1048576)
+  -parquet-converter.locking.memcached.min-idle-connections-headroom-percentage float
+    	The minimum number of idle connections to keep open as a percentage (0-100) of the number of recently used idle connections. If negative, idle connections are kept open indefinitely. (default -1)
+  -parquet-converter.locking.memcached.timeout duration
+    	The socket read/write timeout. (default 200ms)
+  -parquet-converter.locking.memcached.tls-ca-path string
+    	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
+  -parquet-converter.locking.memcached.tls-cert-path string
+    	Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.
+  -parquet-converter.locking.memcached.tls-cipher-suites string
+    	Override the default cipher suite list (separated by commas).
+  -parquet-converter.locking.memcached.tls-enabled
+    	Enable connecting to Memcached with TLS.
+  -parquet-converter.locking.memcached.tls-insecure-skip-verify
+    	Skip validating server certificate.
+  -parquet-converter.locking.memcached.tls-key-path string
+    	Path to the key for the client certificate. Also requires the client certificate to be configured.
+  -parquet-converter.locking.memcached.tls-min-version string
+    	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
+  -parquet-converter.locking.memcached.tls-server-name string
+    	Override the expected name on the server certificate.
   -parquet-converter.max-block-age duration
     	Maximum age of blocks to convert. Blocks older than this will be skipped. Set to 0 to disable age filtering.
   -parquet-converter.max-rows-per-group int
