@@ -37,6 +37,9 @@ func (b *blockInternalFunctionsMiddleware) Do(ctx context.Context, request Metri
 	}
 
 	containsInternalFunction, err := astmapper.AnyNode(expr, isInternalFunctionCall)
+	if err != nil {
+		return nil, err
+	}
 
 	if containsInternalFunction {
 		return nil, apierror.Newf(apierror.TypeBadData, "expression contains an internal function not permitted in queries")
