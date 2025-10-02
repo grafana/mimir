@@ -54,6 +54,10 @@ func (r *RemoteExecution) EquivalentTo(other planning.Node) bool {
 }
 
 func (r *RemoteExecution) Describe() string {
+	if r.EagerLoad {
+		return "eager load"
+	}
+
 	return ""
 }
 
