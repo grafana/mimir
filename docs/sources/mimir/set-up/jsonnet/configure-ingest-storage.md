@@ -35,7 +35,7 @@ Refer to the [Configure the Grafana Mimir ruler with Jsonnet](https://grafana.co
 The Jsonnet configures some Kafka connection parameters by default:
 
 - **Kafka topic**: `ingest`
-- **Auto-created partitions**: 1000 (when topic doesn't exist)
+- **Auto-created partitions**: 1000 (when the topic doesn't exist)
 - **Kafka addresses**: `kafka.<namespace>.svc.<cluster_domain>:9092`
 
 To customize the Kafka connection configuration, override the default settings:
