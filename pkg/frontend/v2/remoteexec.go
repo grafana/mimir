@@ -20,6 +20,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/limiter"
+	"github.com/grafana/mimir/pkg/util/pool"
 )
 
 type RemoteExecutor struct {
@@ -385,3 +386,49 @@ func accountForHPointMemoryConsumption(d []promql.HPoint, memoryConsumptionTrack
 
 	return nil
 }
+type responseStreamBuffer struct {
+	msgs       []*frontendv2pb.QueryResultStreamRequest
+	startIndex int
+	length     int
+}
+
+func (b *responseStreamBuffer) Push(msg *frontendv2pb.QueryResultStreamRequest) {
+	if b.length == cap(b.msgs) {
+		newCap := max(len(b.msgs)*2, 1)
+		newMsgs := responseMessageSlicePool.Get(newCap)
+		newMsgs = newMsgs[:newCap]
+		headSize := cap(b.msgs) - b.startIndex
+		copy(newMsgs[0:headSize], b.msgs[b.startIndex:])
+		copy(newMsgs[headSize:newCap], b.msgs[0:b.startIndex])
+
+		clear(b.msgs)
+		responseMessageSlicePool.Put(b.msgs)
+		b.msgs = newMsgs
+		b.startIndex = 0
+	}
+
+	newIndex := (b.startIndex + b.length) % len(b.msgs)
+	b.msgs[newIndex] = msg
+	b.length++
+}
+
+func (b *responseStreamBuffer) Pop() *frontendv2pb.QueryResultStreamRequest {
+	msg := b.msgs[b.startIndex]
+	b.length--
+
+	if b.length == 0 {
+		b.startIndex = 0
+	} else {
+		b.startIndex = (b.startIndex + 1) % len(b.msgs)
+	}
+
+	return msg
+}
+
+func (b *responseStreamBuffer) Any() bool {
+	return b.length > 0
+}
+
+var responseMessageSlicePool = pool.NewBucketedPool(131072, func(size int) []*frontendv2pb.QueryResultStreamRequest {
+	return make([]*frontendv2pb.QueryResultStreamRequest, 0, size)
+})

@@ -652,3 +652,59 @@ func (m *timeRangeCapturingFrontend) DoProtobufRequest(ctx context.Context, req 
 	m.maxT = maxT
 	return nil, nil
 }
+
+func TestResponseStreamBuffer(t *testing.T) {
+	buf := &responseStreamBuffer{}
+	require.False(t, buf.Any())
+
+	msg1 := newStringMessage("first message")
+	buf.Push(msg1)
+	require.True(t, buf.Any())
+	require.Equal(t, msg1, buf.Pop())
+	require.False(t, buf.Any())
+	// Make sure the internal state has been reset correctly, so that the tests below exercise the expected behaviour.
+	require.Zero(t, buf.startIndex)
+	require.Zero(t, buf.length)
+	require.Equal(t, 1, cap(buf.msgs))
+
+	msg2 := newStringMessage("second message")
+	msg3 := newStringMessage("third message")
+	buf.Push(msg1)
+	buf.Push(msg2)
+	buf.Push(msg3)
+	require.True(t, buf.Any())
+	require.Equal(t, msg1, buf.Pop())
+	require.Equal(t, msg2, buf.Pop())
+	require.Equal(t, msg3, buf.Pop())
+	require.False(t, buf.Any())
+	// Make sure the internal state has been reset correctly, so that the tests below exercise the expected behaviour.
+	require.Zero(t, buf.startIndex)
+	require.Zero(t, buf.length)
+	require.Equal(t, 4, cap(buf.msgs))
+
+	// Test that appending to the buffer when the first item is not in the first index of the underlying slice behaves correctly.
+	msg4 := newStringMessage("fourth message")
+	buf.Push(msg1)
+	buf.Push(msg2)
+	buf.Push(msg3)
+	buf.Push(msg4)
+	require.Equal(t, 4, cap(buf.msgs))
+
+	require.Equal(t, msg1, buf.Pop())
+
+	msg5 := newStringMessage("fifth message")
+	buf.Push(msg5)
+	require.Equal(t, 4, cap(buf.msgs), "buffer should have wrapped around inside slice")
+	require.Equal(t, 1, buf.startIndex, "buffer should not have shifted elements in slice")
+
+	msg6 := newStringMessage("sixth message")
+	buf.Push(msg6)
+	require.Equal(t, 8, cap(buf.msgs), "slice should have been expanded")
+	require.Equal(t, 0, buf.startIndex, "buffer should have shifted elements in slice")
+
+	require.Equal(t, msg2, buf.Pop())
+	require.Equal(t, msg3, buf.Pop())
+	require.Equal(t, msg4, buf.Pop())
+	require.Equal(t, msg5, buf.Pop())
+	require.Equal(t, msg6, buf.Pop())
+}
