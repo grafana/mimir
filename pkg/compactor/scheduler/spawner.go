@@ -17,6 +17,7 @@ import (
 	"github.com/grafana/mimir/pkg/util"
 )
 
+// Spawner periodically creates plan jobs for tenants.
 type Spawner struct {
 	services.Service
 	planMap              map[string]time.Time
