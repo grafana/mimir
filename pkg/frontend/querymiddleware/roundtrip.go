@@ -414,6 +414,7 @@ func newQueryMiddlewares(
 	queryLimiterMiddleware := newQueryLimiterMiddleware(cacheClient, cacheKeyGenerator, limits, log, blockedQueriesCounter)
 	queryStatsMiddleware := newQueryStatsMiddleware(registerer, engineOpts)
 	prom2CompatMiddleware := newProm2RangeCompatMiddleware(limits, log, registerer)
+	blockInternalFunctionsMiddleware := newBlockInternalFunctionsMiddleware(log)
 
 	remoteReadMiddleware = append(remoteReadMiddleware,
 		// Track query range statistics. Added first before any subsequent middleware modifies the request.
@@ -428,6 +429,7 @@ func newQueryMiddlewares(
 		newLimitsMiddleware(limits, log),
 		queryBlockerMiddleware,
 		queryLimiterMiddleware,
+		blockInternalFunctionsMiddleware,
 		newInstrumentMiddleware("prom2_compat", metrics),
 		newDurationsMiddleware(log),
 		prom2CompatMiddleware,
@@ -440,6 +442,7 @@ func newQueryMiddlewares(
 		newLimitsMiddleware(limits, log),
 		queryBlockerMiddleware,
 		queryLimiterMiddleware,
+		blockInternalFunctionsMiddleware,
 		newInstrumentMiddleware("prom2_compat", metrics),
 		newDurationsMiddleware(log),
 		prom2CompatMiddleware,
