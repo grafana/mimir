@@ -32,14 +32,14 @@ type Spawner struct {
 
 	// Mutable state
 	planMap     map[string]time.Time
-	planTracker *JobTracker[string, struct{}]
+	planTracker *JobTracker[struct{}]
 }
 
 func NewSpawner(
 	cfg Config,
 	allowList *util.AllowList,
 	rotator *Rotator,
-	planTracker *JobTracker[string, struct{}],
+	planTracker *JobTracker[struct{}],
 	bkt objstore.Bucket,
 	logger log.Logger) *Spawner {
 	s := &Spawner{
@@ -79,7 +79,7 @@ func (s *Spawner) iter(ctx context.Context) error {
 }
 
 func (s *Spawner) plan() {
-	jobs := make([]*Job[string, struct{}], 0, len(s.planMap))
+	jobs := make([]*Job[struct{}], 0, len(s.planMap))
 	now := s.clock.Now()
 	for tenant, lastSubmitted := range s.planMap {
 		if now.Sub(lastSubmitted) > s.planningInterval {

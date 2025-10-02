@@ -71,7 +71,7 @@ type Scheduler struct {
 
 	cfg                Config
 	rotator            *Rotator
-	planTracker        *JobTracker[string, struct{}]
+	planTracker        *JobTracker[struct{}]
 	subservicesManager *services.Manager
 	logger             log.Logger
 	clock              clock.Clock
@@ -84,7 +84,7 @@ func NewCompactorScheduler(
 	logger log.Logger,
 	registerer prometheus.Registerer) (*Scheduler, error) {
 
-	planTracker := NewJobTracker[string, struct{}](InfiniteLeases)
+	planTracker := NewJobTracker[struct{}](InfiniteLeases)
 
 	scheduler := &Scheduler{
 		cfg:         cfg,
@@ -179,7 +179,7 @@ func (s *Scheduler) PlannedJobs(ctx context.Context, req *compactorschedulerpb.P
 	if removed, _ := s.planTracker.Remove(req.Key.Id, req.Key.Epoch); removed {
 		level.Info(s.logger).Log("msg", "received plan results", "tenant", req.Key.Id, "epoch", req.Key.Epoch, "job_count", len(req.Jobs))
 		now := s.clock.Now()
-		jobs := make([]*Job[string, *CompactionJob], 0, len(req.Jobs))
+		jobs := make([]*Job[*CompactionJob], 0, len(req.Jobs))
 		for _, job := range req.Jobs {
 			jobs = append(jobs, NewJob(
 				job.Id,

@@ -14,10 +14,9 @@ import (
 const InfiniteLeases = 0
 
 // Job is the wrapper type within the JobTracker.
-// K identifies the job. If another job is offered with K the conflict must be decided.
 // V is the contained type
-type Job[K comparable, V any] struct {
-	id    K
+type Job[V any] struct {
+	id    string
 	value V
 
 	creationTime      time.Time
@@ -28,8 +27,8 @@ type Job[K comparable, V any] struct {
 	clock             clock.Clock
 }
 
-func NewJob[K comparable, V any](id K, value V, creationTime time.Time, clock clock.Clock) *Job[K, V] {
-	return &Job[K, V]{
+func NewJob[V any](id string, value V, creationTime time.Time, clock clock.Clock) *Job[V] {
+	return &Job[V]{
 		id:           id,
 		value:        value,
 		creationTime: creationTime,
@@ -38,55 +37,54 @@ func NewJob[K comparable, V any](id K, value V, creationTime time.Time, clock cl
 	}
 }
 
-func (j *Job[K, V]) IsLeased() bool {
+func (j *Job[V]) IsLeased() bool {
 	return !j.leaseCreationTime.IsZero()
 }
 
-func (j *Job[K, V]) MarkLeased() {
+func (j *Job[V]) MarkLeased() {
 	j.leaseCreationTime = j.clock.Now()
 	j.lastRenewalTime = j.leaseCreationTime
 	j.numLeases += 1
 	j.epoch += int64(1)
 }
 
-func (j *Job[K, V]) ClearLease() {
+func (j *Job[V]) ClearLease() {
 	j.leaseCreationTime = time.Time{}
 	j.lastRenewalTime = time.Time{}
 }
 
 // JobTracker tracks pending and active planning and compaction jobs for tenants.
 // TODO: Some kind of feedback mechanism so the Spawner can know if a submitted plan job failed or completed
-type JobTracker[K comparable, V any] struct {
+type JobTracker[V any] struct {
 	clock     clock.Clock
 	maxLeases int
-	mtx       *sync.Mutex
 
-	// Guarded by mtx
+	mtx     *sync.Mutex
 	pending *list.List
 	active  *list.List
-	allJobs map[K]*list.Element // all tracked jobs will be in this map, element is in one and only one of pending or active
+	allJobs map[string]*list.Element // all tracked jobs will be in this map, element is in one and only one of pending or active
 }
 
-func NewJobTracker[K comparable, V any](maxLeases int) *JobTracker[K, V] {
-	return &JobTracker[K, V]{
+func NewJobTracker[V any](maxLeases int) *JobTracker[V] {
+	return &JobTracker[V]{
 		clock:     clock.New(),
 		maxLeases: maxLeases,
 		mtx:       &sync.Mutex{},
 		pending:   list.New(),
 		active:    list.New(),
-		allJobs:   make(map[K]*list.Element),
+		allJobs:   make(map[string]*list.Element),
 	}
 }
 
 // Lease iterates the job queue for an acceptable job according to the provided canAccept function
 // If one is found it is marked as active and still internally tracked (but is no longer leasable)
-func (jt *JobTracker[K, V]) Lease(canAccept func(K, V) bool) (id K, value V, epoch int64, becameEmpty bool) {
+func (jt *JobTracker[V]) Lease(canAccept func(string, V) bool) (id string, value V, epoch int64, becameEmpty bool) {
 	jt.mtx.Lock()
 	defer jt.mtx.Unlock()
 
 	var e *list.Element
 	for e = jt.pending.Front(); e != nil; e = e.Next() {
-		j := e.Value.(*Job[K, V])
+		j := e.Value.(*Job[V])
 		if canAccept(j.id, j.value) {
 			break
 		}
@@ -94,10 +92,10 @@ func (jt *JobTracker[K, V]) Lease(canAccept func(K, V) bool) (id K, value V, epo
 	if e == nil {
 		// Empty or no acceptable jobs
 		// Never hint for removal if a job is not taken
-		return *new(K), *new(V), 0, false
+		return "", *new(V), 0, false
 	}
 
-	j := jt.pending.Remove(e).(*Job[K, V])
+	j := jt.pending.Remove(e).(*Job[V])
 	j.MarkLeased()
 	jt.allJobs[j.id] = jt.active.PushBack(j)
 
@@ -105,20 +103,20 @@ func (jt *JobTracker[K, V]) Lease(canAccept func(K, V) bool) (id K, value V, epo
 }
 
 // Does not acquire any lock. It is required that any callers hold an appropriate lock.
-func (jt *JobTracker[K, V]) isPendingEmpty() bool {
+func (jt *JobTracker[V]) isPendingEmpty() bool {
 	return jt.pending.Front() == nil
 }
 
-func (jt *JobTracker[K, V]) Remove(id K, epoch int64) (removed bool, becameEmpty bool) {
+func (jt *JobTracker[V]) Remove(id string, epoch int64) (removed bool, becameEmpty bool) {
 	return jt.remove(id, epoch, true)
 }
 
 // Does not check for an epoch match
-func (jt *JobTracker[K, V]) RemoveForcefully(id K) (removed bool, becameEmpty bool) {
+func (jt *JobTracker[KV]) RemoveForcefully(id string) (removed bool, becameEmpty bool) {
 	return jt.remove(id, 0, false)
 }
 
-func (jt *JobTracker[K, V]) remove(id K, epoch int64, checkEpoch bool) (removed bool, becameEmpty bool) {
+func (jt *JobTracker[V]) remove(id string, epoch int64, checkEpoch bool) (removed bool, becameEmpty bool) {
 	jt.mtx.Lock()
 	defer jt.mtx.Unlock()
 
@@ -127,7 +125,7 @@ func (jt *JobTracker[K, V]) remove(id K, epoch int64, checkEpoch bool) (removed 
 		return false, false
 	}
 
-	j := e.Value.(*Job[K, V])
+	j := e.Value.(*Job[V])
 	if checkEpoch && epoch != j.epoch {
 		return false, false
 	}
@@ -144,7 +142,7 @@ func (jt *JobTracker[K, V]) remove(id K, epoch int64, checkEpoch bool) (removed 
 // ExpireLeases iterates through all the active jobs known by the JobTracker to find ones that have expired leases.
 // If a job has an expired lease and has been active under the maximum number of times, it is returned to the front of the queue
 // Otherwise a job with an expired lease will be removed from the tracker.
-func (jt *JobTracker[K, V]) ExpireLeases(leaseDuration time.Duration) bool {
+func (jt *JobTracker[V]) ExpireLeases(leaseDuration time.Duration) bool {
 	jt.mtx.Lock()
 	defer jt.mtx.Unlock()
 
@@ -156,7 +154,7 @@ func (jt *JobTracker[K, V]) ExpireLeases(leaseDuration time.Duration) bool {
 	for e = jt.active.Front(); e != nil; e = next {
 		next = e.Next() // get the next element now since it can't be done after removal
 
-		j := e.Value.(*Job[K, V])
+		j := e.Value.(*Job[V])
 		if now.Sub(j.lastRenewalTime) > leaseDuration {
 			if jt.endLease(e, j) {
 				revivedAny = true
@@ -171,7 +169,7 @@ func (jt *JobTracker[K, V]) ExpireLeases(leaseDuration time.Duration) bool {
 }
 
 // endLease removes a job from the active list and returns true if the job was returned to the queue or false otherwise
-func (jt *JobTracker[K, V]) endLease(e *list.Element, j *Job[K, V]) bool {
+func (jt *JobTracker[V]) endLease(e *list.Element, j *Job[V]) bool {
 	jt.active.Remove(e)
 
 	// Can the job be returned to the queue?
@@ -185,7 +183,7 @@ func (jt *JobTracker[K, V]) endLease(e *list.Element, j *Job[K, V]) bool {
 	return false
 }
 
-func (jt *JobTracker[K, V]) RenewLease(id K, epoch int64) bool {
+func (jt *JobTracker[V]) RenewLease(id string, epoch int64) bool {
 	jt.mtx.Lock()
 	defer jt.mtx.Unlock()
 
@@ -194,15 +192,17 @@ func (jt *JobTracker[K, V]) RenewLease(id K, epoch int64) bool {
 		return false
 	}
 
-	j := e.Value.(*Job[K, V])
+	j := e.Value.(*Job[V])
 	if j.IsLeased() && j.epoch == epoch {
-		j.lastRenewalTime = time.Now()
+		j.lastRenewalTime = jt.clock.Now()
+		jt.active.Remove(e)
+		jt.allJobs[id] = jt.active.PushBack(j)
 		return true
 	}
 	return false
 }
 
-func (jt *JobTracker[K, V]) CancelLease(id K, epoch int64) (canceled bool, becamePending bool) {
+func (jt *JobTracker[V]) CancelLease(id string, epoch int64) (canceled bool, becamePending bool) {
 	jt.mtx.Lock()
 	defer jt.mtx.Unlock()
 
@@ -211,7 +211,7 @@ func (jt *JobTracker[K, V]) CancelLease(id K, epoch int64) (canceled bool, becam
 		return false, false
 	}
 
-	j := e.Value.(*Job[K, V])
+	j := e.Value.(*Job[V])
 	if j.IsLeased() && j.epoch == epoch {
 		wasEmpty := jt.isPendingEmpty()
 		return true, wasEmpty && jt.endLease(e, j)
@@ -219,7 +219,7 @@ func (jt *JobTracker[K, V]) CancelLease(id K, epoch int64) (canceled bool, becam
 	return false, false
 }
 
-func (jt *JobTracker[K, V]) Offer(jobs []*Job[K, V], shouldReplace func(prev, new V) bool) (accepted int, becamePending bool) {
+func (jt *JobTracker[V]) Offer(jobs []*Job[V], shouldReplace func(prev, new V) bool) (accepted int, becamePending bool) {
 	jt.mtx.Lock()
 	defer jt.mtx.Unlock()
 
@@ -229,7 +229,7 @@ func (jt *JobTracker[K, V]) Offer(jobs []*Job[K, V], shouldReplace func(prev, ne
 
 	for _, j := range jobs {
 		if e, ok := jt.allJobs[j.id]; ok {
-			prevJ := e.Value.(*Job[K, V])
+			prevJ := e.Value.(*Job[V])
 			// TODO: Set an indicator to do a swap if the lease expires instead of rejecting? That sounds complicated.
 			// This case is tricky because we're past a point of no return if a worker is already on it.
 			if prevJ.IsLeased() || !shouldReplace(prevJ.value, j.value) {

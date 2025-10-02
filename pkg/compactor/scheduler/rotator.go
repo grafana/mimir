@@ -26,24 +26,23 @@ const outsideRotation int = -1
 type Rotator struct {
 	services.Service
 
-	planTracker          *JobTracker[string, struct{}]
+	planTracker          *JobTracker[struct{}]
 	leaseDuration        time.Duration
 	leaseCheckInterval   time.Duration
 	maxLeases            int
 	rotationIndexCounter *atomic.Int32 // only increments, overflow is okay
-	mtx                  *sync.RWMutex
 
-	// Guarded by mtx
+	mtx            *sync.RWMutex
 	tenantStateMap map[string]*TenantRotationState
 	rotation       []string
 }
 
 type TenantRotationState struct {
-	tracker       *JobTracker[string, *CompactionJob]
+	tracker       *JobTracker[*CompactionJob]
 	rotationIndex int
 }
 
-func NewRotator(planTracker *JobTracker[string, struct{}], leaseDuration time.Duration, leaseCheckInterval time.Duration, maxLeases int) *Rotator {
+func NewRotator(planTracker *JobTracker[struct{}], leaseDuration time.Duration, leaseCheckInterval time.Duration, maxLeases int) *Rotator {
 	r := &Rotator{
 		planTracker:          planTracker,
 		leaseDuration:        leaseDuration,
@@ -157,7 +156,7 @@ func (r *Rotator) CancelJobLease(tenant string, key string, epoch int64) bool {
 	return canceled
 }
 
-func (r *Rotator) OfferJobs(tenant string, jobs []*Job[string, *CompactionJob], shouldReplace func(*CompactionJob, *CompactionJob) bool) int {
+func (r *Rotator) OfferJobs(tenant string, jobs []*Job[*CompactionJob], shouldReplace func(*CompactionJob, *CompactionJob) bool) int {
 	if len(jobs) == 0 {
 		return 0
 	}
@@ -184,7 +183,7 @@ func (r *Rotator) OfferJobs(tenant string, jobs []*Job[string, *CompactionJob], 
 	tenantState, ok = r.tenantStateMap[tenant]
 	if !ok {
 		tenantState = &TenantRotationState{
-			NewJobTracker[string, *CompactionJob](r.maxLeases),
+			NewJobTracker[*CompactionJob](r.maxLeases),
 			outsideRotation,
 		}
 	}
