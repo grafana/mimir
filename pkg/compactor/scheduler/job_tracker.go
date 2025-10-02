@@ -195,8 +195,7 @@ func (jt *JobTracker[V]) RenewLease(id string, epoch int64) bool {
 	j := e.Value.(*Job[V])
 	if j.IsLeased() && j.epoch == epoch {
 		j.lastRenewalTime = jt.clock.Now()
-		jt.active.Remove(e)
-		jt.allJobs[id] = jt.active.PushBack(j)
+		jt.active.MoveToBack(e)
 		return true
 	}
 	return false
