@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/gogo/protobuf/proto"
@@ -22,6 +23,8 @@ import (
 	"github.com/grafana/mimir/pkg/util/limiter"
 	"github.com/grafana/mimir/pkg/util/pool"
 )
+
+var errMultipleEagerLoadingNextCalls = errors.New("multiple pending calls to eagerLoadingResponseStream.Next()")
 
 type RemoteExecutor struct {
 	frontend ProtobufFrontend
@@ -86,12 +89,16 @@ func (r *RemoteExecutor) startExecution(ctx context.Context, fullPlan *planning.
 	}
 
 	queriedTimeRange := node.QueriedTimeRange(timeRange, r.cfg.LookBackDelta)
-	stream, err := r.frontend.DoProtobufRequest(ctx, req, queriedTimeRange.MinT, queriedTimeRange.MaxT)
+	var stream responseStream
+	stream, err = r.frontend.DoProtobufRequest(ctx, req, queriedTimeRange.MinT, queriedTimeRange.MaxT)
 	if err != nil {
 		return nil, err
 	}
 
-	// FIXME: when we support query sharding in MQE, we'll need to start buffering the response stream so we avoid the deadlocking issue
+	if eagerLoad {
+		stream = newEagerLoadingResponseStream(ctx, stream)
+	}
+
 	return stream, nil
 }
 
@@ -386,13 +393,118 @@ func accountForHPointMemoryConsumption(d []promql.HPoint, memoryConsumptionTrack
 
 	return nil
 }
+
+type eagerLoadingResponseStream struct {
+	inner       responseStream
+	bufferedErr error
+
+	mtx              *sync.Mutex
+	buffer           *responseStreamBuffer
+	newDataAvailable chan struct{}
+}
+
+func newEagerLoadingResponseStream(ctx context.Context, inner responseStream) *eagerLoadingResponseStream {
+	stream := &eagerLoadingResponseStream{
+		inner:  inner,
+		mtx:    &sync.Mutex{},
+		buffer: &responseStreamBuffer{},
+	}
+
+	go stream.startBuffering(ctx)
+
+	return stream
+}
+
+func (e *eagerLoadingResponseStream) startBuffering(ctx context.Context) {
+	for {
+		if !e.bufferOne(ctx) {
+			return
+		}
+	}
+}
+
+func (e *eagerLoadingResponseStream) bufferOne(ctx context.Context) bool {
+	msg, err := e.inner.Next(ctx)
+
+	e.mtx.Lock()
+	defer e.mtx.Unlock()
+	defer e.notifyNewDataAvailable()
+
+	e.buffer.Push(bufferedMessage{msg, err})
+
+	return err == nil
+}
+
+// notifyNewDataAvailable unblocks a pending Next() call.
+// It must only be called with e.mtx locked.
+func (e *eagerLoadingResponseStream) notifyNewDataAvailable() {
+	if e.newDataAvailable == nil {
+		return
+	}
+
+	close(e.newDataAvailable)
+	e.newDataAvailable = nil
+}
+
+func (e *eagerLoadingResponseStream) Next(ctx context.Context) (*frontendv2pb.QueryResultStreamRequest, error) {
+	if e.bufferedErr != nil {
+		return nil, e.bufferedErr
+	}
+
+	e.mtx.Lock()
+
+	if e.newDataAvailable != nil {
+		e.mtx.Unlock()
+		return nil, errMultipleEagerLoadingNextCalls
+	}
+
+	if e.buffer.Any() {
+		msg := e.buffer.Pop()
+		defer e.mtx.Unlock()
+
+		if msg.err != nil {
+			e.bufferedErr = msg.err
+		}
+
+		return msg.payload, msg.err
+	}
+
+	newDataAvailable := make(chan struct{}) // We can't store this directly in e.newDataAvailable because e.newDataAvailable might be cleared by the time we wait on it below.
+	e.newDataAvailable = newDataAvailable
+	e.mtx.Unlock()
+
+	select {
+	case <-ctx.Done():
+		return nil, context.Cause(ctx)
+	case <-newDataAvailable:
+		e.mtx.Lock()
+		defer e.mtx.Unlock()
+		msg := e.buffer.Pop()
+
+		if msg.err != nil {
+			e.bufferedErr = msg.err
+		}
+
+		return msg.payload, msg.err
+	}
+}
+
+func (e *eagerLoadingResponseStream) Close() {
+	e.inner.Close() // This is expected to release any pending Next() call in startBuffering(), so we don't need to do anything to terminate it here.
+}
+
 type responseStreamBuffer struct {
-	msgs       []*frontendv2pb.QueryResultStreamRequest
+	msgs       []bufferedMessage
 	startIndex int
 	length     int
 }
 
-func (b *responseStreamBuffer) Push(msg *frontendv2pb.QueryResultStreamRequest) {
+type bufferedMessage struct {
+	payload *frontendv2pb.QueryResultStreamRequest
+	err     error
+}
+
+func (b *responseStreamBuffer) Push(msg bufferedMessage) {
 	if b.length == cap(b.msgs) {
 		newCap := max(len(b.msgs)*2, 1)
 		newMsgs := responseMessageSlicePool.Get(newCap)
@@ -412,7 +524,7 @@ func (b *responseStreamBuffer) Push(msg *frontendv2pb.QueryResultStreamRequest) 
 	b.length++
 }
 
-func (b *responseStreamBuffer) Pop() *frontendv2pb.QueryResultStreamRequest {
+func (b *responseStreamBuffer) Pop() bufferedMessage {
 	msg := b.msgs[b.startIndex]
 	b.length--
 
@@ -429,6 +541,6 @@ func (b *responseStreamBuffer) Any() bool {
 	return b.length > 0
 }
 
-var responseMessageSlicePool = pool.NewBucketedPool(131072, func(size int) []*frontendv2pb.QueryResultStreamRequest {
-	return make([]*frontendv2pb.QueryResultStreamRequest, 0, size)
+var responseMessageSlicePool = pool.NewBucketedPool(131072, func(size int) []bufferedMessage {
+	return make([]bufferedMessage, 0, size)
 })
