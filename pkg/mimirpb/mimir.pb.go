@@ -307,6 +307,8 @@ type WriteRequest struct {
 	skipUnmarshalingExemplars bool
 	// Skip normalization of metadata metric names when unmarshalling the request.
 	skipNormalizeMetadataMetricName bool
+	// Skip deduplication of metric metadata by family name.
+	skipDeduplicateMetadata bool
 	// Unmarshal from Remote Write 2.0. if rw2symbols is not nil.
 	unmarshalFromRW2 bool
 	rw2symbols       rw2PagedSymbols
@@ -7584,7 +7586,7 @@ func (m *WriteRequest) Unmarshal(dAtA []byte) error {
 			m.Timeseries = append(m.Timeseries, PreallocTimeseries{})
 			m.Timeseries[len(m.Timeseries)-1].skipUnmarshalingExemplars = m.skipUnmarshalingExemplars
 			if metadata == nil {
-				metadata = newDedupingMetadataSet()
+				metadata = metadataSetFromSettings(m.skipDeduplicateMetadata)
 			}
 			if err := m.Timeseries[len(m.Timeseries)-1].Unmarshal(dAtA[iNdEx:postIndex], &m.rw2symbols, metadata, m.skipNormalizeMetadataMetricName); err != nil {
 				return err
