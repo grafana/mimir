@@ -635,7 +635,7 @@ func TestRemoteExecutor_CorrectlyPassesQueriedTimeRange(t *testing.T) {
 
 	ctx := context.Background()
 	node := &core.VectorSelector{VectorSelectorDetails: &core.VectorSelectorDetails{}}
-	_, err := executor.startExecution(ctx, &planning.QueryPlan{}, node, timeRange, false)
+	_, err := executor.startExecution(ctx, &planning.QueryPlan{}, node, timeRange, false, false)
 	require.NoError(t, err)
 
 	require.Equal(t, startT.Add(-cfg.LookBackDelta+time.Millisecond), frontendMock.minT)

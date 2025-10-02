@@ -111,6 +111,7 @@ func (m *RemoteExecutionMaterializer) Materialize(n planning.Node, materializer 
 			RemoteExecutor:           m.executor,
 			MemoryConsumptionTracker: params.MemoryConsumptionTracker,
 			Annotations:              params.Annotations,
+			EagerLoad:                r.EagerLoad,
 		}), nil
 
 	case parser.ValueTypeVector:
@@ -121,6 +122,7 @@ func (m *RemoteExecutionMaterializer) Materialize(n planning.Node, materializer 
 			RemoteExecutor:           m.executor,
 			MemoryConsumptionTracker: params.MemoryConsumptionTracker,
 			Annotations:              params.Annotations,
+			EagerLoad:                r.EagerLoad,
 		}), nil
 
 	case parser.ValueTypeMatrix:
@@ -131,6 +133,7 @@ func (m *RemoteExecutionMaterializer) Materialize(n planning.Node, materializer 
 			RemoteExecutor:           m.executor,
 			MemoryConsumptionTracker: params.MemoryConsumptionTracker,
 			Annotations:              params.Annotations,
+			EagerLoad:                r.EagerLoad,
 		}), nil
 
 	default:
