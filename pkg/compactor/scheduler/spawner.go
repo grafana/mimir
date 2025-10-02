@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/benbjohnson/clock"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/backoff"
@@ -20,32 +21,37 @@ import (
 // Spawner periodically creates plan jobs for tenants.
 type Spawner struct {
 	services.Service
-	planMap              map[string]time.Time
+
+	logger               log.Logger
+	clock                clock.Clock
 	allowedTenants       *util.AllowList
-	planTracker          *JobTracker[string, struct{}]
-	rotator              *Rotator
 	bkt                  objstore.Bucket
 	planningInterval     time.Duration
 	userDiscoveryBackoff backoff.Config
-	logger               log.Logger
+	rotator              *Rotator
+
+	// Mutable state
+	planMap     map[string]time.Time
+	planTracker *JobTracker[struct{}]
 }
 
 func NewSpawner(
 	cfg Config,
 	allowList *util.AllowList,
 	rotator *Rotator,
-	planTracker *JobTracker[string, struct{}],
+	planTracker *JobTracker[struct{}],
 	bkt objstore.Bucket,
 	logger log.Logger) *Spawner {
 	s := &Spawner{
-		planMap:              make(map[string]time.Time),
+		logger:               logger,
+		clock:                clock.New(),
 		allowedTenants:       allowList,
-		rotator:              rotator,
-		planTracker:          planTracker,
 		bkt:                  bkt,
 		planningInterval:     cfg.planningInterval,
 		userDiscoveryBackoff: cfg.userDiscoveryBackoff,
-		logger:               logger,
+		rotator:              rotator,
+		planMap:              make(map[string]time.Time),
+		planTracker:          planTracker,
 	}
 	s.Service = services.NewTimerService(cfg.planningCheckInterval, s.start, s.iter, nil)
 	return s
@@ -73,11 +79,11 @@ func (s *Spawner) iter(ctx context.Context) error {
 }
 
 func (s *Spawner) plan() {
-	jobs := make([]*Job[string, struct{}], 0, len(s.planMap))
-	now := time.Now()
+	jobs := make([]*Job[struct{}], 0, len(s.planMap))
+	now := s.clock.Now()
 	for tenant, lastSubmitted := range s.planMap {
 		if now.Sub(lastSubmitted) > s.planningInterval {
-			jobs = append(jobs, NewJob(tenant, struct{}{}, now))
+			jobs = append(jobs, NewJob(tenant, struct{}{}, now, s.clock))
 			s.planMap[tenant] = now
 		}
 	}
