@@ -2120,22 +2120,23 @@ reactive_limiter:
   # CLI flag: -distributor.reactive-limiter.initial-limit
   [initial_limit: <int> | default = 20]
 
-  # (experimental) The maximum limit as a multiple of current inflight requests
+  # (experimental) The maximum inflight limit as a multiple of current inflight
+  # requests
   # CLI flag: -distributor.reactive-limiter.max-limit-factor
   [max_limit_factor: <float> | default = 5]
 
-  # (experimental) Minimum duration of the window that is used to determine the
-  # recent, short-term load on the system
+  # (experimental) Minimum duration of the window that is used to collect recent
+  # response time samples
   # CLI flag: -distributor.reactive-limiter.recent-window-min-duration
   [recent_window_min_duration: <duration> | default = 1s]
 
-  # (experimental) Maximum duration of the window that is used to determine the
-  # recent, short-term load on the system
+  # (experimental) Maximum duration of the window that is used to collect recent
+  # response time samples
   # CLI flag: -distributor.reactive-limiter.recent-window-max-duration
   [recent_window_max_duration: <duration> | default = 30s]
 
   # (experimental) Minimum number of samples that must be recorded in the recent
-  # window
+  # window before updating the limit
   # CLI flag: -distributor.reactive-limiter.recent-window-min-samples
   [recent_window_min_samples: <int> | default = 50]
 
@@ -2144,8 +2145,8 @@ reactive_limiter:
   # CLI flag: -distributor.reactive-limiter.recent-quantile
   [recent_quantile: <float> | default = 0.9]
 
-  # (experimental) The long-term average age of aggregated recent samples that
-  # are stored
+  # (experimental) The average age of baseline samples aggregated recent samples
+  # are added to
   # CLI flag: -distributor.reactive-limiter.baseline-window-age
   [baseline_window_age: <int> | default = 10]
 
