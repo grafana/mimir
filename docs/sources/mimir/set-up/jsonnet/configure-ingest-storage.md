@@ -63,11 +63,3 @@ To customize the Kafka connection configuration, override the default settings:
 The configured topic must have at least as many partitions as the number of ingesters in one zone.
 
 Refer to [Configure the Grafana Mimir Kafka backend](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/configure-kafka-backend/) for more details about Kafka configurations.
-
-## Migration considerations
-
-{{< admonition type="warning" >}}
-Migration of a live Grafana Mimir cluster from the classic architecture to the ingest storage is a complex multi-step process, that requires careful planning and execution.
-
-For use-cases that allow some downtime, it's simpler to deploy a new Grafana Mimir cluster, that uses ingest storage, and migrate the data from the old cluster to the new one.
-{{< /admonition >}}
