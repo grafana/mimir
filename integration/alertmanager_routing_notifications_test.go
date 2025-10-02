@@ -280,7 +280,7 @@ func (s *grafanaAMScenario) runAMTest() {
 	// simulating prod timeline
 	time.Sleep(2 * time.Second)
 
-	// 2. send resolved alert - only wh1 should get it
+	// 2. send resolved alert - only wh-0 should get it
 	// the only reason wh-0 gets a notification is because we trigger a config update right after sending the alert
 	// this restarts the dispatcher, setting the `hasFlushed` flag to false. The dedup stage works for repeated notifications
 	// but if there was a state change it will trigger a notification
