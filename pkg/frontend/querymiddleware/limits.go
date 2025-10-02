@@ -211,14 +211,18 @@ func (l limitsMiddleware) Do(ctx context.Context, r MetricsQueryRequest) (Respon
 
 type limitedParallelismRoundTripper struct {
 	downstream MetricsQueryHandler
-	limits     Limits
+	limits     LimitedParallelismLimits
 
 	codec      Codec
 	middleware MetricsQueryMiddleware
 }
 
+type LimitedParallelismLimits interface {
+	MaxQueryParallelism(userID string) int
+}
+
 // NewLimitedParallelismRoundTripper creates a new roundtripper that enforces MaxQueryParallelism to the `next` roundtripper across `middlewares`.
-func NewLimitedParallelismRoundTripper(next MetricsQueryHandler, codec Codec, limits Limits, middlewares ...MetricsQueryMiddleware) http.RoundTripper {
+func NewLimitedParallelismRoundTripper(next MetricsQueryHandler, codec Codec, limits LimitedParallelismLimits, middlewares ...MetricsQueryMiddleware) http.RoundTripper {
 	return limitedParallelismRoundTripper{
 		downstream: next,
 		codec:      codec,

@@ -884,6 +884,9 @@ func (m *mockHandler) Do(ctx context.Context, req MetricsQueryRequest) (Response
 }
 
 func TestLimitedRoundTripper_MaxQueryParallelism(t *testing.T) {
+	// This test only applies to requests sent to queriers over HTTPGRPC.
+	// For the equivalent test for remote execution, see TestMaxQueryParallelismWithRemoteExecution in pkg/frontend/v2/remoteexec_test.go
+
 	var (
 		maxQueryParallelism = 2
 		count               atomic.Int32
