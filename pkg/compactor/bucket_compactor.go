@@ -30,6 +30,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/thanos-io/objstore"
 	"github.com/thanos-io/objstore/providers/filesystem"
+	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/storage/indexheader"
 	"github.com/grafana/mimir/pkg/storage/sharding"
@@ -351,12 +352,14 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 	}
 
 	blocksToCompactDirs := make([]string, len(toCompact))
+	var totalBlockSize int64
 	for ix, meta := range toCompact {
 		blocksToCompactDirs[ix] = filepath.Join(subDir, meta.ULID.String())
+		totalBlockSize += meta.BlockBytes()
 	}
 
 	elapsed := time.Since(downloadBegin)
-	level.Info(jobLogger).Log("msg", "downloaded and verified blocks; compacting blocks", "block_count", blockCount, "blocks", toCompactStr, "duration", elapsed, "duration_ms", elapsed.Milliseconds())
+	level.Info(jobLogger).Log("msg", "downloaded and verified blocks; compacting blocks", "block_count", blockCount, "blocks", toCompactStr, "total_size_bytes", totalBlockSize, "duration", elapsed, "duration_ms", elapsed.Milliseconds())
 
 	compactionBegin := time.Now()
 
@@ -460,6 +463,7 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 
 	// upload all blocks
 	c.metrics.blockUploadsStarted.Add(float64(uploadBlocksCount))
+	var totalUploadedSize atomic.Int64
 	err = concurrency.ForEachJob(ctx, uploadBlocksCount, c.blockSyncConcurrency, func(ctx context.Context, idx int) error {
 		blockToUpload := blocksToUpload[idx]
 		bdir := filepath.Join(subDir, blockToUpload.ulid.String())
@@ -469,7 +473,8 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 			objstore.WithUploadConcurrency(c.maxPerBlockUploadConcurrency),
 		}
 
-		if err := block.Upload(ctx, jobLogger, c.bkt, bdir, nil, opts...); err != nil {
+		uploadedMeta, err := block.Upload(ctx, jobLogger, c.bkt, bdir, nil, opts...)
+		if err != nil {
 			var uploadErr *block.UploadError
 			if errors.As(err, &uploadErr) {
 				c.metrics.blockUploadsFailed.WithLabelValues(uploadErr.FileType()).Inc()
@@ -481,7 +486,30 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 
 		elapsed := time.Since(begin)
 		c.metrics.blockUploadsDuration.WithLabelValues(jobType).Observe(elapsed.Seconds())
-		level.Info(jobLogger).Log("msg", "uploaded block", "result_block", blockToUpload.ulid, "duration", elapsed, "duration_ms", elapsed.Milliseconds(), "external_labels", labels.FromMap(blockToUpload.labels))
+
+		blockSize := int64(0)
+		seriesCount := uint64(0)
+		sampleCount := uint64(0)
+		compactionLevel := 0
+
+		if uploadedMeta != nil {
+			seriesCount = uploadedMeta.Stats.NumSeries
+			sampleCount = uploadedMeta.Stats.NumSamples
+			compactionLevel = uploadedMeta.Compaction.Level
+			blockSize = uploadedMeta.BlockBytes()
+			totalUploadedSize.Add(blockSize)
+		}
+
+		level.Info(jobLogger).Log(
+			"msg", "uploaded block",
+			"result_block", blockToUpload.ulid,
+			"size_bytes", blockSize,
+			"series_count", seriesCount,
+			"sample_count", sampleCount,
+			"compaction_level", compactionLevel,
+			"duration", elapsed,
+			"duration_ms", elapsed.Milliseconds(),
+			"external_labels", labels.FromMap(blockToUpload.labels))
 		return nil
 	})
 	if err != nil {
@@ -489,7 +517,7 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 	}
 
 	elapsed = time.Since(uploadBegin)
-	level.Info(jobLogger).Log("msg", "uploaded all blocks", "blocks", uploadBlocksCount, "duration", elapsed, "duration_ms", elapsed.Milliseconds())
+	level.Info(jobLogger).Log("msg", "uploaded all blocks", "blocks", uploadBlocksCount, "total_size_bytes", totalUploadedSize.Load(), "duration", elapsed, "duration_ms", elapsed.Milliseconds())
 
 	// Mark for deletion the blocks we just compacted from the job and bucket so they do not get included
 	// into the next planning cycle.
@@ -686,7 +714,7 @@ func repairIssue347(ctx context.Context, logger log.Logger, bkt objstore.Bucket,
 	}
 
 	level.Info(logger).Log("msg", "uploading repaired block", "newID", resid)
-	if err = block.Upload(ctx, logger, bkt, filepath.Join(tmpdir, resid.String()), nil); err != nil {
+	if _, err = block.Upload(ctx, logger, bkt, filepath.Join(tmpdir, resid.String()), nil); err != nil {
 		return errors.Wrapf(err, "upload of %s failed", resid)
 	}
 

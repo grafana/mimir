@@ -69,8 +69,14 @@ func NewSubquery(
 	}, nil
 }
 
-func (s *Subquery) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
-	return s.Inner.SeriesMetadata(ctx)
+func (s *Subquery) SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
+	if s.SubqueryTimeRange.StepCount == 0 {
+		// There are no steps in the subquery time range.
+		// This can happen with queries like "metric[7m:1h]" if the 7m range doesn't overlap with the beginning of an hour.
+		return nil, nil
+	}
+
+	return s.Inner.SeriesMetadata(ctx, matchers)
 }
 
 func (s *Subquery) NextSeries(ctx context.Context) error {
@@ -106,7 +112,7 @@ func (s *Subquery) NextSeries(ctx context.Context) error {
 	return nil
 }
 
-func (s *Subquery) NextStepSamples() (*types.RangeVectorStepData, error) {
+func (s *Subquery) NextStepSamples(ctx context.Context) (*types.RangeVectorStepData, error) {
 	if s.nextStepT > s.ParentQueryTimeRange.EndT {
 		return nil, types.EOS
 	}
@@ -169,6 +175,10 @@ func (s *Subquery) Prepare(ctx context.Context, params *types.PrepareParams) err
 		QueryStats: s.subqueryStats,
 	}
 	return s.Inner.Prepare(ctx, &childParams)
+}
+
+func (s *Subquery) Finalize(ctx context.Context) error {
+	return s.Inner.Finalize(ctx)
 }
 
 func (s *Subquery) Close() {

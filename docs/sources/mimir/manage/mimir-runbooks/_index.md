@@ -859,12 +859,6 @@ How to **investigate**:
 - Check the latest runtime config update (it's likely to be broken)
 - Check Mimir logs to get more details about what's wrong with the config
 
-### MimirFrontendQueriesStuck
-
-This alert fires if Mimir is running without query-scheduler and queries are piling up in the query-frontend queue.
-
-The procedure to investigate it is the same as the one for [`MimirSchedulerQueriesStuck`](#MimirSchedulerQueriesStuck): please see the other runbook for more details.
-
 ### MimirSchedulerQueriesStuck
 
 This alert fires if queries are piling up in the query-scheduler.
@@ -1577,6 +1571,20 @@ How to **investigate** and **fix** it:
 
   - After the resizing process finishes, revert this change.
 
+### MimirHighGRPCConcurrentStreamsPerConnection
+
+How it **works**:
+
+This alert fires when GRPC connections are getting close to maxing out their maximum number of concurrent streams. By default, each component accepts up to 100 concurrent streams on each GRPC connection.
+
+When the number of concurrent streams is maxed out, it causes hard-to-explain latency increases between components.
+
+How to **investigate**:
+
+- Check the `grpc_concurrent_streams_by_conn_max` metric to see if a sudden increase in streams per connection can be attributed to another issue.
+- If the number of streams has grown organically, consider setting the `-server.grpc-max-concurrent-streams` flag to a value higher than the current setting. Refer to the `cortex_grpc_concurrent_streams_limit` metric for the current value.
+- You can also horizontally scale up the component to reduce the number of concurrent streams on each replica.
+
 ## Mimir ingest storage (experimental)
 
 This section contains runbooks for alerts related to experimental Mimir ingest storage.
@@ -1802,22 +1810,25 @@ How to **fix**:
 
   1. Once ingesters are stable, revert the temporarily config applied in the previous step.
 
-### MimirBlockBuilderLagging
+### MimirBlockBuilderSchedulerPendingJobs
 
-This alert fires when the block-builder reports a large number of unprocessed records in Kafka partitions.
+This alert fires when the block-builder-scheduler reports pending jobs for an extended period of time.
 
 How it **works**:
 
-- The block-builder-scheduler watches the Kafka topic backlog. The lag is calculated per-partition as the difference between the partition's end and its last committed offset.
-- The block-builder-scheduler chops the backlog into jobs, and distributes the jobs between the block-builder instances.
-- A block-builder must consume and process the records in a job into TSDB blocks.
+- The block-builder-scheduler watches the Kafka topic backlog.
+- The block-builder-scheduler divides the backlog into jobs, and distributes the jobs between the block-builder instances.
+- A block-builder must consume records from a job's start offset to its end offset, and process the records into TSDB blocks.
 - When the job is processed, the block-builder-scheduler commits the offset of the last record from this job into Kafka.
+- The jobs that haven't been yet assigned to any block-builder instance are reported as "pending" jobs.
 
-If the block-builder reports high values in the lag, this could indicate that the block-builder cannot fully process and commit Kafka record.
+When the block-builder-scheduler reports that it has pending jobs, this can mean either that all block-builder instances are busy, and can't pick the pending jobs;
+or there are no block-builder instances running.
 
 How to **investigate**:
 
-- Check if the per-partition lag has been growing over the past hours.
+- Check if the block-builder instances are healthy, and that they progress with the assigned jobs.
+- Check if the per-partition lag has been growing over the previous hours.
 - Explore the block-builder logs for any errors reported while it processed the partition.
 
 ### MimirBlockBuilderCompactAndUploadFailed

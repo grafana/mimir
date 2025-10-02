@@ -98,8 +98,8 @@ func Handler(
 ) http.Handler {
 	return handler(maxRecvMsgSize, newRequestBuffers, sourceIPs, allowSkipLabelNameValidation, allowSkipLabelCountValidation, limits, retryCfg, push, logger, func(ctx context.Context, r *http.Request, maxRecvMsgSize int, buffers *util.RequestBuffers, req *mimirpb.PreallocWriteRequest, _ log.Logger) error {
 		protoBodySize, err := util.ParseProtoReader(ctx, r.Body, int(r.ContentLength), maxRecvMsgSize, buffers, req, util.RawSnappy)
-		if errors.Is(err, util.MsgSizeTooLargeErr{}) {
-			err = distributorMaxWriteMessageSizeErr{actual: int(r.ContentLength), limit: maxRecvMsgSize}
+		if e := (util.MsgSizeTooLargeErr{}); errors.As(err, &e) {
+			err = distributorMaxWriteMessageSizeErr{compressed: e.Compressed, actual: e.Actual, limit: e.Limit}
 		}
 		if err != nil {
 			return err
@@ -108,32 +108,36 @@ func Handler(
 		if err != nil {
 			return err
 		}
-		pushMetrics.ObserveUncompressedBodySize(tenantID, float64(protoBodySize))
+		pushMetrics.ObserveUncompressedBodySize(tenantID, "push", float64(protoBodySize))
 
 		return nil
 	})
 }
 
 type distributorMaxWriteMessageSizeErr struct {
-	actual, limit int
+	compressed, actual, limit int
 }
 
 func (e distributorMaxWriteMessageSizeErr) Error() string {
-	msgSizeDesc := fmt.Sprintf(" of %d bytes", e.actual)
-	if e.actual < 0 {
-		msgSizeDesc = ""
+	msgSizeDesc := ""
+	if e.actual > 0 {
+		msgSizeDesc = fmt.Sprintf(" of %d bytes (uncompressed)", e.actual)
+	} else if e.compressed > 0 {
+		msgSizeDesc = fmt.Sprintf(" of %d bytes (compressed)", e.compressed)
 	}
 	return globalerror.DistributorMaxWriteMessageSize.MessageWithPerInstanceLimitConfig(fmt.Sprintf("the incoming push request has been rejected because its message size%s is larger than the allowed limit of %d bytes", msgSizeDesc, e.limit), "distributor.max-recv-msg-size")
 }
 
 type distributorMaxOTLPRequestSizeErr struct {
-	actual, limit int
+	compressed, actual, limit int
 }
 
 func (e distributorMaxOTLPRequestSizeErr) Error() string {
-	msgSizeDesc := fmt.Sprintf(" of %d bytes", e.actual)
-	if e.actual < 0 {
-		msgSizeDesc = ""
+	msgSizeDesc := ""
+	if e.actual > 0 {
+		msgSizeDesc = fmt.Sprintf(" of %d bytes (uncompressed)", e.actual)
+	} else if e.compressed > 0 {
+		msgSizeDesc = fmt.Sprintf(" of %d bytes (compressed)", e.compressed)
 	}
 	return globalerror.DistributorMaxOTLPRequestSize.MessageWithPerInstanceLimitConfig(fmt.Sprintf("the incoming OTLP request has been rejected because its message size%s is larger than the allowed limit of %d bytes", msgSizeDesc, e.limit), maxOTLPRequestSizeFlag)
 }

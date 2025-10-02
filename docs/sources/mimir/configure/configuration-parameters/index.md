@@ -1500,7 +1500,7 @@ storage:
   [filesystem: <filesystem_storage_backend>]
 
 client_cluster_validation:
-  # (experimental) Optionally define the cluster validation label.
+  # (experimental) Primary cluster validation label.
   # CLI flag: -common.client-cluster-validation.label
   [label: <string> | default = ""]
 ```
@@ -1764,9 +1764,14 @@ grpc_tls_config:
 [http_path_prefix: <string> | default = ""]
 
 cluster_validation:
-  # (experimental) Optionally define the cluster validation label.
+  # (experimental) Primary cluster validation label.
   # CLI flag: -server.cluster-validation.label
   [label: <string> | default = ""]
+
+  # (experimental) Comma-separated list of additional cluster validation labels
+  # that the server will accept from incoming requests.
+  # CLI flag: -server.cluster-validation.additional-labels
+  [additional_labels: <string> | default = ""]
 
   grpc:
     # (experimental) When enabled, cluster label validation is executed:
@@ -2705,6 +2710,11 @@ The `querier` block configures the querier.
 # CLI flag: -querier.lookback-delta
 [lookback_delta: <duration> | default = 5m]
 
+# (experimental) Enable the experimental Prometheus feature for delayed name
+# removal.
+# CLI flag: -querier.enable-delayed-name-removal
+[enable_delayed_name_removal: <boolean> | default = false]
+
 mimir_query_engine:
   # (experimental) Enable pruning query expressions that are toggled off with
   # constants.
@@ -2726,6 +2736,11 @@ mimir_query_engine:
   # queries that do not require full histograms.
   # CLI flag: -querier.mimir-query-engine.enable-skipping-histogram-decoding
   [enable_skipping_histogram_decoding: <boolean> | default = true]
+
+  # (experimental) Enable generating selectors for one side of a binary
+  # expression based on results from the other side.
+  # CLI flag: -querier.mimir-query-engine.enable-narrow-binary-selectors
+  [enable_narrow_binary_selectors: <boolean> | default = false]
 ```
 
 ### frontend
@@ -2845,6 +2860,11 @@ results_cache:
 # CLI flag: -query-frontend.parallelize-shardable-queries
 [parallelize_shardable_queries: <boolean> | default = false]
 
+# (experimental) Set to true to enable rewriting histogram queries for a more
+# efficient order of execution.
+# CLI flag: -query-frontend.rewrite-histogram-queries
+[rewrite_histogram_queries: <boolean> | default = false]
+
 # (experimental) Set to true to enable rewriting queries to propagate label
 # matchers across binary expressions.
 # CLI flag: -query-frontend.rewrite-propagate-matchers
@@ -2882,7 +2902,7 @@ results_cache:
 [cache_samples_processed_stats: <boolean> | default = false]
 
 client_cluster_validation:
-  # (experimental) Optionally define the cluster validation label.
+  # (experimental) Primary cluster validation label.
   # CLI flag: -query-frontend.client-cluster-validation.label
   [label: <string> | default = ""]
 
@@ -2895,6 +2915,11 @@ client_cluster_validation:
 # Mimir query engine.
 # CLI flag: -query-frontend.enable-query-engine-fallback
 [enable_query_engine_fallback: <boolean> | default = true]
+
+# (experimental) If set to true and the Mimir query engine is in use, use remote
+# execution to evaluate queries in queriers.
+# CLI flag: -query-frontend.enable-remote-execution
+[enable_remote_execution: <boolean> | default = false]
 ```
 
 ### query_scheduler
@@ -3262,8 +3287,9 @@ ring:
 [query_stats_enabled: <boolean> | default = false]
 
 query_frontend:
-  # GRPC listen address of the query-frontend(s). Must be a DNS address
-  # (prefixed with dns:///) to enable client side load balancing.
+  # Can be either the GRPC listen address of the query-frontend(s) or the
+  # HTTP/HTTPS address of a Prometheus-compatible server. Must be a DNS address
+  # (prefixed with dns:///) to enable GRPC client side load balancing.
   # CLI flag: -ruler.query-frontend.address
   [address: <string> | default = ""]
 
@@ -3272,6 +3298,13 @@ query_frontend:
   # The CLI flags prefix for this block configuration is:
   # ruler.query-frontend.grpc-client-config
   [grpc_client_config: <grpc_client>]
+
+  # Configures the HTTP client used to communicate between the rulers and
+  # query-frontends.
+  http_client_config:
+    # (advanced) Timeout for establishing a connection to the query-frontend.
+    # CLI flag: -ruler.query-frontend.http-client-config.connect-timeout
+    [connect_timeout: <duration> | default = 30s]
 
   # Format to use when retrieving query results from query-frontends. Supported
   # values: json, protobuf
@@ -3666,7 +3699,7 @@ alertmanager_client:
   [connect_backoff_max_delay: <duration> | default = 5s]
 
   cluster_validation:
-    # (experimental) Optionally define the cluster validation label.
+    # (experimental) Primary cluster validation label.
     # CLI flag: -alertmanager.alertmanager-client.cluster-validation.label
     [label: <string> | default = ""]
 
@@ -3938,7 +3971,7 @@ backoff_config:
 [connect_backoff_max_delay: <duration> | default = 5s]
 
 cluster_validation:
-  # (experimental) Optionally define the cluster validation label.
+  # (experimental) Primary cluster validation label.
   # CLI flag: -<prefix>.cluster-validation.label
   [label: <string> | default = ""]
 ```
@@ -4462,6 +4495,13 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -validation.max-length-label-value
 [max_label_value_length: <int> | default = 2048]
 
+# (experimental) What to do for label values over the length limit. Options are:
+# 'error', 'truncate', 'drop'. For 'truncate', the hash of the full value
+# replaces the end portion of the value. For 'drop', the hash fully replaces the
+# value.
+# CLI flag: -validation.label-value-length-over-limit-strategy
+[label_value_length_over_limit_strategy: <string> | default = "error"]
+
 # Maximum number of label names per series.
 # CLI flag: -validation.max-label-names-per-series
 [max_label_names_per_series: <int> | default = 30]
@@ -4860,10 +4900,10 @@ blocked_requests:
 # CLI flag: -query-frontend.subquery-spin-off-enabled
 [subquery_spin_off_enabled: <boolean> | default = false]
 
-# (experimental) Enable labels query optimizations. When enabled, the
-# query-frontend may rewrite labels queries to improve their performance.
+# (advanced) Enable labels query optimizations. When enabled, the query-frontend
+# may rewrite labels queries to improve their performance.
 # CLI flag: -query-frontend.labels-query-optimizer-enabled
-[labels_query_optimizer_enabled: <boolean> | default = false]
+[labels_query_optimizer_enabled: <boolean> | default = true]
 
 # Enables endpoints used for cardinality analysis.
 # CLI flag: -querier.cardinality-analysis-enabled
@@ -4903,7 +4943,7 @@ cost_attribution_labels_structured:
 # (experimental) Maximum cardinality of cost attribution labels allowed per
 # user.
 # CLI flag: -validation.max-cost-attribution-cardinality
-[max_cost_attribution_cardinality: <int> | default = 10000]
+[max_cost_attribution_cardinality: <int> | default = 2000]
 
 # (experimental) Defines how long cost attribution stays in overflow before
 # attempting a reset, with received/discarded samples extending the cooldown if
@@ -4916,6 +4956,11 @@ cost_attribution_labels_structured:
 # have been pushed.
 # CLI flag: -ruler.evaluation-delay-duration
 [ruler_evaluation_delay_duration: <duration> | default = 1m]
+
+# (experimental) The maximum tolerated ingestion delay for eventually consistent
+# rule evaluations. Set to 0 to disable the enforcement.
+# CLI flag: -ruler.evaluation-consistency-max-delay
+[ruler_evaluation_consistency_max_delay: <duration> | default = 0s]
 
 # The tenant's shard size when sharding is used by ruler. Value of 0 disables
 # shuffle sharding for the tenant, and tenant rules will be sharded across all
@@ -5200,7 +5245,8 @@ ruler_alertmanager_client_config:
 # is given in JSON format. Rate limit has the same meaning as
 # -alertmanager.notification-rate-limit, but only applies for specific
 # integration. Allowed integration names: webhook, email, pagerduty, opsgenie,
-# wechat, slack, victorops, pushover, sns, webex, telegram, discord, msteams.
+# wechat, slack, victorops, pushover, sns, webex, telegram, discord, msteams,
+# msteamsv2.
 # CLI flag: -alertmanager.notification-rate-limit-per-integration
 [alertmanager_notification_rate_limit_per_integration: <map of string to float64> | default = {}]
 
@@ -5955,6 +6001,11 @@ tsdb:
   # CLI flag: -blocks-storage.tsdb.bigger-out-of-order-blocks-for-old-samples
   [bigger_out_of_order_blocks_for_old_samples: <boolean> | default = false]
 
+  # (experimental) How frequently to collect head statistics, which are used in
+  # query execution optimization. 0 to disable.
+  # CLI flag: -blocks-storage.tsdb.head-statistics-collection-frequency
+  [head_statistics_collection_frequency: <duration> | default = 1h]
+
   # (advanced) Max size - in bytes - of the in-memory series hash cache. The
   # cache is shared across all tenants and it's used only when query sharding is
   # enabled.
@@ -6053,6 +6104,12 @@ tsdb:
   # performance.
   # CLI flag: -blocks-storage.tsdb.index-lookup-planning-enabled
   [index_lookup_planning_enabled: <boolean> | default = false]
+
+  # (experimental) Portion of queries where a mirrored chunk querier compares
+  # results with and without index lookup planning. Value between 0 (disabled)
+  # and 1 (all queries).
+  # CLI flag: -blocks-storage.tsdb.index-lookup-planning-comparison-portion
+  [index_lookup_planning_comparison_portion: <float> | default = 0]
 ```
 
 ### compactor

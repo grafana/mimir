@@ -79,16 +79,6 @@ groups:
           for: 5m
           labels:
             severity: critical
-        - alert: MimirFrontendQueriesStuck
-          annotations:
-            message: |
-                There are {{ $value }} queued up queries in {{ $labels.cluster }}/{{ $labels.namespace }} {{ $labels.job }}.
-            runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirfrontendqueriesstuck
-          expr: |
-            sum by (cluster, namespace, job) (min_over_time(cortex_query_frontend_queue_length[1m])) > 0
-          for: 5m
-          labels:
-            severity: critical
         - alert: MimirSchedulerQueriesStuck
           annotations:
             message: |
@@ -267,6 +257,17 @@ groups:
           for: 15m
           labels:
             component: ingester
+            severity: warning
+        - alert: MimirHighGRPCConcurrentStreamsPerConnection
+          annotations:
+            message: |
+                Container {{ $labels.container }} in {{ $labels.cluster }}/{{ $labels.namespace }} is experiencing high GRPC concurrent streams per connection.
+            runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirhighgrpcconcurrentstreamsperconnection
+          expr: |
+            max(avg_over_time(grpc_concurrent_streams_by_conn_max[10m])) by (cluster, namespace, container)
+            /
+            min(cortex_grpc_concurrent_streams_limit) by (cluster, namespace, container) > 0.9
+          labels:
             severity: warning
     - name: mimir_instance_limits_alerts
       rules:
@@ -772,7 +773,7 @@ groups:
           expr: |
             increase(cortex_alertmanager_state_initial_sync_completed_total{outcome="failed"}[1m]) > 0
           labels:
-            severity: critical
+            severity: warning
         - alert: MimirAlertmanagerAllocatingTooMuchMemory
           annotations:
             message: |
@@ -1309,36 +1310,15 @@ groups:
           for: 5m
           labels:
             severity: critical
-        - alert: MimirBlockBuilderLagging
+        - alert: MimirBlockBuilderSchedulerPendingJobs
           annotations:
-            message: Mimir {{ $labels.instance }} in {{ $labels.cluster }}/{{ $labels.namespace }} reports partition lag of {{ printf "%.2f" $value }}.
-            runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirblockbuilderlagging
+            message: Mimir {{ $labels.instance }} in {{ $labels.cluster }}/{{ $labels.namespace }} reports {{ printf "%.2f" $value }} pending jobs.
+            runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirblockbuilderschedulerpendingjobs
           expr: |
-            max by(cluster, namespace, instance) (
-            max_over_time(
-            (
-            cortex_blockbuilder_scheduler_partition_end_offset offset 1h
-            -
-            cortex_blockbuilder_scheduler_partition_committed_offset
-            )[10m:])) > 4e6
-          for: 75m
+            sum by (cluster, namespace, instance) (cortex_blockbuilder_scheduler_pending_jobs) > 0
+          for: 40m
           labels:
             severity: warning
-        - alert: MimirBlockBuilderLagging
-          annotations:
-            message: Mimir {{ $labels.instance }} in {{ $labels.cluster }}/{{ $labels.namespace }} reports partition lag of {{ printf "%.2f" $value }}.
-            runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirblockbuilderlagging
-          expr: |
-            max by(cluster, namespace, instance) (
-            max_over_time(
-            (
-            cortex_blockbuilder_scheduler_partition_end_offset offset 1h
-            -
-            cortex_blockbuilder_scheduler_partition_committed_offset
-            )[10m:])) > 4e6
-          for: 140m
-          labels:
-            severity: critical
         - alert: MimirBlockBuilderCompactAndUploadFailed
           annotations:
             message: Mimir {{ $labels.instance }} in {{ $labels.cluster }}/{{ $labels.namespace }} fails to compact and upload blocks.

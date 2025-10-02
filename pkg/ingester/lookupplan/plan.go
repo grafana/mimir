@@ -4,10 +4,14 @@ package lookupplan
 
 import (
 	"context"
-	"fmt"
 	"slices"
 
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/tsdb/index"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
+
+	"github.com/grafana/mimir/pkg/util"
 )
 
 const (
@@ -26,22 +30,19 @@ type plan struct {
 }
 
 // newScanOnlyPlan returns a plan in which all predicates would be used to scan and none to reach from the index.
-func newScanOnlyPlan(ctx context.Context, matchers []*labels.Matcher, stats Statistics) (plan, error) {
+func newScanOnlyPlan(ctx context.Context, stats index.Statistics, matchers []*labels.Matcher) plan {
 	p := plan{
 		predicates:     make([]planPredicate, 0, len(matchers)),
 		indexPredicate: make([]bool, 0, len(matchers)),
 		totalSeries:    stats.TotalSeries(),
 	}
 	for _, m := range matchers {
-		pred, err := newPlanPredicate(ctx, m, stats)
-		if err != nil {
-			return plan{}, fmt.Errorf("error converting matcher to plan predicate: %w", err)
-		}
+		pred := newPlanPredicate(ctx, m, stats)
 		p.predicates = append(p.predicates, pred)
 		p.indexPredicate = append(p.indexPredicate, false)
 	}
 
-	return p, nil
+	return p
 }
 
 func (p plan) IndexMatchers() []*labels.Matcher {
@@ -156,23 +157,35 @@ func (p plan) cardinality() uint64 {
 	return uint64(finalSelectivity * float64(p.totalSeries))
 }
 
-func (p plan) appendLogKVs(keyVals []any, fieldPrefix string) []any {
-	indexMatchers := p.IndexMatchers()
-	scanMatchers := p.ScanMatchers()
+func (p plan) addPredicatesToSpan(span trace.Span) {
+	// Preallocate the attributes. Use an array to ensure the capacity is correct at compile time.
+	const numAttributesPerPredicate = 7
+	attributes := make([]attribute.KeyValue, 0, len(p.predicates)*numAttributesPerPredicate)
 
-	keyVals = append(keyVals,
-		fmt.Sprintf("%s_total_cost", fieldPrefix), p.totalCost(),
-		fmt.Sprintf("%s_index_lookup_cost", fieldPrefix), p.indexLookupCost(),
-		fmt.Sprintf("%s_filter_cost", fieldPrefix), p.filterCost(),
-		fmt.Sprintf("%s_intersection_cost", fieldPrefix), p.intersectionCost(),
-		fmt.Sprintf("%s_cardinality", fieldPrefix), p.cardinality(),
-	)
+	for _, pred := range p.predicates {
+		predAttr := [numAttributesPerPredicate]attribute.KeyValue{
+			attribute.Stringer("matcher", pred.matcher),
+			attribute.Float64("selectivity", pred.selectivity),
+			attribute.Int64("cardinality", int64(pred.cardinality)),
+			attribute.Int64("label_name_unique_values", int64(pred.labelNameUniqueVals)),
+			attribute.Float64("single_match_cost", pred.singleMatchCost),
+			attribute.Float64("index_scan_cost", pred.indexScanCost),
+			attribute.Float64("index_lookup_cost", pred.indexLookupCost()),
+		}
+		attributes = append(attributes, predAttr[:]...)
+	}
+	span.AddEvent("lookup_plan_predicate", trace.WithAttributes(attributes...))
+}
 
-	for i, m := range indexMatchers {
-		keyVals = append(keyVals, fmt.Sprintf("%s_index_%d", fieldPrefix, i), m.String())
-	}
-	for i, m := range scanMatchers {
-		keyVals = append(keyVals, fmt.Sprintf("%s_scan_%d", fieldPrefix, i), m.String())
-	}
-	return keyVals
+func (p plan) addSpanEvent(span trace.Span, planName string) {
+	span.AddEvent("lookup plan", trace.WithAttributes(
+		attribute.String("plan_name", planName),
+		attribute.Float64("total_cost", p.totalCost()),
+		attribute.Float64("index_lookup_cost", p.indexLookupCost()),
+		attribute.Float64("filter_cost", p.filterCost()),
+		attribute.Float64("intersection_cost", p.intersectionCost()),
+		attribute.Int64("cardinality", int64(p.cardinality())),
+		attribute.Stringer("index_matchers", util.MatchersStringer(p.IndexMatchers())),
+		attribute.Stringer("scan_matchers", util.MatchersStringer(p.ScanMatchers())),
+	))
 }

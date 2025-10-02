@@ -756,10 +756,21 @@
               "kind": "field",
               "name": "label",
               "required": false,
-              "desc": "Optionally define the cluster validation label.",
+              "desc": "Primary cluster validation label.",
               "fieldValue": null,
               "fieldDefaultValue": "",
               "fieldFlag": "server.cluster-validation.label",
+              "fieldType": "string",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "additional_labels",
+              "required": false,
+              "desc": "Comma-separated list of additional cluster validation labels that the server will accept from incoming requests.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "server.cluster-validation.additional-labels",
               "fieldType": "string",
               "fieldCategory": "experimental"
             },
@@ -2101,7 +2112,7 @@
                       "kind": "field",
                       "name": "label",
                       "required": false,
-                      "desc": "Optionally define the cluster validation label.",
+                      "desc": "Primary cluster validation label.",
                       "fieldValue": null,
                       "fieldDefaultValue": "",
                       "fieldFlag": "distributor.usage-tracker-client.grpc-client-config.cluster-validation.label",
@@ -2521,7 +2532,7 @@
                   "kind": "field",
                   "name": "label",
                   "required": false,
-                  "desc": "Optionally define the cluster validation label.",
+                  "desc": "Primary cluster validation label.",
                   "fieldValue": null,
                   "fieldDefaultValue": "",
                   "fieldFlag": "querier.store-gateway-client.cluster-validation.label",
@@ -2688,6 +2699,17 @@
           "fieldCategory": "advanced"
         },
         {
+          "kind": "field",
+          "name": "enable_delayed_name_removal",
+          "required": false,
+          "desc": "Enable the experimental Prometheus feature for delayed name removal.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "querier.enable-delayed-name-removal",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
           "kind": "block",
           "name": "mimir_query_engine",
           "required": false,
@@ -2734,6 +2756,17 @@
               "fieldValue": null,
               "fieldDefaultValue": true,
               "fieldFlag": "querier.mimir-query-engine.enable-skipping-histogram-decoding",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "enable_narrow_binary_selectors",
+              "required": false,
+              "desc": "Enable generating selectors for one side of a binary expression based on results from the other side.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "querier.mimir-query-engine.enable-narrow-binary-selectors",
               "fieldType": "boolean",
               "fieldCategory": "experimental"
             }
@@ -3019,7 +3052,7 @@
                   "kind": "field",
                   "name": "label",
                   "required": false,
-                  "desc": "Optionally define the cluster validation label.",
+                  "desc": "Primary cluster validation label.",
                   "fieldValue": null,
                   "fieldDefaultValue": "",
                   "fieldFlag": "ingester.client.cluster-validation.label",
@@ -4860,6 +4893,17 @@
         },
         {
           "kind": "field",
+          "name": "label_value_length_over_limit_strategy",
+          "required": false,
+          "desc": "What to do for label values over the length limit. Options are: 'error', 'truncate', 'drop'. For 'truncate', the hash of the full value replaces the end portion of the value. For 'drop', the hash fully replaces the value.",
+          "fieldValue": null,
+          "fieldDefaultValue": "error",
+          "fieldFlag": "validation.label-value-length-over-limit-strategy",
+          "fieldType": "string",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "max_label_names_per_series",
           "required": false,
           "desc": "Maximum number of label names per series.",
@@ -5571,10 +5615,10 @@
           "required": false,
           "desc": "Enable labels query optimizations. When enabled, the query-frontend may rewrite labels queries to improve their performance.",
           "fieldValue": null,
-          "fieldDefaultValue": false,
+          "fieldDefaultValue": true,
           "fieldFlag": "query-frontend.labels-query-optimizer-enabled",
           "fieldType": "boolean",
-          "fieldCategory": "experimental"
+          "fieldCategory": "advanced"
         },
         {
           "kind": "field",
@@ -5681,7 +5725,7 @@
           "required": false,
           "desc": "Maximum cardinality of cost attribution labels allowed per user.",
           "fieldValue": null,
-          "fieldDefaultValue": 10000,
+          "fieldDefaultValue": 2000,
           "fieldFlag": "validation.max-cost-attribution-cardinality",
           "fieldType": "int",
           "fieldCategory": "experimental"
@@ -5706,6 +5750,17 @@
           "fieldDefaultValue": 60000000000,
           "fieldFlag": "ruler.evaluation-delay-duration",
           "fieldType": "duration"
+        },
+        {
+          "kind": "field",
+          "name": "ruler_evaluation_consistency_max_delay",
+          "required": false,
+          "desc": "The maximum tolerated ingestion delay for eventually consistent rule evaluations. Set to 0 to disable the enforcement.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "ruler.evaluation-consistency-max-delay",
+          "fieldType": "duration",
+          "fieldCategory": "experimental"
         },
         {
           "kind": "field",
@@ -6207,7 +6262,7 @@
           "kind": "field",
           "name": "alertmanager_notification_rate_limit_per_integration",
           "required": false,
-          "desc": "Per-integration notification rate limits. Value is a map, where each key is integration name and value is a rate-limit (float). On command line, this map is given in JSON format. Rate limit has the same meaning as -alertmanager.notification-rate-limit, but only applies for specific integration. Allowed integration names: webhook, email, pagerduty, opsgenie, wechat, slack, victorops, pushover, sns, webex, telegram, discord, msteams.",
+          "desc": "Per-integration notification rate limits. Value is a map, where each key is integration name and value is a rate-limit (float). On command line, this map is given in JSON format. Rate limit has the same meaning as -alertmanager.notification-rate-limit, but only applies for specific integration. Allowed integration names: webhook, email, pagerduty, opsgenie, wechat, slack, victorops, pushover, sns, webex, telegram, discord, msteams, msteamsv2.",
           "fieldValue": null,
           "fieldDefaultValue": {},
           "fieldFlag": "alertmanager.notification-rate-limit-per-integration",
@@ -6774,7 +6829,7 @@
                   "kind": "field",
                   "name": "label",
                   "required": false,
-                  "desc": "Optionally define the cluster validation label.",
+                  "desc": "Primary cluster validation label.",
                   "fieldValue": null,
                   "fieldDefaultValue": "",
                   "fieldFlag": "querier.frontend-client.cluster-validation.label",
@@ -7057,7 +7112,7 @@
                   "kind": "field",
                   "name": "label",
                   "required": false,
-                  "desc": "Optionally define the cluster validation label.",
+                  "desc": "Primary cluster validation label.",
                   "fieldValue": null,
                   "fieldDefaultValue": "",
                   "fieldFlag": "querier.scheduler-client.cluster-validation.label",
@@ -7447,7 +7502,7 @@
                   "kind": "field",
                   "name": "label",
                   "required": false,
-                  "desc": "Optionally define the cluster validation label.",
+                  "desc": "Primary cluster validation label.",
                   "fieldValue": null,
                   "fieldDefaultValue": "",
                   "fieldFlag": "query-frontend.grpc-client-config.cluster-validation.label",
@@ -7817,6 +7872,17 @@
         },
         {
           "kind": "field",
+          "name": "rewrite_histogram_queries",
+          "required": false,
+          "desc": "Set to true to enable rewriting histogram queries for a more efficient order of execution.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "query-frontend.rewrite-histogram-queries",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "rewrite_propagate_matchers",
           "required": false,
           "desc": "Set to true to enable rewriting queries to propagate label matchers across binary expressions.",
@@ -7900,7 +7966,7 @@
               "kind": "field",
               "name": "label",
               "required": false,
-              "desc": "Optionally define the cluster validation label.",
+              "desc": "Primary cluster validation label.",
               "fieldValue": null,
               "fieldDefaultValue": "",
               "fieldFlag": "query-frontend.client-cluster-validation.label",
@@ -7930,6 +7996,17 @@
           "fieldValue": null,
           "fieldDefaultValue": true,
           "fieldFlag": "query-frontend.enable-query-engine-fallback",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "enable_remote_execution",
+          "required": false,
+          "desc": "If set to true and the Mimir query engine is in use, use remote execution to evaluate queries in queriers.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "query-frontend.enable-remote-execution",
           "fieldType": "boolean",
           "fieldCategory": "experimental"
         }
@@ -10766,6 +10843,17 @@
             },
             {
               "kind": "field",
+              "name": "head_statistics_collection_frequency",
+              "required": false,
+              "desc": "How frequently to collect head statistics, which are used in query execution optimization. 0 to disable.",
+              "fieldValue": null,
+              "fieldDefaultValue": 3600000000000,
+              "fieldFlag": "blocks-storage.tsdb.head-statistics-collection-frequency",
+              "fieldType": "duration",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
               "name": "series_hash_cache_max_size_bytes",
               "required": false,
               "desc": "Max size - in bytes - of the in-memory series hash cache. The cache is shared across all tenants and it's used only when query sharding is enabled.",
@@ -10949,6 +11037,17 @@
               "fieldDefaultValue": false,
               "fieldFlag": "blocks-storage.tsdb.index-lookup-planning-enabled",
               "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "index_lookup_planning_comparison_portion",
+              "required": false,
+              "desc": "Portion of queries where a mirrored chunk querier compares results with and without index lookup planning. Value between 0 (disabled) and 1 (all queries).",
+              "fieldValue": null,
+              "fieldDefaultValue": 0,
+              "fieldFlag": "blocks-storage.tsdb.index-lookup-planning-comparison-portion",
+              "fieldType": "float",
               "fieldCategory": "experimental"
             }
           ],
@@ -12862,7 +12961,7 @@
                   "kind": "field",
                   "name": "label",
                   "required": false,
-                  "desc": "Optionally define the cluster validation label.",
+                  "desc": "Primary cluster validation label.",
                   "fieldValue": null,
                   "fieldDefaultValue": "",
                   "fieldFlag": "ruler.client.cluster-validation.label",
@@ -13650,7 +13749,7 @@
               "kind": "field",
               "name": "address",
               "required": false,
-              "desc": "GRPC listen address of the query-frontend(s). Must be a DNS address (prefixed with dns:///) to enable client side load balancing.",
+              "desc": "Can be either the GRPC listen address of the query-frontend(s) or the HTTP/HTTPS address of a Prometheus-compatible server. Must be a DNS address (prefixed with dns:///) to enable GRPC client side load balancing.",
               "fieldValue": null,
               "fieldDefaultValue": "",
               "fieldFlag": "ruler.query-frontend.address",
@@ -13924,7 +14023,7 @@
                       "kind": "field",
                       "name": "label",
                       "required": false,
-                      "desc": "Optionally define the cluster validation label.",
+                      "desc": "Primary cluster validation label.",
                       "fieldValue": null,
                       "fieldDefaultValue": "",
                       "fieldFlag": "ruler.query-frontend.grpc-client-config.cluster-validation.label",
@@ -13934,6 +14033,27 @@
                   ],
                   "fieldValue": null,
                   "fieldDefaultValue": null
+                }
+              ],
+              "fieldValue": null,
+              "fieldDefaultValue": null
+            },
+            {
+              "kind": "block",
+              "name": "http_client_config",
+              "required": false,
+              "desc": "",
+              "blockEntries": [
+                {
+                  "kind": "field",
+                  "name": "connect_timeout",
+                  "required": false,
+                  "desc": "Timeout for establishing a connection to the query-frontend.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 30000000000,
+                  "fieldFlag": "ruler.query-frontend.http-client-config.connect-timeout",
+                  "fieldType": "duration",
+                  "fieldCategory": "advanced"
                 }
               ],
               "fieldValue": null,
@@ -16215,7 +16335,7 @@
                   "kind": "field",
                   "name": "label",
                   "required": false,
-                  "desc": "Optionally define the cluster validation label.",
+                  "desc": "Primary cluster validation label.",
                   "fieldValue": null,
                   "fieldDefaultValue": "",
                   "fieldFlag": "alertmanager.alertmanager-client.cluster-validation.label",
@@ -18174,7 +18294,7 @@
                   "kind": "field",
                   "name": "label",
                   "required": false,
-                  "desc": "Optionally define the cluster validation label.",
+                  "desc": "Primary cluster validation label.",
                   "fieldValue": null,
                   "fieldDefaultValue": "",
                   "fieldFlag": "query-scheduler.grpc-client-config.cluster-validation.label",
@@ -23517,7 +23637,7 @@
               "kind": "field",
               "name": "label",
               "required": false,
-              "desc": "Optionally define the cluster validation label.",
+              "desc": "Primary cluster validation label.",
               "fieldValue": null,
               "fieldDefaultValue": "",
               "fieldFlag": "common.client-cluster-validation.label",

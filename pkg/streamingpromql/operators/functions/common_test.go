@@ -31,7 +31,7 @@ func TestDropSeriesName(t *testing.T) {
 		err := tracker.IncreaseMemoryConsumptionForLabels(metadata.Labels)
 		require.NoError(t, err)
 	}
-	modifiedMetadata, err := DropSeriesName.Func(seriesMetadata, tracker)
+	modifiedMetadata, err := DropSeriesName.Func(seriesMetadata, tracker, false)
 	require.NoError(t, err)
 	require.Equal(t, expected, modifiedMetadata)
 }

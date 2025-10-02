@@ -9,6 +9,7 @@ import (
 	"context"
 	"sort"
 
+	"github.com/go-kit/log"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
@@ -17,6 +18,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/operators"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/limiter"
+	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
 // OneToOneVectorVectorBinaryOperation represents a one-to-one binary operation between instant vectors such as "<expr> + <expr>" or "<expr> - <expr>".
@@ -27,8 +29,7 @@ type OneToOneVectorVectorBinaryOperation struct {
 	Op                       parser.ItemType
 	ReturnBool               bool
 	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
-
-	VectorMatching parser.VectorMatching
+	VectorMatching           parser.VectorMatching
 
 	// We need to retain these so that NextSeries() can return an error message with the series labels when
 	// multiple points match on a single side.
@@ -45,6 +46,8 @@ type OneToOneVectorVectorBinaryOperation struct {
 	expressionPosition posrange.PositionRange
 	annotations        *annotations.Annotations
 	timeRange          types.QueryTimeRange
+	hints              *Hints
+	logger             log.Logger
 }
 
 var _ types.InstantVectorOperator = &OneToOneVectorVectorBinaryOperation{}
@@ -128,6 +131,8 @@ func NewOneToOneVectorVectorBinaryOperation(
 	annotations *annotations.Annotations,
 	expressionPosition posrange.PositionRange,
 	timeRange types.QueryTimeRange,
+	hints *Hints,
+	logger log.Logger,
 ) (*OneToOneVectorVectorBinaryOperation, error) {
 	e, err := newVectorVectorBinaryOperationEvaluator(op, returnBool, memoryConsumptionTracker, annotations, expressionPosition)
 	if err != nil {
@@ -146,6 +151,8 @@ func NewOneToOneVectorVectorBinaryOperation(
 		expressionPosition: expressionPosition,
 		annotations:        annotations,
 		timeRange:          timeRange,
+		hints:              hints,
+		logger:             logger,
 	}
 
 	return b, nil
@@ -170,10 +177,47 @@ func (b *OneToOneVectorVectorBinaryOperation) ExpressionPosition() posrange.Posi
 // (The alternative would be to compute the entire result here in SeriesMetadata and only return the series that
 // contain points, but that would mean we'd need to hold the entire result in memory at once, which we want to
 // avoid.)
-func (b *OneToOneVectorVectorBinaryOperation) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
-	if canProduceAnySeries, err := b.loadSeriesMetadata(ctx); err != nil {
+func (b *OneToOneVectorVectorBinaryOperation) SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
+	var err error
+	b.leftMetadata, err = b.Left.SeriesMetadata(ctx, matchers)
+	if err != nil {
 		return nil, err
-	} else if !canProduceAnySeries {
+	} else if len(b.leftMetadata) == 0 {
+		if err = b.Finalize(ctx); err != nil {
+			return nil, err
+		}
+
+		// No series on left-hand side, we'll never have any output series.
+		b.Close()
+		return nil, nil
+	}
+
+	// If there are labels that this binary operation selects on or aggregations being done
+	// on the LHS, we can use the series and their values for those labels to reduce the amount
+	// of data fetched on the RHS.
+	if b.hints != nil {
+		hintMatchers := BuildMatchers(b.leftMetadata, b.hints)
+		// Note we are reassigning `matchers` here before passing to the RHS.
+		matchers = matchers.Append(hintMatchers)
+
+		sl := spanlogger.FromContext(ctx, b.logger)
+		sl.DebugLog(
+			"msg", "binary operator passing additional matchers to RHS",
+			"fields", b.hints.Include,
+			"hint_matchers", len(hintMatchers),
+			"total_matchers", len(matchers),
+		)
+	}
+
+	b.rightMetadata, err = b.Right.SeriesMetadata(ctx, matchers)
+	if err != nil {
+		return nil, err
+	} else if len(b.rightMetadata) == 0 {
+		if err = b.Finalize(ctx); err != nil {
+			return nil, err
+		}
+
+		// No series on right-hand side, we'll never have any output series.
 		b.Close()
 		return nil, nil
 	}
@@ -187,6 +231,11 @@ func (b *OneToOneVectorVectorBinaryOperation) SeriesMetadata(ctx context.Context
 		types.SeriesMetadataSlicePool.Put(&allMetadata, b.MemoryConsumptionTracker)
 		types.BoolSlicePool.Put(&leftSeriesUsed, b.MemoryConsumptionTracker)
 		types.BoolSlicePool.Put(&rightSeriesUsed, b.MemoryConsumptionTracker)
+
+		if err := b.Finalize(ctx); err != nil {
+			return nil, err
+		}
+
 		b.Close()
 		return nil, nil
 	}
@@ -198,37 +247,6 @@ func (b *OneToOneVectorVectorBinaryOperation) SeriesMetadata(ctx context.Context
 	b.rightBuffer = operators.NewInstantVectorOperatorBuffer(b.Right, rightSeriesUsed, lastRightSeriesUsedIndex, b.MemoryConsumptionTracker)
 
 	return allMetadata, nil
-}
-
-// loadSeriesMetadata loads series metadata from both sides of this operation.
-// It returns false if one side returned no series and that means there is no way for this operation to return any series.
-// (eg. if doing A + B and either A or B have no series, then there is no way for this operation to produce any series)
-func (b *OneToOneVectorVectorBinaryOperation) loadSeriesMetadata(ctx context.Context) (bool, error) {
-	// We retain the series labels for later so we can use them to generate error messages.
-	// We'll return them to the pool in Close().
-
-	var err error
-	b.leftMetadata, err = b.Left.SeriesMetadata(ctx)
-	if err != nil {
-		return false, err
-	}
-
-	if len(b.leftMetadata) == 0 {
-		// No series on left-hand side, we'll never have any output series.
-		return false, nil
-	}
-
-	b.rightMetadata, err = b.Right.SeriesMetadata(ctx)
-	if err != nil {
-		return false, err
-	}
-
-	if len(b.rightMetadata) == 0 {
-		// No series on right-hand side, we'll never have any output series.
-		return false, nil
-	}
-
-	return true, nil
 }
 
 // computeOutputSeries determines the possible output series from this operator.
@@ -285,9 +303,8 @@ func (b *OneToOneVectorVectorBinaryOperation) computeOutputSeries() ([]types.Ser
 			groupKey := groupKeyFunc(s.Labels)
 
 			// Important: don't extract the string(...) call below - passing it directly allows us to avoid allocating it.
-			rightSide, exists := rightSideGroupsMap[string(groupKey)]
-
-			if !exists {
+			rightSide, rightExists := rightSideGroupsMap[string(groupKey)]
+			if !rightExists {
 				// No matching series on the right side.
 				continue
 			}
@@ -588,12 +605,19 @@ func (b *OneToOneVectorVectorBinaryOperation) mergeConflictToError(conflict *ope
 }
 
 func (b *OneToOneVectorVectorBinaryOperation) Prepare(ctx context.Context, params *types.PrepareParams) error {
-	err := b.Left.Prepare(ctx, params)
-	if err != nil {
+	if err := b.Left.Prepare(ctx, params); err != nil {
 		return err
 	}
 
 	return b.Right.Prepare(ctx, params)
+}
+
+func (b *OneToOneVectorVectorBinaryOperation) Finalize(ctx context.Context) error {
+	if err := b.Left.Finalize(ctx); err != nil {
+		return err
+	}
+
+	return b.Right.Finalize(ctx)
 }
 
 func (b *OneToOneVectorVectorBinaryOperation) Close() {

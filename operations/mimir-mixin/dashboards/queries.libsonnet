@@ -178,6 +178,33 @@ local filename = 'mimir-queries.json';
         ),
       )
     )
+    .addRow(
+      $.row('Query-frontend - Query Lengths')
+      .addPanel(
+        $.heatmapPanel('Query Expression Length') +
+        $.queryPanel(
+          'sum(rate(cortex_query_frontend_queries_expression_bytes{namespace="$namespace"}[$__rate_interval]))',
+          'Bytes'
+        ) +
+        { fieldConfig+: { defaults+: { unit: 'bytes' } } }
+      )
+      .addPanel(
+        $.timeseriesPanel('Query Expression Percentiles') +
+        $.queryPanel(
+          'histogram_quantile(0.99, sum(rate(cortex_query_frontend_queries_expression_bytes{namespace="$namespace"}[$__rate_interval])))',
+          '99th Percentile'
+        ) +
+        $.queryPanel(
+          'histogram_quantile(0.90, sum(rate(cortex_query_frontend_queries_expression_bytes{namespace="$namespace"}[$__rate_interval])))',
+          '90th Percentile'
+        ) +
+        $.queryPanel(
+          'histogram_avg(sum(rate(cortex_query_frontend_queries_expression_bytes{namespace="$namespace"}[$__rate_interval])))',
+          'Average'
+        ) +
+        { fieldConfig+: { defaults+: { unit: 'bytes' } } }
+      )
+    )
     .addRowIf(
       $._config.show_ingest_storage_panels,
       $.row('Query-frontend – strong consistency (ingest storage)')

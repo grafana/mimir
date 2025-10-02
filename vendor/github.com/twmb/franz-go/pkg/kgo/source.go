@@ -1693,7 +1693,7 @@ func (o *ProcessFetchPartitionOpts) processRecordBatch(
 			&krecords[i],
 			record,
 		)
-		record.Context = poolsCtx
+		record.Context = poolsCtx   //nolint:fatcontext // not a nested context
 		krecords[i] = kmsg.Record{} // prevent the kmsg.Record from hanging onto anything
 		if kept := o.maybeKeepRecord(fp, record, abortBatch); kept {
 			nkept++

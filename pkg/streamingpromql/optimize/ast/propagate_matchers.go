@@ -120,8 +120,9 @@ func (mapper *propagateMatchers) extractVectorSelectors(expr parser.Expr) ([]*en
 		return mapper.propagateMatchersInBinaryExpr(e)
 	// Explicitly define what is not handled to avoid confusion.
 	case *parser.StepInvariantExpr:
-		// Used only for optimizations and not produced directly by parser.
-		return nil, nil
+		// Used only for optimizations and not produced directly by parser,
+		// but may be added in preprocessing step.
+		return mapper.extractVectorSelectors(e.Expr)
 	default:
 		return nil, nil
 	}
@@ -198,7 +199,7 @@ func VectorSelectorArgumentIndex(funcName string) (int, error) {
 	case "histogram_fraction":
 		return 2, nil
 	// Aggregation over time
-	case "avg_over_time", "min_over_time", "max_over_time", "sum_over_time", "count_over_time", "stddev_over_time", "stdvar_over_time", "last_over_time", "present_over_time", "mad_over_time", "ts_of_min_over_time", "ts_of_max_over_time", "ts_of_last_over_time":
+	case "avg_over_time", "min_over_time", "max_over_time", "sum_over_time", "count_over_time", "stddev_over_time", "stdvar_over_time", "first_over_time", "last_over_time", "present_over_time", "mad_over_time", "ts_of_min_over_time", "ts_of_max_over_time", "ts_of_first_over_time", "ts_of_last_over_time":
 		return 0, nil
 	case "quantile_over_time":
 		return 1, nil

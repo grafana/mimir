@@ -123,6 +123,8 @@ The following features are currently experimental:
     - `-validation.name-validation-scheme`
   - Configure metric and label name translation strategy in OTLP endpoint
     - `-distributor.otel-translation-strategy`
+  - Configure how to handle label values over the length limit
+    - `-validation.label-value-length-over-limit-strategy`
 - Hash ring
   - Disabling ring heartbeat timeouts
     - `-distributor.ring.heartbeat-timeout=0`
@@ -212,6 +214,9 @@ The following features are currently experimental:
     - `-blocks-storage.tsdb.shared-postings-for-matchers-cache`
     - `-blocks-storage.tsdb.head-postings-for-matchers-cache-invalidation`
     - `-blocks-storage.tsdb.head-postings-for-matchers-cache-versions`
+  - Index lookup planning comparison to validate planning correctness
+    - `-blocks-storage.tsdb.index-lookup-planning-enabled`
+    - `-blocks-storage.tsdb.index-lookup-planning-comparison-portion`
 - Querier
   - Limiting queries based on the estimated number of chunks that will be used (`-querier.max-estimated-fetched-chunks-per-query-multiplier`)
   - Max concurrency for tenant federated queries (`-tenant-federation.max-concurrent`)
@@ -219,6 +224,7 @@ The following features are currently experimental:
   - Allow streaming of `/active_series` responses to the frontend (`-querier.response-streaming-enabled`)
   - [Mimir query engine](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/mimir-query-engine) (`-querier.query-engine` and `-querier.enable-query-engine-fallback`, and all flags beginning with `-querier.mimir-query-engine`)
   - Maximum estimated memory consumption per query limit (`-querier.max-estimated-memory-consumption-per-query`)
+  - Enable the experimental Prometheus feature for delayed name removal (`-querier.enable-delayed-name-removal`)
   - Ignore deletion marks while querying delay (`-blocks-storage.bucket-store.ignore-deletion-marks-while-querying-delay`)
 - Query-frontend
   - Lower TTL for cache entries overlapping the out-of-order samples ingestion window (re-using `-ingester.out-of-order-window` from ingesters)
@@ -232,13 +238,12 @@ The following features are currently experimental:
   - Support for duration expressions in PromQL, which are simple arithmetics on numbers in offset and range specification.
   - Support for configuring the maximum series limit for cardinality API requests on a per-tenant basis via `cardinality_analysis_max_results`.
   - [Mimir query engine](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/mimir-query-engine) (`-query-frontend.query-engine` and `-query-frontend.enable-query-engine-fallback`)
-  - Labels query optimizer (`-query-frontend.labels-query-optimizer-enabled`)
+  - Rewriting of queries to optimize processing: `-query-frontend.rewrite-histogram-queries` and `-query-frontend.rewrite-propagate-matchers`
 - Query-scheduler
   - `-query-scheduler.querier-forget-delay`
 - Store-gateway
   - Eagerly loading some blocks on startup even when lazy loading is enabled `-blocks-storage.bucket-store.index-header.eager-loading-startup-enabled`
   - Allow more than the default of 3 store-gateways to own recent blocks `-store-gateway.dynamic-replication`
-- Read-write deployment mode
 - API endpoints:
   - `/api/v1/user_limits`
   - `/api/v1/cardinality/active_series`
@@ -290,10 +295,10 @@ For details about what _deprecated_ means, see [Parameter lifecycle](../configur
 
 The following features or configuration parameters are currently deprecated and will be **removed in a future release (to be announced)**:
 
-- Distributor's HA tracker timeouts can now be configured on a per-tenant basis. To support this, their configuration has moved from [`distributor.ha_tracker`](../configuration-parameters/#distributor) to [`limits`](../configuration-parameters/#limits) (deprecated since Mimir 2.17)
 - Tracing configuration through Jaeger `JAEGER_*` environment variables and Jaeger tracing exposition protocol (deprecated since Mimir 2.17)
   - Use OpenTelemetry configuration instead, as Jaeger supports OTLP ingestion natively
 - Rule group configuration file
   - `evaluation_delay` field: use `query_offset` instead
-- The `-ingester.stream-chunks-when-using-blocks` CLI flag, and `ingester_stream_chunks_when_using_blocks` runtime configuration option
 - The `-store-gateway.sharding-ring.auto-forget-enabled` is deprecated and will be removed in a future release. Set the `-store-gateway.sharding-ring.auto-forget-unhealthy-periods` flag to 0 to disable the auto-forget feature. Deprecated since Mimir 2.17.
+- etcd is deprecated as an option for backend storage for the HA tracker since Mimir 2.17.
+- The `-distributor.otel-start-time-quiet-zero` parameter no longer has any effect and will be removed in a future release. Deprecated since Mimir 2.18.

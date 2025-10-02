@@ -192,7 +192,7 @@ Usage of ./cmd/mimir/mimir:
   -alertmanager.alertmanager-client.backoff-retries int
     	Number of times to backoff and retry before failing. (default 10)
   -alertmanager.alertmanager-client.cluster-validation.label string
-    	[experimental] Optionally define the cluster validation label.
+    	[experimental] Primary cluster validation label.
   -alertmanager.alertmanager-client.connect-backoff-base-delay duration
     	Initial backoff delay after first connection failure. Only relevant if ConnectTimeout > 0. (default 1s)
   -alertmanager.alertmanager-client.connect-backoff-max-delay duration
@@ -272,7 +272,7 @@ Usage of ./cmd/mimir/mimir:
   -alertmanager.notification-rate-limit float
     	Per-tenant rate limit for sending notifications from Alertmanager in notifications/sec. 0 = rate limit disabled. Negative value = no notifications are allowed.
   -alertmanager.notification-rate-limit-per-integration value
-    	Per-integration notification rate limits. Value is a map, where each key is integration name and value is a rate-limit (float). On command line, this map is given in JSON format. Rate limit has the same meaning as -alertmanager.notification-rate-limit, but only applies for specific integration. Allowed integration names: webhook, email, pagerduty, opsgenie, wechat, slack, victorops, pushover, sns, webex, telegram, discord, msteams. (default {})
+    	Per-integration notification rate limits. Value is a map, where each key is integration name and value is a rate-limit (float). On command line, this map is given in JSON format. Rate limit has the same meaning as -alertmanager.notification-rate-limit, but only applies for specific integration. Allowed integration names: webhook, email, pagerduty, opsgenie, wechat, slack, victorops, pushover, sns, webex, telegram, discord, msteams, msteamsv2. (default {})
   -alertmanager.notify-hook-receivers comma-separated-list-of-strings
     	List of receivers to enable notify hooks for. empty = all receivers.
   -alertmanager.notify-hook-timeout duration
@@ -807,6 +807,10 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] How long to cache postings for matchers in the Head and OOOHead. 0 disables the cache and just deduplicates the in-flight calls. (default 10s)
   -blocks-storage.tsdb.head-postings-for-matchers-cache-versions int
     	[experimental] The size of the metric versions cache in each ingester when invalidation is enabled. (default 2097152)
+  -blocks-storage.tsdb.head-statistics-collection-frequency duration
+    	[experimental] How frequently to collect head statistics, which are used in query execution optimization. 0 to disable. (default 1h0m0s)
+  -blocks-storage.tsdb.index-lookup-planning-comparison-portion float
+    	[experimental] Portion of queries where a mirrored chunk querier compares results with and without index lookup planning. Value between 0 (disabled) and 1 (all queries).
   -blocks-storage.tsdb.index-lookup-planning-enabled
     	[experimental] Controls the collection of statistics and whether to defer some vector selector matchers to sequential scans. This leads to better performance.
   -blocks-storage.tsdb.memory-snapshot-on-shutdown
@@ -834,7 +838,7 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.tsdb.wal-segment-size-bytes int
     	TSDB WAL segments files max size (bytes). (default 134217728)
   -common.client-cluster-validation.label string
-    	[experimental] Optionally define the cluster validation label.
+    	[experimental] Primary cluster validation label.
   -common.storage.azure.account-key string
     	Azure storage account key. If unset, Azure managed identities will be used for authentication instead.
   -common.storage.azure.account-name string
@@ -1378,7 +1382,7 @@ Usage of ./cmd/mimir/mimir:
   -distributor.usage-tracker-client.grpc-client-config.backoff-retries int
     	Number of times to backoff and retry before failing. (default 10)
   -distributor.usage-tracker-client.grpc-client-config.cluster-validation.label string
-    	[experimental] Optionally define the cluster validation label.
+    	[experimental] Primary cluster validation label.
   -distributor.usage-tracker-client.grpc-client-config.connect-backoff-base-delay duration
     	Initial backoff delay after first connection failure. Only relevant if ConnectTimeout > 0. (default 1s)
   -distributor.usage-tracker-client.grpc-client-config.connect-backoff-max-delay duration
@@ -1532,7 +1536,7 @@ Usage of ./cmd/mimir/mimir:
   -ingester.client.backoff-retries int
     	Number of times to backoff and retry before failing. (default 10)
   -ingester.client.cluster-validation.label string
-    	[experimental] Optionally define the cluster validation label.
+    	[experimental] Primary cluster validation label.
   -ingester.client.connect-backoff-base-delay duration
     	Initial backoff delay after first connection failure. Only relevant if ConnectTimeout > 0. (default 1s)
   -ingester.client.connect-backoff-max-delay duration
@@ -1843,8 +1847,6 @@ Usage of ./cmd/mimir/mimir:
     	Unregister from the ring upon clean shutdown. It can be useful to disable for rolling restarts with consistent naming. (default true)
   -ingester.ring.zone-awareness-enabled
     	True to enable the zone-awareness and replicate ingested samples across different availability zones. This option needs be set on ingesters, distributors, queriers, and rulers when running in microservices mode.
-  -ingester.stream-chunks-when-using-blocks
-    	[deprecated] Stream chunks from ingesters to queriers. (default true)
   -ingester.track-ingester-owned-series
     	[experimental] This option enables tracking of ingester-owned series based on ring state, even if -ingester.use-ingester-owned-series-for-limits is disabled.
   -ingester.tsdb-config-update-period duration
@@ -2041,6 +2043,8 @@ Usage of ./cmd/mimir/mimir:
     	The default evaluation interval or step size for subqueries. This config option should be set on query-frontend too when query sharding is enabled. (default 1m0s)
   -querier.dns-lookup-period duration
     	How often to query DNS for query-frontend or query-scheduler address. (default 10s)
+  -querier.enable-delayed-name-removal
+    	[experimental] Enable the experimental Prometheus feature for delayed name removal.
   -querier.enable-query-engine-fallback
     	[experimental] If set to true and the Mimir query engine is in use, fall back to using the Prometheus query engine for any queries not supported by the Mimir query engine. (default true)
   -querier.filter-queryables-enabled
@@ -2054,7 +2058,7 @@ Usage of ./cmd/mimir/mimir:
   -querier.frontend-client.backoff-retries int
     	Number of times to backoff and retry before failing. (default 10)
   -querier.frontend-client.cluster-validation.label string
-    	[experimental] Optionally define the cluster validation label.
+    	[experimental] Primary cluster validation label.
   -querier.frontend-client.connect-backoff-base-delay duration
     	Initial backoff delay after first connection failure. Only relevant if ConnectTimeout > 0. (default 1s)
   -querier.frontend-client.connect-backoff-max-delay duration
@@ -2127,6 +2131,8 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Enable common subexpression elimination when evaluating queries. (default true)
   -querier.mimir-query-engine.enable-common-subexpression-elimination-for-range-vector-expressions-in-instant-queries
     	[experimental] Enable common subexpression elimination for range vector expressions when evaluating instant queries. This has no effect if common subexpression elimination is disabled. (default true)
+  -querier.mimir-query-engine.enable-narrow-binary-selectors
+    	[experimental] Enable generating selectors for one side of a binary expression based on results from the other side.
   -querier.mimir-query-engine.enable-prune-toggles
     	[experimental] Enable pruning query expressions that are toggled off with constants. (default true)
   -querier.mimir-query-engine.enable-skipping-histogram-decoding
@@ -2154,7 +2160,7 @@ Usage of ./cmd/mimir/mimir:
   -querier.scheduler-client.backoff-retries int
     	Number of times to backoff and retry before failing. (default 10)
   -querier.scheduler-client.cluster-validation.label string
-    	[experimental] Optionally define the cluster validation label.
+    	[experimental] Primary cluster validation label.
   -querier.scheduler-client.connect-backoff-base-delay duration
     	Initial backoff delay after first connection failure. Only relevant if ConnectTimeout > 0. (default 1s)
   -querier.scheduler-client.connect-backoff-max-delay duration
@@ -2202,7 +2208,7 @@ Usage of ./cmd/mimir/mimir:
   -querier.store-gateway-client.backoff-retries int
     	Number of times to backoff and retry before failing. (default 10)
   -querier.store-gateway-client.cluster-validation.label string
-    	[experimental] Optionally define the cluster validation label.
+    	[experimental] Primary cluster validation label.
   -querier.store-gateway-client.connect-backoff-base-delay duration
     	Initial backoff delay after first connection failure. Only relevant if ConnectTimeout > 0. (default 1s)
   -querier.store-gateway-client.connect-backoff-max-delay duration
@@ -2258,9 +2264,11 @@ Usage of ./cmd/mimir/mimir:
   -query-frontend.cache-unaligned-requests
     	Cache requests that are not step-aligned.
   -query-frontend.client-cluster-validation.label string
-    	[experimental] Optionally define the cluster validation label.
+    	[experimental] Primary cluster validation label.
   -query-frontend.enable-query-engine-fallback
     	[experimental] If set to true and the Mimir query engine is in use, fall back to using the Prometheus query engine for any queries not supported by the Mimir query engine. (default true)
+  -query-frontend.enable-remote-execution
+    	[experimental] If set to true and the Mimir query engine is in use, use remote execution to evaluate queries in queriers.
   -query-frontend.enabled-promql-experimental-functions comma-separated-list-of-strings
     	Enable certain experimental PromQL functions, which are subject to being changed or removed at any time, on a per-tenant basis. Defaults to empty which means all experimental functions are disabled. Set to 'all' to enable all experimental functions.
   -query-frontend.extra-propagated-headers comma-separated-list-of-strings
@@ -2274,7 +2282,7 @@ Usage of ./cmd/mimir/mimir:
   -query-frontend.grpc-client-config.backoff-retries int
     	Number of times to backoff and retry before failing. (default 10)
   -query-frontend.grpc-client-config.cluster-validation.label string
-    	[experimental] Optionally define the cluster validation label.
+    	[experimental] Primary cluster validation label.
   -query-frontend.grpc-client-config.connect-backoff-base-delay duration
     	Initial backoff delay after first connection failure. Only relevant if ConnectTimeout > 0. (default 1s)
   -query-frontend.grpc-client-config.connect-backoff-max-delay duration
@@ -2320,7 +2328,7 @@ Usage of ./cmd/mimir/mimir:
   -query-frontend.instance-port int
     	Port to advertise to querier (via scheduler) (defaults to server.grpc-listen-port).
   -query-frontend.labels-query-optimizer-enabled
-    	[experimental] Enable labels query optimizations. When enabled, the query-frontend may rewrite labels queries to improve their performance.
+    	Enable labels query optimizations. When enabled, the query-frontend may rewrite labels queries to improve their performance. (default true)
   -query-frontend.log-queries-longer-than duration
     	Log queries that are slower than the specified duration. Set to 0 to disable. Set to < 0 to enable on all queries.
   -query-frontend.log-query-request-headers comma-separated-list-of-strings
@@ -2409,6 +2417,8 @@ Usage of ./cmd/mimir/mimir:
     	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -query-frontend.results-cache.memcached.tls-server-name string
     	Override the expected name on the server certificate.
+  -query-frontend.rewrite-histogram-queries
+    	[experimental] Set to true to enable rewriting histogram queries for a more efficient order of execution.
   -query-frontend.rewrite-propagate-matchers
     	[experimental] Set to true to enable rewriting queries to propagate label matchers across binary expressions.
   -query-frontend.scheduler-address string
@@ -2434,7 +2444,7 @@ Usage of ./cmd/mimir/mimir:
   -query-scheduler.grpc-client-config.backoff-retries int
     	Number of times to backoff and retry before failing. (default 10)
   -query-scheduler.grpc-client-config.cluster-validation.label string
-    	[experimental] Optionally define the cluster validation label.
+    	[experimental] Primary cluster validation label.
   -query-scheduler.grpc-client-config.connect-backoff-base-delay duration
     	Initial backoff delay after first connection failure. Only relevant if ConnectTimeout > 0. (default 1s)
   -query-scheduler.grpc-client-config.connect-backoff-max-delay duration
@@ -2814,7 +2824,7 @@ Usage of ./cmd/mimir/mimir:
   -ruler.client.backoff-retries int
     	Number of times to backoff and retry before failing. (default 10)
   -ruler.client.cluster-validation.label string
-    	[experimental] Optionally define the cluster validation label.
+    	[experimental] Primary cluster validation label.
   -ruler.client.connect-backoff-base-delay duration
     	Initial backoff delay after first connection failure. Only relevant if ConnectTimeout > 0. (default 1s)
   -ruler.client.connect-backoff-max-delay duration
@@ -2857,6 +2867,8 @@ Usage of ./cmd/mimir/mimir:
     	Enable the ruler config API. (default true)
   -ruler.enabled-tenants comma-separated-list-of-strings
     	Comma separated list of tenants whose rules this ruler can evaluate. If specified, only these tenants will be handled by ruler, otherwise this ruler can process rules from all tenants. Subject to sharding.
+  -ruler.evaluation-consistency-max-delay duration
+    	[experimental] The maximum tolerated ingestion delay for eventually consistent rule evaluations. Set to 0 to disable the enforcement.
   -ruler.evaluation-delay-duration duration
     	Duration to delay the evaluation of rules to ensure the underlying metrics have been pushed. (default 1m)
   -ruler.evaluation-interval duration
@@ -2898,7 +2910,7 @@ Usage of ./cmd/mimir/mimir:
   -ruler.protected-namespaces comma-separated-list-of-strings
     	[experimental] List of namespaces that are protected from modification unless a special HTTP header is used. If a namespace is protected, it can only be read, not modified via the ruler's configuration API. The value is a list of strings, where each string is a namespace name. On the command line, this list is given as a comma-separated list.
   -ruler.query-frontend.address string
-    	GRPC listen address of the query-frontend(s). Must be a DNS address (prefixed with dns:///) to enable client side load balancing.
+    	Can be either the GRPC listen address of the query-frontend(s) or the HTTP/HTTPS address of a Prometheus-compatible server. Must be a DNS address (prefixed with dns:///) to enable GRPC client side load balancing.
   -ruler.query-frontend.grpc-client-config.backoff-max-period duration
     	Maximum delay when backing off. (default 10s)
   -ruler.query-frontend.grpc-client-config.backoff-min-period duration
@@ -2908,7 +2920,7 @@ Usage of ./cmd/mimir/mimir:
   -ruler.query-frontend.grpc-client-config.backoff-retries int
     	Number of times to backoff and retry before failing. (default 10)
   -ruler.query-frontend.grpc-client-config.cluster-validation.label string
-    	[experimental] Optionally define the cluster validation label.
+    	[experimental] Primary cluster validation label.
   -ruler.query-frontend.grpc-client-config.connect-backoff-base-delay duration
     	Initial backoff delay after first connection failure. Only relevant if ConnectTimeout > 0. (default 1s)
   -ruler.query-frontend.grpc-client-config.connect-backoff-max-delay duration
@@ -2945,6 +2957,8 @@ Usage of ./cmd/mimir/mimir:
     	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -ruler.query-frontend.grpc-client-config.tls-server-name string
     	Override the expected name on the server certificate.
+  -ruler.query-frontend.http-client-config.connect-timeout duration
+    	Timeout for establishing a connection to the query-frontend. (default 30s)
   -ruler.query-frontend.max-retries-rate float
     	Maximum number of retries for failed queries per second. (default 170)
   -ruler.query-frontend.query-result-response-format string
@@ -3039,6 +3053,8 @@ Usage of ./cmd/mimir/mimir:
     	Comma separated list of yaml files with the configuration that can be updated at runtime. Runtime config files will be merged from left to right.
   -runtime-config.reload-period duration
     	How often to check runtime config files. (default 10s)
+  -server.cluster-validation.additional-labels comma-separated-list-of-strings
+    	[experimental] Comma-separated list of additional cluster validation labels that the server will accept from incoming requests.
   -server.cluster-validation.grpc.enabled
     	[experimental] When enabled, cluster label validation is executed: configured cluster validation label is compared with the cluster validation label received through the requests.
   -server.cluster-validation.grpc.soft-validation
@@ -3052,7 +3068,7 @@ Usage of ./cmd/mimir/mimir:
   -server.cluster-validation.http.soft-validation
     	[experimental] When enabled, soft cluster label validation is executed. Can be enabled only together with server.cluster-validation.http.enabled
   -server.cluster-validation.label string
-    	[experimental] Optionally define the cluster validation label.
+    	[experimental] Primary cluster validation label.
   -server.graceful-shutdown-timeout duration
     	Timeout for graceful shutdowns (default 30s)
   -server.grpc-collect-max-streams-by-conn
@@ -3275,6 +3291,16 @@ Usage of ./cmd/mimir/mimir:
     	Optionally define the cluster validation label.
   -tests.client.user-agent string
     	The value the Mimir client should send in the User-Agent header. (default "mimir-continuous-test")
+  -tests.ingest-storage-record.consumer-group string
+    	The Kafka consumer group used for getting/setting commmitted offsets. (default "ingest-storage-record")
+  -tests.ingest-storage-record.enabled
+    	Whether the test for ingest-storage record correctness is enabled.
+  -tests.ingest-storage-record.max-jump-size int
+    	If a partition increases by this many offsets in a run, we skip processing it, to protect against downloading unexpectedly huge batches. (default 500000000)
+  -tests.ingest-storage-record.max-records-per-run int
+    	Limit on the number of total records to be processed in a run, to keep memory bounded in large cells. This limit is approximate, we might go over by a partial fetch. (default 200000)
+  -tests.ingest-storage-record.records-processed-percent int
+    	The approximate percent of records to actually fetch and compare. (default 5)
   -tests.read-endpoint string
     	The base endpoint on the read path. The URL should have no trailing slash. The specific API path is appended by the tool to the URL, for example /api/v1/query_range for range query API, so the configured URL must not include it.
   -tests.read-timeout duration
@@ -3905,8 +3931,10 @@ Usage of ./cmd/mimir/mimir:
     	Controls how far into the future incoming samples and exemplars are accepted compared to the wall clock. Any sample or exemplar will be rejected if its timestamp is greater than '(now + creation_grace_period)'. This configuration is enforced in the distributor and ingester. (default 10m)
   -validation.enforce-metadata-metric-name
     	Enforce every metadata has a metric name. (default true)
+  -validation.label-value-length-over-limit-strategy value
+    	[experimental] What to do for label values over the length limit. Options are: 'error', 'truncate', 'drop'. For 'truncate', the hash of the full value replaces the end portion of the value. For 'drop', the hash fully replaces the value.
   -validation.max-cost-attribution-cardinality int
-    	[experimental] Maximum cardinality of cost attribution labels allowed per user. (default 10000)
+    	[experimental] Maximum cardinality of cost attribution labels allowed per user. (default 2000)
   -validation.max-label-names-per-info-series int
     	Maximum number of label names per info series. Has no effect if less than the value of the maximum number of label names per series option (-validation.max-label-names-per-series) (default 80)
   -validation.max-label-names-per-series int

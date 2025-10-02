@@ -194,21 +194,6 @@ func TestMimir(t *testing.T) {
 				AlertManager,
 			},
 		},
-		"-target=write": {
-			target:                  []string{Write},
-			expectedEnabledModules:  []string{DistributorService, IngesterService},
-			expectedDisabledModules: []string{Querier, Ruler, StoreGateway, Compactor, AlertManager},
-		},
-		"-target=read": {
-			target:                  []string{Read},
-			expectedEnabledModules:  []string{QueryFrontend, Querier},
-			expectedDisabledModules: []string{IngesterService, Ruler, StoreGateway, Compactor, AlertManager},
-		},
-		"-target=backend": {
-			target:                  []string{Backend},
-			expectedEnabledModules:  []string{QueryScheduler, Ruler, StoreGateway, Compactor, AlertManager},
-			expectedDisabledModules: []string{IngesterService, QueryFrontend, Querier},
-		},
 	}
 
 	for testName, testData := range tests {
@@ -537,14 +522,6 @@ func TestConfig_validateFilesystemPaths(t *testing.T) {
 	}{
 		"should succeed with the default configuration": {
 			setup: func(*Config) {},
-		},
-		"should fail if alertmanager data directory contains bucket store sync directory when running mimir-backend": {
-			setup: func(cfg *Config) {
-				cfg.Target = flagext.StringSliceCSV{Backend}
-				cfg.Alertmanager.DataDir = "/data"
-				cfg.BlocksStorage.BucketStore.SyncDir = "/data/tsdb"
-			},
-			expectedErr: `the configured bucket store sync directory "/data/tsdb" cannot overlap with the configured alertmanager data directory "/data"`,
 		},
 		"should fail if alertmanager filesystem backend directory is equal to alertmanager data directory": {
 			setup: func(cfg *Config) {

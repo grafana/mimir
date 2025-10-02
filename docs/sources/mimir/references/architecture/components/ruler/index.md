@@ -44,6 +44,10 @@ Communication between ruler and query-frontend is established over gRPC, so you 
 
 ![Architecture of Grafana Mimir's ruler component in remote mode](ruler-remote.svg)
 
+### Remote over HTTP/HTTPS
+
+When the query-frontend address set via the `-ruler.query-frontend.address` CLI flag or its respective YAML configuration parameter starts with `http://` or `https://`, the ruler delegates rule evaluation to a Prometheus-compatible server. One use case for this feature is to use a proxy to federate data from multiple Mimir instances.
+
 ## Recording rules
 
 The ruler evaluates the expressions in the [recording rules](https://prometheus.io/docs/prometheus/latest/configuration/recording_rules/#recording-rules) at regular intervals and writes the results back to the ingesters.

@@ -362,16 +362,24 @@ func (s *BlockBuilderScheduler) enqueuePendingJobs() {
 }
 
 func (s *BlockBuilderScheduler) populateInitialJobs(ctx context.Context, consumeOffs []partitionOffsets, offStore offsetStore) {
-	// Note that the lock is already held because we're in startup mode.
+	// (Note that the lock is already held because we're in startup mode.)
+
+	// While during normal operation we are periodically asking about every
+	// partition's end offset, during startup we need to compute a set of
+	// ~correctly-sized jobs that may exist between the partition's commit and
+	// end offsets.
+	// We do that by performing a one-time probe of <offset, time> pairs between
+	// those two offsets and seeding the schedule by calling updateEndOffset for
+	// each of them- just like we do during normal operation.
 
 	endTime := time.Now()
 	minScanTime := endTime.Add(-s.cfg.MaxScanAge)
 
 	for _, off := range consumeOffs {
-		o, err := probeInitialJobOffsets(ctx, offStore, off.topic, off.partition,
+		o, err := probeInitialOffsets(ctx, offStore, off.topic, off.partition,
 			off.start, off.resume, off.end, endTime, s.cfg.JobSize, minScanTime, s.logger)
 		if err != nil {
-			level.Warn(s.logger).Log("msg", "failed to get consumption ranges", "err", err)
+			level.Warn(s.logger).Log("msg", "failed to probe initial offsets", "err", err)
 			continue
 		}
 		if len(o) == 0 {
@@ -401,13 +409,13 @@ func (s *BlockBuilderScheduler) getPartitionState(topic string, partition int32)
 		partition:   partition,
 		pendingJobs: list.New(),
 		planned: &advancingOffset{
-			name:    "planned",
+			name:    offsetNamePlanned,
 			off:     offsetEmpty,
 			metrics: &s.metrics,
 			logger:  s.logger,
 		},
 		committed: &advancingOffset{
-			name:    "committed",
+			name:    offsetNameCommitted,
 			off:     offsetEmpty,
 			metrics: &s.metrics,
 			logger:  s.logger,
@@ -422,30 +430,26 @@ type offsetTime struct {
 	time   time.Time
 }
 
-// computeInitialJobs computes an initial set of consumption jobs that exist
-// between each partition's committed offset and the end of the partition. This
-// is used to bootstrap the job queue when the scheduler starts up. After these
-// jobs are created, the scheduler is only concerned with keeping track of each
-// partition's end offsets.
-func probeInitialJobOffsets(ctx context.Context, offs offsetStore, topic string, partition int32, start, resume, end int64,
+// probeInitialOffsets computes an initial set of <offset, time> pairs that
+// exist between this partition's commit and end offsets. These pairs can be
+// used to seed a bunch of end offset observations to start the scheduler.
+func probeInitialOffsets(ctx context.Context, offs offsetStore, topic string, partition int32, start, commit, end int64,
 	endTime time.Time, jobSize time.Duration, minScanTime time.Time, logger log.Logger) ([]*offsetTime, error) {
 
-	// The general idea is that we know the commit offset, but we don't know
-	// that offset's timestamp. We have an API to get offsets given a timestamp,
-	// so we iteratively call that API until we reach the committed offset.
-
-	if resume >= end || start >= end {
+	if commit >= end || start >= end {
 		// No new data to consume.
 		return []*offsetTime{}, nil
 	}
 
-	sentinels := []*offsetTime{}
-
 	// Pick a more high-resolution interval to scan for the sentinel offsets.
 	scanStep := jobSize / 4
+	reachedCommit := false
+	sentinels := []*offsetTime{}
 
-	// Iterate backwards from the boundary time by job size, stopping when we've
-	// either crossed the committed offset or the min scan time.
+	// The general idea is that we know the commit offset, but we don't know
+	// that offset's timestamp. We have an API (offsetAfterTime) to get offsets
+	// given a timestamp, so we iteratively call that API until we reach either
+	// the commit offset or the min scan time.
 	for pb := endTime; minScanTime.Before(pb); pb = pb.Add(-scanStep) {
 		off, t, err := offs.offsetAfterTime(ctx, topic, partition, pb)
 		if err != nil {
@@ -454,17 +458,26 @@ func probeInitialJobOffsets(ctx context.Context, offs offsetStore, topic string,
 		level.Debug(logger).Log("msg", "found next boundary offset", "ts", pb,
 			"topic", topic, "partition", partition, "offset", off)
 
-		// Don't want to create jobs that are before the resume offset.
-		off = max(off, resume)
+		// Don't want to probe for offsets before the commit.
+		off = max(off, commit)
 
 		if len(sentinels) == 0 || off != sentinels[len(sentinels)-1].offset {
 			sentinels = append(sentinels, &offsetTime{offset: off, time: t})
 		}
 
-		if off == resume {
-			// We've reached the resumption offset, so we're done.
+		if off == commit {
+			// We've reached the commit offset, so we're done.
+			reachedCommit = true
 			break
 		}
+	}
+
+	if !reachedCommit {
+		lastOffset := int64(-1)
+		if len(sentinels) > 0 {
+			lastOffset = sentinels[len(sentinels)-1].offset
+		}
+		level.Warn(logger).Log("msg", "probe offsets: probe did not reach commit offset due to limited scan age", "lastOffset", lastOffset, "commitOffset", commit)
 	}
 
 	// Return them in increasing order of offset.
@@ -973,6 +986,11 @@ type advancingOffset struct {
 
 const offsetEmpty int64 = -1
 
+const (
+	offsetNamePlanned   = "planned"
+	offsetNameCommitted = "committed"
+)
+
 // advance moves the offset forward by the given job spec. Advancements are
 // expected to be monotonically increasing and contiguous. Advance will not
 // allow backwards movement. If a gap is detected, a warning is logged and a
@@ -989,7 +1007,7 @@ func (o *advancingOffset) advance(key jobKey, spec schedulerpb.JobSpec) {
 		// Gap detected.
 		level.Warn(o.logger).Log("msg", "gap detected in offset advancement", "offset_name", o.name, "job_id", key.id, "epoch", key.epoch,
 			"partition", spec.Partition, "start_offset", spec.StartOffset, "end_offset", spec.EndOffset, "committed", o.off)
-		o.metrics.jobGapDetected.WithLabelValues(o.name, fmt.Sprint(spec.Partition)).Inc()
+		o.metrics.jobGapDetected.WithLabelValues(o.name).Inc()
 	}
 
 	o.off = spec.EndOffset

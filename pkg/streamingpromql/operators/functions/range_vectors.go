@@ -56,6 +56,37 @@ func lastOverTime(step *types.RangeVectorStepData, _ []types.ScalarData, _ types
 	return 0, false, lastHistogram.H.Copy(), nil
 }
 
+var FirstOverTime = FunctionOverRangeVectorDefinition{
+	// We want to use the input series as-is, so no need to set SeriesMetadataFunction.
+	StepFunc: firstOverTime,
+}
+
+func firstOverTime(step *types.RangeVectorStepData, _ []types.ScalarData, _ types.QueryTimeRange, _ types.EmitAnnotationFunc, _ *limiter.MemoryConsumptionTracker) (float64, bool, *histogram.FloatHistogram, error) {
+	floatAvailable := step.Floats.Any()
+	histogramAvailable := step.Histograms.Any()
+
+	if !floatAvailable && !histogramAvailable {
+		return 0, false, nil, nil
+	}
+
+	var firstFloat promql.FPoint
+	if floatAvailable {
+		firstFloat = step.Floats.First()
+	}
+
+	var firstHistogram promql.HPoint
+	if histogramAvailable {
+		firstHistogram = step.Histograms.First()
+	}
+
+	if floatAvailable && (!histogramAvailable || firstFloat.T < firstHistogram.T) {
+		return firstFloat.F, true, nil, nil
+	}
+
+	// We must make a copy of the histogram before returning it, as the ring buffer may reuse the FloatHistogram instance on subsequent steps.
+	return 0, false, firstHistogram.H.Copy(), nil
+}
+
 var PresentOverTime = FunctionOverRangeVectorDefinition{
 	SeriesMetadataFunction: DropSeriesName,
 	StepFunc:               presentOverTime,
@@ -102,6 +133,120 @@ func maxOverTime(step *types.RangeVectorStepData, _ []types.ScalarData, _ types.
 	}
 
 	return maxSoFar, true, nil, nil
+}
+
+var TsOfMinOverTime = FunctionOverRangeVectorDefinition{
+	SeriesMetadataFunction:         DropSeriesName,
+	StepFunc:                       tsOfMinOverTime,
+	NeedsSeriesNamesForAnnotations: true,
+}
+
+func tsOfMinOverTime(step *types.RangeVectorStepData, _ []types.ScalarData, _ types.QueryTimeRange, emitAnnotation types.EmitAnnotationFunc, _ *limiter.MemoryConsumptionTracker) (float64, bool, *histogram.FloatHistogram, error) {
+	cmpFunc := func(existing, next promql.FPoint) bool {
+		return next.F <= existing.F || math.IsNaN(existing.F)
+	}
+
+	return tsOverTime(cmpFunc, step, emitAnnotation)
+}
+
+var TsOfMaxOverTime = FunctionOverRangeVectorDefinition{
+	SeriesMetadataFunction:         DropSeriesName,
+	StepFunc:                       tsOfMaxOverTime,
+	NeedsSeriesNamesForAnnotations: true,
+}
+
+func tsOfMaxOverTime(step *types.RangeVectorStepData, _ []types.ScalarData, _ types.QueryTimeRange, emitAnnotation types.EmitAnnotationFunc, _ *limiter.MemoryConsumptionTracker) (float64, bool, *histogram.FloatHistogram, error) {
+	cmpFunc := func(existing, next promql.FPoint) bool {
+		return next.F >= existing.F || math.IsNaN(existing.F)
+	}
+
+	return tsOverTime(cmpFunc, step, emitAnnotation)
+}
+
+func tsOverTime(compareFn func(promql.FPoint, promql.FPoint) bool, step *types.RangeVectorStepData, emitAnnotation types.EmitAnnotationFunc) (float64, bool, *histogram.FloatHistogram, error) {
+	head, tail := step.Floats.UnsafePoints()
+
+	if len(head) == 0 && len(tail) == 0 {
+		return 0, false, nil, nil
+	}
+
+	if step.Histograms.Any() {
+		emitAnnotation(annotations.NewHistogramIgnoredInMixedRangeInfo)
+	}
+
+	best := head[0]
+	head = head[1:]
+
+	for _, p := range head {
+		if compareFn(best, p) {
+			best = p
+		}
+	}
+
+	for _, p := range tail {
+		if compareFn(best, p) {
+			best = p
+		}
+	}
+
+	return float64(best.T) / 1000, true, nil, nil
+}
+
+var TsOfLastOverTime = FunctionOverRangeVectorDefinition{
+	SeriesMetadataFunction:         DropSeriesName,
+	StepFunc:                       tsOfLastOverTime,
+	NeedsSeriesNamesForAnnotations: true,
+}
+
+func tsOfLastOverTime(step *types.RangeVectorStepData, _ []types.ScalarData, _ types.QueryTimeRange, _ types.EmitAnnotationFunc, _ *limiter.MemoryConsumptionTracker) (float64, bool, *histogram.FloatHistogram, error) {
+	lastFloat, floatAvailable := step.Floats.Last()
+	lastHistogram, histogramAvailable := step.Histograms.Last()
+
+	if !floatAvailable && !histogramAvailable {
+		return 0, false, nil, nil
+	}
+
+	if floatAvailable && histogramAvailable {
+		if lastFloat.T > lastHistogram.T {
+			return float64(lastFloat.T) / 1000, true, nil, nil
+		}
+		return float64(lastHistogram.T) / 1000, true, nil, nil
+	}
+
+	if floatAvailable {
+		return float64(lastFloat.T) / 1000, true, nil, nil
+	}
+
+	return float64(lastHistogram.T) / 1000, true, nil, nil
+}
+
+var TsOfFirstOverTime = FunctionOverRangeVectorDefinition{
+	SeriesMetadataFunction:         DropSeriesName,
+	StepFunc:                       tsOfFirstOverTime,
+	NeedsSeriesNamesForAnnotations: true,
+}
+
+func tsOfFirstOverTime(step *types.RangeVectorStepData, _ []types.ScalarData, _ types.QueryTimeRange, _ types.EmitAnnotationFunc, _ *limiter.MemoryConsumptionTracker) (float64, bool, *histogram.FloatHistogram, error) {
+
+	floats := step.Floats.Count()
+	histograms := step.Histograms.Count()
+
+	if floats == 0 && histograms == 0 {
+		return 0, false, nil, nil
+	}
+
+	if floats > 0 && histograms > 0 {
+		if step.Floats.First().T <= step.Histograms.First().T {
+			return float64(step.Floats.First().T) / 1000, true, nil, nil
+		}
+		return float64(step.Histograms.First().T) / 1000, true, nil, nil
+	}
+
+	if floats > 0 {
+		return float64(step.Floats.First().T) / 1000, true, nil, nil
+	}
+
+	return float64(step.Histograms.First().T) / 1000, true, nil, nil
 }
 
 var MinOverTime = FunctionOverRangeVectorDefinition{
@@ -188,20 +333,28 @@ func sumHistograms(head, tail []promql.HPoint, emitAnnotation types.EmitAnnotati
 	head = head[1:]
 
 	for _, p := range head {
-		if _, _, err := sum.Add(p.H); err != nil {
+		if _, counterResetCollision, err := sum.Add(p.H); err != nil {
 			err = NativeHistogramErrorToAnnotation(err, emitAnnotation)
 			return nil, err
+		} else if counterResetCollision {
+			emitAnnotation(newAdditionCounterResetCollisionWarning)
 		}
 	}
 
 	for _, p := range tail {
-		if _, _, err := sum.Add(p.H); err != nil {
+		if _, counterResetCollision, err := sum.Add(p.H); err != nil {
 			err = NativeHistogramErrorToAnnotation(err, emitAnnotation)
 			return nil, err
+		} else if counterResetCollision {
+			emitAnnotation(newAdditionCounterResetCollisionWarning)
 		}
 	}
 
 	return sum, nil
+}
+
+func newAdditionCounterResetCollisionWarning(_ string, expressionPosition posrange.PositionRange) error {
+	return annotations.NewHistogramCounterResetCollisionWarning(expressionPosition, annotations.HistogramAdd)
 }
 
 var AvgOverTime = FunctionOverRangeVectorDefinition{

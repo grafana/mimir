@@ -84,9 +84,7 @@ jobs:
       - name: Check License Header
         run: make BUILD_IN_CONTAINER=false check-license
       - name: Check Docker-Compose YAML
-        run: make BUILD_IN_CONTAINER=false check-mimir-microservices-mode-docker-compose-yaml check-mimir-read-write-mode-docker-compose-yaml
-      - name: Check Generated OTLP Code
-        run: make BUILD_IN_CONTAINER=false check-generated-otlp-code
+        run: make BUILD_IN_CONTAINER=false check-mimir-microservices-mode-docker-compose-yaml
 
   lint-jsonnet:
     runs-on: ubuntu-latest
@@ -140,7 +138,7 @@ jobs:
           mkdir -p /go/src/github.com/grafana/mimir
           ln -s $GITHUB_WORKSPACE/* /go/src/github.com/grafana/mimir
       - name: Set up Helm
-        uses: azure/setup-helm@b9e51907a09c216f16ebe8536097933489208112 # v4.3.0
+        uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4 # v4.3.1
         with:
           version: v3.17.2
       - name: Check Helm Tests
@@ -157,6 +155,9 @@ jobs:
         test_group_total: [4]
     needs:
       - prepare
+    permissions:
+      contents: read
+      pull-requests: write
     container:
       image: ${{ needs.prepare.outputs.build_image }} # zizmor: ignore[unpinned-images] The image output produced by the prepare step is pinned
     steps:
@@ -164,6 +165,8 @@ jobs:
         uses: actions/checkout@v4
         with:
           persist-credentials: false
+      - name: Install GitHub CLI
+        run: ./.github/workflows/scripts/install-gh.sh
       - name: Run Git Config
         run: git config --global --add safe.directory '*'
       - name: Symlink Expected Path to Workspace
@@ -182,6 +185,24 @@ jobs:
           command: |
             echo "Running unit tests (group ${{ matrix.test_group_id }} of ${{ matrix.test_group_total }}) with Go version: $(go version)"
             ./.github/workflows/scripts/run-unit-tests-group.sh --index ${{ matrix.test_group_id }} --total ${{ matrix.test_group_total }}
+      - name: Notify on streamingpromql failures
+        if: failure() && env.FAILED_PACKAGES != '' && contains(github.event.pull_request.labels.*.name, 'vendored-mimir-prometheus-update')
+        run: |
+          if echo "${{ env.FAILED_PACKAGES }}" | grep -q "pkg/streamingpromql"; then
+            gh pr comment ${{ github.event.pull_request.number }} --body \
+              "⚠️ Test failures detected in \`pkg/streamingpromql\` (test group ${{ matrix.test_group_id }}/${{ matrix.test_group_total }})
+              
+          Failed packages in this test group:
+          \`\`\`
+          ${{ env.FAILED_PACKAGES }}
+          \`\`\`
+              
+          cc @charleskorn @56quarters @lamida @zenador @Konstantinov-Innokentii 
+              
+          Please review the [test logs](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) and push fixes to this PR."
+          fi
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   test-docs:
     uses: ./.github/workflows/test-docs.yml

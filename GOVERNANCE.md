@@ -60,6 +60,7 @@ The current team members are:
 - Franco Posa [@francoposa](https://github.com/francoposa) ([Grafana Labs](https://grafana.com/))
 - George Krajcsovits - [@krajorama](https://github.com/krajorama) ([Grafana Labs](https://grafana.com/))
 - Jeanette Tan [@zenador](https://github.com/zenador) ([Grafana Labs](https://grafana.com/))
+- Jesús Vázquez — [@jesusvazquez](https://github.com/jesusvazquez) ([Grafana Labs](https://grafana.com/))
 - Jon Kartago Lamida [@lamida](https://github.com/lamida) ([Grafana Labs](https://grafana.com/))
 - Jonathan Halterman [@jhalterman](https://github.com/jhalterman) ([Grafana Labs](https://grafana.com/))
 - Josh Abreu Mesa [@gotjosh](https://github.com/gotjosh) ([Grafana Labs](https://grafana.com/))

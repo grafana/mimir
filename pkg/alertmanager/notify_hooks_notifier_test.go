@@ -4,6 +4,7 @@ package alertmanager
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -14,6 +15,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	webhookV1 "github.com/grafana/alerting/receivers/webhook/v1"
 	"github.com/prometheus/alertmanager/notify"
 	"github.com/prometheus/alertmanager/types"
 	"github.com/prometheus/client_golang/prometheus"
@@ -24,10 +26,12 @@ import (
 )
 
 type fakeNotifier struct {
-	calls [][]*types.Alert
+	ctxForTesting context.Context
+	calls         [][]*types.Alert
 }
 
-func (m *fakeNotifier) Notify(_ context.Context, alerts ...*types.Alert) (bool, error) {
+func (m *fakeNotifier) Notify(ctx context.Context, alerts ...*types.Alert) (bool, error) {
+	m.ctxForTesting = ctx
 	m.calls = append(m.calls, alerts)
 	return false, nil
 }
@@ -182,7 +186,9 @@ func TestNotifyHooksNotifier(t *testing.T) {
 		`"endsAt":"0001-01-01T00:00:00Z",` +
 		`"generatorURL":"",` +
 		`"UpdatedAt":"0001-01-01T00:00:00Z",` +
-		`"Timeout":false}]}`
+		`"Timeout":false}],` +
+		`"extraData": [{"one": "two"}, {"three": "four"}]` +
+		`}`
 
 	t.Run("hook invoked", func(t *testing.T) {
 		f := newTestHooksFixture(t, http.StatusOK, okResponse)
@@ -192,6 +198,19 @@ func TestNotifyHooksNotifier(t *testing.T) {
 
 		require.Equal(t, [][]*types.Alert{makeAlert("changed")}, f.upstream.calls)
 		f.assertMetricsSuccess(t, 1, 0)
+	})
+	t.Run("hook invoked with extra data", func(t *testing.T) {
+		f := newTestHooksFixture(t, http.StatusOK, okResponse)
+		ctx := makeContext()
+
+		_, err := f.notifier.Notify(ctx, makeAlert("foo")...)
+		require.NoError(t, err)
+
+		extraDataRaw, ok := f.upstream.ctxForTesting.Value(webhookV1.ExtraDataKey).([]json.RawMessage)
+		require.True(t, ok)
+		require.Equal(t, 2, len(extraDataRaw))
+		require.Equal(t, `{"one": "two"}`, string(extraDataRaw[0]))
+		require.Equal(t, `{"three": "four"}`, string(extraDataRaw[1]))
 	})
 	t.Run("hook not invoked when empty url configured", func(t *testing.T) {
 		f := newTestHooksFixture(t, http.StatusOK, okResponse)

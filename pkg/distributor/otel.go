@@ -23,6 +23,7 @@ import (
 	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/runutil"
 	"github.com/grafana/dskit/tenant"
+	"github.com/klauspost/compress/zstd"
 	"github.com/pierrec/lz4/v4"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -30,6 +31,7 @@ import (
 	"github.com/prometheus/otlptranslator"
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/prompb"
+	"github.com/prometheus/prometheus/storage/remote/otlptranslator/prometheusremotewrite"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
 	"go.opentelemetry.io/collector/pdata/pmetric/pmetricotlp"
@@ -37,7 +39,7 @@ import (
 	"go.uber.org/multierr"
 	"google.golang.org/grpc/codes"
 
-	"github.com/grafana/mimir/pkg/distributor/otlp"
+	"github.com/grafana/mimir/pkg/distributor/otlpappender"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util"
 	utillog "github.com/grafana/mimir/pkg/util/log"
@@ -65,6 +67,8 @@ type OTLPHandlerLimits interface {
 	NameValidationScheme(id string) model.ValidationScheme
 }
 
+type OTLPPushMiddleware func(ctx context.Context, req *pmetricotlp.ExportRequest) error
+
 // OTLPHandler is an http.Handler accepting OTLP write requests.
 func OTLPHandler(
 	maxRecvMsgSize int,
@@ -73,7 +77,7 @@ func OTLPHandler(
 	limits OTLPHandlerLimits,
 	resourceAttributePromotionConfig OTelResourceAttributePromotionConfig,
 	retryCfg RetryConfig,
-	enableStartTimeQuietZero bool,
+	OTLPPushMiddlewares []OTLPPushMiddleware,
 	push PushFunc,
 	pushMetrics *PushMetrics,
 	reg prometheus.Registerer,
@@ -91,9 +95,9 @@ func OTLPHandler(
 			}
 		}
 
-		otlpConverter := newOTLPMimirConverter()
+		otlpConverter := newOTLPMimirConverter(otlpappender.NewCombinedAppender())
 
-		parser := newOTLPParser(limits, resourceAttributePromotionConfig, otlpConverter, enableStartTimeQuietZero, pushMetrics, discardedDueToOtelParseError)
+		parser := newOTLPParser(limits, resourceAttributePromotionConfig, otlpConverter, pushMetrics, discardedDueToOtelParseError, OTLPPushMiddlewares)
 
 		supplier := func() (*mimirpb.WriteRequest, func(), error) {
 			rb := util.NewRequestBuffers(requestBufferPool)
@@ -159,7 +163,13 @@ func OTLPHandler(
 				httpCode = http.StatusServiceUnavailable
 			}
 		} else {
-			grpcCode, httpCode = toOtlpGRPCHTTPStatus(pushErr)
+			var isSoft bool
+			grpcCode, httpCode, isSoft = toOtlpGRPCHTTPStatus(pushErr)
+			if isSoft {
+				handlePartialOTLPPush(pushErr, w, r, req, logger)
+				return
+			}
+
 			errorMsg = pushErr.Error()
 		}
 		if httpCode != 202 {
@@ -177,13 +187,26 @@ func OTLPHandler(
 	})
 }
 
+func handlePartialOTLPPush(pushErr error, w http.ResponseWriter, r *http.Request, req *Request, logger log.Logger) {
+	// Respond as per spec:
+	// https://opentelemetry.io/docs/specs/otlp/#otlphttp-response.
+	expResp := colmetricpb.ExportMetricsServiceResponse{
+		PartialSuccess: &colmetricpb.ExportMetricsPartialSuccess{
+			RejectedDataPoints: 0,
+			ErrorMessage:       pushErr.Error(),
+		},
+	}
+	addSuccessHeaders(w, req.artificialDelay)
+	writeOTLPResponse(r, w, http.StatusOK, &expResp, logger)
+}
+
 func newOTLPParser(
 	limits OTLPHandlerLimits,
 	resourceAttributePromotionConfig OTelResourceAttributePromotionConfig,
 	otlpConverter *otlpMimirConverter,
-	enableStartTimeQuietZero bool,
 	pushMetrics *PushMetrics,
 	discardedDueToOtelParseError *prometheus.CounterVec,
+	OTLPPushMiddlewares []OTLPPushMiddleware,
 ) parserFunc {
 	return func(ctx context.Context, r *http.Request, maxRecvMsgSize int, buffers *util.RequestBuffers, req *mimirpb.PreallocWriteRequest, logger log.Logger) error {
 		contentType := r.Header.Get("Content-Type")
@@ -194,10 +217,12 @@ func newOTLPParser(
 			compression = util.Gzip
 		case "lz4":
 			compression = util.Lz4
+		case "zstd":
+			compression = util.Zstd
 		case "":
 			compression = util.NoCompression
 		default:
-			return httpgrpc.Errorf(http.StatusUnsupportedMediaType, "unsupported compression: %s. Only \"gzip\", \"lz4\", or no compression supported", contentEncoding)
+			return httpgrpc.Errorf(http.StatusUnsupportedMediaType, "unsupported compression: %s. Only \"gzip\", \"lz4\", \"zstd\", or no compression supported", contentEncoding)
 		}
 
 		var decoderFunc func(io.Reader) (req pmetricotlp.ExportRequest, uncompressedBodySize int, err error)
@@ -212,8 +237,9 @@ func newOTLPParser(
 				var tooLargeErr util.MsgSizeTooLargeErr
 				if errors.As(err, &tooLargeErr) {
 					return exportReq, 0, httpgrpc.Error(http.StatusRequestEntityTooLarge, distributorMaxOTLPRequestSizeErr{
-						actual: tooLargeErr.Actual,
-						limit:  tooLargeErr.Limit,
+						compressed: tooLargeErr.Compressed,
+						actual:     tooLargeErr.Actual,
+						limit:      tooLargeErr.Limit,
 					}.Error())
 				}
 				return exportReq, protoBodySize, err
@@ -238,6 +264,11 @@ func newOTLPParser(
 					reader = gzReader
 				case util.Lz4:
 					reader = io.NopCloser(lz4.NewReader(reader))
+				case util.Zstd:
+					reader, err = zstd.NewReader(reader)
+					if err != nil {
+						return exportReq, 0, errors.Wrap(err, "create zstd reader")
+					}
 				}
 
 				reader = http.MaxBytesReader(nil, io.NopCloser(reader), int64(maxRecvMsgSize))
@@ -282,6 +313,13 @@ func newOTLPParser(
 
 		level.Debug(spanLogger).Log("msg", "decoding complete, starting conversion")
 
+		for _, middleware := range OTLPPushMiddlewares {
+			err := middleware(ctx, &otlpReq)
+			if err != nil {
+				return err
+			}
+		}
+
 		tenantID, err := tenant.TenantID(ctx)
 		if err != nil {
 			return err
@@ -299,12 +337,11 @@ func newOTLPParser(
 		validateTranslationStrategy(translationStrategy, limits, tenantID)
 
 		pushMetrics.IncOTLPRequest(tenantID)
-		pushMetrics.ObserveUncompressedBodySize(tenantID, float64(uncompressedBodySize))
+		pushMetrics.ObserveUncompressedBodySize(tenantID, "otlp", float64(uncompressedBodySize))
 
 		convOpts := conversionOptions{
 			addSuffixes:                       translationStrategy.ShouldAddSuffixes(),
 			enableCTZeroIngestion:             enableCTZeroIngestion,
-			enableStartTimeQuietZero:          enableStartTimeQuietZero,
 			keepIdentifyingResourceAttributes: keepIdentifyingResourceAttributes,
 			convertHistogramsToNHCB:           convertHistogramsToNHCB,
 			promoteScopeMetadata:              promoteScopeMetadata,
@@ -312,7 +349,7 @@ func newOTLPParser(
 			allowDeltaTemporality:             allowDeltaTemporality,
 			allowUTF8:                         !translationStrategy.ShouldEscape(),
 		}
-		metrics, metricsDropped, err := otelMetricsToTimeseries(
+		metrics, metadata, metricsDropped, err := otelMetricsToSeriesAndMetadata(
 			ctx,
 			otlpConverter,
 			otlpReq.Metrics(),
@@ -347,9 +384,10 @@ func newOTLPParser(
 			"promoted_resource_attributes", promoteResourceAttributes,
 		)
 
+		req.Source = mimirpb.OTLP
 		req.Timeseries = metrics
-		req.Metadata, err = otelMetricsToMetadata(otlpReq.Metrics(), convOpts)
-		return err
+		req.Metadata = metadata
+		return nil
 	}
 }
 
@@ -385,16 +423,15 @@ func validateTranslationStrategy(translationStrategy otlptranslator.TranslationS
 }
 
 // toOtlpGRPCHTTPStatus is utilized by the OTLP endpoint.
-func toOtlpGRPCHTTPStatus(pushErr error) (codes.Code, int) {
+func toOtlpGRPCHTTPStatus(pushErr error) (codes.Code, int, bool) {
 	var distributorErr Error
 	if errors.Is(pushErr, context.DeadlineExceeded) || !errors.As(pushErr, &distributorErr) {
-		return codes.Internal, http.StatusServiceUnavailable
+		return codes.Internal, http.StatusServiceUnavailable, false
 	}
 
 	grpcStatusCode := errorCauseToGRPCStatusCode(distributorErr.Cause(), false)
 	httpStatusCode := errorCauseToHTTPStatusCode(distributorErr.Cause(), false)
-	otlpHTTPStatusCode := httpRetryableToOTLPRetryable(httpStatusCode)
-	return grpcStatusCode, otlpHTTPStatusCode
+	return grpcStatusCode, httpRetryableToOTLPRetryable(httpStatusCode), distributorErr.IsSoft()
 }
 
 // httpRetryableToOTLPRetryable maps non-retryable 5xx HTTP status codes according
@@ -489,73 +526,9 @@ func (o otlpProtoUnmarshaler) Unmarshal(data []byte) error {
 	return o.request.UnmarshalProto(data)
 }
 
-func otelMetricTypeToMimirMetricType(otelMetric pmetric.Metric) mimirpb.MetricMetadata_MetricType {
-	switch otelMetric.Type() {
-	case pmetric.MetricTypeGauge:
-		return mimirpb.GAUGE
-	case pmetric.MetricTypeSum:
-		metricType := mimirpb.GAUGE
-		if otelMetric.Sum().IsMonotonic() {
-			metricType = mimirpb.COUNTER
-		}
-		return metricType
-	case pmetric.MetricTypeHistogram:
-		return mimirpb.HISTOGRAM
-	case pmetric.MetricTypeSummary:
-		return mimirpb.SUMMARY
-	case pmetric.MetricTypeExponentialHistogram:
-		return mimirpb.HISTOGRAM
-	}
-	return mimirpb.UNKNOWN
-}
-
-func otelMetricsToMetadata(md pmetric.Metrics, opts conversionOptions) ([]*mimirpb.MetricMetadata, error) {
-	resourceMetricsSlice := md.ResourceMetrics()
-
-	metadataLength := 0
-	for i := 0; i < resourceMetricsSlice.Len(); i++ {
-		scopeMetricsSlice := resourceMetricsSlice.At(i).ScopeMetrics()
-		for j := 0; j < scopeMetricsSlice.Len(); j++ {
-			metadataLength += scopeMetricsSlice.At(j).Metrics().Len()
-		}
-	}
-
-	namer := otlptranslator.MetricNamer{
-		Namespace:          "",
-		WithMetricSuffixes: opts.addSuffixes,
-		UTF8Allowed:        opts.allowUTF8,
-	}
-
-	metadata := make([]*mimirpb.MetricMetadata, 0, metadataLength)
-	for i := 0; i < resourceMetricsSlice.Len(); i++ {
-		scopeMetricsSlice := resourceMetricsSlice.At(i).ScopeMetrics()
-		for j := 0; j < scopeMetricsSlice.Len(); j++ {
-			scopeMetrics := scopeMetricsSlice.At(j)
-			for k := 0; k < scopeMetrics.Metrics().Len(); k++ {
-				metric := scopeMetrics.Metrics().At(k)
-				name, err := namer.Build(otlp.TranslatorMetricFromOtelMetric(metric))
-				if err != nil {
-					return nil, err
-				}
-				entry := mimirpb.MetricMetadata{
-					Type: otelMetricTypeToMimirMetricType(metric),
-					// TODO(krajorama): when UTF-8 is configurable from user limits, use BuildMetricName. See https://github.com/prometheus/prometheus/pull/15664
-					MetricFamilyName: name,
-					Help:             metric.Description(),
-					Unit:             metric.Unit(),
-				}
-				metadata = append(metadata, &entry)
-			}
-		}
-	}
-
-	return metadata, nil
-}
-
 type conversionOptions struct {
 	addSuffixes                       bool
 	enableCTZeroIngestion             bool
-	enableStartTimeQuietZero          bool
 	keepIdentifyingResourceAttributes bool
 	convertHistogramsToNHCB           bool
 	promoteScopeMetadata              bool
@@ -564,52 +537,55 @@ type conversionOptions struct {
 	allowUTF8                         bool
 }
 
-func otelMetricsToTimeseries(
+func otelMetricsToSeriesAndMetadata(
 	ctx context.Context,
 	converter *otlpMimirConverter,
 	md pmetric.Metrics,
 	opts conversionOptions,
 	logger log.Logger,
-) ([]mimirpb.PreallocTimeseries, int, error) {
-	settings := otlp.Settings{
-		AddMetricSuffixes:                   opts.addSuffixes,
-		EnableCreatedTimestampZeroIngestion: opts.enableCTZeroIngestion,
-		EnableStartTimeQuietZero:            opts.enableStartTimeQuietZero,
-		PromoteResourceAttributes:           otlp.NewPromoteResourceAttributes(config.OTLPConfig{PromoteResourceAttributes: opts.promoteResourceAttributes}),
-		KeepIdentifyingResourceAttributes:   opts.keepIdentifyingResourceAttributes,
-		ConvertHistogramsToNHCB:             opts.convertHistogramsToNHCB,
-		PromoteScopeMetadata:                opts.promoteScopeMetadata,
-		AllowDeltaTemporality:               opts.allowDeltaTemporality,
-		AllowUTF8:                           opts.allowUTF8,
+) ([]mimirpb.PreallocTimeseries, []*mimirpb.MetricMetadata, int, error) {
+	settings := prometheusremotewrite.Settings{
+		AddMetricSuffixes:                 opts.addSuffixes,
+		PromoteResourceAttributes:         prometheusremotewrite.NewPromoteResourceAttributes(config.OTLPConfig{PromoteResourceAttributes: opts.promoteResourceAttributes}),
+		KeepIdentifyingResourceAttributes: opts.keepIdentifyingResourceAttributes,
+		ConvertHistogramsToNHCB:           opts.convertHistogramsToNHCB,
+		PromoteScopeMetadata:              opts.promoteScopeMetadata,
+		AllowDeltaTemporality:             opts.allowDeltaTemporality,
+		AllowUTF8:                         opts.allowUTF8,
 	}
-	mimirTS := converter.ToTimeseries(ctx, md, settings, logger)
+	converter.appender.EnableCreatedTimestampZeroIngestion = opts.enableCTZeroIngestion
+	mimirTS, metadata := converter.ToSeriesAndMetadata(ctx, md, settings, logger)
 
 	dropped := converter.DroppedTotal()
 	if len(mimirTS) == 0 && dropped > 0 {
-		return nil, dropped, converter.Err()
+		return nil, nil, dropped, converter.Err()
 	}
-	return mimirTS, dropped, nil
+	return mimirTS, metadata, dropped, nil
 }
 
 type otlpMimirConverter struct {
-	converter *otlp.MimirConverter
+	appender  *otlpappender.MimirAppender
+	converter *prometheusremotewrite.PrometheusConverter
 	// err holds OTLP parse errors
 	err error
 }
 
-func newOTLPMimirConverter() *otlpMimirConverter {
+func newOTLPMimirConverter(appender *otlpappender.MimirAppender) *otlpMimirConverter {
 	return &otlpMimirConverter{
-		converter: otlp.NewMimirConverter(),
+		appender:  appender,
+		converter: prometheusremotewrite.NewPrometheusConverter(appender),
 	}
 }
 
-func (c *otlpMimirConverter) ToTimeseries(ctx context.Context, md pmetric.Metrics, settings otlp.Settings, logger log.Logger) []mimirpb.PreallocTimeseries {
+func (c *otlpMimirConverter) ToSeriesAndMetadata(ctx context.Context, md pmetric.Metrics, settings prometheusremotewrite.Settings, logger log.Logger) ([]mimirpb.PreallocTimeseries, []*mimirpb.MetricMetadata) {
 	if c.err != nil {
-		return nil
+		return nil, nil
 	}
 
-	_, c.err = c.converter.FromMetrics(ctx, md, settings, utillog.SlogFromGoKit(logger))
-	return c.converter.TimeSeries()
+	_, c.err = c.converter.FromMetrics(ctx, md, settings)
+
+	timeseries, metadata := c.appender.GetResult()
+	return timeseries, metadata
 }
 
 func (c *otlpMimirConverter) DroppedTotal() int {
@@ -710,8 +686,8 @@ func TimeseriesToOTLPRequest(timeseries []prompb.TimeSeries, metadata []mimirpb.
 				if i == 0 {
 					for _, tsEx := range ts.Exemplars {
 						ex := datapoint.Exemplars().AppendEmpty()
-						ex.SetDoubleValue(histogram.Sum / 10.0) // Doesn't really matter, just a placeholder
-						ex.SetTimestamp(pcommon.Timestamp(histogram.Timestamp * time.Millisecond.Nanoseconds()))
+						ex.SetDoubleValue(tsEx.Value)
+						ex.SetTimestamp(pcommon.Timestamp(tsEx.Timestamp * time.Millisecond.Nanoseconds()))
 						ex.FilteredAttributes().EnsureCapacity(len(tsEx.Labels))
 						for _, label := range tsEx.Labels {
 							ex.FilteredAttributes().PutStr(label.Name, label.Value)
@@ -765,7 +741,7 @@ type otelAttributeValueTooLongError struct {
 
 func (e otelAttributeValueTooLongError) Error() string {
 	return fmt.Sprintf(
-		"received a metric whose attribute value length exceeds the limit of %d, attribute: '%s', value: '%.200s' (truncated) metric: '%.200s'. See: https://grafana.com/docs/grafana-cloud/send-data/otlp/otlp-format-considerations/#metrics-ingestion-limits",
-		e.Limit, e.Label.Name, e.Label.Value, e.Series,
+		"received a metric whose attribute value length of %d exceeds the limit of %d, attribute: '%s', value: '%.200s' (truncated) metric: '%.200s'. See: https://grafana.com/docs/grafana-cloud/send-data/otlp/otlp-format-considerations/#metrics-ingestion-limits",
+		len(e.Label.Value), e.Limit, e.Label.Name, e.Label.Value, e.Series,
 	)
 }

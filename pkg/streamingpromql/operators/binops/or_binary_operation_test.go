@@ -243,7 +243,7 @@ func TestOrBinaryOperationSorting(t *testing.T) {
 		},
 		// OrBinaryOperation does not handle the case where both sides contain series with identical labels, and
 		// instead relies on DeduplicateAndMerge to handle merging series with identical labels.
-		// Given NewOrBinaryOperation wraps the OrBinaryOperation in a DeduplicateAndMerge, we can still test this
+		// Given OrBinaryOperation is expected to be wrapped in a DeduplicateAndMerge, we can still test this
 		// here.
 		"same series on both sides, one series": {
 			leftSeries: []labels.Labels{
@@ -305,7 +305,9 @@ func TestOrBinaryOperationSorting(t *testing.T) {
 				posrange.PositionRange{},
 			)
 
-			actualSeriesMetadata, err := op.SeriesMetadata(ctx)
+			// Wrap OrBinaryOperation in a DeduplicateAndMerge as would happen at the planning level
+			op = operators.NewDeduplicateAndMerge(op, memoryConsumptionTracker, false)
+			actualSeriesMetadata, err := op.SeriesMetadata(ctx, nil)
 			require.NoError(t, err)
 
 			expectedSeriesMetadata := testutils.LabelsToSeriesMetadata(testCase.expectedOutputSeriesOrder)
@@ -538,7 +540,7 @@ func TestOrBinaryOperation_ClosesInnerOperatorsAsSoonAsPossible(t *testing.T) {
 			vectorMatching := parser.VectorMatching{On: true, MatchingLabels: []string{"group"}}
 			o := NewOrBinaryOperation(left, right, vectorMatching, memoryConsumptionTracker, timeRange, posrange.PositionRange{})
 
-			outputSeries, err := o.SeriesMetadata(ctx)
+			outputSeries, err := o.SeriesMetadata(ctx, nil)
 			require.NoError(t, err)
 
 			if len(testCase.expectedOutputSeries) == 0 {
@@ -548,14 +550,18 @@ func TestOrBinaryOperation_ClosesInnerOperatorsAsSoonAsPossible(t *testing.T) {
 			}
 
 			if testCase.expectLeftSideClosedAfterOutputSeriesIndex == -1 {
+				require.True(t, left.Finalized, "left side should be finalized after SeriesMetadata, but it is not")
 				require.True(t, left.Closed, "left side should be closed after SeriesMetadata, but it is not")
 			} else {
+				require.False(t, left.Finalized, "left side should not be finalized after SeriesMetadata, but it is")
 				require.False(t, left.Closed, "left side should not be closed after SeriesMetadata, but it is")
 			}
 
 			if testCase.expectRightSideClosedAfterOutputSeriesIndex == -1 {
+				require.True(t, right.Finalized, "right side should be finalized after SeriesMetadata, but it is not")
 				require.True(t, right.Closed, "right side should be closed after SeriesMetadata, but it is not")
 			} else {
+				require.False(t, right.Finalized, "right side should not be finalized after SeriesMetadata, but it is")
 				require.False(t, right.Closed, "right side should not be closed after SeriesMetadata, but it is")
 			}
 
@@ -564,14 +570,18 @@ func TestOrBinaryOperation_ClosesInnerOperatorsAsSoonAsPossible(t *testing.T) {
 				require.NoErrorf(t, err, "got error while reading series at index %v", outputSeriesIdx)
 
 				if outputSeriesIdx >= testCase.expectLeftSideClosedAfterOutputSeriesIndex {
+					require.Truef(t, left.Finalized, "left side should be finalized after output series at index %v, but it is not", outputSeriesIdx)
 					require.Truef(t, left.Closed, "left side should be closed after output series at index %v, but it is not", outputSeriesIdx)
 				} else {
+					require.Falsef(t, left.Finalized, "left side should not be finalized after output series at index %v, but it is", outputSeriesIdx)
 					require.Falsef(t, left.Closed, "left side should not be closed after output series at index %v, but it is", outputSeriesIdx)
 				}
 
 				if outputSeriesIdx >= testCase.expectRightSideClosedAfterOutputSeriesIndex {
+					require.Truef(t, right.Finalized, "right side should be finalized after output series at index %v, but it is not", outputSeriesIdx)
 					require.Truef(t, right.Closed, "right side should be closed after output series at index %v, but it is not", outputSeriesIdx)
 				} else {
+					require.Falsef(t, right.Finalized, "right side should not be finalized after output series at index %v, but it is", outputSeriesIdx)
 					require.Falsef(t, right.Closed, "right side should not be closed after output series at index %v, but it is", outputSeriesIdx)
 				}
 			}
@@ -684,7 +694,7 @@ func TestOrBinaryOperation_ReleasesIntermediateStateIfClosedEarly(t *testing.T) 
 			vectorMatching := parser.VectorMatching{On: true, MatchingLabels: []string{"group"}}
 			o := NewOrBinaryOperation(left, right, vectorMatching, memoryConsumptionTracker, timeRange, posrange.PositionRange{})
 
-			outputSeries, err := o.SeriesMetadata(ctx)
+			outputSeries, err := o.SeriesMetadata(ctx, nil)
 			require.NoError(t, err)
 			require.Equal(t, testutils.LabelsToSeriesMetadata(testCase.expectedOutputSeries), outputSeries)
 			types.SeriesMetadataSlicePool.Put(&outputSeries, memoryConsumptionTracker)

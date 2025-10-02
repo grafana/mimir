@@ -13,7 +13,6 @@ import (
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
-	"github.com/grafana/mimir/pkg/streamingpromql/operators"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/binops"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
@@ -74,6 +73,19 @@ func (b *BinaryExpression) Describe() string {
 	}
 
 	builder.WriteString(" RHS")
+
+	if b.Hints != nil {
+		builder.WriteString(", hints (")
+		for i, l := range b.Hints.Include {
+			if i > 0 {
+				builder.WriteString(", ")
+			}
+
+			builder.WriteString(l)
+		}
+
+		builder.WriteByte(')')
+	}
 
 	return builder.String()
 }
@@ -166,12 +178,12 @@ func MaterializeBinaryExpression(b *BinaryExpression, materializer *planning.Mat
 		vector = lhsVector
 	}
 
-	o, err := binops.NewVectorScalarBinaryOperation(scalar, vector, scalarIsLeftSide, op, b.ReturnBool, timeRange, params.MemoryConsumptionTracker, params.Annotations, b.ExpressionPosition())
+	o, err := binops.NewVectorScalarBinaryOperation(scalar, vector, scalarIsLeftSide, op, b.ReturnBool, timeRange, params, b.ExpressionPosition())
 	if err != nil {
 		return nil, err
 	}
 
-	return planning.NewSingleUseOperatorFactory(operators.NewDeduplicateAndMerge(o, params.MemoryConsumptionTracker)), nil
+	return planning.NewSingleUseOperatorFactory(o), nil
 }
 
 func (b *BinaryExpression) getChildOperator(node planning.Node, timeRange types.QueryTimeRange, materializer *planning.Materializer, side string) (types.InstantVectorOperator, types.ScalarOperator, error) {
@@ -201,7 +213,7 @@ func (b *BinaryExpression) createVectorVectorOperator(lhs, rhs types.InstantVect
 		case parser.CardOneToMany, parser.CardManyToOne:
 			return binops.NewGroupedVectorVectorBinaryOperation(lhs, rhs, *b.VectorMatching.ToPrometheusType(), op, b.ReturnBool, params.MemoryConsumptionTracker, params.Annotations, b.ExpressionPosition(), timeRange)
 		case parser.CardOneToOne:
-			return binops.NewOneToOneVectorVectorBinaryOperation(lhs, rhs, *b.VectorMatching.ToPrometheusType(), op, b.ReturnBool, params.MemoryConsumptionTracker, params.Annotations, b.ExpressionPosition(), timeRange)
+			return binops.NewOneToOneVectorVectorBinaryOperation(lhs, rhs, *b.VectorMatching.ToPrometheusType(), op, b.ReturnBool, params.MemoryConsumptionTracker, params.Annotations, b.ExpressionPosition(), timeRange, b.Hints.ToOperatorType(), params.Logger)
 		default:
 			return nil, compat.NewNotSupportedError(fmt.Sprintf("binary expression with %v matching for '%v'", b.VectorMatching.Card, b.Op.String()))
 		}

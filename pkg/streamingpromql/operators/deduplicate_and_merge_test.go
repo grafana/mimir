@@ -22,12 +22,15 @@ func TestDeduplicateAndMerge(t *testing.T) {
 	// the number of buffered series.
 
 	testCases := map[string]struct {
-		inputSeries []labels.Labels
-		inputData   []types.InstantVectorSeriesData
+		inputSeries           []labels.Labels
+		inputData             []types.InstantVectorSeriesData
+		inputDropName         []bool
+		runDelayedNameRemoval bool
 
-		expectConflict       bool
-		expectedOutputSeries []labels.Labels
-		expectedOutputData   []types.InstantVectorSeriesData
+		expectConflict         bool
+		expectedOutputSeries   []labels.Labels
+		expectedOutputData     []types.InstantVectorSeriesData
+		expectedOutputDropName []bool
 	}{
 		"no series": {
 			inputSeries: []labels.Labels{},
@@ -153,20 +156,87 @@ func TestDeduplicateAndMerge(t *testing.T) {
 
 			expectConflict: true,
 		},
+		"with dropName set partially and runDelayedNameRemoval=false": {
+			inputSeries: []labels.Labels{
+				labels.FromStrings(labels.MetricName, "metric", "foo", "1"),
+				labels.FromStrings(labels.MetricName, "metric", "foo", "2"),
+				labels.FromStrings(labels.MetricName, "metric", "foo", "3"),
+			},
+			inputData: []types.InstantVectorSeriesData{
+				{Floats: []promql.FPoint{{T: 0, F: 0}, {T: 1, F: 1}}},
+				{Floats: []promql.FPoint{{T: 0, F: 10}, {T: 1, F: 11}}},
+				{Floats: []promql.FPoint{{T: 0, F: 20}, {T: 1, F: 21}}},
+			},
+			inputDropName: []bool{
+				true,
+				false,
+				true,
+			},
+
+			expectedOutputSeries: []labels.Labels{
+				labels.FromStrings(labels.MetricName, "metric", "foo", "1"),
+				labels.FromStrings(labels.MetricName, "metric", "foo", "2"),
+				labels.FromStrings(labels.MetricName, "metric", "foo", "3"),
+			},
+			expectedOutputData: []types.InstantVectorSeriesData{
+				{Floats: []promql.FPoint{{T: 0, F: 0}, {T: 1, F: 1}}},
+				{Floats: []promql.FPoint{{T: 0, F: 10}, {T: 1, F: 11}}},
+				{Floats: []promql.FPoint{{T: 0, F: 20}, {T: 1, F: 21}}},
+			},
+			expectedOutputDropName: []bool{
+				true,
+				false,
+				true,
+			},
+		},
+		"with dropName set partially and runDelayedNameRemoval=true": {
+			inputSeries: []labels.Labels{
+				labels.FromStrings(labels.MetricName, "metric", "foo", "1"),
+				labels.FromStrings(labels.MetricName, "metric", "foo", "2"),
+				labels.FromStrings(labels.MetricName, "metric", "foo", "3"),
+			},
+			inputData: []types.InstantVectorSeriesData{
+				{Floats: []promql.FPoint{{T: 0, F: 0}, {T: 1, F: 1}}},
+				{Floats: []promql.FPoint{{T: 0, F: 10}, {T: 1, F: 11}}},
+				{Floats: []promql.FPoint{{T: 0, F: 20}, {T: 1, F: 21}}},
+			},
+			inputDropName: []bool{
+				true,
+				false,
+				true,
+			},
+			runDelayedNameRemoval: true,
+
+			expectedOutputSeries: []labels.Labels{
+				labels.FromStrings("foo", "1"),
+				labels.FromStrings(labels.MetricName, "metric", "foo", "2"),
+				labels.FromStrings("foo", "3"),
+			},
+			expectedOutputData: []types.InstantVectorSeriesData{
+				{Floats: []promql.FPoint{{T: 0, F: 0}, {T: 1, F: 1}}},
+				{Floats: []promql.FPoint{{T: 0, F: 10}, {T: 1, F: 11}}},
+				{Floats: []promql.FPoint{{T: 0, F: 20}, {T: 1, F: 21}}},
+			},
+			expectedOutputDropName: []bool{
+				false,
+				false,
+				false,
+			},
+		},
 	}
 
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
 			ctx := context.Background()
 			memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
-			inner := &TestOperator{Series: testCase.inputSeries, Data: testCase.inputData, MemoryConsumptionTracker: memoryConsumptionTracker}
-			o := NewDeduplicateAndMerge(inner, memoryConsumptionTracker)
+			inner := &TestOperator{Series: testCase.inputSeries, Data: testCase.inputData, DropName: testCase.inputDropName, MemoryConsumptionTracker: memoryConsumptionTracker}
+			o := NewDeduplicateAndMerge(inner, memoryConsumptionTracker, testCase.runDelayedNameRemoval)
 
-			outputSeriesMetadata, err := o.SeriesMetadata(ctx)
+			outputSeriesMetadata, err := o.SeriesMetadata(ctx, nil)
 			require.NoError(t, err)
 
 			if !testCase.expectConflict {
-				require.Equal(t, testutils.LabelsToSeriesMetadata(testCase.expectedOutputSeries), outputSeriesMetadata)
+				require.Equal(t, testutils.LabelsToSeriesMetadataWithDropName(testCase.expectedOutputSeries, testCase.expectedOutputDropName), outputSeriesMetadata)
 			}
 
 			outputData := []types.InstantVectorSeriesData{}

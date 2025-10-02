@@ -68,8 +68,7 @@ DOC_SOURCES_PATH := docs/sources/mimir
 DOC_TEMPLATES := $(DOC_SOURCES_PATH)/configure/configuration-parameters/index.template
 
 # Documents to run through embedding
-DOC_EMBED := $(DOC_SOURCES_PATH)/configure/configure-the-query-frontend-work-with-prometheus.md \
-	$(DOC_SOURCES_PATH)/configure/mirror-requests-to-a-second-cluster/index.md \
+DOC_EMBED := $(DOC_SOURCES_PATH)/configure/mirror-requests-to-a-second-cluster/index.md \
 	$(DOC_SOURCES_PATH)/references/architecture/components/overrides-exporter.md \
 	$(DOC_SOURCES_PATH)/get-started/_index.md \
 	$(DOC_SOURCES_PATH)/set-up/jsonnet/deploy.md
@@ -215,9 +214,6 @@ PROTO_GOS := $(patsubst %.proto,%.pb.go,$(PROTO_DEFS))
 
 PROMQL_TESTS := $(shell find pkg/streamingpromql/testdata/ours pkg/streamingpromql/testdata/ours-only $(DONT_FIND) -type f -path '*.test' -print)
 
-# Generating OTLP translation code is automated.
-OTLP_GOS := $(shell find ./pkg/distributor/otlp/ -type f -name '*_generated.go' -print)
-
 # Building binaries is now automated. The convention is to build a binary
 # for every directory with main.go in it.
 MAIN_GO := $(shell find . $(DONT_FIND) -type f -name 'main.go' -print)
@@ -247,7 +243,7 @@ mimir-build-image/$(UPTODATE): mimir-build-image/*
 # All the boiler plate for building golang follows:
 SUDO := $(shell docker info >/dev/null 2>&1 || echo "sudo -E")
 BUILD_IN_CONTAINER ?= true
-LATEST_BUILD_IMAGE_TAG ?= pr12352-27854ede92
+LATEST_BUILD_IMAGE_TAG ?= pr12712-28f11b4f26
 
 # TTY is parameterized to allow CI and scripts to run builds,
 # as it currently disallows TTY devices.
@@ -276,7 +272,7 @@ GOVOLUMES=	-v mimir-go-cache:/go/cache \
 # Mount local ssh credentials to be able to clone private repos when doing `mod-check`
 SSHVOLUME=  -v ~/.ssh/:/root/.ssh:$(CONTAINER_MOUNT_OPTIONS)
 
-exes $(EXES) $(EXES_RACE) protos $(PROTO_GOS) lint lint-gh-action lint-packaging-scripts test test-with-race cover shell mod-check check-protos doc format dist build-mixin format-mixin check-mixin-tests license check-license conftest-fmt check-conftest-fmt helm-conftest-test helm-conftest-quick-test conftest-verify check-helm-tests build-helm-tests print-go-version format-promql-tests check-promql-tests format-protobuf check-protobuf-format generate-otlp: fetch-build-image
+exes $(EXES) $(EXES_RACE) protos $(PROTO_GOS) lint lint-gh-action lint-packaging-scripts test test-with-race cover shell mod-check check-protos doc format dist build-mixin format-mixin check-mixin-tests license check-license conftest-fmt check-conftest-fmt helm-conftest-test helm-conftest-quick-test conftest-verify check-helm-tests build-helm-tests print-go-version format-promql-tests check-promql-tests format-protobuf check-protobuf-format: fetch-build-image
 	@echo ">>>> Entering build container: $@"
 	$(SUDO) time docker run --rm $(TTY) -i $(SSHVOLUME) $(GOVOLUMES) $(BUILD_IMAGE) GOOS=$(GOOS) GOARCH=$(GOARCH) BINARY_SUFFIX=$(BINARY_SUFFIX) $@;
 
@@ -609,13 +605,13 @@ HELM_RAW_MANIFESTS_PATH=operations/helm/manifests-intermediate
 HELM_REFERENCE_MANIFESTS=operations/helm/tests
 
 conftest-fmt:
-	@conftest fmt $(REGO_POLICIES_PATH)
+	@conftest --rego-version=v0 fmt $(REGO_POLICIES_PATH)
 
 check-conftest-fmt: conftest-fmt
 	@./tools/find-diff-or-untracked.sh $(REGO_POLICIES_PATH) || (echo "Format the rego policies by running 'make conftest-fmt' and commit the changes" && false)
 
 conftest-verify:
-	@conftest verify -p $(REGO_POLICIES_PATH) --report notes
+	@conftest --rego-version=v0 verify -p $(REGO_POLICIES_PATH) --report notes
 
 update-helm-dependencies:
 	@./$(HELM_SCRIPTS_PATH)/update-helm-dependencies.sh operations/helm/charts/mimir-distributed
@@ -633,14 +629,6 @@ helm-conftest-test: build-helm-tests helm-conftest-quick-test
 check-helm-tests: ## Check the helm golden records.
 check-helm-tests: build-helm-tests helm-conftest-test
 	@./tools/find-diff-or-untracked.sh $(HELM_REFERENCE_MANIFESTS) || (echo "Rebuild the Helm tests output by running 'make build-helm-tests' and commit the changes" && false)
-
-.PHONY: generate-otlp
-generate-otlp:
-	cd pkg/distributor/otlp && rm -f *_generated.go && go generate
-
-.PHONY: check-generated-otlp-code
-check-generated-otlp-code: generate-otlp
-	@./tools/find-diff-or-untracked.sh $(OTLP_GOS) || (echo "Please rebuild OTLP code by running 'make generate-otlp'" && false)
 
 endif
 
@@ -689,6 +677,7 @@ reference-help: cmd/mimir/mimir tools/config-inspector/config-inspector
 	@(./cmd/mimir/mimir -h || true) > cmd/mimir/help.txt.tmpl
 	@(./cmd/mimir/mimir -help-all || true) > cmd/mimir/help-all.txt.tmpl
 	@(./tools/config-inspector/config-inspector || true) > cmd/mimir/config-descriptor.json
+	@jq -f ./tools/config-descriptor-extract-flag-defaults.jq cmd/mimir/config-descriptor.json > operations/mimir/mimir-flags-defaults.json
 
 clean-white-noise: ## Clean the white noise in the markdown files.
 	@find . -path ./.pkg -prune -o -path ./.cache -prune -o -path "*/vendor/*" -prune -or -type f -name "*.md" -print | \
@@ -773,9 +762,6 @@ check-jsonnet-tests: build-jsonnet-tests jsonnet-conftest-test
 
 check-mimir-microservices-mode-docker-compose-yaml: ## Check the jsonnet and docker-compose diff for development/mimir-microservices-mode.
 	cd development/mimir-microservices-mode && make check
-
-check-mimir-read-write-mode-docker-compose-yaml: ## Check the jsonnet and docker-compose diff for development/mimir-read-write-mode.
-	cd development/mimir-read-write-mode && make check
 
 integration-tests: ## Run all integration tests.
 integration-tests: cmd/mimir/$(UPTODATE)

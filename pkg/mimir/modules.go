@@ -34,6 +34,7 @@ import (
 	"github.com/prometheus/prometheus/rules"
 	prom_storage "github.com/prometheus/prometheus/storage"
 	prom_remote "github.com/prometheus/prometheus/storage/remote"
+	"github.com/spf13/afero"
 
 	"github.com/grafana/mimir/pkg/alertmanager"
 	"github.com/grafana/mimir/pkg/alertmanager/alertstore"
@@ -49,6 +50,7 @@ import (
 	"github.com/grafana/mimir/pkg/frontend"
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
 	"github.com/grafana/mimir/pkg/frontend/transport"
+	v2 "github.com/grafana/mimir/pkg/frontend/v2"
 	"github.com/grafana/mimir/pkg/ingester"
 	"github.com/grafana/mimir/pkg/querier"
 	querierapi "github.com/grafana/mimir/pkg/querier/api"
@@ -63,11 +65,15 @@ import (
 	"github.com/grafana/mimir/pkg/storegateway"
 	"github.com/grafana/mimir/pkg/streamingpromql"
 	streamingpromqlcompat "github.com/grafana/mimir/pkg/streamingpromql/compat"
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/remoteexec"
+	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/usagestats"
 	"github.com/grafana/mimir/pkg/usagetracker"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/activitytracker"
+	"github.com/grafana/mimir/pkg/util/chunkinfologger"
 	util_log "github.com/grafana/mimir/pkg/util/log"
+	"github.com/grafana/mimir/pkg/util/propagation"
 	"github.com/grafana/mimir/pkg/util/validation"
 	"github.com/grafana/mimir/pkg/util/validation/exporter"
 	"github.com/grafana/mimir/pkg/util/version"
@@ -118,11 +124,6 @@ const (
 	UsageTrackerInstanceRing         string = "usage-tracker-instance-ring"
 	UsageTrackerPartitionRing        string = "usage-tracker-partition-ring"
 	Vault                            string = "vault"
-
-	// Write Read and Backend are the targets used when using the read-write deployment mode.
-	Write   string = "write"
-	Read    string = "read"
-	Backend string = "backend"
 
 	All string = "all"
 )
@@ -336,7 +337,8 @@ func (t *Mimir) initServer() (services.Service, error) {
 
 	// Mimir handles signals on its own.
 	DisableSignalHandling(&t.Cfg.Server)
-	serv, err := server.New(t.Cfg.Server)
+	t.ServerMetrics = server.NewServerMetrics(t.Cfg.Server)
+	serv, err := server.NewWithMetrics(t.Cfg.Server, t.ServerMetrics)
 	if err != nil {
 		return nil, err
 	}
@@ -393,6 +395,9 @@ func (t *Mimir) initIngesterPartitionRing() (services.Service, error) {
 
 	// Expose a web page to view the partitions ring state.
 	t.API.RegisterIngesterPartitionRing(ring.NewPartitionRingPageHandler(t.IngesterPartitionRingWatcher, ring.NewPartitionRingEditor(ingester.PartitionRingKey, kvClient)))
+
+	// Track anonymous usage statistics.
+	usagestats.SetMode(usagestats.ModeIngestStorage)
 
 	return t.IngesterPartitionRingWatcher, nil
 }
@@ -530,10 +535,6 @@ func (t *Mimir) initDistributor() (serv services.Service, err error) {
 func (t *Mimir) initQueryable() (serv services.Service, err error) {
 	registerer := prometheus.WrapRegistererWith(querierEngine, t.Registerer)
 
-	if t.Cfg.Querier.FilterQueryablesEnabled {
-		t.Server.HTTP.Use(querier.FilterQueryablesMiddleware().Wrap)
-	}
-
 	// Create a querier queryable and PromQL engine
 	t.QuerierQueryable, t.ExemplarQueryable, t.QuerierEngine, t.QuerierStreamingEngine, err = querier.New(
 		t.Cfg.Querier, t.Overrides, t.Distributor, t.AdditionalStorageQueryables, registerer, util_log.Logger, t.ActivityTracker, t.QuerierQueryPlanner,
@@ -624,10 +625,26 @@ func (t *Mimir) initQuerier() (serv services.Service, err error) {
 	t.Cfg.Worker.MaxConcurrentRequests = t.Cfg.Querier.EngineConfig.MaxConcurrent
 	t.Cfg.Worker.QuerySchedulerDiscovery = t.Cfg.QueryScheduler.ServiceDiscovery
 
+	// Add the default propagators.
+	t.Extractors = append(
+		t.Extractors,
+		&chunkinfologger.Extractor{},
+		&streamingpromqlcompat.EngineFallbackExtractor{},
+
+		// Since we don't use the regular RegisterQueryAPI, we need to register the consistency extractor here too.
+		&querierapi.ConsistencyExtractor{},
+	)
+
+	if t.Cfg.Querier.FilterQueryablesEnabled {
+		t.Extractors = append(t.Extractors, &querier.FilterQueryablesExtractor{})
+	}
+
+	extractor := &propagation.MultiExtractor{Extractors: t.Extractors}
+	metrics := querier.NewRequestMetrics(t.Registerer)
 	var dispatcher *querier.Dispatcher
 
 	if t.Cfg.Querier.QueryEngine == querier.MimirEngine {
-		dispatcher = querier.NewDispatcher(util_log.Logger, t.QuerierStreamingEngine, t.QuerierQueryable)
+		dispatcher = querier.NewDispatcher(t.QuerierStreamingEngine, t.QuerierQueryable, metrics, t.ServerMetrics, extractor, util_log.Logger)
 	}
 
 	// Create an internal HTTP handler that is configured with the Prometheus API routes and points
@@ -635,21 +652,17 @@ func (t *Mimir) initQuerier() (serv services.Service, err error) {
 	internalQuerierRouter := api.NewQuerierHandler(
 		t.Cfg.API,
 		t.Cfg.Querier,
-		dispatcher,
 		t.QuerierQueryable,
 		t.ExemplarQueryable,
 		t.MetadataSupplier,
 		t.QuerierEngine,
 		t.Distributor,
+		metrics,
 		t.Registerer,
 		util_log.Logger,
 		t.Overrides,
+		extractor,
 	)
-
-	if dispatcher != nil {
-		// If MQE is enabled, register the evaluation API with the external HTTP server.
-		t.API.RegisterEvaluationAPI(internalQuerierRouter)
-	}
 
 	// If the querier is running standalone without the query-frontend or query-scheduler, we must register it's internal
 	// HTTP handler externally and provide the external Mimir Server HTTP handler to the frontend worker
@@ -723,7 +736,6 @@ func (t *Mimir) tsdbIngesterConfig() {
 func (t *Mimir) initIngesterService() (serv services.Service, err error) {
 	t.Cfg.Ingester.IngesterRing.ListenPort = t.Cfg.Server.GRPCListenPort
 	t.Cfg.Ingester.IngesterRing.HideTokensInStatusPage = t.Cfg.IngestStorage.Enabled
-	t.Cfg.Ingester.StreamTypeFn = ingesterChunkStreaming(t.RuntimeConfig)
 	t.Cfg.Ingester.InstanceLimitsFn = ingesterInstanceLimits(t.RuntimeConfig)
 	t.Cfg.Ingester.IngestStorageConfig = t.Cfg.IngestStorage
 	t.tsdbIngesterConfig()
@@ -777,7 +789,17 @@ func (t *Mimir) initFlusher() (serv services.Service, err error) {
 // initQueryFrontendCodec initializes query frontend codec.
 // NOTE: Grafana Enterprise Metrics depends on this.
 func (t *Mimir) initQueryFrontendCodec() (services.Service, error) {
-	t.QueryFrontendCodec = querymiddleware.NewCodec(t.Registerer, t.Cfg.Querier.EngineConfig.LookbackDelta, t.Cfg.Frontend.QueryMiddleware.QueryResultResponseFormat, t.Cfg.Frontend.QueryMiddleware.ExtraPropagateHeaders)
+	// Add our default injectors.
+	t.Injectors = append(t.Injectors, &querierapi.ConsistencyInjector{})
+
+	t.QueryFrontendCodec = querymiddleware.NewCodec(
+		t.Registerer,
+		t.Cfg.Querier.EngineConfig.LookbackDelta,
+		t.Cfg.Frontend.QueryMiddleware.QueryResultResponseFormat,
+		t.Cfg.Frontend.QueryMiddleware.ExtraPropagateHeaders,
+		&propagation.MultiInjector{Injectors: t.Injectors},
+	)
+
 	return nil, nil
 }
 
@@ -832,15 +854,16 @@ func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error
 	case querier.PrometheusEngine:
 		eng = promql.NewEngine(promOpts)
 	case querier.MimirEngine:
-		streamingEngine, err := streamingpromql.NewEngine(mqeOpts, streamingpromql.NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(mqeOpts.CommonOpts.Reg), t.QueryFrontendQueryPlanner, util_log.Logger)
+		var err error
+		t.QueryFrontendStreamingEngine, err = streamingpromql.NewEngine(mqeOpts, streamingpromql.NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(mqeOpts.CommonOpts.Reg), t.QueryFrontendQueryPlanner)
 		if err != nil {
 			return nil, fmt.Errorf("unable to create Mimir Query Engine: %w", err)
 		}
 
 		if t.Cfg.Frontend.EnableQueryEngineFallback {
-			eng = streamingpromqlcompat.NewEngineWithFallback(streamingEngine, promql.NewEngine(promOpts), mqeOpts.CommonOpts.Reg, util_log.Logger)
+			eng = streamingpromqlcompat.NewEngineWithFallback(t.QueryFrontendStreamingEngine, promql.NewEngine(promOpts), mqeOpts.CommonOpts.Reg, util_log.Logger)
 		} else {
-			eng = streamingEngine
+			eng = t.QueryFrontendStreamingEngine
 		}
 	default:
 		panic(fmt.Sprintf("invalid config not caught by validation: unknown PromQL engine '%s'", t.Cfg.Frontend.QueryEngine))
@@ -855,6 +878,8 @@ func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error
 		eng,
 		promOpts,
 		t.QueryFrontendTopicOffsetsReaders,
+		t.Cfg.Frontend.EnableRemoteExecution,
+		t.QueryFrontendStreamingEngine,
 		t.Registerer,
 	)
 	if err != nil {
@@ -879,7 +904,7 @@ func (t *Mimir) initQueryFrontend() (serv services.Service, err error) {
 		t.Cfg.Frontend.FrontendV2.SchedulerAddress = address
 	}
 
-	roundTripper, frontendV2, err := frontend.InitFrontend(
+	roundTripper, frontend, err := frontend.InitFrontend(
 		t.Cfg.Frontend,
 		t.Overrides,
 		t.Cfg.Server.GRPCListenPort,
@@ -891,24 +916,32 @@ func (t *Mimir) initQueryFrontend() (serv services.Service, err error) {
 		return nil, err
 	}
 
-	t.API.RegisterQueryFrontend2(frontendV2)
+	t.API.RegisterQueryFrontend2(frontend)
+
+	if t.QueryFrontendStreamingEngine != nil && t.Cfg.Frontend.EnableRemoteExecution {
+		executor := v2.NewRemoteExecutor(frontend, t.Cfg.Frontend.FrontendV2)
+
+		if err := t.QueryFrontendStreamingEngine.RegisterNodeMaterializer(planning.NODE_TYPE_REMOTE_EXEC, remoteexec.NewRemoteExecutionMaterializer(executor)); err != nil {
+			return nil, fmt.Errorf("unable to register remote execution materializer: %w", err)
+		}
+	}
 
 	// Wrap roundtripper into Tripperware and then wrap this with the roundtripper that checks
 	// that the frontend is ready to receive requests when running the query-frontend.
 	roundTripper = t.QueryFrontendTripperware(roundTripper)
-	roundTripper = querymiddleware.NewFrontendRunningRoundTripper(roundTripper, frontendV2, t.Cfg.Frontend.QueryMiddleware.NotRunningTimeout, util_log.Logger)
+	roundTripper = querymiddleware.NewFrontendRunningRoundTripper(roundTripper, frontend, t.Cfg.Frontend.QueryMiddleware.NotRunningTimeout, util_log.Logger)
 
 	handler := transport.NewHandler(t.Cfg.Frontend.Handler, roundTripper, util_log.Logger, t.Registerer, t.ActivityTracker)
 	// Allow the Prometheus engine to be explicitly selected if MQE is in use and a fallback is configured.
-	fallbackInjector := streamingpromqlcompat.EngineFallbackInjector{}
+	fallbackInjector := propagation.Middleware(&streamingpromqlcompat.EngineFallbackExtractor{})
 	t.API.RegisterQueryFrontendHandler(fallbackInjector.Wrap(handler), t.BuildInfoHandler)
 
 	w := services.NewFailureWatcher()
 	return services.NewBasicService(func(_ context.Context) error {
-		w.WatchService(frontendV2)
+		w.WatchService(frontend)
 		// Note that we pass an independent context to the service, since we want to
 		// delay stopping it until in-flight requests are waited on.
-		return services.StartAndAwaitRunning(context.Background(), frontendV2)
+		return services.StartAndAwaitRunning(context.Background(), frontend)
 	}, func(serviceContext context.Context) error {
 		select {
 		case <-serviceContext.Done():
@@ -918,14 +951,19 @@ func (t *Mimir) initQueryFrontend() (serv services.Service, err error) {
 		}
 	}, func(_ error) error {
 		handler.Stop()
-		return services.StopAndAwaitTerminated(context.Background(), frontendV2)
+		return services.StopAndAwaitTerminated(context.Background(), frontend)
 	}), nil
 }
 
 func (t *Mimir) initQuerierQueryPlanner() (services.Service, error) {
 	reg := prometheus.WrapRegistererWith(prometheus.Labels{"component": "querier"}, t.Registerer)
 	_, mqeOpts := engine.NewPromQLEngineOptions(t.Cfg.Querier.EngineConfig, t.ActivityTracker, util_log.Logger, reg)
-	t.QuerierQueryPlanner = streamingpromql.NewQueryPlanner(mqeOpts)
+
+	var err error
+	t.QuerierQueryPlanner, err = streamingpromql.NewQueryPlanner(mqeOpts)
+	if err != nil {
+		return nil, err
+	}
 
 	// Only expose the querier's planner through the analysis endpoint if the query-frontend isn't running in this process.
 	// If the query-frontend is running in this process, it will expose its planner through the analysis endpoint.
@@ -940,8 +978,20 @@ func (t *Mimir) initQuerierQueryPlanner() (services.Service, error) {
 func (t *Mimir) initQueryFrontendQueryPlanner() (services.Service, error) {
 	reg := prometheus.WrapRegistererWith(prometheus.Labels{"component": "query-frontend"}, t.Registerer)
 	_, mqeOpts := engine.NewPromQLEngineOptions(t.Cfg.Querier.EngineConfig, t.ActivityTracker, util_log.Logger, reg)
-	t.QueryFrontendQueryPlanner = streamingpromql.NewQueryPlanner(mqeOpts)
 
+	var err error
+	t.QueryFrontendQueryPlanner, err = streamingpromql.NewQueryPlanner(mqeOpts)
+	if err != nil {
+		return nil, err
+	}
+
+	if t.Cfg.Frontend.EnableRemoteExecution {
+		t.QueryFrontendQueryPlanner.RegisterQueryPlanOptimizationPass(remoteexec.NewOptimizationPass())
+	}
+
+	// FIXME: results returned by the analysis endpoint won't include any changes made by query middlewares
+	// like sharding, splitting etc.
+	// Once these are running as MQE optimisation passes, they'll automatically be included in the analysis result.
 	analysisHandler := streamingpromql.AnalysisHandler(t.QueryFrontendQueryPlanner)
 	t.API.RegisterQueryAnalysisAPI(analysisHandler)
 
@@ -949,8 +999,8 @@ func (t *Mimir) initQueryFrontendQueryPlanner() (services.Service, error) {
 }
 
 func (t *Mimir) initRulerStorage() (serv services.Service, err error) {
-	// If the ruler is not configured and Mimir is running in monolithic or read-write mode, then we just skip starting the ruler.
-	if t.Cfg.isAnyModuleExplicitlyTargeted(Backend, All) && t.Cfg.RulerStorage.IsDefaults() {
+	// If the ruler is not configured and Mimir is running in monolithic mode, then we just skip starting the ruler.
+	if t.Cfg.isAnyModuleExplicitlyTargeted(All) && t.Cfg.RulerStorage.IsDefaults() {
 		level.Info(util_log.Logger).Log("msg", "The ruler is not being started because you need to configure the ruler storage.")
 		return
 	}
@@ -1036,11 +1086,13 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 			t.Overrides,
 		)
 	}
+	rulesFS := afero.NewOsFs()
 	managerFactory := ruler.DefaultTenantManagerFactory(
 		t.Cfg.Ruler,
 		t.Distributor,
 		embeddedQueryable,
 		queryFunc,
+		rulesFS,
 		concurrencyController,
 		t.Overrides,
 		t.Registerer,
@@ -1057,7 +1109,7 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 	)
 
 	dnsResolver := dns.NewProvider(util_log.Logger, dnsProviderReg, dns.GolangResolverType)
-	manager, err := ruler.NewDefaultMultiTenantManager(t.Cfg.Ruler, managerFactory, t.Registerer, util_log.Logger, dnsResolver, t.Overrides)
+	manager, err := ruler.NewDefaultMultiTenantManager(t.Cfg.Ruler, managerFactory, t.Registerer, util_log.Logger, dnsResolver, t.Overrides, rulesFS)
 	if err != nil {
 		return nil, err
 	}
@@ -1302,6 +1354,8 @@ func (t *Mimir) initBlockBuilderScheduler() (services.Service, error) {
 }
 
 func (t *Mimir) initContinuousTest() (services.Service, error) {
+	t.Cfg.ContinuousTest.IngestStorageRecordTest.Kafka = t.Cfg.IngestStorage.KafkaConfig
+
 	client, err := continuoustest.NewClient(t.Cfg.ContinuousTest.Client, util_log.Logger, t.Registerer)
 	if err != nil {
 		return nil, errors.Wrap(err, "Failed to initialize continuous-test client")
@@ -1309,6 +1363,7 @@ func (t *Mimir) initContinuousTest() (services.Service, error) {
 
 	t.ContinuousTestManager = continuoustest.NewManager(t.Cfg.ContinuousTest.Manager, util_log.Logger)
 	t.ContinuousTestManager.AddTest(continuoustest.NewWriteReadSeriesTest(t.Cfg.ContinuousTest.WriteReadSeriesTest, client, util_log.Logger, t.Registerer))
+	t.ContinuousTestManager.AddTest(continuoustest.NewIngestStorageRecordTest(t.Cfg.ContinuousTest.IngestStorageRecordTest, util_log.Logger, t.Registerer))
 
 	return services.NewBasicService(nil, func(ctx context.Context) error {
 		return t.ContinuousTestManager.Run(ctx)
@@ -1363,10 +1418,6 @@ func (t *Mimir) setupModuleManager() error {
 	mm.RegisterModule(UsageTrackerPartitionRing, t.initUsageTrackerPartitionRing, modules.UserInvisibleModule)
 	mm.RegisterModule(Vault, t.initVault, modules.UserInvisibleModule)
 
-	mm.RegisterModule(Write, nil)
-	mm.RegisterModule(Read, nil)
-	mm.RegisterModule(Backend, nil)
-
 	mm.RegisterModule(All, nil)
 
 	// Add dependencies
@@ -1407,10 +1458,6 @@ func (t *Mimir) setupModuleManager() error {
 		UsageTracker:                     {API, Overrides, UsageTrackerInstanceRing, UsageTrackerPartitionRing},
 		UsageTrackerInstanceRing:         {MemberlistKV},
 		UsageTrackerPartitionRing:        {MemberlistKV, UsageTrackerInstanceRing},
-
-		Backend: {QueryScheduler, Ruler, StoreGateway, Compactor, AlertManager, OverridesExporter},
-		Read:    {QueryFrontend, Querier},
-		Write:   {Distributor, Ingester},
 
 		All: {QueryFrontend, QueryScheduler, Querier, Ingester, Distributor, StoreGateway, Ruler, Compactor},
 	}

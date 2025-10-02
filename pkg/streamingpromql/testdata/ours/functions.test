@@ -687,9 +687,7 @@ eval range from 0 to 8m step 1m idelta(metric[3m1s])
   expect warn
   {case="2 floats"} _ 4 4 4
   {case="2 floats and nh last sample"} _ 4
-  {case="2 floats and nh middle sample"} _ _ 4 4
   {case="2 floats and nhcb last sample"} _ 4
-  {case="2 floats and nhcb middle sample"} _ _ 4 4
   {case="2 floats with Inf 2 middle samples"} _ Inf NaN -Inf -Inf -Inf
   {case="2 floats with Inf last sample"} _ 4 Inf Inf Inf
   {case="2 floats with Inf middle sample"} _ Inf -Inf -Inf -Inf
@@ -710,9 +708,7 @@ eval range from 0 to 8m step 1m irate(metric[3m1s])
   expect warn
   {case="2 floats"} _ 0.06666666666666667 0.06666666666666667 0.06666666666666667
   {case="2 floats and nh last sample"} _ 0.06666666666666667
-  {case="2 floats and nh middle sample"} _ _ 0.03333333333333333 0.03333333333333333
   {case="2 floats and nhcb last sample"} _ 0.06666666666666667
-  {case="2 floats and nhcb middle sample"} _ _ 0.03333333333333333 0.03333333333333333
   {case="2 floats with Inf 2 middle samples"} _ Inf NaN 0.08333333333333333 0.08333333333333333 0.08333333333333333
   {case="2 floats with Inf last sample"} _ 0.06666666666666667 Inf Inf Inf
   {case="2 floats with Inf middle sample"} _ Inf 0.08333333333333333 0.08333333333333333 0.08333333333333333
@@ -907,14 +903,14 @@ load 1m
 eval range from 0 to 7m step 1m year(some_metric)
   {case="gap1"} _ 2006 2006 2017 2017 2022 2022 2022
   {case="gap2"} 2006 2006 2006 2017 2017 2017 2022 2022
-  {case="histogram-float"} 2006 2006 2017
+  {case="histogram-float"} 2006 _ 2017
   {case="series1"} 1970 2006 2042 2078 2114 2150 2186 2222
   {case="series2"} 1970 2022 2075 2128 2181 2234 2287 2340
 
 eval range from 0 to 7m step 1m month(some_metric)
   {case="gap1"} _ 1 1 2 2 12 12 12
   {case="gap2"} 1 1 1 2 2 2 12 12
-  {case="histogram-float"} 1 1 2
+  {case="histogram-float"} 1 _ 2
   {case="series1"} 1 1 1 1 1 1 1 1
   {case="series2"} 1 12 12 12 12 12 12 12
 
@@ -1347,5 +1343,81 @@ eval_fail instant at 0s double_exponential_smoothing(http_requests[5000s], 0, 0.
 
 eval_fail instant at 0s double_exponential_smoothing(http_requests[5000s], 0.01, 0)
   expected_fail_message invalid trend factor. Expected: 0 < tf < 1, got: 0.000000
+
+clear
+
+# Tests for ts_of_min_over_time and ts_of_max_over_time using a mix of floats and histograms
+load 10s
+  metric 1 2 3 4 5 6
+  metric_histogram{type="only_histogram"} {{schema:1 sum:2 count:3}}x6
+  metric_histogram{type="mix"} 5 2 1 {{schema:1 sum:2 count:3}} {{schema:1 sum:2 count:3}} 6
+  metric_histogram{type="mix_end"} 5 2 1 {{schema:1 sum:2 count:3}} {{schema:1 sum:2 count:3}} 1
+  metric_histogram{type="mix_middle"} 10 2 60 {{schema:1 sum:2 count:3}} {{schema:1 sum:2 count:3}} 10
+
+eval instant at 60s ts_of_min_over_time(metric[60s])
+  {} 10
+  expect no_info
+
+eval instant at 60s ts_of_max_over_time(metric[60s])
+  {} 50
+  expect no_info
+
+eval instant at 60s ts_of_min_over_time(metric_histogram{type="mix"}[60s])
+  {type="mix"} 20
+  expect info regex: ignored histograms in a range containing both floats and histograms for metric name
+
+eval instant at 60s ts_of_max_over_time(metric_histogram{type="mix"}[60s])
+  {type="mix"} 50
+  expect info regex: ignored histograms in a range containing both floats and histograms for metric name
+
+eval instant at 60s ts_of_min_over_time(metric_histogram{type="mix_end"}[60s])
+  {type="mix_end"} 50
+  expect info regex: ignored histograms in a range containing both floats and histograms for metric name
+
+eval instant at 60s ts_of_max_over_time(metric_histogram{type="mix_end"}[60s])
+  {type="mix_end"} 10
+  expect info regex: ignored histograms in a range containing both floats and histograms for metric name
+
+eval instant at 60s ts_of_min_over_time(metric_histogram{type="mix_middle"}[60s])
+  {type="mix_middle"} 10
+  expect info regex: ignored histograms in a range containing both floats and histograms for metric name
+
+eval instant at 60s ts_of_max_over_time(metric_histogram{type="mix_middle"}[60s])
+  {type="mix_middle"} 20
+  expect info regex: ignored histograms in a range containing both floats and histograms for metric name
+
+clear
+
+# Tests for ts_of_last_over_time using a mix of floats and histograms
+load 10s
+  metric_histogram{type="mix_last_histogram"} 5 2 1 {{schema:1 sum:2 count:3}} 1 {{schema:1 sum:2 count:3}}
+  metric_histogram{type="mix_last_float"} 5 2 1 {{schema:1 sum:2 count:3}} {{schema:1 sum:2 count:3}} 1
+  metric_histogram{type="mix_last_missing"} 5 2 1 {{schema:1 sum:2 count:3}} {{schema:1 sum:2 count:3}} _
+
+eval instant at 60s ts_of_last_over_time(metric_histogram{type="mix_last_histogram"}[60s])
+  {type="mix_last_histogram"} 50
+
+eval instant at 60s ts_of_last_over_time(metric_histogram{type="mix_last_float"}[60s])
+  {type="mix_last_float"} 50
+
+eval instant at 60s ts_of_last_over_time(metric_histogram{type="mix_last_missing"}[60s])
+  {type="mix_last_missing"} 40
+
+clear
+
+# Tests for ts_of_first_over_time using a mix of floats and histograms
+load 10s
+  metric_histogram{type="mix_first_histogram"} {{schema:1 sum:2 count:3}} 1 {{schema:1 sum:2 count:3}} 5 2 1
+  metric_histogram{type="mix_first_float"} 5 {{schema:1 sum:2 count:3}} {{schema:1 sum:2 count:3}} 1 2 1
+  metric_histogram{type="mix_first_missing"} _ 2 1 {{schema:1 sum:2 count:3}} {{schema:1 sum:2 count:3}} _
+
+eval instant at 60s ts_of_first_over_time(metric_histogram{type="mix_first_histogram"}[80s])
+  {type="mix_first_histogram"} 0
+
+eval instant at 60s ts_of_first_over_time(metric_histogram{type="mix_first_float"}[80s])
+  {type="mix_first_float"} 0
+
+eval instant at 60s ts_of_first_over_time(metric_histogram{type="mix_first_missing"}[80s])
+  {type="mix_first_missing"} 10
 
 clear

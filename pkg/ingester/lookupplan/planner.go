@@ -8,13 +8,14 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strconv"
 	"time"
 
-	"github.com/go-kit/log"
+	"github.com/grafana/dskit/tracing"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/index"
-
-	"github.com/grafana/mimir/pkg/util/spanlogger"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
 type NoopPlanner struct{}
@@ -24,12 +25,11 @@ func (i NoopPlanner) PlanIndexLookup(_ context.Context, plan index.LookupPlan, _
 }
 
 type CostBasedPlanner struct {
-	stats Statistics
-
+	stats   index.Statistics
 	metrics Metrics
 }
 
-func NewCostBasedPlanner(metrics Metrics, statistics Statistics) *CostBasedPlanner {
+func NewCostBasedPlanner(metrics Metrics, statistics index.Statistics) *CostBasedPlanner {
 	return &CostBasedPlanner{
 		metrics: metrics,
 		stats:   statistics,
@@ -55,20 +55,32 @@ func (p CostBasedPlanner) PlanIndexLookup(ctx context.Context, inPlan index.Look
 		return inPlan, errTooManyMatchers
 	}
 
-	var err error
-	allPlans, err = p.generatePlans(ctx, matchers)
-	if err != nil {
-		return nil, fmt.Errorf("error generating plans: %w", err)
+	allPlansUnordered := p.generatePlans(ctx, p.stats, matchers)
+
+	type planWithCost struct {
+		plan
+		totalCost float64
+	}
+	// calculate the cost of all plans once, instead of calculating them every time we compare during sort
+	allPlansWithCosts := make([]planWithCost, len(allPlansUnordered))
+	for i, p := range allPlansUnordered {
+		allPlansWithCosts[i] = planWithCost{plan: p, totalCost: p.totalCost()}
 	}
 
-	slices.SortFunc(allPlans, func(a, b plan) int {
-		return cmp.Compare(a.totalCost(), b.totalCost())
+	slices.SortFunc(allPlansWithCosts, func(a, b planWithCost) int {
+		return cmp.Compare(a.totalCost, b.totalCost)
 	})
+
+	// build the sorted slice of plans
+	for _, pwc := range allPlansWithCosts {
+		allPlans = append(allPlans, pwc.plan)
+	}
 
 	// Select the cheapest plan that has at least one index matcher.
 	// PostingsForMatchers will return incorrect results if there are no matchers.
-	for _, p := range allPlans {
+	for i, p := range allPlans {
 		if len(p.IndexMatchers()) > 0 {
+			allPlans = allPlans[i:]
 			return p, nil
 		}
 	}
@@ -78,14 +90,11 @@ func (p CostBasedPlanner) PlanIndexLookup(ctx context.Context, inPlan index.Look
 
 var errTooManyMatchers = errors.New("too many matchers to generate plans")
 
-func (p CostBasedPlanner) generatePlans(ctx context.Context, matchers []*labels.Matcher) ([]plan, error) {
-	noopPlan, err := newScanOnlyPlan(ctx, matchers, p.stats)
-	if err != nil {
-		return nil, fmt.Errorf("error generating index lookup plan: %w", err)
-	}
+func (p CostBasedPlanner) generatePlans(ctx context.Context, statistics index.Statistics, matchers []*labels.Matcher) []plan {
+	noopPlan := newScanOnlyPlan(ctx, statistics, matchers)
 	allPlans := make([]plan, 0, 1<<uint(len(matchers)))
 
-	return generatePredicateCombinations(allPlans, noopPlan, 0), nil
+	return generatePredicateCombinations(allPlans, noopPlan, 0)
 }
 
 // generatePredicateCombinations recursively generates all possible plans with their predicates toggled as index or as scan predicates.
@@ -115,38 +124,52 @@ func mapPlanningOutcomeError(err error) (mappedError error, tooManyMatchers bool
 }
 
 func (p CostBasedPlanner) recordPlanningOutcome(ctx context.Context, start time.Time, abortedEarly bool, retErr error, allPlans []plan) {
-	logger := spanlogger.FromContext(ctx, log.NewNopLogger())
+	span, _, traceSampled := tracing.SpanFromContext(ctx)
 
 	var outcome string
 	switch {
 	case abortedEarly:
 		outcome = "aborted_due_to_too_many_matchers"
-		logger.DebugLog("msg", "aborted creating lookup plan because there are too many matchers")
+		if span != nil {
+			span.AddEvent("aborted creating lookup plan because there are too many matchers")
+		}
 	case retErr != nil:
 		outcome = "error"
-		logger.DebugLog("msg", "failed to create lookup plan", "err", retErr)
+		if span != nil {
+			span.AddEvent("failed to create lookup plan", trace.WithAttributes(
+				attribute.String("error", retErr.Error()),
+			))
+		}
 	default:
+		selectedPlan := allPlans[0]
+		if queryStats := QueryStatsFromContext(ctx); queryStats != nil {
+			queryStats.SetEstimatedSelectedPostings(selectedPlan.intersectionSize())
+			queryStats.SetEstimatedFinalCardinality(selectedPlan.cardinality())
+		}
+
 		outcome = "success"
-		const topKPlans = 3
-		numPredicates := 0
-		if len(allPlans) > 0 {
-			numPredicates = len(allPlans[0].predicates)
+		if traceSampled {
+			// Only add span events when tracing is sampled to avoid unnecessary overhead.
+			p.addSpanEvents(span, start, selectedPlan, allPlans)
 		}
-		logKvs := make([]any, 0, 2 /* msg */ +2 /* duration */ +topKPlans*2 /* key+value */ *(5 /* cost */ +numPredicates /* matchers */))
-		logKvs = append(logKvs,
-			"msg", "selected lookup plan",
-			"duration", time.Since(start).String(),
-		)
-		for i, plan := range allPlans[:min(topKPlans, len(allPlans))] {
-			planFieldPrefix := "selected_plan"
-			if i > 0 {
-				planFieldPrefix = fmt.Sprintf("plan_%d", i+1)
-			}
-			logKvs = plan.appendLogKVs(logKvs, planFieldPrefix)
-		}
-		logger.DebugLog(logKvs...)
 	}
 	p.metrics.planningDuration.WithLabelValues(outcome).Observe(time.Since(start).Seconds())
+}
+
+func (p CostBasedPlanner) addSpanEvents(span trace.Span, start time.Time, selectedPlan plan, allPlans []plan) {
+	span.AddEvent("selected lookup plan", trace.WithAttributes(
+		attribute.Stringer("duration", time.Since(start)),
+	))
+	selectedPlan.addPredicatesToSpan(span)
+
+	const topKPlans = 2
+	for i, plan := range allPlans[:min(topKPlans, len(allPlans))] {
+		planName := "selected_plan"
+		if i > 0 {
+			planName = strconv.Itoa(i + 1)
+		}
+		plan.addSpanEvent(span, planName)
+	}
 }
 
 type contextKey string

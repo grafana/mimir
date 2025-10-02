@@ -2,6 +2,7 @@ package util
 
 import (
 	"context"
+	"math"
 	"reflect"
 	"time"
 )
@@ -68,6 +69,9 @@ func errorAs(err error, targetType reflect.Type) bool {
 
 // MergeContexts returns a context that is canceled when either ctx1 or ctx2 are Done.
 func MergeContexts(ctx1, ctx2 context.Context) (context.Context, context.CancelCauseFunc) {
+	if ctx1 == ctx2 {
+		return ctx1, noop
+	}
 	bgContext := context.Background()
 	if ctx1 == bgContext {
 		return ctx2, noop
@@ -113,24 +117,48 @@ func RandomDelay[T number](delay T, jitter T, random float64) T {
 	return delay + T(randomAddend)
 }
 
-func RandomDelayFactor[T number](delay T, jitterFactor float32, random float32) T {
+func RandomDelayFactor[T number](delay T, jitterFactor float64, random float64) T {
 	randomFactor := 1 + (1-random*2)*jitterFactor
-	return T(float32(delay) * randomFactor)
+	return T(float64(delay) * randomFactor)
+}
+
+// Smooth returns a value that is decreased by some portion of the oldValue, and increased by some portion of the
+// newValue, based on the factor.
+func Smooth(oldValue, newValue, factor float64) float64 {
+	return oldValue*(1-factor) + newValue*factor
+}
+
+var log10Values []int
+
+func init() {
+	for i := 0; i < 100; i++ {
+		log10Values = append(log10Values, 1)
+	}
+	for i := 100; i < 1000; i++ {
+		log10Values = append(log10Values, 2)
+	}
+}
+
+func Log10Func(factor int) func(limit int) int {
+	return func(limit int) int {
+		if limit < len(log10Values) {
+			return factor * log10Values[limit]
+		}
+		return factor * int(math.Log10(float64(limit)))
+	}
 }
 
 type Clock interface {
-	CurrentUnixNano() int64
+	Now() time.Time
 }
+
+var WallClock = &wallClock{}
 
 type wallClock struct {
 }
 
-func (wc *wallClock) CurrentUnixNano() int64 {
-	return time.Now().UnixNano()
-}
-
-func NewClock() Clock {
-	return &wallClock{}
+func (wc *wallClock) Now() time.Time {
+	return time.Now()
 }
 
 type Stopwatch interface {
@@ -155,4 +183,8 @@ func (s *wallClockStopwatch) ElapsedTime() time.Duration {
 
 func (s *wallClockStopwatch) Reset() {
 	s.startTime = time.Now()
+}
+
+func Round(v float64) float64 {
+	return math.Round(v*100) / 100
 }

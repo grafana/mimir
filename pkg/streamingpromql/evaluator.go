@@ -7,6 +7,7 @@ import (
 	"fmt"
 
 	"github.com/grafana/dskit/cancellation"
+	"github.com/grafana/dskit/tracing"
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/util/annotations"
@@ -21,9 +22,10 @@ var errQueryClosed = cancellation.NewErrorf("Query.Close() called")
 var errQueryFinished = cancellation.NewErrorf("query execution finished")
 
 type Evaluator struct {
-	root                       types.Operator
-	engine                     *Engine
-	activityTrackerDescription string
+	root               types.Operator
+	engine             *Engine
+	originalExpression string
+	timeRange          types.QueryTimeRange
 
 	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
 
@@ -32,16 +34,17 @@ type Evaluator struct {
 	cancel      context.CancelCauseFunc
 }
 
-func NewEvaluator(root types.Operator, params *planning.OperatorParameters, timeRange types.QueryTimeRange, engine *Engine, opts promql.QueryOpts, activityTrackerDescription string) (*Evaluator, error) {
+func NewEvaluator(root types.Operator, params *planning.OperatorParameters, timeRange types.QueryTimeRange, engine *Engine, opts promql.QueryOpts, originalExpression string) (*Evaluator, error) {
 	stats, err := types.NewQueryStats(timeRange, engine.enablePerStepStats && opts.EnablePerStepStats(), params.MemoryConsumptionTracker)
 	if err != nil {
 		return nil, err
 	}
 
 	return &Evaluator{
-		root:                       root,
-		engine:                     engine,
-		activityTrackerDescription: activityTrackerDescription,
+		root:               root,
+		engine:             engine,
+		originalExpression: originalExpression,
+		timeRange:          timeRange,
 
 		MemoryConsumptionTracker: params.MemoryConsumptionTracker,
 		annotations:              params.Annotations,
@@ -54,12 +57,8 @@ func NewEvaluator(root types.Operator, params *planning.OperatorParameters, time
 // Evaluate will always call observer.EvaluationCompleted before returning nil.
 // It may return a non-nil error after calling observer.EvaluationCompleted if observer.EvaluationCompleted returned a non-nil error.
 func (e *Evaluator) Evaluate(ctx context.Context, observer EvaluationObserver) error {
-	defer e.root.Close()
-
-	if e.engine.pedantic {
-		// Close the root operator a second time to ensure all operators behave correctly if Close is called multiple times.
-		defer e.root.Close()
-	}
+	span, ctx := tracing.StartSpanFromContext(ctx, "Evaluator.Evaluate")
+	defer span.Finish()
 
 	// Add the memory consumption tracker to the context of this query before executing it so
 	// that we can pass it to the rest of the read path and keep track of memory used loading
@@ -76,19 +75,27 @@ func (e *Evaluator) Evaluate(ctx context.Context, observer EvaluationObserver) e
 		defer cancelTimeoutCtx()
 	}
 
-	// The order of the deferred cancellations is important: we want to cancel with errQueryFinished first, so we must defer this cancellation last
+	// The order of the deferred cancellations is important: we want to close all operators first, then
+	// cancel with errQueryFinished and not a timeout, so we must defer this function last
 	// (so that it runs before the cancellation of the context with timeout created above).
-	defer cancel(errQueryFinished)
+	defer func() {
+		e.root.Close()
+		cancel(errQueryFinished)
+	}()
 
-	queryID, err := e.engine.activeQueryTracker.Insert(ctx, e.activityTrackerDescription)
+	if e.engine.pedantic {
+		// Close the root operator a second time to ensure all operators behave correctly if Close is called multiple times.
+		defer e.root.Close()
+	}
+
+	queryID, err := e.engine.activeQueryTracker.InsertWithDetails(ctx, e.originalExpression, "evaluation", e.timeRange)
 	if err != nil {
 		return err
 	}
 
 	defer e.engine.activeQueryTracker.Delete(queryID)
 
-	err = e.root.Prepare(ctx, &types.PrepareParams{QueryStats: e.stats})
-	if err != nil {
+	if err := e.root.Prepare(ctx, &types.PrepareParams{QueryStats: e.stats}); err != nil {
 		return fmt.Errorf("failed to prepare query: %w", err)
 	}
 
@@ -117,6 +124,17 @@ func (e *Evaluator) Evaluate(ctx context.Context, observer EvaluationObserver) e
 		return fmt.Errorf("operator type %T produces unknown result type", root)
 	}
 
+	if err := e.root.Finalize(ctx); err != nil {
+		return err
+	}
+
+	if e.engine.pedantic {
+		// Finalize the root operator a second time to ensure all operators behave correctly if Finalize is called multiple times.
+		if err := e.root.Finalize(ctx); err != nil {
+			return fmt.Errorf("pedantic mode: failed to finalize operator a second time after successfully finalizing the first time: %w", err)
+		}
+	}
+
 	// To make comparing to Prometheus' engine easier, only return the annotations if there are some, otherwise, return nil.
 	if len(*e.annotations) == 0 {
 		e.annotations = nil
@@ -126,7 +144,7 @@ func (e *Evaluator) Evaluate(ctx context.Context, observer EvaluationObserver) e
 }
 
 func (e *Evaluator) evaluateInstantVectorOperator(ctx context.Context, op types.InstantVectorOperator, observer EvaluationObserver) error {
-	series, err := op.SeriesMetadata(ctx)
+	series, err := op.SeriesMetadata(ctx, nil)
 	if err != nil {
 		return err
 	}
@@ -156,7 +174,7 @@ func (e *Evaluator) evaluateInstantVectorOperator(ctx context.Context, op types.
 }
 
 func (e *Evaluator) evaluateRangeVectorOperator(ctx context.Context, op types.RangeVectorOperator, observer EvaluationObserver) error {
-	series, err := op.SeriesMetadata(ctx)
+	series, err := op.SeriesMetadata(ctx, nil)
 	if err != nil {
 		return err
 	}
@@ -179,7 +197,7 @@ func (e *Evaluator) evaluateRangeVectorOperator(ctx context.Context, op types.Ra
 
 		stepIdx := 0
 		for {
-			step, err := op.NextStepSamples()
+			step, err := op.NextStepSamples(ctx)
 
 			// nolint:errorlint // errors.Is introduces a performance overhead, and NextStepSamples is guaranteed to return exactly EOS, never a wrapped error.
 			if err == types.EOS {
@@ -214,6 +232,10 @@ func (e *Evaluator) evaluateStringOperator(ctx context.Context, op types.StringO
 	v := op.GetValue()
 
 	return observer.StringEvaluated(ctx, e, v)
+}
+
+func (e *Evaluator) GetQueryTimeRange() types.QueryTimeRange {
+	return e.timeRange
 }
 
 func (e *Evaluator) Cancel() {

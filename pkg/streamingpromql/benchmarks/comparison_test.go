@@ -43,7 +43,9 @@ func BenchmarkQuery(b *testing.B) {
 
 	opts := streamingpromql.NewTestEngineOpts()
 	prometheusEngine := promql.NewEngine(opts.CommonOpts)
-	mimirEngine, err := streamingpromql.NewEngine(opts, streamingpromql.NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), streamingpromql.NewQueryPlanner(opts), log.NewNopLogger())
+	planner, err := streamingpromql.NewQueryPlanner(opts)
+	require.NoError(b, err)
+	mimirEngine, err := streamingpromql.NewEngine(opts, streamingpromql.NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), planner)
 	require.NoError(b, err)
 
 	// Important: the names below must remain in sync with the names used in tools/benchmark-query-engine.
@@ -97,7 +99,9 @@ func TestBothEnginesReturnSameResultsForBenchmarkQueries(t *testing.T) {
 	prometheusEngine := promql.NewEngine(opts.CommonOpts)
 	limitsProvider := streamingpromql.NewStaticQueryLimitsProvider(0)
 	queryMetrics := stats.NewQueryMetrics(nil)
-	mimirEngine, err := streamingpromql.NewEngine(opts, limitsProvider, queryMetrics, streamingpromql.NewQueryPlanner(opts), log.NewNopLogger())
+	planner, err := streamingpromql.NewQueryPlanner(opts)
+	require.NoError(t, err)
+	mimirEngine, err := streamingpromql.NewEngine(opts, limitsProvider, queryMetrics, planner)
 	require.NoError(t, err)
 
 	ctx := user.InjectOrgID(context.Background(), UserID)
@@ -124,7 +128,9 @@ func TestBenchmarkSetup(t *testing.T) {
 	q := createBenchmarkQueryable(t, []int{1})
 
 	opts := streamingpromql.NewTestEngineOpts()
-	mimirEngine, err := streamingpromql.NewEngine(opts, streamingpromql.NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), streamingpromql.NewQueryPlanner(opts), log.NewNopLogger())
+	planner, err := streamingpromql.NewQueryPlanner(opts)
+	require.NoError(t, err)
+	mimirEngine, err := streamingpromql.NewEngine(opts, streamingpromql.NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), planner)
 	require.NoError(t, err)
 
 	ctx := user.InjectOrgID(context.Background(), UserID)

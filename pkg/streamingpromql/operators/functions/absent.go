@@ -42,8 +42,8 @@ func NewAbsent(inner types.InstantVectorOperator, labels labels.Labels, timeRang
 	}
 }
 
-func (a *Absent) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
-	innerMetadata, err := a.Inner.SeriesMetadata(ctx)
+func (a *Absent) SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
+	innerMetadata, err := a.Inner.SeriesMetadata(ctx, matchers)
 	if err != nil {
 		return nil, err
 	}
@@ -115,6 +115,10 @@ func (a *Absent) ExpressionPosition() posrange.PositionRange {
 
 func (a *Absent) Prepare(ctx context.Context, params *types.PrepareParams) error {
 	return a.Inner.Prepare(ctx, params)
+}
+
+func (a *Absent) Finalize(ctx context.Context) error {
+	return a.Inner.Finalize(ctx)
 }
 
 func (a *Absent) Close() {
