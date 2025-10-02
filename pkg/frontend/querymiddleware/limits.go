@@ -172,7 +172,7 @@ func (l limitsMiddleware) Do(ctx context.Context, r MetricsQueryRequest) (Respon
 				"maxQueryLookback", maxQueryLookback,
 				"blocksRetentionPeriod", blocksRetentionPeriod)
 
-			return newEmptyPrometheusResponse(), nil
+			return NewEmptyPrometheusResponse(), nil
 		}
 
 		if r.GetStart() < minStartTime {
