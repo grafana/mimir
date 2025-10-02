@@ -906,12 +906,12 @@ func TestLimitedRoundTripper_MaxQueryParallelism(t *testing.T) {
 	codec := newTestCodec()
 	r, err := codec.EncodeMetricsQueryRequest(ctx, &PrometheusRangeQueryRequest{
 		path:      "/api/v1/query_range",
-		start:     time.Now().Add(time.Hour).Unix(),
-		end:       util.TimeToMillis(time.Now()),
+		start:     time.Now().Add(-time.Hour).Unix(),
+		end:       time.Now().Unix(),
 		step:      int64(1 * time.Second * time.Millisecond),
 		queryExpr: parseQuery(t, `foo`),
 	})
-	require.Nil(t, err)
+	require.NoError(t, err)
 
 	handler := NewHTTPQueryRequestRoundTripperHandler(downstream, codec, log.NewNopLogger())
 	_, err = NewLimitedParallelismRoundTripper(handler, codec, mockLimits{maxQueryParallelism: maxQueryParallelism},
