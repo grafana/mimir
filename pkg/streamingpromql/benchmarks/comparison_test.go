@@ -20,6 +20,7 @@ import (
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/test"
 	"github.com/grafana/dskit/user"
+	"github.com/grafana/mimir/pkg/util/limiter"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage"
@@ -32,7 +33,6 @@ import (
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/streamingpromql"
 	"github.com/grafana/mimir/pkg/streamingpromql/testutils"
-	"github.com/grafana/mimir/pkg/util/limiter"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
@@ -106,15 +106,13 @@ func TestBothEnginesReturnSameResultsForBenchmarkQueries(t *testing.T) {
 	require.NoError(t, err)
 
 	ctx := user.InjectOrgID(context.Background(), UserID)
-	memoryTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
-	ctx = limiter.AddMemoryTrackerToContext(ctx, memoryTracker)
 
 	for _, c := range cases {
 		t.Run(c.Name(), func(t *testing.T) {
 			start := time.Unix(int64((NumIntervals-c.Steps)*intervalSeconds), 0)
 			end := time.Unix(int64(NumIntervals*intervalSeconds), 0)
 
-			prometheusResult, prometheusClose := c.Run(ctx, t, start, end, interval, prometheusEngine, q)
+			prometheusResult, prometheusClose := c.Run(limiter.InitiateUnlimitedMemoryTrackerInContext(ctx), t, start, end, interval, prometheusEngine, q)
 			mimirResult, mimirClose := c.Run(ctx, t, start, end, interval, mimirEngine, q)
 
 			testutils.RequireEqualResults(t, c.Expr, prometheusResult, mimirResult, false)
