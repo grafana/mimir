@@ -21,7 +21,6 @@ import (
 	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/multierror"
 	"github.com/grafana/dskit/tenant"
-	"github.com/grafana/mimir/pkg/mimir"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/common/model"
@@ -200,7 +199,7 @@ func New(cfg Config, limits *validation.Overrides, distributor Distributor, quer
 
 	switch cfg.QueryEngine {
 	case PrometheusEngine:
-		eng = mimir.NewUnlimitedMemoryTrackerPromqlEngine(promql.NewEngine(opts))
+		eng = limiter.NewUnlimitedMemoryTrackerPromqlEngine(promql.NewEngine(opts))
 	case MimirEngine:
 		limitsProvider := NewTenantQueryLimitsProvider(limits)
 		var err error
@@ -210,7 +209,7 @@ func New(cfg Config, limits *validation.Overrides, distributor Distributor, quer
 		}
 
 		if cfg.EnableQueryEngineFallback {
-			prometheusEngine := mimir.NewUnlimitedMemoryTrackerPromqlEngine(promql.NewEngine(opts))
+			prometheusEngine := limiter.NewUnlimitedMemoryTrackerPromqlEngine(promql.NewEngine(opts))
 			eng = compat.NewEngineWithFallback(streamingEngine, prometheusEngine, reg, logger)
 		} else {
 			eng = streamingEngine
