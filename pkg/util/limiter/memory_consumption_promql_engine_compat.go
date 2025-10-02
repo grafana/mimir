@@ -10,8 +10,8 @@ import (
 	"github.com/prometheus/prometheus/storage"
 )
 
-// UnlimitedMemoryTrackerPromqlEngine wrap promql.Engine so that this can
-// pass MemoryConsumptionTracker without memory limit.
+// UnlimitedMemoryTrackerPromqlEngine wraps promql.Engine so that this can
+// pass an unlimited MemoryConsumptionTracker.
 //
 // We will have MemoryConsumptionTracker when processing response from ingester and store gateway,
 // but we only want to track and limit memory consumption for query coming from streamingpromql.Engine.
@@ -19,7 +19,7 @@ type UnlimitedMemoryTrackerPromqlEngine struct {
 	inner *promql.Engine
 }
 
-func NewNoopMemoryTrackerPromqlEngine(inner *promql.Engine) UnlimitedMemoryTrackerPromqlEngine {
+func NewUnlimitedMemoryTrackerPromqlEngine(inner *promql.Engine) UnlimitedMemoryTrackerPromqlEngine {
 	return UnlimitedMemoryTrackerPromqlEngine{inner: inner}
 }
 
