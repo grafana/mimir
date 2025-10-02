@@ -16,6 +16,7 @@ import (
 	"github.com/prometheus/common/model"
 
 	"github.com/grafana/alerting/http"
+	"github.com/grafana/alerting/models"
 
 	"github.com/grafana/alerting/receivers"
 	alertmanager "github.com/grafana/alerting/receivers/alertmanager/v1"
@@ -69,24 +70,11 @@ type TestIntegrationConfigResult struct {
 	Error  string `json:"error"`
 }
 
-type GrafanaIntegrationConfig struct {
-	UID                   string            `json:"uid" yaml:"uid"`
-	Name                  string            `json:"name" yaml:"name"`
-	Type                  string            `json:"type" yaml:"type"`
-	DisableResolveMessage bool              `json:"disableResolveMessage" yaml:"disableResolveMessage"`
-	Settings              json.RawMessage   `json:"settings" yaml:"settings"`
-	SecureSettings        map[string]string `json:"secureSettings" yaml:"secureSettings"`
-}
-
 type ConfigReceiver = config.Receiver
 
 type APIReceiver struct {
-	ConfigReceiver      `yaml:",inline"`
-	GrafanaIntegrations `yaml:",inline"`
-}
-
-type GrafanaIntegrations struct {
-	Integrations []*GrafanaIntegrationConfig `yaml:"grafana_managed_receiver_configs,omitempty" json:"grafana_managed_receiver_configs,omitempty"`
+	ConfigReceiver        `yaml:",inline"`
+	models.ReceiverConfig `yaml:",inline"`
 }
 
 type TestReceiversConfigBodyParams struct {
@@ -100,7 +88,7 @@ type TestReceiversConfigAlertParams struct {
 }
 
 type IntegrationTimeoutError struct {
-	Integration *GrafanaIntegrationConfig
+	Integration *models.IntegrationConfig
 	Err         error
 }
 
@@ -153,7 +141,7 @@ func newTestAlert(c TestReceiversConfigBodyParams, startsAt, updatedAt time.Time
 	return alert
 }
 
-func ProcessIntegrationError(config *GrafanaIntegrationConfig, err error) error {
+func ProcessIntegrationError(config *models.IntegrationConfig, err error) error {
 	if err == nil {
 		return nil
 	}
@@ -206,7 +194,7 @@ type GrafanaReceiverConfig struct {
 	WebexConfigs        []*NotifierConfig[webex.Config]
 }
 
-// NotifierConfig represents parsed GrafanaIntegrationConfig.
+// NotifierConfig represents parsed IntegrationConfig.
 type NotifierConfig[T interface{}] struct {
 	receivers.Metadata
 	Settings         T
@@ -275,7 +263,7 @@ func BuildReceiverConfiguration(ctx context.Context, api *APIReceiver, decode De
 }
 
 // parseNotifier parses receivers and populates the corresponding field in GrafanaReceiverConfig. Returns an error if the configuration cannot be parsed.
-func parseNotifier(ctx context.Context, result *GrafanaReceiverConfig, receiver *GrafanaIntegrationConfig, decode DecodeSecretsFn, decrypt GetDecryptedValueFn, idx int) error {
+func parseNotifier(ctx context.Context, result *GrafanaReceiverConfig, receiver *models.IntegrationConfig, decode DecodeSecretsFn, decrypt GetDecryptedValueFn, idx int) error {
 	secureSettings, err := decode(receiver.SecureSettings)
 	if err != nil {
 		return err
@@ -533,7 +521,7 @@ func GetActiveReceiversMap(r *dispatch.Route) map[string]struct{} {
 	return receiversMap
 }
 
-func parseHTTPConfig(integration *GrafanaIntegrationConfig, decryptFn func(key string, fallback string) string) (*http.HTTPClientConfig, error) {
+func parseHTTPConfig(integration *models.IntegrationConfig, decryptFn func(key string, fallback string) string) (*http.HTTPClientConfig, error) {
 	httpConfigSettings := struct {
 		HTTPConfig *http.HTTPClientConfig `yaml:"http_config,omitempty" json:"http_config,omitempty"`
 	}{}
@@ -552,7 +540,7 @@ func parseHTTPConfig(integration *GrafanaIntegrationConfig, decryptFn func(key s
 	return httpConfigSettings.HTTPConfig, nil
 }
 
-func newNotifierConfig[T interface{}](integration *GrafanaIntegrationConfig, idx int, settings T, decryptFn func(key string, fallback string) string) (*NotifierConfig[T], error) {
+func newNotifierConfig[T interface{}](integration *models.IntegrationConfig, idx int, settings T, decryptFn func(key string, fallback string) string) (*NotifierConfig[T], error) {
 	httpClientConfig, err := parseHTTPConfig(integration, decryptFn)
 	if err != nil {
 		return nil, err
@@ -572,7 +560,7 @@ func newNotifierConfig[T interface{}](integration *GrafanaIntegrationConfig, idx
 
 type IntegrationValidationError struct {
 	Err         error
-	Integration *GrafanaIntegrationConfig
+	Integration *models.IntegrationConfig
 }
 
 func (e IntegrationValidationError) Error() string {

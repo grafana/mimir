@@ -325,8 +325,8 @@ func BuildReceiversIntegrations(
 	nameToReceiver := make(map[string]*APIReceiver, len(apiReceivers))
 	for _, receiver := range apiReceivers {
 		if existing, ok := nameToReceiver[receiver.Name]; ok {
-			itypes := make([]string, 0, len(existing.GrafanaIntegrations.Integrations))
-			for _, i := range existing.GrafanaIntegrations.Integrations {
+			itypes := make([]string, 0, len(existing.Integrations))
+			for _, i := range existing.Integrations {
 				itypes = append(itypes, i.Type)
 			}
 			level.Warn(logger).Log("msg", "receiver with same name is defined multiple times. Only the last one will be used", "receiver_name", receiver.Name, "overwritten_integrations", itypes)
