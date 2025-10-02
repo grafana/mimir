@@ -30,6 +30,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerpb"
 	"github.com/grafana/mimir/pkg/streamingpromql"
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize/ast/sharding"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/remoteexec"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
@@ -849,18 +850,36 @@ func TestResponseStreamBuffer(t *testing.T) {
 }
 
 func TestMaxQueryParallelismWithRemoteExecution(t *testing.T) {
+	t.Run("with sharding running outside MQE", func(t *testing.T) {
+		runQueryParallelismTestCase(t, false)
+	})
+
+	t.Run("with sharding running inside MQE", func(t *testing.T) {
+		runQueryParallelismTestCase(t, true)
+	})
+}
+
+func runQueryParallelismTestCase(t *testing.T, enableMQESharding bool) {
 	const maxQueryParallelism = int64(2)
 	count := atomic.NewInt64(0)
 	maxMtx := &sync.Mutex{}
 	maxConcurrent := int64(0)
 	ctx := user.InjectOrgID(context.Background(), "the-user")
+	ctx, cancel := context.WithTimeoutCause(ctx, 20*time.Second, errors.New("parallelism test timed out: this may indicate a deadlock somewhere"))
+	defer cancel()
 	codec := newTestCodec()
 	logger := log.NewNopLogger()
+	limits := &mockLimitedParallelismLimits{maxQueryParallelism: int(maxQueryParallelism)}
 
 	opts := streamingpromql.NewTestEngineOpts()
 	planner, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts)
 	require.NoError(t, err)
 	planner.RegisterQueryPlanOptimizationPass(remoteexec.NewOptimizationPass())
+
+	if enableMQESharding {
+		planner.RegisterASTOptimizationPass(sharding.NewOptimizationPass(limits, 0, nil, logger))
+	}
+
 	engine, err := streamingpromql.NewEngine(opts, streamingpromql.NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), planner)
 	require.NoError(t, err)
 
@@ -888,7 +907,7 @@ func TestMaxQueryParallelismWithRemoteExecution(t *testing.T) {
 	executor := NewRemoteExecutor(frontend, cfg)
 	require.NoError(t, engine.RegisterNodeMaterializer(planning.NODE_TYPE_REMOTE_EXEC, remoteexec.NewRemoteExecutionMaterializer(executor)))
 
-	expr, err := parser.ParseExpr("foo")
+	expr, err := parser.ParseExpr("sum(foo)")
 	require.NoError(t, err)
 	request := querymiddleware.NewPrometheusRangeQueryRequest("/api/v1/query_range", nil, timestamp.FromTime(time.Now().Add(-time.Hour)), timestamp.FromTime(time.Now()), time.Second.Milliseconds(), 5*time.Minute, expr, querymiddleware.Options{}, nil, "")
 	httpRequest, err := codec.EncodeMetricsQueryRequest(ctx, request)
@@ -899,7 +918,7 @@ func TestMaxQueryParallelismWithRemoteExecution(t *testing.T) {
 			wg := &errgroup.Group{}
 
 			// Simulate many parts of the request being split and evaluated in parallel.
-			for range maxQueryParallelism + 20 {
+			for range maxQueryParallelism + 10 {
 				wg.Go(func() error {
 					_, err := next.Do(c, request)
 					return err
@@ -912,7 +931,7 @@ func TestMaxQueryParallelismWithRemoteExecution(t *testing.T) {
 	})
 
 	handler := querymiddleware.NewEngineQueryRequestRoundTripperHandler(engine, codec, logger)
-	_, err = querymiddleware.NewLimitedParallelismRoundTripper(handler, codec, &mockLimitedParallelismLimits{maxQueryParallelism: int(maxQueryParallelism)}, middleware).RoundTrip(httpRequest)
+	_, err = querymiddleware.NewLimitedParallelismRoundTripper(handler, codec, limits, middleware).RoundTrip(httpRequest)
 	require.NoError(t, err)
 	require.NotZero(t, maxConcurrent, "expected at least one query to be executed")
 	require.LessOrEqualf(t, maxConcurrent, maxQueryParallelism, "max query parallelism %v went over the configured limit of %v", maxConcurrent, maxQueryParallelism)
@@ -920,6 +939,22 @@ func TestMaxQueryParallelismWithRemoteExecution(t *testing.T) {
 
 type mockLimitedParallelismLimits struct {
 	maxQueryParallelism int
+}
+
+func (m mockLimitedParallelismLimits) QueryShardingTotalShards(_ string) int {
+	return m.maxQueryParallelism * 3
+}
+
+func (m mockLimitedParallelismLimits) QueryShardingMaxRegexpSizeBytes(_ string) int {
+	return 0
+}
+
+func (m mockLimitedParallelismLimits) QueryShardingMaxShardedQueries(_ string) int {
+	return 0
+}
+
+func (m mockLimitedParallelismLimits) CompactorSplitAndMergeShards(_ string) int {
+	return 4
 }
 
 func (m mockLimitedParallelismLimits) MaxQueryParallelism(_ string) int {
