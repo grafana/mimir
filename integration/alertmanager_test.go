@@ -660,11 +660,11 @@ func TestAlertmanagerSharding(t *testing.T) {
 				for _, c := range clients {
 					list, err := c.GetReceiversExperimental(context.Background())
 					assert.NoError(t, err)
-					assert.ElementsMatch(t, list, []alertingmodels.Receiver{
+					assert.ElementsMatch(t, list, []alertingmodels.ReceiverStatus{
 						{
 							Name:   "dummy",
 							Active: true,
-							Integrations: []alertingmodels.Integration{
+							Integrations: []alertingmodels.IntegrationStatus{
 								{
 									LastNotifyAttemptDuration: "0s",
 									Name:                      "email",
