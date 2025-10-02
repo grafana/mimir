@@ -51,9 +51,8 @@ func RemoteReadHandler(q storage.SampleAndChunkQueryable, logger log.Logger, cfg
 
 func remoteReadHandler(q storage.SampleAndChunkQueryable, maxBytesInFrame int, maxConcurrency int, lg log.Logger) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// We don't do memory tracking for remote read, therefore we use NoopMemoryConsumptionTracker
-		memoryTracker := limiter.NewNoopMemoryConsumptionTracker()
-		ctx := limiter.AddMemoryTrackerToContext(r.Context(), memoryTracker)
+		ctx := r.Context()
+		ctx = limiter.InitiateUnlimitedMemoryTrackerInContext(ctx)
 		var req prompb.ReadRequest
 		logger := util_log.WithContext(ctx, lg)
 		if _, err := util.ParseProtoReader(ctx, r.Body, int(r.ContentLength), MaxRemoteReadQuerySize, nil, &req, util.RawSnappy); err != nil {
