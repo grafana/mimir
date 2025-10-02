@@ -6,48 +6,28 @@ import (
 	"context"
 	"time"
 
-	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage"
 )
 
-type noopMemoryConsumptionTracker struct{}
-
-func NewNoopMemoryConsumptionTracker() MemoryConsumptionOperation {
-	return &noopMemoryConsumptionTracker{}
-}
-
-func (n noopMemoryConsumptionTracker) IncreaseMemoryConsumption(_ uint64, _ MemoryConsumptionSource) error {
-	return nil
-}
-
-func (n noopMemoryConsumptionTracker) DecreaseMemoryConsumption(_ uint64, _ MemoryConsumptionSource) {
-}
-
-func (n noopMemoryConsumptionTracker) IncreaseMemoryConsumptionForLabels(_ labels.Labels) error {
-	return nil
-}
-
-func (n noopMemoryConsumptionTracker) DecreaseMemoryConsumptionForLabels(_ labels.Labels) {}
-
-// NoopMemoryTrackerPromqlEngine wrap promql.Engine so that this can
-// pass noopMemoryConsumptionTracker which will do nothing when processing query.
+// UnlimitedMemoryTrackerPromqlEngine wrap promql.Engine so that this can
+// pass MemoryConsumptionTracker without memory limit.
 //
 // We will have MemoryConsumptionTracker when processing response from ingester and store gateway,
-// but we only want to track memory consumption for query coming from streamingpromql.Engine.
-type NoopMemoryTrackerPromqlEngine struct {
+// but we only want to track and limit memory consumption for query coming from streamingpromql.Engine.
+type UnlimitedMemoryTrackerPromqlEngine struct {
 	inner *promql.Engine
 }
 
-func NewNoopMemoryTrackerPromqlEngine(inner *promql.Engine) NoopMemoryTrackerPromqlEngine {
-	return NoopMemoryTrackerPromqlEngine{inner: inner}
+func NewNoopMemoryTrackerPromqlEngine(inner *promql.Engine) UnlimitedMemoryTrackerPromqlEngine {
+	return UnlimitedMemoryTrackerPromqlEngine{inner: inner}
 }
 
-func (p NoopMemoryTrackerPromqlEngine) NewInstantQuery(ctx context.Context, q storage.Queryable, opts promql.QueryOpts, qs string, ts time.Time) (promql.Query, error) {
-	ctx = AddMemoryTrackerToContext(ctx, noopMemoryConsumptionTracker{})
+func (p UnlimitedMemoryTrackerPromqlEngine) NewInstantQuery(ctx context.Context, q storage.Queryable, opts promql.QueryOpts, qs string, ts time.Time) (promql.Query, error) {
+	ctx = InitiateUnlimitedMemoryTrackerInContext(ctx)
 	return p.inner.NewInstantQuery(ctx, q, opts, qs, ts)
 }
-func (p NoopMemoryTrackerPromqlEngine) NewRangeQuery(ctx context.Context, q storage.Queryable, opts promql.QueryOpts, qs string, start, end time.Time, interval time.Duration) (promql.Query, error) {
-	ctx = AddMemoryTrackerToContext(ctx, noopMemoryConsumptionTracker{})
+func (p UnlimitedMemoryTrackerPromqlEngine) NewRangeQuery(ctx context.Context, q storage.Queryable, opts promql.QueryOpts, qs string, start, end time.Time, interval time.Duration) (promql.Query, error) {
+	ctx = InitiateUnlimitedMemoryTrackerInContext(ctx)
 	return p.inner.NewRangeQuery(ctx, q, opts, qs, start, end, interval)
 }
