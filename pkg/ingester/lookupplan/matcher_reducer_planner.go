@@ -102,32 +102,47 @@ func setReduceMatchers(ms []*labels.Matcher) []*labels.Matcher {
 	for _, matchers := range matchersByName {
 		matchers = dedupeMatchers(matchers)
 		matchersByType := groupMatchersByType(matchers)
+		outMatchers = append(outMatchers, matchersByType[labels.MatchEqual]...)
 		// If we have more than one unique equals matcher, we can just return those;
 		// we know we'll only return an empty set
-		outMatchers = append(outMatchers, matchersByType[labels.MatchEqual]...)
 		if len(matchersByType[labels.MatchEqual]) > 1 {
 			continue
 		}
-		outMatchers = append(outMatchers, filterRegexMatchers(matchersByType)...)
+		outMatchers = append(outMatchers, filterRegexMatchers(matchersByType, labels.MatchRegexp)...)
 		outMatchers = append(outMatchers, filterNotEqualsMatchers(matchersByType)...)
-		outMatchers = append(outMatchers, filterNotRegexMatchers(matchersByType)...)
+		outMatchers = append(outMatchers, filterRegexMatchers(matchersByType, labels.MatchNotRegexp)...)
 	}
 	return outMatchers
 }
 
-func filterRegexMatchers(mf map[labels.MatchType][]*labels.Matcher) []*labels.Matcher {
-	outMatchers := make([]*labels.Matcher, 0, len(mf[labels.MatchRegexp]))
-	for _, m := range mf[labels.MatchRegexp] {
-		matchesNoEquals := true
-		// If a regex matcher matches any equals matcher, that equals matcher is a subset of the regex,
-		// and we can throw out the regex matcher.
-		for _, em := range mf[labels.MatchEqual] {
-			if m.Matches(em.Value) {
-				matchesNoEquals = false
-				break
-			}
+// matcherMatchesAnyValues returns true if the given matcher matches a single value from the input matchers, and false otherwise.
+func matcherMatchesAnyValues(matcher *labels.Matcher, matchers []*labels.Matcher) bool {
+	for _, m := range matchers {
+		if matcher.Matches(m.Value) {
+			return true
 		}
-		if matchesNoEquals {
+	}
+	return false
+}
+
+// filterRegexMatchers returns a subset of regex matchers which would actually reduce the result set size for either positive or negative regex matchers.
+// If a regex matcher matches any equals matchers, it is dropped, since the equals matcher will match a strict subset of values that the regex matcher would.
+func filterRegexMatchers(mf map[labels.MatchType][]*labels.Matcher, regexType labels.MatchType) []*labels.Matcher {
+	var matchers []*labels.Matcher
+	switch regexType {
+	case labels.MatchRegexp:
+		matchers = mf[labels.MatchRegexp]
+	case labels.MatchNotRegexp:
+		matchers = mf[labels.MatchNotRegexp]
+	default:
+		// Do not filter anything if passed a non-regex type.
+		return mf[regexType]
+	}
+	outMatchers := make([]*labels.Matcher, 0, len(matchers))
+	for _, m := range matchers {
+		// If a regex matcher matches any equals matcher, that equals matcher is a subset of the regex,
+		// and we should not add it to outMatchers.
+		if !matcherMatchesAnyValues(m, mf[labels.MatchEqual]) {
 			outMatchers = append(outMatchers, m)
 		}
 	}
@@ -155,38 +170,12 @@ func filterNotEqualsMatchers(mf map[labels.MatchType][]*labels.Matcher) []*label
 				}
 			}
 		}
-		matchesNoEquals := true
 		// If the value of any equals matcher is matched by the not-equals matcher, only keep the equals matcher,
 		// because the not-equals will not "subtract" anything from the final set.
-		for _, e := range mf[labels.MatchEqual] {
-			if m.Matches(e.Value) {
-				matchesNoEquals = false
-				break
-			}
-		}
+		matchesNoEquals := !matcherMatchesAnyValues(m, mf[labels.MatchEqual])
+
 		if matchesNoRegex && matchesNoEquals {
 			outMatchers = append(outMatchers, m)
-		}
-	}
-	return outMatchers
-}
-
-// filterNotRegexMatchers returns a subset of not-regex matchers which should actually reduce the result set size.
-// A not-regex matcher is dropped if any equals matcher is matched by the not-regex matcher.
-func filterNotRegexMatchers(mf map[labels.MatchType][]*labels.Matcher) []*labels.Matcher {
-	outMatchers := make([]*labels.Matcher, 0, len(mf[labels.MatchNotRegexp]))
-	for _, nr := range mf[labels.MatchNotRegexp] {
-		matchesNoEquals := true
-		// If the value of any equals matcher is matched by the not-regex matcher, drop the not-regex matcher,
-		// because it will not subtract anything from the final set.
-		for _, e := range mf[labels.MatchEqual] {
-			if nr.Matches(e.Value) {
-				matchesNoEquals = false
-				break
-			}
-		}
-		if matchesNoEquals {
-			outMatchers = append(outMatchers, nr)
 		}
 	}
 	return outMatchers
