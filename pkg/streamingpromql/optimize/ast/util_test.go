@@ -33,16 +33,6 @@ func runASTOptimizationPass(t *testing.T, ctx context.Context, input string, cre
 	reg := prometheus.NewPedanticRegistry()
 	opts.CommonOpts.Reg = reg
 	optimizer := createOptimizerFunc(opts.CommonOpts.Reg)
-	outputExpr := runASTOptimizationPassInner(t, ctx, input, optimizer, opts)
-	return reg, outputExpr
-}
-
-func runASTOptimizationPassWithoutMetrics(t *testing.T, ctx context.Context, input string, optimizer optimize.ASTOptimizationPass) parser.Expr {
-	opts := streamingpromql.NewTestEngineOpts()
-	return runASTOptimizationPassInner(t, ctx, input, optimizer, opts)
-}
-
-func runASTOptimizationPassInner(t *testing.T, ctx context.Context, input string, optimizer optimize.ASTOptimizationPass, opts streamingpromql.EngineOpts) parser.Expr {
 	dummyTimeRange := types.NewInstantQueryTimeRange(timestamp.Time(1000))
 	planner, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts)
 	require.NoError(t, err)
@@ -50,6 +40,13 @@ func runASTOptimizationPassInner(t *testing.T, ctx context.Context, input string
 	observer := streamingpromql.NoopPlanningObserver{}
 	outputExpr, err := planner.ParseAndApplyASTOptimizationPasses(ctx, input, dummyTimeRange, observer)
 	require.NoError(t, err)
+	return reg, outputExpr
+}
+
+func runASTOptimizationPassWithoutMetrics(t *testing.T, ctx context.Context, input string, optimizer optimize.ASTOptimizationPass) parser.Expr {
+	_, outputExpr := runASTOptimizationPass(t, ctx, input, func(prometheus.Registerer) optimize.ASTOptimizationPass {
+		return optimizer
+	})
 	return outputExpr
 }
 
