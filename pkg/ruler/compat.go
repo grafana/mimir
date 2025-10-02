@@ -31,6 +31,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier"
 	querier_stats "github.com/grafana/mimir/pkg/querier/stats"
 	notifierCfg "github.com/grafana/mimir/pkg/ruler/notifier"
+	"github.com/grafana/mimir/pkg/util/limiter"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
@@ -408,11 +409,15 @@ func DefaultTenantManagerFactory(
 			appendeable = NewNoopAppendable()
 		}
 
+		// Add memory tracker to context for ruler queries (both QueryFunc and direct Queryable.Select calls)
+		ruleManagerCtx := user.InjectOrgID(ctx, userID)
+		ruleManagerCtx = limiter.ContextWithNewUnlimitedMemoryConsumptionTracker(ruleManagerCtx)
+
 		return rules.NewManager(&rules.ManagerOptions{
 			Appendable:                 appendeable,
 			Queryable:                  wrappedQueryable,
 			QueryFunc:                  wrappedQueryFunc,
-			Context:                    user.InjectOrgID(ctx, userID),
+			Context:                    ruleManagerCtx,
 			GroupEvaluationContextFunc: FederatedGroupContextFunc,
 			ExternalURL:                cfg.ExternalURL.URL,
 			NotifyFunc:                 rules.SendAlerts(notifier, cfg.ExternalURL.String()),
