@@ -79,7 +79,7 @@ type PreallocWriteRequest struct {
 	// SkipDeduplicateMetadata skips deduplication of RW2 metadata by metric family name.
 	// Normally this is done because RW2 requests to repeat metadata as it's embedded in timeseries.
 	// Some applications, like RW1->RW2 translation, might choose to disable it.
-	// Has no effect on marshalled or existing strucs; must be set prior to Unmarshal calls.
+	// Has no effect on marshalled or existing structs; must be set prior to Unmarshal calls.
 	SkipDeduplicateMetadata bool
 }
 
