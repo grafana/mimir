@@ -195,6 +195,7 @@ func (s *Scheduler) PlannedJobs(ctx context.Context, req *compactorschedulerpb.P
 		s.rotator.OfferJobs(req.Key.Id, jobs, func(_ *CompactionJob, _ *CompactionJob) bool {
 			return true
 		})
+		return &compactorschedulerpb.PlannedJobsResponse{}, nil
 	}
 
 	level.Error(s.logger).Log("msg", "received results for unknown plan job", "tenant", req.Key.Id, "epoch", req.Key.Epoch, "job_count", len(req.Jobs))
