@@ -26,7 +26,7 @@ The ingest storage architecture requires a production-grade Apache Kafka cluster
 {{< /admonition >}}
 
 {{< admonition type="warning" >}}
-The ingest storage architecture requires the ruler remote evaluation to be enabled for the Mimir instance.
+The ingest storage architecture requires the ruler remote evaluation to be enabled for the Mimir cluster.
 Refer to the [Configure the Grafana Mimir ruler with Jsonnet](https://grafana.com/docs/mimir/<MIMIR_VERSION>/set-up/jsonnet/configure-ruler/) documentation for details about the ruler's operational modes.
 {{< /admonition >}}
 
