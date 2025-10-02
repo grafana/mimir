@@ -33,9 +33,7 @@ func TestMustFromContext(t *testing.T) {
 		ctx = context.WithValue(ctx, memoryConsumptionTracker, existing)
 		stored := MustMemoryTrackerFromContext(ctx)
 		require.Equal(t, existing, stored)
-		tracker, ok := stored.(*MemoryConsumptionTracker)
-		require.True(t, ok)
-		require.Equal(t, uint64(512), tracker.CurrentEstimatedMemoryConsumptionBytes())
+		require.Equal(t, uint64(512), stored.CurrentEstimatedMemoryConsumptionBytes())
 	})
 }
 

@@ -20,10 +20,10 @@ const (
 	memoryConsumptionTracker contextKey = 0
 )
 
-// MustMemoryTrackerFromContext returns a MemoryConsumptionOperation that has been added to this
-// context. If there is no MemoryConsumptionOperation in this context, this will panic.
-func MustMemoryTrackerFromContext(ctx context.Context) MemoryConsumptionOperation {
-	tracker, ok := ctx.Value(memoryConsumptionTracker).(MemoryConsumptionOperation)
+// MustMemoryTrackerFromContext returns a MemoryConsumptionTracker that has been added to this
+// context. If there is no MemoryConsumptionTracker in this context, this will panic.
+func MustMemoryTrackerFromContext(ctx context.Context) *MemoryConsumptionTracker {
+	tracker, ok := ctx.Value(memoryConsumptionTracker).(*MemoryConsumptionTracker)
 	if !ok {
 		panic("memory tracker not found in context")
 	}
@@ -34,8 +34,15 @@ func MustMemoryTrackerFromContext(ctx context.Context) MemoryConsumptionOperatio
 // AddMemoryTrackerToContext adds a MemoryConsumptionTracker to this context. This is used to propagate
 // per-query memory consumption tracking to parts of the read path that cannot be modified
 // to accept extra parameters.
-func AddMemoryTrackerToContext(ctx context.Context, tracker MemoryConsumptionOperation) context.Context {
+func AddMemoryTrackerToContext(ctx context.Context, tracker *MemoryConsumptionTracker) context.Context {
 	return context.WithValue(ctx, interface{}(memoryConsumptionTracker), tracker)
+}
+
+// InitiateUnlimitedMemoryTrackerInContext creates an unlimited MemoryConsumptionTracker and add it to the context and return
+// the context. This can be used in places where we don't want to limit memory consumption, although tracking will still happen.
+func InitiateUnlimitedMemoryTrackerInContext(ctx context.Context) context.Context {
+	memoryTracker := NewMemoryConsumptionTracker(ctx, 0, nil, "")
+	return AddMemoryTrackerToContext(ctx, memoryTracker)
 }
 
 type MemoryConsumptionSource int
@@ -108,13 +115,6 @@ func (s MemoryConsumptionSource) String() string {
 	default:
 		return unknownMemorySource
 	}
-}
-
-type MemoryConsumptionOperation interface {
-	IncreaseMemoryConsumption(b uint64, source MemoryConsumptionSource) error
-	DecreaseMemoryConsumption(b uint64, source MemoryConsumptionSource)
-	IncreaseMemoryConsumptionForLabels(lbls labels.Labels) error
-	DecreaseMemoryConsumptionForLabels(lbls labels.Labels)
 }
 
 // MemoryConsumptionTracker tracks the current memory utilisation of a single query, and applies any max in-memory bytes limit.
