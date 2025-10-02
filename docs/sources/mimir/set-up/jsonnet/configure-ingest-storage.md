@@ -62,7 +62,7 @@ To customize the Kafka connection configuration, override the default settings:
 
 The configured topic must have at least as many partitions as the number of ingesters in one zone.
 
-The [Configure the Grafana Mimir Kafka backend](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/configure-kafka-backend/) documentation provides more details about Kafka configurations.
+Refer to [Configure the Grafana Mimir Kafka backend](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/configure-kafka-backend/) for more details about Kafka configurations.
 
 ## Migration considerations
 
