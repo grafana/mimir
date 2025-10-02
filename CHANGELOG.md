@@ -32,6 +32,7 @@
 * [FEATURE] Usage-tracker: Introduce a new experimental service to enforce active series limits before Kafka ingestion. #12358
 * [FEATURE] Ingester: Add experimental `-include-tenant-id-in-profile-labels` flag to include tenant ID in pprof profiling labels for sampled traces. Currently only supported by the ingester. This can help debug performance issues for specific tenants. #12404
 * [FEATURE] Alertmanager: Add experimental `-alertmanager.storage.state-read-timeout` flag to configure the timeout for reading the Alertmanager state (notification log, silences) from object storage during the initial sync. #12425
+* [FEATURE] Load shedding: Add core priority-aware load shedding utilities including enhanced reactive limiters, CPU utilization limiter with rejection rate calculation, and gRPC priority interceptors for context propagation. #12833
 * [FEATURE] Ingester: Add experimental `-blocks-storage.tsdb.head-statistics-collection-frequency` flag to configure the periodic collection of statistics from the TSDB head. #12407
 * [FEATURE] Ingester: Add experimental `blocks-storage.tsdb.index-lookup-planning-enabled` flag to configure use of a cost-based index lookup planner. #12530
 * [FEATURE] MQE: Add support for applying extra selectors to one side of a binary operation to reduce data fetched. #12577

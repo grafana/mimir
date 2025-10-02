@@ -5,6 +5,7 @@ package limiter
 import (
 	"context"
 	"fmt"
+	"math"
 	"runtime/metrics"
 	"strings"
 	"time"
@@ -18,7 +19,7 @@ import (
 	"github.com/prometheus/procfs"
 	"go.uber.org/atomic"
 
-	"github.com/grafana/mimir/pkg/util/math"
+	utilmath "github.com/grafana/mimir/pkg/util/math"
 )
 
 const (
@@ -78,12 +79,16 @@ type UtilizationBasedLimiter struct {
 	firstCPUUpdate time.Time
 	// The time of the last CPU update.
 	lastCPUUpdate  time.Time
-	cpuMovingAvg   *math.EwmaRate
+	cpuMovingAvg   *utilmath.EwmaRate
 	limitingReason atomic.String
 	currCPUUtil    atomic.Float64
 	currHeapSize   atomic.Uint64
 	// For logging of input to CPU load EWMA calculation, keep window of source samples
 	cpuSamples *cpuSampleBuffer
+	
+	// Enhanced rejection rate fields
+	thresholdExceededSince time.Time
+	rejectionRate          atomic.Float64
 }
 
 // NewUtilizationBasedLimiter returns a UtilizationBasedLimiter configured with cpuLimit and memoryLimit.
@@ -101,7 +106,7 @@ func NewUtilizationBasedLimiter(cpuLimit float64, memoryLimit uint64, logCPUSamp
 		cpuLimit:    cpuLimit,
 		memoryLimit: memoryLimit,
 		// Use a minute long window, each sample being a second apart
-		cpuMovingAvg: math.NewEWMARate(alpha, resourceUtilizationUpdateInterval),
+		cpuMovingAvg: utilmath.NewEWMARate(alpha, resourceUtilizationUpdateInterval),
 		cpuSamples:   cpuSamples,
 	}
 	l.Service = services.NewTimerService(resourceUtilizationUpdateInterval, l.starting, l.update, nil)
@@ -119,6 +124,12 @@ func NewUtilizationBasedLimiter(cpuLimit float64, memoryLimit uint64, logCPUSamp
 		}, func() float64 {
 			return float64(l.currHeapSize.Load())
 		})
+		promauto.With(reg).NewGaugeFunc(prometheus.GaugeOpts{
+			Name: "utilization_limiter_rejection_rate",
+			Help: "Current rejection rate (0.0 to 1.0) calculated by utilization based limiter.",
+		}, func() float64 {
+			return l.rejectionRate.Load()
+		})
 	}
 
 	return l
@@ -128,6 +139,35 @@ func NewUtilizationBasedLimiter(cpuLimit float64, memoryLimit uint64, logCPUSamp
 // If an empty string is returned, limiting is disabled.
 func (l *UtilizationBasedLimiter) LimitingReason() string {
 	return l.limitingReason.Load()
+}
+
+// GetRejectionRate returns the current rejection rate as a float64 between 0.0 and 1.0
+func (l *UtilizationBasedLimiter) GetRejectionRate() float64 {
+	return l.rejectionRate.Load()
+}
+
+// ShouldRejectRequest determines whether a request with the given priority should be rejected
+func (l *UtilizationBasedLimiter) ShouldRejectRequest(priority int) bool {
+	rejectionRate := l.GetRejectionRate()
+	if rejectionRate == 0.0 {
+		return false
+	}
+	
+	var priorityThreshold float64
+	switch {
+	case priority >= 400:
+		priorityThreshold = 0.95
+	case priority >= 300:
+		priorityThreshold = 0.80
+	case priority >= 200:
+		priorityThreshold = 0.60
+	case priority >= 100:
+		priorityThreshold = 0.40
+	default:
+		priorityThreshold = 0.20
+	}
+	
+	return rejectionRate > priorityThreshold
 }
 
 func (l *UtilizationBasedLimiter) starting(_ context.Context) error {
@@ -202,6 +242,9 @@ func (l *UtilizationBasedLimiter) compute(nowFn func() time.Time) (currCPUUtil f
 	} else if l.cpuLimit > 0 && currCPUUtil >= l.cpuLimit {
 		reason = "cpu"
 	}
+	
+	// Update rejection rate based on time above threshold
+	l.updateRejectionRate(now, reason != "")
 
 	enable := reason != ""
 	prevEnable := l.limitingReason.Load() != ""
@@ -283,4 +326,22 @@ func (b *cpuSampleBuffer) String() string {
 	}
 
 	return sb.String()
+}
+
+func (l *UtilizationBasedLimiter) updateRejectionRate(now time.Time, isAboveThreshold bool) {
+	const maxRejectionTime = 5 * time.Minute
+
+	if isAboveThreshold {
+		if l.thresholdExceededSince.IsZero() {
+			l.thresholdExceededSince = now
+		}
+
+		timeAboveThreshold := now.Sub(l.thresholdExceededSince)
+		rejectionRate := math.Min(1.0, timeAboveThreshold.Seconds()/maxRejectionTime.Seconds())
+
+		l.rejectionRate.Store(rejectionRate)
+	} else {
+		l.thresholdExceededSince = time.Time{}
+		l.rejectionRate.Store(0.0)
+	}
 }
