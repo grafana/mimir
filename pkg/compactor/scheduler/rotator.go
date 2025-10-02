@@ -18,41 +18,40 @@ const outsideRotation int = -1
 // Rotator rotates initial calls to LeaseJob between per-tenant job trackers for fairness and to reduce contention.
 // Hints are given by a tenant's job tracker when an operation causes it to transition states:
 //
-//	available jobs -> no available jobs: The tenant's job tracker is taken out of rotation
-//	no available jobs -> available jobs: The tenant's job tracker is placed into rotation
+//	pending jobs -> no pending jobs: The tenant's job tracker is taken out of rotation
+//	no pending jobs -> pending jobs: The tenant's job tracker is placed into rotation
 //
 // A mapping is maintained for each tenant even if they are not currently in the rotation for lease interaction.
 // Note: The rotation mechanism could be extended for weighted fairness if needed.
 type Rotator struct {
 	services.Service
 
-	tenantStateMap map[string]*TenantRotationState
-	rotation       []string
-	mtx            *sync.RWMutex
-
+	planTracker          *JobTracker[struct{}]
+	leaseDuration        time.Duration
+	leaseCheckInterval   time.Duration
+	maxLeases            int
 	rotationIndexCounter *atomic.Int32 // only increments, overflow is okay
 
-	planTracker        *JobTracker[string, struct{}]
-	leaseDuration      time.Duration
-	leaseCheckInterval time.Duration
-	maxLeases          int
+	mtx            *sync.RWMutex
+	tenantStateMap map[string]*TenantRotationState
+	rotation       []string
 }
 
 type TenantRotationState struct {
-	tracker       *JobTracker[string, *CompactionJob]
+	tracker       *JobTracker[*CompactionJob]
 	rotationIndex int
 }
 
-func NewRotator(planTracker *JobTracker[string, struct{}], leaseDuration time.Duration, leaseCheckInterval time.Duration, maxLeases int) *Rotator {
+func NewRotator(planTracker *JobTracker[struct{}], leaseDuration time.Duration, leaseCheckInterval time.Duration, maxLeases int) *Rotator {
 	r := &Rotator{
-		tenantStateMap:       make(map[string]*TenantRotationState),
-		rotation:             make([]string, 0, 10), // initial size doesn't really matter
-		mtx:                  &sync.RWMutex{},
-		rotationIndexCounter: atomic.NewInt32(0),
 		planTracker:          planTracker,
 		leaseDuration:        leaseDuration,
 		leaseCheckInterval:   leaseCheckInterval,
 		maxLeases:            maxLeases,
+		rotationIndexCounter: atomic.NewInt32(0),
+		mtx:                  &sync.RWMutex{},
+		tenantStateMap:       make(map[string]*TenantRotationState),
+		rotation:             make([]string, 0, 10), // initial size doesn't really matter
 	}
 	r.Service = services.NewTimerService(leaseCheckInterval, nil, r.iter, nil)
 	return r
@@ -73,6 +72,7 @@ func (r *Rotator) LeaseJob(ctx context.Context, canAccept func(string, *Compacti
 		return nil, false
 	}
 
+	// Handle potential overflow of rotationIndexCounter
 	i := ((int(r.rotationIndexCounter.Add(1)) % length) + length) % length
 
 	// Check possibly all tenants. Tenants get removed from the rotation once they are out of work,
@@ -148,7 +148,7 @@ func (r *Rotator) CancelJobLease(tenant string, key string, epoch int64) bool {
 		return false
 	}
 
-	if tenantState.rotationIndex == outsideRotation && !tenantState.tracker.isAvailableEmpty() {
+	if tenantState.rotationIndex == outsideRotation && !tenantState.tracker.isPendingEmpty() {
 		tenantState.rotationIndex = len(r.rotation)
 		r.rotation = append(r.rotation, tenant)
 	}
@@ -156,7 +156,7 @@ func (r *Rotator) CancelJobLease(tenant string, key string, epoch int64) bool {
 	return canceled
 }
 
-func (r *Rotator) OfferJobs(tenant string, jobs []*Job[string, *CompactionJob], shouldReplace func(*CompactionJob, *CompactionJob) bool) int {
+func (r *Rotator) OfferJobs(tenant string, jobs []*Job[*CompactionJob], shouldReplace func(*CompactionJob, *CompactionJob) bool) int {
 	if len(jobs) == 0 {
 		return 0
 	}
@@ -183,14 +183,14 @@ func (r *Rotator) OfferJobs(tenant string, jobs []*Job[string, *CompactionJob], 
 	tenantState, ok = r.tenantStateMap[tenant]
 	if !ok {
 		tenantState = &TenantRotationState{
-			NewJobTracker[string, *CompactionJob](r.maxLeases),
+			NewJobTracker[*CompactionJob](r.maxLeases),
 			outsideRotation,
 		}
 	}
 
 	if transition {
 		// If we thought we should transition the tracker before make sure it still contains jobs
-		transition = !tenantState.tracker.isAvailableEmpty()
+		transition = !tenantState.tracker.isPendingEmpty()
 	} else {
 		// This branch is taken when the tenantState wasn't found when under the read lock
 		added, transition = tenantState.tracker.Offer(jobs, shouldReplace)
@@ -231,7 +231,7 @@ func (r *Rotator) RemoveTenant(tenant string) {
 		return
 	}
 
-	// Note: don't care if there are leased/available jobs in this tenant.
+	// Note: don't care if there are active/pending jobs in this tenant.
 	// A caller would only call this function if it sees the tenant as entirely empty. We could still be
 	// generating plan jobs that achieve nothing in that case.
 	if tenantState.rotationIndex != outsideRotation {
@@ -261,7 +261,7 @@ func (r *Rotator) LeaseMaintenance(leaseDuration time.Duration) {
 	defer r.mtx.Unlock()
 	for _, tenant := range addRotationFor {
 		tenantState, ok := r.tenantStateMap[tenant]
-		if ok && tenantState.rotationIndex == outsideRotation && !tenantState.tracker.isAvailableEmpty() {
+		if ok && tenantState.rotationIndex == outsideRotation && !tenantState.tracker.isPendingEmpty() {
 			tenantState.rotationIndex = len(r.rotation)
 			r.rotation = append(r.rotation, tenant)
 		}
@@ -274,9 +274,9 @@ func (r *Rotator) possiblyRemoveFromRotation(tenant string) {
 
 	// State may have changed by the time this lock was acquired, double check.
 	// Since we hold the write lock, we have exclusive access to all trackers.
-	// Therefore, the tracker lock isn't necessary for isAvailableEmpty(). Be quick.
+	// Therefore, the tracker lock isn't necessary for isPendingEmpty(). Be quick.
 	tenantState, ok := r.tenantStateMap[tenant]
-	if ok && tenantState.rotationIndex != outsideRotation && tenantState.tracker.isAvailableEmpty() {
+	if ok && tenantState.rotationIndex != outsideRotation && tenantState.tracker.isPendingEmpty() {
 		r.removeFromRotation(tenantState)
 	}
 }
