@@ -10,6 +10,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"math"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -207,6 +208,7 @@ func TestFrontend_Protobuf_HappyPath(t *testing.T) {
 	})
 
 	ctx := user.InjectOrgID(context.Background(), userID)
+	ctx = querymiddleware.ContextWithParallelismLimiter(ctx, querymiddleware.NewParallelismLimiter(math.MaxInt))
 	ctx = querymiddleware.ContextWithHeadersToPropagate(ctx, headers)
 	req := &querierpb.EvaluateQueryRequest{}
 	resp, err := f.DoProtobufRequest(ctx, req, time.Now().Add(-5*time.Hour), time.Now())
@@ -261,6 +263,7 @@ func TestFrontend_Protobuf_ShouldNotCancelRequestAfterSuccess(t *testing.T) {
 
 			for range 10000 { // Send many requests to try to trigger the race condition that previously caused this test to fail.
 				ctx := user.InjectOrgID(context.Background(), userID)
+				ctx = querymiddleware.ContextWithParallelismLimiter(ctx, querymiddleware.NewParallelismLimiter(math.MaxInt))
 				req := &querierpb.EvaluateQueryRequest{}
 				resp, err := f.DoProtobufRequest(ctx, req, time.Now().Add(-5*time.Hour), time.Now())
 				require.NoError(t, err)
@@ -309,6 +312,7 @@ func TestFrontend_Protobuf_QuerierResponseReceivedBeforeSchedulerResponse(t *tes
 	})
 
 	ctx := user.InjectOrgID(context.Background(), userID)
+	ctx = querymiddleware.ContextWithParallelismLimiter(ctx, querymiddleware.NewParallelismLimiter(math.MaxInt))
 	req := &querierpb.EvaluateQueryRequest{}
 	resp, err := f.DoProtobufRequest(ctx, req, time.Now(), time.Now())
 	require.NoError(t, err)
@@ -349,6 +353,7 @@ func TestFrontend_Protobuf_ResponseClosedBeforeStreamExhausted(t *testing.T) {
 	})
 
 	ctx := user.InjectOrgID(context.Background(), userID)
+	ctx = querymiddleware.ContextWithParallelismLimiter(ctx, querymiddleware.NewParallelismLimiter(math.MaxInt))
 	req := &querierpb.EvaluateQueryRequest{}
 	resp, err := f.DoProtobufRequest(ctx, req, time.Now(), time.Now())
 	require.NoError(t, err)
@@ -425,6 +430,7 @@ func TestFrontend_Protobuf_ErrorReturnedByQuerier(t *testing.T) {
 	})
 
 	ctx := user.InjectOrgID(context.Background(), userID)
+	ctx = querymiddleware.ContextWithParallelismLimiter(ctx, querymiddleware.NewParallelismLimiter(math.MaxInt))
 	req := &querierpb.EvaluateQueryRequest{}
 	resp, err := f.DoProtobufRequest(ctx, req, time.Now(), time.Now())
 	require.NoError(t, err)
@@ -472,6 +478,7 @@ func TestFrontend_ShouldTrackPerRequestMetrics(t *testing.T) {
 			},
 			makeRequest: func(t *testing.T, f *Frontend) {
 				ctx := user.InjectOrgID(context.Background(), userID)
+				ctx = querymiddleware.ContextWithParallelismLimiter(ctx, querymiddleware.NewParallelismLimiter(math.MaxInt))
 				req := &querierpb.EvaluateQueryRequest{}
 				resp, err := f.DoProtobufRequest(ctx, req, time.Now(), time.Now())
 				require.NoError(t, err)
@@ -580,6 +587,7 @@ func TestFrontend_Protobuf_RetryEnqueue(t *testing.T) {
 	})
 
 	ctx := user.InjectOrgID(context.Background(), userID)
+	ctx = querymiddleware.ContextWithParallelismLimiter(ctx, querymiddleware.NewParallelismLimiter(math.MaxInt))
 	req := &querierpb.EvaluateQueryRequest{}
 	resp, err := f.DoProtobufRequest(ctx, req, time.Now(), time.Now())
 	require.NoError(t, err)
@@ -596,6 +604,7 @@ func TestFrontend_Protobuf_EnqueueRetriesExhausted(t *testing.T) {
 	})
 
 	ctx := user.InjectOrgID(context.Background(), "test")
+	ctx = querymiddleware.ContextWithParallelismLimiter(ctx, querymiddleware.NewParallelismLimiter(math.MaxInt))
 	req := &querierpb.EvaluateQueryRequest{}
 	resp, err := f.DoProtobufRequest(ctx, req, time.Now(), time.Now())
 	require.NoError(t, err)
@@ -626,6 +635,7 @@ func TestFrontend_Protobuf_ReadingResponseAfterAllMessagesReceived(t *testing.T)
 	})
 
 	ctx := user.InjectOrgID(context.Background(), userID)
+	ctx = querymiddleware.ContextWithParallelismLimiter(ctx, querymiddleware.NewParallelismLimiter(math.MaxInt))
 	req := &querierpb.EvaluateQueryRequest{}
 	resp, err := f.DoProtobufRequest(ctx, req, time.Now(), time.Now())
 	require.NoError(t, err)
@@ -685,6 +695,7 @@ func TestFrontend_Protobuf_TooManyRequests(t *testing.T) {
 	})
 
 	ctx := user.InjectOrgID(context.Background(), "test")
+	ctx = querymiddleware.ContextWithParallelismLimiter(ctx, querymiddleware.NewParallelismLimiter(math.MaxInt))
 	req := &querierpb.EvaluateQueryRequest{}
 	resp, err := f.DoProtobufRequest(ctx, req, time.Now(), time.Now())
 	require.NoError(t, err)
@@ -727,6 +738,7 @@ func TestFrontend_Protobuf_SchedulerError(t *testing.T) {
 	})
 
 	ctx := user.InjectOrgID(context.Background(), "test")
+	ctx = querymiddleware.ContextWithParallelismLimiter(ctx, querymiddleware.NewParallelismLimiter(math.MaxInt))
 	req := &querierpb.EvaluateQueryRequest{}
 	resp, err := f.DoProtobufRequest(ctx, req, time.Now(), time.Now())
 	require.NoError(t, err)
@@ -821,6 +833,7 @@ func TestFrontendCancellation(t *testing.T) {
 			f, ms := setupFrontend(t, nil, nil)
 
 			ctx, cancel := context.WithTimeout(user.InjectOrgID(context.Background(), "test"), 200*time.Millisecond)
+			ctx = querymiddleware.ContextWithParallelismLimiter(ctx, querymiddleware.NewParallelismLimiter(math.MaxInt))
 			defer cancel()
 
 			makeRequest(ctx, t, f)
@@ -875,6 +888,7 @@ func TestFrontendWorkerCancellation(t *testing.T) {
 
 			ctx, cancel := context.WithTimeout(user.InjectOrgID(context.Background(), "test"), 200*time.Millisecond)
 			defer cancel()
+			ctx = querymiddleware.ContextWithParallelismLimiter(ctx, querymiddleware.NewParallelismLimiter(math.MaxInt))
 
 			// send multiple requests > maxconcurrency of scheduler. So that it keeps all the frontend worker busy in serving requests.
 			reqCount := testFrontendWorkerConcurrency + 5
@@ -944,6 +958,7 @@ func TestFrontendFailedCancellation(t *testing.T) {
 
 			ctx, cancel := context.WithCancel(user.InjectOrgID(context.Background(), "test"))
 			defer cancel()
+			ctx = querymiddleware.ContextWithParallelismLimiter(ctx, querymiddleware.NewParallelismLimiter(math.MaxInt))
 
 			go func() {
 				time.Sleep(100 * time.Millisecond)
@@ -989,6 +1004,7 @@ func TestFrontend_Protobuf_ReadingResponseWithCanceledContext(t *testing.T) {
 	})
 
 	ctx := user.InjectOrgID(context.Background(), "test")
+	ctx = querymiddleware.ContextWithParallelismLimiter(ctx, querymiddleware.NewParallelismLimiter(math.MaxInt))
 	req := &querierpb.EvaluateQueryRequest{}
 	resp, err := f.DoProtobufRequest(ctx, req, time.Now(), time.Now())
 	require.NoError(t, err)
@@ -1008,6 +1024,7 @@ func TestFrontend_Protobuf_ReadingResponseWithCanceledContext(t *testing.T) {
 
 func TestFrontend_Protobuf_ReadingCancelledRequestBeforeResponseReceivedFromQuerier(t *testing.T) {
 	ctx, cancel := context.WithCancelCause(user.InjectOrgID(context.Background(), "test"))
+	ctx = querymiddleware.ContextWithParallelismLimiter(ctx, querymiddleware.NewParallelismLimiter(math.MaxInt))
 	cancellationError := cancellation.NewErrorf("the request has been canceled")
 
 	f, _ := setupFrontend(t, nil, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
@@ -1032,6 +1049,7 @@ func TestFrontend_Protobuf_ReadingCancelledRequestBeforeResponseReceivedFromQuer
 
 func TestFrontend_Protobuf_ReadingCancelledRequestAfterResponseReceivedFromQuerier(t *testing.T) {
 	ctx, cancel := context.WithCancelCause(user.InjectOrgID(context.Background(), "test"))
+	ctx = querymiddleware.ContextWithParallelismLimiter(ctx, querymiddleware.NewParallelismLimiter(math.MaxInt))
 
 	f, _ := setupFrontend(t, nil, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
 		switch msg.Type {
@@ -1178,6 +1196,7 @@ func TestFrontend_Protobuf_ResponseSentTwice(t *testing.T) {
 	})
 
 	ctx := user.InjectOrgID(context.Background(), userID)
+	ctx = querymiddleware.ContextWithParallelismLimiter(ctx, querymiddleware.NewParallelismLimiter(math.MaxInt))
 	req := &querierpb.EvaluateQueryRequest{}
 	resp, err := f.DoProtobufRequest(ctx, req, time.Now(), time.Now())
 	require.NoError(t, err)
@@ -1224,6 +1243,7 @@ func TestFrontend_Protobuf_ResponseWithUnexpectedUserID(t *testing.T) {
 	})
 
 	ctx := user.InjectOrgID(context.Background(), "the-user")
+	ctx = querymiddleware.ContextWithParallelismLimiter(ctx, querymiddleware.NewParallelismLimiter(math.MaxInt))
 	req := &querierpb.EvaluateQueryRequest{}
 	resp, err := f.DoProtobufRequest(ctx, req, time.Now(), time.Now())
 	require.NoError(t, err)
