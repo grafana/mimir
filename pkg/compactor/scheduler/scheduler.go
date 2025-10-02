@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/benbjohnson/clock"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/gogo/status"
@@ -36,7 +37,7 @@ type Config struct {
 func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&cfg.maxLeases, "compactor-scheduler.max-leases", 3, "The maximum number of times a job can be retried from the same plan before it is removed. 0 for no limit.")
 	f.DurationVar(&cfg.leaseDuration, "compactor-scheduler.lease-duration", 10*time.Minute, "The duration of time without contact until the scheduler is able to lease a work item to another worker.")
-	f.DurationVar(&cfg.leaseCheckInterval, "compactor-scheduler.lease-check-interval", 3*time.Minute, "How often the scheduler will check for expired leases to make the work items available again.")
+	f.DurationVar(&cfg.leaseCheckInterval, "compactor-scheduler.lease-check-interval", 3*time.Minute, "How often the scheduler will check for expired leases to make the work items pending again.")
 	f.DurationVar(&cfg.planningCheckInterval, "compactor-scheduler.planning-check-interval", time.Minute, "How often the scheduler will check all tenants to see if a planning job needs to be submitted.")
 	f.DurationVar(&cfg.planningInterval, "compactor-scheduler.planning-interval", 30*time.Minute, "How often the plan jobs will be created by the scheduler.")
 	cfg.userDiscoveryBackoff.RegisterFlagsWithPrefix("compactor-scheduler", f)
@@ -71,9 +72,10 @@ type Scheduler struct {
 
 	cfg                Config
 	rotator            *Rotator
-	planTracker        *JobTracker[string, struct{}]
+	planTracker        *JobTracker[struct{}]
 	subservicesManager *services.Manager
 	logger             log.Logger
+	clock              clock.Clock
 }
 
 func NewCompactorScheduler(
@@ -83,13 +85,14 @@ func NewCompactorScheduler(
 	logger log.Logger,
 	registerer prometheus.Registerer) (*Scheduler, error) {
 
-	planTracker := NewJobTracker[string, struct{}](INFINITE_LEASES)
+	planTracker := NewJobTracker[struct{}](InfiniteLeases)
 
 	scheduler := &Scheduler{
 		cfg:         cfg,
 		rotator:     NewRotator(planTracker, cfg.leaseDuration, cfg.leaseCheckInterval, cfg.maxLeases),
 		planTracker: planTracker,
 		logger:      logger,
+		clock:       clock.New(),
 	}
 
 	// TODO: This will need to be moved for testing
@@ -159,7 +162,7 @@ func (s *Scheduler) LeaseJob(ctx context.Context, req *compactorschedulerpb.Leas
 		}, nil
 	}
 
-	// There were no available plan jobs, check for compaction jobs
+	// There were no pending plan jobs, check for compaction jobs
 	response, ok := s.rotator.LeaseJob(ctx, func(_ string, _ *CompactionJob) bool {
 		return true
 	})
@@ -169,15 +172,15 @@ func (s *Scheduler) LeaseJob(ctx context.Context, req *compactorschedulerpb.Leas
 		return response, nil
 	}
 
-	level.Info(s.logger).Log("msg", "no jobs available to be leased", "worker", req.WorkerId)
-	return nil, status.Error(codes.NotFound, "no jobs were available to be leased")
+	level.Info(s.logger).Log("msg", "no jobs pending to be leased", "worker", req.WorkerId)
+	return nil, status.Error(codes.NotFound, "no jobs were pending to be leased")
 }
 
 func (s *Scheduler) PlannedJobs(ctx context.Context, req *compactorschedulerpb.PlannedJobsRequest) (*compactorschedulerpb.PlannedJobsResponse, error) {
 	if removed, _ := s.planTracker.Remove(req.Key.Id, req.Key.Epoch); removed {
 		level.Info(s.logger).Log("msg", "received plan results", "tenant", req.Key.Id, "epoch", req.Key.Epoch, "job_count", len(req.Jobs))
-		now := time.Now()
-		jobs := make([]*Job[string, *CompactionJob], 0, len(req.Jobs))
+		now := s.clock.Now()
+		jobs := make([]*Job[*CompactionJob], 0, len(req.Jobs))
 		for _, job := range req.Jobs {
 			jobs = append(jobs, NewJob(
 				job.Id,
@@ -186,6 +189,7 @@ func (s *Scheduler) PlannedJobs(ctx context.Context, req *compactorschedulerpb.P
 					isSplit: job.Job.Split,
 				},
 				now,
+				s.clock,
 			))
 		}
 		s.rotator.OfferJobs(req.Key.Id, jobs, func(_ *CompactionJob, _ *CompactionJob) bool {
