@@ -51,6 +51,7 @@
   "server.trace-request-headers-exclude-list": "",
   "server.path-prefix": "",
   "server.cluster-validation.label": "",
+  "server.cluster-validation.additional-labels": "",
   "server.cluster-validation.http.excluded-paths": "",
   "server.cluster-validation.http.excluded-user-agents": "",
   "distributor.client-cleanup-period": 15000000000,

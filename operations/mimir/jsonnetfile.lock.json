@@ -40,6 +40,16 @@
       },
       "version": "cd4dd9a04aa740b2644e12810e48382188c25adc",
       "sum": "f+DYmgxR3spwx8DbIyY4+qSaFsshg/SE+MDG6jUQhJg="
+    },
+    {
+      "source": {
+        "git": {
+          "remote": "https://github.com/grafana/rollout-operator.git",
+          "subdir": "operations/rollout-operator"
+        }
+      },
+      "version": "f92afca59c667514c9b248afeeddac008a1de227",
+      "sum": "dXQwvAIC0lyDQIemXeOzZzrz25o5tYPIxQpj8PwP1e8="
     }
   ],
   "legacyImports": false
