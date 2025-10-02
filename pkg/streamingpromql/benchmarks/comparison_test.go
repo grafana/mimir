@@ -112,7 +112,7 @@ func TestBothEnginesReturnSameResultsForBenchmarkQueries(t *testing.T) {
 			start := time.Unix(int64((NumIntervals-c.Steps)*intervalSeconds), 0)
 			end := time.Unix(int64(NumIntervals*intervalSeconds), 0)
 
-			prometheusResult, prometheusClose := c.Run(limiter.InitiateUnlimitedMemoryTrackerInContext(ctx), t, start, end, interval, prometheusEngine, q)
+			prometheusResult, prometheusClose := c.Run(limiter.ContextWithNewUnlimitedMemoryConsumptionTracker(ctx), t, start, end, interval, prometheusEngine, q)
 			mimirResult, mimirClose := c.Run(ctx, t, start, end, interval, mimirEngine, q)
 
 			testutils.RequireEqualResults(t, c.Expr, prometheusResult, mimirResult, false)

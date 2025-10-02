@@ -38,9 +38,9 @@ func AddMemoryTrackerToContext(ctx context.Context, tracker *MemoryConsumptionTr
 	return context.WithValue(ctx, interface{}(memoryConsumptionTracker), tracker)
 }
 
-// InitiateUnlimitedMemoryTrackerInContext creates an unlimited MemoryConsumptionTracker and add it to the context and return
+// ContextWithNewUnlimitedMemoryConsumptionTracker creates an unlimited MemoryConsumptionTracker and add it to the context and return
 // the context. This can be used in places where we don't want to limit memory consumption, although tracking will still happen.
-func InitiateUnlimitedMemoryTrackerInContext(ctx context.Context) context.Context {
+func ContextWithNewUnlimitedMemoryConsumptionTracker(ctx context.Context) context.Context {
 	memoryTracker := NewMemoryConsumptionTracker(ctx, 0, nil, "")
 	return AddMemoryTrackerToContext(ctx, memoryTracker)
 }

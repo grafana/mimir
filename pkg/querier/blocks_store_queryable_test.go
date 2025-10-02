@@ -1743,7 +1743,7 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 					ctx, cancel := context.WithCancel(context.Background())
 					t.Cleanup(cancel)
 					ctx = limiter.AddQueryLimiterToContext(ctx, testData.queryLimiter)
-					ctx = limiter.InitiateUnlimitedMemoryTrackerInContext(ctx)
+					ctx = limiter.ContextWithNewUnlimitedMemoryConsumptionTracker(ctx)
 					st, ctx := stats.ContextWithEmptyStats(ctx)
 					const tenantID = "user-1"
 					ctx = user.InjectOrgID(ctx, tenantID)
@@ -1872,7 +1872,7 @@ func TestBlocksStoreQuerier_Select_ClosedBeforeSelectFinishes(t *testing.T) {
 
 	reg := prometheus.NewPedanticRegistry()
 	ctx := user.InjectOrgID(context.Background(), "user-1")
-	ctx = limiter.InitiateUnlimitedMemoryTrackerInContext(ctx)
+	ctx = limiter.ContextWithNewUnlimitedMemoryConsumptionTracker(ctx)
 	querier := &blocksStoreQuerier{
 		minT:               minT,
 		maxT:               maxT,
@@ -1972,7 +1972,7 @@ func TestBlocksStoreQuerier_ShouldReturnContextCanceledIfContextWasCanceledWhile
 			waitExecution     = make(chan struct{})
 			continueExecution = make(chan struct{})
 		)
-		ctx = limiter.InitiateUnlimitedMemoryTrackerInContext(ctx)
+		ctx = limiter.ContextWithNewUnlimitedMemoryConsumptionTracker(ctx)
 
 		srv, q, reg := prepareTestCase(t)
 
@@ -2158,7 +2158,7 @@ func TestBlocksStoreQuerier_Select_cancelledContext(t *testing.T) {
 			defer cancel()
 
 			ctx = limiter.AddQueryLimiterToContext(ctx, noOpQueryLimiter)
-			ctx = limiter.InitiateUnlimitedMemoryTrackerInContext(ctx)
+			ctx = limiter.ContextWithNewUnlimitedMemoryConsumptionTracker(ctx)
 			reg := prometheus.NewPedanticRegistry()
 
 			const tenantID = "user-1"
@@ -3072,7 +3072,7 @@ func TestBlocksStoreQuerier_PromQLExecution(t *testing.T) {
 			for _, streaming := range []bool{true, false} {
 				t.Run(fmt.Sprintf("streaming=%t", streaming), func(t *testing.T) {
 					ctx := context.Background()
-					ctx = limiter.InitiateUnlimitedMemoryTrackerInContext(ctx)
+					ctx = limiter.ContextWithNewUnlimitedMemoryConsumptionTracker(ctx)
 
 					block1 := ulid.MustNew(1, nil)
 					block2 := ulid.MustNew(2, nil)
