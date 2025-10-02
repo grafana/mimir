@@ -131,7 +131,7 @@ type PlanningObserver interface {
 
 // ParseAndApplyASTOptimizationPasses runs the AST optimization passes on the input string and outputs
 // an expression and any error encountered. This is separated into its own method to allow testing of
-// the AST optimization passes in the query planning.
+// AST optimization passes.
 func (p *QueryPlanner) ParseAndApplyASTOptimizationPasses(ctx context.Context, qs string, timeRange types.QueryTimeRange, observer PlanningObserver) (parser.Expr, error) {
 	expr, err := p.runASTStage("Parsing", observer, func() (parser.Expr, error) { return parser.ParseExpr(qs) })
 	if err != nil {
