@@ -18,6 +18,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -747,6 +748,15 @@ func (n *DedupStage) Exec(ctx context.Context, l log.Logger, alerts ...*types.Al
 	}
 
 	needsUpdate, reason := n.needsUpdate(entry, firingSet, resolvedSet, repeatInterval)
+	fs := make([]string, 0, len(firingSet))
+	for a := range firingSet {
+		fs = append(fs, fmt.Sprintf("%016x", a))
+	}
+	rs := make([]string, 0, len(resolvedSet))
+	for a := range resolvedSet {
+		rs = append(rs, fmt.Sprintf("%016x", a))
+	}
+	_ = level.Warn(l).Log("msg", "needsUpdate", "entry", entry, "firingSet", strings.Join(fs, ","), "resolvedSet", strings.Join(rs, ","), "repeatInterval", repeatInterval, "needsUpdate", needsUpdate, "needsUpdateReason", reason, "receiver", n.recv.GroupName, "integration", n.recv.Integration)
 	if !needsUpdate {
 		return ctx, nil, nil
 	}

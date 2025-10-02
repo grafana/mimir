@@ -1,0 +1,233 @@
+{
+  "wh-1": [
+    {
+      "alerts": 1,
+      "fingerprints": {
+        "1": "a68c079e9ea93d6d"
+      },
+      "status": "firing",
+      "groupKey": "{}/{}:{alertname=\"test\", grafana_folder=\"integration\", id=\"1\"}",
+      "groupLabels": {
+        "alertname": "test",
+        "grafana_folder": "integration",
+        "id": "1"
+      },
+      "timeNow": "2025-09-29T19:12:44.888196762Z",
+      "node": "172.23.0.7",
+      "deltaLastSeconds": 0,
+      "deltaStartSeconds": 8.258403296000001
+    },
+    {
+      "alerts": 1,
+      "fingerprints": {
+        "1": "a68c079e9ea93d6d"
+      },
+      "status": "resolved",
+      "groupKey": "{}/{}:{alertname=\"test\", grafana_folder=\"integration\", id=\"1\"}",
+      "groupLabels": {
+        "alertname": "test",
+        "grafana_folder": "integration",
+        "id": "1"
+      },
+      "timeNow": "2025-09-29T19:12:46.882191263Z",
+      "node": "172.23.0.7",
+      "deltaLastSeconds": 1.993994501,
+      "deltaStartSeconds": 10.252397797
+    },
+    {
+      "alerts": 1,
+      "fingerprints": {
+        "2": "ff4249ef946dae06"
+      },
+      "status": "firing",
+      "groupKey": "{}/{}:{alertname=\"test\", grafana_folder=\"integration\", id=\"2\"}",
+      "groupLabels": {
+        "alertname": "test",
+        "grafana_folder": "integration",
+        "id": "2"
+      },
+      "timeNow": "2025-09-29T19:12:49.462101292Z",
+      "node": "172.23.0.7",
+      "deltaLastSeconds": 2.577630251,
+      "deltaStartSeconds": 12.830028047999999
+    },
+    {
+      "alerts": 1,
+      "fingerprints": {
+        "3": "8e1d90962ffe064f"
+      },
+      "status": "firing",
+      "groupKey": "{}/{}:{alertname=\"test\", grafana_folder=\"integration\", id=\"3\"}",
+      "groupLabels": {
+        "alertname": "test",
+        "grafana_folder": "integration",
+        "id": "3"
+      },
+      "timeNow": "2025-09-29T19:12:49.466883625Z",
+      "node": "172.23.0.7",
+      "deltaLastSeconds": 0.004782333,
+      "deltaStartSeconds": 12.834810381
+    },
+    {
+      "alerts": 1,
+      "fingerprints": {
+        "4": "261f02a9008de568"
+      },
+      "status": "firing",
+      "groupKey": "{}/{}:{alertname=\"test\", grafana_folder=\"integration\", id=\"4\"}",
+      "groupLabels": {
+        "alertname": "test",
+        "grafana_folder": "integration",
+        "id": "4"
+      },
+      "timeNow": "2025-09-29T19:12:49.472212542Z",
+      "node": "172.23.0.7",
+      "deltaLastSeconds": 0.005328917,
+      "deltaStartSeconds": 12.840139298
+    }
+  ],
+  "wh-2": [
+    {
+      "alerts": 1,
+      "fingerprints": {
+        "1": "a68c079e9ea93d6d"
+      },
+      "status": "firing",
+      "groupKey": "{}/{nest=\"true\"}/{}:{alertname=\"test\", grafana_folder=\"integration\"}",
+      "groupLabels": {
+        "alertname": "test",
+        "grafana_folder": "integration"
+      },
+      "timeNow": "2025-09-29T19:12:44.888195804Z",
+      "node": "172.23.0.7",
+      "deltaLastSeconds": 0,
+      "deltaStartSeconds": 8.258402379
+    },
+    {
+      "alerts": 3,
+      "fingerprints": {
+        "2": "ff4249ef946dae06",
+        "3": "8e1d90962ffe064f",
+        "4": "261f02a9008de568"
+      },
+      "status": "firing",
+      "groupKey": "{}/{nest=\"true\"}/{}:{alertname=\"test\", grafana_folder=\"integration\"}",
+      "groupLabels": {
+        "alertname": "test",
+        "grafana_folder": "integration"
+      },
+      "timeNow": "2025-09-29T19:12:50.887903668Z",
+      "node": "172.23.0.7",
+      "deltaLastSeconds": 5.997428127,
+      "deltaStartSeconds": 14.255830506
+    },
+    {
+      "alerts": 3,
+      "fingerprints": {
+        "2": "ff4249ef946dae06",
+        "3": "8e1d90962ffe064f",
+        "4": "261f02a9008de568"
+      },
+      "status": "firing",
+      "groupKey": "{}/{nest=\"true\"}/{}:{alertname=\"test\", grafana_folder=\"integration\"}",
+      "groupLabels": {
+        "alertname": "test",
+        "grafana_folder": "integration"
+      },
+      "timeNow": "2025-09-29T19:12:54.892905878Z",
+      "node": "172.23.0.7",
+      "deltaLastSeconds": 4.005002377,
+      "deltaStartSeconds": 18.260832883
+    },
+    {
+      "alerts": 3,
+      "fingerprints": {
+        "2": "ff4249ef946dae06",
+        "3": "8e1d90962ffe064f",
+        "4": "261f02a9008de568"
+      },
+      "status": "firing",
+      "groupKey": "{}/{nest=\"true\"}/{}:{alertname=\"test\", grafana_folder=\"integration\"}",
+      "groupLabels": {
+        "alertname": "test",
+        "grafana_folder": "integration"
+      },
+      "timeNow": "2025-09-29T19:12:58.892206796Z",
+      "node": "172.23.0.7",
+      "deltaLastSeconds": 3.999300835,
+      "deltaStartSeconds": 22.260133718
+    }
+  ],
+  "wh-3": [
+    {
+      "alerts": 1,
+      "fingerprints": {
+        "1": "a68c079e9ea93d6d"
+      },
+      "status": "firing",
+      "groupKey": "{}/{nest=\"true\"}/{further=\"true\"}:{alertname=\"test\", grafana_folder=\"integration\"}",
+      "groupLabels": {
+        "alertname": "test",
+        "grafana_folder": "integration"
+      },
+      "timeNow": "2025-09-29T19:12:44.888196012Z",
+      "node": "172.23.0.7",
+      "deltaLastSeconds": 0,
+      "deltaStartSeconds": 8.255272671
+    },
+    {
+      "alerts": 3,
+      "fingerprints": {
+        "2": "ff4249ef946dae06",
+        "3": "8e1d90962ffe064f",
+        "4": "261f02a9008de568"
+      },
+      "status": "firing",
+      "groupKey": "{}/{nest=\"true\"}/{further=\"true\"}:{alertname=\"test\", grafana_folder=\"integration\"}",
+      "groupLabels": {
+        "alertname": "test",
+        "grafana_folder": "integration"
+      },
+      "timeNow": "2025-09-29T19:12:50.887913543Z",
+      "node": "172.23.0.7",
+      "deltaLastSeconds": 5.997437752,
+      "deltaStartSeconds": 14.252710423
+    },
+    {
+      "alerts": 3,
+      "fingerprints": {
+        "2": "ff4249ef946dae06",
+        "3": "8e1d90962ffe064f",
+        "4": "261f02a9008de568"
+      },
+      "status": "firing",
+      "groupKey": "{}/{nest=\"true\"}/{further=\"true\"}:{alertname=\"test\", grafana_folder=\"integration\"}",
+      "groupLabels": {
+        "alertname": "test",
+        "grafana_folder": "integration"
+      },
+      "timeNow": "2025-09-29T19:12:54.892926336Z",
+      "node": "172.23.0.7",
+      "deltaLastSeconds": 4.005012877,
+      "deltaStartSeconds": 18.2577233
+    },
+    {
+      "alerts": 3,
+      "fingerprints": {
+        "2": "ff4249ef946dae06",
+        "3": "8e1d90962ffe064f",
+        "4": "261f02a9008de568"
+      },
+      "status": "firing",
+      "groupKey": "{}/{nest=\"true\"}/{further=\"true\"}:{alertname=\"test\", grafana_folder=\"integration\"}",
+      "groupLabels": {
+        "alertname": "test",
+        "grafana_folder": "integration"
+      },
+      "timeNow": "2025-09-29T19:12:58.892699005Z",
+      "node": "172.23.0.7",
+      "deltaLastSeconds": 3.999772585,
+      "deltaStartSeconds": 22.257495885
+    }
+  ]
+}

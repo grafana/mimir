@@ -1,0 +1,31 @@
+# Do not use this configuration in production.
+# It is for demonstration purposes only.
+# Run Mimir in single process mode, with all components running in 1 process.
+target: alertmanager
+
+# Configure Mimir to use Minio as object storage backend.
+common:
+  storage:
+    backend: s3
+    s3:
+      endpoint: minio:9000
+      access_key_id: mimir
+      secret_access_key: supersecret
+      bucket_name: grafana_alertmanager
+      insecure: true
+
+# Blocks storage requires a prefix when using a common object storage bucket.
+blocks_storage:
+  storage_prefix: blocks
+
+# Use memberlist, a gossip-based protocol, to enable the 3 Mimir replicas to communicate
+memberlist:
+  join_members: [am-0, am-1, am-2]
+
+alertmanager:
+  data_dir: /data/alertmanager
+  fallback_config_file: /shared/alertmanager-fallback-config.yaml
+  external_url: http://localhost:9009/alertmanager
+
+server:
+  log_level: debug

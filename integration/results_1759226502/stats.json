@@ -1,0 +1,12 @@
+{
+  "wh-1": {
+    "firing": 4,
+    "resolved": 1
+  },
+  "wh-2": {
+    "firing": 3
+  },
+  "wh-3": {
+    "firing": 3
+  }
+}

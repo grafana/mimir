@@ -357,6 +357,7 @@ func (d *Dispatcher) processAlert(dispatchLink trace.Link, alert *types.Alert, r
 
 	ag, ok := routeGroups[fp]
 	if ok {
+		level.Debug(d.logger).Log("msg", "Inserting alert into existing aggregation group", "aggrGroup", ag, "groupFingerprint", ag.fingerprint(), "alert", alert, "fingerprint", alert.Fingerprint())
 		ag.insert(alert)
 		return
 	}

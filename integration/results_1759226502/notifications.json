@@ -1,0 +1,204 @@
+{
+  "wh-1": [
+    {
+      "alerts": 1,
+      "fingerprints": {
+        "1": "a68c079e9ea93d6d"
+      },
+      "status": "firing",
+      "groupKey": "{}/{}:{alertname=\"test\", grafana_folder=\"integration\", id=\"1\"}",
+      "groupLabels": {
+        "alertname": "test",
+        "grafana_folder": "integration",
+        "id": "1"
+      },
+      "groupFingerprint": 14678566401440685309,
+      "timeNow": "2025-09-30T09:58:48.329060548Z",
+      "node": "172.23.0.7",
+      "deltaLastSeconds": 0,
+      "deltaStartSeconds": 7.900070379
+    },
+    {
+      "alerts": 1,
+      "fingerprints": {
+        "1": "a68c079e9ea93d6d"
+      },
+      "status": "resolved",
+      "groupKey": "{}/{}:{alertname=\"test\", grafana_folder=\"integration\", id=\"1\"}",
+      "groupLabels": {
+        "alertname": "test",
+        "grafana_folder": "integration",
+        "id": "1"
+      },
+      "groupFingerprint": 14678566401440685309,
+      "timeNow": "2025-09-30T09:59:48.325753048Z",
+      "node": "172.23.0.7",
+      "deltaLastSeconds": 59.997319902,
+      "deltaStartSeconds": 67.897390281
+    },
+    {
+      "alerts": 1,
+      "fingerprints": {
+        "2": "ff4249ef946dae06"
+      },
+      "status": "firing",
+      "groupKey": "{}/{}:{alertname=\"test\", grafana_folder=\"integration\", id=\"2\"}",
+      "groupLabels": {
+        "alertname": "test",
+        "grafana_folder": "integration",
+        "id": "2"
+      },
+      "groupFingerprint": 14681381151208337794,
+      "timeNow": "2025-09-30T10:00:23.372642634Z",
+      "node": "172.23.0.7",
+      "deltaLastSeconds": 35.047036432,
+      "deltaStartSeconds": 102.944426713
+    },
+    {
+      "alerts": 1,
+      "fingerprints": {
+        "3": "8e1d90962ffe064f"
+      },
+      "status": "firing",
+      "groupKey": "{}/{}:{alertname=\"test\", grafana_folder=\"integration\", id=\"3\"}",
+      "groupLabels": {
+        "alertname": "test",
+        "grafana_folder": "integration",
+        "id": "3"
+      },
+      "groupFingerprint": 14680255251301238955,
+      "timeNow": "2025-09-30T10:00:23.381719425Z",
+      "node": "172.23.0.7",
+      "deltaLastSeconds": 0.009076792,
+      "deltaStartSeconds": 102.953503505
+    },
+    {
+      "alerts": 1,
+      "fingerprints": {
+        "4": "261f02a9008de568"
+      },
+      "status": "firing",
+      "groupKey": "{}/{}:{alertname=\"test\", grafana_folder=\"integration\", id=\"4\"}",
+      "groupLabels": {
+        "alertname": "test",
+        "grafana_folder": "integration",
+        "id": "4"
+      },
+      "groupFingerprint": 14683070001068891440,
+      "timeNow": "2025-09-30T10:00:23.385565467Z",
+      "node": "172.23.0.7",
+      "deltaLastSeconds": 0.003846166,
+      "deltaStartSeconds": 102.957349671
+    }
+  ],
+  "wh-2": [
+    {
+      "alerts": 1,
+      "fingerprints": {
+        "1": "a68c079e9ea93d6d"
+      },
+      "status": "firing",
+      "groupKey": "{}/{nest=\"true\"}/{}:{alertname=\"test\", grafana_folder=\"integration\"}",
+      "groupLabels": {
+        "alertname": "test",
+        "grafana_folder": "integration"
+      },
+      "groupFingerprint": 10999511406549616657,
+      "timeNow": "2025-09-30T09:58:48.329065173Z",
+      "node": "172.23.0.7",
+      "deltaLastSeconds": 0,
+      "deltaStartSeconds": 7.898493796
+    },
+    {
+      "alerts": 1,
+      "fingerprints": {
+        "2": "ff4249ef946dae06"
+      },
+      "status": "firing",
+      "groupKey": "{}/{nest=\"true\"}/{}:{alertname=\"test\", grafana_folder=\"integration\"}",
+      "groupLabels": {
+        "alertname": "test",
+        "grafana_folder": "integration"
+      },
+      "groupFingerprint": 10999511406549616657,
+      "timeNow": "2025-09-30T10:00:23.372664175Z",
+      "node": "172.23.0.7",
+      "deltaLastSeconds": 95.044373418,
+      "deltaStartSeconds": 102.942867214
+    },
+    {
+      "alerts": 3,
+      "fingerprints": {
+        "2": "ff4249ef946dae06",
+        "3": "8e1d90962ffe064f",
+        "4": "261f02a9008de568"
+      },
+      "status": "firing",
+      "groupKey": "{}/{nest=\"true\"}/{}:{alertname=\"test\", grafana_folder=\"integration\"}",
+      "groupLabels": {
+        "alertname": "test",
+        "grafana_folder": "integration"
+      },
+      "groupFingerprint": 10999511406549616657,
+      "timeNow": "2025-09-30T10:01:18.837060298Z",
+      "node": "172.23.0.8",
+      "deltaLastSeconds": 55.464893108,
+      "deltaStartSeconds": 158.407760322
+    }
+  ],
+  "wh-3": [
+    {
+      "alerts": 1,
+      "fingerprints": {
+        "1": "a68c079e9ea93d6d"
+      },
+      "status": "firing",
+      "groupKey": "{}/{nest=\"true\"}/{further=\"true\"}:{alertname=\"test\", grafana_folder=\"integration\"}",
+      "groupLabels": {
+        "alertname": "test",
+        "grafana_folder": "integration"
+      },
+      "groupFingerprint": 10999511406549616657,
+      "timeNow": "2025-09-30T09:58:48.32906009Z",
+      "node": "172.23.0.7",
+      "deltaLastSeconds": 0,
+      "deltaStartSeconds": 7.882468838
+    },
+    {
+      "alerts": 1,
+      "fingerprints": {
+        "2": "ff4249ef946dae06"
+      },
+      "status": "firing",
+      "groupKey": "{}/{nest=\"true\"}/{further=\"true\"}:{alertname=\"test\", grafana_folder=\"integration\"}",
+      "groupLabels": {
+        "alertname": "test",
+        "grafana_folder": "integration"
+      },
+      "groupFingerprint": 10999511406549616657,
+      "timeNow": "2025-09-30T10:00:23.372664259Z",
+      "node": "172.23.0.7",
+      "deltaLastSeconds": 95.044378417,
+      "deltaStartSeconds": 102.926847255
+    },
+    {
+      "alerts": 3,
+      "fingerprints": {
+        "2": "ff4249ef946dae06",
+        "3": "8e1d90962ffe064f",
+        "4": "261f02a9008de568"
+      },
+      "status": "firing",
+      "groupKey": "{}/{nest=\"true\"}/{further=\"true\"}:{alertname=\"test\", grafana_folder=\"integration\"}",
+      "groupLabels": {
+        "alertname": "test",
+        "grafana_folder": "integration"
+      },
+      "groupFingerprint": 10999511406549616657,
+      "timeNow": "2025-09-30T10:01:18.837060381Z",
+      "node": "172.23.0.8",
+      "deltaLastSeconds": 55.464893192,
+      "deltaStartSeconds": 158.391740447
+    }
+  ]
+}
