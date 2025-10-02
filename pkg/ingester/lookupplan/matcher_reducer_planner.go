@@ -42,7 +42,7 @@ func (p MatcherReducerPlanner) PlanIndexLookup(ctx context.Context, inPlan index
 	}
 
 	matchers := slices.Concat(inPlan.IndexMatchers(), inPlan.ScanMatchers())
-	matchers = deduplicateAndFilterNonselectiveMatchers(matchers)
+	matchers = setReduceMatchers(matchers)
 
 	allowedOutMatchers := make(map[labels.Matcher]bool, len(matchers))
 	for _, m := range matchers {
@@ -85,90 +85,129 @@ func buildOutMatchers(inMatchers []*labels.Matcher, allowedOutMatchers map[label
 	return outMatchers, allowedOutMatchers, droppedMatchers
 }
 
-func deduplicateAndFilterNonselectiveMatchers(ms []*labels.Matcher) []*labels.Matcher {
-	outMatchers := make([]*labels.Matcher, 0, len(ms))
+func setReduceMatchers(ms []*labels.Matcher) []*labels.Matcher {
+	// Group matchers by their label names so we can evaluate each label name independently
 	matchersByName := make(map[string][]*labels.Matcher)
 	for _, m := range ms {
 		if _, ok := matchersByName[m.Name]; !ok {
-			matchersByName[m.Name] = make([]*labels.Matcher, 0, len(ms))
+			matchersByName[m.Name] = make([]*labels.Matcher, 0, 1)
+		}
+		// Always drop wildcard matchers
+		if m.Type == labels.MatchRegexp && m.Value == ".*" {
+			continue
 		}
 		matchersByName[m.Name] = append(matchersByName[m.Name], m)
 	}
+	outMatchers := make([]*labels.Matcher, 0, len(ms))
 	for _, matchers := range matchersByName {
 		matchers = dedupeMatchers(matchers)
-		// If we have more than one unique matcher at all, filter out all universally non-selective matchers
-		// (i.e., =~".*", which matches everything including empty strings).
-		if len(matchers) > 1 {
-			relevantMatchers := make([]*labels.Matcher, 0, len(matchers))
-			for _, m := range matchers {
-				if isNonSelectiveMatcher(m) && m.Matches("") {
-					continue
-				}
-				relevantMatchers = append(relevantMatchers, m)
-			}
-			matchers = relevantMatchers
+		matchersByType := groupMatchersByType(matchers)
+		// If we have more than one unique equals matcher, we can just return those;
+		// we know we'll only return an empty set
+		outMatchers = append(outMatchers, matchersByType[labels.MatchEqual]...)
+		if len(matchersByType[labels.MatchEqual]) > 1 {
+			continue
 		}
+		outMatchers = append(outMatchers, filterRegexMatchers(matchersByType)...)
+		outMatchers = append(outMatchers, filterNotEqualsMatchers(matchersByType)...)
+		outMatchers = append(outMatchers, filterNotRegexMatchers(matchersByType)...)
+	}
+	return outMatchers
+}
 
-		matchersForName := make([]*labels.Matcher, 0, len(ms))
-		nonSelectiveMatchers := make([]*labels.Matcher, 0, len(ms))
-		for _, m := range matchers {
-			if isNonSelectiveMatcher(m) {
-				nonSelectiveMatchers = append(nonSelectiveMatchers, m)
-				continue
-			}
-			// We always keep selective matchers
-			matchersForName = append(matchersForName, m)
-		}
-
-		// We want to know if any selective matchers match empty strings.
-		// If there are none, we can use that information to drop some nonselective matchers.
-		var selectiveEmptyStringMatchersExist bool
-		for _, m := range matchersForName {
-			if m.Matches("") {
-				selectiveEmptyStringMatchersExist = true
+func filterRegexMatchers(mf map[labels.MatchType][]*labels.Matcher) []*labels.Matcher {
+	outMatchers := make([]*labels.Matcher, 0, len(mf[labels.MatchRegexp]))
+	for _, m := range mf[labels.MatchRegexp] {
+		matchesNoEquals := true
+		// If a regex matcher matches any equals matcher, that equals matcher is a subset of the regex,
+		// and we can throw out the regex matcher.
+		for _, em := range mf[labels.MatchEqual] {
+			if m.Matches(em.Value) {
+				matchesNoEquals = false
 				break
 			}
 		}
-
-		for i, m := range nonSelectiveMatchers {
-			// If we're on the last matcher for the label name and have returned none so far,
-			// we should keep the last one.
-			if i == len(nonSelectiveMatchers)-1 && len(matchersForName) == 0 {
-				matchersForName = append(matchersForName, m)
-				continue
-			}
-			// If this matcher doesn't match empty strings and no other matchers match empty strings,
-			// this isn't reducing the set size, so we should drop it.
-			if !m.Matches("") && !selectiveEmptyStringMatchersExist {
-				continue
-			}
-
-			matchersForName = append(matchersForName, m)
+		if matchesNoEquals {
+			outMatchers = append(outMatchers, m)
 		}
-		outMatchers = append(outMatchers, matchersForName...)
 	}
 	return outMatchers
+}
+
+// filterNotEqualsMatchers returns a subset of not-equals matchers which should actually reduce the result set size.
+// This subset is determined by comparing each not-equals matchers against equals and not-regex matchers.
+// A not-equals matcher is dropped if:
+// - there exists any not-regex matcher which would also remove the not-equals matcher value from the result set, OR
+// - there exists any equals matcher for a value that is matched by the not-equals matcher
+func filterNotEqualsMatchers(mf map[labels.MatchType][]*labels.Matcher) []*labels.Matcher {
+	outMatchers := make([]*labels.Matcher, 0, len(mf[labels.MatchNotEqual]))
+	// If the value of a not-equals matcher is matched by the inverse of any not-regex matcher,
+	// that not-equals matcher can be dropped, because it will select a subset of the regex.
+	// Using the example of x!="a" and x!~"a.*",
+	// x!~"a.*" will exclude more values than x!="a".
+	for _, m := range mf[labels.MatchNotEqual] {
+		matchesNoRegex := true
+		for _, nr := range mf[labels.MatchNotRegexp] {
+			if inv, err := nr.Inverse(); err == nil {
+				if inv.Matches(m.Value) {
+					matchesNoRegex = false
+					break
+				}
+			}
+		}
+		matchesNoEquals := true
+		// If the value of any equals matcher is matched by the not-equals matcher, only keep the equals matcher,
+		// because the not-equals will not "subtract" anything from the final set.
+		for _, e := range mf[labels.MatchEqual] {
+			if m.Matches(e.Value) {
+				matchesNoEquals = false
+				break
+			}
+		}
+		if matchesNoRegex && matchesNoEquals {
+			outMatchers = append(outMatchers, m)
+		}
+	}
+	return outMatchers
+}
+
+// filterNotRegexMatchers returns a subset of not-regex matchers which should actually reduce the result set size.
+// A not-regex matcher is dropped if any equals matcher is matched by the not-regex matcher.
+func filterNotRegexMatchers(mf map[labels.MatchType][]*labels.Matcher) []*labels.Matcher {
+	outMatchers := make([]*labels.Matcher, 0, len(mf[labels.MatchNotRegexp]))
+	for _, nr := range mf[labels.MatchNotRegexp] {
+		matchesNoEquals := true
+		// If the value of any equals matcher is matched by the not-regex matcher, drop the not-regex matcher,
+		// because it will not subtract anything from the final set.
+		for _, e := range mf[labels.MatchEqual] {
+			if nr.Matches(e.Value) {
+				matchesNoEquals = false
+				break
+			}
+		}
+		if matchesNoEquals {
+			outMatchers = append(outMatchers, nr)
+		}
+	}
+	return outMatchers
+}
+
+func groupMatchersByType(ms []*labels.Matcher) map[labels.MatchType][]*labels.Matcher {
+	outGroups := make(map[labels.MatchType][]*labels.Matcher)
+	for _, m := range ms {
+		outGroups[m.Type] = append(outGroups[m.Type], m)
+	}
+	return outGroups
 }
 
 func dedupeMatchers(ms []*labels.Matcher) []*labels.Matcher {
-	deduped := make(map[labels.Matcher]bool, len(ms))
+	deduped := make(map[labels.Matcher]*labels.Matcher, len(ms))
 	for _, m := range ms {
-		deduped[*m] = true
+		deduped[*m] = m
 	}
 	outMatchers := make([]*labels.Matcher, 0, len(deduped))
-	for m := range deduped {
-		outMatchers = append(outMatchers, &m)
+	for _, ptr := range deduped {
+		outMatchers = append(outMatchers, ptr)
 	}
 	return outMatchers
-}
-
-func isNonSelectiveMatcher(m *labels.Matcher) bool {
-	switch m.Type {
-	case labels.MatchRegexp:
-		return m.Value == ".*"
-	case labels.MatchNotRegexp, labels.MatchNotEqual:
-		return m.Value == ""
-	default:
-		return false
-	}
 }
