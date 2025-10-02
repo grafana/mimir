@@ -43,7 +43,6 @@ import (
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/api"
-	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
 var ErrNotFound = errors.New("not found")
@@ -309,8 +308,6 @@ func (c *Client) PushOTLPPayload(payload []byte, contentType string) (*http.Resp
 // Query runs an instant query.
 func (c *Client) Query(query string, ts time.Time) (model.Value, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
-	memoryTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
-	ctx = limiter.AddMemoryTrackerToContext(ctx, memoryTracker)
 	defer cancel()
 
 	value, _, err := c.querierClient.Query(ctx, query, ts)
@@ -320,8 +317,6 @@ func (c *Client) Query(query string, ts time.Time) (model.Value, error) {
 // Query runs a query range.
 func (c *Client) QueryRange(query string, start, end time.Time, step time.Duration) (model.Value, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
-	memoryTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
-	ctx = limiter.AddMemoryTrackerToContext(ctx, memoryTracker)
 	defer cancel()
 
 	value, _, err := c.querierClient.QueryRange(ctx, query, promv1.Range{
@@ -490,8 +485,6 @@ func (c *Client) QueryRawAt(query string, ts time.Time) (*http.Response, []byte,
 // Series finds series by label matchers.
 func (c *Client) Series(matches []string, start, end time.Time, opts ...promv1.Option) ([]model.LabelSet, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
-	memoryTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
-	ctx = limiter.AddMemoryTrackerToContext(ctx, memoryTracker)
 	defer cancel()
 
 	result, _, err := c.querierClient.Series(ctx, matches, start, end, opts...)
