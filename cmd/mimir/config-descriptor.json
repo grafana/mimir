@@ -7883,6 +7883,17 @@
         },
         {
           "kind": "field",
+          "name": "enable_remote_execution",
+          "required": false,
+          "desc": "If set to true and the Mimir query engine is in use, use remote execution to evaluate queries in queriers.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "query-frontend.enable-remote-execution",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "use_mimir_query_engine_for_sharding",
           "required": false,
           "desc": "Set to true to enable performing query sharding inside the Mimir query engine (MQE). This setting has no effect if sharding is disabled. Requires remote execution and MQE to be enabled.",
@@ -8018,17 +8029,6 @@
           "fieldValue": null,
           "fieldDefaultValue": true,
           "fieldFlag": "query-frontend.enable-query-engine-fallback",
-          "fieldType": "boolean",
-          "fieldCategory": "experimental"
-        },
-        {
-          "kind": "field",
-          "name": "enable_remote_execution",
-          "required": false,
-          "desc": "If set to true and the Mimir query engine is in use, use remote execution to evaluate queries in queriers.",
-          "fieldValue": null,
-          "fieldDefaultValue": false,
-          "fieldFlag": "query-frontend.enable-remote-execution",
           "fieldType": "boolean",
           "fieldCategory": "experimental"
         }

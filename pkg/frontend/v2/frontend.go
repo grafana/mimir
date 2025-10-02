@@ -397,6 +397,13 @@ func (f *Frontend) DoProtobufRequest(requestContext context.Context, req proto.M
 			f.inflightRequestCount.Dec()
 		}()
 
+		parallelismLimiter := querymiddleware.ParallelismLimiterFromContext(ctx)
+		if err := parallelismLimiter.BeginRequest(ctx); err != nil {
+			freq.protobufResponseStream.writeEnqueueError(err)
+			return
+		}
+		defer parallelismLimiter.RequestFinished()
+
 		cancelCh, err := f.enqueueRequestWithRetries(streamContext, freq)
 		if err != nil {
 			freq.protobufResponseStream.writeEnqueueError(err)

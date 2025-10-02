@@ -931,7 +931,7 @@ func runQueryParallelismTestCase(t *testing.T, enableMQESharding bool) {
 	})
 
 	handler := querymiddleware.NewEngineQueryRequestRoundTripperHandler(engine, codec, logger)
-	_, err = querymiddleware.NewLimitedParallelismRoundTripper(handler, codec, limits, middleware).RoundTrip(httpRequest)
+	_, err = querymiddleware.NewLimitedParallelismRoundTripper(handler, codec, limits, true, middleware).RoundTrip(httpRequest)
 	require.NoError(t, err)
 	require.NotZero(t, maxConcurrent, "expected at least one query to be executed")
 	require.LessOrEqualf(t, maxConcurrent, maxQueryParallelism, "max query parallelism %v went over the configured limit of %v", maxConcurrent, maxQueryParallelism)
