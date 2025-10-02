@@ -4,6 +4,7 @@ package limiter
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -20,15 +21,17 @@ const (
 	memoryConsumptionTracker contextKey = 0
 )
 
-// MustMemoryTrackerFromContext returns a MemoryConsumptionTracker that has been added to this
-// context. If there is no MemoryConsumptionTracker in this context, this will panic.
-func MustMemoryTrackerFromContext(ctx context.Context) *MemoryConsumptionTracker {
+var ErrNoMemoryConsumptionTrackerInContext = errors.New("no memory consumption tracker in context")
+
+// MemoryConsumptionTrackerFromContext returns a MemoryConsumptionTracker that has been added to this
+// context. If there is no MemoryConsumptionTracker in this context, return ErrNoMemoryConsumptionTrackerInContext.
+func MemoryConsumptionTrackerFromContext(ctx context.Context) (*MemoryConsumptionTracker, error) {
 	tracker, ok := ctx.Value(memoryConsumptionTracker).(*MemoryConsumptionTracker)
 	if !ok {
-		panic("memory tracker not found in context")
+		return nil, ErrNoMemoryConsumptionTrackerInContext
 	}
 
-	return tracker
+	return tracker, nil
 }
 
 // AddMemoryTrackerToContext adds a MemoryConsumptionTracker to this context. This is used to propagate
