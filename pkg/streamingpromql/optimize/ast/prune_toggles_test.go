@@ -13,6 +13,7 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/stretchr/testify/require"
 
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/ast"
 )
 
@@ -62,15 +63,10 @@ func TestPruneToggles(t *testing.T) {
 		t.Run(input, func(t *testing.T) {
 			expectedExpr, err := parser.ParseExpr(expected)
 			require.NoError(t, err)
-			inputExpr, err := parser.ParseExpr(input)
-			require.NoError(t, err)
-			inputExpr, err = preprocessQuery(t, inputExpr)
-			require.NoError(t, err)
 
-			reg := prometheus.NewPedanticRegistry()
-			optimizer := ast.NewPruneToggles(reg)
-			outputExpr, err := optimizer.Apply(ctx, inputExpr)
-			require.NoError(t, err)
+			reg, outputExpr := runASTOptimizationPass(t, ctx, input, func(reg prometheus.Registerer) optimize.ASTOptimizationPass {
+				return ast.NewPruneToggles(reg)
+			})
 
 			require.Equal(t, expectedExpr.String(), outputExpr.String())
 			expectedChanged := 0

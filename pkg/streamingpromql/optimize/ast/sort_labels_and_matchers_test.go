@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-package ast
+package ast_test
 
 import (
 	"context"
@@ -8,10 +8,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/stretchr/testify/require"
+
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize"
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize/ast"
 )
 
 func TestSortLabelsAndMatchers_AggregateAndBinaryExpressions(t *testing.T) {
@@ -56,15 +60,12 @@ func TestSortLabelsAndMatchers_AggregateAndBinaryExpressions(t *testing.T) {
 		"2":          "2",
 	}
 
-	sortLabelsAndMatchers := &SortLabelsAndMatchers{}
+	ctx := context.Background()
+	sortLabelsAndMatchers := &ast.SortLabelsAndMatchers{}
 
 	for input, expected := range testCases {
 		t.Run(input, func(t *testing.T) {
-			expr, err := parser.ParseExpr(input)
-			require.NoError(t, err)
-
-			result, err := sortLabelsAndMatchers.Apply(context.Background(), expr)
-			require.NoError(t, err)
+			result := runASTOptimizationPassWithoutMetrics(t, ctx, input, sortLabelsAndMatchers)
 			require.Equal(t, expected, result.String())
 		})
 	}
@@ -154,14 +155,13 @@ func TestSortLabelsAndMatchers_Selectors(t *testing.T) {
 		},
 	}
 
-	sortLabelsAndMatchers := &SortLabelsAndMatchers{}
+	ctx := context.Background()
+	sortLabelsAndMatchers := &ast.SortLabelsAndMatchers{}
 
 	run := func(t *testing.T, input string, expected parser.Expr) {
-		expr, err := parser.ParseExpr(input)
-		require.NoError(t, err)
-
-		result, err := sortLabelsAndMatchers.Apply(context.Background(), expr)
-		require.NoError(t, err)
+		_, result := runASTOptimizationPass(t, ctx, input, func(prometheus.Registerer) optimize.ASTOptimizationPass {
+			return sortLabelsAndMatchers
+		})
 
 		// Compare the expected and result expressions formatted as strings for clearer diffs.
 		// Note that we can't use the VectorSelector and MatrixSelector String() methods because these
