@@ -1017,8 +1017,7 @@ func TestDistributor_PushHAInstances(t *testing.T) {
 func TestDistributor_PushQuery(t *testing.T) {
 	const metricName = "foo"
 	ctx := user.InjectOrgID(context.Background(), "user")
-	memoryTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
-	ctx = limiter.AddMemoryTrackerToContext(ctx, memoryTracker)
+	ctx = limiter.InitiateUnlimitedMemoryTrackerInContext(ctx)
 	nameMatcher := mustEqualMatcher(model.MetricNameLabel, metricName)
 	barMatcher := mustEqualMatcher("bar", "baz")
 
@@ -2497,8 +2496,7 @@ func BenchmarkDistributor_Push(b *testing.B) {
 
 func TestSlowQueries(t *testing.T) {
 	ctx := user.InjectOrgID(context.Background(), "user")
-	memoryTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
-	ctx = limiter.AddMemoryTrackerToContext(ctx, memoryTracker)
+	ctx = limiter.InitiateUnlimitedMemoryTrackerInContext(ctx)
 	nameMatcher := mustEqualMatcher(model.MetricNameLabel, "foo")
 	nIngesters := 3
 	for happy := 0; happy <= nIngesters; happy++ {
