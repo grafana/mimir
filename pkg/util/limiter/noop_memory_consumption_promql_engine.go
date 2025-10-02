@@ -24,10 +24,10 @@ func NewNoopMemoryTrackerPromqlEngine(inner *promql.Engine) UnlimitedMemoryTrack
 }
 
 func (p UnlimitedMemoryTrackerPromqlEngine) NewInstantQuery(ctx context.Context, q storage.Queryable, opts promql.QueryOpts, qs string, ts time.Time) (promql.Query, error) {
-	ctx = InitiateUnlimitedMemoryTrackerInContext(ctx)
+	ctx = ContextWithNewUnlimitedMemoryConsumptionTracker(ctx)
 	return p.inner.NewInstantQuery(ctx, q, opts, qs, ts)
 }
 func (p UnlimitedMemoryTrackerPromqlEngine) NewRangeQuery(ctx context.Context, q storage.Queryable, opts promql.QueryOpts, qs string, start, end time.Time, interval time.Duration) (promql.Query, error) {
-	ctx = InitiateUnlimitedMemoryTrackerInContext(ctx)
+	ctx = ContextWithNewUnlimitedMemoryConsumptionTracker(ctx)
 	return p.inner.NewRangeQuery(ctx, q, opts, qs, start, end, interval)
 }

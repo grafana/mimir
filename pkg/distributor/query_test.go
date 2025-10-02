@@ -183,7 +183,7 @@ func TestDistributor_QueryStream_ShouldReturnErrorIfMaxChunksPerQueryLimitIsReac
 			for _, minimizeIngesterRequests := range []bool{true, false} {
 				t.Run(fmt.Sprintf("request minimization enabled: %v", minimizeIngesterRequests), func(t *testing.T) {
 					userCtx := user.InjectOrgID(context.Background(), "user")
-					userCtx = limiter.InitiateUnlimitedMemoryTrackerInContext(userCtx)
+					userCtx = limiter.ContextWithNewUnlimitedMemoryConsumptionTracker(userCtx)
 					limits := prepareDefaultLimits()
 					limits.MaxChunksPerQuery = limit
 
@@ -334,7 +334,7 @@ func TestDistributor_QueryStream_ShouldReturnErrorIfMaxChunkBytesPerQueryLimitIs
 	const seriesToAdd = 10
 
 	ctx := user.InjectOrgID(context.Background(), "user")
-	ctx = limiter.InitiateUnlimitedMemoryTrackerInContext(ctx)
+	ctx = limiter.ContextWithNewUnlimitedMemoryConsumptionTracker(ctx)
 	limits := prepareDefaultLimits()
 
 	// Prepare distributors.
@@ -446,7 +446,7 @@ func TestDistributor_QueryStream_ShouldSuccessfullyRunOnSlowIngesterWithStreamin
 
 			// Ensure strong read consistency, required to have no flaky tests when ingest storage is enabled.
 			ctx := user.InjectOrgID(context.Background(), "test")
-			ctx = limiter.InitiateUnlimitedMemoryTrackerInContext(ctx)
+			ctx = limiter.ContextWithNewUnlimitedMemoryConsumptionTracker(ctx)
 			ctx = api.ContextWithReadConsistencyLevel(ctx, api.ReadConsistencyStrong)
 
 			// Push series.

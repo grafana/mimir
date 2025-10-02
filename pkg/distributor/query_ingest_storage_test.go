@@ -27,7 +27,7 @@ func TestDistributor_QueryStream_ShouldSupportIngestStorage(t *testing.T) {
 	const tenantID = "user"
 
 	ctx := user.InjectOrgID(context.Background(), tenantID)
-	ctx = limiter.InitiateUnlimitedMemoryTrackerInContext(ctx)
+	ctx = limiter.ContextWithNewUnlimitedMemoryConsumptionTracker(ctx)
 	selectAllSeriesMatcher := mustEqualMatcher("bar", "baz")
 
 	tests := map[string]struct {
