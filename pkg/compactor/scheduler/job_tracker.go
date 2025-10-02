@@ -45,6 +45,7 @@ func (j *Job[K, V]) MarkLeased() {
 	j.epoch += int64(1)
 }
 
+// JobTracker tracks available and leased planning and compaction jobs for tenants.
 // TODO: Some kind of feedback mechanism so the Spawner can know if a submitted plan job failed or completed
 type JobTracker[K comparable, V any] struct {
 	q          *list.List          // available jobs
@@ -66,7 +67,7 @@ func NewJobTracker[K comparable, V any](maxLeases int) *JobTracker[K, V] {
 
 // Lease iterates the job queue for an acceptable job according to the provided canAccept function
 // If one is found it is marked as leased and still internally tracked (but is no longer leasable)
-func (jq *JobTracker[K, V]) Lease(canAccept func(k K, v V) bool) (K, V, int64, bool) {
+func (jq *JobTracker[K, V]) Lease(canAccept func(k K, v V) bool) (key K, value V, epoch int64, transitioned bool) {
 	jq.mtx.Lock()
 	defer jq.mtx.Unlock()
 
@@ -97,7 +98,7 @@ func (jq *JobTracker[K, V]) isAvailableEmpty() bool {
 	return jq.q.Front() == nil
 }
 
-func (jq *JobTracker[K, V]) Remove(k K, epoch int64) (bool, bool) {
+func (jq *JobTracker[K, V]) Remove(k K, epoch int64) (removed bool, transitioned bool) {
 	jq.mtx.Lock()
 	defer jq.mtx.Unlock()
 
@@ -122,7 +123,7 @@ func (jq *JobTracker[K, V]) Remove(k K, epoch int64) (bool, bool) {
 }
 
 // Does not check for an epoch match
-func (jq *JobTracker[K, V]) RemoveForcefully(k K) (bool, bool) {
+func (jq *JobTracker[K, V]) RemoveForcefully(k K) (removed bool, transitioned bool) {
 	jq.mtx.Lock()
 	defer jq.mtx.Unlock()
 
@@ -201,7 +202,7 @@ func (jq *JobTracker[K, V]) RenewLease(k K, epoch int64) bool {
 	return false
 }
 
-func (jq *JobTracker[K, V]) CancelLease(k K, epoch int64) (bool, bool) {
+func (jq *JobTracker[K, V]) CancelLease(k K, epoch int64) (canceled bool, transitioned bool) {
 	jq.mtx.Lock()
 	defer jq.mtx.Unlock()
 
@@ -218,14 +219,13 @@ func (jq *JobTracker[K, V]) CancelLease(k K, epoch int64) (bool, bool) {
 	return false, false
 }
 
-func (jq *JobTracker[K, V]) Offer(jobs []*Job[K, V], shouldReplace func(prev, new V) bool) (int, bool) {
+func (jq *JobTracker[K, V]) Offer(jobs []*Job[K, V], shouldReplace func(prev, new V) bool) (accepted int, transitioned bool) {
 	jq.mtx.Lock()
 	defer jq.mtx.Unlock()
 
 	wasEmpty := jq.isAvailableEmpty()
 
 	// TODO: Count replacements?
-	accepted := 0
 
 	for _, j := range jobs {
 		if e, ok := jq.elementMap[j.k]; ok {
