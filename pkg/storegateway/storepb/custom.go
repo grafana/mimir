@@ -16,14 +16,6 @@ import (
 	"github.com/grafana/mimir/pkg/storage/chunk"
 )
 
-func NewSeriesResponse(series *Series) *SeriesResponse {
-	return &SeriesResponse{
-		Result: &SeriesResponse_Series{
-			Series: series,
-		},
-	}
-}
-
 func NewHintsSeriesResponse(hints *types.Any) *SeriesResponse {
 	return &SeriesResponse{
 		Result: &SeriesResponse_Hints{
