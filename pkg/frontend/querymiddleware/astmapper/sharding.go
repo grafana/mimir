@@ -19,7 +19,6 @@ import (
 
 type Squasher interface {
 	Squash(...EmbeddedQuery) (parser.Expr, error)
-	ContainsSquashedExpression(node parser.Node) (bool, error)
 }
 
 type ShardLabeller interface {

@@ -118,7 +118,7 @@ type ExtendedAlert struct {
 	ImageURL      string             `json:"imageURL,omitempty"`
 	EmbeddedImage string             `json:"embeddedImage,omitempty"`
 	OrgID         *int64             `json:"orgId,omitempty"`
-	ExtraData     json.RawMessage    `json:"extraData,omitempty"`
+	ExtraData     json.RawMessage    `json:"enrichments,omitempty"`
 }
 
 type ExtendedAlerts []ExtendedAlert

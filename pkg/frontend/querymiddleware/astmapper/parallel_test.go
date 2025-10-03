@@ -311,12 +311,6 @@ func TestEvalPredicate(t *testing.T) {
 			expectedRes: true,
 			expectedErr: false,
 		},
-		"hasEmbeddedQueries()": {
-			input:       `sum without(__query_shard__) (__embedded_queries__{__queries__="tstquery"}) or sum(selector)`,
-			fn:          EmbeddedQueriesSquasher.ContainsSquashedExpression,
-			expectedRes: true,
-			expectedErr: false,
-		},
 	} {
 		t.Run(testName, func(t *testing.T) {
 			expr, err := parser.ParseExpr(tc.input)

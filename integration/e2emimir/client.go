@@ -1608,7 +1608,7 @@ func (c *Client) GetReceivers(ctx context.Context) ([]string, error) {
 	return receivers, nil
 }
 
-func (c *Client) GetReceiversExperimental(ctx context.Context) ([]alertingmodels.Receiver, error) {
+func (c *Client) GetReceiversExperimental(ctx context.Context) ([]alertingmodels.ReceiverStatus, error) {
 	u := c.alertmanagerClient.URL("api/v1/grafana/receivers", nil)
 
 	req, err := http.NewRequest(http.MethodGet, u.String(), nil)
@@ -1629,7 +1629,7 @@ func (c *Client) GetReceiversExperimental(ctx context.Context) ([]alertingmodels
 		return nil, fmt.Errorf("getting receivers failed with status %d and error %v", resp.StatusCode, string(body))
 	}
 
-	decoded := []alertingmodels.Receiver{}
+	decoded := []alertingmodels.ReceiverStatus{}
 	if err := json.Unmarshal(body, &decoded); err != nil {
 		return nil, err
 	}

@@ -216,14 +216,18 @@ type Distributor struct {
 }
 
 type artificialLatencyWithErrors struct {
-	minDelay       time.Duration
-	maxDelay       time.Duration
-	workers        int
-	totalDuration  time.Duration
-	errorFrequency time.Duration
+	minDelay time.Duration
+	maxDelay time.Duration
 
-	lastError time.Time
-	startTime time.Time
+	startTime     time.Time
+	totalDuration time.Duration
+
+	workers           int
+	slowDownFrequency time.Duration
+	lastSlowDown      time.Time
+
+	errorFrequency time.Duration
+	lastError      time.Time
 }
 
 func (a *artificialLatencyWithErrors) isActive() bool {
@@ -253,28 +257,24 @@ func (a *artificialLatencyWithErrors) shouldReturnError(delay time.Duration) boo
 	return false
 }
 
-var errArtificial = fmt.Errorf("artificial error")
-
-func (a *artificialLatencyWithErrors) sleep(logger log.Logger) error {
-	if a == nil || !a.isActive() {
-		return nil
-	}
-
-	// Pick random delay in [minDelay, maxDelay].
-	delay := a.minDelay + time.Duration(rand.Int63n(int64(a.maxDelay-a.minDelay)))
-	var err error
-	if a.shouldReturnError(delay) {
-		err = errArtificial
-	}
-	defer func() {
-		level.Debug(logger).Log("msg", "artificial latency with error", "min_next_error_delay", a.minDelay, "max_next_error_delay", a.maxDelay, "random_delay", delay, "total_duration", a.totalDuration, "start_time", a.startTime, "last_error", a.lastError, "err", err)
-	}()
-
+func (a *artificialLatencyWithErrors) shouldSlowDown(delay time.Duration) bool {
 	if a.workers == 0 {
-		time.Sleep(delay)
-		return err
+		return false
 	}
+	if a.slowDownFrequency == 0 {
+		return true
+	}
+	if a.lastSlowDown.IsZero() {
+		return true
+	}
+	nextSlowDown := a.lastSlowDown.Add(a.errorFrequency)
+	if time.Now().Add(delay).After(nextSlowDown) {
+		return true
+	}
+	return false
+}
 
+func (a *artificialLatencyWithErrors) slowDown(delay time.Duration) {
 	end := time.Now().Add(delay)
 	var wg sync.WaitGroup
 	wg.Add(a.workers)
@@ -293,7 +293,27 @@ func (a *artificialLatencyWithErrors) sleep(logger log.Logger) error {
 		}()
 	}
 	wg.Wait()
-	return err
+}
+
+var errArtificial = fmt.Errorf("artificial error")
+
+func (a *artificialLatencyWithErrors) sleep(logger log.Logger, expectedErr error, shouldSlowDown bool) error {
+	if a == nil || !a.isActive() {
+		return nil
+	}
+
+	// Pick random delay in [minDelay, maxDelay].
+	delay := a.minDelay + time.Duration(rand.Int63n(int64(a.maxDelay-a.minDelay)))
+	defer func() {
+		level.Debug(logger).Log("msg", "artificial latency with error", "min_next_error_delay", a.minDelay, "max_next_error_delay", a.maxDelay, "random_delay", delay, "total_duration", a.totalDuration, "start_time", a.startTime, "should_slowdown", fmt.Sprintf("%v", shouldSlowDown), "err", expectedErr)
+	}()
+
+	if shouldSlowDown {
+		a.slowDown(delay)
+	} else {
+		time.Sleep(delay)
+	}
+	return expectedErr
 }
 
 func defaultSleep(d time.Duration) { time.Sleep(d) }
@@ -1987,10 +2007,19 @@ func (d *Distributor) addArtificialLatencyWithError() error {
 		d.latency = nil
 		return nil
 	}
+	var (
+		expectedErr    error
+		shouldSlowDown bool
+	)
 	if d.latency.lastError.IsZero() || time.Since(d.latency.lastError) >= d.latency.errorFrequency {
 		d.latency.lastError = time.Now()
+		expectedErr = errArtificial
 	}
-	return d.latency.sleep(d.log)
+	if d.latency.lastSlowDown.IsZero() || time.Since(d.latency.lastSlowDown) >= d.latency.slowDownFrequency {
+		d.latency.lastSlowDown = time.Now()
+		shouldSlowDown = true
+	}
+	return d.latency.sleep(d.log, expectedErr, shouldSlowDown)
 }
 
 func (d *Distributor) StartArtificialLatencyHandler(w http.ResponseWriter, r *http.Request) {
@@ -2002,6 +2031,7 @@ func (d *Distributor) StartArtificialLatencyHandler(w http.ResponseWriter, r *ht
 	latencyMaxStr := vars["latencyMax"]
 	latencyDurationStr := vars["latencyDuration"]
 	latencyWorkersStr := vars["latencyWorkers"]
+	latencySlowDownFrequencyStr := vars["latencySlowDownFrequency"]
 	latencyErrorFrequencyStr := vars["latencyErrorFrequency"]
 
 	// Defaults
@@ -2009,28 +2039,34 @@ func (d *Distributor) StartArtificialLatencyHandler(w http.ResponseWriter, r *ht
 	latencyMax, _ := time.ParseDuration(defaultIfEmpty(latencyMaxStr, "500ms"))
 	latencyDuration, _ := time.ParseDuration(defaultIfEmpty(latencyDurationStr, "300s"))
 	latencyWorkers, _ := strconv.Atoi(defaultIfEmpty(latencyWorkersStr, "1"))
-	var latencyErrorFrequency time.Duration
-	if latencyErrorFrequencyStr == "" {
+	latencySlowDownFrequency, err := time.ParseDuration(latencySlowDownFrequencyStr)
+	if err != nil {
+		latencySlowDownFrequency = time.Duration(1<<63 - 1)
+	}
+	latencyErrorFrequency, err := time.ParseDuration(latencyErrorFrequencyStr)
+	if err != nil {
 		latencyErrorFrequency = time.Duration(1<<63 - 1)
-	} else {
-		latencyErrorFrequency, _ = time.ParseDuration(latencyErrorFrequencyStr)
 	}
 
-	level.Info(d.log).Log("msg", "artificial latency parameters retrieved", "latencyMin", latencyMin, "latencyMax", latencyMax, "latencyDuration", latencyDuration, "latencyWorkers", latencyWorkers, "latencyErrorFrequency", latencyErrorFrequency)
+	level.Info(d.log).Log("msg", "artificial latency parameters retrieved", "latencyMin", latencyMin, "latencyMax", latencyMax, "latencyDuration", latencyDuration, "latencyWorkers", latencyWorkers, "latencySlowDownFrequency", latencySlowDownFrequency, "latencyErrorFrequency", latencyErrorFrequency)
 
 	d.latency = &artificialLatencyWithErrors{
-		minDelay:       latencyMin,
-		maxDelay:       latencyMax,
-		totalDuration:  latencyDuration,
-		workers:        latencyWorkers,
+		minDelay: latencyMin,
+		maxDelay: latencyMax,
+
+		startTime:     time.Now(),
+		totalDuration: latencyDuration,
+
+		workers:           latencyWorkers,
+		slowDownFrequency: latencySlowDownFrequency,
+
 		errorFrequency: latencyErrorFrequency,
-		startTime:      time.Now(),
 	}
 
 	level.Info(d.log).Log("msg", "artificial latency with error setup completed")
 
 	// Build response
-	response := fmt.Sprintf("Artificial latency with error with parameters min=%v, max=%v, duration=%v, workers=%d", latencyMin, latencyMax, latencyDuration, latencyWorkers)
+	response := fmt.Sprintf("Artificial latency with error with parameters min=%v, max=%v, duration=%v, workers=%d, slow down frequency=%v, error frequency=%v", latencyMin, latencyMax, latencyDuration, latencyWorkers, latencySlowDownFrequency, latencyErrorFrequency)
 	util.WriteHTMLResponse(w, response)
 }
 

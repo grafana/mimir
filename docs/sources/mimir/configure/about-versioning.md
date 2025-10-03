@@ -184,28 +184,28 @@ The following features are currently experimental:
     - `-ingester.read-circuit-breaker.request-timeout`
   - Reactive concurrency limiters
     - `-ingester.push-reactive-limiter.enabled`
-    - `-ingester.push-reactive-limiter.short-window-min-duration`
-    - `-ingester.push-reactive-limiter.short-window-max-duration`
-    - `-ingester.push-reactive-limiter.short-window-min-samples`
-    - `-ingester.push-reactive-limiter.long-window`
-    - `-ingester.push-reactive-limiter.sample-quantile`
-    - `-ingester.push-reactive-limiter.min-inflight-limit`
-    - `-ingester.push-reactive-limiter.max-inflight-limit`
-    - `-ingester.push-reactivereactive-limiter.initial-inflight-limit`
+    - `-ingester.push-reactive-limiter.min-limit`
+    - `-ingester.push-reactive-limiter.max-limit`
+    - `-ingester.push-reactive-limiter.initial-limit`
     - `-ingester.push-reactive-limiter.max-limit-factor`
+    - `-ingester.push-reactive-limiter.recent-window-min-duration`
+    - `-ingester.push-reactive-limiter.recent-window-max-duration`
+    - `-ingester.push-reactive-limiter.recent-window-min-samples`
+    - `-ingester.push-reactive-limiter.recent-quantile`
+    - `-ingester.push-reactive-limiter.baseline-window-age`
     - `-ingester.push-reactive-limiter.correlation-window`
     - `-ingester.push-reactive-limiter.initial-rejection-factor`
     - `-ingester.push-reactive-limiter.max-rejection-factor`
     - `-ingester.read-reactive-limiter.enabled`
-    - `-ingester.read-reactive-limiter.short-window-min-duration`
-    - `-ingester.read-reactive-limiter.short-window-max-duration`
-    - `-ingester.read-reactive-limiter.short-window-min-samples`
-    - `-ingester.read-reactive-limiter.long-window`
-    - `-ingester.read-reactive-limiter.sample-quantile`
-    - `-ingester.read-reactive-limiter.min-inflight-limit`
-    - `-ingester.read-reactive-limiter.max-inflight-limit`
-    - `-ingester.read-reactive-limiter.initial-inflight-limit`
+    - `-ingester.read-reactive-limiter.min-limit`
+    - `-ingester.read-reactive-limiter.max-limit`
+    - `-ingester.read-reactive-limiter.initial-limit`
     - `-ingester.read-reactive-limiter.max-limit-factor`
+    - `-ingester.read-reactive-limiter.recent-window-min-duration`
+    - `-ingester.read-reactive-limiter.recent-window-max-duration`
+    - `-ingester.read-reactive-limiter.recent-window-min-samples`
+    - `-ingester.read-reactive-limiter.recent-quantile`
+    - `-ingester.read-reactive-limiter.baseline-window-age`
     - `-ingester.read-reactive-limiter.correlation-window`
     - `-ingester.read-reactive-limiter.initial-rejection-factor`
     - `-ingester.read-reactive-limiter.max-rejection-factor`
@@ -238,6 +238,8 @@ The following features are currently experimental:
   - Support for duration expressions in PromQL, which are simple arithmetics on numbers in offset and range specification.
   - Support for configuring the maximum series limit for cardinality API requests on a per-tenant basis via `cardinality_analysis_max_results`.
   - [Mimir query engine](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/mimir-query-engine) (`-query-frontend.query-engine` and `-query-frontend.enable-query-engine-fallback`)
+  - Remote execution of queries in queriers: `-query-frontend.enable-remote-execution=true`
+  - Performing query sharding within MQE: `-query-frontend.use-mimir-query-engine-for-sharding=true`
   - Rewriting of queries to optimize processing: `-query-frontend.rewrite-histogram-queries` and `-query-frontend.rewrite-propagate-matchers`
 - Query-scheduler
   - `-query-scheduler.querier-forget-delay`

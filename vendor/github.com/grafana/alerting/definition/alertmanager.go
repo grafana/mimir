@@ -540,7 +540,7 @@ func (r *PostableApiReceiver) HasGrafanaIntegrations() bool {
 }
 
 func (r *PostableApiReceiver) GetName() string {
-	return r.Receiver.Name
+	return r.Name
 }
 
 // CopyIntegrations appends all integrations, Mimir and Grafana, from source receiver to destination.

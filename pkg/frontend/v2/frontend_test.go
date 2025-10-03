@@ -194,9 +194,7 @@ func TestFrontend_Protobuf_HappyPath(t *testing.T) {
 
 	f, _ := setupFrontend(t, nil, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
 		if msg.Type != schedulerpb.ENQUEUE {
-			// If the test closes the response before the goroutine in DoProtobufRequest returns, it will try to send a cancellation
-			// notification to the scheduler. We don't want to spawn a goroutine to send a mock querier response in this case.
-			return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
+			return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.ERROR, Error: fmt.Sprintf("unexpected message type %v sent to scheduler", msg.Type)}
 		}
 
 		require.Equal(t, []string{ingesterQueryComponent}, msg.AdditionalQueueDimensions)
@@ -214,6 +212,7 @@ func TestFrontend_Protobuf_HappyPath(t *testing.T) {
 	resp, err := f.DoProtobufRequest(ctx, req, time.Now().Add(-5*time.Hour), time.Now())
 	require.NoError(t, err)
 	defer resp.Close()
+	defer resp.Close() // Closing a response stream multiple times should not panic.
 
 	msg, err := resp.Next(ctx)
 	require.NoError(t, err)
@@ -226,6 +225,63 @@ func TestFrontend_Protobuf_HappyPath(t *testing.T) {
 	msg, err = resp.Next(ctx)
 	require.NoError(t, err)
 	require.Nil(t, msg)
+}
+
+// This test checks that we don't send unnecessary cancellation messages to the query-scheduler
+// when a request has been completely read successfully.
+//
+// Previously, there was a race between calling Close() on the stream returned by DoProtobufRequest()
+// and receiveResultForProtobufRequest() observing that the stream was finished.
+// If Close() won the race, it would cause the cancellation monitoring goroutine started by
+// DoProtobufRequest() to send a cancellation message to the scheduler, even though that was unnecessary.
+//
+// While this had no user-visible impact, cancelling a request causes the scheduler to close its stream
+// with the querier (to signal the cancellation). This means queriers had to reestablish the stream,
+// which takes time. If all querier workers were closed due to this, then scheduler would then
+// reshuffle querier tenant assignments for shuffle sharding, which would reduce the effectiveness of
+// shuffle sharding.
+func TestFrontend_Protobuf_ShouldNotCancelRequestAfterSuccess(t *testing.T) {
+	for _, exhaustStream := range []bool{true, false} {
+		t.Run(fmt.Sprintf("exhaust stream=%v", exhaustStream), func(t *testing.T) {
+			const userID = "test"
+			cancellations := atomic.NewInt64(0)
+
+			f, _ := setupFrontend(t, nil, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
+				switch msg.Type {
+				case schedulerpb.ENQUEUE:
+					go sendStreamingResponse(t, f, userID, msg.QueryID, newStringMessage("first message"))
+				case schedulerpb.CANCEL:
+					cancellations.Inc()
+				default:
+					return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.ERROR, Error: fmt.Sprintf("unexpected message type %v sent to scheduler", msg.Type)}
+				}
+
+				return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
+			})
+
+			for range 10000 { // Send many requests to try to trigger the race condition that previously caused this test to fail.
+				ctx := user.InjectOrgID(context.Background(), userID)
+				req := &querierpb.EvaluateQueryRequest{}
+				resp, err := f.DoProtobufRequest(ctx, req, time.Now().Add(-5*time.Hour), time.Now())
+				require.NoError(t, err)
+
+				msg, err := resp.Next(ctx)
+				require.NoError(t, err)
+				require.Equal(t, "first message", msg.GetEvaluateQueryResponse().GetStringValue().Value)
+
+				if exhaustStream {
+					// Response stream exhausted.
+					msg, err = resp.Next(ctx)
+					require.NoError(t, err)
+					require.Nil(t, msg)
+				}
+
+				resp.Close()
+			}
+
+			require.Zero(t, cancellations.Load(), "expected no cancellations to be sent to the scheduler, but at least one was")
+		})
+	}
 }
 
 func TestFrontend_Protobuf_QuerierResponseReceivedBeforeSchedulerResponse(t *testing.T) {
@@ -283,6 +339,10 @@ func TestFrontend_Protobuf_ResponseClosedBeforeStreamExhausted(t *testing.T) {
 	}
 
 	f, _ := setupFrontend(t, nil, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
+		if msg.Type != schedulerpb.ENQUEUE {
+			return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.ERROR, Error: fmt.Sprintf("unexpected message type %v sent to scheduler", msg.Type)}
+		}
+
 		go sendStreamingResponse(t, f, userID, msg.QueryID, expectedMessages...)
 
 		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
@@ -303,6 +363,10 @@ func TestFrontend_Protobuf_ErrorReturnedByQuerier(t *testing.T) {
 	const userID = "test"
 
 	f, _ := setupFrontend(t, nil, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
+		if msg.Type != schedulerpb.ENQUEUE {
+			return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.ERROR, Error: fmt.Sprintf("unexpected message type %v sent to scheduler", msg.Type)}
+		}
+
 		errorMessage := newErrorMessage(mimirpb.QUERY_ERROR_TYPE_BAD_DATA, "something went wrong")
 		go sendStreamingResponse(t, f, userID, msg.QueryID, errorMessage)
 
@@ -370,6 +434,10 @@ func TestFrontend_ShouldTrackPerRequestMetrics(t *testing.T) {
 			reg := prometheus.NewRegistry()
 
 			f, _ := setupFrontend(t, reg, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
+				if msg.Type != schedulerpb.ENQUEUE {
+					return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.ERROR, Error: fmt.Sprintf("unexpected message type %v sent to scheduler", msg.Type)}
+				}
+
 				testCase.sendQuerierResponse(t, f, msg.QueryID)
 				return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
 			})
@@ -446,6 +514,10 @@ func TestFrontend_Protobuf_RetryEnqueue(t *testing.T) {
 	}
 
 	f, _ := setupFrontend(t, nil, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
+		if msg.Type != schedulerpb.ENQUEUE {
+			return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.ERROR, Error: fmt.Sprintf("unexpected message type %v sent to scheduler", msg.Type)}
+		}
+
 		fail := failures.Dec()
 		if fail >= 0 {
 			return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.SHUTTING_DOWN}
@@ -493,6 +565,10 @@ func TestFrontend_Protobuf_ReadingResponseAfterAllMessagesReceived(t *testing.T)
 	}
 
 	f, _ := setupFrontend(t, nil, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
+		if msg.Type != schedulerpb.ENQUEUE {
+			return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.ERROR, Error: fmt.Sprintf("unexpected message type %v sent to scheduler", msg.Type)}
+		}
+
 		go sendStreamingResponse(t, f, userID, msg.QueryID, expectedMessages...)
 
 		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
@@ -514,7 +590,7 @@ func TestFrontend_Protobuf_ReadingResponseAfterAllMessagesReceived(t *testing.T)
 
 	// Wait until the last message has been buffered into the stream channel and the stream's context has been cancelled by DoProtobufRequest.
 	select {
-	case <-resp.ctx.Done():
+	case <-resp.streamContext.Done():
 		// Context cancelled, continue.
 	case <-time.After(time.Second):
 		require.Fail(t, "gave up waiting for stream context to be cancelled")
@@ -549,6 +625,10 @@ func TestFrontend_HTTPGRPC_TooManyRequests(t *testing.T) {
 func TestFrontend_Protobuf_TooManyRequests(t *testing.T) {
 	schedulerEnqueueAttempts := atomic.NewInt64(0)
 	f, _ := setupFrontend(t, nil, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
+		if msg.Type != schedulerpb.ENQUEUE {
+			return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.ERROR, Error: fmt.Sprintf("unexpected message type %v sent to scheduler", msg.Type)}
+		}
+
 		schedulerEnqueueAttempts.Inc()
 		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.TOO_MANY_REQUESTS_PER_TENANT}
 	})
@@ -587,6 +667,10 @@ func TestFrontend_HTTPGRPC_SchedulerError(t *testing.T) {
 func TestFrontend_Protobuf_SchedulerError(t *testing.T) {
 	schedulerEnqueueAttempts := atomic.NewInt64(0)
 	f, _ := setupFrontend(t, nil, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
+		if msg.Type != schedulerpb.ENQUEUE {
+			return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.ERROR, Error: fmt.Sprintf("unexpected message type %v sent to scheduler", msg.Type)}
+		}
+
 		schedulerEnqueueAttempts.Inc()
 		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.ERROR, Error: "something went wrong inside the scheduler"}
 	})
@@ -845,6 +929,10 @@ func TestFrontend_Protobuf_ReadingResponseWithCanceledContext(t *testing.T) {
 	signal := make(chan struct{})
 
 	f, _ := setupFrontend(t, nil, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
+		if msg.Type != schedulerpb.ENQUEUE {
+			return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.ERROR, Error: fmt.Sprintf("unexpected message type %v sent to scheduler", msg.Type)}
+		}
+
 		<-signal // Don't respond until the test has attempted to read from the stream.
 		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
 	})
@@ -867,11 +955,15 @@ func TestFrontend_Protobuf_ReadingResponseWithCanceledContext(t *testing.T) {
 	close(signal)
 }
 
-func TestFrontend_Protobuf_ReadingCancelledRequest(t *testing.T) {
+func TestFrontend_Protobuf_ReadingCancelledRequestBeforeResponseReceivedFromQuerier(t *testing.T) {
 	ctx, cancel := context.WithCancelCause(user.InjectOrgID(context.Background(), "test"))
 	cancellationError := cancellation.NewErrorf("the request has been canceled")
 
 	f, _ := setupFrontend(t, nil, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
+		if msg.Type != schedulerpb.ENQUEUE {
+			return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.ERROR, Error: fmt.Sprintf("unexpected message type %v sent to scheduler", msg.Type)}
+		}
+
 		cancel(cancellationError)
 		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
 	})
@@ -885,6 +977,66 @@ func TestFrontend_Protobuf_ReadingCancelledRequest(t *testing.T) {
 	msg, err := resp.Next(uncancelledContext)
 	require.ErrorIs(t, err, cancellationError)
 	require.Nil(t, msg)
+}
+
+func TestFrontend_Protobuf_ReadingCancelledRequestAfterResponseReceivedFromQuerier(t *testing.T) {
+	ctx, cancel := context.WithCancelCause(user.InjectOrgID(context.Background(), "test"))
+
+	f, _ := setupFrontend(t, nil, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
+		switch msg.Type {
+		case schedulerpb.ENQUEUE:
+			go sendStreamingResponse(t, f, msg.UserID, msg.QueryID, newStringMessage("first message"), newStringMessage("second message"), newStringMessage("third message"))
+			return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
+		case schedulerpb.CANCEL:
+			return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
+		default:
+			return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.ERROR, Error: fmt.Sprintf("unexpected message type %v sent to scheduler", msg.Type)}
+		}
+	})
+
+	req := &querierpb.EvaluateQueryRequest{}
+	resp, err := f.DoProtobufRequest(ctx, req, time.Now(), time.Now())
+	require.NoError(t, err)
+
+	uncancelledContext := context.Background()
+	msg, err := resp.Next(uncancelledContext)
+	require.NoError(t, err)
+	require.Equal(t, "first message", msg.GetEvaluateQueryResponse().GetStringValue().Value)
+
+	// At this point, the next message should be waiting in the stream's channel, and receiveResultForProtobufRequest will be reading the next message from the gRPC stream.
+	// Cancel the original request, and confirm that we never receive a nil message and no error from a call to Next:
+	// we should either receive the cancellation error or the next remaining message.
+	// Once we've seen a cancellation error, then that's all we should get.
+	cancellationError := cancellation.NewErrorf("the request has been canceled")
+	cancel(cancellationError)
+
+	seenSecondMessage := false
+	seenThirdMessage := false
+	seenCancellationError := false
+
+	for range 10 {
+		msg, err := resp.Next(uncancelledContext)
+		if err != nil {
+			require.ErrorIs(t, err, cancellationError)
+			seenCancellationError = true
+			continue
+		}
+
+		require.NotNil(t, msg)
+		require.False(t, seenCancellationError, "got a non-nil message after already observing the cancellation")
+
+		if !seenSecondMessage {
+			require.Equal(t, "second message", msg.GetEvaluateQueryResponse().GetStringValue().Value)
+			seenSecondMessage = true
+		} else if !seenThirdMessage {
+			require.Equal(t, "second message", msg.GetEvaluateQueryResponse().GetStringValue().Value)
+			seenThirdMessage = true
+		} else {
+			require.Failf(t, "received unexpected message", "received message %v", msg)
+		}
+	}
+
+	require.True(t, seenCancellationError)
 }
 
 func TestFrontend_HTTPGRPC_ResponseSentTwice(t *testing.T) {
@@ -947,9 +1099,7 @@ func TestFrontend_Protobuf_ResponseSentTwice(t *testing.T) {
 
 	f, _ := setupFrontend(t, nil, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
 		if msg.Type != schedulerpb.ENQUEUE {
-			// If the test closes the response before the goroutine in DoProtobufRequest returns, it will try to send a cancellation
-			// notification to the scheduler, which we should ignore.
-			return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
+			return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.ERROR, Error: fmt.Sprintf("unexpected message type %v sent to scheduler", msg.Type)}
 		}
 
 		queryID.Store(msg.QueryID)
@@ -1011,10 +1161,9 @@ func TestFrontend_Protobuf_ResponseWithUnexpectedUserID(t *testing.T) {
 
 	f, _ := setupFrontend(t, nil, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
 		if msg.Type != schedulerpb.ENQUEUE {
-			// If the test closes the response before the goroutine in DoProtobufRequest returns, it will try to send a cancellation
-			// notification to the scheduler. We don't want to spawn a goroutine to send a mock querier response in this case.
-			return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
+			return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.ERROR, Error: fmt.Sprintf("unexpected message type %v sent to scheduler", msg.Type)}
 		}
+
 		go func() {
 			queryID.Store(msg.QueryID)
 			errChan <- sendStreamingResponseWithErrorCapture(f, "some-other-user", msg.QueryID, newStringMessage("first message"), newStringMessage("second message"))

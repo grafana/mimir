@@ -8,6 +8,7 @@ import (
 	"fmt"
 
 	"github.com/go-kit/log/level"
+
 	"github.com/prometheus/alertmanager/notify"
 	"github.com/prometheus/alertmanager/types"
 
@@ -82,7 +83,7 @@ func (n *Notifier) Notify(ctx context.Context, as ...*types.Alert) (bool, error)
 	err = n.client.Connect(ctx, n.settings.BrokerURL, n.settings.ClientID, n.settings.Username, n.settings.Password, tlsCfg)
 	if err != nil {
 		level.Error(l).Log("msg", "Failed to connect to MQTT broker", "err", err.Error())
-		return false, fmt.Errorf("Failed to connect to MQTT broker: %s", err.Error())
+		return false, fmt.Errorf("failed to connect to MQTT broker: %s", err.Error())
 	}
 	defer func() {
 		err := n.client.Disconnect(ctx)
@@ -94,7 +95,7 @@ func (n *Notifier) Notify(ctx context.Context, as ...*types.Alert) (bool, error)
 	qos, err := n.settings.QoS.Int64()
 	if err != nil {
 		level.Error(l).Log("msg", "Failed to parse QoS", "err", err.Error())
-		return false, fmt.Errorf("Failed to parse QoS: %s", err.Error())
+		return false, fmt.Errorf("failed to parse QoS: %s", err.Error())
 	}
 
 	err = n.client.Publish(
@@ -109,7 +110,7 @@ func (n *Notifier) Notify(ctx context.Context, as ...*types.Alert) (bool, error)
 
 	if err != nil {
 		level.Error(l).Log("msg", "Failed to publish MQTT message", "err", err.Error())
-		return false, fmt.Errorf("Failed to publish MQTT message: %s", err.Error())
+		return false, fmt.Errorf("failed to publish MQTT message: %s", err.Error())
 	}
 
 	return true, nil
@@ -146,7 +147,7 @@ func (n *Notifier) buildMessage(ctx context.Context, l log.Logger, as ...*types.
 
 		return string(jsonMsg), nil
 	default:
-		return "", errors.New("Invalid message format")
+		return "", errors.New("invalid message format")
 	}
 }
 

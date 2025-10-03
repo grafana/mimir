@@ -37,7 +37,7 @@
 * [FEATURE] Ingester: Add experimental `blocks-storage.tsdb.index-lookup-planning-enabled` flag to configure use of a cost-based index lookup planner. #12530
 * [FEATURE] MQE: Add support for applying extra selectors to one side of a binary operation to reduce data fetched. #12577
 * [FEATURE] Query-frontend: Add a native histogram presenting the length of query expressions handled by the query-frontend #12571
-* [FEATURE] Query-frontend and querier: Add experimental support for performing query planning in query-frontends and distributing portions of the plan to queriers for execution. #12302 #12551 #12665 #12687 #12745 #12757 #12798 #12808 #12809 #12870
+* [FEATURE] Query-frontend and querier: Add experimental support for performing query planning in query-frontends and distributing portions of the plan to queriers for execution. #12302 #12551 #12665 #12687 #12745 #12757 #12798 #12808 #12809 #12835 #12856 #12870
 * [FEATURE] Alertmanager: add Microsoft Teams V2 as a supported integration. #12680
 * [FEATURE] Distributor: Add experimental flag `-validation.label-value-length-over-limit-strategy` to configure how to handle label values over the length limit. #12627 #12844
 * [FEATURE] Ingester: Introduce metric `cortex_ingester_owned_target_info_series` for counting the number of owned `target_info` series by tenant. #12681
@@ -91,6 +91,7 @@
 * [BUGFIX] Ingester, Block-builder: silently ignore duplicate sample if it's due to zero sample from created timestamp. Created timestamp equal to the timestamp of the first sample of series is a common case if created timestamp comes from OTLP where start time equal to timestamp of the first sample simply means unknown start time. #12726
 * [BUGFIX] Distributor: Fix error when native histograms bucket limit is set then no NHCB passes validation. #12741
 * [BUGFIX] Ingester: Fix continous reload of active series counters when cost-attribution labels are above the max cardinality. #12822
+* [BUGFIX] Distributor: Report the correct size in the `err-mimir-distributor-max-write-message-size` error. #12799
 
 ### Mixin
 
