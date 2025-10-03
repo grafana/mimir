@@ -46,7 +46,7 @@ func (p pusherFunc) PushToStorageAndReleaseRequest(ctx context.Context, request 
 	return p(ctx, request)
 }
 
-func (p pusherFunc) NotifyPreCommit() error {
+func (p pusherFunc) NotifyPreCommit(_ context.Context) error {
 	return nil
 }
 
@@ -613,7 +613,7 @@ func (m *mockPusher) PushToStorageAndReleaseRequest(ctx context.Context, request
 	return args.Error(0)
 }
 
-func (m *mockPusher) NotifyPreCommit() error {
+func (m *mockPusher) NotifyPreCommit(_ context.Context) error {
 	args := m.Called()
 	return args.Error(0)
 }

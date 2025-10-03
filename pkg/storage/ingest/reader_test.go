@@ -3313,7 +3313,7 @@ type testPreCommitNotifier struct {
 	onNotify    func()
 }
 
-func (t *testPreCommitNotifier) NotifyPreCommit() error {
+func (t *testPreCommitNotifier) NotifyPreCommit(_ context.Context) error {
 	t.notifyCount.Inc()
 	if t.onNotify != nil {
 		t.onNotify()

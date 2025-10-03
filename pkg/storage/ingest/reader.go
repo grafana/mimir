@@ -1010,7 +1010,7 @@ func (r *partitionCommitter) commit(ctx context.Context, offset int64) (returnEr
 	startTime := time.Now()
 	r.commitRequestsTotal.Inc()
 
-	notifyErr := r.notifier.NotifyPreCommit()
+	notifyErr := r.notifier.NotifyPreCommit(ctx)
 
 	if notifyErr != nil {
 		level.Warn(r.logger).Log("msg", "pre-commit notification failed, continuing with commit", "err", notifyErr, "offset", offset)

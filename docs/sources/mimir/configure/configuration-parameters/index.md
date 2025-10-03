@@ -5594,10 +5594,15 @@ migration:
   # CLI flag: -ingest-storage.migration.ingest-storage-max-wait-time
   [ingest_storage_max_wait_time: <duration> | default = 0s]
 
-# (experimental) Experimental: Enable fsyncing of WAL and WBL before Kafka
-# offsets are committed.
+# (experimental) Enable fsyncing of WAL and WBL before Kafka offsets are
+# committed.
 # CLI flag: -ingest-storage.write-logs-fsync-before-kafka-commit-enabled
-[write_logs_fsync_before_kafka_commit_enabled: <boolean> | default = false]
+[write_logs_fsync_before_kafka_commit_enabled: <boolean> | default = true]
+
+# (experimental) Concurrency for fsyncing of WAL and WBL before Kafka offsets
+# are committed.
+# CLI flag: -ingest-storage.write-logs-fsync-before-kafka-commit-concurrency
+[write_logs_fsync_before_kafka_commit_concurrency: <int> | default = 8]
 ```
 
 ### blocks_storage

@@ -31,13 +31,13 @@ type Pusher interface {
 }
 
 type PreCommitNotifier interface {
-	NotifyPreCommit() error
+	NotifyPreCommit(ctx context.Context) error
 }
 
 type NoOpPreCommitNotifier struct {
 }
 
-func (n *NoOpPreCommitNotifier) NotifyPreCommit() error {
+func (n *NoOpPreCommitNotifier) NotifyPreCommit(_ context.Context) error {
 	return nil
 }
 
