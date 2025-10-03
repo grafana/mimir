@@ -58,6 +58,8 @@ func (j *Job[V]) ClearLease() {
 type JobTracker[V any] struct {
 	clock     clock.Clock
 	maxLeases int
+	jobType   string
+	metrics   *schedulerMetrics
 
 	mtx     *sync.Mutex
 	pending *list.List
@@ -65,10 +67,12 @@ type JobTracker[V any] struct {
 	allJobs map[string]*list.Element // all tracked jobs will be in this map, element is in one and only one of pending or active
 }
 
-func NewJobTracker[V any](maxLeases int) *JobTracker[V] {
+func NewJobTracker[V any](maxLeases int, jobType string, metrics *schedulerMetrics) *JobTracker[V] {
 	return &JobTracker[V]{
 		clock:     clock.New(),
 		maxLeases: maxLeases,
+		jobType:   jobType,
+		metrics:   metrics,
 		mtx:       &sync.Mutex{},
 		pending:   list.New(),
 		active:    list.New(),
@@ -98,6 +102,9 @@ func (jt *JobTracker[V]) Lease(canAccept func(string, V) bool) (id string, value
 	j := jt.pending.Remove(e).(*Job[V])
 	j.MarkLeased()
 	jt.allJobs[j.id] = jt.active.PushBack(j)
+
+	jt.metrics.pendingJobs.WithLabelValues(jt.jobType).Set(float64(jt.pending.Len()))
+	jt.metrics.activeJobs.WithLabelValues(jt.jobType).Set(float64(jt.active.Len()))
 
 	return j.id, j.value, j.epoch, jt.isPendingEmpty()
 }
@@ -133,9 +140,12 @@ func (jt *JobTracker[V]) remove(id string, epoch int64, checkEpoch bool) (remove
 	delete(jt.allJobs, id)
 	if j.IsLeased() {
 		jt.active.Remove(e)
+		jt.metrics.activeJobs.WithLabelValues(jt.jobType).Set(float64(jt.active.Len()))
 		return true, false
 	}
+
 	jt.pending.Remove(e)
+	jt.metrics.pendingJobs.WithLabelValues(jt.jobType).Set(float64(jt.pending.Len()))
 	return true, jt.isPendingEmpty()
 }
 
@@ -171,11 +181,13 @@ func (jt *JobTracker[V]) ExpireLeases(leaseDuration time.Duration) bool {
 // endLease removes a job from the active list and returns true if the job was returned to the queue or false otherwise
 func (jt *JobTracker[V]) endLease(e *list.Element, j *Job[V]) bool {
 	jt.active.Remove(e)
+	jt.metrics.activeJobs.WithLabelValues(jt.jobType).Set(float64(jt.pending.Len()))
 
 	// Can the job be returned to the queue?
 	if jt.maxLeases == InfiniteLeases || j.numLeases < jt.maxLeases {
 		j.ClearLease()
 		jt.allJobs[j.id] = jt.pending.PushFront(j)
+		jt.metrics.pendingJobs.WithLabelValues(jt.jobType).Set(float64(jt.pending.Len()))
 		return true
 	}
 
@@ -246,5 +258,6 @@ func (jt *JobTracker[V]) Offer(jobs []*Job[V], shouldReplace func(prev, new V) b
 		accepted += 1
 	}
 
+	jt.metrics.pendingJobs.WithLabelValues(jt.jobType).Set(float64(jt.pending.Len()))
 	return accepted, wasEmpty && accepted > 0
 }

@@ -30,6 +30,7 @@ type Rotator struct {
 	leaseDuration        time.Duration
 	leaseCheckInterval   time.Duration
 	maxLeases            int
+	metrics              *schedulerMetrics
 	rotationIndexCounter *atomic.Int32 // only increments, overflow is okay
 
 	mtx            *sync.RWMutex
@@ -42,12 +43,13 @@ type TenantRotationState struct {
 	rotationIndex int
 }
 
-func NewRotator(planTracker *JobTracker[struct{}], leaseDuration time.Duration, leaseCheckInterval time.Duration, maxLeases int) *Rotator {
+func NewRotator(planTracker *JobTracker[struct{}], leaseDuration time.Duration, leaseCheckInterval time.Duration, maxLeases int, metrics *schedulerMetrics) *Rotator {
 	r := &Rotator{
 		planTracker:          planTracker,
 		leaseDuration:        leaseDuration,
 		leaseCheckInterval:   leaseCheckInterval,
 		maxLeases:            maxLeases,
+		metrics:              metrics,
 		rotationIndexCounter: atomic.NewInt32(0),
 		mtx:                  &sync.RWMutex{},
 		tenantStateMap:       make(map[string]*TenantRotationState),
@@ -183,7 +185,7 @@ func (r *Rotator) OfferJobs(tenant string, jobs []*Job[*CompactionJob], shouldRe
 	tenantState, ok = r.tenantStateMap[tenant]
 	if !ok {
 		tenantState = &TenantRotationState{
-			NewJobTracker[*CompactionJob](r.maxLeases),
+			NewJobTracker[*CompactionJob](r.maxLeases, "compaction", r.metrics),
 			outsideRotation,
 		}
 	}
