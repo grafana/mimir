@@ -12,20 +12,18 @@ import (
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware/astmapper"
 )
 
-var InternalFunctionNames = map[string]struct{}{
-	// Internal functions are registered by the packages that implement them.
-}
-
 type blockInternalFunctionsMiddleware struct {
-	next   MetricsQueryHandler
-	logger log.Logger
+	next             MetricsQueryHandler
+	functionsToBlock FunctionNamesSet
+	logger           log.Logger
 }
 
-func newBlockInternalFunctionsMiddleware(logger log.Logger) MetricsQueryMiddleware {
+func newBlockInternalFunctionsMiddleware(functionsToBlock FunctionNamesSet, logger log.Logger) MetricsQueryMiddleware {
 	return MetricsQueryMiddlewareFunc(func(next MetricsQueryHandler) MetricsQueryHandler {
 		return &blockInternalFunctionsMiddleware{
-			next:   next,
-			logger: logger,
+			next:             next,
+			functionsToBlock: functionsToBlock,
+			logger:           logger,
 		}
 	})
 }
@@ -36,7 +34,7 @@ func (b *blockInternalFunctionsMiddleware) Do(ctx context.Context, request Metri
 		return nil, err
 	}
 
-	containsInternalFunction, err := astmapper.AnyNode(expr, isInternalFunctionCall)
+	containsInternalFunction, err := astmapper.AnyNode(expr, b.isInternalFunctionCall)
 	if err != nil {
 		return nil, err
 	}
@@ -48,13 +46,22 @@ func (b *blockInternalFunctionsMiddleware) Do(ctx context.Context, request Metri
 	return b.next.Do(ctx, request)
 }
 
-func isInternalFunctionCall(node parser.Node) (bool, error) {
+func (b *blockInternalFunctionsMiddleware) isInternalFunctionCall(node parser.Node) (bool, error) {
 	call, isCall := node.(*parser.Call)
 	if !isCall {
 		return false, nil
 	}
 
-	_, internalFunction := InternalFunctionNames[call.Func.Name]
+	return b.functionsToBlock.Contains(call.Func.Name), nil
+}
 
-	return internalFunction, nil
+type FunctionNamesSet map[string]struct{}
+
+func (s FunctionNamesSet) Add(name string) {
+	s[name] = struct{}{}
+}
+
+func (s FunctionNamesSet) Contains(name string) bool {
+	_, ok := s[name]
+	return ok
 }

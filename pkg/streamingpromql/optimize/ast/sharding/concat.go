@@ -11,7 +11,6 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 
-	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
@@ -20,7 +19,6 @@ import (
 
 func init() {
 	parser.Functions[ConcatFunction.Name] = ConcatFunction
-	querymiddleware.InternalFunctionNames[ConcatFunction.Name] = struct{}{}
 
 	if err := functions.RegisterFunction(functions.FUNCTION_SHARDING_CONCAT, ConcatFunction.Name, ConcatFunction.ReturnType, concatFactory); err != nil {
 		panic(err)

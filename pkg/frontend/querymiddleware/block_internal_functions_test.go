@@ -19,11 +19,8 @@ import (
 )
 
 func TestBlockInternalFunctionsMiddleware(t *testing.T) {
-	originalInternalFunctionNames := InternalFunctionNames
-	InternalFunctionNames = map[string]struct{}{
-		"sin": {},
-	}
-	t.Cleanup(func() { InternalFunctionNames = originalInternalFunctionNames })
+	blockedFunctions := FunctionNamesSet{}
+	blockedFunctions.Add("sin")
 
 	innerResponse := &PrometheusResponse{
 		Status: statusSuccess,
@@ -38,7 +35,7 @@ func TestBlockInternalFunctionsMiddleware(t *testing.T) {
 	}
 
 	inner := mockHandlerWith(innerResponse, nil)
-	middleware := newBlockInternalFunctionsMiddleware(log.NewNopLogger())
+	middleware := newBlockInternalFunctionsMiddleware(blockedFunctions, log.NewNopLogger())
 	handler := middleware.Wrap(inner)
 	ctx := context.Background()
 
