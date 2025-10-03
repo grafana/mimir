@@ -9,6 +9,7 @@ import (
 	"iter"
 	"os"
 	"path"
+	"sync/atomic"
 	"time"
 
 	"github.com/go-kit/log"
@@ -55,6 +56,8 @@ type BlockBuilder struct {
 	readerMetricsSource   swappableReaderMetricsSource
 	kpromMetrics          *kprom.Metrics
 	pusherConsumerMetrics *ingest.PusherConsumerMetrics
+
+	busy atomic.Bool
 }
 
 func New(
@@ -210,6 +213,9 @@ func (b *BlockBuilder) running(ctx context.Context) error {
 		}
 
 		// Once we've gotten a job, we attempt to complete it even if the context is cancelled.
+		// Mark that we're working on a job for readiness checks
+		b.busy.Store(true)
+
 		if err := b.consumeJob(graceCtx, key, spec); err != nil {
 			level.Error(b.logger).Log("msg", "failed to consume job", "job_id", key.Id, "epoch", key.Epoch, "err", err)
 
@@ -218,12 +224,17 @@ func (b *BlockBuilder) running(ctx context.Context) error {
 				panic("couldn't fail job")
 			}
 
+			// Mark as idle after job failure
+			b.busy.Store(false)
 			continue
 		}
 
 		if err := b.schedulerClient.CompleteJob(key); err != nil {
 			level.Error(b.logger).Log("msg", "failed to complete job", "job_id", key.Id, "epoch", key.Epoch, "err", err)
 		}
+
+		// Mark as idle after job completion
+		b.busy.Store(false)
 	}
 }
 
@@ -500,6 +511,17 @@ func (b *BlockBuilder) uploadBlocks(ctx context.Context, tenantID, dbDir string,
 		if err := boff.ErrCause(); err != nil {
 			return fmt.Errorf("upload block %s (tenant %s): %w", meta.ULID.String(), tenantID, err)
 		}
+	}
+	return nil
+}
+
+// CheckReady implements the readiness check for the BlockBuilder.
+// It returns an error (not ready) when the BlockBuilder is idle (not working on a job).
+// This allows Kubernetes to prioritize idle pods for scaling down.
+func (b *BlockBuilder) CheckReady(ctx context.Context) error {
+	// Check if we're currently working on a job
+	if busy := b.busy.Load(); !busy {
+		return fmt.Errorf("blockbuilder is idle (not working on a job)")
 	}
 	return nil
 }

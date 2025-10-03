@@ -1149,6 +1149,13 @@ func (t *Mimir) readyHandler(sm *services.Manager, shutdownRequested *atomic.Boo
 			}
 		}
 
+		if t.BlockBuilder != nil {
+			if err := t.BlockBuilder.CheckReady(r.Context()); err != nil {
+				http.Error(w, "BlockBuilder not ready: "+err.Error(), http.StatusServiceUnavailable)
+				return
+			}
+		}
+
 		util.WriteTextResponse(w, "ready")
 	}
 }
