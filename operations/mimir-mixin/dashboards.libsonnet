@@ -18,6 +18,9 @@
     (import 'dashboards/top-tenants.libsonnet') +
     (import 'dashboards/overview.libsonnet') +
 
+    (if $._config.deployment_type != 'kubernetes' || $._config.singleBinary == true || !$._config.rollout_operator_dashboard_enable then {} else
+       (import 'rollout-operator-mixin/dashboards/rollout-operator.libsonnet')) +
+
     (if !$._config.block_builder_enabled then {} else
        (import 'dashboards/block-builder.libsonnet')) +
 

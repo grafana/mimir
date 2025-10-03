@@ -4,27 +4,40 @@ import (
 	"encoding/json"
 
 	"github.com/grafana/alerting/definition"
+	"github.com/grafana/alerting/models"
 	"github.com/grafana/alerting/templates"
 )
 
+func PostableAPIReceiversToAPIReceivers(r []*definition.PostableApiReceiver) []*APIReceiver {
+	result := make([]*APIReceiver, 0, len(r))
+	for _, receiver := range r {
+		result = append(result, PostableAPIReceiverToAPIReceiver(receiver))
+	}
+	return result
+}
+
 func PostableAPIReceiverToAPIReceiver(r *definition.PostableApiReceiver) *APIReceiver {
-	integrations := GrafanaIntegrations{
-		Integrations: make([]*GrafanaIntegrationConfig, 0, len(r.GrafanaManagedReceivers)),
+	integrations := models.ReceiverConfig{
+		Integrations: make([]*models.IntegrationConfig, 0, len(r.GrafanaManagedReceivers)),
 	}
 	for _, p := range r.GrafanaManagedReceivers {
-		integrations.Integrations = append(integrations.Integrations, &GrafanaIntegrationConfig{
-			UID:                   p.UID,
-			Name:                  p.Name,
-			Type:                  p.Type,
-			DisableResolveMessage: p.DisableResolveMessage,
-			Settings:              json.RawMessage(p.Settings),
-			SecureSettings:        p.SecureSettings,
-		})
+		integrations.Integrations = append(integrations.Integrations, PostableGrafanaReceiverToIntegrationConfig(p))
 	}
 
 	return &APIReceiver{
-		ConfigReceiver:      r.Receiver,
-		GrafanaIntegrations: integrations,
+		ConfigReceiver: r.Receiver,
+		ReceiverConfig: integrations,
+	}
+}
+
+func PostableGrafanaReceiverToIntegrationConfig(r *definition.PostableGrafanaReceiver) *models.IntegrationConfig {
+	return &models.IntegrationConfig{
+		UID:                   r.UID,
+		Name:                  r.Name,
+		Type:                  r.Type,
+		DisableResolveMessage: r.DisableResolveMessage,
+		Settings:              json.RawMessage(r.Settings),
+		SecureSettings:        r.SecureSettings,
 	}
 }
 

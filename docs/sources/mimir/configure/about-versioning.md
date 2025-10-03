@@ -184,28 +184,28 @@ The following features are currently experimental:
     - `-ingester.read-circuit-breaker.request-timeout`
   - Reactive concurrency limiters
     - `-ingester.push-reactive-limiter.enabled`
-    - `-ingester.push-reactive-limiter.short-window-min-duration`
-    - `-ingester.push-reactive-limiter.short-window-max-duration`
-    - `-ingester.push-reactive-limiter.short-window-min-samples`
-    - `-ingester.push-reactive-limiter.long-window`
-    - `-ingester.push-reactive-limiter.sample-quantile`
-    - `-ingester.push-reactive-limiter.min-inflight-limit`
-    - `-ingester.push-reactive-limiter.max-inflight-limit`
-    - `-ingester.push-reactivereactive-limiter.initial-inflight-limit`
+    - `-ingester.push-reactive-limiter.min-limit`
+    - `-ingester.push-reactive-limiter.max-limit`
+    - `-ingester.push-reactive-limiter.initial-limit`
     - `-ingester.push-reactive-limiter.max-limit-factor`
+    - `-ingester.push-reactive-limiter.recent-window-min-duration`
+    - `-ingester.push-reactive-limiter.recent-window-max-duration`
+    - `-ingester.push-reactive-limiter.recent-window-min-samples`
+    - `-ingester.push-reactive-limiter.recent-quantile`
+    - `-ingester.push-reactive-limiter.baseline-window-age`
     - `-ingester.push-reactive-limiter.correlation-window`
     - `-ingester.push-reactive-limiter.initial-rejection-factor`
     - `-ingester.push-reactive-limiter.max-rejection-factor`
     - `-ingester.read-reactive-limiter.enabled`
-    - `-ingester.read-reactive-limiter.short-window-min-duration`
-    - `-ingester.read-reactive-limiter.short-window-max-duration`
-    - `-ingester.read-reactive-limiter.short-window-min-samples`
-    - `-ingester.read-reactive-limiter.long-window`
-    - `-ingester.read-reactive-limiter.sample-quantile`
-    - `-ingester.read-reactive-limiter.min-inflight-limit`
-    - `-ingester.read-reactive-limiter.max-inflight-limit`
-    - `-ingester.read-reactive-limiter.initial-inflight-limit`
+    - `-ingester.read-reactive-limiter.min-limit`
+    - `-ingester.read-reactive-limiter.max-limit`
+    - `-ingester.read-reactive-limiter.initial-limit`
     - `-ingester.read-reactive-limiter.max-limit-factor`
+    - `-ingester.read-reactive-limiter.recent-window-min-duration`
+    - `-ingester.read-reactive-limiter.recent-window-max-duration`
+    - `-ingester.read-reactive-limiter.recent-window-min-samples`
+    - `-ingester.read-reactive-limiter.recent-quantile`
+    - `-ingester.read-reactive-limiter.baseline-window-age`
     - `-ingester.read-reactive-limiter.correlation-window`
     - `-ingester.read-reactive-limiter.initial-rejection-factor`
     - `-ingester.read-reactive-limiter.max-rejection-factor`

@@ -192,7 +192,7 @@ Usage of ./cmd/mimir/mimir:
   -alertmanager.alertmanager-client.backoff-retries int
     	Number of times to backoff and retry before failing. (default 10)
   -alertmanager.alertmanager-client.cluster-validation.label string
-    	[experimental] Optionally define the cluster validation label.
+    	[experimental] Primary cluster validation label.
   -alertmanager.alertmanager-client.connect-backoff-base-delay duration
     	Initial backoff delay after first connection failure. Only relevant if ConnectTimeout > 0. (default 1s)
   -alertmanager.alertmanager-client.connect-backoff-max-delay duration
@@ -838,7 +838,7 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.tsdb.wal-segment-size-bytes int
     	TSDB WAL segments files max size (bytes). (default 134217728)
   -common.client-cluster-validation.label string
-    	[experimental] Optionally define the cluster validation label.
+    	[experimental] Primary cluster validation label.
   -common.storage.azure.account-key string
     	Azure storage account key. If unset, Azure managed identities will be used for authentication instead.
   -common.storage.azure.account-name string
@@ -1382,7 +1382,7 @@ Usage of ./cmd/mimir/mimir:
   -distributor.usage-tracker-client.grpc-client-config.backoff-retries int
     	Number of times to backoff and retry before failing. (default 10)
   -distributor.usage-tracker-client.grpc-client-config.cluster-validation.label string
-    	[experimental] Optionally define the cluster validation label.
+    	[experimental] Primary cluster validation label.
   -distributor.usage-tracker-client.grpc-client-config.connect-backoff-base-delay duration
     	Initial backoff delay after first connection failure. Only relevant if ConnectTimeout > 0. (default 1s)
   -distributor.usage-tracker-client.grpc-client-config.connect-backoff-max-delay duration
@@ -1536,7 +1536,7 @@ Usage of ./cmd/mimir/mimir:
   -ingester.client.backoff-retries int
     	Number of times to backoff and retry before failing. (default 10)
   -ingester.client.cluster-validation.label string
-    	[experimental] Optionally define the cluster validation label.
+    	[experimental] Primary cluster validation label.
   -ingester.client.connect-backoff-base-delay duration
     	Initial backoff delay after first connection failure. Only relevant if ConnectTimeout > 0. (default 1s)
   -ingester.client.connect-backoff-max-delay duration
@@ -1681,32 +1681,32 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] The maximum duration of an ingester's request before it triggers a timeout. This configuration is used for circuit breakers only, and its timeouts aren't reported as errors. (default 2s)
   -ingester.push-circuit-breaker.thresholding-period duration
     	[experimental] Moving window of time that the percentage of failed requests is computed over (default 1m0s)
+  -ingester.push-reactive-limiter.baseline-window-age uint
+    	[experimental] The average age of baseline samples aggregated recent samples are added to (default 10)
   -ingester.push-reactive-limiter.correlation-window uint
     	[experimental] How many recent limit and inflight time measurements are stored to detect whether increases in limits correlate with increases in inflight times (default 50)
   -ingester.push-reactive-limiter.enabled
-    	[experimental] Enable reactive limiting when making requests to ingesters
-  -ingester.push-reactive-limiter.initial-inflight-limit uint
+    	[experimental] Enable reactive limiting when making requests to a service
+  -ingester.push-reactive-limiter.initial-limit uint
     	[experimental] Initial inflight requests limit (default 20)
   -ingester.push-reactive-limiter.initial-rejection-factor float
     	[experimental] The number of allowed queued requests, as a multiple of current inflight requests, after which rejections start (default 2)
-  -ingester.push-reactive-limiter.long-window uint
-    	[experimental] Short-term window measurements that are stored in an exponentially weighted moving average window, representing the long-term baseline inflight time (default 60)
-  -ingester.push-reactive-limiter.max-inflight-limit uint
+  -ingester.push-reactive-limiter.max-limit uint
     	[experimental] Maximum inflight requests limit (default 200)
   -ingester.push-reactive-limiter.max-limit-factor float
-    	[experimental] The maximum limit as a multiple of current inflight requests (default 5)
+    	[experimental] The maximum inflight limit as a multiple of current inflight requests (default 5)
   -ingester.push-reactive-limiter.max-rejection-factor float
     	[experimental] The number of allowed queued requests, as a multiple of current inflight requests, after which all requests are rejected (default 3)
-  -ingester.push-reactive-limiter.min-inflight-limit uint
+  -ingester.push-reactive-limiter.min-limit uint
     	[experimental] Minimum inflight requests limit (default 2)
-  -ingester.push-reactive-limiter.sample-quantile float
-    	[experimental] The quantile of recorded response times to consider when adjusting the concurrency limit (default 0.9)
-  -ingester.push-reactive-limiter.short-window-max-duration duration
-    	[experimental] Maximum duration of the window that is used to determine the recent, short-term load on the system (default 30s)
-  -ingester.push-reactive-limiter.short-window-min-duration duration
-    	[experimental] Minimum duration of the window that is used to determine the recent, short-term load on the system (default 1s)
-  -ingester.push-reactive-limiter.short-window-min-samples uint
-    	[experimental] Minimum number of samples that must be recorded in the window (default 50)
+  -ingester.push-reactive-limiter.recent-quantile float
+    	[experimental] The quantile of recent recorded response times to consider when adjusting the concurrency limit (default 0.9)
+  -ingester.push-reactive-limiter.recent-window-max-duration duration
+    	[experimental] Maximum duration of the window that is used to collect recent response time samples (default 30s)
+  -ingester.push-reactive-limiter.recent-window-min-duration duration
+    	[experimental] Minimum duration of the window that is used to collect recent response time samples (default 1s)
+  -ingester.push-reactive-limiter.recent-window-min-samples uint
+    	[experimental] Minimum number of samples that must be recorded in the recent window before updating the limit (default 50)
   -ingester.rate-update-period duration
     	Period with which to update the per-tenant ingestion rates. (default 15s)
   -ingester.read-circuit-breaker.cooldown-period duration
@@ -1727,32 +1727,32 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] CPU utilization limit, as CPU cores, for CPU/memory utilization based read request limiting. Use 0 to disable it.
   -ingester.read-path-memory-utilization-limit uint
     	[experimental] Memory limit, in bytes, for CPU/memory utilization based read request limiting. Use 0 to disable it.
+  -ingester.read-reactive-limiter.baseline-window-age uint
+    	[experimental] The average age of baseline samples aggregated recent samples are added to (default 10)
   -ingester.read-reactive-limiter.correlation-window uint
     	[experimental] How many recent limit and inflight time measurements are stored to detect whether increases in limits correlate with increases in inflight times (default 50)
   -ingester.read-reactive-limiter.enabled
-    	[experimental] Enable reactive limiting when making requests to ingesters
-  -ingester.read-reactive-limiter.initial-inflight-limit uint
+    	[experimental] Enable reactive limiting when making requests to a service
+  -ingester.read-reactive-limiter.initial-limit uint
     	[experimental] Initial inflight requests limit (default 20)
   -ingester.read-reactive-limiter.initial-rejection-factor float
     	[experimental] The number of allowed queued requests, as a multiple of current inflight requests, after which rejections start (default 2)
-  -ingester.read-reactive-limiter.long-window uint
-    	[experimental] Short-term window measurements that are stored in an exponentially weighted moving average window, representing the long-term baseline inflight time (default 60)
-  -ingester.read-reactive-limiter.max-inflight-limit uint
+  -ingester.read-reactive-limiter.max-limit uint
     	[experimental] Maximum inflight requests limit (default 200)
   -ingester.read-reactive-limiter.max-limit-factor float
-    	[experimental] The maximum limit as a multiple of current inflight requests (default 5)
+    	[experimental] The maximum inflight limit as a multiple of current inflight requests (default 5)
   -ingester.read-reactive-limiter.max-rejection-factor float
     	[experimental] The number of allowed queued requests, as a multiple of current inflight requests, after which all requests are rejected (default 3)
-  -ingester.read-reactive-limiter.min-inflight-limit uint
+  -ingester.read-reactive-limiter.min-limit uint
     	[experimental] Minimum inflight requests limit (default 2)
-  -ingester.read-reactive-limiter.sample-quantile float
-    	[experimental] The quantile of recorded response times to consider when adjusting the concurrency limit (default 0.9)
-  -ingester.read-reactive-limiter.short-window-max-duration duration
-    	[experimental] Maximum duration of the window that is used to determine the recent, short-term load on the system (default 30s)
-  -ingester.read-reactive-limiter.short-window-min-duration duration
-    	[experimental] Minimum duration of the window that is used to determine the recent, short-term load on the system (default 1s)
-  -ingester.read-reactive-limiter.short-window-min-samples uint
-    	[experimental] Minimum number of samples that must be recorded in the window (default 50)
+  -ingester.read-reactive-limiter.recent-quantile float
+    	[experimental] The quantile of recent recorded response times to consider when adjusting the concurrency limit (default 0.9)
+  -ingester.read-reactive-limiter.recent-window-max-duration duration
+    	[experimental] Maximum duration of the window that is used to collect recent response time samples (default 30s)
+  -ingester.read-reactive-limiter.recent-window-min-duration duration
+    	[experimental] Minimum duration of the window that is used to collect recent response time samples (default 1s)
+  -ingester.read-reactive-limiter.recent-window-min-samples uint
+    	[experimental] Minimum number of samples that must be recorded in the recent window before updating the limit (default 50)
   -ingester.rejection-prioritizer.calibration-interval duration
     	[experimental] The interval at which the rejection threshold is calibrated (default 1s)
   -ingester.ring.consul.acl-token string
@@ -2058,7 +2058,7 @@ Usage of ./cmd/mimir/mimir:
   -querier.frontend-client.backoff-retries int
     	Number of times to backoff and retry before failing. (default 10)
   -querier.frontend-client.cluster-validation.label string
-    	[experimental] Optionally define the cluster validation label.
+    	[experimental] Primary cluster validation label.
   -querier.frontend-client.connect-backoff-base-delay duration
     	Initial backoff delay after first connection failure. Only relevant if ConnectTimeout > 0. (default 1s)
   -querier.frontend-client.connect-backoff-max-delay duration
@@ -2160,7 +2160,7 @@ Usage of ./cmd/mimir/mimir:
   -querier.scheduler-client.backoff-retries int
     	Number of times to backoff and retry before failing. (default 10)
   -querier.scheduler-client.cluster-validation.label string
-    	[experimental] Optionally define the cluster validation label.
+    	[experimental] Primary cluster validation label.
   -querier.scheduler-client.connect-backoff-base-delay duration
     	Initial backoff delay after first connection failure. Only relevant if ConnectTimeout > 0. (default 1s)
   -querier.scheduler-client.connect-backoff-max-delay duration
@@ -2208,7 +2208,7 @@ Usage of ./cmd/mimir/mimir:
   -querier.store-gateway-client.backoff-retries int
     	Number of times to backoff and retry before failing. (default 10)
   -querier.store-gateway-client.cluster-validation.label string
-    	[experimental] Optionally define the cluster validation label.
+    	[experimental] Primary cluster validation label.
   -querier.store-gateway-client.connect-backoff-base-delay duration
     	Initial backoff delay after first connection failure. Only relevant if ConnectTimeout > 0. (default 1s)
   -querier.store-gateway-client.connect-backoff-max-delay duration
@@ -2264,7 +2264,7 @@ Usage of ./cmd/mimir/mimir:
   -query-frontend.cache-unaligned-requests
     	Cache requests that are not step-aligned.
   -query-frontend.client-cluster-validation.label string
-    	[experimental] Optionally define the cluster validation label.
+    	[experimental] Primary cluster validation label.
   -query-frontend.enable-query-engine-fallback
     	[experimental] If set to true and the Mimir query engine is in use, fall back to using the Prometheus query engine for any queries not supported by the Mimir query engine. (default true)
   -query-frontend.enable-remote-execution
@@ -2282,7 +2282,7 @@ Usage of ./cmd/mimir/mimir:
   -query-frontend.grpc-client-config.backoff-retries int
     	Number of times to backoff and retry before failing. (default 10)
   -query-frontend.grpc-client-config.cluster-validation.label string
-    	[experimental] Optionally define the cluster validation label.
+    	[experimental] Primary cluster validation label.
   -query-frontend.grpc-client-config.connect-backoff-base-delay duration
     	Initial backoff delay after first connection failure. Only relevant if ConnectTimeout > 0. (default 1s)
   -query-frontend.grpc-client-config.connect-backoff-max-delay duration
@@ -2446,7 +2446,7 @@ Usage of ./cmd/mimir/mimir:
   -query-scheduler.grpc-client-config.backoff-retries int
     	Number of times to backoff and retry before failing. (default 10)
   -query-scheduler.grpc-client-config.cluster-validation.label string
-    	[experimental] Optionally define the cluster validation label.
+    	[experimental] Primary cluster validation label.
   -query-scheduler.grpc-client-config.connect-backoff-base-delay duration
     	Initial backoff delay after first connection failure. Only relevant if ConnectTimeout > 0. (default 1s)
   -query-scheduler.grpc-client-config.connect-backoff-max-delay duration
@@ -2826,7 +2826,7 @@ Usage of ./cmd/mimir/mimir:
   -ruler.client.backoff-retries int
     	Number of times to backoff and retry before failing. (default 10)
   -ruler.client.cluster-validation.label string
-    	[experimental] Optionally define the cluster validation label.
+    	[experimental] Primary cluster validation label.
   -ruler.client.connect-backoff-base-delay duration
     	Initial backoff delay after first connection failure. Only relevant if ConnectTimeout > 0. (default 1s)
   -ruler.client.connect-backoff-max-delay duration
@@ -2922,7 +2922,7 @@ Usage of ./cmd/mimir/mimir:
   -ruler.query-frontend.grpc-client-config.backoff-retries int
     	Number of times to backoff and retry before failing. (default 10)
   -ruler.query-frontend.grpc-client-config.cluster-validation.label string
-    	[experimental] Optionally define the cluster validation label.
+    	[experimental] Primary cluster validation label.
   -ruler.query-frontend.grpc-client-config.connect-backoff-base-delay duration
     	Initial backoff delay after first connection failure. Only relevant if ConnectTimeout > 0. (default 1s)
   -ruler.query-frontend.grpc-client-config.connect-backoff-max-delay duration
@@ -3055,6 +3055,8 @@ Usage of ./cmd/mimir/mimir:
     	Comma separated list of yaml files with the configuration that can be updated at runtime. Runtime config files will be merged from left to right.
   -runtime-config.reload-period duration
     	How often to check runtime config files. (default 10s)
+  -server.cluster-validation.additional-labels comma-separated-list-of-strings
+    	[experimental] Comma-separated list of additional cluster validation labels that the server will accept from incoming requests.
   -server.cluster-validation.grpc.enabled
     	[experimental] When enabled, cluster label validation is executed: configured cluster validation label is compared with the cluster validation label received through the requests.
   -server.cluster-validation.grpc.soft-validation
@@ -3068,7 +3070,7 @@ Usage of ./cmd/mimir/mimir:
   -server.cluster-validation.http.soft-validation
     	[experimental] When enabled, soft cluster label validation is executed. Can be enabled only together with server.cluster-validation.http.enabled
   -server.cluster-validation.label string
-    	[experimental] Optionally define the cluster validation label.
+    	[experimental] Primary cluster validation label.
   -server.graceful-shutdown-timeout duration
     	Timeout for graceful shutdowns (default 30s)
   -server.grpc-collect-max-streams-by-conn

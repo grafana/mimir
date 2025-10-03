@@ -125,20 +125,10 @@ type PlanningObserver interface {
 	OnAllPlanningStagesComplete(finalPlan *planning.QueryPlan) error
 }
 
-func (p *QueryPlanner) NewQueryPlan(ctx context.Context, qs string, timeRange types.QueryTimeRange, observer PlanningObserver) (*planning.QueryPlan, error) {
-	spanLogger, ctx := spanlogger.New(ctx, p.logger, tracer, "QueryPlanner.NewQueryPlan")
-	defer spanLogger.Finish()
-	spanLogger.SetTag("query", qs)
-
-	queryID, err := p.activeQueryTracker.InsertWithDetails(ctx, qs, "planning", timeRange)
-	if err != nil {
-		return nil, err
-	}
-
-	defer p.activeQueryTracker.Delete(queryID)
-
-	spanLogger.DebugLog("msg", "starting planning", "expression", qs)
-
+// ParseAndApplyASTOptimizationPasses runs the AST optimization passes on the input string and outputs
+// an expression and any error encountered. This is separated into its own method to allow testing of
+// AST optimization passes.
+func (p *QueryPlanner) ParseAndApplyASTOptimizationPasses(ctx context.Context, qs string, timeRange types.QueryTimeRange, observer PlanningObserver) (parser.Expr, error) {
 	expr, err := p.runASTStage("Parsing", observer, func() (parser.Expr, error) { return parser.ParseExpr(qs) })
 	if err != nil {
 		return nil, err
@@ -174,6 +164,28 @@ func (p *QueryPlanner) NewQueryPlan(ctx context.Context, qs string, timeRange ty
 	}
 
 	if err := observer.OnAllASTStagesComplete(expr); err != nil {
+		return nil, err
+	}
+
+	return expr, nil
+}
+
+func (p *QueryPlanner) NewQueryPlan(ctx context.Context, qs string, timeRange types.QueryTimeRange, observer PlanningObserver) (*planning.QueryPlan, error) {
+	spanLogger, ctx := spanlogger.New(ctx, p.logger, tracer, "QueryPlanner.NewQueryPlan")
+	defer spanLogger.Finish()
+	spanLogger.SetTag("query", qs)
+
+	queryID, err := p.activeQueryTracker.InsertWithDetails(ctx, qs, "planning", timeRange)
+	if err != nil {
+		return nil, err
+	}
+
+	defer p.activeQueryTracker.Delete(queryID)
+
+	spanLogger.DebugLog("msg", "starting planning", "expression", qs)
+
+	expr, err := p.ParseAndApplyASTOptimizationPasses(ctx, qs, timeRange, observer)
+	if err != nil {
 		return nil, err
 	}
 

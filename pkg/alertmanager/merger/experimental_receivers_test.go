@@ -38,33 +38,33 @@ func TestExperimentalReceivers(t *testing.T) {
 func TestMergeReceivers(t *testing.T) {
 	cases := []struct {
 		name string
-		in   []alertingmodels.Receiver
+		in   []alertingmodels.ReceiverStatus
 		err  error
-		out  []alertingmodels.Receiver
+		out  []alertingmodels.ReceiverStatus
 	}{
 		{
 			name: "no receivers, should return an empty list",
-			in:   []alertingmodels.Receiver{},
-			out:  []alertingmodels.Receiver{},
+			in:   []alertingmodels.ReceiverStatus{},
+			out:  []alertingmodels.ReceiverStatus{},
 		},
 		{
 			name: "one receiver, should return the receiver",
-			in: []alertingmodels.Receiver{
+			in: []alertingmodels.ReceiverStatus{
 				{
 					Name:   "recv-a",
 					Active: true,
-					Integrations: []alertingmodels.Integration{
+					Integrations: []alertingmodels.IntegrationStatus{
 						{
 							Name: "inte-a",
 						},
 					},
 				},
 			},
-			out: []alertingmodels.Receiver{
+			out: []alertingmodels.ReceiverStatus{
 				{
 					Name:   "recv-a",
 					Active: true,
-					Integrations: []alertingmodels.Integration{
+					Integrations: []alertingmodels.IntegrationStatus{
 						{
 							Name: "inte-a",
 						},
@@ -74,11 +74,11 @@ func TestMergeReceivers(t *testing.T) {
 		},
 		{
 			name: "two receivers with different names, should return two receivers",
-			in: []alertingmodels.Receiver{
+			in: []alertingmodels.ReceiverStatus{
 				{
 					Name:   "recv-a",
 					Active: true,
-					Integrations: []alertingmodels.Integration{
+					Integrations: []alertingmodels.IntegrationStatus{
 						{
 							Name: "inte-a",
 						},
@@ -87,18 +87,18 @@ func TestMergeReceivers(t *testing.T) {
 				{
 					Name:   "recv-b",
 					Active: true,
-					Integrations: []alertingmodels.Integration{
+					Integrations: []alertingmodels.IntegrationStatus{
 						{
 							Name: "inte-a",
 						},
 					},
 				},
 			},
-			out: []alertingmodels.Receiver{
+			out: []alertingmodels.ReceiverStatus{
 				{
 					Name:   "recv-a",
 					Active: true,
-					Integrations: []alertingmodels.Integration{
+					Integrations: []alertingmodels.IntegrationStatus{
 						{
 							Name: "inte-a",
 						},
@@ -107,7 +107,7 @@ func TestMergeReceivers(t *testing.T) {
 				{
 					Name:   "recv-b",
 					Active: true,
-					Integrations: []alertingmodels.Integration{
+					Integrations: []alertingmodels.IntegrationStatus{
 						{
 							Name: "inte-a",
 						},
@@ -118,11 +118,11 @@ func TestMergeReceivers(t *testing.T) {
 		// Two replicas might briefly have different configurations, causing this case.
 		{
 			name: "two receivers with same names, with integrations with different names, should return one receiver with two integrations",
-			in: []alertingmodels.Receiver{
+			in: []alertingmodels.ReceiverStatus{
 				{
 					Name:   "recv-a",
 					Active: true,
-					Integrations: []alertingmodels.Integration{
+					Integrations: []alertingmodels.IntegrationStatus{
 						{
 							Name: "inte-a",
 						},
@@ -131,18 +131,18 @@ func TestMergeReceivers(t *testing.T) {
 				{
 					Name:   "recv-a",
 					Active: true,
-					Integrations: []alertingmodels.Integration{
+					Integrations: []alertingmodels.IntegrationStatus{
 						{
 							Name: "inte-b",
 						},
 					},
 				},
 			},
-			out: []alertingmodels.Receiver{
+			out: []alertingmodels.ReceiverStatus{
 				{
 					Name:   "recv-a",
 					Active: true,
-					Integrations: []alertingmodels.Integration{
+					Integrations: []alertingmodels.IntegrationStatus{
 						{
 							Name: "inte-a",
 						},
@@ -155,11 +155,11 @@ func TestMergeReceivers(t *testing.T) {
 		},
 		{
 			name: "two receivers with same names, with integrations with same names, should return one receiver with one integrations",
-			in: []alertingmodels.Receiver{
+			in: []alertingmodels.ReceiverStatus{
 				{
 					Name:   "recv-a",
 					Active: true,
-					Integrations: []alertingmodels.Integration{
+					Integrations: []alertingmodels.IntegrationStatus{
 						{
 							Name: "inte-a",
 						},
@@ -168,18 +168,18 @@ func TestMergeReceivers(t *testing.T) {
 				{
 					Name:   "recv-a",
 					Active: true,
-					Integrations: []alertingmodels.Integration{
+					Integrations: []alertingmodels.IntegrationStatus{
 						{
 							Name: "inte-a",
 						},
 					},
 				},
 			},
-			out: []alertingmodels.Receiver{
+			out: []alertingmodels.ReceiverStatus{
 				{
 					Name:   "recv-a",
 					Active: true,
-					Integrations: []alertingmodels.Integration{
+					Integrations: []alertingmodels.IntegrationStatus{
 						{
 							Name: "inte-a",
 						},
@@ -201,18 +201,18 @@ func TestMergeReceivers(t *testing.T) {
 func TestMergeIntegrations(t *testing.T) {
 	cases := []struct {
 		name string
-		in   []alertingmodels.Integration
+		in   []alertingmodels.IntegrationStatus
 		err  error
-		out  []alertingmodels.Integration
+		out  []alertingmodels.IntegrationStatus
 	}{
 		{
 			name: "no integrations, should return an empty list",
-			in:   []alertingmodels.Integration{},
-			out:  []alertingmodels.Integration{},
+			in:   []alertingmodels.IntegrationStatus{},
+			out:  []alertingmodels.IntegrationStatus{},
 		},
 		{
 			name: "one integration, should return the integration",
-			in: []alertingmodels.Integration{
+			in: []alertingmodels.IntegrationStatus{
 				{
 					Name:                      "int-a",
 					SendResolved:              true,
@@ -221,7 +221,7 @@ func TestMergeIntegrations(t *testing.T) {
 					LastNotifyAttemptError:    "",
 				},
 			},
-			out: []alertingmodels.Integration{
+			out: []alertingmodels.IntegrationStatus{
 				{
 					Name:                      "int-a",
 					SendResolved:              true,
@@ -233,7 +233,7 @@ func TestMergeIntegrations(t *testing.T) {
 		},
 		{
 			name: "two integrations with different names, should return two integrations in name order",
-			in: []alertingmodels.Integration{
+			in: []alertingmodels.IntegrationStatus{
 				{
 					Name:                      "int-b",
 					SendResolved:              true,
@@ -249,7 +249,7 @@ func TestMergeIntegrations(t *testing.T) {
 					LastNotifyAttemptError:    "err-a",
 				},
 			},
-			out: []alertingmodels.Integration{
+			out: []alertingmodels.IntegrationStatus{
 				{
 					Name:                      "int-a",
 					SendResolved:              true,
@@ -268,7 +268,7 @@ func TestMergeIntegrations(t *testing.T) {
 		},
 		{
 			name: "two integrations with same name, should return integration with newest notify attempt",
-			in: []alertingmodels.Integration{
+			in: []alertingmodels.IntegrationStatus{
 				{
 					Name:                      "int-a",
 					SendResolved:              true,
@@ -284,7 +284,7 @@ func TestMergeIntegrations(t *testing.T) {
 					LastNotifyAttemptError:    "err-1",
 				},
 			},
-			out: []alertingmodels.Integration{
+			out: []alertingmodels.IntegrationStatus{
 				{
 					Name:                      "int-a",
 					SendResolved:              true,
@@ -296,7 +296,7 @@ func TestMergeIntegrations(t *testing.T) {
 		},
 		{
 			name: "two integrations with same name, one without a notify attempt, should return integration with notify attempt",
-			in: []alertingmodels.Integration{
+			in: []alertingmodels.IntegrationStatus{
 				{
 					Name:                      "int-a",
 					SendResolved:              true,
@@ -312,7 +312,7 @@ func TestMergeIntegrations(t *testing.T) {
 					LastNotifyAttemptError:    "",
 				},
 			},
-			out: []alertingmodels.Integration{
+			out: []alertingmodels.IntegrationStatus{
 				{
 					Name:                      "int-a",
 					SendResolved:              true,
