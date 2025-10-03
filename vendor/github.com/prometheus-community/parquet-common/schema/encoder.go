@@ -92,17 +92,22 @@ func (e *PrometheusParquetChunksEncoder) Encode(it chunks.Iterator) ([][]byte, e
 					return nil, fmt.Errorf("found value type %v in float chunk", vt)
 				}
 				t, v := sampleIt.At()
-
 				chkIdx := e.schema.DataColumIdx(t)
+				println(t, chkIdx)
+
 				reEncodedChunksAppenders[chkIdx][chunkenc.EncXOR].Append(t, v)
 				chunk := reEncodedChunks[chkIdx][chunkenc.EncXOR][len(reEncodedChunks[chkIdx][chunkenc.EncXOR])-1]
 				if t < chunk.MinTime {
+					println("encountered timestamp lower than mintime")
 					chunk.MinTime = t
 				}
 				if t > chunk.MaxTime {
+					println("encountered timestamp higher than maxtime")
 					chunk.MaxTime = t
 				}
+				println("append to ", chkIdx, chunk.Chunk.NumSamples())
 				if chunk.Chunk.NumSamples() >= e.samplesPerChunk {
+					println("cutting new chunk")
 					nChunk, app, err := e.cutNewChunk(chunkenc.EncXOR)
 					if err != nil {
 						return nil, err
@@ -202,6 +207,7 @@ func (e *PrometheusParquetChunksEncoder) Encode(it chunks.Iterator) ([][]byte, e
 	for i, chunks := range reEncodedChunks {
 		for _, enc := range []chunkenc.Encoding{chunkenc.EncXOR, chunkenc.EncHistogram, chunkenc.EncFloatHistogram} {
 			for _, chk := range chunks[enc] {
+				println("chunk", i, enc, chk.Chunk.NumSamples(), len(chk.Chunk.Bytes()))
 				if chk.Chunk.NumSamples() == 0 {
 					continue
 				}
