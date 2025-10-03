@@ -2847,6 +2847,7 @@ func TestBlocksStoreQuerier_SelectSortedShouldHonorQueryStoreAfter(t *testing.T)
 
 			const tenantID = "user-1"
 			ctx = user.InjectOrgID(ctx, tenantID)
+			ctx = limiter.ContextWithNewUnlimitedMemoryConsumptionTracker(ctx)
 			q := &blocksStoreQuerier{
 				minT:               testData.queryMinT,
 				maxT:               testData.queryMaxT,
