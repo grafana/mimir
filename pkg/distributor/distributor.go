@@ -212,107 +212,102 @@ type Distributor struct {
 	sleep func(time.Duration)
 	now   func() time.Time
 
-	latency *artificialLatencyWithErrors
+	latency  *artificialLatencyWithErrors
+	cpuUsage *artificialCPUUsage
 }
 
-type artificialLatencyWithErrors struct {
-	minDelay time.Duration
-	maxDelay time.Duration
+type delayCalculator struct {
+	min time.Duration
+	max time.Duration
 
 	startTime     time.Time
 	totalDuration time.Duration
-
-	workers           int
-	slowDownFrequency time.Duration
-	lastSlowDown      time.Time
-
-	errorFrequency time.Duration
-	lastError      time.Time
 }
 
-func (a *artificialLatencyWithErrors) isActive() bool {
-	if a == nil {
+func (dc *delayCalculator) isActive() bool {
+	if dc == nil {
 		return false
 	}
-	if time.Since(a.startTime) >= a.totalDuration {
+	if time.Since(dc.startTime) >= dc.totalDuration {
 		return false
 	}
-	if a.minDelay >= a.maxDelay {
+	if dc.min >= dc.max {
 		return false
 	}
 	return true
 }
 
-func (a *artificialLatencyWithErrors) shouldReturnError(delay time.Duration) bool {
-	if a.errorFrequency == 0 {
-		return true
+func (dc *delayCalculator) calculateDelay() time.Duration {
+	if dc == nil || !dc.isActive() {
+		return 0
 	}
-	if a.lastError.IsZero() {
-		return true
-	}
-	nextError := a.lastError.Add(a.errorFrequency)
-	if time.Now().Add(delay).After(nextError) {
-		return true
-	}
-	return false
+
+	// Pick random duration from [min, max].
+	return dc.min + time.Duration(rand.Int63n(int64(dc.max-dc.min)))
 }
 
-func (a *artificialLatencyWithErrors) shouldSlowDown(delay time.Duration) bool {
-	if a.workers == 0 {
-		return false
-	}
-	if a.slowDownFrequency == 0 {
-		return true
-	}
-	if a.lastSlowDown.IsZero() {
-		return true
-	}
-	nextSlowDown := a.lastSlowDown.Add(a.errorFrequency)
-	if time.Now().Add(delay).After(nextSlowDown) {
-		return true
-	}
-	return false
+type artificialCPUUsage struct {
+	delayCalculator
+
+	workers   int
+	frequency time.Duration
 }
 
-func (a *artificialLatencyWithErrors) slowDown(delay time.Duration) {
-	end := time.Now().Add(delay)
+func (a *artificialCPUUsage) expensiveWork(duration time.Duration) {
+	end := time.Now().Add(duration)
 	var wg sync.WaitGroup
 	wg.Add(a.workers)
 
 	for i := 0; i < a.workers; i++ {
 		go func() {
 			defer wg.Done()
-			x := 0
 			for time.Now().Before(end) {
-				// Do some meaningless work
-				x++
-				if x > 1_000_000 {
-					x = 0
-				}
+				_ = rand.Int63() * rand.Int63()
 			}
 		}()
 	}
 	wg.Wait()
 }
 
+func (a *artificialCPUUsage) run(logger log.Logger) {
+	if !a.isActive() {
+		return
+	}
+	ticker := time.NewTicker(a.frequency)
+	for {
+		select {
+		case <-ticker.C:
+			if !a.isActive() {
+				level.Info(logger).Log("msg", "artificialCPUUsage has been completed", "total_duration", time.Since(a.startTime).String())
+				return
+			}
+			duration := a.calculateDelay()
+			a.expensiveWork(duration)
+			level.Info(logger).Log("msg", "artificialCPUUsage executed an expensive operation", "start_time", a.startTime.String(), "current_time", time.Now().String(), "last_duration", duration.String())
+		}
+	}
+}
+
+type artificialLatencyWithErrors struct {
+	delayCalculator
+
+	errorFrequency time.Duration
+	lastError      time.Time
+}
+
 var errArtificial = fmt.Errorf("artificial error")
 
-func (a *artificialLatencyWithErrors) sleep(logger log.Logger, expectedErr error, shouldSlowDown bool) error {
+func (a *artificialLatencyWithErrors) run(logger log.Logger, expectedErr error) error {
 	if a == nil || !a.isActive() {
 		return nil
 	}
 
-	// Pick random delay in [minDelay, maxDelay].
-	delay := a.minDelay + time.Duration(rand.Int63n(int64(a.maxDelay-a.minDelay)))
+	delay := a.calculateDelay()
 	defer func() {
-		level.Debug(logger).Log("msg", "artificial latency with error", "min_next_error_delay", a.minDelay, "max_next_error_delay", a.maxDelay, "random_delay", delay, "total_duration", a.totalDuration, "start_time", a.startTime, "should_slowdown", fmt.Sprintf("%v", shouldSlowDown), "err", expectedErr)
+		level.Debug(logger).Log("msg", "artificial latency with error", "min_delay", a.min, "max_delay", a.max, "current_delay", delay, "total_duration", a.totalDuration, "start_time", a.startTime, "err", expectedErr)
 	}()
 
-	if shouldSlowDown {
-		a.slowDown(delay)
-	} else {
-		time.Sleep(delay)
-	}
+	time.Sleep(delay)
 	return expectedErr
 }
 
@@ -2003,23 +1998,16 @@ func (d *Distributor) addArtificialLatencyWithError() error {
 	if d.latency == nil {
 		return nil
 	}
-	if time.Since(d.latency.startTime) >= d.latency.totalDuration {
+	if !d.latency.isActive() {
 		d.latency = nil
 		return nil
 	}
-	var (
-		expectedErr    error
-		shouldSlowDown bool
-	)
+	var expectedErr error
 	if d.latency.lastError.IsZero() || time.Since(d.latency.lastError) >= d.latency.errorFrequency {
 		d.latency.lastError = time.Now()
 		expectedErr = errArtificial
 	}
-	if d.latency.lastSlowDown.IsZero() || time.Since(d.latency.lastSlowDown) >= d.latency.slowDownFrequency {
-		d.latency.lastSlowDown = time.Now()
-		shouldSlowDown = true
-	}
-	return d.latency.sleep(d.log, expectedErr, shouldSlowDown)
+	return d.latency.run(d.log, expectedErr)
 }
 
 func (d *Distributor) StartArtificialLatencyHandler(w http.ResponseWriter, r *http.Request) {
@@ -2051,22 +2039,21 @@ func (d *Distributor) StartArtificialLatencyHandler(w http.ResponseWriter, r *ht
 	level.Info(d.log).Log("msg", "artificial latency parameters retrieved", "latencyMin", latencyMin, "latencyMax", latencyMax, "latencyDuration", latencyDuration, "latencyWorkers", latencyWorkers, "latencySlowDownFrequency", latencySlowDownFrequency, "latencyErrorFrequency", latencyErrorFrequency)
 
 	d.latency = &artificialLatencyWithErrors{
-		minDelay: latencyMin,
-		maxDelay: latencyMax,
+		delayCalculator: delayCalculator{
+			min: latencyMin,
+			max: latencyMax,
 
-		startTime:     time.Now(),
-		totalDuration: latencyDuration,
-
-		workers:           latencyWorkers,
-		slowDownFrequency: latencySlowDownFrequency,
-
+			startTime:     time.Now(),
+			totalDuration: latencyDuration,
+		},
 		errorFrequency: latencyErrorFrequency,
+		lastError:      time.Time{},
 	}
 
 	level.Info(d.log).Log("msg", "artificial latency with error setup completed")
 
 	// Build response
-	response := fmt.Sprintf("Artificial latency with error with parameters min=%v, max=%v, duration=%v, workers=%d, slow down frequency=%v, error frequency=%v", latencyMin, latencyMax, latencyDuration, latencyWorkers, latencySlowDownFrequency, latencyErrorFrequency)
+	response := fmt.Sprintf("Artificial latency with error with parameters min=%v, max=%v, duration=%v, error frequency=%v", latencyMin, latencyMax, latencyDuration, latencyErrorFrequency)
 	util.WriteHTMLResponse(w, response)
 }
 
@@ -2077,6 +2064,49 @@ func (d *Distributor) StopArtificialLatencyHandler(w http.ResponseWriter, r *htt
 	level.Info(d.log).Log("msg", "artificial latency stopped")
 	// Build response
 	response := "Artificial latency has been stopped"
+	util.WriteHTMLResponse(w, response)
+}
+
+func (d *Distributor) StartArtificialCPUUsageHandler(w http.ResponseWriter, r *http.Request) {
+	level.Info(d.log).Log("msg", "received a request to start artificial CPU usage")
+	vars := mux.Vars(r)
+
+	// Extract path parameters
+	cpuUsageMinStr := vars["cpuUsageMin"]
+	cpuUsageMaxStr := vars["cpuUsageMax"]
+	cpuUsageDurationStr := vars["cpuUsageDuration"]
+	cpuUsageWorkersStr := vars["cpuUsageWorkers"]
+	cpuUsageFrequencyStr := vars["cpuUsageFrequency"]
+
+	// Defaults
+	cpuUsageMin, _ := time.ParseDuration(defaultIfEmpty(cpuUsageMinStr, "100ms"))
+	cpuUsageMax, _ := time.ParseDuration(defaultIfEmpty(cpuUsageMaxStr, "500ms"))
+	cpuUsageDuration, _ := time.ParseDuration(defaultIfEmpty(cpuUsageDurationStr, "300s"))
+	cpuUsageWorkers, _ := strconv.Atoi(defaultIfEmpty(cpuUsageWorkersStr, "1"))
+	cpuUsageFrequency, err := time.ParseDuration(cpuUsageFrequencyStr)
+	if err != nil {
+		cpuUsageFrequency = time.Duration(1<<63 - 1)
+	}
+
+	level.Info(d.log).Log("msg", "artificial CPU usage parameters retrieved", "cpuUsageMin", cpuUsageMin, "cpuUsageMax", cpuUsageMax, "cpuUsageDuration", cpuUsageDuration, "cpuUsageWorkers", cpuUsageWorkers, "cpuUsageFrequency", cpuUsageFrequency)
+
+	cpuUsage := &artificialCPUUsage{
+		delayCalculator: delayCalculator{
+			min: cpuUsageMin,
+			max: cpuUsageMax,
+
+			startTime:     time.Now(),
+			totalDuration: cpuUsageDuration,
+		},
+		workers:   cpuUsageWorkers,
+		frequency: cpuUsageFrequency,
+	}
+
+	level.Info(d.log).Log("msg", "starting artificial CPU usage")
+	cpuUsage.run(d.log)
+
+	// Build response
+	response := fmt.Sprintf("Artificial CPU usagewith parameters min=%v, max=%v, duration=%v, workers-%d, frequency=%v executed", cpuUsageMin, cpuUsageMax, cpuUsageDuration, cpuUsageWorkers, cpuUsageFrequency)
 	util.WriteHTMLResponse(w, response)
 }
 
