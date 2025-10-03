@@ -298,15 +298,18 @@ func NewQuerierHandler(
 	cardinalityQueryStats := usagestats.NewRequestsMiddleware("querier_cardinality_query_requests")
 	formattingQueryStats := usagestats.NewRequestsMiddleware("querier_formatting_requests")
 
+	// Add memory consumption tracker in middleware for endpoints like /read and /series that need memory consumption tracker to be available in context.
+	memoryTrackerMiddleware := limiter.MemoryTrackerMiddleware{}
+
 	// TODO(gotjosh): This custom handler is temporary until we're able to vendor the changes in:
 	// https://github.com/prometheus/prometheus/pull/7125/files
-	router.Path(path.Join(promPrefix, "/read")).Methods("POST").Handler(remoteReadStats.Wrap(querier.RemoteReadHandler(queryable, logger, querierCfg)))
+	router.Path(path.Join(promPrefix, "/read")).Methods("POST").Handler(remoteReadStats.Wrap(memoryTrackerMiddleware.Wrap(querier.RemoteReadHandler(queryable, logger, querierCfg))))
 	router.Path(path.Join(promPrefix, "/query")).Methods("GET", "POST").Handler(instantQueryStats.Wrap(promRouter))
 	router.Path(path.Join(promPrefix, "/query_range")).Methods("GET", "POST").Handler(rangeQueryStats.Wrap(promRouter))
 	router.Path(path.Join(promPrefix, "/query_exemplars")).Methods("GET", "POST").Handler(exemplarsQueryStats.Wrap(promRouter))
 	router.Path(path.Join(promPrefix, "/labels")).Methods("GET", "POST").Handler(labelsQueryStats.Wrap(promRouter))
 	router.Path(path.Join(promPrefix, "/label/{name}/values")).Methods("GET").Handler(labelsQueryStats.Wrap(promRouter))
-	router.Path(path.Join(promPrefix, "/series")).Methods("GET", "POST", "DELETE").Handler(limiter.MemoryTrackerMiddleware{}.Wrap(seriesQueryStats.Wrap(promRouter)))
+	router.Path(path.Join(promPrefix, "/series")).Methods("GET", "POST", "DELETE").Handler(seriesQueryStats.Wrap(memoryTrackerMiddleware.Wrap(promRouter)))
 	router.Path(path.Join(promPrefix, "/metadata")).Methods("GET").Handler(metadataQueryStats.Wrap(querier.NewMetadataHandler(metadataSupplier)))
 	router.Path(path.Join(promPrefix, "/cardinality/label_names")).Methods("GET", "POST").Handler(cardinalityQueryStats.Wrap(querier.LabelNamesCardinalityHandler(distributor, limits)))
 	router.Path(path.Join(promPrefix, "/cardinality/label_values")).Methods("GET", "POST").Handler(cardinalityQueryStats.Wrap(querier.LabelValuesCardinalityHandler(distributor, limits)))
