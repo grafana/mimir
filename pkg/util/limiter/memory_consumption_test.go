@@ -24,7 +24,7 @@ func TestMemoryConsumptionTrackerFromContext(t *testing.T) {
 		ctx := context.Background()
 		tracker, err := MemoryConsumptionTrackerFromContext(ctx)
 		require.Nil(t, tracker)
-		require.ErrorAs(t, err, &errNoMemoryConsumptionTrackerInContext)
+		require.ErrorIs(t, err, errNoMemoryConsumptionTrackerInContext)
 	})
 
 	t.Run("exists", func(t *testing.T) {
