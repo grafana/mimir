@@ -97,7 +97,7 @@ func TestBothEnginesReturnSameResultsForBenchmarkQueries(t *testing.T) {
 	cases := TestCases(metricSizes)
 
 	opts := streamingpromql.NewTestEngineOpts()
-	prometheusEngine := promql.NewEngine(opts.CommonOpts)
+	prometheusEngine := limiter.NewUnlimitedMemoryTrackerPromqlEngine(promql.NewEngine(opts.CommonOpts))
 	limitsProvider := streamingpromql.NewStaticQueryLimitsProvider(0)
 	queryMetrics := stats.NewQueryMetrics(nil)
 	planner, err := streamingpromql.NewQueryPlanner(opts)
@@ -112,7 +112,7 @@ func TestBothEnginesReturnSameResultsForBenchmarkQueries(t *testing.T) {
 			start := time.Unix(int64((NumIntervals-c.Steps)*intervalSeconds), 0)
 			end := time.Unix(int64(NumIntervals*intervalSeconds), 0)
 
-			prometheusResult, prometheusClose := c.Run(ctx, t, start, end, interval, limiter.NewUnlimitedMemoryTrackerPromqlEngine(prometheusEngine), q)
+			prometheusResult, prometheusClose := c.Run(ctx, t, start, end, interval, prometheusEngine, q)
 			mimirResult, mimirClose := c.Run(ctx, t, start, end, interval, mimirEngine, q)
 
 			testutils.RequireEqualResults(t, c.Expr, prometheusResult, mimirResult, false)
