@@ -7,18 +7,40 @@ import (
 	"time"
 
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/util/stats"
 )
 
 // UnlimitedMemoryTrackingQuery wraps promql.Query so that this can
 // pass an unlimited MemoryConsumptionTracker, specifically in the Exec call.
 type UnlimitedMemoryTrackingQuery struct {
-	promql.Query
+	inner promql.Query
 }
 
 func (u *UnlimitedMemoryTrackingQuery) Exec(ctx context.Context) *promql.Result {
 	ctx = ContextWithNewUnlimitedMemoryConsumptionTracker(ctx)
-	return u.Query.Exec(ctx)
+	return u.inner.Exec(ctx)
+}
+
+func (u *UnlimitedMemoryTrackingQuery) Close() {
+	u.inner.Close()
+}
+
+func (u *UnlimitedMemoryTrackingQuery) Statement() parser.Statement {
+	return u.inner.Statement()
+}
+
+func (u *UnlimitedMemoryTrackingQuery) Stats() *stats.Statistics {
+	return u.inner.Stats()
+}
+
+func (u *UnlimitedMemoryTrackingQuery) Cancel() {
+	u.inner.Cancel()
+}
+
+func (u *UnlimitedMemoryTrackingQuery) String() string {
+	return u.inner.String()
 }
 
 func NewUnlimitedMemoryTrackingQuery(query promql.Query) *UnlimitedMemoryTrackingQuery {
