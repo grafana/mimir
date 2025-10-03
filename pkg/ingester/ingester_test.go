@@ -12314,31 +12314,30 @@ func TestIngester_NotifyPreCommit(t *testing.T) {
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), ingester))
 	defer services.StopAndAwaitTerminated(context.Background(), ingester) //nolint:errcheck
 
-	// Push some data to create a TSDB
-	userID := "test"
-	ctx := user.InjectOrgID(context.Background(), userID)
-	req := &mimirpb.WriteRequest{
-		Source: mimirpb.API,
-		Timeseries: []mimirpb.PreallocTimeseries{
-			{
-				TimeSeries: &mimirpb.TimeSeries{
-					Labels: []mimirpb.LabelAdapter{
-						{Name: labels.MetricName, Value: "test_metric"},
-					},
-					Samples: []mimirpb.Sample{
-						{Value: 1, TimestampMs: time.Now().UnixMilli()},
-						{Value: 2, TimestampMs: time.Now().Add(time.Second).UnixMilli()},
-						{Value: 3, TimestampMs: time.Now().Add(2 * time.Second).UnixMilli()},
+	// Push some data to create some TSDBs
+	for _, u := range []string{"user1", "user2", "user3"} {
+		ctx := user.InjectOrgID(context.Background(), u)
+		req := &mimirpb.WriteRequest{
+			Source: mimirpb.API,
+			Timeseries: []mimirpb.PreallocTimeseries{
+				{
+					TimeSeries: &mimirpb.TimeSeries{
+						Labels: []mimirpb.LabelAdapter{
+							{Name: labels.MetricName, Value: "test_metric"},
+						},
+						Samples: []mimirpb.Sample{
+							{Value: 1, TimestampMs: time.Now().UnixMilli()},
+							{Value: 2, TimestampMs: time.Now().Add(time.Second).UnixMilli()},
+							{Value: 3, TimestampMs: time.Now().Add(2 * time.Second).UnixMilli()},
+						},
 					},
 				},
 			},
-		},
+		}
+
+		_, err = ingester.Push(ctx, req)
+		require.NoError(t, err)
 	}
-
-	//TODO: add more users
-
-	_, err = ingester.Push(ctx, req)
-	require.NoError(t, err)
 
 	getFsyncCount := func() uint64 {
 		metrics, err := reg.Gather()
@@ -12357,9 +12356,11 @@ func TestIngester_NotifyPreCommit(t *testing.T) {
 
 	fsyncCountBefore := getFsyncCount()
 
-	err = ingester.NotifyPreCommit(context.TODO())
+	err = ingester.NotifyPreCommit(context.Background())
 	require.NoError(t, err)
 
 	fsyncCountAfter := getFsyncCount()
-	assert.Greater(t, fsyncCountAfter, fsyncCountBefore)
+
+	// As there are three users, fsync should have been called at least three times
+	assert.GreaterOrEqual(t, fsyncCountAfter-fsyncCountBefore, uint64(3))
 }
