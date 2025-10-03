@@ -182,6 +182,17 @@ func tryDownloadSparseHeader(ctx context.Context, logger log.Logger, bkt objstor
 		level.Info(logger).Log("msg", "could not download sparse index-header from bucket; will reconstruct when the block is queried", "err", err)
 		return
 	}
+
+	dir := filepath.Dir(sparseHeaderPath)
+	if df, err := os.Open(dir); err != nil && os.IsNotExist(err) {
+		if err := os.MkdirAll(dir, os.ModePerm); err != nil {
+			level.Info(logger).Log("msg", "could not create directory for sparse index-header; will reconstruct when the block is queried", "err", err)
+			return
+		}
+	} else {
+		_ = df.Close()
+	}
+
 	err = atomicfs.CreateFile(sparseHeaderPath, bytes.NewReader(bucketSparseHeaderBytes))
 	if err != nil {
 		level.Info(logger).Log("msg", "could not store sparse index-header on disk; will reconstruct when the block is queried", "err", err)
