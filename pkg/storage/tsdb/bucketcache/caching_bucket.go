@@ -539,6 +539,7 @@ func (cb *CachingBucket) cachedGetRange(ctx context.Context, name string, keyGen
 
 		err := cb.fetchMissingSubranges(ctx, name, startRange, endRange, offsetKeys, hits, lastSubrangeOffset, lastSubrangeLength, cfgName, cfg)
 		if err != nil {
+			releaseSlabs = false
 			return nil, err
 		}
 	}
