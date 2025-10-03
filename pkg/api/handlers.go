@@ -20,6 +20,7 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/grafana/dskit/kv/memberlist"
 	"github.com/grafana/dskit/middleware"
+	"github.com/grafana/mimir/pkg/util/limiter"
 	"github.com/grafana/regexp"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -34,7 +35,6 @@ import (
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/usagestats"
 	"github.com/grafana/mimir/pkg/util"
-	"github.com/grafana/mimir/pkg/util/limiter"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/propagation"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -287,15 +287,6 @@ func NewQuerierHandler(
 	promRouter := route.New().WithPrefix(path.Join(promPrefix))
 	api.Register(promRouter)
 
-	// Helper function to wrap handlers with memory tracker middleware for API endpoints
-	// that access the queryable directly (like /series) without going through PromQL engine.
-	withMemoryTracker := func(handler http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			ctx := limiter.ContextWithNewUnlimitedMemoryConsumptionTracker(r.Context())
-			handler.ServeHTTP(w, r.WithContext(ctx))
-		})
-	}
-
 	// Track the requests count in the anonymous usage stats.
 	remoteReadStats := usagestats.NewRequestsMiddleware("querier_remote_read_requests")
 	instantQueryStats := usagestats.NewRequestsMiddleware("querier_instant_query_requests")
@@ -315,7 +306,7 @@ func NewQuerierHandler(
 	router.Path(path.Join(promPrefix, "/query_exemplars")).Methods("GET", "POST").Handler(exemplarsQueryStats.Wrap(promRouter))
 	router.Path(path.Join(promPrefix, "/labels")).Methods("GET", "POST").Handler(labelsQueryStats.Wrap(promRouter))
 	router.Path(path.Join(promPrefix, "/label/{name}/values")).Methods("GET").Handler(labelsQueryStats.Wrap(promRouter))
-	router.Path(path.Join(promPrefix, "/series")).Methods("GET", "POST", "DELETE").Handler(withMemoryTracker(seriesQueryStats.Wrap(promRouter)))
+	router.Path(path.Join(promPrefix, "/series")).Methods("GET", "POST", "DELETE").Handler(limiter.MemoryTrackerMiddleware{}.Wrap(seriesQueryStats.Wrap(promRouter)))
 	router.Path(path.Join(promPrefix, "/metadata")).Methods("GET").Handler(metadataQueryStats.Wrap(querier.NewMetadataHandler(metadataSupplier)))
 	router.Path(path.Join(promPrefix, "/cardinality/label_names")).Methods("GET", "POST").Handler(cardinalityQueryStats.Wrap(querier.LabelNamesCardinalityHandler(distributor, limits)))
 	router.Path(path.Join(promPrefix, "/cardinality/label_values")).Methods("GET", "POST").Handler(cardinalityQueryStats.Wrap(querier.LabelValuesCardinalityHandler(distributor, limits)))
