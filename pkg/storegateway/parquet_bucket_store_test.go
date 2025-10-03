@@ -5,6 +5,7 @@ package storegateway
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 	"testing"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/gate"
+	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/promslog"
@@ -309,6 +311,9 @@ func TestParquetBucketStores_RowLimits(t *testing.T) {
 		seriesSet, warnings, err := queryParquetSeries(t, stores, userID, metricName, 10, 100)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "would fetch too many rows")
+		status, ok := grpcutil.ErrorToStatus(err)
+		require.True(t, ok)
+		require.Equal(t, http.StatusUnprocessableEntity, int(status.Code()))
 		require.Empty(t, warnings)
 		require.Empty(t, seriesSet)
 	})

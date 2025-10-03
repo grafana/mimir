@@ -8,6 +8,7 @@ package storegateway
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"os"
 	"path"
 	"path/filepath"
@@ -18,6 +19,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/gogo/protobuf/types"
 	"github.com/grafana/dskit/gate"
+	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/multierror"
 	"github.com/grafana/dskit/runutil"
 	"github.com/grafana/dskit/services"
@@ -253,6 +255,13 @@ func (s *ParquetBucketStore) Series(req *storepb.SeriesRequest, srv storegateway
 	}
 	defer done()
 
+	defer func() {
+		// Limit errors should be mapped to StatusUnprocessableEntity, otherwise they are retried
+		if err != nil && search.IsResourceExhausted(err) {
+			err = httpgrpc.Error(http.StatusUnprocessableEntity, err.Error())
+		}
+	}()
+
 	var (
 		resHints = &hintspb.SeriesResponseHints{}
 	)
@@ -400,7 +409,9 @@ func (s *ParquetBucketStore) LabelNames(ctx context.Context, req *storepb.LabelN
 		if errors.Is(err, context.Canceled) {
 			return nil, status.Error(codes.Canceled, err.Error())
 		}
-
+		if search.IsResourceExhausted(err) {
+			return nil, httpgrpc.Error(http.StatusUnprocessableEntity, err.Error())
+		}
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 
@@ -504,7 +515,9 @@ func (s *ParquetBucketStore) LabelValues(ctx context.Context, req *storepb.Label
 		if errors.Is(err, context.Canceled) {
 			return nil, status.Error(codes.Canceled, err.Error())
 		}
-
+		if search.IsResourceExhausted(err) {
+			return nil, httpgrpc.Error(http.StatusUnprocessableEntity, err.Error())
+		}
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 
