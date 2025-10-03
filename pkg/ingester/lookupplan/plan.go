@@ -14,16 +14,6 @@ import (
 	"github.com/grafana/mimir/pkg/util"
 )
 
-const (
-	// estimatedRetrievedSeriesCost accounts for iterating postings that have been retrieved form the index.
-	estimatedRetrievedPostingCost = 0.01
-
-	// estimatedRetrievedSeriesCost  accounts for retrieving series from the index and checking if a series belongs to the query's shard.
-	// This is much cheaper for the head block, but for blocks on disk, we need to read from disk and sometimes do hashing on the hot path.
-	// For comparison, you can see that vendor/github.com/prometheus/prometheus/model/labels/cost.go, estimatedStringEqualityCost=1.1.
-	estimatedRetrievedSeriesCost = 10
-)
-
 // plan is a representation of one way of executing a vector selector.
 type plan struct {
 	// predicates contains all the matchers converted to plan predicates with their statistics.
@@ -33,17 +23,20 @@ type plan struct {
 	indexPredicate []bool
 	// totalSeries is the total number of series in the index.
 	totalSeries uint64
+
+	config CostConfig
 }
 
 // newScanOnlyPlan returns a plan in which all predicates would be used to scan and none to reach from the index.
-func newScanOnlyPlan(ctx context.Context, stats index.Statistics, matchers []*labels.Matcher) plan {
+func newScanOnlyPlan(ctx context.Context, stats index.Statistics, config CostConfig, matchers []*labels.Matcher) plan {
 	p := plan{
 		predicates:     make([]planPredicate, 0, len(matchers)),
 		indexPredicate: make([]bool, 0, len(matchers)),
 		totalSeries:    stats.TotalSeries(),
+		config:         config,
 	}
 	for _, m := range matchers {
-		pred := newPlanPredicate(ctx, m, stats)
+		pred := newPlanPredicate(ctx, m, stats, config)
 		p.predicates = append(p.predicates, pred)
 		p.indexPredicate = append(p.indexPredicate, false)
 	}
@@ -115,13 +108,13 @@ func (p plan) intersectionCost() float64 {
 		iteratedPostings += pred.cardinality
 	}
 
-	return float64(iteratedPostings) * estimatedRetrievedPostingCost
+	return float64(iteratedPostings) * p.config.RetrievedPostingCost
 }
 
 // seriesRetrievalCost returns the cost of retrieving series from the index after intersecting posting lists.
 // This includes retrieving the series' labels from the index and checking if the series belongs to the query's shard.
 func (p plan) seriesRetrievalCost() float64 {
-	return float64(p.intersectionSize()) * estimatedRetrievedSeriesCost
+	return float64(p.intersectionSize()) * p.config.RetrievedSeriesCost
 }
 
 // filterCost returns the cost of applying scan predicates to the fetched series
