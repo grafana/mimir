@@ -21,14 +21,14 @@ const (
 	memoryConsumptionTracker contextKey = 0
 )
 
-var ErrNoMemoryConsumptionTrackerInContext = errors.New("no memory consumption tracker in context")
+var errNoMemoryConsumptionTrackerInContext = errors.New("no memory consumption tracker in context")
 
 // MemoryConsumptionTrackerFromContext returns a MemoryConsumptionTracker that has been added to this
-// context. If there is no MemoryConsumptionTracker in this context, return ErrNoMemoryConsumptionTrackerInContext.
+// context. If there is no MemoryConsumptionTracker in this context, return errNoMemoryConsumptionTrackerInContext.
 func MemoryConsumptionTrackerFromContext(ctx context.Context) (*MemoryConsumptionTracker, error) {
 	tracker, ok := ctx.Value(memoryConsumptionTracker).(*MemoryConsumptionTracker)
 	if !ok {
-		return nil, ErrNoMemoryConsumptionTrackerInContext
+		return nil, errNoMemoryConsumptionTrackerInContext
 	}
 
 	return tracker, nil
