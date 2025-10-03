@@ -15,11 +15,12 @@ import (
 // UnlimitedMemoryTrackingQuery wraps promql.Query so that this can
 // pass an unlimited MemoryConsumptionTracker, specifically in the Exec call.
 type UnlimitedMemoryTrackingQuery struct {
-	inner promql.Query
+	inner                    promql.Query
+	memoryConsumptionTracker *MemoryConsumptionTracker
 }
 
 func (u *UnlimitedMemoryTrackingQuery) Exec(ctx context.Context) *promql.Result {
-	ctx = ContextWithNewUnlimitedMemoryConsumptionTracker(ctx)
+	ctx = AddMemoryTrackerToContext(ctx, u.memoryConsumptionTracker)
 	return u.inner.Exec(ctx)
 }
 
@@ -43,8 +44,11 @@ func (u *UnlimitedMemoryTrackingQuery) String() string {
 	return u.inner.String()
 }
 
-func NewUnlimitedMemoryTrackingQuery(query promql.Query) *UnlimitedMemoryTrackingQuery {
-	return &UnlimitedMemoryTrackingQuery{query}
+func NewUnlimitedMemoryTrackingQuery(query promql.Query, memoryConsumptionTracker *MemoryConsumptionTracker) *UnlimitedMemoryTrackingQuery {
+	return &UnlimitedMemoryTrackingQuery{
+		inner:                    query,
+		memoryConsumptionTracker: memoryConsumptionTracker,
+	}
 }
 
 // UnlimitedMemoryTrackerPromQLEngine wraps promql.Engine so that queries always run
@@ -67,12 +71,14 @@ func (p UnlimitedMemoryTrackerPromQLEngine) NewInstantQuery(ctx context.Context,
 	if err != nil {
 		return nil, err
 	}
-	return NewUnlimitedMemoryTrackingQuery(qry), nil
+	memoryTracker := NewMemoryConsumptionTracker(ctx, 0, nil, "")
+	return NewUnlimitedMemoryTrackingQuery(qry, memoryTracker), nil
 }
 func (p UnlimitedMemoryTrackerPromQLEngine) NewRangeQuery(ctx context.Context, q storage.Queryable, opts promql.QueryOpts, qs string, start, end time.Time, interval time.Duration) (promql.Query, error) {
 	qry, err := p.inner.NewRangeQuery(ctx, q, opts, qs, start, end, interval)
 	if err != nil {
 		return nil, err
 	}
-	return NewUnlimitedMemoryTrackingQuery(qry), nil
+	memoryTracker := NewMemoryConsumptionTracker(ctx, 0, nil, "")
+	return NewUnlimitedMemoryTrackingQuery(qry, memoryTracker), nil
 }
