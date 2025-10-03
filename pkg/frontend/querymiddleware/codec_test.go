@@ -1778,7 +1778,7 @@ func Test_DecodeOptions(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			actual := &Options{}
-			decodeOptions(tt.input, actual)
+			DecodeOptions(tt.input, actual)
 			require.Equal(t, tt.expected, actual)
 		})
 	}
