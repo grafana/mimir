@@ -27,7 +27,7 @@ NHCB are different from classic Prometheus histograms in a number of ways:
 
 For an introduction to native histograms in general, watch the [Native Histograms in Prometheus](https://www.youtube.com/watch?v=AcmABV6NCYk) presentation. For a short introduction to NHCB, watch [Native Histograms With Custom Buckets](https://www.youtube.com/watch?v=2v9DOGq2Mos).
 
-For more information on native histogram flavors and how to query them using PromQL, refer to the [Prometheus Native Histograms specification](https://prometheus.io/docs/specs/native_histograms/).
+This document provides a practical implementation guide for using NHCB in Grafana Mimir, but it's not as comprehensive as the official [specification](https://prometheus.io/docs/specs/native_histograms/) in the Prometheus documentation.
 
 ## Advantages and disadvantages
 
