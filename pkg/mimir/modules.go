@@ -1059,6 +1059,10 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 			return nil, fmt.Errorf("could not create queryable for ruler: %w", err)
 		}
 
+		// Wrap the queryable to ensure all queries have a memory tracker in the context.
+		// This is needed for ruler operations like alert state restoration that may bypass
+		// the query engine's NewInstantQuery/NewRangeQuery methods.
+		queryable = querier.NewMemoryTrackerSampleAndChunkQueryable(queryable)
 		queryable = querier.NewErrorTranslateQueryableWithFn(queryable, ruler.WrapQueryableErrors)
 
 		if t.Cfg.Ruler.TenantFederation.Enabled {
