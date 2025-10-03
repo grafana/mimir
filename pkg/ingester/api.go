@@ -21,5 +21,5 @@ type API interface {
 	TenantTSDBHandler(http.ResponseWriter, *http.Request)
 	PrepareInstanceRingDownscaleHandler(http.ResponseWriter, *http.Request)
 	PushToStorageAndReleaseRequest(context.Context, *mimirpb.WriteRequest) error
-	NotifyPreCommit() error
+	NotifyPreCommit(ctx context.Context) error
 }

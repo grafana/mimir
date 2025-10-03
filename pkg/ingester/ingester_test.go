@@ -12261,6 +12261,8 @@ func TestIngester_NotifyPreCommit(t *testing.T) {
 		},
 	}
 
+	//TODO: add more users
+
 	_, err = ingester.Push(ctx, req)
 	require.NoError(t, err)
 
@@ -12281,7 +12283,7 @@ func TestIngester_NotifyPreCommit(t *testing.T) {
 
 	fsyncCountBefore := getFsyncCount()
 
-	err = ingester.NotifyPreCommit()
+	err = ingester.NotifyPreCommit(context.TODO())
 	require.NoError(t, err)
 
 	fsyncCountAfter := getFsyncCount()

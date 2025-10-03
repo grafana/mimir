@@ -347,8 +347,7 @@ func (b *TSDBBuilder) newTSDB(tenant tsdbTenant) (*userTSDB, error) {
 	return udb, nil
 }
 
-func (b *TSDBBuilder) NotifyPreCommit() error {
-	//TODO: is it necessary to sync anything before commit?
+func (b *TSDBBuilder) NotifyPreCommit(_ context.Context) error {
 	return nil
 }
 

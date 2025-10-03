@@ -565,6 +565,8 @@
   "ingest-storage.kafka.ingestion-concurrency-target-flushes-per-shard": 80,
   "ingest-storage.kafka.ingestion-concurrency-estimated-bytes-per-sample": 500,
   "ingest-storage.migration.ingest-storage-max-wait-time": 0,
+  "ingest-storage.write-logs-fsync-before-kafka-commit-enabled": true,
+  "ingest-storage.write-logs-fsync-before-kafka-commit-concurrency": 8,
   "blocks-storage.backend": "filesystem",
   "blocks-storage.s3.endpoint": "",
   "blocks-storage.s3.region": "",
