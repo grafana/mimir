@@ -362,7 +362,7 @@ func (f *Frontend) DoProtobufRequest(requestContext context.Context, req proto.M
 	logger, requestContext := spanlogger.New(requestContext, f.log, tracer, "frontend.DoProtobufRequest")
 	logger.SetTag("request.type", proto.MessageName(req))
 
-	freq, streamContext, cancel, err := f.createNewRequest(requestContext)
+	freq, streamContext, cancelStream, err := f.createNewRequest(requestContext)
 	if err != nil {
 		logger.Finish()
 		return nil, err
@@ -375,7 +375,7 @@ func (f *Frontend) DoProtobufRequest(requestContext context.Context, req proto.M
 	freq.protobufResponseStream = &ProtobufResponseStream{
 		requestContext: requestContext,
 		streamContext:  streamContext,
-		cancelStream:   cancel,
+		cancelStream:   cancelStream,
 		spanLogger:     freq.spanLogger,
 		// Buffer of 1 to ensure response or error can be written to the channel
 		// even if this goroutine goes away due to client context cancellation.
@@ -392,7 +392,7 @@ func (f *Frontend) DoProtobufRequest(requestContext context.Context, req proto.M
 	go func() {
 		defer func() {
 			f.requests.delete(freq.queryID)
-			cancel(errExecutingQueryRoundTripFinished)
+			cancelStream(errExecutingQueryRoundTripFinished)
 			logger.Finish()
 			f.inflightRequestCount.Dec()
 		}()
