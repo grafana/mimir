@@ -44,7 +44,7 @@ func (u *UnlimitedMemoryTrackingQuery) String() string {
 	return u.inner.String()
 }
 
-func NewUnlimitedMemoryTrackingQuery(query promql.Query, memoryConsumptionTracker *MemoryConsumptionTracker) *UnlimitedMemoryTrackingQuery {
+func newUnlimitedMemoryTrackingQuery(query promql.Query, memoryConsumptionTracker *MemoryConsumptionTracker) *UnlimitedMemoryTrackingQuery {
 	return &UnlimitedMemoryTrackingQuery{
 		inner:                    query,
 		memoryConsumptionTracker: memoryConsumptionTracker,
@@ -72,7 +72,7 @@ func (p UnlimitedMemoryTrackerPromQLEngine) NewInstantQuery(ctx context.Context,
 		return nil, err
 	}
 	memoryTracker := NewMemoryConsumptionTracker(ctx, 0, nil, "")
-	return NewUnlimitedMemoryTrackingQuery(qry, memoryTracker), nil
+	return newUnlimitedMemoryTrackingQuery(qry, memoryTracker), nil
 }
 func (p UnlimitedMemoryTrackerPromQLEngine) NewRangeQuery(ctx context.Context, q storage.Queryable, opts promql.QueryOpts, qs string, start, end time.Time, interval time.Duration) (promql.Query, error) {
 	qry, err := p.inner.NewRangeQuery(ctx, q, opts, qs, start, end, interval)
@@ -80,5 +80,5 @@ func (p UnlimitedMemoryTrackerPromQLEngine) NewRangeQuery(ctx context.Context, q
 		return nil, err
 	}
 	memoryTracker := NewMemoryConsumptionTracker(ctx, 0, nil, "")
-	return NewUnlimitedMemoryTrackingQuery(qry, memoryTracker), nil
+	return newUnlimitedMemoryTrackingQuery(qry, memoryTracker), nil
 }
