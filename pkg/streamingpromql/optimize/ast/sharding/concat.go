@@ -104,7 +104,11 @@ func (c *Concat) SeriesMetadata(ctx context.Context, matchers types.Matchers) ([
 
 	for _, result := range results {
 		combined = append(combined, result...)
-		clear(result) // We want to retain the SeriesMetadata elements, but we need to return the slice to the pool.
+
+		// Clear the slice, as we don't want Put to reduce the memory consumption
+		// estimate based on the labels in the slice (since we're retaining those labels in
+		// the combined slice).
+		clear(result)
 		types.SeriesMetadataSlicePool.Put(&result, c.MemoryConsumptionTracker)
 	}
 
