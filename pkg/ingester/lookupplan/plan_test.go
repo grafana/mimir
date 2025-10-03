@@ -23,29 +23,31 @@ func TestPlanCosts(t *testing.T) {
 	stats := newMockStatistics()
 
 	type testCase struct {
-		name             string
-		indexMatchers    []*labels.Matcher
-		scanMatchers     []*labels.Matcher
-		cardinality      uint64
-		indexCost        float64
-		intersectionCost float64
-		filterCost       float64
-		totalCost        float64
+		name                string
+		indexMatchers       []*labels.Matcher
+		scanMatchers        []*labels.Matcher
+		cardinality         uint64
+		indexCost           float64
+		intersectionCost    float64
+		seriesRetrievalCost float64
+		filterCost          float64
+		totalCost           float64
 	}
 
 	data := newCSVTestData(
-		[]string{"testName", "indexMatchers", "scanMatchers", "cardinality", "indexCost", "intersectionCost", "filterCost", "totalCost"},
+		[]string{"testName", "indexMatchers", "scanMatchers", "cardinality", "indexCost", "intersectionCost", "seriesRetrievalCost", "filterCost", "totalCost"},
 		filepath.Join("testdata", "plan_cost_test_cases.csv"),
 		func(record []string) testCase {
 			return testCase{
-				name:             record[0],
-				indexMatchers:    parseVectorSelector(t, record[1]),
-				scanMatchers:     parseVectorSelector(t, record[2]),
-				cardinality:      parseUint(t, record[3]),
-				indexCost:        parseFloat(t, record[4]),
-				intersectionCost: parseFloat(t, record[5]),
-				filterCost:       parseFloat(t, record[6]),
-				totalCost:        parseFloat(t, record[7]),
+				name:                record[0],
+				indexMatchers:       parseVectorSelector(t, record[1]),
+				scanMatchers:        parseVectorSelector(t, record[2]),
+				cardinality:         parseUint(t, record[3]),
+				indexCost:           parseFloat(t, record[4]),
+				intersectionCost:    parseFloat(t, record[5]),
+				seriesRetrievalCost: parseFloat(t, record[6]),
+				filterCost:          parseFloat(t, record[7]),
+				totalCost:           parseFloat(t, record[8]),
 			}
 		},
 		func(tc testCase) []string {
@@ -56,6 +58,7 @@ func TestPlanCosts(t *testing.T) {
 				fmt.Sprintf("%d", tc.cardinality),
 				fmt.Sprintf("%.2f", tc.indexCost),
 				fmt.Sprintf("%.2f", tc.intersectionCost),
+				fmt.Sprintf("%.2f", tc.seriesRetrievalCost),
 				fmt.Sprintf("%.2f", tc.filterCost),
 				fmt.Sprintf("%.2f", tc.totalCost),
 			}
@@ -100,6 +103,7 @@ func TestPlanCosts(t *testing.T) {
 			testCases[tcIdx].cardinality = p.cardinality()
 			testCases[tcIdx].indexCost = p.indexLookupCost()
 			testCases[tcIdx].intersectionCost = p.intersectionCost()
+			testCases[tcIdx].seriesRetrievalCost = p.seriesRetrievalCost()
 			testCases[tcIdx].filterCost = p.filterCost()
 			testCases[tcIdx].totalCost = p.totalCost()
 		})

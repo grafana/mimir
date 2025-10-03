@@ -15,10 +15,11 @@ import (
 )
 
 const (
-	// estimatedRetrievedSeriesCost accounts for retrieving a series from the index.
-	// This includes iterating postings and retrieving series from the index, and checking if a series belongs to the query's shard.
-	// Iterating postings is normally very cheap.
-	// Most of the cost comes from retrieving the labels and checking/hashing the series for query sharding.
+	// estimatedRetrievedSeriesCost accounts for iterating postings that have been retrieved form the index.
+	estimatedRetrievedPostingCost = 0.01
+
+	// estimatedRetrievedSeriesCost  accounts for retrieving series from the index and checking if a series belongs to the query's shard.
+	// This is much cheaper for the head block, but for blocks on disk, we need to read from disk and sometimes do hashing on the hot path.
 	// For comparison, you can see that vendor/github.com/prometheus/prometheus/model/labels/cost.go, estimatedStringEqualityCost=1.1.
 	estimatedRetrievedSeriesCost = 10
 )
@@ -88,7 +89,7 @@ func (p plan) useScanFor(predicateIdx int) plan {
 
 // totalCost returns the sum of indexLookupCost + intersectionCost + filterCost
 func (p plan) totalCost() float64 {
-	return p.indexLookupCost() + p.intersectionCost() + p.filterCost()
+	return p.indexLookupCost() + p.intersectionCost() + p.seriesRetrievalCost() + p.filterCost()
 }
 
 // indexLookupCost returns the cost of performing index lookups for all predicates that use the index
@@ -114,7 +115,13 @@ func (p plan) intersectionCost() float64 {
 		iteratedPostings += pred.cardinality
 	}
 
-	return float64(iteratedPostings) * estimatedRetrievedSeriesCost
+	return float64(iteratedPostings) * estimatedRetrievedPostingCost
+}
+
+// seriesRetrievalCost returns the cost of retrieving series from the index after intersecting posting lists.
+// This includes retrieving the series' labels from the index and checking if the series belongs to the query's shard.
+func (p plan) seriesRetrievalCost() float64 {
+	return float64(p.intersectionSize()) * estimatedRetrievedSeriesCost
 }
 
 // filterCost returns the cost of applying scan predicates to the fetched series
@@ -190,6 +197,7 @@ func (p plan) addSpanEvent(span trace.Span, planName string) {
 		attribute.Float64("index_lookup_cost", p.indexLookupCost()),
 		attribute.Float64("filter_cost", p.filterCost()),
 		attribute.Float64("intersection_cost", p.intersectionCost()),
+		attribute.Float64("series_retrieval_cost", p.seriesRetrievalCost()),
 		attribute.Int64("cardinality", int64(p.cardinality())),
 		attribute.Stringer("index_matchers", util.MatchersStringer(p.IndexMatchers())),
 		attribute.Stringer("scan_matchers", util.MatchersStringer(p.ScanMatchers())),
