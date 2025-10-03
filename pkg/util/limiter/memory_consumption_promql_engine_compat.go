@@ -47,29 +47,29 @@ func NewUnlimitedMemoryTrackingQuery(query promql.Query) *UnlimitedMemoryTrackin
 	return &UnlimitedMemoryTrackingQuery{query}
 }
 
-// UnlimitedMemoryTrackerPromqlEngine wraps promql.Engine so that queries always run
+// UnlimitedMemoryTrackerPromQLEngine wraps promql.Engine so that queries always run
 // with a MemoryConsumptionTracker in their context.
-// 
+//
 // The provided MemoryConsumptionTracker will enforce no limit on query memory consumption,
 // but is still required as some querier components track memory consumption even
 // when running in Prometheus' engine (eg. the ingester and store-gateway Queryable
 // implementations).
-type UnlimitedMemoryTrackerPromqlEngine struct {
+type UnlimitedMemoryTrackerPromQLEngine struct {
 	inner *promql.Engine
 }
 
-func NewUnlimitedMemoryTrackerPromqlEngine(inner *promql.Engine) UnlimitedMemoryTrackerPromqlEngine {
-	return UnlimitedMemoryTrackerPromqlEngine{inner: inner}
+func NewUnlimitedMemoryTrackerPromqlEngine(inner *promql.Engine) UnlimitedMemoryTrackerPromQLEngine {
+	return UnlimitedMemoryTrackerPromQLEngine{inner: inner}
 }
 
-func (p UnlimitedMemoryTrackerPromqlEngine) NewInstantQuery(ctx context.Context, q storage.Queryable, opts promql.QueryOpts, qs string, ts time.Time) (promql.Query, error) {
+func (p UnlimitedMemoryTrackerPromQLEngine) NewInstantQuery(ctx context.Context, q storage.Queryable, opts promql.QueryOpts, qs string, ts time.Time) (promql.Query, error) {
 	qry, err := p.inner.NewInstantQuery(ctx, q, opts, qs, ts)
 	if err != nil {
 		return nil, err
 	}
 	return NewUnlimitedMemoryTrackingQuery(qry), nil
 }
-func (p UnlimitedMemoryTrackerPromqlEngine) NewRangeQuery(ctx context.Context, q storage.Queryable, opts promql.QueryOpts, qs string, start, end time.Time, interval time.Duration) (promql.Query, error) {
+func (p UnlimitedMemoryTrackerPromQLEngine) NewRangeQuery(ctx context.Context, q storage.Queryable, opts promql.QueryOpts, qs string, start, end time.Time, interval time.Duration) (promql.Query, error) {
 	qry, err := p.inner.NewRangeQuery(ctx, q, opts, qs, start, end, interval)
 	if err != nil {
 		return nil, err
