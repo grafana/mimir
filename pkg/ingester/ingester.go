@@ -4390,16 +4390,15 @@ func timeUntilCompaction(now time.Time, compactionInterval, zoneOffset time.Dura
 	return compactionInterval - timeSinceLastCompaction
 }
 
-func (i *Ingester) NotifyPreCommit() error {
+func (i *Ingester) NotifyPreCommit(ctx context.Context) error {
 	if !i.cfg.IngestStorageConfig.WriteLogsFsyncBeforeKafkaCommit {
 		return nil
 	}
 
 	level.Info(i.logger).Log("msg", "fsyncing tsdbs")
 
-	// fsync all tsdbs before commit
-	for _, u := range i.getTSDBUsers() {
-		db, err := i.getOrCreateTSDB(u)
+	return concurrency.ForEachUser(ctx, i.getTSDBUsers(), i.cfg.IngestStorageConfig.WriteLogsFsyncBeforeKafkaCommitConcurrency, func(ctx context.Context, userID string) error {
+		db, err := i.getOrCreateTSDB(userID)
 		if err != nil {
 			return err
 		}
@@ -4407,6 +4406,6 @@ func (i *Ingester) NotifyPreCommit() error {
 		if err != nil {
 			return err
 		}
-	}
-	return nil
+		return nil
+	})
 }

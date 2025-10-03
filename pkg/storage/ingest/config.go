@@ -52,12 +52,14 @@ type Config struct {
 	KafkaConfig KafkaConfig     `yaml:"kafka"`
 	Migration   MigrationConfig `yaml:"migration"`
 
-	WriteLogsFsyncBeforeKafkaCommit bool `yaml:"write_logs_fsync_before_kafka_commit_enabled" category:"experimental"`
+	WriteLogsFsyncBeforeKafkaCommit            bool `yaml:"write_logs_fsync_before_kafka_commit_enabled" category:"experimental"`
+	WriteLogsFsyncBeforeKafkaCommitConcurrency int  `yaml:"write_logs_fsync_before_kafka_commit_concurrency" category:"experimental"`
 }
 
 func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.Enabled, "ingest-storage.enabled", false, "True to enable the ingestion via object storage.")
-	f.BoolVar(&cfg.WriteLogsFsyncBeforeKafkaCommit, "ingest-storage.write-logs-fsync-before-kafka-commit-enabled", false, "Experimental: Enable fsyncing of WAL and WBL before Kafka offsets are committed.")
+	f.BoolVar(&cfg.WriteLogsFsyncBeforeKafkaCommit, "ingest-storage.write-logs-fsync-before-kafka-commit-enabled", true, "Enable fsyncing of WAL and WBL before Kafka offsets are committed.")
+	f.IntVar(&cfg.WriteLogsFsyncBeforeKafkaCommitConcurrency, "ingest-storage.write-logs-fsync-before-kafka-commit-concurrency", 8, "Concurrency for fsyncing of WAL and WBL before Kafka offsets are committed.")
 
 	cfg.KafkaConfig.RegisterFlagsWithPrefix("ingest-storage.kafka.", f)
 	cfg.Migration.RegisterFlagsWithPrefix("ingest-storage.migration.", f)
