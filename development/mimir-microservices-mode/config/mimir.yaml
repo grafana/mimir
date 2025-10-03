@@ -174,6 +174,7 @@ querier:
 query_scheduler:
   # Change to "dns" to switch to query-scheduler DNS-based service discovery.
   service_discovery_mode: "ring"
+  max_outstanding_requests_per_tenant: 1600
 
 limits:
   # Limit max query time range to 31d

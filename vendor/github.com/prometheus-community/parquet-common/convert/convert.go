@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/hashicorp/go-multierror"
+	"github.com/oklog/ulid/v2"
 	"github.com/parquet-go/parquet-go"
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/model/labels"
@@ -34,6 +35,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/prometheus/prometheus/tsdb/tombstones"
 	"github.com/thanos-io/objstore"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/prometheus-community/parquet-common/schema"
 )
@@ -48,7 +50,8 @@ var DefaultConvertOpts = convertOpts{
 	pageBufferSize:     parquet.DefaultPageBufferSize,
 	writeBufferSize:    parquet.DefaultWriteBufferSize,
 	columnPageBuffers:  parquet.DefaultWriterConfig().ColumnPageBuffers,
-	concurrency:        runtime.GOMAXPROCS(0),
+	readConcurrency:    runtime.GOMAXPROCS(0),
+	writeConcurrency:   runtime.GOMAXPROCS(0),
 	maxSamplesPerChunk: tsdb.DefaultSamplesPerChunk,
 }
 
@@ -69,7 +72,8 @@ type convertOpts struct {
 	pageBufferSize        int
 	writeBufferSize       int
 	columnPageBuffers     parquet.BufferPool
-	concurrency           int
+	readConcurrency       int
+	writeConcurrency      int
 	maxSamplesPerChunk    int
 	labelsCompressionOpts []schema.CompressionOpts
 	chunksCompressionOpts []schema.CompressionOpts
@@ -209,7 +213,7 @@ func WithRowGroupSize(size int) ConvertOption {
 	}
 }
 
-// WithConcurrency sets the number of concurrent goroutines used during conversion.
+// WithReadConcurrency sets the number of concurrent goroutines used to read TSDB series during conversion.
 // Higher concurrency can improve performance on multi-core systems but increases
 // memory usage. The optimal value depends on available CPU cores and memory.
 //
@@ -218,10 +222,26 @@ func WithRowGroupSize(size int) ConvertOption {
 //
 // Example:
 //
-//	WithConcurrency(8)  // Use 8 concurrent workers
-func WithConcurrency(concurrency int) ConvertOption {
+//	WithReadConcurrency(8)  // Use 8 concurrent workers
+func WithReadConcurrency(concurrency int) ConvertOption {
 	return func(opts *convertOpts) {
-		opts.concurrency = concurrency
+		opts.readConcurrency = concurrency
+	}
+}
+
+// WithWriteConcurrency sets the number of concurrent goroutines used to write Parquet shards during conversion.
+// Higher concurrency can improve conversion time on multi-core systems but increases
+// CPU and memory usage. The optimal value depends on available CPU cores and memory.
+//
+// Parameters:
+//   - concurrency: Number of concurrent workers (default: runtime.GOMAXPROCS(0))
+//
+// Example:
+//
+//	WithWriteConcurrency(8)  // Use 8 concurrent workers
+func WithWriteConcurrency(concurrency int) ConvertOption {
+	return func(opts *convertOpts) {
+		opts.writeConcurrency = concurrency
 	}
 }
 
@@ -343,9 +363,75 @@ func ConvertTSDBBlock(
 	return w.currentShard, errors.Wrap(w.Write(ctx), "error writing block")
 }
 
-var _ parquet.RowReader = &TsdbRowReader{}
+func ConvertTSDBBlockParallel(
+	ctx context.Context,
+	bkt objstore.Bucket,
+	mint, maxt int64,
+	blks []Convertible,
+	opts ...ConvertOption,
+) (int, error) {
+	cfg := DefaultConvertOpts
 
-type TsdbRowReader struct {
+	for _, opt := range opts {
+		opt(&cfg)
+	}
+
+	shardedRowReaders, err := NewShardedTSDBRowReaders(ctx, mint, maxt, cfg.colDuration.Milliseconds(), blks, &cfg)
+	if err != nil {
+		return 0, errors.Wrap(err, "failed to create sharded TSDB row readers")
+	}
+	defer func() {
+		for _, rr := range shardedRowReaders {
+			_ = rr.Close()
+		}
+	}()
+
+	errGroup := &errgroup.Group{}
+	errGroup.SetLimit(cfg.writeConcurrency)
+	for shard, rr := range shardedRowReaders {
+		shard, rr := shard, rr // capture loop variable
+		errGroup.Go(func() error {
+			fmt.Printf("shard %d\n", shard)
+			labelsProjection, err := rr.Schema().LabelsProjection(cfg.labelsCompressionOpts...)
+			if err != nil {
+				return errors.Wrap(err, "error getting labels projection from tsdb schema")
+			}
+			chunksProjection, err := rr.Schema().ChunksProjection(cfg.chunksCompressionOpts...)
+			if err != nil {
+				return errors.Wrap(err, "error getting chunks projection from tsdb schema")
+			}
+			outSchemaProjections := []*schema.TSDBProjection{
+				labelsProjection, chunksProjection,
+			}
+
+			fmt.Printf("initializing writer for shard %d\n", shard)
+			w := &PreShardedWriter{
+				shard:                shard,
+				rr:                   rr,
+				schema:               rr.Schema(),
+				outSchemaProjections: outSchemaProjections,
+				pipeReaderWriter:     NewPipeReaderBucketWriter(bkt),
+				opts:                 &cfg,
+			}
+			err = w.Write(ctx)
+			fmt.Printf("completed outer func writer for shard %d\n", shard)
+			if err != nil {
+				return errors.Wrap(err, "error writing shard for block")
+			}
+			return nil
+		})
+	}
+
+	err = errGroup.Wait()
+	if err != nil {
+		return 0, errors.Wrap(err, "failed to convert shards in parallel")
+	}
+	return len(shardedRowReaders), nil
+}
+
+var _ parquet.RowReader = &TSDBRowReader{}
+
+type TSDBRowReader struct {
 	ctx context.Context
 
 	closers []io.Closer
@@ -360,7 +446,111 @@ type TsdbRowReader struct {
 	concurrency int
 }
 
-func NewTsdbRowReader(ctx context.Context, mint, maxt, colDuration int64, blks []Convertible, ops convertOpts) (*TsdbRowReader, error) {
+func NewShardedTSDBRowReaders(
+	ctx context.Context,
+	mint, maxt, colDuration int64,
+	blocks []Convertible,
+	opts *convertOpts,
+) ([]*TSDBRowReader, error) {
+	blocksByID := make(map[ulid.ULID]Convertible, len(blocks))
+	blockIndexRs := make(map[ulid.ULID]tsdb.IndexReader, len(blocks))
+	defer func() {
+			for i := range blockIndexRs {
+				_ = blockIndexRs[i].Close()
+			}
+	}()
+	for _, blk := range blocks {
+		blocksByID[blk.Meta().ULID] = blk
+		indexr, err := blk.Index()
+		if err != nil {
+			return nil, fmt.Errorf("unable to get index reader from block: %w", err)
+		}
+		blockIndexRs[blk.Meta().ULID] = indexr
+	}
+
+	uniqueSeriesCount, shardedSeries, err := shardSeries(ctx, blockIndexRs, mint, maxt, opts)
+	if err != nil {
+		return nil, fmt.Errorf("unable to get unique series count: %w", err)
+	}
+	if uniqueSeriesCount == 0 {
+		return nil, fmt.Errorf("no series found in the specified time range")
+	}
+
+
+	shardTSDBRowReaders := make([]*TSDBRowReader, len(shardedSeries))
+	// For each shard create a TSDBRowReader with:
+	//	* a MergeChunkSeriesSet of all blocks' series sets for the shard
+	//	* a schema built from only the label names present in the shard
+	for shardIdx, shardSeries := range shardedSeries {
+		closers := make([]io.Closer, 0, len(shardSeries)*3) // index, chunk, and tombstone reader per block
+		seriesSets := make([]storage.ChunkSeriesSet, 0, len(blocks))
+		schemaBuilder := schema.NewBuilder(mint, maxt, colDuration)
+
+		// For each block, init readers and postings list to create a tsdb.blockChunkSeriesSet;
+		// series sets from all blocks for the shard will be merged by NewMergeChunkSeriesSet.
+		for blockID, blockSeries := range shardSeries {
+			blk := blocksByID[blockID]
+
+			// Init all readers for block & add to closers
+
+			// Init separate index readers from above blockIndexRs to simplify closing logic
+			indexr, err := blk.Index()
+			if err != nil {
+				return nil, fmt.Errorf("failed to get index reader from block: %w", err)
+			}
+			closers = append(closers, indexr)
+
+			chunkr, err := blk.Chunks()
+			if err != nil {
+				return nil, fmt.Errorf("failed to get chunk reader from block: %w", err)
+			}
+			closers = append(closers, chunkr)
+
+			tombsr, err := blk.Tombstones()
+			if err != nil {
+				return nil, fmt.Errorf("failed to get tombstone reader from block: %w", err)
+			}
+			closers = append(closers, tombsr)
+
+			// Flatten series refs and add all label columns to schema for the shard
+			refs := make([]storage.SeriesRef, 0, len(blockSeries))
+			for _, series := range blockSeries {
+				refs = append(refs, series.ref)
+				series.labels.Range(func(l labels.Label) {
+					schemaBuilder.AddLabelNameColumn(l.Name)
+				})
+			}
+			postings := index.NewListPostings(refs)
+			seriesSet := tsdb.NewBlockChunkSeriesSet(blk.Meta().ULID, indexr, chunkr, tombsr, postings, mint, maxt, false)
+			seriesSets = append(seriesSets, seriesSet)
+		}
+
+		mergeSeriesSet := NewMergeChunkSeriesSet(
+			seriesSets, compareBySortedLabelsFunc(opts.sortedLabels), storage.NewConcatenatingChunkSeriesMerger(),
+		)
+
+		s, err := schemaBuilder.Build()
+		if err != nil {
+			return nil, fmt.Errorf("unable to build schema reader from block: %w", err)
+		}
+
+		rr := &TSDBRowReader{
+			ctx:         ctx,
+			seriesSet:   mergeSeriesSet,
+			closers:     closers,
+			tsdbSchema:  s,
+			concurrency: opts.readConcurrency,
+
+			rowBuilder: parquet.NewRowBuilder(s.Schema),
+			encoder:    schema.NewPrometheusParquetChunksEncoder(s, opts.maxSamplesPerChunk),
+		}
+		shardTSDBRowReaders[shardIdx] = rr
+	}
+
+	return shardTSDBRowReaders, nil
+}
+
+func NewTsdbRowReader(ctx context.Context, mint, maxt, colDuration int64, blks []Convertible, ops convertOpts) (*TSDBRowReader, error) {
 	var (
 		seriesSets = make([]storage.ChunkSeriesSet, 0, len(blks))
 		closers    = make([]io.Closer, 0, len(blks))
@@ -426,12 +616,12 @@ func NewTsdbRowReader(ctx context.Context, mint, maxt, colDuration int64, blks [
 		return nil, fmt.Errorf("unable to build index reader from block: %w", err)
 	}
 
-	rr := &TsdbRowReader{
+	rr := &TSDBRowReader{
 		ctx:         ctx,
 		seriesSet:   cseriesSet,
 		closers:     closers,
 		tsdbSchema:  s,
-		concurrency: ops.concurrency,
+		concurrency: ops.readConcurrency,
 
 		rowBuilder: parquet.NewRowBuilder(s.Schema),
 		encoder:    schema.NewPrometheusParquetChunksEncoder(s, ops.maxSamplesPerChunk),
@@ -440,7 +630,7 @@ func NewTsdbRowReader(ctx context.Context, mint, maxt, colDuration int64, blks [
 	return rr, nil
 }
 
-func (rr *TsdbRowReader) Close() error {
+func (rr *TSDBRowReader) Close() error {
 	err := &multierror.Error{}
 	for i := range rr.closers {
 		err = multierror.Append(err, rr.closers[i].Close())
@@ -448,7 +638,7 @@ func (rr *TsdbRowReader) Close() error {
 	return err.ErrorOrNil()
 }
 
-func (rr *TsdbRowReader) Schema() *schema.TSDBSchema {
+func (rr *TSDBRowReader) Schema() *schema.TSDBSchema {
 	return rr.tsdbSchema
 }
 
@@ -515,7 +705,7 @@ P:
 	return index.NewListPostings(ep)
 }
 
-func (rr *TsdbRowReader) ReadRows(buf []parquet.Row) (int, error) {
+func (rr *TSDBRowReader) ReadRows(buf []parquet.Row) (int, error) {
 	type chkBytesOrError struct {
 		chkBytes [][]byte
 		err      error
@@ -616,6 +806,158 @@ func (rr *TsdbRowReader) ReadRows(buf []parquet.Row) (int, error) {
 	}
 
 	return i, rr.seriesSet.Err()
+}
+
+type blockSeries struct {
+	blockID ulid.ULID
+	idx     int
+	ref     storage.SeriesRef
+	labels  labels.Labels
+}
+
+func compareBlockSeriesBySortedLabelsFunc(sortedLabels []string) func(a, b blockSeries) int {
+	return func(a, b blockSeries) int {
+		for _, lb := range sortedLabels {
+			if c := strings.Compare(a.labels.Get(lb), b.labels.Get(lb)); c != 0 {
+				return c
+			}
+		}
+		if a.blockID.Compare(b.blockID) < 0 {
+			return -1
+		} else if a.blockID.Compare(b.blockID) > 0 {
+			return 1
+		}
+
+		if a.idx < b.idx {
+			return -1
+		} else if a.idx > b.idx {
+			return 1
+		}
+		return 0
+	}
+}
+
+func shardSeries(
+	ctx context.Context,
+	blockIndexReaders map[ulid.ULID]tsdb.IndexReader,
+	mint, maxt int64,
+	opts *convertOpts,
+) (int, []map[ulid.ULID][]blockSeries, error) {
+	type reader struct {
+		blockID      ulid.ULID
+		indexr       tsdb.IndexReader
+		postingsIter index.Postings
+	}
+
+	readers := make([]reader, 0, len(blockIndexReaders))
+	for blockID, indexr := range blockIndexReaders {
+		readers = append(readers, reader{
+			blockID:      blockID,
+			indexr:       indexr,
+			postingsIter: tsdb.AllSortedPostings(ctx, indexr),
+		})
+	}
+
+	chks := make([]chunks.Meta, 0, 128)
+	allSeries := make([]blockSeries, 0, 128*len(readers))
+	// Collect all series from all blocks with chunks in the time range
+	for _, reader := range readers {
+		i := 0
+		scratchBuilder := labels.NewScratchBuilder(10)
+
+		for reader.postingsIter.Next() {
+			scratchBuilder.Reset()
+			chks = chks[:0]
+
+			if err := reader.indexr.Series(reader.postingsIter.At(), &scratchBuilder, &chks); err != nil {
+				return 0, nil, errors.Wrap(err, "unable to expand series")
+			}
+
+			hasChunks := slices.ContainsFunc(chks, func(chk chunks.Meta) bool {
+				return mint <= chk.MaxTime && chk.MinTime <= maxt
+			})
+			if !hasChunks {
+				continue
+			}
+
+			scratchBuilderLabels := scratchBuilder.Labels()
+			allSeries = append(allSeries, blockSeries{
+				blockID: reader.blockID,
+				idx:     i,
+				ref:     reader.postingsIter.At(),
+				labels:  scratchBuilderLabels,
+			})
+		}
+	}
+
+	if len(allSeries) == 0 {
+		return 0, nil, nil
+	}
+
+	slices.SortFunc(allSeries, compareBlockSeriesBySortedLabelsFunc(opts.sortedLabels))
+
+	// Count how many unique series will exist after merging across blocks.
+	uniqueSeriesCount := 1
+	for i := 1; i < len(allSeries); i++ {
+		if labels.Compare(allSeries[i].labels, allSeries[i-1].labels) != 0 {
+			uniqueSeriesCount++
+		}
+	}
+
+	totalShards := int(math.Ceil(float64(uniqueSeriesCount) / float64(opts.numRowGroups*opts.rowGroupSize)))
+	// Divide rows evenly across shards to avoid one small shard at the end;
+	// use floats & round up so integer division does not cut off the remainder series.
+	rowsPerShard := int(math.Ceil(float64(uniqueSeriesCount) / float64(totalShards)))
+
+	// For each shard index i, shardSeries[i] is a map of blockID -> []series.
+	shardSeries := make([]map[ulid.ULID][]blockSeries, totalShards)
+	for i := range shardSeries {
+		shardSeries[i] = make(map[ulid.ULID][]blockSeries)
+	}
+
+	shardIdx := 0
+	allSeriesIdx := 0
+	for shardIdx < totalShards {
+		seriesToShard := allSeries[allSeriesIdx:]
+
+		// First series in a shard will always be unique.
+		uniqueCount := 1
+		shardSeries[shardIdx][seriesToShard[0].blockID] = append(
+			shardSeries[shardIdx][seriesToShard[0].blockID], seriesToShard[0],
+		)
+		allSeriesIdx++
+
+		// Split all series into shards, counting unique series until we reach rowsPerShard.
+		// Nothing gets dropped here as all series are already unique per block; merge happens later.
+		for i := 1; i < len(seriesToShard); i++ {
+			prev := seriesToShard[i-1]
+			curr := seriesToShard[i]
+			shardSeries[shardIdx][curr.blockID] = append(shardSeries[shardIdx][curr.blockID], curr)
+
+			if labels.Compare(curr.labels, prev.labels) != 0 {
+				uniqueCount++
+			}
+			allSeriesIdx++
+			if uniqueCount >= rowsPerShard {
+				break
+			}
+		}
+		shardIdx++
+	}
+
+	return uniqueSeriesCount, shardSeries, nil
+}
+
+func compareBySortedLabelsFunc(sortedLabels []string) func(a, b labels.Labels) int {
+	return func(a, b labels.Labels) int {
+		for _, lb := range sortedLabels {
+			if c := strings.Compare(a.Get(lb), b.Get(lb)); c != 0 {
+				return c
+			}
+		}
+
+		return labels.Compare(a, b)
+	}
 }
 
 func allChunksEmpty(chkBytes [][]byte) bool {

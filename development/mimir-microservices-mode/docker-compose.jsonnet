@@ -139,9 +139,11 @@ std.manifestYamlDoc({
       name: 'parquet-converter',
       target: 'parquet-converter',
       httpPort: 8040,
-      extraArguments: ' -parquet-converter.conversion-interval=30s' +
-                      ' -parquet-converter.discovery-interval=30s' +
-                      ' -parquet-converter.min-compaction-level=1',
+      extraArguments: ' -parquet-converter.conversion-interval=10s' +
+                      ' -parquet-converter.discovery-interval=10s' +
+                      ' -parquet-converter.min-compaction-level=0' +
+                      ' -parquet-converter.max-rows-per-group=1000' +
+                      ' -parquet-converter.max-row-groups-per-shard=4',
     }),
   },
 

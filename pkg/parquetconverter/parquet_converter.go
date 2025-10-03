@@ -10,6 +10,7 @@ import (
 	"flag"
 	"fmt"
 	"hash/fnv"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -66,9 +67,11 @@ func (d defaultBlockConverter) ConvertBlock(ctx context.Context, meta *block.Met
 	if err != nil {
 		return err
 	}
-	defer runutil.CloseWithErrCapture(&err, tsdbBlock, "close tsdb block")
+	defer func() {
+		runutil.CloseWithErrCapture(&err, tsdbBlock, "close tsdb block")
+	}()
 
-	_, err = convert.ConvertTSDBBlock(
+	_, err = convert.ConvertTSDBBlockParallel(
 		ctx,
 		bkt,
 		meta.MinTime,
@@ -92,11 +95,12 @@ type Config struct {
 	MinBlockTimestamp  uint64        `yaml:"min_block_timestamp"`
 	MinDataAge         time.Duration `yaml:"min_data_age" category:"advanced"`
 
-	SortingLabels      flagext.StringSliceCSV `yaml:"sorting_labels" category:"advanced"`
-	ColDuration        time.Duration          `yaml:"col_duration" category:"advanced"`
-	MaxRowsPerGroup    int                    `yaml:"max_rows_per_group" category:"advanced"`
-	MinCompactionLevel int                    `yaml:"min_compaction_level" category:"advanced"`
-	MinBlockDuration   time.Duration          `yaml:"min_block_duration" category:"advanced"`
+	SortingLabels        flagext.StringSliceCSV `yaml:"sorting_labels" category:"advanced"`
+	ColDuration          time.Duration          `yaml:"col_duration" category:"advanced"`
+	MaxRowsPerGroup      int                    `yaml:"max_rows_per_group" category:"advanced"`
+	MaxRowGroupsPerShard int                    `yaml:"max_row_groups_per_shard" category:"advanced"`
+	MinCompactionLevel   int                    `yaml:"min_compaction_level" category:"advanced"`
+	MinBlockDuration     time.Duration          `yaml:"min_block_duration" category:"advanced"`
 
 	CompressionEnabled bool `yaml:"compression_enabled" category:"advanced"`
 
@@ -117,6 +121,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.Var(&cfg.SortingLabels, "parquet-converter.sorting-labels", "Comma-separated list of labels to sort by when converting to Parquet format. If not the file will be sorted by '__name__'.")
 	f.DurationVar(&cfg.ColDuration, "parquet-converter.col-duration", 8*time.Hour, "Duration for column chunks in Parquet files.")
 	f.IntVar(&cfg.MaxRowsPerGroup, "parquet-converter.max-rows-per-group", 1e6, "Maximum number of rows per row group in Parquet files.")
+	f.IntVar(&cfg.MaxRowGroupsPerShard, "parquet-converter.max-row-groups-per-shard", math.MaxInt32, "Maximum number of rows per row group in Parquet files.")
 	f.IntVar(&cfg.MinCompactionLevel, "parquet-converter.min-compaction-level", 2, "Minimum compaction level required for blocks to be converted to Parquet. Blocks equal or greater than this level will be converted.")
 	f.DurationVar(&cfg.MinBlockDuration, "parquet-converter.min-block-duration", 0, "Minimum duration of blocks to convert. Blocks with a duration shorter than this will be skipped. Set to 0 to disable duration filtering.")
 	f.BoolVar(&cfg.CompressionEnabled, "parquet-converter.compression-enabled", true, "Whether compression is enabled for labels and chunks parquet files. When disabled, parquet files will be converted and stored uncompressed.")
@@ -164,7 +169,14 @@ func buildBaseConverterOptions(cfg Config) []convert.ConvertOption {
 		baseConverterOptions = append(baseConverterOptions, convert.WithRowGroupSize(cfg.MaxRowsPerGroup))
 	}
 
-	baseConverterOptions = append(baseConverterOptions, convert.WithCompression(schema.WithCompressionEnabled(cfg.CompressionEnabled)))
+	if cfg.MaxRowGroupsPerShard > 0 {
+		baseConverterOptions = append(baseConverterOptions, convert.WithNumRowGroups(cfg.MaxRowGroupsPerShard))
+	}
+
+	baseConverterOptions = append(baseConverterOptions, convert.WithReadConcurrency(1))
+	baseConverterOptions = append(baseConverterOptions, convert.WithWriteConcurrency(4))
+
+	baseConverterOptions = append(baseConverterOptions, convert.WithCompression(schema.WithCompressionEnabled(false)))
 
 	return baseConverterOptions
 }
@@ -461,6 +473,17 @@ func (c *ParquetConverter) discoverAndEnqueueBlocks(ctx context.Context) {
 
 // processBlock handles the conversion of a single block with proper metrics tracking.
 func (c *ParquetConverter) processBlock(ctx context.Context, userID string, meta *block.Meta, uBucket objstore.InstrumentedBucket, logger log.Logger) {
+	ulidTime := time.UnixMilli(int64(meta.ULID.Time()))
+	level.Info(logger).Log(
+		"msg", "starting block conversion",
+		"block", meta.ULID.String(),
+		"min_time", meta.MinTime,
+		"max_time", meta.MaxTime,
+		"ulid_timestamp_ms", meta.ULID.Time(),
+		"ulid_time_human", ulidTime.UTC().Format(time.RFC3339),
+		"compaction_level", meta.Compaction.Level,
+		"block_size_bytes", meta.BlockBytes(),
+	)
 	start := time.Now()
 	var err error
 	var skipped bool
@@ -517,14 +540,16 @@ func (c *ParquetConverter) processBlock(ctx context.Context, userID string, meta
 		return
 	}
 
-	ulidTime := time.UnixMilli(int64(meta.ULID.Time()))
 	level.Info(logger).Log(
-		"msg", "converted block",
+		"msg", "finished block conversion",
 		"block", meta.ULID.String(),
+		"min_time", meta.MinTime,
+		"max_time", meta.MaxTime,
 		"ulid_timestamp_ms", meta.ULID.Time(),
 		"ulid_time_human", ulidTime.UTC().Format(time.RFC3339),
-		"duration_seconds", time.Since(start).Seconds(),
+		"compaction_level", meta.Compaction.Level,
 		"block_size_bytes", meta.BlockBytes(),
+		"duration_seconds", time.Since(start).Seconds(),
 	)
 
 	err = WriteConversionMark(ctx, meta.ULID, uBucket)
