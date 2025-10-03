@@ -47,8 +47,13 @@ func NewUnlimitedMemoryTrackingQuery(query promql.Query) *UnlimitedMemoryTrackin
 	return &UnlimitedMemoryTrackingQuery{query}
 }
 
-// UnlimitedMemoryTrackerPromqlEngine wraps promql.Engine so that it can have promql.Query that can pass
-// MemoryConsumptionTracker during the Exec call.
+// UnlimitedMemoryTrackerPromqlEngine wraps promql.Engine so that queries always run
+// with a MemoryConsumptionTracker in their context.
+// 
+// The provided MemoryConsumptionTracker will enforce no limit on query memory consumption,
+// but is still required as some querier components track memory consumption even
+// when running in Prometheus' engine (eg. the ingester and store-gateway Queryable
+// implementations).
 type UnlimitedMemoryTrackerPromqlEngine struct {
 	inner *promql.Engine
 }
