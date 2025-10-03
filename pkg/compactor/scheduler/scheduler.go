@@ -85,11 +85,12 @@ func NewCompactorScheduler(
 	logger log.Logger,
 	registerer prometheus.Registerer) (*Scheduler, error) {
 
-	planTracker := NewJobTracker[struct{}](InfiniteLeases)
+	metrics := newSchedulerMetrics(registerer)
+	planTracker := NewJobTracker[struct{}](InfiniteLeases, "planning", metrics)
 
 	scheduler := &Scheduler{
 		cfg:         cfg,
-		rotator:     NewRotator(planTracker, cfg.leaseDuration, cfg.leaseCheckInterval, cfg.maxLeases),
+		rotator:     NewRotator(planTracker, cfg.leaseDuration, cfg.leaseCheckInterval, cfg.maxLeases, metrics),
 		planTracker: planTracker,
 		logger:      logger,
 		clock:       clock.New(),
