@@ -85,6 +85,9 @@ const (
 	// Number of timeseries to return in each batch of a QueryStream.
 	queryStreamBatchSize = 128
 
+	// Number of chunks to return in each batch of a QueryStream if not set in the request.
+	fallbackChunkStreamBatchSize = 256
+
 	// Discarded Metadata metric labels.
 	perUserMetadataLimit   = "per_user_metadata_limit"
 	perMetricMetadataLimit = "per_metric_metadata_limit"
@@ -2309,6 +2312,14 @@ func (i *Ingester) QueryStream(req *client.QueryRequest, stream client.Ingester_
 
 	ctx := stream.Context()
 	spanlog := spanlogger.FromContext(ctx, i.logger)
+
+	// Previously a chunk batch size of 0 was used to request a non-streaming response.
+	// Streaming series and chunks has been the default for some time and we no longer
+	// support non-streaming responses.
+	if req.StreamingChunksBatchSize == 0 {
+		req.StreamingChunksBatchSize = fallbackChunkStreamBatchSize
+	}
+
 	userID, err := tenant.TenantID(ctx)
 	if err != nil {
 		return err
@@ -2342,14 +2353,8 @@ func (i *Ingester) QueryStream(req *client.QueryRequest, stream client.Ingester_
 	numSamples := 0
 	numSeries := 0
 
-	if req.StreamingChunksBatchSize > 0 {
-		spanlog.DebugLog("msg", "using executeStreamingQuery")
-		numSeries, numSamples, err = i.executeStreamingQuery(ctx, db, int64(from), int64(through), matchers, shard, stream, req.StreamingChunksBatchSize, spanlog)
-	} else {
-		spanlog.DebugLog("msg", "using executeChunksQuery")
-		numSeries, numSamples, err = i.executeChunksQuery(ctx, db, int64(from), int64(through), matchers, shard, stream)
-	}
-
+	spanlog.DebugLog("msg", "using executeStreamingQuery")
+	numSeries, numSamples, err = i.executeStreamingQuery(ctx, db, int64(from), int64(through), matchers, shard, stream, req.StreamingChunksBatchSize, spanlog)
 	if err != nil {
 		return err
 	}
@@ -2358,106 +2363,6 @@ func (i *Ingester) QueryStream(req *client.QueryRequest, stream client.Ingester_
 	i.metrics.queriedSamples.Observe(float64(numSamples))
 	spanlog.DebugLog("series", numSeries, "samples", numSamples)
 	return nil
-}
-
-// executeChunksQuery streams metrics from a TSDB. This implements the client.IngesterServer interface
-func (i *Ingester) executeChunksQuery(ctx context.Context, db *userTSDB, from, through int64, matchers []*labels.Matcher, shard *sharding.ShardSelector, stream client.Ingester_QueryStreamServer) (numSeries, numSamples int, _ error) {
-	var q storage.ChunkQuerier
-	var err error
-	if i.limits.OutOfOrderTimeWindow(db.userID) > 0 {
-		q, err = db.UnorderedChunkQuerier(from, through)
-	} else {
-		q, err = db.ChunkQuerier(from, through)
-	}
-	if err != nil {
-		return 0, 0, err
-	}
-	defer q.Close()
-
-	// Disable chunks trimming, so that we don't have to rewrite chunks which have samples outside
-	// the requested from/through range. PromQL engine can handle it.
-	hints := initSelectHints(from, through)
-	hints = configSelectHintsWithShard(hints, shard)
-	hints = configSelectHintsWithDisabledTrimming(hints)
-
-	// It's not required to return sorted series because series are sorted by the Mimir querier.
-	ss := q.Select(ctx, false, hints, matchers...)
-	if ss.Err() != nil {
-		return 0, 0, errors.Wrap(ss.Err(), "selecting series from ChunkQuerier")
-	}
-
-	chunkSeries := make([]client.TimeSeriesChunk, 0, queryStreamBatchSize)
-	batchSizeBytes := 0
-	var it chunks.Iterator
-	for ss.Next() {
-		series := ss.At()
-
-		// convert labels to LabelAdapter
-		ts := client.TimeSeriesChunk{
-			Labels: mimirpb.FromLabelsToLabelAdapters(series.Labels()),
-		}
-
-		it = series.Iterator(it)
-		for it.Next() {
-			// Chunks are ordered by min time.
-			meta := it.At()
-
-			// It is not guaranteed that chunk returned by iterator is populated.
-			// For now just return error. We could also try to figure out how to read the chunk.
-			if meta.Chunk == nil {
-				return 0, 0, errors.Errorf("unfilled chunk returned from TSDB chunk querier")
-			}
-
-			ch, err := client.ChunkFromMeta(meta)
-			if err != nil {
-				return 0, 0, err
-			}
-
-			ts.Chunks = append(ts.Chunks, ch)
-			numSamples += meta.Chunk.NumSamples()
-		}
-
-		if err := it.Err(); err != nil {
-			return 0, 0, err
-		}
-
-		numSeries++
-		tsSize := ts.Size()
-
-		if (batchSizeBytes > 0 && batchSizeBytes+tsSize > queryStreamBatchMessageSize) || len(chunkSeries) >= queryStreamBatchSize {
-			// Adding this series to the batch would make it too big,
-			// flush the data and add it to new batch instead.
-			err = client.SendQueryStream(stream, &client.QueryStreamResponse{
-				Chunkseries: chunkSeries,
-			})
-			if err != nil {
-				return 0, 0, err
-			}
-
-			batchSizeBytes = 0
-			chunkSeries = chunkSeries[:0]
-		}
-
-		chunkSeries = append(chunkSeries, ts)
-		batchSizeBytes += tsSize
-	}
-
-	// Ensure no error occurred while iterating the series set.
-	if err := ss.Err(); err != nil {
-		return 0, 0, errors.Wrap(err, "iterating ChunkSeriesSet")
-	}
-
-	// Final flush any existing metrics
-	if batchSizeBytes != 0 {
-		err = client.SendQueryStream(stream, &client.QueryStreamResponse{
-			Chunkseries: chunkSeries,
-		})
-		if err != nil {
-			return 0, 0, err
-		}
-	}
-
-	return numSeries, numSamples, nil
 }
 
 func (i *Ingester) executeStreamingQuery(ctx context.Context, db *userTSDB, from, through int64, matchers []*labels.Matcher, shard *sharding.ShardSelector, stream client.Ingester_QueryStreamServer, batchSize uint64, spanlog *spanlogger.SpanLogger) (numSeries, numSamples int, _ error) {
