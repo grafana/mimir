@@ -3,6 +3,8 @@ description: Learn how to store classic histograms more efficiently in Grafana M
 keywords:
   - send metrics
   - native histogram
+  - custom buckets
+  - NHCB
   - prometheus
   - grafana alloy
   - instrumentation
@@ -16,11 +18,11 @@ weight: 2
 
 # Send native histograms with custom buckets to Grafana Mimir
 
-Prometheus [native histograms](https://prometheus.io/docs/specs/native_histograms/) with custom buckets, also known as NHCB, is a data type in the Prometheus ecosystem that makes it possible to store classic Prometheus [histograms](https://prometheus.io/docs/concepts/metric_types/#histogram) as native histograms with custom buckets.
+Prometheus [native histograms](https://prometheus.io/docs/specs/native_histograms/) with custom buckets, also known as NHCB, is a sample type in the Prometheus ecosystem that makes it possible to store classic Prometheus [histograms](https://prometheus.io/docs/concepts/metric_types/#histogram) as NHCB.
 
-Native histograms with custom buckets are different from classic Prometheus histograms in a number of ways:
+NHCB are different from classic Prometheus histograms in a number of ways:
 
-- An instance of a native histogram metric only requires a single time series, because the buckets, sum of observations, and the count of observations are stored in a single data type called `native histogram` rather than in separate time series using the `float` data type. Thus, there are no `<metric>_bucket`, `<metric>_sum`, and `<metric>_count` series. There is only `<metric>` time series.
+- An instance of a native histogram metric only requires a single time series, because the buckets, sum of observations, and the count of observations are stored in a single sample type called `native histogram` rather than in separate time series using the `float` sample type. Thus, there are no `<metric>_bucket`, `<metric>_sum`, and `<metric>_count` series. There is only a `<metric>` time series.
 - Querying native histograms via the Prometheus query language (PromQL) uses a different syntax. For details, refer to [Visualize native histograms](https://grafana.com/docs/mimir/<MIMIR_VERSION>/visualize/native-histograms/) and [functions](https://prometheus.io/docs/prometheus/latest/querying/functions/).
 
 For an introduction to native histograms in general, watch the [Native Histograms in Prometheus](https://www.youtube.com/watch?v=AcmABV6NCYk) presentation. For a short introduction to NHCB, watch [Native Histograms With Custom Buckets](https://www.youtube.com/watch?v=2v9DOGq2Mos).
@@ -29,13 +31,13 @@ For more information on native histogram flavors and how to query them using Pro
 
 ## Advantages and disadvantages
 
-There are advantages and disadvantages of using native histograms with custom buckets compared to the classic Prometheus histograms.
+There are advantages and disadvantages of using NHCB compared to the classic Prometheus histograms.
 
 ### Advantages
 
-- Lower storage costs. Native histograms with custom buckets use a single series instead of multiple and apply a sparse representation that aims to avoid storing buckets that are empty.
-- Storage and query of native histograms with custom buckets are atomic, meaning that either all or none of a native histograms with custom buckets sample is stored or retrieved. This is different from classic histograms that are split into multiple independent time series that might be individually lost or delayed, resulting in corrupted or inconsistent data.
-- It is possible to migrate to native histograms with custom buckets without modifying the instrumentation.
+- Lower storage costs. NHCB use a single series instead of multiple and apply a sparse representation that aims to avoid storing buckets that are empty.
+- Storage and query of NHCB are atomic, meaning that either all or none of a NHCB sample is stored or retrieved. This is different from classic histograms, which are split into multiple independent time series that might be individually lost or delayed, resulting in corrupted or inconsistent data.
+- It is possible to migrate to NHCB without modifying the instrumentation.
 - Easy to migrate to [native histogram with exponential buckets](https://grafana.com/docs/mimir/<MIMIR_VERSION>/send/native-histograms/_exponential_buckets) later as queries and visualizations would be already migrated.
 
 ### Disadvantages
@@ -48,11 +50,11 @@ There are advantages and disadvantages of using native histograms with custom bu
 
 No change is required in instrumentation.
 
-Currently scrape processes like Prometheus or Grafana Alloy convert classic histograms during scrape to native histograms with custom buckets as there is no support for native histograms with custom buckets in exposition formats.
+Currently scrape processes like Prometheus or Grafana Alloy convert classic histograms during scrape to NHCB as there is no support for NHCB in exposition formats.
 
 ## Scrape and send native histograms with Prometheus
 
-Use latest Prometheus version.
+Use the latest Prometheus version.
 
 1. To enable scraping native histograms from the application, you need to enable the native histograms feature via a feature flag on the command line:
 
@@ -68,22 +70,7 @@ Use latest Prometheus version.
    Native histograms don't have a textual presentation on the application's `/metrics` endpoint. Therefore, Prometheus negotiates a Protobuf protocol transfer in these cases.
    {{< /admonition >}}
 
-   {{< admonition type="note" >}}
-   In certain situations, the Protobuf parsing changes the number formatting of
-   the `le` labels of conventional histograms and the `quantile` labels of
-   summaries. Typically, this happens if the scraped target is instrumented with
-   [client_golang](https://github.com/prometheus/client_golang), provided that
-   [promhttp.HandlerOpts.EnableOpenMetrics](https://pkg.go.dev/github.com/prometheus/client_golang/prometheus/promhttp#HandlerOpts)
-   is set to `false`. In such cases, integer label values are represented
-   as `quantile="1"` or `le="2"` omitting the zero fractional.
-   However, the Protobuf parsing changes the representation to always include a fractional (following the OpenMetrics
-   specification), so the examples above become `quantile="1.0"` and `le="2.0"` after
-   ingestion into Prometheus. This changes the identity of the metric from what was originally ingested.
-
-   For more information, refer to [le and quantile label values](https://prometheus.io/docs/prometheus/latest/migration/#le-and-quantile-label-values) in the Prometheus documentation.
-   {{< /admonition >}}
-
-1. Optionally, to disable native histograms with exponential buckets and only use native histograms with custom buckets, you need to set scrape protocols that don't carry native histograms with exponential buckets. This is not recommended as it does not save on migration time or effort, but looses the advantages of exponential buckets and has higher overhead than using `PrometheusProto`.
+1. Optionally, to disable native histograms with exponential buckets and only use NHCB, you need to set scrape protocols that don't carry native histograms with exponential buckets. This is not recommended as it does not save on migration time or effort, but looses the advantages of exponential buckets and has higher overhead than using `PrometheusProto`.
 
    For example, use this scrape protocol setting to avoid scraping native histograms with exponential schema:
 
@@ -94,9 +81,9 @@ Use latest Prometheus version.
          [OpenMetricsText1.0.0, OpenMetricsText0.0.1, PrometheusText0.0.4]
    ```
 
-1. To enable converting classic histograms into native histograms with custom buckets, you need to set `convert_histograms_to_nhcb` to `true` in your scrape jobs. This setting will have no effect for histograms that already have a native histogram defined, such as with [native histogram with exponential buckets](https://grafana.com/docs/mimir/<MIMIR_VERSION>/send/native-histograms/_exponential_buckets).
+1. To enable converting classic histograms into NHCB, you need to set `convert_histograms_to_nhcb` to `true` in your scrape jobs. This setting will have no effect for histograms that already have a native histogram defined, such as with [native histogram with exponential buckets](https://grafana.com/docs/mimir/<MIMIR_VERSION>/send/native-histograms/_exponential_buckets).
 
-   For example, to convert classic histograms to native histograms with custom buckets, use the following configuration:
+   For example, to convert classic histograms to NHCB, use the following configuration:
 
    ```yaml
    scrape_configs:
@@ -140,7 +127,7 @@ Use latest Prometheus version.
 
 To ease the migration process, you can keep the custom bucket definition of a classic histogram and add native histogram buckets at the same time.
 
-1. Let Prometheus scrape both classic and native histograms with custom buckets.
+1. Let Prometheus scrape both classic and NHCB.
 1. Send native histograms to remote write, along with the existing classic histograms.
 1. Modify dashboards to use the native histogram metrics. Refer to [Visualize native histograms](https://grafana.com/docs/mimir/<MIMIR_VERSION>/visualize/native-histograms/) for more information.
 
@@ -180,7 +167,7 @@ To ease the migration process, you can keep the custom bucket definition of a cl
      {{< /admonition >}}
 
 1. Start adding _new_ recording rules and alerts to use native histograms. Do not remove the old recording rules and alerts at this time.
-1. It is important to keep scraping both classic and native histograms for at least the period of the longest range in your recording rules and alerts, plus one day. This is the minimum amount of time, but it's recommended to keep scraping both data types until the new rules and alerts can be verified.
+1. It is important to keep scraping both classic and native histograms for at least the period of the longest range in your recording rules and alerts, plus one day. This is the minimum amount of time, but it's recommended to keep scraping both sample types until the new rules and alerts can be verified.
 
    For example, if you have an alert that calculates the rate of requests, such as `sum(rate(http_request_duration_seconds[7d]))`, this query looks at the data from the last seven days plus the Prometheus [lookback period](https://prometheus.io/docs/prometheus/latest/querying/basics/#staleness). When you start sending native histograms, the data isn't there for the entire seven days, and therefore, the results might be unreliable for alerting.
 
@@ -193,4 +180,4 @@ To ease the migration process, you can keep the custom bucket definition of a cl
 
 ## Limit the number of buckets
 
-There is no way to automatically reduce the resolution or merge custom buckets like with [native histogram with exponential buckets](https://grafana.com/docs/mimir/<MIMIR_VERSION>/send/native-histograms/_exponential_buckets#limit-the-number-buckets). Set bucket limits greater than the largest expected bucket count to avoid having native histograms with custom buckets rejected.
+There is no way to automatically reduce the resolution or merge custom buckets like with [native histogram with exponential buckets](https://grafana.com/docs/mimir/<MIMIR_VERSION>/send/native-histograms/_exponential_buckets#limit-the-number-buckets). Set bucket limits greater than the largest expected bucket count to avoid having NHCB rejected.

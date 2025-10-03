@@ -16,14 +16,14 @@ weight: 1
 
 # Send native histograms with exponential buckets to Grafana Mimir
 
-Prometheus [native histograms](https://prometheus.io/docs/specs/native_histograms/) with exponential buckets, also known officially as native histograms with standard schema, is a data type in the Prometheus ecosystem that makes it possible to produce, store, and query a high-resolution [histogram](https://prometheus.io/docs/concepts/metric_types/#histogram) of observations.
+Prometheus [native histograms](https://prometheus.io/docs/specs/native_histograms/) with exponential buckets, also known officially as native histograms with standard schemas, is a sample type in the Prometheus ecosystem that makes it possible to produce, store, and query a high-resolution [histogram](https://prometheus.io/docs/concepts/metric_types/#histogram) of observations.
 
 Native histograms with exponential buckets are different from classic Prometheus histograms in a number of ways:
 
 - Exponential bucket boundaries are calculated by a formula that depends on the scale (resolution) of the native histogram, and are not user defined. The calculation produces exponentially increasing bucket boundaries. For details, refer to [Exponential bucket boundary calculation](#exponential-bucket-boundary-calculation).
 - Exponential bucket boundaries might change (widen) dynamically if the observations result in too many buckets. For details, refer to [Limit the number of buckets](#limit-the-number-of-buckets).
 - Exponential bucket counters only count observations inside the bucket boundaries, whereas the classic histogram buckets only have an upper bound called `le` and count all observations in the bucket and all lower buckets (cumulative).
-- An instance of a native histogram metric only requires a single time series, because the buckets, sum of observations, and the count of observations are stored in a single data type called `native histogram` rather than in separate time series using the `float` data type. Thus, there are no `<metric>_bucket`, `<metric>_sum`, and `<metric>_count` series. There is only `<metric>` time series.
+- An instance of a native histogram metric only requires a single time series, because the buckets, sum of observations, and the count of observations are stored in a single sample type called `native histogram` rather than in separate time series using the `float` sample type. Thus, there are no `<metric>_bucket`, `<metric>_sum`, and `<metric>_count` series. There is only a `<metric>` time series.
 - Querying native histograms via the Prometheus query language (PromQL) uses a different syntax. For details, refer to [Visualize native histograms](https://grafana.com/docs/mimir/<MIMIR_VERSION>/visualize/native-histograms/) and [functions](https://prometheus.io/docs/prometheus/latest/querying/functions/).
 
 For an introduction to native histograms, watch the [Native Histograms in Prometheus](https://www.youtube.com/watch?v=AcmABV6NCYk) presentation.
@@ -40,13 +40,13 @@ There are advantages and disadvantages of using native histograms with exponenti
 - Better resolution in practice: custom bucket layouts are usually not high resolution.
 - Native histograms with exponential buckets are compatible with each other: they have an automatic layout, which makes them easy to combine.
   {{< admonition type="note" >}}
-  The operation might scale down an operand to lower resolution to match the other operand.
+  The operation might scale down an operand to a lower resolution to match the other operand.
   {{< /admonition >}}
 
 ### Disadvantages
 
 - Observations might be distributed in a way that is not a good fit for the exponential bucket schema, such as sound pressure measured in decibels, which are already logarithmic.
-- If converting from an externally represented histogram with specific bucket boundaries, there is generally no precise match with the exponential bucket boundaries of the native histogram, and in which case you need to use interpolation.
+- If converting from an externally represented histogram with specific bucket boundaries, there is generally no precise match with the exponential bucket boundaries of the native histogram, in which case you need to use interpolation.
 - There is no way to set an arbitrary bucket boundary, such as one that is particularly interesting for an SLO definition. Generally, ratios of observations above or below a given threshold have to be estimated by interpolation, rather than being precise in the case for a classic histogram with a configured bucket boundary at a given threshold.
 
 The preceding problems are mitigated by high resolution, which native histograms with exponential buckets can provide at a much lower resource cost compared to classic histograms.
@@ -107,7 +107,7 @@ The duration in `NativeHistogramMinResetDuration`/`nativeResetDuration` will pro
 
 ## Scrape and send native histograms with Prometheus
 
-Use Prometheus version 2.47 or later.
+Use Prometheus version 3.00 or later.
 
 1. To enable scraping native histograms from the application, you need to enable the native histograms feature via a feature flag on the command line:
 
@@ -121,21 +121,6 @@ Use Prometheus version 2.47 or later.
    <!-- Issue: https://github.com/prometheus/prometheus/issues/11265 -->
 
    Native histograms don't have a textual presentation on the application's `/metrics` endpoint. Therefore, Prometheus negotiates a Protobuf protocol transfer in these cases.
-   {{< /admonition >}}
-
-   {{< admonition type="note" >}}
-   In certain situations, the Protobuf parsing changes the number formatting of
-   the `le` labels of conventional histograms and the `quantile` labels of
-   summaries. Typically, this happens if the scraped target is instrumented with
-   [client_golang](https://github.com/prometheus/client_golang), provided that
-   [promhttp.HandlerOpts.EnableOpenMetrics](https://pkg.go.dev/github.com/prometheus/client_golang/prometheus/promhttp#HandlerOpts)
-   is set to `false`. In such cases, integer label values are represented
-   as `quantile="1"` or `le="2"` omitting the zero fractional.
-   However, the Protobuf parsing changes the representation to always include a fractional (following the OpenMetrics
-   specification), so the examples above become `quantile="1.0"` and `le="2.0"` after
-   ingestion into Prometheus. This changes the identity of the metric from what was originally ingested.
-
-   For more information, refer to [le and quantile label values](https://prometheus.io/docs/prometheus/latest/migration/#le-and-quantile-label-values) in the Prometheus documentation.
    {{< /admonition >}}
 
 1. To keep scraping the classic histogram version of native histogram metrics, you need to set `always_scrape_classic_histograms` to `true` in your scrape jobs.
@@ -285,7 +270,7 @@ To ease the migration process, you can keep the custom bucket definition of a cl
      {{< /admonition >}}
 
 1. Start adding _new_ recording rules and alerts to use native histograms. Do not remove the old recording rules and alerts at this time.
-1. It is important to keep scraping both classic and native histograms for at least the period of the longest range in your recording rules and alerts, plus one day. This is the minimum amount of time, but it's recommended to keep scraping both data types until the new rules and alerts can be verified.
+1. It is important to keep scraping both classic and native histograms for at least the period of the longest range in your recording rules and alerts, plus one day. This is the minimum amount of time, but it's recommended to keep scraping both sample types until the new rules and alerts can be verified.
 
    For example, if you have an alert that calculates the rate of requests, such as `sum(rate(http_request_duration_seconds[7d]))`, this query looks at the data from the last seven days plus the Prometheus [lookback period](https://prometheus.io/docs/prometheus/latest/querying/basics/#staleness). When you start sending native histograms, the data isn't there for the entire seven days, and therefore, the results might be unreliable for alerting.
 
