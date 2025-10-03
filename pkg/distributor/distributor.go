@@ -212,8 +212,7 @@ type Distributor struct {
 	sleep func(time.Duration)
 	now   func() time.Time
 
-	latency  *artificialLatencyWithErrors
-	cpuUsage *artificialCPUUsage
+	latency *artificialLatencyWithErrors
 }
 
 type delayCalculator struct {
@@ -291,6 +290,8 @@ func (a *artificialCPUUsage) run(logger log.Logger) {
 type artificialLatencyWithErrors struct {
 	delayCalculator
 
+	expensiveRunPercentage float64
+
 	errorFrequency time.Duration
 	lastError      time.Time
 }
@@ -306,8 +307,14 @@ func (a *artificialLatencyWithErrors) run(logger log.Logger, expectedErr error) 
 	defer func() {
 		level.Debug(logger).Log("msg", "artificial latency with error", "min_delay", a.min, "max_delay", a.max, "current_delay", delay, "total_duration", a.totalDuration, "start_time", a.startTime, "err", expectedErr)
 	}()
-
-	time.Sleep(delay)
+	if rand.Float64()*100 < a.expensiveRunPercentage {
+		end := time.Now().Add(delay)
+		for time.Now().Before(end) {
+			_ = rand.Int63() * rand.Int63()
+		}
+	} else {
+		time.Sleep(delay)
+	}
 	return expectedErr
 }
 
@@ -2018,25 +2025,23 @@ func (d *Distributor) StartArtificialLatencyHandler(w http.ResponseWriter, r *ht
 	latencyMinStr := vars["latencyMin"]
 	latencyMaxStr := vars["latencyMax"]
 	latencyDurationStr := vars["latencyDuration"]
-	latencyWorkersStr := vars["latencyWorkers"]
-	latencySlowDownFrequencyStr := vars["latencySlowDownFrequency"]
 	latencyErrorFrequencyStr := vars["latencyErrorFrequency"]
+	latencyExpensiveRunPercentageStr := vars["latencyExpensiveRunPercentage"]
 
 	// Defaults
 	latencyMin, _ := time.ParseDuration(defaultIfEmpty(latencyMinStr, "100ms"))
 	latencyMax, _ := time.ParseDuration(defaultIfEmpty(latencyMaxStr, "500ms"))
 	latencyDuration, _ := time.ParseDuration(defaultIfEmpty(latencyDurationStr, "300s"))
-	latencyWorkers, _ := strconv.Atoi(defaultIfEmpty(latencyWorkersStr, "1"))
-	latencySlowDownFrequency, err := time.ParseDuration(latencySlowDownFrequencyStr)
-	if err != nil {
-		latencySlowDownFrequency = time.Duration(1<<63 - 1)
-	}
 	latencyErrorFrequency, err := time.ParseDuration(latencyErrorFrequencyStr)
 	if err != nil {
 		latencyErrorFrequency = time.Duration(1<<63 - 1)
 	}
+	latencyExpensiveRunPercentage, err := strconv.ParseFloat(latencyExpensiveRunPercentageStr, 64)
+	if err != nil {
+		latencyExpensiveRunPercentage = 20.0
+	}
 
-	level.Info(d.log).Log("msg", "artificial latency parameters retrieved", "latencyMin", latencyMin, "latencyMax", latencyMax, "latencyDuration", latencyDuration, "latencyWorkers", latencyWorkers, "latencySlowDownFrequency", latencySlowDownFrequency, "latencyErrorFrequency", latencyErrorFrequency)
+	level.Info(d.log).Log("msg", "artificial latency parameters retrieved", "latencyMin", latencyMin, "latencyMax", latencyMax, "latencyDuration", latencyDuration, "latencyErrorFrequency", latencyErrorFrequency, "latencyExpensiveRunPercentage", latencyExpensiveRunPercentage)
 
 	d.latency = &artificialLatencyWithErrors{
 		delayCalculator: delayCalculator{
@@ -2046,6 +2051,9 @@ func (d *Distributor) StartArtificialLatencyHandler(w http.ResponseWriter, r *ht
 			startTime:     time.Now(),
 			totalDuration: latencyDuration,
 		},
+
+		expensiveRunPercentage: latencyExpensiveRunPercentage,
+
 		errorFrequency: latencyErrorFrequency,
 		lastError:      time.Time{},
 	}
@@ -2053,7 +2061,7 @@ func (d *Distributor) StartArtificialLatencyHandler(w http.ResponseWriter, r *ht
 	level.Info(d.log).Log("msg", "artificial latency with error setup completed")
 
 	// Build response
-	response := fmt.Sprintf("Artificial latency with error with parameters min=%v, max=%v, duration=%v, error frequency=%v", latencyMin, latencyMax, latencyDuration, latencyErrorFrequency)
+	response := fmt.Sprintf("Artificial latency with error with parameters min=%v, max=%v, duration=%v, error frequency=%v, expensiveRunPercentage=%5.2f%%", latencyMin, latencyMax, latencyDuration, latencyErrorFrequency, latencyExpensiveRunPercentage)
 	util.WriteHTMLResponse(w, response)
 }
 
