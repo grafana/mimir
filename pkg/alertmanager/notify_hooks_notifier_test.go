@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/alerting/receivers"
 	"github.com/prometheus/alertmanager/notify"
 	"github.com/prometheus/alertmanager/types"
 	"github.com/prometheus/client_golang/prometheus"
@@ -186,7 +187,7 @@ func TestNotifyHooksNotifier(t *testing.T) {
 		`"generatorURL":"",` +
 		`"UpdatedAt":"0001-01-01T00:00:00Z",` +
 		`"Timeout":false}],` +
-		`"extraData": {"foo": "bar"}` +
+		`"extraData": [{"one": "two"}, {"three": "four"}]` +
 		`}`
 
 	t.Run("hook invoked", func(t *testing.T) {
@@ -205,16 +206,11 @@ func TestNotifyHooksNotifier(t *testing.T) {
 		_, err := f.notifier.Notify(ctx, makeAlert("foo")...)
 		require.NoError(t, err)
 
-		type testExtraData struct {
-			Foo string `json:"foo"`
-		}
-
-		extraDataRaw := f.upstream.ctxForTesting.Value(ExtraDataKey).(json.RawMessage)
-		extraData := testExtraData{}
-		err = json.Unmarshal(extraDataRaw, &extraData)
-		require.NoError(t, err)
-
-		require.Equal(t, "bar", extraData.Foo)
+		extraDataRaw, ok := f.upstream.ctxForTesting.Value(receivers.ExtraDataKey).([]json.RawMessage)
+		require.True(t, ok)
+		require.Equal(t, 2, len(extraDataRaw))
+		require.Equal(t, `{"one": "two"}`, string(extraDataRaw[0]))
+		require.Equal(t, `{"three": "four"}`, string(extraDataRaw[1]))
 	})
 	t.Run("hook not invoked when empty url configured", func(t *testing.T) {
 		f := newTestHooksFixture(t, http.StatusOK, okResponse)

@@ -237,8 +237,9 @@ func newOTLPParser(
 				var tooLargeErr util.MsgSizeTooLargeErr
 				if errors.As(err, &tooLargeErr) {
 					return exportReq, 0, httpgrpc.Error(http.StatusRequestEntityTooLarge, distributorMaxOTLPRequestSizeErr{
-						actual: tooLargeErr.Actual,
-						limit:  tooLargeErr.Limit,
+						compressed: tooLargeErr.Compressed,
+						actual:     tooLargeErr.Actual,
+						limit:      tooLargeErr.Limit,
 					}.Error())
 				}
 				return exportReq, protoBodySize, err

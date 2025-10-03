@@ -15,6 +15,8 @@ import (
 	"unicode/utf8"
 	"unsafe"
 
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
@@ -79,6 +81,14 @@ var (
 	)
 	labelValueTooLongMsgFormat = globalerror.SeriesLabelValueTooLong.MessageWithPerTenantLimitConfig(
 		"received a series whose label value length of %d exceeds the limit of %d, label: '%s', value: '%.200s' (truncated) series: '%.200s'",
+		validation.MaxLabelValueLengthFlag,
+	)
+	truncatedLabelValueMsg = globalerror.SeriesLabelValueTooLong.MessageWithPerTenantLimitConfig(
+		"received a series whose label value length exceeds the limit; label value was truncated and appended its hash value",
+		validation.MaxLabelValueLengthFlag,
+	)
+	droppedLabelValueMsg = globalerror.SeriesLabelValueTooLong.MessageWithPerTenantLimitConfig(
+		"received a series whose label value length exceeds the limit; label value was replaced by its hash value",
 		validation.MaxLabelValueLengthFlag,
 	)
 	invalidLabelMsgFormat      = globalerror.SeriesInvalidLabel.Message("received a series with an invalid label: '%.200s' series: '%.200s'")
@@ -422,7 +432,7 @@ func removeNonASCIIChars(in string) (out string) {
 // validateLabels returns an err if the labels are invalid.
 // The returned error MUST NOT retain label strings - they point into a gRPC buffer which is re-used.
 // It may mutate ls and the underlying UnsafeMutableLabel/Strings.
-func validateLabels(m *sampleValidationMetrics, cfg labelValidationConfig, userID, group string, ls []mimirpb.UnsafeMutableLabel, skipLabelValidation, skipLabelCountValidation bool, cat *costattribution.SampleTracker, ts time.Time) error {
+func validateLabels(m *sampleValidationMetrics, cfg labelValidationConfig, userID, group string, ls []mimirpb.UnsafeMutableLabel, skipLabelValidation, skipLabelCountValidation bool, cat *costattribution.SampleTracker, ts time.Time, logger log.Logger) error {
 	unsafeMetricName, err := extract.UnsafeMetricNameFromLabelAdapters(ls)
 	if err != nil {
 		cat.IncrementDiscardedSamples(ls, 1, reasonMissingMetricName, ts)
@@ -483,9 +493,19 @@ func validateLabels(m *sampleValidationMetrics, cfg labelValidationConfig, userI
 					Limit:  maxLabelValueLength,
 				}
 			case validation.LabelValueLengthOverLimitStrategyTruncate:
+				level.Warn(logger).Log("msg", truncatedLabelValueMsg,
+					"length", len(l.Value), "limit", maxLabelValueLength,
+					"label", l.Name, "value", fmt.Sprintf("%.200s (truncated)", l.Value),
+					"series", fmt.Sprintf("%.200s", mimirpb.FromLabelAdaptersToString(ls)),
+					"user", userID, "insight", true)
 				_ = hashLabelValueInto(l.Value[maxLabelValueLength-validation.LabelValueHashLen:], l.Value)
 				ls[i].Value = ls[i].Value[:maxLabelValueLength]
 			case validation.LabelValueLengthOverLimitStrategyDrop:
+				level.Warn(logger).Log("msg", droppedLabelValueMsg,
+					"length", len(l.Value), "limit", maxLabelValueLength,
+					"label", l.Name, "value", fmt.Sprintf("%.200s (truncated)", l.Value),
+					"series", fmt.Sprintf("%.200s", mimirpb.FromLabelAdaptersToString(ls)),
+					"user", userID, "insight", true)
 				ls[i].Value = hashLabelValueInto(l.Value[:validation.LabelValueHashLen], l.Value)
 			default:
 				panic(fmt.Errorf("unexpected value: %v", labelValueLengthOverLimitStrategy))

@@ -24,6 +24,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/failsafe-go/failsafe-go/adaptivelimiter"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/concurrency"
@@ -203,11 +204,11 @@ type Config struct {
 	UpdateIngesterOwnedSeries       bool          `yaml:"track_ingester_owned_series" category:"experimental"`
 	OwnedSeriesUpdateInterval       time.Duration `yaml:"owned_series_update_interval" category:"experimental"`
 
-	PushCircuitBreaker   CircuitBreakerConfig                       `yaml:"push_circuit_breaker"`
-	ReadCircuitBreaker   CircuitBreakerConfig                       `yaml:"read_circuit_breaker"`
-	RejectionPrioritizer reactivelimiter.RejectionPrioritizerConfig `yaml:"rejection_prioritizer"`
-	PushReactiveLimiter  reactivelimiter.Config                     `yaml:"push_reactive_limiter"`
-	ReadReactiveLimiter  reactivelimiter.Config                     `yaml:"read_reactive_limiter"`
+	PushCircuitBreaker   CircuitBreakerConfig              `yaml:"push_circuit_breaker"`
+	ReadCircuitBreaker   CircuitBreakerConfig              `yaml:"read_circuit_breaker"`
+	RejectionPrioritizer reactivelimiter.PrioritizerConfig `yaml:"rejection_prioritizer"`
+	PushReactiveLimiter  reactivelimiter.Config            `yaml:"push_reactive_limiter"`
+	ReadReactiveLimiter  reactivelimiter.Config            `yaml:"read_reactive_limiter"`
 
 	PushGrpcMethodEnabled bool `yaml:"push_grpc_method_enabled" category:"experimental" doc:"hidden"`
 
@@ -1133,7 +1134,7 @@ func (i *Ingester) startPushRequest(ctx context.Context, reqSize int64) (context
 
 	if i.reactiveLimiter.push != nil && !i.reactiveLimiter.push.CanAcquirePermit() {
 		i.metrics.rejected.WithLabelValues(reasonIngesterMaxInflightPushRequests).Inc()
-		return nil, false, newReactiveLimiterExceededError(reactivelimiter.ErrExceeded)
+		return nil, false, newReactiveLimiterExceededError(adaptivelimiter.ErrExceeded)
 	}
 
 	inflight := i.inflightPushRequests.Inc()
@@ -1828,7 +1829,7 @@ func (i *Ingester) StartReadRequest(ctx context.Context) (resultCtx context.Cont
 		// Check that a permit can be later acquired
 		if i.reactiveLimiter.read != nil && !i.reactiveLimiter.read.CanAcquirePermit() {
 			i.metrics.rejected.WithLabelValues(reasonIngesterMaxInflightReadRequests).Inc()
-			return nil, newReactiveLimiterExceededError(reactivelimiter.ErrExceeded)
+			return nil, newReactiveLimiterExceededError(adaptivelimiter.ErrExceeded)
 		}
 		finish, err := i.circuitBreaker.tryAcquireReadPermit()
 		if err != nil {
@@ -2353,7 +2354,7 @@ func (i *Ingester) QueryStream(req *client.QueryRequest, stream client.Ingester_
 		return err
 	}
 
-	i.metrics.queriedSeries.Observe(float64(numSeries))
+	i.metrics.queriedSeries.WithLabelValues("merged_blocks").Observe(float64(numSeries))
 	i.metrics.queriedSamples.Observe(float64(numSamples))
 	spanlog.DebugLog("series", numSeries, "samples", numSamples)
 	return nil
@@ -2859,7 +2860,7 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 				MaxBytes:              i.cfg.BlocksStorageConfig.TSDB.HeadPostingsForMatchersCacheMaxBytes,
 				Force:                 i.cfg.BlocksStorageConfig.TSDB.HeadPostingsForMatchersCacheForce,
 				Metrics:               i.tsdbMetrics.headPostingsForMatchersCacheMetrics,
-				PostingsClonerFactory: tsdb.DefaultPostingsClonerFactory{},
+				PostingsClonerFactory: lookupplan.ActualSelectedPostingsClonerFactory{},
 			},
 		),
 		BlockPostingsForMatchersCacheFactory: tsdb.NewPostingsForMatchersCacheFactory(
@@ -2873,10 +2874,10 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 				MaxBytes:              i.cfg.BlocksStorageConfig.TSDB.BlockPostingsForMatchersCacheMaxBytes,
 				Force:                 i.cfg.BlocksStorageConfig.TSDB.BlockPostingsForMatchersCacheForce,
 				Metrics:               i.tsdbMetrics.blockPostingsForMatchersCacheMetrics,
-				PostingsClonerFactory: tsdb.DefaultPostingsClonerFactory{},
+				PostingsClonerFactory: lookupplan.ActualSelectedPostingsClonerFactory{},
 			},
 		),
-		PostingsClonerFactory:  tsdb.DefaultPostingsClonerFactory{},
+		PostingsClonerFactory:  lookupplan.ActualSelectedPostingsClonerFactory{},
 		EnableNativeHistograms: i.limits.NativeHistogramsIngestionEnabled(userID),
 		SecondaryHashFunction:  secondaryTSDBHashFunctionForUser(userID),
 		IndexLookupPlannerFunc: i.getIndexLookupPlannerFunc(userID),
@@ -2948,24 +2949,28 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 	return userDB, nil
 }
 
-// createBlockChunkQuerier creates a BlockChunkQuerier that optionally wraps the default querier with mirroring
+// createBlockChunkQuerier creates a BlockChunkQuerier that wraps the default querier with stats tracking
+// and optionally with mirroring for comparison.
 func (i *Ingester) createBlockChunkQuerier(userID string, b tsdb.BlockReader, mint, maxt int64) (storage.ChunkQuerier, error) {
 	defaultQuerier, err := tsdb.NewBlockChunkQuerier(b, mint, maxt)
 	if err != nil {
 		return nil, err
 	}
 
+	lookupStatsQuerier := newStatsTrackingChunkQuerier(defaultQuerier, i.metrics, i.lookupPlanMetrics.ForUser(userID))
+
 	if rand.Float64() > i.cfg.BlocksStorageConfig.TSDB.IndexLookupPlanningComparisonPortion {
-		return defaultQuerier, nil
+		return lookupStatsQuerier, nil
 	}
 
+	// If mirroring is enabled, wrap the stats querier with mirrored querier
 	mirroredQuerier := newMirroredChunkQuerierWithMeta(
 		userID,
 		i.metrics.indexLookupComparisonOutcomes,
 		mint, maxt,
 		b.Meta(),
 		i.logger,
-		defaultQuerier,
+		lookupStatsQuerier,
 	)
 
 	return mirroredQuerier, nil

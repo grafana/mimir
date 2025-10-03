@@ -15,6 +15,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/alerting/receivers"
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/alertmanager/notify"
 	"github.com/prometheus/alertmanager/types"
@@ -180,17 +181,11 @@ type hookData struct {
 	Alerts      []*types.Alert `json:"alerts"`
 	GroupLabels model.LabelSet `json:"groupLabels"`
 
-	ExtraData json.RawMessage `json:"extraData,omitempty"`
+	ExtraData []json.RawMessage `json:"extraData,omitempty"`
 }
 
-type extraDataKey int
-
-const (
-	ExtraDataKey extraDataKey = iota
-)
-
-func withExtraData(ctx context.Context, extraData json.RawMessage) context.Context {
-	return context.WithValue(ctx, ExtraDataKey, extraData)
+func withExtraData(ctx context.Context, extraData []json.RawMessage) context.Context {
+	return context.WithValue(ctx, receivers.ExtraDataKey, extraData)
 }
 
 func (n *notifyHooksNotifier) getData(ctx context.Context, l log.Logger, alerts []*types.Alert) *hookData {

@@ -5,8 +5,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/prometheus/alertmanager/config"
 	"gopkg.in/yaml.v3"
+
+	"github.com/prometheus/alertmanager/config"
 )
 
 // LoadCompat loads a PostableApiAlertingConfig from a YAML configuration
@@ -243,13 +244,13 @@ func GrafanaToUpstreamConfig(cfg *PostableApiAlertingConfig) config.Config {
 	}
 
 	return config.Config{
-		Global:            cfg.Config.Global,
-		Route:             cfg.Config.Route.AsAMRoute(),
-		InhibitRules:      cfg.Config.InhibitRules,
+		Global:            cfg.Global,
+		Route:             cfg.Route.AsAMRoute(),
+		InhibitRules:      cfg.InhibitRules,
 		Receivers:         rcvs,
-		Templates:         cfg.Config.Templates,
-		MuteTimeIntervals: cfg.Config.MuteTimeIntervals,
-		TimeIntervals:     cfg.Config.TimeIntervals,
+		Templates:         cfg.Templates,
+		MuteTimeIntervals: cfg.MuteTimeIntervals,
+		TimeIntervals:     cfg.TimeIntervals,
 	}
 }
 

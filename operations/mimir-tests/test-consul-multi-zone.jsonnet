@@ -22,5 +22,8 @@ mimir {
 
     multi_zone_store_gateway_enabled: true,
     multi_zone_store_gateway_replicas: 3,
+
+    // not relevant to this test
+    zpdb_custom_resource_definition_enabled: false,
   },
 }

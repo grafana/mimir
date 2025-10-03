@@ -17,15 +17,17 @@ type TestOperator struct {
 	Series                   []labels.Labels
 	DropName                 []bool
 	Data                     []types.InstantVectorSeriesData
+	Prepared                 bool
 	Finalized                bool
 	Closed                   bool
+	Position                 posrange.PositionRange
 	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
 }
 
 var _ types.InstantVectorOperator = &TestOperator{}
 
 func (t *TestOperator) ExpressionPosition() posrange.PositionRange {
-	return posrange.PositionRange{}
+	return t.Position
 }
 
 func (t *TestOperator) SeriesMetadata(_ context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
@@ -103,7 +105,7 @@ func (t *TestOperator) ReleaseUnreadData(memoryConsumptionTracker *limiter.Memor
 }
 
 func (t *TestOperator) Prepare(_ context.Context, _ *types.PrepareParams) error {
-	// Nothing to do.
+	t.Prepared = true
 	return nil
 }
 
