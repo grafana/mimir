@@ -130,8 +130,10 @@ type ParquetConverter struct {
 	logger              log.Logger
 	limits              *validation.Overrides
 	bucketClientFactory func(ctx context.Context) (objstore.Bucket, error)
+	downloaderFactory   func(ctx context.Context) (downloader, error)
 
 	bucketClient objstore.Bucket
+	s3dl         downloader
 
 	ringLifecycler         *ring.BasicLifecycler
 	ring                   *ring.Ring
@@ -173,13 +175,18 @@ func NewParquetConverter(cfg Config, storageCfg mimir_tsdb.BlocksStorageConfig, 
 	bucketClientFactory := func(ctx context.Context) (objstore.Bucket, error) {
 		return bucket.NewClient(ctx, storageCfg.Bucket, "parquet-converter", logger, registerer)
 	}
-	return newParquetConverter(cfg, logger, registerer, bucketClientFactory, limits, defaultBlockConverter{})
+	downloaderFactory := func(ctx context.Context) (downloader, error) {
+		return downloaderFromConfig(ctx, storageCfg.Bucket.S3)
+	}
+	return newParquetConverter(cfg, logger, registerer, bucketClientFactory, downloaderFactory, limits, defaultBlockConverter{})
 }
+
 func newParquetConverter(
 	cfg Config,
 	logger log.Logger,
 	registerer prometheus.Registerer,
 	bucketClientFactory func(ctx context.Context) (objstore.Bucket, error),
+	downloaderFactory func(ctx context.Context) (downloader, error),
 	limits *validation.Overrides,
 	blockConverter blockConverter,
 ) (*ParquetConverter, error) {
@@ -188,6 +195,7 @@ func newParquetConverter(
 	c := &ParquetConverter{
 		Cfg:                  cfg,
 		bucketClientFactory:  bucketClientFactory,
+		downloaderFactory:    downloaderFactory,
 		logger:               log.With(logger, "component", "parquet-converter"),
 		registerer:           registerer,
 		limits:               limits,
@@ -206,6 +214,11 @@ func (c *ParquetConverter) starting(ctx context.Context) error {
 	c.bucketClient, err = c.bucketClientFactory(ctx)
 	if err != nil {
 		return errors.Wrap(err, "failed to create bucket client")
+	}
+
+	c.s3dl, err = c.downloaderFactory(ctx)
+	if err != nil {
+		return errors.Wrap(err, "failed to create s3 downloader")
 	}
 
 	// Initialize the parquet-converters ring if sharding is enabled.
@@ -502,7 +515,13 @@ func (c *ParquetConverter) processBlock(ctx context.Context, userID string, meta
 
 	localBlockDir := filepath.Join(c.dirForUser(userID), meta.ULID.String())
 	level.Info(logger).Log("msg", "downloading block", "block", meta.ULID.String(), "maxTime", meta.MaxTime)
-	if err = block.Download(ctx, logger, uBucket, meta.ULID, localBlockDir, objstore.WithFetchConcurrency(10)); err != nil {
+
+	if c.s3dl == nil {
+		panic("nil s3 downloader")
+	}
+
+	err = c.s3dl.download(ctx, logger, uBucket, meta.ULID, localBlockDir)
+	if err != nil {
 		level.Error(logger).Log("msg", "error downloading block", "err", err)
 		return
 	}
