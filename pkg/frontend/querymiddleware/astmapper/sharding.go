@@ -187,7 +187,7 @@ func (summer *shardSummer) canShardAllVectorSelectors(expr parser.Expr) (can boo
 		}
 	}()
 
-	hasSelector, err := anyNode(expr, isVectorSelector)
+	hasSelector, err := AnyNode(expr, isVectorSelector)
 	if !hasSelector {
 		return true, nil
 	}
@@ -205,7 +205,7 @@ func (summer *shardSummer) canShardAllVectorSelectors(expr parser.Expr) (can boo
 		return canShardLHS && canShardRHS, nil
 	}
 
-	hasAggregation, err := anyNode(expr, isAggregateExpr)
+	hasAggregation, err := AnyNode(expr, isAggregateExpr)
 	if err != nil {
 		return false, err
 	}
