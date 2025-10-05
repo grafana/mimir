@@ -46,7 +46,7 @@ func TestBlockInternalFunctionsMiddleware(t *testing.T) {
 
 	req = createTestRequest(t, "sin(foo)")
 	resp, err = handler.Do(ctx, req)
-	require.Equal(t, apierror.New(apierror.TypeBadData, "expression contains an internal function not permitted in queries"), err)
+	require.Equal(t, apierror.New(apierror.TypeBadData, "expression contains internal function 'sin' not permitted in queries"), err)
 	require.Nil(t, resp)
 }
 
