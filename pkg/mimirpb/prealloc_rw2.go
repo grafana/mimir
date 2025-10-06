@@ -69,6 +69,7 @@ func reuseTimeSeriesRW2Slice(s []TimeSeriesRW2) {
 		reuseLabelsRefsSlice(s[i].LabelsRefs)
 		s[i] = TimeSeriesRW2{}
 	}
+	//nolint:staticcheck // SA6002: safe to ignore and actually fixing it has some performance penalty.
 	preallocTimeseriesRW2SlicePool.Put(s[:0])
 }
 
