@@ -304,6 +304,10 @@ func (m *alertmanagerMetrics) removeUserRegistry(user string) {
 	m.regs.RemoveTenantRegistry(user, false)
 }
 
+func (m *alertmanagerMetrics) getUserRegistry(user string) *prometheus.Registry {
+	return m.regs.GetRegistryForTenant(user)
+}
+
 func (m *alertmanagerMetrics) Describe(out chan<- *prometheus.Desc) {
 	out <- m.alertsReceived
 	out <- m.alertsInvalid

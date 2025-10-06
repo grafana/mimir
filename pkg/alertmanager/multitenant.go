@@ -750,7 +750,11 @@ func (am *MultitenantAlertmanager) syncConfigs(ctx context.Context, cfgMap map[s
 			delete(am.cfgs, userID)
 			am.multitenantMetrics.lastReloadSuccessful.DeleteLabelValues(userID)
 			am.multitenantMetrics.lastReloadSuccessfulTimestamp.DeleteLabelValues(userID)
-			am.alertmanagerMetrics.removeUserRegistry(userID)
+
+			if !exists {
+				// Only delete if there's no chance the user is coming back after a while.
+				am.alertmanagerMetrics.removeUserRegistry(userID)
+			}
 		}
 	}
 	am.alertmanagersMtx.Unlock()
@@ -1096,15 +1100,13 @@ func (am *MultitenantAlertmanager) getTenantDirectory(userID string) string {
 }
 
 func (am *MultitenantAlertmanager) newAlertmanager(userID string, amConfig *definition.PostableApiAlertingConfig, templates []definition.PostableApiTemplate, rawCfg string, tmplExternalURL *url.URL, emailCfg alertingReceivers.EmailSenderConfig, usingGrafanaConfig bool) (*Alertmanager, error) {
-	reg := prometheus.NewRegistry()
-
 	tenantDir := am.getTenantDirectory(userID)
 	err := os.MkdirAll(tenantDir, 0777)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to create per-tenant directory %v", tenantDir)
 	}
 
-	newAM, err := New(&Config{
+	cfg := Config{
 		UserID:                            userID,
 		TenantDataDir:                     tenantDir,
 		Logger:                            am.logger,
@@ -1121,7 +1123,21 @@ func (am *MultitenantAlertmanager) newAlertmanager(userID string, amConfig *defi
 		GrafanaAlertmanagerCompatibility:  am.cfg.GrafanaAlertmanagerCompatibilityEnabled,
 		EnableNotifyHooks:                 am.cfg.EnableNotifyHooks,
 		StateReadTimeout:                  am.cfg.StateReadTimeout,
-	}, reg)
+	}
+
+	// Check if there's an existing registry we can reuse.
+	// This can happen when an Alertmanager goes on->off->on.
+	var newAM *Alertmanager
+	var reg *prometheus.Registry
+	existingReg := am.alertmanagerMetrics.getUserRegistry(userID)
+	if existingReg != nil {
+		// Use the no-op registry to avoid panics, override it with the existing one.
+		newAM, err = New(&cfg, noOpReg{}, withRegister(existingReg))
+	} else {
+		reg = prometheus.NewRegistry()
+		newAM, err = New(&cfg, reg)
+	}
+
 	if err != nil {
 		return nil, fmt.Errorf("unable to start Alertmanager for user %v: %v", userID, err)
 	}
@@ -1131,7 +1147,10 @@ func (am *MultitenantAlertmanager) newAlertmanager(userID string, amConfig *defi
 		return nil, fmt.Errorf("unable to apply initial config for user %v: %v", userID, err)
 	}
 
-	am.alertmanagerMetrics.addUserRegistry(userID, reg)
+	if existingReg == nil {
+		// Only add the registry for the tenant if we've not done it before.
+		am.alertmanagerMetrics.addUserRegistry(userID, reg)
+	}
 	return newAM, nil
 }
 

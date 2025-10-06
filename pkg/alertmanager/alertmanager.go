@@ -131,7 +131,7 @@ type Alertmanager struct {
 	maintenanceStop chan struct{}
 	wg              sync.WaitGroup
 	mux             *http.ServeMux
-	registry        *prometheus.Registry
+	registry        prometheus.Registerer
 	receiversMtx    sync.Mutex
 	receivers       []*nfstatus.Receiver
 	templatesMtx    sync.RWMutex
@@ -200,8 +200,18 @@ type Replicator interface {
 	ReadFullStateForUser(context.Context, string) ([]*clusterpb.FullState, error)
 }
 
+type option func(*Alertmanager) *Alertmanager
+
+// withRegister overrides the 'registry' field in the Alertmanager struct.
+func withRegister(reg prometheus.Registerer) option {
+	return func(am *Alertmanager) *Alertmanager {
+		am.registry = reg
+		return am
+	}
+}
+
 // New creates a new Alertmanager.
-func New(cfg *Config, reg *prometheus.Registry) (*Alertmanager, error) {
+func New(cfg *Config, reg prometheus.Registerer, opts ...option) (*Alertmanager, error) {
 	if cfg.TenantDataDir == "" {
 		return nil, fmt.Errorf("directory for tenant-specific AlertManager is not configured")
 	}
@@ -342,6 +352,10 @@ func New(cfg *Config, reg *prometheus.Registry) (*Alertmanager, error) {
 	}
 
 	am.dispatcherMetrics = dispatch.NewDispatcherMetrics(true, am.registry)
+
+	for _, opt := range opts {
+		opt(am)
+	}
 
 	// TODO: From this point onward, the alertmanager _might_ receive requests - we need to make sure we've settled and are ready.
 	return am, nil
