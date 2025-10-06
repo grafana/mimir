@@ -23,7 +23,7 @@ The following diagram shows how ingest storage architecture works:
 
 <div align="center">
 
-![Ingest storage architecture diagram](/media/docs/mimir/ingest_storage_arch.png)
+![Ingest storage architecture diagram](/media/docs/mimir/ingest-storage-overview.png)
 
 </div>
 
