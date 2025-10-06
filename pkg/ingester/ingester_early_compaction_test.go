@@ -455,19 +455,25 @@ func TestIngester_compactBlocksToReduceInMemorySeries_Concurrency(t *testing.T) 
 		numReaders          = 5
 	)
 
+	// Requests may be modified by the ingester so we need to create a new one for
+	// every call to QueryStream()
+	newReaderReq := func() *client.QueryRequest {
+		return &client.QueryRequest{
+			StartTimestampMs: math.MinInt64,
+			EndTimestampMs:   math.MaxInt64,
+			Matchers: []*client.LabelMatcher{
+				{Type: client.REGEX_MATCH, Name: model.MetricNameLabel, Value: "series_.*"},
+			},
+			StreamingChunksBatchSize: 64,
+		}
+	}
+
 	for r := 0; r < numRuns; r++ {
 		t.Run(fmt.Sprintf("Run %d", r), func(t *testing.T) {
 			var (
 				ctx         = context.Background()
 				ctxWithUser = user.InjectOrgID(ctx, userID)
 				startTime   = time.Now()
-				readerReq   = &client.QueryRequest{
-					StartTimestampMs: math.MinInt64,
-					EndTimestampMs:   math.MaxInt64,
-					Matchers: []*client.LabelMatcher{
-						{Type: client.REGEX_MATCH, Name: model.MetricNameLabel, Value: "series_.*"},
-					},
-				}
 
 				startEarlyCompaction          = make(chan struct{})
 				stopReadersAndEarlyCompaction = make(chan struct{})
@@ -545,7 +551,7 @@ func TestIngester_compactBlocksToReduceInMemorySeries_Concurrency(t *testing.T) 
 							return
 						case <-time.After(100 * time.Millisecond):
 							s := stream{ctx: ctxWithUser}
-							err := ingester.QueryStream(readerReq, &s)
+							err := ingester.QueryStream(newReaderReq(), &s)
 							require.NoError(t, err)
 
 							res, err := client.StreamsToMatrix(model.Earliest, model.Latest, s.responses)
@@ -618,7 +624,7 @@ func TestIngester_compactBlocksToReduceInMemorySeries_Concurrency(t *testing.T) 
 
 			// Query again all series. We expect to read back all written series and samples.
 			s := stream{ctx: ctxWithUser}
-			err = ingester.QueryStream(readerReq, &s)
+			err = ingester.QueryStream(newReaderReq(), &s)
 			require.NoError(t, err)
 
 			res, err := client.StreamsToMatrix(model.Earliest, model.Latest, s.responses)
