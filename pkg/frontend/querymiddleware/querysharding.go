@@ -286,7 +286,6 @@ func (s *QuerySharder) Shard(ctx context.Context, tenantIDs []string, expr parse
 	log.DebugLog(
 		"msg", "computed shard count for query, rewriting in shardable form",
 		"total shards", totalShards,
-		"expr", expr, // We've already logged this above, and it shouldn't have changed, but I suspect that the expression is getting mutated when we're inspecting it in getShardsForQuery.
 	)
 
 	s.metrics.shardingAttempts.Inc()
