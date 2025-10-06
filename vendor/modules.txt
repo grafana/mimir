@@ -1437,7 +1437,7 @@ github.com/twmb/franz-go/plugin/kotel
 # github.com/twmb/franz-go/plugin/kprom v1.1.0
 ## explicit; go 1.18
 github.com/twmb/franz-go/plugin/kprom
-# github.com/tylertreat/BoomFilters v0.0.0-20250630160909-db6545748bc4
+# github.com/tylertreat/BoomFilters v0.0.0-20251001182300-5b3723cc64ae
 ## explicit
 github.com/tylertreat/BoomFilters
 # github.com/uber/jaeger-client-go v2.30.0+incompatible

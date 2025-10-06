@@ -84,7 +84,7 @@ require (
 	github.com/twmb/franz-go/pkg/kmsg v1.11.2
 	github.com/twmb/franz-go/plugin/kotel v1.5.0
 	github.com/twmb/franz-go/plugin/kprom v1.1.0
-	github.com/tylertreat/BoomFilters v0.0.0-20250630160909-db6545748bc4
+	github.com/tylertreat/BoomFilters v0.0.0-20251001182300-5b3723cc64ae
 	github.com/xlab/treeprint v1.2.0
 	go.opentelemetry.io/collector/pdata v1.42.0
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.61.0
