@@ -95,7 +95,8 @@ func setupBenchmarkData(b *testing.B, user string, compression bool, sortByLabel
 		Source: block.TestSource,
 	}, nil)
 	require.NoError(b, err)
-	require.NoError(b, block.Upload(context.Background(), log.NewNopLogger(), userBkt, filepath.Join(blockDir, blockId.String()), nil))
+	_, err = block.Upload(context.Background(), log.NewNopLogger(), userBkt, filepath.Join(blockDir, blockId.String()), nil)
+	require.NoError(b, err)
 
 	convertOpts := []convert.ConvertOption{
 		convert.WithName(blockId.String()),
