@@ -1492,6 +1492,11 @@ parquet_converter:
   # CLI flag: -parquet-converter.max-rows-per-group
   [max_rows_per_group: <int> | default = 1000000]
 
+  # (advanced) Maximum number of Go routines reading TSDB series in parallel
+  # when converting a block.
+  # CLI flag: -parquet-converter.tsdb-read-concurrency
+  [tsdb_read_concurrency: <int> | default = 4]
+
   # (advanced) Minimum compaction level required for blocks to be converted to
   # Parquet. Blocks equal or greater than this level will be converted.
   # CLI flag: -parquet-converter.min-compaction-level
