@@ -22781,6 +22781,17 @@
         },
         {
           "kind": "field",
+          "name": "tsdb_read_concurrency",
+          "required": false,
+          "desc": "Maximum number of Go routines reading TSDB series in parallel when converting a block.",
+          "fieldValue": null,
+          "fieldDefaultValue": 4,
+          "fieldFlag": "parquet-converter.tsdb-read-concurrency",
+          "fieldType": "int",
+          "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
           "name": "min_compaction_level",
           "required": false,
           "desc": "Minimum compaction level required for blocks to be converted to Parquet. Blocks equal or greater than this level will be converted.",

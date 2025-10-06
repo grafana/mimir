@@ -92,11 +92,13 @@ type Config struct {
 	MinBlockTimestamp  uint64        `yaml:"min_block_timestamp"`
 	MinDataAge         time.Duration `yaml:"min_data_age" category:"advanced"`
 
-	SortingLabels      flagext.StringSliceCSV `yaml:"sorting_labels" category:"advanced"`
-	ColDuration        time.Duration          `yaml:"col_duration" category:"advanced"`
-	MaxRowsPerGroup    int                    `yaml:"max_rows_per_group" category:"advanced"`
-	MinCompactionLevel int                    `yaml:"min_compaction_level" category:"advanced"`
-	MinBlockDuration   time.Duration          `yaml:"min_block_duration" category:"advanced"`
+	SortingLabels       flagext.StringSliceCSV `yaml:"sorting_labels" category:"advanced"`
+	ColDuration         time.Duration          `yaml:"col_duration" category:"advanced"`
+	MaxRowsPerGroup     int                    `yaml:"max_rows_per_group" category:"advanced"`
+	TSDBReadConcurrency int                    `yaml:"tsdb_read_concurrency" category:"advanced"`
+
+	MinCompactionLevel int           `yaml:"min_compaction_level" category:"advanced"`
+	MinBlockDuration   time.Duration `yaml:"min_block_duration" category:"advanced"`
 
 	CompressionEnabled bool `yaml:"compression_enabled" category:"advanced"`
 
@@ -117,6 +119,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.Var(&cfg.SortingLabels, "parquet-converter.sorting-labels", "Comma-separated list of labels to sort by when converting to Parquet format. If not the file will be sorted by '__name__'.")
 	f.DurationVar(&cfg.ColDuration, "parquet-converter.col-duration", 8*time.Hour, "Duration for column chunks in Parquet files.")
 	f.IntVar(&cfg.MaxRowsPerGroup, "parquet-converter.max-rows-per-group", 1e6, "Maximum number of rows per row group in Parquet files.")
+	f.IntVar(&cfg.TSDBReadConcurrency, "parquet-converter.tsdb-read-concurrency", 4, "Maximum number of Go routines reading TSDB series in parallel when converting a block.")
 	f.IntVar(&cfg.MinCompactionLevel, "parquet-converter.min-compaction-level", 2, "Minimum compaction level required for blocks to be converted to Parquet. Blocks equal or greater than this level will be converted.")
 	f.DurationVar(&cfg.MinBlockDuration, "parquet-converter.min-block-duration", 0, "Minimum duration of blocks to convert. Blocks with a duration shorter than this will be skipped. Set to 0 to disable duration filtering.")
 	f.BoolVar(&cfg.CompressionEnabled, "parquet-converter.compression-enabled", true, "Whether compression is enabled for labels and chunks parquet files. When disabled, parquet files will be converted and stored uncompressed.")
@@ -162,6 +165,10 @@ func buildBaseConverterOptions(cfg Config) []convert.ConvertOption {
 
 	if cfg.MaxRowsPerGroup > 0 {
 		baseConverterOptions = append(baseConverterOptions, convert.WithRowGroupSize(cfg.MaxRowsPerGroup))
+	}
+
+	if cfg.TSDBReadConcurrency > 0 {
+		baseConverterOptions = append(baseConverterOptions, convert.WithConcurrency(cfg.TSDBReadConcurrency))
 	}
 
 	baseConverterOptions = append(baseConverterOptions, convert.WithCompression(schema.WithCompressionEnabled(cfg.CompressionEnabled)))

@@ -2145,6 +2145,8 @@ Usage of ./cmd/mimir/mimir:
     	Minimum time to wait for ring stability at startup. Set to 0 to disable.
   -parquet-converter.sorting-labels comma-separated-list-of-strings
     	Comma-separated list of labels to sort by when converting to Parquet format. If not the file will be sorted by '__name__'.
+  -parquet-converter.tsdb-read-concurrency int
+    	Maximum number of Go routines reading TSDB series in parallel when converting a block. (default 4)
   -print.config
     	Print the config and exit.
   -querier.active-series-results-max-size-bytes int
