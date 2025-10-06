@@ -422,10 +422,10 @@ func BenchmarkRecordSerializer(b *testing.B) {
 		}
 	}
 
-	//v2s := versionTwoRecordSerializer{}
-	//v1s := versionOneRecordSerializer{}
+	v2s := versionTwoRecordSerializer{}
+	v1s := versionOneRecordSerializer{}
 
-	/*b.Run("v2 serialize (full flow)", func(b *testing.B) {
+	b.Run("v2 serialize (full flow)", func(b *testing.B) {
 		for n := 0; n < b.N; n++ {
 			_, err := v2s.ToRecords(123, "user-1", req, 16000000)
 			if err != nil {
@@ -441,7 +441,7 @@ func BenchmarkRecordSerializer(b *testing.B) {
 				b.Fatal(err)
 			}
 		}
-	})*/
+	})
 
 	b.Run("v1 -> v2 convert", func(b *testing.B) {
 		for n := 0; n < b.N; n++ {
