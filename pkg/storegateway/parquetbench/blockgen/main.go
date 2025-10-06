@@ -153,7 +153,7 @@ func generateBlocks(outputDir, userID string, dims dimensions, compression bool,
 
 	// Upload TSDB block if requested
 	if storeType == "tsdb" || storeType == "both" {
-		if err := block.Upload(ctx, kitlog.NewNopLogger(), userBkt, filepath.Join(blockDir, blockID.String()), nil); err != nil {
+		if _, err := block.Upload(ctx, kitlog.NewNopLogger(), userBkt, filepath.Join(blockDir, blockID.String()), nil); err != nil {
 			return fmt.Errorf("failed to upload TSDB block: %w", err)
 		}
 		if verbose {
