@@ -188,6 +188,11 @@ func (summer *shardSummer) canShardAllVectorSelectors(expr parser.Expr) (can boo
 		}
 	}()
 
+	if paren, ok := expr.(*parser.ParenExpr); ok {
+		// Unwrap the expression.
+		return summer.canShardAllVectorSelectors(paren.Expr)
+	}
+
 	hasSelector, err := anyNode(expr, isVectorSelector)
 	if !hasSelector {
 		return true, nil

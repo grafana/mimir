@@ -275,6 +275,11 @@ func (s *querySharder) shard(ctx context.Context, tenantIDs []string, expr parse
 		return nil, nil
 	}
 
+	log.DebugLog(
+		"msg", "computed shard count for query, rewriting in shardable form",
+		"total shards", totalShards,
+	)
+
 	s.metrics.shardingAttempts.Inc()
 	shardedExpr, shardingStats, err := s.shardQuery(ctx, expr, totalShards, false)
 	if err != nil {
@@ -340,6 +345,11 @@ func (s *querySharder) getShardsForQuery(ctx context.Context, tenantIDs []string
 	}
 
 	if requestedShardCount > 0 {
+		spanLog.DebugLog(
+			"msg", "number of shards has been adjusted to match the requested shard count",
+			"requested shard count", requestedShardCount,
+			"previous total shards", totalShards,
+		)
 		totalShards = requestedShardCount
 	}
 
@@ -383,6 +393,11 @@ func (s *querySharder) getShardsForQuery(ctx context.Context, tenantIDs []string
 		if shardingStats.GetShardedQueries() > 0 {
 			numShardableLegs = shardingStats.GetShardedQueries()
 		}
+
+		spanLog.DebugLog(
+			"msg", "computed number of shardable legs for the query",
+			"shardable legs", numShardableLegs,
+		)
 
 		prevTotalShards := totalShards
 		totalShards = max(1, min(totalShards, (maxShardedQueries/int(totalQueries))/numShardableLegs))
