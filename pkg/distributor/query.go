@@ -102,11 +102,7 @@ func (d *Distributor) QueryStream(ctx context.Context, queryMetrics *stats.Query
 		}
 
 		s := trace.SpanFromContext(ctx)
-		s.SetAttributes(
-			attribute.Int("chunk-series", len(result.Chunkseries)),
-			attribute.Int("time-series", len(result.Timeseries)),
-			attribute.Int("streaming-series", len(result.StreamingSeries)),
-		)
+		s.SetAttributes(attribute.Int("streaming-series", len(result.StreamingSeries)))
 		return nil
 	})
 
@@ -207,10 +203,7 @@ func mergeExemplarQueryResponses(results []*ingester_client.ExemplarQueryRespons
 }
 
 type ingesterQueryResult struct {
-	// Why retain the batches rather than build a single slice? We don't need a single slice for each ingester, so building a single slice for each ingester is a waste of time.
-	chunkseriesBatches [][]ingester_client.TimeSeriesChunk
-	timeseriesBatches  [][]mimirpb.TimeSeries
-	streamingSeries    seriesChunksStream
+	streamingSeries seriesChunksStream
 }
 
 // queryIngesterStream queries the ingesters using the gRPC streaming API.
@@ -306,54 +299,8 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSets [
 		return ingester_client.CombinedQueryStreamResponse{}, err
 	}
 
-	// We keep track of the number of chunks that were able to be deduplicated entirely
-	// via the AccumulateChunks function (fast) instead of needing to merge samples one
-	// by one (slow). Useful to verify the performance impact of things that potentially
-	// result in different samples being written to each ingester.
-	// Note that deduplication of streaming chunks is handled in streamingChunkSeries.
-	deduplicatedChunks := 0
-	totalChunks := 0
-	defer func() {
-		queryMetrics.IngesterChunksDeduplicated.Add(float64(deduplicatedChunks))
-		queryMetrics.IngesterChunksTotal.Add(float64(totalChunks))
-	}()
-
-	hashToChunkseries := map[string]ingester_client.TimeSeriesChunk{}
-	hashToTimeSeries := map[string]mimirpb.TimeSeries{}
 	streamReaderCount := 0
-
 	for _, res := range results {
-		// Accumulate any chunk series
-		for _, batch := range res.chunkseriesBatches {
-			for _, series := range batch {
-				key := mimirpb.FromLabelAdaptersToKeyString(series.Labels)
-				existing := hashToChunkseries[key]
-				existing.Labels = series.Labels
-
-				numPotentialChunks := len(existing.Chunks) + len(series.Chunks)
-				existing.Chunks = ingester_client.AccumulateChunks(existing.Chunks, series.Chunks)
-
-				deduplicatedChunks += numPotentialChunks - len(existing.Chunks)
-				totalChunks += len(series.Chunks)
-				hashToChunkseries[key] = existing
-			}
-		}
-
-		// Accumulate any time series
-		for _, batch := range res.timeseriesBatches {
-			for _, series := range batch {
-				key := mimirpb.FromLabelAdaptersToKeyString(series.Labels)
-				existing := hashToTimeSeries[key]
-				existing.Labels = series.Labels
-				if len(existing.Samples) == 0 {
-					existing.Samples = series.Samples
-				} else {
-					existing.Samples = mergeSamples(existing.Samples, series.Samples)
-				}
-				hashToTimeSeries[key] = existing
-			}
-		}
-
 		// Start buffering chunks for streaming series
 		if res.streamingSeries.StreamReader != nil {
 			res.streamingSeries.StreamReader.StartBuffering()
@@ -363,29 +310,18 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSets [
 
 	// Now turn the accumulated maps into slices.
 	resp := ingester_client.CombinedQueryStreamResponse{
-		Chunkseries:     make([]ingester_client.TimeSeriesChunk, 0, len(hashToChunkseries)),
-		Timeseries:      make([]mimirpb.TimeSeries, 0, len(hashToTimeSeries)),
 		StreamingSeries: mergeSeriesChunkStreams(results, d.estimatedIngestersPerSeries(replicationSets)),
 		StreamReaders:   make([]*ingester_client.SeriesChunksStreamReader, 0, streamReaderCount),
 	}
-	for _, series := range hashToChunkseries {
-		resp.Chunkseries = append(resp.Chunkseries, series)
-	}
-	for _, series := range hashToTimeSeries {
-		resp.Timeseries = append(resp.Timeseries, series)
-	}
+
 	for _, res := range results {
 		if res.streamingSeries.StreamReader != nil {
 			resp.StreamReaders = append(resp.StreamReaders, res.streamingSeries.StreamReader)
 		}
 	}
 
-	reqStats.AddFetchedSeries(uint64(len(resp.Chunkseries) + len(resp.Timeseries) + len(resp.StreamingSeries)))
-
-	// Stats for streaming series are handled in streamingChunkSeries.
-	reqStats.AddFetchedChunkBytes(uint64(ingester_client.ChunksSize(resp.Chunkseries)))
-	reqStats.AddFetchedChunks(uint64(ingester_client.ChunksCount(resp.Chunkseries)))
-
+	reqStats.AddFetchedSeries(uint64(len(resp.StreamingSeries)))
+	// Stats for streaming series chunks and bytes are handled in streamingChunkSeries.
 	return resp, nil
 }
 
@@ -401,42 +337,7 @@ func (r *ingesterQueryResult) receiveResponse(stream ingester_client.Ingester_Qu
 	}
 	defer resp.FreeBuffer()
 
-	if len(resp.Timeseries) > 0 {
-		for _, series := range resp.Timeseries {
-			if limitErr := queryLimiter.AddSeries(mimirpb.FromLabelAdaptersToLabels(series.Labels)); limitErr != nil {
-				return nil, false, limitErr
-			}
-		}
-
-		for i := range resp.Timeseries {
-			resp.Timeseries[i].MakeReferencesSafeToRetain()
-		}
-		r.timeseriesBatches = append(r.timeseriesBatches, resp.Timeseries)
-	} else if len(resp.Chunkseries) > 0 {
-		// Enforce the max chunks limits.
-		if err := queryLimiter.AddChunks(ingester_client.ChunksCount(resp.Chunkseries)); err != nil {
-			return nil, false, err
-		}
-
-		if err := queryLimiter.AddEstimatedChunks(ingester_client.ChunksCount(resp.Chunkseries)); err != nil {
-			return nil, false, err
-		}
-
-		for _, series := range resp.Chunkseries {
-			if err := queryLimiter.AddSeries(mimirpb.FromLabelAdaptersToLabels(series.Labels)); err != nil {
-				return nil, false, err
-			}
-		}
-
-		if err := queryLimiter.AddChunkBytes(ingester_client.ChunksSize(resp.Chunkseries)); err != nil {
-			return nil, false, err
-		}
-
-		for i := range resp.Chunkseries {
-			resp.Chunkseries[i].MakeReferencesSafeToRetain()
-		}
-		r.chunkseriesBatches = append(r.chunkseriesBatches, resp.Chunkseries)
-	} else if len(resp.StreamingSeries) > 0 {
+	if len(resp.StreamingSeries) > 0 {
 		labelsBatch := make([]labels.Labels, 0, len(resp.StreamingSeries))
 		for _, s := range resp.StreamingSeries {
 			l := mimirpb.FromLabelAdaptersToLabelsWithCopy(s.Labels)

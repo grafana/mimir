@@ -1151,12 +1151,7 @@ func TestDistributor_PushQuery(t *testing.T) {
 				assert.True(t, ok, fmt.Sprintf("expected error to be a status error, but got: %T", err))
 			}
 
-			var m model.Matrix
-			if len(resp.Chunkseries) == 0 {
-				m, err = client.StreamingSeriesToMatrix(0, 10, resp.StreamingSeries)
-			} else {
-				m, err = client.TimeSeriesChunksToMatrix(0, 10, resp.Chunkseries)
-			}
+			m, err := client.StreamingSeriesToMatrix(0, 10, resp.StreamingSeries)
 			assert.NoError(t, err)
 			assert.Equal(t, tc.expectedResponse.String(), m.String())
 
@@ -5630,12 +5625,6 @@ type prepConfig struct {
 	ingestStorageMigrationEnabled bool
 	ingestStoragePartitions       int32 // Number of partitions. Auto-detected from configured ingesters if not explicitly set.
 	ingestStorageKafka            *kfake.Cluster
-
-	// We need this setting to simulate a response from ingesters that didn't support responding
-	// with a stream of chunks, and were responding with chunk series instead. This is needed to
-	// ensure backwards compatibility, i.e., that queriers can still correctly handle both types
-	// or responses.
-	disableStreamingResponse bool
 }
 
 // totalIngesters takes into account ingesterStateByZone and numIngesters.
@@ -5781,7 +5770,6 @@ func prepareIngesterZone(t testing.TB, zone string, state ingesterZoneState, cfg
 			zone:                          zone,
 			labelNamesStreamResponseDelay: labelNamesStreamResponseDelay,
 			timeOut:                       cfg.timeOut,
-			disableStreamingResponse:      cfg.disableStreamingResponse,
 		}
 
 		// Init the partition reader if the ingester should consume from Kafka.
@@ -6392,7 +6380,6 @@ type mockIngester struct {
 	timeOut                       bool
 	tokens                        []uint32
 	id                            int
-	disableStreamingResponse      bool
 
 	// partitionReader is responsible to consume a partition from Kafka when the
 	// ingest storage is enabled. This field is nil if the ingest storage is disabled.
@@ -6590,7 +6577,6 @@ func (i *mockIngester) QueryStream(ctx context.Context, req *client.QueryRequest
 		return nil, err
 	}
 
-	nonStreamingResponses := []*client.QueryStreamResponse{}
 	streamingLabelResponses := []*client.QueryStreamResponse{}
 	streamingChunkResponses := []*client.QueryStreamResponse{}
 
@@ -6682,47 +6668,32 @@ func (i *mockIngester) QueryStream(ctx context.Context, req *client.QueryRequest
 			}
 		}
 
-		if i.disableStreamingResponse || req.StreamingChunksBatchSize == 0 {
-			nonStreamingResponses = append(nonStreamingResponses, &client.QueryStreamResponse{
-				Chunkseries: []client.TimeSeriesChunk{
-					{
-						Labels: slices.Clone(ts.Labels), // Clone labels to avoid data races between reading label values in this mock ingester and cloning them in receiveResponse().
-						Chunks: wireChunks,
-					},
+		streamingLabelResponses = append(streamingLabelResponses, &client.QueryStreamResponse{
+			StreamingSeries: []client.QueryStreamSeries{
+				{
+					Labels:     ts.Labels,
+					ChunkCount: int64(len(wireChunks)),
 				},
-			})
-		} else {
-			streamingLabelResponses = append(streamingLabelResponses, &client.QueryStreamResponse{
-				StreamingSeries: []client.QueryStreamSeries{
-					{
-						Labels:     ts.Labels,
-						ChunkCount: int64(len(wireChunks)),
-					},
-				},
-			})
+			},
+		})
 
-			streamingChunkResponses = append(streamingChunkResponses, &client.QueryStreamResponse{
-				StreamingSeriesChunks: []client.QueryStreamSeriesChunks{
-					{
-						SeriesIndex: uint64(seriesIndex),
-						Chunks:      wireChunks,
-					},
+		streamingChunkResponses = append(streamingChunkResponses, &client.QueryStreamResponse{
+			StreamingSeriesChunks: []client.QueryStreamSeriesChunks{
+				{
+					SeriesIndex: uint64(seriesIndex),
+					Chunks:      wireChunks,
 				},
-			})
-		}
+			},
+		})
+
 	}
 
 	var results []*client.QueryStreamResponse
-
-	if i.disableStreamingResponse {
-		results = nonStreamingResponses
-	} else {
-		endOfLabelsMessage := &client.QueryStreamResponse{
-			IsEndOfSeriesStream: true,
-		}
-		results = append(streamingLabelResponses, endOfLabelsMessage)
-		results = append(results, streamingChunkResponses...)
+	endOfLabelsMessage := &client.QueryStreamResponse{
+		IsEndOfSeriesStream: true,
 	}
+	results = append(streamingLabelResponses, endOfLabelsMessage)
+	results = append(results, streamingChunkResponses...)
 
 	return &stream{
 		ctx:     ctx,
