@@ -59,7 +59,7 @@ type Config struct {
 func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.Enabled, "ingest-storage.enabled", false, "True to enable the ingestion via object storage.")
 	f.BoolVar(&cfg.WriteLogsFsyncBeforeKafkaCommit, "ingest-storage.write-logs-fsync-before-kafka-commit-enabled", true, "Enable fsyncing of WAL and WBL before Kafka offsets are committed.")
-	f.IntVar(&cfg.WriteLogsFsyncBeforeKafkaCommitConcurrency, "ingest-storage.write-logs-fsync-before-kafka-commit-concurrency", 8, "Concurrency for fsyncing of WAL and WBL before Kafka offsets are committed.")
+	f.IntVar(&cfg.WriteLogsFsyncBeforeKafkaCommitConcurrency, "ingest-storage.write-logs-fsync-before-kafka-commit-concurrency", 1, "Concurrency for fsyncing of WAL and WBL before Kafka offsets are committed.")
 
 	cfg.KafkaConfig.RegisterFlagsWithPrefix("ingest-storage.kafka.", f)
 	cfg.Migration.RegisterFlagsWithPrefix("ingest-storage.migration.", f)
