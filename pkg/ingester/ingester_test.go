@@ -6035,14 +6035,9 @@ func TestIngester_QueryStream(t *testing.T) {
 						return receivedSeries, err
 					}
 
-					if resp.StreamingSeries != nil {
-						actualStreamedSeries = append(actualStreamedSeries, resp.StreamingSeries...)
-						receivedSeries += len(resp.StreamingSeries)
-					}
-
-					if resp.StreamingSeriesChunks != nil {
-						actualStreamedChunks = append(actualStreamedChunks, resp.StreamingSeriesChunks...)
-					}
+					receivedSeries += len(resp.StreamingSeries)
+					actualStreamedSeries = append(actualStreamedSeries, resp.StreamingSeries...)
+					actualStreamedChunks = append(actualStreamedChunks, resp.StreamingSeriesChunks...)
 				}
 
 				return receivedSeries, nil
