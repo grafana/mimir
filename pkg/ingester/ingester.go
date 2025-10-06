@@ -4483,7 +4483,7 @@ func (i *Ingester) NotifyPreCommit(ctx context.Context) error {
 		return nil
 	}
 
-	level.Info(i.logger).Log("msg", "fsyncing tsdbs")
+	level.Debug(i.logger).Log("msg", "fsyncing tsdbs")
 
 	return concurrency.ForEachUser(ctx, i.getTSDBUsers(), i.cfg.IngestStorageConfig.WriteLogsFsyncBeforeKafkaCommitConcurrency, func(ctx context.Context, userID string) error {
 		db, err := i.getOrCreateTSDB(userID)
