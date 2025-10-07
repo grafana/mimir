@@ -35,7 +35,7 @@ Each newly created block is uploaded to long-term storage but kept in the ingest
 This gives [queriers](../../../references/architecture/components/querier/) and [store-gateways](../../../references/architecture/components/store-gateway/) enough time to discover the new block on the storage and download its index-header.
 
 To effectively use the WAL, and to be able to recover the in-memory series if an ingester abruptly terminates, store the WAL to a persistent disk that can survive an ingester failure.
-For example, when running in the cloud, include an AWS EBS volume or a GCP Persistent Disk.
+For example, when running in a cloud environment, attach an AWS EBS volume, a GCP Persistent Disk, or similar to the VM instance.
 If you are running the Grafana Mimir cluster in Kubernetes, you can use a StatefulSet with a persistent volume claim for the ingesters.
 The location on the filesystem where the WAL is stored is the same location where local TSDB blocks (compacted from head) are stored. The locations of the WAL and the local TSDB blocks cannot be decoupled.
 
