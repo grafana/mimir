@@ -71,7 +71,7 @@ func (p UnlimitedMemoryTrackerPromQLEngine) NewInstantQuery(ctx context.Context,
 	if err != nil {
 		return nil, err
 	}
-	memoryTracker := NewMemoryConsumptionTracker(ctx, 0, nil, "")
+	memoryTracker := NewUnlimitedMemoryConsumptionTracker(ctx)
 	return newUnlimitedMemoryTrackingQuery(qry, memoryTracker), nil
 }
 func (p UnlimitedMemoryTrackerPromQLEngine) NewRangeQuery(ctx context.Context, q storage.Queryable, opts promql.QueryOpts, qs string, start, end time.Time, interval time.Duration) (promql.Query, error) {
@@ -79,6 +79,6 @@ func (p UnlimitedMemoryTrackerPromQLEngine) NewRangeQuery(ctx context.Context, q
 	if err != nil {
 		return nil, err
 	}
-	memoryTracker := NewMemoryConsumptionTracker(ctx, 0, nil, "")
+	memoryTracker := NewUnlimitedMemoryConsumptionTracker(ctx)
 	return newUnlimitedMemoryTrackingQuery(qry, memoryTracker), nil
 }

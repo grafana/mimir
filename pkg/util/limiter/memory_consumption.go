@@ -44,7 +44,7 @@ func AddMemoryTrackerToContext(ctx context.Context, tracker *MemoryConsumptionTr
 // ContextWithNewUnlimitedMemoryConsumptionTracker creates an unlimited MemoryConsumptionTracker and add it to the context and return
 // the context. This can be used in places where we don't want to limit memory consumption, although tracking will still happen.
 func ContextWithNewUnlimitedMemoryConsumptionTracker(ctx context.Context) context.Context {
-	memoryTracker := NewMemoryConsumptionTracker(ctx, 0, nil, "")
+	memoryTracker := NewUnlimitedMemoryConsumptionTracker(ctx)
 	return AddMemoryTrackerToContext(ctx, memoryTracker)
 }
 
@@ -140,6 +140,12 @@ type MemoryConsumptionTracker struct {
 	// rather than atomics because we only want to adjust the memory used after checking
 	// that it would not exceed the limit.
 	mtx sync.Mutex
+}
+
+// NewUnlimitedMemoryConsumptionTracker creates a new MemoryConsumptionTracker that track memory consumption but
+// will not enforce memory limit.
+func NewUnlimitedMemoryConsumptionTracker(ctx context.Context) *MemoryConsumptionTracker {
+	return NewMemoryConsumptionTracker(ctx, 0, nil, "")
 }
 
 func NewMemoryConsumptionTracker(ctx context.Context, maxEstimatedMemoryConsumptionBytes uint64, rejectionCount prometheus.Counter, queryDescription string) *MemoryConsumptionTracker {
