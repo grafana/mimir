@@ -104,8 +104,6 @@ func newFastRegexMatcherWithoutCache(v string) (*FastRegexMatcher, error) {
 		if err != nil {
 			return nil, err
 		}
-		// Simplify the syntax tree to run faster.
-		parsed = parsed.Simplify()
 		m.re, err = regexp.Compile("^(?s:" + parsed.String() + ")$")
 		if err != nil {
 			return nil, err

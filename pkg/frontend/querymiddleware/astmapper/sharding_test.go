@@ -89,6 +89,29 @@ func TestShardSummer(t *testing.T) {
 			2,
 		},
 		{
+			"sum(bar1) or sum(bar2)",
+			`sum(` + concatShards(t, shardCount, `sum(bar1{__query_shard__="x_of_y"})`) + `)` +
+				` or sum(` + concatShards(t, shardCount, `sum(bar2{__query_shard__="x_of_y"})`) + `)`,
+			2,
+		},
+		{
+			"count(bar1) or sum(bar2)",
+			`sum(` + concatShards(t, shardCount, `count(bar1{__query_shard__="x_of_y"})`) + `)` +
+				` or sum(` + concatShards(t, shardCount, `sum(bar2{__query_shard__="x_of_y"})`) + `)`,
+			2,
+		},
+		{
+			"count(bar1) or (sum(bar2) * 0)",
+			`sum(` + concatShards(t, shardCount, `count(bar1{__query_shard__="x_of_y"})`) + `)` +
+				` or (sum(` + concatShards(t, shardCount, `sum(bar2{__query_shard__="x_of_y"})`) + `) * 0)`,
+			2,
+		},
+		{
+			"sum(bar2) * 0",
+			`sum(` + concatShards(t, shardCount, `sum(bar2{__query_shard__="x_of_y"})`) + `) * 0`,
+			1,
+		},
+		{
 			`histogram_quantile(0.5, sum(rate(cortex_cache_value_size_bytes_bucket[5m])) by (le))`,
 			`histogram_quantile(0.5,sum  by (le) (` + concatShards(t, shardCount, `sum  by (le) (rate(cortex_cache_value_size_bytes_bucket{__query_shard__="x_of_y"}[5m]))`) + `))`,
 			1,

@@ -86,6 +86,8 @@ type Config struct {
 	ExtraInstantQueryMiddlewares []MetricsQueryMiddleware `yaml:"-"`
 	ExtraRangeQueryMiddlewares   []MetricsQueryMiddleware `yaml:"-"`
 
+	InternalFunctionNames FunctionNamesSet `yaml:"-"`
+
 	ExtraPropagateHeaders flagext.StringSliceCSV `yaml:"extra_propagated_headers" category:"advanced"`
 
 	QueryResultResponseFormat string `yaml:"query_result_response_format"`
@@ -111,6 +113,9 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.UseActiveSeriesDecoder, "query-frontend.use-active-series-decoder", false, "Set to true to use the zero-allocation response decoder for active series queries.")
 	f.BoolVar(&cfg.CacheSamplesProcessedStats, "query-frontend.cache-samples-processed-stats", false, "Cache statistics of processed samples on results cache.")
 	cfg.ResultsCache.RegisterFlags(f)
+
+	// This field isn't user-configurable, but we still need to set a default value so that subsequent Add() calls don't panic due to a nil map.
+	cfg.InternalFunctionNames = FunctionNamesSet{}
 }
 
 // Validate validates the config.
@@ -414,6 +419,7 @@ func newQueryMiddlewares(
 	queryLimiterMiddleware := newQueryLimiterMiddleware(cacheClient, cacheKeyGenerator, limits, log, blockedQueriesCounter)
 	queryStatsMiddleware := newQueryStatsMiddleware(registerer, engineOpts)
 	prom2CompatMiddleware := newProm2RangeCompatMiddleware(limits, log, registerer)
+	blockInternalFunctionsMiddleware := newBlockInternalFunctionsMiddleware(cfg.InternalFunctionNames, log)
 
 	remoteReadMiddleware = append(remoteReadMiddleware,
 		// Track query range statistics. Added first before any subsequent middleware modifies the request.
@@ -428,6 +434,7 @@ func newQueryMiddlewares(
 		newLimitsMiddleware(limits, log),
 		queryBlockerMiddleware,
 		queryLimiterMiddleware,
+		blockInternalFunctionsMiddleware,
 		newInstrumentMiddleware("prom2_compat", metrics),
 		newDurationsMiddleware(log),
 		prom2CompatMiddleware,
@@ -440,6 +447,7 @@ func newQueryMiddlewares(
 		newLimitsMiddleware(limits, log),
 		queryBlockerMiddleware,
 		queryLimiterMiddleware,
+		blockInternalFunctionsMiddleware,
 		newInstrumentMiddleware("prom2_compat", metrics),
 		newDurationsMiddleware(log),
 		prom2CompatMiddleware,

@@ -849,6 +849,8 @@ func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error
 	// Always eagerly load selectors so that they are loaded in parallel in the background.
 	mqeOpts.EagerLoadSelectors = true
 
+	t.Cfg.Frontend.QueryMiddleware.InternalFunctionNames.Add(sharding.ConcatFunction.Name)
+
 	// Use either the Prometheus engine or Mimir Query Engine (with optional fallback to Prometheus
 	// if it has been configured) for middlewares that require executing queries using a PromQL engine.
 	var eng promql.QueryEngine
