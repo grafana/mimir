@@ -15,41 +15,41 @@ import (
 // NewMemoryTrackerQueryable wraps a storage.Queryable to inject an unlimited MemoryConsumptionTracker
 // into the context.
 func NewMemoryTrackerQueryable(inner storage.Queryable) storage.Queryable {
-	return &memoryTrackerQueryable{inner: inner}
+	return &unlimitedMemoryTrackerQueryable{inner: inner}
 }
 
-// memoryTrackerQueryable is for queryables that don't support ChunkQuerier
-type memoryTrackerQueryable struct {
+// unlimitedMemoryTrackerQueryable is for queryables that returns unlimitedMemoryTrackerQuerier.
+type unlimitedMemoryTrackerQueryable struct {
 	inner storage.Queryable
 }
 
-func (q *memoryTrackerQueryable) Querier(minT, maxT int64) (storage.Querier, error) {
+func (q *unlimitedMemoryTrackerQueryable) Querier(minT, maxT int64) (storage.Querier, error) {
 	querier, err := q.inner.Querier(minT, maxT)
 	if err != nil {
 		return nil, err
 	}
-	return &memoryTrackerQuerier{inner: querier}, nil
+	return &unlimitedMemoryTrackerQuerier{inner: querier}, nil
 }
 
-// memoryTrackerQuerier wraps a storage.Querier and ensures all Select calls have an unlimited
-// MemoryConsumptionTracker in their context.
-type memoryTrackerQuerier struct {
+// unlimitedMemoryTrackerQuerier wraps a storage.Querier and ensures all Select calls have an unlimited
+// MemoryConsumptionTracker in their context. It does nothing on other Querier methods.
+type unlimitedMemoryTrackerQuerier struct {
 	inner storage.Querier
 }
 
-func (q *memoryTrackerQuerier) Select(ctx context.Context, sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
+func (q *unlimitedMemoryTrackerQuerier) Select(ctx context.Context, sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
 	ctx = limiter.ContextWithNewUnlimitedMemoryConsumptionTracker(ctx)
 	return q.inner.Select(ctx, sortSeries, hints, matchers...)
 }
 
-func (q *memoryTrackerQuerier) LabelValues(ctx context.Context, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+func (q *unlimitedMemoryTrackerQuerier) LabelValues(ctx context.Context, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	return q.inner.LabelValues(ctx, name, hints, matchers...)
 }
 
-func (q *memoryTrackerQuerier) LabelNames(ctx context.Context, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+func (q *unlimitedMemoryTrackerQuerier) LabelNames(ctx context.Context, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	return q.inner.LabelNames(ctx, hints, matchers...)
 }
 
-func (q *memoryTrackerQuerier) Close() error {
+func (q *unlimitedMemoryTrackerQuerier) Close() error {
 	return q.inner.Close()
 }
