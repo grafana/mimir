@@ -78,7 +78,7 @@ type FastSymbolsTable struct {
 	symbolsMapCapacityLowerBound int
 
 	usedSymbolRefs int
-	commonSymbols  []string
+	commonSymbols  *CommonSymbols
 	offset         uint32
 }
 
@@ -90,7 +90,7 @@ func NewFastSymbolsTable(capacityHint int) *FastSymbolsTable {
 	}
 }
 
-func (t *FastSymbolsTable) ConfigureCommonSymbols(offset uint32, commonSymbols []string) {
+func (t *FastSymbolsTable) ConfigureCommonSymbols(offset uint32, commonSymbols *CommonSymbols) {
 	t.offset = offset
 	t.commonSymbols = commonSymbols
 }
@@ -101,11 +101,9 @@ func (t *FastSymbolsTable) Symbolize(str string) uint32 {
 		return 0
 	}
 	if t.commonSymbols != nil {
-		// TODO: CommonSymbols is bounded size, it small enough to where linear search is faster?
-		for i := range t.commonSymbols {
-			if str == t.commonSymbols[i] {
-				return uint32(i)
-			}
+		commonSymbols := t.commonSymbols.GetMap()
+		if ref, ok := commonSymbols[str]; ok {
+			return ref
 		}
 	}
 
@@ -166,4 +164,40 @@ func (t *FastSymbolsTable) Reset() {
 	t.usedSymbolRefs = 0
 	t.offset = 0
 	t.commonSymbols = nil
+}
+
+// CommonSymbols is used to store a shared, pre-loaded, immutable symbols table that's re-used multiple times.
+// It can look like either a slice, where the position in the slice is the symbol, or a map from string to symbol.
+// Thread safe.
+type CommonSymbols struct {
+	symbols []string
+	mapFunc func() map[string]uint32
+}
+
+func NewCommonSymbols(symbols []string) *CommonSymbols {
+	mapFunc := sync.OnceValue(func() map[string]uint32 {
+		res := make(map[string]uint32, len(symbols))
+		for ref, str := range symbols {
+			res[str] = uint32(ref)
+		}
+		return res
+	})
+	return &CommonSymbols{
+		symbols: symbols,
+		mapFunc: mapFunc,
+	}
+}
+
+func (cs *CommonSymbols) GetSlice() []string {
+	if cs == nil {
+		return nil
+	}
+	return cs.symbols
+}
+
+func (cs *CommonSymbols) GetMap() map[string]uint32 {
+	if cs == nil {
+		return nil
+	}
+	return cs.mapFunc()
 }

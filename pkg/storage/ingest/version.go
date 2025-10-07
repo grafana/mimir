@@ -23,7 +23,7 @@ var (
 	// The index corresponds to the symbol value.
 	// The first `V2RecordSymbolOffset` symbols are reserved for this table.
 	// Note: V2 is not yet stabilized.
-	V2CommonSymbols = []string{
+	V2CommonSymbols = mimirpb.NewCommonSymbols([]string{
 		// RW2.0 Spec: The first element of the symbols table MUST be an empty string.
 		// This ensures that empty/missing refs still map to empty string.
 		"",
@@ -68,7 +68,7 @@ var (
 		"kube-system/node-local-dns",
 		"kube-state-metrics/kube-state-metrics",
 		"default/kubernetes",
-	}
+	})
 )
 
 func ValidateRecordVersion(version int) error {
@@ -188,7 +188,7 @@ func deserializeRecordContentV1(content []byte, wr *mimirpb.PreallocWriteRequest
 func deserializeRecordContentV2(content []byte, wr *mimirpb.PreallocWriteRequest) error {
 	wr.UnmarshalFromRW2 = true
 	wr.RW2SymbolOffset = V2RecordSymbolOffset
-	wr.RW2CommonSymbols = V2CommonSymbols
+	wr.RW2CommonSymbols = V2CommonSymbols.GetSlice()
 	wr.SkipNormalizeMetadataMetricName = true
 	wr.SkipDeduplicateMetadata = true
 	return wr.Unmarshal(content)
