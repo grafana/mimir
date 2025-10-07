@@ -297,6 +297,9 @@ func (a *API) RegisterDistributor(d *distributor.Distributor, pushConfig distrib
 	a.RegisterRoute("/distributor/ring", d, false, true, "GET", "POST")
 	a.RegisterRoute("/distributor/all_user_stats", http.HandlerFunc(d.AllUserStatsHandler), false, true, "GET")
 	a.RegisterRoute("/distributor/ha_tracker", d.HATracker, false, true, "GET")
+	a.RegisterRoute("/distributor/start_artificial_cpu_usage/{cpuUsageMin}/{cpuUsageMax}/{cpuUsageDuration}/{cpuUsageWorkers}/{cpuUsageFrequency}", http.HandlerFunc(d.StartArtificialCPUUsageHandler), false, true, "POST")
+	a.RegisterRoute("/distributor/start_artificial_latency/{latencyMin}/{latencyMax}/{latencyDuration}/{latencyErrorFrequency}/{latencyExpensiveRunPercentage}", http.HandlerFunc(d.StartArtificialLatencyHandler), false, true, "POST")
+	a.RegisterRoute("/distributor/stop_artificial_latency", http.HandlerFunc(d.StopArtificialLatencyHandler), false, true, "POST")
 }
 
 // RegisterCostAttribution registers a Prometheus HTTP handler for the cost attribution metrics.

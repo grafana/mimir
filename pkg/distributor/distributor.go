@@ -21,6 +21,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/gorilla/mux"
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/httpgrpc"
@@ -210,6 +211,111 @@ type Distributor struct {
 	// For testing functionality that relies on timing without having to sleep in unit tests.
 	sleep func(time.Duration)
 	now   func() time.Time
+
+	latency *artificialLatencyWithErrors
+}
+
+type delayCalculator struct {
+	min time.Duration
+	max time.Duration
+
+	startTime     time.Time
+	totalDuration time.Duration
+}
+
+func (dc *delayCalculator) isActive() bool {
+	if dc == nil {
+		return false
+	}
+	if time.Since(dc.startTime) >= dc.totalDuration {
+		return false
+	}
+	if dc.min >= dc.max {
+		return false
+	}
+	return true
+}
+
+func (dc *delayCalculator) calculateDelay() time.Duration {
+	if dc == nil || !dc.isActive() {
+		return 0
+	}
+
+	// Pick random duration from [min, max].
+	return dc.min + time.Duration(rand.Int63n(int64(dc.max-dc.min)))
+}
+
+type artificialCPUUsage struct {
+	delayCalculator
+
+	workers   int
+	frequency time.Duration
+}
+
+func (a *artificialCPUUsage) expensiveWork(duration time.Duration) {
+	end := time.Now().Add(duration)
+	var wg sync.WaitGroup
+	wg.Add(a.workers)
+
+	for i := 0; i < a.workers; i++ {
+		go func() {
+			defer wg.Done()
+			for time.Now().Before(end) {
+				_ = rand.Int63() * rand.Int63()
+			}
+		}()
+	}
+	wg.Wait()
+}
+
+func (a *artificialCPUUsage) run(logger log.Logger) {
+	if !a.isActive() {
+		return
+	}
+	ticker := time.NewTicker(a.frequency)
+	for {
+		select {
+		case <-ticker.C:
+			if !a.isActive() {
+				level.Info(logger).Log("msg", "artificialCPUUsage has been completed", "total_duration", time.Since(a.startTime).String())
+				return
+			}
+			duration := a.calculateDelay()
+			a.expensiveWork(duration)
+			level.Info(logger).Log("msg", "artificialCPUUsage executed an expensive operation", "start_time", a.startTime.String(), "current_time", time.Now().String(), "last_duration", duration.String())
+		}
+	}
+}
+
+type artificialLatencyWithErrors struct {
+	delayCalculator
+
+	expensiveRunPercentage float64
+
+	errorFrequency time.Duration
+	lastError      time.Time
+}
+
+var errArtificial = fmt.Errorf("artificial error")
+
+func (a *artificialLatencyWithErrors) run(logger log.Logger, expectedErr error) error {
+	if a == nil || !a.isActive() {
+		return nil
+	}
+
+	delay := a.calculateDelay()
+	defer func() {
+		level.Debug(logger).Log("msg", "artificial latency with error", "min_delay", a.min, "max_delay", a.max, "current_delay", delay, "total_duration", a.totalDuration, "start_time", a.startTime, "err", expectedErr)
+	}()
+	if rand.Float64()*100 < a.expensiveRunPercentage {
+		end := time.Now().Add(delay)
+		for time.Now().Before(end) {
+			_ = rand.Int63() * rand.Int63()
+		}
+	} else {
+		time.Sleep(delay)
+	}
+	return expectedErr
 }
 
 func defaultSleep(d time.Duration) { time.Sleep(d) }
@@ -1888,6 +1994,130 @@ func (d *Distributor) handlePushError(ctx context.Context, pushErr error) error 
 	return toErrorWithGRPCStatus(pushErr, serviceOverloadErrorEnabled)
 }
 
+func (d *Distributor) addArtificialLatencyWithError() error {
+	if d.latency == nil {
+		return nil
+	}
+	if !d.latency.isActive() {
+		d.latency = nil
+		return nil
+	}
+	var expectedErr error
+	if d.latency.lastError.IsZero() || time.Since(d.latency.lastError) >= d.latency.errorFrequency {
+		d.latency.lastError = time.Now()
+		expectedErr = errArtificial
+	}
+	return d.latency.run(d.log, expectedErr)
+}
+
+func (d *Distributor) StartArtificialLatencyHandler(w http.ResponseWriter, r *http.Request) {
+	level.Info(d.log).Log("msg", "received a request to start artificial latency with errors")
+	vars := mux.Vars(r)
+
+	// Extract path parameters
+	latencyMinStr := vars["latencyMin"]
+	latencyMaxStr := vars["latencyMax"]
+	latencyDurationStr := vars["latencyDuration"]
+	latencyErrorFrequencyStr := vars["latencyErrorFrequency"]
+	latencyExpensiveRunPercentageStr := vars["latencyExpensiveRunPercentage"]
+
+	// Defaults
+	latencyMin, _ := time.ParseDuration(defaultIfEmpty(latencyMinStr, "100ms"))
+	latencyMax, _ := time.ParseDuration(defaultIfEmpty(latencyMaxStr, "500ms"))
+	latencyDuration, _ := time.ParseDuration(defaultIfEmpty(latencyDurationStr, "300s"))
+	latencyErrorFrequency, err := time.ParseDuration(latencyErrorFrequencyStr)
+	if err != nil {
+		latencyErrorFrequency = time.Duration(1<<63 - 1)
+	}
+	latencyExpensiveRunPercentage, err := strconv.ParseFloat(latencyExpensiveRunPercentageStr, 64)
+	if err != nil {
+		latencyExpensiveRunPercentage = 20.0
+	}
+
+	level.Info(d.log).Log("msg", "artificial latency parameters retrieved", "latencyMin", latencyMin, "latencyMax", latencyMax, "latencyDuration", latencyDuration, "latencyErrorFrequency", latencyErrorFrequency, "latencyExpensiveRunPercentage", latencyExpensiveRunPercentage)
+
+	d.latency = &artificialLatencyWithErrors{
+		delayCalculator: delayCalculator{
+			min: latencyMin,
+			max: latencyMax,
+
+			startTime:     time.Now(),
+			totalDuration: latencyDuration,
+		},
+
+		expensiveRunPercentage: latencyExpensiveRunPercentage,
+
+		errorFrequency: latencyErrorFrequency,
+		lastError:      time.Time{},
+	}
+
+	level.Info(d.log).Log("msg", "artificial latency with error setup completed")
+
+	// Build response
+	response := fmt.Sprintf("Artificial latency with error with parameters min=%v, max=%v, duration=%v, error frequency=%v, expensiveRunPercentage=%5.2f%%", latencyMin, latencyMax, latencyDuration, latencyErrorFrequency, latencyExpensiveRunPercentage)
+	util.WriteHTMLResponse(w, response)
+}
+
+func (d *Distributor) StopArtificialLatencyHandler(w http.ResponseWriter, r *http.Request) {
+	level.Info(d.log).Log("msg", "received a request to stop artificial latency")
+	d.latency = nil
+
+	level.Info(d.log).Log("msg", "artificial latency stopped")
+	// Build response
+	response := "Artificial latency has been stopped"
+	util.WriteHTMLResponse(w, response)
+}
+
+func (d *Distributor) StartArtificialCPUUsageHandler(w http.ResponseWriter, r *http.Request) {
+	level.Info(d.log).Log("msg", "received a request to start artificial CPU usage")
+	vars := mux.Vars(r)
+
+	// Extract path parameters
+	cpuUsageMinStr := vars["cpuUsageMin"]
+	cpuUsageMaxStr := vars["cpuUsageMax"]
+	cpuUsageDurationStr := vars["cpuUsageDuration"]
+	cpuUsageWorkersStr := vars["cpuUsageWorkers"]
+	cpuUsageFrequencyStr := vars["cpuUsageFrequency"]
+
+	// Defaults
+	cpuUsageMin, _ := time.ParseDuration(defaultIfEmpty(cpuUsageMinStr, "100ms"))
+	cpuUsageMax, _ := time.ParseDuration(defaultIfEmpty(cpuUsageMaxStr, "500ms"))
+	cpuUsageDuration, _ := time.ParseDuration(defaultIfEmpty(cpuUsageDurationStr, "300s"))
+	cpuUsageWorkers, _ := strconv.Atoi(defaultIfEmpty(cpuUsageWorkersStr, "1"))
+	cpuUsageFrequency, err := time.ParseDuration(cpuUsageFrequencyStr)
+	if err != nil {
+		cpuUsageFrequency = time.Duration(1<<63 - 1)
+	}
+
+	level.Info(d.log).Log("msg", "artificial CPU usage parameters retrieved", "cpuUsageMin", cpuUsageMin, "cpuUsageMax", cpuUsageMax, "cpuUsageDuration", cpuUsageDuration, "cpuUsageWorkers", cpuUsageWorkers, "cpuUsageFrequency", cpuUsageFrequency)
+
+	cpuUsage := &artificialCPUUsage{
+		delayCalculator: delayCalculator{
+			min: cpuUsageMin,
+			max: cpuUsageMax,
+
+			startTime:     time.Now(),
+			totalDuration: cpuUsageDuration,
+		},
+		workers:   cpuUsageWorkers,
+		frequency: cpuUsageFrequency,
+	}
+
+	level.Info(d.log).Log("msg", "starting artificial CPU usage")
+	cpuUsage.run(d.log)
+
+	// Build response
+	response := fmt.Sprintf("Artificial CPU usagewith parameters min=%v, max=%v, duration=%v, workers-%d, frequency=%v executed", cpuUsageMin, cpuUsageMax, cpuUsageDuration, cpuUsageWorkers, cpuUsageFrequency)
+	util.WriteHTMLResponse(w, response)
+}
+
+func defaultIfEmpty(value, def string) string {
+	if value == "" {
+		return def
+	}
+	return value
+}
+
 // push takes a write request and distributes it to ingesters using the ring.
 // Strings in pushReq may be pointers into the gRPC buffer which will be reused, so must be copied if retained.
 // push does not check limits like ingestion rate and inflight requests.
@@ -2073,6 +2303,9 @@ func (d *Distributor) sendWriteRequestToBackends(ctx context.Context, tenantID s
 func (d *Distributor) sendWriteRequestToIngesters(ctx context.Context, tenantRing ring.DoBatchRing, req *mimirpb.WriteRequest, keys []uint32, initialMetadataIndex int, remoteRequestContext func() context.Context, batchOptions ring.DoBatchOptions) error {
 	err := ring.DoBatchWithOptions(ctx, ring.WriteNoExtend, tenantRing, keys,
 		func(ingester ring.InstanceDesc, indexes []int) error {
+			if err := d.addArtificialLatencyWithError(); err != nil {
+				return err
+			}
 			req := req.ForIndexes(indexes, initialMetadataIndex)
 
 			h, err := d.ingesterPool.GetClientForInstance(ingester)
@@ -2098,6 +2331,9 @@ func (d *Distributor) sendWriteRequestToIngesters(ctx context.Context, tenantRin
 func (d *Distributor) sendWriteRequestToPartitions(ctx context.Context, tenantID string, tenantRing ring.DoBatchRing, req *mimirpb.WriteRequest, keys []uint32, initialMetadataIndex int, remoteRequestContext func() context.Context, batchOptions ring.DoBatchOptions) error {
 	err := ring.DoBatchWithOptions(ctx, ring.WriteNoExtend, tenantRing, keys,
 		func(partition ring.InstanceDesc, indexes []int) error {
+			if err := d.addArtificialLatencyWithError(); err != nil {
+				return err
+			}
 			req := req.ForIndexes(indexes, initialMetadataIndex)
 
 			// The partition ID is stored in the ring.InstanceDesc Id.
