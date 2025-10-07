@@ -153,7 +153,7 @@ func registerReactiveLimiterMetrics(limiterMetrics adaptivelimiter.Metrics, r pr
 	})
 	promauto.With(r).NewGaugeFunc(prometheus.GaugeOpts{
 		Name: "cortex_distributor_reactive_limiter_queued_requests",
-		Help: "Distributor reactive limiter blocked requests.",
+		Help: "Distributor reactive limiter queued requests.",
 	}, func() float64 {
 		return float64(limiterMetrics.Queued())
 	})

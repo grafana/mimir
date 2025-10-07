@@ -1750,7 +1750,7 @@ func (d *Distributor) PreparePushRequest(ctx context.Context) (func(error), erro
 		permit, err := d.reactiveLimiter.AcquirePermit(ctx)
 		if err != nil {
 			kv := d.reactiveLimiter.getStat()
-			kv = append(kv, "msg", "it was impossible to acquire a reactive limiter permit during startPushRequest")
+			kv = append(kv, "msg", "it was impossible to acquire a reactive limiter permit during PreparePushRequest")
 			level.Debug(d.log).Log(kv...)
 			d.rejectedRequests.WithLabelValues(reasonDistributorMaxInflightPushRequests).Inc()
 			return nil, newReactiveLimiterExceededError(adaptivelimiter.ErrExceeded)
