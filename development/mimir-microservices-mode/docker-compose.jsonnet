@@ -142,7 +142,7 @@ std.manifestYamlDoc({
       extraArguments: ' -parquet-converter.conversion-interval=10s' +
                       ' -parquet-converter.discovery-interval=10s' +
                       ' -parquet-converter.min-compaction-level=0' +
-                      ' -parquet-converter.max-rows-per-group=1000' +
+                      ' -parquet-converter.max-rows-per-group=2000' +
                       ' -parquet-converter.max-row-groups-per-shard=4',
     }),
   },

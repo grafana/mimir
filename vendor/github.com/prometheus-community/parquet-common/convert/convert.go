@@ -389,9 +389,7 @@ func ConvertTSDBBlockParallel(
 	errGroup := &errgroup.Group{}
 	errGroup.SetLimit(cfg.writeConcurrency)
 	for shard, rr := range shardedRowReaders {
-		shard, rr := shard, rr // capture loop variable
 		errGroup.Go(func() error {
-			fmt.Printf("shard %d\n", shard)
 			labelsProjection, err := rr.Schema().LabelsProjection(cfg.labelsCompressionOpts...)
 			if err != nil {
 				return errors.Wrap(err, "error getting labels projection from tsdb schema")
@@ -404,7 +402,6 @@ func ConvertTSDBBlockParallel(
 				labelsProjection, chunksProjection,
 			}
 
-			fmt.Printf("initializing writer for shard %d\n", shard)
 			w := &PreShardedWriter{
 				shard:                shard,
 				rr:                   rr,
@@ -414,7 +411,6 @@ func ConvertTSDBBlockParallel(
 				opts:                 &cfg,
 			}
 			err = w.Write(ctx)
-			fmt.Printf("completed outer func writer for shard %d\n", shard)
 			if err != nil {
 				return errors.Wrap(err, "error writing shard for block")
 			}
@@ -454,35 +450,37 @@ func NewShardedTSDBRowReaders(
 ) ([]*TSDBRowReader, error) {
 	blocksByID := make(map[ulid.ULID]Convertible, len(blocks))
 	blockIndexRs := make(map[ulid.ULID]tsdb.IndexReader, len(blocks))
+	// Simpler to track and close these readers separate from those used by shard conversion reader/writers.
 	defer func() {
-			for i := range blockIndexRs {
-				_ = blockIndexRs[i].Close()
-			}
+		for i := range blockIndexRs {
+			_ = blockIndexRs[i].Close()
+		}
 	}()
 	for _, blk := range blocks {
 		blocksByID[blk.Meta().ULID] = blk
 		indexr, err := blk.Index()
 		if err != nil {
-			return nil, fmt.Errorf("unable to get index reader from block: %w", err)
+			return nil, errors.Wrap(err, "failed to get index reader from block")
 		}
 		blockIndexRs[blk.Meta().ULID] = indexr
 	}
 
 	uniqueSeriesCount, shardedSeries, err := shardSeries(ctx, blockIndexRs, mint, maxt, opts)
 	if err != nil {
-		return nil, fmt.Errorf("unable to get unique series count: %w", err)
+		return nil, errors.Wrap(err, "failed to determine unique series count")
 	}
 	if uniqueSeriesCount == 0 {
-		return nil, fmt.Errorf("no series found in the specified time range")
+		return nil, errors.Wrap(err, "no series found in the specified time range")
 	}
 
-
 	shardTSDBRowReaders := make([]*TSDBRowReader, len(shardedSeries))
-	// For each shard create a TSDBRowReader with:
+	// For each shard, create a TSDBRowReader with:
 	//	* a MergeChunkSeriesSet of all blocks' series sets for the shard
 	//	* a schema built from only the label names present in the shard
 	for shardIdx, shardSeries := range shardedSeries {
-		closers := make([]io.Closer, 0, len(shardSeries)*3) // index, chunk, and tombstone reader per block
+		// An index, chunk, and tombstone reader per block each must be closed after usage
+		// in order for the prometheus block reader to not hang indefinitely when closed.
+		closers := make([]io.Closer, 0, len(shardSeries)*3)
 		seriesSets := make([]storage.ChunkSeriesSet, 0, len(blocks))
 		schemaBuilder := schema.NewBuilder(mint, maxt, colDuration)
 
@@ -496,19 +494,19 @@ func NewShardedTSDBRowReaders(
 			// Init separate index readers from above blockIndexRs to simplify closing logic
 			indexr, err := blk.Index()
 			if err != nil {
-				return nil, fmt.Errorf("failed to get index reader from block: %w", err)
+				return nil, errors.Wrap(err, "failed to get index reader from block")
 			}
 			closers = append(closers, indexr)
 
 			chunkr, err := blk.Chunks()
 			if err != nil {
-				return nil, fmt.Errorf("failed to get chunk reader from block: %w", err)
+				return nil, errors.Wrap(err, "failed to get chunk reader from block")
 			}
 			closers = append(closers, chunkr)
 
 			tombsr, err := blk.Tombstones()
 			if err != nil {
-				return nil, fmt.Errorf("failed to get tombstone reader from block: %w", err)
+				return nil, errors.Wrap(err, "failed to get tombstone reader from block")
 			}
 			closers = append(closers, tombsr)
 
@@ -904,9 +902,9 @@ func shardSeries(
 		}
 	}
 
-	totalShards := int(math.Ceil(float64(uniqueSeriesCount) / float64(opts.numRowGroups*opts.rowGroupSize)))
 	// Divide rows evenly across shards to avoid one small shard at the end;
 	// use floats & round up so integer division does not cut off the remainder series.
+	totalShards := int(math.Ceil(float64(uniqueSeriesCount) / float64(opts.numRowGroups*opts.rowGroupSize)))
 	rowsPerShard := int(math.Ceil(float64(uniqueSeriesCount) / float64(totalShards)))
 
 	// For each shard index i, shardSeries[i] is a map of blockID -> []series.

@@ -46,15 +46,12 @@ func (c *PreShardedWriter) Write(ctx context.Context) error {
 	if err := c.convertShard(ctx); err != nil {
 		return errors.Wrap(err, "failed to convert shard")
 	}
-	fmt.Printf("finished shard %d write\n", c.shard)
 	return nil
 }
 
 func (c *PreShardedWriter) convertShard(ctx context.Context) error {
-	fmt.Printf("starting shard %d conversion\n", c.shard)
 	outSchemas := outSchemasForShard(c.opts.name, c.shard, c.outSchemaProjections)
 	_, err := writeFile(ctx, c.schema, outSchemas, c.rr, c.pipeReaderWriter, c.opts)
-	fmt.Printf("finished shard %d conversion\n", c.shard)
 	return err
 }
 
@@ -321,11 +318,6 @@ func (s *splitPipeFileWriter) Close() error {
 		}
 	}
 
-	files := make([]string, 0, len(s.fileWriters))
-	for f := range s.fileWriters {
-		files = append(files, f)
-	}
-	fmt.Printf("waiting for all split pipe file writers to complete for files %v \n", files)
 	if errClose := s.errGroup.Wait(); errClose != nil {
 		err = multierror.Append(err, errClose)
 	}
