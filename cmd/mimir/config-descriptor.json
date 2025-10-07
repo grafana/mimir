@@ -2242,6 +2242,188 @@
           ],
           "fieldValue": null,
           "fieldDefaultValue": null
+        },
+        {
+          "kind": "block",
+          "name": "reactive_limiter",
+          "required": false,
+          "desc": "",
+          "blockEntries": [
+            {
+              "kind": "field",
+              "name": "enabled",
+              "required": false,
+              "desc": "Enable reactive limiting when making requests to a service",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "distributor.reactive-limiter.enabled",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "min_limit",
+              "required": false,
+              "desc": "Minimum inflight requests limit",
+              "fieldValue": null,
+              "fieldDefaultValue": 2,
+              "fieldFlag": "distributor.reactive-limiter.min-limit",
+              "fieldType": "int",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "max_limit",
+              "required": false,
+              "desc": "Maximum inflight requests limit",
+              "fieldValue": null,
+              "fieldDefaultValue": 200,
+              "fieldFlag": "distributor.reactive-limiter.max-limit",
+              "fieldType": "int",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "initial_limit",
+              "required": false,
+              "desc": "Initial inflight requests limit",
+              "fieldValue": null,
+              "fieldDefaultValue": 20,
+              "fieldFlag": "distributor.reactive-limiter.initial-limit",
+              "fieldType": "int",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "max_limit_factor",
+              "required": false,
+              "desc": "The maximum inflight limit as a multiple of current inflight requests",
+              "fieldValue": null,
+              "fieldDefaultValue": 5,
+              "fieldFlag": "distributor.reactive-limiter.max-limit-factor",
+              "fieldType": "float",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "recent_window_min_duration",
+              "required": false,
+              "desc": "Minimum duration of the window that is used to collect recent response time samples",
+              "fieldValue": null,
+              "fieldDefaultValue": 1000000000,
+              "fieldFlag": "distributor.reactive-limiter.recent-window-min-duration",
+              "fieldType": "duration",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "recent_window_max_duration",
+              "required": false,
+              "desc": "Maximum duration of the window that is used to collect recent response time samples",
+              "fieldValue": null,
+              "fieldDefaultValue": 30000000000,
+              "fieldFlag": "distributor.reactive-limiter.recent-window-max-duration",
+              "fieldType": "duration",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "recent_window_min_samples",
+              "required": false,
+              "desc": "Minimum number of samples that must be recorded in the recent window before updating the limit",
+              "fieldValue": null,
+              "fieldDefaultValue": 50,
+              "fieldFlag": "distributor.reactive-limiter.recent-window-min-samples",
+              "fieldType": "int",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "recent_quantile",
+              "required": false,
+              "desc": "The quantile of recent recorded response times to consider when adjusting the concurrency limit",
+              "fieldValue": null,
+              "fieldDefaultValue": 0.9,
+              "fieldFlag": "distributor.reactive-limiter.recent-quantile",
+              "fieldType": "float",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "baseline_window_age",
+              "required": false,
+              "desc": "The average age of baseline samples aggregated recent samples are added to",
+              "fieldValue": null,
+              "fieldDefaultValue": 10,
+              "fieldFlag": "distributor.reactive-limiter.baseline-window-age",
+              "fieldType": "int",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "correlation_window",
+              "required": false,
+              "desc": "How many recent limit and inflight time measurements are stored to detect whether increases in limits correlate with increases in inflight times",
+              "fieldValue": null,
+              "fieldDefaultValue": 50,
+              "fieldFlag": "distributor.reactive-limiter.correlation-window",
+              "fieldType": "int",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "initial_rejection_factor",
+              "required": false,
+              "desc": "The number of allowed queued requests, as a multiple of current inflight requests, after which rejections start",
+              "fieldValue": null,
+              "fieldDefaultValue": 2,
+              "fieldFlag": "distributor.reactive-limiter.initial-rejection-factor",
+              "fieldType": "float",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "max_rejection_factor",
+              "required": false,
+              "desc": "The number of allowed queued requests, as a multiple of current inflight requests, after which all requests are rejected",
+              "fieldValue": null,
+              "fieldDefaultValue": 3,
+              "fieldFlag": "distributor.reactive-limiter.max-rejection-factor",
+              "fieldType": "float",
+              "fieldCategory": "experimental"
+            }
+          ],
+          "fieldValue": null,
+          "fieldDefaultValue": null
+        },
+        {
+          "kind": "field",
+          "name": "rejection_prioritizer_enabled",
+          "required": false,
+          "desc": "",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldType": "boolean"
+        },
+        {
+          "kind": "block",
+          "name": "rejection_prioritizer",
+          "required": false,
+          "desc": "",
+          "blockEntries": [
+            {
+              "kind": "field",
+              "name": "calibration_interval",
+              "required": false,
+              "desc": "",
+              "fieldValue": null,
+              "fieldDefaultValue": null,
+              "fieldType": "duration",
+              "fieldCategory": "experimental"
+            }
+          ],
+          "fieldValue": null,
+          "fieldDefaultValue": null
         }
       ],
       "fieldValue": null,

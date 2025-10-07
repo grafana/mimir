@@ -1291,6 +1291,32 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Whether to promote OTel scope metadata (scope name, version, schema URL, attributes) to corresponding metric labels, prefixed with otel_scope_.
   -distributor.otel-translation-strategy value
     	[experimental] Translation strategy to apply in OTLP endpoint for metric and label names. If unspecified (the default), the strategy is derived from -validation.name-validation-scheme and -distributor.otel-metric-suffixes-enabled. Supported values: "", UnderscoreEscapingWithSuffixes, UnderscoreEscapingWithoutSuffixes, NoUTF8EscapingWithSuffixes, NoTranslation.
+  -distributor.reactive-limiter.baseline-window-age uint
+    	[experimental] The average age of baseline samples aggregated recent samples are added to (default 10)
+  -distributor.reactive-limiter.correlation-window uint
+    	[experimental] How many recent limit and inflight time measurements are stored to detect whether increases in limits correlate with increases in inflight times (default 50)
+  -distributor.reactive-limiter.enabled
+    	[experimental] Enable reactive limiting when making requests to a service
+  -distributor.reactive-limiter.initial-limit uint
+    	[experimental] Initial inflight requests limit (default 20)
+  -distributor.reactive-limiter.initial-rejection-factor float
+    	[experimental] The number of allowed queued requests, as a multiple of current inflight requests, after which rejections start (default 2)
+  -distributor.reactive-limiter.max-limit uint
+    	[experimental] Maximum inflight requests limit (default 200)
+  -distributor.reactive-limiter.max-limit-factor float
+    	[experimental] The maximum inflight limit as a multiple of current inflight requests (default 5)
+  -distributor.reactive-limiter.max-rejection-factor float
+    	[experimental] The number of allowed queued requests, as a multiple of current inflight requests, after which all requests are rejected (default 3)
+  -distributor.reactive-limiter.min-limit uint
+    	[experimental] Minimum inflight requests limit (default 2)
+  -distributor.reactive-limiter.recent-quantile float
+    	[experimental] The quantile of recent recorded response times to consider when adjusting the concurrency limit (default 0.9)
+  -distributor.reactive-limiter.recent-window-max-duration duration
+    	[experimental] Maximum duration of the window that is used to collect recent response time samples (default 30s)
+  -distributor.reactive-limiter.recent-window-min-duration duration
+    	[experimental] Minimum duration of the window that is used to collect recent response time samples (default 1s)
+  -distributor.reactive-limiter.recent-window-min-samples uint
+    	[experimental] Minimum number of samples that must be recorded in the recent window before updating the limit (default 50)
   -distributor.remote-timeout duration
     	Timeout for downstream ingesters. (default 2s)
   -distributor.request-burst-size int
