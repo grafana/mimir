@@ -21,10 +21,10 @@ To get started, you can run Grafana Mimir in [monolithic mode](../../references/
 
 Starting with version 3.0, you can deploy Grafana Mimir using the following architectures:
 
-| Architecture             | Description                                                                                                                      | Related Documentation                                                   |
-| ------------------------ | -------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| Architecture               | Description                                                                                                                      | Related Documentation                                                   |
+| -------------------------- | -------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
 | Ingest storage (preferred) | Uses Kafka as a central pipeline to decouple read and write operations                                                           | [About ingest storage architecture](about-ingest-storage-architecture/) |
-| Classic                  | Uses stateful ingesters with local write-ahead logs to manage both the ingestion of new data and serving recent data for queries | [About classic architecture](about-classic-architecture/)               |
+| Classic                    | Uses stateful ingesters with local write-ahead logs to manage both the ingestion of new data and serving recent data for queries | [About classic architecture](about-classic-architecture/)               |
 
 ## The role of Prometheus
 
