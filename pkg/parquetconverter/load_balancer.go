@@ -37,7 +37,7 @@ type loadBalancer interface {
 }
 
 const (
-	lockTTL    = 24 * time.Hour
+	lockTTL    = 4 * time.Hour
 	lockPrefix = "parquet-converter-lock:"
 )
 
