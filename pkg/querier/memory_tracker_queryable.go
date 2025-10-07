@@ -38,9 +38,7 @@ type memoryTrackerQuerier struct {
 }
 
 func (q *memoryTrackerQuerier) Select(ctx context.Context, sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
-	if _, err := limiter.MemoryConsumptionTrackerFromContext(ctx); err != nil {
-		ctx = limiter.ContextWithNewUnlimitedMemoryConsumptionTracker(ctx)
-	}
+	ctx = limiter.ContextWithNewUnlimitedMemoryConsumptionTracker(ctx)
 	return q.inner.Select(ctx, sortSeries, hints, matchers...)
 }
 
