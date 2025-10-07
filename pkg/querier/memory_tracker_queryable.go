@@ -18,7 +18,7 @@ func NewMemoryTrackerQueryable(inner storage.Queryable) storage.Queryable {
 	return &unlimitedMemoryTrackerQueryable{inner: inner}
 }
 
-// unlimitedMemoryTrackerQueryable is for queryables that returns unlimitedMemoryTrackerQuerier.
+// unlimitedMemoryTrackerQueryable wraps Queryable that returns unlimitedMemoryTrackerQuerier.
 type unlimitedMemoryTrackerQueryable struct {
 	inner storage.Queryable
 }
