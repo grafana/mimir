@@ -258,9 +258,10 @@ func (rt limitedParallelismRoundTripper) RoundTrip(r *http.Request) (*http.Respo
 	// sub-requests run in parallel.
 	response, err := rt.middleware.Wrap(
 		HandlerFunc(func(ctx context.Context, r MetricsQueryRequest) (Response, error) {
-			// If remote execution is enabled, then don't apply the parallelism limit here, as we'll enforce it in Frontend.DoProtobufRequest instead.
-			// If we enforce the limit here, then we'll count requests twice: once here, and again in Frontend.DoProtobufRequest.
+			// If remote execution is disabled, apply the parallelism limit here.
+			// If remote execution is enabled, we'll enforce the limit in Frontend.DoProtobufRequest instead.
 			// We need to enforce the limit in DoProtobufRequest because the requests we see here are before sharding is applied if sharding inside MQE is enabled.
+			// If we were to enforce the limit here with remote execution enabled, then we'll count requests twice: once here, and again in Frontend.DoProtobufRequest.
 			if !rt.remoteExecutionEnabled {
 				if err := limiter.BeginRequest(ctx); err != nil {
 					return nil, err
