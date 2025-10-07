@@ -19,7 +19,6 @@ import (
 
 type Squasher interface {
 	Squash(...EmbeddedQuery) (parser.Expr, error)
-	ContainsSquashedExpression(node parser.Node) (bool, error)
 }
 
 type ShardLabeller interface {
@@ -188,7 +187,12 @@ func (summer *shardSummer) canShardAllVectorSelectors(expr parser.Expr) (can boo
 		}
 	}()
 
-	hasSelector, err := anyNode(expr, isVectorSelector)
+	if paren, ok := expr.(*parser.ParenExpr); ok {
+		// Unwrap the expression.
+		return summer.canShardAllVectorSelectors(paren.Expr)
+	}
+
+	hasSelector, err := AnyNode(expr, isVectorSelector)
 	if !hasSelector {
 		return true, nil
 	}
@@ -206,7 +210,7 @@ func (summer *shardSummer) canShardAllVectorSelectors(expr parser.Expr) (can boo
 		return canShardLHS && canShardRHS, nil
 	}
 
-	hasAggregation, err := anyNode(expr, isAggregateExpr)
+	hasAggregation, err := AnyNode(expr, isAggregateExpr)
 	if err != nil {
 		return false, err
 	}

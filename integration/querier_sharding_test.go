@@ -27,26 +27,44 @@ type querierShardingTestConfig struct {
 	shuffleShardingEnabled bool
 	sendHistograms         bool
 	querierResponseFormat  string
+	enableRemoteExecution  bool
 }
 
 func TestQuerySharding(t *testing.T) {
 	for _, shuffleShardingEnabled := range []bool{false, true} {
 		for _, sendHistograms := range []bool{false, true} {
-			for _, querierResponseFormat := range []string{"json", "protobuf"} {
-				if sendHistograms && querierResponseFormat == "json" {
-					// histograms over json are not supported
-					continue
-				}
-				testName := fmt.Sprintf("shuffle shard=%v/histograms=%v/format=%v",
-					shuffleShardingEnabled, sendHistograms, querierResponseFormat,
-				)
+			testName := fmt.Sprintf("shuffle shard=%v/histograms=%v", shuffleShardingEnabled, sendHistograms)
+
+			var formats []string
+
+			if sendHistograms {
+				// Histograms over JSON are not supported.
+				formats = []string{"protobuf"}
+			} else {
+				formats = []string{"json", "protobuf"}
+			}
+
+			for _, querierResponseFormat := range formats {
+				t.Run(testName+fmt.Sprintf("/format=%v", querierResponseFormat), func(t *testing.T) {
+					cfg := querierShardingTestConfig{
+						shuffleShardingEnabled: shuffleShardingEnabled,
+						sendHistograms:         sendHistograms,
+						querierResponseFormat:  querierResponseFormat,
+					}
+
+					runQuerierShardingTest(t, cfg)
+				})
+			}
+
+			t.Run(testName+"/remote execution", func(t *testing.T) {
 				cfg := querierShardingTestConfig{
 					shuffleShardingEnabled: shuffleShardingEnabled,
 					sendHistograms:         sendHistograms,
-					querierResponseFormat:  querierResponseFormat,
+					enableRemoteExecution:  true,
 				}
-				t.Run(testName, func(t *testing.T) { runQuerierShardingTest(t, cfg) })
-			}
+
+				runQuerierShardingTest(t, cfg)
+			})
 		}
 	}
 }
@@ -69,6 +87,8 @@ func runQuerierShardingTest(t *testing.T, cfg querierShardingTestConfig) {
 		"-query-frontend.results-cache.memcached.addresses":    "dns+" + memcached.NetworkEndpoint(e2ecache.MemcachedPort),
 		"-query-frontend.results-cache.compression":            "snappy",
 		"-query-scheduler.max-outstanding-requests-per-tenant": strconv.Itoa(numQueries), // To avoid getting errors.
+		"-query-frontend.enable-remote-execution":              strconv.FormatBool(cfg.enableRemoteExecution),
+		"-query-frontend.use-mimir-query-engine-for-sharding":  strconv.FormatBool(cfg.enableRemoteExecution),
 	})
 
 	minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
@@ -165,16 +185,19 @@ func runQuerierShardingTest(t *testing.T, cfg querierShardingTestConfig) {
 	require.NoError(t, err)
 	require.Len(t, q2Values, 1)
 
-	total := q1Values[0] + q2Values[0]
-	diff := q1Values[0] - q2Values[0]
+	q1Count := q1Values[0] - 1 // -1: Remove request used for metrics initialization.
+	q2Count := q2Values[0] - 1
+
+	total := q1Count + q2Count
+	diff := q1Count - q2Count
 	if diff < 0 {
 		diff = -diff
 	}
 
-	require.Equal(t, float64(numQueries), total-2) // Remove 2 requests used for metrics initialization.
+	require.Equal(t, float64(numQueries), total)
 
 	if cfg.shuffleShardingEnabled {
-		require.Equal(t, float64(numQueries), diff)
+		require.Equalf(t, float64(numQueries), diff, "expected all queries to be handled by single querier, but one querier got %v requests and the other got %v requests", q1Count, q2Count)
 	} else {
 		// Both queriers should have roughly equal number of requests, with possible delta. 50% delta is
 		// picked to be small enough so that load between queriers would not be wildly different (allow a

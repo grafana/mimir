@@ -7,6 +7,7 @@ package querier
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -38,6 +39,8 @@ import (
 
 var evaluateQueryRequestMessageName = proto.MessageName(&querierpb.EvaluateQueryRequest{})
 
+var errMQENotEnabled = errors.New("MQE is not enabled on this querier")
+
 type Dispatcher struct {
 	engine    *streamingpromql.Engine
 	queryable storage.Queryable
@@ -67,31 +70,25 @@ func NewDispatcher(engine *streamingpromql.Engine, queryable storage.Queryable, 
 }
 
 func (d *Dispatcher) HandleProtobuf(ctx context.Context, req *prototypes.Any, metadata propagation.Carrier, stream frontendv2pb.QueryResultStream) {
-	writer := &queryResponseWriter{
-		stream:         stream,
-		querierMetrics: d.querierMetrics,
-		serverMetrics:  d.serverMetrics,
-		logger:         d.logger,
-	}
-
+	writer := newQueryResponseWriter(stream, d.querierMetrics, d.serverMetrics, d.logger)
 	messageName, err := prototypes.AnyMessageName(req)
 	writer.Start(messageName, len(req.Value)) // We deliberately call this before checking the error below, so that we still get stats for malformed requests.
 	defer writer.Finish()
 
 	if err != nil {
-		writer.WriteError(ctx, mimirpb.QUERY_ERROR_TYPE_BAD_DATA, fmt.Sprintf("malformed query request type %q: %v", req.TypeUrl, err))
+		writer.WriteError(ctx, apierror.TypeBadData, fmt.Errorf("malformed query request type %q: %w", req.TypeUrl, err))
 		return
 	}
 
 	tenantID, err := user.ExtractOrgID(ctx)
 	if err != nil {
-		writer.WriteError(ctx, mimirpb.QUERY_ERROR_TYPE_BAD_DATA, err.Error())
+		writer.WriteError(ctx, apierror.TypeBadData, err)
 		return
 	}
 
 	ctx, err = d.extractor.ExtractFromCarrier(ctx, metadata)
 	if err != nil {
-		writer.WriteError(ctx, mimirpb.QUERY_ERROR_TYPE_BAD_DATA, err.Error())
+		writer.WriteError(ctx, apierror.TypeBadData, err)
 		return
 	}
 
@@ -102,7 +99,7 @@ func (d *Dispatcher) HandleProtobuf(ctx context.Context, req *prototypes.Any, me
 		d.evaluateQuery(ctx, req.Value, writer)
 
 	default:
-		writer.WriteError(ctx, mimirpb.QUERY_ERROR_TYPE_BAD_DATA, fmt.Sprintf("unknown query request type %q", req.TypeUrl))
+		writer.WriteError(ctx, apierror.TypeBadData, fmt.Errorf("unknown query request type %q", req.TypeUrl))
 	}
 }
 
@@ -112,18 +109,18 @@ func (d *Dispatcher) evaluateQuery(ctx context.Context, body []byte, resp *query
 	span.SetAttributes(attribute.String("request.type", evaluateQueryRequestMessageName))
 
 	if d.engine == nil {
-		resp.WriteError(ctx, mimirpb.QUERY_ERROR_TYPE_NOT_FOUND, "MQE is not enabled on this querier")
+		resp.WriteError(ctx, apierror.TypeNotFound, errMQENotEnabled)
 		return
 	}
 
 	req := &querierpb.EvaluateQueryRequest{}
 	if err := proto.Unmarshal(body, req); err != nil {
-		resp.WriteError(ctx, mimirpb.QUERY_ERROR_TYPE_INTERNAL, fmt.Sprintf("could not read request body: %s", err.Error()))
+		resp.WriteError(ctx, apierror.TypeInternal, fmt.Errorf("could not read request body: %w", err))
 		return
 	}
 
 	if len(req.Nodes) != 1 {
-		resp.WriteError(ctx, mimirpb.QUERY_ERROR_TYPE_BAD_DATA, fmt.Sprintf("this querier only supports evaluating exactly one node, got %d", len(req.Nodes)))
+		resp.WriteError(ctx, apierror.TypeBadData, fmt.Errorf("this querier only supports evaluating exactly one node, got %d", len(req.Nodes)))
 		return
 	}
 
@@ -131,14 +128,14 @@ func (d *Dispatcher) evaluateQuery(ctx context.Context, body []byte, resp *query
 
 	plan, nodes, err := req.Plan.ToDecodedPlan(evaluationNode.NodeIndex)
 	if err != nil {
-		resp.WriteError(ctx, mimirpb.QUERY_ERROR_TYPE_BAD_DATA, fmt.Sprintf("could not decode plan: %s", err.Error()))
+		resp.WriteError(ctx, apierror.TypeBadData, fmt.Errorf("could not decode plan: %w", err))
 		return
 	}
 
 	opts := promql.NewPrometheusQueryOpts(req.EnablePerStepStats, 0)
 	e, err := d.engine.NewEvaluator(ctx, d.queryable, opts, plan, nodes[0], evaluationNode.TimeRange.ToDecodedTimeRange())
 	if err != nil {
-		resp.WriteError(ctx, mimirpb.QUERY_ERROR_TYPE_BAD_DATA, fmt.Sprintf("could not materialize query: %s", err.Error()))
+		resp.WriteError(ctx, apierror.TypeBadData, fmt.Errorf("could not materialize query: %w", err))
 		return
 	}
 
@@ -153,15 +150,15 @@ func (d *Dispatcher) evaluateQuery(ctx context.Context, body []byte, resp *query
 	}
 
 	if err := e.Evaluate(ctx, observer); err != nil {
-		resp.WriteError(ctx, errorTypeForError(err), err.Error())
+		resp.WriteError(ctx, apierror.TypeExec, err)
 		return
 	}
 
 	span.SetStatus(codes.Ok, "evaluation completed successfully")
 }
 
-func errorTypeForError(err error) mimirpb.QueryErrorType {
-	apiErrorType := apierror.TypeForError(err, apierror.TypeExec)
+func errorTypeForError(err error, fallback apierror.Type) mimirpb.QueryErrorType {
+	apiErrorType := apierror.TypeForError(err, fallback)
 	t, conversionErr := mimirpb.ErrorTypeFromAPIErrorType(apiErrorType)
 
 	// ErrorTypeFromAPIErrorType should never fail, as the APIError and QueryErrorType enums should remain
@@ -188,6 +185,15 @@ type queryResponseWriter struct {
 	routeName                   string
 	status                      string
 	tenantID                    string
+}
+
+func newQueryResponseWriter(stream frontendv2pb.QueryResultStream, querierMetrics *RequestMetrics, serverMetrics *server.Metrics, logger log.Logger) *queryResponseWriter {
+	return &queryResponseWriter{
+		stream:         stream,
+		querierMetrics: querierMetrics,
+		serverMetrics:  serverMetrics,
+		logger:         logger,
+	}
 }
 
 // Start emits metrics at the start of request processing.
@@ -235,9 +241,15 @@ func (w *queryResponseWriter) Write(ctx context.Context, r querierpb.EvaluateQue
 	return w.write(ctx, resp)
 }
 
-func (w *queryResponseWriter) WriteError(ctx context.Context, typ mimirpb.QueryErrorType, msg string) {
+func (w *queryResponseWriter) WriteError(ctx context.Context, fallbackType apierror.Type, err error) {
+	typ := errorTypeForError(err, fallbackType)
+	msg := err.Error()
 	span := trace.SpanFromContext(ctx)
-	span.SetStatus(codes.Error, msg)
+
+	if typ != mimirpb.QUERY_ERROR_TYPE_CANCELED {
+		span.SetStatus(codes.Error, msg)
+	}
+
 	span.AddEvent("returning error", trace.WithAttributes(attribute.String("type", typ.String()), attribute.String("msg", msg)))
 
 	w.status = "ERROR_" + strings.TrimPrefix(typ.String(), "QUERY_ERROR_TYPE_")

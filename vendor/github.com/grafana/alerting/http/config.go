@@ -76,13 +76,13 @@ func (cfg *ProxyConfig) Proxy() func(*http.Request) (*url.URL, error) {
 			return proxyFn(req.URL)
 		}
 	}
-	if cfg.ProxyURL.URL != nil && cfg.ProxyURL.URL.String() != "" {
+	if cfg.ProxyURL.URL != nil && cfg.ProxyURL.String() != "" {
 		if cfg.NoProxy == "" {
 			return http.ProxyURL(cfg.ProxyURL.URL)
 		}
 		proxy := &httpproxy.Config{
-			HTTPProxy:  cfg.ProxyURL.URL.String(),
-			HTTPSProxy: cfg.ProxyURL.URL.String(),
+			HTTPProxy:  cfg.ProxyURL.String(),
+			HTTPSProxy: cfg.ProxyURL.String(),
 			NoProxy:    cfg.NoProxy,
 		}
 		proxyFn := proxy.ProxyFunc()
@@ -109,7 +109,7 @@ func ValidateProxyConfig(cfg ProxyConfig) error {
 	if len(cfg.ProxyConnectHeader) > 0 && !cfg.ProxyFromEnvironment && (cfg.ProxyURL.URL == nil || cfg.ProxyURL.String() == "") {
 		return errors.New("if proxy_connect_header is configured, proxy_url or proxy_from_environment must also be configured")
 	}
-	if cfg.ProxyFromEnvironment && !(cfg.ProxyURL.URL == nil || cfg.ProxyURL.String() == "") {
+	if cfg.ProxyFromEnvironment && cfg.ProxyURL.URL != nil && cfg.ProxyURL.String() != "" {
 		return errors.New("if proxy_from_environment is configured, proxy_url must not be configured")
 	}
 	if cfg.ProxyFromEnvironment && cfg.NoProxy != "" {

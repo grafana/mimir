@@ -47,6 +47,7 @@ func convertMatchersToLabelMatcher(matchers []*labels.Matcher) []storepb.LabelMa
 	return converted
 }
 
+// TODO: Remove after non-streaming removed from querier
 // Implementation of storage.SeriesSet, based on individual responses from store client.
 type blockQuerierSeriesSet struct {
 	series []*storepb.Series

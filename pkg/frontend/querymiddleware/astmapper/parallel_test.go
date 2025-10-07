@@ -31,7 +31,7 @@ func TestCanParallel(t *testing.T) {
 				Expr: &parser.VectorSelector{
 					Name: "some_metric",
 					LabelMatchers: []*labels.Matcher{
-						mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "some_metric"),
+						labels.MustNewMatcher(labels.MatchEqual, string(model.MetricNameLabel), "some_metric"),
 					},
 				},
 				Grouping: []string{"foo"},
@@ -46,7 +46,7 @@ func TestCanParallel(t *testing.T) {
 				Expr: &parser.VectorSelector{
 					Name: "some_metric",
 					LabelMatchers: []*labels.Matcher{
-						mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "some_metric"),
+						labels.MustNewMatcher(labels.MatchEqual, string(model.MetricNameLabel), "some_metric"),
 					},
 				},
 				Grouping: []string{"foo"},
@@ -71,7 +71,7 @@ func TestCanParallel(t *testing.T) {
 						Expr: &parser.VectorSelector{
 							Name: "idk",
 							LabelMatchers: []*labels.Matcher{
-								mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "bar1"),
+								labels.MustNewMatcher(labels.MatchEqual, string(model.MetricNameLabel), "bar1"),
 							},
 						},
 					},
@@ -81,7 +81,7 @@ func TestCanParallel(t *testing.T) {
 						Expr: &parser.VectorSelector{
 							Name: "idk",
 							LabelMatchers: []*labels.Matcher{
-								mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "bar2"),
+								labels.MustNewMatcher(labels.MatchEqual, string(model.MetricNameLabel), "bar2"),
 							},
 						},
 					},
@@ -97,7 +97,7 @@ func TestCanParallel(t *testing.T) {
 				Expr: &parser.VectorSelector{
 					Name: "idk",
 					LabelMatchers: []*labels.Matcher{
-						mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "bar1"),
+						labels.MustNewMatcher(labels.MatchEqual, string(model.MetricNameLabel), "bar1"),
 					},
 				},
 			},
@@ -279,7 +279,7 @@ func TestCountVectorSelectors(t *testing.T) {
 func TestEvalPredicate(t *testing.T) {
 	for testName, tc := range map[string]struct {
 		input       string
-		fn          predicate
+		fn          Predicate
 		expectedRes bool
 		expectedErr bool
 	}{
@@ -311,18 +311,12 @@ func TestEvalPredicate(t *testing.T) {
 			expectedRes: true,
 			expectedErr: false,
 		},
-		"hasEmbeddedQueries()": {
-			input:       `sum without(__query_shard__) (__embedded_queries__{__queries__="tstquery"}) or sum(selector)`,
-			fn:          EmbeddedQueriesSquasher.ContainsSquashedExpression,
-			expectedRes: true,
-			expectedErr: false,
-		},
 	} {
 		t.Run(testName, func(t *testing.T) {
 			expr, err := parser.ParseExpr(tc.input)
 			require.Nil(t, err)
 
-			res, err := anyNode(expr.(parser.Node), tc.fn)
+			res, err := AnyNode(expr.(parser.Node), tc.fn)
 			if tc.expectedErr {
 				require.Error(t, err)
 			} else {

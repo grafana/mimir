@@ -45,6 +45,7 @@ import (
 	"github.com/grafana/mimir/pkg/compactor"
 	"github.com/grafana/mimir/pkg/distributor"
 	"github.com/grafana/mimir/pkg/frontend"
+	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
 	v2 "github.com/grafana/mimir/pkg/frontend/v2"
 	"github.com/grafana/mimir/pkg/ingester"
 	"github.com/grafana/mimir/pkg/querier"
@@ -171,6 +172,9 @@ func TestMimir(t *testing.T) {
 			QueryEngine: "prometheus",
 			FrontendV2: v2.Config{
 				SchedulerAddress: "localhost",
+			},
+			QueryMiddleware: querymiddleware.Config{
+				InternalFunctionNames: querymiddleware.FunctionNamesSet{},
 			},
 		},
 		MemberlistKV: memberlist.KVConfig{

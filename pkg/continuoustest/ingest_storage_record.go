@@ -410,8 +410,8 @@ func (t *IngestStorageRecordTest) testRec(rec *kgo.Record, report batchReport) b
 		sortMetadata := cmpopts.SortSlices(func(m1, m2 *mimirpb.MetricMetadata) bool {
 			return m1.MetricFamilyName < m2.MetricFamilyName
 		})
-		if !cmp.Equal(dropExactDuplicates(req.Metadata), v2Req.Metadata, sortMetadata) {
-			diff := cmp.Diff(dropExactDuplicates(req.Metadata), v2Req.Metadata, sortMetadata)
+		if !cmp.Equal(dropExactDuplicates(req.Metadata), dropExactDuplicates(v2Req.Metadata), sortMetadata) {
+			diff := cmp.Diff(dropExactDuplicates(req.Metadata), dropExactDuplicates(v2Req.Metadata), sortMetadata)
 			return report.Error(fmt.Errorf("metadata did not match (adjusting for ordering, exact duplicates dropped). numTimeseries: %d, numMetadata: %d,\noriginalMetadata: %v,\nv2Metadata: %v\n Diff: %s", len(req.Timeseries), len(req.Metadata), req.Metadata, v2Req.Metadata, diff))
 		}
 	}

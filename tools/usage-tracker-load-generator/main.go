@@ -41,6 +41,7 @@ type Config struct {
 	SimulatedTotalSeries           int
 	SimulatedScrapeInterval        time.Duration
 	SimulatedSeriesPerWriteRequest int
+	SimulatedSeriesLifetime        time.Duration
 }
 
 func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
@@ -49,6 +50,7 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.IntVar(&c.SimulatedTotalSeries, "test.simulated-total-series", 1000, "Total number of series simulated.")
 	f.DurationVar(&c.SimulatedScrapeInterval, "test.simulated-scrape-interval", 20*time.Second, "Simulated scrape interval.")
 	f.IntVar(&c.SimulatedSeriesPerWriteRequest, "test.simulated-series-per-write-request", 1000, "Simulated number of series per write request.")
+	f.DurationVar(&c.SimulatedSeriesLifetime, "test.simulated-series-lifetime", time.Hour, "Simulated series lifetime. Series will churn after this duration.")
 
 	c.Client.RegisterFlagsWithPrefix("usage-tracker-client.", f)
 	c.InstanceRing.RegisterFlags(f, logger)
@@ -145,11 +147,8 @@ func runWorker(ctx context.Context, replicaSeed uint64, workerID, numWorkers int
 	// Inject the user ID in the context, required by the usage-tracker server.
 	ctx = user.InjectOrgID(ctx, cfg.TenantID)
 
-	// Pre-generate all series hashes. We use a random generator. We don't care about collisions between workers.
-	// We expect collisions to be a very low %.
-	seriesHashes := generateSeriesHashes(replicaSeed, workerID, numSeriesPerWorker)
-
 	for {
+		seriesHashes := generateSeriesHashesWithChurn(replicaSeed, workerID, numSeriesPerWorker, cfg.SimulatedSeriesLifetime, time.Now())
 		sendSeriesHashes(ctx, workerID, cfg.TenantID, seriesHashes, numSeriesPerRequest, cfg.SimulatedScrapeInterval, targetTimePerRequest, client)
 	}
 }
@@ -193,13 +192,23 @@ func sendSeriesHashes(ctx context.Context, workerID int, tenantID string, series
 	}
 }
 
-func generateSeriesHashes(replicaSeed uint64, workerID, numSeries int) []uint64 {
+func generateSeriesHashesWithChurn(replicaSeed uint64, workerID, numSeries int, seriesLifetime time.Duration, now time.Time) []uint64 {
 	// We use a random generator. We don't care about collisions between workers.
 	// We expect collisions to be a very low %.
+	// We want series to churn gradually, so we will select a churning point in the seriesLifetime nanos duration where it should churn.
+	// Churning will be achieved by adding time.Now().UnixNano() / seriesLifetime.Nanoseconds() to the generated hash,
+	// and additionally the proportional amount of series to the remainder of the division will be churned by 1.
+	churnOffset := now.UnixNano() / seriesLifetime.Nanoseconds()
+	extraChurnOffsetNanos := now.UnixNano() % seriesLifetime.Nanoseconds()
+	extraChurnOffsetIndex := numSeries - int((extraChurnOffsetNanos*int64(numSeries))/seriesLifetime.Nanoseconds())
+
 	random := rand.New(rand.NewPCG(replicaSeed, uint64(workerID)))
 	seriesHashes := make([]uint64, 0, numSeries)
-	for i := 0; i < numSeries; i++ {
-		seriesHashes = append(seriesHashes, random.Uint64())
+	for i := 0; i < extraChurnOffsetIndex; i++ {
+		seriesHashes = append(seriesHashes, random.Uint64()+uint64(churnOffset))
+	}
+	for i := extraChurnOffsetIndex; i < numSeries; i++ {
+		seriesHashes = append(seriesHashes, random.Uint64()+uint64(churnOffset)+1)
 	}
 
 	return seriesHashes
