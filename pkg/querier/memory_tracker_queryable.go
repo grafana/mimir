@@ -12,9 +12,9 @@ import (
 	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
-// NewMemoryTrackerQueryable wraps a storage.Queryable to inject an unlimited MemoryConsumptionTracker
+// NewUnlimitedMemoryTrackerQueryable wraps a storage.Queryable to inject an unlimited MemoryConsumptionTracker
 // into the context.
-func NewMemoryTrackerQueryable(inner storage.Queryable) storage.Queryable {
+func NewUnlimitedMemoryTrackerQueryable(inner storage.Queryable) storage.Queryable {
 	return &unlimitedMemoryTrackerQueryable{inner: inner}
 }
 
