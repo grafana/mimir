@@ -7,7 +7,7 @@ weight: 10
 
 # About ingest storage architecture
 
-Ingest storage architecture uses Kafka as a central pipeline to decouple read and write operations, making Grafana Mimir more reliable and scalable.
+Ingest storage architecture uses Apache Kafka or a Kafka-compatible system as a central pipeline to decouple read and write operations, making Grafana Mimir more reliable and scalable.
 
 Starting with Grafana Mimir 3.0, ingest storage architecture is stable and the preferred architecture for running Grafana Mimir.
 
@@ -95,7 +95,7 @@ Using this technique, the ingester never misses a sample written to Kafka and ob
 
 The in-memory samples are periodically flushed to disk, and the WAL is truncated when a new TSDB block is created.
 By default, this occurs every two hours.
-Each newly created block is uploaded to long-term storage and kept in the ingester until the configured `-blocks-storage.tsdb.retention-period` expires.
+Each newly created block is uploaded to long-term storage but kept in the ingester until the configured `-blocks-storage.tsdb.retention-period` expires.
 This gives [queriers](../../../references/architecture/components/querier/) and [store-gateways](../../../references/architecture/components/store-gateway/) enough time to discover the new block and download its index-header.
 
 To effectively use the WAL and recover in-memory series after abrupt termination, store the WAL on a persistent disk that survives ingester failure.
