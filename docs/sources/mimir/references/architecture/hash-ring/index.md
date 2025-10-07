@@ -193,7 +193,7 @@ In the example that follows, the series are replicated to the instances of `Inge
 ## How the hash ring is used for service discovery
 
 Grafana Mimir also uses the ring for built-in service discovery.
-Since instances register themselves in their ring and periodically send heartbeats, it becames very convenient using the hash ring for internal service discovery as well.
+Since instances register themselves in their ring and periodically send heartbeats, it becomes very convenient using the hash ring for internal service discovery as well.
 
 When the hash ring is used exclusively for service discovery (not sharding), instances do **not** register tokens in the ring.
 Instead, they only register their presence and periodically update a heartbeat timestamp.
