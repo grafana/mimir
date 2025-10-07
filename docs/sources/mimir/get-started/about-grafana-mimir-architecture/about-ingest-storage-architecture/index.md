@@ -32,7 +32,7 @@ Here's an overview of how ingest storage architecture works:
 - Distributors receive write requests and validate them, apply transformations, and forward samples to the storage layer.
 - Distributors connect to a Kafka topic and shard each write request across multiple partitions, briefly buffering requests before sending them to the Kafka broker.
 - Kafka brokers persist the write requests durably and optionally replicate them to other brokers before acknowledging the write.
-- Distributors acknowledge the write requests back to the client, for exmaple, the OTel collector, after Kafka confirms persistence.
+- Distributors acknowledge the write requests back to the client, for example, the OTel collector, after Kafka confirms persistence.
 - Ingesters consume write requests from Kafka partitions continuously, with each ingester consuming from a single partition.
 - Multiple ingesters across different zones consume from the same partition to provide high availability on the read path.
 - Ingesters add the fetched write requests to in-memory state and persist them to disk, making the samples available for queries.
