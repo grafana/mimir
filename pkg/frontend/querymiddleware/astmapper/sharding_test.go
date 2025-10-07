@@ -53,6 +53,11 @@ func TestShardSummer(t *testing.T) {
 			0,
 		},
 		{
+			`absent(sum(foo))`,
+			`absent(sum(` + concatShards(t, shardCount, `sum(foo{__query_shard__="x_of_y"})`) + `))`,
+			1,
+		},
+		{
 			`absent_over_time(foo[1m])`,
 			`absent_over_time(foo[1m])`,
 			0,
@@ -146,6 +151,11 @@ func TestShardSummer(t *testing.T) {
 		{
 			`count(up)`,
 			`sum(` + concatShards(t, shardCount, `count(up{__query_shard__="x_of_y"})`) + `)`,
+			1,
+		},
+		{
+			`-count(up)`,
+			`-sum(` + concatShards(t, shardCount, `count(up{__query_shard__="x_of_y"})`) + `)`,
 			1,
 		},
 		{
@@ -288,6 +298,11 @@ func TestShardSummer(t *testing.T) {
 			0,
 		},
 		{
+			`rate(metric_counter[5m])[10m:]`,
+			`rate(metric_counter[5m])[10m:]`,
+			0,
+		},
+		{
 			`absent_over_time(rate(metric_counter[5m])[10m:])`,
 			`absent_over_time(rate(metric_counter[5m])[10m:])`,
 			0,
@@ -417,6 +432,22 @@ func TestShardSummer(t *testing.T) {
 			0,
 		},
 		{
+			`month()`,
+			`month()`,
+			0,
+		},
+		{
+			// We could shard month(foo), but since it doesn't reduce the data set, we don't.
+			`month(foo)`,
+			`month(foo)`,
+			0,
+		},
+		{
+			`month(sum(foo))`,
+			`month(sum(` + concatShards(t, shardCount, `sum(foo{__query_shard__="x_of_y"})`) + `))`,
+			1,
+		},
+		{
 			// This query is not parallelized because the leg "year(foo)" could result in high cardinality results.
 			`sum(rate(metric_counter[1m])) / vector(3) ^ year(foo)`,
 			`sum(rate(metric_counter[1m])) / vector(3) ^ year(foo)`,
@@ -542,14 +573,43 @@ func TestShardSummer(t *testing.T) {
 			out:                      `count(group without() (` + concatShards(t, shardCount, `group without() ({namespace="foo",__query_shard__="x_of_y"})`) + `))`,
 			expectedShardableQueries: 1,
 		},
+		{
+			in:                       `vector(scalar(sum(foo)))`,
+			out:                      `vector(scalar(sum(` + concatShards(t, shardCount, `sum(foo{__query_shard__="x_of_y"})`) + `)))`,
+			expectedShardableQueries: 1,
+		},
 	} {
 		t.Run(tt.in, func(t *testing.T) {
-			runTest(t, tt.in, tt.out, shardCount, false, tt.expectedShardableQueries*shardCount)
-		})
+			t.Run("applying sharding", func(t *testing.T) {
+				runTest(t, tt.in, tt.out, shardCount, false, tt.expectedShardableQueries*shardCount)
+			})
 
-		t.Run(tt.in+" with 'inspect only' set", func(t *testing.T) {
-			// The query should be unchanged, but the number of sharded queries should still be reported.
-			runTest(t, tt.in, tt.in, 1, true, tt.expectedShardableQueries)
+			t.Run("inspecting", func(t *testing.T) {
+				// The query should be unchanged, but the number of sharded queries should still be reported.
+				runTest(t, tt.in, tt.in, 1, true, tt.expectedShardableQueries)
+			})
+
+			t.Run("checking if all vector selectors are sharded", func(t *testing.T) {
+				// There are a lot of edge cases in willShardAllSelectors, and this method is only called
+				// if an expression appears inside a binary expression.
+				// So rather than generating a whole set of test cases just for this, we directly check each of
+				// our existing test cases.
+				expr, err := parser.ParseExpr(tt.in)
+				require.NoError(t, err)
+				stats := NewMapperStats()
+				summer := newShardSummer(shardCount, false, EmbeddedQueriesSquasher, log.NewNopLogger(), stats, newQueryShardLabeller(shardCount))
+
+				willShardAllSelectors, err := summer.willShardAllSelectors(expr)
+				require.NoError(t, err)
+				hasVectorSelectors, err := anyNode(expr, isVectorSelector)
+				require.NoError(t, err)
+
+				if hasVectorSelectors {
+					require.Equal(t, tt.expectedShardableQueries > 0, willShardAllSelectors, "willShardAllSelectors should be true if the expression is shardable, and false otherwise")
+				} else {
+					require.True(t, willShardAllSelectors, "expression has no selectors")
+				}
+			})
 		})
 	}
 }

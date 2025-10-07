@@ -64,7 +64,7 @@ type shardSummer struct {
 
 	shardLabeller ShardLabeller
 
-	canShardAllVectorSelectorsCache map[parser.Expr]bool
+	willShardAllSelectorsCache map[parser.Expr]bool
 }
 
 func newShardSummer(shards int, inspectOnly bool, squasher Squasher, logger log.Logger, stats *MapperStats, shardLabeller ShardLabeller) *shardSummer {
@@ -82,7 +82,7 @@ func newShardSummer(shards int, inspectOnly bool, squasher Squasher, logger log.
 
 		shardLabeller: shardLabeller,
 
-		canShardAllVectorSelectorsCache: make(map[parser.Expr]bool),
+		willShardAllSelectorsCache: make(map[parser.Expr]bool),
 	}
 }
 
@@ -149,15 +149,8 @@ func (summer *shardSummer) MapExpr(ctx context.Context, expr parser.Expr) (mappe
 		// process in the query-frontend. Since we can't estimate the cardinality, we prefer
 		// to be pessimistic and not parallelize at all the two legs unless we're able to
 		// parallelize all vector selectors in the legs.
-		canLHS, err := summer.canShardAllVectorSelectors(e.LHS)
-		if err != nil {
-			return e, true, err
-		}
-		if !canLHS {
-			return e, true, nil
-		}
-		canRHS, err := summer.canShardAllVectorSelectors(e.RHS)
-		return e, !canRHS, err
+		willShard, err := summer.willShardAllSelectors(e)
+		return e, !willShard, err
 
 	case *parser.SubqueryExpr:
 		// If the mapped expr is part of the sharded query, then it means we already checked whether it was
@@ -176,47 +169,84 @@ func (summer *shardSummer) MapExpr(ctx context.Context, expr parser.Expr) (mappe
 	}
 }
 
-func (summer *shardSummer) canShardAllVectorSelectors(expr parser.Expr) (can bool, err error) {
+// willShardAllSelectors returns true if all selectors in expr will be sharded.
+// This differs from CanParallelize, which returns true if it is valid to shard the expr.
+//
+// For example, it is valid to shard a vector selector (so CanParallelize returns true), but we
+// don't bother doing this because it has no benefit (so willShardAllSelectors returns false).
+//
+// However, if the expression was a sum aggregation over a vector selector, for example, then
+// both methods would return true.
+func (summer *shardSummer) willShardAllSelectors(expr parser.Expr) (will bool, err error) {
 	// We need to cache the results of this function to avoid processing it again and again
 	// in queries like `a or b or c or d`, which would lead to exponential processing time.
-	if can, ok := summer.canShardAllVectorSelectorsCache[expr]; ok {
-		return can, nil
+	if cached, ok := summer.willShardAllSelectorsCache[expr]; ok {
+		return cached, nil
 	}
 	defer func() {
 		if err == nil {
-			summer.canShardAllVectorSelectorsCache[expr] = can
+			summer.willShardAllSelectorsCache[expr] = will
 		}
 	}()
 
-	if paren, ok := expr.(*parser.ParenExpr); ok {
-		// Unwrap the expression.
-		return summer.canShardAllVectorSelectors(paren.Expr)
-	}
+	switch expr := expr.(type) {
+	case *parser.VectorSelector, *parser.MatrixSelector:
+		return false, nil
+	case *parser.ParenExpr:
+		return summer.willShardAllSelectors(expr.Expr)
+	case *parser.AggregateExpr:
+		if CanParallelize(expr, summer.logger) {
+			return true, nil
+		}
 
-	hasSelector, err := anyNode(expr, isVectorSelector)
-	if !hasSelector {
+		// If we can't shard this expression, we might still be able to shard the inner expression.
+		// eg. in avg(count(test)), we can't shard the avg(), but we can shard the count().
+		return summer.willShardAllSelectors(expr.Expr)
+
+	case *parser.BinaryExpr:
+		if summer.isShardableBinOp(expr) && CanParallelize(expr, summer.logger) {
+			return true, nil
+		}
+
+		willLHS, err := summer.willShardAllSelectors(expr.LHS)
+		if err != nil {
+			return false, err
+		}
+		if !willLHS {
+			return false, nil
+		}
+		willRHS, err := summer.willShardAllSelectors(expr.RHS)
+		return willRHS, err
+
+	case *parser.Call:
+		if isSubqueryCall(expr) {
+			return CanParallelize(expr, summer.logger) && !containsAggregateExpr(expr), nil
+		}
+
+		for _, arg := range argsWithDefaults(expr) {
+			if can, err := summer.willShardAllSelectors(arg); err != nil {
+				return false, err
+			} else if !can {
+				return false, nil
+			}
+		}
+
 		return true, nil
+
+	case *parser.NumberLiteral, *parser.StringLiteral:
+		return true, nil
+
+	case *parser.UnaryExpr:
+		return summer.willShardAllSelectors(expr.Expr)
+
+	case *parser.SubqueryExpr:
+		// If we've reached this point, then the subquery is not shardable.
+		// If the subquery was shardable, we would have returned true when examining the outer function call.
+		return false, nil
+
+	default:
+		return false, fmt.Errorf("willShardAllSelectors: unexpected expression type %T", expr)
 	}
-
-	if binop, ok := expr.(*parser.BinaryExpr); ok {
-		canShardLHS, err := summer.canShardAllVectorSelectors(binop.LHS)
-		if err != nil {
-			return false, err
-		}
-
-		canShardRHS, err := summer.canShardAllVectorSelectors(binop.RHS)
-		if err != nil {
-			return false, err
-		}
-		return canShardLHS && canShardRHS, nil
-	}
-
-	hasAggregation, err := anyNode(expr, isAggregateExpr)
-	if err != nil {
-		return false, err
-	}
-
-	return CanParallelize(expr, summer.logger) && hasAggregation, nil
 }
 
 // shardAndSquashFuncCall shards the given function call by cloning it and adding the shard label to the most outer matrix/vector selector.
@@ -516,21 +546,29 @@ func (summer *shardSummer) shardAndSquashAggregateExpr(ctx context.Context, expr
 	return summer.squasher.Squash(children...)
 }
 
-// shardBinOp attempts to shard the given binary operation expression.
-func (summer *shardSummer) shardBinOp(ctx context.Context, expr *parser.BinaryExpr) (mapped parser.Expr, finished bool, err error) {
+func (summer *shardSummer) isShardableBinOp(expr *parser.BinaryExpr) bool {
 	switch expr.Op {
 	case parser.GTR,
 		parser.GTE,
 		parser.LSS,
 		parser.LTE:
-		mapped, err = summer.shardAndSquashBinOp(ctx, expr)
-		if err != nil {
-			return nil, false, err
-		}
-		return mapped, true, nil
+		return true
 	default:
+		return false
+	}
+}
+
+// shardBinOp attempts to shard the given binary operation expression.
+func (summer *shardSummer) shardBinOp(ctx context.Context, expr *parser.BinaryExpr) (mapped parser.Expr, finished bool, err error) {
+	if !summer.isShardableBinOp(expr) {
 		return expr, false, nil
 	}
+
+	mapped, err = summer.shardAndSquashBinOp(ctx, expr)
+	if err != nil {
+		return nil, false, err
+	}
+	return mapped, true, nil
 }
 
 // shardAndSquashBinOp returns a squashed CONCAT expression including N embedded
