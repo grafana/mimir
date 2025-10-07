@@ -299,7 +299,7 @@ func NewQuerierHandler(
 	formattingQueryStats := usagestats.NewRequestsMiddleware("querier_formatting_requests")
 
 	// Add memory consumption tracker in middleware for endpoints like /read and /series that need memory consumption tracker to be available in context.
-	memoryTrackerMiddleware := limiter.MemoryTrackerMiddleware{}
+	memoryTrackerMiddleware := limiter.UnlimitedMemoryTrackerMiddleware{}
 
 	// TODO(gotjosh): This custom handler is temporary until we're able to vendor the changes in:
 	// https://github.com/prometheus/prometheus/pull/7125/files
