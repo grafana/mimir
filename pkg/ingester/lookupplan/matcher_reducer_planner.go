@@ -4,7 +4,6 @@ package lookupplan
 
 import (
 	"context"
-	"slices"
 
 	"github.com/grafana/dskit/tracing"
 	"github.com/prometheus/prometheus/model/labels"
@@ -35,56 +34,52 @@ func (p concreteLookupPlan) IndexMatchers() []*labels.Matcher {
 	return p.indexMatchers
 }
 
-func (p MatcherReducerPlanner) PlanIndexLookup(ctx context.Context, inPlan index.LookupPlan, minT, maxT int64) (index.LookupPlan, error) {
-	span, _, traceSampled := tracing.SpanFromContext(ctx)
-	if planningDisabled(ctx) {
+// PlanIndexLookup takes an index.LookupPlan and removes matchers that match only supersets of other matchers.
+// It does not modify plans if the input plan has any scan matchers. It does not guarantee matcher order of the output plan.
+func (p MatcherReducerPlanner) PlanIndexLookup(ctx context.Context, inPlan index.LookupPlan, _, _ int64) (index.LookupPlan, error) {
+	// For simplicity, we don't process plans with scan matchers
+	if planningDisabled(ctx) || len(inPlan.ScanMatchers()) > 0 {
 		return inPlan, nil
 	}
-
-	matchers := slices.Concat(inPlan.IndexMatchers(), inPlan.ScanMatchers())
-	matchers = setReduceMatchers(matchers)
-
-	// allowedOutMatchers is used to check which matchers can be returned.
-	// We use the matcher string as the key because we can't rely on value equality for regex matchers.
-	// If a matcher string's value is false, it hasn't been added to any result set.
-	allowedOutMatchers := make(map[string]bool, len(matchers))
-	for _, m := range matchers {
-		allowedOutMatchers[m.String()] = false
-	}
+	allowedMatchers := setReduceMatchers(inPlan.IndexMatchers())
 
 	// Rebuild the index and scan matchers in the input order, less the filtered/deduplicated matchers
 	// droppedMatchers is used for logging purposes to record all matchers have been removed from the plan.
-	outIndexMatchers, allowedOutMatchers, droppedMatchers := buildOutMatchers(inPlan.IndexMatchers(), allowedOutMatchers, nil)
-	outScanMatchers, _, droppedMatchers := buildOutMatchers(inPlan.ScanMatchers(), allowedOutMatchers, droppedMatchers)
+	outMatchers, droppedMatchers := buildOutMatchers(inPlan.IndexMatchers(), allowedMatchers)
 
+	span, _, traceSampled := tracing.SpanFromContext(ctx)
 	if traceSampled && len(droppedMatchers) > 0 {
 		span.AddEvent("dropped matchers", trace.WithAttributes(
 			attribute.Stringer("matchers", util.MatchersStringer(droppedMatchers)),
 		))
 	}
-	return &concreteLookupPlan{
-		indexMatchers: outIndexMatchers,
-		scanMatchers:  outScanMatchers,
-	}, nil
+	return &concreteLookupPlan{indexMatchers: outMatchers}, nil
 }
 
-// buildOutMatchers takes a slice of index or scan matchers, and returns the same slice in order,
-// less any duplicate matchers.
-func buildOutMatchers(inMatchers []*labels.Matcher, allowedOutMatchers map[string]bool, droppedMatchers []*labels.Matcher) ([]*labels.Matcher, map[string]bool, []*labels.Matcher) {
+// buildOutMatchers takes a slice of matchers, and returns a slice of matchers which are included in allowedOutMatchers,
+// as well as a slice of droppedMatchers which were either duplicates or not included in allowedOutMatchers.
+func buildOutMatchers(inMatchers []*labels.Matcher, allowedOutMatchers []*labels.Matcher) ([]*labels.Matcher, []*labels.Matcher) {
 	outMatchers := make([]*labels.Matcher, 0, len(inMatchers))
-	for _, m := range inMatchers {
-		matcherStr := m.String()
+	dedupedMatchers, dropped := dedupeMatchers(inMatchers)
+
+	// allowedInResultSet's keys are strings of matchers which are returned from setReduceMatchers(),
+	// and its values track whether each matcher string is already represented in outMatchers.
+	allowedInResultSet := make(map[string]bool, len(allowedOutMatchers))
+	for _, m := range allowedOutMatchers {
+		allowedInResultSet[m.String()] = false
+	}
+	for _, m := range dedupedMatchers {
 		// allowedOutMatchers is used to both keep track of all unique matchers (evidenced by existence in the map),
 		// and whether the matcher has already been seen and added to a set of output matchers (evidenced by the value in the map).
 		// We only want to add the matcher if it hasn't already been added to an output slice.
-		if matcherAlreadySeen, ok := allowedOutMatchers[matcherStr]; ok && !matcherAlreadySeen {
+		if alreadyInResultSet, allowed := allowedInResultSet[m.String()]; allowed && !alreadyInResultSet {
 			outMatchers = append(outMatchers, m)
-			allowedOutMatchers[matcherStr] = true
+			allowedInResultSet[m.String()] = true
 		} else {
-			droppedMatchers = append(droppedMatchers, m)
+			dropped = append(dropped, m)
 		}
 	}
-	return outMatchers, allowedOutMatchers, droppedMatchers
+	return outMatchers, dropped
 }
 
 // setReduceMatchers takes a slice of matchers, and returns only those matchers which would reduce the result set size.
@@ -106,7 +101,7 @@ func setReduceMatchers(ms []*labels.Matcher) []*labels.Matcher {
 	outMatchers := make([]*labels.Matcher, 0, len(ms))
 	for _, matchers := range matchersByName {
 		matchersByType := groupMatchersByType(matchers)
-		equalsMatchers := dedupeEqualsMatchers(matchersByType)
+		equalsMatchers, _ := dedupeMatchers(matchersByType[labels.MatchEqual])
 		outMatchers = append(outMatchers, equalsMatchers...)
 		// If we have more than one unique equals matcher, we can just return those;
 		// we know we'll only return an empty set
@@ -120,20 +115,22 @@ func setReduceMatchers(ms []*labels.Matcher) []*labels.Matcher {
 	return outMatchers
 }
 
-func dedupeEqualsMatchers(mf map[labels.MatchType][]*labels.Matcher) []*labels.Matcher {
-	return dedupeMatchers(mf[labels.MatchEqual])
-}
-
-func dedupeMatchers(ms []*labels.Matcher) []*labels.Matcher {
-	deduped := make(map[labels.Matcher]*labels.Matcher, len(ms))
+// dedupeMatchers dedupes matchers based on their matcher string.
+func dedupeMatchers(ms []*labels.Matcher) ([]*labels.Matcher, []*labels.Matcher) {
+	deduped := make(map[string]*labels.Matcher, len(ms))
+	dropped := make([]*labels.Matcher, 0, 1)
 	for _, m := range ms {
-		deduped[*m] = m
+		if _, ok := deduped[m.String()]; !ok {
+			deduped[m.String()] = m
+		} else {
+			dropped = append(dropped, m)
+		}
 	}
 	outMatchers := make([]*labels.Matcher, 0, len(deduped))
 	for _, ptr := range deduped {
 		outMatchers = append(outMatchers, ptr)
 	}
-	return outMatchers
+	return outMatchers, dropped
 }
 
 // matcherMatchesAnyValues returns true if the given matcher matches a single value from the input matchers, and false otherwise.
@@ -148,7 +145,7 @@ func matcherMatchesAnyValues(matcher *labels.Matcher, matchers []*labels.Matcher
 
 // filterRegexMatchers returns a subset of regex matchers which would actually reduce the result set size for either positive or negative regex matchers.
 // A regex matcher is dropped if:
-//   - it matches all values (foo=~".*")
+//   - it is a positive regex matcher and matches all values (foo=~".*")
 //   - it matches any equals matches, since the equals matcher will match a strict subset of values that the regex matcher would.
 //
 // Examples:
@@ -169,7 +166,7 @@ func filterRegexMatchers(mf map[labels.MatchType][]*labels.Matcher, regexType la
 	outMatchers := make([]*labels.Matcher, 0, len(matchers))
 	for _, m := range matchers {
 		// Always drop wildcard matchers
-		if m.Value == ".*" {
+		if m.Type == labels.MatchRegexp && m.Value == ".*" {
 			continue
 		}
 		// If m matches any equals matcher, that equals matcher is a subset of the regex,
@@ -189,7 +186,7 @@ func filterRegexMatchers(mf map[labels.MatchType][]*labels.Matcher, regexType la
 //
 // Examples:
 //   - for the matcher set {foo!="bar", foo="b"}, foo!="bar" does match the value "b", so foo!="bar" is dropped.
-//   - for the matcher set {foo!="bar", foo="bar"}, foo!="bar" matches the value "bar", so foo!="bar" is not dropped.
+//   - for the matcher set {foo!="bar", foo="bar"}, foo!="bar" does not match the value "bar", so foo!="bar" is not dropped.
 //   - for the matcher set {foo!="bar", foo!~".*bar.*"}, foo!~".*bar.*" will exclude more values from the result set than foo!="bar", so foo!="bar" is dropped.
 func filterNotEqualsMatchers(mf map[labels.MatchType][]*labels.Matcher) []*labels.Matcher {
 	outMatchers := make([]*labels.Matcher, 0, len(mf[labels.MatchNotEqual]))

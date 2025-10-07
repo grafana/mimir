@@ -30,54 +30,50 @@ func TestMatcherReducerPlanner_PlanIndexLookup(t *testing.T) {
 			expectedScanMatchers:  []string{`foo="bar"`, `foo!=""`},
 		},
 		{
-			name:                  "deduplicate index matchers",
+			name:                  "planning enabled with scan matchers should not alter plan",
 			ctx:                   context.Background(),
-			inIndexMatchers:       []string{`foo="bar"`, `foo="bar"`},
-			expectedIndexMatchers: []string{`foo="bar"`},
+			inIndexMatchers:       []string{`foo="bar"`, `foo=~".*"`, `foo!=""`},
+			expectedIndexMatchers: []string{`foo="bar"`, `foo=~".*"`, `foo!=""`},
+			inScanMatchers:        []string{`foo="bar"`, `foo!=""`},
+			expectedScanMatchers:  []string{`foo="bar"`, `foo!=""`},
 		},
 		{
-			name:                 "deduplicate scan matchers",
-			ctx:                  context.Background(),
-			inScanMatchers:       []string{`foo=~".*bar.*"`, `foo=~".*bar.*"`, `foo=~".*bar.*"`},
-			expectedScanMatchers: []string{`foo=~".*bar.*"`},
-		},
-		{
-			name:                  "duplicate matchers across index and scan should be deduplicated to only index matcher",
+			name:                  "deduplicate matchers",
 			ctx:                   context.Background(),
-			inIndexMatchers:       []string{`foo="bar"`},
-			expectedIndexMatchers: []string{`foo="bar"`},
-			inScanMatchers:        []string{`foo="bar"`},
+			inIndexMatchers:       []string{`foo="bar"`, `foo="bar"`, `foo=~".*baz.*"`, `foo=~".*baz.*"`},
+			expectedIndexMatchers: []string{`foo="bar"`, `foo=~".*baz.*"`},
 		},
 		{
-			name:            "multiple unique equals matchers should only return equals matchers",
-			ctx:             context.Background(),
-			inIndexMatchers: []string{`foo="bar"`},
+			name: "multiple unique equals matchers should only return equals matchers",
+			ctx:  context.Background(),
 			// Even though the regex matcher matches neither equals matcher,
 			// a query with multiple equals matchers for the same label name is already guaranteed to return an empty set
-			inScanMatchers:        []string{`foo="baz"`, `foo=~".*bananas.*"`},
-			expectedIndexMatchers: []string{`foo="bar"`},
-			expectedScanMatchers:  []string{`foo="baz"`},
+			inIndexMatchers:       []string{`foo="bar"`, `foo=~".*bananas.*"`, `foo="baz"`},
+			expectedIndexMatchers: []string{`foo="bar"`, `foo="baz"`},
 		},
 		{
 			name:                  "planning should remove a regex matcher if it is a superset of an equals matcher",
 			ctx:                   context.Background(),
-			inIndexMatchers:       []string{`foo="bar"`},
-			inScanMatchers:        []string{`foo=~".*bar.*"`},
+			inIndexMatchers:       []string{`foo="bar"`, `foo=~".*bar.*"`},
 			expectedIndexMatchers: []string{`foo="bar"`},
 		},
 		{
 			name:                  "planning should preserve a regex matcher if it is not a superset of an equals matcher",
 			ctx:                   context.Background(),
-			inIndexMatchers:       []string{`foo="bar"`, `foo="bar"`},
-			inScanMatchers:        []string{`foo=~".*baz.*"`},
-			expectedIndexMatchers: []string{`foo="bar"`},
-			expectedScanMatchers:  []string{`foo=~".*baz.*"`},
+			inIndexMatchers:       []string{`foo="bar"`, `foo="bar"`, `foo=~".*baz.*"`},
+			expectedIndexMatchers: []string{`foo="bar"`, `foo=~".*baz.*"`},
 		},
 		{
 			name:                  "always drop wildcard matcher, even if it is the only matcher",
 			ctx:                   context.Background(),
 			inIndexMatchers:       []string{`foo=~".*"`},
 			expectedIndexMatchers: []string{},
+		},
+		{
+			name:                  "do not drop wildcard negative regex matcher",
+			ctx:                   context.Background(),
+			inIndexMatchers:       []string{`foo!~".*"`},
+			expectedIndexMatchers: []string{`foo!~".*"`},
 		},
 		{
 			name:                  "single non-wildcard matcher should not be dropped",
@@ -88,25 +84,20 @@ func TestMatcherReducerPlanner_PlanIndexLookup(t *testing.T) {
 		{
 			name:                  "drop all matchers that match supersets of an equals matcher",
 			ctx:                   context.Background(),
-			inIndexMatchers:       []string{`foo=~".*bar.*"`},
-			inScanMatchers:        []string{`foo="bar"`, `foo!=""`, `foo!~""`, `foo!="baz"`},
-			expectedIndexMatchers: []string{},
-			expectedScanMatchers:  []string{`foo="bar"`},
+			inIndexMatchers:       []string{`foo=~".*bar.*"`, `foo="bar"`, `foo!=""`, `foo!~""`, `foo!="baz"`},
+			expectedIndexMatchers: []string{`foo="bar"`},
 		},
 		{
-			name:                 "keep one matcher of ones that reduce the set size equivalently",
-			ctx:                  context.Background(),
-			inIndexMatchers:      []string{`foo=~".*"`},
-			inScanMatchers:       []string{`foo!~""`, `foo!=""`},
-			expectedScanMatchers: []string{`foo!~""`},
+			name:                  "keep one matcher of ones that reduce the set size equivalently",
+			ctx:                   context.Background(),
+			inIndexMatchers:       []string{`foo=~".*"`, `foo!~""`, `foo!=""`},
+			expectedIndexMatchers: []string{`foo!~""`},
 		},
 		{
 			name:                  "keep at least one matcher for each label name",
 			ctx:                   context.Background(),
-			inIndexMatchers:       []string{`foo=~".*"`, `baz!=""`},
-			inScanMatchers:        []string{`foo!~""`, `foo!=""`},
-			expectedIndexMatchers: []string{`baz!=""`},
-			expectedScanMatchers:  []string{`foo!~""`},
+			inIndexMatchers:       []string{`foo=~".*"`, `baz!=""`, `foo!~""`, `foo!=""`},
+			expectedIndexMatchers: []string{`baz!=""`, `foo!~""`},
 		},
 		{
 			name:                  "keep matcher that excludes empty strings if no other matcher does so",
@@ -117,7 +108,7 @@ func TestMatcherReducerPlanner_PlanIndexLookup(t *testing.T) {
 		{
 			name:                  "not equals matcher should not be removed if it doesn't match equals matcher value",
 			ctx:                   context.Background(),
-			inIndexMatchers:       []string{`foo != "bar"`, `foo="bar"`},
+			inIndexMatchers:       []string{`foo!="bar"`, `foo="bar"`},
 			expectedIndexMatchers: []string{`foo!="bar"`, `foo="bar"`},
 		},
 		{
@@ -150,6 +141,7 @@ func TestMatcherReducerPlanner_PlanIndexLookup(t *testing.T) {
 func assertEqualMatchers(t *testing.T, expected, actual []*labels.Matcher) {
 	assert.Equal(t, len(expected), len(actual))
 	for i, m := range expected {
+		assert.NotNil(t, actual[i])
 		switch m.Type {
 		case labels.MatchEqual, labels.MatchNotEqual:
 			assert.Equal(t, m, actual[i])
