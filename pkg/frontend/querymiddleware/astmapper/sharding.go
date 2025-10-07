@@ -203,7 +203,7 @@ func (summer *shardSummer) willShardAllSelectors(expr parser.Expr) (will bool, e
 		return summer.willShardAllSelectors(expr.Expr)
 
 	case *parser.BinaryExpr:
-		if CanParallelize(expr, summer.logger) && summer.isShardableBinOp(expr) {
+		if summer.isShardableBinOp(expr) && CanParallelize(expr, summer.logger) {
 			return true, nil
 		}
 
