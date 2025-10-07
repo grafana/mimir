@@ -359,6 +359,56 @@ func TestFrontend_Protobuf_ResponseClosedBeforeStreamExhausted(t *testing.T) {
 	resp.Close() // We expect all goroutines to be cleaned up after this (verified by the VerifyNoLeakTestMain call in TestMain above)
 }
 
+func TestFrontend_Protobuf_ResponseClosedBeforeResponseReceived(t *testing.T) {
+	respChannel := make(chan *ProtobufResponseStream)
+	defer close(respChannel)
+
+	f, _ := setupFrontend(t, nil, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
+		if msg.Type != schedulerpb.ENQUEUE {
+			return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.ERROR, Error: fmt.Sprintf("unexpected message type %v sent to scheduler", msg.Type)}
+		}
+
+		go func() {
+			// Close the stream returned by DoProtobufRequest once we're confident the goroutine in DoProtobufRequest has observed that the request has been enqueued
+			// and is waiting for streamContext to be cancelled.
+			// This ensures that closing the channel doesn't trigger the code path that calls writeEnqueueError().
+			resp := <-respChannel
+			time.Sleep(10 * time.Millisecond)
+			resp.Close()
+		}()
+
+		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
+	})
+
+	ctx := user.InjectOrgID(context.Background(), "user-1")
+	req := &querierpb.EvaluateQueryRequest{}
+	resp, err := f.DoProtobufRequest(ctx, req, time.Now(), time.Now())
+	require.NoError(t, err)
+	respChannel <- resp
+
+	nextReturned := make(chan struct{})
+
+	go func() {
+		defer close(nextReturned)
+		// Next shouldn't block forever if Close is called before the querier responds.
+		msg, err := resp.Next(ctx)
+		require.ErrorIs(t, err, errStreamClosed)
+		require.Nil(t, msg)
+
+		// Subsequent calls to Next should also return the same error.
+		msg, err = resp.Next(ctx)
+		require.ErrorIs(t, err, errStreamClosed)
+		require.Nil(t, msg)
+	}()
+
+	select {
+	case <-nextReturned:
+		// Nothing to do.
+	case <-time.After(time.Second):
+		require.Fail(t, "timed out waiting for Next to return")
+	}
+}
+
 func TestFrontend_Protobuf_ErrorReturnedByQuerier(t *testing.T) {
 	const userID = "test"
 

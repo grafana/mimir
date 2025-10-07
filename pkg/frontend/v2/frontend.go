@@ -511,27 +511,22 @@ func (s *ProtobufResponseStream) writeEnqueueError(err error) {
 // Calling Next after an error has been returned by a previous Next call may lead to
 // undefined behaviour.
 func (s *ProtobufResponseStream) Next(ctx context.Context) (*frontendv2pb.QueryResultStreamRequest, error) {
-	// If the request has already been cancelled, then return immediately.
-	if s.requestContext.Err() != nil {
-		return nil, context.Cause(s.requestContext)
-	} else if ctx.Err() != nil {
-		return nil, context.Cause(ctx)
+	// If the request has already been cancelled or if this stream has been closed, then we should stop now.
+	if err := s.shouldAbortReading(ctx); err != nil {
+		return nil, err
 	}
 
 	select {
 	case resp, messagesChannelOpen := <-s.messages:
 		if !messagesChannelOpen {
-			// We've reached the end of the stream. Check if the request was cancelled and return the
-			// cancellation cause if so.
+			// We've reached the end of the stream. Check if the request was cancelled or if this stream was closed.
 			// Without this, the caller may receive a nil message if the original request was cancelled and there
 			// are no outstanding messages in s.messages, as the Go runtime may randomly select the s.messages branch
 			// if either s.requestContext or ctx are done as well.
 			// We don't need to check s.enqueueError as s.messages is only closed if we've received a response, which
 			// means the enqueue must have succeeded.
-			if s.requestContext.Err() != nil {
-				return nil, context.Cause(s.requestContext)
-			} else if ctx.Err() != nil {
-				return nil, context.Cause(ctx)
+			if err := s.shouldAbortReading(ctx); err != nil {
+				return nil, err
 			}
 		}
 
@@ -549,8 +544,25 @@ func (s *ProtobufResponseStream) Next(ctx context.Context) (*frontendv2pb.QueryR
 		// as the response has been completely received, but we want to continue reading any outstanding messages
 		// from the stream unless s.requestContext (which presumably represents the query as a whole) is cancelled.
 		return nil, context.Cause(s.requestContext)
+	case <-s.closed:
+		// If the stream was closed, then we should stop now as well.
+		return nil, errStreamClosed
 	case <-ctx.Done():
 		return nil, context.Cause(ctx)
+	}
+}
+
+// shouldAbortReading checks if the request has been cancelled or if this stream has been closed, and returns an error if so.
+func (s *ProtobufResponseStream) shouldAbortReading(ctx context.Context) error {
+	select {
+	case <-s.requestContext.Done():
+		return context.Cause(s.requestContext)
+	case <-ctx.Done():
+		return context.Cause(ctx)
+	case <-s.closed:
+		return errStreamClosed
+	default:
+		return nil
 	}
 }
 
