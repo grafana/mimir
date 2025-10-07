@@ -41,6 +41,10 @@ func (p MatcherReducerPlanner) PlanIndexLookup(ctx context.Context, inPlan index
 	if planningDisabled(ctx) || len(inPlan.ScanMatchers()) > 0 {
 		return inPlan, nil
 	}
+	// If there's only one matcher, don't try to do any optimizations
+	if len(inPlan.IndexMatchers()) <= 1 {
+		return inPlan, nil
+	}
 	allowedMatchers := setReduceMatchers(inPlan.IndexMatchers())
 
 	// Rebuild the index and scan matchers in the input order, less the filtered/deduplicated matchers

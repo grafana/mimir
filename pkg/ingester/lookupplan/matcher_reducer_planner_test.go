@@ -4,9 +4,13 @@ package lookupplan
 
 import (
 	"context"
+	"sort"
 	"testing"
 
+	"github.com/prometheus/common/promslog"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/tsdb"
+	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -136,6 +140,205 @@ func TestMatcherReducerPlanner_PlanIndexLookup(t *testing.T) {
 			assertEqualMatchers(t, expectedPlan.ScanMatchers(), outPlan.ScanMatchers())
 		})
 	}
+}
+
+func TestMatcherReducerPlanner_MatchedSeries(t *testing.T) {
+	// Create TSDB instance with sample data
+	db, err := tsdb.Open(t.TempDir(), promslog.NewNopLogger(), nil, tsdb.DefaultOptions(), nil)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, db.Close())
+	})
+
+	sampleSeries := []labels.Labels{
+		labels.FromStrings("__name__", "http_requests_total", "method", "GET", "status", "200", "handler", "/api"),
+		labels.FromStrings("__name__", "http_requests_total", "method", "POST", "status", "200", "handler", "/api"),
+		labels.FromStrings("__name__", "http_requests_total", "method", "GET", "status", "404", "handler", "/api"),
+		labels.FromStrings("__name__", "http_requests_total", "method", "GET", "status", "500", "handler", "/api"),
+		labels.FromStrings("__name__", "http_requests_total", "method", "GET", "status", "504", "handler", "/api"),
+		labels.FromStrings("__name__", "cpu_usage_percent", "instance", "web-1", "job", "webserver"),
+		labels.FromStrings("__name__", "cache_requests_total", "backend", "memcached"),
+	}
+
+	// Add sample series to TSDB
+	app := db.Appender(context.Background())
+	for i, series := range sampleSeries {
+		_, err := app.Append(0, series, int64(i*1000), float64(i))
+		require.NoError(t, err)
+	}
+	require.NoError(t, app.Commit())
+
+	tests := []struct {
+		name     string
+		matchers []string
+	}{
+		{
+			name:     "intersecting (duplicate) equals matcher for the same label name",
+			matchers: []string{`__name__="http_requests_total"`, `__name__="http_requests_total"`},
+		},
+		{
+			name:     "non-intersecting equals matchers for the same label name",
+			matchers: []string{`__name__="http_requests_total"`, `__name__="cpu_usage_percent"`},
+		},
+		{
+			name:     "multiple equals matchers for different label names",
+			matchers: []string{`__name__="http_requests_total"`, `method="GET"`},
+		},
+		{
+			name:     "not equals matcher only",
+			matchers: []string{`status!="500"`},
+		},
+		{
+			name:     "not-regex matcher only",
+			matchers: []string{`__name__!~".*requests.*"`},
+		},
+		{
+			name:     "wildcard matcher only",
+			matchers: []string{`__name__=~".*"`},
+		},
+		{
+			name:     "wildcard matcher and not-equals matcher for different label names",
+			matchers: []string{`instance=~".*"`, `__name__!=""`},
+		},
+		{
+			name:     "regex matcher and intersecting equals matcher",
+			matchers: []string{`__name__=~".*requests.*"`, `__name__="http_requests_total"`},
+		},
+		{
+			name:     "regex matcher and non-intersecting equals matcher",
+			matchers: []string{`__name__=~".*requests.*"`, `__name__="cpu_usage_percent"`},
+		},
+		{
+			name:     "regex matcher and non-subtractive not-equals matcher",
+			matchers: []string{`__name__=~".*requests.*"`, `__name__!="cpu_usage_percent"`},
+		},
+		{
+			name:     "regex matcher and fully subtractive not-equals matcher",
+			matchers: []string{`__name__=~".*http_requests.*"`, `__name__!="http_requests_total"`},
+		},
+		{
+			name:     "regex matcher and partially subtractive not-equals matcher",
+			matchers: []string{`__name__=~".*requests.*"`, `__name__!="http_requests_total"`},
+		},
+		{
+			name:     "regex matcher and intersecting regex matcher",
+			matchers: []string{`__name__=~".*requests.*"`, `__name__=~".*total.*"`},
+		},
+		{
+			name:     "regex matcher and non-intersecting regex matcher",
+			matchers: []string{`__name__=~".*requests.*"`, `__name__=~".*percent.*"`},
+		},
+		{
+			name:     "regex matcher and partially intersecting regex matcher",
+			matchers: []string{`__name__=~".*requests.*"`, `__name__=~".*http.*"`},
+		},
+		{
+			name:     "regex matcher and intersecting not-regex matcher",
+			matchers: []string{`__name__=~".*requests.*"`, `__name__!~".*usage.*"`},
+		},
+		{
+			name:     "regex matcher and non-intersecting not-regex matcher",
+			matchers: []string{`__name__=~".*requests.*"`, `__name__!~".*"`},
+		},
+		{
+			name:     "regex matcher and partially intersecting not-regex matcher",
+			matchers: []string{`__name__=~".*requests.*"`, `__name__!~".*cache.*"`},
+		},
+		{
+			name:     "not-equals matcher and equivalent not-regex matcher",
+			matchers: []string{`__name__!=""`, `__name__!~""`},
+		},
+		{
+			name:     "not-equals matcher and subtractive not-regex matcher",
+			matchers: []string{`__name__!="http_requests_total"`, `__name__!~".*usage.*"`},
+		},
+		{
+			name:     "not-equals matcher and non-subtractive not-regex matcher",
+			matchers: []string{`__name__!="http_requests_total"`, `__name__!~".*bananas.*"`},
+		},
+		{
+			name:     "not-equals matcher and intersecting equals matcher",
+			matchers: []string{`__name__!=""`, `__name__="http_requests_total"`},
+		},
+		{
+			name:     "not-equals matcher and non-intersecting equals matcher",
+			matchers: []string{`__name__!="http_requests_total"`, `__name__="http_requests_total"`},
+		},
+		{
+			name:     "not-equals matcher and intersecting not-equals matcher",
+			matchers: []string{`__name__!=""`, `__name__!="cache_requests_total"`},
+		},
+		{
+			name:     "not-equals matcher and non-intersecting not-equals matcher for different label names",
+			matchers: []string{`backend!=""`, `__name__!="cache_requests_total"`},
+		},
+		{
+			name:     "not-regex matcher and not-regex matcher",
+			matchers: []string{`__name__!~""`, `__name__!~"http_requests_total"`},
+		},
+		{
+			name:     "not-regex matcher and not-regex matcher, empty set",
+			matchers: []string{`__name__!~""`, `__name__!~".*requests.*"`, `__name__!~".*cpu.*"`},
+		},
+		{
+			name:     "not equals matcher with positive regex matcher for the same label name",
+			matchers: []string{`status!="500"`, `status=~".04"`},
+		},
+		{
+			name:     "all matcher types",
+			matchers: []string{`__name__="http_requests_total"`, `method="GET"`, `status!="500"`, `handler=~"/.*"`},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			matchers := parseMatchers(t, tt.matchers)
+
+			// Query test series with and without matcher reducer planner
+			seriesWithMatcherReduction := querySeriesWithPlanner(t, db, matchers, MatcherReducerPlanner{})
+			seriesWithoutMatcherReduction := querySeriesWithPlanner(t, db, matchers, NoopPlanner{})
+			assert.Equal(t, len(seriesWithoutMatcherReduction), len(seriesWithMatcherReduction))
+
+			// Both approaches should return the same series
+			sort.Slice(seriesWithMatcherReduction, func(i, j int) bool {
+				return labels.Compare(seriesWithMatcherReduction[i], seriesWithMatcherReduction[j]) < 0
+			})
+			sort.Slice(seriesWithoutMatcherReduction, func(i, j int) bool {
+				return labels.Compare(seriesWithoutMatcherReduction[i], seriesWithoutMatcherReduction[j]) < 0
+			})
+			assert.Equal(t, seriesWithoutMatcherReduction, seriesWithMatcherReduction)
+		})
+	}
+}
+
+// querySeriesWithMatchers queries series from TSDB using the provided matchers,
+// optionally applying MatcherReducerPlanner optimization
+func querySeriesWithPlanner(t *testing.T, db *tsdb.DB, matchers []*labels.Matcher, planner index.LookupPlanner) []labels.Labels {
+	ctx := context.Background()
+
+	head := db.Head()
+	indexReader, err := head.Index()
+	require.NoError(t, err)
+	defer indexReader.Close()
+	inPlan := concreteLookupPlan{indexMatchers: matchers}
+	outPlan, err := planner.PlanIndexLookup(ctx, inPlan, 0, 0)
+	require.NoError(t, err)
+
+	postings, err := tsdb.PostingsForMatchers(ctx, indexReader, outPlan.IndexMatchers()...)
+	require.NoError(t, err)
+
+	// Collect all series from postings
+	var outSeries []labels.Labels
+	builder := labels.NewScratchBuilder(len(outPlan.IndexMatchers()))
+	for postings.Next() {
+		var ls labels.Labels
+		err = indexReader.Series(postings.At(), &builder, nil)
+		require.NoError(t, err)
+		ls = builder.Labels()
+		outSeries = append(outSeries, ls)
+	}
+	require.NoError(t, postings.Err())
+
+	return outSeries
 }
 
 func assertEqualMatchers(t *testing.T, expected, actual []*labels.Matcher) {
