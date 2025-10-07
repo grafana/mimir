@@ -2099,6 +2099,8 @@ Usage of ./cmd/mimir/mimir:
     	Minimum compaction level required for blocks to be converted to Parquet. Blocks equal or greater than this level will be converted. (default 2)
   -parquet-converter.min-data-age duration
     	Minimum age of data in blocks to convert. Only convert blocks containing data older than this duration from now, based on their MinTime. Set to 0 to disable age filtering.
+  -parquet-converter.parquet-shard-write-concurrency int
+    	Maximum number of Go routines writing Parquet shards in parallel when converting a block. (default 4)
   -parquet-converter.ring.consul.acl-token string
     	ACL Token used to interact with Consul.
   -parquet-converter.ring.consul.cas-retry-delay duration
@@ -2176,7 +2178,7 @@ Usage of ./cmd/mimir/mimir:
   -parquet-converter.task-concurrency int
     	Maximum number of Go routines processing tasks in parallel. (default 2)
   -parquet-converter.tsdb-read-concurrency int
-    	Maximum number of Go routines reading TSDB series in parallel when converting a block. (default 4)
+    	Maximum number of Go routines reading TSDB series in concurrently when converting a block. (default 4)
   -print.config
     	Print the config and exit.
   -querier.active-series-results-max-size-bytes int

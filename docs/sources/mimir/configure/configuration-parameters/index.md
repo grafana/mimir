@@ -478,21 +478,40 @@ parquet_converter:
   # CLI flag: -parquet-converter.discovery-interval
   [discovery_interval: <duration> | default = 5m]
 
-  # Maximum age of blocks to convert. Blocks older than this will be skipped.
-  # Set to 0 to disable age filtering.
-  # CLI flag: -parquet-converter.max-block-age
-  [max_block_age: <duration> | default = 0s]
+  # (advanced) Maximum number of Go routines processing tasks in parallel.
+  # CLI flag: -parquet-converter.task-concurrency
+  [task_concurrency: <int> | default = 2]
 
-  # Minimum block timestamp (based on ULID) to convert. Set to 0 to disable
-  # timestamp filtering.
-  # CLI flag: -parquet-converter.min-block-timestamp
-  [min_block_timestamp: <int> | default = 0]
+  # (advanced) Maximum number of concurrent Go routines allowed to run the
+  # conversion code.
+  # CLI flag: -parquet-converter.conversion-concurrency
+  [conversion_concurrency: <int> | default = 1]
 
   # (advanced) Minimum age of data in blocks to convert. Only convert blocks
   # containing data older than this duration from now, based on their MinTime.
   # Set to 0 to disable age filtering.
   # CLI flag: -parquet-converter.min-data-age
   [min_data_age: <duration> | default = 0s]
+
+  # Minimum block timestamp (based on ULID) to convert. Set to 0 to disable
+  # timestamp filtering.
+  # CLI flag: -parquet-converter.min-block-timestamp
+  [min_block_timestamp: <int> | default = 0]
+
+  # (advanced) Minimum duration of blocks to convert. Blocks with a duration
+  # shorter than this will be skipped. Set to 0 to disable duration filtering.
+  # CLI flag: -parquet-converter.min-block-duration
+  [min_block_duration: <duration> | default = 0s]
+
+  # Maximum age of blocks to convert. Blocks older than this will be skipped.
+  # Set to 0 to disable age filtering.
+  # CLI flag: -parquet-converter.max-block-age
+  [max_block_age: <duration> | default = 0s]
+
+  # (advanced) Minimum compaction level required for blocks to be converted to
+  # Parquet. Blocks equal or greater than this level will be converted.
+  # CLI flag: -parquet-converter.min-compaction-level
+  [min_compaction_level: <int> | default = 2]
 
   # (advanced) Comma-separated list of labels to sort by when converting to
   # Parquet format. If not the file will be sorted by '__name__'.
@@ -507,29 +526,18 @@ parquet_converter:
   # CLI flag: -parquet-converter.max-rows-per-group
   [max_rows_per_group: <int> | default = 1000000]
 
-  # (advanced) Maximum number of Go routines reading TSDB series in parallel
+  # (advanced)
+  [max_row_groups_per_shard: <int> | default = ]
+
+  # (advanced) Maximum number of Go routines reading TSDB series in concurrently
   # when converting a block.
   # CLI flag: -parquet-converter.tsdb-read-concurrency
   [tsdb_read_concurrency: <int> | default = 4]
 
-  # (advanced) Maximum number of Go routines processing tasks in parallel.
-  # CLI flag: -parquet-converter.task-concurrency
-  [task_concurrency: <int> | default = 2]
-
-  # (advanced) Maximum number of concurrent Go routines allowed to run the
-  # conversion code.
-  # CLI flag: -parquet-converter.conversion-concurrency
-  [conversion_concurrency: <int> | default = 1]
-
-  # (advanced) Minimum compaction level required for blocks to be converted to
-  # Parquet. Blocks equal or greater than this level will be converted.
-  # CLI flag: -parquet-converter.min-compaction-level
-  [min_compaction_level: <int> | default = 2]
-
-  # (advanced) Minimum duration of blocks to convert. Blocks with a duration
-  # shorter than this will be skipped. Set to 0 to disable duration filtering.
-  # CLI flag: -parquet-converter.min-block-duration
-  [min_block_duration: <duration> | default = 0s]
+  # (advanced) Maximum number of Go routines writing Parquet shards in parallel
+  # when converting a block.
+  # CLI flag: -parquet-converter.parquet-shard-write-concurrency
+  [parquet_shard_write_concurrency: <int> | default = 4]
 
   # (advanced) Whether compression is enabled for labels and chunks parquet
   # files. When disabled, parquet files will be converted and stored

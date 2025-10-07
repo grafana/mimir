@@ -19268,13 +19268,36 @@
         },
         {
           "kind": "field",
-          "name": "max_block_age",
+          "name": "task_concurrency",
           "required": false,
-          "desc": "Maximum age of blocks to convert. Blocks older than this will be skipped. Set to 0 to disable age filtering.",
+          "desc": "Maximum number of Go routines processing tasks in parallel.",
+          "fieldValue": null,
+          "fieldDefaultValue": 2,
+          "fieldFlag": "parquet-converter.task-concurrency",
+          "fieldType": "int",
+          "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
+          "name": "conversion_concurrency",
+          "required": false,
+          "desc": "Maximum number of concurrent Go routines allowed to run the conversion code.",
+          "fieldValue": null,
+          "fieldDefaultValue": 1,
+          "fieldFlag": "parquet-converter.conversion-concurrency",
+          "fieldType": "int",
+          "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
+          "name": "min_data_age",
+          "required": false,
+          "desc": "Minimum age of data in blocks to convert. Only convert blocks containing data older than this duration from now, based on their MinTime. Set to 0 to disable age filtering.",
           "fieldValue": null,
           "fieldDefaultValue": 0,
-          "fieldFlag": "parquet-converter.max-block-age",
-          "fieldType": "duration"
+          "fieldFlag": "parquet-converter.min-data-age",
+          "fieldType": "duration",
+          "fieldCategory": "advanced"
         },
         {
           "kind": "field",
@@ -19288,13 +19311,34 @@
         },
         {
           "kind": "field",
-          "name": "min_data_age",
+          "name": "min_block_duration",
           "required": false,
-          "desc": "Minimum age of data in blocks to convert. Only convert blocks containing data older than this duration from now, based on their MinTime. Set to 0 to disable age filtering.",
+          "desc": "Minimum duration of blocks to convert. Blocks with a duration shorter than this will be skipped. Set to 0 to disable duration filtering.",
           "fieldValue": null,
           "fieldDefaultValue": 0,
-          "fieldFlag": "parquet-converter.min-data-age",
+          "fieldFlag": "parquet-converter.min-block-duration",
           "fieldType": "duration",
+          "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
+          "name": "max_block_age",
+          "required": false,
+          "desc": "Maximum age of blocks to convert. Blocks older than this will be skipped. Set to 0 to disable age filtering.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "parquet-converter.max-block-age",
+          "fieldType": "duration"
+        },
+        {
+          "kind": "field",
+          "name": "min_compaction_level",
+          "required": false,
+          "desc": "Minimum compaction level required for blocks to be converted to Parquet. Blocks equal or greater than this level will be converted.",
+          "fieldValue": null,
+          "fieldDefaultValue": 2,
+          "fieldFlag": "parquet-converter.min-compaction-level",
+          "fieldType": "int",
           "fieldCategory": "advanced"
         },
         {
@@ -19332,9 +19376,19 @@
         },
         {
           "kind": "field",
+          "name": "max_row_groups_per_shard",
+          "required": false,
+          "desc": "",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldType": "int",
+          "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
           "name": "tsdb_read_concurrency",
           "required": false,
-          "desc": "Maximum number of Go routines reading TSDB series in parallel when converting a block.",
+          "desc": "Maximum number of Go routines reading TSDB series in concurrently when converting a block.",
           "fieldValue": null,
           "fieldDefaultValue": 4,
           "fieldFlag": "parquet-converter.tsdb-read-concurrency",
@@ -19343,46 +19397,13 @@
         },
         {
           "kind": "field",
-          "name": "task_concurrency",
+          "name": "parquet_shard_write_concurrency",
           "required": false,
-          "desc": "Maximum number of Go routines processing tasks in parallel.",
+          "desc": "Maximum number of Go routines writing Parquet shards in parallel when converting a block.",
           "fieldValue": null,
-          "fieldDefaultValue": 2,
-          "fieldFlag": "parquet-converter.task-concurrency",
+          "fieldDefaultValue": 4,
+          "fieldFlag": "parquet-converter.parquet-shard-write-concurrency",
           "fieldType": "int",
-          "fieldCategory": "advanced"
-        },
-        {
-          "kind": "field",
-          "name": "conversion_concurrency",
-          "required": false,
-          "desc": "Maximum number of concurrent Go routines allowed to run the conversion code.",
-          "fieldValue": null,
-          "fieldDefaultValue": 1,
-          "fieldFlag": "parquet-converter.conversion-concurrency",
-          "fieldType": "int",
-          "fieldCategory": "advanced"
-        },
-        {
-          "kind": "field",
-          "name": "min_compaction_level",
-          "required": false,
-          "desc": "Minimum compaction level required for blocks to be converted to Parquet. Blocks equal or greater than this level will be converted.",
-          "fieldValue": null,
-          "fieldDefaultValue": 2,
-          "fieldFlag": "parquet-converter.min-compaction-level",
-          "fieldType": "int",
-          "fieldCategory": "advanced"
-        },
-        {
-          "kind": "field",
-          "name": "min_block_duration",
-          "required": false,
-          "desc": "Minimum duration of blocks to convert. Blocks with a duration shorter than this will be skipped. Set to 0 to disable duration filtering.",
-          "fieldValue": null,
-          "fieldDefaultValue": 0,
-          "fieldFlag": "parquet-converter.min-block-duration",
-          "fieldType": "duration",
           "fieldCategory": "advanced"
         },
         {
