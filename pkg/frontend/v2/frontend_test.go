@@ -369,10 +369,11 @@ func TestFrontend_Protobuf_ResponseClosedBeforeResponseReceived(t *testing.T) {
 		}
 
 		go func() {
+			resp := <-respChannel
+
 			// Close the stream returned by DoProtobufRequest once we're confident the goroutine in DoProtobufRequest has observed that the request has been enqueued
 			// and is waiting for streamContext to be cancelled.
-			// This ensures that closing the channel doesn't trigger the code path that calls writeEnqueueError().
-			resp := <-respChannel
+			// This ensures that closing the stream doesn't trigger the code path that calls writeEnqueueError().
 			time.Sleep(10 * time.Millisecond)
 			resp.Close()
 		}()
