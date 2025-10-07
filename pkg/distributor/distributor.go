@@ -62,6 +62,7 @@ import (
 	mimir_limiter "github.com/grafana/mimir/pkg/util/limiter"
 	util_math "github.com/grafana/mimir/pkg/util/math"
 	"github.com/grafana/mimir/pkg/util/pool"
+	"github.com/grafana/mimir/pkg/util/reactivelimiter"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -204,6 +205,8 @@ type Distributor struct {
 	// is disabled.
 	usageTrackerClient usageTrackerGenericClient
 
+	reactiveLimiter reactivelimiter.ReactiveLimiter
+
 	// For testing functionality that relies on timing without having to sleep in unit tests.
 	sleep func(time.Duration)
 	now   func() time.Time
@@ -283,6 +286,8 @@ type Config struct {
 	// Usage-tracker (optional).
 	UsageTrackerEnabled bool                      `yaml:"-"` // Injected internally.
 	UsageTrackerClient  usagetrackerclient.Config `yaml:"usage_tracker_client"`
+
+	ReactiveLimiter reactivelimiter.Config `yaml:"reactive_limiter"`
 }
 
 // PushWrapper wraps around a push. It is similar to middleware.Interface.
@@ -295,6 +300,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	cfg.DistributorRing.RegisterFlags(f, logger)
 	cfg.RetryConfig.RegisterFlags(f)
 	cfg.UsageTrackerClient.RegisterFlagsWithPrefix("distributor.usage-tracker-client.", f)
+	cfg.ReactiveLimiter.RegisterFlagsWithPrefix("distributor.reactive-limiter.", f)
 
 	f.IntVar(&cfg.MaxRecvMsgSize, "distributor.max-recv-msg-size", 100<<20, "Max message size in bytes that the distributors will accept for incoming push requests to the remote write API. If exceeded, the request will be rejected.")
 	f.IntVar(&cfg.MaxOTLPRequestSize, maxOTLPRequestSizeFlag, 100<<20, "Maximum OTLP request size in bytes that the distributors accept. Requests exceeding this limit are rejected.")
@@ -621,6 +627,7 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 
 	d.requestRateLimiter = limiter.NewRateLimiter(requestRateStrategy, 10*time.Second)
 	d.ingestionRateLimiter = limiter.NewRateLimiter(ingestionRateStrategy, 10*time.Second)
+	d.reactiveLimiter = newDistributorReactiveLimiter(d.cfg.ReactiveLimiter, log, reg)
 	d.distributorsLifecycler = distributorsLifecycler
 	d.distributorsRing = distributorsRing
 	d.HATracker = haTrackerImpl
@@ -1643,8 +1650,23 @@ func (d *Distributor) StartPushRequest(ctx context.Context, httpgrpcRequestSize 
 	return ctx, err
 }
 
-func (d *Distributor) PreparePushRequest(_ context.Context) (func(error), error) {
-	return nil, nil
+func (d *Distributor) PreparePushRequest(ctx context.Context) (func(error), error) {
+	if d.reactiveLimiter == nil {
+		return nil, nil
+	}
+	// Acquire a permit, blocking if needed
+	permit, err := d.reactiveLimiter.AcquirePermit(ctx)
+	if err != nil {
+		d.rejectedRequests.WithLabelValues(reasonDistributorMaxInflightPushRequests).Inc()
+		return nil, errReactiveLimiterLimitExceeded
+	}
+	return func(err error) {
+		if errors.Is(err, context.Canceled) || ctx.Err() != nil {
+			permit.Drop()
+		} else {
+			permit.Record()
+		}
+	}, nil
 }
 
 // startPushRequest does limits checks at the beginning of Push request in distributor.
@@ -1659,6 +1681,11 @@ func (d *Distributor) PreparePushRequest(_ context.Context) (func(error), error)
 // This object describes which checks were already performed on the request,
 // and which component is responsible for doing a cleanup.
 func (d *Distributor) startPushRequest(ctx context.Context, httpgrpcRequestSize int64) (context.Context, *requestState, error) {
+	if d.reactiveLimiter != nil && !d.reactiveLimiter.CanAcquirePermit() {
+		d.rejectedRequests.WithLabelValues(reasonDistributorMaxInflightPushRequests).Inc()
+		return ctx, nil, errReactiveLimiterLimitExceeded
+	}
+
 	// If requestState is already in context, it means that StartPushRequest already ran for this request.
 	rs, alreadyInContext := ctx.Value(requestStateKey).(*requestState)
 	if alreadyInContext {
