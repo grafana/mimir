@@ -541,6 +541,10 @@ func (b *responseStreamBuffer) Any() bool {
 	return b.length > 0
 }
 
-var responseMessageSlicePool = pool.NewBucketedPool(131072, func(size int) []bufferedMessage {
+// Why types.MaxExpectedSeriesPerResult as the slice size limit?
+// The vast majority of these slices will be used for instant vector results, which
+// will have 2 + num_series messages in the worst case. So we use our estimate of the
+// maximum number of series per result to limit the size of slices in the pool.
+var responseMessageSlicePool = pool.NewBucketedPool(types.MaxExpectedSeriesPerResult, func(size int) []bufferedMessage {
 	return make([]bufferedMessage, 0, size)
 })
