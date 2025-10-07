@@ -202,8 +202,8 @@ type Replicator interface {
 
 type option func(*Alertmanager) *Alertmanager
 
-// withRegister overrides the 'registry' field in the Alertmanager struct.
-func withRegister(reg prometheus.Registerer) option {
+// withRegisterOverride overrides the 'registry' field in the Alertmanager struct.
+func withRegisterOverride(reg prometheus.Registerer) option {
 	return func(am *Alertmanager) *Alertmanager {
 		am.registry = reg
 		return am

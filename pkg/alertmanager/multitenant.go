@@ -752,7 +752,8 @@ func (am *MultitenantAlertmanager) syncConfigs(ctx context.Context, cfgMap map[s
 			am.multitenantMetrics.lastReloadSuccessfulTimestamp.DeleteLabelValues(userID)
 
 			if !exists {
-				// Only delete if there's no chance the user is coming back after a while.
+				// Only delete registries for tenants not owned by this instance.
+				// Skipped tenants might come back.
 				am.alertmanagerMetrics.removeUserRegistry(userID)
 			}
 		}
@@ -1131,8 +1132,8 @@ func (am *MultitenantAlertmanager) newAlertmanager(userID string, amConfig *defi
 	var reg *prometheus.Registry
 	existingReg := am.alertmanagerMetrics.getUserRegistry(userID)
 	if existingReg != nil {
-		// Use the no-op registry to avoid panics, override it with the existing one.
-		newAM, err = New(&cfg, noOpReg{}, withRegister(existingReg))
+		// Use a no-op registry to avoid panics, override it with the existing one.
+		newAM, err = New(&cfg, noOpReg{}, withRegisterOverride(existingReg))
 	} else {
 		reg = prometheus.NewRegistry()
 		newAM, err = New(&cfg, reg)
