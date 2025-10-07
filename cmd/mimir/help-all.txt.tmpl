@@ -1223,6 +1223,8 @@ Usage of ./cmd/mimir/mimir:
     	Override the expected name on the server certificate.
   -distributor.ha-tracker.etcd.username string
     	Etcd username.
+  -distributor.ha-tracker.failover-sample-timeout duration
+    	Additional timeout to use for failover that uses the earliest sample time instead of the current time. Defaults to 0, which is disabled. This is useful to prevent samples from being too close together during failover when write requests are delayed so that the sample time is earlier than the current time.
   -distributor.ha-tracker.failover-timeout duration
     	If we don't receive any samples from the accepted replica for a cluster in this amount of time we will failover to the next replica we receive a sample from. This value must be greater than the update timeout. (default 30s)
   -distributor.ha-tracker.max-clusters int

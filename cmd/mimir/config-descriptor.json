@@ -4862,6 +4862,17 @@
         },
         {
           "kind": "field",
+          "name": "ha_tracker_sample_failover_timeout",
+          "required": false,
+          "desc": "Additional timeout to use for failover that uses the earliest sample time instead of the current time. Defaults to 0, which is disabled. This is useful to prevent samples from being too close together during failover when write requests are delayed so that the sample time is earlier than the current time.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "distributor.ha-tracker.failover-sample-timeout",
+          "fieldType": "duration",
+          "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
           "name": "drop_labels",
           "required": false,
           "desc": "This flag can be used to specify label names that to drop during sample ingestion within the distributor and can be repeated in order to drop multiple labels.",

@@ -4488,6 +4488,14 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -distributor.ha-tracker.failover-timeout
 [ha_tracker_failover_timeout: <duration> | default = 30s]
 
+# (advanced) Additional timeout to use for failover that uses the earliest
+# sample time instead of the current time. Defaults to 0, which is disabled.
+# This is useful to prevent samples from being too close together during
+# failover when write requests are delayed so that the sample time is earlier
+# than the current time.
+# CLI flag: -distributor.ha-tracker.failover-sample-timeout
+[ha_tracker_sample_failover_timeout: <duration> | default = 0s]
+
 # (advanced) This flag can be used to specify label names that to drop during
 # sample ingestion within the distributor and can be repeated in order to drop
 # multiple labels.
