@@ -9,7 +9,7 @@ weight: 10
 
 Ingest storage architecture uses Kafka as a central pipeline to decouple read and write operations, making Grafana Mimir more reliable and scalable.
 
-Starting with Grafana Mimir 3.0, ingest storage architecture is stable and the default architecture for running Mimir.
+Starting with Grafana Mimir 3.0, ingest storage architecture is stable and the preferred architecture for running Grafana Mimir.
 
 Ingest storage architecture enhances reliability, supports growth, and enables larger-scale use cases, helping you to run more robust deployments of Grafana Mimir.
 
