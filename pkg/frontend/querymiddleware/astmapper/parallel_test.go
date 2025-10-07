@@ -279,7 +279,7 @@ func TestCountVectorSelectors(t *testing.T) {
 func TestEvalPredicate(t *testing.T) {
 	for testName, tc := range map[string]struct {
 		input       string
-		fn          predicate
+		fn          Predicate
 		expectedRes bool
 		expectedErr bool
 	}{
@@ -316,7 +316,7 @@ func TestEvalPredicate(t *testing.T) {
 			expr, err := parser.ParseExpr(tc.input)
 			require.Nil(t, err)
 
-			res, err := anyNode(expr.(parser.Node), tc.fn)
+			res, err := AnyNode(expr.(parser.Node), tc.fn)
 			if tc.expectedErr {
 				require.Error(t, err)
 			} else {
