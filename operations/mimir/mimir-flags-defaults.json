@@ -1638,6 +1638,7 @@
   "parquet-converter.data-dir": "./data-parquet-converter/",
   "parquet-converter.conversion-interval": 60000000000,
   "parquet-converter.discovery-interval": 300000000000,
+<<<<<<< HEAD
   "parquet-converter.max-block-age": 0,
   "parquet-converter.min-block-timestamp": 0,
   "parquet-converter.min-data-age": 0,
@@ -1648,6 +1649,19 @@
   "parquet-converter.min-block-duration": 0,
   "parquet-converter.compression-enabled": true,
   "parquet-converter.load-balancing-strategy": "ring",
+=======
+  "parquet-converter.min-data-age": 0,
+  "parquet-converter.min-block-timestamp": 0,
+  "parquet-converter.min-block-duration": 0,
+  "parquet-converter.max-block-age": 0,
+  "parquet-converter.min-compaction-level": 2,
+  "parquet-converter.sorting-labels": "",
+  "parquet-converter.col-duration": 28800000000000,
+  "parquet-converter.max-rows-per-group": 1000000,
+  "parquet-converter.tsdb-read-concurrency": 4,
+  "parquet-converter.parquet-shard-write-concurrency": 4,
+  "parquet-converter.compression-enabled": true,
+>>>>>>> 50877eacec (incorporate parallel block conversion and options, regenerate help and docs)
   "parquet-converter.ring.store": "memberlist",
   "parquet-converter.ring.prefix": "parquet-converters/",
   "parquet-converter.ring.consul.hostname": "localhost:8500",
@@ -1679,6 +1693,7 @@
   "parquet-converter.ring.wait-stability-min-duration": 0,
   "parquet-converter.ring.wait-stability-max-duration": 300000000000,
   "parquet-converter.ring.wait-active-instance-timeout": 600000000000,
+<<<<<<< HEAD
   "parquet-converter.locking.backend": "",
   "parquet-converter.locking.memcached.addresses": "",
   "parquet-converter.locking.memcached.timeout": 200000000,
@@ -1697,6 +1712,8 @@
   "parquet-converter.locking.memcached.tls-cipher-suites": "",
   "parquet-converter.locking.memcached.tls-min-version": "",
   "parquet-converter.locking.memcached.dns-ignore-startup-failures": true,
+=======
+>>>>>>> 50877eacec (incorporate parallel block conversion and options, regenerate help and docs)
   "common.storage.backend": "filesystem",
   "common.storage.s3.endpoint": "",
   "common.storage.s3.region": "",
