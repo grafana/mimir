@@ -58,7 +58,7 @@ Ingest storage architecture:
 
 <div align="center">
 
-![Ingest storage architecture diagram](/media/docs/mimir/ingest_storage_arch.png)
+![Ingest storage architecture diagram](/media/docs/mimir/ingest-storage-overview.png)
 
 </div>
 
