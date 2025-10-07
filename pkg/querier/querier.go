@@ -199,7 +199,7 @@ func New(cfg Config, limits *validation.Overrides, distributor Distributor, quer
 
 	switch cfg.QueryEngine {
 	case PrometheusEngine:
-		eng = limiter.NewUnlimitedMemoryTrackerPromqlEngine(promql.NewEngine(opts))
+		eng = limiter.NewUnlimitedMemoryTrackerPromQLEngine(promql.NewEngine(opts))
 	case MimirEngine:
 		limitsProvider := NewTenantQueryLimitsProvider(limits)
 		var err error
@@ -209,7 +209,7 @@ func New(cfg Config, limits *validation.Overrides, distributor Distributor, quer
 		}
 
 		if cfg.EnableQueryEngineFallback {
-			prometheusEngine := limiter.NewUnlimitedMemoryTrackerPromqlEngine(promql.NewEngine(opts))
+			prometheusEngine := limiter.NewUnlimitedMemoryTrackerPromQLEngine(promql.NewEngine(opts))
 			eng = compat.NewEngineWithFallback(streamingEngine, prometheusEngine, reg, logger)
 		} else {
 			eng = streamingEngine

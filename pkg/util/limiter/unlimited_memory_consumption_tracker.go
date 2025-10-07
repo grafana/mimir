@@ -62,7 +62,7 @@ type UnlimitedMemoryTrackerPromQLEngine struct {
 	inner *promql.Engine
 }
 
-func NewUnlimitedMemoryTrackerPromqlEngine(inner *promql.Engine) UnlimitedMemoryTrackerPromQLEngine {
+func NewUnlimitedMemoryTrackerPromQLEngine(inner *promql.Engine) UnlimitedMemoryTrackerPromQLEngine {
 	return UnlimitedMemoryTrackerPromQLEngine{inner: inner}
 }
 
