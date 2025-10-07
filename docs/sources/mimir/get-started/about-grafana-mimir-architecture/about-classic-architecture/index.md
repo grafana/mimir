@@ -31,7 +31,7 @@ The per-tenant TSDB is lazily created in each ingester as soon as the first samp
 
 The in-memory samples are periodically flushed to disk, and the WAL is truncated, when a new TSDB block is created.
 By default, this occurs every two hours.
-Each newly created block is uploaded to long-term storage and kept in the ingester until the configured `-blocks-storage.tsdb.retention-period` expires.
+Each newly created block is uploaded to long-term storage but kept in the ingester until the configured `-blocks-storage.tsdb.retention-period` expires.
 This gives [queriers](../../../references/architecture/components/querier/) and [store-gateways](../../../references/architecture/components/store-gateway/) enough time to discover the new block on the storage and download its index-header.
 
 To effectively use the WAL, and to be able to recover the in-memory series if an ingester abruptly terminates, store the WAL to a persistent disk that can survive an ingester failure.
