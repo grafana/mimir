@@ -48,7 +48,7 @@
 * [ENHANCEMENT] Query-frontend: Allow users to set the `query-frontend.extra-propagated-headers` flag to specify the extra headers allowed to pass through to the rest of the query path. #12174
 * [ENHANCEMENT] MQE: Add support for applying common subexpression elimination to range vector expressions in instant queries. #12236
 * [ENHANCEMENT] Ingester: Improve the performance of active series custom trackers matchers. #12184
-* [ENHANCEMENT] Ingester: Add postings cache sharing and invalidation. Sharing and head cache invalidation can be enabled via `-blocks-storage.tsdb.shared-postings-for-matchers-cache` and `-blocks-storage.tsdb.head-postings-for-matchers-cache-invalidation` respectively, and the number of metric versions per cache can be configured via -`blocks-storage.tsdb.head-postings-for-matchers-cache-versions`. #12333
+* [ENHANCEMENT] Ingester: Add postings cache sharing and invalidation. You can enable sharing and head cache invalidation via `-blocks-storage.tsdb.shared-postings-for-matchers-cache` and `-blocks-storage.tsdb.head-postings-for-matchers-cache-invalidation` respectively, and you can configure the number of metric versions per cache via `-blocks-storage.tsdb.head-postings-for-matchers-cache-versions`. #12333
 * [ENHANCEMENT] Overrides-exporter: The overrides-exporter can now export arbitrary fields from the limits configuration. Metric names are automatically discovered from YAML tags in the limits structure, eliminating the need to maintain hardcoded lists when adding new exportable metrics. #12244
 * [ENHANCEMENT] OTLP: Stick to OTLP vocabulary on invalid label value length error. #12273
 * [ENHANCEMENT] Elide SeriesChunksStreamReader.StartBuffering span on queries; show as events on parent span. #12257
@@ -66,6 +66,7 @@
 * [ENHANCEMENT] Distributor: Support zstd decompression of OTLP messages. #12229
 * [ENHANCEMENT] Ingester: Improved the performance of active series custom trackers matchers. #12663
 * [ENHANCEMENT] Compactor: Log sizes of downloaded and uploaded blocks. #12656
+* [ENHANCEMENT] Block-builder-scheduler: The scheduler now handles multiple concurrent jobs within a partition if allowed by `-block-builder-scheduler.max-jobs-per-partition`. #12772
 * [ENHANCEMENT] Ingester: Add `cortex_ingest_storage_reader_receive_and_consume_delay_seconds` metric tracking the time between when a write request is received in the distributor and its content is ingested in ingesters, when the ingest storage is enabled. #12751
 * [ENHANCEMENT] Ruler: Add `ruler_evaluation_consistency_max_delay` per-tenant configuration option support, to specify the maximum tolerated ingestion delay for eventually consistent rule evaluations. This feature is used only when ingest storage is enabled. By default, no maximum delay is enforced. #12751
 * [ENHANCEMENT] Ingester: Export `cortex_attributed_series_overflow_labels` metric on the `/usage-metrics` metrics endpoint with the configured cost-attribution labels set to overflow value. #12846
