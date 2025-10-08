@@ -18,6 +18,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+	"log/slog"
 	"math"
 	"runtime"
 	"slices"
@@ -368,6 +369,7 @@ func ConvertTSDBBlockParallel(
 	bkt objstore.Bucket,
 	mint, maxt int64,
 	blks []Convertible,
+	logger *slog.Logger,
 	opts ...ConvertOption,
 ) (int, error) {
 	cfg := DefaultConvertOpts
@@ -386,6 +388,7 @@ func ConvertTSDBBlockParallel(
 		}
 	}()
 
+	logger.Info("starting parallel block conversion", "shards", len(shardedRowReaders), "write_concurrency", cfg.writeConcurrency)
 	errGroup := &errgroup.Group{}
 	errGroup.SetLimit(cfg.writeConcurrency)
 	for shard, rr := range shardedRowReaders {
@@ -409,6 +412,7 @@ func ConvertTSDBBlockParallel(
 				outSchemaProjections: outSchemaProjections,
 				pipeReaderWriter:     NewPipeReaderBucketWriter(bkt),
 				opts:                 &cfg,
+				logger:               logger,
 			}
 			err = w.Write(ctx)
 			if err != nil {

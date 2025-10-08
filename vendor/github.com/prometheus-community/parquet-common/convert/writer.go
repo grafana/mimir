@@ -17,6 +17,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 
@@ -40,12 +41,16 @@ type PreShardedWriter struct {
 	pipeReaderWriter     PipeReaderWriter
 
 	opts *convertOpts
+
+	logger *slog.Logger
 }
 
 func (c *PreShardedWriter) Write(ctx context.Context) error {
+	c.logger.Info("starting conversion for shard", "shard", c.shard)
 	if err := c.convertShard(ctx); err != nil {
 		return errors.Wrap(err, "failed to convert shard")
 	}
+	c.logger.Info("finished conversion for shard", "shard", c.shard)
 	return nil
 }
 
