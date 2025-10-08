@@ -36,7 +36,7 @@ func (m *MemoryTrackingSeriesSet) At() storage.Series {
 	at := m.inner.At()
 
 	// Only decrease memory once per each single Next() call and multiple At() call
-	if m.memoryConsumptionTracker != nil && !m.memoryDecreased {
+	if !m.memoryDecreased {
 		// New series at this position
 		m.currentSeries = at
 		m.memoryDecreased = true
