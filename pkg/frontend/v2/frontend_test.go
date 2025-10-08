@@ -59,11 +59,11 @@ func TestMain(m *testing.M) {
 
 const testFrontendWorkerConcurrency = 5
 
-func setupFrontend(t *testing.T, reg prometheus.Registerer, schedulerReplyFunc func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend) (*Frontend, *mockScheduler) {
-	return setupFrontendWithConcurrencyAndServerOptions(t, reg, schedulerReplyFunc, testFrontendWorkerConcurrency)
+func setupFrontend(t testing.TB, reg prometheus.Registerer, schedulerReplyFunc func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend) (*Frontend, *mockScheduler) {
+	return setupFrontendWithConcurrencyAndServerOptions(t, reg, schedulerReplyFunc, testFrontendWorkerConcurrency, log.NewLogfmtLogger(os.Stdout))
 }
 
-func setupFrontendWithConcurrencyAndServerOptions(t *testing.T, reg prometheus.Registerer, schedulerReplyFunc func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend, concurrency int, opts ...grpc.ServerOption) (*Frontend, *mockScheduler) {
+func setupFrontendWithConcurrencyAndServerOptions(t testing.TB, reg prometheus.Registerer, schedulerReplyFunc func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend, concurrency int, logger log.Logger, opts ...grpc.ServerOption) (*Frontend, *mockScheduler) {
 	l, err := net.Listen("tcp", "localhost:0")
 	require.NoError(t, err)
 
@@ -83,7 +83,6 @@ func setupFrontendWithConcurrencyAndServerOptions(t *testing.T, reg prometheus.R
 	cfg.Port = grpcPort
 	cfg.QueryStoreAfter = 12 * time.Hour
 
-	logger := log.NewLogfmtLogger(os.Stdout)
 	codec := newTestCodec()
 
 	f, err := NewFrontend(cfg, limits{queryIngestersWithin: 13 * time.Hour}, logger, reg, codec)
@@ -133,7 +132,7 @@ func sendResponseWithDelay(f *Frontend, delay time.Duration, userID string, quer
 	return err
 }
 
-func sendStreamingResponse(t *testing.T, f *Frontend, userID string, queryID uint64, resp ...*frontendv2pb.QueryResultStreamRequest) {
+func sendStreamingResponse(t testing.TB, f *Frontend, userID string, queryID uint64, resp ...*frontendv2pb.QueryResultStreamRequest) {
 	if err := sendStreamingResponseWithErrorCapture(f, userID, queryID, resp...); err != nil {
 		// If QueryResultStream fails, it's not necessarily a problem (eg. it might be that the context was cancelled)
 		// So just log it but don't fail the test.
@@ -153,6 +152,19 @@ func sendStreamingResponseWithErrorCapture(f *Frontend, userID string, queryID u
 	}
 
 	return f.QueryResultStream(stream)
+}
+
+func sendStreamingResponseFromEncodedMessages(t testing.TB, f *Frontend, userID string, queryID uint64, resp ...[]byte) {
+	ctx := user.InjectOrgID(context.Background(), userID)
+	stream := &mockUnmarshallingQueryResultStreamServer{
+		queryID: queryID,
+		ctx:     ctx,
+		msgs:    resp,
+	}
+
+	if err := f.QueryResultStream(stream); err != nil {
+		t.Errorf("QueryResultStream returned %v", err)
+	}
 }
 
 func TestFrontend_HTTPGRPC_HappyPath(t *testing.T) {
@@ -1448,8 +1460,48 @@ func (s *mockQueryResultStreamServer) Recv() (*frontendv2pb.QueryResultStreamReq
 	return s.msgs[s.next], nil
 }
 
+// mockUnmarshallingQueryResultStreamServer is like mockQueryResultStreamServer, but unmarhsals
+// responses from bytes, to better emulate the performance characteristics of a real stream.
+type mockUnmarshallingQueryResultStreamServer struct {
+	ctx     context.Context
+	msgs    [][]byte
+	next    int
+	queryID uint64
+
+	grpc.ServerStream
+}
+
+func (s *mockUnmarshallingQueryResultStreamServer) Context() context.Context {
+	return s.ctx
+}
+
+func (s *mockUnmarshallingQueryResultStreamServer) SendAndClose(_ *frontendv2pb.QueryResultResponse) error {
+	return s.ctx.Err()
+}
+
+func (s *mockUnmarshallingQueryResultStreamServer) Recv() (*frontendv2pb.QueryResultStreamRequest, error) {
+	if err := s.ctx.Err(); err != nil {
+		return nil, err
+	}
+
+	if s.next >= len(s.msgs) {
+		return nil, io.EOF
+	}
+	defer func() { s.next++ }()
+
+	b := s.msgs[s.next]
+	msg := &frontendv2pb.QueryResultStreamRequest{}
+	if err := msg.Unmarshal(b); err != nil {
+		return nil, err
+	}
+
+	msg.QueryID = s.queryID
+
+	return msg, nil
+}
+
 type mockScheduler struct {
-	t *testing.T
+	t testing.TB
 	f *Frontend
 
 	replyFunc func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend
@@ -1459,7 +1511,7 @@ type mockScheduler struct {
 	msgs         []*schedulerpb.FrontendToScheduler
 }
 
-func newMockScheduler(t *testing.T, f *Frontend, replyFunc func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend) *mockScheduler {
+func newMockScheduler(t testing.TB, f *Frontend, replyFunc func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend) *mockScheduler {
 	return &mockScheduler{t: t, f: f, frontendAddr: map[string]int{}, replyFunc: replyFunc}
 }
 
@@ -1552,7 +1604,7 @@ func TestWithClosingGrpcServer(t *testing.T) {
 
 	f, _ := setupFrontendWithConcurrencyAndServerOptions(t, nil, func(*Frontend, *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
 		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.TOO_MANY_REQUESTS_PER_TENANT}
-	}, frontendConcurrency, grpc.KeepaliveParams(keepalive.ServerParameters{
+	}, frontendConcurrency, log.NewLogfmtLogger(os.Stdout), grpc.KeepaliveParams(keepalive.ServerParameters{
 		MaxConnectionIdle:     100 * time.Millisecond,
 		MaxConnectionAge:      100 * time.Millisecond,
 		MaxConnectionAgeGrace: 100 * time.Millisecond,
