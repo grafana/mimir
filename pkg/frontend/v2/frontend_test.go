@@ -387,6 +387,7 @@ func TestFrontend_Protobuf_ResponseClosedBeforeResponseReceived(t *testing.T) {
 	})
 
 	ctx := user.InjectOrgID(context.Background(), "user-1")
+	ctx = querymiddleware.ContextWithParallelismLimiter(ctx, querymiddleware.NewParallelismLimiter(math.MaxInt))
 	req := &querierpb.EvaluateQueryRequest{}
 	resp, err := f.DoProtobufRequest(ctx, req, time.Now(), time.Now())
 	require.NoError(t, err)
