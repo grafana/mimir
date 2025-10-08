@@ -197,7 +197,7 @@ func rewriteForQuerySharding(ctx context.Context, expr string) (string, error) {
 	const maxShards = 2
 	stats := astmapper.NewMapperStats()
 	squasher := astmapper.EmbeddedQueriesSquasher
-	summer := astmapper.NewQueryShardSummer(maxShards, false, squasher, log.NewNopLogger(), stats)
+	summer := astmapper.NewQueryShardSummer(maxShards, squasher, log.NewNopLogger(), stats)
 	ast, err := parser.ParseExpr(expr)
 	if err != nil {
 		return "", err
