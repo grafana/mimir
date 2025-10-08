@@ -61,6 +61,7 @@ func (d defaultBlockConverter) ConvertBlock(ctx context.Context, meta *block.Met
 		meta.MinTime,
 		meta.MaxTime,
 		[]convert.Convertible{tsdbBlock},
+		util_log.SlogFromGoKit(logger),
 		opts...,
 	)
 	return err
@@ -441,6 +442,17 @@ func (c *ParquetConverter) discoverAndEnqueueBlocks(ctx context.Context) {
 
 // processBlock handles the conversion of a single block with proper metrics tracking.
 func (c *ParquetConverter) processBlock(ctx context.Context, userID string, meta *block.Meta, uBucket objstore.InstrumentedBucket, logger log.Logger) {
+	ulidTime := time.UnixMilli(int64(meta.ULID.Time()))
+	level.Info(logger).Log(
+		"msg", "starting block conversion",
+		"block", meta.ULID.String(),
+		"min_time", meta.MinTime,
+		"max_time", meta.MaxTime,
+		"ulid_timestamp_ms", meta.ULID.Time(),
+		"ulid_time_human", ulidTime.UTC().Format(time.RFC3339),
+		"compaction_level", meta.Compaction.Level,
+		"block_size_bytes", meta.BlockBytes(),
+	)
 	start := time.Now()
 	var err error
 	var skipped bool
@@ -526,14 +538,16 @@ func (c *ParquetConverter) processBlock(ctx context.Context, userID string, meta
 		return
 	}
 
-	ulidTime := time.UnixMilli(int64(meta.ULID.Time()))
 	level.Info(logger).Log(
-		"msg", "converted block",
+		"msg", "finished block conversion",
 		"block", meta.ULID.String(),
+		"min_time", meta.MinTime,
+		"max_time", meta.MaxTime,
 		"ulid_timestamp_ms", meta.ULID.Time(),
 		"ulid_time_human", ulidTime.UTC().Format(time.RFC3339),
-		"duration_seconds", time.Since(start).Seconds(),
+		"compaction_level", meta.Compaction.Level,
 		"block_size_bytes", meta.BlockBytes(),
+		"duration_seconds", time.Since(start).Seconds(),
 	)
 
 	err = WriteConversionMark(ctx, meta.ULID, uBucket)
