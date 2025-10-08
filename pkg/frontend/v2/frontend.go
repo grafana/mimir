@@ -100,7 +100,7 @@ func (cfg *Config) Validate() error {
 		return fmt.Errorf("scheduler address cannot be specified when query-scheduler service discovery mode is set to '%s'", cfg.QuerySchedulerDiscovery.Mode)
 	}
 
-	if cfg.RemoteExecutionBatchSize == 0 {
+	if cfg.RemoteExecutionBatchSize <= 0 {
 		return fmt.Errorf("remote execution batch size must be greater than 0")
 	}
 
