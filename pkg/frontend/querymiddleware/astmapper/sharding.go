@@ -148,8 +148,8 @@ func (summer *shardSummer) MapExpr(ctx context.Context, expr parser.Expr) (mappe
 		// process in the query-frontend. Since we can't estimate the cardinality, we prefer
 		// to be pessimistic and not parallelize at all the two legs unless we're able to
 		// parallelize all vector selectors in the legs.
-		willShard, err := summer.analyzer.WillShardAllSelectors(e)
-		return e, !willShard, err
+		analysis, err := summer.analyzer.Analyze(e)
+		return e, !analysis.WillShardAllSelectors, err
 
 	case *parser.SubqueryExpr:
 		// If the mapped expr is part of the sharded query, then it means we already checked whether it was
@@ -169,94 +169,133 @@ func (summer *shardSummer) MapExpr(ctx context.Context, expr parser.Expr) (mappe
 }
 
 type ShardingAnalyzer struct {
-	logger                     log.Logger
-	willShardAllSelectorsCache map[parser.Expr]bool
+	logger        log.Logger
+	analysisCache map[parser.Expr]ShardingAnalysisResult
+}
+
+type ShardingAnalysisResult struct {
+	// WillShardAllSelectors is true if all selectors in the expression will be sharded,
+	// or if there are no selectors in the expression.
+	WillShardAllSelectors bool
+
+	// The number of sharded selectors in the final expression.
+	// - If the original query was sum(foo), this would be 1.
+	// - If the original query was sum(foo) + bar, this would be 0, as the bar selector won't be sharded and so the sum is not sharded.
+	// - If the original query was sum(foo) + sum(bar), this would be 2.
+	// - If the original query was avg(foo), this would be 2, as avg(foo) is rewritten as sum(foo) / count(foo).
+	//
+	// If WillShardAllSelectors is false, then this will be 0.
+	ShardedQueries int
+}
+
+func UnshardedExpression() ShardingAnalysisResult {
+	return ShardingAnalysisResult{
+		WillShardAllSelectors: false,
+		ShardedQueries:        0,
+	}
+}
+
+func ShardedExpression() ShardingAnalysisResult {
+	return ShardingAnalysisResult{
+		WillShardAllSelectors: true,
+		ShardedQueries:        0, // TODO
+	}
 }
 
 func NewShardingAnalyzer(logger log.Logger) *ShardingAnalyzer {
 	return &ShardingAnalyzer{
-		logger:                     logger,
-		willShardAllSelectorsCache: make(map[parser.Expr]bool),
+		logger:        logger,
+		analysisCache: make(map[parser.Expr]ShardingAnalysisResult),
 	}
 }
 
-// WillShardAllSelectors returns true if all selectors in expr will be sharded.
+// Analyze analyzes the given expression and returns true if all selectors in expr will be sharded,
+// and the number of shardable queries in the sharded expression.
+//
 // This differs from CanParallelize, which returns true if it is valid to shard the expr.
 //
 // For example, it is valid to shard a vector selector (so CanParallelize returns true), but we
-// don't bother doing this because it has no benefit (so WillShardAllSelectors returns false).
+// don't bother doing this because it has no benefit (so Analyze returns false).
 //
 // However, if the expression was a sum aggregation over a vector selector, for example, then
 // both methods would return true.
-func (analyzer *ShardingAnalyzer) WillShardAllSelectors(expr parser.Expr) (will bool, err error) {
+func (analyzer *ShardingAnalyzer) Analyze(expr parser.Expr) (result ShardingAnalysisResult, err error) {
 	// We need to cache the results of this function to avoid processing it again and again
 	// in queries like `a or b or c or d`, which would lead to exponential processing time.
-	if cached, ok := analyzer.willShardAllSelectorsCache[expr]; ok {
+	if cached, ok := analyzer.analysisCache[expr]; ok {
 		return cached, nil
 	}
 	defer func() {
 		if err == nil {
-			analyzer.willShardAllSelectorsCache[expr] = will
+			analyzer.analysisCache[expr] = result
 		}
 	}()
 
 	switch expr := expr.(type) {
 	case *parser.VectorSelector, *parser.MatrixSelector:
-		return false, nil
+		return UnshardedExpression(), nil
 	case *parser.ParenExpr:
-		return analyzer.WillShardAllSelectors(expr.Expr)
+		return analyzer.Analyze(expr.Expr)
 	case *parser.AggregateExpr:
 		if CanParallelize(expr, analyzer.logger) {
-			return true, nil
+			return ShardedExpression(), nil
 		}
 
 		// If we can't shard this expression, we might still be able to shard the inner expression.
 		// eg. in avg(count(test)), we can't shard the avg(), but we can shard the count().
-		return analyzer.WillShardAllSelectors(expr.Expr)
+		return analyzer.Analyze(expr.Expr)
 
 	case *parser.BinaryExpr:
 		if isShardableBinOp(expr) && CanParallelize(expr, analyzer.logger) {
-			return true, nil
+			return ShardedExpression(), nil
 		}
 
-		willLHS, err := analyzer.WillShardAllSelectors(expr.LHS)
+		lhs, err := analyzer.Analyze(expr.LHS)
 		if err != nil {
-			return false, err
+			return UnshardedExpression(), err
 		}
-		if !willLHS {
-			return false, nil
+		if !lhs.WillShardAllSelectors {
+			return UnshardedExpression(), nil
 		}
-		willRHS, err := analyzer.WillShardAllSelectors(expr.RHS)
+		willRHS, err := analyzer.Analyze(expr.RHS)
 		return willRHS, err
 
 	case *parser.Call:
 		if isSubqueryCall(expr) {
-			return CanParallelize(expr, analyzer.logger) && !containsAggregateExpr(expr), nil
+			if containsAggregateExpr(expr) {
+				return UnshardedExpression(), nil
+			}
+
+			if !CanParallelize(expr, analyzer.logger) {
+				return UnshardedExpression(), nil
+			}
+
+			return ShardedExpression(), nil
 		}
 
 		for _, arg := range argsWithDefaults(expr) {
-			if can, err := analyzer.WillShardAllSelectors(arg); err != nil {
-				return false, err
-			} else if !can {
-				return false, nil
+			if result, err := analyzer.Analyze(arg); err != nil {
+				return UnshardedExpression(), err
+			} else if !result.WillShardAllSelectors {
+				return UnshardedExpression(), nil
 			}
 		}
 
-		return true, nil
+		return ShardedExpression(), nil
 
 	case *parser.NumberLiteral, *parser.StringLiteral:
-		return true, nil
+		return ShardedExpression(), nil
 
 	case *parser.UnaryExpr:
-		return analyzer.WillShardAllSelectors(expr.Expr)
+		return analyzer.Analyze(expr.Expr)
 
 	case *parser.SubqueryExpr:
 		// If we've reached this point, then the subquery is not shardable.
 		// If the subquery was shardable, we would have returned true when examining the outer function call.
-		return false, nil
+		return UnshardedExpression(), nil
 
 	default:
-		return false, fmt.Errorf("WillShardAllSelectors: unexpected expression type %T", expr)
+		return UnshardedExpression(), fmt.Errorf("unexpected expression type %T in ShardingAnalyzer.Analyze", expr)
 	}
 }
 

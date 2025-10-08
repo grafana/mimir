@@ -590,7 +590,7 @@ func TestShardSummer(t *testing.T) {
 			})
 
 			t.Run("checking if all vector selectors are sharded", func(t *testing.T) {
-				// There are a lot of edge cases in WillShardAllSelectors, and this method is only called
+				// There are a lot of edge cases in Analyze, and this method is only called
 				// if an expression appears inside a binary expression.
 				// So rather than generating a whole set of test cases just for this, we directly check each of
 				// our existing test cases.
@@ -598,15 +598,15 @@ func TestShardSummer(t *testing.T) {
 				require.NoError(t, err)
 				analyzer := NewShardingAnalyzer(log.NewNopLogger())
 
-				willShardAllSelectors, err := analyzer.WillShardAllSelectors(expr)
+				analysisResult, err := analyzer.Analyze(expr)
 				require.NoError(t, err)
 				hasVectorSelectors, err := AnyNode(expr, isVectorSelector)
 				require.NoError(t, err)
 
 				if hasVectorSelectors {
-					require.Equal(t, tt.expectedShardableQueries > 0, willShardAllSelectors, "WillShardAllSelectors should be true if the expression is shardable, and false otherwise")
+					require.Equal(t, tt.expectedShardableQueries > 0, analysisResult.WillShardAllSelectors, "Analyze should be true if the expression is shardable, and false otherwise")
 				} else {
-					require.True(t, willShardAllSelectors, "expression has no selectors")
+					require.True(t, analysisResult.WillShardAllSelectors, "expression has no selectors")
 				}
 			})
 		})
