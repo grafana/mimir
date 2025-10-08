@@ -198,7 +198,7 @@ Since instances register themselves in their ring and periodically send heartbea
 
 When the hash ring is used exclusively for service discovery, rather than sharding, instances don't register tokens in the ring.
 Instead, they only register their presence and periodically update a heartbeat timestamp.
-When other instances need to find the healthy instances of a given component, they look up the ring to find the instances that have successfully updated the heartbeat the ring.
+When other instances need to find the healthy instances of a given component, they look up the ring to find the instances that have successfully updated the heartbeat timestamp in the ring.
 
 The Grafana Mimir components using the ring for service discovery or coordination are:
 
