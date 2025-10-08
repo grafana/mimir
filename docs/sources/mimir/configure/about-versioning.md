@@ -183,6 +183,19 @@ The following features are currently experimental:
     - `-ingester.read-circuit-breaker.initial-delay`
     - `-ingester.read-circuit-breaker.request-timeout`
   - Reactive concurrency limiters
+    - `-distributor.reactive-limiter.enabled`
+    - `-distributor.reactive-limiter.min-limit`
+    - `-distributor.reactive-limiter.max-limit`
+    - `-distributor.reactive-limiter.initial-limit`
+    - `-distributor.reactive-limiter.max-limit-factor`
+    - `-distributor.reactive-limiter.recent-window-min-duration`
+    - `-distributor.reactive-limiter.recent-window-max-duration`
+    - `-distributor.reactive-limiter.recent-window-min-samples`
+    - `-distributor.reactive-limiter.recent-quantile`
+    - `-distributor.reactive-limiter.baseline-window-age`
+    - `-distributor.reactive-limiter.correlation-window`
+    - `-distributor.reactive-limiter.initial-rejection-factor`
+    - `-distributor.reactive-limiter.max-rejection-factor`
     - `-ingester.push-reactive-limiter.enabled`
     - `-ingester.push-reactive-limiter.min-limit`
     - `-ingester.push-reactive-limiter.max-limit`
