@@ -9,7 +9,6 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"hash/fnv"
 	"os"
 	"path/filepath"
 	"strings"
@@ -18,9 +17,8 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/cache"
 	"github.com/grafana/dskit/flagext"
-	"github.com/grafana/dskit/kv"
-	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/runutil"
 	"github.com/grafana/dskit/services"
 	"github.com/pkg/errors"
@@ -38,18 +36,6 @@ import (
 	"github.com/grafana/mimir/pkg/util"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/validation"
-)
-
-const (
-	ringKey = "parquet-converter"
-
-	// ringAutoForgetUnhealthyPeriods is how many consecutive timeout periods an unhealthy instance
-	// in the ring will be automatically removed after.
-	ringAutoForgetUnhealthyPeriods = 10
-)
-
-var (
-	RingOp = ring.NewOp([]ring.InstanceState{ring.ACTIVE}, nil)
 )
 
 // blockConverter defines the interface for converting blocks to parquet format.
@@ -102,12 +88,17 @@ type Config struct {
 
 	CompressionEnabled bool `yaml:"compression_enabled" category:"advanced"`
 
-	ShardingRing RingConfig `yaml:"sharding_ring"`
+	LoadBalancingStrategy string              `yaml:"load_balancing_strategy"`
+	ShardingRing          RingConfig          `yaml:"sharding_ring"`
+	MemcachedLock         cache.BackendConfig `yaml:"locking"`
 }
 
 // RegisterFlags registers the ParquetConverter flags.
 func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
+	f.StringVar(&cfg.LoadBalancingStrategy, "parquet-converter.load-balancing-strategy", "ring", "The strategy to use to balance blocks to convert across multiple parquet-converter instances. Supported values: ring, locking.")
 	cfg.ShardingRing.RegisterFlags(f, logger)
+	f.StringVar(&cfg.MemcachedLock.Backend, "parquet-converter.locking.backend", "", "Backend for parquet-converter locking cache (used when load-balancing-strategy is 'locking'). Supported values: memcached.")
+	cfg.MemcachedLock.Memcached.RegisterFlagsWithPrefix("parquet-converter.locking.memcached.", f)
 	f.Var(&cfg.EnabledTenants, "parquet-converter.enabled-tenants", "Comma-separated list of tenants that can have their TSDB blocks converted into Parquet. If specified, the Parquet-converter only converts these tenants. Otherwise, it converts all tenants. Subject to sharding.")
 	f.Var(&cfg.DisabledTenants, "parquet-converter.disabled-tenants", "Comma-separated list of tenants that cannot have their TSDB blocks converted into Parquet. If specified, and the Parquet-converter would normally pick a given tenant to convert the blocks to Parquet (via -parquet-converter.enabled-tenants or sharding), it is ignored instead.")
 	f.DurationVar(&cfg.ConversionInterval, "parquet-converter.conversion-interval", time.Minute, "The frequency at which the conversion runs.")
@@ -134,12 +125,9 @@ type ParquetConverter struct {
 	limits              *validation.Overrides
 	bucketClientFactory func(ctx context.Context) (objstore.Bucket, error)
 
-	bucketClient objstore.Bucket
-
-	ringLifecycler         *ring.BasicLifecycler
-	ring                   *ring.Ring
-	ringSubservices        *services.Manager
-	ringSubservicesWatcher *services.FailureWatcher
+	bucketClient        objstore.Bucket
+	loadBalancer        loadBalancer
+	loadBalancerWatcher *services.FailureWatcher
 
 	blockConverter       blockConverter
 	baseConverterOptions []convert.ConvertOption
@@ -180,7 +168,29 @@ func NewParquetConverter(cfg Config, storageCfg mimir_tsdb.BlocksStorageConfig, 
 	bucketClientFactory := func(ctx context.Context) (objstore.Bucket, error) {
 		return bucket.NewClient(ctx, storageCfg.Bucket, "parquet-converter", logger, registerer)
 	}
-	return newParquetConverter(cfg, logger, registerer, bucketClientFactory, limits, defaultBlockConverter{})
+
+	var loadBalancer loadBalancer
+	switch cfg.LoadBalancingStrategy {
+	case "ring":
+		ringLB, err := newRingLoadBalancer(cfg.ShardingRing, logger, registerer)
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to create ring load balancer")
+		}
+		loadBalancer = ringLB
+	case "locking":
+		if cfg.MemcachedLock.Backend != "memcached" {
+			return nil, errors.New("locking backend must be 'memcached'")
+		}
+		lockingCache, err := cache.CreateClient("parquet-converter-lock", cfg.MemcachedLock, logger, registerer)
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to create locking cache client")
+		}
+		loadBalancer = newCacheLockLoadBalancer(lockingCache)
+	default:
+		return nil, fmt.Errorf("unsupported load balancing strategy: %s (supported: ring, locking)", cfg.LoadBalancingStrategy)
+	}
+
+	return newParquetConverter(cfg, logger, registerer, bucketClientFactory, limits, defaultBlockConverter{}, loadBalancer)
 }
 func newParquetConverter(
 	cfg Config,
@@ -189,6 +199,7 @@ func newParquetConverter(
 	bucketClientFactory func(ctx context.Context) (objstore.Bucket, error),
 	limits *validation.Overrides,
 	blockConverter blockConverter,
+	loadBalancer loadBalancer,
 ) (*ParquetConverter, error) {
 	cfg.allowedTenants = util.NewAllowList(cfg.EnabledTenants, cfg.DisabledTenants)
 
@@ -198,6 +209,7 @@ func newParquetConverter(
 		logger:               log.With(logger, "component", "parquet-converter"),
 		registerer:           registerer,
 		limits:               limits,
+		loadBalancer:         loadBalancer,
 		blockConverter:       blockConverter,
 		baseConverterOptions: buildBaseConverterOptions(cfg),
 		metrics:              newParquetConverterMetrics(registerer),
@@ -215,86 +227,15 @@ func (c *ParquetConverter) starting(ctx context.Context) error {
 		return errors.Wrap(err, "failed to create bucket client")
 	}
 
-	// Initialize the parquet-converters ring if sharding is enabled.
-	c.ring, c.ringLifecycler, err = newRingAndLifecycler(c.Cfg.ShardingRing, c.logger, c.registerer)
-	if err != nil {
-		return err
+	c.loadBalancerWatcher = services.NewFailureWatcher()
+	c.loadBalancerWatcher.WatchService(c.loadBalancer)
+
+	if err := services.StartAndAwaitRunning(ctx, c.loadBalancer); err != nil {
+		return errors.Wrap(err, "unable to start load balancer")
 	}
 
-	c.ringSubservices, err = services.NewManager(c.ringLifecycler, c.ring)
-	if err != nil {
-		return errors.Wrap(err, "unable to create parquet-converter ring dependencies")
-	}
-
-	c.ringSubservicesWatcher = services.NewFailureWatcher()
-	c.ringSubservicesWatcher.WatchManager(c.ringSubservices)
-	if err = c.ringSubservices.StartAsync(ctx); err != nil {
-		return errors.Wrap(err, "unable to start parquet-converter ring dependencies")
-	}
-
-	ctxTimeout, cancel := context.WithTimeout(ctx, c.Cfg.ShardingRing.WaitActiveInstanceTimeout)
-	defer cancel()
-	if err = c.ringSubservices.AwaitHealthy(ctxTimeout); err != nil {
-		return errors.Wrap(err, "unable to start parquet-converter ring dependencies")
-	}
-
-	// If sharding is enabled we should wait until this instance is ACTIVE within the ring. This
-	// MUST be done before starting any other component depending on the users scanner, because
-	// the users scanner depends on the ring (to check whether a user belongs to this shard or not).
-	level.Info(c.logger).Log("msg", "waiting until parquet-converter is ACTIVE in the ring")
-	if err = ring.WaitInstanceState(ctxTimeout, c.ring, c.ringLifecycler.GetInstanceID(), ring.ACTIVE); err != nil {
-		return errors.Wrap(err, "parquet-converter failed to become ACTIVE in the ring")
-	}
-
-	level.Info(c.logger).Log("msg", "parquet-converter is ACTIVE in the ring")
-
-	// In the event of a cluster cold start or scale up of 2+ parquet-converter instances at the same
-	// time, we may end up in a situation where each new parquet-converter instance starts at a slightly
-	// different time and thus each one starts with a different state of the ring. It's better
-	// to just wait a short time for ring stability.
-	if c.Cfg.ShardingRing.WaitStabilityMinDuration > 0 {
-		minWaiting := c.Cfg.ShardingRing.WaitStabilityMinDuration
-		maxWaiting := c.Cfg.ShardingRing.WaitStabilityMaxDuration
-
-		level.Info(c.logger).Log("msg", "waiting until parquet-converter ring topology is stable", "min_waiting", minWaiting.String(), "max_waiting", maxWaiting.String())
-		if err := ring.WaitRingStability(ctx, c.ring, RingOp, minWaiting, maxWaiting); err != nil {
-			level.Warn(c.logger).Log("msg", "parquet-converter ring topology is not stable after the max waiting time, proceeding anyway")
-		} else {
-			level.Info(c.logger).Log("msg", "parquet-converter ring topology is stable")
-		}
-	}
-
+	level.Info(c.logger).Log("msg", "parquet-converter started", "strategy", c.Cfg.LoadBalancingStrategy)
 	return nil
-}
-
-func newRingAndLifecycler(cfg RingConfig, logger log.Logger, reg prometheus.Registerer) (*ring.Ring, *ring.BasicLifecycler, error) {
-	reg = prometheus.WrapRegistererWithPrefix("cortex_", reg)
-	kvStore, err := kv.NewClient(cfg.Common.KVStore, ring.GetCodec(), kv.RegistererWithKVName(reg, "parquet-converter-lifecycler"), logger)
-	if err != nil {
-		return nil, nil, errors.Wrap(err, "failed to initialize parquet-converters' KV store")
-	}
-
-	lifecyclerCfg, err := cfg.ToBasicLifecyclerConfig(logger)
-	if err != nil {
-		return nil, nil, errors.Wrap(err, "failed to build parquet-converters' lifecycler config")
-	}
-
-	var delegate ring.BasicLifecyclerDelegate
-	delegate = ring.NewInstanceRegisterDelegate(ring.ACTIVE, lifecyclerCfg.NumTokens)
-	delegate = ring.NewLeaveOnStoppingDelegate(delegate, logger)
-	delegate = ring.NewAutoForgetDelegate(ringAutoForgetUnhealthyPeriods*lifecyclerCfg.HeartbeatTimeout, delegate, logger)
-
-	parquetConvertersLifecycler, err := ring.NewBasicLifecycler(lifecyclerCfg, "parquet-converter", ringKey, kvStore, delegate, logger, reg)
-	if err != nil {
-		return nil, nil, errors.Wrap(err, "failed to initialize parquet-converter' lifecycler")
-	}
-
-	parquetConvertersRing, err := ring.New(cfg.toRingConfig(), "parquet-converter", ringKey, logger, reg)
-	if err != nil {
-		return nil, nil, errors.Wrap(err, "failed to initialize parquet-converter' parquetConvertersRing client")
-	}
-
-	return parquetConvertersRing, parquetConvertersLifecycler, nil
 }
 
 func (c *ParquetConverter) running(ctx context.Context) error {
@@ -360,7 +301,7 @@ func (c *ParquetConverter) running(ctx context.Context) error {
 						}
 					}()
 
-					c.metrics.queueSize.Set(float64(c.conversionQueue.Size()))
+					c.metrics.queueSize.WithLabelValues(c.Cfg.LoadBalancingStrategy).Set(float64(c.conversionQueue.Size()))
 					c.metrics.queueItemsProcessed.WithLabelValues(task.UserID).Inc()
 
 					waitTime := time.Since(task.EnqueuedAt)
@@ -377,10 +318,9 @@ func (c *ParquetConverter) running(ctx context.Context) error {
 		select {
 		case <-ctx.Done():
 			return g.Wait()
-		case err := <-c.ringSubservicesWatcher.Chan():
-			return errors.Wrap(err, "parquet-converter ring subservice failed")
+		case err := <-c.loadBalancerWatcher.Chan():
+			return errors.Wrap(err, "parquet-converter load balancer failed")
 		case <-gCtx.Done():
-			// Check if any goroutine failed
 			return g.Wait()
 		}
 	}
@@ -447,7 +387,6 @@ func (c *ParquetConverter) discoverAndEnqueueBlocks(ctx context.Context) {
 
 			if c.conversionQueue.Push(task) {
 				c.metrics.queueItemsEnqueued.WithLabelValues(u).Inc()
-				// Mark block as queued to prevent duplicate queuing
 				c.queuedBlocks.Store(m.ULID, time.Now())
 
 				level.Info(blogger).Log(
@@ -460,7 +399,7 @@ func (c *ParquetConverter) discoverAndEnqueueBlocks(ctx context.Context) {
 				level.Warn(ulogger).Log("msg", "failed to enqueue block, queue closed", "block", m.ULID.String())
 			}
 
-			c.metrics.queueSize.Set(float64(c.conversionQueue.Size()))
+			c.metrics.queueSize.WithLabelValues(c.Cfg.LoadBalancingStrategy).Set(float64(c.conversionQueue.Size()))
 		}
 	}
 
@@ -472,7 +411,6 @@ func (c *ParquetConverter) processBlock(ctx context.Context, userID string, meta
 	var err error
 	var skipped bool
 	defer func() {
-		// Remove block from queued blocks map when processing completes (success or failure)
 		c.queuedBlocks.Delete(meta.ULID)
 
 		duration := time.Since(start)
@@ -481,6 +419,23 @@ func (c *ParquetConverter) processBlock(ctx context.Context, userID string, meta
 		} else if !skipped {
 			c.metrics.blocksConverted.WithLabelValues(userID).Inc()
 			c.metrics.conversionDuration.WithLabelValues(userID).Observe(duration.Seconds())
+		}
+	}()
+
+	var ok bool
+	ok, err = c.loadBalancer.lock(ctx, meta.ULID.String())
+	if err != nil {
+		level.Error(logger).Log("msg", "failed to acquire block processing rights", "block", meta.ULID.String(), "err", err)
+		return
+	}
+	if !ok {
+		skipped = true
+		level.Debug(logger).Log("msg", "skipped block, already being processed by another instance", "block", meta.ULID.String())
+		return
+	}
+	defer func() {
+		if err := c.loadBalancer.unlock(context.Background(), meta.ULID.String()); err != nil {
+			level.Warn(logger).Log("msg", "failed to notify block processing completion", "block", meta.ULID.String(), "err", err)
 		}
 	}()
 
@@ -541,14 +496,9 @@ func (c *ParquetConverter) processBlock(ctx context.Context, userID string, meta
 }
 
 func (c *ParquetConverter) stopping(_ error) error {
-	ctx := context.Background()
-
 	c.conversionQueue.Close()
 
-	if c.ringSubservices != nil {
-		return services.StopManagerAndAwaitStopped(ctx, c.ringSubservices)
-	}
-	return nil
+	return services.StopAndAwaitTerminated(context.Background(), c.loadBalancer)
 }
 
 // discoverUsers scans the bucket for users and returns a list of user IDs that are allowed to be converted.
@@ -597,32 +547,16 @@ func (c *ParquetConverter) metaSyncDirForUser(userID string) string {
 
 }
 
-func (c *ParquetConverter) ownBlock(id string) (bool, error) {
-	hasher := fnv.New32a()
-	_, _ = hasher.Write([]byte(id))
-	rs, err := c.ring.Get(hasher.Sum32(), RingOp, nil, nil, nil)
-	if err != nil {
-		return false, err
-	}
-
-	if len(rs.Instances) != 1 {
-		return false, fmt.Errorf("unexpected number of parquet-converter in the shard (expected 1, got %d)", len(rs.Instances))
-	}
-
-	return rs.Instances[0].Addr == c.ringLifecycler.GetInstanceAddr(), nil
-}
-
 // shouldProcessBlock determines whether a block should be processed for conversion to parquet.
 // It returns a reason string if the block should NOT be processed, an empty string means should process.
 func (c *ParquetConverter) shouldProcessBlock(ctx context.Context, meta *block.Meta, uBucket objstore.InstrumentedBucket) (string, error) {
-	owned, err := c.ownBlock(meta.ULID.String())
+	owned, err := c.loadBalancer.shouldEnqueue(ctx, meta.ULID.String())
 	if err != nil {
 		return "", fmt.Errorf("error checking block ownership: %w", err)
 	}
 	if !owned {
 		return "not owned", nil
 	}
-
 	if _, alreadyQueued := c.queuedBlocks.Load(meta.ULID); alreadyQueued {
 		return "already queued", nil
 	}
@@ -651,7 +585,6 @@ func (c *ParquetConverter) shouldProcessBlock(ctx context.Context, meta *block.M
 		}
 	}
 
-	// Make this the last check as it requires an object storage operation
 	mark, err := ReadConversionMark(ctx, meta.ULID, uBucket, nil)
 	if err != nil {
 		return "", fmt.Errorf("error reading conversion mark: %w", err)
