@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/dskit/cache"
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/kv/consul"
@@ -35,48 +36,73 @@ import (
 
 func TestParquetConverter(t *testing.T) {
 	user := "testuser"
-	t.Parallel()
 
-	bucketDir := t.TempDir()
-	bucketClient, err := filesystem.NewBucket(bucketDir)
-	println(bucketDir)
-	require.NoError(t, err)
-	uBucket := bucket.NewPrefixedBucketClient(bucketClient, user)
+	testCases := []struct {
+		name              string
+		setupLoadBalancer func(*testing.T) loadBalancer
+	}{
+		{
+			name: "ring strategy",
+			setupLoadBalancer: func(t *testing.T) loadBalancer {
+				ringCfg := prepareRingConfig(t)
+				ringCfg.Common.InstanceID = "converters-1"
+				ringCfg.Common.InstanceAddr = "1.2.3.4"
 
-	ctx := context.Background()
+				logs := &concurrency.SyncBuffer{}
+				registry := prometheus.NewRegistry()
+				ringLB, err := newRingLoadBalancer(ringCfg, log.NewLogfmtLogger(logs), registry)
+				require.NoError(t, err)
+				return ringLB
+			},
+		},
+		{
+			name: "locking strategy",
+			setupLoadBalancer: func(t *testing.T) loadBalancer {
+				return newCacheLockLoadBalancer(cache.NewMockCache())
+			},
+		},
+	}
 
-	bid := uploadTestBlock(ctx, t, uBucket)
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 
-	ringStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
-	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
+			bucketDir := t.TempDir()
+			bucketClient, err := filesystem.NewBucket(bucketDir)
+			println(bucketDir)
+			require.NoError(t, err)
+			uBucket := bucket.NewPrefixedBucketClient(bucketClient, user)
 
-	cfg := prepareConfig(t)
-	cfg.ShardingRing.Common.InstanceID = "converters-1"
-	cfg.ShardingRing.Common.InstanceAddr = "1.2.3.4"
-	cfg.ShardingRing.Common.KVStore.Mock = ringStore
+			ctx := context.Background()
 
-	c, _ := prepare(t, cfg, objstore.WithNoopInstr(bucketClient))
+			bid := uploadTestBlock(ctx, t, uBucket)
 
-	require.NoError(t, services.StartAndAwaitRunning(context.Background(), c))
-	t.Cleanup(func() { assert.NoError(t, services.StopAndAwaitTerminated(context.Background(), c)) })
+			cfg := prepareConfig()
+			loadBalancer := tc.setupLoadBalancer(t)
 
-	test.Poll(t, 10*time.Second, true, func() interface{} {
-		parquetFiles := 0
-		err := uBucket.Iter(ctx, bid.String(), func(name string) error {
-			if strings.HasSuffix(name, ".parquet") {
-				parquetFiles++
-			}
-			return nil
+			c, _ := prepare(t, cfg, objstore.WithNoopInstr(bucketClient), loadBalancer)
+
+			require.NoError(t, services.StartAndAwaitRunning(context.Background(), c))
+			t.Cleanup(func() { assert.NoError(t, services.StopAndAwaitTerminated(context.Background(), c)) })
+
+			test.Poll(t, 10*time.Second, true, func() interface{} {
+				parquetFiles := 0
+				err := uBucket.Iter(ctx, bid.String(), func(name string) error {
+					if strings.HasSuffix(name, ".parquet") {
+						parquetFiles++
+					}
+					return nil
+				})
+				require.NoError(t, err)
+				mark, err := ReadConversionMark(ctx, bid, uBucket, log.NewNopLogger())
+				require.NoError(t, err)
+				return parquetFiles == 2 && mark.Version == CurrentVersion
+			})
 		})
-		require.NoError(t, err)
-		mark, err := ReadConversionMark(ctx, bid, uBucket, log.NewNopLogger())
-		require.NoError(t, err)
-		return parquetFiles == 2 && mark.Version == CurrentVersion
-	})
-
+	}
 }
 
-func prepare(t *testing.T, cfg Config, bucketClient objstore.Bucket) (*ParquetConverter, *prometheus.Registry) {
+func prepare(t *testing.T, cfg Config, bucketClient objstore.Bucket, loadBalancer loadBalancer) (*ParquetConverter, *prometheus.Registry) {
 	var limits validation.Limits
 	flagext.DefaultValues(&limits)
 	overrides := validation.NewOverrides(limits, nil)
@@ -89,34 +115,42 @@ func prepare(t *testing.T, cfg Config, bucketClient objstore.Bucket) (*ParquetCo
 	bucketClientFactory := func(ctx context.Context) (objstore.Bucket, error) {
 		return bucketClient, nil
 	}
-	c, err := newParquetConverter(cfg, log.NewLogfmtLogger(logs), registry, bucketClientFactory, overrides, defaultBlockConverter{})
+
+	c, err := newParquetConverter(cfg, log.NewLogfmtLogger(logs), registry, bucketClientFactory, overrides, defaultBlockConverter{}, loadBalancer)
 	require.NoError(t, err)
 
 	return c, registry
 }
 
-func prepareConfig(t *testing.T) Config {
+func prepareConfig() Config {
 	cfg := Config{}
 	flagext.DefaultValues(&cfg)
-
-	// Do not wait for ring stability by default, in order to speed up tests.
-	cfg.ShardingRing.WaitStabilityMinDuration = 0
-	cfg.ShardingRing.WaitStabilityMaxDuration = 0
-
-	// Set lower timeout for waiting on converter to become ACTIVE in the ring for unit tests
-	cfg.ShardingRing.WaitActiveInstanceTimeout = 5 * time.Second
-
-	// Inject default KV store. Must be overridden if "real" sharding is required.
-	inmem, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
-	t.Cleanup(func() { _ = closer.Close() })
-	cfg.ShardingRing.Common.KVStore.Mock = inmem
-	cfg.ShardingRing.Common.InstanceAddr = "localhost"
 
 	// Speed up tests
 	cfg.ConversionInterval = 100 * time.Millisecond
 	cfg.DiscoveryInterval = 100 * time.Millisecond
 
 	cfg.MinCompactionLevel = 0
+	return cfg
+}
+
+func prepareRingConfig(t *testing.T) RingConfig {
+	cfg := RingConfig{}
+	flagext.DefaultValues(&cfg)
+
+	// Do not wait for ring stability by default, in order to speed up tests.
+	cfg.WaitStabilityMinDuration = 0
+	cfg.WaitStabilityMaxDuration = 0
+
+	// Set lower timeout for waiting on converter to become ACTIVE in the ring for unit tests
+	cfg.WaitActiveInstanceTimeout = 5 * time.Second
+
+	// Inject default KV store. Must be overridden if "real" sharding is required.
+	inmem, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
+	t.Cleanup(func() { _ = closer.Close() })
+	cfg.Common.KVStore.Mock = inmem
+	cfg.Common.InstanceAddr = "localhost"
+
 	return cfg
 }
 
@@ -248,19 +282,12 @@ func TestShouldProcessBlock(t *testing.T) {
 			require.NoError(t, err)
 			bucket := bucket.NewUserBucketClient("test", objstore.WithNoopInstr(bucketClient), nil)
 
-			// Setup ring (same pattern as TestParquetConverter)
-			ringStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
-			defer closer.Close()
-
-			cfg := prepareConfig(t)
+			cfg := prepareConfig()
 			if tt.cfg != nil {
 				cfg = tt.cfg(cfg)
 			}
-			cfg.ShardingRing.Common.InstanceID = "test-converter"
-			cfg.ShardingRing.Common.InstanceAddr = "1.2.3.4"
-			cfg.ShardingRing.Common.KVStore.Mock = ringStore
 
-			c, _ := prepare(t, cfg, bucketClient)
+			c, _ := prepare(t, cfg, bucketClient, newCacheLockLoadBalancer(cache.NewMockCache()))
 
 			// Start services for ring functionality
 			require.NoError(t, services.StartAndAwaitRunning(context.Background(), c))
