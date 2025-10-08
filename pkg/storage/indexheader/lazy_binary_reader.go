@@ -186,7 +186,7 @@ func tryDownloadSparseHeader(ctx context.Context, logger log.Logger, bkt objstor
 	dir := filepath.Dir(sparseHeaderPath)
 	if df, err := os.Open(dir); err != nil && os.IsNotExist(err) {
 		if err := os.MkdirAll(dir, os.ModePerm); err != nil {
-			level.Info(logger).Log("msg", "could not create directory for sparse index-header; will reconstruct when the block is queried", "err", err)
+			level.Warn(logger).Log("msg", "could not create directory for sparse index-header; will reconstruct when the block is queried", "err", err)
 			return
 		}
 	} else {
