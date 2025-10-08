@@ -40,7 +40,7 @@ func TestMatcherReducerPlanner_PlanIndexLookup(t *testing.T) {
 		{
 			name:                  "deduplicate matchers",
 			ctx:                   context.Background(),
-			inIndexMatchers:       []string{`foo="bar"`, `foo="bar"`, `foo=~".*baz.*"`, `foo=~".*baz.*"`},
+			inIndexMatchers:       []string{`foo="bar"`, `foo="bar"`, `foo="bar"`, `foo=~".*baz.*"`, `foo=~".*baz.*"`},
 			expectedIndexMatchers: []string{`foo="bar"`, `foo=~".*baz.*"`},
 		},
 		{
@@ -139,17 +139,22 @@ func TestMatcherReducerPlanner_PlanIndexLookup(t *testing.T) {
 }
 
 func assertEqualMatchers(t *testing.T, expected, actual []*labels.Matcher) {
+	actualMatchers := make(map[string]*labels.Matcher, len(actual))
+	for _, m := range actual {
+		actualMatchers[m.String()] = m
+	}
 	assert.Equal(t, len(expected), len(actual))
-	for i, m := range expected {
-		assert.NotNil(t, actual[i])
+	for _, m := range expected {
+		actualMatcher := actualMatchers[m.String()]
+		assert.NotNil(t, actualMatcher)
 		switch m.Type {
 		case labels.MatchEqual, labels.MatchNotEqual:
-			assert.Equal(t, m, actual[i])
+			assert.Equal(t, m, actualMatcher)
 		case labels.MatchRegexp, labels.MatchNotRegexp:
 			// We can't rely on the FastRegexMatcher pointer to be the same for all regex matchers
-			assert.Equal(t, m.Type, actual[i].Type)
-			assert.Equal(t, m.Name, actual[i].Name)
-			assert.Equal(t, m.Value, actual[i].Value)
+			assert.Equal(t, m.Type, actualMatcher.Type)
+			assert.Equal(t, m.Name, actualMatcher.Name)
+			assert.Equal(t, m.Value, actualMatcher.Value)
 		}
 	}
 }
