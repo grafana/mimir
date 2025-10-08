@@ -55,19 +55,19 @@ This document groups API endpoints by service. Note that the API endpoints are e
 | [Ingesters ring status](#ingesters-ring-status) | Distributor,Ingester | `GET /ingester/ring` |
 | [Ingester tenants](#ingester-tenants) | Ingester | `GET /ingester/tenants` |
 | [Ingester tenant TSDB](#ingester-tenant-tsdb) | Ingester | `GET /ingester/tsdb/{tenant}` |
-| [Instant query](#instant-query) | Querier, Query-frontend | `GET,POST <prometheus-http-prefix>/api/v1/query` |
-| [Range query](#range-query) | Querier, Query-frontend | `GET,POST <prometheus-http-prefix>/api/v1/query_range` |
-| [Exemplar query](#exemplar-query) | Querier, Query-frontend | `GET,POST <prometheus-http-prefix>/api/v1/query_exemplars` |
-| [Get series by label matchers](#get-series-by-label-matchers) | Querier, Query-frontend | `GET,POST <prometheus-http-prefix>/api/v1/series` |
+| [Instant query](#instant-query) | Query-frontend | `GET,POST <prometheus-http-prefix>/api/v1/query` |
+| [Range query](#range-query) | Query-frontend | `GET,POST <prometheus-http-prefix>/api/v1/query_range` |
+| [Exemplar query](#exemplar-query) | Query-frontend | `GET,POST <prometheus-http-prefix>/api/v1/query_exemplars` |
+| [Get series by label matchers](#get-series-by-label-matchers) | Query-frontend | `GET,POST <prometheus-http-prefix>/api/v1/series` |
 | [Get active series by selector](#get-active-series-by-selector) | Query-frontend | `GET, POST <prometheus-http-prefix>/api/v1/cardinality/active_series` |
-| [Get label names](#get-label-names) | Querier, Query-frontend | `GET,POST <prometheus-http-prefix>/api/v1/labels` |
-| [Get label values](#get-label-values) | Querier, Query-frontend | `GET <prometheus-http-prefix>/api/v1/label/{name}/values` |
-| [Get metric metadata](#get-metric-metadata) | Querier, Query-frontend | `GET <prometheus-http-prefix>/api/v1/metadata` |
-| [Remote read](#remote-read) | Querier, Query-frontend | `POST <prometheus-http-prefix>/api/v1/read` |
-| [Label names cardinality](#label-names-cardinality) | Querier, Query-frontend | `GET, POST <prometheus-http-prefix>/api/v1/cardinality/label_names` |
-| [Label values cardinality](#label-values-cardinality) | Querier, Query-frontend | `GET, POST <prometheus-http-prefix>/api/v1/cardinality/label_values` |
-| [Build information](#build-information) | Querier, Query-frontend, Ruler | `GET <prometheus-http-prefix>/api/v1/status/buildinfo` |
-| [Format query](#format-query) | Querier, Query-frontend | `GET, POST <prometheus-http-prefix>/api/v1/format_query` |
+| [Get label names](#get-label-names) | Query-frontend | `GET,POST <prometheus-http-prefix>/api/v1/labels` |
+| [Get label values](#get-label-values) | Query-frontend | `GET <prometheus-http-prefix>/api/v1/label/{name}/values` |
+| [Get metric metadata](#get-metric-metadata) | Query-frontend | `GET <prometheus-http-prefix>/api/v1/metadata` |
+| [Remote read](#remote-read) | Query-frontend | `POST <prometheus-http-prefix>/api/v1/read` |
+| [Label names cardinality](#label-names-cardinality) | Query-frontend | `GET, POST <prometheus-http-prefix>/api/v1/cardinality/label_names` |
+| [Label values cardinality](#label-values-cardinality) | Query-frontend | `GET, POST <prometheus-http-prefix>/api/v1/cardinality/label_values` |
+| [Build information](#build-information) | Query-frontend, Ruler | `GET <prometheus-http-prefix>/api/v1/status/buildinfo` |
+| [Format query](#format-query) | Query-frontend | `GET, POST <prometheus-http-prefix>/api/v1/format_query` |
 | [Get tenant ingestion stats](#get-tenant-ingestion-stats) | Querier | `GET /api/v1/user_stats` |
 | [Query-scheduler ring status](#query-scheduler-ring-status) | Query-scheduler | `GET /query-scheduler/ring` |
 | [Ruler ring status](#ruler-ring-status) | Ruler | `GET /ruler/ring` |
@@ -538,9 +538,9 @@ GET /ingester/tsdb/{tenant}
 
 Displays a web page with details about tenant's open TSDB on given ingester.
 
-## Querier / Query-frontend
+## Query-frontend
 
-The following endpoints are exposed both by the [querier](../architecture/components/querier/) and [query-frontend](../architecture/components/query-frontend/).
+The following endpoints are exposed by the [query-frontend](../architecture/components/query-frontend/).
 
 ### Instant query
 
