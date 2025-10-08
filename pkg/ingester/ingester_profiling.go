@@ -90,8 +90,12 @@ func (i *ProfilingWrapper) PushToStorageAndReleaseRequest(ctx context.Context, r
 	return i.ing.PushToStorageAndReleaseRequest(ctx, request)
 }
 
-func (i *ProfilingWrapper) NotifyPreCommit(ctx context.Context) error {
-	return i.ing.NotifyPreCommit(ctx)
+func (i *ProfilingWrapper) NotifyPostConsume(ctx context.Context, tenants map[string]int64) error {
+	return i.ing.NotifyPostConsume(ctx, tenants)
+}
+
+func (i *ProfilingWrapper) NotifyPreCommit(ctx context.Context, offset int64) error {
+	return i.ing.NotifyPreCommit(ctx, offset)
 }
 
 func (i *ProfilingWrapper) QueryStream(request *client.QueryRequest, server client.Ingester_QueryStreamServer) error {

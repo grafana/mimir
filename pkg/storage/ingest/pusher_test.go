@@ -46,7 +46,11 @@ func (p pusherFunc) PushToStorageAndReleaseRequest(ctx context.Context, request 
 	return p(ctx, request)
 }
 
-func (p pusherFunc) NotifyPreCommit(_ context.Context) error {
+func (p pusherFunc) NotifyPostConsume(_ context.Context, _ map[string]int64) error {
+	return nil
+}
+
+func (p pusherFunc) NotifyPreCommit(_ context.Context, _ int64) error {
 	return nil
 }
 
@@ -613,9 +617,110 @@ func (m *mockPusher) PushToStorageAndReleaseRequest(ctx context.Context, request
 	return args.Error(0)
 }
 
-func (m *mockPusher) NotifyPreCommit(_ context.Context) error {
-	args := m.Called()
+func (m *mockPusher) NotifyPreCommit(ctx context.Context, offset int64) error {
+	args := m.Called(ctx, offset)
 	return args.Error(0)
+}
+
+func (m *mockPusher) NotifyPostConsume(ctx context.Context, tenants map[string]int64) error {
+	args := m.Called(ctx, tenants)
+	return args.Error(0)
+}
+
+func TestPusherConsumer_NotifyPostConsume(t *testing.T) {
+	writeReq := &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{mockPreallocTimeseries("series_1")}}
+	reqBytes, err := writeReq.Marshal()
+	require.NoError(t, err)
+
+	records := []testRecord{
+		{tenantID: "tenant1", content: reqBytes},
+		{tenantID: "tenant2", content: reqBytes},
+		{tenantID: "tenant1", content: reqBytes},
+		{tenantID: "tenant3", content: reqBytes},
+	}
+
+	var pushCount atomic.Int32
+
+	pusher := &mockPusher{}
+	pusher.On("PushToStorageAndReleaseRequest", mock.Anything, mock.Anything).
+		Return(nil).
+		Run(func(args mock.Arguments) {
+			pushCount.Inc()
+		})
+
+	// Expect highest offset for each tenant.
+	expectedOffsets := map[string]int64{
+		"tenant1": 2,
+		"tenant2": 1,
+		"tenant3": 3,
+	}
+	pusher.On("NotifyPostConsume", mock.Anything, expectedOffsets).
+		Return(nil).
+		Run(func(args mock.Arguments) {
+			// Verify all pushes completed before NotifyPostConsume.
+			if pushCount.Load() != 4 {
+				t.Errorf("NotifyPostConsume called before all pushes completed: %d/4", pushCount.Load())
+			}
+		}).
+		Once()
+
+	metrics := NewPusherConsumerMetrics(prometheus.NewPedanticRegistry())
+	consumer := NewPusherConsumer(pusher, KafkaConfig{}, metrics, log.NewNopLogger())
+
+	kafkaRecords := func(yield func(*kgo.Record) bool) {
+		for i, r := range records {
+			rec := createRecord("test-topic", 1, r.content, r.version)
+			rec.Context = context.Background()
+			rec.Key = []byte(r.tenantID)
+			rec.Offset = int64(i)
+
+			if !yield(rec) {
+				return
+			}
+		}
+	}
+
+	err = consumer.Consume(context.Background(), kafkaRecords)
+	require.NoError(t, err)
+
+	pusher.AssertExpectations(t)
+}
+
+func TestPusherConsumer_NotifyPostConsume_NotCalledOnError(t *testing.T) {
+	writeReq := &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{mockPreallocTimeseries("series_1")}}
+	reqBytes, err := writeReq.Marshal()
+	require.NoError(t, err)
+
+	records := []testRecord{
+		{tenantID: "tenant1", content: reqBytes},
+		{tenantID: "tenant2", content: reqBytes},
+	}
+
+	pusher := &mockPusher{}
+	pusher.On("PushToStorageAndReleaseRequest", mock.Anything, mock.Anything).Return(nil).Once()
+	pusher.On("PushToStorageAndReleaseRequest", mock.Anything, mock.Anything).Return(errors.New("push failed")).Once()
+
+	metrics := NewPusherConsumerMetrics(prometheus.NewPedanticRegistry())
+	consumer := NewPusherConsumer(pusher, KafkaConfig{}, metrics, log.NewNopLogger())
+
+	kafkaRecords := func(yield func(*kgo.Record) bool) {
+		for i, r := range records {
+			rec := createRecord("test-topic", 1, r.content, r.version)
+			rec.Context = context.Background()
+			rec.Key = []byte(r.tenantID)
+			rec.Offset = int64(i)
+
+			if !yield(rec) {
+				return
+			}
+		}
+	}
+
+	err = consumer.Consume(context.Background(), kafkaRecords)
+	require.Error(t, err)
+
+	pusher.AssertExpectations(t)
+	pusher.AssertNotCalled(t, "NotifyPostConsume")
 }
 
 func TestParallelStorageShards_ShardWriteRequest(t *testing.T) {

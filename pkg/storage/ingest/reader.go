@@ -81,7 +81,7 @@ type PartitionReader struct {
 	newConsumer consumerFactory
 	metrics     ReaderMetrics
 
-	notifier  PreCommitNotifier
+	notifier  IngestStorageNotifier
 	committer *partitionCommitter
 
 	// consumedOffsetWatcher is used to wait until a given offset has been consumed.
@@ -106,7 +106,7 @@ func NewPartitionReaderForPusher(kafkaCfg KafkaConfig, partitionID int32, instan
 	return newPartitionReader(kafkaCfg, partitionID, instanceID, factory, pusher, logger, reg)
 }
 
-func newPartitionReader(kafkaCfg KafkaConfig, partitionID int32, instanceID string, consumer consumerFactory, notifier PreCommitNotifier, logger log.Logger, reg prometheus.Registerer) (*PartitionReader, error) {
+func newPartitionReader(kafkaCfg KafkaConfig, partitionID int32, instanceID string, consumer consumerFactory, notifier IngestStorageNotifier, logger log.Logger, reg prometheus.Registerer) (*PartitionReader, error) {
 	r := &PartitionReader{
 		kafkaCfg:                              kafkaCfg,
 		partitionID:                           partitionID,
@@ -922,7 +922,7 @@ type partitionCommitter struct {
 	toCommit  *atomic.Int64
 	admClient AdmClient
 
-	notifier PreCommitNotifier
+	notifier IngestStorageNotifier
 
 	logger log.Logger
 
@@ -937,7 +937,7 @@ type AdmClient interface {
 	CommitOffsets(ctx context.Context, group string, os kadm.Offsets) (kadm.OffsetResponses, error)
 }
 
-func newPartitionCommitter(kafkaCfg KafkaConfig, admClient AdmClient, partitionID int32, consumerGroup string, notifier PreCommitNotifier, logger log.Logger, reg prometheus.Registerer) *partitionCommitter {
+func newPartitionCommitter(kafkaCfg KafkaConfig, admClient AdmClient, partitionID int32, consumerGroup string, notifier IngestStorageNotifier, logger log.Logger, reg prometheus.Registerer) *partitionCommitter {
 	c := &partitionCommitter{
 		logger:        logger,
 		kafkaCfg:      kafkaCfg,
@@ -1010,7 +1010,7 @@ func (r *partitionCommitter) commit(ctx context.Context, offset int64) (returnEr
 	startTime := time.Now()
 	r.commitRequestsTotal.Inc()
 
-	notifyErr := r.notifier.NotifyPreCommit(ctx)
+	notifyErr := r.notifier.NotifyPreCommit(ctx, offset)
 
 	if notifyErr != nil {
 		level.Warn(r.logger).Log("msg", "pre-commit notification failed, continuing with commit", "err", notifyErr, "offset", offset)

@@ -95,7 +95,7 @@ func TestPartitionReader_ShouldHonorConfiguredFetchMaxWait(t *testing.T) {
 	cfg := defaultReaderTestConfig(t, "", topicName, partitionID, nil)
 	cfg.kafka.FetchMaxWait = fetchMaxWait
 
-	reader, err := newPartitionReader(cfg.kafka, cfg.partitionID, "test-group", cfg.consumer, &NoOpPreCommitNotifier{}, cfg.logger, cfg.registry)
+	reader, err := newPartitionReader(cfg.kafka, cfg.partitionID, "test-group", cfg.consumer, &NoOpNotifier{}, cfg.logger, cfg.registry)
 	require.NoError(t, err)
 	require.Equal(t, fetchMaxWait, reader.concurrentFetchersMinBytesMaxWaitTime)
 }
@@ -107,7 +107,7 @@ func TestPartitionReader_logFetchErrors(t *testing.T) {
 	)
 
 	cfg := defaultReaderTestConfig(t, "", topicName, partitionID, nil)
-	reader, err := newPartitionReader(cfg.kafka, cfg.partitionID, "test-group", cfg.consumer, &NoOpPreCommitNotifier{}, cfg.logger, cfg.registry)
+	reader, err := newPartitionReader(cfg.kafka, cfg.partitionID, "test-group", cfg.consumer, &NoOpNotifier{}, cfg.logger, cfg.registry)
 	require.NoError(t, err)
 
 	reader.logFetchErrors(kgo.Fetches{
@@ -2646,7 +2646,7 @@ func TestPartitionCommitter(t *testing.T) {
 		adm := kadm.NewClient(client)
 		reg := prometheus.NewPedanticRegistry()
 
-		committer := newPartitionCommitter(cfg, adm, partitionID, consumerGroup, &NoOpPreCommitNotifier{}, logger, reg)
+		committer := newPartitionCommitter(cfg, adm, partitionID, consumerGroup, &NoOpNotifier{}, logger, reg)
 		require.NoError(t, services.StartAndAwaitRunning(context.Background(), committer))
 		t.Cleanup(func() {
 			require.NoError(t, services.StopAndAwaitTerminated(context.Background(), committer))
@@ -2712,7 +2712,7 @@ func TestPartitionCommitter_commit(t *testing.T) {
 
 		adm := kadm.NewClient(client)
 		reg := prometheus.NewPedanticRegistry()
-		committer := newPartitionCommitter(cfg, adm, partitionID, consumerGroup, &NoOpPreCommitNotifier{}, log.NewNopLogger(), reg)
+		committer := newPartitionCommitter(cfg, adm, partitionID, consumerGroup, &NoOpNotifier{}, log.NewNopLogger(), reg)
 
 		require.NoError(t, committer.commit(context.Background(), 123))
 
@@ -2752,7 +2752,7 @@ func TestPartitionCommitter_commit(t *testing.T) {
 
 		adm := kadm.NewClient(client)
 		reg := prometheus.NewPedanticRegistry()
-		committer := newPartitionCommitter(cfg, adm, partitionID, consumerGroup, &NoOpPreCommitNotifier{}, log.NewNopLogger(), reg)
+		committer := newPartitionCommitter(cfg, adm, partitionID, consumerGroup, &NoOpNotifier{}, log.NewNopLogger(), reg)
 
 		require.Error(t, committer.commit(context.Background(), 123))
 
@@ -2913,7 +2913,7 @@ type readerTestCfg struct {
 	consumer          consumerFactory
 	registry          *prometheus.Registry
 	logger            log.Logger
-	preCommitNotifier PreCommitNotifier
+	preCommitNotifier IngestStorageNotifier
 }
 
 type readerTestCfgOpt func(cfg *readerTestCfg)
@@ -2956,7 +2956,7 @@ func withWaitStrongReadConsistencyTimeout(timeout time.Duration) func(cfg *reade
 	}
 }
 
-func withPreCommitNotifier(notifier PreCommitNotifier) func(cfg *readerTestCfg) {
+func withPreCommitNotifier(notifier IngestStorageNotifier) func(cfg *readerTestCfg) {
 	return func(cfg *readerTestCfg) {
 		cfg.preCommitNotifier = notifier
 	}
@@ -3020,7 +3020,7 @@ func createReader(t *testing.T, addr string, topicName string, partitionID int32
 
 	notifier := cfg.preCommitNotifier
 	if notifier == nil {
-		notifier = &NoOpPreCommitNotifier{}
+		notifier = &NoOpNotifier{}
 	}
 
 	reader, err := newPartitionReader(cfg.kafka, cfg.partitionID, "test-group", cfg.consumer, notifier, cfg.logger, cfg.registry)
@@ -3313,7 +3313,11 @@ type testPreCommitNotifier struct {
 	onNotify    func()
 }
 
-func (t *testPreCommitNotifier) NotifyPreCommit(_ context.Context) error {
+func (t *testPreCommitNotifier) NotifyPostConsume(_ context.Context, _ map[string]int64) error {
+	return nil
+}
+
+func (t *testPreCommitNotifier) NotifyPreCommit(_ context.Context, _ int64) error {
 	t.notifyCount.Inc()
 	if t.onNotify != nil {
 		t.onNotify()

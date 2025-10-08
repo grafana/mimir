@@ -12280,9 +12280,17 @@ func TestIngester_NotifyPreCommit(t *testing.T) {
 		return 0
 	}
 
+	err = ingester.NotifyPostConsume(context.Background(), map[string]int64{
+		"user1": 100,
+		"user2": 200,
+		"user3": 300,
+	})
+	require.NoError(t, err)
+
 	fsyncCountBefore := getFsyncCount()
 
-	err = ingester.NotifyPreCommit(context.Background())
+	// Now notify pre-commit with an offset
+	err = ingester.NotifyPreCommit(context.Background(), 300)
 	require.NoError(t, err)
 
 	fsyncCountAfter := getFsyncCount()

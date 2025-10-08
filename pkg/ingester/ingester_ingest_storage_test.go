@@ -834,6 +834,98 @@ func TestIngester_timeUntilCompaction(t *testing.T) {
 	}
 }
 
+func TestIngester_TenantFilteringInNotifyMethods(t *testing.T) {
+	t.Run("NotifyPostConsume should track tenant offsets", func(t *testing.T) {
+		ctx := context.Background()
+		cfg := defaultIngesterTestConfig(t)
+		cfg.IngestStorageConfig.WriteLogsFsyncBeforeKafkaCommit = true
+		reg := prometheus.NewRegistry()
+		overrides := validation.NewOverrides(defaultLimitsTestConfig(), nil)
+
+		ingester, _, _ := createTestIngesterWithIngestStorage(t, &cfg, overrides, reg)
+		require.NoError(t, services.StartAndAwaitRunning(ctx, ingester))
+		t.Cleanup(func() {
+			require.NoError(t, services.StopAndAwaitTerminated(ctx, ingester))
+		})
+
+		// Wait until it's healthy
+		test.Poll(t, 1*time.Second, 1, func() interface{} {
+			return ingester.lifecycler.HealthyInstancesCount()
+		})
+
+		// Notify with some tenants
+		tenants := map[string]int64{
+			"tenant1": 100,
+			"tenant2": 200,
+			"tenant3": 300,
+		}
+		err := ingester.NotifyPostConsume(ctx, tenants)
+		require.NoError(t, err)
+
+		// Verify all tenants are tracked
+		assert.Equal(t, int64(100), ingester.tenantConsumedOffsets["tenant1"])
+		assert.Equal(t, int64(200), ingester.tenantConsumedOffsets["tenant2"])
+		assert.Equal(t, int64(300), ingester.tenantConsumedOffsets["tenant3"])
+
+		// Notify again with updated offsets
+		updatedTenants := map[string]int64{
+			"tenant1": 150, // Updated
+			"tenant4": 400, // New tenant
+		}
+		err = ingester.NotifyPostConsume(ctx, updatedTenants)
+		require.NoError(t, err)
+
+		// Verify offsets are updated correctly
+		assert.Equal(t, int64(150), ingester.tenantConsumedOffsets["tenant1"])
+		assert.Equal(t, int64(200), ingester.tenantConsumedOffsets["tenant2"])
+		assert.Equal(t, int64(300), ingester.tenantConsumedOffsets["tenant3"])
+		assert.Equal(t, int64(400), ingester.tenantConsumedOffsets["tenant4"])
+	})
+
+	t.Run("NotifyPreCommit should remove tenants with offset <= committed offset", func(t *testing.T) {
+		ctx := context.Background()
+		cfg := defaultIngesterTestConfig(t)
+		cfg.IngestStorageConfig.WriteLogsFsyncBeforeKafkaCommit = true
+		reg := prometheus.NewRegistry()
+		overrides := validation.NewOverrides(defaultLimitsTestConfig(), nil)
+
+		ingester, _, _ := createTestIngesterWithIngestStorage(t, &cfg, overrides, reg)
+		require.NoError(t, services.StartAndAwaitRunning(ctx, ingester))
+		t.Cleanup(func() {
+			require.NoError(t, services.StopAndAwaitTerminated(ctx, ingester))
+		})
+
+		// Wait until it's healthy
+		test.Poll(t, 1*time.Second, 1, func() interface{} {
+			return ingester.lifecycler.HealthyInstancesCount()
+		})
+
+		// Set up tracking with various offsets
+		ingester.tenantConsumedOffsets = map[string]int64{
+			"tenant1": 100, // Will be removed (< 200)
+			"tenant2": 200, // Will be removed (== 200)
+			"tenant3": 250, // Will remain (> 200)
+			"tenant4": 300, // Will remain (> 200)
+		}
+
+		err := ingester.NotifyPreCommit(ctx, 200)
+		require.NoError(t, err)
+
+		// Verify only tenants with offset > 200 remain
+		assert.NotContains(t, ingester.tenantConsumedOffsets, "tenant1")
+		assert.NotContains(t, ingester.tenantConsumedOffsets, "tenant2")
+		assert.Equal(t, int64(250), ingester.tenantConsumedOffsets["tenant3"])
+		assert.Equal(t, int64(300), ingester.tenantConsumedOffsets["tenant4"])
+
+		err = ingester.NotifyPreCommit(ctx, 250)
+		require.NoError(t, err)
+
+		// Verify tenant3 is now removed, only tenant4 remains
+		assert.NotContains(t, ingester.tenantConsumedOffsets, "tenant3")
+		assert.Equal(t, int64(300), ingester.tenantConsumedOffsets["tenant4"])
+	})
+}
+
 // Returned ingester is NOT started.
 func createTestIngesterWithIngestStorage(t testing.TB, ingesterCfg *Config, overrides *validation.Overrides, reg prometheus.Registerer) (*Ingester, *kfake.Cluster, *ring.PartitionRingWatcher) {
 	var (

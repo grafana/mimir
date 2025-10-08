@@ -7220,7 +7220,11 @@ func (c *mockIngesterPusherAdapter) PushToStorageAndReleaseRequest(ctx context.C
 	return err
 }
 
-func (c *mockIngesterPusherAdapter) NotifyPreCommit(_ context.Context) error {
+func (c *mockIngesterPusherAdapter) NotifyPostConsume(_ context.Context, _ map[string]int64) error {
+	return nil
+}
+
+func (c *mockIngesterPusherAdapter) NotifyPreCommit(_ context.Context, _ int64) error {
 	return nil
 }
 

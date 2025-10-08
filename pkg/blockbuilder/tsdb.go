@@ -347,7 +347,11 @@ func (b *TSDBBuilder) newTSDB(tenant tsdbTenant) (*userTSDB, error) {
 	return udb, nil
 }
 
-func (b *TSDBBuilder) NotifyPreCommit(_ context.Context) error {
+func (b *TSDBBuilder) NotifyPostConsume(_ context.Context, _ map[string]int64) error {
+	return nil
+}
+
+func (b *TSDBBuilder) NotifyPreCommit(_ context.Context, _ int64) error {
 	return nil
 }
 

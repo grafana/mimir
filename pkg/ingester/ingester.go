@@ -356,6 +356,9 @@ type Ingester struct {
 	ingestPartitionID         int32
 	ingestPartitionLifecycler *ring.PartitionInstanceLifecycler
 
+	tenantConsumedOffsets map[string]int64
+	tenantOffsetsMtx      sync.RWMutex
+
 	circuitBreaker  ingesterCircuitBreaker
 	reactiveLimiter *ingesterReactiveLimiter
 }
@@ -387,6 +390,8 @@ func newIngester(cfg Config, limits *validation.Overrides, registerer prometheus
 		forceCompactTrigger: make(chan requestWithUsersAndCallback),
 		shipTrigger:         make(chan requestWithUsersAndCallback),
 		seriesHashCache:     hashcache.NewSeriesHashCache(cfg.BlocksStorageConfig.TSDB.SeriesHashCacheMaxBytes),
+
+		tenantConsumedOffsets: make(map[string]int64),
 
 		errorSamplers: newIngesterErrSamplers(cfg.ErrorSampleRate),
 	}, nil
@@ -4383,18 +4388,53 @@ func timeUntilCompaction(now time.Time, compactionInterval, zoneOffset time.Dura
 	return compactionInterval - timeSinceLastCompaction
 }
 
-func (i *Ingester) NotifyPreCommit(ctx context.Context) error {
+func (i *Ingester) NotifyPostConsume(_ context.Context, updated map[string]int64) error {
+	if !i.cfg.IngestStorageConfig.WriteLogsFsyncBeforeKafkaCommit {
+		return nil
+	}
+
+	i.tenantOffsetsMtx.Lock()
+	defer i.tenantOffsetsMtx.Unlock()
+	for t, offset := range updated {
+		i.tenantConsumedOffsets[t] = offset
+	}
+	return nil
+}
+
+func (i *Ingester) NotifyPreCommit(ctx context.Context, offset int64) error {
 	if !i.cfg.IngestStorageConfig.WriteLogsFsyncBeforeKafkaCommit {
 		return nil
 	}
 
 	level.Debug(i.logger).Log("msg", "fsyncing tsdbs")
 
-	return concurrency.ForEachUser(ctx, i.getTSDBUsers(), i.cfg.IngestStorageConfig.WriteLogsFsyncBeforeKafkaCommitConcurrency, func(ctx context.Context, userID string) error {
+	i.tenantOffsetsMtx.Lock()
+	toNotify := make([]string, 0, len(i.tenantConsumedOffsets))
+	for tenantID := range i.tenantConsumedOffsets {
+		toNotify = append(toNotify, tenantID)
+	}
+	i.tenantOffsetsMtx.Unlock()
+
+	err := concurrency.ForEachUser(ctx, toNotify, i.cfg.IngestStorageConfig.WriteLogsFsyncBeforeKafkaCommitConcurrency, func(ctx context.Context, userID string) error {
 		db, err := i.getOrCreateTSDB(userID)
 		if err != nil {
 			return err
 		}
 		return db.Head().FsyncWLSegments()
 	})
+	if err != nil {
+		return err
+	}
+
+	// At this point, we can be sure all data up to the offset have been fsynced.
+	// We can delete the tenants from the tracking map if their consumed offset is <= the offset to be committed;
+	// they won't need to be fysnced again unless more records are consumed.
+	i.tenantOffsetsMtx.Lock()
+	for tenantID, tenantOffset := range i.tenantConsumedOffsets {
+		if tenantOffset <= offset {
+			delete(i.tenantConsumedOffsets, tenantID)
+		}
+	}
+	i.tenantOffsetsMtx.Unlock()
+	return nil
 }

@@ -40,8 +40,12 @@ func (i *ActivityTrackerWrapper) PushToStorageAndReleaseRequest(ctx context.Cont
 	return i.ing.PushToStorageAndReleaseRequest(ctx, request)
 }
 
-func (i *ActivityTrackerWrapper) NotifyPreCommit(ctx context.Context) error {
-	return i.ing.NotifyPreCommit(ctx)
+func (i *ActivityTrackerWrapper) NotifyPostConsume(ctx context.Context, tenants map[string]int64) error {
+	return i.ing.NotifyPostConsume(ctx, tenants)
+}
+
+func (i *ActivityTrackerWrapper) NotifyPreCommit(ctx context.Context, offset int64) error {
+	return i.ing.NotifyPreCommit(ctx, offset)
 }
 
 func (i *ActivityTrackerWrapper) QueryStream(request *client.QueryRequest, server client.Ingester_QueryStreamServer) error {

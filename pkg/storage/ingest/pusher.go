@@ -27,17 +27,22 @@ import (
 
 type Pusher interface {
 	PushToStorageAndReleaseRequest(context.Context, *mimirpb.WriteRequest) error
-	PreCommitNotifier
+	IngestStorageNotifier
 }
 
-type PreCommitNotifier interface {
-	NotifyPreCommit(ctx context.Context) error
+type IngestStorageNotifier interface {
+	NotifyPostConsume(ctx context.Context, tenants map[string]int64) error
+	NotifyPreCommit(ctx context.Context, offset int64) error
 }
 
-type NoOpPreCommitNotifier struct {
+type NoOpNotifier struct {
 }
 
-func (n *NoOpPreCommitNotifier) NotifyPreCommit(_ context.Context) error {
+func (n *NoOpNotifier) NotifyPostConsume(_ context.Context, _ map[string]int64) error {
+	return nil
+}
+
+func (n *NoOpNotifier) NotifyPreCommit(_ context.Context, _ int64) error {
 	return nil
 }
 
@@ -135,8 +140,10 @@ func (c PusherConsumer) Consume(ctx context.Context, records iter.Seq[*kgo.Recor
 	// We accumulate the total bytes across all records per tenant to determine the number of timeseries we expected to receive.
 	// Then, we'll use that to determine the number of shards we need to parallelize the writes.
 	var bytesPerTenant = make(map[string]int)
+	var offsetPerTenant = make(map[string]int64)
 	for rec := range records {
 		bytesPerTenant[string(rec.Key)] += len(rec.Value)
+		offsetPerTenant[string(rec.Key)] = rec.Offset
 	}
 
 	// Create and start the storage writer.
@@ -165,6 +172,11 @@ func (c PusherConsumer) Consume(ctx context.Context, records iter.Seq[*kgo.Recor
 			cancel(cancellation.NewErrorf("error while pushing to storage")) // Stop the unmarshalling goroutine.
 			return fmt.Errorf("consuming record at offset %d for tenant %s: %w", r.offset, r.tenantID, err)
 		}
+	}
+
+	err := c.pusher.NotifyPostConsume(ctx, offsetPerTenant)
+	if err != nil {
+		level.Warn(c.logger).Log("failed to notify post consume, continuing", "err", err)
 	}
 
 	cancel(cancellation.NewErrorf("done unmarshalling records"))
