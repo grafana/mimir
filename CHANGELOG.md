@@ -114,8 +114,9 @@
 * [CHANGE] Ingester: Disable shipping of blocks on the third zone (zone-c) when using `ingest_storage_ingester_zones: 3` on ingest storage #12743 #12744
 * [CHANGE] Distributor: Increase `server.grpc-max-concurrent-streams` from 100 to 1000. #12742
 * [CHANGE] Ruler Query Frontend: Increase `server.grpc-max-concurrent-streams` from 100 to 300. #12742
-* [ENHANCEMENT] Add timeout validation for querier and query-frontend. Enhanced `parseDuration` to support milliseconds and combined formats (e.g., "4m30s"). #12766
 * [CHANGE] Rollout-operator: Vendor jsonnet from rollout-operator repository. #12688
+* [FEATURE] Memcached: Allow `minReadySeconds` to be set via `_config.cache_frontend_min_ready_seconds` (etc.) to slow down Memcached rollouts. #12938
+* [ENHANCEMENT] Add timeout validation for querier and query-frontend. Enhanced `parseDuration` to support milliseconds and combined formats (e.g., "4m30s"). #12766
 * [ENHANCEMENT] Allow the max number of OTEL events in a span to be configure via `_config.otel_span_event_count_limit`. #12865
 
 ### Documentation
