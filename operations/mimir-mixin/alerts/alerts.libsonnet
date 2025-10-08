@@ -6,19 +6,27 @@ local utils = import 'mixin-utils/utils.libsonnet';
     assert std.isArray(strings) : 'simpleRegexpOpt requires that `strings` is an array of strings`';
     '(' + std.join('|', strings) + ')',
 
-  local groupDeploymentByRolloutGroup(metricName) =
-    'sum without(deployment) (label_replace(%s, "rollout_group", "$1", "deployment", "(.*?)(?:-zone-[a-z])?"))' % metricName,
+  local excludeWorkloads(labelName, values) =
+    if std.length(values) == 0 then '' else '{%s!~"%s"}' % [labelName, std.join('|', values)],
 
-  local groupStatefulSetByRolloutGroup(metricName) =
-    'sum by (%s, rollout_group) (label_replace(%s, "rollout_group", "$1", "statefulset", "(.*?)(?:-zone-[a-z])?"))' % [
-      $._config.alert_aggregation_labels,
+  local groupDeploymentByRolloutGroup(metricName, ignore) =
+    'sum without(deployment) (label_replace(%s%s, "rollout_group", "$1", "deployment", "(.*?)(?:-zone-[a-z])?"))' % [
       metricName,
+      excludeWorkloads('deployment', ignore),
     ],
 
-  local groupStatefulSetByRolloutGroupAndRevision(metricName) =
-    'sum by (%s, rollout_group, revision) (label_replace(%s, "rollout_group", "$1", "statefulset", "(.*?)(?:-zone-[a-z])?"))' % [
+  local groupStatefulSetByRolloutGroup(metricName, ignore) =
+    'sum by (%s, rollout_group) (label_replace(%s%s, "rollout_group", "$1", "statefulset", "(.*?)(?:-zone-[a-z])?"))' % [
       $._config.alert_aggregation_labels,
       metricName,
+      excludeWorkloads('statefulset', ignore),
+    ],
+
+  local groupStatefulSetByRolloutGroupAndRevision(metricName, ignore) =
+    'sum by (%s, rollout_group, revision) (label_replace(%s%s, "rollout_group", "$1", "statefulset", "(.*?)(?:-zone-[a-z])?"))' % [
+      $._config.alert_aggregation_labels,
+      metricName,
+      excludeWorkloads('statefulset', ignore),
     ],
 
   local request_metric = 'cortex_request_duration_seconds',
@@ -615,11 +623,11 @@ local utils = import 'mixin-utils/utils.libsonnet';
         ||| % {
           aggregation_labels: $._config.alert_aggregation_labels,
           // Indicates the revision of the StatefulSet used to generate current replicas.
-          kube_statefulset_status_current_revision: groupStatefulSetByRolloutGroupAndRevision('kube_statefulset_status_current_revision'),
+          kube_statefulset_status_current_revision: groupStatefulSetByRolloutGroupAndRevision('kube_statefulset_status_current_revision', $._config.rollout_stuck_alert_ignore_statefulsets),
           // Indicates the revision of the StatefulSet used to generate replicas being updated.
-          kube_statefulset_status_update_revision: groupStatefulSetByRolloutGroupAndRevision('kube_statefulset_status_update_revision'),
-          kube_statefulset_replicas: groupStatefulSetByRolloutGroup('kube_statefulset_replicas'),
-          kube_statefulset_status_replicas_updated: groupStatefulSetByRolloutGroup('kube_statefulset_status_replicas_updated'),
+          kube_statefulset_status_update_revision: groupStatefulSetByRolloutGroupAndRevision('kube_statefulset_status_update_revision', $._config.rollout_stuck_alert_ignore_statefulsets),
+          kube_statefulset_replicas: groupStatefulSetByRolloutGroup('kube_statefulset_replicas', $._config.rollout_stuck_alert_ignore_statefulsets),
+          kube_statefulset_status_replicas_updated: groupStatefulSetByRolloutGroup('kube_statefulset_status_replicas_updated', $._config.rollout_stuck_alert_ignore_statefulsets),
           range_interval: '15m:' + $.alertRangeInterval(1),
         },
         'for': for_duration,
@@ -649,8 +657,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
           * on(%(aggregation_labels)s) group_left max by(%(aggregation_labels)s) (cortex_build_info)
         ||| % {
           aggregation_labels: $._config.alert_aggregation_labels,
-          kube_deployment_spec_replicas: groupDeploymentByRolloutGroup('kube_deployment_spec_replicas'),
-          kube_deployment_status_replicas_updated: groupDeploymentByRolloutGroup('kube_deployment_status_replicas_updated'),
+          kube_deployment_spec_replicas: groupDeploymentByRolloutGroup('kube_deployment_spec_replicas', $._config.rollout_stuck_alert_ignore_deployments),
+          kube_deployment_status_replicas_updated: groupDeploymentByRolloutGroup('kube_deployment_status_replicas_updated', $._config.rollout_stuck_alert_ignore_deployments),
           range_interval: '15m:' + $.alertRangeInterval(1),
         },
         'for': for_duration,
