@@ -1025,6 +1025,7 @@ func TestDispatcher_HandleProtobuf_WithDelayedNameRemovalEnabled(t *testing.T) {
 					NodeIndex: nodeIndex,
 				},
 			},
+			BatchSize: 1,
 		}
 
 		req, err := prototypes.MarshalAny(body)
