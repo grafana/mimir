@@ -538,9 +538,9 @@ GET /ingester/tsdb/{tenant}
 
 Displays a web page with details about tenant's open TSDB on given ingester.
 
-## Querier / Query-frontend
+## Query-frontend
 
-The following endpoints are exposed both by the [querier](../architecture/components/querier/) and [query-frontend](../architecture/components/query-frontend/).
+The following endpoints are exposed by the [query-frontend](../architecture/components/query-frontend/).
 
 ### Instant query
 
