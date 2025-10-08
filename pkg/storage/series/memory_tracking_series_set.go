@@ -13,7 +13,6 @@ import (
 type MemoryTrackingSeriesSet struct {
 	inner                    storage.SeriesSet
 	memoryConsumptionTracker *limiter.MemoryConsumptionTracker
-	currentSeries            storage.Series
 	memoryDecreased          bool
 }
 
@@ -25,8 +24,6 @@ func NewMemoryTrackingSeriesSet(inner storage.SeriesSet, memoryConsumptionTracke
 }
 
 func (m *MemoryTrackingSeriesSet) Next() bool {
-	// Reset tracking state when moving to next series
-	m.currentSeries = nil
 	// This flag is needed because some SeriesSet implementation might reuse internal pointer of currentSeries.
 	m.memoryDecreased = false
 	return m.inner.Next()
@@ -38,7 +35,6 @@ func (m *MemoryTrackingSeriesSet) At() storage.Series {
 	// Only decrease memory once per each single Next() call and multiple At() call
 	if !m.memoryDecreased {
 		// New series at this position
-		m.currentSeries = at
 		m.memoryDecreased = true
 		// The caller should IncreaseMemoryConsumption for labels if they want to retain the labels.
 		m.memoryConsumptionTracker.DecreaseMemoryConsumptionForLabels(at.Labels())
