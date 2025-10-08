@@ -10,7 +10,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/cespare/xxhash/v2"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/prometheus/prometheus/util/zeropool"
@@ -71,12 +70,8 @@ func (t *trackerStore) trackSeries(ctx context.Context, tenantID string, series 
 	tenant := t.getOrCreateTenant(tenantID)
 	defer tenant.RUnlock()
 
-	// Sort series by shard.
-	// Start each tenant on its own shard to avoid hotspots.
-	tenantStartingShard := xxhash.Sum64String(tenantID) % shards
-	slices.SortFunc(series, func(a, b uint64) int {
-		return int((a%shards+tenantStartingShard)%shards) - int((b%shards+tenantStartingShard)%shards)
-	})
+	// Sort series by shard to minimize lock contention by taking mutex once for each shard.
+	slices.SortFunc(series, func(a, b uint64) int { return int(a%shards) - int(b%shards) })
 
 	now := clock.ToMinutes(timeNow)
 
