@@ -234,6 +234,8 @@ func (analyzer *ShardingAnalyzer) Analyze(expr parser.Expr) (result ShardingAnal
 		return UnshardedExpression(), nil
 	case *parser.ParenExpr:
 		return analyzer.Analyze(expr.Expr)
+	case *parser.StepInvariantExpr:
+		return analyzer.Analyze(expr.Expr)
 	case *parser.AggregateExpr:
 		if CanParallelize(expr, analyzer.logger) {
 			selectorCount := 1

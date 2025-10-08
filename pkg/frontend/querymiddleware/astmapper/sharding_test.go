@@ -10,8 +10,11 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/go-kit/log"
+	"github.com/prometheus/prometheus/model/timestamp"
+	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -583,40 +586,69 @@ func TestSharding(t *testing.T) {
 			out:                      `scalar(sum(` + concatShards(t, shardCount, `sum(foo{__query_shard__="x_of_y"})`) + `))`,
 			expectedShardableQueries: 1,
 		},
+		{
+			in:                       `sum(bar2 @ 123)`,
+			out:                      `sum(` + concatShards(t, shardCount, `sum(bar2{__query_shard__="x_of_y"} @ 123)`) + `)`,
+			expectedShardableQueries: 1,
+		},
+		{
+			in: `count(bar1) or (sum(bar2 @ 123))`,
+			out: `sum(` + concatShards(t, shardCount, `count(bar1{__query_shard__="x_of_y"})`) + `)` +
+				` or (sum(` + concatShards(t, shardCount, `sum(bar2{__query_shard__="x_of_y"} @ 123)`) + `))`,
+			expectedShardableQueries: 2,
+		},
 	} {
 		t.Run(tt.in, func(t *testing.T) {
-			t.Run("applying sharding", func(t *testing.T) {
-				stats := NewMapperStats()
-				summer := NewQueryShardSummer(shardCount, EmbeddedQueriesSquasher, log.NewNopLogger(), stats)
-				expr, err := parser.ParseExpr(tt.in)
-				require.NoError(t, err)
-				expectedExpr, err := parser.ParseExpr(tt.out)
-				require.NoError(t, err)
+			for _, preprocess := range []bool{true, false} {
+				startT := timestamp.Time(1000)
+				endT := startT.Add(5 * time.Minute)
 
-				ctx := context.Background()
-				mapped, err := summer.Map(ctx, expr)
-				require.NoError(t, err)
-				require.Equal(t, expectedExpr.String(), mapped.String())
-				require.Equal(t, tt.expectedShardableQueries*shardCount, stats.GetShardedQueries())
-			})
+				parseInputAndPreprocess := func(t *testing.T) parser.Expr {
+					expr, err := parser.ParseExpr(tt.in)
+					require.NoError(t, err)
 
-			t.Run("analyzing", func(t *testing.T) {
-				expr, err := parser.ParseExpr(tt.in)
-				require.NoError(t, err)
-				analyzer := NewShardingAnalyzer(log.NewNopLogger())
+					if preprocess {
+						expr, err = promql.PreprocessExpr(expr, startT, endT, time.Minute)
+						require.NoError(t, err)
+					}
 
-				analysisResult, err := analyzer.Analyze(expr)
-				require.NoError(t, err)
-				hasVectorSelectors := AnyNode(expr, isVectorSelector)
-
-				if hasVectorSelectors {
-					require.Equal(t, tt.expectedShardableQueries > 0, analysisResult.WillShardAllSelectors, "Analyze should be true if the expression is shardable, and false otherwise")
-					require.Equal(t, tt.expectedShardableQueries, analysisResult.ShardedSelectors)
-				} else {
-					require.True(t, analysisResult.WillShardAllSelectors, "expression has no selectors")
-					require.Equal(t, 0, analysisResult.ShardedSelectors, "expression has no selectors")
+					return expr
 				}
-			})
+
+				t.Run(fmt.Sprintf("preprocess expression=%v", preprocess), func(t *testing.T) {
+					t.Run("applying sharding", func(t *testing.T) {
+						stats := NewMapperStats()
+						summer := NewQueryShardSummer(shardCount, EmbeddedQueriesSquasher, log.NewNopLogger(), stats)
+						expr := parseInputAndPreprocess(t)
+						expectedExpr, err := parser.ParseExpr(tt.out)
+						require.NoError(t, err)
+
+						ctx := context.Background()
+						mapped, err := summer.Map(ctx, expr)
+						require.NoError(t, err)
+						require.Equal(t, expectedExpr.String(), mapped.String())
+						require.Equal(t, tt.expectedShardableQueries*shardCount, stats.GetShardedQueries())
+					})
+
+					t.Run("analyzing", func(t *testing.T) {
+						expr := parseInputAndPreprocess(t)
+						analyzer := NewShardingAnalyzer(log.NewNopLogger())
+
+						analysisResult, err := analyzer.Analyze(expr)
+						require.NoError(t, err)
+						hasVectorSelectors := AnyNode(expr, isVectorSelector)
+						require.NoError(t, err)
+
+						if hasVectorSelectors {
+							require.Equal(t, tt.expectedShardableQueries > 0, analysisResult.WillShardAllSelectors, "Analyze should be true if the expression is shardable, and false otherwise")
+							require.Equal(t, tt.expectedShardableQueries, analysisResult.ShardedSelectors)
+						} else {
+							require.True(t, analysisResult.WillShardAllSelectors, "expression has no selectors")
+							require.Equal(t, 0, analysisResult.ShardedSelectors, "expression has no selectors")
+						}
+					})
+				})
+			}
 		})
 	}
 }
