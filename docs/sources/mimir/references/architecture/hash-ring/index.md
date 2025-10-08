@@ -36,12 +36,11 @@ Each of the following Mimir components joins its own dedicated hash ring for sha
 A hash ring is a data structure that represents the data space as 32-bit unsigned integers.
 Each instance of a Mimir component owns a set of token ranges that define which portion of the data space it is responsible for.
 
-When an instance starts, it generates a fixed number of tokens and registers them in the ring.
-Each token maps to a value in the 32-bit integer space.
-A token is owned by the instance that registered the smallest value greater than the lookup token being looked up and wraps around to zero after `(2^32)-1`.
-
 The data or workload to be sharded is hashed using a function that returns a 32-bit unsigned integer, called a token.
 The instance that owns that token handles the data.
+
+When an instance starts, it generates a fixed number of tokens and registers them in the ring.
+A token is owned by the instance that registered the smallest value greater than the lookup token being looked up and wraps around to zero after `(2^32)-1`.
 
 Hash rings provide consistent hashing.
 When an instance joins or leaves the ring, only a small, bounded portion of data moves.
