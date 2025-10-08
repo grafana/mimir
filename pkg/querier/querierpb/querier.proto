@@ -17,7 +17,7 @@ message EvaluateQueryRequest {
   planning.EncodedQueryPlan plan = 1 [(gogoproto.nullable) = false];
   repeated EvaluationNode nodes = 2 [(gogoproto.nullable) = false];
   bool enablePerStepStats = 3;
-  uint32 batchSize = 4;
+  uint64 batchSize = 4;
 }
 
 message EvaluationNode {

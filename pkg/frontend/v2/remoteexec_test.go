@@ -146,6 +146,94 @@ func TestInstantVectorExecutionResponse(t *testing.T) {
 	require.True(t, stream.closed)
 }
 
+func TestInstantVectorExecutionResponse_Batching(t *testing.T) {
+	stream := &mockResponseStream{
+		responses: []mockResponse{
+			{
+				msg: newSeriesMetadata(
+					false,
+					labels.FromStrings("series", "1"),
+					labels.FromStrings("series", "2"),
+				),
+			},
+			{
+				msg: newBatchedInstantVectorSeriesData(
+					querierpb.InstantVectorSeriesData{
+						Floats:     mimirpb.FromFPointsToSamples(generateFPoints(1000, 2, 0)),
+						Histograms: mimirpb.FromHPointsToHistograms(generateHPoints(3000, 2, 0)),
+					},
+					querierpb.InstantVectorSeriesData{
+						Floats:     mimirpb.FromFPointsToSamples(generateFPoints(1000, 2, 1)),
+						Histograms: mimirpb.FromHPointsToHistograms(generateHPoints(3000, 2, 1)),
+					},
+				),
+			},
+			{
+				msg: newBatchedInstantVectorSeriesData(
+					querierpb.InstantVectorSeriesData{
+						Floats:     mimirpb.FromFPointsToSamples(generateFPoints(1000, 2, 2)),
+						Histograms: mimirpb.FromHPointsToHistograms(generateHPoints(3000, 2, 2)),
+					},
+				),
+			},
+		},
+	}
+
+	ctx := context.Background()
+	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
+
+	response := &instantVectorExecutionResponse{stream: stream, memoryConsumptionTracker: memoryConsumptionTracker}
+	series, err := response.GetSeriesMetadata(ctx)
+	require.NoError(t, err)
+
+	expectedSeries := []types.SeriesMetadata{
+		{Labels: labels.FromStrings("series", "1")},
+		{Labels: labels.FromStrings("series", "2")},
+	}
+	require.Equal(t, expectedSeries, series)
+	require.NotZero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
+	types.SeriesMetadataSlicePool.Put(&series, memoryConsumptionTracker)
+	require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
+
+	data, err := response.GetNextSeries(ctx)
+	require.NoError(t, err)
+
+	expectedData := types.InstantVectorSeriesData{
+		Floats:     generateFPoints(1000, 2, 0),
+		Histograms: generateHPoints(3000, 2, 0),
+	}
+	require.Equal(t, expectedData, data)
+	require.NotZero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
+	types.PutInstantVectorSeriesData(data, memoryConsumptionTracker)
+
+	data, err = response.GetNextSeries(ctx)
+	require.NoError(t, err)
+
+	expectedData = types.InstantVectorSeriesData{
+		Floats:     generateFPoints(1000, 2, 1),
+		Histograms: generateHPoints(3000, 2, 1),
+	}
+	require.Equal(t, expectedData, data)
+	require.NotZero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
+	types.PutInstantVectorSeriesData(data, memoryConsumptionTracker)
+	require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes(), "should not be holding previous batch in memory consumption estimate")
+
+	data, err = response.GetNextSeries(ctx)
+	require.NoError(t, err)
+
+	expectedData = types.InstantVectorSeriesData{
+		Floats:     generateFPoints(1000, 2, 2),
+		Histograms: generateHPoints(3000, 2, 2),
+	}
+	require.Equal(t, expectedData, data)
+	require.NotZero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
+	types.PutInstantVectorSeriesData(data, memoryConsumptionTracker)
+	require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
+
+	response.Close()
+	require.True(t, stream.closed)
+}
+
 func TestInstantVectorExecutionResponse_DelayedNameRemoval(t *testing.T) {
 	stream := &mockResponseStream{
 		responses: []mockResponse{
@@ -394,7 +482,7 @@ func TestExecutionResponses_GetEvaluationInfo(t *testing.T) {
 			return &scalarExecutionResponse{stream, memoryConsumptionTracker}
 		},
 		"instant vector": func(stream responseStream, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) remoteexec.RemoteExecutionResponse {
-			return &instantVectorExecutionResponse{stream, memoryConsumptionTracker}
+			return newInstantVectorExecutionResponse(stream, memoryConsumptionTracker)
 		},
 		"range vector": func(stream responseStream, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) remoteexec.RemoteExecutionResponse {
 			return newRangeVectorExecutionResponse(stream, memoryConsumptionTracker)
@@ -573,6 +661,20 @@ func newInstantVectorSeriesData(floats []promql.FPoint, histograms []promql.HPoi
 	}
 }
 
+func newBatchedInstantVectorSeriesData(series ...querierpb.InstantVectorSeriesData) *frontendv2pb.QueryResultStreamRequest {
+	return &frontendv2pb.QueryResultStreamRequest{
+		Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
+			EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
+				Message: &querierpb.EvaluateQueryResponse_InstantVectorSeriesData{
+					InstantVectorSeriesData: &querierpb.EvaluateQueryResponseInstantVectorSeriesData{
+						Series: series,
+					},
+				},
+			},
+		},
+	}
+}
+
 func newRangeVectorStepData(seriesIndex int64, stepT int64, rangeStart int64, rangeEnd int64, floats []promql.FPoint, histograms []promql.HPoint) *frontendv2pb.QueryResultStreamRequest {
 	return &frontendv2pb.QueryResultStreamRequest{
 		Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
@@ -663,7 +765,7 @@ func TestRemoteExecutor_CorrectlyPassesQueriedTimeRange(t *testing.T) {
 
 	ctx := context.Background()
 	node := &core.VectorSelector{VectorSelectorDetails: &core.VectorSelectorDetails{}}
-	_, err := executor.startExecution(ctx, &planning.QueryPlan{}, node, timeRange, false, false)
+	_, err := executor.startExecution(ctx, &planning.QueryPlan{}, node, timeRange, false, false, 1)
 	require.NoError(t, err)
 
 	require.Equal(t, startT.Add(-cfg.LookBackDelta+time.Millisecond), frontendMock.minT)

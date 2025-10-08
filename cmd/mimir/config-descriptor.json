@@ -7574,6 +7574,17 @@
         },
         {
           "kind": "field",
+          "name": "remote_execution_batch_size",
+          "required": false,
+          "desc": "Maximum number of series to send in a single remote execution response from a querier.",
+          "fieldValue": null,
+          "fieldDefaultValue": 128,
+          "fieldFlag": "query-frontend.remote-execution-batch-size",
+          "fieldType": "int",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "split_queries_by_interval",
           "required": false,
           "desc": "Split range queries by an interval and execute in parallel. You should use a multiple of 24 hours to optimize querying blocks. 0 to disable it.",

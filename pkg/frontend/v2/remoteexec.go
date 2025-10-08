@@ -42,7 +42,7 @@ func NewRemoteExecutor(frontend ProtobufFrontend, cfg Config) *RemoteExecutor {
 }
 
 func (r *RemoteExecutor) StartScalarExecution(ctx context.Context, fullPlan *planning.QueryPlan, node planning.Node, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, enablePerStepStats bool, eagerLoad bool) (remoteexec.ScalarRemoteExecutionResponse, error) {
-	stream, err := r.startExecution(ctx, fullPlan, node, timeRange, enablePerStepStats, eagerLoad)
+	stream, err := r.startExecution(ctx, fullPlan, node, timeRange, enablePerStepStats, eagerLoad, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -51,16 +51,16 @@ func (r *RemoteExecutor) StartScalarExecution(ctx context.Context, fullPlan *pla
 }
 
 func (r *RemoteExecutor) StartInstantVectorExecution(ctx context.Context, fullPlan *planning.QueryPlan, node planning.Node, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, enablePerStepStats bool, eagerLoad bool) (remoteexec.InstantVectorRemoteExecutionResponse, error) {
-	stream, err := r.startExecution(ctx, fullPlan, node, timeRange, enablePerStepStats, eagerLoad)
+	stream, err := r.startExecution(ctx, fullPlan, node, timeRange, enablePerStepStats, eagerLoad, r.cfg.RemoteExecutionBatchSize)
 	if err != nil {
 		return nil, err
 	}
 
-	return &instantVectorExecutionResponse{stream, memoryConsumptionTracker}, nil
+	return newInstantVectorExecutionResponse(stream, memoryConsumptionTracker), nil
 }
 
 func (r *RemoteExecutor) StartRangeVectorExecution(ctx context.Context, fullPlan *planning.QueryPlan, node planning.Node, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, enablePerStepStats bool, eagerLoad bool) (remoteexec.RangeVectorRemoteExecutionResponse, error) {
-	stream, err := r.startExecution(ctx, fullPlan, node, timeRange, enablePerStepStats, eagerLoad)
+	stream, err := r.startExecution(ctx, fullPlan, node, timeRange, enablePerStepStats, eagerLoad, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -68,7 +68,15 @@ func (r *RemoteExecutor) StartRangeVectorExecution(ctx context.Context, fullPlan
 	return newRangeVectorExecutionResponse(stream, memoryConsumptionTracker), nil
 }
 
-func (r *RemoteExecutor) startExecution(ctx context.Context, fullPlan *planning.QueryPlan, node planning.Node, timeRange types.QueryTimeRange, enablePerStepStats bool, eagerLoad bool) (responseStream, error) {
+func (r *RemoteExecutor) startExecution(
+	ctx context.Context,
+	fullPlan *planning.QueryPlan,
+	node planning.Node,
+	timeRange types.QueryTimeRange,
+	enablePerStepStats bool,
+	eagerLoad bool,
+	batchSize uint64,
+) (responseStream, error) {
 	subsetPlan := &planning.QueryPlan{
 		TimeRange:          timeRange,
 		Root:               node,
@@ -86,6 +94,7 @@ func (r *RemoteExecutor) startExecution(ctx context.Context, fullPlan *planning.
 			{NodeIndex: encodedPlan.RootNode, TimeRange: encodedPlan.TimeRange},
 		},
 		EnablePerStepStats: enablePerStepStats,
+		BatchSize:          batchSize,
 	}
 
 	queriedTimeRange := node.QueriedTimeRange(timeRange, r.cfg.LookBackDelta)
@@ -145,6 +154,14 @@ func (r *scalarExecutionResponse) Close() {
 type instantVectorExecutionResponse struct {
 	stream                   responseStream
 	memoryConsumptionTracker *limiter.MemoryConsumptionTracker
+	currentBatch             []querierpb.InstantVectorSeriesData
+}
+
+func newInstantVectorExecutionResponse(stream responseStream, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) *instantVectorExecutionResponse {
+	return &instantVectorExecutionResponse{
+		stream:                   stream,
+		memoryConsumptionTracker: memoryConsumptionTracker,
+	}
 }
 
 func (r *instantVectorExecutionResponse) GetSeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
@@ -152,27 +169,38 @@ func (r *instantVectorExecutionResponse) GetSeriesMetadata(ctx context.Context) 
 }
 
 func (r *instantVectorExecutionResponse) GetNextSeries(ctx context.Context) (types.InstantVectorSeriesData, error) {
-	resp, err := readNextEvaluateQueryResponse(ctx, r.stream)
-	if err != nil {
-		return types.InstantVectorSeriesData{}, err
+	if len(r.currentBatch) == 0 {
+		resp, err := readNextEvaluateQueryResponse(ctx, r.stream)
+		if err != nil {
+			return types.InstantVectorSeriesData{}, err
+		}
+
+		data := resp.GetInstantVectorSeriesData()
+		if data == nil {
+			return types.InstantVectorSeriesData{}, fmt.Errorf("expected InstantVectorSeriesData, got %T", resp.Message)
+		}
+
+		r.currentBatch = data.Series
+
+		for _, series := range r.currentBatch {
+			// This isn't as expensive as it looks: FromSamplesToFPoints and FromHistogramsToHPoints directly cast the slices,
+			// they don't create new slices.
+			if err := accountForFPointMemoryConsumption(mimirpb.FromSamplesToFPoints(series.Floats), r.memoryConsumptionTracker); err != nil {
+				return types.InstantVectorSeriesData{}, err
+			}
+
+			if err := accountForHPointMemoryConsumption(mimirpb.FromHistogramsToHPoints(series.Histograms), r.memoryConsumptionTracker); err != nil {
+				return types.InstantVectorSeriesData{}, err
+			}
+		}
 	}
 
-	seriesData := resp.GetInstantVectorSeriesData()
-	if seriesData == nil {
-		return types.InstantVectorSeriesData{}, fmt.Errorf("expected InstantVectorSeriesData, got %T", resp.Message)
-	}
+	series := r.currentBatch[0]
+	r.currentBatch = r.currentBatch[1:]
 
 	mqeData := types.InstantVectorSeriesData{
-		Floats:     mimirpb.FromSamplesToFPoints(seriesData.Series[0].Floats),
-		Histograms: mimirpb.FromHistogramsToHPoints(seriesData.Series[0].Histograms),
-	}
-
-	if err := accountForFPointMemoryConsumption(mqeData.Floats, r.memoryConsumptionTracker); err != nil {
-		return types.InstantVectorSeriesData{}, err
-	}
-
-	if err := accountForHPointMemoryConsumption(mqeData.Histograms, r.memoryConsumptionTracker); err != nil {
-		return types.InstantVectorSeriesData{}, err
+		Floats:     mimirpb.FromSamplesToFPoints(series.Floats),
+		Histograms: mimirpb.FromHistogramsToHPoints(series.Histograms),
 	}
 
 	return mqeData, nil
@@ -184,6 +212,7 @@ func (r *instantVectorExecutionResponse) GetEvaluationInfo(ctx context.Context) 
 
 func (r *instantVectorExecutionResponse) Close() {
 	r.stream.Close()
+	r.currentBatch = nil
 }
 
 type rangeVectorExecutionResponse struct {
