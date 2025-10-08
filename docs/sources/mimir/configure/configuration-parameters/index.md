@@ -1513,6 +1513,11 @@ parquet_converter:
   # CLI flag: -parquet-converter.compression-enabled
   [compression_enabled: <boolean> | default = true]
 
+  # The strategy to use to balance blocks to convert across multiple
+  # parquet-converter instances. Supported values: ring, locking.
+  # CLI flag: -parquet-converter.load-balancing-strategy
+  [load_balancing_strategy: <string> | default = "ring"]
+
   sharding_ring:
     # The key-value store used to share the hash ring across multiple instances.
     kvstore:
@@ -1598,6 +1603,17 @@ parquet_converter:
     # the ring.
     # CLI flag: -parquet-converter.ring.wait-active-instance-timeout
     [wait_active_instance_timeout: <duration> | default = 10m]
+
+  locking:
+    # Backend for parquet-converter locking cache (used when
+    # load-balancing-strategy is 'locking'). Supported values: memcached.
+    # CLI flag: -parquet-converter.locking.backend
+    [backend: <string> | default = ""]
+
+    # The memcached block configures the Memcached-based caching backend.
+    # The CLI flags prefix for this block configuration is:
+    # parquet-converter.locking
+    [memcached: <memcached>]
 
 # The common block holds configurations that configure multiple components at a
 # time.
@@ -6727,6 +6743,7 @@ The `memcached` block configures the Memcached-based caching backend. The suppor
 - `blocks-storage.bucket-store.chunks-cache`
 - `blocks-storage.bucket-store.index-cache`
 - `blocks-storage.bucket-store.metadata-cache`
+- `parquet-converter.locking`
 - `query-frontend.results-cache`
 - `ruler-storage.cache`
 

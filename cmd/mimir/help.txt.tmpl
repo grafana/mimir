@@ -553,6 +553,16 @@ Usage of ./cmd/mimir/mimir:
     	Directory to temporarily store blocks during conversion. This directory is not required to persist between restarts. (default "./data-parquet-converter/")
   -parquet-converter.discovery-interval duration
     	The frequency at which user and block discovery runs. (default 5m0s)
+  -parquet-converter.load-balancing-strategy string
+    	The strategy to use to balance blocks to convert across multiple parquet-converter instances. Supported values: ring, locking. (default "ring")
+  -parquet-converter.locking.backend string
+    	Backend for parquet-converter locking cache (used when load-balancing-strategy is 'locking'). Supported values: memcached.
+  -parquet-converter.locking.memcached.addresses comma-separated-list-of-strings
+    	Comma-separated list of memcached addresses. Each address can be an IP address, hostname, or an entry specified in the DNS Service Discovery format.
+  -parquet-converter.locking.memcached.connect-timeout duration
+    	The connection timeout. (default 200ms)
+  -parquet-converter.locking.memcached.timeout duration
+    	The socket read/write timeout. (default 200ms)
   -parquet-converter.max-block-age duration
     	Maximum age of blocks to convert. Blocks older than this will be skipped. Set to 0 to disable age filtering.
   -parquet-converter.min-block-timestamp uint
