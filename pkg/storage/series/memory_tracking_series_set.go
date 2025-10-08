@@ -4,21 +4,22 @@ package series
 
 import (
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/util/annotations"
 
 	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
 // MemoryTrackingSeriesSet is storage.SeriesSet that tracks the wrapped SeriesSet memory consumption.
 type MemoryTrackingSeriesSet struct {
-	storage.SeriesSet
+	inner                    storage.SeriesSet
 	memoryConsumptionTracker *limiter.MemoryConsumptionTracker
 	currentSeries            storage.Series
 	memoryDecreased          bool
 }
 
-func NewMemoryTrackingSeriesSet(embed storage.SeriesSet, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) storage.SeriesSet {
+func NewMemoryTrackingSeriesSet(inner storage.SeriesSet, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) storage.SeriesSet {
 	return &MemoryTrackingSeriesSet{
-		SeriesSet:                embed,
+		inner:                    inner,
 		memoryConsumptionTracker: memoryConsumptionTracker,
 	}
 }
@@ -27,14 +28,14 @@ func (m *MemoryTrackingSeriesSet) Next() bool {
 	// Reset tracking state when moving to next series
 	m.currentSeries = nil
 	m.memoryDecreased = false
-	return m.SeriesSet.Next()
+	return m.inner.Next()
 }
 
 func (m *MemoryTrackingSeriesSet) At() storage.Series {
-	at := m.SeriesSet.At()
+	at := m.inner.At()
 
 	// Only decrease memory once per series position
-	if m.memoryConsumptionTracker != nil && !m.memoryDecreased {
+	if m.memoryConsumptionTracker != nil {
 		if m.currentSeries != at {
 			// New series at this position
 			m.currentSeries = at
@@ -43,4 +44,12 @@ func (m *MemoryTrackingSeriesSet) At() storage.Series {
 		}
 	}
 	return at
+}
+
+func (m *MemoryTrackingSeriesSet) Err() error {
+	return m.inner.Err()
+}
+
+func (m *MemoryTrackingSeriesSet) Warnings() annotations.Annotations {
+	return m.inner.Warnings()
 }
