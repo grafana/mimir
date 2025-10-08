@@ -21,6 +21,8 @@ import (
 	"math"
 	"slices"
 	"sort"
+	"sync"
+	"time"
 
 	"github.com/dennwc/varint"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
@@ -31,6 +33,10 @@ type PrometheusParquetChunksEncoder struct {
 	schema          *TSDBSchema
 	samplesPerChunk int
 }
+
+var mu sync.Mutex
+var encodeCalls int
+var lastView time.Time
 
 func NewPrometheusParquetChunksEncoder(schema *TSDBSchema, samplesPerChunk int) *PrometheusParquetChunksEncoder {
 	return &PrometheusParquetChunksEncoder{
@@ -63,6 +69,17 @@ func (e *PrometheusParquetChunksEncoder) Encode(it chunks.Iterator) ([][]byte, e
 		return chks[i].MinTime < chks[j].MinTime
 	})
 
+	mu.Lock()
+	encodeCalls++
+	if encodeCalls >= 10_000 {
+		now := time.Now()
+		elapsed := now.Sub(lastView)
+		println("encode calls", encodeCalls, "elapsed", elapsed.String())
+		lastView = now
+		encodeCalls = 0
+	}
+	mu.Unlock()
+
 	dataColSize := len(e.schema.DataColsIndexes)
 
 	reEncodedChunks := make([]map[chunkenc.Encoding][]*chunks.Meta, dataColSize)
@@ -85,7 +102,7 @@ func (e *PrometheusParquetChunksEncoder) Encode(it chunks.Iterator) ([][]byte, e
 	needsNewChunk := make(map[int]struct{})
 
 	nextXorChunk := func(chkIdx int) error {
-		println("cutting new chunk")
+		//println("cutting new chunk")
 		nChunk, app, err := e.cutNewChunk(chunkenc.EncXOR)
 		if err != nil {
 			return err
@@ -95,8 +112,7 @@ func (e *PrometheusParquetChunksEncoder) Encode(it chunks.Iterator) ([][]byte, e
 		return nil
 	}
 
-	fastPath := 0
-	slowPath := 0
+	const useFastPath = false
 
 	var sampleIt chunkenc.Iterator
 	for _, chk := range chks {
@@ -105,8 +121,8 @@ func (e *PrometheusParquetChunksEncoder) Encode(it chunks.Iterator) ([][]byte, e
 		case chunkenc.EncXOR:
 			minColumn := e.schema.DataColumIdx(chk.MinTime)
 			maxColumn := e.schema.DataColumIdx(chk.MaxTime)
-			if minColumn == maxColumn {
-				fastPath++
+
+			if useFastPath && minColumn == maxColumn {
 				// Fast path for all samples going to the same Parquet column.
 				// We always make a new chunk here. We're going to write to it.
 				if _, ok := needsNewChunk[minColumn]; ok {
@@ -120,19 +136,17 @@ func (e *PrometheusParquetChunksEncoder) Encode(it chunks.Iterator) ([][]byte, e
 				chunk.Ref = chk.Ref
 				chunk.MinTime = chk.MinTime
 				chunk.MaxTime = chk.MaxTime
-				chunk.Chunk.Reset(bytes.Clone(chk.Chunk.Bytes()))
+				chunk.Chunk.Reset(chk.Chunk.Bytes())
 				needsNewChunk[minColumn] = struct{}{}
 
 			} else {
-				println("slow path")
-				slowPath++
 				for vt := sampleIt.Next(); vt != chunkenc.ValNone; vt = sampleIt.Next() {
 					if vt != chunkenc.ValFloat {
 						return nil, fmt.Errorf("found value type %v in float chunk", vt)
 					}
 					t, v := sampleIt.At()
 					chkIdx := e.schema.DataColumIdx(t)
-					println(t, chkIdx)
+					// println(t, chkIdx)
 
 					if _, ok := needsNewChunk[chkIdx]; ok {
 						err := nextXorChunk(chkIdx)
@@ -145,14 +159,13 @@ func (e *PrometheusParquetChunksEncoder) Encode(it chunks.Iterator) ([][]byte, e
 					reEncodedChunksAppenders[chkIdx][chunkenc.EncXOR].Append(t, v)
 					chunk := reEncodedChunks[chkIdx][chunkenc.EncXOR][len(reEncodedChunks[chkIdx][chunkenc.EncXOR])-1]
 					if t < chunk.MinTime {
-						println("encountered timestamp lower than mintime")
+						//println("encountered timestamp lower than mintime")
 						chunk.MinTime = t
 					}
 					if t > chunk.MaxTime {
-						println("encountered timestamp higher than maxtime")
+						//println("encountered timestamp higher than maxtime")
 						chunk.MaxTime = t
 					}
-					println("append to ", chkIdx, chunk.Chunk.NumSamples())
 					if chunk.Chunk.NumSamples() >= e.samplesPerChunk {
 						needsNewChunk[chkIdx] = struct{}{}
 					}
@@ -265,7 +278,6 @@ func (e *PrometheusParquetChunksEncoder) Encode(it chunks.Iterator) ([][]byte, e
 			}
 		}
 	}
-	println("fast path", fastPath, "slow path", slowPath)
 	return result, nil
 }
 

@@ -22,6 +22,8 @@ import (
 	"runtime"
 	"slices"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/hashicorp/go-multierror"
@@ -352,8 +354,8 @@ type TsdbRowReader struct {
 
 	seriesSet storage.ChunkSeriesSet
 
-	rowBuilder *parquet.RowBuilder
-	tsdbSchema *schema.TSDBSchema
+	rowBuilderPool chan *parquet.RowBuilder
+	tsdbSchema     *schema.TSDBSchema
 
 	encoder     *schema.PrometheusParquetChunksEncoder
 	totalRead   int64
@@ -426,15 +428,20 @@ func NewTsdbRowReader(ctx context.Context, mint, maxt, colDuration int64, blks [
 		return nil, fmt.Errorf("unable to build index reader from block: %w", err)
 	}
 
-	rr := &TsdbRowReader{
-		ctx:         ctx,
-		seriesSet:   cseriesSet,
-		closers:     closers,
-		tsdbSchema:  s,
-		concurrency: ops.concurrency,
+	// Create a pool of RowBuilder instances for concurrent use
+	rowBuilderPool := make(chan *parquet.RowBuilder, ops.concurrency)
+	for i := 0; i < ops.concurrency; i++ {
+		rowBuilderPool <- parquet.NewRowBuilder(s.Schema)
+	}
 
-		rowBuilder: parquet.NewRowBuilder(s.Schema),
-		encoder:    schema.NewPrometheusParquetChunksEncoder(s, ops.maxSamplesPerChunk),
+	rr := &TsdbRowReader{
+		ctx:            ctx,
+		seriesSet:      cseriesSet,
+		closers:        closers,
+		tsdbSchema:     s,
+		concurrency:    ops.concurrency,
+		rowBuilderPool: rowBuilderPool,
+		encoder:        schema.NewPrometheusParquetChunksEncoder(s, ops.maxSamplesPerChunk),
 	}
 	ok = true
 	return rr, nil
@@ -524,36 +531,53 @@ func (rr *TsdbRowReader) ReadRows(buf []parquet.Row) (int, error) {
 		s storage.ChunkSeries
 		c chan chkBytesOrError
 	}
+	type result struct {
+		s storage.ChunkSeries
+		c chkBytesOrError
+	}
 
-	c := make(chan chunkSeriesPromise, rr.concurrency)
+	type encodeJob struct {
+		s  storage.ChunkSeries
+		it chunks.Iterator
+	}
+
+	encoderJobs := make(chan encodeJob, rr.concurrency)
+	c := make(chan result, rr.concurrency)
 
 	go func() {
 		i := 0
-		defer close(c)
+		defer close(encoderJobs)
 		for i < len(buf) && rr.seriesSet.Next() {
 			s := rr.seriesSet.At()
 			it := s.Iterator(nil)
 
-			promise := chunkSeriesPromise{
-				s: s,
-				c: make(chan chkBytesOrError, 1),
-			}
-
 			select {
-			case c <- promise:
+			case encoderJobs <- encodeJob{s: s, it: it}:
 			case <-rr.ctx.Done():
 				return
 			}
-			go func() {
-				chkBytes, err := rr.encoder.Encode(it)
-				promise.c <- chkBytesOrError{chkBytes: chkBytes, err: err}
-			}()
 			i++
 		}
 	}()
 
-	i, j := 0, 0
-	lblsIdxs := []int{}
+	var wg sync.WaitGroup
+	wg.Add(rr.concurrency)
+
+	for range rr.concurrency {
+		go func() {
+			defer wg.Done()
+			for ej := range encoderJobs {
+				chkBytes, err := rr.encoder.Encode(ej.it)
+				c <- result{s: ej.s, c: chkBytesOrError{chkBytes: chkBytes, err: err}}
+			}
+		}()
+	}
+
+	go func() {
+		wg.Wait()
+		close(c)
+	}()
+
 	colIndex, ok := rr.tsdbSchema.Schema.Lookup(schema.ColIndexesColumn)
 	if !ok {
 		return 0, fmt.Errorf("unable to find indexes")
@@ -563,59 +587,82 @@ func (rr *TsdbRowReader) ReadRows(buf []parquet.Row) (int, error) {
 		return 0, fmt.Errorf("unable to find series hash column")
 	}
 
-	for promise := range c {
-		j++
+	var i, j atomic.Int64
 
-		chkBytesOrErr := <-promise.c
-		if err := chkBytesOrErr.err; err != nil {
-			return 0, fmt.Errorf("unable encode chunks: %w", err)
-		}
-		chkBytes := chkBytesOrErr.chkBytes
+	var writeWg sync.WaitGroup
+	writeWg.Add(rr.concurrency)
 
-		rr.rowBuilder.Reset()
-		lblsIdxs = lblsIdxs[:0]
+	// Make writer goroutines.
+	for range rr.concurrency {
+		go func() {
+			defer writeWg.Done()
+			for r := range c {
+				//println("AAAAAA")
+				j.Add(1)
 
-		seriesLabels := promise.s.Labels()
-		seriesLabels.Range(func(l labels.Label) {
-			colName := schema.LabelToColumn(l.Name)
-			lc, _ := rr.tsdbSchema.Schema.Lookup(colName)
-			rr.rowBuilder.Add(lc.ColumnIndex, parquet.ValueOf(l.Value))
-			lblsIdxs = append(lblsIdxs, lc.ColumnIndex)
-		})
+				if err := r.c.err; err != nil {
+					panic(fmt.Errorf("unable encode chunks: %w", err))
+				}
+				chkBytes := r.c.chkBytes
 
-		rr.rowBuilder.Add(colIndex.ColumnIndex, parquet.ValueOf(schema.EncodeIntSlice(lblsIdxs)))
+				// Acquire a RowBuilder from the pool
+				rowBuilder := <-rr.rowBuilderPool
 
-		// Compute and store the series hash as a byte slice in big-endian format
-		seriesHashValue := labels.StableHash(seriesLabels)
-		seriesHashBytes := make([]byte, 8)
-		binary.BigEndian.PutUint64(seriesHashBytes, seriesHashValue)
-		rr.rowBuilder.Add(seriesHashIndex.ColumnIndex, parquet.ValueOf(seriesHashBytes))
+				rowBuilder.Reset()
+				lblsIdxs := []int{}
 
-		// skip series that have no chunks in the requested time
-		if allChunksEmpty(chkBytes) {
-			continue
-		}
+				seriesLabels := r.s.Labels()
+				seriesLabels.Range(func(l labels.Label) {
+					colName := schema.LabelToColumn(l.Name)
+					lc, _ := rr.tsdbSchema.Schema.Lookup(colName)
+					rowBuilder.Add(lc.ColumnIndex, parquet.ValueOf(l.Value))
+					lblsIdxs = append(lblsIdxs, lc.ColumnIndex)
+				})
 
-		for idx, chk := range chkBytes {
-			if len(chk) == 0 {
-				continue
+				rowBuilder.Add(colIndex.ColumnIndex, parquet.ValueOf(schema.EncodeIntSlice(lblsIdxs)))
+
+				// Compute and store the series hash as a byte slice in big-endian format
+				seriesHashValue := labels.StableHash(seriesLabels)
+				seriesHashBytes := make([]byte, 8)
+				binary.BigEndian.PutUint64(seriesHashBytes, seriesHashValue)
+				rowBuilder.Add(seriesHashIndex.ColumnIndex, parquet.ValueOf(seriesHashBytes))
+
+				// skip series that have no chunks in the requested time
+				if allChunksEmpty(chkBytes) {
+					continue
+				}
+
+				for idx, chk := range chkBytes {
+					if len(chk) == 0 {
+						continue
+					}
+					rowBuilder.Add(rr.tsdbSchema.DataColsIndexes[idx], parquet.ValueOf(chk))
+				}
+				rownum := i.Add(1) - 1
+				buf[rownum] = rowBuilder.AppendRow(buf[rownum][:0])
+
+				// Return the RowBuilder to the pool
+				rr.rowBuilderPool <- rowBuilder
 			}
-			rr.rowBuilder.Add(rr.tsdbSchema.DataColsIndexes[idx], parquet.ValueOf(chk))
-		}
-		buf[i] = rr.rowBuilder.AppendRow(buf[i][:0])
-		i++
+		}()
 	}
-	rr.totalRead += int64(i)
+
+	writeWg.Wait()
+
+	ii := i.Load()
+
+	//println("BBBBBB")
+	rr.totalRead += int64(ii)
 
 	if rr.ctx.Err() != nil {
-		return i, rr.ctx.Err()
+		return int(ii), rr.ctx.Err()
 	}
 
-	if j < len(buf) {
-		return i, io.EOF
+	if j.Load() < int64(len(buf)) {
+		return int(ii), io.EOF
 	}
 
-	return i, rr.seriesSet.Err()
+	return int(ii), rr.seriesSet.Err()
 }
 
 func allChunksEmpty(chkBytes [][]byte) bool {

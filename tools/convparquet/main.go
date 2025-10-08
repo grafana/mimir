@@ -2,10 +2,14 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"log"
 	"os"
 	"path"
+	"runtime"
+	"runtime/pprof"
+	"runtime/trace"
 
 	"github.com/grafana/dskit/runutil"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
@@ -14,11 +18,46 @@ import (
 )
 
 func main() {
-	if len(os.Args) < 2 {
-		log.Fatal("Usage: conv <block-path>")
+	// Parse command line flags
+	var traceFlag = flag.Bool("trace", false, "Enable runtime tracing")
+	var heapFlag = flag.Bool("heap", false, "Enable heap profiling")
+	flag.Parse()
+
+	if len(flag.Args()) < 1 {
+		log.Fatal("Usage: conv [-trace] [-heap] <block-path>")
 	}
 
-	blockPath := os.Args[1]
+	blockPath := flag.Args()[0]
+
+	// Start tracing if requested
+	if *traceFlag {
+		traceFile, err := os.Create("trace.out")
+		if err != nil {
+			log.Fatalf("Failed to create trace file: %v", err)
+		}
+		defer traceFile.Close()
+
+		if err := trace.Start(traceFile); err != nil {
+			log.Fatalf("Failed to start trace: %v", err)
+		}
+		defer trace.Stop()
+	}
+
+	// Start heap profiling if requested
+	if *heapFlag {
+		heapFile, err := os.Create("heap.prof")
+		if err != nil {
+			log.Fatalf("Failed to create heap profile file: %v", err)
+		}
+		defer heapFile.Close()
+
+		// Force garbage collection before profiling
+		runtime.GC()
+
+		if err := pprof.WriteHeapProfile(heapFile); err != nil {
+			log.Fatalf("Failed to write heap profile: %v", err)
+		}
+	}
 	metafile, err := os.Open(path.Join(blockPath, "meta.json"))
 	if err != nil {
 		log.Fatalf("Failed to open meta file: %v", err)
@@ -35,7 +74,7 @@ func main() {
 	}
 
 	// Convert the block
-	err = ConvertBlock(ctx, meta, blockPath, nil)
+	err = ConvertBlock(ctx, meta, blockPath, []convert.ConvertOption{convert.WithConcurrency(3)})
 	if err != nil {
 		log.Fatalf("Failed to convert block: %v", err)
 	}
