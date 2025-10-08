@@ -2774,7 +2774,7 @@ func TestPartitionCommitter_commit(t *testing.T) {
 			"cortex_ingest_storage_reader_last_committed_offset"))
 	})
 
-	t.Run("should call pre-commit notifier before commiting", func(t *testing.T) {
+	t.Run("should call pre-commit notifier before committing", func(t *testing.T) {
 		t.Parallel()
 
 		_, clusterAddr := testkafka.CreateCluster(t, partitionID+1, topicName)
