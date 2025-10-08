@@ -172,7 +172,7 @@ func (l limitsMiddleware) Do(ctx context.Context, r MetricsQueryRequest) (Respon
 				"maxQueryLookback", maxQueryLookback,
 				"blocksRetentionPeriod", blocksRetentionPeriod)
 
-			return newEmptyPrometheusResponse(), nil
+			return NewEmptyPrometheusResponse(), nil
 		}
 
 		if r.GetStart() < minStartTime {
@@ -210,20 +210,26 @@ func (l limitsMiddleware) Do(ctx context.Context, r MetricsQueryRequest) (Respon
 }
 
 type limitedParallelismRoundTripper struct {
-	downstream MetricsQueryHandler
-	limits     Limits
+	downstream             MetricsQueryHandler
+	limits                 LimitedParallelismLimits
+	remoteExecutionEnabled bool
 
 	codec      Codec
 	middleware MetricsQueryMiddleware
 }
 
+type LimitedParallelismLimits interface {
+	MaxQueryParallelism(userID string) int
+}
+
 // NewLimitedParallelismRoundTripper creates a new roundtripper that enforces MaxQueryParallelism to the `next` roundtripper across `middlewares`.
-func NewLimitedParallelismRoundTripper(next MetricsQueryHandler, codec Codec, limits Limits, middlewares ...MetricsQueryMiddleware) http.RoundTripper {
+func NewLimitedParallelismRoundTripper(next MetricsQueryHandler, codec Codec, limits LimitedParallelismLimits, remoteExecutionEnabled bool, middlewares ...MetricsQueryMiddleware) http.RoundTripper {
 	return limitedParallelismRoundTripper{
-		downstream: next,
-		codec:      codec,
-		limits:     limits,
-		middleware: MergeMetricsQueryMiddlewares(middlewares...),
+		downstream:             next,
+		codec:                  codec,
+		limits:                 limits,
+		remoteExecutionEnabled: remoteExecutionEnabled,
+		middleware:             MergeMetricsQueryMiddlewares(middlewares...),
 	}
 }
 
@@ -242,25 +248,26 @@ func (rt limitedParallelismRoundTripper) RoundTrip(r *http.Request) (*http.Respo
 		return nil, apierror.New(apierror.TypeBadData, err.Error())
 	}
 
-	// Limit the amount of parallel sub-requests according to the MaxQueryParallelism tenant setting.
-	parallelism := validation.SmallestPositiveIntPerTenant(tenantIDs, rt.limits.MaxQueryParallelism)
-	sem := semaphore.NewWeighted(int64(parallelism))
+	// Limit the number of parallel sub-requests according to the MaxQueryParallelism tenant setting.
+	maxParallelism := validation.SmallestPositiveIntPerTenant(tenantIDs, rt.limits.MaxQueryParallelism)
+	limiter := NewParallelismLimiter(maxParallelism)
+	ctx = ContextWithParallelismLimiter(ctx, limiter)
 
 	// Wraps middlewares with a final handler, which will receive sub-requests in
 	// parallel from upstream handlers and ensure that no more than MaxQueryParallelism
 	// sub-requests run in parallel.
 	response, err := rt.middleware.Wrap(
 		HandlerFunc(func(ctx context.Context, r MetricsQueryRequest) (Response, error) {
-			if err := sem.Acquire(ctx, 1); err != nil {
-				// Without this change, using WithTimeoutCause has no effect when calling Do on
-				// limitedParallelismRoundTripper, since that would need to return the cause as error,
-				// which is the normal behaviour except that semaphore does not do that.
-				if errors.Is(err, ctx.Err()) {
-					err = context.Cause(ctx)
+			// If remote execution is disabled, apply the parallelism limit here.
+			// If remote execution is enabled, we'll enforce the limit in Frontend.DoProtobufRequest instead.
+			// We need to enforce the limit in DoProtobufRequest because the requests we see here are before sharding is applied if sharding inside MQE is enabled.
+			// If we were to enforce the limit here with remote execution enabled, then we'll count requests twice: once here, and again in Frontend.DoProtobufRequest.
+			if !rt.remoteExecutionEnabled {
+				if err := limiter.BeginRequest(ctx); err != nil {
+					return nil, err
 				}
-				return nil, fmt.Errorf("could not acquire work: %w", err)
+				defer limiter.RequestFinished()
 			}
-			defer sem.Release(1)
 
 			return rt.downstream.Do(ctx, r)
 		})).Do(ctx, request)
@@ -270,6 +277,33 @@ func (rt limitedParallelismRoundTripper) RoundTrip(r *http.Request) (*http.Respo
 
 	// EncodeMetricsQueryResponse handles closing the response
 	return rt.codec.EncodeMetricsQueryResponse(ctx, r, response)
+}
+
+type ParallelismLimiter struct {
+	sem *semaphore.Weighted
+}
+
+func NewParallelismLimiter(maxParallelism int) *ParallelismLimiter {
+	return &ParallelismLimiter{
+		sem: semaphore.NewWeighted(int64(maxParallelism)),
+	}
+}
+
+func (l *ParallelismLimiter) BeginRequest(ctx context.Context) error {
+	if err := l.sem.Acquire(ctx, 1); err != nil {
+		// Acquire returns ctx.Err(), rather than context.Cause(ctx).
+		// We want to return the cause if there is one.
+		if errors.Is(err, ctx.Err()) {
+			err = context.Cause(ctx)
+		}
+		return fmt.Errorf("could not acquire work: %w", err)
+	}
+
+	return nil
+}
+
+func (l *ParallelismLimiter) RequestFinished() {
+	l.sem.Release(1)
 }
 
 func NewHTTPQueryRequestRoundTripperHandler(next http.RoundTripper, codec Codec, logger log.Logger) MetricsQueryHandler {
@@ -451,6 +485,7 @@ type requestContextKeyType int
 const (
 	requestHintsKey requestContextKeyType = iota
 	requestOptionsKey
+	parallelismLimiterKey
 )
 
 func ContextWithRequestHintsAndOptions(ctx context.Context, hints *Hints, options Options) context.Context {
@@ -473,4 +508,16 @@ func RequestOptionsFromContext(ctx context.Context) Options {
 	}
 
 	return Options{}
+}
+
+func ContextWithParallelismLimiter(ctx context.Context, limiter *ParallelismLimiter) context.Context {
+	return context.WithValue(ctx, parallelismLimiterKey, limiter)
+}
+
+func ParallelismLimiterFromContext(ctx context.Context) *ParallelismLimiter {
+	if v := ctx.Value(parallelismLimiterKey); v != nil {
+		return v.(*ParallelismLimiter)
+	}
+
+	return nil
 }

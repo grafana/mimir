@@ -2862,6 +2862,11 @@ results_cache:
 # CLI flag: -query-frontend.parallelize-shardable-queries
 [parallelize_shardable_queries: <boolean> | default = false]
 
+# (experimental) If set to true and the Mimir query engine is in use, use remote
+# execution to evaluate queries in queriers.
+# CLI flag: -query-frontend.enable-remote-execution
+[enable_remote_execution: <boolean> | default = false]
+
 # (experimental) Set to true to enable performing query sharding inside the
 # Mimir query engine (MQE). This setting has no effect if sharding is disabled.
 # Requires remote execution and MQE to be enabled.
@@ -2923,11 +2928,6 @@ client_cluster_validation:
 # Mimir query engine.
 # CLI flag: -query-frontend.enable-query-engine-fallback
 [enable_query_engine_fallback: <boolean> | default = true]
-
-# (experimental) If set to true and the Mimir query engine is in use, use remote
-# execution to evaluate queries in queriers.
-# CLI flag: -query-frontend.enable-remote-execution
-[enable_remote_execution: <boolean> | default = false]
 ```
 
 ### query_scheduler

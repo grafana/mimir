@@ -882,7 +882,7 @@ func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error
 		eng,
 		promOpts,
 		t.QueryFrontendTopicOffsetsReaders,
-		t.Cfg.Frontend.EnableRemoteExecution,
+		t.Cfg.Frontend.QueryMiddleware.EnableRemoteExecution,
 		t.QueryFrontendStreamingEngine,
 		t.Registerer,
 	)
@@ -922,7 +922,7 @@ func (t *Mimir) initQueryFrontend() (serv services.Service, err error) {
 
 	t.API.RegisterQueryFrontend2(frontend)
 
-	if t.QueryFrontendStreamingEngine != nil && t.Cfg.Frontend.EnableRemoteExecution {
+	if t.QueryFrontendStreamingEngine != nil && t.Cfg.Frontend.QueryMiddleware.EnableRemoteExecution {
 		executor := v2.NewRemoteExecutor(frontend, t.Cfg.Frontend.FrontendV2)
 
 		if err := t.QueryFrontendStreamingEngine.RegisterNodeMaterializer(planning.NODE_TYPE_REMOTE_EXEC, remoteexec.NewRemoteExecutionMaterializer(executor)); err != nil {
@@ -989,7 +989,7 @@ func (t *Mimir) initQueryFrontendQueryPlanner() (services.Service, error) {
 		return nil, err
 	}
 
-	if t.Cfg.Frontend.EnableRemoteExecution {
+	if t.Cfg.Frontend.QueryMiddleware.EnableRemoteExecution {
 		t.QueryFrontendQueryPlanner.RegisterQueryPlanOptimizationPass(remoteexec.NewOptimizationPass())
 	}
 

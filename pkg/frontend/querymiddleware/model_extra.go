@@ -35,8 +35,8 @@ var (
 	}.Froze()
 )
 
-// newEmptyPrometheusResponse returns an empty successful Prometheus query range response.
-func newEmptyPrometheusResponse() *PrometheusResponse {
+// NewEmptyPrometheusResponse returns an empty successful Prometheus query range response.
+func NewEmptyPrometheusResponse() *PrometheusResponse {
 	return &PrometheusResponse{
 		Status: statusSuccess,
 		Data: &PrometheusData{
