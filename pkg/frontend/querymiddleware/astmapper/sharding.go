@@ -185,20 +185,20 @@ type ShardingAnalysisResult struct {
 	// - If the original query was avg(foo), this would be 2, as avg(foo) is rewritten as sum(foo) / count(foo).
 	//
 	// If WillShardAllSelectors is false, then this will be 0.
-	ShardedQueries int
+	ShardedSelectors int
 }
 
 func UnshardedExpression() ShardingAnalysisResult {
 	return ShardingAnalysisResult{
 		WillShardAllSelectors: false,
-		ShardedQueries:        0,
+		ShardedSelectors:      0,
 	}
 }
 
-func ShardedExpression() ShardingAnalysisResult {
+func ShardedExpression(shardedSelectors int) ShardingAnalysisResult {
 	return ShardingAnalysisResult{
 		WillShardAllSelectors: true,
-		ShardedQueries:        0, // TODO
+		ShardedSelectors:      shardedSelectors,
 	}
 }
 
@@ -238,7 +238,14 @@ func (analyzer *ShardingAnalyzer) Analyze(expr parser.Expr) (result ShardingAnal
 		return analyzer.Analyze(expr.Expr)
 	case *parser.AggregateExpr:
 		if CanParallelize(expr, analyzer.logger) {
-			return ShardedExpression(), nil
+			selectorCount := 1
+
+			if expr.Op == parser.AVG {
+				// We'll rewrite avg(foo) as sum(foo) / count(foo), so we need to account for both selectors.
+				selectorCount = 2
+			}
+
+			return ShardedExpression(selectorCount), nil
 		}
 
 		// If we can't shard this expression, we might still be able to shard the inner expression.
@@ -247,7 +254,7 @@ func (analyzer *ShardingAnalyzer) Analyze(expr parser.Expr) (result ShardingAnal
 
 	case *parser.BinaryExpr:
 		if isShardableBinOp(expr) && CanParallelize(expr, analyzer.logger) {
-			return ShardedExpression(), nil
+			return ShardedExpression(1), nil
 		}
 
 		lhs, err := analyzer.Analyze(expr.LHS)
@@ -257,8 +264,13 @@ func (analyzer *ShardingAnalyzer) Analyze(expr parser.Expr) (result ShardingAnal
 		if !lhs.WillShardAllSelectors {
 			return UnshardedExpression(), nil
 		}
-		willRHS, err := analyzer.Analyze(expr.RHS)
-		return willRHS, err
+
+		rhs, err := analyzer.Analyze(expr.RHS)
+		if !rhs.WillShardAllSelectors {
+			return UnshardedExpression(), nil
+		}
+
+		return ShardedExpression(lhs.ShardedSelectors + rhs.ShardedSelectors), err
 
 	case *parser.Call:
 		if isSubqueryCall(expr) {
@@ -270,7 +282,7 @@ func (analyzer *ShardingAnalyzer) Analyze(expr parser.Expr) (result ShardingAnal
 				return UnshardedExpression(), nil
 			}
 
-			return ShardedExpression(), nil
+			return ShardedExpression(1), nil
 		}
 
 		for _, arg := range argsWithDefaults(expr) {
@@ -281,10 +293,10 @@ func (analyzer *ShardingAnalyzer) Analyze(expr parser.Expr) (result ShardingAnal
 			}
 		}
 
-		return ShardedExpression(), nil
+		return ShardedExpression(countSelectors(expr)), nil
 
 	case *parser.NumberLiteral, *parser.StringLiteral:
-		return ShardedExpression(), nil
+		return ShardedExpression(0), nil
 
 	case *parser.UnaryExpr:
 		return analyzer.Analyze(expr.Expr)

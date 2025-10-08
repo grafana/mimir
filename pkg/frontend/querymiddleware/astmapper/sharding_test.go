@@ -605,6 +605,7 @@ func TestShardSummer(t *testing.T) {
 
 				if hasVectorSelectors {
 					require.Equal(t, tt.expectedShardableQueries > 0, analysisResult.WillShardAllSelectors, "Analyze should be true if the expression is shardable, and false otherwise")
+					require.Equal(t, tt.expectedShardableQueries, analysisResult.ShardedSelectors)
 				} else {
 					require.True(t, analysisResult.WillShardAllSelectors, "expression has no selectors")
 				}
