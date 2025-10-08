@@ -68,6 +68,7 @@
 * [ENHANCEMENT] Compactor: Log sizes of downloaded and uploaded blocks. #12656
 * [ENHANCEMENT] Block-builder-scheduler: The scheduler now handles multiple concurrent jobs within a partition if allowed by `-block-builder-scheduler.max-jobs-per-partition`. #12772
 * [ENHANCEMENT] Ingester: Add `cortex_ingest_storage_reader_receive_and_consume_delay_seconds` metric tracking the time between when a write request is received in the distributor and its content is ingested in ingesters, when the ingest storage is enabled. #12751
+* [ENHANCEMENT] Distributor: Add experimental configuration option `-distributor.sharding.exclude-classic-histogram-bucket-label` to compute the series hash – used for sharding – excluding the 'le' label. When this configuration option is set to true, all buckets of a classic histogram metric are stored in the same shard. #12815
 * [ENHANCEMENT] Ruler: Add `ruler_evaluation_consistency_max_delay` per-tenant configuration option support, to specify the maximum tolerated ingestion delay for eventually consistent rule evaluations. This feature is used only when ingest storage is enabled. By default, no maximum delay is enforced. #12751
 * [ENHANCEMENT] Ingester: Export `cortex_attributed_series_overflow_labels` metric on the `/usage-metrics` metrics endpoint with the configured cost-attribution labels set to overflow value. #12846
 * [ENHANCEMENT] Usage stats: Report ingest-storage mode as part of usage statistics. #12753
