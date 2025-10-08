@@ -68,10 +68,10 @@ func TestMatcherReducerPlanner_PlanIndexLookup(t *testing.T) {
 			expectedIndexMatchers: []string{`foo="bar"`, `foo=~".*baz.*"`},
 		},
 		{
-			name:                  "always drop wildcard matcher, even if it is the only matcher",
+			name:                  "do not drop wildcard matcher if it is the only matcher",
 			ctx:                   context.Background(),
 			inIndexMatchers:       []string{`foo=~".*"`},
-			expectedIndexMatchers: []string{},
+			expectedIndexMatchers: []string{`foo=~".*"`},
 		},
 		{
 			name:                  "do not drop wildcard negative regex matcher",
@@ -201,47 +201,53 @@ func TestMatcherReducerPlanner_MatchedSeries(t *testing.T) {
 			matchers: []string{`instance=~".*"`, `__name__!=""`},
 		},
 		{
-			name:     "regex matcher and intersecting equals matcher",
+			name:     "regex matcher and overlapping equals matcher",
 			matchers: []string{`__name__=~".*requests.*"`, `__name__="http_requests_total"`},
 		},
 		{
-			name:     "regex matcher and non-intersecting equals matcher",
+			name:     "regex matcher and non-overlapping equals matcher",
 			matchers: []string{`__name__=~".*requests.*"`, `__name__="cpu_usage_percent"`},
 		},
 		{
-			name:     "regex matcher and non-subtractive not-equals matcher",
+			// An "overlapping" matcher matches a set of series that overlaps with (and may be fully identical to) the other matcher.
+			// A "non-subtractive" not-equals matcher matches all the same series as the other matcher.
+			name:     "regex matcher and overlapping, non-subtractive not-equals matcher",
 			matchers: []string{`__name__=~".*requests.*"`, `__name__!="cpu_usage_percent"`},
 		},
 		{
-			name:     "regex matcher and fully subtractive not-equals matcher",
-			matchers: []string{`__name__=~".*http_requests.*"`, `__name__!="http_requests_total"`},
-		},
-		{
-			name:     "regex matcher and partially subtractive not-equals matcher",
+			// A "partially subtractive" not-equals matcher matches a strict subset of series matched by the other matcher.
+			name:     "regex matcher and overlapping, partially subtractive not-equals matcher",
 			matchers: []string{`__name__=~".*requests.*"`, `__name__!="http_requests_total"`},
 		},
 		{
-			name:     "regex matcher and intersecting regex matcher",
+			// A "non-overlapping" matcher does not match any series that are matched by the other matcher.
+			// A "fully subtractive" not-equals matcher results in the exclusion of all series from the result set.
+			// "Non-overlapping" and "fully subtractive" are equivalent descriptors.
+			name:     "regex matcher and non-overlapping, fully subtractive not-equals matcher",
+			matchers: []string{`__name__=~".*http_requests.*"`, `__name__!="http_requests_total"`},
+		},
+		{
+			name:     "regex matcher and overlapping regex matcher",
 			matchers: []string{`__name__=~".*requests.*"`, `__name__=~".*total.*"`},
 		},
 		{
-			name:     "regex matcher and non-intersecting regex matcher",
+			name:     "regex matcher and non-overlapping regex matcher",
 			matchers: []string{`__name__=~".*requests.*"`, `__name__=~".*percent.*"`},
 		},
 		{
-			name:     "regex matcher and partially intersecting regex matcher",
+			name:     "regex matcher and partially overlapping regex matcher",
 			matchers: []string{`__name__=~".*requests.*"`, `__name__=~".*http.*"`},
 		},
 		{
-			name:     "regex matcher and intersecting not-regex matcher",
+			name:     "regex matcher and overlapping not-regex matcher",
 			matchers: []string{`__name__=~".*requests.*"`, `__name__!~".*usage.*"`},
 		},
 		{
-			name:     "regex matcher and non-intersecting not-regex matcher",
+			name:     "regex matcher and non-overlapping not-regex matcher",
 			matchers: []string{`__name__=~".*requests.*"`, `__name__!~".*"`},
 		},
 		{
-			name:     "regex matcher and partially intersecting not-regex matcher",
+			name:     "regex matcher and partially overlapping not-regex matcher",
 			matchers: []string{`__name__=~".*requests.*"`, `__name__!~".*cache.*"`},
 		},
 		{
@@ -249,27 +255,27 @@ func TestMatcherReducerPlanner_MatchedSeries(t *testing.T) {
 			matchers: []string{`__name__!=""`, `__name__!~""`},
 		},
 		{
-			name:     "not-equals matcher and subtractive not-regex matcher",
+			name:     "not-equals matcher and non-overlapping, partially subtractive not-regex matcher",
 			matchers: []string{`__name__!="http_requests_total"`, `__name__!~".*usage.*"`},
 		},
 		{
-			name:     "not-equals matcher and non-subtractive not-regex matcher",
+			name:     "not-equals matcher and overlapping, non-subtractive not-regex matcher",
 			matchers: []string{`__name__!="http_requests_total"`, `__name__!~".*bananas.*"`},
 		},
 		{
-			name:     "not-equals matcher and intersecting equals matcher",
+			name:     "not-equals matcher and overlapping equals matcher",
 			matchers: []string{`__name__!=""`, `__name__="http_requests_total"`},
 		},
 		{
-			name:     "not-equals matcher and non-intersecting equals matcher",
+			name:     "not-equals matcher and non-overlapping equals matcher",
 			matchers: []string{`__name__!="http_requests_total"`, `__name__="http_requests_total"`},
 		},
 		{
-			name:     "not-equals matcher and intersecting not-equals matcher",
+			name:     "not-equals matcher and overlapping not-equals matcher",
 			matchers: []string{`__name__!=""`, `__name__!="cache_requests_total"`},
 		},
 		{
-			name:     "not-equals matcher and non-intersecting not-equals matcher for different label names",
+			name:     "not-equals matcher and non-overlapping not-equals matcher for different label names",
 			matchers: []string{`backend!=""`, `__name__!="cache_requests_total"`},
 		},
 		{
