@@ -84,6 +84,7 @@ type Config struct {
 	SortingLabels                flagext.StringSliceCSV `yaml:"sorting_labels" category:"advanced"`
 	ColDuration                  time.Duration          `yaml:"col_duration" category:"advanced"`
 	MaxRowsPerGroup              int                    `yaml:"max_rows_per_group" category:"advanced"`
+	MaxRowGroupsPerShard         int                    `yaml:"max_row_groups_per_shard" category:"advanced"`
 	TSDBReadConcurrency          int                    `yaml:"tsdb_read_concurrency" category:"advanced"`
 	ParquetShardWriteConcurrency int                    `yaml:"parquet_shard_write_concurrency" category:"advanced"`
 
@@ -117,6 +118,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.Var(&cfg.SortingLabels, "parquet-converter.sorting-labels", "Comma-separated list of labels to sort by when converting to Parquet format. If not the file will be sorted by '__name__'.")
 	f.DurationVar(&cfg.ColDuration, "parquet-converter.col-duration", 8*time.Hour, "Duration for column chunks in Parquet files.")
 	f.IntVar(&cfg.MaxRowsPerGroup, "parquet-converter.max-rows-per-group", 1e6, "Maximum number of rows per row group in Parquet files.")
+	f.IntVar(&cfg.MaxRowGroupsPerShard, "parquet-converter.max-row-groups-per-shard", 0, "Maximum number of rows per row group in Parquet files.")
 	f.IntVar(&cfg.TSDBReadConcurrency, "parquet-converter.tsdb-read-concurrency", 4, "Maximum number of Go routines reading TSDB series in concurrently when converting a block.")
 	f.IntVar(&cfg.ParquetShardWriteConcurrency, "parquet-converter.parquet-shard-write-concurrency", 4, "Maximum number of Go routines writing Parquet shards in parallel when converting a block.")
 
@@ -161,6 +163,10 @@ func buildBaseConverterOptions(cfg Config) []convert.ConvertOption {
 
 	if cfg.MaxRowsPerGroup > 0 {
 		baseConverterOptions = append(baseConverterOptions, convert.WithRowGroupSize(cfg.MaxRowsPerGroup))
+	}
+
+	if cfg.MaxRowGroupsPerShard > 0 {
+		baseConverterOptions = append(baseConverterOptions, convert.WithNumRowGroups(cfg.MaxRowGroupsPerShard))
 	}
 
 	if cfg.TSDBReadConcurrency > 0 {

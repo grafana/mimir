@@ -22836,6 +22836,17 @@
         },
         {
           "kind": "field",
+          "name": "max_row_groups_per_shard",
+          "required": false,
+          "desc": "Maximum number of rows per row group in Parquet files.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "parquet-converter.max-row-groups-per-shard",
+          "fieldType": "int",
+          "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
           "name": "tsdb_read_concurrency",
           "required": false,
           "desc": "Maximum number of Go routines reading TSDB series in concurrently when converting a block.",
