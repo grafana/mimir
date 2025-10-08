@@ -135,7 +135,7 @@ func (q *distributorQuerier) streamingSelect(ctx context.Context, minT, maxT int
 
 	sets := []storage.SeriesSet(nil)
 	if len(results.Timeseries) > 0 {
-		sets = append(sets, limiter.NewMemoryTrackingSeriesSet(newTimeSeriesSeriesSet(results.Timeseries), memoryTracker))
+		sets = append(sets, series.NewMemoryTrackingSeriesSet(newTimeSeriesSeriesSet(results.Timeseries), memoryTracker))
 	}
 
 	var chunkInfo *chunkinfologger.ChunkInfoLogger
@@ -172,7 +172,7 @@ func (q *distributorQuerier) streamingSelect(ctx context.Context, minT, maxT int
 	}
 
 	if len(serieses) > 0 {
-		sets = append(sets, limiter.NewMemoryTrackingSeriesSet(series.NewConcreteSeriesSetFromUnsortedSeries(serieses), memoryTracker))
+		sets = append(sets, series.NewMemoryTrackingSeriesSet(series.NewConcreteSeriesSetFromUnsortedSeries(serieses), memoryTracker))
 	}
 
 	if len(results.StreamingSeries) > 0 {
@@ -196,7 +196,7 @@ func (q *distributorQuerier) streamingSelect(ctx context.Context, minT, maxT int
 			})
 		}
 
-		sets = append(sets, limiter.NewMemoryTrackingSeriesSet(series.NewConcreteSeriesSetFromSortedSeries(streamingSeries), memoryTracker))
+		sets = append(sets, series.NewMemoryTrackingSeriesSet(series.NewConcreteSeriesSetFromSortedSeries(streamingSeries), memoryTracker))
 	}
 
 	q.streamReadersMtx.Lock()

@@ -12,7 +12,6 @@ import (
 	"github.com/grafana/dskit/tracing"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/storage"
 )
 
 type contextKey int
@@ -20,43 +19,6 @@ type contextKey int
 const (
 	memoryConsumptionTracker contextKey = 0
 )
-
-// memoryTrackingSeriesSet is storage.SeriesSet that tracks the wrapped SeriesSet memory consumption.
-type memoryTrackingSeriesSet struct {
-	storage.SeriesSet
-	memoryConsumptionTracker *MemoryConsumptionTracker
-	currentSeries            storage.Series
-	memoryDecreased          bool
-}
-
-func NewMemoryTrackingSeriesSet(embed storage.SeriesSet, memoryConsumptionTracker *MemoryConsumptionTracker) storage.SeriesSet {
-	return &memoryTrackingSeriesSet{
-		SeriesSet:                embed,
-		memoryConsumptionTracker: memoryConsumptionTracker,
-	}
-}
-
-func (m *memoryTrackingSeriesSet) Next() bool {
-	// Reset tracking state when moving to next series
-	m.currentSeries = nil
-	m.memoryDecreased = false
-	return m.SeriesSet.Next()
-}
-
-func (m *memoryTrackingSeriesSet) At() storage.Series {
-	at := m.SeriesSet.At()
-
-	// Only decrease memory once per series position
-	if m.memoryConsumptionTracker != nil && !m.memoryDecreased {
-		if m.currentSeries != at {
-			// New series at this position
-			m.currentSeries = at
-			m.memoryDecreased = true
-			defer m.memoryConsumptionTracker.DecreaseMemoryConsumptionForLabels(at.Labels())
-		}
-	}
-	return at
-}
 
 // MemoryTrackerFromContextWithFallback returns a MemoryConsumptionTracker that has been added to this
 // context. If there is no MemoryConsumptionTracker in this context, a new no-op tracker that
