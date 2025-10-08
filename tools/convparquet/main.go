@@ -21,10 +21,11 @@ func main() {
 	// Parse command line flags
 	var traceFlag = flag.Bool("trace", false, "Enable runtime tracing")
 	var heapFlag = flag.Bool("heap", false, "Enable heap profiling")
+	var cpuFlag = flag.Bool("cpu", false, "Enable CPU profiling")
 	flag.Parse()
 
 	if len(flag.Args()) < 1 {
-		log.Fatal("Usage: conv [-trace] [-heap] <block-path>")
+		log.Fatal("Usage: conv [-trace] [-heap] [-cpu] <block-path>")
 	}
 
 	blockPath := flag.Args()[0]
@@ -41,6 +42,20 @@ func main() {
 			log.Fatalf("Failed to start trace: %v", err)
 		}
 		defer trace.Stop()
+	}
+
+	// Start CPU profiling if requested
+	if *cpuFlag {
+		cpuFile, err := os.Create("cpu.prof")
+		if err != nil {
+			log.Fatalf("Failed to create CPU profile file: %v", err)
+		}
+		defer cpuFile.Close()
+
+		if err := pprof.StartCPUProfile(cpuFile); err != nil {
+			log.Fatalf("Failed to start CPU profile: %v", err)
+		}
+		defer pprof.StopCPUProfile()
 	}
 
 	// Start heap profiling if requested
