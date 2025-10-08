@@ -392,6 +392,10 @@ func (c *ParquetConverter) discoverAndEnqueueBlocks(ctx context.Context) {
 				level.Info(blogger).Log(
 					"msg", "enqueued block for conversion",
 					"block", m.ULID.String(),
+					"block_duration", (time.Duration(m.MaxTime-m.MinTime) * time.Millisecond).String(),
+					"block_level", m.Compaction.Level,
+					"block_min_time", m.MinTime,
+					"block_ooo", m.OutOfOrder,
 					"queue_size", c.conversionQueue.Size(),
 				)
 			} else {
