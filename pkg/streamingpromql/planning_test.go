@@ -104,7 +104,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 
 			expectedPlan: &planning.EncodedQueryPlan{
 				TimeRange: instantQueryEncodedTimeRange,
-				RootNode:  0,
+				RootNode:  1,
 				Nodes: []*planning.EncodedNode{
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
@@ -118,6 +118,14 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 						Type:        "VectorSelector",
 						Description: `{__name__="some_metric"} @ 0 (1970-01-01T00:00:00Z)`,
 					},
+					{
+						NodeType:       planning.NODE_TYPE_STEP_INVARIANT_EXPRESSION,
+						Details:        marshalDetails(&core.StepInvariantExpressionDetails{}),
+						ChildrenLabels: []string{""},
+						Children:       []int64{0},
+						Type:           "StepInvariantExpression",
+						Description:    `[step invariant]`,
+					},
 				},
 			},
 		},
@@ -127,7 +135,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 
 			expectedPlan: &planning.EncodedQueryPlan{
 				TimeRange: rangeQueryEncodedTimeRange,
-				RootNode:  0,
+				RootNode:  1,
 				Nodes: []*planning.EncodedNode{
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
@@ -141,6 +149,14 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 						Type:        "VectorSelector",
 						Description: `{__name__="some_metric"} @ 3000 (1970-01-01T00:00:03Z)`,
 					},
+					{
+						NodeType:       planning.NODE_TYPE_STEP_INVARIANT_EXPRESSION,
+						Details:        marshalDetails(&core.StepInvariantExpressionDetails{}),
+						ChildrenLabels: []string{""},
+						Children:       []int64{0},
+						Type:           "StepInvariantExpression",
+						Description:    `[step invariant]`,
+					},
 				},
 			},
 		},
@@ -150,7 +166,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 
 			expectedPlan: &planning.EncodedQueryPlan{
 				TimeRange: rangeQueryEncodedTimeRange,
-				RootNode:  0,
+				RootNode:  1,
 				Nodes: []*planning.EncodedNode{
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
@@ -163,6 +179,14 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 						}),
 						Type:        "VectorSelector",
 						Description: `{__name__="some_metric"} @ 5000 (1970-01-01T00:00:05Z)`,
+					},
+					{
+						NodeType:       planning.NODE_TYPE_STEP_INVARIANT_EXPRESSION,
+						Details:        marshalDetails(&core.StepInvariantExpressionDetails{}),
+						ChildrenLabels: []string{""},
+						Children:       []int64{0},
+						Type:           "StepInvariantExpression",
+						Description:    `[step invariant]`,
 					},
 				},
 			},
@@ -625,7 +649,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 
 			expectedPlan: &planning.EncodedQueryPlan{
 				TimeRange: instantQueryEncodedTimeRange,
-				RootNode:  2,
+				RootNode:  3,
 				Nodes: []*planning.EncodedNode{
 					{
 						NodeType: planning.NODE_TYPE_NUMBER_LITERAL,
@@ -655,6 +679,14 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 						Children:       []int64{0, 1},
 						Description:    `LHS + RHS`,
 						ChildrenLabels: []string{"LHS", "RHS"},
+					},
+					{
+						NodeType:       planning.NODE_TYPE_STEP_INVARIANT_EXPRESSION,
+						Details:        marshalDetails(&core.StepInvariantExpressionDetails{}),
+						ChildrenLabels: []string{""},
+						Children:       []int64{2},
+						Type:           "StepInvariantExpression",
+						Description:    `[step invariant]`,
 					},
 				},
 			},

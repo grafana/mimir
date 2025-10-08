@@ -455,6 +455,17 @@ func HistogramFractionFunctionOperatorFactory(args []types.Operator, _ labels.La
 	return NewHistogramFractionFunction(lower, upper, inner, opParams.MemoryConsumptionTracker, opParams.Annotations, expressionPosition, timeRange, opParams.EnableDelayedNameRemoval), nil
 }
 
+// isOrWrapsInstantVectorSelector returns true if the given operator is an InstantVectorSelector or is a StepInvariantInstantVectorOperator which wraps an InstantVectorSelector
+func isOrWrapsInstantVectorSelector(op types.Operator) bool {
+	if _, ok := op.(*selectors.InstantVectorSelector); ok {
+		return true
+	}
+	if si, ok := op.(*operators.StepInvariantInstantVectorOperator); ok {
+		return isOrWrapsInstantVectorSelector(si.Inner())
+	}
+	return false
+}
+
 func TimestampFunctionOperatorFactory(args []types.Operator, _ labels.Labels, opParams *planning.OperatorParameters, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.Operator, error) {
 	if len(args) != 1 {
 		// Should be caught by the PromQL parser, but we check here for safety.
@@ -468,9 +479,7 @@ func TimestampFunctionOperatorFactory(args []types.Operator, _ labels.Labels, op
 	}
 
 	f := Timestamp
-	_, isSelector := args[0].(*selectors.InstantVectorSelector)
-
-	if isSelector {
+	if isOrWrapsInstantVectorSelector(args[0]) {
 		// We'll have already set ReturnSampleTimestamps on the InstantVectorSelector during the planning process, so we don't need to do that here.
 		f.SeriesDataFunc = PassthroughData
 	}

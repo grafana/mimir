@@ -274,6 +274,8 @@ func shouldWrapInDedupAndMerge(root planning.Node) (bool, error) {
 		if err == nil && res == parser.ValueTypeScalar {
 			return false, nil
 		}
+	case *core.StepInvariantExpression:
+		return shouldWrapInDedupAndMerge(node.Inner)
 	}
 	return true, nil
 }
@@ -310,6 +312,20 @@ func (p *QueryPlanner) runPlanningStage(stageName string, observer PlanningObser
 	}
 
 	return plan, nil
+}
+
+// applyIfIsOrWrapsVectorSelector will invoke the given action if the node is a VectorSelector or the node is a StepInvariantExpression which wraps a VectorSelector
+func (p *QueryPlanner) applyIfIsOrWrapsVectorSelector(node planning.Node, action func(vs *core.VectorSelector)) {
+	vs, isVectorSelector := node.(*core.VectorSelector)
+	if isVectorSelector {
+		action(vs)
+		return
+	}
+
+	stepInvariant, isStepInvariant := node.(*core.StepInvariantExpression)
+	if isStepInvariant {
+		p.applyIfIsOrWrapsVectorSelector(stepInvariant.Inner, action)
+	}
 }
 
 func (p *QueryPlanner) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
@@ -462,10 +478,11 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
 		case functions.FUNCTION_ABSENT, functions.FUNCTION_ABSENT_OVER_TIME:
 			f.AbsentLabels = mimirpb.FromLabelsToLabelAdapters(functions.CreateLabelsForAbsentFunction(expr.Args[0]))
 		case functions.FUNCTION_TIMESTAMP:
-			vs, isVectorSelector := args[0].(*core.VectorSelector)
-			if isVectorSelector {
+			// Set the ReturnSampleTimestamps on the underlying VectorSelector.
+			// Check for both a raw VectorSelector or when it is nested within a StepInvariantExpression
+			p.applyIfIsOrWrapsVectorSelector(args[0], func(vs *core.VectorSelector) {
 				vs.ReturnSampleTimestamps = true
-			}
+			})
 		}
 
 		if functionNeedsDeduplication(fnc) {
@@ -554,12 +571,44 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
 		return p.nodeFromExpr(expr.Expr)
 
 	case *parser.StepInvariantExpr:
-		// FIXME: make use of the fact the expression is step invariant
-		return p.nodeFromExpr(expr.Expr)
+		if !p.wrapInStepInvariantExpr(expr.Expr) {
+			return p.nodeFromExpr(expr.Expr)
+		}
+
+		inner, err := p.nodeFromExpr(expr.Expr)
+		if err != nil {
+			return nil, err
+		}
+
+		return &core.StepInvariantExpression{
+			Inner:                          inner,
+			StepInvariantExpressionDetails: &core.StepInvariantExpressionDetails{},
+		}, nil
 
 	default:
 		return nil, fmt.Errorf("unknown expression type: %T", expr)
 	}
+}
+
+// wrapInStepInvariantExpr returns true if this expression can be wrapped in a StepInvariantExpression.
+// The StepInvariantExpression wrapping is not required when the expression result will be a matrix, as it will have its own unique timestamps which do not depend on the step.
+func (p *QueryPlanner) wrapInStepInvariantExpr(expr parser.Expr) bool {
+	// We do not duplicate results for range selectors since result is a matrix
+	// with their unique timestamps which does not depend on the step.
+	switch v := expr.(type) {
+	case *parser.MatrixSelector:
+		return false
+	case *parser.SubqueryExpr:
+		return false
+	case *parser.Call:
+		for _, arg := range v.Args {
+			if !p.wrapInStepInvariantExpr(arg) {
+				return false
+			}
+		}
+		return true
+	}
+	return true
 }
 
 func findFunction(name string) (functions.Function, bool) {

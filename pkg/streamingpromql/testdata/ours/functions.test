@@ -1421,3 +1421,23 @@ eval instant at 60s ts_of_first_over_time(metric_histogram{type="mix_first_missi
   {type="mix_first_missing"} 10
 
 clear
+
+load 10s
+  metric{label="foo"} 16x10
+  metric{label="bar", group="a"} 5 4x9
+  metric{label="bar", group="b"} 3 4x9
+
+eval range from 0 to 60s step 10s metric{label="bar"} @ start()
+  {__name__="metric", label="bar", group="a"} 5 5 5 5 5 5 5
+  {__name__="metric", label="bar", group="b"} 3 3 3 3 3 3 3
+
+eval range from 0 to 60s step 10s sum(metric{label="bar"} @ start())
+  {} 8 8 8 8 8 8 8
+
+eval range from 0 to 60s step 10s metric{label="foo"} / ignoring(label) sum(metric{label="bar"} @ end())
+  {} 2 2 2 2 2 2 2
+
+eval range from 0 to 60s step 10s metric{label="foo"} / ignoring(label) sum(metric{label="bar"} @ end())
+  {} 2 2 2 2 2 2 2
+
+clear
