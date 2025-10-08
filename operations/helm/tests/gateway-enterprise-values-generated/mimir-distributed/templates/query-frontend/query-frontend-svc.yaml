@@ -8,6 +8,7 @@ metadata:
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: gateway-enterprise-values
     app.kubernetes.io/component: query-frontend
+    app.kubernetes.io/part-of: memberlist
     app.kubernetes.io/managed-by: Helm
   annotations:
     {}
