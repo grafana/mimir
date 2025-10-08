@@ -8178,7 +8178,7 @@
           "required": false,
           "desc": "Concurrency for fsyncing of WAL and WBL before Kafka offsets are committed.",
           "fieldValue": null,
-          "fieldDefaultValue": 8,
+          "fieldDefaultValue": 1,
           "fieldFlag": "ingest-storage.write-logs-fsync-before-kafka-commit-concurrency",
           "fieldType": "int",
           "fieldCategory": "experimental"
