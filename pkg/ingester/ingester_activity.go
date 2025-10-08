@@ -36,7 +36,7 @@ func (i *ActivityTrackerWrapper) Push(ctx context.Context, request *mimirpb.Writ
 }
 
 func (i *ActivityTrackerWrapper) PushToStorageAndReleaseRequest(ctx context.Context, request *mimirpb.WriteRequest) error {
-	// No tracking in PushToStorageAndReleaseRgoequest because it is called very frequently
+	// No tracking in PushToStorageAndReleaseRequest because it is called very frequently
 	return i.ing.PushToStorageAndReleaseRequest(ctx, request)
 }
 

@@ -4402,10 +4402,6 @@ func (i *Ingester) NotifyPreCommit(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		err = db.Head().FsyncWLSegments()
-		if err != nil {
-			return err
-		}
-		return nil
+		return db.Head().FsyncWLSegments()
 	})
 }
