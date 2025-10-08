@@ -20,7 +20,6 @@ The following Mimir features are built on top of hash rings:
 - Zone-aware replication: Optionally replicate data across failure domains for high availability. For more information, refer to [Configure zone-aware replication](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/configure-zone-aware-replication/).
 - Shuffle sharding: Optionally limit the blast radius of failures in a multi-tenant cluster by isolating tenants. For more information, refer to [Configure shuffle sharding](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/configure-shuffle-sharding/).
 
-
 ## How the hash ring is used for sharding
 
 The primary use of hash rings in Mimir is sharding data, for example, time series, and workloads, for example, compaction jobs, in a consistent way, without a central coordinator or single point of failure.
@@ -46,12 +45,10 @@ Hash rings provide consistent hashing.
 When an instance joins or leaves the ring, only a small, bounded portion of data moves.
 On average, only `n/m` tokens move, where `n` is the total number of tokens (32-bit unsigned integer) and `m` is the number of instances that are registered in the ring.
 
-
 ## How series sharding works
 
 The most important hash ring in Grafana Mimir is the one used to shard series.
 The implementation details depend on the configured architecture.
-
 
 ### Series sharding in ingest storage architecture
 
@@ -78,9 +75,9 @@ Each partition owns a range of tokens used to shard series among partitions and 
 
 When a distributor receives a write request containing series data:
 
-1.	It hashes each series using the `fnv32a` hashing function.
-2.	It looks up the resulting token in the partitions ring to determine the Kafka partition for that series.
-3.	It writes the series to the matching Kafka partition.
+1. It hashes each series using the `fnv32a` hashing function.
+2. It looks up the resulting token in the partitions ring to determine the Kafka partition for that series.
+3. It writes the series to the matching Kafka partition.
 
 A write request is considered successful when all series in the request are successfully committed to Kafka.
 
@@ -91,9 +88,9 @@ Each ingester registers itself in the ring and periodically updates its heartbea
 
 [Queriers](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/components/querier/) watch the ingesters ring to identify healthy ingesters and their IP addresses. When a querier receives a query:
 
-1.	It looks up the partitions ring to find which partitions contain the relevant data.
-2.	It looks up the ingesters ring to find which ingesters own those partitions.
-3.	It fetches the matching series by contacting the ingesters that own the partitions.
+1. It looks up the partitions ring to find which partitions contain the relevant data.
+2. It looks up the ingesters ring to find which ingesters own those partitions.
+3. It fetches the matching series by contacting the ingesters that own the partitions.
 
 In ingest storage architecture, consistency is guaranteed with a quorum of 1.
 Each partition needs to be queried only once.
@@ -150,7 +147,6 @@ Finally, the rollout operator terminates the ingester pod, completing the safe d
 
 ![Partitions lifecycle - How it works when an ingester stop](partitions-lifecycle-ingester-stop.png)
 
-
 ### Series sharding in classic architecture
 
 {{< admonition type="note" >}}
@@ -188,7 +184,6 @@ In the example that follows, the series are replicated to the instances of `Inge
 ![Hash ring with replication](classic-hash-ring-with-replication.png)
 
 [//]: # "Diagram source at https://docs.google.com/presentation/d/1bHp8_zcoWCYoNU2AhO2lSagQyuIrghkCncViSqn14cU/edit"
-
 
 ## How the hash ring is used for service discovery
 
