@@ -14,7 +14,7 @@ type parquetConverterMetrics struct {
 	blocksConvertedFailed *prometheus.CounterVec
 	conversionDuration    *prometheus.HistogramVec
 	tenantsDiscovered     prometheus.Gauge
-	queueSize             prometheus.Gauge
+	queueSize             *prometheus.GaugeVec
 	queueWaitTime         *prometheus.HistogramVec
 	queueItemsEnqueued    *prometheus.CounterVec
 	queueItemsProcessed   *prometheus.CounterVec
@@ -47,10 +47,10 @@ func newParquetConverterMetrics(reg prometheus.Registerer) parquetConverterMetri
 		Help: "Number of tenants discovered by the parquet converter",
 	})
 
-	m.queueSize = promauto.With(reg).NewGauge(prometheus.GaugeOpts{
+	m.queueSize = promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
 		Name: "cortex_parquet_converter_queue_size",
 		Help: "Current number of blocks in the conversion queue",
-	})
+	}, []string{"lb_strategy"}) // The meaning of the queue size differs depending on the load balancing strategy
 
 	m.queueWaitTime = promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
 		Name:                            "cortex_parquet_converter_queue_wait_time_seconds",
