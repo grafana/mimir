@@ -1300,13 +1300,13 @@ Usage of ./cmd/mimir/mimir:
   -distributor.reactive-limiter.initial-limit uint
     	[experimental] Initial inflight requests limit (default 20)
   -distributor.reactive-limiter.initial-rejection-factor float
-    	[experimental] The number of allowed queued requests, as a multiple of current inflight requests, after which rejections start (default 2)
+    	[experimental] The number of allowed queued requests, as a multiple of current inflight requests, after which rejections start (default 1)
   -distributor.reactive-limiter.max-limit uint
     	[experimental] Maximum inflight requests limit (default 200)
   -distributor.reactive-limiter.max-limit-factor float
     	[experimental] The maximum inflight limit as a multiple of current inflight requests (default 5)
   -distributor.reactive-limiter.max-rejection-factor float
-    	[experimental] The number of allowed queued requests, as a multiple of current inflight requests, after which all requests are rejected (default 3)
+    	[experimental] The number of allowed queued requests, as a multiple of current inflight requests, after which all requests are rejected (default 2)
   -distributor.reactive-limiter.min-limit uint
     	[experimental] Minimum inflight requests limit (default 2)
   -distributor.reactive-limiter.recent-quantile float

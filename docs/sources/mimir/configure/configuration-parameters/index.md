@@ -2159,12 +2159,12 @@ reactive_limiter:
   # (experimental) The number of allowed queued requests, as a multiple of
   # current inflight requests, after which rejections start
   # CLI flag: -distributor.reactive-limiter.initial-rejection-factor
-  [initial_rejection_factor: <float> | default = 2]
+  [initial_rejection_factor: <float> | default = 1]
 
   # (experimental) The number of allowed queued requests, as a multiple of
   # current inflight requests, after which all requests are rejected
   # CLI flag: -distributor.reactive-limiter.max-rejection-factor
-  [max_rejection_factor: <float> | default = 3]
+  [max_rejection_factor: <float> | default = 2]
 ```
 
 ### ingester

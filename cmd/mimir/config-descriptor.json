@@ -2376,7 +2376,7 @@
               "required": false,
               "desc": "The number of allowed queued requests, as a multiple of current inflight requests, after which rejections start",
               "fieldValue": null,
-              "fieldDefaultValue": 2,
+              "fieldDefaultValue": 1,
               "fieldFlag": "distributor.reactive-limiter.initial-rejection-factor",
               "fieldType": "float",
               "fieldCategory": "experimental"
@@ -2387,7 +2387,7 @@
               "required": false,
               "desc": "The number of allowed queued requests, as a multiple of current inflight requests, after which all requests are rejected",
               "fieldValue": null,
-              "fieldDefaultValue": 3,
+              "fieldDefaultValue": 2,
               "fieldFlag": "distributor.reactive-limiter.max-rejection-factor",
               "fieldType": "float",
               "fieldCategory": "experimental"
