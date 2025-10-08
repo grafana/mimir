@@ -21,6 +21,7 @@ type ScalarRemoteExec struct {
 	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
 	Annotations              *annotations.Annotations
 	QueryStats               *types.QueryStats
+	EagerLoad                bool
 
 	resp      ScalarRemoteExecutionResponse
 	finalized bool
@@ -32,7 +33,7 @@ func (s *ScalarRemoteExec) Prepare(ctx context.Context, params *types.PreparePar
 	s.QueryStats = params.QueryStats
 
 	var err error
-	s.resp, err = s.RemoteExecutor.StartScalarExecution(ctx, s.RootPlan, s.Node, s.TimeRange, s.MemoryConsumptionTracker, s.QueryStats.EnablePerStepStats)
+	s.resp, err = s.RemoteExecutor.StartScalarExecution(ctx, s.RootPlan, s.Node, s.TimeRange, s.MemoryConsumptionTracker, s.QueryStats.EnablePerStepStats, s.EagerLoad)
 	return err
 }
 

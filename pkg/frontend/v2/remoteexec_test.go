@@ -4,6 +4,7 @@ package v2
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -447,11 +448,20 @@ func TestExecutionResponses_GetEvaluationInfo(t *testing.T) {
 }
 
 type mockResponseStream struct {
+	release   chan struct{}
 	responses []mockResponse
 	closed    bool
 }
 
 func (m *mockResponseStream) Next(ctx context.Context) (*frontendv2pb.QueryResultStreamRequest, error) {
+	if m.release != nil {
+		<-m.release
+	}
+
+	if len(m.responses) == 0 {
+		return nil, errors.New("exhausted mock response stream")
+	}
+
 	resp := m.responses[0]
 	m.responses = m.responses[1:]
 
@@ -635,7 +645,7 @@ func TestRemoteExecutor_CorrectlyPassesQueriedTimeRange(t *testing.T) {
 
 	ctx := context.Background()
 	node := &core.VectorSelector{VectorSelectorDetails: &core.VectorSelectorDetails{}}
-	_, err := executor.startExecution(ctx, &planning.QueryPlan{}, node, timeRange, false)
+	_, err := executor.startExecution(ctx, &planning.QueryPlan{}, node, timeRange, false, false)
 	require.NoError(t, err)
 
 	require.Equal(t, startT.Add(-cfg.LookBackDelta+time.Millisecond), frontendMock.minT)
@@ -651,4 +661,178 @@ func (m *timeRangeCapturingFrontend) DoProtobufRequest(ctx context.Context, req 
 	m.minT = minT
 	m.maxT = maxT
 	return nil, nil
+}
+
+func TestEagerLoadingResponseStream_ShouldBufferAllMessagesEvenIfNoNextCallWaiting(t *testing.T) {
+	msg1 := newStringMessage("first message")
+	msg2 := newStringMessage("second message")
+	msg3 := newStringMessage("third message")
+	inner := &mockResponseStream{
+		responses: []mockResponse{
+			{msg: msg1},
+			{msg: msg2},
+			{msg: msg3},
+		},
+	}
+
+	stream := newEagerLoadingResponseStream(context.Background(), inner)
+
+	require.Eventually(t, func() bool {
+		stream.mtx.Lock()
+		defer stream.mtx.Unlock()
+
+		return stream.buffer.length >= 3
+	}, 100*time.Millisecond, 10*time.Millisecond, "buffer should be populated even if no Next() call waiting")
+
+	receivedMessage, err := stream.Next(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, msg1, receivedMessage)
+
+	receivedMessage, err = stream.Next(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, msg2, receivedMessage)
+
+	receivedMessage, err = stream.Next(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, msg3, receivedMessage)
+}
+
+func TestEagerLoadingResponseStream_ShouldWaitForDataIfBufferEmpty(t *testing.T) {
+	msg1 := newStringMessage("first message")
+	msg2 := newStringMessage("second message")
+	msg3 := newStringMessage("third message")
+	release := make(chan struct{})
+	inner := &mockResponseStream{
+		release: release, // Don't return any messages until we've had a chance to call Next() below.
+		responses: []mockResponse{
+			{msg: msg1},
+			{msg: msg2},
+			{msg: msg3},
+		},
+	}
+
+	stream := newEagerLoadingResponseStream(context.Background(), inner)
+	go func() {
+		<-time.After(100 * time.Millisecond)
+		close(release)
+	}()
+
+	receivedMessage, err := stream.Next(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, msg1, receivedMessage)
+
+	receivedMessage, err = stream.Next(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, msg2, receivedMessage)
+
+	receivedMessage, err = stream.Next(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, msg3, receivedMessage)
+}
+
+func TestEagerLoadingResponseStream_ErrorReturnedByInnerStream(t *testing.T) {
+	inner := &mockResponseStream{
+		responses: []mockResponse{
+			{err: errors.New("something went wrong")},
+		},
+	}
+	stream := newEagerLoadingResponseStream(context.Background(), inner)
+
+	msg, err := stream.Next(context.Background())
+	require.EqualError(t, err, "something went wrong")
+	require.Nil(t, msg)
+
+	msg, err = stream.Next(context.Background())
+	require.EqualError(t, err, "something went wrong", "error should be returned on subsequent Next() calls")
+	require.Nil(t, msg)
+}
+
+func TestEagerLoadingResponseStream_AbortsNextCallOnContextCancellation(t *testing.T) {
+	inner := &mockResponseStreamThatNeverReturns{release: make(chan struct{})}
+	stream := newEagerLoadingResponseStream(context.Background(), inner)
+
+	ctx, cancel := context.WithTimeoutCause(context.Background(), 20*time.Millisecond, errors.New("something has timed out"))
+	defer cancel()
+
+	msg, err := stream.Next(ctx)
+	require.EqualError(t, err, "something has timed out")
+	require.Nil(t, msg)
+
+	inner.Close()
+}
+
+type mockResponseStreamThatNeverReturns struct {
+	release chan struct{}
+}
+
+func (m *mockResponseStreamThatNeverReturns) Next(ctx context.Context) (*frontendv2pb.QueryResultStreamRequest, error) {
+	<-m.release
+	return nil, errors.New("mock response stream closed")
+}
+
+func (m *mockResponseStreamThatNeverReturns) Close() {
+	close(m.release)
+}
+
+func TestEagerLoadingResponseStream_ClosesInnerStreamWhenClosed(t *testing.T) {
+	inner := &mockResponseStream{}
+	stream := newEagerLoadingResponseStream(context.Background(), inner)
+	stream.Close()
+	require.True(t, inner.closed)
+}
+
+func TestResponseStreamBuffer(t *testing.T) {
+	buf := &responseStreamBuffer{}
+	require.False(t, buf.Any())
+
+	msg1 := bufferedMessage{newStringMessage("first message"), nil}
+	buf.Push(msg1)
+	require.True(t, buf.Any())
+	require.Equal(t, msg1, buf.Pop())
+	require.False(t, buf.Any())
+	// Make sure the internal state has been reset correctly, so that the tests below exercise the expected behaviour.
+	require.Zero(t, buf.startIndex)
+	require.Zero(t, buf.length)
+	require.Equal(t, 1, cap(buf.msgs))
+
+	msg2 := bufferedMessage{newStringMessage("second message"), nil}
+	msg3 := bufferedMessage{newStringMessage("third message"), nil}
+	buf.Push(msg1)
+	buf.Push(msg2)
+	buf.Push(msg3)
+	require.True(t, buf.Any())
+	require.Equal(t, msg1, buf.Pop())
+	require.Equal(t, msg2, buf.Pop())
+	require.Equal(t, msg3, buf.Pop())
+	require.False(t, buf.Any())
+	// Make sure the internal state has been reset correctly, so that the tests below exercise the expected behaviour.
+	require.Zero(t, buf.startIndex)
+	require.Zero(t, buf.length)
+	require.Equal(t, 4, cap(buf.msgs))
+
+	// Test that appending to the buffer when the first item is not in the first index of the underlying slice behaves correctly.
+	msg4 := bufferedMessage{newStringMessage("fourth message"), nil}
+	buf.Push(msg1)
+	buf.Push(msg2)
+	buf.Push(msg3)
+	buf.Push(msg4)
+	require.Equal(t, 4, cap(buf.msgs))
+
+	require.Equal(t, msg1, buf.Pop())
+
+	msg5 := bufferedMessage{newStringMessage("fifth message"), nil}
+	buf.Push(msg5)
+	require.Equal(t, 4, cap(buf.msgs), "buffer should have wrapped around inside slice")
+	require.Equal(t, 1, buf.startIndex, "buffer should not have shifted elements in slice")
+
+	msg6 := bufferedMessage{newStringMessage("sixth message"), nil}
+	buf.Push(msg6)
+	require.Equal(t, 8, cap(buf.msgs), "slice should have been expanded")
+	require.Equal(t, 0, buf.startIndex, "buffer should have shifted elements in slice")
+
+	require.Equal(t, msg2, buf.Pop())
+	require.Equal(t, msg3, buf.Pop())
+	require.Equal(t, msg4, buf.Pop())
+	require.Equal(t, msg5, buf.Pop())
+	require.Equal(t, msg6, buf.Pop())
 }

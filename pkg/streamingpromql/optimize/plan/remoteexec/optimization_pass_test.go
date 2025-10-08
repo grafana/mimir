@@ -85,10 +85,10 @@ func TestOptimizationPass(t *testing.T) {
 			expectedPlan: `
 				- AggregateExpression: sum
 					- FunctionCall: __sharded_concat__(...)
-						- param 0: RemoteExecution
+						- param 0: RemoteExecution: eager load
 							- AggregateExpression: sum
 								- VectorSelector: {__query_shard__="1_of_2", __name__="my_metric"}
-						- param 1: RemoteExecution
+						- param 1: RemoteExecution: eager load
 							- AggregateExpression: sum
 								- VectorSelector: {__query_shard__="2_of_2", __name__="my_metric"}
 			`,
@@ -108,18 +108,18 @@ func TestOptimizationPass(t *testing.T) {
 				- BinaryExpression: LHS + RHS
 					- LHS: AggregateExpression: sum
 						- FunctionCall: __sharded_concat__(...)
-							- param 0: RemoteExecution
+							- param 0: RemoteExecution: eager load
 								- AggregateExpression: sum
 									- VectorSelector: {__query_shard__="1_of_2", __name__="my_metric"}
-							- param 1: RemoteExecution
+							- param 1: RemoteExecution: eager load
 								- AggregateExpression: sum
 									- VectorSelector: {__query_shard__="2_of_2", __name__="my_metric"}
 					- RHS: AggregateExpression: sum
 						- FunctionCall: __sharded_concat__(...)
-							- param 0: RemoteExecution
+							- param 0: RemoteExecution: eager load
 								- AggregateExpression: count
 									- VectorSelector: {__query_shard__="1_of_2", __name__="my_other_metric"}
-							- param 1: RemoteExecution
+							- param 1: RemoteExecution: eager load
 								- AggregateExpression: count
 									- VectorSelector: {__query_shard__="2_of_2", __name__="my_other_metric"}
 			`,
