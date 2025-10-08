@@ -117,18 +117,22 @@
     cache_frontend_enabled: true,
     cache_frontend_max_item_size_mb: 5,
     cache_frontend_connection_limit: 16384,
+    cache_frontend_min_ready_seconds: 60,
 
     cache_index_queries_enabled: true,
     cache_index_queries_max_item_size_mb: 5,
     cache_index_queries_connection_limit: 16384,
+    cache_index_queries_min_ready_seconds: 60,
 
     cache_chunks_enabled: true,
     cache_chunks_max_item_size_mb: 1,
     cache_chunks_connection_limit: 16384,
+    cache_chunks_min_ready_seconds: 60,
 
     cache_metadata_enabled: true,
     cache_metadata_max_item_size_mb: 1,
     cache_metadata_connection_limit: 16384,
+    cache_metadata_min_ready_seconds: 60,
 
     // Number of etcd replicas.
     etcd_replicas: 3,

@@ -1854,6 +1854,7 @@ metadata:
   name: memcached
   namespace: default
 spec:
+  minReadySeconds: 60
   replicas: 3
   selector:
     matchLabels:
@@ -1913,6 +1914,7 @@ metadata:
   name: memcached-frontend
   namespace: default
 spec:
+  minReadySeconds: 60
   replicas: 3
   selector:
     matchLabels:
@@ -1972,6 +1974,7 @@ metadata:
   name: memcached-index-queries
   namespace: default
 spec:
+  minReadySeconds: 60
   replicas: 3
   selector:
     matchLabels:
@@ -2031,6 +2034,7 @@ metadata:
   name: memcached-metadata
   namespace: default
 spec:
+  minReadySeconds: 60
   replicas: 3
   selector:
     matchLabels:
