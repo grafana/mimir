@@ -264,11 +264,15 @@ func (analyzer *ShardingAnalyzer) Analyze(expr parser.Expr) (result ShardingAnal
 		}
 
 		rhs, err := analyzer.Analyze(expr.RHS)
+		if err != nil {
+			return UnshardedExpression(), err
+		}
+
 		if !rhs.WillShardAllSelectors {
 			return UnshardedExpression(), nil
 		}
 
-		return ShardedExpression(lhs.ShardedSelectors + rhs.ShardedSelectors), err
+		return ShardedExpression(lhs.ShardedSelectors + rhs.ShardedSelectors), nil
 
 	case *parser.Call:
 		if isSubqueryCall(expr) {
