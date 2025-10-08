@@ -120,8 +120,7 @@ func CanParallelize(expr parser.Expr, logger log.Logger) bool {
 		return CanParallelize(e.Expr, logger)
 
 	case *parser.UnaryExpr:
-		// Since these are only currently supported for Scalars, should be parallel-compatible
-		return true
+		return CanParallelize(e.Expr, logger)
 
 	case *parser.MatrixSelector, *parser.NumberLiteral, *parser.StringLiteral, *parser.VectorSelector:
 		return true

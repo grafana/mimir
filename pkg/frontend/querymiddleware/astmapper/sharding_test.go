@@ -147,6 +147,11 @@ func TestSharding(t *testing.T) {
 			1,
 		},
 		{
+			`-up`,
+			`-up`,
+			0,
+		},
+		{
 			`avg(count(test))`,
 			`avg(sum(` + concatShards(t, shardCount, `count(test{__query_shard__="x_of_y"})`) + `))`,
 			1,
@@ -596,6 +601,11 @@ func TestSharding(t *testing.T) {
 			out: `sum(` + concatShards(t, shardCount, `count(bar1{__query_shard__="x_of_y"})`) + `)` +
 				` or (sum(` + concatShards(t, shardCount, `sum(bar2{__query_shard__="x_of_y"} @ 123)`) + `))`,
 			expectedShardableQueries: 2,
+		},
+		{
+			in:                       `max_over_time((-absent(foo))[5m:])`,
+			out:                      `max_over_time((-absent(foo))[5m:])`,
+			expectedShardableQueries: 0,
 		},
 	} {
 		t.Run(tt.in, func(t *testing.T) {
