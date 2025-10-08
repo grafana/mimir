@@ -16,7 +16,7 @@ Hash rings are a distributed [consistent hashing scheme](https://en.wikipedia.or
 The following Mimir features are built on top of hash rings:
 
 - Service discovery: Instances can discover each other by looking up which peers are registered in the ring.
-- Health check: Instances periodically send a heartbeat to the ring to signal that they are alive. An instance is considered unhealthy if it misses heartbeats for a configured period.
+- Health check: Instances periodically send a heartbeat to the ring to signal that they are healthy. An instance is considered unhealthy if it misses heartbeats for a configured period.
 - Zone-aware replication: Optionally replicate data across failure domains for high availability. For more information, refer to [Configure zone-aware replication](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/configure-zone-aware-replication/).
 - Shuffle sharding: Optionally limit the blast radius of failures in a multi-tenant cluster by isolating tenants. For more information, refer to [Configure shuffle sharding](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/configure-shuffle-sharding/).
 
@@ -90,7 +90,7 @@ A write request is considered successful when all series in the request are succ
 The ingesters ring is the source of truth for all ingesters currently running in the Grafana Mimir cluster and is used for service discovery.
 Each ingester registers itself in the ring and periodically updates its heartbeat.
 
-[Queriers](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/components/querier/) watch the ingesters ring to identify alive ingesters and their IP addresses. When a querier receives a query:
+[Queriers](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/components/querier/) watch the ingesters ring to identify healthy ingesters and their IP addresses. When a querier receives a query:
 
 1.	It looks up the partitions ring to find which partitions contain the relevant data.
 2.	It looks up the ingesters ring to find which ingesters own those partitions.
@@ -98,7 +98,7 @@ Each ingester registers itself in the ring and periodically updates its heartbea
 
 In ingest storage architecture, consistency is guaranteed with a quorum of 1.
 Each partition needs to be queried only once.
-If multiple ingesters own the same partition, the querier fetches data from only one of the alive ingesters for that partition.
+If multiple ingesters own the same partition, the querier fetches data from only one of the healthy ingesters for that partition.
 
 #### Partitions ring lifecycle
 
@@ -198,11 +198,11 @@ Since instances register themselves in their ring and periodically send heartbea
 
 When the hash ring is used exclusively for service discovery, rather than sharding, instances don't register tokens in the ring.
 Instead, they only register their presence and periodically update a heartbeat timestamp.
-When other instances need to find the alive instances of a given component, they look up the ring to find the instances that have successfully updated the heartbeat the ring.
+When other instances need to find the healthy instances of a given component, they look up the ring to find the instances that have successfully updated the heartbeat the ring.
 
 The Grafana Mimir components using the ring for service discovery or coordination are:
 
-- [Distributors](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/components/distributor/) – enforce global rate limits as local limits by dividing the global limit by the number of alive distributor instances.
+- [Distributors](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/components/distributor/) – enforce global rate limits as local limits by dividing the global limit by the number of healthy distributor instances.
 - [Query-schedulers](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/components/query-scheduler/) – allow query-frontends and queriers to discover available schedulers.
 - [(Optional) Overrides-exporters](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/components/overrides-exporter/) – self-elect a leader among replicas to export high-cardinality metrics. No strict leader election is required.
 
