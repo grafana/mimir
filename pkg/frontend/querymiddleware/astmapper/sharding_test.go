@@ -595,6 +595,7 @@ func TestSharding(t *testing.T) {
 					require.Equal(t, tt.expectedShardableQueries, analysisResult.ShardedSelectors)
 				} else {
 					require.True(t, analysisResult.WillShardAllSelectors, "expression has no selectors")
+					require.Equal(t, 0, analysisResult.ShardedSelectors, "expression has no selectors")
 				}
 			})
 		})
