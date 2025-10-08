@@ -75,6 +75,10 @@ func newShardSummer(shards int, squasher Squasher, logger log.Logger, stats *Map
 
 		shardLabeller: shardLabeller,
 
+		// FIXME: if we already have an analyzer we've used for the expression we're going to shard, we could reuse it here
+		// and make use of its cached results.
+		// Most expressions won't trigger the need for analysis during sharding, and passing the analyzer around adds some
+		// extra complexity, so we haven't bothered to do this yet.
 		analyzer: NewShardingAnalyzer(logger),
 	}
 }
