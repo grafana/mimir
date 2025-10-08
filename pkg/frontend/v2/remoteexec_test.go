@@ -560,8 +560,12 @@ func newInstantVectorSeriesData(floats []promql.FPoint, histograms []promql.HPoi
 			EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
 				Message: &querierpb.EvaluateQueryResponse_InstantVectorSeriesData{
 					InstantVectorSeriesData: &querierpb.EvaluateQueryResponseInstantVectorSeriesData{
-						Floats:     mimirpb.FromFPointsToSamples(floats),
-						Histograms: mimirpb.FromHPointsToHistograms(histograms),
+						Series: []querierpb.InstantVectorSeriesData{
+							{
+								Floats:     mimirpb.FromFPointsToSamples(floats),
+								Histograms: mimirpb.FromHPointsToHistograms(histograms),
+							},
+						},
 					},
 				},
 			},
@@ -964,19 +968,21 @@ func (m mockLimitedParallelismLimits) MaxQueryParallelism(_ string) int {
 }
 
 func BenchmarkProtobufResponses(b *testing.B) {
+	const batchSize = 256
+
 	for _, seriesCount := range []int{1, 2, 10, 100, 1000, 5000} {
 		b.Run(fmt.Sprintf("series count=%v", seriesCount), func(b *testing.B) {
 			for _, pointCount := range []int{0, 1, 10, 100} {
 				b.Run(fmt.Sprintf("point count=%v", pointCount), func(b *testing.B) {
-					runProtobufResponseBenchmark(b, seriesCount, pointCount)
+					runProtobufResponseBenchmark(b, seriesCount, pointCount, batchSize)
 				})
 			}
 		})
 	}
 }
 
-func runProtobufResponseBenchmark(b *testing.B, seriesCount, pointCount int) {
-	messages := generateBenchmarkResponse(seriesCount, pointCount)
+func runProtobufResponseBenchmark(b *testing.B, seriesCount int, pointCount int, batchSize int) {
+	messages := generateBenchmarkResponse(seriesCount, pointCount, batchSize)
 	encodedMessages := encode(b, messages)
 
 	scheduler := func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
@@ -1014,7 +1020,7 @@ func runProtobufResponseBenchmark(b *testing.B, seriesCount, pointCount int) {
 	}
 }
 
-func generateBenchmarkResponse(seriesCount int, pointCount int) []*frontendv2pb.QueryResultStreamRequest {
+func generateBenchmarkResponse(seriesCount int, pointCount int, batchSize int) []*frontendv2pb.QueryResultStreamRequest {
 	msgs := make([]*frontendv2pb.QueryResultStreamRequest, 0, seriesCount+2)
 
 	series := make([]labels.Labels, 0, seriesCount)
@@ -1024,17 +1030,44 @@ func generateBenchmarkResponse(seriesCount int, pointCount int) []*frontendv2pb.
 
 	msgs = append(msgs, newSeriesMetadata(false, series...))
 
+	pendingSeriesData := make([]querierpb.InstantVectorSeriesData, 0, batchSize)
+	appendSeriesDataMessage := func() {
+		msgs = append(msgs, &frontendv2pb.QueryResultStreamRequest{
+			Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
+				EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
+					Message: &querierpb.EvaluateQueryResponse_InstantVectorSeriesData{
+						InstantVectorSeriesData: &querierpb.EvaluateQueryResponseInstantVectorSeriesData{
+							Series: pendingSeriesData,
+						},
+					},
+				},
+			},
+		})
+
+		pendingSeriesData = make([]querierpb.InstantVectorSeriesData, 0, batchSize)
+	}
+
 	for seriesIdx := range seriesCount {
-		floats := make([]promql.FPoint, 0, pointCount)
+		floats := make([]mimirpb.Sample, 0, pointCount)
 
 		for pointIdx := range pointCount {
-			floats = append(floats, promql.FPoint{
-				T: int64(pointIdx),
-				F: float64(seriesIdx*100000 + pointIdx),
+			floats = append(floats, mimirpb.Sample{
+				TimestampMs: int64(pointIdx),
+				Value:       float64(seriesIdx*100000 + pointIdx),
 			})
 		}
 
-		msgs = append(msgs, newInstantVectorSeriesData(floats, nil))
+		pendingSeriesData = append(pendingSeriesData, querierpb.InstantVectorSeriesData{
+			Floats: floats,
+		})
+
+		if len(pendingSeriesData) == batchSize {
+			appendSeriesDataMessage()
+		}
+	}
+
+	if len(pendingSeriesData) > 0 {
+		appendSeriesDataMessage()
 	}
 
 	msgs = append(msgs, newEvaluationCompleted(uint64(seriesCount*pointCount), nil, nil))

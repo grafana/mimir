@@ -17,6 +17,7 @@ message EvaluateQueryRequest {
   planning.EncodedQueryPlan plan = 1 [(gogoproto.nullable) = false];
   repeated EvaluationNode nodes = 2 [(gogoproto.nullable) = false];
   bool enablePerStepStats = 3;
+  uint32 batchSize = 4;
 }
 
 message EvaluationNode {
@@ -60,8 +61,12 @@ message EvaluateQueryResponseScalarValue {
 
 message EvaluateQueryResponseInstantVectorSeriesData {
   int64 nodeIndex = 1;
-  repeated cortexpb.Sample floats = 2 [(gogoproto.nullable) = false];
-  repeated cortexpb.FloatHistogramPair histograms = 3 [(gogoproto.nullable) = false];
+  repeated InstantVectorSeriesData series = 2 [(gogoproto.nullable) = false];
+}
+
+message InstantVectorSeriesData {
+  repeated cortexpb.Sample floats = 1 [(gogoproto.nullable) = false];
+  repeated cortexpb.FloatHistogramPair histograms = 2 [(gogoproto.nullable) = false];
 }
 
 message EvaluateQueryResponseRangeVectorStepData {

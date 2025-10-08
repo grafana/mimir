@@ -317,10 +317,14 @@ func (o *evaluationObserver) InstantVectorSeriesDataEvaluated(ctx context.Contex
 			InstantVectorSeriesData: &querierpb.EvaluateQueryResponseInstantVectorSeriesData{
 				NodeIndex: o.nodeIndex,
 
-				// The methods below do unsafe casts and do not copy the data from the slices, but this is OK as we're immediately
-				// serializing the message and sending it before the deferred return to the pool occurs above.
-				Floats:     mimirpb.FromFPointsToSamples(seriesData.Floats),
-				Histograms: mimirpb.FromHPointsToHistograms(seriesData.Histograms),
+				Series: []querierpb.InstantVectorSeriesData{
+					{
+						// The methods below do unsafe casts and do not copy the data from the slices, but this is OK as we're immediately
+						// serializing the message and sending it before the deferred return to the pool occurs above.
+						Floats:     mimirpb.FromFPointsToSamples(seriesData.Floats),
+						Histograms: mimirpb.FromHPointsToHistograms(seriesData.Histograms),
+					},
+				},
 			},
 		},
 	})

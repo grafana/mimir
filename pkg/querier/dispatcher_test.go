@@ -174,10 +174,14 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 							Message: &querierpb.EvaluateQueryResponse_InstantVectorSeriesData{
 								InstantVectorSeriesData: &querierpb.EvaluateQueryResponseInstantVectorSeriesData{
 									NodeIndex: 3,
-									Floats: []mimirpb.Sample{
-										{TimestampMs: 0, Value: 0.123},
-										{TimestampMs: 10_000, Value: 1.123},
-										{TimestampMs: 20_000, Value: 2.123},
+									Series: []querierpb.InstantVectorSeriesData{
+										{
+											Floats: []mimirpb.Sample{
+												{TimestampMs: 0, Value: 0.123},
+												{TimestampMs: 10_000, Value: 1.123},
+												{TimestampMs: 20_000, Value: 2.123},
+											},
+										},
 									},
 								},
 							},
@@ -190,10 +194,14 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 							Message: &querierpb.EvaluateQueryResponse_InstantVectorSeriesData{
 								InstantVectorSeriesData: &querierpb.EvaluateQueryResponseInstantVectorSeriesData{
 									NodeIndex: 3,
-									Floats: []mimirpb.Sample{
-										{TimestampMs: 0, Value: 1.123},
-										{TimestampMs: 10_000, Value: 3.123},
-										{TimestampMs: 20_000, Value: 5.123},
+									Series: []querierpb.InstantVectorSeriesData{
+										{
+											Floats: []mimirpb.Sample{
+												{TimestampMs: 0, Value: 1.123},
+												{TimestampMs: 10_000, Value: 3.123},
+												{TimestampMs: 20_000, Value: 5.123},
+											},
+										},
 									},
 								},
 							},
@@ -480,8 +488,12 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 							Message: &querierpb.EvaluateQueryResponse_InstantVectorSeriesData{
 								InstantVectorSeriesData: &querierpb.EvaluateQueryResponseInstantVectorSeriesData{
 									NodeIndex: 7,
-									Floats: []mimirpb.Sample{
-										{TimestampMs: 30_000, Value: math.Inf(1)},
+									Series: []querierpb.InstantVectorSeriesData{
+										{
+											Floats: []mimirpb.Sample{
+												{TimestampMs: 30_000, Value: math.Inf(1)},
+											},
+										},
 									},
 								},
 							},
@@ -539,10 +551,14 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 							Message: &querierpb.EvaluateQueryResponse_InstantVectorSeriesData{
 								InstantVectorSeriesData: &querierpb.EvaluateQueryResponseInstantVectorSeriesData{
 									NodeIndex: 3,
-									Floats: []mimirpb.Sample{
-										{TimestampMs: 0, Value: 0.123},
-										{TimestampMs: 10_000, Value: 1.123},
-										{TimestampMs: 20_000, Value: 2.123},
+									Series: []querierpb.InstantVectorSeriesData{
+										{
+											Floats: []mimirpb.Sample{
+												{TimestampMs: 0, Value: 0.123},
+												{TimestampMs: 10_000, Value: 1.123},
+												{TimestampMs: 20_000, Value: 2.123},
+											},
+										},
 									},
 								},
 							},
@@ -555,10 +571,14 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 							Message: &querierpb.EvaluateQueryResponse_InstantVectorSeriesData{
 								InstantVectorSeriesData: &querierpb.EvaluateQueryResponseInstantVectorSeriesData{
 									NodeIndex: 3,
-									Floats: []mimirpb.Sample{
-										{TimestampMs: 0, Value: 1.123},
-										{TimestampMs: 10_000, Value: 3.123},
-										{TimestampMs: 20_000, Value: 5.123},
+									Series: []querierpb.InstantVectorSeriesData{
+										{
+											Floats: []mimirpb.Sample{
+												{TimestampMs: 0, Value: 1.123},
+												{TimestampMs: 10_000, Value: 3.123},
+												{TimestampMs: 20_000, Value: 5.123},
+											},
+										},
 									},
 								},
 							},
@@ -795,8 +815,12 @@ func TestDispatcher_HandleProtobuf_WithDelayedNameRemovalEnabled(t *testing.T) {
 							Message: &querierpb.EvaluateQueryResponse_InstantVectorSeriesData{
 								InstantVectorSeriesData: &querierpb.EvaluateQueryResponseInstantVectorSeriesData{
 									NodeIndex: 1,
-									Floats: []mimirpb.Sample{
-										{TimestampMs: 9_000, Value: 1},
+									Series: []querierpb.InstantVectorSeriesData{
+										{
+											Floats: []mimirpb.Sample{
+												{TimestampMs: 9_000, Value: 1},
+											},
+										},
 									},
 								},
 							},
@@ -846,8 +870,12 @@ func TestDispatcher_HandleProtobuf_WithDelayedNameRemovalEnabled(t *testing.T) {
 							Message: &querierpb.EvaluateQueryResponse_InstantVectorSeriesData{
 								InstantVectorSeriesData: &querierpb.EvaluateQueryResponseInstantVectorSeriesData{
 									NodeIndex: 2,
-									Floats: []mimirpb.Sample{
-										{TimestampMs: 9_000, Value: 1},
+									Series: []querierpb.InstantVectorSeriesData{
+										{
+											Floats: []mimirpb.Sample{
+												{TimestampMs: 9_000, Value: 1},
+											},
+										},
 									},
 								},
 							},

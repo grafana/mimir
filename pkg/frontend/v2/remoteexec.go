@@ -163,8 +163,8 @@ func (r *instantVectorExecutionResponse) GetNextSeries(ctx context.Context) (typ
 	}
 
 	mqeData := types.InstantVectorSeriesData{
-		Floats:     mimirpb.FromSamplesToFPoints(seriesData.Floats),
-		Histograms: mimirpb.FromHistogramsToHPoints(seriesData.Histograms),
+		Floats:     mimirpb.FromSamplesToFPoints(seriesData.Series[0].Floats),
+		Histograms: mimirpb.FromHistogramsToHPoints(seriesData.Series[0].Histograms),
 	}
 
 	if err := accountForFPointMemoryConsumption(mqeData.Floats, r.memoryConsumptionTracker); err != nil {
