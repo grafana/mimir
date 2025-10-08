@@ -8,12 +8,14 @@ import (
 	"strconv"
 	"testing"
 
+	"github.com/alecthomas/units"
 	"github.com/go-kit/log"
 	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunks"
+	"github.com/prometheus/prometheus/tsdb/hashcache"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/prometheus/prometheus/tsdb/tombstones"
 	"github.com/stretchr/testify/require"
@@ -23,8 +25,10 @@ const countMinEpsilon = 0.005
 
 // mockIndexReader is a simplified in-memory index reader implementation for testing
 type mockIndexReader struct {
-	memPostings *index.MemPostings
-	series      map[storage.SeriesRef]labels.Labels
+	memPostings          *index.MemPostings
+	series               map[storage.SeriesRef]labels.Labels
+	seriesHashCache      *hashcache.SeriesHashCache
+	blockSeriesHashCache *hashcache.BlockSeriesHashCache
 }
 
 func (p *mockIndexReader) Symbols() index.StringIter {
@@ -62,8 +66,46 @@ func (p *mockIndexReader) SortedPostings(index.Postings) index.Postings {
 	panic("mockIndexReader doesn't implement SortedPostings()")
 }
 
-func (p *mockIndexReader) ShardedPostings(index.Postings, uint64, uint64) index.Postings {
-	panic("mockIndexReader doesn't implement ShardedPostings()")
+func (p *mockIndexReader) ShardedPostings(postings index.Postings, shardIndex, shardCount uint64) index.Postings {
+	var shardedRefs []storage.SeriesRef
+	bufLbls := labels.ScratchBuilder{}
+
+	for postings.Next() {
+		id := postings.At()
+
+		var (
+			hash uint64
+			ok   bool
+		)
+
+		// Check if the hash is cached
+		if p.blockSeriesHashCache != nil {
+			hash, ok = p.blockSeriesHashCache.Fetch(id)
+		}
+
+		if !ok {
+			// Get the series labels to compute hash
+			if ls, exists := p.series[id]; exists {
+				hash = labels.StableHash(ls)
+			} else {
+				// Fallback: generate labels based on series ID for consistent hashing
+				bufLbls.Reset()
+				bufLbls.Add(labels.MetricName, strconv.Itoa(int(id)))
+				hash = labels.StableHash(bufLbls.Labels())
+			}
+
+			// Store in cache if available
+			if p.blockSeriesHashCache != nil {
+				p.blockSeriesHashCache.Store(id, hash)
+			}
+		}
+
+		// Check if the series belong to the shard
+		if hash%shardCount == shardIndex {
+			shardedRefs = append(shardedRefs, id)
+		}
+	}
+	return index.NewListPostings(shardedRefs)
 }
 
 func (p *mockIndexReader) Series(storage.SeriesRef, *labels.ScratchBuilder, *[]chunks.Meta) error {
@@ -139,9 +181,12 @@ func (p *mockIndexReader) Size() int64 {
 }
 
 func newMockIndexReader() *mockIndexReader {
+	seriesHashCache := hashcache.NewSeriesHashCache(uint64(350 * units.Mebibyte))
 	return &mockIndexReader{
-		memPostings: index.NewMemPostings(),
-		series:      make(map[storage.SeriesRef]labels.Labels),
+		memPostings:          index.NewMemPostings(),
+		series:               make(map[storage.SeriesRef]labels.Labels),
+		seriesHashCache:      seriesHashCache,
+		blockSeriesHashCache: seriesHashCache.GetBlockCache("0"),
 	}
 }
 
