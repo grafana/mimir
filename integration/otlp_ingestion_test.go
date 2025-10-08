@@ -429,6 +429,7 @@ func testStartTimeHandling(t *testing.T, enableCTzero bool) {
 
 	var zeroTs time.Time
 	now := time.Now()
+	prevTs := now.Add(-30 * time.Second)
 
 	testCases := map[string]struct {
 		startTs      time.Time
@@ -443,7 +444,7 @@ func testStartTimeHandling(t *testing.T, enableCTzero bool) {
 			expectCTzero: false,
 		},
 		"start time ok": {
-			startTs:      now.Add(-30 * time.Second),
+			startTs:      now.Add(-20 * time.Second),
 			expectCTzero: true,
 		},
 		"start time equal to sample timestamp": {
@@ -485,10 +486,16 @@ func testStartTimeHandling(t *testing.T, enableCTzero bool) {
 	c, err := e2emimir.NewClient(mimir.HTTPEndpoint(), mimir.HTTPEndpoint(), "", "", "user-1")
 	require.NoError(t, err)
 
+	float64Ptr := func(v float64) *float64 {
+		x := v
+		return &x
+	}
+
 	count := int64(0)
 	for name, tc := range testCases {
 		t.Run(name, func(t *testing.T) {
-			metric := "http_requests_" + strconv.FormatInt(count, 10)
+			counterMetric := "http_requests_" + strconv.FormatInt(count, 10)
+			histogramMetric := "http_requests_seconds" + strconv.FormatInt(count, 10)
 			req := &metricspb.MetricsData{
 				ResourceMetrics: []*metricspb.ResourceMetrics{
 					{
@@ -501,7 +508,7 @@ func testStartTimeHandling(t *testing.T, enableCTzero bool) {
 							{
 								Metrics: []*metricspb.Metric{
 									{
-										Name:        metric,
+										Name:        counterMetric,
 										Description: "Number of HTTP requests",
 										Unit:        "1",
 										Data: &metricspb.Metric_Sum{
@@ -513,7 +520,55 @@ func testStartTimeHandling(t *testing.T, enableCTzero bool) {
 														Attributes: []*commonpb.KeyValue{
 															{Key: "method", Value: &commonpb.AnyValue{Value: &commonpb.AnyValue_StringValue{StringValue: "GET"}}},
 														},
+														Value:             &metricspb.NumberDataPoint_AsDouble{AsDouble: 1000.0},
+														StartTimeUnixNano: uint64(prevTs.UnixNano()),
+														TimeUnixNano:      uint64(prevTs.UnixNano()),
+													},
+													{
+														Attributes: []*commonpb.KeyValue{
+															{Key: "method", Value: &commonpb.AnyValue{Value: &commonpb.AnyValue_StringValue{StringValue: "GET"}}},
+														},
 														Value:             &metricspb.NumberDataPoint_AsDouble{AsDouble: 100.0},
+														StartTimeUnixNano: uint64(tc.startTs.UnixNano()),
+														TimeUnixNano:      uint64(now.UnixNano()),
+													},
+												},
+											},
+										},
+									},
+									{
+										Name:        histogramMetric,
+										Description: "Latency histogram of HTTP requests",
+										Unit:        "s",
+										Data: &metricspb.Metric_ExponentialHistogram{
+											ExponentialHistogram: &metricspb.ExponentialHistogram{
+												AggregationTemporality: metricspb.AggregationTemporality_AGGREGATION_TEMPORALITY_CUMULATIVE,
+												DataPoints: []*metricspb.ExponentialHistogramDataPoint{
+													{
+														Attributes: []*commonpb.KeyValue{
+															{Key: "method", Value: &commonpb.AnyValue{Value: &commonpb.AnyValue_StringValue{StringValue: "GET"}}},
+														},
+														Count: 1000,
+														Sum:   float64Ptr(123114.0),
+														Scale: 4, // We want this to be non-zero for regression against the injected zero sample having scale 0.
+														Positive: &metricspb.ExponentialHistogramDataPoint_Buckets{
+															Offset:       2,
+															BucketCounts: []uint64{10, 200, 470, 300, 20},
+														},
+														StartTimeUnixNano: uint64(prevTs.UnixNano()),
+														TimeUnixNano:      uint64(prevTs.UnixNano()),
+													},
+													{
+														Attributes: []*commonpb.KeyValue{
+															{Key: "method", Value: &commonpb.AnyValue{Value: &commonpb.AnyValue_StringValue{StringValue: "GET"}}},
+														},
+														Count: 100,
+														Sum:   float64Ptr(12311.4),
+														Scale: 4, // We want this to be non-zero for regression against the injected zero sample having scale 0.
+														Positive: &metricspb.ExponentialHistogramDataPoint_Buckets{
+															Offset:       2,
+															BucketCounts: []uint64{1, 20, 47, 30, 2},
+														},
 														StartTimeUnixNano: uint64(tc.startTs.UnixNano()),
 														TimeUnixNano:      uint64(now.UnixNano()),
 													},
@@ -534,24 +589,73 @@ func testStartTimeHandling(t *testing.T, enableCTzero bool) {
 			require.NoError(t, err)
 			require.Equal(t, 200, res.StatusCode)
 
-			result, err := c.Query(metric+"[1h]", now.Add(30*time.Minute))
-			require.NoError(t, err)
+			for _, metric := range []string{counterMetric, histogramMetric} {
+				t.Run(metric, func(t *testing.T) {
+					result, err := c.Query(metric+"[1h]", now.Add(30*time.Minute))
+					require.NoError(t, err)
 
-			m, ok := result.(model.Matrix)
-			require.True(t, ok, "result is a Matrix")
+					m, ok := result.(model.Matrix)
+					require.True(t, ok, "result is a Matrix")
 
-			s := m[0]
-			sampleIdx := 0
-			if enableCTzero && tc.expectCTzero {
-				sampleIdx = 1
-				require.Len(t, s.Values, 2)
-				require.Equal(t, tc.startTs.UnixMilli(), s.Values[0].Timestamp.Time().UnixMilli())
-				require.Equal(t, 0.0, float64(s.Values[0].Value))
-			} else {
-				require.Len(t, s.Values, 1)
+					s := m[0]
+
+					getSampleCount := func() int {
+						if metric == counterMetric {
+							return len(s.Values)
+						}
+						return len(s.Histograms)
+					}
+					getTimeStamp := func(i int) int64 {
+						if metric == counterMetric {
+							return s.Values[i].Timestamp.Time().UnixMilli()
+						}
+						return s.Histograms[i].Timestamp.Time().UnixMilli()
+					}
+					getValue := func(i int) float64 {
+						if metric == counterMetric {
+							return float64(s.Values[i].Value)
+						}
+						return float64(s.Histograms[i].Histogram.Count)
+					}
+
+					sampleIdx := 0
+
+					require.Greater(t, getSampleCount(), 1)
+					require.Equal(t, prevTs.UnixMilli(), getTimeStamp(sampleIdx))
+					require.Equal(t, 1000.0, getValue(sampleIdx))
+					sampleIdx++
+
+					if enableCTzero && tc.expectCTzero {
+						require.Equal(t, 3, getSampleCount())
+						require.Equal(t, tc.startTs.UnixMilli(), getTimeStamp(sampleIdx))
+						require.Equal(t, 0.0, getValue(sampleIdx))
+						sampleIdx++
+					} else {
+						require.Equal(t, 2, getSampleCount())
+					}
+
+					require.Equal(t, now.UnixMilli(), getTimeStamp(sampleIdx))
+					require.Equal(t, 100.0, getValue(sampleIdx))
+
+					if metric != histogramMetric || !enableCTzero || !tc.expectCTzero {
+						return
+					}
+					// Test rate doesn't loose resolution, which would happen if
+					// the injected zero histogram has a scale == 0.
+					// The resolution isn't returned directly, but we can check the
+					// number of buckets to see if some were merged together.
+					result, err = c.Query("rate("+metric+"[1m])", now.Add(1*time.Second))
+					require.NoError(t, err)
+
+					v, ok := result.(model.Vector)
+					require.True(t, ok, "result is a Vector")
+					require.Len(t, v, 1)
+					require.Len(t, v[0].Histogram.Buckets, 5, "same number of buckets as the input")
+					for _, bucket := range v[0].Histogram.Buckets {
+						require.NotZero(t, bucket.Count)
+					}
+				})
 			}
-			require.Equal(t, now.UnixMilli(), s.Values[sampleIdx].Timestamp.Time().UnixMilli())
-			require.Equal(t, 100.0, float64(s.Values[sampleIdx].Value))
 		})
 		count++
 	}
