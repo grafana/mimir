@@ -100,9 +100,9 @@ If multiple ingesters own the same partition, the querier fetches data from only
 
 A partition in the ring can be in one of the following states:
 
-- `Pending` – no writes or reads are allowed.
-- `Active` – the partition is in read-write mode.
-- `Inactive` – the partition is in read-only mode.
+- `Pending`: No writes or reads are allowed.
+- `Active`: The partition is in read-write mode.
+- `Inactive`: The partition is in read-only mode.
 
 Partitions are not live components and cannot register themselves in the ring.
 Their lifecycle is managed by ingesters.
