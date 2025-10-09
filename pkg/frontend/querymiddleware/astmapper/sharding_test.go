@@ -28,6 +28,7 @@ func TestSharding(t *testing.T) {
 	for _, tt := range []struct {
 		in                       string
 		out                      string
+		outWithPreprocessing     string
 		expectedShardableQueries int
 	}{
 		{
@@ -274,6 +275,14 @@ func TestSharding(t *testing.T) {
 						[5m:1m])
 					[2m:])
 				[10m:]))`),
+			// Preprocessing will remove the superfluous parenthesis.
+			outWithPreprocessing: concatShards(t, shardCount, `max_over_time(
+					stddev_over_time(
+						deriv(
+							rate(metric_counter{__query_shard__="x_of_y"}[10m])
+						[5m:1m])
+					[2m:])
+				[10m:])`),
 			expectedShardableQueries: 1,
 		},
 		{
@@ -378,8 +387,10 @@ func TestSharding(t *testing.T) {
 			expectedShardableQueries: 1,
 		},
 		{
-			in:                       `sum by (job)(rate(http_requests_total[1h] @ end()))`,
-			out:                      `sum by (job)(` + concatShards(t, shardCount, `sum by (job)(rate(http_requests_total{__query_shard__="x_of_y"}[1h] @ end()))`) + `)`,
+			in:  `sum by (job)(rate(http_requests_total[1h] @ end()))`,
+			out: `sum by (job)(` + concatShards(t, shardCount, `sum by (job)(rate(http_requests_total{__query_shard__="x_of_y"}[1h] @ end()))`) + `)`,
+			// Preprocessing will replace 'end()' with the actual end timestamp in the input, so the output will have this too.
+			outWithPreprocessing:     `sum by (job)(` + concatShards(t, shardCount, `sum by (job)(rate(http_requests_total{__query_shard__="x_of_y"}[1h] @ 301.000))`) + `)`,
 			expectedShardableQueries: 1,
 		},
 		{
@@ -624,12 +635,17 @@ func TestSharding(t *testing.T) {
 					return expr
 				}
 
+				out := tt.out
+				if preprocess && tt.outWithPreprocessing != "" {
+					out = tt.outWithPreprocessing
+				}
+
 				t.Run(fmt.Sprintf("preprocess expression=%v", preprocess), func(t *testing.T) {
 					t.Run("applying sharding", func(t *testing.T) {
 						stats := NewMapperStats()
 						summer := NewQueryShardSummer(shardCount, EmbeddedQueriesSquasher, log.NewNopLogger(), stats)
 						expr := parseInputAndPreprocess(t)
-						expectedExpr, err := parser.ParseExpr(tt.out)
+						expectedExpr, err := parser.ParseExpr(out)
 						require.NoError(t, err)
 
 						ctx := context.Background()
