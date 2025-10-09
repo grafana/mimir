@@ -172,7 +172,7 @@ Grafana Mimir doesn't log an error if it's unable to mirror writes to the second
 However, the total number of errors is tracked through the metric `cortex_multikv_mirror_write_errors_total`.
 {{< /admonition >}}
 
-The multi KV primary backend and mirroring can also be configured in the [runtime configuration file](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/about-runtime-configuration/).
+You can also configure the multi KV primary backend and mirroring in the [runtime configuration file](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/about-runtime-configuration/).
 Changes to a multi KV Store in the runtime configuration apply to _all_ components using a multi KV store.
 
 The following example shows a runtime configuration file for the multi KV store:
