@@ -26,11 +26,11 @@ The primary use of hash rings in Mimir is to consistently shard data, such as ti
 
 Each of the following Mimir components joins its own dedicated hash ring for sharding:
 
-- [Ingesters](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/components/ingester/) – shard and replicate series.
-- [Compactors](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/components/compactor/) – shard compaction jobs.
-- [Store-gateways](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/components/store-gateway/) – shard blocks to query from long-term storage.
-- [(Optional) Rulers](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/components/ruler/) – shard rule groups to evaluate.
-- [(Optional) Alertmanagers](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/components/alertmanager/) – shard tenants.
+- [Ingesters](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/components/ingester/): Shard and replicate series.
+- [Compactors](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/components/compactor/): Shard compaction jobs.
+- [Store-gateways](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/components/store-gateway/): Shard blocks to query from long-term storage.
+- [(Optional) Rulers](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/components/ruler/): Shard rule groups to evaluate.
+- [(Optional) Alertmanagers](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/components/alertmanager/): Shard tenants.
 
 A hash ring is a data structure that represents the data space as 32-bit unsigned integers.
 Each instance of a Mimir component owns a set of token ranges that define which portion of the data space it is responsible for.
