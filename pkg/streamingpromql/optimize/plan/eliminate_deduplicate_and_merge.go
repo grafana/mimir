@@ -57,9 +57,11 @@ func (e *EliminateDeduplicateAndMergeOptimizationPass) Apply(ctx context.Context
 }
 
 func (e *EliminateDeduplicateAndMergeOptimizationPass) collectNodesToRemove(node planning.Node, parent planning.Node, childIndex int, nodesToRemove *[]dedupNodeInfo) {
-	// Binary operations are not supported yet.
-	// 1. It makes elimination logic much more complex - it's needed to track if name was dropped on both sides of the binary operation.
-	// 2. We likely can't do label projections when binary operation is involved, becaue of conflict error messages.
+	// Binary operations are not supported yet. When we encounter a binary operation, we stop the elimination
+	// and keep all DeduplicateAndMerge nodes. It's done just to keep initial implementation simple.
+	// TODO:
+	// 1. Remove DeduplicateAndMerge nodes provided they don't contain binary operations - rate(foo[5m]) / rate(bar[5m])
+	// 2. Handle all binary operations by inspecting whether each side produces series with a __name__ label that could cause duplicates.
 	if _, isBinaryOp := node.(*core.BinaryExpression); isBinaryOp {
 		*nodesToRemove = nil
 		return

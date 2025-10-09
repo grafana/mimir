@@ -218,19 +218,106 @@ func TestEliminateDeduplicateAndMergeOptimizationPass(t *testing.T) {
 		"nested function calls, function in between doesn't drop __name__- should keep DeduplicateAndMerge closest to node which drops name after label_replace": {
 			expr: `abs(sort(label_replace(rate(foo[5m]), "dst", "$1", "src", "(.*)")))`,
 			expectedPlan: `
-					- DeduplicateAndMerge
-						- FunctionCall: abs(...)
-							- FunctionCall: sort(...)
-								- DeduplicateAndMerge
-									- FunctionCall: label_replace(...)
-										- param 0: FunctionCall: rate(...)
-											- MatrixSelector: {__name__="foo"}[5m0s]
-										- param 1: StringLiteral: "dst"
-										- param 2: StringLiteral: "$1"
-										- param 3: StringLiteral: "src"
-										- param 4: StringLiteral: "(.*)"
-					`,
+				- DeduplicateAndMerge
+					- FunctionCall: abs(...)
+						- FunctionCall: sort(...)
+							- DeduplicateAndMerge
+								- FunctionCall: label_replace(...)
+									- param 0: FunctionCall: rate(...)
+										- MatrixSelector: {__name__="foo"}[5m0s]
+									- param 1: StringLiteral: "dst"
+									- param 2: StringLiteral: "$1"
+									- param 3: StringLiteral: "src"
+									- param 4: StringLiteral: "(.*)"
+				`,
 			nodesEliminated: 1,
+		},
+
+		// Test cases to confirm we're skipping optimization when expression has a binary operation.
+		"or operator - should keep DeduplicateAndMerge": {
+			expr: `foo or bar`,
+			expectedPlan: `
+				- DeduplicateAndMerge
+					- BinaryExpression: LHS or RHS
+						- LHS: VectorSelector: {__name__="foo"}
+						- RHS: VectorSelector: {__name__="bar"}
+				`,
+			nodesEliminated: 0,
+		},
+		"or operator with functions - should keep DeduplicateAndMerge": {
+			expr: `rate(foo[5m]) or rate(bar[5m])`,
+			expectedPlan: `
+				- DeduplicateAndMerge
+					- BinaryExpression: LHS or RHS
+						- LHS: DeduplicateAndMerge
+							- FunctionCall: rate(...)
+								- MatrixSelector: {__name__="foo"}[5m0s]
+						- RHS: DeduplicateAndMerge
+							- FunctionCall: rate(...)
+								- MatrixSelector: {__name__="bar"}[5m0s]
+				`,
+			nodesEliminated: 0,
+		},
+		"vector-scalar comparison with bool modifier should keep DeduplicateAndMerge": {
+			expr: `foo == bool 6`,
+			expectedPlan: `
+				- DeduplicateAndMerge
+					- BinaryExpression: LHS == bool RHS
+						- LHS: VectorSelector: {__name__="foo"}
+						- RHS: NumberLiteral: 6
+				`,
+			nodesEliminated: 0,
+		},
+		"vector-scalar arithmetic with exact name matcher should keep DeduplicateAndMerge": {
+			expr: `foo * 2`,
+			expectedPlan: `
+				- DeduplicateAndMerge
+					- BinaryExpression: LHS * RHS
+						- LHS: VectorSelector: {__name__="foo"}
+						- RHS: NumberLiteral: 2
+				`,
+			nodesEliminated: 0,
+		},
+		"binary operation with nested rate functions - should skip optimization entirely": {
+			expr: `rate(foo[5m]) + rate(bar[5m])`,
+			expectedPlan: `
+				- BinaryExpression: LHS + RHS
+					- LHS: DeduplicateAndMerge
+						- FunctionCall: rate(...)
+							- MatrixSelector: {__name__="foo"}[5m0s]
+					- RHS: DeduplicateAndMerge
+						- FunctionCall: rate(...)
+							- MatrixSelector: {__name__="bar"}[5m0s]
+				`,
+			nodesEliminated: 0,
+		},
+		"binary operation with aggregations - should skip optimization entirely": {
+			expr: `sum(rate(foo[5m])) / sum(rate(bar[5m]))`,
+			expectedPlan: `
+				- BinaryExpression: LHS / RHS
+					- LHS: AggregateExpression: sum
+						- DeduplicateAndMerge
+							- FunctionCall: rate(...)
+								- MatrixSelector: {__name__="foo"}[5m0s]
+					- RHS: AggregateExpression: sum
+						- DeduplicateAndMerge
+							- FunctionCall: rate(...)
+								- MatrixSelector: {__name__="bar"}[5m0s]
+				`,
+			nodesEliminated: 0,
+		},
+		"binary operation and expression - should skip optimization entirely": {
+			expr: `rate(foo[5m]) and rate(bar[5m])`,
+			expectedPlan: `
+				- BinaryExpression: LHS and RHS
+					- LHS: DeduplicateAndMerge
+						- FunctionCall: rate(...)
+							- MatrixSelector: {__name__="foo"}[5m0s]
+					- RHS: DeduplicateAndMerge
+						- FunctionCall: rate(...)
+							- MatrixSelector: {__name__="bar"}[5m0s]
+				`,
+			nodesEliminated: 0,
 		},
 	}
 
