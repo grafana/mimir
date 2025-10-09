@@ -94,9 +94,9 @@ func TestParquetConverter(t *testing.T) {
 					return nil
 				})
 				require.NoError(t, err)
-				mark, err := ReadConversionMark(ctx, bid, uBucket, log.NewNopLogger())
+				mark, ok, err := ReadConversionMark(ctx, bid, uBucket, log.NewNopLogger())
 				require.NoError(t, err)
-				return parquetFiles == 2 && mark.Version == CurrentVersion
+				return parquetFiles == 2 && ok && mark.Version == CurrentVersion
 			})
 		})
 	}

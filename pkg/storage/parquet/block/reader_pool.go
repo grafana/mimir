@@ -99,6 +99,7 @@ func newReaderPool(
 func (p *ReaderPool) GetReader(
 	ctx context.Context,
 	blockID ulid.ULID,
+	shardIdx int,
 	bkt objstore.InstrumentedBucketReader,
 	localDir string,
 	loadIndexToDisk bool,
@@ -112,6 +113,7 @@ func (p *ReaderPool) GetReader(
 		reader, err = NewLazyReaderLocalLabelsBucketChunks(
 			ctx,
 			blockID,
+			shardIdx,
 			bkt,
 			localDir,
 			fileOpts,
@@ -125,6 +127,7 @@ func (p *ReaderPool) GetReader(
 		reader, err = NewLazyReaderBucketLabelsAndChunks(
 			ctx,
 			blockID,
+			shardIdx,
 			bkt,
 			localDir,
 			fileOpts,

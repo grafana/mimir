@@ -63,7 +63,7 @@ type ParquetBucketStore struct {
 
 	userID string
 
-	bkt        objstore.InstrumentedBucketReader
+	bkt        objstore.InstrumentedBucket
 	fetcher    block.MetadataFetcher
 	localDir   string
 	readerPool *parquetBlock.ReaderPool
@@ -107,7 +107,7 @@ type ParquetBucketStore struct {
 func NewParquetBucketStore(
 	userID string,
 	localDir string,
-	bkt objstore.InstrumentedBucketReader,
+	bkt objstore.InstrumentedBucket,
 	bucketStoreConfig tsdb.BucketStoreConfig,
 	blockMetaFetcher block.MetadataFetcher,
 	queryGate gate.Gate,
@@ -369,40 +369,41 @@ func (s *ParquetBucketStore) LabelNames(ctx context.Context, req *storepb.LabelN
 		resHints.AddQueriedBlock(b.meta.ULID)
 		blocksQueriedByBlockMeta[newBlockQueriedMeta(b.meta)]++
 
-		shard := b.ShardReader()
-		shardsFinder := func(ctx context.Context, mint, maxt int64) ([]parquetStorage.ParquetShard, error) {
-			return []parquetStorage.ParquetShard{shard}, nil
-		}
-
-		g.Go(func() error {
-			defer runutil.CloseWithLogOnErr(s.logger, shard, "close shard")
-
-			decoder := schema.NewPrometheusParquetChunksDecoder(chunkenc.NewPool())
-			parquetQueryable, err := queryable.NewParquetQueryable(decoder, shardsFinder)
-			if err != nil {
-				return errors.Wrap(err, "error creating parquet queryable")
+		shards := b.ShardReaders()
+		for _, shard := range shards {
+			shardsFinder := func(ctx context.Context, mint, maxt int64) ([]parquetStorage.ParquetShard, error) {
+				return []parquetStorage.ParquetShard{shard}, nil
 			}
-			q, err := parquetQueryable.Querier(req.Start, req.End)
-			if err != nil {
-				return errors.Wrap(err, "error creating parquet querier")
-			}
-			// TODO we already have the blockLabels, ideally we could use them to avoid querying the block again.
-			result, _, err := q.LabelNames(gctx, nil, reqSeriesMatchers...)
-			if err != nil {
-				if errors.Is(err, context.Canceled) {
-					return err
+
+			g.Go(func() error {
+				defer runutil.CloseWithLogOnErr(s.logger, shard, "close shard")
+
+				decoder := schema.NewPrometheusParquetChunksDecoder(chunkenc.NewPool())
+				parquetQueryable, err := queryable.NewParquetQueryable(decoder, shardsFinder)
+				if err != nil {
+					return errors.Wrap(err, "error creating parquet queryable")
 				}
-				return errors.Wrap(err, "error querying label names")
-			}
+				q, err := parquetQueryable.Querier(req.Start, req.End)
+				if err != nil {
+					return errors.Wrap(err, "error creating parquet querier")
+				}
+				result, _, err := q.LabelNames(gctx, nil, reqSeriesMatchers...)
+				if err != nil {
+					if errors.Is(err, context.Canceled) {
+						return err
+					}
+					return errors.Wrap(err, "error querying label names")
+				}
 
-			if len(result) > 0 {
-				setsMtx.Lock()
-				sets = append(sets, result)
-				setsMtx.Unlock()
-			}
+				if len(result) > 0 {
+					setsMtx.Lock()
+					sets = append(sets, result)
+					setsMtx.Unlock()
+				}
 
-			return nil
-		})
+				return nil
+			})
+		}
 	})
 
 	if err := g.Wait(); err != nil {
@@ -476,39 +477,42 @@ func (s *ParquetBucketStore) LabelValues(ctx context.Context, req *storepb.Label
 		resHints.AddQueriedBlock(b.meta.ULID)
 		blocksQueriedByBlockMeta[newBlockQueriedMeta(b.meta)]++
 
-		shard := b.ShardReader()
-		shardsFinder := func(ctx context.Context, mint, maxt int64) ([]parquetStorage.ParquetShard, error) {
-			return []parquetStorage.ParquetShard{shard}, nil
-		}
-
-		g.Go(func() error {
-			defer runutil.CloseWithLogOnErr(s.logger, shard, "close shard")
-
-			decoder := schema.NewPrometheusParquetChunksDecoder(chunkenc.NewPool())
-			parquetQueryable, err := queryable.NewParquetQueryable(decoder, shardsFinder)
-			if err != nil {
-				return errors.Wrap(err, "error creating parquet queryable")
+		shards := b.ShardReaders()
+		for _, shard := range shards {
+			shard := shard
+			shardsFinder := func(ctx context.Context, mint, maxt int64) ([]parquetStorage.ParquetShard, error) {
+				return []parquetStorage.ParquetShard{shard}, nil
 			}
-			q, err := parquetQueryable.Querier(req.Start, req.End)
-			if err != nil {
-				return errors.Wrap(err, "error creating parquet querier")
-			}
-			result, _, err := q.LabelValues(gctx, req.Label, nil, reqSeriesMatchers...)
-			if err != nil {
-				if errors.Is(err, context.Canceled) {
-					return err
+
+			g.Go(func() error {
+				defer runutil.CloseWithLogOnErr(s.logger, shard, "close shard")
+
+				decoder := schema.NewPrometheusParquetChunksDecoder(chunkenc.NewPool())
+				parquetQueryable, err := queryable.NewParquetQueryable(decoder, shardsFinder)
+				if err != nil {
+					return errors.Wrap(err, "error creating parquet queryable")
 				}
-				return errors.Wrap(err, "error querying label values")
-			}
+				q, err := parquetQueryable.Querier(req.Start, req.End)
+				if err != nil {
+					return errors.Wrap(err, "error creating parquet querier")
+				}
+				result, _, err := q.LabelValues(gctx, req.Label, nil, reqSeriesMatchers...)
+				if err != nil {
+					if errors.Is(err, context.Canceled) {
+						return err
+					}
+					return errors.Wrap(err, "error querying label values")
+				}
 
-			if len(result) > 0 {
-				setsMtx.Lock()
-				sets = append(sets, result)
-				setsMtx.Unlock()
-			}
+				if len(result) > 0 {
+					setsMtx.Lock()
+					sets = append(sets, result)
+					setsMtx.Unlock()
+				}
 
-			return nil
-		})
+				return nil
+			})
+		}
 	})
 
 	if err := g.Wait(); err != nil {
@@ -545,19 +549,19 @@ func (s *ParquetBucketStore) LabelValues(ctx context.Context, req *storepb.Label
 }
 
 // Placeholder methods for parquet-specific functionality
-func (s *ParquetBucketStore) openParquetBlocksForReading(ctx context.Context, _ bool, minTime, maxTime int64, reqBlockMatchers []*labels.Matcher, stats *safeQueryStats) ([]*parquetBucketBlock, map[ulid.ULID]ParquetShardReaderCloser) {
+func (s *ParquetBucketStore) openParquetBlocksForReading(ctx context.Context, _ bool, minTime, maxTime int64, reqBlockMatchers []*labels.Matcher, stats *safeQueryStats) ([]*parquetBucketBlock, []ParquetShardReaderCloser) {
 	_, span := tracer.Start(ctx, "parquet_bucket_store_open_blocks_for_reading")
 	defer span.End()
 
 	var blocks []*parquetBucketBlock
-	shardReaders := make(map[ulid.ULID]ParquetShardReaderCloser)
+	var allShardReaders []ParquetShardReaderCloser
 
 	s.blockSet.filter(minTime, maxTime, reqBlockMatchers, func(b *parquetBucketBlock) {
 		blocks = append(blocks, b)
-		shardReaders[b.meta.ULID] = b.ShardReader()
-
+		blockShardReaders := b.ShardReaders()
+		allShardReaders = append(allShardReaders, blockShardReaders...)
 	})
-	return blocks, shardReaders
+	return blocks, allShardReaders
 }
 
 func (s *ParquetBucketStore) limitConcurrentQueries(ctx context.Context, stats *safeQueryStats) (done func(), err error) {
@@ -597,7 +601,7 @@ func (s *ParquetBucketStore) createLabelsAndChunksIterators(
 	ctx context.Context,
 	req *storepb.SeriesRequest,
 	parquetBlocks []*parquetBucketBlock,
-	shardReaders map[ulid.ULID]ParquetShardReaderCloser,
+	shardReaders []ParquetShardReaderCloser,
 	shardSelector *sharding.ShardSelector,
 	matchers []*labels.Matcher,
 	chunksLimiter ChunksLimiter,
@@ -991,13 +995,16 @@ func (s *ParquetBucketStore) syncBlocks(ctx context.Context) error {
 	}
 
 	var wg sync.WaitGroup
-	blockc := make(chan *block.Meta)
+	blockc := make(chan struct {
+		meta       *block.Meta
+		shardCount int
+	})
 
 	for i := 0; i < s.blockSyncConcurrency; i++ {
 		wg.Add(1)
 		go func() {
-			for meta := range blockc {
-				if err := s.addBlock(ctx, meta); err != nil {
+			for block := range blockc {
+				if err := s.addBlock(ctx, block.meta, block.shardCount); err != nil {
 					continue
 				}
 			}
@@ -1012,21 +1019,26 @@ func (s *ParquetBucketStore) syncBlocks(ctx context.Context) error {
 			continue
 		}
 
-		markPath := path.Join(id.String(), parquetconverter.ParquetConversionMarkFileName)
-		exists, err := s.bkt.Exists(ctx, markPath)
+		mark, ok, err := parquetconverter.ReadConversionMark(ctx, id, s.bkt, s.logger)
 		if err != nil {
 			level.Debug(s.logger).Log("msg", "failed to check parquet conversion mark existence, skipping block", "block", id, "err", err)
 			continue
 		}
 
-		if !exists {
+		if !ok {
 			level.Debug(s.logger).Log("msg", "parquet conversion mark not found, block not converted, skipping", "block", id)
 			continue
 		}
 
 		select {
 		case <-ctx.Done():
-		case blockc <- meta:
+		case blockc <- struct {
+			meta       *block.Meta
+			shardCount int
+		}{
+			meta:       meta,
+			shardCount: mark.ShardCount,
+		}:
 		}
 	}
 
@@ -1057,7 +1069,7 @@ func (s *ParquetBucketStore) syncBlocks(ctx context.Context) error {
 	return nil
 }
 
-func (s *ParquetBucketStore) addBlock(ctx context.Context, meta *block.Meta) (err error) {
+func (s *ParquetBucketStore) addBlock(ctx context.Context, meta *block.Meta, shardsCount int) (err error) {
 	blockLocalDir := filepath.Join(s.localDir, meta.ULID.String())
 	start := time.Now()
 
@@ -1075,29 +1087,38 @@ func (s *ParquetBucketStore) addBlock(ctx context.Context, meta *block.Meta) (er
 	}()
 	s.metrics.blockLoads.Inc()
 
-	blockReader, err := s.readerPool.GetReader(
-		ctx,
-		meta.ULID,
-		s.bkt,
-		blockLocalDir,
-		s.loadIndexToDisk,
-		s.fileOpts,
-		s.logger,
-	)
-
-	if err != nil {
-		return errors.Wrap(err, "create parquet block reader")
+	var shardReaders []ParquetShardReaderCloser
+	for shardIdx := range shardsCount {
+		blockReader, err := s.readerPool.GetReader(
+			ctx,
+			meta.ULID,
+			shardIdx,
+			s.bkt,
+			blockLocalDir,
+			s.loadIndexToDisk,
+			s.fileOpts,
+			s.logger,
+		)
+		if err != nil {
+			for _, reader := range shardReaders {
+				runutil.CloseWithLogOnErr(s.logger, reader, "close shard reader during cleanup")
+			}
+			return errors.Wrapf(err, "create parquet block reader for shard %d", shardIdx)
+		}
+		shardReaders = append(shardReaders, blockReader)
 	}
 
 	defer func() {
 		if err != nil {
-			runutil.CloseWithErrCapture(&err, blockReader, "parquet block reader")
+			for _, reader := range shardReaders {
+				runutil.CloseWithErrCapture(&err, reader, "parquet block reader")
+			}
 		}
 	}()
 
 	b := newParquetBucketBlock(
 		meta,
-		blockReader,
+		shardReaders,
 		blockLocalDir,
 	)
 	if err != nil {
