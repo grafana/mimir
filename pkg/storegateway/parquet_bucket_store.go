@@ -62,7 +62,7 @@ type ParquetBucketStore struct {
 
 	userID string
 
-	bkt        objstore.InstrumentedBucketReader
+	bkt        objstore.InstrumentedBucket
 	fetcher    block.MetadataFetcher
 	localDir   string
 	readerPool *parquetBlock.ReaderPool
@@ -105,7 +105,7 @@ type ParquetBucketStore struct {
 func NewParquetBucketStore(
 	userID string,
 	localDir string,
-	bkt objstore.InstrumentedBucketReader,
+	bkt objstore.InstrumentedBucket,
 	bucketStoreConfig tsdb.BucketStoreConfig,
 	blockMetaFetcher block.MetadataFetcher,
 	queryGate gate.Gate,
@@ -367,7 +367,6 @@ func (s *ParquetBucketStore) LabelNames(ctx context.Context, req *storepb.LabelN
 
 		shards := b.ShardReaders()
 		for _, shard := range shards {
-			shard := shard
 			shardsFinder := func(ctx context.Context, mint, maxt int64) ([]parquetStorage.ParquetShard, error) {
 				return []parquetStorage.ParquetShard{shard}, nil
 			}
@@ -992,13 +991,16 @@ func (s *ParquetBucketStore) syncBlocks(ctx context.Context) error {
 	}
 
 	var wg sync.WaitGroup
-	blockc := make(chan *block.Meta)
+	blockc := make(chan struct {
+		meta       *block.Meta
+		shardCount int
+	})
 
 	for i := 0; i < s.blockSyncConcurrency; i++ {
 		wg.Add(1)
 		go func() {
-			for meta := range blockc {
-				if err := s.addBlock(ctx, meta); err != nil {
+			for block := range blockc {
+				if err := s.addBlock(ctx, block.meta, block.shardCount); err != nil {
 					continue
 				}
 			}
@@ -1013,21 +1015,26 @@ func (s *ParquetBucketStore) syncBlocks(ctx context.Context) error {
 			continue
 		}
 
-		markPath := path.Join(id.String(), parquetconverter.ParquetConversionMarkFileName)
-		exists, err := s.bkt.Exists(ctx, markPath)
+		mark, ok, err := parquetconverter.ReadConversionMark(ctx, id, s.bkt, s.logger)
 		if err != nil {
 			level.Debug(s.logger).Log("msg", "failed to check parquet conversion mark existence, skipping block", "block", id, "err", err)
 			continue
 		}
 
-		if !exists {
+		if !ok {
 			level.Debug(s.logger).Log("msg", "parquet conversion mark not found, block not converted, skipping", "block", id)
 			continue
 		}
 
 		select {
 		case <-ctx.Done():
-		case blockc <- meta:
+		case blockc <- struct {
+			meta       *block.Meta
+			shardCount int
+		}{
+			meta:       meta,
+			shardCount: mark.ShardCount,
+		}:
 		}
 	}
 
@@ -1058,7 +1065,7 @@ func (s *ParquetBucketStore) syncBlocks(ctx context.Context) error {
 	return nil
 }
 
-func (s *ParquetBucketStore) addBlock(ctx context.Context, meta *block.Meta) (err error) {
+func (s *ParquetBucketStore) addBlock(ctx context.Context, meta *block.Meta, shardsCount int) (err error) {
 	start := time.Now()
 
 	level.Debug(s.logger).Log("msg", "loading new block", "id", meta.ULID)
@@ -1072,11 +1079,8 @@ func (s *ParquetBucketStore) addBlock(ctx context.Context, meta *block.Meta) (er
 	}()
 	s.metrics.blockLoads.Inc()
 
-	numShards := s.calculateNumShards(ctx, meta.ULID)
-	level.Debug(s.logger).Log("msg", "calculated number of shards", "id", meta.ULID, "num_shards", numShards)
-
 	var shardReaders []ParquetShardReaderCloser
-	for shardIdx := 0; shardIdx < numShards; shardIdx++ {
+	for shardIdx := range shardsCount {
 		blockReader, err := s.readerPool.GetReader(
 			ctx,
 			meta.ULID,
@@ -1120,27 +1124,6 @@ func (s *ParquetBucketStore) addBlock(ctx context.Context, meta *block.Meta) (er
 	}
 
 	return nil
-}
-
-func (s *ParquetBucketStore) calculateNumShards(ctx context.Context, blockID ulid.ULID) int {
-	shardIdx := 0
-	for {
-		labelsFileName := schema.LabelsPfileNameForShard(blockID.String(), shardIdx)
-		exists, err := s.bkt.Exists(ctx, labelsFileName)
-		if err != nil || !exists {
-			break
-		}
-		shardIdx++
-		if shardIdx > 1000 {
-			level.Warn(s.logger).Log("msg", "reached maximum shard limit, stopping shard discovery", "block", blockID, "max_shards", 1000)
-			break
-		}
-	}
-
-	if shardIdx == 0 {
-		return 1
-	}
-	return shardIdx
 }
 
 func (s *ParquetBucketStore) tryRestoreLoadedBlocksSet() map[ulid.ULID]struct{} { // nolint:unused
