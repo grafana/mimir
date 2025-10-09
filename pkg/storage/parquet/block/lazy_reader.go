@@ -301,6 +301,7 @@ type LazyReaderBucketLabelsAndChunks struct {
 func NewLazyReaderBucketLabelsAndChunks(
 	ctx context.Context,
 	blockID ulid.ULID,
+	shardIdx int,
 	bkt objstore.InstrumentedBucketReader,
 	localDir string,
 	fileOpts []storage.FileOption,
@@ -310,7 +311,6 @@ func NewLazyReaderBucketLabelsAndChunks(
 	earlyValidation bool,
 	logger log.Logger,
 ) (*LazyReaderBucketLabelsAndChunks, error) {
-	shardIdx := FirstShardIndex
 
 	bucketOpener := storage.NewParquetBucketOpener(bkt)
 
@@ -438,6 +438,7 @@ type LazyReaderLocalLabelsBucketChunks struct {
 func NewLazyReaderLocalLabelsBucketChunks(
 	ctx context.Context,
 	blockID ulid.ULID,
+	shardIdx int,
 	bkt objstore.InstrumentedBucketReader,
 	localDir string,
 	fileOpts []storage.FileOption,
@@ -447,7 +448,6 @@ func NewLazyReaderLocalLabelsBucketChunks(
 	earlyValidation bool,
 	logger log.Logger,
 ) (*LazyReaderLocalLabelsBucketChunks, error) {
-	shardIdx := FirstShardIndex
 
 	labelsFileName := schema.LabelsPfileNameForShard(blockID.String(), shardIdx)
 	labelsFileLocalPath := filepath.Join(localDir, strings.TrimPrefix(labelsFileName, blockID.String()))

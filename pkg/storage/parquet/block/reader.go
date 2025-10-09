@@ -24,13 +24,6 @@ const (
 	DefaultIndexHeaderLazyLoadingIdleTimeout = 60 * time.Minute
 )
 
-// FirstShardIndex represents the default initial shard for a parquet block reader;
-// TSDB blocks can be split into multiple shards when converted to our Parquet format,
-// but this sharding is not in use yet; assume all blocks have a single Parquet shard for now.
-const FirstShardIndex = 0
-
-// Reader wraps access to a TSDB block's storage.ParquetShard interface.
-
 type Reader interface {
 	BlockID() ulid.ULID
 	storage.ParquetShard
