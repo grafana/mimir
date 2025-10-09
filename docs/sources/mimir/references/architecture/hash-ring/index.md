@@ -162,10 +162,10 @@ Then the distributor writes the series to the `RF` ingesters owning the series i
 
 To illustrate, consider four ingesters and a token space from `0` to `9`:
 
-- Ingester #1 is registered in the ring with the token `2`
-- Ingester #2 is registered in the ring with the token `4`
-- Ingester #3 is registered in the ring with the token `6`
-- Ingester #4 is registered in the ring with the token `9`
+- Ingester #1 is registered in the ring with the token `2`.
+- Ingester #2 is registered in the ring with the token `4`.
+- Ingester #3 is registered in the ring with the token `6`.
+- Ingester #4 is registered in the ring with the token `9`.
 
 A distributor receives an incoming sample for the series `{__name__="cpu_seconds_total",instance="1.1.1.1"}`.
 It hashes the series’ labels, and the result of the hashing function is the token `3`.
