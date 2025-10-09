@@ -22,11 +22,9 @@ At that point, queriers retrieve the data from object storage through the store-
 To recover its in-memory state after a crash or restart, the ingester maintains both a [write-ahead log](#write-ahead-log) (WAL) and a [write-behind log](#write-behind-log) (WBL).
 The WBL is used only when out-of-order sample ingestion is enabled.
 
-
 ## Series ingestion and querying
 
 The way ingesters receive series, and the way queriers query them back from ingesters, differs between the ingest storage architecture and the classic architecture.
-
 
 ### Series ingestion and querying in ingest storage architecture
 
@@ -58,7 +56,6 @@ We recommend assigning two ingesters per partition, that is a replication factor
 
 For more information about sharding, refer to [Series sharding in ingest storage architecture](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/hash-ring/#series-sharding-in-ingest-storage-architecture).
 
-
 ### Series ingestion and querying in classic architecture
 
 {{< admonition type="note" >}}
@@ -80,7 +77,6 @@ For example, with an `RF` of three, a read request succeeds if each series is su
 
 For more information about sharding, refer to [Series sharding in classic architecture](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/hash-ring/#series-sharding-in-classic-architecture).
 
-
 ### Differences in read path availability between ingest storage and classic architecture
 
 Because the read quorum behavior differs between the two architectures, the ingest storage architecture is significantly more resilient to ingester failures.
@@ -97,7 +93,6 @@ Even with a lower replication factor — and therefore fewer ingesters — the i
 
 ![Read path outage probability](read-path-outage-probability.png)
 
-
 ### Zone aware replication
 
 Zone aware replication ensures that the ingester replicas for a given time series are replicated across different zones.
@@ -106,14 +101,12 @@ Dividing replicas across multiple zones prevents data loss and service interrupt
 
 To set up multi-zone replication, refer to [Configuring zone-aware replication](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/configure-zone-aware-replication/).
 
-
 ### Shuffle sharding
 
 Shuffle sharding is a technique used by Grafana Mimir to minimize the impact tenants have on each other.
 It works by isolating each tenant’s data across different partitions or ingesters, probabilistically reducing overlap between tenants.
 
 For more information on shuffle sharding, refer to [Configuring shuffle sharding](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/configure-shuffle-sharding/).
-
 
 ## Ingesters hash ring
 
@@ -146,7 +139,6 @@ The supported states are:
 
 To configure the ingesters' hash ring, refer to [Configure Grafana Mimir hash rings](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/configure-hash-rings/).
 
-
 ### Read-only mode
 
 {{< admonition type="note" >}}
@@ -163,19 +155,16 @@ In the write path, read-only ingesters are excluded from the shard computation u
 Read-only mode is particularly useful during downscaling or as preparation for an ingester’s shutdown.
 Ingesters can be placed in read-only mode using the [Prepare Instance Ring Downscale](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/http-api/#prepare-instance-ring-downscale) API endpoint.
 
-
 ## Write-ahead and write-behind logs
 
 The ingester uses a write-ahead log (WAL) and a write-behind log (WBL) to recover its in-memory state after a restart or crash.
 These logs protect against data loss caused by process restarts or failures but do not protect against disk failures.
 They also do not improve availability — replication is still required for high availability.
 
-
 ### Write-ahead log
 
 The write-ahead log (WAL) records all incoming series to persistent disk until those series are uploaded to long-term storage.
 If an ingester fails, it replays the WAL on restart to restore the in-memory series and samples.
-
 
 ### Write-behind log
 
