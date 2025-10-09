@@ -85,11 +85,11 @@ spec:
         - name: gateway
           image: {{ .nginx.image.registry }}/{{ .nginx.image.repository }}:{{ .nginx.image.tag }}
           imagePullPolicy: {{ $.Values.image.pullPolicy }}
-          {{- with .extraArgs }}
+          {{- if .extraArgs }}
           args:
-            {{- range $key, $value := . }}
-            - "-{{ $key }} {{ $value }}"
-            {{- end }}
+          {{- range $key, $value := .extraArgs }}
+            - -{{ $key }}={{ $value }}
+          {{- end }}
           {{- end }}
           volumeMounts:
             {{- if .extraVolumeMounts }}
