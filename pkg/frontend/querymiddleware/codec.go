@@ -237,7 +237,7 @@ var jsonFormatterInstance = jsonFormatter{}
 
 var knownFormats = []formatter{
 	jsonFormatterInstance,
-	protobufFormatter{},
+	ProtobufFormatter{},
 }
 
 func NewCodec(
