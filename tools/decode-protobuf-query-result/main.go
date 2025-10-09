@@ -35,13 +35,12 @@ func main() {
 }
 
 func decode(filename string) error {
-	// open file ki.proto and load as binary data
 	file, err := os.Open(filename)
 	if err != nil {
 		return fmt.Errorf("open file: %w", err)
 	}
 	defer file.Close()
-	// read the file content
+
 	data, err := io.ReadAll(file)
 	if err != nil {
 		return fmt.Errorf("read file: %w", err)
