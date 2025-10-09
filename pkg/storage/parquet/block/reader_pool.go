@@ -91,12 +91,10 @@ func newReaderPool(
 	}
 }
 
-// GetReader creates and returns a new binary reader. If the pool has been configured
-// with lazy reader enabled, this function will return a lazy reader. The returned lazy reader
-// is tracked by the pool and automatically closed once the idle timeout expires.
 func (p *ReaderPool) GetReader(
 	ctx context.Context,
 	blockID ulid.ULID,
+	shardIdx int,
 	bkt objstore.InstrumentedBucketReader,
 	fileOpts []storage.FileOption,
 	logger log.Logger,
@@ -104,6 +102,7 @@ func (p *ReaderPool) GetReader(
 	reader, err := NewLazyBucketReader(
 		ctx,
 		blockID,
+		shardIdx,
 		bkt,
 		fileOpts,
 		p.metrics.lazyReader,
