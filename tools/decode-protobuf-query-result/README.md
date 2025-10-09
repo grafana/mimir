@@ -17,6 +17,7 @@ Make a query using curl (or some other tool) and make sure to:
 - verify that the HTTP response was 2xx.
 
 For example
+
 ```sh
 $ curl -G -H "Accept: application/vnd.mimir.queryresponse+protobuf" -H "X-Scope-OrgId: 1" http://localhost:8080/prometheus/api/v1/query --data-urlencode 'query=foo{bar="baz"}[6m]' --data-urlencode 'time=1759932075' -o out.proto
  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
