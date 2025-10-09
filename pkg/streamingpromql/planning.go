@@ -65,6 +65,14 @@ func NewQueryPlanner(opts EngineOpts) (*QueryPlanner, error) {
 	planner.RegisterASTOptimizationPass(&ast.SortLabelsAndMatchers{}) // This is a prerequisite for other optimization passes such as common subexpression elimination.
 	// After query sharding is moved here, we want to move propagate matchers and reorder histogram aggregation here as well before query sharding.
 
+	// EliminateDeduplicateAndMerge doesn't support delayed name removal yet.
+	// This optimization pass is registered before CSE to keep the query plan as a simple tree structure.
+	// After CSE, the query plan may no longer be a tree due to multiple paths culminating in the same Duplicate node,
+	// which would make the elimination logic more complex.
+	if !opts.CommonOpts.EnableDelayedNameRemoval {
+		planner.RegisterQueryPlanOptimizationPass(plan.NewEliminateDeduplicateAndMergeOptimizationPass())
+	}
+
 	if opts.EnableCommonSubexpressionElimination {
 		planner.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(opts.EnableCommonSubexpressionEliminationForRangeVectorExpressionsInInstantQueries, opts.CommonOpts.Reg, opts.Logger))
 	}
@@ -76,11 +84,6 @@ func NewQueryPlanner(opts EngineOpts) (*QueryPlanner, error) {
 
 	if opts.EnableNarrowBinarySelectors {
 		planner.RegisterQueryPlanOptimizationPass(plan.NewNarrowSelectorsOptimizationPass(opts.Logger))
-	}
-
-	// EliminateDeduplicateAndMerge doesn't support delayed name removal yet.
-	if !opts.CommonOpts.EnableDelayedNameRemoval {
-		planner.RegisterQueryPlanOptimizationPass(plan.NewEliminateDeduplicateAndMergeOptimizationPass())
 	}
 
 	return planner, nil
