@@ -48,6 +48,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [ENHANCEMENT] Add documentation for livenessProbe support in Chart. #12182
 * [ENHANCEMENT] Upgrade rollout-operator to [0.33.0](https://github.com/grafana/helm-charts/blob/main/charts/rollout-operator/README.md#upgrade-of-grafana-rollout-operator). Note required actions for upgrading the rollout-operator chart. #12591
 * [ENHANCEMENT] Add support for `dnsConfig` for all components. #12618
+* [CHANGE] Remove deprecated `nginx` top-level values section. #12702
 
 ## 5.8.0
 
