@@ -24,6 +24,7 @@ const (
 	DefaultIndexHeaderLazyLoadingIdleTimeout = 60 * time.Minute
 )
 
+// Reader wraps access to a TSDB block's storage.ParquetShard interface.
 type Reader interface {
 	BlockID() ulid.ULID
 	storage.ParquetShard
