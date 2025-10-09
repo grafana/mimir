@@ -200,7 +200,21 @@ func (summer *shardSummer) willShardAllSelectors(expr parser.Expr) (will bool, e
 
 		// If we can't shard this expression, we might still be able to shard the inner expression.
 		// eg. in avg(count(test)), we can't shard the avg(), but we can shard the count().
-		return summer.willShardAllSelectors(expr.Expr)
+		if willShard, err := summer.willShardAllSelectors(expr.Expr); err != nil {
+			return false, err
+		} else if !willShard {
+			return false, nil
+		}
+
+		if expr.Param != nil {
+			if willShard, err := summer.willShardAllSelectors(expr.Param); err != nil {
+				return false, err
+			} else if !willShard {
+				return false, nil
+			}
+		}
+
+		return true, nil
 
 	case *parser.BinaryExpr:
 		if summer.isShardableBinOp(expr) && CanParallelize(expr, summer.logger) {
