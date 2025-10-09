@@ -314,20 +314,6 @@ func (p *QueryPlanner) runPlanningStage(stageName string, observer PlanningObser
 	return plan, nil
 }
 
-// applyIfIsOrWrapsVectorSelector will invoke the given action if the node is a VectorSelector or the node is a StepInvariantExpression which wraps a VectorSelector
-func (p *QueryPlanner) applyIfIsOrWrapsVectorSelector(node planning.Node, action func(vs *core.VectorSelector)) {
-	vs, isVectorSelector := node.(*core.VectorSelector)
-	if isVectorSelector {
-		action(vs)
-		return
-	}
-
-	stepInvariant, isStepInvariant := node.(*core.StepInvariantExpression)
-	if isStepInvariant {
-		p.applyIfIsOrWrapsVectorSelector(stepInvariant.Inner, action)
-	}
-}
-
 func (p *QueryPlanner) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
 	switch expr := expr.(type) {
 	case *parser.VectorSelector:
@@ -450,7 +436,6 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
 
 	case *parser.Call:
 		fnc, ok := findFunction(expr.Func.Name)
-
 		if !ok {
 			return nil, compat.NewNotSupportedError(fmt.Sprintf("'%s' function", expr.Func.Name))
 		}
@@ -478,11 +463,29 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
 		case functions.FUNCTION_ABSENT, functions.FUNCTION_ABSENT_OVER_TIME:
 			f.AbsentLabels = mimirpb.FromLabelsToLabelAdapters(functions.CreateLabelsForAbsentFunction(expr.Args[0]))
 		case functions.FUNCTION_TIMESTAMP:
-			// Set the ReturnSampleTimestamps on the underlying VectorSelector.
-			// Check for both a raw VectorSelector or when it is nested within a StepInvariantExpression
-			p.applyIfIsOrWrapsVectorSelector(args[0], func(vs *core.VectorSelector) {
-				vs.ReturnSampleTimestamps = true
-			})
+
+			// A special case to re-order when we have a timestamp(StepInvariantExpression(VectorSelector)).
+			// The StepInvariantExpression is moved up to encase the entire function call.
+			// Note that the DeduplicateAndMerge still wraps the function call as the timestamp function returns true under functionNeedsDeduplication().
+			stepInvariantExpression, ok := args[0].(*core.StepInvariantExpression)
+			if ok {
+				vectorSelector, ok := stepInvariantExpression.Inner.(*core.VectorSelector)
+				if ok {
+					vectorSelector.ReturnSampleTimestamps = true
+					f.Args[0] = stepInvariantExpression.Inner
+					return &core.StepInvariantExpression{
+						Inner: &core.DeduplicateAndMerge{
+							Inner:                      f,
+							DeduplicateAndMergeDetails: &core.DeduplicateAndMergeDetails{}},
+						StepInvariantExpressionDetails: &core.StepInvariantExpressionDetails{},
+					}, nil
+				}
+			}
+
+			vectorSelector, ok := args[0].(*core.VectorSelector)
+			if ok {
+				vectorSelector.ReturnSampleTimestamps = true
+			}
 		}
 
 		if functionNeedsDeduplication(fnc) {

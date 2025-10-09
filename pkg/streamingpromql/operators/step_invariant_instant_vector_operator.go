@@ -27,10 +27,6 @@ func NewStepInvariantInstantVectorOperator(op types.InstantVectorOperator, origi
 	}
 }
 
-func (s *StepInvariantInstantVectorOperator) Inner() types.InstantVectorOperator {
-	return s.inner
-}
-
 func (s *StepInvariantInstantVectorOperator) ExpressionPosition() posrange.PositionRange {
 	return s.inner.ExpressionPosition()
 }
@@ -63,7 +59,7 @@ func (s *StepInvariantInstantVectorOperator) NextSeries(ctx context.Context) (ty
 
 	// The inner query should be pinned to a single point in time with a single step. We don't expect to have multiple values per series here
 	if len(data.Floats) > 1 || len(data.Histograms) > 1 {
-		return types.InstantVectorSeriesData{}, fmt.Errorf("expected a single value float or histogram series. floats=%d, histograms=%d", len(data.Floats), len(data.Histograms))
+		return types.InstantVectorSeriesData{}, fmt.Errorf("expected a single value float or histogram series, but got %d floats and %d histograms", len(data.Floats), len(data.Histograms))
 	}
 
 	if len(data.Floats) == 1 {
@@ -74,10 +70,8 @@ func (s *StepInvariantInstantVectorOperator) NextSeries(ctx context.Context) (ty
 			return types.InstantVectorSeriesData{}, err
 		}
 
-		floats = append(floats, promql.FPoint{T: data.Floats[0].T, F: data.Floats[0].F})
-
 		// Fill the expected steps with the same point.
-		for ts := s.originalTimeRange.StartT + s.originalTimeRange.IntervalMilliseconds; ts <= s.originalTimeRange.EndT; ts += s.originalTimeRange.IntervalMilliseconds {
+		for ts := s.originalTimeRange.StartT; ts <= s.originalTimeRange.EndT; ts += s.originalTimeRange.IntervalMilliseconds {
 			floats = append(floats, promql.FPoint{
 				T: ts,
 				F: data.Floats[0].F,
@@ -95,17 +89,17 @@ func (s *StepInvariantInstantVectorOperator) NextSeries(ctx context.Context) (ty
 			return types.InstantVectorSeriesData{}, err
 		}
 
-		h := data.Histograms[0].H
-
+		histograms = append(histograms, promql.HPoint{T: data.Histograms[0].T, H: data.Histograms[0].H})
 		// Note that we create a copy of the histogram for each step as we can not re-use the same *FloatHistogram in the slice from the pool.
-		// A copy also ensures that when the original slice is returned to the pool the histograms we continue to reference are not mangled.
-		histograms = append(histograms, promql.HPoint{T: data.Histograms[0].T, H: h.Copy()})
 		for ts := s.originalTimeRange.StartT + s.originalTimeRange.IntervalMilliseconds; ts <= s.originalTimeRange.EndT; ts += s.originalTimeRange.IntervalMilliseconds {
 			histograms = append(histograms, promql.HPoint{
 				T: ts,
-				H: h.Copy(),
+				H: data.Histograms[0].H.Copy(),
 			})
 		}
+
+		// Ensure that the histogram is not mangled when returned to the pool
+		data.Histograms[0].H = nil
 		types.HPointSlicePool.Put(&data.Histograms, s.memoryConsumptionTracker)
 		data.Histograms = histograms
 	}
