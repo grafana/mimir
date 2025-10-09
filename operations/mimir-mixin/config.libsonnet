@@ -227,6 +227,7 @@
     // The alertname is used to create a hyperlink to the runbooks. Currenlty we only have a single set of runbooks, so different products (e.g. GEM) should still use the same runbooks.
     alert_product: $._config.product,
 
+    // The Deployment or StatefulSet names (eg. 'querier' or 'ingester-zone-a') to exclude from the MimirRolloutStuck alert.
     rollout_stuck_alert_ignore_deployments: [],
     rollout_stuck_alert_ignore_statefulsets: [],
 
