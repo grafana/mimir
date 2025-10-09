@@ -196,9 +196,9 @@ When other instances need to find the healthy instances of a given component, th
 
 The Grafana Mimir components using the ring for service discovery or coordination are:
 
-- [Distributors](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/components/distributor/) – enforce global rate limits as local limits by dividing the global limit by the number of healthy distributor instances.
-- [Query-schedulers](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/components/query-scheduler/) – allow query-frontends and queriers to discover available schedulers.
-- [(Optional) Overrides-exporters](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/components/overrides-exporter/) – self-elect a leader among replicas to export high-cardinality metrics. No strict leader election is required.
+- [Distributors](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/components/distributor/): Enforce global rate limits as local limits by dividing the global limit by the number of healthy distributor instances.
+- [Query-schedulers](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/components/query-scheduler/): Allow query-frontends and queriers to discover available schedulers.
+- [(Optional) Overrides-exporters](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/components/overrides-exporter/): Self-elect a leader among replicas to export high-cardinality metrics. No strict leader election is required.
 
 ## Share a hash ring between Grafana Mimir instances
 
