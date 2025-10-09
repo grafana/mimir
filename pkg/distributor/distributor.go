@@ -285,7 +285,7 @@ type Config struct {
 
 	// Usage-tracker (optional).
 	UsageTrackerEnabled bool                      `yaml:"-"` // Injected internally.
-	UsageTrackerClient  usagetrackerclient.Config `yaml:"usage_tracker_client"`
+	UsageTrackerClient  usagetrackerclient.Config `yaml:"usage_tracker_client" doc:"hidden"`
 
 	ReactiveLimiter reactivelimiter.Config `yaml:"reactive_limiter"`
 }
