@@ -136,7 +136,7 @@ To use [Consul](https://www.consul.io) as a backend KV store, set the following 
 - `<prefix>.consul.hostname`: Consul hostname and port separated by colon. For example, `consul:8500`.
 - `<prefix>.consul.acl-token`: [ACL token](https://www.consul.io/docs/security/acl/acl-system) used to authenticate to Consul. If Consul authentication is disabled, you can leave the token empty.
 
-To see all supported configuration parameters, refer [consul](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/configuration-parameters/#consul).
+To see all supported configuration parameters, refer to [consul](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/configuration-parameters/#consul).
 
 ### Etcd
 
