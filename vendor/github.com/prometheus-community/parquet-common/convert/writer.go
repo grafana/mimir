@@ -19,6 +19,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sync"
 
 	"github.com/hashicorp/go-multierror"
 	"github.com/parquet-go/parquet-go"
@@ -218,6 +219,9 @@ type fileWriter struct {
 type splitPipeFileWriter struct {
 	fileWriters map[string]*fileWriter
 	errGroup    *errgroup.Group
+
+	writesWg sync.WaitGroup
+	writes   chan func()
 }
 
 func newSplitFileWriter(
@@ -248,36 +252,56 @@ func newSplitFileWriter(
 			return pipeReaderWriter.Write(ctx, r, file)
 		})
 	}
-	return &splitPipeFileWriter{
+
+	w := &splitPipeFileWriter{
 		fileWriters: fileWriters,
 		errGroup:    errGroup,
-	}, nil
+		writes:      make(chan func()),
+	}
+
+	go w.runWrites()
+	return w, nil
+}
+
+func (s *splitPipeFileWriter) runWrites() {
+	const concurrency = 6
+
+	for range concurrency {
+		go func() {
+			for f := range s.writes {
+				f()
+				s.writesWg.Done()
+			}
+		}()
+	}
 }
 
 func (s *splitPipeFileWriter) WriteRows(rows []parquet.Row) (int, error) {
 	errGroup := &errgroup.Group{}
 	for _, writer := range s.fileWriters {
-		errGroup.Go(func() error {
+		s.writesWg.Add(1)
+		s.writes <- func() {
 			convertedRows := util.CloneRows(rows)
 			_, err := writer.conv.Convert(convertedRows)
 			if err != nil {
-				return fmt.Errorf("unable to convert rows: %w", err)
+				println(fmt.Errorf("unable to convert rows: %w", err))
 			}
 			n, err := writer.pw.WriteRows(convertedRows)
 			if err != nil {
-				return fmt.Errorf("unable to write rows: %w", err)
+				println(fmt.Errorf("unable to write rows: %w", err))
 			}
 			if n != len(rows) {
-				return fmt.Errorf("unable to write rows: %d != %d", n, len(rows))
+				println(fmt.Errorf("unable to write rows: %d != %d", n, len(rows)))
 			}
-			return nil
-		})
+		}
 	}
 
 	return len(rows), errGroup.Wait()
 }
 
 func (s *splitPipeFileWriter) Close() error {
+	close(s.writes)
+	s.writesWg.Wait()
 	var err error
 	for _, fw := range s.fileWriters {
 		if errClose := fw.pw.Close(); errClose != nil {
