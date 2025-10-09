@@ -22,7 +22,7 @@ The following Mimir features are built on top of hash rings:
 
 ## How the hash ring is used for sharding
 
-The primary use of hash rings in Mimir is sharding data, for example, time series, and workloads, for example, compaction jobs, in a consistent way, without a central coordinator or single point of failure.
+The primary use of hash rings in Mimir is to consistently shard data, such as time series, and workloads, such as compaction jobs, without a central coordinator or single point of failure.
 
 Each of the following Mimir components joins its own dedicated hash ring for sharding:
 
