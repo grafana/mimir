@@ -387,7 +387,7 @@ func (s *QuerySharder) getShardsForQuery(ctx context.Context, tenantIDs []string
 			return 0, err
 		}
 		numShardableLegs := 1
-		if result.ShardedSelectors > 0 {
+		if result.WillShardAllSelectors && result.ShardedSelectors > 0 {
 			numShardableLegs = result.ShardedSelectors
 		}
 
