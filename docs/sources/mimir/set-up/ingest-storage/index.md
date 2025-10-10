@@ -20,7 +20,7 @@ Before you start, ensure you have the following:
 
 ## About ingest storage architecture
 
-Ingest storage architecture decouples ingestion from query and storage components using Kafka as a durable buffer between the distributor, ingester, and store-gateway services. This design improves reliability, resilience, and scalability for high-ingestion environments.
+Ingest storage architecture decouples ingestion from query and storage components using Kafka as a durable buffer between the distributor and ingester services. This design improves reliability, resilience, and scalability for high-ingestion environments.
 
  You can review the full system flow and component relationships in [About ingest storage architecture](https://grafana.com/docs/mimir/<MIMIR_VERSION>/get-started/about-grafana-mimir-architecture/about-ingest-storage-architecture/).
 
