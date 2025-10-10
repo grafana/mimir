@@ -82,34 +82,72 @@ func (e *PrometheusParquetChunksEncoder) Encode(it chunks.Iterator) ([][]byte, e
 		}
 	}
 
+	needsNewChunk := make(map[int]struct{})
+	nextXorChunk := func(chkIdx int) error {
+		nChunk, app, err := e.cutNewChunk(chunkenc.EncXOR)
+		if err != nil {
+			return err
+		}
+		reEncodedChunks[chkIdx][chunkenc.EncXOR] = append(reEncodedChunks[chkIdx][chunkenc.EncXOR], nChunk)
+		reEncodedChunksAppenders[chkIdx][chunkenc.EncXOR] = app
+		return nil
+	}
+
 	var sampleIt chunkenc.Iterator
 	for _, chk := range chks {
 		sampleIt = chk.Chunk.Iterator(sampleIt)
 		switch chk.Chunk.Encoding() {
 		case chunkenc.EncXOR:
-			for vt := sampleIt.Next(); vt != chunkenc.ValNone; vt = sampleIt.Next() {
-				if vt != chunkenc.ValFloat {
-					return nil, fmt.Errorf("found value type %v in float chunk", vt)
-				}
-				t, v := sampleIt.At()
+			minColumn := e.schema.DataColumIdx(chk.MinTime)
+			maxColumn := e.schema.DataColumIdx(chk.MaxTime)
 
-				chkIdx := e.schema.DataColumIdx(t)
-				reEncodedChunksAppenders[chkIdx][chunkenc.EncXOR].Append(t, v)
-				chunk := reEncodedChunks[chkIdx][chunkenc.EncXOR][len(reEncodedChunks[chkIdx][chunkenc.EncXOR])-1]
-				if t < chunk.MinTime {
-					chunk.MinTime = t
-				}
-				if t > chunk.MaxTime {
-					chunk.MaxTime = t
-				}
-				if chunk.Chunk.NumSamples() >= e.samplesPerChunk {
-					nChunk, app, err := e.cutNewChunk(chunkenc.EncXOR)
+			if minColumn == maxColumn {
+				// Fast path for all samples going to the same Parquet column.
+				// We always make a new chunk here. We're going to write to it.
+				if _, ok := needsNewChunk[minColumn]; ok {
+					err := nextXorChunk(minColumn)
 					if err != nil {
 						return nil, err
 					}
+					delete(needsNewChunk, minColumn)
+				}
+				chunk := reEncodedChunks[minColumn][chunkenc.EncXOR][len(reEncodedChunks[minColumn][chunkenc.EncXOR])-1]
+				chunk.Ref = chk.Ref
+				chunk.MinTime = chk.MinTime
+				chunk.MaxTime = chk.MaxTime
+				chunk.Chunk.Reset(chk.Chunk.Bytes())
+				needsNewChunk[minColumn] = struct{}{}
 
-					reEncodedChunks[chkIdx][chunkenc.EncXOR] = append(reEncodedChunks[chkIdx][chunkenc.EncXOR], nChunk)
-					reEncodedChunksAppenders[chkIdx][chunkenc.EncXOR] = app
+			} else {
+				for vt := sampleIt.Next(); vt != chunkenc.ValNone; vt = sampleIt.Next() {
+					if vt != chunkenc.ValFloat {
+						return nil, fmt.Errorf("found value type %v in float chunk", vt)
+					}
+					t, v := sampleIt.At()
+					chkIdx := e.schema.DataColumIdx(t)
+					// println(t, chkIdx)
+
+					if _, ok := needsNewChunk[chkIdx]; ok {
+						err := nextXorChunk(chkIdx)
+						if err != nil {
+							return nil, err
+						}
+						delete(needsNewChunk, chkIdx)
+					}
+
+					reEncodedChunksAppenders[chkIdx][chunkenc.EncXOR].Append(t, v)
+					chunk := reEncodedChunks[chkIdx][chunkenc.EncXOR][len(reEncodedChunks[chkIdx][chunkenc.EncXOR])-1]
+					if t < chunk.MinTime {
+						//println("encountered timestamp lower than mintime")
+						chunk.MinTime = t
+					}
+					if t > chunk.MaxTime {
+						//println("encountered timestamp higher than maxtime")
+						chunk.MaxTime = t
+					}
+					if chunk.Chunk.NumSamples() >= e.samplesPerChunk {
+						needsNewChunk[chkIdx] = struct{}{}
+					}
 				}
 			}
 		case chunkenc.EncFloatHistogram:
