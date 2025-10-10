@@ -841,7 +841,7 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 				var isEOS bool
 				var shouldRetry bool
 				mySeries, myWarnings, myQueriedBlocks, myStreamingSeriesLabels, indexBytesFetched, isEOS, shouldRetry, err = q.receiveMessage(
-					c, stream, queryLimiter, mySeries, myWarnings, myQueriedBlocks, myStreamingSeriesLabels, indexBytesFetched,
+					c, stream, queryLimiter, memoryTracker, mySeries, myWarnings, myQueriedBlocks, myStreamingSeriesLabels, indexBytesFetched,
 				)
 				if errors.Is(err, io.EOF) {
 					util.CloseAndExhaust[*storepb.SeriesResponse](stream) //nolint:errcheck
@@ -935,7 +935,7 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 			// Store the result.
 			mtx.Lock()
 			if len(mySeries) > 0 {
-				seriesSets = append(seriesSets, &blockQuerierSeriesSet{series: mySeries})
+				seriesSets = append(seriesSets, series.NewMemoryTrackingSeriesSet(&blockQuerierSeriesSet{series: mySeries}, memoryTracker))
 			} else if len(myStreamingSeriesLabels) > 0 {
 				if chunkInfo != nil {
 					chunkInfo.SetMsg("store-gateway streaming")
@@ -956,6 +956,10 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 						remoteAddress: c.RemoteAddress(),
 					})
 					streamReaders = append(streamReaders, streamReader)
+				}
+
+				for _, ls := range myStreamingSeriesLabels {
+					memoryTracker.DecreaseMemoryConsumptionForLabels(ls)
 				}
 			}
 			warnings.Merge(myWarnings)
@@ -991,7 +995,7 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 	return seriesSets, queriedBlocks, warnings, streamReaders, estimateChunks, nil //nolint:govet // It's OK to return without cancelling reqCtx, see comment above.
 }
 
-func (q *blocksStoreQuerier) receiveMessage(c BlocksStoreClient, stream storegatewaypb.StoreGateway_SeriesClient, queryLimiter *limiter.QueryLimiter, mySeries []*storepb.Series, myWarnings annotations.Annotations, myQueriedBlocks []ulid.ULID, myStreamingSeriesLabels []labels.Labels, indexBytesFetched uint64) ([]*storepb.Series, annotations.Annotations, []ulid.ULID, []labels.Labels, uint64, bool, bool, error) {
+func (q *blocksStoreQuerier) receiveMessage(c BlocksStoreClient, stream storegatewaypb.StoreGateway_SeriesClient, queryLimiter *limiter.QueryLimiter, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, mySeries []*storepb.Series, myWarnings annotations.Annotations, myQueriedBlocks []ulid.ULID, myStreamingSeriesLabels []labels.Labels, indexBytesFetched uint64) ([]*storepb.Series, annotations.Annotations, []ulid.ULID, []labels.Labels, uint64, bool, bool, error) {
 	resp, err := stream.Recv()
 	if err != nil {
 		if errors.Is(err, io.EOF) {
@@ -1011,8 +1015,14 @@ func (q *blocksStoreQuerier) receiveMessage(c BlocksStoreClient, stream storegat
 		s.MakeReferencesSafeToRetain()
 		mySeries = append(mySeries, s)
 
+		ls := mimirpb.FromLabelAdaptersToLabels(s.Labels)
+
+		if err := memoryConsumptionTracker.IncreaseMemoryConsumptionForLabels(ls); err != nil {
+			return mySeries, myWarnings, myQueriedBlocks, myStreamingSeriesLabels, indexBytesFetched, false, false, err
+		}
+
 		// Add series fingerprint to query limiter; will return error if we are over the limit
-		if err := queryLimiter.AddSeries(mimirpb.FromLabelAdaptersToLabels(s.Labels)); err != nil {
+		if err := queryLimiter.AddSeries(ls); err != nil {
 			return mySeries, myWarnings, myQueriedBlocks, myStreamingSeriesLabels, indexBytesFetched, false, false, err
 		}
 
@@ -1056,6 +1066,10 @@ func (q *blocksStoreQuerier) receiveMessage(c BlocksStoreClient, stream storegat
 
 		for _, s := range ss.Series {
 			ls := mimirpb.FromLabelAdaptersToLabelsWithCopy(s.Labels)
+
+			if err := memoryConsumptionTracker.IncreaseMemoryConsumptionForLabels(ls); err != nil {
+				return mySeries, myWarnings, myQueriedBlocks, myStreamingSeriesLabels, indexBytesFetched, false, false, err
+			}
 
 			// Add series fingerprint to query limiter; will return error if we are over the limit
 			if limitErr := queryLimiter.AddSeries(ls); limitErr != nil {

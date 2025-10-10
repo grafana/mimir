@@ -16,6 +16,8 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/stretchr/testify/require"
+
+	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
 // This file contains the details of the benchmarks so that tools/benchmark-query-engine can use the same information.
@@ -59,6 +61,10 @@ func (c BenchCase) Run(ctx context.Context, t testing.TB, start, end time.Time, 
 		require.NoError(t, err)
 		return nil, nil
 	}
+
+	// Initiate memoryConsumptionTracker in context so that downstream read path, including query via prometheus engine will see the same memoryConsumptionTracker
+	memoryConsumptionTracker := limiter.MemoryTrackerFromContextWithFallback(ctx)
+	ctx = limiter.AddMemoryTrackerToContext(ctx, memoryConsumptionTracker)
 
 	res := qry.Exec(ctx)
 
