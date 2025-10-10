@@ -124,6 +124,7 @@
 * [CHANGE] Ruler Query Frontend: Increase `server.grpc-max-concurrent-streams` from 100 to 300. #12742
 * [CHANGE] Rollout-operator: Vendor jsonnet from rollout-operator repository. #12688 #12962
 * [FEATURE] Memcached: Allow `minReadySeconds` to be set via `_config.cache_frontend_min_ready_seconds` (etc.) to slow down Memcached rollouts. #12938
+* [FEATURE] Distributor: Allow setting GOMEMLIMIT equal to memory request, via `_config.distributor_gomemlimit_enabled`. If enabled, distributor horizontal auto-scaling memory trigger is also removed, since it doesn't make sense in combination with GOMEMLIMIT. #12963
 * [ENHANCEMENT] Add timeout validation for querier and query-frontend. Enhanced `parseDuration` to support milliseconds and combined formats (e.g., "4m30s"). #12766
 * [ENHANCEMENT] Allow the max number of OTEL events in a span to be configure via `_config.otel_span_event_count_limit`. #12865
 
