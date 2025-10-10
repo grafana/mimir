@@ -400,6 +400,10 @@ func DefaultTenantManagerFactory(
 
 		// Wrap the queryable with our custom logic.
 		wrappedQueryable := WrapQueryableWithReadConsistency(queryable, logger)
+		// Wrap the queryable to ensure all queries have a memory tracker in the context.
+		// This is needed for ruler operations like alert state restoration that may bypass
+		// the query engine's NewInstantQuery/NewRangeQuery methods.
+		wrappedQueryable = NewUnlimitedMemoryTrackerQueryable(wrappedQueryable)
 
 		var appendeable storage.Appendable
 		if cfg.RuleEvaluationWriteEnabled {

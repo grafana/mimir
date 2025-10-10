@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-package querier
+package ruler
 
 import (
 	"context"
+
+	"github.com/grafana/mimir/pkg/util/limiter"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
@@ -36,6 +38,7 @@ type unlimitedMemoryTrackerQuerier struct {
 }
 
 func (q *unlimitedMemoryTrackerQuerier) Select(ctx context.Context, sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
+	ctx = limiter.ContextWithNewUnlimitedMemoryConsumptionTracker(ctx)
 	return q.inner.Select(ctx, sortSeries, hints, matchers...)
 }
 
