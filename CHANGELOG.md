@@ -92,6 +92,7 @@
 * [BUGFIX] Distributor: Fix error when native histograms bucket limit is set then no NHCB passes validation. #12741
 * [BUGFIX] Ingester: Fix continous reload of active series counters when cost-attribution labels are above the max cardinality. #12822
 * [BUGFIX] Distributor: Report the correct size in the `err-mimir-distributor-max-write-message-size` error. #12799
+* [BUGFIX] Query-frontend: Fix issue where shardable expressions containing aggregations with a shardable parameter (eg. `sum(foo)` in `topk(scalar(sum(foo)), sum by (pod) (bar))`) would not have the parameter sharded. #12958
 
 ### Mixin
 
