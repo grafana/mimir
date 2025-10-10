@@ -90,6 +90,10 @@ func (i *ProfilingWrapper) PushToStorageAndReleaseRequest(ctx context.Context, r
 	return i.ing.PushToStorageAndReleaseRequest(ctx, request)
 }
 
+func (i *ProfilingWrapper) NotifyPreCommit(ctx context.Context) error {
+	return i.ing.NotifyPreCommit(ctx)
+}
+
 func (i *ProfilingWrapper) QueryStream(request *client.QueryRequest, server client.Ingester_QueryStreamServer) error {
 	ctx := server.Context()
 	if isTraceSampled(ctx) {
