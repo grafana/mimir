@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"net/http/httptest"
+	"path"
 	"testing"
 
 	"github.com/go-kit/log"
@@ -18,16 +19,17 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/storage/bucket/filesystem"
+	"github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/util/shutdownmarker"
 	"github.com/grafana/mimir/pkg/util/test"
 )
 
-func createStoreGateway(t *testing.T, reg prometheus.Registerer) (*StoreGateway, *consul.Client) {
+func createStoreGateway(t *testing.T, reg prometheus.Registerer, opts ...storageConfigOption) (*StoreGateway, *consul.Client) {
 	gatewayCfg := mockGatewayConfig()
 	gatewayCfg.ShardingRing.UnregisterOnShutdown = false
 
 	storageDir := t.TempDir()
-	storageCfg := mockStorageConfig(t)
+	storageCfg := mockStorageConfig(t, opts...)
 
 	ringStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
 	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
@@ -50,7 +52,13 @@ func getRingDesc(ctx context.Context, t *testing.T, ringStore *consul.Client) *r
 func TestStoreGateway_PrepareShutdownHandler(t *testing.T) {
 	test.VerifyNoLeak(t)
 	reg := prometheus.NewPedanticRegistry()
-	g, ringStore := createStoreGateway(t, reg)
+
+	setSyncDirToNonExistentDir := func(config *tsdb.BlocksStorageConfig) {
+		// Make sure that pointing to a non-existent sync dir doesn't break us.
+		// We expect this directory is created during startup.
+		config.BucketStore.SyncDir = path.Join(config.BucketStore.SyncDir, "non-existent-dir")
+	}
+	g, ringStore := createStoreGateway(t, reg, setSyncDirToNonExistentDir)
 
 	shutdownMarkerPath := shutdownmarker.GetPath(g.storageCfg.BucketStore.SyncDir)
 	// ensure that there is no shutdown marker

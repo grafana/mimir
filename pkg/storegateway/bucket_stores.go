@@ -194,6 +194,10 @@ func (u *BucketStores) stopBucketStores(error) error {
 func (u *BucketStores) initialSync(ctx context.Context) error {
 	level.Info(u.logger).Log("msg", "synchronizing TSDB blocks for all users")
 
+	if err := os.MkdirAll(u.cfg.BucketStore.SyncDir, 0750); err != nil {
+		return fmt.Errorf("create sync-dir: %w", err)
+	}
+
 	if err := u.syncUsersBlocksWithRetries(ctx, func(ctx context.Context, store *BucketStore) error {
 		return store.InitialSync(ctx)
 	}); err != nil {
