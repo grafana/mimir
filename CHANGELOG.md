@@ -75,6 +75,7 @@
 * [ENHANCEMENT] Distributor: Add new optional config flag `distributor.ha-tracker.failover-sample-timeout` for HA tracker as an additional failover timeout check based on sample time instead of server time. #12331
 * [ENHANCEMENT] Distributor: Add reactive concurrency limiters to protect push operations from overload. #12923
 * [ENHANCEMENT] Ingester: Add experimental matcher set reduction to cost-based lookup planning. #12831
+* [ENHANCEMENT] MQE: Add support for determining a query plan version based on versioned planning nodes. #12961
 * [BUGFIX] Distributor: Calculate `WriteResponseStats` before validation and `PushWrappers`. This prevents clients using Remote-Write 2.0 from seeing a diff in written samples, histograms and exemplars. #12682
 * [BUGFIX] Compactor: Fix cortex_compactor_block_uploads_failed_total metric showing type="unknown". #12477
 * [BUGFIX] Querier: Samples with the same timestamp are merged deterministically. Previously, this could lead to flapping query results when an out-of-order sample is ingested that conflicts with a previously ingested in-order sample's value. #8673
