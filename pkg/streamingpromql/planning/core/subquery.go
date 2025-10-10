@@ -145,3 +145,7 @@ func (s *Subquery) QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbac
 func (s *Subquery) ExpressionPosition() posrange.PositionRange {
 	return s.GetExpressionPosition().ToPrometheusType()
 }
+
+func (a *Subquery) MinimumRequiredPlanVersion() int64 {
+	return planning.DefaultNodeMinimumRequiredQueryPlanVersion
+}
