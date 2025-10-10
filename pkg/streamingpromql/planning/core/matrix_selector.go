@@ -99,5 +99,5 @@ func (m *MatrixSelector) ExpressionPosition() posrange.PositionRange {
 }
 
 func (m *MatrixSelector) MinimumRequiredPlanVersion() int64 {
-	return planning.DefaultNodeMinimumRequiredQueryPlanVersion
+	return planning.QueryPlanVersionZero
 }

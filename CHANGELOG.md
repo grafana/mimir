@@ -37,7 +37,7 @@
 * [FEATURE] Ingester: Add experimental `blocks-storage.tsdb.index-lookup-planning-enabled` flag to configure use of a cost-based index lookup planner. #12530
 * [FEATURE] MQE: Add support for applying extra selectors to one side of a binary operation to reduce data fetched. #12577
 * [FEATURE] Query-frontend: Add a native histogram presenting the length of query expressions handled by the query-frontend #12571
-* [FEATURE] Query-frontend and querier: Add experimental support for performing query planning in query-frontends and distributing portions of the plan to queriers for execution. #12302 #12551 #12665 #12687 #12745 #12757 #12798 #12808 #12809 #12835 #12856 #12870 #12883 #12885 #12886
+* [FEATURE] Query-frontend and querier: Add experimental support for performing query planning in query-frontends and distributing portions of the plan to queriers for execution. #12302 #12551 #12665 #12687 #12745 #12757 #12798 #12808 #12809 #12835 #12856 #12870 #12883 #12885 #12886 #12961
 * [FEATURE] Alertmanager: add Microsoft Teams V2 as a supported integration. #12680
 * [FEATURE] Distributor: Add experimental flag `-validation.label-value-length-over-limit-strategy` to configure how to handle label values over the length limit. #12627 #12844
 * [FEATURE] Ingester: Introduce metric `cortex_ingester_owned_target_info_series` for counting the number of owned `target_info` series by tenant. #12681
@@ -75,7 +75,6 @@
 * [ENHANCEMENT] Distributor: Add new optional config flag `distributor.ha-tracker.failover-sample-timeout` for HA tracker as an additional failover timeout check based on sample time instead of server time. #12331
 * [ENHANCEMENT] Distributor: Add reactive concurrency limiters to protect push operations from overload. #12923
 * [ENHANCEMENT] Ingester: Add experimental matcher set reduction to cost-based lookup planning. #12831
-* [ENHANCEMENT] MQE: Add support for determining a query plan version based on versioned planning nodes. #12961
 * [BUGFIX] Distributor: Calculate `WriteResponseStats` before validation and `PushWrappers`. This prevents clients using Remote-Write 2.0 from seeing a diff in written samples, histograms and exemplars. #12682
 * [BUGFIX] Compactor: Fix cortex_compactor_block_uploads_failed_total metric showing type="unknown". #12477
 * [BUGFIX] Querier: Samples with the same timestamp are merged deterministically. Previously, this could lead to flapping query results when an out-of-order sample is ingested that conflicts with a previously ingested in-order sample's value. #8673

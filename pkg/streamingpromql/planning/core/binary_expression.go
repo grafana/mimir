@@ -257,7 +257,7 @@ func (b *BinaryExpression) ExpressionPosition() posrange.PositionRange {
 }
 
 func (b *BinaryExpression) MinimumRequiredPlanVersion() int64 {
-	return planning.DefaultNodeMinimumRequiredQueryPlanVersion
+	return planning.QueryPlanVersionZero
 }
 
 func (v *VectorMatching) Equals(other *VectorMatching) bool {

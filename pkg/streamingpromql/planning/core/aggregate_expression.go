@@ -172,5 +172,5 @@ func (a *AggregateExpression) ExpressionPosition() posrange.PositionRange {
 }
 
 func (a *AggregateExpression) MinimumRequiredPlanVersion() int64 {
-	return planning.DefaultNodeMinimumRequiredQueryPlanVersion
+	return planning.QueryPlanVersionZero
 }

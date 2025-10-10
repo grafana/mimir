@@ -1164,7 +1164,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 func TestPlanVersioning(t *testing.T) {
 	originalMaximumPlanVersion := planning.MaximumSupportedQueryPlanVersion
 	planning.MaximumSupportedQueryPlanVersion = 9001
-	planning.DefaultNodeMinimumRequiredQueryPlanVersion = 9000
+	planning.QueryPlanVersionZero = 9000
 	t.Cleanup(func() { planning.MaximumSupportedQueryPlanVersion = originalMaximumPlanVersion })
 
 	plan := &planning.QueryPlan{

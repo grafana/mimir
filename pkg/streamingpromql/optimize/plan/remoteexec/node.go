@@ -82,7 +82,7 @@ func (r *RemoteExecution) ExpressionPosition() posrange.PositionRange {
 }
 
 func (r *RemoteExecution) MinimumRequiredPlanVersion() int64 {
-	return planning.DefaultNodeMinimumRequiredQueryPlanVersion
+	return planning.QueryPlanVersionZero
 }
 
 type RemoteExecutionMaterializer struct {

@@ -99,5 +99,5 @@ func (u *UnaryExpression) ExpressionPosition() posrange.PositionRange {
 }
 
 func (u *UnaryExpression) MinimumRequiredPlanVersion() int64 {
-	return planning.DefaultNodeMinimumRequiredQueryPlanVersion
+	return planning.QueryPlanVersionZero
 }

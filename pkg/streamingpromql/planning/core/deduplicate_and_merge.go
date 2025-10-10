@@ -76,7 +76,7 @@ func (d *DeduplicateAndMerge) ExpressionPosition() posrange.PositionRange {
 }
 
 func (d *DeduplicateAndMerge) MinimumRequiredPlanVersion() int64 {
-	return planning.DefaultNodeMinimumRequiredQueryPlanVersion
+	return planning.QueryPlanVersionZero
 }
 
 func MaterializeDeduplicateAndMerge(d *DeduplicateAndMerge, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {

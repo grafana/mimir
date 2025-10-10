@@ -147,5 +147,5 @@ func (s *Subquery) ExpressionPosition() posrange.PositionRange {
 }
 
 func (s *Subquery) MinimumRequiredPlanVersion() int64 {
-	return planning.DefaultNodeMinimumRequiredQueryPlanVersion
+	return planning.QueryPlanVersionZero
 }

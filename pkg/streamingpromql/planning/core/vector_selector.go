@@ -102,5 +102,5 @@ func (v *VectorSelector) ExpressionPosition() posrange.PositionRange {
 }
 
 func (v *VectorSelector) MinimumRequiredPlanVersion() int64 {
-	return planning.DefaultNodeMinimumRequiredQueryPlanVersion
+	return planning.QueryPlanVersionZero
 }

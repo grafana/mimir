@@ -137,5 +137,5 @@ func (f *FunctionCall) ExpressionPosition() posrange.PositionRange {
 }
 
 func (f *FunctionCall) MinimumRequiredPlanVersion() int64 {
-	return planning.DefaultNodeMinimumRequiredQueryPlanVersion
+	return planning.QueryPlanVersionZero
 }

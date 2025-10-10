@@ -78,7 +78,7 @@ func (d *Duplicate) ExpressionPosition() posrange.PositionRange {
 }
 
 func (d *Duplicate) MinimumRequiredPlanVersion() int64 {
-	return planning.DefaultNodeMinimumRequiredQueryPlanVersion
+	return planning.QueryPlanVersionZero
 }
 
 func MaterializeDuplicate(d *Duplicate, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
