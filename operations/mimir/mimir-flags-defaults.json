@@ -497,6 +497,7 @@
   "query-frontend.instance-interface-names": [],
   "query-frontend.instance-addr": "",
   "query-frontend.instance-port": 0,
+  "query-frontend.remote-execution-batch-size": 128,
   "query-frontend.split-queries-by-interval": 86400000000000,
   "query-frontend.results-cache.backend": "",
   "query-frontend.results-cache.memcached.addresses": "",
