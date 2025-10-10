@@ -5012,11 +5012,6 @@ tsdb:
   # CLI flag: -blocks-storage.tsdb.bigger-out-of-order-blocks-for-old-samples
   [bigger_out_of_order_blocks_for_old_samples: <boolean> | default = false]
 
-  # (experimental) How frequently to collect head statistics, which are used in
-  # query execution optimization. 0 to disable.
-  # CLI flag: -blocks-storage.tsdb.head-statistics-collection-frequency
-  [head_statistics_collection_frequency: <duration> | default = 1h]
-
   # (advanced) Max size - in bytes - of the in-memory series hash cache. The
   # cache is shared across all tenants and it's used only when query sharding is
   # enabled.
@@ -5110,17 +5105,42 @@ tsdb:
   # CLI flag: -blocks-storage.tsdb.timely-head-compaction-enabled
   [timely_head_compaction_enabled: <boolean> | default = false]
 
-  # (experimental) Controls the collection of statistics and whether to defer
-  # some vector selector matchers to sequential scans. This leads to better
-  # performance.
-  # CLI flag: -blocks-storage.tsdb.index-lookup-planning-enabled
-  [index_lookup_planning_enabled: <boolean> | default = false]
+  index_lookup_planning:
+    # (advanced) Cost for iterating postings that have been retrieved from the
+    # index.
+    # CLI flag: -blocks-storage.tsdb.index-lookup-planning.retrieved-posting-cost
+    [retrieved_posting_cost: <float> | default = 0.01]
 
-  # (experimental) Portion of queries where a mirrored chunk querier compares
-  # results with and without index lookup planning. Value between 0 (disabled)
-  # and 1 (all queries).
-  # CLI flag: -blocks-storage.tsdb.index-lookup-planning-comparison-portion
-  [index_lookup_planning_comparison_portion: <float> | default = 0]
+    # (advanced) Cost for retrieving series from the index and checking if a
+    # series belongs to the query's shard.
+    # CLI flag: -blocks-storage.tsdb.index-lookup-planning.retrieved-series-cost
+    [retrieved_series_cost: <float> | default = 10]
+
+    # (advanced) Cost for retrieving the posting list from disk or from memory.
+    # CLI flag: -blocks-storage.tsdb.index-lookup-planning.retrieved-posting-list-cost
+    [retrieved_posting_list_cost: <float> | default = 10]
+
+    # (advanced) Minimum number of series a block must have for query planning
+    # to be used.
+    # CLI flag: -blocks-storage.tsdb.index-lookup-planning.min-series-per-block-for-query-planning
+    [min_series_per_block_for_query_planning: <int> | default = 10000]
+
+    # (experimental) Controls the collection of statistics and whether to defer
+    # some vector selector matchers to sequential scans. This leads to better
+    # performance.
+    # CLI flag: -blocks-storage.tsdb.index-lookup-planning.enabled
+    [index_lookup_planning_enabled: <boolean> | default = false]
+
+    # (experimental) Portion of queries where a mirrored chunk querier compares
+    # results with and without index lookup planning. Value between 0 (disabled)
+    # and 1 (all queries).
+    # CLI flag: -blocks-storage.tsdb.index-lookup-planning.comparison-portion
+    [index_lookup_planning_comparison_portion: <float> | default = 0]
+
+    # (experimental) How frequently to collect block statistics, which are used
+    # in query execution optimization. 0 to disable.
+    # CLI flag: -blocks-storage.tsdb.index-lookup-planning.statistics-collection-frequency
+    [statistics_collection_frequency: <duration> | default = 1h]
 ```
 
 ### compactor

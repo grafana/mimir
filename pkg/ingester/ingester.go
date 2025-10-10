@@ -552,8 +552,8 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 	i.subservicesWatcher.WatchService(i.metadataPurgerService)
 
 	// Init head statistics generation service if enabled
-	if cfg.BlocksStorageConfig.TSDB.IndexLookupPlanningEnabled {
-		i.statisticsService = services.NewTimerService(cfg.BlocksStorageConfig.TSDB.HeadStatisticsCollectionFrequency, nil, i.generateHeadStatisticsForAllUsers, nil)
+	if cfg.BlocksStorageConfig.TSDB.IndexLookupPlanning.Enabled {
+		i.statisticsService = services.NewTimerService(cfg.BlocksStorageConfig.TSDB.IndexLookupPlanning.StatisticsCollectionFrequency, nil, i.generateHeadStatisticsForAllUsers, nil)
 		i.subservicesWatcher.WatchService(i.statisticsService)
 	}
 
@@ -683,7 +683,7 @@ func (i *Ingester) starting(ctx context.Context) (err error) {
 		servs = append(servs, shippingService)
 	}
 
-	if i.cfg.BlocksStorageConfig.TSDB.IndexLookupPlanningEnabled {
+	if i.cfg.BlocksStorageConfig.TSDB.IndexLookupPlanning.Enabled {
 		servs = append(servs, i.statisticsService)
 	}
 
@@ -2634,7 +2634,7 @@ func (i *Ingester) getTSDB(userID string) *userTSDB {
 // If found, it uses the cached planner; otherwise, it falls back to generating statistics on-demand.
 // When disabled, it uses NoopPlanner which performs no optimization.
 func (i *Ingester) getIndexLookupPlannerFunc(userID string) tsdb.IndexLookupPlannerFunc {
-	if !i.cfg.BlocksStorageConfig.TSDB.IndexLookupPlanningEnabled {
+	if !i.cfg.BlocksStorageConfig.TSDB.IndexLookupPlanning.Enabled {
 		return func(tsdb.BlockMeta, tsdb.IndexReader) index.LookupPlanner { return lookupplan.NoopPlanner{} }
 	}
 
@@ -2739,8 +2739,8 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 	}
 	userDB.triggerRecomputeOwnedSeries(recomputeOwnedSeriesReasonNewUser)
 
-	if i.cfg.BlocksStorageConfig.TSDB.IndexLookupPlanningEnabled {
-		plannerFactory := lookupplan.NewPlannerFactory(i.lookupPlanMetrics.ForUser(userID), userLogger, lookupplan.NewStatisticsGenerator(userLogger))
+	if i.cfg.BlocksStorageConfig.TSDB.IndexLookupPlanning.Enabled {
+		plannerFactory := lookupplan.NewPlannerFactory(i.lookupPlanMetrics.ForUser(userID), userLogger, lookupplan.NewStatisticsGenerator(userLogger), i.cfg.BlocksStorageConfig.TSDB.IndexLookupPlanning.CostConfig)
 		userDB.plannerProvider = newPlannerProvider(plannerFactory)
 		// Generate initial statistics only after the TSDB has been opened and initialized.
 		defer func() {
@@ -2871,7 +2871,7 @@ func (i *Ingester) createBlockChunkQuerier(userID string, b tsdb.BlockReader, mi
 
 	lookupStatsQuerier := newStatsTrackingChunkQuerier(defaultQuerier, i.metrics, i.lookupPlanMetrics.ForUser(userID))
 
-	if rand.Float64() > i.cfg.BlocksStorageConfig.TSDB.IndexLookupPlanningComparisonPortion {
+	if rand.Float64() > i.cfg.BlocksStorageConfig.TSDB.IndexLookupPlanning.ComparisonPortion {
 		return lookupStatsQuerier, nil
 	}
 

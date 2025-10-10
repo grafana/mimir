@@ -10613,17 +10613,6 @@
             },
             {
               "kind": "field",
-              "name": "head_statistics_collection_frequency",
-              "required": false,
-              "desc": "How frequently to collect head statistics, which are used in query execution optimization. 0 to disable.",
-              "fieldValue": null,
-              "fieldDefaultValue": 3600000000000,
-              "fieldFlag": "blocks-storage.tsdb.head-statistics-collection-frequency",
-              "fieldType": "duration",
-              "fieldCategory": "experimental"
-            },
-            {
-              "kind": "field",
               "name": "series_hash_cache_max_size_bytes",
               "required": false,
               "desc": "Max size - in bytes - of the in-memory series hash cache. The cache is shared across all tenants and it's used only when query sharding is enabled.",
@@ -10799,26 +10788,91 @@
               "fieldCategory": "experimental"
             },
             {
-              "kind": "field",
-              "name": "index_lookup_planning_enabled",
+              "kind": "block",
+              "name": "index_lookup_planning",
               "required": false,
-              "desc": "Controls the collection of statistics and whether to defer some vector selector matchers to sequential scans. This leads to better performance.",
+              "desc": "",
+              "blockEntries": [
+                {
+                  "kind": "field",
+                  "name": "retrieved_posting_cost",
+                  "required": false,
+                  "desc": "Cost for iterating postings that have been retrieved from the index.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 0.01,
+                  "fieldFlag": "blocks-storage.tsdb.index-lookup-planning.retrieved-posting-cost",
+                  "fieldType": "float",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "retrieved_series_cost",
+                  "required": false,
+                  "desc": "Cost for retrieving series from the index and checking if a series belongs to the query's shard.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 10,
+                  "fieldFlag": "blocks-storage.tsdb.index-lookup-planning.retrieved-series-cost",
+                  "fieldType": "float",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "retrieved_posting_list_cost",
+                  "required": false,
+                  "desc": "Cost for retrieving the posting list from disk or from memory.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 10,
+                  "fieldFlag": "blocks-storage.tsdb.index-lookup-planning.retrieved-posting-list-cost",
+                  "fieldType": "float",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "min_series_per_block_for_query_planning",
+                  "required": false,
+                  "desc": "Minimum number of series a block must have for query planning to be used.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 10000,
+                  "fieldFlag": "blocks-storage.tsdb.index-lookup-planning.min-series-per-block-for-query-planning",
+                  "fieldType": "int",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "index_lookup_planning_enabled",
+                  "required": false,
+                  "desc": "Controls the collection of statistics and whether to defer some vector selector matchers to sequential scans. This leads to better performance.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": false,
+                  "fieldFlag": "blocks-storage.tsdb.index-lookup-planning.enabled",
+                  "fieldType": "boolean",
+                  "fieldCategory": "experimental"
+                },
+                {
+                  "kind": "field",
+                  "name": "index_lookup_planning_comparison_portion",
+                  "required": false,
+                  "desc": "Portion of queries where a mirrored chunk querier compares results with and without index lookup planning. Value between 0 (disabled) and 1 (all queries).",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 0,
+                  "fieldFlag": "blocks-storage.tsdb.index-lookup-planning.comparison-portion",
+                  "fieldType": "float",
+                  "fieldCategory": "experimental"
+                },
+                {
+                  "kind": "field",
+                  "name": "statistics_collection_frequency",
+                  "required": false,
+                  "desc": "How frequently to collect block statistics, which are used in query execution optimization. 0 to disable.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 3600000000000,
+                  "fieldFlag": "blocks-storage.tsdb.index-lookup-planning.statistics-collection-frequency",
+                  "fieldType": "duration",
+                  "fieldCategory": "experimental"
+                }
+              ],
               "fieldValue": null,
-              "fieldDefaultValue": false,
-              "fieldFlag": "blocks-storage.tsdb.index-lookup-planning-enabled",
-              "fieldType": "boolean",
-              "fieldCategory": "experimental"
-            },
-            {
-              "kind": "field",
-              "name": "index_lookup_planning_comparison_portion",
-              "required": false,
-              "desc": "Portion of queries where a mirrored chunk querier compares results with and without index lookup planning. Value between 0 (disabled) and 1 (all queries).",
-              "fieldValue": null,
-              "fieldDefaultValue": 0,
-              "fieldFlag": "blocks-storage.tsdb.index-lookup-planning-comparison-portion",
-              "fieldType": "float",
-              "fieldCategory": "experimental"
+              "fieldDefaultValue": null
             }
           ],
           "fieldValue": null,
