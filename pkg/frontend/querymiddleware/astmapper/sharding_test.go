@@ -578,6 +578,26 @@ func TestShardSummer(t *testing.T) {
 			out:                      `vector(scalar(sum(` + concatShards(t, shardCount, `sum(foo{__query_shard__="x_of_y"})`) + `)))`,
 			expectedShardableQueries: 1,
 		},
+		{
+			in: `
+				topk(
+					scalar(count(foo)),
+					sum by(pod) (rate(bar[5m]))
+				)
+			`,
+			out: `
+				topk(
+					scalar(sum(` + concatShards(t, shardCount, `count(foo{__query_shard__="x_of_y"})`) + `)),
+					sum by(pod) (` + concatShards(t, shardCount, `sum by (pod) (rate(bar{__query_shard__="x_of_y"}[5m]))`) + `)
+				)
+			`,
+			expectedShardableQueries: 2,
+		},
+		{
+			in:                       `scalar(sum(foo))`,
+			out:                      `scalar(sum(` + concatShards(t, shardCount, `sum(foo{__query_shard__="x_of_y"})`) + `))`,
+			expectedShardableQueries: 1,
+		},
 	} {
 		t.Run(tt.in, func(t *testing.T) {
 			t.Run("applying sharding", func(t *testing.T) {
