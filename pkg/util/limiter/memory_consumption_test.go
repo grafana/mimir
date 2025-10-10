@@ -19,12 +19,12 @@ import (
 
 const rejectedQueriesMetricName = "rejected_queries"
 
-func TestFromContextWithFallback(t *testing.T) {
+func TestMemoryConsumptionTrackerFromContext(t *testing.T) {
 	t.Run("does not exist", func(t *testing.T) {
 		ctx := context.Background()
-		tracker := MemoryTrackerFromContextWithFallback(ctx)
-		require.NotNil(t, tracker)
-		require.Equal(t, uint64(0), tracker.CurrentEstimatedMemoryConsumptionBytes())
+		tracker, err := MemoryConsumptionTrackerFromContext(ctx)
+		require.Nil(t, tracker)
+		require.ErrorIs(t, err, errNoMemoryConsumptionTrackerInContext)
 	})
 
 	t.Run("exists", func(t *testing.T) {
@@ -33,7 +33,8 @@ func TestFromContextWithFallback(t *testing.T) {
 		require.NoError(t, existing.IncreaseMemoryConsumption(uint64(512), IngesterChunks))
 
 		ctx = context.WithValue(ctx, memoryConsumptionTracker, existing)
-		stored := MemoryTrackerFromContextWithFallback(ctx)
+		stored, err := MemoryConsumptionTrackerFromContext(ctx)
+		require.NoError(t, err)
 		require.Equal(t, existing, stored)
 		require.Equal(t, uint64(512), stored.CurrentEstimatedMemoryConsumptionBytes())
 	})

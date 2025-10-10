@@ -466,8 +466,13 @@ func (q *blocksStoreQuerier) selectSorted(ctx context.Context, sp *storage.Selec
 		return storage.ErrSeriesSet(err)
 	}
 
+	memoryTracker, err := limiter.MemoryConsumptionTrackerFromContext(ctx)
+	if err != nil {
+		return storage.ErrSeriesSet(err)
+	}
+
 	queryF := func(clients map[BlocksStoreClient][]ulid.ULID, minT, maxT int64) ([]ulid.ULID, error) {
-		seriesSets, queriedBlocks, warnings, streamReaders, chunkEstimator, err := q.fetchSeriesFromStores(ctx, sp, clients, minT, maxT, tenantID, convertedMatchers)
+		seriesSets, queriedBlocks, warnings, streamReaders, chunkEstimator, err := q.fetchSeriesFromStores(ctx, sp, clients, minT, maxT, tenantID, convertedMatchers, memoryTracker)
 		if err != nil {
 			return nil, err
 		}
@@ -769,7 +774,7 @@ func canBlockWithCompactorShardIndexContainQueryShard(queryShardIndex, queryShar
 // In case of a successful run, fetchSeriesFromStores returns a startStreamingChunks function to start streaming
 // chunks for the fetched series if it was a streaming call for series+chunks. startStreamingChunks must be called
 // before iterating on the series.
-func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *storage.SelectHints, clients map[BlocksStoreClient][]ulid.ULID, minT int64, maxT int64, tenantID string, convertedMatchers []storepb.LabelMatcher) (_ []storage.SeriesSet, _ []ulid.ULID, _ annotations.Annotations, streamReaders []*storeGatewayStreamReader, estimateChunks func() int, _ error) {
+func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *storage.SelectHints, clients map[BlocksStoreClient][]ulid.ULID, minT int64, maxT int64, tenantID string, convertedMatchers []storepb.LabelMatcher, memoryTracker *limiter.MemoryConsumptionTracker) (_ []storage.SeriesSet, _ []ulid.ULID, _ annotations.Annotations, streamReaders []*storeGatewayStreamReader, estimateChunks func() int, _ error) {
 	var (
 		// We deliberately only cancel this context if any store-gateway call fails, to ensure that all streams are aborted promptly.
 		// When all calls succeed, we rely on the parent context being cancelled, otherwise we'd abort all the store-gateway streams returned by this method, which makes them unusable.
@@ -784,7 +789,6 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 		queryLimiter  = limiter.QueryLimiterFromContextWithFallback(ctx)
 		reqStats      = stats.FromContext(ctx)
 		streams       []storegatewaypb.StoreGateway_SeriesClient
-		memoryTracker = limiter.MemoryTrackerFromContextWithFallback(ctx)
 	)
 
 	debugQuery := chunkinfologger.IsChunkInfoLoggingEnabled(ctx)

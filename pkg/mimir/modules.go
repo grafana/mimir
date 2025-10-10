@@ -74,6 +74,7 @@ import (
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/activitytracker"
 	"github.com/grafana/mimir/pkg/util/chunkinfologger"
+	"github.com/grafana/mimir/pkg/util/limiter"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/propagation"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -856,7 +857,7 @@ func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error
 	var eng promql.QueryEngine
 	switch t.Cfg.Frontend.QueryEngine {
 	case querier.PrometheusEngine:
-		eng = promql.NewEngine(promOpts)
+		eng = limiter.NewUnlimitedMemoryTrackerPromQLEngine(promql.NewEngine(promOpts))
 	case querier.MimirEngine:
 		var err error
 		t.QueryFrontendStreamingEngine, err = streamingpromql.NewEngine(mqeOpts, streamingpromql.NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(mqeOpts.CommonOpts.Reg), t.QueryFrontendQueryPlanner)
@@ -865,7 +866,7 @@ func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error
 		}
 
 		if t.Cfg.Frontend.EnableQueryEngineFallback {
-			eng = streamingpromqlcompat.NewEngineWithFallback(t.QueryFrontendStreamingEngine, promql.NewEngine(promOpts), mqeOpts.CommonOpts.Reg, util_log.Logger)
+			eng = streamingpromqlcompat.NewEngineWithFallback(t.QueryFrontendStreamingEngine, limiter.NewUnlimitedMemoryTrackerPromQLEngine(promql.NewEngine(promOpts)), mqeOpts.CommonOpts.Reg, util_log.Logger)
 		} else {
 			eng = t.QueryFrontendStreamingEngine
 		}
