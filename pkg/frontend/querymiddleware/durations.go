@@ -13,6 +13,7 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
+	"github.com/grafana/mimir/pkg/frontend/querymiddleware/astmapper"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
@@ -55,7 +56,7 @@ func (d *durationsMiddleware) rewriteIfNeeded(ctx context.Context, req MetricsQu
 	defer spanLog.Finish()
 
 	origQuery := req.GetQuery()
-	expr, err := parser.ParseExpr(origQuery)
+	expr, err := astmapper.CloneExpr(req.GetParsedQuery())
 	if err != nil {
 		// This middleware focuses on duration expressions, so if the query is
 		// not valid, we just fall through to the next handler.
