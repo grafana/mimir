@@ -358,6 +358,15 @@ func (em ASTExprMapper) Map(ctx context.Context, expr parser.Expr) (parser.Expr,
 			return nil, err
 		}
 		e.Expr = expr
+
+		if e.Param != nil {
+			param, err := em.Map(ctx, e.Param)
+			if err != nil {
+				return nil, err
+			}
+			e.Param = param
+		}
+
 		return e, nil
 
 	case *parser.BinaryExpr:
