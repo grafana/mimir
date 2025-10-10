@@ -15,10 +15,10 @@ Migrate from a Grafana Mimir cluster running with classic architecture to one ru
 
 Before you begin, ensure you have the following:
 
-- An existing Mimir cluster running the classic architecture
+- An existing Mimir cluster running with classic architecture
 - Access to deploy and configure a second Mimir cluster
-- Write clients (for example, Prometheus or OpenTelemetry Collector) that you can configure to send data to multiple endpoints
-- Read clients (for example, Grafana) that you can reconfigure to point to a new endpoint
+- Write clients, for example, Prometheus or OpenTelemetry Collector, that you can configure to send data to multiple endpoints
+- Read clients, for example, Grafana, that you can reconfigure to point to a new endpoint
 - The ability to modify Helm or Jsonnet configurations for both clusters
 
 {{< admonition type="caution" >}}
