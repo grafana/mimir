@@ -19,22 +19,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/sharding"
 )
 
-func TestShardSummer(t *testing.T) {
-	runTest := func(t *testing.T, input string, expected string, shardCount int, inspectOnly bool, expectedShardedQueries int) {
-		stats := NewMapperStats()
-		summer := NewQueryShardSummer(shardCount, inspectOnly, EmbeddedQueriesSquasher, log.NewNopLogger(), stats)
-		expr, err := parser.ParseExpr(input)
-		require.NoError(t, err)
-		expectedExpr, err := parser.ParseExpr(expected)
-		require.NoError(t, err)
-
-		ctx := context.Background()
-		mapped, err := summer.Map(ctx, expr)
-		require.NoError(t, err)
-		require.Equal(t, expectedExpr.String(), mapped.String())
-		require.Equal(t, expectedShardedQueries, stats.GetShardedQueries())
-	}
-
+func TestSharding(t *testing.T) {
 	const shardCount = 3
 
 	for _, tt := range []struct {
@@ -601,32 +586,35 @@ func TestShardSummer(t *testing.T) {
 	} {
 		t.Run(tt.in, func(t *testing.T) {
 			t.Run("applying sharding", func(t *testing.T) {
-				runTest(t, tt.in, tt.out, shardCount, false, tt.expectedShardableQueries*shardCount)
-			})
-
-			t.Run("inspecting", func(t *testing.T) {
-				// The query should be unchanged, but the number of sharded queries should still be reported.
-				runTest(t, tt.in, tt.in, 1, true, tt.expectedShardableQueries)
-			})
-
-			t.Run("checking if all vector selectors are sharded", func(t *testing.T) {
-				// There are a lot of edge cases in willShardAllSelectors, and this method is only called
-				// if an expression appears inside a binary expression.
-				// So rather than generating a whole set of test cases just for this, we directly check each of
-				// our existing test cases.
+				stats := NewMapperStats()
+				summer := NewQueryShardSummer(shardCount, EmbeddedQueriesSquasher, log.NewNopLogger(), stats)
 				expr, err := parser.ParseExpr(tt.in)
 				require.NoError(t, err)
-				stats := NewMapperStats()
-				summer := newShardSummer(shardCount, false, EmbeddedQueriesSquasher, log.NewNopLogger(), stats, newQueryShardLabeller(shardCount))
+				expectedExpr, err := parser.ParseExpr(tt.out)
+				require.NoError(t, err)
 
-				willShardAllSelectors, err := summer.willShardAllSelectors(expr)
+				ctx := context.Background()
+				mapped, err := summer.Map(ctx, expr)
+				require.NoError(t, err)
+				require.Equal(t, expectedExpr.String(), mapped.String())
+				require.Equal(t, tt.expectedShardableQueries*shardCount, stats.GetShardedQueries())
+			})
+
+			t.Run("analyzing", func(t *testing.T) {
+				expr, err := parser.ParseExpr(tt.in)
+				require.NoError(t, err)
+				analyzer := NewShardingAnalyzer(log.NewNopLogger())
+
+				analysisResult, err := analyzer.Analyze(expr)
 				require.NoError(t, err)
 				hasVectorSelectors := AnyNode(expr, isVectorSelector)
 
 				if hasVectorSelectors {
-					require.Equal(t, tt.expectedShardableQueries > 0, willShardAllSelectors, "willShardAllSelectors should be true if the expression is shardable, and false otherwise")
+					require.Equal(t, tt.expectedShardableQueries > 0, analysisResult.WillShardAllSelectors, "Analyze should be true if the expression is shardable, and false otherwise")
+					require.Equal(t, tt.expectedShardableQueries, analysisResult.ShardedSelectors)
 				} else {
-					require.True(t, willShardAllSelectors, "expression has no selectors")
+					require.True(t, analysisResult.WillShardAllSelectors, "expression has no selectors")
+					require.Equal(t, 0, analysisResult.ShardedSelectors, "expression has no selectors")
 				}
 			})
 		})
@@ -666,7 +654,7 @@ func TestShardSummerWithEncoding(t *testing.T) {
 	} {
 		t.Run(fmt.Sprintf("[%d]", i), func(t *testing.T) {
 			stats := NewMapperStats()
-			summer := NewQueryShardSummer(c.shards, false, EmbeddedQueriesSquasher, log.NewNopLogger(), stats)
+			summer := NewQueryShardSummer(c.shards, EmbeddedQueriesSquasher, log.NewNopLogger(), stats)
 			expr, err := parser.ParseExpr(c.input)
 			require.Nil(t, err)
 
