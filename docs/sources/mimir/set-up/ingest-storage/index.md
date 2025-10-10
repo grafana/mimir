@@ -7,7 +7,7 @@ weight: 20
 
 # Set up Grafana Mimir with ingest storage architecture
 
-Set up Grafana Mimir with ingest storage architecture. Ingest storage architecture provides a scalable and resilient path for high-volume metric ingestion using Kafka and object storage. It’s designed for production environments that need to efficiently handle large workloads.
+Ingest storage architecture provides a scalable and resilient path for high-volume metric ingestion using Kafka and object storage. It's designed for production environments that need to efficiently handle large workloads.
 
 ## Before you begin
 
