@@ -11,7 +11,7 @@ weight: 20
 
 Migrate from a Grafana Mimir cluster running with classic architecture to one running with ingest storage architecture. This process allows you to migrate without downtime by temporarily running two clusters in parallel and duplicating writes. For background on the different architectures, refer to [Grafana Mimir architecture](https://grafana.com/docs/mimir/<MIMIR_VERSION>/get-started/about-grafana-mimir-architecture/).
 
- The following workflow describes the migration process:
+The following workflow describes the migration process:
 
 1. [Before you begin](#before-you-begin)
 1. [Set up a new Mimir cluster with ingest storage](#set-up-a-new-mimir-cluster-with-ingest-storage)
@@ -124,4 +124,3 @@ helm uninstall <OLD_RELEASE_NAME>
 ```
 
 Your system runs entirely with ingest storage architecture.
-
