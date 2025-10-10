@@ -5,11 +5,11 @@ package ruler
 import (
 	"context"
 
-	"github.com/grafana/mimir/pkg/util/limiter"
-
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/annotations"
+
+	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
 // NewUnlimitedMemoryTrackerQueryable wraps a storage.Queryable to inject an unlimited MemoryConsumptionTracker
