@@ -7,8 +7,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/prometheus/model/timestamp"
+	"github.com/prometheus/prometheus/promql/promqltest"
 	"github.com/stretchr/testify/require"
 
+	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/streamingpromql"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
@@ -17,7 +20,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
-func TestEliminateDeduplicateAndMergeOptimizationPass(t *testing.T) {
+func TestEliminateDeduplicateAndMergeOptimizationPassPlan(t *testing.T) {
 	testCases := map[string]struct {
 		expr            string
 		expectedPlan    string
@@ -367,4 +370,174 @@ func countDeduplicateAndMergeNodes(node planning.Node) int {
 		count += countDeduplicateAndMergeNodes(child)
 	}
 	return count
+}
+
+func TestEliminateDeduplicateAndMergeOptimizationPass(t *testing.T) {
+	testCases := map[string]struct {
+		data           string
+		expr           string
+		expectedResult string
+		expectedError  string
+	}{
+		"series with different labelset after name drop": {
+			data: `
+				load 1m
+					a{env="prod"} 0+1x10
+					a{env="test"} 0+2x10
+			`,
+			expr: `abs(rate(a[5m]))`,
+			expectedResult: `{env="prod"} => 0.016666666666666666 @[600000]
+{env="test"} => 0.03333333333333333 @[600000]`,
+		},
+		"series with same labelset after name drop, but datapoints at different timestamps - should be merged": {
+			data: `
+				load 1m
+					a{env="prod"} _ 0 1 2 _ _ _ _ _ _
+					b{env="prod"} _ _ _ _ _ 0 1 2 3 4
+			`,
+			expr:           `abs(rate({__name__=~"(a|b)"}[5m]))`,
+			expectedResult: `{env="prod"} => 0.016666666666666666 @[600000]`,
+		},
+		"series with same labelset after name drop, but datapoints at same timestamp - should error": {
+			data: `
+				load 1m
+					a{env="prod"} 0 1 2 3 4 5 6 7 8 9
+					b{env="prod"} 0 1 2 3 4 5 6 7 8 9
+			`,
+			expr:          `abs(rate({__name__=~"(a|b)"}[5m]))`,
+			expectedError: "vector cannot contain metrics with the same labelset",
+		},
+		"nested function calls over series with different labelset after name drop": {
+			data: `
+				load 1m
+					a{env="prod"} 0+1x10
+					a{env="test"} 0+2x10
+			`,
+			expr: `abs(rate(a[5m]))`,
+			expectedResult: `{env="prod"} => 0.016666666666666666 @[600000]
+{env="test"} => 0.03333333333333333 @[600000]`,
+		},
+		"label_replace with exact name matcher, no conflicts": {
+			data: `
+				load 1m
+					a{env="prod", src="value1"} 0+1x10
+					a{env="test", src="value2"} 0+2x10
+			`,
+			expr: `abs(label_replace(rate(a[5m]), "dst", "$1", "src", "(.*)"))`,
+			expectedResult: `{dst="value1", env="prod", src="value1"} => 0.016666666666666666 @[600000]
+{dst="value2", env="test", src="value2"} => 0.03333333333333333 @[600000]`,
+		},
+		"label_replace that creates duplicate labelsets - should error": {
+			data: `
+				load 1m
+					a{env="prod", src="value"} 0 1 2 3 4 5 6 7 8 9
+					b{env="prod", src="value"} 0 1 2 3 4 5 6 7 8 9
+			`,
+			expr:          `abs(label_replace(rate({__name__=~"(a|b)"}[5m]), "dst", "same", "src", "(.*)"))`,
+			expectedError: "vector cannot contain metrics with the same labelset",
+		},
+		"label_replace where series will be merged": {
+			// This tests that label_replace can create duplicate labelsets that get merged successfully.
+			// Step by step:
+			// 1. Initial: two series a{env="prod"} at timestamps 1-3m and a{env="test"} at timestamps 5-9m (same __name__, different env, non-overlapping timestamps)
+			// 2. label_replace overwrites env label: both become a{env="merged"} (now identical labelsets)
+			// 3. Since labelsets are identical and timestamps don't overlap, the series merge into one: a{env="merged"}
+			data: `
+				load 1m
+					a{env="prod"} _ 0 1 2 _ _ _ _ _ _
+					a{env="test"} _ _ _ _ _ 0 1 2 3 4
+			`,
+			expr:           `label_replace(a, "env", "merged", "env", "(.*)")`,
+			expectedResult: `{__name__="a", env="merged"} => 4 @[600000]`,
+		},
+		"label_replace re-introduces __name__ after rate drops it": {
+			data: `
+				load 1m
+					a{env="prod"} 0+1x10
+					a{env="test"} 0+2x10
+			`,
+			expr: `label_replace(rate(a[5m]), "__name__", "my_metric", "", "")`,
+			expectedResult: `{__name__="my_metric", env="prod"} => 0.016666666666666666 @[600000]
+{__name__="my_metric", env="test"} => 0.03333333333333333 @[600000]`,
+		},
+		"label_replace re-introduces __name__, then name-dropping operation merges series": {
+			// This tests the full cycle: drop name -> re-introduce name with label change -> drop name again -> merge.
+			// Step by step:
+			// 1. Initial: a{env="prod"} at timestamps 1-3m and a{env="test"} at timestamps 5-9m (different env, non-overlapping)
+			// 2. rate() drops __name__: {env="prod"} and {env="test"} (still two separate series)
+			// 3. label_replace re-introduces __name__ AND changes env: {__name__="my_metric", env="my_metric"} for both
+			// 4. abs() drops __name__ again: {env="my_metric"} for both (now identical labelsets!)
+			// 5. Since labelsets are identical and timestamps don't overlap, series merge into one: {env="my_metric"}
+			data: `
+				load 1m
+					a{env="prod"} _ 0 1 2 _ _ _ _ _ _
+					a{env="test"} _ _ _ _ _ 0 1 2 3 4
+			`,
+			expr:           `abs(label_replace(label_replace(rate(a[5m]), "__name__", "my_metric", "", ""), "env", "my_metric", "", ""))`,
+			expectedResult: `{env="my_metric"} => 0.016666666666666666 @[600000]`,
+		},
+		"label_replace re-introduces __name__, then name-dropping operation causes error": {
+			// This tests the error case: drop name -> re-introduce name with label change -> drop name again -> error.
+			// Step by step:
+			// 1. Initial: a{env="prod"} and a{env="test"} both at all timestamps (different env, overlapping data)
+			// 2. rate() drops __name__: {env="prod"} and {env="test"} (still two separate series)
+			// 3. label_replace re-introduces __name__ AND changes env: {__name__="my_metric", env="my_metric"} for both
+			// 4. abs() drops __name__ again: {env="my_metric"} for both (now identical labelsets!)
+			// 5. Since labelsets are identical but timestamps overlap, this should error
+			data: `
+				load 1m
+					a{env="prod"} 0 1 2 3 4 5 6 7 8 9
+					a{env="test"} 0 1 2 3 4 5 6 7 8 9
+			`,
+			expr:          `abs(label_replace(label_replace(rate(a[5m]), "__name__", "my_metric", "", ""), "env", "my_metric", "", ""))`,
+			expectedError: "vector cannot contain metrics with the same labelset",
+		},
+	}
+
+	ctx := context.Background()
+	end := timestamp.Time(0).Add(10 * time.Minute)
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			storage := promqltest.LoadedStorage(t, testCase.data)
+			t.Cleanup(func() { require.NoError(t, storage.Close()) })
+
+			runTest := func(t *testing.T, withOptimization bool) {
+				opts := streamingpromql.NewTestEngineOpts()
+				// Disable delayed name removal, since EliminateDeduplicateAndMergeOptimizationPass is enabled only when delayed name removal is disabled.
+				opts.CommonOpts.EnableDelayedNameRemoval = false
+				planner, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts)
+				require.NoError(t, err)
+
+				if withOptimization {
+					planner.RegisterQueryPlanOptimizationPass(plan.NewEliminateDeduplicateAndMergeOptimizationPass())
+				}
+
+				engine, err := streamingpromql.NewEngine(opts, streamingpromql.NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), planner)
+				require.NoError(t, err)
+
+				q, err := engine.NewInstantQuery(ctx, storage, nil, testCase.expr, end)
+				require.NoError(t, err)
+				defer q.Close()
+
+				result := q.Exec(ctx)
+
+				if testCase.expectedError != "" {
+					require.Error(t, result.Err)
+					require.Contains(t, result.Err.Error(), testCase.expectedError)
+				} else {
+					require.NoError(t, result.Err)
+					require.Equal(t, testCase.expectedResult, result.String())
+				}
+			}
+
+			t.Run("without optimization", func(t *testing.T) {
+				runTest(t, false)
+			})
+
+			t.Run("with optimization", func(t *testing.T) {
+				runTest(t, true)
+			})
+		})
+	}
 }
