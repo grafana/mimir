@@ -117,7 +117,6 @@ func (e *PrometheusParquetChunksEncoder) Encode(it chunks.Iterator) ([][]byte, e
 				chunk.MaxTime = chk.MaxTime
 				chunk.Chunk.Reset(chk.Chunk.Bytes())
 				needsNewChunk[minColumn] = struct{}{}
-
 			} else {
 				for vt := sampleIt.Next(); vt != chunkenc.ValNone; vt = sampleIt.Next() {
 					if vt != chunkenc.ValFloat {
@@ -125,7 +124,6 @@ func (e *PrometheusParquetChunksEncoder) Encode(it chunks.Iterator) ([][]byte, e
 					}
 					t, v := sampleIt.At()
 					chkIdx := e.schema.DataColumIdx(t)
-					// println(t, chkIdx)
 
 					if _, ok := needsNewChunk[chkIdx]; ok {
 						err := nextXorChunk(chkIdx)
@@ -138,11 +136,9 @@ func (e *PrometheusParquetChunksEncoder) Encode(it chunks.Iterator) ([][]byte, e
 					reEncodedChunksAppenders[chkIdx][chunkenc.EncXOR].Append(t, v)
 					chunk := reEncodedChunks[chkIdx][chunkenc.EncXOR][len(reEncodedChunks[chkIdx][chunkenc.EncXOR])-1]
 					if t < chunk.MinTime {
-						//println("encountered timestamp lower than mintime")
 						chunk.MinTime = t
 					}
 					if t > chunk.MaxTime {
-						//println("encountered timestamp higher than maxtime")
 						chunk.MaxTime = t
 					}
 					if chunk.Chunk.NumSamples() >= e.samplesPerChunk {
