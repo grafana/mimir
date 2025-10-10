@@ -379,6 +379,7 @@
   "validation.max-cost-attribution-cardinality": 2000,
   "validation.cost-attribution-cooldown": 0,
   "ruler.evaluation-delay-duration": 60000000000,
+  "ruler.evaluation-consistency-max-delay": 0,
   "ruler.tenant-shard-size": 0,
   "ruler.max-rules-per-rule-group": 20,
   "ruler.max-rule-groups-per-tenant": 70,
