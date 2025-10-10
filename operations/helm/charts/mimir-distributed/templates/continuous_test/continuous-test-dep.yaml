@@ -68,9 +68,7 @@ spec:
             - "-tests.bearer-token={{ .Values.continuous_test.auth.bearerToken }}"
             {{- end }}
             {{- range $key, $value := .Values.continuous_test.extraArgs }}
-            {{- if ne $value nil }}
             - -{{ $key }}={{ $value }}
-            {{- end }}
             {{- end }}
           volumeMounts:
             - name: config
