@@ -146,6 +146,6 @@ func (s *Subquery) ExpressionPosition() posrange.PositionRange {
 	return s.GetExpressionPosition().ToPrometheusType()
 }
 
-func (a *Subquery) MinimumRequiredPlanVersion() int64 {
+func (s *Subquery) MinimumRequiredPlanVersion() int64 {
 	return planning.DefaultNodeMinimumRequiredQueryPlanVersion
 }

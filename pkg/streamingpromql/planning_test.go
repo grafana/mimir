@@ -1177,7 +1177,8 @@ func TestPlanVersioning(t *testing.T) {
 		OriginalExpression: "123",
 	}
 
-	plan.DeterminePlanVersion()
+	err := plan.DeterminePlanVersion()
+	require.NoError(t, err)
 
 	encoded, err := plan.ToEncodedPlan(false, true)
 	require.NoError(t, err)

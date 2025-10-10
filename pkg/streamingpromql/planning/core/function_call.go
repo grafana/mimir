@@ -136,6 +136,6 @@ func (f *FunctionCall) ExpressionPosition() posrange.PositionRange {
 	return f.GetExpressionPosition().ToPrometheusType()
 }
 
-func (a *FunctionCall) MinimumRequiredPlanVersion() int64 {
+func (f *FunctionCall) MinimumRequiredPlanVersion() int64 {
 	return planning.DefaultNodeMinimumRequiredQueryPlanVersion
 }

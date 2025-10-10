@@ -98,6 +98,6 @@ func (u *UnaryExpression) ExpressionPosition() posrange.PositionRange {
 	return u.GetExpressionPosition().ToPrometheusType()
 }
 
-func (a *UnaryExpression) MinimumRequiredPlanVersion() int64 {
+func (u *UnaryExpression) MinimumRequiredPlanVersion() int64 {
 	return planning.DefaultNodeMinimumRequiredQueryPlanVersion
 }

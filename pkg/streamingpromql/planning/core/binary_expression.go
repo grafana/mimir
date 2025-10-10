@@ -256,7 +256,7 @@ func (b *BinaryExpression) ExpressionPosition() posrange.PositionRange {
 	return b.GetExpressionPosition().ToPrometheusType()
 }
 
-func (a *BinaryExpression) MinimumRequiredPlanVersion() int64 {
+func (b *BinaryExpression) MinimumRequiredPlanVersion() int64 {
 	return planning.DefaultNodeMinimumRequiredQueryPlanVersion
 }
 
