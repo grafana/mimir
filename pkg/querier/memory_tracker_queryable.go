@@ -8,7 +8,6 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/annotations"
-	//"github.com/grafana/mimir/pkg/util/limiter"
 )
 
 // NewUnlimitedMemoryTrackerQueryable wraps a storage.Queryable to inject an unlimited MemoryConsumptionTracker
@@ -37,7 +36,6 @@ type unlimitedMemoryTrackerQuerier struct {
 }
 
 func (q *unlimitedMemoryTrackerQuerier) Select(ctx context.Context, sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
-	//ctx = limiter.ContextWithNewUnlimitedMemoryConsumptionTracker(ctx)
 	return q.inner.Select(ctx, sortSeries, hints, matchers...)
 }
 
