@@ -116,9 +116,11 @@ func CanParallelize(expr parser.Expr, logger log.Logger) bool {
 	case *parser.ParenExpr:
 		return CanParallelize(e.Expr, logger)
 
+	case *parser.StepInvariantExpr:
+		return CanParallelize(e.Expr, logger)
+
 	case *parser.UnaryExpr:
-		// Since these are only currently supported for Scalars, should be parallel-compatible
-		return true
+		return CanParallelize(e.Expr, logger)
 
 	case *parser.MatrixSelector, *parser.NumberLiteral, *parser.StringLiteral, *parser.VectorSelector:
 		return true
@@ -184,7 +186,8 @@ func isNotConstantNumber(n parser.Node) bool {
 	case nil,
 		*parser.NumberLiteral,
 		*parser.UnaryExpr,
-		*parser.ParenExpr:
+		*parser.ParenExpr,
+		*parser.StepInvariantExpr:
 		return false
 	case *parser.BinaryExpr:
 		// if ReturnBool then not a number, otherwise, it will be a number if both sides are numbers
