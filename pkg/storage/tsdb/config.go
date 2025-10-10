@@ -229,7 +229,6 @@ type TSDBConfig struct {
 	MemorySnapshotOnShutdown            bool          `yaml:"memory_snapshot_on_shutdown" category:"experimental"`
 	HeadChunksWriteQueueSize            int           `yaml:"head_chunks_write_queue_size" category:"advanced"`
 	BiggerOutOfOrderBlocksForOldSamples bool          `yaml:"bigger_out_of_order_blocks_for_old_samples" category:"experimental"`
-	HeadStatisticsCollectionFrequency   time.Duration `yaml:"head_statistics_collection_frequency" category:"experimental"`
 
 	// Series hash cache.
 	SeriesHashCacheMaxBytes uint64 `yaml:"series_hash_cache_max_size_bytes" category:"advanced"`
@@ -311,6 +310,8 @@ type TSDBConfig struct {
 		// results between queries with and without index lookup planning enabled. The value must be between 0 and 1, where 0
 		// disables comparison and 1 enables it for all queries.
 		ComparisonPortion float64 `yaml:"index_lookup_planning_comparison_portion" category:"experimental"`
+
+		StatisticsCollectionFrequency time.Duration `yaml:"statistics_collection_frequency" category:"experimental"`
 	} `yaml:"index_lookup_planning" category:"experimental"`
 }
 
@@ -362,9 +363,9 @@ func (cfg *TSDBConfig) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.TimelyHeadCompaction, "blocks-storage.tsdb.timely-head-compaction-enabled", false, "Allows head compaction to happen when the min block range can no longer be appended, without requiring 1.5x the chunk range worth of data in the head.")
 	f.BoolVar(&cfg.BiggerOutOfOrderBlocksForOldSamples, "blocks-storage.tsdb.bigger-out-of-order-blocks-for-old-samples", false, "When enabled, ingester produces 24h blocks for out-of-order data that is before the current day, instead of the usual 2h blocks.")
 	f.BoolVar(&cfg.IndexLookupPlanning.Enabled, "blocks-storage.tsdb.index-lookup-planning.enabled", false, "Controls the collection of statistics and whether to defer some vector selector matchers to sequential scans. This leads to better performance.")
-	f.DurationVar(&cfg.HeadStatisticsCollectionFrequency, "blocks-storage.tsdb.head-statistics-collection-frequency", time.Hour, "How frequently to collect head statistics, which are used in query execution optimization. 0 to disable.")
+	f.DurationVar(&cfg.IndexLookupPlanning.StatisticsCollectionFrequency, "blocks-storage.tsdb.index-lookup-planning.statistics-collection-frequency", time.Hour, "How frequently to collect block statistics, which are used in query execution optimization. 0 to disable.")
 	f.Float64Var(&cfg.IndexLookupPlanning.ComparisonPortion, "blocks-storage.tsdb.index-lookup-planning.comparison-portion", 0.0, "Portion of queries where a mirrored chunk querier compares results with and without index lookup planning. Value between 0 (disabled) and 1 (all queries).")
-	cfg.IndexLookupPlanning.CostConfig.RegisterFlags(f, "blocks-storage.tsdb.index-lookup-planning.")
+	cfg.IndexLookupPlanning.RegisterFlags(f, "blocks-storage.tsdb.index-lookup-planning.")
 
 	cfg.HeadCompactionIntervalJitterEnabled = true
 	cfg.HeadCompactionIntervalWhileStarting = 30 * time.Second
@@ -412,7 +413,7 @@ func (cfg *TSDBConfig) Validate(activeSeriesCfg activeseries.Config) error {
 		return errInvalidEarlyHeadCompactionMinSeriesReduction
 	}
 
-	if cfg.IndexLookupPlanning.Enabled && cfg.HeadStatisticsCollectionFrequency <= 0 {
+	if cfg.IndexLookupPlanning.Enabled && cfg.IndexLookupPlanning.StatisticsCollectionFrequency <= 0 {
 		return errors.Errorf("head statistics collection frequency must be a non-negative duration. 0 to disable")
 	}
 

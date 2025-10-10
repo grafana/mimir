@@ -553,7 +553,7 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 
 	// Init head statistics generation service if enabled
 	if cfg.BlocksStorageConfig.TSDB.IndexLookupPlanning.Enabled {
-		i.statisticsService = services.NewTimerService(cfg.BlocksStorageConfig.TSDB.HeadStatisticsCollectionFrequency, nil, i.generateHeadStatisticsForAllUsers, nil)
+		i.statisticsService = services.NewTimerService(cfg.BlocksStorageConfig.TSDB.IndexLookupPlanning.StatisticsCollectionFrequency, nil, i.generateHeadStatisticsForAllUsers, nil)
 		i.subservicesWatcher.WatchService(i.statisticsService)
 	}
 

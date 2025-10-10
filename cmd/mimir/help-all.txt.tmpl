@@ -807,8 +807,6 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] How long to cache postings for matchers in the Head and OOOHead. 0 disables the cache and just deduplicates the in-flight calls. (default 10s)
   -blocks-storage.tsdb.head-postings-for-matchers-cache-versions int
     	[experimental] The size of the metric versions cache in each ingester when invalidation is enabled. (default 2097152)
-  -blocks-storage.tsdb.head-statistics-collection-frequency duration
-    	[experimental] How frequently to collect head statistics, which are used in query execution optimization. 0 to disable. (default 1h0m0s)
   -blocks-storage.tsdb.index-lookup-planning.comparison-portion float
     	[experimental] Portion of queries where a mirrored chunk querier compares results with and without index lookup planning. Value between 0 (disabled) and 1 (all queries).
   -blocks-storage.tsdb.index-lookup-planning.enabled
@@ -821,6 +819,8 @@ Usage of ./cmd/mimir/mimir:
     	Cost for retrieving the posting list from disk or from memory. (default 10)
   -blocks-storage.tsdb.index-lookup-planning.retrieved-series-cost float
     	Cost for retrieving series from the index and checking if a series belongs to the query's shard. (default 10)
+  -blocks-storage.tsdb.index-lookup-planning.statistics-collection-frequency duration
+    	[experimental] How frequently to collect block statistics, which are used in query execution optimization. 0 to disable. (default 1h0m0s)
   -blocks-storage.tsdb.memory-snapshot-on-shutdown
     	[experimental] True to enable snapshotting of in-memory TSDB data on disk when shutting down.
   -blocks-storage.tsdb.out-of-order-capacity-max int
