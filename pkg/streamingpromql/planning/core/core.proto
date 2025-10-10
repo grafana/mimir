@@ -173,6 +173,8 @@ message SubqueryDetails {
   PositionRange expressionPosition = 5 [(gogoproto.nullable) = false];
 }
 
+message StepInvariantExpressionDetails {}
+
 message LabelMatcher {
   int64 type = 1 [(gogoproto.casttype) = "github.com/prometheus/prometheus/model/labels.MatchType"];
   string name = 2;
