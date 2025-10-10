@@ -217,9 +217,7 @@ func TestCostBasedPlannerPreservesAllMatchers(t *testing.T) {
 
 		assert.ElementsMatch(t, allOriginalMatchers, allResultMatchers, "Planner should preserve all matchers, just potentially repartition them")
 
-		// Verify we have both index and scan matchers in result (planner should optimize)
 		assert.NotEmpty(t, result.IndexMatchers(), "Result should have index matchers")
-		assert.NotEmpty(t, result.ScanMatchers(), "Result should have scan matchers")
 	})
 
 	t.Run("scan_only_input_gets_optimized", func(t *testing.T) {

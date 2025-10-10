@@ -248,7 +248,27 @@ func (analyzer *ShardingAnalyzer) Analyze(expr parser.Expr) (result ShardingAnal
 
 		// If we can't shard this expression, we might still be able to shard the inner expression.
 		// eg. in avg(count(test)), we can't shard the avg(), but we can shard the count().
-		return analyzer.Analyze(expr.Expr)
+		exprResult, err := analyzer.Analyze(expr.Expr)
+		if err != nil {
+			return UnshardedExpression(), err
+		}
+		if !exprResult.WillShardAllSelectors {
+			return UnshardedExpression(), nil
+		}
+
+		if expr.Param != nil {
+			paramResult, err := analyzer.Analyze(expr.Param)
+			if err != nil {
+				return UnshardedExpression(), err
+			}
+			if !paramResult.WillShardAllSelectors {
+				return UnshardedExpression(), nil
+			}
+
+			exprResult.ShardedSelectors += paramResult.ShardedSelectors
+		}
+
+		return exprResult, nil
 
 	case *parser.BinaryExpr:
 		if isShardableBinOp(expr) && CanParallelize(expr, analyzer.logger) {

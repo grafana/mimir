@@ -38,8 +38,8 @@
           "subdir": "memcached"
         }
       },
-      "version": "cd4dd9a04aa740b2644e12810e48382188c25adc",
-      "sum": "f+DYmgxR3spwx8DbIyY4+qSaFsshg/SE+MDG6jUQhJg="
+      "version": "dfc90cc58ffd46be49aeafe57014ef55ea4e3cd8",
+      "sum": "zNTCDRaCqJUHjQSQRsxGR3jLrMP9tU7YNQb13dbm1bU="
     },
     {
       "source": {
@@ -48,8 +48,8 @@
           "subdir": "operations/rollout-operator"
         }
       },
-      "version": "f92afca59c667514c9b248afeeddac008a1de227",
-      "sum": "dXQwvAIC0lyDQIemXeOzZzrz25o5tYPIxQpj8PwP1e8="
+      "version": "4d563316583fdc8120c6ee7dfb393bb59a537bae",
+      "sum": "gcthnxVbRLN/HhE9wHYaW+rYbiavEFVXaci3/Q6Q+ec="
     }
   ],
   "legacyImports": false
