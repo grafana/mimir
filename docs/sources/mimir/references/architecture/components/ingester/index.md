@@ -110,28 +110,17 @@ Ingesters join a dedicated [hash ring](https://grafana.com/docs/mimir/<MIMIR_VER
 In classic architecture, the ring is used for sharding and service discovery.
 In ingest storage architecture, it’s used for service discovery only.
 
-Regardless of the architecture, each ingester in the ring has a state that changes throughout its lifecycle.
-The supported states are:
+Regardless of the architecture, each ingester in the ring has a state that changes throughout its lifecycle:
 
-- `PENDING`<br />
-  The ingester has started but its bootstrap phase hasn’t begun.
-  In this state, it does not ingest series or serve read requests.
-- `JOINING`<br />
-  The ingester is bootstrapping and preparing to serve read requests.
-  In classic architecture, it replays the WAL and WBL.
-  In ingest storage architecture, it replays the WAL and WBL, then catches up with the backlog of series accumulated in its Kafka partition since the previous shutdown.
-- `ACTIVE`<br />
-  The ingester is fully operational.
-  It ingests series and serves read requests.
-- `LEAVING`<br />
-  The ingester is shutting down.
-  It stops ingesting series and serving read requests.
-- `UNHEALTHY`<br />
-  A meta state derived from heartbeat monitoring.
-  An ingester is considered `UNHEALTHY` if it fails to update its heartbeat timestamp within a configurable timeout.
-  Other components avoid contacting ingesters in this state.
-  In particular, queriers skip `UNHEALTHY` ingesters when reading.
-  In classic architecture, distributors avoid writing to them.
+{{% responsive-table %}}
+| State | Description |
+| --- | --- |
+| `PENDING` | The ingester has started but its bootstrap phase hasn’t begun. In this state, it does not ingest series or serve read requests. |
+| `JOINING` | The ingester is bootstrapping and preparing to serve read requests. In classic architecture, it replays the WAL and WBL. In ingest storage architecture, it replays the WAL and WBL, then catches up with the backlog of series accumulated in its Kafka partition since the previous shutdown. |
+| `ACTIVE` | The ingester is fully operational. It ingests series and serves read requests. |
+| `LEAVING` | The ingester is shutting down. It stops ingesting series and serving read requests. |
+| `UNHEALTHY` | A meta state derived from heartbeat monitoring. An ingester is considered `UNHEALTHY` if it fails to update its heartbeat timestamp within a configurable timeout. Other components avoid contacting ingesters in this state. In particular, queriers skip `UNHEALTHY` ingesters when reading. In classic architecture, distributors avoid writing to them. |
+{{% /responsive-table %}}
 
 To configure the ingesters hash ring, refer to [Configure Grafana Mimir hash rings](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/configure-hash-rings/).
 
