@@ -427,6 +427,7 @@
     memory_target_utilization,
     with_cortex_prefix=false,
     with_ready_trigger=false,
+    with_memory_trigger=true,
     weight=1,
     scale_down_period=null,
     extra_triggers=[],
@@ -458,19 +459,20 @@
           // up or down unexpectedly. See https://keda.sh/docs/2.13/scalers/prometheus/ for more info.
           ignore_null_values: false,
         },
-        {
-          metric_name: '%s%s_memory_hpa_%s' %
-                       ([if with_cortex_prefix then 'cortex_' else ''] + [std.strReplace(name, '-', '_'), $._config.namespace]),
+      ] + (if with_memory_trigger then [
+             {
+               metric_name: '%s%s_memory_hpa_%s' %
+                            ([if with_cortex_prefix then 'cortex_' else ''] + [std.strReplace(name, '-', '_'), $._config.namespace]),
 
-          query: queryWithWeight(memoryHPAQuery(with_ready_trigger) % queryParameters, weight),
+               query: queryWithWeight(memoryHPAQuery(with_ready_trigger) % queryParameters, weight),
 
-          // Threshold is expected to be a string
-          threshold: std.toString(std.floor($.util.siToBytes(memory_requests) * memory_target_utilization)),
-          // Disable ignoring null values. This allows HPAs to effectively pause when metrics are unavailable rather than scaling
-          // up or down unexpectedly. See https://keda.sh/docs/2.13/scalers/prometheus/ for more info.
-          ignore_null_values: false,
-        },
-      ] + extra_triggers,
+               // Threshold is expected to be a string
+               threshold: std.toString(std.floor($.util.siToBytes(memory_requests) * memory_target_utilization)),
+               // Disable ignoring null values. This allows HPAs to effectively pause when metrics are unavailable rather than scaling
+               // up or down unexpectedly. See https://keda.sh/docs/2.13/scalers/prometheus/ for more info.
+               ignore_null_values: false,
+             },
+           ] else []) + extra_triggers,
     },
   ),
 
@@ -623,6 +625,7 @@
       with_cortex_prefix=true,
       with_ready_trigger=true,
       extra_matchers=extra_matchers,
+      with_memory_trigger=!$._config.distributor_gomemlimit_enabled,
     ) + (
       {
         spec+: {
