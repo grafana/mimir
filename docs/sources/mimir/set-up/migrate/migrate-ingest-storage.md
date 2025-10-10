@@ -11,19 +11,6 @@ weight: 20
 
 Migrate from a Grafana Mimir cluster running with classic architecture to one running with ingest storage architecture. This process allows you to migrate without downtime by temporarily running two clusters in parallel and duplicating writes. For background on the different architectures, refer to [Grafana Mimir architecture](https://grafana.com/docs/mimir/<MIMIR_VERSION>/get-started/about-grafana-mimir-architecture/).
 
-The following workflow describes the migration process:
-
-1. [Before you begin](#before-you-begin)
-1. [Set up a new Mimir cluster with ingest storage](#set-up-a-new-mimir-cluster-with-ingest-storage)
-1. [Configure write clients to duplicate writes](#configure-write-clients-to-duplicate-writes)
-1. [Wait for the old cluster’s ingesters to flush data](#wait-for-the-old-cluster-s-ingesters-to-flush-data)
-1. [Switch read clients to the new cluster](#switch-read-clients-to-the-new-cluster)
-1. [Scale down compactors in the old cluster](#scale-down-compactors-in-the-old-cluster)
-1. [Scale out compactors in the new cluster](#scale-out-compactors-in-the-new-cluster)
-1. [Update ruler alerting configuration](#update-ruler-alerting-configuration)
-1. [Stop writing to the old cluster](#stop-writing-to-the-old-cluster)
-1. [Decommission the old cluster](#decommission-the-old-cluster)
-
 ## Before you begin
 
 Before you begin, ensure you have the following:
@@ -34,93 +21,97 @@ Before you begin, ensure you have the following:
 - Read clients, for example, Grafana, that you can reconfigure to point to a new endpoint
 - The ability to modify Helm or Jsonnet configurations for both clusters
 
-{{< admonition type="caution" >}}
+{{< admonition type="note" >}}
 This procedure temporarily doubles your ingestion and storage costs, because both clusters run in parallel and receive duplicated writes.
 {{< /admonition >}}
 
-## Set up a new Grafana Mimir cluster with ingest storage
+## Migrate your Grafana Mimir cluster to ingest storage
 
-Deploy a new Grafana Mimir cluster that uses ingest storage. Configure the new cluster to use the same object storage bucket as the old cluster.
+Follow these steps to migrate your Grafana Mimir cluster from classic architecture to ingest storage architecture.
 
-To prevent conflicts, disable the compactor, as shown in the following code sample:
+1. Set up a new Grafana Mimir cluster with ingest storage.
 
-```yaml
-compactor:
-  replicas: 0
-```
+   Deploy a new Grafana Mimir cluster that uses ingest storage. Configure the new cluster to use the same object storage bucket as the old cluster.
 
-This configuration lets the new cluster use existing blocks from the old cluster while avoiding block overwrites.
+   To prevent conflicts, disable the compactor, as shown in the following code sample:
 
-Optionally, to avoid duplicate alerts, disable alert sending from the ruler. For example:
+   ```yaml
+   compactor:
+     replicas: 0
+   ```
 
-```yaml
-limits:
-  ruler_alerting_rules_evaluation_enabled: false
-# or set the flag:
-# -ruler.alerting-rules-evaluation-enabled=false
-```
+   This configuration lets the new cluster use existing blocks from the old cluster while avoiding block overwrites.
 
-If your alert delivery system, for example, Grafana OnCall or PagerDuty, already deduplicates alerts, you can skip this step.
+   Optionally, to avoid duplicate alerts, disable alert sending from the ruler. For example:
 
-For setup instructions, refer to existing [Helm chart](https://grafana.com/docs/helm-charts/mimir-distributed/latest/run-production-environment-with-helm/) or [Jsonnet](https://grafana.com/docs/mimir/<MIMIR_VERSION>/set-up/jsonnet/configure-ingest-storage/) configuration documentation for ingest storage.
+   ```yaml
+   limits:
+     ruler_alerting_rules_evaluation_enabled: false
+   # or set the flag:
+   # -ruler.alerting-rules-evaluation-enabled=false
+   ```
 
-## Configure write clients to duplicate writes
+   If your alert delivery system, for example, Grafana OnCall or PagerDuty, already deduplicates alerts, you can skip this step.
 
-Configure all write clients, such as Prometheus servers and OpenTelemetry Collectors, to send metrics to both clusters simultaneously.
+   For setup instructions, refer to the existing [Helm chart](https://grafana.com/docs/helm-charts/mimir-distributed/latest/run-production-environment-with-helm/) or [Jsonnet](https://grafana.com/docs/mimir/<MIMIR_VERSION>/set-up/jsonnet/configure-ingest-storage/) configuration documentation for ingest storage.
 
-This ensures that the new cluster receives all recent samples while it accesses historical blocks from object storage.
+1. Configure write clients to duplicate writes.
 
-Keep read clients, such as Grafana, configured to use the old cluster during this step.
+   Configure all write clients, such as Prometheus servers and OpenTelemetry Collectors, to send metrics to both clusters simultaneously.
 
-## Wait for the old cluster’s ingesters to flush data
+   This ensures that the new cluster receives all recent samples while it accesses historical blocks from object storage.
 
-Allow enough time for all ingesters in the old cluster to flush their in-memory data to object storage. This usually takes about 13 hours. During this time, both clusters are writing and both are healthy.
+   Keep read clients, such as Grafana, configured to use the old cluster during this step.
 
-## Switch read clients to the new cluster
+1. Wait for the old cluster’s ingesters to flush data.
 
-Update read clients, like Grafana, to query the new cluster.
+   Allow enough time for all ingesters in the old cluster to flush their in-memory data to object storage. This usually takes about 13 hours. During this time, both clusters are writing and both are healthy.
 
-Verify that the old cluster is no longer receiving queries by checking for `msg="query stats"` entries in the query-frontend logs.
+1. Switch read clients to the new cluster.
 
-## Scale down compactors in the old cluster
+   Update read clients, like Grafana, to query the new cluster.
 
-Reduce the number of compactor replicas in the old cluster to zero. For example:
+   Verify that the old cluster is no longer receiving queries by checking for `msg="query stats"` entries in the query-frontend logs.
 
-```yaml
-compactor:
-  replicas: 0
-```
+1. Scale down compactors in the old cluster
 
-Run this step immediately before scaling up the new compactors, ideally within 30 minutes.
+   Reduce the number of compactor replicas in the old cluster to zero. For example:
 
-## Scale out compactors in the new cluster
+   ```yaml
+   compactor:
+     replicas: 0
+   ```
 
-Increase the number of compactor replicas in the new cluster to match the old configuration.
+   Run this step immediately before scaling up the new compactors, ideally within 30 minutes.
 
-This activates compaction in the new cluster and completes the transition for background storage management.
+1. Scale out compactors in the new cluster.
 
-## Update ruler alerting configuration
+   Increase the number of compactor replicas in the new cluster to match the old configuration.
 
-If you disabled alert sending in the new cluster:
+   This activates compaction in the new cluster and completes the transition for background storage management.
 
-1. Disable rule evaluations in the old cluster.
-2. Enable them in the new cluster by removing the override you previously set.
+1. Update ruler alerting configuration.
 
-{{< admonition type="tip" >}}
-Complete these actions in quick succession to prevent duplicate alerts.
-{{< /admonition >}}
+   If you disabled alert sending in the new cluster:
 
-## Stop writing to the old cluster
+   1. Disable rule evaluations in the old cluster.
+   2. Enable them in the new cluster by removing the override you previously set.
 
-Reconfigure write clients to only send data to the new cluster.
+   {{< admonition type="tip" >}}
+   Complete these actions in quick succession to prevent duplicate alerts.
+   {{< /admonition >}}
 
-## Decommission the old cluster
+1. Stop writing to the old cluster.
 
-After the new cluster is fully operational, decommission the old cluster.  
-For example, if you’re using Helm:
+   Reconfigure write clients to only send data to the new cluster.
 
-```sh
-helm uninstall <OLD_RELEASE_NAME>
-```
+1. Decommission the old cluster
 
-Your system runs entirely with ingest storage architecture.
+   After the new cluster is fully operational, decommission the old cluster.  
+   For example, if you’re using Helm, run the following command:
+
+   ```sh
+   helm uninstall <OLD_RELEASE_NAME>
+   ```
+
+   Your system runs entirely with ingest storage architecture.
