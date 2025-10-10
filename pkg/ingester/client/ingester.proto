@@ -202,16 +202,6 @@ message ActiveSeriesResponse {
   repeated uint64 bucket_count = 2;
 }
 
-message TimeSeriesChunk {
-  string from_ingester_id = 1;
-  string user_id = 2;
-  repeated cortexpb.LabelPair labels = 3 [
-    (gogoproto.nullable) = false,
-    (gogoproto.customtype) = "github.com/grafana/mimir/pkg/mimirpb.LabelAdapter"
-  ];
-  repeated Chunk chunks = 4 [(gogoproto.nullable) = false];
-}
-
 message Chunk {
   int64 start_timestamp_ms = 1;
   int64 end_timestamp_ms = 2;

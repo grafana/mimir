@@ -1,5 +1,5 @@
 diff --git a/pkg/ingester/client/ingester.pb.go b/pkg/ingester/client/ingester.pb.go
-index a492f44c97..f947257251 100644
+index 0b512cceab..4a76b23a8c 100644
 --- a/pkg/ingester/client/ingester.pb.go
 +++ b/pkg/ingester/client/ingester.pb.go
 @@ -587,9 +587,6 @@ func (m *ActiveSeriesRequest) GetType() ActiveSeriesRequest_RequestType {
