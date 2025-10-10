@@ -8176,7 +8176,7 @@
           "kind": "field",
           "name": "write_logs_fsync_before_kafka_commit_concurrency",
           "required": false,
-          "desc": "Concurrency for fsyncing of WAL and WBL before Kafka offsets are committed.",
+          "desc": "Number of tenants to concurrently fsync WAL and WBL before Kafka offsets are committed. Ignored if -ingest-storage.write-logs-fsync-before-kafka-commit-enabled=false",
           "fieldValue": null,
           "fieldDefaultValue": 1,
           "fieldFlag": "ingest-storage.write-logs-fsync-before-kafka-commit-concurrency",

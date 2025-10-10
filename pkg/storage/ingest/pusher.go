@@ -31,6 +31,10 @@ type Pusher interface {
 }
 
 type PreCommitNotifier interface {
+	// NotifyPreCommit is called before committing a Kafka offset to allow for
+	// synchronization or cleanup operations. The offset to commit is determined before this call.
+	// The committer waits for this method to complete before proceeding with the actual
+	// commit to Kafka.
 	NotifyPreCommit(ctx context.Context) error
 }
 
