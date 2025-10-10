@@ -107,7 +107,7 @@ Follow these steps to migrate your Grafana Mimir cluster from classic architectu
 
 1. Decommission the old cluster
 
-   After the new cluster is fully operational, decommission the old cluster.  
+   After the new cluster is fully operational, decommission the old cluster.
    For example, if you’re using Helm, run the following command:
 
    ```sh
