@@ -86,9 +86,7 @@ Follow these steps to migrate your Grafana Mimir cluster from classic architectu
 
 1. Scale out compactors in the new cluster.
 
-   Increase the number of compactor replicas in the new cluster to match the old configuration.
-
-   This activates compaction in the new cluster and completes the transition for background storage management.
+   Increase the number of compactor replicas in the new cluster to match the old configuration. This activates compaction in the new cluster and completes the transition for background storage management.
 
 1. Update ruler alerting configuration.
 
@@ -105,7 +103,7 @@ Follow these steps to migrate your Grafana Mimir cluster from classic architectu
 
    Reconfigure write clients to only send data to the new cluster.
 
-1. Decommission the old cluster
+1. Decommission the old cluster.
 
    After the new cluster is fully operational, decommission the old cluster.
    For example, if you’re using Helm, run the following command:
@@ -114,4 +112,4 @@ Follow these steps to migrate your Grafana Mimir cluster from classic architectu
    helm uninstall <OLD_RELEASE_NAME>
    ```
 
-   Your system runs entirely with ingest storage architecture.
+Your system runs entirely with ingest storage architecture.
