@@ -31,6 +31,13 @@ The following outlines the high-level setup workflow for a Mimir cluster running
 1. Deploy Kafka.  
    Create and configure the Kafka cluster with appropriate replication, partitions, and retention settings for your expected ingestion rate.
 
+      {{< admonition type="note" >}}
+   Size Kafka topics according to your Kafka vendor’s guidance and workload needs. Refer to the following resources:
+   - [Apache Kafka topic configuration reference](https://kafka.apache.org/38/generated/topic_config.html)
+   - [Creating topics and specifying partitions/replication factor](https://kafka.apache.org/24/documentation.html)
+   - [Partition count guidance and operational considerations](https://docs.confluent.io/kafka/operations-tools/partition-determination.html)
+   {{< /admonition >}}
+
 1. Deploy Mimir services.  
    Install Grafana Mimir and enable the ingest storage configuration.
 
