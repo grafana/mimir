@@ -63,13 +63,8 @@ Key configuration parameters include:
 | `ingester.storage`            | Object storage configuration for persistent metric blocks.    |
 | `compactor.storage`           | Shared object storage for compacted blocks.                   |
 
- Refer to [Configure the Grafana Mimir Kafka backend](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/configure-kafka-backend/) and [Configure ingest storage architecture](https://grafana.com/docs/mimir/<MIMIR_VERSION>/set-up/jsonnet/configure-ingest-storage/) for complete parameter details.
+ Refer to [Configure the Grafana Mimir Kafka backend](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/configure-kafka-backend/) and [Configure ingest storage architecture](https://grafana.com/docs/mimir/<MIMIR_VERSION>/set-up/jsonnet/configure-ingest-storage/) for example configurations and key parameters.  
 
-## See also
-
- - [About ingest storage architecture](https://grafana.com/docs/mimir/<MIMIR_VERSION>/get-started/about-grafana-mimir-architecture/about-ingest-storage-architecture/)
- - [Configure the Grafana Mimir Kafka backend](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/configure-kafka-backend/)
- - [Run a production environment with Helm](https://grafana.com/docs/helm-charts/mimir-distributed/latest/run-production-environment-with-helm/)
 
 
 
