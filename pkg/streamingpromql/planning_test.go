@@ -1164,6 +1164,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 func TestPlanVersioning(t *testing.T) {
 	originalMaximumPlanVersion := planning.MaximumSupportedQueryPlanVersion
 	planning.MaximumSupportedQueryPlanVersion = 9001
+	planning.QueryPlanVersionZero = 9000
 	t.Cleanup(func() { planning.MaximumSupportedQueryPlanVersion = originalMaximumPlanVersion })
 
 	plan := &planning.QueryPlan{
@@ -1174,8 +1175,10 @@ func TestPlanVersioning(t *testing.T) {
 			},
 		},
 		OriginalExpression: "123",
-		Version:            9000,
 	}
+
+	err := plan.DeterminePlanVersion()
+	require.NoError(t, err)
 
 	encoded, err := plan.ToEncodedPlan(false, true)
 	require.NoError(t, err)
