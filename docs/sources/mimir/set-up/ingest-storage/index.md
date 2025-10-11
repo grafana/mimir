@@ -29,25 +29,25 @@ Ingest storage architecture decouples ingestion from query and storage component
 The following outlines the high-level setup workflow for a Mimir cluster running in ingest storage mode:
 
 1. Deploy Kafka.  
-   Create and configure the Kafka cluster with appropriate replication, partitions, and retention settings for your expected ingestion rate.
 
-      {{< admonition type="note" >}}
-   Size Kafka topics according to your Kafka vendor’s guidance and workload needs. Refer to the following resources:
+   Create and configure the Kafka cluster with appropriate replication, partitions, and retention settings for your expected ingestion rate. Size Kafka topics according to your Kafka vendor’s guidance and workload needs. Refer to the following resources:
    - [Apache Kafka topic configuration reference](https://kafka.apache.org/38/generated/topic_config.html)
    - [Creating topics and specifying partitions/replication factor](https://kafka.apache.org/24/documentation.html)
    - [Partition count guidance and operational considerations](https://docs.confluent.io/kafka/operations-tools/partition-determination.html)
-   {{< /admonition >}}
 
 1. Deploy Mimir services.  
+
    Install Grafana Mimir and enable the ingest storage configuration.
 
-1. Configure ingest storage parameters.  
-   Update the service configuration for the following components:
-   - Distributor: Configure the Kafka producer to publish to the ingestion topics.
-   - Ingester: Configure the Kafka consumer to read and process ingested metric data.
-   - Ingester storage: Set up object storage credentials and paths for long-term persistence.
+1. Configure ingest storage parameters.
 
-1. Validate ingestion and compaction.  
+   Update your configuration for the following components:
+   - [Distributor](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/components/distributor/): Configure the Kafka producer to publish to the ingestion topics.
+   - [Ingester](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/components/ingester/): Configure the Kafka consumer to read and process ingested metric data, and connect to object storage for writing blocks.
+   - [Compactor](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/components/compactor/): Ensure the compactor shares access to the same object storage bucket for block compaction.
+
+1. Validate ingestion and compaction.
+ 
    After deployed, confirm that distributors are writing to Kafka and ingesters are consuming messages successfully. Verify that metrics are stored in your object storage backend.
 
 ## Configuration overview
