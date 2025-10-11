@@ -248,6 +248,11 @@ func (c *ParquetConverter) starting(ctx context.Context) error {
 func (c *ParquetConverter) running(ctx context.Context) error {
 	g, gCtx := errgroup.WithContext(ctx)
 
+	// Clear any work from the previous instance on startup.
+	if err := os.RemoveAll(c.rootDir()); err != nil {
+		level.Error(c.logger).Log("msg", "failed to remove work directory", "path", c.rootDir(), "err", err)
+	}
+
 	g.Go(func() error {
 		defer func() {
 			if r := recover(); r != nil {
@@ -472,11 +477,17 @@ func (c *ParquetConverter) processBlock(ctx context.Context, userID string, meta
 		return
 	}
 
-	if err := os.RemoveAll(c.rootDir()); err != nil {
-		level.Error(logger).Log("msg", "failed to remove work directory", "path", c.rootDir(), "err", err)
+	localBlockDir := filepath.Join(c.dirForUser(userID), meta.ULID.String())
+
+	cleanBlockDir := func() {
+		if err := os.RemoveAll(localBlockDir); err != nil {
+			level.Error(logger).Log("msg", "failed to remove block work directory", "path", localBlockDir, "err", err)
+		}
 	}
 
-	localBlockDir := filepath.Join(c.dirForUser(userID), meta.ULID.String())
+	cleanBlockDir()
+	defer cleanBlockDir()
+
 	level.Info(logger).Log("msg", "downloading block", "block", meta.ULID.String(), "maxTime", meta.MaxTime)
 	if err = block.Download(ctx, logger, uBucket, meta.ULID, localBlockDir, objstore.WithFetchConcurrency(10)); err != nil {
 		level.Error(logger).Log("msg", "error downloading block", "err", err)
@@ -487,6 +498,7 @@ func (c *ParquetConverter) processBlock(ctx context.Context, userID string, meta
 	copy(convertOpts, c.baseConverterOptions)
 	convertOpts[len(c.baseConverterOptions)] = convert.WithName(meta.ULID.String())
 
+	// Conversion is the intense part, so we limit the number of concurrent conversions.
 	if err := c.conversionSem.Acquire(ctx, 1); err != nil {
 		level.Error(logger).Log("msg", "failed to acquire conversion semaphore", "err", err)
 		return
