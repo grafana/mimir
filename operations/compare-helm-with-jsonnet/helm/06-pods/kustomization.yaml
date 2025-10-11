@@ -69,7 +69,7 @@ patches:
 
   # Minor Difference: Helm names the memberlist port slightly differently
   - target:
-      name: mimir-(distributor|querier|alertmanager|ingester|store-gateway|compactor)
+      name: mimir-(distributor|querier|query-frontend|alertmanager|ingester|store-gateway|compactor)
       kind: Deployment|StatefulSet
     patch: |-
       - op: replace

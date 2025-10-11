@@ -4,7 +4,7 @@ kind: Deployment
 metadata:
   name: {{ include "mimir.resourceName" (dict "ctx" . "component" "query-frontend") }}
   labels:
-    {{- include "mimir.labels" (dict "ctx" . "component" "query-frontend") | nindent 4 }}
+    {{- include "mimir.labels" (dict "ctx" . "component" "query-frontend" "memberlist" true) | nindent 4 }}
   annotations:
     {{- toYaml .Values.query_frontend.annotations | nindent 4 }}
   namespace: {{ .Release.Namespace | quote }}
@@ -20,13 +20,13 @@ spec:
   {{- end }}
   selector:
     matchLabels:
-      {{- include "mimir.selectorLabels" (dict "ctx" . "component" "query-frontend") | nindent 6 }}
+      {{- include "mimir.selectorLabels" (dict "ctx" . "component" "query-frontend" "memberlist" true) | nindent 6 }}
   strategy:
     {{- toYaml .Values.query_frontend.strategy | nindent 4 }}
   template:
     metadata:
       labels:
-        {{- include "mimir.podLabels" (dict "ctx" . "component" "query-frontend") | nindent 8 }}
+        {{- include "mimir.podLabels" (dict "ctx" . "component" "query-frontend" "memberlist" true) | nindent 8 }}
       annotations:
         {{- include "mimir.podAnnotations" (dict "ctx" . "component" "query-frontend") | nindent 8 }}
       namespace: {{ .Release.Namespace | quote }}
@@ -89,6 +89,9 @@ spec:
               protocol: TCP
             - name: grpc
               containerPort: {{ include "mimir.serverGrpcListenPort" . }}
+              protocol: TCP
+            - name: memberlist
+              containerPort: {{ include "mimir.memberlistBindPort" . }}
               protocol: TCP
           livenessProbe:
             {{- toYaml .Values.query_frontend.livenessProbe | nindent 12 }}
