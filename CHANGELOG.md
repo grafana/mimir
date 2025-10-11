@@ -4,6 +4,7 @@
 
 ### Grafana Mimir
 
+* [CHANGE] Distributor: Return `HTTP 415 Unsupported Media Type` when handling invalid `Content-Type` or `Content-Encoding` headers. #12739
 * [CHANGE] Build: Include updated Mozilla CA bundle from Debian Testing. #12247
 * [CHANGE] Query-frontend: Add support for UTF-8 label and metric names in `/api/v1/cardinality/{label_values|label_values|active_series}` endpoints. #11848.
 * [CHANGE] Querier: Add support for UTF-8 label and metric names in `label_join`, `label_replace` and `count_values` PromQL functions. #11848.
