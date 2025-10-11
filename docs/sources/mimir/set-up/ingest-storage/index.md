@@ -9,14 +9,17 @@ weight: 20
 
 Ingest storage architecture provides a scalable and resilient path for high-volume metric ingestion using Kafka and object storage. It's designed for production environments that need to efficiently handle large workloads.
 
+{{< admonition type="note" >}}
+This guidance is for setting up a new Grafana Mimir cluster with ingest storage. To migrate an existing cluster, refer to [Migrate to ingest storage](https://grafana.com/docs/mimir/<MIMIR_VERSION>/set-up/migrate/migrate-ingest-storage/).
+{{< /admonition >}}
+
 ## Before you begin
 
 Before you start, ensure you have the following:
 
  - Kafka cluster: Used as the backend for ingest storage. You can use a managed Kafka service or host your own. For configuration details, refer to [Configure the Grafana Mimir Kafka backend](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/configure-kafka-backend/).
 - Performant object storage: Mimir requires high-throughput, durable object storage compatible with S3 APIs.
- - Helm: To deploy Grafana Mimir in Kubernetes using the Helm chart. For setup details, refer to [Run a production environment with Helm](https://grafana.com/docs/helm-charts/mimir-distributed/latest/run-production-environment-with-helm/).
- - Access to the ingest storage configuration templates: Refer to [Configure ingest storage architecture](https://grafana.com/docs/mimir/<MIMIR_VERSION>/set-up/jsonnet/configure-ingest-storage/).
+ - Helm: As a best practice, deploy Grafana Mimir in Kubernetes using the Helm chart. For setup details, refer to [Run a production environment with Helm](https://grafana.com/docs/helm-charts/mimir-distributed/latest/run-production-environment-with-helm/).
 
 ## About ingest storage architecture
 
@@ -60,8 +63,6 @@ Key configuration parameters include:
 | --------------------------- | ------------------------------------------------------------- |
 | `distributor.kafka.producer` | Kafka producer configuration for the distributor service.     |
 | `ingester.kafka.consumer`     | Kafka consumer configuration for the ingester service.        |
-| `ingester.storage`            | Object storage configuration for persistent metric blocks.    |
-| `compactor.storage`           | Shared object storage for compacted blocks.                   |
 
  Refer to [Configure the Grafana Mimir Kafka backend](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/configure-kafka-backend/) and [Configure ingest storage architecture](https://grafana.com/docs/mimir/<MIMIR_VERSION>/set-up/jsonnet/configure-ingest-storage/) for example configurations and key parameters.  
 
