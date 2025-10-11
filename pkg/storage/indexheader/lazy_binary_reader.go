@@ -135,8 +135,17 @@ func NewLazyBinaryReader(
 	onClosed func(*LazyBinaryReader),
 	lazyLoadingGate gate.Gate,
 ) (*LazyBinaryReader, error) {
-	indexHeaderPath := filepath.Join(dir, id.String(), block.IndexHeaderFilename)
-	sparseHeaderPath := filepath.Join(dir, id.String(), block.SparseIndexHeaderFilename)
+	dir = filepath.Join(dir, id.String())
+	indexHeaderPath := filepath.Join(dir, block.IndexHeaderFilename)
+	sparseHeaderPath := filepath.Join(dir, block.SparseIndexHeaderFilename)
+
+	if df, err := os.Open(dir); err != nil && os.IsNotExist(err) {
+		if err := os.MkdirAll(dir, os.ModePerm); err != nil {
+			return nil, fmt.Errorf("cannot create index-header dir: %w", err)
+		}
+	} else {
+		_ = df.Close()
+	}
 
 	g := errgroup.Group{}
 	g.Go(func() error {
@@ -182,6 +191,7 @@ func tryDownloadSparseHeader(ctx context.Context, logger log.Logger, bkt objstor
 		level.Info(logger).Log("msg", "could not download sparse index-header from bucket; will reconstruct when the block is queried", "err", err)
 		return
 	}
+
 	err = atomicfs.CreateFile(sparseHeaderPath, bytes.NewReader(bucketSparseHeaderBytes))
 	if err != nil {
 		level.Info(logger).Log("msg", "could not store sparse index-header on disk; will reconstruct when the block is queried", "err", err)
