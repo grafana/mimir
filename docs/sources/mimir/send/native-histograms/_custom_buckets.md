@@ -81,14 +81,14 @@ Use the latest Prometheus version.
          [OpenMetricsText1.0.0, OpenMetricsText0.0.1, PrometheusText0.0.4]
    ```
 
-1. To enable converting classic histograms into NHCB, you need to set `convert_histograms_to_nhcb` to `true` in your scrape jobs. This setting has no effect for histograms that already have a native histogram defined, such as with [native histogram with exponential buckets](https://grafana.com/docs/mimir/<MIMIR_VERSION>/send/native-histograms/_exponential_buckets).
+1. To enable converting classic histograms into NHCB, you need to set `convert_classic_histograms_to_nhcb` to `true` in your scrape jobs. This setting has no effect for histograms that already have a native histogram defined, such as with [native histogram with exponential buckets](https://grafana.com/docs/mimir/<MIMIR_VERSION>/send/native-histograms/_exponential_buckets).
 
    For example, to convert classic histograms to NHCB, use the following configuration:
 
    ```yaml
    scrape_configs:
      - job_name: myapp
-       convert_histograms_to_nhcb: true
+       convert_classic_histograms_to_nhcb: true
    ```
 
 1. To keep scraping the classic histogram version of native histogram metrics, you need to set `always_scrape_classic_histograms` to `true` in your scrape jobs.
@@ -102,7 +102,7 @@ Use the latest Prometheus version.
    ```yaml
    scrape_configs:
      - job_name: myapp
-       convert_histograms_to_nhcb: true
+       convert_classic_histograms_to_nhcb: true
        always_scrape_classic_histograms: true
    ```
 
