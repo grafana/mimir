@@ -39,9 +39,6 @@ There are advantages and disadvantages of using native histograms with exponenti
 - Simpler instrumentation: You don't need to think about bucket boundaries because they are created automatically.
 - Better resolution in practice: Custom bucket layouts are usually not high resolution.
 - Increased compatibility: Native histograms with exponential buckets are compatible with each other. They have an automatic layout, which makes them easy to combine.
-  {{< admonition type="note" >}}
-  The operation might scale down an operand to a lower resolution to match the other operand.
-  {{< /admonition >}}
 
 ### Disadvantages
 
