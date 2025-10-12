@@ -126,7 +126,7 @@ Use Prometheus version 3.00 or later.
 1. To keep scraping the classic histogram version of native histogram metrics, you need to set `always_scrape_classic_histograms` to `true` in your scrape jobs.
 
    {{< admonition type="note" >}}
-   In Prometheus versions earlier than 3.0, the `always_scrape_classic_histograms` setting is called `scrape_classic_histograms`. Use the setting name that corresponds to the version of Prometheus you're using.
+   In Prometheus versions 3.0 and earlier, the `always_scrape_classic_histograms` setting is called `scrape_classic_histograms`. Use the setting name that corresponds to the version of Prometheus you're using.
    {{< /admonition >}}
 
    For example, to get both classic and native histograms, use the following configuration:
@@ -147,41 +147,33 @@ Use Prometheus version 3.00 or later.
 
 ## Scrape and send native histograms with Grafana Alloy
 
-Use the latest version of [Grafana Alloy](https://grafana.com/docs/alloy/<ALLOY_VERSION>).
+Use [Grafana Alloy](https://grafana.com/docs/alloy/<ALLOY_VERSION>) version 1.11 or later.
 
-1. To scrape native histograms, set the `scrape_protocols` argument in the `prometheus.scrape` component to specify `PrometheusProto` as the first protocol to negotiate.
+1. To scrape native histograms, set the `scrape_native_histograms` argument in the `prometheus.scrape` component to `true`.
 
    ```
-    scrape_protocols = ["PrometheusProto", "OpenMetricsText1.0.0", "OpenMetricsText0.0.1", "PrometheusText0.0.4"]
+   scrape_native_histograms = true
    ```
 
-1. To scrape classic histograms in addition to native histograms, set `always_scrape_classic_histograms` to `true`.
-
-   {{< admonition type="note" >}}
-   In Prometheus versions 3.0 and earlier, the `always_scrape_classic_histograms` setting is called `scrape_classic_histograms`. Use the setting name that corresponds to the version of Prometheus you're using.
+   {{< admonition type="warning" >}}
+   In Grafana Alloy versions 1.10 and earlier setting `scrape_native_histograms` to `true` was not required.
+   For more information, refer to [Release notes for Grafana Alloy](https://grafana.com/docs/alloy/latest/release-notes/).
    {{< /admonition >}}
 
+   {{< admonition type="note" >}}
+   For now, native histograms are only available through the Prometheus Protobuf exposition format.
+   Make sure to either not override the argument `scrape_protocols` or that the first item is
+   `PrometheusProto`.
+   {{< /admonition >}}
+
+1. To scrape classic histograms in addition to native histograms, set `scrape_classic_histograms` to `true`.
+
    ```
-   scrape_protocols = ["PrometheusProto", "OpenMetricsText1.0.0", "OpenMetricsText0.0.1", "PrometheusText0.0.4"]
-   always_scrape_classic_histograms = true
+   scrape_native_histograms = true
+   scrape_classic_histograms = true
    ```
 
    For more information, refer to [prometheus.scrape](https://grafana.com/docs/alloy/<ALLOY_VERSION>/reference/components/prometheus/prometheus.scrape/) in the Grafana Alloy documentation.
-
-   {{< admonition type="note" >}}
-   In certain situations, the Protobuf parsing changes the number formatting of
-   the `le` labels of conventional histograms and the `quantile` labels of
-   summaries. Typically, this happens if the scraped target is instrumented with
-   [client_golang](https://github.com/prometheus/client_golang), provided that
-   [promhttp.HandlerOpts.EnableOpenMetrics](https://pkg.go.dev/github.com/prometheus/client_golang/prometheus/promhttp#HandlerOpts)
-   is set to `false`. In such cases, integer label values are represented
-   as `quantile="1"` or `le="2"` omitting the zero fractional.
-   However, the Protobuf parsing changes the representation to always include a fractional (following the OpenMetrics
-   specification), so the examples above become `quantile="1.0"` and `le="2.0"` after
-   ingestion into Prometheus. This changes the identity of the metric from what was originally ingested.
-
-   For more information, refer to [Feature Flags Native Histograms](https://prometheus.io/docs/prometheus/latest/feature_flags/#native-histograms) in the Prometheus documentation.
-   {{< /admonition >}}
 
 1. To send native histograms to a Prometheus remote-write compatible receiver, such as Grafana Cloud Metrics or Grafana Mimir, set the `send_native_histograms` argument to `true` in the `prometheus.remote_write` component. For example:
 
