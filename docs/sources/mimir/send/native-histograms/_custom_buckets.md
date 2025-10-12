@@ -94,7 +94,7 @@ Use the latest Prometheus version.
 1. To keep scraping the classic histogram version of native histogram metrics, you need to set `always_scrape_classic_histograms` to `true` in your scrape jobs.
 
    {{< admonition type="note" >}}
-   In Prometheus versions earlier than 3.0, the `always_scrape_classic_histograms` setting is called `scrape_classic_histograms`. Use the setting name that corresponds to the version of Prometheus you're using.
+   In Prometheus versions 3.0 and earlier, the `always_scrape_classic_histograms` setting is called `scrape_classic_histograms`. Use the setting name that corresponds to the version of Prometheus you're using.
    {{< /admonition >}}
 
    For example, to get both classic and native histograms, use the following configuration:

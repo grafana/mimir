@@ -158,7 +158,7 @@ Use the latest version of [Grafana Alloy](https://grafana.com/docs/alloy/<ALLOY_
 1. To scrape classic histograms in addition to native histograms, set `always_scrape_classic_histograms` to `true`.
 
    {{< admonition type="note" >}}
-   In Prometheus versions earlier than 3.0, the `always_scrape_classic_histograms` setting is called `scrape_classic_histograms`. Use the setting name that corresponds to the version of Prometheus you're using.
+   In Prometheus versions 3.0 and earlier, the `always_scrape_classic_histograms` setting is called `scrape_classic_histograms`. Use the setting name that corresponds to the version of Prometheus you're using.
    {{< /admonition >}}
 
    ```
