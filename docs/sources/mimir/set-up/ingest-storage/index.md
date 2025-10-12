@@ -35,7 +35,7 @@ The following outlines the high-level setup workflow for a Grafana Mimir cluster
 
    Create and configure the Kafka cluster with appropriate replication, partitions, and retention settings for your expected ingestion rate. Size Kafka topics according to your Kafka vendor’s guidance and workload needs. Refer to the following resources:
 
-   - [Creating topics and specifying partitions/replication factor](https://kafka.apache.org/documentation/)
+   - [Apache Kafka documentation](https://kafka.apache.org/documentation/)
    - [Partition count guidance and operational considerations](https://docs.confluent.io/kafka/operations-tools/partition-determination.html)
    - [Apache Kafka topic configuration reference](https://kafka.apache.org/38/generated/topic_config.html)
 
