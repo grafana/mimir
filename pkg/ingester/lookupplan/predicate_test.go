@@ -46,7 +46,7 @@ func TestFilterCost(t *testing.T) {
 	for _, tc := range testCases {
 		testName := fmt.Sprintf("%d_series_%s", tc.seriesCount, tc.matcher)
 		t.Run(testName, func(t *testing.T) {
-			pred := newPlanPredicate(ctx, tc.matcher, stats)
+			pred := newPlanPredicate(ctx, tc.matcher, stats, defaultCostConfig)
 
 			cost := pred.filterCost(tc.seriesCount)
 			assert.GreaterOrEqual(t, cost, 0.0, "can't have negative costs")
@@ -88,7 +88,7 @@ func TestIndexLookupCost(t *testing.T) {
 
 	for tcIdx, tc := range testCases {
 		t.Run(tc.matcher.String(), func(t *testing.T) {
-			pred := newPlanPredicate(ctx, tc.matcher, stats)
+			pred := newPlanPredicate(ctx, tc.matcher, stats, defaultCostConfig)
 
 			actualCost := pred.indexLookupCost()
 			assert.GreaterOrEqual(t, actualCost, 0.0, "can't have negative cost")
@@ -133,7 +133,7 @@ func TestCardinalityEstimation(t *testing.T) {
 
 	for tcIdx, tc := range testCases {
 		t.Run(tc.matcher.String(), func(t *testing.T) {
-			pred := newPlanPredicate(ctx, tc.matcher, stats)
+			pred := newPlanPredicate(ctx, tc.matcher, stats, defaultCostConfig)
 			actualCardinality := pred.cardinality
 
 			if tc.deltaTolerance > 0 {

@@ -529,12 +529,7 @@ func TestDistributor_QueryStream_ShouldSupportIngestStorage(t *testing.T) {
 				}
 			}
 
-			var responseMatrix model.Matrix
-			if len(resp.Chunkseries) == 0 {
-				responseMatrix, err = ingester_client.StreamingSeriesToMatrix(0, 5, resp.StreamingSeries)
-			} else {
-				responseMatrix, err = ingester_client.TimeSeriesChunksToMatrix(0, 5, resp.Chunkseries)
-			}
+			responseMatrix, err := ingester_client.StreamingSeriesToMatrix(0, 5, resp.StreamingSeries)
 			assert.NoError(t, err)
 			assert.Equal(t, testData.expectedResponse.String(), responseMatrix.String())
 

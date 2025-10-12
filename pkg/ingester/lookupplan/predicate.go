@@ -9,9 +9,8 @@ import (
 	"github.com/prometheus/prometheus/tsdb/index"
 )
 
-const costPerPostingListRetrieval = 10.0
-
 type planPredicate struct {
+	config  CostConfig
 	matcher *labels.Matcher
 
 	// selectivity is between 0 and 1. 1 indicates that the matcher will match all label values, 0 indicates it will match no values. NB: label values, not series
@@ -26,10 +25,11 @@ type planPredicate struct {
 	indexScanCost float64
 }
 
-func newPlanPredicate(ctx context.Context, m *labels.Matcher, stats index.Statistics) planPredicate {
+func newPlanPredicate(ctx context.Context, m *labels.Matcher, stats index.Statistics, config CostConfig) planPredicate {
 	pred := planPredicate{
 		matcher:         m,
 		singleMatchCost: m.SingleMatchCost(),
+		config:          config,
 	}
 	pred.labelNameUniqueVals = stats.LabelValuesCount(ctx, m.Name)
 	pred.selectivity = m.EstimateSelectivity(pred.labelNameUniqueVals)
@@ -114,7 +114,7 @@ func (pr planPredicate) indexLookupCost() float64 {
 	cost += pr.indexScanCost
 
 	// Retrieving each posting list (e.g. checksumming, disk seeking)
-	cost += costPerPostingListRetrieval * float64(pr.labelNameUniqueVals) * pr.selectivity
+	cost += pr.config.RetrievedPostingListCost * float64(pr.labelNameUniqueVals) * pr.selectivity
 
 	return cost
 }

@@ -8,8 +8,6 @@ results-cache:
     enabled: true
 minio:
     enabled: false
-nginx:
-    enabled: false
 kafka:
     enabled: false
 rbac:
@@ -17,6 +15,12 @@ rbac:
     pspEnabled: false
 serviceAccount:
     create: false
+
+# These overrides are for the Helm chart changes https://github.com/grafana/mimir/issues/11886
+# The Jsonnet bundle doesn't provide any gateway or ingress.
+gateway:
+    enabled: false
+    enabledNonEnterprise: false
 
 # To be updated in https://github.com/grafana/mimir/issues/2922
 rollout_operator:

@@ -21,6 +21,7 @@ type InstantVectorRemoteExec struct {
 	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
 	Annotations              *annotations.Annotations
 	QueryStats               *types.QueryStats
+	EagerLoad                bool
 
 	resp      InstantVectorRemoteExecutionResponse
 	finalized bool
@@ -32,7 +33,7 @@ func (r *InstantVectorRemoteExec) Prepare(ctx context.Context, params *types.Pre
 	r.QueryStats = params.QueryStats
 
 	var err error
-	r.resp, err = r.RemoteExecutor.StartInstantVectorExecution(ctx, r.RootPlan, r.Node, r.TimeRange, r.MemoryConsumptionTracker, r.QueryStats.EnablePerStepStats)
+	r.resp, err = r.RemoteExecutor.StartInstantVectorExecution(ctx, r.RootPlan, r.Node, r.TimeRange, r.MemoryConsumptionTracker, r.QueryStats.EnablePerStepStats, r.EagerLoad)
 	return err
 }
 

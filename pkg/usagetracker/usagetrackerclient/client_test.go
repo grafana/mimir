@@ -484,6 +484,62 @@ func TestUsageTrackerClient_TrackSeries(t *testing.T) {
 		require.NoError(t, err)
 		require.Empty(t, rejected)
 	})
+
+	t.Run("should ignore errors when IgnoreErrors is enabled", func(t *testing.T) {
+		t.Parallel()
+
+		partitionRing, instanceRing, registerer := prepareTest()
+
+		// Mock the usage-tracker server with failing instances.
+		instances := map[string]*usageTrackerMock{
+			"usage-tracker-zone-a-1": newUsageTrackerMockWithResponse(nil, errors.New("failing instance")),
+			"usage-tracker-zone-a-2": newUsageTrackerMockWithResponse(nil, errors.New("failing instance")),
+			"usage-tracker-zone-b-1": newUsageTrackerMockWithResponse(nil, errors.New("failing instance")),
+			"usage-tracker-zone-b-2": newUsageTrackerMockWithResponse(nil, errors.New("failing instance")),
+		}
+
+		clientCfg := createTestClientConfig()
+		clientCfg.IgnoreErrors = true
+		clientCfg.PreferAvailabilityZone = "zone-b"
+
+		clientCfg.ClientFactory = ring_client.PoolInstFunc(func(instance ring.InstanceDesc) (ring_client.PoolClient, error) {
+			mock, ok := instances[instance.Id]
+			if ok {
+				return mock, nil
+			}
+
+			return nil, fmt.Errorf("usage-tracker with ID %s not found", instance.Id)
+		})
+
+		c := usagetrackerclient.NewUsageTrackerClient("test", clientCfg, partitionRing, instanceRing, logger, registerer)
+		require.NoError(t, services.StartAndAwaitRunning(ctx, c))
+		t.Cleanup(func() {
+			require.NoError(t, services.StopAndAwaitTerminated(ctx, c))
+		})
+
+		// Generate the series hashes so that we can predict in which partition they're sharded to.
+		partitions := partitionRing.PartitionRing().Partitions()
+		require.Len(t, partitions, 2)
+		slices.SortFunc(partitions, func(a, b ring.PartitionDesc) int { return int(a.Id - b.Id) })
+
+		require.Equal(t, int32(1), partitions[0].Id)
+		require.Equal(t, int32(2), partitions[1].Id)
+
+		series1Partition1 := uint64(partitions[0].Tokens[0] - 1)
+		series2Partition1 := uint64(partitions[0].Tokens[1] - 1)
+		series3Partition1 := uint64(partitions[0].Tokens[2] - 1)
+		series4Partition2 := uint64(partitions[1].Tokens[0] - 1)
+		series5Partition2 := uint64(partitions[1].Tokens[1] - 1)
+
+		// Despite all instances failing, the client should not return an error when IgnoreErrors is enabled.
+		rejected, err := c.TrackSeries(user.InjectOrgID(ctx, userID), userID, []uint64{series1Partition1, series2Partition1, series3Partition1, series4Partition2, series5Partition2})
+		require.NoError(t, err)
+		require.Empty(t, rejected)
+
+		// All instances should have been called despite failing.
+		instances["usage-tracker-zone-b-1"].AssertNumberOfCalls(t, "TrackSeries", 1)
+		instances["usage-tracker-zone-b-2"].AssertNumberOfCalls(t, "TrackSeries", 1)
+	})
 }
 
 func createTestClientConfig() usagetrackerclient.Config {

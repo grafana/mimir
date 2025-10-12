@@ -47,3 +47,6 @@ compose-simple
 coverage.txt
 # Go Telemetry
 .config/go/telemetry/
+
+# AI agent configuration files
+AGENTS.md

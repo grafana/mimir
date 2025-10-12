@@ -14,6 +14,11 @@ import (
 	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
+const (
+	defaultInitialRejectionFactor = 2.0
+	defaultMaxRejectionFactor     = 3.0
+)
+
 type Config struct {
 	Enabled bool `yaml:"enabled" category:"experimental"`
 
@@ -34,6 +39,10 @@ type Config struct {
 }
 
 func (cfg *Config) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
+	cfg.RegisterFlagsWithPrefixAndRejectionFactors(prefix, f, defaultInitialRejectionFactor, defaultMaxRejectionFactor)
+}
+
+func (cfg *Config) RegisterFlagsWithPrefixAndRejectionFactors(prefix string, f *flag.FlagSet, initRejectionFactor float64, maxRejectionFactor float64) {
 	f.BoolVar(&cfg.Enabled, prefix+"enabled", false, "Enable reactive limiting when making requests to a service")
 
 	f.UintVar(&cfg.MinLimit, prefix+"min-limit", 2, "Minimum inflight requests limit")
@@ -48,8 +57,8 @@ func (cfg *Config) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 	f.UintVar(&cfg.BaselienWindowAge, prefix+"baseline-window-age", 10, "The average age of baseline samples aggregated recent samples are added to")
 	f.UintVar(&cfg.CorrelationWindow, prefix+"correlation-window", 50, "How many recent limit and inflight time measurements are stored to detect whether increases in limits correlate with increases in inflight times")
 
-	f.Float64Var(&cfg.InitialRejectionFactor, prefix+"initial-rejection-factor", 2, "The number of allowed queued requests, as a multiple of current inflight requests, after which rejections start")
-	f.Float64Var(&cfg.MaxRejectionFactor, prefix+"max-rejection-factor", 3, "The number of allowed queued requests, as a multiple of current inflight requests, after which all requests are rejected")
+	f.Float64Var(&cfg.InitialRejectionFactor, prefix+"initial-rejection-factor", initRejectionFactor, "The number of allowed queued requests, as a multiple of current inflight requests, after which rejections start")
+	f.Float64Var(&cfg.MaxRejectionFactor, prefix+"max-rejection-factor", maxRejectionFactor, "The number of allowed queued requests, as a multiple of current inflight requests, after which all requests are rejected")
 }
 
 // New returns a new ReactiveLimiter.

@@ -64,9 +64,8 @@ func (cfg *Config) Validate() error {
 	if cfg.MaxScanAge <= 0 {
 		return fmt.Errorf("min scan age (%d) must be positive", cfg.MaxScanAge)
 	}
-	if cfg.MaxJobsPerPartition != 1 {
-		// TODO: revise once we've implemented safe bookkeeping under parallel region consumption.
-		return fmt.Errorf("max jobs per partition (%d) must be 1", cfg.MaxJobsPerPartition)
+	if cfg.MaxJobsPerPartition < 0 {
+		return fmt.Errorf("max jobs per partition (%d) must be non-negative", cfg.MaxJobsPerPartition)
 	}
 	if cfg.EnqueueInterval <= 0 {
 		return fmt.Errorf("enqueue interval (%d) must be positive", cfg.EnqueueInterval)

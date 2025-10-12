@@ -40,6 +40,10 @@ func (i *ActivityTrackerWrapper) PushToStorageAndReleaseRequest(ctx context.Cont
 	return i.ing.PushToStorageAndReleaseRequest(ctx, request)
 }
 
+func (i *ActivityTrackerWrapper) NotifyPreCommit(ctx context.Context) error {
+	return i.ing.NotifyPreCommit(ctx)
+}
+
 func (i *ActivityTrackerWrapper) QueryStream(request *client.QueryRequest, server client.Ingester_QueryStreamServer) error {
 	ix := i.tracker.Insert(func() string {
 		return requestActivity(server.Context(), "Ingester/QueryStream", request)

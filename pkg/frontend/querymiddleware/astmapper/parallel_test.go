@@ -6,7 +6,6 @@
 package astmapper
 
 import (
-	"errors"
 	"fmt"
 	"testing"
 
@@ -279,50 +278,33 @@ func TestCountVectorSelectors(t *testing.T) {
 func TestEvalPredicate(t *testing.T) {
 	for testName, tc := range map[string]struct {
 		input       string
-		fn          predicate
+		fn          Predicate
 		expectedRes bool
-		expectedErr bool
 	}{
-		"should return error if the predicate returns error": {
-			input: "selector1{} or selector2{}",
-			fn: func(parser.Node) (bool, error) {
-				return false, errors.New("some err")
-			},
-			expectedRes: false,
-			expectedErr: true,
-		},
 		"should return false if the predicate returns false for all nodes in the subtree": {
 			input: "selector1{} or selector2{}",
-			fn: func(parser.Node) (bool, error) {
-				return false, nil
+			fn: func(parser.Node) bool {
+				return false
 			},
 			expectedRes: false,
-			expectedErr: false,
 		},
 		"should return true if the predicate returns true for at least 1 node in the subtree": {
 			input: "selector1{} or selector2{}",
-			fn: func(node parser.Node) (bool, error) {
+			fn: func(node parser.Node) bool {
 				// Return true only for 1 node in the subtree.
 				if node.String() == "selector1" {
-					return true, nil
+					return true
 				}
-				return false, nil
+				return false
 			},
 			expectedRes: true,
-			expectedErr: false,
 		},
 	} {
 		t.Run(testName, func(t *testing.T) {
 			expr, err := parser.ParseExpr(tc.input)
 			require.Nil(t, err)
 
-			res, err := anyNode(expr.(parser.Node), tc.fn)
-			if tc.expectedErr {
-				require.Error(t, err)
-			} else {
-				require.Nil(t, err)
-			}
-
+			res := AnyNode(expr.(parser.Node), tc.fn)
 			require.Equal(t, tc.expectedRes, res)
 		})
 	}
