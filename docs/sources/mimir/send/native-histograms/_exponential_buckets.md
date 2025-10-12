@@ -20,25 +20,25 @@ Prometheus [native histograms](https://prometheus.io/docs/specs/native_histogram
 
 Native histograms with exponential buckets are different from classic Prometheus histograms in a number of ways:
 
-- Exponential bucket boundaries are calculated by a formula that depends on the scale (resolution) of the native histogram, and are not user defined. The calculation produces exponentially increasing bucket boundaries. For details, refer to [Exponential bucket boundary calculation](#exponential-bucket-boundary-calculation).
-- Exponential bucket boundaries might change (widen) dynamically if the observations result in too many buckets. For details, refer to [Limit the number of buckets](#limit-the-number-of-buckets).
-- Exponential bucket counters only count observations inside the bucket boundaries, whereas the classic histogram buckets only have an upper bound called `le` and count all observations in the bucket and all lower buckets (cumulative).
+- Exponential bucket boundaries are calculated by a formula that depends on the scale, or resolution of the native histogram, and are not user-defined. The calculation produces exponentially increasing bucket boundaries. For details, refer to [Exponential bucket boundary calculation](#exponential-bucket-boundary-calculation).
+- Exponential bucket boundaries might change dynamically if the observations result in too many buckets. For details, refer to [Limit the number of buckets](#limit-the-number-of-buckets).
+- Exponential bucket counters only count observations inside the bucket boundaries, whereas the classic histogram buckets only have an upper bound called `le` and count all observations in the bucket and all lower buckets cumulatively.
 - An instance of a native histogram metric only requires a single time series, because the buckets, sum of observations, and the count of observations are stored in a single sample type called `native histogram` rather than in separate time series using the `float` sample type. Thus, there are no `<metric>_bucket`, `<metric>_sum`, and `<metric>_count` series. There is only a `<metric>` time series.
 - Querying native histograms via the Prometheus query language (PromQL) uses a different syntax. For details, refer to [Visualize native histograms](https://grafana.com/docs/mimir/<MIMIR_VERSION>/visualize/native-histograms/) and [functions](https://prometheus.io/docs/prometheus/latest/querying/functions/).
 
 For an introduction to native histograms, watch the [Native Histograms in Prometheus](https://www.youtube.com/watch?v=AcmABV6NCYk) presentation.
 
-This document provides a practical implementation guide for using native histograms with exponential schemas in Grafana Mimir, but it's not as comprehensive as the official [specification](https://prometheus.io/docs/specs/native_histograms/) in the Prometheus documentation.
+This document provides a practical implementation guide for using native histograms with exponential schemas in Grafana Mimir. For comprehensive guidance, refer to the official [specification](https://prometheus.io/docs/specs/native_histograms/) in the Prometheus documentation.
 
 ## Advantages and disadvantages
 
-There are advantages and disadvantages of using native histograms with exponential buckets compared to the classic Prometheus histograms. For more information and a real example, refer to the [Prometheus Native Histograms in Production](https://www.youtube.com/watch?v=TgINvIK9SYc&t=127s) video.
+There are advantages and disadvantages of using native histograms with exponential buckets compared to the classic Prometheus histograms. For more information, refer to the [Prometheus Native Histograms in Production](https://www.youtube.com/watch?v=TgINvIK9SYc&t=127s) video.
 
 ### Advantages
 
-- Simpler instrumentation: you do not need to think about bucket boundaries because they are created automatically.
-- Better resolution in practice: custom bucket layouts are usually not high resolution.
-- Native histograms with exponential buckets are compatible with each other: they have an automatic layout, which makes them easy to combine.
+- Simpler instrumentation: You don't need to think about bucket boundaries because they are created automatically.
+- Better resolution in practice: Custom bucket layouts are usually not high resolution.
+- Increased compatibility: Native histograms with exponential buckets are compatible with each other. They have an automatic layout, which makes them easy to combine.
   {{< admonition type="note" >}}
   The operation might scale down an operand to a lower resolution to match the other operand.
   {{< /admonition >}}
@@ -56,11 +56,11 @@ The preceding problems are mitigated by high resolution, which native histograms
 The following examples have some reasonable defaults to define a new native histogram with exponential buckets metric. The examples use the [Go client library](https://pkg.go.dev/github.com/prometheus/client_golang/prometheus#Histogram) version 1.16 and the [Java client library](https://prometheus.github.io/client_java/api/io/prometheus/metrics/core/metrics/Histogram.Builder.html) 1.0.
 
 {{< admonition type="note" >}}
-Native histogram options can be added to existing classic histograms to get both the classic and native histogram at the same time. Refer to [Migrate from classic histograms](#migrate-from-classic-histograms).
+You can add native histogram options to existing classic histograms to get both the classic and native histogram at the same time. Refer to [Migrate from classic histograms](#migrate-from-classic-histograms).
 {{< /admonition >}}
 
 {{< admonition type="note" >}}
-Native histograms with exponential schema take precedence over [native histograms with custom buckets](https://grafana.com/docs/mimir/<MIMIR_VERSION>/send/native-histograms/_custom_buckets), which means that if a histogram is scraped as native histograms with exponential bucket, then no native histograms with custom buckets can be generated for the same histogram.
+Native histograms with exponential schema take precedence over [native histograms with custom buckets](https://grafana.com/docs/mimir/<MIMIR_VERSION>/send/native-histograms/_custom_buckets), which means that if a histogram is scraped as a native histogram with exponential buckets, then no native histograms with custom buckets can be generated for the same histogram.
 {{< /admonition >}}
 
 {{< code >}}
@@ -89,7 +89,7 @@ static final Histogram requestLatency = Histogram.build()
 
 {{< /code >}}
 
-In Go, the `NativeHistogramBucketFactor` option sets an upper limit of the relative growth from one exponential bucket to the next. The value 1.1 means that an exponential bucket is at most 10% wider than the next smaller exponential bucket. The currently supported values range from `1.0027` or 0.27% up to 65536 or 655%. For more detailed explanation, refer to [Exponential bucket boundary calculation](#exponential-bucket-boundary-calculation).
+In Go, the `NativeHistogramBucketFactor` option sets an upper limit of the relative growth from one exponential bucket to the next. The value 1.1 means that an exponential bucket is at most 10% wider than the next smaller exponential bucket. The currently supported values range from `1.0027` or 0.27% up to 65536 or 655%. For a more detailed explanation, refer to [Exponential bucket boundary calculation](#exponential-bucket-boundary-calculation).
 
 Some of the resulting exponential buckets for factor `1.1` rounded to two decimal places are:
 
@@ -103,7 +103,7 @@ In Java `.nativeInitialSchema` using schema value `3` results in the same expone
 
 The value of `NativeHistogramMaxBucketNumber`/`nativeMaxNumberOfBuckets` limits the number of exponential buckets produced by the observations. This can be especially useful if the receiver side is limiting the number of buckets that can be sent. For more information about the bucket limit refer to [Limit the number of buckets](#limit-the-number-of-buckets).
 
-The duration in `NativeHistogramMinResetDuration`/`nativeResetDuration` will prohibit automatic counter resets inside that period. Counter resets are related to the bucket limit, for more information refer to [Limit the number of buckets](#limit-the-number-of-buckets).
+The duration in `NativeHistogramMinResetDuration`/`nativeResetDuration` prohibits automatic counter resets inside that period. Counter resets are related to the bucket limit, for more information refer to [Limit the number of buckets](#limit-the-number-of-buckets).
 
 ## Scrape and send native histograms with Prometheus
 
