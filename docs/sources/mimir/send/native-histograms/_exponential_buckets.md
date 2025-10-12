@@ -137,7 +137,7 @@ Use Prometheus version 3.00 or later.
        always_scrape_classic_histograms: true
    ```
 
-1. To be able to send native histograms to a Prometheus remote-write compatible receiver, for example Grafana Cloud Metrics, Grafana Mimir, etc, set `send_native_histograms` to `true` in the remote-write configuration, for example:
+1. To send native histograms to a Prometheus remote-write compatible receiver, for example Grafana Cloud Metrics or Grafana Mimir, set `send_native_histograms` to `true` in the remote-write configuration. For example:
 
    ```yaml
    remote_write:
@@ -201,7 +201,7 @@ To ease the migration process, you can keep the custom bucket definition of a cl
 1. Add the native histogram exponential buckets definition to an existing histogram in the instrumentation.
 1. If the existing histogram doesn't have buckets defined, add the default buckets to keep the classic histogram.
 
-   Code examples with both classic and native histogram defined for the same metric:
+   The following code examples have both classic and native histograms defined for the same metric:
 
    {{< code >}}
 
@@ -231,7 +231,7 @@ To ease the migration process, you can keep the custom bucket definition of a cl
    {{< /code >}}
 
 1. Let Prometheus or Grafana Alloy scrape both classic and native histograms with exponential buckets for metrics that have both defined.
-1. Send native histograms to remote write, along with the existing classic histograms.
+1. Send native histograms to remote write along with the existing classic histograms.
 1. Modify dashboards to use the native histogram metrics. Refer to [Visualize native histograms](https://grafana.com/docs/mimir/<MIMIR_VERSION>/visualize/native-histograms/) for more information.
 
    Use one of the following strategies to update dashboards.
@@ -269,7 +269,7 @@ To ease the migration process, you can keep the custom bucket definition of a cl
      Using the PromQL operator `or` can lead to unexpected results. For example, if a query uses a range of seven days, such as `sum(rate(http_request_duration_seconds[7d]))`, then this query returns a value as soon as there are two native histograms samples present before the end time specified in the query. In this case, the seven day rate is calculated from a couple of minutes, rather than seven days, worth of data. This results in an inaccuracy in the graph around the time you started scraping native histograms.
      {{< /admonition >}}
 
-1. Start adding _new_ recording rules and alerts to use native histograms. Do not remove the old recording rules and alerts at this time.
+1. Start adding new recording rules and alerts to use native histograms. Do not remove the existing recording rules and alerts at this time.
 1. It is important to keep scraping both classic and native histograms for at least the period of the longest range in your recording rules and alerts, plus one day. This is the minimum amount of time, but it's recommended to keep scraping both sample types until the new rules and alerts can be verified.
 
    For example, if you have an alert that calculates the rate of requests, such as `sum(rate(http_request_duration_seconds[7d]))`, this query looks at the data from the last seven days plus the Prometheus [lookback period](https://prometheus.io/docs/prometheus/latest/querying/basics/#staleness). When you start sending native histograms, the data isn't there for the entire seven days, and therefore, the results might be unreliable for alerting.
@@ -355,10 +355,10 @@ The instrumentation libraries of Prometheus have automation to keep the number o
 
 After the set maximum is exceeded, the following strategy is enacted:
 
-1. First, if the last reset (or the creation) of the histogram is at least the minimum reset duration ago, then the whole histogram is reset to its initial state (including classic buckets). This only works if the minimum reset duration was set (`NativeHistogramMinResetDuration` in Go).
+1. First, if the last reset, or the creation, of the histogram is at least the minimum reset duration, then the whole histogram is reset to its initial state, including classic buckets. This only works if the minimum reset duration was set (`NativeHistogramMinResetDuration` in Go).
 
-1. If less time has passed, or if the minimum reset duration is zero, no reset is performed. Instead, the zero threshold is increased sufficiently to reduce the number of exponential buckets to or below the maximum bucket number, but not to more than the maximum zero threshold (`NativeHistogramMaxZeroThreshold` in Go). Thus, if the threshold is at or above the maximum threshold already nothing happens at this step.
+1. If less time has passed, or if the minimum reset duration is zero, no reset is performed. Instead, the zero threshold is increased sufficiently to reduce the number of exponential buckets to or below the maximum bucket number, but not to more than the maximum zero threshold (`NativeHistogramMaxZeroThreshold` in Go). Thus, if the threshold is at or above the maximum threshold already, nothing happens at this step.
 
-1. After that, if the number of exponential buckets still exceeds maximum bucket number, the resolution of the histogram is reduced by doubling the width of all the exponential buckets (up to a growth factor between one bucket to the next of 2^(2^4) = 65536, refer to [Exponential bucket boundary calculation](#exponential-bucket-boundary-calculation)).
+1. After that, if the number of exponential buckets still exceeds the maximum bucket number, the resolution of the histogram is reduced by doubling the width of all the exponential buckets up to a growth factor between one bucket to the next of 2^(2^4) = 65536. Refer to [Exponential bucket boundary calculation](#exponential-bucket-boundary-calculation)).
 
-1. Any increased zero threshold or reduced resolution is reset back to their original values once the minimum reset duration has passed (since the last reset or the creation of the histogram).
+1. Any increased zero threshold or reduced resolution is reset back to their original values once the minimum reset duration has passed since the last reset or the creation of the histogram.
