@@ -221,11 +221,11 @@ To ease the migration process, you can keep the custom bucket definition of a cl
 
 1. Let Prometheus or Grafana Alloy scrape both classic and native histograms with exponential buckets for metrics that have both defined.
 1. Send native histograms to remote write along with the existing classic histograms.
-1. Modify dashboards to use the native histogram metrics. Refer to [Visualize native histograms](https://grafana.com/docs/mimir/<MIMIR_VERSION>/visualize/native-histograms/) for more information.
+1. Modify dashboards to use the native histograms metrics. Refer to [Visualize native histograms](https://grafana.com/docs/mimir/<MIMIR_VERSION>/visualize/native-histograms/) for more information.
 
    Use one of the following strategies to update dashboards.
 
-   - (Recommended) Add new dashboards with the new native histogram queries. This solution requires looking at different dashboards for data before and after the migration, until data before the migration is removed due to passing its retention time. You can publish the new dashboard when sufficient time has passed to serve users with the new data.
+   - (Recommended) Add new dashboards with the new native histograms queries. This solution requires looking at different dashboards for data before and after the migration, until data before the migration is removed due to passing its retention time. You can publish the new dashboard when sufficient time has passed to serve users with the new data.
    - Add a dashboard variable to your dashboard to enable switching between classic histograms and native histograms. There isn't support for selectively enabling and disabling queries in Grafana ([issue 79848](https://github.com/grafana/grafana/issues/79848)). As a workaround, add the dashboard variable `latency_metrics`, for example, and assign it a value of either `-1` or `1`. Then, add the following two queries to the panel:
 
      ```
@@ -236,11 +236,11 @@ To ease the migration process, you can keep the custom bucket definition of a cl
      (<native_query>) and on() (vector($latency_metrics) == -1)
      ```
 
-     Where `classic_query` is the original query and `native_query` is the same query using native histogram query syntax placed inside parentheses. Grafana Mimir dashboards use this technique. For an example, refer to the [Overview dashboard](https://github.com/grafana/mimir/blob/main/operations/mimir-mixin-compiled/dashboards/mimir-overview.json) in the Grafana Mimir repository.
+     Where `classic_query` is the original query and `native_query` is the same query using native histograms query syntax placed inside parentheses. Grafana Mimir dashboards use this technique. For an example, refer to the [Overview dashboard](https://github.com/grafana/mimir/blob/main/operations/mimir-mixin-compiled/dashboards/mimir-overview.json) in the Grafana Mimir repository.
 
-     This solution allows users to switch between the classic histogram and the native histogram without going to a different dashboard.
+     This solution allows users to switch between classic histograms and native histograms without going to a different dashboard.
 
-   - Replace the existing classic queries with modified queries. For example, replace:
+   - Replace the existing classic histograms queries with modified queries. For example, replace:
 
      ```
      <classic_query>
@@ -252,7 +252,7 @@ To ease the migration process, you can keep the custom bucket definition of a cl
      <native_query> or <classic_query>
      ```
 
-     Where `classic_query` is the original query and `native_query` is the same query using native histogram query syntax.
+     Where `classic_query` is the original query and `native_query` is the same query using native histograms query syntax.
 
      {{< admonition type="warning" >}}
      Using the PromQL operator `or` can lead to unexpected results. For example, if a query uses a range of seven days, such as `sum(rate(http_request_duration_seconds[7d]))`, then this query returns a value as soon as there are two native histograms samples present before the end time specified in the query. In this case, the seven day rate is calculated from a couple of minutes, rather than seven days, worth of data. This results in an inaccuracy in the graph around the time you started scraping native histograms.
