@@ -5,6 +5,7 @@
 ### Grafana Mimir
 
 * [BUGFIX] Update to Go v1.23.12 to address [CVE-2025-22871](https://nvd.nist.gov/vuln/detail/CVE-2025-22871), [CVE-2025-4673](https://nvd.nist.gov/vuln/detail/CVE-2025-4673), [CVE-2025-0913](https://nvd.nist.gov/vuln/detail/CVE-2025-0913). #12582
+* [BUGFIX] Update Docker base images for tools from `alpine:3.21.3` to `alpine:3.21.5` to address [CVE-2025-9230](https://nvd.nist.gov/vuln/detail/CVE-2025-9230), [CVE-2025-9231](https://nvd.nist.gov/vuln/detail/CVE-2025-9231), [CVE-2025-2025-9232](https://nvd.nist.gov/vuln/detail/CVE-2025-9232). #XXXX
 
 ## 2.16.1
 
