@@ -5,7 +5,6 @@ package streamingpromql
 import (
 	"context"
 	"fmt"
-	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"strconv"
 	"strings"
 	"testing"
@@ -15,6 +14,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
@@ -1681,5 +1681,5 @@ func (t *testNode) ExpressionPosition() posrange.PositionRange {
 }
 
 func (t *testNode) MinimumRequiredPlanVersion() int64 {
-	return int64(t.NumberLiteralDetails.Value)
+	return int64(t.Value)
 }
