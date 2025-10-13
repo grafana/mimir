@@ -198,10 +198,8 @@ func (p *QueryPlan) DeterminePlanVersion() error {
 
 func (p *QueryPlan) maxMinimumRequiredPlanVersion(node Node) int64 {
 	maxVersion := node.MinimumRequiredPlanVersion()
-	if node.Children() != nil {
-		for _, child := range node.Children() {
-			maxVersion = max(maxVersion, p.maxMinimumRequiredPlanVersion(child))
-		}
+	for _, child := range node.Children() {
+		maxVersion = max(maxVersion, p.maxMinimumRequiredPlanVersion(child))
 	}
 	return maxVersion
 }

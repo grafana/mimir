@@ -1165,7 +1165,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 func TestPlanVersioning(t *testing.T) {
 
 	planning.RegisterNodeFactory(func() planning.Node {
-		return &testNode{NumberLiteralDetails: &core.NumberLiteralDetails{}}
+		return &versioningTestNode{NumberLiteralDetails: &core.NumberLiteralDetails{}}
 	})
 
 	originalMaximumPlanVersion := planning.MaximumSupportedQueryPlanVersion
@@ -1619,67 +1619,67 @@ func TestFunctionNeedsDeduplicationHandlesAllKnownFunctions(t *testing.T) {
 	}
 }
 
-// testNode is a node for use with TestPlanVersioning.
+// versioningTestNode is a node for use with TestPlanVersioning.
 // It uses the NumberLiteralDetails to encode an arbitrary minimumRequiredPlanVersion
 // Note that most of the Node interface functions return dummy values, and it does not support children.
-type testNode struct {
+type versioningTestNode struct {
 	*core.NumberLiteralDetails
 }
 
-func newTestNode(minimumRequiredPlanVersion int64) *testNode {
-	return &testNode{
+func newTestNode(minimumRequiredPlanVersion int64) *versioningTestNode {
+	return &versioningTestNode{
 		NumberLiteralDetails: &core.NumberLiteralDetails{Value: float64(minimumRequiredPlanVersion)},
 	}
 }
 
-func (t *testNode) Describe() string {
+func (t *versioningTestNode) Describe() string {
 	return ""
 }
 
-func (t *testNode) ChildrenLabels() []string {
+func (t *versioningTestNode) ChildrenLabels() []string {
 	return []string{}
 }
 
-func (t *testNode) Details() proto.Message {
+func (t *versioningTestNode) Details() proto.Message {
 	return t.NumberLiteralDetails
 }
 
-func (t *testNode) NodeType() planning.NodeType {
+func (t *versioningTestNode) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_TEST
 }
 
-func (t *testNode) Children() []planning.Node {
+func (t *versioningTestNode) Children() []planning.Node {
 	return []planning.Node{}
 }
 
-func (t *testNode) SetChildren(children []planning.Node) error {
+func (t *versioningTestNode) SetChildren(children []planning.Node) error {
 	if len(children) != 0 {
 		panic("not supported")
 	}
 	return nil
 }
 
-func (t *testNode) EquivalentTo(other planning.Node) bool {
-	otherTestNode, ok := other.(*testNode)
+func (t *versioningTestNode) EquivalentTo(other planning.Node) bool {
+	otherTestNode, ok := other.(*versioningTestNode)
 	return ok && t.NumberLiteralDetails == otherTestNode.NumberLiteralDetails
 }
 
-func (t *testNode) ChildrenTimeRange(_ types.QueryTimeRange) types.QueryTimeRange {
+func (t *versioningTestNode) ChildrenTimeRange(_ types.QueryTimeRange) types.QueryTimeRange {
 	return types.QueryTimeRange{}
 }
 
-func (t *testNode) ResultType() (parser.ValueType, error) {
+func (t *versioningTestNode) ResultType() (parser.ValueType, error) {
 	return parser.ValueTypeScalar, nil
 }
 
-func (t *testNode) QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) planning.QueriedTimeRange {
+func (t *versioningTestNode) QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) planning.QueriedTimeRange {
 	return planning.NoDataQueried()
 }
 
-func (t *testNode) ExpressionPosition() posrange.PositionRange {
+func (t *versioningTestNode) ExpressionPosition() posrange.PositionRange {
 	return posrange.PositionRange{}
 }
 
-func (t *testNode) MinimumRequiredPlanVersion() int64 {
+func (t *versioningTestNode) MinimumRequiredPlanVersion() int64 {
 	return int64(t.Value)
 }
