@@ -54,11 +54,11 @@ This guidance applies to ingest storage architecture.
 For more information about the supported architectures in Grafana Mimir, refer to [Grafana Mimir architecture](https://grafana.com/docs/mimir/<MIMIR_VERSION>/get-started/about-grafana-mimir-architecture/).
 {{< /admonition >}}
 
-When running Grafana Mimir with the ingest storage architecture, scaling down ingesters triggers the reassignment of ingestion partitions instead of transferring in-memory series ownership between ingesters.
+When running Grafana Mimir with ingest storage architecture, scaling down ingesters triggers the reassignment of ingestion partitions instead of transferring in-memory series ownership between ingesters.
 
 The ingestion layer durably stores each partition and can reassign it to a new ingester without data loss. When you terminate or scale down an ingester, the system transitions its assigned partitions through the partition lifecycle until another ingester safely takes ownership.
 
-For details about how partitions are created, reassigned, and transitioned between states, refer to [Hash ring partitions and lifecycle](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/hash-ring/#partition-lifecycle).
+For details about how partitions are created, reassigned, and transitioned between states, refer to [Grafana Mimir hash rings](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/hash-ring/#partition-lifecycle).
 
 Because the system writes ingestion data to Kafka and persists it in object storage, scaling down ingesters in the ingest storage architecture doesn't require draining in-memory series or handoff operations. However, ensure all partitions finish reassignment before you permanently remove ingesters to avoid temporary ingestion delays.
 
@@ -91,10 +91,7 @@ You might experience the following challenges when you scale down ingesters:
 
 Complete the following steps to scale down ingesters in any zone.
 
-1. Set each ingester to read-only mode:
-
-   1. Send a POST request to the `/ingester/prepare-instance-ring-downscale` API endpoint on the ingester to place it into read-only mode.
-
+1. Send a POST request to the `/ingester/prepare-instance-ring-downscale` API endpoint on each ingester to place it into read-only mode.
 1. Wait until the blocks uploaded by read-only ingesters are available for querying before proceeding. The required amount of time to wait depends on your configuration and is the maximum value for the following settings:
 
    - The configured `-querier.query-store-after` setting
