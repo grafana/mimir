@@ -25,6 +25,8 @@ import (
 var MaximumSupportedQueryPlanVersion = QueryPlanVersionOne
 
 const QueryPlanVersionZero = int64(0)
+
+// QueryPlanVersionOne introduces support for step invariant expression nodes
 const QueryPlanVersionOne = int64(1)
 
 type QueryPlan struct {
