@@ -6,14 +6,15 @@ package planning
 import (
 	bytes "bytes"
 	fmt "fmt"
-	_ "github.com/gogo/protobuf/gogoproto"
-	proto "github.com/gogo/protobuf/proto"
 	io "io"
 	math "math"
 	math_bits "math/bits"
 	reflect "reflect"
 	strconv "strconv"
 	strings "strings"
+
+	_ "github.com/gogo/protobuf/gogoproto"
+	proto "github.com/gogo/protobuf/proto"
 )
 
 // Reference imports to suppress errors if they are not otherwise used.
@@ -44,9 +45,9 @@ const (
 	NODE_TYPE_SUBQUERY              NodeType = 9
 	NODE_TYPE_DUPLICATE             NodeType = 10
 	NODE_TYPE_DEDUPLICATE_AND_MERGE NodeType = 11
-	NODE_TYPE_NAME_DROP             NodeType = 13
 	NODE_TYPE_REMOTE_EXEC           NodeType = 12
-	NODE_TYPE_TEST                  NodeType = 14
+	NODE_TYPE_TEST                  NodeType = 13
+	NODE_TYPE_NAME_DROP             NodeType = 14
 )
 
 var NodeType_name = map[int32]string{
