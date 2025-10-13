@@ -25,9 +25,9 @@ memcached {
   },
 
   // Creates a memcached instance used to cache query results.
-  newMemcachedFrontend()::
+  newMemcachedFrontend(name)::
     $.memcached {
-      name: 'memcached-frontend',
+      name: name,
       max_item_size: '%dm' % [$._config.cache_frontend_max_item_size_mb],
       overprovision_factor: 1.05,
       connection_limit: std.toString($._config.cache_frontend_connection_limit),
@@ -39,13 +39,13 @@ memcached {
 
   memcached_frontend:
     if $._config.cache_frontend_enabled then
-      $.newMemcachedFrontend()
+      $.newMemcachedFrontend('memcached-frontend')
     else {},
 
   // Creates a memcached instance used to temporarily cache index lookups.
-  newMemcachedIndexQueries()::
+  newMemcachedIndexQueries(name)::
     $.memcached {
-      name: 'memcached-index-queries',
+      name: name,
       max_item_size: '%dm' % [$._config.cache_index_queries_max_item_size_mb],
       overprovision_factor: 1.05,
       connection_limit: std.toString($._config.cache_index_queries_connection_limit),
@@ -57,13 +57,13 @@ memcached {
 
   memcached_index_queries:
     if $._config.cache_index_queries_enabled then
-      $.newMemcachedIndexQueries()
+      $.newMemcachedIndexQueries('memcached-index-queries')
     else {},
 
   // Creates a memcached instance used to cache chunks.
-  newMemcachedChunks()::
+  newMemcachedChunks(name)::
     $.memcached {
-      name: 'memcached',
+      name: name,
       max_item_size: '%dm' % [$._config.cache_chunks_max_item_size_mb],
 
       // Save memory by more tightly provisioning memcached chunks.
@@ -78,13 +78,13 @@ memcached {
 
   memcached_chunks:
     if $._config.cache_chunks_enabled then
-      $.newMemcachedChunks()
+      $.newMemcachedChunks('memcached')
     else {},
 
   // Creates a memcached instance for caching TSDB blocks metadata (meta.json files, deletion marks, list of users and blocks).
-  newMemcachedMetadata()::
+  newMemcachedMetadata(name)::
     $.memcached {
-      name: 'memcached-metadata',
+      name: name,
       max_item_size: '%dm' % [$._config.cache_metadata_max_item_size_mb],
       connection_limit: std.toString($._config.cache_metadata_connection_limit),
       min_ready_seconds: $._config.cache_metadata_min_ready_seconds,
@@ -99,6 +99,6 @@ memcached {
 
   memcached_metadata:
     if $._config.cache_metadata_enabled then
-      $.newMemcachedMetadata()
+      $.newMemcachedMetadata('memcached-metadata')
     else {},
 }
