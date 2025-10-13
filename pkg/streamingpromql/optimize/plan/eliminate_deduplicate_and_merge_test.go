@@ -4,12 +4,12 @@ package plan_test
 
 import (
 	"context"
+	"io"
+	"io/fs"
+	"os"
+	"strings"
 	"testing"
 	"time"
-
-	"github.com/prometheus/prometheus/model/timestamp"
-	"github.com/prometheus/prometheus/promql/promqltest"
-	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/streamingpromql"
@@ -18,6 +18,10 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
 	"github.com/grafana/mimir/pkg/streamingpromql/testutils"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
+	"github.com/prometheus/prometheus/model/timestamp"
+	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/prometheus/prometheus/promql/promqltest"
+	"github.com/stretchr/testify/require"
 )
 
 func TestEliminateDeduplicateAndMergeOptimizationPassPlan(t *testing.T) {
@@ -552,6 +556,48 @@ func TestEliminateDeduplicateAndMergeOptimizationPassCorrectness(t *testing.T) {
 			t.Run("with optimization", func(t *testing.T) {
 				runTest(t, true)
 			})
+		})
+	}
+}
+
+// Test runs upstream and our test cases with delayed name removal disabled, ensuring that the optimization pass doesn't cause regressions.
+// It's needed because in TestUpstreamTestCases and TestOurTestCase delayed name removal is enabled, but the optimization pass requires it to be disabled.
+func TestEliminateDeduplicateAndMergeOptimizationDoesNotRegress(t *testing.T) {
+	runTestCasesWithDelayedNameRemovalDisabled(t, "upstream/*.test")
+	runTestCasesWithDelayedNameRemovalDisabled(t, "ours*/*.test")
+}
+
+func runTestCasesWithDelayedNameRemovalDisabled(t *testing.T, globPattern string) {
+
+	types.EnableManglingReturnedSlices = true
+	parser.ExperimentalDurationExpr = true
+	parser.EnableExperimentalFunctions = true
+
+	testdataFS := os.DirFS("../../testdata")
+	testFiles, err := fs.Glob(testdataFS, globPattern)
+	require.NoError(t, err)
+
+	for _, testFile := range testFiles {
+		t.Run(testFile, func(t *testing.T) {
+			if strings.Contains(testFile, "name_label_dropping") {
+				t.Skip("name_label_dropping tests require delayed name removal to be enabled, but optimization pass requires it to be disabled")
+			}
+
+			f, err := testdataFS.Open(testFile)
+			require.NoError(t, err)
+			defer f.Close()
+
+			b, err := io.ReadAll(f)
+			require.NoError(t, err)
+
+			testScript := string(b)
+			opts := streamingpromql.NewTestEngineOpts()
+			opts.CommonOpts.EnableDelayedNameRemoval = false
+			planner, err := streamingpromql.NewQueryPlanner(opts)
+			require.NoError(t, err)
+			engine, err := streamingpromql.NewEngine(opts, streamingpromql.NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), planner)
+			require.NoError(t, err)
+			promqltest.RunTest(t, testScript, engine)
 		})
 	}
 }
