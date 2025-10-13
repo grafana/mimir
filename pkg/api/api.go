@@ -284,8 +284,11 @@ func (a *API) RegisterDistributor(d *distributor.Distributor, pushConfig distrib
 	}
 
 	a.RegisterRoute(OTLPPushEndpoint, distributor.OTLPHandler(
-		pushConfig.MaxOTLPRequestSize, d.RequestBufferPool, a.sourceIPs, limits, pushConfig.OTelResourceAttributePromotionConfig,
-		pushConfig.RetryConfig, pushConfig.OTLPPushMiddlewares, d.PushWithMiddlewares, d.PushMetrics, reg, a.logger,
+		pushConfig.MaxOTLPRequestSize, d.RequestBufferPool, a.sourceIPs, limits,
+		pushConfig.OTelResourceAttributePromotionConfig,
+		pushConfig.KeepIdentifyingOTelResourceAttributesConfig,
+		pushConfig.RetryConfig, pushConfig.OTLPPushMiddlewares,
+		d.PushWithMiddlewares, d.PushMetrics, reg, a.logger,
 	), true, false, "POST")
 
 	a.indexPage.AddLinks(defaultWeight, "Distributor", []IndexPageLink{
