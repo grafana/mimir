@@ -392,6 +392,12 @@ func DefaultTenantManagerFactory(
 			zeroFetchedSeriesCount = zeroFetchedSeriesQueries.WithLabelValues(userID)
 		}
 
+		// queryFunc is used for Group.Eval and queryable is used of Group.RestoreForState.
+		// See rules.ManagerOptions for the details.
+		// For memoryTracking purpose, queryFunc must have been wrapped with engine that returns
+		// an UnlimitedMemoryTrackingQuery, hence no more wrapping needed.
+		// But queryable yet to be wrapped, therefore we wrap it with NewUnlimitedMemoryTrackerQueryable below.
+
 		// Wrap the query function with our custom logic.
 		wrappedQueryFunc := WrapQueryFuncWithReadConsistency(queryFunc, overrides, userID, logger)
 		remoteQuerier := cfg.QueryFrontend.Address != ""
@@ -401,8 +407,8 @@ func DefaultTenantManagerFactory(
 		// Wrap the queryable with our custom logic.
 		wrappedQueryable := WrapQueryableWithReadConsistency(queryable, logger)
 		// Wrap the queryable to ensure all queries have a memory tracker in the context.
-		// This is needed for ruler operations like alert state restoration that may bypass
-		// the query engine's NewInstantQuery/NewRangeQuery methods.
+		// This is needed for ruler operations, specifically alert state restoration that is not using
+		// the query engine's NewInstantQuery/NewRangeQuery methods from UnlimitedMemoryTrackerPromQLEngine.
 		wrappedQueryable = NewUnlimitedMemoryTrackerQueryable(wrappedQueryable)
 
 		var appendeable storage.Appendable
