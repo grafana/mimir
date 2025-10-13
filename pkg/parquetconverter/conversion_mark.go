@@ -25,43 +25,37 @@ const (
 )
 
 type ConversionMark struct {
-	Version    int `json:"version"`
-	ShardCount int `json:"shard_count"`
+	Version int `json:"version"`
 }
 
-func ReadConversionMark(ctx context.Context, id ulid.ULID, userBkt objstore.InstrumentedBucket, logger log.Logger) (*ConversionMark, bool, error) {
+func ReadConversionMark(ctx context.Context, id ulid.ULID, userBkt objstore.InstrumentedBucket, logger log.Logger) (*ConversionMark, error) {
 	markPath := path.Join(id.String(), ParquetConversionMarkFileName)
 	reader, err := userBkt.WithExpectedErrs(func(e error) bool {
 		return userBkt.IsAccessDeniedErr(e) && userBkt.IsObjNotFoundErr(e)
 	}).Get(ctx, markPath)
 	if err != nil {
 		if userBkt.IsObjNotFoundErr(err) {
-			return nil, false, nil
+			return &ConversionMark{}, nil
 		}
 
-		return nil, false, err
+		return &ConversionMark{}, err
 	}
 
 	defer runutil.CloseWithLogOnErr(logger, reader, "close bucket index reader")
 
 	metaContent, err := io.ReadAll(reader)
 	if err != nil {
-		return nil, false, errors.Wrapf(err, "read file: %s", ParquetConversionMarkFileName)
+		return nil, errors.Wrapf(err, "read file: %s", ParquetConversionMarkFileName)
 	}
 
-	mark := ConversionMark{
-		// Default to 1 shard if not set, for retrocompatibility
-		ShardCount: 1,
-	}
+	mark := ConversionMark{}
 	err = json.Unmarshal(metaContent, &mark)
-	return &mark, err == nil, err
+	return &mark, err
 }
 
 func WriteConversionMark(ctx context.Context, id ulid.ULID, userBkt objstore.InstrumentedBucket) error {
 	mark := ConversionMark{
 		Version: CurrentVersion,
-		// TODO: replace once we add multi shard conversion
-		ShardCount: 1,
 	}
 	markPath := path.Join(id.String(), ParquetConversionMarkFileName)
 	b, err := json.Marshal(mark)

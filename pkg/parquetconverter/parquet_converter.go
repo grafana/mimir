@@ -491,13 +491,13 @@ func (c *ParquetConverter) processBlock(ctx context.Context, userID string, meta
 	}()
 
 	var mark *ConversionMark
-	mark, ok, err = ReadConversionMark(ctx, meta.ULID, uBucket, logger)
+	mark, err = ReadConversionMark(ctx, meta.ULID, uBucket, logger)
 	if err != nil {
 		level.Error(logger).Log("msg", "failed to read conversion mark, skipping", "err", err, "block", meta.ULID.String())
 		return
 	}
 
-	if ok && mark.Version == CurrentVersion {
+	if mark.Version == CurrentVersion {
 		skipped = true
 		ulidTime := time.UnixMilli(int64(meta.ULID.Time()))
 		level.Info(logger).Log(
@@ -651,10 +651,10 @@ func (c *ParquetConverter) shouldProcessBlock(ctx context.Context, meta *block.M
 		}
 	}
 
-	mark, ok, err := ReadConversionMark(ctx, meta.ULID, uBucket, nil)
+	mark, err := ReadConversionMark(ctx, meta.ULID, uBucket, nil)
 	if err != nil {
 		return "", fmt.Errorf("error reading conversion mark: %w", err)
-	} else if ok && mark.Version == CurrentVersion {
+	} else if mark.Version == CurrentVersion {
 		return "conversion mark found", nil
 	}
 
