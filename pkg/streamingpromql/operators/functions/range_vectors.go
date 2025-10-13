@@ -336,9 +336,10 @@ func sumHistograms(head, tail []promql.HPoint, emitAnnotation types.EmitAnnotati
 	notCounterResetSeen := false
 
 	trackCounterReset := func(h *histogram.FloatHistogram) {
-		if h.CounterResetHint == histogram.CounterReset {
+		switch h.CounterResetHint {
+		case histogram.CounterReset:
 			counterResetSeen = true
-		} else if h.CounterResetHint == histogram.NotCounterReset {
+		case histogram.NotCounterReset:
 			notCounterResetSeen = true
 		}
 	}
@@ -476,9 +477,10 @@ func avgHistograms(head, tail []promql.HPoint, emitAnnotation types.EmitAnnotati
 	notCounterResetSeen := false
 
 	trackCounterReset := func(h *histogram.FloatHistogram) {
-		if h.CounterResetHint == histogram.CounterReset {
+		switch h.CounterResetHint {
+		case histogram.CounterReset:
 			counterResetSeen = true
-		} else if h.CounterResetHint == histogram.NotCounterReset {
+		case histogram.NotCounterReset:
 			notCounterResetSeen = true
 		}
 	}
