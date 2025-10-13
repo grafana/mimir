@@ -127,12 +127,11 @@ To configure the ingesters hash ring, refer to [Configure Grafana Mimir hash rin
 ### Read-only mode
 
 {{< admonition type="note" >}}
-This guidance applies to classic architecture. For more information about the supported architectures in Grafana Mimir, refer to [Grafana Mimir architecture](https://grafana.com/docs/mimir/<MIMIR_VERSION>/get-started/about-grafana-mimir-architecture/).
+This feature is used exclusively in classic architecture. For more information about the supported architectures in Grafana Mimir, refer to [Grafana Mimir architecture](https://grafana.com/docs/mimir/<MIMIR_VERSION>/get-started/about-grafana-mimir-architecture/).
 {{< /admonition >}}
 
 Ingesters have an additional property in the ring called "read-only" mode.
 This information is stored separately from the ingester’s instance state, so an ingester can be in any supported state, for example, `ACTIVE` or `LEAVING`, while also being in read-only mode.
-This feature is used exclusively in the classic architecture.
 
 When an ingester is in read-only mode, it stops receiving write requests from distributors but continues to serve read requests.
 In the write path, read-only ingesters are excluded from the shard computation used for distributing tenant writes.
