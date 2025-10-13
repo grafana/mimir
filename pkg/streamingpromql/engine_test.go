@@ -227,7 +227,7 @@ func TestOurTestCases(t *testing.T) {
 	optsWithDelayedNameRemoval := NewTestEngineOpts()
 	optsWithDelayedNameRemoval.CommonOpts.EnableDelayedNameRemoval = true
 	// Disable the optimization pass, since it requires delayed name removal to be enabled.
-	opts.EnableEliminateDeduplicateAndMerge = false
+	optsWithDelayedNameRemoval.EnableEliminateDeduplicateAndMerge = false
 	mimirEngineWithDelayedNameRemoval, prometheusEngineWithDelayedNameRemoval := makeEngines(t, optsWithDelayedNameRemoval)
 
 	testdataFS := os.DirFS("./testdata")
