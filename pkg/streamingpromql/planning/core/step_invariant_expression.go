@@ -29,7 +29,8 @@ func (s *StepInvariantExpression) Describe() string {
 }
 
 func (s *StepInvariantExpression) ChildrenTimeRange(timeRange types.QueryTimeRange) types.QueryTimeRange {
-	return timeRange
+	// note that we set the StartT == EndT with a single step count.
+	return types.NewInstantQueryTimeRange(timestamp.Time(timeRange.StartT))
 }
 
 func (s *StepInvariantExpression) Details() proto.Message {
@@ -68,9 +69,7 @@ func (s *StepInvariantExpression) ChildrenLabels() []string {
 }
 
 func MaterializeStepInvariantExpression(s *StepInvariantExpression, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
-
-	// note that we set the StartT == EndT with a single step count.
-	adjustedTimeRange := types.NewInstantQueryTimeRange(timestamp.Time(timeRange.StartT))
+	adjustedTimeRange := s.ChildrenTimeRange(timeRange)
 
 	op, err := materializer.ConvertNodeToOperator(s.Inner, adjustedTimeRange)
 	if err != nil {
