@@ -256,6 +256,10 @@ func (b *BinaryExpression) ExpressionPosition() posrange.PositionRange {
 	return b.GetExpressionPosition().ToPrometheusType()
 }
 
+func (b *BinaryExpression) MinimumRequiredPlanVersion() int64 {
+	return planning.QueryPlanVersionZero
+}
+
 func (v *VectorMatching) Equals(other *VectorMatching) bool {
 	if v == nil && other == nil {
 		// Both are nil.

@@ -100,3 +100,7 @@ func (v *VectorSelector) QueriedTimeRange(queryTimeRange types.QueryTimeRange, l
 func (v *VectorSelector) ExpressionPosition() posrange.PositionRange {
 	return v.GetExpressionPosition().ToPrometheusType()
 }
+
+func (v *VectorSelector) MinimumRequiredPlanVersion() int64 {
+	return planning.QueryPlanVersionZero
+}

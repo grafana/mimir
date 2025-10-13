@@ -75,6 +75,10 @@ func (d *DeduplicateAndMerge) ExpressionPosition() posrange.PositionRange {
 	return d.Inner.ExpressionPosition()
 }
 
+func (d *DeduplicateAndMerge) MinimumRequiredPlanVersion() int64 {
+	return planning.QueryPlanVersionZero
+}
+
 func MaterializeDeduplicateAndMerge(d *DeduplicateAndMerge, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
 	inner, err := materializer.ConvertNodeToInstantVectorOperator(d.Inner, timeRange)
 	if err != nil {

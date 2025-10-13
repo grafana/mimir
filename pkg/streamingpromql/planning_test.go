@@ -14,6 +14,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
@@ -1162,20 +1163,24 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 }
 
 func TestPlanVersioning(t *testing.T) {
+
+	planning.RegisterNodeFactory(func() planning.Node {
+		return &versioningTestNode{NumberLiteralDetails: &core.NumberLiteralDetails{}}
+	})
+
 	originalMaximumPlanVersion := planning.MaximumSupportedQueryPlanVersion
 	planning.MaximumSupportedQueryPlanVersion = 9001
 	t.Cleanup(func() { planning.MaximumSupportedQueryPlanVersion = originalMaximumPlanVersion })
 
+	// Plan has a node which has a min required plan version of 9000
 	plan := &planning.QueryPlan{
-		TimeRange: types.NewInstantQueryTimeRange(time.Now()),
-		Root: &core.NumberLiteral{
-			NumberLiteralDetails: &core.NumberLiteralDetails{
-				Value: 123,
-			},
-		},
+		TimeRange:          types.NewInstantQueryTimeRange(time.Now()),
+		Root:               newTestNode(9000),
 		OriginalExpression: "123",
-		Version:            9000,
 	}
+
+	err := plan.DeterminePlanVersion()
+	require.NoError(t, err)
 
 	encoded, err := plan.ToEncodedPlan(false, true)
 	require.NoError(t, err)
@@ -1612,4 +1617,69 @@ func TestFunctionNeedsDeduplicationHandlesAllKnownFunctions(t *testing.T) {
 			}, "functionNeedsDeduplication should handle %s", name)
 		})
 	}
+}
+
+// versioningTestNode is a node for use with TestPlanVersioning.
+// It uses the NumberLiteralDetails to encode an arbitrary minimumRequiredPlanVersion
+// Note that most of the Node interface functions return dummy values, and it does not support children.
+type versioningTestNode struct {
+	*core.NumberLiteralDetails
+}
+
+func newTestNode(minimumRequiredPlanVersion int64) *versioningTestNode {
+	return &versioningTestNode{
+		NumberLiteralDetails: &core.NumberLiteralDetails{Value: float64(minimumRequiredPlanVersion)},
+	}
+}
+
+func (t *versioningTestNode) Describe() string {
+	return ""
+}
+
+func (t *versioningTestNode) ChildrenLabels() []string {
+	return []string{}
+}
+
+func (t *versioningTestNode) Details() proto.Message {
+	return t.NumberLiteralDetails
+}
+
+func (t *versioningTestNode) NodeType() planning.NodeType {
+	return planning.NODE_TYPE_TEST
+}
+
+func (t *versioningTestNode) Children() []planning.Node {
+	return []planning.Node{}
+}
+
+func (t *versioningTestNode) SetChildren(children []planning.Node) error {
+	if len(children) != 0 {
+		panic("not supported")
+	}
+	return nil
+}
+
+func (t *versioningTestNode) EquivalentTo(other planning.Node) bool {
+	otherTestNode, ok := other.(*versioningTestNode)
+	return ok && t.NumberLiteralDetails == otherTestNode.NumberLiteralDetails
+}
+
+func (t *versioningTestNode) ChildrenTimeRange(_ types.QueryTimeRange) types.QueryTimeRange {
+	return types.QueryTimeRange{}
+}
+
+func (t *versioningTestNode) ResultType() (parser.ValueType, error) {
+	return parser.ValueTypeScalar, nil
+}
+
+func (t *versioningTestNode) QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) planning.QueriedTimeRange {
+	return planning.NoDataQueried()
+}
+
+func (t *versioningTestNode) ExpressionPosition() posrange.PositionRange {
+	return posrange.PositionRange{}
+}
+
+func (t *versioningTestNode) MinimumRequiredPlanVersion() int64 {
+	return int64(t.Value)
 }
