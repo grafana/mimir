@@ -1112,9 +1112,9 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 						Description: `{__name__="some_metric"}`,
 					},
 					{
-						NodeType:       planning.NODE_TYPE_NAME_DROP,
-						Details:        marshalDetails(&core.NameDropDetails{}),
-						Type:           "NameDrop",
+						NodeType:       planning.NODE_TYPE_DROP_NAME,
+						Details:        marshalDetails(&core.DropNameDetails{}),
+						Type:           "DropName",
 						Description:    "drop metric names",
 						Children:       []int64{0},
 						ChildrenLabels: []string{""},

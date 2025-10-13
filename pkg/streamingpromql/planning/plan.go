@@ -26,6 +26,9 @@ var MaximumSupportedQueryPlanVersion = int64(0)
 
 const QueryPlanVersionZero = int64(0)
 
+// QueryPlanVersionOne is the version of the query plan that introduces the DropName node.
+const QueryPlanVersionOne = int64(1)
+
 type QueryPlan struct {
 	TimeRange types.QueryTimeRange
 	Root      Node

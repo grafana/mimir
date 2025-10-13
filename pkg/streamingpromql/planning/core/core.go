@@ -38,7 +38,7 @@ func init() {
 		return &DeduplicateAndMerge{DeduplicateAndMergeDetails: &DeduplicateAndMergeDetails{}}
 	})
 	planning.RegisterNodeFactory(func() planning.Node {
-		return &NameDrop{NameDropDetails: &NameDropDetails{}}
+		return &DropName{DropNameDetails: &DropNameDetails{}}
 	})
 }
 

@@ -15,7 +15,7 @@ import (
 	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
-func TestNameDrop(t *testing.T) {
+func TestDropName(t *testing.T) {
 	testCases := map[string]struct {
 		inputSeries            []labels.Labels
 		inputData              []types.InstantVectorSeriesData
@@ -69,7 +69,7 @@ func TestNameDrop(t *testing.T) {
 				DropName:                 testCase.inputDropName,
 				MemoryConsumptionTracker: memoryConsumptionTracker,
 			}
-			o := NewNameDrop(inner, memoryConsumptionTracker)
+			o := NewDropName(inner, memoryConsumptionTracker)
 
 			outputSeriesMetadata, err := o.SeriesMetadata(ctx, nil)
 			require.NoError(t, err)

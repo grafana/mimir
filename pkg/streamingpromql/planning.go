@@ -210,7 +210,7 @@ func (p *QueryPlanner) NewQueryPlan(ctx context.Context, qs string, timeRange ty
 
 		if p.enableDelayedNameRemoval {
 			var err error
-			root, err = p.insertNameDropOperator(root)
+			root, err = p.insertDropNameOperator(root)
 			if err != nil {
 				return nil, err
 			}
@@ -254,13 +254,13 @@ func (p *QueryPlanner) NewQueryPlan(ctx context.Context, qs string, timeRange ty
 	return plan, err
 }
 
-func (p *QueryPlanner) insertNameDropOperator(root planning.Node) (planning.Node, error) {
+func (p *QueryPlanner) insertDropNameOperator(root planning.Node) (planning.Node, error) {
 	if dedupAndMerge, ok := root.(*core.DeduplicateAndMerge); ok {
-		// If root is already DeduplicateAndMerge, insert NameDrop between it and its inner node
+		// If root is already DeduplicateAndMerge, insert DropName between it and its inner node
 		return &core.DeduplicateAndMerge{
-			Inner: &core.NameDrop{
+			Inner: &core.DropName{
 				Inner:           dedupAndMerge.Inner,
-				NameDropDetails: &core.NameDropDetails{},
+				DropNameDetails: &core.DropNameDetails{},
 			},
 			DeduplicateAndMergeDetails: dedupAndMerge.DeduplicateAndMergeDetails,
 		}, nil
@@ -274,9 +274,9 @@ func (p *QueryPlanner) insertNameDropOperator(root planning.Node) (planning.Node
 	}
 	if shouldWrap {
 		return &core.DeduplicateAndMerge{
-			Inner: &core.NameDrop{
+			Inner: &core.DropName{
 				Inner:           root,
-				NameDropDetails: &core.NameDropDetails{},
+				DropNameDetails: &core.DropNameDetails{},
 			},
 			DeduplicateAndMergeDetails: &core.DeduplicateAndMergeDetails{},
 		}, nil

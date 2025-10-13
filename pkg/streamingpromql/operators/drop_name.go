@@ -11,18 +11,18 @@ import (
 	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
-type NameDrop struct {
+type DropName struct {
 	Inner                    types.InstantVectorOperator
 	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
 }
 
-var _ types.InstantVectorOperator = &NameDrop{}
+var _ types.InstantVectorOperator = &DropName{}
 
-func NewNameDrop(inner types.InstantVectorOperator, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) *NameDrop {
-	return &NameDrop{Inner: inner, MemoryConsumptionTracker: memoryConsumptionTracker}
+func NewDropName(inner types.InstantVectorOperator, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) *DropName {
+	return &DropName{Inner: inner, MemoryConsumptionTracker: memoryConsumptionTracker}
 }
 
-func (n *NameDrop) SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
+func (n *DropName) SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
 	innerMetadata, err := n.Inner.SeriesMetadata(ctx, matchers)
 
 	if err != nil {
@@ -46,22 +46,22 @@ func (n *NameDrop) SeriesMetadata(ctx context.Context, matchers types.Matchers) 
 	return innerMetadata, nil
 }
 
-func (n *NameDrop) NextSeries(ctx context.Context) (types.InstantVectorSeriesData, error) {
+func (n *DropName) NextSeries(ctx context.Context) (types.InstantVectorSeriesData, error) {
 	return n.Inner.NextSeries(ctx)
 }
 
-func (n *NameDrop) ExpressionPosition() posrange.PositionRange {
+func (n *DropName) ExpressionPosition() posrange.PositionRange {
 	return n.Inner.ExpressionPosition()
 }
 
-func (n *NameDrop) Prepare(ctx context.Context, params *types.PrepareParams) error {
+func (n *DropName) Prepare(ctx context.Context, params *types.PrepareParams) error {
 	return n.Inner.Prepare(ctx, params)
 }
 
-func (n *NameDrop) Finalize(ctx context.Context) error {
+func (n *DropName) Finalize(ctx context.Context) error {
 	return n.Inner.Finalize(ctx)
 }
 
-func (n *NameDrop) Close() {
+func (n *DropName) Close() {
 	n.Inner.Close()
 }
