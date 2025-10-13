@@ -214,6 +214,12 @@ func newOTLPParser(
 	discardedDueToOtelParseError *prometheus.CounterVec,
 	OTLPPushMiddlewares []OTLPPushMiddleware,
 ) parserFunc {
+	if resourceAttributePromotionConfig == nil {
+		resourceAttributePromotionConfig = limits
+	}
+	if keepIdentifyingOTelResourceAttributesConfig == nil {
+		keepIdentifyingOTelResourceAttributesConfig = limits
+	}
 	return func(ctx context.Context, r *http.Request, maxRecvMsgSize int, buffers *util.RequestBuffers, req *mimirpb.PreallocWriteRequest, logger log.Logger) error {
 		contentType := r.Header.Get("Content-Type")
 		contentEncoding := r.Header.Get("Content-Encoding")
@@ -331,12 +337,6 @@ func newOTLPParser(
 			return err
 		}
 		enableCTZeroIngestion := limits.OTelCreatedTimestampZeroIngestionEnabled(tenantID)
-		if resourceAttributePromotionConfig == nil {
-			resourceAttributePromotionConfig = limits
-		}
-		if keepIdentifyingOTelResourceAttributesConfig == nil {
-			keepIdentifyingOTelResourceAttributesConfig = limits
-		}
 		promoteResourceAttributes := resourceAttributePromotionConfig.PromoteOTelResourceAttributes(tenantID)
 		keepIdentifyingResourceAttributes := keepIdentifyingOTelResourceAttributesConfig.OTelKeepIdentifyingResourceAttributes(tenantID)
 		convertHistogramsToNHCB := limits.OTelConvertHistogramsToNHCB(tenantID)
