@@ -38,34 +38,32 @@ func NewConfig(jsonData json.RawMessage, decryptFn receivers.DecryptFunc) (Confi
 	return settings, nil
 }
 
-func Schema() schema.IntegrationSchemaVersion {
-	return schema.IntegrationSchemaVersion{
-		Version:   Version,
-		CanCreate: true,
-		Options: []schema.Field{
-			{
-				Label:        "URL",
-				Element:      schema.ElementTypeInput,
-				InputType:    schema.InputTypeText,
-				Placeholder:  "Google Chat incoming webhook url",
-				PropertyName: "url",
-				Required:     true,
-				Secure:       true,
-			},
-			{
-				Label:        "Title",
-				Description:  "Templated title of the message",
-				Element:      schema.ElementTypeTextArea,
-				InputType:    schema.InputTypeText,
-				Placeholder:  templates.DefaultMessageTitleEmbed,
-				PropertyName: "title",
-			},
-			{
-				Label:        "Message",
-				Element:      schema.ElementTypeTextArea,
-				Placeholder:  templates.DefaultMessageEmbed,
-				PropertyName: "message",
-			},
+var Schema = schema.IntegrationSchemaVersion{
+	Version:   Version,
+	CanCreate: true,
+	Options: []schema.Field{
+		{
+			Label:        "URL",
+			Element:      schema.ElementTypeInput,
+			InputType:    schema.InputTypeText,
+			Placeholder:  "Google Chat incoming webhook url",
+			PropertyName: "url",
+			Required:     true,
+			Secure:       true,
 		},
-	}
+		{
+			Label:        "Title",
+			Description:  "Templated title of the message",
+			Element:      schema.ElementTypeTextArea,
+			InputType:    schema.InputTypeText,
+			Placeholder:  templates.DefaultMessageTitleEmbed,
+			PropertyName: "title",
+		},
+		{
+			Label:        "Message",
+			Element:      schema.ElementTypeTextArea,
+			Placeholder:  templates.DefaultMessageEmbed,
+			PropertyName: "message",
+		},
+	},
 }
