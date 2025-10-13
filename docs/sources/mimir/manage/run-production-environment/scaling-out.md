@@ -47,30 +47,47 @@ Consider the following guidelines when you scale down Alertmanagers:
 If you enabled [zone-aware replication](../../../configure/configure-zone-aware-replication/) for Alertmanagers, you can, in parallel, scale down any number of Alertmanager instances within one zone at a time.
 {{< /admonition >}}
 
-### Scaling down ingesters
+### Scaling down ingesters in ingest storage architecture
 
-[Ingesters](../../../references/architecture/components/ingester/) store recently received samples in memory.
-When an ingester shuts down, because of a scale down operation, the samples stored in the ingester cannot be discarded in order to guarantee no data loss.
+{{< admonition type="note" >}}
+This guidance applies to ingest storage architecture.  
+For more information about the supported architectures in Grafana Mimir, refer to [Grafana Mimir architecture](https://grafana.com/docs/mimir/<MIMIR_VERSION>/get-started/about-grafana-mimir-architecture/).
+{{< /admonition >}}
+
+When running Grafana Mimir with the ingest storage architecture, scaling down ingesters triggers the reassignment of ingestion partitions instead of transferring in-memory series ownership between ingesters.
+
+The ingestion layer durably stores each partition and can reassign it to a new ingester without data loss. When you terminate or scale down an ingester, the system transitions its assigned partitions through the partition lifecycle until another ingester safely takes ownership.
+
+For details about how partitions are created, reassigned, and transitioned between states, refer to [Hash ring partitions and lifecycle](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/hash-ring/#partition-lifecycle).
+
+Because the system writes ingestion data to Kafka and persists it in object storage, scaling down ingesters in the ingest storage architecture doesn't require draining in-memory series or handoff operations. However, ensure all partitions finish reassignment before you permanently remove ingesters to avoid temporary ingestion delays.
+
+### Scaling down ingesters in classic architecture
+
+{{< admonition type="note" >}}
+This guidance applies to classic architecture.  
+For more information about the supported architectures in Grafana Mimir, refer to [Grafana Mimir architecture](https://grafana.com/docs/mimir/<MIMIR_VERSION>/get-started/about-grafana-mimir-architecture/).
+{{< /admonition >}}
+
+[Ingesters](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/components/ingester/) store recently received samples in memory. When you scale down an ingester, do not discard the samples stored in the ingester to guarantee no data loss.
 
 You might experience the following challenges when you scale down ingesters:
 
-- By default, when an ingester shuts down, the samples stored in the ingester are not uploaded to the long-term storage, which causes data loss.
+- By default, when an ingester shuts down, it does not upload the samples to long-term storage, which causes data loss.
 
-  Ingesters expose an API endpoint [`/ingester/shutdown`](../../../references/http-api/#shutdown) that flushes in-memory time series data from ingester to the long-term storage and unregisters the ingester from the ring.
+  Ingesters expose an API endpoint [`/ingester/shutdown`](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/http-api/#shutdown) that flushes in-memory time series data from ingester to the long-term storage and unregisters the ingester from the ring.
 
-  After the `/ingester/shutdown` API endpoint successfully returns, the ingester does not receive write or read requests, but the process will not exit.
+  After the `/ingester/shutdown` API endpoint successfully returns, the ingester doesn't receive write or read requests, but the process doesn't exit.
 
   You can terminate the process by sending a `SIGINT` or `SIGTERM` signal after the shutdown endpoint returns.
 
-  **To mitigate this challenge, ensure that the ingester blocks are uploaded to the long-term storage before shutting down.**
+  To mitigate this challenge, upload the ingester blocks to long-term storage before shutting down.
 
 - When you scale down ingesters, the querier might temporarily return partial results.
 
   The blocks an ingester uploads to the long-term storage are not immediately available for querying.
-  It takes the [queriers](../../../references/architecture/components/querier/) and [store-gateways](../../../references/architecture/components/store-gateway/) some time before a newly uploaded block is available for querying.
+  It takes the [queriers](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/components/querier/) and [store-gateways](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/components/store-gateway/) some time before a newly uploaded block is available for querying.
   If you scale down two or more ingesters in a short period of time, queries might return partial results.
-
-#### Scaling down ingesters
 
 Complete the following steps to scale down ingesters in any zone.
 
