@@ -12,7 +12,7 @@ prometheus.scrape "mimir" {
 
   scrape_interval = "5s"
   scrape_timeout = "4s"
-  scrape_protocols = ["PrometheusProto", "OpenMetricsText1.0.0", "OpenMetricsText0.0.1", "PrometheusText0.0.4"]
+  scrape_native_histograms = true
   scrape_classic_histograms = true
 }
 
