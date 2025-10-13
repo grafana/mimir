@@ -5,6 +5,7 @@ package streamingpromql
 import (
 	"context"
 	"fmt"
+	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"strconv"
 	"strings"
 	"testing"
@@ -1162,18 +1163,19 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 }
 
 func TestPlanVersioning(t *testing.T) {
+
+	planning.RegisterNodeFactory(func() planning.Node {
+		return &testNode{NumberLiteralDetails: &core.NumberLiteralDetails{}}
+	})
+
 	originalMaximumPlanVersion := planning.MaximumSupportedQueryPlanVersion
 	planning.MaximumSupportedQueryPlanVersion = 9001
-	planning.QueryPlanVersionZero = 9000
 	t.Cleanup(func() { planning.MaximumSupportedQueryPlanVersion = originalMaximumPlanVersion })
 
+	// Plan has a node which has a min required plan version of 9000
 	plan := &planning.QueryPlan{
-		TimeRange: types.NewInstantQueryTimeRange(time.Now()),
-		Root: &core.NumberLiteral{
-			NumberLiteralDetails: &core.NumberLiteralDetails{
-				Value: 123,
-			},
-		},
+		TimeRange:          types.NewInstantQueryTimeRange(time.Now()),
+		Root:               newTestNode(9000),
 		OriginalExpression: "123",
 	}
 
@@ -1615,4 +1617,69 @@ func TestFunctionNeedsDeduplicationHandlesAllKnownFunctions(t *testing.T) {
 			}, "functionNeedsDeduplication should handle %s", name)
 		})
 	}
+}
+
+// testNode is a node for use with TestPlanVersioning.
+// It uses the NumberLiteralDetails to encode an arbitrary minimumRequiredPlanVersion
+// Note that most of the Node interface functions return dummy values, and it does not support children.
+type testNode struct {
+	*core.NumberLiteralDetails
+}
+
+func newTestNode(minimumRequiredPlanVersion int64) *testNode {
+	return &testNode{
+		NumberLiteralDetails: &core.NumberLiteralDetails{Value: float64(minimumRequiredPlanVersion)},
+	}
+}
+
+func (t *testNode) Describe() string {
+	return ""
+}
+
+func (t *testNode) ChildrenLabels() []string {
+	return []string{}
+}
+
+func (t *testNode) Details() proto.Message {
+	return t.NumberLiteralDetails
+}
+
+func (t *testNode) NodeType() planning.NodeType {
+	return planning.NODE_TYPE_TEST
+}
+
+func (t *testNode) Children() []planning.Node {
+	return []planning.Node{}
+}
+
+func (t *testNode) SetChildren(children []planning.Node) error {
+	if len(children) != 0 {
+		panic("not supported")
+	}
+	return nil
+}
+
+func (t *testNode) EquivalentTo(other planning.Node) bool {
+	otherTestNode, ok := other.(*testNode)
+	return ok && t.NumberLiteralDetails == otherTestNode.NumberLiteralDetails
+}
+
+func (t *testNode) ChildrenTimeRange(_ types.QueryTimeRange) types.QueryTimeRange {
+	return types.QueryTimeRange{}
+}
+
+func (t *testNode) ResultType() (parser.ValueType, error) {
+	return parser.ValueTypeScalar, nil
+}
+
+func (t *testNode) QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) planning.QueriedTimeRange {
+	return planning.NoDataQueried()
+}
+
+func (t *testNode) ExpressionPosition() posrange.PositionRange {
+	return posrange.PositionRange{}
+}
+
+func (t *testNode) MinimumRequiredPlanVersion() int64 {
+	return int64(t.NumberLiteralDetails.Value)
 }

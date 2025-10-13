@@ -45,6 +45,7 @@ const (
 	NODE_TYPE_DUPLICATE             NodeType = 10
 	NODE_TYPE_DEDUPLICATE_AND_MERGE NodeType = 11
 	NODE_TYPE_REMOTE_EXEC           NodeType = 12
+	NODE_TYPE_TEST					NodeType = 13
 )
 
 var NodeType_name = map[int32]string{
@@ -61,6 +62,7 @@ var NodeType_name = map[int32]string{
 	10: "NODE_TYPE_DUPLICATE",
 	11: "NODE_TYPE_DEDUPLICATE_AND_MERGE",
 	12: "NODE_TYPE_REMOTE_EXEC",
+	13: "NODE_TYPE_TEST",
 }
 
 var NodeType_value = map[string]int32{
@@ -77,6 +79,7 @@ var NodeType_value = map[string]int32{
 	"NODE_TYPE_DUPLICATE":             10,
 	"NODE_TYPE_DEDUPLICATE_AND_MERGE": 11,
 	"NODE_TYPE_REMOTE_EXEC":           12,
+	"NODE_TYPE_TEST":                  13,
 }
 
 func (NodeType) EnumDescriptor() ([]byte, []int) {

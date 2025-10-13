@@ -24,7 +24,7 @@ import (
 
 var MaximumSupportedQueryPlanVersion = int64(0)
 
-var QueryPlanVersionZero = int64(0)
+const QueryPlanVersionZero = int64(0)
 
 type QueryPlan struct {
 	TimeRange types.QueryTimeRange
