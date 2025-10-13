@@ -16,7 +16,7 @@ The ingester is a stateful component that processes the most recently ingested s
 
 The ingester stores data both in memory and on disk for a configurable retention period.
 In-memory series are periodically compacted into an on-disk format called a TSDB block and then uploaded to object storage. This process happens every two hours by default.
-When the local retention period expires, and the data has been compacted and successfully uploaded, the ingester removes the local copy.
+When the local retention period expires and the data has been compacted and successfully uploaded, the ingester removes the local copy.
 
 At that point, queriers retrieve the data from object storage through the store-gateways.
 
