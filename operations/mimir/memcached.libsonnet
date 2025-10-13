@@ -25,7 +25,7 @@ memcached {
   },
 
   // Creates a memcached instance used to cache query results.
-  newMemcachedFrontend(name)::
+  newMemcachedFrontend(name, nodeAffinityMatchers=[])::
     $.memcached {
       name: name,
       max_item_size: '%dm' % [$._config.cache_frontend_max_item_size_mb],
@@ -34,7 +34,8 @@ memcached {
       min_ready_seconds: $._config.cache_frontend_min_ready_seconds,
 
       statefulSet+:
-        statefulSet.mixin.spec.withReplicas($._config.memcached_frontend_replicas),
+        statefulSet.mixin.spec.withReplicas($._config.memcached_frontend_replicas) +
+        $.newMimirNodeAffinityMatchers(nodeAffinityMatchers),
     },
 
   memcached_frontend:
@@ -43,7 +44,7 @@ memcached {
     else {},
 
   // Creates a memcached instance used to temporarily cache index lookups.
-  newMemcachedIndexQueries(name)::
+  newMemcachedIndexQueries(name, nodeAffinityMatchers=[])::
     $.memcached {
       name: name,
       max_item_size: '%dm' % [$._config.cache_index_queries_max_item_size_mb],
@@ -52,7 +53,8 @@ memcached {
       min_ready_seconds: $._config.cache_index_queries_min_ready_seconds,
 
       statefulSet+:
-        statefulSet.mixin.spec.withReplicas($._config.memcached_index_queries_replicas),
+        statefulSet.mixin.spec.withReplicas($._config.memcached_index_queries_replicas) +
+        $.newMimirNodeAffinityMatchers(nodeAffinityMatchers),
     },
 
   memcached_index_queries:
@@ -61,7 +63,7 @@ memcached {
     else {},
 
   // Creates a memcached instance used to cache chunks.
-  newMemcachedChunks(name)::
+  newMemcachedChunks(name, nodeAffinityMatchers=[])::
     $.memcached {
       name: name,
       max_item_size: '%dm' % [$._config.cache_chunks_max_item_size_mb],
@@ -73,7 +75,8 @@ memcached {
       min_ready_seconds: $._config.cache_chunks_min_ready_seconds,
 
       statefulSet+:
-        statefulSet.mixin.spec.withReplicas($._config.memcached_chunks_replicas),
+        statefulSet.mixin.spec.withReplicas($._config.memcached_chunks_replicas) +
+        $.newMimirNodeAffinityMatchers(nodeAffinityMatchers),
     },
 
   memcached_chunks:
@@ -82,7 +85,7 @@ memcached {
     else {},
 
   // Creates a memcached instance for caching TSDB blocks metadata (meta.json files, deletion marks, list of users and blocks).
-  newMemcachedMetadata(name)::
+  newMemcachedMetadata(name, nodeAffinityMatchers=[])::
     $.memcached {
       name: name,
       max_item_size: '%dm' % [$._config.cache_metadata_max_item_size_mb],
@@ -94,7 +97,8 @@ memcached {
       overprovision_factor: 1.05,
 
       statefulSet+:
-        statefulSet.mixin.spec.withReplicas($._config.memcached_metadata_replicas),
+        statefulSet.mixin.spec.withReplicas($._config.memcached_metadata_replicas) +
+        $.newMimirNodeAffinityMatchers(nodeAffinityMatchers),
     },
 
   memcached_metadata:
