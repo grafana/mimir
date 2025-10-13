@@ -9,7 +9,6 @@ title: Grafana Mimir Reads dashboard
 weight: 90
 ---
 
-<!-- Note: This topic is mounted in the GEM documentation. Ensure that all updates are also applicable to GEM. -->
 
 # Grafana Mimir Reads dashboard
 

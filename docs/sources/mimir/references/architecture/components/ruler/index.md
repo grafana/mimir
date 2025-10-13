@@ -7,7 +7,6 @@ title: (Optional) Grafana Mimir ruler
 weight: 130
 ---
 
-<!-- Note: This topic is mounted in the GEM documentation. Ensure that all updates are also applicable to GEM. -->
 
 # (Optional) Grafana Mimir ruler
 

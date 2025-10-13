@@ -9,7 +9,6 @@ title: Installing Grafana Mimir dashboards and alerts
 weight: 30
 ---
 
-<!-- Note: This topic is mounted in the GEM documentation. Ensure that all updates are also applicable to GEM. -->
 
 # Installing Grafana Mimir dashboards and alerts
 

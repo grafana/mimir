@@ -5,7 +5,6 @@ title: Deploy Mimir with Helm
 weight: 10
 ---
 
-<!-- Note: This topic is mounted in the GEM documentation. Ensure that all updates are also applicable to GEM. -->
 
 # Deploy Mimir with Helm
 

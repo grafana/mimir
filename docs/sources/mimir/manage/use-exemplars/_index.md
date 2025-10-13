@@ -10,7 +10,6 @@ title: Use exemplars with Grafana Mimir
 weight: 40
 ---
 
-<!-- Note: This topic is mounted in the GEM documentation. Ensure that all updates are also applicable to GEM. -->
 
 # Use exemplars with Grafana Mimir
 

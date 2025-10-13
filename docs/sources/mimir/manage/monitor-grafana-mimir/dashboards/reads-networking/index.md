@@ -9,7 +9,6 @@ title: Grafana Mimir Reads networking dashboard
 weight: 100
 ---
 
-<!-- Note: This topic is mounted in the GEM documentation. Ensure that all updates are also applicable to GEM. -->
 
 # Grafana Mimir Reads networking dashboard
 

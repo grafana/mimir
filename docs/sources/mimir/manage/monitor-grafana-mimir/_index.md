@@ -11,7 +11,6 @@ title: Monitor Grafana Mimir
 weight: 50
 ---
 
-<!-- Note: This topic is mounted in the GEM documentation. Ensure that all updates are also applicable to GEM. -->
 
 # Monitor Grafana Mimir
 

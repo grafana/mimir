@@ -7,7 +7,6 @@ title: Grafana Mimir Overview resources dashboard
 weight: 6
 ---
 
-<!-- Note: This topic is mounted in the GEM documentation. Ensure that all updates are also applicable to GEM. -->
 
 # Grafana Mimir Overview resources dashboard
 

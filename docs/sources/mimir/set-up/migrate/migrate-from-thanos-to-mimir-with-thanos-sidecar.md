@@ -7,7 +7,6 @@ title: Migrate from Thanos to Mimir using Thanos sidecar
 weight: 15
 ---
 
-<!-- Note: This topic is mounted in the GEM documentation. Ensure that all updates are also applicable to GEM. -->
 
 # Migrate from Thanos to Mimir using Thanos sidecar
 

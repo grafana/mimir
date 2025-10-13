@@ -9,7 +9,6 @@ title: Grafana Mimir Object Store dashboard
 weight: 60
 ---
 
-<!-- Note: This topic is mounted in the GEM documentation. Ensure that all updates are also applicable to GEM. -->
 
 # Grafana Mimir Object Store dashboard
 

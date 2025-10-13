@@ -9,7 +9,6 @@ title: Viewing Grafana Mimir dashboards
 weight: 40
 ---
 
-<!-- Note: This topic is mounted in the GEM documentation. Ensure that all updates are also applicable to GEM. -->
 
 # Viewing Grafana Mimir dashboards
 

@@ -9,7 +9,6 @@ keywords:
   - performance
 ---
 
-<!-- Note: This topic is mounted in the GEM documentation. Ensure that all updates are also applicable to GEM. -->
 
 # Best practices for querying Grafana Mimir
 

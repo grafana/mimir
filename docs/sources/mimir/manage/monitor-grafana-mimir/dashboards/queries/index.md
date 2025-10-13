@@ -9,7 +9,6 @@ title: Grafana Mimir Queries dashboard
 weight: 80
 ---
 
-<!-- Note: This topic is mounted in the GEM documentation. Ensure that all updates are also applicable to GEM. -->
 
 # Grafana Mimir Queries dashboard
 

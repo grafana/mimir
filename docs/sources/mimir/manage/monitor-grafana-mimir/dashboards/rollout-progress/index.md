@@ -9,7 +9,6 @@ title: Grafana Mimir Rollout progress dashboard
 weight: 120
 ---
 
-<!-- Note: This topic is mounted in the GEM documentation. Ensure that all updates are also applicable to GEM. -->
 
 # Grafana Mimir Rollout progress dashboard
 

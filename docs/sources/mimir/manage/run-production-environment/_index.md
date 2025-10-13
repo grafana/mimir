@@ -8,7 +8,6 @@ title: Run Grafana Mimir in production
 weight: 80
 ---
 
-<!-- Note: This topic is mounted in the GEM documentation. Ensure that all updates are also applicable to GEM. -->
 
 # Run Grafana Mimir in production
 

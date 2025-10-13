@@ -18,7 +18,6 @@ title: Grafana Mimir components
 weight: 30
 ---
 
-<!-- Note: This topic is mounted in the GEM documentation. Ensure that all updates are also applicable to GEM. -->
 
 # Grafana Mimir components
 

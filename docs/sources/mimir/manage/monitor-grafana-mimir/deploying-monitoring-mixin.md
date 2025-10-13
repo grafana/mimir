@@ -9,7 +9,6 @@ title: Deploying the Grafana Mimir monitoring mixin
 weight: 20
 ---
 
-<!-- Note: This topic is mounted in the GEM documentation. Ensure that all updates are also applicable to GEM. -->
 
 # Deploying the Grafana Mimir monitoring mixin
 

@@ -8,7 +8,6 @@ title: Planning Grafana Mimir capacity
 weight: 10
 ---
 
-<!-- Note: This topic is mounted in the GEM documentation. Ensure that all updates are also applicable to GEM. -->
 
 # Planning Grafana Mimir capacity
 

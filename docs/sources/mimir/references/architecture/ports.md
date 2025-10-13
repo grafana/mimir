@@ -5,7 +5,6 @@ title: About Grafana Mimir network ports
 weight: 25
 ---
 
-<!-- Note: This topic is mounted in the GEM documentation. Ensure that all updates are also applicable to GEM. -->
 
 # About Grafana Mimir network ports
 

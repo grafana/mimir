@@ -13,7 +13,6 @@ title: Visualize native histograms
 weight: 100
 ---
 
-<!-- Note: This topic is mounted in the GEM documentation. Ensure that all updates are also applicable to GEM. -->
 
 # Visualize native histograms
 

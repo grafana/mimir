@@ -9,7 +9,6 @@ title: Grafana Mimir Ruler dashboard
 weight: 130
 ---
 
-<!-- Note: This topic is mounted in the GEM documentation. Ensure that all updates are also applicable to GEM. -->
 
 # Grafana Mimir Ruler dashboard
 

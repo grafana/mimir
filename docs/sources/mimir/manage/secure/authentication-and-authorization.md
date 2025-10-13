@@ -8,7 +8,6 @@ title: Grafana Mimir authentication and authorization
 weight: 20
 ---
 
-<!-- Note: This topic is mounted in the GEM documentation. Ensure that all updates are also applicable to GEM. -->
 
 # Grafana Mimir authentication and authorization
 

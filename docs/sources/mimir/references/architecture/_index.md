@@ -7,7 +7,6 @@ title: Grafana Mimir advanced architecture
 weight: 20
 ---
 
-<!-- Note: This topic is mounted in the GEM documentation. Ensure that all updates are also applicable to GEM. -->
 
 # Grafana Mimir advanced architecture
 

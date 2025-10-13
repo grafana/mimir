@@ -9,7 +9,6 @@ title: Grafana Mimir Compactor resources dashboard
 weight: 40
 ---
 
-<!-- Note: This topic is mounted in the GEM documentation. Ensure that all updates are also applicable to GEM. -->
 
 # Grafana Mimir Compactor resources dashboard
 
