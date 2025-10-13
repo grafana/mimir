@@ -20,6 +20,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/failsafe-go/failsafe-go/adaptivelimiter"
 	"github.com/go-kit/log"
 	"github.com/gogo/status"
 	"github.com/grafana/dskit/flagext"
@@ -1150,12 +1151,7 @@ func TestDistributor_PushQuery(t *testing.T) {
 				assert.True(t, ok, fmt.Sprintf("expected error to be a status error, but got: %T", err))
 			}
 
-			var m model.Matrix
-			if len(resp.Chunkseries) == 0 {
-				m, err = client.StreamingSeriesToMatrix(0, 10, resp.StreamingSeries)
-			} else {
-				m, err = client.TimeSeriesChunksToMatrix(0, 10, resp.Chunkseries)
-			}
+			m, err := client.StreamingSeriesToMatrix(0, 10, resp.StreamingSeries)
 			assert.NoError(t, err)
 			assert.Equal(t, tc.expectedResponse.String(), m.String())
 
@@ -5629,12 +5625,6 @@ type prepConfig struct {
 	ingestStorageMigrationEnabled bool
 	ingestStoragePartitions       int32 // Number of partitions. Auto-detected from configured ingesters if not explicitly set.
 	ingestStorageKafka            *kfake.Cluster
-
-	// We need this setting to simulate a response from ingesters that didn't support responding
-	// with a stream of chunks, and were responding with chunk series instead. This is needed to
-	// ensure backwards compatibility, i.e., that queriers can still correctly handle both types
-	// or responses.
-	disableStreamingResponse bool
 }
 
 // totalIngesters takes into account ingesterStateByZone and numIngesters.
@@ -5780,7 +5770,6 @@ func prepareIngesterZone(t testing.TB, zone string, state ingesterZoneState, cfg
 			zone:                          zone,
 			labelNamesStreamResponseDelay: labelNamesStreamResponseDelay,
 			timeOut:                       cfg.timeOut,
-			disableStreamingResponse:      cfg.disableStreamingResponse,
 		}
 
 		// Init the partition reader if the ingester should consume from Kafka.
@@ -6391,7 +6380,6 @@ type mockIngester struct {
 	timeOut                       bool
 	tokens                        []uint32
 	id                            int
-	disableStreamingResponse      bool
 
 	// partitionReader is responsible to consume a partition from Kafka when the
 	// ingest storage is enabled. This field is nil if the ingest storage is disabled.
@@ -6589,7 +6577,6 @@ func (i *mockIngester) QueryStream(ctx context.Context, req *client.QueryRequest
 		return nil, err
 	}
 
-	nonStreamingResponses := []*client.QueryStreamResponse{}
 	streamingLabelResponses := []*client.QueryStreamResponse{}
 	streamingChunkResponses := []*client.QueryStreamResponse{}
 
@@ -6681,47 +6668,32 @@ func (i *mockIngester) QueryStream(ctx context.Context, req *client.QueryRequest
 			}
 		}
 
-		if i.disableStreamingResponse || req.StreamingChunksBatchSize == 0 {
-			nonStreamingResponses = append(nonStreamingResponses, &client.QueryStreamResponse{
-				Chunkseries: []client.TimeSeriesChunk{
-					{
-						Labels: slices.Clone(ts.Labels), // Clone labels to avoid data races between reading label values in this mock ingester and cloning them in receiveResponse().
-						Chunks: wireChunks,
-					},
+		streamingLabelResponses = append(streamingLabelResponses, &client.QueryStreamResponse{
+			StreamingSeries: []client.QueryStreamSeries{
+				{
+					Labels:     ts.Labels,
+					ChunkCount: int64(len(wireChunks)),
 				},
-			})
-		} else {
-			streamingLabelResponses = append(streamingLabelResponses, &client.QueryStreamResponse{
-				StreamingSeries: []client.QueryStreamSeries{
-					{
-						Labels:     ts.Labels,
-						ChunkCount: int64(len(wireChunks)),
-					},
-				},
-			})
+			},
+		})
 
-			streamingChunkResponses = append(streamingChunkResponses, &client.QueryStreamResponse{
-				StreamingSeriesChunks: []client.QueryStreamSeriesChunks{
-					{
-						SeriesIndex: uint64(seriesIndex),
-						Chunks:      wireChunks,
-					},
+		streamingChunkResponses = append(streamingChunkResponses, &client.QueryStreamResponse{
+			StreamingSeriesChunks: []client.QueryStreamSeriesChunks{
+				{
+					SeriesIndex: uint64(seriesIndex),
+					Chunks:      wireChunks,
 				},
-			})
-		}
+			},
+		})
+
 	}
 
 	var results []*client.QueryStreamResponse
-
-	if i.disableStreamingResponse {
-		results = nonStreamingResponses
-	} else {
-		endOfLabelsMessage := &client.QueryStreamResponse{
-			IsEndOfSeriesStream: true,
-		}
-		results = append(streamingLabelResponses, endOfLabelsMessage)
-		results = append(results, streamingChunkResponses...)
+	endOfLabelsMessage := &client.QueryStreamResponse{
+		IsEndOfSeriesStream: true,
 	}
+	results = append(streamingLabelResponses, endOfLabelsMessage)
+	results = append(results, streamingChunkResponses...)
 
 	return &stream{
 		ctx:     ctx,
@@ -7218,6 +7190,10 @@ func newMockIngesterPusherAdapter(ingester *mockIngester) *mockIngesterPusherAda
 func (c *mockIngesterPusherAdapter) PushToStorageAndReleaseRequest(ctx context.Context, req *mimirpb.WriteRequest) error {
 	_, err := c.ingester.Push(ctx, req)
 	return err
+}
+
+func (c *mockIngesterPusherAdapter) NotifyPreCommit(_ context.Context) error {
+	return nil
 }
 
 // noopIngester is a mocked ingester which does nothing.
@@ -8239,7 +8215,7 @@ func countCalls(ingesters []*mockIngester, name string) int {
 	return count
 }
 
-func TestStartFinishRequest(t *testing.T) {
+func TestDistributor_StartFinishRequest(t *testing.T) {
 	uniqueMetricsGen := func(sampleIdx int) []mimirpb.LabelAdapter {
 		return []mimirpb.LabelAdapter{
 			{Name: "__name__", Value: fmt.Sprintf("metric_%d", sampleIdx)},
@@ -8276,6 +8252,9 @@ func TestStartFinishRequest(t *testing.T) {
 	type testCase struct {
 		externalCheck       bool  // Start request "externally", from outside of distributor.
 		httpgrpcRequestSize int64 // only used for external check.
+
+		reactiveLimiterEnabled    bool
+		reactiveLimiterCanAcquire bool
 
 		inflightRequestsBeforePush     int
 		inflightRequestsSizeBeforePush int64
@@ -8381,6 +8360,36 @@ func TestStartFinishRequest(t *testing.T) {
 			expectedStartError:         errMaxIngestionRateReached,
 			expectedPushError:          errMaxIngestionRateReached,
 		},
+
+		"enabled reactive limiter can acquire permit, internal": {
+			reactiveLimiterEnabled:    true,
+			reactiveLimiterCanAcquire: true,
+			expectedStartError:        nil,
+			expectedPushError:         nil,
+		},
+
+		"enabled reactive limiter can acquire permit, external": {
+			externalCheck:             true,
+			reactiveLimiterEnabled:    true,
+			reactiveLimiterCanAcquire: true,
+			expectedStartError:        nil,
+			expectedPushError:         nil,
+		},
+
+		"enabled reactive limiter cannot acquire permit, internal": {
+			reactiveLimiterEnabled:    true,
+			reactiveLimiterCanAcquire: false,
+			expectedStartError:        nil,
+			expectedPushError:         errReactiveLimiterLimitExceeded,
+		},
+
+		"enabled reactive limiter cannot acquire permit, external": {
+			externalCheck:             true,
+			reactiveLimiterEnabled:    true,
+			reactiveLimiterCanAcquire: false,
+			expectedStartError:        errReactiveLimiterLimitExceeded,
+			expectedPushError:         errReactiveLimiterLimitExceeded,
+		},
 	}
 
 	for name, tc := range testcases {
@@ -8402,6 +8411,15 @@ func TestStartFinishRequest(t *testing.T) {
 				},
 			})
 			wrappedPush := ds[0].wrapPushWithMiddlewares(finishPush)
+
+			// Setup reactive limiter if needed
+			if tc.reactiveLimiterEnabled {
+				mockLimiter := &mockReactiveLimiter{
+					canAcquire: tc.reactiveLimiterCanAcquire,
+					permit:     &mockPermit{},
+				}
+				ds[0].reactiveLimiter = mockLimiter
+			}
 
 			// Setup inflight values before calling push.
 			ds[0].inflightPushRequests.Add(int64(tc.inflightRequestsBeforePush))
@@ -8453,6 +8471,182 @@ func TestStartFinishRequest(t *testing.T) {
 			require.Equal(t, tc.inflightRequestsSizeBeforePush, ds[0].inflightPushRequestsBytes.Load())
 		})
 	}
+}
+
+func TestDistributor_PreparePushRequest(t *testing.T) {
+	type testCase struct {
+		reactiveLimiterEnabled        bool
+		reactiveLimiterCanAcquire     bool
+		contextCanceled               bool
+		expectedError                 error
+		verifyCleanUpFunc             func(func(error), *mockPermit)
+		expectedRejectedRequestsCount int
+	}
+
+	testCases := map[string]testCase{
+		"no reactive limiter configured": {
+			reactiveLimiterEnabled:        false,
+			expectedError:                 nil,
+			expectedRejectedRequestsCount: 0,
+		},
+		"reactive limiter enabled and can acquire permit": {
+			reactiveLimiterEnabled:    true,
+			reactiveLimiterCanAcquire: true,
+			expectedError:             nil,
+			verifyCleanUpFunc: func(cleanUp func(error), _ *mockPermit) {
+				require.NotNil(t, cleanUp)
+			},
+			expectedRejectedRequestsCount: 0,
+		},
+		"reactive limiter enabled but cannot acquire permit": {
+			reactiveLimiterEnabled:        true,
+			reactiveLimiterCanAcquire:     false,
+			expectedError:                 errReactiveLimiterLimitExceeded,
+			expectedRejectedRequestsCount: 1,
+		},
+		"cleanup function calls permit.Record() on success": {
+			reactiveLimiterEnabled:    true,
+			reactiveLimiterCanAcquire: true,
+			expectedError:             nil,
+			verifyCleanUpFunc: func(cleanUp func(error), permit *mockPermit) {
+				require.NotNil(t, cleanUp)
+				cleanUp(nil)
+				require.True(t, permit.recordCalled)
+				require.False(t, permit.dropCalled)
+			},
+			expectedRejectedRequestsCount: 0,
+		},
+		"cleanup function calls permit.Drop() on context.Canceled error": {
+			reactiveLimiterEnabled:    true,
+			reactiveLimiterCanAcquire: true,
+			expectedError:             nil,
+			verifyCleanUpFunc: func(cleanUp func(error), permit *mockPermit) {
+				require.NotNil(t, cleanUp)
+				cleanUp(context.Canceled)
+				require.False(t, permit.recordCalled)
+				require.True(t, permit.dropCalled)
+			},
+			expectedRejectedRequestsCount: 0,
+		},
+		"cleanup function calls permit.Drop() on regular error with canceled context": {
+			reactiveLimiterEnabled:    true,
+			reactiveLimiterCanAcquire: true,
+			contextCanceled:           true,
+			expectedError:             nil,
+			verifyCleanUpFunc: func(cleanUp func(error), permit *mockPermit) {
+				require.NotNil(t, cleanUp)
+				cleanUp(errors.New("some error"))
+				require.False(t, permit.recordCalled)
+				require.True(t, permit.dropCalled)
+			},
+			expectedRejectedRequestsCount: 0,
+		},
+		"cleanup function calls permit.Record() on regular error with non-canceled context": {
+			reactiveLimiterEnabled:    true,
+			reactiveLimiterCanAcquire: true,
+			expectedError:             nil,
+			verifyCleanUpFunc: func(cleanUp func(error), permit *mockPermit) {
+				require.NotNil(t, cleanUp)
+				cleanUp(errors.New("some error"))
+				require.True(t, permit.recordCalled)
+				require.False(t, permit.dropCalled)
+			},
+			expectedRejectedRequestsCount: 0,
+		},
+	}
+
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			var limits validation.Limits
+			flagext.DefaultValues(&limits)
+
+			// Prepare distributor
+			ds, _, _, _ := prepare(t, prepConfig{
+				numDistributors: 1,
+				limits:          &limits,
+				enableTracker:   true,
+			})
+
+			// Get initial rejected requests count
+			initialRejectedCount := testutil.ToFloat64(ds[0].rejectedRequests.WithLabelValues(reasonDistributorMaxInflightPushRequests))
+
+			// Setup reactive limiter if needed
+			var mockLimiter *mockReactiveLimiter
+			if tc.reactiveLimiterEnabled {
+				mockLimiter = &mockReactiveLimiter{
+					canAcquire: tc.reactiveLimiterCanAcquire,
+					permit:     &mockPermit{},
+				}
+				ds[0].reactiveLimiter = mockLimiter
+			}
+
+			// Create context
+			ctx := user.InjectOrgID(context.Background(), "user")
+
+			// Cancel context if needed for testing
+			var cancel context.CancelFunc
+			if tc.contextCanceled {
+				ctx, cancel = context.WithCancel(ctx)
+				cancel() // Cancel immediately
+			}
+
+			// Call PreparePushRequest
+			cleanupFunc, err := ds[0].PreparePushRequest(ctx)
+
+			// Check error
+			if tc.expectedError != nil {
+				require.ErrorIs(t, err, tc.expectedError)
+			} else {
+				require.NoError(t, err)
+			}
+
+			// Check cleanup function
+			if tc.verifyCleanUpFunc != nil {
+				tc.verifyCleanUpFunc(cleanupFunc, mockLimiter.permit)
+			}
+
+			// Verify rejected requests metric
+			finalRejectedCount := testutil.ToFloat64(ds[0].rejectedRequests.WithLabelValues(reasonDistributorMaxInflightPushRequests))
+			require.Equal(t, float64(tc.expectedRejectedRequestsCount), finalRejectedCount-initialRejectedCount, "rejected requests count should match")
+		})
+	}
+}
+
+// mockReactiveLimiter is a mock implementation of ReactiveLimiter for testing
+type mockReactiveLimiter struct {
+	canAcquire bool
+	permit     *mockPermit
+}
+
+func (m *mockReactiveLimiter) AcquirePermit(_ context.Context) (adaptivelimiter.Permit, error) {
+	if !m.canAcquire {
+		return nil, adaptivelimiter.ErrExceeded
+	}
+	return m.permit, nil
+}
+
+func (m *mockReactiveLimiter) CanAcquirePermit() bool {
+	return m.canAcquire
+}
+
+func (m *mockReactiveLimiter) Metrics() adaptivelimiter.Metrics {
+	return nil
+}
+
+func (m *mockReactiveLimiter) Reset() {}
+
+// mockPermit is a mock implementation of adaptivelimiter.Permit for testing
+type mockPermit struct {
+	recordCalled bool
+	dropCalled   bool
+}
+
+func (m *mockPermit) Record() {
+	m.recordCalled = true
+}
+
+func (m *mockPermit) Drop() {
+	m.dropCalled = true
 }
 
 func TestDistributor_Push_SendMessageMetadata(t *testing.T) {

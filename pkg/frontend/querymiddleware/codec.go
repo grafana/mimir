@@ -237,7 +237,7 @@ var jsonFormatterInstance = jsonFormatter{}
 
 var knownFormats = []formatter{
 	jsonFormatterInstance,
-	protobufFormatter{},
+	ProtobufFormatter{},
 }
 
 func NewCodec(
@@ -260,7 +260,7 @@ func NewCodec(
 // MergeResponse merges responses from multiple requests into a single Response
 func (Codec) MergeResponse(responses ...Response) (Response, error) {
 	if len(responses) == 0 {
-		return newEmptyPrometheusResponse(), nil
+		return NewEmptyPrometheusResponse(), nil
 	}
 
 	promResponses := make([]*PrometheusResponse, 0, len(responses))

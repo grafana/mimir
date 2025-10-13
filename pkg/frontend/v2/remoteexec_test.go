@@ -5,20 +5,34 @@ package v2
 import (
 	"context"
 	"errors"
+	"fmt"
+	"math"
+	"strconv"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/go-kit/log"
 	"github.com/gogo/protobuf/proto"
+	"github.com/grafana/dskit/user"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/atomic"
+	"golang.org/x/sync/errgroup"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
+	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
 	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/querierpb"
 	"github.com/grafana/mimir/pkg/querier/stats"
+	"github.com/grafana/mimir/pkg/scheduler/schedulerpb"
+	"github.com/grafana/mimir/pkg/streamingpromql"
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize/ast/sharding"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/remoteexec"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
@@ -122,6 +136,94 @@ func TestInstantVectorExecutionResponse(t *testing.T) {
 	expectedData = types.InstantVectorSeriesData{
 		Floats:     generateFPoints(1000, 2, 1),
 		Histograms: generateHPoints(3000, 2, 1),
+	}
+	require.Equal(t, expectedData, data)
+	require.NotZero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
+	types.PutInstantVectorSeriesData(data, memoryConsumptionTracker)
+	require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
+
+	response.Close()
+	require.True(t, stream.closed)
+}
+
+func TestInstantVectorExecutionResponse_Batching(t *testing.T) {
+	stream := &mockResponseStream{
+		responses: []mockResponse{
+			{
+				msg: newSeriesMetadata(
+					false,
+					labels.FromStrings("series", "1"),
+					labels.FromStrings("series", "2"),
+				),
+			},
+			{
+				msg: newBatchedInstantVectorSeriesData(
+					querierpb.InstantVectorSeriesData{
+						Floats:     mimirpb.FromFPointsToSamples(generateFPoints(1000, 2, 0)),
+						Histograms: mimirpb.FromHPointsToHistograms(generateHPoints(3000, 2, 0)),
+					},
+					querierpb.InstantVectorSeriesData{
+						Floats:     mimirpb.FromFPointsToSamples(generateFPoints(1000, 2, 1)),
+						Histograms: mimirpb.FromHPointsToHistograms(generateHPoints(3000, 2, 1)),
+					},
+				),
+			},
+			{
+				msg: newBatchedInstantVectorSeriesData(
+					querierpb.InstantVectorSeriesData{
+						Floats:     mimirpb.FromFPointsToSamples(generateFPoints(1000, 2, 2)),
+						Histograms: mimirpb.FromHPointsToHistograms(generateHPoints(3000, 2, 2)),
+					},
+				),
+			},
+		},
+	}
+
+	ctx := context.Background()
+	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
+
+	response := &instantVectorExecutionResponse{stream: stream, memoryConsumptionTracker: memoryConsumptionTracker}
+	series, err := response.GetSeriesMetadata(ctx)
+	require.NoError(t, err)
+
+	expectedSeries := []types.SeriesMetadata{
+		{Labels: labels.FromStrings("series", "1")},
+		{Labels: labels.FromStrings("series", "2")},
+	}
+	require.Equal(t, expectedSeries, series)
+	require.NotZero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
+	types.SeriesMetadataSlicePool.Put(&series, memoryConsumptionTracker)
+	require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
+
+	data, err := response.GetNextSeries(ctx)
+	require.NoError(t, err)
+
+	expectedData := types.InstantVectorSeriesData{
+		Floats:     generateFPoints(1000, 2, 0),
+		Histograms: generateHPoints(3000, 2, 0),
+	}
+	require.Equal(t, expectedData, data)
+	require.NotZero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
+	types.PutInstantVectorSeriesData(data, memoryConsumptionTracker)
+
+	data, err = response.GetNextSeries(ctx)
+	require.NoError(t, err)
+
+	expectedData = types.InstantVectorSeriesData{
+		Floats:     generateFPoints(1000, 2, 1),
+		Histograms: generateHPoints(3000, 2, 1),
+	}
+	require.Equal(t, expectedData, data)
+	require.NotZero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
+	types.PutInstantVectorSeriesData(data, memoryConsumptionTracker)
+	require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes(), "should not be holding previous batch in memory consumption estimate")
+
+	data, err = response.GetNextSeries(ctx)
+	require.NoError(t, err)
+
+	expectedData = types.InstantVectorSeriesData{
+		Floats:     generateFPoints(1000, 2, 2),
+		Histograms: generateHPoints(3000, 2, 2),
 	}
 	require.Equal(t, expectedData, data)
 	require.NotZero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
@@ -380,7 +482,7 @@ func TestExecutionResponses_GetEvaluationInfo(t *testing.T) {
 			return &scalarExecutionResponse{stream, memoryConsumptionTracker}
 		},
 		"instant vector": func(stream responseStream, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) remoteexec.RemoteExecutionResponse {
-			return &instantVectorExecutionResponse{stream, memoryConsumptionTracker}
+			return newInstantVectorExecutionResponse(stream, memoryConsumptionTracker)
 		},
 		"range vector": func(stream responseStream, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) remoteexec.RemoteExecutionResponse {
 			return newRangeVectorExecutionResponse(stream, memoryConsumptionTracker)
@@ -546,8 +648,26 @@ func newInstantVectorSeriesData(floats []promql.FPoint, histograms []promql.HPoi
 			EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
 				Message: &querierpb.EvaluateQueryResponse_InstantVectorSeriesData{
 					InstantVectorSeriesData: &querierpb.EvaluateQueryResponseInstantVectorSeriesData{
-						Floats:     mimirpb.FromFPointsToSamples(floats),
-						Histograms: mimirpb.FromHPointsToHistograms(histograms),
+						Series: []querierpb.InstantVectorSeriesData{
+							{
+								Floats:     mimirpb.FromFPointsToSamples(floats),
+								Histograms: mimirpb.FromHPointsToHistograms(histograms),
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+}
+
+func newBatchedInstantVectorSeriesData(series ...querierpb.InstantVectorSeriesData) *frontendv2pb.QueryResultStreamRequest {
+	return &frontendv2pb.QueryResultStreamRequest{
+		Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
+			EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
+				Message: &querierpb.EvaluateQueryResponse_InstantVectorSeriesData{
+					InstantVectorSeriesData: &querierpb.EvaluateQueryResponseInstantVectorSeriesData{
+						Series: series,
 					},
 				},
 			},
@@ -645,7 +765,7 @@ func TestRemoteExecutor_CorrectlyPassesQueriedTimeRange(t *testing.T) {
 
 	ctx := context.Background()
 	node := &core.VectorSelector{VectorSelectorDetails: &core.VectorSelectorDetails{}}
-	_, err := executor.startExecution(ctx, &planning.QueryPlan{}, node, timeRange, false, false)
+	_, err := executor.startExecution(ctx, &planning.QueryPlan{}, node, timeRange, false, false, 1)
 	require.NoError(t, err)
 
 	require.Equal(t, startT.Add(-cfg.LookBackDelta+time.Millisecond), frontendMock.minT)
@@ -835,4 +955,237 @@ func TestResponseStreamBuffer(t *testing.T) {
 	require.Equal(t, msg4, buf.Pop())
 	require.Equal(t, msg5, buf.Pop())
 	require.Equal(t, msg6, buf.Pop())
+}
+
+func TestMaxQueryParallelismWithRemoteExecution(t *testing.T) {
+	t.Run("with sharding running outside MQE", func(t *testing.T) {
+		runQueryParallelismTestCase(t, false)
+	})
+
+	t.Run("with sharding running inside MQE", func(t *testing.T) {
+		runQueryParallelismTestCase(t, true)
+	})
+}
+
+func runQueryParallelismTestCase(t *testing.T, enableMQESharding bool) {
+	const maxQueryParallelism = int64(2)
+	count := atomic.NewInt64(0)
+	maxMtx := &sync.Mutex{}
+	maxConcurrent := int64(0)
+	ctx := user.InjectOrgID(context.Background(), "the-user")
+	ctx, cancel := context.WithTimeoutCause(ctx, 20*time.Second, errors.New("parallelism test timed out: this may indicate a deadlock somewhere"))
+	defer cancel()
+	codec := newTestCodec()
+	logger := log.NewNopLogger()
+	limits := &mockLimitedParallelismLimits{maxQueryParallelism: int(maxQueryParallelism)}
+
+	opts := streamingpromql.NewTestEngineOpts()
+	planner, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts)
+	require.NoError(t, err)
+	planner.RegisterQueryPlanOptimizationPass(remoteexec.NewOptimizationPass())
+
+	if enableMQESharding {
+		planner.RegisterASTOptimizationPass(sharding.NewOptimizationPass(limits, 0, nil, logger))
+	}
+
+	engine, err := streamingpromql.NewEngine(opts, streamingpromql.NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), planner)
+	require.NoError(t, err)
+
+	frontend, _ := setupFrontend(t, nil, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
+		if msg.Type != schedulerpb.ENQUEUE {
+			return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.ERROR, Error: fmt.Sprintf("scheduler received unexpected message type: %v", msg.Type)}
+		}
+
+		go func() {
+			current := count.Inc()
+			maxMtx.Lock()
+			maxConcurrent = max(current, maxConcurrent)
+			maxMtx.Unlock()
+			defer count.Dec()
+
+			// Simulate doing some work, then send an empty response.
+			time.Sleep(20 * time.Millisecond)
+			sendStreamingResponse(t, f, msg.UserID, msg.QueryID, newSeriesMetadata(false), newEvaluationCompleted(0, nil, nil))
+		}()
+
+		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
+	})
+
+	cfg := Config{LookBackDelta: 7 * time.Minute}
+	executor := NewRemoteExecutor(frontend, cfg)
+	require.NoError(t, engine.RegisterNodeMaterializer(planning.NODE_TYPE_REMOTE_EXEC, remoteexec.NewRemoteExecutionMaterializer(executor)))
+
+	expr, err := parser.ParseExpr("sum(foo)")
+	require.NoError(t, err)
+	request := querymiddleware.NewPrometheusRangeQueryRequest("/api/v1/query_range", nil, timestamp.FromTime(time.Now().Add(-time.Hour)), timestamp.FromTime(time.Now()), time.Second.Milliseconds(), 5*time.Minute, expr, querymiddleware.Options{}, nil, "")
+	httpRequest, err := codec.EncodeMetricsQueryRequest(ctx, request)
+	require.NoError(t, err)
+
+	middleware := querymiddleware.MetricsQueryMiddlewareFunc(func(next querymiddleware.MetricsQueryHandler) querymiddleware.MetricsQueryHandler {
+		return querymiddleware.HandlerFunc(func(c context.Context, _ querymiddleware.MetricsQueryRequest) (querymiddleware.Response, error) {
+			wg := &errgroup.Group{}
+
+			// Simulate many parts of the request being split and evaluated in parallel.
+			for range maxQueryParallelism + 10 {
+				wg.Go(func() error {
+					_, err := next.Do(c, request)
+					return err
+				})
+			}
+
+			err := wg.Wait()
+			return querymiddleware.NewEmptyPrometheusResponse(), err
+		})
+	})
+
+	handler := querymiddleware.NewEngineQueryRequestRoundTripperHandler(engine, codec, logger)
+	_, err = querymiddleware.NewLimitedParallelismRoundTripper(handler, codec, limits, true, middleware).RoundTrip(httpRequest)
+	require.NoError(t, err)
+	require.NotZero(t, maxConcurrent, "expected at least one query to be executed")
+	require.LessOrEqualf(t, maxConcurrent, maxQueryParallelism, "max query parallelism %v went over the configured limit of %v", maxConcurrent, maxQueryParallelism)
+}
+
+type mockLimitedParallelismLimits struct {
+	maxQueryParallelism int
+}
+
+func (m mockLimitedParallelismLimits) QueryShardingTotalShards(_ string) int {
+	return m.maxQueryParallelism * 3
+}
+
+func (m mockLimitedParallelismLimits) QueryShardingMaxRegexpSizeBytes(_ string) int {
+	return 0
+}
+
+func (m mockLimitedParallelismLimits) QueryShardingMaxShardedQueries(_ string) int {
+	return 0
+}
+
+func (m mockLimitedParallelismLimits) CompactorSplitAndMergeShards(_ string) int {
+	return 4
+}
+
+func (m mockLimitedParallelismLimits) MaxQueryParallelism(_ string) int {
+	return m.maxQueryParallelism
+}
+
+func BenchmarkProtobufResponses(b *testing.B) {
+	const batchSize = 256
+
+	for _, seriesCount := range []int{1, 2, 10, 100, 1000, 5000} {
+		b.Run(fmt.Sprintf("series count=%v", seriesCount), func(b *testing.B) {
+			for _, pointCount := range []int{0, 1, 10, 100} {
+				b.Run(fmt.Sprintf("point count=%v", pointCount), func(b *testing.B) {
+					runProtobufResponseBenchmark(b, seriesCount, pointCount, batchSize)
+				})
+			}
+		})
+	}
+}
+
+func runProtobufResponseBenchmark(b *testing.B, seriesCount int, pointCount int, batchSize int) {
+	messages := generateBenchmarkResponse(seriesCount, pointCount, batchSize)
+	encodedMessages := encode(b, messages)
+
+	scheduler := func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
+		if msg.Type != schedulerpb.ENQUEUE {
+			return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.ERROR, Error: fmt.Sprintf("scheduler received unexpected message type: %v", msg.Type)}
+		}
+
+		go sendStreamingResponseFromEncodedMessages(b, f, msg.UserID, msg.QueryID, encodedMessages...)
+
+		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
+	}
+
+	frontend, _ := setupFrontendWithConcurrencyAndServerOptions(b, nil, scheduler, testFrontendWorkerConcurrency, log.NewNopLogger())
+
+	ctx := user.InjectOrgID(context.Background(), "the-user")
+	ctx = querymiddleware.ContextWithParallelismLimiter(ctx, querymiddleware.NewParallelismLimiter(math.MaxInt))
+	req := &querierpb.EvaluateQueryRequest{}
+	minT := time.Now().Add(-time.Hour)
+	maxT := time.Now()
+
+	for b.Loop() {
+		resp, err := frontend.DoProtobufRequest(ctx, req, minT, maxT)
+		if err != nil {
+			require.NoError(b, err)
+		}
+
+		for range messages {
+			_, err := resp.Next(ctx)
+			if err != nil {
+				require.NoError(b, err)
+			}
+		}
+
+		resp.Close()
+	}
+}
+
+func generateBenchmarkResponse(seriesCount int, pointCount int, batchSize int) []*frontendv2pb.QueryResultStreamRequest {
+	msgs := make([]*frontendv2pb.QueryResultStreamRequest, 0, seriesCount+2)
+
+	series := make([]labels.Labels, 0, seriesCount)
+	for i := range seriesCount {
+		series = append(series, labels.FromStrings(labels.MetricName, "my_metric", "idx", strconv.Itoa(i)))
+	}
+
+	msgs = append(msgs, newSeriesMetadata(false, series...))
+
+	pendingSeriesData := make([]querierpb.InstantVectorSeriesData, 0, batchSize)
+	appendSeriesDataMessage := func() {
+		msgs = append(msgs, &frontendv2pb.QueryResultStreamRequest{
+			Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
+				EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
+					Message: &querierpb.EvaluateQueryResponse_InstantVectorSeriesData{
+						InstantVectorSeriesData: &querierpb.EvaluateQueryResponseInstantVectorSeriesData{
+							Series: pendingSeriesData,
+						},
+					},
+				},
+			},
+		})
+
+		pendingSeriesData = make([]querierpb.InstantVectorSeriesData, 0, batchSize)
+	}
+
+	for seriesIdx := range seriesCount {
+		floats := make([]mimirpb.Sample, 0, pointCount)
+
+		for pointIdx := range pointCount {
+			floats = append(floats, mimirpb.Sample{
+				TimestampMs: int64(pointIdx),
+				Value:       float64(seriesIdx*100000 + pointIdx),
+			})
+		}
+
+		pendingSeriesData = append(pendingSeriesData, querierpb.InstantVectorSeriesData{
+			Floats: floats,
+		})
+
+		if len(pendingSeriesData) == batchSize {
+			appendSeriesDataMessage()
+		}
+	}
+
+	if len(pendingSeriesData) > 0 {
+		appendSeriesDataMessage()
+	}
+
+	msgs = append(msgs, newEvaluationCompleted(uint64(seriesCount*pointCount), nil, nil))
+
+	return msgs
+}
+
+func encode(t testing.TB, msgs []*frontendv2pb.QueryResultStreamRequest) [][]byte {
+	encoded := make([][]byte, 0, len(msgs))
+
+	for _, msg := range msgs {
+		b, err := msg.Marshal()
+		require.NoError(t, err)
+
+		encoded = append(encoded, b)
+	}
+
+	return encoded
 }

@@ -166,7 +166,7 @@ func TestLimitsMiddleware_MaxQueryLookback_RangeQueryAndRemoteRead(t *testing.T)
 					limits := mockLimits{maxQueryLookback: testData.maxQueryLookback, compactorBlocksRetentionPeriod: testData.blocksRetentionPeriod}
 					middleware := newLimitsMiddleware(limits, log.NewNopLogger())
 
-					innerRes := newEmptyPrometheusResponse()
+					innerRes := NewEmptyPrometheusResponse()
 					inner := &mockHandler{}
 					inner.On("Do", mock.Anything, mock.Anything).Return(innerRes, nil)
 
@@ -265,7 +265,7 @@ func TestLimitsMiddleware_MaxQueryLookback_InstantQuery(t *testing.T) {
 			limits := mockLimits{maxQueryLookback: testData.maxQueryLookback, compactorBlocksRetentionPeriod: testData.blocksRetentionPeriod}
 			middleware := newLimitsMiddleware(limits, log.NewNopLogger())
 
-			innerRes := newEmptyPrometheusResponse()
+			innerRes := NewEmptyPrometheusResponse()
 			inner := &mockHandler{}
 			inner.On("Do", mock.Anything, mock.Anything).Return(innerRes, nil)
 
@@ -362,7 +362,7 @@ func TestLimitsMiddleware_MaxQueryLookback_TenantFederation(t *testing.T) {
 
 			middleware := newLimitsMiddleware(limits, log.NewNopLogger())
 
-			innerRes := newEmptyPrometheusResponse()
+			innerRes := NewEmptyPrometheusResponse()
 			inner := &mockHandler{}
 			inner.On("Do", mock.Anything, mock.Anything).Return(innerRes, nil)
 
@@ -469,7 +469,7 @@ func TestLimitsMiddleware_MaxQueryExpressionSizeBytes(t *testing.T) {
 					}
 					middleware := newLimitsMiddleware(limits, log.NewNopLogger())
 
-					innerRes := newEmptyPrometheusResponse()
+					innerRes := NewEmptyPrometheusResponse()
 					inner := &mockHandler{}
 					inner.On("Do", mock.Anything, mock.Anything).Return(innerRes, nil)
 
@@ -566,7 +566,7 @@ func TestLimitsMiddleware_MaxQueryLength(t *testing.T) {
 					limits := mockLimits{maxQueryLength: testData.maxQueryLength, maxTotalQueryLength: testData.maxTotalQueryLength}
 					middleware := newLimitsMiddleware(limits, log.NewNopLogger())
 
-					innerRes := newEmptyPrometheusResponse()
+					innerRes := NewEmptyPrometheusResponse()
 					inner := &mockHandler{}
 					inner.On("Do", mock.Anything, mock.Anything).Return(innerRes, nil)
 
@@ -884,6 +884,9 @@ func (m *mockHandler) Do(ctx context.Context, req MetricsQueryRequest) (Response
 }
 
 func TestLimitedRoundTripper_MaxQueryParallelism(t *testing.T) {
+	// This test only applies to requests sent to queriers over HTTPGRPC.
+	// For the equivalent test for remote execution, see TestMaxQueryParallelismWithRemoteExecution in pkg/frontend/v2/remoteexec_test.go
+
 	var (
 		maxQueryParallelism = 2
 		count               atomic.Int32
@@ -906,15 +909,15 @@ func TestLimitedRoundTripper_MaxQueryParallelism(t *testing.T) {
 	codec := newTestCodec()
 	r, err := codec.EncodeMetricsQueryRequest(ctx, &PrometheusRangeQueryRequest{
 		path:      "/api/v1/query_range",
-		start:     time.Now().Add(time.Hour).Unix(),
-		end:       util.TimeToMillis(time.Now()),
+		start:     time.Now().Add(-time.Hour).Unix(),
+		end:       time.Now().Unix(),
 		step:      int64(1 * time.Second * time.Millisecond),
 		queryExpr: parseQuery(t, `foo`),
 	})
-	require.Nil(t, err)
+	require.NoError(t, err)
 
 	handler := NewHTTPQueryRequestRoundTripperHandler(downstream, codec, log.NewNopLogger())
-	_, err = NewLimitedParallelismRoundTripper(handler, codec, mockLimits{maxQueryParallelism: maxQueryParallelism},
+	_, err = NewLimitedParallelismRoundTripper(handler, codec, mockLimits{maxQueryParallelism: maxQueryParallelism}, false,
 		MetricsQueryMiddlewareFunc(func(next MetricsQueryHandler) MetricsQueryHandler {
 			return HandlerFunc(func(c context.Context, _ MetricsQueryRequest) (Response, error) {
 				var wg sync.WaitGroup
@@ -926,7 +929,7 @@ func TestLimitedRoundTripper_MaxQueryParallelism(t *testing.T) {
 					}()
 				}
 				wg.Wait()
-				return newEmptyPrometheusResponse(), nil
+				return NewEmptyPrometheusResponse(), nil
 			})
 		}),
 	).RoundTrip(r)
@@ -959,7 +962,7 @@ func TestLimitedRoundTripper_MaxQueryParallelismLateScheduling(t *testing.T) {
 	require.Nil(t, err)
 
 	handler := NewHTTPQueryRequestRoundTripperHandler(downstream, codec, log.NewNopLogger())
-	_, err = NewLimitedParallelismRoundTripper(handler, codec, mockLimits{maxQueryParallelism: maxQueryParallelism},
+	_, err = NewLimitedParallelismRoundTripper(handler, codec, mockLimits{maxQueryParallelism: maxQueryParallelism}, false,
 		MetricsQueryMiddlewareFunc(func(next MetricsQueryHandler) MetricsQueryHandler {
 			return HandlerFunc(func(c context.Context, _ MetricsQueryRequest) (Response, error) {
 				// fire up work and we don't wait.
@@ -968,7 +971,7 @@ func TestLimitedRoundTripper_MaxQueryParallelismLateScheduling(t *testing.T) {
 						_, _ = next.Do(c, &PrometheusRangeQueryRequest{})
 					}()
 				}
-				return newEmptyPrometheusResponse(), nil
+				return NewEmptyPrometheusResponse(), nil
 			})
 		}),
 	).RoundTrip(r)
@@ -1001,7 +1004,7 @@ func TestLimitedRoundTripper_OriginalRequestContextCancellation(t *testing.T) {
 	require.Nil(t, err)
 
 	handler := NewHTTPQueryRequestRoundTripperHandler(downstream, codec, log.NewNopLogger())
-	_, err = NewLimitedParallelismRoundTripper(handler, codec, mockLimits{maxQueryParallelism: maxQueryParallelism},
+	_, err = NewLimitedParallelismRoundTripper(handler, codec, mockLimits{maxQueryParallelism: maxQueryParallelism}, false,
 		MetricsQueryMiddlewareFunc(func(next MetricsQueryHandler) MetricsQueryHandler {
 			return HandlerFunc(func(c context.Context, _ MetricsQueryRequest) (Response, error) {
 				var wg sync.WaitGroup
@@ -1028,7 +1031,7 @@ func TestLimitedRoundTripper_OriginalRequestContextCancellation(t *testing.T) {
 				wg.Wait()
 				assert.Less(t, time.Since(waitStart).Milliseconds(), int64(100))
 
-				return newEmptyPrometheusResponse(), nil
+				return NewEmptyPrometheusResponse(), nil
 			})
 		}),
 	).RoundTrip(r)
@@ -1061,7 +1064,7 @@ func BenchmarkLimitedParallelismRoundTripper(b *testing.B) {
 	for _, concurrentRequestCount := range []int{1, 10, 100} {
 		for _, subRequestCount := range []int{1, 2, 5, 10, 20, 50, 100} {
 			handler := NewHTTPQueryRequestRoundTripperHandler(downstream, codec, log.NewNopLogger())
-			tripper := NewLimitedParallelismRoundTripper(handler, codec, mockLimits{maxQueryParallelism: maxParallelism},
+			tripper := NewLimitedParallelismRoundTripper(handler, codec, mockLimits{maxQueryParallelism: maxParallelism}, false,
 				MetricsQueryMiddlewareFunc(func(next MetricsQueryHandler) MetricsQueryHandler {
 					return HandlerFunc(func(c context.Context, _ MetricsQueryRequest) (Response, error) {
 						wg := sync.WaitGroup{}
@@ -1073,7 +1076,7 @@ func BenchmarkLimitedParallelismRoundTripper(b *testing.B) {
 							}()
 						}
 						wg.Wait()
-						return newEmptyPrometheusResponse(), nil
+						return NewEmptyPrometheusResponse(), nil
 					})
 				}),
 			)

@@ -241,11 +241,15 @@ func (p *QueryPlanner) NewQueryPlan(ctx context.Context, qs string, timeRange ty
 		}
 	}
 
+	if err := plan.DeterminePlanVersion(); err != nil {
+		return nil, err
+	}
+
 	if err := observer.OnAllPlanningStagesComplete(plan); err != nil {
 		return nil, err
 	}
 
-	spanLogger.DebugLog("msg", "planning completed", "plan", plan)
+	spanLogger.DebugLog("msg", "planning completed", "plan", plan, "version", plan.Version)
 
 	return plan, err
 }

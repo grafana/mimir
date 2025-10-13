@@ -35,23 +35,15 @@ func (b *blockInternalFunctionsMiddleware) Do(ctx context.Context, request Metri
 	}
 
 	forbiddenFunctionName := ""
-	containsInternalFunction, err := astmapper.AnyNode(expr, func(node parser.Node) (bool, error) {
-		call, isCall := node.(*parser.Call)
-		if !isCall {
-			return false, nil
+	containsInternalFunction := astmapper.AnyNode(expr, func(node parser.Node) bool {
+		if call, isCall := node.(*parser.Call); isCall {
+			if b.functionsToBlock.Contains(call.Func.Name) {
+				forbiddenFunctionName = call.Func.Name
+				return true
+			}
 		}
-
-		if b.functionsToBlock.Contains(call.Func.Name) {
-			forbiddenFunctionName = call.Func.Name
-			return true, nil
-		}
-
-		return false, nil
+		return false
 	})
-
-	if err != nil {
-		return nil, err
-	}
 
 	if containsInternalFunction {
 		return nil, apierror.Newf(apierror.TypeBadData, "expression contains internal function '%s' not permitted in queries", forbiddenFunctionName)

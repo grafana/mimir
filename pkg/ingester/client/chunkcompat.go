@@ -25,19 +25,6 @@ func StreamsToMatrix(from, through model.Time, responses []*QueryStreamResponse)
 	haveReachedEndOfStreamingSeriesLabels := false
 
 	for _, response := range responses {
-		series, err := TimeSeriesChunksToMatrix(from, through, response.Chunkseries)
-		if err != nil {
-			return nil, err
-		}
-
-		result = append(result, series...)
-
-		series, err = TimeseriesToMatrix(from, through, response.Timeseries)
-		if err != nil {
-			return nil, err
-		}
-		result = append(result, series...)
-
 		for _, s := range response.StreamingSeries {
 			if haveReachedEndOfStreamingSeriesLabels {
 				return nil, errors.New("received series labels after IsEndOfSeriesStream=true")
@@ -97,64 +84,6 @@ func fromLabelsToMetric(ls labels.Labels) model.Metric {
 		m[model.LabelName(l.Name)] = model.LabelValue(l.Value)
 	})
 	return m
-}
-
-// TimeSeriesChunksToMatrix converts slice of []client.TimeSeriesChunk to a model.Matrix.
-func TimeSeriesChunksToMatrix(from, through model.Time, serieses []TimeSeriesChunk) (model.Matrix, error) {
-	if serieses == nil {
-		return nil, nil
-	}
-
-	result := model.Matrix{}
-	for _, series := range serieses {
-		stream, err := seriesChunksToMatrix(from, through, mimirpb.FromLabelAdaptersToLabels(series.Labels), mimirpb.FromLabelAdaptersToMetric(series.Labels), series.Chunks)
-		if err != nil {
-			return nil, err
-		}
-		result = append(result, stream)
-	}
-	return result, nil
-}
-
-func TimeseriesToMatrix(from, through model.Time, series []mimirpb.TimeSeries) (model.Matrix, error) {
-	if series == nil {
-		return nil, nil
-	}
-
-	result := model.Matrix{}
-	for _, ser := range series {
-		metric := mimirpb.FromLabelAdaptersToMetric(ser.Labels)
-
-		var samples []model.SamplePair
-		for _, sam := range ser.Samples {
-			if sam.TimestampMs < int64(from) || sam.TimestampMs > int64(through) {
-				continue
-			}
-
-			samples = append(samples, model.SamplePair{
-				Timestamp: model.Time(sam.TimestampMs),
-				Value:     model.SampleValue(sam.Value),
-			})
-		}
-
-		var histograms []model.SampleHistogramPair
-		for _, h := range ser.Histograms {
-			if h.Timestamp < int64(from) || h.Timestamp > int64(through) {
-				continue
-			}
-			histograms = append(histograms, model.SampleHistogramPair{
-				Timestamp: model.Time(h.Timestamp),
-				Histogram: mimirpb.FromHistogramProtoToPromHistogram(&h),
-			})
-		}
-
-		result = append(result, &model.SampleStream{
-			Metric:     metric,
-			Values:     samples,
-			Histograms: histograms,
-		})
-	}
-	return result, nil
 }
 
 func seriesChunksToMatrix(from, through model.Time, lbls labels.Labels, metric model.Metric, c []Chunk) (*model.SampleStream, error) {

@@ -880,7 +880,7 @@ func TestCodec_EncodeResponse_ContentNegotiation(t *testing.T) {
 	jsonBody, err := jsonFormatter{}.EncodeQueryResponse(testResponse)
 	require.NoError(t, err)
 
-	protobufBody, err := protobufFormatter{}.EncodeQueryResponse(testResponse)
+	protobufBody, err := ProtobufFormatter{}.EncodeQueryResponse(testResponse)
 	require.NoError(t, err)
 
 	scenarios := map[string]struct {

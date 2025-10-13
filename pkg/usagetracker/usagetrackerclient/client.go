@@ -32,6 +32,7 @@ var (
 
 type Config struct {
 	IgnoreRejectedSeries bool `yaml:"ignore_rejected_series" category:"experimental"`
+	IgnoreErrors         bool `yaml:"ignore_errors" category:"experimental"`
 
 	GRPCClientConfig grpcclient.Config `yaml:"grpc"`
 
@@ -52,6 +53,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 
 func (cfg *Config) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 	f.BoolVar(&cfg.IgnoreRejectedSeries, prefix+"ignore-rejected-series", false, "Ignore rejected series when tracking series in usage-tracker. If enabled, the client will not return the list of rejected series, but it will still track them in usage-tracker. This is useful to validate the rollout process of this service.")
+	f.BoolVar(&cfg.IgnoreErrors, prefix+"ignore-errors", false, "Ignore failed requests when tracking series in usage-tracker. If enabled, the client will not return any errors to the caller, assuming all series were accepted.")
 
 	f.StringVar(&cfg.PreferAvailabilityZone, prefix+"prefer-availability-zone", "", "Preferred availability zone to query usage-trackers.")
 	f.DurationVar(&cfg.RequestsHedgingDelay, prefix+"requests-hedging-delay", 100*time.Millisecond, "Delay before initiating requests to further usage-trackers (e.g. in other zones).")
@@ -173,6 +175,9 @@ func (c *UsageTrackerClient) TrackSeries(ctx context.Context, userID string, ser
 	)
 
 	if err != nil {
+		if c.cfg.IgnoreErrors {
+			return nil, nil
+		}
 		return nil, err
 	}
 
@@ -241,9 +246,15 @@ func (c *UsageTrackerClient) trackSeriesPerPartition(ctx context.Context, userID
 	})
 
 	if err != nil {
+		if c.cfg.IgnoreErrors {
+			return nil, nil
+		}
 		return nil, err
 	}
 	if len(res) == 0 {
+		if c.cfg.IgnoreErrors {
+			return nil, nil
+		}
 		return nil, errors.Errorf("unexpected no responses from usage-tracker for partition %d", partitionID)
 	}
 

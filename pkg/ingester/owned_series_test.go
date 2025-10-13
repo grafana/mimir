@@ -844,7 +844,7 @@ func (c *ownedSeriesWithPartitionsRingTestContext) pushUserSeries(t *testing.T) 
 	})
 
 	for _, s := range c.seriesToWrite {
-		req, _, _, _ := mockWriteRequest(t, s.Labels, s.Samples[0].Val, s.Samples[0].TS)
+		req := mockWriteRequest(t, s.Labels, s.Samples[0].Val, s.Samples[0].TS)
 		require.NoError(t, writer.WriteSync(context.Background(), c.partitionID, c.user, req))
 	}
 

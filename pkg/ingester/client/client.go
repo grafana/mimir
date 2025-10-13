@@ -16,7 +16,6 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health/grpc_health_v1"
 
-	"github.com/grafana/mimir/pkg/mimirpb"
 	querierapi "github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/grpcencoding/s2"
@@ -88,8 +87,6 @@ func (cfg *Config) Validate() error {
 }
 
 type CombinedQueryStreamResponse struct {
-	Chunkseries     []TimeSeriesChunk
-	Timeseries      []mimirpb.TimeSeries
 	StreamingSeries []StreamingSeries
 	StreamReaders   []*SeriesChunksStreamReader
 }
