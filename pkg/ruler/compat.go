@@ -392,12 +392,6 @@ func DefaultTenantManagerFactory(
 			zeroFetchedSeriesCount = zeroFetchedSeriesQueries.WithLabelValues(userID)
 		}
 
-		// queryFunc is used for Group.Eval and queryable is used of Group.RestoreForState.
-		// See rules.ManagerOptions for the details.
-		// For memoryTracking purpose, queryFunc must have been wrapped with engine that returns
-		// an UnlimitedMemoryTrackingQuery, hence no more wrapping needed.
-		// But queryable yet to be wrapped, therefore we wrap it with NewUnlimitedMemoryTrackerQueryable below.
-
 		// Wrap the query function with our custom logic.
 		wrappedQueryFunc := WrapQueryFuncWithReadConsistency(queryFunc, overrides, userID, logger)
 		remoteQuerier := cfg.QueryFrontend.Address != ""
