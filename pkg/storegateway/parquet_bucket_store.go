@@ -1072,7 +1072,10 @@ func (s *ParquetBucketStore) addBlock(ctx context.Context, meta *block.Meta) (er
 	}()
 	s.metrics.blockLoads.Inc()
 
-	numShards := s.calculateNumShards(ctx, meta.ULID)
+	numShards, err := s.calculateNumShards(ctx, meta.ULID)
+	if err != nil {
+		return errors.Wrap(err, "calculate number of shards")
+	}
 	level.Debug(s.logger).Log("msg", "calculated number of shards", "id", meta.ULID, "num_shards", numShards)
 
 	var shardReaders []ParquetShardReaderCloser
@@ -1122,25 +1125,25 @@ func (s *ParquetBucketStore) addBlock(ctx context.Context, meta *block.Meta) (er
 	return nil
 }
 
-func (s *ParquetBucketStore) calculateNumShards(ctx context.Context, blockID ulid.ULID) int {
-	shardIdx := 0
-	for {
-		labelsFileName := schema.LabelsPfileNameForShard(blockID.String(), shardIdx)
-		exists, err := s.bkt.Exists(ctx, labelsFileName)
-		if err != nil || !exists {
-			break
+// calculateNumShards calculates the number of parquet shards in the block by counting
+// the number of parquet labels files in the block directory in the bucket. Ideally we
+// would store this information in the block meta.json or similar, but for our PoC
+// we calculate it this way to minimize changes to the main path.
+func (s *ParquetBucketStore) calculateNumShards(ctx context.Context, blockID ulid.ULID) (int, error) {
+	numShards := 0
+	err := s.bkt.Iter(ctx, blockID.String()+"/", func(name string) error {
+		if tsdb.IsParquetLabelsFile(name) {
+			numShards++
 		}
-		shardIdx++
-		if shardIdx > 1000 {
-			level.Warn(s.logger).Log("msg", "reached maximum shard limit, stopping shard discovery", "block", blockID, "max_shards", 1000)
-			break
-		}
+		return nil
+	})
+	if err != nil {
+		return 0, errors.Wrap(err, "iterate block files to count shards")
 	}
-
-	if shardIdx == 0 {
-		return 1
+	if numShards == 0 {
+		return 0, errors.Errorf("no parquet labels files found in block %s", blockID)
 	}
-	return shardIdx
+	return numShards, nil
 }
 
 func (s *ParquetBucketStore) tryRestoreLoadedBlocksSet() map[ulid.ULID]struct{} { // nolint:unused
