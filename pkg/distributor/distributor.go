@@ -224,7 +224,7 @@ type OTelResourceAttributePromotionConfig interface {
 // KeepIdentifyingOTelResourceAttributesConfig contains methods for configuring keeping of identifying OTel resource attributes.
 type KeepIdentifyingOTelResourceAttributesConfig interface {
 	// OTelKeepIdentifyingResourceAttributes returns whether to keep identifying OTel resource attributes.
-	OTelKeepIdentifyingResourceAttributes(id string) bool
+	OTelKeepIdentifyingResourceAttributes(tenantId string) bool
 }
 
 // Config contains the configuration required to
