@@ -568,10 +568,14 @@ func TestEliminateDeduplicateAndMergeOptimizationDoesNotRegress(t *testing.T) {
 }
 
 func runTestCasesWithDelayedNameRemovalDisabled(t *testing.T, globPattern string) {
-
 	types.EnableManglingReturnedSlices = true
 	parser.ExperimentalDurationExpr = true
 	parser.EnableExperimentalFunctions = true
+	t.Cleanup(func() {
+		types.EnableManglingReturnedSlices = false
+		parser.ExperimentalDurationExpr = false
+		parser.EnableExperimentalFunctions = false
+	})
 
 	testdataFS := os.DirFS("../../testdata")
 	testFiles, err := fs.Glob(testdataFS, globPattern)
