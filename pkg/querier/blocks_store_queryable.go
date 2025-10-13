@@ -838,6 +838,10 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 			myQueriedBlocks := []ulid.ULID(nil)
 			indexBytesFetched := uint64(0)
 
+			memoryTracker, err := limiter.MemoryConsumptionTrackerFromContext(ctx)
+			if err != nil {
+				return err
+			}
 			for {
 				// Ensure the context hasn't been canceled in the meanwhile (eg. an error occurred
 				// in another goroutine).
@@ -849,7 +853,7 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 				var isEOS bool
 				var shouldRetry bool
 				mySeries, myWarnings, myQueriedBlocks, myStreamingSeriesLabels, indexBytesFetched, isEOS, shouldRetry, err = q.receiveMessage(
-					c, stream, queryLimiter, mySeries, myWarnings, myQueriedBlocks, myStreamingSeriesLabels, indexBytesFetched,
+					c, stream, queryLimiter, memoryTracker, mySeries, myWarnings, myQueriedBlocks, myStreamingSeriesLabels, indexBytesFetched,
 				)
 				if errors.Is(err, io.EOF) {
 					util.CloseAndExhaust[*storepb.SeriesResponse](stream) //nolint:errcheck
@@ -999,7 +1003,7 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 	return seriesSets, queriedBlocks, warnings, streamReaders, estimateChunks, nil //nolint:govet // It's OK to return without cancelling reqCtx, see comment above.
 }
 
-func (q *blocksStoreQuerier) receiveMessage(c BlocksStoreClient, stream storegatewaypb.StoreGateway_SeriesClient, queryLimiter *limiter.QueryLimiter, mySeries []*storepb.Series, myWarnings annotations.Annotations, myQueriedBlocks []ulid.ULID, myStreamingSeriesLabels []labels.Labels, indexBytesFetched uint64) ([]*storepb.Series, annotations.Annotations, []ulid.ULID, []labels.Labels, uint64, bool, bool, error) {
+func (q *blocksStoreQuerier) receiveMessage(c BlocksStoreClient, stream storegatewaypb.StoreGateway_SeriesClient, queryLimiter *limiter.QueryLimiter, memoryTracker memoryConsumptionTracker, mySeries []*storepb.Series, myWarnings annotations.Annotations, myQueriedBlocks []ulid.ULID, myStreamingSeriesLabels []labels.Labels, indexBytesFetched uint64) ([]*storepb.Series, annotations.Annotations, []ulid.ULID, []labels.Labels, uint64, bool, bool, error) {
 	resp, err := stream.Recv()
 	if err != nil {
 		if errors.Is(err, io.EOF) {
@@ -1018,6 +1022,12 @@ func (q *blocksStoreQuerier) receiveMessage(c BlocksStoreClient, stream storegat
 	if s := resp.GetSeries(); s != nil {
 		s.MakeReferencesSafeToRetain()
 		mySeries = append(mySeries, s)
+
+		ls := mimirpb.FromLabelAdaptersToLabels(s.Labels)
+
+		if err := memoryTracker.IncreaseMemoryConsumptionForLabels(ls); err != nil {
+			return mySeries, myWarnings, myQueriedBlocks, myStreamingSeriesLabels, indexBytesFetched, false, false, err
+		}
 
 		// Add series fingerprint to query limiter; will return error if we are over the limit
 		if err := queryLimiter.AddSeries(mimirpb.FromLabelAdaptersToLabels(s.Labels)); err != nil {
