@@ -183,6 +183,8 @@ func TestNewInstantQuery_Strings(t *testing.T) {
 func TestUpstreamTestCases(t *testing.T) {
 	opts := NewTestEngineOpts()
 	opts.CommonOpts.EnableDelayedNameRemoval = true
+	// Disable the optimization pass, since it requires delayed name removal to be enabled.
+	opts.EnableEliminateDeduplicateAndMerge = false
 	planner, err := NewQueryPlanner(opts)
 	require.NoError(t, err)
 	engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), planner)
@@ -224,6 +226,8 @@ func TestOurTestCases(t *testing.T) {
 
 	optsWithDelayedNameRemoval := NewTestEngineOpts()
 	optsWithDelayedNameRemoval.CommonOpts.EnableDelayedNameRemoval = true
+	// Disable the optimization pass, since it requires delayed name removal to be enabled.
+	opts.EnableEliminateDeduplicateAndMerge = false
 	mimirEngineWithDelayedNameRemoval, prometheusEngineWithDelayedNameRemoval := makeEngines(t, optsWithDelayedNameRemoval)
 
 	testdataFS := os.DirFS("./testdata")
