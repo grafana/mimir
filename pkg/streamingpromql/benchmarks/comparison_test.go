@@ -32,6 +32,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/streamingpromql"
 	"github.com/grafana/mimir/pkg/streamingpromql/testutils"
+	"github.com/grafana/mimir/pkg/util/limiter"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
@@ -96,7 +97,7 @@ func TestBothEnginesReturnSameResultsForBenchmarkQueries(t *testing.T) {
 	cases := TestCases(metricSizes)
 
 	opts := streamingpromql.NewTestEngineOpts()
-	prometheusEngine := promql.NewEngine(opts.CommonOpts)
+	prometheusEngine := limiter.NewUnlimitedMemoryTrackerPromQLEngine(promql.NewEngine(opts.CommonOpts))
 	limitsProvider := streamingpromql.NewStaticQueryLimitsProvider(0)
 	queryMetrics := stats.NewQueryMetrics(nil)
 	planner, err := streamingpromql.NewQueryPlanner(opts)
