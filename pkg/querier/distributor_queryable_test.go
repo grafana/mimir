@@ -93,6 +93,8 @@ func TestDistributorQuerier_Select_ShouldHonorQueryIngestersWithin(t *testing.T)
 
 			const tenantID = "test"
 			ctx := user.InjectOrgID(context.Background(), tenantID)
+			memoryTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
+			ctx = limiter.AddMemoryTrackerToContext(ctx, memoryTracker)
 			configProvider := newMockConfigProvider(testData.queryIngestersWithin)
 			queryable := NewDistributorQueryable(distributor, configProvider, nil, log.NewNopLogger())
 			querier, err := queryable.Querier(testData.queryMinT, testData.queryMaxT)
@@ -146,8 +148,8 @@ func TestDistributorQuerier_Select(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 
 			ctx := user.InjectOrgID(context.Background(), "0")
-			memoryTracker, err := limiter.MemoryConsumptionTrackerFromContext(ctx)
-			require.NoError(t, err)
+			memoryTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
+			ctx = limiter.AddMemoryTrackerToContext(ctx, memoryTracker)
 
 			d := &mockDistributor{
 				memoryConsumptionTracker: memoryTracker,
@@ -194,8 +196,8 @@ func TestDistributorQuerier_Select_ClosedBeforeSelectFinishes(t *testing.T) {
 	})
 
 	ctx := user.InjectOrgID(context.Background(), "0")
-	memoryTracker, err := limiter.MemoryConsumptionTrackerFromContext(ctx)
-	require.NoError(t, err)
+	memoryTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
+	ctx = limiter.AddMemoryTrackerToContext(ctx, memoryTracker)
 
 	d := &mockDistributor{
 		memoryConsumptionTracker: memoryTracker,
@@ -295,8 +297,8 @@ func TestDistributorQuerier_Select_MixedFloatAndIntegerHistograms(t *testing.T) 
 	}
 
 	ctx := user.InjectOrgID(context.Background(), "0")
-	memoryTracker, err := limiter.MemoryConsumptionTrackerFromContext(ctx)
-	require.NoError(t, err)
+	memoryTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
+	ctx = limiter.AddMemoryTrackerToContext(ctx, memoryTracker)
 
 	d := &mockDistributor{
 		memoryConsumptionTracker: memoryTracker,
@@ -414,8 +416,8 @@ func TestDistributorQuerier_Select_MixedHistogramsAndFloatSamples(t *testing.T) 
 	}
 
 	ctx := user.InjectOrgID(context.Background(), "0")
-	memoryTracker, err := limiter.MemoryConsumptionTrackerFromContext(ctx)
-	require.NoError(t, err)
+	memoryTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
+	ctx = limiter.AddMemoryTrackerToContext(ctx, memoryTracker)
 
 	d := &mockDistributor{
 		memoryConsumptionTracker: memoryTracker,
@@ -569,8 +571,8 @@ func TestDistributorQuerier_Select_CounterResets(t *testing.T) {
 			for responseName, responseType := range responseTypes {
 				t.Run(responseName, func(t *testing.T) {
 					ctx := user.InjectOrgID(context.Background(), "0")
-					memoryTracker, err := limiter.MemoryConsumptionTrackerFromContext(ctx)
-					require.NoError(t, err)
+					memoryTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
+					ctx = limiter.AddMemoryTrackerToContext(ctx, memoryTracker)
 
 					d := &mockDistributor{
 						memoryConsumptionTracker: memoryTracker,
@@ -832,7 +834,9 @@ func (m *mockDistributor) QueryStream(ctx context.Context, queryMetrics *stats.Q
 	response := args.Get(0).(client.CombinedQueryStreamResponse)
 	for _, ss := range response.StreamingSeries {
 		err := m.memoryConsumptionTracker.IncreaseMemoryConsumptionForLabels(ss.Labels)
-		return client.CombinedQueryStreamResponse{}, err
+		if err != nil {
+			return client.CombinedQueryStreamResponse{}, err
+		}
 	}
 
 	return args.Get(0).(client.CombinedQueryStreamResponse), args.Error(1)
