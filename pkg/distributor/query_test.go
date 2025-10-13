@@ -293,7 +293,7 @@ func TestDistributor_QueryStream_ShouldReturnErrorIfMaxSeriesPerQueryLimitIsReac
 			// Since the number of series is equal to the limit (but doesn't
 			// exceed it), we expect a query running on all series to succeed.
 			queryCtx := limiter.AddQueryLimiterToContext(userCtx, limiter.NewQueryLimiter(maxSeriesLimit, 0, 0, 0, stats.NewQueryMetrics(prometheus.NewPedanticRegistry())))
-			queryCtx = limiter.AddMemoryTrackerToContext(queryCtx, memoryTracker)
+			queryCtx = limiter.ContextWithNewUnlimitedMemoryConsumptionTracker(queryCtx)
 			queryRes, err := ds[0].QueryStream(queryCtx, queryMetrics, math.MinInt32, math.MaxInt32, allSeriesMatchers...)
 			require.NoError(t, err)
 
