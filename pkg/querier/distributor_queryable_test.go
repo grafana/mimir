@@ -15,6 +15,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/user"
+	"github.com/grafana/mimir/pkg/util/limiter"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
@@ -143,10 +144,16 @@ func TestDistributorQuerier_Select(t *testing.T) {
 
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
-			d := &mockDistributor{}
-			d.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(testCase.response, nil)
 
 			ctx := user.InjectOrgID(context.Background(), "0")
+			memoryTracker, err := limiter.MemoryConsumptionTrackerFromContext(ctx)
+			require.NoError(t, err)
+
+			d := &mockDistributor{
+				memoryConsumptionTracker: memoryTracker,
+			}
+			d.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(testCase.response, nil)
+
 			queryable := NewDistributorQueryable(d, newMockConfigProvider(0), nil, log.NewNopLogger())
 			querier, err := queryable.Querier(mint, maxt)
 			require.NoError(t, err)
@@ -186,7 +193,13 @@ func TestDistributorQuerier_Select_ClosedBeforeSelectFinishes(t *testing.T) {
 		{SeriesIndex: 1, Chunks: convertToChunks(t, samplesToInterface(s2), false)},
 	})
 
-	d := &mockDistributor{}
+	ctx := user.InjectOrgID(context.Background(), "0")
+	memoryTracker, err := limiter.MemoryConsumptionTrackerFromContext(ctx)
+	require.NoError(t, err)
+
+	d := &mockDistributor{
+		memoryConsumptionTracker: memoryTracker,
+	}
 	d.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(
 		client.CombinedQueryStreamResponse{
 			StreamingSeries: []client.StreamingSeries{
@@ -206,7 +219,6 @@ func TestDistributorQuerier_Select_ClosedBeforeSelectFinishes(t *testing.T) {
 		},
 		nil)
 
-	ctx := user.InjectOrgID(context.Background(), "0")
 	queryable := NewDistributorQueryable(d, newMockConfigProvider(0), stats.NewQueryMetrics(prometheus.NewPedanticRegistry()), log.NewNopLogger())
 	querier, err := queryable.Querier(mint, maxt)
 	require.NoError(t, err)
@@ -282,7 +294,13 @@ func TestDistributorQuerier_Select_MixedFloatAndIntegerHistograms(t *testing.T) 
 		genExpectedHistogram(5500, 55, mimirpb.Histogram_UNKNOWN),
 	}
 
-	d := &mockDistributor{}
+	ctx := user.InjectOrgID(context.Background(), "0")
+	memoryTracker, err := limiter.MemoryConsumptionTrackerFromContext(ctx)
+	require.NoError(t, err)
+
+	d := &mockDistributor{
+		memoryConsumptionTracker: memoryTracker,
+	}
 	d.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(
 		client.CombinedQueryStreamResponse{
 			StreamingSeries: []client.StreamingSeries{
@@ -327,7 +345,6 @@ func TestDistributorQuerier_Select_MixedFloatAndIntegerHistograms(t *testing.T) 
 		},
 		nil)
 
-	ctx := user.InjectOrgID(context.Background(), "0")
 	queryable := NewDistributorQueryable(d, newMockConfigProvider(0), stats.NewQueryMetrics(nil), log.NewNopLogger())
 	querier, err := queryable.Querier(mint, maxt)
 	require.NoError(t, err)
@@ -396,7 +413,13 @@ func TestDistributorQuerier_Select_MixedHistogramsAndFloatSamples(t *testing.T) 
 		genExpectedFloatHistogram(8000, 80, mimirpb.Histogram_NO),
 	}
 
-	d := &mockDistributor{}
+	ctx := user.InjectOrgID(context.Background(), "0")
+	memoryTracker, err := limiter.MemoryConsumptionTrackerFromContext(ctx)
+	require.NoError(t, err)
+
+	d := &mockDistributor{
+		memoryConsumptionTracker: memoryTracker,
+	}
 	d.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(
 		client.CombinedQueryStreamResponse{
 			StreamingSeries: []client.StreamingSeries{
@@ -441,7 +464,6 @@ func TestDistributorQuerier_Select_MixedHistogramsAndFloatSamples(t *testing.T) 
 		},
 		nil)
 
-	ctx := user.InjectOrgID(context.Background(), "0")
 	queryable := NewDistributorQueryable(d, newMockConfigProvider(0), stats.NewQueryMetrics(nil), log.NewNopLogger())
 	querier, err := queryable.Querier(mint, maxt)
 	require.NoError(t, err)
@@ -546,10 +568,15 @@ func TestDistributorQuerier_Select_CounterResets(t *testing.T) {
 
 			for responseName, responseType := range responseTypes {
 				t.Run(responseName, func(t *testing.T) {
-					d := &mockDistributor{}
+					ctx := user.InjectOrgID(context.Background(), "0")
+					memoryTracker, err := limiter.MemoryConsumptionTrackerFromContext(ctx)
+					require.NoError(t, err)
+
+					d := &mockDistributor{
+						memoryConsumptionTracker: memoryTracker,
+					}
 					d.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(responseType.combinedResponse, nil)
 
-					ctx := user.InjectOrgID(context.Background(), "0")
 					queryable := NewDistributorQueryable(d, newMockConfigProvider(0), stats.NewQueryMetrics(prometheus.NewPedanticRegistry()), log.NewNopLogger())
 					querier, err := queryable.Querier(tc.queryStart, tc.queryEnd)
 					require.NoError(t, err)
@@ -793,6 +820,7 @@ func convertToChunks(t *testing.T, samples []interface{}, allowOverflow bool) []
 
 type mockDistributor struct {
 	mock.Mock
+	memoryConsumptionTracker *limiter.MemoryConsumptionTracker
 }
 
 func (m *mockDistributor) QueryExemplars(ctx context.Context, from, to model.Time, matchers ...[]*labels.Matcher) (*client.ExemplarQueryResponse, error) {
@@ -801,6 +829,12 @@ func (m *mockDistributor) QueryExemplars(ctx context.Context, from, to model.Tim
 }
 func (m *mockDistributor) QueryStream(ctx context.Context, queryMetrics *stats.QueryMetrics, from, to model.Time, matchers ...*labels.Matcher) (client.CombinedQueryStreamResponse, error) {
 	args := m.Called(ctx, queryMetrics, from, to, matchers)
+	response := args.Get(0).(client.CombinedQueryStreamResponse)
+	for _, ss := range response.StreamingSeries {
+		err := m.memoryConsumptionTracker.IncreaseMemoryConsumptionForLabels(ss.Labels)
+		return client.CombinedQueryStreamResponse{}, err
+	}
+
 	return args.Get(0).(client.CombinedQueryStreamResponse), args.Error(1)
 }
 func (m *mockDistributor) LabelValuesForLabelName(ctx context.Context, from, to model.Time, lbl model.LabelName, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, error) {
