@@ -72,7 +72,7 @@ func NewQueryPlanner(opts EngineOpts) (*QueryPlanner, error) {
 		if opts.CommonOpts.EnableDelayedNameRemoval {
 			return nil, errors.New("eliminating deduplicate and merge nodes is not supported with delayed name removal")
 		}
-	
+
 		planner.RegisterQueryPlanOptimizationPass(plan.NewEliminateDeduplicateAndMergeOptimizationPass())
 	}
 	if opts.EnableCommonSubexpressionElimination {
