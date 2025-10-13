@@ -127,6 +127,11 @@
 * [FEATURE] Distributor: Allow setting GOMEMLIMIT equal to memory request, via `_config.distributor_gomemlimit_enabled`. If enabled, distributor horizontal auto-scaling memory trigger is also removed, since it doesn't make sense in combination with GOMEMLIMIT. #12963
 * [ENHANCEMENT] Add timeout validation for querier and query-frontend. Enhanced `parseDuration` to support milliseconds and combined formats (e.g., "4m30s"). #12766
 * [ENHANCEMENT] Allow the max number of OTEL events in a span to be configure via `_config.otel_span_event_count_limit`. #12865
+* [ENHANCEMENT] Memcached: added the following fields to customise the memcached's node affinity matchers: #12987
+  * `$.memcached_frontend_node_affinity_matchers`
+  * `$.memcached_index_queries_node_affinity_matchers`
+  * `$.memcached_chunks_node_affinity_matchers`
+  * `$.memcached_metadata_node_affinity_matchers`
 
 ### Documentation
 

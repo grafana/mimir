@@ -7,6 +7,11 @@ memcached {
   local mount = $.core.v1.volumeMount,
   local volume = $.core.v1.volume,
 
+  memcached_frontend_node_affinity_matchers:: [],
+  memcached_index_queries_node_affinity_matchers:: [],
+  memcached_chunks_node_affinity_matchers:: [],
+  memcached_metadata_node_affinity_matchers:: [],
+
   memcached+:: {
     cpu_limits:: null,
     exporter_cpu_requests:: '0.05',
@@ -40,7 +45,7 @@ memcached {
 
   memcached_frontend:
     if $._config.cache_frontend_enabled then
-      $.newMemcachedFrontend('memcached-frontend')
+      $.newMemcachedFrontend('memcached-frontend', $.memcached_frontend_node_affinity_matchers)
     else {},
 
   // Creates a memcached instance used to temporarily cache index lookups.
@@ -59,7 +64,7 @@ memcached {
 
   memcached_index_queries:
     if $._config.cache_index_queries_enabled then
-      $.newMemcachedIndexQueries('memcached-index-queries')
+      $.newMemcachedIndexQueries('memcached-index-queries', $.memcached_index_queries_node_affinity_matchers)
     else {},
 
   // Creates a memcached instance used to cache chunks.
@@ -81,7 +86,7 @@ memcached {
 
   memcached_chunks:
     if $._config.cache_chunks_enabled then
-      $.newMemcachedChunks('memcached')
+      $.newMemcachedChunks('memcached', $.memcached_chunks_node_affinity_matchers)
     else {},
 
   // Creates a memcached instance for caching TSDB blocks metadata (meta.json files, deletion marks, list of users and blocks).
@@ -103,6 +108,6 @@ memcached {
 
   memcached_metadata:
     if $._config.cache_metadata_enabled then
-      $.newMemcachedMetadata('memcached-metadata')
+      $.newMemcachedMetadata('memcached-metadata', $.memcached_metadata_node_affinity_matchers)
     else {},
 }
