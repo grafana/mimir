@@ -50,8 +50,7 @@ If you enabled [zone-aware replication](../../../configure/configure-zone-aware-
 ### Scaling down ingesters in ingest storage architecture
 
 {{< admonition type="note" >}}
-This guidance applies to ingest storage architecture.  
-For more information about the supported architectures in Grafana Mimir, refer to [Grafana Mimir architecture](https://grafana.com/docs/mimir/<MIMIR_VERSION>/get-started/about-grafana-mimir-architecture/).
+This guidance applies to ingest storage architecture. For more information about the supported architectures in Grafana Mimir, refer to [Grafana Mimir architecture](https://grafana.com/docs/mimir/<MIMIR_VERSION>/get-started/about-grafana-mimir-architecture/).
 {{< /admonition >}}
 
 When running Grafana Mimir with ingest storage architecture, scaling down ingesters triggers the reassignment of ingestion partitions instead of transferring in-memory series ownership between ingesters.
@@ -65,8 +64,7 @@ Because the system writes ingestion data to Kafka and persists it in object stor
 ### Scaling down ingesters in classic architecture
 
 {{< admonition type="note" >}}
-This guidance applies to classic architecture.  
-For more information about the supported architectures in Grafana Mimir, refer to [Grafana Mimir architecture](https://grafana.com/docs/mimir/<MIMIR_VERSION>/get-started/about-grafana-mimir-architecture/).
+This guidance applies to classic architecture. For more information about the supported architectures in Grafana Mimir, refer to [Grafana Mimir architecture](https://grafana.com/docs/mimir/<MIMIR_VERSION>/get-started/about-grafana-mimir-architecture/).
 {{< /admonition >}}
 
 [Ingesters](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/components/ingester/) store recently received samples in memory. When you scale down an ingester, do not discard the samples stored in the ingester to guarantee no data loss.
