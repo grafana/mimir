@@ -44,6 +44,10 @@ func (s *StepInvariantExpression) Children() []planning.Node {
 	return []planning.Node{s.Inner}
 }
 
+func (s *StepInvariantExpression) MinimumRequiredPlanVersion() int64 {
+	return planning.QueryPlanVersionOne
+}
+
 func (s *StepInvariantExpression) SetChildren(children []planning.Node) error {
 	if len(children) != 1 {
 		return fmt.Errorf("node of type StepInvariantExpression expects 1 child, but got %d", len(children))
@@ -80,7 +84,7 @@ func MaterializeStepInvariantExpression(s *StepInvariantExpression, materializer
 		return planning.NewSingleUseOperatorFactory(operators.NewStepInvariantScalarOperator(op, timeRange, params.MemoryConsumptionTracker)), nil
 	}
 
-	return planning.NewNoOpOperatorFactory(), fmt.Errorf("unable to materialize step invariant expression because of unhandled operator, operator=%v", reflect.TypeOf(op))
+	return nil, fmt.Errorf("unable to materialize step invariant expression because of unhandled operator, operator=%v", reflect.TypeOf(op))
 }
 
 func (s *StepInvariantExpression) ResultType() (parser.ValueType, error) {

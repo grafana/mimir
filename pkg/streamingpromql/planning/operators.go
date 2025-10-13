@@ -30,10 +30,6 @@ func NewSingleUseOperatorFactory(operator types.Operator) OperatorFactory {
 	}
 }
 
-func NewNoOpOperatorFactory() OperatorFactory {
-	return &singleUseOperatorFactory{}
-}
-
 func (f *singleUseOperatorFactory) Produce() (types.Operator, error) {
 	if f.used {
 		return nil, errSingleUseOperatorAlreadyUsed

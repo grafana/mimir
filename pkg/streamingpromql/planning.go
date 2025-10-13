@@ -471,6 +471,7 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
 			// A special case to re-order when we have a timestamp(StepInvariantExpression(VectorSelector)).
 			// The StepInvariantExpression is moved up to encase the entire function call.
 			// Note that the DeduplicateAndMerge still wraps the function call as the timestamp function returns true under functionNeedsDeduplication().
+			// This can be removed once https://github.com/prometheus/prometheus/pull/17313 is vendored into mimir
 			stepInvariantExpression, ok := args[0].(*core.StepInvariantExpression)
 			if ok {
 				vectorSelector, ok := stepInvariantExpression.Inner.(*core.VectorSelector)

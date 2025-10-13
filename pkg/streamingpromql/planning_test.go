@@ -106,6 +106,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 			expectedPlan: &planning.EncodedQueryPlan{
 				TimeRange: instantQueryEncodedTimeRange,
 				RootNode:  1,
+				Version:   planning.QueryPlanVersionOne,
 				Nodes: []*planning.EncodedNode{
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
@@ -125,7 +126,6 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 						ChildrenLabels: []string{""},
 						Children:       []int64{0},
 						Type:           "StepInvariantExpression",
-						Description:    ``,
 					},
 				},
 			},
@@ -137,6 +137,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 			expectedPlan: &planning.EncodedQueryPlan{
 				TimeRange: rangeQueryEncodedTimeRange,
 				RootNode:  1,
+				Version:   planning.QueryPlanVersionOne,
 				Nodes: []*planning.EncodedNode{
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
@@ -156,7 +157,6 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 						ChildrenLabels: []string{""},
 						Children:       []int64{0},
 						Type:           "StepInvariantExpression",
-						Description:    ``,
 					},
 				},
 			},
@@ -168,6 +168,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 			expectedPlan: &planning.EncodedQueryPlan{
 				TimeRange: rangeQueryEncodedTimeRange,
 				RootNode:  1,
+				Version:   planning.QueryPlanVersionOne,
 				Nodes: []*planning.EncodedNode{
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
@@ -187,7 +188,6 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 						ChildrenLabels: []string{""},
 						Children:       []int64{0},
 						Type:           "StepInvariantExpression",
-						Description:    ``,
 					},
 				},
 			},
@@ -651,6 +651,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 			expectedPlan: &planning.EncodedQueryPlan{
 				TimeRange: instantQueryEncodedTimeRange,
 				RootNode:  3,
+				Version:   planning.QueryPlanVersionOne,
 				Nodes: []*planning.EncodedNode{
 					{
 						NodeType: planning.NODE_TYPE_NUMBER_LITERAL,
@@ -687,7 +688,6 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 						ChildrenLabels: []string{""},
 						Children:       []int64{2},
 						Type:           "StepInvariantExpression",
-						Description:    ``,
 					},
 				},
 			},
@@ -1207,6 +1207,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 			expectedPlan: &planning.EncodedQueryPlan{
 				TimeRange:                rangeQueryEncodedTimeRange,
 				RootNode:                 3,
+				Version:                  planning.QueryPlanVersionOne,
 				EnableDelayedNameRemoval: false,
 				Nodes: []*planning.EncodedNode{
 					{
@@ -1247,7 +1248,6 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 						Details:        marshalDetails(&core.StepInvariantExpressionDetails{}),
 						Type:           "StepInvariantExpression",
 						Children:       []int64{2},
-						Description:    ``,
 						ChildrenLabels: []string{""},
 					},
 				},
@@ -1261,6 +1261,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 			expectedPlan: &planning.EncodedQueryPlan{
 				TimeRange:                rangeQueryEncodedTimeRange,
 				RootNode:                 5,
+				Version:                  planning.QueryPlanVersionOne,
 				EnableDelayedNameRemoval: false,
 				Nodes: []*planning.EncodedNode{
 					{
@@ -1301,7 +1302,6 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 						Details:        marshalDetails(&core.StepInvariantExpressionDetails{}),
 						Type:           "StepInvariantExpression",
 						Children:       []int64{2},
-						Description:    ``,
 						ChildrenLabels: []string{""},
 					},
 					{

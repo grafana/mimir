@@ -22,9 +22,10 @@ import (
 	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
-var MaximumSupportedQueryPlanVersion = int64(0)
+var MaximumSupportedQueryPlanVersion = QueryPlanVersionOne
 
 const QueryPlanVersionZero = int64(0)
+const QueryPlanVersionOne = int64(1)
 
 type QueryPlan struct {
 	TimeRange types.QueryTimeRange
@@ -318,13 +319,15 @@ func (p *EncodedQueryPlan) ToDecodedPlan(nodeIndices ...int64) (*QueryPlan, []No
 		nodes = append(nodes, n)
 	}
 
-	return &QueryPlan{
+	plan := &QueryPlan{
 		TimeRange:                p.TimeRange.ToDecodedTimeRange(),
 		Root:                     root,
 		OriginalExpression:       p.OriginalExpression,
 		EnableDelayedNameRemoval: p.EnableDelayedNameRemoval,
 		Version:                  p.Version,
-	}, nodes, nil
+	}
+
+	return plan, nodes, nil
 }
 
 type queryPlanDecoder struct {
