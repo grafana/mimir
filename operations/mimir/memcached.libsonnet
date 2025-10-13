@@ -7,12 +7,10 @@ memcached {
   local mount = $.core.v1.volumeMount,
   local volume = $.core.v1.volume,
 
-  _config+:: {
-    memcached_frontend_node_affinity_matchers: [],
-    memcached_index_queries_node_affinity_matchers: [],
-    memcached_chunks_node_affinity_matchers: [],
-    memcached_metadata_node_affinity_matchers: [],
-  },
+  memcached_frontend_node_affinity_matchers:: [],
+  memcached_index_queries_node_affinity_matchers:: [],
+  memcached_chunks_node_affinity_matchers:: [],
+  memcached_metadata_node_affinity_matchers:: [],
 
   memcached+:: {
     cpu_limits:: null,
