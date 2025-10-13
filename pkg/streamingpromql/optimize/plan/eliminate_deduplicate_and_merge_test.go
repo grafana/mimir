@@ -372,7 +372,7 @@ func countDeduplicateAndMergeNodes(node planning.Node) int {
 	return count
 }
 
-func TestEliminateDeduplicateAndMergeOptimizationPass(t *testing.T) {
+func TestEliminateDeduplicateAndMergeOptimizationPassCorrectness(t *testing.T) {
 	testCases := map[string]struct {
 		data           string
 		expr           string
@@ -386,8 +386,10 @@ func TestEliminateDeduplicateAndMergeOptimizationPass(t *testing.T) {
 					a{env="test"} 0+2x10
 			`,
 			expr: `abs(rate(a[5m]))`,
-			expectedResult: `{env="prod"} => 0.016666666666666666 @[600000]
-{env="test"} => 0.03333333333333333 @[600000]`,
+			expectedResult: `
+				{env="prod"} => 0.016666666666666666 @[600000]
+				{env="test"} => 0.03333333333333333 @[600000]
+			`,
 		},
 		"series with same labelset after name drop, but datapoints at different timestamps - should be merged": {
 			data: `
@@ -395,8 +397,10 @@ func TestEliminateDeduplicateAndMergeOptimizationPass(t *testing.T) {
 					a{env="prod"} _ 0 1 2 _ _ _ _ _ _
 					b{env="prod"} _ _ _ _ _ 0 1 2 3 4
 			`,
-			expr:           `abs(rate({__name__=~"(a|b)"}[5m]))`,
-			expectedResult: `{env="prod"} => 0.016666666666666666 @[600000]`,
+			expr: `abs(rate({__name__=~"(a|b)"}[5m]))`,
+			expectedResult: `
+				{env="prod"} => 0.016666666666666666 @[600000]
+			`,
 		},
 		"series with same labelset after name drop, but datapoints at same timestamp - should error": {
 			data: `
@@ -414,8 +418,10 @@ func TestEliminateDeduplicateAndMergeOptimizationPass(t *testing.T) {
 					a{env="test"} 0+2x10
 			`,
 			expr: `abs(rate(a[5m]))`,
-			expectedResult: `{env="prod"} => 0.016666666666666666 @[600000]
-{env="test"} => 0.03333333333333333 @[600000]`,
+			expectedResult: `
+				{env="prod"} => 0.016666666666666666 @[600000]
+				{env="test"} => 0.03333333333333333 @[600000]
+			`,
 		},
 		"label_replace with exact name matcher, no conflicts": {
 			data: `
@@ -424,8 +430,10 @@ func TestEliminateDeduplicateAndMergeOptimizationPass(t *testing.T) {
 					a{env="test", src="value2"} 0+2x10
 			`,
 			expr: `abs(label_replace(rate(a[5m]), "dst", "$1", "src", "(.*)"))`,
-			expectedResult: `{dst="value1", env="prod", src="value1"} => 0.016666666666666666 @[600000]
-{dst="value2", env="test", src="value2"} => 0.03333333333333333 @[600000]`,
+			expectedResult: `
+				{dst="value1", env="prod", src="value1"} => 0.016666666666666666 @[600000]
+				{dst="value2", env="test", src="value2"} => 0.03333333333333333 @[600000]
+			`,
 		},
 		"label_replace that creates duplicate labelsets - should error": {
 			data: `
@@ -447,8 +455,10 @@ func TestEliminateDeduplicateAndMergeOptimizationPass(t *testing.T) {
 					a{env="prod"} _ 0 1 2 _ _ _ _ _ _
 					a{env="test"} _ _ _ _ _ 0 1 2 3 4
 			`,
-			expr:           `label_replace(a, "env", "merged", "env", "(.*)")`,
-			expectedResult: `{__name__="a", env="merged"} => 4 @[600000]`,
+			expr: `label_replace(a, "env", "merged", "env", "(.*)")`,
+			expectedResult: `
+				{__name__="a", env="merged"} => 4 @[600000]
+			`,
 		},
 		"label_replace re-introduces __name__ after rate drops it": {
 			data: `
@@ -457,8 +467,10 @@ func TestEliminateDeduplicateAndMergeOptimizationPass(t *testing.T) {
 					a{env="test"} 0+2x10
 			`,
 			expr: `label_replace(rate(a[5m]), "__name__", "my_metric", "", "")`,
-			expectedResult: `{__name__="my_metric", env="prod"} => 0.016666666666666666 @[600000]
-{__name__="my_metric", env="test"} => 0.03333333333333333 @[600000]`,
+			expectedResult: `
+				{__name__="my_metric", env="prod"} => 0.016666666666666666 @[600000]
+				{__name__="my_metric", env="test"} => 0.03333333333333333 @[600000]
+			`,
 		},
 		"label_replace re-introduces __name__, then name-dropping operation merges series": {
 			// This tests the full cycle: drop name -> re-introduce name with label change -> drop name again -> merge.
@@ -473,8 +485,10 @@ func TestEliminateDeduplicateAndMergeOptimizationPass(t *testing.T) {
 					a{env="prod"} _ 0 1 2 _ _ _ _ _ _
 					a{env="test"} _ _ _ _ _ 0 1 2 3 4
 			`,
-			expr:           `abs(label_replace(label_replace(rate(a[5m]), "__name__", "my_metric", "", ""), "env", "my_metric", "", ""))`,
-			expectedResult: `{env="my_metric"} => 0.016666666666666666 @[600000]`,
+			expr: `abs(label_replace(label_replace(rate(a[5m]), "__name__", "my_metric", "", ""), "env", "my_metric", "", ""))`,
+			expectedResult: `
+				{env="my_metric"} => 0.016666666666666666 @[600000]
+			`,
 		},
 		"label_replace re-introduces __name__, then name-dropping operation causes error": {
 			// This tests the error case: drop name -> re-introduce name with label change -> drop name again -> error.
@@ -527,7 +541,7 @@ func TestEliminateDeduplicateAndMergeOptimizationPass(t *testing.T) {
 					require.Contains(t, result.Err.Error(), testCase.expectedError)
 				} else {
 					require.NoError(t, result.Err)
-					require.Equal(t, testCase.expectedResult, result.String())
+					require.Equal(t, testutils.TrimIndent(testCase.expectedResult), result.String())
 				}
 			}
 
