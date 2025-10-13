@@ -407,8 +407,10 @@ func DefaultTenantManagerFactory(
 		// Wrap the queryable with our custom logic.
 		wrappedQueryable := WrapQueryableWithReadConsistency(queryable, logger)
 		// Wrap the queryable to ensure all queries have a memory tracker in the context.
-		// This is needed for ruler operations, specifically alert state restoration that is not using
-		// the query engine's NewInstantQuery/NewRangeQuery methods from UnlimitedMemoryTrackerPromQLEngine.
+		// This is needed for ruler operations, specifically alert state restoration that does not use a query engine.
+		// (Operations that use a query engine use QueryFunc, and it's expected that
+		// the QueryFunc either uses MQE, or uses a Prometheus engine instance wrapped
+		// in UnlimitedMemoryTrackerPromQLEngine to provide a memory consumption tracker.)
 		wrappedQueryable = NewUnlimitedMemoryTrackerQueryable(wrappedQueryable)
 
 		var appendeable storage.Appendable
