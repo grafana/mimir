@@ -45,7 +45,7 @@ memcached {
 
   memcached_frontend:
     if $._config.cache_frontend_enabled then
-      $.newMemcachedFrontend('memcached-frontend', $._config.memcached_frontend_node_affinity_matchers)
+      $.newMemcachedFrontend('memcached-frontend', $.memcached_frontend_node_affinity_matchers)
     else {},
 
   // Creates a memcached instance used to temporarily cache index lookups.
@@ -64,7 +64,7 @@ memcached {
 
   memcached_index_queries:
     if $._config.cache_index_queries_enabled then
-      $.newMemcachedIndexQueries('memcached-index-queries', $._config.memcached_index_queries_node_affinity_matchers)
+      $.newMemcachedIndexQueries('memcached-index-queries', $.memcached_index_queries_node_affinity_matchers)
     else {},
 
   // Creates a memcached instance used to cache chunks.
@@ -86,7 +86,7 @@ memcached {
 
   memcached_chunks:
     if $._config.cache_chunks_enabled then
-      $.newMemcachedChunks('memcached', $._config.memcached_chunks_node_affinity_matchers)
+      $.newMemcachedChunks('memcached', $.memcached_chunks_node_affinity_matchers)
     else {},
 
   // Creates a memcached instance for caching TSDB blocks metadata (meta.json files, deletion marks, list of users and blocks).
@@ -108,6 +108,6 @@ memcached {
 
   memcached_metadata:
     if $._config.cache_metadata_enabled then
-      $.newMemcachedMetadata('memcached-metadata', $._config.memcached_metadata_node_affinity_matchers)
+      $.newMemcachedMetadata('memcached-metadata', $.memcached_metadata_node_affinity_matchers)
     else {},
 }
