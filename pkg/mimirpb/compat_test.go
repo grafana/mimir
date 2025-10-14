@@ -7,6 +7,7 @@ package mimirpb
 
 import (
 	stdlibjson "encoding/json"
+	"fmt"
 	"math"
 	"strconv"
 	"testing"
@@ -206,6 +207,42 @@ func BenchmarkFromLabelAdaptersToLabelsWithCopy(b *testing.B) {
 
 	for i := 0; i < b.N; i++ {
 		FromLabelAdaptersToLabelsWithCopy(input)
+	}
+}
+
+func BenchmarkFromLabelAdaptersToLabels(b *testing.B) {
+	testCases := [][]LabelAdapter{
+		{}, // Empty labels.
+		{
+			{Name: "hello", Value: "world"},
+		},
+		{
+			{Name: "hello", Value: "world"},
+			{Name: "some label", Value: "and its value"},
+		},
+		{
+			{Name: "hello", Value: "world"},
+			{Name: "some label", Value: "and its value"},
+			{Name: "another label", Value: "another value"},
+		},
+		{
+			{Name: "hello", Value: "world"},
+			{Name: "some label", Value: "and its value"},
+			{Name: "another label", Value: "another value"},
+			{Name: "label 4", Value: "value 4"},
+			{Name: "label 5", Value: "value 5"},
+			{Name: "label 6", Value: "value 6"},
+			{Name: "label 7", Value: "value 7"},
+			{Name: "label 8", Value: "value 8"},
+		},
+	}
+
+	for _, testCase := range testCases {
+		b.Run(fmt.Sprintf("%v labels", len(testCase)), func(b *testing.B) {
+			for b.Loop() {
+				FromLabelAdaptersToLabels(testCase)
+			}
+		})
 	}
 }
 
