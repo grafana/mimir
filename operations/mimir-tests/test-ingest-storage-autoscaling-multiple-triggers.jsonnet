@@ -20,6 +20,9 @@
     ingest_storage_ingester_autoscaling_max_replicas_per_zone: 15,
     ingest_storage_ingester_autoscaling_index_metrics: true,
 
+    // not relevant to this test
+    zpdb_custom_resource_definition_enabled: false,
+
     ingest_storage_ingester_autoscaling_triggers+: [
       {
         query: 'vector(123)',

@@ -1248,6 +1248,66 @@ user1:
 	}
 }
 
+func TestRulerMaxRuleEvaluationResults(t *testing.T) {
+	tc := map[string]struct {
+		inputYAML     string
+		overrides     string
+		expectedLimit int
+	}{
+		"default limit": {
+			inputYAML: `
+ruler_max_rule_evaluation_results: 100
+`,
+			expectedLimit: 100,
+		},
+		"zero disables limit": {
+			inputYAML: `
+ruler_max_rule_evaluation_results: 0
+`,
+			expectedLimit: 0,
+		},
+		"user specific limit overrides default": {
+			inputYAML: `
+ruler_max_rule_evaluation_results: 100
+`,
+			overrides: `
+user1:
+  ruler_max_rule_evaluation_results: 500
+`,
+			expectedLimit: 500,
+		},
+		"zero user limit overrides default": {
+			inputYAML: `
+ruler_max_rule_evaluation_results: 100
+`,
+			overrides: `
+user1:
+  ruler_max_rule_evaluation_results: 0
+`,
+			expectedLimit: 0,
+		},
+	}
+
+	for name, tt := range tc {
+		t.Run(name, func(t *testing.T) {
+			LimitsYAML := Limits{}
+			err := yaml.Unmarshal([]byte(tt.inputYAML), &LimitsYAML)
+			require.NoError(t, err)
+
+			var overrides map[string]*Limits
+			if tt.overrides != "" {
+				err = yaml.Unmarshal([]byte(tt.overrides), &overrides)
+				require.NoError(t, err)
+			}
+
+			tl := NewMockTenantLimits(overrides)
+			ov := NewOverrides(LimitsYAML, tl)
+
+			require.Equal(t, tt.expectedLimit, ov.RulerMaxRuleEvaluationResults("user1"))
+		})
+	}
+}
+
 func TestRulerAlertmanagerClientConfig(t *testing.T) {
 	tc := map[string]struct {
 		baseYAML       string

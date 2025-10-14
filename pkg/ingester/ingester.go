@@ -24,6 +24,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/failsafe-go/failsafe-go/adaptivelimiter"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/concurrency"
@@ -83,6 +84,9 @@ var tracer = otel.Tracer("pkg/ingester")
 const (
 	// Number of timeseries to return in each batch of a QueryStream.
 	queryStreamBatchSize = 128
+
+	// Number of chunks to return in each batch of a QueryStream if not set in the request.
+	fallbackChunkStreamBatchSize = 256
 
 	// Discarded Metadata metric labels.
 	perUserMetadataLimit   = "per_user_metadata_limit"
@@ -203,11 +207,11 @@ type Config struct {
 	UpdateIngesterOwnedSeries       bool          `yaml:"track_ingester_owned_series" category:"experimental"`
 	OwnedSeriesUpdateInterval       time.Duration `yaml:"owned_series_update_interval" category:"experimental"`
 
-	PushCircuitBreaker   CircuitBreakerConfig                       `yaml:"push_circuit_breaker"`
-	ReadCircuitBreaker   CircuitBreakerConfig                       `yaml:"read_circuit_breaker"`
-	RejectionPrioritizer reactivelimiter.RejectionPrioritizerConfig `yaml:"rejection_prioritizer"`
-	PushReactiveLimiter  reactivelimiter.Config                     `yaml:"push_reactive_limiter"`
-	ReadReactiveLimiter  reactivelimiter.Config                     `yaml:"read_reactive_limiter"`
+	PushCircuitBreaker   CircuitBreakerConfig              `yaml:"push_circuit_breaker"`
+	ReadCircuitBreaker   CircuitBreakerConfig              `yaml:"read_circuit_breaker"`
+	RejectionPrioritizer reactivelimiter.PrioritizerConfig `yaml:"rejection_prioritizer"`
+	PushReactiveLimiter  reactivelimiter.Config            `yaml:"push_reactive_limiter"`
+	ReadReactiveLimiter  reactivelimiter.Config            `yaml:"read_reactive_limiter"`
 
 	PushGrpcMethodEnabled bool `yaml:"push_grpc_method_enabled" category:"experimental" doc:"hidden"`
 
@@ -338,6 +342,10 @@ type Ingester struct {
 	usersMetadataMtx sync.RWMutex
 	usersMetadata    map[string]*userMetricsMetadata
 
+	// For producing postings caches
+	headPostingsForMatchersCacheFactory  tsdb.PostingsForMatchersCacheFactory
+	blockPostingsForMatchersCacheFactory tsdb.PostingsForMatchersCacheFactory
+
 	// Rate of pushed samples. Used to limit global samples push rate.
 	ingestionRate             *util_math.EwmaRate
 	inflightPushRequests      atomic.Int64
@@ -370,6 +378,8 @@ func newIngester(cfg Config, limits *validation.Overrides, registerer prometheus
 	replicationFactor.Set(int64(cfg.IngesterRing.ReplicationFactor))
 	ringStoreName.Set(cfg.IngesterRing.KVStore.Store)
 
+	metrics := newTSDBMetrics(registerer, logger)
+
 	return &Ingester{
 		cfg:    cfg,
 		limits: limits,
@@ -378,12 +388,39 @@ func newIngester(cfg Config, limits *validation.Overrides, registerer prometheus
 		tsdbs:               make(map[string]*userTSDB),
 		usersMetadata:       make(map[string]*userMetricsMetadata),
 		bucket:              bucketClient,
-		tsdbMetrics:         newTSDBMetrics(registerer, logger),
+		tsdbMetrics:         metrics,
 		shipperMetrics:      newShipperMetrics(registerer),
 		forceCompactTrigger: make(chan requestWithUsersAndCallback),
 		shipTrigger:         make(chan requestWithUsersAndCallback),
 		seriesHashCache:     hashcache.NewSeriesHashCache(cfg.BlocksStorageConfig.TSDB.SeriesHashCacheMaxBytes),
-
+		headPostingsForMatchersCacheFactory: tsdb.NewPostingsForMatchersCacheFactory(
+			tsdb.PostingsForMatchersCacheConfig{
+				Shared:                cfg.BlocksStorageConfig.TSDB.SharedPostingsForMatchersCache,
+				KeyFunc:               tenant.TenantID,
+				Invalidation:          cfg.BlocksStorageConfig.TSDB.HeadPostingsForMatchersCacheInvalidation,
+				CacheVersions:         cfg.BlocksStorageConfig.TSDB.HeadPostingsForMatchersCacheVersions,
+				TTL:                   cfg.BlocksStorageConfig.TSDB.HeadPostingsForMatchersCacheTTL,
+				MaxItems:              cfg.BlocksStorageConfig.TSDB.HeadPostingsForMatchersCacheMaxItems,
+				MaxBytes:              cfg.BlocksStorageConfig.TSDB.HeadPostingsForMatchersCacheMaxBytes,
+				Force:                 cfg.BlocksStorageConfig.TSDB.HeadPostingsForMatchersCacheForce,
+				Metrics:               metrics.headPostingsForMatchersCacheMetrics,
+				PostingsClonerFactory: lookupplan.ActualSelectedPostingsClonerFactory{},
+			},
+		),
+		blockPostingsForMatchersCacheFactory: tsdb.NewPostingsForMatchersCacheFactory(
+			tsdb.PostingsForMatchersCacheConfig{
+				Shared:                cfg.BlocksStorageConfig.TSDB.SharedPostingsForMatchersCache,
+				KeyFunc:               tenant.TenantID,
+				Invalidation:          false,
+				CacheVersions:         0,
+				TTL:                   cfg.BlocksStorageConfig.TSDB.BlockPostingsForMatchersCacheTTL,
+				MaxItems:              cfg.BlocksStorageConfig.TSDB.BlockPostingsForMatchersCacheMaxItems,
+				MaxBytes:              cfg.BlocksStorageConfig.TSDB.BlockPostingsForMatchersCacheMaxBytes,
+				Force:                 cfg.BlocksStorageConfig.TSDB.BlockPostingsForMatchersCacheForce,
+				Metrics:               metrics.blockPostingsForMatchersCacheMetrics,
+				PostingsClonerFactory: lookupplan.ActualSelectedPostingsClonerFactory{},
+			},
+		),
 		errorSamplers: newIngesterErrSamplers(cfg.ErrorSampleRate),
 	}, nil
 }
@@ -462,6 +499,7 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 		// This is injected already higher up for methods invoked via the network.
 		// Here we use it so that pushes from kafka also get a tenant assigned since the PartitionReader invokes the ingester.
 		profilingIngester := NewIngesterProfilingWrapper(i)
+
 		i.ingestReader, err = ingest.NewPartitionReaderForPusher(kafkaCfg, i.ingestPartitionID, cfg.IngesterRing.InstanceID, profilingIngester, log.With(logger, "component", "ingest_reader"), registerer)
 		if err != nil {
 			return nil, errors.Wrap(err, "creating ingest storage reader")
@@ -515,8 +553,8 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 	i.subservicesWatcher.WatchService(i.metadataPurgerService)
 
 	// Init head statistics generation service if enabled
-	if cfg.BlocksStorageConfig.TSDB.IndexLookupPlanningEnabled {
-		i.statisticsService = services.NewTimerService(cfg.BlocksStorageConfig.TSDB.HeadStatisticsCollectionFrequency, nil, i.generateHeadStatisticsForAllUsers, nil)
+	if cfg.BlocksStorageConfig.TSDB.IndexLookupPlanning.Enabled {
+		i.statisticsService = services.NewTimerService(cfg.BlocksStorageConfig.TSDB.IndexLookupPlanning.StatisticsCollectionFrequency, nil, i.generateHeadStatisticsForAllUsers, nil)
 		i.subservicesWatcher.WatchService(i.statisticsService)
 	}
 
@@ -646,7 +684,7 @@ func (i *Ingester) starting(ctx context.Context) (err error) {
 		servs = append(servs, shippingService)
 	}
 
-	if i.cfg.BlocksStorageConfig.TSDB.IndexLookupPlanningEnabled {
+	if i.cfg.BlocksStorageConfig.TSDB.IndexLookupPlanning.Enabled {
 		servs = append(servs, i.statisticsService)
 	}
 
@@ -1133,7 +1171,7 @@ func (i *Ingester) startPushRequest(ctx context.Context, reqSize int64) (context
 
 	if i.reactiveLimiter.push != nil && !i.reactiveLimiter.push.CanAcquirePermit() {
 		i.metrics.rejected.WithLabelValues(reasonIngesterMaxInflightPushRequests).Inc()
-		return nil, false, newReactiveLimiterExceededError(reactivelimiter.ErrExceeded)
+		return nil, false, newReactiveLimiterExceededError(adaptivelimiter.ErrExceeded)
 	}
 
 	inflight := i.inflightPushRequests.Inc()
@@ -1828,7 +1866,7 @@ func (i *Ingester) StartReadRequest(ctx context.Context) (resultCtx context.Cont
 		// Check that a permit can be later acquired
 		if i.reactiveLimiter.read != nil && !i.reactiveLimiter.read.CanAcquirePermit() {
 			i.metrics.rejected.WithLabelValues(reasonIngesterMaxInflightReadRequests).Inc()
-			return nil, newReactiveLimiterExceededError(reactivelimiter.ErrExceeded)
+			return nil, newReactiveLimiterExceededError(adaptivelimiter.ErrExceeded)
 		}
 		finish, err := i.circuitBreaker.tryAcquireReadPermit()
 		if err != nil {
@@ -2308,6 +2346,14 @@ func (i *Ingester) QueryStream(req *client.QueryRequest, stream client.Ingester_
 
 	ctx := stream.Context()
 	spanlog := spanlogger.FromContext(ctx, i.logger)
+
+	// Previously a chunk batch size of 0 was used to request a non-streaming response.
+	// Streaming series and chunks has been the default for some time and we no longer
+	// support non-streaming responses.
+	if req.StreamingChunksBatchSize == 0 {
+		req.StreamingChunksBatchSize = fallbackChunkStreamBatchSize
+	}
+
 	userID, err := tenant.TenantID(ctx)
 	if err != nil {
 		return err
@@ -2341,14 +2387,8 @@ func (i *Ingester) QueryStream(req *client.QueryRequest, stream client.Ingester_
 	numSamples := 0
 	numSeries := 0
 
-	if req.StreamingChunksBatchSize > 0 {
-		spanlog.DebugLog("msg", "using executeStreamingQuery")
-		numSeries, numSamples, err = i.executeStreamingQuery(ctx, db, int64(from), int64(through), matchers, shard, stream, req.StreamingChunksBatchSize, spanlog)
-	} else {
-		spanlog.DebugLog("msg", "using executeChunksQuery")
-		numSeries, numSamples, err = i.executeChunksQuery(ctx, db, int64(from), int64(through), matchers, shard, stream)
-	}
-
+	spanlog.DebugLog("msg", "using executeStreamingQuery")
+	numSeries, numSamples, err = i.executeStreamingQuery(ctx, db, int64(from), int64(through), matchers, shard, stream, req.StreamingChunksBatchSize, spanlog)
 	if err != nil {
 		return err
 	}
@@ -2357,106 +2397,6 @@ func (i *Ingester) QueryStream(req *client.QueryRequest, stream client.Ingester_
 	i.metrics.queriedSamples.Observe(float64(numSamples))
 	spanlog.DebugLog("series", numSeries, "samples", numSamples)
 	return nil
-}
-
-// executeChunksQuery streams metrics from a TSDB. This implements the client.IngesterServer interface
-func (i *Ingester) executeChunksQuery(ctx context.Context, db *userTSDB, from, through int64, matchers []*labels.Matcher, shard *sharding.ShardSelector, stream client.Ingester_QueryStreamServer) (numSeries, numSamples int, _ error) {
-	var q storage.ChunkQuerier
-	var err error
-	if i.limits.OutOfOrderTimeWindow(db.userID) > 0 {
-		q, err = db.UnorderedChunkQuerier(from, through)
-	} else {
-		q, err = db.ChunkQuerier(from, through)
-	}
-	if err != nil {
-		return 0, 0, err
-	}
-	defer q.Close()
-
-	// Disable chunks trimming, so that we don't have to rewrite chunks which have samples outside
-	// the requested from/through range. PromQL engine can handle it.
-	hints := initSelectHints(from, through)
-	hints = configSelectHintsWithShard(hints, shard)
-	hints = configSelectHintsWithDisabledTrimming(hints)
-
-	// It's not required to return sorted series because series are sorted by the Mimir querier.
-	ss := q.Select(ctx, false, hints, matchers...)
-	if ss.Err() != nil {
-		return 0, 0, errors.Wrap(ss.Err(), "selecting series from ChunkQuerier")
-	}
-
-	chunkSeries := make([]client.TimeSeriesChunk, 0, queryStreamBatchSize)
-	batchSizeBytes := 0
-	var it chunks.Iterator
-	for ss.Next() {
-		series := ss.At()
-
-		// convert labels to LabelAdapter
-		ts := client.TimeSeriesChunk{
-			Labels: mimirpb.FromLabelsToLabelAdapters(series.Labels()),
-		}
-
-		it = series.Iterator(it)
-		for it.Next() {
-			// Chunks are ordered by min time.
-			meta := it.At()
-
-			// It is not guaranteed that chunk returned by iterator is populated.
-			// For now just return error. We could also try to figure out how to read the chunk.
-			if meta.Chunk == nil {
-				return 0, 0, errors.Errorf("unfilled chunk returned from TSDB chunk querier")
-			}
-
-			ch, err := client.ChunkFromMeta(meta)
-			if err != nil {
-				return 0, 0, err
-			}
-
-			ts.Chunks = append(ts.Chunks, ch)
-			numSamples += meta.Chunk.NumSamples()
-		}
-
-		if err := it.Err(); err != nil {
-			return 0, 0, err
-		}
-
-		numSeries++
-		tsSize := ts.Size()
-
-		if (batchSizeBytes > 0 && batchSizeBytes+tsSize > queryStreamBatchMessageSize) || len(chunkSeries) >= queryStreamBatchSize {
-			// Adding this series to the batch would make it too big,
-			// flush the data and add it to new batch instead.
-			err = client.SendQueryStream(stream, &client.QueryStreamResponse{
-				Chunkseries: chunkSeries,
-			})
-			if err != nil {
-				return 0, 0, err
-			}
-
-			batchSizeBytes = 0
-			chunkSeries = chunkSeries[:0]
-		}
-
-		chunkSeries = append(chunkSeries, ts)
-		batchSizeBytes += tsSize
-	}
-
-	// Ensure no error occurred while iterating the series set.
-	if err := ss.Err(); err != nil {
-		return 0, 0, errors.Wrap(err, "iterating ChunkSeriesSet")
-	}
-
-	// Final flush any existing metrics
-	if batchSizeBytes != 0 {
-		err = client.SendQueryStream(stream, &client.QueryStreamResponse{
-			Chunkseries: chunkSeries,
-		})
-		if err != nil {
-			return 0, 0, err
-		}
-	}
-
-	return numSeries, numSamples, nil
 }
 
 func (i *Ingester) executeStreamingQuery(ctx context.Context, db *userTSDB, from, through int64, matchers []*labels.Matcher, shard *sharding.ShardSelector, stream client.Ingester_QueryStreamServer, batchSize uint64, spanlog *spanlogger.SpanLogger) (numSeries, numSamples int, _ error) {
@@ -2695,7 +2635,7 @@ func (i *Ingester) getTSDB(userID string) *userTSDB {
 // If found, it uses the cached planner; otherwise, it falls back to generating statistics on-demand.
 // When disabled, it uses NoopPlanner which performs no optimization.
 func (i *Ingester) getIndexLookupPlannerFunc(userID string) tsdb.IndexLookupPlannerFunc {
-	if !i.cfg.BlocksStorageConfig.TSDB.IndexLookupPlanningEnabled {
+	if !i.cfg.BlocksStorageConfig.TSDB.IndexLookupPlanning.Enabled {
 		return func(tsdb.BlockMeta, tsdb.IndexReader) index.LookupPlanner { return lookupplan.NoopPlanner{} }
 	}
 
@@ -2800,8 +2740,8 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 	}
 	userDB.triggerRecomputeOwnedSeries(recomputeOwnedSeriesReasonNewUser)
 
-	if i.cfg.BlocksStorageConfig.TSDB.IndexLookupPlanningEnabled {
-		plannerFactory := lookupplan.NewPlannerFactory(i.lookupPlanMetrics.ForUser(userID), userLogger, lookupplan.NewStatisticsGenerator(userLogger))
+	if i.cfg.BlocksStorageConfig.TSDB.IndexLookupPlanning.Enabled {
+		plannerFactory := lookupplan.NewPlannerFactory(i.lookupPlanMetrics.ForUser(userID), userLogger, lookupplan.NewStatisticsGenerator(userLogger), i.cfg.BlocksStorageConfig.TSDB.IndexLookupPlanning.CostConfig)
 		userDB.plannerProvider = newPlannerProvider(plannerFactory)
 		// Generate initial statistics only after the TSDB has been opened and initialized.
 		defer func() {
@@ -2822,64 +2762,38 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 	oooTW := i.limits.OutOfOrderTimeWindow(userID)
 	// Create a new user database
 	db, err := tsdb.Open(udir, util_log.SlogFromGoKit(userLogger), tsdbPromReg, &tsdb.Options{
-		RetentionDuration:                 i.cfg.BlocksStorageConfig.TSDB.Retention.Milliseconds(),
-		MinBlockDuration:                  blockRanges[0],
-		MaxBlockDuration:                  blockRanges[len(blockRanges)-1],
-		NoLockfile:                        true,
-		StripeSize:                        i.cfg.BlocksStorageConfig.TSDB.StripeSize,
-		HeadChunksWriteBufferSize:         i.cfg.BlocksStorageConfig.TSDB.HeadChunksWriteBufferSize,
-		HeadChunksEndTimeVariance:         i.cfg.BlocksStorageConfig.TSDB.HeadChunksEndTimeVariance,
-		WALCompression:                    i.cfg.BlocksStorageConfig.TSDB.WALCompressionType(),
-		WALSegmentSize:                    i.cfg.BlocksStorageConfig.TSDB.WALSegmentSizeBytes,
-		WALReplayConcurrency:              walReplayConcurrency,
-		SeriesLifecycleCallback:           userDB,
-		BlocksToDelete:                    blocksToDelete,
-		EnableExemplarStorage:             true, // enable for everyone so we can raise the limit later
-		MaxExemplars:                      int64(i.limiter.maxExemplarsPerUser(userID)),
-		SeriesHashCache:                   i.seriesHashCache,
-		EnableMemorySnapshotOnShutdown:    i.cfg.BlocksStorageConfig.TSDB.MemorySnapshotOnShutdown,
-		EnableBiggerOOOBlockForOldSamples: i.cfg.BlocksStorageConfig.TSDB.BiggerOutOfOrderBlocksForOldSamples,
-		IsolationDisabled:                 true,
-		HeadChunksWriteQueueSize:          i.cfg.BlocksStorageConfig.TSDB.HeadChunksWriteQueueSize,
-		EnableOverlappingCompaction:       false,                // always false since Mimir only uploads lvl 1 compacted blocks
-		EnableSharding:                    true,                 // Always enable query sharding support.
-		OutOfOrderTimeWindow:              oooTW.Milliseconds(), // The unit must be same as our timestamps.
-		OutOfOrderCapMax:                  int64(i.cfg.BlocksStorageConfig.TSDB.OutOfOrderCapacityMax),
-		TimelyCompaction:                  i.cfg.BlocksStorageConfig.TSDB.TimelyHeadCompaction,
-		SharedPostingsForMatchersCache:    i.cfg.BlocksStorageConfig.TSDB.SharedPostingsForMatchersCache,
-		PostingsForMatchersCacheKeyFunc:   tenant.TenantID,
-		HeadPostingsForMatchersCacheFactory: tsdb.NewPostingsForMatchersCacheFactory(
-			tsdb.PostingsForMatchersCacheConfig{
-				Shared:                i.cfg.BlocksStorageConfig.TSDB.SharedPostingsForMatchersCache,
-				KeyFunc:               tenant.TenantID,
-				Invalidation:          i.cfg.BlocksStorageConfig.TSDB.HeadPostingsForMatchersCacheInvalidation,
-				CacheVersions:         i.cfg.BlocksStorageConfig.TSDB.HeadPostingsForMatchersCacheVersions,
-				TTL:                   i.cfg.BlocksStorageConfig.TSDB.HeadPostingsForMatchersCacheTTL,
-				MaxItems:              i.cfg.BlocksStorageConfig.TSDB.HeadPostingsForMatchersCacheMaxItems,
-				MaxBytes:              i.cfg.BlocksStorageConfig.TSDB.HeadPostingsForMatchersCacheMaxBytes,
-				Force:                 i.cfg.BlocksStorageConfig.TSDB.HeadPostingsForMatchersCacheForce,
-				Metrics:               i.tsdbMetrics.headPostingsForMatchersCacheMetrics,
-				PostingsClonerFactory: lookupplan.ActualSelectedPostingsClonerFactory{},
-			},
-		),
-		BlockPostingsForMatchersCacheFactory: tsdb.NewPostingsForMatchersCacheFactory(
-			tsdb.PostingsForMatchersCacheConfig{
-				Shared:                i.cfg.BlocksStorageConfig.TSDB.SharedPostingsForMatchersCache,
-				KeyFunc:               tenant.TenantID,
-				Invalidation:          false,
-				CacheVersions:         0,
-				TTL:                   i.cfg.BlocksStorageConfig.TSDB.BlockPostingsForMatchersCacheTTL,
-				MaxItems:              i.cfg.BlocksStorageConfig.TSDB.BlockPostingsForMatchersCacheMaxItems,
-				MaxBytes:              i.cfg.BlocksStorageConfig.TSDB.BlockPostingsForMatchersCacheMaxBytes,
-				Force:                 i.cfg.BlocksStorageConfig.TSDB.BlockPostingsForMatchersCacheForce,
-				Metrics:               i.tsdbMetrics.blockPostingsForMatchersCacheMetrics,
-				PostingsClonerFactory: lookupplan.ActualSelectedPostingsClonerFactory{},
-			},
-		),
-		PostingsClonerFactory:  lookupplan.ActualSelectedPostingsClonerFactory{},
-		EnableNativeHistograms: i.limits.NativeHistogramsIngestionEnabled(userID),
-		SecondaryHashFunction:  secondaryTSDBHashFunctionForUser(userID),
-		IndexLookupPlannerFunc: i.getIndexLookupPlannerFunc(userID),
+		RetentionDuration:                    i.cfg.BlocksStorageConfig.TSDB.Retention.Milliseconds(),
+		MinBlockDuration:                     blockRanges[0],
+		MaxBlockDuration:                     blockRanges[len(blockRanges)-1],
+		NoLockfile:                           true,
+		StripeSize:                           i.cfg.BlocksStorageConfig.TSDB.StripeSize,
+		HeadChunksWriteBufferSize:            i.cfg.BlocksStorageConfig.TSDB.HeadChunksWriteBufferSize,
+		HeadChunksEndTimeVariance:            i.cfg.BlocksStorageConfig.TSDB.HeadChunksEndTimeVariance,
+		WALCompression:                       i.cfg.BlocksStorageConfig.TSDB.WALCompressionType(),
+		WALSegmentSize:                       i.cfg.BlocksStorageConfig.TSDB.WALSegmentSizeBytes,
+		WALReplayConcurrency:                 walReplayConcurrency,
+		SeriesLifecycleCallback:              userDB,
+		BlocksToDelete:                       blocksToDelete,
+		EnableExemplarStorage:                true, // enable for everyone so we can raise the limit later
+		MaxExemplars:                         int64(i.limiter.maxExemplarsPerUser(userID)),
+		SeriesHashCache:                      i.seriesHashCache,
+		EnableMemorySnapshotOnShutdown:       i.cfg.BlocksStorageConfig.TSDB.MemorySnapshotOnShutdown,
+		EnableBiggerOOOBlockForOldSamples:    i.cfg.BlocksStorageConfig.TSDB.BiggerOutOfOrderBlocksForOldSamples,
+		IsolationDisabled:                    true,
+		HeadChunksWriteQueueSize:             i.cfg.BlocksStorageConfig.TSDB.HeadChunksWriteQueueSize,
+		EnableOverlappingCompaction:          false,                // always false since Mimir only uploads lvl 1 compacted blocks
+		EnableSharding:                       true,                 // Always enable query sharding support.
+		OutOfOrderTimeWindow:                 oooTW.Milliseconds(), // The unit must be same as our timestamps.
+		OutOfOrderCapMax:                     int64(i.cfg.BlocksStorageConfig.TSDB.OutOfOrderCapacityMax),
+		TimelyCompaction:                     i.cfg.BlocksStorageConfig.TSDB.TimelyHeadCompaction,
+		SharedPostingsForMatchersCache:       i.cfg.BlocksStorageConfig.TSDB.SharedPostingsForMatchersCache,
+		PostingsForMatchersCacheKeyFunc:      tenant.TenantID,
+		HeadPostingsForMatchersCacheFactory:  i.headPostingsForMatchersCacheFactory,
+		BlockPostingsForMatchersCacheFactory: i.blockPostingsForMatchersCacheFactory,
+		PostingsClonerFactory:                lookupplan.ActualSelectedPostingsClonerFactory{},
+		EnableNativeHistograms:               i.limits.NativeHistogramsIngestionEnabled(userID),
+		SecondaryHashFunction:                secondaryTSDBHashFunctionForUser(userID),
+		IndexLookupPlannerFunc:               i.getIndexLookupPlannerFunc(userID),
 		BlockChunkQuerierFunc: func(b tsdb.BlockReader, mint, maxt int64) (storage.ChunkQuerier, error) {
 			return i.createBlockChunkQuerier(userID, b, mint, maxt)
 		},
@@ -2958,7 +2872,7 @@ func (i *Ingester) createBlockChunkQuerier(userID string, b tsdb.BlockReader, mi
 
 	lookupStatsQuerier := newStatsTrackingChunkQuerier(defaultQuerier, i.metrics, i.lookupPlanMetrics.ForUser(userID))
 
-	if rand.Float64() > i.cfg.BlocksStorageConfig.TSDB.IndexLookupPlanningComparisonPortion {
+	if rand.Float64() > i.cfg.BlocksStorageConfig.TSDB.IndexLookupPlanning.ComparisonPortion {
 		return lookupStatsQuerier, nil
 	}
 
@@ -4474,4 +4388,20 @@ func timeUntilCompaction(now time.Time, compactionInterval, zoneOffset time.Dura
 	}
 
 	return compactionInterval - timeSinceLastCompaction
+}
+
+func (i *Ingester) NotifyPreCommit(ctx context.Context) error {
+	if !i.cfg.IngestStorageConfig.WriteLogsFsyncBeforeKafkaCommit {
+		return nil
+	}
+
+	level.Debug(i.logger).Log("msg", "fsyncing tsdbs")
+
+	return concurrency.ForEachUser(ctx, i.getTSDBUsers(), i.cfg.IngestStorageConfig.WriteLogsFsyncBeforeKafkaCommitConcurrency, func(ctx context.Context, userID string) error {
+		db := i.getTSDB(userID)
+		if db == nil {
+			return nil
+		}
+		return db.Head().FsyncWLSegments()
+	})
 }

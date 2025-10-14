@@ -82,7 +82,7 @@ func TestPlannerFactory_CreatePlanner(t *testing.T) {
 	metrics := NewMetrics(nil)
 	statsGenerator := NewStatisticsGenerator(logger)
 
-	factory := NewPlannerFactory(metrics, logger, statsGenerator)
+	factory := NewPlannerFactory(metrics, logger, statsGenerator, defaultCostConfig)
 
 	tests := []struct {
 		name            string
@@ -124,31 +124,27 @@ func TestPlannerFactory_CreatePlanner(t *testing.T) {
 			name: "boundary case just below threshold returns NoopPlanner",
 			blockMeta: tsdb.BlockMeta{
 				Stats: tsdb.BlockStats{
-					NumSeries: minSeriesPerBlockForQueryPlanning - 1,
+					NumSeries: defaultCostConfig.MinSeriesPerBlockForQueryPlanning - 1,
 				},
 			},
-			indexReader:     createMockIndexReaderWithSeries(minSeriesPerBlockForQueryPlanning - 1),
+			indexReader:     createMockIndexReaderWithSeries(int(defaultCostConfig.MinSeriesPerBlockForQueryPlanning - 1)),
 			expectedPlanner: reflect.TypeOf(NoopPlanner{}),
 		},
 		{
-			name: "large block with working IndexReader returns CostBasedPlanner",
-			blockMeta: tsdb.BlockMeta{
-				Stats: tsdb.BlockStats{
-					NumSeries: 15000,
-				},
-			},
+			name:            "large block with working IndexReader returns CostBasedPlanner",
+			blockMeta:       tsdb.BlockMeta{Stats: tsdb.BlockStats{NumSeries: 15000}},
 			indexReader:     createMockIndexReaderWithSeries(15000),
-			expectedPlanner: reflect.TypeOf(&CostBasedPlanner{}),
+			expectedPlanner: reflect.TypeOf(index.ChainLookupPlanners(MatcherReducerPlanner{}, CostBasedPlanner{})),
 		},
 		{
 			name: "exactly at threshold with working IndexReader returns CostBasedPlanner",
 			blockMeta: tsdb.BlockMeta{
 				Stats: tsdb.BlockStats{
-					NumSeries: minSeriesPerBlockForQueryPlanning,
+					NumSeries: defaultCostConfig.MinSeriesPerBlockForQueryPlanning,
 				},
 			},
-			indexReader:     createMockIndexReaderWithSeries(minSeriesPerBlockForQueryPlanning),
-			expectedPlanner: reflect.TypeOf(&CostBasedPlanner{}),
+			indexReader:     createMockIndexReaderWithSeries(int(defaultCostConfig.MinSeriesPerBlockForQueryPlanning)),
+			expectedPlanner: reflect.TypeOf(index.ChainLookupPlanners(MatcherReducerPlanner{}, CostBasedPlanner{})),
 		},
 		{
 			name: "very large block with working IndexReader returns CostBasedPlanner",
@@ -158,7 +154,7 @@ func TestPlannerFactory_CreatePlanner(t *testing.T) {
 				},
 			},
 			indexReader:     createMockIndexReaderWithSeries(100000),
-			expectedPlanner: reflect.TypeOf(&CostBasedPlanner{}),
+			expectedPlanner: reflect.TypeOf(index.ChainLookupPlanners(MatcherReducerPlanner{}, CostBasedPlanner{})),
 		},
 		{
 			name: "large block with error IndexReader fallbacks to NoopPlanner",
@@ -174,7 +170,7 @@ func TestPlannerFactory_CreatePlanner(t *testing.T) {
 			name: "exactly at threshold with error IndexReader fallbacks to NoopPlanner",
 			blockMeta: tsdb.BlockMeta{
 				Stats: tsdb.BlockStats{
-					NumSeries: minSeriesPerBlockForQueryPlanning,
+					NumSeries: defaultCostConfig.MinSeriesPerBlockForQueryPlanning,
 				},
 			},
 			indexReader:     &errorIndexReader{},
@@ -188,7 +184,7 @@ func TestPlannerFactory_CreatePlanner(t *testing.T) {
 				},
 			},
 			indexReader:     createMockIndexReaderWithSeries(1000000),
-			expectedPlanner: reflect.TypeOf(&CostBasedPlanner{}),
+			expectedPlanner: reflect.TypeOf(index.ChainLookupPlanners(MatcherReducerPlanner{}, CostBasedPlanner{})),
 		},
 	}
 

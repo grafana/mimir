@@ -5,9 +5,6 @@ package streamingpromql
 import (
 	"context"
 	"fmt"
-	"net/http"
-	"net/http/httptest"
-	"net/url"
 	"strconv"
 	"strings"
 	"testing"
@@ -17,6 +14,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
@@ -1165,20 +1163,24 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 }
 
 func TestPlanVersioning(t *testing.T) {
+
+	planning.RegisterNodeFactory(func() planning.Node {
+		return &versioningTestNode{NumberLiteralDetails: &core.NumberLiteralDetails{}}
+	})
+
 	originalMaximumPlanVersion := planning.MaximumSupportedQueryPlanVersion
 	planning.MaximumSupportedQueryPlanVersion = 9001
 	t.Cleanup(func() { planning.MaximumSupportedQueryPlanVersion = originalMaximumPlanVersion })
 
+	// Plan has a node which has a min required plan version of 9000
 	plan := &planning.QueryPlan{
-		TimeRange: types.NewInstantQueryTimeRange(time.Now()),
-		Root: &core.NumberLiteral{
-			NumberLiteralDetails: &core.NumberLiteralDetails{
-				Value: 123,
-			},
-		},
+		TimeRange:          types.NewInstantQueryTimeRange(time.Now()),
+		Root:               newTestNode(9000),
 		OriginalExpression: "123",
-		Version:            9000,
 	}
+
+	err := plan.DeterminePlanVersion()
+	require.NoError(t, err)
 
 	encoded, err := plan.ToEncodedPlan(false, true)
 	require.NoError(t, err)
@@ -1411,289 +1413,6 @@ func TestQueryPlanner_ActivityTracking(t *testing.T) {
 	require.Equal(t, expectedPlanningActivities, tracker.queries)
 }
 
-func TestAnalysisHandler(t *testing.T) {
-	originalTimeSince := timeSince
-	timeSince = func(_ time.Time) time.Duration { return 1234 * time.Millisecond }
-	t.Cleanup(func() { timeSince = originalTimeSince })
-
-	testCases := map[string]struct {
-		params url.Values
-
-		expectedResponse   string
-		expectedStatusCode int
-	}{
-		"valid request for instant query": {
-			params: url.Values{
-				"query": []string{`up`},
-				"time":  []string{"2022-01-01T00:00:00Z"},
-			},
-			expectedResponse: `{
-			  "originalExpression": "up",
-			  "timeRange": {"startT": 1640995200000, "endT": 1640995200000, "intervalMilliseconds": 1, "isInstant": true},
-			  "astStages": [
-				{"name": "Parsing", "duration": 1234000000, "outputExpression": "up"},
-				{"name": "Pre-processing", "duration": 1234000000, "outputExpression": "up"},
-				{"name": "Final expression", "duration": null, "outputExpression": "up"}
-			  ],
-			  "planningStages": [
-				{
-				  "name": "Original plan",
-				  "duration": 1234000000,
-				  "outputPlan": {
-					"timeRange": {"startT": 1640995200000, "endT": 1640995200000, "intervalMilliseconds": 1, "isInstant": true},
-					"nodes": [
-					  {"type": "VectorSelector", "description": "{__name__=\"up\"}"}
-					],
-					"originalExpression": "up"
-				  }
-				},
-				{
-				  "name": "Final plan",
-				  "duration": null,
-				  "outputPlan": {
-					"timeRange": {"startT": 1640995200000, "endT": 1640995200000, "intervalMilliseconds": 1, "isInstant": true},
-					"nodes": [
-					  {"type": "VectorSelector", "description": "{__name__=\"up\"}"}
-					],
-					"originalExpression": "up"
-				  }
-				}
-			  ],
-			  "planVersion": 0
-			}`,
-			expectedStatusCode: http.StatusOK,
-		},
-
-		"valid request for range query": {
-			params: url.Values{
-				"query": []string{`up`},
-				"start": []string{"2022-01-01T00:00:00Z"},
-				"end":   []string{"2022-01-01T01:00:00Z"},
-				"step":  []string{"10"},
-			},
-			expectedResponse: `{
-			  "originalExpression": "up",
-			  "timeRange": {"startT": 1640995200000, "endT": 1640998800000, "intervalMilliseconds": 10000},
-			  "astStages": [
-				{"name": "Parsing", "duration": 1234000000, "outputExpression": "up"},
-				{"name": "Pre-processing", "duration": 1234000000, "outputExpression": "up"},
-				{"name": "Final expression", "duration": null, "outputExpression": "up"}
-			  ],
-			  "planningStages": [
-				{
-				  "name": "Original plan",
-				  "duration": 1234000000,
-				  "outputPlan": {
-					"timeRange": {"startT": 1640995200000, "endT": 1640998800000, "intervalMilliseconds": 10000},
-					"nodes": [
-					  {"type": "VectorSelector", "description": "{__name__=\"up\"}"}
-					],
-					"originalExpression": "up"
-				  }
-				},
-				{
-				  "name": "Final plan",
-				  "duration": null,
-				  "outputPlan": {
-					"timeRange": {"startT": 1640995200000, "endT": 1640998800000, "intervalMilliseconds": 10000},
-					"nodes": [
-					  {"type": "VectorSelector", "description": "{__name__=\"up\"}"}
-					],
-					"originalExpression": "up"
-				  }
-				}
-			  ],
-			  "planVersion": 0
-			}`,
-			expectedStatusCode: http.StatusOK,
-		},
-
-		"no params": {
-			expectedResponse:   `missing 'query' parameter`,
-			expectedStatusCode: http.StatusBadRequest,
-		},
-		"no time range": {
-			params: url.Values{
-				"query": []string{`up`},
-			},
-			expectedResponse:   `missing 'time' parameter for instant query or 'start', 'end' and 'step' parameters for range query`,
-			expectedStatusCode: http.StatusBadRequest,
-		},
-		"invalid time": {
-			params: url.Values{
-				"query": []string{`up`},
-				"time":  []string{"foo"},
-			},
-			expectedResponse:   `could not parse 'time' parameter: cannot parse "foo" to a valid timestamp`,
-			expectedStatusCode: http.StatusBadRequest,
-		},
-		"invalid start time": {
-			params: url.Values{
-				"query": []string{`up`},
-				"start": []string{"foo"},
-				"end":   []string{"2022-01-01T00:00:00Z"},
-				"step":  []string{"10"},
-			},
-			expectedResponse:   `could not parse 'start' parameter: cannot parse "foo" to a valid timestamp`,
-			expectedStatusCode: http.StatusBadRequest,
-		},
-		"invalid end time": {
-			params: url.Values{
-				"query": []string{`up`},
-				"start": []string{"2022-01-01T00:00:00Z"},
-				"end":   []string{"foo"},
-				"step":  []string{"10"},
-			},
-			expectedResponse:   `could not parse 'end' parameter: cannot parse "foo" to a valid timestamp`,
-			expectedStatusCode: http.StatusBadRequest,
-		},
-		"invalid step": {
-			params: url.Values{
-				"query": []string{`up`},
-				"start": []string{"2022-01-01T00:00:00Z"},
-				"end":   []string{"2022-01-01T01:00:00Z"},
-				"step":  []string{"foo"},
-			},
-			expectedResponse:   `could not parse 'step' parameter: cannot parse "foo" to a valid duration`,
-			expectedStatusCode: http.StatusBadRequest,
-		},
-		"0 step": {
-			params: url.Values{
-				"query": []string{`up`},
-				"start": []string{"2022-01-01T00:00:00Z"},
-				"end":   []string{"2022-01-01T01:00:00Z"},
-				"step":  []string{"0"},
-			},
-			expectedResponse:   `step must be greater than 0`,
-			expectedStatusCode: http.StatusBadRequest,
-		},
-		"negative step": {
-			params: url.Values{
-				"query": []string{`up`},
-				"start": []string{"2022-01-01T00:00:00Z"},
-				"end":   []string{"2022-01-01T01:00:00Z"},
-				"step":  []string{"-10"},
-			},
-			expectedResponse:   `step must be greater than 0`,
-			expectedStatusCode: http.StatusBadRequest,
-		},
-		"end before start": {
-			params: url.Values{
-				"query": []string{`up`},
-				"start": []string{"2022-01-01T01:00:00Z"},
-				"end":   []string{"2022-01-01T00:00:00Z"},
-				"step":  []string{"10s"},
-			},
-			expectedResponse:   `end time must be not be before start time`,
-			expectedStatusCode: http.StatusBadRequest,
-		},
-		"missing start time": {
-			params: url.Values{
-				"query": []string{`up`},
-				"end":   []string{"2022-01-01T01:00:00Z"},
-				"step":  []string{"10s"},
-			},
-			expectedResponse:   `missing 'time' parameter for instant query or 'start', 'end' and 'step' parameters for range query`,
-			expectedStatusCode: http.StatusBadRequest,
-		},
-		"missing end time": {
-			params: url.Values{
-				"query": []string{`up`},
-				"start": []string{"2022-01-01T00:00:00Z"},
-				"step":  []string{"10s"},
-			},
-			expectedResponse:   `missing 'time' parameter for instant query or 'start', 'end' and 'step' parameters for range query`,
-			expectedStatusCode: http.StatusBadRequest,
-		},
-		"missing step": {
-			params: url.Values{
-				"query": []string{`up`},
-				"start": []string{"2022-01-01T00:00:00Z"},
-				"end":   []string{"2022-01-01T01:00:00Z"},
-			},
-			expectedResponse:   `missing 'time' parameter for instant query or 'start', 'end' and 'step' parameters for range query`,
-			expectedStatusCode: http.StatusBadRequest,
-		},
-		"have both instant query time and range query start time": {
-			params: url.Values{
-				"query": []string{`up`},
-				"time":  []string{"2022-01-01T00:00:00Z"},
-				"start": []string{"2022-01-01T01:00:00Z"},
-			},
-			expectedResponse:   `cannot provide a mixture of parameters for instant query ('time') and range query ('start', 'end' and 'step')`,
-			expectedStatusCode: http.StatusBadRequest,
-		},
-		"have both instant query time and range query end time": {
-			params: url.Values{
-				"query": []string{`up`},
-				"time":  []string{"2022-01-01T00:00:00Z"},
-				"end":   []string{"2022-01-01T01:00:00Z"},
-			},
-			expectedResponse:   `cannot provide a mixture of parameters for instant query ('time') and range query ('start', 'end' and 'step')`,
-			expectedStatusCode: http.StatusBadRequest,
-		},
-		"have both instant query time and range query step": {
-			params: url.Values{
-				"query": []string{`up`},
-				"time":  []string{"2022-01-01T00:00:00Z"},
-				"step":  []string{"10s"},
-			},
-			expectedResponse:   `cannot provide a mixture of parameters for instant query ('time') and range query ('start', 'end' and 'step')`,
-			expectedStatusCode: http.StatusBadRequest,
-		},
-
-		"invalid expression": {
-			params: url.Values{
-				"query": []string{`-`},
-				"time":  []string{"2022-01-01T01:00:00Z"},
-			},
-			expectedResponse:   `parsing expression failed: 1:2: parse error: unexpected end of input`,
-			expectedStatusCode: http.StatusBadRequest,
-		},
-	}
-
-	planner, err := NewQueryPlannerWithoutOptimizationPasses(NewTestEngineOpts())
-	require.NoError(t, err)
-	handler := AnalysisHandler(planner)
-
-	for name, testCase := range testCases {
-		t.Run(name, func(t *testing.T) {
-			req := httptest.NewRequest(http.MethodGet, "/", nil)
-			req.URL.RawQuery = testCase.params.Encode()
-			resp := httptest.NewRecorder()
-			handler.ServeHTTP(resp, req)
-
-			body := resp.Body.String()
-
-			if testCase.expectedStatusCode == http.StatusOK {
-				require.JSONEq(t, testCase.expectedResponse, body)
-				require.Equal(t, "application/json", resp.Header().Get("Content-Type"))
-			} else {
-				require.Equal(t, testCase.expectedResponse, body)
-				require.Equal(t, "text/plain", resp.Header().Get("Content-Type"))
-			}
-
-			require.Equal(t, testCase.expectedStatusCode, resp.Code)
-			require.Equal(t, strconv.Itoa(len(body)), resp.Header().Get("Content-Length"))
-		})
-	}
-}
-
-func TestAnalysisHandler_PlanningDisabled(t *testing.T) {
-	handler := AnalysisHandler(nil)
-
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	resp := httptest.NewRecorder()
-	handler.ServeHTTP(resp, req)
-
-	body := resp.Body.String()
-
-	require.Equal(t, "query planning is disabled, analysis is not available", body)
-	require.Equal(t, "text/plain", resp.Header().Get("Content-Type"))
-	require.Equal(t, http.StatusNotFound, resp.Code)
-	require.Equal(t, strconv.Itoa(len(body)), resp.Header().Get("Content-Length"))
-}
-
 func TestDecodingInvalidPlan(t *testing.T) {
 	testCases := map[string]struct {
 		input         *planning.EncodedQueryPlan
@@ -1898,4 +1617,69 @@ func TestFunctionNeedsDeduplicationHandlesAllKnownFunctions(t *testing.T) {
 			}, "functionNeedsDeduplication should handle %s", name)
 		})
 	}
+}
+
+// versioningTestNode is a node for use with TestPlanVersioning.
+// It uses the NumberLiteralDetails to encode an arbitrary minimumRequiredPlanVersion
+// Note that most of the Node interface functions return dummy values, and it does not support children.
+type versioningTestNode struct {
+	*core.NumberLiteralDetails
+}
+
+func newTestNode(minimumRequiredPlanVersion int64) *versioningTestNode {
+	return &versioningTestNode{
+		NumberLiteralDetails: &core.NumberLiteralDetails{Value: float64(minimumRequiredPlanVersion)},
+	}
+}
+
+func (t *versioningTestNode) Describe() string {
+	return ""
+}
+
+func (t *versioningTestNode) ChildrenLabels() []string {
+	return []string{}
+}
+
+func (t *versioningTestNode) Details() proto.Message {
+	return t.NumberLiteralDetails
+}
+
+func (t *versioningTestNode) NodeType() planning.NodeType {
+	return planning.NODE_TYPE_TEST
+}
+
+func (t *versioningTestNode) Children() []planning.Node {
+	return []planning.Node{}
+}
+
+func (t *versioningTestNode) SetChildren(children []planning.Node) error {
+	if len(children) != 0 {
+		panic("not supported")
+	}
+	return nil
+}
+
+func (t *versioningTestNode) EquivalentTo(other planning.Node) bool {
+	otherTestNode, ok := other.(*versioningTestNode)
+	return ok && t.NumberLiteralDetails == otherTestNode.NumberLiteralDetails
+}
+
+func (t *versioningTestNode) ChildrenTimeRange(_ types.QueryTimeRange) types.QueryTimeRange {
+	return types.QueryTimeRange{}
+}
+
+func (t *versioningTestNode) ResultType() (parser.ValueType, error) {
+	return parser.ValueTypeScalar, nil
+}
+
+func (t *versioningTestNode) QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) planning.QueriedTimeRange {
+	return planning.NoDataQueried()
+}
+
+func (t *versioningTestNode) ExpressionPosition() posrange.PositionRange {
+	return posrange.PositionRange{}
+}
+
+func (t *versioningTestNode) MinimumRequiredPlanVersion() int64 {
+	return int64(t.Value)
 }

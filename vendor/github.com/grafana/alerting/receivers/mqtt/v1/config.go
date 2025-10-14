@@ -59,15 +59,15 @@ func NewConfig(jsonData json.RawMessage, decryptFn receivers.DecryptFunc) (Confi
 		settings.MessageFormat = MessageFormatJSON
 	}
 	if settings.MessageFormat != MessageFormatJSON && settings.MessageFormat != MessageFormatText {
-		return Config{}, errors.New("Invalid message format, must be 'json' or 'text'")
+		return Config{}, errors.New("invalid message format, must be 'json' or 'text'")
 	}
 
 	qos, err := settings.QoS.Int64()
 	if err != nil {
-		return Config{}, fmt.Errorf("Failed to parse QoS: %w", err)
+		return Config{}, fmt.Errorf("failed to parse QoS: %w", err)
 	}
 	if qos < 0 || qos > 2 {
-		return Config{}, fmt.Errorf("Invalid QoS level: %d. Must be 0, 1 or 2", qos)
+		return Config{}, fmt.Errorf("invalid QoS level: %d. Must be 0, 1 or 2", qos)
 	}
 
 	settings.Password = decryptFn("password", settings.Password)
@@ -82,7 +82,7 @@ func NewConfig(jsonData json.RawMessage, decryptFn receivers.DecryptFunc) (Confi
 
 	parsedURL, err := url.Parse(settings.BrokerURL)
 	if err != nil {
-		return Config{}, errors.New("Failed to parse broker URL")
+		return Config{}, errors.New("failed to parse broker URL")
 	}
 	settings.TLSConfig.ServerName = parsedURL.Hostname()
 

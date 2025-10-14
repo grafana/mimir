@@ -59,12 +59,12 @@ cortex_prometheus_rule_evaluation_duration_seconds_sum{user="user3"} 100
 cortex_prometheus_rule_evaluation_duration_seconds_count{user="user3"} 1
 # HELP cortex_prometheus_rule_evaluation_failures_total The total number of rule evaluation failures.
 # TYPE cortex_prometheus_rule_evaluation_failures_total counter
-cortex_prometheus_rule_evaluation_failures_total{rule_group="group_one",user="user1"} 1
-cortex_prometheus_rule_evaluation_failures_total{rule_group="group_one",user="user2"} 10
-cortex_prometheus_rule_evaluation_failures_total{rule_group="group_one",user="user3"} 100
-cortex_prometheus_rule_evaluation_failures_total{rule_group="group_two",user="user1"} 1
-cortex_prometheus_rule_evaluation_failures_total{rule_group="group_two",user="user2"} 10
-cortex_prometheus_rule_evaluation_failures_total{rule_group="group_two",user="user3"} 100
+cortex_prometheus_rule_evaluation_failures_total{reason="user",rule_group="group_one",user="user1"} 1
+cortex_prometheus_rule_evaluation_failures_total{reason="user",rule_group="group_one",user="user2"} 10
+cortex_prometheus_rule_evaluation_failures_total{reason="user",rule_group="group_one",user="user3"} 100
+cortex_prometheus_rule_evaluation_failures_total{reason="user",rule_group="group_two",user="user1"} 1
+cortex_prometheus_rule_evaluation_failures_total{reason="user",rule_group="group_two",user="user2"} 10
+cortex_prometheus_rule_evaluation_failures_total{reason="user",rule_group="group_two",user="user3"} 100
 # HELP cortex_prometheus_rule_evaluations_total The total number of rule evaluations.
 # TYPE cortex_prometheus_rule_evaluations_total counter
 cortex_prometheus_rule_evaluations_total{rule_group="group_one",user="user1"} 1
@@ -159,8 +159,8 @@ func populateManager(base float64) *prometheus.Registry {
 	metrics.IterationsMissed.WithLabelValues("group_two").Add(base)
 	metrics.EvalTotal.WithLabelValues("group_one").Add(base)
 	metrics.EvalTotal.WithLabelValues("group_two").Add(base)
-	metrics.EvalFailures.WithLabelValues("group_one").Add(base)
-	metrics.EvalFailures.WithLabelValues("group_two").Add(base)
+	metrics.EvalFailures.WithLabelValues("group_one", "user").Add(base)
+	metrics.EvalFailures.WithLabelValues("group_two", "user").Add(base)
 
 	metrics.GroupLastEvalTime.WithLabelValues("group_one").Add(base * 1000)
 	metrics.GroupLastEvalTime.WithLabelValues("group_two").Add(base * 1000)

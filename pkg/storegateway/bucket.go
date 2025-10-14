@@ -67,6 +67,7 @@ const (
 	labelDecode = "decode"
 
 	targetQueryStreamBatchMessageSize = 1 * 1024 * 1024
+	fallbackStreamingBatchSize        = 256
 )
 
 type BucketStoreStats struct {
@@ -555,10 +556,17 @@ type seriesChunks struct {
 
 // Series implements the storegatewaypb.StoreGatewayServer interface.
 func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storegatewaypb.StoreGateway_SeriesServer) (err error) {
-	if req.SkipChunks {
-		// We don't do the streaming call if we are not requesting the chunks.
-		req.StreamingChunksBatchSize = 0
+	ctx := srv.Context()
+	spanLogger := spanlogger.FromContext(ctx, s.logger)
+
+	// Previously, a batch size of 0 was used to indicate this was a Prometheus series request
+	// that didn't need to load any chunk data (in addition to the SkipChunks field) and used
+	// the non-streaming path. Now that Prometheus series requests use the streaming path we
+	// need to make sure that the batch size is always non-zero.
+	if req.StreamingChunksBatchSize == 0 {
+		req.StreamingChunksBatchSize = fallbackStreamingBatchSize
 	}
+
 	defer func() { err = mapSeriesError(err) }()
 
 	matchers, err := storepb.MatchersToPromMatchers(req.Matchers...)
@@ -572,15 +580,11 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storegatewaypb.Stor
 		return status.Error(codes.InvalidArgument, errors.Wrap(err, "parse query sharding label").Error())
 	}
 
-	var (
-		spanLogger       = spanlogger.FromContext(srv.Context(), s.logger)
-		ctx              = srv.Context()
-		stats            = newSafeQueryStats()
-		reqBlockMatchers []*labels.Matcher
-	)
+	stats := newSafeQueryStats()
 	defer s.recordSeriesCallResult(stats)
 	defer s.recordRequestAmbientTime(stats, time.Now())
 
+	var reqBlockMatchers []*labels.Matcher
 	if req.Hints != nil {
 		reqHints := &hintspb.SeriesRequestHints{}
 		if err := types.UnmarshalAny(req.Hints, reqHints); err != nil {
@@ -593,21 +597,19 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storegatewaypb.Stor
 		}
 	}
 
-	logSeriesRequestToSpan(srv.Context(), s.logger, req.MinTime, req.MaxTime, matchers, reqBlockMatchers, shardSelector, req.StreamingChunksBatchSize)
+	logSeriesRequestToSpan(spanLogger, req.MinTime, req.MaxTime, matchers, reqBlockMatchers, shardSelector, req.StreamingChunksBatchSize)
 
 	blocks, indexReaders, chunkReaders := s.openBlocksForReading(ctx, req.SkipChunks, req.MinTime, req.MaxTime, reqBlockMatchers, stats)
 	// We must keep the readers open until all their data has been sent.
-	for _, r := range indexReaders {
-		defer runutil.CloseWithLogOnErr(s.logger, r, "close block index reader")
-	}
-	for _, r := range chunkReaders {
-		defer runutil.CloseWithLogOnErr(s.logger, r, "close block chunk reader")
-	}
+	defer func() {
+		for _, r := range indexReaders {
+			runutil.CloseWithLogOnErr(s.logger, r, "close block index reader")
+		}
 
-	var readers *bucketChunkReaders
-	if !req.SkipChunks {
-		readers = newChunkReaders(chunkReaders)
-	}
+		for _, r := range chunkReaders {
+			runutil.CloseWithLogOnErr(s.logger, r, "close block chunk reader")
+		}
+	}()
 
 	// Wait for the query gate only after opening blocks. Opening blocks is usually fast (~1ms),
 	// but sometimes it can take minutes if the block isn't loaded and there is a surge in queries for unloaded blocks.
@@ -617,92 +619,74 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storegatewaypb.Stor
 	}
 	defer done()
 
-	var (
-		streamingIterators *streamingSeriesIterators
-		resHints           = &hintspb.SeriesResponseHints{}
-	)
-	for _, b := range blocks {
-		resHints.AddQueriedBlock(b.meta.ULID)
-
-		if b.meta.Compaction.Level == 1 && b.meta.Thanos.Source == block.ReceiveSource && !b.queried.Load() {
-			level.Debug(s.logger).Log("msg", "queried non-compacted block", "blockId", b.meta.ULID, "ooo", b.meta.Compaction.FromOutOfOrder())
-		}
-
-		b.queried.Store(true)
-	}
-	if err := s.sendHints(srv, resHints); err != nil {
+	// Send hints about the blocks loaded for this query before sending series or stats.
+	resHints := buildSeriesResponseHints(blocks)
+	if err = s.sendHints(srv, resHints); err != nil {
 		return err
 	}
 
-	streamingSeriesCount := 0
-	if req.StreamingChunksBatchSize > 0 {
-		var (
-			seriesSet       storepb.SeriesSet
-			seriesLoadStart = time.Now()
-			chunksLimiter   = s.chunksLimiterFactory(s.metrics.queriesDropped.WithLabelValues("chunks"))
-			seriesLimiter   = s.seriesLimiterFactory(s.metrics.queriesDropped.WithLabelValues("series"))
-		)
+	var (
+		streamingSeriesCount int
+		seriesSet            storepb.SeriesSet
+		streamingIterators   *streamingSeriesIterators
+		seriesLoadStart      = time.Now()
+		chunksLimiter        = s.chunksLimiterFactory(s.metrics.queriesDropped.WithLabelValues("chunks"))
+		seriesLimiter        = s.seriesLimiterFactory(s.metrics.queriesDropped.WithLabelValues("series"))
+	)
 
-		seriesSet, streamingIterators, err = s.createIteratorForChunksStreamingLabelsPhase(ctx, req, blocks, indexReaders, shardSelector, matchers, chunksLimiter, seriesLimiter, stats)
-		if err != nil {
-			return err
-		}
+	seriesSet, streamingIterators, err = s.createIteratorForChunksStreamingLabelsPhase(ctx, req, blocks, indexReaders, shardSelector, matchers, chunksLimiter, seriesLimiter, stats)
+	if err != nil {
+		return err
+	}
 
-		streamingSeriesCount, err = s.sendStreamingSeriesLabelsAndStats(req, srv, stats, seriesSet)
-		if err != nil {
-			return err
-		}
-		spanLogger.DebugLog(
-			"msg", "sent streaming series",
-			"num_series", streamingSeriesCount,
-			"duration", time.Since(seriesLoadStart),
-		)
+	streamingSeriesCount, err = s.sendStreamingSeriesLabelsAndStats(req, srv, stats, seriesSet)
+	if err != nil {
+		return err
+	}
+	spanLogger.DebugLog(
+		"msg", "sent streaming series",
+		"num_series", streamingSeriesCount,
+		"duration", time.Since(seriesLoadStart),
+	)
 
-		if streamingSeriesCount == 0 {
-			// There is no series to send chunks for.
-			return nil
-		}
+	if streamingSeriesCount == 0 || req.SkipChunks {
+		// There are no series to send chunks for, or we aren't sending chunks.
+		return nil
 	}
 
 	// We create the limiter twice in the case of streaming so that we don't double count the series
 	// and hit the limit prematurely.
-	chunksLimiter := s.chunksLimiterFactory(s.metrics.queriesDropped.WithLabelValues("chunks"))
-	seriesLimiter := s.seriesLimiterFactory(s.metrics.queriesDropped.WithLabelValues("series"))
+	chunksLimiter = s.chunksLimiterFactory(s.metrics.queriesDropped.WithLabelValues("chunks"))
+	seriesLimiter = s.seriesLimiterFactory(s.metrics.queriesDropped.WithLabelValues("series"))
 
-	start := time.Now()
-	if req.StreamingChunksBatchSize > 0 {
-		seriesChunkIt := s.createIteratorForChunksStreamingChunksPhase(ctx, readers, stats, chunksLimiter, seriesLimiter, streamingIterators)
-		err = s.sendStreamingChunks(req, srv, seriesChunkIt, stats, streamingSeriesCount)
-	} else {
-		var seriesSet storepb.SeriesSet
-		seriesSet, err = s.createIteratorForNonChunksStreamingRequest(ctx, req, blocks, indexReaders, readers, shardSelector, matchers, chunksLimiter, seriesLimiter, stats)
-		if err != nil {
-			return err
-		}
-		err = s.sendSeriesChunks(req, srv, seriesSet, stats)
-	}
+	readers := newChunkReaders(chunkReaders)
+	chunksLoadStart := time.Now()
+
+	seriesChunkIt := s.createIteratorForChunksStreamingChunksPhase(ctx, readers, stats, chunksLimiter, seriesLimiter, streamingIterators)
+	err = s.sendStreamingChunks(req, srv, seriesChunkIt, stats, streamingSeriesCount)
 	if err != nil {
-		return
+		return err
 	}
 
 	numSeries, numChunks := stats.seriesAndChunksCount()
-	debugMessage := "sent series"
-	if req.StreamingChunksBatchSize > 0 {
-		debugMessage = "sent streaming chunks"
-	}
 	spanLogger.DebugLog(
-		"msg", debugMessage,
+		"msg", "sent streaming chunks",
 		"num_series", numSeries,
 		"num_chunks", numChunks,
-		"duration", time.Since(start),
+		"duration", time.Since(chunksLoadStart),
 	)
 
-	if req.StreamingChunksBatchSize == 0 {
-		// Stats were not sent before, so send it now.
-		return s.sendStats(srv, stats)
+	return nil
+}
+
+func buildSeriesResponseHints(blocks []*bucketBlock) *hintspb.SeriesResponseHints {
+	resHints := &hintspb.SeriesResponseHints{}
+	for _, b := range blocks {
+		resHints.AddQueriedBlock(b.meta.ULID)
+		b.queried.Store(true)
 	}
 
-	return nil
+	return resHints
 }
 
 func mapSeriesError(err error) error {
@@ -918,53 +902,6 @@ func (s *BucketStore) sendStreamingChunks(
 	return it.Err()
 }
 
-func (s *BucketStore) sendSeriesChunks(
-	req *storepb.SeriesRequest,
-	srv storegatewaypb.StoreGateway_SeriesServer,
-	seriesSet storepb.SeriesSet,
-	stats *safeQueryStats,
-) error {
-	var (
-		encodeDuration           time.Duration
-		sendDuration             time.Duration
-		seriesCount, chunksCount int
-	)
-
-	defer stats.update(func(stats *queryStats) {
-		stats.mergedSeriesCount += seriesCount
-		stats.mergedChunksCount += chunksCount
-
-		stats.streamingSeriesEncodeResponseDuration += encodeDuration
-		stats.streamingSeriesSendResponseDuration += sendDuration
-	})
-
-	for seriesSet.Next() {
-		seriesCount++
-		// IMPORTANT: do not retain the memory returned by seriesSet.At() beyond this loop cycle
-		// because the subsequent call to seriesSet.Next() may release it. But it is safe to hold
-		// onto lset because the labels are not released.
-		lset, chks := seriesSet.At()
-		series := storepb.Series{
-			Labels: mimirpb.FromLabelsToLabelAdapters(lset),
-		}
-		if !req.SkipChunks {
-			series.Chunks = chks
-			chunksCount += len(chks)
-			s.metrics.chunkSizeBytes.Observe(float64(chunksSize(chks)))
-		}
-
-		err := s.sendMessage("series", srv, storepb.NewSeriesResponse(&series), &encodeDuration, &sendDuration)
-		if err != nil {
-			return err
-		}
-	}
-	if seriesSet.Err() != nil {
-		return errors.Wrap(seriesSet.Err(), "expand series set")
-	}
-
-	return nil
-}
-
 func (s *BucketStore) sendMessage(typ string, srv storegatewaypb.StoreGateway_SeriesServer, msg interface{}, encodeDuration, sendDuration *time.Duration) error {
 	// We encode it ourselves into a PreparedMsg in order to measure the time it takes.
 	encodeBegin := time.Now()
@@ -1012,8 +949,7 @@ func (s *BucketStore) sendStats(srv storegatewaypb.StoreGateway_SeriesServer, st
 	return nil
 }
 
-func logSeriesRequestToSpan(ctx context.Context, l log.Logger, minT, maxT int64, matchers, blockMatchers []*labels.Matcher, shardSelector *sharding.ShardSelector, streamingChunksBatchSize uint64) {
-	spanLogger := spanlogger.FromContext(ctx, l)
+func logSeriesRequestToSpan(spanLogger *spanlogger.SpanLogger, minT, maxT int64, matchers, blockMatchers []*labels.Matcher, shardSelector *sharding.ShardSelector, streamingChunksBatchSize uint64) {
 	spanLogger.DebugLog(
 		"msg", "BucketStore.Series",
 		"request min time", time.UnixMilli(minT).UTC().Format(time.RFC3339Nano),
@@ -1030,38 +966,6 @@ func chunksSize(chks []storepb.AggrChunk) (size int) {
 		size += chk.Size() // This gets the encoded proto size.
 	}
 	return size
-}
-
-// createIteratorForNonChunksStreamingRequest is used when the streaming feature is not enabled.
-func (s *BucketStore) createIteratorForNonChunksStreamingRequest(
-	ctx context.Context,
-	req *storepb.SeriesRequest,
-	blocks []*bucketBlock,
-	indexReaders map[ulid.ULID]*bucketIndexReader,
-	chunkReaders *bucketChunkReaders,
-	shardSelector *sharding.ShardSelector,
-	matchers []*labels.Matcher,
-	chunksLimiter ChunksLimiter,
-	seriesLimiter SeriesLimiter,
-	stats *safeQueryStats,
-) (storepb.SeriesSet, error) {
-	strategy := defaultStrategy
-	if req.SkipChunks {
-		strategy = noChunkRefs
-	}
-	it, err := s.getSeriesIteratorFromBlocks(ctx, req, blocks, indexReaders, shardSelector, matchers, chunksLimiter, seriesLimiter, stats, strategy, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	var set storepb.SeriesSet
-	if !req.SkipChunks {
-		ss := newChunksPreloadingIterator(ctx, s.logger, s.userID, *chunkReaders, it, s.maxSeriesPerBatch, stats)
-		set = newSeriesChunksSeriesSet(ss)
-	} else {
-		set = newSeriesSetWithoutChunks(ctx, it, stats)
-	}
-	return set, nil
 }
 
 // createIteratorForChunksStreamingLabelsPhase is used when streaming feature is enabled.

@@ -411,7 +411,7 @@ local filename = 'mimir-reads.json';
       .addPanel(
         $.timeseriesPanel('Ingester per %s queued requests' % $._config.per_instance_label) +
         $.hiddenLegendQueryPanel(
-          'sum by (%s) (cortex_ingester_reactive_limiter_blocked_requests{%s, request_type="read"})'
+          'sum by (%s) (cortex_ingester_reactive_limiter_queued_requests{%s, request_type="read"})'
           % [$._config.per_instance_label, $.jobMatcher($._config.job_names.ingester)], '',
         ) +
         { fieldConfig+: { defaults+: { unit: 'req' } } }

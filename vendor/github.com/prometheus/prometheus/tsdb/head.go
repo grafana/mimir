@@ -94,6 +94,7 @@ type Head struct {
 	floatHistogramsPool zeropool.Pool[[]record.RefFloatHistogramSample]
 	metadataPool        zeropool.Pool[[]record.RefMetadata]
 	seriesPool          zeropool.Pool[[]*memSeries]
+	typeMapPool         zeropool.Pool[map[chunks.HeadSeriesRef]sampleType]
 	bytesPool           zeropool.Pool[[]byte]
 	memChunkPool        sync.Pool
 
@@ -1863,6 +1864,25 @@ func (h *Head) mmapHeadChunks() {
 		h.series.locks[i].RUnlock()
 	}
 	h.metrics.mmapChunksTotal.Add(float64(count))
+}
+
+func (h *Head) FsyncWLSegments() error {
+	if h.wal == nil {
+		return errors.New("wal not initialized")
+	}
+	err := h.wal.FsyncSegmentsUntilCurrent()
+	if err != nil {
+		return fmt.Errorf("could not fsync wal segments: %w", err)
+	}
+	if h.wbl == nil {
+		// WBL is not initialized, which is expected when OOO is disabled
+		return nil
+	}
+	err = h.wbl.FsyncSegmentsUntilCurrent()
+	if err != nil {
+		return fmt.Errorf("could not fsync wbl segments: %w", err)
+	}
+	return nil
 }
 
 // seriesHashmap lets TSDB find a memSeries by its label set, via a 64-bit hash.

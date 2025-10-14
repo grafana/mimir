@@ -36,7 +36,7 @@ func (n *NarrowSelectorsOptimizationPass) Apply(ctx context.Context, plan *plann
 	// query has been rewritten to be sharded or spun off, don't attempt to generate any query
 	// hints since there are no selectors that we understand and can add matchers to.
 	res := optimize.Inspect(plan.Root)
-	if !res.HasSelectors || res.IsRewritten {
+	if !res.HasSelectors || res.IsRewrittenByMiddleware {
 		return plan, nil
 	}
 

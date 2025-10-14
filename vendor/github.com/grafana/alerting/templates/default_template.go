@@ -250,7 +250,7 @@ func DefaultTemplate(omitTemplates []string) (TemplateDefinition, error) {
 		if name == "" || slices.Contains(omitTemplates, name) {
 			continue
 		}
-		def := tmpl.Tree.Root.String()
+		def := tmpl.Root.String()
 		if tmpl.Name() == "__text_values_list" {
 			// Temporary fix for https://github.com/golang/go/commit/6fea4094242fe4e7be8bd7ec0b55df9f6df3f025.
 			// TODO: Can remove with GO v1.24.

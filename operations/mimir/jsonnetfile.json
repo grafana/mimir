@@ -36,6 +36,15 @@
         }
       },
       "version": "master"
+    },
+    {
+      "source": {
+        "git": {
+          "remote": "https://github.com/grafana/rollout-operator.git",
+          "subdir": "operations/rollout-operator"
+        }
+      },
+      "version": "4d563316583fdc8120c6ee7dfb393bb59a537bae"
     }
   ],
   "legacyImports": true

@@ -25,12 +25,14 @@ func (i NoopPlanner) PlanIndexLookup(_ context.Context, plan index.LookupPlan, _
 }
 
 type CostBasedPlanner struct {
+	config  CostConfig
 	stats   index.Statistics
 	metrics Metrics
 }
 
-func NewCostBasedPlanner(metrics Metrics, statistics index.Statistics) *CostBasedPlanner {
+func NewCostBasedPlanner(metrics Metrics, statistics index.Statistics, config CostConfig) *CostBasedPlanner {
 	return &CostBasedPlanner{
+		config:  config,
 		metrics: metrics,
 		stats:   statistics,
 	}
@@ -91,7 +93,7 @@ func (p CostBasedPlanner) PlanIndexLookup(ctx context.Context, inPlan index.Look
 var errTooManyMatchers = errors.New("too many matchers to generate plans")
 
 func (p CostBasedPlanner) generatePlans(ctx context.Context, statistics index.Statistics, matchers []*labels.Matcher) []plan {
-	noopPlan := newScanOnlyPlan(ctx, statistics, matchers)
+	noopPlan := newScanOnlyPlan(ctx, statistics, p.config, matchers)
 	allPlans := make([]plan, 0, 1<<uint(len(matchers)))
 
 	return generatePredicateCombinations(allPlans, noopPlan, 0)

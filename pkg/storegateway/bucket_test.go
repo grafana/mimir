@@ -1484,9 +1484,9 @@ func benchBucketSeries(t test.TB, skipChunk bool, samplesPerSeries, totalSeries 
 			})
 		}
 
-		streamingBatchSizes := []int{0}
+		streamingBatchSizes := []int{5}
 		if !t.IsBenchmark() {
-			streamingBatchSizes = []int{0, 1, 5}
+			streamingBatchSizes = []int{1, 5}
 		}
 		for _, streamingBatchSize := range streamingBatchSizes {
 			t.Run(fmt.Sprintf("streamingBatchSize=%d", streamingBatchSize), func(t test.TB) {
@@ -1672,7 +1672,7 @@ func TestBucketStore_Series_Concurrency(t *testing.T) {
 	// Run the test with different batch sizes.
 	for _, batchSize := range []int{len(expectedSeries) / 100, len(expectedSeries) * 2} {
 		t.Run(fmt.Sprintf("batch size: %d", batchSize), func(t *testing.T) {
-			for _, streamBatchSize := range []int{0, 10} {
+			for _, streamBatchSize := range []int{1, 10} {
 				t.Run(fmt.Sprintf("streamBatchSize:%d", streamBatchSize), func(t *testing.T) {
 					// Reset the memory pool tracker.
 					seriesChunkRefsSetPool.(*pool.TrackedPool).Reset()
@@ -2406,7 +2406,7 @@ func testBucketStoreSeriesBlockWithMultipleChunks(
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
-			for _, streamingBatchSize := range []int{0, 1, 5} {
+			for _, streamingBatchSize := range []int{1, 5} {
 				t.Run(fmt.Sprintf("streamingBatchSize=%d", streamingBatchSize), func(t *testing.T) {
 					req := &storepb.SeriesRequest{
 						MinTime: testData.reqMinTime,
@@ -2430,12 +2430,7 @@ func testBucketStoreSeriesBlockWithMultipleChunks(
 						numSamples += decodedChunk.NumSamples()
 					}
 
-					if streamingBatchSize == 0 {
-						require.Zero(t, estimatedChunks)
-					} else {
-						require.InDelta(t, len(seriesSet[0].Chunks), estimatedChunks, 0.1, "number of chunks estimations should be within 10% of the actual number of chunks")
-					}
-
+					require.InDelta(t, len(seriesSet[0].Chunks), estimatedChunks, 0.1, "number of chunks estimations should be within 10% of the actual number of chunks")
 					compareToPromChunks(t, seriesSet[0].Chunks, mimirpb.FromLabelAdaptersToLabels(seriesSet[0].Labels), testData.reqMinTime, testData.reqMaxTime, promBlock)
 				})
 			}

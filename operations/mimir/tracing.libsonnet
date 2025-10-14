@@ -6,6 +6,10 @@
     // See OTel SDK documentation and Mimir's tracing documentation for available options.
     otel_traces_sampler: null,
     otel_traces_sampler_arg: null,
+    // otel_span_event_count_limit configures the max number of events that can be
+    // added to a span. The SDK default is 128 events.
+    otel_span_event_count_limit: null,
+
     otel_resource_attributes: [
       { key: 'k8s.namespace.name', value: $._config.namespace },
       { key: 'service.namespace', value: $._config.namespace },
@@ -36,6 +40,7 @@
       { name: 'OTEL_RESOURCE_ATTRIBUTES', value: constructOtelResourceAttributes(resourceAttributes) },
       if $._config.otel_traces_sampler != null then { name: 'OTEL_TRACES_SAMPLER', value: $._config.otel_traces_sampler },
       if $._config.otel_traces_sampler_arg != null then { name: 'OTEL_TRACES_SAMPLER_ARG', value: $._config.otel_traces_sampler_arg },
+      if $._config.otel_span_event_count_limit != null then { name: 'OTEL_SPAN_EVENT_COUNT_LIMIT', value: $._config.otel_span_event_count_limit },
     ]),
   },
 }

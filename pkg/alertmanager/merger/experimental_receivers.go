@@ -18,9 +18,9 @@ import (
 type ExperimentalReceivers struct{}
 
 func (ExperimentalReceivers) MergeResponses(in [][]byte) ([]byte, error) {
-	responses := make([]alertingmodels.Receiver, 0)
+	responses := make([]alertingmodels.ReceiverStatus, 0)
 	for _, body := range in {
-		parsed := make([]alertingmodels.Receiver, 0)
+		parsed := make([]alertingmodels.ReceiverStatus, 0)
 		if err := json.Unmarshal(body, &parsed); err != nil {
 			return nil, err
 		}
@@ -35,8 +35,8 @@ func (ExperimentalReceivers) MergeResponses(in [][]byte) ([]byte, error) {
 	return json.Marshal(merged)
 }
 
-func mergeReceivers(in []alertingmodels.Receiver) ([]alertingmodels.Receiver, error) {
-	receivers := make(map[string]alertingmodels.Receiver)
+func mergeReceivers(in []alertingmodels.ReceiverStatus) ([]alertingmodels.ReceiverStatus, error) {
+	receivers := make(map[string]alertingmodels.ReceiverStatus)
 	for _, recv := range in {
 		name := recv.Name
 
@@ -51,20 +51,20 @@ func mergeReceivers(in []alertingmodels.Receiver) ([]alertingmodels.Receiver, er
 		}
 	}
 
-	result := make([]alertingmodels.Receiver, 0, len(receivers))
+	result := make([]alertingmodels.ReceiverStatus, 0, len(receivers))
 	for _, recv := range receivers {
 		result = append(result, recv)
 	}
 
 	// Sort receivers by name to give a stable response.
-	slices.SortFunc(result, func(a, b alertingmodels.Receiver) int {
+	slices.SortFunc(result, func(a, b alertingmodels.ReceiverStatus) int {
 		return strings.Compare(a.Name, b.Name)
 	})
 
 	return result, nil
 }
 
-func mergeReceiver(lhs alertingmodels.Receiver, rhs alertingmodels.Receiver) (alertingmodels.Receiver, error) {
+func mergeReceiver(lhs alertingmodels.ReceiverStatus, rhs alertingmodels.ReceiverStatus) (alertingmodels.ReceiverStatus, error) {
 	// Receiver is active if it's active anywhere. In theory these should never
 	// be different, but perhaps during reconfiguration, one replica thinks
 	// a receiver is active, and another doesn't.
@@ -72,18 +72,18 @@ func mergeReceiver(lhs alertingmodels.Receiver, rhs alertingmodels.Receiver) (al
 
 	integrations, err := mergeIntegrations(append(lhs.Integrations, rhs.Integrations...))
 	if err != nil {
-		return alertingmodels.Receiver{}, err
+		return alertingmodels.ReceiverStatus{}, err
 	}
 
-	return alertingmodels.Receiver{
+	return alertingmodels.ReceiverStatus{
 		Name:         lhs.Name,
 		Active:       active,
 		Integrations: integrations,
 	}, nil
 }
 
-func mergeIntegrations(in []alertingmodels.Integration) ([]alertingmodels.Integration, error) {
-	integrations := make(map[string]alertingmodels.Integration)
+func mergeIntegrations(in []alertingmodels.IntegrationStatus) ([]alertingmodels.IntegrationStatus, error) {
+	integrations := make(map[string]alertingmodels.IntegrationStatus)
 
 	for _, integration := range in {
 		if current, ok := integrations[integration.Name]; ok {
@@ -96,13 +96,13 @@ func mergeIntegrations(in []alertingmodels.Integration) ([]alertingmodels.Integr
 		integrations[integration.Name] = integration
 	}
 
-	result := make([]alertingmodels.Integration, 0, len(integrations))
+	result := make([]alertingmodels.IntegrationStatus, 0, len(integrations))
 	for _, integration := range integrations {
 		result = append(result, integration)
 	}
 
 	// Sort integrations by name to give a stable response.
-	slices.SortFunc(result, func(a, b alertingmodels.Integration) int {
+	slices.SortFunc(result, func(a, b alertingmodels.IntegrationStatus) int {
 		return strings.Compare(a.Name, b.Name)
 	})
 

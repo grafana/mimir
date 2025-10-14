@@ -20,12 +20,14 @@ import (
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/stats"
+	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
 func TestDistributor_QueryStream_ShouldSupportIngestStorage(t *testing.T) {
 	const tenantID = "user"
 
 	ctx := user.InjectOrgID(context.Background(), tenantID)
+	ctx = limiter.ContextWithNewUnlimitedMemoryConsumptionTracker(ctx)
 	selectAllSeriesMatcher := mustEqualMatcher("bar", "baz")
 
 	tests := map[string]struct {
@@ -529,12 +531,7 @@ func TestDistributor_QueryStream_ShouldSupportIngestStorage(t *testing.T) {
 				}
 			}
 
-			var responseMatrix model.Matrix
-			if len(resp.Chunkseries) == 0 {
-				responseMatrix, err = ingester_client.StreamingSeriesToMatrix(0, 5, resp.StreamingSeries)
-			} else {
-				responseMatrix, err = ingester_client.TimeSeriesChunksToMatrix(0, 5, resp.Chunkseries)
-			}
+			responseMatrix, err := ingester_client.StreamingSeriesToMatrix(0, 5, resp.StreamingSeries)
 			assert.NoError(t, err)
 			assert.Equal(t, testData.expectedResponse.String(), responseMatrix.String())
 

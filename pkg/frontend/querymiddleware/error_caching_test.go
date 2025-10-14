@@ -60,7 +60,7 @@ func TestErrorCachingHandler_Do(t *testing.T) {
 			t.Run("no user set", func(t *testing.T) {
 				c := cache.NewInstrumentedMockCache()
 
-				innerRes := newEmptyPrometheusResponse()
+				innerRes := NewEmptyPrometheusResponse()
 				inner := &mockHandler{}
 				inner.On("Do", mock.Anything, mock.Anything).Return(innerRes, nil)
 
@@ -77,7 +77,7 @@ func TestErrorCachingHandler_Do(t *testing.T) {
 			t.Run("disabled by option", func(t *testing.T) {
 				c := cache.NewInstrumentedMockCache()
 
-				innerRes := newEmptyPrometheusResponse()
+				innerRes := NewEmptyPrometheusResponse()
 				inner := &mockHandler{}
 				inner.On("Do", mock.Anything, mock.Anything).Return(innerRes, nil)
 
@@ -121,7 +121,7 @@ func TestErrorCachingHandler_Do(t *testing.T) {
 			t.Run("cache hit key collision", func(t *testing.T) {
 				c := cache.NewInstrumentedMockCache()
 
-				innerRes := newEmptyPrometheusResponse()
+				innerRes := NewEmptyPrometheusResponse()
 				inner := &mockHandler{}
 				inner.On("Do", mock.Anything, mock.Anything).Return(innerRes, nil)
 
@@ -149,7 +149,7 @@ func TestErrorCachingHandler_Do(t *testing.T) {
 			t.Run("corrupt cache data", func(t *testing.T) {
 				c := cache.NewInstrumentedMockCache()
 
-				innerRes := newEmptyPrometheusResponse()
+				innerRes := NewEmptyPrometheusResponse()
 				inner := &mockHandler{}
 				inner.On("Do", mock.Anything, mock.Anything).Return(innerRes, nil)
 
@@ -171,7 +171,7 @@ func TestErrorCachingHandler_Do(t *testing.T) {
 			t.Run("cache miss no error", func(t *testing.T) {
 				c := cache.NewInstrumentedMockCache()
 
-				innerRes := newEmptyPrometheusResponse()
+				innerRes := NewEmptyPrometheusResponse()
 				inner := &mockHandler{}
 				inner.On("Do", mock.Anything, mock.Anything).Return(innerRes, nil)
 

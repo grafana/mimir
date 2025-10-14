@@ -37,7 +37,6 @@ import (
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/stats"
-	"github.com/grafana/mimir/pkg/storage/chunk"
 	"github.com/grafana/mimir/pkg/streamingpromql"
 	"github.com/grafana/mimir/pkg/util"
 	util_log "github.com/grafana/mimir/pkg/util/log"
@@ -240,7 +239,6 @@ func TestQuerier(t *testing.T) {
 
 			// No samples returned by ingesters.
 			distributor := &mockDistributor{}
-			distributor.On("Query", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(&client.QueryResponse{}, nil)
 			distributor.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(client.CombinedQueryStreamResponse{}, nil)
 
 			overrides := validation.NewOverrides(defaultLimitsConfig(), nil)
@@ -272,43 +270,69 @@ func TestQuerier_QueryableReturnsChunksOutsideQueriedRange(t *testing.T) {
 	distributor := &mockDistributor{}
 	distributor.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(
 		client.CombinedQueryStreamResponse{
-			Chunkseries: []client.TimeSeriesChunk{
-				// Series with data points only before queryStart.
+			StreamingSeries: []client.StreamingSeries{
 				{
-					Labels: []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "one"}},
-					Chunks: convertToChunks(t, []interface{}{
-						mimirpb.Sample{TimestampMs: queryStart.Add(-9*time.Minute).Unix() * 1000, Value: 1},
-						mimirpb.Sample{TimestampMs: queryStart.Add(-8*time.Minute).Unix() * 1000, Value: 1},
-						mimirpb.Sample{TimestampMs: queryStart.Add(-7*time.Minute).Unix() * 1000, Value: 1},
-					}, false),
+					Labels: labels.FromStrings(labels.MetricName, "one"),
+					Sources: []client.StreamingSeriesSource{
+						{
+							SeriesIndex: 0,
+							StreamReader: createTestStreamReader([]client.QueryStreamSeriesChunks{
+								{
+									SeriesIndex: 0,
+									Chunks: convertToChunks(t, []interface{}{
+										mimirpb.Sample{TimestampMs: queryStart.Add(-9*time.Minute).Unix() * 1000, Value: 1},
+										mimirpb.Sample{TimestampMs: queryStart.Add(-8*time.Minute).Unix() * 1000, Value: 1},
+										mimirpb.Sample{TimestampMs: queryStart.Add(-7*time.Minute).Unix() * 1000, Value: 1},
+									}, false),
+								},
+							})},
+					},
 				},
-				// Series with data points before and after queryStart, but before queryEnd.
 				{
-					Labels: []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "one"}},
-					Chunks: convertToChunks(t, []interface{}{
-						mimirpb.Sample{TimestampMs: queryStart.Add(-9*time.Minute).Unix() * 1000, Value: 1},
-						mimirpb.Sample{TimestampMs: queryStart.Add(-8*time.Minute).Unix() * 1000, Value: 3},
-						mimirpb.Sample{TimestampMs: queryStart.Add(-7*time.Minute).Unix() * 1000, Value: 5},
-						mimirpb.Sample{TimestampMs: queryStart.Add(-6*time.Minute).Unix() * 1000, Value: 7},
-						mimirpb.Sample{TimestampMs: queryStart.Add(-5*time.Minute).Unix() * 1000, Value: 11},
-						mimirpb.Sample{TimestampMs: queryStart.Add(-4*time.Minute).Unix() * 1000, Value: 13},
-						mimirpb.Sample{TimestampMs: queryStart.Add(-3*time.Minute).Unix() * 1000, Value: 17},
-						mimirpb.Sample{TimestampMs: queryStart.Add(-2*time.Minute).Unix() * 1000, Value: 19},
-						mimirpb.Sample{TimestampMs: queryStart.Add(-1*time.Minute).Unix() * 1000, Value: 23},
-						mimirpb.Sample{TimestampMs: queryStart.Add(+0*time.Minute).Unix() * 1000, Value: 29},
-						mimirpb.Sample{TimestampMs: queryStart.Add(+1*time.Minute).Unix() * 1000, Value: 31},
-						mimirpb.Sample{TimestampMs: queryStart.Add(+2*time.Minute).Unix() * 1000, Value: 37},
-					}, false),
+					// Series with data points before and after queryStart, but before queryEnd.
+					Labels: labels.FromStrings(labels.MetricName, "one"),
+					Sources: []client.StreamingSeriesSource{
+						{
+							SeriesIndex: 0,
+							StreamReader: createTestStreamReader([]client.QueryStreamSeriesChunks{
+								{
+									SeriesIndex: 0,
+									Chunks: convertToChunks(t, []interface{}{
+										mimirpb.Sample{TimestampMs: queryStart.Add(-9*time.Minute).Unix() * 1000, Value: 1},
+										mimirpb.Sample{TimestampMs: queryStart.Add(-8*time.Minute).Unix() * 1000, Value: 3},
+										mimirpb.Sample{TimestampMs: queryStart.Add(-7*time.Minute).Unix() * 1000, Value: 5},
+										mimirpb.Sample{TimestampMs: queryStart.Add(-6*time.Minute).Unix() * 1000, Value: 7},
+										mimirpb.Sample{TimestampMs: queryStart.Add(-5*time.Minute).Unix() * 1000, Value: 11},
+										mimirpb.Sample{TimestampMs: queryStart.Add(-4*time.Minute).Unix() * 1000, Value: 13},
+										mimirpb.Sample{TimestampMs: queryStart.Add(-3*time.Minute).Unix() * 1000, Value: 17},
+										mimirpb.Sample{TimestampMs: queryStart.Add(-2*time.Minute).Unix() * 1000, Value: 19},
+										mimirpb.Sample{TimestampMs: queryStart.Add(-1*time.Minute).Unix() * 1000, Value: 23},
+										mimirpb.Sample{TimestampMs: queryStart.Add(+0*time.Minute).Unix() * 1000, Value: 29},
+										mimirpb.Sample{TimestampMs: queryStart.Add(+1*time.Minute).Unix() * 1000, Value: 31},
+										mimirpb.Sample{TimestampMs: queryStart.Add(+2*time.Minute).Unix() * 1000, Value: 37},
+									}, false),
+								},
+							})},
+					},
 				},
-				// Series with data points after queryEnd.
 				{
-					Labels: []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "one"}},
-					Chunks: convertToChunks(t, []interface{}{
-						mimirpb.Sample{TimestampMs: queryStart.Add(+4*time.Minute).Unix() * 1000, Value: 41},
-						mimirpb.Sample{TimestampMs: queryStart.Add(+5*time.Minute).Unix() * 1000, Value: 43},
-						mimirpb.Sample{TimestampMs: queryStart.Add(+6*time.Minute).Unix() * 1000, Value: 47},
-						mimirpb.Sample{TimestampMs: queryStart.Add(+7*time.Minute).Unix() * 1000, Value: 53},
-					}, false),
+					// Series with data points after queryEnd.
+					Labels: labels.FromStrings(labels.MetricName, "one"),
+					Sources: []client.StreamingSeriesSource{
+						{
+							SeriesIndex: 0,
+							StreamReader: createTestStreamReader([]client.QueryStreamSeriesChunks{
+								{
+									SeriesIndex: 0,
+									Chunks: convertToChunks(t, []interface{}{
+										mimirpb.Sample{TimestampMs: queryStart.Add(+4*time.Minute).Unix() * 1000, Value: 41},
+										mimirpb.Sample{TimestampMs: queryStart.Add(+5*time.Minute).Unix() * 1000, Value: 43},
+										mimirpb.Sample{TimestampMs: queryStart.Add(+6*time.Minute).Unix() * 1000, Value: 47},
+										mimirpb.Sample{TimestampMs: queryStart.Add(+7*time.Minute).Unix() * 1000, Value: 53},
+									}, false),
+								},
+							})},
+					},
 				},
 			},
 		},
@@ -391,16 +415,32 @@ func TestBatchMergeChunks(t *testing.T) {
 	distributor := &mockDistributor{}
 	distributor.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(
 		client.CombinedQueryStreamResponse{
-			Chunkseries: []client.TimeSeriesChunk{
-				// Series with chunks in the 1,2 order, that need merge
+			StreamingSeries: []client.StreamingSeries{
 				{
-					Labels: []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "one"}, {Name: "instance", Value: "foo"}},
-					Chunks: chunks12,
+					Labels: labels.FromStrings(labels.MetricName, "one", "instance", "foo"),
+					Sources: []client.StreamingSeriesSource{
+						{
+							SeriesIndex: 0,
+							StreamReader: createTestStreamReader([]client.QueryStreamSeriesChunks{
+								{
+									SeriesIndex: 0,
+									Chunks:      chunks12,
+								},
+							})},
+					},
 				},
-				// Series with chunks in the 2,1 order, that need merge
 				{
-					Labels: []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "one"}, {Name: "instance", Value: "bar"}},
-					Chunks: chunks21,
+					Labels: labels.FromStrings(labels.MetricName, "one", "instance", "bar"),
+					Sources: []client.StreamingSeriesSource{
+						{
+							SeriesIndex: 0,
+							StreamReader: createTestStreamReader([]client.QueryStreamSeriesChunks{
+								{
+									SeriesIndex: 0,
+									Chunks:      chunks21,
+								},
+							})},
+					},
 				},
 			},
 		},
@@ -428,84 +468,6 @@ func TestBatchMergeChunks(t *testing.T) {
 	require.Equal(t, 2, m.Len())
 	require.ElementsMatch(t, m[0].Floats, m[1].Floats)
 	require.ElementsMatch(t, m[0].Histograms, m[1].Histograms)
-}
-
-func BenchmarkQueryExecute(b *testing.B) {
-	var (
-		logger    = log.NewNopLogger()
-		queryStep = time.Second
-	)
-
-	var cfg Config
-	flagext.DefaultValues(&cfg)
-
-	limits := defaultLimitsConfig()
-	limits.QueryIngestersWithin = 0 // Always query ingesters in this test.
-	overrides := validation.NewOverrides(limits, nil)
-
-	scenarios := []struct {
-		numChunks          int
-		numSamplesPerChunk int
-		duplicationFactor  int
-	}{
-		{numChunks: 1000, numSamplesPerChunk: 100, duplicationFactor: 1},
-		{numChunks: 1000, numSamplesPerChunk: 100, duplicationFactor: 3},
-		{numChunks: 100, numSamplesPerChunk: 100, duplicationFactor: 1},
-		{numChunks: 100, numSamplesPerChunk: 100, duplicationFactor: 3},
-		{numChunks: 1, numSamplesPerChunk: 100, duplicationFactor: 1},
-		{numChunks: 1, numSamplesPerChunk: 100, duplicationFactor: 3},
-	}
-
-	for _, scenario := range scenarios {
-		for _, encoding := range []chunk.Encoding{
-			chunk.PrometheusXorChunk,
-			chunk.PrometheusHistogramChunk,
-			chunk.PrometheusFloatHistogramChunk,
-		} {
-			name := fmt.Sprintf("chunks: %d samples per chunk: %d duplication factor: %d encoding: %s", scenario.numChunks, scenario.numSamplesPerChunk, scenario.duplicationFactor, encoding)
-			queryStart := time.Now().Add(-time.Second * time.Duration(scenario.numChunks*scenario.numSamplesPerChunk))
-			queryEnd := time.Now()
-			chunks := createChunks(b, scenario.numChunks, scenario.numSamplesPerChunk, scenario.duplicationFactor, queryStart, queryStep, encoding)
-			// Mock distributor to return chunks that need merging.
-			distributor := &mockDistributor{}
-			distributor.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(
-				client.CombinedQueryStreamResponse{
-					Chunkseries: []client.TimeSeriesChunk{
-						{
-							Labels: []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "one"}, {Name: "instance", Value: "foo"}},
-							Chunks: chunks,
-						},
-					},
-				},
-				nil)
-
-			engine := promql.NewEngine(promql.EngineOpts{
-				Logger:     util_log.SlogFromGoKit(logger),
-				MaxSamples: 1e6,
-				Timeout:    1 * time.Minute,
-			})
-
-			queryable, _, _, _, err := New(cfg, overrides, distributor, nil, nil, logger, nil, nil)
-			require.NoError(b, err)
-
-			ctx := user.InjectOrgID(context.Background(), "user-1")
-
-			b.Run(name, func(b *testing.B) {
-				b.ReportAllocs()
-
-				for i := 0; i < b.N; i++ {
-					query, err := engine.NewRangeQuery(ctx, queryable, nil, `rate({__name__=~".+"}[10s])`, queryStart, queryEnd, queryStep)
-					require.NoError(b, err)
-
-					r := query.Exec(ctx)
-					m, err := r.Matrix()
-					require.NoError(b, err)
-
-					require.Equal(b, 1, m.Len())
-				}
-			})
-		}
-	}
 }
 
 func mockTSDB(t *testing.T, mint model.Time, samples int, step, chunkOffset time.Duration, samplesPerChunk int, valueType func(model.Time) chunkenc.ValueType) (storage.Queryable, model.Time) {
@@ -561,22 +523,6 @@ func mockTSDB(t *testing.T, mint model.Time, samples int, step, chunkOffset time
 	})
 
 	return queryable, ts
-}
-
-func createChunks(b require.TestingT, numChunks, numSamplesPerChunk, duplicationFactor int, queryStart time.Time, step time.Duration, enc chunk.Encoding) []client.Chunk {
-	result := make([]chunk.Chunk, 0, numChunks)
-
-	for d := 0; d < duplicationFactor; d++ {
-		for c := 0; c < numChunks; c++ {
-			minTime := queryStart.Add(step * time.Duration(c*numSamplesPerChunk))
-			maxTime := minTime.Add(step * time.Duration(numSamplesPerChunk))
-			result = append(result, mkChunk(b, model.TimeFromUnixNano(minTime.UnixNano()), model.TimeFromUnixNano(maxTime.UnixNano()), step, enc))
-		}
-	}
-
-	chunks, err := client.ToChunks(result)
-	require.NoError(b, err)
-	return chunks
 }
 
 func TestQuerier_QueryIngestersWithinConfig(t *testing.T) {

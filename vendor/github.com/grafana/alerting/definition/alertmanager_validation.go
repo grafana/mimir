@@ -60,7 +60,7 @@ func (r *Route) Validate() error {
 	if len(r.Receiver) == 0 {
 		return fmt.Errorf("root route must specify a default receiver")
 	}
-	if len(r.Match) > 0 || len(r.MatchRE) > 0 {
+	if len(r.Match) > 0 || len(r.MatchRE) > 0 || len(r.Matchers) > 0 || len(r.ObjectMatchers) > 0 {
 		return fmt.Errorf("root route must not have any matchers")
 	}
 	if len(r.MuteTimeIntervals) > 0 {
