@@ -258,6 +258,7 @@ type Limits struct {
 	RulerMaxIndependentRuleEvaluationConcurrencyPerTenant int64                             `yaml:"ruler_max_independent_rule_evaluation_concurrency_per_tenant" json:"ruler_max_independent_rule_evaluation_concurrency_per_tenant" category:"experimental"`
 	RulerAlertmanagerClientConfig                         notifier.AlertmanagerClientConfig `yaml:"ruler_alertmanager_client_config" json:"ruler_alertmanager_client_config" category:"experimental" doc:"description=Per-tenant Alertmanager client configuration. If not supplied, the tenant's notifications are sent to the ruler-wide default."`
 	RulerMinRuleEvaluationInterval                        model.Duration                    `yaml:"ruler_min_rule_evaluation_interval" json:"ruler_min_rule_evaluation_interval" category:"experimental"`
+	RulerMaxRuleEvaluationResults                         int                               `yaml:"ruler_max_rule_evaluation_results" json:"ruler_max_rule_evaluation_results" category:"experimental"`
 
 	// Store-gateway.
 	StoreGatewayTenantShardSize int `yaml:"store_gateway_tenant_shard_size" json:"store_gateway_tenant_shard_size"`
@@ -450,6 +451,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	l.RulerAlertmanagerClientConfig.RegisterFlags(f)
 	_ = l.RulerMinRuleEvaluationInterval.Set("0s")
 	f.Var(&l.RulerMinRuleEvaluationInterval, "ruler.min-rule-evaluation-interval", "Minimum allowable evaluation interval for rule groups.")
+	f.IntVar(&l.RulerMaxRuleEvaluationResults, "ruler.max-rule-evaluation-results", 0, "Maximum number of alerts or series one alerting rule or one recording rule respectively can produce. 0 is no limit.")
 
 	f.Var(&l.CompactorBlocksRetentionPeriod, "compactor.blocks-retention-period", "Delete blocks containing samples older than the specified retention period. Also used by query-frontend to avoid querying beyond the retention period by instant, range or remote read queries. 0 to disable.")
 	f.IntVar(&l.CompactorSplitAndMergeShards, "compactor.split-and-merge-shards", 0, "The number of shards to use when splitting blocks. 0 to disable splitting.")
@@ -1261,6 +1263,11 @@ func (o *Overrides) RulerAlertmanagerClientConfig(userID string) notifier.Alertm
 
 func (o *Overrides) RulerMinRuleEvaluationInterval(userID string) time.Duration {
 	return time.Duration(o.getOverridesForUser(userID).RulerMinRuleEvaluationInterval)
+}
+
+// RulerMaxRuleEvaluationResults returns the maximum number of results (alert instances) produced by a single alerting rule evaluation.
+func (o *Overrides) RulerMaxRuleEvaluationResults(userID string) int {
+	return o.getOverridesForUser(userID).RulerMaxRuleEvaluationResults
 }
 
 // StoreGatewayTenantShardSize returns the store-gateway shard size for a given user.

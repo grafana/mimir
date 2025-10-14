@@ -219,6 +219,7 @@ type RulesLimits interface {
 	RulerMaxIndependentRuleEvaluationConcurrencyPerTenant(userID string) int64
 	RulerAlertmanagerClientConfig(userID string) notifierCfg.AlertmanagerClientConfig
 	RulerMinRuleEvaluationInterval(userID string) time.Duration
+	RulerMaxRuleEvaluationResults(userID string) int
 	NameValidationScheme(userID string) model.ValidationScheme
 }
 
