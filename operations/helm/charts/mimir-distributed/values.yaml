@@ -48,11 +48,11 @@ global:
   dnsConfig: {}
 
   # -- Common environment variables to add to all pods directly managed by this chart.
-  # scope: admin-api, alertmanager, compactor, continuous-test, distributor, gateway, graphite-proxy, ingester, memcached, nginx, overrides-exporter, querier, query-frontend, query-scheduler, ruler, store-gateway, smoke-test, tokengen, federation-frontend
+  # scope: admin-api, alertmanager, compactor, continuous-test, distributor, gateway, ingester, memcached, nginx, overrides-exporter, querier, query-frontend, query-scheduler, ruler, store-gateway, smoke-test
   extraEnv: []
 
   # -- Common source of environment injections to add to all pods directly managed by this chart.
-  # scope: admin-api, alertmanager, compactor, continuous-test, distributor, gateway, graphite-proxy, ingester, memcached, nginx, overrides-exporter, querier, query-frontend, query-scheduler, ruler, store-gateway, smoke-test, tokengen, federation-frontend
+  # scope: admin-api, alertmanager, compactor, continuous-test, distributor, gateway, ingester, memcached, nginx, overrides-exporter, querier, query-frontend, query-scheduler, ruler, store-gateway, smoke-test
   # For example to inject values from a Secret, use:
   # extraEnvFrom:
   #   - secretRef:
@@ -60,19 +60,19 @@ global:
   extraEnvFrom: []
 
   # -- Common volumes to add to all pods directly managed by this chart.
-  # scope: admin-api, alertmanager, compactor, continuous-test, distributor, gateway, graphite-proxy, ingester, memcached, nginx, overrides-exporter, querier, query-frontend, query-scheduler, ruler, store-gateway, smoke-test, tokengen, federation-frontend
+  # scope: admin-api, alertmanager, compactor, continuous-test, distributor, gateway, ingester, memcached, nginx, overrides-exporter, querier, query-frontend, query-scheduler, ruler, store-gateway, smoke-test
   extraVolumes: []
 
   # -- Common mount points to add to all pods directly managed by this chart.
-  # scope: admin-api, alertmanager, compactor, continuous-test, distributor, gateway, graphite-proxy, ingester, memcached, nginx, overrides-exporter, querier, query-frontend, query-scheduler, ruler, store-gateway, smoke-test, tokengen, federation-frontend
+  # scope: admin-api, alertmanager, compactor, continuous-test, distributor, gateway, ingester, memcached, nginx, overrides-exporter, querier, query-frontend, query-scheduler, ruler, store-gateway, smoke-test
   extraVolumeMounts: []
 
   # -- Pod annotations for all pods directly managed by this chart. Usable for example to associate a version to 'global.extraEnv' and 'global.extraEnvFrom' and trigger a restart of the affected services.
-  # scope: admin-api, alertmanager, compactor, distributor, gateway, ingester, memcached, nginx, overrides-exporter, querier, query-frontend, query-scheduler, ruler, store-gateway, tokengen, federation-frontend
+  # scope: admin-api, alertmanager, compactor, distributor, gateway, ingester, memcached, nginx, overrides-exporter, querier, query-frontend, query-scheduler, ruler, store-gateway
   podAnnotations: {}
 
   # -- Pod labels for all pods directly managed by this chart.
-  # scope: admin-api, alertmanager, compactor, distributor, gateway, ingester, memcached, nginx, overrides-exporter, querier, query-frontend, query-scheduler, ruler, store-gateway, tokengen, federation-frontend
+  # scope: admin-api, alertmanager, compactor, distributor, gateway, ingester, memcached, nginx, overrides-exporter, querier, query-frontend, query-scheduler, ruler, store-gateway
   podLabels: {}
 
 serviceAccount:
@@ -472,7 +472,7 @@ alertmanager:
   revisionHistoryLimit: null
 
   # -- Allows to override the container image of the alertmanager component.
-  # When set it takes precedence over what is defined in global "image" or "enterprise.image" sections.
+  # When set it takes precedence over what is defined in global "image" .
   image:
     # repository: grafana/mimir
     # tag: 2.16.0
@@ -768,7 +768,7 @@ distributor:
   enabled: true
 
   # -- Allows to override the container image of the distributor component.
-  # When set it takes precedence over what is defined in global "image" or "enterprise.image" sections.
+  # When set it takes precedence over what is defined in global "image" .
   image:
     # repository: grafana/mimir
     # tag: 2.16.0
@@ -893,7 +893,7 @@ ingester:
   enabled: true
 
   # -- Allows to override the container image of the ingester component.
-  # When set it takes precedence over what is defined in global "image" or "enterprise.image" sections.
+  # When set it takes precedence over what is defined in global "image" .
   image:
     # repository: grafana/mimir
     # tag: 2.16.0
@@ -1158,7 +1158,7 @@ overrides_exporter:
   enabled: true
 
   # -- Allows to override the container image of the overrides-exporter component.
-  # When set it takes precedence over what is defined in global "image" or "enterprise.image" sections.
+  # When set it takes precedence over what is defined in global "image" .
   image:
     # repository: grafana/mimir
     # tag: 2.16.0
@@ -1253,7 +1253,7 @@ ruler:
   enabled: true
 
   # -- Allows to override the container image of the ruler component.
-  # When set it takes precedence over what is defined in global "image" or "enterprise.image" sections.
+  # When set it takes precedence over what is defined in global "image" .
   image:
     # repository: grafana/mimir
     # tag: 2.16.0
@@ -1384,7 +1384,7 @@ ruler:
 # -- Only deployed if .Values.ruler.remoteEvaluationDedicatedQueryPath
 ruler_querier:
   # -- Allows to override the container image of the ruler-querier component.
-  # When set it takes precedence over what is defined in global "image" or "enterprise.image" sections.
+  # When set it takes precedence over what is defined in global "image" .
   image:
     # repository: grafana/mimir
     # tag: 2.16.0
@@ -1507,7 +1507,7 @@ ruler_querier:
 # -- Only deployed if .Values.ruler.remoteEvaluationDedicatedQueryPath
 ruler_query_frontend:
   # -- Allows to override the container image of the ruler-query-frontend component.
-  # When set it takes precedence over what is defined in global "image" or "enterprise.image" sections.
+  # When set it takes precedence over what is defined in global "image" .
   image:
     # repository: grafana/mimir
     # tag: 2.16.0
@@ -1626,7 +1626,7 @@ ruler_query_frontend:
 # -- Only deployed if .Values.ruler.remoteEvaluationDedicatedQueryPath
 ruler_query_scheduler:
   # -- Allows to override the container image of the ruler-query-scheduler component.
-  # When set it takes precedence over what is defined in global "image" or "enterprise.image" sections.
+  # When set it takes precedence over what is defined in global "image" .
   image:
     # repository: grafana/mimir
     # tag: 2.16.0
@@ -1720,7 +1720,7 @@ querier:
   enabled: true
 
   # -- Allows to override the container image of the querier component.
-  # When set it takes precedence over what is defined in global "image" or "enterprise.image" sections.
+  # When set it takes precedence over what is defined in global "image" .
   image:
     # repository: grafana/mimir
     # tag: 2.16.0
@@ -1858,7 +1858,7 @@ query_frontend:
   enabled: true
 
   # -- Allows to override the container image of the query-frontend component.
-  # When set it takes precedence over what is defined in global "image" or "enterprise.image" sections.
+  # When set it takes precedence over what is defined in global "image" .
   image:
     # repository: grafana/mimir
     # tag: 2.16.0
@@ -1980,7 +1980,7 @@ query_scheduler:
   enabled: true
 
   # -- Allows to override the container image of the query-scheduler component.
-  # When set it takes precedence over what is defined in global "image" or "enterprise.image" sections.
+  # When set it takes precedence over what is defined in global "image" .
   image:
     # repository: grafana/mimir
     # tag: 2.16.0
@@ -2076,7 +2076,7 @@ store_gateway:
   enabled: true
 
   # -- Allows to override the container image of the store-gateway component.
-  # When set it takes precedence over what is defined in global "image" or "enterprise.image" sections.
+  # When set it takes precedence over what is defined in global "image" .
   image:
     # repository: grafana/mimir
     # tag: 2.16.0
@@ -2340,7 +2340,7 @@ compactor:
   enabled: true
 
   # -- Allows to override the container image of the compactor component.
-  # When set it takes precedence over what is defined in global "image" or "enterprise.image" sections.
+  # When set it takes precedence over what is defined in global "image" .
   image:
     # repository: grafana/mimir
     # tag: 2.16.0
@@ -2974,13 +2974,13 @@ minio:
     - name: mimir-ruler
       policy: none
       purge: false
-    - name: enterprise-metrics-tsdb
+    - name: mimir-tsdb
       policy: none
       purge: false
-    - name: enterprise-metrics-admin
+    - name: mimir-admin
       policy: none
       purge: false
-    - name: enterprise-metrics-ruler
+    - name: mimir-ruler
       policy: none
       purge: false
   persistence:
@@ -3789,7 +3789,7 @@ grafana-agent-operator:
 extraObjects: []
 smoke_test:
   # -- Allows to override the container image of the smoke-test component.
-  # When set it takes precedence over what is defined in global "image" or "enterprise.image" sections.
+  # When set it takes precedence over what is defined in global "image" .
   image:
     # repository: grafana/mimir
     # tag: 2.16.0
@@ -3814,7 +3814,7 @@ smoke_test:
 continuous_test:
   enabled: false
   # -- Allows to override the container image of the continuous-test component.
-  # When set it takes precedence over what is defined in global "image" or "enterprise.image" sections.
+  # When set it takes precedence over what is defined in global "image" .
   image:
     # repository: grafana/mimir-continuous-test
     # tag: 2.16.0
@@ -3838,7 +3838,7 @@ continuous_test:
     # In case of basicAuth, it is set as the username.
     tenant: "mimir-continuous-test"
     # -- Password for basicAuth auth (note: can be environment variable from secret attached in extraEnvFrom, e.g. $(PASSWORD))
-    # For GEM, it should contain an access token created for an access policy that allows `metrics:read` and `metrics:write` for the tenant.
+    # It should contain an access token created for an access policy that allows `metrics:read` and `metrics:write` for the tenant.
     password: null
     # -- Bearer token for bearerToken auth (note: can be environment variable from secret attached in extraEnvFrom, e.g. $(TOKEN))
     bearerToken: null

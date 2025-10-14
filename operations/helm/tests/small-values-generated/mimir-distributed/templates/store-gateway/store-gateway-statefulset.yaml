@@ -140,10 +140,10 @@ spec:
             initialDelaySeconds: 60
           resources:
             limits:
-              memory: 2.1Gi
+              memory: 128Mi
             requests:
-              cpu: 1
-              memory: 1.5Gi
+              cpu: 100m
+              memory: 64Mi
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
@@ -154,7 +154,7 @@ spec:
             - name: GOMAXPROCS
               value: "5"
             - name: GOMEMLIMIT
-              value: "1610612736"
+              value: "67108864"
 ---
 # Source: mimir-distributed/templates/store-gateway/store-gateway-statefulset.yaml
 apiVersion: apps/v1
@@ -298,10 +298,10 @@ spec:
             initialDelaySeconds: 60
           resources:
             limits:
-              memory: 2.1Gi
+              memory: 128Mi
             requests:
-              cpu: 1
-              memory: 1.5Gi
+              cpu: 100m
+              memory: 64Mi
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
@@ -312,7 +312,7 @@ spec:
             - name: GOMAXPROCS
               value: "5"
             - name: GOMEMLIMIT
-              value: "1610612736"
+              value: "67108864"
 ---
 # Source: mimir-distributed/templates/store-gateway/store-gateway-statefulset.yaml
 apiVersion: apps/v1
@@ -456,10 +456,10 @@ spec:
             initialDelaySeconds: 60
           resources:
             limits:
-              memory: 2.1Gi
+              memory: 128Mi
             requests:
-              cpu: 1
-              memory: 1.5Gi
+              cpu: 100m
+              memory: 64Mi
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
@@ -470,4 +470,4 @@ spec:
             - name: GOMAXPROCS
               value: "5"
             - name: GOMEMLIMIT
-              value: "1610612736"
+              value: "67108864"

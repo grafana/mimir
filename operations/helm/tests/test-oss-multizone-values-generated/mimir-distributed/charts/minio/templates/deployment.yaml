@@ -28,7 +28,7 @@ spec:
         release: test-oss-multizone-values
       annotations:
         checksum/secrets: 9fe3797cca5763d14637aa4db45b29f5b9af3f29297c1bc1e13c61fd84a80658
-        checksum/config: 21e56deded5591bffcc100ba285f844f3121e45a032bf04d6487be1e5dfd4585
+        checksum/config: dc5236effc0167d107535f347ebbb3f9e423fa865a53908359725b345052bdb0
     spec:
       securityContext:
         

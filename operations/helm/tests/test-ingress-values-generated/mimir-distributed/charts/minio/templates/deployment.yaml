@@ -28,7 +28,7 @@ spec:
         release: test-ingress-values
       annotations:
         checksum/secrets: 6436024bb4e3baea76128a5de7e10a7d91c70a6e8edbbd6420aa38ef9f125a84
-        checksum/config: b27cad450dbe41bdac167652ec99862a9ee95dafbac6c3991d5351812ac5b8a2
+        checksum/config: afc9668a56794edcc648bbda30a760903a60d2b22af9d8a0e10d18385e94d327
     spec:
       securityContext:
         

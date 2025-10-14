@@ -28,7 +28,7 @@ spec:
         release: test-ingest-storage-values
       annotations:
         checksum/secrets: 03181121398669719388d922ab85bbe45e17e88d2e958fe9b6235b78595fa2fe
-        checksum/config: 8e2667f801bcbd1b94295c3d550f46395e70b036aaa7a633422841e7725bb1a4
+        checksum/config: 9d1cb7396b6e5d5c007c90d161795ba1f112974ae2e5a41c977fa5ba88d020a2
     spec:
       securityContext:
         

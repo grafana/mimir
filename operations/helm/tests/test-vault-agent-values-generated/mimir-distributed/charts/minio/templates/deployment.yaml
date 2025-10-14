@@ -28,7 +28,7 @@ spec:
         release: test-vault-agent-values
       annotations:
         checksum/secrets: 09d8dca81a08b6344dffa449f7317796ae11a2039df9d80a69dc5c21d7d72f22
-        checksum/config: c26c7837d436ed1507c6e31180f182c642e3a1bae46583bcc8355fb1ad50409e
+        checksum/config: 8e8ea36ac4304f7205f7a23fcb19350a94d7d81fef471f63f452d81f8b7934d3
     spec:
       securityContext:
         

@@ -28,7 +28,7 @@ spec:
         release: graphite-enabled-values
       annotations:
         checksum/secrets: 76f557adc3f31b4d2c8f7f79e520c7ed20479ea01f4d9a2662c67b9a3b141166
-        checksum/config: 583632031ac23c3af4304637a928e9c953e5c5e00451ba528f6d8d9898222663
+        checksum/config: 630dba4579fae22b83d0048ff365f92473f8bc1f942e42b2321e77619ba7c5ff
     spec:
       securityContext:
         

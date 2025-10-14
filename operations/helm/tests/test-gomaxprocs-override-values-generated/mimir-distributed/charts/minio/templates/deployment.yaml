@@ -28,7 +28,7 @@ spec:
         release: test-gomaxprocs-override-values
       annotations:
         checksum/secrets: fda36335dcbe838cf2a9d5c46206e36886fd58c759d63a91bf9889c4de597f42
-        checksum/config: 2ebbfdd0fae19bf0299509979f42366d5023556ccf8f5905562927d49943a4a8
+        checksum/config: 409bdf807c0fe3680e03911596dd3bd04c477b1036d805065b3cee252f932cb6
     spec:
       securityContext:
         

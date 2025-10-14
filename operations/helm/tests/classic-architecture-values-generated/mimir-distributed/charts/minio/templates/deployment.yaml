@@ -28,7 +28,7 @@ spec:
         release: classic-architecture-values
       annotations:
         checksum/secrets: 232cfbe95077159a85f8139543209dedf1492d7196e6f4beb0869acb4e6cb5f3
-        checksum/config: 0be3612a3e88a67bae73b4f428aea3d5c9cec662114f2b56f88c25eabce7aebb
+        checksum/config: 35c6040d95022cc9e6c1d9e6bab5de5b1d8334529661017750b7a14c5dbe184f
     spec:
       securityContext:
         

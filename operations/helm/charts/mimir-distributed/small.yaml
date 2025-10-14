@@ -180,8 +180,6 @@ store_gateway:
   zoneAwareReplication:
     topologyKey: "kubernetes.io/hostname"
 
-# Grafana Enterprise Metrics feature related
-admin_api:
   replicas: 1
   resources:
     limits:

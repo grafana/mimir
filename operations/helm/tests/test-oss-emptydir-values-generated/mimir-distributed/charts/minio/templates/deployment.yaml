@@ -28,7 +28,7 @@ spec:
         release: test-oss-emptydir-values
       annotations:
         checksum/secrets: eaefbb2edb125352d20acb771ff5ca0ae50451ec9faaf7947991357f7e8b05eb
-        checksum/config: cdb573a00d10481717e2f39e26efabb8ed93ac42f4237de59eacb1dc5fd9106c
+        checksum/config: d32768a7cac00e8abf85c5979901f9afb5efcb7ba7db47c9acdb0941fead07e0
     spec:
       securityContext:
         

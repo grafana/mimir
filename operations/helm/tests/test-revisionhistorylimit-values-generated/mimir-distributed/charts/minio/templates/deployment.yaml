@@ -28,7 +28,7 @@ spec:
         release: test-revisionhistorylimit-values
       annotations:
         checksum/secrets: 083ac1a3c8ea035c9074ece50e6c0686ba161b85dc3ca2466947dbd5bf8f9947
-        checksum/config: 30a2e9987dca48c04c5b77b77e886d557ae97aea391817b3b554f8a95aea6cf2
+        checksum/config: c8b179309081349489ddb479cccc7a5596eae620120d1eb9cfa5b1aedc1a961d
     spec:
       securityContext:
         
