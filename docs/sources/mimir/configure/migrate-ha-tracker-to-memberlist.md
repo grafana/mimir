@@ -106,8 +106,6 @@ distributor:
         mirror_enabled: true  # Changed in this step
 ```
 
-This change can be applied via runtime configuration and does not require restarting distributors.
-
 **Verification:**
 
 Monitor the following metrics to verify mirroring is working:
@@ -136,8 +134,6 @@ distributor:
         mirror_enabled: true
 ```
 
-This change can be applied via runtime configuration and does not require restarting distributors.
-
 From this point on, distributors will read from memberlist and mirror updates to Consul/etcd.
 
 **Verification:**
@@ -161,8 +157,6 @@ distributor:
         secondary: consul  # or etcd
         mirror_enabled: false  # Changed in this step
 ```
-
-This change can be applied via runtime configuration and does not require restarting distributors.
 
 **Verification:**
 
