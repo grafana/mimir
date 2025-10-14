@@ -75,8 +75,6 @@ spec:
               mountPath: /etc/mimir
             - name: runtime-config
               mountPath: /var/{{ include "mimir.name" $ }}
-            - name: license
-              mountPath: /license
             - name: tmp
               mountPath: /data
             - name: active-queries
@@ -180,9 +178,6 @@ spec:
         - name: tmp
           emptyDir: {}
         {{- if $isGEMGateway }}
-        - name: license
-          secret:
-            secretName: {{ tpl $.Values.license.secretName $ }}
         - name: storage
           emptyDir: {}
         - name: active-queries
