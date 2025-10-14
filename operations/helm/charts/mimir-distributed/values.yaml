@@ -126,33 +126,6 @@ mimir:
     activity_tracker:
       filepath: /active-query-tracker/activity.log
 
-    {{- if .Values.enterprise.enabled }}
-    admin_api:
-      leader_election:
-        enabled: true
-        ring:
-          kvstore:
-            store: "memberlist"
-
-    admin_client:
-      storage:
-      {{- if .Values.minio.enabled }}
-        type: s3
-        s3:
-          access_key_id: {{ .Values.minio.rootUser }}
-          bucket_name: enterprise-metrics-admin
-          endpoint: {{ template "minio.fullname" .Subcharts.minio }}.{{ .Release.Namespace }}.svc:{{ .Values.minio.service.port }}
-          insecure: true
-          secret_access_key: {{ .Values.minio.rootPassword }}
-      {{- end }}
-      {{- if (index .Values "admin-cache" "enabled") }}
-        cache:
-          backend: memcached
-          memcached:
-            addresses: {{ include "mimir.adminCacheAddress" . }}
-            max_item_size: {{ mul (index .Values "admin-cache").maxItemMemory 1024 1024 }}
-      {{- end }}
-    {{- end }}
 
     alertmanager:
       data_dir: /data
@@ -177,13 +150,6 @@ mimir:
         secret_access_key: {{ .Values.minio.rootPassword }}
     {{- end }}
 
-    {{- if .Values.enterprise.enabled }}
-    auth:
-      type: enterprise
-      admin:
-        pass_access_policy_name: true
-        pass_token_name: true
-    {{- end }}
 
     # This configures how the store-gateway synchronizes blocks stored in the bucket. It uses Minio by default for getting started (configured via flags) but this should be changed for production deployments.
     blocks_storage:
@@ -229,9 +195,6 @@ mimir:
         head_compaction_interval: 15m
         wal_replay_concurrency: 3
 
-    {{- if .Values.enterprise.enabled }}
-    cluster_name: "{{ .Release.Name }}"
-    {{- end }}
 
     compactor:
       compaction_interval: 30m
@@ -266,52 +229,13 @@ mimir:
       cache_results: true
       query_sharding_target_series_per_shard: 2500
       {{- end }}
-      {{- if not .Values.federation_frontend.disableOtherComponents }}
       scheduler_address: {{ template "mimir.fullname" . }}-query-scheduler-headless.{{ .Release.Namespace }}.svc:{{ include "mimir.serverGrpcListenPort" . }}
-      {{- end }}
-      {{- if .Values.enterprise.enabled }}
-      log_query_request_headers: X-Access-Policy-Name,X-Token-Name
-      {{- end }}
 
     frontend_worker:
       grpc_client_config:
         max_send_msg_size: 419430400 # 400MiB
       scheduler_address: {{ template "mimir.fullname" . }}-query-scheduler-headless.{{ .Release.Namespace }}.svc:{{ include "mimir.serverGrpcListenPort" . }}
 
-    {{- if and .Values.enterprise.enabled }}
-    gateway:
-      proxy:
-        admin_api:
-          url: http://{{ template "mimir.fullname" . }}-admin-api.{{ .Release.Namespace }}.svc:{{ include "mimir.serverHttpListenPort" . }}
-        alertmanager:
-          url: http://{{ template "mimir.fullname" . }}-alertmanager-headless.{{ .Release.Namespace }}.svc:{{ include "mimir.serverHttpListenPort" . }}
-        compactor:
-          url: http://{{ template "mimir.fullname" . }}-compactor.{{ .Release.Namespace }}.svc:{{ include "mimir.serverHttpListenPort" . }}
-        default:
-          url: http://{{ template "mimir.fullname" . }}-admin-api.{{ .Release.Namespace }}.svc:{{ include "mimir.serverHttpListenPort" . }}
-        {{- if and .Values.distributor.enabled (not .Values.federation_frontend.disableOtherComponents) }}
-        distributor:
-          url: dns:///{{ template "mimir.fullname" . }}-distributor-headless.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }}:{{ include "mimir.serverGrpcListenPort" . }}
-        {{- end }}
-        ingester:
-          url: http://{{ template "mimir.fullname" . }}-ingester-headless.{{ .Release.Namespace }}.svc:{{ include "mimir.serverHttpListenPort" . }}
-        query_frontend:
-        {{ if .Values.federation_frontend.enabled }}
-          url: http://{{ template "mimir.fullname" . }}-federation-frontend.{{ .Release.Namespace }}.svc:{{ include "mimir.serverHttpListenPort" . }}
-        {{ else }}
-          url: http://{{ template "mimir.fullname" . }}-query-frontend.{{ .Release.Namespace }}.svc:{{ include "mimir.serverHttpListenPort" . }}
-        {{ end }}
-        ruler:
-          url: http://{{ template "mimir.fullname" . }}-ruler.{{ .Release.Namespace }}.svc:{{ include "mimir.serverHttpListenPort" . }}
-        store_gateway:
-          url: http://{{ template "mimir.fullname" . }}-store-gateway-headless.{{ .Release.Namespace }}.svc:{{ include "mimir.serverHttpListenPort" . }}
-        {{- if and .Values.enterprise.enabled .Values.graphite.enabled }}
-        graphite_write_proxy:
-          url: http://{{ template "mimir.fullname" . }}-graphite-write-proxy.{{ .Release.Namespace }}.svc:{{ include "mimir.serverHttpListenPort" . }}
-        graphite_querier:
-          url: http://{{ template "mimir.fullname" . }}-graphite-querier.{{ .Release.Namespace }}.svc:{{ include "mimir.serverHttpListenPort" . }}
-        {{- end}}
-    {{- end }}
 
     ingest_storage:
       enabled: true
@@ -346,17 +270,6 @@ mimir:
         max_recv_msg_size: 104857600
         max_send_msg_size: 104857600
 
-    {{- if .Values.enterprise.enabled }}
-    instrumentation:
-      enabled: {{ and .Values.distributor.enabled (not .Values.federation_frontend.disableOtherComponents) }}
-    {{- if and .Values.distributor.enabled (not .Values.federation_frontend.disableOtherComponents) }}
-      distributor_client:
-        address: dns:///{{ template "mimir.fullname" . }}-distributor-headless.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }}:{{ include "mimir.serverGrpcListenPort" . }}
-    {{- end }}
-
-    license:
-      path: "/license/license.jwt"
-    {{- end }}
 
     limits:
       # Limit queries to 500 days. You can override this on a per-tenant basis.
@@ -414,10 +327,8 @@ mimir:
       {{- end }}
     {{- end }}
 
-    {{- if not .Values.federation_frontend.disableOtherComponents }}
     runtime_config:
       file: /var/{{ include "mimir.name" . }}/runtime.yaml
-    {{- end }}
 
     store_gateway:
       sharding_ring:
@@ -434,31 +345,6 @@ mimir:
         zone_awareness_enabled: true
         {{- end }}
 
-    {{- if and .Values.enterprise.enabled .Values.graphite.enabled }}
-    graphite:
-      enabled: true
-
-      write_proxy:
-        distributor_client:
-          address: dns:///{{ template "mimir.fullname" . }}-distributor.{{ .Release.Namespace }}.svc:{{ include "mimir.serverGrpcListenPort" .  }}
-
-      querier:
-        remote_read:
-          query_address: http://{{ template "mimir.fullname" . }}-query-frontend.{{ .Release.Namespace }}.svc:{{ include "mimir.serverHttpListenPort" .  }}/prometheus
-        proxy_bad_requests: false
-
-        schemas:
-          default_storage_schemas_file: /etc/graphite-proxy/storage-schemas.conf
-          default_storage_aggregations_file: /etc/graphite-proxy/storage-aggregations.conf
-        aggregation_cache:
-          memcached:
-            addresses: dnssrvnoa+{{ template "mimir.fullname" . }}-gr-aggr-cache.{{ .Release.Namespace}}.svc:11211
-            timeout: 1s
-        metric_name_cache:
-          memcached:
-            addresses: dnssrvnoa+{{ template "mimir.fullname" . }}-gr-metricname-cache.{{ .Release.Namespace}}.svc:11211
-            timeout: 1s
-    {{- end}}
 
   # -- Additional structured values on top of the text based 'mimir.config'. Applied after the text based config is evaluated for templates. Enables adding and modifying YAML elements in the evaulated 'mimir.config'.
   #
@@ -3928,4 +3814,137 @@ grafana-agent-operator:
     capabilities:
       drop: [ALL]
 
+extraObjects: []
+smoke_test:
+  # -- Allows to override the container image of the smoke-test component.
+  # When set it takes precedence over what is defined in global "image" or "enterprise.image" sections.
+  image:
+    # repository: grafana/mimir
+    # tag: 2.16.0
+  # -- Controls the backoffLimit on the Kubernetes Job. The Job is marked as failed after that many retries.
+  backoffLimit: 5
+  # The image section has been removed as continuous test is now a module of the regular Mimir image.
+  # See settings for the image at the top image section.
+  tenantId: ""
+  extraArgs: {}
+  env: []
+  extraEnvFrom: []
+  annotations: {}
+  initContainers: []
+  resources: {}
+  # -- The name of the PriorityClass for smoke-test pods
+  priorityClassName: null
+  dnsConfig: {}
+
+# -- Settings for mimir-continuous-test.
+# This continuously writes and reads metrics from Mimir.
+# https://grafana.com/docs/mimir/latest/manage/tools/mimir-continuous-test/
+continuous_test:
+  enabled: false
+  # -- Allows to override the container image of the continuous-test component.
+  # When set it takes precedence over what is defined in global "image" or "enterprise.image" sections.
+  image:
+    # repository: grafana/mimir-continuous-test
+    # tag: 2.16.0
+  # -- Number of replicas to start of continuous test
+  replicas: 1
+  revisionHistoryLimit: null
+  # The image section has been removed as continuous test is now a module of the regular Mimir image.
+  # See settings for the image at the top image section.
+  # -- The endpoints to use for writing to and reading metrics from your instance.
+  # Defaults to the gateway URL, but you may want to test from an external ingress which you can configure here.
+  ## -- Mimir Write Endpoint to use for writing metrics to your instance. Defaults to mimir.gatewayUrl if not set.
+  write:
+  # -- Mimir Read Endpoint to use for querying metrics from your instance. Defaults to mimir.gatewayUrl if not set. Path /prometheus is appended to value.
+  read:
+  # -- Authentication settings of continuous test
+  auth:
+    # -- Type of authentication to use (tenantId, basicAuth, bearerToken)
+    type: tenantId
+    # -- The tenant to use for tenantId or basicAuth authentication type
+    # In case of tenantId authentication, it is injected as the X-Scope-OrgID header on requests.
+    # In case of basicAuth, it is set as the username.
+    tenant: "mimir-continuous-test"
+    # -- Password for basicAuth auth (note: can be environment variable from secret attached in extraEnvFrom, e.g. $(PASSWORD))
+    # For GEM, it should contain an access token created for an access policy that allows `metrics:read` and `metrics:write` for the tenant.
+    password: null
+    # -- Bearer token for bearerToken auth (note: can be environment variable from secret attached in extraEnvFrom, e.g. $(TOKEN))
+    bearerToken: null
+  # -- The maximum number of series to write in a single request.
+  numSeries: 1000
+  # -- How far back in the past metrics can be queried at most.
+  maxQueryAge: "48h"
+  # -- Interval between test runs
+  runInterval: "5m"
+
+  # -- Pod affinity settings for the continuous test replicas
+  affinity: {}
+  # -- Annotations for the continuous test Deployment
+  annotations: {}
+  # -- The SecurityContext for continuous test containers
+  containerSecurityContext:
+    readOnlyRootFilesystem: true
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop: [ALL]
+  # -- Extra environment variables for continuous test containers
+  env: []
+  # -- Extra command line arguments for the continuous test container
+  extraArgs: {}
+  # -- Extra environment from secret/configmap for continuous test containers
+  extraEnvFrom: []
+  # -- Extra volumes for the continuous test container
+  extraVolumes: []
+  # -- Extra volume mounts for the continuous test container
+  extraVolumeMounts: []
+  # -- Extra containers for the continuous test Deployment
+  extraContainers: []
+  # -- Extra initContainers for the continuous test Deployment
+  initContainers: []
+  # -- Nodeselector of continuous test replicas
+  nodeSelector: {}
+  # -- The name of the PriorityClass for continuous test pods
+  priorityClassName: null
+  # -- Kubernetes resource requests and limits for continuous test
+  resources:
+    limits:
+      memory: 1Gi
+    requests:
+      cpu: "1"
+      memory: 512Mi
+  # -- Security context for the continuous test Deployment
+  securityContext: {}
+  # -- Service for monitoring continuous test
+  service:
+    annotations: {}
+    labels: {}
+    extraPorts: []
+  # -- Upgrade strategy for the continuous test Deployment
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
+
+  dnsConfig: {}
+  tolerations: []
+  terminationGracePeriodSeconds: 30
+
+# -- Add dynamic manifests via values. Example:
+# extraObjects:
+# - kind: ConfigMap
+#   apiVersion: v1
+#   metadata:
+#     name: extra-cm-{{ .Release.Name }}
+#   data: |
+#     extra.yml: "does-my-install-need-extra-info: true"
+# alternatively, you can use strings, which lets you use the mimir defines:
+# extraObjects:
+# - |
+#   kind: ConfigMap
+#   apiVersion: v1
+#   metadata:
+#     name: extra-cm-{{ .Release.Name }}
+#   data: |
+#     extra.yml: "{{ include some-mimir-define }}"
 extraObjects: []

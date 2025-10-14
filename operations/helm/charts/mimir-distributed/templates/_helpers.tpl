@@ -410,8 +410,6 @@ Examples:
   "compactor" "compactor"
   "continuous-test" "continuous_test"
   "distributor" "distributor"
-  "provisioner" "provisioner"
-  "federation-frontend" "federation_frontend"
   "gateway" "gateway"
   "gr-aggr-cache" "gr-aggr-cache"
   "gr-metricname-cache" "gr-metricname-cache"
