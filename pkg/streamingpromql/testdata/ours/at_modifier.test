@@ -39,17 +39,17 @@ clear
 
 # Test a step invariant range vector
 load 1m
-    metric  0 1 2 3 4 5 6 7 8 9 10
+  metric  0 1 2 3 4 5 6 7 8 9 10
 
 # each step will evaluate to a range vector at 5m of [4,5] - so each step is 4+5=9
 eval range from 0 to 10m step 1m sum_over_time(metric[2m] @ 300)
-    {} 9 9 9 9 9 9 9 9 9 9 9
+  {} 9 9 9 9 9 9 9 9 9 9 9
 
 eval range from 0 to 10m step 1m increase(metric[2m] @ 300)
-    {} 2 2 2 2 2 2 2 2 2 2 2
+  {} 2 2 2 2 2 2 2 2 2 2 2
 
 eval range from 0 to 5m step 1m timestamp(increase(metric[2m] @ 300))
-    {} 0 60 120 180 240 300
+  {} 0 60 120 180 240 300
 
 clear
 
