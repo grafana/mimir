@@ -321,15 +321,13 @@ func (p *EncodedQueryPlan) ToDecodedPlan(nodeIndices ...int64) (*QueryPlan, []No
 		nodes = append(nodes, n)
 	}
 
-	plan := &QueryPlan{
+	return &QueryPlan{
 		TimeRange:                p.TimeRange.ToDecodedTimeRange(),
 		Root:                     root,
 		OriginalExpression:       p.OriginalExpression,
 		EnableDelayedNameRemoval: p.EnableDelayedNameRemoval,
 		Version:                  p.Version,
-	}
-
-	return plan, nodes, nil
+	}, nodes, nil
 }
 
 type queryPlanDecoder struct {
