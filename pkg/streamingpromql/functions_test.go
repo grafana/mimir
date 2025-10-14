@@ -87,6 +87,7 @@ func TestFunctionDeduplicateAndMerge(t *testing.T) {
 		"log10":                        `log10({__name__=~"float.*"})`,
 		"log2":                         `log2({__name__=~"float.*"})`,
 		"max_over_time":                `max_over_time({__name__=~"float.*"}[1m])`,
+		"mad_over_time":                `mad_over_time({__name__=~"float.*"}[1m])`,
 		"min_over_time":                `min_over_time({__name__=~"float.*"}[1m])`,
 		"minute":                       `minute({__name__=~"float.*"})`,
 		"month":                        `month({__name__=~"float.*"})`,
