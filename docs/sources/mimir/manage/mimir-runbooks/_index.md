@@ -1265,14 +1265,14 @@ When using Memberlist as KV store for hash rings, all read and update operations
 How it **works**:
 
 - Consul is typically used to store the hash ring state.
-- Etcd is typically used to store by the HA tracker (distributor) to deduplicate samples.
+- Memberlist (default since Mimir 3.0) or etcd/Consul (deprecated) are used by the HA tracker (distributor) to deduplicate samples.
 - If an instance is failing operations on the **hash ring**, either the instance can't update the heartbeat in the ring or is failing to receive ring updates.
 - If an instance is failing operations on the **HA tracker** backend, either the instance can't update the authoritative replica or is failing to receive updates.
 
 How to **investigate**:
 
-- Ensure Consul/Etcd is up and running.
-- Investigate the logs of the affected instance to find the specific error occurring when talking to Consul/Etcd.
+- Ensure the KV store backend (Consul, etcd, or memberlist) is up and running.
+- Investigate the logs of the affected instance to find the specific error occurring when talking to the KV store backend.
 
 ### MimirReachingTCPConnectionsLimit
 
