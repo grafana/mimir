@@ -111,8 +111,8 @@ distributor:
 Monitor the following metrics to verify mirroring is working:
 
 - `cortex_multikv_mirror_enabled` – Shows which distributors have mirroring enabled (should be 1 for all)
-- `rate(cortex_multikv_mirror_writes_total[1m])` – Rate of writes to secondary store (memberlist)
-- `rate(cortex_multikv_mirror_write_errors_total[1m])` – Rate of write errors (should be 0 or very low)
+- `rate(cortex_multikv_mirror_writes_total[$__rate_interval])` – Rate of writes to secondary store (memberlist)
+- `rate(cortex_multikv_mirror_write_errors_total[$__rate_interval])` – Rate of write errors (should be 0 or very low)
 
 After mirroring is enabled, you should see HA tracker keys in the memberlist cluster information on the `/memberlist` admin page.
 
