@@ -138,7 +138,7 @@ From this point on, distributors will read from memberlist and mirror updates to
 
 **Verification:**
 
-Monitor `cortex_multikv_primary_store` to verify all distributors are using memberlist as the primary store. The metric should show `memberlist` as the value.
+Monitor `cortex_multikv_primary_store` to verify all distributors are using memberlist as the primary store. The `store` label should have the value `memberlist`.
 
 ### Step 4: Disable mirroring
 
