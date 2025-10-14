@@ -143,7 +143,7 @@ type HATrackerConfig struct {
 	EnableElectedReplicaMetric bool `yaml:"enable_elected_replica_metric"`
 
 	// KVStore is the backend storage for the HA tracker. Memberlist is the recommended backend.
-	// Consul and etcd are deprecated for the HA tracker as of Mimir 3.0 and will be removed in a future release.
+	// Supported values: consul, etcd, inmemory, memberlist, multi. Memberlist is recommended. Consul and etcd are still available for backward compatibility but are considered deprecated for this purpose.
 	KVStore kv.Config `yaml:"kvstore" doc:"description=Backend storage to use for the HA tracker. Supported values are: consul, etcd, inmemory, memberlist, multi. Memberlist is recommended. Consul and etcd are deprecated for the HA tracker."`
 }
 
