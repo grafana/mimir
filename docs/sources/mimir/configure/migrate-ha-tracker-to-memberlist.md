@@ -25,8 +25,6 @@ Before starting this migration:
 
 - Ensure you're running Grafana Mimir 2.17 or later
 - Have a running Mimir cluster with HA tracker currently using Consul or etcd
-- Understand your current HA tracker configuration
-- Have the ability to update Mimir configuration (either through config files, helm values, or runtime config)
 
 ## Migration steps
 
