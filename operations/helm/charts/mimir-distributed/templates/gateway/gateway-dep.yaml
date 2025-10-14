@@ -179,15 +179,6 @@ spec:
         {{- end }}
         - name: tmp
           emptyDir: {}
-        {{- if $isGEMGateway }}
-        - name: license
-          secret:
-            secretName: {{ tpl $.Values.license.secretName $ }}
-        - name: storage
-          emptyDir: {}
-        - name: active-queries
-          emptyDir: {}
-        {{- end -}}
         {{- if .extraVolumes }}
         {{- toYaml .extraVolumes | nindent 8 }}
         {{- end }}

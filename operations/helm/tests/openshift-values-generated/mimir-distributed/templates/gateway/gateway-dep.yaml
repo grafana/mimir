@@ -97,10 +97,3 @@ spec:
             name: openshift-values-mimir-runtime
         - name: tmp
           emptyDir: {}
-        - name: license
-          secret:
-            secretName: openshift-values-mimir-license
-        - name: storage
-          emptyDir: {}
-        - name: active-queries
-          emptyDir: {}

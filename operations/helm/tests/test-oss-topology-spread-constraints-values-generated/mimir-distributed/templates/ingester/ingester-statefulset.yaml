@@ -99,9 +99,6 @@ spec:
             items:
               - key: "mimir.yaml"
                 path: "mimir.yaml"
-        - name: license
-          secret:
-            secretName: test-oss-topology-spread-constraints-values-mimir-license
         - name: runtime-config
           configMap:
             name: test-oss-topology-spread-constraints-values-mimir-runtime
@@ -123,8 +120,6 @@ spec:
               mountPath: /var/mimir
             - name: storage
               mountPath: "/data"
-            - name: license
-              mountPath: /license
             - name: active-queries
               mountPath: /active-query-tracker
           ports:
@@ -259,9 +254,6 @@ spec:
             items:
               - key: "mimir.yaml"
                 path: "mimir.yaml"
-        - name: license
-          secret:
-            secretName: test-oss-topology-spread-constraints-values-mimir-license
         - name: runtime-config
           configMap:
             name: test-oss-topology-spread-constraints-values-mimir-runtime
@@ -283,8 +275,6 @@ spec:
               mountPath: /var/mimir
             - name: storage
               mountPath: "/data"
-            - name: license
-              mountPath: /license
             - name: active-queries
               mountPath: /active-query-tracker
           ports:
@@ -419,9 +409,6 @@ spec:
             items:
               - key: "mimir.yaml"
                 path: "mimir.yaml"
-        - name: license
-          secret:
-            secretName: test-oss-topology-spread-constraints-values-mimir-license
         - name: runtime-config
           configMap:
             name: test-oss-topology-spread-constraints-values-mimir-runtime
@@ -443,8 +430,6 @@ spec:
               mountPath: /var/mimir
             - name: storage
               mountPath: "/data"
-            - name: license
-              mountPath: /license
             - name: active-queries
               mountPath: /active-query-tracker
           ports:

@@ -105,10 +105,3 @@ spec:
             name: test-oss-topology-spread-constraints-values-mimir-runtime
         - name: tmp
           emptyDir: {}
-        - name: license
-          secret:
-            secretName: test-oss-topology-spread-constraints-values-mimir-license
-        - name: storage
-          emptyDir: {}
-        - name: active-queries
-          emptyDir: {}
