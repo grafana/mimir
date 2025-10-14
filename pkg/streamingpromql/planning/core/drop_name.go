@@ -73,7 +73,7 @@ func (n *DropName) ExpressionPosition() posrange.PositionRange {
 }
 
 func (n *DropName) MinimumRequiredPlanVersion() int64 {
-	return planning.QueryPlanVersionZero
+	return planning.QueryPlanVersionOne
 }
 
 func MaterializeDropName(n *DropName, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
