@@ -48,11 +48,11 @@ global:
   dnsConfig: {}
 
   # -- Common environment variables to add to all pods directly managed by this chart.
-  # scope: admin-api, alertmanager, compactor, continuous-test, distributor, gateway, ingester, memcached, nginx, overrides-exporter, querier, query-frontend, query-scheduler, ruler, store-gateway, smoke-test
+  # scope: alertmanager, compactor, continuous-test, distributor, gateway, ingester, memcached, nginx, overrides-exporter, querier, query-frontend, query-scheduler, ruler, store-gateway, smoke-test
   extraEnv: []
 
   # -- Common source of environment injections to add to all pods directly managed by this chart.
-  # scope: admin-api, alertmanager, compactor, continuous-test, distributor, gateway, ingester, memcached, nginx, overrides-exporter, querier, query-frontend, query-scheduler, ruler, store-gateway, smoke-test
+  # scope: alertmanager, compactor, continuous-test, distributor, gateway, ingester, memcached, nginx, overrides-exporter, querier, query-frontend, query-scheduler, ruler, store-gateway, smoke-test
   # For example to inject values from a Secret, use:
   # extraEnvFrom:
   #   - secretRef:
@@ -60,19 +60,19 @@ global:
   extraEnvFrom: []
 
   # -- Common volumes to add to all pods directly managed by this chart.
-  # scope: admin-api, alertmanager, compactor, continuous-test, distributor, gateway, ingester, memcached, nginx, overrides-exporter, querier, query-frontend, query-scheduler, ruler, store-gateway, smoke-test
+  # scope: alertmanager, compactor, continuous-test, distributor, gateway, ingester, memcached, nginx, overrides-exporter, querier, query-frontend, query-scheduler, ruler, store-gateway, smoke-test
   extraVolumes: []
 
   # -- Common mount points to add to all pods directly managed by this chart.
-  # scope: admin-api, alertmanager, compactor, continuous-test, distributor, gateway, ingester, memcached, nginx, overrides-exporter, querier, query-frontend, query-scheduler, ruler, store-gateway, smoke-test
+  # scope: alertmanager, compactor, continuous-test, distributor, gateway, ingester, memcached, nginx, overrides-exporter, querier, query-frontend, query-scheduler, ruler, store-gateway, smoke-test
   extraVolumeMounts: []
 
   # -- Pod annotations for all pods directly managed by this chart. Usable for example to associate a version to 'global.extraEnv' and 'global.extraEnvFrom' and trigger a restart of the affected services.
-  # scope: admin-api, alertmanager, compactor, distributor, gateway, ingester, memcached, nginx, overrides-exporter, querier, query-frontend, query-scheduler, ruler, store-gateway
+  # scope: alertmanager, compactor, distributor, gateway, ingester, memcached, nginx, overrides-exporter, querier, query-frontend, query-scheduler, ruler, store-gateway
   podAnnotations: {}
 
   # -- Pod labels for all pods directly managed by this chart.
-  # scope: admin-api, alertmanager, compactor, distributor, gateway, ingester, memcached, nginx, overrides-exporter, querier, query-frontend, query-scheduler, ruler, store-gateway
+  # scope: alertmanager, compactor, distributor, gateway, ingester, memcached, nginx, overrides-exporter, querier, query-frontend, query-scheduler, ruler, store-gateway
   podLabels: {}
 
 serviceAccount:
@@ -3099,15 +3099,6 @@ gateway:
   # -- Whether to render the manifests related to the gateway component.
   enabled: true
 
-  # -- Toggle to enable/disable the gateway deployment.
-  # The value of this field is ignored when gateway.enabled=false.
-  enabledNonEnterprise: true
-
-  # -- This section is deprecated and unused. Use gateway.nginx.image for the nginx gateway.
-  image:
-    # repository: grafana/mimir
-    # tag: r364
-
   # -- Number of replicas for the Deployment
   replicas: 1
   revisionHistoryLimit: null
@@ -3828,7 +3819,6 @@ continuous_test:
     # In case of basicAuth, it is set as the username.
     tenant: "mimir-continuous-test"
     # -- Password for basicAuth auth (note: can be environment variable from secret attached in extraEnvFrom, e.g. $(PASSWORD))
-    # It should contain an access token created for an access policy that allows `metrics:read` and `metrics:write` for the tenant.
     password: null
     # -- Bearer token for bearerToken auth (note: can be environment variable from secret attached in extraEnvFrom, e.g. $(TOKEN))
     bearerToken: null
