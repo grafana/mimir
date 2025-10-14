@@ -2974,15 +2974,6 @@ minio:
     - name: mimir-ruler
       policy: none
       purge: false
-    - name: mimir-tsdb
-      policy: none
-      purge: false
-    - name: mimir-admin
-      policy: none
-      purge: false
-    - name: mimir-ruler
-      policy: none
-      purge: false
   persistence:
     size: 5Gi
   resources:

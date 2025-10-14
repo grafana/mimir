@@ -28,7 +28,7 @@ spec:
         release: test-extra-objects-values
       annotations:
         checksum/secrets: f9bc53c7106583a335743c0f2a0452572676dc73a4b74266b3875ccde8355340
-        checksum/config: 0448693632acffa69d1871dc4fb385deaf796890e02abaf32603aec05ebf9dc2
+        checksum/config: cb241151031455eaa0f46078b11c97de5581e4e219c0f15eaf609cbf4990218f
     spec:
       securityContext:
         

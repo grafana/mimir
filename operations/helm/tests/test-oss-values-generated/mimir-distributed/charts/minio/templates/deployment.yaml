@@ -28,7 +28,7 @@ spec:
         release: test-oss-values
       annotations:
         checksum/secrets: 3385e2fb878d21e00a6b7add9728bed0bbd60b70fc46138798a71fd3452fdb8c
-        checksum/config: ebfa87f67c1cc2228129683750ad71891c5162cf4045769cea7e4ae5a978ed9a
+        checksum/config: b78e1918759ef6e276ac3efe1c8aa455966eedd7cd0acb8f3bcb1917a2413b8a
     spec:
       securityContext:
         

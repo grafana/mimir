@@ -28,7 +28,7 @@ spec:
         release: test-oss-k8s-1.25-values
       annotations:
         checksum/secrets: 175754727717775cd5bb310e5179e22b71cdcb8ac50a1f8bfd8f30db7c65ef8a
-        checksum/config: 928b623e1c9acf5b7b3932dd7c282fcadc0d966b9443288e72308a8225952051
+        checksum/config: 5e3c3fc104fdd55181095d1d1271bfd4ef872bdd45f515f410b04ef3b4239f08
     spec:
       securityContext:
         

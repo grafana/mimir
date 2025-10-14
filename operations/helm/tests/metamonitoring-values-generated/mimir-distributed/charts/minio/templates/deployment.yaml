@@ -28,7 +28,7 @@ spec:
         release: metamonitoring-values
       annotations:
         checksum/secrets: 2ec5c6f02c6843ff02d788a30a2c302fd8ba81d2cc43f13cd14efcd22d006fcf
-        checksum/config: 5a35a850d83d8567a372da3b0b5decd151a367c8fb78695d993026697a37fce6
+        checksum/config: b50028d09d6212d14a40a25f377f6491ed17d6661b5f607512e542f51dfeb271
     spec:
       securityContext:
         
