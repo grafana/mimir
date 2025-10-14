@@ -143,6 +143,10 @@
 * [ENHANCEMENT] Improve the description of how to limit the number of buckets in native histograms. #12797
 * [BUGFIX] Add a missing attribute to the list of default promoted OTel resource attributes in the docs: deployment.environment. #12181
 
+### Tools
+
+* [ENHANCEMENT] Base `mimirtool`, `metaconvert`, `copyblocks`, and `query-tee` images on `distroless/static-debian12`. #13014
+
 ## 2.17.1
 
 ### Grafana Mimir
