@@ -47,7 +47,6 @@ spec:
   template:
     metadata:
       labels:
-        
         app.kubernetes.io/name: mimir
         app.kubernetes.io/instance: large-values
         app.kubernetes.io/managed-by: Helm
@@ -203,7 +202,6 @@ spec:
   template:
     metadata:
       labels:
-        
         app.kubernetes.io/name: mimir
         app.kubernetes.io/instance: large-values
         app.kubernetes.io/managed-by: Helm
@@ -359,7 +357,6 @@ spec:
   template:
     metadata:
       labels:
-        
         app.kubernetes.io/name: mimir
         app.kubernetes.io/instance: large-values
         app.kubernetes.io/managed-by: Helm

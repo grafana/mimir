@@ -47,7 +47,6 @@ spec:
   template:
     metadata:
       labels:
-        
         app.kubernetes.io/name: mimir
         app.kubernetes.io/instance: small-values
         app.kubernetes.io/managed-by: Helm
@@ -205,7 +204,6 @@ spec:
   template:
     metadata:
       labels:
-        
         app.kubernetes.io/name: mimir
         app.kubernetes.io/instance: small-values
         app.kubernetes.io/managed-by: Helm
@@ -363,7 +361,6 @@ spec:
   template:
     metadata:
       labels:
-        
         app.kubernetes.io/name: mimir
         app.kubernetes.io/instance: small-values
         app.kubernetes.io/managed-by: Helm

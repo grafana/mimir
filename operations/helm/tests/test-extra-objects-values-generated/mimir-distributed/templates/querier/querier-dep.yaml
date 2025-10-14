@@ -29,7 +29,6 @@ spec:
   template:
     metadata:
       labels:
-        
         app.kubernetes.io/name: mimir
         app.kubernetes.io/instance: test-extra-objects-values
         app.kubernetes.io/managed-by: Helm
