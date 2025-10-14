@@ -14,7 +14,7 @@ Name of the gateway Service resource
 
 
 {{/*
-Returns "true" or "false" strings if the gateway component (nginx or GEM gateway) should be deployed
+Returns "true" or "false" strings if the gateway component (nginx) should be deployed
 */}}
 {{- define "mimir.gateway.isEnabled" -}}
 {{- .Values.gateway.enabled -}}

@@ -46,7 +46,7 @@ Create chart name and version as used by the chart label.
 {{- end -}}
 
 {{/*
-Build mimir image reference based on whether enterprise features are requested. The component local values always take precedence.
+Build mimir image reference. The component local values always take precedence.
 Params:
   ctx = . context
   component = component name
@@ -59,7 +59,7 @@ Params:
 {{- end -}}
 
 {{/*
-For compatibility and to support upgrade from enterprise-metrics chart calculate minio bucket name
+Calculate minio bucket prefix name
 */}}
 {{- define "mimir.minioBucketPrefix" -}}
 mimir
