@@ -75,14 +75,6 @@ ingester:
       requiredDuringSchedulingIgnoredDuringExecution:
         - labelSelector:
             matchExpressions:
-              - key: target
-                operator: In
-                values:
-                  - ingester
-          topologyKey: "kubernetes.io/hostname"
-
-        - labelSelector:
-            matchExpressions:
               - key: app.kubernetes.io/component
                 operator: In
                 values:
@@ -169,14 +161,6 @@ store_gateway:
       requiredDuringSchedulingIgnoredDuringExecution:
         - labelSelector:
             matchExpressions:
-              - key: target
-                operator: In
-                values:
-                  - store-gateway
-          topologyKey: "kubernetes.io/hostname"
-
-        - labelSelector:
-            matchExpressions:
               - key: app.kubernetes.io/component
                 operator: In
                 values:
@@ -185,15 +169,6 @@ store_gateway:
 
   zoneAwareReplication:
     topologyKey: "kubernetes.io/hostname"
-
-  replicas: 1
-  resources:
-    limits:
-      cpu: 200m
-      memory: 128Mi
-    requests:
-      cpu: 200m
-      memory: 128Mi
 
 gateway:
   replicas: 1

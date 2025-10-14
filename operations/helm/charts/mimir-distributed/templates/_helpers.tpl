@@ -403,18 +403,12 @@ Examples:
 */}}
 {{- define "mimir.componentSectionFromName" -}}
 {{- $componentsMap := dict
-  "admin-api" "admin_api"
-  "admin-cache" "admin-cache"
   "alertmanager" "alertmanager"
   "chunks-cache" "chunks-cache"
   "compactor" "compactor"
   "continuous-test" "continuous_test"
   "distributor" "distributor"
   "gateway" "gateway"
-  "gr-aggr-cache" "gr-aggr-cache"
-  "gr-metricname-cache" "gr-metricname-cache"
-  "graphite-querier" "graphite.querier"
-  "graphite-write-proxy" "graphite.write_proxy"
   "index-cache" "index-cache"
   "ingester" "ingester"
   "kafka" "kafka"

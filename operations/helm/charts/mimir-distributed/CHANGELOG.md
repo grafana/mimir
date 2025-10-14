@@ -29,7 +29,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 ## main / unreleased
 
-* [CHANGE] Remove all remaining GEM/enterprise references from test configurations, reference files, and values.yaml. #13001
+* [CHANGE] Remove all remaining GEM (enterprise) references from test configurations, reference files, and values.yaml. #13001
 * [ENHANCEMENT] Added `trafficDistribution` configuration option to distributor, gateway, querier, query-frontend, query-scheduler, ingester, and store-gateway services to enable same-zone traffic routing. #12243
 * [CHANGE] Minimum compatible Kubernetes version was updated to v1.29. #12527
 * [CHANGE] Mimir is deployed in the ingest storage architecture by default. #12459 #12495
