@@ -1667,38 +1667,36 @@ func (d *Distributor) StartPushRequest(ctx context.Context, httpgrpcRequestSize 
 	return ctx, err
 }
 
-func (d *Distributor) PreparePushRequest(ctx context.Context) (func(error), error) {
-	return d.acquireReactiveLimiterPermit(ctx, false)
+func (d *Distributor) PreparePushRequest(_ context.Context) (func(error), error) {
+	return nil, nil
 }
 
 // acquireReactiveLimiterPermit acquires a reactive limiter permit to control inflight push requests.
 //
 // If a permit is successfully acquired, it is recorded in the requestState associated with the provided context
-// by setting its reactiveLimiterPermitAcquired field. In this case, acquireReactiveLimiterPermit returns a cleanup
-// function that must be called when the request completes.
-//
-// If registerCleanup is true, the cleanup function is also stored in the reactiveLimiterCleanup field
-// of the requestState, allowing it to be invoked automatically during request cleanup.
+// by setting its reactiveLimiterPermitAcquired field. Moreover, a cleanup function that must be called when the
+// request completes is stored in the reactiveLimiterCleanup field the requestState, allowing it to be invoked
+// automatically during request cleanup.
 //
 // If no requestState is found in the provided context, acquireReactiveLimiterPermit returns errMissingRequestState.
 // If called more than once for the same request, it returns errReactiveLimiterPermitAlreadyAcquired.
-func (d *Distributor) acquireReactiveLimiterPermit(ctx context.Context, registerCleanup bool) (func(error), error) {
+func (d *Distributor) acquireReactiveLimiterPermit(ctx context.Context) error {
 	if d.reactiveLimiter == nil {
-		return nil, nil
+		return nil
 	}
 	rs, alreadyInContext := ctx.Value(requestStateKey).(*requestState)
 	if !alreadyInContext {
-		return nil, errMissingRequestState
+		return errMissingRequestState
 	}
 	if rs.reactiveLimiterPermitAcquired {
-		return nil, errReactiveLimiterPermitAlreadyAcquired
+		return errReactiveLimiterPermitAlreadyAcquired
 	}
 
 	// Acquire a permit, blocking if needed
 	permit, err := d.reactiveLimiter.AcquirePermit(ctx)
 	if err != nil {
 		d.rejectedRequests.WithLabelValues(reasonDistributorMaxInflightPushRequests).Inc()
-		return nil, errReactiveLimiterLimitExceeded
+		return errReactiveLimiterLimitExceeded
 	}
 	cleanup := func(err error) {
 		if errors.Is(err, context.Canceled) || ctx.Err() != nil {
@@ -1708,10 +1706,8 @@ func (d *Distributor) acquireReactiveLimiterPermit(ctx context.Context, register
 		}
 	}
 	rs.reactiveLimiterPermitAcquired = true
-	if registerCleanup {
-		rs.reactiveLimiterCleanup = cleanup
-	}
-	return cleanup, nil
+	rs.reactiveLimiterCleanup = cleanup
+	return nil
 }
 
 // startPushRequest does limits checks at the beginning of Push request in distributor.
@@ -1852,8 +1848,7 @@ func (d *Distributor) limitsMiddleware(next PushFunc) PushFunc {
 		defer func() {
 			rs.pushErr = retErr
 		}()
-		_, reactiveLimiterErr := d.acquireReactiveLimiterPermit(ctx, true)
-		if reactiveLimiterErr != nil && !errors.Is(err, errReactiveLimiterPermitAlreadyAcquired) {
+		if reactiveLimiterErr := d.acquireReactiveLimiterPermit(ctx); reactiveLimiterErr != nil {
 			return reactiveLimiterErr
 		}
 
