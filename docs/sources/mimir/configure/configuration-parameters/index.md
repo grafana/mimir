@@ -1501,7 +1501,7 @@ parquet_converter:
   # CLI flag: -parquet-converter.task-concurrency
   [task_concurrency: <int> | default = 2]
 
-  # (advanced) Maximum number of concurrent goroutines allowed to run the
+  # (advanced) Maximum number of concurrent Go routines allowed to run the
   # conversion code.
   # CLI flag: -parquet-converter.conversion-concurrency
   [conversion_concurrency: <int> | default = 1]

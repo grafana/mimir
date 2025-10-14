@@ -115,7 +115,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.IntVar(&cfg.MaxRowsPerGroup, "parquet-converter.max-rows-per-group", 1e6, "Maximum number of rows per row group in Parquet files.")
 	f.IntVar(&cfg.TSDBReadConcurrency, "parquet-converter.tsdb-read-concurrency", 4, "Maximum number of Go routines reading TSDB series in parallel when converting a block.")
 	f.IntVar(&cfg.TaskConcurrency, "parquet-converter.task-concurrency", 2, "Maximum number of Go routines processing tasks in parallel.")
-	f.IntVar(&cfg.ConversionConcurrency, "parquet-converter.conversion-concurrency", 1, "Maximum number of concurrent goroutines allowed to execute the conversion code.")
+	f.IntVar(&cfg.ConversionConcurrency, "parquet-converter.conversion-concurrency", 1, "Maximum number of concurrent Go routines allowed to run the conversion code.")
 	f.IntVar(&cfg.MinCompactionLevel, "parquet-converter.min-compaction-level", 2, "Minimum compaction level required for blocks to be converted to Parquet. Blocks equal or greater than this level will be converted.")
 	f.DurationVar(&cfg.MinBlockDuration, "parquet-converter.min-block-duration", 0, "Minimum duration of blocks to convert. Blocks with a duration shorter than this will be skipped. Set to 0 to disable duration filtering.")
 	f.BoolVar(&cfg.CompressionEnabled, "parquet-converter.compression-enabled", true, "Whether compression is enabled for labels and chunks parquet files. When disabled, parquet files will be converted and stored uncompressed.")
