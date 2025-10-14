@@ -72,12 +72,14 @@ distributor:
       multi:
         primary: etcd
         secondary: memberlist
+        # Mirroring is disabled by default, we'll enable it in Step 2
         mirror_enabled: false
       etcd:
         # Your existing etcd configuration
         endpoints:
           - etcd.default.svc.cluster.local:2379
       memberlist:
+        # Memberlist configuration - typically shared with other components
         join_members:
           - mimir-gossip-ring.default.svc.cluster.local:7946
 ```
