@@ -1099,6 +1099,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 				TimeRange:                instantQueryEncodedTimeRange,
 				RootNode:                 2,
 				EnableDelayedNameRemoval: true,
+				Version:                  planning.QueryPlanVersionOne,
 				Nodes: []*planning.EncodedNode{
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
