@@ -3786,7 +3786,6 @@ grafana-agent-operator:
     capabilities:
       drop: [ALL]
 
-extraObjects: []
 smoke_test:
   # -- Allows to override the container image of the smoke-test component.
   # When set it takes precedence over what is defined in global "image" .
