@@ -268,10 +268,6 @@
 {{- fail "You have selected both ingress.enabled and gateway.ingress.enabled, you must select either ingress or gateway but not both" -}}
 {{- end -}}
 
-{{- if and (not .Values.enterprise.enabled) .Values.federation_frontend.enabled -}}
-{{- fail "You have federation_frontend.enabled=true, but enterprise.enabled=false. Federation Frontend is an enterprise-only feature and requires enterprise mode to be enabled." }}
-{{- end -}}
-
 {{- range .Values.ingester.zoneAwareReplication.zones }}
   {{- if and (eq .noDownscale true) (eq .prepareDownscale true) }}
     {{- fail (printf "For ingester zone '%s': noDownscale and prepareDownscale cannot be used simultaneously." .name) -}}
