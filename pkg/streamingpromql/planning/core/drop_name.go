@@ -49,7 +49,7 @@ func (n *DropName) EquivalentTo(other planning.Node) bool {
 }
 
 func (n *DropName) Describe() string {
-	return "drop metric names"
+	return ""
 }
 
 func (n *DropName) ChildrenLabels() []string {
@@ -73,7 +73,7 @@ func (n *DropName) ExpressionPosition() posrange.PositionRange {
 }
 
 func (n *DropName) MinimumRequiredPlanVersion() int64 {
-	return planning.QueryPlanVersionOne
+	return planning.QueryPlanV1
 }
 
 func MaterializeDropName(n *DropName, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {

@@ -26,9 +26,9 @@ var MaximumSupportedQueryPlanVersion = int64(1)
 
 const QueryPlanVersionZero = int64(0)
 
-// Thins version introduces:
+// This version introduces:
 // 1. DropName node
-const QueryPlanVersionOne = int64(1)
+const QueryPlanV1 = int64(1)
 
 type QueryPlan struct {
 	TimeRange types.QueryTimeRange
