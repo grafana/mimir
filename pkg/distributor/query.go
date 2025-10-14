@@ -394,46 +394,6 @@ func (d *Distributor) estimatedIngestersPerSeries(replicationSets []ring.Replica
 	return d.ingestersRing.ReplicationFactor() - replicationSet.MaxErrors
 }
 
-// Merges and dedupes two sorted slices with samples together.
-func mergeSamples(a, b []mimirpb.Sample) []mimirpb.Sample {
-	if sameSamples(a, b) {
-		return a
-	}
-
-	result := make([]mimirpb.Sample, 0, len(a)+len(b))
-	i, j := 0, 0
-	for i < len(a) && j < len(b) {
-		if a[i].TimestampMs < b[j].TimestampMs {
-			result = append(result, a[i])
-			i++
-		} else if a[i].TimestampMs > b[j].TimestampMs {
-			result = append(result, b[j])
-			j++
-		} else {
-			result = append(result, a[i])
-			i++
-			j++
-		}
-	}
-	// Add the rest of a or b. One of them is empty now.
-	result = append(result, a[i:]...)
-	result = append(result, b[j:]...)
-	return result
-}
-
-func sameSamples(a, b []mimirpb.Sample) bool {
-	if len(a) != len(b) {
-		return false
-	}
-
-	for i := 0; i < len(a); i++ {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
-}
-
 type seriesChunksStream struct {
 	StreamReader *ingester_client.SeriesChunksStreamReader
 	Series       []labels.Labels
