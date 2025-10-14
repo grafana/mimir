@@ -101,9 +101,9 @@ distributor:
     kvstore:
       store: multi
       multi:
-        primary: consul  # or etcd
+        primary: consul # or etcd
         secondary: memberlist
-        mirror_enabled: true  # Changed in this step
+        mirror_enabled: true # Changed in this step
 ```
 
 **Verification:**
@@ -129,8 +129,8 @@ distributor:
     kvstore:
       store: multi
       multi:
-        primary: memberlist  # Changed in this step
-        secondary: consul    # or etcd - changed in this step
+        primary: memberlist # Changed in this step
+        secondary: consul # or etcd - changed in this step
         mirror_enabled: true
 ```
 
@@ -154,8 +154,8 @@ distributor:
       store: multi
       multi:
         primary: memberlist
-        secondary: consul  # or etcd
-        mirror_enabled: false  # Changed in this step
+        secondary: consul # or etcd
+        mirror_enabled: false # Changed in this step
 ```
 
 **Verification:**
@@ -173,7 +173,7 @@ distributor:
   ha_tracker:
     enable_ha_tracker: true
     kvstore:
-      store: memberlist  # Changed in this step
+      store: memberlist # Changed in this step
       memberlist:
         join_members:
           - mimir-gossip-ring.default.svc.cluster.local:7946
@@ -206,7 +206,7 @@ mimir:
         kvstore:
           store: multi
           multi:
-            primary: consul  # or etcd
+            primary: consul # or etcd
             secondary: memberlist
             mirror_enabled: false
           consul:
@@ -216,4 +216,3 @@ mimir:
           #   endpoints:
           #     - "{{ .Release.Name }}-etcd.{{ .Release.Namespace }}.svc.cluster.local:2379"
 ```
-
