@@ -142,7 +142,9 @@ type HATrackerConfig struct {
 	// This is a potentially high cardinality metric, so it is disabled by default.
 	EnableElectedReplicaMetric bool `yaml:"enable_elected_replica_metric"`
 
-	KVStore kv.Config `yaml:"kvstore" doc:"description=Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi. Note that etcd is deprecated."`
+	// KVStore is the backend storage for the HA tracker. Memberlist is the recommended backend.
+	// Consul and etcd are deprecated for the HA tracker as of Mimir 3.0 and will be removed in a future release.
+	KVStore kv.Config `yaml:"kvstore" doc:"description=Backend storage to use for the HA tracker. Supported values are: consul, etcd, inmemory, memberlist, multi. Memberlist is recommended. Consul and etcd are deprecated for the HA tracker."`
 }
 
 // RegisterFlags adds the flags required to config this to the given FlagSet.
@@ -154,6 +156,7 @@ func (cfg *HATrackerConfig) RegisterFlags(f *flag.FlagSet) {
 	// for HA cluster tracking. We also customize the default keys prefix, in
 	// order to not clash with the ring key if they both share the same KVStore
 	// backend (i.e. run on the same Consul cluster).
+	// Note: memberlist is the recommended backend for the HA tracker. Consul and etcd are deprecated.
 	cfg.KVStore.RegisterFlagsWithPrefix("distributor.ha-tracker.", "ha-tracker/", f)
 }
 
@@ -202,8 +205,9 @@ type haClusterInfo struct {
 	nonElectedLastSeenSampleTime int64 // last seen earliest sample time in milliseconds
 }
 
-// newHaTracker returns a new HA cluster tracker using either Consul,
-// etcd, or an in-memory KV store. Tracker must be started via StartAsync().
+// newHaTracker returns a new HA cluster tracker using memberlist (recommended),
+// consul, etcd, or an in-memory KV store. Consul and etcd are deprecated for
+// the HA tracker. Tracker must be started via StartAsync().
 func newHaTracker(cfg HATrackerConfig, limits haTrackerLimits, reg prometheus.Registerer, logger log.Logger) (*defaultHaTracker, error) {
 	t := &defaultHaTracker{
 		logger:   log.With(logger, "component", "ha-tracker"),
