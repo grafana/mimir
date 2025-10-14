@@ -199,6 +199,9 @@ type Config struct {
 	// HideTokensInStatusPage allows tokens to be hidden from management tools e.g. the status page, for use in contexts which do not utilize tokens.
 	// This option is set internally and never exposed to the user.
 	HideTokensInStatusPage bool `yaml:"-"`
+	// ShowVersionsInStatusPage enables displaying versions on the status page.
+	// This option is set internally and never exposed to the user.
+	ShowVersionsInStatusPage bool `yaml:"-"`
 }
 
 // RegisterFlags adds the flags required to config this to the given FlagSet with a specified prefix
@@ -1345,7 +1348,7 @@ func (r *Ring) getRing(_ context.Context) (*Desc, error) {
 }
 
 func (r *Ring) ServeHTTP(w http.ResponseWriter, req *http.Request) {
-	newRingPageHandler(r, r.cfg.HeartbeatTimeout, r.cfg.HideTokensInStatusPage).handle(w, req)
+	newRingPageHandler(r, r.cfg.HeartbeatTimeout, r.cfg.HideTokensInStatusPage, !r.cfg.ShowVersionsInStatusPage).handle(w, req)
 }
 
 // InstancesCount returns the number of instances in the ring.

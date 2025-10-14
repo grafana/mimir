@@ -36,20 +36,23 @@ type httpResponse struct {
 	ShowTokens bool `json:"-"`
 	// DisableTokens hides the concept of tokens entirely in the page, across all elements.
 	DisableTokens bool `json:"-"`
+	// DisableVersions hides the versions column on the page.
+	DisableVersions bool `json:"-"`
 }
 
 type ingesterDesc struct {
-	ID                       string    `json:"id"`
-	State                    string    `json:"state"`
-	Address                  string    `json:"address"`
-	HeartbeatTimestamp       time.Time `json:"timestamp"`
-	RegisteredTimestamp      time.Time `json:"registered_timestamp"`
-	ReadOnly                 bool      `json:"read_only"`
-	ReadOnlyUpdatedTimestamp time.Time `json:"read_only_updated_timestamp"`
-	Zone                     string    `json:"zone"`
-	Tokens                   []uint32  `json:"tokens"`
-	NumTokens                int       `json:"-"`
-	Ownership                float64   `json:"-"`
+	ID                       string            `json:"id"`
+	State                    string            `json:"state"`
+	Address                  string            `json:"address"`
+	HeartbeatTimestamp       time.Time         `json:"timestamp"`
+	RegisteredTimestamp      time.Time         `json:"registered_timestamp"`
+	ReadOnly                 bool              `json:"read_only"`
+	ReadOnlyUpdatedTimestamp time.Time         `json:"read_only_updated_timestamp"`
+	Zone                     string            `json:"zone"`
+	Tokens                   []uint32          `json:"tokens"`
+	NumTokens                int               `json:"-"`
+	Ownership                float64           `json:"-"`
+	Versions                 map[uint64]uint64 `json:"versions,omitempty"`
 }
 
 type ringAccess interface {
@@ -61,13 +64,15 @@ type ringPageHandler struct {
 	r                ringAccess
 	heartbeatTimeout time.Duration
 	disableTokens    bool
+	disableVersions  bool
 }
 
-func newRingPageHandler(r ringAccess, heartbeatTimeout time.Duration, disableTokens bool) *ringPageHandler {
+func newRingPageHandler(r ringAccess, heartbeatTimeout time.Duration, disableTokens bool, disableVersions bool) *ringPageHandler {
 	return &ringPageHandler{
 		r:                r,
 		heartbeatTimeout: heartbeatTimeout,
 		disableTokens:    disableTokens,
+		disableVersions:  disableVersions,
 	}
 }
 
@@ -131,16 +136,18 @@ func (h *ringPageHandler) handle(w http.ResponseWriter, req *http.Request) {
 			Zone:                     ing.Zone,
 			NumTokens:                len(ing.Tokens),
 			Ownership:                (float64(ownedTokens[id]) / float64(math.MaxUint32)) * 100,
+			Versions:                 ing.Versions,
 		})
 	}
 
 	tokensParam := req.URL.Query().Get("tokens")
 
 	renderHTTPResponse(w, httpResponse{
-		Ingesters:     ingesters,
-		Now:           now,
-		ShowTokens:    tokensParam == "true",
-		DisableTokens: h.disableTokens,
+		Ingesters:       ingesters,
+		Now:             now,
+		ShowTokens:      tokensParam == "true",
+		DisableTokens:   h.disableTokens,
+		DisableVersions: h.disableVersions,
 	}, defaultPageTemplate, req)
 }
 
