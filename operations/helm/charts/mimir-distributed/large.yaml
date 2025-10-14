@@ -71,7 +71,7 @@ ingester:
       requiredDuringSchedulingIgnoredDuringExecution:
         - labelSelector:
             matchExpressions:
-              - key: target # support for enterprise.legacyLabels
+              - key: target
                 operator: In
                 values:
                   - ingester
@@ -164,7 +164,7 @@ store_gateway:
       requiredDuringSchedulingIgnoredDuringExecution:
         - labelSelector:
             matchExpressions:
-              - key: target # support for enterprise.legacyLabels
+              - key: target
                 operator: In
                 values:
                   - store-gateway
