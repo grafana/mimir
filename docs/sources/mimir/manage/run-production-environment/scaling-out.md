@@ -55,11 +55,17 @@ This guidance applies to ingest storage architecture. For more information about
 
 When running Grafana Mimir with ingest storage architecture, scaling down ingesters triggers the reassignment of ingestion partitions instead of transferring in-memory series ownership between ingesters.
 
-The ingestion layer durably stores each partition and can reassign it to a new ingester without data loss. When you terminate or scale down an ingester, the system transitions its assigned partitions through the partition lifecycle until another ingester safely takes ownership.
+The ingestion layer durably stores each partition and can reassign it to a new ingester without data loss. When you terminate or scale down an ingester, it stops writing to its assigned partitions. Other ingesters continue consuming active partitions as normal according to the partition lifecycle.
 
-For details about how partitions are created, reassigned, and transitioned between states, refer to [Grafana Mimir hash rings](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/hash-ring/#partition-lifecycle).
+For details about how partitions are created, reassigned, and transitioned between states, refer to [Grafana Mimir hash rings](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/hash-ring/#partitions-ring-lifecycle).
 
-Because the system writes ingestion data to Kafka and persists it in object storage, scaling down ingesters in the ingest storage architecture doesn't require draining in-memory series or handoff operations. However, ensure all partitions finish reassignment before you permanently remove ingesters to avoid temporary ingestion delays.
+Because the system writes ingestion data to Kafka and persists it in object storage, scaling down ingesters in the ingest storage architecture doesn’t require draining in-memory series or handoff operations.
+
+In production environments, scaling down typically happens automatically through the rollout-operator, which coordinates ingesters across zones. The rollout-operator prepares ingesters for shutdown by moving their partitions from `ACTIVE` to `INACTIVE` and removes the ingesters after a defined period.
+
+The rollout-operator is deployed by the Grafana Mimir Helm chart and is the recommended way to manage partitioned ingesters and scaling operations for ingest storage.
+
+If you’re managing ingesters manually, you can use GET, POST, or DELETE on the HTTP API endpoint  `/ingester/prepare-partition-downscale` to prepare ingesters for downscaling instead of relying on the rollout-operator.
 
 ### Scaling down ingesters in classic architecture
 
