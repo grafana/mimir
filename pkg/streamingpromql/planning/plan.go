@@ -22,7 +22,7 @@ import (
 	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
-var MaximumSupportedQueryPlanVersion = int64(0)
+var MaximumSupportedQueryPlanVersion = int64(1)
 
 const QueryPlanVersionZero = int64(0)
 
