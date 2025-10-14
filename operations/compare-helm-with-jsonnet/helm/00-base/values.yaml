@@ -20,7 +20,6 @@ serviceAccount:
 # The Jsonnet bundle doesn't provide any gateway or ingress.
 gateway:
     enabled: false
-    enabledNonEnterprise: false
 
 # To be updated in https://github.com/grafana/mimir/issues/2922
 rollout_operator:
