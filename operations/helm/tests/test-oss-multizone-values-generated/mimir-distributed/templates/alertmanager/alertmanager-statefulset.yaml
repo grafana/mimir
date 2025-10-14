@@ -42,6 +42,7 @@ spec:
   template:
     metadata:
       labels:
+        
         app.kubernetes.io/name: mimir
         app.kubernetes.io/instance: test-oss-multizone-values
         app.kubernetes.io/managed-by: Helm
@@ -200,6 +201,7 @@ spec:
   template:
     metadata:
       labels:
+        
         app.kubernetes.io/name: mimir
         app.kubernetes.io/instance: test-oss-multizone-values
         app.kubernetes.io/managed-by: Helm
@@ -358,6 +360,7 @@ spec:
   template:
     metadata:
       labels:
+        
         app.kubernetes.io/name: mimir
         app.kubernetes.io/instance: test-oss-multizone-values
         app.kubernetes.io/managed-by: Helm

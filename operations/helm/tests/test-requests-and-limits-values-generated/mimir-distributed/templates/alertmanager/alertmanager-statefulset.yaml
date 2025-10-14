@@ -37,6 +37,7 @@ spec:
   template:
     metadata:
       labels:
+        
         app.kubernetes.io/name: mimir
         app.kubernetes.io/instance: test-requests-and-limits-values
         app.kubernetes.io/managed-by: Helm
