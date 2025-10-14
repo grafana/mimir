@@ -2,9 +2,11 @@
 
 ## unreleased
 
+
 * [BUGFIX] Add a missing attribute to the list of default promoted OTel resource attributes in the docs: deployment.environment. #12181
 * [BUGFIX] Ingest: Fix memory pool poisoning in Remote-Write 2.0/OTLP by not clearning created timestamp field before returning time series to the memory pool. #12735
 * [BUGFIX] Distributor: Fix error when native histograms bucket limit is set then no NHCB passes validation. #12746
+* [BUGFIX] Update Docker base images for tools from `alpine:3.22.1` to `alpine:3.22.2` to address [CVE-2025-9230](https://nvd.nist.gov/vuln/detail/CVE-2025-9230), [CVE-2025-9231](https://nvd.nist.gov/vuln/detail/CVE-2025-9231), [CVE-2025-2025-9232](https://nvd.nist.gov/vuln/detail/CVE-2025-9232). #12993
 
 ## 2.17.1
 
