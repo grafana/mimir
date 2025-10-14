@@ -10,8 +10,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 )
 
-// FromLabelAdaptersToLabels converts []LabelAdapter to labels.Labels.
-// Note this is relatively expensive; see FromLabelAdaptersOverwriteLabels for a fast unsafe way.
+// FromLabelAdaptersToLabels casts []LabelAdapter to labels.Labels and sorts the Labels. It uses unsafe.
 func FromLabelAdaptersToLabels(ls []LabelAdapter) labels.Labels {
 	l := *(*[]labels.Label)(unsafe.Pointer(&ls))
 	return labels.New(l...)
