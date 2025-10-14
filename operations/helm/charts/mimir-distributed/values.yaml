@@ -465,6 +465,17 @@ mimir:
   # Additionally, consider the optional "insecure_skip_verify" key below, it allows you to skip_verify_false in case the s3_endpoint certificate is not trusted.
   # For more information see https://grafana.com/docs/mimir/latest/references/configuration-parameters/
   #
+  # Note: As of Mimir 3.0, the HA tracker defaults to using memberlist for its KV store.
+  # Consul and etcd are deprecated for the HA tracker. If you need to continue using consul or etcd,
+  # you can configure it explicitly via structuredConfig:
+  #
+  #   distributor:
+  #     ha_tracker:
+  #       kvstore:
+  #         store: consul  # or etcd (deprecated)
+  #
+  # For migration from consul/etcd to memberlist, see the migration guide.
+  #
   # Example:
   #
   # structuredConfig:
