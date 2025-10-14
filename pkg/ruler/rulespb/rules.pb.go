@@ -50,7 +50,8 @@ type RuleGroupDesc struct {
 	QueryOffset                   time.Duration                                       `protobuf:"bytes,13,opt,name=queryOffset,proto3,stdduration" json:"queryOffset"`
 	AlignEvaluationTimeOnInterval bool                                                `protobuf:"varint,12,opt,name=align_evaluation_time_on_interval,json=alignEvaluationTimeOnInterval,proto3" json:"align_evaluation_time_on_interval,omitempty"`
 	Labels                        []github_com_grafana_mimir_pkg_mimirpb.LabelAdapter `protobuf:"bytes,14,rep,name=labels,proto3,customtype=github.com/grafana/mimir/pkg/mimirpb.LabelAdapter" json:"labels"`
-	Limit                         int32                                               `protobuf:"varint,15,opt,name=limit,proto3" json:"limit,omitempty"`
+	// The limit is enforced in Mimir per-user.
+	Limit int32 `protobuf:"varint,15,opt,name=limit,proto3" json:"limit,omitempty"`
 }
 
 func (m *RuleGroupDesc) Reset()      { *m = RuleGroupDesc{} }

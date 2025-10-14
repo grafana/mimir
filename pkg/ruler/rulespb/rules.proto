@@ -51,6 +51,7 @@ message RuleGroupDesc {
     (gogoproto.customtype) = "github.com/grafana/mimir/pkg/mimirpb.LabelAdapter"
   ];
 
+  // The limit is enforced in Mimir per-user.
   int32 limit = 15;
 }
 
