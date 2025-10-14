@@ -1918,11 +1918,11 @@ func (d *Distributor) Push(ctx context.Context, req *mimirpb.WriteRequest) (*mim
 	if pushErr == nil {
 		return &mimirpb.WriteResponse{}, nil
 	}
-	handledErr := d.handlePushError(ctx, pushErr)
+	handledErr := d.handlePushError(pushErr)
 	return nil, handledErr
 }
 
-func (d *Distributor) handlePushError(ctx context.Context, pushErr error) error {
+func (d *Distributor) handlePushError(pushErr error) error {
 	if errors.Is(pushErr, context.Canceled) {
 		return pushErr
 	}
@@ -1931,12 +1931,7 @@ func (d *Distributor) handlePushError(ctx context.Context, pushErr error) error 
 		return pushErr
 	}
 
-	serviceOverloadErrorEnabled := false
-	userID, err := tenant.TenantID(ctx)
-	if err == nil {
-		serviceOverloadErrorEnabled = d.limits.ServiceOverloadStatusCodeOnRateLimitEnabled(userID)
-	}
-	return toErrorWithGRPCStatus(pushErr, serviceOverloadErrorEnabled)
+	return toErrorWithGRPCStatus(pushErr)
 }
 
 // push takes a write request and distributes it to ingesters using the ring.

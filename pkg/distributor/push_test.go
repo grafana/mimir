@@ -904,7 +904,7 @@ func TestHandler_HandleRetryAfterHeader(t *testing.T) {
 		},
 		{
 			name:          "Generic error, HTTP 429, Retry-After with valid Retry-Attempts set to 3",
-			responseCode:  StatusServiceOverloaded,
+			responseCode:  http.StatusTooManyRequests,
 			expectRetry:   true,
 			retryAttempt:  "3",
 			retryCfg:      RetryConfig{Enabled: true, MinBackoff: 2 * time.Second, MaxBackoff: 64 * time.Second},
@@ -1032,24 +1032,9 @@ func TestHandler_toHTTPStatus(t *testing.T) {
 			err:                ingestionRateLimitedErr,
 			expectedHTTPStatus: http.StatusTooManyRequests,
 		},
-		"an ingestionRateLimitedError with serviceOverloadErrorEnabled gets translated into an HTTP 529": {
-			err:                         ingestionRateLimitedErr,
-			serviceOverloadErrorEnabled: true,
-			expectedHTTPStatus:          StatusServiceOverloaded,
-		},
 		"a DoNotLogError of an ingestionRateLimitedError gets translated into an HTTP 429": {
 			err:                middleware.DoNotLogError{Err: ingestionRateLimitedErr},
 			expectedHTTPStatus: http.StatusTooManyRequests,
-		},
-		"a requestRateLimitedError with serviceOverloadErrorEnabled gets translated into an HTTP 529": {
-			err:                         requestRateLimitedErr,
-			serviceOverloadErrorEnabled: true,
-			expectedHTTPStatus:          StatusServiceOverloaded,
-		},
-		"a DoNotLogError of a requestRateLimitedError with serviceOverloadErrorEnabled gets translated into an HTTP 529": {
-			err:                         middleware.DoNotLogError{Err: requestRateLimitedErr},
-			serviceOverloadErrorEnabled: true,
-			expectedHTTPStatus:          StatusServiceOverloaded,
 		},
 		"a requestRateLimitedError without serviceOverloadErrorEnabled gets translated into an HTTP 429": {
 			err:                         requestRateLimitedErr,
@@ -1124,18 +1109,7 @@ func TestHandler_toHTTPStatus(t *testing.T) {
 	}
 	for name, tc := range testCases {
 		t.Run(name, func(t *testing.T) {
-			ctx := user.InjectOrgID(context.Background(), userID)
-
-			tenantLimits := map[string]*validation.Limits{
-				userID: {
-					ServiceOverloadStatusCodeOnRateLimitEnabled: tc.serviceOverloadErrorEnabled,
-				},
-			}
-			limits := validation.NewOverrides(
-				validation.Limits{},
-				validation.NewMockTenantLimits(tenantLimits),
-			)
-			status := toHTTPStatus(ctx, tc.err, limits)
+			status := toHTTPStatus(tc.err)
 			assert.Equal(t, tc.expectedHTTPStatus, status)
 		})
 	}

@@ -438,8 +438,8 @@ func toOtlpGRPCHTTPStatus(pushErr error) (codes.Code, int, bool) {
 		return codes.Internal, http.StatusServiceUnavailable, false
 	}
 
-	grpcStatusCode := errorCauseToGRPCStatusCode(distributorErr.Cause(), false)
-	httpStatusCode := errorCauseToHTTPStatusCode(distributorErr.Cause(), false)
+	grpcStatusCode := errorCauseToGRPCStatusCode(distributorErr.Cause())
+	httpStatusCode := errorCauseToHTTPStatusCode(distributorErr.Cause())
 	return grpcStatusCode, httpRetryableToOTLPRetryable(httpStatusCode), distributorErr.IsSoft()
 }
 

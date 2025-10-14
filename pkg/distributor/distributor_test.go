@@ -553,11 +553,10 @@ func TestDistributor_PushRequestRateLimiter(t *testing.T) {
 	}
 	ctx := user.InjectOrgID(context.Background(), "user")
 	tests := map[string]struct {
-		distributors               int
-		requestRate                float64
-		requestBurstSize           int
-		pushes                     []testPush
-		enableServiceOverloadError bool
+		distributors     int
+		requestRate      float64
+		requestBurstSize int
+		pushes           []testPush
 	}{
 		"request limit should be evenly shared across distributors": {
 			distributors:     2,
@@ -590,17 +589,6 @@ func TestDistributor_PushRequestRateLimiter(t *testing.T) {
 				{expectedError: status.New(codes.ResourceExhausted, newRequestRateLimitedError(2, 3).Error())},
 			},
 		},
-		"request limit is reached return 529 when enable service overload error set to true": {
-			distributors:               2,
-			requestRate:                4,
-			requestBurstSize:           2,
-			enableServiceOverloadError: true,
-			pushes: []testPush{
-				{expectedError: nil},
-				{expectedError: nil},
-				{expectedError: status.New(codes.Unavailable, newRequestRateLimitedError(4, 2).Error())},
-			},
-		},
 	}
 
 	expectedDetails := &mimirpb.ErrorDetails{Cause: mimirpb.ERROR_CAUSE_REQUEST_RATE_LIMITED}
@@ -610,7 +598,6 @@ func TestDistributor_PushRequestRateLimiter(t *testing.T) {
 			limits := prepareDefaultLimits()
 			limits.RequestRate = testData.requestRate
 			limits.RequestBurstSize = testData.requestBurstSize
-			limits.ServiceOverloadStatusCodeOnRateLimitEnabled = testData.enableServiceOverloadError
 
 			// Start all expected distributors
 			distributors, _, _, _ := prepare(t, prepConfig{
@@ -5196,7 +5183,7 @@ func TestHaDedupeMiddleware(t *testing.T) {
 				err := middleware(tc.ctx, pushReq)
 				handledErr := err
 				if handledErr != nil {
-					handledErr = ds[0].handlePushError(tc.ctx, err)
+					handledErr = ds[0].handlePushError(err)
 				}
 				gotErrs = append(gotErrs, handledErr)
 			}
@@ -8110,7 +8097,7 @@ func TestHandlePushError(t *testing.T) {
 		},
 		"an Error gives the error returned by toErrorWithGRPCStatus()": {
 			pushError:         mockDistributorErr(testErrorMsg),
-			expectedGRPCError: status.Convert(toErrorWithGRPCStatus(mockDistributorErr(testErrorMsg), false)),
+			expectedGRPCError: status.Convert(toErrorWithGRPCStatus(mockDistributorErr(testErrorMsg))),
 		},
 		"a random error without status gives an Internal gRPC error": {
 			pushError:         errWithUserID,
@@ -8125,11 +8112,10 @@ func TestHandlePushError(t *testing.T) {
 		replicationFactor: 1, // push each series to single ingester only
 	}
 	d, _, _, _ := prepare(t, config)
-	ctx := context.Background()
 
 	for testName, testData := range test {
 		t.Run(testName, func(t *testing.T) {
-			err := d[0].handlePushError(ctx, testData.pushError)
+			err := d[0].handlePushError(testData.pushError)
 			if testData.expectedGRPCError == nil {
 				require.Equal(t, testData.expectedOtherError, err)
 			} else {
