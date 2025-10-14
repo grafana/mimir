@@ -4162,8 +4162,8 @@ ruler_alertmanager_client_config:
 # CLI flag: -ruler.min-rule-evaluation-interval
 [ruler_min_rule_evaluation_interval: <duration> | default = 0s]
 
-# (experimental) Maximum number of alerts an alerting rule or series a recording
-# rule can produce for rule groups. 0 is no limit.
+# (experimental) Maximum number of alerts or series one alerting rule or one
+# recording rule respectively can produce. 0 is no limit.
 # CLI flag: -ruler.max-rule-evaluation-results
 [ruler_max_rule_evaluation_results: <int> | default = 0]
 

@@ -5841,7 +5841,7 @@
           "kind": "field",
           "name": "ruler_max_rule_evaluation_results",
           "required": false,
-          "desc": "Maximum number of alerts an alerting rule or series a recording rule can produce for rule groups. 0 is no limit.",
+          "desc": "Maximum number of alerts or series one alerting rule or one recording rule respectively can produce. 0 is no limit.",
           "fieldValue": null,
           "fieldDefaultValue": 0,
           "fieldFlag": "ruler.max-rule-evaluation-results",
