@@ -28,7 +28,7 @@ If release name contains chart name it will be used as a full name.
 Calculate the infix for naming
 */}}
 {{- define "mimir.infixName" -}}
-{{- if and .Values.enterprise.enabled .Values.enterprise.legacyLabels -}}enterprise-metrics{{- else -}}mimir{{- end -}}
+mimir
 {{- end -}}
 
 {{/*
@@ -54,11 +54,7 @@ Params:
 {{- define "mimir.imageReference" -}}
 {{- $componentSection := include "mimir.componentSectionFromName" . | fromYaml -}}
 {{- $image := $componentSection.image | default dict -}}
-{{- if .ctx.Values.enterprise.enabled -}}
-  {{- $image = mustMerge $image .ctx.Values.enterprise.image -}}
-{{- else -}}
-  {{- $image = mustMerge $image .ctx.Values.image -}}
-{{- end -}}
+{{- $image = mustMerge $image .ctx.Values.image -}}
 {{ $image.repository }}:{{ $image.tag }}
 {{- end -}}
 
@@ -66,7 +62,7 @@ Params:
 For compatibility and to support upgrade from enterprise-metrics chart calculate minio bucket name
 */}}
 {{- define "mimir.minioBucketPrefix" -}}
-{{- if .Values.enterprise.legacyLabels -}}enterprise-metrics{{- else -}}mimir{{- end -}}
+mimir
 {{- end -}}
 
 {{/*
@@ -230,18 +226,6 @@ Params:
   rolloutZoneName = rollout zone name (optional)
 */}}
 {{- define "mimir.labels" -}}
-{{- if .ctx.Values.enterprise.legacyLabels }}
-{{- if .component -}}
-app: {{ include "mimir.name" .ctx }}-{{ .component }}
-{{- else -}}
-app: {{ include "mimir.name" .ctx }}
-{{- end }}
-chart: {{ template "mimir.chart" .ctx }}
-heritage: {{ .ctx.Release.Service }}
-release: {{ .ctx.Release.Name }}
-
-{{- else -}}
-
 helm.sh/chart: {{ include "mimir.chart" .ctx }}
 app.kubernetes.io/name: {{ include "mimir.name" .ctx }}
 app.kubernetes.io/instance: {{ .ctx.Release.Name }}
@@ -255,7 +239,6 @@ app.kubernetes.io/part-of: memberlist
 app.kubernetes.io/version: {{ .ctx.Chart.AppVersion | quote }}
 {{- end }}
 app.kubernetes.io/managed-by: {{ .ctx.Release.Service }}
-{{- end }}
 {{- if .rolloutZoneName }}
 {{-   if not .component }}
 {{-     printf "Component name cannot be empty if rolloutZoneName (%s) is set" .rolloutZoneName | fail }}
@@ -278,21 +261,6 @@ Params:
 {{ with .ctx.Values.global.podLabels -}}
 {{ toYaml . }}
 {{ end }}
-{{- if .ctx.Values.enterprise.legacyLabels }}
-{{- if .component -}}
-app: {{ include "mimir.name" .ctx }}-{{ .component }}
-{{- if not .rolloutZoneName }}
-name: {{ .component }}
-{{- end }}
-{{- end }}
-{{- if .memberlist }}
-gossip_ring_member: "true"
-{{- end -}}
-{{- if .component }}
-target: {{ .component }}
-release: {{ .ctx.Release.Name }}
-{{- end }}
-{{- else -}}
 helm.sh/chart: {{ include "mimir.chart" .ctx }}
 app.kubernetes.io/name: {{ include "mimir.name" .ctx }}
 app.kubernetes.io/instance: {{ .ctx.Release.Name }}
@@ -303,7 +271,6 @@ app.kubernetes.io/component: {{ .component }}
 {{- end }}
 {{- if .memberlist }}
 app.kubernetes.io/part-of: memberlist
-{{- end }}
 {{- end }}
 {{- $componentSection := include "mimir.componentSectionFromName" . | fromYaml }}
 {{- with ($componentSection).podLabels }}
@@ -353,18 +320,11 @@ Params:
   rolloutZoneName = rollout zone name (optional)
 */}}
 {{- define "mimir.selectorLabels" -}}
-{{- if .ctx.Values.enterprise.legacyLabels }}
-{{- if .component -}}
-app: {{ include "mimir.name" .ctx }}-{{ .component }}
-{{- end }}
-release: {{ .ctx.Release.Name }}
-{{- else -}}
 app.kubernetes.io/name: {{ include "mimir.name" .ctx }}
 app.kubernetes.io/instance: {{ .ctx.Release.Name }}
 {{- if .component }}
 app.kubernetes.io/component: {{ .component }}
 {{- end }}
-{{- end -}}
 {{- if .rolloutZoneName }}
 {{-   if not .component }}
 {{-     printf "Component name cannot be empty if rolloutZoneName (%s) is set" .rolloutZoneName | fail }}

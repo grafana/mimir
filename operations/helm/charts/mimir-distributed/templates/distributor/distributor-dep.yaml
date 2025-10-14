@@ -1,4 +1,4 @@
-{{- if and .Values.distributor.enabled (not .Values.federation_frontend.disableOtherComponents) }}
+{{- if .Values.distributor.enabled }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
