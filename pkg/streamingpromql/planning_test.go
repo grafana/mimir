@@ -268,7 +268,8 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 
 			expectedPlan: &planning.EncodedQueryPlan{
 				TimeRange: rangeQueryEncodedTimeRange,
-				RootNode:  2,
+				RootNode:  3,
+				Version:   1,
 				Nodes: []*planning.EncodedNode{
 					{
 						NodeType: planning.NODE_TYPE_MATRIX_SELECTOR,
@@ -302,6 +303,14 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 						Description:    ``,
 						ChildrenLabels: []string{""},
 					},
+					{
+						NodeType:       planning.NODE_TYPE_STEP_INVARIANT_EXPRESSION,
+						Details:        marshalDetails(&core.StepInvariantExpressionDetails{}),
+						Type:           "StepInvariantExpression",
+						Children:       []int64{2},
+						Description:    ``,
+						ChildrenLabels: []string{""},
+					},
 				},
 			},
 		},
@@ -311,7 +320,8 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 
 			expectedPlan: &planning.EncodedQueryPlan{
 				TimeRange: rangeQueryEncodedTimeRange,
-				RootNode:  2,
+				RootNode:  3,
+				Version:   1,
 				Nodes: []*planning.EncodedNode{
 					{
 						NodeType: planning.NODE_TYPE_MATRIX_SELECTOR,
@@ -342,6 +352,14 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 						Details:        marshalDetails(&core.DeduplicateAndMergeDetails{}),
 						Type:           "DeduplicateAndMerge",
 						Children:       []int64{1},
+						Description:    ``,
+						ChildrenLabels: []string{""},
+					},
+					{
+						NodeType:       planning.NODE_TYPE_STEP_INVARIANT_EXPRESSION,
+						Details:        marshalDetails(&core.StepInvariantExpressionDetails{}),
+						Type:           "StepInvariantExpression",
+						Children:       []int64{2},
 						Description:    ``,
 						ChildrenLabels: []string{""},
 					},
@@ -1093,7 +1111,8 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 
 			expectedPlan: &planning.EncodedQueryPlan{
 				TimeRange: instantQueryEncodedTimeRange,
-				RootNode:  1,
+				RootNode:  2,
+				Version:   1,
 				Nodes: []*planning.EncodedNode{
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
@@ -1117,6 +1136,14 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 						Type:           "Subquery",
 						Children:       []int64{0},
 						Description:    `[1m0s:1s] @ 0 (1970-01-01T00:00:00Z)`,
+						ChildrenLabels: []string{""},
+					},
+					{
+						NodeType:       planning.NODE_TYPE_STEP_INVARIANT_EXPRESSION,
+						Details:        marshalDetails(&core.StepInvariantExpressionDetails{}),
+						Type:           "StepInvariantExpression",
+						Children:       []int64{1},
+						Description:    ``,
 						ChildrenLabels: []string{""},
 					},
 				},

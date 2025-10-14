@@ -81,6 +81,8 @@ func MaterializeStepInvariantExpression(s *StepInvariantExpression, materializer
 		return planning.NewSingleUseOperatorFactory(operators.NewStepInvariantInstantVectorOperator(op, timeRange, params.MemoryConsumptionTracker)), nil
 	case types.ScalarOperator:
 		return planning.NewSingleUseOperatorFactory(operators.NewStepInvariantScalarOperator(op, timeRange, params.MemoryConsumptionTracker)), nil
+	case *operators.Subquery:
+		return planning.NewSingleUseOperatorFactory(op), nil
 	}
 
 	return nil, fmt.Errorf("unable to materialize step invariant expression because of unhandled operator, operator=%v", reflect.TypeOf(op))

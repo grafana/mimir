@@ -579,10 +579,6 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
 		return p.nodeFromExpr(expr.Expr)
 
 	case *parser.StepInvariantExpr:
-		if !p.wrapInStepInvariantExpr(expr.Expr) {
-			return p.nodeFromExpr(expr.Expr)
-		}
-
 		inner, err := p.nodeFromExpr(expr.Expr)
 		if err != nil {
 			return nil, err
@@ -596,27 +592,6 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
 	default:
 		return nil, fmt.Errorf("unknown expression type: %T", expr)
 	}
-}
-
-// wrapInStepInvariantExpr returns true if this expression can be wrapped in a StepInvariantExpression.
-// The StepInvariantExpression wrapping is not required when the expression result will be a matrix, as it will have its own unique timestamps which do not depend on the step.
-func (p *QueryPlanner) wrapInStepInvariantExpr(expr parser.Expr) bool {
-	// We do not duplicate results for range selectors since result is a matrix
-	// with their unique timestamps which does not depend on the step.
-	switch v := expr.(type) {
-	case *parser.MatrixSelector:
-		return false
-	case *parser.SubqueryExpr:
-		return false
-	case *parser.Call:
-		for _, arg := range v.Args {
-			if !p.wrapInStepInvariantExpr(arg) {
-				return false
-			}
-		}
-		return true
-	}
-	return true
 }
 
 func findFunction(name string) (functions.Function, bool) {

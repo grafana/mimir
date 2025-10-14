@@ -3434,9 +3434,11 @@ func TestQueryStats(t *testing.T) {
 			expectedTotalSamplesPerStep: []int64{13, 13, 0, 0, 0, 0, 0, 0, 0, 0, 0},
 		},
 		"range vector selector with @ modifier": {
-			expr:                        `sum_over_time(dense_series{}[2m] @ 300)`,
-			expectedTotalSamples:        22, // each step selects 2 points at T=300 over query range
-			expectedTotalSamplesPerStep: []int64{2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2},
+			expr:                               `sum_over_time(dense_series{}[2m] @ 300)`,
+			expectedTotalSamples:               22, // each step selects 2 points at T=300 over query range
+			expectedTotalSamplesWithMQE:        2,  // the range vector with @ is step invariant so these 2 samples are re-used for each step
+			expectedTotalSamplesPerStep:        []int64{2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2},
+			expectedTotalSamplesPerStepWithMQE: []int64{2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
 		},
 		"subquery": {
 			expr:                        `dense_series{}[5m:1m]`,
@@ -3866,12 +3868,14 @@ func TestQueryStatsUpstreamTestCases(t *testing.T) {
 			expectedTotalSamplesPerStep: []int64{1, 1, 1, 1},
 		},
 		{
-			query:                       "max_over_time(metricWith3SampleEvery10Seconds[60s] @ 30)",
-			start:                       time.Unix(201, 0),
-			end:                         time.Unix(220, 0),
-			interval:                    5 * time.Second,
-			expectedTotalSamples:        48, // @ modifier force the evaluation timestamp at 30 seconds - So it brings 4 datapoints (0, 10, 20, 30 seconds) * 3 series * 4 steps
-			expectedTotalSamplesPerStep: []int64{12, 12, 12, 12},
+			query:                              "max_over_time(metricWith3SampleEvery10Seconds[60s] @ 30)",
+			start:                              time.Unix(201, 0),
+			end:                                time.Unix(220, 0),
+			interval:                           5 * time.Second,
+			expectedTotalSamples:               48, // @ modifier force the evaluation timestamp at 30 seconds - So it brings 4 datapoints (0, 10, 20, 30 seconds) * 3 series * 4 steps
+			expectedTotalSamplesPerStep:        []int64{12, 12, 12, 12},
+			expectedTotalSamplesWithMQE:        12, // the @ modifier allows for this range vector to be considered a step invariant
+			expectedTotalSamplesPerStepWithMQE: []int64{12, 0, 0, 0},
 		},
 		{
 			query:                       `metricWith3SampleEvery10Seconds`,

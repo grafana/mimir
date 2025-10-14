@@ -34,3 +34,39 @@ load 5m
 # Using end(), initial points outside lookback window
 eval range from 0 to 10m step 1m metric @ end()
   metric 10 10 10 10 10 10 10 10 10 10 10
+
+clear
+
+# Test a step invariant range vector
+load 1m
+    metric  0 1 2 3 4 5 6 7 8 9 10
+
+# each step will evaluate to a range vector at 5m of [4,5] - so each step is 4+5=9
+eval range from 0 to 10m step 1m sum_over_time(metric[2m] @ 300)
+    {} 9 9 9 9 9 9 9 9 9 9 9
+
+eval range from 0 to 10m step 1m increase(metric[2m] @ 300)
+    {} 2 2 2 2 2 2 2 2 2 2 2
+
+eval range from 0 to 5m step 1m timestamp(increase(metric[2m] @ 300))
+    {} 0 60 120 180 240 300
+
+clear
+
+load 10s
+  metric{job="api"}  0+100x10
+  metric{job="web"}  50+200x10
+
+# this query breaks down as follows;
+# rate(metric[1m]) - per second increase over this time range
+# rate(metric[1m])[1s:60s] - sub-query - calculate this rate over the last 60 seconds at a 1s interval
+# @ 60 - the subquery [1s:60s] is evaluated relative to 60s, not the current eval step. The subquery range is step invariant.
+eval range from 0 to 60s step 10s avg_over_time(rate(metric[1m])[1s:60s] @ 60)
+  {job="api"} 10 10 10 10 10 10 10
+  {job="web"} 20 20 20 20 20 20 20
+
+eval range from 0 to 60s step 10s avg_over_time(rate(metric[1m])[1s:60s])
+  {job="api"} _ _ _ _ _ _ 10
+  {job="web"} _ _ _ _ _ _ 20
+
+clear
