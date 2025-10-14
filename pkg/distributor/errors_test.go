@@ -306,15 +306,15 @@ func TestToErrorWithGRPCStatus(t *testing.T) {
 			expectedErrorMsg:     fmt.Sprintf("%s %s: %s", failedPushingToIngesterMessage, ingesterID, originalMsg),
 			expectedErrorDetails: &mimirpb.ErrorDetails{Cause: mimirpb.ERROR_CAUSE_BAD_DATA},
 		},
-		"an ingesterPushError with INSTANCE_LIMIT cause gets translated into a Internal error with INSTANCE_LIMIT cause": {
+		"an ingesterPushError with INSTANCE_LIMIT cause gets translated into an Unavailable error with INSTANCE_LIMIT cause": {
 			err:                  newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, originalMsg, mimirpb.ERROR_CAUSE_INSTANCE_LIMIT), ingesterID),
-			expectedGRPCCode:     codes.Internal,
+			expectedGRPCCode:     codes.Unavailable,
 			expectedErrorMsg:     fmt.Sprintf("%s %s: %s", failedPushingToIngesterMessage, ingesterID, originalMsg),
 			expectedErrorDetails: &mimirpb.ErrorDetails{Cause: mimirpb.ERROR_CAUSE_INSTANCE_LIMIT},
 		},
-		"a DoNotLogError of an ingesterPushError with INSTANCE_LIMIT cause gets translated into a Internal error with INSTANCE_LIMIT cause": {
+		"a DoNotLogError of an ingesterPushError with INSTANCE_LIMIT cause gets translated into an Unavailable error with INSTANCE_LIMIT cause": {
 			err:                  middleware.DoNotLogError{Err: newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, originalMsg, mimirpb.ERROR_CAUSE_INSTANCE_LIMIT), ingesterID)},
-			expectedGRPCCode:     codes.Internal,
+			expectedGRPCCode:     codes.Unavailable,
 			expectedErrorMsg:     fmt.Sprintf("%s %s: %s", failedPushingToIngesterMessage, ingesterID, originalMsg),
 			expectedErrorDetails: &mimirpb.ErrorDetails{Cause: mimirpb.ERROR_CAUSE_INSTANCE_LIMIT},
 		},
@@ -589,9 +589,9 @@ func TestErrorCauseToGRPCStatusCode(t *testing.T) {
 			errorCause:             mimirpb.ERROR_CAUSE_UNKNOWN,
 			expectedGRPCStatusCode: codes.Internal,
 		},
-		"an INSTANCE_LIMIT error cause gets translated into an Internal": {
+		"an INSTANCE_LIMIT error cause gets translated into an Unavailable": {
 			errorCause:             mimirpb.ERROR_CAUSE_INSTANCE_LIMIT,
-			expectedGRPCStatusCode: codes.Internal,
+			expectedGRPCStatusCode: codes.Unavailable,
 		},
 		"a SERVICE_UNAVAILABLE error cause gets translated into an Internal": {
 			errorCause:             mimirpb.ERROR_CAUSE_SERVICE_UNAVAILABLE,

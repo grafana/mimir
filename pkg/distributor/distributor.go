@@ -1652,6 +1652,14 @@ type requestState struct {
 
 	// If positive, it means that size of mimirpb.WriteRequest has been checked and added to inflightPushRequestsBytes.
 	writeRequestSize int64
+
+	// If set, represents the error obtained by executing the respective push request.
+	pushErr error
+
+	// If set to true, it means that a reactive limiter permit has already been acquired for the respective push request.
+	reactiveLimiterPermitAcquired bool
+	// If set, represents the reactive limiter clean up function to be executed on cleaning up the respective push request.
+	reactiveLimiterCleanup func(error)
 }
 
 func (d *Distributor) StartPushRequest(ctx context.Context, httpgrpcRequestSize int64) (context.Context, error) {
@@ -1660,22 +1668,50 @@ func (d *Distributor) StartPushRequest(ctx context.Context, httpgrpcRequestSize 
 }
 
 func (d *Distributor) PreparePushRequest(ctx context.Context) (func(error), error) {
+	return d.acquireReactiveLimiterPermit(ctx, false)
+}
+
+// acquireReactiveLimiterPermit acquires a reactive limiter permit to control inflight push requests.
+//
+// If a permit is successfully acquired, it is recorded in the requestState associated with the provided context
+// by setting its reactiveLimiterPermitAcquired field. In this case, acquireReactiveLimiterPermit returns a cleanup
+// function that must be called when the request completes.
+//
+// If registerCleanup is true, the cleanup function is also stored in the reactiveLimiterCleanup field
+// of the requestState, allowing it to be invoked automatically during request cleanup.
+//
+// If no requestState is found in the provided context, acquireReactiveLimiterPermit returns errMissingRequestState.
+// If called more than once for the same request, it returns errReactiveLimiterPermitAlreadyAcquired.
+func (d *Distributor) acquireReactiveLimiterPermit(ctx context.Context, registerCleanup bool) (func(error), error) {
 	if d.reactiveLimiter == nil {
 		return nil, nil
 	}
+	rs, alreadyInContext := ctx.Value(requestStateKey).(*requestState)
+	if !alreadyInContext {
+		return nil, errMissingRequestState
+	}
+	if rs.reactiveLimiterPermitAcquired {
+		return nil, errReactiveLimiterPermitAlreadyAcquired
+	}
+
 	// Acquire a permit, blocking if needed
 	permit, err := d.reactiveLimiter.AcquirePermit(ctx)
 	if err != nil {
 		d.rejectedRequests.WithLabelValues(reasonDistributorMaxInflightPushRequests).Inc()
 		return nil, errReactiveLimiterLimitExceeded
 	}
-	return func(err error) {
+	cleanup := func(err error) {
 		if errors.Is(err, context.Canceled) || ctx.Err() != nil {
 			permit.Drop()
 		} else {
 			permit.Record()
 		}
-	}, nil
+	}
+	rs.reactiveLimiterPermitAcquired = true
+	if registerCleanup {
+		rs.reactiveLimiterCleanup = cleanup
+	}
+	return cleanup, nil
 }
 
 // startPushRequest does limits checks at the beginning of Push request in distributor.
@@ -1793,11 +1829,14 @@ func (d *Distributor) cleanupAfterPushFinished(rs *requestState) {
 	if rs.writeRequestSize > 0 {
 		d.inflightPushRequestsBytes.Sub(rs.writeRequestSize)
 	}
+	if rs.reactiveLimiterCleanup != nil {
+		rs.reactiveLimiterCleanup(rs.pushErr)
+	}
 }
 
 // limitsMiddleware checks for instance limits and rejects request if this instance cannot process it at the moment.
 func (d *Distributor) limitsMiddleware(next PushFunc) PushFunc {
-	return func(ctx context.Context, pushReq *Request) error {
+	return func(ctx context.Context, pushReq *Request) (retErr error) {
 		// Make sure the distributor service and all its dependent services have been
 		// started. The following checks in this middleware depend on the runtime config
 		// service having been started.
@@ -1808,6 +1847,13 @@ func (d *Distributor) limitsMiddleware(next PushFunc) PushFunc {
 		ctx, rs, err := d.startPushRequest(ctx, pushReq.contentLength)
 		if err != nil {
 			return middleware.DoNotLogError{Err: err}
+		}
+
+		defer func() {
+			rs.pushErr = retErr
+		}()
+		if _, reactiveLimiterErr := d.acquireReactiveLimiterPermit(ctx, true); reactiveLimiterErr != nil {
+			return reactiveLimiterErr
 		}
 
 		rs.pushHandlerPerformsCleanup = true
