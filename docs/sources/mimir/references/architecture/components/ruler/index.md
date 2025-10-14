@@ -7,7 +7,6 @@ title: (Optional) Grafana Mimir ruler
 weight: 130
 ---
 
-
 # (Optional) Grafana Mimir ruler
 
 The ruler is an optional component that evaluates PromQL expressions defined in recording and alerting rules.

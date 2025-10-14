@@ -9,7 +9,6 @@ title: Grafana Mimir scaling dashboard
 weight: 140
 ---
 
-
 # Grafana Mimir Scaling dashboard
 
 The Scaling dashboard displays services that you can optionally scale up in the event of a failure caused by one or more reasons.

@@ -9,7 +9,6 @@ title: Migrate from Thanos or Prometheus to Grafana Mimir
 weight: 10
 ---
 
-
 # Migrate from Thanos or Prometheus to Grafana Mimir
 
 This document guides an operator through the process of migrating a deployment of Thanos or Prometheus to Grafana Mimir.

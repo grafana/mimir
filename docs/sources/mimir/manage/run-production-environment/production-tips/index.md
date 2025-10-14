@@ -8,7 +8,6 @@ title: Grafana Mimir production tips
 weight: 40
 ---
 
-
 # Grafana Mimir production tips
 
 This topic provides tips and techniques for you to consider when setting up a production Grafana Mimir cluster.

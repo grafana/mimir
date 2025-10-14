@@ -5,7 +5,6 @@ title: Grafana Mimir Remote ruler reads networking dashboard
 weight: 110
 ---
 
-
 # Grafana Mimir Remote ruler reads networking dashboard
 
 The Remote ruler reads networking dashboard shows receive and transmit bandwidth, in-flight requests, and TCP connections for ruler query path components when remote operational mode is enabled.

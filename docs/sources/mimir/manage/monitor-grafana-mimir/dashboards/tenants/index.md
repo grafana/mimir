@@ -9,7 +9,6 @@ title: Grafana Mimir Tenants dashboard
 weight: 160
 ---
 
-
 # Grafana Mimir Tenants dashboard
 
 The Tenants dashboard shows various metrics for a selected tenant.

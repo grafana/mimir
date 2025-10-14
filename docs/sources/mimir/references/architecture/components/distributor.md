@@ -7,7 +7,6 @@ title: Grafana Mimir distributor
 weight: 20
 ---
 
-
 # Grafana Mimir distributor
 
 The distributor is a stateless component that receives time-series data from Prometheus or Grafana Alloy.

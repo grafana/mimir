@@ -7,7 +7,6 @@ title: Migrate from Thanos to Mimir using Thanos sidecar
 weight: 15
 ---
 
-
 # Migrate from Thanos to Mimir using Thanos sidecar
 
 As an operator, you can migrate a deployment of Thanos to Grafana Mimir by using Thanos sidecar to move metrics over with a stepped workflow.

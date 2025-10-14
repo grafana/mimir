@@ -7,7 +7,6 @@ title: Grafana Mimir bucket index
 weight: 50
 ---
 
-
 # Grafana Mimir bucket index
 
 The bucket index is a per-tenant file that contains the list of blocks and block deletion marks in the storage. The bucket index is stored in the backend object storage, is periodically updated by the compactor, and used by queriers, store-gateways, and rulers (in [internal](../components/ruler/#internal) operational mode) to discover blocks in the storage.

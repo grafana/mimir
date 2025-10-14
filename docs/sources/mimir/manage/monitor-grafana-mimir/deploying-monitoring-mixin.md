@@ -9,7 +9,6 @@ title: Deploying the Grafana Mimir monitoring mixin
 weight: 20
 ---
 
-
 # Deploying the Grafana Mimir monitoring mixin
 
 Grafana Mimir exposes a `/metrics` endpoint returning Prometheus metrics.

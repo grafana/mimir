@@ -5,7 +5,6 @@ title: Grafana Mimir tools
 weight: 100
 ---
 
-
 # Grafana Mimir tools
 
 Grafana Mimir provides several command-line tools designed to assist with administration, troubleshooting, and testing tasks within a Mimir cluster.

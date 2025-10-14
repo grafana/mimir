@@ -8,7 +8,6 @@ title: Scaling out Grafana Mimir
 weight: 30
 ---
 
-
 # Scaling out Grafana Mimir
 
 Grafana Mimir can horizontally scale every component.

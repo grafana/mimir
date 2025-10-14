@@ -7,7 +7,6 @@ title: (Optional) Grafana Mimir Alertmanager
 weight: 90
 ---
 
-
 # (Optional) Grafana Mimir Alertmanager
 
 The Mimir Alertmanager adds multi-tenancy support and horizontal scalability to the [Prometheus Alertmanager](https://prometheus.io/docs/alerting/alertmanager/).

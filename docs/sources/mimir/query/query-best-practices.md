@@ -9,7 +9,6 @@ keywords:
   - performance
 ---
 
-
 # Best practices for querying Grafana Mimir
 
 The way you write queries for Grafana Mimir affects the speed and quality of your results. Follow these best practices to ensure optimal performance and reliability for queries.

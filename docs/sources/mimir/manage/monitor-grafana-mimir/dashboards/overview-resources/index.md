@@ -7,7 +7,6 @@ title: Grafana Mimir Overview resources dashboard
 weight: 6
 ---
 
-
 # Grafana Mimir Overview resources dashboard
 
 The Overview resources dashboard shows CPU, memory, disk, and other resource utilization metrics.

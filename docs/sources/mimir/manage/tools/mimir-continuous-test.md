@@ -7,7 +7,6 @@ title: Grafana mimir-continuous-test
 weight: 30
 ---
 
-
 # Grafana mimir-continuous-test
 
 As a developer, you can use the mimir-continuous-test tool to run smoke tests on live Grafana Mimir clusters.

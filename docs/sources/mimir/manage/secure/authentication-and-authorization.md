@@ -8,7 +8,6 @@ title: Grafana Mimir authentication and authorization
 weight: 20
 ---
 
-
 # Grafana Mimir authentication and authorization
 
 Grafana Mimir is a multi-tenant system where tenants can query metrics and alerts that include their tenant ID.

@@ -9,7 +9,6 @@ title: Grafana Mimir Reads dashboard
 weight: 90
 ---
 
-
 # Grafana Mimir Reads dashboard
 
 The Reads dashboard shows health metrics for the read path and object storage metrics for operations triggered by the read path.

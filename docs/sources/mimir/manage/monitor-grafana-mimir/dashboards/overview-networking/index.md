@@ -7,7 +7,6 @@ title: Grafana Mimir Overview networking dashboard
 weight: 7
 ---
 
-
 # Grafana Mimir Overview networking dashboard
 
 The Overview networking dashboard shows receive and transmit bandwidth, in-flight requests, and TCP connections.

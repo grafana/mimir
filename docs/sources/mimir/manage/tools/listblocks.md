@@ -7,7 +7,6 @@ title: Grafana Mimir listblocks
 weight: 10
 ---
 
-
 # Grafana Mimir listblocks
 
 The listblocks tool lists blocks and shows the block details of a tenant.

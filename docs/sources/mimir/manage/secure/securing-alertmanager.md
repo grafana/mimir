@@ -8,7 +8,6 @@ title: Securing Grafana Mimir Alertmanager
 weight: 40
 ---
 
-
 # Securing Grafana Mimir Alertmanager
 
 By default, the Alertmanager exposes API endpoints that enable a user to configure the Alertmanager.

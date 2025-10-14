@@ -9,7 +9,6 @@ keywords:
   - dashboards
 ---
 
-
 # Visualize metric data
 
 [Grafana](/grafana/download/) has built-in support for Mimir through the Prometheus data source type.

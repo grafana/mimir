@@ -7,7 +7,6 @@ title: Migrate from Cortex to Grafana Mimir
 weight: 10
 ---
 
-
 # Migrate from Cortex to Grafana Mimir
 
 As an operator, you can migrate a Jsonnet deployment of [Cortex](https://cortexmetrics.io/) to Grafana Mimir.

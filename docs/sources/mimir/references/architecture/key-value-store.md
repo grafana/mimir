@@ -7,7 +7,6 @@ title: Grafana Mimir key-value store
 weight: 70
 ---
 
-
 # Grafana Mimir key-value store
 
 A key-value (KV) store is a database that stores data indexed by key.

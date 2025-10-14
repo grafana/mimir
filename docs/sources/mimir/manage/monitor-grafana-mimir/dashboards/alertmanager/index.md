@@ -9,7 +9,6 @@ title: Grafana Mimir Alertmanager dashboard
 weight: 10
 ---
 
-
 # Grafana Mimir Alertmanager dashboard
 
 The Alertmanager dashboard shows health and activity metrics for the Alertmanager and object storage metrics for operations triggered by the Alertmanager.

@@ -8,7 +8,6 @@ title: Run Grafana Mimir in production
 weight: 80
 ---
 
-
 # Run Grafana Mimir in production
 
 The following topics provide guidance for you to consider when you run Grafana Mimir in a production environment.

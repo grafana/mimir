@@ -7,7 +7,6 @@ title: Grafana Mimir binary index-header
 weight: 40
 ---
 
-
 # Grafana Mimir binary index-header
 
 To query series inside blocks from object storage, the [store-gateway](../components/store-gateway/) must obtain information about each block index.

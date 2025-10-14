@@ -9,7 +9,6 @@ title: Grafana Mimir Ruler dashboard
 weight: 130
 ---
 
-
 # Grafana Mimir Ruler dashboard
 
 The Ruler dashboard shows health and activity metrics for the ruler and object storage metrics for operations triggered by the ruler.

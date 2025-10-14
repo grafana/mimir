@@ -9,7 +9,6 @@ title: Grafana Mimir Writes resources dashboard
 weight: 200
 ---
 
-
 # Grafana Mimir Writes resources dashboard
 
 The Writes resources dashboard shows CPU, memory, disk, and other resource utilization metrics.

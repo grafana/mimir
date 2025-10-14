@@ -7,7 +7,6 @@ title: Grafana Mimir architecture
 weight: 5
 ---
 
-
 # Grafana Mimir architecture
 
 Grafana Mimir has a microservices-based architecture. The system has multiple horizontally scalable microservices that can run separately and in parallel. Grafana Mimir microservices are called components.

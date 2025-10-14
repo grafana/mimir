@@ -9,7 +9,6 @@ title: Viewing Grafana Mimir dashboards
 weight: 40
 ---
 
-
 # Viewing Grafana Mimir dashboards
 
 Grafana Mimir provides the following production-ready dashboards.

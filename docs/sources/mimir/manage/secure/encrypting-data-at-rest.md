@@ -8,7 +8,6 @@ title: Encrypting Grafana Mimir data at rest
 weight: 30
 ---
 
-
 # Encrypting Grafana Mimir data at rest
 
 Grafana Mimir supports encrypting data at rest in object storage using server-side encryption (SSE).

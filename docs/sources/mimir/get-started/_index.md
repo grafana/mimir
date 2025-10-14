@@ -7,7 +7,6 @@ title: Get started with Grafana Mimir
 weight: 10
 ---
 
-
 # Get started with Grafana Mimir
 
 You can get started with Grafana Mimir _imperatively_ or _declaratively_:

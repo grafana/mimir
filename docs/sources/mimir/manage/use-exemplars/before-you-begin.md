@@ -8,7 +8,6 @@ title: Before you begin using exemplars with Grafana Mimir
 weight: 20
 ---
 
-
 # Before you begin using exemplars with Grafana Mimir
 
 Follow the checklist to ensure that your application is generating metrics, traces, and exemplars.

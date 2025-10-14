@@ -9,7 +9,6 @@ title: Grafana Mimir Writes networking dashboard
 weight: 190
 ---
 
-
 # Grafana Mimir Writes networking dashboard
 
 The Writes networking dashboard shows receive/transmit bandwidth, inflight requests, and TCP connections.

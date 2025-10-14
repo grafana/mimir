@@ -7,7 +7,6 @@ title: (Optional) Grafana Mimir overrides-exporter
 weight: 110
 ---
 
-
 # (Optional) Grafana Mimir overrides-exporter
 
 Grafana Mimir supports applying overrides on a per-tenant basis.

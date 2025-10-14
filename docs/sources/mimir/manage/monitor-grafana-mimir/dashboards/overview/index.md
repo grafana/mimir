@@ -7,7 +7,6 @@ title: Grafana Mimir Overview dashboard
 weight: 5
 ---
 
-
 # Grafana Mimir Overview dashboard
 
 The Overview dashboard shows health and status of a Mimir cluster.

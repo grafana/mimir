@@ -9,7 +9,6 @@ title: Grafana Mimir Reads networking dashboard
 weight: 100
 ---
 
-
 # Grafana Mimir Reads networking dashboard
 
 The Reads networking dashboard shows receive and transmit bandwidth, in-flight requests, and TCP connections.

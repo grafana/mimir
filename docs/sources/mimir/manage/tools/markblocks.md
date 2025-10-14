@@ -5,7 +5,6 @@ title: Grafana Markblocks
 weight: 50
 ---
 
-
 # Grafana Markblocks
 
 You can use the markblocks tool in Grafana Mimir to manage the state of time series data blocks in object storage.

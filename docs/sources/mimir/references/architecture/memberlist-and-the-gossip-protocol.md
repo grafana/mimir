@@ -7,7 +7,6 @@ title: Grafana Mimir memberlist and gossip protocol
 weight: 80
 ---
 
-
 # Grafana Mimir memberlist and gossip protocol
 
 [Memberlist](https://github.com/hashicorp/memberlist) is a Go library that manages cluster membership, node failure detection, and message passing using a gossip-based protocol.

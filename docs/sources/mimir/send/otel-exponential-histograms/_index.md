@@ -10,7 +10,6 @@ title: Send OpenTelemetry exponential histograms to Mimir
 weight: 200
 ---
 
-
 # Send OpenTelemetry exponential histograms to Mimir
 
 {{% admonition type="note" %}}

@@ -12,7 +12,6 @@ title: Grafana Mimir HTTP API
 weight: 120
 ---
 
-
 # Grafana Mimir HTTP API
 
 Grafana Mimir exposes an HTTP API that you can use to write and query time series data, and operate the cluster.

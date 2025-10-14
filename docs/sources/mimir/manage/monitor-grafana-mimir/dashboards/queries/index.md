@@ -9,7 +9,6 @@ title: Grafana Mimir Queries dashboard
 weight: 80
 ---
 
-
 # Grafana Mimir Queries dashboard
 
 The Queries dashboard shows information about query queues, duration, retries, and details about query execution performance.

@@ -9,7 +9,6 @@ title: Grafana Mimir Remote ruler reads dashboard
 weight: 90
 ---
 
-
 # Grafana Mimir Remote ruler reads dashboard
 
 The Remote ruler reads dashboard shows health metrics for the ruler read path when remote operational mode is enabled.

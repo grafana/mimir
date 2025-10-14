@@ -7,7 +7,6 @@ title: Grafana Mimir deployment modes
 weight: 20
 ---
 
-
 # Grafana Mimir deployment modes
 
 Grafana Mimir offers two deployment modes to accommodate different operational requirements and scale needs. Choose the deployment mode that best fits your use case:

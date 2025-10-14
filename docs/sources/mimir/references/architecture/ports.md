@@ -5,7 +5,6 @@ title: About Grafana Mimir network ports
 weight: 25
 ---
 
-
 # About Grafana Mimir network ports
 
 Grafana Mimir uses various network ports to facilitate communication between its internal components, external services like Prometheus and Grafana, and for overall cluster operation. Proper port configuration is crucial for setting up your Mimir cluster, configuring firewalls, and ensuring secure communication between Mimir components and integrated tools.

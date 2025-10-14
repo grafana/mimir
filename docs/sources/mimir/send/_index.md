@@ -7,7 +7,6 @@ title: Send metric data to Mimir
 weight: 32
 ---
 
-
 # Send metric data to Mimir
 
 To send metric data to Mimir:

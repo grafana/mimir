@@ -9,7 +9,6 @@ title: Grafana Mimir Compactor resources dashboard
 weight: 40
 ---
 
-
 # Grafana Mimir Compactor resources dashboard
 
 The Compactor resources dashboard shows CPU, memory, disk, and networking metrics for the compactor.

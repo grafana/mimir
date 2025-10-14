@@ -9,7 +9,6 @@ title: Grafana Mimir Object Store dashboard
 weight: 60
 ---
 
-
 # Grafana Mimir Object Store dashboard
 
 The Object Store dashboard shows an overview of all activity and operations run by any Grafana Mimir component on the object storage.

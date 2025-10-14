@@ -7,7 +7,6 @@ title: Grafana Mimir compactor
 weight: 10
 ---
 
-
 # Grafana Mimir compactor
 
 The compactor increases query performance and reduces long-term storage usage by combining blocks.

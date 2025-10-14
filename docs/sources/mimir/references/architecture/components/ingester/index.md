@@ -7,7 +7,6 @@ title: Grafana Mimir ingester
 weight: 30
 ---
 
-
 # Grafana Mimir ingester
 
 The ingester is a stateful component that processes the most recently ingested samples and makes them available for querying.

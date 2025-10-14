@@ -9,7 +9,6 @@ title: Perform a rolling update to Grafana Mimir
 weight: 20
 ---
 
-
 # Perform a rolling update to Grafana Mimir
 
 You can use a rolling update strategy to apply configuration changes to

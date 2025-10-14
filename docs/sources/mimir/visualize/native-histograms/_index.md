@@ -13,7 +13,6 @@ title: Visualize native histograms
 weight: 100
 ---
 
-
 # Visualize native histograms
 
 Prometheus native histograms are a data type in the Prometheus ecosystem that allow you to produce, store, and query a high-resolution [histogram](https://prometheus.io/docs/concepts/metric_types/#histogram) of observations.

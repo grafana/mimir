@@ -9,7 +9,6 @@ title: Grafana Mimir Alertmanager resources dashboard
 weight: 20
 ---
 
-
 # Grafana Mimir Alertmanager resources dashboard
 
 The Alertmanager resources dashboard shows CPU, memory, disk, and networking metrics for the Alertmanager.
