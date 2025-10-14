@@ -1852,7 +1852,8 @@ func (d *Distributor) limitsMiddleware(next PushFunc) PushFunc {
 		defer func() {
 			rs.pushErr = retErr
 		}()
-		if _, reactiveLimiterErr := d.acquireReactiveLimiterPermit(ctx, true); reactiveLimiterErr != nil {
+		_, reactiveLimiterErr := d.acquireReactiveLimiterPermit(ctx, true)
+		if reactiveLimiterErr != nil && !errors.Is(err, errReactiveLimiterPermitAlreadyAcquired) {
 			return reactiveLimiterErr
 		}
 
