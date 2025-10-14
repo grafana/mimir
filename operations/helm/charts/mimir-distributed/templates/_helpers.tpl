@@ -260,7 +260,7 @@ Params:
 {{- define "mimir.podLabels" -}}
 {{ with .ctx.Values.global.podLabels -}}
 {{ toYaml . }}
-{{ end }}
+{{- end -}}
 helm.sh/chart: {{ include "mimir.chart" .ctx }}
 app.kubernetes.io/name: {{ include "mimir.name" .ctx }}
 app.kubernetes.io/instance: {{ .ctx.Release.Name }}
