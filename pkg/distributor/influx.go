@@ -126,7 +126,7 @@ func InfluxHandler(
 				if errors.Is(err, context.DeadlineExceeded) || !errors.As(err, &distributorErr) {
 					httpCode = http.StatusServiceUnavailable
 				} else {
-					httpCode = errorCauseToHTTPStatusCode(distributorErr.Cause(), false)
+					httpCode = errorCauseToHTTPStatusCode(distributorErr.Cause())
 				}
 			}
 			if httpCode != 202 {
