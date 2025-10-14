@@ -195,9 +195,7 @@ If you are no longer using Consul or etcd for any other purpose in your Mimir de
 
 ## Helm-specific guidance
 
-If you're using the `mimir-distributed` Helm chart, the migration steps are similar but use Helm values instead of direct YAML configuration.
-
-### Step 1: Configure multi KV store
+If you're using the `mimir-distributed` Helm chart, the migration steps are the same but use Helm values instead of direct YAML configuration:
 
 ```yaml
 mimir:
@@ -219,47 +217,3 @@ mimir:
           #     - "{{ .Release.Name }}-etcd.{{ .Release.Namespace }}.svc.cluster.local:2379"
 ```
 
-### Step 2-4: Runtime configuration updates
-
-For steps 2-4, you can update the runtime configuration without redeploying. Use the runtime config ConfigMap or API to update:
-
-- Step 2: Set `mirror_enabled: true`
-- Step 3: Swap primary/secondary values
-- Step 4: Set `mirror_enabled: false`
-
-### Step 5: Remove multi KV store
-
-Update your Helm values to use memberlist directly:
-
-```yaml
-mimir:
-  structuredConfig:
-    distributor:
-      ha_tracker:
-        enable_ha_tracker: true
-        kvstore:
-          store: memberlist
-```
-
-Upgrade the Helm release to roll out the change.
-
-## Verification and testing
-
-After completing the migration:
-
-1. Check the `/memberlist` admin page on distributors to verify memberlist cluster health
-2. Monitor HA tracker metrics:
-   - `cortex_ha_tracker_elected_replica_total` – Number of elected replicas per cluster
-   - `cortex_ha_tracker_replicas_count` – Number of replicas tracked per cluster
-3. Verify HA deduplication is working by sending samples from HA Prometheus replicas and confirming only one replica's samples are accepted
-
-## Rollback procedure
-
-If you encounter issues during migration, you can rollback to the previous step:
-
-- **From Step 2**: Disable mirroring (set `mirror_enabled: false`) and return to Step 1 configuration
-- **From Step 3**: Switch primary/secondary back to original (Consul/etcd as primary)
-- **From Step 4**: Re-enable mirroring (set `mirror_enabled: true`)
-- **From Step 5**: Redeploy with multi KV store configuration from Step 4
-
-At any point before Step 5, you can revert changes via runtime configuration without restarting distributors.
