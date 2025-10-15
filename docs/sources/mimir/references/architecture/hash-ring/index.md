@@ -7,8 +7,6 @@ title: Grafana Mimir hash rings
 weight: 60
 ---
 
-<!-- Note: This topic is mounted in the GEM documentation. Ensure that all updates are also applicable to GEM. -->
-
 # Grafana Mimir hash rings
 
 Hash rings are a distributed [consistent hashing scheme](https://en.wikipedia.org/wiki/Consistent_hashing) that Grafana Mimir uses for sharding, replication, and service discovery.
