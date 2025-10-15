@@ -14,7 +14,6 @@ title: Send native histograms with custom buckets to Grafana Mimir
 weight: 2
 ---
 
-
 # Send native histograms with custom buckets to Grafana Mimir
 
 Prometheus [native histograms](https://prometheus.io/docs/specs/native_histograms/) with custom buckets, also known as NHCBs, are a sample type in the Prometheus ecosystem that makes it possible to store classic Prometheus [histograms](https://prometheus.io/docs/concepts/metric_types/#histogram) as NHCBs.

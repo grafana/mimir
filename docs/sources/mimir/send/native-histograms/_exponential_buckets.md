@@ -12,7 +12,6 @@ title: Send native histograms with exponential buckets to Grafana Mimir
 weight: 1
 ---
 
-
 # Send native histograms with exponential buckets to Grafana Mimir
 
 Prometheus [native histograms](https://prometheus.io/docs/specs/native_histograms/) with exponential buckets, also known officially as native histograms with standard schemas, is a sample type in the Prometheus ecosystem that makes it possible to produce, store, and query a high-resolution [histogram](https://prometheus.io/docs/concepts/metric_types/#histogram) of observations.
