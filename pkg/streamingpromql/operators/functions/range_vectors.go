@@ -1091,3 +1091,45 @@ func calculateDoubleExponentialSmoothing(fHead []promql.FPoint, fTail []promql.F
 
 	return smooth1, true, nil, nil
 }
+
+var MadOverTime = FunctionOverRangeVectorDefinition{
+	SeriesMetadataFunction:         DropSeriesName,
+	StepFunc:                       madOverTime,
+	NeedsSeriesNamesForAnnotations: true,
+}
+
+func madOverTime(step *types.RangeVectorStepData, _ []types.ScalarData, _ types.QueryTimeRange, emitAnnotation types.EmitAnnotationFunc, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (float64, bool, *histogram.FloatHistogram, error) {
+	head, tail := step.Floats.UnsafePoints()
+
+	if len(head) == 0 && len(tail) == 0 {
+		return 0, false, nil, nil
+	}
+
+	if step.Histograms.Any() {
+		emitAnnotation(annotations.NewHistogramIgnoredInMixedRangeInfo)
+	}
+
+	values, err := types.Float64SlicePool.Get(len(head)+len(tail), memoryConsumptionTracker)
+	if err != nil {
+		return 0, false, nil, err
+	}
+	defer types.Float64SlicePool.Put(&values, memoryConsumptionTracker)
+
+	// MAD = median( | xᵢ - median(x) | )
+
+	for _, p := range head {
+		values = append(values, p.F)
+	}
+
+	for _, p := range tail {
+		values = append(values, p.F)
+	}
+
+	median := floats.Quantile(0.5, values)
+
+	for i, p := range values {
+		values[i] = math.Abs(p - median)
+	}
+
+	return floats.Quantile(0.5, values), true, nil, nil
+}
