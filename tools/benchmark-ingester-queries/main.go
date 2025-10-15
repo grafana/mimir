@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math"
 	"os"
 	"path/filepath"
 	"time"
@@ -92,7 +93,8 @@ func (a *app) runBasicBenchmarks() error {
 		iterStart := time.Now()
 
 		// Execute a simple query to benchmark ingester performance
-		err := a.executeQuery("__name__", "a_100")
+		// TODO dimitarvdimitrov  read the queries from a file dump from "query stats" logs
+		err := a.executeQuery("__name__", "mimir_continuous_test_sine_wave_v2")
 		if err != nil {
 			slog.Warn("query execution failed", "error", err, "iteration", i+1)
 		}
@@ -140,15 +142,19 @@ func (a *app) executeQuery(labelName, labelValue string) error {
 	}
 
 	// Create query request
-	now := time.Now()
 	req := &client.QueryRequest{
-		StartTimestampMs: now.Add(-time.Hour).UnixMilli(), // 1 hour ago
-		EndTimestampMs:   now.UnixMilli(),                 // now
+		// Cover all blocks by using extreme timestamps.
+		StartTimestampMs: math.MinInt64,
+		EndTimestampMs:   math.MaxInt64,
 		Matchers:         labelMatchers,
 	}
 
 	// Execute query using QueryStream with user context
-	ctx := user.InjectOrgID(context.Background(), "benchmark-tenant")
+	ctx := user.InjectOrgID(context.Background(), "anonymous")
+	ctx, err = user.InjectIntoGRPCRequest(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to inject user into gRPC request: %w", err)
+	}
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
@@ -177,7 +183,7 @@ func (a *app) executeQuery(labelName, labelValue string) error {
 		}
 	}
 
-	slog.Debug("query executed successfully",
+	slog.Info("query executed successfully",
 		"label", fmt.Sprintf("%s=%s", labelName, labelValue),
 		"series_count", seriesCount,
 		"sample_count", sampleCount)
