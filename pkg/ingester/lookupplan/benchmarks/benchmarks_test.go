@@ -3,35 +3,28 @@
 package benchmarks
 
 import (
-	"os"
-	"path/filepath"
+	"flag"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 )
 
+var dataDirFlag = flag.String("data-dir", "", "Directory containing an ingester data dir (WAL + blocks for multiple tenants).")
+
 // BenchmarkQueryExecution benchmarks query execution against a running ingester
 func BenchmarkQueryExecution(b *testing.B) {
-	// Create temporary directory
-	tempDir, err := os.MkdirTemp("", "benchmark-query-*")
-	require.NoError(b, err)
-	defer os.RemoveAll(tempDir)
+	require.NotEmpty(b, *dataDirFlag, "-data-dir flag is required")
 
-	// Create data subdirectory
-	dataDir := filepath.Join(tempDir, "data")
-	err = os.MkdirAll(dataDir, 0755)
+	addr, cleanupFunc, err := StartIngesterAndLoadBlocks(*dataDirFlag)
 	require.NoError(b, err)
+	defer cleanupFunc()
 
-	// Start ingester once for all iterations
-	addr, cleanup, err := StartIngesterAndLoadBlocks(tempDir)
-	require.NoError(b, err)
-	defer cleanup()
-
+	b.ReportAllocs()
 	b.ResetTimer()
 
 	// Benchmark query execution
 	for i := 0; i < b.N; i++ {
-		_, err := ExecuteQuery(addr, "__name__", "test_metric")
+		_, err := ExecuteQuery(addr, "__name__", "mimir_continuous_test_sine_wave_v2")
 		require.NoError(b, err)
 	}
 }
