@@ -1024,7 +1024,7 @@ func runQueryParallelismTestCase(t *testing.T, enableMQESharding bool) {
 	limits := &mockLimitedParallelismLimits{maxQueryParallelism: int(maxQueryParallelism)}
 
 	opts := streamingpromql.NewTestEngineOpts()
-	planner, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts)
+	planner, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(t, err)
 	planner.RegisterQueryPlanOptimizationPass(remoteexec.NewOptimizationPass())
 

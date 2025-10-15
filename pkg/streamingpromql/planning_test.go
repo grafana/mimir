@@ -1146,7 +1146,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 			}
 			opts.CommonOpts.Reg = reg
 			opts.CommonOpts.EnableDelayedNameRemoval = testCase.enableDelayedNameRemoval
-			planner, err := NewQueryPlannerWithoutOptimizationPasses(opts)
+			planner, err := NewQueryPlannerWithoutOptimizationPasses(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
 			require.NoError(t, err)
 
 			originalPlan, err := planner.NewQueryPlan(ctx, testCase.expr, testCase.timeRange, NoopPlanningObserver{})
@@ -1317,7 +1317,7 @@ func TestDeduplicateAndMergePlanning(t *testing.T) {
 	observer := NoopPlanningObserver{}
 
 	opts := NewTestEngineOpts()
-	planner, err := NewQueryPlannerWithoutOptimizationPasses(opts)
+	planner, err := NewQueryPlannerWithoutOptimizationPasses(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(t, err)
 
 	for name, testCase := range testCases {
@@ -1352,7 +1352,7 @@ func BenchmarkPlanEncodingAndDecoding(b *testing.B) {
 	}
 
 	opts := NewTestEngineOpts()
-	planner, err := NewQueryPlanner(opts)
+	planner, err := NewQueryPlanner(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(b, err)
 	ctx := context.Background()
 
@@ -1407,7 +1407,7 @@ func TestQueryPlanner_ActivityTracking(t *testing.T) {
 	opts := NewTestEngineOpts()
 	tracker := &testQueryTracker{}
 	opts.ActiveQueryTracker = tracker
-	planner, err := NewQueryPlanner(opts)
+	planner, err := NewQueryPlanner(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(t, err)
 
 	expr := "test"

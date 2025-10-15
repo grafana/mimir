@@ -36,6 +36,7 @@ type QueryPlanner struct {
 	astOptimizationPasses    []optimize.ASTOptimizationPass
 	planOptimizationPasses   []optimize.QueryPlanOptimizationPass
 	planStageLatency         *prometheus.HistogramVec
+	versionProvider          QueryPlanVersionProvider
 
 	logger log.Logger
 
@@ -43,8 +44,8 @@ type QueryPlanner struct {
 	TimeSince func(time.Time) time.Duration
 }
 
-func NewQueryPlanner(opts EngineOpts) (*QueryPlanner, error) {
-	planner, err := NewQueryPlannerWithoutOptimizationPasses(opts)
+func NewQueryPlanner(opts EngineOpts, versionProvider QueryPlanVersionProvider) (*QueryPlanner, error) {
+	planner, err := NewQueryPlannerWithoutOptimizationPasses(opts, versionProvider)
 	if err != nil {
 		return nil, err
 	}
@@ -90,7 +91,7 @@ func NewQueryPlanner(opts EngineOpts) (*QueryPlanner, error) {
 // NewQueryPlannerWithoutOptimizationPasses creates a new query planner without any optimization passes registered.
 //
 // This is intended for use in tests only.
-func NewQueryPlannerWithoutOptimizationPasses(opts EngineOpts) (*QueryPlanner, error) {
+func NewQueryPlannerWithoutOptimizationPasses(opts EngineOpts, versionProvider QueryPlanVersionProvider) (*QueryPlanner, error) {
 	activeQueryTracker := opts.ActiveQueryTracker
 	if activeQueryTracker == nil {
 		if opts.CommonOpts.ActiveQueryTracker != nil {
@@ -109,6 +110,7 @@ func NewQueryPlannerWithoutOptimizationPasses(opts EngineOpts) (*QueryPlanner, e
 			Help:                        "Latency of each stage of the query planning process.",
 			NativeHistogramBucketFactor: 1.1,
 		}, []string{"stage_type", "stage"}),
+		versionProvider: versionProvider,
 
 		logger:    opts.Logger,
 		TimeSince: time.Since,

@@ -256,7 +256,7 @@ func TestHandler(t *testing.T) {
 		},
 	}
 
-	planner, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(streamingpromql.NewTestEngineOpts())
+	planner, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(streamingpromql.NewTestEngineOpts(), streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(t, err)
 	planner.TimeSince = func(_ time.Time) time.Duration { return 1234 * time.Millisecond }
 	handler := Handler(planner)
@@ -423,7 +423,7 @@ func TestHandler_Sharding(t *testing.T) {
 		},
 	}
 
-	planner, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(streamingpromql.NewTestEngineOpts())
+	planner, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(streamingpromql.NewTestEngineOpts(), streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(t, err)
 	planner.TimeSince = func(_ time.Time) time.Duration { return 1234 * time.Millisecond }
 	planner.RegisterASTOptimizationPass(sharding.NewOptimizationPass(&mockLimits{}, 0, nil, log.NewNopLogger()))
