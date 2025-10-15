@@ -729,6 +729,52 @@ func TestRangeVectorSelectors(t *testing.T) {
 				},
 			},
 		},
+		"selector with @ modifier and subquery 1m resolution": {
+			expr: "some_metric[1m1s:1m] @ 2m",
+			ts:   baseT.Add(20 * time.Minute),
+			expected: &promql.Result{
+				Value: promql.Matrix{
+					{
+						Metric: labels.FromStrings("__name__", "some_metric", "env", "1"),
+						Floats: []promql.FPoint{
+							{T: timestamp.FromTime(baseT.Add(time.Minute)), F: 1},
+							{T: timestamp.FromTime(baseT.Add(2 * time.Minute)), F: 2},
+						},
+					},
+					{
+						Metric: labels.FromStrings("__name__", "some_metric", "env", "2"),
+						Floats: []promql.FPoint{
+							{T: timestamp.FromTime(baseT.Add(time.Minute)), F: 2},
+							{T: timestamp.FromTime(baseT.Add(2 * time.Minute)), F: 4},
+						},
+					},
+				},
+			},
+		},
+		"selector with @ modifier and subquery 30s resolution": {
+			expr: "some_metric[1m1s:30s] @ 2m",
+			ts:   baseT.Add(20 * time.Minute),
+			expected: &promql.Result{
+				Value: promql.Matrix{
+					{
+						Metric: labels.FromStrings("__name__", "some_metric", "env", "1"),
+						Floats: []promql.FPoint{
+							{T: timestamp.FromTime(baseT.Add(time.Second * 60)), F: 1},
+							{T: timestamp.FromTime(baseT.Add(time.Second * 90)), F: 1},
+							{T: timestamp.FromTime(baseT.Add(time.Second * 120)), F: 2},
+						},
+					},
+					{
+						Metric: labels.FromStrings("__name__", "some_metric", "env", "2"),
+						Floats: []promql.FPoint{
+							{T: timestamp.FromTime(baseT.Add(time.Second * 60)), F: 2},
+							{T: timestamp.FromTime(baseT.Add(time.Second * 90)), F: 2},
+							{T: timestamp.FromTime(baseT.Add(time.Second * 120)), F: 4},
+						},
+					},
+				},
+			},
+		},
 		"selector with @ modifier and offset": {
 			expr: "some_metric[1m1s] @ 3m offset 1m",
 			ts:   baseT.Add(20 * time.Minute),
@@ -880,6 +926,64 @@ func TestSubqueries(t *testing.T) {
 						Metric:     labels.FromStrings("__name__", "metric", "type", "histograms"),
 					},
 				},
+			},
+			Start: time.Unix(10, 0),
+		},
+		{
+			Query: "metric[20s:5s] @ end()",
+			Result: promql.Result{
+				Value: promql.Matrix{
+					promql.Series{
+						Floats: []promql.FPoint{{F: 1, T: 0}, {F: 1, T: 5000}, {F: 2, T: 10000}},
+						Metric: labels.FromStrings("__name__", "metric", "type", "floats"),
+					},
+					promql.Series{
+						Histograms: []promql.HPoint{{H: &histogram.FloatHistogram{Count: 1}, T: 0}, {H: &histogram.FloatHistogram{Count: 1}, T: 5000}, {H: &histogram.FloatHistogram{Count: 2}, T: 10000}},
+						Metric:     labels.FromStrings("__name__", "metric", "type", "histograms"),
+					},
+				},
+			},
+			Start: time.Unix(10, 0),
+		},
+		{
+			// subquery is evaluated from 0 - so only a single sample is found
+			Query: "metric[20s:5s] @ 0",
+			Result: promql.Result{
+				Value: promql.Matrix{
+					promql.Series{
+						Floats: []promql.FPoint{{F: 1, T: 0}},
+						Metric: labels.FromStrings("__name__", "metric", "type", "floats"),
+					},
+					promql.Series{
+						Histograms: []promql.HPoint{{H: &histogram.FloatHistogram{Count: 1}, T: 0}},
+						Metric:     labels.FromStrings("__name__", "metric", "type", "histograms"),
+					},
+				},
+			},
+			Start: time.Unix(10, 0),
+		},
+		{
+			// subquery is evaluated from 60s - the 2nd (and last) sample falls within the lookback window so this value is used
+			Query: "metric[20s:5s] @ 60s",
+			Result: promql.Result{
+				Value: promql.Matrix{
+					promql.Series{
+						Floats: []promql.FPoint{{F: 2, T: 45000}, {F: 2, T: 50000}, {F: 2, T: 55000}, {F: 2, T: 60000}},
+						Metric: labels.FromStrings("__name__", "metric", "type", "floats"),
+					},
+					promql.Series{
+						Histograms: []promql.HPoint{{H: &histogram.FloatHistogram{Count: 2}, T: 45000}, {H: &histogram.FloatHistogram{Count: 2}, T: 50000}, {H: &histogram.FloatHistogram{Count: 2}, T: 55000}, {H: &histogram.FloatHistogram{Count: 2}, T: 60000}},
+						Metric:     labels.FromStrings("__name__", "metric", "type", "histograms"),
+					},
+				},
+			},
+			Start: time.Unix(10, 0),
+		},
+		{
+			// subquery is evaluated from 60m - no samples are recorded 20s back from 60m and this is outside the lookback window so no results are found
+			Query: "metric[20s:5s] @ 60m",
+			Result: promql.Result{
+				Value: promql.Matrix{},
 			},
 			Start: time.Unix(10, 0),
 		},

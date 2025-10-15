@@ -51,6 +51,14 @@ eval range from 0 to 10m step 1m increase(metric[2m] @ 300)
 eval range from 0 to 5m step 1m timestamp(increase(metric[2m] @ 300))
   {} 0 60 120 180 240 300
 
+eval instant at 1m metric[2m] @ 300
+  expect range vector from 4m to 5m step 1m
+  {__name__="metric"} 4 5
+
+eval instant at 1m metric[3m] @ 300
+  expect range vector from 3m to 5m step 1m
+  {__name__="metric"} 3 4 5
+
 clear
 
 load 10s

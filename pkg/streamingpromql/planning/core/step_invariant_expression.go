@@ -4,7 +4,6 @@ package core
 
 import (
 	"fmt"
-	"github.com/go-kit/log"
 	"reflect"
 	"time"
 
@@ -83,13 +82,20 @@ func MaterializeStepInvariantExpression(s *StepInvariantExpression, materializer
 	case types.ScalarOperator:
 		return planning.NewSingleUseOperatorFactory(operators.NewStepInvariantScalarOperator(op, timeRange, params.MemoryConsumptionTracker)), nil
 	case types.RangeVectorOperator:
-		// Notes on range vector handling ...
-		// For the query to have been wrapped in a step invariant expression, this must be a sub query for a range vector at a fixed point in time. ie metric[3m] @ 100
-		// This query is not tied to the outer queries step interval, so no special operator is needed to fill in the data for each step.
-		// Since range queries can not provide range vector results, this query is an instant query and can be evaluated once.
-		// For other step invariant queries which wrap range vector data, they will have been handled above by the InstantVectorOperator.
-
-		here WIP and add back in those raw instant range vector tests with @ modifier
+		// Notes on range vector handling:
+		//
+		// If the query was wrapped in a step-invariant expression and this branch is reached,
+		// the inner expression must be a subquery that returns a range vector at a fixed evaluation
+		// timestamp — for example: metric[3m] @ 100.
+		//
+		// Since range queries cannot directly produce range-vector results for step evaluation,
+		// this must be an instant query; therefore, no special step-invariant operator is required.
+		//
+		// Other step-invariant expressions that wrap range-vector-producing queries are handled
+		// above in the InstantVectorOperator case. For example, a query such as
+		// max_over_time(metric[3m] @ 100) would have the entire function wrapped as a step-invariant,
+		// and its inner operation (the range function call) would be materialized via the
+		// InstantVectorOperator path.
 
 		return planning.NewSingleUseOperatorFactory(op), nil
 	}
