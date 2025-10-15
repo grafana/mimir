@@ -15,6 +15,7 @@ import (
 	"github.com/grafana/dskit/kv"
 	"github.com/grafana/dskit/ring"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 
 	"github.com/grafana/mimir/pkg/streamingpromql"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
@@ -124,8 +125,27 @@ type RingQueryPlanVersionProvider struct {
 	ring ring.ReadRing
 }
 
-func NewRingQueryPlanVersionProvider(ring ring.ReadRing) streamingpromql.QueryPlanVersionProvider {
-	return &RingQueryPlanVersionProvider{ring: ring}
+func NewRingQueryPlanVersionProvider(ring ring.ReadRing, reg prometheus.Registerer) streamingpromql.QueryPlanVersionProvider {
+	provider := &RingQueryPlanVersionProvider{ring: ring}
+
+	promauto.With(reg).NewGaugeFunc(prometheus.GaugeOpts{
+		Name: "cortex_querier_ring_calculated_maximum_supported_query_plan_version",
+		Help: "The maximum supported query plan version calculated from the querier ring.",
+	}, func() float64 {
+		version, err := provider.GetMaximumSupportedQueryPlanVersion(context.Background())
+		if err != nil {
+			return -1
+		}
+
+		return float64(version)
+	})
+
+	promauto.With(reg).NewGauge(prometheus.GaugeOpts{
+		Name: "cortex_querier_ring_expected_maximum_supported_query_plan_version",
+		Help: "The maximum supported query plan version this process was compiled to support.",
+	}).Set(float64(planning.MaximumSupportedQueryPlanVersion))
+
+	return provider
 }
 
 var queryPlanVersioningOp = ring.NewOp([]ring.InstanceState{ring.ACTIVE, ring.PENDING, ring.JOINING, ring.LEAVING}, nil)

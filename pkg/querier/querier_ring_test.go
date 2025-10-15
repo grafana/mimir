@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"math/rand"
+	"strings"
 	"testing"
 	"time"
 
@@ -13,7 +14,10 @@ import (
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
+
+	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 )
 
 type mockInstance struct {
@@ -168,7 +172,7 @@ func TestRingQueryPlanVersionProvider(t *testing.T) {
 			require.NoError(t, services.StartAndAwaitRunning(ctx, r))
 			t.Cleanup(func() { _ = services.StopAndAwaitTerminated(ctx, r) })
 
-			versionProvider := NewRingQueryPlanVersionProvider(r)
+			versionProvider := NewRingQueryPlanVersionProvider(r, reg)
 			version, err := versionProvider.GetMaximumSupportedQueryPlanVersion(ctx)
 			if testCase.expectedError != "" {
 				require.EqualError(t, err, testCase.expectedError)
@@ -176,6 +180,23 @@ func TestRingQueryPlanVersionProvider(t *testing.T) {
 				require.NoError(t, err)
 				require.Equal(t, testCase.expectedVersion, version)
 			}
+
+			expectedMetricValue := float64(testCase.expectedVersion)
+			if testCase.expectedError != "" {
+				expectedMetricValue = -1
+			}
+
+			expectedMetrics := fmt.Sprintf(`
+				# HELP cortex_querier_ring_calculated_maximum_supported_query_plan_version The maximum supported query plan version calculated from the querier ring.
+				# TYPE cortex_querier_ring_calculated_maximum_supported_query_plan_version gauge
+				cortex_querier_ring_calculated_maximum_supported_query_plan_version %v
+				
+				# HELP cortex_querier_ring_expected_maximum_supported_query_plan_version The maximum supported query plan version this process was compiled to support.
+				# TYPE cortex_querier_ring_expected_maximum_supported_query_plan_version gauge
+				cortex_querier_ring_expected_maximum_supported_query_plan_version %v
+			`, expectedMetricValue, planning.MaximumSupportedQueryPlanVersion)
+
+			require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics), "cortex_querier_ring_calculated_maximum_supported_query_plan_version", "cortex_querier_ring_expected_maximum_supported_query_plan_version"))
 		})
 	}
 }
