@@ -65,7 +65,7 @@ In production environments, scaling down typically happens automatically through
 
 The rollout-operator is deployed by the Grafana Mimir Helm chart and is the recommended way to manage partitioned ingesters and scaling operations for ingest storage.
 
-If you’re managing ingesters manually, you can use GET, POST, or DELETE on the HTTP API endpoint  `/ingester/prepare-partition-downscale` to prepare ingesters for downscaling instead of relying on the rollout-operator.
+If you’re managing ingesters manually, you can use GET, POST, or DELETE on the [HTTP API endpoint `/ingester/prepare-partition-downscale`](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/http-api/#prepare-partition-downscale) to prepare ingesters for downscaling instead of relying on the rollout-operator.
 
 ### Scaling down ingesters in classic architecture
 
