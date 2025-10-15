@@ -1193,7 +1193,7 @@ func TestPlanVersioning(t *testing.T) {
 
 	encoded, err := plan.ToEncodedPlan(false, true)
 	require.NoError(t, err)
-	require.Equal(t, int64(9000), encoded.Version)
+	require.Equal(t, uint64(9000), encoded.Version)
 
 	decoded, _, err := encoded.ToDecodedPlan()
 	require.NoError(t, err)
@@ -1689,6 +1689,6 @@ func (t *versioningTestNode) ExpressionPosition() posrange.PositionRange {
 	return posrange.PositionRange{}
 }
 
-func (t *versioningTestNode) MinimumRequiredPlanVersion() int64 {
-	return int64(t.Value)
+func (t *versioningTestNode) MinimumRequiredPlanVersion() uint64 {
+	return uint64(t.Value)
 }
