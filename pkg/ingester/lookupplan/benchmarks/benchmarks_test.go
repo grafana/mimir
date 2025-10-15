@@ -25,7 +25,7 @@ import (
 
 var (
 	dataDirFlag     = flag.String("data-dir", "", "Directory containing an ingester data dir (WAL + blocks for multiple tenants).")
-	queryFileFlag   = flag.String("query-file", "", `File containing queries in Loki log JSON format. You can obtian it by running a query like this against loki: {namespace="", name="query-frontend"} |= "query stats" | logfmt | path=~".*/query(_range)?"`)
+	queryFileFlag   = flag.String("query-file", "", `File containing queries in Loki log JSON format. You can obtian it by running a command like this with logcli: logcli query -q --timezone=UTC --limit=1000000 --from='2025-10-15T15:15:21.0Z' --to='2025-10-15T16:15:21.0Z' --output=jsonl '{namespace="mimir", name="query-frontend"} |= "query stats" | logfmt | path=~".*/query(_range)?"' > logs.json`)
 	querySampleFlag = flag.Float64("query-sample", 1.0, "Fraction of queries to sample (0.0 to 1.0). Queries are split into 100 segments, and a continuous sample is taken from each segment.")
 	querySampleSeed = flag.Int64("query-sample-seed", 1, "Random seed for query sampling.")
 	numSegments     = 100 // Number of segments to split queries into
@@ -54,7 +54,6 @@ func BenchmarkQueryExecution(b *testing.B) {
 	for i := range queries {
 		matchersList, err := extractLabelMatchers(queries[i].Query)
 		if err != nil {
-			b.Logf("Failed to parse query %d: %v (query: %s)", i, err, queries[i].Query)
 			continue
 		}
 
@@ -69,7 +68,7 @@ func BenchmarkQueryExecution(b *testing.B) {
 	b.Logf("Extracted %d vector selectors from %d queries", len(vectorQueries), len(queries))
 
 	vectorQueries = sampleQueries(vectorQueries, *querySampleFlag, *querySampleSeed)
-	b.Logf("Sampled down to %d vector selectors (%.1f%%)", len(vectorQueries), *querySampleFlag*100)
+	b.Logf("Sampled down to %d vector selectors (%f%%)", len(vectorQueries), *querySampleFlag*100)
 
 	require.NotEmpty(b, vectorQueries, "no vector queries after sampling")
 
@@ -89,6 +88,7 @@ func BenchmarkQueryExecution(b *testing.B) {
 	// Warm up the connection with a simple query
 	_, _ = executeQueryWithMatchers(ingesterClient, vectorQueries[0])
 
+	b.Log("Starting benchmark")
 	b.ReportAllocs()
 	b.ResetTimer()
 

@@ -3,6 +3,7 @@
 package benchmarks
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
 	"math"
@@ -24,8 +25,8 @@ type Query struct {
 	valid     bool // internal flag to track if query should be included
 }
 
-// ParseQueriesFromFile parses queries from a Loki log file in JSON format.
-// The file should be a JSON array of query objects.
+// ParseQueriesFromFile parses queries from a Loki log file in newline-delimited JSON format.
+// Each line should be a JSON object with query information in the labels field.
 func ParseQueriesFromFile(filepath string) ([]Query, error) {
 	f, err := os.Open(filepath)
 	if err != nil {
@@ -33,19 +34,30 @@ func ParseQueriesFromFile(filepath string) ([]Query, error) {
 	}
 	defer f.Close()
 
-	// Decode as an array of Query objects
-	dec := json.NewDecoder(f)
-	var allQueries []Query
-	if err := dec.Decode(&allQueries); err != nil {
-		return nil, fmt.Errorf("failed to decode query file: %w", err)
-	}
-
-	// Filter to only include valid queries (POST requests with success status)
 	var queries []Query
-	for _, q := range allQueries {
+	scanner := bufio.NewScanner(f)
+	lineNum := 0
+
+	for scanner.Scan() {
+		lineNum++
+		line := scanner.Bytes()
+		if len(line) == 0 {
+			continue
+		}
+
+		var q Query
+		if err := json.Unmarshal(line, &q); err != nil {
+			// Skip malformed lines
+			continue
+		}
+
 		if q.valid {
 			queries = append(queries, q)
 		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		return nil, fmt.Errorf("error reading file: %w", err)
 	}
 
 	return queries, nil
@@ -54,34 +66,38 @@ func ParseQueriesFromFile(filepath string) ([]Query, error) {
 // UnmarshalJSON implements custom JSON unmarshaling for Query.
 func (q *Query) UnmarshalJSON(b []byte) error {
 	var d struct {
-		Fields struct {
+		Labels struct {
 			Query  string `json:"param_query"`
 			Start  string `json:"param_start"`
 			Step   string `json:"param_step"`
 			End    string `json:"param_end"`
-			OrgID  string `json:"user"`
 			Method string `json:"method"`
-			Status string `json:"status"`
-		} `json:"fields"`
+		} `json:"labels"`
+		Timestamp string `json:"timestamp"`
 	}
 
 	if err := json.Unmarshal(b, &d); err != nil {
 		return err
 	}
 
-	// Only include POST requests with success status
-	if d.Fields.Method != "POST" || d.Fields.Status != "success" {
-		// Not a valid query to benchmark, but don't return error
+	// Skip if no query present
+	if d.Labels.Query == "" {
 		return nil
 	}
 
 	q.valid = true
-	q.Query = d.Fields.Query
-	q.OrgID = d.Fields.OrgID
+	q.Query = d.Labels.Query
+
+	// Parse timestamp
+	timestamp, err := time.Parse(time.RFC3339Nano, d.Timestamp)
+	if err != nil {
+		return fmt.Errorf("failed to parse timestamp: %w", err)
+	}
+	q.Timestamp = timestamp
 
 	// Parse start time if present
-	if d.Fields.Start != "" {
-		start, err := parseTime(d.Fields.Start)
+	if d.Labels.Start != "" {
+		start, err := parseTime(d.Labels.Start)
 		if err != nil {
 			return fmt.Errorf("failed to parse start time: %w", err)
 		}
@@ -89,8 +105,8 @@ func (q *Query) UnmarshalJSON(b []byte) error {
 	}
 
 	// Parse end time if present
-	if d.Fields.End != "" {
-		end, err := parseTime(d.Fields.End)
+	if d.Labels.End != "" {
+		end, err := parseTime(d.Labels.End)
 		if err != nil {
 			return fmt.Errorf("failed to parse end time: %w", err)
 		}
@@ -98,8 +114,8 @@ func (q *Query) UnmarshalJSON(b []byte) error {
 	}
 
 	// Parse step if present
-	if d.Fields.Step != "" {
-		step, err := parseDuration(d.Fields.Step)
+	if d.Labels.Step != "" {
+		step, err := parseDuration(d.Labels.Step)
 		if err != nil {
 			return fmt.Errorf("failed to parse step: %w", err)
 		}
