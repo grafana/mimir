@@ -1016,7 +1016,7 @@ func (t *Mimir) initQueryFrontendQueryPlanner() (services.Service, error) {
 	reg := prometheus.WrapRegistererWith(prometheus.Labels{"component": "query-frontend"}, t.Registerer)
 	_, mqeOpts := engine.NewPromQLEngineOptions(t.Cfg.Querier.EngineConfig, t.ActivityTracker, util_log.Logger, reg)
 
-	versionProvider := streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider()
+	versionProvider := querier.NewRingQueryPlanVersionProvider(t.QuerierRing)
 
 	var err error
 	t.QueryFrontendQueryPlanner, err = streamingpromql.NewQueryPlanner(mqeOpts, versionProvider)

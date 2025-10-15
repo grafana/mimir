@@ -3,8 +3,10 @@
 package querier
 
 import (
+	"context"
 	"flag"
 	"fmt"
+	"math"
 	"net"
 	"strconv"
 	"time"
@@ -14,6 +16,7 @@ import (
 	"github.com/grafana/dskit/ring"
 	"github.com/prometheus/client_golang/prometheus"
 
+	"github.com/grafana/mimir/pkg/streamingpromql"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/util"
 )
@@ -115,4 +118,35 @@ func NewRing(cfg RingConfig, logger log.Logger, reg prometheus.Registerer) (*rin
 	}
 
 	return r, nil
+}
+
+type RingQueryPlanVersionProvider struct {
+	ring ring.ReadRing
+}
+
+func NewRingQueryPlanVersionProvider(ring ring.ReadRing) streamingpromql.QueryPlanVersionProvider {
+	return &RingQueryPlanVersionProvider{ring: ring}
+}
+
+var queryPlanVersioningOp = ring.NewOp([]ring.InstanceState{ring.ACTIVE, ring.PENDING, ring.JOINING, ring.LEAVING}, nil)
+var errQuerierHasNoSupportedQueryPlanVersion = fmt.Errorf("one or more queriers in the ring is not reporting a supported query plan version")
+
+func (r *RingQueryPlanVersionProvider) GetMaximumSupportedQueryPlanVersion(ctx context.Context) (uint64, error) {
+	instances, err := r.ring.GetAllHealthy(queryPlanVersioningOp)
+	if err != nil {
+		return 0, fmt.Errorf("could not get all queriers from the ring: %w", err)
+	}
+
+	lowestVersionSeen := uint64(math.MaxUint64)
+
+	for _, instance := range instances.Instances {
+		version, ok := instance.Versions[MaximumSupportedQueryPlanVersion]
+		if !ok {
+			return 0, errQuerierHasNoSupportedQueryPlanVersion
+		}
+
+		lowestVersionSeen = min(lowestVersionSeen, version)
+	}
+
+	return lowestVersionSeen, nil
 }
