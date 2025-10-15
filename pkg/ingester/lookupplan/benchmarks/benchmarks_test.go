@@ -16,6 +16,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
+	"github.com/grafana/mimir/pkg/ingester"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/streamingpromql/benchmarks"
 )
@@ -40,7 +41,9 @@ func BenchmarkQueryExecution(b *testing.B) {
 	b.Logf("Prepared %d vector selectors (sample: %f%%)", len(vectorQueries), *querySampleFlag*100)
 
 	// Start ingester
-	addr, cleanupFunc, err := benchmarks.StartIngesterAndLoadData(*dataDirFlag, []int{})
+	addr, cleanupFunc, err := benchmarks.StartIngesterAndLoadData(*dataDirFlag, []int{}, func(config *ingester.Config) {
+		config.BlocksStorageConfig.TSDB.IndexLookupPlanning.Enabled = true
+	})
 	require.NoError(b, err)
 	defer cleanupFunc()
 
