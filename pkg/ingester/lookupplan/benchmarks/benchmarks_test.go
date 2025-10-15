@@ -65,19 +65,20 @@ func BenchmarkQueryExecution(b *testing.B) {
 	// Benchmark query execution - run all vector selectors in each iteration
 	for i := 0; i < b.N; i++ {
 		for queryIdx, vq := range vectorQueries {
-			_, err := executeQueryWithMatchers(ingesterClient, vq)
+			queryResult, err := executeQueryWithMatchers(ingesterClient, vq)
 			if err != nil {
 				b.Logf("Query %d failed: %v (query: %s)", queryIdx, err, vq.originalQuery.Query)
 				b.Fail()
 			}
+			b.Logf("Query %d: series=%d chunks=%d duration=%s", queryIdx, queryResult.SeriesCount, queryResult.ChunkCount, queryResult.Duration)
 		}
 	}
 }
 
 // queryResult contains the result of executing a query against the ingester.
 type queryResult struct {
-	SeriesCount int
-	SampleCount int
+	SeriesCount int // Number of series returned
+	ChunkCount  int // Total chunks across all series
 	Duration    time.Duration
 }
 
@@ -115,23 +116,49 @@ func executeQueryWithMatchers(ingesterClient client.IngesterClient, vq vectorSel
 		return nil, fmt.Errorf("failed to execute query: %w", err)
 	}
 
-	// Read response stream
 	result := &queryResult{}
+
+	// Phase 1: Read series metadata
+	for {
+		resp, err := stream.Recv()
+		if err == io.EOF {
+			// No series returned
+			result.Duration = time.Since(start)
+			return result, nil
+		}
+		if err != nil {
+			return nil, fmt.Errorf("failed to receive query response: %w", err)
+		}
+
+		// Must call FreeBuffer after processing each response
+		func() {
+			defer resp.FreeBuffer()
+
+			if len(resp.StreamingSeries) > 0 {
+				for _, s := range resp.StreamingSeries {
+					result.SeriesCount++
+					result.ChunkCount += int(s.ChunkCount)
+				}
+			}
+		}()
+
+		if resp.IsEndOfSeriesStream {
+			// We've received all series metadata
+			break
+		}
+	}
+
+	// Phase 2: Drain remaining chunk data (but don't process it)
+	// We must read all responses to properly close the stream
 	for {
 		resp, err := stream.Recv()
 		if err == io.EOF {
 			break
 		}
 		if err != nil {
-			return nil, fmt.Errorf("failed to receive query response: %w", err)
+			return nil, fmt.Errorf("failed to receive streaming chunks: %w", err)
 		}
-
-		if len(resp.Chunkseries) > 0 {
-			for _, series := range resp.Chunkseries {
-				result.SeriesCount++
-				result.SampleCount += len(series.Chunks)
-			}
-		}
+		resp.FreeBuffer()
 	}
 
 	result.Duration = time.Since(start)

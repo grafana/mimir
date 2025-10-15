@@ -92,6 +92,7 @@ func (q *Query) UnmarshalJSON(b []byte) error {
 			Step   string `json:"param_step"`
 			End    string `json:"param_end"`
 			Method string `json:"method"`
+			User   string `json:"user"`
 		} `json:"labels"`
 		Timestamp string `json:"timestamp"`
 	}
@@ -107,6 +108,7 @@ func (q *Query) UnmarshalJSON(b []byte) error {
 
 	q.valid = true
 	q.Query = d.Labels.Query
+	q.OrgID = d.Labels.User
 
 	// Parse timestamp
 	timestamp, err := time.Parse(time.RFC3339Nano, d.Timestamp)
