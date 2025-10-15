@@ -55,6 +55,7 @@ func LoadQueryLogsFromFile(filepath string) ([]Query, error) {
 
 	var queries []Query
 	scanner := bufio.NewScanner(f)
+	scanner.Buffer(nil, 10*1024*1024) // 10MB max line size
 	lineNum := 0
 
 	for scanner.Scan() {
