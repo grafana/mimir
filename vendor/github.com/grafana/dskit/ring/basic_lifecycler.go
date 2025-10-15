@@ -68,6 +68,11 @@ type BasicLifecyclerConfig struct {
 
 	// Versions are the component versions associated with this instance.
 	Versions InstanceVersions
+
+	// ComponentNames are the names of the components in Versions, used for display on the status page.
+	// If a component in Versions has no name in ComponentNames, then the version will be shown on the status page
+	// without a name.
+	ComponentNames map[uint64]string
 }
 
 /*
@@ -599,5 +604,5 @@ func (l *BasicLifecycler) getRing(ctx context.Context) (*Desc, error) {
 }
 
 func (l *BasicLifecycler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
-	newRingPageHandler(l, l.cfg.HeartbeatTimeout, l.cfg.HideTokensInStatusPage, !l.cfg.ShowVersionsInStatusPage).handle(w, req)
+	newRingPageHandler(l, l.cfg.HeartbeatTimeout, l.cfg.HideTokensInStatusPage, !l.cfg.ShowVersionsInStatusPage, l.cfg.ComponentNames).handle(w, req)
 }

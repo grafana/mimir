@@ -202,6 +202,12 @@ type Config struct {
 	// ShowVersionsInStatusPage enables displaying versions on the status page.
 	// This option is set internally and never exposed to the user.
 	ShowVersionsInStatusPage bool `yaml:"-"`
+
+	// ComponentNames are the names of the components in InstanceDesc.Versions, used for display on the status page.
+	// If a component in Versions has no name in ComponentNames, then the version will be shown on the status page
+	// without a name.
+	// This option is set internally and never exposed to the user.
+	ComponentNames map[uint64]string `yaml:"-"`
 }
 
 // RegisterFlags adds the flags required to config this to the given FlagSet with a specified prefix
@@ -1348,7 +1354,7 @@ func (r *Ring) getRing(_ context.Context) (*Desc, error) {
 }
 
 func (r *Ring) ServeHTTP(w http.ResponseWriter, req *http.Request) {
-	newRingPageHandler(r, r.cfg.HeartbeatTimeout, r.cfg.HideTokensInStatusPage, !r.cfg.ShowVersionsInStatusPage).handle(w, req)
+	newRingPageHandler(r, r.cfg.HeartbeatTimeout, r.cfg.HideTokensInStatusPage, !r.cfg.ShowVersionsInStatusPage, r.cfg.ComponentNames).handle(w, req)
 }
 
 // InstancesCount returns the number of instances in the ring.

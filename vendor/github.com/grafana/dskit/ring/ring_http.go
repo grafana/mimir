@@ -37,7 +37,8 @@ type httpResponse struct {
 	// DisableTokens hides the concept of tokens entirely in the page, across all elements.
 	DisableTokens bool `json:"-"`
 	// DisableVersions hides the versions column on the page.
-	DisableVersions bool `json:"-"`
+	DisableVersions bool              `json:"-"`
+	ComponentNames  map[uint64]string `json:"-"`
 }
 
 type ingesterDesc struct {
@@ -65,14 +66,16 @@ type ringPageHandler struct {
 	heartbeatTimeout time.Duration
 	disableTokens    bool
 	disableVersions  bool
+	componentNames   map[uint64]string
 }
 
-func newRingPageHandler(r ringAccess, heartbeatTimeout time.Duration, disableTokens bool, disableVersions bool) *ringPageHandler {
+func newRingPageHandler(r ringAccess, heartbeatTimeout time.Duration, disableTokens bool, disableVersions bool, componentNames map[uint64]string) *ringPageHandler {
 	return &ringPageHandler{
 		r:                r,
 		heartbeatTimeout: heartbeatTimeout,
 		disableTokens:    disableTokens,
 		disableVersions:  disableVersions,
+		componentNames:   componentNames,
 	}
 }
 
@@ -148,6 +151,7 @@ func (h *ringPageHandler) handle(w http.ResponseWriter, req *http.Request) {
 		ShowTokens:      tokensParam == "true",
 		DisableTokens:   h.disableTokens,
 		DisableVersions: h.disableVersions,
+		ComponentNames:  h.componentNames,
 	}, defaultPageTemplate, req)
 }
 

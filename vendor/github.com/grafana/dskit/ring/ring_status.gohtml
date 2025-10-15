@@ -58,7 +58,11 @@
             {{ if not $.DisableVersions }}
             <td>
               {{ range $k, $v := .Versions }}
-                  {{ $k }}: v{{ $v }}<br/>
+                  {{ with $componentName := index $.ComponentNames $k }}
+                    {{ $k }} ({{ $componentName }}): v{{ $v }}<br/>
+                  {{ else }}
+                    {{ $k }}: v{{ $v }}<br/>
+                  {{ end }}
               {{ end }}
             </td>
             {{ end }}
