@@ -744,3 +744,29 @@ func (n NoopPlanningObserver) OnAllPlanningStagesComplete(*planning.QueryPlan) e
 	// Nothing to do.
 	return nil
 }
+
+type QueryPlanVersionProvider interface {
+	GetMaximumSupportedQueryPlanVersion(ctx context.Context) (uint64, error)
+}
+
+// NewStaticQueryPlanVersionProvider returns a QueryPlanVersionProvider that always returns the given version.
+// This is intended to be used only in tests.
+func NewStaticQueryPlanVersionProvider(version uint64) QueryPlanVersionProvider {
+	return &staticQueryPlanVersionProvider{
+		version: version,
+	}
+}
+
+// NewMaximumSupportedVersionQueryPlanVersionProvider returns a QueryPlanVersionProvider that always returns the maximum supported query plan version.
+// This is intended to be used only in tests.
+func NewMaximumSupportedVersionQueryPlanVersionProvider() QueryPlanVersionProvider {
+	return NewStaticQueryPlanVersionProvider(planning.MaximumSupportedQueryPlanVersion)
+}
+
+type staticQueryPlanVersionProvider struct {
+	version uint64
+}
+
+func (s *staticQueryPlanVersionProvider) GetMaximumSupportedQueryPlanVersion(_ context.Context) (uint64, error) {
+	return s.version, nil
+}
