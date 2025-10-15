@@ -37,7 +37,7 @@ Follow these steps to migrate your Grafana Mimir cluster from classic architectu
 
    Deploy a new Grafana Mimir cluster that uses ingest storage. Configure the new cluster to use the same object storage bucket as the old cluster.
 
-   To prevent conflicts, disable the compactor, as shown in the following code sample:
+   To prevent conflicts, disable the compactor, as shown in the following Helm values file sample:
 
    ```yaml
    compactor:
