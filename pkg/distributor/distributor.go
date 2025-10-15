@@ -1845,12 +1845,12 @@ func (d *Distributor) limitsMiddleware(next PushFunc) PushFunc {
 			return middleware.DoNotLogError{Err: err}
 		}
 
-		defer func() {
-			rs.pushErr = retErr
-		}()
 		if reactiveLimiterErr := d.acquireReactiveLimiterPermit(ctx); reactiveLimiterErr != nil {
 			return reactiveLimiterErr
 		}
+		defer func() {
+			rs.pushErr = retErr
+		}()
 
 		rs.pushHandlerPerformsCleanup = true
 		// Decrement counter after all ingester calls have finished or been cancelled.
