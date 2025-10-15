@@ -8461,7 +8461,7 @@ func TestDistributor_StartFinishRequest(t *testing.T) {
 	}
 }
 
-func TestDistributor_PreparePushRequest(t *testing.T) {
+func TestDistributor_AcquireReactiveLimiterPermit(t *testing.T) {
 	type testCase struct {
 		reactiveLimiterEnabled        bool
 		reactiveLimiterCanAcquire     bool
@@ -8469,6 +8469,7 @@ func TestDistributor_PreparePushRequest(t *testing.T) {
 		expectedError                 error
 		verifyCleanUpFunc             func(func(error), *mockPermit)
 		expectedRejectedRequestsCount int
+		expectedAcquiredPermit        bool
 	}
 
 	testCases := map[string]testCase{
@@ -8485,6 +8486,7 @@ func TestDistributor_PreparePushRequest(t *testing.T) {
 				require.NotNil(t, cleanUp)
 			},
 			expectedRejectedRequestsCount: 0,
+			expectedAcquiredPermit:        true,
 		},
 		"reactive limiter enabled but cannot acquire permit": {
 			reactiveLimiterEnabled:        true,
@@ -8503,6 +8505,7 @@ func TestDistributor_PreparePushRequest(t *testing.T) {
 				require.False(t, permit.dropCalled)
 			},
 			expectedRejectedRequestsCount: 0,
+			expectedAcquiredPermit:        true,
 		},
 		"cleanup function calls permit.Drop() on context.Canceled error": {
 			reactiveLimiterEnabled:    true,
@@ -8515,6 +8518,7 @@ func TestDistributor_PreparePushRequest(t *testing.T) {
 				require.True(t, permit.dropCalled)
 			},
 			expectedRejectedRequestsCount: 0,
+			expectedAcquiredPermit:        true,
 		},
 		"cleanup function calls permit.Drop() on regular error with canceled context": {
 			reactiveLimiterEnabled:    true,
@@ -8528,6 +8532,7 @@ func TestDistributor_PreparePushRequest(t *testing.T) {
 				require.True(t, permit.dropCalled)
 			},
 			expectedRejectedRequestsCount: 0,
+			expectedAcquiredPermit:        true,
 		},
 		"cleanup function calls permit.Record() on regular error with non-canceled context": {
 			reactiveLimiterEnabled:    true,
@@ -8540,6 +8545,7 @@ func TestDistributor_PreparePushRequest(t *testing.T) {
 				require.False(t, permit.dropCalled)
 			},
 			expectedRejectedRequestsCount: 0,
+			expectedAcquiredPermit:        true,
 		},
 	}
 
@@ -8570,6 +8576,7 @@ func TestDistributor_PreparePushRequest(t *testing.T) {
 
 			// Create context
 			ctx := user.InjectOrgID(context.Background(), "user")
+			ctx = context.WithValue(ctx, requestStateKey, &requestState{})
 
 			// Cancel context if needed for testing
 			var cancel context.CancelFunc
@@ -8579,18 +8586,23 @@ func TestDistributor_PreparePushRequest(t *testing.T) {
 			}
 
 			// Call PreparePushRequest
-			cleanupFunc, err := ds[0].PreparePushRequest(ctx)
-
+			err := ds[0].acquireReactiveLimiterPermit(ctx)
+			rs, ok := ctx.Value(requestStateKey).(*requestState)
 			// Check error
 			if tc.expectedError != nil {
 				require.ErrorIs(t, err, tc.expectedError)
 			} else {
 				require.NoError(t, err)
+				require.True(t, ok)
+				require.Equal(t, tc.expectedAcquiredPermit, rs.reactiveLimiterPermitAcquired)
 			}
 
 			// Check cleanup function
 			if tc.verifyCleanUpFunc != nil {
-				tc.verifyCleanUpFunc(cleanupFunc, mockLimiter.permit)
+				require.NotNil(t, rs.reactiveLimiterCleanup)
+				tc.verifyCleanUpFunc(rs.reactiveLimiterCleanup, mockLimiter.permit)
+			} else {
+				require.Nil(t, rs.reactiveLimiterCleanup)
 			}
 
 			// Verify rejected requests metric
@@ -8598,6 +8610,86 @@ func TestDistributor_PreparePushRequest(t *testing.T) {
 			require.Equal(t, float64(tc.expectedRejectedRequestsCount), finalRejectedCount-initialRejectedCount, "rejected requests count should match")
 		})
 	}
+}
+
+func TestDistributor_AcquireReactiveLimiterPermitIdempotent(t *testing.T) {
+	testCases := map[string]struct {
+		enabled         bool
+		addRequestState bool
+		expectedError   error
+	}{
+		"no permit when reactive limiter is disabled": {
+			enabled: false,
+		},
+		"context with no request state causes an error": {
+			enabled:         true,
+			addRequestState: false,
+			expectedError:   errMissingRequestState,
+		},
+		"happy case": {
+			enabled:         true,
+			addRequestState: true,
+		},
+	}
+
+	for testName, tc := range testCases {
+		t.Run(testName, func(t *testing.T) {
+			var limits validation.Limits
+			flagext.DefaultValues(&limits)
+
+			// Prepare distributor
+			ds, _, _, _ := prepare(t, prepConfig{
+				numDistributors: 1,
+				limits:          &limits,
+				enableTracker:   true,
+			})
+
+			// Setup reactive limiter if needed
+			if tc.enabled {
+				mockLimiter := &mockReactiveLimiter{
+					canAcquire: true,
+					permit:     &mockPermit{},
+				}
+				ds[0].reactiveLimiter = mockLimiter
+			}
+
+			// Create context
+			ctx := user.InjectOrgID(context.Background(), "user")
+			if !tc.enabled {
+				err := ds[0].acquireReactiveLimiterPermit(ctx)
+				require.NoError(t, err)
+			} else if !tc.addRequestState {
+				err := ds[0].acquireReactiveLimiterPermit(ctx)
+				require.Error(t, err)
+				require.ErrorIs(t, errMissingRequestState, err)
+			} else {
+				ctx = context.WithValue(ctx, requestStateKey, &requestState{})
+				checkRequestState(t, ctx, false)
+
+				// First call to acquireReactiveLimiterPermit should actually get a new permit.
+				err := ds[0].acquireReactiveLimiterPermit(ctx)
+				require.NoError(t, err)
+				checkRequestState(t, ctx, true)
+
+				// Second call to acquireReactiveLimiterPermit should fail.
+				err = ds[0].acquireReactiveLimiterPermit(ctx)
+				require.Error(t, err)
+				require.ErrorIs(t, err, errReactiveLimiterPermitAlreadyAcquired)
+				checkRequestState(t, ctx, true)
+			}
+		})
+	}
+}
+
+func checkRequestState(t *testing.T, ctx context.Context, acquiredPermit bool) {
+	rs, ok := ctx.Value(requestStateKey).(*requestState)
+	require.True(t, ok)
+	if !acquiredPermit {
+		require.False(t, rs.reactiveLimiterPermitAcquired)
+		return
+	}
+	require.True(t, rs.reactiveLimiterPermitAcquired)
+	require.NotNil(t, rs.reactiveLimiterCleanup)
 }
 
 // mockReactiveLimiter is a mock implementation of ReactiveLimiter for testing

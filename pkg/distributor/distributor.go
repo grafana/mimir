@@ -1652,6 +1652,14 @@ type requestState struct {
 
 	// If positive, it means that size of mimirpb.WriteRequest has been checked and added to inflightPushRequestsBytes.
 	writeRequestSize int64
+
+	// If set, represents the error obtained by executing the respective push request.
+	pushErr error
+
+	// If set to true, it means that a reactive limiter permit has already been acquired for the respective push request.
+	reactiveLimiterPermitAcquired bool
+	// If set, represents the reactive limiter clean up function to be executed on cleaning up the respective push request.
+	reactiveLimiterCleanup func(error)
 }
 
 func (d *Distributor) StartPushRequest(ctx context.Context, httpgrpcRequestSize int64) (context.Context, error) {
@@ -1659,23 +1667,47 @@ func (d *Distributor) StartPushRequest(ctx context.Context, httpgrpcRequestSize 
 	return ctx, err
 }
 
-func (d *Distributor) PreparePushRequest(ctx context.Context) (func(error), error) {
+func (d *Distributor) PreparePushRequest(_ context.Context) (func(error), error) {
+	return nil, nil
+}
+
+// acquireReactiveLimiterPermit acquires a reactive limiter permit to control inflight push requests.
+//
+// If a permit is successfully acquired, it is recorded in the requestState associated with the provided context
+// by setting its reactiveLimiterPermitAcquired field. Moreover, a cleanup function that must be called when the
+// request completes is stored in the reactiveLimiterCleanup field the requestState, allowing it to be invoked
+// automatically during request cleanup.
+//
+// If no requestState is found in the provided context, acquireReactiveLimiterPermit returns errMissingRequestState.
+// If called more than once for the same request, it returns errReactiveLimiterPermitAlreadyAcquired.
+func (d *Distributor) acquireReactiveLimiterPermit(ctx context.Context) error {
 	if d.reactiveLimiter == nil {
-		return nil, nil
+		return nil
 	}
+	rs, alreadyInContext := ctx.Value(requestStateKey).(*requestState)
+	if !alreadyInContext {
+		return errMissingRequestState
+	}
+	if rs.reactiveLimiterPermitAcquired {
+		return errReactiveLimiterPermitAlreadyAcquired
+	}
+
 	// Acquire a permit, blocking if needed
 	permit, err := d.reactiveLimiter.AcquirePermit(ctx)
 	if err != nil {
 		d.rejectedRequests.WithLabelValues(reasonDistributorMaxInflightPushRequests).Inc()
-		return nil, errReactiveLimiterLimitExceeded
+		return errReactiveLimiterLimitExceeded
 	}
-	return func(err error) {
+	cleanup := func(err error) {
 		if errors.Is(err, context.Canceled) || ctx.Err() != nil {
 			permit.Drop()
 		} else {
 			permit.Record()
 		}
-	}, nil
+	}
+	rs.reactiveLimiterPermitAcquired = true
+	rs.reactiveLimiterCleanup = cleanup
+	return nil
 }
 
 // startPushRequest does limits checks at the beginning of Push request in distributor.
@@ -1793,11 +1825,14 @@ func (d *Distributor) cleanupAfterPushFinished(rs *requestState) {
 	if rs.writeRequestSize > 0 {
 		d.inflightPushRequestsBytes.Sub(rs.writeRequestSize)
 	}
+	if rs.reactiveLimiterCleanup != nil {
+		rs.reactiveLimiterCleanup(rs.pushErr)
+	}
 }
 
 // limitsMiddleware checks for instance limits and rejects request if this instance cannot process it at the moment.
 func (d *Distributor) limitsMiddleware(next PushFunc) PushFunc {
-	return func(ctx context.Context, pushReq *Request) error {
+	return func(ctx context.Context, pushReq *Request) (retErr error) {
 		// Make sure the distributor service and all its dependent services have been
 		// started. The following checks in this middleware depend on the runtime config
 		// service having been started.
@@ -1809,6 +1844,13 @@ func (d *Distributor) limitsMiddleware(next PushFunc) PushFunc {
 		if err != nil {
 			return middleware.DoNotLogError{Err: err}
 		}
+
+		if reactiveLimiterErr := d.acquireReactiveLimiterPermit(ctx); reactiveLimiterErr != nil {
+			return reactiveLimiterErr
+		}
+		defer func() {
+			rs.pushErr = retErr
+		}()
 
 		rs.pushHandlerPerformsCleanup = true
 		// Decrement counter after all ingester calls have finished or been cancelled.
