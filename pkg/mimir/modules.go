@@ -1016,7 +1016,16 @@ func (t *Mimir) initQueryFrontendQueryPlanner() (services.Service, error) {
 	reg := prometheus.WrapRegistererWith(prometheus.Labels{"component": "query-frontend"}, t.Registerer)
 	_, mqeOpts := engine.NewPromQLEngineOptions(t.Cfg.Querier.EngineConfig, t.ActivityTracker, util_log.Logger, reg)
 
-	versionProvider := querier.NewRingQueryPlanVersionProvider(t.QuerierRing, t.Registerer)
+	var versionProvider streamingpromql.QueryPlanVersionProvider
+
+	if t.Cfg.Frontend.QueryMiddleware.EnableRemoteExecution {
+		versionProvider = querier.NewRingQueryPlanVersionProvider(t.QuerierRing, t.Registerer)
+	} else {
+		// If we're not using remote execution, then the query plans we generate in the query-frontend will
+		// only be used in this process, so we can generate query plans up to whatever the maximum supported
+		// version is.
+		versionProvider = streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider()
+	}
 
 	var err error
 	t.QueryFrontendQueryPlanner, err = streamingpromql.NewQueryPlanner(mqeOpts, versionProvider)
