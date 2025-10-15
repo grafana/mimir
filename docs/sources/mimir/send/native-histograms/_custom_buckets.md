@@ -125,7 +125,7 @@ Use the latest Prometheus version.
 
 ## Migrate from classic histograms
 
-To ease the migration process, you can keep scraping classic histograms and NHCBS at the same time.
+To ease the migration process, you can keep scraping classic histograms and NHCBs at the same time.
 
 1. Let Prometheus scrape both classic histograms and NHCBs.
 1. Send native histograms to remote write, along with the existing classic histograms.

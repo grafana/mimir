@@ -12,7 +12,6 @@ title: Send native histograms with exponential buckets to Grafana Mimir
 weight: 1
 ---
 
-<!-- Note: This topic is mounted in the GEM documentation. Ensure that all updates are also applicable to GEM. -->
 
 # Send native histograms with exponential buckets to Grafana Mimir
 
@@ -20,7 +19,7 @@ Prometheus [native histograms](https://prometheus.io/docs/specs/native_histogram
 
 Native histograms with exponential buckets are different from classic Prometheus histograms in a number of ways:
 
-- Exponential bucket boundaries are calculated by a formula that depends on the scale, or resolution of the native histogram, and are not user-defined. The calculation produces exponentially increasing bucket boundaries. For details, refer to [Exponential bucket boundary calculation](#exponential-bucket-boundary-calculation).
+- Exponential bucket boundaries are calculated by a formula that depends on the scale, or resolution, of the native histogram and are not user-defined. The calculation produces exponentially increasing bucket boundaries. For details, refer to [Exponential bucket boundary calculation](#exponential-bucket-boundary-calculation).
 - Exponential bucket boundaries might change dynamically if the observations result in too many buckets. For details, refer to [Limit the number of buckets](#limit-the-number-of-buckets).
 - Exponential bucket counters only count observations inside the bucket boundaries, whereas the classic histogram buckets only have an upper bound called `le` and count all observations in the bucket and all lower buckets cumulatively.
 - An instance of a native histogram metric only requires a single time series, because the buckets, sum of observations, and the count of observations are stored in a single sample type called `native histogram` rather than in separate time series using the `float` sample type. Thus, there are no `<metric>_bucket`, `<metric>_sum`, and `<metric>_count` series. There is only a `<metric>` time series.
@@ -96,11 +95,11 @@ Some of the resulting exponential buckets for factor `1.1` rounded to two decima
 
 ..., (512, 558], (558, 608], (608, 663], ...
 
-In Java `.nativeInitialSchema` using schema value `3` results in the same exponential bucket boundaries. For more information about the schema supported in Java, consult the documentation for [nativeInitialSchema](<https://prometheus.github.io/client_java/api/io/prometheus/metrics/core/metrics/Histogram.Builder.html#nativeInitialSchema(int)>).
+In Java, `.nativeInitialSchema` using a schema value of `3` results in the same exponential bucket boundaries. For more information about the schema supported in Java, consult the documentation for [nativeInitialSchema](<https://prometheus.github.io/client_java/api/io/prometheus/metrics/core/metrics/Histogram.Builder.html#nativeInitialSchema(int)>).
 
-The value of `NativeHistogramMaxBucketNumber`/`nativeMaxNumberOfBuckets` limits the number of exponential buckets produced by the observations. This can be especially useful if the receiver side is limiting the number of buckets that can be sent. For more information about the bucket limit refer to [Limit the number of buckets](#limit-the-number-of-buckets).
+The value of `NativeHistogramMaxBucketNumber`/`nativeMaxNumberOfBuckets` limits the number of exponential buckets produced by the observations. This can be especially useful if the receiver side is limiting the number of buckets that can be sent. For more information about the bucket limit, refer to [Limit the number of buckets](#limit-the-number-of-buckets).
 
-The duration in `NativeHistogramMinResetDuration`/`nativeResetDuration` prohibits automatic counter resets inside that period. Counter resets are related to the bucket limit, for more information refer to [Limit the number of buckets](#limit-the-number-of-buckets).
+The duration in `NativeHistogramMinResetDuration`/`nativeResetDuration` prohibits automatic counter resets inside that period. Counter resets are related to the bucket limit. For more information, refer to [Limit the number of buckets](#limit-the-number-of-buckets).
 
 ## Scrape and send native histograms with Prometheus
 
@@ -112,7 +111,7 @@ Use Prometheus version 3.00 or later.
    prometheus --enable-feature=native-histograms
    ```
 
-   This flag makes Prometheus detect and scrape [native histogram with exponential buckets](https://grafana.com/docs/mimir/<MIMIR_VERSION>/send/native-histograms/_exponential_buckets) over the `PrometheusProto` scrape protocol and ignore the classic histogram version of metrics that have native histograms defined as well. Classic histograms without native histogram definitions are not affected.
+   This flag makes Prometheus detect and scrape [native histograms with exponential buckets](https://grafana.com/docs/mimir/<MIMIR_VERSION>/send/native-histograms/_exponential_buckets) over the `PrometheusProto` scrape protocol and ignore the classic histogram version of metrics that have native histograms defined as well. Classic histograms without native histogram definitions are not affected.
 
    {{< admonition type="note" >}}
    <!-- Issue: https://github.com/prometheus/prometheus/issues/11265 -->
@@ -153,7 +152,7 @@ Use [Grafana Alloy](https://grafana.com/docs/alloy/<ALLOY_VERSION>) version 1.11
    ```
 
    {{< admonition type="warning" >}}
-   In Grafana Alloy versions 1.10 and earlier setting `scrape_native_histograms` to `true` was not required.
+   In Grafana Alloy versions 1.10 and earlier, setting `scrape_native_histograms` to `true` isn't required.
    For more information, refer to [Release notes for Grafana Alloy](https://grafana.com/docs/alloy/latest/release-notes/).
    {{< /admonition >}}
 
