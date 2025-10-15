@@ -14,7 +14,6 @@ title: Send native histograms with custom buckets to Grafana Mimir
 weight: 2
 ---
 
-<!-- Note: This topic is mounted in the GEM documentation. Ensure that all updates are also applicable to GEM. -->
 
 # Send native histograms with custom buckets to Grafana Mimir
 
@@ -38,7 +37,7 @@ There are advantages and disadvantages of using NHCBs compared to classic Promet
 - Lower storage costs. NHCBs use a single series and applies a sparse representation that avoids storing empty buckets.
 - Storage and query of NHCBs are atomic, meaning that either all or none of a NHCB sample is stored or retrieved. This is different from classic histograms, which are split into multiple independent time series that might be individually lost or delayed, resulting in corrupted or inconsistent data.
 - It's possible to migrate to NHCBs without modifying the instrumentation.
-- It's easy to migrate to [native histogram with exponential buckets](https://grafana.com/docs/mimir/<MIMIR_VERSION>/send/native-histograms/_exponential_buckets) once NHCBs are in use, as queries and visualizations are already migrated.
+- The migrate to [native histograms with exponential buckets](https://grafana.com/docs/mimir/<MIMIR_VERSION>/send/native-histograms/_exponential_buckets) takes fewer steps once NHCBs are in use, as queries and visualizations are already migrated.
 
 ### Disadvantages
 
