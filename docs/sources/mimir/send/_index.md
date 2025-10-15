@@ -7,8 +7,6 @@ title: Send metric data to Mimir
 weight: 32
 ---
 
-<!-- Note: This topic is mounted in the GEM documentation. Ensure that all updates are also applicable to GEM. -->
-
 # Send metric data to Mimir
 
 To send metric data to Mimir:

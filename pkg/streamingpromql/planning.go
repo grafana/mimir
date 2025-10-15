@@ -70,6 +70,7 @@ func NewQueryPlanner(opts EngineOpts) (*QueryPlanner, error) {
 
 		planner.RegisterQueryPlanOptimizationPass(plan.NewEliminateDeduplicateAndMergeOptimizationPass())
 	}
+
 	if opts.EnableCommonSubexpressionElimination {
 		planner.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(opts.EnableCommonSubexpressionEliminationForRangeVectorExpressionsInInstantQueries, opts.CommonOpts.Reg, opts.Logger))
 	}
@@ -208,21 +209,10 @@ func (p *QueryPlanner) NewQueryPlan(ctx context.Context, qs string, timeRange ty
 		}
 
 		if p.enableDelayedNameRemoval {
-			if dedupAndMerge, ok := root.(*core.DeduplicateAndMerge); ok {
-				dedupAndMerge.RunDelayedNameRemoval = true
-			} else {
-				// Don't run delayed name removal or deduplicate and merge where there are no
-				// vector selectors.
-				shouldWrap, err := shouldWrapInDedupAndMerge(root)
-				if err != nil {
-					return nil, err
-				}
-				if shouldWrap {
-					root = &core.DeduplicateAndMerge{
-						Inner:                      root,
-						DeduplicateAndMergeDetails: &core.DeduplicateAndMergeDetails{RunDelayedNameRemoval: true},
-					}
-				}
+			var err error
+			root, err = p.insertDropNameOperator(root)
+			if err != nil {
+				return nil, err
 			}
 		}
 
@@ -262,6 +252,37 @@ func (p *QueryPlanner) NewQueryPlan(ctx context.Context, qs string, timeRange ty
 	spanLogger.DebugLog("msg", "planning completed", "plan", plan, "version", plan.Version)
 
 	return plan, err
+}
+
+func (p *QueryPlanner) insertDropNameOperator(root planning.Node) (planning.Node, error) {
+	if dedupAndMerge, ok := root.(*core.DeduplicateAndMerge); ok {
+		// If root is already DeduplicateAndMerge, insert DropName between it and its inner node
+		return &core.DeduplicateAndMerge{
+			Inner: &core.DropName{
+				Inner:           dedupAndMerge.Inner,
+				DropNameDetails: &core.DropNameDetails{},
+			},
+			DeduplicateAndMergeDetails: dedupAndMerge.DeduplicateAndMergeDetails,
+		}, nil
+	}
+
+	// Don't run delayed name removal or deduplicate and merge where there are no
+	// vector selectors.
+	shouldWrap, err := shouldWrapInDedupAndMerge(root)
+	if err != nil {
+		return nil, err
+	}
+	if shouldWrap {
+		return &core.DeduplicateAndMerge{
+			Inner: &core.DropName{
+				Inner:           root,
+				DropNameDetails: &core.DropNameDetails{},
+			},
+			DeduplicateAndMergeDetails: &core.DeduplicateAndMergeDetails{},
+		}, nil
+	}
+
+	return root, nil
 }
 
 func shouldWrapInDedupAndMerge(root planning.Node) (bool, error) {

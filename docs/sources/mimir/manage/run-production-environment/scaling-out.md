@@ -8,8 +8,6 @@ title: Scaling out Grafana Mimir
 weight: 30
 ---
 
-<!-- Note: This topic is mounted in the GEM documentation. Ensure that all updates are also applicable to GEM. -->
-
 # Scaling out Grafana Mimir
 
 Grafana Mimir can horizontally scale every component.
