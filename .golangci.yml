@@ -70,10 +70,6 @@ linters:
         - G301
         # Uses system umask to restrict file permissions instead of hardcoding values.
         - G306
-    misspell:
-      extra-words:
-        - typo: "Go routines"
-          correction: "goroutines"
     revive:
       rules:
         - name: redefines-builtin-id
