@@ -44,7 +44,7 @@
           "subdir": "operations/rollout-operator"
         }
       },
-      "version": "56b3ea99597d8628d15f494087648a0630001f50"
+      "version": "v0.31.1"
     }
   ],
   "legacyImports": true
