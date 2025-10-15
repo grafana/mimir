@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/go-kit/log"
@@ -36,6 +37,7 @@ type QueryPlanner struct {
 	astOptimizationPasses    []optimize.ASTOptimizationPass
 	planOptimizationPasses   []optimize.QueryPlanOptimizationPass
 	planStageLatency         *prometheus.HistogramVec
+	generatedPlans           *prometheus.CounterVec
 	versionProvider          QueryPlanVersionProvider
 
 	logger log.Logger
@@ -110,6 +112,11 @@ func NewQueryPlannerWithoutOptimizationPasses(opts EngineOpts, versionProvider Q
 			Help:                        "Latency of each stage of the query planning process.",
 			NativeHistogramBucketFactor: 1.1,
 		}, []string{"stage_type", "stage"}),
+		generatedPlans: promauto.With(opts.CommonOpts.Reg).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_mimir_query_engine_plans_generated_total",
+			Help: "Total number of query plans generated.",
+		}, []string{"version"}),
+
 		versionProvider: versionProvider,
 
 		logger:    opts.Logger,
@@ -195,7 +202,12 @@ func (p *QueryPlanner) NewQueryPlan(ctx context.Context, qs string, timeRange ty
 
 	defer p.activeQueryTracker.Delete(queryID)
 
-	spanLogger.DebugLog("msg", "starting planning", "expression", qs)
+	maximumSupportedQueryPlanVersion, err := p.versionProvider.GetMaximumSupportedQueryPlanVersion(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("could not determine maximum supported query plan version: %w", err)
+	}
+
+	spanLogger.DebugLog("msg", "starting planning", "expression", qs, "maximum_supported_query_plan_version", maximumSupportedQueryPlanVersion)
 
 	expr, err := p.ParseAndApplyASTOptimizationPasses(ctx, qs, timeRange, observer)
 	if err != nil {
@@ -236,7 +248,7 @@ func (p *QueryPlanner) NewQueryPlan(ctx context.Context, qs string, timeRange ty
 	spanLogger.DebugLog("msg", "original plan completed", "plan", plan)
 
 	for _, o := range p.planOptimizationPasses {
-		plan, err = p.runPlanningStage(o.Name(), observer, func() (*planning.QueryPlan, error) { return o.Apply(ctx, plan) })
+		plan, err = p.runPlanningStage(o.Name(), observer, func() (*planning.QueryPlan, error) { return o.Apply(ctx, plan, maximumSupportedQueryPlanVersion) })
 
 		if err != nil {
 			return nil, err
@@ -246,6 +258,12 @@ func (p *QueryPlanner) NewQueryPlan(ctx context.Context, qs string, timeRange ty
 	if err := plan.DeterminePlanVersion(); err != nil {
 		return nil, err
 	}
+
+	if plan.Version > maximumSupportedQueryPlanVersion {
+		return nil, fmt.Errorf("maximum supported query plan version is %d, but generated plan version is %d - this is a bug", maximumSupportedQueryPlanVersion, plan.Version)
+	}
+
+	p.generatedPlans.WithLabelValues(strconv.FormatUint(plan.Version, 10)).Inc()
 
 	if err := observer.OnAllPlanningStagesComplete(plan); err != nil {
 		return nil, err

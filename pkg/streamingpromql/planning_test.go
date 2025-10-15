@@ -12,6 +12,7 @@ import (
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
@@ -1158,6 +1159,13 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 {stage="Pre-processing", stage_type="AST"} 1
 			`)
 
+			expectedMetrics := fmt.Sprintf(`
+				# HELP cortex_mimir_query_engine_plans_generated_total Total number of query plans generated.
+				# TYPE cortex_mimir_query_engine_plans_generated_total counter
+				cortex_mimir_query_engine_plans_generated_total{version="%d"} 1
+			`, originalPlan.Version)
+			require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics), "cortex_mimir_query_engine_plans_generated_total"))
+
 			// Encode plan, confirm it matches what we expect
 			encoded, err := originalPlan.ToEncodedPlan(true, true)
 			require.NoError(t, err)
@@ -1171,8 +1179,30 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 	}
 }
 
-func TestPlanVersioning(t *testing.T) {
+func TestPlanCreation_OptimisationPassGeneratesPlanWithHigherVersionThanAllowed(t *testing.T) {
+	opts := NewTestEngineOpts()
+	planner, err := NewQueryPlannerWithoutOptimizationPasses(opts, NewStaticQueryPlanVersionProvider(12))
+	require.NoError(t, err)
 
+	planner.RegisterQueryPlanOptimizationPass(&optimizationPassThatGeneratesHigherVersionPlanThanAllowed{})
+
+	plan, err := planner.NewQueryPlan(context.Background(), "foo", types.NewInstantQueryTimeRange(time.Now()), NoopPlanningObserver{})
+	require.EqualError(t, err, "maximum supported query plan version is 12, but generated plan version is 13 - this is a bug")
+	require.Nil(t, plan)
+}
+
+type optimizationPassThatGeneratesHigherVersionPlanThanAllowed struct{}
+
+func (o *optimizationPassThatGeneratesHigherVersionPlanThanAllowed) Name() string {
+	return "test optimization pass"
+}
+
+func (o *optimizationPassThatGeneratesHigherVersionPlanThanAllowed) Apply(ctx context.Context, plan *planning.QueryPlan, maximumSupportedQueryPlanVersion uint64) (*planning.QueryPlan, error) {
+	plan.Root = newTestNode(maximumSupportedQueryPlanVersion + 1)
+	return plan, nil
+}
+
+func TestPlanVersioning(t *testing.T) {
 	planning.RegisterNodeFactory(func() planning.Node {
 		return &versioningTestNode{NumberLiteralDetails: &core.NumberLiteralDetails{}}
 	})
@@ -1635,7 +1665,7 @@ type versioningTestNode struct {
 	*core.NumberLiteralDetails
 }
 
-func newTestNode(minimumRequiredPlanVersion int64) *versioningTestNode {
+func newTestNode(minimumRequiredPlanVersion uint64) *versioningTestNode {
 	return &versioningTestNode{
 		NumberLiteralDetails: &core.NumberLiteralDetails{Value: float64(minimumRequiredPlanVersion)},
 	}
