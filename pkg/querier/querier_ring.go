@@ -4,11 +4,15 @@ package querier
 
 import (
 	"flag"
+	"fmt"
 	"net"
 	"strconv"
+	"time"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/dskit/kv"
 	"github.com/grafana/dskit/ring"
+	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/util"
@@ -19,6 +23,8 @@ const (
 	// Queriers use a ring because they need to share the maximum query plan version
 	// they support with query-frontends.
 	ringNumTokens = 1
+
+	querierRingKey = "querier"
 
 	MaximumSupportedQueryPlanVersion = 1
 )
@@ -52,6 +58,7 @@ func (cfg *RingConfig) ToBasicLifecyclerConfig(logger log.Logger) (ring.BasicLif
 		TokensObservePeriod:             0,
 		NumTokens:                       ringNumTokens,
 		KeepInstanceInTheRingOnShutdown: false,
+		HideTokensInStatusPage:          true,
 		ShowVersionsInStatusPage:        true,
 		Versions: ring.InstanceVersions{
 			MaximumSupportedQueryPlanVersion: uint64(planning.MaximumSupportedQueryPlanVersion),
@@ -65,4 +72,31 @@ func (cfg *RingConfig) toRingConfig() ring.Config {
 	rc.ShowVersionsInStatusPage = true
 
 	return rc
+}
+
+func NewLifecycler(cfg RingConfig, logger log.Logger, reg prometheus.Registerer) (*ring.BasicLifecycler, error) {
+	reg = prometheus.WrapRegistererWithPrefix("cortex_", reg)
+	kvStore, err := kv.NewClient(cfg.Common.KVStore, ring.GetCodec(), kv.RegistererWithKVName(reg, "querier-lifecycler"), logger)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize querier KV store: %w", err)
+	}
+
+	lifecyclerCfg, err := cfg.ToBasicLifecyclerConfig(logger)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build querier lifecycler config: %w", err)
+	}
+
+	var delegate ring.BasicLifecyclerDelegate
+	delegate = ring.NewInstanceRegisterDelegate(ring.ACTIVE, lifecyclerCfg.NumTokens)
+	delegate = ring.NewLeaveOnStoppingDelegate(delegate, logger)
+	if cfg.AutoForgetUnhealthyPeriods > 0 {
+		delegate = ring.NewAutoForgetDelegate(time.Duration(cfg.AutoForgetUnhealthyPeriods)*cfg.Common.HeartbeatTimeout, delegate, logger)
+	}
+
+	lifecycler, err := ring.NewBasicLifecycler(lifecyclerCfg, "querier", querierRingKey, kvStore, delegate, logger, reg)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize querier lifecycler: %w", err)
+	}
+
+	return lifecycler, nil
 }
