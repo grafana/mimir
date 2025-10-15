@@ -22825,6 +22825,28 @@
         },
         {
           "kind": "field",
+          "name": "task_concurrency",
+          "required": false,
+          "desc": "Maximum number of Go routines processing tasks in parallel.",
+          "fieldValue": null,
+          "fieldDefaultValue": 2,
+          "fieldFlag": "parquet-converter.task-concurrency",
+          "fieldType": "int",
+          "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
+          "name": "conversion_concurrency",
+          "required": false,
+          "desc": "Maximum number of concurrent Go routines allowed to run the conversion code.",
+          "fieldValue": null,
+          "fieldDefaultValue": 1,
+          "fieldFlag": "parquet-converter.conversion-concurrency",
+          "fieldType": "int",
+          "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
           "name": "min_compaction_level",
           "required": false,
           "desc": "Minimum compaction level required for blocks to be converted to Parquet. Blocks equal or greater than this level will be converted.",
