@@ -209,7 +209,10 @@ type ingesterQueryResult struct {
 // queryIngesterStream queries the ingesters using the gRPC streaming API.
 func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSets []ring.ReplicationSet, req *ingester_client.QueryRequest, queryMetrics *stats.QueryMetrics) (ingester_client.CombinedQueryStreamResponse, error) {
 	queryLimiter := limiter.QueryLimiterFromContextWithFallback(ctx)
-	memoryTracker := limiter.MemoryTrackerFromContextWithFallback(ctx)
+	memoryTracker, err := limiter.MemoryConsumptionTrackerFromContext(ctx)
+	if err != nil {
+		return ingester_client.CombinedQueryStreamResponse{}, err
+	}
 	reqStats := stats.FromContext(ctx)
 
 	// queryIngester MUST call cancelContext once processing is completed in order to release resources. It's required
@@ -389,46 +392,6 @@ func (d *Distributor) estimatedIngestersPerSeries(replicationSets []ring.Replica
 
 	// Not zone-aware: quorum is replication factor less allowable unavailable ingesters.
 	return d.ingestersRing.ReplicationFactor() - replicationSet.MaxErrors
-}
-
-// Merges and dedupes two sorted slices with samples together.
-func mergeSamples(a, b []mimirpb.Sample) []mimirpb.Sample {
-	if sameSamples(a, b) {
-		return a
-	}
-
-	result := make([]mimirpb.Sample, 0, len(a)+len(b))
-	i, j := 0, 0
-	for i < len(a) && j < len(b) {
-		if a[i].TimestampMs < b[j].TimestampMs {
-			result = append(result, a[i])
-			i++
-		} else if a[i].TimestampMs > b[j].TimestampMs {
-			result = append(result, b[j])
-			j++
-		} else {
-			result = append(result, a[i])
-			i++
-			j++
-		}
-	}
-	// Add the rest of a or b. One of them is empty now.
-	result = append(result, a[i:]...)
-	result = append(result, b[j:]...)
-	return result
-}
-
-func sameSamples(a, b []mimirpb.Sample) bool {
-	if len(a) != len(b) {
-		return false
-	}
-
-	for i := 0; i < len(a); i++ {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
 }
 
 type seriesChunksStream struct {

@@ -22,12 +22,14 @@ import (
 	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
-var MaximumSupportedQueryPlanVersion = QueryPlanVersionOne
+var MaximumSupportedQueryPlanVersion = QueryPlanV1
 
 const QueryPlanVersionZero = int64(0)
 
-// QueryPlanVersionOne introduces support for step invariant expression nodes
-const QueryPlanVersionOne = int64(1)
+// This version introduces:
+// 1. DropName node
+// 2. Step invariant expression node
+const QueryPlanV1 = int64(1)
 
 type QueryPlan struct {
 	TimeRange types.QueryTimeRange

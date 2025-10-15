@@ -60,6 +60,17 @@ func NewQueryPlanner(opts EngineOpts) (*QueryPlanner, error) {
 	planner.RegisterASTOptimizationPass(&ast.SortLabelsAndMatchers{}) // This is a prerequisite for other optimization passes such as common subexpression elimination.
 	// After query sharding is moved here, we want to move propagate matchers and reorder histogram aggregation here as well before query sharding.
 
+	// This optimization pass is registered before CSE to keep the query plan as a simple tree structure.
+	// After CSE, the query plan may no longer be a tree due to multiple paths culminating in the same Duplicate node,
+	// which would make the elimination logic more complex.
+	if opts.EnableEliminateDeduplicateAndMerge {
+		if opts.CommonOpts.EnableDelayedNameRemoval {
+			return nil, errors.New("eliminating deduplicate and merge nodes is not supported with delayed name removal")
+		}
+
+		planner.RegisterQueryPlanOptimizationPass(plan.NewEliminateDeduplicateAndMergeOptimizationPass())
+	}
+
 	if opts.EnableCommonSubexpressionElimination {
 		planner.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(opts.EnableCommonSubexpressionEliminationForRangeVectorExpressionsInInstantQueries, opts.CommonOpts.Reg, opts.Logger))
 	}
@@ -198,21 +209,10 @@ func (p *QueryPlanner) NewQueryPlan(ctx context.Context, qs string, timeRange ty
 		}
 
 		if p.enableDelayedNameRemoval {
-			if dedupAndMerge, ok := root.(*core.DeduplicateAndMerge); ok {
-				dedupAndMerge.RunDelayedNameRemoval = true
-			} else {
-				// Don't run delayed name removal or deduplicate and merge where there are no
-				// vector selectors.
-				shouldWrap, err := shouldWrapInDedupAndMerge(root)
-				if err != nil {
-					return nil, err
-				}
-				if shouldWrap {
-					root = &core.DeduplicateAndMerge{
-						Inner:                      root,
-						DeduplicateAndMergeDetails: &core.DeduplicateAndMergeDetails{RunDelayedNameRemoval: true},
-					}
-				}
+			var err error
+			root, err = p.insertDropNameOperator(root)
+			if err != nil {
+				return nil, err
 			}
 		}
 
@@ -252,6 +252,37 @@ func (p *QueryPlanner) NewQueryPlan(ctx context.Context, qs string, timeRange ty
 	spanLogger.DebugLog("msg", "planning completed", "plan", plan, "version", plan.Version)
 
 	return plan, err
+}
+
+func (p *QueryPlanner) insertDropNameOperator(root planning.Node) (planning.Node, error) {
+	if dedupAndMerge, ok := root.(*core.DeduplicateAndMerge); ok {
+		// If root is already DeduplicateAndMerge, insert DropName between it and its inner node
+		return &core.DeduplicateAndMerge{
+			Inner: &core.DropName{
+				Inner:           dedupAndMerge.Inner,
+				DropNameDetails: &core.DropNameDetails{},
+			},
+			DeduplicateAndMergeDetails: dedupAndMerge.DeduplicateAndMergeDetails,
+		}, nil
+	}
+
+	// Don't run delayed name removal or deduplicate and merge where there are no
+	// vector selectors.
+	shouldWrap, err := shouldWrapInDedupAndMerge(root)
+	if err != nil {
+		return nil, err
+	}
+	if shouldWrap {
+		return &core.DeduplicateAndMerge{
+			Inner: &core.DropName{
+				Inner:           root,
+				DropNameDetails: &core.DropNameDetails{},
+			},
+			DeduplicateAndMergeDetails: &core.DeduplicateAndMergeDetails{},
+		}, nil
+	}
+
+	return root, nil
 }
 
 func shouldWrapInDedupAndMerge(root planning.Node) (bool, error) {

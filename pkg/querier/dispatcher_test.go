@@ -1004,6 +1004,8 @@ func TestDispatcher_HandleProtobuf_WithDelayedNameRemovalEnabled(t *testing.T) {
 
 	opts := streamingpromql.NewTestEngineOpts()
 	opts.CommonOpts.EnableDelayedNameRemoval = true
+	// Disable the optimization pass, since it requires delayed name removal to be enabled.
+	opts.EnableEliminateDeduplicateAndMerge = false
 	ctx := context.Background()
 	planner, err := streamingpromql.NewQueryPlanner(opts)
 	require.NoError(t, err)

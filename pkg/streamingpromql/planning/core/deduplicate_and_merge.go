@@ -49,9 +49,6 @@ func (d *DeduplicateAndMerge) EquivalentTo(other planning.Node) bool {
 }
 
 func (d *DeduplicateAndMerge) Describe() string {
-	if d.RunDelayedNameRemoval {
-		return "with delayed name removal"
-	}
 	return ""
 }
 
@@ -85,7 +82,7 @@ func MaterializeDeduplicateAndMerge(d *DeduplicateAndMerge, materializer *planni
 		return nil, err
 	}
 
-	o := operators.NewDeduplicateAndMerge(inner, params.MemoryConsumptionTracker, d.RunDelayedNameRemoval)
+	o := operators.NewDeduplicateAndMerge(inner, params.MemoryConsumptionTracker)
 
 	return planning.NewSingleUseOperatorFactory(o), nil
 }

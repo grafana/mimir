@@ -2506,6 +2506,17 @@
               "fieldFlag": "querier.mimir-query-engine.enable-narrow-binary-selectors",
               "fieldType": "boolean",
               "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "enable_eliminate_deduplicate_and_merge",
+              "required": false,
+              "desc": "Enable eliminating redundant DeduplicateAndMerge nodes from the query plan when it can be proven that each input series produces a unique output series.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "querier.mimir-query-engine.enable-eliminate-deduplicate-and-merge",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
             }
           ],
           "fieldValue": null,
@@ -4777,17 +4788,6 @@
         },
         {
           "kind": "field",
-          "name": "service_overload_status_code_on_rate_limit_enabled",
-          "required": false,
-          "desc": "If enabled, rate limit errors will be reported to the client with HTTP status code 529 (Service is overloaded). If disabled, status code 429 (Too Many Requests) is used. Enabling -distributor.retry-after-header.enabled before utilizing this option is strongly recommended as it helps prevent premature request retries by the client.",
-          "fieldValue": null,
-          "fieldDefaultValue": false,
-          "fieldFlag": "distributor.service-overload-status-code-on-rate-limit-enabled",
-          "fieldType": "boolean",
-          "fieldCategory": "experimental"
-        },
-        {
-          "kind": "field",
           "name": "max_global_series_per_user",
           "required": false,
           "desc": "The maximum number of in-memory series per tenant, across the cluster before replication. 0 to disable.",
@@ -5824,6 +5824,17 @@
           "fieldDefaultValue": 0,
           "fieldFlag": "ruler.min-rule-evaluation-interval",
           "fieldType": "duration",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "ruler_max_rule_evaluation_results",
+          "required": false,
+          "desc": "Maximum number of alerts or series one alerting rule or one recording rule respectively can produce. 0 is no limit.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "ruler.max-rule-evaluation-results",
+          "fieldType": "int",
           "fieldCategory": "experimental"
         },
         {

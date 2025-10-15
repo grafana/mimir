@@ -16,11 +16,12 @@
 * [CHANGE] Query-frontend: Use the Mimir Query Engine (MQE) by default. #12361
 * [CHANGE] Query-frontend: Remove the CLI flags `-querier.frontend-address`, `-querier.max-outstanding-requests-per-tenant`, and `-query-frontend.querier-forget-delay` and corresponding YAML configurations. This is part of a change that makes the query-scheduler a required component. This removes the ability to run the query-frontend with an embedded query-scheduler. Instead, you must run a dedicated query-scheduler component. #12200
 * [CHANGE] Ingester: Remove deprecated `-ingester.stream-chunks-when-using-blocks` CLI flag and `ingester_stream_chunks_when_using_blocks` runtime configuration option. #12615
-* [CHANGE] Querier: Require non-zero values for `-querier.streaming-chunks-per-ingester-buffer-size` and `-querier.streaming-chunks-per-store-gateway-buffer-size` CLI flags and corresponding YAML configurations. This is part of a change that makes streaming required between queriers, ingesters, and store-gateways. Streaming has been the default since Mimir 2.14. #12790 #12818 #12897 #12929
+* [CHANGE] Querier: Require non-zero values for `-querier.streaming-chunks-per-ingester-buffer-size` and `-querier.streaming-chunks-per-store-gateway-buffer-size` CLI flags and corresponding YAML configurations. This is part of a change that makes streaming required between queriers, ingesters, and store-gateways. Streaming has been the default since Mimir 2.14. #12790 #12818 #12897 #12929 #12973
 * [CHANGE] Remove support for the experimental read-write deployment mode. #12584
 * [CHANGE] Store-gateway: Update default value of `-store-gateway.dynamic-replication.multiple` to `5` to increase replication of recent blocks. #12433
 * [CHANGE] Cost attribution: Reduce the default maximum per-user cardinality of cost attribution labels to 2000. #12625
 * [CHANGE] Querier, query-frontend: Add `_total` suffix to `cortex_mimir_query_engine_common_subexpression_elimination_duplication_nodes_introduced`, `cortex_mimir_query_engine_common_subexpression_elimination_selectors_eliminated` and `cortex_mimir_query_engine_common_subexpression_elimination_selectors_inspected` metric names. #12636
+* [CHANGE] Distributor: Remove the experimental setting `service_overload_status_code_on_rate_limit_enabled` which used an HTTP 529 error (non-standard) instead of HTTP 429 for rate limiting. #13012
 * [CHANGE] Alertmanager: Change the severity for InitialSyncFailed from 'critical' to 'warning'. #12824
 * [CHANGE] Ingester: Renamed experimental reactive limiter options. #12773
 * [FEATURE] Ingester: Expose the number of active series ingested via OTLP as `cortex_ingester_active_otlp_series`. #12678
@@ -37,13 +38,14 @@
 * [FEATURE] Ingester: Add experimental `blocks-storage.tsdb.index-lookup-planning-enabled` flag to configure use of a cost-based index lookup planner. #12530
 * [FEATURE] MQE: Add support for applying extra selectors to one side of a binary operation to reduce data fetched. #12577
 * [FEATURE] Query-frontend: Add a native histogram presenting the length of query expressions handled by the query-frontend #12571
-* [FEATURE] Query-frontend and querier: Add experimental support for performing query planning in query-frontends and distributing portions of the plan to queriers for execution. #12302 #12551 #12665 #12687 #12745 #12757 #12798 #12808 #12809 #12835 #12856 #12870 #12883 #12885 #12886 #12911 #12933 #12934 #12961
+* [FEATURE] Query-frontend and querier: Add experimental support for performing query planning in query-frontends and distributing portions of the plan to queriers for execution. #12302 #12551 #12665 #12687 #12745 #12757 #12798 #12808 #12809 #12835 #12856 #12870 #12883 #12885 #12886 #12911 #12933 #12934 #12961 #13016
 * [FEATURE] Alertmanager: add Microsoft Teams V2 as a supported integration. #12680
 * [FEATURE] Distributor: Add experimental flag `-validation.label-value-length-over-limit-strategy` to configure how to handle label values over the length limit. #12627 #12844
 * [FEATURE] Ingester: Introduce metric `cortex_ingester_owned_target_info_series` for counting the number of owned `target_info` series by tenant. #12681
 * [FEATURE] MQE: Add support for step invariant expression handling in query planning and evaluation. #12931
 * [FEATURE] MQE: Add support for experimental `ts_of_min_over_time`, `ts_of_max_over_time`, `ts_of_first_over_time` and `ts_of_last_over_time` PromQL functions. #12819
 * [FEATURE] Ingester: Add experimental flags `-ingest-storage.write-logs-fsync-before-kafka-commit-enabled` and `-ingest-storage.write-logs-fsync-before-kafka-commit-concurrency` to fsync write logs before the offset is committed to Kafka. This is enabled by default. #12816
+* [FEATURE] MQE: Add support for experimental `mad_over_time` PromQL function. #12995
 * [ENHANCEMENT] Query-frontend: CLI flag `-query-frontend.enabled-promql-experimental-functions` and its associated YAML configuration is now stable. #12368
 * [ENHANCEMENT] Query-scheduler/query-frontend: Add native histogram definitions to `cortex_query_{scheduler|frontend}_queue_duration_seconds`. #12288
 * [ENHANCEMENT] Querier: Add native histogram definition to `cortex_bucket_index_load_duration_seconds`. #12094
@@ -78,6 +80,8 @@
 * [ENHANCEMENT] Distributor: Add reactive concurrency limiters to protect push operations from overload. #12923
 * [ENHANCEMENT] Ingester: Add experimental matcher set reduction to cost-based lookup planning. #12831
 * [ENHANCEMENT] Ruler: Add `reason` label to `cortex_prometheus_rule_evaluation_failures_total` metric to distinguish between "user" and "operator" errors. #12971
+* [ENHANCEMENT] Update Docker base images from `alpine:3.22.1` to `alpine:3.22.2`. #12991
+* [ENHANCEMENT] Ruler: Add the `ruler_max_rule_evaluation_results` per-tenant configuration option to limit the maximum number of alerts an alerting rule or series a recording rule can produce for the group. By default, no limit is enforced. #12832
 * [BUGFIX] Distributor: Calculate `WriteResponseStats` before validation and `PushWrappers`. This prevents clients using Remote-Write 2.0 from seeing a diff in written samples, histograms and exemplars. #12682
 * [BUGFIX] Compactor: Fix cortex_compactor_block_uploads_failed_total metric showing type="unknown". #12477
 * [BUGFIX] Querier: Samples with the same timestamp are merged deterministically. Previously, this could lead to flapping query results when an out-of-order sample is ingested that conflicts with a previously ingested in-order sample's value. #8673
@@ -123,10 +127,16 @@
 * [CHANGE] Ingester: Disable shipping of blocks on the third zone (zone-c) when using `ingest_storage_ingester_zones: 3` on ingest storage #12743 #12744
 * [CHANGE] Distributor: Increase `server.grpc-max-concurrent-streams` from 100 to 1000. #12742
 * [CHANGE] Ruler Query Frontend: Increase `server.grpc-max-concurrent-streams` from 100 to 300. #12742
-* [CHANGE] Rollout-operator: Vendor jsonnet from rollout-operator repository. #12688 #12962
+* [CHANGE] Rollout-operator: Vendor jsonnet from rollout-operator repository. #12688 #12962 #12996
 * [FEATURE] Memcached: Allow `minReadySeconds` to be set via `_config.cache_frontend_min_ready_seconds` (etc.) to slow down Memcached rollouts. #12938
+* [FEATURE] Distributor: Allow setting GOMEMLIMIT equal to memory request, via `_config.distributor_gomemlimit_enabled`. If enabled, distributor horizontal auto-scaling memory trigger is also removed, since it doesn't make sense in combination with GOMEMLIMIT. #12963
 * [ENHANCEMENT] Add timeout validation for querier and query-frontend. Enhanced `parseDuration` to support milliseconds and combined formats (e.g., "4m30s"). #12766
 * [ENHANCEMENT] Allow the max number of OTEL events in a span to be configure via `_config.otel_span_event_count_limit`. #12865
+* [ENHANCEMENT] Memcached: added the following fields to customise the memcached's node affinity matchers: #12987
+  * `$.memcached_frontend_node_affinity_matchers`
+  * `$.memcached_index_queries_node_affinity_matchers`
+  * `$.memcached_chunks_node_affinity_matchers`
+  * `$.memcached_metadata_node_affinity_matchers`
 
 ### Documentation
 

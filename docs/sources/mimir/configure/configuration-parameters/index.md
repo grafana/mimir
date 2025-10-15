@@ -1738,6 +1738,12 @@ mimir_query_engine:
   # expression based on results from the other side.
   # CLI flag: -querier.mimir-query-engine.enable-narrow-binary-selectors
   [enable_narrow_binary_selectors: <boolean> | default = false]
+
+  # (experimental) Enable eliminating redundant DeduplicateAndMerge nodes from
+  # the query plan when it can be proven that each input series produces a
+  # unique output series.
+  # CLI flag: -querier.mimir-query-engine.enable-eliminate-deduplicate-and-merge
+  [enable_eliminate_deduplicate_and_merge: <boolean> | default = false]
 ```
 
 ### frontend
@@ -3580,15 +3586,6 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -distributor.metric-relabeling-enabled
 [metric_relabeling_enabled: <boolean> | default = true]
 
-# (experimental) If enabled, rate limit errors will be reported to the client
-# with HTTP status code 529 (Service is overloaded). If disabled, status code
-# 429 (Too Many Requests) is used. Enabling
-# -distributor.retry-after-header.enabled before utilizing this option is
-# strongly recommended as it helps prevent premature request retries by the
-# client.
-# CLI flag: -distributor.service-overload-status-code-on-rate-limit-enabled
-[service_overload_status_code_on_rate_limit_enabled: <boolean> | default = false]
-
 # The maximum number of in-memory series per tenant, across the cluster before
 # replication. 0 to disable.
 # CLI flag: -ingester.max-global-series-per-user
@@ -4155,6 +4152,11 @@ ruler_alertmanager_client_config:
 # (experimental) Minimum allowable evaluation interval for rule groups.
 # CLI flag: -ruler.min-rule-evaluation-interval
 [ruler_min_rule_evaluation_interval: <duration> | default = 0s]
+
+# (experimental) Maximum number of alerts or series one alerting rule or one
+# recording rule respectively can produce. 0 is no limit.
+# CLI flag: -ruler.max-rule-evaluation-results
+[ruler_max_rule_evaluation_results: <int> | default = 0]
 
 # The tenant's shard size, used when store-gateway sharding is enabled. Value of
 # 0 disables shuffle sharding for the tenant, that is all tenant blocks are
