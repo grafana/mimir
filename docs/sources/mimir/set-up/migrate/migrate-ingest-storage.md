@@ -29,6 +29,10 @@ This procedure temporarily doubles your ingestion and storage costs, because bot
 
 Follow these steps to migrate your Grafana Mimir cluster from classic architecture to ingest storage architecture.
 
+1. Prepare your existing Grafana Mimir cluster for migration.
+
+   Before creating a new Grafana Mimir cluster, temporarily scale out compactors in your existing cluster. This step helps handle the increased number of blocks created while both clusters are writing to the same object storage bucket.
+
 1. Set up a new Grafana Mimir cluster with ingest storage.
 
    Deploy a new Grafana Mimir cluster that uses ingest storage. Configure the new cluster to use the same object storage bucket as the old cluster.
@@ -63,9 +67,15 @@ Follow these steps to migrate your Grafana Mimir cluster from classic architectu
 
    Keep read clients, such as Grafana, configured to use the old cluster during this step.
 
-1. Wait for the old cluster’s ingesters to flush data.
+1. Wait until both clusters have a complete view of the data.
 
-   Allow enough time for all ingesters in the old cluster to flush their in-memory data to object storage. This usually takes about 13 hours. During this time, both clusters are writing and both are healthy.
+   Keep write duplication running long enough for both clusters to have a complete view of recent data.
+   
+   Ingesters in the old cluster continuously upload new blocks to object storage and roll new blocks on disk every 2 hours. Because ingesters typically hold about 12–13 hours of recent data in memory and on local disk, continue double writing for at least that duration. This ensures that the new cluster receives all data written during the overlap period and that queries return a complete dataset.
+
+   You don’t need to disable block uploads from ingesters in the new cluster. Both clusters can safely upload blocks to the shared object storage because compactors merge them correctly.  
+
+   After the migration is complete, scale the compactors in the new cluster back down to their normal count.
 
 1. Switch read clients to the new cluster.
 
@@ -73,7 +83,7 @@ Follow these steps to migrate your Grafana Mimir cluster from classic architectu
 
    Verify that the old cluster is no longer receiving queries by checking for `msg="query stats"` entries in the query-frontend logs.
 
-1. Scale down compactors in the old cluster
+1. Scale down compactors in the old cluster.
 
    Reduce the number of compactor replicas in the old cluster to zero. For example:
 
@@ -82,7 +92,7 @@ Follow these steps to migrate your Grafana Mimir cluster from classic architectu
      replicas: 0
    ```
 
-   Run this step immediately before scaling up the new compactors, ideally within 30 minutes.
+   Run this step immediately before scaling up the compactors in the new cluster, ideally within 15 minutes. If the bucket index isn’t updated by the new cluster’s compactors within about an hour of stopping the old compactors, read queries can fail.
 
 1. Scale out compactors in the new cluster.
 
@@ -111,5 +121,9 @@ Follow these steps to migrate your Grafana Mimir cluster from classic architectu
    ```sh
    helm uninstall <OLD_RELEASE_NAME>
    ```
+
+1. Scale down compactors in the new cluster.
+
+   After the migration is complete and the old cluster is decommissioned, reduce the number of compactor replicas in the new cluster to your normal steady-state configuration. This lowers resource use after the temporary load from the dual-cluster operation is gone.
 
 Your system runs entirely with ingest storage architecture.
