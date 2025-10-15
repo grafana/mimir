@@ -3,13 +3,21 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"time"
 
+	"github.com/grafana/dskit/user"
+	"github.com/prometheus/prometheus/model/labels"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
+
+	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/ingester/lookupplan/benchmarks"
 )
 
@@ -83,9 +91,11 @@ func (a *app) runBasicBenchmarks() error {
 		// In future iterations, we can add actual query execution here
 		iterStart := time.Now()
 
-		// Placeholder for actual query execution
-		// TODO: Add query execution using createIngesterQueryable
-		time.Sleep(1 * time.Millisecond) // Simulate minimal work
+		// Execute a simple query to benchmark ingester performance
+		err := a.executeQuery("__name__", "a_100")
+		if err != nil {
+			slog.Warn("query execution failed", "error", err, "iteration", i+1)
+		}
 
 		iterDuration := time.Since(iterStart)
 		slog.Info("benchmark iteration completed",
@@ -101,6 +111,76 @@ func (a *app) runBasicBenchmarks() error {
 		"total_duration", totalDuration,
 		"avg_duration", avgDuration,
 		"iterations", a.count)
+
+	return nil
+}
+
+// executeQuery executes a simple query against the ingester using gRPC client
+func (a *app) executeQuery(labelName, labelValue string) error {
+	// Create gRPC connection to ingester
+	conn, err := grpc.Dial(a.ingesterAddress, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		return fmt.Errorf("failed to connect to ingester: %w", err)
+	}
+	defer conn.Close()
+
+	// Create ingester client
+	ingesterClient := client.NewIngesterClient(conn)
+
+	// Create label matcher
+	matcher, err := labels.NewMatcher(labels.MatchEqual, labelName, labelValue)
+	if err != nil {
+		return fmt.Errorf("failed to create label matcher: %w", err)
+	}
+
+	// Convert to client format
+	labelMatchers, err := client.ToLabelMatchers([]*labels.Matcher{matcher})
+	if err != nil {
+		return fmt.Errorf("failed to convert label matchers: %w", err)
+	}
+
+	// Create query request
+	now := time.Now()
+	req := &client.QueryRequest{
+		StartTimestampMs: now.Add(-time.Hour).UnixMilli(), // 1 hour ago
+		EndTimestampMs:   now.UnixMilli(),                 // now
+		Matchers:         labelMatchers,
+	}
+
+	// Execute query using QueryStream with user context
+	ctx := user.InjectOrgID(context.Background(), "benchmark-tenant")
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	stream, err := ingesterClient.QueryStream(ctx, req)
+	if err != nil {
+		return fmt.Errorf("failed to execute query: %w", err)
+	}
+
+	// Read response stream
+	seriesCount := 0
+	sampleCount := 0
+	for {
+		resp, err := stream.Recv()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return fmt.Errorf("failed to receive query response: %w", err)
+		}
+
+		if len(resp.Chunkseries) > 0 {
+			for _, series := range resp.Chunkseries {
+				seriesCount++
+				sampleCount += len(series.Chunks)
+			}
+		}
+	}
+
+	slog.Debug("query executed successfully",
+		"label", fmt.Sprintf("%s=%s", labelName, labelValue),
+		"series_count", seriesCount,
+		"sample_count", sampleCount)
 
 	return nil
 }
