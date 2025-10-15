@@ -69,6 +69,7 @@ func (cfg *RingConfig) ToBasicLifecyclerConfig(logger log.Logger) (ring.BasicLif
 func (cfg *RingConfig) toRingConfig() ring.Config {
 	rc := cfg.Common.ToRingConfig()
 	rc.ReplicationFactor = 1
+	rc.HideTokensInStatusPage = true
 	rc.ShowVersionsInStatusPage = true
 
 	return rc
@@ -99,4 +100,13 @@ func NewLifecycler(cfg RingConfig, logger log.Logger, reg prometheus.Registerer)
 	}
 
 	return lifecycler, nil
+}
+
+func NewRing(cfg RingConfig, logger log.Logger, reg prometheus.Registerer) (*ring.Ring, error) {
+	r, err := ring.New(cfg.toRingConfig(), "querier", querierRingKey, logger, reg)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize querier ring client: %w", err)
+	}
+
+	return r, nil
 }

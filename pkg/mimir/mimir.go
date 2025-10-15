@@ -854,6 +854,8 @@ type Mimir struct {
 	AdditionalStorageQueryables      []querier.TimeRangeQueryable
 	MetadataSupplier                 querier.MetadataSupplier
 	QuerierEngine                    promql.QueryEngine
+	QuerierLifecycler                *ring.BasicLifecycler
+	QuerierRing                      *ring.Ring
 	QuerierStreamingEngine           *streamingpromql.Engine // The MQE instance in QuerierEngine (without fallback wrapper), or nil if MQE is disabled.
 	QueryFrontendStreamingEngine     *streamingpromql.Engine // The MQE instance used by the query-frontend (without fallback wrapper), or nil if MQE is disabled.
 	QueryFrontendTripperware         querymiddleware.Tripperware
@@ -1017,6 +1019,14 @@ func (t *Mimir) Run() error {
 		t.API.RegisterIngesterRing(t.IngesterRing)
 	} else if t.Ingester != nil {
 		t.API.RegisterIngesterRing(t.Ingester.RingHandler())
+	}
+
+	// Similar to above, register the querier ring handler if it exists,
+	// preferring the one exposed by the ring instance over the BasicLifecycler.
+	if t.QuerierRing != nil {
+		t.API.RegisterQuerierRing(t.QuerierRing)
+	} else if t.QuerierLifecycler != nil {
+		t.API.RegisterQuerierRing(t.QuerierLifecycler)
 	}
 
 	// get all services, create service manager and tell it to start

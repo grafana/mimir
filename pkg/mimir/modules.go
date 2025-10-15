@@ -108,6 +108,7 @@ const (
 	Querier                          string = "querier"
 	QuerierLifecycler                string = "querier-lifecycler"
 	QuerierQueryPlanner              string = "querier-query-planner"
+	QuerierRing                      string = "querier-ring"
 	QueryFrontend                    string = "query-frontend"
 	QueryFrontendCodec               string = "query-frontend-codec"
 	QueryFrontendQueryPlanner        string = "query-frontend-query-planner"
@@ -586,9 +587,20 @@ func (t *Mimir) initQuerierLifecycler() (services.Service, error) {
 		return nil, fmt.Errorf("failed to create querier lifecycler: %w", err)
 	}
 
-	t.API.RegisterQuerierRing(lifecycler)
+	t.QuerierLifecycler = lifecycler
 
 	return lifecycler, nil
+}
+
+func (t *Mimir) initQuerierRing() (services.Service, error) {
+	r, err := querier.NewRing(t.Cfg.Querier.Ring, util_log.Logger, t.Registerer)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create querier ring: %w", err)
+	}
+
+	t.QuerierRing = r
+
+	return r, nil
 }
 
 // initQuerier registers an internal HTTP router with a Prometheus API backed by the
@@ -1424,6 +1436,7 @@ func (t *Mimir) setupModuleManager() error {
 	mm.RegisterModule(Querier, t.initQuerier)
 	mm.RegisterModule(QuerierLifecycler, t.initQuerierLifecycler, modules.UserInvisibleModule)
 	mm.RegisterModule(QuerierQueryPlanner, t.initQuerierQueryPlanner, modules.UserInvisibleModule)
+	mm.RegisterModule(QuerierRing, t.initQuerierRing, modules.UserInvisibleModule)
 	mm.RegisterModule(QueryFrontend, t.initQueryFrontend)
 	mm.RegisterModule(QueryFrontendCodec, t.initQueryFrontendCodec, modules.UserInvisibleModule)
 	mm.RegisterModule(QueryFrontendQueryPlanner, t.initQueryFrontendQueryPlanner, modules.UserInvisibleModule)
@@ -1470,8 +1483,9 @@ func (t *Mimir) setupModuleManager() error {
 		Querier:                          {TenantFederation, Vault, QuerierLifecycler},
 		QuerierLifecycler:                {API, RuntimeConfig, MemberlistKV, Vault},
 		QuerierQueryPlanner:              {API, ActivityTracker},
+		QuerierRing:                      {API, RuntimeConfig, MemberlistKV, Vault},
 		QueryFrontend:                    {QueryFrontendTripperware, MemberlistKV, Vault},
-		QueryFrontendQueryPlanner:        {API, ActivityTracker, Overrides},
+		QueryFrontendQueryPlanner:        {API, ActivityTracker, Overrides, QuerierRing},
 		QueryFrontendTopicOffsetsReaders: {IngesterPartitionRing},
 		QueryFrontendTripperware:         {API, Overrides, QueryFrontendCodec, QueryFrontendTopicOffsetsReaders, QueryFrontendQueryPlanner},
 		QueryScheduler:                   {API, Overrides, MemberlistKV, Vault},
