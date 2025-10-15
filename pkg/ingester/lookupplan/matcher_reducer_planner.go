@@ -72,7 +72,13 @@ func buildOutMatchers(inMatchers []*labels.Matcher, allowedOutMatchers []*labels
 	for _, m := range allowedOutMatchers {
 		allowedInResultSet[m.String()] = false
 	}
-	for _, m := range dedupedMatchers {
+	// If we have reached the last deduped input matcher and are still not returning any matchers,
+	// we should return at least one matcher. This can happen if all input matchers are wildcard matchers.
+	for i, m := range dedupedMatchers {
+		if i == len(dedupedMatchers)-1 && len(outMatchers) == 0 {
+			outMatchers = append(outMatchers, m)
+			continue
+		}
 		// allowedOutMatchers is used to both keep track of all unique matchers (evidenced by existence in the map),
 		// and whether the matcher has already been seen and added to a set of output matchers (evidenced by the value in the map).
 		// We only want to add the matcher if it hasn't already been added to an output slice.
