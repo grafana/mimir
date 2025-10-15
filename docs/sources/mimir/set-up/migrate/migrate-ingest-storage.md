@@ -59,6 +59,8 @@ Follow these steps to migrate your Grafana Mimir cluster from classic architectu
 
    For setup instructions, refer to the existing [Helm chart](https://grafana.com/docs/helm-charts/mimir-distributed/latest/run-production-environment-with-helm/) or [Jsonnet](https://grafana.com/docs/mimir/<MIMIR_VERSION>/set-up/jsonnet/configure-ingest-storage/) configuration documentation for ingest storage.
 
+   After completing this step, open the Mimir overview dashboards for both clusters and verify that all components are healthy. Check that ingestion and querying are succeeding and that there are no gaps or errors.
+
 1. Configure write clients to duplicate writes.
 
    Configure all write clients, such as Prometheus servers and OpenTelemetry Collectors, to send metrics to both clusters simultaneously.
@@ -66,6 +68,8 @@ Follow these steps to migrate your Grafana Mimir cluster from classic architectu
    This ensures that the new cluster receives all recent samples while it accesses historical blocks from object storage.
 
    Keep read clients, such as Grafana, configured to use the old cluster during this step.
+
+   After completing this step, open the Mimir overview dashboards for both clusters and verify that all components are healthy. Check that ingestion and querying are succeeding and that there are no gaps or errors.
 
 1. Wait until both clusters have a complete view of the data.
 
@@ -83,6 +87,8 @@ Follow these steps to migrate your Grafana Mimir cluster from classic architectu
 
    Verify that the old cluster is no longer receiving queries by checking for `msg="query stats"` entries in the query-frontend logs.
 
+   After completing this step, open the Mimir overview dashboards for both clusters and verify that all components are healthy. Check that ingestion and querying are succeeding and that there are no gaps or errors.
+
 1. Scale down compactors in the old cluster.
 
    Reduce the number of compactor replicas in the old cluster to zero. For example:
@@ -97,6 +103,8 @@ Follow these steps to migrate your Grafana Mimir cluster from classic architectu
 1. Scale out compactors in the new cluster.
 
    Increase the number of compactor replicas in the new cluster to match the old configuration. This activates compaction in the new cluster and completes the transition for background storage management.
+
+   After completing this step, open the Mimir overview dashboards for both clusters and verify that all components are healthy. Check that ingestion and querying are succeeding and that there are no gaps or errors.
 
 1. Update ruler alerting configuration.
 
