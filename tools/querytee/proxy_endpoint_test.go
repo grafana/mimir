@@ -577,7 +577,7 @@ func waitForResponseComparisonMetric(t *testing.T, g prometheus.Gatherer, expect
 		expected := fmt.Sprintf(`
 			# HELP cortex_querytee_responses_compared_total Total number of responses compared per route name by result.
 			# TYPE cortex_querytee_responses_compared_total counter
-			cortex_querytee_responses_compared_total{result="%v",route="test"} %d
+			cortex_querytee_responses_compared_total{result="%v",route="test",secondary_backend="secondary-backend"} %d
 `, expectedResult, expectedCount)
 		err := testutil.GatherAndCompare(g, bytes.NewBufferString(expected), "cortex_querytee_responses_compared_total")
 
@@ -882,5 +882,190 @@ func TestProxyEndpoint_BackendSelection(t *testing.T) {
 				require.InEpsilonf(t, testCase.expectedPreferredOnlySelectionCount, preferredOnlySelectionCount, 0.2, "expected to choose only the preferred backend %v times, but chose it %v times", testCase.expectedPreferredOnlySelectionCount, preferredOnlySelectionCount)
 			}
 		})
+	}
+}
+
+func Test_ProxyEndpoint_MultipleSecondaryBackends(t *testing.T) {
+	testRoute := Route{RouteName: "test"}
+
+	scenarios := map[string]struct {
+		numSecondaryBackends          int
+		secondaryResults              []ComparisonResult
+		expectedMetricsCount          int
+		expectedSuccessfulComparisons int
+	}{
+		"1 preferred + 2 secondary backends (all succeed)": {
+			numSecondaryBackends:          2,
+			secondaryResults:              []ComparisonResult{ComparisonSuccess, ComparisonSuccess},
+			expectedMetricsCount:          2, // One metric entry per secondary backend
+			expectedSuccessfulComparisons: 2,
+		},
+		"1 preferred + 3 secondary backends (all succeed)": {
+			numSecondaryBackends:          3,
+			secondaryResults:              []ComparisonResult{ComparisonSuccess, ComparisonSuccess, ComparisonSuccess},
+			expectedMetricsCount:          3,
+			expectedSuccessfulComparisons: 3,
+		},
+		"1 preferred + 2 secondary backends (one fails)": {
+			numSecondaryBackends:          2,
+			secondaryResults:              []ComparisonResult{ComparisonSuccess, ComparisonFailed},
+			expectedMetricsCount:          2,
+			expectedSuccessfulComparisons: 1,
+		},
+		"1 preferred + 3 secondary backends (mixed results)": {
+			numSecondaryBackends:          3,
+			secondaryResults:              []ComparisonResult{ComparisonSuccess, ComparisonFailed, ComparisonSkipped},
+			expectedMetricsCount:          3,
+			expectedSuccessfulComparisons: 1,
+		},
+	}
+
+	for name, scenario := range scenarios {
+		t.Run(name, func(t *testing.T) {
+			preferredBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusOK)
+				_, err := w.Write([]byte("preferred response"))
+				require.NoError(t, err)
+			}))
+			defer preferredBackend.Close()
+
+			preferredBackendURL, err := url.Parse(preferredBackend.URL)
+			require.NoError(t, err)
+
+			backends := []ProxyBackendInterface{
+				NewProxyBackend("preferred-backend", preferredBackendURL, time.Second, true, false, defaultBackendConfig()),
+			}
+
+			var secondaryServers []*httptest.Server
+			for i := 0; i < scenario.numSecondaryBackends; i++ {
+				secondaryServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+					w.Header().Set("Content-Type", "application/json")
+					w.WriteHeader(http.StatusOK)
+					_, err := fmt.Fprintf(w, "secondary response %d", i)
+					require.NoError(t, err)
+				}))
+				secondaryServers = append(secondaryServers, secondaryServer)
+
+				secondaryURL, err := url.Parse(secondaryServer.URL)
+				require.NoError(t, err)
+
+				backends = append(backends, NewProxyBackend(
+					fmt.Sprintf("secondary-backend-%d", i),
+					secondaryURL,
+					time.Second,
+					false, // not preferred
+					false,
+					defaultBackendConfig(),
+				))
+			}
+
+			defer func() {
+				for _, server := range secondaryServers {
+					server.Close()
+				}
+			}()
+
+			logger := newMockLogger()
+			reg := prometheus.NewPedanticRegistry()
+
+			comparator := &multiCallComparator{
+				results: scenario.secondaryResults,
+			}
+
+			endpoint := NewProxyEndpoint(backends, testRoute, NewProxyMetrics(reg), logger, comparator, 0, 1.0, false)
+
+			resp := httptest.NewRecorder()
+			req, err := http.NewRequest("GET", "http://test/api/v1/test", nil)
+			require.NoError(t, err)
+			endpoint.ServeHTTP(resp, req)
+
+			require.Equal(t, "preferred response", resp.Body.String())
+			require.Equal(t, http.StatusOK, resp.Code)
+			require.Equal(t, "application/json", resp.Header().Get("Content-Type"))
+
+			waitForMultipleBackendComparisonMetrics(t, reg, scenario.expectedMetricsCount, scenario.secondaryResults)
+
+			require.Equal(t, scenario.numSecondaryBackends, comparator.callCount, "comparator should be called once per secondary backend")
+		})
+	}
+}
+
+// multiCallComparator tracks calls and returns different results for each call
+type multiCallComparator struct {
+	results   []ComparisonResult
+	callCount int
+	mu        sync.Mutex
+}
+
+func (m *multiCallComparator) Compare(_, _ []byte, _ time.Time) (ComparisonResult, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if m.callCount >= len(m.results) {
+		return ComparisonFailed, fmt.Errorf("unexpected call to comparator (call %d, expected %d calls)", m.callCount+1, len(m.results))
+	}
+
+	result := m.results[m.callCount]
+	m.callCount++
+	return result, nil
+}
+
+// waitForMultipleBackendComparisonMetrics waits for all secondary backend comparison metrics to be recorded
+func waitForMultipleBackendComparisonMetrics(t *testing.T, g prometheus.Gatherer, expectedTotalMetrics int, expectedResults []ComparisonResult) {
+	started := time.Now()
+	timeoutAt := started.Add(2 * time.Second)
+
+	// Count expected results by type
+	expectedCounts := make(map[ComparisonResult]int)
+	for _, result := range expectedResults {
+		expectedCounts[result]++
+	}
+
+	for {
+		// Check if we have the right number of metrics with the right result types
+		// We don't care about the exact backend-to-result mapping since goroutines can complete in any order
+		mfs, err := g.Gather()
+		if err != nil {
+			t.Fatalf("error gathering metrics: %v", err)
+		}
+
+		actualCounts := make(map[ComparisonResult]int)
+		var totalMetrics int
+
+		for _, mf := range mfs {
+			if mf.GetName() == "cortex_querytee_responses_compared_total" {
+				for _, metric := range mf.GetMetric() {
+					totalMetrics++
+					// Extract the result label value
+					for _, label := range metric.GetLabel() {
+						if label.GetName() == "result" {
+							actualCounts[ComparisonResult(label.GetValue())]++
+							break
+						}
+					}
+				}
+			}
+		}
+
+		if totalMetrics == expectedTotalMetrics {
+			allMatch := true
+			for result, expectedCount := range expectedCounts {
+				if actualCounts[result] != expectedCount {
+					allMatch = false
+					break
+				}
+			}
+			if allMatch {
+				return
+			}
+		}
+
+		if time.Now().After(timeoutAt) {
+			t.Fatalf("timed out waiting for multiple backend comparison metrics. Expected: %d total metrics with counts %v, got: %d total metrics with counts %v",
+				expectedTotalMetrics, expectedCounts, totalMetrics, actualCounts)
+		} else {
+			time.Sleep(50 * time.Millisecond)
+		}
 	}
 }
