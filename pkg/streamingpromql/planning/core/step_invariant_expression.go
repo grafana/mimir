@@ -4,6 +4,7 @@ package core
 
 import (
 	"fmt"
+	"github.com/go-kit/log"
 	"reflect"
 	"time"
 
@@ -81,7 +82,15 @@ func MaterializeStepInvariantExpression(s *StepInvariantExpression, materializer
 		return planning.NewSingleUseOperatorFactory(operators.NewStepInvariantInstantVectorOperator(op, timeRange, params.MemoryConsumptionTracker)), nil
 	case types.ScalarOperator:
 		return planning.NewSingleUseOperatorFactory(operators.NewStepInvariantScalarOperator(op, timeRange, params.MemoryConsumptionTracker)), nil
-	case *operators.Subquery:
+	case types.RangeVectorOperator:
+		// Notes on range vector handling ...
+		// For the query to have been wrapped in a step invariant expression, this must be a sub query for a range vector at a fixed point in time. ie metric[3m] @ 100
+		// This query is not tied to the outer queries step interval, so no special operator is needed to fill in the data for each step.
+		// Since range queries can not provide range vector results, this query is an instant query and can be evaluated once.
+		// For other step invariant queries which wrap range vector data, they will have been handled above by the InstantVectorOperator.
+
+		here WIP and add back in those raw instant range vector tests with @ modifier
+
 		return planning.NewSingleUseOperatorFactory(op), nil
 	}
 
