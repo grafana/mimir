@@ -143,6 +143,7 @@
 * [CHANGE] Remove references to queriers having a Prometheus HTTP API. Instead, the query-frontend is now required for a Prometheus HTTP API. #12949
 * [ENHANCEMENT] Improve the MimirIngesterReachingSeriesLimit runbook. #12356
 * [ENHANCEMENT] Improve the description of how to limit the number of buckets in native histograms. #12797
+* [ENHANCEMENT] Document native histograms with custom buckets. #12823
 * [BUGFIX] Add a missing attribute to the list of default promoted OTel resource attributes in the docs: deployment.environment. #12181
 
 ### Tools
