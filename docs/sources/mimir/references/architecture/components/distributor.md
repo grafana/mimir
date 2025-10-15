@@ -11,16 +11,33 @@ weight: 20
 
 # Grafana Mimir distributor
 
-The distributor is a stateless component that receives time-series data from Prometheus or Grafana Alloy.
-The distributor validates the data for correctness and ensures that it is within the configured limits for a given tenant.
-The distributor then divides the data into batches and sends it to multiple [ingesters](../ingester/) in parallel, shards the series among ingesters, and replicates each series by the configured replication factor. By default, the configured replication factor is three.
+The distributor is a stateless component that serves as the ingress for the Mimir write path.
+It receives incoming write requests containing time series data, validates the data for correctness, enforces tenant-specific limits, and then ingests the data into Mimir.
+
+To scale beyond the limits of a single node, distributors shard incoming series across a pool of partitions or ingesters.
+The details of how sharding, replication, and ingestion work differ between the ingest storage and classic architectures.
+For more information, refer to:
+
+- [Series sharding in ingest storage architecture](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/hash-ring/#series-sharding-in-ingest-storage-architecture)
+- [Series sharding in classic architecture](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/hash-ring/#series-sharding-in-classic-architecture)
+
+## Supported protocols
+
+The distributor supports the following metrics ingestion protocols:
+
+- Prometheus remote write v1
+- Prometheus remote write v2
+- OpenTelemetry Protocol (OTLP)
+- Influx
 
 ## Validation
 
-The distributor cleans and validates data that it receives before writing the data to the ingesters.
-Because a single request can contain valid and invalid metrics, samples, metadata, and exemplars, the distributor only passes valid data to the ingesters. The distributor does not include invalid data in its requests to the ingesters.
-If the request contains invalid data, the distributor returns a 400 HTTP status code and the details appear in the response body.
-The details about the first invalid data are typically logged by the sender, be it Prometheus or Grafana Alloy.
+The distributor cleans and validates incoming data before ingesting it into Mimir.
+
+A single request can include both valid and invalid metrics, samples, metadata, or exemplars.
+The distributor ingests only the valid data and rejects any invalid entries.
+If invalid data is detected, the distributor returns an HTTP 400 status code, and the response body includes details about the first invalid item encountered.
+The returned error is typically logged by the agent sending metrics to Mimir, such as Prometheus, Grafana Alloy, or the OpenTelemetry Collector.
 
 The distributor data cleanup includes the following transformation:
 
@@ -38,7 +55,7 @@ The distributor validation includes the following checks:
 - Each exemplar has no more than 128 labels.
 
 {{< admonition type="note" >}}
-For each tenant, you can override the validation checks by modifying the overrides section of the [runtime configuration](../../../../configure/about-runtime-configuration/).
+For each tenant, you can override the validation checks by modifying the overrides section of the [runtime configuration](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/about-runtime-configuration/).
 {{< /admonition >}}
 
 ## Rate limiting
@@ -56,7 +73,10 @@ If any of these rates is exceeded, the distributor drops the request and returns
 Internally, these limits are implemented using a per-distributor local rate limiter.
 The local rate limiter for each distributor is configured with a limit of `limit / N`, where `N` is the number of healthy distributor replicas.
 The distributor automatically adjusts the request and ingestion rate limits if the number of distributor replicas change.
-Because these rate limits are implemented using a per-distributor local rate limiter, they require that write requests are [evenly distributed across the pool of distributors](#load-balancing-across-distributors).
+
+The distributor rate limits are implemented using a per-distributor local rate limiter, they require that write requests are [evenly distributed across the pool of distributors](#load-balancing-across-distributors).
+
+### Rate limiting configuration
 
 Use the following flags to configure the rate limits:
 
@@ -73,59 +93,10 @@ You can override rate limiting on a per-tenant basis by setting `request_rate`, 
 By default, Prometheus remote write doesn't retry requests on 429 HTTP response status code. To modify this behavior, use `retry_on_http_429: true` in the Prometheus [`remote_write` configuration](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#remote_write).
 {{< /admonition >}}
 
-### Configuration
+### Distributors' hash ring for rate limiting
 
-The distributors form a [hash ring](../../hash-ring/) (called the distributors’ ring) to discover each other and enforce limits correctly.
-To configure the distributors' hash ring, refer to [configuring hash rings](../../../../configure/configure-hash-rings/).
-
-## High-availability tracker
-
-Remote write senders, such as Prometheus, can be configured in pairs, which means that metrics continue to be scraped and written to Grafana Mimir even when one of the remote write senders is down for maintenance or is unavailable due to a failure.
-We refer to this configuration as high-availability (HA) pairs.
-
-The distributor includes an HA tracker.
-When the HA tracker is enabled, the distributor deduplicates incoming series from Prometheus HA pairs.
-This enables you to have multiple HA replicas of the same Prometheus servers that write the same series to Mimir and then deduplicates the series in the Mimir distributor.
-
-For more information about HA deduplication and how to configure it, refer to [configure HA deduplication](../../../../configure/configure-high-availability-deduplication/).
-
-## Sharding and replication
-
-The distributor shards and replicates incoming series across ingesters.
-You can configure the number of ingester replicas that each series is written to via the `-ingester.ring.replication-factor` flag, which is `3` by default.
-Distributors use consistent hashing, in conjunction with a configurable replication factor, to determine which ingesters receive a given series.
-
-Sharding and replication uses the ingesters' hash ring.
-For each incoming series, the distributor computes a hash using the metric name, labels, and tenant ID.
-The computed hash is called a _token_.
-The distributor looks up the token in the hash ring to determine which ingesters to write a series to.
-
-For more information, see [hash ring](../../hash-ring/).
-
-#### Quorum consistency
-
-Because distributors share access to the same hash ring, write requests can be sent to any distributor. You can also set up a stateless load balancer in front of it.
-
-To ensure consistent query results, Mimir uses [Dynamo-style](https://www.allthingsdistributed.com/files/amazon-dynamo-sosp2007.pdf) quorum consistency on reads and writes.
-The distributor waits for a successful response from `n`/2 + 1 ingesters, where `n` is the configured replication factor, before sending a successful response to the Prometheus write request.
-
-## Load balancing across distributors
-
-We recommend randomly load balancing write requests across distributor instances.
-If you're running Grafana Mimir in a Kubernetes cluster, you can define a Kubernetes [Service](https://kubernetes.io/docs/concepts/services-networking/service/) as ingress for the distributors.
-
-{{< admonition type="note" >}}
-A Kubernetes Service balances TCP connections across Kubernetes endpoints and doesn't balance HTTP requests within a single TCP connection.
-
-If you enable HTTP persistent connections, also known as HTTP keep-alive, Prometheus reuses the same TCP connection for each remote-write HTTP request of a remote-write shard.
-This can cause distributors to receive an uneven distribution of remote-write HTTP requests.
-
-To improve the balancing of requests between distributors, consider increasing `min_shards` in the Prometheus [`remote write` configuration](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#remote_write).
-{{< /admonition >}}
-
-## Configuration
-
-The distributors must form a hash ring (also called the _distributors ring_) so that they can discover each other and correctly enforce limits.
+Since distributor rate limits are implemented locally, each distributor must know how many healthy distributors are running in the Mimir cluster.
+To achieve this, each distributor joins a hash ring used for service discovery, which tracks the number of healthy distributor instances.
 
 The default configuration uses `memberlist` as backend for the distributors ring.
 If you want to configure a different backend, for example, `consul` or `etcd`, you can use the following CLI flags (and their respective YAML configuration options) to configure the distributors ring KV store:
@@ -133,3 +104,30 @@ If you want to configure a different backend, for example, `consul` or `etcd`, y
 - `-distributor.ring.store`: The backend storage to use.
 - `-distributor.ring.consul.*`: The Consul client configuration. Set this flag only if `consul` is the configured backend storage.
 - `-distributor.ring.etcd.*`: The etcd client configuration. Set this flag only if `etcd` is the configured backend storage.
+
+For more information, refer to [Configure hash rings](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/configure-hash-rings/).
+
+## Load balancing across distributors
+
+We recommend uniformly distributing write requests across all distributor instances by placing a load balancer in front of them.
+The preferred approach is a Layer 7 load balancer, which balances individual HTTP requests across distributors.
+
+{{< admonition type="note" >}}
+If you run Grafana Mimir in a Kubernetes cluster and use a Kubernetes [Service](https://kubernetes.io/docs/concepts/services-networking/service/) as the ingress for distributors, note that a Kubernetes Service balances TCP connections across endpoints but does not balance HTTP requests within a single TCP connection.
+
+If you enable HTTP persistent connections, also known as HTTP keep-alive, Prometheus reuses the same TCP connection for each remote-write HTTP request of a remote-write shard.
+This can cause distributors to receive an uneven distribution of remote-write HTTP requests.
+
+To improve the balancing of requests between distributors, consider increasing `min_shards` in the Prometheus [`remote_write` configuration](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#remote_write) block.
+{{< /admonition >}}
+
+## High-availability tracker
+
+Remote write agents, such as Prometheus or Grafana Alloy, can be configured in pairs, which means that metrics continue to be scraped and written to Grafana Mimir even when one of the remote write agents is down for maintenance or is unavailable due to a failure.
+We refer to this configuration as high-availability (HA) pairs.
+
+The distributor includes an HA tracker.
+When the HA tracker is enabled, the distributor deduplicates incoming series from Prometheus HA pairs.
+This enables you to have multiple HA replicas of the same Prometheus servers that write the same series to Mimir and then deduplicates the series in the Mimir distributor.
+
+For more information about HA deduplication and how to configure it, refer to [Configure high-availability deduplication](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/configure-high-availability-deduplication/).

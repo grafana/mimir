@@ -158,7 +158,10 @@ In classic architecture, [distributors](https://grafana.com/docs/mimir/<MIMIR_VE
 Each ingester joins the ingesters hash ring and owns a subset of token ranges.
 When a distributor receives a write request containing series data, it hashes each series using the `fnv32a` hashing function.
 It then looks up the resulting token in the ingesters hash ring to find the authoritative owner and replicates the series to the next `RF - 1` ingesters in the ring (where `RF` is the replication factor, `3` by default).
+
 Then the distributor writes the series to the `RF` ingesters owning the series itself.
+A write request is considered successful when each series is written to a quorum of ingesters.
+With a replication factor of 3, a quorum is reached when at least 2 ingesters successfully receive each series.
 
 To illustrate, consider four ingesters and a token space from `0` to `9`:
 
@@ -196,7 +199,7 @@ When other instances need to find the healthy instances of a given component, th
 
 The Grafana Mimir components using the ring for service discovery or coordination are:
 
-- [Distributors](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/components/distributor/): Enforce global rate limits as local limits by dividing the global limit by the number of healthy distributor instances.
+- [Distributors](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/components/distributor/): Enforce global rate limits as local limits by dividing the global limit by the number of healthy distributor instances. For more information, refer to [Rate limiting](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/components/distributor/#rate-limiting).
 - [Query-schedulers](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/components/query-scheduler/): Allow query-frontends and queriers to discover available schedulers.
 - [(Optional) Overrides-exporters](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/components/overrides-exporter/): Self-elect a leader among replicas to export high-cardinality metrics. No strict leader election is required.
 
