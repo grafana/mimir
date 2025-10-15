@@ -46,7 +46,7 @@ func (s *StepInvariantExpression) Children() []planning.Node {
 }
 
 func (s *StepInvariantExpression) MinimumRequiredPlanVersion() int64 {
-	return planning.QueryPlanVersionOne
+	return planning.QueryPlanV1
 }
 
 func (s *StepInvariantExpression) SetChildren(children []planning.Node) error {

@@ -106,7 +106,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 			expectedPlan: &planning.EncodedQueryPlan{
 				TimeRange: instantQueryEncodedTimeRange,
 				RootNode:  1,
-				Version:   planning.QueryPlanVersionOne,
+				Version:   planning.QueryPlanV1,
 				Nodes: []*planning.EncodedNode{
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
@@ -137,7 +137,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 			expectedPlan: &planning.EncodedQueryPlan{
 				TimeRange: rangeQueryEncodedTimeRange,
 				RootNode:  1,
-				Version:   planning.QueryPlanVersionOne,
+				Version:   planning.QueryPlanV1,
 				Nodes: []*planning.EncodedNode{
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
@@ -168,7 +168,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 			expectedPlan: &planning.EncodedQueryPlan{
 				TimeRange: rangeQueryEncodedTimeRange,
 				RootNode:  1,
-				Version:   planning.QueryPlanVersionOne,
+				Version:   planning.QueryPlanV1,
 				Nodes: []*planning.EncodedNode{
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
@@ -669,7 +669,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 			expectedPlan: &planning.EncodedQueryPlan{
 				TimeRange: instantQueryEncodedTimeRange,
 				RootNode:  3,
-				Version:   planning.QueryPlanVersionOne,
+				Version:   planning.QueryPlanV1,
 				Nodes: []*planning.EncodedNode{
 					{
 						NodeType: planning.NODE_TYPE_NUMBER_LITERAL,
@@ -1226,7 +1226,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					},
 					{
 						NodeType:       planning.NODE_TYPE_DEDUPLICATE_AND_MERGE,
-						Details:        marshalDetails(&core.DeduplicateAndMergeDetails{RunDelayedNameRemoval: true}),
+						Details:        marshalDetails(&core.DeduplicateAndMergeDetails{}),
 						Type:           "DeduplicateAndMerge",
 						Children:       []int64{1},
 						Description:    `with delayed name removal`,
@@ -1243,7 +1243,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 			expectedPlan: &planning.EncodedQueryPlan{
 				TimeRange:                rangeQueryEncodedTimeRange,
 				RootNode:                 3,
-				Version:                  planning.QueryPlanVersionOne,
+				Version:                  planning.QueryPlanV1,
 				EnableDelayedNameRemoval: false,
 				Nodes: []*planning.EncodedNode{
 					{
@@ -1297,7 +1297,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 			expectedPlan: &planning.EncodedQueryPlan{
 				TimeRange:                rangeQueryEncodedTimeRange,
 				RootNode:                 5,
-				Version:                  planning.QueryPlanVersionOne,
+				Version:                  planning.QueryPlanV1,
 				EnableDelayedNameRemoval: false,
 				Nodes: []*planning.EncodedNode{
 					{
