@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"math/rand"
 	"testing"
 	"time"
 
@@ -23,8 +24,11 @@ import (
 )
 
 var (
-	dataDirFlag   = flag.String("data-dir", "", "Directory containing an ingester data dir (WAL + blocks for multiple tenants).")
-	queryFileFlag = flag.String("query-file", "", `File containing queries in Loki log JSON format. You can obtian it by running a query like this against loki: {namespace="", name="query-frontend"} |= "query stats" | logfmt | path=~".*/query(_range)?"`)
+	dataDirFlag     = flag.String("data-dir", "", "Directory containing an ingester data dir (WAL + blocks for multiple tenants).")
+	queryFileFlag   = flag.String("query-file", "", `File containing queries in Loki log JSON format. You can obtian it by running a query like this against loki: {namespace="", name="query-frontend"} |= "query stats" | logfmt | path=~".*/query(_range)?"`)
+	querySampleFlag = flag.Float64("query-sample", 1.0, "Fraction of queries to sample (0.0 to 1.0). Queries are split into 100 segments, and a continuous sample is taken from each segment.")
+	querySampleSeed = flag.Int64("query-sample-seed", 1, "Random seed for query sampling.")
+	numSegments     = 100 // Number of segments to split queries into
 )
 
 // vectorSelectorQuery represents a single vector selector extracted from a query
@@ -63,6 +67,11 @@ func BenchmarkQueryExecution(b *testing.B) {
 	}
 
 	b.Logf("Extracted %d vector selectors from %d queries", len(vectorQueries), len(queries))
+
+	vectorQueries = sampleQueries(vectorQueries, *querySampleFlag, *querySampleSeed)
+	b.Logf("Sampled down to %d vector selectors (%.1f%%)", len(vectorQueries), *querySampleFlag*100)
+
+	require.NotEmpty(b, vectorQueries, "no vector queries after sampling")
 
 	// Start ingester
 	addr, cleanupFunc, err := benchmarks.StartIngesterAndLoadData(*dataDirFlag, []int{})
@@ -198,4 +207,72 @@ func extractLabelMatchers(query string) ([][]*labels.Matcher, error) {
 	})
 
 	return allMatcherSets, nil
+}
+
+// sampleQueries samples queries by splitting them into segments and taking a continuous
+// sample from each segment. This ensures representative coverage across the query set.
+func sampleQueries(queries []vectorSelectorQuery, sampleFraction float64, seed int64) []vectorSelectorQuery {
+	if sampleFraction >= 1.0 {
+		return queries
+	}
+	if sampleFraction <= 0.0 {
+		return nil
+	}
+
+	totalQueries := len(queries)
+	if totalQueries == 0 {
+		return queries
+	}
+
+	rng := rand.New(rand.NewSource(seed))
+
+	// Calculate segment size
+	segmentSize := totalQueries / numSegments
+	if segmentSize == 0 {
+		segmentSize = 1
+	}
+
+	// Calculate sample size per segment
+	sampleSize := int(math.Ceil(float64(segmentSize) * sampleFraction))
+	if sampleSize < 1 {
+		sampleSize = 1
+	}
+
+	var sampledQueries []vectorSelectorQuery
+
+	// Sample from each segment
+	for seg := 0; seg < numSegments; seg++ {
+		segmentStart := seg * segmentSize
+		segmentEnd := segmentStart + segmentSize
+		if segmentEnd > totalQueries {
+			segmentEnd = totalQueries
+		}
+
+		// If segment is empty, skip it
+		currentSegmentSize := segmentEnd - segmentStart
+		if currentSegmentSize == 0 {
+			break
+		}
+
+		// Adjust sample size if segment is smaller than expected
+		currentSampleSize := sampleSize
+		if currentSampleSize > currentSegmentSize {
+			currentSampleSize = currentSegmentSize
+		}
+
+		// Pick random starting point within the segment for continuous sample
+		maxStartOffset := currentSegmentSize - currentSampleSize
+		startOffset := 0
+		if maxStartOffset > 0 {
+			startOffset = rng.Intn(maxStartOffset + 1)
+		}
+
+		// Extract continuous sample
+		sampleStart := segmentStart + startOffset
+		sampleEnd := sampleStart + currentSampleSize
+
+		sampledQueries = append(sampledQueries, queries[sampleStart:sampleEnd]...)
+	}
+
+	return sampledQueries
 }
