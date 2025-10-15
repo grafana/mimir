@@ -370,13 +370,13 @@ func Test_ProxyEndpoint_Comparison(t *testing.T) {
 
 			switch scenario.expectedComparisonResult {
 			case ComparisonSuccess:
-				requireNoLogMessages(t, logger.messages, "response comparison failed", "response comparison skipped")
+				requireNoLogMessages(t, logger.Messages(), "response comparison failed", "response comparison skipped")
 
 			case ComparisonFailed:
-				requireLogMessageWithError(t, logger.messages, "response comparison failed", scenario.expectedComparisonError)
+				requireLogMessageWithError(t, logger.Messages(), "response comparison failed", scenario.expectedComparisonError)
 
 			case ComparisonSkipped:
-				requireLogMessageWithError(t, logger.messages, "response comparison skipped", scenario.expectedComparisonError)
+				requireLogMessageWithError(t, logger.Messages(), "response comparison skipped", scenario.expectedComparisonError)
 			}
 		})
 	}
@@ -468,13 +468,13 @@ func Test_ProxyEndpoint_LogSlowQueries(t *testing.T) {
 			waitForResponseComparisonMetric(t, reg, ComparisonSuccess, 1)
 
 			if scenario.expectLatencyExceedsThreshold {
-				requireLogKeyValues(t, logger.messages, map[string]string{
+				requireLogKeyValues(t, logger.Messages(), map[string]string{
 					"msg":             "response time difference between backends exceeded threshold",
 					"slowest_backend": scenario.slowestBackend,
 					"fastest_backend": scenario.fastestBackend,
 				})
 			} else {
-				requireNoLogMessages(t, logger.messages, "response time difference between backends exceeded threshold")
+				requireNoLogMessages(t, logger.Messages(), "response time difference between backends exceeded threshold")
 			}
 		})
 	}
@@ -753,6 +753,15 @@ func (m *mockLogger) Log(keyvals ...interface{}) error {
 	m.messages = append(m.messages, message)
 
 	return nil
+}
+
+func (m *mockLogger) Messages() []map[string]interface{} {
+	m.lock.Lock()
+	defer m.lock.Unlock()
+	// Return a copy to avoid races
+	result := make([]map[string]interface{}, len(m.messages))
+	copy(result, m.messages)
+	return result
 }
 
 type latencyPair struct {
