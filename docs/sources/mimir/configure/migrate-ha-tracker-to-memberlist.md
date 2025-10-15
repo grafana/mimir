@@ -19,7 +19,7 @@ Memberlist eliminates the need to deploy and maintain a separate consistent KV s
 - Reduced infrastructure: One less component in your deployment
 - Built-in: Memberlist is already used by other Mimir components for hash rings and can be used for the HA tracker as well
 
-## Prerequisites
+## Before you begin
 
 Before starting this migration:
 
