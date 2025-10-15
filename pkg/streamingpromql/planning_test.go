@@ -1197,7 +1197,8 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 
 			expectedPlan: &planning.EncodedQueryPlan{
 				TimeRange:                rangeQueryEncodedTimeRange,
-				RootNode:                 2,
+				RootNode:                 3,
+				Version:                  planning.QueryPlanV1,
 				EnableDelayedNameRemoval: true,
 				Nodes: []*planning.EncodedNode{
 					{
@@ -1225,11 +1226,19 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 						ChildrenLabels: []string{""},
 					},
 					{
+						NodeType:       planning.NODE_TYPE_DROP_NAME,
+						Details:        marshalDetails(&core.DropNameDetails{}),
+						Type:           "DropName",
+						Description:    "",
+						Children:       []int64{1},
+						ChildrenLabels: []string{""},
+					},
+					{
 						NodeType:       planning.NODE_TYPE_DEDUPLICATE_AND_MERGE,
 						Details:        marshalDetails(&core.DeduplicateAndMergeDetails{}),
 						Type:           "DeduplicateAndMerge",
-						Children:       []int64{1},
-						Description:    `with delayed name removal`,
+						Children:       []int64{2},
+						Description:    ``,
 						ChildrenLabels: []string{""},
 					},
 				},
