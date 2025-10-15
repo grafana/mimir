@@ -29,6 +29,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/thanos-io/objstore"
 	"golang.org/x/sync/errgroup"
+	"golang.org/x/sync/semaphore"
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
@@ -78,10 +79,12 @@ type Config struct {
 	MinBlockTimestamp  uint64        `yaml:"min_block_timestamp"`
 	MinDataAge         time.Duration `yaml:"min_data_age" category:"advanced"`
 
-	SortingLabels       flagext.StringSliceCSV `yaml:"sorting_labels" category:"advanced"`
-	ColDuration         time.Duration          `yaml:"col_duration" category:"advanced"`
-	MaxRowsPerGroup     int                    `yaml:"max_rows_per_group" category:"advanced"`
-	TSDBReadConcurrency int                    `yaml:"tsdb_read_concurrency" category:"advanced"`
+	SortingLabels         flagext.StringSliceCSV `yaml:"sorting_labels" category:"advanced"`
+	ColDuration           time.Duration          `yaml:"col_duration" category:"advanced"`
+	MaxRowsPerGroup       int                    `yaml:"max_rows_per_group" category:"advanced"`
+	TSDBReadConcurrency   int                    `yaml:"tsdb_read_concurrency" category:"advanced"`
+	TaskConcurrency       int                    `yaml:"task_concurrency" category:"advanced"`
+	ConversionConcurrency int                    `yaml:"conversion_concurrency" category:"advanced"`
 
 	MinCompactionLevel int           `yaml:"min_compaction_level" category:"advanced"`
 	MinBlockDuration   time.Duration `yaml:"min_block_duration" category:"advanced"`
@@ -111,6 +114,8 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.DurationVar(&cfg.ColDuration, "parquet-converter.col-duration", 8*time.Hour, "Duration for column chunks in Parquet files.")
 	f.IntVar(&cfg.MaxRowsPerGroup, "parquet-converter.max-rows-per-group", 1e6, "Maximum number of rows per row group in Parquet files.")
 	f.IntVar(&cfg.TSDBReadConcurrency, "parquet-converter.tsdb-read-concurrency", 4, "Maximum number of Go routines reading TSDB series in parallel when converting a block.")
+	f.IntVar(&cfg.TaskConcurrency, "parquet-converter.task-concurrency", 2, "Maximum number of Go routines processing tasks in parallel.")
+	f.IntVar(&cfg.ConversionConcurrency, "parquet-converter.conversion-concurrency", 1, "Maximum number of concurrent Go routines allowed to run the conversion code.")
 	f.IntVar(&cfg.MinCompactionLevel, "parquet-converter.min-compaction-level", 2, "Minimum compaction level required for blocks to be converted to Parquet. Blocks equal or greater than this level will be converted.")
 	f.DurationVar(&cfg.MinBlockDuration, "parquet-converter.min-block-duration", 0, "Minimum duration of blocks to convert. Blocks with a duration shorter than this will be skipped. Set to 0 to disable duration filtering.")
 	f.BoolVar(&cfg.CompressionEnabled, "parquet-converter.compression-enabled", true, "Whether compression is enabled for labels and chunks parquet files. When disabled, parquet files will be converted and stored uncompressed.")
@@ -134,6 +139,7 @@ type ParquetConverter struct {
 	metrics              parquetConverterMetrics
 
 	conversionQueue *priorityQueue
+	conversionSem   *semaphore.Weighted
 
 	queuedBlocks sync.Map // map[ulid.ULID]time.Time - persistent cache of blocks that have been queued
 }
@@ -214,6 +220,7 @@ func newParquetConverter(
 		baseConverterOptions: buildBaseConverterOptions(cfg),
 		metrics:              newParquetConverterMetrics(registerer),
 		conversionQueue:      newPriorityQueue(),
+		conversionSem:        semaphore.NewWeighted(int64(cfg.ConversionConcurrency)),
 	}
 
 	c.Service = services.NewBasicService(c.starting, c.running, c.stopping).WithName("parquet-converter")
@@ -240,6 +247,11 @@ func (c *ParquetConverter) starting(ctx context.Context) error {
 
 func (c *ParquetConverter) running(ctx context.Context) error {
 	g, gCtx := errgroup.WithContext(ctx)
+
+	// Clear any work from the previous instance on startup.
+	if err := os.RemoveAll(c.rootDir()); err != nil {
+		level.Error(c.logger).Log("msg", "failed to remove work directory", "path", c.rootDir(), "err", err)
+	}
 
 	g.Go(func() error {
 		defer func() {
@@ -271,48 +283,50 @@ func (c *ParquetConverter) running(ctx context.Context) error {
 		}
 	})
 
-	g.Go(func() error {
-		defer func() {
-			if r := recover(); r != nil {
-				level.Error(c.logger).Log("msg", "parquet-converter processing goroutine panicked", "panic", r)
-				panic(r) // Re-panic to force service restart
-			}
-		}()
-
-		for {
-			select {
-			case <-gCtx.Done():
-				return nil
-			default:
-				task, ok := c.conversionQueue.Pop()
-				if !ok {
-					select {
-					case <-gCtx.Done():
-						return nil
-					case <-time.After(1 * time.Second):
-						continue
-					}
+	for range c.Cfg.TaskConcurrency {
+		g.Go(func() error {
+			defer func() {
+				if r := recover(); r != nil {
+					level.Error(c.logger).Log("msg", "parquet-converter processing goroutine panicked", "panic", r)
+					panic(r) // Re-panic to force service restart
 				}
+			}()
 
-				func() {
-					defer func() {
-						if r := recover(); r != nil {
-							level.Error(c.logger).Log("msg", "parquet-converter processBlock panicked", "panic", r, "block", task.Meta.ULID.String())
+			for {
+				select {
+				case <-gCtx.Done():
+					return nil
+				default:
+					task, ok := c.conversionQueue.Pop()
+					if !ok {
+						select {
+						case <-gCtx.Done():
+							return nil
+						case <-time.After(1 * time.Second):
+							continue
 						}
+					}
+
+					func() {
+						defer func() {
+							if r := recover(); r != nil {
+								level.Error(c.logger).Log("msg", "parquet-converter processBlock panicked", "panic", r, "block", task.Meta.ULID.String())
+							}
+						}()
+
+						c.metrics.queueSize.WithLabelValues(c.Cfg.LoadBalancingStrategy).Set(float64(c.conversionQueue.Size()))
+						c.metrics.queueItemsProcessed.WithLabelValues(task.UserID).Inc()
+
+						waitTime := time.Since(task.EnqueuedAt)
+						c.metrics.queueWaitTime.WithLabelValues(task.UserID).Observe(waitTime.Seconds())
+
+						ulogger := util_log.WithUserID(task.UserID, c.logger)
+						c.processBlock(gCtx, task.UserID, task.Meta, task.Bucket, ulogger)
 					}()
-
-					c.metrics.queueSize.WithLabelValues(c.Cfg.LoadBalancingStrategy).Set(float64(c.conversionQueue.Size()))
-					c.metrics.queueItemsProcessed.WithLabelValues(task.UserID).Inc()
-
-					waitTime := time.Since(task.EnqueuedAt)
-					c.metrics.queueWaitTime.WithLabelValues(task.UserID).Observe(waitTime.Seconds())
-
-					ulogger := util_log.WithUserID(task.UserID, c.logger)
-					c.processBlock(gCtx, task.UserID, task.Meta, task.Bucket, ulogger)
-				}()
+				}
 			}
-		}
-	})
+		})
+	}
 
 	for {
 		select {
@@ -463,11 +477,17 @@ func (c *ParquetConverter) processBlock(ctx context.Context, userID string, meta
 		return
 	}
 
-	if err := os.RemoveAll(c.rootDir()); err != nil {
-		level.Error(logger).Log("msg", "failed to remove work directory", "path", c.rootDir(), "err", err)
+	localBlockDir := filepath.Join(c.dirForUser(userID), meta.ULID.String())
+
+	cleanBlockDir := func() {
+		if err := os.RemoveAll(localBlockDir); err != nil {
+			level.Error(logger).Log("msg", "failed to remove block work directory", "path", localBlockDir, "err", err)
+		}
 	}
 
-	localBlockDir := filepath.Join(c.dirForUser(userID), meta.ULID.String())
+	cleanBlockDir()
+	defer cleanBlockDir()
+
 	level.Info(logger).Log("msg", "downloading block", "block", meta.ULID.String(), "maxTime", meta.MaxTime)
 	if err = block.Download(ctx, logger, uBucket, meta.ULID, localBlockDir, objstore.WithFetchConcurrency(10)); err != nil {
 		level.Error(logger).Log("msg", "error downloading block", "err", err)
@@ -478,7 +498,14 @@ func (c *ParquetConverter) processBlock(ctx context.Context, userID string, meta
 	copy(convertOpts, c.baseConverterOptions)
 	convertOpts[len(c.baseConverterOptions)] = convert.WithName(meta.ULID.String())
 
+	// Conversion is the intense part, so we limit the number of concurrent conversions.
+	if err := c.conversionSem.Acquire(ctx, 1); err != nil {
+		level.Error(logger).Log("msg", "failed to acquire conversion semaphore", "err", err)
+		return
+	}
+
 	err = c.blockConverter.ConvertBlock(ctx, meta, localBlockDir, uBucket, logger, convertOpts)
+	c.conversionSem.Release(1)
 	if err != nil {
 		level.Error(logger).Log("msg", "failed to convert block", "block", meta.ULID.String(), "err", err)
 		return
