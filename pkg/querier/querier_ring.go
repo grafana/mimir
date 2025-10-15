@@ -109,6 +109,11 @@ func NewLifecycler(cfg RingConfig, logger log.Logger, reg prometheus.Registerer)
 		return nil, fmt.Errorf("failed to initialize querier lifecycler: %w", err)
 	}
 
+	promauto.With(reg).NewGauge(prometheus.GaugeOpts{
+		Name: "cortex_querier_maximum_supported_query_plan_version",
+		Help: "The maximum supported query plan version this process was compiled to support.",
+	}).Set(float64(planning.MaximumSupportedQueryPlanVersion))
+
 	return lifecycler, nil
 }
 

@@ -107,11 +107,13 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 		expectedResponseMessages                     []*frontendv2pb.QueryResultStreamRequest
 		expectedStatusCode                           string
 		expectStorageToBeCalledWithPropagatedHeaders bool
+		dontExpectQueryPlanVersionMetric             bool
 	}{
 		"unknown payload type": {
 			req: &prototypes.Any{
 				TypeUrl: "grafana.com/something/unknown",
 			},
+			dontExpectQueryPlanVersionMetric: true,
 			expectedResponseMessages: []*frontendv2pb.QueryResultStreamRequest{
 				{
 					Data: &frontendv2pb.QueryResultStreamRequest_Error{
@@ -129,7 +131,8 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 			req: &prototypes.Any{
 				TypeUrl: "unknown",
 			},
-			dontSetTenantID: true,
+			dontSetTenantID:                  true,
+			dontExpectQueryPlanVersionMetric: true,
 			expectedResponseMessages: []*frontendv2pb.QueryResultStreamRequest{
 				{
 					Data: &frontendv2pb.QueryResultStreamRequest_Error{
@@ -144,8 +147,9 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 		},
 
 		"request without tenant ID": {
-			req:             createQueryRequest(`my_series`, types.NewInstantQueryTimeRange(startT)),
-			dontSetTenantID: true,
+			req:                              createQueryRequest(`my_series`, types.NewInstantQueryTimeRange(startT)),
+			dontSetTenantID:                  true,
+			dontExpectQueryPlanVersionMetric: true,
 			expectedResponseMessages: []*frontendv2pb.QueryResultStreamRequest{
 				{
 					Data: &frontendv2pb.QueryResultStreamRequest_Error{
@@ -990,6 +994,21 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 			if testCase.expectStorageToBeCalledWithPropagatedHeaders {
 				require.NotNil(t, storage.ctx)
 				require.Equal(t, "some-value-from-the-request", storage.ctx.Value(testExtractorKey))
+			}
+
+			if !testCase.dontExpectQueryPlanVersionMetric {
+				req := &querierpb.EvaluateQueryRequest{}
+				require.NoError(t, prototypes.UnmarshalAny(testCase.req, req))
+
+				expectedVersion := req.Plan.Version
+
+				expectedMetrics := fmt.Sprintf(`
+					# HELP cortex_querier_received_query_plans_total Total number of query plans received by the querier.
+					# TYPE cortex_querier_received_query_plans_total counter
+					cortex_querier_received_query_plans_total{version="%[1]d"} 1
+				`, expectedVersion)
+
+				require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics), "cortex_querier_received_query_plans_total"))
 			}
 		})
 	}

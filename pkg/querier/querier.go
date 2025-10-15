@@ -816,6 +816,7 @@ type RequestMetrics struct {
 	ReceivedMessageSize *prometheus.HistogramVec
 	SentMessageSize     *prometheus.HistogramVec
 	InflightRequests    *prometheus.GaugeVec
+	PlansReceived       *prometheus.CounterVec
 }
 
 func NewRequestMetrics(reg prometheus.Registerer) *RequestMetrics {
@@ -842,5 +843,10 @@ func NewRequestMetrics(reg prometheus.Registerer) *RequestMetrics {
 			Name: "cortex_querier_inflight_requests",
 			Help: "Current number of inflight requests to the querier.",
 		}, []string{"method", "route"}),
+
+		PlansReceived: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_querier_received_query_plans_total",
+			Help: "Total number of query plans received by the querier.",
+		}, []string{"version"}),
 	}
 }
