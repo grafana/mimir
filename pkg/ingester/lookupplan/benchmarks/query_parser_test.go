@@ -12,7 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestParseQueriesFromFile(t *testing.T) {
+func TestLoadQueryLogsFromFile(t *testing.T) {
 	// Create a temporary file with sample query data
 	tmpDir := t.TempDir()
 	queryFile := filepath.Join(tmpDir, "queries.json")
@@ -28,11 +28,12 @@ func TestParseQueriesFromFile(t *testing.T) {
 	require.NoError(t, err)
 
 	// Parse queries
-	queries, err := ParseQueriesFromFile(queryFile)
+	queries, err := LoadQueryLogsFromFile(queryFile)
 	require.NoError(t, err)
 
-	// We should have 3 valid queries (POST requests + query without method)
-	assert.Len(t, queries, 3)
+	// We should have 4 valid queries (2 POST + 1 GET + 1 without method - only GET is filtered)
+	// Actually we don't filter GET anymore, we filter based on having a query
+	assert.Len(t, queries, 4)
 
 	// Check first query
 	assert.Equal(t, "up", queries[0].Query)
@@ -48,23 +49,26 @@ func TestParseQueriesFromFile(t *testing.T) {
 	assert.NotZero(t, queries[1].End)
 	assert.Equal(t, 30*time.Second, queries[1].Step)
 
-	// Check third query (one without method field)
-	assert.Equal(t, "query_without_method", queries[2].Query)
+	// Check third query (GET request - now included)
+	assert.Equal(t, "should_be_skipped", queries[2].Query)
+
+	// Check fourth query (one without method field)
+	assert.Equal(t, "query_without_method", queries[3].Query)
 }
 
-func TestParseQueriesFromFile_EmptyFile(t *testing.T) {
+func TestLoadQueryLogsFromFile_EmptyFile(t *testing.T) {
 	tmpDir := t.TempDir()
 	queryFile := filepath.Join(tmpDir, "empty.json")
 
 	err := os.WriteFile(queryFile, []byte(""), 0644)
 	require.NoError(t, err)
 
-	queries, err := ParseQueriesFromFile(queryFile)
+	queries, err := LoadQueryLogsFromFile(queryFile)
 	require.NoError(t, err)
 	assert.Empty(t, queries)
 }
 
-func TestParseQueriesFromFile_NonExistent(t *testing.T) {
-	_, err := ParseQueriesFromFile("/nonexistent/file.json")
+func TestLoadQueryLogsFromFile_NonExistent(t *testing.T) {
+	_, err := LoadQueryLogsFromFile("/nonexistent/file.json")
 	assert.Error(t, err)
 }

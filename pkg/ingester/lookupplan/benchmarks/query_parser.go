@@ -7,12 +7,31 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"math/rand"
 	"os"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/promql/parser"
 )
+
+const (
+	// numSegments is the number of segments to split queries into for sampling.
+	numSegments = 100
+)
+
+// vectorQueryCache caches prepared vector queries to avoid re-processing the same file with same parameters.
+// Cache key is a string combining filepath, sample fraction, and seed.
+var vectorQueryCache sync.Map
+
+// vectorSelectorQuery represents a single vector selector extracted from a query.
+type vectorSelectorQuery struct {
+	originalQuery *Query
+	matchers      []*labels.Matcher
+}
 
 // Query represents a parsed query from Loki logs.
 type Query struct {
@@ -25,9 +44,9 @@ type Query struct {
 	valid     bool // internal flag to track if query should be included
 }
 
-// ParseQueriesFromFile parses queries from a Loki log file in newline-delimited JSON format.
+// LoadQueryLogsFromFile parses queries from a Loki log file in newline-delimited JSON format.
 // Each line should be a JSON object with query information in the labels field.
-func ParseQueriesFromFile(filepath string) ([]Query, error) {
+func LoadQueryLogsFromFile(filepath string) ([]Query, error) {
 	f, err := os.Open(filepath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open query file: %w", err)
@@ -152,4 +171,155 @@ func parseDuration(s string) (time.Duration, error) {
 		return 0, err
 	}
 	return time.Duration(stepD), nil
+}
+
+// PrepareVectorQueries loads queries from a file, extracts label matchers from each query,
+// and samples them according to the given parameters. Results are cached to avoid re-processing.
+func PrepareVectorQueries(filepath string, sampleFraction float64, seed int64) ([]vectorSelectorQuery, error) {
+	// Create cache key from parameters
+	cacheKey := fmt.Sprintf("%s|%f|%d", filepath, sampleFraction, seed)
+
+	// Check cache first
+	if cached, ok := vectorQueryCache.Load(cacheKey); ok {
+		return cached.([]vectorSelectorQuery), nil
+	}
+
+	// Load queries from file
+	queries, err := LoadQueryLogsFromFile(filepath)
+	if err != nil {
+		return nil, err
+	}
+
+	// Extract label matchers from each query (each query may produce multiple vector selectors)
+	var vectorQueries []vectorSelectorQuery
+	for i := range queries {
+		matchersList, err := extractLabelMatchers(queries[i].Query)
+		if err != nil {
+			continue
+		}
+
+		for _, matchers := range matchersList {
+			vectorQueries = append(vectorQueries, vectorSelectorQuery{
+				originalQuery: &queries[i],
+				matchers:      matchers,
+			})
+		}
+	}
+
+	// Sample queries
+	sampledQueries := sampleQueries(vectorQueries, sampleFraction, seed)
+
+	// Store in cache before returning
+	vectorQueryCache.Store(cacheKey, sampledQueries)
+
+	return sampledQueries, nil
+}
+
+// extractLabelMatchers extracts label matchers from a PromQL query string.
+// It parses the PromQL expression and returns a separate set of matchers for each vector selector.
+// Returns a slice of slices, where each inner slice represents one vector selector's matchers.
+func extractLabelMatchers(query string) ([][]*labels.Matcher, error) {
+	expr, err := parser.ParseExpr(query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse PromQL query: %w", err)
+	}
+
+	// Collect matchers from each vector selector separately
+	var allMatcherSets [][]*labels.Matcher
+
+	parser.Inspect(expr, func(node parser.Node, _ []parser.Node) error {
+		if n, ok := node.(*parser.VectorSelector); ok {
+			var matchers []*labels.Matcher
+
+			// Add the metric name matcher if present
+			if n.Name != "" {
+				matcher, err := labels.NewMatcher(labels.MatchEqual, labels.MetricName, n.Name)
+				if err == nil {
+					matchers = append(matchers, matcher)
+				}
+			}
+
+			// Add all label matchers
+			for _, lm := range n.LabelMatchers {
+				if lm != nil {
+					matchers = append(matchers, lm)
+				}
+			}
+
+			if len(matchers) > 0 {
+				allMatcherSets = append(allMatcherSets, matchers)
+			}
+		}
+		return nil
+	})
+
+	return allMatcherSets, nil
+}
+
+// sampleQueries samples queries by splitting them into segments and taking a continuous
+// sample from each segment. This ensures representative coverage across the query set.
+func sampleQueries(queries []vectorSelectorQuery, sampleFraction float64, seed int64) []vectorSelectorQuery {
+	if sampleFraction >= 1.0 {
+		return queries
+	}
+	if sampleFraction <= 0.0 {
+		return nil
+	}
+
+	totalQueries := len(queries)
+	if totalQueries == 0 {
+		return queries
+	}
+
+	rng := rand.New(rand.NewSource(seed))
+
+	// Calculate segment size
+	segmentSize := totalQueries / numSegments
+	if segmentSize == 0 {
+		segmentSize = 1
+	}
+
+	// Calculate sample size per segment
+	sampleSize := int(math.Ceil(float64(segmentSize) * sampleFraction))
+	if sampleSize < 1 {
+		sampleSize = 1
+	}
+
+	var sampledQueries []vectorSelectorQuery
+
+	// Sample from each segment
+	for seg := 0; seg < numSegments; seg++ {
+		segmentStart := seg * segmentSize
+		segmentEnd := segmentStart + segmentSize
+		if segmentEnd > totalQueries {
+			segmentEnd = totalQueries
+		}
+
+		// If segment is empty, skip it
+		currentSegmentSize := segmentEnd - segmentStart
+		if currentSegmentSize == 0 {
+			break
+		}
+
+		// Adjust sample size if segment is smaller than expected
+		currentSampleSize := sampleSize
+		if currentSampleSize > currentSegmentSize {
+			currentSampleSize = currentSegmentSize
+		}
+
+		// Pick random starting point within the segment for continuous sample
+		maxStartOffset := currentSegmentSize - currentSampleSize
+		startOffset := 0
+		if maxStartOffset > 0 {
+			startOffset = rng.Intn(maxStartOffset + 1)
+		}
+
+		// Extract continuous sample
+		sampleStart := segmentStart + startOffset
+		sampleEnd := sampleStart + currentSampleSize
+
+		sampledQueries = append(sampledQueries, queries[sampleStart:sampleEnd]...)
+	}
+
+	return sampledQueries
 }
