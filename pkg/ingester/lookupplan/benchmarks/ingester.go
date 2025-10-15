@@ -24,13 +24,12 @@ import (
 //
 // Parameters:
 //   - rootDataDir: Directory containing blocks to load (passed as ingester data directory)
-//   - blockDirs: Currently unused, blocks are discovered automatically from rootDataDir
 //
 // Returns:
 //   - address: gRPC address of the started ingester
 //   - cleanup: Function to call to stop the ingester and cleanup resources
 //   - error: Any error that occurred during startup
-func StartIngesterAndLoadBlocks(rootDataDir string, blockDirs []string) (string, func(), error) {
+func StartIngesterAndLoadBlocks(rootDataDir string) (string, func(), error) {
 	// Reuse existing function with empty metric sizes - no synthetic data needed
 	// The ingester will automatically discover and load existing blocks from rootDataDir
 	// via openExistingTSDB() method during startup

@@ -23,7 +23,7 @@ func BenchmarkQueryExecution(b *testing.B) {
 	require.NoError(b, err)
 
 	// Start ingester once for all iterations
-	addr, cleanup, err := StartIngesterAndLoadBlocks(tempDir, nil)
+	addr, cleanup, err := StartIngesterAndLoadBlocks(tempDir)
 	require.NoError(b, err)
 	defer cleanup()
 

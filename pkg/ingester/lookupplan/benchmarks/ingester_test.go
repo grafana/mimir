@@ -41,7 +41,7 @@ func TestStartIngesterAndLoadBlocks(t *testing.T) {
 func TestStartIngesterAndLoadBlocks_InvalidDirectory(t *testing.T) {
 	// Test with non-existent directory should still work
 	// (ingester will create it if needed)
-	addr, cleanup, err := StartIngesterAndLoadBlocks("/non/existent/path", nil)
+	addr, cleanup, err := StartIngesterAndLoadBlocks("/non/existent/path")
 
 	// The function should handle this gracefully
 	if err == nil {
@@ -65,7 +65,7 @@ func TestExecuteQuery(t *testing.T) {
 	require.NoError(t, err)
 
 	// Start ingester
-	addr, cleanup, err := StartIngesterAndLoadBlocks(tempDir, nil)
+	addr, cleanup, err := StartIngesterAndLoadBlocks(tempDir)
 	require.NoError(t, err)
 	defer cleanup()
 
