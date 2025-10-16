@@ -6,15 +6,12 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"io"
 	"math"
 	"testing"
 	"time"
 
 	"github.com/grafana/dskit/user"
 	"github.com/stretchr/testify/require"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
 
 	"github.com/grafana/mimir/pkg/ingester"
 	"github.com/grafana/mimir/pkg/ingester/client"
@@ -27,6 +24,35 @@ var (
 	querySampleFlag = flag.Float64("query-sample", 1.0, "Fraction of queries to sample (0.0 to 1.0). Queries are split into 100 segments, and a continuous sample is taken from each segment.")
 	querySampleSeed = flag.Int64("query-sample-seed", 1, "Random seed for query sampling.")
 )
+
+// mockQueryStreamServer is a server stream that accumulates query results without sending over the network.
+type mockQueryStreamServer struct {
+	client.Ingester_QueryStreamServer
+	result                *queryResult
+	ctx                   context.Context
+	seenEndOfSeriesStream bool
+}
+
+func (m *mockQueryStreamServer) Send(resp *client.QueryStreamResponse) error {
+	defer resp.FreeBuffer()
+
+	if len(resp.StreamingSeries) > 0 {
+		for _, s := range resp.StreamingSeries {
+			m.result.SeriesCount++
+			m.result.ChunkCount += int(s.ChunkCount)
+		}
+	}
+
+	if resp.IsEndOfSeriesStream {
+		m.seenEndOfSeriesStream = true
+	}
+
+	return nil
+}
+
+func (m *mockQueryStreamServer) Context() context.Context {
+	return m.ctx
+}
 
 // BenchmarkQueryExecution benchmarks query execution against a running ingester
 func BenchmarkQueryExecution(b *testing.B) {
@@ -41,23 +67,14 @@ func BenchmarkQueryExecution(b *testing.B) {
 	b.Logf("Prepared %d vector selectors (sample: %f%%)", len(vectorQueries), *querySampleFlag*100)
 
 	// Start ingester
-	// TODO dimitarvdimitrov instead of oging through network just get back the ingester - expose startBenchmarkIngester and use the ingester we get back; implement a mock client stream which just discards data so we can just see how fast the ingester can push the data through the stream
-	addr, cleanupFunc, err := benchmarks.StartIngesterAndLoadData(*dataDirFlag, []int{}, func(config *ingester.Config) {
+	ing, _, cleanupFunc, err := benchmarks.StartBenchmarkIngester(*dataDirFlag, func(config *ingester.Config) {
 		config.BlocksStorageConfig.TSDB.IndexLookupPlanning.Enabled = true
 	})
 	require.NoError(b, err)
 	defer cleanupFunc()
 
-	// Create a single gRPC connection to the ingester
-	conn, err := grpc.Dial(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
-	require.NoError(b, err)
-	defer conn.Close()
-
-	// Create ingester client
-	ingesterClient := client.NewIngesterClient(conn)
-
-	// Warm up the connection with a simple query
-	_, _ = executeQueryWithMatchers(ingesterClient, vectorQueries[0])
+	// Warm up with a simple query
+	_, _ = executeQueryDirect(ing, vectorQueries[0])
 
 	b.Log("Starting benchmark")
 	b.ReportAllocs()
@@ -66,7 +83,7 @@ func BenchmarkQueryExecution(b *testing.B) {
 	// Benchmark query execution - run all vector selectors in each iteration
 	for i := 0; i < b.N; i++ {
 		for queryIdx, vq := range vectorQueries {
-			queryResult, err := executeQueryWithMatchers(ingesterClient, vq)
+			queryResult, err := executeQueryDirect(ing, vq)
 			if err != nil {
 				b.Logf("Query %d failed: %v (query: %s)", queryIdx, err, vq.originalQuery.Query)
 				b.Fail()
@@ -83,10 +100,8 @@ type queryResult struct {
 	Duration    time.Duration
 }
 
-// executeQueryWithMatchers executes a vector selector query against the ingester.
-// Note: This uses the ingester's QueryStream API which accepts label matchers
-// but not full PromQL expressions. For a complete implementation, a PromQL engine would be needed.
-func executeQueryWithMatchers(ingesterClient client.IngesterClient, vq vectorSelectorQuery) (*queryResult, error) {
+// executeQueryDirect executes a vector selector query directly against the ingester without going through gRPC.
+func executeQueryDirect(ing *ingester.Ingester, vq vectorSelectorQuery) (*queryResult, error) {
 	start := time.Now()
 
 	// Convert to client format
@@ -105,61 +120,20 @@ func executeQueryWithMatchers(ingesterClient client.IngesterClient, vq vectorSel
 	}
 
 	ctx := user.InjectOrgID(context.Background(), vq.originalQuery.OrgID)
-	ctx, err = user.InjectIntoGRPCRequest(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to inject user into gRPC request: %w", err)
-	}
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
-	stream, err := ingesterClient.QueryStream(ctx, req)
+	// Create mock stream that accumulates results directly
+	result := &queryResult{}
+	mockStream := &mockQueryStreamServer{
+		ctx:    ctx,
+		result: result,
+	}
+
+	// Call QueryStream directly on the ingester
+	err = ing.QueryStream(req, mockStream)
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute query: %w", err)
-	}
-
-	result := &queryResult{}
-
-	// Phase 1: Read series metadata
-	for {
-		resp, err := stream.Recv()
-		if err == io.EOF {
-			// No series returned
-			result.Duration = time.Since(start)
-			return result, nil
-		}
-		if err != nil {
-			return nil, fmt.Errorf("failed to receive query response: %w", err)
-		}
-
-		// Must call FreeBuffer after processing each response
-		func() {
-			defer resp.FreeBuffer()
-
-			if len(resp.StreamingSeries) > 0 {
-				for _, s := range resp.StreamingSeries {
-					result.SeriesCount++
-					result.ChunkCount += int(s.ChunkCount)
-				}
-			}
-		}()
-
-		if resp.IsEndOfSeriesStream {
-			// We've received all series metadata
-			break
-		}
-	}
-
-	// Phase 2: Drain remaining chunk data (but don't process it)
-	// We must read all responses to properly close the stream
-	for {
-		resp, err := stream.Recv()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return nil, fmt.Errorf("failed to receive streaming chunks: %w", err)
-		}
-		resp.FreeBuffer()
 	}
 
 	result.Duration = time.Since(start)

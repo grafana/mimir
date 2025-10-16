@@ -63,7 +63,7 @@ const UserID = "benchmark-tenant"
 type IngesterConfigOption func(*ingester.Config)
 
 func StartIngesterAndLoadData(rootDataDir string, metricSizes []int, opts ...IngesterConfigOption) (string, func(), error) {
-	ing, addr, cleanup, err := startBenchmarkIngester(rootDataDir, opts...)
+	ing, addr, cleanup, err := StartBenchmarkIngester(rootDataDir, opts...)
 
 	if err != nil {
 		return "", nil, fmt.Errorf("could not start ingester: %w", err)
@@ -77,7 +77,9 @@ func StartIngesterAndLoadData(rootDataDir string, metricSizes []int, opts ...Ing
 	return addr, cleanup, nil
 }
 
-func startBenchmarkIngester(rootDataDir string, opts ...IngesterConfigOption) (*ingester.Ingester, string, func(), error) {
+// StartBenchmarkIngester starts an ingester and returns the ingester instance.
+// It also starts a gRPC server and returns its address.
+func StartBenchmarkIngester(rootDataDir string, opts ...IngesterConfigOption) (*ingester.Ingester, string, func(), error) {
 	var cleanupFuncs []func() error
 	cleanup := func() {
 		for i := len(cleanupFuncs) - 1; i >= 0; i-- {
