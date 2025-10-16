@@ -109,12 +109,12 @@ func TestPrepareQueries_Caching(t *testing.T) {
 
 	// First call
 	config := QueryLoaderConfig{Filepath: queryFile, TenantID: "", QueryIDs: nil, SampleFraction: 1.0, Seed: 1}
-	queries1, err := qc.PrepareQueries(config)
+	queries1, _, err := qc.PrepareQueries(config)
 	require.NoError(t, err)
 	require.Len(t, queries1, 2)
 
 	// Second call with same parameters - should be cached
-	queries2, err := qc.PrepareQueries(config)
+	queries2, _, err := qc.PrepareQueries(config)
 	require.NoError(t, err)
 	require.Len(t, queries2, 2)
 
@@ -123,7 +123,7 @@ func TestPrepareQueries_Caching(t *testing.T) {
 
 	// Call with different sample fraction - should not be cached (different cache key)
 	config2 := QueryLoaderConfig{Filepath: queryFile, TenantID: "", QueryIDs: nil, SampleFraction: 0.5, Seed: 1}
-	queries3, err := qc.PrepareQueries(config2)
+	queries3, _, err := qc.PrepareQueries(config2)
 	require.NoError(t, err)
 	// With small dataset, sampling may still return same queries, but they should be different slice instances
 	require.NotEqual(t, fmt.Sprintf("%p", queries1), fmt.Sprintf("%p", queries3), "different parameters should create new slice")
@@ -135,7 +135,7 @@ func TestPrepareQueries_Caching(t *testing.T) {
 	require.NoError(t, err)
 
 	// Call again with original parameters - should still return cached result (doesn't detect file changes)
-	queries4, err := qc.PrepareQueries(config)
+	queries4, _, err := qc.PrepareQueries(config)
 	require.NoError(t, err)
 	assert.Len(t, queries4, 2, "cache should return original result even after file modification")
 }
@@ -156,25 +156,25 @@ func TestPrepareQueries_TenantFiltering(t *testing.T) {
 	require.NoError(t, err)
 
 	// No tenant filter - should get all queries
-	allQueries, err := qc.PrepareQueries(QueryLoaderConfig{Filepath: queryFile, TenantID: "", QueryIDs: nil, SampleFraction: 1.0, Seed: 1})
+	allQueries, _, err := qc.PrepareQueries(QueryLoaderConfig{Filepath: queryFile, TenantID: "", QueryIDs: nil, SampleFraction: 1.0, Seed: 1})
 	require.NoError(t, err)
 	require.Len(t, allQueries, 4, "should have all queries when no tenant filter")
 
 	// Filter by tenant1
-	tenant1Queries, err := qc.PrepareQueries(QueryLoaderConfig{Filepath: queryFile, TenantID: "tenant1", QueryIDs: nil, SampleFraction: 1.0, Seed: 1})
+	tenant1Queries, _, err := qc.PrepareQueries(QueryLoaderConfig{Filepath: queryFile, TenantID: "tenant1", QueryIDs: nil, SampleFraction: 1.0, Seed: 1})
 	require.NoError(t, err)
 	require.Len(t, tenant1Queries, 2, "should have only tenant1 queries")
 	assert.Equal(t, "tenant1", tenant1Queries[0].User)
 	assert.Equal(t, "tenant1", tenant1Queries[1].User)
 
 	// Filter by tenant2
-	tenant2Queries, err := qc.PrepareQueries(QueryLoaderConfig{Filepath: queryFile, TenantID: "tenant2", QueryIDs: nil, SampleFraction: 1.0, Seed: 1})
+	tenant2Queries, _, err := qc.PrepareQueries(QueryLoaderConfig{Filepath: queryFile, TenantID: "tenant2", QueryIDs: nil, SampleFraction: 1.0, Seed: 1})
 	require.NoError(t, err)
 	require.Len(t, tenant2Queries, 1, "should have only tenant2 queries")
 	assert.Equal(t, "tenant2", tenant2Queries[0].User)
 
 	// Filter by non-existent tenant
-	noQueries, err := qc.PrepareQueries(QueryLoaderConfig{Filepath: queryFile, TenantID: "nonexistent", QueryIDs: nil, SampleFraction: 1.0, Seed: 1})
+	noQueries, _, err := qc.PrepareQueries(QueryLoaderConfig{Filepath: queryFile, TenantID: "nonexistent", QueryIDs: nil, SampleFraction: 1.0, Seed: 1})
 	require.NoError(t, err)
 	require.Len(t, noQueries, 0, "should have no queries for non-existent tenant")
 }
@@ -196,12 +196,13 @@ func TestLoadQueryLogsFromFile(t *testing.T) {
 	require.NoError(t, err)
 
 	// Parse queries
-	queries, err := loadQueryLogsFromFile(queryFile, nil)
+	queries, stats, err := loadQueryLogsFromFile(queryFile, nil)
 	require.NoError(t, err)
 
 	// We should have 4 valid queries (2 POST + 1 GET + 1 without method - only GET is filtered)
 	// Actually we don't filter GET anymore, we filter based on having a query
 	assert.Len(t, queries, 4)
+	assert.Equal(t, 0, stats.MalformedLines)
 
 	// Check first query
 	assert.Equal(t, "up", queries[0].Query)
@@ -231,14 +232,43 @@ func TestLoadQueryLogsFromFile_EmptyFile(t *testing.T) {
 	err := os.WriteFile(queryFile, []byte(""), 0644)
 	require.NoError(t, err)
 
-	queries, err := loadQueryLogsFromFile(queryFile, nil)
+	queries, stats, err := loadQueryLogsFromFile(queryFile, nil)
 	require.NoError(t, err)
 	assert.Empty(t, queries)
+	assert.Equal(t, 0, stats.MalformedLines)
 }
 
 func TestLoadQueryLogsFromFile_NonExistent(t *testing.T) {
-	_, err := loadQueryLogsFromFile("/nonexistent/file.json", nil)
+	_, _, err := loadQueryLogsFromFile("/nonexistent/file.json", nil)
 	assert.Error(t, err)
+}
+
+func TestLoadQueryLogsFromFile_MalformedLines(t *testing.T) {
+	tmpDir := t.TempDir()
+	queryFile := filepath.Join(tmpDir, "malformed.json")
+
+	// Content with both valid and malformed lines
+	content := `{"labels":{"param_query":"up"},"timestamp":"2025-10-15T14:56:24.337Z"}
+this is not valid json
+{"labels":{"param_query":"down"},"timestamp":"2025-10-15T14:56:24.437Z"}
+{incomplete json
+{"labels":{"param_query":"process_cpu_seconds_total"},"timestamp":"2025-10-15T14:56:24.537Z"}
+`
+
+	err := os.WriteFile(queryFile, []byte(content), 0644)
+	require.NoError(t, err)
+
+	queries, stats, err := loadQueryLogsFromFile(queryFile, nil)
+	require.NoError(t, err)
+
+	// Should have 3 valid queries
+	assert.Len(t, queries, 3)
+	assert.Equal(t, "up", queries[0].Query)
+	assert.Equal(t, "down", queries[1].Query)
+	assert.Equal(t, "process_cpu_seconds_total", queries[2].Query)
+
+	// Should have counted 2 malformed lines
+	assert.Equal(t, 2, stats.MalformedLines)
 }
 
 // TestSampleQueries tests the sampleQueries function

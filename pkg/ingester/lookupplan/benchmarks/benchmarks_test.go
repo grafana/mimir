@@ -90,7 +90,7 @@ func BenchmarkQueryExecution(b *testing.B) {
 		require.NoError(b, err)
 	}
 
-	queries, err := queryLoader.PrepareQueries(bench.QueryLoaderConfig{
+	queries, stats, err := queryLoader.PrepareQueries(bench.QueryLoaderConfig{
 		Filepath:       *queryFileFlag,
 		TenantID:       *tenantIDFlag,
 		QueryIDs:       queryIDs,
@@ -99,7 +99,7 @@ func BenchmarkQueryExecution(b *testing.B) {
 	})
 	require.NoError(b, err)
 	require.NotEmpty(b, queries, "no queries after filtering and sampling")
-	b.Logf("Prepared %d queries (sample: %f%%)", len(queries), *querySampleFlag*100)
+	b.Logf("Prepared %d queries (malformed: %d, sampled: %f%% of all queries)", len(queries), stats.MalformedLines, *querySampleFlag*100)
 
 	// Start ingester
 	ing, _, cleanupFunc, err := benchmarks.StartBenchmarkIngester(*dataDirFlag, func(config *ingester.Config) {

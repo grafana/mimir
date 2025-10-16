@@ -85,10 +85,10 @@ type QueryLoaderConfig struct {
 //
 // The file should contain newline-delimited JSON logs with query parameters in the labels field,
 // as produced by logcli (see package documentation for details).
-func (qc *QueryLoader) PrepareQueries(config QueryLoaderConfig) ([]Query, error) {
+func (qc *QueryLoader) PrepareQueries(config QueryLoaderConfig) ([]Query, ParsingStats, error) {
 	// Validate that QueryIDs and sampling are mutually exclusive
 	if len(config.QueryIDs) > 0 && config.SampleFraction < 1.0 {
-		return nil, fmt.Errorf("QueryIDs and SampleFraction < 1.0 are mutually exclusive")
+		return nil, ParsingStats{}, fmt.Errorf("QueryIDs and SampleFraction < 1.0 are mutually exclusive")
 	}
 
 	// Create cache key from parameters
@@ -96,13 +96,13 @@ func (qc *QueryLoader) PrepareQueries(config QueryLoaderConfig) ([]Query, error)
 
 	// Check cache first
 	if cached, ok := qc.cache.Load(cacheKey); ok {
-		return cached.([]Query), nil
+		return cached.([]Query), ParsingStats{}, nil
 	}
 
 	// Load queries from file (with early filtering by query IDs if specified)
-	queries, err := loadQueryLogsFromFile(config.Filepath, config.QueryIDs)
+	queries, stats, err := loadQueryLogsFromFile(config.Filepath, config.QueryIDs)
 	if err != nil {
-		return nil, err
+		return nil, ParsingStats{}, err
 	}
 
 	// Filter by tenant ID if specified
@@ -124,7 +124,11 @@ func (qc *QueryLoader) PrepareQueries(config QueryLoaderConfig) ([]Query, error)
 	// Store in cache before returning
 	qc.cache.Store(cacheKey, queries)
 
-	return queries, nil
+	return queries, stats, nil
+}
+
+type ParsingStats struct {
+	MalformedLines int
 }
 
 // Query represents a parsed query from Loki logs.
@@ -143,10 +147,11 @@ type Query struct {
 // loadQueryLogsFromFile parses queries from a Loki log file in newline-delimited JSON (JSONL) format.
 // Each line should be a JSON object with query information in the labels field (see package documentation).
 // If queryIDs is non-empty, only queries with matching line numbers are returned.
-func loadQueryLogsFromFile(filepath string, queryIDs []int) ([]Query, error) {
+// Returns the parsed queries and statistics about the parsing process.
+func loadQueryLogsFromFile(filepath string, queryIDs []int) ([]Query, ParsingStats, error) {
 	f, err := os.Open(filepath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to open query file %q: %w", filepath, err)
+		return nil, ParsingStats{}, fmt.Errorf("failed to open query file %q: %w", filepath, err)
 	}
 	defer f.Close()
 
@@ -160,6 +165,7 @@ func loadQueryLogsFromFile(filepath string, queryIDs []int) ([]Query, error) {
 	}
 
 	var queries []Query
+	var stats ParsingStats
 	scanner := bufio.NewScanner(f)
 	scanner.Buffer(nil, 10*1024*1024) // 10MB max line size
 	lineNum := 0
@@ -181,6 +187,7 @@ func loadQueryLogsFromFile(filepath string, queryIDs []int) ([]Query, error) {
 		var q Query
 		if err := json.Unmarshal(line, &q); err != nil {
 			// Skip malformed lines
+			stats.MalformedLines++
 			continue
 		}
 
@@ -191,10 +198,10 @@ func loadQueryLogsFromFile(filepath string, queryIDs []int) ([]Query, error) {
 	}
 
 	if err := scanner.Err(); err != nil {
-		return nil, fmt.Errorf("error reading file: %w", err)
+		return nil, ParsingStats{}, fmt.Errorf("error reading file: %w", err)
 	}
 
-	return queries, nil
+	return queries, stats, nil
 }
 
 // extractLabelMatchers extracts label matchers from a PromQL query string.
@@ -263,20 +270,17 @@ func (q *Query) UnmarshalJSON(b []byte) error {
 
 	// Skip if no query present
 	if d.Labels.Query == "" {
-		return nil
+		return fmt.Errorf("no query present in log entry")
+	}
+
+	vectorSelectors, err := extractLabelMatchers(d.Labels.Query)
+	if err != nil {
+		return fmt.Errorf("failed to extract label matchers: %w", err)
 	}
 
 	q.valid = true
 	q.Query = d.Labels.Query
 	q.User = d.Labels.User
-
-	// Extract vector selectors from the query
-	vectorSelectors, err := extractLabelMatchers(d.Labels.Query)
-	if err != nil {
-		// If we can't parse the query, still mark it as valid but with no vector selectors
-		// This allows the query to be included in stats but skipped for benchmarking
-		vectorSelectors = nil
-	}
 	q.VectorSelectors = vectorSelectors
 
 	// Parse timestamp
