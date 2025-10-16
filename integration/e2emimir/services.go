@@ -73,6 +73,10 @@ func newMimirServiceFromOptions(name string, defaultFlags, flags map[string]stri
 	serviceFlags := o.MapFlags(e2e.MergeFlags(defaultFlags, flags, getExtraFlags()))
 	binaryName := getBinaryNameForBackwardsCompatibility()
 
+	if dir, ok := serviceFlags["-compactor.data-dir"]; ok {
+		_ = os.MkdirAll(dir, 0o755)
+	}
+
 	return NewMimirService(
 		name,
 		o.Image,
@@ -210,10 +214,6 @@ func NewQueryScheduler(name string, flags map[string]string, options ...Option) 
 }
 
 func NewCompactor(name string, consulAddress string, flags map[string]string, options ...Option) *MimirService {
-	if dir, ok := flags["-compactor.data-dir"]; ok {
-		_ = os.MkdirAll(dir, 0o755)
-	}
-
 	return newMimirServiceFromOptions(
 		name,
 		map[string]string{
