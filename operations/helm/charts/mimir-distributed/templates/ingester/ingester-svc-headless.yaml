@@ -1,4 +1,4 @@
-{{- if and .Values.ingester.enabled (not .Values.federation_frontend.disableOtherComponents) }}
+{{- if .Values.ingester.enabled }}
 apiVersion: v1
 kind: Service
 metadata:

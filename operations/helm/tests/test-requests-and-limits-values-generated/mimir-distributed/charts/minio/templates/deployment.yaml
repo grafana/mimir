@@ -28,7 +28,7 @@ spec:
         release: test-requests-and-limits-values
       annotations:
         checksum/secrets: b2f679e2c087ae6514eab30df9cbbcfe3e4ba2f7cac7e496034c1e043c479e1c
-        checksum/config: dc9b14f28a5470990042a7e859e4066124fd2ce74a4b839c0b841b6d3feb4283
+        checksum/config: 9413a820a494a0b90b7e918cbb581f676cfa3ab923846f037b39f79b5b7fffda
     spec:
       securityContext:
         

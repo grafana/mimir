@@ -11,9 +11,6 @@ test_extra_args: &test_extra_args
     flag-json2: '{"foo":"bar"}'
     flag-number: 0
 
-admin_api:
-  <<: *test_extra_args
-
 alertmanager:
   <<: *test_extra_args
 

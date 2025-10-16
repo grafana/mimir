@@ -151,8 +151,7 @@ If the table is empty, it means there is something wrong with the configuration.
 
 ### Distributor metrics
 
-If you have set up [metamonitoring](https://grafana.com/docs/mimir/latest/manage/monitor-grafana-mimir/monitor-system-health/) or if you
-run GEM with built-in system monitoring,
+If you have set up [metamonitoring](https://grafana.com/docs/mimir/latest/manage/monitor-grafana-mimir/monitor-system-health/),
 Mimir [distributor](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/components/distributor/)
 exposes some metrics related to HA deduplication. The relevant metrics are those with `cortex_ha_tracker_` prefix.
 

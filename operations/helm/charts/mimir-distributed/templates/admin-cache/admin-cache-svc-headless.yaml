@@ -1,3 +1,0 @@
-{{- if and .Values.enterprise.enabled (index .Values "admin-cache" "enabled") -}}
-{{- include "mimir.memcached.service" (dict "ctx" $ "component" "admin-cache" ) }}
-{{- end -}}
