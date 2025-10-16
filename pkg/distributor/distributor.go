@@ -1723,6 +1723,7 @@ func (d *Distributor) acquireReactiveLimiterPermit(ctx context.Context) error {
 // and which component is responsible for doing a cleanup.
 func (d *Distributor) startPushRequest(ctx context.Context, httpgrpcRequestSize int64) (context.Context, *requestState, error) {
 	// If requestState is already in context, it means that StartPushRequest already ran for this request.
+	// This check must be performed first, before any other logic in this function.
 	rs, alreadyInContext := ctx.Value(requestStateKey).(*requestState)
 	if alreadyInContext {
 		return ctx, rs, nil
