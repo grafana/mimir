@@ -163,7 +163,7 @@ func (t *Mimir) initAPI() (services.Service, error) {
 		})
 
 	t.API = a
-	t.API.RegisterAPI(t.Cfg.Server.PathPrefix, t.Cfg, newDefaultConfig(), t.BuildInfoHandler)
+	t.API.RegisterAPI(t.Cfg, newDefaultConfig(), t.BuildInfoHandler)
 
 	return nil, nil
 }

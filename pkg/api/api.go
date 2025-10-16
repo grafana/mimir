@@ -234,15 +234,15 @@ func (a *API) RegisterAlertmanager(am *alertmanager.MultitenantAlertmanager, api
 }
 
 // RegisterAPI registers the standard endpoints associated with a running Mimir.
-func (a *API) RegisterAPI(httpPathPrefix string, actualCfg interface{}, defaultCfg interface{}, buildInfoHandler http.Handler) {
+func (a *API) RegisterAPI(actualCfg interface{}, defaultCfg interface{}, buildInfoHandler http.Handler) {
 	a.indexPage.AddLinks(configWeight, "Current config", []IndexPageLink{
 		{Desc: "Including the default values", Path: "/config"},
 		{Desc: "Only values that differ from the defaults", Path: "/config?mode=diff"},
 	})
 
 	a.RegisterRoute("/config", a.cfg.configHandler(actualCfg, defaultCfg), false, true, "GET")
-	a.RegisterRoute("/", indexHandler(httpPathPrefix, a.indexPage), false, true, "GET")
-	a.RegisterRoutesWithPrefix("/static/", http.StripPrefix(httpPathPrefix, http.FileServer(http.FS(staticFiles))), false, true, "GET")
+	a.RegisterRoute("/", indexHandler(a.indexPage), false, true, "GET")
+	a.RegisterRoutesWithPrefix("/static/", http.FileServer(http.FS(staticFiles)), false, true, "GET")
 	a.RegisterRoute("/debug/fgprof", fgprof.Handler(), false, true, "GET")
 	a.RegisterRoute("/api/v1/status/buildinfo", buildInfoHandler, false, true, "GET")
 	a.RegisterRoute("/api/v1/status/config", a.cfg.statusConfigHandler(), false, true, "GET")
