@@ -12,7 +12,6 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/grafana/mimir/pkg/util"
-	"github.com/grafana/mimir/pkg/util/pool"
 )
 
 // plan is a representation of one way of executing a vector selector.
@@ -25,18 +24,16 @@ type plan struct {
 	// totalSeries is the total number of series in the index.
 	totalSeries uint64
 
-	config             CostConfig
-	indexPredicatePool *pool.SlabPool[bool]
+	config CostConfig
 }
 
 // newScanOnlyPlan returns a plan in which all predicates would be used to scan and none to reach from the index.
-func newScanOnlyPlan(ctx context.Context, stats index.Statistics, config CostConfig, matchers []*labels.Matcher, predicatedPool *pool.SlabPool[bool]) plan {
+func newScanOnlyPlan(ctx context.Context, stats index.Statistics, config CostConfig, matchers []*labels.Matcher) plan {
 	p := plan{
-		predicates:         make([]planPredicate, 0, len(matchers)),
-		indexPredicate:     make([]bool, 0, len(matchers)),
-		totalSeries:        stats.TotalSeries(),
-		config:             config,
-		indexPredicatePool: predicatedPool,
+		predicates:     make([]planPredicate, 0, len(matchers)),
+		indexPredicate: make([]bool, 0, len(matchers)),
+		totalSeries:    stats.TotalSeries(),
+		config:         config,
 	}
 	for _, m := range matchers {
 		pred := newPlanPredicate(ctx, m, stats, config)
@@ -69,21 +66,17 @@ func (p plan) ScanMatchers() []*labels.Matcher {
 
 // useIndexFor returns a copy of this plan where predicate predicateIdx is used on the index.
 func (p plan) useIndexFor(predicateIdx int) plan {
-	var copied []bool
-	if p.indexPredicatePool != nil {
-		copied = p.indexPredicatePool.Get(len(p.indexPredicate))
-		copy(copied, p.indexPredicate)
-	} else {
-		copied = slices.Clone(p.indexPredicate)
-	}
-	p.indexPredicate = copied
+	p.indexPredicate = slices.Clone(p.indexPredicate)
 	p.indexPredicate[predicateIdx] = true
 	return p
 }
 
-func (p plan) withoutMemoryPool() plan {
+// useScanFor returns a copy of this plan where the predicate at predicateIdx is used during sequential scanning.
+//
+//nolint:unused
+func (p plan) useScanFor(predicateIdx int) plan {
 	p.indexPredicate = slices.Clone(p.indexPredicate)
-	p.indexPredicatePool = nil
+	p.indexPredicate[predicateIdx] = false
 	return p
 }
 
