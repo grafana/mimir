@@ -94,6 +94,8 @@ func (p *ProxyEndpoint) selectBackends() []ProxyBackendInterface {
 		return []ProxyBackendInterface{p.preferredBackend}
 	}
 
+	// TODO(jesusvazquez) Filter request min time
+
 	if rand.Float64() > p.secondaryBackendRequestProportion {
 		return []ProxyBackendInterface{p.preferredBackend}
 	}

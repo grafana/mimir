@@ -6,6 +6,7 @@
 package main
 
 import (
+	"bytes"
 	"flag"
 	"fmt"
 	"io"
@@ -13,16 +14,22 @@ import (
 	"time"
 
 	"github.com/go-kit/log/level"
-	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/log"
 	"github.com/grafana/dskit/tracing"
+	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/collectors"
 	"github.com/prometheus/common/model"
+	"gopkg.in/yaml.v3"
 
 	"github.com/grafana/mimir/pkg/util/instrumentation"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/tools/querytee"
+)
+
+const (
+	configFileOption = "config.file"
+	configExpandEnv  = "config.expand-env"
 )
 
 type Config struct {
@@ -30,20 +37,41 @@ type Config struct {
 	LogLevel          log.Level
 	ProxyConfig       querytee.ProxyConfig
 	PathPrefix        string
+	ConfigFile        string
+	ConfigExpandEnv   bool
+}
+
+func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
+	f.StringVar(&cfg.ConfigFile, configFileOption, "", "Configuration file to load.")
+	f.BoolVar(&cfg.ConfigExpandEnv, configExpandEnv, false, "Expands ${var} or $var in config according to the values of the environment variables.")
+	f.IntVar(&cfg.ServerMetricsPort, "server.metrics-port", 9900, "The port where metrics are exposed.")
+	f.StringVar(&cfg.PathPrefix, "server.path-prefix", "", "Path prefix for API paths (query-tee will accept Prometheus API calls at <prefix>/api/v1/...). Example: -server.path-prefix=/prometheus")
+
+	cfg.LogLevel.RegisterFlags(f)
+	cfg.ProxyConfig.RegisterFlags(f)
+
+	err := f.Parse(os.Args[1:])
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error parsing command line arguments: %v\n", err)
+		os.Exit(1)
+	}
 }
 
 func main() {
-	// Parse CLI flags.
 	cfg := Config{}
-	flag.IntVar(&cfg.ServerMetricsPort, "server.metrics-port", 9900, "The port where metrics are exposed.")
-	flag.StringVar(&cfg.PathPrefix, "server.path-prefix", "", "Path prefix for API paths (query-tee will accept Prometheus API calls at <prefix>/api/v1/...). Example: -server.path-prefix=/prometheus")
-	cfg.LogLevel.RegisterFlags(flag.CommandLine)
-	cfg.ProxyConfig.RegisterFlags(flag.CommandLine)
 
-	// Parse CLI arguments.
-	if err := flagext.ParseFlagsWithoutArguments(flag.CommandLine); err != nil {
-		fmt.Fprintln(os.Stderr, err.Error())
-		os.Exit(1)
+	cfg.RegisterFlags(flag.CommandLine)
+
+	if cfg.ConfigFile != "" {
+		if _, err := os.Stat(cfg.ConfigFile); err == nil {
+			if err := loadConfig(cfg.ConfigFile, cfg.ConfigExpandEnv, &cfg); err != nil {
+				fmt.Fprintf(os.Stderr, "error loading config from %s: %v\n", cfg.ConfigFile, err)
+				os.Exit(1)
+			}
+		} else if cfg.ConfigFile != "query-tee.yaml" {
+			fmt.Fprintf(os.Stderr, "config file not found: %s\n", cfg.ConfigFile)
+			os.Exit(1)
+		}
 	}
 
 	util_log.InitLogger(log.LogfmtFormat, cfg.LogLevel, false, util_log.RateLimitedLoggerCfg{})
@@ -132,4 +160,38 @@ func mimirReadRoutes(cfg Config) []querytee.Route {
 		{Path: prefix + "/prometheus/config/v1/rules", RouteName: "prometheus_config_v1_rules", Methods: []string{"GET", "POST"}, ResponseComparator: nil},
 		{Path: prefix + "/api/v1/alerts", RouteName: "api_v1_alerts", Methods: []string{"GET", "POST"}, ResponseComparator: nil},
 	}
+}
+
+func loadConfig(filename string, expandEnv bool, cfg *Config) error {
+	buf, err := os.ReadFile(filename)
+	if err != nil {
+		return errors.Wrap(err, "Error reading config file")
+	}
+
+	if expandEnv {
+		buf = expandEnvironmentVariables(buf)
+	}
+
+	dec := yaml.NewDecoder(bytes.NewReader(buf))
+	dec.KnownFields(true)
+
+	yamlConfig := &querytee.YAMLConfig{}
+	if err := dec.Decode(yamlConfig); err != nil {
+		return errors.Wrap(err, "Error parsing config file")
+	}
+
+	if err := cfg.ProxyConfig.ApplyYAMLConfig(yamlConfig); err != nil {
+		return errors.Wrap(err, "Error applying YAML configuration")
+	}
+
+	return nil
+}
+
+func expandEnvironmentVariables(config []byte) []byte {
+	return []byte(os.Expand(string(config), func(key string) string {
+		if value, exists := os.LookupEnv(key); exists {
+			return value
+		}
+		return "${" + key + "}"
+	}))
 }

@@ -781,6 +781,7 @@ type mockProxyBackend struct {
 	name                  string
 	timeout               time.Duration
 	preferred             bool
+	requestProportion     float64
 	fakeResponseLatencies []time.Duration
 	responseIndex         int
 }
@@ -790,6 +791,7 @@ func newMockProxyBackend(name string, timeout time.Duration, preferred bool, fak
 		name:                  name,
 		timeout:               timeout,
 		preferred:             preferred,
+		requestProportion:     1.0,
 		fakeResponseLatencies: fakeResponseLatencies,
 	}
 }
@@ -804,6 +806,14 @@ func (b *mockProxyBackend) Endpoint() *url.URL {
 
 func (b *mockProxyBackend) Preferred() bool {
 	return b.preferred
+}
+
+func (b *mockProxyBackend) RequestProportion() float64 {
+	return b.requestProportion
+}
+
+func (b *mockProxyBackend) SetRequestProportion(proportion float64) {
+	b.requestProportion = proportion
 }
 
 func (b *mockProxyBackend) ForwardRequest(_ context.Context, _ *http.Request, _ io.ReadCloser) (time.Duration, int, []byte, *http.Response, error) {

@@ -23,6 +23,8 @@ type ProxyBackendInterface interface {
 	Name() string
 	Endpoint() *url.URL
 	Preferred() bool
+	RequestProportion() float64
+	SetRequestProportion(proportion float64)
 	ForwardRequest(ctx context.Context, orig *http.Request, body io.ReadCloser) (time.Duration, int, []byte, *http.Response, error)
 }
 
@@ -36,7 +38,12 @@ type ProxyBackend struct {
 	// Whether this is the preferred backend from which picking up
 	// the response and sending it back to the client.
 	preferred bool
-	cfg       BackendConfig
+
+	// The proportion of requests to send to this backend (0.0 to 1.0).
+	// Only applies to secondary backends; ignored for preferred backends.
+	requestProportion float64
+
+	cfg BackendConfig
 }
 
 // NewProxyBackend makes a new ProxyBackend
@@ -59,11 +66,12 @@ func NewProxyBackend(name string, endpoint *url.URL, timeout time.Duration, pref
 	tracingTransport := otelhttp.NewTransport(innerTransport)
 
 	return &ProxyBackend{
-		name:      name,
-		endpoint:  endpoint,
-		timeout:   timeout,
-		preferred: preferred,
-		cfg:       cfg,
+		name:              name,
+		endpoint:          endpoint,
+		timeout:           timeout,
+		preferred:         preferred,
+		requestProportion: 1.0, // Default to 1.0 (send all requests)
+		cfg:               cfg,
 		client: &http.Client{
 			CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
 				return errors.New("the query-tee proxy does not follow redirects")
@@ -83,6 +91,14 @@ func (b *ProxyBackend) Endpoint() *url.URL {
 
 func (b *ProxyBackend) Preferred() bool {
 	return b.preferred
+}
+
+func (b *ProxyBackend) RequestProportion() float64 {
+	return b.requestProportion
+}
+
+func (b *ProxyBackend) SetRequestProportion(proportion float64) {
+	b.requestProportion = proportion
 }
 
 func (b *ProxyBackend) ForwardRequest(ctx context.Context, orig *http.Request, body io.ReadCloser) (time.Duration, int, []byte, *http.Response, error) {
