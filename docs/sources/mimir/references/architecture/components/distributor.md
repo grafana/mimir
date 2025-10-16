@@ -113,7 +113,7 @@ We recommend uniformly distributing write requests across all distributor instan
 The preferred approach is a Layer 7 load balancer, which balances individual HTTP requests across distributors.
 
 {{< admonition type="note" >}}
-If you run Grafana Mimir in a Kubernetes cluster and use a Kubernetes [Service](https://kubernetes.io/docs/concepts/services-networking/service/) as the ingress for distributors, note that a Kubernetes Service balances TCP connections across endpoints but does not balance HTTP requests within a single TCP connection.
+If you run Grafana Mimir in a Kubernetes cluster and use a Kubernetes [Service](https://kubernetes.io/docs/concepts/services-networking/service/) as the ingress for distributors, a Kubernetes Service balances TCP connections across endpoints but doesn't balance HTTP requests within a single TCP connection.
 
 If you enable HTTP persistent connections, also known as HTTP keep-alive, Prometheus reuses the same TCP connection for each remote-write HTTP request of a remote-write shard.
 This can cause distributors to receive an uneven distribution of remote-write HTTP requests.
