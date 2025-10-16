@@ -76,7 +76,7 @@ The distributor automatically adjusts the request and ingestion rate limits if t
 
 The distributor rate limits are implemented using a per-distributor local rate limiter, they require that write requests are [evenly distributed across the pool of distributors](#load-balancing-across-distributors).
 
-### Rate limiting configuration
+### Configure rate limits
 
 Use the following flags to configure the rate limits:
 
