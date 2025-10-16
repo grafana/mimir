@@ -157,6 +157,10 @@ func (cfg *HATrackerConfig) RegisterFlags(f *flag.FlagSet) {
 	// order to not clash with the ring key if they both share the same KVStore
 	// backend (i.e. run on the same Consul cluster).
 	// Note: memberlist is the recommended backend for the HA tracker. Consul and etcd are deprecated.
+	// Set the default to memberlist before registering flags.
+	if cfg.KVStore.Store == "" {
+		cfg.KVStore.Store = "memberlist"
+	}
 	cfg.KVStore.RegisterFlagsWithPrefix("distributor.ha-tracker.", "ha-tracker/", f)
 }
 

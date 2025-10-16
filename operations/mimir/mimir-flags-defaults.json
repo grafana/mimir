@@ -59,7 +59,7 @@
   "distributor.retry-after-header.enabled": true,
   "distributor.retry-after-header.min-backoff": 6000000000,
   "distributor.retry-after-header.max-backoff": 96000000000,
-  "distributor.ha-tracker.store": "consul",
+  "distributor.ha-tracker.store": "memberlist",
   "distributor.ha-tracker.prefix": "ha-tracker/",
   "distributor.ha-tracker.consul.hostname": "localhost:8500",
   "distributor.ha-tracker.consul.acl-token": "",

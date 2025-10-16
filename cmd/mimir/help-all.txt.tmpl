@@ -1250,7 +1250,7 @@ Usage of ./cmd/mimir/mimir:
   -distributor.ha-tracker.replica string
     	Prometheus label to look for in samples to identify a Prometheus HA replica. (default "__replica__")
   -distributor.ha-tracker.store string
-    	Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi. (default "consul")
+    	Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi. (default "memberlist")
   -distributor.ha-tracker.update-timeout duration
     	Update the timestamp in the KV store for a given cluster/replica only after this amount of time has passed since the current stored timestamp. (default 15s)
   -distributor.ha-tracker.update-timeout-jitter-max duration
