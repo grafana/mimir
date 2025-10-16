@@ -749,9 +749,16 @@ func (f *Frontend) QueryResultStream(stream frontendv2pb.FrontendForQuerier_Quer
 		}
 
 		err := stream.SendAndClose(&frontendv2pb.QueryResultResponse{})
-		if err != nil && !errors.Is(globalerror.WrapGRPCErrorWithContextError(stream.Context(), err), context.Canceled) {
-			level.Warn(f.log).Log("msg", "failed to close query result body stream", "err", err)
+		if err == nil {
+			return
 		}
+
+		if errors.Is(globalerror.WrapGRPCErrorWithContextError(stream.Context(), err), context.Canceled) {
+			// If the stream was cancelled, we don't care.
+			return
+		}
+
+		level.Warn(f.log).Log("msg", "failed to close query result body stream", "err", err)
 	}
 
 	defer closeStream()
