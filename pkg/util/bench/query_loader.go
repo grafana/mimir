@@ -1,31 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-// Package bench provides utilities for benchmarking with queries extracted from production logs.
-//
-// The package expects query logs in Loki's newline-delimited JSON (JSONL) format,
-// where each line contains a JSON object with query parameters in the labels field.
-//
-// You can obtain query logs using logcli with a command like:
-//
-//	logcli query -q --timezone=UTC --limit=1000000 \
-//	  --from='2025-10-15T15:15:21.0Z' \
-//	  --to='2025-10-15T16:15:21.0Z' \
-//	  --output=jsonl \
-//	  '{namespace="mimir", name="query-frontend"} |= "query stats" | logfmt | path=~".*/query(_range)?"' \
-//	  > logs.json
-//
-// Each log line should have the following structure:
-//
-//	{
-//	  "labels": {
-//	    "param_query": "sum(rate(metric[5m]))",
-//	    "param_start": "1697452800",
-//	    "param_end": "1697456400",
-//	    "param_step": "60",
-//	    "user": "tenant-123"
-//	  },
-//	  "timestamp": "2025-10-15T15:30:00.123456789Z"
-//	}
 package bench
 
 import (
@@ -53,9 +27,34 @@ const (
 	numSegments = 100
 )
 
-// QueryLoader loads and prepares queries from a Loki log file in JSONL format.
+// QueryLoader loads and parses queries from query-frontend "query stats" logs.
+// The queries are contained in a logcli log file in JSONL format.
 // It supports filtering by tenant ID and/or specific query IDs, as well as sampling.
-// Results are cached to avoid re-processing the same parameters.
+//
+// QueryLoader expects query logs in Loki's newline-delimited JSON (JSONL) format,
+// where each line contains a JSON object with query parameters in the labels field.
+//
+// You can obtain query logs using logcli with a command like:
+//
+//	logcli query -q --timezone=UTC --limit=1000000 \
+//	  --from='2025-10-15T15:15:21.0Z' \
+//	  --to='2025-10-15T16:15:21.0Z' \
+//	  --output=jsonl \
+//	  '{namespace="mimir", name="query-frontend"} |= "query stats" | logfmt | path=~".*/query(_range)?"' \
+//	  > logs.json
+//
+// Each log line should have the following structure:
+//
+//	{
+//	  "labels": {
+//	    "param_query": "sum(rate(metric[5m]))",
+//	    "param_start": "1697452800",
+//	    "param_end": "1697456400",
+//	    "param_step": "60",
+//	    "user": "tenant-123"
+//	  },
+//	  "timestamp": "2025-10-15T15:30:00.123456789Z"
+//	}
 type QueryLoader struct {
 	cache sync.Map
 }
