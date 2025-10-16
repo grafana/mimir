@@ -46,13 +46,19 @@ Follow these steps to migrate your Grafana Mimir cluster from classic architectu
 
    This configuration lets the new cluster use existing blocks from the old cluster while avoiding block overwrites.
 
-   Optionally, to avoid duplicate alerts, disable alert sending from the ruler. For example:
+   Optionally, to avoid duplicate alerts, disable alert sending from the ruler. For example, if you're using the Helm chart:
 
    ```yaml
-   limits:
-     ruler_alerting_rules_evaluation_enabled: false
-   # or set the flag:
-   # -ruler.alerting-rules-evaluation-enabled=false
+   mimir:
+   structuredConfig:
+       limits:
+         ruler_alerting_rules_evaluation_enabled: false
+
+   # or
+
+   ruler:
+   extraArgs:
+       ruler.alerting-rules-evaluation-enabled: false
    ```
 
    If your alert delivery system, for example, Grafana OnCall or PagerDuty, already deduplicates alerts, you can skip this step.
