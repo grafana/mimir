@@ -36,6 +36,10 @@ chmod +x query-tee
 
 ## Configure the query-tee
 
+You can configure the query-tee using either command-line flags or a YAML configuration file. The YAML configuration provides more advanced features including per-backend request headers and individual request proportions.
+
+### Command-line configuration
+
 The query-tee requires the endpoints of the backend Grafana Mimir clusters.
 You can configure the backend endpoints by setting the `-backend.endpoints` flag to a comma-separated list of HTTP or HTTPS URLs.
 
@@ -44,6 +48,144 @@ For each incoming request, the query-tee clones the request and sends it to each
 {{< admonition type="note" >}}
 You can configure the query-tee proxy listening ports via the `-server.http-service-port` flag for the HTTP port and `server.grpc-service-port` flag for the gRPC port.
 {{< /admonition >}}
+
+### YAML configuration
+
+For advanced configurations, you can use a YAML configuration file by specifying the `-config.file` flag:
+
+```bash
+query-tee -config.file=config.yaml
+```
+
+The YAML configuration supports all command-line options plus additional per-backend features:
+
+```yaml
+# Server configuration
+server:
+  http_service:
+    address: ""           # HTTP bind address (default: all interfaces)
+    port: 8080           # HTTP port (default: 80)
+  grpc_service:
+    address: ""           # gRPC bind address (default: all interfaces)
+    port: 9095           # gRPC port (default: 9095)
+  graceful_shutdown_timeout: 30s  # Graceful shutdown timeout
+  path_prefix: ""       # Path prefix for API routes
+
+# Backend endpoints configuration
+backends:
+  endpoints:
+    - name: "preferred-backend"
+      url: "http://mimir-1.example.com:8080"
+      preferred: true               # Exactly one backend must be preferred
+      timeout: 150s                 # Request timeout (default: 150s)
+      skip_tls_verify: false        # Skip TLS verification
+      request_headers:              # Custom headers for this backend
+        X-Scope-OrgID: ["tenant-1"]
+        Authorization: ["Bearer token123"]
+    - name: "secondary-backend"
+      url: "http://mimir-2.example.com:8080"
+      preferred: false
+      request_proportion: 0.8       # Send 80% of requests to this backend
+      request_headers:
+        X-Scope-OrgID: ["tenant-2"]
+
+# Proxy behavior configuration
+proxy:
+  compare_responses: false                              # Compare responses between backends
+  passthrough_non_registered_routes: false             # Pass unregistered routes to preferred backend
+  add_missing_time_parameter_to_instant_queries: true  # Add time param to instant queries
+  log_slow_query_response_threshold: 10s               # Log slow query threshold
+  skip_preferred_backend_failures: false               # Skip comparisons when preferred fails
+
+# Response comparison configuration
+comparison:
+  value_tolerance: 0.000001         # Floating point comparison tolerance
+  use_relative_error: false         # Use relative vs absolute error tolerance
+  skip_recent_samples: 2m           # Skip samples within this time window
+  skip_samples_before: ""           # Skip samples before this timestamp (RFC3339)
+  require_exact_error_match: false  # Require exact error message matching
+```
+
+#### Environment variable expansion
+
+The YAML configuration supports environment variable expansion using the `-config.expand-env` flag:
+
+```bash
+query-tee -config.file=config.yaml -config.expand-env=true
+```
+
+In your YAML file, you can use `${VAR}` or `$VAR` syntax:
+
+```yaml
+backends:
+  endpoints:
+    - name: "backend1"
+      url: "${BACKEND1_URL}"
+      request_headers:
+        Authorization: ["Bearer ${API_TOKEN}"]
+```
+
+### Usage examples
+
+#### Basic comparison setup
+
+Command-line setup for basic comparison between two clusters:
+
+```bash
+query-tee \
+  -backend.endpoints="http://old-mimir:8080,http://new-mimir:8080" \
+  -backend.preferred="old-mimir" \
+  -proxy.compare-responses=true \
+  -server.http-service-port=8080
+```
+
+#### Multi-tenant YAML configuration
+
+YAML configuration for testing multiple tenants with different backends:
+
+```yaml
+# config.yaml
+server:
+  http_service:
+    port: 8080
+    
+backends:
+  endpoints:
+    - name: "production"
+      url: "http://prod-mimir.company.com:8080"
+      preferred: true
+      request_headers:
+        X-Scope-OrgID: ["prod-tenant"]
+        
+    - name: "staging-canary"
+      url: "http://staging-mimir.company.com:8080"
+      preferred: false
+      request_proportion: 0.1  # Only 10% of traffic for canary testing
+      request_headers:
+        X-Scope-OrgID: ["staging-tenant"]
+        
+    - name: "development"
+      url: "http://dev-mimir.company.com:8080"
+      preferred: false
+      request_proportion: 0.05  # Only 5% of traffic for dev testing
+      request_headers:
+        X-Scope-OrgID: ["dev-tenant"]
+        X-Debug-Mode: ["true"]
+
+proxy:
+  compare_responses: true
+  log_slow_query_response_threshold: 5s
+
+comparison:
+  value_tolerance: 0.001
+  skip_recent_samples: 3m
+```
+
+Run with:
+
+```bash
+query-tee -config.file=config.yaml
+```
 
 ## How the query-tee works
 
@@ -87,13 +229,78 @@ A request sent from the query-tee to a backend includes HTTP basic authenticatio
 - If the backend endpoint URL is configured only with a username, then query-tee keeps the configured username and injects the password received in the incoming request.
 - If the backend endpoint URL is configured without a username and password, then query-tee forwards the authentication credentials found in the incoming request.
 
+#### Custom request headers
+
+When using YAML configuration, you can configure custom HTTP headers to be sent to specific backends:
+
+```yaml
+backends:
+  endpoints:
+    - name: "tenant-1-backend"
+      url: "http://mimir-tenant1.example.com:8080"
+      preferred: true
+      request_headers:
+        X-Scope-OrgID: ["tenant-1"]
+        Authorization: ["Bearer eyJ0eXAiOiJKV1QiLCJhbGc..."]
+        X-Custom-Header: ["value1", "value2"]  # Multiple values supported
+    - name: "tenant-2-backend"
+      url: "http://mimir-tenant2.example.com:8080"
+      preferred: false
+      request_headers:
+        X-Scope-OrgID: ["tenant-2"]
+        Authorization: ["Bearer eyJ0eXAiOiJKV1QiLCJhbGc..."]
+```
+
+Custom headers are useful for:
+- **Multi-tenancy**: Send different tenant IDs to different backends
+- **Authentication**: Use different API tokens or credentials for each backend
+- **Debugging**: Add tracing or debugging headers to specific backends
+- **Load balancing**: Add custom routing headers for backend infrastructure
+
+{{< admonition type="note" >}}
+Custom headers are added to outgoing requests to backends. They are combined with any headers from the original client request, with custom headers taking precedence over client headers for the same header name.
+{{< /admonition >}}
+
 ### Backend selection
 
-You can use the query-tee to either send requests to all backends, or to send a proportion of requests to all backends and the remaining requests to only the preferred backend.
-You can configure this with the `-proxy.secondary-backends-request-proportion` CLI flag.
+You can use the query-tee to either send requests to all backends, or to send a proportion of requests to specific backends.
+
+#### Command-line configuration
+
+You can configure a global proportion for all secondary backends using the `-proxy.secondary-backends-request-proportion` CLI flag.
 
 For example, if you set the `-proxy.secondary-backends-request-proportion` CLI flag to `1.0`, then all requests are sent to all backends.
 Alternatively, if you set the `-proxy.secondary-backends-request-proportion` CLI flag to `0.2`, then 20% of requests are sent to all backends, and the remaining 80% of requests are sent only to your preferred backend.
+
+#### YAML configuration
+
+With YAML configuration, you can set individual request proportions for each secondary backend:
+
+```yaml
+backends:
+  endpoints:
+    - name: "preferred"
+      url: "http://primary.example.com:8080"
+      preferred: true
+      # Preferred backend always receives 100% of requests
+    - name: "secondary-canary"
+      url: "http://canary.example.com:8080"
+      preferred: false
+      request_proportion: 0.1  # Send 10% of requests to canary
+    - name: "secondary-full"
+      url: "http://secondary.example.com:8080"
+      preferred: false
+      request_proportion: 1.0  # Send 100% of requests to secondary
+```
+
+This configuration sends:
+- 100% of requests to the preferred backend
+- 10% of requests to the canary backend
+- 100% of requests to the full secondary backend
+
+{{< admonition type="note" >}}
+The `request_proportion` field only applies to secondary backends (where `preferred: false`). The preferred backend always receives all requests.
+{{< /admonition >}}
 
 ### Backend response selection
 
