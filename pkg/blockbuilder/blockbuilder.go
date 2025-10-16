@@ -57,7 +57,7 @@ type BlockBuilder struct {
 	kpromMetrics          *kprom.Metrics
 	pusherConsumerMetrics *ingest.PusherConsumerMetrics
 
-	busy atomic.Bool
+	consuming *atomic.Bool
 }
 
 func New(
@@ -97,6 +97,7 @@ func newWithSchedulerClient(
 		readerMetricsSource:   readerMetricsSource,
 		kpromMetrics:          kpm,
 		pusherConsumerMetrics: ingest.NewPusherConsumerMetrics(reg),
+		consuming:             atomic.NewBool(false),
 	}
 
 	bucketClient, err := bucket.NewClient(context.Background(), cfg.BlocksStorage.Bucket, "block-builder", logger, reg)
@@ -212,10 +213,6 @@ func (b *BlockBuilder) running(ctx context.Context) error {
 			continue
 		}
 
-		// Once we've gotten a job, we attempt to complete it even if the context is cancelled.
-		// Mark that we're working on a job for readiness checks
-		b.busy.Store(true)
-
 		if err := b.consumeJob(graceCtx, key, spec); err != nil {
 			level.Error(b.logger).Log("msg", "failed to consume job", "job_id", key.Id, "epoch", key.Epoch, "err", err)
 
@@ -224,23 +221,20 @@ func (b *BlockBuilder) running(ctx context.Context) error {
 				panic("couldn't fail job")
 			}
 
-			// Mark as idle after job failure
-			b.busy.Store(false)
 			continue
 		}
 
 		if err := b.schedulerClient.CompleteJob(key); err != nil {
 			level.Error(b.logger).Log("msg", "failed to complete job", "job_id", key.Id, "epoch", key.Epoch, "err", err)
 		}
-
-		// Mark as idle after job completion
-		b.busy.Store(false)
 	}
 }
 
 // consumeJob performs block consumption from Kafka into object storage based on the given job spec.
 func (b *BlockBuilder) consumeJob(ctx context.Context, key schedulerpb.JobKey, spec schedulerpb.JobSpec) (err error) {
+	b.consuming.Store(true)
 	defer func(start time.Time) {
+		b.consuming.Store(false)
 		success := "true"
 		if err != nil {
 			success = "false"
@@ -520,7 +514,7 @@ func (b *BlockBuilder) uploadBlocks(ctx context.Context, tenantID, dbDir string,
 // This allows Kubernetes to prioritize idle pods for scaling down.
 func (b *BlockBuilder) CheckReady(ctx context.Context) error {
 	// Check if we're currently working on a job
-	if busy := b.busy.Load(); !busy {
+	if busy := b.consuming.Load(); !busy {
 		return fmt.Errorf("blockbuilder is idle (not working on a job)")
 	}
 	return nil
