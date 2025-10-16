@@ -78,13 +78,12 @@ func BenchmarkQueryExecution(b *testing.B) {
 	_, _ = executeQueryDirect(ing, vectorQueries[0])
 
 	b.Log("Starting benchmark")
-	b.ReportAllocs()
-	b.ResetTimer()
 
 	// Benchmark query execution - run each query as a sub-benchmark
 	for _, vq := range vectorQueries {
 		queryID := fmt.Sprintf("query-%d", vq.originalQuery.QueryID)
 		b.Run(queryID, func(b *testing.B) {
+			b.ReportAllocs()
 			for i := 0; i < b.N; i++ {
 				queryResult, err := executeQueryDirect(ing, vq)
 				if err != nil {
