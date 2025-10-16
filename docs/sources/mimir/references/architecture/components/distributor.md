@@ -123,7 +123,7 @@ To improve the balancing of requests between distributors, consider increasing `
 
 ## High-availability tracker
 
-Remote write agents, such as Prometheus or Grafana Alloy, can be configured in pairs, which means that metrics continue to be scraped and written to Grafana Mimir even when one of the remote write agents is down for maintenance or is unavailable due to a failure.
+You can configure remote write agents, such as Prometheus or Grafana Alloy, in pairs, which means that metrics continue to be scraped and written to Grafana Mimir even when one of the remote write agents is down for maintenance or is unavailable due to a failure.
 We refer to this configuration as high-availability (HA) pairs.
 
 The distributor includes an HA tracker.
