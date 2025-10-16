@@ -1,5 +1,31 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
+// Package bench provides utilities for benchmarking with queries extracted from production logs.
+//
+// The package expects query logs in Loki's newline-delimited JSON (JSONL) format,
+// where each line contains a JSON object with query parameters in the labels field.
+//
+// You can obtain query logs using logcli with a command like:
+//
+//	logcli query -q --timezone=UTC --limit=1000000 \
+//	  --from='2025-10-15T15:15:21.0Z' \
+//	  --to='2025-10-15T16:15:21.0Z' \
+//	  --output=jsonl \
+//	  '{namespace="mimir", name="query-frontend"} |= "query stats" | logfmt | path=~".*/query(_range)?"' \
+//	  > logs.json
+//
+// Each log line should have the following structure:
+//
+//	{
+//	  "labels": {
+//	    "param_query": "sum(rate(metric[5m]))",
+//	    "param_start": "1697452800",
+//	    "param_end": "1697456400",
+//	    "param_step": "60",
+//	    "user": "tenant-123"
+//	  },
+//	  "timestamp": "2025-10-15T15:30:00.123456789Z"
+//	}
 package bench
 
 import (
@@ -27,19 +53,24 @@ const (
 	numSegments = 100
 )
 
-// QueryLoader caches prepared queries to avoid re-processing the same file with same parameters.
+// QueryLoader loads and prepares queries from a Loki log file in JSONL format.
+// It supports filtering by tenant ID and/or specific query IDs, as well as sampling.
+// Results are cached to avoid re-processing the same parameters.
 type QueryLoader struct {
 	cache sync.Map
 }
 
-// NewQueryCache creates a new QueryLoader.
-func NewQueryCache() *QueryLoader {
+// NewQueryLoader creates a new QueryLoader.
+func NewQueryLoader() *QueryLoader {
 	return &QueryLoader{}
 }
 
-// PrepareQueries loads queries from a file, filters by tenant ID and/or query IDs if specified,
-// and samples them according to the given parameters. Results are cached to avoid re-processing.
-// Queries are returned with their VectorSelectors already parsed.
+// PrepareQueries loads queries from a Loki log file in JSONL format, filters by tenant ID
+// and/or query IDs if specified, and samples them according to the given parameters.
+// Results are cached to avoid re-processing. Queries are returned with their VectorSelectors already parsed.
+//
+// The file should contain newline-delimited JSON logs with query parameters in the labels field,
+// as produced by logcli (see package documentation for details).
 func (qc *QueryLoader) PrepareQueries(filepath string, tenantID string, queryIDsStr string, sampleFraction float64, seed int64) ([]Query, error) {
 	// Create cache key from parameters
 	cacheKey := fmt.Sprintf("%s|%s|%s|%f|%d", filepath, tenantID, queryIDsStr, sampleFraction, seed)
@@ -96,8 +127,8 @@ type Query struct {
 	valid           bool // internal flag to track if query should be included
 }
 
-// loadQueryLogsFromFile parses queries from a Loki log file in newline-delimited JSON format.
-// Each line should be a JSON object with query information in the labels field.
+// loadQueryLogsFromFile parses queries from a Loki log file in newline-delimited JSON (JSONL) format.
+// Each line should be a JSON object with query information in the labels field (see package documentation).
 // If queryIDs is non-empty, only queries with matching line numbers are returned.
 func loadQueryLogsFromFile(filepath string, queryIDs []int) ([]Query, error) {
 	f, err := os.Open(filepath)

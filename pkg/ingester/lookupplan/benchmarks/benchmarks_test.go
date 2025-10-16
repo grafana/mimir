@@ -42,7 +42,7 @@ var (
 	queryIDsFlag    = flag.String("query-ids", "", "Comma-separated list of query IDs (line numbers) to benchmark. Mutually exclusive with query-sample < 1.0.")
 	querySampleFlag = flag.Float64("query-sample", 1.0, "Fraction of queries to sample (0.0 to 1.0). Queries are split into 100 segments, and a continuous sample is taken from each segment.")
 	querySampleSeed = flag.Int64("query-sample-seed", 1, "Random seed for query sampling.")
-	queryCache      = bench.NewQueryCache()
+	queryLoader     = bench.NewQueryLoader()
 )
 
 // mockQueryStreamServer implements the minimum required methods for QueryStream.
@@ -86,8 +86,7 @@ func BenchmarkQueryExecution(b *testing.B) {
 		b.Fatal("-query-ids and -query-sample < 1.0 are mutually exclusive")
 	}
 
-	// Prepare queries (load, extract vector selectors, filter by tenant/IDs, sample) - this is cached
-	queries, err := queryCache.PrepareQueries(*queryFileFlag, *tenantIDFlag, *queryIDsFlag, *querySampleFlag, *querySampleSeed)
+	queries, err := queryLoader.PrepareQueries(*queryFileFlag, *tenantIDFlag, *queryIDsFlag, *querySampleFlag, *querySampleSeed)
 	require.NoError(b, err)
 	require.NotEmpty(b, queries, "no queries after filtering and sampling")
 	b.Logf("Prepared %d queries (sample: %f%%)", len(queries), *querySampleFlag*100)

@@ -95,7 +95,7 @@ func TestExtractLabelMatchers_InvalidQuery(t *testing.T) {
 
 // TestPrepareQueries_Caching tests query caching
 func TestPrepareQueries_Caching(t *testing.T) {
-	qc := NewQueryCache()
+	qc := NewQueryLoader()
 	tmpDir := t.TempDir()
 	queryFile := filepath.Join(tmpDir, "cached_queries.json")
 
@@ -139,7 +139,7 @@ func TestPrepareQueries_Caching(t *testing.T) {
 }
 
 func TestPrepareQueries_TenantFiltering(t *testing.T) {
-	qc := NewQueryCache()
+	qc := NewQueryLoader()
 	tmpDir := t.TempDir()
 	queryFile := filepath.Join(tmpDir, "tenant_queries.json")
 
