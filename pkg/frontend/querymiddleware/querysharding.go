@@ -263,6 +263,7 @@ func newQuerySharder(
 func (s *querySharder) shard(ctx context.Context, tenantIDs []string, expr parser.Expr, requestedShardCount int, seriesCount *EstimatedSeriesCount, totalQueries int32) (parser.Expr, error) {
 	log := spanlogger.FromContext(ctx, s.logger)
 	log.DebugLog("msg", "attempting query sharding", "query", expr)
+	s.metrics.shardingAttempts.Inc()
 
 	totalShards, err := s.getShardsForQuery(ctx, tenantIDs, expr, requestedShardCount, seriesCount, totalQueries, log)
 	if err != nil {
@@ -280,7 +281,6 @@ func (s *querySharder) shard(ctx context.Context, tenantIDs []string, expr parse
 		"total shards", totalShards,
 	)
 
-	s.metrics.shardingAttempts.Inc()
 	shardedExpr, shardingStats, err := s.shardQuery(ctx, expr, totalShards, false)
 	if err != nil {
 		return nil, err
@@ -369,36 +369,39 @@ func (s *querySharder) getShardsForQuery(ctx context.Context, tenantIDs []string
 		}
 	}
 
+	// Calculate how many legs are shardable. To do it we use a trick: rewrite the query passing 1
+	// total shards and then we check how many sharded queries are generated. In case of any error,
+	// we just consider as if there's only 1 shardable leg (the error will be detected anyway later on).
+	//
+	// "Leg" is the terminology we use in query sharding to mention a part of the query that can be sharded.
+	// For example, look at this query:
+	// sum(metric) / count(metric)
+	//
+	// This query has 2 shardable "legs":
+	// - sum(metric)
+	// - count(metric)
+	//
+	// Calling s.shardQuery() with 1 total shards we can see how many shardable legs the query has.
+	_, shardingStats, err := s.shardQuery(ctx, queryExpr, 1, true)
+	if err != nil {
+		return 0, err
+	}
+
+	if shardingStats.GetShardedQueries() == 0 {
+		// If we can't shard all selectors, then we won't shard the query at all.
+		return 1, nil
+	}
+
+	numShardableLegs := shardingStats.GetShardedQueries()
+
+	spanLog.DebugLog(
+		"msg", "computed number of shardable legs for the query",
+		"shardable legs", numShardableLegs,
+	)
+
 	// If total queries is provided through hints, then we adjust the number of shards for the query
 	// based on the configured max sharded queries limit.
 	if maxShardedQueries := validation.SmallestPositiveIntPerTenant(tenantIDs, s.limit.QueryShardingMaxShardedQueries); maxShardedQueries > 0 {
-		// Calculate how many legs are shardable. To do it we use a trick: rewrite the query passing 1
-		// total shards and then we check how many sharded queries are generated. In case of any error,
-		// we just consider as if there's only 1 shardable leg (the error will be detected anyway later on).
-		//
-		// "Leg" is the terminology we use in query sharding to mention a part of the query that can be sharded.
-		// For example, look at this query:
-		// sum(metric) / count(metric)
-		//
-		// This query has 2 shardable "legs":
-		// - sum(metric)
-		// - count(metric)
-		//
-		// Calling s.shardQuery() with 1 total shards we can see how many shardable legs the query has.
-		_, shardingStats, err := s.shardQuery(ctx, queryExpr, 1, true)
-		if err != nil {
-			return 0, err
-		}
-		numShardableLegs := 1
-		if shardingStats.GetShardedQueries() > 0 {
-			numShardableLegs = shardingStats.GetShardedQueries()
-		}
-
-		spanLog.DebugLog(
-			"msg", "computed number of shardable legs for the query",
-			"shardable legs", numShardableLegs,
-		)
-
 		prevTotalShards := totalShards
 		totalShards = max(1, min(totalShards, (maxShardedQueries/int(totalQueries))/numShardableLegs))
 
