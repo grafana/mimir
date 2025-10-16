@@ -3,9 +3,12 @@
 # Provenance-includes-license: Apache-2.0
 # Provenance-includes-copyright: The Cortex Authors.
 
-FROM       alpine:3.22.1
-ARG        EXTRA_PACKAGES
-RUN        apk add --no-cache ca-certificates tzdata $EXTRA_PACKAGES
+ARG        BASEIMG=gcr.io/distroless/static-debian12
+# TODO(rwwiv): Remove once CA bundle is updated upstream.
+FROM debian:testing AS updated-ca-bundle
+RUN apt update && apt install -y ca-certificates && update-ca-certificates && apt clean
+
+FROM       ${BASEIMG}
 # Expose TARGETOS and TARGETARCH variables. These are supported by Docker when using BuildKit, but must be "enabled" using ARG.
 ARG        TARGETOS
 ARG        TARGETARCH
@@ -13,6 +16,8 @@ ARG        BINARY_SUFFIX="_${TARGETOS}_${TARGETARCH}"
 # Set to non-empty value to use ${BINARY_SUFFIX} when copying binary, leave unset to use no suffix.
 ARG        USE_BINARY_SUFFIX
 COPY       query-tee${USE_BINARY_SUFFIX:+${BINARY_SUFFIX}} /query-tee
+# Copy the updated CA bundle from the updated-ca-bundle stage
+COPY --from=updated-ca-bundle /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 ENTRYPOINT ["/query-tee"]
 
 ARG revision

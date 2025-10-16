@@ -70,6 +70,8 @@ type Config struct {
 	Addr string `yaml:"address" category:"advanced"`
 	Port int    `category:"advanced"`
 
+	RemoteExecutionBatchSize uint64 `yaml:"remote_execution_batch_size" category:"experimental"`
+
 	// These configuration options are injected internally.
 	QuerySchedulerDiscovery schedulerdiscovery.Config `yaml:"-"`
 	LookBackDelta           time.Duration             `yaml:"-"`
@@ -87,6 +89,8 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.StringVar(&cfg.Addr, "query-frontend.instance-addr", "", "IP address to advertise to the querier (via scheduler) (default is auto-detected from network interfaces).")
 	f.IntVar(&cfg.Port, "query-frontend.instance-port", 0, "Port to advertise to querier (via scheduler) (defaults to server.grpc-listen-port).")
 
+	f.Uint64Var(&cfg.RemoteExecutionBatchSize, "query-frontend.remote-execution-batch-size", 128, "Maximum number of series to send in a single remote execution response from a querier.")
+
 	cfg.GRPCClientConfig.CustomCompressors = []string{s2.Name}
 	cfg.GRPCClientConfig.RegisterFlagsWithPrefix("query-frontend.grpc-client-config", f)
 }
@@ -94,6 +98,10 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 func (cfg *Config) Validate() error {
 	if cfg.QuerySchedulerDiscovery.Mode == schedulerdiscovery.ModeRing && cfg.SchedulerAddress != "" {
 		return fmt.Errorf("scheduler address cannot be specified when query-scheduler service discovery mode is set to '%s'", cfg.QuerySchedulerDiscovery.Mode)
+	}
+
+	if cfg.RemoteExecutionBatchSize <= 0 {
+		return fmt.Errorf("remote execution batch size must be greater than 0")
 	}
 
 	return cfg.GRPCClientConfig.Validate()
@@ -397,6 +405,13 @@ func (f *Frontend) DoProtobufRequest(requestContext context.Context, req proto.M
 			f.inflightRequestCount.Dec()
 		}()
 
+		parallelismLimiter := querymiddleware.ParallelismLimiterFromContext(streamContext)
+		if err := parallelismLimiter.BeginRequest(streamContext); err != nil {
+			freq.protobufResponseStream.writeEnqueueError(err)
+			return
+		}
+		defer parallelismLimiter.RequestFinished()
+
 		cancelCh, err := f.enqueueRequestWithRetries(streamContext, freq)
 		if err != nil {
 			freq.protobufResponseStream.writeEnqueueError(err)
@@ -511,27 +526,22 @@ func (s *ProtobufResponseStream) writeEnqueueError(err error) {
 // Calling Next after an error has been returned by a previous Next call may lead to
 // undefined behaviour.
 func (s *ProtobufResponseStream) Next(ctx context.Context) (*frontendv2pb.QueryResultStreamRequest, error) {
-	// If the request has already been cancelled, then return immediately.
-	if s.requestContext.Err() != nil {
-		return nil, context.Cause(s.requestContext)
-	} else if ctx.Err() != nil {
-		return nil, context.Cause(ctx)
+	// If the request has already been cancelled or if this stream has been closed, then we should stop now.
+	if err := s.shouldAbortReading(ctx); err != nil {
+		return nil, err
 	}
 
 	select {
 	case resp, messagesChannelOpen := <-s.messages:
 		if !messagesChannelOpen {
-			// We've reached the end of the stream. Check if the request was cancelled and return the
-			// cancellation cause if so.
+			// We've reached the end of the stream. Check if the request was cancelled or if this stream was closed.
 			// Without this, the caller may receive a nil message if the original request was cancelled and there
 			// are no outstanding messages in s.messages, as the Go runtime may randomly select the s.messages branch
 			// if either s.requestContext or ctx are done as well.
 			// We don't need to check s.enqueueError as s.messages is only closed if we've received a response, which
 			// means the enqueue must have succeeded.
-			if s.requestContext.Err() != nil {
-				return nil, context.Cause(s.requestContext)
-			} else if ctx.Err() != nil {
-				return nil, context.Cause(ctx)
+			if err := s.shouldAbortReading(ctx); err != nil {
+				return nil, err
 			}
 		}
 
@@ -549,8 +559,25 @@ func (s *ProtobufResponseStream) Next(ctx context.Context) (*frontendv2pb.QueryR
 		// as the response has been completely received, but we want to continue reading any outstanding messages
 		// from the stream unless s.requestContext (which presumably represents the query as a whole) is cancelled.
 		return nil, context.Cause(s.requestContext)
+	case <-s.closed:
+		// If the stream was closed, then we should stop now as well.
+		return nil, errStreamClosed
 	case <-ctx.Done():
 		return nil, context.Cause(ctx)
+	}
+}
+
+// shouldAbortReading checks if the request has been cancelled or if this stream has been closed, and returns an error if so.
+func (s *ProtobufResponseStream) shouldAbortReading(ctx context.Context) error {
+	select {
+	case <-s.requestContext.Done():
+		return context.Cause(s.requestContext)
+	case <-ctx.Done():
+		return context.Cause(ctx)
+	case <-s.closed:
+		return errStreamClosed
+	default:
+		return nil
 	}
 }
 

@@ -7,8 +7,6 @@ title: Grafana Mimir deployment modes
 weight: 20
 ---
 
-<!-- Note: This topic is mounted in the GEM documentation. Ensure that all updates are also applicable to GEM. -->
-
 # Grafana Mimir deployment modes
 
 Grafana Mimir offers two deployment modes to accommodate different operational requirements and scale needs. Choose the deployment mode that best fits your use case:
@@ -58,7 +56,7 @@ Ingest storage architecture:
 
 <div align="center">
 
-![Ingest storage architecture diagram](/media/docs/mimir/ingest_storage_arch.png)
+![Ingest storage architecture diagram](/media/docs/mimir/ingest-storage-overview.png)
 
 </div>
 

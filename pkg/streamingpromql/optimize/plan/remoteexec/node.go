@@ -54,6 +54,10 @@ func (r *RemoteExecution) EquivalentTo(other planning.Node) bool {
 }
 
 func (r *RemoteExecution) Describe() string {
+	if r.EagerLoad {
+		return "eager load"
+	}
+
 	return ""
 }
 
@@ -75,6 +79,10 @@ func (r *RemoteExecution) QueriedTimeRange(queryTimeRange types.QueryTimeRange, 
 
 func (r *RemoteExecution) ExpressionPosition() posrange.PositionRange {
 	return r.Inner.ExpressionPosition()
+}
+
+func (r *RemoteExecution) MinimumRequiredPlanVersion() int64 {
+	return planning.QueryPlanVersionZero
 }
 
 type RemoteExecutionMaterializer struct {
@@ -107,6 +115,7 @@ func (m *RemoteExecutionMaterializer) Materialize(n planning.Node, materializer 
 			RemoteExecutor:           m.executor,
 			MemoryConsumptionTracker: params.MemoryConsumptionTracker,
 			Annotations:              params.Annotations,
+			EagerLoad:                r.EagerLoad,
 		}), nil
 
 	case parser.ValueTypeVector:
@@ -117,6 +126,7 @@ func (m *RemoteExecutionMaterializer) Materialize(n planning.Node, materializer 
 			RemoteExecutor:           m.executor,
 			MemoryConsumptionTracker: params.MemoryConsumptionTracker,
 			Annotations:              params.Annotations,
+			EagerLoad:                r.EagerLoad,
 		}), nil
 
 	case parser.ValueTypeMatrix:
@@ -127,6 +137,7 @@ func (m *RemoteExecutionMaterializer) Materialize(n planning.Node, materializer 
 			RemoteExecutor:           m.executor,
 			MemoryConsumptionTracker: params.MemoryConsumptionTracker,
 			Annotations:              params.Annotations,
+			EagerLoad:                r.EagerLoad,
 		}), nil
 
 	default:

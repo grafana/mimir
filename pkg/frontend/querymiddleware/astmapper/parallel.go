@@ -70,9 +70,9 @@ func CanParallelize(expr parser.Expr, logger log.Logger) bool {
 		}
 
 		// Ensure there are no nested aggregations
-		nestedAggrs, err := anyNode(e.Expr, isAggregateExpr)
+		nestedAggrs := AnyNode(e.Expr, isAggregateExpr)
 
-		return err == nil && !nestedAggrs && CanParallelize(e.Expr, logger)
+		return !nestedAggrs && CanParallelize(e.Expr, logger)
 
 	case *parser.BinaryExpr:
 		// Binary expressions can be parallelised when:
@@ -87,7 +87,7 @@ func CanParallelize(expr parser.Expr, logger log.Logger) bool {
 		//
 		// Since we don't care about the order in which binary op is written, we extract the condition into a lambda and check both ways.
 		parallelisable := func(a, b parser.Expr) bool {
-			return CanParallelize(a, logger) && noAggregates(a) && !isConstantScalar(a) && isConstantScalar(b)
+			return CanParallelize(a, logger) && !containsAggregateExpr(a) && !isConstantScalar(a) && isConstantScalar(b)
 		}
 		// If e.VectorMatching is not nil, then both hands are vector operators, so none of them is a constant scalar, so we can't shard it.
 		// It is just a shortcut, but the other two operations should imply the same.
@@ -116,9 +116,11 @@ func CanParallelize(expr parser.Expr, logger log.Logger) bool {
 	case *parser.ParenExpr:
 		return CanParallelize(e.Expr, logger)
 
+	case *parser.StepInvariantExpr:
+		return CanParallelize(e.Expr, logger)
+
 	case *parser.UnaryExpr:
-		// Since these are only currently supported for Scalars, should be parallel-compatible
-		return true
+		return CanParallelize(e.Expr, logger)
 
 	case *parser.MatrixSelector, *parser.NumberLiteral, *parser.StringLiteral, *parser.VectorSelector:
 		return true
@@ -131,26 +133,26 @@ func CanParallelize(expr parser.Expr, logger log.Logger) bool {
 
 // containsAggregateExpr returns true if the given expr contains an aggregate expression within its children.
 func containsAggregateExpr(e parser.Expr) bool {
-	containsAggregate, _ := anyNode(e, isAggregateExpr)
-	return containsAggregate
+	return AnyNode(e, isAggregateExpr)
 }
 
 // countVectorSelectors returns the number of vector selectors in the input expression.
 func countVectorSelectors(e parser.Expr) int {
 	count := 0
 
-	visitNode(e, func(node parser.Node) {
-		if ok, _ := isVectorSelector(node); ok {
+	_ = AnyNode(e, func(node parser.Node) bool {
+		if ok := isVectorSelector(node); ok {
 			count++
 		}
+		return false
 	})
 
 	return count
 }
 
-func isAggregateExpr(n parser.Node) (bool, error) {
+func isAggregateExpr(n parser.Node) bool {
 	_, ok := n.(*parser.AggregateExpr)
-	return ok, nil
+	return ok
 }
 
 // ParallelizableFunc ensures that a promql function can be part of a parallel query.
@@ -175,85 +177,48 @@ func argsWithDefaults(call *parser.Call) parser.Expressions {
 	return call.Args
 }
 
-func noAggregates(n parser.Node) bool {
-	hasAggregates, _ := anyNode(n, isAggregateExpr)
-	return !hasAggregates
-}
-
 func isConstantScalar(n parser.Node) bool {
-	isNot, _ := anyNode(n, isNotConstantNumber)
-	return !isNot
+	return !AnyNode(n, isNotConstantNumber)
 }
 
-func isNotConstantNumber(n parser.Node) (bool, error) {
+func isNotConstantNumber(n parser.Node) bool {
 	switch n := n.(type) {
 	case nil,
 		*parser.NumberLiteral,
 		*parser.UnaryExpr,
-		*parser.ParenExpr:
-		return false, nil
+		*parser.ParenExpr,
+		*parser.StepInvariantExpr:
+		return false
 	case *parser.BinaryExpr:
 		// if ReturnBool then not a number, otherwise, it will be a number if both sides are numbers
-		return n.ReturnBool, nil
+		return n.ReturnBool
 	case *parser.Call:
 		// The only function we consider as a constant number is `time()`, everything else is not a constant number.
-		return n.Func.Name != "time", nil
+		return n.Func.Name != "time"
 	default:
-		return true, nil
+		return true
 	}
 }
 
 // isVectorSelector returns whether the expr is a vector selector.
-//
-// It will never return an error, but does so to satisfy the predicate function signature for anyNode.
-func isVectorSelector(n parser.Node) (bool, error) {
+func isVectorSelector(n parser.Node) bool {
 	_, ok := n.(*parser.VectorSelector)
-	return ok, nil
+	return ok
 }
 
-// anyNode is a helper which walks the input node and returns true if any node in the subtree
+// AnyNode is a helper which walks the input node and returns true if any node in the subtree
 // returns true for the specified predicate function.
-func anyNode(node parser.Node, fn predicate) (bool, error) {
-	v := &visitor{
-		fn: fn,
+func AnyNode(node parser.Node, fn Predicate) bool {
+	if fn(node) {
+		return true
 	}
 
-	if err := parser.Walk(v, node, nil); err != nil {
-		return false, err
+	for node := range parser.ChildrenIter(node) {
+		if AnyNode(node, fn) {
+			return true
+		}
 	}
-	return v.result, nil
+	return false
 }
 
-// visitNode recursively traverse the node's subtree and call fn for each node encountered.
-func visitNode(node parser.Node, fn func(node parser.Node)) {
-	_ = parser.Walk(&visitor{fn: func(node parser.Node) (bool, error) {
-		fn(node)
-		return false, nil
-	}}, node, nil)
-}
-
-type predicate = func(parser.Node) (bool, error)
-
-type visitor struct {
-	fn     predicate
-	result bool
-}
-
-// Visit implements parser.Visitor
-func (v *visitor) Visit(node parser.Node, _ []parser.Node) (parser.Visitor, error) {
-	// if the visitor has already seen a predicate success, don't overwrite
-	if v.result {
-		return nil, nil
-	}
-
-	var err error
-
-	v.result, err = v.fn(node)
-	if err != nil {
-		return nil, err
-	}
-	if v.result {
-		return nil, nil
-	}
-	return v, nil
-}
+type Predicate = func(parser.Node) bool

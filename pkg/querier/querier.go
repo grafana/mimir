@@ -199,7 +199,7 @@ func New(cfg Config, limits *validation.Overrides, distributor Distributor, quer
 
 	switch cfg.QueryEngine {
 	case PrometheusEngine:
-		eng = promql.NewEngine(opts)
+		eng = limiter.NewUnlimitedMemoryTrackerPromQLEngine(promql.NewEngine(opts))
 	case MimirEngine:
 		limitsProvider := NewTenantQueryLimitsProvider(limits)
 		var err error
@@ -209,7 +209,7 @@ func New(cfg Config, limits *validation.Overrides, distributor Distributor, quer
 		}
 
 		if cfg.EnableQueryEngineFallback {
-			prometheusEngine := promql.NewEngine(opts)
+			prometheusEngine := limiter.NewUnlimitedMemoryTrackerPromQLEngine(promql.NewEngine(opts))
 			eng = compat.NewEngineWithFallback(streamingEngine, prometheusEngine, reg, logger)
 		} else {
 			eng = streamingEngine
@@ -459,8 +459,7 @@ func (mq *multiQuerier) Select(ctx context.Context, _ bool, sp *storage.SelectHi
 		}
 	}
 
-	// we have all the sets from different sources (chunk from store, chunks from ingesters,
-	// time series from store and time series from ingesters).
+	// we have all the sets from different sources (chunk from store, chunks from ingesters).
 	// mergeSeriesSets will return sorted set.
 	return mq.mergeSeriesSets(result)
 }

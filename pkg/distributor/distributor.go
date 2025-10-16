@@ -40,6 +40,7 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/relabel"
+	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/storage"
 	"go.opentelemetry.io/otel"
@@ -61,6 +62,7 @@ import (
 	mimir_limiter "github.com/grafana/mimir/pkg/util/limiter"
 	util_math "github.com/grafana/mimir/pkg/util/math"
 	"github.com/grafana/mimir/pkg/util/pool"
+	"github.com/grafana/mimir/pkg/util/reactivelimiter"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -203,6 +205,8 @@ type Distributor struct {
 	// is disabled.
 	usageTrackerClient usageTrackerGenericClient
 
+	reactiveLimiter reactivelimiter.ReactiveLimiter
+
 	// For testing functionality that relies on timing without having to sleep in unit tests.
 	sleep func(time.Duration)
 	now   func() time.Time
@@ -215,6 +219,12 @@ func defaultNow() time.Time        { return time.Now() }
 type OTelResourceAttributePromotionConfig interface {
 	// PromoteOTelResourceAttributes returns which OTel resource attributes to promote for tenant ID.
 	PromoteOTelResourceAttributes(id string) []string
+}
+
+// KeepIdentifyingOTelResourceAttributesConfig contains methods for configuring keeping of identifying OTel resource attributes.
+type KeepIdentifyingOTelResourceAttributesConfig interface {
+	// OTelKeepIdentifyingResourceAttributes returns whether to keep identifying OTel resource attributes.
+	OTelKeepIdentifyingResourceAttributes(tenantID string) bool
 }
 
 // Config contains the configuration required to
@@ -273,6 +283,9 @@ type Config struct {
 	// OTelResourceAttributePromotionConfig allows for specializing OTel resource attribute promotion.
 	OTelResourceAttributePromotionConfig OTelResourceAttributePromotionConfig `yaml:"-"`
 
+	// KeepIdentifyingOTelResourceAttributesConfig allows for specializing keeping of identifying OTel resource attributes.
+	KeepIdentifyingOTelResourceAttributesConfig KeepIdentifyingOTelResourceAttributesConfig `yaml:"-"`
+
 	// Influx endpoint disabled by default
 	EnableInfluxEndpoint bool `yaml:"influx_endpoint_enabled" category:"experimental" doc:"hidden"`
 
@@ -281,7 +294,9 @@ type Config struct {
 
 	// Usage-tracker (optional).
 	UsageTrackerEnabled bool                      `yaml:"-"` // Injected internally.
-	UsageTrackerClient  usagetrackerclient.Config `yaml:"usage_tracker_client"`
+	UsageTrackerClient  usagetrackerclient.Config `yaml:"usage_tracker_client" doc:"hidden"`
+
+	ReactiveLimiter reactivelimiter.Config `yaml:"reactive_limiter"`
 }
 
 // PushWrapper wraps around a push. It is similar to middleware.Interface.
@@ -294,6 +309,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	cfg.DistributorRing.RegisterFlags(f, logger)
 	cfg.RetryConfig.RegisterFlags(f)
 	cfg.UsageTrackerClient.RegisterFlagsWithPrefix("distributor.usage-tracker-client.", f)
+	cfg.ReactiveLimiter.RegisterFlagsWithPrefixAndRejectionFactors("distributor.reactive-limiter.", f, 1.0, 2.0)
 
 	f.IntVar(&cfg.MaxRecvMsgSize, "distributor.max-recv-msg-size", 100<<20, "Max message size in bytes that the distributors will accept for incoming push requests to the remote write API. If exceeded, the request will be rejected.")
 	f.IntVar(&cfg.MaxOTLPRequestSize, maxOTLPRequestSizeFlag, 100<<20, "Maximum OTLP request size in bytes that the distributors accept. Requests exceeding this limit are rejected.")
@@ -620,6 +636,7 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 
 	d.requestRateLimiter = limiter.NewRateLimiter(requestRateStrategy, 10*time.Second)
 	d.ingestionRateLimiter = limiter.NewRateLimiter(ingestionRateStrategy, 10*time.Second)
+	d.reactiveLimiter = newDistributorReactiveLimiter(d.cfg.ReactiveLimiter, log, reg)
 	d.distributorsLifecycler = distributorsLifecycler
 	d.distributorsRing = distributorsRing
 	d.HATracker = haTrackerImpl
@@ -817,7 +834,7 @@ func (d *Distributor) stopping(_ error) error {
 // Returns a boolean that indicates whether or not we want to remove the replica label going forward,
 // and an error that indicates whether we want to accept samples based on the cluster/replica found in ts.
 // nil for the error means accept the sample.
-func (d *Distributor) checkSample(ctx context.Context, userID, cluster, replica string) (removeReplicaLabel bool, _ error) {
+func (d *Distributor) checkSample(ctx context.Context, userID, cluster, replica string, ts int64) (removeReplicaLabel bool, _ error) {
 	// If the sample doesn't have either HA label, accept it.
 	// At the moment we want to accept these samples by default.
 	if cluster == "" || replica == "" {
@@ -831,7 +848,9 @@ func (d *Distributor) checkSample(ctx context.Context, userID, cluster, replica 
 
 	// At this point we know we have both HA labels, we should lookup
 	// the cluster/instance here to see if we want to accept this sample.
-	err := d.HATracker.checkReplica(ctx, userID, cluster, replica, time.Now())
+	// Convert the timestamp to a time.Time for checking the replica
+	sampleTime := timestamp.Time(ts)
+	err := d.HATracker.checkReplica(ctx, userID, cluster, replica, time.Now(), sampleTime)
 	// checkReplica would have returned an error if there was a real error talking to Consul,
 	// or if the replica is not the currently elected replica.
 	if err != nil { // Don't accept the sample.
@@ -1075,11 +1094,30 @@ func (d *Distributor) prePushHaDedupeMiddleware(next PushFunc) PushFunc {
 		numSamples := 0
 		now := time.Now()
 		group := d.activeGroups.UpdateActiveGroupTimestamp(userID, validation.GroupLabel(d.limits, userID, req.Timeseries), now)
+		sampleTimestamp := timestamp.FromTime(now)
+		if d.limits.HATrackerUseSampleTimeForFailover(userID) {
+			earliestSampleTimestamp := sampleTimestamp
+			for _, ts := range req.Timeseries {
+				if len(ts.Samples) > 0 {
+					tsms := ts.Samples[0].TimestampMs
+					if tsms < earliestSampleTimestamp {
+						earliestSampleTimestamp = tsms
+					}
+				}
+				if len(ts.Histograms) > 0 {
+					tsms := ts.Histograms[0].Timestamp
+					if tsms < earliestSampleTimestamp {
+						earliestSampleTimestamp = tsms
+					}
+				}
+			}
+			sampleTimestamp = earliestSampleTimestamp
+		}
 		for _, ts := range req.Timeseries {
 			numSamples += len(ts.Samples) + len(ts.Histograms)
 		}
 
-		removeReplica, err := d.checkSample(ctx, userID, cluster, replica)
+		removeReplica, err := d.checkSample(ctx, userID, cluster, replica, sampleTimestamp)
 		if err != nil {
 			if errors.As(err, &replicasDidNotMatchError{}) {
 				// These samples have been deduped.
@@ -1614,6 +1652,14 @@ type requestState struct {
 
 	// If positive, it means that size of mimirpb.WriteRequest has been checked and added to inflightPushRequestsBytes.
 	writeRequestSize int64
+
+	// If set, represents the error obtained by executing the respective push request.
+	pushErr error
+
+	// If set to true, it means that a reactive limiter permit has already been acquired for the respective push request.
+	reactiveLimiterPermitAcquired bool
+	// If set, represents the reactive limiter clean up function to be executed on cleaning up the respective push request.
+	reactiveLimiterCleanup func(error)
 }
 
 func (d *Distributor) StartPushRequest(ctx context.Context, httpgrpcRequestSize int64) (context.Context, error) {
@@ -1623,6 +1669,45 @@ func (d *Distributor) StartPushRequest(ctx context.Context, httpgrpcRequestSize 
 
 func (d *Distributor) PreparePushRequest(_ context.Context) (func(error), error) {
 	return nil, nil
+}
+
+// acquireReactiveLimiterPermit acquires a reactive limiter permit to control inflight push requests.
+//
+// If a permit is successfully acquired, it is recorded in the requestState associated with the provided context
+// by setting its reactiveLimiterPermitAcquired field. Moreover, a cleanup function that must be called when the
+// request completes is stored in the reactiveLimiterCleanup field the requestState, allowing it to be invoked
+// automatically during request cleanup.
+//
+// If no requestState is found in the provided context, acquireReactiveLimiterPermit returns errMissingRequestState.
+// If called more than once for the same request, it returns errReactiveLimiterPermitAlreadyAcquired.
+func (d *Distributor) acquireReactiveLimiterPermit(ctx context.Context) error {
+	if d.reactiveLimiter == nil {
+		return nil
+	}
+	rs, alreadyInContext := ctx.Value(requestStateKey).(*requestState)
+	if !alreadyInContext {
+		return errMissingRequestState
+	}
+	if rs.reactiveLimiterPermitAcquired {
+		return errReactiveLimiterPermitAlreadyAcquired
+	}
+
+	// Acquire a permit, blocking if needed
+	permit, err := d.reactiveLimiter.AcquirePermit(ctx)
+	if err != nil {
+		d.rejectedRequests.WithLabelValues(reasonDistributorMaxInflightPushRequests).Inc()
+		return errReactiveLimiterLimitExceeded
+	}
+	cleanup := func(err error) {
+		if errors.Is(err, context.Canceled) || ctx.Err() != nil {
+			permit.Drop()
+		} else {
+			permit.Record()
+		}
+	}
+	rs.reactiveLimiterPermitAcquired = true
+	rs.reactiveLimiterCleanup = cleanup
+	return nil
 }
 
 // startPushRequest does limits checks at the beginning of Push request in distributor.
@@ -1637,6 +1722,11 @@ func (d *Distributor) PreparePushRequest(_ context.Context) (func(error), error)
 // This object describes which checks were already performed on the request,
 // and which component is responsible for doing a cleanup.
 func (d *Distributor) startPushRequest(ctx context.Context, httpgrpcRequestSize int64) (context.Context, *requestState, error) {
+	if d.reactiveLimiter != nil && !d.reactiveLimiter.CanAcquirePermit() {
+		d.rejectedRequests.WithLabelValues(reasonDistributorMaxInflightPushRequests).Inc()
+		return ctx, nil, errReactiveLimiterLimitExceeded
+	}
+
 	// If requestState is already in context, it means that StartPushRequest already ran for this request.
 	rs, alreadyInContext := ctx.Value(requestStateKey).(*requestState)
 	if alreadyInContext {
@@ -1735,11 +1825,14 @@ func (d *Distributor) cleanupAfterPushFinished(rs *requestState) {
 	if rs.writeRequestSize > 0 {
 		d.inflightPushRequestsBytes.Sub(rs.writeRequestSize)
 	}
+	if rs.reactiveLimiterCleanup != nil {
+		rs.reactiveLimiterCleanup(rs.pushErr)
+	}
 }
 
 // limitsMiddleware checks for instance limits and rejects request if this instance cannot process it at the moment.
 func (d *Distributor) limitsMiddleware(next PushFunc) PushFunc {
-	return func(ctx context.Context, pushReq *Request) error {
+	return func(ctx context.Context, pushReq *Request) (retErr error) {
 		// Make sure the distributor service and all its dependent services have been
 		// started. The following checks in this middleware depend on the runtime config
 		// service having been started.
@@ -1751,6 +1844,13 @@ func (d *Distributor) limitsMiddleware(next PushFunc) PushFunc {
 		if err != nil {
 			return middleware.DoNotLogError{Err: err}
 		}
+
+		if reactiveLimiterErr := d.acquireReactiveLimiterPermit(ctx); reactiveLimiterErr != nil {
+			return reactiveLimiterErr
+		}
+		defer func() {
+			rs.pushErr = retErr
+		}()
 
 		rs.pushHandlerPerformsCleanup = true
 		// Decrement counter after all ingester calls have finished or been cancelled.
@@ -1818,11 +1918,11 @@ func (d *Distributor) Push(ctx context.Context, req *mimirpb.WriteRequest) (*mim
 	if pushErr == nil {
 		return &mimirpb.WriteResponse{}, nil
 	}
-	handledErr := d.handlePushError(ctx, pushErr)
+	handledErr := d.handlePushError(pushErr)
 	return nil, handledErr
 }
 
-func (d *Distributor) handlePushError(ctx context.Context, pushErr error) error {
+func (d *Distributor) handlePushError(pushErr error) error {
 	if errors.Is(pushErr, context.Canceled) {
 		return pushErr
 	}
@@ -1831,12 +1931,7 @@ func (d *Distributor) handlePushError(ctx context.Context, pushErr error) error 
 		return pushErr
 	}
 
-	serviceOverloadErrorEnabled := false
-	userID, err := tenant.TenantID(ctx)
-	if err == nil {
-		serviceOverloadErrorEnabled = d.limits.ServiceOverloadStatusCodeOnRateLimitEnabled(userID)
-	}
-	return toErrorWithGRPCStatus(pushErr, serviceOverloadErrorEnabled)
+	return toErrorWithGRPCStatus(pushErr)
 }
 
 // push takes a write request and distributes it to ingesters using the ring.

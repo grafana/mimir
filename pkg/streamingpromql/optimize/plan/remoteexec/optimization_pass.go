@@ -36,7 +36,7 @@ func (o *OptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan) 
 	}
 
 	var err error
-	plan.Root, err = o.wrapInRemoteExecutionNode(plan.Root)
+	plan.Root, err = o.wrapInRemoteExecutionNode(plan.Root, false)
 	if err != nil {
 		return nil, err
 	}
@@ -44,8 +44,8 @@ func (o *OptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan) 
 	return plan, nil
 }
 
-func (o *OptimizationPass) wrapInRemoteExecutionNode(child planning.Node) (planning.Node, error) {
-	n := &RemoteExecution{}
+func (o *OptimizationPass) wrapInRemoteExecutionNode(child planning.Node, eagerLoad bool) (planning.Node, error) {
+	n := &RemoteExecution{RemoteExecutionDetails: &RemoteExecutionDetails{EagerLoad: eagerLoad}}
 	if err := n.SetChildren([]planning.Node{child}); err != nil {
 		return nil, err
 	}
@@ -85,7 +85,7 @@ func (o *OptimizationPass) wrapShardedConcat(functionCall *core.FunctionCall) er
 
 	for idx, child := range children {
 		var err error
-		children[idx], err = o.wrapInRemoteExecutionNode(child)
+		children[idx], err = o.wrapInRemoteExecutionNode(child, true)
 		if err != nil {
 			return err
 		}

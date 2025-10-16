@@ -144,7 +144,7 @@ type Config struct {
 	MemberlistKV        memberlist.KVConfig                        `yaml:"memberlist"`
 	QueryScheduler      scheduler.Config                           `yaml:"query_scheduler"`
 	UsageStats          usagestats.Config                          `yaml:"usage_stats"`
-	UsageTracker        usagetracker.Config                        `yaml:"usage_tracker"`
+	UsageTracker        usagetracker.Config                        `yaml:"usage_tracker" doc:"hidden"`
 	ContinuousTest      continuoustest.Config                      `yaml:"-"`
 	OverridesExporter   exporter.Config                            `yaml:"overrides_exporter"`
 

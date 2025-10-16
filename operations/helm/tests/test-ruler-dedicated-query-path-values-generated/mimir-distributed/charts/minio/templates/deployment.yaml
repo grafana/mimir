@@ -28,7 +28,7 @@ spec:
         release: test-ruler-dedicated-query-path-values
       annotations:
         checksum/secrets: d6192ffdfa07538ff559586dd26ccb114d316f2f0f1506ed0a7506d4aebf3e5a
-        checksum/config: 2e9c3371e78af1077dbfc3100fbb94f96842679907935bfd91ea02e7883b14e5
+        checksum/config: b88d13f97c07b45d75023f2954ca628f48aa9ee71debc968cc71231a2c74b47d
     spec:
       securityContext:
         

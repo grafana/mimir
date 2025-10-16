@@ -74,6 +74,7 @@ import (
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/activitytracker"
 	"github.com/grafana/mimir/pkg/util/chunkinfologger"
+	"github.com/grafana/mimir/pkg/util/limiter"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/propagation"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -162,7 +163,7 @@ func (t *Mimir) initAPI() (services.Service, error) {
 		})
 
 	t.API = a
-	t.API.RegisterAPI(t.Cfg.Server.PathPrefix, t.Cfg, newDefaultConfig(), t.BuildInfoHandler)
+	t.API.RegisterAPI(t.Cfg, newDefaultConfig(), t.BuildInfoHandler)
 
 	return nil, nil
 }
@@ -849,12 +850,14 @@ func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error
 	// Always eagerly load selectors so that they are loaded in parallel in the background.
 	mqeOpts.EagerLoadSelectors = true
 
+	t.Cfg.Frontend.QueryMiddleware.InternalFunctionNames.Add(sharding.ConcatFunction.Name)
+
 	// Use either the Prometheus engine or Mimir Query Engine (with optional fallback to Prometheus
 	// if it has been configured) for middlewares that require executing queries using a PromQL engine.
 	var eng promql.QueryEngine
 	switch t.Cfg.Frontend.QueryEngine {
 	case querier.PrometheusEngine:
-		eng = promql.NewEngine(promOpts)
+		eng = limiter.NewUnlimitedMemoryTrackerPromQLEngine(promql.NewEngine(promOpts))
 	case querier.MimirEngine:
 		var err error
 		t.QueryFrontendStreamingEngine, err = streamingpromql.NewEngine(mqeOpts, streamingpromql.NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(mqeOpts.CommonOpts.Reg), t.QueryFrontendQueryPlanner)
@@ -863,7 +866,7 @@ func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error
 		}
 
 		if t.Cfg.Frontend.EnableQueryEngineFallback {
-			eng = streamingpromqlcompat.NewEngineWithFallback(t.QueryFrontendStreamingEngine, promql.NewEngine(promOpts), mqeOpts.CommonOpts.Reg, util_log.Logger)
+			eng = streamingpromqlcompat.NewEngineWithFallback(t.QueryFrontendStreamingEngine, limiter.NewUnlimitedMemoryTrackerPromQLEngine(promql.NewEngine(promOpts)), mqeOpts.CommonOpts.Reg, util_log.Logger)
 		} else {
 			eng = t.QueryFrontendStreamingEngine
 		}
@@ -880,7 +883,7 @@ func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error
 		eng,
 		promOpts,
 		t.QueryFrontendTopicOffsetsReaders,
-		t.Cfg.Frontend.EnableRemoteExecution,
+		t.Cfg.Frontend.QueryMiddleware.EnableRemoteExecution,
 		t.QueryFrontendStreamingEngine,
 		t.Registerer,
 	)
@@ -920,7 +923,7 @@ func (t *Mimir) initQueryFrontend() (serv services.Service, err error) {
 
 	t.API.RegisterQueryFrontend2(frontend)
 
-	if t.QueryFrontendStreamingEngine != nil && t.Cfg.Frontend.EnableRemoteExecution {
+	if t.QueryFrontendStreamingEngine != nil && t.Cfg.Frontend.QueryMiddleware.EnableRemoteExecution {
 		executor := v2.NewRemoteExecutor(frontend, t.Cfg.Frontend.FrontendV2)
 
 		if err := t.QueryFrontendStreamingEngine.RegisterNodeMaterializer(planning.NODE_TYPE_REMOTE_EXEC, remoteexec.NewRemoteExecutionMaterializer(executor)); err != nil {
@@ -987,7 +990,7 @@ func (t *Mimir) initQueryFrontendQueryPlanner() (services.Service, error) {
 		return nil, err
 	}
 
-	if t.Cfg.Frontend.EnableRemoteExecution {
+	if t.Cfg.Frontend.QueryMiddleware.EnableRemoteExecution {
 		t.QueryFrontendQueryPlanner.RegisterQueryPlanOptimizationPass(remoteexec.NewOptimizationPass())
 	}
 
@@ -1221,7 +1224,7 @@ func (t *Mimir) initMemberlistKV() (services.Service, error) {
 	)
 	dnsProvider := dns.NewProvider(util_log.Logger, dnsProviderReg, dns.GolangResolverType)
 	t.MemberlistKV = memberlist.NewKVInitService(&t.Cfg.MemberlistKV, util_log.Logger, dnsProvider, t.Registerer)
-	t.API.RegisterMemberlistKV(t.Cfg.Server.PathPrefix, t.MemberlistKV)
+	t.API.RegisterMemberlistKV(t.MemberlistKV)
 
 	// Update the config.
 	// lint:sorted

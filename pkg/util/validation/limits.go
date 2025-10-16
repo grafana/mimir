@@ -136,24 +136,31 @@ type Limits struct {
 	// other than the replica written in the KVStore if the difference
 	// between the stored timestamp and the time we received a sample is
 	// more than this duration
-	HATrackerFailoverTimeout                    model.Duration                    `yaml:"ha_tracker_failover_timeout" json:"ha_tracker_failover_timeout" category:"advanced" doc:"description=If we don't receive any samples from the accepted replica for a cluster in this amount of time we will failover to the next replica we receive a sample from. This value must be greater than the update timeout."`
-	DropLabels                                  flagext.StringSlice               `yaml:"drop_labels" json:"drop_labels" category:"advanced"`
-	MaxLabelNameLength                          int                               `yaml:"max_label_name_length" json:"max_label_name_length"`
-	MaxLabelValueLength                         int                               `yaml:"max_label_value_length" json:"max_label_value_length"`
-	LabelValueLengthOverLimitStrategy           LabelValueLengthOverLimitStrategy `yaml:"label_value_length_over_limit_strategy" json:"label_value_length_over_limit_strategy" category:"experimental" doc:"description=What to do for label values over the length limit. Options are: 'error', 'truncate', 'drop'. For 'truncate', the hash of the full value replaces the end portion of the value. For 'drop', the hash fully replaces the value."`
-	MaxLabelNamesPerSeries                      int                               `yaml:"max_label_names_per_series" json:"max_label_names_per_series"`
-	MaxLabelNamesPerInfoSeries                  int                               `yaml:"max_label_names_per_info_series" json:"max_label_names_per_info_series"`
-	MaxMetadataLength                           int                               `yaml:"max_metadata_length" json:"max_metadata_length"`
-	MaxNativeHistogramBuckets                   int                               `yaml:"max_native_histogram_buckets" json:"max_native_histogram_buckets"`
-	MaxExemplarsPerSeriesPerRequest             int                               `yaml:"max_exemplars_per_series_per_request" json:"max_exemplars_per_series_per_request" category:"experimental"`
-	ReduceNativeHistogramOverMaxBuckets         bool                              `yaml:"reduce_native_histogram_over_max_buckets" json:"reduce_native_histogram_over_max_buckets"`
-	CreationGracePeriod                         model.Duration                    `yaml:"creation_grace_period" json:"creation_grace_period" category:"advanced"`
-	PastGracePeriod                             model.Duration                    `yaml:"past_grace_period" json:"past_grace_period" category:"advanced"`
-	EnforceMetadataMetricName                   bool                              `yaml:"enforce_metadata_metric_name" json:"enforce_metadata_metric_name" category:"advanced"`
-	IngestionTenantShardSize                    int                               `yaml:"ingestion_tenant_shard_size" json:"ingestion_tenant_shard_size"`
-	MetricRelabelConfigs                        []*relabel.Config                 `yaml:"metric_relabel_configs,omitempty" json:"metric_relabel_configs,omitempty" doc:"nocli|description=List of metric relabel configurations. Note that in most situations, it is more effective to use metrics relabeling directly in the Prometheus server, e.g. remote_write.write_relabel_configs. Labels available during the relabeling phase and cleaned afterwards: __meta_tenant_id" category:"experimental"`
-	MetricRelabelingEnabled                     bool                              `yaml:"metric_relabeling_enabled" json:"metric_relabeling_enabled" category:"experimental"`
-	ServiceOverloadStatusCodeOnRateLimitEnabled bool                              `yaml:"service_overload_status_code_on_rate_limit_enabled" json:"service_overload_status_code_on_rate_limit_enabled" category:"experimental"`
+	HATrackerFailoverTimeout model.Duration `yaml:"ha_tracker_failover_timeout" json:"ha_tracker_failover_timeout" category:"advanced" doc:"description=If we don't receive any samples from the accepted replica for a cluster in this amount of time we will failover to the next replica we receive a sample from. This value must be greater than the update timeout."`
+	// We should only failover to accepting samples from a replica
+	// other than the replica written in the KVStore if the difference
+	// between the stored timestamp and the earliest sample time in the
+	// batch received is more than this duration
+	// If set, this is an additional check to the HATrackerFailoverTimeout.
+	// If the earliest sample time is the same as the current time, setting
+	// this to the same value as HATrackerFailoverTimeout makes no difference.
+	HATrackerFailoverSampleTimeout      model.Duration                    `yaml:"ha_tracker_sample_failover_timeout" json:"ha_tracker_sample_failover_timeout" category:"advanced"`
+	DropLabels                          flagext.StringSlice               `yaml:"drop_labels" json:"drop_labels" category:"advanced"`
+	MaxLabelNameLength                  int                               `yaml:"max_label_name_length" json:"max_label_name_length"`
+	MaxLabelValueLength                 int                               `yaml:"max_label_value_length" json:"max_label_value_length"`
+	LabelValueLengthOverLimitStrategy   LabelValueLengthOverLimitStrategy `yaml:"label_value_length_over_limit_strategy" json:"label_value_length_over_limit_strategy" category:"experimental" doc:"description=What to do for label values over the length limit. Options are: 'error', 'truncate', 'drop'. For 'truncate', the hash of the full value replaces the end portion of the value. For 'drop', the hash fully replaces the value."`
+	MaxLabelNamesPerSeries              int                               `yaml:"max_label_names_per_series" json:"max_label_names_per_series"`
+	MaxLabelNamesPerInfoSeries          int                               `yaml:"max_label_names_per_info_series" json:"max_label_names_per_info_series"`
+	MaxMetadataLength                   int                               `yaml:"max_metadata_length" json:"max_metadata_length"`
+	MaxNativeHistogramBuckets           int                               `yaml:"max_native_histogram_buckets" json:"max_native_histogram_buckets"`
+	MaxExemplarsPerSeriesPerRequest     int                               `yaml:"max_exemplars_per_series_per_request" json:"max_exemplars_per_series_per_request" category:"experimental"`
+	ReduceNativeHistogramOverMaxBuckets bool                              `yaml:"reduce_native_histogram_over_max_buckets" json:"reduce_native_histogram_over_max_buckets"`
+	CreationGracePeriod                 model.Duration                    `yaml:"creation_grace_period" json:"creation_grace_period" category:"advanced"`
+	PastGracePeriod                     model.Duration                    `yaml:"past_grace_period" json:"past_grace_period" category:"advanced"`
+	EnforceMetadataMetricName           bool                              `yaml:"enforce_metadata_metric_name" json:"enforce_metadata_metric_name" category:"advanced"`
+	IngestionTenantShardSize            int                               `yaml:"ingestion_tenant_shard_size" json:"ingestion_tenant_shard_size"`
+	MetricRelabelConfigs                []*relabel.Config                 `yaml:"metric_relabel_configs,omitempty" json:"metric_relabel_configs,omitempty" doc:"nocli|description=List of metric relabel configurations. Note that in most situations, it is more effective to use metrics relabeling directly in the Prometheus server, e.g. remote_write.write_relabel_configs. Labels available during the relabeling phase and cleaned afterwards: __meta_tenant_id" category:"experimental"`
+	MetricRelabelingEnabled             bool                              `yaml:"metric_relabeling_enabled" json:"metric_relabeling_enabled" category:"experimental"`
 
 	IngestionArtificialDelay                                         model.Duration `yaml:"ingestion_artificial_delay" json:"ingestion_artificial_delay" category:"experimental" doc:"hidden"`
 	IngestionArtificialDelayConditionForTenantsWithLessThanMaxSeries int            `yaml:"ingestion_artificial_delay_condition_for_tenants_with_less_than_max_series" json:"ingestion_artificial_delay_condition_for_tenants_with_less_than_max_series" category:"experimental" doc:"hidden"`
@@ -250,6 +257,7 @@ type Limits struct {
 	RulerMaxIndependentRuleEvaluationConcurrencyPerTenant int64                             `yaml:"ruler_max_independent_rule_evaluation_concurrency_per_tenant" json:"ruler_max_independent_rule_evaluation_concurrency_per_tenant" category:"experimental"`
 	RulerAlertmanagerClientConfig                         notifier.AlertmanagerClientConfig `yaml:"ruler_alertmanager_client_config" json:"ruler_alertmanager_client_config" category:"experimental" doc:"description=Per-tenant Alertmanager client configuration. If not supplied, the tenant's notifications are sent to the ruler-wide default."`
 	RulerMinRuleEvaluationInterval                        model.Duration                    `yaml:"ruler_min_rule_evaluation_interval" json:"ruler_min_rule_evaluation_interval" category:"experimental"`
+	RulerMaxRuleEvaluationResults                         int                               `yaml:"ruler_max_rule_evaluation_results" json:"ruler_max_rule_evaluation_results" category:"experimental"`
 
 	// Store-gateway.
 	StoreGatewayTenantShardSize int `yaml:"store_gateway_tenant_shard_size" json:"store_gateway_tenant_shard_size"`
@@ -333,6 +341,8 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.Var(&l.HATrackerUpdateTimeoutJitterMax, "distributor.ha-tracker.update-timeout-jitter-max", "Maximum jitter applied to the update timeout, in order to spread the HA heartbeats over time.")
 	l.HATrackerFailoverTimeout = model.Duration(30 * time.Second)
 	f.Var(&l.HATrackerFailoverTimeout, "distributor.ha-tracker.failover-timeout", "If we don't receive any samples from the accepted replica for a cluster in this amount of time we will failover to the next replica we receive a sample from. This value must be greater than the update timeout.")
+	l.HATrackerFailoverSampleTimeout = model.Duration(0)
+	f.Var(&l.HATrackerFailoverSampleTimeout, "distributor.ha-tracker.failover-sample-timeout", "Additional timeout to use for failover that uses the earliest sample time instead of the current time. Defaults to 0, which is disabled. This is useful to prevent samples from being too close together during failover when write requests are delayed so that the sample time is earlier than the current time.")
 	f.IntVar(&l.HAMaxClusters, HATrackerMaxClustersFlag, 100, "Maximum number of clusters that HA tracker will keep track of for a single tenant. 0 to disable the limit.")
 	f.Var(&l.DropLabels, "distributor.drop-label", "This flag can be used to specify label names that to drop during sample ingestion within the distributor and can be repeated in order to drop multiple labels.")
 	f.IntVar(&l.MaxLabelNameLength, MaxLabelNameLengthFlag, 1024, "Maximum length accepted for label names")
@@ -350,7 +360,6 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.Var(&l.PastGracePeriod, PastGracePeriodFlag, "Controls how far into the past incoming samples and exemplars are accepted compared to the wall clock. Any sample or exemplar will be rejected if its timestamp is lower than '(now - OOO window - past_grace_period)'. This configuration is enforced in the distributor and ingester. 0 to disable.")
 	f.BoolVar(&l.EnforceMetadataMetricName, "validation.enforce-metadata-metric-name", true, "Enforce every metadata has a metric name.")
 	f.BoolVar(&l.MetricRelabelingEnabled, "distributor.metric-relabeling-enabled", true, "Enable metric relabeling for the tenant. This configuration option can be used to forcefully disable metric relabeling on a per-tenant basis.")
-	f.BoolVar(&l.ServiceOverloadStatusCodeOnRateLimitEnabled, "distributor.service-overload-status-code-on-rate-limit-enabled", false, "If enabled, rate limit errors will be reported to the client with HTTP status code 529 (Service is overloaded). If disabled, status code 429 (Too Many Requests) is used. Enabling -distributor.retry-after-header.enabled before utilizing this option is strongly recommended as it helps prevent premature request retries by the client.")
 	f.BoolVar(&l.OTelMetricSuffixesEnabled, "distributor.otel-metric-suffixes-enabled", false, "Whether to enable automatic suffixes to names of metrics ingested through OTLP.")
 	f.BoolVar(&l.OTelCreatedTimestampZeroIngestionEnabled, "distributor.otel-created-timestamp-zero-ingestion-enabled", false, "Whether to enable translation of OTel start timestamps to Prometheus zero samples in the OTLP endpoint.")
 	f.Var(&l.PromoteOTelResourceAttributes, "distributor.otel-promote-resource-attributes", "Optionally specify OTel resource attributes to promote to labels.")
@@ -440,6 +449,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	l.RulerAlertmanagerClientConfig.RegisterFlags(f)
 	_ = l.RulerMinRuleEvaluationInterval.Set("0s")
 	f.Var(&l.RulerMinRuleEvaluationInterval, "ruler.min-rule-evaluation-interval", "Minimum allowable evaluation interval for rule groups.")
+	f.IntVar(&l.RulerMaxRuleEvaluationResults, "ruler.max-rule-evaluation-results", 0, "Maximum number of alerts or series one alerting rule or one recording rule respectively can produce. 0 is no limit.")
 
 	f.Var(&l.CompactorBlocksRetentionPeriod, "compactor.blocks-retention-period", "Delete blocks containing samples older than the specified retention period. Also used by query-frontend to avoid querying beyond the retention period by instant, range or remote read queries. 0 to disable.")
 	f.IntVar(&l.CompactorSplitAndMergeShards, "compactor.split-and-merge-shards", 0, "The number of shards to use when splitting blocks. 0 to disable splitting.")
@@ -777,11 +787,6 @@ func (o *Overrides) IngestionBurstFactor(userID string) float64 {
 // AcceptHASamples returns whether the distributor should track and accept samples from HA replicas for this user.
 func (o *Overrides) AcceptHASamples(userID string) bool {
 	return o.getOverridesForUser(userID).AcceptHASamples
-}
-
-// ServiceOverloadStatusCodeOnRateLimitEnabled return whether the distributor uses status code 529 instead of 429 when the rate limit is exceeded.
-func (o *Overrides) ServiceOverloadStatusCodeOnRateLimitEnabled(userID string) bool {
-	return o.getOverridesForUser(userID).ServiceOverloadStatusCodeOnRateLimitEnabled
 }
 
 // HAClusterLabel returns the cluster label to look for when deciding whether to accept a sample from a Prometheus HA replica.
@@ -1253,6 +1258,11 @@ func (o *Overrides) RulerMinRuleEvaluationInterval(userID string) time.Duration 
 	return time.Duration(o.getOverridesForUser(userID).RulerMinRuleEvaluationInterval)
 }
 
+// RulerMaxRuleEvaluationResults returns the maximum number of results (alert instances) produced by a single alerting rule evaluation.
+func (o *Overrides) RulerMaxRuleEvaluationResults(userID string) int {
+	return o.getOverridesForUser(userID).RulerMaxRuleEvaluationResults
+}
+
 // StoreGatewayTenantShardSize returns the store-gateway shard size for a given user.
 func (o *Overrides) StoreGatewayTenantShardSize(userID string) int {
 	return o.getOverridesForUser(userID).StoreGatewayTenantShardSize
@@ -1264,7 +1274,7 @@ func (o *Overrides) MaxHAClusters(user string) int {
 }
 
 // See distributor.haTrackerLimits.HATrackerTimeouts
-func (o *Overrides) HATrackerTimeouts(user string) (update time.Duration, updateJitterMax time.Duration, failover time.Duration) {
+func (o *Overrides) HATrackerTimeouts(user string) (update, updateJitterMax, failover, failoverSample time.Duration) {
 	uo := o.getOverridesForUser(user)
 
 	update = time.Duration(o.defaultLimits.HATrackerUpdateTimeout)
@@ -1282,11 +1292,19 @@ func (o *Overrides) HATrackerTimeouts(user string) (update time.Duration, update
 		failover = time.Duration(uo.HATrackerFailoverTimeout)
 	}
 
-	return update, updateJitterMax, failover
+	if uo.HATrackerFailoverSampleTimeout > 0 {
+		failoverSample = time.Duration(uo.HATrackerFailoverSampleTimeout)
+	}
+
+	return update, updateJitterMax, failover, failoverSample
 }
 
 func (o *Overrides) DefaultHATrackerUpdateTimeout() time.Duration {
 	return time.Duration(o.defaultLimits.HATrackerUpdateTimeout)
+}
+
+func (o *Overrides) HATrackerUseSampleTimeForFailover(user string) bool {
+	return o.getOverridesForUser(user).HATrackerFailoverSampleTimeout > 0
 }
 
 // S3SSEType returns the per-tenant S3 SSE type.

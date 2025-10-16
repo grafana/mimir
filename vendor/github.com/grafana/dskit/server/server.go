@@ -471,7 +471,7 @@ func newServer(cfg Config, metrics *Metrics) (*Server, error) {
 
 	var grpcServerLimit *grpcInflightLimitCheck
 	if cfg.GrpcMethodLimiter != nil {
-		grpcServerLimit = newGrpcInflightLimitCheck(cfg.GrpcMethodLimiter)
+		grpcServerLimit = newGrpcInflightLimitCheck(cfg.GrpcMethodLimiter, logger)
 		grpcMiddleware = append(grpcMiddleware, grpcServerLimit.UnaryServerInterceptor)
 		grpcStreamMiddleware = append(grpcStreamMiddleware, grpcServerLimit.StreamServerInterceptor)
 	}

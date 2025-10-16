@@ -183,6 +183,8 @@ func TestNewInstantQuery_Strings(t *testing.T) {
 func TestUpstreamTestCases(t *testing.T) {
 	opts := NewTestEngineOpts()
 	opts.CommonOpts.EnableDelayedNameRemoval = true
+	// Disable the optimization pass, since it requires delayed name removal to be enabled.
+	opts.EnableEliminateDeduplicateAndMerge = false
 	planner, err := NewQueryPlanner(opts)
 	require.NoError(t, err)
 	engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), planner)
@@ -224,6 +226,8 @@ func TestOurTestCases(t *testing.T) {
 
 	optsWithDelayedNameRemoval := NewTestEngineOpts()
 	optsWithDelayedNameRemoval.CommonOpts.EnableDelayedNameRemoval = true
+	// Disable the optimization pass, since it requires delayed name removal to be enabled.
+	optsWithDelayedNameRemoval.EnableEliminateDeduplicateAndMerge = false
 	mimirEngineWithDelayedNameRemoval, prometheusEngineWithDelayedNameRemoval := makeEngines(t, optsWithDelayedNameRemoval)
 
 	testdataFS := os.DirFS("./testdata")
@@ -815,8 +819,8 @@ func TestSubqueries(t *testing.T) {
 	           http_requests{job="api-server", instance="0", group="canary"}     0+30x1000 300+80x1000
 	           http_requests{job="api-server", instance="1", group="canary"}     0+40x2000
 	           other_metric{type="floats"} 0 4 3 6 -1 10
-	           other_metric{type="histograms"} {{count:0}} {{count:4}} {{count:3}} {{count:6}} {{count:-1}} {{count:10}}
-	           other_metric{type="mixed"} 0 4 3 6 {{count:-1}} {{count:10}}
+	           other_metric{type="histograms"} {{count:0}} {{count:4}} {{count:3}} {{count:6}} {{count:1}} {{count:10}}
+	           other_metric{type="mixed"} 0 4 3 6 {{count:1}} {{count:10}}
 	`
 
 	opts := NewTestEngineOpts()
@@ -1185,12 +1189,12 @@ func TestSubqueries(t *testing.T) {
 						Metric: labels.FromStrings(labels.MetricName, "other_metric", "type", "floats"),
 					},
 					{
-						H:      &histogram.FloatHistogram{Count: -1, CounterResetHint: histogram.UnknownCounterReset},
+						H:      &histogram.FloatHistogram{Count: 1, CounterResetHint: histogram.UnknownCounterReset},
 						T:      40000,
 						Metric: labels.FromStrings(labels.MetricName, "other_metric", "type", "histograms"),
 					},
 					{
-						H:      &histogram.FloatHistogram{Count: -1, CounterResetHint: histogram.UnknownCounterReset},
+						H:      &histogram.FloatHistogram{Count: 1, CounterResetHint: histogram.UnknownCounterReset},
 						T:      40000,
 						Metric: labels.FromStrings(labels.MetricName, "other_metric", "type", "mixed"),
 					},

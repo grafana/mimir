@@ -122,12 +122,14 @@ func isHistogramValidationError(err error) bool {
 	// TODO: Consider adding single histogram error type instead of individual sentinel errors.
 	return errors.Is(err, histogram.ErrHistogramCountMismatch) ||
 		errors.Is(err, histogram.ErrHistogramCountNotBigEnough) ||
+		errors.Is(err, histogram.ErrHistogramNegativeCount) ||
 		errors.Is(err, histogram.ErrHistogramNegativeBucketCount) ||
 		errors.Is(err, histogram.ErrHistogramSpanNegativeOffset) ||
 		errors.Is(err, histogram.ErrHistogramSpansBucketsMismatch) ||
 		errors.Is(err, histogram.ErrHistogramCustomBucketsMismatch) ||
 		errors.Is(err, histogram.ErrHistogramCustomBucketsInvalid) ||
 		errors.Is(err, histogram.ErrHistogramCustomBucketsInfinite) ||
+		errors.Is(err, histogram.ErrHistogramCustomBucketsNaN) ||
 		errors.Is(err, histogram.ErrHistogramCustomBucketsZeroCount) ||
 		errors.Is(err, histogram.ErrHistogramCustomBucketsZeroThresh) ||
 		errors.Is(err, histogram.ErrHistogramCustomBucketsNegSpans) ||
@@ -425,6 +427,12 @@ func (h *writeHandler) appendV2(app storage.Appender, req *writev2.Request, rs *
 		} else if duplicateLabel, hasDuplicate := ls.HasDuplicateLabelNames(); hasDuplicate {
 			badRequestErrs = append(badRequestErrs, fmt.Errorf("invalid labels for series, labels %v, duplicated label %s", ls.String(), duplicateLabel))
 			samplesWithInvalidLabels += len(ts.Samples) + len(ts.Histograms)
+			continue
+		}
+
+		// Validate that the TimeSeries has at least one sample or histogram.
+		if len(ts.Samples) == 0 && len(ts.Histograms) == 0 {
+			badRequestErrs = append(badRequestErrs, fmt.Errorf("TimeSeries must contain at least one sample or histogram for series %v", ls.String()))
 			continue
 		}
 

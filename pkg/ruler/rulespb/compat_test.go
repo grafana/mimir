@@ -188,6 +188,24 @@ func TestToProto(t *testing.T) {
 				Labels:          make([]mimirpb.LabelAdapter, 0),
 			},
 		},
+		"with limit": {
+			input: rulefmt.RuleGroup{
+				Name:     "group",
+				Interval: model.Duration(60 * time.Second),
+				Rules:    []rulefmt.Rule{},
+				Labels:   map[string]string{},
+				Limit:    10,
+			},
+			expected: &RuleGroupDesc{
+				Name:      "group",
+				Namespace: namespace,
+				Interval:  60 * time.Second,
+				User:      user,
+				Rules:     []*RuleDesc{},
+				Labels:    make([]mimirpb.LabelAdapter, 0),
+				Limit:     10,
+			},
+		},
 		"check grouplabels are properly propagated": {
 			input: rulefmt.RuleGroup{
 				Name: "group",
@@ -331,6 +349,24 @@ func TestFromProto(t *testing.T) {
 				QueryOffset: pointerOf(model.Duration(2 * time.Second)),
 				Rules:       []rulefmt.Rule{},
 				Labels:      map[string]string{},
+			},
+		},
+		"with limit": {
+			input: &RuleGroupDesc{
+				Name:      "group",
+				Namespace: namespace,
+				Interval:  60 * time.Second,
+				User:      user,
+				Rules:     []*RuleDesc{},
+				Labels:    []mimirpb.LabelAdapter{},
+				Limit:     10,
+			},
+			expected: rulefmt.RuleGroup{
+				Name:     "group",
+				Interval: model.Duration(60 * time.Second),
+				Rules:    []rulefmt.Rule{},
+				Labels:   map[string]string{},
+				Limit:    10,
 			},
 		},
 		"with both evaluation delay and query offset": {

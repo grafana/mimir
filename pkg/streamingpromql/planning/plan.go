@@ -3,6 +3,7 @@
 package planning
 
 import (
+	"errors"
 	"fmt"
 	"reflect"
 	"strings"
@@ -21,7 +22,13 @@ import (
 	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
-var MaximumSupportedQueryPlanVersion = int64(0)
+var MaximumSupportedQueryPlanVersion = QueryPlanV1
+
+const QueryPlanVersionZero = int64(0)
+
+// This version introduces:
+// 1. DropName node
+const QueryPlanV1 = int64(1)
 
 type QueryPlan struct {
 	TimeRange types.QueryTimeRange
@@ -102,6 +109,9 @@ type Node interface {
 	// expression.
 	ExpressionPosition() posrange.PositionRange
 
+	// MinimumRequiredPlanVersion returns the minimum query plan version required to execute a plan that includes these nodes.
+	MinimumRequiredPlanVersion() int64
+
 	// FIXME: implementations for many of the above methods can be generated automatically
 }
 
@@ -179,6 +189,23 @@ func (p *QueryPlan) ToEncodedPlan(includeDescriptions bool, includeDetails bool)
 	}
 
 	return encoded, nil
+}
+
+// DeterminePlanVersion will set the plan Version to the largest MinimumRequiredPlanVersion found within the plan nodes.
+func (p *QueryPlan) DeterminePlanVersion() error {
+	if p.Root == nil {
+		return errors.New("query plan version can not be determined without a root node")
+	}
+	p.Version = p.maxMinimumRequiredPlanVersion(p.Root)
+	return nil
+}
+
+func (p *QueryPlan) maxMinimumRequiredPlanVersion(node Node) int64 {
+	maxVersion := node.MinimumRequiredPlanVersion()
+	for _, child := range node.Children() {
+		maxVersion = max(maxVersion, p.maxMinimumRequiredPlanVersion(child))
+	}
+	return maxVersion
 }
 
 func toEncodedTimeRange(t types.QueryTimeRange) EncodedQueryTimeRange {
