@@ -17,6 +17,7 @@ This procedure temporarily doubles your ingestion and storage costs, because bot
 
 Follow these steps to migrate your Grafana Mimir cluster from classic architecture to ingest storage architecture.
 
+1. [Before you begin](#before-you-begin)
 1. [Prepare your existing Grafana Mimir cluster for migration](#prepare-your-existing-grafana-mimir-cluster-for-migration)
 1. [Set up a new Grafana Mimir cluster with ingest storage](#set-up-a-new-grafana-mimir-cluster-with-ingest-storage)
 1. [Configure write clients to duplicate writes](#configure-write-clients-to-duplicate-writes)
