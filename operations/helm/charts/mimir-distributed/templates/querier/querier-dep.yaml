@@ -1,4 +1,4 @@
-{{- if and .Values.querier.enabled (not .Values.federation_frontend.disableOtherComponents) }}
+{{- if .Values.querier.enabled }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:

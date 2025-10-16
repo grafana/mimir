@@ -122,9 +122,6 @@ data:
     # Create the buckets
     createBucket mimir-tsdb "none" false false false
     createBucket mimir-ruler "none" false false false
-    createBucket enterprise-metrics-tsdb "none" false false false
-    createBucket enterprise-metrics-admin "none" false false false
-    createBucket enterprise-metrics-ruler "none" false false false
     
   add-user: |-
     #!/bin/sh

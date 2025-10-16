@@ -1,4 +1,4 @@
-{{- if and .Values.kafka.enabled (not .Values.federation_frontend.disableOtherComponents) -}}
+{{- if .Values.kafka.enabled -}}
 {{- with .Values.kafka -}}
 {{- $replicas := .replicas | default 1 -}}
 apiVersion: apps/v1

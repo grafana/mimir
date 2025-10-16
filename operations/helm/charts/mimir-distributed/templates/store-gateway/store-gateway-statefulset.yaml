@@ -1,4 +1,4 @@
-{{- if and .Values.store_gateway.enabled (not .Values.federation_frontend.disableOtherComponents) }}
+{{- if .Values.store_gateway.enabled }}
 {{- $args := dict "ctx" $ "component" "store-gateway" "memberlist" true -}}
 {{- $zonesMap := include "mimir.zoneAwareReplicationMap" $args | fromYaml -}}
 {{- range $zoneName, $rolloutZone := $zonesMap }}
@@ -45,7 +45,7 @@ spec:
     {{- else }}
     {{- toYaml .Values.store_gateway.strategy | nindent 4 }}
     {{- end }}
-  serviceName: {{ template "mimir.fullname" . }}-store-gateway{{- if not .Values.enterprise.legacyLabels -}}-headless{{- end -}}
+  serviceName: {{ template "mimir.fullname" . }}-store-gateway-headless
   {{- if .Values.store_gateway.persistentVolume.enabled }}
   {{- with .Values.store_gateway.persistentVolume }}
   volumeClaimTemplates:

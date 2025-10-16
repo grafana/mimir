@@ -28,7 +28,7 @@ spec:
         release: keda-autoscaling-global-values
       annotations:
         checksum/secrets: 95b032976ff694341397d8f8c1dc9d4483d457a0937b9f5cb285ccfc4833880a
-        checksum/config: a0bda18c7c220986e62d8eb6a95d36e68ea2475516425c0cf2ea805e953d67f7
+        checksum/config: 74884fb72b695ce514b91cbefd1436445e377d9703a79b7db8a74e1c3645c649
     spec:
       securityContext:
         

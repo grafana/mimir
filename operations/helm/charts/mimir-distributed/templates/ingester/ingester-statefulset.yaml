@@ -1,4 +1,4 @@
-{{- if and .Values.ingester.enabled (not .Values.federation_frontend.disableOtherComponents) }}
+{{- if .Values.ingester.enabled }}
 {{- $args := dict "ctx" . "component" "ingester" "memberlist" true -}}
 {{- $zonesMap := include "mimir.zoneAwareReplicationMap" $args | fromYaml -}}
 {{- range $zoneName, $rolloutZone := $zonesMap }}
@@ -45,7 +45,7 @@ spec:
     {{- else }}
     {{- toYaml .Values.ingester.statefulStrategy | nindent 4 }}
     {{- end }}
-  serviceName: {{ template "mimir.fullname" . }}-ingester{{- if not .Values.enterprise.legacyLabels -}}-headless{{- end -}}
+  serviceName: {{ template "mimir.fullname" . }}-ingester-headless
   {{- if .Values.ingester.persistentVolume.enabled }}
   {{- with .Values.ingester.persistentVolume }}
   volumeClaimTemplates:
