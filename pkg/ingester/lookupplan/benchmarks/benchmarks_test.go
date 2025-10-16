@@ -80,7 +80,13 @@ func BenchmarkQueryExecution(b *testing.B) {
 		b.Fatal("-query-ids and -query-sample < 1.0 are mutually exclusive")
 	}
 
-	queries, err := queryLoader.PrepareQueries(*queryFileFlag, *tenantIDFlag, *queryIDsFlag, *querySampleFlag, *querySampleSeed)
+	queries, err := queryLoader.PrepareQueries(bench.QueryLoaderConfig{
+		Filepath:       *queryFileFlag,
+		TenantID:       *tenantIDFlag,
+		QueryIDsStr:    *queryIDsFlag,
+		SampleFraction: *querySampleFlag,
+		Seed:           *querySampleSeed,
+	})
 	require.NoError(b, err)
 	require.NotEmpty(b, queries, "no queries after filtering and sampling")
 	b.Logf("Prepared %d queries (sample: %f%%)", len(queries), *querySampleFlag*100)

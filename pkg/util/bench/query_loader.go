@@ -64,15 +64,31 @@ func NewQueryLoader() *QueryLoader {
 	return &QueryLoader{}
 }
 
+// QueryLoaderConfig contains the parameters for loading queries.
+type QueryLoaderConfig struct {
+	// Filepath is the path to the Loki log file in JSONL format.
+	Filepath string
+	// TenantID is the tenant ID to filter queries by. If empty, all queries are used.
+	TenantID string
+	// QueryIDs is a list of query IDs (line numbers) to load.
+	// Mutually exclusive with sampling (SampleFraction < 1.0).
+	QueryIDs []int
+	// SampleFraction is the fraction of queries to sample (0.0 to 1.0).
+	// Queries are split into segments and sampled uniformly across segments.
+	SampleFraction float64
+	// Seed is the random seed for query sampling.
+	Seed int64
+}
+
 // PrepareQueries loads queries from a Loki log file in JSONL format, filters by tenant ID
 // and/or query IDs if specified, and samples them according to the given parameters.
 // Results are cached to avoid re-processing. Queries are returned with their VectorSelectors already parsed.
 //
 // The file should contain newline-delimited JSON logs with query parameters in the labels field,
 // as produced by logcli (see package documentation for details).
-func (qc *QueryLoader) PrepareQueries(filepath string, tenantID string, queryIDsStr string, sampleFraction float64, seed int64) ([]Query, error) {
+func (qc *QueryLoader) PrepareQueries(config QueryLoaderConfig) ([]Query, error) {
 	// Create cache key from parameters
-	cacheKey := fmt.Sprintf("%s|%s|%s|%f|%d", filepath, tenantID, queryIDsStr, sampleFraction, seed)
+	cacheKey := fmt.Sprintf("%s|%s|%s|%f|%d", config.Filepath, config.TenantID, config.QueryIDsStr, config.SampleFraction, config.Seed)
 
 	// Check cache first
 	if cached, ok := qc.cache.Load(cacheKey); ok {
@@ -80,22 +96,22 @@ func (qc *QueryLoader) PrepareQueries(filepath string, tenantID string, queryIDs
 	}
 
 	// Parse query IDs if specified
-	queryIDs, err := parseQueryIDs(queryIDsStr)
+	queryIDs, err := parseQueryIDs(config.QueryIDsStr)
 	if err != nil {
 		return nil, err
 	}
 
 	// Load queries from file (with early filtering by query IDs if specified)
-	queries, err := loadQueryLogsFromFile(filepath, queryIDs)
+	queries, err := loadQueryLogsFromFile(config.Filepath, queryIDs)
 	if err != nil {
 		return nil, err
 	}
 
 	// Filter by tenant ID if specified
-	if tenantID != "" {
+	if config.TenantID != "" {
 		filtered := queries[:0]
 		for i := range queries {
-			if queries[i].User == tenantID {
+			if queries[i].User == config.TenantID {
 				filtered = append(filtered, queries[i])
 			}
 		}
@@ -103,8 +119,8 @@ func (qc *QueryLoader) PrepareQueries(filepath string, tenantID string, queryIDs
 	}
 
 	// Sample queries only if not filtering by specific IDs
-	if queryIDsStr == "" {
-		queries = sampleQueries(queries, sampleFraction, seed)
+	if config.QueryIDsStr == "" {
+		queries = sampleQueries(queries, config.SampleFraction, config.Seed)
 	}
 
 	// Store in cache before returning
