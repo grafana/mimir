@@ -96,7 +96,7 @@ func BenchmarkQueryExecution(b *testing.B) {
 		config.BlocksStorageConfig.TSDB.IndexLookupPlanning.Enabled = true
 	})
 	require.NoError(b, err)
-	defer cleanupFunc()
+	b.Cleanup(cleanupFunc)
 
 	b.Log("Starting benchmark")
 
