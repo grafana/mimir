@@ -23,7 +23,7 @@ for component in "admin-api" "alertmanager" "compactor" "distributor" "gateway" 
 done
 
 for component in "admin-api" "alertmanager" "compactor" "distributor" "gateway" "ingester" "overrides-exporter" "querier" "query-frontend" "ruler" "store-gateway" ; do
-  for filename in $(find "templates/${component}" -name "*.yaml") ; do
+  find "templates/${component}" -name "*.yaml" -print0 | while IFS= read -r -d '' filename ; do
     cp "${filename}" "${filename}.ori"
     ./scripts/replace ${COMPONENTARGS["${component}"]} "${component}" "${filename}.ori" > "${filename}"
     rm "${filename}.ori"
