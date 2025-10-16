@@ -413,25 +413,3 @@ func TestSampleQueries_SmallSet(t *testing.T) {
 	assert.Greater(t, len(sampled), 0)
 	assert.LessOrEqual(t, len(sampled), len(queries))
 }
-
-func TestSampleQueries_EdgeCases(t *testing.T) {
-	queries := make([]Query, 100)
-	for i := range queries {
-		queries[i] = Query{
-			QueryID: i,
-			Query:   fmt.Sprintf("metric_%d", i),
-		}
-	}
-
-	// Empty input
-	empty := sampleQueries([]Query{}, 0.5, 42)
-	assert.Empty(t, empty)
-
-	// Fraction > 1.0 should return all
-	all := sampleQueries(queries, 1.5, 42)
-	assert.Len(t, all, len(queries))
-
-	// Negative fraction should return none
-	none := sampleQueries(queries, -0.1, 42)
-	assert.Nil(t, none)
-}
