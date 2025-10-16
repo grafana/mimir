@@ -617,6 +617,11 @@ func TestSharding(t *testing.T) {
 			out:                      `max_over_time((-absent(foo))[5m:])`,
 			expectedShardableQueries: 0,
 		},
+		{
+			in:                       `clamp_max(max(foo), scalar(bar))`,
+			out:                      `clamp_max(max(foo), scalar(bar))`,
+			expectedShardableQueries: 0,
+		},
 	} {
 		t.Run(tt.in, func(t *testing.T) {
 			for _, preprocess := range []bool{true, false} {
