@@ -74,7 +74,7 @@ Internally, these limits are implemented using a per-distributor local rate limi
 The local rate limiter for each distributor is configured with a limit of `limit / N`, where `N` is the number of healthy distributor replicas.
 The distributor automatically adjusts the request and ingestion rate limits if the number of distributor replicas change.
 
-The distributor rate limits are implemented using a per-distributor local rate limiter, they require that write requests are [evenly distributed across the pool of distributors](#load-balancing-across-distributors).
+This design uses a per-distributor local rate limiter and requires that write requests be [evenly distributed across the pool of distributors](#load-balancing-across-distributors).
 
 ### Configure rate limits
 
