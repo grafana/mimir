@@ -271,6 +271,7 @@ func NewQuerySharder(
 func (s *QuerySharder) Shard(ctx context.Context, tenantIDs []string, expr parser.Expr, requestedShardCount int, seriesCount *EstimatedSeriesCount, totalQueries int32) (parser.Expr, error) {
 	log := spanlogger.FromContext(ctx, s.logger)
 	log.DebugLog("msg", "attempting query sharding", "query", expr)
+	s.metrics.shardingAttempts.Inc()
 
 	totalShards, err := s.getShardsForQuery(ctx, tenantIDs, expr, requestedShardCount, seriesCount, totalQueries, log)
 	if err != nil {
@@ -288,7 +289,6 @@ func (s *QuerySharder) Shard(ctx context.Context, tenantIDs []string, expr parse
 		"total shards", totalShards,
 	)
 
-	s.metrics.shardingAttempts.Inc()
 	shardedExpr, shardingStats, err := s.shardQuery(ctx, expr, totalShards)
 	if err != nil {
 		return nil, err
