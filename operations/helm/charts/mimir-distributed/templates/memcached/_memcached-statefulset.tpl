@@ -3,7 +3,7 @@ memcached StatefulSet
 */}}
 {{- define "mimir.memcached.statefulSet" -}}
 {{ with (index $.ctx.Values $.component) }}
-{{- if and .enabled (not $.ctx.Values.federation_frontend.disableOtherComponents) -}}
+{{- if .enabled -}}
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
