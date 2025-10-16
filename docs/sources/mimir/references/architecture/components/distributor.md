@@ -36,7 +36,13 @@ The distributor cleans and validates incoming data before ingesting it into Mimi
 
 A single request can include both valid and invalid metrics, samples, metadata, or exemplars.
 The distributor ingests only the valid data and rejects any invalid entries.
-If invalid data is detected, the distributor returns an HTTP 400 status code, and the response body includes details about the first invalid item encountered.
+
+If invalid data is detected:
+
+- When using Prometheus remote write or Influx, the distributor returns an HTTP 400 status code.
+- When using OTLP, it returns an HTTP 200 status code, following the OTLP specification for partial ingestion.
+
+In both cases, the response body contains details about the first invalid item encountered.
 The returned error is typically logged by the agent sending metrics to Mimir, such as Prometheus, Grafana Alloy, or the OpenTelemetry Collector.
 
 The distributor data cleanup includes the following transformation:
@@ -93,7 +99,7 @@ You can override rate limiting on a per-tenant basis by setting `request_rate`, 
 By default, Prometheus remote write doesn't retry requests on 429 HTTP response status code. To modify this behavior, use `retry_on_http_429: true` in the Prometheus [`remote_write` configuration](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#remote_write).
 {{< /admonition >}}
 
-### Distributors' hash ring for rate limiting
+### Distributor ring and rate limiting
 
 Since distributor rate limits are implemented locally, each distributor must know how many healthy distributors are running in the Mimir cluster.
 To achieve this, each distributor joins a hash ring used for service discovery, which tracks the number of healthy distributor instances.
