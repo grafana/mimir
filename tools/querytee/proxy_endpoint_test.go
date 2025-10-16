@@ -203,6 +203,7 @@ func Test_ProxyEndpoint_Requests(t *testing.T) {
 				strings := strings.NewReader("this-is-some-payload")
 				r, err := http.NewRequest("POST", "http://test/api/v1/test", strings)
 				require.NoError(t, err)
+				r.Header["Content-Type"] = []string{"application/x-www-form-urlencoded"}
 				r.Header["test-X"] = []string{"test-X-value"}
 				return r
 			},
@@ -783,6 +784,7 @@ type mockProxyBackend struct {
 	preferred             bool
 	fakeResponseLatencies []time.Duration
 	responseIndex         int
+	requestProportion     float64
 }
 
 func newMockProxyBackend(name string, timeout time.Duration, preferred bool, fakeResponseLatencies []time.Duration) ProxyBackendInterface {
@@ -791,6 +793,7 @@ func newMockProxyBackend(name string, timeout time.Duration, preferred bool, fak
 		timeout:               timeout,
 		preferred:             preferred,
 		fakeResponseLatencies: fakeResponseLatencies,
+		requestProportion:     DefaultRequestProportion,
 	}
 }
 
@@ -804,6 +807,26 @@ func (b *mockProxyBackend) Endpoint() *url.URL {
 
 func (b *mockProxyBackend) Preferred() bool {
 	return b.preferred
+}
+
+func (b *mockProxyBackend) RequestProportion() float64 {
+	return b.requestProportion
+}
+
+func (b *mockProxyBackend) SetRequestProportion(proportion float64) {
+	b.requestProportion = proportion
+}
+
+func (b *mockProxyBackend) HasConfiguredProportion() bool {
+	return false // For simplicity in tests, assume it's not configured
+}
+
+func (b *mockProxyBackend) MinDataQueriedAge() time.Duration {
+	return DefaultMinDataQueriedAge // Default to DefaultMinDataQueriedAge (serve all queries) for tests
+}
+
+func (b *mockProxyBackend) ShouldHandleQuery(minQueryTime time.Time) bool {
+	return true // Default to handling all queries in tests
 }
 
 func (b *mockProxyBackend) ForwardRequest(_ context.Context, _ *http.Request, _ io.ReadCloser) (time.Duration, int, []byte, *http.Response, error) {
@@ -873,7 +896,9 @@ func TestProxyEndpoint_BackendSelection(t *testing.T) {
 			preferredOnlySelectionCount := 0
 
 			for i := 0; i < runCount; i++ {
-				backends := proxyEndpoint.selectBackends()
+				req, _ := http.NewRequest("GET", "/api/v1/query", nil)
+				backends, err := proxyEndpoint.selectBackends(req)
+				require.NoError(t, err)
 				require.GreaterOrEqual(t, len(backends), 1)
 
 				if len(backends) == 1 {
