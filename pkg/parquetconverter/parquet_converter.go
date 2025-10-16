@@ -55,7 +55,7 @@ func (d defaultBlockConverter) ConvertBlock(ctx context.Context, meta *block.Met
 	}
 	defer runutil.CloseWithErrCapture(&err, tsdbBlock, "close tsdb block")
 
-	_, err = convert.ConvertTSDBBlockParallel(
+	_, err = convert.ConvertTSDBBlock(
 		ctx,
 		bkt,
 		meta.MinTime,
