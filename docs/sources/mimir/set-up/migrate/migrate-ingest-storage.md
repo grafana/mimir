@@ -147,8 +147,8 @@ For example, if you’re using Helm, run the following command:
 helm uninstall <OLD_RELEASE_NAME>
 ```
 
+Your system runs entirely with ingest storage architecture.
+
 ## Scale down compactors in the new cluster
 
 After the migration is complete and the old cluster is decommissioned, reduce the number of compactor replicas in the new cluster to your normal steady-state configuration. This lowers resource use after the temporary load from the dual-cluster operation is gone.
-
-Your system runs entirely with ingest storage architecture.
