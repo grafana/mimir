@@ -28,7 +28,7 @@ spec:
         release: gateway-nginx-values
       annotations:
         checksum/secrets: 12a49e03dae026ccb9e9a7e07321c3609b9deb761d8722e27bfa4734fd00340a
-        checksum/config: cd2d31f2a703d79d880ce6eaed2d89d9bc8a870511a5821d83393cd66373bc33
+        checksum/config: 2ee5f5664938858978206bcb156f21338f4410c945b12c95bd3e32c4bd85b5b2
     spec:
       securityContext:
         
