@@ -9,7 +9,6 @@ import (
 	"iter"
 	"os"
 	"path"
-	"sync/atomic"
 	"time"
 
 	"github.com/go-kit/log"
@@ -24,6 +23,7 @@ import (
 	"github.com/twmb/franz-go/plugin/kprom"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"go.opentelemetry.io/otel"
+	"go.uber.org/atomic"
 	"google.golang.org/grpc"
 
 	"github.com/grafana/mimir/pkg/blockbuilder/schedulerpb"
