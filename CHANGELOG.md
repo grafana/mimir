@@ -152,7 +152,7 @@
 
 ### Query-tee
 
-* [CHANGE] If multiple secondary backends are configured and comparisons are enabled, query-tee will now report comparison results of the preferred backend against each of the secondaries #13022
+* [CHANGE] If you configure multiple secondary backends and enable comparisons, query-tee reports comparison results of the preferred backend against each of the secondaries. #13022
 
 ## 2.17.1
 
