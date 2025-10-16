@@ -11,7 +11,7 @@ The [`mimir-distributed` Helm chart](https://github.com/grafana/mimir/blob/main/
 
 ## Use ingest storage
 
-Grafana Mimir uses the ingest storage architecture by default when deployed with the Helm chart.  
+Grafana Mimir uses the ingest storage architecture by default when deployed with the Helm chart.
 You can configure an external Kafka backend or disable ingest storage if needed.
 
 For details, refer to [Run Grafana Mimir in production using the Helm chart](https://grafana.com/docs/helm-charts/mimir-distributed/latest/run-production-environment-with-helm/), which provides complete setup and configuration guidance for production environments.
