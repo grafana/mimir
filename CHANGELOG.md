@@ -150,6 +150,10 @@
 
 * [ENHANCEMENT] Base `mimirtool`, `metaconvert`, `copyblocks`, and `query-tee` images on `distroless/static-debian12`. #13014
 
+### Query-tee
+
+* [CHANGE] If you configure multiple secondary backends and enable comparisons, query-tee reports comparison results of the preferred backend against each of the secondaries. #13022
+
 ## 2.17.1
 
 ### Grafana Mimir
