@@ -24,7 +24,6 @@ import (
 	"fmt"
 	"math"
 	"testing"
-	"time"
 
 	"github.com/grafana/dskit/user"
 	"github.com/stretchr/testify/require"
@@ -147,8 +146,6 @@ func executeQueryDirect(ing *ingester.Ingester, vq vectorSelectorQuery) (*queryR
 	}
 
 	ctx := user.InjectOrgID(context.Background(), vq.originalQuery.OrgID)
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
 
 	// Create mock stream that accumulates results directly
 	result := &queryResult{}
