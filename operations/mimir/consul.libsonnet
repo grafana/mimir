@@ -1,5 +1,7 @@
 local consul = import 'consul/consul.libsonnet';
 
+// Consul is deprecated for use with the HA tracker. Use memberlist instead.
+// Consul is still supported for other components like rings, but memberlist is recommended for all KV store usages.
 {
   _config+:: {
     consul_enabled: if $._config.memberlist_ring_enabled && !$._config.multikv_migration_enabled then false else true,
