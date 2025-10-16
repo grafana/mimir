@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-package benchmarks
+package bench
 
 import (
 	"bufio"
@@ -27,7 +27,7 @@ const (
 	numSegments = 100
 )
 
-// QueryCache caches prepared vector queries to avoid re-processing the same file with same parameters.
+// QueryCache caches prepared queries to avoid re-processing the same file with same parameters.
 type QueryCache struct {
 	cache sync.Map
 }
@@ -37,28 +37,33 @@ func NewQueryCache() *QueryCache {
 	return &QueryCache{}
 }
 
-// vectorSelectorQuery represents a single vector selector extracted from a query.
-type vectorSelectorQuery struct {
-	originalQuery *Query
-	matchers      []*labels.Matcher
+// Get retrieves a cached value if it exists.
+func (qc *QueryCache) Get(key string) (interface{}, bool) {
+	return qc.cache.Load(key)
+}
+
+// Store saves a value to the cache.
+func (qc *QueryCache) Store(key string, value interface{}) {
+	qc.cache.Store(key, value)
 }
 
 // Query represents a parsed query from Loki logs.
 type Query struct {
-	QueryID   int // Line number from the file (1-indexed)
-	Query     string
-	Start     time.Time
-	End       time.Time
-	Step      time.Duration
-	Timestamp time.Time
-	OrgID     string
-	valid     bool // internal flag to track if query should be included
+	QueryID         int                 // Line number from the file (1-indexed)
+	Query           string              // Raw PromQL query string
+	VectorSelectors [][]*labels.Matcher // Extracted label matchers from vector selectors in the query
+	Start           time.Time
+	End             time.Time
+	Step            time.Duration
+	Timestamp       time.Time
+	User            string
+	valid           bool // internal flag to track if query should be included
 }
 
-// LoadQueryLogsFromFile parses queries from a Loki log file in newline-delimited JSON format.
+// loadQueryLogsFromFile parses queries from a Loki log file in newline-delimited JSON format.
 // Each line should be a JSON object with query information in the labels field.
 // If queryIDs is non-empty, only queries with matching line numbers are returned.
-func LoadQueryLogsFromFile(filepath string, queryIDs []int) ([]Query, error) {
+func loadQueryLogsFromFile(filepath string, queryIDs []int) ([]Query, error) {
 	f, err := os.Open(filepath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open query file %q: %w", filepath, err)
@@ -112,6 +117,47 @@ func LoadQueryLogsFromFile(filepath string, queryIDs []int) ([]Query, error) {
 	return queries, nil
 }
 
+// extractLabelMatchers extracts label matchers from a PromQL query string.
+// It parses the PromQL expression and returns a separate set of matchers for each vector selector.
+// Returns a slice of slices, where each inner slice represents one vector selector's matchers.
+func extractLabelMatchers(query string) ([][]*labels.Matcher, error) {
+	expr, err := parser.ParseExpr(query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse PromQL query: %w", err)
+	}
+
+	// Collect matchers from each vector selector separately
+	var allMatcherSets [][]*labels.Matcher
+
+	parser.Inspect(expr, func(node parser.Node, _ []parser.Node) error {
+		if n, ok := node.(*parser.VectorSelector); ok {
+			var matchers []*labels.Matcher
+
+			// Add the metric name matcher if present
+			if n.Name != "" {
+				matcher, err := labels.NewMatcher(labels.MatchEqual, labels.MetricName, n.Name)
+				if err == nil {
+					matchers = append(matchers, matcher)
+				}
+			}
+
+			// Add all label matchers
+			for _, lm := range n.LabelMatchers {
+				if lm != nil {
+					matchers = append(matchers, lm)
+				}
+			}
+
+			if len(matchers) > 0 {
+				allMatcherSets = append(allMatcherSets, matchers)
+			}
+		}
+		return nil
+	})
+
+	return allMatcherSets, nil
+}
+
 // UnmarshalJSON implements custom JSON unmarshaling for Query.
 // It expects the Loki log format with query parameters in the labels field:
 //
@@ -142,7 +188,16 @@ func (q *Query) UnmarshalJSON(b []byte) error {
 
 	q.valid = true
 	q.Query = d.Labels.Query
-	q.OrgID = d.Labels.User
+	q.User = d.Labels.User
+
+	// Extract vector selectors from the query
+	vectorSelectors, err := extractLabelMatchers(d.Labels.Query)
+	if err != nil {
+		// If we can't parse the query, still mark it as valid but with no vector selectors
+		// This allows the query to be included in stats but skipped for benchmarking
+		vectorSelectors = nil
+	}
+	q.VectorSelectors = vectorSelectors
 
 	// Parse timestamp
 	timestamp, err := time.Parse(time.RFC3339Nano, d.Timestamp)
@@ -239,16 +294,16 @@ func parseQueryIDs(queryIDsStr string) ([]int, error) {
 	return queryIDs, nil
 }
 
-// PrepareVectorQueries loads queries from a file, filters by tenant ID and/or query IDs if specified,
-// extracts label matchers from each query, and samples them according to the given parameters.
-// Results are cached to avoid re-processing.
-func (qc *QueryCache) PrepareVectorQueries(filepath string, tenantID string, queryIDsStr string, sampleFraction float64, seed int64) ([]vectorSelectorQuery, error) {
+// PrepareQueries loads queries from a file, filters by tenant ID and/or query IDs if specified,
+// and samples them according to the given parameters. Results are cached to avoid re-processing.
+// Queries are returned with their VectorSelectors already parsed.
+func (qc *QueryCache) PrepareQueries(filepath string, tenantID string, queryIDsStr string, sampleFraction float64, seed int64) ([]Query, error) {
 	// Create cache key from parameters
 	cacheKey := fmt.Sprintf("%s|%s|%s|%f|%d", filepath, tenantID, queryIDsStr, sampleFraction, seed)
 
 	// Check cache first
-	if cached, ok := qc.cache.Load(cacheKey); ok {
-		return cached.([]vectorSelectorQuery), nil
+	if cached, ok := qc.Get(cacheKey); ok {
+		return cached.([]Query), nil
 	}
 
 	// Parse query IDs if specified
@@ -258,101 +313,36 @@ func (qc *QueryCache) PrepareVectorQueries(filepath string, tenantID string, que
 	}
 
 	// Load queries from file (with early filtering by query IDs if specified)
-	queries, err := LoadQueryLogsFromFile(filepath, queryIDs)
+	queries, err := loadQueryLogsFromFile(filepath, queryIDs)
 	if err != nil {
 		return nil, err
 	}
 
-	// Filter by tenant ID if specified (before extracting matchers to save work)
+	// Filter by tenant ID if specified
 	if tenantID != "" {
 		filtered := queries[:0]
 		for i := range queries {
-			if queries[i].OrgID == tenantID {
+			if queries[i].User == tenantID {
 				filtered = append(filtered, queries[i])
 			}
 		}
 		queries = filtered
 	}
 
-	// Extract label matchers from each query (each query may produce multiple vector selectors)
-	// Pre-allocate with estimated capacity (assume ~2 selectors per query)
-	vectorQueries := make([]vectorSelectorQuery, 0, len(queries)*2)
-	var skippedCount int
-	for i := range queries {
-		matchersList, err := extractLabelMatchers(queries[i].Query)
-		if err != nil {
-			skippedCount++
-			continue
-		}
-
-		for _, matchers := range matchersList {
-			vectorQueries = append(vectorQueries, vectorSelectorQuery{
-				originalQuery: &queries[i],
-				matchers:      matchers,
-			})
-		}
-	}
-
-	if skippedCount > 0 {
-		// Note: This will be visible in the benchmark output if printed
-		_ = skippedCount
-	}
-
 	// Sample queries only if not filtering by specific IDs
 	if queryIDsStr == "" {
-		vectorQueries = sampleQueries(vectorQueries, sampleFraction, seed)
+		queries = sampleQueries(queries, sampleFraction, seed)
 	}
 
 	// Store in cache before returning
-	qc.cache.Store(cacheKey, vectorQueries)
+	qc.Store(cacheKey, queries)
 
-	return vectorQueries, nil
-}
-
-// extractLabelMatchers extracts label matchers from a PromQL query string.
-// It parses the PromQL expression and returns a separate set of matchers for each vector selector.
-// Returns a slice of slices, where each inner slice represents one vector selector's matchers.
-func extractLabelMatchers(query string) ([][]*labels.Matcher, error) {
-	expr, err := parser.ParseExpr(query)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse PromQL query: %w", err)
-	}
-
-	// Collect matchers from each vector selector separately
-	var allMatcherSets [][]*labels.Matcher
-
-	parser.Inspect(expr, func(node parser.Node, _ []parser.Node) error {
-		if n, ok := node.(*parser.VectorSelector); ok {
-			var matchers []*labels.Matcher
-
-			// Add the metric name matcher if present
-			if n.Name != "" {
-				matcher, err := labels.NewMatcher(labels.MatchEqual, labels.MetricName, n.Name)
-				if err == nil {
-					matchers = append(matchers, matcher)
-				}
-			}
-
-			// Add all label matchers
-			for _, lm := range n.LabelMatchers {
-				if lm != nil {
-					matchers = append(matchers, lm)
-				}
-			}
-
-			if len(matchers) > 0 {
-				allMatcherSets = append(allMatcherSets, matchers)
-			}
-		}
-		return nil
-	})
-
-	return allMatcherSets, nil
+	return queries, nil
 }
 
 // sampleQueries samples queries by splitting them into segments and taking a continuous
 // sample from each segment. This ensures representative coverage across the query set.
-func sampleQueries(queries []vectorSelectorQuery, sampleFraction float64, seed int64) []vectorSelectorQuery {
+func sampleQueries(queries []Query, sampleFraction float64, seed int64) []Query {
 	if sampleFraction >= 1.0 {
 		return queries
 	}
@@ -379,7 +369,7 @@ func sampleQueries(queries []vectorSelectorQuery, sampleFraction float64, seed i
 		sampleSize = 1
 	}
 
-	var sampledQueries []vectorSelectorQuery
+	var sampledQueries []Query
 
 	// Sample from each segment
 	for seg := 0; seg < numSegments; seg++ {

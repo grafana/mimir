@@ -26,11 +26,13 @@ import (
 	"testing"
 
 	"github.com/grafana/dskit/user"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/ingester"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/streamingpromql/benchmarks"
+	"github.com/grafana/mimir/pkg/util/bench"
 )
 
 var (
@@ -40,7 +42,7 @@ var (
 	queryIDsFlag    = flag.String("query-ids", "", "Comma-separated list of query IDs (line numbers) to benchmark. Mutually exclusive with query-sample < 1.0.")
 	querySampleFlag = flag.Float64("query-sample", 1.0, "Fraction of queries to sample (0.0 to 1.0). Queries are split into 100 segments, and a continuous sample is taken from each segment.")
 	querySampleSeed = flag.Int64("query-sample-seed", 1, "Random seed for query sampling.")
-	queryCache      = NewQueryCache()
+	queryCache      = bench.NewQueryCache()
 )
 
 // mockQueryStreamServer implements the minimum required methods for QueryStream.
@@ -84,12 +86,11 @@ func BenchmarkQueryExecution(b *testing.B) {
 		b.Fatal("-query-ids and -query-sample < 1.0 are mutually exclusive")
 	}
 
-	// Prepare vector queries (load, extract matchers, filter by tenant/IDs, sample) - this is cached
-	vectorQueries, err := queryCache.PrepareVectorQueries(*queryFileFlag, *tenantIDFlag, *queryIDsFlag, *querySampleFlag, *querySampleSeed)
+	// Prepare queries (load, extract vector selectors, filter by tenant/IDs, sample) - this is cached
+	queries, err := queryCache.PrepareQueries(*queryFileFlag, *tenantIDFlag, *queryIDsFlag, *querySampleFlag, *querySampleSeed)
 	require.NoError(b, err)
-	require.NotEmpty(b, vectorQueries, "no vector queries after filtering and sampling")
-
-	b.Logf("Prepared %d vector selectors (sample: %f%%)", len(vectorQueries), *querySampleFlag*100)
+	require.NotEmpty(b, queries, "no queries after filtering and sampling")
+	b.Logf("Prepared %d queries (sample: %f%%)", len(queries), *querySampleFlag*100)
 
 	// Start ingester
 	ing, _, cleanupFunc, err := benchmarks.StartBenchmarkIngester(*dataDirFlag, func(config *ingester.Config) {
@@ -98,27 +99,26 @@ func BenchmarkQueryExecution(b *testing.B) {
 	require.NoError(b, err)
 	defer cleanupFunc()
 
-	// Warm up with a simple query
-	_, _ = executeQueryDirect(ing, vectorQueries[0])
-
 	b.Log("Starting benchmark")
 
-	// Benchmark query execution - run each query as a sub-benchmark
-	for _, vq := range vectorQueries {
-		queryID := fmt.Sprintf("query=%d", vq.originalQuery.QueryID)
-		b.Run(queryID, func(b *testing.B) {
-			b.ReportAllocs()
-			for i := 0; i < b.N; i++ {
-				queryResult, err := executeQueryDirect(ing, vq)
-				if err != nil {
-					b.Fatalf("Query failed: %v (query: %s)", err, vq.originalQuery.Query)
+	// Benchmark query execution - run each vector selector as a sub-benchmark
+	for _, q := range queries {
+		for selectorIdx := range q.VectorSelectors {
+			queryID := fmt.Sprintf("query=%d/selector=%d", q.QueryID, selectorIdx)
+			b.Run(queryID, func(b *testing.B) {
+				b.ReportAllocs()
+				for i := 0; i < b.N; i++ {
+					queryResult, err := executeQueryDirect(ing, q.VectorSelectors[selectorIdx], q.User)
+					if err != nil {
+						b.Fatalf("Query failed: %v (query: %s)", err, q.Query)
+					}
+					// Report metrics only on first iteration to avoid clutter
+					if i == 0 {
+						b.Logf("series=%d chunks=%d", queryResult.SeriesCount, queryResult.ChunkCount)
+					}
 				}
-				// Report metrics only on first iteration to avoid clutter
-				if i == 0 {
-					b.Logf("series=%d chunks=%d", queryResult.SeriesCount, queryResult.ChunkCount)
-				}
-			}
-		})
+			})
+		}
 	}
 }
 
@@ -129,9 +129,9 @@ type queryResult struct {
 }
 
 // executeQueryDirect executes a vector selector query directly against the ingester without going through gRPC.
-func executeQueryDirect(ing *ingester.Ingester, vq vectorSelectorQuery) (*queryResult, error) {
+func executeQueryDirect(ing *ingester.Ingester, matchers []*labels.Matcher, userID string) (*queryResult, error) {
 	// Convert to client format
-	labelMatchers, err := client.ToLabelMatchers(vq.matchers)
+	labelMatchers, err := client.ToLabelMatchers(matchers)
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert label matchers: %w", err)
 	}
@@ -145,7 +145,7 @@ func executeQueryDirect(ing *ingester.Ingester, vq vectorSelectorQuery) (*queryR
 		Matchers:         labelMatchers,
 	}
 
-	ctx := user.InjectOrgID(context.Background(), vq.originalQuery.OrgID)
+	ctx := user.InjectOrgID(context.Background(), userID)
 
 	// Create mock stream that accumulates results directly
 	result := &queryResult{}
