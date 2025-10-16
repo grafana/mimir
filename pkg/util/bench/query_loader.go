@@ -10,7 +10,6 @@ import (
 	"math/rand"
 	"os"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
 
@@ -87,22 +86,21 @@ type QueryLoaderConfig struct {
 // The file should contain newline-delimited JSON logs with query parameters in the labels field,
 // as produced by logcli (see package documentation for details).
 func (qc *QueryLoader) PrepareQueries(config QueryLoaderConfig) ([]Query, error) {
+	// Validate that QueryIDs and sampling are mutually exclusive
+	if len(config.QueryIDs) > 0 && config.SampleFraction < 1.0 {
+		return nil, fmt.Errorf("QueryIDs and SampleFraction < 1.0 are mutually exclusive")
+	}
+
 	// Create cache key from parameters
-	cacheKey := fmt.Sprintf("%s|%s|%s|%f|%d", config.Filepath, config.TenantID, config.QueryIDsStr, config.SampleFraction, config.Seed)
+	cacheKey := fmt.Sprintf("%s|%s|%v|%f|%d", config.Filepath, config.TenantID, config.QueryIDs, config.SampleFraction, config.Seed)
 
 	// Check cache first
 	if cached, ok := qc.cache.Load(cacheKey); ok {
 		return cached.([]Query), nil
 	}
 
-	// Parse query IDs if specified
-	queryIDs, err := parseQueryIDs(config.QueryIDsStr)
-	if err != nil {
-		return nil, err
-	}
-
 	// Load queries from file (with early filtering by query IDs if specified)
-	queries, err := loadQueryLogsFromFile(config.Filepath, queryIDs)
+	queries, err := loadQueryLogsFromFile(config.Filepath, config.QueryIDs)
 	if err != nil {
 		return nil, err
 	}
@@ -119,7 +117,7 @@ func (qc *QueryLoader) PrepareQueries(config QueryLoaderConfig) ([]Query, error)
 	}
 
 	// Sample queries only if not filtering by specific IDs
-	if config.QueryIDsStr == "" {
+	if len(config.QueryIDs) == 0 {
 		queries = sampleQueries(queries, config.SampleFraction, config.Seed)
 	}
 
@@ -345,35 +343,6 @@ func parseDuration(s string) (time.Duration, error) {
 		return 0, err
 	}
 	return time.Duration(stepD), nil
-}
-
-// parseQueryIDs parses a comma-separated string of query IDs into a slice of ints.
-func parseQueryIDs(queryIDsStr string) ([]int, error) {
-	if queryIDsStr == "" {
-		return nil, nil
-	}
-
-	parts := strings.Split(queryIDsStr, ",")
-	queryIDs := make([]int, 0, len(parts))
-
-	for _, part := range parts {
-		part = strings.TrimSpace(part)
-		if part == "" {
-			continue
-		}
-
-		id, err := strconv.Atoi(part)
-		if err != nil {
-			return nil, fmt.Errorf("invalid query ID %q: %w", part, err)
-		}
-		queryIDs = append(queryIDs, id)
-	}
-
-	if len(queryIDs) == 0 {
-		return nil, fmt.Errorf("no valid query IDs provided")
-	}
-
-	return queryIDs, nil
 }
 
 // sampleQueries samples queries by splitting them into segments and taking a continuous

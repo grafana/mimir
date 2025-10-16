@@ -17,6 +17,8 @@ import (
 	"flag"
 	"fmt"
 	"math"
+	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/grafana/dskit/user"
@@ -80,10 +82,18 @@ func BenchmarkQueryExecution(b *testing.B) {
 		b.Fatal("-query-ids and -query-sample < 1.0 are mutually exclusive")
 	}
 
+	// Parse query IDs if provided
+	var queryIDs []int
+	var err error
+	if *queryIDsFlag != "" {
+		queryIDs, err = parseQueryIDs(*queryIDsFlag)
+		require.NoError(b, err)
+	}
+
 	queries, err := queryLoader.PrepareQueries(bench.QueryLoaderConfig{
 		Filepath:       *queryFileFlag,
 		TenantID:       *tenantIDFlag,
-		QueryIDsStr:    *queryIDsFlag,
+		QueryIDs:       queryIDs,
 		SampleFraction: *querySampleFlag,
 		Seed:           *querySampleSeed,
 	})
@@ -159,4 +169,32 @@ func queryIngester(ing *ingester.Ingester, matchers []*labels.Matcher, userID st
 	}
 
 	return result, nil
+}
+
+func parseQueryIDs(queryIDsStr string) ([]int, error) {
+	if queryIDsStr == "" {
+		return nil, nil
+	}
+
+	parts := strings.Split(queryIDsStr, ",")
+	queryIDs := make([]int, 0, len(parts))
+
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+
+		id, err := strconv.Atoi(part)
+		if err != nil {
+			return nil, fmt.Errorf("invalid query ID %q: %w", part, err)
+		}
+		queryIDs = append(queryIDs, id)
+	}
+
+	if len(queryIDs) == 0 {
+		return nil, fmt.Errorf("no valid query IDs provided")
+	}
+
+	return queryIDs, nil
 }

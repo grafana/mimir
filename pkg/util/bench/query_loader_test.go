@@ -108,7 +108,7 @@ func TestPrepareQueries_Caching(t *testing.T) {
 	require.NoError(t, err)
 
 	// First call
-	config := QueryLoaderConfig{Filepath: queryFile, TenantID: "", QueryIDsStr: "", SampleFraction: 1.0, Seed: 1}
+	config := QueryLoaderConfig{Filepath: queryFile, TenantID: "", QueryIDs: nil, SampleFraction: 1.0, Seed: 1}
 	queries1, err := qc.PrepareQueries(config)
 	require.NoError(t, err)
 	require.Len(t, queries1, 2)
@@ -122,7 +122,7 @@ func TestPrepareQueries_Caching(t *testing.T) {
 	assert.Equal(t, &queries1[0], &queries2[0], "cached result should return same slice")
 
 	// Call with different sample fraction - should not be cached (different cache key)
-	config2 := QueryLoaderConfig{Filepath: queryFile, TenantID: "", QueryIDsStr: "", SampleFraction: 0.5, Seed: 1}
+	config2 := QueryLoaderConfig{Filepath: queryFile, TenantID: "", QueryIDs: nil, SampleFraction: 0.5, Seed: 1}
 	queries3, err := qc.PrepareQueries(config2)
 	require.NoError(t, err)
 	// With small dataset, sampling may still return same queries, but they should be different slice instances
@@ -156,25 +156,25 @@ func TestPrepareQueries_TenantFiltering(t *testing.T) {
 	require.NoError(t, err)
 
 	// No tenant filter - should get all queries
-	allQueries, err := qc.PrepareQueries(QueryLoaderConfig{Filepath: queryFile, TenantID: "", QueryIDsStr: "", SampleFraction: 1.0, Seed: 1})
+	allQueries, err := qc.PrepareQueries(QueryLoaderConfig{Filepath: queryFile, TenantID: "", QueryIDs: nil, SampleFraction: 1.0, Seed: 1})
 	require.NoError(t, err)
 	require.Len(t, allQueries, 4, "should have all queries when no tenant filter")
 
 	// Filter by tenant1
-	tenant1Queries, err := qc.PrepareQueries(QueryLoaderConfig{Filepath: queryFile, TenantID: "tenant1", QueryIDsStr: "", SampleFraction: 1.0, Seed: 1})
+	tenant1Queries, err := qc.PrepareQueries(QueryLoaderConfig{Filepath: queryFile, TenantID: "tenant1", QueryIDs: nil, SampleFraction: 1.0, Seed: 1})
 	require.NoError(t, err)
 	require.Len(t, tenant1Queries, 2, "should have only tenant1 queries")
 	assert.Equal(t, "tenant1", tenant1Queries[0].User)
 	assert.Equal(t, "tenant1", tenant1Queries[1].User)
 
 	// Filter by tenant2
-	tenant2Queries, err := qc.PrepareQueries(QueryLoaderConfig{Filepath: queryFile, TenantID: "tenant2", QueryIDsStr: "", SampleFraction: 1.0, Seed: 1})
+	tenant2Queries, err := qc.PrepareQueries(QueryLoaderConfig{Filepath: queryFile, TenantID: "tenant2", QueryIDs: nil, SampleFraction: 1.0, Seed: 1})
 	require.NoError(t, err)
 	require.Len(t, tenant2Queries, 1, "should have only tenant2 queries")
 	assert.Equal(t, "tenant2", tenant2Queries[0].User)
 
 	// Filter by non-existent tenant
-	noQueries, err := qc.PrepareQueries(QueryLoaderConfig{Filepath: queryFile, TenantID: "nonexistent", QueryIDsStr: "", SampleFraction: 1.0, Seed: 1})
+	noQueries, err := qc.PrepareQueries(QueryLoaderConfig{Filepath: queryFile, TenantID: "nonexistent", QueryIDs: nil, SampleFraction: 1.0, Seed: 1})
 	require.NoError(t, err)
 	require.Len(t, noQueries, 0, "should have no queries for non-existent tenant")
 }
