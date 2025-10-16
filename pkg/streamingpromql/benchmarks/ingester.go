@@ -40,26 +40,6 @@ const NumIntervals = 10000 + int(time.Minute/interval) + 1 // The longest-range 
 
 const UserID = "benchmark-tenant"
 
-// IngesterConfigOption is a function that modifies an ingester.Config.
-// Options are applied after the default test configuration is set up
-// but before the ring is created.
-//
-// Example usage:
-//
-//	// Customize head compaction interval
-//	opt := func(cfg *ingester.Config) {
-//	    cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval = 10 * time.Minute
-//	}
-//	addr, cleanup, err := StartIngesterAndLoadData(dir, []int{}, opt)
-//
-//	// Multiple options
-//	opt1 := func(cfg *ingester.Config) {
-//	    cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval = 5 * time.Minute
-//	}
-//	opt2 := func(cfg *ingester.Config) {
-//	    cfg.BlocksStorageConfig.TSDB.BlockRanges = []time.Duration{2 * time.Hour}
-//	}
-//	addr, cleanup, err := StartIngesterAndLoadData(dir, []int{}, opt1, opt2)
 type IngesterConfigOption func(*ingester.Config)
 
 func StartIngesterAndLoadData(rootDataDir string, metricSizes []int, opts ...IngesterConfigOption) (string, func(), error) {
@@ -107,7 +87,6 @@ func StartBenchmarkIngester(rootDataDir string, opts ...IngesterConfigOption) (*
 	ingesterCfg.BlocksStorageConfig.TSDB.HeadCompactionIntervalJitterEnabled = false
 	ingesterCfg.BlocksStorageConfig.TSDB.HeadCompactionIdleTimeout = 0
 
-	// Apply configuration options before creating the ring
 	for _, opt := range opts {
 		opt(&ingesterCfg)
 	}
