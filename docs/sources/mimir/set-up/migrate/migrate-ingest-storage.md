@@ -51,14 +51,14 @@ Follow these steps to migrate your Grafana Mimir cluster from classic architectu
    ```yaml
    mimir:
    structuredConfig:
-       limits:
-         ruler_alerting_rules_evaluation_enabled: false
+     limits:
+       ruler_alerting_rules_evaluation_enabled: false
 
    # or
 
    ruler:
    extraArgs:
-       ruler.alerting-rules-evaluation-enabled: false
+     ruler.alerting-rules-evaluation-enabled: false
    ```
 
    If your alert delivery system, for example, Grafana OnCall or PagerDuty, already deduplicates alerts, you can skip this step.
@@ -80,10 +80,10 @@ Follow these steps to migrate your Grafana Mimir cluster from classic architectu
 1. Wait until both clusters have a complete view of the data.
 
    Keep write duplication running long enough for both clusters to have a complete view of recent data.
-   
+
    Ingesters in the old cluster continuously upload new blocks to object storage and create new blocks on disk every 2 hours. Because ingesters typically hold about 12–13 hours of recent data in memory and on local disk, continue double writing for at least that duration. This ensures that the new cluster receives all data written during the overlap period and that queries return a complete dataset.
 
-   You don’t need to disable block uploads from ingesters in the new cluster. Both clusters can safely upload blocks to the shared object storage because compactors merge them correctly.  
+   You don’t need to disable block uploads from ingesters in the new cluster. Both clusters can safely upload blocks to the shared object storage because compactors merge them correctly.
 
    After the migration is complete, scale the compactors in the new cluster back down to their normal count.
 
