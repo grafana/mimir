@@ -11,7 +11,7 @@ weight: 20
 
 # Grafana Mimir distributor
 
-The distributor is a stateless component that serves as the ingress for the Mimir write path.
+The distributor is a stateless component that acts as the entry point for the Grafana Mimir write path.
 It receives incoming write requests containing time series data, validates the data for correctness, enforces tenant-specific limits, and then ingests the data into Mimir.
 
 To scale beyond the limits of a single node, distributors shard incoming series across a pool of partitions or ingesters.
