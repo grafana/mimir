@@ -44,11 +44,10 @@ func NewReaderPoolMetrics(reg prometheus.Registerer) *ReaderPoolMetrics {
 type ReaderPool struct {
 	services.Service
 
-	lazyReaderEnabled      bool
-	earlyValidationEnabled bool
-	lazyReaderIdleTimeout  time.Duration
-	logger                 log.Logger
-	metrics                *ReaderPoolMetrics
+	lazyReaderEnabled     bool
+	lazyReaderIdleTimeout time.Duration
+	logger                log.Logger
+	metrics               *ReaderPoolMetrics
 
 	// Gate used to limit the number of concurrent index-header loads.
 	lazyLoadingGate gate.Gate
@@ -83,13 +82,12 @@ func newReaderPool(
 	metrics *ReaderPoolMetrics,
 ) *ReaderPool {
 	return &ReaderPool{
-		logger:                 logger,
-		metrics:                metrics,
-		lazyReaderEnabled:      indexHeaderConfig.LazyLoadingEnabled,
-		earlyValidationEnabled: false,
-		lazyReaderIdleTimeout:  indexHeaderConfig.LazyLoadingIdleTimeout,
-		lazyReaders:            make(map[LazyReader]struct{}),
-		lazyLoadingGate:        lazyLoadingGate,
+		logger:                logger,
+		metrics:               metrics,
+		lazyReaderEnabled:     indexHeaderConfig.LazyLoadingEnabled,
+		lazyReaderIdleTimeout: indexHeaderConfig.LazyLoadingIdleTimeout,
+		lazyReaders:           make(map[LazyReader]struct{}),
+		lazyLoadingGate:       lazyLoadingGate,
 	}
 }
 
@@ -100,41 +98,19 @@ func (p *ReaderPool) GetReader(
 	ctx context.Context,
 	blockID ulid.ULID,
 	bkt objstore.InstrumentedBucketReader,
-	localDir string,
-	loadIndexToDisk bool,
 	fileOpts []storage.FileOption,
 	logger log.Logger,
 ) (Reader, error) {
-	var reader LazyReader
-	var err error
-
-	if loadIndexToDisk {
-		reader, err = NewLazyReaderLocalLabelsBucketChunks(
-			ctx,
-			blockID,
-			bkt,
-			localDir,
-			fileOpts,
-			p.metrics.lazyReader,
-			p.onLazyReaderClosed,
-			p.lazyLoadingGate,
-			p.earlyValidationEnabled,
-			logger,
-		)
-	} else {
-		reader, err = NewLazyReaderBucketLabelsAndChunks(
-			ctx,
-			blockID,
-			bkt,
-			localDir,
-			fileOpts,
-			p.metrics.lazyReader,
-			p.onLazyReaderClosed,
-			nil,
-			p.earlyValidationEnabled,
-			logger,
-		)
-	}
+	reader, err := NewLazyBucketReader(
+		ctx,
+		blockID,
+		bkt,
+		fileOpts,
+		p.metrics.lazyReader,
+		p.onLazyReaderClosed,
+		nil,
+		logger,
+	)
 
 	if err != nil {
 		return nil, err

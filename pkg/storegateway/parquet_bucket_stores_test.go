@@ -15,6 +15,7 @@ import (
 	"github.com/oklog/ulid/v2"
 	"github.com/prometheus-community/parquet-common/convert"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/common/promslog"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/util/annotations"
@@ -173,6 +174,7 @@ func generateParquetStorageBlock(t *testing.T, storageDir string, bkt objstore.B
 			minT,
 			maxT,
 			[]convert.Convertible{tsdbBlock},
+			promslog.NewNopLogger(),
 			convert.WithName(blockId),
 		)
 		require.NoError(t, err)

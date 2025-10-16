@@ -11,7 +11,6 @@ import (
 	"net/http"
 	"os"
 	"path"
-	"path/filepath"
 	"sync"
 	"time"
 
@@ -82,7 +81,6 @@ type ParquetBucketStore struct {
 
 	// Gate used to limit concurrency on loading index-headers across all tenants.
 	lazyLoadingGate      gate.Gate
-	loadIndexToDisk      bool
 	actuallyStreamChunks bool
 	fileOpts             []parquetStorage.FileOption
 
@@ -112,7 +110,6 @@ func NewParquetBucketStore(
 	blockMetaFetcher block.MetadataFetcher,
 	queryGate gate.Gate,
 	lazyLoadingGate gate.Gate,
-	loadIndexToDisk bool,
 	// Whether to stream results from the Parquet chunks file directly, instead of loading them all inmemory
 	actuallyStreamChunks bool,
 	fileOpts []parquetStorage.FileOption,
@@ -137,7 +134,6 @@ func NewParquetBucketStore(
 		queryGate:            queryGate,
 		lazyLoadingGate:      lazyLoadingGate,
 		actuallyStreamChunks: actuallyStreamChunks,
-		loadIndexToDisk:      loadIndexToDisk,
 		fileOpts: append(fileOpts,
 			parquetStorage.WithFileOptions(parquetGo.SkipBloomFilters(false)),
 		),
@@ -1058,16 +1054,12 @@ func (s *ParquetBucketStore) syncBlocks(ctx context.Context) error {
 }
 
 func (s *ParquetBucketStore) addBlock(ctx context.Context, meta *block.Meta) (err error) {
-	blockLocalDir := filepath.Join(s.localDir, meta.ULID.String())
 	start := time.Now()
 
 	level.Debug(s.logger).Log("msg", "loading new block", "id", meta.ULID)
 	defer func() {
 		if err != nil {
 			s.metrics.blockLoadFailures.Inc()
-			if err2 := os.RemoveAll(blockLocalDir); err2 != nil {
-				level.Warn(s.logger).Log("msg", "failed to remove block we cannot load", "err", err2)
-			}
 			level.Error(s.logger).Log("msg", "loading block failed", "elapsed", time.Since(start), "id", meta.ULID, "err", err)
 		} else {
 			level.Info(s.logger).Log("msg", "loaded new block", "elapsed", time.Since(start), "id", meta.ULID)
@@ -1079,8 +1071,6 @@ func (s *ParquetBucketStore) addBlock(ctx context.Context, meta *block.Meta) (er
 		ctx,
 		meta.ULID,
 		s.bkt,
-		blockLocalDir,
-		s.loadIndexToDisk,
 		s.fileOpts,
 		s.logger,
 	)
@@ -1098,7 +1088,6 @@ func (s *ParquetBucketStore) addBlock(ctx context.Context, meta *block.Meta) (er
 	b := newParquetBucketBlock(
 		meta,
 		blockReader,
-		blockLocalDir,
 	)
 	if err != nil {
 		return errors.Wrap(err, "new parquet bucket block")
@@ -1150,9 +1139,6 @@ func (s *ParquetBucketStore) removeBlock(id ulid.ULID) (returnErr error) {
 
 	if err := b.Close(); err != nil {
 		return errors.Wrap(err, "close block")
-	}
-	if err := os.RemoveAll(b.localDir); err != nil {
-		return errors.Wrap(err, "delete block")
 	}
 	return nil
 }

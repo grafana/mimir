@@ -740,7 +740,6 @@
   "blocks-storage.bucket-store.index-header.lazy-loading-concurrency-queue-timeout": 5000000000,
   "blocks-storage.bucket-store.batch-series-size": 5000,
   "blocks-storage.bucket-store.series-fetch-preference": 0.75,
-  "blocks-storage.bucket-store.parquet-load-index-to-disk": true,
   "blocks-storage.bucket-store.parquet-max-row-count": 0,
   "blocks-storage.bucket-store.parquet-max-chunk-size-bytes": 0,
   "blocks-storage.bucket-store.parquet-max-data-size-bytes": 0,
