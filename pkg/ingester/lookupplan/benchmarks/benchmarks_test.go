@@ -1,5 +1,21 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
+// Package benchmarks provides benchmark tests for the index lookup planner.
+//
+// These benchmarks execute real PromQL queries extracted from production logs
+// against a running ingester with actual data.
+//
+// Usage:
+//
+//	go test -bench=. -data-dir=/path/to/data -query-file=/path/to/queries.json
+//
+// Flags:
+//   - -data-dir: Directory containing ingester data (WAL + blocks)
+//   - -query-file: JSON file with query logs from Loki
+//   - -tenant-id: Filter queries by tenant (optional)
+//   - -query-ids: Specific query IDs to benchmark (optional)
+//   - -query-sample: Fraction of queries to sample (0.0-1.0)
+//   - -query-sample-seed: Random seed for query sampling
 package benchmarks
 
 import (
@@ -20,14 +36,17 @@ import (
 
 var (
 	dataDirFlag     = flag.String("data-dir", "", "Directory containing an ingester data dir (WAL + blocks for multiple tenants).")
-	queryFileFlag   = flag.String("query-file", "", `File containing queries in Loki log JSON format. You can obtian it by running a command like this with logcli: logcli query -q --timezone=UTC --limit=1000000 --from='2025-10-15T15:15:21.0Z' --to='2025-10-15T16:15:21.0Z' --output=jsonl '{namespace="mimir", name="query-frontend"} |= "query stats" | logfmt | path=~".*/query(_range)?"' > logs.json`)
+	queryFileFlag   = flag.String("query-file", "", `File containing queries in Loki log JSON format. You can obtain it by running a command like this with logcli: logcli query -q --timezone=UTC --limit=1000000 --from='2025-10-15T15:15:21.0Z' --to='2025-10-15T16:15:21.0Z' --output=jsonl '{namespace="mimir", name="query-frontend"} |= "query stats" | logfmt | path=~".*/query(_range)?"' > logs.json`)
 	tenantIDFlag    = flag.String("tenant-id", "", "Tenant ID to filter queries by. If empty, all queries are used.")
 	queryIDsFlag    = flag.String("query-ids", "", "Comma-separated list of query IDs (line numbers) to benchmark. Mutually exclusive with query-sample < 1.0.")
 	querySampleFlag = flag.Float64("query-sample", 1.0, "Fraction of queries to sample (0.0 to 1.0). Queries are split into 100 segments, and a continuous sample is taken from each segment.")
 	querySampleSeed = flag.Int64("query-sample-seed", 1, "Random seed for query sampling.")
+	queryCache      = NewQueryCache()
 )
 
-// mockQueryStreamServer is a server stream that accumulates query results without sending over the network.
+// mockQueryStreamServer implements the minimum required methods for QueryStream.
+// It embeds Ingester_QueryStreamServer to satisfy the interface but only Send and Context
+// are actually called by QueryStream.
 type mockQueryStreamServer struct {
 	client.Ingester_QueryStreamServer
 	result                *queryResult
@@ -67,7 +86,7 @@ func BenchmarkQueryExecution(b *testing.B) {
 	}
 
 	// Prepare vector queries (load, extract matchers, filter by tenant/IDs, sample) - this is cached
-	vectorQueries, err := PrepareVectorQueries(*queryFileFlag, *tenantIDFlag, *queryIDsFlag, *querySampleFlag, *querySampleSeed)
+	vectorQueries, err := queryCache.PrepareVectorQueries(*queryFileFlag, *tenantIDFlag, *queryIDsFlag, *querySampleFlag, *querySampleSeed)
 	require.NoError(b, err)
 	require.NotEmpty(b, vectorQueries, "no vector queries after filtering and sampling")
 
@@ -108,13 +127,10 @@ func BenchmarkQueryExecution(b *testing.B) {
 type queryResult struct {
 	SeriesCount int // Number of series returned
 	ChunkCount  int // Total chunks across all series
-	Duration    time.Duration
 }
 
 // executeQueryDirect executes a vector selector query directly against the ingester without going through gRPC.
 func executeQueryDirect(ing *ingester.Ingester, vq vectorSelectorQuery) (*queryResult, error) {
-	start := time.Now()
-
 	// Convert to client format
 	labelMatchers, err := client.ToLabelMatchers(vq.matchers)
 	if err != nil {
@@ -147,6 +163,5 @@ func executeQueryDirect(ing *ingester.Ingester, vq vectorSelectorQuery) (*queryR
 		return nil, fmt.Errorf("failed to execute query: %w", err)
 	}
 
-	result.Duration = time.Since(start)
 	return result, nil
 }

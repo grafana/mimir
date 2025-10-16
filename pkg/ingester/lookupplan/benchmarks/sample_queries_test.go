@@ -3,6 +3,7 @@
 package benchmarks
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -13,7 +14,10 @@ func TestSampleQueries(t *testing.T) {
 	queries := make([]vectorSelectorQuery, 1000)
 	for i := range queries {
 		queries[i] = vectorSelectorQuery{
-			originalQuery: &Query{Query: string(rune(i))},
+			originalQuery: &Query{
+				QueryID: i,
+				Query:   fmt.Sprintf("metric_%d", i),
+			},
 		}
 	}
 
@@ -93,7 +97,10 @@ func TestSampleQueries_Deterministic(t *testing.T) {
 	queries := make([]vectorSelectorQuery, 1000)
 	for i := range queries {
 		queries[i] = vectorSelectorQuery{
-			originalQuery: &Query{Query: string(rune(i))},
+			originalQuery: &Query{
+				QueryID: i,
+				Query:   fmt.Sprintf("metric_%d", i),
+			},
 		}
 	}
 
@@ -138,7 +145,10 @@ func TestSampleQueries_SmallSet(t *testing.T) {
 	queries := make([]vectorSelectorQuery, 10)
 	for i := range queries {
 		queries[i] = vectorSelectorQuery{
-			originalQuery: &Query{Query: string(rune(i))},
+			originalQuery: &Query{
+				QueryID: i,
+				Query:   fmt.Sprintf("metric_%d", i),
+			},
 		}
 	}
 
@@ -151,7 +161,10 @@ func TestSampleQueries_EdgeCases(t *testing.T) {
 	queries := make([]vectorSelectorQuery, 100)
 	for i := range queries {
 		queries[i] = vectorSelectorQuery{
-			originalQuery: &Query{Query: string(rune(i))},
+			originalQuery: &Query{
+				QueryID: i,
+				Query:   fmt.Sprintf("metric_%d", i),
+			},
 		}
 	}
 

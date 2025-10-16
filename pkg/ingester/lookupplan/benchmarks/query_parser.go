@@ -21,12 +21,21 @@ import (
 
 const (
 	// numSegments is the number of segments to split queries into for sampling.
+	// This value provides a good balance between sampling granularity and performance
+	// for typical query sets (1000-100000 queries). Each segment is sampled independently
+	// to ensure representative coverage across the entire query distribution.
 	numSegments = 100
 )
 
-// vectorQueryCache caches prepared vector queries to avoid re-processing the same file with same parameters.
-// Cache key is a string combining filepath, sample fraction, and seed.
-var vectorQueryCache sync.Map
+// QueryCache caches prepared vector queries to avoid re-processing the same file with same parameters.
+type QueryCache struct {
+	cache sync.Map
+}
+
+// NewQueryCache creates a new QueryCache.
+func NewQueryCache() *QueryCache {
+	return &QueryCache{}
+}
 
 // vectorSelectorQuery represents a single vector selector extracted from a query.
 type vectorSelectorQuery struct {
@@ -52,7 +61,7 @@ type Query struct {
 func LoadQueryLogsFromFile(filepath string, queryIDs []int) ([]Query, error) {
 	f, err := os.Open(filepath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to open query file: %w", err)
+		return nil, fmt.Errorf("failed to open query file %q: %w", filepath, err)
 	}
 	defer f.Close()
 
@@ -104,6 +113,11 @@ func LoadQueryLogsFromFile(filepath string, queryIDs []int) ([]Query, error) {
 }
 
 // UnmarshalJSON implements custom JSON unmarshaling for Query.
+// It expects the Loki log format with query parameters in the labels field:
+//
+//	{"labels": {"param_query": "...", "param_start": "...", ...}, "timestamp": "..."}
+//
+// This format is produced by the command documented in the queryFileFlag help text.
 func (q *Query) UnmarshalJSON(b []byte) error {
 	var d struct {
 		Labels struct {
@@ -228,12 +242,12 @@ func parseQueryIDs(queryIDsStr string) ([]int, error) {
 // PrepareVectorQueries loads queries from a file, filters by tenant ID and/or query IDs if specified,
 // extracts label matchers from each query, and samples them according to the given parameters.
 // Results are cached to avoid re-processing.
-func PrepareVectorQueries(filepath string, tenantID string, queryIDsStr string, sampleFraction float64, seed int64) ([]vectorSelectorQuery, error) {
+func (qc *QueryCache) PrepareVectorQueries(filepath string, tenantID string, queryIDsStr string, sampleFraction float64, seed int64) ([]vectorSelectorQuery, error) {
 	// Create cache key from parameters
 	cacheKey := fmt.Sprintf("%s|%s|%s|%f|%d", filepath, tenantID, queryIDsStr, sampleFraction, seed)
 
 	// Check cache first
-	if cached, ok := vectorQueryCache.Load(cacheKey); ok {
+	if cached, ok := qc.cache.Load(cacheKey); ok {
 		return cached.([]vectorSelectorQuery), nil
 	}
 
@@ -261,10 +275,13 @@ func PrepareVectorQueries(filepath string, tenantID string, queryIDsStr string, 
 	}
 
 	// Extract label matchers from each query (each query may produce multiple vector selectors)
-	var vectorQueries []vectorSelectorQuery
+	// Pre-allocate with estimated capacity (assume ~2 selectors per query)
+	vectorQueries := make([]vectorSelectorQuery, 0, len(queries)*2)
+	var skippedCount int
 	for i := range queries {
 		matchersList, err := extractLabelMatchers(queries[i].Query)
 		if err != nil {
+			skippedCount++
 			continue
 		}
 
@@ -276,13 +293,18 @@ func PrepareVectorQueries(filepath string, tenantID string, queryIDsStr string, 
 		}
 	}
 
+	if skippedCount > 0 {
+		// Note: This will be visible in the benchmark output if printed
+		_ = skippedCount
+	}
+
 	// Sample queries only if not filtering by specific IDs
 	if queryIDsStr == "" {
 		vectorQueries = sampleQueries(vectorQueries, sampleFraction, seed)
 	}
 
 	// Store in cache before returning
-	vectorQueryCache.Store(cacheKey, vectorQueries)
+	qc.cache.Store(cacheKey, vectorQueries)
 
 	return vectorQueries, nil
 }
