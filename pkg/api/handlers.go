@@ -328,11 +328,10 @@ func NewQuerierHandler(
 //go:embed memberlist_status.gohtml
 var memberlistStatusPageHTML string
 
-func memberlistStatusHandler(httpPathPrefix string, kvs *memberlist.KVInitService) http.Handler {
+func memberlistStatusHandler(kvs *memberlist.KVInitService) http.Handler {
 	templ := template.New("memberlist_status")
 	templ.Funcs(map[string]interface{}{
-		"AddPathPrefix": func(link string) string { return path.Join(httpPathPrefix, link) },
-		"StringsJoin":   strings.Join,
+		"StringsJoin": strings.Join,
 	})
 	template.Must(templ.Parse(memberlistStatusPageHTML))
 	return memberlist.NewHTTPStatusHandler(kvs, templ)
