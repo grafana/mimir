@@ -142,6 +142,7 @@
 ### Documentation
 
 * [CHANGE] Remove references to queriers having a Prometheus HTTP API. Instead, the query-frontend is now required for a Prometheus HTTP API. #12949
+* [CHANGE] Helm: Remove GEM (Grafana Enterprise Metrics) references from Helm chart documentation. #13019 #13020 #13021
 * [ENHANCEMENT] Improve the MimirIngesterReachingSeriesLimit runbook. #12356
 * [ENHANCEMENT] Improve the description of how to limit the number of buckets in native histograms. #12797
 * [ENHANCEMENT] Document native histograms with custom buckets. #12823
