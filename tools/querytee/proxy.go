@@ -58,14 +58,19 @@ type ProxyConfig struct {
 }
 
 type BackendConfig struct {
-	RequestHeaders http.Header `json:"request_headers" yaml:"request_headers"`
+	RequestHeaders    http.Header `json:"request_headers" yaml:"request_headers"`
+	RequestProportion *float64    `json:"request_proportion,omitempty" yaml:"request_proportion,omitempty"`
+	MinTimeThreshold  string      `json:"min_time_threshold,omitempty" yaml:"min_time_threshold,omitempty"`
 }
 
 func exampleJSONBackendConfig() string {
+	proportion := 0.5
 	cfg := BackendConfig{
 		RequestHeaders: http.Header{
 			"Cache-Control": {"no-store"},
 		},
+		RequestProportion: &proportion,
+		MinTimeThreshold:  "24h",
 	}
 	jsonBytes, err := json.Marshal(cfg)
 	if err != nil {
@@ -100,7 +105,7 @@ func (cfg *ProxyConfig) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.SkipPreferredBackendFailures, "proxy.compare-skip-preferred-backend-failures", false, "If true, the proxy will 'skip' result comparisons where the preferred backend returned a 5xx status code. This is useful in the case where the secondary backend is more reliable.")
 	f.BoolVar(&cfg.PassThroughNonRegisteredRoutes, "proxy.passthrough-non-registered-routes", false, "Passthrough requests for non-registered routes to preferred backend.")
 	f.BoolVar(&cfg.AddMissingTimeParamToInstantQueries, "proxy.add-missing-time-parameter-to-instant-queries", true, "Add a 'time' parameter to proxied instant query requests if they do not have one.")
-	f.Float64Var(&cfg.SecondaryBackendsRequestProportion, "proxy.secondary-backends-request-proportion", 1.0, "Proportion of requests to send to secondary backends. Must be between 0 and 1 (inclusive), and if not 1, then -backend.preferred must be set.")
+	f.Float64Var(&cfg.SecondaryBackendsRequestProportion, "proxy.secondary-backends-request-proportion", DefaultRequestProportion, "Proportion of requests to send to secondary backends. Must be between 0 and 1 (inclusive), and if not 1, then -backend.preferred must be set. Optionally this global setting can be overrided on a per-backend basis via the backend config file.")
 }
 
 type Route struct {
@@ -248,7 +253,7 @@ func validateBackendConfig(backends []ProxyBackendInterface, config map[string]*
 	// Tests need to pass the same hostname for all backends, so we also
 	// support a numeric preferred backend which is the index in the list of backend.
 	numericBackendNameRegex := regexp.MustCompile("^[0-9]+$")
-	for configuredBackend := range config {
+	for configuredBackend, backendCfg := range config {
 		backendExists := false
 		for _, actualBacked := range backends {
 			if actualBacked.Name() == configuredBackend {
@@ -258,6 +263,21 @@ func validateBackendConfig(backends []ProxyBackendInterface, config map[string]*
 		}
 		if !backendExists && !numericBackendNameRegex.MatchString(configuredBackend) {
 			return fmt.Errorf("configured backend %s does not exist in the list of actual backends", configuredBackend)
+		}
+
+		// Validate request proportion if specified
+		if backendCfg.RequestProportion != nil {
+			proportion := *backendCfg.RequestProportion
+			if proportion < 0 || proportion > 1 {
+				return fmt.Errorf("backend %s: request_proportion must be between 0.0 and 1.0, got %f", configuredBackend, proportion)
+			}
+		}
+
+		// Validate time threshold if specified
+		if backendCfg.MinTimeThreshold != "" {
+			if _, err := time.ParseDuration(backendCfg.MinTimeThreshold); err != nil {
+				return fmt.Errorf("backend %s: invalid min_time_threshold format %q: %w", configuredBackend, backendCfg.MinTimeThreshold, err)
+			}
 		}
 	}
 	return nil
