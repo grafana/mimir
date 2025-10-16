@@ -85,8 +85,8 @@ func MaterializeStepInvariantExpression(s *StepInvariantExpression, materializer
 		// Notes on range vector handling:
 		//
 		// If the query was wrapped in a step-invariant expression and this branch is reached,
-		// the inner expression must be a subquery that returns a range vector at a fixed evaluation
-		// timestamp — for example: metric[3m] @ 100.
+		// the inner expression must be a subquery or range vector selector that returns a range vector at a fixed evaluation
+		// timestamp — for example: metric[3m:1m] @ 100 or metric[3m] @ 100.
 		//
 		// Since range queries cannot directly produce range-vector results for step evaluation,
 		// this must be an instant query; therefore, no special step-invariant operator is required.
