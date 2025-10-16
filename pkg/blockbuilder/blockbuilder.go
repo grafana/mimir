@@ -213,6 +213,7 @@ func (b *BlockBuilder) running(ctx context.Context) error {
 			continue
 		}
 
+		// Once we've gotten a job, we attempt to complete it even if the context is cancelled.
 		if err := b.consumeJob(graceCtx, key, spec); err != nil {
 			level.Error(b.logger).Log("msg", "failed to consume job", "job_id", key.Id, "epoch", key.Epoch, "err", err)
 
