@@ -1267,6 +1267,32 @@ func TestQuerySharding_ShouldSkipShardingViaOption(t *testing.T) {
 	})
 }
 
+func TestQuerySharding_ShouldSkipShardingIfUnshardableAndMaxShardedQueriesIsZero(t *testing.T) {
+	req := &PrometheusRangeQueryRequest{
+		path:      "/query_range",
+		start:     util.TimeToMillis(start),
+		end:       util.TimeToMillis(end),
+		step:      step.Milliseconds(),
+		queryExpr: parseQuery(t, "clamp_max(max(foo), scalar(bar))"),
+	}
+
+	runForEngines(t, func(t *testing.T, opts promql.EngineOpts, eng promql.QueryEngine) {
+		shardingware := newQueryShardingMiddleware(log.NewNopLogger(), eng, mockLimits{totalShards: 16, maxShardedQueries: 0}, 0, nil)
+		downstream := &mockHandler{}
+		downstream.On("Do", mock.Anything, mock.Anything).Return(&PrometheusResponse{Status: statusSuccess}, nil)
+
+		res, err := shardingware.Wrap(downstream).Do(user.InjectOrgID(context.Background(), "test"), req)
+		require.NoError(t, err)
+		shardedPrometheusRes, ok := res.GetPrometheusResponse()
+		require.True(t, ok)
+
+		assert.Equal(t, statusSuccess, shardedPrometheusRes.GetStatus())
+		// Ensure we get the same request downstream. No sharding
+		downstream.AssertCalled(t, "Do", mock.Anything, req)
+		downstream.AssertNumberOfCalls(t, "Do", 1)
+	})
+}
+
 func TestQuerySharding_ShouldOverrideShardingSizeViaOption(t *testing.T) {
 	req := &PrometheusRangeQueryRequest{
 		path:      "/query_range",

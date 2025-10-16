@@ -127,8 +127,11 @@ func (summer *shardSummer) MapExpr(ctx context.Context, expr parser.Expr) (mappe
 				}
 				return summer.shardAndSquashFuncCall(ctx, e)
 			}
-			return e, false, nil
+
+			willShard, err := summer.willShardAllSelectors(e)
+			return e, !willShard, err
 		}
+
 		return e, false, nil
 
 	case *parser.BinaryExpr:
