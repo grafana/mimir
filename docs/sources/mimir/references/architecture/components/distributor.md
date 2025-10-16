@@ -128,6 +128,6 @@ We refer to this configuration as high-availability (HA) pairs.
 
 The distributor includes an HA tracker.
 When the HA tracker is enabled, the distributor deduplicates incoming series from Prometheus HA pairs.
-This enables you to have multiple HA replicas of the same Prometheus servers that write the same series to Mimir and then deduplicates the series in the Mimir distributor.
+This enables you to have multiple Prometheus HA replicas of the same server writing identical series to Mimir, which the distributor then deduplicates.
 
 For more information about HA deduplication and how to configure it, refer to [Configure high-availability deduplication](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/configure-high-availability-deduplication/).
