@@ -109,7 +109,7 @@ For more information, refer to [Configure hash rings](https://grafana.com/docs/m
 
 ## Load balancing across distributors
 
-We recommend uniformly distributing write requests across all distributor instances by placing a load balancer in front of them.
+As a best practice, uniformly distribute write requests across all distributor instances by placing a load balancer in front of them.
 The preferred approach is a Layer 7 load balancer, which balances individual HTTP requests across distributors.
 
 {{< admonition type="note" >}}
