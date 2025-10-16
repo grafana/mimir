@@ -614,9 +614,9 @@ func TestErrorCauseToHTTPStatusCode(t *testing.T) {
 			errorCause:         mimirpb.ERROR_CAUSE_UNKNOWN,
 			expectedHTTPStatus: http.StatusInternalServerError,
 		},
-		"an INSTANCE_LIMIT error cause gets translated into a HTTP 500": {
+		"an INSTANCE_LIMIT error cause gets translated into a HTTP 503": {
 			errorCause:         mimirpb.ERROR_CAUSE_INSTANCE_LIMIT,
-			expectedHTTPStatus: http.StatusInternalServerError,
+			expectedHTTPStatus: http.StatusServiceUnavailable,
 		},
 		"a SERVICE_UNAVAILABLE error cause gets translated into a HTTP 500": {
 			errorCause:         mimirpb.ERROR_CAUSE_SERVICE_UNAVAILABLE,
