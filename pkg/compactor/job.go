@@ -13,6 +13,7 @@ import (
 	"github.com/oklog/ulid/v2"
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/thanos-io/objstore"
 
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
@@ -172,6 +173,10 @@ func jobWaitPeriodElapsed(ctx context.Context, job *Job, waitPeriod time.Duratio
 	for _, meta := range job.Metas() {
 		if meta.OutOfOrder || meta.Compaction.FromOutOfOrder() {
 			continue
+		}
+
+		if timestamp.Time(meta.MaxTime).After(threshold) {
+			return false, meta, nil
 		}
 
 		attrs, err := block.GetMetaAttributes(ctx, meta, userBucket)
