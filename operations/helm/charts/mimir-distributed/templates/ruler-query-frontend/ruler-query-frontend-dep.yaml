@@ -57,6 +57,7 @@ spec:
             - "-config.file=/etc/mimir/mimir.yaml"
             - "-query-frontend.cache-results=false"
             - "-query-frontend.scheduler-address={{ template "mimir.fullname" . }}-ruler-query-scheduler-headless.{{ .Release.Namespace }}.svc:{{ include "mimir.serverGrpcListenPort" .  }}"
+            - "-querier.ring.prefix=ruler-querier/"
             # Reduce the likelihood of queries hitting terminated query-frontends.
             - "-server.grpc.keepalive.max-connection-age=30s"
             - "-shutdown-delay=90s"

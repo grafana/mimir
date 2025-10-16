@@ -113,7 +113,7 @@ func (c *ownedSeriesWithIngesterRingTestContext) registerTestedIngesterIntoRing(
 		tokens = append(tokens, userToken(c.user, c.ingesterZone, skip)+1)
 		slices.Sort(tokens)
 
-		desc.AddIngester(instanceID, instanceAddr, instanceZone, tokens, ring.ACTIVE, time.Now(), false, time.Time{})
+		desc.AddIngester(instanceID, instanceAddr, instanceZone, tokens, ring.ACTIVE, time.Now(), false, time.Time{}, nil)
 	})
 }
 
@@ -133,7 +133,7 @@ func (c *ownedSeriesWithIngesterRingTestContext) registerSecondIngesterOwningHal
 		slices.Sort(tokens)
 
 		// Must be in the same zone, because we use RF=1, and require RF=num of zones.
-		desc.AddIngester("second-ingester", "localhost", c.ingesterZone, tokens, ring.ACTIVE, time.Now(), false, time.Time{})
+		desc.AddIngester("second-ingester", "localhost", c.ingesterZone, tokens, ring.ACTIVE, time.Now(), false, time.Time{}, nil)
 	})
 }
 
@@ -444,7 +444,7 @@ func TestOwnedSeriesServiceWithIngesterRing(t *testing.T) {
 
 				// add a PENDING ingester with no tokens
 				updateRingAndWaitForWatcherToReadUpdate(t, c.kvStore, func(desc *ring.Desc) {
-					desc.AddIngester("second-ingester", "localhost", c.ingesterZone, []uint32{}, ring.PENDING, time.Now(), false, time.Time{})
+					desc.AddIngester("second-ingester", "localhost", c.ingesterZone, []uint32{}, ring.PENDING, time.Now(), false, time.Time{}, nil)
 				})
 
 				// verify no change in state before owned series run
@@ -1577,7 +1577,7 @@ func TestOwnedSeriesStartsQuicklyWithEmptyIngesterRing(t *testing.T) {
 
 	// Add an instance to the ring. This is enough to start doing checks.
 	updateRingAndWaitForWatcherToReadUpdate(t, kvStore, func(desc *ring.Desc) {
-		desc.AddIngester("an-instance", "localhost:11111", "zone", []uint32{1, 2, 3}, ring.ACTIVE, time.Now(), false, time.Time{})
+		desc.AddIngester("an-instance", "localhost:11111", "zone", []uint32{1, 2, 3}, ring.ACTIVE, time.Now(), false, time.Time{}, nil)
 	})
 
 	// We should see owned series doing its checks now.
@@ -1648,7 +1648,7 @@ func TestOwnedSeriesIngesterRingStrategyRingChanged(t *testing.T) {
 	ringStrategy := newOwnedSeriesIngesterRingStrategy(instanceID1, rng, nil)
 
 	updateRingAndWaitForWatcherToReadUpdate(t, wkv, func(desc *ring.Desc) {
-		desc.AddIngester(instanceID1, "localhost:11111", "zone", []uint32{1, 2, 3}, ring.ACTIVE, time.Now(), false, time.Time{})
+		desc.AddIngester(instanceID1, "localhost:11111", "zone", []uint32{1, 2, 3}, ring.ACTIVE, time.Now(), false, time.Time{}, nil)
 	})
 
 	// First call should indicate ring change.
@@ -1666,7 +1666,7 @@ func TestOwnedSeriesIngesterRingStrategyRingChanged(t *testing.T) {
 
 	t.Run("new instance added", func(t *testing.T) {
 		updateRingAndWaitForWatcherToReadUpdate(t, wkv, func(desc *ring.Desc) {
-			desc.AddIngester(instanceID2, "localhost:22222", "zone", []uint32{4, 5, 6}, ring.ACTIVE, time.Now(), false, time.Time{})
+			desc.AddIngester(instanceID2, "localhost:22222", "zone", []uint32{4, 5, 6}, ring.ACTIVE, time.Now(), false, time.Time{}, nil)
 		})
 
 		changed, err := ringStrategy.checkRingForChanges()

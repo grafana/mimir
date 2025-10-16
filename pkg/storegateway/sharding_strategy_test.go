@@ -70,7 +70,7 @@ func TestShuffleShardingStrategy(t *testing.T) {
 			dynamicReplication: false,
 			limits:             &shardingLimitsMock{storeGatewayTenantShardSize: 1},
 			setupRing: func(r *ring.Desc) {
-				r.AddIngester("instance-1", "127.0.0.1", "", []uint32{0}, ring.ACTIVE, registeredAt, false, time.Time{})
+				r.AddIngester("instance-1", "127.0.0.1", "", []uint32{0}, ring.ACTIVE, registeredAt, false, time.Time{}, nil)
 			},
 			expectedUsers: []usersExpectation{
 				{instanceID: "instance-1", instanceAddr: "127.0.0.1", users: []string{userID}},
@@ -86,7 +86,7 @@ func TestShuffleShardingStrategy(t *testing.T) {
 			dynamicReplication: false,
 			limits:             &shardingLimitsMock{storeGatewayTenantShardSize: 1},
 			setupRing: func(r *ring.Desc) {
-				r.AddIngester("instance-1", "127.0.0.1", "", []uint32{0}, ring.ACTIVE, registeredAt, false, time.Time{})
+				r.AddIngester("instance-1", "127.0.0.1", "", []uint32{0}, ring.ACTIVE, registeredAt, false, time.Time{}, nil)
 			},
 			expectedUsers: []usersExpectation{
 				{instanceID: "instance-1", instanceAddr: "127.0.0.1", users: []string{userID}},
@@ -102,7 +102,7 @@ func TestShuffleShardingStrategy(t *testing.T) {
 			dynamicReplication: false,
 			limits:             &shardingLimitsMock{storeGatewayTenantShardSize: 2},
 			setupRing: func(r *ring.Desc) {
-				r.AddIngester("instance-1", "127.0.0.1", "", []uint32{0}, ring.ACTIVE, registeredAt, false, time.Time{})
+				r.AddIngester("instance-1", "127.0.0.1", "", []uint32{0}, ring.ACTIVE, registeredAt, false, time.Time{}, nil)
 			},
 			expectedUsers: []usersExpectation{
 				{instanceID: "instance-1", instanceAddr: "127.0.0.1", users: []string{userID}},
@@ -118,8 +118,8 @@ func TestShuffleShardingStrategy(t *testing.T) {
 			dynamicReplication: false,
 			limits:             &shardingLimitsMock{storeGatewayTenantShardSize: 1},
 			setupRing: func(r *ring.Desc) {
-				r.AddIngester("instance-1", "127.0.0.1", "", []uint32{block1Hash + 1, block3Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
-				r.AddIngester("instance-2", "127.0.0.2", "", []uint32{block2Hash + 1, block4Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
+				r.AddIngester("instance-1", "127.0.0.1", "", []uint32{block1Hash + 1, block3Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{}, nil)
+				r.AddIngester("instance-2", "127.0.0.2", "", []uint32{block2Hash + 1, block4Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{}, nil)
 			},
 			expectedUsers: []usersExpectation{
 				{instanceID: "instance-1", instanceAddr: "127.0.0.1", users: []string{userID}},
@@ -135,8 +135,8 @@ func TestShuffleShardingStrategy(t *testing.T) {
 			dynamicReplication: false,
 			limits:             &shardingLimitsMock{storeGatewayTenantShardSize: 2},
 			setupRing: func(r *ring.Desc) {
-				r.AddIngester("instance-1", "127.0.0.1", "", []uint32{block1Hash + 1, block3Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
-				r.AddIngester("instance-2", "127.0.0.2", "", []uint32{block2Hash + 1, block4Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
+				r.AddIngester("instance-1", "127.0.0.1", "", []uint32{block1Hash + 1, block3Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{}, nil)
+				r.AddIngester("instance-2", "127.0.0.2", "", []uint32{block2Hash + 1, block4Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{}, nil)
 			},
 			expectedUsers: []usersExpectation{
 				{instanceID: "instance-1", instanceAddr: "127.0.0.1", users: []string{userID}},
@@ -152,8 +152,8 @@ func TestShuffleShardingStrategy(t *testing.T) {
 			dynamicReplication: false,
 			limits:             &shardingLimitsMock{storeGatewayTenantShardSize: 1},
 			setupRing: func(r *ring.Desc) {
-				r.AddIngester("instance-1", "127.0.0.1", "", []uint32{block1Hash + 1, block3Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
-				r.AddIngester("instance-2", "127.0.0.2", "", []uint32{block2Hash + 1, block4Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
+				r.AddIngester("instance-1", "127.0.0.1", "", []uint32{block1Hash + 1, block3Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{}, nil)
+				r.AddIngester("instance-2", "127.0.0.2", "", []uint32{block2Hash + 1, block4Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{}, nil)
 			},
 			expectedUsers: []usersExpectation{
 				{instanceID: "instance-1", instanceAddr: "127.0.0.1", users: []string{userID}},
@@ -169,8 +169,8 @@ func TestShuffleShardingStrategy(t *testing.T) {
 			dynamicReplication: false,
 			limits:             &shardingLimitsMock{storeGatewayTenantShardSize: 2},
 			setupRing: func(r *ring.Desc) {
-				r.AddIngester("instance-1", "127.0.0.1", "", []uint32{block1Hash + 1, block3Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
-				r.AddIngester("instance-2", "127.0.0.2", "", []uint32{block2Hash + 1, block4Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
+				r.AddIngester("instance-1", "127.0.0.1", "", []uint32{block1Hash + 1, block3Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{}, nil)
+				r.AddIngester("instance-2", "127.0.0.2", "", []uint32{block2Hash + 1, block4Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{}, nil)
 			},
 			expectedUsers: []usersExpectation{
 				{instanceID: "instance-1", instanceAddr: "127.0.0.1", users: []string{userID}},
@@ -186,9 +186,9 @@ func TestShuffleShardingStrategy(t *testing.T) {
 			dynamicReplication: false,
 			limits:             &shardingLimitsMock{storeGatewayTenantShardSize: 3},
 			setupRing: func(r *ring.Desc) {
-				r.AddIngester("instance-1", "127.0.0.1", "", []uint32{block1Hash + 1, block3Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
-				r.AddIngester("instance-2", "127.0.0.2", "", []uint32{block2Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
-				r.AddIngester("instance-3", "127.0.0.3", "", []uint32{block4Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
+				r.AddIngester("instance-1", "127.0.0.1", "", []uint32{block1Hash + 1, block3Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{}, nil)
+				r.AddIngester("instance-2", "127.0.0.2", "", []uint32{block2Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{}, nil)
+				r.AddIngester("instance-3", "127.0.0.3", "", []uint32{block4Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{}, nil)
 			},
 			expectedUsers: []usersExpectation{
 				{instanceID: "instance-1", instanceAddr: "127.0.0.1", users: []string{userID}},
@@ -206,9 +206,9 @@ func TestShuffleShardingStrategy(t *testing.T) {
 			dynamicReplication: true,
 			limits:             &shardingLimitsMock{storeGatewayTenantShardSize: 3},
 			setupRing: func(r *ring.Desc) {
-				r.AddIngester("instance-1", "127.0.0.1", "", []uint32{block1Hash + 1, block3Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
-				r.AddIngester("instance-2", "127.0.0.2", "", []uint32{block2Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
-				r.AddIngester("instance-3", "127.0.0.3", "", []uint32{block4Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
+				r.AddIngester("instance-1", "127.0.0.1", "", []uint32{block1Hash + 1, block3Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{}, nil)
+				r.AddIngester("instance-2", "127.0.0.2", "", []uint32{block2Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{}, nil)
+				r.AddIngester("instance-3", "127.0.0.3", "", []uint32{block4Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{}, nil)
 			},
 			expectedUsers: []usersExpectation{
 				{instanceID: "instance-1", instanceAddr: "127.0.0.1", users: []string{userID}},
@@ -226,8 +226,8 @@ func TestShuffleShardingStrategy(t *testing.T) {
 			dynamicReplication: false,
 			limits:             &shardingLimitsMock{storeGatewayTenantShardSize: 3},
 			setupRing: func(r *ring.Desc) {
-				r.AddIngester("instance-1", "127.0.0.1", "", []uint32{block1Hash + 1, block3Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
-				r.AddIngester("instance-2", "127.0.0.2", "", []uint32{block2Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
+				r.AddIngester("instance-1", "127.0.0.1", "", []uint32{block1Hash + 1, block3Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{}, nil)
+				r.AddIngester("instance-2", "127.0.0.2", "", []uint32{block2Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{}, nil)
 
 				r.Ingesters["instance-3"] = ring.InstanceDesc{
 					Addr:      "127.0.0.3",
@@ -253,8 +253,8 @@ func TestShuffleShardingStrategy(t *testing.T) {
 			dynamicReplication: false,
 			limits:             &shardingLimitsMock{storeGatewayTenantShardSize: 3},
 			setupRing: func(r *ring.Desc) {
-				r.AddIngester("instance-1", "127.0.0.1", "", []uint32{block1Hash + 1, block3Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
-				r.AddIngester("instance-2", "127.0.0.2", "", []uint32{block2Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
+				r.AddIngester("instance-1", "127.0.0.1", "", []uint32{block1Hash + 1, block3Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{}, nil)
+				r.AddIngester("instance-2", "127.0.0.2", "", []uint32{block2Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{}, nil)
 
 				r.Ingesters["instance-3"] = ring.InstanceDesc{
 					Addr:      "127.0.0.3",
@@ -279,8 +279,8 @@ func TestShuffleShardingStrategy(t *testing.T) {
 			dynamicReplication: false,
 			limits:             &shardingLimitsMock{storeGatewayTenantShardSize: 2},
 			setupRing: func(r *ring.Desc) {
-				r.AddIngester("instance-1", "127.0.0.1", "", []uint32{block1Hash + 1, block4Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
-				r.AddIngester("instance-2", "127.0.0.2", "", []uint32{block2Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
+				r.AddIngester("instance-1", "127.0.0.1", "", []uint32{block1Hash + 1, block4Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{}, nil)
+				r.AddIngester("instance-2", "127.0.0.2", "", []uint32{block2Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{}, nil)
 
 				r.Ingesters["instance-3"] = ring.InstanceDesc{
 					Addr:      "127.0.0.3",
@@ -305,8 +305,8 @@ func TestShuffleShardingStrategy(t *testing.T) {
 			dynamicReplication: false,
 			limits:             &shardingLimitsMock{storeGatewayTenantShardSize: 2},
 			setupRing: func(r *ring.Desc) {
-				r.AddIngester("instance-1", "127.0.0.1", "", []uint32{block1Hash + 1, block4Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
-				r.AddIngester("instance-2", "127.0.0.2", "", []uint32{block2Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
+				r.AddIngester("instance-1", "127.0.0.1", "", []uint32{block1Hash + 1, block4Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{}, nil)
+				r.AddIngester("instance-2", "127.0.0.2", "", []uint32{block2Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{}, nil)
 
 				r.Ingesters["instance-3"] = ring.InstanceDesc{
 					Addr:      "127.0.0.3",
@@ -334,9 +334,9 @@ func TestShuffleShardingStrategy(t *testing.T) {
 			dynamicReplication: false,
 			limits:             &shardingLimitsMock{storeGatewayTenantShardSize: 2},
 			setupRing: func(r *ring.Desc) {
-				r.AddIngester("instance-1", "127.0.0.1", "", []uint32{block1Hash + 1, block3Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
-				r.AddIngester("instance-2", "127.0.0.2", "", []uint32{block2Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
-				r.AddIngester("instance-3", "127.0.0.3", "", []uint32{block4Hash + 1}, ring.LEAVING, registeredAt, false, time.Time{})
+				r.AddIngester("instance-1", "127.0.0.1", "", []uint32{block1Hash + 1, block3Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{}, nil)
+				r.AddIngester("instance-2", "127.0.0.2", "", []uint32{block2Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{}, nil)
+				r.AddIngester("instance-3", "127.0.0.3", "", []uint32{block4Hash + 1}, ring.LEAVING, registeredAt, false, time.Time{}, nil)
 			},
 			expectedUsers: []usersExpectation{
 				{instanceID: "instance-1", instanceAddr: "127.0.0.1", users: []string{userID}},
@@ -354,9 +354,9 @@ func TestShuffleShardingStrategy(t *testing.T) {
 			dynamicReplication: false,
 			limits:             &shardingLimitsMock{storeGatewayTenantShardSize: 2},
 			setupRing: func(r *ring.Desc) {
-				r.AddIngester("instance-1", "127.0.0.1", "", []uint32{block1Hash + 1, block3Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
-				r.AddIngester("instance-2", "127.0.0.2", "", []uint32{block2Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
-				r.AddIngester("instance-3", "127.0.0.3", "", []uint32{block4Hash + 1}, ring.JOINING, registeredAt, false, time.Time{})
+				r.AddIngester("instance-1", "127.0.0.1", "", []uint32{block1Hash + 1, block3Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{}, nil)
+				r.AddIngester("instance-2", "127.0.0.2", "", []uint32{block2Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{}, nil)
+				r.AddIngester("instance-3", "127.0.0.3", "", []uint32{block4Hash + 1}, ring.JOINING, registeredAt, false, time.Time{}, nil)
 			},
 			expectedUsers: []usersExpectation{
 				{instanceID: "instance-1", instanceAddr: "127.0.0.1", users: []string{userID}},
@@ -374,8 +374,8 @@ func TestShuffleShardingStrategy(t *testing.T) {
 			dynamicReplication: false,
 			limits:             &shardingLimitsMock{storeGatewayTenantShardSize: 0},
 			setupRing: func(r *ring.Desc) {
-				r.AddIngester("instance-1", "127.0.0.1", "", []uint32{block1Hash + 1, block3Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
-				r.AddIngester("instance-2", "127.0.0.2", "", []uint32{block2Hash + 1, block4Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
+				r.AddIngester("instance-1", "127.0.0.1", "", []uint32{block1Hash + 1, block3Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{}, nil)
+				r.AddIngester("instance-2", "127.0.0.2", "", []uint32{block2Hash + 1, block4Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{}, nil)
 			},
 			expectedUsers: []usersExpectation{
 				{instanceID: "instance-1", instanceAddr: "127.0.0.1", users: []string{userID}},

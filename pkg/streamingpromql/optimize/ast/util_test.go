@@ -34,7 +34,7 @@ func runASTOptimizationPass(t *testing.T, ctx context.Context, input string, cre
 	opts.CommonOpts.Reg = reg
 	optimizer := createOptimizerFunc(opts.CommonOpts.Reg)
 	dummyTimeRange := types.NewInstantQueryTimeRange(timestamp.Time(1000))
-	planner, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts)
+	planner, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(t, err)
 	planner.RegisterASTOptimizationPass(optimizer)
 	observer := streamingpromql.NoopPlanningObserver{}

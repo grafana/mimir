@@ -57,7 +57,7 @@ func run() error {
 	}
 
 	opts := streamingpromql.NewTestEngineOpts()
-	planner, err := streamingpromql.NewQueryPlanner(opts)
+	planner, err := streamingpromql.NewQueryPlanner(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 	if err != nil {
 		return fmt.Errorf("could not create planner: %w", err)
 	}

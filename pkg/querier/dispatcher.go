@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -119,6 +120,8 @@ func (d *Dispatcher) evaluateQuery(ctx context.Context, body []byte, resp *query
 		resp.WriteError(ctx, apierror.TypeInternal, fmt.Errorf("could not read request body: %w", err))
 		return
 	}
+
+	d.querierMetrics.PlansReceived.WithLabelValues(strconv.FormatUint(req.Plan.Version, 10)).Inc()
 
 	if len(req.Nodes) != 1 {
 		resp.WriteError(ctx, apierror.TypeBadData, fmt.Errorf("this querier only supports evaluating exactly one node, got %d", len(req.Nodes)))

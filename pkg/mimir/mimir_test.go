@@ -166,10 +166,18 @@ func TestMimir(t *testing.T) {
 			InstanceInterfaceNames: []string{"en0", "eth0", "lo0", "lo"},
 		}},
 		Querier: querier.Config{
-			QueryEngine: "prometheus",
+			QueryEngine: "mimir",
+			Ring: querier.RingConfig{
+				Common: util.CommonRingConfig{
+					KVStore: kv.Config{
+						Store: "memberlist",
+					},
+					InstanceAddr: "test:8080",
+				},
+			},
 		},
 		Frontend: frontend.CombinedFrontendConfig{
-			QueryEngine: "prometheus",
+			QueryEngine: "mimir",
 			FrontendV2: v2.Config{
 				SchedulerAddress: "localhost",
 			},

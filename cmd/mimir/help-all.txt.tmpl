@@ -2135,6 +2135,74 @@ Usage of ./cmd/mimir/mimir:
     	The time after which a metric should be queried from storage and not just ingesters. 0 means all queries are sent to store. If this option is enabled, the time range of the query sent to the store-gateway will be manipulated to ensure the query end is not more recent than 'now - query-store-after'. (default 12h0m0s)
   -querier.response-streaming-enabled
     	[experimental] Enables streaming of responses from querier to query-frontend for response types that support it (currently only `active_series` responses do).
+  -querier.ring.auto-forget-unhealthy-periods int
+    	Number of consecutive timeout periods an unhealthy instance in the ring is automatically removed after. Set to 0 to disable auto-forget. (default 10)
+  -querier.ring.consul.acl-token string
+    	ACL Token used to interact with Consul.
+  -querier.ring.consul.cas-retry-delay duration
+    	Maximum duration to wait before retrying a Compare And Swap (CAS) operation. (default 1s)
+  -querier.ring.consul.client-timeout duration
+    	HTTP timeout when talking to Consul (default 20s)
+  -querier.ring.consul.consistent-reads
+    	Enable consistent reads to Consul.
+  -querier.ring.consul.hostname string
+    	Hostname and port of Consul. (default "localhost:8500")
+  -querier.ring.consul.watch-burst-size int
+    	Burst size used in rate limit. Values less than 1 are treated as 1. (default 1)
+  -querier.ring.consul.watch-rate-limit float
+    	Rate limit when watching key or prefix in Consul, in requests per second. 0 disables the rate limit. (default 1)
+  -querier.ring.etcd.dial-timeout duration
+    	The dial timeout for the etcd connection. (default 10s)
+  -querier.ring.etcd.endpoints string
+    	The etcd endpoints to connect to.
+  -querier.ring.etcd.max-retries int
+    	The maximum number of retries to do for failed ops. (default 10)
+  -querier.ring.etcd.password string
+    	Etcd password.
+  -querier.ring.etcd.tls-ca-path string
+    	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
+  -querier.ring.etcd.tls-cert-path string
+    	Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.
+  -querier.ring.etcd.tls-cipher-suites string
+    	Override the default cipher suite list (separated by commas).
+  -querier.ring.etcd.tls-enabled
+    	Enable TLS.
+  -querier.ring.etcd.tls-insecure-skip-verify
+    	Skip validating server certificate.
+  -querier.ring.etcd.tls-key-path string
+    	Path to the key for the client certificate. Also requires the client certificate to be configured.
+  -querier.ring.etcd.tls-min-version string
+    	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
+  -querier.ring.etcd.tls-server-name string
+    	Override the expected name on the server certificate.
+  -querier.ring.etcd.username string
+    	Etcd username.
+  -querier.ring.heartbeat-period duration
+    	Period at which to heartbeat to the ring. 0 = disabled. (default 15s)
+  -querier.ring.heartbeat-timeout duration
+    	The heartbeat timeout after which queriers are considered unhealthy within the ring. 0 = never (timeout disabled). (default 1m0s)
+  -querier.ring.instance-addr string
+    	IP address to advertise in the ring. Default is auto-detected.
+  -querier.ring.instance-enable-ipv6
+    	Enable using a IPv6 instance address. (default false)
+  -querier.ring.instance-id string
+    	Instance ID to register in the ring. (default "<hostname>")
+  -querier.ring.instance-interface-names string
+    	List of network interface names to look up when finding the instance IP address. (default [<private network interfaces>])
+  -querier.ring.instance-port int
+    	Port to advertise in the ring (defaults to -server.grpc-listen-port).
+  -querier.ring.multi.mirror-enabled
+    	Mirror writes to secondary store.
+  -querier.ring.multi.mirror-timeout duration
+    	Timeout for storing value to secondary store. (default 2s)
+  -querier.ring.multi.primary string
+    	Primary backend storage used by multi-client.
+  -querier.ring.multi.secondary string
+    	Secondary backend storage used by multi-client.
+  -querier.ring.prefix string
+    	The prefix for the keys in the store. Should end with a /. (default "collectors/")
+  -querier.ring.store string
+    	Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi. (default "memberlist")
   -querier.scheduler-address string
     	Address of the query-scheduler component, in host:port format. The host should resolve to all query-scheduler instances. This option should be set only when query-scheduler component is in use and -query-scheduler.service-discovery-mode is set to 'dns'.
   -querier.scheduler-client.backoff-max-period duration

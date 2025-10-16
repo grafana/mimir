@@ -1130,7 +1130,7 @@ func (v *findVectorSelectorsVisitor) Visit(node parser.Node, _ []parser.Node) (p
 func TestEngineQueryRequestRoundTripperHandler(t *testing.T) {
 	opts := streamingpromql.NewTestEngineOpts()
 	opts.CommonOpts.EnablePerStepStats = true
-	planner, err := streamingpromql.NewQueryPlanner(opts)
+	planner, err := streamingpromql.NewQueryPlanner(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(t, err)
 	logger := log.NewNopLogger()
 	engine, err := streamingpromql.NewEngine(opts, streamingpromql.NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), planner)

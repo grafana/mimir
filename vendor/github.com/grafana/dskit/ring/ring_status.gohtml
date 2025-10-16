@@ -25,6 +25,9 @@
             <th>Tokens</th>
             <th>Ownership</th>
             {{ end }}
+            {{ if not .DisableVersions }}
+            <th>Versions</th>
+            {{ end }}
             <th>Actions</th>
         </tr>
         </thead>
@@ -51,6 +54,17 @@
             {{ if not $.DisableTokens }}
             <td>{{ .NumTokens }}</td>
             <td>{{ .Ownership | humanFloat }}%</td>
+            {{ end }}
+            {{ if not $.DisableVersions }}
+            <td>
+              {{ range $k, $v := .Versions }}
+                  {{ with $componentName := index $.ComponentNames $k }}
+                    {{ $k }} ({{ $componentName }}): v{{ $v }}<br/>
+                  {{ else }}
+                    {{ $k }}: v{{ $v }}<br/>
+                  {{ end }}
+              {{ end }}
+            </td>
             {{ end }}
             <td>
                 <button name="forget" value="{{ .ID }}" type="submit">Forget</button>

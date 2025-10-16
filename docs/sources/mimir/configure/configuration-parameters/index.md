@@ -1744,6 +1744,79 @@ mimir_query_engine:
   # unique output series.
   # CLI flag: -querier.mimir-query-engine.enable-eliminate-deduplicate-and-merge
   [enable_eliminate_deduplicate_and_merge: <boolean> | default = false]
+
+ring:
+  # The key-value store used to share the hash ring across multiple instances.
+  kvstore:
+    # Backend storage to use for the ring. Supported values are: consul, etcd,
+    # inmemory, memberlist, multi.
+    # CLI flag: -querier.ring.store
+    [store: <string> | default = "memberlist"]
+
+    # (advanced) The prefix for the keys in the store. Should end with a /.
+    # CLI flag: -querier.ring.prefix
+    [prefix: <string> | default = "collectors/"]
+
+    # The consul block configures the consul client.
+    # The CLI flags prefix for this block configuration is: querier.ring
+    [consul: <consul>]
+
+    # The etcd block configures the etcd client.
+    # The CLI flags prefix for this block configuration is: querier.ring
+    [etcd: <etcd>]
+
+    multi:
+      # (advanced) Primary backend storage used by multi-client.
+      # CLI flag: -querier.ring.multi.primary
+      [primary: <string> | default = ""]
+
+      # (advanced) Secondary backend storage used by multi-client.
+      # CLI flag: -querier.ring.multi.secondary
+      [secondary: <string> | default = ""]
+
+      # (advanced) Mirror writes to secondary store.
+      # CLI flag: -querier.ring.multi.mirror-enabled
+      [mirror_enabled: <boolean> | default = false]
+
+      # (advanced) Timeout for storing value to secondary store.
+      # CLI flag: -querier.ring.multi.mirror-timeout
+      [mirror_timeout: <duration> | default = 2s]
+
+  # (advanced) Period at which to heartbeat to the ring. 0 = disabled.
+  # CLI flag: -querier.ring.heartbeat-period
+  [heartbeat_period: <duration> | default = 15s]
+
+  # (advanced) The heartbeat timeout after which queriers are considered
+  # unhealthy within the ring. 0 = never (timeout disabled).
+  # CLI flag: -querier.ring.heartbeat-timeout
+  [heartbeat_timeout: <duration> | default = 1m]
+
+  # (advanced) Instance ID to register in the ring.
+  # CLI flag: -querier.ring.instance-id
+  [instance_id: <string> | default = "<hostname>"]
+
+  # List of network interface names to look up when finding the instance IP
+  # address.
+  # CLI flag: -querier.ring.instance-interface-names
+  [instance_interface_names: <list of strings> | default = [<private network interfaces>]]
+
+  # (advanced) Port to advertise in the ring (defaults to
+  # -server.grpc-listen-port).
+  # CLI flag: -querier.ring.instance-port
+  [instance_port: <int> | default = 0]
+
+  # (advanced) IP address to advertise in the ring. Default is auto-detected.
+  # CLI flag: -querier.ring.instance-addr
+  [instance_addr: <string> | default = ""]
+
+  # (advanced) Enable using a IPv6 instance address. (default false)
+  # CLI flag: -querier.ring.instance-enable-ipv6
+  [instance_enable_ipv6: <boolean> | default = false]
+
+  # (advanced) Number of consecutive timeout periods an unhealthy instance in
+  # the ring is automatically removed after. Set to 0 to disable auto-forget.
+  # CLI flag: -querier.ring.auto-forget-unhealthy-periods
+  [auto_forget_unhealthy_periods: <int> | default = 10]
 ```
 
 ### frontend
@@ -3039,6 +3112,7 @@ The `etcd` block configures the etcd client. The supported CLI flags `<prefix>` 
 - `ingester.partition-ring`
 - `ingester.ring`
 - `overrides-exporter.ring`
+- `querier.ring`
 - `query-scheduler.ring`
 - `ruler.ring`
 - `store-gateway.sharding-ring`
@@ -3144,6 +3218,7 @@ The `consul` block configures the consul client. The supported CLI flags `<prefi
 - `ingester.partition-ring`
 - `ingester.ring`
 - `overrides-exporter.ring`
+- `querier.ring`
 - `query-scheduler.ring`
 - `ruler.ring`
 - `store-gateway.sharding-ring`

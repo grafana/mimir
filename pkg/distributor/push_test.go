@@ -1263,7 +1263,7 @@ func setupTestDistributor(t *testing.T) (*Distributor, func()) {
 	err := kvStore.CAS(ctx, ingester.IngesterRingKey,
 		func(_ interface{}) (interface{}, bool, error) {
 			d := &ring.Desc{}
-			d.AddIngester("ingester-1", "127.0.0.1", "", ring.NewRandomTokenGenerator().GenerateTokens(128, nil), ring.ACTIVE, time.Now(), false, time.Time{})
+			d.AddIngester("ingester-1", "127.0.0.1", "", ring.NewRandomTokenGenerator().GenerateTokens(128, nil), ring.ACTIVE, time.Now(), false, time.Time{}, nil)
 			return d, true, nil
 		},
 	)

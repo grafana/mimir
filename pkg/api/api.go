@@ -443,6 +443,13 @@ type Distributor interface {
 	UserStatsHandler(w http.ResponseWriter, r *http.Request)
 }
 
+func (a *API) RegisterQuerierRing(handler http.Handler) {
+	a.indexPage.AddLinks(defaultWeight, "Querier", []IndexPageLink{
+		{Desc: "Ring status", Path: "/querier/ring"},
+	})
+	a.RegisterRoute("/querier/ring", handler, false, true, "GET", "POST")
+}
+
 // RegisterQueryable registers the default routes associated with the querier
 // module.
 func (a *API) RegisterQueryable(distributor Distributor) {
