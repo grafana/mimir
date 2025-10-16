@@ -81,16 +81,21 @@ func BenchmarkQueryExecution(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 
-	// Benchmark query execution - run all vector selectors in each iteration
-	for i := 0; i < b.N; i++ {
-		for queryIdx, vq := range vectorQueries {
-			queryResult, err := executeQueryDirect(ing, vq)
-			if err != nil {
-				b.Logf("Query %d failed: %v (query: %s)", queryIdx, err, vq.originalQuery.Query)
-				b.Fail()
+	// Benchmark query execution - run each query as a sub-benchmark
+	for _, vq := range vectorQueries {
+		queryID := fmt.Sprintf("query-%d", vq.originalQuery.QueryID)
+		b.Run(queryID, func(b *testing.B) {
+			for i := 0; i < b.N; i++ {
+				queryResult, err := executeQueryDirect(ing, vq)
+				if err != nil {
+					b.Fatalf("Query failed: %v (query: %s)", err, vq.originalQuery.Query)
+				}
+				// Report metrics only on first iteration to avoid clutter
+				if i == 0 {
+					b.Logf("series=%d chunks=%d", queryResult.SeriesCount, queryResult.ChunkCount)
+				}
 			}
-			b.Logf("Query %d: series=%d chunks=%d duration=%s", queryIdx, queryResult.SeriesCount, queryResult.ChunkCount, queryResult.Duration)
-		}
+		})
 	}
 }
 

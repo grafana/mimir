@@ -35,6 +35,7 @@ type vectorSelectorQuery struct {
 
 // Query represents a parsed query from Loki logs.
 type Query struct {
+	QueryID   int // Line number from the file (1-indexed)
 	Query     string
 	Start     time.Time
 	End       time.Time
@@ -72,6 +73,7 @@ func LoadQueryLogsFromFile(filepath string) ([]Query, error) {
 		}
 
 		if q.valid {
+			q.QueryID = lineNum
 			queries = append(queries, q)
 		}
 	}
