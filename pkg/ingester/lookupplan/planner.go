@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"slices"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/grafana/dskit/tracing"
@@ -16,12 +17,59 @@ import (
 	"github.com/prometheus/prometheus/tsdb/index"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
+
+	"github.com/grafana/mimir/pkg/util/pool"
 )
 
 type NoopPlanner struct{}
 
 func (i NoopPlanner) PlanIndexLookup(_ context.Context, plan index.LookupPlan, _, _ int64) (index.LookupPlan, error) {
 	return plan, nil
+}
+
+var (
+	rawPlansWithCostPool   = &sync.Pool{}
+	rawPlansPool           = &sync.Pool{}
+	rawIndexPredicatedPool = &sync.Pool{}
+)
+
+const (
+	// maxMatchersForPlanning is arbitrary. Since we generate 2^N plans for N matchers, we want to avoid allocating too many plans.
+	maxMatchersForPlanning = 10
+	maxPlansForPlanning    = 1 << maxMatchersForPlanning
+
+	// predicateIndexSlicesTotalLen is used to size the pools for the booleans which say if a predicate is an index predicate ornot.
+	// We want to size the pool so we can fit a plan with numMatchersForSingleAlloc matchers by taking a single slab.
+	// We'd need 2^numMatchersForSingleAlloc plans, and each plan will have numMatchersForSingleAlloc number of matchers.
+	predicateIndexSlicesTotalLen = 1 << numMatchersForSingleAlloc * numMatchersForSingleAlloc
+	// numMatchersForSingleAlloc is an arbitrary number so we don't leave a lot of empty space in predicateIndexSlicesTotalLen
+	// while accounting for most of the queries that may come in.
+	numMatchersForSingleAlloc = 6
+)
+
+type costBasedPlannerPools struct {
+	plansWithCostPool   *pool.SlabPool[planWithCost]
+	plansPool           *pool.SlabPool[plan]
+	indexPredicatedPool *pool.SlabPool[bool]
+}
+
+func newCostBasedPlannerPools() *costBasedPlannerPools {
+	return &costBasedPlannerPools{
+		plansWithCostPool:   pool.NewSlabPool[planWithCost](rawPlansWithCostPool, maxPlansForPlanning),
+		plansPool:           pool.NewSlabPool[plan](rawPlansPool, maxPlansForPlanning),
+		indexPredicatedPool: pool.NewSlabPool[bool](rawIndexPredicatedPool, predicateIndexSlicesTotalLen),
+	}
+}
+
+func (p *costBasedPlannerPools) Release() {
+	p.plansWithCostPool.Release()
+	p.plansPool.Release()
+	p.indexPredicatedPool.Release()
+}
+
+type planWithCost struct {
+	plan
+	totalCost float64
 }
 
 type CostBasedPlanner struct {
@@ -38,12 +86,20 @@ func NewCostBasedPlanner(metrics Metrics, statistics index.Statistics, config Co
 	}
 }
 
-func (p CostBasedPlanner) PlanIndexLookup(ctx context.Context, inPlan index.LookupPlan, _, _ int64) (_ index.LookupPlan, retErr error) {
+func (p CostBasedPlanner) PlanIndexLookup(ctx context.Context, inPlan index.LookupPlan, _, _ int64) (retPlan index.LookupPlan, retErr error) {
 	if planningDisabled(ctx) {
 		return inPlan, nil
 	}
 
 	var allPlans []plan
+	memPools := newCostBasedPlannerPools()
+	defer memPools.Release()
+	defer func() {
+		if plan, ok := retPlan.(plan); ok {
+			retPlan = plan.withoutMemoryPool()
+		}
+	}()
+
 	defer func(start time.Time) {
 		var abortedEarly bool
 		retErr, abortedEarly = mapPlanningOutcomeError(retErr)
@@ -53,18 +109,14 @@ func (p CostBasedPlanner) PlanIndexLookup(ctx context.Context, inPlan index.Look
 	// Repartition the matchers. We don't trust other planners.
 	// Allocate a new slice so that we don't mess up the slice of the caller.
 	matchers := slices.Concat(inPlan.IndexMatchers(), inPlan.ScanMatchers())
-	if len(matchers) > 10 {
+	if len(matchers) > maxMatchersForPlanning {
 		return inPlan, errTooManyMatchers
 	}
 
-	allPlansUnordered := p.generatePlans(ctx, p.stats, matchers)
+	allPlansUnordered := p.generatePlans(ctx, p.stats, matchers, memPools)
 
-	type planWithCost struct {
-		plan
-		totalCost float64
-	}
 	// calculate the cost of all plans once, instead of calculating them every time we compare during sort
-	allPlansWithCosts := make([]planWithCost, len(allPlansUnordered))
+	allPlansWithCosts := memPools.plansWithCostPool.Get(len(allPlansUnordered))
 	for i, p := range allPlansUnordered {
 		allPlansWithCosts[i] = planWithCost{plan: p, totalCost: p.totalCost()}
 	}
@@ -74,6 +126,7 @@ func (p CostBasedPlanner) PlanIndexLookup(ctx context.Context, inPlan index.Look
 	})
 
 	// build the sorted slice of plans
+	allPlans = memPools.plansPool.Get(len(allPlansWithCosts))[:0]
 	for _, pwc := range allPlansWithCosts {
 		allPlans = append(allPlans, pwc.plan)
 	}
@@ -92,9 +145,9 @@ func (p CostBasedPlanner) PlanIndexLookup(ctx context.Context, inPlan index.Look
 
 var errTooManyMatchers = errors.New("too many matchers to generate plans")
 
-func (p CostBasedPlanner) generatePlans(ctx context.Context, statistics index.Statistics, matchers []*labels.Matcher) []plan {
-	noopPlan := newScanOnlyPlan(ctx, statistics, p.config, matchers)
-	allPlans := make([]plan, 0, 1<<uint(len(matchers)))
+func (p CostBasedPlanner) generatePlans(ctx context.Context, statistics index.Statistics, matchers []*labels.Matcher, pools *costBasedPlannerPools) []plan {
+	noopPlan := newScanOnlyPlan(ctx, statistics, p.config, matchers, pools.indexPredicatedPool)
+	allPlans := pools.plansPool.Get(1 << uint(len(matchers)))[:0]
 
 	return generatePredicateCombinations(allPlans, noopPlan, 0)
 }
