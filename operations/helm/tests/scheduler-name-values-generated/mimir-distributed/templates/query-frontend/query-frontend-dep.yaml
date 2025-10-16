@@ -8,6 +8,7 @@ metadata:
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: scheduler-name-values
     app.kubernetes.io/component: query-frontend
+    app.kubernetes.io/part-of: memberlist
     app.kubernetes.io/managed-by: Helm
   annotations:
     {}
@@ -32,6 +33,7 @@ spec:
         app.kubernetes.io/instance: scheduler-name-values
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/component: query-frontend
+        app.kubernetes.io/part-of: memberlist
       annotations:
       namespace: "citestns"
     spec:
@@ -68,6 +70,9 @@ spec:
               protocol: TCP
             - name: grpc
               containerPort: 9095
+              protocol: TCP
+            - name: memberlist
+              containerPort: 7946
               protocol: TCP
           livenessProbe:
             null
