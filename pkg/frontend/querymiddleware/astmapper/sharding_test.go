@@ -598,6 +598,16 @@ func TestShardSummer(t *testing.T) {
 			out:                      `scalar(sum(` + concatShards(t, shardCount, `sum(foo{__query_shard__="x_of_y"})`) + `))`,
 			expectedShardableQueries: 1,
 		},
+		{
+			in:                       `clamp_max(max(foo), scalar(bar))`,
+			out:                      `clamp_max(max(foo), scalar(bar))`,
+			expectedShardableQueries: 0,
+		},
+		{
+			in:                       `clamp_max(max(foo), scalar(sum(bar)))`,
+			out:                      `clamp_max(max(` + concatShards(t, shardCount, `max(foo{__query_shard__="x_of_y"})`) + `), scalar(sum(` + concatShards(t, shardCount, `sum(bar{__query_shard__="x_of_y"})`) + `)))`,
+			expectedShardableQueries: 2,
+		},
 	} {
 		t.Run(tt.in, func(t *testing.T) {
 			t.Run("applying sharding", func(t *testing.T) {
