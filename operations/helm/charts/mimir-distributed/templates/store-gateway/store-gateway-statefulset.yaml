@@ -1,4 +1,4 @@
-{{- if and .Values.store_gateway.enabled (not .Values.federation_frontend.disableOtherComponents) }}
+{{- if .Values.store_gateway.enabled }}
 {{- $args := dict "ctx" $ "component" "store-gateway" "memberlist" true -}}
 {{- $zonesMap := include "mimir.zoneAwareReplicationMap" $args | fromYaml -}}
 {{- range $zoneName, $rolloutZone := $zonesMap }}
@@ -45,7 +45,7 @@ spec:
     {{- else }}
     {{- toYaml .Values.store_gateway.strategy | nindent 4 }}
     {{- end }}
-  serviceName: {{ template "mimir.fullname" . }}-store-gateway{{- if not .Values.enterprise.legacyLabels -}}-headless{{- end -}}
+  serviceName: {{ template "mimir.fullname" . }}-store-gateway-headless
   {{- if .Values.store_gateway.persistentVolume.enabled }}
   {{- with .Values.store_gateway.persistentVolume }}
   volumeClaimTemplates:
@@ -121,11 +121,6 @@ spec:
       volumes:
         - name: config
           {{- include "mimir.configVolume" . | nindent 10 }}
-        {{- if .Values.enterprise.enabled }}
-        - name: license
-          secret:
-            secretName: {{ tpl .Values.license.secretName . }}
-        {{- end }}
         - name: runtime-config
           configMap:
             name: {{ template "mimir.fullname" . }}-runtime
@@ -174,10 +169,6 @@ spec:
             {{- end }}
             - name: config
               mountPath: /etc/mimir
-            {{- if .Values.enterprise.enabled }}
-            - name: license
-              mountPath: /license
-            {{- end }}
             - name: runtime-config
               mountPath: /var/{{ include "mimir.name" . }}
             - name: storage

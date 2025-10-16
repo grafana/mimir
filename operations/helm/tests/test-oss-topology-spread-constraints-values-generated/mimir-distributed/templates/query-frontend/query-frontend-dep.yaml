@@ -56,8 +56,6 @@ spec:
           volumeMounts:
             - name: runtime-config
               mountPath: /var/mimir
-            - name: license
-              mountPath: /license
             - name: config
               mountPath: /etc/mimir
             - name: storage
@@ -112,9 +110,6 @@ spec:
             items:
               - key: "mimir.yaml"
                 path: "mimir.yaml"
-        - name: license
-          secret:
-            secretName: test-oss-topology-spread-constraints-values-mimir-license
         - name: runtime-config
           configMap:
             name: test-oss-topology-spread-constraints-values-mimir-runtime
