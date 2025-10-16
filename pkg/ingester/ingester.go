@@ -2630,27 +2630,6 @@ func (i *Ingester) getTSDB(userID string) *userTSDB {
 	return db
 }
 
-// getIndexLookupPlannerFunc returns the appropriate index lookup planner function based on configuration.
-// When index lookup planning is enabled, it first checks if a pre-computed planner exists in the repository.
-// If found, it uses the cached planner; otherwise, it falls back to generating statistics on-demand.
-// When disabled, it uses NoopPlanner which performs no optimization.
-func (i *Ingester) getIndexLookupPlannerFunc(userID string) tsdb.IndexLookupPlannerFunc {
-	if !i.cfg.BlocksStorageConfig.TSDB.IndexLookupPlanning.Enabled {
-		return func(tsdb.BlockMeta, tsdb.IndexReader) index.LookupPlanner { return lookupplan.NoopPlanner{} }
-	}
-
-	return func(meta tsdb.BlockMeta, reader tsdb.IndexReader) index.LookupPlanner {
-		// Get the userTSDB for this tenant
-		userDB := i.getTSDB(userID)
-		if userDB == nil {
-			// This might happen if a query runs while we're initializing the TSDB for a user.
-			return lookupplan.NoopPlanner{}
-		}
-
-		return userDB.getIndexLookupPlanner(meta, reader)
-	}
-}
-
 // List all users for which we have a TSDB. We do it here in order
 // to keep the mutex locked for the shortest time possible.
 func (i *Ingester) getTSDBUsers() []string {
@@ -2722,6 +2701,7 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 	}
 
 	userDB := &userTSDB{
+		cfg:                     &i.cfg,
 		userID:                  userID,
 		activeSeries:            activeseries.NewActiveSeries(asmodel.NewMatchers(matchersConfig), i.cfg.ActiveSeriesMetrics.IdleTimeout, i.costAttributionMgr.ActiveSeriesTracker(userID)),
 		seriesInMetric:          newMetricCounter(i.limiter, i.cfg.getIgnoreSeriesLimitForMetricNamesMap()),
@@ -2793,7 +2773,7 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 		PostingsClonerFactory:                lookupplan.ActualSelectedPostingsClonerFactory{},
 		EnableNativeHistograms:               i.limits.NativeHistogramsIngestionEnabled(userID),
 		SecondaryHashFunction:                secondaryTSDBHashFunctionForUser(userID),
-		IndexLookupPlannerFunc:               i.getIndexLookupPlannerFunc(userID),
+		IndexLookupPlannerFunc:               userDB.getIndexLookupPlannerFunc(),
 		BlockChunkQuerierFunc: func(b tsdb.BlockReader, mint, maxt int64) (storage.ChunkQuerier, error) {
 			return i.createBlockChunkQuerier(userID, b, mint, maxt)
 		},
