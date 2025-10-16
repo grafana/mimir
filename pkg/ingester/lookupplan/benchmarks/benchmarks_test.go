@@ -22,6 +22,7 @@ var (
 	dataDirFlag     = flag.String("data-dir", "", "Directory containing an ingester data dir (WAL + blocks for multiple tenants).")
 	queryFileFlag   = flag.String("query-file", "", `File containing queries in Loki log JSON format. You can obtian it by running a command like this with logcli: logcli query -q --timezone=UTC --limit=1000000 --from='2025-10-15T15:15:21.0Z' --to='2025-10-15T16:15:21.0Z' --output=jsonl '{namespace="mimir", name="query-frontend"} |= "query stats" | logfmt | path=~".*/query(_range)?"' > logs.json`)
 	tenantIDFlag    = flag.String("tenant-id", "", "Tenant ID to filter queries by. If empty, all queries are used.")
+	queryIDsFlag    = flag.String("query-ids", "", "Comma-separated list of query IDs (line numbers) to benchmark. Mutually exclusive with query-sample < 1.0.")
 	querySampleFlag = flag.Float64("query-sample", 1.0, "Fraction of queries to sample (0.0 to 1.0). Queries are split into 100 segments, and a continuous sample is taken from each segment.")
 	querySampleSeed = flag.Int64("query-sample-seed", 1, "Random seed for query sampling.")
 )
@@ -60,8 +61,13 @@ func BenchmarkQueryExecution(b *testing.B) {
 	require.NotEmpty(b, *dataDirFlag, "-data-dir flag is required")
 	require.NotEmpty(b, *queryFileFlag, "-query-file flag is required")
 
-	// Prepare vector queries (load, extract matchers, filter by tenant, sample) - this is cached
-	vectorQueries, err := PrepareVectorQueries(*queryFileFlag, *tenantIDFlag, *querySampleFlag, *querySampleSeed)
+	// Validate mutual exclusivity of query-ids and query-sample
+	if *queryIDsFlag != "" && *querySampleFlag < 1.0 {
+		b.Fatal("-query-ids and -query-sample < 1.0 are mutually exclusive")
+	}
+
+	// Prepare vector queries (load, extract matchers, filter by tenant/IDs, sample) - this is cached
+	vectorQueries, err := PrepareVectorQueries(*queryFileFlag, *tenantIDFlag, *queryIDsFlag, *querySampleFlag, *querySampleSeed)
 	require.NoError(b, err)
 	require.NotEmpty(b, vectorQueries, "no vector queries after filtering and sampling")
 
@@ -81,7 +87,7 @@ func BenchmarkQueryExecution(b *testing.B) {
 
 	// Benchmark query execution - run each query as a sub-benchmark
 	for _, vq := range vectorQueries {
-		queryID := fmt.Sprintf("query-%d", vq.originalQuery.QueryID)
+		queryID := fmt.Sprintf("query=%d", vq.originalQuery.QueryID)
 		b.Run(queryID, func(b *testing.B) {
 			b.ReportAllocs()
 			for i := 0; i < b.N; i++ {

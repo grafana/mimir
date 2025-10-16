@@ -28,7 +28,7 @@ func TestLoadQueryLogsFromFile(t *testing.T) {
 	require.NoError(t, err)
 
 	// Parse queries
-	queries, err := LoadQueryLogsFromFile(queryFile)
+	queries, err := LoadQueryLogsFromFile(queryFile, nil)
 	require.NoError(t, err)
 
 	// We should have 4 valid queries (2 POST + 1 GET + 1 without method - only GET is filtered)
@@ -63,12 +63,12 @@ func TestLoadQueryLogsFromFile_EmptyFile(t *testing.T) {
 	err := os.WriteFile(queryFile, []byte(""), 0644)
 	require.NoError(t, err)
 
-	queries, err := LoadQueryLogsFromFile(queryFile)
+	queries, err := LoadQueryLogsFromFile(queryFile, nil)
 	require.NoError(t, err)
 	assert.Empty(t, queries)
 }
 
 func TestLoadQueryLogsFromFile_NonExistent(t *testing.T) {
-	_, err := LoadQueryLogsFromFile("/nonexistent/file.json")
+	_, err := LoadQueryLogsFromFile("/nonexistent/file.json", nil)
 	assert.Error(t, err)
 }

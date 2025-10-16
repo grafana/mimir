@@ -10,6 +10,7 @@ import (
 	"math/rand"
 	"os"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -47,12 +48,22 @@ type Query struct {
 
 // LoadQueryLogsFromFile parses queries from a Loki log file in newline-delimited JSON format.
 // Each line should be a JSON object with query information in the labels field.
-func LoadQueryLogsFromFile(filepath string) ([]Query, error) {
+// If queryIDs is non-empty, only queries with matching line numbers are returned.
+func LoadQueryLogsFromFile(filepath string, queryIDs []int) ([]Query, error) {
 	f, err := os.Open(filepath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open query file: %w", err)
 	}
 	defer f.Close()
+
+	// Create a set for fast lookups if filtering by query IDs
+	var queryIDSet map[int]struct{}
+	if len(queryIDs) > 0 {
+		queryIDSet = make(map[int]struct{}, len(queryIDs))
+		for _, id := range queryIDs {
+			queryIDSet[id] = struct{}{}
+		}
+	}
 
 	var queries []Query
 	scanner := bufio.NewScanner(f)
@@ -64,6 +75,13 @@ func LoadQueryLogsFromFile(filepath string) ([]Query, error) {
 		line := scanner.Bytes()
 		if len(line) == 0 {
 			continue
+		}
+
+		// Skip lines that don't match query ID filter
+		if queryIDSet != nil {
+			if _, ok := queryIDSet[lineNum]; !ok {
+				continue
+			}
 		}
 
 		var q Query
@@ -178,20 +196,55 @@ func parseDuration(s string) (time.Duration, error) {
 	return time.Duration(stepD), nil
 }
 
-// PrepareVectorQueries loads queries from a file, filters by tenant ID if specified,
+// parseQueryIDs parses a comma-separated string of query IDs into a slice of ints.
+func parseQueryIDs(queryIDsStr string) ([]int, error) {
+	if queryIDsStr == "" {
+		return nil, nil
+	}
+
+	parts := strings.Split(queryIDsStr, ",")
+	queryIDs := make([]int, 0, len(parts))
+
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+
+		id, err := strconv.Atoi(part)
+		if err != nil {
+			return nil, fmt.Errorf("invalid query ID %q: %w", part, err)
+		}
+		queryIDs = append(queryIDs, id)
+	}
+
+	if len(queryIDs) == 0 {
+		return nil, fmt.Errorf("no valid query IDs provided")
+	}
+
+	return queryIDs, nil
+}
+
+// PrepareVectorQueries loads queries from a file, filters by tenant ID and/or query IDs if specified,
 // extracts label matchers from each query, and samples them according to the given parameters.
 // Results are cached to avoid re-processing.
-func PrepareVectorQueries(filepath string, tenantID string, sampleFraction float64, seed int64) ([]vectorSelectorQuery, error) {
+func PrepareVectorQueries(filepath string, tenantID string, queryIDsStr string, sampleFraction float64, seed int64) ([]vectorSelectorQuery, error) {
 	// Create cache key from parameters
-	cacheKey := fmt.Sprintf("%s|%s|%f|%d", filepath, tenantID, sampleFraction, seed)
+	cacheKey := fmt.Sprintf("%s|%s|%s|%f|%d", filepath, tenantID, queryIDsStr, sampleFraction, seed)
 
 	// Check cache first
 	if cached, ok := vectorQueryCache.Load(cacheKey); ok {
 		return cached.([]vectorSelectorQuery), nil
 	}
 
-	// Load queries from file
-	queries, err := LoadQueryLogsFromFile(filepath)
+	// Parse query IDs if specified
+	queryIDs, err := parseQueryIDs(queryIDsStr)
+	if err != nil {
+		return nil, err
+	}
+
+	// Load queries from file (with early filtering by query IDs if specified)
+	queries, err := LoadQueryLogsFromFile(filepath, queryIDs)
 	if err != nil {
 		return nil, err
 	}
@@ -223,13 +276,15 @@ func PrepareVectorQueries(filepath string, tenantID string, sampleFraction float
 		}
 	}
 
-	// Sample queries
-	sampledQueries := sampleQueries(vectorQueries, sampleFraction, seed)
+	// Sample queries only if not filtering by specific IDs
+	if queryIDsStr == "" {
+		vectorQueries = sampleQueries(vectorQueries, sampleFraction, seed)
+	}
 
 	// Store in cache before returning
-	vectorQueryCache.Store(cacheKey, sampledQueries)
+	vectorQueryCache.Store(cacheKey, vectorQueries)
 
-	return sampledQueries, nil
+	return vectorQueries, nil
 }
 
 // extractLabelMatchers extracts label matchers from a PromQL query string.
