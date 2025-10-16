@@ -47,7 +47,9 @@ func (hc HealthCheckService) run(ctx context.Context) error {
 		ticker.Stop()
 	}()
 
-	attempts := 0
+	writeAttempts := 0
+	readAttempts := 0
+	existAttempts := 0
 	for {
 		select {
 		case <-ctx.Done():
@@ -57,21 +59,26 @@ func (hc HealthCheckService) run(ctx context.Context) error {
 			if err := os.WriteFile(hc.testfile, []byte(""), 0o644); err != nil {
 				level.Warn(hc.logger).Log("msg", fmt.Sprintf("error writing test file %s", hc.testfile), "err", err)
 
-				if attempts >= MaxDiskCheckAttempts {
-					level.Error(hc.logger).Log("msg", fmt.Sprintf("failed to write test file %s after %d attempts", hc.testfile, attempts), "err", err)
+				if (writeAttempts + readAttempts + existAttempts) >= MaxDiskCheckAttempts {
+					level.Error(hc.logger).Log("msg", fmt.Sprintf("failed to read/write test file %s after %d attempts", hc.testfile, writeAttempts+readAttempts+existAttempts), "err", err)
 					return nil
 				}
-				attempts++
+				writeAttempts++
 				continue
+			} else {
+				writeAttempts = 0
 			}
 
 			if _, err := os.Stat(hc.testfile); err != nil {
 				level.Warn(hc.logger).Log("msg", "failed to stat test file %s after it was created", "err", err)
-				attempts++
+				existAttempts++
 			} else {
+				existAttempts = 0
 				if _, err := os.ReadFile(hc.testfile); err != nil {
 					level.Warn(hc.logger).Log("msg", "failed to read test file %s after it was created", "err", err)
-					attempts++
+					readAttempts++
+				} else {
+					readAttempts = 0
 				}
 			}
 
