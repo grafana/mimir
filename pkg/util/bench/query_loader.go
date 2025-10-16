@@ -27,24 +27,60 @@ const (
 	numSegments = 100
 )
 
-// QueryCache caches prepared queries to avoid re-processing the same file with same parameters.
-type QueryCache struct {
+// QueryLoader caches prepared queries to avoid re-processing the same file with same parameters.
+type QueryLoader struct {
 	cache sync.Map
 }
 
-// NewQueryCache creates a new QueryCache.
-func NewQueryCache() *QueryCache {
-	return &QueryCache{}
+// NewQueryCache creates a new QueryLoader.
+func NewQueryCache() *QueryLoader {
+	return &QueryLoader{}
 }
 
-// Get retrieves a cached value if it exists.
-func (qc *QueryCache) Get(key string) (interface{}, bool) {
-	return qc.cache.Load(key)
-}
+// PrepareQueries loads queries from a file, filters by tenant ID and/or query IDs if specified,
+// and samples them according to the given parameters. Results are cached to avoid re-processing.
+// Queries are returned with their VectorSelectors already parsed.
+func (qc *QueryLoader) PrepareQueries(filepath string, tenantID string, queryIDsStr string, sampleFraction float64, seed int64) ([]Query, error) {
+	// Create cache key from parameters
+	cacheKey := fmt.Sprintf("%s|%s|%s|%f|%d", filepath, tenantID, queryIDsStr, sampleFraction, seed)
 
-// Store saves a value to the cache.
-func (qc *QueryCache) Store(key string, value interface{}) {
-	qc.cache.Store(key, value)
+	// Check cache first
+	if cached, ok := qc.cache.Load(cacheKey); ok {
+		return cached.([]Query), nil
+	}
+
+	// Parse query IDs if specified
+	queryIDs, err := parseQueryIDs(queryIDsStr)
+	if err != nil {
+		return nil, err
+	}
+
+	// Load queries from file (with early filtering by query IDs if specified)
+	queries, err := loadQueryLogsFromFile(filepath, queryIDs)
+	if err != nil {
+		return nil, err
+	}
+
+	// Filter by tenant ID if specified
+	if tenantID != "" {
+		filtered := queries[:0]
+		for i := range queries {
+			if queries[i].User == tenantID {
+				filtered = append(filtered, queries[i])
+			}
+		}
+		queries = filtered
+	}
+
+	// Sample queries only if not filtering by specific IDs
+	if queryIDsStr == "" {
+		queries = sampleQueries(queries, sampleFraction, seed)
+	}
+
+	// Store in cache before returning
+	qc.cache.Store(cacheKey, queries)
+
+	return queries, nil
 }
 
 // Query represents a parsed query from Loki logs.
@@ -292,52 +328,6 @@ func parseQueryIDs(queryIDsStr string) ([]int, error) {
 	}
 
 	return queryIDs, nil
-}
-
-// PrepareQueries loads queries from a file, filters by tenant ID and/or query IDs if specified,
-// and samples them according to the given parameters. Results are cached to avoid re-processing.
-// Queries are returned with their VectorSelectors already parsed.
-func (qc *QueryCache) PrepareQueries(filepath string, tenantID string, queryIDsStr string, sampleFraction float64, seed int64) ([]Query, error) {
-	// Create cache key from parameters
-	cacheKey := fmt.Sprintf("%s|%s|%s|%f|%d", filepath, tenantID, queryIDsStr, sampleFraction, seed)
-
-	// Check cache first
-	if cached, ok := qc.Get(cacheKey); ok {
-		return cached.([]Query), nil
-	}
-
-	// Parse query IDs if specified
-	queryIDs, err := parseQueryIDs(queryIDsStr)
-	if err != nil {
-		return nil, err
-	}
-
-	// Load queries from file (with early filtering by query IDs if specified)
-	queries, err := loadQueryLogsFromFile(filepath, queryIDs)
-	if err != nil {
-		return nil, err
-	}
-
-	// Filter by tenant ID if specified
-	if tenantID != "" {
-		filtered := queries[:0]
-		for i := range queries {
-			if queries[i].User == tenantID {
-				filtered = append(filtered, queries[i])
-			}
-		}
-		queries = filtered
-	}
-
-	// Sample queries only if not filtering by specific IDs
-	if queryIDsStr == "" {
-		queries = sampleQueries(queries, sampleFraction, seed)
-	}
-
-	// Store in cache before returning
-	qc.Store(cacheKey, queries)
-
-	return queries, nil
 }
 
 // sampleQueries samples queries by splitting them into segments and taking a continuous
