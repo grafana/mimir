@@ -81,6 +81,7 @@ func (r *RemoteExecutor) startExecution(
 		TimeRange:          timeRange,
 		Root:               node,
 		OriginalExpression: fullPlan.OriginalExpression,
+		Version:            fullPlan.Version,
 	}
 
 	encodedPlan, err := subsetPlan.ToEncodedPlan(false, true)

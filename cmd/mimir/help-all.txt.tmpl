@@ -548,7 +548,7 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.bucket-store.max-concurrent-queue-timeout duration
     	Timeout for the queue of queries waiting for execution. If the queue is full and the timeout is reached, the query will be retried on another store-gateway. 0 means no timeout and all queries will wait indefinitely for their turn. (default 5s)
   -blocks-storage.bucket-store.meta-sync-concurrency int
-    	Number of Go routines to use when syncing block meta files from object storage per tenant. (default 20)
+    	Number of goroutines to use when syncing block meta files from object storage per tenant. (default 20)
   -blocks-storage.bucket-store.metadata-cache.backend string
     	Backend for metadata cache, if not empty. Supported values: memcached.
   -blocks-storage.bucket-store.metadata-cache.block-index-attributes-ttl duration
@@ -1026,7 +1026,7 @@ Usage of ./cmd/mimir/mimir:
   -compactor.block-ranges comma-separated-list-of-durations
     	List of compaction time ranges. (default 2h0m0s,12h0m0s,24h0m0s)
   -compactor.block-sync-concurrency int
-    	Number of Go routines to use when downloading blocks for compaction and uploading resulting blocks. (default 8)
+    	Number of goroutines to use when downloading blocks for compaction and uploading resulting blocks. (default 8)
   -compactor.block-upload-enabled
     	Enable block upload API for the tenant.
   -compactor.block-upload-max-block-size-bytes int
@@ -1074,7 +1074,7 @@ Usage of ./cmd/mimir/mimir:
   -compactor.max-per-block-upload-concurrency int
     	Maximum number of TSDB segment files that the compactor can upload concurrently per block. (default 8)
   -compactor.meta-sync-concurrency int
-    	Number of Go routines to use when syncing block meta files from the long term storage. (default 20)
+    	Number of goroutines to use when syncing block meta files from the long term storage. (default 20)
   -compactor.no-blocks-file-cleanup-enabled
     	[experimental] If enabled, will delete the bucket-index, markers and debug files in the tenant bucket when there are no blocks left in the index.
   -compactor.partial-block-deletion-delay duration
@@ -1162,7 +1162,7 @@ Usage of ./cmd/mimir/mimir:
   -compactor.tenant-cleanup-delay duration
     	For tenants marked for deletion, this is the time between deletion of the last block, and doing final cleanup (marker files, debug files) of the tenant. (default 6h0m0s)
   -compactor.update-blocks-concurrency int
-    	Number of Go routines to use when updating blocks metadata during bucket index updates. (default 1)
+    	Number of goroutines to use when updating blocks metadata during bucket index updates. (default 1)
   -compactor.upload-sparse-index-headers
     	[experimental] If enabled, the compactor constructs and uploads sparse index headers to object storage during each compaction cycle. This allows store-gateway instances to use the sparse headers from object storage instead of recreating them locally.
   -config.expand-env
@@ -1407,8 +1407,6 @@ Usage of ./cmd/mimir/mimir:
     	The prefix for the keys in the store. Should end with a /. (default "collectors/")
   -distributor.ring.store string
     	Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi. (default "memberlist")
-  -distributor.service-overload-status-code-on-rate-limit-enabled
-    	[experimental] If enabled, rate limit errors will be reported to the client with HTTP status code 529 (Service is overloaded). If disabled, status code 429 (Too Many Requests) is used. Enabling -distributor.retry-after-header.enabled before utilizing this option is strongly recommended as it helps prevent premature request retries by the client.
   -distributor.write-requests-buffer-pooling-enabled
     	[experimental] Enable pooling of buffers used for marshaling write requests. (default true)
   -enable-go-runtime-metrics

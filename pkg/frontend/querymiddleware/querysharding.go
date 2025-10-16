@@ -271,6 +271,7 @@ func NewQuerySharder(
 func (s *QuerySharder) Shard(ctx context.Context, tenantIDs []string, expr parser.Expr, requestedShardCount int, seriesCount *EstimatedSeriesCount, totalQueries int32) (parser.Expr, error) {
 	log := spanlogger.FromContext(ctx, s.logger)
 	log.DebugLog("msg", "attempting query sharding", "query", expr)
+	s.metrics.shardingAttempts.Inc()
 
 	totalShards, err := s.getShardsForQuery(ctx, tenantIDs, expr, requestedShardCount, seriesCount, totalQueries, log)
 	if err != nil {
@@ -288,7 +289,6 @@ func (s *QuerySharder) Shard(ctx context.Context, tenantIDs []string, expr parse
 		"total shards", totalShards,
 	)
 
-	s.metrics.shardingAttempts.Inc()
 	shardedExpr, shardingStats, err := s.shardQuery(ctx, expr, totalShards)
 	if err != nil {
 		return nil, err
@@ -377,25 +377,29 @@ func (s *QuerySharder) getShardsForQuery(ctx context.Context, tenantIDs []string
 		}
 	}
 
+	// Calculate how many legs are shardable.
+	analyzer := astmapper.NewShardingAnalyzer(s.logger)
+	result, err := analyzer.Analyze(queryExpr)
+	if err != nil {
+		return 0, err
+	}
+
+	spanLog.DebugLog(
+		"msg", "computed number of shardable legs for the query",
+		"shardable legs", result.ShardedSelectors,
+		"can shard all selectors", result.WillShardAllSelectors,
+	)
+
+	if !result.WillShardAllSelectors || result.ShardedSelectors == 0 {
+		// If we can't shard all selectors, then we won't shard the query at all.
+		return 1, nil
+	}
+
+	numShardableLegs := result.ShardedSelectors
+
 	// If total queries is provided through hints, then we adjust the number of shards for the query
 	// based on the configured max sharded queries limit.
 	if maxShardedQueries := validation.SmallestPositiveIntPerTenant(tenantIDs, s.limit.QueryShardingMaxShardedQueries); maxShardedQueries > 0 {
-		// Calculate how many legs are shardable.
-		analyzer := astmapper.NewShardingAnalyzer(s.logger)
-		result, err := analyzer.Analyze(queryExpr)
-		if err != nil {
-			return 0, err
-		}
-		numShardableLegs := 1
-		if result.WillShardAllSelectors && result.ShardedSelectors > 0 {
-			numShardableLegs = result.ShardedSelectors
-		}
-
-		spanLog.DebugLog(
-			"msg", "computed number of shardable legs for the query",
-			"shardable legs", numShardableLegs,
-		)
-
 		prevTotalShards := totalShards
 		totalShards = max(1, min(totalShards, (maxShardedQueries/int(totalQueries))/numShardableLegs))
 

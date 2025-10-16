@@ -10,8 +10,6 @@ title: Send OpenTelemetry exponential histograms to Mimir
 weight: 200
 ---
 
-<!-- Note: This topic is mounted in the GEM documentation. Ensure that all updates are also applicable to GEM. -->
-
 # Send OpenTelemetry exponential histograms to Mimir
 
 {{% admonition type="note" %}}

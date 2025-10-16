@@ -3587,15 +3587,6 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -distributor.metric-relabeling-enabled
 [metric_relabeling_enabled: <boolean> | default = true]
 
-# (experimental) If enabled, rate limit errors will be reported to the client
-# with HTTP status code 529 (Service is overloaded). If disabled, status code
-# 429 (Too Many Requests) is used. Enabling
-# -distributor.retry-after-header.enabled before utilizing this option is
-# strongly recommended as it helps prevent premature request retries by the
-# client.
-# CLI flag: -distributor.service-overload-status-code-on-rate-limit-enabled
-[service_overload_status_code_on_rate_limit_enabled: <boolean> | default = false]
-
 # The maximum number of in-memory series per tenant, across the cluster before
 # replication. 0 to disable.
 # CLI flag: -ingester.max-global-series-per-user
@@ -4696,7 +4687,7 @@ bucket_store:
   # CLI flag: -blocks-storage.bucket-store.block-sync-concurrency
   [block_sync_concurrency: <int> | default = 4]
 
-  # (advanced) Number of Go routines to use when syncing block meta files from
+  # (advanced) Number of goroutines to use when syncing block meta files from
   # object storage per tenant.
   # CLI flag: -blocks-storage.bucket-store.meta-sync-concurrency
   [meta_sync_concurrency: <int> | default = 20]
@@ -5175,12 +5166,12 @@ The `compactor` block configures the compactor component.
 # CLI flag: -compactor.block-ranges
 [block_ranges: <list of durations> | default = 2h0m0s,12h0m0s,24h0m0s]
 
-# (advanced) Number of Go routines to use when downloading blocks for compaction
+# (advanced) Number of goroutines to use when downloading blocks for compaction
 # and uploading resulting blocks.
 # CLI flag: -compactor.block-sync-concurrency
 [block_sync_concurrency: <int> | default = 8]
 
-# (advanced) Number of Go routines to use when syncing block meta files from the
+# (advanced) Number of goroutines to use when syncing block meta files from the
 # long term storage.
 # CLI flag: -compactor.meta-sync-concurrency
 [meta_sync_concurrency: <int> | default = 20]
@@ -5266,7 +5257,7 @@ The `compactor` block configures the compactor component.
 # CLI flag: -compactor.max-block-upload-validation-concurrency
 [max_block_upload_validation_concurrency: <int> | default = 1]
 
-# (advanced) Number of Go routines to use when updating blocks metadata during
+# (advanced) Number of goroutines to use when updating blocks metadata during
 # bucket index updates.
 # CLI flag: -compactor.update-blocks-concurrency
 [update_blocks_concurrency: <int> | default = 1]

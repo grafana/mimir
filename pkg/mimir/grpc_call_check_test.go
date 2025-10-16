@@ -187,25 +187,16 @@ func TestGrpcInflightMethodLimiter(t *testing.T) {
 		}))
 		require.NoError(t, err)
 		require.Equal(t, 1, m.startCalls)
-		require.Equal(t, 0, m.prepareCalls)
 		require.Equal(t, 0, m.finishCalls)
 		require.Equal(t, int64(123456), m.lastRequestSize)
-
-		_, err = l.RPCCallProcessing(ctx, httpgrpcHandleMethod)
-		require.NoError(t, err)
-		require.Equal(t, 1, m.startCalls)
-		require.Equal(t, 1, m.prepareCalls)
-		require.Equal(t, 0, m.finishCalls)
 
 		// calling finish with empty context does not do any Finish calls.
 		l.RPCCallFinished(context.Background())
 		require.Equal(t, 1, m.startCalls)
-		require.Equal(t, 1, m.prepareCalls)
 		require.Equal(t, 0, m.finishCalls)
 
 		l.RPCCallFinished(ctx)
 		require.Equal(t, 1, m.startCalls)
-		require.Equal(t, 1, m.prepareCalls)
 		require.Equal(t, 1, m.finishCalls)
 
 		// Now return error from distributor receiver.
@@ -233,7 +224,6 @@ func TestGrpcInflightMethodLimiter(t *testing.T) {
 		}))
 		require.NoError(t, err)
 		require.Equal(t, 0, m.startCalls)
-		require.Equal(t, 0, m.prepareCalls)
 		require.Equal(t, 0, m.finishCalls)
 		require.Equal(t, int64(0), m.lastRequestSize)
 	})
@@ -249,7 +239,6 @@ func TestGrpcInflightMethodLimiter(t *testing.T) {
 		}))
 		require.NoError(t, err)
 		require.Equal(t, 0, m.startCalls)
-		require.Equal(t, 0, m.prepareCalls)
 		require.Equal(t, 0, m.finishCalls)
 		require.Equal(t, int64(0), m.lastRequestSize)
 	})
@@ -258,30 +247,14 @@ func TestGrpcInflightMethodLimiter(t *testing.T) {
 		m := &mockDistributorReceiver{}
 		l := newGrpcInflightMethodLimiter(nil, func() pushReceiver { return m })
 
-		ctx, err := l.RPCCallStarting(context.Background(), httpgrpcHandleMethod, metadata.New(map[string]string{
+		_, err := l.RPCCallStarting(context.Background(), httpgrpcHandleMethod, metadata.New(map[string]string{
 			httpgrpc.MetadataMethod:      "POST",
 			httpgrpc.MetadataURL:         "prefix" + api.OTLPPushEndpoint,
 			grpcutil.MetadataMessageSize: "one-two-three",
 		}))
 		require.NoError(t, err)
 		require.Equal(t, 1, m.startCalls)
-		require.Equal(t, 0, m.prepareCalls)
 		require.Equal(t, 0, m.finishCalls)
-		require.Equal(t, int64(0), m.lastRequestSize)
-
-		_, err = l.RPCCallProcessing(ctx, httpgrpcHandleMethod)
-		require.NoError(t, err)
-		require.Equal(t, 1, m.startCalls)
-		require.Equal(t, 1, m.prepareCalls)
-		require.Equal(t, 0, m.finishCalls)
-		require.Equal(t, int64(0), m.lastRequestSize)
-
-		require.NotPanics(t, func() {
-			l.RPCCallFinished(ctx)
-		})
-		require.Equal(t, 1, m.startCalls)
-		require.Equal(t, 1, m.prepareCalls)
-		require.Equal(t, 1, m.finishCalls)
 		require.Equal(t, int64(0), m.lastRequestSize)
 	})
 }

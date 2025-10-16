@@ -783,6 +783,50 @@ func (m *timeRangeCapturingFrontend) DoProtobufRequest(ctx context.Context, req 
 	return nil, nil
 }
 
+func TestRemoteExecutor_SendsQueryPlanVersion(t *testing.T) {
+	frontendMock := &requestCapturingFrontendMock{}
+	executor := NewRemoteExecutor(frontendMock, Config{})
+
+	ctx := context.Background()
+	timeRange := types.NewInstantQueryTimeRange(time.Now())
+
+	node := &nodeWithOverriddenVersion{
+		Node: &nodeWithOverriddenVersion{
+			Node:    &core.NumberLiteral{NumberLiteralDetails: &core.NumberLiteralDetails{Value: 1234}},
+			version: 55,
+		},
+		version: 44,
+	}
+
+	fullPlan := &planning.QueryPlan{Version: 66}
+
+	_, err := executor.startExecution(ctx, fullPlan, node, timeRange, false, false, 1)
+	require.NoError(t, err)
+
+	require.NotNil(t, frontendMock.request)
+	require.IsType(t, &querierpb.EvaluateQueryRequest{}, frontendMock.request)
+	request := frontendMock.request.(*querierpb.EvaluateQueryRequest)
+	require.Equal(t, int64(66), request.Plan.Version, "should set request plan version to match the original plan version")
+}
+
+type nodeWithOverriddenVersion struct {
+	planning.Node
+	version int64
+}
+
+func (n *nodeWithOverriddenVersion) MinimumRequiredPlanVersion() int64 {
+	return n.version
+}
+
+type requestCapturingFrontendMock struct {
+	request proto.Message
+}
+
+func (m *requestCapturingFrontendMock) DoProtobufRequest(ctx context.Context, req proto.Message, minT, maxT time.Time) (*ProtobufResponseStream, error) {
+	m.request = req
+	return nil, nil
+}
+
 func TestEagerLoadingResponseStream_ShouldBufferAllMessagesEvenIfNoNextCallWaiting(t *testing.T) {
 	msg1 := newStringMessage("first message")
 	msg2 := newStringMessage("second message")

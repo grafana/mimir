@@ -294,6 +294,10 @@ func TestMatcherReducerPlanner_MatchedSeries(t *testing.T) {
 			name:     "all matcher types",
 			matchers: []string{`__name__="http_requests_total"`, `method="GET"`, `status!="500"`, `handler=~"/.*"`},
 		},
+		{
+			name:     "multiple wildcard matchers",
+			matchers: []string{`__name__=~".*"`, `method=~".*"`},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

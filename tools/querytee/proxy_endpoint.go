@@ -252,30 +252,52 @@ func (p *ProxyEndpoint) executeBackendRequests(req *http.Request, backends []Pro
 	wg.Wait()
 	close(resCh)
 
-	// Compare responses, but only if comparison is enabled and we ran this request against two backends.
-	if p.comparator != nil && len(backends) == 2 {
-		expectedResponse := responses[0]
-		actualResponse := responses[1]
-		if responses[1].backend.Preferred() {
-			expectedResponse, actualResponse = actualResponse, expectedResponse
+	if p.comparator != nil && len(backends) > 1 {
+		var preferredResponse *backendResponse
+		var secondaryResponses []*backendResponse
+
+		for _, response := range responses {
+			if response.backend.Preferred() {
+				preferredResponse = response
+			} else {
+				secondaryResponses = append(secondaryResponses, response)
+			}
 		}
 
-		result, err := p.compareResponses(expectedResponse, actualResponse, evaluationTime)
-		switch result {
-		case ComparisonFailed:
-			level.Error(logger).Log(
-				"msg", "response comparison failed",
-				"err", err,
-				"expected_response_duration", expectedResponse.elapsedTime,
-				"actual_response_duration", actualResponse.elapsedTime,
-			)
-		case ComparisonSkipped:
-			level.Warn(logger).Log(
-				"msg", "response comparison skipped",
-				"err", err,
-				"expected_response_duration", expectedResponse.elapsedTime,
-				"actual_response_duration", actualResponse.elapsedTime,
-			)
+		// Skip comparison if no preferred backend response was found
+		if preferredResponse == nil {
+			level.Warn(logger).Log("msg", "skipping response comparison because no preferred backend response was found")
+			return
+		}
+
+		for _, secondaryResponse := range secondaryResponses {
+			result, err := p.compareResponses(preferredResponse, secondaryResponse, evaluationTime)
+			switch result {
+			case ComparisonFailed:
+				level.Error(logger).Log(
+					"msg", "response comparison failed",
+					"err", err,
+					"preferred_backend", preferredResponse.backend.Name(),
+					"secondary_backend", secondaryResponse.backend.Name(),
+					"expected_response_duration", preferredResponse.elapsedTime,
+					"actual_response_duration", secondaryResponse.elapsedTime,
+				)
+			case ComparisonSkipped:
+				level.Warn(logger).Log(
+					"msg", "response comparison skipped",
+					"err", err,
+					"preferred_backend", preferredResponse.backend.Name(),
+					"secondary_backend", secondaryResponse.backend.Name(),
+					"expected_response_duration", preferredResponse.elapsedTime,
+					"actual_response_duration", secondaryResponse.elapsedTime,
+				)
+			}
+
+			relativeDuration := secondaryResponse.elapsedTime - preferredResponse.elapsedTime
+			proportionalDurationDifference := relativeDuration.Seconds() / preferredResponse.elapsedTime.Seconds()
+			p.metrics.relativeDuration.WithLabelValues(p.route.RouteName, secondaryResponse.backend.Name()).Observe(relativeDuration.Seconds())
+			p.metrics.proportionalDuration.WithLabelValues(p.route.RouteName, secondaryResponse.backend.Name()).Observe(proportionalDurationDifference)
+			p.metrics.responsesComparedTotal.WithLabelValues(p.route.RouteName, secondaryResponse.backend.Name(), string(result)).Inc()
 		}
 
 		// Log queries that are slower in some backends than others
@@ -288,12 +310,6 @@ func (p *ProxyEndpoint) executeBackendRequests(req *http.Request, backends []Pro
 				"fastest_backend", fastestBackend.Name(),
 			)
 		}
-
-		relativeDuration := actualResponse.elapsedTime - expectedResponse.elapsedTime
-		proportionalDurationDifference := relativeDuration.Seconds() / expectedResponse.elapsedTime.Seconds()
-		p.metrics.relativeDuration.WithLabelValues(p.route.RouteName).Observe(relativeDuration.Seconds())
-		p.metrics.proportionalDuration.WithLabelValues(p.route.RouteName).Observe(proportionalDurationDifference)
-		p.metrics.responsesComparedTotal.WithLabelValues(p.route.RouteName, string(result)).Inc()
 	}
 }
 
