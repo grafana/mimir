@@ -1828,53 +1828,61 @@ func (d *Distributor) acquireReactiveLimiterPermit(ctx context.Context) error {
 // This object describes which checks were already performed on the request,
 // and which component is responsible for doing a cleanup.
 func (d *Distributor) startPushRequest(ctx context.Context, httpgrpcRequestSize int64) (context.Context, *requestState, error) {
-	// If requestState is already in context, it means that StartPushRequest already ran for this request.
+	return d.startIfNeeded(ctx, func(ctx context.Context) (context.Context, *requestState, error) {
+		if d.reactiveLimiter != nil && !d.reactiveLimiter.CanAcquirePermit() {
+			d.rejectedRequests.WithLabelValues(reasonDistributorMaxInflightPushRequests).Inc()
+			return ctx, nil, errReactiveLimiterLimitExceeded
+		}
+
+		rs := &requestState{}
+
+		cleanupInDefer := true
+
+		// Increment number of requests and bytes before doing the checks, so that we hit error if this request crosses the limits.
+		inflight := d.inflightPushRequests.Inc()
+		defer func() {
+			if cleanupInDefer {
+				d.cleanupAfterPushFinished(rs)
+			}
+		}()
+
+		il := d.getInstanceLimits()
+		if il.MaxInflightPushRequests > 0 && inflight > int64(il.MaxInflightPushRequests) {
+			d.rejectedRequests.WithLabelValues(reasonDistributorMaxInflightPushRequests).Inc()
+			return ctx, nil, errMaxInflightRequestsReached
+		}
+
+		if il.MaxIngestionRate > 0 {
+			if rate := d.ingestionRate.Rate(); rate >= il.MaxIngestionRate {
+				d.rejectedRequests.WithLabelValues(reasonDistributorMaxIngestionRate).Inc()
+				return ctx, nil, errMaxIngestionRateReached
+			}
+		}
+
+		// If we know the httpgrpcRequestSize, we can check it.
+		if httpgrpcRequestSize > 0 {
+			if err := d.checkHttpgrpcRequestSize(rs, httpgrpcRequestSize); err != nil {
+				return ctx, nil, err
+			}
+		}
+
+		ctx = context.WithValue(ctx, requestStateKey, rs)
+
+		cleanupInDefer = false
+		return ctx, rs, nil
+	})
+}
+
+func (d *Distributor) startIfNeeded(ctx context.Context, startPushRequest func(context.Context) (context.Context, *requestState, error)) (context.Context, *requestState, error) {
+	// If requestState is already in context, it means that we have already started this request.
+	// In that case we return.
 	rs, alreadyInContext := ctx.Value(requestStateKey).(*requestState)
 	if alreadyInContext {
 		return ctx, rs, nil
 	}
 
-	if d.reactiveLimiter != nil && !d.reactiveLimiter.CanAcquirePermit() {
-		d.rejectedRequests.WithLabelValues(reasonDistributorMaxInflightPushRequests).Inc()
-		return ctx, nil, errReactiveLimiterLimitExceeded
-	}
-
-	rs = &requestState{}
-
-	cleanupInDefer := true
-
-	// Increment number of requests and bytes before doing the checks, so that we hit error if this request crosses the limits.
-	inflight := d.inflightPushRequests.Inc()
-	defer func() {
-		if cleanupInDefer {
-			d.cleanupAfterPushFinished(rs)
-		}
-	}()
-
-	il := d.getInstanceLimits()
-	if il.MaxInflightPushRequests > 0 && inflight > int64(il.MaxInflightPushRequests) {
-		d.rejectedRequests.WithLabelValues(reasonDistributorMaxInflightPushRequests).Inc()
-		return ctx, nil, errMaxInflightRequestsReached
-	}
-
-	if il.MaxIngestionRate > 0 {
-		if rate := d.ingestionRate.Rate(); rate >= il.MaxIngestionRate {
-			d.rejectedRequests.WithLabelValues(reasonDistributorMaxIngestionRate).Inc()
-			return ctx, nil, errMaxIngestionRateReached
-		}
-	}
-
-	// If we know the httpgrpcRequestSize, we can check it.
-	if httpgrpcRequestSize > 0 {
-		if err := d.checkHttpgrpcRequestSize(rs, httpgrpcRequestSize); err != nil {
-			return ctx, nil, err
-		}
-	}
-
-	ctx = context.WithValue(ctx, requestStateKey, rs)
-
-	cleanupInDefer = false
-	return ctx, rs, nil
+	// Otherwise we start the push request.
+	return startPushRequest(ctx)
 }
 
 func (d *Distributor) checkHttpgrpcRequestSize(rs *requestState, httpgrpcRequestSize int64) error {
