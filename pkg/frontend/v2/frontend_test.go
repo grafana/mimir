@@ -27,6 +27,7 @@ import (
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/metrics"
+	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/servicediscovery"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/test"
@@ -37,6 +38,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/keepalive"
 	"google.golang.org/protobuf/proto"
 
@@ -64,22 +66,35 @@ func setupFrontend(t testing.TB, reg prometheus.Registerer, schedulerReplyFunc f
 }
 
 func setupFrontendWithConcurrencyAndServerOptions(t testing.TB, reg prometheus.Registerer, schedulerReplyFunc func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend, concurrency int, logger log.Logger, opts ...grpc.ServerOption) (*Frontend, *mockScheduler) {
-	l, err := net.Listen("tcp", "localhost:0")
+	// We need to use different ports as the scheduler does not need the user header interceptor,
+	// whereas the frontend does.
+	frontendListener, err := net.Listen("tcp", "localhost:0")
 	require.NoError(t, err)
 
-	server := grpc.NewServer(opts...)
-
-	h, p, err := net.SplitHostPort(l.Addr().String())
+	schedulerListener, err := net.Listen("tcp", "localhost:0")
 	require.NoError(t, err)
 
-	grpcPort, err := strconv.Atoi(p)
+	schedulerOpts := opts
+	frontendOpts := append(
+		opts,
+		grpc.StreamInterceptor(middleware.StreamServerUserHeaderInterceptor),
+		grpc.UnaryInterceptor(middleware.ServerUserHeaderInterceptor),
+	)
+
+	schedulerServer := grpc.NewServer(schedulerOpts...)
+	frontendServer := grpc.NewServer(frontendOpts...)
+
+	frontendHost, frontendPort, err := net.SplitHostPort(frontendListener.Addr().String())
+	require.NoError(t, err)
+
+	grpcPort, err := strconv.Atoi(frontendPort)
 	require.NoError(t, err)
 
 	cfg := Config{}
 	flagext.DefaultValues(&cfg)
-	cfg.SchedulerAddress = l.Addr().String()
+	cfg.SchedulerAddress = schedulerListener.Addr().String()
 	cfg.WorkerConcurrency = concurrency
-	cfg.Addr = h
+	cfg.Addr = frontendHost
 	cfg.Port = grpcPort
 	cfg.QueryStoreAfter = 12 * time.Hour
 
@@ -88,18 +103,27 @@ func setupFrontendWithConcurrencyAndServerOptions(t testing.TB, reg prometheus.R
 	f, err := NewFrontend(cfg, limits{queryIngestersWithin: 13 * time.Hour}, logger, reg, codec)
 	require.NoError(t, err)
 
-	frontendv2pb.RegisterFrontendForQuerierServer(server, f)
+	frontendv2pb.RegisterFrontendForQuerierServer(frontendServer, f)
 
 	ms := newMockScheduler(t, f, schedulerReplyFunc)
-	schedulerpb.RegisterSchedulerForFrontendServer(server, ms)
+	schedulerpb.RegisterSchedulerForFrontendServer(schedulerServer, ms)
 
 	go func() {
-		_ = server.Serve(l)
+		_ = frontendServer.Serve(frontendListener)
+	}()
+
+	go func() {
+		_ = schedulerServer.Serve(schedulerListener)
 	}()
 
 	t.Cleanup(func() {
-		_ = l.Close()
-		server.GracefulStop()
+		_ = frontendListener.Close()
+		frontendServer.GracefulStop()
+	})
+
+	t.Cleanup(func() {
+		_ = schedulerListener.Close()
+		schedulerServer.GracefulStop()
 	})
 
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), f))
@@ -146,12 +170,33 @@ func sendStreamingResponseWithErrorCapture(f *Frontend, userID string, queryID u
 	}
 
 	ctx := user.InjectOrgID(context.Background(), userID)
-	stream := &mockQueryResultStreamServer{
-		ctx:  ctx,
-		msgs: resp,
+
+	conn, err := grpc.NewClient(
+		net.JoinHostPort(f.cfg.Addr, strconv.Itoa(f.cfg.Port)),
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithChainUnaryInterceptor(middleware.ClientUserHeaderInterceptor),
+		grpc.WithChainStreamInterceptor(middleware.StreamClientUserHeaderInterceptor),
+	)
+
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+
+	client := frontendv2pb.NewFrontendForQuerierClient(conn)
+	stream, err := client.QueryResultStream(ctx)
+	if err != nil {
+		return err
 	}
 
-	return f.QueryResultStream(stream)
+	for _, m := range resp {
+		if err := stream.Send(m); err != nil {
+			return err
+		}
+	}
+
+	_, err = stream.CloseAndRecv()
+	return err
 }
 
 func sendStreamingResponseFromEncodedMessages(t testing.TB, f *Frontend, userID string, queryID uint64, resp ...[]byte) {
