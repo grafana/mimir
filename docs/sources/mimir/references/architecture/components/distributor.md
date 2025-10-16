@@ -98,7 +98,7 @@ By default, Prometheus remote write doesn't retry requests on 429 HTTP response 
 Since distributor rate limits are implemented locally, each distributor must know how many healthy distributors are running in the Mimir cluster.
 To achieve this, each distributor joins a hash ring used for service discovery, which tracks the number of healthy distributor instances.
 
-The default configuration uses `memberlist` as backend for the distributors ring.
+By default, the distributors’ ring uses `memberlist` as its backend.
 If you want to configure a different backend, for example, `consul` or `etcd`, you can use the following CLI flags (and their respective YAML configuration options) to configure the distributors ring KV store:
 
 - `-distributor.ring.store`: The backend storage to use.
