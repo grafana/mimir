@@ -41,6 +41,7 @@ func BenchmarkQueryExecution(b *testing.B) {
 	b.Logf("Prepared %d vector selectors (sample: %f%%)", len(vectorQueries), *querySampleFlag*100)
 
 	// Start ingester
+	// TODO dimitarvdimitrov instead of oging through network just get back the ingester - expose startBenchmarkIngester and use the ingester we get back; implement a mock client stream which just discards data so we can just see how fast the ingester can push the data through the stream
 	addr, cleanupFunc, err := benchmarks.StartIngesterAndLoadData(*dataDirFlag, []int{}, func(config *ingester.Config) {
 		config.BlocksStorageConfig.TSDB.IndexLookupPlanning.Enabled = true
 	})
