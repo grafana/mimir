@@ -176,11 +176,12 @@ func parseDuration(s string) (time.Duration, error) {
 	return time.Duration(stepD), nil
 }
 
-// PrepareVectorQueries loads queries from a file, extracts label matchers from each query,
-// and samples them according to the given parameters. Results are cached to avoid re-processing.
-func PrepareVectorQueries(filepath string, sampleFraction float64, seed int64) ([]vectorSelectorQuery, error) {
+// PrepareVectorQueries loads queries from a file, filters by tenant ID if specified,
+// extracts label matchers from each query, and samples them according to the given parameters.
+// Results are cached to avoid re-processing.
+func PrepareVectorQueries(filepath string, tenantID string, sampleFraction float64, seed int64) ([]vectorSelectorQuery, error) {
 	// Create cache key from parameters
-	cacheKey := fmt.Sprintf("%s|%f|%d", filepath, sampleFraction, seed)
+	cacheKey := fmt.Sprintf("%s|%s|%f|%d", filepath, tenantID, sampleFraction, seed)
 
 	// Check cache first
 	if cached, ok := vectorQueryCache.Load(cacheKey); ok {
@@ -191,6 +192,17 @@ func PrepareVectorQueries(filepath string, sampleFraction float64, seed int64) (
 	queries, err := LoadQueryLogsFromFile(filepath)
 	if err != nil {
 		return nil, err
+	}
+
+	// Filter by tenant ID if specified (before extracting matchers to save work)
+	if tenantID != "" {
+		filtered := queries[:0]
+		for i := range queries {
+			if queries[i].OrgID == tenantID {
+				filtered = append(filtered, queries[i])
+			}
+		}
+		queries = filtered
 	}
 
 	// Extract label matchers from each query (each query may produce multiple vector selectors)
