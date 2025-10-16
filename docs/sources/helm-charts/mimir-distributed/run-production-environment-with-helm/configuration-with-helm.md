@@ -155,7 +155,7 @@ Grafana Mimir does not track changes to the credentials. If you update the crede
 
 This example shows how to set up the configuration to use an S3 bucket for blocks storage in a namespace called `mimir-test`.
 
-1. Set up the external blocks storage, in this case S3 with buckets named, for example, `my-blocks-bucket`, `my-ruler-bucket` and in case of Grafana Enterprise Metrics, `my-admin-bucket`.
+1. Set up the external blocks storage, in this case S3 with buckets named, for example, `my-blocks-bucket` and `my-ruler-bucket`.
 
 1. Create an external secret with the S3 credentials by writing the following to a `mysecret.yaml` file:
 
@@ -193,14 +193,6 @@ This example shows how to set up the configuration to use an S3 bucket for block
 
    mimir:
      structuredConfig:
-       # Uncomment when using Grafana Enterprise Metrics
-       # admin_client:
-       #   storage:
-       #     s3:
-       #       bucket_name: my-admin-bucket
-       #       access_key_id: ${AWS_ACCESS_KEY_ID}
-       #       endpoint: s3.amazonaws.com
-       #       secret_access_key: ${AWS_SECRET_ACCESS_KEY}
        alertmanager_storage:
          s3:
            bucket_name: my-ruler-bucket
