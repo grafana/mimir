@@ -9,13 +9,7 @@
 //
 //	go test -bench=. -data-dir=/path/to/data -query-file=/path/to/queries.json
 //
-// Flags:
-//   - -data-dir: Directory containing ingester data (WAL + blocks)
-//   - -query-file: JSON file with query logs from Loki
-//   - -tenant-id: Filter queries by tenant (optional)
-//   - -query-ids: Specific query IDs to benchmark (optional)
-//   - -query-sample: Fraction of queries to sample (0.0-1.0)
-//   - -query-sample-seed: Random seed for query sampling
+// For more flags see the individual flag descriptions below.
 package benchmarks
 
 import (
@@ -61,7 +55,7 @@ func (m *mockQueryStreamServer) Send(resp *client.QueryStreamResponse) error {
 	if len(resp.StreamingSeries) > 0 {
 		for _, s := range resp.StreamingSeries {
 			m.result.SeriesCount++
-			m.result.ChunkCount += int(s.ChunkCount)
+			m.result.ChunksCount += int(s.ChunkCount)
 		}
 	}
 
@@ -107,13 +101,13 @@ func BenchmarkQueryExecution(b *testing.B) {
 			b.Run(queryID, func(b *testing.B) {
 				b.ReportAllocs()
 				for i := 0; i < b.N; i++ {
-					queryResult, err := executeQueryDirect(ing, q.VectorSelectors[selectorIdx], q.User)
+					queryResult, err := queryIngester(ing, q.VectorSelectors[selectorIdx], q.User)
 					if err != nil {
 						b.Fatalf("Query failed: %v (query: %s)", err, q.Query)
 					}
 					// Report metrics only on first iteration to avoid clutter
 					if i == 0 {
-						b.Logf("series=%d chunks=%d", queryResult.SeriesCount, queryResult.ChunkCount)
+						b.Logf("series=%d chunks=%d", queryResult.SeriesCount, queryResult.ChunksCount)
 					}
 				}
 			})
@@ -123,12 +117,11 @@ func BenchmarkQueryExecution(b *testing.B) {
 
 // queryResult contains the result of executing a query against the ingester.
 type queryResult struct {
-	SeriesCount int // Number of series returned
-	ChunkCount  int // Total chunks across all series
+	SeriesCount int
+	ChunksCount int
 }
 
-// executeQueryDirect executes a vector selector query directly against the ingester without going through gRPC.
-func executeQueryDirect(ing *ingester.Ingester, matchers []*labels.Matcher, userID string) (*queryResult, error) {
+func queryIngester(ing *ingester.Ingester, matchers []*labels.Matcher, userID string) (*queryResult, error) {
 	// Convert to client format
 	labelMatchers, err := client.ToLabelMatchers(matchers)
 	if err != nil {
