@@ -4,6 +4,7 @@ package grpcstats
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net"
 	"testing"
@@ -88,7 +89,7 @@ func TestDataTransferStatsHandler(t *testing.T) {
 		messagesReceived := 0
 		for {
 			_, err := stream.Recv()
-			if err == io.EOF {
+			if errors.Is(err, io.EOF) {
 				break
 			}
 			require.NoError(t, err)

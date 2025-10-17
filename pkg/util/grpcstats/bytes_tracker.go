@@ -43,7 +43,7 @@ func (h *grpcDataTransferStatsHandler) HandleRPC(_ context.Context, rpcStats sta
 	case *stats.OutPayload:
 		h.bytesTransferred.Add(float64(s.WireLength))
 	case *stats.OutTrailer:
-		h.bytesTransferred.Add(float64(s.WireLength))
+		// OutTrailer has WireLength field, but the field is deprecated and its value is never set.
 	}
 }
 
