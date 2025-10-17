@@ -118,6 +118,7 @@
 
 ### Mixin
 
+* [CHANGE] Enable ingest storage panels by default in all compiled mixins. #13023
 * [CHANGE] Alerts: Removed `MimirFrontendQueriesStuck` alert given this is not relevant when the query-scheduler is running and the query-scheduler is now a required component. #12810
 * [ENHANCEMENT] Rollout progress dashboard: make panels higher to fit more components. #12429
 * [ENHANCEMENT] Add `max_series` limit to Writes Resources > Ingester > In-memory series panel. #12476
