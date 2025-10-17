@@ -70,7 +70,7 @@ func buildOutMatchers(inMatchers []*labels.Matcher, allowedOutMatchers []*labels
 	// The innermost map value tracks whether that matcher is already represented in outMatchers.
 	// We do it this way instead of using the matcher string via m.String()
 	// to avoid unnecessary memory allocations when building the string.
-	allowedInResultSet := make(map[labels.MatchType]map[string]map[string]bool, len(allowedOutMatchers))
+	allowedInResultSet := make(map[labels.MatchType]map[string]map[string]bool, 4)
 	for _, m := range allowedOutMatchers {
 		if _, ok := allowedInResultSet[m.Type][m.Name]; ok {
 			allowedInResultSet[m.Type][m.Name][m.Value] = false
@@ -137,20 +137,34 @@ func setReduceMatchers(ms []*labels.Matcher) []*labels.Matcher {
 	return outMatchers
 }
 
-// dedupeMatchers dedupes matchers based on their matcher string.
+// dedupeMatchers dedupes matchers based on their type, name, and value.
 func dedupeMatchers(ms []*labels.Matcher) ([]*labels.Matcher, []*labels.Matcher) {
-	deduped := make(map[string]*labels.Matcher, len(ms))
+	deduped := make(map[labels.MatchType]map[string]map[string]*labels.Matcher, 4)
 	dropped := make([]*labels.Matcher, 0, 1)
 	for _, m := range ms {
-		if _, ok := deduped[m.String()]; !ok {
-			deduped[m.String()] = m
-		} else {
+		if _, ok := deduped[m.Type][m.Name][m.Value]; ok {
 			dropped = append(dropped, m)
+			continue
 		}
+		if _, ok := deduped[m.Type][m.Name]; ok {
+			deduped[m.Type][m.Name][m.Value] = m
+			continue
+		}
+		valPtr := map[string]*labels.Matcher{m.Value: m}
+		if _, ok := deduped[m.Type]; ok {
+			deduped[m.Type][m.Name] = valPtr
+			continue
+		}
+		name := map[string]map[string]*labels.Matcher{m.Name: valPtr}
+		deduped[m.Type] = name
 	}
 	outMatchers := make([]*labels.Matcher, 0, len(deduped))
-	for _, ptr := range deduped {
-		outMatchers = append(outMatchers, ptr)
+	for _, nameMap := range deduped {
+		for _, valMap := range nameMap {
+			for _, ptr := range valMap {
+				outMatchers = append(outMatchers, ptr)
+			}
+		}
 	}
 	return outMatchers, dropped
 }
