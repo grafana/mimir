@@ -4,6 +4,7 @@ package compactor
 
 import (
 	"context"
+	"os"
 	"sync"
 	"testing"
 	"time"
@@ -12,9 +13,12 @@ import (
 	"github.com/grafana/dskit/kv/consul"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
+	util_log "github.com/grafana/mimir/pkg/util/log"
+	"github.com/oklog/ulid/v2"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore"
 	"go.uber.org/goleak"
@@ -26,6 +30,7 @@ import (
 	"github.com/grafana/mimir/pkg/compactor/scheduler/compactorschedulerpb"
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
+	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	testutil "github.com/grafana/mimir/pkg/util/test"
 )
 
@@ -42,6 +47,9 @@ func makeTestCompactorConfig(PlanningMode, schedulerAddress string) Config {
 		SymbolsFlushersConcurrency:          1,
 		MaxBlockUploadValidationConcurrency: 1,
 		BlockRanges:                         mimir_tsdb.DurationList{2 * time.Hour, 12 * time.Hour, 24 * time.Hour},
+		MetaSyncConcurrency:                 1, // Must be > 0 to avoid blocking in MetaFetcher
+		CompactionConcurrency:               1, // Must be > 0 for BucketCompactor
+		BlockSyncConcurrency:                1, // Must be > 0 for block syncing
 	}
 }
 
@@ -507,4 +515,302 @@ func TestSchedulerExecutor_JobCancellationOn_NotFoundResponse(t *testing.T) {
 
 	// check that exactly 2 updates were sent. First recv OK, next recv NOT_FOUND to trigge cancel
 	require.Equal(t, 2, updateCallCount, "should have sent exactly 2 updates: one successful, then one NOT_FOUND")
+}
+
+// TestSchedulerExecutor_ExecuteCompactionJob_InvalidInput tests that executeCompactionJob
+// properly validates input and returns appropriate status codes for invalid job specs.
+// ABANDON status indicates unrecoverable errors (likely scheduler bugs) that should not be retried.
+func TestSchedulerExecutor_ExecuteCompactionJob_InvalidInput(t *testing.T) {
+	tests := map[string]struct {
+		spec           *compactorschedulerpb.JobSpec
+		expectedStatus compactorschedulerpb.UpdateType
+	}{
+		"nil_job_spec_returns_abandon": {
+			spec: &compactorschedulerpb.JobSpec{
+				Tenant:  "test-tenant",
+				Job:     nil,
+				JobType: compactorschedulerpb.COMPACTION,
+			},
+			expectedStatus: compactorschedulerpb.ABANDON,
+		},
+		"empty_block_ids_returns_abandon": {
+			spec: &compactorschedulerpb.JobSpec{
+				Tenant: "test-tenant",
+				Job: &compactorschedulerpb.CompactionJob{
+					BlockIds: [][]byte{},
+					Split:    false,
+				},
+				JobType: compactorschedulerpb.COMPACTION,
+			},
+			expectedStatus: compactorschedulerpb.ABANDON,
+		},
+		"invalid_block_id_returns_abandon": {
+			spec: &compactorschedulerpb.JobSpec{
+				Tenant: "test-tenant",
+				Job: &compactorschedulerpb.CompactionJob{
+					BlockIds: [][]byte{[]byte("not-a-valid-ulid")},
+					Split:    false,
+				},
+				JobType: compactorschedulerpb.COMPACTION,
+			},
+			expectedStatus: compactorschedulerpb.ABANDON,
+		},
+		"multiple_blocks_with_one_invalid_returns_abandon": {
+			spec: &compactorschedulerpb.JobSpec{
+				Tenant: "test-tenant",
+				Job: &compactorschedulerpb.CompactionJob{
+					BlockIds: [][]byte{
+						[]byte("01HZBE7WEN8ZGXWXRGEKWZXP1N"), // Valid
+						[]byte("invalid"),                    // Invalid
+					},
+					Split: false,
+				},
+				JobType: compactorschedulerpb.COMPACTION,
+			},
+			expectedStatus: compactorschedulerpb.ABANDON,
+		},
+	}
+
+	for testName, tc := range tests {
+		t.Run(testName, func(t *testing.T) {
+			cfg := makeTestCompactorConfig(planningModeScheduler, "localhost:9095")
+			schedulerExec, err := newSchedulerExecutor(cfg, log.NewNopLogger(), nil)
+			require.NoError(t, err)
+
+			c, _, _, _, _ := prepareWithConfigProvider(t, cfg, &bucket.ClientMock{}, newMockConfigProvider())
+
+			status, err := schedulerExec.executeCompactionJob(context.Background(), c, tc.spec)
+
+			require.Error(t, err)
+			assert.Equal(t, tc.expectedStatus, status)
+		})
+	}
+}
+
+// TestSchedulerExecutor_ExecuteCompactionJob_BlockMetadataSync tests that executeCompactionJob
+// properly syncs block metadata from object storage and validates that all specified blocks exist.
+// This is critical because the scheduler only sends block IDs, not full metadata.
+func TestSchedulerExecutor_ExecuteCompactionJob_BlockMetadataSync(t *testing.T) {
+	tests := map[string]struct {
+		setupBucket         func(*testing.T, objstore.Bucket) []string
+		expectedStatus      compactorschedulerpb.UpdateType
+		expectedErrorSubstr string
+	}{
+		// "block_not_found_in_bucket": {
+		// 	setupBucket: func(t *testing.T, bkt objstore.Bucket) []string {
+		// 		return []string{"01HZBE7WEN8ZGXWXRGEKWZXP1N"}
+		// 	},
+		// 	expectedStatus:      compactorschedulerpb.REASSIGN,
+		// 	expectedErrorSubstr: "not found in synced metadata",
+		// },
+		"successful_sync_with_single_block": {
+			// Test that metadata syncing works correctly when the block exists
+			setupBucket: func(t *testing.T, bkt objstore.Bucket) []string {
+				block1 := createTSDBBlock(t, bkt, "test-tenant", 10, 11, 2, nil)
+				return []string{block1.String()}
+			},
+			expectedStatus:      compactorschedulerpb.COMPLETE,
+			expectedErrorSubstr: "",
+		},
+		// "successful_sync_with_multiple_blocks": {
+		// 	// Test that metadata syncing works correctly with multiple blocks
+		// 	setupBucket: func(t *testing.T, bkt objstore.Bucket) []string {
+		// 		block1 := createTSDBBlock(t, bkt, "test-tenant", 10, 20, 2, nil)
+		// 		block2 := createTSDBBlock(t, bkt, "test-tenant", 20, 30, 2, nil)
+		// 		return []string{block1.String(), block2.String()}
+		// 	},
+		// 	expectedStatus:      compactorschedulerpb.COMPLETE,
+		// 	expectedErrorSubstr: "",
+		// },
+	}
+
+	for testName, tc := range tests {
+		t.Run(testName, func(t *testing.T) {
+			cfg := makeTestCompactorConfig(planningModeScheduler, "localhost:9095")
+			bkt := objstore.NewInMemBucket()
+
+			blockIDs := tc.setupBucket(t, bkt)
+			logger := util_log.MakeLeveledLogger(os.Stdout, "info")
+			schedulerExec, err := newSchedulerExecutor(cfg, logger, nil)
+			require.NoError(t, err)
+
+			c, tsdbCompactor, tsdbPlanner, _, _ := prepareWithConfigProvider(t, cfg, bkt, newMockConfigProvider())
+			c.bucketClient = bkt
+
+			// The planner and compactor are normally set during service startup (in the starting() method),
+			// but since we're testing the executor directly without starting the full service,
+			// we need to set them manually.
+			c.blocksPlanner = tsdbPlanner
+			c.blocksCompactor = tsdbCompactor
+
+			// Configure mocks: planner returns blocks as-is (like SplitAndMergePlanner)
+			tsdbPlanner.On("Plan", mock.Anything, mock.Anything).Return(
+				mock.AnythingOfType("[]*block.Meta"),
+				nil,
+			).Maybe()
+
+			// Build job spec from block IDs
+			blockIDBytes := make([][]byte, len(blockIDs))
+			for i, id := range blockIDs {
+				blockIDBytes[i] = []byte(id)
+			}
+
+			spec := &compactorschedulerpb.JobSpec{
+				Tenant: "test-tenant",
+				Job: &compactorschedulerpb.CompactionJob{
+					BlockIds: blockIDBytes,
+					Split:    false,
+				},
+				JobType: compactorschedulerpb.COMPACTION,
+			}
+
+			status, err := schedulerExec.executeCompactionJob(context.Background(), c, spec)
+
+			if tc.expectedErrorSubstr != "" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tc.expectedErrorSubstr)
+			} else {
+				require.NoError(t, err)
+			}
+			assert.Equal(t, tc.expectedStatus, status)
+		})
+	}
+}
+
+// TestSchedulerExecutor_ExecuteCompactionJob_SplitCompaction tests that the split flag
+// from the job spec is properly respected when creating and executing compaction jobs.
+// Split compaction divides blocks into multiple shards for better parallelization.
+func TestSchedulerExecutor_ExecuteCompactionJob_SplitCompaction(t *testing.T) {
+	tests := map[string]struct {
+		splitEnabled bool
+		// TODO: Add assertions about split behavior once we have a full working test
+	}{
+		"split_disabled": {
+			splitEnabled: false,
+		},
+		"split_enabled": {
+			splitEnabled: true,
+		},
+	}
+
+	for testName, tc := range tests {
+		t.Run(testName, func(t *testing.T) {
+			t.Skip("TODO: Implement full compaction test with mock blocks")
+			_ = tc // TODO: use tc when implementing test
+
+			// This test would:
+			// 1. Create mock blocks in the bucket
+			// 2. Call executeCompactionJob with split enabled/disabled
+			// 3. Verify that BucketCompactor.runCompactionJob receives a Job with correct split settings
+			// 4. Verify the number of output blocks matches expectations (1 for merge, N for split)
+		})
+	}
+}
+
+// TestSchedulerExecutor_ExecuteCompactionJob_ContextCancellation tests that executeCompactionJob
+// properly respects context cancellation. This is important because the scheduler can cancel jobs
+// via the heartbeat mechanism (returning NOT_FOUND), and we need to stop work immediately.
+func TestSchedulerExecutor_ExecuteCompactionJob_ContextCancellation(t *testing.T) {
+	tests := map[string]struct {
+		cancelBeforeSync bool
+	}{
+		"cancel_before_metadata_sync": {
+			// Test that canceling context before metadata sync is detected early
+			cancelBeforeSync: true,
+		},
+		// TODO: Add test for cancellation during compaction execution
+		// This would require more complex setup with actual block data
+	}
+
+	for testName, tc := range tests {
+		t.Run(testName, func(t *testing.T) {
+			cfg := makeTestCompactorConfig(planningModeScheduler, "localhost:9095")
+			bucketClient := &bucket.ClientMock{}
+			bucketClient.MockIter("test-tenant/", []string{}, nil)
+			bucketClient.MockIter("test-tenant/markers/", []string{}, nil)
+
+			schedulerExec, err := newSchedulerExecutor(cfg, log.NewNopLogger(), nil)
+			require.NoError(t, err)
+
+			c, _, _, _, _ := prepareWithConfigProvider(t, cfg, bucketClient, newMockConfigProvider())
+			c.bucketClient = bucketClient
+
+			spec := &compactorschedulerpb.JobSpec{
+				Tenant: "test-tenant",
+				Job: &compactorschedulerpb.CompactionJob{
+					BlockIds: [][]byte{[]byte("01HZBE7WEN8ZGXWXRGEKWZXP1N")},
+					Split:    false,
+				},
+				JobType: compactorschedulerpb.COMPACTION,
+			}
+
+			ctx, cancel := context.WithCancel(context.Background())
+			if tc.cancelBeforeSync {
+				cancel()
+			}
+
+			status, err := schedulerExec.executeCompactionJob(ctx, c, spec)
+
+			// Context cancellation should result in an error
+			if tc.cancelBeforeSync {
+				require.Error(t, err)
+				assert.Equal(t, compactorschedulerpb.REASSIGN, status)
+			}
+		})
+	}
+}
+
+// TestSchedulerExecutor_ExecuteCompactionJob_TenantIsolation tests that executeCompactionJob
+// properly isolates tenant data by using tenant-specific bucket clients and loggers.
+// This is critical for multi-tenancy to prevent data leakage between tenants.
+func TestSchedulerExecutor_ExecuteCompactionJob_TenantIsolation(t *testing.T) {
+	tests := map[string]struct {
+		tenantID string
+	}{
+		"tenant_a": {
+			tenantID: "tenant-a",
+		},
+		"tenant_b": {
+			tenantID: "tenant-b",
+		},
+	}
+
+	for testName, tc := range tests {
+		t.Run(testName, func(t *testing.T) {
+			t.Skip("TODO: Implement test that verifies tenant-specific bucket client is used")
+			_ = tc // TODO: use tc when implementing test
+
+			// This test would:
+			// 1. Create a mock bucket that tracks which tenant paths are accessed
+			// 2. Call executeCompactionJob for a specific tenant
+			// 3. Verify that only that tenant's blocks are accessed
+			// 4. Verify tenant ID appears in log messages
+		})
+	}
+}
+
+// TestSchedulerExecutor_ExecuteCompactionJob_MetricsReporting tests that executeCompactionJob
+// properly reports metrics for compaction jobs. This includes:
+// - Number of blocks compacted
+// - Compaction duration
+// - Success/failure counters
+func TestSchedulerExecutor_ExecuteCompactionJob_MetricsReporting(t *testing.T) {
+	tests := map[string]struct {
+		// TODO: Add test cases for different metric scenarios
+	}{
+		"successful_compaction_reports_metrics": {
+			// Verify that successful compaction increments appropriate counters
+		},
+	}
+
+	for testName := range tests {
+		t.Run(testName, func(t *testing.T) {
+			t.Skip("TODO: Implement metrics verification test")
+
+			// This test would:
+			// 1. Create a compactor with a test registry
+			// 2. Execute a compaction job
+			// 3. Verify expected metrics are updated (compaction duration, block counts, etc.)
+		})
+	}
 }

@@ -804,6 +804,28 @@ func (c *MultitenantCompactor) compactUsers(ctx context.Context) {
 	succeeded = true
 }
 
+// getOrCreateMetaCache retrieves or creates a metadata cache for the given user.
+// Returns nil if the configured cache size is 0 (caching disabled).
+func (c *MultitenantCompactor) getOrCreateMetaCache(userID string) *block.MetaCache {
+	metaCacheSize := c.cfgProvider.CompactorInMemoryTenantMetaCacheSize(userID)
+	if metaCacheSize == 0 {
+		delete(c.metaCaches, userID)
+		return nil
+	}
+
+	metaCache := c.metaCaches[userID]
+	if metaCache == nil || metaCache.MaxSize() != metaCacheSize {
+		// We use min compaction level equal to configured block ranges.
+		// Blocks created by ingesters start with compaction level 1. When blocks are first compacted (blockRanges[0], possibly split-compaction), compaction level will be 2.
+		// Higher the compaction level, higher chance of finding the same block over and over, and that's where cache helps the most.
+		// Blocks with 64 sources take at least 1 KiB of memory (each source = 16 bytes). Blocks with many sources are more expensive to reparse over and over again.
+		metaCache = block.NewMetaCache(metaCacheSize, len(c.compactorCfg.BlockRanges), 64)
+		c.metaCaches[userID] = metaCache
+	}
+
+	return metaCache
+}
+
 func (c *MultitenantCompactor) compactUserWithRetries(ctx context.Context, userID string) error {
 	var lastErr error
 
@@ -844,21 +866,7 @@ func (c *MultitenantCompactor) compactUser(ctx context.Context, userID string) e
 		NewNoCompactionMarkFilter(userBucket),
 	}
 
-	var metaCache *block.MetaCache
-	metaCacheSize := c.cfgProvider.CompactorInMemoryTenantMetaCacheSize(userID)
-	if metaCacheSize == 0 {
-		delete(c.metaCaches, userID)
-	} else {
-		metaCache = c.metaCaches[userID]
-		if metaCache == nil || metaCache.MaxSize() != metaCacheSize {
-			// We use min compaction level equal to configured block ranges.
-			// Blocks created by ingesters start with compaction level 1. When blocks are first compacted (blockRanges[0], possibly split-compaction), compaction level will be 2.
-			// Higher the compaction level, higher chance of finding the same block over and over, and that's where cache helps the most.
-			// Blocks with 64 sources take at least 1 KiB of memory (each source = 16 bytes). Blocks with many sources are more expensive to reparse over and over again.
-			metaCache = block.NewMetaCache(metaCacheSize, len(c.compactorCfg.BlockRanges), 64)
-			c.metaCaches[userID] = metaCache
-		}
-	}
+	metaCache := c.getOrCreateMetaCache(userID)
 
 	// Disable maxLookback (set to 0s) when block upload is enabled, block upload enabled implies there will be blocks
 	// beyond the lookback period, we don't want the compactor to skip these

@@ -3,9 +3,12 @@
 package compactor
 
 import (
+	"cmp"
 	"context"
 	"crypto/rand"
 	"fmt"
+	"path"
+	"slices"
 	"time"
 
 	"github.com/failsafe-go/failsafe-go"
@@ -17,12 +20,16 @@ import (
 	"github.com/oklog/ulid/v2"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/prometheus/model/labels"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 
 	"github.com/grafana/mimir/pkg/compactor/scheduler/compactorschedulerpb"
+	"github.com/grafana/mimir/pkg/storage/bucket"
+	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/util"
+	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
 // compactionExecutor defines how compaction work is executed.
@@ -277,6 +284,159 @@ func (e *schedulerExecutor) updateJobStatus(ctx context.Context, key *compactors
 }
 
 func (e *schedulerExecutor) executeCompactionJob(ctx context.Context, c *MultitenantCompactor, spec *compactorschedulerpb.JobSpec) (compactorschedulerpb.UpdateType, error) {
+	if spec.Job == nil || len(spec.Job.BlockIds) == 0 {
+		// This should never happen, likely a bug in the scheduler. Abandon job.
+		return compactorschedulerpb.ABANDON, errors.New("compaction job has no blocks")
+	}
+
+	userID := spec.Tenant
+	userLogger := util_log.WithUserID(userID, e.logger)
+
+	// Convert block IDs from bytes to ULIDs
+	blockIDs := make([]ulid.ULID, 0, len(spec.Job.BlockIds))
+	for _, id := range spec.Job.BlockIds {
+		blockID, err := ulid.Parse(string(id))
+		if err != nil {
+			// Invalid block ID likely indicates a scheduler bug. Abandon job.
+			return compactorschedulerpb.ABANDON, errors.Wrapf(err, "failed to parse block ID")
+		}
+		blockIDs = append(blockIDs, blockID)
+	}
+
+	level.Info(userLogger).Log("msg", "executing compaction job from scheduler", "tenant", userID, "blocks", len(blockIDs), "split", spec.Job.Split)
+
+	reg := prometheus.NewRegistry()
+	defer c.syncerMetrics.gatherThanosSyncerMetrics(reg, userLogger)
+
+	userBucket := bucket.NewUserBucketClient(userID, c.bucketClient, c.cfgProvider)
+
+	deduplicateBlocksFilter := NewShardAwareDeduplicateFilter()
+	fetcherFilters := []block.MetadataFilter{
+		NewLabelRemoverFilter(compactionIgnoredLabels),
+		deduplicateBlocksFilter,
+		NewNoCompactionMarkFilter(userBucket),
+	}
+
+	metaCache := c.getOrCreateMetaCache(userID)
+
+	var maxLookback = c.cfgProvider.CompactorMaxLookback(userID)
+	if c.cfgProvider.CompactorBlockUploadEnabled(userID) {
+		maxLookback = 0
+	}
+
+	// Create metadata fetcher
+	fetcher, err := block.NewMetaFetcher(
+		userLogger,
+		c.compactorCfg.MetaSyncConcurrency,
+		userBucket,
+		c.metaSyncDirForUser(userID),
+		reg,
+		fetcherFilters,
+		metaCache,
+		maxLookback,
+	)
+	if err != nil {
+		return compactorschedulerpb.REASSIGN, errors.Wrap(err, "failed to create meta fetcher")
+	}
+	level.Info(userLogger).Log("msg", "executing compaction job from scheduler", "tenant", userID, "blocks", len(blockIDs), "split", spec.Job.Split)
+
+	// Create syncer
+	syncer, err := newMetaSyncer(
+		userLogger,
+		reg,
+		userBucket,
+		fetcher,
+		deduplicateBlocksFilter,
+		c.blocksMarkedForDeletion,
+	)
+	if err != nil {
+		return compactorschedulerpb.REASSIGN, errors.Wrap(err, "failed to create syncer")
+	}
+	level.Info(userLogger).Log("msg", "executing compaction job from scheduler", "tenant", userID, "blocks", len(blockIDs), "split", spec.Job.Split)
+
+	// Sync metadata from bucket
+	if err := syncer.SyncMetas(ctx); err != nil {
+		return compactorschedulerpb.REASSIGN, errors.Wrap(err, "failed to sync metas")
+	}
+
+	// Get all synced metas and filter to only the blocks in our job
+	allMetas := syncer.Metas()
+	jobMetas := make([]*block.Meta, 0, len(blockIDs))
+	for _, blockID := range blockIDs {
+		meta, ok := allMetas[blockID]
+		if !ok {
+			return compactorschedulerpb.REASSIGN, errors.Errorf("block %s not found in synced metadata", blockID.String())
+		}
+		jobMetas = append(jobMetas, meta)
+	}
+
+	// Sort metas by MinTime as required by Job
+	slices.SortFunc(jobMetas, func(a, b *block.Meta) int {
+		return cmp.Compare(a.MinTime, b.MinTime)
+	})
+
+	// Build the Job structure
+	// Use the labels and resolution from the first block (they should all match within a job)
+	var jobLabels labels.Labels
+	var resolution int64
+	if len(jobMetas) > 0 {
+		jobLabels = labels.FromMap(jobMetas[0].Thanos.Labels)
+		resolution = jobMetas[0].Thanos.Downsample.Resolution
+	}
+
+	// Determine split parameters
+	useSplitting := spec.Job.Split
+	var splitNumShards uint32
+	if useSplitting {
+		splitNumShards = uint32(c.cfgProvider.CompactorSplitAndMergeShards(userID))
+	}
+
+	// Create a unique key for this job based on the block IDs
+	jobKey := defaultGroupKey(resolution, jobLabels)
+
+	// Use the first block ID as the sharding key (consistent with how jobs are normally sharded)
+	shardingKey := blockIDs[0].String()
+
+	job := newJob(userID, jobKey, jobLabels, resolution, useSplitting, splitNumShards, shardingKey)
+	for _, meta := range jobMetas {
+		if err := job.AppendMeta(meta); err != nil {
+			return compactorschedulerpb.REASSIGN, errors.Wrapf(err, "failed to append meta to job")
+		}
+	}
+
+	// Create BucketCompactor for this job
+	compactor, err := NewBucketCompactor(
+		userLogger,
+		syncer,
+		c.blocksGrouperFactory(ctx, c.compactorCfg, c.cfgProvider, userID, userLogger, reg),
+		c.blocksPlanner,
+		c.blocksCompactor,
+		path.Join(c.compactorCfg.DataDir, "compact"),
+		userBucket,
+		c.compactorCfg.CompactionConcurrency,
+		true, // Skip unhealthy blocks
+		ownAllJobs,
+		c.jobsOrder,
+		c.compactorCfg.CompactionWaitPeriod,
+		c.compactorCfg.BlockSyncConcurrency,
+		c.bucketCompactorMetrics,
+		c.compactorCfg.UploadSparseIndexHeaders,
+		c.compactorCfg.SparseIndexHeadersSamplingRate,
+		c.compactorCfg.SparseIndexHeadersConfig,
+		c.cfgProvider.CompactorMaxPerBlockUploadConcurrency(userID),
+	)
+	if err != nil {
+		return compactorschedulerpb.REASSIGN, errors.Wrap(err, "failed to create bucket compactor")
+	}
+
+	// Execute the compaction job
+	_, compactedBlockIDs, err := compactor.runCompactionJob(ctx, job)
+	if err != nil {
+		level.Error(userLogger).Log("msg", "compaction job failed", "tenant", userID, "err", err)
+		return compactorschedulerpb.REASSIGN, err
+	}
+
+	level.Info(userLogger).Log("msg", "compaction job completed", "tenant", userID, "compacted_blocks", len(compactedBlockIDs))
 	return compactorschedulerpb.COMPLETE, nil
 }
 
