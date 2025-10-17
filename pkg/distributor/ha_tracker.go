@@ -143,8 +143,8 @@ type HATrackerConfig struct {
 	EnableElectedReplicaMetric bool `yaml:"enable_elected_replica_metric"`
 
 	// KVStore is the backend storage for the HA tracker. Memberlist is the recommended backend.
-	// Supported values: consul, etcd, inmemory, memberlist, multi. Memberlist is recommended. Consul and etcd are still available for backward compatibility but are considered deprecated for this purpose.
-	KVStore kv.Config `yaml:"kvstore" doc:"description=Backend storage to use for the HA tracker. Supported values are: consul, etcd, inmemory, memberlist, multi. Memberlist is recommended. Consul and etcd are deprecated for the HA tracker."`
+	// Supported values: consul, etcd, inmemory, memberlist, multi. Memberlist is recommended. Consul and etcd are still available and supported.
+	KVStore kv.Config `yaml:"kvstore" doc:"description=Backend storage to use for the HA tracker. Supported values are: consul, etcd, inmemory, memberlist, multi. Memberlist is recommended."`
 }
 
 // RegisterFlags adds the flags required to config this to the given FlagSet.
@@ -156,7 +156,6 @@ func (cfg *HATrackerConfig) RegisterFlags(f *flag.FlagSet) {
 	// for HA cluster tracking. We also customize the default keys prefix, in
 	// order to not clash with the ring key if they both share the same KVStore
 	// backend (i.e. run on the same Consul cluster).
-	// Note: memberlist is the recommended backend for the HA tracker. Consul and etcd are deprecated.
 	// Set the default to memberlist before registering flags.
 	if cfg.KVStore.Store == "" {
 		cfg.KVStore.Store = "memberlist"
