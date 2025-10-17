@@ -466,6 +466,7 @@ func newMultitenantCompactor(
 // errors
 func (c *MultitenantCompactor) CheckReady(_ context.Context) error {
 	if c.compactorCfg.DataDir == "" {
+		level.Warn(c.logger).Log("msg", "-compactor.data-dir is empty.  Skipping the volume read/write test")
 		return nil
 	}
 
