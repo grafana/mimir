@@ -296,6 +296,7 @@ type LazyBucketReader struct {
 func NewLazyBucketReader(
 	ctx context.Context,
 	blockID ulid.ULID,
+	shardIdx int,
 	bkt objstore.InstrumentedBucketReader,
 	fileOpts []storage.FileOption,
 	metrics *LazyParquetReaderMetrics,
@@ -303,8 +304,6 @@ func NewLazyBucketReader(
 	lazyLoadingGate gate.Gate,
 	logger log.Logger,
 ) (*LazyBucketReader, error) {
-	shardIdx := FirstShardIndex
-
 	bucketOpener := storage.NewParquetBucketOpener(bkt)
 
 	reader := &LazyBucketReader{
