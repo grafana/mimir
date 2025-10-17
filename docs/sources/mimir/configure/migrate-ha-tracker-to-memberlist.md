@@ -30,10 +30,10 @@ Before starting this migration:
 
 The migration uses Mimir's multi KV store feature to transition from Consul or etcd to memberlist without downtime. The process involves:
 
-1. Configuring a multi KV store with your current backend as primary and memberlist as secondary
-1. Enabling mirroring to write to both stores
-1. Switching memberlist to be the primary store
-1. Removing the old backend
+1. [Configuring a multi KV store](#configure-multi-kv-store) with your current backend as primary and memberlist as secondary
+1. [Enabling mirroring](#enable-kv-store-mirroring) to write to both stores
+1. [Switching memberlist to be the primary store](#switch-to-memberlist-as-the-primary-store)
+1. [Removing the old backend](#remove-multi-kv-store-configuration)
 
 ### Configure multi KV store
 
