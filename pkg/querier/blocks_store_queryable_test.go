@@ -3272,6 +3272,7 @@ func (m *blocksFinderMock) GetBlocks(ctx context.Context, userID string, minT, m
 
 type storeGatewayClientMock struct {
 	remoteAddr                string
+	remoteZone                string
 	mockedSeriesResponses     []*storepb.SeriesResponse
 	mockedSeriesErr           error
 	mockedLabelNamesResponse  *storepb.LabelNamesResponse
@@ -3314,6 +3315,10 @@ func (m *storeGatewayClientMock) LabelValues(context.Context, *storepb.LabelValu
 
 func (m *storeGatewayClientMock) RemoteAddress() string {
 	return m.remoteAddr
+}
+
+func (m *storeGatewayClientMock) RemoteZone() string {
+	return m.remoteZone
 }
 
 type storeGatewaySeriesClientMock struct {
@@ -3359,6 +3364,7 @@ func (m *cancelerStoreGatewaySeriesClientMock) Recv() (*storepb.SeriesResponse, 
 
 type cancelerStoreGatewayClientMock struct {
 	remoteAddr    string
+	remoteZone    string
 	produceSeries bool
 	cancel        func()
 }
@@ -3390,6 +3396,10 @@ func (m *cancelerStoreGatewayClientMock) LabelValues(ctx context.Context, _ *sto
 
 func (m *cancelerStoreGatewayClientMock) RemoteAddress() string {
 	return m.remoteAddr
+}
+
+func (m *cancelerStoreGatewayClientMock) RemoteZone() string {
+	return m.remoteZone
 }
 
 type blocksStoreLimitsMock struct {

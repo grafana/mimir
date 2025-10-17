@@ -38,7 +38,7 @@ func newStoreGatewayClientFactory(clientCfg grpcclient.Config, reg prometheus.Re
 	})
 }
 
-func dialStoreGatewayClient(clientCfg grpcclient.Config, inst ring.InstanceDesc, requestDuration *prometheus.HistogramVec, invalidClusterValidation *prometheus.CounterVec, logger log.Logger) (*storeGatewayClient, error) {
+func dialStoreGatewayClient(clientCfg grpcclient.Config, instance ring.InstanceDesc, requestDuration *prometheus.HistogramVec, invalidClusterValidation *prometheus.CounterVec, logger log.Logger) (*storeGatewayClient, error) {
 	unary, stream := grpcclient.Instrument(requestDuration)
 	opts, err := clientCfg.DialOption(unary, stream, util.NewInvalidClusterValidationReporter(clientCfg.ClusterValidation.Label, invalidClusterValidation, logger))
 	if err != nil {
@@ -47,22 +47,24 @@ func dialStoreGatewayClient(clientCfg grpcclient.Config, inst ring.InstanceDesc,
 	opts = append(opts, grpc.WithStatsHandler(otelgrpc.NewClientHandler()))
 
 	// nolint:staticcheck // grpc.Dial() has been deprecated; we'll address it before upgrading to gRPC 2.
-	conn, err := grpc.Dial(inst.Addr, opts...)
+	conn, err := grpc.Dial(instance.Addr, opts...)
 	if err != nil {
-		return nil, errors.Wrapf(err, "failed to dial store-gateway %s %s", inst.Id, inst.Addr)
+		return nil, errors.Wrapf(err, "failed to dial store-gateway %s %s", instance.Id, instance.Addr)
 	}
 
 	return &storeGatewayClient{
 		StoreGatewayClient: storegatewaypb.NewCustomStoreGatewayClient(conn),
 		HealthClient:       grpc_health_v1.NewHealthClient(conn),
 		conn:               conn,
+		instance:           instance,
 	}, nil
 }
 
 type storeGatewayClient struct {
 	storegatewaypb.StoreGatewayClient
 	grpc_health_v1.HealthClient
-	conn *grpc.ClientConn
+	conn     *grpc.ClientConn
+	instance ring.InstanceDesc
 }
 
 func (c *storeGatewayClient) Close() error {
@@ -75,6 +77,10 @@ func (c *storeGatewayClient) String() string {
 
 func (c *storeGatewayClient) RemoteAddress() string {
 	return c.conn.Target()
+}
+
+func (c *storeGatewayClient) RemoteZone() string {
+	return c.instance.Zone
 }
 
 func newStoreGatewayClientPool(discovery client.PoolServiceDiscovery, clientConfig grpcclient.Config, logger log.Logger, reg prometheus.Registerer) *client.Pool {
