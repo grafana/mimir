@@ -4,6 +4,7 @@ package plan
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/prometheus/prometheus/model/labels"
 
@@ -19,7 +20,9 @@ import (
 // and each series with the name 'foo' must have a unique set of labels.
 // Thus, when rate() function drops the name label, the output is still guaranteed to be unique.
 // Primary goal of this optimization is to unlock "labels projection" - ability to load only needed labels into memory.
-type EliminateDeduplicateAndMergeOptimizationPass struct{}
+type EliminateDeduplicateAndMergeOptimizationPass struct {
+	enableDelayedNameRemoval bool
+}
 
 type SelectorType int
 
@@ -33,20 +36,24 @@ type dedupNodeInfo struct {
 	node       *core.DeduplicateAndMerge
 	parent     planning.Node
 	childIndex int // childIndex is the index of a node in its parent's children array.
+	keep       bool
 }
 
-func NewEliminateDeduplicateAndMergeOptimizationPass() *EliminateDeduplicateAndMergeOptimizationPass {
-	return &EliminateDeduplicateAndMergeOptimizationPass{}
+func NewEliminateDeduplicateAndMergeOptimizationPass(enableDelayedNameRemoval bool) *EliminateDeduplicateAndMergeOptimizationPass {
+	return &EliminateDeduplicateAndMergeOptimizationPass{
+		enableDelayedNameRemoval: enableDelayedNameRemoval,
+	}
 }
 
 func (e *EliminateDeduplicateAndMergeOptimizationPass) Name() string {
-	return "Eliminate DeduplicateAndMerge"
+	return fmt.Sprintf("Eliminate DeduplicateAndMerge (enableDelayedNameRemoval: %t)", e.enableDelayedNameRemoval)
 }
 
-func (e *EliminateDeduplicateAndMergeOptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan, maximumSupportedQueryPlanVersion planning.QueryPlanVersion) (*planning.QueryPlan, error) {
-	var nodesToRemove []dedupNodeInfo
-	e.collectNodesToRemove(plan.Root, nil, -1, &nodesToRemove)
-	newRoot, err := e.eliminate(nodesToRemove)
+func (e *EliminateDeduplicateAndMergeOptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan) (*planning.QueryPlan, error) {
+	// nodes is a list of DeduplicateAndMerge nodes in the order of their appearance in the plan.
+	var nodes []dedupNodeInfo
+	e.collect(plan.Root, nil, -1, &nodes)
+	newRoot, err := e.eliminate(nodes)
 	if err != nil {
 		return nil, err
 	}
@@ -56,19 +63,20 @@ func (e *EliminateDeduplicateAndMergeOptimizationPass) Apply(ctx context.Context
 	return plan, nil
 }
 
-func (e *EliminateDeduplicateAndMergeOptimizationPass) collectNodesToRemove(node planning.Node, parent planning.Node, childIndex int, nodesToRemove *[]dedupNodeInfo) {
+// collect collects DeduplicateAndMerge nodes from the plan and marks them for removal or keeping.
+func (e *EliminateDeduplicateAndMergeOptimizationPass) collect(node planning.Node, parent planning.Node, childIndex int, nodes *[]dedupNodeInfo) {
 	// Binary operations are not supported yet. When we encounter a binary operation, we stop the elimination
 	// and keep all DeduplicateAndMerge nodes. It's done just to keep initial implementation simple.
 	// TODO:
 	// 1. Remove DeduplicateAndMerge nodes provided they don't contain binary operations - rate(foo[5m]) / rate(bar[5m])
 	// 2. Handle all binary operations by inspecting whether each side produces series with a __name__ label that could cause duplicates.
 	if _, isBinaryOp := node.(*core.BinaryExpression); isBinaryOp {
-		*nodesToRemove = nil
+		*nodes = nil
 		return
 	}
 
 	if dedupNode, isDedup := node.(*core.DeduplicateAndMerge); isDedup {
-		*nodesToRemove = append(*nodesToRemove, dedupNodeInfo{
+		*nodes = append(*nodes, dedupNodeInfo{
 			node:       dedupNode,
 			parent:     parent,
 			childIndex: childIndex,
@@ -78,49 +86,197 @@ func (e *EliminateDeduplicateAndMergeOptimizationPass) collectNodesToRemove(node
 	selectorType := getSelectorType(node)
 	switch selectorType {
 	case SelectorWithExactName:
-		// For selectors with exact name matchers – eliminate all collectedDeduplicateAndMerge nodes in the path from root to this selector.
+		// Series with the same name are guaranteed to have the same labels, so we can eliminate all DeduplicateAndMerge nodes.
 		return
 	case SelectorWithoutExactName:
-		// If it's a selector without an exact name matcher – keep the DeduplicateAndMerge closest to the selector.
-		// There are bunch of exceptions, handled below.
-		if len(*nodesToRemove) >= 1 {
-			*nodesToRemove = (*nodesToRemove)[:len(*nodesToRemove)-1]
+		if e.enableDelayedNameRemoval {
+			// With Delayed Name Removal name is dropped at the very end of query execution.
+			// Keep the DeduplicateAndMerge closest to root to handle final deduplication.
+			if len(*nodes) > 0 {
+				(*nodes)[0].keep = true
+			}
+		} else {
+			// Without delayed name removal name is dropped immediately, so there should be no duplicates after..
+			// So, keep only the DeduplicateAndMerge closest to the selector.
+			if len(*nodes) >= 1 {
+				(*nodes)[len(*nodes)-1].keep = true
+			}
 		}
 		return
 	}
 
-	// Keep the last two DeduplicateAndMerge nodes before the label_replace or label_join function.
-	// First is needed because label_replace and label_join might introduce duplicates on its own.
-	// Second is needed because they might re-introduce name label even if it was dropped before.
+	// label_replace or label_join manipulate labels, so they could cause duplicates or reintroduce the __name__ label.
+	// Keep DeduplicateAndMerge wrapping label_replace or label_join to handle potential duplicates.
 	if isLabelReplaceOrJoinFunction(node) {
-		if len(*nodesToRemove) >= 2 {
-			*nodesToRemove = (*nodesToRemove)[:len(*nodesToRemove)-2]
-		} else {
-			*nodesToRemove = nil
+		switch len(*nodes) {
+		case 0:
+		case 1:
+			(*nodes)[0].keep = true
+		default:
+			if e.enableDelayedNameRemoval {
+				// Also keep the root DeduplicateAndMerge to handle final deduplication, if delayed name removal is enabled.
+				// Name is dropped at the very end of query execution and label_replace or label_join might mess with it even if selector guarantees unique series.
+				// TODO - I'm not really sure about keeping the root one, corresponding test case is "function call enclosing label_replace, selector with exact name matcher".
+				(*nodes)[0].keep = true
+				(*nodes)[len(*nodes)-1].keep = true
+			} else {
+				// Also keep DeduplicateAndMerge wrapping closest __name__ dropping operation, in case __name__ is reintroduced by label_replace or label_join and operation's result should be deduplicated.
+				(*nodes)[len(*nodes)-2].keep = true
+				(*nodes)[len(*nodes)-1].keep = true
+			}
 		}
 	}
 
 	for i, child := range node.Children() {
-		e.collectNodesToRemove(child, node, i, nodesToRemove)
+		e.collect(child, node, i, nodes)
 	}
 }
 
+/*
+func (e *EliminateDeduplicateAndMergeOptimizationPass) collectNodesToRemoveWithDelayedNameRemoval(node planning.Node, parent planning.Node, childIndex int, nodes *[]dedupNodeInfo) {
+	if _, isBinaryOp := node.(*core.BinaryExpression); isBinaryOp {
+		*nodes = nil
+		return
+	}
+
+	if dedupNode, isDedup := node.(*core.DeduplicateAndMerge); isDedup {
+		*nodes = append(*nodes, dedupNodeInfo{
+			node:       dedupNode,
+			parent:     parent,
+			childIndex: childIndex,
+		})
+	}
+
+	selectorType := getSelectorType(node)
+	switch selectorType {
+	case SelectorWithExactName:
+		// Series with the same name are guaranteed to have the same labels, so we can eliminate all DeduplicateAndMerge nodes.
+		return
+	case SelectorWithoutExactName:
+		// if len(*nodesToRemove) > 0 && len(*nodesToKeep) == 0 {
+		// 	*nodesToKeep = append(*nodesToKeep, (*nodesToRemove)[0])
+		// 	*nodesToRemove = (*nodesToRemove)[1:]
+		// }
+
+		// With Delayed Name Removal name is dropped at the very end of query execution.
+		// Keep the DeduplicateAndMerge closest to root to handle final deduplication.
+		// TODO: comment about hasDedupBefore logic
+		hasDedupBefore := false
+		for _, node := range *nodes {
+			if node.keep {
+				hasDedupBefore = true
+				break
+			}
+		}
+		if len(*nodes) > 0 && !hasDedupBefore {
+			(*nodes)[0].keep = true
+		}
+		return
+	}
+
+	// if isLabelReplaceOrJoinFunction(node) {
+	// 	if len(*nodes) >= 2 {
+	// 		// Keep the root deduplicateAndMerge (first) and the one around label_replace/join (last)
+	// 		(*nodes)[0].keep = true
+	// 		(*nodes)[len(*nodes)-1].keep = true
+	// 	} else {
+	// 		*nodesToKeep = append(*nodesToKeep, *nodesToRemove...)
+	// 		*nodesToRemove = nil
+
+	// 	}
+	// }
+
+	// label_replace or label_join manipulate labels, so they could cause duplicates or mess with the __name__ label.
+	// Keep DeduplicateAndMerge wrapping label_replace or label_join to handle potential duplicates.
+	// TODO - do we need to keep second DeduplicateAndMerge if name is not dropped?
+	// Also keep DeduplicateAndMerge wrapping node which encloses label_replace or label_join to handle case with reintroduced __name__ label:
+	// result of the __name__ dropping operation enclosing this label_replace or label_join will be deduplicated.
+	if isLabelReplaceOrJoinFunction(node) {
+		switch len(*nodes) {
+		case 0:
+			// No nodes at all - nothing to keep
+		case 1:
+			(*nodes)[0].keep = true
+		default:
+			(*nodes)[0].keep = true
+			(*nodes)[len(*nodes)-1].keep = true
+		}
+	}
+
+	for i, child := range node.Children() {
+		e.collectNodesToRemoveWithDelayedNameRemoval(child, node, i, nodes)
+	}
+}
+
+func (e *EliminateDeduplicateAndMergeOptimizationPass) collectWithoutDelayedNameRemoval(node planning.Node, parent planning.Node, childIndex int, nodes *[]dedupNodeInfo) {
+	if _, isBinaryOp := node.(*core.BinaryExpression); isBinaryOp {
+		*nodes = nil
+		return
+	}
+
+	if dedupNode, isDedup := node.(*core.DeduplicateAndMerge); isDedup {
+		*nodes = append(*nodes, dedupNodeInfo{
+			node:       dedupNode,
+			parent:     parent,
+			childIndex: childIndex,
+		})
+	}
+
+	selectorType := getSelectorType(node)
+	switch selectorType {
+	case SelectorWithExactName:
+		// Series with the same name are guaranteed to have the same labels, so we can eliminate all collected DeduplicateAndMerge nodes.
+		return
+	case SelectorWithoutExactName:
+		// Without delayed name removal name is dropped immediately, so there should be no duplicates after..
+		// So, keep only the DeduplicateAndMerge closest to the selector - which is last one in the list.
+		if len(*nodes) >= 1 {
+			(*nodes)[len(*nodes)-1].keep = true
+		}
+		return
+	}
+
+	// label_replace/label_join manipulate labels, so they could cause duplicates or reintroduce the __name__ label.
+	// Keep DeduplicateAndMerge wrapping label_replace/label_join to handle potential duplicates.
+	// Also keep second closest DeduplicateAndMerge. It wraps first __name__ dropping operation after label_replace/label_join.
+	// These functions could reintroduce the __name__ label, so deduplication might be needed again
+	if isLabelReplaceOrJoinFunction(node) {
+		switch len(*nodes) {
+		case 0:
+			// No nodes at all - nothing to keep
+		case 1:
+			(*nodes)[0].keep = true
+		default:
+			(*nodes)[len(*nodes)-2].keep = true
+			(*nodes)[len(*nodes)-1].keep = true
+		}
+	}
+
+	for i, child := range node.Children() {
+		e.collectWithoutDelayedNameRemoval(child, node, i, nodes)
+	}
+}
+*/
+
 func (e *EliminateDeduplicateAndMergeOptimizationPass) eliminate(dedupNodes []dedupNodeInfo) (planning.Node, error) {
 	var newRoot planning.Node
+
 	for _, dedupInfo := range dedupNodes {
-		// TODO: case where the DeduplicateAndMerge node is the root should be reworked to support delayed name removal.
+		if dedupInfo.keep {
+			continue
+		}
 		if dedupInfo.parent == nil {
 			newRoot = dedupInfo.node.Inner
 			continue
 		}
-		if err := e.replaceChildAtIndex(dedupInfo.parent, dedupInfo.childIndex, dedupInfo.node.Inner); err != nil {
+		if err := replaceChildAtIndex(dedupInfo.parent, dedupInfo.childIndex, dedupInfo.node.Inner); err != nil {
 			return nil, err
 		}
 	}
 	return newRoot, nil
 }
 
-func (e *EliminateDeduplicateAndMergeOptimizationPass) replaceChildAtIndex(parent planning.Node, childIndex int, newChild planning.Node) error {
+func replaceChildAtIndex(parent planning.Node, childIndex int, newChild planning.Node) error {
 	children := parent.Children()
 	children[childIndex] = newChild
 	return parent.SetChildren(children)
