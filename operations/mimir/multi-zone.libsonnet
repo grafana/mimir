@@ -36,7 +36,6 @@
     // the regex subexpression group number - only required if the above regular expression has more then 1 grouping
     multi_zone_ingester_zpdb_partition_group: 1,
 
-
     // We can update the queryBlocksStorageConfig only once the migration is over. During the migration
     // we don't want to apply these changes to single-zone store-gateways too.
     queryBlocksStorageConfig+:: if !$._config.multi_zone_store_gateway_enabled || !$._config.multi_zone_store_gateway_read_path_enabled || $._config.multi_zone_store_gateway_migration_enabled then {} else {
@@ -44,10 +43,23 @@
       'store-gateway.sharding-ring.prefix': 'multi-zone/',
     },
 
+    // Toleration to add to all Mimir components when multi-zone deployment is enabled.
     multi_zone_schedule_toleration: 'secondary-az',
   },
 
   assert !$._config.multi_zone_zpdb_enabled || $._config.rollout_operator_webhooks_enabled : 'zpdb configuration requires rollout_operator_webhooks_enabled=true',
+
+  //
+  // Utilities.
+  //
+
+  newMimirMultiZoneToleration()::
+    if $._config.multi_zone_schedule_toleration == '' then [] else [
+      $.core.v1.toleration.withKey('topology') +
+      $.core.v1.toleration.withOperator('Equal') +
+      $.core.v1.toleration.withValue($._config.multi_zone_schedule_toleration) +
+      $.core.v1.toleration.withEffect('NoSchedule'),
+    ],
 
   //
   // Zone-aware replication.

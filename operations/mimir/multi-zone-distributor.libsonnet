@@ -6,7 +6,6 @@
     multi_zone_distributor_enabled: false,
     multi_zone_availability_zones: [],
     multi_zone_distributor_replicas: std.length($._config.multi_zone_availability_zones),
-    multi_zone_distributor_schedule_toleration: $._config.multi_zone_schedule_toleration,
   },
 
   local container = $.core.v1.container,
@@ -80,12 +79,7 @@
 
     $.newDistributorDeployment(name, container, nodeAffinityMatchers) +
     deployment.mixin.spec.withReplicas(std.ceil($._config.multi_zone_distributor_replicas / std.length($._config.multi_zone_availability_zones))) +
-    deployment.spec.template.spec.withTolerationsMixin(if $._config.multi_zone_distributor_schedule_toleration == '' then [] else [
-      $.core.v1.toleration.withKey('topology') +
-      $.core.v1.toleration.withOperator('Equal') +
-      $.core.v1.toleration.withValue($._config.multi_zone_distributor_schedule_toleration) +
-      $.core.v1.toleration.withEffect('NoSchedule'),
-    ]),
+    deployment.spec.template.spec.withTolerationsMixin($.newMimirMultiZoneToleration()),
 
   // Remove single-zone deployment when multi-zone is enabled.
   distributor_deployment: if !isSingleZoneEnabled then null else super.distributor_deployment,
