@@ -191,8 +191,7 @@ api:
 # The frontend block configures the query-frontend.
 [frontend: <frontend>]
 
-# The ingest_storage block configures the experimental Kafka-based ingest
-# storage.
+# The ingest_storage block configures the Kafka-based ingest storage.
 [ingest_storage: <ingest_storage>]
 
 # The blocks_storage block configures the blocks storage.
@@ -4396,7 +4395,7 @@ ruler_alertmanager_client_config:
 
 ### ingest_storage
 
-The `ingest_storage` block configures the experimental Kafka-based ingest storage.
+The `ingest_storage` block configures the Kafka-based ingest storage.
 
 ```yaml
 # True to enable the ingestion via object storage.
