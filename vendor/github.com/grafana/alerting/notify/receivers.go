@@ -15,9 +15,9 @@ import (
 	"github.com/prometheus/alertmanager/types"
 	"github.com/prometheus/common/model"
 
+	"github.com/grafana/alerting/definition"
 	"github.com/grafana/alerting/http"
 	"github.com/grafana/alerting/models"
-
 	"github.com/grafana/alerting/receivers"
 	alertmanager "github.com/grafana/alerting/receivers/alertmanager/v1"
 	dingding "github.com/grafana/alerting/receivers/dingding/v1"
@@ -32,6 +32,7 @@ import (
 	opsgenie "github.com/grafana/alerting/receivers/opsgenie/v1"
 	pagerduty "github.com/grafana/alerting/receivers/pagerduty/v1"
 	pushover "github.com/grafana/alerting/receivers/pushover/v1"
+	"github.com/grafana/alerting/receivers/schema"
 	sensugo "github.com/grafana/alerting/receivers/sensugo/v1"
 	slack "github.com/grafana/alerting/receivers/slack/v1"
 	sns "github.com/grafana/alerting/receivers/sns/v1"
@@ -573,3 +574,26 @@ func (e IntegrationValidationError) Error() string {
 }
 
 func (e IntegrationValidationError) Unwrap() error { return e.Err }
+
+type MimirIntegrationConfig struct {
+	Schema schema.IntegrationSchemaVersion
+	Config any
+}
+
+// ConfigJSON returns the JSON representation of the integration config with non-masked secrets.
+func (c MimirIntegrationConfig) ConfigJSON() ([]byte, error) {
+	return definition.MarshalJSONWithSecrets(c.Config)
+}
+
+func (c MimirIntegrationConfig) ConfigMap() (map[string]any, error) {
+	data, err := c.ConfigJSON()
+	if err != nil {
+		return nil, err
+	}
+	var result map[string]any
+	err = json.Unmarshal(data, &result)
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
+}
