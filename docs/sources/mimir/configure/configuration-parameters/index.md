@@ -870,13 +870,13 @@ ha_tracker:
   # CLI flag: -distributor.ha-tracker.enable-elected-replica-metric
   [enable_elected_replica_metric: <boolean> | default = false]
 
-  # Backend storage to use for the ring. Supported values are: consul, etcd,
-  # inmemory, memberlist, multi. Note that etcd is deprecated.
+  # Backend storage to use for the HA tracker. Supported values are: consul,
+  # etcd, inmemory, memberlist, multi. Memberlist is recommended.
   kvstore:
     # Backend storage to use for the ring. Supported values are: consul, etcd,
     # inmemory, memberlist, multi.
     # CLI flag: -distributor.ha-tracker.store
-    [store: <string> | default = "consul"]
+    [store: <string> | default = "memberlist"]
 
     # (advanced) The prefix for the keys in the store. Should end with a /.
     # CLI flag: -distributor.ha-tracker.prefix

@@ -987,7 +987,7 @@
                   "required": false,
                   "desc": "Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi.",
                   "fieldValue": null,
-                  "fieldDefaultValue": "consul",
+                  "fieldDefaultValue": "memberlist",
                   "fieldFlag": "distributor.ha-tracker.store",
                   "fieldType": "string"
                 },
