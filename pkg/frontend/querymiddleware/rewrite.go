@@ -12,6 +12,7 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
+	"github.com/grafana/mimir/pkg/frontend/querymiddleware/astmapper"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/ast"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
@@ -69,7 +70,7 @@ func newRewriteMiddleware(
 func (m *rewriteMiddleware) Do(ctx context.Context, r MetricsQueryRequest) (Response, error) {
 	log := spanlogger.FromContext(ctx, m.logger)
 
-	rewrittenQuery, success, err := m.rewriteQuery(ctx, r.GetQuery())
+	rewrittenQuery, success, err := m.rewriteQuery(ctx, r.GetParsedQuery())
 	if err != nil {
 		return nil, err
 	}
@@ -81,7 +82,7 @@ func (m *rewriteMiddleware) Do(ctx context.Context, r MetricsQueryRequest) (Resp
 
 	level.Debug(log).Log("msg", "query has been rewritten", "original", r.GetQuery(), "rewritten", rewrittenQuery)
 
-	updatedReq, err := r.WithQuery(rewrittenQuery)
+	updatedReq, err := r.WithExpr(rewrittenQuery)
 	if err != nil {
 		return nil, err
 	}
@@ -89,21 +90,20 @@ func (m *rewriteMiddleware) Do(ctx context.Context, r MetricsQueryRequest) (Resp
 	return m.next.Do(ctx, updatedReq)
 }
 
-func (m *rewriteMiddleware) rewriteQuery(ctx context.Context, query string) (string, bool, error) {
-	// Parse the query.
-	expr, err := parser.ParseExpr(query)
+func (m *rewriteMiddleware) rewriteQuery(ctx context.Context, expr parser.Expr) (parser.Expr, bool, error) {
+	rewrittenQuery, err := astmapper.CloneExpr(expr)
 	if err != nil {
-		return "", false, apierror.New(apierror.TypeBadData, DecorateWithParamName(err, "query").Error())
+		return nil, false, apierror.New(apierror.TypeBadData, DecorateWithParamName(err, "query").Error())
 	}
-	rewrittenQuery := expr
 	changed := false
 
 	if m.cfg.RewriteQueriesHistogram {
 		mapperHistogram := ast.NewReorderHistogramAggregationMapper()
 		m.reorderHistogramAggregationAttempts.Inc()
+		var err error
 		rewrittenQuery, err = mapperHistogram.Map(ctx, rewrittenQuery)
 		if err != nil {
-			return "", false, err
+			return nil, false, err
 		}
 		if mapperHistogram.HasChanged() {
 			changed = true
@@ -114,9 +114,10 @@ func (m *rewriteMiddleware) rewriteQuery(ctx context.Context, query string) (str
 	if m.cfg.RewriteQueriesPropagateMatchers {
 		mapperPropagateMatchers := ast.NewPropagateMatchersMapper()
 		m.propagateMatchersAttempts.Inc()
+		var err error
 		rewrittenQuery, err = mapperPropagateMatchers.Map(ctx, rewrittenQuery)
 		if err != nil {
-			return "", false, err
+			return nil, false, err
 		}
 		if mapperPropagateMatchers.HasChanged() {
 			changed = true
@@ -125,7 +126,7 @@ func (m *rewriteMiddleware) rewriteQuery(ctx context.Context, query string) (str
 	}
 
 	if changed {
-		return rewrittenQuery.String(), true, nil
+		return rewrittenQuery, true, nil
 	}
-	return "", false, nil
+	return nil, false, nil
 }
