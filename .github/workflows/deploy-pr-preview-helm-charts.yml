@@ -34,10 +34,10 @@ jobs:
           },
           {
             "index_file": "content/docs/helm-charts/mimir-distributed/_index.md",
-            "relative_prefix": "/docs/helm-charts/mimir-distributed/latest/",
+            "relative_prefix": "/docs/helm-charts/mimir-distributed/next/",
             "repo": "mimir",
             "source_directory": "docs/sources/helm-charts/mimir-distributed",
-            "website_directory": "content/docs/helm-charts/mimir-distributed/latest"
+            "website_directory": "content/docs/helm-charts/mimir-distributed/next"
           }
         ]
-      title: ${{ github.event.pull_request.title }}
+      title: Helm chart

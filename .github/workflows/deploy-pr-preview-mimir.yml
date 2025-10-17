@@ -33,4 +33,4 @@ jobs:
             "website_directory": "content/docs/mimir/next"
           }
         ]
-      title: ${{ github.event.pull_request.title }}
+      title: Mimir
