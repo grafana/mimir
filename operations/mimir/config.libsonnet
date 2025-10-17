@@ -134,9 +134,6 @@
     cache_metadata_connection_limit: 16384,
     cache_metadata_min_ready_seconds: 60,
 
-    // Number of etcd replicas.
-    etcd_replicas: 3,
-
     // The query-tee is an optional service which can be used to send
     // the same input query to multiple backends and make them compete
     // (comparing performances).
