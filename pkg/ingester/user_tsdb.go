@@ -27,6 +27,7 @@ import (
 	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/ingester/activeseries"
+	"github.com/grafana/mimir/pkg/ingester/lookupplan"
 	"github.com/grafana/mimir/pkg/util/extract"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	util_math "github.com/grafana/mimir/pkg/util/math"
@@ -95,6 +96,7 @@ type ownedSeriesState struct {
 }
 
 type userTSDB struct {
+	cfg            *Config
 	db             *tsdb.DB
 	userID         string
 	activeSeries   *activeseries.ActiveSeries
@@ -171,10 +173,20 @@ func (u *userTSDB) generateHeadStatistics() error {
 	return nil
 }
 
-// getIndexLookupPlanner returns a cached planner or generates one on-demand.
+// getIndexLookupPlannerFunc returns the appropriate index lookup planner function based on configuration.
+// When index lookup planning is enabled, it first checks if a pre-computed planner exists in the repository.
+// If found, it uses the cached planner; otherwise, it falls back to generating statistics on-demand.
+// When disabled, it uses NoopPlanner which performs no optimization.
+// getIndexLookupPlannerFunc returns a cached planner or generates one on-demand.
 // Not all planners are cached after being created, see plannerProvider.getPlanner() for details.
-func (u *userTSDB) getIndexLookupPlanner(blockMeta tsdb.BlockMeta, indexReader tsdb.IndexReader) index.LookupPlanner {
-	return u.plannerProvider.getPlanner(blockMeta, indexReader)
+func (u *userTSDB) getIndexLookupPlannerFunc() tsdb.IndexLookupPlannerFunc {
+	return func(blockMeta tsdb.BlockMeta, indexReader tsdb.IndexReader) index.LookupPlanner {
+		if !u.cfg.BlocksStorageConfig.TSDB.IndexLookupPlanning.Enabled {
+			return lookupplan.NoopPlanner{}
+		}
+
+		return u.plannerProvider.getPlanner(blockMeta, indexReader)
+	}
 }
 
 func (u *userTSDB) Appender(ctx context.Context) storage.Appender {
