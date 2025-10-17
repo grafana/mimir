@@ -166,8 +166,16 @@ func handler(
 
 		isRW2, err := isRemoteWrite2(r)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			http.Error(w, err.Error(), http.StatusUnsupportedMediaType)
 		}
+
+		// https://prometheus.io/docs/specs/prw/remote_write_spec_2_0/#unsupported-request-content:
+		// Receivers MUST return 415 HTTP Unsupported Media Type status code if they
+		// don't support a given content type or encoding provided by Senders.
+		if !isValidContentEncoding(r) {
+			http.Error(w, "invalid content encoding", http.StatusUnsupportedMediaType)
+		}
+
 		supplier := func() (*mimirpb.WriteRequest, func(), error) {
 			var rb *util.RequestBuffers
 			if newRequestBuffers != nil {
@@ -299,6 +307,18 @@ func isRemoteWrite2(r *http.Request) (bool, error) {
 	}
 	// No "proto=" parameter, assuming v1.
 	return false, nil
+}
+
+// isValidContentEncoding validates the content-encoding header is either empty
+// (in which case Mimir assumes "snappy") or set to a supported value. Currently,
+// Mimir supports only "snappy".
+func isValidContentEncoding(r *http.Request) bool {
+	contentEncoding := r.Header.Get("Content-Encoding")
+	switch contentEncoding {
+	case "", "snappy":
+		return true
+	}
+	return false
 }
 
 // Consts from https://github.com/prometheus/prometheus/blob/main/storage/remote/stats.go
