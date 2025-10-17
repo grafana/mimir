@@ -465,6 +465,10 @@ func newMultitenantCompactor(
 // an empty file in the compactor's /data volume and fail if any of these operations encounter
 // errors
 func (c *MultitenantCompactor) CheckReady(_ context.Context) error {
+	if c.compactorCfg.DataDir == "" {
+		return nil
+	}
+
 	testfile := path.Join(c.compactorCfg.DataDir, ".rw-test")
 
 	if err := os.WriteFile(testfile, []byte{}, 0o644); err != nil {
