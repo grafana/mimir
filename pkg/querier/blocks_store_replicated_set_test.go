@@ -357,7 +357,7 @@ func TestBlocksStoreReplicationSet_GetClientsFor(t *testing.T) {
 			}
 
 			reg := prometheus.NewPedanticRegistry()
-			s, err := newBlocksStoreReplicationSet(r, noLoadBalancing, storegateway.NewNopDynamicReplication(ringCfg.ReplicationFactor), limits, grpcclient.Config{}, log.NewNopLogger(), reg)
+			s, err := newBlocksStoreReplicationSet(r, noLoadBalancing, storegateway.NewNopDynamicReplication(ringCfg.ReplicationFactor), "", limits, grpcclient.Config{}, log.NewNopLogger(), reg)
 			require.NoError(t, err)
 			require.NoError(t, services.StartAndAwaitRunning(ctx, s))
 			defer services.StopAndAwaitTerminated(ctx, s) //nolint:errcheck
@@ -412,7 +412,7 @@ func TestBlocksStoreReplicationSet_GetClientsFor_ShouldSupportRandomLoadBalancin
 	require.NoError(t, ringStore.CAS(ctx, "test", func(interface{}) (interface{}, bool, error) {
 		d := ring.NewDesc()
 		for n := 1; n <= numInstances; n++ {
-			d.AddIngester(fmt.Sprintf("instance-%d", n), fmt.Sprintf("127.0.0.%d", n), "", []uint32{uint32(n)}, ring.ACTIVE, registeredAt, false, time.Time{})
+			d.AddIngester(fmt.Sprintf("instance-%d", n), fmt.Sprintf("127.0.0.%d", n), fmt.Sprintf("zone-%d", n), []uint32{uint32(n)}, ring.ACTIVE, registeredAt, false, time.Time{})
 		}
 		return d, true, nil
 	}))
@@ -422,49 +422,109 @@ func TestBlocksStoreReplicationSet_GetClientsFor_ShouldSupportRandomLoadBalancin
 	flagext.DefaultValues(&ringCfg)
 	ringCfg.ReplicationFactor = numInstances
 
-	r, err := ring.NewWithStoreClientAndStrategy(ringCfg, "test", "test", ringStore, ring.NewIgnoreUnhealthyInstancesReplicationStrategy(), nil, log.NewNopLogger())
-	require.NoError(t, err)
+	setupBlocksStoreReplicationSet := func(t *testing.T, preferredZone string) *blocksStoreReplicationSet {
+		r, err := ring.NewWithStoreClientAndStrategy(ringCfg, "test", "test", ringStore, ring.NewIgnoreUnhealthyInstancesReplicationStrategy(), nil, log.NewNopLogger())
+		require.NoError(t, err)
 
-	limits := &blocksStoreLimitsMock{storeGatewayTenantShardSize: 0}
-	reg := prometheus.NewPedanticRegistry()
-	s, err := newBlocksStoreReplicationSet(r, randomLoadBalancing, storegateway.NewNopDynamicReplication(ringCfg.ReplicationFactor), limits, grpcclient.Config{}, log.NewNopLogger(), reg)
-	require.NoError(t, err)
-	require.NoError(t, services.StartAndAwaitRunning(ctx, s))
-	defer services.StopAndAwaitTerminated(ctx, s) //nolint:errcheck
+		limits := &blocksStoreLimitsMock{storeGatewayTenantShardSize: 0}
+		reg := prometheus.NewPedanticRegistry()
+		s, err := newBlocksStoreReplicationSet(r, randomLoadBalancing, storegateway.NewNopDynamicReplication(ringCfg.ReplicationFactor), preferredZone, limits, grpcclient.Config{}, log.NewNopLogger(), reg)
+		require.NoError(t, err)
+		require.NoError(t, services.StartAndAwaitRunning(ctx, s))
+		t.Cleanup(func() {
+			require.NoError(t, services.StopAndAwaitTerminated(ctx, s))
+		})
 
-	// Wait until the ring client has initialised the state.
-	test.Poll(t, time.Second, true, func() interface{} {
-		all, err := r.GetAllHealthy(storegateway.BlocksRead)
-		return err == nil && len(all.Instances) > 0
+		// Wait until the ring client has initialised the state.
+		test.Poll(t, time.Second, true, func() interface{} {
+			all, err := r.GetAllHealthy(storegateway.BlocksRead)
+			return err == nil && len(all.Instances) > 0
+		})
+
+		return s
+	}
+
+	t.Run("no preferred zone configured", func(t *testing.T) {
+		s := setupBlocksStoreReplicationSet(t, "")
+
+		// Request the same block multiple times and ensure the distribution of
+		// requests across store-gateways is balanced.
+		distribution := map[string]int{}
+
+		for n := 0; n < numRuns; n++ {
+			clients, err := s.GetClientsFor(userID, []*bucketindex.Block{block1}, nil)
+			require.NoError(t, err)
+			t.Cleanup(func() {
+				// Close all clients to ensure no goroutines are leaked.
+				for c := range clients {
+					c.(io.Closer).Close() //nolint:errcheck
+				}
+			})
+
+			require.Len(t, clients, 1)
+
+			for addr := range getStoreGatewayClientAddrs(clients) {
+				distribution[addr]++
+			}
+		}
+
+		assert.Len(t, distribution, numInstances)
+		for addr, count := range distribution {
+			// Ensure that the number of times each client is returned is above
+			// the 80% of the perfect even distribution.
+			assert.Greaterf(t, float64(count), (float64(numRuns)/float64(numInstances))*0.8, "store-gateway address: %s", addr)
+		}
 	})
 
-	// Request the same block multiple times and ensure the distribution of
-	// requests across store-gateways is balanced.
-	distribution := map[string]int{}
+	t.Run("preferred zone configured", func(t *testing.T) {
+		const preferredZone = "zone-1"
+		s := setupBlocksStoreReplicationSet(t, preferredZone)
 
-	for n := 0; n < numRuns; n++ {
-		clients, err := s.GetClientsFor(userID, []*bucketindex.Block{block1}, nil)
-		require.NoError(t, err)
-		defer func() {
-			// Close all clients to ensure no goroutines are leaked.
-			for c := range clients {
-				c.(io.Closer).Close() //nolint:errcheck
+		// Request the same block multiple times. We expect we always get the store-gateway in the preferred zone.
+		for n := 0; n < numRuns; n++ {
+			clients, err := s.GetClientsFor(userID, []*bucketindex.Block{block1}, nil)
+			require.NoError(t, err)
+			t.Cleanup(func() {
+				// Close all clients to ensure no goroutines are leaked.
+				for c := range clients {
+					c.(io.Closer).Close() //nolint:errcheck
+				}
+			})
+
+			require.Len(t, clients, 1)
+			for client := range clients {
+				assert.Equal(t, preferredZone, client.RemoteZone())
 			}
-		}()
-
-		require.Len(t, clients, 1)
-
-		for addr := range getStoreGatewayClientAddrs(clients) {
-			distribution[addr]++
 		}
-	}
 
-	assert.Len(t, distribution, numInstances)
-	for addr, count := range distribution {
-		// Ensure that the number of times each client is returned is above
-		// the 80% of the perfect even distribution.
-		assert.Greaterf(t, float64(count), (float64(numRuns)/float64(numInstances))*0.8, "store-gateway address: %s", addr)
-	}
+		// Request the same block multiple times, excluding the store-gateway running in the preferred zone.
+		// We expect the distribution of requests across other store-gateway zones to be balanced.
+		distribution := map[string]int{}
+
+		for n := 0; n < numRuns; n++ {
+			clients, err := s.GetClientsFor(userID, []*bucketindex.Block{block1}, map[ulid.ULID][]string{block1.ID: {"127.0.0.1"}})
+			require.NoError(t, err)
+			t.Cleanup(func() {
+				// Close all clients to ensure no goroutines are leaked.
+				for c := range clients {
+					c.(io.Closer).Close() //nolint:errcheck
+				}
+			})
+
+			require.Len(t, clients, 1)
+
+			for addr := range getStoreGatewayClientAddrs(clients) {
+				distribution[addr]++
+			}
+		}
+
+		assert.Len(t, distribution, numInstances-1)
+		for addr, count := range distribution {
+			// Ensure that the number of times each client is returned is above
+			// the 80% of the perfect even distribution.
+			assert.Greaterf(t, float64(count), (float64(numRuns)/float64(numInstances-1))*0.8, "store-gateway address: %s", addr)
+		}
+	})
 }
 
 func getStoreGatewayClientAddrs(clients map[BlocksStoreClient][]ulid.ULID) map[string][]ulid.ULID {
