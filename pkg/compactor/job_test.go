@@ -150,15 +150,15 @@ func TestJobWaitPeriodElapsed(t *testing.T) {
 			expectedElapsed: false,
 			expectedMeta:    meta8,
 		},
-		"block with max-time since more than the wait period but skipFutureMaxTime disabled": {
+		"block with max-time since more than the wait period but skip-future-max-time disabled": {
 			waitPeriod:        10 * time.Minute,
 			skipFutureMaxTime: false,
 			jobBlocks: []jobBlock{
 				{meta: meta7, attrs: objstore.ObjectAttributes{LastModified: time.Now().Add(-20 * time.Minute)}},
 				{meta: meta8, attrs: objstore.ObjectAttributes{LastModified: time.Now().Add(-5 * time.Minute)}},
 			},
-			expectedElapsed: false,
-			expectedMeta:    meta8,
+			expectedElapsed: true,
+			expectedMeta:    nil,
 		},
 		"block with max-time since more than the wait period but their compaction level is > 1": {
 			waitPeriod:        10 * time.Minute,
