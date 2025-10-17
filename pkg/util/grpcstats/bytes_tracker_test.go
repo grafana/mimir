@@ -14,6 +14,7 @@ import (
 	"github.com/grafana/dskit/grpcclient"
 	dskitserver "github.com/grafana/dskit/server"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
@@ -22,11 +23,10 @@ import (
 func TestDataTransferStatsHandler(t *testing.T) {
 	// Create a Prometheus counter to track bytes transferred.
 	reg := prometheus.NewPedanticRegistry()
-	counter := prometheus.NewCounter(prometheus.CounterOpts{
+	counter := promauto.With(reg).NewCounter(prometheus.CounterOpts{
 		Name: "test_grpc_bytes_transferred_total",
 		Help: "Total bytes transferred in test gRPC calls.",
 	})
-	reg.MustRegister(counter)
 
 	// Create the stats handler.
 	handler := NewDataTransferStatsHandler(counter)
