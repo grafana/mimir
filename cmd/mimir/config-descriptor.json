@@ -2297,6 +2297,17 @@
         },
         {
           "kind": "field",
+          "name": "prefer_availability_zone",
+          "required": false,
+          "desc": "When set, the querier prioritizes querying data from ingesters and store-gateways in this availability zone.",
+          "fieldValue": null,
+          "fieldDefaultValue": "",
+          "fieldFlag": "querier.prefer-availability-zone",
+          "fieldType": "string",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "streaming_chunks_per_ingester_series_buffer_size",
           "required": false,
           "desc": "Number of series to buffer per ingester when streaming chunks from ingesters.",
