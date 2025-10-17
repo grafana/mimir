@@ -720,7 +720,6 @@ func createBlockWithOptions(
 	numSamples := numFloatSamples + numHistogramSamples
 
 	headOpts := tsdb.DefaultHeadOptions()
-	headOpts.EnableNativeHistograms.Store(true)
 	headOpts.ChunkDirRoot = filepath.Join(dir, "chunks")
 	headOpts.ChunkRange = 10000000000
 	h, err := tsdb.NewHead(nil, nil, nil, nil, headOpts, nil)

@@ -2303,7 +2303,6 @@ func testBucketStoreSeriesBlockWithMultipleChunks(
 	// Create a block with 1 series but a high number of samples,
 	// so that they will span across multiple chunks.
 	headOpts := tsdb.DefaultHeadOptions()
-	headOpts.EnableNativeHistograms.Store(true)
 	headOpts.ChunkDirRoot = filepath.Join(tmpDir, "block")
 	headOpts.ChunkRange = math.MaxInt64
 
