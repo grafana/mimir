@@ -105,4 +105,3 @@ You can use [Tanka](https://tanka.dev/) and [jsonnet-bundler](https://github.com
    The generated Kubernetes manifests create resources in the `default` namespace.
    To use a different namespace, change the `namespace` configuration option in the `environments/default/main.jsonnet` file, and re-generate the Kubernetes manifests.
    {{< /admonition >}}
-
