@@ -897,7 +897,8 @@ func TestProxyEndpoint_BackendSelection(t *testing.T) {
 
 			for i := 0; i < runCount; i++ {
 				req, _ := http.NewRequest("GET", "/api/v1/query", nil)
-				backends := proxyEndpoint.selectBackends(req)
+				backends, err := proxyEndpoint.selectBackends(req)
+				require.NoError(t, err)
 				require.GreaterOrEqual(t, len(backends), 1)
 
 				if len(backends) == 1 {

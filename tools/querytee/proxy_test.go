@@ -1144,7 +1144,8 @@ func TestProxyEndpoint_TimeBasedBackendSelection(t *testing.T) {
 			req.URL.RawQuery = q.Encode()
 
 			// Test backend selection
-			selectedBackends := endpoint.selectBackends(req)
+			selectedBackends, err := endpoint.selectBackends(req)
+			require.NoError(t, err, tc.description)
 
 			// Extract names of selected backends
 			var selectedNames []string
@@ -1261,7 +1262,8 @@ func TestTimeExtractionFunctions(t *testing.T) {
 			}
 			req.URL.RawQuery = q.Encode()
 
-			extractedTime := extractMinTimeFromRequest(req)
+			extractedTime, err := extractMinTimeFromRequest(req)
+			require.NoError(t, err)
 
 			if tc.expectedTime == nil {
 				assert.True(t, extractedTime.IsZero(), tc.description)

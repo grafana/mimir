@@ -66,7 +66,12 @@ func NewProxyEndpoint(backends []ProxyBackendInterface, route Route, metrics *Pr
 
 func (p *ProxyEndpoint) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Send the same request to all selected backends.
-	backends := p.selectBackends(r)
+	backends, err := p.selectBackends(r)
+	if err != nil {
+		level.Error(p.logger).Log("msg", "Unable to select backends", "err", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 	resCh := make(chan *backendResponse, len(backends))
 	go p.executeBackendRequests(r, backends, resCh)
 
@@ -86,12 +91,14 @@ func (p *ProxyEndpoint) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	p.metrics.responsesTotal.WithLabelValues(downstreamRes.backend.Name(), r.Method, p.route.RouteName).Inc()
 }
 
-func (p *ProxyEndpoint) selectBackends(r *http.Request) []ProxyBackendInterface {
+func (p *ProxyEndpoint) selectBackends(r *http.Request) ([]ProxyBackendInterface, error) {
 	if len(p.backends) == 1 {
-		return p.backends
+		return p.backends, nil
 	}
-
-	minQueryTime := extractMinTimeFromRequest(r)
+	minQueryTime, err := extractMinTimeFromRequest(r)
+	if err != nil {
+		return nil, fmt.Errorf("extract min query time: %w", err)
+	}
 
 	selected := []ProxyBackendInterface{}
 
@@ -120,7 +127,7 @@ func (p *ProxyEndpoint) selectBackends(r *http.Request) []ProxyBackendInterface 
 		}
 	}
 
-	return selected
+	return selected, nil
 }
 
 func (p *ProxyEndpoint) executeBackendRequests(req *http.Request, backends []ProxyBackendInterface, resCh chan *backendResponse) {
@@ -411,20 +418,32 @@ func (r *backendResponse) statusCode() int {
 
 // extractMinTimeFromRequest extracts the minimum time from a Prometheus API request
 // Returns zero time if time parameters cannot be parsed, which causes all backends to handle the query.
-func extractMinTimeFromRequest(r *http.Request) time.Time {
+func extractMinTimeFromRequest(r *http.Request) (time.Time, error) {
+	var body []byte
+	var err error
+	if r.Body != nil {
+		body, err = io.ReadAll(r.Body)
+		if err != nil {
+			return time.Time{}, fmt.Errorf("unable to read request body: %w", err)
+		}
+		r.Body = io.NopCloser(bytes.NewReader(body))
+	}
 	if err := r.ParseForm(); err != nil {
-		return time.Time{} // Return zero time on parse error
+		return time.Time{}, nil // Return zero time on parse error
+	}
+	if body != nil {
+		r.Body = io.NopCloser(bytes.NewReader(body))
 	}
 
 	path := r.URL.Path
 
 	switch {
 	case strings.HasSuffix(path, "/api/v1/query_range"):
-		return extractMinTimeFromRangeQuery(r)
+		return extractMinTimeFromRangeQuery(r), nil
 	case strings.HasSuffix(path, "/api/v1/query"):
-		return extractTimeFromInstantQuery(r)
+		return extractTimeFromInstantQuery(r), nil
 	default:
-		return extractTimeFromGenericQuery(r) // series, labels, exemplars endpoints all use start/end or time parameters
+		return extractTimeFromGenericQuery(r), nil // series, labels, exemplars endpoints all use start/end or time parameters
 	}
 }
 
