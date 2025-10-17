@@ -481,7 +481,6 @@ type BucketStoreConfig struct {
 	SeriesFetchPreference float64 `yaml:"series_fetch_preference" category:"advanced"`
 
 	// Options for the parquet store
-	ParquetLoadIndexToDisk   bool   `yaml:"parquet_load_index_to_disk" category:"advanced"`
 	ParquetStreamingEnabled  bool   `yaml:"parquet_streaming_enabled" category:"advanced"`
 	ParquetMaxRowCount       uint64 `yaml:"parquet_max_row_count" category:"advanced"`
 	ParquetMaxChunkSizeBytes uint64 `yaml:"parquet_max_chunk_size_bytes" category:"advanced"`
@@ -515,7 +514,6 @@ func (cfg *BucketStoreConfig) RegisterFlags(f *flag.FlagSet) {
 	f.Float64Var(&cfg.SeriesFetchPreference, "blocks-storage.bucket-store.series-fetch-preference", 0.75, "This parameter controls the trade-off in fetching series versus fetching postings to fulfill a series request. Increasing the series preference results in fetching more series and reducing the volume of postings fetched. Reducing the series preference results in the opposite. Increase this parameter to reduce the rate of fetched series bytes (see \"Mimir / Queries\" dashboard) or API calls to the object store. Must be a positive floating point number.")
 
 	// Parquet flags separated from the rest to avoid confusion on rebases with main
-	f.BoolVar(&cfg.ParquetLoadIndexToDisk, "blocks-storage.bucket-store.parquet-load-index-to-disk", true, "True to download the Parquet labels file to disk before opening it. False to open it directly from the bucket.")
 	f.BoolVar(&cfg.ParquetStreamingEnabled, "blocks-storage.bucket-store.parquet-streaming-enabled", false, "Experimental support for streaming results from the Parquet chunks file directly, instead of loading them all in memory. This is normally desirable to reduce memory usage, but Parquet has some caveats that could make this less performant and bug-prone. The current implementation is a rough PoC to analyze performance improvements.")
 	f.Uint64Var(&cfg.ParquetMaxRowCount, "blocks-storage.bucket-store.parquet-max-row-count", 0, "Maximum number of rows in a parquet file. If the number of rows exceeds this value the query will stop with limit error.")
 	f.Uint64Var(&cfg.ParquetMaxChunkSizeBytes, "blocks-storage.bucket-store.parquet-max-chunk-size-bytes", 0, "Maximum size in bytes that can be fetched from the parquet chunks file. If the size exceeds this value the query will stop with limit error.")
