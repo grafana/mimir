@@ -25,18 +25,18 @@ type plan struct {
 	// totalSeries is the total number of series in the index.
 	totalSeries uint64
 
-	config             CostConfig
-	indexPredicatePool *pool.SlabPool[bool]
+	config              CostConfig
+	indexPredicatesPool *pool.SlabPool[bool]
 }
 
 // newScanOnlyPlan returns a plan in which all predicates would be used to scan and none to reach from the index.
-func newScanOnlyPlan(ctx context.Context, stats index.Statistics, config CostConfig, matchers []*labels.Matcher, predicatedPool *pool.SlabPool[bool]) plan {
+func newScanOnlyPlan(ctx context.Context, stats index.Statistics, config CostConfig, matchers []*labels.Matcher, predicatesPool *pool.SlabPool[bool]) plan {
 	p := plan{
-		predicates:         make([]planPredicate, 0, len(matchers)),
-		indexPredicate:     make([]bool, 0, len(matchers)),
-		totalSeries:        stats.TotalSeries(),
-		config:             config,
-		indexPredicatePool: predicatedPool,
+		predicates:          make([]planPredicate, 0, len(matchers)),
+		indexPredicate:      make([]bool, 0, len(matchers)),
+		totalSeries:         stats.TotalSeries(),
+		config:              config,
+		indexPredicatesPool: predicatesPool,
 	}
 	for _, m := range matchers {
 		pred := newPlanPredicate(ctx, m, stats, config)
@@ -70,8 +70,8 @@ func (p plan) ScanMatchers() []*labels.Matcher {
 // useIndexFor returns a copy of this plan where predicate predicateIdx is used on the index.
 func (p plan) useIndexFor(predicateIdx int) plan {
 	var copied []bool
-	if p.indexPredicatePool != nil {
-		copied = p.indexPredicatePool.Get(len(p.indexPredicate))
+	if p.indexPredicatesPool != nil {
+		copied = p.indexPredicatesPool.Get(len(p.indexPredicate))
 		copy(copied, p.indexPredicate)
 	} else {
 		copied = slices.Clone(p.indexPredicate)
@@ -83,7 +83,7 @@ func (p plan) useIndexFor(predicateIdx int) plan {
 
 func (p plan) withoutMemoryPool() plan {
 	p.indexPredicate = slices.Clone(p.indexPredicate)
-	p.indexPredicatePool = nil
+	p.indexPredicatesPool = nil
 	return p
 }
 

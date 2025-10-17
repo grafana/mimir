@@ -30,7 +30,7 @@ func (i NoopPlanner) PlanIndexLookup(_ context.Context, plan index.LookupPlan, _
 var (
 	rawPlansWithCostPool   = &sync.Pool{}
 	rawPlansPool           = &sync.Pool{}
-	rawIndexPredicatedPool = &sync.Pool{}
+	rawIndexPredicatesPool = &sync.Pool{}
 )
 
 const (
@@ -38,7 +38,7 @@ const (
 	maxMatchersForPlanning = 10
 	maxPlansForPlanning    = 1 << maxMatchersForPlanning
 
-	// predicateIndexSlicesTotalLen is used to size the pools for the booleans which say if a predicate is an index predicate ornot.
+	// predicateIndexSlicesTotalLen is used to size the pools for the booleans which say if a predicate is an index predicate or not.
 	// We want to size the pool so we can fit a plan with numMatchersForSingleAlloc matchers by taking a single slab.
 	// We'd need 2^numMatchersForSingleAlloc plans, and each plan will have numMatchersForSingleAlloc number of matchers.
 	predicateIndexSlicesTotalLen = 1 << numMatchersForSingleAlloc * numMatchersForSingleAlloc
@@ -50,21 +50,21 @@ const (
 type costBasedPlannerPools struct {
 	plansWithCostPool   *pool.SlabPool[planWithCost]
 	plansPool           *pool.SlabPool[plan]
-	indexPredicatedPool *pool.SlabPool[bool]
+	indexPredicatesPool *pool.SlabPool[bool]
 }
 
 func newCostBasedPlannerPools() *costBasedPlannerPools {
 	return &costBasedPlannerPools{
 		plansWithCostPool:   pool.NewSlabPool[planWithCost](rawPlansWithCostPool, maxPlansForPlanning),
 		plansPool:           pool.NewSlabPool[plan](rawPlansPool, maxPlansForPlanning),
-		indexPredicatedPool: pool.NewSlabPool[bool](rawIndexPredicatedPool, predicateIndexSlicesTotalLen),
+		indexPredicatesPool: pool.NewSlabPool[bool](rawIndexPredicatesPool, predicateIndexSlicesTotalLen),
 	}
 }
 
 func (p *costBasedPlannerPools) Release() {
 	p.plansWithCostPool.Release()
 	p.plansPool.Release()
-	p.indexPredicatedPool.Release()
+	p.indexPredicatesPool.Release()
 }
 
 type planWithCost struct {
@@ -146,7 +146,7 @@ func (p CostBasedPlanner) PlanIndexLookup(ctx context.Context, inPlan index.Look
 var errTooManyMatchers = errors.New("too many matchers to generate plans")
 
 func (p CostBasedPlanner) generatePlans(ctx context.Context, statistics index.Statistics, matchers []*labels.Matcher, pools *costBasedPlannerPools) []plan {
-	noopPlan := newScanOnlyPlan(ctx, statistics, p.config, matchers, pools.indexPredicatedPool)
+	noopPlan := newScanOnlyPlan(ctx, statistics, p.config, matchers, pools.indexPredicatesPool)
 	allPlans := pools.plansPool.Get(1 << uint(len(matchers)))[:0]
 
 	return generatePredicateCombinations(allPlans, noopPlan, 0)
