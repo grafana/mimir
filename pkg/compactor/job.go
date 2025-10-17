@@ -157,7 +157,7 @@ func (job *Job) String() string {
 // elapsed for the input job. If the wait period has not elapsed, then this function
 // also returns the Meta of the first source block encountered for which the wait
 // period has not elapsed yet.
-func jobWaitPeriodElapsed(ctx context.Context, job *Job, waitPeriod time.Duration, userBucket objstore.Bucket) (bool, *block.Meta, error) {
+func jobWaitPeriodElapsed(ctx context.Context, job *Job, waitPeriod time.Duration, skipFutureMaxTime bool, userBucket objstore.Bucket) (bool, *block.Meta, error) {
 	if waitPeriod <= 0 {
 		return true, nil, nil
 	}
@@ -175,7 +175,7 @@ func jobWaitPeriodElapsed(ctx context.Context, job *Job, waitPeriod time.Duratio
 			continue
 		}
 
-		if timestamp.Time(meta.MaxTime).After(threshold) {
+		if skipFutureMaxTime && timestamp.Time(meta.MaxTime).After(threshold) {
 			return false, meta, nil
 		}
 

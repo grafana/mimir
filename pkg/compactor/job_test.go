@@ -83,14 +83,16 @@ func TestJobWaitPeriodElapsed(t *testing.T) {
 	}
 
 	tests := map[string]struct {
-		waitPeriod      time.Duration
-		jobBlocks       []jobBlock
-		expectedElapsed bool
-		expectedMeta    *block.Meta
-		expectedErr     string
+		waitPeriod        time.Duration
+		skipFutureMaxTime bool
+		jobBlocks         []jobBlock
+		expectedElapsed   bool
+		expectedMeta      *block.Meta
+		expectedErr       string
 	}{
 		"wait period disabled": {
-			waitPeriod: 0,
+			waitPeriod:        0,
+			skipFutureMaxTime: false,
 			jobBlocks: []jobBlock{
 				{meta: meta1, attrs: objstore.ObjectAttributes{LastModified: time.Now().Add(-20 * time.Minute)}},
 				{meta: meta2, attrs: objstore.ObjectAttributes{LastModified: time.Now().Add(-5 * time.Minute)}},
@@ -99,7 +101,8 @@ func TestJobWaitPeriodElapsed(t *testing.T) {
 			expectedMeta:    nil,
 		},
 		"blocks uploaded since more than the wait period": {
-			waitPeriod: 10 * time.Minute,
+			waitPeriod:        10 * time.Minute,
+			skipFutureMaxTime: false,
 			jobBlocks: []jobBlock{
 				{meta: meta1, attrs: objstore.ObjectAttributes{LastModified: time.Now().Add(-20 * time.Minute)}},
 				{meta: meta2, attrs: objstore.ObjectAttributes{LastModified: time.Now().Add(-25 * time.Minute)}},
@@ -108,7 +111,8 @@ func TestJobWaitPeriodElapsed(t *testing.T) {
 			expectedMeta:    nil,
 		},
 		"blocks uploaded since less than the wait period": {
-			waitPeriod: 10 * time.Minute,
+			waitPeriod:        10 * time.Minute,
+			skipFutureMaxTime: false,
 			jobBlocks: []jobBlock{
 				{meta: meta1, attrs: objstore.ObjectAttributes{LastModified: time.Now().Add(-20 * time.Minute)}},
 				{meta: meta2, attrs: objstore.ObjectAttributes{LastModified: time.Now().Add(-5 * time.Minute)}},
@@ -117,7 +121,8 @@ func TestJobWaitPeriodElapsed(t *testing.T) {
 			expectedMeta:    meta2,
 		},
 		"blocks uploaded since less than the wait period but their compaction level is > 1": {
-			waitPeriod: 10 * time.Minute,
+			waitPeriod:        10 * time.Minute,
+			skipFutureMaxTime: false,
 			jobBlocks: []jobBlock{
 				{meta: meta3, attrs: objstore.ObjectAttributes{LastModified: time.Now().Add(-4 * time.Minute)}},
 				{meta: meta4, attrs: objstore.ObjectAttributes{LastModified: time.Now().Add(-5 * time.Minute)}},
@@ -126,7 +131,8 @@ func TestJobWaitPeriodElapsed(t *testing.T) {
 			expectedMeta:    nil,
 		},
 		"out of order block": {
-			waitPeriod: 10 * time.Minute,
+			waitPeriod:        10 * time.Minute,
+			skipFutureMaxTime: false,
 			jobBlocks: []jobBlock{
 				{meta: meta5, attrs: objstore.ObjectAttributes{LastModified: time.Now().Add(-20 * time.Minute)}},
 				{meta: meta6, attrs: objstore.ObjectAttributes{LastModified: time.Now().Add(-5 * time.Minute)}},
@@ -135,7 +141,18 @@ func TestJobWaitPeriodElapsed(t *testing.T) {
 			expectedMeta:    nil,
 		},
 		"block with max-time since more than the wait period": {
-			waitPeriod: 10 * time.Minute,
+			waitPeriod:        10 * time.Minute,
+			skipFutureMaxTime: true,
+			jobBlocks: []jobBlock{
+				{meta: meta7, attrs: objstore.ObjectAttributes{LastModified: time.Now().Add(-20 * time.Minute)}},
+				{meta: meta8, attrs: objstore.ObjectAttributes{LastModified: time.Now().Add(-5 * time.Minute)}},
+			},
+			expectedElapsed: false,
+			expectedMeta:    meta8,
+		},
+		"block with max-time since more than the wait period but skipFutureMaxTime disabled": {
+			waitPeriod:        10 * time.Minute,
+			skipFutureMaxTime: false,
 			jobBlocks: []jobBlock{
 				{meta: meta7, attrs: objstore.ObjectAttributes{LastModified: time.Now().Add(-20 * time.Minute)}},
 				{meta: meta8, attrs: objstore.ObjectAttributes{LastModified: time.Now().Add(-5 * time.Minute)}},
@@ -144,7 +161,8 @@ func TestJobWaitPeriodElapsed(t *testing.T) {
 			expectedMeta:    meta8,
 		},
 		"block with max-time since more than the wait period but their compaction level is > 1": {
-			waitPeriod: 10 * time.Minute,
+			waitPeriod:        10 * time.Minute,
+			skipFutureMaxTime: true,
 			jobBlocks: []jobBlock{
 				{meta: meta9, attrs: objstore.ObjectAttributes{LastModified: time.Now().Add(-20 * time.Minute)}},
 				{meta: meta10, attrs: objstore.ObjectAttributes{LastModified: time.Now().Add(-5 * time.Minute)}},
@@ -153,7 +171,8 @@ func TestJobWaitPeriodElapsed(t *testing.T) {
 			expectedMeta:    nil,
 		},
 		"an error occurred while checking the blocks upload timestamp": {
-			waitPeriod: 10 * time.Minute,
+			waitPeriod:        10 * time.Minute,
+			skipFutureMaxTime: false,
 			jobBlocks: []jobBlock{
 				// This block has been uploaded since more than the wait period.
 				{meta: meta1, attrs: objstore.ObjectAttributes{LastModified: time.Now().Add(-20 * time.Minute)}},
@@ -178,7 +197,7 @@ func TestJobWaitPeriodElapsed(t *testing.T) {
 				userBucket.MockAttributes(path.Join(b.meta.ULID.String(), block.MetaFilename), b.attrs, b.attrsErr)
 			}
 
-			elapsed, meta, err := jobWaitPeriodElapsed(context.Background(), job, testData.waitPeriod, userBucket)
+			elapsed, meta, err := jobWaitPeriodElapsed(context.Background(), job, testData.waitPeriod, testData.skipFutureMaxTime, userBucket)
 			if testData.expectedErr != "" {
 				require.Error(t, err)
 				assert.ErrorContains(t, err, testData.expectedErr)
