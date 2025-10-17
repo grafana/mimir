@@ -5,11 +5,11 @@ description:
   Learn how to configure the Grafana Mimir Helm chart to handle HA Prometheus
   server deduplication.
 menuTitle: Configure high-availability deduplication
-title: Configuring Grafana Mimir-Distributed Helm Chart for high-availability deduplication
+title: Configure high-availability deduplication with the Mimir distributed Helm chart
 weight: 70
 ---
 
-# Configuring Grafana Mimir-Distributed Helm Chart for high-availability deduplication
+# Configure high-availability deduplication with the Mimir distributed Helm chart
 
 Grafana Mimir can deduplicate data from a high-availability (HA) Prometheus setup. Starting from Mimir 3.0, the HA tracker uses `memberlist` by default, which requires no external dependencies. For more information, see [Configure high availability](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/configure-high-availability-deduplication/).
 
@@ -34,7 +34,7 @@ which are the default labels for a HA setup in Grafana Mimir. If you want to cha
 make sure to change them in Mimir as well. This ensures that the configurations of Grafana Mimir, Prometheus, and Grafana Alloy all match each other. Otherwise, HA deduplication will not work.
 
 - The value of the `cluster` label must be same across replicas that belong to the same cluster.
-- The value of the `__replica__` label must be unique across different replicas within the same cluster.
+- The value of the `__replica__` label must be unique across replicas within the same cluster.
 
 ```yaml
 global:
@@ -77,7 +77,7 @@ mimir:
 If memberlist is already configured for other Mimir components (such as the hash ring), the HA tracker will automatically use that configuration. In most Helm deployments, memberlist is already configured, so no additional configuration is needed.
 {{< /admonition >}}
 
-2. Upgrade the Mimir's helm release using the following command:
+2. Upgrade the Mimir Helm release using the following command:
 
 ```bash
  helm -n <mimir-namespace> upgrade mimir grafana/mimir-distributed -f custom.yaml
@@ -111,8 +111,8 @@ runtimeConfig:
       ha_replica_label: __replica__
 ```
 
-The `mimir` configuration block is similar to the globally configure HA deduplication setup. The `runtimeConfig` block
-is the configuration for per tenant HA deduplication.
+The `mimir` configuration block is similar to the global HA deduplication configuration. The `runtimeConfig` block
+configures per-tenant HA deduplication.
 
 2. Upgrade the Mimir's helm release using the following command:
 

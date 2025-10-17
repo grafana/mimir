@@ -114,8 +114,8 @@ The `consul` and `etcd` backends are deprecated as of Mimir 3.0. If you're curre
 
 The following CLI flags (and their respective YAML configuration options) are available for configuring the HA tracker KV store:
 
-- `-distributor.ha-tracker.store`: The backend storage to use (default: `memberlist`).
-- `-memberlist.*`: The memberlist client configuration. This is common and used by other Mimir components as well.
+- `-distributor.ha-tracker.store`: Backend storage to use (default: `memberlist`).
+- `-memberlist.*`: Memberlist client configuration. This is shared by multiple components.
 
 The memberlist configuration is typically shared across multiple Mimir components (distributors, ingesters, etc.), so if you already have memberlist configured for hash ring synchronization, no additional configuration is required for the HA tracker.
 
@@ -150,11 +150,12 @@ distributor:
 memberlist:
   # Memberlist configuration (typically shared with other components)
   join_members:
-    - <addresses of other Mimir components>
+        - <IP_OR_DNS:PORT>
+        - <IP_OR_DNS:PORT>
 ```
 
 {{< admonition type="note" >}}
-If memberlist is already configured for other Mimir components (such as the hash ring), the HA tracker will automatically use that configuration. In most deployments, no additional memberlist configuration is needed.
+If memberlist is already configured for other Mimir components, such as the hash ring, the HA tracker automatically uses that configuration. In most deployments, you don't need any additional memberlist configuration.
 {{< /admonition >}}
 
 For more information, see [distributor](../configuration-parameters/#distributor). The HA tracker flags are prefixed with `-distributor.ha-tracker.*`.
