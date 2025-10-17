@@ -526,8 +526,9 @@ parquet_converter:
   # CLI flag: -parquet-converter.max-rows-per-group
   [max_rows_per_group: <int> | default = 1000000]
 
-  # (advanced)
-  [max_row_groups_per_shard: <int> | default = ]
+  # (advanced) Maximum number of row groups per Parquet shard file.
+  # CLI flag: -parquet-converter.max-row-groups-per-shard
+  [max_row_groups_per_shard: <int> | default = 8]
 
   # (advanced) Maximum number of Go routines reading TSDB series in concurrently
   # when converting a block.

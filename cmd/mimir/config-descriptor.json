@@ -19367,9 +19367,10 @@
           "kind": "field",
           "name": "max_row_groups_per_shard",
           "required": false,
-          "desc": "",
+          "desc": "Maximum number of row groups per Parquet shard file.",
           "fieldValue": null,
-          "fieldDefaultValue": 0,
+          "fieldDefaultValue": 8,
+          "fieldFlag": "parquet-converter.max-row-groups-per-shard",
           "fieldType": "int",
           "fieldCategory": "advanced"
         },

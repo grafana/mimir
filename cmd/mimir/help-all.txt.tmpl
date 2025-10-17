@@ -2087,6 +2087,8 @@ Usage of ./cmd/mimir/mimir:
     	Override the expected name on the server certificate.
   -parquet-converter.max-block-age duration
     	Maximum age of blocks to convert. Blocks older than this will be skipped. Set to 0 to disable age filtering.
+  -parquet-converter.max-row-groups-per-shard int
+    	Maximum number of row groups per Parquet shard file. (default 8)
   -parquet-converter.max-rows-per-group int
     	Maximum number of rows per row group in Parquet files. (default 1000000)
   -parquet-converter.min-block-duration duration

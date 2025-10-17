@@ -1372,6 +1372,7 @@
   "parquet-converter.sorting-labels": "",
   "parquet-converter.col-duration": 28800000000000,
   "parquet-converter.max-rows-per-group": 1000000,
+  "parquet-converter.max-row-groups-per-shard": 8,
   "parquet-converter.tsdb-read-concurrency": 4,
   "parquet-converter.parquet-shard-write-concurrency": 4,
   "parquet-converter.compression-enabled": true,
