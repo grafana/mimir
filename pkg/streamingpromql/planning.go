@@ -309,6 +309,8 @@ func shouldWrapInDedupAndMerge(root planning.Node) (bool, error) {
 		if err == nil && res == parser.ValueTypeScalar {
 			return false, nil
 		}
+	case *core.StepInvariantExpression:
+		return shouldWrapInDedupAndMerge(node.Inner)
 	}
 	return true, nil
 }
@@ -469,7 +471,6 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
 
 	case *parser.Call:
 		fnc, ok := findFunction(expr.Func.Name)
-
 		if !ok {
 			return nil, compat.NewNotSupportedError(fmt.Sprintf("'%s' function", expr.Func.Name))
 		}
@@ -497,9 +498,29 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
 		case functions.FUNCTION_ABSENT, functions.FUNCTION_ABSENT_OVER_TIME:
 			f.AbsentLabels = mimirpb.FromLabelsToLabelAdapters(functions.CreateLabelsForAbsentFunction(expr.Args[0]))
 		case functions.FUNCTION_TIMESTAMP:
-			vs, isVectorSelector := args[0].(*core.VectorSelector)
-			if isVectorSelector {
-				vs.ReturnSampleTimestamps = true
+
+			// A special case to re-order when we have a timestamp(StepInvariantExpression(VectorSelector)).
+			// The StepInvariantExpression is moved up to encase the entire function call.
+			// Note that the DeduplicateAndMerge still wraps the function call as the timestamp function returns true under functionNeedsDeduplication().
+			// This can be removed once https://github.com/prometheus/prometheus/pull/17313 is vendored into mimir
+			stepInvariantExpression, ok := args[0].(*core.StepInvariantExpression)
+			if ok {
+				vectorSelector, ok := stepInvariantExpression.Inner.(*core.VectorSelector)
+				if ok {
+					vectorSelector.ReturnSampleTimestamps = true
+					f.Args[0] = stepInvariantExpression.Inner
+					return &core.StepInvariantExpression{
+						Inner: &core.DeduplicateAndMerge{
+							Inner:                      f,
+							DeduplicateAndMergeDetails: &core.DeduplicateAndMergeDetails{}},
+						StepInvariantExpressionDetails: &core.StepInvariantExpressionDetails{},
+					}, nil
+				}
+			}
+
+			vectorSelector, ok := args[0].(*core.VectorSelector)
+			if ok {
+				vectorSelector.ReturnSampleTimestamps = true
 			}
 		}
 
@@ -589,8 +610,15 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
 		return p.nodeFromExpr(expr.Expr)
 
 	case *parser.StepInvariantExpr:
-		// FIXME: make use of the fact the expression is step invariant
-		return p.nodeFromExpr(expr.Expr)
+		inner, err := p.nodeFromExpr(expr.Expr)
+		if err != nil {
+			return nil, err
+		}
+
+		return &core.StepInvariantExpression{
+			Inner:                          inner,
+			StepInvariantExpressionDetails: &core.StepInvariantExpressionDetails{},
+		}, nil
 
 	default:
 		return nil, fmt.Errorf("unknown expression type: %T", expr)
