@@ -43,15 +43,15 @@ func TestIsBlockIndexFile(t *testing.T) {
 func TestIsParquetLabelsFile(t *testing.T) {
 	blockID := ulid.MustNew(1, nil)
 
-	assert.True(t, isParquetLabelsFile(fmt.Sprintf("tenant1/%s/0.labels.parquet", blockID.String())))
-	assert.True(t, isParquetLabelsFile(fmt.Sprintf("tenant1/%s/1.labels.parquet", blockID.String())))
+	assert.True(t, IsParquetLabelsFile(fmt.Sprintf("tenant1/%s/0.labels.parquet", blockID.String())))
+	assert.True(t, IsParquetLabelsFile(fmt.Sprintf("tenant1/%s/1.labels.parquet", blockID.String())))
 
-	assert.False(t, isParquetLabelsFile(fmt.Sprintf("tenant1/%s/labels.parquet", blockID.String())))
-	assert.False(t, isParquetLabelsFile(fmt.Sprintf("tenant1/%s/0.labels.parquet/something", blockID.String())))
-	assert.False(t, isParquetLabelsFile(fmt.Sprintf("tenant1/0.labels.parquet/%s/index", blockID.String())))
-	assert.False(t, isParquetLabelsFile(fmt.Sprintf("tenant1/%s/0.labels.parquet.tmp", blockID.String())))
-	assert.False(t, isParquetLabelsFile(fmt.Sprintf("tenant1/%s/something.0.labels.parquet", blockID.String())))
-	assert.False(t, isParquetLabelsFile(fmt.Sprintf("tenant1/%s/0.labels.parquet.gz", blockID.String())))
+	assert.False(t, IsParquetLabelsFile(fmt.Sprintf("tenant1/%s/labels.parquet", blockID.String())))
+	assert.False(t, IsParquetLabelsFile(fmt.Sprintf("tenant1/%s/0.labels.parquet/something", blockID.String())))
+	assert.False(t, IsParquetLabelsFile(fmt.Sprintf("tenant1/0.labels.parquet/%s/index", blockID.String())))
+	assert.False(t, IsParquetLabelsFile(fmt.Sprintf("tenant1/%s/0.labels.parquet.tmp", blockID.String())))
+	assert.False(t, IsParquetLabelsFile(fmt.Sprintf("tenant1/%s/something.0.labels.parquet", blockID.String())))
+	assert.False(t, IsParquetLabelsFile(fmt.Sprintf("tenant1/%s/0.labels.parquet.gz", blockID.String())))
 }
 
 func TestIsParquetChunksFile(t *testing.T) {
@@ -60,10 +60,10 @@ func TestIsParquetChunksFile(t *testing.T) {
 	assert.True(t, isParquetChunksFile(fmt.Sprintf("tenant1/%s/0.chunks.parquet", blockID.String())))
 	assert.True(t, isParquetChunksFile(fmt.Sprintf("tenant1/%s/1.chunks.parquet", blockID.String())))
 
-	assert.False(t, isParquetLabelsFile(fmt.Sprintf("tenant1/%s/chunks.parquet", blockID.String())))
-	assert.False(t, isParquetLabelsFile(fmt.Sprintf("tenant1/%s/0.chunks.parquet/something", blockID.String())))
-	assert.False(t, isParquetLabelsFile(fmt.Sprintf("tenant1/0.chunks.parquet/%s/index", blockID.String())))
-	assert.False(t, isParquetLabelsFile(fmt.Sprintf("tenant1/%s/0.chunks.parquet.tmp", blockID.String())))
-	assert.False(t, isParquetLabelsFile(fmt.Sprintf("tenant1/%s/something.0.chunks.parquet", blockID.String())))
-	assert.False(t, isParquetLabelsFile(fmt.Sprintf("tenant1/%s/0.chunks.parquet.gz", blockID.String())))
+	assert.False(t, IsParquetLabelsFile(fmt.Sprintf("tenant1/%s/chunks.parquet", blockID.String())))
+	assert.False(t, IsParquetLabelsFile(fmt.Sprintf("tenant1/%s/0.chunks.parquet/something", blockID.String())))
+	assert.False(t, IsParquetLabelsFile(fmt.Sprintf("tenant1/0.chunks.parquet/%s/index", blockID.String())))
+	assert.False(t, IsParquetLabelsFile(fmt.Sprintf("tenant1/%s/0.chunks.parquet.tmp", blockID.String())))
+	assert.False(t, IsParquetLabelsFile(fmt.Sprintf("tenant1/%s/something.0.chunks.parquet", blockID.String())))
+	assert.False(t, IsParquetLabelsFile(fmt.Sprintf("tenant1/%s/0.chunks.parquet.gz", blockID.String())))
 }

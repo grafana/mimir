@@ -152,7 +152,16 @@ func prepareParquetStorageConfig(t *testing.T) mimir_tsdb.BlocksStorageConfig {
 	return cfg
 }
 
-func generateParquetStorageBlock(t *testing.T, storageDir string, bkt objstore.Bucket, userID string, metricName string, numSeries int, minT, maxT int64, step int) {
+func generateParquetStorageBlock(
+	t *testing.T,
+	storageDir string,
+	bkt objstore.Bucket,
+	userID string,
+	metricName string,
+	numSeries int,
+	minT, maxT int64, step int,
+	opts ...convert.ConvertOption,
+) {
 	generateStorageBlockWithMultipleSeries(t, storageDir, userID, metricName, numSeries, minT, maxT, step)
 	userDir := filepath.Join(storageDir, userID)
 	bkt = bucket.NewPrefixedBucketClient(bkt, userID)
@@ -168,6 +177,8 @@ func generateParquetStorageBlock(t *testing.T, storageDir string, bkt objstore.B
 		require.NoError(t, err)
 		defer runutil.CloseWithErrCapture(&err, tsdbBlock, "close tsdb block")
 
+		// Put name first in case options override it.
+		blockOpts := append([]convert.ConvertOption{convert.WithName(blockId)}, opts...)
 		_, err = convert.ConvertTSDBBlock(
 			context.Background(),
 			bkt,
@@ -175,7 +186,7 @@ func generateParquetStorageBlock(t *testing.T, storageDir string, bkt objstore.B
 			maxT,
 			[]convert.Convertible{tsdbBlock},
 			promslog.NewNopLogger(),
-			convert.WithName(blockId),
+			blockOpts...,
 		)
 		require.NoError(t, err)
 

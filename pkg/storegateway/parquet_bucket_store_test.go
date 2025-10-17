@@ -15,6 +15,7 @@ import (
 	"github.com/grafana/dskit/gate"
 	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/services"
+	"github.com/prometheus-community/parquet-common/convert"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/promslog"
 	"github.com/prometheus/prometheus/model/labels"
@@ -69,7 +70,9 @@ func TestParquetBucketStore_Queries(t *testing.T) {
 	bkt, err := filesystem.NewBucketClient(filesystem.Config{Directory: storageDir})
 	require.NoError(t, err)
 
-	generateParquetStorageBlock(t, storageDir, bkt, userID, metricName, 1, 10, 100, 15)
+	const totalSeries = 5
+	// a single-row row group with a maximum of 1 row group per shard should result in 5 shards
+	generateParquetStorageBlock(t, storageDir, bkt, userID, metricName, totalSeries, 10, 100, 15, convert.WithRowGroupSize(1), convert.WithNumRowGroups(1))
 	createBucketIndex(t, bkt, userID)
 
 	store := createTestParquetBucketStore(t, userID, bkt)
@@ -136,7 +139,7 @@ func TestParquetBucketStore_Queries(t *testing.T) {
 		seriesSet, warnings, err := grpcSeries(t, context.Background(), store, req)
 		require.NoError(t, err)
 		require.Empty(t, warnings)
-		require.Len(t, seriesSet, 1)
+		require.Len(t, seriesSet, totalSeries)
 	})
 
 	t.Run("Series_Streaming", func(t *testing.T) {
@@ -155,7 +158,7 @@ func TestParquetBucketStore_Queries(t *testing.T) {
 		seriesSet, warnings, err := grpcSeries(t, context.Background(), store, req)
 		require.NoError(t, err)
 		require.Empty(t, warnings)
-		require.Len(t, seriesSet, 1)
+		require.Len(t, seriesSet, totalSeries)
 	})
 
 	t.Run("Series_Sharding", func(t *testing.T) {
@@ -184,10 +187,10 @@ func TestParquetBucketStore_Queries(t *testing.T) {
 			seriesSet, warnings, err := grpcSeries(t, context.Background(), store, req)
 			require.NoError(t, err)
 			require.Empty(t, warnings)
-			require.LessOrEqual(t, len(seriesSet), 1, "Expected at most one series result per shard")
+			require.LessOrEqual(t, len(seriesSet), totalSeries, "Expected at most %d series in shard", totalSeries)
 			seriesResultCount += len(seriesSet)
 		}
-		require.Equal(t, seriesResultCount, 1, "Expected only one series result across all shards")
+		require.Equal(t, seriesResultCount, totalSeries, "Expected only one series result across all shards")
 	})
 
 	t.Run("Series_SkipChunks", func(t *testing.T) {
@@ -215,7 +218,7 @@ func TestParquetBucketStore_Queries(t *testing.T) {
 				seriesSet, warnings, err := grpcSeries(t, context.Background(), store, req)
 				require.NoError(t, err)
 				require.Empty(t, warnings)
-				require.Len(t, seriesSet, 1)
+				require.Len(t, seriesSet, totalSeries)
 				series := seriesSet[0]
 				require.NotEmpty(t, series.Labels)
 				require.Empty(t, series.Chunks)

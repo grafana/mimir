@@ -113,7 +113,7 @@ func CreateCachingBucket(chunksCache cache.Cache, chunksConfig ChunksCacheConfig
 		cfg.CacheAttributes("metafile", metadataCache, isMetaFile, metadataConfig.MetafileAttributesTTL)
 		cfg.CacheAttributes("block-index", metadataCache, isBlockIndexFile, metadataConfig.BlockIndexAttributesTTL)
 		cfg.CacheGet("bucket-index", metadataCache, isBucketIndexFile, metadataConfig.BucketIndexMaxSize, metadataConfig.BucketIndexContentTTL /* do not cache exist / not exist: */, 0, 0)
-		cfg.CacheAttributes("parquet-labels", metadataCache, isParquetLabelsFile, metadataConfig.ParquetLabelsAttributesTTL)
+		cfg.CacheAttributes("parquet-labels", metadataCache, IsParquetLabelsFile, metadataConfig.ParquetLabelsAttributesTTL)
 		cfg.CacheAttributes("parquet-chunks", metadataCache, isParquetChunksFile, metadataConfig.ParquetChunksAttributesTTL)
 
 		codec := bucketcache.SnappyIterCodec{IterCodec: bucketcache.JSONIterCodec{}}
@@ -143,7 +143,7 @@ func CreateCachingBucket(chunksCache cache.Cache, chunksConfig ChunksCacheConfig
 		cfg.CacheGetRange("chunks", chunksCache, isTSDBChunkFile, subrangeSize, attributesCache, chunksConfig.AttributesTTL, chunksConfig.SubrangeTTL, chunksConfig.MaxGetRangeRequests)
 		cfg.CacheGetRange("parquet-chunks", chunksCache, isParquetChunksFile, subrangeSize, attributesCache, chunksConfig.AttributesTTL, chunksConfig.SubrangeTTL, chunksConfig.MaxGetRangeRequests)
 		// TODO Note that the parquet labels should go into a different cache than the chunks. We reuse the same cache to avoid changes across the codebase but if we're going with this implementation we should move it.
-		cfg.CacheGetRange("parquet-labels", chunksCache, isParquetLabelsFile, subrangeSize, attributesCache, chunksConfig.AttributesTTL, chunksConfig.SubrangeTTL, chunksConfig.MaxGetRangeRequests)
+		cfg.CacheGetRange("parquet-labels", chunksCache, IsParquetLabelsFile, subrangeSize, attributesCache, chunksConfig.AttributesTTL, chunksConfig.SubrangeTTL, chunksConfig.MaxGetRangeRequests)
 	}
 
 	if !cachingConfigured {
@@ -164,7 +164,7 @@ var parquetChunksMatcher = regexp.MustCompile(`^.*/\d+\.chunks\.parquet$`)
 
 func isTSDBChunkFile(name string) bool { return chunksMatcher.MatchString(name) }
 
-func isParquetLabelsFile(name string) bool { return parquetLabelsMatcher.MatchString(name) }
+func IsParquetLabelsFile(name string) bool { return parquetLabelsMatcher.MatchString(name) }
 
 func isParquetChunksFile(name string) bool { return parquetChunksMatcher.MatchString(name) }
 
