@@ -9,8 +9,6 @@ title: Grafana Mimir Slow queries dashboard
 weight: 150
 ---
 
-<!-- Note: This topic is mounted in the GEM documentation. Ensure that all updates are also applicable to GEM. -->
-
 # Grafana Mimir Slow queries dashboard
 
 The Slow queries dashboard shows details about the slowest queries for a given time range and enables you to filter results by a specific tenant.

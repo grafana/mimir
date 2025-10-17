@@ -1001,9 +1001,8 @@ spec:
       - args:
         - -distributor.ha-tracker.enable=true
         - -distributor.ha-tracker.enable-for-all-users=true
-        - -distributor.ha-tracker.etcd.endpoints=etcd-client.default.svc.cluster.local.:2379
         - -distributor.ha-tracker.prefix=prom_ha/
-        - -distributor.ha-tracker.store=etcd
+        - -distributor.ha-tracker.store=memberlist
         - -distributor.health-check-ingesters=true
         - -distributor.ingestion-burst-size=200000
         - -distributor.ingestion-rate-limit=10000
@@ -1344,7 +1343,7 @@ spec:
         - -server-tls.enabled=true
         - -use-zone-tracker=true
         - -zone-tracker.config-map-name=rollout-operator-zone-tracker
-        image: grafana/rollout-operator:v0.30.0
+        image: grafana/rollout-operator:v0.31.1
         imagePullPolicy: IfNotPresent
         name: rollout-operator
         ports:

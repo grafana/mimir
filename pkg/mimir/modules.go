@@ -163,7 +163,7 @@ func (t *Mimir) initAPI() (services.Service, error) {
 		})
 
 	t.API = a
-	t.API.RegisterAPI(t.Cfg.Server.PathPrefix, t.Cfg, newDefaultConfig(), t.BuildInfoHandler)
+	t.API.RegisterAPI(t.Cfg, newDefaultConfig(), t.BuildInfoHandler)
 
 	return nil, nil
 }
@@ -1224,7 +1224,7 @@ func (t *Mimir) initMemberlistKV() (services.Service, error) {
 	)
 	dnsProvider := dns.NewProvider(util_log.Logger, dnsProviderReg, dns.GolangResolverType)
 	t.MemberlistKV = memberlist.NewKVInitService(&t.Cfg.MemberlistKV, util_log.Logger, dnsProvider, t.Registerer)
-	t.API.RegisterMemberlistKV(t.Cfg.Server.PathPrefix, t.MemberlistKV)
+	t.API.RegisterMemberlistKV(t.MemberlistKV)
 
 	// Update the config.
 	// lint:sorted

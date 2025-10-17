@@ -7,8 +7,6 @@ title: Grafana Mimir query-tee
 weight: 30
 ---
 
-<!-- Note: This topic is mounted in the GEM documentation. Ensure that all updates are also applicable to GEM. -->
-
 # Grafana Mimir query-tee
 
 The query-tee is a standalone tool that you can use for testing purposes when comparing the query results and performance of two Grafana Mimir clusters.
@@ -117,13 +115,13 @@ The query-tee considers a 4xx response as a valid response to select because a 4
 
 ### Backend results comparison
 
-The query-tee can optionally compare the query results received by two backends.
+You can use the query-tee to compare query results received from multiple backends.
 The query results comparison can be enabled setting the flag `-proxy.compare-responses=true` and requires that:
 
-1. Two backends have been configured setting `-backend.endpoints`.
-1. A preferred backend is configured setting `-backend.preferred`.
+1. You've configured at least two backends by setting `-backend.endpoints`.
+1. You've configured a preferred backend by setting `-backend.preferred`.
 
-When the query results comparison is enabled, the query-tee compares the response received from the two configured backends and logs a message for each query whose results don't match. Query-tee keeps track of the number of successful and failed comparison through the metric `cortex_querytee_responses_compared_total`.
+When you enable the query results comparison, the query-tee compares the response received from the preferred backend against each secondary backend individually and logs a message for each query whose results don't match. Query-tee keeps track of the number of successful and failed comparison through the metric `cortex_querytee_responses_compared_total`, with separate metrics for each secondary backend.
 
 By default, query-tee considers equivalent error messages as matching, even if they are not exactly the same.
 This ensures that comparison does not fail for known situations where error messages are non-deterministic.
@@ -168,13 +166,13 @@ cortex_querytee_responses_total{backend="<hostname>",method="<method>",route="<r
 
 # HELP cortex_querytee_responses_compared_total Total number of responses compared per route name by result.
 # TYPE cortex_querytee_responses_compared_total counter
-cortex_querytee_responses_compared_total{route="<route>",result="<success|fail>"}
+cortex_querytee_responses_compared_total{route="<route>",secondary_backend="<hostname>",result="<success|fail|skip>"}
 ```
 
 Additionally, if backend results comparison is configured, two native histograms are available:
 
-- `cortex_querytee_backend_response_relative_duration_seconds`: Time (in seconds) of secondary backend less preferred backend.
-- `cortex_querytee_backend_response_relative_duration_proportional`: Response time of secondary backend less preferred backend, as a proportion of preferred backend response time.
+- `cortex_querytee_backend_response_relative_duration_seconds{route="<route>",secondary_backend="<hostname>"}`: Time (in seconds) of the secondary backend minus the preferred backend, for each secondary backend.
+- `cortex_querytee_backend_response_relative_duration_proportional{route="<route>",secondary_backend="<hostname>"}`: Response time of the secondary backend minus the preferred backend, as a proportion of the preferred backend response time.
 
 ### Ruler remote operational mode test
 

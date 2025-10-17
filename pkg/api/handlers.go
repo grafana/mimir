@@ -117,13 +117,8 @@ type indexPageContents struct {
 //go:embed static
 var staticFiles embed.FS
 
-func indexHandler(httpPathPrefix string, content *IndexPageContent) http.HandlerFunc {
+func indexHandler(content *IndexPageContent) http.HandlerFunc {
 	templ := template.New("main")
-	templ.Funcs(map[string]interface{}{
-		"AddPathPrefix": func(link string) string {
-			return path.Join(httpPathPrefix, link)
-		},
-	})
 	template.Must(templ.Parse(indexPageHTML))
 
 	return func(w http.ResponseWriter, _ *http.Request) {
@@ -328,11 +323,10 @@ func NewQuerierHandler(
 //go:embed memberlist_status.gohtml
 var memberlistStatusPageHTML string
 
-func memberlistStatusHandler(httpPathPrefix string, kvs *memberlist.KVInitService) http.Handler {
+func memberlistStatusHandler(kvs *memberlist.KVInitService) http.Handler {
 	templ := template.New("memberlist_status")
 	templ.Funcs(map[string]interface{}{
-		"AddPathPrefix": func(link string) string { return path.Join(httpPathPrefix, link) },
-		"StringsJoin":   strings.Join,
+		"StringsJoin": strings.Join,
 	})
 	template.Must(templ.Parse(memberlistStatusPageHTML))
 	return memberlist.NewHTTPStatusHandler(kvs, templ)

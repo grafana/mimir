@@ -87,11 +87,21 @@ std.manifestYamlDoc({
   },
 
   store_gateways(count):: {
-    ['store-gateway-%d' % id]: mimirService({
-      name: 'store-gateway-' + id,
+    ['store-gateway-zone-a-%d' % id]: mimirService({
+      name: 'store-gateway-zone-a-' + id,
       target: 'store-gateway',
       publishedHttpPort: 8020 + id,
-      jaegerApp: 'store-gateway-%d' % id,
+      jaegerApp: 'store-gateway-zone-a-%d' % id,
+      extraArguments: ['-store-gateway.sharding-ring.instance-availability-zone=zone-a'],
+    })
+    for id in std.range(1, count)
+  } + {
+    ['store-gateway-zone-b-%d' % id]: mimirService({
+      name: 'store-gateway-zone-b-' + id,
+      target: 'store-gateway',
+      publishedHttpPort: 8050 + id,
+      jaegerApp: 'store-gateway-zone-b-%d' % id,
+      extraArguments: ['-store-gateway.sharding-ring.instance-availability-zone=zone-b'],
     })
     for id in std.range(1, count)
   },

@@ -1802,16 +1802,16 @@ func TestHandler_toOtlpGRPCHTTPStatus(t *testing.T) {
 			expectedGRPCStatus: codes.Internal,
 			expectedSoft:       false,
 		},
-		"an ingesterPushError with INSTANCE_LIMIT cause gets translated into gRPC codes.Internal and HTTP 503 statuses": {
+		"an ingesterPushError with INSTANCE_LIMIT cause gets translated into gRPC codes.Unavailable and HTTP 503 statuses": {
 			err:                newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, originalMsg, mimirpb.ERROR_CAUSE_INSTANCE_LIMIT), ingesterID),
 			expectedHTTPStatus: http.StatusServiceUnavailable,
-			expectedGRPCStatus: codes.Internal,
+			expectedGRPCStatus: codes.Unavailable,
 			expectedSoft:       false,
 		},
-		"a DoNotLogError of an ingesterPushError with INSTANCE_LIMIT cause gets translated into gRPC codes.Internal and HTTP 503 statuses": {
+		"a DoNotLogError of an ingesterPushError with INSTANCE_LIMIT cause gets translated into gRPC codes.Unavailable and HTTP 503 statuses": {
 			err:                middleware.DoNotLogError{Err: newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, originalMsg, mimirpb.ERROR_CAUSE_INSTANCE_LIMIT), ingesterID)},
 			expectedHTTPStatus: http.StatusServiceUnavailable,
-			expectedGRPCStatus: codes.Internal,
+			expectedGRPCStatus: codes.Unavailable,
 			expectedSoft:       false,
 		},
 		"an ingesterPushError with UNKNOWN_CAUSE cause gets translated into gRPC codes.Internal and HTTP 503 statuses": {

@@ -22,14 +22,15 @@ import (
 )
 
 const (
-	// 529 is non-standard status code used by some services to signal that "The service is overloaded".
-	StatusServiceOverloaded         = 529
 	deadlineExceededWrapMessage     = "exceeded configured distributor remote timeout"
 	failedPushingToIngesterMessage  = "failed pushing to ingester"
 	failedPushingToPartitionMessage = "failed pushing to partition"
 )
 
 var (
+	errMissingRequestState                  = fmt.Errorf("context does not contain a request state")
+	errReactiveLimiterPermitAlreadyAcquired = fmt.Errorf("reactive limiter permit already acquired")
+
 	tooManyClustersMsgFormat = globalerror.TooManyHAClusters.MessageWithPerTenantLimitConfig(
 		"the write request has been rejected because the maximum number of high-availability (HA) clusters has been reached for this tenant (limit: %d)",
 		validation.HATrackerMaxClustersFlag,
@@ -155,7 +156,7 @@ func newReactiveLimiterExceededError(err error) reactiveLimiterExceededError {
 }
 
 func (e reactiveLimiterExceededError) Cause() mimirpb.ErrorCause {
-	return mimirpb.ERROR_CAUSE_REQUEST_RATE_LIMITED
+	return mimirpb.ERROR_CAUSE_INSTANCE_LIMIT
 }
 
 func (e reactiveLimiterExceededError) IsSoft() bool {
@@ -354,7 +355,7 @@ func (e partitionPushError) Unwrap() error {
 var _ Error = partitionPushError{}
 
 // toErrorWithGRPCStatus converts the given error into an appropriate gRPC error.
-func toErrorWithGRPCStatus(pushErr error, serviceOverloadErrorEnabled bool) error {
+func toErrorWithGRPCStatus(pushErr error) error {
 	var (
 		distributorErr Error
 		errDetails     *mimirpb.ErrorDetails
@@ -362,27 +363,24 @@ func toErrorWithGRPCStatus(pushErr error, serviceOverloadErrorEnabled bool) erro
 	)
 	if errors.As(pushErr, &distributorErr) {
 		errDetails = &mimirpb.ErrorDetails{Cause: distributorErr.Cause()}
-		errCode = errorCauseToGRPCStatusCode(distributorErr.Cause(), serviceOverloadErrorEnabled)
+		errCode = errorCauseToGRPCStatusCode(distributorErr.Cause())
 	}
 	return globalerror.WrapErrorWithGRPCStatus(pushErr, errCode, errDetails).Err()
 }
 
-func errorCauseToGRPCStatusCode(errCause mimirpb.ErrorCause, serviceOverloadErrorEnabled bool) codes.Code {
+func errorCauseToGRPCStatusCode(errCause mimirpb.ErrorCause) codes.Code {
 	switch errCause {
 	case mimirpb.ERROR_CAUSE_BAD_DATA:
 		return codes.InvalidArgument
 	case mimirpb.ERROR_CAUSE_TENANT_LIMIT:
 		return codes.FailedPrecondition
 	case mimirpb.ERROR_CAUSE_INGESTION_RATE_LIMITED, mimirpb.ERROR_CAUSE_REQUEST_RATE_LIMITED, mimirpb.ERROR_CAUSE_ACTIVE_SERIES_LIMITED:
-		if serviceOverloadErrorEnabled {
-			return codes.Unavailable
-		}
 		return codes.ResourceExhausted
 	case mimirpb.ERROR_CAUSE_REPLICAS_DID_NOT_MATCH:
 		return codes.AlreadyExists
 	case mimirpb.ERROR_CAUSE_TOO_MANY_CLUSTERS:
 		return codes.FailedPrecondition
-	case mimirpb.ERROR_CAUSE_CIRCUIT_BREAKER_OPEN:
+	case mimirpb.ERROR_CAUSE_CIRCUIT_BREAKER_OPEN, mimirpb.ERROR_CAUSE_INSTANCE_LIMIT:
 		return codes.Unavailable
 	case mimirpb.ERROR_CAUSE_METHOD_NOT_ALLOWED:
 		return codes.Unimplemented
@@ -390,19 +388,16 @@ func errorCauseToGRPCStatusCode(errCause mimirpb.ErrorCause, serviceOverloadErro
 	return codes.Internal
 }
 
-func errorCauseToHTTPStatusCode(errCause mimirpb.ErrorCause, serviceOverloadErrorEnabled bool) int {
+func errorCauseToHTTPStatusCode(errCause mimirpb.ErrorCause) int {
 	switch errCause {
 	case mimirpb.ERROR_CAUSE_BAD_DATA:
 		return http.StatusBadRequest
 	case mimirpb.ERROR_CAUSE_TENANT_LIMIT:
 		return http.StatusBadRequest
 	case mimirpb.ERROR_CAUSE_INGESTION_RATE_LIMITED, mimirpb.ERROR_CAUSE_REQUEST_RATE_LIMITED, mimirpb.ERROR_CAUSE_ACTIVE_SERIES_LIMITED:
-		// Return a 429 or a 529 here depending on configuration to tell the client it is going too fast.
+		// Return a 429 to tell the client it is going too fast.
 		// Client may discard the data or slow down and re-send.
 		// Prometheus v2.26 added a remote-write option 'retry_on_http_429'.
-		if serviceOverloadErrorEnabled {
-			return StatusServiceOverloaded
-		}
 		return http.StatusTooManyRequests
 	case mimirpb.ERROR_CAUSE_REPLICAS_DID_NOT_MATCH:
 		return http.StatusAccepted
@@ -410,7 +405,7 @@ func errorCauseToHTTPStatusCode(errCause mimirpb.ErrorCause, serviceOverloadErro
 		return http.StatusBadRequest
 	case mimirpb.ERROR_CAUSE_TSDB_UNAVAILABLE:
 		return http.StatusServiceUnavailable
-	case mimirpb.ERROR_CAUSE_CIRCUIT_BREAKER_OPEN:
+	case mimirpb.ERROR_CAUSE_CIRCUIT_BREAKER_OPEN, mimirpb.ERROR_CAUSE_INSTANCE_LIMIT:
 		return http.StatusServiceUnavailable
 	case mimirpb.ERROR_CAUSE_METHOD_NOT_ALLOWED:
 		// Return a 501 (and not 405) to explicitly signal a misconfiguration and to possibly track that amongst other 5xx errors.

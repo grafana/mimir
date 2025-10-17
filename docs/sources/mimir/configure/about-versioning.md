@@ -97,8 +97,6 @@ The following features are currently experimental:
     - `-distributor.max-influx-request-size`
   - Metrics relabeling
     - `-distributor.metric-relabeling-enabled`
-  - Using status code 529 instead of 429 upon rate limit exhaustion.
-    - `-distributor.service-overload-status-code-on-rate-limit-enabled`
   - Limit exemplars per series per request
     - `-distributor.max-exemplars-per-series-per-request`
   - Limit OTLP write request byte size
@@ -299,9 +297,8 @@ The following features are currently experimental:
     - Assuming that a gRPC client configuration can be reached via `-<grpc-client-config-path>`, cluster validation label is configured via: `-<grpc-client-config-path>.cluster-validation.label`.
     - The cluster validation label of all gRPC clients can be configured via `-common.client-cluster-validation.label`.
     - Requests with invalid cluster validation labels are tracked via the `cortex_client_invalid_cluster_validation_label_requests_total` metric.
-- Kafka-based ingest storage
-  - `-ingest-storage.*`
-  - `-ingester.partition-ring.*`
+- Preferred available zone for querying ingesters and store-gateways
+  - `-querier.prefer-availability-zone`
 
 ## Deprecated features
 

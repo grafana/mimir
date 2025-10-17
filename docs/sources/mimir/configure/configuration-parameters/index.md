@@ -191,8 +191,7 @@ api:
 # The frontend block configures the query-frontend.
 [frontend: <frontend>]
 
-# The ingest_storage block configures the experimental Kafka-based ingest
-# storage.
+# The ingest_storage block configures the Kafka-based ingest storage.
 [ingest_storage: <ingest_storage>]
 
 # The blocks_storage block configures the blocks storage.
@@ -1632,6 +1631,11 @@ The `querier` block configures the querier.
 # (ingesters shuffle sharding on read path is disabled).
 # CLI flag: -querier.shuffle-sharding-ingesters-enabled
 [shuffle_sharding_ingesters_enabled: <boolean> | default = true]
+
+# (experimental) When set, the querier prioritizes querying data from ingesters
+# and store-gateways in this availability zone.
+# CLI flag: -querier.prefer-availability-zone
+[prefer_availability_zone: <string> | default = ""]
 
 # (advanced) Number of series to buffer per ingester when streaming chunks from
 # ingesters.
@@ -3586,15 +3590,6 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -distributor.metric-relabeling-enabled
 [metric_relabeling_enabled: <boolean> | default = true]
 
-# (experimental) If enabled, rate limit errors will be reported to the client
-# with HTTP status code 529 (Service is overloaded). If disabled, status code
-# 429 (Too Many Requests) is used. Enabling
-# -distributor.retry-after-header.enabled before utilizing this option is
-# strongly recommended as it helps prevent premature request retries by the
-# client.
-# CLI flag: -distributor.service-overload-status-code-on-rate-limit-enabled
-[service_overload_status_code_on_rate_limit_enabled: <boolean> | default = false]
-
 # The maximum number of in-memory series per tenant, across the cluster before
 # replication. 0 to disable.
 # CLI flag: -ingester.max-global-series-per-user
@@ -4405,7 +4400,7 @@ ruler_alertmanager_client_config:
 
 ### ingest_storage
 
-The `ingest_storage` block configures the experimental Kafka-based ingest storage.
+The `ingest_storage` block configures the Kafka-based ingest storage.
 
 ```yaml
 # True to enable the ingestion via object storage.
@@ -4695,7 +4690,7 @@ bucket_store:
   # CLI flag: -blocks-storage.bucket-store.block-sync-concurrency
   [block_sync_concurrency: <int> | default = 4]
 
-  # (advanced) Number of Go routines to use when syncing block meta files from
+  # (advanced) Number of goroutines to use when syncing block meta files from
   # object storage per tenant.
   # CLI flag: -blocks-storage.bucket-store.meta-sync-concurrency
   [meta_sync_concurrency: <int> | default = 20]
@@ -5174,12 +5169,12 @@ The `compactor` block configures the compactor component.
 # CLI flag: -compactor.block-ranges
 [block_ranges: <list of durations> | default = 2h0m0s,12h0m0s,24h0m0s]
 
-# (advanced) Number of Go routines to use when downloading blocks for compaction
+# (advanced) Number of goroutines to use when downloading blocks for compaction
 # and uploading resulting blocks.
 # CLI flag: -compactor.block-sync-concurrency
 [block_sync_concurrency: <int> | default = 8]
 
-# (advanced) Number of Go routines to use when syncing block meta files from the
+# (advanced) Number of goroutines to use when syncing block meta files from the
 # long term storage.
 # CLI flag: -compactor.meta-sync-concurrency
 [meta_sync_concurrency: <int> | default = 20]
@@ -5208,6 +5203,13 @@ The `compactor` block configures the compactor component.
 # have uploaded their blocks to the storage.
 # CLI flag: -compactor.first-level-compaction-wait-period
 [first_level_compaction_wait_period: <duration> | default = 25m]
+
+# (experimental) When enabled, the compactor skips first-level compaction jobs
+# if any source block has a MaxTime more recent than the wait period threshold.
+# This prevents premature compaction of blocks that may still receive
+# late-arriving data.
+# CLI flag: -compactor.first-level-compaction-skip-future-max-time
+[first_level_compaction_skip_future_max_time: <boolean> | default = false]
 
 # (advanced) How frequently the compactor should run blocks cleanup and
 # maintenance, as well as update the bucket index.
@@ -5265,7 +5267,7 @@ The `compactor` block configures the compactor component.
 # CLI flag: -compactor.max-block-upload-validation-concurrency
 [max_block_upload_validation_concurrency: <int> | default = 1]
 
-# (advanced) Number of Go routines to use when updating blocks metadata during
+# (advanced) Number of goroutines to use when updating blocks metadata during
 # bucket index updates.
 # CLI flag: -compactor.update-blocks-concurrency
 [update_blocks_concurrency: <int> | default = 1]

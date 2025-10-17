@@ -248,7 +248,7 @@ func handler(
 				// These errors are created by using the httpgrpc package.
 				code, msg = int(resp.Code), string(resp.Body)
 			} else {
-				code = toHTTPStatus(ctx, err, limits)
+				code = toHTTPStatus(err)
 				msg = err.Error()
 			}
 			if code != 202 {
@@ -365,19 +365,14 @@ func calculateRetryAfter(retryAttemptHeader string, minBackoff, maxBackoff time.
 // toHTTPStatus converts the given error into an appropriate HTTP status corresponding
 // to that error, if the error is one of the errors from this package. Otherwise, an
 // http.StatusInternalServerError is returned.
-func toHTTPStatus(ctx context.Context, pushErr error, limits *validation.Overrides) int {
+func toHTTPStatus(pushErr error) int {
 	if errors.Is(pushErr, context.DeadlineExceeded) {
 		return http.StatusInternalServerError
 	}
 
 	var distributorErr Error
 	if errors.As(pushErr, &distributorErr) {
-		serviceOverloadErrorEnabled := false
-		userID, err := tenant.TenantID(ctx)
-		if err == nil {
-			serviceOverloadErrorEnabled = limits.ServiceOverloadStatusCodeOnRateLimitEnabled(userID)
-		}
-		return errorCauseToHTTPStatusCode(distributorErr.Cause(), serviceOverloadErrorEnabled)
+		return errorCauseToHTTPStatusCode(distributorErr.Cause())
 	}
 
 	return http.StatusInternalServerError

@@ -1,7 +1,6 @@
 {
   _config+:: {
     multi_zone_etcd_enabled: false,
-    multi_zone_etcd_schedule_toleration: $._config.multi_zone_schedule_toleration,
   },
 
   // Enforcing the spread of etcd pods across multi-AZ is not easy because we're limited
@@ -29,12 +28,7 @@
         },
 
         tolerations+:
-          deployment.spec.template.spec.withTolerationsMixin(if $._config.multi_zone_etcd_schedule_toleration == '' then [] else [
-            $.core.v1.toleration.withKey('topology') +
-            $.core.v1.toleration.withOperator('Equal') +
-            $.core.v1.toleration.withValue($._config.multi_zone_etcd_schedule_toleration) +
-            $.core.v1.toleration.withEffect('NoSchedule'),
-          ]).spec.template.spec.tolerations,
+          deployment.spec.template.spec.withTolerationsMixin($.newMimirMultiZoneToleration()).spec.template.spec.tolerations,
       },
     },
   }),
