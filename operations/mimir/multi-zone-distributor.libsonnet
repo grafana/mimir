@@ -4,7 +4,6 @@
     // Multi-zone and single-zone can be enabled at the same time during migrations.
     single_zone_distributor_enabled: !$._config.multi_zone_distributor_enabled,
     multi_zone_distributor_enabled: false,
-    multi_zone_availability_zones: [],
     multi_zone_distributor_replicas: std.length($._config.multi_zone_availability_zones),
   },
 
