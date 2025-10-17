@@ -21,6 +21,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/grpcstats"
 )
 
 func newStoreGatewayClientFactory(clientCfg grpcclient.Config, reg prometheus.Registerer, logger log.Logger) client.PoolFactory {
@@ -31,20 +32,28 @@ func newStoreGatewayClientFactory(clientCfg grpcclient.Config, reg prometheus.Re
 		ConstLabels: prometheus.Labels{"client": "querier"},
 	}, []string{"operation", "status_code"})
 
+	transferredBytes := promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+		Name: "cortex_storegateway_client_transferred_bytes_total",
+		Help: "Total bytes transferred to/from the store-gateway.",
+	}, []string{"store_gateway_zone"})
+
 	invalidClusterValidation := util.NewRequestInvalidClusterValidationLabelsTotalCounter(reg, "store-gateway", util.GRPCProtocol)
 
 	return client.PoolInstFunc(func(inst ring.InstanceDesc) (client.PoolClient, error) {
-		return dialStoreGatewayClient(clientCfg, inst, requestDuration, invalidClusterValidation, logger)
+		return dialStoreGatewayClient(clientCfg, inst, requestDuration, invalidClusterValidation, transferredBytes, logger)
 	})
 }
 
-func dialStoreGatewayClient(clientCfg grpcclient.Config, instance ring.InstanceDesc, requestDuration *prometheus.HistogramVec, invalidClusterValidation *prometheus.CounterVec, logger log.Logger) (*storeGatewayClient, error) {
+func dialStoreGatewayClient(clientCfg grpcclient.Config, instance ring.InstanceDesc, requestDuration *prometheus.HistogramVec, invalidClusterValidation, transferredBytes *prometheus.CounterVec, logger log.Logger) (*storeGatewayClient, error) {
 	unary, stream := grpcclient.Instrument(requestDuration)
 	opts, err := clientCfg.DialOption(unary, stream, util.NewInvalidClusterValidationReporter(clientCfg.ClusterValidation.Label, invalidClusterValidation, logger))
 	if err != nil {
 		return nil, err
 	}
-	opts = append(opts, grpc.WithStatsHandler(otelgrpc.NewClientHandler()))
+	opts = append(opts,
+		grpc.WithStatsHandler(otelgrpc.NewClientHandler()),
+		grpc.WithStatsHandler(grpcstats.NewDataTransferStatsHandler(transferredBytes.WithLabelValues(instance.Zone))),
+	)
 
 	// nolint:staticcheck // grpc.Dial() has been deprecated; we'll address it before upgrading to gRPC 2.
 	conn, err := grpc.Dial(instance.Addr, opts...)
