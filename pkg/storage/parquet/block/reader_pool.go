@@ -97,6 +97,7 @@ func newReaderPool(
 func (p *ReaderPool) GetReader(
 	ctx context.Context,
 	blockID ulid.ULID,
+	shardIdx int,
 	bkt objstore.InstrumentedBucketReader,
 	fileOpts []storage.FileOption,
 	logger log.Logger,
@@ -104,6 +105,7 @@ func (p *ReaderPool) GetReader(
 	reader, err := NewLazyBucketReader(
 		ctx,
 		blockID,
+		shardIdx,
 		bkt,
 		fileOpts,
 		p.metrics.lazyReader,
