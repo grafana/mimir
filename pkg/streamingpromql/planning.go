@@ -65,13 +65,7 @@ func NewQueryPlanner(opts EngineOpts, versionProvider QueryPlanVersionProvider) 
 	// This optimization pass is registered before CSE to keep the query plan as a simple tree structure.
 	// After CSE, the query plan may no longer be a tree due to multiple paths culminating in the same Duplicate node,
 	// which would make the elimination logic more complex.
-	if opts.EnableEliminateDeduplicateAndMerge {
-		if opts.CommonOpts.EnableDelayedNameRemoval {
-			return nil, errors.New("eliminating deduplicate and merge nodes is not supported with delayed name removal")
-		}
-
-		planner.RegisterQueryPlanOptimizationPass(plan.NewEliminateDeduplicateAndMergeOptimizationPass())
-	}
+	planner.RegisterQueryPlanOptimizationPass(plan.NewEliminateDeduplicateAndMergeOptimizationPass(opts.CommonOpts.EnableDelayedNameRemoval))
 
 	if opts.EnableCommonSubexpressionElimination {
 		planner.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(opts.EnableCommonSubexpressionEliminationForRangeVectorExpressionsInInstantQueries, opts.CommonOpts.Reg, opts.Logger))
