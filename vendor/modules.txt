@@ -1235,7 +1235,7 @@ github.com/prometheus/common/sigv4
 # github.com/prometheus/exporter-toolkit v0.14.1
 ## explicit; go 1.23.0
 github.com/prometheus/exporter-toolkit/web
-# github.com/prometheus/otlptranslator v1.0.0 => github.com/grafana/mimir-otlptranslator v0.0.0-20250804202727-9e7a25d056aa
+# github.com/prometheus/otlptranslator v1.0.0 => github.com/grafana/mimir-otlptranslator v0.0.0-20251017074411-ea1e8f863e1d
 ## explicit; go 1.23.0
 github.com/prometheus/otlptranslator
 # github.com/prometheus/procfs v0.17.0
@@ -2201,4 +2201,4 @@ sigs.k8s.io/yaml/goyaml.v3
 # github.com/opentracing-contrib/go-stdlib => github.com/grafana/opentracing-contrib-go-stdlib v0.0.0-20230509071955-f410e79da956
 # github.com/opentracing-contrib/go-grpc => github.com/charleskorn/go-grpc v0.0.0-20231024023642-e9298576254f
 # github.com/prometheus/alertmanager => github.com/grafana/prometheus-alertmanager v0.25.1-0.20250911094103-5456b6e45604
-# github.com/prometheus/otlptranslator => github.com/grafana/mimir-otlptranslator v0.0.0-20250804202727-9e7a25d056aa
+# github.com/prometheus/otlptranslator => github.com/grafana/mimir-otlptranslator v0.0.0-20251017074411-ea1e8f863e1d
