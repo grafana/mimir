@@ -73,6 +73,12 @@ func newMimirServiceFromOptions(name string, defaultFlags, flags map[string]stri
 	serviceFlags := o.MapFlags(e2e.MergeFlags(defaultFlags, flags, getExtraFlags()))
 	binaryName := getBinaryNameForBackwardsCompatibility()
 
+	if dir, ok := serviceFlags["-compactor.data-dir"]; ok {
+		if err := os.MkdirAll(dir, 0o644); err != nil {
+			panic(fmt.Errorf("unable to create -compactor.data-dir %s for integration test", dir))
+		}
+	}
+
 	return NewMimirService(
 		name,
 		o.Image,
