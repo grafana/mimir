@@ -278,6 +278,7 @@ func convertToParquet(ctx context.Context, userBkt objstore.InstrumentedBucket, 
 		head.MinTime(),
 		head.MaxTime(),
 		[]convert.Convertible{head},
+		promslog.NewNopLogger(),
 		convertOpts...)
 
 	if err != nil {

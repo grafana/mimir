@@ -447,7 +447,6 @@ func (ss *ParquetBucketStores) getOrCreateStore(ctx context.Context, userID stri
 		fetcher,
 		ss.queryGate,
 		ss.lazyLoadingGate,
-		ss.cfg.BucketStore.ParquetLoadIndexToDisk,
 		ss.cfg.BucketStore.ParquetStreamingEnabled,
 		nil,
 		NewChunksLimiterFactory(func() uint64 {

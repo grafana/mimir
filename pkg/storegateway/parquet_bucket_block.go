@@ -57,7 +57,6 @@ type parquetBucketBlock struct {
 	meta              *block.Meta
 	blockLabels       labels.Labels
 	shardReaderCloser ParquetShardReaderCloser
-	localDir          string
 
 	pendingReaders sync.WaitGroup
 	closedMtx      sync.RWMutex
@@ -70,14 +69,12 @@ type parquetBucketBlock struct {
 func newParquetBucketBlock(
 	meta *block.Meta,
 	shardReaderCloser ParquetShardReaderCloser,
-	localDir string,
 ) *parquetBucketBlock {
 	return &parquetBucketBlock{
 		meta: meta,
 		// Inject the block ID as a label to allow to match blocks by ID.
 		blockLabels:       labels.FromStrings(block.BlockIDLabel, meta.ULID.String()),
 		shardReaderCloser: shardReaderCloser,
-		localDir:          localDir,
 	}
 }
 
