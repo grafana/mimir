@@ -203,6 +203,7 @@ func Test_ProxyEndpoint_Requests(t *testing.T) {
 				strings := strings.NewReader("this-is-some-payload")
 				r, err := http.NewRequest("POST", "http://test/api/v1/test", strings)
 				require.NoError(t, err)
+				r.Header["Content-Type"] = []string{"application/x-www-form-urlencoded"}
 				r.Header["test-X"] = []string{"test-X-value"}
 				return r
 			},
