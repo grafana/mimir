@@ -24,7 +24,8 @@
 * [CHANGE] Distributor: Remove the experimental setting `service_overload_status_code_on_rate_limit_enabled` which used an HTTP 529 error (non-standard) instead of HTTP 429 for rate limiting. #13012
 * [CHANGE] Alertmanager: Change the severity for InitialSyncFailed from 'critical' to 'warning'. #12824
 * [CHANGE] Ingester: Renamed experimental reactive limiter options. #12773
-* [CHANGE] Distributor: gRPC errors with the `mimirpb.ERROR_CAUSE_INSTANCE_LIMIT` cause are now mapped to `codes.Unavailable` instead of `codes.Internal`. #13003
+* [CHANGE] Distributor: gRPC errors with the `mimirpb.ERROR_CAUSE_INSTANCE_LIMIT` cause are now mapped to `codes.Unavailable` and `http.StatusServiceUnavailable` instead of `codes.Internal` and `http.StatusInternalServerError`. #13003 #13032
+* [CHANGE] Admin: use relative links instead of absolute ones in the administration web UI. #13034
 * [CHANGE] Distributor: Use memberlist by default for the HA tracker. #12998
 * [FEATURE] Ingester: Expose the number of active series ingested via OTLP as `cortex_ingester_active_otlp_series`. #12678
 * [FEATURE] Distributor, ruler: Add experimental `-validation.name-validation-scheme` flag to specify the validation scheme for metric and label names. #12215
@@ -44,6 +45,7 @@
 * [FEATURE] Alertmanager: add Microsoft Teams V2 as a supported integration. #12680
 * [FEATURE] Distributor: Add experimental flag `-validation.label-value-length-over-limit-strategy` to configure how to handle label values over the length limit. #12627 #12844
 * [FEATURE] Ingester: Introduce metric `cortex_ingester_owned_target_info_series` for counting the number of owned `target_info` series by tenant. #12681
+* [FEATURE] MQE: Add support for step invariant expression handling in query planning and evaluation. #12931
 * [FEATURE] MQE: Add support for experimental `ts_of_min_over_time`, `ts_of_max_over_time`, `ts_of_first_over_time` and `ts_of_last_over_time` PromQL functions. #12819
 * [FEATURE] Ingester: Add experimental flags `-ingest-storage.write-logs-fsync-before-kafka-commit-enabled` and `-ingest-storage.write-logs-fsync-before-kafka-commit-concurrency` to fsync write logs before the offset is committed to Kafka. This is enabled by default. #12816
 * [FEATURE] MQE: Add support for experimental `mad_over_time` PromQL function. #12995
@@ -78,12 +80,16 @@
 * [ENHANCEMENT] Usage stats: Report ingest-storage mode as part of usage statistics. #12753
 * [ENHANCEMENT] All: Add cluster validation flag `-server.cluster-validation.additional-labels` configuration support, to accept multiple cluster labels during cluster migrations. #12850
 * [ENHANCEMENT] Distributor: Add new optional config flag `distributor.ha-tracker.failover-sample-timeout` for HA tracker as an additional failover timeout check based on sample time instead of server time. #12331
-* [ENHANCEMENT] Distributor: Add reactive concurrency limiters to protect push operations from overload. #12923 #13003
+* [ENHANCEMENT] Distributor: Add reactive concurrency limiters to protect push operations from overload. #12923 #13003 #13033
 * [ENHANCEMENT] Ingester: Add experimental matcher set reduction to cost-based lookup planning. #12831
 * [ENHANCEMENT] Ruler: Add `reason` label to `cortex_prometheus_rule_evaluation_failures_total` metric to distinguish between "user" and "operator" errors. #12971
 * [ENHANCEMENT] Update Docker base images from `alpine:3.22.1` to `alpine:3.22.2`. #12991
 * [ENHANCEMENT] Ruler: Add the `ruler_max_rule_evaluation_results` per-tenant configuration option to limit the maximum number of alerts an alerting rule or series a recording rule can produce for the group. By default, no limit is enforced. #12832
 * [ENHANCEMENT] Jsonnet: Changed the default KV store for the HA tracker from etcd to memberlist. Etcd and Consul are now deprecated for HA tracker usage but remain supported for backward compatibility. #13000
+* [ENHANCEMENT] Querier: prefer querying ingesters and store-gateways in a specific zone when `-querier.prefer-availability-zone` is configured. Added the following metrics tracking the data transfer between the querier and ingesters / store-gateways respectively: #13045
+  * `cortex_ingester_client_transferred_bytes_total{ingester_zone="..."}`
+  * `cortex_storegateway_client_transferred_bytes_total{store_gateway_zone="..."}`
+* [ENHANCEMENT] Compactor: Add experimental `-compactor.first-level-compaction-skip-future-max-time` flag to skip first-level compaction if any source block has a MaxTime more recent than the wait period threshold. #13040
 * [BUGFIX] Distributor: Calculate `WriteResponseStats` before validation and `PushWrappers`. This prevents clients using Remote-Write 2.0 from seeing a diff in written samples, histograms and exemplars. #12682
 * [BUGFIX] Compactor: Fix cortex_compactor_block_uploads_failed_total metric showing type="unknown". #12477
 * [BUGFIX] Querier: Samples with the same timestamp are merged deterministically. Previously, this could lead to flapping query results when an out-of-order sample is ingested that conflicts with a previously ingested in-order sample's value. #8673
@@ -108,6 +114,7 @@
 * [BUGFIX] Query-frontend: Fix issue where expressions containing unary negation could be sharded incorrectly in some cases. #12911
 * [BUGFIX] Query-frontend: Fix issue where shardable expressions containing aggregations with a shardable parameter (eg. `sum(foo)` in `topk(scalar(sum(foo)), sum by (pod) (bar))`) would not have the parameter sharded. #12958
 * [BUGFIX] Ingester: Fix `max_inflight_push_requests` metric and internal counter not decremented under pressure, possibly causing the rejection of all push requests. #12975
+* [BUGFIX] Store-gateway: Fix not being able to scale down via the `POST /prepare-shutdown` endpoint unless there are some active tenants with sharded blocks to the store-gateway replica. #12972
 
 ### Mixin
 
@@ -130,6 +137,9 @@
 * [CHANGE] Distributor: Increase `server.grpc-max-concurrent-streams` from 100 to 1000. #12742
 * [CHANGE] Ruler Query Frontend: Increase `server.grpc-max-concurrent-streams` from 100 to 300. #12742
 * [CHANGE] Rollout-operator: Vendor jsonnet from rollout-operator repository. #12688 #12962 #12996
+* [CHANGE] Removed per-component configuration options to set the pods toleration when multi-zone is enabled. Tolerations can still be configured globally using `_config.multi_zone_schedule_toleration`. The following configuration options have been removed: #13043
+  * `_config.multi_zone_distributor_schedule_toleration`
+  * `_config.multi_zone_etcd_schedule_toleration`
 * [FEATURE] Memcached: Allow `minReadySeconds` to be set via `_config.cache_frontend_min_ready_seconds` (etc.) to slow down Memcached rollouts. #12938
 * [FEATURE] Distributor: Allow setting GOMEMLIMIT equal to memory request, via `_config.distributor_gomemlimit_enabled`. If enabled, distributor horizontal auto-scaling memory trigger is also removed, since it doesn't make sense in combination with GOMEMLIMIT. #12963
 * [ENHANCEMENT] Add timeout validation for querier and query-frontend. Enhanced `parseDuration` to support milliseconds and combined formats (e.g., "4m30s"). #12766
@@ -143,6 +153,7 @@
 ### Documentation
 
 * [CHANGE] Remove references to queriers having a Prometheus HTTP API. Instead, the query-frontend is now required for a Prometheus HTTP API. #12949
+* [CHANGE] Helm: Remove GEM (Grafana Enterprise Metrics) references from Helm chart documentation. #13019 #13020 #13021
 * [ENHANCEMENT] Improve the MimirIngesterReachingSeriesLimit runbook. #12356
 * [ENHANCEMENT] Improve the description of how to limit the number of buckets in native histograms. #12797
 * [ENHANCEMENT] Document native histograms with custom buckets. #12823

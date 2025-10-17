@@ -191,8 +191,7 @@ api:
 # The frontend block configures the query-frontend.
 [frontend: <frontend>]
 
-# The ingest_storage block configures the experimental Kafka-based ingest
-# storage.
+# The ingest_storage block configures the Kafka-based ingest storage.
 [ingest_storage: <ingest_storage>]
 
 # The blocks_storage block configures the blocks storage.
@@ -1632,6 +1631,11 @@ The `querier` block configures the querier.
 # (ingesters shuffle sharding on read path is disabled).
 # CLI flag: -querier.shuffle-sharding-ingesters-enabled
 [shuffle_sharding_ingesters_enabled: <boolean> | default = true]
+
+# (experimental) When set, the querier prioritizes querying data from ingesters
+# and store-gateways in this availability zone.
+# CLI flag: -querier.prefer-availability-zone
+[prefer_availability_zone: <string> | default = ""]
 
 # (advanced) Number of series to buffer per ingester when streaming chunks from
 # ingesters.
@@ -4396,7 +4400,7 @@ ruler_alertmanager_client_config:
 
 ### ingest_storage
 
-The `ingest_storage` block configures the experimental Kafka-based ingest storage.
+The `ingest_storage` block configures the Kafka-based ingest storage.
 
 ```yaml
 # True to enable the ingestion via object storage.
@@ -5199,6 +5203,13 @@ The `compactor` block configures the compactor component.
 # have uploaded their blocks to the storage.
 # CLI flag: -compactor.first-level-compaction-wait-period
 [first_level_compaction_wait_period: <duration> | default = 25m]
+
+# (experimental) When enabled, the compactor skips first-level compaction jobs
+# if any source block has a MaxTime more recent than the wait period threshold.
+# This prevents premature compaction of blocks that may still receive
+# late-arriving data.
+# CLI flag: -compactor.first-level-compaction-skip-future-max-time
+[first_level_compaction_skip_future_max_time: <boolean> | default = false]
 
 # (advanced) How frequently the compactor should run blocks cleanup and
 # maintenance, as well as update the bucket index.

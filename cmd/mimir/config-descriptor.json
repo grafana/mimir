@@ -2297,6 +2297,17 @@
         },
         {
           "kind": "field",
+          "name": "prefer_availability_zone",
+          "required": false,
+          "desc": "When set, the querier prioritizes querying data from ingesters and store-gateways in this availability zone.",
+          "fieldValue": null,
+          "fieldDefaultValue": "",
+          "fieldFlag": "querier.prefer-availability-zone",
+          "fieldType": "string",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "streaming_chunks_per_ingester_series_buffer_size",
           "required": false,
           "desc": "Number of series to buffer per ingester when streaming chunks from ingesters.",
@@ -11006,6 +11017,17 @@
           "fieldDefaultValue": 1500000000000,
           "fieldFlag": "compactor.first-level-compaction-wait-period",
           "fieldType": "duration"
+        },
+        {
+          "kind": "field",
+          "name": "first_level_compaction_skip_future_max_time",
+          "required": false,
+          "desc": "When enabled, the compactor skips first-level compaction jobs if any source block has a MaxTime more recent than the wait period threshold. This prevents premature compaction of blocks that may still receive late-arriving data.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "compactor.first-level-compaction-skip-future-max-time",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
         },
         {
           "kind": "field",

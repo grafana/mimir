@@ -139,7 +139,7 @@ var (
 		{
 			Name:       "ingest_storage",
 			StructType: reflect.TypeOf(ingest.Config{}),
-			Desc:       "The ingest_storage block configures the experimental Kafka-based ingest storage.",
+			Desc:       "The ingest_storage block configures the Kafka-based ingest storage.",
 		},
 		{
 			Name:       "blocks_storage",

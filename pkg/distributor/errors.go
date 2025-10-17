@@ -405,7 +405,7 @@ func errorCauseToHTTPStatusCode(errCause mimirpb.ErrorCause) int {
 		return http.StatusBadRequest
 	case mimirpb.ERROR_CAUSE_TSDB_UNAVAILABLE:
 		return http.StatusServiceUnavailable
-	case mimirpb.ERROR_CAUSE_CIRCUIT_BREAKER_OPEN:
+	case mimirpb.ERROR_CAUSE_CIRCUIT_BREAKER_OPEN, mimirpb.ERROR_CAUSE_INSTANCE_LIMIT:
 		return http.StatusServiceUnavailable
 	case mimirpb.ERROR_CAUSE_METHOD_NOT_ALLOWED:
 		// Return a 501 (and not 405) to explicitly signal a misconfiguration and to possibly track that amongst other 5xx errors.

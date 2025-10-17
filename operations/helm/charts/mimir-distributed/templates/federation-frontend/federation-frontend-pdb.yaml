@@ -1,3 +1,0 @@
-{{- if and .Values.enterprise.enabled .Values.federation_frontend.enabled }}
-{{- include "mimir.lib.podDisruptionBudget" (dict "ctx" $ "component" "federation-frontend") }}
-{{- end }}
