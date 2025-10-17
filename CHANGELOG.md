@@ -138,7 +138,7 @@
 ### Documentation
 
 * [CHANGE] Remove references to queriers having a Prometheus HTTP API. Instead, the query-frontend is now required for a Prometheus HTTP API. #12949
-* [ENHANCEMENT] Add migration guide for HA tracker from Consul/etcd to memberlist. #13011
+* [ENHANCEMENT] Add migration guide for HA tracker from Consul or etcd to memberlist. #13011
 * [ENHANCEMENT] Improve the MimirIngesterReachingSeriesLimit runbook. #12356
 * [ENHANCEMENT] Improve the description of how to limit the number of buckets in native histograms. #12797
 * [BUGFIX] Add a missing attribute to the list of default promoted OTel resource attributes in the docs: deployment.environment. #12181

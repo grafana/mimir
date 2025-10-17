@@ -7,9 +7,9 @@ weight: 55
 
 # Migrate HA tracker from Consul or etcd to memberlist without downtime
 
-Since Grafana Mimir 2.17, the HA tracker supports memberlist as a key-value (KV) store backend. Memberlist is now the recommended KV store for the HA tracker, and the `consul` and `etcd` backends are deprecated.
+Since Grafana Mimir 2.17, the HA tracker supports memberlist as a key-value (KV) store backend. Memberlist is the recommended KV store for the HA tracker. The `consul` and `etcd` backends are deprecated.
 
-This guide describes how to migrate your HA tracker configuration from Consul or etcd to memberlist without any downtime.
+Follow this guidance to migrate your HA tracker configuration from Consul or etcd to memberlist without any downtime.
 
 ## Why migrate to memberlist
 
@@ -28,18 +28,18 @@ Before starting this migration:
 
 ## Migration steps
 
-The migration uses Mimir's multi KV store feature to transition from Consul/etcd to memberlist without downtime. The process involves:
+The migration uses Mimir's multi KV store feature to transition from Consul or etcd to memberlist without downtime. The process involves:
 
 1. Configuring a multi KV store with your current backend as primary and memberlist as secondary
-2. Enabling mirroring to write to both stores
-3. Switching memberlist to be the primary store
-4. Removing the old backend
+1. Enabling mirroring to write to both stores
+1. Switching memberlist to be the primary store
+1. Removing the old backend
 
-### Step 1: Configure multi KV store
+### Configure multi KV store
 
-Configure the HA tracker to use the `multi` KV store with your current backend (Consul or etcd) as the primary store and memberlist as the secondary store.
+Configure the HA tracker to use the `multi` KV store with your current backend, Consul or etcd, as the primary store and memberlist as the secondary store.
 
-**For Consul:**
+For Consul:
 
 ```yaml
 distributor:
@@ -61,7 +61,7 @@ distributor:
           - mimir-gossip-ring.default.svc.cluster.local:7946
 ```
 
-**For etcd:**
+For etcd:
 
 ```yaml
 distributor:
@@ -86,11 +86,11 @@ distributor:
 
 Apply this configuration change. This step requires a rollout of all distributor instances.
 
-After applying this step, all distributors will expose the `/memberlist` admin page on their HTTP port, which you can use to check the health of the memberlist cluster.
+After applying this step, all distributors expose the `/memberlist` admin page on their HTTP port, which you can use to check the health of the memberlist cluster.
 
-### Step 2: Enable KV store mirroring
+### Enable KV store mirroring
 
-Enable mirroring to write HA tracker state to both the primary (Consul/etcd) and secondary (memberlist) stores.
+Enable mirroring to write the HA tracker state to both the primary (Consul or etcd) and secondary (memberlist) stores.
 
 Update the configuration:
 
@@ -106,19 +106,19 @@ distributor:
         mirror_enabled: true # Changed in this step
 ```
 
-**Verification:**
+Verification:
 
 Monitor the following metrics to verify mirroring is working:
 
-- `cortex_multikv_mirror_enabled` – Shows which distributors have mirroring enabled (should be 1 for all)
-- `rate(cortex_multikv_mirror_writes_total[$__rate_interval])` – Rate of writes to secondary store (memberlist)
-- `rate(cortex_multikv_mirror_write_errors_total[$__rate_interval])` – Rate of write errors (should be 0 or very low)
+- `cortex_multikv_mirror_enabled`: Shows which distributors have mirroring enabled. This should be set to 1 for all distributors.
+- `rate(cortex_multikv_mirror_writes_total[$__rate_interval])`: Rate of writes to secondary store, memberlist
+- `rate(cortex_multikv_mirror_write_errors_total[$__rate_interval])`: Rate of write errors. This should be 0.
 
-After mirroring is enabled, you should see HA tracker keys in the memberlist cluster information on the `/memberlist` admin page.
+After enabling mirroring, you should see HA tracker keys in the memberlist cluster information on the `/memberlist` admin page.
 
-### Step 3: Switch to memberlist as primary
+### Switch to memberlist as the primary store
 
-Switch the primary and secondary stores so memberlist becomes the primary store.
+Switch the primary and secondary stores so that memberlist is the primary store.
 
 Update the configuration:
 
@@ -134,15 +134,15 @@ distributor:
         mirror_enabled: true
 ```
 
-From this point on, distributors will read from memberlist and mirror updates to Consul/etcd.
+From this point on, distributors read from memberlist and mirror updates to Consul or etcd.
 
-**Verification:**
+Verification:
 
 Monitor `cortex_multikv_primary_store` to verify all distributors are using memberlist as the primary store. The `store` label should have the value `memberlist`.
 
-### Step 4: Disable mirroring
+### Disable mirroring
 
-Stop mirroring writes to Consul/etcd.
+Stop mirroring writes to Consul or etcd.
 
 Update the configuration:
 
@@ -158,11 +158,11 @@ distributor:
         mirror_enabled: false # Changed in this step
 ```
 
-**Verification:**
+Verification:
 
-Monitor `cortex_multikv_mirror_enabled` to verify all distributors have disabled mirroring (value should be 0).
+Monitor `cortex_multikv_mirror_enabled` to verify that all distributors have disabled mirroring. This value should be 0.
 
-### Step 5: Remove multi KV store configuration
+### Remove multi KV store configuration
 
 Configure the HA tracker to use memberlist directly, removing the multi KV store wrapper.
 
@@ -181,21 +181,21 @@ distributor:
 
 Apply this configuration change. This step requires a rollout of all distributor instances.
 
-After the rollout completes, distributors will use memberlist directly for the HA tracker. The `cortex_multikv_*` metrics will no longer be exposed.
+After the rollout completes, distributors use memberlist directly for the HA tracker. The `cortex_multikv_*` metrics are no longer exposed.
 
-### Step 6: Cleanup
+### Cleanup
 
-You have successfully migrated the HA tracker from Consul/etcd to memberlist without downtime.
+You have successfully migrated the HA tracker from Consul or etcd to memberlist without downtime.
 
-If you are no longer using Consul or etcd for any other purpose in your Mimir deployment, you can now:
+If you are no longer using Consul or etcd for any other purpose in your Mimir deployment, you can:
 
 - Remove the Consul or etcd deployment
-- Remove any Consul/etcd monitoring dashboards and alerts
-- Remove Consul/etcd client configuration from your Mimir configuration
+- Remove any Consul or etcd monitoring dashboards and alerts
+- Remove Consul or etcd client configuration from your Mimir configuration
 
 ## Helm-specific guidance
 
-If you're using the `mimir-distributed` Helm chart, the migration steps are the same but use Helm values instead of direct YAML configuration:
+If you're using the `mimir-distributed` Helm chart, the migration steps are the same but use Helm values instead of direct YAML configuration. For example:
 
 ```yaml
 mimir:
