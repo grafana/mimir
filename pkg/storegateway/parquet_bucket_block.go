@@ -31,19 +31,20 @@ type ParquetShardReaderCloser interface {
 // in order to control custom lifecycle logic for compatibility with lazy & pooled readers.
 // The block's pending readers counter is incremented when the reader is created and decremented on Close().
 type parquetBucketShardReader struct {
-	block *parquetBucketBlock
+	block    *parquetBucketBlock
+	shardIdx int
 }
 
 func (r *parquetBucketShardReader) LabelsFile() storage.ParquetFileView {
-	return r.block.shardReaderCloser.LabelsFile()
+	return r.block.shardReaderClosers[r.shardIdx].LabelsFile()
 }
 
 func (r *parquetBucketShardReader) ChunksFile() storage.ParquetFileView {
-	return r.block.shardReaderCloser.ChunksFile()
+	return r.block.shardReaderClosers[r.shardIdx].ChunksFile()
 }
 
 func (r *parquetBucketShardReader) TSDBSchema() (*schema.TSDBSchema, error) {
-	return r.block.shardReaderCloser.TSDBSchema()
+	return r.block.shardReaderClosers[r.shardIdx].TSDBSchema()
 }
 
 func (r *parquetBucketShardReader) Close() error {
@@ -54,33 +55,36 @@ func (r *parquetBucketShardReader) Close() error {
 // parquetBucketBlock wraps access to the block's storage.ParquetShard interface
 // with metadata, metrics and caching [etc once we fill in capabilities].
 type parquetBucketBlock struct {
-	meta              *block.Meta
-	blockLabels       labels.Labels
-	shardReaderCloser ParquetShardReaderCloser
+	meta               *block.Meta
+	blockLabels        labels.Labels
+	shardReaderClosers []ParquetShardReaderCloser
 
 	pendingReaders sync.WaitGroup
 	closedMtx      sync.RWMutex
 	closed         bool
 
-	// Indicates whether the block was queried.
 	queried atomic.Bool
 }
 
 func newParquetBucketBlock(
 	meta *block.Meta,
-	shardReaderCloser ParquetShardReaderCloser,
+	shardReaderClosers []ParquetShardReaderCloser,
 ) *parquetBucketBlock {
 	return &parquetBucketBlock{
 		meta: meta,
 		// Inject the block ID as a label to allow to match blocks by ID.
-		blockLabels:       labels.FromStrings(block.BlockIDLabel, meta.ULID.String()),
-		shardReaderCloser: shardReaderCloser,
+		blockLabels:        labels.FromStrings(block.BlockIDLabel, meta.ULID.String()),
+		shardReaderClosers: shardReaderClosers,
 	}
 }
 
-func (b *parquetBucketBlock) ShardReader() ParquetShardReaderCloser {
-	b.pendingReaders.Add(1)
-	return &parquetBucketShardReader{block: b}
+func (b *parquetBucketBlock) ShardReaders() []ParquetShardReaderCloser {
+	readers := make([]ParquetShardReaderCloser, len(b.shardReaderClosers))
+	for i := range b.shardReaderClosers {
+		b.pendingReaders.Add(1)
+		readers[i] = &parquetBucketShardReader{block: b, shardIdx: i}
+	}
+	return readers
 }
 
 // matchLabels verifies whether the block matches the given matchers.
@@ -112,7 +116,11 @@ func (b *parquetBucketBlock) Close() error {
 
 	b.pendingReaders.Wait()
 
-	return b.shardReaderCloser.Close()
+	errs := multierror.New()
+	for _, shardReader := range b.shardReaderClosers {
+		errs.Add(shardReader.Close())
+	}
+	return errs.Err()
 }
 
 // parquetBlockSet holds all blocks.
