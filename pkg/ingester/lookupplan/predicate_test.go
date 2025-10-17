@@ -32,7 +32,7 @@ func TestFilterCost(t *testing.T) {
 			}
 		},
 		func(tc testCase) []string {
-			return []string{tc.matcher.String(), fmt.Sprintf("%d", tc.seriesCount), fmt.Sprintf("%.1f", tc.expectedCost)}
+			return []string{tc.matcher.String(), fmt.Sprintf("%d", tc.seriesCount), formatFloat(tc.expectedCost)}
 		},
 	)
 
@@ -43,7 +43,7 @@ func TestFilterCost(t *testing.T) {
 		t.Cleanup(func() { data.WriteTestCases(t, testCases) })
 	}
 
-	for _, tc := range testCases {
+	for tcIdx, tc := range testCases {
 		testName := fmt.Sprintf("%d_series_%s", tc.seriesCount, tc.matcher)
 		t.Run(testName, func(t *testing.T) {
 			pred := newPlanPredicate(ctx, tc.matcher, stats, defaultCostConfig)
@@ -51,6 +51,7 @@ func TestFilterCost(t *testing.T) {
 			cost := pred.filterCost(tc.seriesCount)
 			assert.GreaterOrEqual(t, cost, 0.0, "can't have negative costs")
 			assert.Equal(t, tc.expectedCost, cost)
+			testCases[tcIdx].expectedCost = cost
 		})
 	}
 }
@@ -75,7 +76,7 @@ func TestIndexLookupCost(t *testing.T) {
 			}
 		},
 		func(tc testCase) []string {
-			return []string{tc.matcher.String(), fmt.Sprintf("%.1f", tc.actualCost)}
+			return []string{tc.matcher.String(), formatFloat(tc.actualCost)}
 		},
 	)
 

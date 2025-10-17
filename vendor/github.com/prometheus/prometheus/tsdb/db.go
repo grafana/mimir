@@ -200,9 +200,6 @@ type Options struct {
 	// If nil, the cache won't be used.
 	SeriesHashCache *hashcache.SeriesHashCache
 
-	// EnableNativeHistograms enables the ingestion of native histograms.
-	EnableNativeHistograms bool
-
 	// EnableBiggerOOOBlockForOldSamples enables building 24h blocks for the OOO samples
 	// that belong to the previous day. This is in-line with Mimir maintaining 24h blocks
 	// for the previous days.
@@ -1108,7 +1105,6 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 	headOpts.EnableExemplarStorage = opts.EnableExemplarStorage
 	headOpts.MaxExemplars.Store(opts.MaxExemplars)
 	headOpts.EnableMemorySnapshotOnShutdown = opts.EnableMemorySnapshotOnShutdown
-	headOpts.EnableNativeHistograms.Store(opts.EnableNativeHistograms)
 	headOpts.OutOfOrderTimeWindow.Store(opts.OutOfOrderTimeWindow)
 	headOpts.OutOfOrderCapMax.Store(opts.OutOfOrderCapMax)
 	headOpts.EnableSharding = opts.EnableSharding
@@ -1356,16 +1352,6 @@ func (db *DB) ApplyConfig(conf *config.Config) error {
 		db.oooWasEnabled.Store(oooTimeWindow > 0)
 	}
 	return nil
-}
-
-// EnableNativeHistograms enables the native histogram feature.
-func (db *DB) EnableNativeHistograms() {
-	db.head.EnableNativeHistograms()
-}
-
-// DisableNativeHistograms disables the native histogram feature.
-func (db *DB) DisableNativeHistograms() {
-	db.head.DisableNativeHistograms()
 }
 
 // dbAppender wraps the DB's head appender and triggers compactions on commit
