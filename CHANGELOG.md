@@ -131,6 +131,9 @@
 * [CHANGE] Distributor: Increase `server.grpc-max-concurrent-streams` from 100 to 1000. #12742
 * [CHANGE] Ruler Query Frontend: Increase `server.grpc-max-concurrent-streams` from 100 to 300. #12742
 * [CHANGE] Rollout-operator: Vendor jsonnet from rollout-operator repository. #12688 #12962 #12996
+* [CHANGE] Removed per-component configuration options to set the pods toleration when multi-zone is enabled. Tolerations can still be configured globally using `_config.multi_zone_schedule_toleration`. The following configuration options have been removed: #10596
+  * `_config.multi_zone_distributor_schedule_toleration`
+  * `_config.multi_zone_etcd_schedule_toleration`
 * [FEATURE] Memcached: Allow `minReadySeconds` to be set via `_config.cache_frontend_min_ready_seconds` (etc.) to slow down Memcached rollouts. #12938
 * [FEATURE] Distributor: Allow setting GOMEMLIMIT equal to memory request, via `_config.distributor_gomemlimit_enabled`. If enabled, distributor horizontal auto-scaling memory trigger is also removed, since it doesn't make sense in combination with GOMEMLIMIT. #12963
 * [ENHANCEMENT] Add timeout validation for querier and query-frontend. Enhanced `parseDuration` to support milliseconds and combined formats (e.g., "4m30s"). #12766
