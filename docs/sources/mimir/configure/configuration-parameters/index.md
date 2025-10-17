@@ -5204,6 +5204,13 @@ The `compactor` block configures the compactor component.
 # CLI flag: -compactor.first-level-compaction-wait-period
 [first_level_compaction_wait_period: <duration> | default = 25m]
 
+# (experimental) When enabled, the compactor skips first-level compaction jobs
+# if any source block has a MaxTime more recent than the wait period threshold.
+# This prevents premature compaction of blocks that may still receive
+# late-arriving data.
+# CLI flag: -compactor.first-level-compaction-skip-future-max-time
+[first_level_compaction_skip_future_max_time: <boolean> | default = false]
+
 # (advanced) How frequently the compactor should run blocks cleanup and
 # maintenance, as well as update the bucket index.
 # CLI flag: -compactor.cleanup-interval
