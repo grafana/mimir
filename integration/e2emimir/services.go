@@ -73,8 +73,13 @@ func newMimirServiceFromOptions(name string, defaultFlags, flags map[string]stri
 	serviceFlags := o.MapFlags(e2e.MergeFlags(defaultFlags, flags, getExtraFlags()))
 	binaryName := getBinaryNameForBackwardsCompatibility()
 
+	for k, v := range serviceFlags {
+		println(k + "=" + v)
+	}
 	if dir, ok := serviceFlags["-compactor.data-dir"]; ok {
-		_ = os.MkdirAll(dir, 0o755)
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			println(fmt.Sprintf("an error occurred creating the data-dir: %s", err.Error()))
+		}
 	}
 
 	return NewMimirService(
