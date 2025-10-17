@@ -969,7 +969,7 @@ func TestConcurrentFetchers(t *testing.T) {
 		consumedRecords := fetches.NumRecords()
 
 		pollFetchesAndAssertNoRecords(t, fetchers)
-		t.Log("Consumed all large records")
+		t.Logf("Consumed %d large records", fetches.NumRecords())
 
 		// Produce small records
 		smallValue := bytes.Repeat([]byte{'b'}, smallRecordSize)
@@ -982,7 +982,7 @@ func TestConcurrentFetchers(t *testing.T) {
 		// Consume half of the small records. This should be enough to stabilize the records size estimation.
 		fetches = longPollFetches(fetchers, smallRecordsCount/2, 10*time.Second)
 		consumedRecords += fetches.NumRecords()
-		t.Log("Consumed half of the small records")
+		t.Logf("Consumed %d of the small records", fetches.NumRecords())
 
 		// Assert that the buffer is well utilized.
 		waitForStableBufferedRecords(t, fetchers)
@@ -994,7 +994,7 @@ func TestConcurrentFetchers(t *testing.T) {
 		// Consume the rest of the small records.
 		fetches = longPollFetches(fetchers, smallRecordsCount/2, 10*time.Second)
 		consumedRecords += fetches.NumRecords()
-		t.Log("Consumed rest of the small records")
+		t.Logf("Consumed %d more of the small records", fetches.NumRecords())
 
 		// Verify we received correct number of records
 		const totalProducedRecords = largeRecordsCount + smallRecordsCount
