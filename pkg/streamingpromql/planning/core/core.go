@@ -38,6 +38,9 @@ func init() {
 		return &DeduplicateAndMerge{DeduplicateAndMergeDetails: &DeduplicateAndMergeDetails{}}
 	})
 	planning.RegisterNodeFactory(func() planning.Node {
+		return &StepInvariantExpression{StepInvariantExpressionDetails: &StepInvariantExpressionDetails{}}
+	})
+	planning.RegisterNodeFactory(func() planning.Node {
 		return &DropName{DropNameDetails: &DropNameDetails{}}
 	})
 }

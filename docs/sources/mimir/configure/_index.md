@@ -32,6 +32,7 @@ Set up secure multi-tenant environments.
 
 - [About Grafana Mimir tenant IDs](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/about-tenant-ids/)
 - [Configure Grafana Mimir high-availability deduplication](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/configure-high-availability-deduplication/)
+- [Migrate HA tracker from Consul or etcd to memberlist](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/migrate-ha-tracker-to-memberlist/)
 - [About Grafana Mimir anonymous usage statistics reporting](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/about-anonymous-usage-statistics-reporting/)
 
 ## Storage and data management

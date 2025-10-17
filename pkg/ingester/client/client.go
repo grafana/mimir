@@ -19,6 +19,7 @@ import (
 	querierapi "github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/grpcencoding/s2"
+	"github.com/grafana/mimir/pkg/util/grpcstats"
 )
 
 // HealthAndIngesterClient is the union of IngesterClient and grpc_health_v1.HealthClient.
@@ -45,7 +46,10 @@ func MakeIngesterClient(inst ring.InstanceDesc, cfg Config, metrics *Metrics, lo
 	if err != nil {
 		return nil, err
 	}
-	opts = append(opts, grpc.WithStatsHandler(otelgrpc.NewClientHandler()))
+	opts = append(opts,
+		grpc.WithStatsHandler(otelgrpc.NewClientHandler()),
+		grpc.WithStatsHandler(grpcstats.NewDataTransferStatsHandler(metrics.transferredBytes.WithLabelValues(inst.Zone))),
+	)
 
 	// nolint:staticcheck // grpc.Dial() has been deprecated; we'll address it before upgrading to gRPC 2.
 	conn, err := grpc.Dial(inst.Addr, opts...)

@@ -1502,7 +1502,9 @@ func mockGatewayConfig() Config {
 	return cfg
 }
 
-func mockStorageConfig(t *testing.T) mimir_tsdb.BlocksStorageConfig {
+type storageConfigOption func(*mimir_tsdb.BlocksStorageConfig)
+
+func mockStorageConfig(t *testing.T, opts ...storageConfigOption) mimir_tsdb.BlocksStorageConfig {
 	tmpDir := t.TempDir()
 
 	cfg := mimir_tsdb.BlocksStorageConfig{}
@@ -1510,6 +1512,10 @@ func mockStorageConfig(t *testing.T) mimir_tsdb.BlocksStorageConfig {
 
 	cfg.BucketStore.IgnoreBlocksWithin = 0
 	cfg.BucketStore.SyncDir = tmpDir
+
+	for _, opt := range opts {
+		opt(&cfg)
+	}
 
 	return cfg
 }

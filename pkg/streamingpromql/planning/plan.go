@@ -28,6 +28,7 @@ const QueryPlanVersionZero = int64(0)
 
 // This version introduces:
 // 1. DropName node
+// 2. Step invariant expression node
 const QueryPlanV1 = int64(1)
 
 type QueryPlan struct {

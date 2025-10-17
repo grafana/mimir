@@ -112,6 +112,8 @@ Starting from Mimir 3.0, `memberlist` is the recommended and default KV store ba
 The `consul` and `etcd` backends are deprecated as of Mimir 3.0. If you're currently using `consul` or `etcd` for the HA tracker, refer to the migration guide for instructions on migrating to `memberlist`.
 {{< /admonition >}}
 
+To migrate from Consul or etcd to memberlist without downtime, see [Migrate HA tracker from Consul or etcd to memberlist](migrate-ha-tracker-to-memberlist/).
+
 The following CLI flags (and their respective YAML configuration options) are available for configuring the HA tracker KV store:
 
 - `-distributor.ha-tracker.store`: Backend storage to use (default: `memberlist`).

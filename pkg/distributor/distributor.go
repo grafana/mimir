@@ -1722,15 +1722,16 @@ func (d *Distributor) acquireReactiveLimiterPermit(ctx context.Context) error {
 // This object describes which checks were already performed on the request,
 // and which component is responsible for doing a cleanup.
 func (d *Distributor) startPushRequest(ctx context.Context, httpgrpcRequestSize int64) (context.Context, *requestState, error) {
-	if d.reactiveLimiter != nil && !d.reactiveLimiter.CanAcquirePermit() {
-		d.rejectedRequests.WithLabelValues(reasonDistributorMaxInflightPushRequests).Inc()
-		return ctx, nil, errReactiveLimiterLimitExceeded
-	}
-
 	// If requestState is already in context, it means that StartPushRequest already ran for this request.
+	// This check must be performed first, before any other logic in this function.
 	rs, alreadyInContext := ctx.Value(requestStateKey).(*requestState)
 	if alreadyInContext {
 		return ctx, rs, nil
+	}
+
+	if d.reactiveLimiter != nil && !d.reactiveLimiter.CanAcquirePermit() {
+		d.rejectedRequests.WithLabelValues(reasonDistributorMaxInflightPushRequests).Inc()
+		return ctx, nil, errReactiveLimiterLimitExceeded
 	}
 
 	rs = &requestState{}
@@ -1846,6 +1847,7 @@ func (d *Distributor) limitsMiddleware(next PushFunc) PushFunc {
 		}
 
 		if reactiveLimiterErr := d.acquireReactiveLimiterPermit(ctx); reactiveLimiterErr != nil {
+			d.rejectedRequests.WithLabelValues(reasonDistributorMaxInflightPushRequests).Inc()
 			return reactiveLimiterErr
 		}
 		defer func() {
