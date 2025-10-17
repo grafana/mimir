@@ -1933,7 +1933,14 @@ func TestBlocksStoreQuerier_ShouldReturnContextCanceledIfContextWasCanceledWhile
 		clientCfg := grpcclient.Config{}
 		flagext.DefaultValues(&clientCfg)
 
-		client, err := dialStoreGatewayClient(clientCfg, ring.InstanceDesc{Addr: listener.Addr().String()}, promauto.With(nil).NewHistogramVec(prometheus.HistogramOpts{}, []string{"route", "status_code"}), util.NewRequestInvalidClusterValidationLabelsTotalCounter(nil, "store-gateway", util.GRPCProtocol), log.NewNopLogger())
+		client, err := dialStoreGatewayClient(
+			clientCfg,
+			ring.InstanceDesc{Addr: listener.Addr().String()},
+			promauto.With(nil).NewHistogramVec(prometheus.HistogramOpts{}, []string{"route", "status_code"}),
+			util.NewRequestInvalidClusterValidationLabelsTotalCounter(nil, "store-gateway", util.GRPCProtocol),
+			promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"store_gateway_zone"}),
+			log.NewNopLogger())
+
 		require.NoError(t, err)
 		t.Cleanup(func() {
 			require.NoError(t, client.Close())
