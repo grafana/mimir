@@ -107,8 +107,6 @@ The following features are currently experimental:
     - `-distributor.otel-created-timestamp-zero-ingestion-enabled`
   - Promote a certain set of OTel resource attributes to labels
     - `-distributor.otel-promote-resource-attributes`
-  - Add experimental `memberlist` key-value store for ha_tracker. Note that this feature is `experimental`, as the upper limits of propagation times have not yet been validated. Additionally, cleanup operations have not yet been implemented for the memberlist entries.
-    - `-distributor.ha-tracker.kvstore.store`
   - Allow keeping OpenTelemetry `service.instance.id`, `service.name` and `service.namespace` resource attributes in `target_info` on top of converting them to the `instance` and `job` labels.
     - `-distributor.otel-keep-identifying-resource-attributes`
   - Enable conversion of OTel explicit bucket histograms into native histograms with custom buckets.
@@ -312,5 +310,6 @@ The following features or configuration parameters are currently deprecated and 
 - Rule group configuration file
   - `evaluation_delay` field: use `query_offset` instead
 - The `-store-gateway.sharding-ring.auto-forget-enabled` is deprecated and will be removed in a future release. Set the `-store-gateway.sharding-ring.auto-forget-unhealthy-periods` flag to 0 to disable the auto-forget feature. Deprecated since Mimir 2.17.
-- etcd is deprecated as an option for backend storage for the HA tracker since Mimir 2.17.
+- Consul and etcd are deprecated as backend storage options for the HA tracker as of Mimir 3.0.
+- Use `memberlist` instead. Refer to the migration guide for instructions on migrating from Consul or etcd to `memberlist` for the HA tracker.
 - The `-distributor.otel-start-time-quiet-zero` parameter no longer has any effect and will be removed in a future release. Deprecated since Mimir 2.18.
