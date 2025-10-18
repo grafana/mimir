@@ -156,6 +156,7 @@
 
 * [CHANGE] Remove references to queriers having a Prometheus HTTP API. Instead, the query-frontend is now required for a Prometheus HTTP API. #12949
 * [CHANGE] Helm: Remove GEM (Grafana Enterprise Metrics) references from Helm chart documentation. #13019 #13020 #13021
+* [CHANGE] Update HA tracker documentation to use memberlist as the default KV store instead of consul/etcd. Consul and etcd are now marked as deprecated for the HA tracker as of Mimir 3.0. #13002
 * [ENHANCEMENT] Add migration guide for HA tracker from Consul or etcd to memberlist. #13011
 * [ENHANCEMENT] Improve the MimirIngesterReachingSeriesLimit runbook. #12356
 * [ENHANCEMENT] Improve the description of how to limit the number of buckets in native histograms. #12797

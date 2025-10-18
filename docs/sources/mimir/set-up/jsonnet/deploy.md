@@ -105,3 +105,7 @@ You can use [Tanka](https://tanka.dev/) and [jsonnet-bundler](https://github.com
    The generated Kubernetes manifests create resources in the `default` namespace.
    To use a different namespace, change the `namespace` configuration option in the `environments/default/main.jsonnet` file, and re-generate the Kubernetes manifests.
    {{< /admonition >}}
+
+   {{< admonition type="note" >}}
+   Starting from Mimir 3.0, a Jsonnet-based installation uses `memberlist` for the HA tracker by default. No external dependencies are required. If you're upgrading from a previous version that used etcd or Consul for the HA tracker, refer to the migration guide.
+   {{< /admonition >}}
