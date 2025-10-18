@@ -152,8 +152,8 @@ distributor:
 memberlist:
   # Memberlist configuration (typically shared with other components)
   join_members:
-        - <IP_OR_DNS:PORT>
-        - <IP_OR_DNS:PORT>
+    - <IP_OR_DNS:PORT>
+    - <IP_OR_DNS:PORT>
 ```
 
 {{< admonition type="note" >}}
