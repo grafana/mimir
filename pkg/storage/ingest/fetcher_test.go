@@ -969,7 +969,7 @@ func TestConcurrentFetchers(t *testing.T) {
 		consumedRecords := fetches.NumRecords()
 
 		pollFetchesAndAssertNoRecords(t, fetchers)
-		t.Log("Consumed all large records")
+		t.Logf("Consumed %d large records", fetches.NumRecords())
 
 		// Produce small records
 		smallValue := bytes.Repeat([]byte{'b'}, smallRecordSize)
@@ -982,7 +982,7 @@ func TestConcurrentFetchers(t *testing.T) {
 		// Consume half of the small records. This should be enough to stabilize the records size estimation.
 		fetches = longPollFetches(fetchers, smallRecordsCount/2, 10*time.Second)
 		consumedRecords += fetches.NumRecords()
-		t.Log("Consumed half of the small records")
+		t.Logf("Consumed %d of the small records", fetches.NumRecords())
 
 		// Assert that the buffer is well utilized.
 		waitForStableBufferedRecords(t, fetchers)
@@ -994,7 +994,7 @@ func TestConcurrentFetchers(t *testing.T) {
 		// Consume the rest of the small records.
 		fetches = longPollFetches(fetchers, smallRecordsCount/2, 10*time.Second)
 		consumedRecords += fetches.NumRecords()
-		t.Log("Consumed rest of the small records")
+		t.Logf("Consumed %d more of the small records", fetches.NumRecords())
 
 		// Verify we received correct number of records
 		const totalProducedRecords = largeRecordsCount + smallRecordsCount
@@ -1077,7 +1077,7 @@ func TestConcurrentFetchers_fetchSingle(t *testing.T) {
 			startOffset:             1,
 			endOffset:               5,
 			estimatedBytesPerRecord: 100,
-			targetMaxBytes:          1000000,
+			maxBytesLimit:           1000000,
 		}
 		res := fetchers.fetchSingle(ctx, fw)
 
@@ -1097,7 +1097,7 @@ func TestConcurrentFetchers_fetchSingle(t *testing.T) {
 			startOffset:             1,
 			endOffset:               5,
 			estimatedBytesPerRecord: 100,
-			targetMaxBytes:          1000000,
+			maxBytesLimit:           1000000,
 		}
 		res := fetchers.fetchSingle(ctx, fw)
 
@@ -1116,7 +1116,7 @@ func TestConcurrentFetchers_fetchSingle(t *testing.T) {
 			startOffset:             1,
 			endOffset:               5,
 			estimatedBytesPerRecord: 100,
-			targetMaxBytes:          1000000,
+			maxBytesLimit:           1000000,
 		}
 		res := fetchers.fetchSingle(ctx, fw)
 
@@ -1148,7 +1148,7 @@ func TestConcurrentFetchers_fetchSingle(t *testing.T) {
 			startOffset:             1,
 			endOffset:               5,
 			estimatedBytesPerRecord: 100,
-			targetMaxBytes:          1000000,
+			maxBytesLimit:           1000000,
 		}
 		res := fetchers.fetchSingle(ctx, fw)
 
@@ -1396,6 +1396,7 @@ func TestFetchWant_MaxBytes(t *testing.T) {
 				startOffset:             0,
 				endOffset:               10,
 				estimatedBytesPerRecord: 100,
+				maxBytesLimit:           math.MaxInt32,
 			},
 			expected: 1_000_000, // minimum fetch size
 		},
@@ -1404,6 +1405,7 @@ func TestFetchWant_MaxBytes(t *testing.T) {
 				startOffset:             0,
 				endOffset:               1000,
 				estimatedBytesPerRecord: 1000,
+				maxBytesLimit:           math.MaxInt32,
 			},
 			expected: 1_050_000, // 1000 * 1000 * 1.05
 		},
@@ -1412,6 +1414,7 @@ func TestFetchWant_MaxBytes(t *testing.T) {
 				startOffset:             0,
 				endOffset:               2 << 31,
 				estimatedBytesPerRecord: 2 << 30,
+				maxBytesLimit:           math.MaxInt32,
 			},
 			expected: math.MaxInt32,
 		},
@@ -1420,8 +1423,18 @@ func TestFetchWant_MaxBytes(t *testing.T) {
 				startOffset:             0,
 				endOffset:               math.MaxInt64,
 				estimatedBytesPerRecord: math.MaxInt32,
+				maxBytesLimit:           math.MaxInt32,
 			},
 			expected: math.MaxInt32,
+		},
+		"capped by maxBytesLimit": {
+			fw: fetchWant{
+				startOffset:             0,
+				endOffset:               1000,
+				estimatedBytesPerRecord: 10000,
+				maxBytesLimit:           5_000_000,
+			},
+			expected: 5_000_000, // capped by maxBytesLimit even though calculation would be 10_500_000
 		},
 	}
 
