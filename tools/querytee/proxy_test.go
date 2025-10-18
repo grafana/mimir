@@ -11,6 +11,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -785,13 +786,110 @@ func Test_NewProxy_BackendConfigPath(t *testing.T) {
 				},
 			},
 		},
+		"valid config with request proportions": {
+			createFile: true,
+			configContent: `
+                backend1:
+                  request_headers:
+                    X-Custom-Header: ["value1"]
+                  request_proportion: 0.8
+                backend2:
+                  request_headers:
+                    Authorization: ["Bearer token123"]
+                  request_proportion: 0.5
+            `,
+			expectedConfig: map[string]*BackendConfig{
+				"backend1": {
+					RequestHeaders: http.Header{
+						"X-Custom-Header": {"value1"},
+					},
+					RequestProportion: func() *float64 { v := 0.8; return &v }(),
+				},
+				"backend2": {
+					RequestHeaders: http.Header{
+						"Authorization": {"Bearer token123"},
+					},
+					RequestProportion: func() *float64 { v := 0.5; return &v }(),
+				},
+			},
+		},
+		"multiple backends with request proportions": {
+			createFile: true,
+			configContent: `
+                backend1:
+                  request_headers:
+                    X-Custom-Header: ["value1"]
+                  request_proportion: 0.8
+                backend2:
+                  request_headers:
+                    Authorization: ["Bearer token123"]
+                  request_proportion: 0.5
+                backend3:
+                  request_headers:
+                    X-Tenant-ID: ["tenant3"]
+                  request_proportion: 1.0
+                backend4:
+                  request_headers:
+                    X-Debug: ["true"]
+                  request_proportion: 0.0
+            `,
+			expectedConfig: map[string]*BackendConfig{
+				"backend1": {
+					RequestHeaders: http.Header{
+						"X-Custom-Header": {"value1"},
+					},
+					RequestProportion: func() *float64 { v := 0.8; return &v }(),
+				},
+				"backend2": {
+					RequestHeaders: http.Header{
+						"Authorization": {"Bearer token123"},
+					},
+					RequestProportion: func() *float64 { v := 0.5; return &v }(),
+				},
+				"backend3": {
+					RequestHeaders: http.Header{
+						"X-Tenant-ID": {"tenant3"},
+					},
+					RequestProportion: func() *float64 { v := DefaultRequestProportion; return &v }(),
+				},
+				"backend4": {
+					RequestHeaders: http.Header{
+						"X-Debug": {"true"},
+					},
+					RequestProportion: func() *float64 { v := 0.0; return &v }(),
+				},
+			},
+		},
+		"invalid request proportion - negative": {
+			createFile: true,
+			configContent: `
+                backend1:
+                  request_proportion: -0.1
+            `,
+			expectedError: "backend backend1: request_proportion must be between 0.0 and 1.0, got -0.100000",
+		},
+		"invalid request proportion - greater than 1": {
+			createFile: true,
+			configContent: `
+                backend1:
+                  request_proportion: 1.5
+            `,
+			expectedError: "backend backend1: request_proportion must be between 0.0 and 1.0, got 1.500000",
+		},
 	}
 
 	for testName, testCase := range tests {
 		t.Run(testName, func(t *testing.T) {
 			// Base config that's valid except for the backend config path
+			backendEndpoints := "http://backend1:9090,http://backend2:9090"
+
+			// For the multiple backends test, add more backends
+			if testName == "multiple backends with request proportions" {
+				backendEndpoints = "http://backend1:9090,http://backend2:9090,http://backend3:9090,http://backend4:9090"
+			}
+
 			cfg := ProxyConfig{
-				BackendEndpoints:                   "http://backend1:9090,http://backend2:9090",
+				BackendEndpoints:                   backendEndpoints,
 				ServerHTTPServiceAddress:           "localhost",
 				ServerHTTPServicePort:              0,
 				ServerGRPCServiceAddress:           "localhost",
@@ -864,4 +962,392 @@ func getServerAddress(proto string, server *server.Server) string {
 	}
 
 	return ""
+}
+
+func TestProxyEndpoint_TimeBasedBackendSelection(t *testing.T) {
+	testCases := map[string]struct {
+		backends         []backendTestConfig
+		requestPath      string
+		requestParams    map[string]string
+		expectedBackends []string // Names of backends expected to be selected
+		description      string
+	}{
+		"instant query with no time parameter - all backends selected": {
+			backends: []backendTestConfig{
+				{name: "preferred", preferred: true, minTimeThreshold: "0s"},
+				{name: "recent", preferred: false, minTimeThreshold: "1h"},
+				{name: "old", preferred: false, minTimeThreshold: "24h"},
+			},
+			requestPath: "/api/v1/query",
+			requestParams: map[string]string{
+				"query": "up",
+			},
+			expectedBackends: []string{"preferred", "recent", "old"},
+			description:      "instant query without time defaults to now, should match all thresholds",
+		},
+		"instant query with current time - all backends selected": {
+			backends: []backendTestConfig{
+				{name: "preferred", preferred: true, minTimeThreshold: "0s"},
+				{name: "recent", preferred: false, minTimeThreshold: "1h"},
+				{name: "old", preferred: false, minTimeThreshold: "24h"},
+			},
+			requestPath: "/api/v1/query",
+			requestParams: map[string]string{
+				"query": "up",
+				"time":  strconv.FormatInt(time.Now().Unix(), 10),
+			},
+			expectedBackends: []string{"preferred", "recent", "old"},
+			description:      "instant query with current time should match all thresholds",
+		},
+		"instant query with old time - only preferred backend selected": {
+			backends: []backendTestConfig{
+				{name: "preferred", preferred: true, minTimeThreshold: "0s"},
+				{name: "recent", preferred: false, minTimeThreshold: "1h"},
+				{name: "old", preferred: false, minTimeThreshold: "24h"},
+			},
+			requestPath: "/api/v1/query",
+			requestParams: map[string]string{
+				"query": "up",
+				"time":  strconv.FormatInt(time.Now().Add(-48*time.Hour).Unix(), 10),
+			},
+			expectedBackends: []string{"preferred"},
+			description:      "48-hour old instant query should only match preferred backend (has 0s threshold)",
+		},
+		"range query covering recent and old data - only preferred backend": {
+			backends: []backendTestConfig{
+				{name: "preferred", preferred: true, minTimeThreshold: "0s"},
+				{name: "recent", preferred: false, minTimeThreshold: "1h"},
+				{name: "old", preferred: false, minTimeThreshold: "24h"},
+			},
+			requestPath: "/api/v1/query_range",
+			requestParams: map[string]string{
+				"query": "up",
+				"start": strconv.FormatInt(time.Now().Add(-48*time.Hour).Unix(), 10),
+				"end":   strconv.FormatInt(time.Now().Unix(), 10),
+				"step":  "1h",
+			},
+			expectedBackends: []string{"preferred"},
+			description:      "range query with 48h-ago start should only match preferred backend (min time too old for others)",
+		},
+		"range query with very recent data - all backends selected": {
+			backends: []backendTestConfig{
+				{name: "preferred", preferred: true, minTimeThreshold: "0s"},
+				{name: "recent", preferred: false, minTimeThreshold: "1h"},
+				{name: "old", preferred: false, minTimeThreshold: "24h"},
+			},
+			requestPath: "/api/v1/query_range",
+			requestParams: map[string]string{
+				"query": "up",
+				"start": strconv.FormatInt(time.Now().Add(-30*time.Minute).Unix(), 10),
+				"end":   strconv.FormatInt(time.Now().Unix(), 10),
+				"step":  "1m",
+			},
+			expectedBackends: []string{"preferred", "recent", "old"},
+			description:      "range query with recent data should match all backends",
+		},
+		"backends with zero threshold serve all queries": {
+			backends: []backendTestConfig{
+				{name: "preferred", preferred: true, minTimeThreshold: "0s"},
+				{name: "secondary", preferred: false, minTimeThreshold: "0s"},
+			},
+			requestPath: "/api/v1/query",
+			requestParams: map[string]string{
+				"query": "up",
+				"time":  strconv.FormatInt(time.Now().Add(-365*24*time.Hour).Unix(), 10), // 1 year old
+			},
+			expectedBackends: []string{"preferred", "secondary"},
+			description:      "backends with 0s threshold should serve all queries regardless of time",
+		},
+		"preferred backend always included regardless of threshold": {
+			backends: []backendTestConfig{
+				{name: "preferred", preferred: true, minTimeThreshold: "1h"},
+				{name: "secondary", preferred: false, minTimeThreshold: "1h"},
+			},
+			requestPath: "/api/v1/query",
+			requestParams: map[string]string{
+				"query": "up",
+				"time":  strconv.FormatInt(time.Now().Add(-48*time.Hour).Unix(), 10),
+			},
+			expectedBackends: []string{"preferred"},
+			description:      "preferred backend should always be included even if query time is outside its threshold",
+		},
+		"three backends with different thresholds - 2 should be selected": {
+			backends: []backendTestConfig{
+				{name: "preferred", preferred: true, minTimeThreshold: "0s"},   // serves all
+				{name: "short-term", preferred: false, minTimeThreshold: "1h"}, // serves last 1 hour
+				{name: "long-term", preferred: false, minTimeThreshold: "72h"}, // serves last 72 hours
+			},
+			requestPath: "/api/v1/query",
+			requestParams: map[string]string{
+				"query": "up",
+				"time":  strconv.FormatInt(time.Now().Add(-36*time.Hour).Unix(), 10), // 36 hours ago
+			},
+			expectedBackends: []string{"preferred", "long-term"},
+			description:      "36-hour old query should be forwarded to preferred (0s threshold) and long-term (72h threshold) backends, but not short-term (1h threshold)",
+		},
+		"three backends with mixed thresholds - query within all thresholds": {
+			backends: []backendTestConfig{
+				{name: "preferred", preferred: true, minTimeThreshold: "0s"},
+				{name: "medium", preferred: false, minTimeThreshold: "6h"},
+				{name: "long", preferred: false, minTimeThreshold: "24h"},
+			},
+			requestPath: "/api/v1/query",
+			requestParams: map[string]string{
+				"query": "up",
+				"time":  strconv.FormatInt(time.Now().Add(-3*time.Hour).Unix(), 10), // 3 hours ago
+			},
+			expectedBackends: []string{"preferred", "medium", "long"},
+			description:      "3-hour old query should be forwarded to all backends as it's within all thresholds",
+		},
+	}
+
+	for testName, tc := range testCases {
+		t.Run(testName, func(t *testing.T) {
+			// Create mock backends
+			var backends []ProxyBackendInterface
+			for _, backendCfg := range tc.backends {
+				u, err := url.Parse("http://localhost:9090")
+				require.NoError(t, err)
+
+				cfg := BackendConfig{
+					MinTimeThreshold: backendCfg.minTimeThreshold,
+				}
+
+				backend := NewProxyBackend(
+					backendCfg.name,
+					u,
+					time.Second,
+					backendCfg.preferred,
+					false,
+					cfg,
+				)
+				backends = append(backends, backend)
+			}
+
+			endpoint := NewProxyEndpoint(
+				backends,
+				Route{RouteName: "test"},
+				NewProxyMetrics(nil),
+				log.NewNopLogger(),
+				nil,
+				0,
+				1.0, // All secondary backends should be included by proportion
+				false,
+			)
+
+			// Create test request
+			req := httptest.NewRequest("GET", tc.requestPath, nil)
+			q := req.URL.Query()
+			for key, value := range tc.requestParams {
+				q.Set(key, value)
+			}
+			req.URL.RawQuery = q.Encode()
+
+			// Test backend selection
+			selectedBackends := endpoint.selectBackends(req)
+
+			// Extract names of selected backends
+			var selectedNames []string
+			for _, backend := range selectedBackends {
+				selectedNames = append(selectedNames, backend.Name())
+			}
+
+			// Verify expected backends were selected
+			assert.ElementsMatch(t, tc.expectedBackends, selectedNames, tc.description)
+		})
+	}
+}
+
+func TestTimeExtractionFunctions(t *testing.T) {
+	baseTime := time.Now().Truncate(time.Second).UTC()
+
+	testCases := map[string]struct {
+		method       string
+		path         string
+		params       map[string]string
+		expectedTime *time.Time // nil if expecting zero time
+		description  string
+	}{
+		"instant query without time parameter": {
+			method: "GET",
+			path:   "/api/v1/query",
+			params: map[string]string{
+				"query": "up",
+			},
+			expectedTime: &baseTime, // Will be compared with tolerance
+			description:  "should default to current time",
+		},
+		"instant query with Unix timestamp": {
+			method: "GET",
+			path:   "/api/v1/query",
+			params: map[string]string{
+				"query": "up",
+				"time":  strconv.FormatInt(baseTime.Add(-2*time.Hour).Unix(), 10), // 2 hours ago
+			},
+			expectedTime: func() *time.Time { t := baseTime.Add(-2 * time.Hour); return &t }(),
+			description:  "should parse Unix timestamp correctly",
+		},
+		"range query with start and end": {
+			method: "GET",
+			path:   "/api/v1/query_range",
+			params: map[string]string{
+				"query": "up",
+				"start": strconv.FormatInt(baseTime.Add(-3*time.Hour).Unix(), 10), // 3 hours ago
+				"end":   strconv.FormatInt(baseTime.Add(-2*time.Hour).Unix(), 10), // 2 hours ago
+				"step":  "60s",
+			},
+			expectedTime: func() *time.Time { t := baseTime.Add(-3 * time.Hour); return &t }(),
+			description:  "should extract start time as minimum",
+		},
+		"range query with end earlier than start": {
+			method: "GET",
+			path:   "/api/v1/query_range",
+			params: map[string]string{
+				"query": "up",
+				"start": strconv.FormatInt(baseTime.Add(-2*time.Hour).Unix(), 10), // 2 hours ago
+				"end":   strconv.FormatInt(baseTime.Add(-3*time.Hour).Unix(), 10), // 3 hours ago
+				"step":  "60s",
+			},
+			expectedTime: func() *time.Time { t := baseTime.Add(-3 * time.Hour); return &t }(),
+			description:  "should return earlier time even if it's the end parameter",
+		},
+		"range query with only start parameter": {
+			method: "GET",
+			path:   "/api/v1/query_range",
+			params: map[string]string{
+				"query": "up",
+				"start": strconv.FormatInt(baseTime.Add(-4*time.Hour).Unix(), 10), // 4 hours ago
+				"step":  "60s",
+			},
+			expectedTime: func() *time.Time { t := baseTime.Add(-4 * time.Hour); return &t }(),
+			description:  "should use start time when end is missing",
+		},
+		"range query with only end parameter": {
+			method: "GET",
+			path:   "/api/v1/query_range",
+			params: map[string]string{
+				"query": "up",
+				"end":   strconv.FormatInt(baseTime.Add(-5*time.Hour).Unix(), 10), // 5 hours ago
+				"step":  "60s",
+			},
+			expectedTime: func() *time.Time { t := baseTime.Add(-5 * time.Hour); return &t }(),
+			description:  "should use end time when start is missing",
+		},
+		"non-Prometheus API path": {
+			method:       "GET",
+			path:         "/api/v1/status/config",
+			params:       map[string]string{},
+			expectedTime: nil,
+			description:  "should return zero time for non-query paths",
+		},
+		"invalid time format": {
+			method: "GET",
+			path:   "/api/v1/query",
+			params: map[string]string{
+				"query": "up",
+				"time":  "invalid-time",
+			},
+			expectedTime: nil,
+			description:  "should return zero time for invalid time format",
+		},
+	}
+
+	for testName, tc := range testCases {
+		t.Run(testName, func(t *testing.T) {
+			req := httptest.NewRequest(tc.method, tc.path, nil)
+			q := req.URL.Query()
+			for key, value := range tc.params {
+				q.Set(key, value)
+			}
+			req.URL.RawQuery = q.Encode()
+
+			extractedTime := extractMinTimeFromRequest(req)
+
+			if tc.expectedTime == nil {
+				assert.True(t, extractedTime.IsZero(), tc.description)
+			} else {
+				// For "now" comparisons, allow some tolerance
+				if tc.params["time"] == "" && tc.path == "/api/v1/query" {
+					assert.WithinDuration(t, *tc.expectedTime, extractedTime, 5*time.Second, tc.description)
+				} else {
+					assert.Equal(t, *tc.expectedTime, extractedTime, tc.description)
+				}
+			}
+		})
+	}
+}
+
+func TestBackendConfig_TimeThresholdValidation(t *testing.T) {
+	testCases := map[string]struct {
+		config        map[string]*BackendConfig
+		expectError   bool
+		errorContains string
+		description   string
+	}{
+		"valid time threshold": {
+			config: map[string]*BackendConfig{
+				"backend1": {
+					MinTimeThreshold: "24h",
+				},
+			},
+			expectError: false,
+			description: "valid duration format should pass validation",
+		},
+		"multiple valid time thresholds": {
+			config: map[string]*BackendConfig{
+				"backend1": {MinTimeThreshold: "1h30m"},
+				"backend2": {MinTimeThreshold: "168h"}, // 7 days = 168 hours
+				"backend3": {MinTimeThreshold: "0s"},
+			},
+			expectError: false,
+			description: "multiple valid duration formats should pass validation",
+		},
+		"invalid time threshold": {
+			config: map[string]*BackendConfig{
+				"backend1": {
+					MinTimeThreshold: "invalid-duration",
+				},
+			},
+			expectError:   true,
+			errorContains: "invalid min_time_threshold format",
+			description:   "invalid duration format should fail validation",
+		},
+		"empty time threshold": {
+			config: map[string]*BackendConfig{
+				"backend1": {
+					MinTimeThreshold: "",
+				},
+			},
+			expectError: false,
+			description: "empty threshold should pass validation (defaults to 0)",
+		},
+	}
+
+	for testName, tc := range testCases {
+		t.Run(testName, func(t *testing.T) {
+			var backends []ProxyBackendInterface
+			for backendName := range tc.config {
+				u, _ := url.Parse("http://localhost:9090")
+				backend := NewProxyBackend(backendName, u, time.Second, false, false, *tc.config[backendName])
+				backends = append(backends, backend)
+			}
+
+			err := validateBackendConfig(backends, tc.config)
+
+			if tc.expectError {
+				assert.Error(t, err, tc.description)
+				if tc.errorContains != "" {
+					assert.Contains(t, err.Error(), tc.errorContains, tc.description)
+				}
+			} else {
+				assert.NoError(t, err, tc.description)
+			}
+		})
+	}
+}
+
+type backendTestConfig struct {
+	name             string
+	preferred        bool
+	minTimeThreshold string
 }
