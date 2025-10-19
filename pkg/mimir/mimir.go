@@ -1021,7 +1021,7 @@ func (t *Mimir) Run() error {
 		t.API.RegisterIngesterRing(t.Ingester.RingHandler())
 	}
 
-	// Similar to above, register the querier ring handler if it exists,
+	// Register the querier ring handler if it exists,
 	// preferring the one exposed by the ring instance over the BasicLifecycler.
 	if t.QuerierRing != nil {
 		t.API.RegisterQuerierRing(t.QuerierRing)
