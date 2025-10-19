@@ -115,7 +115,7 @@ func TestMemoryTrackingSeriesSet_MultipleAtCalls(t *testing.T) {
 	series = memTrackingSet.At()
 	require.Equal(t, series2, series)
 	memoryAfterSecondSeries := tracker.CurrentEstimatedMemoryConsumptionBytes()
-	require.Less(t, memoryAfterSecondSeries, memoryAfterThirdAt)
+	require.Equal(t, uint64(0), memoryAfterSecondSeries)
 
 	require.False(t, memTrackingSet.Next())
 	require.Equal(t, uint64(0), tracker.CurrentEstimatedMemoryConsumptionBytes())
