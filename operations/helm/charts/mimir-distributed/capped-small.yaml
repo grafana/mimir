@@ -1,7 +1,7 @@
-# These values configure the Grafana Mimir or Grafana Enterprise Metrics cluster
-# for a more production-ready setup. The setup targets 70% CPU and memory utilization
-# so that the cluster has room to grow. The resource requests and limits reflect 100% utilization.
-# This is useful when you want to strictly control costs when purchasing GEM through a marketplace subscription for example.
+# These values configure the Grafana Mimir cluster for a more production-ready setup.
+# The setup targets 70% CPU and memory utilization so that the cluster has room to grow.
+# The resource requests and limits reflect 100% utilization.
+# This is useful when you want to strictly control costs.
 # limits==requests also ensure a "Guaranteed" QoS: https://kubernetes.io/docs/tasks/configure-pod-container/quality-service-pod/.
 # Note that setting CPU limits has some known issues:
 # https://engineering.indeedblog.com/blog/2019/12/unthrottled-fixing-cpu-limits-in-the-cloud/.
@@ -73,14 +73,6 @@ ingester:
   affinity:
     podAntiAffinity:
       requiredDuringSchedulingIgnoredDuringExecution:
-        - labelSelector:
-            matchExpressions:
-              - key: target # support for enterprise.legacyLabels
-                operator: In
-                values:
-                  - ingester
-          topologyKey: "kubernetes.io/hostname"
-
         - labelSelector:
             matchExpressions:
               - key: app.kubernetes.io/component
@@ -169,14 +161,6 @@ store_gateway:
       requiredDuringSchedulingIgnoredDuringExecution:
         - labelSelector:
             matchExpressions:
-              - key: target # support for enterprise.legacyLabels
-                operator: In
-                values:
-                  - store-gateway
-          topologyKey: "kubernetes.io/hostname"
-
-        - labelSelector:
-            matchExpressions:
               - key: app.kubernetes.io/component
                 operator: In
                 values:
@@ -185,17 +169,6 @@ store_gateway:
 
   zoneAwareReplication:
     topologyKey: "kubernetes.io/hostname"
-
-# Grafana Enterprise Metrics feature related
-admin_api:
-  replicas: 1
-  resources:
-    limits:
-      cpu: 200m
-      memory: 128Mi
-    requests:
-      cpu: 200m
-      memory: 128Mi
 
 gateway:
   replicas: 1

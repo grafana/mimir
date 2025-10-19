@@ -1,4 +1,4 @@
-{{- if and .Values.compactor.enabled (not .Values.federation_frontend.disableOtherComponents) }}
+{{- if .Values.compactor.enabled }}
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
@@ -96,11 +96,6 @@ spec:
       volumes:
         - name: config
           {{- include "mimir.configVolume" . | nindent 10 }}
-        {{- if .Values.enterprise.enabled }}
-        - name: license
-          secret:
-            secretName: {{ tpl .Values.license.secretName . }}
-        {{- end }}
         - name: runtime-config
           configMap:
             name: {{ template "mimir.fullname" . }}-runtime
@@ -139,10 +134,6 @@ spec:
             {{- end }}
             - name: config
               mountPath: /etc/mimir
-            {{- if .Values.enterprise.enabled }}
-            - name: license
-              mountPath: /license
-            {{- end }}
             - name: runtime-config
               mountPath: /var/{{ include "mimir.name" . }}
             - name: storage

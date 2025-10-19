@@ -1,4 +1,4 @@
-{{- if and .Values.compactor.enabled (not .Values.federation_frontend.disableOtherComponents) }}
+{{- if .Values.compactor.enabled }}
 apiVersion: v1
 kind: Service
 metadata:

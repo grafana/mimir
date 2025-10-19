@@ -1078,13 +1078,13 @@ func TestHandler_toHTTPStatus(t *testing.T) {
 			err:                middleware.DoNotLogError{Err: newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, originalMsg, mimirpb.ERROR_CAUSE_SERVICE_UNAVAILABLE), ingesterID)},
 			expectedHTTPStatus: http.StatusInternalServerError,
 		},
-		"an ingesterPushError with INSTANCE_LIMIT cause gets translated into an HTTP 500": {
+		"an ingesterPushError with INSTANCE_LIMIT cause gets translated into an HTTP 503": {
 			err:                newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, originalMsg, mimirpb.ERROR_CAUSE_INSTANCE_LIMIT), ingesterID),
-			expectedHTTPStatus: http.StatusInternalServerError,
+			expectedHTTPStatus: http.StatusServiceUnavailable,
 		},
-		"a DoNotLogError of an ingesterPushError with INSTANCE_LIMIT cause gets translated into an HTTP 500": {
+		"a DoNotLogError of an ingesterPushError with INSTANCE_LIMIT cause gets translated into an HTTP 503": {
 			err:                middleware.DoNotLogError{Err: newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, originalMsg, mimirpb.ERROR_CAUSE_INSTANCE_LIMIT), ingesterID)},
-			expectedHTTPStatus: http.StatusInternalServerError,
+			expectedHTTPStatus: http.StatusServiceUnavailable,
 		},
 		"an ingesterPushError with UNKNOWN_CAUSE cause gets translated into an HTTP 500": {
 			err:                newIngesterPushError(createStatusWithDetails(t, codes.Internal, originalMsg, mimirpb.ERROR_CAUSE_UNKNOWN), ingesterID),

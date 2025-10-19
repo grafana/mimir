@@ -987,7 +987,7 @@
                   "required": false,
                   "desc": "Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi.",
                   "fieldValue": null,
-                  "fieldDefaultValue": "consul",
+                  "fieldDefaultValue": "memberlist",
                   "fieldFlag": "distributor.ha-tracker.store",
                   "fieldType": "string"
                 },
@@ -2294,6 +2294,17 @@
           "fieldFlag": "querier.shuffle-sharding-ingesters-enabled",
           "fieldType": "boolean",
           "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
+          "name": "prefer_availability_zone",
+          "required": false,
+          "desc": "When set, the querier prioritizes querying data from ingesters and store-gateways in this availability zone.",
+          "fieldValue": null,
+          "fieldDefaultValue": "",
+          "fieldFlag": "querier.prefer-availability-zone",
+          "fieldType": "string",
+          "fieldCategory": "experimental"
         },
         {
           "kind": "field",
@@ -9738,7 +9749,7 @@
               "kind": "field",
               "name": "meta_sync_concurrency",
               "required": false,
-              "desc": "Number of Go routines to use when syncing block meta files from object storage per tenant.",
+              "desc": "Number of goroutines to use when syncing block meta files from object storage per tenant.",
               "fieldValue": null,
               "fieldDefaultValue": 20,
               "fieldFlag": "blocks-storage.bucket-store.meta-sync-concurrency",
@@ -11354,7 +11365,7 @@
           "kind": "field",
           "name": "block_sync_concurrency",
           "required": false,
-          "desc": "Number of Go routines to use when downloading blocks for compaction and uploading resulting blocks.",
+          "desc": "Number of goroutines to use when downloading blocks for compaction and uploading resulting blocks.",
           "fieldValue": null,
           "fieldDefaultValue": 8,
           "fieldFlag": "compactor.block-sync-concurrency",
@@ -11365,7 +11376,7 @@
           "kind": "field",
           "name": "meta_sync_concurrency",
           "required": false,
-          "desc": "Number of Go routines to use when syncing block meta files from the long term storage.",
+          "desc": "Number of goroutines to use when syncing block meta files from the long term storage.",
           "fieldValue": null,
           "fieldDefaultValue": 20,
           "fieldFlag": "compactor.meta-sync-concurrency",
@@ -11424,6 +11435,17 @@
           "fieldDefaultValue": 1500000000000,
           "fieldFlag": "compactor.first-level-compaction-wait-period",
           "fieldType": "duration"
+        },
+        {
+          "kind": "field",
+          "name": "first_level_compaction_skip_future_max_time",
+          "required": false,
+          "desc": "When enabled, the compactor skips first-level compaction jobs if any source block has a MaxTime more recent than the wait period threshold. This prevents premature compaction of blocks that may still receive late-arriving data.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "compactor.first-level-compaction-skip-future-max-time",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
         },
         {
           "kind": "field",
@@ -11539,7 +11561,7 @@
           "kind": "field",
           "name": "update_blocks_concurrency",
           "required": false,
-          "desc": "Number of Go routines to use when updating blocks metadata during bucket index updates.",
+          "desc": "Number of goroutines to use when updating blocks metadata during bucket index updates.",
           "fieldValue": null,
           "fieldDefaultValue": 1,
           "fieldFlag": "compactor.update-blocks-concurrency",

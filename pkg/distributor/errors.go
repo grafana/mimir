@@ -28,6 +28,9 @@ const (
 )
 
 var (
+	errMissingRequestState                  = fmt.Errorf("context does not contain a request state")
+	errReactiveLimiterPermitAlreadyAcquired = fmt.Errorf("reactive limiter permit already acquired")
+
 	tooManyClustersMsgFormat = globalerror.TooManyHAClusters.MessageWithPerTenantLimitConfig(
 		"the write request has been rejected because the maximum number of high-availability (HA) clusters has been reached for this tenant (limit: %d)",
 		validation.HATrackerMaxClustersFlag,
@@ -153,7 +156,7 @@ func newReactiveLimiterExceededError(err error) reactiveLimiterExceededError {
 }
 
 func (e reactiveLimiterExceededError) Cause() mimirpb.ErrorCause {
-	return mimirpb.ERROR_CAUSE_REQUEST_RATE_LIMITED
+	return mimirpb.ERROR_CAUSE_INSTANCE_LIMIT
 }
 
 func (e reactiveLimiterExceededError) IsSoft() bool {
@@ -377,7 +380,7 @@ func errorCauseToGRPCStatusCode(errCause mimirpb.ErrorCause) codes.Code {
 		return codes.AlreadyExists
 	case mimirpb.ERROR_CAUSE_TOO_MANY_CLUSTERS:
 		return codes.FailedPrecondition
-	case mimirpb.ERROR_CAUSE_CIRCUIT_BREAKER_OPEN:
+	case mimirpb.ERROR_CAUSE_CIRCUIT_BREAKER_OPEN, mimirpb.ERROR_CAUSE_INSTANCE_LIMIT:
 		return codes.Unavailable
 	case mimirpb.ERROR_CAUSE_METHOD_NOT_ALLOWED:
 		return codes.Unimplemented
@@ -402,7 +405,7 @@ func errorCauseToHTTPStatusCode(errCause mimirpb.ErrorCause) int {
 		return http.StatusBadRequest
 	case mimirpb.ERROR_CAUSE_TSDB_UNAVAILABLE:
 		return http.StatusServiceUnavailable
-	case mimirpb.ERROR_CAUSE_CIRCUIT_BREAKER_OPEN:
+	case mimirpb.ERROR_CAUSE_CIRCUIT_BREAKER_OPEN, mimirpb.ERROR_CAUSE_INSTANCE_LIMIT:
 		return http.StatusServiceUnavailable
 	case mimirpb.ERROR_CAUSE_METHOD_NOT_ALLOWED:
 		// Return a 501 (and not 405) to explicitly signal a misconfiguration and to possibly track that amongst other 5xx errors.

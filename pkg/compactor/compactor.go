@@ -88,20 +88,21 @@ type BlocksCompactorFactory func(
 
 // Config holds the MultitenantCompactor config.
 type Config struct {
-	BlockRanges                mimir_tsdb.DurationList `yaml:"block_ranges" category:"advanced"`
-	BlockSyncConcurrency       int                     `yaml:"block_sync_concurrency" category:"advanced"`
-	MetaSyncConcurrency        int                     `yaml:"meta_sync_concurrency" category:"advanced"`
-	DataDir                    string                  `yaml:"data_dir"`
-	CompactionInterval         time.Duration           `yaml:"compaction_interval" category:"advanced"`
-	CompactionRetries          int                     `yaml:"compaction_retries" category:"advanced"`
-	CompactionConcurrency      int                     `yaml:"compaction_concurrency" category:"advanced"`
-	CompactionWaitPeriod       time.Duration           `yaml:"first_level_compaction_wait_period"`
-	CleanupInterval            time.Duration           `yaml:"cleanup_interval" category:"advanced"`
-	CleanupConcurrency         int                     `yaml:"cleanup_concurrency" category:"advanced"`
-	DeletionDelay              time.Duration           `yaml:"deletion_delay" category:"advanced"`
-	TenantCleanupDelay         time.Duration           `yaml:"tenant_cleanup_delay" category:"advanced"`
-	MaxCompactionTime          time.Duration           `yaml:"max_compaction_time" category:"advanced"`
-	NoBlocksFileCleanupEnabled bool                    `yaml:"no_blocks_file_cleanup_enabled" category:"experimental"`
+	BlockRanges                 mimir_tsdb.DurationList `yaml:"block_ranges" category:"advanced"`
+	BlockSyncConcurrency        int                     `yaml:"block_sync_concurrency" category:"advanced"`
+	MetaSyncConcurrency         int                     `yaml:"meta_sync_concurrency" category:"advanced"`
+	DataDir                     string                  `yaml:"data_dir"`
+	CompactionInterval          time.Duration           `yaml:"compaction_interval" category:"advanced"`
+	CompactionRetries           int                     `yaml:"compaction_retries" category:"advanced"`
+	CompactionConcurrency       int                     `yaml:"compaction_concurrency" category:"advanced"`
+	CompactionWaitPeriod        time.Duration           `yaml:"first_level_compaction_wait_period"`
+	CompactionSkipFutureMaxTime bool                    `yaml:"first_level_compaction_skip_future_max_time" category:"experimental"`
+	CleanupInterval             time.Duration           `yaml:"cleanup_interval" category:"advanced"`
+	CleanupConcurrency          int                     `yaml:"cleanup_concurrency" category:"advanced"`
+	DeletionDelay               time.Duration           `yaml:"deletion_delay" category:"advanced"`
+	TenantCleanupDelay          time.Duration           `yaml:"tenant_cleanup_delay" category:"advanced"`
+	MaxCompactionTime           time.Duration           `yaml:"max_compaction_time" category:"advanced"`
+	NoBlocksFileCleanupEnabled  bool                    `yaml:"no_blocks_file_cleanup_enabled" category:"experimental"`
 
 	// Compactor concurrency options
 	MaxOpeningBlocksConcurrency         int `yaml:"max_opening_blocks_concurrency" category:"advanced"`          // Number of goroutines opening blocks before compaction.
@@ -143,14 +144,15 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	cfg.retryMaxBackoff = time.Minute
 
 	f.Var(&cfg.BlockRanges, "compactor.block-ranges", "List of compaction time ranges.")
-	f.IntVar(&cfg.BlockSyncConcurrency, "compactor.block-sync-concurrency", 8, "Number of Go routines to use when downloading blocks for compaction and uploading resulting blocks.")
-	f.IntVar(&cfg.MetaSyncConcurrency, "compactor.meta-sync-concurrency", 20, "Number of Go routines to use when syncing block meta files from the long term storage.")
+	f.IntVar(&cfg.BlockSyncConcurrency, "compactor.block-sync-concurrency", 8, "Number of goroutines to use when downloading blocks for compaction and uploading resulting blocks.")
+	f.IntVar(&cfg.MetaSyncConcurrency, "compactor.meta-sync-concurrency", 20, "Number of goroutines to use when syncing block meta files from the long term storage.")
 	f.StringVar(&cfg.DataDir, "compactor.data-dir", "./data-compactor/", "Directory to temporarily store blocks during compaction. This directory is not required to be persisted between restarts.")
 	f.DurationVar(&cfg.CompactionInterval, "compactor.compaction-interval", time.Hour, "The frequency at which the compaction runs")
 	f.DurationVar(&cfg.MaxCompactionTime, "compactor.max-compaction-time", time.Hour, "Max time for starting compactions for a single tenant. After this time no new compactions for the tenant are started before next compaction cycle. This can help in multi-tenant environments to avoid single tenant using all compaction time, but also in single-tenant environments to force new discovery of blocks more often. 0 = disabled.")
 	f.IntVar(&cfg.CompactionRetries, "compactor.compaction-retries", 3, "How many times to retry a failed compaction within a single compaction run.")
 	f.IntVar(&cfg.CompactionConcurrency, "compactor.compaction-concurrency", 1, "Max number of concurrent compactions running.")
 	f.DurationVar(&cfg.CompactionWaitPeriod, "compactor.first-level-compaction-wait-period", 25*time.Minute, "How long the compactor waits before compacting first-level blocks that are uploaded by the ingesters. This configuration option allows for the reduction of cases where the compactor begins to compact blocks before all ingesters have uploaded their blocks to the storage.")
+	f.BoolVar(&cfg.CompactionSkipFutureMaxTime, "compactor.first-level-compaction-skip-future-max-time", false, "When enabled, the compactor skips first-level compaction jobs if any source block has a MaxTime more recent than the wait period threshold. This prevents premature compaction of blocks that may still receive late-arriving data.")
 	f.DurationVar(&cfg.CleanupInterval, "compactor.cleanup-interval", 15*time.Minute, "How frequently the compactor should run blocks cleanup and maintenance, as well as update the bucket index.")
 	f.IntVar(&cfg.CleanupConcurrency, "compactor.cleanup-concurrency", 20, "Max number of tenants for which blocks cleanup and maintenance should run concurrently.")
 	f.StringVar(&cfg.CompactionJobsOrder, "compactor.compaction-jobs-order", CompactionOrderOldestFirst, fmt.Sprintf("The sorting to use when deciding which compaction jobs should run first for a given tenant. Supported values are: %s.", strings.Join(CompactionOrders, ", ")))
@@ -166,7 +168,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.IntVar(&cfg.MaxClosingBlocksConcurrency, "compactor.max-closing-blocks-concurrency", 1, "Max number of blocks that can be closed concurrently during split compaction. Note that closing a newly compacted block uses a lot of memory for writing the index.")
 	f.IntVar(&cfg.SymbolsFlushersConcurrency, "compactor.symbols-flushers-concurrency", 1, "Number of symbols flushers used when doing split compaction.")
 	f.IntVar(&cfg.MaxBlockUploadValidationConcurrency, "compactor.max-block-upload-validation-concurrency", 1, "Max number of uploaded blocks that can be validated concurrently. 0 = no limit.")
-	f.IntVar(&cfg.UpdateBlocksConcurrency, "compactor.update-blocks-concurrency", defaultUpdateBlocksConcurrency, "Number of Go routines to use when updating blocks metadata during bucket index updates.")
+	f.IntVar(&cfg.UpdateBlocksConcurrency, "compactor.update-blocks-concurrency", defaultUpdateBlocksConcurrency, "Number of goroutines to use when updating blocks metadata during bucket index updates.")
 
 	f.Var(&cfg.EnabledTenants, "compactor.enabled-tenants", "Comma separated list of tenants that can be compacted. If specified, only these tenants will be compacted by the compactor, otherwise all tenants can be compacted. Subject to sharding.")
 	f.Var(&cfg.DisabledTenants, "compactor.disabled-tenants", "Comma separated list of tenants that cannot be compacted by the compactor. If specified, and the compactor would normally pick a given tenant for compaction (via -compactor.enabled-tenants or sharding), it will be ignored instead.")
@@ -845,6 +847,7 @@ func (c *MultitenantCompactor) compactUser(ctx context.Context, userID string) e
 		c.shardingStrategy.ownJob,
 		c.jobsOrder,
 		c.compactorCfg.CompactionWaitPeriod,
+		c.compactorCfg.CompactionSkipFutureMaxTime,
 		c.compactorCfg.BlockSyncConcurrency,
 		c.bucketCompactorMetrics,
 		c.compactorCfg.UploadSparseIndexHeaders,

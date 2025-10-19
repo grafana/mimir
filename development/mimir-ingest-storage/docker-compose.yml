@@ -411,19 +411,19 @@
     "hostname": "ruler-1"
     "image": "mimir"
     "ports":
-      - "8032:8080"
-      - "11032:11032"
+      - "8031:8080"
+      - "11031:11031"
     "volumes":
       - "./config:/mimir/config"
       - "./activity:/activity"
-  "store-gateway-1":
+  "store-gateway-zone-a-1":
     "build":
       "context": "."
       "dockerfile": "dev.dockerfile"
     "command":
       - "sh"
       - "-c"
-      - "exec ./mimir -config.file=./config/mimir.yaml -target=store-gateway -activity-tracker.filepath=/activity/store-gateway-1"
+      - "exec ./mimir -config.file=./config/mimir.yaml -target=store-gateway -activity-tracker.filepath=/activity/store-gateway-zone-a-1 -store-gateway.sharding-ring.instance-availability-zone=zone-a"
     "depends_on":
       "kafka_1":
         "condition": "service_healthy"
@@ -433,11 +433,36 @@
         "condition": "service_started"
     "environment":
       - "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://tempo:4318/v1/traces"
-    "hostname": "store-gateway-1"
+    "hostname": "store-gateway-zone-a-1"
     "image": "mimir"
     "ports":
       - "8021:8080"
       - "11021:11021"
+    "volumes":
+      - "./config:/mimir/config"
+      - "./activity:/activity"
+  "store-gateway-zone-b-1":
+    "build":
+      "context": "."
+      "dockerfile": "dev.dockerfile"
+    "command":
+      - "sh"
+      - "-c"
+      - "exec ./mimir -config.file=./config/mimir.yaml -target=store-gateway -activity-tracker.filepath=/activity/store-gateway-zone-b-1 -store-gateway.sharding-ring.instance-availability-zone=zone-b"
+    "depends_on":
+      "kafka_1":
+        "condition": "service_healthy"
+      "kafka_2":
+        "condition": "service_healthy"
+      "minio":
+        "condition": "service_started"
+    "environment":
+      - "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://tempo:4318/v1/traces"
+    "hostname": "store-gateway-zone-b-1"
+    "image": "mimir"
+    "ports":
+      - "8051:8080"
+      - "11051:11051"
     "volumes":
       - "./config:/mimir/config"
       - "./activity:/activity"

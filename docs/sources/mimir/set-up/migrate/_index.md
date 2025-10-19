@@ -8,8 +8,6 @@ title: Migrate to Grafana Mimir
 weight: 5
 ---
 
-<!-- Note: This topic is mounted in the GEM documentation. Ensure that all updates are also applicable to GEM. -->
-
 # Migrate to Grafana Mimir
 
 Refer to the following migration guides when you migrate to Grafana Mimir.
