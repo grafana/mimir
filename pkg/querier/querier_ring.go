@@ -70,7 +70,7 @@ func (cfg *RingConfig) ToBasicLifecyclerConfig(logger log.Logger) (ring.BasicLif
 		ShowVersionsInStatusPage:        true,
 		ComponentNames:                  querierRingComponentNames,
 		Versions: ring.InstanceVersions{
-			MaximumSupportedQueryPlanVersion: uint64(planning.MaximumSupportedQueryPlanVersion),
+			MaximumSupportedQueryPlanVersion: planning.MaximumSupportedQueryPlanVersion,
 		},
 	}, nil
 }
@@ -156,7 +156,7 @@ func NewRingQueryPlanVersionProvider(ring ring.ReadRing, reg prometheus.Register
 var queryPlanVersioningOp = ring.NewOp([]ring.InstanceState{ring.ACTIVE, ring.PENDING, ring.JOINING, ring.LEAVING}, nil)
 var errQuerierHasNoSupportedQueryPlanVersion = fmt.Errorf("one or more queriers in the ring is not reporting a supported query plan version")
 
-func (r *RingQueryPlanVersionProvider) GetMaximumSupportedQueryPlanVersion(ctx context.Context) (uint64, error) {
+func (r *RingQueryPlanVersionProvider) GetMaximumSupportedQueryPlanVersion(_ context.Context) (uint64, error) {
 	instances, err := r.ring.GetAllHealthy(queryPlanVersioningOp)
 	if err != nil {
 		return 0, fmt.Errorf("could not get all queriers from the ring: %w", err)
