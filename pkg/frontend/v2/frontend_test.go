@@ -38,8 +38,10 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/keepalive"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
@@ -1212,7 +1214,7 @@ func TestFrontend_HTTPGRPC_ResponseSentTwice(t *testing.T) {
 	// Wait for both responses to be sent off, then confirm one failed in the way we expect.
 	wg.Wait()
 	require.True(t, responseSucceeded.Load())
-	require.EqualError(t, responseError.Load(), fmt.Sprintf("query %v not found or response already received", queryID.Load()))
+	require.Equal(t, responseError.Load(), status.Errorf(codes.FailedPrecondition, "query %v not found or response already received", queryID.Load()))
 }
 
 func TestFrontend_Protobuf_ResponseSentTwice(t *testing.T) {
@@ -1280,7 +1282,7 @@ func TestFrontend_Protobuf_ResponseSentTwice(t *testing.T) {
 	// Wait for both responses to be sent off, then confirm one failed in the way we expect.
 	wg.Wait()
 	require.True(t, responseSucceeded.Load())
-	require.EqualError(t, responseError.Load(), fmt.Sprintf("query %v not found or response already received", queryID))
+	require.Equal(t, responseError.Load(), status.Errorf(codes.FailedPrecondition, "query %v not found or response already received", queryID))
 }
 
 func TestFrontend_Protobuf_ResponseWithUnexpectedUserID(t *testing.T) {
@@ -1308,7 +1310,7 @@ func TestFrontend_Protobuf_ResponseWithUnexpectedUserID(t *testing.T) {
 	defer resp.Close()
 
 	errSentToQuerier := <-errChan
-	require.EqualError(t, errSentToQuerier, fmt.Sprintf(`got response for query ID %v, expected user "the-user", but response had "some-other-user"`, queryID))
+	require.Equal(t, errSentToQuerier, status.Errorf(codes.FailedPrecondition, `got response for query ID %v, expected user "the-user", but response had "some-other-user"`, queryID))
 }
 
 func TestFrontendStreamingResponse(t *testing.T) {

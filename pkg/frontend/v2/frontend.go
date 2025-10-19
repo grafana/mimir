@@ -35,6 +35,8 @@ import (
 	"github.com/prometheus/prometheus/model/timestamp"
 	"go.opentelemetry.io/otel"
 	"go.uber.org/atomic"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
@@ -718,11 +720,11 @@ func (f *Frontend) QueryResult(ctx context.Context, qrReq *frontendv2pb.QueryRes
 	// To avoid leaking query results between users, we verify the user here.
 	// To avoid mixing results from different queries, we randomize queryID counter on start.
 	if req == nil {
-		return nil, fmt.Errorf("query %d not found or response already received", qrReq.QueryID)
+		return nil, status.Errorf(codes.FailedPrecondition, "query %d not found or response already received", qrReq.QueryID)
 	}
 
 	if req.userID != userID {
-		return nil, fmt.Errorf("got response for query ID %d, expected user %q, but response had %q", qrReq.QueryID, req.userID, userID)
+		return nil, status.Errorf(codes.FailedPrecondition, "got response for query ID %d, expected user %q, but response had %q", qrReq.QueryID, req.userID, userID)
 	}
 
 	if req.httpResponse == nil {
@@ -780,11 +782,11 @@ func (f *Frontend) QueryResultStream(stream frontendv2pb.FrontendForQuerier_Quer
 	req := f.requests.getAndDelete(firstMessage.QueryID)
 
 	if req == nil {
-		return fmt.Errorf("query %d not found or response already received", firstMessage.QueryID)
+		return status.Errorf(codes.FailedPrecondition, "query %d not found or response already received", firstMessage.QueryID)
 	}
 
 	if req.userID != userID {
-		return fmt.Errorf("got response for query ID %d, expected user %q, but response had %q", firstMessage.QueryID, req.userID, userID)
+		return status.Errorf(codes.FailedPrecondition, "got response for query ID %d, expected user %q, but response had %q", firstMessage.QueryID, req.userID, userID)
 	}
 
 	switch d := firstMessage.Data.(type) {
