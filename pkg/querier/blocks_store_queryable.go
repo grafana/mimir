@@ -516,9 +516,9 @@ func (q *blocksStoreQuerier) selectSorted(ctx context.Context, sp *storage.Selec
 		}
 	}
 
-	return series.NewSeriesSetWithWarnings(
+	return series.NewMemoryTrackingSeriesSet(series.NewSeriesSetWithWarnings(
 		storage.NewMergeSeriesSet(resSeriesSets, 0, storage.ChainedSeriesMerge),
-		resWarnings)
+		resWarnings), memoryTracker)
 }
 
 func (q *blocksStoreQuerier) startBuffering(streamReaders []*storeGatewayStreamReader) error {
@@ -1030,7 +1030,7 @@ func (q *blocksStoreQuerier) receiveMessage(c BlocksStoreClient, stream storegat
 		}
 
 		// Add series fingerprint to query limiter; will return error if we are over the limit
-		if err := queryLimiter.AddSeries(mimirpb.FromLabelAdaptersToLabels(s.Labels)); err != nil {
+		if err := queryLimiter.AddSeries(ls); err != nil {
 			return mySeries, myWarnings, myQueriedBlocks, myStreamingSeriesLabels, indexBytesFetched, false, false, err
 		}
 
