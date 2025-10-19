@@ -838,10 +838,6 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 			myQueriedBlocks := []ulid.ULID(nil)
 			indexBytesFetched := uint64(0)
 
-			memoryTracker, err := limiter.MemoryConsumptionTrackerFromContext(ctx)
-			if err != nil {
-				return err
-			}
 			for {
 				// Ensure the context hasn't been canceled in the meanwhile (eg. an error occurred
 				// in another goroutine).
