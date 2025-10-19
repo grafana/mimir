@@ -37,6 +37,7 @@ func (m *MemoryTrackingSeriesSet) At() storage.Series {
 		// New series at this position
 		m.memoryDecreased = true
 		// The caller should IncreaseMemoryConsumption for labels if they want to retain the labels.
+		// In the future we should avoid calling decrease here and make it the caller responsibility.
 		m.memoryConsumptionTracker.DecreaseMemoryConsumptionForLabels(at.Labels())
 	}
 	return at
