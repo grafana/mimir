@@ -70,12 +70,15 @@ func NewQueryPlanner(opts EngineOpts) (*QueryPlanner, error) {
 	}
 
 	if opts.EnableSkippingHistogramDecoding {
-		// This optimization pass must be registered after common subexpression elimination, if that is enabled.
 		planner.RegisterQueryPlanOptimizationPass(plan.NewSkipHistogramDecodingOptimizationPass())
 	}
 
 	if opts.EnableNarrowBinarySelectors {
 		planner.RegisterQueryPlanOptimizationPass(plan.NewNarrowSelectorsOptimizationPass(opts.Logger))
+	}
+
+	if opts.EnableProjectionPushdown {
+		planner.RegisterQueryPlanOptimizationPass(plan.NewProjectionPushdownOptimizationPass(opts.CommonOpts.Reg, opts.Logger))
 	}
 
 	return planner, nil

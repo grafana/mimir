@@ -80,6 +80,8 @@ func MaterializeVectorSelector(v *VectorSelector, _ *planning.Materializer, time
 		Matchers:                 LabelMatchersToOperatorType(v.Matchers),
 		EagerLoad:                params.EagerLoadSelectors,
 		SkipHistogramBuckets:     v.SkipHistogramBuckets,
+		ProjectionLabels:         params.Plan.ProjectionLabels,
+		ProjectionInclude:        params.Plan.ProjectionInclude,
 		ExpressionPosition:       v.ExpressionPosition(),
 		MemoryConsumptionTracker: params.MemoryConsumptionTracker,
 	}

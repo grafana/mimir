@@ -33,6 +33,7 @@ type EngineOpts struct {
 	EnableCommonSubexpressionEliminationForRangeVectorExpressionsInInstantQueries bool `yaml:"enable_common_subexpression_elimination_for_range_vector_expressions_in_instant_queries" category:"experimental"`
 	EnableSkippingHistogramDecoding                                               bool `yaml:"enable_skipping_histogram_decoding" category:"experimental"`
 	EnableNarrowBinarySelectors                                                   bool `yaml:"enable_narrow_binary_selectors" category:"experimental"`
+	EnableProjectionPushdown                                                      bool `yaml:"enable_projection_pushdown" category:"experimental"`
 }
 
 func (o *EngineOpts) RegisterFlags(f *flag.FlagSet) {
@@ -41,6 +42,7 @@ func (o *EngineOpts) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&o.EnableCommonSubexpressionEliminationForRangeVectorExpressionsInInstantQueries, "querier.mimir-query-engine.enable-common-subexpression-elimination-for-range-vector-expressions-in-instant-queries", true, "Enable common subexpression elimination for range vector expressions when evaluating instant queries. This has no effect if common subexpression elimination is disabled.")
 	f.BoolVar(&o.EnableSkippingHistogramDecoding, "querier.mimir-query-engine.enable-skipping-histogram-decoding", true, "Enable skipping decoding native histograms when evaluating queries that do not require full histograms.")
 	f.BoolVar(&o.EnableNarrowBinarySelectors, "querier.mimir-query-engine.enable-narrow-binary-selectors", false, "Enable generating selectors for one side of a binary expression based on results from the other side.")
+	f.BoolVar(&o.EnableProjectionPushdown, "querier.mimir-query-engine.enable-projection-pushdown", false, "Enable projection pushdown optimization to reduce the number of labels read from storage.")
 }
 
 func NewTestEngineOpts() EngineOpts {
@@ -63,5 +65,6 @@ func NewTestEngineOpts() EngineOpts {
 		EnableCommonSubexpressionEliminationForRangeVectorExpressionsInInstantQueries: true,
 		EnableSkippingHistogramDecoding:                                               true,
 		EnableNarrowBinarySelectors:                                                   true,
+		EnableProjectionPushdown:                                                      true,
 	}
 }

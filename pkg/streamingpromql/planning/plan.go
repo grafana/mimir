@@ -26,6 +26,9 @@ type QueryPlan struct {
 
 	OriginalExpression       string
 	EnableDelayedNameRemoval bool
+	
+	ProjectionLabels  []string
+	ProjectionInclude bool
 }
 
 // Node represents a node in the query plan graph.

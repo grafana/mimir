@@ -74,6 +74,8 @@ func MaterializeMatrixSelector(m *MatrixSelector, _ *planning.Materializer, time
 		Matchers:                 LabelMatchersToOperatorType(m.Matchers),
 		EagerLoad:                params.EagerLoadSelectors,
 		SkipHistogramBuckets:     m.SkipHistogramBuckets,
+		ProjectionLabels:         params.Plan.ProjectionLabels,
+		ProjectionInclude:        params.Plan.ProjectionInclude,
 		ExpressionPosition:       m.ExpressionPosition(),
 		MemoryConsumptionTracker: params.MemoryConsumptionTracker,
 	}
