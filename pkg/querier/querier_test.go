@@ -1311,48 +1311,6 @@ func (m *errDistributor) ActiveNativeHistogramMetrics(context.Context, []*labels
 	return nil, errDistributorError
 }
 
-type emptyDistributor struct{}
-
-func (d *emptyDistributor) LabelNamesAndValues(_ context.Context, _ []*labels.Matcher, _ cardinality.CountMethod) (*client.LabelNamesAndValuesResponse, error) {
-	return nil, errors.New("method is not implemented")
-}
-
-func (d *emptyDistributor) QueryStream(context.Context, *stats.QueryMetrics, model.Time, model.Time, ...*labels.Matcher) (client.CombinedQueryStreamResponse, error) {
-	return client.CombinedQueryStreamResponse{}, nil
-}
-
-func (d *emptyDistributor) QueryExemplars(context.Context, model.Time, model.Time, ...[]*labels.Matcher) (*client.ExemplarQueryResponse, error) {
-	return nil, nil
-}
-
-func (d *emptyDistributor) LabelValuesForLabelName(context.Context, model.Time, model.Time, model.LabelName, *storage.LabelHints, ...*labels.Matcher) ([]string, error) {
-	return nil, nil
-}
-
-func (d *emptyDistributor) LabelNames(context.Context, model.Time, model.Time, *storage.LabelHints, ...*labels.Matcher) ([]string, error) {
-	return nil, nil
-}
-
-func (d *emptyDistributor) MetricsForLabelMatchers(context.Context, model.Time, model.Time, *storage.SelectHints, ...*labels.Matcher) ([]labels.Labels, error) {
-	return nil, nil
-}
-
-func (d *emptyDistributor) MetricsMetadata(context.Context, *client.MetricsMetadataRequest) ([]scrape.MetricMetadata, error) {
-	return nil, nil
-}
-
-func (d *emptyDistributor) LabelValuesCardinality(context.Context, []model.LabelName, []*labels.Matcher, cardinality.CountMethod) (uint64, *client.LabelValuesCardinalityResponse, error) {
-	return 0, nil, nil
-}
-
-func (d *emptyDistributor) ActiveSeries(context.Context, []*labels.Matcher) ([]labels.Labels, error) {
-	return nil, nil
-}
-
-func (d *emptyDistributor) ActiveNativeHistogramMetrics(context.Context, []*labels.Matcher) (*cardinality.ActiveNativeHistogramMetricsResponse, error) {
-	return &cardinality.ActiveNativeHistogramMetricsResponse{}, nil
-}
-
 func TestQuerier_QueryStoreAfterConfig(t *testing.T) {
 	testCases := []struct {
 		name                 string
