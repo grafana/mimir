@@ -36,6 +36,10 @@ type Selector struct {
 	// Set for range vector selectors, otherwise 0.
 	Range time.Duration
 
+	// Projection pushdown fields
+	ProjectionLabels  []string
+	ProjectionInclude bool
+
 	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
 
 	querier   storage.Querier
@@ -135,6 +139,10 @@ func (s *Selector) loadSeriesSet(ctx context.Context, matchers types.Matchers) e
 		// Mimir does use ShardCount, ShardIndex and DisableTrimming, but not at this level:
 		// ShardCount and ShardIndex are set by ingesters and store-gateways when a sharding
 		// label matcher is present, and ingesters set DisableTrimming to true.
+		
+		// Set projection hints if they are configured
+		ProjectionLabels:  s.ProjectionLabels,
+		ProjectionInclude: s.ProjectionInclude,
 	}
 
 	// Convert our operator type matchers to Prometheus matchers. This parses any regular

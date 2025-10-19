@@ -42,6 +42,9 @@ type QueryPlan struct {
 	// Queriers use this to ensure they do not attempt to execute a query plan that contains features they
 	// cannot safely or correctly execute (eg. new nodes or new meaning for existing node details).
 	Version int64
+
+	ProjectionLabels  []string
+	ProjectionInclude bool
 }
 
 // Node represents a node in the query plan graph.
