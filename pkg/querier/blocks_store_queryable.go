@@ -1071,6 +1071,10 @@ func (q *blocksStoreQuerier) receiveMessage(c BlocksStoreClient, stream storegat
 		for _, s := range ss.Series {
 			ls := mimirpb.FromLabelAdaptersToLabelsWithCopy(s.Labels)
 
+			if err := memoryTracker.IncreaseMemoryConsumptionForLabels(ls); err != nil {
+				return mySeries, myWarnings, myQueriedBlocks, myStreamingSeriesLabels, indexBytesFetched, false, false, err
+			}
+
 			// Add series fingerprint to query limiter; will return error if we are over the limit
 			if limitErr := queryLimiter.AddSeries(ls); limitErr != nil {
 				return mySeries, myWarnings, myQueriedBlocks, myStreamingSeriesLabels, indexBytesFetched, false, false, limitErr
