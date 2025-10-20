@@ -841,7 +841,7 @@ func (c *MultitenantCompactor) compactUser(ctx context.Context, userID string) e
 
 	// Disable maxLookback (set to 0s) when block upload is enabled, block upload enabled implies there will be blocks
 	// beyond the lookback period, we don't want the compactor to skip these
-	maxLookback := c.cfgProvider.CompactorMaxLookback(userID)
+	var maxLookback = c.cfgProvider.CompactorMaxLookback(userID)
 	if c.cfgProvider.CompactorBlockUploadEnabled(userID) {
 		maxLookback = 0
 	}
