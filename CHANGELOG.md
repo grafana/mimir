@@ -38,7 +38,7 @@
 * [FEATURE] Usage-tracker: Introduce a new experimental service to enforce active series limits before Kafka ingestion. #12358 #12895 #12940 #12942 #12970
 * [FEATURE] Ingester: Add experimental `-include-tenant-id-in-profile-labels` flag to include tenant ID in pprof profiling labels for sampled traces. Currently only supported by the ingester. This can help debug performance issues for specific tenants. #12404
 * [FEATURE] Alertmanager: Add experimental `-alertmanager.storage.state-read-timeout` flag to configure the timeout for reading the Alertmanager state (notification log, silences) from object storage during the initial sync. #12425
-* [FEATURE] Ingester: Add experimental `-blocks-storage.tsdb.index-lookup-planning.*` flags to configure use of a cost-based index lookup planner. This should reduce the cost of queries in the ingester. #12197 #12199 #12245 #12248 #12457 #12530 #12407 #12550 #12597 #12608 #13039 
+* [FEATURE] Ingester: Add experimental `-blocks-storage.tsdb.index-lookup-planning.*` flags to configure use of a cost-based index lookup planner. This should reduce the cost of queries in the ingester. #12197 #12199 #12245 #12248 #12457 #12530 #12407 #12460 #12550 #12597 #12608 #13039
 * [FEATURE] MQE: Add support for applying extra selectors to one side of a binary operation to reduce data fetched. #12577
 * [FEATURE] Query-frontend: Add a native histogram presenting the length of query expressions handled by the query-frontend #12571
 * [FEATURE] Query-frontend and querier: Add experimental support for performing query planning in query-frontends and distributing portions of the plan to queriers for execution. #12302 #12551 #12665 #12687 #12745 #12757 #12798 #12808 #12809 #12835 #12856 #12870 #12883 #12885 #12886 #12911 #12933 #12934 #12961 #13016 #13027
@@ -63,7 +63,6 @@
 * [ENHANCEMENT] Ruler: Add `-ruler.max-notification-batch-size` CLI flag that can be used to configure the maximum Alertmanager notification batch size. #12469
 * [ENHANCEMENT] Ingester: Skip read path load shedding when an ingester is the only available replica. #12448
 * [ENHANCEMENT] Querier: Include more information about inflight queries in the activity tracker. A querier logs this information after it restarts following a crash. #12526
-* [ENHANCEMENT] Ingester: Add experimental `-blocks-storage.tsdb.index-lookup-planning-comparison-portion` flag to enable mirrored chunk querier comparison between queries with and without index lookup planning. #12460
 * [ENHANCEMENT] Ruler: Add native histogram version of `cortex_ruler_sync_rules_duration_seconds`. #12628
 * [ENHANCEMENT] Block-builder: Implement concurrent consumption within a job when `-ingest-storage.kafka.fetch-concurrency-max` is given. #12222
 * [ENHANCEMENT] Query-frontend: Labels query optimizer is no longer experimental and is enabled by default. It can be disabled with `-query-frontend.labels-query-optimizer-enabled=false` CLI flag. #12606
