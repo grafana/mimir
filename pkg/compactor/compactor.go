@@ -477,6 +477,7 @@ func (c *MultitenantCompactor) CheckReady(_ context.Context) error {
 		return nil
 	} else if err != nil {
 		level.Error(c.logger).Log("msg", "-compactor.data-dir cannot be listed", "err", err)
+		return err
 	}
 
 	level.Warn(c.logger).Log("msg", "-compactor.data-dir is not yet mounted.  Skipping the volume read/write test until it is created")
