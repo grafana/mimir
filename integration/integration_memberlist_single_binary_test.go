@@ -206,8 +206,8 @@ func TestSingleBinaryWithMemberlistScaling(t *testing.T) {
 
 	// Sanity check the ring membership and give each instance time to see every other instance.
 	for _, c := range instances {
-		// we expect 6*maxMimir to account for ingester, distributor, compactor, store-gateway, store-gateway-client and ruler rings
-		require.NoError(t, c.WaitSumMetrics(e2e.Equals(float64(maxMimir*6)), "cortex_ring_members"), "instance: %s", c.Name())
+		// we expect 7*maxMimir to account for ingester, distributor, compactor, querier, store-gateway, store-gateway-client and ruler rings
+		require.NoError(t, c.WaitSumMetrics(e2e.Equals(float64(maxMimir*7)), "cortex_ring_members"), "instance: %s", c.Name())
 		require.NoError(t, c.WaitSumMetrics(e2e.Equals(0), "memberlist_client_kv_store_value_tombstones"), "instance: %s", c.Name())
 	}
 
@@ -233,9 +233,9 @@ func TestSingleBinaryWithMemberlistScaling(t *testing.T) {
 	// The logging is mildly spammy, but it has proven extremely useful for debugging convergence cases.
 	// We don't use WaitSumMetrics [over all instances] here so we can log the per-instance metrics.
 
-	// These values account for the fact that ingester, distributor, compactor, store-gateway, store-gateway-client and ruler components use rings.
-	expectedRingMembers := float64(minMimir) * 6 // One extra, because store-gateway-client uses ring too. But it's the same ring as store-gateway.
-	expectedTombstones := float64(maxMimir-minMimir) * 5
+	// These values account for the fact that ingester, distributor, compactor, querier, store-gateway, store-gateway-client and ruler components use rings.
+	expectedRingMembers := float64(minMimir) * 7 // One extra, because store-gateway-client uses ring too. But it's the same ring as store-gateway.
+	expectedTombstones := float64(maxMimir-minMimir) * 6
 
 	require.Eventually(t, func() bool {
 		ok := true

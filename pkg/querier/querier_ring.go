@@ -118,6 +118,7 @@ func NewLifecycler(cfg RingConfig, logger log.Logger, reg prometheus.Registerer)
 }
 
 func NewRing(cfg RingConfig, logger log.Logger, reg prometheus.Registerer) (*ring.Ring, error) {
+	reg = prometheus.WrapRegistererWithPrefix("cortex_", reg)
 	r, err := ring.New(cfg.toRingConfig(), "querier", querierRingKey, logger, reg)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize querier ring client: %w", err)
