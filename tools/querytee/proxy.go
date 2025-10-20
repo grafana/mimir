@@ -55,12 +55,13 @@ type ProxyConfig struct {
 	AddMissingTimeParamToInstantQueries bool
 	SecondaryBackendsRequestProportion  float64
 	SkipPreferredBackendFailures        bool
+	BackendsLookbackDelta               time.Duration
 }
 
 type BackendConfig struct {
-	RequestHeaders     http.Header `json:"request_headers" yaml:"request_headers"`
-	RequestProportion  *float64    `json:"request_proportion,omitempty" yaml:"request_proportion,omitempty"`
-	MinDataQueriedAge  string      `json:"min_data_queried_age,omitempty" yaml:"min_data_queried_age,omitempty"`
+	RequestHeaders    http.Header `json:"request_headers" yaml:"request_headers"`
+	RequestProportion *float64    `json:"request_proportion,omitempty" yaml:"request_proportion,omitempty"`
+	MinDataQueriedAge string      `json:"min_data_queried_age,omitempty" yaml:"min_data_queried_age,omitempty"`
 }
 
 func exampleJSONBackendConfig() string {
@@ -70,7 +71,7 @@ func exampleJSONBackendConfig() string {
 			"Cache-Control": {"no-store"},
 		},
 		RequestProportion: &proportion,
-		MinDataQueriedAge:  "24h",
+		MinDataQueriedAge: "24h",
 	}
 	jsonBytes, err := json.Marshal(cfg)
 	if err != nil {
@@ -106,6 +107,7 @@ func (cfg *ProxyConfig) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.PassThroughNonRegisteredRoutes, "proxy.passthrough-non-registered-routes", false, "Passthrough requests for non-registered routes to preferred backend.")
 	f.BoolVar(&cfg.AddMissingTimeParamToInstantQueries, "proxy.add-missing-time-parameter-to-instant-queries", true, "Add a 'time' parameter to proxied instant query requests if they do not have one.")
 	f.Float64Var(&cfg.SecondaryBackendsRequestProportion, "proxy.secondary-backends-request-proportion", DefaultRequestProportion, "Proportion of requests to send to secondary backends. Must be between 0 and 1 (inclusive), and if not 1, then -backend.preferred must be set. Optionally this global setting can be overrided on a per-backend basis via the backend config file.")
+	f.DurationVar(&cfg.BackendsLookbackDelta, "proxy.backends-lookback-delta", 5*time.Minute, "The lookback configured in the backends query engines. Used to accurately extract min time from queries for backends that require it.")
 }
 
 type Route struct {
@@ -330,7 +332,7 @@ func (p *Proxy) Start() error {
 		if p.cfg.CompareResponses {
 			comparator = route.ResponseComparator
 		}
-		router.Path(route.Path).Methods(route.Methods...).Handler(NewProxyEndpoint(p.backends, route, p.metrics, p.logger, comparator, p.cfg.LogSlowQueryResponseThreshold, p.cfg.SecondaryBackendsRequestProportion, p.cfg.SkipPreferredBackendFailures))
+		router.Path(route.Path).Methods(route.Methods...).Handler(NewProxyEndpoint(p.backends, route, p.metrics, p.logger, comparator, p.cfg.LogSlowQueryResponseThreshold, p.cfg.SecondaryBackendsRequestProportion, p.cfg.SkipPreferredBackendFailures, p.cfg.BackendsLookbackDelta))
 	}
 
 	if p.cfg.PassThroughNonRegisteredRoutes {

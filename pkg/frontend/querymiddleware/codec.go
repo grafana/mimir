@@ -334,18 +334,24 @@ func (Codec) MergeResponse(responses ...Response) (Response, error) {
 }
 
 // DecodeMetricsQueryRequest decodes a MetricsQueryRequest from an http request.
-func (c Codec) DecodeMetricsQueryRequest(_ context.Context, r *http.Request) (MetricsQueryRequest, error) {
+func (c Codec) DecodeMetricsQueryRequest(ctx context.Context, r *http.Request) (MetricsQueryRequest, error) {
+	return DecodeMetricsQueryRequestWithLookbackDelta(ctx, r, c.lookbackDelta)
+}
+
+// DecodeMetricsQueryRequestWithLookbackDelta decodes a MetricsQueryRequest from an http request
+// using the provided lookback delta.
+func DecodeMetricsQueryRequestWithLookbackDelta(_ context.Context, r *http.Request, lookbackDelta time.Duration) (MetricsQueryRequest, error) {
 	switch {
 	case IsRangeQuery(r.URL.Path):
-		return c.decodeRangeQueryRequest(r)
+		return decodeRangeQueryRequest(r, lookbackDelta)
 	case IsInstantQuery(r.URL.Path):
-		return c.decodeInstantQueryRequest(r)
+		return decodeInstantQueryRequest(r, lookbackDelta)
 	default:
 		return nil, fmt.Errorf("unknown metrics query API endpoint %s", r.URL.Path)
 	}
 }
 
-func (c Codec) decodeRangeQueryRequest(r *http.Request) (MetricsQueryRequest, error) {
+func decodeRangeQueryRequest(r *http.Request, lookbackDelta time.Duration) (MetricsQueryRequest, error) {
 	reqValues, err := util.ParseRequestFormWithoutConsumingBody(r)
 	if err != nil {
 		return nil, apierror.New(apierror.TypeBadData, err.Error())
@@ -367,12 +373,12 @@ func (c Codec) decodeRangeQueryRequest(r *http.Request) (MetricsQueryRequest, er
 
 	stats := reqValues.Get("stats")
 	req := NewPrometheusRangeQueryRequest(
-		r.URL.Path, httpHeadersToProm(r.Header), start, end, step, c.lookbackDelta, queryExpr, options, nil, stats,
+		r.URL.Path, httpHeadersToProm(r.Header), start, end, step, lookbackDelta, queryExpr, options, nil, stats,
 	)
 	return req, nil
 }
 
-func (c Codec) decodeInstantQueryRequest(r *http.Request) (MetricsQueryRequest, error) {
+func decodeInstantQueryRequest(r *http.Request, lookbackDelta time.Duration) (MetricsQueryRequest, error) {
 	reqValues, err := util.ParseRequestFormWithoutConsumingBody(r)
 	if err != nil {
 		return nil, apierror.New(apierror.TypeBadData, err.Error())
@@ -395,7 +401,7 @@ func (c Codec) decodeInstantQueryRequest(r *http.Request) (MetricsQueryRequest, 
 	stats := reqValues.Get("stats")
 
 	req := NewPrometheusInstantQueryRequest(
-		r.URL.Path, httpHeadersToProm(r.Header), time, c.lookbackDelta, queryExpr, options, nil, stats,
+		r.URL.Path, httpHeadersToProm(r.Header), time, lookbackDelta, queryExpr, options, nil, stats,
 	)
 	return req, nil
 }

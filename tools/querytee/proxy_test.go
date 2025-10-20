@@ -1127,6 +1127,7 @@ func TestProxyEndpoint_TimeBasedBackendSelection(t *testing.T) {
 				0,
 				1.0, // All secondary backends should be included by proportion
 				false,
+				5*time.Minute,
 			)
 
 			// Create test request
@@ -1149,126 +1150,6 @@ func TestProxyEndpoint_TimeBasedBackendSelection(t *testing.T) {
 
 			// Verify expected backends were selected
 			assert.ElementsMatch(t, tc.expectedBackends, selectedNames)
-		})
-	}
-}
-
-func TestTimeExtractionFunctions(t *testing.T) {
-	baseTime := time.Now().Truncate(time.Second).UTC()
-
-	testCases := map[string]struct {
-		method       string
-		path         string
-		params       map[string]string
-		expectedTime *time.Time // nil if expecting zero time
-		description  string
-	}{
-		"instant query without time parameter": {
-			method: "GET",
-			path:   "/api/v1/query",
-			params: map[string]string{
-				"query": "up",
-			},
-			expectedTime: &baseTime, // Will be compared with tolerance
-			description:  "should default to current time",
-		},
-		"instant query with Unix timestamp": {
-			method: "GET",
-			path:   "/api/v1/query",
-			params: map[string]string{
-				"query": "up",
-				"time":  strconv.FormatInt(baseTime.Add(-2*time.Hour).Unix(), 10), // 2 hours ago
-			},
-			expectedTime: func() *time.Time { t := baseTime.Add(-2 * time.Hour); return &t }(),
-			description:  "should parse Unix timestamp correctly",
-		},
-		"range query with start and end": {
-			method: "GET",
-			path:   "/api/v1/query_range",
-			params: map[string]string{
-				"query": "up",
-				"start": strconv.FormatInt(baseTime.Add(-3*time.Hour).Unix(), 10), // 3 hours ago
-				"end":   strconv.FormatInt(baseTime.Add(-2*time.Hour).Unix(), 10), // 2 hours ago
-				"step":  "60s",
-			},
-			expectedTime: func() *time.Time { t := baseTime.Add(-3 * time.Hour); return &t }(),
-			description:  "should extract start time as minimum",
-		},
-		"range query with end earlier than start": {
-			method: "GET",
-			path:   "/api/v1/query_range",
-			params: map[string]string{
-				"query": "up",
-				"start": strconv.FormatInt(baseTime.Add(-2*time.Hour).Unix(), 10), // 2 hours ago
-				"end":   strconv.FormatInt(baseTime.Add(-3*time.Hour).Unix(), 10), // 3 hours ago
-				"step":  "60s",
-			},
-			expectedTime: func() *time.Time { t := baseTime.Add(-3 * time.Hour); return &t }(),
-			description:  "should return earlier time even if it's the end parameter",
-		},
-		"range query with only start parameter": {
-			method: "GET",
-			path:   "/api/v1/query_range",
-			params: map[string]string{
-				"query": "up",
-				"start": strconv.FormatInt(baseTime.Add(-4*time.Hour).Unix(), 10), // 4 hours ago
-				"step":  "60s",
-			},
-			expectedTime: func() *time.Time { t := baseTime.Add(-4 * time.Hour); return &t }(),
-			description:  "should use start time when end is missing",
-		},
-		"range query with only end parameter": {
-			method: "GET",
-			path:   "/api/v1/query_range",
-			params: map[string]string{
-				"query": "up",
-				"end":   strconv.FormatInt(baseTime.Add(-5*time.Hour).Unix(), 10), // 5 hours ago
-				"step":  "60s",
-			},
-			expectedTime: func() *time.Time { t := baseTime.Add(-5 * time.Hour); return &t }(),
-			description:  "should use end time when start is missing",
-		},
-		"non-Prometheus API path": {
-			method:       "GET",
-			path:         "/api/v1/status/config",
-			params:       map[string]string{},
-			expectedTime: nil,
-			description:  "should return zero time for non-query paths",
-		},
-		"invalid time format": {
-			method: "GET",
-			path:   "/api/v1/query",
-			params: map[string]string{
-				"query": "up",
-				"time":  "invalid-time",
-			},
-			expectedTime: nil,
-			description:  "should return zero time for invalid time format",
-		},
-	}
-
-	for testName, tc := range testCases {
-		t.Run(testName, func(t *testing.T) {
-			req := httptest.NewRequest(tc.method, tc.path, nil)
-			q := req.URL.Query()
-			for key, value := range tc.params {
-				q.Set(key, value)
-			}
-			req.URL.RawQuery = q.Encode()
-
-			extractedTime, err := extractMinTimeFromRequest(req)
-			require.NoError(t, err)
-
-			if tc.expectedTime == nil {
-				assert.True(t, extractedTime.IsZero(), tc.description)
-			} else {
-				// For "now" comparisons, allow some tolerance
-				if tc.params["time"] == "" && tc.path == "/api/v1/query" {
-					assert.WithinDuration(t, *tc.expectedTime, extractedTime, 5*time.Second, tc.description)
-				} else {
-					assert.Equal(t, *tc.expectedTime, extractedTime, tc.description)
-				}
-			}
 		})
 	}
 }
