@@ -37,7 +37,7 @@
 * [FEATURE] Usage-tracker: Introduce a new experimental service to enforce active series limits before Kafka ingestion. #12358 #12895 #12940 #12942 #12970
 * [FEATURE] Ingester: Add experimental `-include-tenant-id-in-profile-labels` flag to include tenant ID in pprof profiling labels for sampled traces. Currently only supported by the ingester. This can help debug performance issues for specific tenants. #12404
 * [FEATURE] Alertmanager: Add experimental `-alertmanager.storage.state-read-timeout` flag to configure the timeout for reading the Alertmanager state (notification log, silences) from object storage during the initial sync. #12425
-* [FEATURE] Ingester: Add experimental `-blocks-storage.tsdb.index-lookup-planning.*` flags to configure use of a cost-based index lookup planner. This should reduce the cost of queries in the ingester. #12530 #12407 #13039
+* [FEATURE] Ingester: Add experimental `-blocks-storage.tsdb.index-lookup-planning.*` flags to configure use of a cost-based index lookup planner. This should reduce the cost of queries in the ingester. #12197 #12245 #12530 #12407 #13039
 * [FEATURE] MQE: Add support for applying extra selectors to one side of a binary operation to reduce data fetched. #12577
 * [FEATURE] Query-frontend: Add a native histogram presenting the length of query expressions handled by the query-frontend #12571
 * [FEATURE] Query-frontend and querier: Add experimental support for performing query planning in query-frontends and distributing portions of the plan to queriers for execution. #12302 #12551 #12665 #12687 #12745 #12757 #12798 #12808 #12809 #12835 #12856 #12870 #12883 #12885 #12886 #12911 #12933 #12934 #12961 #13016 #13027
@@ -120,6 +120,7 @@
 
 * [CHANGE] Enable ingest storage panels by default in all compiled mixins. #13023
 * [CHANGE] Alerts: Removed `MimirFrontendQueriesStuck` alert given this is not relevant when the query-scheduler is running and the query-scheduler is now a required component. #12810
+* [CHANGE] Alerts: Make `MimirIngesterHasNotShippedBlocksSinceStart` weaker to account for block-builder restarts. The change only affects the block-builder version of the alert. #12319
 * [ENHANCEMENT] Rollout progress dashboard: make panels higher to fit more components. #12429
 * [ENHANCEMENT] Add `max_series` limit to Writes Resources > Ingester > In-memory series panel. #12476
 * [ENHANCEMENT] Alerts: Add `MimirHighGRPCConcurrentStreamsPerConnection` alert. #11947
