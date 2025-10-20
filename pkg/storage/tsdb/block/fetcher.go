@@ -45,12 +45,13 @@ type FetcherMetrics struct {
 	Synced *extprom.TxGaugeVec
 
 	// Cache layer metrics track hits/misses at each cache layer
-	MetaLoadsTotal  prometheus.Counter // Total calls to loadMeta()
-	InMemCacheHits  prometheus.Counter // in_mem: per-instance f.cached map
-	LRUCacheHits    prometheus.Counter // lru: shared MetaCache LRU
-	LRUCacheMisses  prometheus.Counter // lru: MetaCache misses
-	DiskCacheHits   prometheus.Counter // disk: local disk cache
-	DiskCacheMisses prometheus.Counter // disk: had to check object storage
+	MetaLoadsTotal   prometheus.Counter // Total calls to loadMeta()
+	InMemCacheHits   prometheus.Counter // in_mem: per-instance f.cached map
+	InMemCacheMisses prometheus.Counter // in_mem: not found in f.cached map
+	LRUCacheHits     prometheus.Counter // lru: shared MetaCache LRU
+	LRUCacheMisses   prometheus.Counter // lru: MetaCache misses
+	DiskCacheHits    prometheus.Counter // disk: local disk cache
+	DiskCacheMisses  prometheus.Counter // disk: had to check object storage
 }
 
 // Submit applies new values for metrics tracked by transaction GaugeVec.
@@ -132,6 +133,10 @@ func NewFetcherMetrics(reg prometheus.Registerer, syncedExtraLabels [][]string) 
 	m.InMemCacheHits = promauto.With(reg).NewCounter(prometheus.CounterOpts{
 		Name: "blocks_meta_in_mem_cache_hits_total",
 		Help: "Total number of times block metadata was found in the per-instance in-memory f.cached map",
+	})
+	m.InMemCacheMisses = promauto.With(reg).NewCounter(prometheus.CounterOpts{
+		Name: "blocks_meta_in_mem_cache_misses_total",
+		Help: "Total number of times block metadata was not found in the per-instance in-memory f.cached map",
 	})
 	m.LRUCacheHits = promauto.With(reg).NewCounter(prometheus.CounterOpts{
 		Name: "blocks_meta_lru_cache_hits_total",
@@ -257,7 +262,11 @@ func (f *MetaFetcher) loadMeta(ctx context.Context, id ulid.ULID) (*Meta, error)
 		f.metrics.InMemCacheHits.Inc()
 		return m, nil
 	}
+	f.metrics.InMemCacheMisses.Inc()
 
+	// Note: MetaCache.Get() also tracks hits/misses internally, creating some double-tracking.
+	// We track LRU metrics here directly (rather than using MetaCache.Stats()) to keep the code simple,
+	// accepting that both this metric and MetaCache's internal counter will increment on the same operation.
 	if f.metaCache != nil {
 		m := f.metaCache.Get(id)
 		if m != nil {

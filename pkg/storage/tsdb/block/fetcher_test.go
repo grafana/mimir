@@ -684,6 +684,7 @@ func TestMetaFetcher_CacheMetrics(t *testing.T) {
 		setup                 func(t *testing.T) (*prometheus.Registry, *MetaFetcher)
 		expectedLoads         int
 		expectedInMemHits     int
+		expectedInMemMisses   int
 		expectedLRUHits       int
 		expectedLRUMisses     int
 		expectedDiskCacheHits int
@@ -697,6 +698,7 @@ func TestMetaFetcher_CacheMetrics(t *testing.T) {
 				return reg, fetcher
 			},
 			expectedLoads:         1,
+			expectedInMemMisses:   1,
 			expectedDiskCacheMiss: 1,
 		},
 		"second fetch with same fetcher should hit in-memory cache": {
@@ -710,6 +712,7 @@ func TestMetaFetcher_CacheMetrics(t *testing.T) {
 			},
 			expectedLoads:         2,
 			expectedInMemHits:     1,
+			expectedInMemMisses:   1,
 			expectedDiskCacheMiss: 1,
 		},
 		"new fetcher should hit disk cache": {
@@ -727,6 +730,7 @@ func TestMetaFetcher_CacheMetrics(t *testing.T) {
 				return reg2, fetcher2
 			},
 			expectedLoads:         1,
+			expectedInMemMisses:   1,
 			expectedDiskCacheHits: 1,
 		},
 		"second fetch with LRU cache should hit LRU": {
@@ -741,6 +745,7 @@ func TestMetaFetcher_CacheMetrics(t *testing.T) {
 			},
 			expectedLoads:         2,
 			expectedInMemHits:     1,
+			expectedInMemMisses:   1,
 			expectedLRUMisses:     1,
 			expectedDiskCacheMiss: 1,
 		},
@@ -758,9 +763,10 @@ func TestMetaFetcher_CacheMetrics(t *testing.T) {
 				require.NoError(t, err)
 				return reg2, fetcher2
 			},
-			expectedLoads:     1,
-			expectedLRUHits:   1,
-			expectedLRUMisses: 0,
+			expectedLoads:       1,
+			expectedInMemMisses: 1,
+			expectedLRUHits:     1,
+			expectedLRUMisses:   0,
 		},
 		"no disk cache dir should not increment disk metrics": {
 			setup: func(t *testing.T) (*prometheus.Registry, *MetaFetcher) {
@@ -769,7 +775,8 @@ func TestMetaFetcher_CacheMetrics(t *testing.T) {
 				require.NoError(t, err)
 				return reg, fetcher
 			},
-			expectedLoads: 1,
+			expectedLoads:       1,
+			expectedInMemMisses: 1,
 		},
 	}
 
@@ -786,6 +793,10 @@ func TestMetaFetcher_CacheMetrics(t *testing.T) {
 				# HELP blocks_meta_in_mem_cache_hits_total Total number of times block metadata was found in the per-instance in-memory f.cached map
 				# TYPE blocks_meta_in_mem_cache_hits_total counter
 				blocks_meta_in_mem_cache_hits_total `+fmt.Sprintf("%d", tc.expectedInMemHits)+`
+
+				# HELP blocks_meta_in_mem_cache_misses_total Total number of times block metadata was not found in the per-instance in-memory f.cached map
+				# TYPE blocks_meta_in_mem_cache_misses_total counter
+				blocks_meta_in_mem_cache_misses_total `+fmt.Sprintf("%d", tc.expectedInMemMisses)+`
 
 				# HELP blocks_meta_lru_cache_hits_total Total number of times block metadata was found in the shared LRU MetaCache
 				# TYPE blocks_meta_lru_cache_hits_total counter
@@ -806,7 +817,7 @@ func TestMetaFetcher_CacheMetrics(t *testing.T) {
 				# HELP blocks_meta_loads_total Total number of calls to loadMeta() - the denominator for all cache hit rate calculations
 				# TYPE blocks_meta_loads_total counter
 				blocks_meta_loads_total `+fmt.Sprintf("%d", tc.expectedLoads)+`
-			`), "blocks_meta_loads_total", "blocks_meta_in_mem_cache_hits_total", "blocks_meta_lru_cache_hits_total", "blocks_meta_lru_cache_misses_total", "blocks_meta_disk_cache_hits_total", "blocks_meta_disk_cache_misses_total"))
+			`), "blocks_meta_loads_total", "blocks_meta_in_mem_cache_hits_total", "blocks_meta_in_mem_cache_misses_total", "blocks_meta_lru_cache_hits_total", "blocks_meta_lru_cache_misses_total", "blocks_meta_disk_cache_hits_total", "blocks_meta_disk_cache_misses_total"))
 		})
 	}
 }
