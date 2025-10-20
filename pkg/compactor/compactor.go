@@ -463,6 +463,43 @@ func newMultitenantCompactor(
 	return c, nil
 }
 
+// CheckReady performs a health check for the /ready probe.  Attempt to write, stat, and read
+// an empty file in the compactor's /data volume and fail if any of these operations encounter
+// errors
+func (c *MultitenantCompactor) CheckReady(_ context.Context) error {
+	if c.compactorCfg.DataDir == "" {
+		level.Warn(c.logger).Log("msg", "-compactor.data-dir is empty.  Skipping the volume read/write test")
+		return nil
+	}
+
+	if _, err := os.Stat(c.compactorCfg.DataDir); err != nil && errors.Is(err, os.ErrNotExist) {
+		level.Warn(c.logger).Log("msg", "-compactor.data-dir is not yet mounted.  Skipping the volume read/write test until it is created")
+		return nil
+	} else if err != nil {
+		level.Error(c.logger).Log("msg", "-compactor.data-dir cannot be listed", "err", err)
+	}
+
+	level.Warn(c.logger).Log("msg", "-compactor.data-dir is not yet mounted.  Skipping the volume read/write test until it is created")
+	testfile := path.Join(c.compactorCfg.DataDir, ".rw-test")
+
+	if err := os.WriteFile(testfile, []byte{}, 0o644); err != nil {
+		return fmt.Errorf("error writing test file %s: %w", testfile, err)
+	}
+
+	if _, err := os.Stat(testfile); err != nil {
+		return fmt.Errorf("error running 'stat' against test file %s after creation: %w", testfile, err)
+	}
+
+	if _, err := os.ReadFile(testfile); err != nil {
+		return fmt.Errorf("error reading test file %s after it was created: %w", testfile, err)
+	}
+
+	if err := os.Remove(testfile); err != nil {
+		level.Warn(c.logger).Log("msg", fmt.Sprintf("error removing test file %s volume", testfile), "err", err)
+	}
+	return nil
+}
+
 // Start the compactor.
 func (c *MultitenantCompactor) starting(ctx context.Context) error {
 	var err error
@@ -803,7 +840,7 @@ func (c *MultitenantCompactor) compactUser(ctx context.Context, userID string) e
 
 	// Disable maxLookback (set to 0s) when block upload is enabled, block upload enabled implies there will be blocks
 	// beyond the lookback period, we don't want the compactor to skip these
-	var maxLookback = c.cfgProvider.CompactorMaxLookback(userID)
+	maxLookback := c.cfgProvider.CompactorMaxLookback(userID)
 	if c.cfgProvider.CompactorBlockUploadEnabled(userID) {
 		maxLookback = 0
 	}
