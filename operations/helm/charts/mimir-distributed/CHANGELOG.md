@@ -43,6 +43,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [CHANGE] Distributor: Reduce calculated `GOMAXPROCS` to closer to the requested number of CPUs. #12150
 * [CHANGE] Query-scheduler: The query-scheduler is now a required component that is always used by queriers and query-frontends. #12188
 * [CHANGE] Provisioner: Replace the default kubectl image, used by the provisioner job, to `alpine/kubectl`. #12498
+* [CHANGE] Ingress: Change default routes to point to non-headless services. #13064
 * [ENHANCEMENT] Gateway ingress: Support labels for gateway ingress. #11964
 * [ENHANCEMENT] Store-gateway: Configure options for emptyDir. #11951
 * [ENHANCEMENT] Add support for `revisionhistorylimit` for all deployments. #12323
