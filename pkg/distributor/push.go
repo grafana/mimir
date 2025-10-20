@@ -92,25 +92,113 @@ func Handler(
 	allowSkipLabelCountValidation bool,
 	limits *validation.Overrides,
 	retryCfg RetryConfig,
-	push PushFunc,
+	d *Distributor,
 	pushMetrics *PushMetrics,
 	logger log.Logger,
 ) http.Handler {
-	return handler(maxRecvMsgSize, sourceIPs, allowSkipLabelNameValidation, allowSkipLabelCountValidation, limits, retryCfg, push, logger, func(ctx context.Context, r *http.Request, maxRecvMsgSize int, req *mimirpb.PreallocWriteRequest, _ log.Logger) error {
-		protoBodySize, err := util.ParseProtoReader(ctx, r.Body, int(r.ContentLength), maxRecvMsgSize, req, util.RawSnappy)
-		if errors.Is(err, util.MsgSizeTooLargeErr{}) {
-			err = distributorMaxWriteMessageSizeErr{actual: int(r.ContentLength), limit: maxRecvMsgSize}
-		}
-		if err != nil {
-			return err
-		}
-		tenantID, err := tenant.TenantID(ctx)
-		if err != nil {
-			return err
-		}
-		pushMetrics.ObserveUncompressedBodySize(tenantID, "push", float64(protoBodySize))
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
 
-		return nil
+		arena.WithArena(func(a *arena.Arena) {
+			ctx := arena.ContextWithArena(ctx, a)
+
+			logger := utillog.WithContext(ctx, logger)
+			if sourceIPs != nil {
+				source := sourceIPs.Get(r)
+				if source != "" {
+					logger = utillog.WithSourceIPs(source, logger)
+				}
+			}
+
+			isRW2, err := isRemoteWrite2(r)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+			}
+
+			supplier := func() (*mimirpb.WriteRequest, error) {
+				req := mimirpb.NewPreallocWriteRequest(a)
+
+				req.UnmarshalFromRW2 = isRW2
+
+				userID, err := tenant.TenantID(ctx)
+				if err != nil && !errors.Is(err, user.ErrNoOrgID) { // ignore user.ErrNoOrgID
+					return nil, errors.Wrap(err, "failed to get tenant ID")
+				}
+
+				// userID might be empty if none was in the ctx, in this case just use the default setting.
+				if limits.MaxGlobalExemplarsPerUser(userID) == 0 {
+					// The user is not allowed to send exemplars, so there is no need to unmarshal them.
+					// Optimization to avoid the allocations required for unmarshaling exemplars.
+					req.SkipUnmarshalingExemplars = true
+				}
+
+				if err := parser(ctx, r, maxRecvMsgSize, req, pushMetrics); err != nil {
+					// Check for httpgrpc error, default to client error if parsing failed
+					if _, ok := httpgrpc.HTTPResponseFromError(err); !ok {
+						err = httpgrpc.Error(http.StatusBadRequest, err.Error())
+					}
+
+					return nil, err
+				}
+
+				if allowSkipLabelNameValidation {
+					req.SkipLabelValidation = req.SkipLabelValidation && r.Header.Get(SkipLabelNameValidationHeader) == "true"
+				} else {
+					req.SkipLabelValidation = false
+				}
+
+				if allowSkipLabelCountValidation {
+					req.SkipLabelCountValidation = req.SkipLabelCountValidation && r.Header.Get(SkipLabelCountValidationHeader) == "true"
+				} else {
+					req.SkipLabelCountValidation = false
+				}
+
+				return &req.WriteRequest, nil
+			}
+			req := newRequest(supplier)
+			req.contentLength = r.ContentLength
+			if isRW2 {
+				ctx = contextWithWriteResponseStats(ctx)
+			}
+			err = d.PushWithMiddlewares(ctx, req)
+			if isRW2 {
+				if err := addWriteResponseStats(ctx, w); err != nil {
+					// Should not happen, but we should not panic anyway.
+					level.Error(logger).Log("msg", "error write response stats not found in context", "err", err)
+				}
+			}
+			if err == nil {
+				addSuccessHeaders(w, req.artificialDelay) //lifecheck:safe
+			} else {
+				if errors.Is(err, context.Canceled) {
+					http.Error(w, err.Error(), statusClientClosedRequest)
+					level.Warn(logger).Log("msg", "push request canceled", "err", err)
+					return
+				}
+				var (
+					code int
+					msg  string
+				)
+				if resp, ok := httpgrpc.HTTPResponseFromError(err); ok {
+					// This code is needed for a correct handling of errors returned by the supplier function.
+					// These errors are created by using the httpgrpc package.
+					code, msg = int(resp.Code), string(resp.Body)
+				} else {
+					code = toHTTPStatus(ctx, err, limits)
+					msg = err.Error()
+				}
+				if code != 202 {
+					// This error message is consistent with error message in OTLP handler, and ingester's ingest-storage pushToStorage method.
+					msgs := []interface{}{"msg", "detected an error while ingesting Prometheus remote-write request (the request may have been partially ingested)", "httpCode", code, "err", err}
+					if code/100 == 4 {
+						msgs = append(msgs, "insight", true)
+					}
+					level.Error(logger).Log(msgs...)
+				}
+				addErrorHeaders(w, err, r, code, retryCfg)
+				http.Error(w, validUTF8Message(msg), code)
+			}
+		})
 	})
 }
 
@@ -138,120 +226,21 @@ func (e distributorMaxOTLPRequestSizeErr) Error() string {
 	return globalerror.DistributorMaxOTLPRequestSize.MessageWithPerInstanceLimitConfig(fmt.Sprintf("the incoming OTLP request has been rejected because its message size%s is larger than the allowed limit of %d bytes", msgSizeDesc, e.limit), maxOTLPRequestSizeFlag)
 }
 
-func handler(
-	maxRecvMsgSize int,
-	sourceIPs *middleware.SourceIPExtractor,
-	allowSkipLabelNameValidation bool,
-	allowSkipLabelCountValidation bool,
-	limits *validation.Overrides,
-	retryCfg RetryConfig,
-	push PushFunc,
-	logger log.Logger,
-	parser parserFunc,
-) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ctx := r.Context()
+func parser(ctx context.Context, r *http.Request, maxRecvMsgSize int, req *mimirpb.PreallocWriteRequest, pushMetrics *PushMetrics) error {
+	protoBodySize, err := util.ParseProtoReader(ctx, r.Body, int(r.ContentLength), maxRecvMsgSize, req, util.RawSnappy)
+	if errors.Is(err, util.MsgSizeTooLargeErr{}) {
+		err = distributorMaxWriteMessageSizeErr{actual: int(r.ContentLength), limit: maxRecvMsgSize}
+	}
+	if err != nil {
+		return err
+	}
+	tenantID, err := tenant.TenantID(ctx)
+	if err != nil {
+		return err
+	}
+	pushMetrics.ObserveUncompressedBodySize(tenantID, "push", float64(protoBodySize))
 
-		a := arena.NewArena()
-		defer a.Free()
-		ctx = arena.ContextWithArena(ctx, a)
-
-		logger := utillog.WithContext(ctx, logger)
-		if sourceIPs != nil {
-			source := sourceIPs.Get(r)
-			if source != "" {
-				logger = utillog.WithSourceIPs(source, logger)
-			}
-		}
-
-		isRW2, err := isRemoteWrite2(r)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-		}
-		supplier := func() (*mimirpb.WriteRequest, error) {
-			req := mimirpb.NewPreallocWriteRequest(a)
-
-			req.UnmarshalFromRW2 = isRW2
-
-			userID, err := tenant.TenantID(ctx)
-			if err != nil && !errors.Is(err, user.ErrNoOrgID) { // ignore user.ErrNoOrgID
-				return nil, errors.Wrap(err, "failed to get tenant ID")
-			}
-
-			// userID might be empty if none was in the ctx, in this case just use the default setting.
-			if limits.MaxGlobalExemplarsPerUser(userID) == 0 {
-				// The user is not allowed to send exemplars, so there is no need to unmarshal them.
-				// Optimization to avoid the allocations required for unmarshaling exemplars.
-				req.SkipUnmarshalingExemplars = true
-			}
-
-			if err := parser(ctx, r, maxRecvMsgSize, req, logger); err != nil {
-				// Check for httpgrpc error, default to client error if parsing failed
-				if _, ok := httpgrpc.HTTPResponseFromError(err); !ok {
-					err = httpgrpc.Error(http.StatusBadRequest, err.Error())
-				}
-
-				return nil, err
-			}
-
-			if allowSkipLabelNameValidation {
-				req.SkipLabelValidation = req.SkipLabelValidation && r.Header.Get(SkipLabelNameValidationHeader) == "true"
-			} else {
-				req.SkipLabelValidation = false
-			}
-
-			if allowSkipLabelCountValidation {
-				req.SkipLabelCountValidation = req.SkipLabelCountValidation && r.Header.Get(SkipLabelCountValidationHeader) == "true"
-			} else {
-				req.SkipLabelCountValidation = false
-			}
-
-			return &req.WriteRequest, nil
-		}
-		req := newRequest(supplier)
-		req.contentLength = r.ContentLength
-		if isRW2 {
-			ctx = contextWithWriteResponseStats(ctx)
-		}
-		err = push(ctx, req)
-		if isRW2 {
-			if err := addWriteResponseStats(ctx, w); err != nil {
-				// Should not happen, but we should not panic anyway.
-				level.Error(logger).Log("msg", "error write response stats not found in context", "err", err)
-			}
-		}
-		if err == nil {
-			addSuccessHeaders(w, req.artificialDelay)
-		} else {
-			if errors.Is(err, context.Canceled) {
-				http.Error(w, err.Error(), statusClientClosedRequest)
-				level.Warn(logger).Log("msg", "push request canceled", "err", err)
-				return
-			}
-			var (
-				code int
-				msg  string
-			)
-			if resp, ok := httpgrpc.HTTPResponseFromError(err); ok {
-				// This code is needed for a correct handling of errors returned by the supplier function.
-				// These errors are created by using the httpgrpc package.
-				code, msg = int(resp.Code), string(resp.Body)
-			} else {
-				code = toHTTPStatus(ctx, err, limits)
-				msg = err.Error()
-			}
-			if code != 202 {
-				// This error message is consistent with error message in OTLP handler, and ingester's ingest-storage pushToStorage method.
-				msgs := []interface{}{"msg", "detected an error while ingesting Prometheus remote-write request (the request may have been partially ingested)", "httpCode", code, "err", err}
-				if code/100 == 4 {
-					msgs = append(msgs, "insight", true)
-				}
-				level.Error(logger).Log(msgs...)
-			}
-			addErrorHeaders(w, err, r, code, retryCfg)
-			http.Error(w, validUTF8Message(msg), code)
-		}
-	})
+	return nil
 }
 
 func isRemoteWrite2(r *http.Request) (bool, error) {

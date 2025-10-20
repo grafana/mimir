@@ -180,8 +180,6 @@ type Distributor struct {
 	// Metrics to be passed to distributor push handlers
 	PushMetrics *PushMetrics
 
-	PushWithMiddlewares PushFunc
-
 	// Pool of []byte used when marshalling write requests.
 	writeRequestBytePool sync.Pool
 
@@ -623,8 +621,6 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 	d.activeUsers = util.NewActiveUsersCleanupWithDefaultValues(d.cleanupInactiveUser)
 	d.activeGroups = activeGroupsCleanupService
 
-	d.PushWithMiddlewares = d.wrapPushWithMiddlewares(d.push)
-
 	subservices = append(subservices, d.ingesterPool, d.activeUsers)
 
 	if cfg.ReusableIngesterPushWorkers > 0 {
@@ -1012,573 +1008,571 @@ func (d *Distributor) validateSeries(nowt time.Time, ts *mimirpb.PreallocTimeser
 	return nil
 }
 
-// wrapPushWithMiddlewares returns push function wrapped in all Distributor's middlewares.
-// push wrappers will be applied to incoming requests in the order in which they are in the slice in the config struct.
-func (d *Distributor) wrapPushWithMiddlewares(next PushFunc) PushFunc {
-	var middlewares []PushWrapper
-
-	// The middlewares will be applied to the request (!) in the specified order, from first to last.
-	// To guarantee that, middleware functions will be called in reversed order, wrapping the
-	// result from previous call.
-	middlewares = append(middlewares, d.limitsMiddleware) // Should run first because it checks limits before other middlewares need to read the request body.
-	middlewares = append(middlewares, d.metricsMiddleware)
-	middlewares = append(middlewares, d.prePushHaDedupeMiddleware)
-	middlewares = append(middlewares, d.prePushRelabelMiddleware)
-	middlewares = append(middlewares, d.prePushSortAndFilterMiddleware)
-	middlewares = append(middlewares, d.prePushValidationMiddleware)
-	middlewares = append(middlewares, d.cfg.PushWrappers...)             // TODO GEM has a BI middleware. It should probably be applied after prePushMaxSeriesLimitMiddleware
-	middlewares = append(middlewares, d.prePushMaxSeriesLimitMiddleware) // Should be the very last, to enforce the max series limit on top of all filtering, relabelling and other changes (e.g. GEM aggregations) previous middlewares could do
-
-	for ix := len(middlewares) - 1; ix >= 0; ix-- {
-		next = middlewares[ix](next)
-	}
-
+func (d *Distributor) PushWithMiddlewares(ctx context.Context, req *Request) error {
 	// The delay middleware must take into account total runtime of all other middlewares and the push func, hence why we wrap all others.
-	return d.outerMaybeDelayMiddleware(next)
-
+	return d.outerMaybeDelayMiddleware(ctx, req)
 }
 
-func (d *Distributor) prePushHaDedupeMiddleware(next PushFunc) PushFunc {
-	return func(ctx context.Context, pushReq *Request) error {
-		next, maybeCleanup := NextOrCleanup(next, pushReq)
-		defer maybeCleanup()
-
-		req, err := pushReq.WriteRequest()
-		if err != nil {
-			return err
+func (d *Distributor) prePushHaDedupeMiddleware(ctx context.Context, pushReq *Request) error {
+	cleanupInDefer := true
+	defer func() {
+		if cleanupInDefer {
+			pushReq.CleanUp()
 		}
+	}()
 
-		userID, err := tenant.TenantID(ctx)
-		if err != nil {
-			return err
-		}
-
-		if len(req.Timeseries) == 0 || !d.limits.AcceptHASamples(userID) {
-			return next(ctx, pushReq)
-		}
-
-		haReplicaLabel := d.limits.HAReplicaLabel(userID)
-		cluster, replica := findHALabels(haReplicaLabel, d.limits.HAClusterLabel(userID), req.Timeseries[0].Labels)
-		// Make a copy of these, since they may be retained as labels on our metrics, e.g. dedupedSamples.
-		cluster, replica = strings.Clone(cluster), strings.Clone(replica)
-
-		span := trace.SpanFromContext(ctx)
-		span.SetAttributes(
-			attribute.String("cluster", cluster),
-			attribute.String("replica", replica),
-		)
-
-		numSamples := 0
-		now := time.Now()
-		group := d.activeGroups.UpdateActiveGroupTimestamp(userID, validation.GroupLabel(d.limits, userID, req.Timeseries), now)
-		for _, ts := range req.Timeseries {
-			numSamples += len(ts.Samples) + len(ts.Histograms)
-		}
-
-		removeReplica, err := d.checkSample(ctx, userID, cluster, replica)
-		if err != nil {
-			if errors.As(err, &replicasDidNotMatchError{}) {
-				// These samples have been deduped.
-				d.dedupedSamples.WithLabelValues(userID, cluster).Add(float64(numSamples))
-			}
-
-			if errors.As(err, &tooManyClustersError{}) {
-				d.discardedSamplesTooManyHaClusters.WithLabelValues(userID, group).Add(float64(numSamples))
-				d.costAttributionMgr.SampleTracker(userID).IncrementDiscardedSamples(req.Timeseries[0].Labels, float64(numSamples), reasonTooManyHAClusters, now)
-			}
-
-			return err
-		}
-
-		if removeReplica {
-			// If we found both the cluster and replica labels, we only want to include the cluster label when
-			// storing series in Mimir. If we kept the replica label we would end up with another series for the same
-			// series we're trying to dedupe when HA tracking moves over to a different replica.
-			for ix := range req.Timeseries {
-				req.Timeseries[ix].RemoveLabel(haReplicaLabel)
-			}
-		} else {
-			// If there wasn't an error but removeReplica is false that means we didn't find both HA labels.
-			d.nonHASamples.WithLabelValues(userID).Add(float64(numSamples))
-		}
-
-		return next(ctx, pushReq)
+	req, err := pushReq.WriteRequest()
+	if err != nil {
+		return err
 	}
+
+	userID, err := tenant.TenantID(ctx)
+	if err != nil {
+		return err
+	}
+
+	if len(req.Timeseries) == 0 || !d.limits.AcceptHASamples(userID) {
+		cleanupInDefer = false
+		return d.prePushRelabelMiddleware(ctx, pushReq)
+	}
+
+	haReplicaLabel := d.limits.HAReplicaLabel(userID)
+	cluster, replica := findHALabels(haReplicaLabel, d.limits.HAClusterLabel(userID), req.Timeseries[0].Labels)
+	// Make a copy of these, since they may be retained as labels on our metrics, e.g. dedupedSamples.
+	cluster, replica = strings.Clone(cluster), strings.Clone(replica)
+
+	span := trace.SpanFromContext(ctx)
+	span.SetAttributes(
+		attribute.String("cluster", cluster),
+		attribute.String("replica", replica),
+	)
+
+	numSamples := 0
+	now := time.Now()
+	group := d.activeGroups.UpdateActiveGroupTimestamp(userID, validation.GroupLabel(d.limits, userID, req.Timeseries), now)
+	for _, ts := range req.Timeseries {
+		numSamples += len(ts.Samples) + len(ts.Histograms)
+	}
+
+	removeReplica, err := d.checkSample(ctx, userID, cluster, replica)
+	if err != nil {
+		if errors.As(err, &replicasDidNotMatchError{}) {
+			// These samples have been deduped.
+			d.dedupedSamples.WithLabelValues(userID, cluster).Add(float64(numSamples))
+		}
+
+		if errors.As(err, &tooManyClustersError{}) {
+			d.discardedSamplesTooManyHaClusters.WithLabelValues(userID, group).Add(float64(numSamples))
+			d.costAttributionMgr.SampleTracker(userID).IncrementDiscardedSamples(req.Timeseries[0].Labels, float64(numSamples), reasonTooManyHAClusters, now)
+		}
+
+		return err
+	}
+
+	if removeReplica {
+		// If we found both the cluster and replica labels, we only want to include the cluster label when
+		// storing series in Mimir. If we kept the replica label we would end up with another series for the same
+		// series we're trying to dedupe when HA tracking moves over to a different replica.
+		for ix := range req.Timeseries {
+			req.Timeseries[ix].RemoveLabel(haReplicaLabel)
+		}
+	} else {
+		// If there wasn't an error but removeReplica is false that means we didn't find both HA labels.
+		d.nonHASamples.WithLabelValues(userID).Add(float64(numSamples))
+	}
+
+	cleanupInDefer = false
+	return d.prePushRelabelMiddleware(ctx, pushReq)
 }
 
-func (d *Distributor) prePushRelabelMiddleware(next PushFunc) PushFunc {
-	return func(ctx context.Context, pushReq *Request) error {
-		next, maybeCleanup := NextOrCleanup(next, pushReq)
-		defer maybeCleanup()
-
-		userID, err := tenant.TenantID(ctx)
-		if err != nil {
-			return err
+func (d *Distributor) prePushRelabelMiddleware(ctx context.Context, pushReq *Request) error {
+	cleanupInDefer := true
+	defer func() {
+		if cleanupInDefer {
+			pushReq.CleanUp()
 		}
+	}()
 
-		if !d.limits.MetricRelabelingEnabled(userID) {
-			return next(ctx, pushReq)
-		}
+	userID, err := tenant.TenantID(ctx)
+	if err != nil {
+		return err
+	}
 
-		req, err := pushReq.WriteRequest()
-		if err != nil {
-			return err
-		}
+	if !d.limits.MetricRelabelingEnabled(userID) {
+		cleanupInDefer = false
+		return d.prePushSortAndFilterMiddleware(ctx, pushReq)
+	}
 
-		dropLabels := d.limits.DropLabels(userID)
-		relabelConfigs := d.limits.MetricRelabelConfigs(userID)
+	req, err := pushReq.WriteRequest()
+	if err != nil {
+		return err
+	}
 
-		var removeTsIndexes []int
-		lb := labels.NewBuilder(labels.EmptyLabels())
-		for tsIdx := 0; tsIdx < len(req.Timeseries); tsIdx++ {
-			ts := req.Timeseries[tsIdx]
+	dropLabels := d.limits.DropLabels(userID)
+	relabelConfigs := d.limits.MetricRelabelConfigs(userID)
 
-			if len(relabelConfigs) > 0 {
-				mimirpb.FromLabelAdaptersToBuilder(ts.Labels, lb)
-				lb.Set(metaLabelTenantID, userID)
-				keep := relabel.ProcessBuilder(lb, relabelConfigs...)
-				if !keep {
-					removeTsIndexes = append(removeTsIndexes, tsIdx)
-					continue
-				}
-				lb.Del(metaLabelTenantID)
-				req.Timeseries[tsIdx].SetLabels(mimirpb.FromBuilderToLabelAdapters(lb, ts.Labels))
-			}
+	var removeTsIndexes []int
+	lb := labels.NewBuilder(labels.EmptyLabels())
+	for tsIdx := 0; tsIdx < len(req.Timeseries); tsIdx++ {
+		ts := req.Timeseries[tsIdx]
 
-			for _, labelName := range dropLabels {
-				req.Timeseries[tsIdx].RemoveLabel(labelName)
-			}
-
-			if len(ts.Labels) == 0 {
+		if len(relabelConfigs) > 0 {
+			mimirpb.FromLabelAdaptersToBuilder(ts.Labels, lb)
+			lb.Set(metaLabelTenantID, userID)
+			keep := relabel.ProcessBuilder(lb, relabelConfigs...)
+			if !keep {
 				removeTsIndexes = append(removeTsIndexes, tsIdx)
 				continue
 			}
+			lb.Del(metaLabelTenantID)
+			req.Timeseries[tsIdx].SetLabels(mimirpb.FromBuilderToLabelAdapters(lb, ts.Labels))
 		}
 
-		if len(removeTsIndexes) > 0 {
-			req.Timeseries = util.RemoveSliceIndexes(req.Timeseries, removeTsIndexes)
+		for _, labelName := range dropLabels {
+			req.Timeseries[tsIdx].RemoveLabel(labelName)
 		}
 
-		return next(ctx, pushReq)
+		if len(ts.Labels) == 0 {
+			removeTsIndexes = append(removeTsIndexes, tsIdx)
+			continue
+		}
 	}
+
+	if len(removeTsIndexes) > 0 {
+		req.Timeseries = util.RemoveSliceIndexes(req.Timeseries, removeTsIndexes)
+	}
+
+	cleanupInDefer = false
+	return d.prePushSortAndFilterMiddleware(ctx, pushReq)
 }
 
 // prePushSortAndFilterMiddleware is responsible for sorting labels and
 // filtering empty values. This is a protection mechanism for ingesters.
-func (d *Distributor) prePushSortAndFilterMiddleware(next PushFunc) PushFunc {
-	return func(ctx context.Context, pushReq *Request) error {
-		next, maybeCleanup := NextOrCleanup(next, pushReq)
-		defer maybeCleanup()
-
-		req, err := pushReq.WriteRequest()
-		if err != nil {
-			return err
+func (d *Distributor) prePushSortAndFilterMiddleware(ctx context.Context, pushReq *Request) error {
+	cleanupInDefer := true
+	defer func() {
+		if cleanupInDefer {
+			pushReq.CleanUp()
 		}
+	}()
 
-		var removeTsIndexes []int
-		for tsIdx := 0; tsIdx < len(req.Timeseries); tsIdx++ {
-			ts := req.Timeseries[tsIdx]
-
-			// Prometheus strips empty values before storing; drop them now, before sharding to ingesters.
-			req.Timeseries[tsIdx].RemoveEmptyLabelValues()
-
-			if len(ts.Labels) == 0 {
-				removeTsIndexes = append(removeTsIndexes, tsIdx)
-				continue
-			}
-
-			// We rely on sorted labels in different places:
-			// 1) When computing token for labels. Here different order of
-			// labels returns different tokens, which is bad.
-			// 2) In validation code, when checking for duplicate label names.
-			// As duplicate label names are rejected later in the validation
-			// phase, we ignore them here.
-			// 3) Ingesters expect labels to be sorted in the Push request.
-			req.Timeseries[tsIdx].SortLabelsIfNeeded()
-		}
-
-		if len(removeTsIndexes) > 0 {
-			req.Timeseries = util.RemoveSliceIndexes(req.Timeseries, removeTsIndexes)
-		}
-
-		return next(ctx, pushReq)
+	req, err := pushReq.WriteRequest()
+	if err != nil {
+		return err
 	}
+
+	var removeTsIndexes []int
+	for tsIdx := 0; tsIdx < len(req.Timeseries); tsIdx++ {
+		ts := req.Timeseries[tsIdx]
+
+		// Prometheus strips empty values before storing; drop them now, before sharding to ingesters.
+		req.Timeseries[tsIdx].RemoveEmptyLabelValues()
+
+		if len(ts.Labels) == 0 {
+			removeTsIndexes = append(removeTsIndexes, tsIdx)
+			continue
+		}
+
+		// We rely on sorted labels in different places:
+		// 1) When computing token for labels. Here different order of
+		// labels returns different tokens, which is bad.
+		// 2) In validation code, when checking for duplicate label names.
+		// As duplicate label names are rejected later in the validation
+		// phase, we ignore them here.
+		// 3) Ingesters expect labels to be sorted in the Push request.
+		req.Timeseries[tsIdx].SortLabelsIfNeeded()
+	}
+
+	if len(removeTsIndexes) > 0 {
+		req.Timeseries = util.RemoveSliceIndexes(req.Timeseries, removeTsIndexes)
+	}
+
+	cleanupInDefer = false
+	return d.prePushValidationMiddleware(ctx, pushReq)
 }
 
-func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
-	return func(ctx context.Context, pushReq *Request) error {
-		next, maybeCleanup := NextOrCleanup(next, pushReq)
-		defer maybeCleanup()
+func (d *Distributor) prePushValidationMiddleware(ctx context.Context, pushReq *Request) error {
+	cleanupInDefer := true
+	defer func() {
+		if cleanupInDefer {
+			pushReq.CleanUp()
+		}
+	}()
 
-		req, err := pushReq.WriteRequest()
-		if err != nil {
-			return err
+	req, err := pushReq.WriteRequest()
+	if err != nil {
+		return err
+	}
+
+	userID, err := tenant.TenantID(ctx)
+	if err != nil {
+		return err
+	}
+
+	now := mtime.Now()
+	d.receivedRequests.WithLabelValues(userID).Add(1)
+	d.activeUsers.UpdateUserTimestamp(userID, now)
+
+	pushReq.group = d.activeGroups.UpdateActiveGroupTimestamp(userID, validation.GroupLabel(d.limits, userID, req.Timeseries), now)
+
+	// A WriteRequest can only contain series or metadata but not both. This might change in the future.
+	validatedMetadata := 0
+	validatedSamples := 0
+	validatedExemplars := 0
+
+	// Find the earliest and latest samples in the batch.
+	earliestSampleTimestampMs, latestSampleTimestampMs := int64(math.MaxInt64), int64(0)
+	for _, ts := range req.Timeseries {
+		for _, s := range ts.Samples {
+			earliestSampleTimestampMs = min(earliestSampleTimestampMs, s.TimestampMs)
+			latestSampleTimestampMs = max(latestSampleTimestampMs, s.TimestampMs)
+		}
+		for _, h := range ts.Histograms {
+			earliestSampleTimestampMs = min(earliestSampleTimestampMs, h.Timestamp)
+			latestSampleTimestampMs = max(latestSampleTimestampMs, h.Timestamp)
+		}
+	}
+	// Update this metric even in case of errors.
+	if latestSampleTimestampMs > 0 {
+		d.latestSeenSampleTimestampPerUser.WithLabelValues(userID).Set(float64(latestSampleTimestampMs) / 1000)
+	}
+
+	// Exemplars are not expired by Prometheus client libraries, therefore we may receive old exemplars
+	// repeated on every scrape. Drop any that are more than 5 minutes older than samples in the same batch.
+	// (If we didn't find any samples this will be 0, and we won't reject any exemplars.)
+	var minExemplarTS int64
+	if earliestSampleTimestampMs != math.MaxInt64 {
+		minExemplarTS = earliestSampleTimestampMs - 5*time.Minute.Milliseconds()
+
+		if d.limits.PastGracePeriod(userID) > 0 {
+			minExemplarTS = max(minExemplarTS, now.Add(-d.limits.PastGracePeriod(userID)).Add(-d.limits.OutOfOrderTimeWindow(userID)).UnixMilli())
+		}
+	}
+
+	// Enforce the creation grace period on exemplars too.
+	maxExemplarTS := now.Add(d.limits.CreationGracePeriod(userID)).UnixMilli()
+
+	// Are we going to drop native histograms? If yes, let's count and report them.
+	countDroppedNativeHistograms := !d.limits.NativeHistogramsIngestionEnabled(userID)
+	var droppedNativeHistograms int
+
+	var firstPartialErr error
+	var removeIndexes []int
+	totalSamples, totalExemplars := 0, 0
+	const maxMetricsWithDeduplicatedSamplesToTrace = 10
+	var dedupedPerUnsafeMetricName map[string]int
+
+	for tsIdx, ts := range req.Timeseries {
+		totalSamples += len(ts.Samples)
+		totalExemplars += len(ts.Exemplars)
+		if len(ts.Labels) == 0 {
+			removeIndexes = append(removeIndexes, tsIdx)
+			continue
 		}
 
-		userID, err := tenant.TenantID(ctx)
-		if err != nil {
-			return err
+		d.labelsHistogram.Observe(float64(len(ts.Labels)))
+
+		skipLabelValidation := d.cfg.SkipLabelValidation || req.GetSkipLabelValidation()
+		skipLabelCountValidation := d.cfg.SkipLabelCountValidation || req.GetSkipLabelCountValidation()
+
+		// Note that validateSeries may drop some data in ts.
+		rawSamples := len(ts.Samples)
+		rawHistograms := len(ts.Histograms)
+		validationErr := d.validateSeries(now, &req.Timeseries[tsIdx], userID, pushReq.group, skipLabelValidation, skipLabelCountValidation, minExemplarTS, maxExemplarTS)
+
+		if countDroppedNativeHistograms {
+			droppedNativeHistograms += len(ts.Histograms)
 		}
 
-		now := mtime.Now()
-		d.receivedRequests.WithLabelValues(userID).Add(1)
-		d.activeUsers.UpdateUserTimestamp(userID, now)
-
-		pushReq.group = d.activeGroups.UpdateActiveGroupTimestamp(userID, validation.GroupLabel(d.limits, userID, req.Timeseries), now)
-
-		// A WriteRequest can only contain series or metadata but not both. This might change in the future.
-		validatedMetadata := 0
-		validatedSamples := 0
-		validatedExemplars := 0
-
-		// Find the earliest and latest samples in the batch.
-		earliestSampleTimestampMs, latestSampleTimestampMs := int64(math.MaxInt64), int64(0)
-		for _, ts := range req.Timeseries {
-			for _, s := range ts.Samples {
-				earliestSampleTimestampMs = min(earliestSampleTimestampMs, s.TimestampMs)
-				latestSampleTimestampMs = max(latestSampleTimestampMs, s.TimestampMs)
+		// Errors in validation are considered non-fatal, as one series in a request may contain
+		// invalid data but all the remaining series could be perfectly valid.
+		if validationErr != nil {
+			if firstPartialErr == nil {
+				// The series are never retained by validationErr. This is guaranteed by the way the latter is built.
+				firstPartialErr = newValidationError(validationErr)
 			}
-			for _, h := range ts.Histograms {
-				earliestSampleTimestampMs = min(earliestSampleTimestampMs, h.Timestamp)
-				latestSampleTimestampMs = max(latestSampleTimestampMs, h.Timestamp)
-			}
-		}
-		// Update this metric even in case of errors.
-		if latestSampleTimestampMs > 0 {
-			d.latestSeenSampleTimestampPerUser.WithLabelValues(userID).Set(float64(latestSampleTimestampMs) / 1000)
+			removeIndexes = append(removeIndexes, tsIdx)
+			continue
 		}
 
-		// Exemplars are not expired by Prometheus client libraries, therefore we may receive old exemplars
-		// repeated on every scrape. Drop any that are more than 5 minutes older than samples in the same batch.
-		// (If we didn't find any samples this will be 0, and we won't reject any exemplars.)
-		var minExemplarTS int64
-		if earliestSampleTimestampMs != math.MaxInt64 {
-			minExemplarTS = earliestSampleTimestampMs - 5*time.Minute.Milliseconds()
-
-			if d.limits.PastGracePeriod(userID) > 0 {
-				minExemplarTS = max(minExemplarTS, now.Add(-d.limits.PastGracePeriod(userID)).Add(-d.limits.OutOfOrderTimeWindow(userID)).UnixMilli())
+		dedupedSamplesAndHistograms := (rawSamples - len(ts.Samples)) + (rawHistograms - len(ts.Histograms))
+		if dedupedSamplesAndHistograms > 0 {
+			if dedupedPerUnsafeMetricName == nil {
+				dedupedPerUnsafeMetricName = make(map[string]int, maxMetricsWithDeduplicatedSamplesToTrace)
 			}
-		}
-
-		// Enforce the creation grace period on exemplars too.
-		maxExemplarTS := now.Add(d.limits.CreationGracePeriod(userID)).UnixMilli()
-
-		// Are we going to drop native histograms? If yes, let's count and report them.
-		countDroppedNativeHistograms := !d.limits.NativeHistogramsIngestionEnabled(userID)
-		var droppedNativeHistograms int
-
-		var firstPartialErr error
-		var removeIndexes []int
-		totalSamples, totalExemplars := 0, 0
-		const maxMetricsWithDeduplicatedSamplesToTrace = 10
-		var dedupedPerUnsafeMetricName map[string]int
-
-		for tsIdx, ts := range req.Timeseries {
-			totalSamples += len(ts.Samples)
-			totalExemplars += len(ts.Exemplars)
-			if len(ts.Labels) == 0 {
-				removeIndexes = append(removeIndexes, tsIdx)
-				continue
+			name, err := extract.UnsafeMetricNameFromLabelAdapters(ts.Labels)
+			if err != nil {
+				name = "unnamed"
 			}
-
-			d.labelsHistogram.Observe(float64(len(ts.Labels)))
-
-			skipLabelValidation := d.cfg.SkipLabelValidation || req.GetSkipLabelValidation()
-			skipLabelCountValidation := d.cfg.SkipLabelCountValidation || req.GetSkipLabelCountValidation()
-
-			// Note that validateSeries may drop some data in ts.
-			rawSamples := len(ts.Samples)
-			rawHistograms := len(ts.Histograms)
-			validationErr := d.validateSeries(now, &req.Timeseries[tsIdx], userID, pushReq.group, skipLabelValidation, skipLabelCountValidation, minExemplarTS, maxExemplarTS)
-
-			if countDroppedNativeHistograms {
-				droppedNativeHistograms += len(ts.Histograms)
+			increment := len(dedupedPerUnsafeMetricName) < maxMetricsWithDeduplicatedSamplesToTrace
+			if !increment {
+				// If at max capacity, only touch pre-existing entries.
+				_, increment = dedupedPerUnsafeMetricName[name]
 			}
-
-			// Errors in validation are considered non-fatal, as one series in a request may contain
-			// invalid data but all the remaining series could be perfectly valid.
-			if validationErr != nil {
-				if firstPartialErr == nil {
-					// The series are never retained by validationErr. This is guaranteed by the way the latter is built.
-					firstPartialErr = newValidationError(validationErr)
-				}
-				removeIndexes = append(removeIndexes, tsIdx)
-				continue
-			}
-
-			dedupedSamplesAndHistograms := (rawSamples - len(ts.Samples)) + (rawHistograms - len(ts.Histograms))
-			if dedupedSamplesAndHistograms > 0 {
-				if dedupedPerUnsafeMetricName == nil {
-					dedupedPerUnsafeMetricName = make(map[string]int, maxMetricsWithDeduplicatedSamplesToTrace)
-				}
-				name, err := extract.UnsafeMetricNameFromLabelAdapters(ts.Labels)
-				if err != nil {
-					name = "unnamed"
-				}
-				increment := len(dedupedPerUnsafeMetricName) < maxMetricsWithDeduplicatedSamplesToTrace
-				if !increment {
-					// If at max capacity, only touch pre-existing entries.
-					_, increment = dedupedPerUnsafeMetricName[name]
-				}
-				if increment {
-					dedupedPerUnsafeMetricName[name] += dedupedSamplesAndHistograms
-				}
-			}
-
-			validatedSamples += len(ts.Samples) + len(ts.Histograms)
-			validatedExemplars += len(ts.Exemplars)
-		}
-
-		if len(dedupedPerUnsafeMetricName) > 0 {
-			// Emit tracing span events for metrics with deduped samples.
-			sp := trace.SpanFromContext(ctx)
-			for unsafeMetricName, deduped := range dedupedPerUnsafeMetricName {
-				sp.AddEvent(
-					"Distributor.prePushValidationMiddleware[deduplicated samples/histograms with conflicting timestamps from write request]",
-					trace.WithAttributes(
-						// unsafeMetricName is an unsafe reference to a gRPC unmarshalling buffer,
-						// clone it for safe retention.
-						attribute.String("metric", strings.Clone(unsafeMetricName)),
-						attribute.Int("count", deduped),
-					),
-				)
+			if increment {
+				dedupedPerUnsafeMetricName[name] += dedupedSamplesAndHistograms
 			}
 		}
 
-		if droppedNativeHistograms > 0 {
-			d.droppedNativeHistograms.WithLabelValues(userID).Add(float64(droppedNativeHistograms))
+		validatedSamples += len(ts.Samples) + len(ts.Histograms)
+		validatedExemplars += len(ts.Exemplars)
+	}
+
+	if len(dedupedPerUnsafeMetricName) > 0 {
+		// Emit tracing span events for metrics with deduped samples.
+		sp := trace.SpanFromContext(ctx)
+		for unsafeMetricName, deduped := range dedupedPerUnsafeMetricName {
+			sp.AddEvent(
+				"Distributor.prePushValidationMiddleware[deduplicated samples/histograms with conflicting timestamps from write request]",
+				trace.WithAttributes(
+					// unsafeMetricName is an unsafe reference to a gRPC unmarshalling buffer,
+					// clone it for safe retention.
+					attribute.String("metric", strings.Clone(unsafeMetricName)),
+					attribute.Int("count", deduped),
+				),
+			)
 		}
+	}
 
-		d.incomingSamplesPerRequest.WithLabelValues(userID).Observe(float64(totalSamples))
-		d.incomingExemplarsPerRequest.WithLabelValues(userID).Observe(float64(totalExemplars))
+	if droppedNativeHistograms > 0 {
+		d.droppedNativeHistograms.WithLabelValues(userID).Add(float64(droppedNativeHistograms))
+	}
 
-		if len(removeIndexes) > 0 {
-			req.Timeseries = util.RemoveSliceIndexes(req.Timeseries, removeIndexes)
-			removeIndexes = removeIndexes[:0]
-		}
+	d.incomingSamplesPerRequest.WithLabelValues(userID).Observe(float64(totalSamples))
+	d.incomingExemplarsPerRequest.WithLabelValues(userID).Observe(float64(totalExemplars))
 
-		for mIdx, m := range req.Metadata {
-			if validationErr := cleanAndValidateMetadata(d.metadataValidationMetrics, d.limits, userID, m); validationErr != nil {
-				if firstPartialErr == nil {
-					// The series are never retained by validationErr. This is guaranteed by the way the latter is built.
-					firstPartialErr = newValidationError(validationErr)
-				}
+	if len(removeIndexes) > 0 {
+		req.Timeseries = util.RemoveSliceIndexes(req.Timeseries, removeIndexes)
+		removeIndexes = removeIndexes[:0]
+	}
 
-				removeIndexes = append(removeIndexes, mIdx)
-				continue
+	for mIdx, m := range req.Metadata {
+		if validationErr := cleanAndValidateMetadata(d.metadataValidationMetrics, d.limits, userID, m); validationErr != nil {
+			if firstPartialErr == nil {
+				// The series are never retained by validationErr. This is guaranteed by the way the latter is built.
+				firstPartialErr = newValidationError(validationErr)
 			}
 
-			validatedMetadata++
-		}
-		if len(removeIndexes) > 0 {
-			req.Metadata = util.RemoveSliceIndexes(req.Metadata, removeIndexes)
+			removeIndexes = append(removeIndexes, mIdx)
+			continue
 		}
 
-		if validatedSamples == 0 && validatedMetadata == 0 {
-			return firstPartialErr
-		}
+		validatedMetadata++
+	}
+	if len(removeIndexes) > 0 {
+		req.Metadata = util.RemoveSliceIndexes(req.Metadata, removeIndexes)
+	}
 
-		totalN := validatedSamples + validatedExemplars + validatedMetadata
-		if !d.ingestionRateLimiter.AllowN(now, userID, totalN) {
-			if len(req.Timeseries) > 0 {
-				d.costAttributionMgr.SampleTracker(userID).IncrementDiscardedSamples(req.Timeseries[0].Labels, float64(validatedSamples), reasonRateLimited, now)
-			}
-			d.discardedSamplesRateLimited.WithLabelValues(userID, pushReq.group).Add(float64(validatedSamples))
-			d.discardedExemplarsRateLimited.WithLabelValues(userID).Add(float64(validatedExemplars))
-			d.discardedMetadataRateLimited.WithLabelValues(userID).Add(float64(validatedMetadata))
-
-			// Determine whether limiter burst size was exceeded.
-			limiterBurst := d.ingestionRateLimiter.Burst(now, userID)
-			if totalN > limiterBurst {
-				return newIngestionBurstSizeLimitedError(limiterBurst, totalN)
-			}
-
-			burstSize := d.limits.IngestionBurstSize(userID)
-			if d.limits.IngestionBurstFactor(userID) > 0 {
-				burstSize = int(d.limits.IngestionRate(userID) * d.limits.IngestionBurstFactor(userID))
-			}
-			return newIngestionRateLimitedError(d.limits.IngestionRate(userID), burstSize)
-		}
-
-		// totalN included samples, exemplars and metadata. Ingester follows this pattern when computing its ingestion rate.
-		d.ingestionRate.Add(int64(totalN))
-
-		err = next(ctx, pushReq)
-		if err != nil {
-			// Errors resulting from the pushing to the ingesters have priority over validation errors.
-			return err
-		}
-
+	if validatedSamples == 0 && validatedMetadata == 0 {
 		return firstPartialErr
 	}
+
+	totalN := validatedSamples + validatedExemplars + validatedMetadata
+	if !d.ingestionRateLimiter.AllowN(now, userID, totalN) {
+		if len(req.Timeseries) > 0 {
+			d.costAttributionMgr.SampleTracker(userID).IncrementDiscardedSamples(req.Timeseries[0].Labels, float64(validatedSamples), reasonRateLimited, now)
+		}
+		d.discardedSamplesRateLimited.WithLabelValues(userID, pushReq.group).Add(float64(validatedSamples))
+		d.discardedExemplarsRateLimited.WithLabelValues(userID).Add(float64(validatedExemplars))
+		d.discardedMetadataRateLimited.WithLabelValues(userID).Add(float64(validatedMetadata))
+
+		// Determine whether limiter burst size was exceeded.
+		limiterBurst := d.ingestionRateLimiter.Burst(now, userID)
+		if totalN > limiterBurst {
+			return newIngestionBurstSizeLimitedError(limiterBurst, totalN)
+		}
+
+		burstSize := d.limits.IngestionBurstSize(userID)
+		if d.limits.IngestionBurstFactor(userID) > 0 {
+			burstSize = int(d.limits.IngestionRate(userID) * d.limits.IngestionBurstFactor(userID))
+		}
+		return newIngestionRateLimitedError(d.limits.IngestionRate(userID), burstSize)
+	}
+
+	// totalN included samples, exemplars and metadata. Ingester follows this pattern when computing its ingestion rate.
+	d.ingestionRate.Add(int64(totalN))
+
+	cleanupInDefer = false
+	err = d.prePushMaxSeriesLimitMiddleware(ctx, pushReq)
+	if err != nil {
+		// Errors resulting from the pushing to the ingesters have priority over validation errors.
+		return err
+	}
+
+	return firstPartialErr
 }
 
 // prePushMaxSeriesLimitMiddleware enforces the per-tenant max series limit when the usage-tracker service is enabled.
-func (d *Distributor) prePushMaxSeriesLimitMiddleware(next PushFunc) PushFunc {
-	return func(ctx context.Context, pushReq *Request) error {
-		// If the usage-tracker client hasn't been created it means usage-tracker is disabled
-		// for this instance.
-		if d.usageTrackerClient == nil {
-			return next(ctx, pushReq)
-		}
-
-		next, maybeCleanup := NextOrCleanup(next, pushReq)
-		defer maybeCleanup()
-
-		req, err := pushReq.WriteRequest()
-		if err != nil {
-			return err
-		}
-
-		if len(req.Timeseries) == 0 {
-			// There's nothing to reject here.
-			return next(ctx, pushReq)
-		}
-
-		userID, err := tenant.TenantID(ctx)
-		if err != nil {
-			return err
-		}
-
-		// Generate the stable hash of each series.
-		var (
-			seriesHashes    = make([]uint64, len(req.Timeseries))
-			builder         = labels.NewScratchBuilder(100)
-			nonCopiedLabels labels.Labels
-			totalTimeseries = len(req.Timeseries)
-		)
-
-		for idx, series := range req.Timeseries {
-			mimirpb.FromLabelAdaptersOverwriteLabels(&builder, series.Labels, &nonCopiedLabels)
-			seriesHashes[idx] = labels.StableHash(nonCopiedLabels)
-		}
-
-		// Track the series and check if anyone should be rejected because over the limit.
-		rejectedHashes, err := d.usageTrackerClient.TrackSeries(ctx, userID, seriesHashes)
-		if err != nil {
-			return errors.Wrap(err, "failed to enforce max series limit")
-		}
-
-		if len(rejectedHashes) > 0 {
-			// Build a map of rejected hashes so that it's easier to lookup.
-			rejectedHashesMap := make(map[uint64]struct{}, len(rejectedHashes))
-			for _, hash := range rejectedHashes {
-				rejectedHashesMap[hash] = struct{}{}
-			}
-
-			// Filter out rejected series.
-			discardedSamples := 0
-			o := 0
-			for i := 0; i < len(req.Timeseries); i++ {
-				seriesHash := seriesHashes[i]
-
-				if _, rejected := rejectedHashesMap[seriesHash]; !rejected {
-					// Keep this series.
-					req.Timeseries[o] = req.Timeseries[i]
-					o++
-					continue
-				}
-
-				// Keep track of the discarded samples and histograms.
-				discardedSamples += len(req.Timeseries[i].Samples) + len(req.Timeseries[i].Histograms)
-			}
-
-			req.Timeseries = req.Timeseries[:o]
-
-			d.discardedSamplesPerUserSeriesLimit.WithLabelValues(userID, pushReq.group).Add(float64(discardedSamples))
-		}
-
-		if len(req.Timeseries) == 0 {
-			// All series have been rejected, no need to talk to ingesters.
-			return newActiveSeriesLimitedError(totalTimeseries, len(rejectedHashes), d.limits.MaxActiveSeriesPerUser(userID))
-		}
-
-		// If there's an error coming from the ingesters, prioritize that one.
-		if err := next(ctx, pushReq); err != nil {
-			return err
-		}
-
-		if len(rejectedHashes) > 0 {
-			return newActiveSeriesLimitedError(totalTimeseries, len(rejectedHashes), d.limits.MaxActiveSeriesPerUser(userID))
-		}
-
-		return nil
+func (d *Distributor) prePushMaxSeriesLimitMiddleware(ctx context.Context, pushReq *Request) error {
+	// If the usage-tracker client hasn't been created it means usage-tracker is disabled
+	// for this instance.
+	if d.usageTrackerClient == nil {
+		return d.push(ctx, pushReq)
 	}
+
+	cleanupInDefer := true
+	defer func() {
+		if cleanupInDefer {
+			pushReq.CleanUp()
+		}
+	}()
+
+	req, err := pushReq.WriteRequest()
+	if err != nil {
+		return err
+	}
+
+	if len(req.Timeseries) == 0 {
+		// There's nothing to reject here.
+		cleanupInDefer = false
+		return d.push(ctx, pushReq)
+	}
+
+	userID, err := tenant.TenantID(ctx)
+	if err != nil {
+		return err
+	}
+
+	// Generate the stable hash of each series.
+	var (
+		seriesHashes    = make([]uint64, len(req.Timeseries))
+		builder         = labels.NewScratchBuilder(100)
+		nonCopiedLabels labels.Labels
+		totalTimeseries = len(req.Timeseries)
+	)
+
+	for idx, series := range req.Timeseries {
+		mimirpb.FromLabelAdaptersOverwriteLabels(&builder, series.Labels, &nonCopiedLabels)
+		seriesHashes[idx] = labels.StableHash(nonCopiedLabels)
+	}
+
+	// Track the series and check if anyone should be rejected because over the limit.
+	rejectedHashes, err := d.usageTrackerClient.TrackSeries(ctx, userID, seriesHashes)
+	if err != nil {
+		return errors.Wrap(err, "failed to enforce max series limit")
+	}
+
+	if len(rejectedHashes) > 0 {
+		// Build a map of rejected hashes so that it's easier to lookup.
+		rejectedHashesMap := make(map[uint64]struct{}, len(rejectedHashes))
+		for _, hash := range rejectedHashes {
+			rejectedHashesMap[hash] = struct{}{}
+		}
+
+		// Filter out rejected series.
+		discardedSamples := 0
+		o := 0
+		for i := 0; i < len(req.Timeseries); i++ {
+			seriesHash := seriesHashes[i]
+
+			if _, rejected := rejectedHashesMap[seriesHash]; !rejected {
+				// Keep this series.
+				req.Timeseries[o] = req.Timeseries[i]
+				o++
+				continue
+			}
+
+			// Keep track of the discarded samples and histograms.
+			discardedSamples += len(req.Timeseries[i].Samples) + len(req.Timeseries[i].Histograms)
+		}
+
+		req.Timeseries = req.Timeseries[:o]
+
+		d.discardedSamplesPerUserSeriesLimit.WithLabelValues(userID, pushReq.group).Add(float64(discardedSamples))
+	}
+
+	if len(req.Timeseries) == 0 {
+		// All series have been rejected, no need to talk to ingesters.
+		return newActiveSeriesLimitedError(totalTimeseries, len(rejectedHashes), d.limits.MaxActiveSeriesPerUser(userID))
+	}
+
+	cleanupInDefer = false
+	// If there's an error coming from the ingesters, prioritize that one.
+	if err := d.push(ctx, pushReq); err != nil {
+		return err
+	}
+
+	if len(rejectedHashes) > 0 {
+		return newActiveSeriesLimitedError(totalTimeseries, len(rejectedHashes), d.limits.MaxActiveSeriesPerUser(userID))
+	}
+
+	return nil
 }
 
 // metricsMiddleware updates metrics which are expected to account for all received data,
 // including data that later gets modified or dropped.
-func (d *Distributor) metricsMiddleware(next PushFunc) PushFunc {
-	return func(ctx context.Context, pushReq *Request) error {
-		next, maybeCleanup := NextOrCleanup(next, pushReq)
-		defer maybeCleanup()
-
-		req, err := pushReq.WriteRequest()
-		if err != nil {
-			return err
+func (d *Distributor) metricsMiddleware(ctx context.Context, pushReq *Request) error {
+	cleanupInDefer := true
+	defer func() {
+		if cleanupInDefer {
+			pushReq.CleanUp()
 		}
+	}()
 
-		userID, err := tenant.TenantID(ctx)
-		if err != nil {
-			return err
-		}
-
-		numSamples := 0
-		numHistograms := 0
-		numExemplars := 0
-		for _, ts := range req.Timeseries {
-			numSamples += len(ts.Samples)
-			numHistograms += len(ts.Histograms)
-			numExemplars += len(ts.Exemplars)
-		}
-
-		span := trace.SpanFromContext(ctx)
-		span.SetAttributes(
-			attribute.Int("write.samples", numSamples+numHistograms),
-			attribute.Int("write.exemplars", numExemplars),
-			attribute.Int("write.metadata", len(req.Metadata)),
-		)
-
-		d.incomingRequests.WithLabelValues(userID, req.ProtocolVersion()).Inc()
-		d.incomingSamples.WithLabelValues(userID).Add(float64(numSamples + numHistograms))
-		d.incomingExemplars.WithLabelValues(userID).Add(float64(numExemplars))
-		d.incomingMetadata.WithLabelValues(userID).Add(float64(len(req.Metadata)))
-
-		// Update the write response stats, which are returned to callers using remote write
-		// version 2.0.
-		updateWriteResponseStatsCtx(ctx, numSamples, numHistograms, numExemplars)
-
-		return next(ctx, pushReq)
+	req, err := pushReq.WriteRequest()
+	if err != nil {
+		return err
 	}
+
+	userID, err := tenant.TenantID(ctx)
+	if err != nil {
+		return err
+	}
+
+	numSamples := 0
+	numHistograms := 0
+	numExemplars := 0
+	for _, ts := range req.Timeseries {
+		numSamples += len(ts.Samples)
+		numHistograms += len(ts.Histograms)
+		numExemplars += len(ts.Exemplars)
+	}
+
+	span := trace.SpanFromContext(ctx)
+	span.SetAttributes(
+		attribute.Int("write.samples", numSamples+numHistograms),
+		attribute.Int("write.exemplars", numExemplars),
+		attribute.Int("write.metadata", len(req.Metadata)),
+	)
+
+	d.incomingRequests.WithLabelValues(userID, req.ProtocolVersion()).Inc()
+	d.incomingSamples.WithLabelValues(userID).Add(float64(numSamples + numHistograms))
+	d.incomingExemplars.WithLabelValues(userID).Add(float64(numExemplars))
+	d.incomingMetadata.WithLabelValues(userID).Add(float64(len(req.Metadata)))
+
+	// Update the write response stats, which are returned to callers using remote write
+	// version 2.0.
+	updateWriteResponseStatsCtx(ctx, numSamples, numHistograms, numExemplars)
+
+	cleanupInDefer = false
+	return d.prePushHaDedupeMiddleware(ctx, pushReq)
 }
 
 // outerMaybeDelayMiddleware is a middleware that may delay ingestion if configured.
-func (d *Distributor) outerMaybeDelayMiddleware(next PushFunc) PushFunc {
-	return func(ctx context.Context, pushReq *Request) error {
-		start := d.now()
-		// Execute the whole middleware chain.
-		err := next(ctx, pushReq)
+func (d *Distributor) outerMaybeDelayMiddleware(ctx context.Context, pushReq *Request) error {
+	start := d.now()
+	// Execute the whole middleware chain.
+	err := d.limitsMiddleware(ctx, pushReq)
 
-		userID, userErr := tenant.TenantID(ctx) // Log tenant ID if available.
-		if userErr == nil {
-			if delay := d.limits.DistributorIngestionArtificialDelay(userID); delay > 0 {
-				// Target delay - time spent processing the middleware chain including the push.
-				// If the request took longer than the target delay, we don't delay at all as sleep will return immediately for a negative value.
-				if delay = delay - d.now().Sub(start); delay > 0 {
-					// Delay is configured but request is taking less than the delay
-					pushReq.artificialDelay = util.DurationWithJitter(delay, 0.10)
-					d.sleep(pushReq.artificialDelay)
-				} else {
-					// Delay is configured but request is already taking longer than the delay
-					pushReq.artificialDelay = 0
-				}
+	userID, userErr := tenant.TenantID(ctx) // Log tenant ID if available.
+	if userErr == nil {
+		if delay := d.limits.DistributorIngestionArtificialDelay(userID); delay > 0 {
+			// Target delay - time spent processing the middleware chain including the push.
+			// If the request took longer than the target delay, we don't delay at all as sleep will return immediately for a negative value.
+			if delay = delay - d.now().Sub(start); delay > 0 {
+				// Delay is configured but request is taking less than the delay
+				pushReq.artificialDelay = util.DurationWithJitter(delay, 0.10)
+				d.sleep(pushReq.artificialDelay)
+			} else {
+				// Delay is configured but request is already taking longer than the delay
+				pushReq.artificialDelay = 0
 			}
-			return err
 		}
-
-		level.Warn(d.log).Log("msg", "failed to get tenant ID while trying to delay ingestion", "err", userErr)
 		return err
 	}
+
+	level.Warn(d.log).Log("msg", "failed to get tenant ID while trying to delay ingestion", "err", userErr)
+	return err
 }
 
 type ctxKey int
@@ -1722,55 +1716,58 @@ func (d *Distributor) cleanupAfterPushFinished(rs *requestState) {
 }
 
 // limitsMiddleware checks for instance limits and rejects request if this instance cannot process it at the moment.
-func (d *Distributor) limitsMiddleware(next PushFunc) PushFunc {
-	return func(ctx context.Context, pushReq *Request) error {
-		// Make sure the distributor service and all its dependent services have been
-		// started. The following checks in this middleware depend on the runtime config
-		// service having been started.
-		if s := d.State(); s != services.Running {
-			return newUnavailableError(s)
-		}
-
-		ctx, rs, err := d.startPushRequest(ctx, pushReq.contentLength)
-		if err != nil {
-			return middleware.DoNotLogError{Err: err}
-		}
-
-		rs.pushHandlerPerformsCleanup = true
-		// Decrement counter after all ingester calls have finished or been cancelled.
-		pushReq.AddCleanup(func() {
-			d.cleanupAfterPushFinished(rs)
-		})
-
-		next, maybeCleanup := NextOrCleanup(next, pushReq)
-		defer maybeCleanup()
-
-		userID, err := tenant.TenantID(ctx)
-		if err != nil {
-			return err
-		}
-
-		now := mtime.Now()
-		if !d.requestRateLimiter.AllowN(now, userID, 1) {
-			d.discardedRequestsRateLimited.WithLabelValues(userID).Add(1)
-
-			return newRequestRateLimitedError(d.limits.RequestRate(userID), d.limits.RequestBurstSize(userID))
-		}
-
-		// Note that we don't enforce the per-user ingestion rate limit here since we need to apply validation
-		// before we know how many samples/exemplars/metadata we'll actually be writing.
-
-		req, err := pushReq.WriteRequest()
-		if err != nil {
-			return err
-		}
-
-		if err := d.checkWriteRequestSize(rs, int64(req.Size())); err != nil {
-			return err
-		}
-
-		return next(ctx, pushReq)
+func (d *Distributor) limitsMiddleware(ctx context.Context, pushReq *Request) error {
+	// Make sure the distributor service and all its dependent services have been
+	// started. The following checks in this middleware depend on the runtime config
+	// service having been started.
+	if s := d.State(); s != services.Running {
+		return newUnavailableError(s)
 	}
+
+	ctx, rs, err := d.startPushRequest(ctx, pushReq.contentLength)
+	if err != nil {
+		return middleware.DoNotLogError{Err: err}
+	}
+
+	rs.pushHandlerPerformsCleanup = true
+	// Decrement counter after all ingester calls have finished or been cancelled.
+	pushReq.AddCleanup(func() {
+		d.cleanupAfterPushFinished(rs)
+	})
+
+	cleanupInDefer := true
+	defer func() {
+		if cleanupInDefer {
+			pushReq.CleanUp()
+		}
+	}()
+
+	userID, err := tenant.TenantID(ctx)
+	if err != nil {
+		return err
+	}
+
+	now := mtime.Now()
+	if !d.requestRateLimiter.AllowN(now, userID, 1) {
+		d.discardedRequestsRateLimited.WithLabelValues(userID).Add(1)
+
+		return newRequestRateLimitedError(d.limits.RequestRate(userID), d.limits.RequestBurstSize(userID))
+	}
+
+	// Note that we don't enforce the per-user ingestion rate limit here since we need to apply validation
+	// before we know how many samples/exemplars/metadata we'll actually be writing.
+
+	req, err := pushReq.WriteRequest()
+	if err != nil {
+		return err
+	}
+
+	if err := d.checkWriteRequestSize(rs, int64(req.Size())); err != nil {
+		return err
+	}
+
+	cleanupInDefer = false
+	return d.metricsMiddleware(ctx, pushReq)
 }
 
 // NextOrCleanup returns a new PushFunc and a cleanup function that should be deferred by the caller.

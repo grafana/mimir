@@ -12,6 +12,7 @@ import (
 	"io"
 	"math"
 	"math/rand"
+	"net/http/httptest"
 	"slices"
 	"sort"
 	"strconv"
@@ -2471,6 +2472,11 @@ func BenchmarkDistributor_Push(b *testing.B) {
 						require.NoError(b, services.StopAndAwaitTerminated(context.Background(), distributor))
 					})
 
+					handler := Handler(100_000_000, nil, true, true, distributor.limits, RetryConfig{},
+						distributor,
+						nil, log.NewNopLogger(),
+					)
+
 					// Prepare the series to remote write before starting the benchmark.
 					metrics, samples := testData.prepareSeries()
 
@@ -2481,14 +2487,24 @@ func BenchmarkDistributor_Push(b *testing.B) {
 					for n := 0; n < b.N; n++ {
 						b.StopTimer()
 						rw := mimirpb.ToWriteRequest(metrics, samples, nil, nil, mimirpb.API)
+						rwb, err := rw.Marshal()
+						require.NoError(b, err)
+						req := createRequest(b, rwb)
+						req = req.WithContext(ctx)
+						resp := httptest.NewRecorder()
 						b.StartTimer()
-						_, err := distributor.Push(ctx, rw)
+
+						handler.ServeHTTP(resp, req)
+						b.StopTimer()
+						if resp.Result().StatusCode > 399 {
+							err = errors.New(resp.Body.String())
+						}
 
 						if testData.expectedErr == "" && err != nil {
-							b.Fatalf("no error expected but got %v", err)
+							b.Fatalf("no error expected but got %q", err)
 						}
 						if testData.expectedErr != "" && (err == nil || !strings.Contains(err.Error(), testData.expectedErr)) {
-							b.Fatalf("expected %v error but got %v", testData.expectedErr, err)
+							b.Fatalf("expected %q error but got %q", testData.expectedErr, err)
 						}
 					}
 				})

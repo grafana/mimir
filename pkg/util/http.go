@@ -163,7 +163,7 @@ func ParseProtoReader(ctx context.Context, reader io.Reader, expectedSize, maxSi
 
 	// We re-implement proto.Unmarshal here as it calls XXX_Unmarshal first,
 	// which we can't override without upsetting golint.
-	req.Reset()
+	req.Reset() //lifecheck:safe
 	if u, ok := req.(proto.Unmarshaler); ok {
 		err = u.Unmarshal(body)
 	} else {

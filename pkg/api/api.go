@@ -269,7 +269,7 @@ func (a *API) RegisterDistributor(d *distributor.Distributor, pushConfig distrib
 
 	a.RegisterRoute(PrometheusPushEndpoint, distributor.Handler(
 		pushConfig.MaxRecvMsgSize, a.sourceIPs, a.cfg.SkipLabelNameValidationHeader,
-		a.cfg.SkipLabelCountValidationHeader, limits, pushConfig.RetryConfig, d.PushWithMiddlewares, d.PushMetrics, a.logger,
+		a.cfg.SkipLabelCountValidationHeader, limits, pushConfig.RetryConfig, d, d.PushMetrics, a.logger,
 	), true, false, "POST")
 
 	if pushConfig.EnableInfluxEndpoint {

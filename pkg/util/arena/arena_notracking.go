@@ -12,22 +12,28 @@ func NewArena() *Arena {
 	return &Arena{a: newArena()}
 }
 
+func WithArena(f func(a *Arena)) {
+	a := NewArena()
+	defer a.Free()
+	f(a)
+}
+
 func New[T any](a *Arena) *T {
 	if a == nil {
 		return new(T)
 	}
-	return allocate[T](a.a)
+	return allocate[T](a.a) //lifecheck:safe,skip,returnalias
 }
 
 func MakeSlice[T any](a *Arena, len, cap int) []T {
 	if a == nil {
 		return make([]T, len, cap)
 	}
-	return makeSlice[T](a.a, len, cap)
+	return makeSlice[T](a.a, len, cap) //lifecheck:safe,skip,returnalias
 }
 
 func Clone[T any](s T) T {
-	return clone(s)
+	return clone(s) //lifecheck:safe,skip
 }
 
 func (a *Arena) Free() {

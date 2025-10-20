@@ -515,7 +515,7 @@ func TestValidateLabels(t *testing.T) {
 					}
 
 					handler := Handler(100000, nil, true, true, d.limits, RetryConfig{},
-						d.PushWithMiddlewares,
+						d,
 						nil, log.NewNopLogger(),
 					)
 
