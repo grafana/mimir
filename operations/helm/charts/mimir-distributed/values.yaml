@@ -3062,13 +3062,13 @@ ingress:
   # ingressClassName: nginx
   annotations: {}
   paths:
-    distributor-headless:
+    distributor:
       - path: /distributor
         # -- pathType (e.g. ImplementationSpecific, Prefix, .. etc.) might also be required by some Ingress Controllers
         # pathType: Prefix
       - path: /api/v1/push
       - path: /otlp/v1/metrics
-    alertmanager-headless:
+    alertmanager:
       - path: /alertmanager
       - path: /multitenant_alertmanager/status
       - path: /multitenant_alertmanager/configs
