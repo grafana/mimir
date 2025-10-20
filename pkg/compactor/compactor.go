@@ -473,14 +473,18 @@ func (c *MultitenantCompactor) CheckReady(_ context.Context) error {
 	}
 
 	if _, err := os.Stat(c.compactorCfg.DataDir); err != nil && errors.Is(err, os.ErrNotExist) {
-		level.Warn(c.logger).Log("msg", "-compactor.data-dir is not yet mounted.  Skipping the volume read/write test until it is created")
+		level.Warn(c.logger).Log("msg", "error running `stat` against -compactor.data-dir volume.  The directory does not exist; skipping health check")
 		return nil
 	} else if err != nil {
-		level.Error(c.logger).Log("msg", "-compactor.data-dir cannot be listed", "err", err)
-		return err
+		return fmt.Errorf("error running `stat` against -compactor.data-dir volume: %w", err)
 	}
 
 	testfile := path.Join(c.compactorCfg.DataDir, ".rw-test")
+	defer func() {
+		if err := os.Remove(testfile); err != nil && !errors.Is(err, os.ErrNotExist) {
+			level.Warn(c.logger).Log("msg", fmt.Sprintf("error removing test file %s", testfile), "err", err)
+		}
+	}()
 
 	if err := os.WriteFile(testfile, []byte{}, 0o644); err != nil {
 		return fmt.Errorf("error writing test file %s: %w", testfile, err)
@@ -491,12 +495,9 @@ func (c *MultitenantCompactor) CheckReady(_ context.Context) error {
 	}
 
 	if _, err := os.ReadFile(testfile); err != nil {
-		return fmt.Errorf("error reading test file %s after it was created: %w", testfile, err)
+		return fmt.Errorf("error reading test file %s after creation: %w", testfile, err)
 	}
 
-	if err := os.Remove(testfile); err != nil {
-		level.Warn(c.logger).Log("msg", fmt.Sprintf("error removing test file %s volume", testfile), "err", err)
-	}
 	return nil
 }
 
@@ -840,7 +841,7 @@ func (c *MultitenantCompactor) compactUser(ctx context.Context, userID string) e
 
 	// Disable maxLookback (set to 0s) when block upload is enabled, block upload enabled implies there will be blocks
 	// beyond the lookback period, we don't want the compactor to skip these
-	var maxLookback = c.cfgProvider.CompactorMaxLookback(userID)
+	maxLookback := c.cfgProvider.CompactorMaxLookback(userID)
 	if c.cfgProvider.CompactorBlockUploadEnabled(userID) {
 		maxLookback = 0
 	}
