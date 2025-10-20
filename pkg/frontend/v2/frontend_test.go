@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	prototypes "github.com/gogo/protobuf/types"
 	"github.com/grafana/dskit/cancellation"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/httpgrpc"
@@ -34,6 +35,7 @@ import (
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
@@ -1311,6 +1313,79 @@ func TestFrontend_Protobuf_ResponseWithUnexpectedUserID(t *testing.T) {
 
 	errSentToQuerier := <-errChan
 	require.Equal(t, errSentToQuerier, status.Errorf(codes.FailedPrecondition, `got response for query ID %v, expected user "the-user", but response had "some-other-user"`, queryID))
+}
+
+func TestFrontend_Protobuf_MultipleConcurrentResponses(t *testing.T) {
+	f, _ := setupFrontend(t, nil, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
+		if msg.Type != schedulerpb.ENQUEUE {
+			return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.ERROR, Error: fmt.Sprintf("unexpected message type %v sent to scheduler", msg.Type)}
+		}
+
+		go func() {
+			req := &querierpb.EvaluateQueryRequest{}
+			require.NoError(t, prototypes.UnmarshalAny(msg.GetProtobufRequest().Payload, req))
+
+			resp := generateConcurrencyTestResponse(req.BatchSize)
+			sendStreamingResponse(t, f, msg.UserID, msg.QueryID, resp)
+		}()
+
+		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
+	})
+
+	ctx := user.InjectOrgID(context.Background(), "the-user")
+	ctx = querymiddleware.ContextWithParallelismLimiter(ctx, querymiddleware.NewParallelismLimiter(math.MaxInt))
+	wg := &sync.WaitGroup{}
+
+	// Launch a number of simultaneous requests to ensure that returned response messages don't share the underlying gRPC buffer.
+	// Labels in series metadata messages contain unsafe references
+	// to the underlying gRPC buffer, so if that buffer is returned to the pool too early, the response will be corrupted.
+	for idx := range 50 {
+		wg.Go(func() {
+			for range 5 {
+
+				req := &querierpb.EvaluateQueryRequest{
+					BatchSize: uint64(idx), // Abuse this parameter so we can smuggle an ID to the handler above, so it can generate predictable but different responses for each request.
+				}
+
+				resp, err := f.DoProtobufRequest(ctx, req, time.Now(), time.Now())
+				require.NoError(t, err)
+
+				msg, err := resp.Next(ctx)
+				require.NoErrorf(t, err, "request %d failed with error", idx)
+
+				// Compare the evaluation response, rather than the top-level message.
+				// The evaluation response is the part that contains the interesting fields for this test,
+				// and avoiding the top-level message means we don't get failures because the buffers each message
+				// holds a reference to is different.
+				expected := generateConcurrencyTestResponse(uint64(idx)).GetEvaluateQueryResponse()
+				payload := msg.GetEvaluateQueryResponse()
+				require.Equal(t, expected, payload)
+
+				resp.Close()
+			}
+		})
+	}
+
+	wg.Wait()
+}
+
+func generateConcurrencyTestResponse(idx uint64) *frontendv2pb.QueryResultStreamRequest {
+	seriesCount := idx%13 + 1
+	var series []labels.Labels
+	for seriesIdx := range seriesCount {
+		lbls := []string{
+			"response", strconv.FormatUint(idx, 10),
+			"series", strconv.FormatUint(seriesIdx, 10),
+		}
+
+		for i := range idx % 5 {
+			lbls = append(lbls, fmt.Sprintf("label_%v", i), strings.Repeat("abcde12345fghij6789!", int(idx)))
+		}
+
+		series = append(series, labels.FromStrings(lbls...))
+	}
+
+	return newSeriesMetadata(false, series...)
 }
 
 func TestFrontendStreamingResponse(t *testing.T) {
