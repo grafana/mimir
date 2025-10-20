@@ -43,6 +43,14 @@ type FetcherMetrics struct {
 	SyncDuration prometheus.Histogram
 
 	Synced *extprom.TxGaugeVec
+
+	// Cache layer metrics track hits/misses at each cache layer
+	MetaLoadsTotal  prometheus.Counter // Total calls to loadMeta()
+	InMemCacheHits  prometheus.Counter // in_mem: per-instance f.cached map
+	LRUCacheHits    prometheus.Counter // lru: shared MetaCache LRU
+	LRUCacheMisses  prometheus.Counter // lru: MetaCache misses
+	DiskCacheHits   prometheus.Counter // disk: local disk cache
+	DiskCacheMisses prometheus.Counter // disk: had to check object storage
 }
 
 // Submit applies new values for metrics tracked by transaction GaugeVec.
@@ -117,6 +125,30 @@ func NewFetcherMetrics(reg prometheus.Registerer, syncedExtraLabels [][]string) 
 			{LookbackExcludedMeta},
 		}, syncedExtraLabels...)...,
 	)
+	m.MetaLoadsTotal = promauto.With(reg).NewCounter(prometheus.CounterOpts{
+		Name: "blocks_meta_loads_total",
+		Help: "Total number of calls to loadMeta() - the denominator for all cache hit rate calculations",
+	})
+	m.InMemCacheHits = promauto.With(reg).NewCounter(prometheus.CounterOpts{
+		Name: "blocks_meta_in_mem_cache_hits_total",
+		Help: "Total number of times block metadata was found in the per-instance in-memory f.cached map",
+	})
+	m.LRUCacheHits = promauto.With(reg).NewCounter(prometheus.CounterOpts{
+		Name: "blocks_meta_lru_cache_hits_total",
+		Help: "Total number of times block metadata was found in the shared LRU MetaCache",
+	})
+	m.LRUCacheMisses = promauto.With(reg).NewCounter(prometheus.CounterOpts{
+		Name: "blocks_meta_lru_cache_misses_total",
+		Help: "Total number of times block metadata was not found in the shared LRU MetaCache",
+	})
+	m.DiskCacheHits = promauto.With(reg).NewCounter(prometheus.CounterOpts{
+		Name: "blocks_meta_disk_cache_hits_total",
+		Help: "Total number of times block metadata was successfully loaded from local disk cache",
+	})
+	m.DiskCacheMisses = promauto.With(reg).NewCounter(prometheus.CounterOpts{
+		Name: "blocks_meta_disk_cache_misses_total",
+		Help: "Total number of times block metadata was not found in local disk cache and required checking object storage",
+	})
 	return &m
 }
 
@@ -190,6 +222,9 @@ var (
 // loadMeta returns metadata from object storage or error.
 // It returns ErrorSyncMetaNotFound and ErrorSyncMetaCorrupted sentinel errors in those cases.
 func (f *MetaFetcher) loadMeta(ctx context.Context, id ulid.ULID) (*Meta, error) {
+	// Track total calls to loadMeta - the denominator for cache hit rates
+	f.metrics.MetaLoadsTotal.Inc()
+
 	var (
 		metaFile       = path.Join(id.String(), MetaFilename)
 		cachedBlockDir = filepath.Join(f.cacheDir, id.String())
@@ -219,20 +254,24 @@ func (f *MetaFetcher) loadMeta(ctx context.Context, id ulid.ULID) (*Meta, error)
 	// - The block has been deleted: the loadMeta() function will not be called at all, because the block
 	//   was not discovered while iterating the bucket since all its files were already deleted.
 	if m, seen := f.cached[id]; seen {
+		f.metrics.InMemCacheHits.Inc()
 		return m, nil
 	}
 
 	if f.metaCache != nil {
 		m := f.metaCache.Get(id)
 		if m != nil {
+			f.metrics.LRUCacheHits.Inc()
 			return m, nil
 		}
+		f.metrics.LRUCacheMisses.Inc()
 	}
 
 	// Best effort load from local dir.
 	if f.cacheDir != "" {
 		m, err := ReadMetaFromDir(cachedBlockDir)
 		if err == nil {
+			f.metrics.DiskCacheHits.Inc()
 			if f.metaCache != nil {
 				f.metaCache.Put(m)
 			}
@@ -245,6 +284,8 @@ func (f *MetaFetcher) loadMeta(ctx context.Context, id ulid.ULID) (*Meta, error)
 				level.Warn(f.logger).Log("msg", "best effort remove of cached dir failed; ignoring", "dir", cachedBlockDir, "err", err)
 			}
 		}
+		// Disk cache was checked but missed
+		f.metrics.DiskCacheMisses.Inc()
 	}
 
 	r, err := f.bkt.ReaderWithExpectedErrs(f.bkt.IsObjNotFoundErr).Get(ctx, metaFile)

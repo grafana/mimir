@@ -5,6 +5,7 @@ package block
 import (
 	"context"
 	crypto_rand "crypto/rand"
+	"fmt"
 	"os"
 	"path"
 	"path/filepath"
@@ -664,4 +665,148 @@ func generateBlockUploadedAtTimestamp(t *testing.T, bkt objstore.Bucket, l log.L
 	_, err = Upload(context.Background(), l, bkt, fixedTimeULIDDir, meta)
 	require.NoError(t, err)
 	return fixedTimeULID
+}
+
+func TestMetaFetcher_CacheMetrics(t *testing.T) {
+	var (
+		ctx    = context.Background()
+		logger = log.NewNopLogger()
+	)
+
+	bkt, err := filesystem.NewBucketClient(filesystem.Config{Directory: t.TempDir()})
+	require.NoError(t, err)
+
+	blockID, blockDir := createTestBlock(t)
+	_, err = Upload(ctx, logger, bkt, blockDir, nil)
+	require.NoError(t, err)
+
+	testCases := map[string]struct {
+		setup                 func(t *testing.T) (*prometheus.Registry, *MetaFetcher)
+		expectedLoads         int
+		expectedInMemHits     int
+		expectedLRUHits       int
+		expectedLRUMisses     int
+		expectedDiskCacheHits int
+		expectedDiskCacheMiss int
+	}{
+		"first fetch should hit object storage": {
+			setup: func(t *testing.T) (*prometheus.Registry, *MetaFetcher) {
+				reg := prometheus.NewPedanticRegistry()
+				fetcher, err := NewMetaFetcher(logger, 10, objstore.WrapWithMetrics(bkt, reg, "test"), t.TempDir(), reg, nil, nil, 0)
+				require.NoError(t, err)
+				return reg, fetcher
+			},
+			expectedLoads:         1,
+			expectedDiskCacheMiss: 1,
+		},
+		"second fetch with same fetcher should hit in-memory cache": {
+			setup: func(t *testing.T) (*prometheus.Registry, *MetaFetcher) {
+				reg := prometheus.NewPedanticRegistry()
+				fetcher, err := NewMetaFetcher(logger, 10, objstore.WrapWithMetrics(bkt, reg, "test"), t.TempDir(), reg, nil, nil, 0)
+				require.NoError(t, err)
+				_, _, err = fetcher.Fetch(ctx)
+				require.NoError(t, err)
+				return reg, fetcher
+			},
+			expectedLoads:         2,
+			expectedInMemHits:     1,
+			expectedDiskCacheMiss: 1,
+		},
+		"new fetcher should hit disk cache": {
+			setup: func(t *testing.T) (*prometheus.Registry, *MetaFetcher) {
+				fetcherDir := t.TempDir()
+				reg1 := prometheus.NewPedanticRegistry()
+				fetcher1, err := NewMetaFetcher(logger, 10, objstore.WrapWithMetrics(bkt, reg1, "test"), fetcherDir, reg1, nil, nil, 0)
+				require.NoError(t, err)
+				_, _, err = fetcher1.Fetch(ctx)
+				require.NoError(t, err)
+
+				reg2 := prometheus.NewPedanticRegistry()
+				fetcher2, err := NewMetaFetcher(logger, 10, objstore.WrapWithMetrics(bkt, reg2, "test"), fetcherDir, reg2, nil, nil, 0)
+				require.NoError(t, err)
+				return reg2, fetcher2
+			},
+			expectedLoads:         1,
+			expectedDiskCacheHits: 1,
+		},
+		"second fetch with LRU cache should hit LRU": {
+			setup: func(t *testing.T) (*prometheus.Registry, *MetaFetcher) {
+				metaCache := NewMetaCache(100, 0, 0)
+				reg := prometheus.NewPedanticRegistry()
+				fetcher, err := NewMetaFetcher(logger, 10, objstore.WrapWithMetrics(bkt, reg, "test"), t.TempDir(), reg, nil, metaCache, 0)
+				require.NoError(t, err)
+				_, _, err = fetcher.Fetch(ctx)
+				require.NoError(t, err)
+				return reg, fetcher
+			},
+			expectedLoads:         2,
+			expectedInMemHits:     1,
+			expectedLRUMisses:     1,
+			expectedDiskCacheMiss: 1,
+		},
+		"new fetcher with shared LRU should hit LRU cache": {
+			setup: func(t *testing.T) (*prometheus.Registry, *MetaFetcher) {
+				metaCache := NewMetaCache(100, 0, 0)
+				reg1 := prometheus.NewPedanticRegistry()
+				fetcher1, err := NewMetaFetcher(logger, 10, objstore.WrapWithMetrics(bkt, reg1, "test"), t.TempDir(), reg1, nil, metaCache, 0)
+				require.NoError(t, err)
+				_, _, err = fetcher1.Fetch(ctx)
+				require.NoError(t, err)
+
+				reg2 := prometheus.NewPedanticRegistry()
+				fetcher2, err := NewMetaFetcher(logger, 10, objstore.WrapWithMetrics(bkt, reg2, "test"), t.TempDir(), reg2, nil, metaCache, 0)
+				require.NoError(t, err)
+				return reg2, fetcher2
+			},
+			expectedLoads:     1,
+			expectedLRUHits:   1,
+			expectedLRUMisses: 0,
+		},
+		"no disk cache dir should not increment disk metrics": {
+			setup: func(t *testing.T) (*prometheus.Registry, *MetaFetcher) {
+				reg := prometheus.NewPedanticRegistry()
+				fetcher, err := NewMetaFetcher(logger, 10, objstore.WrapWithMetrics(bkt, reg, "test"), "", reg, nil, nil, 0)
+				require.NoError(t, err)
+				return reg, fetcher
+			},
+			expectedLoads: 1,
+		},
+	}
+
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			reg, fetcher := tc.setup(t)
+
+			metas, _, err := fetcher.Fetch(ctx)
+			require.NoError(t, err)
+			require.Len(t, metas, 1)
+			require.Contains(t, metas, blockID)
+
+			require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
+				# HELP blocks_meta_in_mem_cache_hits_total Total number of times block metadata was found in the per-instance in-memory f.cached map
+				# TYPE blocks_meta_in_mem_cache_hits_total counter
+				blocks_meta_in_mem_cache_hits_total `+fmt.Sprintf("%d", tc.expectedInMemHits)+`
+
+				# HELP blocks_meta_lru_cache_hits_total Total number of times block metadata was found in the shared LRU MetaCache
+				# TYPE blocks_meta_lru_cache_hits_total counter
+				blocks_meta_lru_cache_hits_total `+fmt.Sprintf("%d", tc.expectedLRUHits)+`
+
+				# HELP blocks_meta_lru_cache_misses_total Total number of times block metadata was not found in the shared LRU MetaCache
+				# TYPE blocks_meta_lru_cache_misses_total counter
+				blocks_meta_lru_cache_misses_total `+fmt.Sprintf("%d", tc.expectedLRUMisses)+`
+
+				# HELP blocks_meta_disk_cache_hits_total Total number of times block metadata was successfully loaded from local disk cache
+				# TYPE blocks_meta_disk_cache_hits_total counter
+				blocks_meta_disk_cache_hits_total `+fmt.Sprintf("%d", tc.expectedDiskCacheHits)+`
+
+				# HELP blocks_meta_disk_cache_misses_total Total number of times block metadata was not found in local disk cache and required checking object storage
+				# TYPE blocks_meta_disk_cache_misses_total counter
+				blocks_meta_disk_cache_misses_total `+fmt.Sprintf("%d", tc.expectedDiskCacheMiss)+`
+
+				# HELP blocks_meta_loads_total Total number of calls to loadMeta() - the denominator for all cache hit rate calculations
+				# TYPE blocks_meta_loads_total counter
+				blocks_meta_loads_total `+fmt.Sprintf("%d", tc.expectedLoads)+`
+			`), "blocks_meta_loads_total", "blocks_meta_in_mem_cache_hits_total", "blocks_meta_lru_cache_hits_total", "blocks_meta_lru_cache_misses_total", "blocks_meta_disk_cache_hits_total", "blocks_meta_disk_cache_misses_total"))
+		})
+	}
 }
