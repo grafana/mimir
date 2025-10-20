@@ -161,14 +161,14 @@ func sendResponseWithDelay(f *Frontend, delay time.Duration, userID string, quer
 }
 
 func sendStreamingResponse(t testing.TB, f *Frontend, userID string, queryID uint64, resp ...*frontendv2pb.QueryResultStreamRequest) {
-	if err := sendStreamingResponseWithErrorCapture(f, userID, queryID, resp...); err != nil {
+	if err := sendStreamingResponseWithErrorCapture(f, userID, queryID, nil, resp...); err != nil {
 		// If QueryResultStream fails, it's not necessarily a problem (eg. it might be that the context was cancelled)
 		// So just log it but don't fail the test.
 		t.Logf("sendStreamingResponse: QueryResultStream returned %v", err)
 	}
 }
 
-func sendStreamingResponseWithErrorCapture(f *Frontend, userID string, queryID uint64, resp ...*frontendv2pb.QueryResultStreamRequest) error {
+func sendStreamingResponseWithErrorCapture(f *Frontend, userID string, queryID uint64, afterLastMessageSent func(), resp ...*frontendv2pb.QueryResultStreamRequest) error {
 	for _, m := range resp {
 		m.QueryID = queryID
 	}
@@ -197,6 +197,10 @@ func sendStreamingResponseWithErrorCapture(f *Frontend, userID string, queryID u
 		if err := stream.Send(m); err != nil {
 			return err
 		}
+	}
+
+	if afterLastMessageSent != nil {
+		afterLastMessageSent()
 	}
 
 	_, err = stream.CloseAndRecv()
@@ -1252,7 +1256,7 @@ func TestFrontend_Protobuf_ResponseSentTwice(t *testing.T) {
 				defer wg.Done()
 
 				err := sendStreamingResponseWithErrorCapture(
-					f, userID, msg.QueryID,
+					f, userID, msg.QueryID, nil,
 					newStringMessage("first message"),
 					newStringMessage("second message"),
 				)
@@ -1313,7 +1317,7 @@ func TestFrontend_Protobuf_ResponseWithUnexpectedUserID(t *testing.T) {
 
 		go func() {
 			queryID.Store(msg.QueryID)
-			errChan <- sendStreamingResponseWithErrorCapture(f, "some-other-user", msg.QueryID, newStringMessage("first message"), newStringMessage("second message"))
+			errChan <- sendStreamingResponseWithErrorCapture(f, "some-other-user", msg.QueryID, nil, newStringMessage("first message"), newStringMessage("second message"))
 		}()
 
 		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
