@@ -134,8 +134,9 @@ type RingQueryPlanVersionProvider struct {
 func NewRingQueryPlanVersionProvider(ring ring.ReadRing, reg prometheus.Registerer) streamingpromql.QueryPlanVersionProvider {
 	provider := &RingQueryPlanVersionProvider{ring: ring}
 
+	// The metrics below are only expected to be exposed by query-frontends, hence the cortex_query_frontend_ prefix.
 	promauto.With(reg).NewGaugeFunc(prometheus.GaugeOpts{
-		Name: "cortex_querier_ring_calculated_maximum_supported_query_plan_version",
+		Name: "cortex_query_frontend_querier_ring_calculated_maximum_supported_query_plan_version",
 		Help: "The maximum supported query plan version calculated from the querier ring.",
 	}, func() float64 {
 		version, err := provider.GetMaximumSupportedQueryPlanVersion(context.Background())
@@ -147,7 +148,7 @@ func NewRingQueryPlanVersionProvider(ring ring.ReadRing, reg prometheus.Register
 	})
 
 	promauto.With(reg).NewGauge(prometheus.GaugeOpts{
-		Name: "cortex_querier_ring_expected_maximum_supported_query_plan_version",
+		Name: "cortex_query_frontend_querier_ring_expected_maximum_supported_query_plan_version",
 		Help: "The maximum supported query plan version this process was compiled to support.",
 	}).Set(float64(planning.MaximumSupportedQueryPlanVersion))
 
