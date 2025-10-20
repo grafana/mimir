@@ -175,6 +175,7 @@
 ### Tools
 
 * [ENHANCEMENT] Base `mimirtool`, `metaconvert`, `copyblocks`, and `query-tee` images on `distroless/static-debian12`. #13014
+* [ENHANCEMENT] kafkatool: add `format=json` to `kafkatool dump print`. #12737
 
 ### Query-tee
 
