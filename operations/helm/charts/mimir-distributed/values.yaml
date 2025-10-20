@@ -382,7 +382,7 @@ runtimeConfig: {}
 
 # RBAC configuration
 rbac:
-  # -- If true, PodSecurityPolicy will be rendered by the chart on Kuberentes 1.24.
+  # -- If true, PodSecurityPolicy will be rendered by the chart on Kubernetes 1.24.
   # By default the PodSecurityPolicy is not rendered on version 1.24.
   create: true
   # -- PSP configuration
