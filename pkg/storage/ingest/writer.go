@@ -167,7 +167,7 @@ func (w *Writer) WriteSync(ctx context.Context, partitionID int32, userID string
 	// visibility over this metric if records are rejected by Kafka because of MESSAGE_TOO_LARGE).
 	w.recordsPerRequest.Observe(float64(len(records)))
 
-	res := writer.ProduceSync(ctx, records)
+	res := writer.ProduceSync(ctx, records, log.With(w.logger, "context", &ctx))
 
 	// We track the latency both in case of success and failure (but with a different label), to avoid misunderstandings
 	// when we look at it in case Kafka Produce requests time out (if latency wasn't tracked on error, we would see low

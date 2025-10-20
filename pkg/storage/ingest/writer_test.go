@@ -335,7 +335,9 @@ func TestWriter_WriteSync(t *testing.T) {
 			secondRequestCtx, cancelSecondRequest = context.WithTimeout(ctx, 10*time.Millisecond)
 			t.Cleanup(cancelSecondRequest)
 
-			assert.ErrorIs(t, writer.WriteSync(secondRequestCtx, partitionID, tenantID, &mimirpb.WriteRequest{Timeseries: series2, Metadata: nil, Source: mimirpb.API}), context.DeadlineExceeded)
+			err := writer.WriteSync(secondRequestCtx, partitionID, tenantID, &mimirpb.WriteRequest{Timeseries: series2, Metadata: nil, Source: mimirpb.API})
+			t.Log("Second request updating")
+			assert.ErrorIs(t, err, context.DeadlineExceeded)
 		})
 
 		runAsyncAfter(&wg, firstRequestReceived, func() {
@@ -344,14 +346,16 @@ func TestWriter_WriteSync(t *testing.T) {
 				return client.BufferedProduceRecords() == 2
 			}, time.Second, 10*time.Millisecond)
 
-			assert.NoError(t, writer.WriteSync(ctx, partitionID, tenantID, &mimirpb.WriteRequest{Timeseries: series3, Metadata: nil, Source: mimirpb.API}))
+			err := writer.WriteSync(ctx, partitionID, tenantID, &mimirpb.WriteRequest{Timeseries: series3, Metadata: nil, Source: mimirpb.API})
+			t.Log("Third request updating")
+			assert.NoError(t, err)
 		})
 
 		// Wait until all 3 requests have been buffered.
 		require.Eventually(t, func() bool {
 			return client.BufferedProduceRecords() == 3
 		}, time.Second, 10*time.Millisecond)
-
+		t.Log("Cancelling second request's context")
 		// Cancel the 2nd request context.
 		cancelSecondRequest()
 

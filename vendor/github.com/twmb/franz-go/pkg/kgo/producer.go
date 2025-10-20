@@ -515,7 +515,7 @@ func (cl *Client) produce(
 		p.blockedBytes += userSize
 		p.mu.Unlock()
 
-		cl.cfg.logger.Log(LogLevelDebug, "blocking Produce because we are either over max buffered records or max buffered bytes",
+		cl.cfg.logger.Log(LogLevelInfo, "blocking Produce because we are either over max buffered records or max buffered bytes",
 			"over_max_records", overMaxRecs,
 			"over_max_bytes", overMaxBytes,
 		)
@@ -565,14 +565,14 @@ func (cl *Client) produce(
 
 		select {
 		case <-wait:
-			cl.cfg.logger.Log(LogLevelDebug, "Produce block awoken, we now have space to produce, continuing to partition and produce")
+			cl.cfg.logger.Log(LogLevelInfo, "Produce block awoken, we now have space to produce, continuing to partition and produce")
 		case <-cl.ctx.Done():
 			drainBuffered(ErrClientClosed)
-			cl.cfg.logger.Log(LogLevelDebug, "client ctx canceled while blocked in Produce, returning")
+			cl.cfg.logger.Log(LogLevelInfo, "client ctx canceled while blocked in Produce, returning")
 			return
 		case <-ctx.Done():
 			drainBuffered(ctx.Err())
-			cl.cfg.logger.Log(LogLevelDebug, "produce ctx canceled while blocked in Produce, returning")
+			cl.cfg.logger.Log(LogLevelInfo, "produce ctx canceled while blocked in Produce, returning")
 			return
 		}
 	}
@@ -1132,7 +1132,7 @@ func (cl *Client) unlingerDueToMaxRecsBuffered() {
 			part.records.unlingerAndManuallyDrain()
 		}
 	}
-	cl.cfg.logger.Log(LogLevelDebug, "unlingered all partitions due to hitting max buffered")
+	cl.cfg.logger.Log(LogLevelInfo, "unlingered all partitions due to hitting max buffered")
 }
 
 // Flush hangs waiting for all buffered records to be flushed, stopping all
@@ -1151,7 +1151,7 @@ func (cl *Client) Flush(ctx context.Context) error {
 	defer p.flushing.Add(-1)
 
 	cl.cfg.logger.Log(LogLevelInfo, "flushing")
-	defer cl.cfg.logger.Log(LogLevelDebug, "flushed")
+	defer cl.cfg.logger.Log(LogLevelInfo, "flushed")
 
 	// At this point, if lingering is configured, nothing will _start_ a
 	// linger because the producer's flushing atomic int32 is nonzero. We
