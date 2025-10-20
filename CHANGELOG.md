@@ -71,6 +71,7 @@
 * [ENHANCEMENT] Query-frontend, querier: Add support for experimental `first_over_time` PromQL function. #12662
 * [ENHANCEMENT] OTLP: native support for OpenTelemetry metric start time to Prometheus metric created timestamp conversion, instead of converting to QuietZeroNaNs introduced in #10238. The configuration parameter `-distributor.otel-start-time-quiet-zero` is therefore deprecated and will be removed. Now supports start time for exponential histograms. This is a major rewrite of the endpoint in upstream Prometheus and Mimir. #12652
 * [ENHANCEMENT] Distributor: Support zstd decompression of OTLP messages. #12229
+* [ENHANCEMENT] Distributor: Optimize Remote Write 1.0 to 2.0 translation by improving symbolization and reducing allocations. #12329
 * [ENHANCEMENT] Ingester: Improved the performance of active series custom trackers matchers. #12663
 * [ENHANCEMENT] Compactor: Log sizes of downloaded and uploaded blocks. #12656
 * [ENHANCEMENT] Block-builder-scheduler: The scheduler now handles multiple concurrent jobs within a partition if allowed by `-block-builder-scheduler.max-jobs-per-partition`. #12772
