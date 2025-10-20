@@ -527,6 +527,9 @@ func (s *ProtobufResponseStream) writeEnqueueError(err error) {
 //
 // Calling Next after an error has been returned by a previous Next call may lead to
 // undefined behaviour.
+//
+// Callers are responsible for calling FreeBuffer on the returned message once they are
+// finished with it.
 func (s *ProtobufResponseStream) Next(ctx context.Context) (*frontendv2pb.QueryResultStreamRequest, error) {
 	// If the request has already been cancelled or if this stream has been closed, then we should stop now.
 	if err := s.shouldAbortReading(ctx); err != nil {

@@ -123,10 +123,13 @@ type scalarExecutionResponse struct {
 }
 
 func (r *scalarExecutionResponse) GetValues(ctx context.Context) (types.ScalarData, error) {
-	resp, err := readNextEvaluateQueryResponse(ctx, r.stream)
+	resp, releaseMessage, err := readNextEvaluateQueryResponse(ctx, r.stream)
 	if err != nil {
 		return types.ScalarData{}, err
 	}
+
+	// Nothing in the message retains a reference to the underlying buffer, so we can release it immediately.
+	releaseMessage()
 
 	scalar := resp.GetScalarValue()
 	if scalar == nil {
@@ -171,10 +174,13 @@ func (r *instantVectorExecutionResponse) GetSeriesMetadata(ctx context.Context) 
 
 func (r *instantVectorExecutionResponse) GetNextSeries(ctx context.Context) (types.InstantVectorSeriesData, error) {
 	if len(r.currentBatch) == 0 {
-		resp, err := readNextEvaluateQueryResponse(ctx, r.stream)
+		resp, releaseMessage, err := readNextEvaluateQueryResponse(ctx, r.stream)
 		if err != nil {
 			return types.InstantVectorSeriesData{}, err
 		}
+
+		// Nothing in the message retains a reference to the underlying buffer, so we can release it immediately.
+		releaseMessage()
 
 		data := resp.GetInstantVectorSeriesData()
 		if data == nil {
@@ -249,10 +255,13 @@ func (r *rangeVectorExecutionResponse) GetNextStepSamples(ctx context.Context) (
 	r.floats.Release()
 	r.histograms.Release()
 
-	resp, err := readNextEvaluateQueryResponse(ctx, r.stream)
+	resp, releaseMessage, err := readNextEvaluateQueryResponse(ctx, r.stream)
 	if err != nil {
 		return nil, err
 	}
+
+	// Nothing in the message retains a reference to the underlying buffer, so we can release it immediately.
+	releaseMessage()
 
 	data := resp.GetRangeVectorStepData()
 	if data == nil {
@@ -303,28 +312,35 @@ func (r *rangeVectorExecutionResponse) Close() {
 
 var errUnexpectedEndOfStream = errors.New("expected EvaluateQueryResponse, got end of stream")
 
-func readNextEvaluateQueryResponse(ctx context.Context, stream responseStream) (*querierpb.EvaluateQueryResponse, error) {
+type releaseMessageFunc func()
+
+func readNextEvaluateQueryResponse(ctx context.Context, stream responseStream) (*querierpb.EvaluateQueryResponse, releaseMessageFunc, error) {
 	msg, err := stream.Next(ctx)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if msg == nil {
-		return nil, errUnexpectedEndOfStream
+		return nil, nil, errUnexpectedEndOfStream
 	}
 
 	resp := msg.GetEvaluateQueryResponse()
 	if resp == nil {
-		return nil, fmt.Errorf("expected EvaluateQueryResponse, got %T", msg.Data)
+		return nil, nil, fmt.Errorf("expected EvaluateQueryResponse, got %T", msg.Data)
 	}
 
-	return resp, nil
+	return resp, msg.FreeBuffer, nil
 }
 
 func readSeriesMetadata(ctx context.Context, stream responseStream, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) ([]types.SeriesMetadata, error) {
-	resp, err := readNextEvaluateQueryResponse(ctx, stream)
+	resp, releaseMessage, err := readNextEvaluateQueryResponse(ctx, stream)
 	if err != nil {
 		return nil, err
 	}
+
+	// The labels in the message contain references to the underlying buffer, so we can't release it immediately.
+	// The value returned by FromLabelAdaptersToLabels does not retain a reference to the underlying buffer,
+	// so we can release the buffer once that method returns.
+	defer releaseMessage()
 
 	seriesMetadata := resp.GetSeriesMetadata()
 	if seriesMetadata == nil {
@@ -353,10 +369,13 @@ func readSeriesMetadata(ctx context.Context, stream responseStream, memoryConsum
 func readEvaluationCompleted(ctx context.Context, stream responseStream) (*annotations.Annotations, stats.Stats, error) {
 	// Keep reading the stream until we get to an evaluation completed message.
 	for {
-		resp, err := readNextEvaluateQueryResponse(ctx, stream)
+		resp, releaseMessage, err := readNextEvaluateQueryResponse(ctx, stream)
 		if err != nil {
 			return nil, stats.Stats{}, err
 		}
+
+		// Nothing in the message retains a reference to the underlying buffer, so we can release it immediately.
+		releaseMessage()
 
 		completion := resp.GetEvaluationCompleted()
 		if completion == nil {
