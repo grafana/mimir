@@ -1933,7 +1933,14 @@ func TestBlocksStoreQuerier_ShouldReturnContextCanceledIfContextWasCanceledWhile
 		clientCfg := grpcclient.Config{}
 		flagext.DefaultValues(&clientCfg)
 
-		client, err := dialStoreGatewayClient(clientCfg, ring.InstanceDesc{Addr: listener.Addr().String()}, promauto.With(nil).NewHistogramVec(prometheus.HistogramOpts{}, []string{"route", "status_code"}), util.NewRequestInvalidClusterValidationLabelsTotalCounter(nil, "store-gateway", util.GRPCProtocol), log.NewNopLogger())
+		client, err := dialStoreGatewayClient(
+			clientCfg,
+			ring.InstanceDesc{Addr: listener.Addr().String()},
+			promauto.With(nil).NewHistogramVec(prometheus.HistogramOpts{}, []string{"route", "status_code"}),
+			util.NewRequestInvalidClusterValidationLabelsTotalCounter(nil, "store-gateway", util.GRPCProtocol),
+			promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"store_gateway_zone"}),
+			log.NewNopLogger())
+
 		require.NoError(t, err)
 		t.Cleanup(func() {
 			require.NoError(t, client.Close())
@@ -3272,6 +3279,7 @@ func (m *blocksFinderMock) GetBlocks(ctx context.Context, userID string, minT, m
 
 type storeGatewayClientMock struct {
 	remoteAddr                string
+	remoteZone                string
 	mockedSeriesResponses     []*storepb.SeriesResponse
 	mockedSeriesErr           error
 	mockedLabelNamesResponse  *storepb.LabelNamesResponse
@@ -3314,6 +3322,10 @@ func (m *storeGatewayClientMock) LabelValues(context.Context, *storepb.LabelValu
 
 func (m *storeGatewayClientMock) RemoteAddress() string {
 	return m.remoteAddr
+}
+
+func (m *storeGatewayClientMock) RemoteZone() string {
+	return m.remoteZone
 }
 
 type storeGatewaySeriesClientMock struct {
@@ -3359,6 +3371,7 @@ func (m *cancelerStoreGatewaySeriesClientMock) Recv() (*storepb.SeriesResponse, 
 
 type cancelerStoreGatewayClientMock struct {
 	remoteAddr    string
+	remoteZone    string
 	produceSeries bool
 	cancel        func()
 }
@@ -3390,6 +3403,10 @@ func (m *cancelerStoreGatewayClientMock) LabelValues(ctx context.Context, _ *sto
 
 func (m *cancelerStoreGatewayClientMock) RemoteAddress() string {
 	return m.remoteAddr
+}
+
+func (m *cancelerStoreGatewayClientMock) RemoteZone() string {
+	return m.remoteZone
 }
 
 type blocksStoreLimitsMock struct {

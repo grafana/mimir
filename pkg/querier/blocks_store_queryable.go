@@ -85,6 +85,10 @@ type BlocksStoreClient interface {
 	// RemoteAddress returns the address of the remote store-gateway and is used to uniquely
 	// identify a store-gateway backend instance.
 	RemoteAddress() string
+
+	// RemoteZone returns the zone of the remote store-gateway, or an empty string if the zone
+	// is not set or is unknown.
+	RemoteZone() string
 }
 
 // BlocksStoreLimits is the interface that should be implemented by the limits provider.
@@ -250,7 +254,7 @@ func NewBlocksStoreQueryableFromConfig(querierCfg Config, gatewayCfg storegatewa
 		)
 	}
 
-	stores, err = newBlocksStoreReplicationSet(storesRing, randomLoadBalancing, dynamicReplication, limits, querierCfg.StoreGatewayClient, logger, reg)
+	stores, err = newBlocksStoreReplicationSet(storesRing, randomLoadBalancing, dynamicReplication, querierCfg.PreferAvailabilityZone, limits, querierCfg.StoreGatewayClient, logger, reg)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to create store set")
 	}

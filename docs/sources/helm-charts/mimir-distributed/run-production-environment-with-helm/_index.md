@@ -337,7 +337,7 @@ If you need redundancy on the write path before it reaches Mimir, then you
 can set up redundant instances of Prometheus or Grafana Alloy to
 write metrics to Mimir.
 
-For more information, see [Configure high-availability deduplication with Consul](configure-helm-ha-deduplication-consul/).
+For more information, refer to [Configure high-availability deduplication](configure-helm-ha-deduplication/).
 
 ## Deploy on OpenShift
 

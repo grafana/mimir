@@ -20,7 +20,6 @@
 (import 'overrides-exporter.libsonnet') +
 
 // Supporting services
-(import 'etcd.libsonnet') +
 (import 'memcached.libsonnet') +
 
 // Mimir features
@@ -32,7 +31,6 @@
 // Multi-zone support.
 (import 'multi-zone.libsonnet') +
 (import 'multi-zone-distributor.libsonnet') +
-(import 'multi-zone-etcd.libsonnet') +
 
 // Import autoscaling after other features because it overrides deployments.
 (import 'autoscaling.libsonnet') +

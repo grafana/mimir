@@ -1431,36 +1431,3 @@ spec:
         requests:
           storage: 50Gi
       storageClassName: standard
----
-apiVersion: etcd.database.coreos.com/v1beta2
-kind: EtcdCluster
-metadata:
-  annotations:
-    etcd.database.coreos.com/scope: clusterwide
-  name: etcd
-  namespace: default
-spec:
-  pod:
-    affinity:
-      podAntiAffinity:
-        requiredDuringSchedulingIgnoredDuringExecution:
-        - labelSelector:
-            matchLabels:
-              etcd_cluster: etcd
-          topologyKey: kubernetes.io/hostname
-    annotations:
-      prometheus.io/port: "2379"
-      prometheus.io/scrape: "true"
-    etcdEnv:
-    - name: ETCD_AUTO_COMPACTION_RETENTION
-      value: 1h
-    labels:
-      name: etcd
-    resources:
-      limits:
-        memory: 512Mi
-      requests:
-        cpu: 500m
-        memory: 512Mi
-  size: 3
-  version: 3.3.13
