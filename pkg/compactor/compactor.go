@@ -480,7 +480,6 @@ func (c *MultitenantCompactor) CheckReady(_ context.Context) error {
 		return err
 	}
 
-	level.Warn(c.logger).Log("msg", "-compactor.data-dir is not yet mounted.  Skipping the volume read/write test until it is created")
 	testfile := path.Join(c.compactorCfg.DataDir, ".rw-test")
 
 	if err := os.WriteFile(testfile, []byte{}, 0o644); err != nil {
