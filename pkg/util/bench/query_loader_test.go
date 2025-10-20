@@ -187,7 +187,7 @@ func TestLoadQueryLogsFromFile(t *testing.T) {
 
 	// Sample log entries in newline-delimited JSON format
 	content := `{"labels":{"method":"POST","param_query":"up","param_start":"2025-10-15T14:56:20Z","param_end":"2025-10-15T14:56:23Z","param_step":"15"},"timestamp":"2025-10-15T14:56:24.337Z"}
-{"labels":{"method":"POST","param_query":"node_cpu_seconds_total","param_start":"1728994584","param_end":"1728994884","param_step":"30"},"timestamp":"2025-10-15T14:56:24.437Z"}
+{"labels":{"method":"POST","param_query":"node_cpu_seconds_total","param_start":"2025-10-15T15:00:20Z","param_end":"2025-10-15T15:01:20Z","param_step":"30"},"timestamp":"2025-10-15T14:56:24.437Z"}
 {"labels":{"method":"GET","param_query":"should_be_skipped"},"timestamp":"2025-10-15T14:56:24.437Z"}
 {"labels":{"param_query":"query_without_method"},"timestamp":"2025-10-15T14:56:24.437Z"}
 `

@@ -318,20 +318,13 @@ func (q *Query) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
-// parseTime parses a time string that can be either a Unix timestamp (float) or RFC3339Nano format.
+// parseTime parses a time string in RFC3339Nano format.
 func parseTime(str string) (time.Time, error) {
-	t, err := strconv.ParseFloat(str, 64)
+	timestamp, err := time.Parse(time.RFC3339Nano, str)
 	if err != nil {
-		timestamp, err := time.Parse(time.RFC3339Nano, str)
-		if err != nil {
-			return time.Time{}, err
-		}
-		return timestamp, nil
+		return time.Time{}, err
 	}
-
-	s, ns := math.Modf(t)
-	ns = math.Round(ns*1000) / 1000
-	return time.Unix(int64(s), int64(ns*float64(time.Second))).UTC(), nil
+	return timestamp, nil
 }
 
 // parseDuration parses a duration string that can be either a float (seconds) or Prometheus duration format.
