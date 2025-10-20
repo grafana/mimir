@@ -473,10 +473,10 @@ func (c *MultitenantCompactor) CheckReady(_ context.Context) error {
 	}
 
 	if _, err := os.Stat(c.compactorCfg.DataDir); err != nil && errors.Is(err, os.ErrNotExist) {
-		level.Warn(c.logger).Log("msg", "error running `stat` against -compactor.data-dir volume.  The directory does not exist; skipping health check")
+		level.Warn(c.logger).Log("msg", "error running 'stat' against -compactor.data-dir volume.  The directory does not exist; skipping health check")
 		return nil
 	} else if err != nil {
-		return fmt.Errorf("error running `stat` against -compactor.data-dir volume: %w", err)
+		return fmt.Errorf("error running 'stat' against -compactor.data-dir volume: %w", err)
 	}
 
 	testfile := path.Join(c.compactorCfg.DataDir, ".rw-test")
