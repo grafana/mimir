@@ -8,7 +8,7 @@ A new Grafana Mimir release is cut approximately once every quarter, at the begi
 The following table contains past releases and tentative dates for upcoming releases:
 
 | Version | Date       | Release shepherd   |
-|---------|------------|--------------------|
+| ------- | ---------- | ------------------ |
 | 2.0.0   | 2022-03-20 | Marco Pracucci     |
 | 2.1.0   | 2022-05-16 | Johanna Ratliff    |
 | 2.2.0   | 2022-06-27 | Oleg Zaytsev       |
