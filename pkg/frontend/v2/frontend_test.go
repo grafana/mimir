@@ -1361,7 +1361,6 @@ func TestFrontend_Protobuf_MultipleConcurrentResponses(t *testing.T) {
 	for idx := range 50 {
 		wg.Go(func() {
 			for range 5 {
-
 				req := &querierpb.EvaluateQueryRequest{
 					BatchSize: uint64(idx), // Abuse this parameter so we can smuggle an ID to the handler above, so it can generate predictable but different responses for each request.
 				}
@@ -1389,15 +1388,22 @@ func TestFrontend_Protobuf_MultipleConcurrentResponses(t *testing.T) {
 	wg.Wait()
 }
 
+// generateConcurrencyTestResponse generates a unique but predictable querier response message based on idx.
+//
+// The message is constructed to have a high likelihood of causing noticeable changes in the other message
+// if two messages share the same underlying buffer.
 func generateConcurrencyTestResponse(idx uint64) *frontendv2pb.QueryResultStreamRequest {
 	seriesCount := idx%13 + 1
 	var series []labels.Labels
 	for seriesIdx := range seriesCount {
+		// Add some labels to help identify the response so we can check it is the response we expect.
 		lbls := []string{
 			"response", strconv.FormatUint(idx, 10),
 			"series", strconv.FormatUint(seriesIdx, 10),
 		}
 
+		// Add a small number of long labels of different lengths to increase the likelihood of overwriting something else
+		// if the buffer is shared by two messages.
 		for i := range idx % 5 {
 			lbls = append(lbls, fmt.Sprintf("label_%v", i), strings.Repeat("abcde12345fghij6789!", int(idx)))
 		}
