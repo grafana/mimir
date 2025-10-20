@@ -187,16 +187,16 @@ func TestRingQueryPlanVersionProvider(t *testing.T) {
 			}
 
 			expectedMetrics := fmt.Sprintf(`
-				# HELP cortex_querier_ring_calculated_maximum_supported_query_plan_version The maximum supported query plan version calculated from the querier ring.
-				# TYPE cortex_querier_ring_calculated_maximum_supported_query_plan_version gauge
-				cortex_querier_ring_calculated_maximum_supported_query_plan_version %v
-				
-				# HELP cortex_querier_ring_expected_maximum_supported_query_plan_version The maximum supported query plan version this process was compiled to support.
-				# TYPE cortex_querier_ring_expected_maximum_supported_query_plan_version gauge
-				cortex_querier_ring_expected_maximum_supported_query_plan_version %v
+				# HELP cortex_query_frontend_querier_ring_calculated_maximum_supported_query_plan_version The maximum supported query plan version calculated from the querier ring.
+				# TYPE cortex_query_frontend_querier_ring_calculated_maximum_supported_query_plan_version gauge
+				cortex_query_frontend_querier_ring_calculated_maximum_supported_query_plan_version %v
+
+				# HELP cortex_query_frontend_querier_ring_expected_maximum_supported_query_plan_version The maximum supported query plan version this process was compiled to support.
+				# TYPE cortex_query_frontend_querier_ring_expected_maximum_supported_query_plan_version gauge
+				cortex_query_frontend_querier_ring_expected_maximum_supported_query_plan_version %v
 			`, expectedMetricValue, planning.MaximumSupportedQueryPlanVersion)
 
-			require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics), "cortex_querier_ring_calculated_maximum_supported_query_plan_version", "cortex_querier_ring_expected_maximum_supported_query_plan_version"))
+			require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics), "cortex_query_frontend_querier_ring_calculated_maximum_supported_query_plan_version", "cortex_query_frontend_querier_ring_expected_maximum_supported_query_plan_version"))
 		})
 	}
 }
