@@ -4,6 +4,18 @@
 
 ### Grafana Mimir
 
+### Mixin
+
+### Jsonnet
+
+### Documentation
+
+### Tools
+
+## 3.0.0-rc.0
+
+### Grafana Mimir
+
 * [CHANGE] Build: Include updated Mozilla CA bundle from Debian Testing. #12247
 * [CHANGE] Query-frontend: Add support for UTF-8 label and metric names in `/api/v1/cardinality/{label_values|label_values|active_series}` endpoints. #11848.
 * [CHANGE] Querier: Add support for UTF-8 label and metric names in `label_join`, `label_replace` and `count_values` PromQL functions. #11848.
