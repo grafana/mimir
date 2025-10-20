@@ -95,7 +95,7 @@ func NewProxyBackend(name string, endpoint *url.URL, timeout time.Duration, pref
 		preferred:         preferred,
 		cfg:               cfg,
 		requestProportion: requestProportion,
-		minDataQueriedAge:  minDataQueriedAge,
+		minDataQueriedAge: minDataQueriedAge,
 		client: &http.Client{
 			CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
 				return errors.New("the query-tee proxy does not follow redirects")
@@ -144,7 +144,7 @@ func (b *ProxyBackend) ShouldHandleQuery(minQueryTime time.Time) bool {
 	}
 	// Backend serves queries where min_query_time >= (now - age)
 	cutOffTs := time.Now().Add(-b.minDataQueriedAge)
-	return !minQueryTime.Before(cutOffTs)
+	return minQueryTime.Before(cutOffTs)
 }
 
 func (b *ProxyBackend) ForwardRequest(ctx context.Context, orig *http.Request, body io.ReadCloser) (time.Duration, int, []byte, *http.Response, error) {
