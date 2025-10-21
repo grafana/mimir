@@ -29,8 +29,9 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 ## main / unreleased
 
+## 6.0.0-rc.0
+
 * [CHANGE] Remove all remaining GEM (enterprise) references from test configurations, reference files, and values.yaml. #13005 #13006 #13007 #13008 #13009 #13010
-* [ENHANCEMENT] Added `trafficDistribution` configuration option to distributor, gateway, querier, query-frontend, query-scheduler, ingester, and store-gateway services to enable same-zone traffic routing. #12243
 * [CHANGE] Minimum compatible Kubernetes version was updated to v1.29. #12527
 * [CHANGE] Mimir is deployed in the ingest storage architecture by default. #12459 #12495
   * Ingest storage is the next generation architecture of Grafana Mimir. With this architecture, the Mimir read and write paths are decoupled with Apache Kafka or Kafka-compatible backend.
@@ -51,6 +52,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [ENHANCEMENT] Add documentation for livenessProbe support in Chart. #12182
 * [ENHANCEMENT] Upgrade rollout-operator to [0.35.1](https://github.com/grafana/helm-charts/blob/main/charts/rollout-operator/README.md#upgrade-of-grafana-rollout-operator). Note required actions for upgrading the rollout-operator chart. #12591, #12996
 * [ENHANCEMENT] Add support for `dnsConfig` for all components. #12618
+* [ENHANCEMENT] Added `trafficDistribution` configuration option to distributor, gateway, querier, query-frontend, query-scheduler, ingester, and store-gateway services to enable same-zone traffic routing. #12243
 
 ## 5.8.0
 

@@ -3431,11 +3431,6 @@ The `memberlist` block configures the Gossip memberlist.
 The `limits` block configures default and per-tenant limits imposed by components.
 
 ```yaml
-# Maximum number of active series per user. 0 means no limit. This limit only
-# applies with ingest storage enabled.
-# CLI flag: -distributor.max-active-series-per-user
-[max_active_series_per_user: <int> | default = 0]
-
 # Per-tenant push request rate limit in requests per second. 0 to disable.
 # CLI flag: -distributor.request-rate-limit
 [request_rate: <float> | default = 0]

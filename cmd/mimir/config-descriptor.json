@@ -4487,16 +4487,6 @@
       "blockEntries": [
         {
           "kind": "field",
-          "name": "max_active_series_per_user",
-          "required": false,
-          "desc": "Maximum number of active series per user. 0 means no limit. This limit only applies with ingest storage enabled.",
-          "fieldValue": null,
-          "fieldDefaultValue": 0,
-          "fieldFlag": "distributor.max-active-series-per-user",
-          "fieldType": "int"
-        },
-        {
-          "kind": "field",
           "name": "request_rate",
           "required": false,
           "desc": "Per-tenant push request rate limit in requests per second. 0 to disable.",
