@@ -39,6 +39,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/streamingpromql"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/limiter"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/test"
@@ -266,8 +267,14 @@ func TestQuerier_QueryableReturnsChunksOutsideQueriedRange(t *testing.T) {
 	var cfg Config
 	flagext.DefaultValues(&cfg)
 
+	ctx := user.InjectOrgID(context.Background(), "user-1")
+	memoryTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
+	ctx = limiter.AddMemoryTrackerToContext(ctx, memoryTracker)
 	// Mock distributor to return chunks containing samples outside the queried range.
-	distributor := &mockDistributor{}
+	distributor := &mockDistributor{
+		memoryConsumptionTracker: memoryTracker,
+	}
+
 	distributor.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(
 		client.CombinedQueryStreamResponse{
 			StreamingSeries: []client.StreamingSeries{
@@ -353,7 +360,6 @@ func TestQuerier_QueryableReturnsChunksOutsideQueriedRange(t *testing.T) {
 	queryable, _, _, _, err := New(cfg, overrides, distributor, nil, nil, logger, nil, planner)
 	require.NoError(t, err)
 
-	ctx := user.InjectOrgID(context.Background(), "user-1")
 	query, err := engine.NewRangeQuery(ctx, queryable, nil, `sum({__name__=~".+"})`, queryStart, queryEnd, queryStep)
 	require.NoError(t, err)
 
@@ -411,8 +417,13 @@ func TestBatchMergeChunks(t *testing.T) {
 	chunks21 = append(chunks21, c2...)
 	chunks21 = append(chunks21, c1...)
 
+	ctx := user.InjectOrgID(context.Background(), "user-1")
+	memoryTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
+	ctx = limiter.AddMemoryTrackerToContext(ctx, memoryTracker)
 	// Mock distributor to return chunks that need merging.
-	distributor := &mockDistributor{}
+	distributor := &mockDistributor{
+		memoryConsumptionTracker: memoryTracker,
+	}
 	distributor.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(
 		client.CombinedQueryStreamResponse{
 			StreamingSeries: []client.StreamingSeries{
@@ -457,7 +468,6 @@ func TestBatchMergeChunks(t *testing.T) {
 	queryable, _, _, _, err := New(cfg, overrides, distributor, nil, nil, logger, nil, planner)
 	require.NoError(t, err)
 
-	ctx := user.InjectOrgID(context.Background(), "user-1")
 	query, err := engine.NewRangeQuery(ctx, queryable, nil, `rate({__name__=~".+"}[10s])`, queryStart, queryEnd, queryStep)
 	require.NoError(t, err)
 
@@ -652,8 +662,13 @@ func TestQuerier_ValidateQueryTimeRange(t *testing.T) {
 
 	for name, c := range tests {
 		t.Run(name, func(t *testing.T) {
+			ctx := user.InjectOrgID(context.Background(), "0")
+			memoryTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
+			ctx = limiter.AddMemoryTrackerToContext(ctx, memoryTracker)
 			// We don't need to query any data for this test, so an empty store is fine.
-			distributor := &mockDistributor{}
+			distributor := &mockDistributor{
+				memoryConsumptionTracker: memoryTracker,
+			}
 			distributor.On("Query", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(model.Matrix{}, nil)
 			distributor.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(client.CombinedQueryStreamResponse{}, nil)
 
@@ -664,7 +679,6 @@ func TestQuerier_ValidateQueryTimeRange(t *testing.T) {
 			queryable, _, _, _, err := New(cfg, overrides, distributor, nil, nil, log.NewNopLogger(), nil, planner)
 			require.NoError(t, err)
 
-			ctx := user.InjectOrgID(context.Background(), "0")
 			query, err := engine.NewRangeQuery(ctx, queryable, nil, "dummy", c.queryStartTime, c.queryEndTime, time.Minute)
 			require.NoError(t, err)
 
@@ -728,8 +742,16 @@ func TestQuerier_ValidateQueryTimeRange_MaxQueryLength(t *testing.T) {
 			limits.MaxPartialQueryLength = model.Duration(maxQueryLength)
 			overrides := validation.NewOverrides(limits, nil)
 
+			ctx := user.InjectOrgID(context.Background(), "test")
+			memoryTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
+			ctx = limiter.AddMemoryTrackerToContext(ctx, memoryTracker)
 			// We don't need to query any data for this test, so an empty distributor is fine.
-			distributor := &emptyDistributor{}
+			// But we still need a mock to handle memory consumption tracker.
+			distributor := &mockDistributor{
+				memoryConsumptionTracker: memoryTracker,
+			}
+			distributor.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(client.CombinedQueryStreamResponse{}, nil)
+
 			planner, err := streamingpromql.NewQueryPlanner(cfg.EngineConfig.MimirQueryEngine)
 			require.NoError(t, err)
 			queryable, _, _, _, err := New(cfg, overrides, distributor, nil, nil, log.NewNopLogger(), nil, planner)
@@ -743,7 +765,6 @@ func TestQuerier_ValidateQueryTimeRange_MaxQueryLength(t *testing.T) {
 				Timeout:            1 * time.Minute,
 			})
 
-			ctx := user.InjectOrgID(context.Background(), "test")
 			query, err := engine.NewRangeQuery(ctx, queryable, nil, testData.query, testData.queryStartTime, testData.queryEndTime, time.Minute)
 			require.NoError(t, err)
 
@@ -850,7 +871,12 @@ func TestQuerier_ValidateQueryTimeRange_MaxQueryLookback(t *testing.T) {
 			overrides := validation.NewOverrides(limits, nil)
 
 			t.Run("query range", func(t *testing.T) {
-				distributor := &mockDistributor{}
+				memoryTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
+				ctx = limiter.AddMemoryTrackerToContext(ctx, memoryTracker)
+
+				distributor := &mockDistributor{
+					memoryConsumptionTracker: memoryTracker,
+				}
 				distributor.On("Query", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(model.Matrix{}, nil)
 				distributor.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(client.CombinedQueryStreamResponse{}, nil)
 
@@ -1283,48 +1309,6 @@ func (m *errDistributor) ActiveSeries(context.Context, []*labels.Matcher) ([]lab
 
 func (m *errDistributor) ActiveNativeHistogramMetrics(context.Context, []*labels.Matcher) (*cardinality.ActiveNativeHistogramMetricsResponse, error) {
 	return nil, errDistributorError
-}
-
-type emptyDistributor struct{}
-
-func (d *emptyDistributor) LabelNamesAndValues(_ context.Context, _ []*labels.Matcher, _ cardinality.CountMethod) (*client.LabelNamesAndValuesResponse, error) {
-	return nil, errors.New("method is not implemented")
-}
-
-func (d *emptyDistributor) QueryStream(context.Context, *stats.QueryMetrics, model.Time, model.Time, ...*labels.Matcher) (client.CombinedQueryStreamResponse, error) {
-	return client.CombinedQueryStreamResponse{}, nil
-}
-
-func (d *emptyDistributor) QueryExemplars(context.Context, model.Time, model.Time, ...[]*labels.Matcher) (*client.ExemplarQueryResponse, error) {
-	return nil, nil
-}
-
-func (d *emptyDistributor) LabelValuesForLabelName(context.Context, model.Time, model.Time, model.LabelName, *storage.LabelHints, ...*labels.Matcher) ([]string, error) {
-	return nil, nil
-}
-
-func (d *emptyDistributor) LabelNames(context.Context, model.Time, model.Time, *storage.LabelHints, ...*labels.Matcher) ([]string, error) {
-	return nil, nil
-}
-
-func (d *emptyDistributor) MetricsForLabelMatchers(context.Context, model.Time, model.Time, *storage.SelectHints, ...*labels.Matcher) ([]labels.Labels, error) {
-	return nil, nil
-}
-
-func (d *emptyDistributor) MetricsMetadata(context.Context, *client.MetricsMetadataRequest) ([]scrape.MetricMetadata, error) {
-	return nil, nil
-}
-
-func (d *emptyDistributor) LabelValuesCardinality(context.Context, []model.LabelName, []*labels.Matcher, cardinality.CountMethod) (uint64, *client.LabelValuesCardinalityResponse, error) {
-	return 0, nil, nil
-}
-
-func (d *emptyDistributor) ActiveSeries(context.Context, []*labels.Matcher) ([]labels.Labels, error) {
-	return nil, nil
-}
-
-func (d *emptyDistributor) ActiveNativeHistogramMetrics(context.Context, []*labels.Matcher) (*cardinality.ActiveNativeHistogramMetricsResponse, error) {
-	return &cardinality.ActiveNativeHistogramMetricsResponse{}, nil
 }
 
 func TestQuerier_QueryStoreAfterConfig(t *testing.T) {
