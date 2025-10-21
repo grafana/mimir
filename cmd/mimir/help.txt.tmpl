@@ -379,8 +379,6 @@ Usage of ./cmd/mimir/mimir:
     	Per-tenant ingestion rate limit in samples per second. (default 10000)
   -distributor.ingestion-tenant-shard-size int
     	The tenant's shard size used by shuffle-sharding. This value is the total size of the shard (ie. it is not the number of ingesters in the shard per zone, but the number of ingesters in the shard across all zones, if zone-awareness is enabled). Must be set both on ingesters and distributors. 0 disables shuffle sharding.
-  -distributor.max-active-series-per-user int
-    	Maximum number of active series per user. 0 means no limit. This limit only applies with ingest storage enabled.
   -distributor.request-burst-size int
     	Per-tenant allowed push request burst size. 0 to disable.
   -distributor.request-rate-limit float
@@ -504,7 +502,7 @@ Usage of ./cmd/mimir/mimir:
   -ingester.ring.etcd.username string
     	Etcd username.
   -ingester.ring.replication-factor int
-    	Number of ingesters that each time series is replicated to. This option needs be set on ingesters, distributors, queriers, and rulers when running in microservices mode. (default 3)
+    	Number of ingesters that each time series is replicated to. This configuration is not used when ingest storage is enabled. This option needs be set on ingesters, distributors, queriers, and rulers when running in microservices mode. (default 3)
   -ingester.ring.store string
     	Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi. (default "memberlist")
   -ingester.ring.tokens-file-path string
