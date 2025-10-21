@@ -28,6 +28,8 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
+	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
+	"github.com/grafana/mimir/pkg/util/propagation"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
@@ -1118,6 +1120,7 @@ func TestProxyEndpoint_TimeBasedBackendSelection(t *testing.T) {
 				backends = append(backends, backend)
 			}
 
+			decoder := newTestQueryDecoder()
 			endpoint := NewProxyEndpoint(
 				backends,
 				Route{RouteName: "test"},
@@ -1127,7 +1130,7 @@ func TestProxyEndpoint_TimeBasedBackendSelection(t *testing.T) {
 				0,
 				1.0, // All secondary backends should be included by proportion
 				false,
-				5*time.Minute,
+				decoder,
 			)
 
 			// Create test request
@@ -1227,4 +1230,9 @@ type backendTestConfig struct {
 	name              string
 	preferred         bool
 	minDataQueriedAge string
+}
+
+// newTestQueryDecoder creates a decoder instance for use in tests
+func newTestQueryDecoder() QueryRequestDecoder {
+	return querymiddleware.NewCodec(nil, 5*time.Minute, "json", nil, &propagation.NoopInjector{})
 }

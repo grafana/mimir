@@ -27,6 +27,10 @@ type ResponsesComparator interface {
 	Compare(expected, actual []byte, queryEvaluationTime time.Time) (ComparisonResult, error)
 }
 
+type QueryRequestDecoder interface {
+	DecodeMetricsQueryRequest(ctx context.Context, r *http.Request) (querymiddleware.MetricsQueryRequest, error)
+}
+
 type ProxyEndpoint struct {
 	backends                          []ProxyBackendInterface
 	metrics                           *ProxyMetrics
@@ -35,7 +39,8 @@ type ProxyEndpoint struct {
 	slowResponseThreshold             time.Duration
 	secondaryBackendRequestProportion float64
 	skipPreferredBackendFailures      bool
-	lookbackDelta                     time.Duration
+
+	decoder QueryRequestDecoder
 
 	// The preferred backend, if any.
 	preferredBackend ProxyBackendInterface
@@ -43,7 +48,7 @@ type ProxyEndpoint struct {
 	route Route
 }
 
-func NewProxyEndpoint(backends []ProxyBackendInterface, route Route, metrics *ProxyMetrics, logger log.Logger, comparator ResponsesComparator, slowResponseThreshold time.Duration, secondaryBackendRequestProportion float64, skipPreferredBackendFailures bool, lookbackDelta time.Duration) *ProxyEndpoint {
+func NewProxyEndpoint(backends []ProxyBackendInterface, route Route, metrics *ProxyMetrics, logger log.Logger, comparator ResponsesComparator, slowResponseThreshold time.Duration, secondaryBackendRequestProportion float64, skipPreferredBackendFailures bool, decoder QueryRequestDecoder) *ProxyEndpoint {
 	var preferredBackend ProxyBackendInterface
 	for _, backend := range backends {
 		if backend.Preferred() {
@@ -62,7 +67,7 @@ func NewProxyEndpoint(backends []ProxyBackendInterface, route Route, metrics *Pr
 		secondaryBackendRequestProportion: secondaryBackendRequestProportion,
 		preferredBackend:                  preferredBackend,
 		skipPreferredBackendFailures:      skipPreferredBackendFailures,
-		lookbackDelta:                     lookbackDelta,
+		decoder:                           decoder,
 	}
 }
 
@@ -420,7 +425,7 @@ func (r *backendResponse) statusCode() int {
 // extractMinTimeFromRequest extracts the minimum time from a Prometheus API request
 // Returns zero time if time parameters cannot be parsed, which causes all backends to handle the query.
 func (p *ProxyEndpoint) extractMinTimeFromRequest(r *http.Request) (time.Time, error) {
-	queryRequest, err := querymiddleware.DecodeMetricsQueryRequestWithLookbackDelta(r.Context(), r, p.lookbackDelta)
+	queryRequest, err := p.decoder.DecodeMetricsQueryRequest(r.Context(), r)
 	if err != nil {
 		// If we can't decode the request as a metrics query request, return zero time
 		// which will cause all backends to handle the request
