@@ -1045,11 +1045,14 @@ func runQueryParallelismTestCase(t *testing.T, enableMQESharding bool) {
 			maxMtx.Lock()
 			maxConcurrent = max(current, maxConcurrent)
 			maxMtx.Unlock()
-			defer count.Dec()
+			afterLastMessageSent := func() {
+				count.Dec()
+			}
 
 			// Simulate doing some work, then send an empty response.
 			time.Sleep(20 * time.Millisecond)
-			sendStreamingResponse(t, f, msg.UserID, msg.QueryID, newSeriesMetadata(false), newEvaluationCompleted(0, nil, nil))
+			err := sendStreamingResponseWithErrorCapture(f, msg.UserID, msg.QueryID, afterLastMessageSent, newSeriesMetadata(false), newEvaluationCompleted(0, nil, nil))
+			require.NoError(t, err)
 		}()
 
 		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}

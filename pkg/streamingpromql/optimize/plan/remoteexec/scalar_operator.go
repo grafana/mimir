@@ -64,4 +64,6 @@ func (s *ScalarRemoteExec) Close() {
 	if s.resp != nil {
 		s.resp.Close()
 	}
+
+	s.finalized = true // Don't try to finalize from a closed stream.
 }

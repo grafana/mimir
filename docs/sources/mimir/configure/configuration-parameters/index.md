@@ -1153,9 +1153,10 @@ ring:
   # CLI flag: -ingester.ring.heartbeat-timeout
   [heartbeat_timeout: <duration> | default = 1m]
 
-  # Number of ingesters that each time series is replicated to. This option
-  # needs be set on ingesters, distributors, queriers, and rulers when running
-  # in microservices mode.
+  # Number of ingesters that each time series is replicated to. This
+  # configuration is not used when ingest storage is enabled. This option needs
+  # be set on ingesters, distributors, queriers, and rulers when running in
+  # microservices mode.
   # CLI flag: -ingester.ring.replication-factor
   [replication_factor: <int> | default = 3]
 
@@ -3506,11 +3507,6 @@ The `memberlist` block configures the Gossip memberlist.
 The `limits` block configures default and per-tenant limits imposed by components.
 
 ```yaml
-# Maximum number of active series per user. 0 means no limit. This limit only
-# applies with ingest storage enabled.
-# CLI flag: -distributor.max-active-series-per-user
-[max_active_series_per_user: <int> | default = 0]
-
 # Per-tenant push request rate limit in requests per second. 0 to disable.
 # CLI flag: -distributor.request-rate-limit
 [request_rate: <float> | default = 0]
@@ -5458,7 +5454,7 @@ sharding_ring:
 # store-gateway instances to use the sparse headers from object storage instead
 # of recreating them locally.
 # CLI flag: -compactor.upload-sparse-index-headers
-[upload_sparse_index_headers: <boolean> | default = false]
+[upload_sparse_index_headers: <boolean> | default = true]
 ```
 
 ### store_gateway

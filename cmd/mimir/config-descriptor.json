@@ -3607,7 +3607,7 @@
               "kind": "field",
               "name": "replication_factor",
               "required": false,
-              "desc": "Number of ingesters that each time series is replicated to. This option needs be set on ingesters, distributors, queriers, and rulers when running in microservices mode.",
+              "desc": "Number of ingesters that each time series is replicated to. This configuration is not used when ingest storage is enabled. This option needs be set on ingesters, distributors, queriers, and rulers when running in microservices mode.",
               "fieldValue": null,
               "fieldDefaultValue": 3,
               "fieldFlag": "ingester.ring.replication-factor",
@@ -4903,16 +4903,6 @@
       "required": false,
       "desc": "",
       "blockEntries": [
-        {
-          "kind": "field",
-          "name": "max_active_series_per_user",
-          "required": false,
-          "desc": "Maximum number of active series per user. 0 means no limit. This limit only applies with ingest storage enabled.",
-          "fieldValue": null,
-          "fieldDefaultValue": 0,
-          "fieldFlag": "distributor.max-active-series-per-user",
-          "fieldType": "int"
-        },
         {
           "kind": "field",
           "name": "request_rate",
@@ -12058,7 +12048,7 @@
           "required": false,
           "desc": "If enabled, the compactor constructs and uploads sparse index headers to object storage during each compaction cycle. This allows store-gateway instances to use the sparse headers from object storage instead of recreating them locally.",
           "fieldValue": null,
-          "fieldDefaultValue": false,
+          "fieldDefaultValue": true,
           "fieldFlag": "compactor.upload-sparse-index-headers",
           "fieldType": "boolean",
           "fieldCategory": "experimental"
