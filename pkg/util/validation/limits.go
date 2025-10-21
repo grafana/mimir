@@ -117,7 +117,7 @@ func IsLimitError(err error) bool {
 // limits via flags, or per-user limits via yaml config.
 type Limits struct {
 	// Distributor enforced limits.
-	MaxActiveSeriesPerUser int     `yaml:"max_active_series_per_user" json:"max_active_series_per_user"`
+	MaxActiveSeriesPerUser int     `yaml:"max_active_series_per_user" json:"max_active_series_per_user" category:"experimental" doc:"hidden"`
 	RequestRate            float64 `yaml:"request_rate" json:"request_rate"`
 	RequestBurstSize       int     `yaml:"request_burst_size" json:"request_burst_size"`
 	IngestionRate          float64 `yaml:"ingestion_rate" json:"ingestion_rate"`
@@ -862,14 +862,7 @@ func (o *Overrides) PastGracePeriod(userID string) time.Duration {
 
 // MaxActiveSeriesPerUser returns the maximum number of active series a user is allowed to store across the cluster.
 func (o *Overrides) MaxActiveSeriesPerUser(userID string) int {
-	overrides := o.getOverridesForUser(userID)
-	limit := overrides.MaxActiveSeriesPerUser
-	// TODO temporary to simplify testing.
-	if limit == 0 {
-		// Fallback to MaxGlobalSeriesPerUser if no per-user active series limit is set.
-		limit = overrides.MaxGlobalSeriesPerUser
-	}
-	return limit
+	return o.getOverridesForUser(userID).MaxActiveSeriesPerUser
 }
 
 // MaxGlobalSeriesPerUser returns the maximum number of series a user is allowed to store across the cluster.
