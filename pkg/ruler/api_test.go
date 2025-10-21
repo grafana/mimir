@@ -1289,25 +1289,11 @@ func TestRuler_PrometheusRules_Evaluation(t *testing.T) {
 	type apiResponse struct {
 		Data struct {
 			Groups []struct {
-				Name  string `json:"name"`
-				File  string `json:"file"`
 				Rules []struct {
-					State          string      `json:"state"`
-					Name           string      `json:"name"`
-					Query          string      `json:"query"`
-					Duration       float64     `json:"duration"`
-					KeepFiringFor  float64     `json:"keepFiringFor"`
-					Alerts         []*Alert    `json:"alerts"`
-					Health         string      `json:"health"`
-					LastError      string      `json:"lastError"`
-					Type           v1.RuleType `json:"type"`
-					LastEvaluation time.Time   `json:"lastEvaluation"`
-					EvaluationTime float64     `json:"evaluationTime"`
+					State string `json:"state"`
 				} `json:"rules"`
-				Interval       float64   `json:"interval"`
 				LastEvaluation time.Time `json:"lastEvaluation"`
 				EvaluationTime float64   `json:"evaluationTime"`
-				SourceTenants  []string  `json:"sourceTenants"`
 			} `json:"groups"`
 		} `json:"data"`
 	}
