@@ -298,10 +298,12 @@ func (a *Aggregation) emitAnnotation(generator types.AnnotationGenerator) {
 }
 
 func (a *Aggregation) Prepare(ctx context.Context, params *types.PrepareParams) error {
+	// The wrapping operator is responsible for preparing the operators providing parameters, if any.
 	return a.Inner.Prepare(ctx, params)
 }
 
 func (a *Aggregation) Finalize(ctx context.Context) error {
+	// The wrapping operator is responsible for finalizing the operators providing parameters, if any.
 	return a.Inner.Finalize(ctx)
 }
 
