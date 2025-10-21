@@ -119,7 +119,7 @@ In classic architecture, the requests that the distributors receive are usually 
 This can result in increased cross-zone bandwidth costs because at least two ingesters will be in different availability zones.
 If this cost is a concern, you can compress those requests by setting the `-ingester.client.grpc-compression` CLI flag, or its respective YAML configuration parameter, to `snappy` or `gzip` in the distributors.
 
-In the ingest-storage architecture, the Kafka records produced by distributors are always sent to Kafka in compressed form.
+In the ingest storage architecture, the Kafka records produced by distributors are always sent to Kafka in compressed form.
 {{< /admonition >}}
 
 ## Kubernetes operator for simplifying rollouts of zone-aware components
