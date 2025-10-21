@@ -1166,7 +1166,7 @@ Usage of ./cmd/mimir/mimir:
   -compactor.update-blocks-concurrency int
     	Number of goroutines to use when updating blocks metadata during bucket index updates. (default 1)
   -compactor.upload-sparse-index-headers
-    	[experimental] If enabled, the compactor constructs and uploads sparse index headers to object storage during each compaction cycle. This allows store-gateway instances to use the sparse headers from object storage instead of recreating them locally.
+    	[experimental] If enabled, the compactor constructs and uploads sparse index headers to object storage during each compaction cycle. This allows store-gateway instances to use the sparse headers from object storage instead of recreating them locally. (default true)
   -config.expand-env
     	Expands ${var} or $var in config according to the values of the environment variables.
   -config.file value

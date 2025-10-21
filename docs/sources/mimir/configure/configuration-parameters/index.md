@@ -5379,7 +5379,7 @@ sharding_ring:
 # store-gateway instances to use the sparse headers from object storage instead
 # of recreating them locally.
 # CLI flag: -compactor.upload-sparse-index-headers
-[upload_sparse_index_headers: <boolean> | default = false]
+[upload_sparse_index_headers: <boolean> | default = true]
 ```
 
 ### store_gateway
