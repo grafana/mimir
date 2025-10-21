@@ -44,7 +44,7 @@ Grafana Mimir supports zone-aware replication for the following:
 
 Zone-aware replication in the Alertmanager ensures that Grafana Mimir replicates alerts across `-alertmanager.sharding-ring.replication-factor` Alertmanager replicas, with one replica located in each zone.
 
-**To enable zone-aware replication for alerts**:
+To enable zone-aware replication for alerts:
 
 1. Configure the zone of each Alertmanager replica via the `-alertmanager.sharding-ring.instance-availability-zone` CLI flag or its respective YAML configuration parameter.
 1. Roll out Alertmanagers so that each Alertmanager replica runs with a configured zone.
@@ -52,30 +52,57 @@ Zone-aware replication in the Alertmanager ensures that Grafana Mimir replicates
 
 ## Configuring ingester time series replication
 
-Zone-aware replication in the ingester ensures that Grafana Mimir replicates each time series to `-ingester.ring.replication-factor` ingester replicas, with one replica located in each zone.
+Mimir replicates time series across ingesters in fundamentally different ways between the ingest-storage and classic architectures.
 
-**To enable zone-aware replication for time series**:
+### Configuring ingester time series replication in ingest storage architecture
 
-1. Configure the zone of each ingester replica via the `-ingester.ring.instance-availability-zone` CLI flag or its respective YAML configuration parameter.
+{{< admonition type="note" >}}
+This guidance applies to ingest storage architecture. For more information about the supported architectures in Grafana Mimir, refer to [Grafana Mimir architecture](https://grafana.com/docs/mimir/<MIMIR_VERSION>/get-started/about-grafana-mimir-architecture/).
+{{< /admonition >}}
+
+In the ingest storage architecture, distributors shard incoming series across Kafka partitions, writing each series to a single partition.
+Series are not replicated across partitions, since Kafka itself provides replication within each partition.
+
+Each ingester owns one Kafka partition and continuously consumes series data from it, making that data available for querying.
+A partition can be assigned to multiple ingesters for high availability – typically two ingesters per partition, corresponding to a replication factor of two.
+
+In this architecture, no explicit replication factor needs to be configured.
+Zone-aware replication is achieved simply by deploying the ingesters for the same partition in different zones.
+
+To enable zone-aware replication for time series:
+
+1. Configure the zone of each ingester replica via the `-ingester.ring.instance-availability-zone` CLI flag or its respective YAML configuration parameter. The `-ingester.ring.replication-factor` CLI flag is not used in the ingest storage architecture.
 2. Roll out ingesters so that each ingester replica runs with a configured zone.
 3. Set the `-ingester.ring.zone-awareness-enabled=true` CLI flag or its respective YAML configuration parameter for distributors, ingesters, and queriers.
 
-## Configuring store-gateway blocks replication
+### Configuring ingester time series replication in classic architecture
 
-To enable zone-aware replication for the store-gateways, refer to [Zone awareness](/docs/mimir/<MIMIR_VERSION>/references/architecture/components/store-gateway/#zone-awareness).
+{{< admonition type="note" >}}
+This guidance applies to classic architecture. For more information about the supported architectures in Grafana Mimir, refer to [Grafana Mimir architecture](https://grafana.com/docs/mimir/<MIMIR_VERSION>/get-started/about-grafana-mimir-architecture/).
+{{< /admonition >}}
 
-## Minimum number of zones
+In the classic architecture, distributors shard and replicate incoming series across ingesters, writing each series to the number of ingesters defined by `-ingester.ring.replication-factor`.
+When zone-aware replication is enabled, each time series is replicated to ingesters located in different zones.
+
+To enable zone-aware replication for time series:
+
+1. Configure the zone of each ingester replica via the `-ingester.ring.instance-availability-zone` CLI flag, and the replication factor via the `-ingester.ring.replication-factor` CLI flag, or their respective YAML configuration parameters.
+2. Roll out ingesters so that each ingester replica runs with a configured zone.
+3. Set the `-ingester.ring.zone-awareness-enabled=true` CLI flag or its respective YAML configuration parameter for distributors, ingesters, and queriers.
+
+#### Minimum number of zones in classic architecture
 
 To ensure zone-aware replication, deploy Grafana Mimir across a number of zones equal-to or greater-than the configured replication factor.
 With a replication factor of 3, which is the default, deploy the Grafana Mimir cluster across at least three zones.
+
 Deploying Grafana Mimir clusters to more zones than the configured replication factor does not have a negative impact.
 Deploying Grafana Mimir clusters to fewer zones than the configured replication factor can cause writes to the replica to be missed, or can cause writes to fail completely.
 
-A Grafana Mimir deployment should have at least `floor(replication factor / 2) + 1` healthy zones to operate.
+A Grafana Mimir deployment requires at least `floor(replication factor / 2) + 1` healthy zones to operate.
 
-{{% admonition type="note" %}}
-For ingest storage architecture, only two zones are required, regardless of the replication factor. Refer to [About Grafana Mimir architecture](https://grafana.com/docs/mimir/<MIMIR_VERSION>/get-started/about-grafana-mimir-architecture/).
-{{% /admonition %}}
+## Configuring store-gateway blocks replication
+
+To enable zone-aware replication for the store-gateways, refer to [Zone awareness](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/components/store-gateway/#zone-awareness).
 
 ## Unbalanced zones
 
@@ -88,10 +115,11 @@ Most cloud providers charge for inter-availability zone networking.
 Deploying Grafana Mimir with zone-aware replication across multiple cloud provider availability zones likely results in additional networking costs.
 
 {{< admonition type="note" >}}
-The requests that the distributors receive are usually compressed, and the requests that the distributors send to the ingesters are uncompressed by default.
+In classic architecture, the requests that the distributors receive are usually compressed, and the requests that the distributors send to the ingesters are uncompressed by default.
 This can result in increased cross-zone bandwidth costs because at least two ingesters will be in different availability zones.
-
 If this cost is a concern, you can compress those requests by setting the `-ingester.client.grpc-compression` CLI flag, or its respective YAML configuration parameter, to `snappy` or `gzip` in the distributors.
+
+In the ingest-storage architecture, the Kafka records produced by distributors are always sent to Kafka in compressed form.
 {{< /admonition >}}
 
 ## Kubernetes operator for simplifying rollouts of zone-aware components

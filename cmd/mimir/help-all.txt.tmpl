@@ -1818,7 +1818,7 @@ Usage of ./cmd/mimir/mimir:
   -ingester.ring.prefix string
     	The prefix for the keys in the store. Should end with a /. (default "collectors/")
   -ingester.ring.replication-factor int
-    	Number of ingesters that each time series is replicated to. This option needs be set on ingesters, distributors, queriers, and rulers when running in microservices mode. (default 3)
+    	Number of ingesters that each time series is replicated to. This configuration is not used when ingest storage is enabled. This option needs be set on ingesters, distributors, queriers, and rulers when running in microservices mode. (default 3)
   -ingester.ring.spread-minimizing-join-ring-in-order
     	True to allow this ingester registering tokens in the ring only after all previous ingesters (with ID lower than the current one) have already been registered. This configuration option is supported only when the token generation strategy is set to "spread-minimizing".
   -ingester.ring.spread-minimizing-zones comma-separated-list-of-strings

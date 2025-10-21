@@ -504,7 +504,7 @@ Usage of ./cmd/mimir/mimir:
   -ingester.ring.etcd.username string
     	Etcd username.
   -ingester.ring.replication-factor int
-    	Number of ingesters that each time series is replicated to. This option needs be set on ingesters, distributors, queriers, and rulers when running in microservices mode. (default 3)
+    	Number of ingesters that each time series is replicated to. This configuration is not used when ingest storage is enabled. This option needs be set on ingesters, distributors, queriers, and rulers when running in microservices mode. (default 3)
   -ingester.ring.store string
     	Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi. (default "memberlist")
   -ingester.ring.tokens-file-path string
