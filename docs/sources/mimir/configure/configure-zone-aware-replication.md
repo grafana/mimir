@@ -86,7 +86,7 @@ When zone-aware replication is enabled, each time series is replicated to ingest
 
 To enable zone-aware replication for time series:
 
-1. Configure the zone of each ingester replica via the `-ingester.ring.instance-availability-zone` CLI flag, and the replication factor via the `-ingester.ring.replication-factor` CLI flag, or their respective YAML configuration parameters.
+1. Configure the zone of each ingester replica via the `-ingester.ring.instance-availability-zone` CLI flag and the replication factor via the `-ingester.ring.replication-factor` CLI flag. You can also set their respective YAML configuration parameters.
 2. Roll out ingesters so that each ingester replica runs with a configured zone.
 3. Set the `-ingester.ring.zone-awareness-enabled=true` CLI flag or its respective YAML configuration parameter for distributors, ingesters, and queriers.
 
