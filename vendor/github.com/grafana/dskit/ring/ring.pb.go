@@ -139,6 +139,8 @@ type InstanceDesc struct {
 	ReadOnly bool `protobuf:"varint,11,opt,name=read_only,json=readOnly,proto3" json:"read_only,omitempty"`
 	// Map of component / feature identifiers to version number.
 	// The component / feature identifiers are specific to the application (ie. aren't defined in dskit).
+	// We use a uint64 for the version number itself as versions are expected to increase and be
+	// sortable.
 	Versions map[uint64]uint64 `protobuf:"bytes,12,rep,name=versions,proto3" json:"versions,omitempty" protobuf_key:"varint,1,opt,name=key,proto3" protobuf_val:"varint,2,opt,name=value,proto3"`
 }
 

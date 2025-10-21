@@ -58,6 +58,8 @@ message InstanceDesc {
 
   // Map of component / feature identifiers to version number.
   // The component / feature identifiers are specific to the application (ie. aren't defined in dskit).
+  // We use a uint64 for the version number itself as versions are expected to increase and be
+  // sortable.
   map<uint64, uint64> versions = 12;
 }
 

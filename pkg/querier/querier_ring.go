@@ -33,8 +33,12 @@ const (
 	MaximumSupportedQueryPlanVersion = 1
 )
 
-var querierRingComponentNames = map[uint64]string{
-	MaximumSupportedQueryPlanVersion: "maximum supported query plan version",
+var statusPageConfig = ring.StatusPageConfig{
+	HideTokensUIElements: true,
+	ShowVersions:         true,
+	ComponentNames: map[uint64]string{
+		MaximumSupportedQueryPlanVersion: "maximum supported query plan version",
+	},
 }
 
 // RingConfig strips the ring lifecycler configuration down to the minimum required for the querier ring.
@@ -66,9 +70,7 @@ func (cfg *RingConfig) ToBasicLifecyclerConfig(logger log.Logger) (ring.BasicLif
 		TokensObservePeriod:             0,
 		NumTokens:                       ringNumTokens,
 		KeepInstanceInTheRingOnShutdown: false,
-		HideTokensInStatusPage:          true,
-		ShowVersionsInStatusPage:        true,
-		ComponentNames:                  querierRingComponentNames,
+		StatusPageConfig:                statusPageConfig,
 		Versions: ring.InstanceVersions{
 			MaximumSupportedQueryPlanVersion: planning.MaximumSupportedQueryPlanVersion,
 		},
@@ -78,9 +80,7 @@ func (cfg *RingConfig) ToBasicLifecyclerConfig(logger log.Logger) (ring.BasicLif
 func (cfg *RingConfig) toRingConfig() ring.Config {
 	rc := cfg.Common.ToRingConfig()
 	rc.ReplicationFactor = 1
-	rc.HideTokensInStatusPage = true
-	rc.ShowVersionsInStatusPage = true
-	rc.ComponentNames = querierRingComponentNames
+	rc.StatusPageConfig = statusPageConfig
 
 	return rc
 }
