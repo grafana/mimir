@@ -100,3 +100,37 @@ func (m *mockResponse) GetEvaluationInfo(ctx context.Context) (*annotations.Anno
 func (m *mockResponse) Close() {
 	panic("should not be called")
 }
+
+type finalizationTestMockResponse struct {
+	Closed                  bool
+	GetEvaluationInfoCalled bool
+}
+
+func (m *finalizationTestMockResponse) GetEvaluationInfo(ctx context.Context) (*annotations.Annotations, stats.Stats, error) {
+	m.GetEvaluationInfoCalled = true
+	return annotations.New(), stats.Stats{}, nil
+}
+
+func (m *finalizationTestMockResponse) Close() {
+	m.Closed = true
+}
+
+func (m *finalizationTestMockResponse) GetSeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
+	panic("not supported")
+}
+
+func (m *finalizationTestMockResponse) GetNextSeries(ctx context.Context) (types.InstantVectorSeriesData, error) {
+	panic("not supported")
+}
+
+func (m *finalizationTestMockResponse) AdvanceToNextSeries(ctx context.Context) error {
+	panic("not supported")
+}
+
+func (m *finalizationTestMockResponse) GetNextStepSamples(ctx context.Context) (*types.RangeVectorStepData, error) {
+	panic("not supported")
+}
+
+func (m *finalizationTestMockResponse) GetValues(ctx context.Context) (types.ScalarData, error) {
+	panic("not supported")
+}

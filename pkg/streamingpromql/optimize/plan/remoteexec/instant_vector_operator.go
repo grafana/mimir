@@ -63,4 +63,6 @@ func (r *InstantVectorRemoteExec) Close() {
 	if r.resp != nil {
 		r.resp.Close()
 	}
+
+	r.finalized = true // Don't try to finalize from a closed stream.
 }
