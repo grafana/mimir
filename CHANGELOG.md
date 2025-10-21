@@ -5,6 +5,7 @@
 ### Grafana Mimir
 
 * [BUGFIX] Compactor: Fix potential concurrent map writes. #13053
+* [ENHANCEMENT] Compactor, Store-gateway: Change default value of `-compactor.upload-sparse-index-headers` to `true`. This improves lazy loading performance in the store-gateway. #13089
 
 ### Mixin
 
