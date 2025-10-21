@@ -128,8 +128,7 @@ func (r *scalarExecutionResponse) GetValues(ctx context.Context) (types.ScalarDa
 		return types.ScalarData{}, err
 	}
 
-	// Nothing in the message retains a reference to the underlying buffer, so we can release it immediately.
-	releaseMessage()
+	defer releaseMessage()
 
 	scalar := resp.GetScalarValue()
 	if scalar == nil {
@@ -179,8 +178,7 @@ func (r *instantVectorExecutionResponse) GetNextSeries(ctx context.Context) (typ
 			return types.InstantVectorSeriesData{}, err
 		}
 
-		// Nothing in the message retains a reference to the underlying buffer, so we can release it immediately.
-		releaseMessage()
+		defer releaseMessage()
 
 		data := resp.GetInstantVectorSeriesData()
 		if data == nil {
@@ -260,8 +258,7 @@ func (r *rangeVectorExecutionResponse) GetNextStepSamples(ctx context.Context) (
 		return nil, err
 	}
 
-	// Nothing in the message retains a reference to the underlying buffer, so we can release it immediately.
-	releaseMessage()
+	defer releaseMessage()
 
 	data := resp.GetRangeVectorStepData()
 	if data == nil {
@@ -374,15 +371,14 @@ func readEvaluationCompleted(ctx context.Context, stream responseStream) (*annot
 			return nil, stats.Stats{}, err
 		}
 
-		// Nothing in the message retains a reference to the underlying buffer, so we can release it immediately.
-		releaseMessage()
-
 		completion := resp.GetEvaluationCompleted()
 		if completion == nil {
+			releaseMessage()
 			continue // Try the next message.
 		}
 
 		annos, stats := decodeEvaluationCompletedMessage(completion)
+		releaseMessage()
 		return annos, stats, nil
 	}
 }
