@@ -221,7 +221,7 @@ func TestKafkaProducer_ProduceSync_ShouldCircuitBreakIfContextIsDone(t *testing.
 	expiredCtx, cancel := context.WithDeadline(ctx, time.Now().Add(-time.Second))
 	t.Cleanup(cancel)
 
-	res := producer.ProduceSync(expiredCtx, []*kgo.Record{{Key: []byte("test"), Value: []byte("message 1")}}, log.NewNopLogger())
+	res := producer.ProduceSync(expiredCtx, []*kgo.Record{{Key: []byte("test"), Value: []byte("message 1")}})
 	require.ErrorIs(t, res.FirstErr(), context.DeadlineExceeded)
 
 	// We expect no records buffered in the Kafka client, because of the circuit breaker.

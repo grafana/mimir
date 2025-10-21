@@ -203,14 +203,13 @@ func (c *KafkaProducer) updateMetricsLoop() {
 //
 // This function honors the configure max buffered bytes and refuse to produce a record, returnin kgo.ErrMaxBuffered,
 // if the configured limit is reached.
-func (c *KafkaProducer) ProduceSync(ctx context.Context, records []*kgo.Record, logger log.Logger) kgo.ProduceResults {
+func (c *KafkaProducer) ProduceSync(ctx context.Context, records []*kgo.Record) kgo.ProduceResults {
 	var (
 		remaining = atomic.NewInt64(int64(len(records)))
 		done      = make(chan struct{})
 		resMx     sync.Mutex
 		res       = make(kgo.ProduceResults, 0, len(records))
 	)
-	logger.Log("msg", "begin ProduceSync()", "num_records", len(records), "remaining", remaining.Load(), "max_buffered_bytes", c.maxBufferedBytes, "buffered_bytes", c.bufferedBytes.Load())
 
 	// Keep track of the remaining deadline before producing records.
 	// This could be useful for troubleshooting.
@@ -250,7 +249,6 @@ func (c *KafkaProducer) ProduceSync(ctx context.Context, records []*kgo.Record, 
 		// It allows us to keep code easier, given we don't expect this function to be frequently
 		// called with multiple records.
 		if remaining.Dec() == 0 {
-			logger.Log("msg", "all produce requests done")
 			close(done)
 		}
 	}
@@ -277,7 +275,6 @@ func (c *KafkaProducer) ProduceSync(ctx context.Context, records []*kgo.Record, 
 			// Produce() may theoretically block if the buffer is full, but we configure the Kafka client with
 			// unlimited buffer because we implement the buffer limit ourselves (see maxBufferedBytes). This means
 			// Produce() should never block for us in practice.
-			logger.Log("msg", "produce record", "key", record.Key, "value", string(record.Value))
 			c.Produce(context.WithoutCancel(ctx), record, onProduceDone)
 		}
 
