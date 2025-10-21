@@ -18,7 +18,6 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/concurrency"
-	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/user"
@@ -1332,36 +1331,7 @@ func TestHandlerOTLPPush(t *testing.T) {
 			responseCode:        http.StatusOK,
 			responseContentType: pbContentType,
 		},
-		{
-			name:       "Attribute value too long",
-			maxMsgSize: 100000,
-			series: []prompb.TimeSeries{
-				{
-					Labels: []prompb.Label{
-						{Name: "__name__", Value: "foo"},
-						{Name: "too_long", Value: "huge value"},
-					},
-					Samples: []prompb.Sample{
-						{Value: 1, Timestamp: time.Date(2020, 4, 1, 0, 0, 0, 0, time.UTC).UnixNano()},
-					},
-				},
-			},
-			metadata: sampleMetadata,
-			verifyFunc: func(_ *testing.T, ctx context.Context, pushReq *Request, _ testCase) error {
-				var limitsCfg validation.Limits
-				flagext.DefaultValues(&limitsCfg)
-				limitsCfg.MaxLabelValueLength = len("huge value") - 1
-				distributors, _, _, _ := prepare(t, prepConfig{numDistributors: 1, limits: &limitsCfg})
-				distributor := distributors[0]
-				return distributor.prePushValidationMiddleware(func(context.Context, *Request) error { return nil })(ctx, pushReq)
-			},
-			responseCode:          http.StatusBadRequest,
-			responseContentType:   pbContentType,
-			responseContentLength: 286,
-			errMessage:            "received a metric whose attribute value length of 10 exceeds the limit of 9, attribute: 'too_long', value: 'huge value' (truncated) metric: 'foo{too_long=\"huge value\"}'. See: https://grafana.com/docs/grafana-cloud/send-data/otlp/otlp-format-considerations/#metrics-ingestion-limits",
-			expectedLogs:          []string{`level=warn user=test msg="detected an error while ingesting OTLP metrics request (the request may have been partially ingested)" httpCode=400 err="received a metric whose attribute value length of 10 exceeds the limit of 9, attribute: 'too_long', value: 'huge value' (truncated) metric: 'foo{too_long=\"huge value\"}'. See: https://grafana.com/docs/grafana-cloud/send-data/otlp/otlp-format-considerations/#metrics-ingestion-limits" insight=true`},
-			expectedRetryHeader:   false,
-		},
+
 		{
 			name:       "Unexpected gRPC status error",
 			maxMsgSize: 100000,

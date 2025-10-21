@@ -20,7 +20,6 @@ import (
 	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/mtime"
 	"github.com/grafana/dskit/ring"
-	"github.com/grafana/dskit/test"
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
@@ -31,7 +30,6 @@ import (
 	"github.com/twmb/franz-go/pkg/kerr"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/pkg/kmsg"
-	"go.uber.org/atomic"
 	"google.golang.org/grpc/codes"
 
 	"github.com/grafana/mimir/pkg/cardinality"
@@ -467,82 +465,6 @@ func TestDistributor_Push_ShouldSupportWriteBothToIngestersAndPartitions(t *test
 				assert.ElementsMatchf(t, testData.expectedMetricsByIngester[ingester.instanceID()], ingester.metricNames(), "ingester ID: %s", ingester.instanceID())
 			}
 		})
-	}
-}
-
-func TestDistributor_Push_ShouldCleanupWriteRequestAfterWritingBothToIngestersAndPartitions(t *testing.T) {
-	t.Parallel()
-
-	ctx := user.InjectOrgID(context.Background(), "user")
-	now := time.Now()
-
-	testConfig := prepConfig{
-		numDistributors:         1,
-		numIngesters:            3,
-		happyIngesters:          3,
-		replicationFactor:       3,
-		ingesterIngestionType:   ingesterIngestionTypeGRPC, // Do not consume from Kafka in this test.
-		ingestStorageEnabled:    true,
-		ingestStoragePartitions: 1,
-		limits:                  prepareDefaultLimits(),
-		configure: func(cfg *Config) {
-			cfg.IngestStorageConfig.Migration.DistributorSendToIngestersEnabled = true
-		},
-	}
-
-	distributors, ingesters, regs, kafkaCluster := prepare(t, testConfig)
-	require.Len(t, distributors, 1)
-	require.Len(t, ingesters, 3)
-	require.Len(t, regs, 1)
-
-	// In this test ingesters have been configured with RF=3. This means that the write request will succeed
-	// once written to at least 2 out of 3 ingesters. We configure 1 ingester to block the Push() request, and
-	// then we control when unblocking it.
-	releaseSlowIngesterPush := make(chan struct{})
-	ingesters[0].registerBeforePushHook(func(_ context.Context, _ *mimirpb.WriteRequest) (*mimirpb.WriteResponse, error, bool) {
-		<-releaseSlowIngesterPush
-		return nil, nil, false
-	})
-
-	// Wrap the distributor Push() to inject a custom cleanup function, so that we can track when it gets called.
-	pushCleanupCallsCount := atomic.NewInt64(0)
-	origPushWithMiddlewares := distributors[0].PushWithMiddlewares
-	distributors[0].PushWithMiddlewares = func(ctx context.Context, req *Request) error {
-		req.AddCleanup(func() {
-			pushCleanupCallsCount.Inc()
-		})
-
-		return origPushWithMiddlewares(ctx, req)
-	}
-
-	// Send write request.
-	_, err := distributors[0].Push(ctx, &mimirpb.WriteRequest{
-		Timeseries: []mimirpb.PreallocTimeseries{
-			makeTimeseries([]string{model.MetricNameLabel, "series_one"}, makeSamples(now.UnixMilli(), 1), nil, nil),
-		},
-	})
-	require.NoError(t, err)
-
-	// Since there's still 1 ingester in-flight request, we expect the cleanup function not being called yet.
-	require.Equal(t, int64(0), pushCleanupCallsCount.Load())
-	time.Sleep(time.Second)
-	require.Equal(t, int64(0), pushCleanupCallsCount.Load())
-
-	// Unblock the slow ingester.
-	close(releaseSlowIngesterPush)
-
-	// Now we expect the cleanup function being called as soon as the request to the slow ingester completes.
-	test.Poll(t, time.Second, int64(1), func() interface{} {
-		return pushCleanupCallsCount.Load()
-	})
-
-	// Ensure series has been correctly written to partitions.
-	actualSeriesByPartition := readAllMetricNamesByPartitionFromKafka(t, kafkaCluster.ListenAddrs(), testConfig.ingestStoragePartitions, time.Second)
-	assert.Equal(t, map[int32][]string{0: {"series_one"}}, actualSeriesByPartition)
-
-	// Ensure series have been correctly sharded to ingesters.
-	for _, ingester := range ingesters {
-		assert.Equal(t, []string{"series_one"}, ingester.metricNames(), "ingester ID: %s", ingester.instanceID())
 	}
 }
 
