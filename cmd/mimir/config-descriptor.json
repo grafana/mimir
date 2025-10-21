@@ -3189,7 +3189,7 @@
               "kind": "field",
               "name": "replication_factor",
               "required": false,
-              "desc": "Number of ingesters that each time series is replicated to. This option needs be set on ingesters, distributors, queriers, and rulers when running in microservices mode.",
+              "desc": "Number of ingesters that each time series is replicated to. This configuration is not used when ingest storage is enabled. This option needs be set on ingesters, distributors, queriers, and rulers when running in microservices mode.",
               "fieldValue": null,
               "fieldDefaultValue": 3,
               "fieldFlag": "ingester.ring.replication-factor",
