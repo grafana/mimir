@@ -6,7 +6,7 @@
 
 * [BUGFIX] Compactor: Fix potential concurrent map writes. #13053
 * [BUGFIX] Query-frontend: Fix issue where queries sometimes fail with `failed to receive query result stream message: rpc error: code = Canceled desc = context canceled` if remote execution is enabled. #13084
-* [BUGFIX] Query-frontend: Fix issue where query stats such as series read did not include the parameters to the `histogram_quantile` and `histogram_fraction` functions if remote execution was enabled. #13084
+* [BUGFIX] Query-frontend: Fix issue where query stats, such as series read, did not include the parameters to the `histogram_quantile` and `histogram_fraction` functions if remote execution was enabled. #13084
 
 ### Mixin
 
