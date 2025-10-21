@@ -66,7 +66,7 @@ Series are not replicated across partitions, since Kafka itself provides replica
 Each ingester owns one Kafka partition and continuously consumes series data from it, making that data available for querying.
 A partition can be assigned to multiple ingesters for high availability – typically two ingesters per partition, corresponding to a replication factor of two.
 
-In this architecture, no explicit replication factor needs to be configured.
+In this architecture, you don't need to configure an explicit replication factor.
 Zone-aware replication is achieved simply by deploying the ingesters for the same partition in different zones.
 
 To enable zone-aware replication for time series:
