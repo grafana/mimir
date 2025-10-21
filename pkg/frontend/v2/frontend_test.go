@@ -16,6 +16,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -80,7 +81,7 @@ func setupFrontendWithConcurrencyAndServerOptions(t testing.TB, reg prometheus.R
 
 	schedulerOpts := opts
 	frontendOpts := append(
-		opts,
+		slices.Clone(opts),
 		grpc.StreamInterceptor(middleware.StreamServerUserHeaderInterceptor),
 		grpc.UnaryInterceptor(middleware.ServerUserHeaderInterceptor),
 	)
