@@ -72,7 +72,7 @@ func (n *DropName) ExpressionPosition() posrange.PositionRange {
 	return n.Inner.ExpressionPosition()
 }
 
-func (n *DropName) MinimumRequiredPlanVersion() int64 {
+func (n *DropName) MinimumRequiredPlanVersion() uint64 {
 	return planning.QueryPlanV1
 }
 

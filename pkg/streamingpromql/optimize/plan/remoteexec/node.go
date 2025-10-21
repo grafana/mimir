@@ -81,7 +81,7 @@ func (r *RemoteExecution) ExpressionPosition() posrange.PositionRange {
 	return r.Inner.ExpressionPosition()
 }
 
-func (r *RemoteExecution) MinimumRequiredPlanVersion() int64 {
+func (r *RemoteExecution) MinimumRequiredPlanVersion() uint64 {
 	return planning.QueryPlanVersionZero
 }
 

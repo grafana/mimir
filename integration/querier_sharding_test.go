@@ -17,6 +17,7 @@ import (
 	e2ecache "github.com/grafana/e2e/cache"
 	e2edb "github.com/grafana/e2e/db"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -123,6 +124,11 @@ func runQuerierShardingTest(t *testing.T, cfg querierShardingTestConfig) {
 	require.NoError(t, distributor.WaitSumMetrics(e2e.Equals(512+1), "cortex_ring_tokens_total"))
 	require.NoError(t, querier1.WaitSumMetrics(e2e.Equals(512), "cortex_ring_tokens_total"))
 	require.NoError(t, querier2.WaitSumMetrics(e2e.Equals(512), "cortex_ring_tokens_total"))
+
+	// Wait until the query-frontend has updated the querier ring.
+	require.NoError(t, queryFrontend.WaitSumMetricsWithOptions(e2e.Equals(2), []string{"cortex_ring_members"}, e2e.WithLabelMatchers(
+		labels.MustNewMatcher(labels.MatchEqual, "name", "querier"),
+		labels.MustNewMatcher(labels.MatchEqual, "state", "ACTIVE"))))
 
 	// Push a series for each user to Mimir.
 	now := time.Now()

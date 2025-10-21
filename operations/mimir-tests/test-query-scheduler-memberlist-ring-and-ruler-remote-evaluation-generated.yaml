@@ -1106,6 +1106,7 @@ spec:
         - -querier.frontend-client.grpc-max-send-msg-size=104857600
         - -querier.max-concurrent=8
         - -querier.max-partial-query-length=768h
+        - -querier.ring.prefix=ruler-querier/
         - -querier.store-gateway-client.grpc-max-recv-msg-size=209715200
         - -query-scheduler.ring.prefix=ruler-query-scheduler/
         - -query-scheduler.ring.store=memberlist
@@ -1185,6 +1186,7 @@ spec:
       - args:
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
+        - -querier.ring.prefix=ruler-querier/
         - -query-frontend.cache-results=false
         - -query-frontend.max-cache-freshness=10m
         - -query-frontend.max-total-query-length=12000h

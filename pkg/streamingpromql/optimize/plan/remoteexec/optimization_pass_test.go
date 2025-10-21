@@ -150,12 +150,12 @@ func TestOptimizationPass(t *testing.T) {
 
 	opts := streamingpromql.NewTestEngineOpts()
 
-	plannerForMQESharding, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts)
+	plannerForMQESharding, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(t, err)
 	plannerForMQESharding.RegisterASTOptimizationPass(sharding.NewOptimizationPass(&mockLimits{}, 0, nil, log.NewNopLogger()))
 	plannerForMQESharding.RegisterQueryPlanOptimizationPass(remoteexec.NewOptimizationPass())
 
-	plannerForMiddlewareSharding, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts)
+	plannerForMiddlewareSharding, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(t, err)
 	plannerForMiddlewareSharding.RegisterQueryPlanOptimizationPass(remoteexec.NewOptimizationPass())
 

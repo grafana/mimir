@@ -155,7 +155,7 @@ func (cfg *RingConfig) ToRingConfig() ring.Config {
 	rc.ZoneAwarenessEnabled = cfg.ZoneAwarenessEnabled
 	rc.ExcludedZones = cfg.ExcludedZones
 	rc.SubringCacheDisabled = false // Enable subring caching.
-	rc.HideTokensInStatusPage = cfg.HideTokensInStatusPage
+	rc.StatusPageConfig.HideTokensUIElements = cfg.HideTokensInStatusPage
 
 	return rc
 }
@@ -186,7 +186,7 @@ func (cfg *RingConfig) ToLifecyclerConfig() ring.LifecyclerConfig {
 	lc.ListenPort = cfg.ListenPort
 	lc.EnableInet6 = cfg.EnableIPv6
 	lc.RingTokenGenerator = cfg.customTokenGenerator()
-	lc.HideTokensInStatusPage = cfg.HideTokensInStatusPage
+	lc.StatusPageConfig.HideTokensUIElements = cfg.HideTokensInStatusPage
 
 	return lc
 }

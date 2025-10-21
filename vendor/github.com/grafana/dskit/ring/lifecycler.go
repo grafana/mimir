@@ -55,8 +55,8 @@ type LifecyclerConfig struct {
 
 	// Injected internally
 	ListenPort int `yaml:"-"`
-	// HideTokensInStatusPage allows tokens to be hidden from management tools e.g. the status page, for use in contexts which do not utilize tokens.
-	HideTokensInStatusPage bool `yaml:"-"`
+
+	StatusPageConfig StatusPageConfig `yaml:"-"`
 
 	// If set, specifies the TokenGenerator implementation that will be used for generating tokens.
 	// Default value is nil, which means that RandomTokenGenerator is used.
@@ -705,7 +705,7 @@ func (i *Lifecycler) initRing(ctx context.Context) error {
 					i.setState(ACTIVE)
 				}
 				ro, rots := i.GetReadOnlyState()
-				ringDesc.AddIngester(i.ID, i.Addr, i.Zone, tokensFromFile, i.GetState(), i.getRegisteredAt(), ro, rots)
+				ringDesc.AddIngester(i.ID, i.Addr, i.Zone, tokensFromFile, i.GetState(), i.getRegisteredAt(), ro, rots, nil)
 				i.setTokens(tokensFromFile)
 				return ringDesc, true, nil
 			}
@@ -713,7 +713,7 @@ func (i *Lifecycler) initRing(ctx context.Context) error {
 			// Either we are a new ingester, or consul must have restarted
 			level.Info(i.logger).Log("msg", "instance not found in ring, adding with no tokens", "ring", i.RingName)
 			ro, rots := i.GetReadOnlyState()
-			ringDesc.AddIngester(i.ID, i.Addr, i.Zone, []uint32{}, i.GetState(), i.getRegisteredAt(), ro, rots)
+			ringDesc.AddIngester(i.ID, i.Addr, i.Zone, []uint32{}, i.GetState(), i.getRegisteredAt(), ro, rots, nil)
 			return ringDesc, true, nil
 		}
 
@@ -817,7 +817,7 @@ func (i *Lifecycler) verifyTokens(ctx context.Context) bool {
 			sort.Sort(ringTokens)
 
 			ro, rots := i.GetReadOnlyState()
-			ringDesc.AddIngester(i.ID, i.Addr, i.Zone, ringTokens, i.GetState(), i.getRegisteredAt(), ro, rots)
+			ringDesc.AddIngester(i.ID, i.Addr, i.Zone, ringTokens, i.GetState(), i.getRegisteredAt(), ro, rots, nil)
 
 			i.setTokens(ringTokens)
 
@@ -926,7 +926,7 @@ func (i *Lifecycler) autoJoin(ctx context.Context, targetState InstanceState) er
 		i.setTokens(myTokens)
 
 		ro, rots := i.GetReadOnlyState()
-		ringDesc.AddIngester(i.ID, i.Addr, i.Zone, i.getTokens(), i.GetState(), i.getRegisteredAt(), ro, rots)
+		ringDesc.AddIngester(i.ID, i.Addr, i.Zone, i.getTokens(), i.GetState(), i.getRegisteredAt(), ro, rots, nil)
 		return ringDesc, true, nil
 	})
 
@@ -961,7 +961,7 @@ func (i *Lifecycler) updateConsul(ctx context.Context) error {
 		}
 
 		ro, rots := i.GetReadOnlyState()
-		ringDesc.AddIngester(i.ID, i.Addr, i.Zone, tokens, i.GetState(), i.getRegisteredAt(), ro, rots)
+		ringDesc.AddIngester(i.ID, i.Addr, i.Zone, tokens, i.GetState(), i.getRegisteredAt(), ro, rots, nil)
 		return ringDesc, true, nil
 	})
 
@@ -1108,7 +1108,7 @@ func (i *Lifecycler) getRing(ctx context.Context) (*Desc, error) {
 }
 
 func (i *Lifecycler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
-	newRingPageHandler(i, i.cfg.HeartbeatTimeout, i.cfg.HideTokensInStatusPage).handle(w, req)
+	newRingPageHandler(i, i.cfg.HeartbeatTimeout, i.cfg.StatusPageConfig).handle(w, req)
 }
 
 // unregister removes our entry from consul.

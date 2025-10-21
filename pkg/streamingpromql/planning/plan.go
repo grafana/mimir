@@ -24,12 +24,12 @@ import (
 
 var MaximumSupportedQueryPlanVersion = QueryPlanV1
 
-const QueryPlanVersionZero = int64(0)
+const QueryPlanVersionZero = uint64(0)
 
 // This version introduces:
 // 1. DropName node
 // 2. Step invariant expression node
-const QueryPlanV1 = int64(1)
+const QueryPlanV1 = uint64(1)
 
 type QueryPlan struct {
 	TimeRange types.QueryTimeRange
@@ -42,7 +42,7 @@ type QueryPlan struct {
 	//
 	// Queriers use this to ensure they do not attempt to execute a query plan that contains features they
 	// cannot safely or correctly execute (eg. new nodes or new meaning for existing node details).
-	Version int64
+	Version uint64
 }
 
 // Node represents a node in the query plan graph.
@@ -111,7 +111,7 @@ type Node interface {
 	ExpressionPosition() posrange.PositionRange
 
 	// MinimumRequiredPlanVersion returns the minimum query plan version required to execute a plan that includes these nodes.
-	MinimumRequiredPlanVersion() int64
+	MinimumRequiredPlanVersion() uint64
 
 	// FIXME: implementations for many of the above methods can be generated automatically
 }
@@ -201,7 +201,7 @@ func (p *QueryPlan) DeterminePlanVersion() error {
 	return nil
 }
 
-func (p *QueryPlan) maxMinimumRequiredPlanVersion(node Node) int64 {
+func (p *QueryPlan) maxMinimumRequiredPlanVersion(node Node) uint64 {
 	maxVersion := node.MinimumRequiredPlanVersion()
 	for _, child := range node.Children() {
 		maxVersion = max(maxVersion, p.maxMinimumRequiredPlanVersion(child))

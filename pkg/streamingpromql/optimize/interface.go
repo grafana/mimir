@@ -17,5 +17,5 @@ type ASTOptimizationPass interface {
 
 type QueryPlanOptimizationPass interface {
 	Name() string
-	Apply(ctx context.Context, plan *planning.QueryPlan) (*planning.QueryPlan, error)
+	Apply(ctx context.Context, plan *planning.QueryPlan, maximumSupportedQueryPlanVersion uint64) (*planning.QueryPlan, error)
 }

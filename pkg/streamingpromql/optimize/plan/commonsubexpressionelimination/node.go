@@ -77,7 +77,7 @@ func (d *Duplicate) ExpressionPosition() posrange.PositionRange {
 	return d.Inner.ExpressionPosition()
 }
 
-func (d *Duplicate) MinimumRequiredPlanVersion() int64 {
+func (d *Duplicate) MinimumRequiredPlanVersion() uint64 {
 	return planning.QueryPlanVersionZero
 }
 
