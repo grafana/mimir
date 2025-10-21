@@ -52,7 +52,7 @@ To enable zone-aware replication for alerts:
 
 ## Configuring ingester time series replication
 
-Mimir replicates time series across ingesters in fundamentally different ways between the ingest-storage and classic architectures.
+Mimir replicates time series across ingesters in fundamentally different ways between the ingest storage and classic architectures.
 
 ### Configuring ingester time series replication in ingest storage architecture
 
