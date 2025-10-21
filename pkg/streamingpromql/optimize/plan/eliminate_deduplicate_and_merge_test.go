@@ -332,37 +332,36 @@ func TestEliminateDeduplicateAndMergeOptimizationPassPlan(t *testing.T) {
 			// - DeduplicateAndMerge wrapping rate is dropped, because selector has exact name matcher.
 			expr: `abs(label_replace(rate(foo[5m]), "dst", "$1", "src", "(.*)"))`,
 			expectedPlanWithoutDelayedName: `
-					- DeduplicateAndMerge
-						- FunctionCall: abs(...)
-							- DeduplicateAndMerge
-								- FunctionCall: label_replace(...)
-									- param 0: FunctionCall: rate(...)
-										- MatrixSelector: {__name__="foo"}[5m0s]
-									- param 1: StringLiteral: "dst"
-									- param 2: StringLiteral: "$1"
-									- param 3: StringLiteral: "src"
-									- param 4: StringLiteral: "(.*)"
-					`,
+				- DeduplicateAndMerge
+					- FunctionCall: abs(...)
+						- DeduplicateAndMerge
+							- FunctionCall: label_replace(...)
+								- param 0: FunctionCall: rate(...)
+									- MatrixSelector: {__name__="foo"}[5m0s]
+								- param 1: StringLiteral: "dst"
+								- param 2: StringLiteral: "$1"
+								- param 3: StringLiteral: "src"
+								- param 4: StringLiteral: "(.*)"
+				`,
 			// keeps:
 			// - DeduplicateAndMerge around label_replace - to deduplicate after label_replace might modify labels and therefore potentially introduce duplicates.
-			// - DeduplicateAndMerge at the root - to deduplicate after __name__ is dropped. Selector has an exact name matcher, BUT label_replace might mess with it. // TODO: confirm this
 			// drops:
 			// - DeduplicateAndMerge wrapping rate is dropped, because selector has exact name matcher.
+			// - DeduplicateAndMerge at the root is dropped, because selector has exact name matcher. label_replace can't reintroduce __name__ label because it's dropped after. Even if it will modify it, DeduplicateAndMerge right after will hanlde this.
 			expectedPlanWithDelayedNameRemoval: `
-					- DeduplicateAndMerge
-						- DropName
-							- FunctionCall: abs(...)
-								- DeduplicateAndMerge
-									- FunctionCall: label_replace(...)
-										- param 0: FunctionCall: rate(...)
-											- MatrixSelector: {__name__="foo"}[5m0s]
-										- param 1: StringLiteral: "dst"
-										- param 2: StringLiteral: "$1"
-										- param 3: StringLiteral: "src"
-										- param 4: StringLiteral: "(.*)"
-					`,
+				- DropName
+					- FunctionCall: abs(...)
+						- DeduplicateAndMerge
+							- FunctionCall: label_replace(...)
+								- param 0: FunctionCall: rate(...)
+									- MatrixSelector: {__name__="foo"}[5m0s]
+								- param 1: StringLiteral: "dst"
+								- param 2: StringLiteral: "$1"
+								- param 3: StringLiteral: "src"
+								- param 4: StringLiteral: "(.*)"
+				`,
 			nodesEliminatedWithoutDelayed: 1,
-			nodesEliminatedWithDelayed:    1,
+			nodesEliminatedWithDelayed:    2,
 		},
 		"function call enclosing label_replace, selector without name matcher": {
 			expr: `abs(label_replace(rate({job="test"}[5m]), "dst", "$1", "src", "(.*)"))`,
@@ -425,11 +424,10 @@ func TestEliminateDeduplicateAndMergeOptimizationPassPlan(t *testing.T) {
 			`,
 			// keeps:
 			// - DeduplicateAndMerge around label_replace - to deduplicate after label_replace might modify labels and therefore potentially introduce duplicates.
-			// - DeduplicateAndMerge at the root - to deduplicate after __name__ is dropped. Selector has an exact name matcher, BUT label_replace might mess with it. // TODO: confirm this
 			// drops:
 			// - DeduplicateAndMerge wrapping rate is dropped, because despite selector has NO exact name matcher, name is not dropped immediately and therefore duplicates won't appear.
+			// - DeduplicateAndMerge at the root is dropped, because selector has exact name matcher. label_replace can't reintroduce __name__ label because it's dropped after. Even if it will modify it, DeduplicateAndMerge right after will hanlde this.
 			expectedPlanWithDelayedNameRemoval: `
-				- DeduplicateAndMerge
 					- DropName
 						- FunctionCall: abs(...)
 							- FunctionCall: ceil(...)
@@ -443,7 +441,7 @@ func TestEliminateDeduplicateAndMergeOptimizationPassPlan(t *testing.T) {
 										- param 4: StringLiteral: "(.*)"
 			`,
 			nodesEliminatedWithoutDelayed: 2,
-			nodesEliminatedWithDelayed:    2,
+			nodesEliminatedWithDelayed:    3,
 		},
 		"function which does not drop name after label_replace": {
 			expr: `sort(label_replace(rate(foo[5m]), "dst", "$1", "src", "(.*)"))`,
@@ -464,11 +462,11 @@ func TestEliminateDeduplicateAndMergeOptimizationPassPlan(t *testing.T) {
 					`,
 			// keeps:
 			// - DeduplicateAndMerge around label_replace - to deduplicate after label_replace might modify labels and therefore potentially introduce duplicates.
-			// - DeduplicateAndMerge at the root - to deduplicate after __name__ is dropped. Selector has an exact name matcher, BUT label_replace might mess with it. // TODO: confirm this
 			// drops:
 			// - DeduplicateAndMerge wrapping rate is dropped because selector has exact name matcher.
+			// - DeduplicateAndMerge at the root is dropped, because selector has exact name matcher. label_replace can't reintroduce __name__ label because it's dropped after. Even if it will modify it, DeduplicateAndMerge right after will hanlde this.
+
 			expectedPlanWithDelayedNameRemoval: `
-								- DeduplicateAndMerge
 									- DropName
 										- FunctionCall: sort(...)
 											- DeduplicateAndMerge
@@ -481,7 +479,7 @@ func TestEliminateDeduplicateAndMergeOptimizationPassPlan(t *testing.T) {
 													- param 4: StringLiteral: "(.*)"
 					`,
 			nodesEliminatedWithoutDelayed: 1,
-			nodesEliminatedWithDelayed:    1,
+			nodesEliminatedWithDelayed:    2,
 		},
 		"nested function calls enclosing label_replace, function in between doesn't drop __name__": {
 			expr: `abs(sort(label_replace(rate(foo[5m]), "dst", "$1", "src", "(.*)")))`,
@@ -505,25 +503,25 @@ func TestEliminateDeduplicateAndMergeOptimizationPassPlan(t *testing.T) {
 				`,
 			// keeps:
 			// - DeduplicateAndMerge around label_replace - to deduplicate after label_replace might modify labels and therefore potentially introduce duplicates.
-			// - DeduplicateAndMerge at the root - to deduplicate after __name__ is dropped. Selector has an exact name matcher, BUT label_replace might mess with it. // TODO: confirm this
 			// drops:
 			// - DeduplicateAndMerge wrapping rate is dropped because selector has exact name matcher.
+			// - DeduplicateAndMerge at the root is dropped, because selector has exact name matcher. label_replace can't reintroduce __name__ label because it's dropped after. Even if it will modify it, DeduplicateAndMerge right after will hanlde this.
+
 			expectedPlanWithDelayedNameRemoval: `
-				- DeduplicateAndMerge
-					- DropName
-						- FunctionCall: abs(...)
-							- FunctionCall: sort(...)
-								- DeduplicateAndMerge
-									- FunctionCall: label_replace(...)
-										- param 0: FunctionCall: rate(...)
-											- MatrixSelector: {__name__="foo"}[5m0s]
-										- param 1: StringLiteral: "dst"
-										- param 2: StringLiteral: "$1"
-										- param 3: StringLiteral: "src"
-										- param 4: StringLiteral: "(.*)"
+				- DropName
+					- FunctionCall: abs(...)
+						- FunctionCall: sort(...)
+							- DeduplicateAndMerge
+								- FunctionCall: label_replace(...)
+									- param 0: FunctionCall: rate(...)
+										- MatrixSelector: {__name__="foo"}[5m0s]
+									- param 1: StringLiteral: "dst"
+									- param 2: StringLiteral: "$1"
+									- param 3: StringLiteral: "src"
+									- param 4: StringLiteral: "(.*)"
 				`,
 			nodesEliminatedWithoutDelayed: 1,
-			nodesEliminatedWithDelayed:    1,
+			nodesEliminatedWithDelayed:    2,
 		},
 		"nested label_replace": {
 			// keeps:
@@ -554,32 +552,31 @@ func TestEliminateDeduplicateAndMergeOptimizationPassPlan(t *testing.T) {
 				`,
 			// keeps:
 			// - DeduplicateAndMerge around  both label_replace - to deduplicate after label_replace might modify labels and therefore potentially introduce duplicates.
-			// - DeduplicateAndMerge at the root - to deduplicate after __name__ is dropped. Selector has an exact name matcher, BUT label_replace might mess with it. // TODO: confirm this
 			// drops:
 			// - DeduplicateAndMerge wrapping rate is dropped because selector has exact name matcher.
 			// - DeduplicateAndMerge wrapping ceil function is dropped because name removal is delayed and series will be deduplicated later.
+			// - DeduplicateAndMerge at the root is dropped, because selector has exact name matcher. label_replace can't reintroduce __name__ label because it's dropped after. Even if it will modify it, DeduplicateAndMerge right after will hanlde this.
 			expectedPlanWithDelayedNameRemoval: `
-			- DeduplicateAndMerge
-				- DropName
-					- FunctionCall: abs(...)
-						- FunctionCall: ceil(...)
-							- DeduplicateAndMerge
-								- FunctionCall: label_replace(...)
-									- param 0: DeduplicateAndMerge
-										- FunctionCall: label_replace(...)
-											- param 0: FunctionCall: rate(...)
-												- MatrixSelector: {__name__="foo"}[5m0s]
-											- param 1: StringLiteral: "dst1"
-											- param 2: StringLiteral: "$1"
-											- param 3: StringLiteral: "src1"
-											- param 4: StringLiteral: "(.*)"
-									- param 1: StringLiteral: "dst2"
-									- param 2: StringLiteral: "$1"
-									- param 3: StringLiteral: "dst1"
-									- param 4: StringLiteral: "(.*)"
+			- DropName
+				- FunctionCall: abs(...)
+					- FunctionCall: ceil(...)
+						- DeduplicateAndMerge
+							- FunctionCall: label_replace(...)
+								- param 0: DeduplicateAndMerge
+									- FunctionCall: label_replace(...)
+										- param 0: FunctionCall: rate(...)
+											- MatrixSelector: {__name__="foo"}[5m0s]
+										- param 1: StringLiteral: "dst1"
+										- param 2: StringLiteral: "$1"
+										- param 3: StringLiteral: "src1"
+										- param 4: StringLiteral: "(.*)"
+								- param 1: StringLiteral: "dst2"
+								- param 2: StringLiteral: "$1"
+								- param 3: StringLiteral: "dst1"
+								- param 4: StringLiteral: "(.*)"
 			`,
 			nodesEliminatedWithoutDelayed: 2,
-			nodesEliminatedWithDelayed:    2,
+			nodesEliminatedWithDelayed:    3,
 		},
 
 		// Test cases to confirm we're skipping optimization when expression has a binary operation.

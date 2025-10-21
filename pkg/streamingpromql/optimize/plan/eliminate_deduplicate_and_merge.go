@@ -116,8 +116,6 @@ func (e *EliminateDeduplicateAndMergeOptimizationPass) collect(node planning.Nod
 			if e.enableDelayedNameRemoval {
 				// Also keep the root DeduplicateAndMerge to handle final deduplication, if delayed name removal is enabled.
 				// Name is dropped at the very end of query execution and label_replace or label_join might mess with it even if selector guarantees unique series.
-				// TODO - I'm not really sure about keeping the root one, corresponding test case is "function call enclosing label_replace, selector with exact name matcher".
-				(*nodes)[0].keep = true
 				(*nodes)[len(*nodes)-1].keep = true
 			} else {
 				// Also keep DeduplicateAndMerge wrapping closest __name__ dropping operation, in case __name__ is reintroduced by label_replace or label_join and operation's result should be deduplicated.
