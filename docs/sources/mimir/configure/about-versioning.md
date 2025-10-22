@@ -140,15 +140,6 @@ The following features are currently experimental:
   - Snapshotting of in-memory TSDB data on disk when shutting down (`-blocks-storage.tsdb.memory-snapshot-on-shutdown`)
   - Out-of-order samples ingestion (`-ingester.out-of-order-time-window`)
   - Shipper labeling out-of-order blocks before upload to cloud storage (`-ingester.out-of-order-blocks-external-label-enabled`)
-  - Postings for matchers cache configuration:
-    - `-blocks-storage.tsdb.head-postings-for-matchers-cache-ttl`
-    - `-blocks-storage.tsdb.head-postings-for-matchers-cache-size` (deprecated)
-    - `-blocks-storage.tsdb.head-postings-for-matchers-cache-max-bytes`
-    - `-blocks-storage.tsdb.head-postings-for-matchers-cache-force`
-    - `-blocks-storage.tsdb.block-postings-for-matchers-cache-ttl`
-    - `-blocks-storage.tsdb.block-postings-for-matchers-cache-size` (deprecated)
-    - `-blocks-storage.tsdb.block-postings-for-matchers-cache-max-bytes`
-    - `-blocks-storage.tsdb.block-postings-for-matchers-cache-force`
   - CPU/memory utilization based read request limiting:
     - `-ingester.read-path-cpu-utilization-limit`
     - `-ingester.read-path-memory-utilization-limit"`
@@ -307,3 +298,6 @@ The following features or configuration parameters are currently deprecated and 
 - Consul and etcd are deprecated as backend storage options for the HA tracker as of Mimir 3.0.
 - Use `memberlist` instead. Refer to the migration guide for instructions on migrating from Consul or etcd to `memberlist` for the HA tracker.
 - The `-distributor.otel-start-time-quiet-zero` parameter no longer has any effect and will be removed in a future release. Deprecated since Mimir 2.18.
+- Postings for matchers cache size (number of entries) configuration:
+  - `-blocks-storage.tsdb.head-postings-for-matchers-cache-size`
+  - `-blocks-storage.tsdb.block-postings-for-matchers-cache-size`
