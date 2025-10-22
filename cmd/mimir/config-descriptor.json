@@ -5837,7 +5837,7 @@
           "fieldDefaultValue": 419430400,
           "fieldFlag": "querier.active-series-results-max-size-bytes",
           "fieldType": "int",
-          "fieldCategory": "experimental"
+          "fieldCategory": "advanced"
         },
         {
           "kind": "field",

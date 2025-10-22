@@ -4009,8 +4009,8 @@ blocked_requests:
 # CLI flag: -querier.cardinality-api-max-series-limit
 [cardinality_analysis_max_results: <int> | default = 500]
 
-# (experimental) Maximum size of an active series or active native histogram
-# series request result shard in bytes. 0 to disable.
+# (advanced) Maximum size of an active series or active native histogram series
+# request result shard in bytes. 0 to disable.
 # CLI flag: -querier.active-series-results-max-size-bytes
 [active_series_results_max_size_bytes: <int> | default = 419430400]
 

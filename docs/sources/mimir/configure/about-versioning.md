@@ -229,7 +229,6 @@ The following features are currently experimental:
 - Querier
   - Limiting queries based on the estimated number of chunks that will be used (`-querier.max-estimated-fetched-chunks-per-query-multiplier`)
   - Max concurrency for tenant federated queries (`-tenant-federation.max-concurrent`)
-  - Maximum response size for active series queries (`-querier.active-series-results-max-size-bytes`)
   - Allow streaming of `/active_series` responses to the frontend (`-querier.response-streaming-enabled`)
   - [Mimir query engine](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/mimir-query-engine) (`-querier.query-engine` and `-querier.enable-query-engine-fallback`, and all flags beginning with `-querier.mimir-query-engine`)
   - Maximum estimated memory consumption per query limit (`-querier.max-estimated-memory-consumption-per-query`)
