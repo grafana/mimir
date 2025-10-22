@@ -550,7 +550,6 @@ func TestMultitenantCompactor_ShouldSupportSplitAndMergeCompactor(t *testing.T) 
 				seriesID := 0
 
 				appendHistograms := func(db *tsdb.DB) {
-					db.EnableNativeHistograms()
 
 					appendHistogram := func(seriesID int, ts int64) {
 						lbls := labels.FromStrings("series_id", strconv.Itoa(seriesID))
