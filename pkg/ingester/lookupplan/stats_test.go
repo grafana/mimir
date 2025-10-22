@@ -285,7 +285,7 @@ func TestLabelsValuesSketches_LabelName(t *testing.T) {
 				p.add(seriesRef, ls)
 			}
 			gen := NewStatisticsGenerator(log.NewNopLogger())
-			sketches, err := gen.Stats(p.Meta(), p)
+			sketches, err := gen.Stats(p.Meta(), p, DefaultLabelValuesCountForLargerSketch)
 			require.NoError(t, err)
 			ctx := context.Background()
 
@@ -367,13 +367,80 @@ func TestLabelsValuesSketches_LabelValue(t *testing.T) {
 				p.add(seriesRef, ls)
 			}
 			gen := NewStatisticsGenerator(log.NewNopLogger())
-			sketches, err := gen.Stats(p.Meta(), p)
+			sketches, err := gen.Stats(p.Meta(), p, DefaultLabelValuesCountForLargerSketch)
 			require.NoError(t, err)
 			ctx := context.Background()
 
 			for _, ev := range tt.expectedValuesForLabelNames {
 				valuesCard := sketches.LabelValuesCardinality(ctx, ev.labelName, ev.labelValues...)
 				require.Equal(t, ev.cardinality, valuesCard)
+			}
+		})
+	}
+}
+
+// TestLabelName_ComparisonAcrossLabelNames tests comparison across multiple count-min sketches.
+// The count-min sketch epsilon is set by number of label name values such that a series with a relatively
+// low number of label name values would produce a sketch with a higher relative-accuracy factor -- that is, a smaller width.
+// It requires that the estimated cardinality for all high-cardinality values for a label name are greater than
+// the estimated cardinality for all low-cardinality values of a different label name.
+// Limitation: This does not test against label names with a different number of series across label names.
+func TestLabelName_ComparisonAcrossLabelNames(t *testing.T) {
+	lowCardLabel := "low_card"
+	highCardLabel := "high_card"
+	tests := []struct {
+		name                   string
+		numSeries              int
+		lowCardNumLabelValues  int
+		highCardNumLabelValues int
+		largerSketchThreshold  uint64
+	}{
+		{
+			name:                   "labels would have same epsilon",
+			numSeries:              5e5,
+			lowCardNumLabelValues:  1e3,
+			highCardNumLabelValues: 1e2,
+			largerSketchThreshold:  1e5,
+		},
+		{
+			name:                   "labels would have different epsilon",
+			numSeries:              5e5,
+			lowCardNumLabelValues:  5e5,
+			highCardNumLabelValues: 1e2,
+			largerSketchThreshold:  1e5,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := newMockIndexReader()
+
+			// Populate postings with series across low- and high-card values
+			for i := 0; i < tt.numSeries; i++ {
+				ls := labels.FromStrings(lowCardLabel, strconv.Itoa(i%tt.lowCardNumLabelValues), highCardLabel, strconv.Itoa(i%tt.highCardNumLabelValues))
+				p.add(storage.SeriesRef(i), ls)
+			}
+
+			ctx := context.Background()
+			gen := NewStatisticsGenerator(log.NewNopLogger())
+			s, err := gen.Stats(p.Meta(), p, tt.largerSketchThreshold)
+			require.NoError(t, err)
+
+			require.Equal(t, uint64(tt.lowCardNumLabelValues), s.LabelValuesCount(ctx, lowCardLabel))
+			require.Equal(t, uint64(tt.numSeries), s.LabelValuesCardinality(ctx, lowCardLabel))
+
+			require.Equal(t, uint64(tt.highCardNumLabelValues), s.LabelValuesCount(ctx, highCardLabel))
+			require.Equal(t, uint64(tt.numSeries), s.LabelValuesCardinality(ctx, highCardLabel))
+
+			for i := 0; i < tt.lowCardNumLabelValues; i++ {
+				lowCard := s.LabelValuesCardinality(ctx, lowCardLabel, strconv.Itoa(i))
+
+				// For every combination of low-card and high-card label values,
+				// we want to ensure that high-card labels are accurately reported as higher-cardinality than low-card labels
+				for j := 0; j < tt.highCardNumLabelValues; j++ {
+					highCard := s.LabelValuesCardinality(ctx, highCardLabel, strconv.Itoa(j))
+					require.Greater(t, highCard, lowCard)
+				}
 			}
 		})
 	}
@@ -394,7 +461,7 @@ func TestLabelName_ManySeries(t *testing.T) {
 
 	ctx := context.Background()
 	gen := NewStatisticsGenerator(log.NewNopLogger())
-	s, err := gen.Stats(p.Meta(), p)
+	s, err := gen.Stats(p.Meta(), p, DefaultLabelValuesCountForLargerSketch)
 	require.NoError(t, err)
 
 	require.Equal(t, uint64(numLabelValues), s.LabelValuesCount(ctx, labelName))
@@ -437,7 +504,7 @@ func TestLabelName_NonUniformValueDistribution(t *testing.T) {
 
 	ctx := context.Background()
 	gen := NewStatisticsGenerator(log.NewNopLogger())
-	s, err := gen.Stats(p.Meta(), p)
+	s, err := gen.Stats(p.Meta(), p, DefaultLabelValuesCountForLargerSketch)
 	require.NoError(t, err)
 
 	lowValCard := s.LabelValuesCardinality(ctx, labelName, lowCardValue)
