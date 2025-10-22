@@ -565,6 +565,8 @@ github.com/grafana/dskit v0.0.0-20251022104856-5ee5a4dcc858 h1:NT4V2+Rc5+gEM1J1E
 github.com/grafana/dskit v0.0.0-20251022104856-5ee5a4dcc858/go.mod h1:8AGVTqx49L8iYNAW6ls2n3+li4v70nenYr74sBsLKMk=
 github.com/grafana/dskit v0.0.0-20251022112651-aea11948b189 h1:UcLr4M3fhOrVL7lvF5aDQl3OWXpQ0kpemkRZJqN5L78=
 github.com/grafana/dskit v0.0.0-20251022112651-aea11948b189/go.mod h1:8AGVTqx49L8iYNAW6ls2n3+li4v70nenYr74sBsLKMk=
+github.com/grafana/dskit v0.0.0-20251022121254-5d4091df1566 h1:O6NCpJizzkSo/iawLahZDYjgRCg3kMd7RBev/zrRocc=
+github.com/grafana/dskit v0.0.0-20251022121254-5d4091df1566/go.mod h1:8AGVTqx49L8iYNAW6ls2n3+li4v70nenYr74sBsLKMk=
 github.com/grafana/e2e v0.1.2-0.20250825134630-3cea6f657739 h1:74hHXvOG42Y87T7jO7naPB5sZpwO3TDGTFiUL48s2Yc=
 github.com/grafana/e2e v0.1.2-0.20250825134630-3cea6f657739/go.mod h1:9bciABa7gW4B3t12C9vpgk54NeeoOZ+1DLsUnOAf+8Y=
 github.com/grafana/goautoneg v0.0.0-20240607115440-f335c04c58ce h1:WI1olbgS+sEl77qxEYbmt9TgRUz7iLqmjh8lYPpGlKQ=
