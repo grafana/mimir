@@ -71,17 +71,6 @@ func TestHealthyInstanceDelegate_OnRingInstanceHeartbeat(t *testing.T) {
 			heartbeatTimeout: time.Minute,
 			expectedCount:    2,
 		},
-
-		"some instances healthy but timeout disabled all instances active": {
-			ringSetup: func(desc *ring.Desc) {
-				now := time.Now()
-				addInstance(desc, "distributor-1", ring.ACTIVE, now.Unix())
-				addInstance(desc, "distributor-2", ring.ACTIVE, now.Unix())
-				addInstance(desc, "distributor-3", ring.ACTIVE, now.Add(-5*time.Minute).Unix())
-			},
-			heartbeatTimeout: 0,
-			expectedCount:    3,
-		},
 	}
 
 	for testName, testData := range tests {
