@@ -16,17 +16,13 @@ package labels
 import "github.com/grafana/regexp/syntax"
 
 const (
-	// TODO verify relative magnitude of these costs.
 	estimatedStringEqualityCost          = 1.0
-	estimatedStringHasPrefixCost         = 0.5
-	estimatedSliceContainsCostPerElement = 1.0
-	estimatedMapContainsCostPerElement   = 0.01
-	estimatedRegexMatchCost              = 10.0
+	estimatedStringHasPrefixCost         = 1.0
+	estimatedSliceContainsCostPerElement = 1.1
+	estimatedMapContainsCost             = 4.0
 )
 
 // SingleMatchCost returns the fixed cost of running this matcher against an arbitrary label value..
-// TODO benchmark relative cost of different matchers.
-// TODO use the complexity of the regex string as a cost.
 func (m *Matcher) SingleMatchCost() float64 {
 	switch m.Type {
 	case MatchEqual, MatchNotEqual:
@@ -39,8 +35,8 @@ func (m *Matcher) SingleMatchCost() float64 {
 		}
 
 		// If we have a string matcher with a map, use that
-		if mm, ok := m.re.stringMatcher.(*equalMultiStringMapMatcher); ok {
-			return estimatedMapContainsCostPerElement*float64(len(mm.values)) + estimatedStringEqualityCost
+		if _, ok := m.re.stringMatcher.(*equalMultiStringMapMatcher); ok {
+			return estimatedMapContainsCost
 		}
 
 		// If we have a prefix optimization, use that
