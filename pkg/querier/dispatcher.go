@@ -243,7 +243,12 @@ func (w *queryResponseWriter) Write(ctx context.Context, r querierpb.EvaluateQue
 		},
 	}
 
-	return w.write(ctx, resp)
+	if err := w.write(ctx, resp); err != nil {
+		level.Warn(w.logger).Log("msg", "failed to write message to stream", "err", err)
+		return err
+	}
+
+	return nil
 }
 
 func (w *queryResponseWriter) WriteError(ctx context.Context, fallbackType apierror.Type, err error) {
@@ -269,7 +274,7 @@ func (w *queryResponseWriter) WriteError(ctx context.Context, fallbackType apier
 	}
 
 	if err := w.write(ctx, resp); err != nil {
-		level.Debug(w.logger).Log("msg", "failed to write error", "writeErr", err, "originalErr", msg)
+		level.Warn(w.logger).Log("msg", "failed to write error to stream", "writeErr", err, "originalErr", msg)
 	}
 }
 
