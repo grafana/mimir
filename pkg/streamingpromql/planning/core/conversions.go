@@ -96,6 +96,7 @@ var itemTypeToAggregationOperation = map[parser.ItemType]AggregationOperation{
 	parser.BOTTOMK:      AGGREGATION_BOTTOMK,
 	parser.COUNT_VALUES: AGGREGATION_COUNT_VALUES,
 	parser.QUANTILE:     AGGREGATION_QUANTILE,
+	parser.LIMITK:       AGGREGATION_LIMITK,
 }
 
 var aggregationOperationToItemType = invert(itemTypeToAggregationOperation)

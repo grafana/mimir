@@ -4,6 +4,7 @@ package core
 
 import (
 	"fmt"
+	"github.com/grafana/mimir/pkg/streamingpromql/operators/aggregations/limitk"
 	"slices"
 	"strings"
 	"time"
@@ -118,6 +119,14 @@ func MaterializeAggregateExpression(a *AggregateExpression, materializer *planni
 		}
 
 		o = topkbottomk.New(inner, param, timeRange, a.Grouping, a.Without, a.Op == AGGREGATION_TOPK, params.MemoryConsumptionTracker, params.Annotations, a.ExpressionPosition())
+
+	case AGGREGATION_LIMITK:
+		param, err := materializer.ConvertNodeToScalarOperator(a.Param, timeRange)
+		if err != nil {
+			return nil, fmt.Errorf("could not create parameter operator for AggregateExpression %s: %w", a.Op.String(), err)
+		}
+
+		o = limitk.New(inner, param, timeRange, a.Grouping, a.Without, params.MemoryConsumptionTracker, params.Annotations, a.ExpressionPosition())
 
 	case AGGREGATION_QUANTILE:
 		param, err := materializer.ConvertNodeToScalarOperator(a.Param, timeRange)

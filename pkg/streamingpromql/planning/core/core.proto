@@ -50,6 +50,7 @@ enum AggregationOperation {
   AGGREGATION_BOTTOMK = 10;
   AGGREGATION_COUNT_VALUES = 11;
   AGGREGATION_QUANTILE = 12;
+  AGGREGATION_LIMITK = 13;
 }
 
 message BinaryExpressionDetails {
