@@ -145,6 +145,10 @@ func parseMatcher(t *testing.T, m string) *labels.Matcher {
 	return promMatcher
 }
 
+func formatFloat(f float64) string {
+	return strconv.FormatFloat(f, 'f', -1, 64)
+}
+
 func parseFloat(t *testing.T, str string) float64 {
 	f, err := strconv.ParseFloat(str, 64)
 	require.NoErrorf(t, err, "Failed to parse float: %s", str)

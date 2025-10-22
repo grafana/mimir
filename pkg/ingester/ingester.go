@@ -1013,12 +1013,6 @@ func (i *Ingester) applyTSDBSettings() {
 		if err := db.db.ApplyConfig(&cfg); err != nil {
 			level.Error(i.logger).Log("msg", "failed to apply config to TSDB", "user", userID, "err", err)
 		}
-		if i.limits.NativeHistogramsIngestionEnabled(userID) {
-			// there is not much overhead involved, so don't keep previous state, just overwrite the current setting
-			db.db.EnableNativeHistograms()
-		} else {
-			db.db.DisableNativeHistograms()
-		}
 	}
 }
 
@@ -2771,7 +2765,6 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 		HeadPostingsForMatchersCacheFactory:  i.headPostingsForMatchersCacheFactory,
 		BlockPostingsForMatchersCacheFactory: i.blockPostingsForMatchersCacheFactory,
 		PostingsClonerFactory:                lookupplan.ActualSelectedPostingsClonerFactory{},
-		EnableNativeHistograms:               i.limits.NativeHistogramsIngestionEnabled(userID),
 		SecondaryHashFunction:                secondaryTSDBHashFunctionForUser(userID),
 		IndexLookupPlannerFunc:               userDB.getIndexLookupPlannerFunc(),
 		BlockChunkQuerierFunc: func(b tsdb.BlockReader, mint, maxt int64) (storage.ChunkQuerier, error) {
