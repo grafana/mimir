@@ -163,11 +163,7 @@ func sendResponseWithDelay(f *Frontend, delay time.Duration, userID string, quer
 }
 
 func sendStreamingResponse(t testing.TB, f *Frontend, userID string, queryID uint64, resp ...*frontendv2pb.QueryResultStreamRequest) {
-	if err := sendStreamingResponseWithErrorCapture(f, userID, queryID, nil, resp...); err != nil {
-		// If QueryResultStream fails, it's not necessarily a problem (eg. it might be that the context was cancelled)
-		// So just log it but don't fail the test.
-		t.Logf("sendStreamingResponse: QueryResultStream returned %v", err)
-	}
+	require.NoError(t, sendStreamingResponseWithErrorCapture(f, userID, queryID, nil, resp...))
 }
 
 func sendStreamingResponseWithErrorCapture(f *Frontend, userID string, queryID uint64, afterLastMessageSent func(), resp ...*frontendv2pb.QueryResultStreamRequest) error {
@@ -431,7 +427,10 @@ func TestFrontend_Protobuf_ResponseClosedBeforeStreamExhausted(t *testing.T) {
 			return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.ERROR, Error: fmt.Sprintf("unexpected message type %v sent to scheduler", msg.Type)}
 		}
 
-		go sendStreamingResponse(t, f, userID, msg.QueryID, expectedMessages...)
+		go func() {
+			err := sendStreamingResponseWithErrorCapture(f, userID, msg.QueryID, nil, expectedMessages...)
+			require.EqualError(t, err, "rpc error: code = Canceled desc = context canceled: stream closed")
+		}()
 
 		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
 	})
@@ -1144,7 +1143,10 @@ func TestFrontend_Protobuf_ReadingCancelledRequestAfterResponseReceivedFromQueri
 	f, _ := setupFrontend(t, nil, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
 		switch msg.Type {
 		case schedulerpb.ENQUEUE:
-			go sendStreamingResponse(t, f, msg.UserID, msg.QueryID, newStringMessage("first message"), newStringMessage("second message"), newStringMessage("third message"))
+			go func() {
+				err := sendStreamingResponseWithErrorCapture(f, msg.UserID, msg.QueryID, nil, newStringMessage("first message"), newStringMessage("second message"), newStringMessage("third message"))
+				require.EqualError(t, err, "rpc error: code = Canceled desc = context canceled: the request has been canceled", "received unexpected error from query-frontend")
+			}()
 			return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
 		case schedulerpb.CANCEL:
 			return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
