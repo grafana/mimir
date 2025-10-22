@@ -14,7 +14,7 @@ function write_template {
   else
     helm template krajo ../../../../operations/helm/charts/mimir-distributed --output-dir "${step_dir}" -f ../base.yaml
   fi
-  find "${step_dir}" -type f -print0 | xargs -0 "${SED}" -E -i -- "/^\s+(checksum\/config|(helm.sh\/)?chart|app.kubernetes.io\/version|image: \"grafana\/(mimir|mimir-continuous-test|enterprise-metrics)):/d"
+  find "${step_dir}" -type f -print0 | xargs -0 "${SED}" -E -i -- "/^\s+(checksum\/config|(helm.sh\/)?chart|app.kubernetes.io\/version|image: \"grafana\/(mimir|enterprise-metrics)):/d"
 }
 
 for component in alertmanager ingester storegateway ; do

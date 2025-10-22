@@ -14,11 +14,14 @@
 
 ### Jsonnet
 
+* [CHANGE] Mimir-continuous-test: Use `mimir -target=continuous-test` instead of standalone binary/image. #13097
 * [ENHANCEMENT] Ruler querier and query-frontend: Add support for newly-introduced querier ring, which is used when performing query planning in query-frontends and distributing portions of the plan to queriers for execution. #13017
 
 ### Documentation
 
 ### Tools
+
+* [CHANGE] Mimir-continuous-test: Remove standalone binary and image. #13097
 
 ## 3.0.0-rc.0
 
