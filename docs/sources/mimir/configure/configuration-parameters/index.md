@@ -3898,7 +3898,7 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -query-frontend.max-query-expression-size-bytes
 [max_query_expression_size_bytes: <int> | default = 0]
 
-# (experimental) List of queries to block.
+# List of queries to block.
 # Example:
 #   The following configuration blocks the query "rate(metric_counter[5m])".
 #   Setting the pattern to ".*" and regex to true blocks all queries.
