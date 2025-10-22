@@ -157,7 +157,11 @@ For example, if Alertmanager is listening at `http://mimir-alertmanager.namespac
 
 ## Enable UTF-8
 
-In effort to support alerts from [OpenTelemetry](https://opentelemetry.io/) (OTel) data, [Prometheus Alertmanager](https://prometheus.io/docs/alerting/alertmanager/) has added support for UTF-8. This is supported for the Grafana Mimir Alertmanager in Mimir versions 2.12 and later.
+In effort to support alerts from [OpenTelemetry](https://opentelemetry.io/) (OTel) data, [Prometheus Alertmanager](https://prometheus.io/docs/alerting/alertmanager/) has added support for UTF-8. This is supported as an opt-in feature for the Grafana Mimir Alertmanager in Mimir versions 2.12 and later.
+
+{{< admonition type="warning" >}}
+Enabling and then disabling UTF-8 strict mode can break existing tenant configurations if tenants added UTF-8 characters to their Alertmanager configuration while it was enabled. Once enabled, disable UTF-8 strict mode with caution.
+{{< /admonition >}}
 
 For new Mimir installations, enable support for UTF-8 before creating any tenant configurations. You can do this by changing [`utf8-strict-mode-enabled`](../../../../configure/configuration-parameters/#alertmanager) to `true`.
 
