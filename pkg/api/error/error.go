@@ -11,9 +11,11 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/gogo/status"
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/promql"
+	"google.golang.org/grpc/codes"
 )
 
 type Type string
@@ -65,7 +67,43 @@ func TypeForError(err error, fallback Type) Type {
 		return TypeInternal
 	}
 
+	if s := unwrapGRPCStatus(err); s != nil {
+		return typeForCode(s.Code(), fallback)
+	}
+
 	return fallback
+}
+
+func unwrapGRPCStatus(err error) *status.Status {
+	if s, ok := status.FromError(err); ok {
+		return s
+	}
+
+	unwrapped := errors.Unwrap(err)
+	if unwrapped == nil {
+		return nil
+	}
+
+	return unwrapGRPCStatus(unwrapped)
+}
+
+func typeForCode(code codes.Code, fallback Type) Type {
+	switch code {
+	case codes.Canceled:
+		return TypeCanceled
+	case codes.Internal:
+		return TypeInternal
+	case codes.DeadlineExceeded:
+		return TypeTimeout
+	case codes.Unavailable:
+		return TypeUnavailable
+	case codes.NotFound:
+		return TypeNotFound
+	case codes.InvalidArgument:
+		return TypeBadData
+	default:
+		return fallback
+	}
 }
 
 type APIError struct {
