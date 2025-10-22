@@ -1,5 +1,15 @@
 # Changelog
 
+## main / unreleased
+
+### Jsonnet
+
+* [CHANGE] Mimir-continuous-test: Use `mimir -target=continuous-test` instead of standalone binary/image. #13097
+
+### Tools
+
+* [CHANGE] Mimir-continuous-test: Remove standalone binary and image. #13097
+
 ## 3.0.0-rc.0
 
 ### Grafana Mimir
