@@ -11,7 +11,7 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/gogo/status"
+	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/promql"
@@ -67,24 +67,11 @@ func TypeForError(err error, fallback Type) Type {
 		return TypeInternal
 	}
 
-	if s := unwrapGRPCStatus(err); s != nil {
+	if s, ok := grpcutil.ErrorToStatus(err); ok {
 		return typeForCode(s.Code(), fallback)
 	}
 
 	return fallback
-}
-
-func unwrapGRPCStatus(err error) *status.Status {
-	if s, ok := status.FromError(err); ok {
-		return s
-	}
-
-	unwrapped := errors.Unwrap(err)
-	if unwrapped == nil {
-		return nil
-	}
-
-	return unwrapGRPCStatus(unwrapped)
 }
 
 func typeForCode(code codes.Code, fallback Type) Type {
