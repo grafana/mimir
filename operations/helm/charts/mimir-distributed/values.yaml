@@ -2467,7 +2467,7 @@ compactor:
   env: []
   extraEnvFrom: []
 
-gossipRing:
+gossip_ring:
   service:
     annotations: {}
 
