@@ -170,18 +170,18 @@ You can configure backends to only serve queries based on the time range of the 
 
 **How time-based routing works:**
 
-- A backend with `min_data_queried_age: "24h"` only serves queries where the minimum query time is within the last 24 hours
-- A backend with `min_data_queried_age: "0s"` (the default) serves all queries regardless of their time range
-- The preferred backend is always included regardless of its time threshold
-- For range queries (`/api/v1/query_range`), the earliest time between `start` and `end` parameters is used
-- For instant queries (`/api/v1/query`), the `time` parameter is used, or current time if not specified
+- A backend with `min_data_queried_age: "24h"` only serves queries where the minimum query time is within the last 24 hours.
+- A backend with `min_data_queried_age: "0s"`, the default, serves all queries regardless of their time range.
+- The preferred backend is always included regardless of its time threshold.
+- Range queries, meaning`/api/v1/query_range`, use earliest time between the `start` and `end` parameters.
+- Instant queries, meaning `/api/v1/query` use, the `time` parameter or, if not specified, the current time.
 
 Example:
 
-With the configuration example above:
+With the preceding configuration example:
 
 - Recent queries (< 6 hours old) are sent to `prometheus-main` and `prometheus-hot` only. This excludes `prometheus-cold`.
-- Old queries (> 6 hours old) are sent to all backends, `prometheus-main`, `prometheus-hot`, and `prometheus-cold`
+- Old queries (> 6 hours old) are sent to all backends, meaning `prometheus-main`, `prometheus-hot`, and `prometheus-cold`.
 
 This allows you to route queries to appropriate storage tiers based on data age, optimizing both performance and cost.
 
