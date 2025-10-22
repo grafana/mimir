@@ -19,10 +19,19 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
+	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storegateway/hintspb"
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 )
+
+// storeTestSeries is a series returned by storeTestServer that contains both labels
+// and chunks assembled from a store-gateway streaming response containing one or the
+// other for ease of testing.
+type storeTestSeries struct {
+	Labels []mimirpb.LabelAdapter
+	Chunks []storepb.AggrChunk
+}
 
 // bucketStoreSeriesServer is a gRPC server and client implementation used to
 // call Series() API endpoint going through the gRPC networking stack.
@@ -66,7 +75,7 @@ func newStoreGatewayTestServer(t testing.TB, store storegatewaypb.StoreGatewaySe
 
 // Series calls the store server's Series() endpoint via gRPC and returns the responses collected
 // via the gRPC stream.
-func (s *storeTestServer) Series(ctx context.Context, req *storepb.SeriesRequest) (seriesSet []*storepb.Series, warnings annotations.Annotations, hints hintspb.SeriesResponseHints, estimatedChunks uint64, err error) {
+func (s *storeTestServer) Series(ctx context.Context, req *storepb.SeriesRequest) (seriesSet []*storeTestSeries, warnings annotations.Annotations, hints hintspb.SeriesResponseHints, estimatedChunks uint64, err error) {
 	var (
 		conn               *grpc.ClientConn
 		stream             storegatewaypb.StoreGateway_SeriesClient
@@ -116,32 +125,6 @@ func (s *storeTestServer) Series(ctx context.Context, req *storepb.SeriesRequest
 			}
 		}
 
-		if recvSeries := res.GetSeries(); recvSeries != nil {
-			if !req.SkipChunks && req.StreamingChunksBatchSize > 0 {
-				err = errors.New("got a normal series when streaming was enabled")
-				return
-			}
-			var recvSeriesData []byte
-
-			// We use a pool for the chunks and may use other pools in the future.
-			// Given we need to retain the reference after the pooled slices are recycled,
-			// we need to do a copy here. We prefer to stay on the safest side at this stage
-			// so we do a marshal+unmarshal to copy the whole series.
-			recvSeriesData, err = recvSeries.Marshal()
-			if err != nil {
-				err = errors.Wrap(err, "marshal received series")
-				return
-			}
-
-			copiedSeries := &storepb.Series{}
-			if err = copiedSeries.Unmarshal(recvSeriesData); err != nil {
-				err = errors.Wrap(err, "unmarshal received series")
-				return
-			}
-
-			seriesSet = append(seriesSet, copiedSeries)
-		}
-
 		if recvSeries := res.GetStreamingSeries(); recvSeries != nil {
 			var recvSeriesData []byte
 
@@ -171,7 +154,7 @@ func (s *storeTestServer) Series(ctx context.Context, req *storepb.SeriesRequest
 		// The store-gateway returns a streaming response even when SkipChunks = true. In that
 		// case, convert the streaming series responses into the expected series set.
 		for _, streamingSeries := range streamingSeriesSet {
-			seriesSet = append(seriesSet, &storepb.Series{
+			seriesSet = append(seriesSet, &storeTestSeries{
 				Labels: streamingSeries.Labels,
 			})
 		}
@@ -235,7 +218,7 @@ func (s *storeTestServer) Series(ctx context.Context, req *storepb.SeriesRequest
 					return
 				}
 
-				seriesSet = append(seriesSet, &storepb.Series{
+				seriesSet = append(seriesSet, &storeTestSeries{
 					Labels: streamingSeriesSet[idx].Labels,
 					Chunks: copiedChunks.Chunks,
 				})
