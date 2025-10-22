@@ -1651,19 +1651,16 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 		t.Run(testName, func(t *testing.T) {
 			reg := prometheus.NewPedanticRegistry()
 
-			// Count the number of series to check the stats later.
-			// We also make a copy of the testData.storeSetResponses where relevant so that
-			// we can run the streaming and non-streaming case in any order.
-			var storeSetResponses []interface{}
+			// Count the number of series and chunks to check the stats later.
 			seriesCount, chunksCount := 0, 0
 			for _, res := range testData.storeSetResponses {
 				m, ok := res.(map[BlocksStoreClient][]ulid.ULID)
 				if !ok {
-					storeSetResponses = append(storeSetResponses, res)
+					// If this isn't a success response we can't count series or chunks.
 					continue
 				}
-				newMap := make(map[BlocksStoreClient][]ulid.ULID, len(m))
-				for k, v := range m {
+
+				for k := range m {
 					mockClient := k.(*storeGatewayClientMock)
 					for _, sr := range mockClient.mockedSeriesResponses {
 						if s := sr.GetStreamingSeries(); s != nil {
@@ -1674,14 +1671,10 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 							chunksCount += int(c.EstimatedChunkCount)
 						}
 					}
-
-					shallowCopy := *mockClient
-					newMap[&shallowCopy] = v
 				}
-				storeSetResponses = append(storeSetResponses, newMap)
 			}
 
-			stores := &blocksStoreSetMock{mockedResponses: storeSetResponses}
+			stores := &blocksStoreSetMock{mockedResponses: testData.storeSetResponses}
 			finder := &blocksFinderMock{}
 			finder.On("GetBlocks", mock.Anything, "user-1", minT, maxT).Return(testData.finderResult, testData.finderErr)
 
