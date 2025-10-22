@@ -64,8 +64,6 @@ The following features are currently experimental:
   - Enable support for any UTF-8 character as part of Alertmanager configuration/API matchers and labels.
     - `-alertmanager.utf8-strict-mode-enabled`
 - Compactor
-  - Enable cleanup of remaining files in the tenant bucket when there are no blocks remaining in the bucket index.
-    - `-compactor.no-blocks-file-cleanup-enabled`
   - In-memory cache for parsed meta.json files:
     - `-compactor.in-memory-tenant-meta-cache-size`
   - Limit blocks processed in each compaction cycle. Blocks uploaded prior to the maximum lookback aren't processed.
