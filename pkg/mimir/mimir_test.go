@@ -85,6 +85,8 @@ func TestMimir(t *testing.T) {
 				},
 				ReplicationFactor:      3,
 				InstanceInterfaceNames: []string{"en0", "eth0", "lo0", "lo"},
+				HeartbeatPeriod:        5 * time.Second,
+				HeartbeatTimeout:       time.Minute,
 			},
 		},
 		BlocksStorage: tsdb.BlocksStorageConfig{
