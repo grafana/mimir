@@ -36,6 +36,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/limiter"
 	"github.com/grafana/mimir/pkg/util/propagation"
+	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
 var evaluateQueryRequestMessageName = proto.MessageName(&querierpb.EvaluateQueryRequest{})
@@ -72,7 +73,8 @@ func NewDispatcher(engine *streamingpromql.Engine, queryable storage.Queryable, 
 }
 
 func (d *Dispatcher) HandleProtobuf(ctx context.Context, req *prototypes.Any, metadata propagation.Carrier, stream frontendv2pb.QueryResultStream) {
-	writer := newQueryResponseWriter(stream, d.querierMetrics, d.serverMetrics, d.logger)
+	logger := spanlogger.FromContext(ctx, d.logger)
+	writer := newQueryResponseWriter(stream, d.querierMetrics, d.serverMetrics, logger)
 	messageName, err := prototypes.AnyMessageName(req)
 	writer.Start(messageName, len(req.Value)) // We deliberately call this before checking the error below, so that we still get stats for malformed requests.
 	defer writer.Finish()
@@ -180,7 +182,7 @@ type queryResponseWriter struct {
 	stream         frontendv2pb.QueryResultStream
 	querierMetrics *RequestMetrics
 	serverMetrics  *server.Metrics
-	logger         log.Logger
+	logger         *spanlogger.SpanLogger
 
 	querierInflightRequests     prometheus.Gauge
 	serverInflightRequests      prometheus.Gauge
@@ -192,7 +194,7 @@ type queryResponseWriter struct {
 	tenantID                    string
 }
 
-func newQueryResponseWriter(stream frontendv2pb.QueryResultStream, querierMetrics *RequestMetrics, serverMetrics *server.Metrics, logger log.Logger) *queryResponseWriter {
+func newQueryResponseWriter(stream frontendv2pb.QueryResultStream, querierMetrics *RequestMetrics, serverMetrics *server.Metrics, logger *spanlogger.SpanLogger) *queryResponseWriter {
 	return &queryResponseWriter{
 		stream:         stream,
 		querierMetrics: querierMetrics,
