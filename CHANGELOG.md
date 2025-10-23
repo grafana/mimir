@@ -17,6 +17,7 @@
 * [BUGFIX] Querier: Fix issue where errors are logged as "EOF" when sending results to query-frontends in response to remote execution requests fails. #13099 #13121
 * [BUGFIX] Usage-Tracker: Fix underflow in current limit calculation when series >= limit. #13113
 * [ENHANCEMENT] Compactor, Store-gateway: Change default value of `-compactor.upload-sparse-index-headers` to `true`. This improves lazy loading performance in the store-gateway. #13089
+* [ENHANCEMENT] Add Azure object store workload identity example configuration. #13135
 
 ### Mixin
 
