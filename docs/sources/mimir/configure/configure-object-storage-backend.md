@@ -181,8 +181,8 @@ global:
     "azure.workload.identity/use: "true"
 ```
 
-{{< admonition type="note" >}}  
-Unlike with Tempo, federated tokens are not supported with Mimir.  
+{{< admonition type="note" >}}
+Unlike with Tempo, federated tokens are not supported with Mimir.
 {{< /admonition >}}
 
 ### OpenStack SWIFT
