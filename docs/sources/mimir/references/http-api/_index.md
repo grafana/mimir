@@ -1370,8 +1370,6 @@ use [Check block upload](#check-block-upload) API endpoint.
 
 Requires [authentication](#authentication).
 
-This API endpoint is experimental and subject to change.
-
 ### Check block upload
 
 ```
@@ -1398,8 +1396,6 @@ Returns state of the block upload. State is returned as JSON object with field `
 ```
 
 Requires [authentication](#authentication).
-
-This API endpoint is experimental and subject to change.
 
 ### Tenant Delete Request
 
