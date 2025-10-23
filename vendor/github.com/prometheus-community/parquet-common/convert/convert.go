@@ -461,6 +461,18 @@ func shardedTSDBRowReaders(
 	}
 
 	shardTSDBRowReaders := make([]*TSDBRowReader, len(shardedSeries))
+
+	// We close everything if any errors or panic occur
+	allClosers := make([]io.Closer, 0, len(blocks)*3)
+	ok := false
+	defer func() {
+		if !ok {
+			for _, closer := range allClosers {
+				_ = closer.Close()
+			}
+		}
+	}()
+
 	// For each shard, create a TSDBRowReader with:
 	//	* a MergeChunkSeriesSet of all blocks' series sets for the shard
 	//	* a schema built from only the label names present in the shard
@@ -484,18 +496,21 @@ func shardedTSDBRowReaders(
 				return nil, errors.Wrap(err, "failed to get index reader from block")
 			}
 			closers = append(closers, indexr)
+			allClosers = append(allClosers, indexr)
 
 			chunkr, err := blk.Chunks()
 			if err != nil {
 				return nil, errors.Wrap(err, "failed to get chunk reader from block")
 			}
 			closers = append(closers, chunkr)
+			allClosers = append(allClosers, chunkr)
 
 			tombsr, err := blk.Tombstones()
 			if err != nil {
 				return nil, errors.Wrap(err, "failed to get tombstone reader from block")
 			}
 			closers = append(closers, tombsr)
+			allClosers = append(allClosers, tombsr)
 
 			// Flatten series refs and add all label columns to schema for the shard
 			refs := make([]storage.SeriesRef, 0, len(blockSeries))
@@ -522,7 +537,7 @@ func shardedTSDBRowReaders(
 			ctx, closers, mergeSeriesSet, tsdbSchema, opts,
 		)
 	}
-
+	ok = true
 	return shardTSDBRowReaders, nil
 }
 
