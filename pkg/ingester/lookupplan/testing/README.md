@@ -19,7 +19,7 @@ Typical workflow:
 2. Extract query logs from Loki (`logcli` command below)
 3. Run benchmarks to establish a baseline (`go test` command below)
 4. Run benchmarks with a different ingester configuration (modify the `benchmarks_test.go`; then run `go test` again)
-5. Profile specific queries with `-query-ids` flag and pprof 
+5. Profile specific queries with `-query-ids` flag and pprof
 
 ### Example Workflow: Profiling Slow Queries
 
