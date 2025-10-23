@@ -2155,6 +2155,11 @@ func TestBucketStore_Series_TimeoutGate(t *testing.T) {
 			StreamingBatchSize:          1,
 			BlockSyncConcurrency:        10,
 			PostingOffsetsInMemSampling: mimir_tsdb.DefaultPostingOffsetInMemorySampling,
+			IndexHeader: indexheader.Config{
+				EagerLoadingPersistInterval: time.Minute,
+				LazyLoadingEnabled:          false,
+				LazyLoadingIdleTimeout:      0,
+			},
 		},
 		selectAllStrategy{},
 		newStaticChunksLimiterFactory(0),

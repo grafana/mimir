@@ -637,7 +637,6 @@ func prepareStorageConfig(t *testing.T) mimir_tsdb.BlocksStorageConfig {
 	cfg := mimir_tsdb.BlocksStorageConfig{}
 	flagext.DefaultValues(&cfg)
 	cfg.BucketStore.SyncDir = tmpDir
-	cfg.BucketStore.IndexHeader.EagerLoadingPersistInterval = time.Minute
 
 	return cfg
 }
