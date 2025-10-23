@@ -242,12 +242,16 @@ func NewBucketStore(
 
 	s.indexReaderPool = indexheader.NewReaderPool(s.logger, bucketStoreConfig.IndexHeader, s.lazyLoadingGate, metrics.indexHeaderReaderMetrics)
 
-	snapConfig := indexheader.SnapshotterConfig{
-		Path:            dir,
-		UserID:          userID,
-		PersistInterval: bucketStoreConfig.IndexHeader.EagerLoadingPersistInterval,
+	if bucketStoreConfig.IndexHeader.LazyLoadingEnabled {
+		snapConfig := indexheader.SnapshotterConfig{
+			Path:            dir,
+			UserID:          userID,
+			PersistInterval: bucketStoreConfig.IndexHeader.EagerLoadingPersistInterval,
+		}
+		s.snapshotter = indexheader.NewSnapshotter(s.logger, snapConfig, s.indexReaderPool)
+	} else {
+		s.snapshotter = services.NewIdleService(nil, nil)
 	}
-	s.snapshotter = indexheader.NewSnapshotter(s.logger, snapConfig, s.indexReaderPool)
 
 	if err := os.MkdirAll(dir, 0750); err != nil {
 		return nil, errors.Wrap(err, "create dir")
@@ -368,7 +372,9 @@ func (s *BucketStore) InitialSync(ctx context.Context) error {
 	if err := s.syncBlocks(ctx); err != nil {
 		return errors.Wrap(err, "sync block")
 	}
-	s.loadBlocks(ctx, previouslyLoadedBlocks)
+	if s.indexHeaderCfg.LazyLoadingEnabled {
+		s.loadBlocks(ctx, previouslyLoadedBlocks)
+	}
 
 	err := s.cleanUpUnownedBlocks()
 	if err != nil {
