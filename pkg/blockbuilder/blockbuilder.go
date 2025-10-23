@@ -23,6 +23,7 @@ import (
 	"github.com/twmb/franz-go/plugin/kprom"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"go.opentelemetry.io/otel"
+	"go.uber.org/atomic"
 	"google.golang.org/grpc"
 
 	"github.com/grafana/mimir/pkg/blockbuilder/schedulerpb"
@@ -55,6 +56,8 @@ type BlockBuilder struct {
 	readerMetricsSource   swappableReaderMetricsSource
 	kpromMetrics          *kprom.Metrics
 	pusherConsumerMetrics *ingest.PusherConsumerMetrics
+
+	consuming *atomic.Bool
 }
 
 func New(
@@ -94,6 +97,7 @@ func newWithSchedulerClient(
 		readerMetricsSource:   readerMetricsSource,
 		kpromMetrics:          kpm,
 		pusherConsumerMetrics: ingest.NewPusherConsumerMetrics(reg),
+		consuming:             atomic.NewBool(false),
 	}
 
 	bucketClient, err := bucket.NewClient(context.Background(), cfg.BlocksStorage.Bucket, "block-builder", logger, reg)
@@ -229,7 +233,9 @@ func (b *BlockBuilder) running(ctx context.Context) error {
 
 // consumeJob performs block consumption from Kafka into object storage based on the given job spec.
 func (b *BlockBuilder) consumeJob(ctx context.Context, key schedulerpb.JobKey, spec schedulerpb.JobSpec) (err error) {
+	b.consuming.Store(true)
 	defer func(start time.Time) {
+		b.consuming.Store(false)
 		success := "true"
 		if err != nil {
 			success = "false"
@@ -500,6 +506,17 @@ func (b *BlockBuilder) uploadBlocks(ctx context.Context, tenantID, dbDir string,
 		if err := boff.ErrCause(); err != nil {
 			return fmt.Errorf("upload block %s (tenant %s): %w", meta.ULID.String(), tenantID, err)
 		}
+	}
+	return nil
+}
+
+// CheckReady implements the readiness check for the BlockBuilder.
+// It returns an error (not ready) when the BlockBuilder is idle (not working on a job).
+// This allows Kubernetes to prioritize idle pods for scaling down.
+func (b *BlockBuilder) CheckReady(ctx context.Context) error {
+	// Check if we're currently working on a job
+	if busy := b.consuming.Load(); !busy {
+		return fmt.Errorf("blockbuilder is idle (not working on a job)")
 	}
 	return nil
 }
