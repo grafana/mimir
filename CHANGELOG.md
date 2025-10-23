@@ -8,6 +8,10 @@
 * [BUGFIX] Distributor: Fix error when native histograms bucket limit is set then no NHCB passes validation. #12746
 * [BUGFIX] Update Docker base images for tools from `alpine:3.22.1` to `alpine:3.22.2` to address [CVE-2025-9230](https://nvd.nist.gov/vuln/detail/CVE-2025-9230), [CVE-2025-9231](https://nvd.nist.gov/vuln/detail/CVE-2025-9231), [CVE-2025-2025-9232](https://nvd.nist.gov/vuln/detail/CVE-2025-9232). #12993
 
+### Tools
+
+* [ENHANCEMENT] Base `mimirtool`, `metaconvert`, `copyblocks`, and `query-tee` images on `distroless/static-debian12`. #13014
+
 ## 2.17.1
 
 ### Grafana Mimir
