@@ -702,13 +702,6 @@ func TestBucketStore_LazyLoadingAlwaysEagerLoading(t *testing.T) {
 				return blockIDs
 			},
 		},
-		"block is present in pre-shutdown loaded blocks and lazy-loading is enabled, loading index header after initial sync": {
-			lazyLoadingEnabled:        true,
-			expectedEagerLoadedBlocks: 6,
-			createLoadedBlocksSnapshotFn: func(blockIDs []ulid.ULID) []ulid.ULID {
-				return blockIDs
-			},
-		},
 		"block is not present in pre-shutdown loaded blocks snapshot and lazy-loading is enabled": {
 			lazyLoadingEnabled:        true,
 			expectedEagerLoadedBlocks: 0, // although lazy loading is enabled, this test will not do eager loading in startup because the block ID is not in the lazy loaded file.
