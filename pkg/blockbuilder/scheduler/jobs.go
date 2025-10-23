@@ -5,11 +5,14 @@ package scheduler
 import (
 	"container/list"
 	"errors"
+	"fmt"
 	"sync"
 	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+
+	"github.com/grafana/mimir/pkg/blockbuilder/schedulerpb"
 )
 
 var (
@@ -20,6 +23,20 @@ var (
 	errJobAlreadyExists      = errors.New("job already exists")
 	errJobCreationDisallowed = errors.New("job creation policy disallowed job")
 )
+
+type jobInfo struct {
+	ID          string    `json:"id"`
+	Epoch       int64     `json:"epoch"`
+	Topic       string    `json:"topic"`
+	Partition   int32     `json:"partition"`
+	StartOffset int64     `json:"start_offset"`
+	EndOffset   int64     `json:"end_offset"`
+	Assignee    string    `json:"assignee,omitempty"`
+	Status      string    `json:"status"`
+	CreatedAt   time.Time `json:"created_at"`
+	LeaseExpiry time.Time `json:"lease_expiry,omitempty"`
+	FailCount   int       `json:"fail_count"`
+}
 
 type jobQueue[T any] struct {
 	leaseExpiry        time.Duration
@@ -294,6 +311,43 @@ func (s *jobQueue[T]) setEpoch(epoch int64) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.epoch = epoch
+}
+
+// getAllJobs returns information about all jobs in the job queue
+func (s *jobQueue[T]) getAllJobs() []jobInfo {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	jobs := make([]jobInfo, 0, len(s.jobs))
+
+	for _, j := range s.jobs {
+		status := "pending"
+		if j.assignee != "" {
+			status = "assigned"
+		}
+		if j.failCount > 0 {
+			status = fmt.Sprintf("%s (failed %d times)", status, j.failCount)
+		}
+
+		// Convert the generic spec to JobSpec
+		if spec, ok := any(j.spec).(schedulerpb.JobSpec); ok {
+			jobs = append(jobs, jobInfo{
+				ID:          j.key.id,
+				Epoch:       j.key.epoch,
+				Topic:       spec.Topic,
+				Partition:   spec.Partition,
+				StartOffset: spec.StartOffset,
+				EndOffset:   spec.EndOffset,
+				Assignee:    j.assignee,
+				Status:      status,
+				CreatedAt:   time.Now(), // We don't track creation time
+				LeaseExpiry: j.leaseExpiry,
+				FailCount:   j.failCount,
+			})
+		}
+	}
+
+	return jobs
 }
 
 type job[T any] struct {
