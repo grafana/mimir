@@ -332,13 +332,13 @@ Usage of ./cmd/mimir/mimir:
   -alertmanager.sharding-ring.heartbeat-period duration
     	Period at which to heartbeat to the ring. 0 = disabled. (default 15s)
   -alertmanager.sharding-ring.heartbeat-timeout duration
-    	The heartbeat timeout after which alertmanagers are considered unhealthy within the ring. 0 = never (timeout disabled). (default 1m0s)
+    	Heartbeat timeout after which Mimir marks alertmanagers unhealthy in the ring. Set to 0 to disable. (default 1m0s)
   -alertmanager.sharding-ring.instance-addr string
     	IP address to advertise in the ring. Default is auto-detected.
   -alertmanager.sharding-ring.instance-availability-zone string
     	The availability zone where this instance is running. Required if zone-awareness is enabled.
   -alertmanager.sharding-ring.instance-enable-ipv6
-    	Enable using a IPv6 instance address. (default false)
+    	Enable using an IPv6 instance address.
   -alertmanager.sharding-ring.instance-id string
     	Instance ID to register in the ring. (default "<hostname>")
   -alertmanager.sharding-ring.instance-interface-names string
@@ -1082,7 +1082,7 @@ Usage of ./cmd/mimir/mimir:
   -compactor.partial-block-deletion-delay duration
     	If a partial block (unfinished block without meta.json file) hasn't been modified for this time, it will be marked for deletion. The minimum accepted value is 4h0m0s: a lower value will be ignored and the feature disabled. 0 to disable. (default 1d)
   -compactor.ring.auto-forget-unhealthy-periods int
-    	Number of consecutive timeout periods an unhealthy instance in the ring is automatically removed after. Set to 0 to disable auto-forget. (default 10)
+    	Number of consecutive timeout periods after which Mimir automatically removes an unhealthy instance in the ring. Set to 0 to disable auto-forget. (default 10)
   -compactor.ring.consul.acl-token string
     	ACL Token used to interact with Consul.
   -compactor.ring.consul.cas-retry-delay duration
@@ -1126,11 +1126,11 @@ Usage of ./cmd/mimir/mimir:
   -compactor.ring.heartbeat-period duration
     	Period at which to heartbeat to the ring. 0 = disabled. (default 15s)
   -compactor.ring.heartbeat-timeout duration
-    	The heartbeat timeout after which compactors are considered unhealthy within the ring. 0 = never (timeout disabled). (default 1m0s)
+    	Heartbeat timeout after which Mimir marks compactors unhealthy in the ring. Set to 0 to disable. (default 1m0s)
   -compactor.ring.instance-addr string
     	IP address to advertise in the ring. Default is auto-detected.
   -compactor.ring.instance-enable-ipv6
-    	Enable using a IPv6 instance address. (default false)
+    	Enable using an IPv6 instance address.
   -compactor.ring.instance-id string
     	Instance ID to register in the ring. (default "<hostname>")
   -compactor.ring.instance-interface-names string
@@ -1340,7 +1340,7 @@ Usage of ./cmd/mimir/mimir:
   -distributor.reusable-ingester-push-workers int
     	Number of pre-allocated workers used to forward push requests to the ingesters. If 0, no workers will be used and a new goroutine will be spawned for each ingester push request. If not enough workers available, new goroutine will be spawned. (Note: this is a performance optimization, not a limiting feature.) (default 2000)
   -distributor.ring.auto-forget-unhealthy-periods int
-    	Number of consecutive timeout periods an unhealthy instance in the ring is automatically removed after. Set to 0 to disable auto-forget. (default 10)
+    	Number of consecutive timeout periods after which Mimir automatically removes an unhealthy instance in the ring. Set to 0 to disable auto-forget. (default 10)
   -distributor.ring.consul.acl-token string
     	ACL Token used to interact with Consul.
   -distributor.ring.consul.cas-retry-delay duration
@@ -1384,11 +1384,11 @@ Usage of ./cmd/mimir/mimir:
   -distributor.ring.heartbeat-period duration
     	Period at which to heartbeat to the ring. 0 = disabled. (default 15s)
   -distributor.ring.heartbeat-timeout duration
-    	The heartbeat timeout after which distributors are considered unhealthy within the ring. 0 = never (timeout disabled). (default 1m0s)
+    	Heartbeat timeout after which Mimir marks distributors unhealthy in the ring. Set to 0 to disable. (default 1m0s)
   -distributor.ring.instance-addr string
     	IP address to advertise in the ring. Default is auto-detected.
   -distributor.ring.instance-enable-ipv6
-    	Enable using a IPv6 instance address. (default false)
+    	Enable using an IPv6 instance address.
   -distributor.ring.instance-id string
     	Instance ID to register in the ring. (default "<hostname>")
   -distributor.ring.instance-interface-names string
@@ -1942,7 +1942,7 @@ Usage of ./cmd/mimir/mimir:
   -overrides-exporter.enabled-metrics comma-separated-list-of-strings
     	Comma-separated list of metrics to include in the exporter. Metric names must match yaml tags from the limits section of the configuration. (default ingestion_rate,ingestion_burst_size,max_global_series_per_user,max_global_series_per_metric,max_global_exemplars_per_user,max_fetched_chunks_per_query,max_fetched_series_per_query,max_fetched_chunk_bytes_per_query,ruler_max_rules_per_rule_group,ruler_max_rule_groups_per_tenant)
   -overrides-exporter.ring.auto-forget-unhealthy-periods int
-    	Number of consecutive timeout periods an unhealthy instance in the ring is automatically removed after. Set to 0 to disable auto-forget. (default 4)
+    	Number of consecutive timeout periods after which Mimir automatically removes an unhealthy instance in the ring. Set to 0 to disable auto-forget. (default 4)
   -overrides-exporter.ring.consul.acl-token string
     	ACL Token used to interact with Consul.
   -overrides-exporter.ring.consul.cas-retry-delay duration
@@ -1988,11 +1988,11 @@ Usage of ./cmd/mimir/mimir:
   -overrides-exporter.ring.heartbeat-period duration
     	Period at which to heartbeat to the ring. 0 = disabled. (default 15s)
   -overrides-exporter.ring.heartbeat-timeout duration
-    	The heartbeat timeout after which overrides-exporters are considered unhealthy within the ring. 0 = never (timeout disabled). (default 1m0s)
+    	Heartbeat timeout after which Mimir marks overrides-exporters unhealthy in the ring. Set to 0 to disable. (default 1m0s)
   -overrides-exporter.ring.instance-addr string
     	IP address to advertise in the ring. Default is auto-detected.
   -overrides-exporter.ring.instance-enable-ipv6
-    	Enable using a IPv6 instance address. (default false)
+    	Enable using an IPv6 instance address.
   -overrides-exporter.ring.instance-id string
     	Instance ID to register in the ring. (default "<hostname>")
   -overrides-exporter.ring.instance-interface-names string
@@ -2138,7 +2138,7 @@ Usage of ./cmd/mimir/mimir:
   -querier.response-streaming-enabled
     	[experimental] Enables streaming of responses from querier to query-frontend for response types that support it (currently only `active_series` responses do).
   -querier.ring.auto-forget-unhealthy-periods int
-    	Number of consecutive timeout periods an unhealthy instance in the ring is automatically removed after. Set to 0 to disable auto-forget. (default 10)
+    	Number of consecutive timeout periods after which Mimir automatically removes an unhealthy instance in the ring. Set to 0 to disable auto-forget. (default 10)
   -querier.ring.consul.acl-token string
     	ACL Token used to interact with Consul.
   -querier.ring.consul.cas-retry-delay duration
@@ -2182,11 +2182,11 @@ Usage of ./cmd/mimir/mimir:
   -querier.ring.heartbeat-period duration
     	Period at which to heartbeat to the ring. 0 = disabled. (default 15s)
   -querier.ring.heartbeat-timeout duration
-    	The heartbeat timeout after which queriers are considered unhealthy within the ring. 0 = never (timeout disabled). (default 1m0s)
+    	Heartbeat timeout after which Mimir marks queriers unhealthy in the ring. Set to 0 to disable. (default 1m0s)
   -querier.ring.instance-addr string
     	IP address to advertise in the ring. Default is auto-detected.
   -querier.ring.instance-enable-ipv6
-    	Enable using a IPv6 instance address. (default false)
+    	Enable using an IPv6 instance address.
   -querier.ring.instance-id string
     	Instance ID to register in the ring. (default "<hostname>")
   -querier.ring.instance-interface-names string
@@ -2548,7 +2548,7 @@ Usage of ./cmd/mimir/mimir:
   -query-scheduler.querier-forget-delay duration
     	[experimental] If a querier disconnects without sending notification about graceful shutdown, the query-scheduler will keep the querier in the tenant's shard until the forget delay has passed. This feature is useful to reduce the blast radius when shuffle-sharding is enabled.
   -query-scheduler.ring.auto-forget-unhealthy-periods int
-    	Number of consecutive timeout periods an unhealthy instance in the ring is automatically removed after. Set to 0 to disable auto-forget. (default 10)
+    	Number of consecutive timeout periods after which Mimir automatically removes an unhealthy instance in the ring. Set to 0 to disable auto-forget. (default 10)
   -query-scheduler.ring.consul.acl-token string
     	ACL Token used to interact with Consul.
   -query-scheduler.ring.consul.cas-retry-delay duration
@@ -3032,7 +3032,7 @@ Usage of ./cmd/mimir/mimir:
   -ruler.resend-delay duration
     	Minimum amount of time to wait before resending an alert to Alertmanager. (default 1m0s)
   -ruler.ring.auto-forget-unhealthy-periods int
-    	Number of consecutive timeout periods an unhealthy instance in the ring is automatically removed after. Set to 0 to disable auto-forget. (default 2)
+    	Number of consecutive timeout periods after which Mimir automatically removes an unhealthy instance in the ring. Set to 0 to disable auto-forget. (default 2)
   -ruler.ring.consul.acl-token string
     	ACL Token used to interact with Consul.
   -ruler.ring.consul.cas-retry-delay duration
@@ -3076,11 +3076,11 @@ Usage of ./cmd/mimir/mimir:
   -ruler.ring.heartbeat-period duration
     	Period at which to heartbeat to the ring. 0 = disabled. (default 15s)
   -ruler.ring.heartbeat-timeout duration
-    	The heartbeat timeout after which rulers are considered unhealthy within the ring. 0 = never (timeout disabled). (default 1m0s)
+    	Heartbeat timeout after which Mimir marks rulers unhealthy in the ring. Set to 0 to disable. (default 1m0s)
   -ruler.ring.instance-addr string
     	IP address to advertise in the ring. Default is auto-detected.
   -ruler.ring.instance-enable-ipv6
-    	Enable using a IPv6 instance address. (default false)
+    	Enable using an IPv6 instance address.
   -ruler.ring.instance-id string
     	Instance ID to register in the ring. (default "<hostname>")
   -ruler.ring.instance-interface-names string
@@ -3248,7 +3248,7 @@ Usage of ./cmd/mimir/mimir:
   -store-gateway.sharding-ring.auto-forget-enabled
     	[deprecated] When enabled, a store-gateway is automatically removed from the ring after failing to heartbeat the ring for a period longer than the configured -store-gateway.sharding-ring.auto-forget-unhealthy-periods times the configured -store-gateway.sharding-ring.heartbeat-timeout. This setting is deprecated. Set -store-gateway.sharding-ring.auto-forget-unhealthy-periods to 0 to disable auto-forget. (default true)
   -store-gateway.sharding-ring.auto-forget-unhealthy-periods int
-    	Number of consecutive timeout periods an unhealthy instance in the ring is automatically removed after. Set to 0 to disable auto-forget. (default 10)
+    	Number of consecutive timeout periods after which Mimir automatically removes an unhealthy instance in the ring. Set to 0 to disable auto-forget. (default 10)
   -store-gateway.sharding-ring.consul.acl-token string
     	ACL Token used to interact with Consul.
   -store-gateway.sharding-ring.consul.cas-retry-delay duration
