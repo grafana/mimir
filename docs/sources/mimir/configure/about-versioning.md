@@ -73,7 +73,6 @@ The following features are currently experimental:
   - Enable the compactor to upload sparse index headers to object storage during compaction cycles.
     - `-compactor.upload-sparse-index-headers`
 - Ruler
-  - Aligning of evaluation timestamp on interval (`align_evaluation_time_on_interval`)
   - Allow defining limits on the maximum number of rules allowed in a rule group by namespace and the maximum number of rule groups by namespace. If set, this supersedes the `-ruler.max-rules-per-rule-group` and `-ruler.max-rule-groups-per-tenant` limits.
   - `-ruler.max-rules-per-rule-group-by-namespace`
   - `-ruler.max-rule-groups-per-tenant-by-namespace`
@@ -227,7 +226,6 @@ The following features are currently experimental:
     - `-blocks-storage.tsdb.index-lookup-planning-enabled`
     - `-blocks-storage.tsdb.index-lookup-planning-comparison-portion`
 - Querier
-  - Limiting queries based on the estimated number of chunks that will be used (`-querier.max-estimated-fetched-chunks-per-query-multiplier`)
   - Max concurrency for tenant federated queries (`-tenant-federation.max-concurrent`)
   - Maximum response size for active series queries (`-querier.active-series-results-max-size-bytes`)
   - Allow streaming of `/active_series` responses to the frontend (`-querier.response-streaming-enabled`)
@@ -267,11 +265,6 @@ The following features are currently experimental:
     - `cortex_vault_token_lease_renewal_active`
     - `cortex_vault_token_lease_renewal_success_total`
     - `cortex_vault_auth_success_total`
-- Logger
-  - Rate limited logger support
-    - `log.rate-limit-enabled`
-    - `log.rate-limit-logs-per-second`
-    - `log.rate-limit-logs-burst-size`
 - Timeseries Unmarshal caching optimization in distributor (`-timeseries-unmarshal-caching-optimization-enabled`)
 - Reusing buffers for marshalling write requests in distributors (`-distributor.write-requests-buffer-pooling-enabled`)
 - Logging of requests that did not send any HTTP request: `-server.http-log-closed-connections-without-response-enabled`.

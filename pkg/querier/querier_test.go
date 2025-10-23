@@ -484,7 +484,6 @@ func mockTSDB(t *testing.T, mint model.Time, samples int, step, chunkOffset time
 	dir := t.TempDir()
 
 	opts := tsdb.DefaultHeadOptions()
-	opts.EnableNativeHistograms.Store(true)
 	opts.ChunkDirRoot = dir
 	// We use TSDB head only. By using full TSDB DB, and appending samples to it, closing it would cause unnecessary HEAD compaction, which slows down the test.
 	head, err := tsdb.NewHead(nil, nil, nil, nil, opts, nil)
