@@ -6654,6 +6654,28 @@
         },
         {
           "kind": "field",
+          "name": "otel_label_name_underscore_sanitization",
+          "required": false,
+          "desc": "If enabled, prefixes label names starting with a single underscore with `key_` when translating OTel attribute names. Defaults to true.",
+          "fieldValue": null,
+          "fieldDefaultValue": true,
+          "fieldFlag": "distributor.otel-label-name-underscore-sanitization",
+          "fieldType": "boolean",
+          "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
+          "name": "otel_label_name_preserve_multiple_underscores",
+          "required": false,
+          "desc": "If enabled, keeps multiple consecutive underscores in label names when translating OTel attribute names. Defaults to true.",
+          "fieldValue": null,
+          "fieldDefaultValue": true,
+          "fieldFlag": "distributor.otel-label-name-preserve-underscores",
+          "fieldType": "boolean",
+          "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
           "name": "ingest_storage_read_consistency",
           "required": false,
           "desc": "The default consistency level to enforce for queries when using the ingest storage. Supports values: strong, eventual.",

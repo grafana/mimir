@@ -18,6 +18,7 @@
 * [CHANGE] Store-gateway: Removed experimental `-blocks-storage.bucket-store.index-header.eager-loading-startup-enabled` flag. The eager loading feature is now always enabled when lazy loading is enabled. #13126
 * [CHANGE] API: The `/api/v1/cardinality/active_series` endpoint is now stable and no longer experimental. #13111
 * [CHANGE] Compactor: remove experimental `-compactor.in-memory-tenant-meta-cache-size`. #13131
+* [FEATURE] Distributor: add `-distributor.otel-label-name-underscore-sanitization` and `-distributor.otel-label-name-preserve-underscores` that control sanitization of underscores during OTLP translation. #13133
 * [FEATURE] Query-frontends: Automatically adjust features used in query plans generated for remote execution based on what the available queriers support. #13017 #13164
 * [FEATURE] Memberlist: Add experimental support for zone-aware routing, in order to reduce memberlist cross-AZ data transfer. #13129
 * [ENHANCEMENT] Compactor, Store-gateway: Change default value of `-compactor.upload-sparse-index-headers` to `true`. This improves lazy loading performance in the store-gateway. #13089
