@@ -92,8 +92,11 @@ func (g StatisticsGenerator) Stats(meta tsdb.BlockMeta, r tsdb.IndexReader, labe
 		}
 
 		labelCardinality, err := countPostings(r.PostingsForAllLabelValues(ctx, labelName))
-		epsilon := selectEpsilon(labelCardinality)
+		if err != nil {
+			return nil, fmt.Errorf("error counting postings for label %s: %w", labelName, err)
+		}
 
+		epsilon := selectEpsilon(labelCardinality)
 		// Create count-min sketch for this label
 		sketch := &LabelValuesSketch{
 			s:              boom.NewCountMinSketch(epsilon, 0.01),
