@@ -6,7 +6,10 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"os"
+	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/prometheus/model/labels"
@@ -143,8 +146,7 @@ func TestCompareIngesterConfigs(t *testing.T) {
 	require.NotEmpty(t, queries, "no queries after filtering and sampling")
 	t.Logf("Prepared %d queries (malformed: %d, sampled: %f%% of all queries)", len(queries), stats.MalformedLines, *querySampleFlag*100)
 
-	// Create a copy of the data directory for the second ingester
-	// Both ingesters can't use the same data directory
+	// Create a copy of the data directory for the second ingester. Both ingesters can't use the same data directory.
 	tempDir := t.TempDir()
 	dataDirCopy := filepath.Join(tempDir, "data-copy")
 	t.Logf("Copying data directory to %s", dataDirCopy)
@@ -152,21 +154,21 @@ func TestCompareIngesterConfigs(t *testing.T) {
 	require.NoError(t, err)
 	t.Log("Data directory copied")
 
-	// Start first ingester with index lookup planning enabled
-	ing1, _, cleanup1, err := benchmarks.StartBenchmarkIngester(*dataDirFlag, func(config *ingester.Config) {
+	ingesterStartTime := time.Now()
+	ing1, _, cleanup1, err := benchmarks.StartBenchmarkIngester(dataDirCopy, func(config *ingester.Config) {
 		config.BlocksStorageConfig.TSDB.IndexLookupPlanning.Enabled = true
 	})
 	require.NoError(t, err)
 	t.Cleanup(cleanup1)
-	t.Log("Started ingester 1 with index lookup planning enabled")
+	t.Logf("Started ingester 1 in %s", time.Since(ingesterStartTime))
 
-	// Start second ingester with index lookup planning disabled using the copied data
-	ing2, _, cleanup2, err := benchmarks.StartBenchmarkIngester(dataDirCopy, func(config *ingester.Config) {
+	ingesterStartTime = time.Now()
+	ing2, _, cleanup2, err := benchmarks.StartBenchmarkIngester(*dataDirFlag, func(config *ingester.Config) {
 		config.BlocksStorageConfig.TSDB.IndexLookupPlanning.Enabled = false
 	})
 	require.NoError(t, err)
 	t.Cleanup(cleanup2)
-	t.Log("Started ingester 2 with index lookup planning disabled")
+	t.Logf("Started ingester 2 in %s", time.Since(ingesterStartTime))
 
 	// Run queries against both ingesters and compare results
 	for _, q := range queries {
@@ -181,13 +183,8 @@ func TestCompareIngesterConfigs(t *testing.T) {
 				result2, err := queryIngesterDetailed(ing2, q.VectorSelectors[selectorIdx], q.User)
 				require.NoError(t, err, "Query failed on ingester 2: %s", q.Query)
 
-				// Compare series count
 				require.Equalf(t, result1.SeriesCount, result2.SeriesCount, "Series count mismatch for query: %s", q.Query)
-
-				// Compare chunks count
 				require.Equalf(t, result1.ChunksCount, result2.ChunksCount, "Chunks count mismatch for query: %s", q.Query)
-
-				// Compare actual series data
 				require.Equalf(t, len(result1.Series), len(result2.Series), "Number of series mismatch for query: %s", q.Query)
 
 				// Compare each series - order must be the same between both ingesters
@@ -196,9 +193,7 @@ func TestCompareIngesterConfigs(t *testing.T) {
 					s2 := result2.Series[i]
 
 					require.Truef(t, labels.Equal(s1.Labels, s2.Labels), "Labels mismatch at series %d for query: %s\ningester1: %s\ningester2: %s", i, q.Query, s1.Labels.String(), s2.Labels.String())
-
 					require.Equalf(t, s1.ChunkCount, s2.ChunkCount, "Chunk count mismatch for series %s in query: %s", s1.Labels.String(), q.Query)
-
 					require.Equalf(t, len(s1.Chunks), len(s2.Chunks), "Number of chunks mismatch for series %s in query: %s", s1.Labels.String(), q.Query)
 
 					// Compare chunks
@@ -207,11 +202,8 @@ func TestCompareIngesterConfigs(t *testing.T) {
 						c2 := s2.Chunks[j]
 
 						require.Equalf(t, c1.MinTime, c2.MinTime, "Chunk %d MinTime mismatch for series %s in query: %s", j, s1.Labels.String(), q.Query)
-
 						require.Equalf(t, c1.MaxTime, c2.MaxTime, "Chunk %d MaxTime mismatch for series %s in query: %s", j, s1.Labels.String(), q.Query)
-
 						require.Equalf(t, c1.Encoding, c2.Encoding, "Chunk %d Encoding mismatch for series %s in query: %s", j, s1.Labels.String(), q.Query)
-
 						require.Equalf(t, c1.Data, c2.Data, "Chunk %d Data mismatch for series %s in query: %s (len1=%d, len2=%d)", j, s1.Labels.String(), q.Query, len(c1.Data), len(c2.Data))
 					}
 				}
@@ -254,4 +246,12 @@ func queryIngesterDetailed(ing *ingester.Ingester, matchers []*labels.Matcher, u
 	}
 
 	return result, nil
+}
+
+// copyDir recursively copies a directory tree.
+func copyDir(src, dst string) error {
+	if err := os.CopyFS(dst, os.DirFS(src)); err != nil {
+		return fmt.Errorf("failed to copy directory: %w", err)
+	}
+	return nil
 }
