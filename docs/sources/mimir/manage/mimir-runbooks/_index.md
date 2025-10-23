@@ -2140,7 +2140,7 @@ Invalid series are skipped during ingestion. Valid series in the same request ar
 ### err-mimir-label-value-too-long
 
 This non-critical error occurs when Mimir receives a write request that contains a series with a label value whose length exceeds the configured limit.
-The limit protects the system’s stability from potential abuse or mistakes. To configure the limit for all tenants, use the `-validation.max-length-label-name` option. To configure the limit per-tenant, use the `max_label_name_length` option in the runtime configuration file.
+The limit protects the system’s stability from potential abuse or mistakes. To configure the limit for all tenants, use the `-validation.max-length-label-value` option. To configure the limit per-tenant, use the `max_label_value_length` option in the runtime configuration file.
 
 {{< admonition type="note" >}}
 Invalid series are skipped during ingestion. Valid series in the same request are ingested.
