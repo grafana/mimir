@@ -112,12 +112,21 @@ func (s *statsTrackingChunkSeriesSet) recordStatsToMetrics() {
 	s.ingesterMetrics.queriedSeries.WithLabelValues("single_block_index").Observe(float64(actualPostings))
 	s.ingesterMetrics.queriedSeries.WithLabelValues("single_block_filter").Observe(float64(actualFinal))
 
+	var (
+		filteredRatio         = -1.0
+		finalCardinalityRatio = -1.0
+		intersectionSizeRatio = -1.0
+	)
 	if actualFinal > 0 {
-		instrument.ObserveWithExemplar(s.ctx, s.lookupPlanMetrics.FilteredRatio.WithLabelValues(), float64(actualPostings)/float64(actualFinal))
-		instrument.ObserveWithExemplar(s.ctx, s.lookupPlanMetrics.FinalCardinalityRatio.WithLabelValues(), float64(estimatedFinal)/float64(actualFinal))
+		filteredRatio = float64(actualPostings) / float64(actualFinal)
+		instrument.ObserveWithExemplar(s.ctx, s.lookupPlanMetrics.FilteredRatio.WithLabelValues(), filteredRatio)
+
+		finalCardinalityRatio = float64(estimatedFinal) / float64(actualFinal)
+		instrument.ObserveWithExemplar(s.ctx, s.lookupPlanMetrics.FinalCardinalityRatio.WithLabelValues(), finalCardinalityRatio)
 	}
 	if actualPostings > 0 {
-		instrument.ObserveWithExemplar(s.ctx, s.lookupPlanMetrics.IntersectionSizeRatio.WithLabelValues(), float64(estimatedPostings)/float64(actualPostings))
+		intersectionSizeRatio = float64(estimatedPostings) / float64(actualPostings)
+		instrument.ObserveWithExemplar(s.ctx, s.lookupPlanMetrics.IntersectionSizeRatio.WithLabelValues(), intersectionSizeRatio)
 	}
 
 	if span, _, traceSampled := tracing.SpanFromContext(s.ctx); traceSampled {
@@ -128,6 +137,9 @@ func (s *statsTrackingChunkSeriesSet) recordStatsToMetrics() {
 				attribute.Int64("actual_selected_postings", int64(actualPostings)),
 				attribute.Int64("estimated_final_cardinality", int64(estimatedFinal)),
 				attribute.Int64("actual_final_cardinality", int64(actualFinal)),
+				attribute.Float64("filtered_ratio", filteredRatio),
+				attribute.Float64("intersection_size_ratio", intersectionSizeRatio),
+				attribute.Float64("final_cardinality_ratio", finalCardinalityRatio),
 			),
 		)
 	}
