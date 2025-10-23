@@ -21,6 +21,7 @@
 * [BUGFIX] Query-frontend: Fix issue where requests that are canceled or time out are sometimes cached if remote execution is enabled. #13098
 * [BUGFIX] Querier: Fix issue where errors are logged as "EOF" when sending results to query-frontends in response to remote execution requests fails. #13099 #13121
 * [BUGFIX] Usage-Tracker: Fix underflow in current limit calculation when series >= limit. #13113
+* [BUGFIX] Querier: Fix issue where a problem sending a response to a query-frontend may cause all other responses from the same querier to the same query-frontend to fail or be delayed. #13123
 
 ### Mixin
 
