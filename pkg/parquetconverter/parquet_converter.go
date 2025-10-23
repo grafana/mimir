@@ -535,9 +535,10 @@ func (c *ParquetConverter) processBlock(ctx context.Context, userID string, meta
 		level.Error(logger).Log("msg", "failed to acquire conversion semaphore", "err", err)
 		return
 	}
+	defer c.conversionSem.Release(1)
 
 	err = c.blockConverter.ConvertBlock(ctx, meta, localBlockDir, uBucket, logger, convertOpts)
-	c.conversionSem.Release(1)
+
 	if err != nil {
 		level.Error(logger).Log("msg", "failed to convert block", "block", meta.ULID.String(), "err", err)
 		return
