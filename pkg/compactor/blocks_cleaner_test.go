@@ -766,11 +766,10 @@ func TestBlocksCleaner_ShouldCleanUpFilesWhenNoMoreBlocksRemain(t *testing.T) {
 	require.NoError(t, bucketClient.Upload(context.Background(), debugMetaFile, strings.NewReader("random content")))
 
 	cfg := BlocksCleanerConfig{
-		DeletionDelay:              deletionDelay,
-		CleanupInterval:            time.Minute,
-		CleanupConcurrency:         1,
-		DeleteBlocksConcurrency:    1,
-		NoBlocksFileCleanupEnabled: true,
+		DeletionDelay:           deletionDelay,
+		CleanupInterval:         time.Minute,
+		CleanupConcurrency:      1,
+		DeleteBlocksConcurrency: 1,
 	}
 
 	logger := test.NewTestingLogger(t)
@@ -1454,7 +1453,6 @@ func TestBlocksCleaner_RaceCondition_CleanerUpdatesBucketIndexWhileAnotherCleane
 			CleanupConcurrency:            1,
 			DeleteBlocksConcurrency:       1,
 			GetDeletionMarkersConcurrency: 1,
-			NoBlocksFileCleanupEnabled:    true,
 		}
 	)
 
