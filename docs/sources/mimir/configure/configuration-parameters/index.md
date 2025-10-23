@@ -3725,12 +3725,12 @@ The `limits` block configures default and per-tenant limits imposed by component
 #       prod: '{namespace=~"prod-.*"}'
 [active_series_additional_custom_trackers: <map of tracker name (string) to matcher (string)> | default = ]
 
-# (advanced) Non-zero value enables out-of-order support for most recent samples
-# that are within the time window in relation to the TSDB's maximum time, i.e.,
-# within [db.maxTime-timeWindow, db.maxTime]). The ingester will need more
-# memory as a factor of rate of out-of-order samples being ingested and the
-# number of series that are getting out-of-order samples. If query falls into
-# this window, cached results will use value from
+# Non-zero value enables out-of-order support for most recent samples that are
+# within the time window in relation to the TSDB's maximum time, i.e., within
+# [db.maxTime-timeWindow, db.maxTime]). The ingester will need more memory as a
+# factor of rate of out-of-order samples being ingested and the number of series
+# that are getting out-of-order samples. If query falls into this window, cached
+# results will use value from
 # -query-frontend.results-cache-ttl-for-out-of-order-time-window option to
 # specify TTL for resulting cache entry.
 # CLI flag: -ingester.out-of-order-time-window
