@@ -5307,8 +5307,7 @@
           "fieldValue": null,
           "fieldDefaultValue": 0,
           "fieldFlag": "ingester.out-of-order-time-window",
-          "fieldType": "duration",
-          "fieldCategory": "experimental"
+          "fieldType": "duration"
         },
         {
           "kind": "field",
@@ -5319,7 +5318,7 @@
           "fieldDefaultValue": false,
           "fieldFlag": "ingester.out-of-order-blocks-external-label-enabled",
           "fieldType": "boolean",
-          "fieldCategory": "experimental"
+          "fieldCategory": "advanced"
         },
         {
           "kind": "field",
