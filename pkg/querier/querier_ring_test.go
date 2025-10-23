@@ -32,7 +32,7 @@ func TestRingQueryPlanVersionProvider(t *testing.T) {
 
 	testCases := map[string]struct {
 		instances       []mockInstance
-		expectedVersion uint64
+		expectedVersion planning.QueryPlanVersion
 		expectedError   string
 	}{
 		"no instances in the ring": {

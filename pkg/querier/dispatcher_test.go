@@ -35,6 +35,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/propagation"
+	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
 func TestDispatcher_HandleProtobuf(t *testing.T) {
@@ -1379,9 +1380,9 @@ func TestQueryResponseWriter_WriteError(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			reg, requestMetrics, serverMetrics := newMetrics()
 			stream := &mockQueryResultStream{t: t, route: "test-route", reg: reg}
-			writer := newQueryResponseWriter(stream, requestMetrics, serverMetrics, log.NewNopLogger())
-			writer.Start("test-route", 123)
 			ctx := context.Background()
+			writer := newQueryResponseWriter(stream, requestMetrics, serverMetrics, spanlogger.FromContext(ctx, log.NewNopLogger()))
+			writer.Start("test-route", 123)
 
 			writer.WriteError(ctx, apierror.TypeNotFound, testCase.err)
 
