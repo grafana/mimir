@@ -554,13 +554,15 @@ func otelMetricsToSeriesAndMetadata(
 	logger log.Logger,
 ) ([]mimirpb.PreallocTimeseries, []*mimirpb.MetricMetadata, int, error) {
 	settings := prometheusremotewrite.Settings{
-		AddMetricSuffixes:                 opts.addSuffixes,
-		PromoteResourceAttributes:         prometheusremotewrite.NewPromoteResourceAttributes(config.OTLPConfig{PromoteResourceAttributes: opts.promoteResourceAttributes}),
-		KeepIdentifyingResourceAttributes: opts.keepIdentifyingResourceAttributes,
-		ConvertHistogramsToNHCB:           opts.convertHistogramsToNHCB,
-		PromoteScopeMetadata:              opts.promoteScopeMetadata,
-		AllowDeltaTemporality:             opts.allowDeltaTemporality,
-		AllowUTF8:                         opts.allowUTF8,
+		AddMetricSuffixes:                    opts.addSuffixes,
+		PromoteResourceAttributes:            prometheusremotewrite.NewPromoteResourceAttributes(config.OTLPConfig{PromoteResourceAttributes: opts.promoteResourceAttributes}),
+		KeepIdentifyingResourceAttributes:    opts.keepIdentifyingResourceAttributes,
+		ConvertHistogramsToNHCB:              opts.convertHistogramsToNHCB,
+		PromoteScopeMetadata:                 opts.promoteScopeMetadata,
+		AllowDeltaTemporality:                opts.allowDeltaTemporality,
+		AllowUTF8:                            opts.allowUTF8,
+		LabelNameUnderscoreSanitization:      true,
+		LabelNamePreserveMultipleUnderscores: true,
 	}
 	converter.appender.EnableCreatedTimestampZeroIngestion = opts.enableCTZeroIngestion
 	mimirTS, metadata := converter.ToSeriesAndMetadata(ctx, md, settings, logger)

@@ -1077,8 +1077,6 @@ Usage of ./cmd/mimir/mimir:
     	Maximum number of TSDB segment files that the compactor can upload concurrently per block. (default 8)
   -compactor.meta-sync-concurrency int
     	Number of goroutines to use when syncing block meta files from the long term storage. (default 20)
-  -compactor.no-blocks-file-cleanup-enabled
-    	[experimental] If enabled, will delete the bucket-index, markers and debug files in the tenant bucket when there are no blocks left in the index.
   -compactor.partial-block-deletion-delay duration
     	If a partial block (unfinished block without meta.json file) hasn't been modified for this time, it will be marked for deletion. The minimum accepted value is 4h0m0s: a lower value will be ignored and the feature disabled. 0 to disable. (default 1d)
   -compactor.ring.auto-forget-unhealthy-periods int
@@ -1588,9 +1586,9 @@ Usage of ./cmd/mimir/mimir:
   -ingester.native-histograms-ingestion-enabled
     	[experimental] Enable ingestion of native histogram samples. If false, native histogram samples are ignored without an error. To query native histograms with query-sharding enabled make sure to set -query-frontend.query-result-response-format to 'protobuf'. (default true)
   -ingester.out-of-order-blocks-external-label-enabled
-    	[experimental] Whether the shipper should label out-of-order blocks with an external label before uploading them. Setting this label will compact out-of-order blocks separately from non-out-of-order blocks
+    	Whether the shipper should label out-of-order blocks with an external label before uploading them. Setting this label will compact out-of-order blocks separately from non-out-of-order blocks
   -ingester.out-of-order-time-window duration
-    	[experimental] Non-zero value enables out-of-order support for most recent samples that are within the time window in relation to the TSDB's maximum time, i.e., within [db.maxTime-timeWindow, db.maxTime]). The ingester will need more memory as a factor of rate of out-of-order samples being ingested and the number of series that are getting out-of-order samples. If query falls into this window, cached results will use value from -query-frontend.results-cache-ttl-for-out-of-order-time-window option to specify TTL for resulting cache entry.
+    	Non-zero value enables out-of-order support for most recent samples that are within the time window in relation to the TSDB's maximum time, i.e., within [db.maxTime-timeWindow, db.maxTime]). The ingester will need more memory as a factor of rate of out-of-order samples being ingested and the number of series that are getting out-of-order samples. If query falls into this window, cached results will use value from -query-frontend.results-cache-ttl-for-out-of-order-time-window option to specify TTL for resulting cache entry.
   -ingester.owned-series-update-interval duration
     	[experimental] How often to check for ring changes and possibly recompute owned series as a result of detected change. (default 15s)
   -ingester.partition-ring.consul.acl-token string
@@ -1842,11 +1840,11 @@ Usage of ./cmd/mimir/mimir:
   -log.level value
     	Only log messages with the given severity or above. Valid levels: [debug, info, warn, error] (default info)
   -log.rate-limit-enabled
-    	[experimental] Use rate limited logger to reduce the number of logged messages per second.
+    	Use rate limited logger to reduce the number of logged messages per second.
   -log.rate-limit-logs-burst-size int
-    	[experimental] Burst size, i.e., maximum number of messages that can be logged at once, temporarily exceeding the configured maximum logs per second. (default 1000)
+    	Burst size, i.e., maximum number of messages that can be logged at once, temporarily exceeding the configured maximum logs per second. (default 1000)
   -log.rate-limit-logs-per-second float
-    	[experimental] Maximum number of messages per second to be logged. (default 10000)
+    	Maximum number of messages per second to be logged. (default 10000)
   -max-separate-metrics-groups-per-user int
     	[experimental] Maximum number of groups allowed per user by which specified distributor and ingester metrics can be further separated. (default 1000)
   -mem-ballast-size-bytes int
@@ -2092,7 +2090,7 @@ Usage of ./cmd/mimir/mimir:
   -querier.max-concurrent-remote-read-queries int
     	Maximum number of remote read queries that can be executed concurrently. 0 or negative values mean unlimited concurrency. (default 2)
   -querier.max-estimated-fetched-chunks-per-query-multiplier float
-    	[experimental] Maximum number of chunks estimated to be fetched in a single query from ingesters and store-gateways, as a multiple of -querier.max-fetched-chunks-per-query. This limit is enforced in the querier. Must be greater than or equal to 1, or 0 to disable.
+    	Maximum number of chunks estimated to be fetched in a single query from ingesters and store-gateways, as a multiple of -querier.max-fetched-chunks-per-query. This limit is enforced in the querier. Must be greater than or equal to 1, or 0 to disable.
   -querier.max-estimated-memory-consumption-per-query uint
     	[experimental] The maximum estimated memory a single query can consume at once, in bytes. This limit is only enforced when Mimir's query engine is in use. This limit is enforced in the querier. 0 to disable.
   -querier.max-fetched-chunk-bytes-per-query int
