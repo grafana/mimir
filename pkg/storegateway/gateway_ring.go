@@ -106,8 +106,8 @@ func (cfg *RingConfig) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	// Ring flags
 	cfg.KVStore.Store = "memberlist"
 	cfg.KVStore.RegisterFlagsWithPrefix(ringFlagsPrefix, "collectors/", f)
-	f.DurationVar(&cfg.HeartbeatPeriod, ringFlagsPrefix+"heartbeat-period", 15*time.Second, "Period at which to heartbeat to the ring. 0 = disabled.")
-	f.DurationVar(&cfg.HeartbeatTimeout, ringHeartbeatTimeoutFlag, time.Minute, "The heartbeat timeout after which store gateways are considered unhealthy within the ring. 0 = never (timeout disabled)."+sharedOptionWithRingClient)
+	f.DurationVar(&cfg.HeartbeatPeriod, ringFlagsPrefix+"heartbeat-period", 15*time.Second, "Period at which to heartbeat to the ring.")
+	f.DurationVar(&cfg.HeartbeatTimeout, ringHeartbeatTimeoutFlag, time.Minute, "The heartbeat timeout after which store gateways are considered unhealthy within the ring."+sharedOptionWithRingClient)
 	f.IntVar(&cfg.AutoForgetUnhealthyPeriods, ringFlagsPrefix+"auto-forget-unhealthy-periods", 10, "Number of consecutive timeout periods after which Mimir automatically removes an unhealthy instance in the ring. Set to 0 to disable auto-forget.")
 	f.BoolVar(&cfg.AutoForgetEnabled, ringFlagsPrefix+"auto-forget-enabled", true, fmt.Sprintf("When enabled, a store-gateway is automatically removed from the ring after failing to heartbeat the ring for a period longer than the configured -%s times the configured -%s. This setting is deprecated. Set -%s to 0 to disable auto-forget.", ringAutoForgetUnhealthyPeriodsFlag, ringHeartbeatTimeoutFlag, ringAutoForgetUnhealthyPeriodsFlag))
 	f.IntVar(&cfg.ReplicationFactor, ringFlagsPrefix+"replication-factor", 3, "The replication factor to use when sharding blocks."+sharedOptionWithRingClient)
