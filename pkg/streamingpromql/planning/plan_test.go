@@ -68,7 +68,7 @@ func TestQueryPlan_String(t *testing.T) {
 type testNode struct {
 	children                   []Node
 	description                string
-	minimumRequiredPlanVersion uint64
+	minimumRequiredPlanVersion QueryPlanVersion
 }
 
 func (t *testNode) Describe() string {
@@ -128,18 +128,18 @@ func (t *testNode) ExpressionPosition() posrange.PositionRange {
 	panic("not supported")
 }
 
-func (t *testNode) MinimumRequiredPlanVersion() uint64 {
+func (t *testNode) MinimumRequiredPlanVersion() QueryPlanVersion {
 	return t.minimumRequiredPlanVersion
 }
 
 func TestQueryPlanVersion(t *testing.T) {
-	v0 := uint64(0)
-	v1 := uint64(1)
-	v2 := uint64(2)
+	v0 := QueryPlanVersion(0)
+	v1 := QueryPlanVersion(1)
+	v2 := QueryPlanVersion(2)
 
 	testCases := map[string]struct {
 		plan            QueryPlan
-		expectedVersion uint64
+		expectedVersion QueryPlanVersion
 		expectedError   error
 	}{
 		"no root node": {
