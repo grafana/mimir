@@ -684,34 +684,34 @@ func TestBucketStore_Series_ChunksLimiter_e2e(t *testing.T) {
 
 func TestBucketStore_EagerLoading(t *testing.T) {
 	testCases := map[string]struct {
-		eagerLoadReaderEnabled       bool
+		lazyLoadingEnabled           bool
 		expectedEagerLoadedBlocks    int
 		createLoadedBlocksSnapshotFn func([]ulid.ULID) []ulid.ULID
 	}{
-		"block is present in pre-shutdown loaded blocks and eager-loading is disabled": {
-			eagerLoadReaderEnabled:    false,
-			expectedEagerLoadedBlocks: 0,
+		"block is present in pre-shutdown loaded blocks and lazy loading is disabled": {
+			lazyLoadingEnabled:        false,
+			expectedEagerLoadedBlocks: 0, // When lazy loading is disabled, all blocks are eagerly loaded at startup, so the snapshot is not used
 			createLoadedBlocksSnapshotFn: func(blockIDs []ulid.ULID) []ulid.ULID {
 				return blockIDs
 			},
 		},
-		"block is present in pre-shutdown loaded blocks and eager-loading is enabled, loading index header during initial sync": {
-			eagerLoadReaderEnabled:    true,
+		"block is present in pre-shutdown loaded blocks and lazy loading is enabled, loading index header during initial sync": {
+			lazyLoadingEnabled:        true,
 			expectedEagerLoadedBlocks: 6,
 			createLoadedBlocksSnapshotFn: func(blockIDs []ulid.ULID) []ulid.ULID {
 				return blockIDs
 			},
 		},
-		"block is present in pre-shutdown loaded blocks and eager-loading is enabled, loading index header after initial sync": {
-			eagerLoadReaderEnabled:    true,
+		"block is present in pre-shutdown loaded blocks and lazy loading is enabled, loading index header after initial sync": {
+			lazyLoadingEnabled:        true,
 			expectedEagerLoadedBlocks: 6,
 			createLoadedBlocksSnapshotFn: func(blockIDs []ulid.ULID) []ulid.ULID {
 				return blockIDs
 			},
 		},
-		"block is not present in pre-shutdown loaded blocks snapshot and eager-loading is enabled": {
-			eagerLoadReaderEnabled:    true,
-			expectedEagerLoadedBlocks: 0, // although eager loading is enabled, this test will not do eager loading because the block ID is not in the lazy loaded file.
+		"block is not present in pre-shutdown loaded blocks snapshot and lazy loading is enabled": {
+			lazyLoadingEnabled:        true,
+			expectedEagerLoadedBlocks: 0, // eager loading doesn't happen because the block ID is not in the lazy loaded file.
 			createLoadedBlocksSnapshotFn: func(_ []ulid.ULID) []ulid.ULID {
 				// let's create a random fake blockID to be stored in lazy loaded headers file
 				fakeBlockID := ulid.MustNew(ulid.Now(), nil)
@@ -719,8 +719,8 @@ func TestBucketStore_EagerLoading(t *testing.T) {
 				return []ulid.ULID{fakeBlockID}
 			},
 		},
-		"pre-shutdown loaded blocks snapshot doesn't exist and eager-loading is enabled": {
-			eagerLoadReaderEnabled:    true,
+		"pre-shutdown loaded blocks snapshot doesn't exist and lazy loading is enabled": {
+			lazyLoadingEnabled:        true,
 			expectedEagerLoadedBlocks: 0,
 		},
 	}
@@ -741,6 +741,7 @@ func TestBucketStore_EagerLoading(t *testing.T) {
 			bkt := objstore.NewInMemBucket()
 			cfg := defaultPrepareStoreConfig(t)
 			cfg.logger = test.NewTestingLogger(t)
+			cfg.bucketStoreConfig.IndexHeader.LazyLoadingEnabled = testData.lazyLoadingEnabled
 			ctx := context.Background()
 
 			// Start the store so we generate some blocks and can use them in the mock snapshot.
