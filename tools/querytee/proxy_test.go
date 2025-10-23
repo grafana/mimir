@@ -11,6 +11,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -27,8 +28,14 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
+	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
+	"github.com/grafana/mimir/pkg/util/propagation"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
+
+func pointerToFloat(v float64) *float64 {
+	return &v
+}
 
 var testRoutes = []Route{
 	{
@@ -785,13 +792,110 @@ func Test_NewProxy_BackendConfigPath(t *testing.T) {
 				},
 			},
 		},
+		"valid config with request proportions": {
+			createFile: true,
+			configContent: `
+                backend1:
+                  request_headers:
+                    X-Custom-Header: ["value1"]
+                  request_proportion: 0.8
+                backend2:
+                  request_headers:
+                    Authorization: ["Bearer token123"]
+                  request_proportion: 0.5
+            `,
+			expectedConfig: map[string]*BackendConfig{
+				"backend1": {
+					RequestHeaders: http.Header{
+						"X-Custom-Header": {"value1"},
+					},
+					RequestProportion: pointerToFloat(0.8),
+				},
+				"backend2": {
+					RequestHeaders: http.Header{
+						"Authorization": {"Bearer token123"},
+					},
+					RequestProportion: pointerToFloat(0.5),
+				},
+			},
+		},
+		"multiple backends with request proportions": {
+			createFile: true,
+			configContent: `
+                backend1:
+                  request_headers:
+                    X-Custom-Header: ["value1"]
+                  request_proportion: 0.8
+                backend2:
+                  request_headers:
+                    Authorization: ["Bearer token123"]
+                  request_proportion: 0.5
+                backend3:
+                  request_headers:
+                    X-Tenant-ID: ["tenant3"]
+                  request_proportion: 1.0
+                backend4:
+                  request_headers:
+                    X-Debug: ["true"]
+                  request_proportion: 0.0
+            `,
+			expectedConfig: map[string]*BackendConfig{
+				"backend1": {
+					RequestHeaders: http.Header{
+						"X-Custom-Header": {"value1"},
+					},
+					RequestProportion: pointerToFloat(0.8),
+				},
+				"backend2": {
+					RequestHeaders: http.Header{
+						"Authorization": {"Bearer token123"},
+					},
+					RequestProportion: pointerToFloat(0.5),
+				},
+				"backend3": {
+					RequestHeaders: http.Header{
+						"X-Tenant-ID": {"tenant3"},
+					},
+					RequestProportion: pointerToFloat(DefaultRequestProportion),
+				},
+				"backend4": {
+					RequestHeaders: http.Header{
+						"X-Debug": {"true"},
+					},
+					RequestProportion: pointerToFloat(0.0),
+				},
+			},
+		},
+		"invalid request proportion - negative": {
+			createFile: true,
+			configContent: `
+                backend1:
+                  request_proportion: -0.1
+            `,
+			expectedError: "backend backend1: request_proportion must be between 0.0 and 1.0, got -0.100000",
+		},
+		"invalid request proportion - greater than 1": {
+			createFile: true,
+			configContent: `
+                backend1:
+                  request_proportion: 1.5
+            `,
+			expectedError: "backend backend1: request_proportion must be between 0.0 and 1.0, got 1.500000",
+		},
 	}
 
 	for testName, testCase := range tests {
 		t.Run(testName, func(t *testing.T) {
 			// Base config that's valid except for the backend config path
+			backendEndpoints := "http://backend1:9090,http://backend2:9090"
+
+			// For the multiple backends test, add more backends
+			if testName == "multiple backends with request proportions" {
+				backendEndpoints = "http://backend1:9090,http://backend2:9090,http://backend3:9090,http://backend4:9090"
+			}
+
 			cfg := ProxyConfig{
-				BackendEndpoints:                   "http://backend1:9090,http://backend2:9090",
+				BackendEndpoints:                   backendEndpoints,
 				ServerHTTPServiceAddress:           "localhost",
 				ServerHTTPServicePort:              0,
 				ServerGRPCServiceAddress:           "localhost",
@@ -864,4 +968,271 @@ func getServerAddress(proto string, server *server.Server) string {
 	}
 
 	return ""
+}
+
+func TestProxyEndpoint_TimeBasedBackendSelection(t *testing.T) {
+	testCases := map[string]struct {
+		backends         []backendTestConfig
+		requestPath      string
+		requestParams    map[string]string
+		expectedBackends []string // Names of backends expected to be selected
+	}{
+		"instant query with no time parameter - only preferred backend": {
+			backends: []backendTestConfig{
+				{name: "preferred", preferred: true, minDataQueriedAge: "0s"},
+				{name: "recent", preferred: false, minDataQueriedAge: "1h"},
+				{name: "old", preferred: false, minDataQueriedAge: "24h"},
+			},
+			requestPath: "/api/v1/query",
+			requestParams: map[string]string{
+				"query": "up",
+			},
+			expectedBackends: []string{"preferred"},
+		},
+		"instant query with current time - only preferred backend": {
+			backends: []backendTestConfig{
+				{name: "preferred", preferred: true, minDataQueriedAge: "0s"},
+				{name: "recent", preferred: false, minDataQueriedAge: "1h"},
+				{name: "old", preferred: false, minDataQueriedAge: "24h"},
+			},
+			requestPath: "/api/v1/query",
+			requestParams: map[string]string{
+				"query": "up",
+				"time":  strconv.FormatInt(time.Now().Unix(), 10),
+			},
+			expectedBackends: []string{"preferred"},
+		},
+		"instant query with old time - all backends": {
+			backends: []backendTestConfig{
+				{name: "preferred", preferred: true, minDataQueriedAge: "0s"},
+				{name: "recent", preferred: false, minDataQueriedAge: "1h"},
+				{name: "old", preferred: false, minDataQueriedAge: "24h"},
+			},
+			requestPath: "/api/v1/query",
+			requestParams: map[string]string{
+				"query": "up",
+				"time":  strconv.FormatInt(time.Now().Add(-48*time.Hour).Unix(), 10),
+			},
+			expectedBackends: []string{"preferred", "recent", "old"},
+		},
+		"range query with old time - all backends": {
+			backends: []backendTestConfig{
+				{name: "preferred", preferred: true, minDataQueriedAge: "0s"},
+				{name: "recent", preferred: false, minDataQueriedAge: "1h"},
+				{name: "old", preferred: false, minDataQueriedAge: "24h"},
+			},
+			requestPath: "/api/v1/query_range",
+			requestParams: map[string]string{
+				"query": "up",
+				"start": strconv.FormatInt(time.Now().Add(-48*time.Hour).Unix(), 10),
+				"end":   strconv.FormatInt(time.Now().Unix(), 10),
+				"step":  "1h",
+			},
+			expectedBackends: []string{"preferred", "recent", "old"},
+		},
+		"range query with recent time - only preferred backend": {
+			backends: []backendTestConfig{
+				{name: "preferred", preferred: true, minDataQueriedAge: "0s"},
+				{name: "recent", preferred: false, minDataQueriedAge: "1h"},
+				{name: "old", preferred: false, minDataQueriedAge: "24h"},
+			},
+			requestPath: "/api/v1/query_range",
+			requestParams: map[string]string{
+				"query": "up",
+				"start": strconv.FormatInt(time.Now().Add(-30*time.Minute).Unix(), 10),
+				"end":   strconv.FormatInt(time.Now().Unix(), 10),
+				"step":  "1m",
+			},
+			expectedBackends: []string{"preferred"},
+		},
+		"backends with zero threshold serve all queries": {
+			backends: []backendTestConfig{
+				{name: "preferred", preferred: true, minDataQueriedAge: "0s"},
+				{name: "secondary", preferred: false, minDataQueriedAge: "0s"},
+			},
+			requestPath: "/api/v1/query",
+			requestParams: map[string]string{
+				"query": "up",
+				"time":  strconv.FormatInt(time.Now().Unix(), 10),
+			},
+			expectedBackends: []string{"preferred", "secondary"},
+		},
+		"preferred backend always included regardless of threshold": {
+			backends: []backendTestConfig{
+				{name: "preferred", preferred: true, minDataQueriedAge: "1h"},
+				{name: "secondary", preferred: false, minDataQueriedAge: "1h"},
+			},
+			requestPath: "/api/v1/query",
+			requestParams: map[string]string{
+				"query": "up",
+				"time":  strconv.FormatInt(time.Now().Add(-30*time.Minute).Unix(), 10),
+			},
+			expectedBackends: []string{"preferred"},
+		},
+		"three backends with different thresholds - 2 should be selected": {
+			backends: []backendTestConfig{
+				{name: "preferred", preferred: true, minDataQueriedAge: "0s"},   // serves all
+				{name: "short-term", preferred: false, minDataQueriedAge: "1h"}, // serves past 1 hour
+				{name: "long-term", preferred: false, minDataQueriedAge: "72h"}, // serves past 72 hours
+			},
+			requestPath: "/api/v1/query",
+			requestParams: map[string]string{
+				"query": "up",
+				"time":  strconv.FormatInt(time.Now().Add(-2*time.Hour).Unix(), 10), // 2 hours ago
+			},
+			expectedBackends: []string{"preferred", "short-term"},
+		},
+		"three backends with mixed thresholds - all backends": {
+			backends: []backendTestConfig{
+				{name: "preferred", preferred: true, minDataQueriedAge: "0s"},
+				{name: "medium", preferred: false, minDataQueriedAge: "6h"},
+				{name: "long", preferred: false, minDataQueriedAge: "24h"},
+			},
+			requestPath: "/api/v1/query",
+			requestParams: map[string]string{
+				"query": "up",
+				"time":  strconv.FormatInt(time.Now().Add(-25*time.Hour).Unix(), 10), // 25 hours ago
+			},
+			expectedBackends: []string{"preferred", "medium", "long"},
+		},
+	}
+
+	for testName, tc := range testCases {
+		t.Run(testName, func(t *testing.T) {
+			// Create mock backends
+			var backends []ProxyBackendInterface
+			for _, backendCfg := range tc.backends {
+				u, err := url.Parse("http://localhost:9090")
+				require.NoError(t, err)
+
+				cfg := BackendConfig{
+					MinDataQueriedAge: backendCfg.minDataQueriedAge,
+				}
+
+				backend := NewProxyBackend(
+					backendCfg.name,
+					u,
+					time.Second,
+					backendCfg.preferred,
+					false,
+					cfg,
+				)
+				backends = append(backends, backend)
+			}
+
+			decoder := newTestQueryDecoder()
+			endpoint := NewProxyEndpoint(
+				backends,
+				Route{RouteName: "test"},
+				NewProxyMetrics(nil),
+				log.NewNopLogger(),
+				nil,
+				0,
+				1.0, // All secondary backends should be included by proportion
+				false,
+				decoder,
+			)
+
+			// Create test request
+			req := httptest.NewRequest("GET", tc.requestPath, nil)
+			q := req.URL.Query()
+			for key, value := range tc.requestParams {
+				q.Set(key, value)
+			}
+			req.URL.RawQuery = q.Encode()
+
+			// Test backend selection
+			selectedBackends, err := endpoint.selectBackends(req)
+			require.NoError(t, err)
+
+			// Extract names of selected backends
+			var selectedNames []string
+			for _, backend := range selectedBackends {
+				selectedNames = append(selectedNames, backend.Name())
+			}
+
+			// Verify expected backends were selected
+			assert.ElementsMatch(t, tc.expectedBackends, selectedNames)
+		})
+	}
+}
+
+func TestBackendConfig_TimeThresholdValidation(t *testing.T) {
+	testCases := map[string]struct {
+		config        map[string]*BackendConfig
+		expectError   bool
+		errorContains string
+		description   string
+	}{
+		"valid time threshold": {
+			config: map[string]*BackendConfig{
+				"backend1": {
+					MinDataQueriedAge: "24h",
+				},
+			},
+			expectError: false,
+			description: "valid duration format should pass validation",
+		},
+		"multiple valid time thresholds": {
+			config: map[string]*BackendConfig{
+				"backend1": {MinDataQueriedAge: "1h30m"},
+				"backend2": {MinDataQueriedAge: "168h"}, // 7 days = 168 hours
+				"backend3": {MinDataQueriedAge: "0s"},
+			},
+			expectError: false,
+			description: "multiple valid duration formats should pass validation",
+		},
+		"invalid time threshold": {
+			config: map[string]*BackendConfig{
+				"backend1": {
+					MinDataQueriedAge: "invalid-duration",
+				},
+			},
+			expectError:   true,
+			errorContains: "invalid min_data_queried_age format",
+			description:   "invalid duration format should fail validation",
+		},
+		"empty time threshold": {
+			config: map[string]*BackendConfig{
+				"backend1": {
+					MinDataQueriedAge: "",
+				},
+			},
+			expectError: false,
+			description: "empty threshold should pass validation (defaults to 0)",
+		},
+	}
+
+	for testName, tc := range testCases {
+		t.Run(testName, func(t *testing.T) {
+			var backends []ProxyBackendInterface
+			for backendName := range tc.config {
+				u, _ := url.Parse("http://localhost:9090")
+				backend := NewProxyBackend(backendName, u, time.Second, false, false, *tc.config[backendName])
+				backends = append(backends, backend)
+			}
+
+			err := validateBackendConfig(backends, tc.config)
+
+			if tc.expectError {
+				assert.Error(t, err, tc.description)
+				if tc.errorContains != "" {
+					assert.Contains(t, err.Error(), tc.errorContains, tc.description)
+				}
+			} else {
+				assert.NoError(t, err, tc.description)
+			}
+		})
+	}
+}
+
+type backendTestConfig struct {
+	name              string
+	preferred         bool
+	minDataQueriedAge string
+}
+
+// newTestQueryDecoder creates a decoder instance for use in tests
+func newTestQueryDecoder() QueryRequestDecoder {
+	return querymiddleware.NewCodec(nil, 5*time.Minute, "json", nil, &propagation.NoopInjector{})
 }

@@ -19,10 +19,22 @@ import (
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 
+const (
+	// DefaultRequestProportion is the default proportion of requests to send to a backend
+	DefaultRequestProportion = 1.0
+	// DefaultMinDataQueriedAge is the default minimum data queried age for a backend (0s means serve all queries)
+	DefaultMinDataQueriedAge = 0 * time.Second
+)
+
 type ProxyBackendInterface interface {
 	Name() string
 	Endpoint() *url.URL
 	Preferred() bool
+	RequestProportion() float64
+	SetRequestProportion(proportion float64)
+	HasConfiguredProportion() bool
+	MinDataQueriedAge() time.Duration
+	ShouldHandleQuery(minQueryTime time.Time) bool
 	ForwardRequest(ctx context.Context, orig *http.Request, body io.ReadCloser) (time.Duration, int, []byte, *http.Response, error)
 }
 
@@ -37,6 +49,12 @@ type ProxyBackend struct {
 	// the response and sending it back to the client.
 	preferred bool
 	cfg       BackendConfig
+
+	// Request proportion for this backend (only applies to secondary backends)
+	requestProportion float64
+
+	// Minimum data queried age - backend serves queries with min time >= (now - age)
+	minDataQueriedAge time.Duration
 }
 
 // NewProxyBackend makes a new ProxyBackend
@@ -58,12 +76,26 @@ func NewProxyBackend(name string, endpoint *url.URL, timeout time.Duration, pref
 
 	tracingTransport := otelhttp.NewTransport(innerTransport)
 
+	requestProportion := DefaultRequestProportion
+	if cfg.RequestProportion != nil {
+		requestProportion = *cfg.RequestProportion
+	}
+
+	minDataQueriedAge := DefaultMinDataQueriedAge
+	if cfg.MinDataQueriedAge != "" {
+		if d, err := time.ParseDuration(cfg.MinDataQueriedAge); err == nil {
+			minDataQueriedAge = d
+		}
+	}
+
 	return &ProxyBackend{
-		name:      name,
-		endpoint:  endpoint,
-		timeout:   timeout,
-		preferred: preferred,
-		cfg:       cfg,
+		name:              name,
+		endpoint:          endpoint,
+		timeout:           timeout,
+		preferred:         preferred,
+		cfg:               cfg,
+		requestProportion: requestProportion,
+		minDataQueriedAge: minDataQueriedAge,
 		client: &http.Client{
 			CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
 				return errors.New("the query-tee proxy does not follow redirects")
@@ -83,6 +115,36 @@ func (b *ProxyBackend) Endpoint() *url.URL {
 
 func (b *ProxyBackend) Preferred() bool {
 	return b.preferred
+}
+
+func (b *ProxyBackend) RequestProportion() float64 {
+	return b.requestProportion
+}
+
+func (b *ProxyBackend) SetRequestProportion(proportion float64) {
+	b.requestProportion = proportion
+}
+
+func (b *ProxyBackend) HasConfiguredProportion() bool {
+	return b.cfg.RequestProportion != nil
+}
+
+func (b *ProxyBackend) MinDataQueriedAge() time.Duration {
+	return b.minDataQueriedAge
+}
+
+func (b *ProxyBackend) ShouldHandleQuery(minQueryTime time.Time) bool {
+	// If the time received is zero we don't know the time so we serve the request
+	if minQueryTime.IsZero() {
+		return true
+	}
+	// If age is 0s, backend serves all queries
+	if b.minDataQueriedAge == 0 {
+		return true
+	}
+	// Backend serves queries where min_query_time >= (now - age)
+	cutOffTs := time.Now().Add(-b.minDataQueriedAge)
+	return minQueryTime.Before(cutOffTs)
 }
 
 func (b *ProxyBackend) ForwardRequest(ctx context.Context, orig *http.Request, body io.ReadCloser) (time.Duration, int, []byte, *http.Response, error) {

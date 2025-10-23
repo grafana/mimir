@@ -99,6 +99,63 @@ func Test_ProxyBackend_createBackendRequest_HTTPBasicAuthentication(t *testing.T
 	}
 }
 
+func Test_ProxyBackend_RequestProportion(t *testing.T) {
+	tests := []struct {
+		name               string
+		config             BackendConfig
+		expectedProportion float64
+		setProportion      *float64
+		finalProportion    float64
+	}{
+		{
+			name:               "default proportion when not configured",
+			config:             BackendConfig{},
+			expectedProportion: DefaultRequestProportion,
+		},
+		{
+			name: "configured proportion from config",
+			config: BackendConfig{
+				RequestProportion: pointerToFloat(0.7),
+			},
+			expectedProportion: 0.7,
+		},
+		{
+			name:               "set proportion via method",
+			config:             BackendConfig{},
+			expectedProportion: DefaultRequestProportion,
+			setProportion:      pointerToFloat(0.3),
+			finalProportion:    0.3,
+		},
+		{
+			name: "explicitly configured proportion of 1.0",
+			config: BackendConfig{
+				RequestProportion: pointerToFloat(DefaultRequestProportion),
+			},
+			expectedProportion: DefaultRequestProportion,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			u, err := url.Parse("http://localhost:9090")
+			require.NoError(t, err)
+
+			backend := NewProxyBackend("test", u, time.Second, false, false, tc.config)
+
+			assert.Equal(t, tc.expectedProportion, backend.RequestProportion())
+
+			// Check if proportion was configured
+			expectedConfigured := tc.config.RequestProportion != nil
+			assert.Equal(t, expectedConfigured, backend.HasConfiguredProportion())
+
+			if tc.setProportion != nil {
+				backend.SetRequestProportion(*tc.setProportion)
+				assert.Equal(t, tc.finalProportion, backend.RequestProportion())
+			}
+		})
+	}
+}
+
 func defaultBackendConfig() BackendConfig {
 	return BackendConfig{}
 }
