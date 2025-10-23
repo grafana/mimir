@@ -1,6 +1,6 @@
 # Changelog
 
-## 2.16.2 / unreleased
+## 2.16.2
 
 ### Grafana Mimir
 
