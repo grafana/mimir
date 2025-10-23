@@ -47,7 +47,7 @@ func (cfg *CommonRingConfig) RegisterFlags(flagPrefix, kvStorePrefix, componentP
 	cfg.KVStore.Store = "memberlist"
 	cfg.KVStore.RegisterFlagsWithPrefix(flagPrefix, kvStorePrefix, f)
 	f.DurationVar(&cfg.HeartbeatPeriod, flagPrefix+"heartbeat-period", 15*time.Second, "Period at which to heartbeat to the ring. 0 = disabled.")
-	f.DurationVar(&cfg.HeartbeatTimeout, flagPrefix+"heartbeat-timeout", time.Minute, fmt.Sprintf("The heartbeat timeout after which %s are considered unhealthy within the ring. 0 = never (timeout disabled).", componentPlural))
+	f.DurationVar(&cfg.HeartbeatTimeout, flagPrefix+"heartbeat-timeout", time.Minute, fmt.Sprintf("Heartbeat timeout after which Mimir marks %s unhealthy in the ring. Set to 0 to disable.", componentPlural))
 
 	// Instance flags
 	cfg.InstanceInterfaceNames = netutil.PrivateNetworkInterfacesWithFallback([]string{"eth0", "en0"}, logger)
@@ -55,7 +55,7 @@ func (cfg *CommonRingConfig) RegisterFlags(flagPrefix, kvStorePrefix, componentP
 	f.StringVar(&cfg.InstanceAddr, flagPrefix+"instance-addr", "", "IP address to advertise in the ring. Default is auto-detected.")
 	f.IntVar(&cfg.InstancePort, flagPrefix+"instance-port", 0, "Port to advertise in the ring (defaults to -server.grpc-listen-port).")
 	f.StringVar(&cfg.InstanceID, flagPrefix+"instance-id", hostname, "Instance ID to register in the ring.")
-	f.BoolVar(&cfg.EnableIPv6, flagPrefix+"instance-enable-ipv6", false, "Enable using a IPv6 instance address. (default false)")
+	f.BoolVar(&cfg.EnableIPv6, flagPrefix+"instance-enable-ipv6", false, "Enable using an IPv6 instance address.")
 }
 
 func (cfg *CommonRingConfig) ToRingConfig() ring.Config {

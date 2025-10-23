@@ -402,8 +402,8 @@ overrides_exporter:
     # CLI flag: -overrides-exporter.ring.heartbeat-period
     [heartbeat_period: <duration> | default = 15s]
 
-    # (advanced) The heartbeat timeout after which overrides-exporters are
-    # considered unhealthy within the ring. 0 = never (timeout disabled).
+    # (advanced) Heartbeat timeout after which Mimir marks overrides-exporters
+    # unhealthy in the ring. Set to 0 to disable.
     # CLI flag: -overrides-exporter.ring.heartbeat-timeout
     [heartbeat_timeout: <duration> | default = 1m]
 
@@ -425,7 +425,7 @@ overrides_exporter:
     # CLI flag: -overrides-exporter.ring.instance-addr
     [instance_addr: <string> | default = ""]
 
-    # (advanced) Enable using a IPv6 instance address. (default false)
+    # (advanced) Enable using an IPv6 instance address.
     # CLI flag: -overrides-exporter.ring.instance-enable-ipv6
     [instance_enable_ipv6: <boolean> | default = false]
 
@@ -440,8 +440,9 @@ overrides_exporter:
     # CLI flag: -overrides-exporter.ring.wait-stability-max-duration
     [wait_stability_max_duration: <duration> | default = 5m]
 
-    # (advanced) Number of consecutive timeout periods an unhealthy instance in
-    # the ring is automatically removed after. Set to 0 to disable auto-forget.
+    # (advanced) Number of consecutive timeout periods after which Mimir
+    # automatically removes an unhealthy instance in the ring. Set to 0 to
+    # disable auto-forget.
     # CLI flag: -overrides-exporter.ring.auto-forget-unhealthy-periods
     [auto_forget_unhealthy_periods: <int> | default = 4]
 
@@ -970,8 +971,8 @@ ring:
   # CLI flag: -distributor.ring.heartbeat-period
   [heartbeat_period: <duration> | default = 15s]
 
-  # (advanced) The heartbeat timeout after which distributors are considered
-  # unhealthy within the ring. 0 = never (timeout disabled).
+  # (advanced) Heartbeat timeout after which Mimir marks distributors unhealthy
+  # in the ring. Set to 0 to disable.
   # CLI flag: -distributor.ring.heartbeat-timeout
   [heartbeat_timeout: <duration> | default = 1m]
 
@@ -993,12 +994,13 @@ ring:
   # CLI flag: -distributor.ring.instance-addr
   [instance_addr: <string> | default = ""]
 
-  # (advanced) Enable using a IPv6 instance address. (default false)
+  # (advanced) Enable using an IPv6 instance address.
   # CLI flag: -distributor.ring.instance-enable-ipv6
   [instance_enable_ipv6: <boolean> | default = false]
 
-  # (advanced) Number of consecutive timeout periods an unhealthy instance in
-  # the ring is automatically removed after. Set to 0 to disable auto-forget.
+  # (advanced) Number of consecutive timeout periods after which Mimir
+  # automatically removes an unhealthy instance in the ring. Set to 0 to disable
+  # auto-forget.
   # CLI flag: -distributor.ring.auto-forget-unhealthy-periods
   [auto_forget_unhealthy_periods: <int> | default = 10]
 
@@ -1791,8 +1793,8 @@ ring:
   # CLI flag: -querier.ring.heartbeat-period
   [heartbeat_period: <duration> | default = 15s]
 
-  # (advanced) The heartbeat timeout after which queriers are considered
-  # unhealthy within the ring. 0 = never (timeout disabled).
+  # (advanced) Heartbeat timeout after which Mimir marks queriers unhealthy in
+  # the ring. Set to 0 to disable.
   # CLI flag: -querier.ring.heartbeat-timeout
   [heartbeat_timeout: <duration> | default = 1m]
 
@@ -1814,12 +1816,13 @@ ring:
   # CLI flag: -querier.ring.instance-addr
   [instance_addr: <string> | default = ""]
 
-  # (advanced) Enable using a IPv6 instance address. (default false)
+  # (advanced) Enable using an IPv6 instance address.
   # CLI flag: -querier.ring.instance-enable-ipv6
   [instance_enable_ipv6: <boolean> | default = false]
 
-  # (advanced) Number of consecutive timeout periods an unhealthy instance in
-  # the ring is automatically removed after. Set to 0 to disable auto-forget.
+  # (advanced) Number of consecutive timeout periods after which Mimir
+  # automatically removes an unhealthy instance in the ring. Set to 0 to disable
+  # auto-forget.
   # CLI flag: -querier.ring.auto-forget-unhealthy-periods
   [auto_forget_unhealthy_periods: <int> | default = 10]
 ```
@@ -2097,8 +2100,9 @@ ring:
   # CLI flag: -query-scheduler.ring.heartbeat-timeout
   [heartbeat_timeout: <duration> | default = 1m]
 
-  # (advanced) Number of consecutive timeout periods an unhealthy instance in
-  # the ring is automatically removed after. Set to 0 to disable auto-forget.
+  # (advanced) Number of consecutive timeout periods after which Mimir
+  # automatically removes an unhealthy instance in the ring. Set to 0 to disable
+  # auto-forget.
   # CLI flag: -query-scheduler.ring.auto-forget-unhealthy-periods
   [auto_forget_unhealthy_periods: <int> | default = 10]
 
@@ -2321,8 +2325,8 @@ ring:
   # CLI flag: -ruler.ring.heartbeat-period
   [heartbeat_period: <duration> | default = 15s]
 
-  # (advanced) The heartbeat timeout after which rulers are considered unhealthy
-  # within the ring. 0 = never (timeout disabled).
+  # (advanced) Heartbeat timeout after which Mimir marks rulers unhealthy in the
+  # ring. Set to 0 to disable.
   # CLI flag: -ruler.ring.heartbeat-timeout
   [heartbeat_timeout: <duration> | default = 1m]
 
@@ -2344,12 +2348,13 @@ ring:
   # CLI flag: -ruler.ring.instance-addr
   [instance_addr: <string> | default = ""]
 
-  # (advanced) Enable using a IPv6 instance address. (default false)
+  # (advanced) Enable using an IPv6 instance address.
   # CLI flag: -ruler.ring.instance-enable-ipv6
   [instance_enable_ipv6: <boolean> | default = false]
 
-  # (advanced) Number of consecutive timeout periods an unhealthy instance in
-  # the ring is automatically removed after. Set to 0 to disable auto-forget.
+  # (advanced) Number of consecutive timeout periods after which Mimir
+  # automatically removes an unhealthy instance in the ring. Set to 0 to disable
+  # auto-forget.
   # CLI flag: -ruler.ring.auto-forget-unhealthy-periods
   [auto_forget_unhealthy_periods: <int> | default = 2]
 
@@ -2581,8 +2586,8 @@ sharding_ring:
   # CLI flag: -alertmanager.sharding-ring.heartbeat-period
   [heartbeat_period: <duration> | default = 15s]
 
-  # (advanced) The heartbeat timeout after which alertmanagers are considered
-  # unhealthy within the ring. 0 = never (timeout disabled).
+  # (advanced) Heartbeat timeout after which Mimir marks alertmanagers unhealthy
+  # in the ring. Set to 0 to disable.
   # CLI flag: -alertmanager.sharding-ring.heartbeat-timeout
   [heartbeat_timeout: <duration> | default = 1m]
 
@@ -2604,7 +2609,7 @@ sharding_ring:
   # CLI flag: -alertmanager.sharding-ring.instance-addr
   [instance_addr: <string> | default = ""]
 
-  # (advanced) Enable using a IPv6 instance address. (default false)
+  # (advanced) Enable using an IPv6 instance address.
   # CLI flag: -alertmanager.sharding-ring.instance-enable-ipv6
   [instance_enable_ipv6: <boolean> | default = false]
 
@@ -5392,8 +5397,8 @@ sharding_ring:
   # CLI flag: -compactor.ring.heartbeat-period
   [heartbeat_period: <duration> | default = 15s]
 
-  # (advanced) The heartbeat timeout after which compactors are considered
-  # unhealthy within the ring. 0 = never (timeout disabled).
+  # (advanced) Heartbeat timeout after which Mimir marks compactors unhealthy in
+  # the ring. Set to 0 to disable.
   # CLI flag: -compactor.ring.heartbeat-timeout
   [heartbeat_timeout: <duration> | default = 1m]
 
@@ -5415,7 +5420,7 @@ sharding_ring:
   # CLI flag: -compactor.ring.instance-addr
   [instance_addr: <string> | default = ""]
 
-  # (advanced) Enable using a IPv6 instance address. (default false)
+  # (advanced) Enable using an IPv6 instance address.
   # CLI flag: -compactor.ring.instance-enable-ipv6
   [instance_enable_ipv6: <boolean> | default = false]
 
@@ -5433,8 +5438,9 @@ sharding_ring:
   # CLI flag: -compactor.ring.wait-active-instance-timeout
   [wait_active_instance_timeout: <duration> | default = 10m]
 
-  # (advanced) Number of consecutive timeout periods an unhealthy instance in
-  # the ring is automatically removed after. Set to 0 to disable auto-forget.
+  # (advanced) Number of consecutive timeout periods after which Mimir
+  # automatically removes an unhealthy instance in the ring. Set to 0 to disable
+  # auto-forget.
   # CLI flag: -compactor.ring.auto-forget-unhealthy-periods
   [auto_forget_unhealthy_periods: <int> | default = 10]
 
@@ -5520,8 +5526,9 @@ sharding_ring:
   # CLI flag: -store-gateway.sharding-ring.auto-forget-enabled
   [auto_forget_enabled: <boolean> | default = true]
 
-  # (advanced) Number of consecutive timeout periods an unhealthy instance in
-  # the ring is automatically removed after. Set to 0 to disable auto-forget.
+  # (advanced) Number of consecutive timeout periods after which Mimir
+  # automatically removes an unhealthy instance in the ring. Set to 0 to disable
+  # auto-forget.
   # CLI flag: -store-gateway.sharding-ring.auto-forget-unhealthy-periods
   [auto_forget_unhealthy_periods: <int> | default = 10]
 
