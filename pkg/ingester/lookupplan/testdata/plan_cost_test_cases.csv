@@ -1,8 +1,10 @@
 testName;indexMatchers;scanMatchers;cardinality;indexCost;intersectionCost;seriesRetrievalCost;filterCost;totalCost
 non_existent_index_with_scan_filter;{non_existent_label="foo"};{another_missing="bar"};0;1.00;0.00;0.00;0.00;1.00
 non_existent_index_multiple;{non_existent_label="foo",another_missing="bar"};{};0;2.00;0.00;0.00;0.00;2.00
-non_existent_index_with_empty_match;{non_existent_label=~"|foo"};{};2100;4.40;21.00;21000.00;0.00;21025.40
-non_existent_scan_with_empty_match;{};{non_existent_label=~"|foo"};2100;0.00;0.00;21000.00;4620.00;25620.00
+non_existent_index_with_empty_set_match;{non_existent_label=~"|foo"};{};2100;4.40;21.00;21000.00;0.00;21025.40
+non_existent_scan_with_empty_set_match;{};{non_existent_label=~"|foo"};2100;0.00;0.00;21000.00;4620.00;25620.00
+non_existent_scan_with_empty_negative_match;{non_existent_label!~".*(go_memstats_alloc_bytes(_total)?).*"};{};4200;0.00;42.00;42000.00;0.00;42042.00
+non_existent_scan_with_empty_regex_match;{non_existent_label=~".*(go_memstats_alloc_bytes(_total)?).*"};{};0;0.00;0.00;0.00;0.00;0.00
 non_existent_scan_only;{};{non_existent_label="foo",another_missing="bar"};0;0.00;0.00;21000.00;4200.00;25200.00
 non_existent_label_value_in_index;{__name__="non_existent_metric"};{};0;11.00;0.00;0.00;0.00;11.00
 simple_single_metric_name;{__name__="memory_usage_bytes"};{};300;11.00;3.00;3000.00;0.00;3014.00
