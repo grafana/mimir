@@ -53,9 +53,6 @@ type mockDetailedQueryStreamServer struct {
 }
 
 func (m *mockDetailedQueryStreamServer) Send(resp *client.QueryStreamResponse) error {
-	// Don't free the buffer as we need to read the data
-	defer resp.FreeBuffer()
-
 	// First, process series metadata
 	if len(resp.StreamingSeries) > 0 {
 		for _, s := range resp.StreamingSeries {
@@ -72,11 +69,6 @@ func (m *mockDetailedQueryStreamServer) Send(resp *client.QueryStreamResponse) e
 			}
 
 			m.result.Series = append(m.result.Series, series)
-		}
-
-		// Store the offset for this batch of series
-		if m.result.Series == nil {
-			m.result.Series = make([]seriesWithChunks, 0)
 		}
 	}
 
