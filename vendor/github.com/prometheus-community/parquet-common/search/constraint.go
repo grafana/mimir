@@ -761,7 +761,7 @@ func (rc *regexConstraint) filter(ctx context.Context, rgIdx int, isPrimary bool
 	}
 	var (
 		res     = make([]RowRange, 0)
-		readPgs = make([]PageToRead, 10)
+		readPgs = make([]PageToRead, 0, 10)
 	)
 	for i := range cidx.NumPages() {
 		poff, pcsz := oidx.Offset(i), oidx.CompressedPageSize(i)
