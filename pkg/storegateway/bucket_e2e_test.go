@@ -690,7 +690,7 @@ func TestBucketStore_LazyLoadingAlwaysEagerLoading(t *testing.T) {
 	}{
 		"block is present in pre-shutdown loaded blocks and lazy-loading is disabled": {
 			lazyLoadingEnabled:        false,
-			expectedEagerLoadedBlocks: 0, // When lazy loading is disabled, all blocks are eagerly loaded at startup, so the snapshot is not used
+			expectedEagerLoadedBlocks: 0, // When lazy loading is disabled, no block is eagerly loaded at startup, so the snapshot is not used
 			createLoadedBlocksSnapshotFn: func(blockIDs []ulid.ULID) []ulid.ULID {
 				return blockIDs
 			},
