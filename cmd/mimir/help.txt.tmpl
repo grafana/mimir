@@ -513,6 +513,12 @@ Usage of ./cmd/mimir/mimir:
     	Output log messages in the given format. Valid formats: [logfmt, json] (default "logfmt")
   -log.level value
     	Only log messages with the given severity or above. Valid levels: [debug, info, warn, error] (default info)
+  -log.rate-limit-enabled
+    	Use rate limited logger to reduce the number of logged messages per second.
+  -log.rate-limit-logs-burst-size int
+    	Burst size, i.e., maximum number of messages that can be logged at once, temporarily exceeding the configured maximum logs per second. (default 1000)
+  -log.rate-limit-logs-per-second float
+    	Maximum number of messages per second to be logged. (default 10000)
   -memberlist.abort-if-join-fails
     	Abort if this node fails to join memberlist cluster at startup. When enabled, it's not guaranteed that other services are started only after the cluster state has been successfully updated; use 'abort-if-fast-join-fails' instead.
   -memberlist.advertise-addr string
