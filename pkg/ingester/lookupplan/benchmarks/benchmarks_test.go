@@ -97,7 +97,6 @@ func BenchmarkQueryExecution(b *testing.B) {
 		SampleFraction: *querySampleFlag,
 		Seed:           *querySampleSeed,
 	})
-	fmt.Println(len(queries))
 	require.NoError(b, err)
 	require.NotEmpty(b, queries, "no queries after filtering and sampling")
 	b.Logf("Prepared %d queries (malformed: %d, sampled: %f%% of all queries)", len(queries), stats.MalformedLines, *querySampleFlag*100)
