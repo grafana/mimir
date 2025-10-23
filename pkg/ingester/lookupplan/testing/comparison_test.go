@@ -111,8 +111,10 @@ func (m *mockDetailedQueryStreamServer) Context() context.Context {
 // TestCompareIngesterConfigs runs queries against two ingesters with different configurations
 // and asserts that they return the same results.
 func TestCompareIngesterConfigs(t *testing.T) {
-	require.NotEmpty(t, *dataDirFlag, "-data-dir flag is required")
-	require.NotEmpty(t, *queryFileFlag, "-query-file flag is required")
+	if *dataDirFlag == "" && *queryFileFlag == "" {
+		t.Logf("Skipping %s since -data-dir and -query-file flags are not set", t.Name())
+		t.SkipNow()
+	}
 
 	// Validate mutual exclusivity of query-ids and query-sample
 	if *queryIDsFlag != "" && *querySampleFlag < 1.0 {
