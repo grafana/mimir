@@ -35,16 +35,11 @@ func NewStatisticsGenerator(l log.Logger) *StatisticsGenerator {
 	}
 }
 
-func setCountMinEpsilon(blockID string, valuesCountThreshold uint64) func(numValues uint64) float64 {
-	// Keep epsilon low for the head block, since it's still growing
-	if blockID == "0000000000XXXXXXXRANGEHEAD" {
-		return func(_ uint64) float64 { return 0.005 }
-	}
-
+func setCountMinEpsilon(labelCardinalityThreshold uint64) func(numValues uint64) float64 {
 	// The more label values for a label name, the larger the sketch, ideally the more accurate the count per label value.
-	return func(numValues uint64) float64 {
+	return func(numSeries uint64) float64 {
 		switch {
-		case numValues >= valuesCountThreshold:
+		case numSeries >= labelCardinalityThreshold:
 			return 0.005
 		default:
 			return 0.01
@@ -53,7 +48,7 @@ func setCountMinEpsilon(blockID string, valuesCountThreshold uint64) func(numVal
 }
 
 // Stats creates statistics using count-min sketches
-func (g StatisticsGenerator) Stats(meta tsdb.BlockMeta, r tsdb.IndexReader, valuesCountThreshold uint64) (retStats index.Statistics, retErr error) {
+func (g StatisticsGenerator) Stats(meta tsdb.BlockMeta, r tsdb.IndexReader, labelCardinalityThreshold uint64) (retStats index.Statistics, retErr error) {
 	ctx := context.Background()
 
 	defer func(startTime time.Time) {
@@ -87,7 +82,7 @@ func (g StatisticsGenerator) Stats(meta tsdb.BlockMeta, r tsdb.IndexReader, valu
 
 	// Build count-min sketches for each label
 	labelSketches := make(map[string]*LabelValuesSketch)
-	selectEpsilon := setCountMinEpsilon(meta.ULID.String(), valuesCountThreshold)
+	selectEpsilon := setCountMinEpsilon(labelCardinalityThreshold)
 
 	for _, labelName := range labelNames {
 		// Get all values for this label
@@ -95,7 +90,9 @@ func (g StatisticsGenerator) Stats(meta tsdb.BlockMeta, r tsdb.IndexReader, valu
 		if err != nil {
 			return nil, fmt.Errorf("failed to get label values for label %s: %w", labelName, err)
 		}
-		epsilon := selectEpsilon(uint64(len(values)))
+
+		labelCardinality, err := countPostings(r.PostingsForAllLabelValues(ctx, labelName))
+		epsilon := selectEpsilon(labelCardinality)
 
 		// Create count-min sketch for this label
 		sketch := &LabelValuesSketch{

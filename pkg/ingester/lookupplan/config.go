@@ -9,7 +9,7 @@ const (
 	DefaultRetrievedSeriesCost               = 10.0
 	DefaultRetrievedPostingListCost          = 10.0
 	DefaultMinSeriesPerBlockForQueryPlanning = 10_000
-	DefaultLabelValuesCountForLargerSketch   = 1e5
+	DefaultLabelCardinalityForLargerSketch   = 1e6
 )
 
 var defaultCostConfig = CostConfig{
@@ -34,7 +34,7 @@ type CostConfig struct {
 	// MinSeriesPerBlockForQueryPlanning is the minimum number of series a block must have for query planning to be used.
 	MinSeriesPerBlockForQueryPlanning uint64 `yaml:"min_series_per_block_for_query_planning" category:"advanced"`
 
-	LabelValuesCountForLargerSketch uint64 `yaml:"label_values_count_for_larger_sketch" category:"advanced"`
+	LabelCardinalityForLargerSketch uint64 `yaml:"label_cardinality_for_larger_sketch" category:"advanced"`
 }
 
 func (cfg *CostConfig) RegisterFlags(f *flag.FlagSet, prefix string) {
@@ -42,5 +42,5 @@ func (cfg *CostConfig) RegisterFlags(f *flag.FlagSet, prefix string) {
 	f.Float64Var(&cfg.RetrievedSeriesCost, prefix+"retrieved-series-cost", DefaultRetrievedSeriesCost, "Cost for retrieving series from the index and checking if a series belongs to the query's shard.")
 	f.Float64Var(&cfg.RetrievedPostingListCost, prefix+"retrieved-posting-list-cost", DefaultRetrievedPostingListCost, "Cost for retrieving the posting list from disk or from memory.")
 	f.Uint64Var(&cfg.MinSeriesPerBlockForQueryPlanning, prefix+"min-series-per-block-for-query-planning", DefaultMinSeriesPerBlockForQueryPlanning, "Minimum number of series a block must have for query planning to be used.")
-	f.Uint64Var(&cfg.LabelValuesCountForLargerSketch, prefix+"label-values-count-for-larger-sketch", DefaultLabelValuesCountForLargerSketch, "Number of label values above which larger count-min sketches are used for a given label name in non-head blocks.")
+	f.Uint64Var(&cfg.LabelCardinalityForLargerSketch, prefix+"label-cardinality-for-larger-sketch", DefaultLabelCardinalityForLargerSketch, "Number of series for a label name above which larger count-min sketches are used for that label.")
 }

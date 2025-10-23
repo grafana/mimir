@@ -54,8 +54,8 @@ func (p *mockIndexReader) PostingsForLabelMatching(context.Context, string, func
 	panic("mockIndexReader doesn't implement PostingsForLabelMatching()")
 }
 
-func (p *mockIndexReader) PostingsForAllLabelValues(context.Context, string) index.Postings {
-	panic("mockIndexReader doesn't implement PostingsForAllLabelValues()")
+func (p *mockIndexReader) PostingsForAllLabelValues(ctx context.Context, name string) index.Postings {
+	return p.memPostings.PostingsForAllLabelValues(ctx, name)
 }
 
 func (p *mockIndexReader) PostingsForMatchers(context.Context, bool, ...*labels.Matcher) (index.Postings, error) {
@@ -285,7 +285,7 @@ func TestLabelsValuesSketches_LabelName(t *testing.T) {
 				p.add(seriesRef, ls)
 			}
 			gen := NewStatisticsGenerator(log.NewNopLogger())
-			sketches, err := gen.Stats(p.Meta(), p, DefaultLabelValuesCountForLargerSketch)
+			sketches, err := gen.Stats(p.Meta(), p, DefaultLabelCardinalityForLargerSketch)
 			require.NoError(t, err)
 			ctx := context.Background()
 
@@ -367,7 +367,7 @@ func TestLabelsValuesSketches_LabelValue(t *testing.T) {
 				p.add(seriesRef, ls)
 			}
 			gen := NewStatisticsGenerator(log.NewNopLogger())
-			sketches, err := gen.Stats(p.Meta(), p, DefaultLabelValuesCountForLargerSketch)
+			sketches, err := gen.Stats(p.Meta(), p, DefaultLabelCardinalityForLargerSketch)
 			require.NoError(t, err)
 			ctx := context.Background()
 
@@ -389,35 +389,56 @@ func TestLabelName_ComparisonAcrossLabelNames(t *testing.T) {
 	lowCardLabel := "low_card"
 	highCardLabel := "high_card"
 	tests := []struct {
-		name                   string
-		numSeries              int
-		lowCardNumLabelValues  int
-		highCardNumLabelValues int
-		largerSketchThreshold  uint64
+		name                  string
+		numLowCardSeries      int
+		numHighCardSeries     int
+		largerSketchThreshold uint64
 	}{
 		{
-			name:                   "labels would have same epsilon",
-			numSeries:              5e5,
-			lowCardNumLabelValues:  1e3,
-			highCardNumLabelValues: 1e2,
-			largerSketchThreshold:  1e5,
+			name:                  "labels would have same epsilon with default",
+			numLowCardSeries:      1e3,
+			numHighCardSeries:     5e5,
+			largerSketchThreshold: DefaultLabelCardinalityForLargerSketch,
 		},
 		{
-			name:                   "labels would have different epsilon",
-			numSeries:              5e5,
-			lowCardNumLabelValues:  5e5,
-			highCardNumLabelValues: 1e2,
-			largerSketchThreshold:  1e5,
+			name:                  "labels would have different epsilon with default",
+			numLowCardSeries:      1e3,
+			numHighCardSeries:     1e6,
+			largerSketchThreshold: DefaultLabelCardinalityForLargerSketch,
+		},
+		{
+			name:                  "labels would have high epsilon with custom setting",
+			numLowCardSeries:      1e3,
+			numHighCardSeries:     1e5,
+			largerSketchThreshold: 2e5,
+		},
+		{
+			name:                  "labels would have low epsilon with custom setting",
+			numLowCardSeries:      1e3,
+			numHighCardSeries:     1e5,
+			largerSketchThreshold: 1e2,
+		},
+		{
+			name:                  "labels would have different epsilon with custom setting",
+			numLowCardSeries:      1e3,
+			numHighCardSeries:     1e5,
+			largerSketchThreshold: 1e4,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			p := newMockIndexReader()
+			require.Less(t, tt.numLowCardSeries, tt.numHighCardSeries)
 
-			// Populate postings with series across low- and high-card values
-			for i := 0; i < tt.numSeries; i++ {
-				ls := labels.FromStrings(lowCardLabel, strconv.Itoa(i%tt.lowCardNumLabelValues), highCardLabel, strconv.Itoa(i%tt.highCardNumLabelValues))
+			// Populate postings
+			for i := 0; i < tt.numHighCardSeries; i++ {
+				var ls labels.Labels
+				if i < tt.numLowCardSeries {
+					ls = labels.FromStrings(lowCardLabel, strconv.Itoa(i), highCardLabel, strconv.Itoa(i))
+				} else {
+					ls = labels.FromStrings(highCardLabel, strconv.Itoa(i))
+				}
 				p.add(storage.SeriesRef(i), ls)
 			}
 
@@ -426,22 +447,15 @@ func TestLabelName_ComparisonAcrossLabelNames(t *testing.T) {
 			s, err := gen.Stats(p.Meta(), p, tt.largerSketchThreshold)
 			require.NoError(t, err)
 
-			require.Equal(t, uint64(tt.lowCardNumLabelValues), s.LabelValuesCount(ctx, lowCardLabel))
-			require.Equal(t, uint64(tt.numSeries), s.LabelValuesCardinality(ctx, lowCardLabel))
+			lowCard := s.LabelValuesCardinality(ctx, lowCardLabel)
+			require.Equal(t, uint64(tt.numLowCardSeries), s.LabelValuesCount(ctx, lowCardLabel))
+			require.Equal(t, uint64(tt.numLowCardSeries), lowCard, "low card: %d, expected: %d", lowCard, tt.numLowCardSeries)
 
-			require.Equal(t, uint64(tt.highCardNumLabelValues), s.LabelValuesCount(ctx, highCardLabel))
-			require.Equal(t, uint64(tt.numSeries), s.LabelValuesCardinality(ctx, highCardLabel))
+			highCard := s.LabelValuesCardinality(ctx, highCardLabel)
+			require.Equal(t, uint64(tt.numHighCardSeries), s.LabelValuesCount(ctx, highCardLabel))
+			require.Equal(t, uint64(tt.numHighCardSeries), highCard)
 
-			for i := 0; i < tt.lowCardNumLabelValues; i++ {
-				lowCard := s.LabelValuesCardinality(ctx, lowCardLabel, strconv.Itoa(i))
-
-				// For every combination of low-card and high-card label values,
-				// we want to ensure that high-card labels are accurately reported as higher-cardinality than low-card labels
-				for j := 0; j < tt.highCardNumLabelValues; j++ {
-					highCard := s.LabelValuesCardinality(ctx, highCardLabel, strconv.Itoa(j))
-					require.Greater(t, highCard, lowCard)
-				}
-			}
+			require.Greater(t, highCard, lowCard)
 		})
 	}
 }
@@ -461,7 +475,7 @@ func TestLabelName_ManySeries(t *testing.T) {
 
 	ctx := context.Background()
 	gen := NewStatisticsGenerator(log.NewNopLogger())
-	s, err := gen.Stats(p.Meta(), p, DefaultLabelValuesCountForLargerSketch)
+	s, err := gen.Stats(p.Meta(), p, DefaultLabelCardinalityForLargerSketch)
 	require.NoError(t, err)
 
 	require.Equal(t, uint64(numLabelValues), s.LabelValuesCount(ctx, labelName))
@@ -504,7 +518,7 @@ func TestLabelName_NonUniformValueDistribution(t *testing.T) {
 
 	ctx := context.Background()
 	gen := NewStatisticsGenerator(log.NewNopLogger())
-	s, err := gen.Stats(p.Meta(), p, DefaultLabelValuesCountForLargerSketch)
+	s, err := gen.Stats(p.Meta(), p, DefaultLabelCardinalityForLargerSketch)
 	require.NoError(t, err)
 
 	lowValCard := s.LabelValuesCardinality(ctx, labelName, lowCardValue)
