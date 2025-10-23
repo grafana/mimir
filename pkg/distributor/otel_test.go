@@ -377,6 +377,61 @@ func TestOTelMetricsToTimeSeries(t *testing.T) {
 				},
 			},
 		},
+		{
+			name:                      "Underscore sanitization",
+			promoteResourceAttributes: nil,
+			appendCustomMetric: func(metricSlice pmetric.MetricSlice) {
+				m := metricSlice.AppendEmpty()
+				m.SetName("test_metric")
+				sum := m.SetEmptySum()
+				sum.SetIsMonotonic(false)
+				sum.SetAggregationTemporality(pmetric.AggregationTemporalityCumulative)
+				dp := sum.DataPoints().AppendEmpty()
+				dp.SetIntValue(123)
+				dp.SetTimestamp(pcommon.NewTimestampFromTime(time.Now()))
+				dp.Attributes().PutStr("_1", "metric value")
+			},
+			expectedLabels: []mimirpb.LabelAdapter{
+				{
+					Name:  "__name__",
+					Value: "test_metric",
+				},
+				{
+					Name:  "instance",
+					Value: "service ID",
+				},
+				{
+					Name:  "job",
+					Value: "service namespace/service name",
+				},
+				{
+					Name:  "key_1",
+					Value: "metric value",
+				},
+			},
+			expectedInfoLabels: []mimirpb.LabelAdapter{
+				{
+					Name:  "__name__",
+					Value: "target_info",
+				},
+				{
+					Name:  "existent_attr",
+					Value: "resource value",
+				},
+				{
+					Name:  "metric_attr",
+					Value: "resource value",
+				},
+				{
+					Name:  "job",
+					Value: "service namespace/service name",
+				},
+				{
+					Name:  "instance",
+					Value: "service ID",
+				},
+			},
+		},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {

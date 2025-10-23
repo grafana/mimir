@@ -627,7 +627,7 @@ func TestBucketStore_Series_ShouldQueryBlockWithOutOfOrderChunks(t *testing.T) {
 	}
 }
 
-func promLabels(m *storepb.Series) labels.Labels {
+func promLabels(m *storeTestSeries) labels.Labels {
 	return mimirpb.FromLabelAdaptersToLabels(m.Labels)
 }
 
@@ -671,7 +671,7 @@ func generateStorageBlock(t *testing.T, storageDir, userID string, metricName st
 	require.NoError(t, db.Snapshot(userDir, true))
 }
 
-func querySeries(t *testing.T, stores *BucketStores, userID, metricName string, minT, maxT int64) ([]*storepb.Series, annotations.Annotations, error) {
+func querySeries(t *testing.T, stores *BucketStores, userID, metricName string, minT, maxT int64) ([]*storeTestSeries, annotations.Annotations, error) {
 	req := &storepb.SeriesRequest{
 		MinTime: minT,
 		MaxTime: maxT,
