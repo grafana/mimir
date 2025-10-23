@@ -5141,7 +5141,7 @@ tsdb:
   [head_postings_for_matchers_cache_versions: <int> | default = 2097152]
 
   # (advanced) How long to cache postings for matchers in the Head and OOOHead.
-  # 0 disables the cache and just deduplicates the in-flight calls.
+  # Set to 0 to disable the cache and only deduplicate in-flight calls.
   # CLI flag: -blocks-storage.tsdb.head-postings-for-matchers-cache-ttl
   [head_postings_for_matchers_cache_ttl: <duration> | default = 10s]
 
@@ -5150,8 +5150,8 @@ tsdb:
   # CLI flag: -blocks-storage.tsdb.head-postings-for-matchers-cache-size
   [head_postings_for_matchers_cache_size: <int> | default = 100]
 
-  # (advanced) Maximum size in bytes of the cache for postings for matchers in
-  # the Head and OOOHead when TTL is greater than 0.
+  # (advanced) Maximum size, in bytes, of the cache for postings for matchers in
+  # each compacted block when the TTL is greater than 0.
   # CLI flag: -blocks-storage.tsdb.head-postings-for-matchers-cache-max-bytes
   [head_postings_for_matchers_cache_max_bytes: <int> | default = 104857600]
 

@@ -798,11 +798,11 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.tsdb.head-postings-for-matchers-cache-invalidation
     	[experimental] Whether head block postings should be tracked and invalidated when they change, allowing higher TTLs to be used. When not using invalidation, cache entries will be used until removed.
   -blocks-storage.tsdb.head-postings-for-matchers-cache-max-bytes int
-    	Maximum size in bytes of the cache for postings for matchers in the Head and OOOHead when TTL is greater than 0. (default 104857600)
+    	Maximum size, in bytes, of the cache for postings for matchers in each compacted block when the TTL is greater than 0. (default 104857600)
   -blocks-storage.tsdb.head-postings-for-matchers-cache-size int
     	[deprecated] Maximum number of entries in the cache for postings for matchers in the Head and OOOHead when TTL is greater than 0. (default 100)
   -blocks-storage.tsdb.head-postings-for-matchers-cache-ttl duration
-    	How long to cache postings for matchers in the Head and OOOHead. 0 disables the cache and just deduplicates the in-flight calls. (default 10s)
+    	How long to cache postings for matchers in the Head and OOOHead. Set to 0 to disable the cache and only deduplicate in-flight calls. (default 10s)
   -blocks-storage.tsdb.head-postings-for-matchers-cache-versions int
     	[experimental] The size of the metric versions cache in each ingester when invalidation is enabled. (default 2097152)
   -blocks-storage.tsdb.index-lookup-planning.comparison-portion float
