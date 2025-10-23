@@ -327,12 +327,9 @@ func TestWriter_WriteSync(t *testing.T) {
 		// Once the 1st Produce request is received by the server but still processing (there's a 1s sleep),
 		// issue two more requests. One with a short context timeout (expected to expire before the next Produce
 		// request will be sent) and one with no timeout.
-		var cancelSecondRequest context.CancelFunc
 
 		runAsyncAfter(&wg, firstRequestReceived, func() {
-			var secondRequestCtx context.Context
-
-			secondRequestCtx, cancelSecondRequest = context.WithTimeout(ctx, 10*time.Millisecond)
+			secondRequestCtx, cancelSecondRequest := context.WithTimeout(ctx, 10*time.Millisecond)
 			t.Cleanup(cancelSecondRequest)
 
 			assert.ErrorIs(t, writer.WriteSync(secondRequestCtx, partitionID, tenantID, &mimirpb.WriteRequest{Timeseries: series2, Metadata: nil, Source: mimirpb.API}), context.DeadlineExceeded)
