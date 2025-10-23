@@ -154,7 +154,6 @@ func defaultPrepareStoreConfig(t testing.TB) *prepareStoreConfig {
 			BlockSyncConcurrency:        20,
 			PostingOffsetsInMemSampling: mimir_tsdb.DefaultPostingOffsetInMemorySampling,
 			IndexHeader: indexheader.Config{
-				EagerLoadingStartupEnabled:  true,
 				EagerLoadingPersistInterval: time.Minute,
 				LazyLoadingEnabled:          true,
 				LazyLoadingIdleTimeout:      time.Minute,
@@ -742,7 +741,6 @@ func TestBucketStore_EagerLoading(t *testing.T) {
 			bkt := objstore.NewInMemBucket()
 			cfg := defaultPrepareStoreConfig(t)
 			cfg.logger = test.NewTestingLogger(t)
-			cfg.bucketStoreConfig.IndexHeader.EagerLoadingStartupEnabled = testData.eagerLoadReaderEnabled
 			ctx := context.Background()
 
 			// Start the store so we generate some blocks and can use them in the mock snapshot.
@@ -780,7 +778,6 @@ func TestBucketStore_PersistsLazyLoadedBlocks(t *testing.T) {
 	cfg := defaultPrepareStoreConfig(t)
 	cfg.logger = test.NewTestingLogger(t)
 	cfg.bucketStoreConfig.IndexHeader.EagerLoadingPersistInterval = persistInterval
-	cfg.bucketStoreConfig.IndexHeader.EagerLoadingStartupEnabled = true
 	cfg.bucketStoreConfig.IndexHeader.LazyLoadingIdleTimeout = persistInterval * 3
 	ctx := context.Background()
 	readBlocksInSnapshot := func() map[ulid.ULID]struct{} {
