@@ -3757,8 +3757,8 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -querier.max-fetched-chunks-per-query
 [max_fetched_chunks_per_query: <int> | default = 2000000]
 
-# (experimental) Maximum number of chunks estimated to be fetched in a single
-# query from ingesters and store-gateways, as a multiple of
+# (advanced) Maximum number of chunks estimated to be fetched in a single query
+# from ingesters and store-gateways, as a multiple of
 # -querier.max-fetched-chunks-per-query. This limit is enforced in the querier.
 # Must be greater than or equal to 1, or 0 to disable.
 # CLI flag: -querier.max-estimated-fetched-chunks-per-query-multiplier
