@@ -7,6 +7,7 @@
 * [CHANGE] Querier: `-querier.max-estimated-fetched-chunks-per-query-multiplier` is now stable and no longer experimental. #13120
 * [CHANGE] Ruler: Add "unknown" alert rule state to alerts and rules on the `GET <prometheus-http-prefix>/api/v1/alerts` end point. Alerts are in the "unknown" state when they haven't yet been evaluated since the ruler started.  #13060
 * [CHANGE] Promote the logger rate-limiting configuration parameters from experimental to stable. #13128
+* [CHANGE] Ingester: Out-of-order ingestion supporter is now stable, use `-ingester.out-of-order-time-window` and `-ingester.out-of-order-blocks-external-label-enabled` to configure it. #13132
 * [FEATURE] Query-frontends: Automatically adjust features used in query plans generated for remote execution based on what the available queriers support. #13017
 * [BUGFIX] Compactor: Fix potential concurrent map writes. #13053
 * [BUGFIX] Query-frontend: Fix issue where queries sometimes fail with `failed to receive query result stream message: rpc error: code = Canceled desc = context canceled` if remote execution is enabled. #13084
@@ -15,7 +16,6 @@
 * [BUGFIX] Querier: Fix issue where errors are logged as "EOF" when sending results to query-frontends in response to remote execution requests fails. #13099 #13121
 * [BUGFIX] Usage-Tracker: Fix underflow in current limit calculation when series >= limit. #13113
 * [ENHANCEMENT] Compactor, Store-gateway: Change default value of `-compactor.upload-sparse-index-headers` to `true`. This improves lazy loading performance in the store-gateway. #13089
-* [ENHANCEMENT] Ingester: Out-of-order ingestion supporter is now stable, use `-ingester.out-of-order-time-window` and `-ingester.out-of-order-blocks-external-label-enabled` to configure it. #13132
 
 ### Mixin
 
