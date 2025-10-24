@@ -1,5 +1,5 @@
 diff --git a/pkg/frontend/v2/frontendv2pb/frontend.pb.go b/pkg/frontend/v2/frontendv2pb/frontend.pb.go
-index 7a6e9cc772..ea835290cf 100644
+index ea87d11a71..ea835290cf 100644
 --- a/pkg/frontend/v2/frontendv2pb/frontend.pb.go
 +++ b/pkg/frontend/v2/frontendv2pb/frontend.pb.go
 @@ -10,7 +10,6 @@ import (
@@ -10,7 +10,16 @@ index 7a6e9cc772..ea835290cf 100644
  	querierpb "github.com/grafana/mimir/pkg/querier/querierpb"
  	_ "github.com/grafana/mimir/pkg/querier/stats"
  	github_com_grafana_mimir_pkg_querier_stats "github.com/grafana/mimir/pkg/querier/stats"
-@@ -88,8 +87,6 @@ func (m *QueryResultRequest) GetHttpResponse() *httpgrpc.HTTPResponse {
+@@ -36,8 +35,6 @@ var _ = math.Inf
+ const _ = proto.GoGoProtoPackageIsVersion3 // please upgrade the proto package
+ 
+ type QueryResultRequest struct {
+-	mimirpb.BufferHolder
+-
+ 	QueryID      uint64                                                `protobuf:"varint,1,opt,name=queryID,proto3" json:"queryID,omitempty"`
+ 	HttpResponse *httpgrpc.HTTPResponse                                `protobuf:"bytes,2,opt,name=httpResponse,proto3" json:"httpResponse,omitempty"`
+ 	Stats        *github_com_grafana_mimir_pkg_querier_stats.SafeStats `protobuf:"bytes,3,opt,name=stats,proto3,customtype=github.com/grafana/mimir/pkg/querier/stats.SafeStats" json:"stats,omitempty"`
+@@ -90,8 +87,6 @@ func (m *QueryResultRequest) GetHttpResponse() *httpgrpc.HTTPResponse {
  }
  
  type QueryResultStreamRequest struct {
@@ -19,3 +28,29 @@ index 7a6e9cc772..ea835290cf 100644
  	QueryID uint64 `protobuf:"varint,1,opt,name=queryID,proto3" json:"queryID,omitempty"`
  	// Types that are valid to be assigned to Data:
  	//	*QueryResultStreamRequest_Metadata
+diff --git a/pkg/frontend/v2/frontendv2pb/frontend.pb.go.expdiff b/pkg/frontend/v2/frontendv2pb/frontend.pb.go.expdiff
+index 4aadf0ef41..e69de29bb2 100644
+--- a/pkg/frontend/v2/frontendv2pb/frontend.pb.go.expdiff
++++ b/pkg/frontend/v2/frontendv2pb/frontend.pb.go.expdiff
+@@ -1,21 +0,0 @@
+-diff --git a/pkg/frontend/v2/frontendv2pb/frontend.pb.go b/pkg/frontend/v2/frontendv2pb/frontend.pb.go
+-index 7a6e9cc772..ea835290cf 100644
+---- a/pkg/frontend/v2/frontendv2pb/frontend.pb.go
+-+++ b/pkg/frontend/v2/frontendv2pb/frontend.pb.go
+-@@ -10,7 +10,6 @@ import (
+- 	_ "github.com/gogo/protobuf/gogoproto"
+- 	proto "github.com/gogo/protobuf/proto"
+- 	httpgrpc "github.com/grafana/dskit/httpgrpc"
+--	"github.com/grafana/mimir/pkg/mimirpb"
+- 	querierpb "github.com/grafana/mimir/pkg/querier/querierpb"
+- 	_ "github.com/grafana/mimir/pkg/querier/stats"
+- 	github_com_grafana_mimir_pkg_querier_stats "github.com/grafana/mimir/pkg/querier/stats"
+-@@ -88,8 +87,6 @@ func (m *QueryResultRequest) GetHttpResponse() *httpgrpc.HTTPResponse {
+- }
+- 
+- type QueryResultStreamRequest struct {
+--	mimirpb.BufferHolder
+--
+- 	QueryID uint64 `protobuf:"varint,1,opt,name=queryID,proto3" json:"queryID,omitempty"`
+- 	// Types that are valid to be assigned to Data:
+- 	//	*QueryResultStreamRequest_Metadata
