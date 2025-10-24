@@ -102,7 +102,6 @@ type Config struct {
 	DeletionDelay               time.Duration           `yaml:"deletion_delay" category:"advanced"`
 	TenantCleanupDelay          time.Duration           `yaml:"tenant_cleanup_delay" category:"advanced"`
 	MaxCompactionTime           time.Duration           `yaml:"max_compaction_time" category:"advanced"`
-	NoBlocksFileCleanupEnabled  bool                    `yaml:"no_blocks_file_cleanup_enabled" category:"experimental"`
 
 	// Compactor concurrency options
 	MaxOpeningBlocksConcurrency         int `yaml:"max_opening_blocks_concurrency" category:"advanced"`          // Number of goroutines opening blocks before compaction.
@@ -160,7 +159,6 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 		"If not 0, blocks will be marked for deletion and the compactor component will permanently delete blocks marked for deletion from the bucket. "+
 		"If 0, blocks will be deleted straight away. Note that deleting blocks immediately can cause query failures.")
 	f.DurationVar(&cfg.TenantCleanupDelay, "compactor.tenant-cleanup-delay", 6*time.Hour, "For tenants marked for deletion, this is the time between deletion of the last block, and doing final cleanup (marker files, debug files) of the tenant.")
-	f.BoolVar(&cfg.NoBlocksFileCleanupEnabled, "compactor.no-blocks-file-cleanup-enabled", false, "If enabled, will delete the bucket-index, markers and debug files in the tenant bucket when there are no blocks left in the index.")
 	f.BoolVar(&cfg.UploadSparseIndexHeaders, "compactor.upload-sparse-index-headers", true, "If enabled, the compactor constructs and uploads sparse index headers to object storage during each compaction cycle. This allows store-gateway instances to use the sparse headers from object storage instead of recreating them locally.")
 
 	// compactor concurrency options
@@ -536,7 +534,6 @@ func (c *MultitenantCompactor) starting(ctx context.Context) error {
 		DeleteBlocksConcurrency:       defaultDeleteBlocksConcurrency,
 		GetDeletionMarkersConcurrency: defaultGetDeletionMarkersConcurrency,
 		UpdateBlocksConcurrency:       c.compactorCfg.UpdateBlocksConcurrency,
-		NoBlocksFileCleanupEnabled:    c.compactorCfg.NoBlocksFileCleanupEnabled,
 		CompactionBlockRanges:         c.compactorCfg.BlockRanges,
 	}, c.bucketClient, c.shardingStrategy.blocksCleanerOwnsUser, c.cfgProvider, c.parentLogger, c.registerer)
 

@@ -1437,7 +1437,7 @@ func (o *optimizationPassThatGeneratesHigherVersionPlanThanAllowed) Name() strin
 	return "test optimization pass"
 }
 
-func (o *optimizationPassThatGeneratesHigherVersionPlanThanAllowed) Apply(ctx context.Context, plan *planning.QueryPlan, maximumSupportedQueryPlanVersion uint64) (*planning.QueryPlan, error) {
+func (o *optimizationPassThatGeneratesHigherVersionPlanThanAllowed) Apply(ctx context.Context, plan *planning.QueryPlan, maximumSupportedQueryPlanVersion planning.QueryPlanVersion) (*planning.QueryPlan, error) {
 	plan.Root = newTestNode(maximumSupportedQueryPlanVersion + 1)
 	return plan, nil
 }
@@ -1463,7 +1463,7 @@ func TestPlanVersioning(t *testing.T) {
 
 	encoded, err := plan.ToEncodedPlan(false, true)
 	require.NoError(t, err)
-	require.Equal(t, uint64(9000), encoded.Version)
+	require.Equal(t, planning.QueryPlanVersion(9000), encoded.Version)
 
 	decoded, _, err := encoded.ToDecodedPlan()
 	require.NoError(t, err)
@@ -1905,7 +1905,7 @@ type versioningTestNode struct {
 	*core.NumberLiteralDetails
 }
 
-func newTestNode(minimumRequiredPlanVersion uint64) *versioningTestNode {
+func newTestNode(minimumRequiredPlanVersion planning.QueryPlanVersion) *versioningTestNode {
 	return &versioningTestNode{
 		NumberLiteralDetails: &core.NumberLiteralDetails{Value: float64(minimumRequiredPlanVersion)},
 	}
@@ -1959,6 +1959,6 @@ func (t *versioningTestNode) ExpressionPosition() posrange.PositionRange {
 	return posrange.PositionRange{}
 }
 
-func (t *versioningTestNode) MinimumRequiredPlanVersion() uint64 {
-	return uint64(t.Value)
+func (t *versioningTestNode) MinimumRequiredPlanVersion() planning.QueryPlanVersion {
+	return planning.QueryPlanVersion(t.Value)
 }

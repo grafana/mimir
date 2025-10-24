@@ -51,7 +51,7 @@ type RingConfig struct {
 
 func (cfg *RingConfig) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	cfg.Common.RegisterFlags("querier.ring.", "collectors/", "queriers", f, logger)
-	f.IntVar(&cfg.AutoForgetUnhealthyPeriods, "querier.ring.auto-forget-unhealthy-periods", 10, "Number of consecutive timeout periods an unhealthy instance in the ring is automatically removed after. Set to 0 to disable auto-forget.")
+	f.IntVar(&cfg.AutoForgetUnhealthyPeriods, "querier.ring.auto-forget-unhealthy-periods", 10, "Number of consecutive timeout periods after which Mimir automatically removes an unhealthy instance in the ring. Set to 0 to disable auto-forget.")
 }
 
 func (cfg *RingConfig) ToBasicLifecyclerConfig(logger log.Logger) (ring.BasicLifecyclerConfig, error) {
@@ -72,7 +72,7 @@ func (cfg *RingConfig) ToBasicLifecyclerConfig(logger log.Logger) (ring.BasicLif
 		KeepInstanceInTheRingOnShutdown: false,
 		StatusPageConfig:                statusPageConfig,
 		Versions: ring.InstanceVersions{
-			MaximumSupportedQueryPlanVersion: planning.MaximumSupportedQueryPlanVersion,
+			MaximumSupportedQueryPlanVersion: uint64(planning.MaximumSupportedQueryPlanVersion),
 		},
 	}, nil
 }
@@ -158,7 +158,7 @@ func NewRingQueryPlanVersionProvider(ring ring.ReadRing, reg prometheus.Register
 var queryPlanVersioningOp = ring.NewOp([]ring.InstanceState{ring.ACTIVE, ring.PENDING, ring.JOINING, ring.LEAVING}, nil)
 var errQuerierHasNoSupportedQueryPlanVersion = fmt.Errorf("one or more queriers in the ring is not reporting a supported query plan version")
 
-func (r *RingQueryPlanVersionProvider) GetMaximumSupportedQueryPlanVersion(_ context.Context) (uint64, error) {
+func (r *RingQueryPlanVersionProvider) GetMaximumSupportedQueryPlanVersion(ctx context.Context) (planning.QueryPlanVersion, error) {
 	instances, err := r.ring.GetAllHealthy(queryPlanVersioningOp)
 	if err != nil {
 		return 0, fmt.Errorf("could not get all queriers from the ring: %w", err)
@@ -175,5 +175,5 @@ func (r *RingQueryPlanVersionProvider) GetMaximumSupportedQueryPlanVersion(_ con
 		lowestVersionSeen = min(lowestVersionSeen, version)
 	}
 
-	return lowestVersionSeen, nil
+	return planning.QueryPlanVersion(lowestVersionSeen), nil
 }

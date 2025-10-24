@@ -282,6 +282,9 @@ func (c *Config) Validate(log log.Logger) error {
 			return errors.New("cannot disable Push gRPC method in ingester, while ingest storage (-ingest-storage.enabled) is not enabled")
 		}
 	}
+	if err := c.MemberlistKV.Validate(); err != nil {
+		return errors.Wrap(err, "invalid memberlist config")
+	}
 	if err := c.BlocksStorage.Validate(c.Ingester.ActiveSeriesMetrics); err != nil {
 		return errors.Wrap(err, "invalid TSDB config")
 	}
