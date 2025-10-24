@@ -96,7 +96,7 @@ func (e *EliminateDeduplicateAndMergeOptimizationPass) collect(node planning.Nod
 				(*nodes)[0].keep = true
 			}
 		} else {
-			// Without delayed name removal name is dropped immediately, so there should be no duplicates after..
+			// Without delayed name removal name is dropped immediately, so there should be no duplicates after.
 			// So, keep only the DeduplicateAndMerge closest to the selector.
 			if len(*nodes) >= 1 {
 				(*nodes)[len(*nodes)-1].keep = true
