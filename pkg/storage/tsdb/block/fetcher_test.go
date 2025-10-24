@@ -346,62 +346,6 @@ func TestMetaFetcher_ShouldNotIssueAnyAPICallToObjectStorageIfAllBlockMetasAreCa
 	`), "thanos_objstore_bucket_operations_total"))
 }
 
-<<<<<<< HEAD
-func TestMetaFetcher_ShouldNotParseMetaJsonFilesAgain(t *testing.T) {
-	var (
-		ctx        = context.Background()
-		logger     = log.NewNopLogger()
-		fetcherDir = t.TempDir()
-	)
-
-	// Create a bucket client.
-	bkt, err := filesystem.NewBucketClient(filesystem.Config{Directory: t.TempDir()})
-	require.NoError(t, err)
-
-	// Upload few blocks.
-	block1ID, block1Dir := createTestBlock(t)
-	_, err = Upload(ctx, logger, bkt, block1Dir, nil)
-	require.NoError(t, err)
-	block2ID, block2Dir := createTestBlock(t)
-	_, err = Upload(ctx, logger, bkt, block2Dir, nil)
-	require.NoError(t, err)
-
-	// We disable min compaction level and sources, to cache ALL parsed meta json files.
-	metaCache := NewMetaCache(100, 0, 0)
-
-	// Create a fetcher and fetch block metas to populate the cache on disk and metaCache.
-	reg1 := prometheus.NewPedanticRegistry()
-	fetcher1, err := NewMetaFetcher(logger, 10, objstore.WrapWithMetrics(bkt, prometheus.WrapRegistererWithPrefix("thanos_", reg1), "test"), fetcherDir, nil, nil, metaCache, 0)
-	require.NoError(t, err)
-	actualMetas, _, actualErr := fetcher1.Fetch(ctx)
-	require.NoError(t, actualErr)
-	require.Len(t, actualMetas, 2)
-	require.Contains(t, actualMetas, block1ID)
-	require.Contains(t, actualMetas, block2ID)
-
-	items, _ := metaCache.Stats()
-	require.Equal(t, 2, items)
-
-	// Now delete meta.json files on local disk, to prove that values from metaCache are reused.
-	require.NoError(t, os.Remove(filepath.Join(fetcherDir, "meta-syncer", block1ID.String(), MetaFilename)))
-	require.NoError(t, os.Remove(filepath.Join(fetcherDir, "meta-syncer", block2ID.String(), MetaFilename)))
-
-	// Create a new fetcher and fetch blocks again. This time we expect all meta.json to be loaded from meta cache.
-	reg2 := prometheus.NewPedanticRegistry()
-	fetcher2, err := NewMetaFetcher(logger, 10, objstore.WrapWithMetrics(bkt, prometheus.WrapRegistererWithPrefix("thanos_", reg2), "test"), fetcherDir, nil, nil, metaCache, 0)
-	require.NoError(t, err)
-	actualMetas, _, actualErr = fetcher2.Fetch(ctx)
-	require.NoError(t, actualErr)
-	require.Len(t, actualMetas, 2)
-	require.Contains(t, actualMetas, block1ID)
-	require.Contains(t, actualMetas, block2ID)
-
-	items, _ = metaCache.Stats()
-	require.Equal(t, 2, items)
-}
-
-=======
->>>>>>> origin/main
 func TestMetaFetcher_Fetch_ShouldReturnDiscoveredBlocksWithinCompactorLookback(t *testing.T) {
 
 	var (
