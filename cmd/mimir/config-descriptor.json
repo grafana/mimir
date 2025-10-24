@@ -10873,6 +10873,17 @@
                 },
                 {
                   "kind": "field",
+                  "name": "label_cardinality_for_larger_sketch",
+                  "required": false,
+                  "desc": "Number of series for a label name above which larger count-min sketches are used for that label.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 1000000,
+                  "fieldFlag": "blocks-storage.tsdb.index-lookup-planning.label-cardinality-for-larger-sketch",
+                  "fieldType": "int",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
                   "name": "index_lookup_planning_enabled",
                   "required": false,
                   "desc": "Controls the collection of statistics and whether to defer some vector selector matchers to sequential scans. This leads to better performance.",

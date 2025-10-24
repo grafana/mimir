@@ -34,6 +34,7 @@ type CostConfig struct {
 	// MinSeriesPerBlockForQueryPlanning is the minimum number of series a block must have for query planning to be used.
 	MinSeriesPerBlockForQueryPlanning uint64 `yaml:"min_series_per_block_for_query_planning" category:"advanced"`
 
+	// LabelCardinalityForLargerSketch is the number of series with a label for that label name to be allocated a larger count-min sketch
 	LabelCardinalityForLargerSketch uint64 `yaml:"label_cardinality_for_larger_sketch" category:"advanced"`
 }
 

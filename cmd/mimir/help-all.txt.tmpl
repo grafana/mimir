@@ -811,6 +811,8 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Portion of queries where a mirrored chunk querier compares results with and without index lookup planning. Value between 0 (disabled) and 1 (all queries).
   -blocks-storage.tsdb.index-lookup-planning.enabled
     	[experimental] Controls the collection of statistics and whether to defer some vector selector matchers to sequential scans. This leads to better performance.
+  -blocks-storage.tsdb.index-lookup-planning.label-cardinality-for-larger-sketch uint
+    	Number of series for a label name above which larger count-min sketches are used for that label. (default 1000000)
   -blocks-storage.tsdb.index-lookup-planning.min-series-per-block-for-query-planning uint
     	Minimum number of series a block must have for query planning to be used. (default 10000)
   -blocks-storage.tsdb.index-lookup-planning.retrieved-posting-cost float
