@@ -14,16 +14,17 @@ import (
 	"iter"
 	"os"
 	"path/filepath"
-	"regexp"
 	"slices"
 	"strings"
 
+	"github.com/grafana/dskit/flagext"
+	"github.com/grafana/regexp"
 	"golang.org/x/tools/go/packages"
 )
 
 func main() {
-	flag.Parse()
-	new(linter).run(flag.Args()...)
+	args := must(flagext.ParseFlagsAndArguments(new(flag.FlagSet)))
+	new(linter).run(args...)
 	os.Exit(exitCode)
 }
 

@@ -450,7 +450,7 @@ lint: check-makefiles check-merge-conflicts
 		-include '*.go'
 
 	# Ensure gRPC buffers aren't released too early
-	go run ./tools/lint-buffer-holder.go
+	go run ./tools/lint-buffer-holder/*.go
 
 format: ## Run gofmt and goimports.
 	find . $(DONT_FIND) -name '*.pb.go' -prune -o -type f -name '*.go' -exec gofmt -w -s {} \;
