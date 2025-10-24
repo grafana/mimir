@@ -1138,7 +1138,7 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 			t.Overrides,
 		)
 	}
-	rulesFS := afero.NewOsFs()
+	rulesFS := afero.NewMemMapFs()
 	managerFactory := ruler.DefaultTenantManagerFactory(
 		t.Cfg.Ruler,
 		t.Distributor,
