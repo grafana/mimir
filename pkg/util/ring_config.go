@@ -47,7 +47,7 @@ func (cfg *CommonRingConfig) RegisterFlags(flagPrefix, kvStorePrefix, componentP
 	cfg.KVStore.Store = "memberlist"
 	cfg.KVStore.RegisterFlagsWithPrefix(flagPrefix, kvStorePrefix, f)
 	f.DurationVar(&cfg.HeartbeatPeriod, flagPrefix+"heartbeat-period", 15*time.Second, "Period at which to heartbeat to the ring.")
-	f.DurationVar(&cfg.HeartbeatTimeout, flagPrefix+"heartbeat-timeout", time.Minute, fmt.Sprintf("Heartbeat timeout after which Mimir marks %s unhealthy in the ring.", componentPlural))
+	f.DurationVar(&cfg.HeartbeatTimeout, flagPrefix+"heartbeat-timeout", time.Minute, fmt.Sprintf("Heartbeat timeout after which Mimir marks %s as unhealthy in the ring.", componentPlural))
 
 	// Instance flags
 	cfg.InstanceInterfaceNames = netutil.PrivateNetworkInterfacesWithFallback([]string{"eth0", "en0"}, logger)

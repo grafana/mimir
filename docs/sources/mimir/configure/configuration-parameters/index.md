@@ -403,7 +403,7 @@ overrides_exporter:
     [heartbeat_period: <duration> | default = 15s]
 
     # (advanced) Heartbeat timeout after which Mimir marks overrides-exporters
-    # unhealthy in the ring.
+    # as unhealthy in the ring.
     # CLI flag: -overrides-exporter.ring.heartbeat-timeout
     [heartbeat_timeout: <duration> | default = 1m]
 
@@ -971,8 +971,8 @@ ring:
   # CLI flag: -distributor.ring.heartbeat-period
   [heartbeat_period: <duration> | default = 15s]
 
-  # (advanced) Heartbeat timeout after which Mimir marks distributors unhealthy
-  # in the ring.
+  # (advanced) Heartbeat timeout after which Mimir marks distributors as
+  # unhealthy in the ring.
   # CLI flag: -distributor.ring.heartbeat-timeout
   [heartbeat_timeout: <duration> | default = 1m]
 
@@ -1792,8 +1792,8 @@ ring:
   # CLI flag: -querier.ring.heartbeat-period
   [heartbeat_period: <duration> | default = 15s]
 
-  # (advanced) Heartbeat timeout after which Mimir marks queriers unhealthy in
-  # the ring.
+  # (advanced) Heartbeat timeout after which Mimir marks queriers as unhealthy
+  # in the ring.
   # CLI flag: -querier.ring.heartbeat-timeout
   [heartbeat_timeout: <duration> | default = 1m]
 
@@ -2324,8 +2324,8 @@ ring:
   # CLI flag: -ruler.ring.heartbeat-period
   [heartbeat_period: <duration> | default = 15s]
 
-  # (advanced) Heartbeat timeout after which Mimir marks rulers unhealthy in the
-  # ring.
+  # (advanced) Heartbeat timeout after which Mimir marks rulers as unhealthy in
+  # the ring.
   # CLI flag: -ruler.ring.heartbeat-timeout
   [heartbeat_timeout: <duration> | default = 1m]
 
@@ -2585,8 +2585,8 @@ sharding_ring:
   # CLI flag: -alertmanager.sharding-ring.heartbeat-period
   [heartbeat_period: <duration> | default = 15s]
 
-  # (advanced) Heartbeat timeout after which Mimir marks alertmanagers unhealthy
-  # in the ring.
+  # (advanced) Heartbeat timeout after which Mimir marks alertmanagers as
+  # unhealthy in the ring.
   # CLI flag: -alertmanager.sharding-ring.heartbeat-timeout
   [heartbeat_timeout: <duration> | default = 1m]
 
@@ -5396,8 +5396,8 @@ sharding_ring:
   # CLI flag: -compactor.ring.heartbeat-period
   [heartbeat_period: <duration> | default = 15s]
 
-  # (advanced) Heartbeat timeout after which Mimir marks compactors unhealthy in
-  # the ring.
+  # (advanced) Heartbeat timeout after which Mimir marks compactors as unhealthy
+  # in the ring.
   # CLI flag: -compactor.ring.heartbeat-timeout
   [heartbeat_timeout: <duration> | default = 1m]
 

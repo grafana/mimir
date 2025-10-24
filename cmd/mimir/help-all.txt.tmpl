@@ -332,7 +332,7 @@ Usage of ./cmd/mimir/mimir:
   -alertmanager.sharding-ring.heartbeat-period duration
     	Period at which to heartbeat to the ring. (default 15s)
   -alertmanager.sharding-ring.heartbeat-timeout duration
-    	Heartbeat timeout after which Mimir marks alertmanagers unhealthy in the ring. (default 1m0s)
+    	Heartbeat timeout after which Mimir marks alertmanagers as unhealthy in the ring. (default 1m0s)
   -alertmanager.sharding-ring.instance-addr string
     	IP address to advertise in the ring. Default is auto-detected.
   -alertmanager.sharding-ring.instance-availability-zone string
@@ -1124,7 +1124,7 @@ Usage of ./cmd/mimir/mimir:
   -compactor.ring.heartbeat-period duration
     	Period at which to heartbeat to the ring. (default 15s)
   -compactor.ring.heartbeat-timeout duration
-    	Heartbeat timeout after which Mimir marks compactors unhealthy in the ring. (default 1m0s)
+    	Heartbeat timeout after which Mimir marks compactors as unhealthy in the ring. (default 1m0s)
   -compactor.ring.instance-addr string
     	IP address to advertise in the ring. Default is auto-detected.
   -compactor.ring.instance-enable-ipv6
@@ -1382,7 +1382,7 @@ Usage of ./cmd/mimir/mimir:
   -distributor.ring.heartbeat-period duration
     	Period at which to heartbeat to the ring. (default 15s)
   -distributor.ring.heartbeat-timeout duration
-    	Heartbeat timeout after which Mimir marks distributors unhealthy in the ring. (default 1m0s)
+    	Heartbeat timeout after which Mimir marks distributors as unhealthy in the ring. (default 1m0s)
   -distributor.ring.instance-addr string
     	IP address to advertise in the ring. Default is auto-detected.
   -distributor.ring.instance-enable-ipv6
@@ -1986,7 +1986,7 @@ Usage of ./cmd/mimir/mimir:
   -overrides-exporter.ring.heartbeat-period duration
     	Period at which to heartbeat to the ring. (default 15s)
   -overrides-exporter.ring.heartbeat-timeout duration
-    	Heartbeat timeout after which Mimir marks overrides-exporters unhealthy in the ring. (default 1m0s)
+    	Heartbeat timeout after which Mimir marks overrides-exporters as unhealthy in the ring. (default 1m0s)
   -overrides-exporter.ring.instance-addr string
     	IP address to advertise in the ring. Default is auto-detected.
   -overrides-exporter.ring.instance-enable-ipv6
@@ -2180,7 +2180,7 @@ Usage of ./cmd/mimir/mimir:
   -querier.ring.heartbeat-period duration
     	Period at which to heartbeat to the ring. (default 15s)
   -querier.ring.heartbeat-timeout duration
-    	Heartbeat timeout after which Mimir marks queriers unhealthy in the ring. (default 1m0s)
+    	Heartbeat timeout after which Mimir marks queriers as unhealthy in the ring. (default 1m0s)
   -querier.ring.instance-addr string
     	IP address to advertise in the ring. Default is auto-detected.
   -querier.ring.instance-enable-ipv6
@@ -3074,7 +3074,7 @@ Usage of ./cmd/mimir/mimir:
   -ruler.ring.heartbeat-period duration
     	Period at which to heartbeat to the ring. (default 15s)
   -ruler.ring.heartbeat-timeout duration
-    	Heartbeat timeout after which Mimir marks rulers unhealthy in the ring. (default 1m0s)
+    	Heartbeat timeout after which Mimir marks rulers as unhealthy in the ring. (default 1m0s)
   -ruler.ring.instance-addr string
     	IP address to advertise in the ring. Default is auto-detected.
   -ruler.ring.instance-enable-ipv6
