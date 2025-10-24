@@ -134,7 +134,7 @@ func TestPlannerFactory_CreatePlanner(t *testing.T) {
 			name:            "large block with working IndexReader returns CostBasedPlanner",
 			blockMeta:       tsdb.BlockMeta{Stats: tsdb.BlockStats{NumSeries: 15000}},
 			indexReader:     createMockIndexReaderWithSeries(15000),
-			expectedPlanner: reflect.TypeOf(index.ChainLookupPlanners(MatcherReducerPlanner{}, CostBasedPlanner{})),
+			expectedPlanner: reflect.TypeOf(&CostBasedPlanner{}),
 		},
 		{
 			name: "exactly at threshold with working IndexReader returns CostBasedPlanner",
@@ -144,7 +144,7 @@ func TestPlannerFactory_CreatePlanner(t *testing.T) {
 				},
 			},
 			indexReader:     createMockIndexReaderWithSeries(int(defaultCostConfig.MinSeriesPerBlockForQueryPlanning)),
-			expectedPlanner: reflect.TypeOf(index.ChainLookupPlanners(MatcherReducerPlanner{}, CostBasedPlanner{})),
+			expectedPlanner: reflect.TypeOf(&CostBasedPlanner{}),
 		},
 		{
 			name: "very large block with working IndexReader returns CostBasedPlanner",
@@ -154,7 +154,7 @@ func TestPlannerFactory_CreatePlanner(t *testing.T) {
 				},
 			},
 			indexReader:     createMockIndexReaderWithSeries(100000),
-			expectedPlanner: reflect.TypeOf(index.ChainLookupPlanners(MatcherReducerPlanner{}, CostBasedPlanner{})),
+			expectedPlanner: reflect.TypeOf(&CostBasedPlanner{}),
 		},
 		{
 			name: "large block with error IndexReader fallbacks to NoopPlanner",
@@ -184,7 +184,7 @@ func TestPlannerFactory_CreatePlanner(t *testing.T) {
 				},
 			},
 			indexReader:     createMockIndexReaderWithSeries(1000000),
-			expectedPlanner: reflect.TypeOf(index.ChainLookupPlanners(MatcherReducerPlanner{}, CostBasedPlanner{})),
+			expectedPlanner: reflect.TypeOf(&CostBasedPlanner{}),
 		},
 	}
 
