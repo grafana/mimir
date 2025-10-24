@@ -90,8 +90,6 @@ The following features are currently experimental:
     - `/api/v1/push/influx/write` endpoint
     - `-distributor.influx-endpoint-enabled`
     - `-distributor.max-influx-request-size`
-  - Metrics relabeling
-    - `-distributor.metric-relabeling-enabled`
   - Limit exemplars per series per request
     - `-distributor.max-exemplars-per-series-per-request`
   - Limit OTLP write request byte size
