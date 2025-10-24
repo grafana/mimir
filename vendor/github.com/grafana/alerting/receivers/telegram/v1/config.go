@@ -77,85 +77,83 @@ func NewConfig(jsonData json.RawMessage, decryptFn receivers.DecryptFunc) (Confi
 	return settings, nil
 }
 
-func Schema() schema.IntegrationSchemaVersion {
-	return schema.IntegrationSchemaVersion{
-		Version:   Version,
-		CanCreate: true,
-		Options: []schema.Field{
-			{
-				Label:        "BOT API Token",
-				Element:      schema.ElementTypeInput,
-				InputType:    schema.InputTypeText,
-				Placeholder:  "Telegram BOT API Token",
-				PropertyName: "bottoken",
-				Required:     true,
-				Secure:       true,
-			},
-			{
-				Label:        "Chat ID",
-				Element:      schema.ElementTypeInput,
-				InputType:    schema.InputTypeText,
-				Description:  "Integer Telegram Chat Identifier",
-				PropertyName: "chatid",
-				Required:     true,
-			},
-			{
-				Label:          "Message Thread ID",
-				Element:        schema.ElementTypeInput,
-				InputType:      schema.InputTypeText,
-				Description:    "Integer Telegram Message Thread Identifier",
-				PropertyName:   "message_thread_id",
-				Required:       false,
-				ValidationRule: "-?[0-9]{1,10}",
-			},
-			{ // New in 8.0.
-				Label:        "Message",
-				Element:      schema.ElementTypeTextArea,
-				Placeholder:  templates.DefaultMessageEmbed,
-				PropertyName: "message",
-			},
-			{
-				Label:   "Parse Mode",
-				Element: schema.ElementTypeSelect,
-				SelectOptions: []schema.SelectOption{
-					{
-						Value: "None",
-						Label: "None",
-					},
-					{
-						Value: "HTML",
-						Label: "HTML",
-					},
-					{
-						Value: "Markdown",
-						Label: "Markdown",
-					},
-					{
-						Value: "MarkdownV2",
-						Label: "Markdown V2",
-					},
-				},
-				Description:  `Mode for parsing entities in the message text. Default is 'HTML'`,
-				PropertyName: "parse_mode",
-			},
-			{
-				Label:        "Disable Web Page Preview",
-				Description:  "Disables link previews for links in this message",
-				Element:      schema.ElementTypeCheckbox,
-				PropertyName: "disable_web_page_preview",
-			},
-			{
-				Label:        "Protect Content",
-				Description:  "Protects the contents of the sent message from forwarding and saving",
-				Element:      schema.ElementTypeCheckbox,
-				PropertyName: "protect_content",
-			},
-			{
-				Label:        "Disable Notification",
-				Description:  "Sends the message silently. Users will receive a notification with no sound.",
-				Element:      schema.ElementTypeCheckbox,
-				PropertyName: "disable_notification",
-			},
+var Schema = schema.IntegrationSchemaVersion{
+	Version:   Version,
+	CanCreate: true,
+	Options: []schema.Field{
+		{
+			Label:        "BOT API Token",
+			Element:      schema.ElementTypeInput,
+			InputType:    schema.InputTypeText,
+			Placeholder:  "Telegram BOT API Token",
+			PropertyName: "bottoken",
+			Required:     true,
+			Secure:       true,
 		},
-	}
+		{
+			Label:        "Chat ID",
+			Element:      schema.ElementTypeInput,
+			InputType:    schema.InputTypeText,
+			Description:  "Integer Telegram Chat Identifier",
+			PropertyName: "chatid",
+			Required:     true,
+		},
+		{
+			Label:          "Message Thread ID",
+			Element:        schema.ElementTypeInput,
+			InputType:      schema.InputTypeText,
+			Description:    "Integer Telegram Message Thread Identifier",
+			PropertyName:   "message_thread_id",
+			Required:       false,
+			ValidationRule: "-?[0-9]{1,10}",
+		},
+		{ // New in 8.0.
+			Label:        "Message",
+			Element:      schema.ElementTypeTextArea,
+			Placeholder:  templates.DefaultMessageEmbed,
+			PropertyName: "message",
+		},
+		{
+			Label:   "Parse Mode",
+			Element: schema.ElementTypeSelect,
+			SelectOptions: []schema.SelectOption{
+				{
+					Value: "None",
+					Label: "None",
+				},
+				{
+					Value: "HTML",
+					Label: "HTML",
+				},
+				{
+					Value: "Markdown",
+					Label: "Markdown",
+				},
+				{
+					Value: "MarkdownV2",
+					Label: "Markdown V2",
+				},
+			},
+			Description:  `Mode for parsing entities in the message text. Default is 'HTML'`,
+			PropertyName: "parse_mode",
+		},
+		{
+			Label:        "Disable Web Page Preview",
+			Description:  "Disables link previews for links in this message",
+			Element:      schema.ElementTypeCheckbox,
+			PropertyName: "disable_web_page_preview",
+		},
+		{
+			Label:        "Protect Content",
+			Description:  "Protects the contents of the sent message from forwarding and saving",
+			Element:      schema.ElementTypeCheckbox,
+			PropertyName: "protect_content",
+		},
+		{
+			Label:        "Disable Notification",
+			Description:  "Sends the message silently. Users will receive a notification with no sound.",
+			Element:      schema.ElementTypeCheckbox,
+			PropertyName: "disable_notification",
+		},
+	},
 }
