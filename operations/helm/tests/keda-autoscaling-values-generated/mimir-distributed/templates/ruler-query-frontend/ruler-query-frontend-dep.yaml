@@ -52,6 +52,7 @@ spec:
             - "-config.file=/etc/mimir/mimir.yaml"
             - "-query-frontend.cache-results=false"
             - "-query-frontend.scheduler-address=keda-autoscaling-values-mimir-ruler-query-scheduler-headless.citestns.svc:9095"
+            - "-querier.ring.prefix=ruler-querier/"
             # Reduce the likelihood of queries hitting terminated query-frontends.
             - "-server.grpc.keepalive.max-connection-age=30s"
             - "-shutdown-delay=90s"

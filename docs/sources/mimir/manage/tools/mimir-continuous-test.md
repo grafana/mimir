@@ -40,7 +40,7 @@ mimir -target=continuous-test
 {{< admonition type="note" >}}
 In [Grafana Mimir 2.13](../../../release-notes/v2.13/) the mimir-continuous-test became a part of Mimir as its own target.
 
-The standalone `grafana/mimir-continuous-test` Docker image and mimir-continuous-test binary are now deprecated but available for backwards compatibility.
+The standalone `grafana/mimir-continuous-test` Docker image and mimir-continuous-test binary were deprecated in 2.13 and removed in 3.0.
 {{< /admonition >}}
 
 ## Configure mimir-continuous-test

@@ -933,49 +933,6 @@ local utils = import 'mixin-utils/utils.libsonnet';
       ],
     },
     {
-      name: 'etcd_alerts',
-      rules: [
-        {
-          alert: 'EtcdAllocatingTooMuchMemory',
-          expr: |||
-            (
-              container_memory_rss{container="etcd"}
-                /
-              ( container_spec_memory_limit_bytes{container="etcd"} > 0 )
-            ) > 0.65
-          |||,
-          'for': '15m',
-          labels: {
-            severity: 'warning',
-          },
-          annotations: {
-            message: |||
-              Too much memory being used by {{ $labels.namespace }}/%(alert_instance_variable)s - bump memory limit.
-            ||| % $._config,
-          },
-        },
-        {
-          alert: 'EtcdAllocatingTooMuchMemory',
-          expr: |||
-            (
-              container_memory_rss{container="etcd"}
-                /
-              ( container_spec_memory_limit_bytes{container="etcd"} > 0 )
-            ) > 0.8
-          |||,
-          'for': '15m',
-          labels: {
-            severity: 'critical',
-          },
-          annotations: {
-            message: |||
-              Too much memory being used by {{ $labels.namespace }}/%(alert_instance_variable)s - bump memory limit.
-            ||| % $._config,
-          },
-        },
-      ],
-    },
-    {
       name: 'golang_alerts',
       rules: (
         [

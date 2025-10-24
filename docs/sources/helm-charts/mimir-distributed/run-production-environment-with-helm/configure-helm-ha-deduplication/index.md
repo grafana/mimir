@@ -3,18 +3,19 @@ aliases:
   - ../configuring/configure-helm-ha-deduplication-consul/
 description:
   Learn how to configure the Grafana Mimir Helm chart to handle HA Prometheus
-  server deduplication with Consul.
-menuTitle: Configure high-availability deduplication with Consul
-title:
-  Configuring Grafana Mimir-Distributed Helm Chart for high-availability deduplication
-  with Consul
+  server deduplication.
+menuTitle: Configure high-availability deduplication
+title: Configure high-availability deduplication with the Mimir distributed Helm chart
 weight: 70
 ---
 
-# Configuring Grafana Mimir-Distributed Helm Chart for high-availability deduplication with Consul
+# Configure high-availability deduplication with the Mimir distributed Helm chart
 
-Grafana Mimir can deduplicate data from a high-availability (HA) Prometheus setup. You can configure
-the deduplication by using the Grafana Mimir helm chart deployment that uses external Consul. For more information, see [Configure high availability](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/configure-high-availability-deduplication/).
+Grafana Mimir can deduplicate data from a high-availability (HA) Prometheus setup. Starting from Mimir 3.0, the HA tracker uses `memberlist` by default, which requires no external dependencies. For more information, see [Configure high availability](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/configure-high-availability-deduplication/).
+
+{{< admonition type="note" >}}
+Prior to Mimir 3.0, the HA tracker required an external key-value store such as Consul or etcd. These backends are now deprecated. If you're currently using Consul or etcd for the HA tracker, refer to the migration guide.
+{{< /admonition >}}
 
 ## Before you begin
 
@@ -22,18 +23,18 @@ You need to have a Grafana Mimir installed via the mimir-distributed Helm chart.
 
 For conceptual information about how Mimir deduplicates incoming HA samples, refer to [Configure high availability](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/configure-high-availability-deduplication/).
 
-You also need to configure HA for Prometheus or Grafana Agent. Lastly, you need a key-value store such as Consul KV.
+You also need to configure HA for Prometheus or Grafana Alloy.
 
 {{< docs/shared source="alloy" lookup="agent-deprecation.md" version="next" >}}
 
-## Configure Prometheus or Grafana Agent to send HA external labels
+## Configure Prometheus or Grafana Alloy to send HA external labels
 
-Configure the Prometheus or Grafana Agent HA setup by setting the labels named `cluster` and `__replica__`,
+Configure the Prometheus or Grafana Alloy HA setup by setting the labels named `cluster` and `__replica__`,
 which are the default labels for a HA setup in Grafana Mimir. If you want to change the HA labels,
-make sure to change them in Mimir as well. This ensures that the configurations of Grafana Mimir, Prometheus, and Grafana Agent all match each other. Otherwise, HA deduplication will not work.
+make sure to change them in Mimir as well. This ensures that the configurations of Grafana Mimir, Prometheus, and Grafana Alloy all match each other. Otherwise, HA deduplication will not work.
 
-- The value of the `cluster` label must be same across replica that belong to the same cluster.
-- The value of the `__replica__` label must be unique across different replica within the same cluster.
+- The value of the `cluster` label must be same across replicas that belong to the same cluster.
+- The value of the `__replica__` label must be unique across replicas within the same cluster.
 
 ```yaml
 global:
@@ -42,15 +43,9 @@ global:
     cluster: my-prometheus
 ```
 
-Reload or restart Prometheus or Grafana Agent after you update the configuration.
+Reload or restart Prometheus or Grafana Alloy after you update the configuration.
 
-> **Note:** [Configure high availability](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/configure-high-availability-deduplication/).
-> document contains the same information on Prometheus setup for HA dedup.
-
-## Install Consul using Helm
-
-To get and install Consul on Kubernetes, use the [Consul helm chart](https://github.com/hashicorp/consul-k8s/tree/main/charts/consul).
-Make a note of the Consul endpoint, because you will need it later to configure Mimir.
+> **Note:** [Configure high availability](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/configure-high-availability-deduplication/) contains the same information on Prometheus setup for HA deduplication.
 
 ## Configure Mimir high availability
 
@@ -75,12 +70,14 @@ mimir:
       ha_tracker:
         enable_ha_tracker: true
         kvstore:
-          store: consul
-          consul:
-            host: <consul-endpoint> # example: http://consul.consul.svc.cluster.local:8500
+          store: memberlist
 ```
 
-2. Upgrade the Mimir's helm release using the following command:
+{{< admonition type="note" >}}
+If memberlist is already configured for other Mimir components (such as the hash ring), the HA tracker will automatically use that configuration. In most Helm deployments, memberlist is already configured, so no additional configuration is needed.
+{{< /admonition >}}
+
+2. Upgrade the Mimir Helm release using the following command:
 
 ```bash
  helm -n <mimir-namespace> upgrade mimir grafana/mimir-distributed -f custom.yaml
@@ -105,9 +102,7 @@ mimir:
       ha_tracker:
         enable_ha_tracker: true
         kvstore:
-          store: consul
-          consul:
-            host: <consul-endpoint> # example: http://consul.consul.svc.cluster.local:8500
+          store: memberlist
 runtimeConfig:
   overrides:
     <tenant-id>: # put real tenant ID here
@@ -116,8 +111,8 @@ runtimeConfig:
       ha_replica_label: __replica__
 ```
 
-The `mimir` configuration block is similar with Globally configure HA deduplication setup. The `runtimeConfig` block
-is the configuration for per tenant HA deduplication.
+The `mimir` configuration block is similar to the global HA deduplication configuration. The `runtimeConfig` block
+configures per-tenant HA deduplication.
 
 2. Upgrade the Mimir's helm release using the following command:
 
@@ -127,7 +122,7 @@ is the configuration for per tenant HA deduplication.
 
 ## Verifying deduplication
 
-After Consul, Prometheus and Mimir running we can verify deduplication in several way.
+After Prometheus and Mimir are running, you can verify deduplication in several ways.
 
 ### ha_tracker's page
 

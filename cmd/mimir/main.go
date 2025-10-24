@@ -54,12 +54,12 @@ const (
 var testMode = false
 
 type mainFlags struct {
-	ballastBytes             int     `category:"advanced"`
-	mutexProfileFraction     int     `category:"advanced"`
-	blockProfileRate         int     `category:"advanced"`
-	rateLimitedLogsEnabled   bool    `category:"experimental"`
-	rateLimitedLogsPerSecond float64 `category:"experimental"`
-	rateLimitedLogsBurstSize int     `category:"experimental"`
+	ballastBytes             int `category:"advanced"`
+	mutexProfileFraction     int `category:"advanced"`
+	blockProfileRate         int `category:"advanced"`
+	rateLimitedLogsEnabled   bool
+	rateLimitedLogsPerSecond float64
+	rateLimitedLogsBurstSize int
 	printVersion             bool
 	printModules             bool
 	printHelp                bool

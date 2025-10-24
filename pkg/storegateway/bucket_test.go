@@ -1391,7 +1391,7 @@ func benchBucketSeries(t test.TB, skipChunk bool, samplesPerSeries, totalSeries 
 
 	var (
 		logger                = log.NewNopLogger()
-		series                []*storepb.Series
+		series                []*storeTestSeries
 		expectedQueriesBlocks []hintspb.Block
 		random                = rand.New(rand.NewSource(120))
 	)
@@ -1558,9 +1558,8 @@ func benchBucketSeries(t test.TB, skipChunk bool, samplesPerSeries, totalSeries 
 				BlockSyncConcurrency:        1,
 				PostingOffsetsInMemSampling: mimir_tsdb.DefaultPostingOffsetInMemorySampling,
 				IndexHeader: indexheader.Config{
-					EagerLoadingStartupEnabled: false,
-					LazyLoadingEnabled:         false,
-					LazyLoadingIdleTimeout:     0,
+					LazyLoadingEnabled:     false,
+					LazyLoadingIdleTimeout: 0,
 				},
 			},
 			selectAllStrategy{},
@@ -1595,7 +1594,7 @@ func TestBucketStore_Series_Concurrency(t *testing.T) {
 	var (
 		ctx              = context.Background()
 		logger           = log.NewNopLogger()
-		expectedSeries   []*storepb.Series
+		expectedSeries   []*storeTestSeries
 		expectedBlockIDs []string
 		random           = rand.New(rand.NewSource(120))
 		tmpDir           = t.TempDir()
@@ -1691,9 +1690,8 @@ func TestBucketStore_Series_Concurrency(t *testing.T) {
 							BlockSyncConcurrency:        1,
 							PostingOffsetsInMemSampling: mimir_tsdb.DefaultPostingOffsetInMemorySampling,
 							IndexHeader: indexheader.Config{
-								EagerLoadingStartupEnabled: false,
-								LazyLoadingEnabled:         false,
-								LazyLoadingIdleTimeout:     0,
+								LazyLoadingEnabled:     false,
+								LazyLoadingIdleTimeout: 0,
 							},
 						},
 						selectAllStrategy{},
@@ -1928,7 +1926,7 @@ func TestBucketStore_Series_OneBlock_InMemIndexCacheSegfault(t *testing.T) {
 }
 
 func TestBucketStore_Series_RequestAndResponseHints(t *testing.T) {
-	newTestCases := func(seriesSet1 []*storepb.Series, seriesSet2 []*storepb.Series, block1 ulid.ULID, block2 ulid.ULID) []*seriesCase {
+	newTestCases := func(seriesSet1 []*storeTestSeries, seriesSet2 []*storeTestSeries, block1 ulid.ULID, block2 ulid.ULID) []*seriesCase {
 		return []*seriesCase{
 			{
 				Name: "querying a range containing 1 block should return 1 block in the response hints",
@@ -1954,7 +1952,7 @@ func TestBucketStore_Series_RequestAndResponseHints(t *testing.T) {
 						{Type: storepb.LabelMatcher_EQ, Name: "foo", Value: "bar"},
 					},
 				},
-				ExpectedSeries: append(append([]*storepb.Series{}, seriesSet1...), seriesSet2...),
+				ExpectedSeries: append(append([]*storeTestSeries{}, seriesSet1...), seriesSet2...),
 				ExpectedHints: hintspb.SeriesResponseHints{
 					QueriedBlocks: []hintspb.Block{
 						{Id: block1.String()},
@@ -2024,9 +2022,8 @@ func TestBucketStore_Series_ErrorUnmarshallingRequestHints(t *testing.T) {
 			BlockSyncConcurrency:        10,
 			PostingOffsetsInMemSampling: mimir_tsdb.DefaultPostingOffsetInMemorySampling,
 			IndexHeader: indexheader.Config{
-				EagerLoadingStartupEnabled: false,
-				LazyLoadingEnabled:         false,
-				LazyLoadingIdleTimeout:     0,
+				LazyLoadingEnabled:     false,
+				LazyLoadingIdleTimeout: 0,
 			},
 		},
 		selectAllStrategy{},
@@ -2082,9 +2079,8 @@ func TestBucketStore_Series_CanceledRequest(t *testing.T) {
 			BlockSyncConcurrency:        10,
 			PostingOffsetsInMemSampling: mimir_tsdb.DefaultPostingOffsetInMemorySampling,
 			IndexHeader: indexheader.Config{
-				EagerLoadingStartupEnabled: false,
-				LazyLoadingEnabled:         false,
-				LazyLoadingIdleTimeout:     0,
+				LazyLoadingEnabled:     false,
+				LazyLoadingIdleTimeout: 0,
 			},
 		},
 		selectAllStrategy{},
@@ -2233,9 +2229,8 @@ func TestBucketStore_Series_InvalidRequest(t *testing.T) {
 			BlockSyncConcurrency:        10,
 			PostingOffsetsInMemSampling: mimir_tsdb.DefaultPostingOffsetInMemorySampling,
 			IndexHeader: indexheader.Config{
-				EagerLoadingStartupEnabled: false,
-				LazyLoadingEnabled:         false,
-				LazyLoadingIdleTimeout:     0,
+				LazyLoadingEnabled:     false,
+				LazyLoadingIdleTimeout: 0,
 			},
 		},
 		selectAllStrategy{},
@@ -2303,7 +2298,6 @@ func testBucketStoreSeriesBlockWithMultipleChunks(
 	// Create a block with 1 series but a high number of samples,
 	// so that they will span across multiple chunks.
 	headOpts := tsdb.DefaultHeadOptions()
-	headOpts.EnableNativeHistograms.Store(true)
 	headOpts.ChunkDirRoot = filepath.Join(tmpDir, "block")
 	headOpts.ChunkRange = math.MaxInt64
 
@@ -2361,9 +2355,8 @@ func testBucketStoreSeriesBlockWithMultipleChunks(
 			BlockSyncConcurrency:        10,
 			PostingOffsetsInMemSampling: mimir_tsdb.DefaultPostingOffsetInMemorySampling,
 			IndexHeader: indexheader.Config{
-				EagerLoadingStartupEnabled: false,
-				LazyLoadingEnabled:         false,
-				LazyLoadingIdleTimeout:     0,
+				LazyLoadingEnabled:     false,
+				LazyLoadingIdleTimeout: 0,
 			},
 		},
 		selectAllStrategy{},
@@ -2523,9 +2516,8 @@ func TestBucketStore_Series_Limits(t *testing.T) {
 							BlockSyncConcurrency:        10,
 							PostingOffsetsInMemSampling: mimir_tsdb.DefaultPostingOffsetInMemorySampling,
 							IndexHeader: indexheader.Config{
-								EagerLoadingStartupEnabled: false,
-								LazyLoadingEnabled:         false,
-								LazyLoadingIdleTimeout:     0,
+								LazyLoadingEnabled:     false,
+								LazyLoadingIdleTimeout: 0,
 							},
 						},
 						selectAllStrategy{},
@@ -2575,7 +2567,7 @@ func mustMarshalAny(pb proto.Message) *types.Any {
 	return out
 }
 
-func setupStoreForHintsTest(t *testing.T, maxSeriesPerBatch int, opts ...BucketStoreOption) (test.TB, *BucketStore, []*storepb.Series, []*storepb.Series, ulid.ULID, ulid.ULID, func()) {
+func setupStoreForHintsTest(t *testing.T, maxSeriesPerBatch int, opts ...BucketStoreOption) (test.TB, *BucketStore, []*storeTestSeries, []*storeTestSeries, ulid.ULID, ulid.ULID, func()) {
 	tb := test.NewTB(t)
 
 	cleanupFuncs := []func(){}
@@ -2643,9 +2635,8 @@ func setupStoreForHintsTest(t *testing.T, maxSeriesPerBatch int, opts ...BucketS
 			BlockSyncConcurrency:        10,
 			PostingOffsetsInMemSampling: mimir_tsdb.DefaultPostingOffsetInMemorySampling,
 			IndexHeader: indexheader.Config{
-				EagerLoadingStartupEnabled: false,
-				LazyLoadingEnabled:         false,
-				LazyLoadingIdleTimeout:     0,
+				LazyLoadingEnabled:     false,
+				LazyLoadingIdleTimeout: 0,
 			},
 		},
 		selectAllStrategy{},
@@ -2720,7 +2711,7 @@ func TestLabelNamesAndValuesHints(t *testing.T) {
 				End:   3,
 			},
 			expectedNames: labelNamesFromSeriesSet(
-				append(append([]*storepb.Series{}, seriesSet1...), seriesSet2...),
+				append(append([]*storeTestSeries{}, seriesSet1...), seriesSet2...),
 			),
 			expectedNamesHints: hintspb.LabelNamesResponseHints{
 				QueriedBlocks: []hintspb.Block{
@@ -2862,7 +2853,7 @@ func TestLabelValues_Cancelled(t *testing.T) {
 	assert.Equal(t, codes.Canceled, s.Code())
 }
 
-func labelNamesFromSeriesSet(series []*storepb.Series) []string {
+func labelNamesFromSeriesSet(series []*storeTestSeries) []string {
 	labelsMap := map[string]struct{}{}
 
 	for _, s := range series {
@@ -2896,7 +2887,7 @@ type headGenOptions struct {
 // Each series looks as follows:
 // {foo=bar,i=000001aaaaaaaaaabbbbbbbbbbccccccccccdddddddddd} <random value> where number indicate sample number from 0.
 // Returned series are framed in the same way as remote read would frame them.
-func createHeadWithSeries(t testing.TB, j int, opts headGenOptions) (*tsdb.Head, []*storepb.Series) {
+func createHeadWithSeries(t testing.TB, j int, opts headGenOptions) (*tsdb.Head, []*storeTestSeries) {
 	if opts.SamplesPerSeries < 1 || opts.Series < 1 {
 		t.Fatal("samples and series has to be 1 or more")
 	}
@@ -2961,14 +2952,14 @@ func createHeadWithSeries(t testing.TB, j int, opts headGenOptions) (*tsdb.Head,
 
 	var (
 		chunkMetas []chunks.Meta
-		expected   = make([]*storepb.Series, 0, opts.Series)
+		expected   = make([]*storeTestSeries, 0, opts.Series)
 	)
 
 	var builder labels.ScratchBuilder
 	all := allPostings(t, ir)
 	for all.Next() {
 		assert.NoError(t, ir.Series(all.At(), &builder, &chunkMetas))
-		expected = append(expected, &storepb.Series{Labels: mimirpb.FromLabelsToLabelAdapters(builder.Labels())})
+		expected = append(expected, &storeTestSeries{Labels: mimirpb.FromLabelsToLabelAdapters(builder.Labels())})
 
 		if opts.SkipChunks {
 			continue
@@ -3028,7 +3019,7 @@ type seriesCase struct {
 	Req  *storepb.SeriesRequest
 
 	// Exact expectations are checked only for tests. For benchmarks only length is assured.
-	ExpectedSeries   []*storepb.Series
+	ExpectedSeries   []*storeTestSeries
 	ExpectedWarnings []string
 	ExpectedHints    hintspb.SeriesResponseHints
 }
