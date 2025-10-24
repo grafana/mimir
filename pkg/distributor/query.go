@@ -348,16 +348,9 @@ func (r *ingesterQueryResult) receiveResponse(stream ingester_client.Ingester_Qu
 			l := mimirpb.FromLabelAdaptersToLabelsWithCopy(s.Labels)
 
 			// AddSeries returns canonical labels for deduplication and isNew flag
-			canonicalLabels, isNew, err := queryLimiter.AddSeries(l)
+			canonicalLabels, err := queryLimiter.AddSeries(l, memoryConsumptionTracker)
 			if err != nil {
 				return nil, false, err
-			}
-
-			// Only track memory for new series to avoid double-counting duplicates
-			if isNew {
-				if err := memoryConsumptionTracker.IncreaseMemoryConsumptionForLabels(canonicalLabels); err != nil {
-					return nil, false, err
-				}
 			}
 
 			// We enforce the chunk count limit here, but enforce the chunk bytes limit while streaming the chunks themselves.

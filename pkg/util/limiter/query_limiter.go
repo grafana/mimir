@@ -81,12 +81,11 @@ func QueryLimiterFromContextWithFallback(ctx context.Context) *QueryLimiter {
 //
 // Returns:
 //   - canonicalLabels: the labels to use (either the input labels if new, or previously stored labels if duplicate)
-//   - isNew: true if this is the first time seeing this series, false if it's a duplicate
 //   - error: validation.LimitError if the series limit is exceeded
-func (ql *QueryLimiter) AddSeries(seriesLabels labels.Labels) (labels.Labels, bool, validation.LimitError) {
+func (ql *QueryLimiter) AddSeries(seriesLabels labels.Labels, tracker *MemoryConsumptionTracker) (labels.Labels, error) {
 	// If the max series is unlimited just return without managing map
 	if ql.maxSeriesPerQuery == 0 {
-		return seriesLabels, true, nil
+		return seriesLabels, nil
 	}
 	fingerprint := seriesLabels.Hash()
 
@@ -95,35 +94,40 @@ func (ql *QueryLimiter) AddSeries(seriesLabels labels.Labels) (labels.Labels, bo
 
 	// Check if we've seen this series before
 	var canonicalLabels labels.Labels
-	var isNew bool
+
+	// This is a new series - track it in the map.
+	// We capture the count before and after adding to detect when we first exceed the limit.
+	uniqueSeriesBefore := len(ql.canonicalLabels)
+	ql.canonicalLabels[fingerprint] = seriesLabels
+	uniqueSeriesAfter := len(ql.canonicalLabels)
 
 	if existingLabels, exists := ql.canonicalLabels[fingerprint]; exists {
 		// This is a duplicate - return the canonical labels we stored earlier
 		canonicalLabels = existingLabels
-		isNew = false
 	} else {
-		// This is a new series - track it in the map.
-		// We capture the count before and after adding to detect when we first exceed the limit.
-		uniqueSeriesBefore := len(ql.canonicalLabels)
-		ql.canonicalLabels[fingerprint] = seriesLabels
-		uniqueSeriesAfter := len(ql.canonicalLabels)
-
 		canonicalLabels = seriesLabels
-		isNew = true
 
 		// Only increment the metric the first time we exceed the limit (when uniqueSeriesBefore was still within limit)
-		if uniqueSeriesAfter > ql.maxSeriesPerQuery && uniqueSeriesBefore <= ql.maxSeriesPerQuery {
-			ql.queryMetrics.QueriesRejectedTotal.WithLabelValues(stats.RejectReasonMaxSeries).Inc()
+		if uniqueSeriesAfter > ql.maxSeriesPerQuery {
+			if uniqueSeriesBefore <= ql.maxSeriesPerQuery {
+				// If we've just exceeded the limit for the first time for this query, increment the failed query metric.
+				ql.queryMetrics.QueriesRejectedTotal.WithLabelValues(stats.RejectReasonMaxSeries).Inc()
+			}
+
+			return canonicalLabels, NewMaxSeriesHitLimitError(uint64(ql.maxSeriesPerQuery))
+		}
+		if err := tracker.IncreaseMemoryConsumptionForLabels(canonicalLabels); err != nil {
+			return canonicalLabels, err
 		}
 	}
 
 	// Single limit check at the end - applies to both new series and duplicates
 	// This ensures that once a query exceeds the limit, all subsequent series (including duplicates) are rejected
 	if len(ql.canonicalLabels) > ql.maxSeriesPerQuery {
-		return canonicalLabels, isNew, NewMaxSeriesHitLimitError(uint64(ql.maxSeriesPerQuery))
+		return canonicalLabels, NewMaxSeriesHitLimitError(uint64(ql.maxSeriesPerQuery))
 	}
 
-	return canonicalLabels, isNew, nil
+	return canonicalLabels, nil
 }
 
 // uniqueSeriesCount returns the count of unique series seen by this query limiter.

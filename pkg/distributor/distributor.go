@@ -3148,8 +3148,8 @@ respsLoop:
 
 	result := make([]labels.Labels, 0, len(metrics))
 	for _, m := range metrics {
-		// Use canonical labels for deduplication
-		canonicalLabels, _, err := queryLimiter.AddSeries(m)
+		// TODO: pass correct memoryTracker here
+		canonicalLabels, err := queryLimiter.AddSeries(m, mimir_limiter.NewUnlimitedMemoryConsumptionTracker(ctx))
 		if err != nil {
 			return nil, err
 		}
