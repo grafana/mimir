@@ -29,21 +29,13 @@ func TestMetadataFetcherMetrics(t *testing.T) {
 
 	//noinspection ALL
 	err := testutil.GatherAndCompare(mainReg, bytes.NewBufferString(`
-		# HELP cortex_blocks_meta_cache_loads_total Total number of block metadata loads served from in-memory cache
-		# TYPE cortex_blocks_meta_cache_loads_total counter
-		cortex_blocks_meta_cache_loads_total 135
+		# HELP cortex_blocks_meta_cached_loads Total number of block metadata loads served from in-memory cache
+		# TYPE cortex_blocks_meta_cached_loads counter
+		cortex_blocks_meta_cached_loads 135
 
-		# HELP cortex_blocks_meta_cache_misses_total Total number of block metadata loads that missed in-memory cache
-		# TYPE cortex_blocks_meta_cache_misses_total counter
-		cortex_blocks_meta_cache_misses_total 180
-
-		# HELP cortex_blocks_meta_disk_loads_total Total number of block metadata loads served from local disk
-		# TYPE cortex_blocks_meta_disk_loads_total counter
-		cortex_blocks_meta_disk_loads_total 225
-
-		# HELP cortex_blocks_meta_disk_misses_total Total number of block metadata loads that missed local disk
-		# TYPE cortex_blocks_meta_disk_misses_total counter
-		cortex_blocks_meta_disk_misses_total 270
+		# HELP cortex_blocks_meta_disk_loads Total number of block metadata loads served from local disk
+		# TYPE cortex_blocks_meta_disk_loads counter
+		cortex_blocks_meta_disk_loads 225
 
 		# HELP cortex_blocks_meta_loads_total Total number of block metadata load attempts across all users
 		# TYPE cortex_blocks_meta_loads_total counter
@@ -87,11 +79,9 @@ func populateMetadataFetcherMetrics(base float64) *prometheus.Registry {
 	m.synced.WithLabelValues("corrupted-meta-json").Set(base * 5)
 	m.synced.WithLabelValues("loaded").Set(base * 6)
 
-	m.metaLoadsTotal.Add(base * 7)
-	m.metaCacheLoads.Add(base * 9)
-	m.metaCacheMisses.Add(base * 12)
+	m.metaLoads.Add(base * 7)
+	m.metaCachedLoads.Add(base * 9)
 	m.metaDiskLoads.Add(base * 15)
-	m.metaDiskMisses.Add(base * 18)
 
 	return reg
 }
@@ -101,11 +91,9 @@ type metadataFetcherMetricsMock struct {
 	syncFailures    prometheus.Counter
 	syncDuration    prometheus.Histogram
 	synced          *prometheus.GaugeVec
-	metaLoadsTotal  prometheus.Counter
-	metaCacheLoads  prometheus.Counter
-	metaCacheMisses prometheus.Counter
+	metaLoads       prometheus.Counter
+	metaCachedLoads prometheus.Counter
 	metaDiskLoads   prometheus.Counter
-	metaDiskMisses  prometheus.Counter
 }
 
 func newMetadataFetcherMetricsMock(reg prometheus.Registerer) *metadataFetcherMetricsMock {
@@ -132,30 +120,20 @@ func newMetadataFetcherMetricsMock(reg prometheus.Registerer) *metadataFetcherMe
 		Name:      "synced",
 		Help:      "Number of block metadata synced",
 	}, []string{"state"})
-	m.metaLoadsTotal = promauto.With(reg).NewCounter(prometheus.CounterOpts{
+	m.metaLoads = promauto.With(reg).NewCounter(prometheus.CounterOpts{
 		Subsystem: "blocks_meta",
 		Name:      "loads_total",
 		Help:      "Total number of block metadata load attempts",
 	})
-	m.metaCacheLoads = promauto.With(reg).NewCounter(prometheus.CounterOpts{
+	m.metaCachedLoads = promauto.With(reg).NewCounter(prometheus.CounterOpts{
 		Subsystem: "blocks_meta",
-		Name:      "cache_loads_total",
+		Name:      "cached_loads",
 		Help:      "Total number of block metadata loads served from in-memory cache",
-	})
-	m.metaCacheMisses = promauto.With(reg).NewCounter(prometheus.CounterOpts{
-		Subsystem: "blocks_meta",
-		Name:      "cache_misses_total",
-		Help:      "Total number of block metadata loads that missed in-memory cache",
 	})
 	m.metaDiskLoads = promauto.With(reg).NewCounter(prometheus.CounterOpts{
 		Subsystem: "blocks_meta",
-		Name:      "disk_loads_total",
+		Name:      "disk_loads",
 		Help:      "Total number of block metadata loads served from local disk",
-	})
-	m.metaDiskMisses = promauto.With(reg).NewCounter(prometheus.CounterOpts{
-		Subsystem: "blocks_meta",
-		Name:      "disk_misses_total",
-		Help:      "Total number of block metadata loads that missed local disk",
 	})
 
 	return &m

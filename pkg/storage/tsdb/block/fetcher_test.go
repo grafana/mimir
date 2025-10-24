@@ -577,12 +577,10 @@ func TestMetaFetcher_CacheMetrics(t *testing.T) {
 	require.NoError(t, err)
 
 	testCases := map[string]struct {
-		setup               func(t *testing.T) (*prometheus.Registry, *MetaFetcher)
-		expectedLoads       int
-		expectedCacheLoads  int
-		expectedCacheMisses int
+		setup              func(t *testing.T) (*prometheus.Registry, *MetaFetcher)
+		expectedLoads      int
+		expectedCachedLoads int
 		expectedDiskLoads   int
-		expectedDiskMisses  int
 	}{
 		"first fetch should hit object storage": {
 			setup: func(t *testing.T) (*prometheus.Registry, *MetaFetcher) {
@@ -591,9 +589,7 @@ func TestMetaFetcher_CacheMetrics(t *testing.T) {
 				require.NoError(t, err)
 				return reg, fetcher
 			},
-			expectedLoads:       1,
-			expectedCacheMisses: 1,
-			expectedDiskMisses:  1,
+			expectedLoads: 1,
 		},
 		"second fetch with same fetcher should hit in-memory cache": {
 			setup: func(t *testing.T) (*prometheus.Registry, *MetaFetcher) {
@@ -604,10 +600,8 @@ func TestMetaFetcher_CacheMetrics(t *testing.T) {
 				require.NoError(t, err)
 				return reg, fetcher
 			},
-			expectedLoads:       2,
-			expectedCacheLoads:  1,
-			expectedCacheMisses: 1,
-			expectedDiskMisses:  1,
+			expectedLoads:      2,
+			expectedCachedLoads: 1,
 		},
 		"new fetcher should hit disk cache": {
 			setup: func(t *testing.T) (*prometheus.Registry, *MetaFetcher) {
@@ -623,9 +617,8 @@ func TestMetaFetcher_CacheMetrics(t *testing.T) {
 				require.NoError(t, err)
 				return reg2, fetcher2
 			},
-			expectedLoads:       1,
-			expectedCacheMisses: 1,
-			expectedDiskLoads:   1,
+			expectedLoads:     1,
+			expectedDiskLoads: 1,
 		},
 		"no disk cache dir should not increment disk metrics": {
 			setup: func(t *testing.T) (*prometheus.Registry, *MetaFetcher) {
@@ -634,8 +627,7 @@ func TestMetaFetcher_CacheMetrics(t *testing.T) {
 				require.NoError(t, err)
 				return reg, fetcher
 			},
-			expectedLoads:       1,
-			expectedCacheMisses: 1,
+			expectedLoads: 1,
 		},
 	}
 
@@ -649,26 +641,18 @@ func TestMetaFetcher_CacheMetrics(t *testing.T) {
 			require.Contains(t, metas, blockID)
 
 			require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
-				# HELP blocks_meta_cache_loads_total Total number of block metadata loads served from in-memory cache
-				# TYPE blocks_meta_cache_loads_total counter
-				blocks_meta_cache_loads_total `+fmt.Sprintf("%d", tc.expectedCacheLoads)+`
+				# HELP blocks_meta_cached_loads Total number of block metadata loads served from in-memory cache
+				# TYPE blocks_meta_cached_loads counter
+				blocks_meta_cached_loads `+fmt.Sprintf("%d", tc.expectedCachedLoads)+`
 
-				# HELP blocks_meta_cache_misses_total Total number of block metadata loads that missed in-memory cache
-				# TYPE blocks_meta_cache_misses_total counter
-				blocks_meta_cache_misses_total `+fmt.Sprintf("%d", tc.expectedCacheMisses)+`
-
-				# HELP blocks_meta_disk_loads_total Total number of block metadata loads served from local disk
-				# TYPE blocks_meta_disk_loads_total counter
-				blocks_meta_disk_loads_total `+fmt.Sprintf("%d", tc.expectedDiskLoads)+`
-
-				# HELP blocks_meta_disk_misses_total Total number of block metadata loads that missed local disk
-				# TYPE blocks_meta_disk_misses_total counter
-				blocks_meta_disk_misses_total `+fmt.Sprintf("%d", tc.expectedDiskMisses)+`
+				# HELP blocks_meta_disk_loads Total number of block metadata loads served from local disk
+				# TYPE blocks_meta_disk_loads counter
+				blocks_meta_disk_loads `+fmt.Sprintf("%d", tc.expectedDiskLoads)+`
 
 				# HELP blocks_meta_loads_total Total number of block metadata load attempts
 				# TYPE blocks_meta_loads_total counter
 				blocks_meta_loads_total `+fmt.Sprintf("%d", tc.expectedLoads)+`
-			`), "blocks_meta_loads_total", "blocks_meta_cache_loads_total", "blocks_meta_cache_misses_total", "blocks_meta_disk_loads_total", "blocks_meta_disk_misses_total"))
+			`), "blocks_meta_loads_total", "blocks_meta_cached_loads", "blocks_meta_disk_loads"))
 		})
 	}
 }

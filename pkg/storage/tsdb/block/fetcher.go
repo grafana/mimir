@@ -40,11 +40,9 @@ type FetcherMetrics struct {
 
 	Synced *extprom.TxGaugeVec
 
-	MetaLoadsTotal  prometheus.Counter
-	MetaCacheLoads  prometheus.Counter
-	MetaCacheMisses prometheus.Counter
-	MetaDiskLoads   prometheus.Counter
-	MetaDiskMisses  prometheus.Counter
+	Loads       prometheus.Counter
+	CachedLoads prometheus.Counter
+	DiskLoads   prometheus.Counter
 }
 
 // Submit applies new values for metrics tracked by transaction GaugeVec.
@@ -119,25 +117,17 @@ func NewFetcherMetrics(reg prometheus.Registerer, syncedExtraLabels [][]string) 
 			{LookbackExcludedMeta},
 		}, syncedExtraLabels...)...,
 	)
-	m.MetaLoadsTotal = promauto.With(reg).NewCounter(prometheus.CounterOpts{
+	m.Loads = promauto.With(reg).NewCounter(prometheus.CounterOpts{
 		Name: "blocks_meta_loads_total",
 		Help: "Total number of block metadata load attempts",
 	})
-	m.MetaCacheLoads = promauto.With(reg).NewCounter(prometheus.CounterOpts{
-		Name: "blocks_meta_cache_loads_total",
+	m.CachedLoads = promauto.With(reg).NewCounter(prometheus.CounterOpts{
+		Name: "blocks_meta_cached_loads",
 		Help: "Total number of block metadata loads served from in-memory cache",
 	})
-	m.MetaCacheMisses = promauto.With(reg).NewCounter(prometheus.CounterOpts{
-		Name: "blocks_meta_cache_misses_total",
-		Help: "Total number of block metadata loads that missed in-memory cache",
-	})
-	m.MetaDiskLoads = promauto.With(reg).NewCounter(prometheus.CounterOpts{
-		Name: "blocks_meta_disk_loads_total",
+	m.DiskLoads = promauto.With(reg).NewCounter(prometheus.CounterOpts{
+		Name: "blocks_meta_disk_loads",
 		Help: "Total number of block metadata loads served from local disk",
-	})
-	m.MetaDiskMisses = promauto.With(reg).NewCounter(prometheus.CounterOpts{
-		Name: "blocks_meta_disk_misses_total",
-		Help: "Total number of block metadata loads that missed local disk",
 	})
 	return &m
 }
@@ -209,12 +199,12 @@ var (
 // It returns ErrorSyncMetaNotFound and ErrorSyncMetaCorrupted sentinel errors in those cases.
 func (f *MetaFetcher) loadMeta(ctx context.Context, id ulid.ULID) (*Meta, error) {
 	
+	f.metrics.Loads.Inc()
+
 	var (
 		metaFile       = path.Join(id.String(), MetaFilename)
 		cachedBlockDir = filepath.Join(f.cacheDir, id.String())
 	)
-	
-	f.metrics.MetaLoadsTotal.Inc()
 
 	// Block meta.json file is immutable, so we lookup the cache as first thing without issuing
 	// any API call to the object storage. This significantly reduce the pressure on the object
@@ -240,16 +230,15 @@ func (f *MetaFetcher) loadMeta(ctx context.Context, id ulid.ULID) (*Meta, error)
 	// - The block has been deleted: the loadMeta() function will not be called at all, because the block
 	//   was not discovered while iterating the bucket since all its files were already deleted.
 	if m, seen := f.cached[id]; seen {
-		f.metrics.MetaCacheLoads.Inc()
+		f.metrics.CachedLoads.Inc()
 		return m, nil
 	}
-	f.metrics.MetaCacheMisses.Inc()
 
 	// Best effort load from local dir.
 	if f.cacheDir != "" {
 		m, err := ReadMetaFromDir(cachedBlockDir)
 		if err == nil {
-			f.metrics.MetaDiskLoads.Inc()
+			f.metrics.DiskLoads.Inc()
 			return m, nil
 		}
 
@@ -259,7 +248,6 @@ func (f *MetaFetcher) loadMeta(ctx context.Context, id ulid.ULID) (*Meta, error)
 				level.Warn(f.logger).Log("msg", "best effort remove of cached dir failed; ignoring", "dir", cachedBlockDir, "err", err)
 			}
 		}
-		f.metrics.MetaDiskMisses.Inc()
 	}
 
 	r, err := f.bkt.ReaderWithExpectedErrs(f.bkt.IsObjNotFoundErr).Get(ctx, metaFile)
