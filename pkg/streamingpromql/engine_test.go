@@ -2404,7 +2404,7 @@ func TestAnnotations(t *testing.T) {
 				`PromQL info: ignored histogram in bottomk aggregation (1:1)`,
 			},
 		},
-		
+
 		"quantile_over_time() with negative quantile": {
 			data: `metric 0 1 2 3`,
 			expr: `quantile_over_time(-1, metric[1m1s])`,

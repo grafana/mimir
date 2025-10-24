@@ -68,8 +68,6 @@ const (
 	QuantileGroupSlices
 	TopKBottomKInstantQuerySeriesSlices
 	TopKBottomKRangeQuerySeriesSlices
-	LimitKQuerySeriesSlices
-	InstantVectorSeriesDataSlices
 	Labels
 
 	memoryConsumptionSourceCount = Labels + 1
