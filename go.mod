@@ -17,7 +17,7 @@ require (
 	github.com/golang/snappy v1.0.0
 	github.com/google/gopacket v1.1.19
 	github.com/gorilla/mux v1.8.1
-	github.com/grafana/dskit v0.0.0-20251015215217-e2f07d67006a
+	github.com/grafana/dskit v0.0.0-20251024134516-10fce42ed131
 	github.com/grafana/e2e v0.1.2-0.20250825134630-3cea6f657739
 	github.com/hashicorp/golang-lru v1.0.2 // indirect
 	github.com/influxdata/influxdb/v2 v2.7.12
@@ -137,7 +137,7 @@ require (
 	github.com/google/gnostic-models v0.7.0 // indirect
 	github.com/google/pprof v0.0.0-20250923004556-9e5a51aed1e8 // indirect
 	github.com/grafana/otel-profiling-go v0.5.1 // indirect
-	github.com/grafana/pyroscope-go/godeltaprof v0.1.8 // indirect
+	github.com/grafana/pyroscope-go/godeltaprof v0.1.9 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.27.2 // indirect
 	github.com/hashicorp/go-metrics v0.5.4 // indirect
 	github.com/hashicorp/go-msgpack/v2 v2.1.2 // indirect
@@ -335,7 +335,7 @@ require (
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.63.0
 	go.opentelemetry.io/otel/metric v1.38.0 // indirect
 	go.uber.org/zap v1.27.0 // indirect
-	golang.org/x/exp v0.0.0-20251009144603-d2f985daa21b
+	golang.org/x/exp v0.0.0-20251023183803-a4bb9ffd2546
 	golang.org/x/mod v0.29.0 // indirect
 	golang.org/x/oauth2 v0.31.0 // indirect
 	golang.org/x/sys v0.37.0 // indirect
@@ -349,14 +349,11 @@ require (
 	sigs.k8s.io/yaml v1.6.0 // indirect
 )
 
-replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v1.8.2-0.20251013030019-1629271a3343
+replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v1.8.2-0.20251017130133-a3bd7ade820f
 
-// Replace memberlist with our fork which includes some fixes that haven't been
-// merged upstream yet:
-// - https://github.com/hashicorp/memberlist/pull/260
-// - https://github.com/grafana/memberlist/pull/3
-// - https://github.com/hashicorp/memberlist/pull/263
-replace github.com/hashicorp/memberlist => github.com/grafana/memberlist v0.3.1-0.20250428154222-f7d51a6f6700
+// Replace memberlist with our fork which includes some changes that haven't been
+// merged upstream yet for years and we don't expect to change anytime soon.
+replace github.com/hashicorp/memberlist => github.com/grafana/memberlist v0.3.1-0.20251024121533-a7f5f8dad077
 
 // gopkg.in/yaml.v3
 // + https://github.com/go-yaml/yaml/pull/691
@@ -380,4 +377,4 @@ replace github.com/prometheus/alertmanager => github.com/grafana/prometheus-aler
 
 // Use Mimir fork of prometheus/otlptranslator to allow for higher velocity of upstream development,
 // while allowing Mimir to move at a more conservative pace.
-replace github.com/prometheus/otlptranslator => github.com/grafana/mimir-otlptranslator v0.0.0-20250804202727-9e7a25d056aa
+replace github.com/prometheus/otlptranslator => github.com/grafana/mimir-otlptranslator v0.0.0-20251017074411-ea1e8f863e1d

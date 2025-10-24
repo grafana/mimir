@@ -64,16 +64,11 @@ The following features are currently experimental:
   - Enable support for any UTF-8 character as part of Alertmanager configuration/API matchers and labels.
     - `-alertmanager.utf8-strict-mode-enabled`
 - Compactor
-  - Enable cleanup of remaining files in the tenant bucket when there are no blocks remaining in the bucket index.
-    - `-compactor.no-blocks-file-cleanup-enabled`
-  - In-memory cache for parsed meta.json files:
-    - `-compactor.in-memory-tenant-meta-cache-size`
   - Limit blocks processed in each compaction cycle. Blocks uploaded prior to the maximum lookback aren't processed.
     - `-compactor.max-lookback`
   - Enable the compactor to upload sparse index headers to object storage during compaction cycles.
     - `-compactor.upload-sparse-index-headers`
 - Ruler
-  - Aligning of evaluation timestamp on interval (`align_evaluation_time_on_interval`)
   - Allow defining limits on the maximum number of rules allowed in a rule group by namespace and the maximum number of rule groups by namespace. If set, this supersedes the `-ruler.max-rules-per-rule-group` and `-ruler.max-rule-groups-per-tenant` limits.
   - `-ruler.max-rules-per-rule-group-by-namespace`
   - `-ruler.max-rule-groups-per-tenant-by-namespace`
@@ -143,15 +138,6 @@ The following features are currently experimental:
   - Snapshotting of in-memory TSDB data on disk when shutting down (`-blocks-storage.tsdb.memory-snapshot-on-shutdown`)
   - Out-of-order samples ingestion (`-ingester.out-of-order-time-window`)
   - Shipper labeling out-of-order blocks before upload to cloud storage (`-ingester.out-of-order-blocks-external-label-enabled`)
-  - Postings for matchers cache configuration:
-    - `-blocks-storage.tsdb.head-postings-for-matchers-cache-ttl`
-    - `-blocks-storage.tsdb.head-postings-for-matchers-cache-size` (deprecated)
-    - `-blocks-storage.tsdb.head-postings-for-matchers-cache-max-bytes`
-    - `-blocks-storage.tsdb.head-postings-for-matchers-cache-force`
-    - `-blocks-storage.tsdb.block-postings-for-matchers-cache-ttl`
-    - `-blocks-storage.tsdb.block-postings-for-matchers-cache-size` (deprecated)
-    - `-blocks-storage.tsdb.block-postings-for-matchers-cache-max-bytes`
-    - `-blocks-storage.tsdb.block-postings-for-matchers-cache-force`
   - CPU/memory utilization based read request limiting:
     - `-ingester.read-path-cpu-utilization-limit`
     - `-ingester.read-path-memory-utilization-limit"`
@@ -227,17 +213,15 @@ The following features are currently experimental:
     - `-blocks-storage.tsdb.index-lookup-planning-enabled`
     - `-blocks-storage.tsdb.index-lookup-planning-comparison-portion`
 - Querier
-  - Limiting queries based on the estimated number of chunks that will be used (`-querier.max-estimated-fetched-chunks-per-query-multiplier`)
   - Max concurrency for tenant federated queries (`-tenant-federation.max-concurrent`)
-  - Maximum response size for active series queries (`-querier.active-series-results-max-size-bytes`)
   - Allow streaming of `/active_series` responses to the frontend (`-querier.response-streaming-enabled`)
   - [Mimir query engine](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/mimir-query-engine) (`-querier.query-engine` and `-querier.enable-query-engine-fallback`, and all flags beginning with `-querier.mimir-query-engine`)
   - Maximum estimated memory consumption per query limit (`-querier.max-estimated-memory-consumption-per-query`)
   - Enable the experimental Prometheus feature for delayed name removal (`-querier.enable-delayed-name-removal`)
   - Ignore deletion marks while querying delay (`-blocks-storage.bucket-store.ignore-deletion-marks-while-querying-delay`)
+  - Querier ring (all flags beginning with `-querier.ring`)
 - Query-frontend
   - Lower TTL for cache entries overlapping the out-of-order samples ingestion window (re-using `-ingester.out-of-order-window` from ingesters)
-  - Query blocking on a per-tenant basis (configured with the limit `blocked_queries`)
   - Sharding of active series queries (`-query-frontend.shard-active-series-queries`)
   - Server-side write timeout for responses to active series requests (`-query-frontend.active-series-write-timeout`)
   - Blocking HTTP requests on a per-tenant basis (configured with the `blocked_requests` limit)
@@ -257,7 +241,6 @@ The following features are currently experimental:
   - Allow more than the default of 3 store-gateways to own recent blocks `-store-gateway.dynamic-replication`
 - API endpoints:
   - `/api/v1/user_limits`
-  - `/api/v1/cardinality/active_series`
 - Metric separation by an additionally configured group label
   - `-validation.separate-metrics-group-label`
   - `-max-separate-metrics-groups-per-user`
@@ -267,11 +250,6 @@ The following features are currently experimental:
     - `cortex_vault_token_lease_renewal_active`
     - `cortex_vault_token_lease_renewal_success_total`
     - `cortex_vault_auth_success_total`
-- Logger
-  - Rate limited logger support
-    - `log.rate-limit-enabled`
-    - `log.rate-limit-logs-per-second`
-    - `log.rate-limit-logs-burst-size`
 - Timeseries Unmarshal caching optimization in distributor (`-timeseries-unmarshal-caching-optimization-enabled`)
 - Reusing buffers for marshalling write requests in distributors (`-distributor.write-requests-buffer-pooling-enabled`)
 - Logging of requests that did not send any HTTP request: `-server.http-log-closed-connections-without-response-enabled`.
@@ -297,6 +275,10 @@ The following features are currently experimental:
     - Requests with invalid cluster validation labels are tracked via the `cortex_client_invalid_cluster_validation_label_requests_total` metric.
 - Preferred available zone for querying ingesters and store-gateways
   - `-querier.prefer-availability-zone`
+- Memberlist zone-aware routing
+  - `-memberlist.zone-aware-routing.enabled`
+  - `-memberlist.zone-aware-routing.instance-availability-zone`
+  - `-memberlist.zone-aware-routing.role`
 
 ## Deprecated features
 
@@ -313,3 +295,6 @@ The following features or configuration parameters are currently deprecated and 
 - Consul and etcd are deprecated as backend storage options for the HA tracker as of Mimir 3.0.
 - Use `memberlist` instead. Refer to the migration guide for instructions on migrating from Consul or etcd to `memberlist` for the HA tracker.
 - The `-distributor.otel-start-time-quiet-zero` parameter no longer has any effect and will be removed in a future release. Deprecated since Mimir 2.18.
+- Postings for matchers cache size (number of entries) configuration:
+  - `-blocks-storage.tsdb.head-postings-for-matchers-cache-size`
+  - `-blocks-storage.tsdb.block-postings-for-matchers-cache-size`

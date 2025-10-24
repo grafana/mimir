@@ -12,6 +12,7 @@ import (
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
@@ -1386,7 +1387,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 			}
 			opts.CommonOpts.Reg = reg
 			opts.CommonOpts.EnableDelayedNameRemoval = testCase.enableDelayedNameRemoval
-			planner, err := NewQueryPlannerWithoutOptimizationPasses(opts)
+			planner, err := NewQueryPlannerWithoutOptimizationPasses(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
 			require.NoError(t, err)
 
 			originalPlan, err := planner.NewQueryPlan(ctx, testCase.expr, testCase.timeRange, NoopPlanningObserver{})
@@ -1397,6 +1398,13 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 {stage="Parsing", stage_type="AST"} 1
 {stage="Pre-processing", stage_type="AST"} 1
 			`)
+
+			expectedMetrics := fmt.Sprintf(`
+				# HELP cortex_mimir_query_engine_plans_generated_total Total number of query plans generated.
+				# TYPE cortex_mimir_query_engine_plans_generated_total counter
+				cortex_mimir_query_engine_plans_generated_total{version="%d"} 1
+			`, originalPlan.Version)
+			require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics), "cortex_mimir_query_engine_plans_generated_total"))
 
 			// Encode plan, confirm it matches what we expect
 			encoded, err := originalPlan.ToEncodedPlan(true, true)
@@ -1411,8 +1419,30 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 	}
 }
 
-func TestPlanVersioning(t *testing.T) {
+func TestPlanCreation_OptimisationPassGeneratesPlanWithHigherVersionThanAllowed(t *testing.T) {
+	opts := NewTestEngineOpts()
+	planner, err := NewQueryPlannerWithoutOptimizationPasses(opts, NewStaticQueryPlanVersionProvider(12))
+	require.NoError(t, err)
 
+	planner.RegisterQueryPlanOptimizationPass(&optimizationPassThatGeneratesHigherVersionPlanThanAllowed{})
+
+	plan, err := planner.NewQueryPlan(context.Background(), "foo", types.NewInstantQueryTimeRange(time.Now()), NoopPlanningObserver{})
+	require.EqualError(t, err, "maximum supported query plan version is 12, but generated plan version is 13 - this is a bug")
+	require.Nil(t, plan)
+}
+
+type optimizationPassThatGeneratesHigherVersionPlanThanAllowed struct{}
+
+func (o *optimizationPassThatGeneratesHigherVersionPlanThanAllowed) Name() string {
+	return "test optimization pass"
+}
+
+func (o *optimizationPassThatGeneratesHigherVersionPlanThanAllowed) Apply(ctx context.Context, plan *planning.QueryPlan, maximumSupportedQueryPlanVersion planning.QueryPlanVersion) (*planning.QueryPlan, error) {
+	plan.Root = newTestNode(maximumSupportedQueryPlanVersion + 1)
+	return plan, nil
+}
+
+func TestPlanVersioning(t *testing.T) {
 	planning.RegisterNodeFactory(func() planning.Node {
 		return &versioningTestNode{NumberLiteralDetails: &core.NumberLiteralDetails{}}
 	})
@@ -1433,7 +1463,7 @@ func TestPlanVersioning(t *testing.T) {
 
 	encoded, err := plan.ToEncodedPlan(false, true)
 	require.NoError(t, err)
-	require.Equal(t, int64(9000), encoded.Version)
+	require.Equal(t, planning.QueryPlanVersion(9000), encoded.Version)
 
 	decoded, _, err := encoded.ToDecodedPlan()
 	require.NoError(t, err)
@@ -1557,7 +1587,7 @@ func TestDeduplicateAndMergePlanning(t *testing.T) {
 	observer := NoopPlanningObserver{}
 
 	opts := NewTestEngineOpts()
-	planner, err := NewQueryPlannerWithoutOptimizationPasses(opts)
+	planner, err := NewQueryPlannerWithoutOptimizationPasses(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(t, err)
 
 	for name, testCase := range testCases {
@@ -1592,7 +1622,7 @@ func BenchmarkPlanEncodingAndDecoding(b *testing.B) {
 	}
 
 	opts := NewTestEngineOpts()
-	planner, err := NewQueryPlanner(opts)
+	planner, err := NewQueryPlanner(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(b, err)
 	ctx := context.Background()
 
@@ -1647,7 +1677,7 @@ func TestQueryPlanner_ActivityTracking(t *testing.T) {
 	opts := NewTestEngineOpts()
 	tracker := &testQueryTracker{}
 	opts.ActiveQueryTracker = tracker
-	planner, err := NewQueryPlanner(opts)
+	planner, err := NewQueryPlanner(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(t, err)
 
 	expr := "test"
@@ -1875,7 +1905,7 @@ type versioningTestNode struct {
 	*core.NumberLiteralDetails
 }
 
-func newTestNode(minimumRequiredPlanVersion int64) *versioningTestNode {
+func newTestNode(minimumRequiredPlanVersion planning.QueryPlanVersion) *versioningTestNode {
 	return &versioningTestNode{
 		NumberLiteralDetails: &core.NumberLiteralDetails{Value: float64(minimumRequiredPlanVersion)},
 	}
@@ -1929,6 +1959,6 @@ func (t *versioningTestNode) ExpressionPosition() posrange.PositionRange {
 	return posrange.PositionRange{}
 }
 
-func (t *versioningTestNode) MinimumRequiredPlanVersion() int64 {
-	return int64(t.Value)
+func (t *versioningTestNode) MinimumRequiredPlanVersion() planning.QueryPlanVersion {
+	return planning.QueryPlanVersion(t.Value)
 }

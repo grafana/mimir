@@ -20,7 +20,7 @@ message EncodedQueryPlan {
 
   bool enableDelayedNameRemoval = 5;
 
-  int64 version = 6;
+  uint64 version = 6 [(gogoproto.casttype) = "QueryPlanVersion"];
 }
 
 message EncodedQueryTimeRange {

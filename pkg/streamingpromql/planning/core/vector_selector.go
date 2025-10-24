@@ -101,6 +101,6 @@ func (v *VectorSelector) ExpressionPosition() posrange.PositionRange {
 	return v.GetExpressionPosition().ToPrometheusType()
 }
 
-func (v *VectorSelector) MinimumRequiredPlanVersion() int64 {
+func (v *VectorSelector) MinimumRequiredPlanVersion() planning.QueryPlanVersion {
 	return planning.QueryPlanVersionZero
 }

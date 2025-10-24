@@ -144,6 +144,11 @@ func (t *trackerStore) processCreatedSeriesEvent(tenantID string, series []uint6
 }
 
 func currentSeriesLimit(series uint64, limit uint64, zonesCount uint64) uint64 {
+	// If we're at or over the limit (can happen if limit was decreased or series exceeded limit),
+	// return the limit itself to avoid underflow in the subtraction below.
+	if series >= limit {
+		return limit
+	}
 	room := limit - series
 	allowance := room / zonesCount
 	if zonesCount > 1 {

@@ -4,15 +4,51 @@
 
 ### Grafana Mimir
 
+* [CHANGE] Querier: `-querier.max-estimated-fetched-chunks-per-query-multiplier` is now stable and no longer experimental. #13120
+* [CHANGE] Compactor: removed experimental flag `-compactor.no-blocks-file-cleanup-enabled`. Cleanup of remaining files when no blocks exist is now always enabled. #13108
+* [CHANGE] Ruler: Add "unknown" alert rule state to alerts and rules on the `GET <prometheus-http-prefix>/api/v1/alerts` end point. Alerts are in the "unknown" state when they haven't yet been evaluated since the ruler started.  #13060
+* [CHANGE] Promote the logger rate-limiting configuration parameters from experimental to stable. #13128
+* [CHANGE] Ingester: Out-of-order ingestion support is now stable, use `-ingester.out-of-order-time-window` and `-ingester.out-of-order-blocks-external-label-enabled` to configure it. #13132
+* [CHANGE] Ruler: `align_evaluation_time_on_interval` is now stable and no longer experimental. #13103
+* [CHANGE] Query-frontend: query blocking (configured with `blocked_queries` limit) is now stable and no longer experimental. #13107
+* [CHANGE] Querier: `-querier.active-series-results-max-size-bytes` is now stable and no longer experimental. #13110
+* [CHANGE] All: remove experimental feature that allowed disabling ring heartbeats and timeouts. #13142
+* [CHANGE] Store-gateway: Removed experimental `-blocks-storage.bucket-store.index-header.eager-loading-startup-enabled` flag. The eager loading feature is now always enabled when lazy loading is enabled. #13126
+* [CHANGE] API: The `/api/v1/cardinality/active_series` endpoint is now stable and no longer experimental. #13111
+* [CHANGE] Compactor: remove experimental `-compactor.in-memory-tenant-meta-cache-size`. #13131
+* [FEATURE] Query-frontends: Automatically adjust features used in query plans generated for remote execution based on what the available queriers support. #13017
+* [FEATURE] Memberlist: Add experimental support for zone-aware routing, in order to reduce memberlist cross-AZ data transfer. #13129
+* [ENHANCEMENT] Compactor, Store-gateway: Change default value of `-compactor.upload-sparse-index-headers` to `true`. This improves lazy loading performance in the store-gateway. #13089
+* [ENHANCEMENT] Ingester: the per-tenant postings for matchers cache is now stable. Use the following configuration options: #13101
+  * `-blocks-storage.tsdb.head-postings-for-matchers-cache-ttl`
+  * `-blocks-storage.tsdb.head-postings-for-matchers-cache-max-bytes`
+  * `-blocks-storage.tsdb.head-postings-for-matchers-cache-force`
+  * `-blocks-storage.tsdb.block-postings-for-matchers-cache-ttl`
+  * `-blocks-storage.tsdb.block-postings-for-matchers-cache-max-bytes`
+  * `-blocks-storage.tsdb.block-postings-for-matchers-cache-force`
 * [BUGFIX] Compactor: Fix potential concurrent map writes. #13053
+* [BUGFIX] Query-frontend: Fix issue where queries sometimes fail with `failed to receive query result stream message: rpc error: code = Canceled desc = context canceled` if remote execution is enabled. #13084
+* [BUGFIX] Query-frontend: Fix issue where query stats, such as series read, did not include the parameters to the `histogram_quantile` and `histogram_fraction` functions if remote execution was enabled. #13084
+* [BUGFIX] Query-frontend: Fix issue where requests that are canceled or time out are sometimes cached if remote execution is enabled. #13098
+* [BUGFIX] Querier: Fix issue where errors are logged as "EOF" when sending results to query-frontends in response to remote execution requests fails. #13099 #13121
+* [BUGFIX] Usage-Tracker: Fix underflow in current limit calculation when series >= limit. #13113
+* [BUGFIX] Querier: Fix issue where a problem sending a response to a query-frontend may cause all other responses from the same querier to the same query-frontend to fail or be delayed. #13123
+* [BUGFIX] Ingester: fix index lookup planning with regular expressions which match empty strings on non-existent labels. #13117
+* [BUGFIX] Memberlist: Fix memberlist initialization when Mimir is executed with `-target=memberlist-kv`. #13129
 
 ### Mixin
 
 ### Jsonnet
 
+* [CHANGE] Mimir-continuous-test: Use `mimir -target=continuous-test` instead of standalone binary/image. #13097 #13144
+* [CHANGE] Store-gateway: The store-gateway disk class now honors the one configured via `$._config.store_gateway_data_disk_class` and doesn't replace `fast` with `fast-dont-retain`. #13152
+* [ENHANCEMENT] Ruler querier and query-frontend: Add support for newly-introduced querier ring, which is used when performing query planning in query-frontends and distributing portions of the plan to queriers for execution. #13017
+
 ### Documentation
 
 ### Tools
+
+* [CHANGE] Mimir-continuous-test: Remove standalone binary and image. #13097
 
 ## 3.0.0-rc.0
 
@@ -49,13 +85,13 @@
 * [FEATURE] Query-frontend: Add `query-frontend.rewrite-propagate-matchers` flag that enables a new MQE AST optimization pass that copies relevant label matchers across binary operations. #12304
 * [FEATURE] Query-frontend: Add `query-frontend.rewrite-histogram-queries` flag that enables a new MQE AST optimization pass that rewrites histogram queries for a more efficient order of execution. #12305
 * [FEATURE] Query-frontend: Support delayed name removal (Prometheus experimental feature) in MQE. #12509
-* [FEATURE] Usage-tracker: Introduce a new experimental service to enforce active series limits before Kafka ingestion. #12358 #12895 #12940 #12942 #12970
+* [FEATURE] Usage-tracker: Introduce a new experimental service to enforce active series limits before Kafka ingestion. #12358 #12895 #12940 #12942 #12970 #13085
 * [FEATURE] Ingester: Add experimental `-include-tenant-id-in-profile-labels` flag to include tenant ID in pprof profiling labels for sampled traces. Currently only supported by the ingester. This can help debug performance issues for specific tenants. #12404
 * [FEATURE] Alertmanager: Add experimental `-alertmanager.storage.state-read-timeout` flag to configure the timeout for reading the Alertmanager state (notification log, silences) from object storage during the initial sync. #12425
 * [FEATURE] Ingester: Add experimental `-blocks-storage.tsdb.index-lookup-planning.*` flags to configure use of a cost-based index lookup planner. This should reduce the cost of queries in the ingester. #12197 #12199 #12245 #12248 #12457 #12530 #12407 #12460 #12550 #12597 #12603 #12608 #12658 #12696 #12731 #12755 #12738 #12752 #12807 #12830 #12896 #13039
 * [FEATURE] MQE: Add support for applying extra selectors to one side of a binary operation to reduce data fetched. #12577
 * [FEATURE] Query-frontend: Add a native histogram presenting the length of query expressions handled by the query-frontend #12571
-* [FEATURE] Query-frontend and querier: Add experimental support for performing query planning in query-frontends and distributing portions of the plan to queriers for execution. #12302 #12551 #12665 #12687 #12745 #12757 #12798 #12808 #12809 #12835 #12856 #12870 #12883 #12885 #12886 #12911 #12933 #12934 #12961 #13016 #13027
+* [FEATURE] Query-frontend and querier: Add experimental support for performing query planning in query-frontends and distributing portions of the plan to queriers for execution. #12302 #12551 #12665 #12687 #12745 #12757 #12798 #12808 #12809 #12835 #12856 #12870 #12883 #12885 #12886 #12911 #12933 #12934 #12961 #13016 #13027 #13058
 * [FEATURE] Alertmanager: add Microsoft Teams V2 as a supported integration. #12680
 * [FEATURE] Distributor: Add experimental flag `-validation.label-value-length-over-limit-strategy` to configure how to handle label values over the length limit. #12627 #12844
 * [FEATURE] Ingester: Introduce metric `cortex_ingester_owned_target_info_series` for counting the number of owned `target_info` series by tenant. #12681
@@ -135,6 +171,7 @@
 * [BUGFIX] Store-gateway: Fix not being able to scale down via the `POST /prepare-shutdown` endpoint unless there are some active tenants with sharded blocks to the store-gateway replica. #12972
 * [BUGFIX] MQE: Fix invalid source label name in `label_join` error message, so it refers to the source label rather than the destination label. #12185
 * [BUGFIX] Continuous test: Fix false positive in metadata assertion when duplicate metadata is present in ingest-storage record correctness test. #12891
+* [BUGFIX] Query-frontend: Fix issue where the query-frontend could behave unpredictably if a response was received from queriers multiple times for the same query. #12639
 
 ### Mixin
 
@@ -433,6 +470,13 @@
 * [ENHANCEMENT] `mark-blocks`: Allow specifying blocks from multiple tenants. #11343
 * [ENHANCEMENT] `undelete-blocks`: Support removing S3 delete markers to avoid copying data when recovering blocks. #11256
 * [BUGFIX] `screenshots`: Update to tar-fs v3.1.0 to address [CVE-2025-48387](https://nvd.nist.gov/vuln/detail/CVE-2025-48387). #12030
+
+## 2.16.2
+
+### Grafana Mimir
+
+* [BUGFIX] Update to Go v1.23.12 to address [CVE-2025-22871](https://nvd.nist.gov/vuln/detail/CVE-2025-22871), [CVE-2025-4673](https://nvd.nist.gov/vuln/detail/CVE-2025-4673), [CVE-2025-0913](https://nvd.nist.gov/vuln/detail/CVE-2025-0913). #12582
+* [BUGFIX] Update Docker base images for tools from `alpine:3.21.3` to `alpine:3.21.5` to address [CVE-2025-9230](https://nvd.nist.gov/vuln/detail/CVE-2025-9230), [CVE-2025-9231](https://nvd.nist.gov/vuln/detail/CVE-2025-9231), [CVE-2025-2025-9232](https://nvd.nist.gov/vuln/detail/CVE-2025-9232). #12990
 
 ## 2.16.1
 

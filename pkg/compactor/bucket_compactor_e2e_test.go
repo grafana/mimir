@@ -122,7 +122,7 @@ func TestSyncer_GarbageCollect_e2e(t *testing.T) {
 		duplicateBlocksFilter := NewShardAwareDeduplicateFilter()
 		metaFetcher, err := block.NewMetaFetcher(nil, 32, objstore.WithNoopInstr(bkt), "", nil, []block.MetadataFilter{
 			duplicateBlocksFilter,
-		}, nil, 0)
+		}, 0)
 		require.NoError(t, err)
 
 		blocksMarkedForDeletion := promauto.With(nil).NewCounter(prometheus.CounterOpts{})
@@ -229,7 +229,7 @@ func TestGroupCompactE2E(t *testing.T) {
 		metaFetcher, err := block.NewMetaFetcher(nil, 32, objstore.WithNoopInstr(bkt), "", nil, []block.MetadataFilter{
 			duplicateBlocksFilter,
 			noCompactMarkerFilter,
-		}, nil, 0)
+		}, 0)
 		require.NoError(t, err)
 
 		blocksMarkedForDeletion := promauto.With(nil).NewCounter(prometheus.CounterOpts{})
@@ -573,7 +573,7 @@ func TestGarbageCollectDoesntCreateEmptyBlocksWithDeletionMarksOnly(t *testing.T
 		duplicateBlocksFilter := NewShardAwareDeduplicateFilter()
 		metaFetcher, err := block.NewMetaFetcher(nil, 32, objstore.WithNoopInstr(bkt), "", nil, []block.MetadataFilter{
 			duplicateBlocksFilter,
-		}, nil, 0)
+		}, 0)
 		require.NoError(t, err)
 
 		sy, err := newMetaSyncer(nil, nil, bkt, metaFetcher, duplicateBlocksFilter, blocksMarkedForDeletion)
@@ -720,7 +720,6 @@ func createBlockWithOptions(
 	numSamples := numFloatSamples + numHistogramSamples
 
 	headOpts := tsdb.DefaultHeadOptions()
-	headOpts.EnableNativeHistograms.Store(true)
 	headOpts.ChunkDirRoot = filepath.Join(dir, "chunks")
 	headOpts.ChunkRange = 10000000000
 	h, err := tsdb.NewHead(nil, nil, nil, nil, headOpts, nil)

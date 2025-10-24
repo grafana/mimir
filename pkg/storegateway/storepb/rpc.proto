@@ -76,10 +76,9 @@ message Stats {
 }
 
 message SeriesResponse {
-  oneof result {
-    /// series contains 1 response series. The series labels are sorted by name.
-    Series series = 1;
+  reserved 1; // non-streaming series are no longer supported or used.
 
+  oneof result {
     /// warning is considered an information piece in place of series for warning purposes.
     /// It is used to warn store API user about suspicious cases or partial response (if enabled).
     string warning = 2;

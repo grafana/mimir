@@ -13,7 +13,7 @@ fi
 rm -rf dist/tmp && mkdir -p dist/tmp/packages
 cp dist/*-linux-* dist/tmp/packages
 
-for name in metaconvert mimir-continuous-test mimir mimirtool query-tee ; do
+for name in metaconvert mimir mimirtool query-tee ; do
     for arch in amd64 arm64; do
         for packager in deb rpm; do
             config_path="dist/tmp/config-${name}-${packager}-${arch}.json"
@@ -26,7 +26,7 @@ for name in metaconvert mimir-continuous-test mimir mimirtool query-tee ; do
             # Generate NFPM configuration using jsonnet
             docker run --rm \
               -v "$(pwd)/packaging/nfpm/nfpm.jsonnet:/nfpm/nfpm.jsonnet" \
-              -it 'bitnami/jsonnet' \
+              -it 'bitnamilegacy/jsonnet:0.21.0-debian-12-r6' \
               -V "name=${name}" -V "arch=${arch}" -V "packager=${packager}" "/nfpm/nfpm.jsonnet" > "${config_path}"
 
             # Generate package dependencies using envsubst

@@ -329,7 +329,6 @@ func (b *TSDBBuilder) newTSDB(tenant tsdbTenant) (*userTSDB, error) {
 		EnableOverlappingCompaction:          false,                                                // Always false since Mimir only uploads lvl 1 compacted blocks
 		OutOfOrderTimeWindow:                 b.limits.OutOfOrderTimeWindow(userID).Milliseconds(), // The unit must be same as our timestamps.
 		OutOfOrderCapMax:                     int64(b.blocksStorageCfg.TSDB.OutOfOrderCapacityMax),
-		EnableNativeHistograms:               b.limits.NativeHistogramsIngestionEnabled(userID),
 		SecondaryHashFunction:                nil, // TODO(codesome): May needed when applying limits. Used to determine the owned series by an ingesters
 		SeriesLifecycleCallback:              udb,
 		HeadPostingsForMatchersCacheMetrics:  tsdb.NewPostingsForMatchersCacheMetrics(nil),
