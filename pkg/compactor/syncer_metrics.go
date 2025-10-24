@@ -20,9 +20,9 @@ type aggregatedSyncerMetrics struct {
 	metaSyncFailures          prometheus.Counter
 	metaSyncDuration          *dskit_metrics.HistogramDataCollector // was prometheus.Histogram before
 	metaBlocksSynced          *prometheus.GaugeVec
-	metaLoads       prometheus.Counter
-	metaCachedLoads prometheus.Counter
-	metaDiskLoads   prometheus.Counter
+	metaLoads                 prometheus.Counter
+	metaCachedLoads           prometheus.Counter
+	metaDiskLoads             prometheus.Counter
 	garbageCollections        prometheus.Counter
 	garbageCollectionFailures prometheus.Counter
 	garbageCollectionDuration *dskit_metrics.HistogramDataCollector // was prometheus.Histogram before

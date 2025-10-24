@@ -198,7 +198,7 @@ var (
 // loadMeta returns metadata from object storage or error.
 // It returns ErrorSyncMetaNotFound and ErrorSyncMetaCorrupted sentinel errors in those cases.
 func (f *MetaFetcher) loadMeta(ctx context.Context, id ulid.ULID) (*Meta, error) {
-	
+
 	f.metrics.Loads.Inc()
 
 	var (

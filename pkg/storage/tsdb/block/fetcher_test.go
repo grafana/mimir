@@ -577,8 +577,8 @@ func TestMetaFetcher_CacheMetrics(t *testing.T) {
 	require.NoError(t, err)
 
 	testCases := map[string]struct {
-		setup              func(t *testing.T) (*prometheus.Registry, *MetaFetcher)
-		expectedLoads      int
+		setup               func(t *testing.T) (*prometheus.Registry, *MetaFetcher)
+		expectedLoads       int
 		expectedCachedLoads int
 		expectedDiskLoads   int
 	}{
@@ -600,7 +600,7 @@ func TestMetaFetcher_CacheMetrics(t *testing.T) {
 				require.NoError(t, err)
 				return reg, fetcher
 			},
-			expectedLoads:      2,
+			expectedLoads:       2,
 			expectedCachedLoads: 1,
 		},
 		"new fetcher should hit disk cache": {
