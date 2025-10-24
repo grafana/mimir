@@ -659,7 +659,6 @@ func TestMultitenantCompactor_ShouldSupportSplitAndMergeCompactor(t *testing.T) 
 				fetcherDir,
 				reg,
 				nil,
-				nil,
 				0,
 			)
 			require.NoError(t, err)
@@ -751,7 +750,6 @@ func TestMultitenantCompactor_ShouldGuaranteeSeriesShardingConsistencyOverTheTim
 		userBucket,
 		fetcherDir,
 		reg,
-		nil,
 		nil,
 		0,
 	)
