@@ -327,6 +327,12 @@ func memberlistStatusHandler(kvs *memberlist.KVInitService) http.Handler {
 	templ := template.New("memberlist_status")
 	templ.Funcs(map[string]interface{}{
 		"StringsJoin": strings.Join,
+		"GetZoneFromMeta": func(meta []byte) string {
+			return memberlist.EncodedNodeMetadata(meta).Zone()
+		},
+		"GetRoleFromMeta": func(meta []byte) string {
+			return memberlist.EncodedNodeMetadata(meta).Role().String()
+		},
 	})
 	template.Must(templ.Parse(memberlistStatusPageHTML))
 	return memberlist.NewHTTPStatusHandler(kvs, templ)

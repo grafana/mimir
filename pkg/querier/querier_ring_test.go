@@ -32,7 +32,7 @@ func TestRingQueryPlanVersionProvider(t *testing.T) {
 
 	testCases := map[string]struct {
 		instances       []mockInstance
-		expectedVersion uint64
+		expectedVersion planning.QueryPlanVersion
 		expectedError   string
 	}{
 		"no instances in the ring": {
@@ -161,7 +161,10 @@ func TestRingQueryPlanVersionProvider(t *testing.T) {
 				desc.AddIngester(fmt.Sprintf("querier-%d", idx), fmt.Sprintf("127.0.0.%d", idx), "", []uint32{uint32(idx)}, instance.state, time.Now(), false, time.Time{}, instance.versions)
 			}
 
-			cfg := ring.Config{ReplicationFactor: 1}
+			cfg := ring.Config{
+				ReplicationFactor: 1,
+				HeartbeatTimeout:  time.Hour,
+			}
 			store := &mockStore{desc: desc}
 			reg := prometheus.NewPedanticRegistry()
 			logger := log.NewNopLogger()

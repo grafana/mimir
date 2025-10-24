@@ -806,15 +806,15 @@ func TestRemoteExecutor_SendsQueryPlanVersion(t *testing.T) {
 	require.NotNil(t, frontendMock.request)
 	require.IsType(t, &querierpb.EvaluateQueryRequest{}, frontendMock.request)
 	request := frontendMock.request.(*querierpb.EvaluateQueryRequest)
-	require.Equal(t, uint64(66), request.Plan.Version, "should set request plan version to match the original plan version")
+	require.Equal(t, planning.QueryPlanVersion(66), request.Plan.Version, "should set request plan version to match the original plan version")
 }
 
 type nodeWithOverriddenVersion struct {
 	planning.Node
-	version uint64
+	version planning.QueryPlanVersion
 }
 
-func (n *nodeWithOverriddenVersion) MinimumRequiredPlanVersion() uint64 {
+func (n *nodeWithOverriddenVersion) MinimumRequiredPlanVersion() planning.QueryPlanVersion {
 	return n.version
 }
 
