@@ -28,7 +28,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/thanos-io/objstore"
-	"go.uber.org/atomic"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/grafana/mimir/pkg/util/extprom"
@@ -44,14 +43,12 @@ type FetcherMetrics struct {
 
 	Synced *extprom.TxGaugeVec
 
-	// Cache layer metrics track hits/misses at each cache layer
-	MetaLoadsTotal   prometheus.Counter // Total calls to loadMeta()
-	InMemCacheHits   prometheus.Counter // in_mem: per-instance f.cached map
-	InMemCacheMisses prometheus.Counter // in_mem: not found in f.cached map
-	LRUCacheHits     prometheus.Counter // lru: shared MetaCache LRU
-	LRUCacheMisses   prometheus.Counter // lru: MetaCache misses
-	DiskCacheHits    prometheus.Counter // disk: local disk cache
-	DiskCacheMisses  prometheus.Counter // disk: had to check object storage
+	// Cache hierarchy: per-tenant (scoped to compaction run) -> on-disk (persists across restarts) -> object storage
+	MetaLoadsTotal   prometheus.Counter
+	InMemCacheHits   prometheus.Counter
+	InMemCacheMisses prometheus.Counter
+	DiskCacheHits    prometheus.Counter
+	DiskCacheMisses  prometheus.Counter
 }
 
 // Submit applies new values for metrics tracked by transaction GaugeVec.
@@ -128,31 +125,23 @@ func NewFetcherMetrics(reg prometheus.Registerer, syncedExtraLabels [][]string) 
 	)
 	m.MetaLoadsTotal = promauto.With(reg).NewCounter(prometheus.CounterOpts{
 		Name: "blocks_meta_loads_total",
-		Help: "Total number of calls to loadMeta() - the denominator for all cache hit rate calculations",
+		Help: "Total number of block metadata load attempts",
 	})
 	m.InMemCacheHits = promauto.With(reg).NewCounter(prometheus.CounterOpts{
 		Name: "blocks_meta_in_mem_cache_hits_total",
-		Help: "Total number of times block metadata was found in the per-instance in-memory f.cached map",
+		Help: "Total number of block metadata loads served from per-tenant cache",
 	})
 	m.InMemCacheMisses = promauto.With(reg).NewCounter(prometheus.CounterOpts{
 		Name: "blocks_meta_in_mem_cache_misses_total",
-		Help: "Total number of times block metadata was not found in the per-instance in-memory f.cached map",
-	})
-	m.LRUCacheHits = promauto.With(reg).NewCounter(prometheus.CounterOpts{
-		Name: "blocks_meta_lru_cache_hits_total",
-		Help: "Total number of times block metadata was found in the shared LRU MetaCache",
-	})
-	m.LRUCacheMisses = promauto.With(reg).NewCounter(prometheus.CounterOpts{
-		Name: "blocks_meta_lru_cache_misses_total",
-		Help: "Total number of times block metadata was not found in the shared LRU MetaCache",
+		Help: "Total number of block metadata loads that missed per-tenant cache",
 	})
 	m.DiskCacheHits = promauto.With(reg).NewCounter(prometheus.CounterOpts{
 		Name: "blocks_meta_disk_cache_hits_total",
-		Help: "Total number of times block metadata was successfully loaded from local disk cache",
+		Help: "Total number of block metadata loads served from on-disk cache",
 	})
 	m.DiskCacheMisses = promauto.With(reg).NewCounter(prometheus.CounterOpts{
 		Name: "blocks_meta_disk_cache_misses_total",
-		Help: "Total number of times block metadata was not found in local disk cache and required checking object storage",
+		Help: "Total number of block metadata loads that required fetching from object storage",
 	})
 	return &m
 }
@@ -264,16 +253,13 @@ func (f *MetaFetcher) loadMeta(ctx context.Context, id ulid.ULID) (*Meta, error)
 	}
 	f.metrics.InMemCacheMisses.Inc()
 
-	// Note: MetaCache.Get() also tracks hits/misses internally, creating some double-tracking.
-	// We track LRU metrics here directly (rather than using MetaCache.Stats()) to keep the code simple,
-	// accepting that both this metric and MetaCache's internal counter will increment on the same operation.
+	// Check the shared LRU MetaCache. This cache is shared across multiple MetaFetcher instances
+	// (e.g., across multiple tenants) and can be reused between compaction runs.
 	if f.metaCache != nil {
 		m := f.metaCache.Get(id)
 		if m != nil {
-			f.metrics.LRUCacheHits.Inc()
 			return m, nil
 		}
-		f.metrics.LRUCacheMisses.Inc()
 	}
 
 	// Best effort load from local dir.
@@ -704,14 +690,13 @@ func (f *IgnoreDeletionMarkFilter) Filter(ctx context.Context, metas map[ulid.UL
 
 // MetaCache is a LRU cache for parsed *Meta objects, optionally used by *MetaFetcher.
 // While MetaFetcher.cache is per-instance, MetaCache can be reused between different *MetaFetcher instances.
+// Note: Hits and misses are tracked via Prometheus metrics in MetaFetcher.loadMeta(), not internally.
 type MetaCache struct {
 	maxSize            int
 	minCompactionLevel int
 	minSources         int
 
-	lru    *lru.Cache[ulid.ULID, *Meta]
-	hits   atomic.Int64
-	misses atomic.Int64
+	lru *lru.Cache[ulid.ULID, *Meta]
 }
 
 // NewMetaCache creates new *MetaCache with given max size, and parameters for storing *Meta objects.
@@ -754,20 +739,20 @@ func (mc *MetaCache) Put(meta *Meta) {
 func (mc *MetaCache) Get(id ulid.ULID) *Meta {
 	val, ok := mc.lru.Get(id)
 	if !ok {
-		mc.misses.Add(1)
 		return nil
 	}
-	mc.hits.Add(1)
 	return val
 }
 
-func (mc *MetaCache) Stats() (items int, bytesSize int64, hits, misses int) {
+// Stats returns the current cache statistics. Note: hits and misses are tracked separately
+// via Prometheus metrics and are no longer returned here.
+func (mc *MetaCache) Stats() (items int, bytesSize int64) {
 	for _, m := range mc.lru.Values() {
 		items++
 		bytesSize += sizeOfUlid // for a key
 		bytesSize += MetaBytesSize(m)
 	}
-	return items, bytesSize, int(mc.hits.Load()), int(mc.misses.Load())
+	return items, bytesSize
 }
 
 var sizeOfUlid = int64(unsafe.Sizeof(ulid.ULID{}))

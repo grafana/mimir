@@ -20,6 +20,11 @@ type aggregatedSyncerMetrics struct {
 	metaSyncFailures          prometheus.Counter
 	metaSyncDuration          *dskit_metrics.HistogramDataCollector // was prometheus.Histogram before
 	metaBlocksSynced          *prometheus.GaugeVec
+	metaLoadsTotal            prometheus.Counter
+	inMemCacheHits            prometheus.Counter
+	inMemCacheMisses          prometheus.Counter
+	diskCacheHits             prometheus.Counter
+	diskCacheMisses           prometheus.Counter
 	garbageCollections        prometheus.Counter
 	garbageCollectionFailures prometheus.Counter
 	garbageCollectionDuration *dskit_metrics.HistogramDataCollector // was prometheus.Histogram before
@@ -47,6 +52,27 @@ func newAggregatedSyncerMetrics(reg prometheus.Registerer) *aggregatedSyncerMetr
 		Name: "cortex_compactor_meta_blocks_synced",
 		Help: "Number of block metadata synced",
 	}, []string{"state"})
+
+	m.metaLoadsTotal = promauto.With(reg).NewCounter(prometheus.CounterOpts{
+		Name: "cortex_compactor_meta_loads_total",
+		Help: "Total number of block metadata load attempts across all users",
+	})
+	m.inMemCacheHits = promauto.With(reg).NewCounter(prometheus.CounterOpts{
+		Name: "cortex_compactor_meta_in_mem_cache_hits_total",
+		Help: "Total number of block metadata loads served from per-tenant cache",
+	})
+	m.inMemCacheMisses = promauto.With(reg).NewCounter(prometheus.CounterOpts{
+		Name: "cortex_compactor_meta_in_mem_cache_misses_total",
+		Help: "Total number of block metadata loads that missed per-tenant cache",
+	})
+	m.diskCacheHits = promauto.With(reg).NewCounter(prometheus.CounterOpts{
+		Name: "cortex_compactor_meta_disk_cache_hits_total",
+		Help: "Total number of block metadata loads served from on-disk cache",
+	})
+	m.diskCacheMisses = promauto.With(reg).NewCounter(prometheus.CounterOpts{
+		Name: "cortex_compactor_meta_disk_cache_misses_total",
+		Help: "Total number of block metadata loads that required fetching from object storage",
+	})
 
 	m.garbageCollections = promauto.With(reg).NewCounter(prometheus.CounterOpts{
 		Name: "cortex_compactor_garbage_collection_total",
@@ -97,6 +123,12 @@ func (m *aggregatedSyncerMetrics) gatherThanosSyncerMetrics(reg *prometheus.Regi
 		}
 		m.metaBlocksSynced.WithLabelValues(ls...).Add(v)
 	}
+
+	m.metaLoadsTotal.Add(mfm.SumCounters("blocks_meta_loads_total"))
+	m.inMemCacheHits.Add(mfm.SumCounters("blocks_meta_in_mem_cache_hits_total"))
+	m.inMemCacheMisses.Add(mfm.SumCounters("blocks_meta_in_mem_cache_misses_total"))
+	m.diskCacheHits.Add(mfm.SumCounters("blocks_meta_disk_cache_hits_total"))
+	m.diskCacheMisses.Add(mfm.SumCounters("blocks_meta_disk_cache_misses_total"))
 
 	m.garbageCollections.Add(mfm.SumCounters("thanos_compact_garbage_collection_total"))
 	m.garbageCollectionFailures.Add(mfm.SumCounters("thanos_compact_garbage_collection_failures_total"))

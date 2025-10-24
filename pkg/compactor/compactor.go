@@ -864,8 +864,8 @@ func (c *MultitenantCompactor) compactUser(ctx context.Context, userID string) e
 	}
 
 	if metaCache != nil {
-		items, size, hits, misses := metaCache.Stats()
-		level.Info(userLogger).Log("msg", "per-user meta cache stats after compacting user", "items", items, "bytes_size", size, "hits", hits, "misses", misses)
+		items, size := metaCache.Stats()
+		level.Info(userLogger).Log("msg", "per-user meta cache stats after compacting user", "items", items, "bytes_size", size)
 	}
 	return nil
 }

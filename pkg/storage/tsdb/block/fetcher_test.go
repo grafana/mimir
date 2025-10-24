@@ -378,10 +378,8 @@ func TestMetaFetcher_ShouldNotParseMetaJsonFilesAgain(t *testing.T) {
 	require.Contains(t, actualMetas, block1ID)
 	require.Contains(t, actualMetas, block2ID)
 
-	items, _, hits, misses := metaCache.Stats()
+	items, _ := metaCache.Stats()
 	require.Equal(t, 2, items)
-	require.Equal(t, 0, hits)
-	require.Equal(t, 2, misses)
 
 	// Now delete meta.json files on local disk, to prove that values from metaCache are reused.
 	require.NoError(t, os.Remove(filepath.Join(fetcherDir, "meta-syncer", block1ID.String(), MetaFilename)))
@@ -397,10 +395,8 @@ func TestMetaFetcher_ShouldNotParseMetaJsonFilesAgain(t *testing.T) {
 	require.Contains(t, actualMetas, block1ID)
 	require.Contains(t, actualMetas, block2ID)
 
-	items, _, hits, misses = metaCache.Stats()
+	items, _ = metaCache.Stats()
 	require.Equal(t, 2, items)
-	require.Equal(t, 2, hits)
-	require.Equal(t, 2, misses)
 }
 
 func TestMetaFetcher_Fetch_ShouldReturnDiscoveredBlocksWithinCompactorLookback(t *testing.T) {
@@ -633,11 +629,9 @@ func TestMetaCache(t *testing.T) {
 	require.Nil(t, cache.Get(notEnoughSources.ULID))
 	require.Nil(t, cache.Get(levelTooLowAndNotEnoughSources.ULID))
 
-	items, size, hits, misses := cache.Stats()
+	items, size := cache.Stats()
 	require.Equal(t, 1, items)
 	require.Equal(t, MetaBytesSize(&meta1)+sizeOfUlid, size)
-	require.Equal(t, 1, hits)
-	require.Equal(t, 3, misses)
 }
 
 func generateULIDs(count int) []ulid.ULID {
@@ -685,8 +679,6 @@ func TestMetaFetcher_CacheMetrics(t *testing.T) {
 		expectedLoads         int
 		expectedInMemHits     int
 		expectedInMemMisses   int
-		expectedLRUHits       int
-		expectedLRUMisses     int
 		expectedDiskCacheHits int
 		expectedDiskCacheMiss int
 	}{
@@ -733,41 +725,6 @@ func TestMetaFetcher_CacheMetrics(t *testing.T) {
 			expectedInMemMisses:   1,
 			expectedDiskCacheHits: 1,
 		},
-		"second fetch with LRU cache should hit LRU": {
-			setup: func(t *testing.T) (*prometheus.Registry, *MetaFetcher) {
-				metaCache := NewMetaCache(100, 0, 0)
-				reg := prometheus.NewPedanticRegistry()
-				fetcher, err := NewMetaFetcher(logger, 10, objstore.WrapWithMetrics(bkt, reg, "test"), t.TempDir(), reg, nil, metaCache, 0)
-				require.NoError(t, err)
-				_, _, err = fetcher.Fetch(ctx)
-				require.NoError(t, err)
-				return reg, fetcher
-			},
-			expectedLoads:         2,
-			expectedInMemHits:     1,
-			expectedInMemMisses:   1,
-			expectedLRUMisses:     1,
-			expectedDiskCacheMiss: 1,
-		},
-		"new fetcher with shared LRU should hit LRU cache": {
-			setup: func(t *testing.T) (*prometheus.Registry, *MetaFetcher) {
-				metaCache := NewMetaCache(100, 0, 0)
-				reg1 := prometheus.NewPedanticRegistry()
-				fetcher1, err := NewMetaFetcher(logger, 10, objstore.WrapWithMetrics(bkt, reg1, "test"), t.TempDir(), reg1, nil, metaCache, 0)
-				require.NoError(t, err)
-				_, _, err = fetcher1.Fetch(ctx)
-				require.NoError(t, err)
-
-				reg2 := prometheus.NewPedanticRegistry()
-				fetcher2, err := NewMetaFetcher(logger, 10, objstore.WrapWithMetrics(bkt, reg2, "test"), t.TempDir(), reg2, nil, metaCache, 0)
-				require.NoError(t, err)
-				return reg2, fetcher2
-			},
-			expectedLoads:       1,
-			expectedInMemMisses: 1,
-			expectedLRUHits:     1,
-			expectedLRUMisses:   0,
-		},
 		"no disk cache dir should not increment disk metrics": {
 			setup: func(t *testing.T) (*prometheus.Registry, *MetaFetcher) {
 				reg := prometheus.NewPedanticRegistry()
@@ -790,34 +747,26 @@ func TestMetaFetcher_CacheMetrics(t *testing.T) {
 			require.Contains(t, metas, blockID)
 
 			require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
-				# HELP blocks_meta_in_mem_cache_hits_total Total number of times block metadata was found in the per-instance in-memory f.cached map
+				# HELP blocks_meta_in_mem_cache_hits_total Total number of block metadata loads served from per-tenant cache
 				# TYPE blocks_meta_in_mem_cache_hits_total counter
 				blocks_meta_in_mem_cache_hits_total `+fmt.Sprintf("%d", tc.expectedInMemHits)+`
 
-				# HELP blocks_meta_in_mem_cache_misses_total Total number of times block metadata was not found in the per-instance in-memory f.cached map
+				# HELP blocks_meta_in_mem_cache_misses_total Total number of block metadata loads that missed per-tenant cache
 				# TYPE blocks_meta_in_mem_cache_misses_total counter
 				blocks_meta_in_mem_cache_misses_total `+fmt.Sprintf("%d", tc.expectedInMemMisses)+`
 
-				# HELP blocks_meta_lru_cache_hits_total Total number of times block metadata was found in the shared LRU MetaCache
-				# TYPE blocks_meta_lru_cache_hits_total counter
-				blocks_meta_lru_cache_hits_total `+fmt.Sprintf("%d", tc.expectedLRUHits)+`
-
-				# HELP blocks_meta_lru_cache_misses_total Total number of times block metadata was not found in the shared LRU MetaCache
-				# TYPE blocks_meta_lru_cache_misses_total counter
-				blocks_meta_lru_cache_misses_total `+fmt.Sprintf("%d", tc.expectedLRUMisses)+`
-
-				# HELP blocks_meta_disk_cache_hits_total Total number of times block metadata was successfully loaded from local disk cache
+				# HELP blocks_meta_disk_cache_hits_total Total number of block metadata loads served from on-disk cache
 				# TYPE blocks_meta_disk_cache_hits_total counter
 				blocks_meta_disk_cache_hits_total `+fmt.Sprintf("%d", tc.expectedDiskCacheHits)+`
 
-				# HELP blocks_meta_disk_cache_misses_total Total number of times block metadata was not found in local disk cache and required checking object storage
+				# HELP blocks_meta_disk_cache_misses_total Total number of block metadata loads that required fetching from object storage
 				# TYPE blocks_meta_disk_cache_misses_total counter
 				blocks_meta_disk_cache_misses_total `+fmt.Sprintf("%d", tc.expectedDiskCacheMiss)+`
 
-				# HELP blocks_meta_loads_total Total number of calls to loadMeta() - the denominator for all cache hit rate calculations
+				# HELP blocks_meta_loads_total Total number of block metadata load attempts
 				# TYPE blocks_meta_loads_total counter
 				blocks_meta_loads_total `+fmt.Sprintf("%d", tc.expectedLoads)+`
-			`), "blocks_meta_loads_total", "blocks_meta_in_mem_cache_hits_total", "blocks_meta_in_mem_cache_misses_total", "blocks_meta_lru_cache_hits_total", "blocks_meta_lru_cache_misses_total", "blocks_meta_disk_cache_hits_total", "blocks_meta_disk_cache_misses_total"))
+			`), "blocks_meta_loads_total", "blocks_meta_in_mem_cache_hits_total", "blocks_meta_in_mem_cache_misses_total", "blocks_meta_disk_cache_hits_total", "blocks_meta_disk_cache_misses_total"))
 		})
 	}
 }
