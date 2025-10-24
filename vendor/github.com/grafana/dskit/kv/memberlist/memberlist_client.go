@@ -528,7 +528,7 @@ func (m *KV) configureZoneAwareRouting(mlCfg *memberlist.Config) error {
 	m.nodeMeta = localMeta
 
 	// Set up the node selection delegate.
-	mlCfg.NodeSelection = newZoneAwareNodeSelectionDelegate(m.cfg.ZoneAwareRouting)
+	mlCfg.NodeSelection = newZoneAwareNodeSelectionDelegate(role, m.cfg.ZoneAwareRouting.Zone, m.logger)
 
 	level.Info(m.logger).Log(
 		"msg", "zone-aware routing enabled",

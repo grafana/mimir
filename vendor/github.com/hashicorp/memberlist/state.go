@@ -415,8 +415,10 @@ func (m *Memberlist) probeNode(node *nodeState) {
 
 HANDLE_REMOTE_FAILURE:
 	// Get some random live nodes.
+	// We intentionally don't use the node selector here for now, because we don't want to limit
+	// indirect probes. We may reconsider this in the future.
 	m.nodeLock.RLock()
-	kNodes := kRandomNodes(m.config.IndirectChecks, m.nodes, m.config.NodeSelection, func(n *nodeState) bool {
+	kNodes := kRandomNodes(m.config.IndirectChecks, m.nodes, nil, func(n *nodeState) bool {
 		return n.Name == m.config.Name ||
 			n.Name == node.Name ||
 			n.State != StateAlive

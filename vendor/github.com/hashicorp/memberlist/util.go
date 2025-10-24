@@ -128,13 +128,16 @@ func moveDeadNodes(nodes []*nodeState, gossipToTheDeadTime time.Duration) int {
 // the exclude function returns true. It is possible that less than k nodes are
 // returned.
 func kRandomNodes(k int, nodes []*nodeState, delegate NodeSelectionDelegate, exclude func(*nodeState) bool) []Node {
-	var preferredNodes []*nodeState
+	kNodes := make([]Node, 0, k)
 
 	// Filter the nodes using the delegate. This allows downstream projects
 	// to implement custom routing logics (e.g. zone-aware gossiping).
 	if delegate != nil {
-		filteredNodes := make([]*nodeState, 0, len(nodes))
+		alloc := make([]*nodeState, 2*len(nodes))
+		filteredNodes := alloc[0:0:len(nodes)]
+		preferredNodes := alloc[len(nodes) : len(nodes) : 2*len(nodes)]
 
+		// Filter nodes by selected ones.
 		for _, node := range nodes {
 			selected, preferred := delegate.SelectNode(node.Node)
 			if selected {
@@ -146,25 +149,23 @@ func kRandomNodes(k int, nodes []*nodeState, delegate NodeSelectionDelegate, exc
 		}
 
 		nodes = filteredNodes
-	}
 
-	kNodes := make([]Node, 0, k)
+		// Select 1 random preferred node first. We guarantee that only 1 preferred node is picked.
+		if n := len(preferredNodes); n > 0 && k > 0 {
+			startIdx := randomOffset(n)
 
-	// Select 1 random preferred node first.
-	if n := len(preferredNodes); n > 0 && k > 0 {
-		startIdx := randomOffset(n)
+			for i := 0; i < n; i++ {
+				idx := (startIdx + i) % n
+				state := preferredNodes[idx]
 
-		for i := 0; i < n; i++ {
-			idx := (startIdx + i) % n
-			state := preferredNodes[idx]
+				// Ensure it's not excluded by the filter.
+				if exclude != nil && exclude(state) {
+					continue
+				}
 
-			// Ensure it's not excluded by the filter.
-			if exclude != nil && exclude(state) {
-				continue
+				kNodes = append(kNodes, state.Node)
+				break
 			}
-
-			kNodes = append(kNodes, state.Node)
-			break
 		}
 	}
 

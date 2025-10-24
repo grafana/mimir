@@ -4,6 +4,8 @@ import (
 	"flag"
 	"fmt"
 
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/hashicorp/memberlist"
 )
 
@@ -80,27 +82,17 @@ func (cfg *ZoneAwareRoutingConfig) Validate() error {
 // zoneAwareNodeSelectionDelegate implements the memberlist.NodeSelectionDelegate interface
 // to provide zone-aware routing for gossip, probing, and push/pull operations.
 type zoneAwareNodeSelectionDelegate struct {
-	cfg       ZoneAwareRoutingConfig
 	localRole NodeRole
+	localZone string
+	logger    log.Logger
 }
 
 // newZoneAwareNodeSelectionDelegate creates a new zone-aware node selection delegate.
-func newZoneAwareNodeSelectionDelegate(cfg ZoneAwareRoutingConfig) *zoneAwareNodeSelectionDelegate {
-	// Determine local role from config.
-	var localRole NodeRole
-	switch cfg.Role {
-	case NodeRoleMember.String():
-		localRole = NodeRoleMember
-	case NodeRoleBridge.String():
-		localRole = NodeRoleBridge
-	default:
-		// Default to member role if unknown (should never happen after validation).
-		localRole = NodeRoleMember
-	}
-
+func newZoneAwareNodeSelectionDelegate(localRole NodeRole, localZone string, logger log.Logger) *zoneAwareNodeSelectionDelegate {
 	return &zoneAwareNodeSelectionDelegate{
-		cfg:       cfg,
 		localRole: localRole,
+		localZone: localZone,
+		logger:    logger,
 	}
 }
 
@@ -115,21 +107,21 @@ func (d *zoneAwareNodeSelectionDelegate) SelectNode(node memberlist.Node) (selec
 	// If either the local zone or the remote zone are unknown, select the node but don't prefer it.
 	// This prevents network partitioning: if every other memberlist node filters it out, then that
 	// remote node would not receive updates and would get isolated.
-	if d.cfg.Zone == "" || remoteZone == "" {
+	if d.localZone == "" || remoteZone == "" {
 		return true, false
 	}
 
 	switch d.localRole {
 	case NodeRoleMember:
 		// Members only select nodes in the same zone.
-		if remoteZone == d.cfg.Zone {
+		if remoteZone == d.localZone {
 			return true, false
 		}
 		return false, false
 
 	case NodeRoleBridge:
 		// Bridges select nodes in the same zone + bridge nodes in other zones.
-		if remoteZone == d.cfg.Zone {
+		if remoteZone == d.localZone {
 			// Same zone: select but don't prefer.
 			return true, false
 		}
@@ -140,6 +132,8 @@ func (d *zoneAwareNodeSelectionDelegate) SelectNode(node memberlist.Node) (selec
 		return false, false
 
 	default:
+		level.Warn(d.logger).Log("msg", "memberlist zone-aware routing is running with an unknown role", "role", d.localRole)
+
 		// Unknown role: select but don't prefer (should never happen).
 		return true, false
 	}
