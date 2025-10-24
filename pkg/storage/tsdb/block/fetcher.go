@@ -40,12 +40,11 @@ type FetcherMetrics struct {
 
 	Synced *extprom.TxGaugeVec
 
-	// Cache hierarchy: per-tenant (scoped to compaction run) -> on-disk (persists across restarts) -> object storage
-	MetaLoadsTotal   prometheus.Counter
-	InMemCacheHits   prometheus.Counter
-	InMemCacheMisses prometheus.Counter
-	DiskCacheHits    prometheus.Counter
-	DiskCacheMisses  prometheus.Counter
+	MetaLoadsTotal  prometheus.Counter
+	MetaCacheLoads  prometheus.Counter
+	MetaCacheMisses prometheus.Counter
+	MetaDiskLoads   prometheus.Counter
+	MetaDiskMisses  prometheus.Counter
 }
 
 // Submit applies new values for metrics tracked by transaction GaugeVec.
@@ -124,21 +123,21 @@ func NewFetcherMetrics(reg prometheus.Registerer, syncedExtraLabels [][]string) 
 		Name: "blocks_meta_loads_total",
 		Help: "Total number of block metadata load attempts",
 	})
-	m.InMemCacheHits = promauto.With(reg).NewCounter(prometheus.CounterOpts{
-		Name: "blocks_meta_in_mem_cache_hits_total",
+	m.MetaCacheLoads = promauto.With(reg).NewCounter(prometheus.CounterOpts{
+		Name: "blocks_meta_cache_loads_total",
 		Help: "Total number of block metadata loads served from per-tenant cache",
 	})
-	m.InMemCacheMisses = promauto.With(reg).NewCounter(prometheus.CounterOpts{
-		Name: "blocks_meta_in_mem_cache_misses_total",
+	m.MetaCacheMisses = promauto.With(reg).NewCounter(prometheus.CounterOpts{
+		Name: "blocks_meta_cache_misses_total",
 		Help: "Total number of block metadata loads that missed per-tenant cache",
 	})
-	m.DiskCacheHits = promauto.With(reg).NewCounter(prometheus.CounterOpts{
-		Name: "blocks_meta_disk_cache_hits_total",
-		Help: "Total number of block metadata loads served from on-disk cache",
+	m.MetaDiskLoads = promauto.With(reg).NewCounter(prometheus.CounterOpts{
+		Name: "blocks_meta_disk_loads_total",
+		Help: "Total number of block metadata loads served from local disk",
 	})
-	m.DiskCacheMisses = promauto.With(reg).NewCounter(prometheus.CounterOpts{
-		Name: "blocks_meta_disk_cache_misses_total",
-		Help: "Total number of block metadata loads that required fetching from object storage",
+	m.MetaDiskMisses = promauto.With(reg).NewCounter(prometheus.CounterOpts{
+		Name: "blocks_meta_disk_misses_total",
+		Help: "Total number of block metadata loads that missed local disk and required fetching from object storage",
 	})
 	return &m
 }
@@ -241,16 +240,16 @@ func (f *MetaFetcher) loadMeta(ctx context.Context, id ulid.ULID) (*Meta, error)
 	// - The block has been deleted: the loadMeta() function will not be called at all, because the block
 	//   was not discovered while iterating the bucket since all its files were already deleted.
 	if m, seen := f.cached[id]; seen {
-		f.metrics.InMemCacheHits.Inc()
+		f.metrics.MetaCacheLoads.Inc()
 		return m, nil
 	}
-	f.metrics.InMemCacheMisses.Inc()
+	f.metrics.MetaCacheMisses.Inc()
 
 	// Best effort load from local dir.
 	if f.cacheDir != "" {
 		m, err := ReadMetaFromDir(cachedBlockDir)
 		if err == nil {
-			f.metrics.DiskCacheHits.Inc()
+			f.metrics.MetaDiskLoads.Inc()
 			return m, nil
 		}
 
@@ -260,8 +259,7 @@ func (f *MetaFetcher) loadMeta(ctx context.Context, id ulid.ULID) (*Meta, error)
 				level.Warn(f.logger).Log("msg", "best effort remove of cached dir failed; ignoring", "dir", cachedBlockDir, "err", err)
 			}
 		}
-		// Disk cache was checked but missed
-		f.metrics.DiskCacheMisses.Inc()
+		f.metrics.MetaDiskMisses.Inc()
 	}
 
 	r, err := f.bkt.ReaderWithExpectedErrs(f.bkt.IsObjNotFoundErr).Get(ctx, metaFile)
