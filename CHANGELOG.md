@@ -41,6 +41,8 @@
 
 ### Mixin
 
+* [ENHANCEMENT] Alerts: Add `MimirFewerIngestersConsumingThanActivePartitions` alert. #13159
+
 ### Jsonnet
 
 * [CHANGE] Mimir-continuous-test: Use `mimir -target=continuous-test` instead of standalone binary/image. #13097 #13144

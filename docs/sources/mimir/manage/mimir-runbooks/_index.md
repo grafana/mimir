@@ -1927,7 +1927,7 @@ How to **investigate**:
 This shouldn't happen in normal circumstances and is most likely indicative of a bug in the distributors or ingesters. This issue should be investigated and fixed as soon as possible.
 
 - Immediately scale out ingesters to the number of active partitions to consume the data.
-- Check that the ingester shutdowns are working as expected. When ingesters are downscaled, they should set ther partition as INACTIVE before shutting down. Ingesters are most likely the cause of this issue.
+- Check that the ingester shutdowns are working as expected. When ingesters are downscaled, they should set their partition as INACTIVE before shutting down. Ingesters are most likely the cause of this issue.
 
 ## Errors catalog
 
