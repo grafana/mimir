@@ -11,10 +11,13 @@ import (
 	"io"
 	"math"
 	"math/rand"
+	"slices"
 	"testing"
 
 	"github.com/go-kit/log"
+	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/prometheus/model/labels"
+	promtsdb "github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/stretchr/testify/assert"
@@ -22,6 +25,7 @@ import (
 	"github.com/thanos-io/objstore"
 
 	"github.com/grafana/mimir/pkg/storage/tsdb"
+	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 	"github.com/grafana/mimir/pkg/util/pool"
 	"github.com/grafana/mimir/pkg/util/test"
@@ -155,6 +159,280 @@ func createChunkBytes(encoding chunkenc.Encoding, chunkDataSize, seed int) []byt
 	binary.BigEndian.PutUint32(buf[crcStart:crcStart+crc32.Size], crc)
 
 	return buf[:dataLenUvarintLen+1+len(chunkData)+crc32.Size]
+}
+
+func TestBucketChunkReader_loadChunks_verifiesCRC32(t *testing.T) {
+	const chunkDataSize = 256
+
+	invalidCRC32 := uint32(0xDEADBEEF)
+
+	testCases := []struct {
+		name        string
+		encodings   []chunkenc.Encoding // encoding for each chunk
+		chunks      [][]byte            // chunk data (data only, no encoding byte or CRC)
+		crcs        []uint32            // CRC for each chunk
+		expectError bool
+	}{
+		{
+			name:        "1 chunk with valid CRC should pass",
+			chunks:      [][]byte{createChunkData(chunkDataSize, 0)},
+			encodings:   []chunkenc.Encoding{chunkenc.EncXOR},
+			crcs:        []uint32{validCRC32(chunkenc.EncXOR, createChunkData(chunkDataSize, 0))},
+			expectError: false,
+		},
+		{
+			name:        "1 chunk with invalid CRC should fail (first chunk verified)",
+			chunks:      [][]byte{createChunkData(chunkDataSize, 0)},
+			encodings:   []chunkenc.Encoding{chunkenc.EncXOR},
+			crcs:        []uint32{invalidCRC32},
+			expectError: true,
+		},
+		{
+			name: "127 chunks with all invalid CRC should fail (first chunk verified)",
+			chunks: func() (chunks [][]byte) {
+				for i := 0; i < 127; i++ {
+					chunks = append(chunks, createChunkData(chunkDataSize, i))
+				}
+				return
+			}(),
+			encodings:   slices.Repeat([]chunkenc.Encoding{chunkenc.EncXOR}, 127),
+			crcs:        slices.Repeat([]uint32{invalidCRC32}, 127),
+			expectError: true,
+		},
+		{
+			name: "128 chunks with all valid CRC should pass",
+			chunks: func() (chunks [][]byte) {
+				for i := 0; i < 128; i++ {
+					chunks = append(chunks, createChunkData(chunkDataSize, i))
+				}
+				return
+			}(),
+			encodings: slices.Repeat([]chunkenc.Encoding{chunkenc.EncXOR}, 128),
+			crcs: func() (crcs []uint32) {
+				for i := 0; i < 128; i++ {
+					crcs = append(crcs, validCRC32(chunkenc.EncXOR, createChunkData(chunkDataSize, i)))
+				}
+				return
+			}(),
+			expectError: false,
+		},
+		{
+			name: "128 chunks with corrupted chunk at position 1 should pass (not verified)",
+			chunks: func() (chunks [][]byte) {
+				chunks = append(chunks, createChunkData(chunkDataSize, 0))
+				chunks = append(chunks, createChunkData(chunkDataSize, 1))
+				for i := 2; i < 128; i++ {
+					chunks = append(chunks, createChunkData(chunkDataSize, i))
+				}
+				return
+			}(),
+			encodings: slices.Repeat([]chunkenc.Encoding{chunkenc.EncXOR}, 128),
+			crcs: func() (crcs []uint32) {
+				crcs = append(crcs, validCRC32(chunkenc.EncXOR, createChunkData(chunkDataSize, 0)))
+				crcs = append(crcs, invalidCRC32)
+				for i := 2; i < 128; i++ {
+					crcs = append(crcs, validCRC32(chunkenc.EncXOR, createChunkData(chunkDataSize, i)))
+				}
+				return
+			}(),
+			expectError: false,
+		},
+		{
+			name: "128 chunks with corrupted chunk at position 64 should pass (not verified)",
+			chunks: func() (chunks [][]byte) {
+				for i := 0; i < 64; i++ {
+					chunks = append(chunks, createChunkData(chunkDataSize, i))
+				}
+				chunks = append(chunks, createChunkData(chunkDataSize, 64))
+				for i := 65; i < 128; i++ {
+					chunks = append(chunks, createChunkData(chunkDataSize, i))
+				}
+				return
+			}(),
+			encodings: slices.Repeat([]chunkenc.Encoding{chunkenc.EncXOR}, 128),
+			crcs: func() (crcs []uint32) {
+				for i := 0; i < 64; i++ {
+					crcs = append(crcs, validCRC32(chunkenc.EncXOR, createChunkData(chunkDataSize, i)))
+				}
+				crcs = append(crcs, invalidCRC32)
+				for i := 65; i < 128; i++ {
+					crcs = append(crcs, validCRC32(chunkenc.EncXOR, createChunkData(chunkDataSize, i)))
+				}
+				return
+			}(),
+			expectError: false,
+		},
+		{
+			name: "128 chunks with corrupted chunk at position 127 should pass (not verified)",
+			chunks: func() (chunks [][]byte) {
+				for i := 0; i < 127; i++ {
+					chunks = append(chunks, createChunkData(chunkDataSize, i))
+				}
+				chunks = append(chunks, createChunkData(chunkDataSize, 127))
+				return
+			}(),
+			encodings: slices.Repeat([]chunkenc.Encoding{chunkenc.EncXOR}, 128),
+			crcs: func() (crcs []uint32) {
+				for i := 0; i < 127; i++ {
+					crcs = append(crcs, validCRC32(chunkenc.EncXOR, createChunkData(chunkDataSize, i)))
+				}
+				crcs = append(crcs, invalidCRC32)
+				return
+			}(),
+			expectError: false,
+		},
+		{
+			name: "256 chunks with corrupted chunk at position 1 should pass (not verified)",
+			chunks: func() (chunks [][]byte) {
+				chunks = append(chunks, createChunkData(chunkDataSize, 0))
+				chunks = append(chunks, createChunkData(chunkDataSize, 1))
+				for i := 2; i < 256; i++ {
+					chunks = append(chunks, createChunkData(chunkDataSize, i))
+				}
+				return
+			}(),
+			encodings: slices.Repeat([]chunkenc.Encoding{chunkenc.EncXOR}, 256),
+			crcs: func() (crcs []uint32) {
+				crcs = append(crcs, validCRC32(chunkenc.EncXOR, createChunkData(chunkDataSize, 0)))
+				crcs = append(crcs, invalidCRC32)
+				for i := 2; i < 256; i++ {
+					crcs = append(crcs, validCRC32(chunkenc.EncXOR, createChunkData(chunkDataSize, i)))
+				}
+				return
+			}(),
+			expectError: false,
+		},
+		{
+			name: "256 chunks with corrupted chunk at position 129 should pass (not verified)",
+			chunks: func() (chunks [][]byte) {
+				for i := 0; i < 129; i++ {
+					chunks = append(chunks, createChunkData(chunkDataSize, i))
+				}
+				chunks = append(chunks, createChunkData(chunkDataSize, 129))
+				for i := 130; i < 256; i++ {
+					chunks = append(chunks, createChunkData(chunkDataSize, i))
+				}
+				return
+			}(),
+			encodings: slices.Repeat([]chunkenc.Encoding{chunkenc.EncXOR}, 256),
+			crcs: func() (crcs []uint32) {
+				for i := 0; i < 129; i++ {
+					crcs = append(crcs, validCRC32(chunkenc.EncXOR, createChunkData(chunkDataSize, i)))
+				}
+				crcs = append(crcs, invalidCRC32)
+				for i := 130; i < 256; i++ {
+					crcs = append(crcs, validCRC32(chunkenc.EncXOR, createChunkData(chunkDataSize, i)))
+				}
+				return
+			}(),
+			expectError: false,
+		},
+		{
+			name: "256 chunks with corrupted chunk at position 255 should pass (not verified)",
+			chunks: func() (chunks [][]byte) {
+				for i := 0; i < 255; i++ {
+					chunks = append(chunks, createChunkData(chunkDataSize, i))
+				}
+				chunks = append(chunks, createChunkData(chunkDataSize, 255))
+				return
+			}(),
+			encodings: slices.Repeat([]chunkenc.Encoding{chunkenc.EncXOR}, 256),
+			crcs: func() (crcs []uint32) {
+				for i := 0; i < 255; i++ {
+					crcs = append(crcs, validCRC32(chunkenc.EncXOR, createChunkData(chunkDataSize, i)))
+				}
+				crcs = append(crcs, invalidCRC32)
+				return
+			}(),
+			expectError: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := t.Context()
+			require.Equal(t, len(tc.chunks), len(tc.crcs), "chunks and crcs must have same length")
+			require.Equal(t, len(tc.chunks), len(tc.encodings), "chunks and encodings must have same length")
+
+			// Build buffer by alternating: varint + encoding + chunk data + CRC
+			var buf bytes.Buffer
+			chunkOffsets := make([]uint32, len(tc.chunks))
+
+			for i, chunkData := range tc.chunks {
+				chunkOffsets[i] = uint32(buf.Len())
+
+				// Write varint length (data length without encoding byte)
+				buf.Write(binary.AppendUvarint(nil, uint64(len(chunkData))))
+
+				// Write encoding byte
+				buf.WriteByte(byte(tc.encodings[i]))
+
+				// Write chunk data
+				buf.Write(chunkData)
+
+				// Write CRC32
+				buf.Write(binary.BigEndian.AppendUint32(nil, tc.crcs[i]))
+			}
+
+			bucketReader := mockObjectStoreBucketReader{b: buf.Bytes()}
+			block := &bucketBlock{
+				meta: &block.Meta{
+					BlockMeta: promtsdb.BlockMeta{
+						ULID: ulid.MustNew(10, nil),
+					},
+				},
+				bkt:          bucketReader,
+				partitioners: blockPartitioners{naivePartitioner{}, naivePartitioner{}, naivePartitioner{}},
+				chunkObjs:    []string{"segment-0"},
+			}
+
+			reader := newBucketChunkReader(ctx, block)
+
+			// Add all chunks to load
+			loadedChunks := make([]seriesChunks, 1)
+			loadedChunks[0].chks = make([]storepb.AggrChunk, len(tc.chunks))
+			for i := range tc.chunks {
+				ref := chunkRef(0, chunkOffsets[i])
+				err := reader.addLoad(ref, 0, i, binary.MaxVarintLen32+chunks.ChunkEncodingSize+chunkDataSize+crc32.Size)
+				require.NoError(t, err)
+			}
+
+			chunksPool := pool.NewSafeSlabPool[byte](chunkBytesSlicePool, seriesChunksSlabSize)
+			err := reader.load(loadedChunks, chunksPool, newSafeQueryStats())
+
+			if tc.expectError {
+				assert.Error(t, err)
+				assert.Contains(t, err.Error(), "crc32 mismatch")
+			} else {
+				assert.NoError(t, err)
+				// Verify we got all chunks back
+				assert.Len(t, loadedChunks[0].chks, len(tc.chunks))
+
+				// Verify chunk data matches expected
+				for i, expectedData := range tc.chunks {
+					loadedChunk := loadedChunks[0].chks[i]
+					assert.NotNil(t, loadedChunk.Raw, "chunk %d should have data", i)
+
+					assert.Greater(t, len(loadedChunk.Raw.Data), 0, "chunk %d should have data", i)
+					assert.Equal(t, translateChunkEncoding(tc.encodings[i]), loadedChunk.Raw.Type, "chunk %d encoding mismatch", i)
+					assert.EqualValues(t, expectedData, loadedChunk.Raw.Data, "chunk %d data mismatch", i)
+				}
+			}
+		})
+	}
+}
+
+func translateChunkEncoding(enc chunkenc.Encoding) storepb.Chunk_Encoding {
+	switch enc {
+	case chunkenc.EncXOR:
+		return storepb.Chunk_XOR
+	case chunkenc.EncHistogram:
+		return storepb.Chunk_Histogram
+	case chunkenc.EncFloatHistogram:
+		return storepb.Chunk_FloatHistogram
+	default:
+		panic(fmt.Sprintf("unsupported chunk encoding: %v", enc))
+	}
 }
 
 func BenchmarkBucketChunkReader_loadChunks(b *testing.B) {
