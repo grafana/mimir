@@ -50,15 +50,15 @@ func NewMetadataFetcherMetrics(logger log.Logger) *MetadataFetcherMetrics {
 			[]string{"state"}, nil),
 		metaLoads: prometheus.NewDesc(
 			"cortex_blocks_meta_loads_total",
-			"Total number of block metadata load attempts across all users",
+			"Total number of block metadata load attempts",
 			nil, nil),
 		metaCachedLoads: prometheus.NewDesc(
 			"cortex_blocks_meta_cached_loads",
-			"Total number of block metadata loads served from in-memory cache",
+			"Block metadata loads served from in-memory cache",
 			nil, nil),
 		metaDiskLoads: prometheus.NewDesc(
 			"cortex_blocks_meta_disk_loads",
-			"Total number of block metadata loads served from local disk",
+			"Block metadata loads served from local disk",
 			nil, nil),
 	}
 }

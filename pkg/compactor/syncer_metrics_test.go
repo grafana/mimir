@@ -32,15 +32,15 @@ func TestSyncerMetrics(t *testing.T) {
 			# TYPE cortex_compactor_meta_blocks_synced gauge
 			cortex_compactor_meta_blocks_synced{state="loaded"} 30
 
-			# HELP cortex_compactor_meta_cached_loads Total number of block metadata loads served from in-memory cache
+			# HELP cortex_compactor_meta_cached_loads Block metadata loads served from in-memory cache
 			# TYPE cortex_compactor_meta_cached_loads counter
 			cortex_compactor_meta_cached_loads 444440
 
-			# HELP cortex_compactor_meta_disk_loads Total number of block metadata loads served from local disk
+			# HELP cortex_compactor_meta_disk_loads Block metadata loads served from local disk
 			# TYPE cortex_compactor_meta_disk_loads counter
 			cortex_compactor_meta_disk_loads 888880
 
-			# HELP cortex_compactor_meta_loads_total Total number of block metadata load attempts across all users
+			# HELP cortex_compactor_meta_loads_total Total number of block metadata load attempts
 			# TYPE cortex_compactor_meta_loads_total counter
 			cortex_compactor_meta_loads_total 333330
 
@@ -168,11 +168,11 @@ func newTestSyncerMetrics(reg prometheus.Registerer) *testSyncerMetrics {
 	})
 	m.metaCachedLoads = promauto.With(reg).NewCounter(prometheus.CounterOpts{
 		Name: "blocks_meta_cached_loads",
-		Help: "Total number of block metadata loads served from in-memory cache",
+		Help: "Block metadata loads served from in-memory cache",
 	})
 	m.metaDiskLoads = promauto.With(reg).NewCounter(prometheus.CounterOpts{
 		Name: "blocks_meta_disk_loads",
-		Help: "Total number of block metadata loads served from local disk",
+		Help: "Block metadata loads served from local disk",
 	})
 
 	m.garbageCollections = promauto.With(reg).NewCounter(prometheus.CounterOpts{

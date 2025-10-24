@@ -53,15 +53,15 @@ func newAggregatedSyncerMetrics(reg prometheus.Registerer) *aggregatedSyncerMetr
 
 	m.metaLoads = promauto.With(reg).NewCounter(prometheus.CounterOpts{
 		Name: "cortex_compactor_meta_loads_total",
-		Help: "Total number of block metadata load attempts across all users",
+		Help: "Total number of block metadata load attempts",
 	})
 	m.metaCachedLoads = promauto.With(reg).NewCounter(prometheus.CounterOpts{
 		Name: "cortex_compactor_meta_cached_loads",
-		Help: "Total number of block metadata loads served from in-memory cache",
+		Help: "Block metadata loads served from in-memory cache",
 	})
 	m.metaDiskLoads = promauto.With(reg).NewCounter(prometheus.CounterOpts{
 		Name: "cortex_compactor_meta_disk_loads",
-		Help: "Total number of block metadata loads served from local disk",
+		Help: "Block metadata loads served from local disk",
 	})
 
 	m.garbageCollections = promauto.With(reg).NewCounter(prometheus.CounterOpts{

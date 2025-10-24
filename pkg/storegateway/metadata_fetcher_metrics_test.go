@@ -29,15 +29,15 @@ func TestMetadataFetcherMetrics(t *testing.T) {
 
 	//noinspection ALL
 	err := testutil.GatherAndCompare(mainReg, bytes.NewBufferString(`
-		# HELP cortex_blocks_meta_cached_loads Total number of block metadata loads served from in-memory cache
+		# HELP cortex_blocks_meta_cached_loads Block metadata loads served from in-memory cache
 		# TYPE cortex_blocks_meta_cached_loads counter
 		cortex_blocks_meta_cached_loads 135
 
-		# HELP cortex_blocks_meta_disk_loads Total number of block metadata loads served from local disk
+		# HELP cortex_blocks_meta_disk_loads Block metadata loads served from local disk
 		# TYPE cortex_blocks_meta_disk_loads counter
 		cortex_blocks_meta_disk_loads 225
 
-		# HELP cortex_blocks_meta_loads_total Total number of block metadata load attempts across all users
+		# HELP cortex_blocks_meta_loads_total Total number of block metadata load attempts
 		# TYPE cortex_blocks_meta_loads_total counter
 		cortex_blocks_meta_loads_total 105
 
@@ -128,12 +128,12 @@ func newMetadataFetcherMetricsMock(reg prometheus.Registerer) *metadataFetcherMe
 	m.metaCachedLoads = promauto.With(reg).NewCounter(prometheus.CounterOpts{
 		Subsystem: "blocks_meta",
 		Name:      "cached_loads",
-		Help:      "Total number of block metadata loads served from in-memory cache",
+		Help:      "Block metadata loads served from in-memory cache",
 	})
 	m.metaDiskLoads = promauto.With(reg).NewCounter(prometheus.CounterOpts{
 		Subsystem: "blocks_meta",
 		Name:      "disk_loads",
-		Help:      "Total number of block metadata loads served from local disk",
+		Help:      "Block metadata loads served from local disk",
 	})
 
 	return &m

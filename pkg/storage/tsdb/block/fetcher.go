@@ -123,11 +123,11 @@ func NewFetcherMetrics(reg prometheus.Registerer, syncedExtraLabels [][]string) 
 	})
 	m.CachedLoads = promauto.With(reg).NewCounter(prometheus.CounterOpts{
 		Name: "blocks_meta_cached_loads",
-		Help: "Total number of block metadata loads served from in-memory cache",
+		Help: "Block metadata loads served from in-memory cache",
 	})
 	m.DiskLoads = promauto.With(reg).NewCounter(prometheus.CounterOpts{
 		Name: "blocks_meta_disk_loads",
-		Help: "Total number of block metadata loads served from local disk",
+		Help: "Block metadata loads served from local disk",
 	})
 	return &m
 }

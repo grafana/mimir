@@ -641,11 +641,11 @@ func TestMetaFetcher_CacheMetrics(t *testing.T) {
 			require.Contains(t, metas, blockID)
 
 			require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
-				# HELP blocks_meta_cached_loads Total number of block metadata loads served from in-memory cache
+				# HELP blocks_meta_cached_loads Block metadata loads served from in-memory cache
 				# TYPE blocks_meta_cached_loads counter
 				blocks_meta_cached_loads `+fmt.Sprintf("%d", tc.expectedCachedLoads)+`
 
-				# HELP blocks_meta_disk_loads Total number of block metadata loads served from local disk
+				# HELP blocks_meta_disk_loads Block metadata loads served from local disk
 				# TYPE blocks_meta_disk_loads counter
 				blocks_meta_disk_loads `+fmt.Sprintf("%d", tc.expectedDiskLoads)+`
 
