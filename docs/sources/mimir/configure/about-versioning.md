@@ -64,8 +64,6 @@ The following features are currently experimental:
   - Enable support for any UTF-8 character as part of Alertmanager configuration/API matchers and labels.
     - `-alertmanager.utf8-strict-mode-enabled`
 - Compactor
-  - In-memory cache for parsed meta.json files:
-    - `-compactor.in-memory-tenant-meta-cache-size`
   - Limit blocks processed in each compaction cycle. Blocks uploaded prior to the maximum lookback aren't processed.
     - `-compactor.max-lookback`
   - Enable the compactor to upload sparse index headers to object storage during compaction cycles.
