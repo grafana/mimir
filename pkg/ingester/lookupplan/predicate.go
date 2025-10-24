@@ -67,45 +67,76 @@ func estimatePredicateIndexScanCost(pred planPredicate, m *labels.Matcher) float
 }
 
 func estimatePredicateCardinality(ctx context.Context, m *labels.Matcher, stats index.Statistics, selectivity float64) uint64 {
-	var (
-		seriesBehindSelectedValues uint64
-		matchesAnyValues           bool
-	)
+	switch m.Type {
+	case labels.MatchEqual:
+		return estimateEqualMatcherCardinality(ctx, m, stats)
+	case labels.MatchNotEqual:
+		return estimateNotEqualMatcherCardinality(ctx, m, stats)
+	case labels.MatchRegexp:
+		return estimateRegexMatcherCardinality(ctx, m, stats, selectivity)
+	case labels.MatchNotRegexp:
+		return estimateNotRegexMatcherCardinality(ctx, m, stats, selectivity)
+	default:
+		panic("estimatePredicateCardinality called with unhandled matcher type: " + m.Type.String() + m.String())
+	}
+}
 
-	switch m.Type {
-	case labels.MatchEqual, labels.MatchNotEqual:
-		if m.Value == "" {
-			seriesBehindSelectedValues = stats.LabelValuesCardinality(ctx, m.Name)
-			// The matcher selects all series, which don't have this label.
-			seriesBehindSelectedValues = stats.TotalSeries() - seriesBehindSelectedValues
-		} else {
-			seriesBehindSelectedValues = stats.LabelValuesCardinality(ctx, m.Name, m.Value)
-		}
-		matchesAnyValues = seriesBehindSelectedValues > 0
-	case labels.MatchRegexp, labels.MatchNotRegexp:
-		if setMatches := m.SetMatches(); len(setMatches) > 0 {
-			seriesBehindSelectedValues = stats.LabelValuesCardinality(ctx, m.Name, setMatches...)
-			matchesAnyValues = seriesBehindSelectedValues > 0
-		} else {
-			labelNameCardinality := stats.LabelValuesCardinality(ctx, m.Name)
-			matchesAnyValues = labelNameCardinality > 0
-			if m.Matches("") {
-				// The matcher selects all series, which don't have this label.
-				seriesBehindSelectedValues += stats.TotalSeries() - labelNameCardinality
-			}
-			// The matcher selects some series with this label.
-			seriesBehindSelectedValues += uint64(float64(labelNameCardinality) * selectivity)
-		}
+func estimateEqualMatcherCardinality(ctx context.Context, m *labels.Matcher, stats index.Statistics) uint64 {
+	if m.Matches("") { // foo=""
+		return numSeriesWithoutLabel(ctx, m.Name, stats)
 	}
-	switch m.Type {
-	case labels.MatchNotEqual, labels.MatchNotRegexp:
-		if !matchesAnyValues {
-			// This label name doesn't exist. This means that negating this will select everything.
-			return stats.TotalSeries()
-		}
-		return stats.TotalSeries() - seriesBehindSelectedValues
+	// foo="bar"
+	return stats.LabelValuesCardinality(ctx, m.Name, m.Value)
+}
+
+func estimateNotEqualMatcherCardinality(ctx context.Context, m *labels.Matcher, stats index.Statistics) uint64 {
+	if m.Value == "" { // foo!=""
+		return stats.LabelValuesCardinality(ctx, m.Name)
 	}
-	return seriesBehindSelectedValues
+	// foo!="bar" matches all series except those with foo="bar"
+	return stats.TotalSeries() - stats.LabelValuesCardinality(ctx, m.Name, m.Value)
+}
+
+func estimateRegexMatcherCardinality(ctx context.Context, m *labels.Matcher, stats index.Statistics, selectivity float64) uint64 {
+	var matchedSeries uint64
+	if setMatches := m.SetMatches(); len(setMatches) > 0 { // foo=~"bar|baz", foo=~"|bar"
+		matchedSeries = stats.LabelValuesCardinality(ctx, m.Name, setMatches...)
+	} else {
+		// Generic regex - estimate using selectivity
+		labelNameCardinality := stats.LabelValuesCardinality(ctx, m.Name)
+		matchedSeries = uint64(float64(labelNameCardinality) * selectivity)
+	}
+	if m.Matches("") { // foo=~"", foo=~"|bar", foo=~"bar?", foo=~".*"
+		// Regex matches empty string. This matches all series which don't have this label name.
+		matchedSeries += numSeriesWithoutLabel(ctx, m.Name, stats)
+	}
+	return matchedSeries
+}
+
+func estimateNotRegexMatcherCardinality(ctx context.Context, m *labels.Matcher, stats index.Statistics, selectivity float64) uint64 {
+	matchedSeries := uint64(0)
+
+	// Calculate how many series are matched by the regex as if the regex was positive.
+	if setMatches := m.SetMatches(); len(setMatches) > 0 { // foo!~"bar|baz", foo!~"|bar"
+		matchedSeries = stats.LabelValuesCardinality(ctx, m.Name, setMatches...)
+	} else {
+		// Generic regex - estimate using selectivity
+		labelNameCardinality := stats.LabelValuesCardinality(ctx, m.Name)
+		matchedSeries = uint64(float64(labelNameCardinality) * selectivity)
+	}
+	// Account for the negation
+	matchedSeries = stats.TotalSeries() - matchedSeries
+
+	if m.Matches("") { // foo!~"bar", foo!~"bar|baz"
+		// Regex matches empty string. This matches all series which don't have this label name.
+		matchedSeries += numSeriesWithoutLabel(ctx, m.Name, stats)
+	}
+
+	return matchedSeries
+}
+
+func numSeriesWithoutLabel(ctx context.Context, labelName string, stats index.Statistics) uint64 {
+	return stats.TotalSeries() - stats.LabelValuesCardinality(ctx, labelName)
 }
 
 func (pr planPredicate) indexLookupCost() float64 {
