@@ -1162,6 +1162,13 @@ func (t *Mimir) readyHandler(sm *services.Manager, shutdownRequested *atomic.Boo
 			}
 		}
 
+		if t.Compactor != nil {
+			if err := t.Compactor.CheckReady(r.Context()); err != nil {
+				http.Error(w, "Compactor not ready: "+err.Error(), http.StatusServiceUnavailable)
+				return
+			}
+		}
+
 		util.WriteTextResponse(w, "ready")
 	}
 }

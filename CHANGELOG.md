@@ -3,6 +3,7 @@
 ## main / unreleased
 
 ### Grafana Mimir
+* [CHANGE] Compactor: Add readiness probe health check which periodically tests read/write access to the data volume. #13067
 
 * [CHANGE] Querier: `-querier.max-estimated-fetched-chunks-per-query-multiplier` is now stable and no longer experimental. #13120
 * [CHANGE] Compactor: removed experimental flag `-compactor.no-blocks-file-cleanup-enabled`. Cleanup of remaining files when no blocks exist is now always enabled. #13108
