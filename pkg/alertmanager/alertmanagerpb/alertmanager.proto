@@ -16,7 +16,7 @@ option go_package = "alertmanagerpb";
 // Alertmanager interface exposed to the Alertmanager Distributor and other Alertmanagers
 service Alertmanager {
   rpc HandleRequest(httpgrpc.HTTPRequest) returns (httpgrpc.HTTPResponse) {}
-  rpc UpdateState(clusterpb.Part) returns (UpdateStateResponse) {}
+  rpc UpdateState(Part) returns (UpdateStateResponse) {}
   rpc ReadState(ReadStateRequest) returns (ReadStateResponse) {}
 }
 enum UpdateStateStatus {
@@ -46,4 +46,10 @@ message ReadStateResponse {
   ReadStateStatus status = 1;
   string error = 2;
   clusterpb.FullState state = 3;
+}
+
+// Copied from clusterpb to add mimirpb.BufferHolder.
+message Part {
+  string key = 1;
+  bytes data = 2;
 }
