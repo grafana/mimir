@@ -4,7 +4,6 @@ package core
 
 import (
 	"fmt"
-	"github.com/grafana/mimir/pkg/streamingpromql/operators/aggregations/limitk"
 	"slices"
 	"strings"
 	"time"
@@ -14,6 +13,7 @@ import (
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/aggregations"
+	"github.com/grafana/mimir/pkg/streamingpromql/operators/aggregations/limitklimitratio"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/aggregations/topkbottomk"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
@@ -126,7 +126,15 @@ func MaterializeAggregateExpression(a *AggregateExpression, materializer *planni
 			return nil, fmt.Errorf("could not create parameter operator for AggregateExpression %s: %w", a.Op.String(), err)
 		}
 
-		o = limitk.New(inner, param, timeRange, a.Grouping, a.Without, params.MemoryConsumptionTracker, params.Annotations, a.ExpressionPosition())
+		o = limitklimitratio.NewLimitK(inner, param, timeRange, a.Grouping, a.Without, params.MemoryConsumptionTracker, params.Annotations, a.ExpressionPosition())
+
+	case AGGREGATION_LIMIT_RATIO:
+		param, err := materializer.ConvertNodeToScalarOperator(a.Param, timeRange)
+		if err != nil {
+			return nil, fmt.Errorf("could not create parameter operator for AggregateExpression %s: %w", a.Op.String(), err)
+		}
+
+		o = limitklimitratio.NewLimitRatio(inner, param, timeRange, a.Grouping, a.Without, params.MemoryConsumptionTracker, params.Annotations, a.ExpressionPosition())
 
 	case AGGREGATION_QUANTILE:
 		param, err := materializer.ConvertNodeToScalarOperator(a.Param, timeRange)

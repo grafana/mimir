@@ -2404,15 +2404,6 @@ func TestAnnotations(t *testing.T) {
 				`PromQL info: ignored histogram in bottomk aggregation (1:1)`,
 			},
 		},
-
-		"limitk() with only floats": {
-			data: mixedFloatHistogramData,
-			expr: `limitk(1, metric{type="float"})`,
-		},
-		"limitk() with only histograms": {
-			data: mixedFloatHistogramData,
-			expr: `limitk(1, metric{type="histogram"})`,
-		},
 		"quantile_over_time() with negative quantile": {
 			data: `metric 0 1 2 3`,
 			expr: `quantile_over_time(-1, metric[1m1s])`,

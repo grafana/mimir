@@ -431,9 +431,8 @@ eval instant at 50m bottomk by (instance) (1, {__name__=~"http_requests(_histogr
 eval instant at 50m limitk(NaN, non_existent)
     expect fail msg: Parameter value is NaN
 
-# Unsupported by streaming engine.
-# eval instant at 50m limit_ratio(NaN, non_existent)
-#     expect fail msg: Ratio value is NaN
+eval instant at 50m limit_ratio(NaN, non_existent)
+    expect fail msg: Ratio value is NaN
 
 clear
 

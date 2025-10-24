@@ -36,9 +36,9 @@ func TestContainedExperimentalFunctions(t *testing.T) {
 			query:  `sort_by_label_desc({__name__=~".+"}, "__name__")`,
 			expect: []string{"sort_by_label_desc"},
 		},
-		"limitk": {
-			query:  `limitk by (group) (0, up)`,
-			expect: []string{"limitk"},
+		"limitklimitratio": {
+			query:  `limitklimitratio by (group) (0, up)`,
+			expect: []string{"limitklimitratio"},
 		},
 		"limit_ratio": {
 			query:  `limit_ratio(0.5, up)`,
