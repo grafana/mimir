@@ -12089,7 +12089,7 @@
                   "kind": "field",
                   "name": "label",
                   "required": false,
-                  "desc": "Optionally define the cluster validation label.",
+                  "desc": "Primary cluster validation label.",
                   "fieldValue": null,
                   "fieldDefaultValue": "",
                   "fieldFlag": "compactor.scheduler.cluster-validation.label",
