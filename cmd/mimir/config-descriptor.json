@@ -18258,6 +18258,49 @@
           "fieldFlag": "memberlist.tls-min-version",
           "fieldType": "string",
           "fieldCategory": "advanced"
+        },
+        {
+          "kind": "block",
+          "name": "zone_aware_routing",
+          "required": false,
+          "desc": "",
+          "blockEntries": [
+            {
+              "kind": "field",
+              "name": "enabled",
+              "required": false,
+              "desc": "Enable zone-aware routing for memberlist gossip.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "memberlist.zone-aware-routing.enabled",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "instance_availability_zone",
+              "required": false,
+              "desc": "Availability zone where this node is running.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "memberlist.zone-aware-routing.instance-availability-zone",
+              "fieldType": "string",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "role",
+              "required": false,
+              "desc": "Role of this node in the cluster. Valid values: member, bridge.",
+              "fieldValue": null,
+              "fieldDefaultValue": "member",
+              "fieldFlag": "memberlist.zone-aware-routing.role",
+              "fieldType": "string",
+              "fieldCategory": "experimental"
+            }
+          ],
+          "fieldValue": null,
+          "fieldDefaultValue": null
         }
       ],
       "fieldValue": null,

@@ -1295,6 +1295,8 @@
   "memberlist.tls-server-name": "",
   "memberlist.tls-cipher-suites": "",
   "memberlist.tls-min-version": "",
+  "memberlist.zone-aware-routing.instance-availability-zone": "",
+  "memberlist.zone-aware-routing.role": "member",
   "query-scheduler.max-outstanding-requests-per-tenant": 100,
   "query-scheduler.querier-forget-delay": 0,
   "query-scheduler.grpc-client-config.grpc-max-recv-msg-size": 104857600,

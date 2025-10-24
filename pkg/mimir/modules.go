@@ -1285,6 +1285,15 @@ func (t *Mimir) initMemberlistKV() (services.Service, error) {
 	t.Cfg.UsageTracker.InstanceRing.KVStore.MemberlistKV = t.MemberlistKV.GetMemberlistKV
 	t.Cfg.UsageTracker.PartitionRing.KVStore.MemberlistKV = t.MemberlistKV.GetMemberlistKV
 
+	// If the memberlist-kv is explicitly targets (e.g. running it as memberlist seed node)
+	// then we have to forcefully initialise the memberlist client, otherwise memberlist will
+	// not really run under the hood (it gets lazily initialised).
+	if t.Cfg.isModuleExplicitlyTargeted(MemberlistKV) {
+		if _, err := t.MemberlistKV.GetMemberlistKV(); err != nil {
+			return nil, fmt.Errorf("failed to initialise memberlist client instance: %w", err)
+		}
+	}
+
 	return t.MemberlistKV, nil
 }
 
