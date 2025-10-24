@@ -457,6 +457,8 @@
   "alertmanager.notify-hook-timeout": 30000000000,
   "distributor.otel-promote-resource-attributes": "",
   "distributor.otel-translation-strategy": "",
+  "distributor.otel-label-name-underscore-sanitization": true,
+  "distributor.otel-label-name-preserve-underscores": true,
   "ingest-storage.read-consistency": "eventual",
   "ingest-storage.ingestion-partition-tenant-shard-size": 0,
   "querier.scheduler-address": "",

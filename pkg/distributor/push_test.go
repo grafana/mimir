@@ -1855,6 +1855,14 @@ func (o otlpLimitsMock) NameValidationScheme(string) model.ValidationScheme {
 	return model.LegacyValidation
 }
 
+func (o otlpLimitsMock) OTelLabelNameUnderscoreSanitization(string) bool {
+	return true
+}
+
+func (o otlpLimitsMock) OTelLabelNamePreserveMultipleUnderscores(string) bool {
+	return true
+}
+
 func promToMimirHistogram(h *prompb.Histogram) mimirpb.Histogram {
 	pSpans := make([]mimirpb.BucketSpan, 0, len(h.PositiveSpans))
 	for _, span := range h.PositiveSpans {

@@ -74,6 +74,8 @@ func TestLimitsLoadingFromYaml(t *testing.T) {
 			testFunc: func(t *testing.T, l Limits) {
 				assert.Equal(t, 1024, l.MaxLabelNameLength)
 				assert.Equal(t, model.LegacyValidation, l.NameValidationScheme)
+				assert.True(t, l.OTelLabelNameUnderscoreSanitization)
+				assert.True(t, l.OTelLabelNamePreserveMultipleUnderscores)
 			},
 		},
 		{
@@ -95,6 +97,20 @@ func TestLimitsLoadingFromYaml(t *testing.T) {
 			input: `name_validation_scheme: "utf8"`,
 			testFunc: func(t *testing.T, l Limits) {
 				assert.Equal(t, model.UTF8Validation, l.NameValidationScheme)
+			},
+		},
+		{
+			name:  "otel_label_name_underscore_sanitization: true",
+			input: `otel_label_name_underscore_sanitization: true`,
+			testFunc: func(t *testing.T, l Limits) {
+				assert.True(t, l.OTelLabelNameUnderscoreSanitization)
+			},
+		},
+		{
+			name:  "otel_label_name_preserve_multiple_underscores: true",
+			input: `otel_label_name_preserve_multiple_underscores: true`,
+			testFunc: func(t *testing.T, l Limits) {
+				assert.True(t, l.OTelLabelNamePreserveMultipleUnderscores)
 			},
 		},
 	}
@@ -121,6 +137,8 @@ func TestLimitsLoadingFromJson(t *testing.T) {
 			testFunc: func(t *testing.T, l Limits) {
 				assert.Equal(t, 1024, l.MaxLabelNameLength)
 				assert.Equal(t, model.LegacyValidation, l.NameValidationScheme)
+				assert.True(t, l.OTelLabelNameUnderscoreSanitization)
+				assert.True(t, l.OTelLabelNamePreserveMultipleUnderscores)
 			},
 		},
 		{
@@ -135,6 +153,20 @@ func TestLimitsLoadingFromJson(t *testing.T) {
 			input: `{"name_validation_scheme": "utf8"}`,
 			testFunc: func(t *testing.T, l Limits) {
 				assert.Equal(t, model.UTF8Validation, l.NameValidationScheme)
+			},
+		},
+		{
+			name:  "otel_label_name_underscore_sanitization: true",
+			input: `{"otel_label_name_underscore_sanitization": true}`,
+			testFunc: func(t *testing.T, l Limits) {
+				assert.True(t, l.OTelLabelNameUnderscoreSanitization)
+			},
+		},
+		{
+			name:  "otel_label_name_preserve_multiple_underscores: true",
+			input: `{"otel_label_name_preserve_multiple_underscores": true}`,
+			testFunc: func(t *testing.T, l Limits) {
+				assert.True(t, l.OTelLabelNamePreserveMultipleUnderscores)
 			},
 		},
 	}
