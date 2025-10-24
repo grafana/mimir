@@ -7,8 +7,10 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
+	"hash/crc32"
 	"io"
 	"math"
+	"math/rand"
 	"testing"
 
 	"github.com/go-kit/log"
@@ -120,6 +122,41 @@ func TestBucketChunkReader_loadChunks_brokenChunkSize(t *testing.T) {
 	require.Error(t, err)
 }
 
+// Helper to create chunk data with random content based on seed (data only, no encoding byte)
+func createChunkData(chunkDataSize, seed int) []byte {
+	data := make([]byte, chunkDataSize)
+	r := rand.New(rand.NewSource(int64(seed)))
+	// Fill with pseudo-random data based on seed
+	for i := 0; i < len(data); i++ {
+		data[i] = byte(r.Intn(256))
+	}
+	return data
+}
+
+// Helper to calculate valid CRC32 for chunk (encoding + data)
+func validCRC32(encoding chunkenc.Encoding, chunkData []byte) uint32 {
+	// Create full chunk with encoding byte for CRC calculation
+	fullChunk := make([]byte, 1+len(chunkData))
+	fullChunk[0] = byte(encoding)
+	copy(fullChunk[1:], chunkData)
+	return crc32.Checksum(fullChunk, crc32.MakeTable(crc32.Castagnoli))
+}
+
+func createChunkBytes(encoding chunkenc.Encoding, chunkDataSize, seed int) []byte {
+	chunkData := createChunkData(chunkDataSize, seed)
+	// Create full chunk bytes: length (varint) + encoding byte + data + crc32
+	buf := make([]byte, binary.MaxVarintLen64+len(chunkData)+4)
+	dataLenUvarintLen := binary.PutUvarint(buf, uint64(len(chunkData)))
+	buf[dataLenUvarintLen] = byte(encoding)
+	copy(buf[dataLenUvarintLen+1:], chunkData)
+
+	crc := validCRC32(encoding, chunkData)
+	crcStart := dataLenUvarintLen + 1 + len(chunkData)
+	binary.BigEndian.PutUint32(buf[crcStart:crcStart+crc32.Size], crc)
+
+	return buf[:dataLenUvarintLen+1+len(chunkData)+crc32.Size]
+}
+
 func BenchmarkBucketChunkReader_loadChunks(b *testing.B) {
 	const chunkSize = 256
 
@@ -131,16 +168,11 @@ func BenchmarkBucketChunkReader_loadChunks(b *testing.B) {
 	}
 	for _, numChunks := range benchCases {
 		b.Run(fmt.Sprintf("blocks-%d", numChunks), func(b *testing.B) {
-			chunkObjs := make([]string, numChunks)
-			for i := 0; i < len(chunkObjs); i++ {
-				chunkObjs[i] = fmt.Sprintf("chunk-%d", i)
-			}
-
 			ctx := context.Background()
 			block := &bucketBlock{
-				bkt:          newMockObjectStoreBucketReader(chunkSize),
+				bkt:          mockObjectStoreBucketReader{b: createChunkBytes(chunkenc.EncXOR, chunkSize, 0)},
 				partitioners: blockPartitioners{naivePartitioner{}, naivePartitioner{}, naivePartitioner{}},
-				chunkObjs:    chunkObjs,
+				chunkObjs:    []string{"00001"},
 			}
 
 			reader := newBucketChunkReader(ctx, block)
@@ -149,8 +181,8 @@ func BenchmarkBucketChunkReader_loadChunks(b *testing.B) {
 			loadIdxs := make([]loadIdx, numChunks)
 			for i := 0; i < len(loadIdxs); i++ {
 				loadIdxs[i] = loadIdx{
-					offset:      uint32(i * chunkSize),
-					length:      chunkSize,
+					offset:      0,
+					length:      2 * chunkSize, // oversize to avoid refetches
 					seriesEntry: 0,
 					chunkEntry:  i,
 				}
@@ -165,8 +197,8 @@ func BenchmarkBucketChunkReader_loadChunks(b *testing.B) {
 			for i := 0; i < b.N; i++ {
 				reader.reset()
 
-				for i, idx := range loadIdxs {
-					if err := reader.addLoad(chunks.ChunkRef(i), idx.seriesEntry, idx.chunkEntry, idx.length); err != nil {
+				for _, idx := range loadIdxs {
+					if err := reader.addLoad(chunks.ChunkRef(0), idx.seriesEntry, idx.chunkEntry, idx.length); err != nil {
 						b.Fatalf("error adding load: %v", err)
 					}
 				}
@@ -187,15 +219,6 @@ type mockObjectStoreBucketReader struct {
 	b []byte
 }
 
-func newMockObjectStoreBucketReader(chunkSize int) mockObjectStoreBucketReader {
-	b := make([]byte, chunkSize+4) // add extra 4 bytes (crc32)
-
-	binary.PutUvarint(b, uint64(chunkSize)-chunks.ChunkEncodingSize)
-	b[2] = byte(chunkenc.EncXOR) // chunk type
-
-	return mockObjectStoreBucketReader{b: b}
-}
-
-func (r mockObjectStoreBucketReader) GetRange(_ context.Context, _ string, _, _ int64) (io.ReadCloser, error) {
-	return io.NopCloser(bytes.NewReader(r.b)), nil
+func (r mockObjectStoreBucketReader) GetRange(_ context.Context, _ string, off, length int64) (io.ReadCloser, error) {
+	return io.NopCloser(bytes.NewReader(r.b[off:min(off+length, int64(len(r.b)))])), nil
 }
