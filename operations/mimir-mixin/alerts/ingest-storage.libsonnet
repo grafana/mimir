@@ -296,6 +296,21 @@
             message: '%(product)s {{ $labels.%(per_instance_label)s }} in %(alert_aggregation_variables)s has detected skipped data.' % $._config,
           },
         },
+
+        // Alert if the number of ingesters consuming partitions is less than the number of active partitions.
+        {
+          alert: $.alertName('FewerIngestersConsumingThanActivePartitions'),
+          expr: |||
+            max(cortex_partition_ring_partitions{name="ingester-partitions", state="Active"}) by (%(alert_aggregation_labels)s) > count(count(cortex_ingest_storage_reader_last_consumed_offset{}) by (%(alert_aggregation_labels)s, partition)) by (%(alert_aggregation_labels)s)
+          ||| % $._config,
+          'for': '15m',
+          labels: {
+            severity: 'critical',
+          },
+          annotations: {
+            message: '%(product)s ingesters in %(alert_aggregation_variables)s have fewer ingesters consuming than active partitions.' % $._config,
+          },
+        },
       ],
     },
   ],

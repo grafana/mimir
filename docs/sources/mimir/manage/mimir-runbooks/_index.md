@@ -1911,6 +1911,24 @@ How to **investigate**:
   - If the application panicked with error like `runtime: program exceeds 10000-thread limit`, check the panic stack trace
   - If the application has not panicked yet, issue `kill -QUIT <pid>` to dump the current stack trace of the process
 
+### MimirFewerIngestersConsumingThanActivePartitions
+
+This alert fires when the number of ingesters consuming partitions is less than the number of active partitions.
+This means that distributors are writing to partitions that are not being consumed by any ingester, leading to data missing from the short-term read path and potential data loss if this persists for too long.
+
+How it **works**:
+
+- Distributors shard series across the active partitions in the partitions ring.
+- Each ingester owns one partition, and consumes from it.
+- If a partition is not being consumed by any ingester, it means that the data written to that partition is not being available for querying and won't be saved to a block.
+
+How to **investigate**:
+
+This shouldn't happen in normal circumstances and is most likely indicative of a bug in the distributors or ingesters. This issue should be investigated and fixed as soon as possible.
+
+- Immediately scale out ingesters to the number of active partitions to consume the data.
+- Check that the ingester shutdowns are working as expected. When ingesters are downscaled, they should set ther partition as INACTIVE before shutting down. Ingesters are most likely the cause of this issue.
+
 ## Errors catalog
 
 Mimir has some codified error IDs that you might see in HTTP responses or logs.
