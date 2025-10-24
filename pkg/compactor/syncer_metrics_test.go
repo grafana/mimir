@@ -32,11 +32,11 @@ func TestSyncerMetrics(t *testing.T) {
 			# TYPE cortex_compactor_meta_blocks_synced gauge
 			cortex_compactor_meta_blocks_synced{state="loaded"} 30
 
-			# HELP cortex_compactor_meta_cache_loads_total Total number of block metadata loads served from per-tenant cache
+			# HELP cortex_compactor_meta_cache_loads_total Total number of block metadata loads served from in-memory cache
 			# TYPE cortex_compactor_meta_cache_loads_total counter
 			cortex_compactor_meta_cache_loads_total 444440
 
-			# HELP cortex_compactor_meta_cache_misses_total Total number of block metadata loads that missed per-tenant cache
+			# HELP cortex_compactor_meta_cache_misses_total Total number of block metadata loads that missed in-memory cache
 			# TYPE cortex_compactor_meta_cache_misses_total counter
 			cortex_compactor_meta_cache_misses_total 555550
 
@@ -44,7 +44,7 @@ func TestSyncerMetrics(t *testing.T) {
 			# TYPE cortex_compactor_meta_disk_loads_total counter
 			cortex_compactor_meta_disk_loads_total 888880
 
-			# HELP cortex_compactor_meta_disk_misses_total Total number of block metadata loads that missed local disk and required fetching from object storage
+			# HELP cortex_compactor_meta_disk_misses_total Total number of block metadata loads that missed local disk
 			# TYPE cortex_compactor_meta_disk_misses_total counter
 			cortex_compactor_meta_disk_misses_total 999990
 
@@ -180,11 +180,11 @@ func newTestSyncerMetrics(reg prometheus.Registerer) *testSyncerMetrics {
 	})
 	m.metaCacheLoads = promauto.With(reg).NewCounter(prometheus.CounterOpts{
 		Name: "blocks_meta_cache_loads_total",
-		Help: "Total number of block metadata loads served from per-tenant cache",
+		Help: "Total number of block metadata loads served from in-memory cache",
 	})
 	m.metaCacheMisses = promauto.With(reg).NewCounter(prometheus.CounterOpts{
 		Name: "blocks_meta_cache_misses_total",
-		Help: "Total number of block metadata loads that missed per-tenant cache",
+		Help: "Total number of block metadata loads that missed in-memory cache",
 	})
 	m.metaDiskLoads = promauto.With(reg).NewCounter(prometheus.CounterOpts{
 		Name: "blocks_meta_disk_loads_total",
@@ -192,7 +192,7 @@ func newTestSyncerMetrics(reg prometheus.Registerer) *testSyncerMetrics {
 	})
 	m.metaDiskMisses = promauto.With(reg).NewCounter(prometheus.CounterOpts{
 		Name: "blocks_meta_disk_misses_total",
-		Help: "Total number of block metadata loads that required fetching from object storage",
+		Help: "Total number of block metadata loads that missed local disk",
 	})
 
 	m.garbageCollections = promauto.With(reg).NewCounter(prometheus.CounterOpts{

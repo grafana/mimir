@@ -59,11 +59,11 @@ func newAggregatedSyncerMetrics(reg prometheus.Registerer) *aggregatedSyncerMetr
 	})
 	m.metaCacheLoads = promauto.With(reg).NewCounter(prometheus.CounterOpts{
 		Name: "cortex_compactor_meta_cache_loads_total",
-		Help: "Total number of block metadata loads served from per-tenant cache",
+		Help: "Total number of block metadata loads served from in-memory cache",
 	})
 	m.metaCacheMisses = promauto.With(reg).NewCounter(prometheus.CounterOpts{
 		Name: "cortex_compactor_meta_cache_misses_total",
-		Help: "Total number of block metadata loads that missed per-tenant cache",
+		Help: "Total number of block metadata loads that missed in-memory cache",
 	})
 	m.metaDiskLoads = promauto.With(reg).NewCounter(prometheus.CounterOpts{
 		Name: "cortex_compactor_meta_disk_loads_total",
@@ -71,7 +71,7 @@ func newAggregatedSyncerMetrics(reg prometheus.Registerer) *aggregatedSyncerMetr
 	})
 	m.metaDiskMisses = promauto.With(reg).NewCounter(prometheus.CounterOpts{
 		Name: "cortex_compactor_meta_disk_misses_total",
-		Help: "Total number of block metadata loads that missed local disk and required fetching from object storage",
+		Help: "Total number of block metadata loads that missed local disk",
 	})
 
 	m.garbageCollections = promauto.With(reg).NewCounter(prometheus.CounterOpts{

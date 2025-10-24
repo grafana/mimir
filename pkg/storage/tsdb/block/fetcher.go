@@ -125,11 +125,11 @@ func NewFetcherMetrics(reg prometheus.Registerer, syncedExtraLabels [][]string) 
 	})
 	m.MetaCacheLoads = promauto.With(reg).NewCounter(prometheus.CounterOpts{
 		Name: "blocks_meta_cache_loads_total",
-		Help: "Total number of block metadata loads served from per-tenant cache",
+		Help: "Total number of block metadata loads served from in-memory cache",
 	})
 	m.MetaCacheMisses = promauto.With(reg).NewCounter(prometheus.CounterOpts{
 		Name: "blocks_meta_cache_misses_total",
-		Help: "Total number of block metadata loads that missed per-tenant cache",
+		Help: "Total number of block metadata loads that missed in-memory cache",
 	})
 	m.MetaDiskLoads = promauto.With(reg).NewCounter(prometheus.CounterOpts{
 		Name: "blocks_meta_disk_loads_total",
@@ -137,7 +137,7 @@ func NewFetcherMetrics(reg prometheus.Registerer, syncedExtraLabels [][]string) 
 	})
 	m.MetaDiskMisses = promauto.With(reg).NewCounter(prometheus.CounterOpts{
 		Name: "blocks_meta_disk_misses_total",
-		Help: "Total number of block metadata loads that missed local disk and required fetching from object storage",
+		Help: "Total number of block metadata loads that missed local disk",
 	})
 	return &m
 }
@@ -208,13 +208,13 @@ var (
 // loadMeta returns metadata from object storage or error.
 // It returns ErrorSyncMetaNotFound and ErrorSyncMetaCorrupted sentinel errors in those cases.
 func (f *MetaFetcher) loadMeta(ctx context.Context, id ulid.ULID) (*Meta, error) {
-	// Track total calls to loadMeta - the denominator for cache hit rates
-	f.metrics.MetaLoadsTotal.Inc()
-
+	
 	var (
 		metaFile       = path.Join(id.String(), MetaFilename)
 		cachedBlockDir = filepath.Join(f.cacheDir, id.String())
 	)
+	
+	f.metrics.MetaLoadsTotal.Inc()
 
 	// Block meta.json file is immutable, so we lookup the cache as first thing without issuing
 	// any API call to the object storage. This significantly reduce the pressure on the object

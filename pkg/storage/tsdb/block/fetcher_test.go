@@ -649,11 +649,11 @@ func TestMetaFetcher_CacheMetrics(t *testing.T) {
 			require.Contains(t, metas, blockID)
 
 			require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
-				# HELP blocks_meta_cache_loads_total Total number of block metadata loads served from per-tenant cache
+				# HELP blocks_meta_cache_loads_total Total number of block metadata loads served from in-memory cache
 				# TYPE blocks_meta_cache_loads_total counter
 				blocks_meta_cache_loads_total `+fmt.Sprintf("%d", tc.expectedCacheLoads)+`
 
-				# HELP blocks_meta_cache_misses_total Total number of block metadata loads that missed per-tenant cache
+				# HELP blocks_meta_cache_misses_total Total number of block metadata loads that missed in-memory cache
 				# TYPE blocks_meta_cache_misses_total counter
 				blocks_meta_cache_misses_total `+fmt.Sprintf("%d", tc.expectedCacheMisses)+`
 
@@ -661,7 +661,7 @@ func TestMetaFetcher_CacheMetrics(t *testing.T) {
 				# TYPE blocks_meta_disk_loads_total counter
 				blocks_meta_disk_loads_total `+fmt.Sprintf("%d", tc.expectedDiskLoads)+`
 
-				# HELP blocks_meta_disk_misses_total Total number of block metadata loads that missed local disk and required fetching from object storage
+				# HELP blocks_meta_disk_misses_total Total number of block metadata loads that missed local disk
 				# TYPE blocks_meta_disk_misses_total counter
 				blocks_meta_disk_misses_total `+fmt.Sprintf("%d", tc.expectedDiskMisses)+`
 

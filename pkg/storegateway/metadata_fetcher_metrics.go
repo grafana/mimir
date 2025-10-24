@@ -56,11 +56,11 @@ func NewMetadataFetcherMetrics(logger log.Logger) *MetadataFetcherMetrics {
 			nil, nil),
 		metaCacheLoads: prometheus.NewDesc(
 			"cortex_blocks_meta_cache_loads_total",
-			"Total number of block metadata loads served from per-tenant cache",
+			"Total number of block metadata loads served from in-memory cache",
 			nil, nil),
 		metaCacheMisses: prometheus.NewDesc(
 			"cortex_blocks_meta_cache_misses_total",
-			"Total number of block metadata loads that missed per-tenant cache",
+			"Total number of block metadata loads that missed in-memory cache",
 			nil, nil),
 		metaDiskLoads: prometheus.NewDesc(
 			"cortex_blocks_meta_disk_loads_total",
@@ -68,7 +68,7 @@ func NewMetadataFetcherMetrics(logger log.Logger) *MetadataFetcherMetrics {
 			nil, nil),
 		metaDiskMisses: prometheus.NewDesc(
 			"cortex_blocks_meta_disk_misses_total",
-			"Total number of block metadata loads that missed local disk and required fetching from object storage",
+			"Total number of block metadata loads that missed local disk",
 			nil, nil),
 	}
 }
