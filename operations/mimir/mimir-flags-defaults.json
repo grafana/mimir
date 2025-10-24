@@ -759,7 +759,6 @@
   "blocks-storage.bucket-store.partitioner-max-gap-bytes": 524288,
   "blocks-storage.bucket-store.posting-offsets-in-mem-sampling": 32,
   "blocks-storage.bucket-store.index-header.max-idle-file-handles": 1,
-  "blocks-storage.bucket-store.index-header.eager-loading-startup-enabled": true,
   "blocks-storage.bucket-store.index-header.lazy-loading-enabled": true,
   "blocks-storage.bucket-store.index-header.lazy-loading-idle-timeout": 3600000000000,
   "blocks-storage.bucket-store.index-header.lazy-loading-concurrency": 4,

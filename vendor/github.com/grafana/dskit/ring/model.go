@@ -180,11 +180,8 @@ func (i *InstanceDesc) IsHealthy(op Operation, heartbeatTimeout time.Duration, n
 }
 
 // IsHeartbeatHealthy returns whether the heartbeat timestamp for the ingester is within the
-// specified timeout period. A timeout of zero disables the timeout; the heartbeat is ignored.
+// specified timeout period.
 func (i *InstanceDesc) IsHeartbeatHealthy(heartbeatTimeout time.Duration, now time.Time) bool {
-	if heartbeatTimeout == 0 {
-		return true
-	}
 	return now.Sub(time.Unix(i.Timestamp, 0)) <= heartbeatTimeout
 }
 
