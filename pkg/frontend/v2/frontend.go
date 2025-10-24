@@ -723,7 +723,7 @@ func (f *Frontend) QueryResult(ctx context.Context, qrReq *frontendv2pb.QueryRes
 	// To avoid leaking query results between users, we verify the user here.
 	// To avoid mixing results from different queries, we randomize queryID counter on start.
 	if req == nil {
-		return nil, status.Errorf(codes.FailedPrecondition, "query %d not found or response already received", qrReq.QueryID)
+		return nil, status.Errorf(codes.FailedPrecondition, "query %d not found, cancelled or response already received", qrReq.QueryID)
 	}
 
 	if req.userID != userID {
@@ -785,7 +785,7 @@ func (f *Frontend) QueryResultStream(stream frontendv2pb.FrontendForQuerier_Quer
 	req := f.requests.getAndDelete(firstMessage.QueryID)
 
 	if req == nil {
-		return status.Errorf(codes.FailedPrecondition, "query %d not found or response already received", firstMessage.QueryID)
+		return status.Errorf(codes.FailedPrecondition, "query %d not found, cancelled or response already received", firstMessage.QueryID)
 	}
 
 	if req.userID != userID {
