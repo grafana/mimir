@@ -9,6 +9,7 @@ import (
 	_ "github.com/gogo/protobuf/gogoproto"
 	proto "github.com/gogo/protobuf/proto"
 	httpgrpc "github.com/grafana/dskit/httpgrpc"
+	mimirpb "github.com/grafana/mimir/pkg/mimirpb"
 	clusterpb "github.com/prometheus/alertmanager/cluster/clusterpb"
 	grpc "google.golang.org/grpc"
 	codes "google.golang.org/grpc/codes"
@@ -391,7 +392,7 @@ const _ = grpc.SupportPackageIsVersion4
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://godoc.org/google.golang.org/grpc#ClientConn.NewStream.
 type AlertmanagerClient interface {
-	HandleRequest(ctx context.Context, in *httpgrpc.HTTPRequest, opts ...grpc.CallOption) (*httpgrpc.HTTPResponse, error)
+	HandleRequest(ctx context.Context, in *mimirpb.HTTPRequest, opts ...grpc.CallOption) (*httpgrpc.HTTPResponse, error)
 	UpdateState(ctx context.Context, in *clusterpb.Part, opts ...grpc.CallOption) (*UpdateStateResponse, error)
 	ReadState(ctx context.Context, in *ReadStateRequest, opts ...grpc.CallOption) (*ReadStateResponse, error)
 }
@@ -404,7 +405,7 @@ func NewAlertmanagerClient(cc *grpc.ClientConn) AlertmanagerClient {
 	return &alertmanagerClient{cc}
 }
 
-func (c *alertmanagerClient) HandleRequest(ctx context.Context, in *httpgrpc.HTTPRequest, opts ...grpc.CallOption) (*httpgrpc.HTTPResponse, error) {
+func (c *alertmanagerClient) HandleRequest(ctx context.Context, in *mimirpb.HTTPRequest, opts ...grpc.CallOption) (*httpgrpc.HTTPResponse, error) {
 	out := new(httpgrpc.HTTPResponse)
 	err := c.cc.Invoke(ctx, "/alertmanagerpb.Alertmanager/HandleRequest", in, out, opts...)
 	if err != nil {
@@ -433,7 +434,7 @@ func (c *alertmanagerClient) ReadState(ctx context.Context, in *ReadStateRequest
 
 // AlertmanagerServer is the server API for Alertmanager service.
 type AlertmanagerServer interface {
-	HandleRequest(context.Context, *httpgrpc.HTTPRequest) (*httpgrpc.HTTPResponse, error)
+	HandleRequest(context.Context, *mimirpb.HTTPRequest) (*httpgrpc.HTTPResponse, error)
 	UpdateState(context.Context, *clusterpb.Part) (*UpdateStateResponse, error)
 	ReadState(context.Context, *ReadStateRequest) (*ReadStateResponse, error)
 }
@@ -442,7 +443,7 @@ type AlertmanagerServer interface {
 type UnimplementedAlertmanagerServer struct {
 }
 
-func (*UnimplementedAlertmanagerServer) HandleRequest(ctx context.Context, req *httpgrpc.HTTPRequest) (*httpgrpc.HTTPResponse, error) {
+func (*UnimplementedAlertmanagerServer) HandleRequest(ctx context.Context, req *mimirpb.HTTPRequest) (*httpgrpc.HTTPResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method HandleRequest not implemented")
 }
 func (*UnimplementedAlertmanagerServer) UpdateState(ctx context.Context, req *clusterpb.Part) (*UpdateStateResponse, error) {
@@ -457,7 +458,7 @@ func RegisterAlertmanagerServer(s *grpc.Server, srv AlertmanagerServer) {
 }
 
 func _Alertmanager_HandleRequest_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(httpgrpc.HTTPRequest)
+	in := new(mimirpb.HTTPRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
@@ -469,7 +470,7 @@ func _Alertmanager_HandleRequest_Handler(srv interface{}, ctx context.Context, d
 		FullMethod: "/alertmanagerpb.Alertmanager/HandleRequest",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(AlertmanagerServer).HandleRequest(ctx, req.(*httpgrpc.HTTPRequest))
+		return srv.(AlertmanagerServer).HandleRequest(ctx, req.(*mimirpb.HTTPRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
