@@ -27,8 +27,8 @@ var (
 )
 
 type QueryLimiter struct {
-	uniqueSeriesMx sync.Mutex
-	uniqueSeries   map[uint64]struct{}
+	seriesMx        sync.Mutex
+	canonicalLabels map[uint64]labels.Labels // Stores canonical labels for both deduplication and counting
 
 	chunkBytesCount     atomic.Int64
 	chunkCount          atomic.Int64
@@ -46,8 +46,8 @@ type QueryLimiter struct {
 // maxSeriesPerQuery, maxChunkBytesPerQuery, maxChunksPerQuery and maxEstimatedChunksPerQuery limits.
 func NewQueryLimiter(maxSeriesPerQuery, maxChunkBytesPerQuery, maxChunksPerQuery int, maxEstimatedChunksPerQuery int, queryMetrics *stats.QueryMetrics) *QueryLimiter {
 	return &QueryLimiter{
-		uniqueSeriesMx: sync.Mutex{},
-		uniqueSeries:   map[uint64]struct{}{},
+		seriesMx:        sync.Mutex{},
+		canonicalLabels: map[uint64]labels.Labels{},
 
 		maxSeriesPerQuery:          maxSeriesPerQuery,
 		maxChunkBytesPerQuery:      maxChunkBytesPerQuery,
@@ -73,37 +73,64 @@ func QueryLimiterFromContextWithFallback(ctx context.Context) *QueryLimiter {
 	return ql
 }
 
-// AddSeries adds the input series and returns an error if the limit is reached.
-func (ql *QueryLimiter) AddSeries(seriesLabels labels.Labels) validation.LimitError {
+// AddSeries adds the input series and returns the canonical labels for deduplication.
+// If the series has been seen before, it returns the previously stored labels instead of the new ones,
+// allowing callers to deduplicate memory consumption for series that appear multiple times.
+// This is useful when the same series is returned from multiple sources (e.g., from different ingesters
+// due to replication, or from different blocks in the store-gateway).
+//
+// Returns:
+//   - canonicalLabels: the labels to use (either the input labels if new, or previously stored labels if duplicate)
+//   - isNew: true if this is the first time seeing this series, false if it's a duplicate
+//   - error: validation.LimitError if the series limit is exceeded
+func (ql *QueryLimiter) AddSeries(seriesLabels labels.Labels) (labels.Labels, bool, validation.LimitError) {
 	// If the max series is unlimited just return without managing map
 	if ql.maxSeriesPerQuery == 0 {
-		return nil
+		return seriesLabels, true, nil
 	}
 	fingerprint := seriesLabels.Hash()
 
-	ql.uniqueSeriesMx.Lock()
-	defer ql.uniqueSeriesMx.Unlock()
+	ql.seriesMx.Lock()
+	defer ql.seriesMx.Unlock()
 
-	uniqueSeriesBefore := len(ql.uniqueSeries)
-	ql.uniqueSeries[fingerprint] = struct{}{}
-	uniqueSeriesAfter := len(ql.uniqueSeries)
+	// Check if we've seen this series before
+	var canonicalLabels labels.Labels
+	var isNew bool
 
-	if uniqueSeriesAfter > ql.maxSeriesPerQuery {
-		if uniqueSeriesBefore <= ql.maxSeriesPerQuery {
-			// If we've just exceeded the limit for the first time for this query, increment the failed query metric.
+	if existingLabels, exists := ql.canonicalLabels[fingerprint]; exists {
+		// This is a duplicate - return the canonical labels we stored earlier
+		canonicalLabels = existingLabels
+		isNew = false
+	} else {
+		// This is a new series - track it in the map.
+		// We capture the count before and after adding to detect when we first exceed the limit.
+		uniqueSeriesBefore := len(ql.canonicalLabels)
+		ql.canonicalLabels[fingerprint] = seriesLabels
+		uniqueSeriesAfter := len(ql.canonicalLabels)
+
+		canonicalLabels = seriesLabels
+		isNew = true
+
+		// Only increment the metric the first time we exceed the limit (when uniqueSeriesBefore was still within limit)
+		if uniqueSeriesAfter > ql.maxSeriesPerQuery && uniqueSeriesBefore <= ql.maxSeriesPerQuery {
 			ql.queryMetrics.QueriesRejectedTotal.WithLabelValues(stats.RejectReasonMaxSeries).Inc()
 		}
-
-		return NewMaxSeriesHitLimitError(uint64(ql.maxSeriesPerQuery))
 	}
-	return nil
+
+	// Single limit check at the end - applies to both new series and duplicates
+	// This ensures that once a query exceeds the limit, all subsequent series (including duplicates) are rejected
+	if len(ql.canonicalLabels) > ql.maxSeriesPerQuery {
+		return canonicalLabels, isNew, NewMaxSeriesHitLimitError(uint64(ql.maxSeriesPerQuery))
+	}
+
+	return canonicalLabels, isNew, nil
 }
 
 // uniqueSeriesCount returns the count of unique series seen by this query limiter.
 func (ql *QueryLimiter) uniqueSeriesCount() int {
-	ql.uniqueSeriesMx.Lock()
-	defer ql.uniqueSeriesMx.Unlock()
-	return len(ql.uniqueSeries)
+	ql.seriesMx.Lock()
+	defer ql.seriesMx.Unlock()
+	return len(ql.canonicalLabels)
 }
 
 // AddChunkBytes adds the input chunk size in bytes and returns an error if the limit is reached.

@@ -1016,16 +1016,20 @@ func (q *blocksStoreQuerier) receiveMessage(c BlocksStoreClient, stream storegat
 		for _, s := range ss.Series {
 			ls := mimirpb.FromLabelAdaptersToLabelsWithCopy(s.Labels)
 
-			if err := memoryTracker.IncreaseMemoryConsumptionForLabels(ls); err != nil {
-				return myWarnings, myQueriedBlocks, myStreamingSeriesLabels, indexBytesFetched, false, false, err
-			}
-
-			// Add series fingerprint to query limiter; will return error if we are over the limit
-			if limitErr := queryLimiter.AddSeries(ls); limitErr != nil {
+			// AddSeries returns canonical labels for deduplication and isNew flag
+			canonicalLabels, isNew, limitErr := queryLimiter.AddSeries(ls)
+			if limitErr != nil {
 				return myWarnings, myQueriedBlocks, myStreamingSeriesLabels, indexBytesFetched, false, false, limitErr
 			}
 
-			myStreamingSeriesLabels = append(myStreamingSeriesLabels, ls)
+			// Only track memory for new series to avoid double-counting duplicates
+			if isNew {
+				if err := memoryTracker.IncreaseMemoryConsumptionForLabels(canonicalLabels); err != nil {
+					return myWarnings, myQueriedBlocks, myStreamingSeriesLabels, indexBytesFetched, false, false, err
+				}
+			}
+
+			myStreamingSeriesLabels = append(myStreamingSeriesLabels, canonicalLabels)
 		}
 
 		if ss.IsEndOfSeriesStream {

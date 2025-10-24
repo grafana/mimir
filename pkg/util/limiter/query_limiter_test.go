@@ -36,16 +36,23 @@ func TestQueryLimiter_AddSeries_ShouldReturnNoErrorOnLimitNotExceeded(t *testing
 		reg     = prometheus.NewPedanticRegistry()
 		limiter = NewQueryLimiter(100, 0, 0, 0, stats.NewQueryMetrics(reg))
 	)
-	err := limiter.AddSeries(series1)
+	canonical1, isNew, err := limiter.AddSeries(series1)
 	assert.NoError(t, err)
-	err = limiter.AddSeries(series2)
+	assert.True(t, isNew)
+	assert.Equal(t, series1, canonical1)
+
+	canonical2, isNew, err := limiter.AddSeries(series2)
 	assert.NoError(t, err)
+	assert.True(t, isNew)
+	assert.Equal(t, series2, canonical2)
 	assert.Equal(t, 2, limiter.uniqueSeriesCount())
 	assertRejectedQueriesMetricValue(t, reg, 0, 0, 0, 0)
 
 	// Re-add previous series to make sure it's not double counted
-	err = limiter.AddSeries(series1)
+	canonicalDup, isNew, err := limiter.AddSeries(series1)
 	assert.NoError(t, err)
+	assert.False(t, isNew, "duplicate series should report isNew=false")
+	assert.True(t, labels.Equal(canonical1, canonicalDup), "should return the original canonical labels")
 	assert.Equal(t, 2, limiter.uniqueSeriesCount())
 	assertRejectedQueriesMetricValue(t, reg, 0, 0, 0, 0)
 }
@@ -71,22 +78,30 @@ func TestQueryLimiter_AddSeries_ShouldReturnErrorOnLimitExceeded(t *testing.T) {
 		reg     = prometheus.NewPedanticRegistry()
 		limiter = NewQueryLimiter(1, 0, 0, 0, stats.NewQueryMetrics(reg))
 	)
-	err := limiter.AddSeries(series1)
+	canonical1, isNew, err := limiter.AddSeries(series1)
 	require.NoError(t, err)
+	assert.True(t, isNew)
+	assert.Equal(t, series1, canonical1)
 	assertRejectedQueriesMetricValue(t, reg, 0, 0, 0, 0)
 
-	err = limiter.AddSeries(series2)
+	canonical2, isNew, err := limiter.AddSeries(series2)
 	require.Error(t, err)
+	assert.True(t, isNew, "even when limit exceeded, new series should report isNew=true")
+	assert.Equal(t, series2, canonical2)
 	assertRejectedQueriesMetricValue(t, reg, 1, 0, 0, 0)
 
 	// Add the same series again and ensure that we don't increment the failed queries metric again.
-	err = limiter.AddSeries(series2)
+	// Since series2 was tracked in the map on first attempt, this should return isNew=false
+	canonical2Again, isNew, err := limiter.AddSeries(series2)
 	require.Error(t, err)
+	assert.False(t, isNew, "duplicate series should report isNew=false even when over limit")
+	assert.True(t, labels.Equal(canonical2, canonical2Again), "should return same canonical labels")
 	assertRejectedQueriesMetricValue(t, reg, 1, 0, 0, 0)
 
 	// Add another series and ensure that we don't increment the failed queries metric again.
-	err = limiter.AddSeries(series3)
+	_, isNew, err = limiter.AddSeries(series3)
 	require.Error(t, err)
+	assert.True(t, isNew, "new series should report isNew=true")
 	assertRejectedQueriesMetricValue(t, reg, 1, 0, 0, 0)
 }
 
@@ -187,7 +202,7 @@ func BenchmarkQueryLimiter_AddSeries(b *testing.B) {
 	reg := prometheus.NewPedanticRegistry()
 	limiter := NewQueryLimiter(b.N+1, 0, 0, 0, stats.NewQueryMetrics(reg))
 	for _, s := range series {
-		err := limiter.AddSeries(s)
+		_, _, err := limiter.AddSeries(s)
 		assert.NoError(b, err)
 	}
 }

@@ -3148,10 +3148,12 @@ respsLoop:
 
 	result := make([]labels.Labels, 0, len(metrics))
 	for _, m := range metrics {
-		if err := queryLimiter.AddSeries(m); err != nil {
+		// Use canonical labels for deduplication
+		canonicalLabels, _, err := queryLimiter.AddSeries(m)
+		if err != nil {
 			return nil, err
 		}
-		result = append(result, m)
+		result = append(result, canonicalLabels)
 	}
 	return result, nil
 }
