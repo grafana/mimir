@@ -11110,12 +11110,12 @@
               "kind": "field",
               "name": "head_postings_for_matchers_cache_ttl",
               "required": false,
-              "desc": "How long to cache postings for matchers in the Head and OOOHead. 0 disables the cache and just deduplicates the in-flight calls.",
+              "desc": "How long to cache postings for matchers in the Head and OOOHead. Set to 0 to disable the cache and only deduplicate in-flight calls.",
               "fieldValue": null,
               "fieldDefaultValue": 10000000000,
               "fieldFlag": "blocks-storage.tsdb.head-postings-for-matchers-cache-ttl",
               "fieldType": "duration",
-              "fieldCategory": "experimental"
+              "fieldCategory": "advanced"
             },
             {
               "kind": "field",
@@ -11132,12 +11132,12 @@
               "kind": "field",
               "name": "head_postings_for_matchers_cache_max_bytes",
               "required": false,
-              "desc": "Maximum size in bytes of the cache for postings for matchers in the Head and OOOHead when TTL is greater than 0.",
+              "desc": "Maximum size, in bytes, of the cache for postings for matchers in each compacted block when the TTL is greater than 0.",
               "fieldValue": null,
               "fieldDefaultValue": 104857600,
               "fieldFlag": "blocks-storage.tsdb.head-postings-for-matchers-cache-max-bytes",
               "fieldType": "int",
-              "fieldCategory": "experimental"
+              "fieldCategory": "advanced"
             },
             {
               "kind": "field",
@@ -11148,7 +11148,7 @@
               "fieldDefaultValue": false,
               "fieldFlag": "blocks-storage.tsdb.head-postings-for-matchers-cache-force",
               "fieldType": "boolean",
-              "fieldCategory": "experimental"
+              "fieldCategory": "advanced"
             },
             {
               "kind": "field",
@@ -11159,7 +11159,7 @@
               "fieldDefaultValue": 10000000000,
               "fieldFlag": "blocks-storage.tsdb.block-postings-for-matchers-cache-ttl",
               "fieldType": "duration",
-              "fieldCategory": "experimental"
+              "fieldCategory": "advanced"
             },
             {
               "kind": "field",
@@ -11181,7 +11181,7 @@
               "fieldDefaultValue": 104857600,
               "fieldFlag": "blocks-storage.tsdb.block-postings-for-matchers-cache-max-bytes",
               "fieldType": "int",
-              "fieldCategory": "experimental"
+              "fieldCategory": "advanced"
             },
             {
               "kind": "field",
@@ -11192,7 +11192,7 @@
               "fieldDefaultValue": false,
               "fieldFlag": "blocks-storage.tsdb.block-postings-for-matchers-cache-force",
               "fieldType": "boolean",
-              "fieldCategory": "experimental"
+              "fieldCategory": "advanced"
             },
             {
               "kind": "field",
