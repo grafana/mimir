@@ -117,7 +117,7 @@ func IsLimitError(err error) bool {
 // limits via flags, or per-user limits via yaml config.
 type Limits struct {
 	// Distributor enforced limits.
-	MaxActiveSeriesPerUser int     `yaml:"max_active_series_per_user" json:"max_active_series_per_user"`
+	MaxActiveSeriesPerUser int     `yaml:"max_active_series_per_user" json:"max_active_series_per_user" category:"experimental" doc:"hidden"`
 	RequestRate            float64 `yaml:"request_rate" json:"request_rate"`
 	RequestBurstSize       int     `yaml:"request_burst_size" json:"request_burst_size"`
 	IngestionRate          float64 `yaml:"ingestion_rate" json:"ingestion_rate"`
@@ -187,15 +187,15 @@ type Limits struct {
 	activeSeriesMergedCustomTrackersConfig     *atomic.Pointer[asmodel.CustomTrackersConfig] `yaml:"-" json:"-"`
 
 	// Max allowed time window for out-of-order samples.
-	OutOfOrderTimeWindow                 model.Duration `yaml:"out_of_order_time_window" json:"out_of_order_time_window" category:"experimental"`
-	OutOfOrderBlocksExternalLabelEnabled bool           `yaml:"out_of_order_blocks_external_label_enabled" json:"out_of_order_blocks_external_label_enabled" category:"experimental"`
+	OutOfOrderTimeWindow                 model.Duration `yaml:"out_of_order_time_window" json:"out_of_order_time_window"`
+	OutOfOrderBlocksExternalLabelEnabled bool           `yaml:"out_of_order_blocks_external_label_enabled" json:"out_of_order_blocks_external_label_enabled" category:"advanced"`
 
 	// User defined label to give the option of subdividing specific metrics by another label
 	SeparateMetricsGroupLabel string `yaml:"separate_metrics_group_label" json:"separate_metrics_group_label" category:"experimental"`
 
 	// Querier enforced limits.
 	MaxChunksPerQuery                     int            `yaml:"max_fetched_chunks_per_query" json:"max_fetched_chunks_per_query"`
-	MaxEstimatedChunksPerQueryMultiplier  float64        `yaml:"max_estimated_fetched_chunks_per_query_multiplier" json:"max_estimated_fetched_chunks_per_query_multiplier" category:"experimental"`
+	MaxEstimatedChunksPerQueryMultiplier  float64        `yaml:"max_estimated_fetched_chunks_per_query_multiplier" json:"max_estimated_fetched_chunks_per_query_multiplier" category:"advanced"`
 	MaxFetchedSeriesPerQuery              int            `yaml:"max_fetched_series_per_query" json:"max_fetched_series_per_query"`
 	MaxFetchedChunkBytesPerQuery          int            `yaml:"max_fetched_chunk_bytes_per_query" json:"max_fetched_chunk_bytes_per_query"`
 	MaxEstimatedMemoryConsumptionPerQuery uint64         `yaml:"max_estimated_memory_consumption_per_query" json:"max_estimated_memory_consumption_per_query" category:"experimental"`
@@ -220,7 +220,7 @@ type Limits struct {
 	ResultsCacheTTLForErrors               model.Duration         `yaml:"results_cache_ttl_for_errors" json:"results_cache_ttl_for_errors"`
 	ResultsCacheForUnalignedQueryEnabled   bool                   `yaml:"cache_unaligned_requests" json:"cache_unaligned_requests" category:"advanced"`
 	MaxQueryExpressionSizeBytes            int                    `yaml:"max_query_expression_size_bytes" json:"max_query_expression_size_bytes"`
-	BlockedQueries                         BlockedQueriesConfig   `yaml:"blocked_queries,omitempty" json:"blocked_queries,omitempty" doc:"nocli|description=List of queries to block." category:"experimental"`
+	BlockedQueries                         BlockedQueriesConfig   `yaml:"blocked_queries,omitempty" json:"blocked_queries,omitempty" doc:"nocli|description=List of queries to block."`
 	LimitedQueries                         LimitedQueriesConfig   `yaml:"limited_queries,omitempty" json:"limited_queries,omitempty" doc:"nocli|description=List of queries to limit and duration to limit them for." category:"experimental"`
 	BlockedRequests                        BlockedRequestsConfig  `yaml:"blocked_requests,omitempty" json:"blocked_requests,omitempty" doc:"nocli|description=List of HTTP requests to block." category:"experimental"`
 	AlignQueriesWithStep                   bool                   `yaml:"align_queries_with_step" json:"align_queries_with_step"`
@@ -234,7 +234,7 @@ type Limits struct {
 	LabelNamesAndValuesResultsMaxSizeBytes        int  `yaml:"label_names_and_values_results_max_size_bytes" json:"label_names_and_values_results_max_size_bytes"`
 	LabelValuesMaxCardinalityLabelNamesPerRequest int  `yaml:"label_values_max_cardinality_label_names_per_request" json:"label_values_max_cardinality_label_names_per_request"`
 	CardinalityAnalysisMaxResults                 int  `yaml:"cardinality_analysis_max_results" json:"cardinality_analysis_max_results" category:"experimental"`
-	ActiveSeriesResultsMaxSizeBytes               int  `yaml:"active_series_results_max_size_bytes" json:"active_series_results_max_size_bytes" category:"experimental"`
+	ActiveSeriesResultsMaxSizeBytes               int  `yaml:"active_series_results_max_size_bytes" json:"active_series_results_max_size_bytes" category:"advanced"`
 
 	// Cost attribution.
 	CostAttributionLabels           flagext.StringSliceCSV       `yaml:"cost_attribution_labels" json:"cost_attribution_labels" category:"experimental"`
@@ -862,14 +862,7 @@ func (o *Overrides) PastGracePeriod(userID string) time.Duration {
 
 // MaxActiveSeriesPerUser returns the maximum number of active series a user is allowed to store across the cluster.
 func (o *Overrides) MaxActiveSeriesPerUser(userID string) int {
-	overrides := o.getOverridesForUser(userID)
-	limit := overrides.MaxActiveSeriesPerUser
-	// TODO temporary to simplify testing.
-	if limit == 0 {
-		// Fallback to MaxGlobalSeriesPerUser if no per-user active series limit is set.
-		limit = overrides.MaxGlobalSeriesPerUser
-	}
-	return limit
+	return o.getOverridesForUser(userID).MaxActiveSeriesPerUser
 }
 
 // MaxGlobalSeriesPerUser returns the maximum number of series a user is allowed to store across the cluster.

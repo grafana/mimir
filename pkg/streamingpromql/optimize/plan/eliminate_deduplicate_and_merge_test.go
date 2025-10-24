@@ -338,14 +338,14 @@ func TestEliminateDeduplicateAndMergeOptimizationPassPlan(t *testing.T) {
 			opts := streamingpromql.NewTestEngineOpts()
 
 			// First, create a plan without optimization to count original nodes
-			plannerNoOpt, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts)
+			plannerNoOpt, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 			require.NoError(t, err)
 			planBefore, err := plannerNoOpt.NewQueryPlan(ctx, testCase.expr, timeRange, observer)
 			require.NoError(t, err)
 			nodesBefore := countDeduplicateAndMergeNodes(planBefore.Root)
 
 			// Then, create a plan with optimization
-			plannerWithOpt, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts)
+			plannerWithOpt, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 			require.NoError(t, err)
 			plannerWithOpt.RegisterQueryPlanOptimizationPass(plan.NewEliminateDeduplicateAndMergeOptimizationPass())
 			planAfter, err := plannerWithOpt.NewQueryPlan(ctx, testCase.expr, timeRange, observer)
@@ -525,7 +525,7 @@ func TestEliminateDeduplicateAndMergeOptimizationPassCorrectness(t *testing.T) {
 				opts := streamingpromql.NewTestEngineOpts()
 				// Disable delayed name removal, since EliminateDeduplicateAndMergeOptimizationPass is enabled only when delayed name removal is disabled.
 				opts.CommonOpts.EnableDelayedNameRemoval = false
-				planner, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts)
+				planner, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 				require.NoError(t, err)
 
 				if withOptimization {
@@ -598,7 +598,7 @@ func runTestCasesWithDelayedNameRemovalDisabled(t *testing.T, globPattern string
 			testScript := string(b)
 			opts := streamingpromql.NewTestEngineOpts()
 			opts.CommonOpts.EnableDelayedNameRemoval = false
-			planner, err := streamingpromql.NewQueryPlanner(opts)
+			planner, err := streamingpromql.NewQueryPlanner(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 			require.NoError(t, err)
 			engine, err := streamingpromql.NewEngine(opts, streamingpromql.NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), planner)
 			require.NoError(t, err)

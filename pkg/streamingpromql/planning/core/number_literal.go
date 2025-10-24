@@ -76,6 +76,6 @@ func (n *NumberLiteral) ExpressionPosition() posrange.PositionRange {
 	return n.GetExpressionPosition().ToPrometheusType()
 }
 
-func (n *NumberLiteral) MinimumRequiredPlanVersion() int64 {
+func (n *NumberLiteral) MinimumRequiredPlanVersion() planning.QueryPlanVersion {
 	return planning.QueryPlanVersionZero
 }

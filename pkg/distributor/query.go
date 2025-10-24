@@ -259,8 +259,13 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSets [
 		var streamingSeriesBatches [][]labels.Labels
 		streamingSeriesCount := 0
 
+		memoryConsumptionTracker, err := limiter.MemoryConsumptionTrackerFromContext(ctx)
+		if err != nil {
+			return result, err
+		}
+
 		for {
-			labelsBatch, isEOS, err := result.receiveResponse(stream, queryLimiter)
+			labelsBatch, isEOS, err := result.receiveResponse(stream, queryLimiter, memoryConsumptionTracker)
 			if errors.Is(err, io.EOF) {
 				// We will never get an EOF here from an ingester that is streaming chunks, so we don't need to do anything to set up streaming here.
 				return result, nil
@@ -328,12 +333,9 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSets [
 	return resp, nil
 }
 
-// receiveResponse receives a response from stream, and:
-// * If the response has Timeseries, they are added to r.timeseriesBatches.
-// * If the response has Chunkseries, they are added to r.chunkseriesBatches.
-// * If the response has StreamingSeries, a slice is returned with the label sets of each series.
+// receiveResponse receives a response from stream returns the label sets of each series.
 // A bool is also returned to indicate whether the end of the stream has been reached.
-func (r *ingesterQueryResult) receiveResponse(stream ingester_client.Ingester_QueryStreamClient, queryLimiter *limiter.QueryLimiter) ([]labels.Labels, bool, error) {
+func (r *ingesterQueryResult) receiveResponse(stream ingester_client.Ingester_QueryStreamClient, queryLimiter *limiter.QueryLimiter, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) ([]labels.Labels, bool, error) {
 	resp, err := stream.Recv()
 	if err != nil {
 		return nil, false, err
@@ -344,6 +346,10 @@ func (r *ingesterQueryResult) receiveResponse(stream ingester_client.Ingester_Qu
 		labelsBatch := make([]labels.Labels, 0, len(resp.StreamingSeries))
 		for _, s := range resp.StreamingSeries {
 			l := mimirpb.FromLabelAdaptersToLabelsWithCopy(s.Labels)
+
+			if err := memoryConsumptionTracker.IncreaseMemoryConsumptionForLabels(l); err != nil {
+				return nil, false, err
+			}
 
 			if err := queryLimiter.AddSeries(l); err != nil {
 				return nil, false, err

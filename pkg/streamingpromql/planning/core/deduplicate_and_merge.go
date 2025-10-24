@@ -72,7 +72,7 @@ func (d *DeduplicateAndMerge) ExpressionPosition() posrange.PositionRange {
 	return d.Inner.ExpressionPosition()
 }
 
-func (d *DeduplicateAndMerge) MinimumRequiredPlanVersion() int64 {
+func (d *DeduplicateAndMerge) MinimumRequiredPlanVersion() planning.QueryPlanVersion {
 	return planning.QueryPlanVersionZero
 }
 

@@ -43,7 +43,7 @@ func (e *EliminateDeduplicateAndMergeOptimizationPass) Name() string {
 	return "Eliminate DeduplicateAndMerge"
 }
 
-func (e *EliminateDeduplicateAndMergeOptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan) (*planning.QueryPlan, error) {
+func (e *EliminateDeduplicateAndMergeOptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan, maximumSupportedQueryPlanVersion planning.QueryPlanVersion) (*planning.QueryPlan, error) {
 	var nodesToRemove []dedupNodeInfo
 	e.collectNodesToRemove(plan.Root, nil, -1, &nodesToRemove)
 	newRoot, err := e.eliminate(nodesToRemove)
