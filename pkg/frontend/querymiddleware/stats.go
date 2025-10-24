@@ -13,6 +13,7 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 
+	"github.com/grafana/mimir/pkg/frontend/querymiddleware/astmapper"
 	"github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/streamingpromql"
@@ -71,7 +72,7 @@ func (s queryStatsMiddleware) Do(ctx context.Context, req MetricsQueryRequest) (
 }
 
 func (s queryStatsMiddleware) trackRegexpMatchers(req MetricsQueryRequest) {
-	expr, err := parser.ParseExpr(req.GetQuery())
+	expr, err := astmapper.CloneExpr(req.GetParsedQuery())
 	if err != nil {
 		return
 	}
@@ -137,7 +138,7 @@ func (s queryStatsMiddleware) populateQueryDetails(ctx context.Context, req Metr
 func (s queryStatsMiddleware) findMinMaxTime(ctx context.Context, req MetricsQueryRequest) (int64, int64, bool) {
 	switch r := req.(type) {
 	case *PrometheusRangeQueryRequest, *PrometheusInstantQueryRequest:
-		expr, err := parser.ParseExpr(r.GetQuery())
+		expr, err := astmapper.CloneExpr(req.GetParsedQuery())
 		if err != nil {
 			return 0, 0, false
 		}

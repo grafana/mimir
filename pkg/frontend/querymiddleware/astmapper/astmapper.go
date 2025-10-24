@@ -65,19 +65,19 @@ func NewMultiMapper(xs ...ASTMapper) *MultiMapper {
 	return m
 }
 
-// cloneExpr is a helper function to clone an expression.
-func cloneExpr(expr parser.Expr) (parser.Expr, error) {
+// CloneExpr is a helper function to clone an expression.
+func CloneExpr(expr parser.Expr) (parser.Expr, error) {
 	switch e := expr.(type) {
 	case nil:
 		return nil, nil
 
 	case *parser.BinaryExpr:
-		lhs, err := cloneExpr(e.LHS)
+		lhs, err := CloneExpr(e.LHS)
 		if err != nil {
 			return nil, err
 		}
 
-		rhs, err := cloneExpr(e.RHS)
+		rhs, err := CloneExpr(e.RHS)
 		if err != nil {
 			return nil, err
 		}
@@ -104,7 +104,7 @@ func cloneExpr(expr parser.Expr) (parser.Expr, error) {
 	case *parser.Call:
 		args := make([]parser.Expr, 0, len(e.Args))
 		for _, arg := range e.Args {
-			cloned, err := cloneExpr(arg)
+			cloned, err := CloneExpr(arg)
 			if err != nil {
 				return nil, err
 			}
@@ -147,7 +147,7 @@ func cloneExpr(expr parser.Expr) (parser.Expr, error) {
 		}, nil
 
 	case *parser.MatrixSelector:
-		vs, err := cloneExpr(e.VectorSelector)
+		vs, err := CloneExpr(e.VectorSelector)
 		if err != nil {
 			return nil, err
 		}
@@ -165,7 +165,7 @@ func cloneExpr(expr parser.Expr) (parser.Expr, error) {
 		}, nil
 
 	case *parser.SubqueryExpr:
-		expr, err := cloneExpr(e.Expr)
+		expr, err := CloneExpr(e.Expr)
 		if err != nil {
 			return nil, err
 		}
@@ -200,12 +200,12 @@ func cloneExpr(expr parser.Expr) (parser.Expr, error) {
 		}, nil
 
 	case *parser.AggregateExpr:
-		expr, err := cloneExpr(e.Expr)
+		expr, err := CloneExpr(e.Expr)
 		if err != nil {
 			return nil, err
 		}
 
-		param, err := cloneExpr(e.Param)
+		param, err := CloneExpr(e.Param)
 		if err != nil {
 			return nil, err
 		}
@@ -233,7 +233,7 @@ func cloneExpr(expr parser.Expr) (parser.Expr, error) {
 		}, nil
 
 	case *parser.UnaryExpr:
-		expr, err := cloneExpr(e.Expr)
+		expr, err := CloneExpr(e.Expr)
 		if err != nil {
 			return nil, err
 		}
@@ -245,7 +245,7 @@ func cloneExpr(expr parser.Expr) (parser.Expr, error) {
 		}, nil
 
 	case *parser.ParenExpr:
-		expr, err := cloneExpr(e.Expr)
+		expr, err := CloneExpr(e.Expr)
 		if err != nil {
 			return nil, err
 		}
@@ -256,7 +256,7 @@ func cloneExpr(expr parser.Expr) (parser.Expr, error) {
 		}, nil
 
 	case *parser.StepInvariantExpr:
-		expr, err := cloneExpr(e.Expr)
+		expr, err := CloneExpr(e.Expr)
 		if err != nil {
 			return nil, err
 		}
@@ -278,12 +278,12 @@ func cloneDurationExpr(expr *parser.DurationExpr) (*parser.DurationExpr, error) 
 		return nil, nil
 	}
 
-	lhs, err := cloneExpr(expr.LHS)
+	lhs, err := CloneExpr(expr.LHS)
 	if err != nil {
 		return nil, err
 	}
 
-	rhs, err := cloneExpr(expr.RHS)
+	rhs, err := CloneExpr(expr.RHS)
 	if err != nil {
 		return nil, err
 	}
@@ -308,7 +308,7 @@ func cloneTimestamp(ts *int64) *int64 {
 }
 
 func cloneAndMap(ctx context.Context, mapper ASTExprMapper, expr parser.Expr) (parser.Expr, error) {
-	cloned, err := cloneExpr(expr)
+	cloned, err := CloneExpr(expr)
 	if err != nil {
 		return nil, err
 	}
