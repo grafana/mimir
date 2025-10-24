@@ -117,11 +117,9 @@ To optimize the storage of and ability to query this data, you can use the `-dis
 The `-distributor.otel-promote-resource-attributes` option is an experimental feature in Grafana Mimir.
 {{< /admonition >}}
 
-## Format considerations
-
-{{< admonition type="note" >}}
 For details about how Grafana Cloud promotes OpenTelemetry resource attributes to labels during ingestion, refer to [Work with default OpenTelemetry labels](https://grafana.com/docs/grafana-cloud/send-data/otlp/otlp-format-considerations/#work-with-default-opentelemetry-labels) in the Grafana Cloud documentation.
-{{< /admonition >}}
+
+## Format considerations
 
 We follow the official [OTLP Metric points to Prometheus](https://opentelemetry.io/docs/reference/specification/compatibility/prometheus_and_openmetrics/#otlp-metric-points-to-prometheus) specification.
 
