@@ -36,6 +36,7 @@
 ### Tools
 
 * [CHANGE] Mimir-continuous-test: Remove standalone binary and image. #13097
+* [ENHANCEMENT] Add `tools/lint-buffer-holder` to ensure gRPC buffers aren't released early in request types that retain references to the buffer. #13154
 
 ## 3.0.0-rc.0
 
