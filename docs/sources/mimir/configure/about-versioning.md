@@ -287,6 +287,10 @@ The following features are currently experimental:
     - Requests with invalid cluster validation labels are tracked via the `cortex_client_invalid_cluster_validation_label_requests_total` metric.
 - Preferred available zone for querying ingesters and store-gateways
   - `-querier.prefer-availability-zone`
+- Memberlist zone-aware routing
+  - `-memberlist.zone-aware-routing.enabled`
+  - `-memberlist.zone-aware-routing.instance-availability-zone`
+  - `-memberlist.zone-aware-routing.role`
 
 ## Deprecated features
 
