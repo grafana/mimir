@@ -827,6 +827,7 @@ func (c *MultitenantCompactor) compactUser(ctx context.Context, userID string) e
 	if err := compactor.Compact(ctx, c.compactorCfg.MaxCompactionTime); err != nil {
 		return errors.Wrap(err, "compaction")
 	}
+
 	return nil
 }
 
