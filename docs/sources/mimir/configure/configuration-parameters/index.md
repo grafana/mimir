@@ -5225,6 +5225,11 @@ tsdb:
     # CLI flag: -blocks-storage.tsdb.index-lookup-planning.min-series-per-block-for-query-planning
     [min_series_per_block_for_query_planning: <int> | default = 10000]
 
+    # (advanced) Number of series for a label name above which larger count-min
+    # sketches are used for that label.
+    # CLI flag: -blocks-storage.tsdb.index-lookup-planning.label-cardinality-for-larger-sketch
+    [label_cardinality_for_larger_sketch: <int> | default = 1000000]
+
     # (experimental) Controls the collection of statistics and whether to defer
     # some vector selector matchers to sequential scans. This leads to better
     # performance.
