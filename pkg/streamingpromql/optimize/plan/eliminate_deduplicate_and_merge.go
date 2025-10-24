@@ -49,7 +49,7 @@ func (e *EliminateDeduplicateAndMergeOptimizationPass) Name() string {
 	return fmt.Sprintf("Eliminate DeduplicateAndMerge (enableDelayedNameRemoval: %t)", e.enableDelayedNameRemoval)
 }
 
-func (e *EliminateDeduplicateAndMergeOptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan) (*planning.QueryPlan, error) {
+func (e *EliminateDeduplicateAndMergeOptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan, _ planning.QueryPlanVersion) (*planning.QueryPlan, error) {
 	// nodes is a list of DeduplicateAndMerge nodes in the order of their appearance in the plan.
 	var nodes []dedupNodeInfo
 	e.collect(plan.Root, nil, -1, &nodes)
