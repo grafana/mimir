@@ -414,7 +414,7 @@ func (cfg *TSDBConfig) Validate(activeSeriesCfg activeseries.Config) error {
 	}
 
 	if cfg.IndexLookupPlanning.Enabled {
-		if err := cfg.IndexLookupPlanning.CostConfig.Validate(); err != nil {
+		if err := cfg.IndexLookupPlanning.Validate(); err != nil {
 			return err
 		}
 		if cfg.IndexLookupPlanning.StatisticsCollectionFrequency <= 0 {
