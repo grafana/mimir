@@ -13,6 +13,10 @@ If you have out-of-order samples, due to the nature of your architecture or the 
 
 As an **experimental** feature, Mimir allows you to ingest out-of-order samples. As a result, no sample is dropped if it is within the configured time window.
 
+{{< admonition type="note" >}}
+In Grafana Cloud, the default value for `out_of_order_time_window` is 2 hours.
+{{< /admonition >}}
+
 ## Configure out-of-order samples ingestion instance-wide
 
 To configure Mimir to accept out-of-order samples, see the following configuration snippet:
