@@ -1319,6 +1319,15 @@ groups:
             increase(cortex_blockbuilder_scheduler_job_gap_detected[1m]) > 0
           labels:
             severity: warning
+        - alert: MimirFewerIngestersConsumingThanActivePartitions
+          annotations:
+            message: Mimir ingesters in {{ $labels.cluster }}/{{ $labels.namespace }} have fewer ingesters consuming than active partitions.
+            runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirfeweringestersconsumingthanactivepartitions
+          expr: |
+            max(cortex_partition_ring_partitions{name="ingester-partitions", state="Active"}) by (cluster, namespace) > count(count(cortex_ingest_storage_reader_last_consumed_offset{}) by (cluster, namespace, partition)) by (cluster, namespace)
+          for: 15m
+          labels:
+            severity: critical
     - name: mimir_continuous_test
       rules:
         - alert: MimirContinuousTestNotRunningOnWrites
