@@ -35,12 +35,14 @@ func NewStatisticsGenerator(l log.Logger) *StatisticsGenerator {
 	}
 }
 
-func setCountMinEpsilon(labelCardinalityThreshold uint64) func(numValues uint64) float64 {
+func setCountMinEpsilon(smallLabelCardinalityThreshold, largeLabelCardinalityThreshold uint64) func(numValues uint64) float64 {
 	// The more label values for a label name, the larger the sketch, ideally the more accurate the count per label value.
 	return func(numSeries uint64) float64 {
 		switch {
-		case numSeries >= labelCardinalityThreshold:
+		case numSeries >= largeLabelCardinalityThreshold:
 			return 0.005
+		case numSeries < smallLabelCardinalityThreshold:
+			return 0.05
 		default:
 			return 0.01
 		}
@@ -48,7 +50,7 @@ func setCountMinEpsilon(labelCardinalityThreshold uint64) func(numValues uint64)
 }
 
 // Stats creates statistics using count-min sketches
-func (g StatisticsGenerator) Stats(meta tsdb.BlockMeta, r tsdb.IndexReader, labelCardinalityThreshold uint64) (retStats index.Statistics, retErr error) {
+func (g StatisticsGenerator) Stats(meta tsdb.BlockMeta, r tsdb.IndexReader, smallLabelCardinalityThreshold, largeLabelCardinalityThreshold uint64) (retStats index.Statistics, retErr error) {
 	ctx := context.Background()
 
 	defer func(startTime time.Time) {
@@ -82,7 +84,7 @@ func (g StatisticsGenerator) Stats(meta tsdb.BlockMeta, r tsdb.IndexReader, labe
 
 	// Build count-min sketches for each label
 	labelSketches := make(map[string]*LabelValuesSketch)
-	selectEpsilon := setCountMinEpsilon(labelCardinalityThreshold)
+	selectEpsilon := setCountMinEpsilon(smallLabelCardinalityThreshold, largeLabelCardinalityThreshold)
 
 	for _, labelName := range labelNames {
 		// Get all values for this label

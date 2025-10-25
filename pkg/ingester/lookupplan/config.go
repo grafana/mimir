@@ -10,6 +10,7 @@ const (
 	DefaultRetrievedPostingListCost          = 10.0
 	DefaultMinSeriesPerBlockForQueryPlanning = 10_000
 	DefaultLabelCardinalityForLargerSketch   = 1e6
+	DefaultLabelCardinalityForSmallerSketch  = 1e3
 )
 
 var defaultCostConfig = CostConfig{
@@ -36,6 +37,9 @@ type CostConfig struct {
 
 	// LabelCardinalityForLargerSketch is the number of series with a label for that label name to be allocated a larger count-min sketch
 	LabelCardinalityForLargerSketch uint64 `yaml:"label_cardinality_for_larger_sketch" category:"advanced"`
+
+	// LabelCardinalityForSmallerSketch is the number of series with a label for that label name to be allocated a smaller count-min sketch.
+	LabelCardinalityForSmallerSketch uint64 `yaml:"label_cardinality_for_smaller_sketch" category:"advanced"`
 }
 
 func (cfg *CostConfig) RegisterFlags(f *flag.FlagSet, prefix string) {
@@ -44,4 +48,5 @@ func (cfg *CostConfig) RegisterFlags(f *flag.FlagSet, prefix string) {
 	f.Float64Var(&cfg.RetrievedPostingListCost, prefix+"retrieved-posting-list-cost", DefaultRetrievedPostingListCost, "Cost for retrieving the posting list from disk or from memory.")
 	f.Uint64Var(&cfg.MinSeriesPerBlockForQueryPlanning, prefix+"min-series-per-block-for-query-planning", DefaultMinSeriesPerBlockForQueryPlanning, "Minimum number of series a block must have for query planning to be used.")
 	f.Uint64Var(&cfg.LabelCardinalityForLargerSketch, prefix+"label-cardinality-for-larger-sketch", DefaultLabelCardinalityForLargerSketch, "Number of series for a label name above which larger count-min sketches are used for that label.")
+	f.Uint64Var(&cfg.LabelCardinalityForSmallerSketch, prefix+"label-cardinality-for-smaller-sketch", DefaultLabelCardinalityForSmallerSketch, "Number of series for a label name above which smaller count-min sketches are used for that label.")
 }

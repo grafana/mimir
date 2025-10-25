@@ -285,7 +285,7 @@ func TestLabelsValuesSketches_LabelName(t *testing.T) {
 				p.add(seriesRef, ls)
 			}
 			gen := NewStatisticsGenerator(log.NewNopLogger())
-			sketches, err := gen.Stats(p.Meta(), p, DefaultLabelCardinalityForLargerSketch)
+			sketches, err := gen.Stats(p.Meta(), p, DefaultLabelCardinalityForSmallerSketch, DefaultLabelCardinalityForLargerSketch)
 			require.NoError(t, err)
 			ctx := context.Background()
 
@@ -367,7 +367,7 @@ func TestLabelsValuesSketches_LabelValue(t *testing.T) {
 				p.add(seriesRef, ls)
 			}
 			gen := NewStatisticsGenerator(log.NewNopLogger())
-			sketches, err := gen.Stats(p.Meta(), p, DefaultLabelCardinalityForLargerSketch)
+			sketches, err := gen.Stats(p.Meta(), p, DefaultLabelCardinalityForSmallerSketch, DefaultLabelCardinalityForLargerSketch)
 			require.NoError(t, err)
 			ctx := context.Background()
 
@@ -444,7 +444,7 @@ func TestLabelName_ComparisonAcrossLabelNames(t *testing.T) {
 
 			ctx := context.Background()
 			gen := NewStatisticsGenerator(log.NewNopLogger())
-			s, err := gen.Stats(p.Meta(), p, tt.largerSketchThreshold)
+			s, err := gen.Stats(p.Meta(), p, DefaultLabelCardinalityForSmallerSketch, tt.largerSketchThreshold)
 			require.NoError(t, err)
 
 			lowCard := s.LabelValuesCardinality(ctx, lowCardLabel)
@@ -475,7 +475,7 @@ func TestLabelName_ManySeries(t *testing.T) {
 
 	ctx := context.Background()
 	gen := NewStatisticsGenerator(log.NewNopLogger())
-	s, err := gen.Stats(p.Meta(), p, DefaultLabelCardinalityForLargerSketch)
+	s, err := gen.Stats(p.Meta(), p, DefaultLabelCardinalityForSmallerSketch, DefaultLabelCardinalityForLargerSketch)
 	require.NoError(t, err)
 
 	require.Equal(t, uint64(numLabelValues), s.LabelValuesCount(ctx, labelName))
@@ -518,7 +518,7 @@ func TestLabelName_NonUniformValueDistribution(t *testing.T) {
 
 	ctx := context.Background()
 	gen := NewStatisticsGenerator(log.NewNopLogger())
-	s, err := gen.Stats(p.Meta(), p, DefaultLabelCardinalityForLargerSketch)
+	s, err := gen.Stats(p.Meta(), p, DefaultLabelCardinalityForSmallerSketch, DefaultLabelCardinalityForLargerSketch)
 	require.NoError(t, err)
 
 	lowValCard := s.LabelValuesCardinality(ctx, labelName, lowCardValue)
