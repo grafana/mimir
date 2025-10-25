@@ -46,6 +46,8 @@
 
 ### Documentation
 
+* [ENHANCEMENT] Add Azure object store workload identity example configuration. #13135
+
 ### Tools
 
 * [CHANGE] Mimir-continuous-test: Remove standalone binary and image. #13097
