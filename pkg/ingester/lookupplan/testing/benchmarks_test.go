@@ -10,7 +10,7 @@
 //	go test -bench=. -data-dir=/path/to/data -query-file=/path/to/queries.json
 //
 // For more flags see the individual flag descriptions below.
-package benchmarks
+package testing
 
 import (
 	"context"
