@@ -2,7 +2,10 @@
 
 package lookupplan
 
-import "flag"
+import (
+	"flag"
+	"fmt"
+)
 
 const (
 	DefaultRetrievedPostingCost              = 0.01
@@ -49,4 +52,11 @@ func (cfg *CostConfig) RegisterFlags(f *flag.FlagSet, prefix string) {
 	f.Uint64Var(&cfg.MinSeriesPerBlockForQueryPlanning, prefix+"min-series-per-block-for-query-planning", DefaultMinSeriesPerBlockForQueryPlanning, "Minimum number of series a block must have for query planning to be used.")
 	f.Uint64Var(&cfg.LabelCardinalityForLargerSketch, prefix+"label-cardinality-for-larger-sketch", DefaultLabelCardinalityForLargerSketch, "Number of series for a label name above which larger count-min sketches are used for that label.")
 	f.Uint64Var(&cfg.LabelCardinalityForSmallerSketch, prefix+"label-cardinality-for-smaller-sketch", DefaultLabelCardinalityForSmallerSketch, "Number of series for a label name above which smaller count-min sketches are used for that label.")
+}
+
+func (cfg *CostConfig) Validate() error {
+	if cfg.LabelCardinalityForSmallerSketch > cfg.LabelCardinalityForLargerSketch {
+		return fmt.Errorf("cardinality limit for smaller sketches cannot be larger than cardinality limit for larger sketches")
+	}
+	return nil
 }
