@@ -795,6 +795,7 @@
   "blocks-storage.tsdb.index-lookup-planning.retrieved-posting-list-cost": 10,
   "blocks-storage.tsdb.index-lookup-planning.min-series-per-block-for-query-planning": 10000,
   "blocks-storage.tsdb.index-lookup-planning.label-cardinality-for-larger-sketch": 1000000,
+  "blocks-storage.tsdb.index-lookup-planning.label-cardinality-for-smaller-sketch": 1000,
   "blocks-storage.tsdb.index-lookup-planning.comparison-portion": 0,
   "blocks-storage.tsdb.index-lookup-planning.statistics-collection-frequency": 3600000000000,
   "compactor.block-ranges": [],

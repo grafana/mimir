@@ -413,8 +413,13 @@ func (cfg *TSDBConfig) Validate(activeSeriesCfg activeseries.Config) error {
 		return errInvalidEarlyHeadCompactionMinSeriesReduction
 	}
 
-	if cfg.IndexLookupPlanning.Enabled && cfg.IndexLookupPlanning.StatisticsCollectionFrequency <= 0 {
-		return errors.Errorf("head statistics collection frequency must be a non-negative duration. 0 to disable")
+	if cfg.IndexLookupPlanning.Enabled {
+		if err := cfg.IndexLookupPlanning.Validate(); err != nil {
+			return err
+		}
+		if cfg.IndexLookupPlanning.StatisticsCollectionFrequency <= 0 {
+			return errors.Errorf("head statistics collection frequency must be a non-negative duration. 0 to disable")
+		}
 	}
 
 	return nil
