@@ -11110,12 +11110,12 @@
               "kind": "field",
               "name": "head_postings_for_matchers_cache_ttl",
               "required": false,
-              "desc": "How long to cache postings for matchers in the Head and OOOHead. 0 disables the cache and just deduplicates the in-flight calls.",
+              "desc": "How long to cache postings for matchers in the Head and OOOHead. Set to 0 to disable the cache and only deduplicate in-flight calls.",
               "fieldValue": null,
               "fieldDefaultValue": 10000000000,
               "fieldFlag": "blocks-storage.tsdb.head-postings-for-matchers-cache-ttl",
               "fieldType": "duration",
-              "fieldCategory": "experimental"
+              "fieldCategory": "advanced"
             },
             {
               "kind": "field",
@@ -11132,12 +11132,12 @@
               "kind": "field",
               "name": "head_postings_for_matchers_cache_max_bytes",
               "required": false,
-              "desc": "Maximum size in bytes of the cache for postings for matchers in the Head and OOOHead when TTL is greater than 0.",
+              "desc": "Maximum size, in bytes, of the cache for postings for matchers in each compacted block when the TTL is greater than 0.",
               "fieldValue": null,
               "fieldDefaultValue": 104857600,
               "fieldFlag": "blocks-storage.tsdb.head-postings-for-matchers-cache-max-bytes",
               "fieldType": "int",
-              "fieldCategory": "experimental"
+              "fieldCategory": "advanced"
             },
             {
               "kind": "field",
@@ -11148,7 +11148,7 @@
               "fieldDefaultValue": false,
               "fieldFlag": "blocks-storage.tsdb.head-postings-for-matchers-cache-force",
               "fieldType": "boolean",
-              "fieldCategory": "experimental"
+              "fieldCategory": "advanced"
             },
             {
               "kind": "field",
@@ -11159,7 +11159,7 @@
               "fieldDefaultValue": 10000000000,
               "fieldFlag": "blocks-storage.tsdb.block-postings-for-matchers-cache-ttl",
               "fieldType": "duration",
-              "fieldCategory": "experimental"
+              "fieldCategory": "advanced"
             },
             {
               "kind": "field",
@@ -11181,7 +11181,7 @@
               "fieldDefaultValue": 104857600,
               "fieldFlag": "blocks-storage.tsdb.block-postings-for-matchers-cache-max-bytes",
               "fieldType": "int",
-              "fieldCategory": "experimental"
+              "fieldCategory": "advanced"
             },
             {
               "kind": "field",
@@ -11192,7 +11192,7 @@
               "fieldDefaultValue": false,
               "fieldFlag": "blocks-storage.tsdb.block-postings-for-matchers-cache-force",
               "fieldType": "boolean",
-              "fieldCategory": "experimental"
+              "fieldCategory": "advanced"
             },
             {
               "kind": "field",
@@ -11274,6 +11274,28 @@
                   "fieldValue": null,
                   "fieldDefaultValue": 10000,
                   "fieldFlag": "blocks-storage.tsdb.index-lookup-planning.min-series-per-block-for-query-planning",
+                  "fieldType": "int",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "label_cardinality_for_larger_sketch",
+                  "required": false,
+                  "desc": "Number of series for a label name above which larger count-min sketches are used for that label.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 1000000,
+                  "fieldFlag": "blocks-storage.tsdb.index-lookup-planning.label-cardinality-for-larger-sketch",
+                  "fieldType": "int",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "label_cardinality_for_smaller_sketch",
+                  "required": false,
+                  "desc": "Number of series for a label name above which smaller count-min sketches are used for that label.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 1000,
+                  "fieldFlag": "blocks-storage.tsdb.index-lookup-planning.label-cardinality-for-smaller-sketch",
                   "fieldType": "int",
                   "fieldCategory": "advanced"
                 },
@@ -18258,6 +18280,49 @@
           "fieldFlag": "memberlist.tls-min-version",
           "fieldType": "string",
           "fieldCategory": "advanced"
+        },
+        {
+          "kind": "block",
+          "name": "zone_aware_routing",
+          "required": false,
+          "desc": "",
+          "blockEntries": [
+            {
+              "kind": "field",
+              "name": "enabled",
+              "required": false,
+              "desc": "Enable zone-aware routing for memberlist gossip.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "memberlist.zone-aware-routing.enabled",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "instance_availability_zone",
+              "required": false,
+              "desc": "Availability zone where this node is running.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "memberlist.zone-aware-routing.instance-availability-zone",
+              "fieldType": "string",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "role",
+              "required": false,
+              "desc": "Role of this node in the cluster. Valid values: member, bridge.",
+              "fieldValue": null,
+              "fieldDefaultValue": "member",
+              "fieldFlag": "memberlist.zone-aware-routing.role",
+              "fieldType": "string",
+              "fieldCategory": "experimental"
+            }
+          ],
+          "fieldValue": null,
+          "fieldDefaultValue": null
         }
       ],
       "fieldValue": null,

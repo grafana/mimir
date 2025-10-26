@@ -3504,6 +3504,20 @@ The `memberlist` block configures the Gossip memberlist.
 # VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
 # CLI flag: -memberlist.tls-min-version
 [tls_min_version: <string> | default = ""]
+
+zone_aware_routing:
+  # (experimental) Enable zone-aware routing for memberlist gossip.
+  # CLI flag: -memberlist.zone-aware-routing.enabled
+  [enabled: <boolean> | default = false]
+
+  # (experimental) Availability zone where this node is running.
+  # CLI flag: -memberlist.zone-aware-routing.instance-availability-zone
+  [instance_availability_zone: <string> | default = ""]
+
+  # (experimental) Role of this node in the cluster. Valid values: member,
+  # bridge.
+  # CLI flag: -memberlist.zone-aware-routing.role
+  [role: <string> | default = "member"]
 ```
 
 ### limits
@@ -5126,8 +5140,8 @@ tsdb:
   # CLI flag: -blocks-storage.tsdb.head-postings-for-matchers-cache-versions
   [head_postings_for_matchers_cache_versions: <int> | default = 2097152]
 
-  # (experimental) How long to cache postings for matchers in the Head and
-  # OOOHead. 0 disables the cache and just deduplicates the in-flight calls.
+  # (advanced) How long to cache postings for matchers in the Head and OOOHead.
+  # Set to 0 to disable the cache and only deduplicate in-flight calls.
   # CLI flag: -blocks-storage.tsdb.head-postings-for-matchers-cache-ttl
   [head_postings_for_matchers_cache_ttl: <duration> | default = 10s]
 
@@ -5136,19 +5150,19 @@ tsdb:
   # CLI flag: -blocks-storage.tsdb.head-postings-for-matchers-cache-size
   [head_postings_for_matchers_cache_size: <int> | default = 100]
 
-  # (experimental) Maximum size in bytes of the cache for postings for matchers
-  # in the Head and OOOHead when TTL is greater than 0.
+  # (advanced) Maximum size, in bytes, of the cache for postings for matchers in
+  # each compacted block when the TTL is greater than 0.
   # CLI flag: -blocks-storage.tsdb.head-postings-for-matchers-cache-max-bytes
   [head_postings_for_matchers_cache_max_bytes: <int> | default = 104857600]
 
-  # (experimental) Force the cache to be used for postings for matchers in the
-  # Head and OOOHead, even if it's not a concurrent (query-sharding) call.
+  # (advanced) Force the cache to be used for postings for matchers in the Head
+  # and OOOHead, even if it's not a concurrent (query-sharding) call.
   # CLI flag: -blocks-storage.tsdb.head-postings-for-matchers-cache-force
   [head_postings_for_matchers_cache_force: <boolean> | default = false]
 
-  # (experimental) How long to cache postings for matchers in each compacted
-  # block queried from the ingester. 0 disables the cache and just deduplicates
-  # the in-flight calls.
+  # (advanced) How long to cache postings for matchers in each compacted block
+  # queried from the ingester. 0 disables the cache and just deduplicates the
+  # in-flight calls.
   # CLI flag: -blocks-storage.tsdb.block-postings-for-matchers-cache-ttl
   [block_postings_for_matchers_cache_ttl: <duration> | default = 10s]
 
@@ -5157,13 +5171,13 @@ tsdb:
   # CLI flag: -blocks-storage.tsdb.block-postings-for-matchers-cache-size
   [block_postings_for_matchers_cache_size: <int> | default = 100]
 
-  # (experimental) Maximum size in bytes of the cache for postings for matchers
-  # in each compacted block when TTL is greater than 0.
+  # (advanced) Maximum size in bytes of the cache for postings for matchers in
+  # each compacted block when TTL is greater than 0.
   # CLI flag: -blocks-storage.tsdb.block-postings-for-matchers-cache-max-bytes
   [block_postings_for_matchers_cache_max_bytes: <int> | default = 104857600]
 
-  # (experimental) Force the cache to be used for postings for matchers in
-  # compacted blocks, even if it's not a concurrent (query-sharding) call.
+  # (advanced) Force the cache to be used for postings for matchers in compacted
+  # blocks, even if it's not a concurrent (query-sharding) call.
   # CLI flag: -blocks-storage.tsdb.block-postings-for-matchers-cache-force
   [block_postings_for_matchers_cache_force: <boolean> | default = false]
 
@@ -5210,6 +5224,16 @@ tsdb:
     # to be used.
     # CLI flag: -blocks-storage.tsdb.index-lookup-planning.min-series-per-block-for-query-planning
     [min_series_per_block_for_query_planning: <int> | default = 10000]
+
+    # (advanced) Number of series for a label name above which larger count-min
+    # sketches are used for that label.
+    # CLI flag: -blocks-storage.tsdb.index-lookup-planning.label-cardinality-for-larger-sketch
+    [label_cardinality_for_larger_sketch: <int> | default = 1000000]
+
+    # (advanced) Number of series for a label name above which smaller count-min
+    # sketches are used for that label.
+    # CLI flag: -blocks-storage.tsdb.index-lookup-planning.label-cardinality-for-smaller-sketch
+    [label_cardinality_for_smaller_sketch: <int> | default = 1000]
 
     # (experimental) Controls the collection of statistics and whether to defer
     # some vector selector matchers to sequential scans. This leads to better

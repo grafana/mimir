@@ -2,13 +2,18 @@
 
 package lookupplan
 
-import "flag"
+import (
+	"flag"
+	"fmt"
+)
 
 const (
 	DefaultRetrievedPostingCost              = 0.01
 	DefaultRetrievedSeriesCost               = 10.0
 	DefaultRetrievedPostingListCost          = 10.0
 	DefaultMinSeriesPerBlockForQueryPlanning = 10_000
+	DefaultLabelCardinalityForLargerSketch   = 1e6
+	DefaultLabelCardinalityForSmallerSketch  = 1e3
 )
 
 var defaultCostConfig = CostConfig{
@@ -32,6 +37,12 @@ type CostConfig struct {
 
 	// MinSeriesPerBlockForQueryPlanning is the minimum number of series a block must have for query planning to be used.
 	MinSeriesPerBlockForQueryPlanning uint64 `yaml:"min_series_per_block_for_query_planning" category:"advanced"`
+
+	// LabelCardinalityForLargerSketch is the number of series with a label for that label name to be allocated a larger count-min sketch
+	LabelCardinalityForLargerSketch uint64 `yaml:"label_cardinality_for_larger_sketch" category:"advanced"`
+
+	// LabelCardinalityForSmallerSketch is the number of series with a label for that label name to be allocated a smaller count-min sketch.
+	LabelCardinalityForSmallerSketch uint64 `yaml:"label_cardinality_for_smaller_sketch" category:"advanced"`
 }
 
 func (cfg *CostConfig) RegisterFlags(f *flag.FlagSet, prefix string) {
@@ -39,4 +50,13 @@ func (cfg *CostConfig) RegisterFlags(f *flag.FlagSet, prefix string) {
 	f.Float64Var(&cfg.RetrievedSeriesCost, prefix+"retrieved-series-cost", DefaultRetrievedSeriesCost, "Cost for retrieving series from the index and checking if a series belongs to the query's shard.")
 	f.Float64Var(&cfg.RetrievedPostingListCost, prefix+"retrieved-posting-list-cost", DefaultRetrievedPostingListCost, "Cost for retrieving the posting list from disk or from memory.")
 	f.Uint64Var(&cfg.MinSeriesPerBlockForQueryPlanning, prefix+"min-series-per-block-for-query-planning", DefaultMinSeriesPerBlockForQueryPlanning, "Minimum number of series a block must have for query planning to be used.")
+	f.Uint64Var(&cfg.LabelCardinalityForLargerSketch, prefix+"label-cardinality-for-larger-sketch", DefaultLabelCardinalityForLargerSketch, "Number of series for a label name above which larger count-min sketches are used for that label.")
+	f.Uint64Var(&cfg.LabelCardinalityForSmallerSketch, prefix+"label-cardinality-for-smaller-sketch", DefaultLabelCardinalityForSmallerSketch, "Number of series for a label name above which smaller count-min sketches are used for that label.")
+}
+
+func (cfg *CostConfig) Validate() error {
+	if cfg.LabelCardinalityForSmallerSketch > cfg.LabelCardinalityForLargerSketch {
+		return fmt.Errorf("cardinality limit for smaller sketches cannot be larger than cardinality limit for larger sketches")
+	}
+	return nil
 }
