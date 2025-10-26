@@ -52,7 +52,7 @@ Ensure you meet these requirements before you configure owned series tracking:
 
 ## Configure owned series tracking
 
-1. Enable owned series tracking on ingesters. For example:
+1.  Enable owned series tracking on ingesters. For example:
 
     ```sh
     # Enable tracking of owned series based on ring state
@@ -62,23 +62,20 @@ Ensure you meet these requirements before you configure owned series tracking:
     -ingester.owned-series-update-interval=15s
     ```
 
-1. Use owned series to enforce per-tenant series limits. For example:
+1.  Use owned series to enforce per-tenant series limits. For example:
 
-    ```sh
-    -ingester.use-ingester-owned-series-for-limits=true
-    ```
-For more information, refer to [ingester](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/configuration-parameters/#ingester) in Grafana Mimir configuration parameters.
+        ```sh
+        -ingester.use-ingester-owned-series-for-limits=true
+        ```
+
+    For more information, refer to [ingester](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/configuration-parameters/#ingester) in Grafana Mimir configuration parameters.
 
 ## Monitor owned series
 
 Ingesters expose the following metrics related to owned series:
 
-| Metric name | Description |
-| --- | --- |
-| `cortex_ingester_owned_series` | Number of currently owned series per tenant |
-| `cortex_ingester_owned_target_info_series` | Number of currently owned `target_info` series per tenant |
-| `cortex_ingester_owned_series_check_duration_seconds` | How long the owned series check takes across tenants |
-
-
-
-
+| Metric name                                           | Description                                               |
+| ----------------------------------------------------- | --------------------------------------------------------- |
+| `cortex_ingester_owned_series`                        | Number of currently owned series per tenant               |
+| `cortex_ingester_owned_target_info_series`            | Number of currently owned `target_info` series per tenant |
+| `cortex_ingester_owned_series_check_duration_seconds` | How long the owned series check takes across tenants      |
