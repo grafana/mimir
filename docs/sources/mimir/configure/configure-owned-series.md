@@ -45,7 +45,7 @@ Triggers for recomputation include the following:
 
 ## Before you begin
 
-Ensure you meet these requirements before you configure owned series tracking:
+Complete the following tasks before configuring owned series tracking:
 
 - Enable [zone-aware replication](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/configure-zone-aware-replication/).
 - Set the replication factor equal to the number of zones.
