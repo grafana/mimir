@@ -33,7 +33,6 @@ import (
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/atomic"
 
-	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier"
 	"github.com/grafana/mimir/pkg/querier/stats"
@@ -1827,11 +1826,11 @@ func TestSplitQueryByInterval(t *testing.T) {
 	queryFooExpr, _ := parser.ParseExpr(queryFoo)
 	queryFooAtStart := "foo @ start()"
 	queryFooAtStartExpr, _ := parser.ParseExpr(queryFooAtStart)
-	queryFooAtZero := "foo @ 0.000"
+	queryFooAtZero := "foo @ 0.00000"
 	queryFooAtZeroExpr, _ := parser.ParseExpr(queryFooAtZero)
 	queryFooSubqueryAtStart := "sum_over_time(foo[1d:] @ start())"
 	queryFooSubqueryAtStartExpr, _ := parser.ParseExpr(queryFooSubqueryAtStart)
-	queryFooSubqueryAtZero := "sum_over_time(foo[1d:] @ 0.000)"
+	queryFooSubqueryAtZero := "sum_over_time(foo[1d:] @ 0.00000)"
 	queryFooSubqueryAtZeroExpr, _ := parser.ParseExpr(queryFooSubqueryAtZero)
 	lookbackDelta := 5 * time.Minute
 
@@ -2014,13 +2013,12 @@ func Test_evaluateAtModifier(t *testing.T) {
 	)
 	for _, tt := range []struct {
 		in, expected string
-		err          error
 	}{
-		{"topk(5, rate(http_requests_total[1h] @ start()))", "topk(5, rate(http_requests_total[1h] @ 1546300.800))", nil},
-		{"topk(5, rate(http_requests_total[1h] @ 0))", "topk(5, rate(http_requests_total[1h] @ 0.000))", nil},
-		{"http_requests_total[1h] @ 10.001", "http_requests_total[1h] @ 10.001", nil},
-		{"sum_over_time(http_requests_total[1h:] @ start())", "sum_over_time(http_requests_total[1h:] @ 1546300.800)", nil},
-		{"sum_over_time((http_requests_total @ end())[1h:] @ start())", "sum_over_time((http_requests_total @ 1646300.800)[1h:] @ 1546300.800)", nil},
+		{"topk(5, rate(http_requests_total[1h] @ start()))", "topk(5, rate(http_requests_total[1h] @ 1546300.800))"},
+		{"topk(5, rate(http_requests_total[1h] @ 0))", "topk(5, rate(http_requests_total[1h] @ 0.000))"},
+		{"http_requests_total[1h] @ 10.001", "http_requests_total[1h] @ 10.001"},
+		{"sum_over_time(http_requests_total[1h:] @ start())", "sum_over_time(http_requests_total[1h:] @ 1546300.800)"},
+		{"sum_over_time((http_requests_total @ end())[1h:] @ start())", "sum_over_time((http_requests_total @ 1646300.800)[1h:] @ 1546300.800)"},
 		{
 			`min_over_time(
 				sum by(cluster) (
@@ -2047,21 +2045,17 @@ func Test_evaluateAtModifier(t *testing.T) {
 						rate(http_requests_total[10m] @ 1546300.800)
 					[5m:1m])
 				[2m:])
-			[10m:])`, nil,
+			[10m:])`,
 		},
-		{"sum by (foo) (bar[buzz])", "foo{}", apierror.New(apierror.TypeBadData, `invalid parameter "query": 1:19: parse error: unexpected character in duration expression: 'b'`)},
 	} {
 		t.Run(tt.in, func(t *testing.T) {
 			t.Parallel()
+			expr, err := parser.ParseExpr(tt.in)
+			require.NoError(t, err)
 			expectedExpr, err := parser.ParseExpr(tt.expected)
 			require.NoError(t, err)
-			out, err := evaluateAtModifierFunction(tt.in, start, end)
-			if tt.err != nil {
-				require.Equal(t, tt.err, err)
-				return
-			}
-			require.NoError(t, err)
-			require.Equal(t, expectedExpr.String(), out)
+			evaluateAtModifierFunction(expr, start, end)
+			require.Equal(t, expectedExpr.String(), expr.String()) // Character positions are not identical between exprs.
 		})
 	}
 }

@@ -56,7 +56,7 @@ func NewSubquerySpinOffMapper(defaultStepFunc func(rangeMillis int64) int64, log
 // See sharding.go and embedded.go for another example of mapping into a fake metric selector.
 func (m *subquerySpinOffMapper) MapExpr(ctx context.Context, expr parser.Expr) (mapped parser.Expr, finished bool, err error) {
 	// Immediately clone the expr to avoid mutating the original
-	expr, err = cloneExpr(expr)
+	expr, err = CloneExpr(expr)
 	if err != nil {
 		return nil, false, err
 	}

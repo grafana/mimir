@@ -367,7 +367,7 @@ func (summer *shardSummer) shardAndSquashFuncCall(ctx context.Context, expr *par
 
 	// Create sub-query for each shard.
 	for i := 0; i < summer.shards; i++ {
-		cloned, err := cloneExpr(expr)
+		cloned, err := CloneExpr(expr)
 		if err != nil {
 			return nil, true, err
 		}
