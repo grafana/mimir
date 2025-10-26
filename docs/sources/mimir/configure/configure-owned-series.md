@@ -47,7 +47,7 @@ Triggers for recomputation include the following:
 
 Ensure you meet these requirements before you configure owned series tracking:
 
-- Enable zone-aware replication.
+- Enable [zone-aware replication](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/configure-zone-aware-replication/).
 - Set the replication factor equal to the number of zones.
 
 ## Configure owned series tracking
@@ -67,6 +67,7 @@ Ensure you meet these requirements before you configure owned series tracking:
     ```sh
     -ingester.use-ingester-owned-series-for-limits=true
     ```
+For more information, refer to [ingester](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/configuration-parameters/#ingester) in Grafana Mimir configuration parameters.
 
 ## Monitor owned series
 
@@ -78,10 +79,6 @@ Ingesters expose the following metrics related to owned series:
 | `cortex_ingester_owned_target_info_series` | Number of currently owned `target_info` series per tenant |
 | `cortex_ingester_owned_series_check_duration_seconds` | How long the owned series check takes across tenants |
 
-## Related resources
-
-- [Configure Grafana Mimir zone-aware replication](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/configure-zone-aware-replication/)
-- [Grafana Mimir configuration parameters](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/configuration-parameters/)
 
 
 
