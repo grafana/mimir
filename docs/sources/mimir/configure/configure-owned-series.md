@@ -64,11 +64,11 @@ Complete the following tasks before configuring owned series tracking:
 
 1.  Use owned series to enforce per-tenant series limits. For example:
 
-        ```sh
-        -ingester.use-ingester-owned-series-for-limits=true
-        ```
+    ```sh
+    -ingester.use-ingester-owned-series-for-limits=true
+    ```
 
-    For more information, refer to [ingester](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/configuration-parameters/#ingester) in Grafana Mimir configuration parameters.
+For more information, refer to [ingester](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/configuration-parameters/#ingester) in [Grafana Mimir configuration parameters](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/configuration-parameters/).
 
 ## Monitor owned series
 
