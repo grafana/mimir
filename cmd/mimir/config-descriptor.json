@@ -4325,7 +4325,7 @@
           "fieldDefaultValue": 0,
           "fieldFlag": "ingester.read-path-memory-utilization-limit",
           "fieldType": "int",
-          "fieldCategory": "experimental"
+          "fieldCategory": "advanced"
         },
         {
           "kind": "field",
