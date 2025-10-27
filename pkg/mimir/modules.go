@@ -1019,7 +1019,7 @@ func (t *Mimir) initQueryFrontendQueryPlanner() (services.Service, error) {
 	var versionProvider streamingpromql.QueryPlanVersionProvider
 
 	if t.Cfg.Frontend.QueryMiddleware.EnableRemoteExecution {
-		versionProvider = querier.NewRingQueryPlanVersionProvider(t.QuerierRing, t.Registerer)
+		versionProvider = querier.NewRingQueryPlanVersionProvider(t.QuerierRing, t.Registerer, util_log.Logger)
 	} else {
 		// If remote execution is not enabled, then the query plans we generate in the query-frontend will
 		// only be used in this process, so we can generate query plans up to whatever the maximum supported
