@@ -25,7 +25,7 @@ func TestNew(t *testing.T) {
 			HLLPrecision:          11,
 		}
 
-		tracker, err := New(cfg, log.NewNopLogger(), prometheus.NewRegistry())
+		tracker, err := New(cfg, log.NewNopLogger(), prometheus.NewRegistry(), nil)
 		require.NoError(t, err)
 		assert.NotNil(t, tracker)
 		assert.Equal(t, 1000000, tracker.MaxSeriesPerPartition())
@@ -38,7 +38,7 @@ func TestNew(t *testing.T) {
 			HLLPrecision:          3, // Invalid, should default to 11
 		}
 
-		tracker, err := New(cfg, log.NewNopLogger(), prometheus.NewRegistry())
+		tracker, err := New(cfg, log.NewNopLogger(), prometheus.NewRegistry(), nil)
 		require.NoError(t, err)
 		assert.NotNil(t, tracker)
 	})
@@ -53,7 +53,7 @@ func TestTracker_GetCurrentState(t *testing.T) {
 		HLLPrecision:          11,
 	}
 
-	tracker, err := New(cfg, log.NewNopLogger(), prometheus.NewRegistry())
+	tracker, err := New(cfg, log.NewNopLogger(), prometheus.NewRegistry(), nil)
 	require.NoError(t, err)
 
 	// Start the tracker
@@ -82,7 +82,7 @@ func TestTracker_UpdateCurrent(t *testing.T) {
 		HLLPrecision:          11,
 	}
 
-	tracker, err := New(cfg, log.NewNopLogger(), prometheus.NewRegistry())
+	tracker, err := New(cfg, log.NewNopLogger(), prometheus.NewRegistry(), nil)
 	require.NoError(t, err)
 
 	require.NoError(t, tracker.StartAsync(context.Background()))
@@ -126,7 +126,7 @@ func TestTracker_MultiplePartitions(t *testing.T) {
 		HLLPrecision:          11,
 	}
 
-	tracker, err := New(cfg, log.NewNopLogger(), prometheus.NewRegistry())
+	tracker, err := New(cfg, log.NewNopLogger(), prometheus.NewRegistry(), nil)
 	require.NoError(t, err)
 
 	require.NoError(t, tracker.StartAsync(context.Background()))
@@ -171,7 +171,7 @@ func TestTracker_MinuteRotation(t *testing.T) {
 	}
 
 	reg := prometheus.NewRegistry()
-	tracker, err := New(cfg, log.NewNopLogger(), reg)
+	tracker, err := New(cfg, log.NewNopLogger(), reg, nil)
 	require.NoError(t, err)
 
 	require.NoError(t, tracker.StartAsync(context.Background()))
@@ -236,7 +236,7 @@ func TestTracker_Metrics(t *testing.T) {
 	}
 
 	reg := prometheus.NewRegistry()
-	tracker, err := New(cfg, log.NewNopLogger(), reg)
+	tracker, err := New(cfg, log.NewNopLogger(), reg, nil)
 	require.NoError(t, err)
 
 	require.NoError(t, tracker.StartAsync(context.Background()))
@@ -288,7 +288,7 @@ func TestTracker_ConcurrentUpdates(t *testing.T) {
 		HLLPrecision:          11,
 	}
 
-	tracker, err := New(cfg, log.NewNopLogger(), prometheus.NewRegistry())
+	tracker, err := New(cfg, log.NewNopLogger(), prometheus.NewRegistry(), nil)
 	require.NoError(t, err)
 
 	require.NoError(t, tracker.StartAsync(context.Background()))
@@ -341,7 +341,7 @@ func TestTracker_TimeWindowCleanup(t *testing.T) {
 		HLLPrecision:          11,
 	}
 
-	tracker, err := New(cfg, log.NewNopLogger(), prometheus.NewRegistry())
+	tracker, err := New(cfg, log.NewNopLogger(), prometheus.NewRegistry(), nil)
 	require.NoError(t, err)
 
 	require.NoError(t, tracker.StartAsync(context.Background()))
@@ -401,7 +401,7 @@ func TestMaxSeriesPerPartition(t *testing.T) {
 		HLLPrecision:          11,
 	}
 
-	tracker, err := New(cfg, log.NewNopLogger(), prometheus.NewRegistry())
+	tracker, err := New(cfg, log.NewNopLogger(), prometheus.NewRegistry(), nil)
 	require.NoError(t, err)
 
 	assert.Equal(t, 12345, tracker.MaxSeriesPerPartition())

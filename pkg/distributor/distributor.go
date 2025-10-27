@@ -673,7 +673,9 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 		// Init HLL-based partition series tracker (if enabled).
 		if cfg.HLLTrackerConfig.Enabled {
 			var err error
-			d.hllTracker, err = hlltracker.New(cfg.HLLTrackerConfig, log, reg)
+			// Phase 1: No KV client (local-only mode)
+			// Phase 2: TODO - pass KV client for distributed mode
+			d.hllTracker, err = hlltracker.New(cfg.HLLTrackerConfig, log, reg, nil)
 			if err != nil {
 				return nil, errors.Wrap(err, "failed to create HLL tracker")
 			}

@@ -51,7 +51,7 @@ func TestPreKafkaPartitionLimitMiddleware_LimitDisabled(t *testing.T) {
 		HLLPrecision:          11,
 	}
 
-	tracker, err := hlltracker.New(cfg, log.NewNopLogger(), prometheus.NewRegistry())
+	tracker, err := hlltracker.New(cfg, log.NewNopLogger(), prometheus.NewRegistry(), nil)
 	require.NoError(t, err)
 	require.NoError(t, tracker.StartAsync(context.Background()))
 	defer func() {
@@ -92,7 +92,7 @@ func TestPreKafkaPartitionLimitMiddleware_NoSeries(t *testing.T) {
 		HLLPrecision:          11,
 	}
 
-	tracker, err := hlltracker.New(cfg, log.NewNopLogger(), prometheus.NewRegistry())
+	tracker, err := hlltracker.New(cfg, log.NewNopLogger(), prometheus.NewRegistry(), nil)
 	require.NoError(t, err)
 	require.NoError(t, tracker.StartAsync(context.Background()))
 	defer func() {

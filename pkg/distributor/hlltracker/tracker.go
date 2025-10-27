@@ -4,11 +4,13 @@ package hlltracker
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/kv"
 	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -17,12 +19,16 @@ import (
 )
 
 // Tracker tracks per-partition series cardinality using HyperLogLog.
-// Phase 1: Local-only tracking without memberlist synchronization.
+// Supports both Phase 1 (local-only) and Phase 2 (distributed with memberlist).
 type Tracker struct {
 	services.Service
 
 	cfg    Config
 	logger log.Logger
+
+	// KV client for distributed state synchronization (Phase 2)
+	// If nil, tracker operates in local-only mode (Phase 1)
+	kvClient kv.Client
 
 	// partitionsMu protects the partitions map
 	partitionsMu sync.RWMutex
@@ -35,9 +41,14 @@ type Tracker struct {
 	// Ticker for minute rotation
 	rotateTicker *time.Ticker
 
+	// Ticker for KV push (Phase 2 only)
+	kvPushTicker *time.Ticker
+
 	// Metrics
 	partitionSeriesEstimate *prometheus.GaugeVec
 	rotations               prometheus.Counter
+	kvPushes                *prometheus.CounterVec
+	kvPushErrors            *prometheus.CounterVec
 }
 
 // partitionTracker tracks HLL state for a single partition.
@@ -81,11 +92,13 @@ func (t *Tracker) MaxSeriesPerPartition() int {
 }
 
 // New creates a new Tracker.
-// Phase 1: No KV client needed yet.
+// kvClient is optional: if nil, operates in local-only mode (Phase 1).
+// If provided, enables distributed state synchronization via memberlist (Phase 2).
 func New(
 	cfg Config,
 	logger log.Logger,
 	reg prometheus.Registerer,
+	kvClient kv.Client,
 ) (*Tracker, error) {
 	// Validate and set defaults
 	if cfg.TimeWindowMinutes <= 0 {
@@ -101,6 +114,7 @@ func New(
 	t := &Tracker{
 		cfg:        cfg,
 		logger:     log.With(logger, "component", "partition-series-tracker"),
+		kvClient:   kvClient,
 		partitions: make(map[int32]*partitionTracker),
 
 		partitionSeriesEstimate: promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
@@ -111,6 +125,20 @@ func New(
 			Name: "cortex_distributor_partition_series_tracker_rotations_total",
 			Help: "Total number of minute rotations in the partition series tracker.",
 		}),
+		kvPushes: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_distributor_partition_series_tracker_kv_pushes_total",
+			Help: "Total number of KV push operations, labeled by status (success/failure).",
+		}, []string{"status"}),
+		kvPushErrors: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_distributor_partition_series_tracker_kv_push_errors_total",
+			Help: "Total number of KV push errors, labeled by error type.",
+		}, []string{"error"}),
+	}
+
+	if kvClient != nil {
+		level.Info(t.logger).Log("msg", "partition series tracker running in distributed mode (Phase 2)")
+	} else {
+		level.Info(t.logger).Log("msg", "partition series tracker running in local-only mode (Phase 1)")
 	}
 
 	t.Service = services.NewBasicService(t.starting, t.running, t.stopping)
@@ -129,12 +157,23 @@ func (t *Tracker) running(ctx context.Context) error {
 	t.rotateTicker = time.NewTicker(1 * time.Second)
 	defer t.rotateTicker.Stop()
 
+	// If KV client is enabled, push state periodically (Phase 2)
+	var kvPushChan <-chan time.Time
+	if t.kvClient != nil {
+		t.kvPushTicker = time.NewTicker(time.Duration(t.cfg.UpdateIntervalSeconds) * time.Second)
+		defer t.kvPushTicker.Stop()
+		kvPushChan = t.kvPushTicker.C
+	}
+
 	for {
 		select {
 		case <-ctx.Done():
 			return nil
 		case <-t.rotateTicker.C:
 			t.checkAndRotateMinute()
+		case <-kvPushChan:
+			// This case is skipped if kvPushChan is nil
+			t.pushToKV(ctx)
 		}
 	}
 }
@@ -245,6 +284,80 @@ func (pt *partitionTracker) rebuildMergedHistorical(precision uint8) {
 		merged.Merge(hll)
 	}
 	pt.mergedHistoricalHLL = merged
+}
+
+// pushToKV pushes current HLL state for all partitions to the KV store.
+// This is called periodically in Phase 2 to synchronize state across distributors.
+func (t *Tracker) pushToKV(ctx context.Context) {
+	t.currentMinuteMu.RLock()
+	currentMinute := t.currentMinute
+	t.currentMinuteMu.RUnlock()
+
+	t.partitionsMu.RLock()
+	partitions := make([]*partitionTracker, 0, len(t.partitions))
+	for _, pt := range t.partitions {
+		partitions = append(partitions, pt)
+	}
+	t.partitionsMu.RUnlock()
+
+	for _, pt := range partitions {
+		pt.mu.RLock()
+		hll := pt.currentHLL.Clone()
+		pt.mu.RUnlock()
+
+		// Create state object
+		state := &PartitionHLLState{
+			PartitionID: pt.partitionID,
+			UnixMinute:  currentMinute,
+			HLL:         hll,
+			UpdatedAtMs: time.Now().UnixMilli(),
+		}
+
+		// Generate KV key
+		key := makePartitionHLLKey(pt.partitionID, currentMinute)
+
+		// Push to KV using CAS with merge
+		err := t.kvClient.CAS(ctx, key, func(in interface{}) (out interface{}, retry bool, err error) {
+			if in == nil {
+				// No existing value, just write ours
+				return state, false, nil
+			}
+
+			// Merge with existing value
+			existing, ok := in.(*PartitionHLLState)
+			if !ok {
+				level.Error(t.logger).Log("msg", "unexpected type in KV", "key", key, "type", fmt.Sprintf("%T", in))
+				t.kvPushErrors.WithLabelValues("type_error").Inc()
+				return nil, false, fmt.Errorf("unexpected type: %T", in)
+			}
+
+			// Merge HLLs
+			merged := existing.HLL.Clone()
+			merged.Merge(hll)
+
+			// Return merged state
+			return &PartitionHLLState{
+				PartitionID: pt.partitionID,
+				UnixMinute:  currentMinute,
+				HLL:         merged,
+				UpdatedAtMs: time.Now().UnixMilli(),
+			}, false, nil
+		})
+
+		if err != nil {
+			level.Warn(t.logger).Log("msg", "failed to push HLL state to KV", "partition", pt.partitionID, "err", err)
+			t.kvPushes.WithLabelValues("failure").Inc()
+			t.kvPushErrors.WithLabelValues("cas_error").Inc()
+		} else {
+			t.kvPushes.WithLabelValues("success").Inc()
+		}
+	}
+}
+
+// makePartitionHLLKey generates a KV key for a partition's HLL state at a specific minute.
+// Format: "partition-series/<partition_id>/<unix_minute>"
+func makePartitionHLLKey(partitionID int32, unixMinute int64) string {
+	return fmt.Sprintf("partition-series/%d/%d", partitionID, unixMinute)
 }
 
 // getOrCreatePartition returns or creates a partition tracker.
