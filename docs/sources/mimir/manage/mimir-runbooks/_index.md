@@ -1914,13 +1914,13 @@ How to **investigate**:
 ### MimirFewerIngestersConsumingThanActivePartitions
 
 This alert fires when the number of ingesters consuming partitions is less than the number of active partitions.
-This means that distributors are writing to partitions that are not being consumed by any ingester, leading to data missing from the short-term read path and potential data loss if this persists for too long.
+This means that distributors are writing to partitions that are not being consumed by any ingester, leading to data missing from the short-term read path and potential data loss if this persists for too long, and block-builder is not used in the Mimir cluster.
 
 How it **works**:
 
 - Distributors shard series across the active partitions in the partitions ring.
 - Each ingester owns one partition, and consumes from it.
-- If a partition is not being consumed by any ingester, it means that the data written to that partition is not being available for querying and won't be saved to a block.
+- If a partition is not being consumed by any ingester, it means that the data written to that partition is not being available for querying. Moreover, if block-builder is not used in the Mimir cluster, then the data won't be saved to a block.
 
 How to **investigate**:
 
