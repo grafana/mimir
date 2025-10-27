@@ -673,9 +673,22 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 		// Init HLL-based partition series tracker (if enabled).
 		if cfg.HLLTrackerConfig.Enabled {
 			var err error
-			// Phase 1: No KV client (local-only mode)
-			// Phase 2: TODO - pass KV client for distributed mode
-			d.hllTracker, err = hlltracker.New(cfg.HLLTrackerConfig, log, reg, nil)
+			var hllKVClient kv.Client
+
+			// Phase 2: Create KV client for distributed HLL state if ring is configured
+			if canJoinDistributorsRing {
+				// Use the same KV store as the distributor ring, but with partition HLL codec
+				codec := hlltracker.NewPartitionHLLCodec()
+				hllKVClient, err = kv.NewClient(cfg.DistributorRing.Common.KVStore, codec, kv.RegistererWithKVName(reg, "distributor-partition-hll"), log)
+				if err != nil {
+					return nil, errors.Wrap(err, "failed to initialize partition HLL KV store")
+				}
+				level.Info(log).Log("msg", "partition series tracker will use distributed mode with KV store")
+			} else {
+				level.Info(log).Log("msg", "partition series tracker will use local-only mode (no distributor ring)")
+			}
+
+			d.hllTracker, err = hlltracker.New(cfg.HLLTrackerConfig, log, reg, hllKVClient)
 			if err != nil {
 				return nil, errors.Wrap(err, "failed to create HLL tracker")
 			}
