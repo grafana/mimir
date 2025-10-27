@@ -310,6 +310,8 @@ type Limits struct {
 	OTelPromoteScopeMetadata                 bool                         `yaml:"otel_promote_scope_metadata" json:"otel_promote_scope_metadata" category:"experimental"`
 	OTelNativeDeltaIngestion                 bool                         `yaml:"otel_native_delta_ingestion" json:"otel_native_delta_ingestion" category:"experimental"`
 	OTelTranslationStrategy                  OTelTranslationStrategyValue `yaml:"otel_translation_strategy" json:"otel_translation_strategy" category:"experimental"`
+	OTelLabelNameUnderscoreSanitization      bool                         `yaml:"otel_label_name_underscore_sanitization" json:"otel_label_name_underscore_sanitization" category:"advanced"`
+	OTelLabelNamePreserveMultipleUnderscores bool                         `yaml:"otel_label_name_preserve_multiple_underscores" json:"otel_label_name_preserve_multiple_underscores" category:"advanced"`
 
 	// Ingest storage.
 	IngestStorageReadConsistency       string `yaml:"ingest_storage_read_consistency" json:"ingest_storage_read_consistency" category:"experimental"`
@@ -365,6 +367,8 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&l.OTelPromoteScopeMetadata, "distributor.otel-promote-scope-metadata", false, "Whether to promote OTel scope metadata (scope name, version, schema URL, attributes) to corresponding metric labels, prefixed with otel_scope_.")
 	f.BoolVar(&l.OTelNativeDeltaIngestion, "distributor.otel-native-delta-ingestion", false, "Whether to enable native ingestion of delta OTLP metrics, which will store the raw delta sample values without conversion. If disabled, delta metrics will be rejected. Delta support is in an early stage of development. The ingestion and querying process is likely to change over time.")
 	f.Var(&l.OTelTranslationStrategy, "distributor.otel-translation-strategy", fmt.Sprintf("Translation strategy to apply in OTLP endpoint for metric and label names. If unspecified (the default), the strategy is derived from -validation.name-validation-scheme and -distributor.otel-metric-suffixes-enabled. Supported values: %s.", strings.Join([]string{`""`, string(otlptranslator.UnderscoreEscapingWithSuffixes), string(otlptranslator.UnderscoreEscapingWithoutSuffixes), string(otlptranslator.NoUTF8EscapingWithSuffixes), string(otlptranslator.NoTranslation)}, ", ")))
+	f.BoolVar(&l.OTelLabelNameUnderscoreSanitization, "distributor.otel-label-name-underscore-sanitization", true, "If enabled, prefixes label names starting with a single underscore with `key_` when translating OTel attribute names. Defaults to true.")
+	f.BoolVar(&l.OTelLabelNamePreserveMultipleUnderscores, "distributor.otel-label-name-preserve-underscores", true, "If enabled, keeps multiple consecutive underscores in label names when translating OTel attribute names. Defaults to true.")
 
 	f.Var(&l.IngestionArtificialDelay, "distributor.ingestion-artificial-delay", "Target ingestion delay to apply to all tenants. If set to a non-zero value, the distributor will artificially delay ingestion time-frame by the specified duration by computing the difference between actual ingestion and the target. There is no delay on actual ingestion of samples, it is only the response back to the client.")
 	f.IntVar(&l.IngestionArtificialDelayConditionForTenantsWithLessThanMaxSeries, "distributor.ingestion-artificial-delay-condition-for-tenants-with-less-than-max-series", 0, "Condition to select tenants for which -distributor.ingestion-artificial-delay-duration-for-tenants-with-less-than-max-series should be applied.")
@@ -1500,6 +1504,14 @@ func (o *Overrides) OTelTranslationStrategy(tenantID string) otlptranslator.Tran
 		panic(fmt.Errorf("unrecognized name validation scheme: %s", scheme))
 	}
 	return strategy
+}
+
+func (o *Overrides) OTelLabelNameUnderscoreSanitization(tenantID string) bool {
+	return o.getOverridesForUser(tenantID).OTelLabelNameUnderscoreSanitization
+}
+
+func (o *Overrides) OTelLabelNamePreserveMultipleUnderscores(tenantID string) bool {
+	return o.getOverridesForUser(tenantID).OTelLabelNamePreserveMultipleUnderscores
 }
 
 // DistributorIngestionArtificialDelay returns the artificial ingestion latency for a given user.

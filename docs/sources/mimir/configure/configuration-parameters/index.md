@@ -4461,6 +4461,16 @@ ruler_alertmanager_client_config:
 # CLI flag: -distributor.otel-translation-strategy
 [otel_translation_strategy: <string> | default = ""]
 
+# (advanced) If enabled, prefixes label names starting with a single underscore
+# with `key_` when translating OTel attribute names. Defaults to true.
+# CLI flag: -distributor.otel-label-name-underscore-sanitization
+[otel_label_name_underscore_sanitization: <boolean> | default = true]
+
+# (advanced) If enabled, keeps multiple consecutive underscores in label names
+# when translating OTel attribute names. Defaults to true.
+# CLI flag: -distributor.otel-label-name-preserve-underscores
+[otel_label_name_preserve_multiple_underscores: <boolean> | default = true]
+
 # (experimental) The default consistency level to enforce for queries when using
 # the ingest storage. Supports values: strong, eventual.
 # CLI flag: -ingest-storage.read-consistency

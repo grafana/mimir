@@ -1287,6 +1287,10 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Whether to enable translation of OTel start timestamps to Prometheus zero samples in the OTLP endpoint.
   -distributor.otel-keep-identifying-resource-attributes
     	[experimental] Whether to keep identifying OTel resource attributes in the target_info metric on top of converting to job and instance labels.
+  -distributor.otel-label-name-preserve-underscores
+    	If enabled, keeps multiple consecutive underscores in label names when translating OTel attribute names. Defaults to true. (default true)
+  -distributor.otel-label-name-underscore-sanitization
+    	If enabled, prefixes label names starting with a single underscore with `key_` when translating OTel attribute names. Defaults to true. (default true)
   -distributor.otel-metric-suffixes-enabled
     	Whether to enable automatic suffixes to names of metrics ingested through OTLP.
   -distributor.otel-native-delta-ingestion
