@@ -1566,13 +1566,13 @@ How to **investigate**:
 
 How it **works**:
 
-This alert fires when queriers within the same query path — either the ordinary query path or ruler query path (if enabled) — are reporting different maximum supported query plan versions.
+This alert fires when queriers within the same query path, either the ordinary query path or the ruler query path, if enabled, report different maximum supported query plan versions.
 
-When queriers are reporting different maximum supported query plan versions, query-frontends will only generate query plans that are compatible with the lowest supported query plan version of all queriers.
+When queriers report different maximum supported query plan versions, query-frontends only generate query plans that are compatible with the lowest supported query plan version of all queriers.
 This may limit query performance or cause queries containing newer PromQL features to fail.
 
-Different versions are expected while some queriers are running an older version of Mimir such as during rollouts and upgrades.
-However, under normal circumstances, all queriers should be running the same version of Mimir and so be reporting the same maximum supported query plan version.
+Different maximum supported query plan versions are expected while some queriers are running an older version of Mimir, such as during rollouts and upgrades.
+However, under normal circumstances, all queriers should run the same version of Mimir and, therefore, report the same maximum supported query plan version.
 
 How to **investigate**:
 
@@ -1582,7 +1582,7 @@ How to **investigate**:
 
 How it **works**:
 
-This alert fires when query-frontends within the same query path — either the ordinary query path or ruler query path (if enabled) — are reporting different maximum supported query plan versions.
+This alert fires when query-frontends within the same query path, either the ordinary query path or ruler query path, if enabled, report different maximum supported query plan versions.
 
 Query-frontends compute the maximum supported query plan version by taking the minimum of the maximum supported query plan versions reported by all queriers in the same query path.
 Queriers share this information with query-frontends through the querier ring.
@@ -1597,20 +1597,20 @@ How to **investigate**:
 
 ### MimirQueryFrontendsAndQueriersDisagreeOnSupportedQueryPlanVersion
 
-This alert fires when query-frontends and queriers in the same query path (ordinary query path, or ruler query path, if enabled) disagree on the maximum supported query plan version.
+This alert fires when query-frontends and queriers in the same query path, such as the ordinary query path, or ruler query path, if enabled, disagree on the maximum supported query plan version.
 
-See [MimirMixedQueryFrontendQueryPlanVersionSupport](#mimirmixedqueryfrontendqueryplanversionsupport) for more information and suggestions on how to investigate this issue.
+Refer to [MimirMixedQueryFrontendQueryPlanVersionSupport](#mimirmixedqueryfrontendqueryplanversionsupport) for more information and suggestions on how to investigate this issue.
 
 ### MimirQueryFrontendNotComputingSupportedQueryPlanVersion
 
 How it **works**:
 
-This alert fires when query-frontends are failing to compute a maximum supported query plan version.
+This alert fires when query-frontends fail to compute a maximum supported query plan version.
 
 Query-frontends compute the maximum supported query plan version by taking the minimum of the maximum supported query plan versions reported by all queriers in the same query path.
 Queriers share this information with query-frontends through the querier ring.
 
-If the querier ring is empty, or some queriers are not reporting a maximum supported query plan version, query-frontends will not be able to compute a maximum supported query plan version.
+If the querier ring is empty, or if some queriers are not reporting a maximum supported query plan version, query-frontends can't compute a maximum supported query plan version.
 
 How to **investigate**:
 
