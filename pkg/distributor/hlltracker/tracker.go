@@ -75,6 +75,11 @@ type CurrentState struct {
 	CurrentCopy *hyperloglog.HyperLogLog
 }
 
+// MaxSeriesPerPartition returns the configured global max series per partition limit.
+func (t *Tracker) MaxSeriesPerPartition() int {
+	return t.cfg.MaxSeriesPerPartition
+}
+
 // New creates a new Tracker.
 // Phase 1: No KV client needed yet.
 func New(

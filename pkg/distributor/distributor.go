@@ -51,6 +51,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/cardinality"
 	"github.com/grafana/mimir/pkg/costattribution"
+	"github.com/grafana/mimir/pkg/distributor/hlltracker"
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/stats"
@@ -200,6 +201,10 @@ type Distributor struct {
 	// partitionsRing is the hash ring holding ingester partitions. It's used when ingest storage is enabled.
 	partitionsRing *ring.PartitionInstanceRing
 
+	// hllTracker tracks per-partition series cardinality using HyperLogLog. It's used when ingest storage is enabled
+	// and partition series tracking is enabled.
+	hllTracker *hlltracker.Tracker
+
 	// usageTrackerClient is the client that should be used to track per-tenant series and
 	// enforce max series limit in the distributor. This field is nil if usage-tracker
 	// is disabled.
@@ -232,8 +237,9 @@ type KeepIdentifyingOTelResourceAttributesConfig interface {
 type Config struct {
 	PoolConfig PoolConfig `yaml:"pool"`
 
-	RetryConfig     RetryConfig     `yaml:"retry_after_header"`
-	HATrackerConfig HATrackerConfig `yaml:"ha_tracker"`
+	RetryConfig      RetryConfig       `yaml:"retry_after_header"`
+	HATrackerConfig  HATrackerConfig   `yaml:"ha_tracker"`
+	HLLTrackerConfig hlltracker.Config `yaml:"partition_series_tracker"`
 
 	MaxRecvMsgSize           int           `yaml:"max_recv_msg_size" category:"advanced"`
 	MaxOTLPRequestSize       int           `yaml:"max_otlp_request_size" category:"experimental"`
@@ -306,6 +312,7 @@ type PushWrapper func(next PushFunc) PushFunc
 func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	cfg.PoolConfig.RegisterFlags(f)
 	cfg.HATrackerConfig.RegisterFlags(f)
+	cfg.HLLTrackerConfig.RegisterFlags(f)
 	cfg.DistributorRing.RegisterFlags(f, logger)
 	cfg.RetryConfig.RegisterFlags(f)
 	cfg.UsageTrackerClient.RegisterFlagsWithPrefix("distributor.usage-tracker-client.", f)
@@ -662,6 +669,16 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 	if cfg.IngestStorageConfig.Enabled {
 		d.ingestStorageWriter = ingest.NewWriter(d.cfg.IngestStorageConfig.KafkaConfig, log, reg)
 		subservices = append(subservices, d.ingestStorageWriter)
+
+		// Init HLL-based partition series tracker (if enabled).
+		if cfg.HLLTrackerConfig.Enabled {
+			var err error
+			d.hllTracker, err = hlltracker.New(cfg.HLLTrackerConfig, log, reg)
+			if err != nil {
+				return nil, errors.Wrap(err, "failed to create HLL tracker")
+			}
+			subservices = append(subservices, d.hllTracker)
+		}
 	}
 
 	// Init usage-tracker client (if enabled).
@@ -1049,8 +1066,9 @@ func (d *Distributor) wrapPushWithMiddlewares(next PushFunc) PushFunc {
 	middlewares = append(middlewares, d.prePushRelabelMiddleware)
 	middlewares = append(middlewares, d.prePushSortAndFilterMiddleware)
 	middlewares = append(middlewares, d.prePushValidationMiddleware)
-	middlewares = append(middlewares, d.cfg.PushWrappers...)             // TODO GEM has a BI middleware. It should probably be applied after prePushMaxSeriesLimitMiddleware
-	middlewares = append(middlewares, d.prePushMaxSeriesLimitMiddleware) // Should be the very last, to enforce the max series limit on top of all filtering, relabelling and other changes (e.g. GEM aggregations) previous middlewares could do
+	middlewares = append(middlewares, d.cfg.PushWrappers...)              // TODO GEM has a BI middleware. It should probably be applied after prePushMaxSeriesLimitMiddleware
+	middlewares = append(middlewares, d.preKafkaPartitionLimitMiddleware) // Enforce partition series limits when using ingest storage
+	middlewares = append(middlewares, d.prePushMaxSeriesLimitMiddleware)  // Should be the very last, to enforce the max series limit on top of all filtering, relabelling and other changes (e.g. GEM aggregations) previous middlewares could do
 
 	for ix := len(middlewares) - 1; ix >= 0; ix-- {
 		next = middlewares[ix](next)

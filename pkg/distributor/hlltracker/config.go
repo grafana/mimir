@@ -10,6 +10,12 @@ import (
 type Config struct {
 	Enabled bool `yaml:"enabled" category:"experimental"`
 
+	// MaxSeriesPerPartition is the global limit on the number of series per partition
+	// across all tenants in the configured time window. This is analogous to ingester
+	// instance limits. 0 = disabled.
+	// Default: 3000000 (3 million)
+	MaxSeriesPerPartition int `yaml:"max_series_per_partition" category:"experimental"`
+
 	// TimeWindowMinutes is the number of minutes to track series cardinality.
 	// Default: 20
 	TimeWindowMinutes int `yaml:"time_window_minutes" category:"experimental"`
@@ -31,6 +37,11 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 		"distributor.partition-series-tracker.enabled",
 		false,
 		"Enable distributed partition series tracking using HyperLogLog. This feature is experimental.")
+
+	f.IntVar(&cfg.MaxSeriesPerPartition,
+		"distributor.partition-series-tracker.max-series-per-partition",
+		3000000,
+		"Global maximum number of series per partition across all tenants in the configured time window. This is analogous to ingester instance limits. 0 = disabled.")
 
 	f.IntVar(&cfg.TimeWindowMinutes,
 		"distributor.partition-series-tracker.time-window-minutes",
