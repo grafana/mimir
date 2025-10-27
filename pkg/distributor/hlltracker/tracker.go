@@ -323,7 +323,7 @@ func (t *Tracker) pushToKV(ctx context.Context) {
 		}
 
 		// Generate KV key
-		key := makePartitionHLLKey(pt.partitionID, currentMinute)
+		key := MakePartitionHLLKey(pt.partitionID, currentMinute)
 
 		// Push to KV using CAS with merge
 		err := t.kvClient.CAS(ctx, key, func(in interface{}) (out interface{}, retry bool, err error) {
@@ -363,9 +363,9 @@ func (t *Tracker) pushToKV(ctx context.Context) {
 	}
 }
 
-// makePartitionHLLKey generates a KV key for a partition's HLL state at a specific minute.
+// MakePartitionHLLKey generates a KV key for a partition's HLL state at a specific minute.
 // Format: "partition-series/<partition_id>/<unix_minute>"
-func makePartitionHLLKey(partitionID int32, unixMinute int64) string {
+func MakePartitionHLLKey(partitionID int32, unixMinute int64) string {
 	return fmt.Sprintf("partition-series/%d/%d", partitionID, unixMinute)
 }
 
