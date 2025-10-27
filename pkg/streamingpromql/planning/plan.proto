@@ -20,7 +20,10 @@ message EncodedQueryPlan {
 
   bool enableDelayedNameRemoval = 5;
 
-  uint64 version = 6 [(gogoproto.casttype) = "QueryPlanVersion"];
+  uint64 version = 6 [
+    (gogoproto.casttype) = "QueryPlanVersion",
+    (gogoproto.jsontag) = "version" // Override default value to remove 'omitempty'
+  ];
 }
 
 message EncodedQueryTimeRange {

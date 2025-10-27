@@ -48,7 +48,8 @@ func TestHandler(t *testing.T) {
 					"nodes": [
 					  {"type": "VectorSelector", "description": "{__name__=\"up\"}"}
 					],
-					"originalExpression": "up"
+					"originalExpression": "up",
+					"version": 0
 				  }
 				},
 				{
@@ -59,7 +60,8 @@ func TestHandler(t *testing.T) {
 					"nodes": [
 					  {"type": "VectorSelector", "description": "{__name__=\"up\"}"}
 					],
-					"originalExpression": "up"
+					"originalExpression": "up",
+					"version": 0
 				  }
 				}
 			  ],
@@ -92,7 +94,8 @@ func TestHandler(t *testing.T) {
 					"nodes": [
 					  {"type": "VectorSelector", "description": "{__name__=\"up\"}"}
 					],
-					"originalExpression": "up"
+					"originalExpression": "up",
+					"version": 0
 				  }
 				},
 				{
@@ -103,7 +106,56 @@ func TestHandler(t *testing.T) {
 					"nodes": [
 					  {"type": "VectorSelector", "description": "{__name__=\"up\"}"}
 					],
-					"originalExpression": "up"
+					"originalExpression": "up",
+					"version": 0
+				  }
+				}
+			  ],
+			  "planVersion": 0
+			}`,
+			expectedStatusCode: http.StatusOK,
+		},
+
+		"valid request with non-zero plan version": {
+			params: url.Values{
+				"query": []string{`up @ start()`},
+				"time":  []string{"2022-01-01T00:00:00Z"},
+			},
+			expectedResponse: `{
+			  "originalExpression": "up @ start()",
+			  "timeRange": {"startT": 1640995200000, "endT": 1640995200000, "intervalMilliseconds": 1, "isInstant": true},
+			  "astStages": [
+				{"name": "Parsing", "duration": 1234000000, "outputExpression": "up @ start()"},
+				{"name": "Pre-processing", "duration": 1234000000, "outputExpression": "up @ 1640995200.000"},
+				{"name": "Final expression", "duration": null, "outputExpression": "up @ 1640995200.000"}
+			  ],
+			  "planningStages": [
+				{
+				  "name": "Original plan",
+				  "duration": 1234000000,
+				  "outputPlan": {
+					"timeRange": {"startT": 1640995200000, "endT": 1640995200000, "intervalMilliseconds": 1, "isInstant": true},
+					"nodes": [
+					  {"type": "VectorSelector", "description": "{__name__=\"up\"} @ 1640995200000 (2022-01-01T00:00:00Z)"},
+					  {"type": "StepInvariantExpression", "children": [0], "childrenLabels": [""]}
+					],
+					"originalExpression": "up @ start()",
+					"rootNode": 1,
+					"version": 1
+				  }
+				},
+				{
+				  "name": "Final plan",
+				  "duration": null,
+				  "outputPlan": {
+					"timeRange": {"startT": 1640995200000, "endT": 1640995200000, "intervalMilliseconds": 1, "isInstant": true},
+					"nodes": [
+					  {"type": "VectorSelector", "description": "{__name__=\"up\"} @ 1640995200000 (2022-01-01T00:00:00Z)"},
+					  {"type": "StepInvariantExpression", "children": [0], "childrenLabels": [""]}
+					],
+					"originalExpression": "up @ start()",
+					"rootNode": 1,
+					"version": 1
 				  }
 				}
 			  ],
@@ -338,7 +390,8 @@ func TestHandler_Sharding(t *testing.T) {
 					  {"type": "AggregateExpression", "children": [6], "description": "sum", "childrenLabels": [""]}
 					],
 					"originalExpression": "sum(up)",
-					"rootNode": 7
+					"rootNode": 7,
+					"version": 0
 				  }
 				},
 				{
@@ -357,7 +410,8 @@ func TestHandler_Sharding(t *testing.T) {
 					  {"type": "AggregateExpression", "children": [6], "description": "sum", "childrenLabels": [""]}
 					],
 					"originalExpression": "sum(up)",
-					"rootNode": 7
+					"rootNode": 7,
+					"version": 0
 				  }
 				}
 			  ],
@@ -397,7 +451,8 @@ func TestHandler_Sharding(t *testing.T) {
 					  {"type": "AggregateExpression", "children": [4], "description": "sum", "childrenLabels": [""]}
 					],
 					"originalExpression": "sum(up)",
-					"rootNode": 5
+					"rootNode": 5,
+					"version": 0
 				  }
 				},
 				{
@@ -414,7 +469,8 @@ func TestHandler_Sharding(t *testing.T) {
 					  {"type": "AggregateExpression", "children": [4], "description": "sum", "childrenLabels": [""]}
 					],
 					"originalExpression": "sum(up)",
-					"rootNode": 5
+					"rootNode": 5,
+					"version": 0
 				  }
 				}
 			  ],
