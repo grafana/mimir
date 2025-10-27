@@ -531,16 +531,25 @@
     if !$._config.autoscaling_querier_enabled then {} else $.removeReplicasFromSpec
   ),
 
-  query_frontend_scaled_object: if !$._config.autoscaling_query_frontend_enabled then null else
+  //
+  // Query-frontends
+  //
+
+  newQueryFrontendScaledObject(name, extra_matchers='')::
     $.newResourceScaledObject(
-      name='query-frontend',
+      name=name,
+      container_name='query-frontend',
       cpu_requests=$.query_frontend_container.resources.requests.cpu,
       memory_requests=$.query_frontend_container.resources.requests.memory,
       min_replicas=$._config.autoscaling_query_frontend_min_replicas,
       max_replicas=$._config.autoscaling_query_frontend_max_replicas,
       cpu_target_utilization=$._config.autoscaling_query_frontend_cpu_target_utilization,
       memory_target_utilization=$._config.autoscaling_query_frontend_memory_target_utilization,
+      extra_matchers=extra_matchers,
     ),
+
+  query_frontend_scaled_object: if !$._config.autoscaling_query_frontend_enabled then null else
+    $.newQueryFrontendScaledObject('query-frontend'),
 
   query_frontend_deployment: overrideSuperIfExists(
     'query_frontend_deployment',
@@ -725,6 +734,7 @@
   newRulerScaledObject(name, extra_matchers='')::
     $.newResourceScaledObject(
       name=name,
+      container_name='ruler',
       cpu_requests=$.ruler_container.resources.requests.cpu,
       memory_requests=$.ruler_container.resources.requests.memory,
       min_replicas=$._config.autoscaling_ruler_min_replicas,
