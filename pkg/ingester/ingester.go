@@ -196,8 +196,8 @@ type Config struct {
 
 	IgnoreSeriesLimitForMetricNames string `yaml:"ignore_series_limit_for_metric_names" category:"advanced"`
 
-	ReadPathCPUUtilizationLimit    float64 `yaml:"read_path_cpu_utilization_limit" category:"experimental"`
-	ReadPathMemoryUtilizationLimit uint64  `yaml:"read_path_memory_utilization_limit" category:"experimental"`
+	ReadPathCPUUtilizationLimit    float64 `yaml:"read_path_cpu_utilization_limit" category:"advanced"`
+	ReadPathMemoryUtilizationLimit uint64  `yaml:"read_path_memory_utilization_limit" category:"advanced"`
 
 	ErrorSampleRate int64 `yaml:"error_sample_rate" json:"error_sample_rate" category:"advanced"`
 
@@ -2843,7 +2843,7 @@ func (i *Ingester) createBlockChunkQuerier(userID string, b tsdb.BlockReader, mi
 		return nil, err
 	}
 
-	lookupStatsQuerier := newStatsTrackingChunkQuerier(defaultQuerier, i.metrics, i.lookupPlanMetrics.ForUser(userID))
+	lookupStatsQuerier := newStatsTrackingChunkQuerier(b.Meta().ULID, defaultQuerier, i.metrics, i.lookupPlanMetrics.ForUser(userID))
 
 	if rand.Float64() > i.cfg.BlocksStorageConfig.TSDB.IndexLookupPlanning.ComparisonPortion {
 		return lookupStatsQuerier, nil

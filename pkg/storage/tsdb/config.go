@@ -255,7 +255,7 @@ type TSDBConfig struct {
 
 	// HeadPostingsForMatchersCacheTTL is the TTL of the postings for matchers cache in the Head.
 	// If it's 0, the cache will only deduplicate in-flight requests, deleting the results once the first request has finished.
-	HeadPostingsForMatchersCacheTTL time.Duration `yaml:"head_postings_for_matchers_cache_ttl" category:"experimental"`
+	HeadPostingsForMatchersCacheTTL time.Duration `yaml:"head_postings_for_matchers_cache_ttl" category:"advanced"`
 
 	// HeadPostingsForMatchersCacheMaxItems is the maximum size (in number of items) of cached postings for matchers elements in the Head.
 	// It's ignored used when HeadPostingsForMatchersCacheTTL is 0.
@@ -264,14 +264,14 @@ type TSDBConfig struct {
 
 	// HeadPostingsForMatchersCacheMaxBytes is the maximum size (in bytes) of cached postings for matchers elements in the Head.
 	// It's ignored used when HeadPostingsForMatchersCacheTTL is 0.
-	HeadPostingsForMatchersCacheMaxBytes int64 `yaml:"head_postings_for_matchers_cache_max_bytes" category:"experimental"`
+	HeadPostingsForMatchersCacheMaxBytes int64 `yaml:"head_postings_for_matchers_cache_max_bytes" category:"advanced"`
 
 	// HeadPostingsForMatchersCacheForce forces the usage of postings for matchers cache for all calls on Head and OOOHead regardless of the `concurrent` param.
-	HeadPostingsForMatchersCacheForce bool `yaml:"head_postings_for_matchers_cache_force" category:"experimental"`
+	HeadPostingsForMatchersCacheForce bool `yaml:"head_postings_for_matchers_cache_force" category:"advanced"`
 
 	// BlockPostingsForMatchersCacheTTL is the TTL of the postings for matchers cache in each compacted block.
 	// If it's 0, the cache will only deduplicate in-flight requests, deleting the results once the first request has finished.
-	BlockPostingsForMatchersCacheTTL time.Duration `yaml:"block_postings_for_matchers_cache_ttl" category:"experimental"`
+	BlockPostingsForMatchersCacheTTL time.Duration `yaml:"block_postings_for_matchers_cache_ttl" category:"advanced"`
 
 	// BlockPostingsForMatchersCacheMaxItems is the maximum size of cached postings for matchers elements in each compacted block.
 	// It's ignored used when BlockPostingsForMatchersCacheTTL is 0.
@@ -280,11 +280,11 @@ type TSDBConfig struct {
 
 	// BlockPostingsForMatchersCacheMaxBytes is the maximum size (in bytes) of cached postings for matchers elements in each compacted block.
 	// It's ignored used when BlockPostingsForMatchersCacheTTL is 0.
-	BlockPostingsForMatchersCacheMaxBytes int64 `yaml:"block_postings_for_matchers_cache_max_bytes" category:"experimental"`
+	BlockPostingsForMatchersCacheMaxBytes int64 `yaml:"block_postings_for_matchers_cache_max_bytes" category:"advanced"`
 
 	// BlockPostingsForMatchersCacheForce forces the usage of postings for matchers cache for all calls compacted blocks
 	// regardless of the `concurrent` param.
-	BlockPostingsForMatchersCacheForce bool `yaml:"block_postings_for_matchers_cache_force" category:"experimental"`
+	BlockPostingsForMatchersCacheForce bool `yaml:"block_postings_for_matchers_cache_force" category:"advanced"`
 
 	EarlyHeadCompactionMinInMemorySeries                     int64 `yaml:"early_head_compaction_min_in_memory_series" category:"experimental"`
 	EarlyHeadCompactionMinEstimatedSeriesReductionPercentage int   `yaml:"early_head_compaction_min_estimated_series_reduction_percentage" category:"experimental"`
@@ -350,9 +350,9 @@ func (cfg *TSDBConfig) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.SharedPostingsForMatchersCache, "blocks-storage.tsdb.shared-postings-for-matchers-cache", false, "Whether postings for matchers cache should be shared across blocks, as opposed to instantiated per block. With a shared cache, one cache is created for head blocks, and one for compacted blocks.")
 	f.BoolVar(&cfg.HeadPostingsForMatchersCacheInvalidation, "blocks-storage.tsdb.head-postings-for-matchers-cache-invalidation", false, "Whether head block postings should be tracked and invalidated when they change, allowing higher TTLs to be used. When not using invalidation, cache entries will be used until removed.")
 	f.IntVar(&cfg.HeadPostingsForMatchersCacheVersions, "blocks-storage.tsdb.head-postings-for-matchers-cache-versions", tsdb.DefaultPostingsForMatchersCacheVersions, "The size of the metric versions cache in each ingester when invalidation is enabled.")
-	f.DurationVar(&cfg.HeadPostingsForMatchersCacheTTL, "blocks-storage.tsdb.head-postings-for-matchers-cache-ttl", tsdb.DefaultPostingsForMatchersCacheTTL, "How long to cache postings for matchers in the Head and OOOHead. 0 disables the cache and just deduplicates the in-flight calls.")
+	f.DurationVar(&cfg.HeadPostingsForMatchersCacheTTL, "blocks-storage.tsdb.head-postings-for-matchers-cache-ttl", tsdb.DefaultPostingsForMatchersCacheTTL, "How long to cache postings for matchers in the Head and OOOHead. Set to 0 to disable the cache and only deduplicate in-flight calls.")
 	f.IntVar(&cfg.HeadPostingsForMatchersCacheMaxItems, "blocks-storage.tsdb.head-postings-for-matchers-cache-size", tsdb.DefaultPostingsForMatchersCacheMaxItems, "Maximum number of entries in the cache for postings for matchers in the Head and OOOHead when TTL is greater than 0.")
-	f.Int64Var(&cfg.HeadPostingsForMatchersCacheMaxBytes, "blocks-storage.tsdb.head-postings-for-matchers-cache-max-bytes", DefaultPostingsForMatchersCacheMaxBytes, "Maximum size in bytes of the cache for postings for matchers in the Head and OOOHead when TTL is greater than 0.")
+	f.Int64Var(&cfg.HeadPostingsForMatchersCacheMaxBytes, "blocks-storage.tsdb.head-postings-for-matchers-cache-max-bytes", DefaultPostingsForMatchersCacheMaxBytes, "Maximum size, in bytes, of the cache for postings for matchers in each compacted block when the TTL is greater than 0.")
 	f.BoolVar(&cfg.HeadPostingsForMatchersCacheForce, "blocks-storage.tsdb.head-postings-for-matchers-cache-force", tsdb.DefaultPostingsForMatchersCacheForce, "Force the cache to be used for postings for matchers in the Head and OOOHead, even if it's not a concurrent (query-sharding) call.")
 	f.DurationVar(&cfg.BlockPostingsForMatchersCacheTTL, "blocks-storage.tsdb.block-postings-for-matchers-cache-ttl", tsdb.DefaultPostingsForMatchersCacheTTL, "How long to cache postings for matchers in each compacted block queried from the ingester. 0 disables the cache and just deduplicates the in-flight calls.")
 	f.IntVar(&cfg.BlockPostingsForMatchersCacheMaxItems, "blocks-storage.tsdb.block-postings-for-matchers-cache-size", tsdb.DefaultPostingsForMatchersCacheMaxItems, "Maximum number of entries in the cache for postings for matchers in each compacted block when TTL is greater than 0.")
@@ -413,8 +413,13 @@ func (cfg *TSDBConfig) Validate(activeSeriesCfg activeseries.Config) error {
 		return errInvalidEarlyHeadCompactionMinSeriesReduction
 	}
 
-	if cfg.IndexLookupPlanning.Enabled && cfg.IndexLookupPlanning.StatisticsCollectionFrequency <= 0 {
-		return errors.Errorf("head statistics collection frequency must be a non-negative duration. 0 to disable")
+	if cfg.IndexLookupPlanning.Enabled {
+		if err := cfg.IndexLookupPlanning.Validate(); err != nil {
+			return err
+		}
+		if cfg.IndexLookupPlanning.StatisticsCollectionFrequency <= 0 {
+			return errors.Errorf("head statistics collection frequency must be a non-negative duration. 0 to disable")
+		}
 	}
 
 	return nil

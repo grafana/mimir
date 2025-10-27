@@ -5,6 +5,7 @@ package block
 import (
 	"context"
 	crypto_rand "crypto/rand"
+	"fmt"
 	"os"
 	"path"
 	"path/filepath"
@@ -38,7 +39,7 @@ func TestMetaFetcher_Fetch_ShouldReturnDiscoveredBlocksIncludingMarkedForDeletio
 	require.NoError(t, err)
 	bkt = BucketWithGlobalMarkers(bkt)
 
-	f, err := NewMetaFetcher(logger, 10, objstore.WrapWithMetrics(bkt, reg, "test"), t.TempDir(), reg, nil, nil, 0)
+	f, err := NewMetaFetcher(logger, 10, objstore.WrapWithMetrics(bkt, reg, "test"), t.TempDir(), reg, nil, 0)
 	require.NoError(t, err)
 
 	t.Run("should return no metas and no partials on no block in the storage", func(t *testing.T) {
@@ -166,7 +167,7 @@ func TestMetaFetcher_FetchWithoutMarkedForDeletion_ShouldReturnDiscoveredBlocksE
 	require.NoError(t, err)
 	bkt = BucketWithGlobalMarkers(bkt)
 
-	f, err := NewMetaFetcher(logger, 10, objstore.WrapWithMetrics(bkt, reg, "test"), t.TempDir(), reg, nil, nil, 0)
+	f, err := NewMetaFetcher(logger, 10, objstore.WrapWithMetrics(bkt, reg, "test"), t.TempDir(), reg, nil, 0)
 	require.NoError(t, err)
 
 	t.Run("should return no metas and no partials on no block in the storage", func(t *testing.T) {
@@ -302,7 +303,7 @@ func TestMetaFetcher_ShouldNotIssueAnyAPICallToObjectStorageIfAllBlockMetasAreCa
 
 	// Create a fetcher and fetch block metas to populate the cache on disk.
 	reg1 := prometheus.NewPedanticRegistry()
-	fetcher1, err := NewMetaFetcher(logger, 10, objstore.WrapWithMetrics(bkt, prometheus.WrapRegistererWithPrefix("thanos_", reg1), "test"), fetcherDir, nil, nil, nil, 0)
+	fetcher1, err := NewMetaFetcher(logger, 10, objstore.WrapWithMetrics(bkt, prometheus.WrapRegistererWithPrefix("thanos_", reg1), "test"), fetcherDir, nil, nil, 0)
 	require.NoError(t, err)
 	actualMetas, _, actualErr := fetcher1.Fetch(ctx)
 	require.NoError(t, actualErr)
@@ -324,7 +325,7 @@ func TestMetaFetcher_ShouldNotIssueAnyAPICallToObjectStorageIfAllBlockMetasAreCa
 
 	// Create a new fetcher and fetch blocks again. This time we expect all meta.json to be loaded from cache.
 	reg2 := prometheus.NewPedanticRegistry()
-	fetcher2, err := NewMetaFetcher(logger, 10, objstore.WrapWithMetrics(bkt, prometheus.WrapRegistererWithPrefix("thanos_", reg2), "test"), fetcherDir, nil, nil, nil, 0)
+	fetcher2, err := NewMetaFetcher(logger, 10, objstore.WrapWithMetrics(bkt, prometheus.WrapRegistererWithPrefix("thanos_", reg2), "test"), fetcherDir, nil, nil, 0)
 	require.NoError(t, err)
 	actualMetas, _, actualErr = fetcher2.Fetch(ctx)
 	require.NoError(t, actualErr)
@@ -343,63 +344,6 @@ func TestMetaFetcher_ShouldNotIssueAnyAPICallToObjectStorageIfAllBlockMetasAreCa
 		thanos_objstore_bucket_operations_total{bucket="test",operation="iter"} 1
 		thanos_objstore_bucket_operations_total{bucket="test",operation="upload"} 0
 	`), "thanos_objstore_bucket_operations_total"))
-}
-
-func TestMetaFetcher_ShouldNotParseMetaJsonFilesAgain(t *testing.T) {
-	var (
-		ctx        = context.Background()
-		logger     = log.NewNopLogger()
-		fetcherDir = t.TempDir()
-	)
-
-	// Create a bucket client.
-	bkt, err := filesystem.NewBucketClient(filesystem.Config{Directory: t.TempDir()})
-	require.NoError(t, err)
-
-	// Upload few blocks.
-	block1ID, block1Dir := createTestBlock(t)
-	_, err = Upload(ctx, logger, bkt, block1Dir, nil)
-	require.NoError(t, err)
-	block2ID, block2Dir := createTestBlock(t)
-	_, err = Upload(ctx, logger, bkt, block2Dir, nil)
-	require.NoError(t, err)
-
-	// We disable min compaction level and sources, to cache ALL parsed meta json files.
-	metaCache := NewMetaCache(100, 0, 0)
-
-	// Create a fetcher and fetch block metas to populate the cache on disk and metaCache.
-	reg1 := prometheus.NewPedanticRegistry()
-	fetcher1, err := NewMetaFetcher(logger, 10, objstore.WrapWithMetrics(bkt, prometheus.WrapRegistererWithPrefix("thanos_", reg1), "test"), fetcherDir, nil, nil, metaCache, 0)
-	require.NoError(t, err)
-	actualMetas, _, actualErr := fetcher1.Fetch(ctx)
-	require.NoError(t, actualErr)
-	require.Len(t, actualMetas, 2)
-	require.Contains(t, actualMetas, block1ID)
-	require.Contains(t, actualMetas, block2ID)
-
-	items, _, hits, misses := metaCache.Stats()
-	require.Equal(t, 2, items)
-	require.Equal(t, 0, hits)
-	require.Equal(t, 2, misses)
-
-	// Now delete meta.json files on local disk, to prove that values from metaCache are reused.
-	require.NoError(t, os.Remove(filepath.Join(fetcherDir, "meta-syncer", block1ID.String(), MetaFilename)))
-	require.NoError(t, os.Remove(filepath.Join(fetcherDir, "meta-syncer", block2ID.String(), MetaFilename)))
-
-	// Create a new fetcher and fetch blocks again. This time we expect all meta.json to be loaded from meta cache.
-	reg2 := prometheus.NewPedanticRegistry()
-	fetcher2, err := NewMetaFetcher(logger, 10, objstore.WrapWithMetrics(bkt, prometheus.WrapRegistererWithPrefix("thanos_", reg2), "test"), fetcherDir, nil, nil, metaCache, 0)
-	require.NoError(t, err)
-	actualMetas, _, actualErr = fetcher2.Fetch(ctx)
-	require.NoError(t, actualErr)
-	require.Len(t, actualMetas, 2)
-	require.Contains(t, actualMetas, block1ID)
-	require.Contains(t, actualMetas, block2ID)
-
-	items, _, hits, misses = metaCache.Stats()
-	require.Equal(t, 2, items)
-	require.Equal(t, 2, hits)
-	require.Equal(t, 2, misses)
 }
 
 func TestMetaFetcher_Fetch_ShouldReturnDiscoveredBlocksWithinCompactorLookback(t *testing.T) {
@@ -435,7 +379,7 @@ func TestMetaFetcher_Fetch_ShouldReturnDiscoveredBlocksWithinCompactorLookback(t
 
 	t.Run("should return all block metas when max lookback is unset", func(t *testing.T) {
 		reg := prometheus.NewPedanticRegistry()
-		f, err := NewMetaFetcher(logger, 10, objstore.WrapWithMetrics(bkt, reg, "test"), fetcherDir, reg, nil, nil, time.Duration(0))
+		f, err := NewMetaFetcher(logger, 10, objstore.WrapWithMetrics(bkt, reg, "test"), fetcherDir, reg, nil, time.Duration(0))
 		require.NoError(t, err)
 
 		actualMetas, _, actualErr := f.Fetch(ctx)
@@ -475,7 +419,7 @@ func TestMetaFetcher_Fetch_ShouldReturnDiscoveredBlocksWithinCompactorLookback(t
 		require.NoError(t, err)
 
 		reg := prometheus.NewPedanticRegistry()
-		f, err := NewMetaFetcher(logger, 10, objstore.WrapWithMetrics(bkt, reg, "test"), fetcherDir, reg, nil, nil, maxLookbackThreshold)
+		f, err := NewMetaFetcher(logger, 10, objstore.WrapWithMetrics(bkt, reg, "test"), fetcherDir, reg, nil, maxLookbackThreshold)
 		require.NoError(t, err)
 
 		actualMetas, actualPartials, actualErr := f.Fetch(ctx)
@@ -517,7 +461,7 @@ func TestMetaFetcher_Fetch_ShouldReturnDiscoveredBlocksWithinCompactorLookback(t
 		require.NoError(t, err)
 
 		reg := prometheus.NewPedanticRegistry()
-		f, err := NewMetaFetcher(logger, 10, objstore.WrapWithMetrics(bkt, reg, "test"), fetcherDir, reg, nil, nil, maxLookbackThreshold)
+		f, err := NewMetaFetcher(logger, 10, objstore.WrapWithMetrics(bkt, reg, "test"), fetcherDir, reg, nil, maxLookbackThreshold)
 		require.NoError(t, err)
 
 		now := time.Now()
@@ -533,7 +477,7 @@ func TestMetaFetcher_Fetch_ShouldReturnDiscoveredBlocksWithinCompactorLookback(t
 		maxLookbackThreshold, err := time.ParseDuration("1000h")
 		require.NoError(t, err)
 		reg := prometheus.NewPedanticRegistry()
-		f, err := NewMetaFetcher(logger, 10, objstore.WrapWithMetrics(bkt, reg, "test"), fetcherDir, reg, nil, nil, maxLookbackThreshold)
+		f, err := NewMetaFetcher(logger, 10, objstore.WrapWithMetrics(bkt, reg, "test"), fetcherDir, reg, nil, maxLookbackThreshold)
 		require.NoError(t, err)
 
 		actualMetas, _, actualErr := f.Fetch(ctx)
@@ -549,7 +493,7 @@ func TestMetaFetcher_Fetch_ShouldReturnDiscoveredBlocksWithinCompactorLookback(t
 		require.NoError(t, err)
 		time.Sleep(5 * time.Millisecond) // sleep until uploaded blocks exceed block age threshold
 		reg := prometheus.NewPedanticRegistry()
-		f, err := NewMetaFetcher(logger, 10, objstore.WrapWithMetrics(bkt, reg, "test"), fetcherDir, reg, nil, nil, maxLookbackThreshold)
+		f, err := NewMetaFetcher(logger, 10, objstore.WrapWithMetrics(bkt, reg, "test"), fetcherDir, reg, nil, maxLookbackThreshold)
 		require.NoError(t, err)
 
 		actualMetas, _, actualErr := f.Fetch(ctx)
@@ -562,7 +506,7 @@ func TestMetaFetcher_Fetch_ShouldReturnDiscoveredBlocksWithinCompactorLookback(t
 		require.NoError(t, err)
 
 		reg := prometheus.NewPedanticRegistry()
-		f, err := NewMetaFetcher(logger, 10, objstore.WrapWithMetrics(bkt, reg, "test"), fetcherDir, reg, nil, nil, maxLookbackThreshold)
+		f, err := NewMetaFetcher(logger, 10, objstore.WrapWithMetrics(bkt, reg, "test"), fetcherDir, reg, nil, maxLookbackThreshold)
 		require.NoError(t, err)
 
 		now := time.Now()
@@ -592,53 +536,6 @@ func createTestBlock(t *testing.T) (blockID ulid.ULID, blockDir string) {
 	return
 }
 
-func TestMetaCache(t *testing.T) {
-	meta1 := Meta{
-		BlockMeta: tsdb.BlockMeta{
-			ULID:       ulid.MustNew(ulid.Now(), crypto_rand.Reader),
-			Compaction: tsdb.BlockMetaCompaction{Level: 5, Sources: generateULIDs(10)},
-		},
-	}
-
-	levelTooLow := Meta{
-		BlockMeta: tsdb.BlockMeta{
-			ULID:       ulid.MustNew(ulid.Now(), crypto_rand.Reader),
-			Compaction: tsdb.BlockMetaCompaction{Level: 2, Sources: generateULIDs(10)},
-		},
-	}
-
-	notEnoughSources := Meta{
-		BlockMeta: tsdb.BlockMeta{
-			ULID:       ulid.MustNew(ulid.Now(), crypto_rand.Reader),
-			Compaction: tsdb.BlockMetaCompaction{Level: 10, Sources: generateULIDs(2)},
-		},
-	}
-
-	levelTooLowAndNotEnoughSources := Meta{
-		BlockMeta: tsdb.BlockMeta{
-			ULID:       ulid.MustNew(ulid.Now(), crypto_rand.Reader),
-			Compaction: tsdb.BlockMetaCompaction{Level: 1, Sources: generateULIDs(1)},
-		},
-	}
-
-	cache := NewMetaCache(10, 3, 5)
-	cache.Put(&meta1)
-	cache.Put(&levelTooLow)
-	cache.Put(&notEnoughSources)
-	cache.Put(&levelTooLowAndNotEnoughSources)
-
-	require.Equal(t, &meta1, cache.Get(meta1.ULID))
-	require.Nil(t, cache.Get(levelTooLow.ULID))
-	require.Nil(t, cache.Get(notEnoughSources.ULID))
-	require.Nil(t, cache.Get(levelTooLowAndNotEnoughSources.ULID))
-
-	items, size, hits, misses := cache.Stats()
-	require.Equal(t, 1, items)
-	require.Equal(t, MetaBytesSize(&meta1)+sizeOfUlid, size)
-	require.Equal(t, 1, hits)
-	require.Equal(t, 3, misses)
-}
-
 func generateULIDs(count int) []ulid.ULID {
 	result := make([]ulid.ULID, 0, count)
 	for i := 0; i < count; i++ {
@@ -664,4 +561,98 @@ func generateBlockUploadedAtTimestamp(t *testing.T, bkt objstore.Bucket, l log.L
 	_, err = Upload(context.Background(), l, bkt, fixedTimeULIDDir, meta)
 	require.NoError(t, err)
 	return fixedTimeULID
+}
+
+func TestMetaFetcher_CacheMetrics(t *testing.T) {
+	var (
+		ctx    = context.Background()
+		logger = log.NewNopLogger()
+	)
+
+	bkt, err := filesystem.NewBucketClient(filesystem.Config{Directory: t.TempDir()})
+	require.NoError(t, err)
+
+	blockID, blockDir := createTestBlock(t)
+	_, err = Upload(ctx, logger, bkt, blockDir, nil)
+	require.NoError(t, err)
+
+	testCases := map[string]struct {
+		setup               func(t *testing.T) (*prometheus.Registry, *MetaFetcher)
+		expectedLoads       int
+		expectedCachedLoads int
+		expectedDiskLoads   int
+	}{
+		"first fetch should hit object storage": {
+			setup: func(t *testing.T) (*prometheus.Registry, *MetaFetcher) {
+				reg := prometheus.NewPedanticRegistry()
+				fetcher, err := NewMetaFetcher(logger, 10, objstore.WrapWithMetrics(bkt, reg, "test"), t.TempDir(), reg, nil, 0)
+				require.NoError(t, err)
+				return reg, fetcher
+			},
+			expectedLoads: 1,
+		},
+		"second fetch with same fetcher should hit in-memory cache": {
+			setup: func(t *testing.T) (*prometheus.Registry, *MetaFetcher) {
+				reg := prometheus.NewPedanticRegistry()
+				fetcher, err := NewMetaFetcher(logger, 10, objstore.WrapWithMetrics(bkt, reg, "test"), t.TempDir(), reg, nil, 0)
+				require.NoError(t, err)
+				_, _, err = fetcher.Fetch(ctx)
+				require.NoError(t, err)
+				return reg, fetcher
+			},
+			expectedLoads:       2,
+			expectedCachedLoads: 1,
+		},
+		"new fetcher should hit disk cache": {
+			setup: func(t *testing.T) (*prometheus.Registry, *MetaFetcher) {
+				fetcherDir := t.TempDir()
+				reg1 := prometheus.NewPedanticRegistry()
+				fetcher1, err := NewMetaFetcher(logger, 10, objstore.WrapWithMetrics(bkt, reg1, "test"), fetcherDir, reg1, nil, 0)
+				require.NoError(t, err)
+				_, _, err = fetcher1.Fetch(ctx)
+				require.NoError(t, err)
+
+				reg2 := prometheus.NewPedanticRegistry()
+				fetcher2, err := NewMetaFetcher(logger, 10, objstore.WrapWithMetrics(bkt, reg2, "test"), fetcherDir, reg2, nil, 0)
+				require.NoError(t, err)
+				return reg2, fetcher2
+			},
+			expectedLoads:     1,
+			expectedDiskLoads: 1,
+		},
+		"no disk cache dir should not increment disk metrics": {
+			setup: func(t *testing.T) (*prometheus.Registry, *MetaFetcher) {
+				reg := prometheus.NewPedanticRegistry()
+				fetcher, err := NewMetaFetcher(logger, 10, objstore.WrapWithMetrics(bkt, reg, "test"), "", reg, nil, 0)
+				require.NoError(t, err)
+				return reg, fetcher
+			},
+			expectedLoads: 1,
+		},
+	}
+
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			reg, fetcher := tc.setup(t)
+
+			metas, _, err := fetcher.Fetch(ctx)
+			require.NoError(t, err)
+			require.Len(t, metas, 1)
+			require.Contains(t, metas, blockID)
+
+			require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
+				# HELP blocks_meta_cached_loads Block metadata loads served from in-memory cache
+				# TYPE blocks_meta_cached_loads counter
+				blocks_meta_cached_loads `+fmt.Sprintf("%d", tc.expectedCachedLoads)+`
+
+				# HELP blocks_meta_disk_loads Block metadata loads served from local disk
+				# TYPE blocks_meta_disk_loads counter
+				blocks_meta_disk_loads `+fmt.Sprintf("%d", tc.expectedDiskLoads)+`
+
+				# HELP blocks_meta_loads_total Total number of block metadata load attempts
+				# TYPE blocks_meta_loads_total counter
+				blocks_meta_loads_total `+fmt.Sprintf("%d", tc.expectedLoads)+`
+			`), "blocks_meta_loads_total", "blocks_meta_cached_loads", "blocks_meta_disk_loads"))
+		})
+	}
 }

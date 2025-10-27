@@ -4314,7 +4314,7 @@
           "fieldDefaultValue": 0,
           "fieldFlag": "ingester.read-path-cpu-utilization-limit",
           "fieldType": "float",
-          "fieldCategory": "experimental"
+          "fieldCategory": "advanced"
         },
         {
           "kind": "field",
@@ -4325,7 +4325,7 @@
           "fieldDefaultValue": 0,
           "fieldFlag": "ingester.read-path-memory-utilization-limit",
           "fieldType": "int",
-          "fieldCategory": "experimental"
+          "fieldCategory": "advanced"
         },
         {
           "kind": "field",
@@ -5192,17 +5192,6 @@
           "fieldValue": null,
           "fieldDefaultValue": null,
           "fieldType": "relabel_config...",
-          "fieldCategory": "experimental"
-        },
-        {
-          "kind": "field",
-          "name": "metric_relabeling_enabled",
-          "required": false,
-          "desc": "Enable metric relabeling for the tenant. This configuration option can be used to forcefully disable metric relabeling on a per-tenant basis.",
-          "fieldValue": null,
-          "fieldDefaultValue": true,
-          "fieldFlag": "distributor.metric-relabeling-enabled",
-          "fieldType": "boolean",
           "fieldCategory": "experimental"
         },
         {
@@ -6662,6 +6651,28 @@
           "fieldFlag": "distributor.otel-translation-strategy",
           "fieldType": "string",
           "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "otel_label_name_underscore_sanitization",
+          "required": false,
+          "desc": "If enabled, prefixes label names starting with a single underscore with `key_` when translating OTel attribute names. Defaults to true.",
+          "fieldValue": null,
+          "fieldDefaultValue": true,
+          "fieldFlag": "distributor.otel-label-name-underscore-sanitization",
+          "fieldType": "boolean",
+          "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
+          "name": "otel_label_name_preserve_multiple_underscores",
+          "required": false,
+          "desc": "If enabled, keeps multiple consecutive underscores in label names when translating OTel attribute names. Defaults to true.",
+          "fieldValue": null,
+          "fieldDefaultValue": true,
+          "fieldFlag": "distributor.otel-label-name-preserve-underscores",
+          "fieldType": "boolean",
+          "fieldCategory": "advanced"
         },
         {
           "kind": "field",
@@ -11110,12 +11121,12 @@
               "kind": "field",
               "name": "head_postings_for_matchers_cache_ttl",
               "required": false,
-              "desc": "How long to cache postings for matchers in the Head and OOOHead. 0 disables the cache and just deduplicates the in-flight calls.",
+              "desc": "How long to cache postings for matchers in the Head and OOOHead. Set to 0 to disable the cache and only deduplicate in-flight calls.",
               "fieldValue": null,
               "fieldDefaultValue": 10000000000,
               "fieldFlag": "blocks-storage.tsdb.head-postings-for-matchers-cache-ttl",
               "fieldType": "duration",
-              "fieldCategory": "experimental"
+              "fieldCategory": "advanced"
             },
             {
               "kind": "field",
@@ -11132,12 +11143,12 @@
               "kind": "field",
               "name": "head_postings_for_matchers_cache_max_bytes",
               "required": false,
-              "desc": "Maximum size in bytes of the cache for postings for matchers in the Head and OOOHead when TTL is greater than 0.",
+              "desc": "Maximum size, in bytes, of the cache for postings for matchers in each compacted block when the TTL is greater than 0.",
               "fieldValue": null,
               "fieldDefaultValue": 104857600,
               "fieldFlag": "blocks-storage.tsdb.head-postings-for-matchers-cache-max-bytes",
               "fieldType": "int",
-              "fieldCategory": "experimental"
+              "fieldCategory": "advanced"
             },
             {
               "kind": "field",
@@ -11148,7 +11159,7 @@
               "fieldDefaultValue": false,
               "fieldFlag": "blocks-storage.tsdb.head-postings-for-matchers-cache-force",
               "fieldType": "boolean",
-              "fieldCategory": "experimental"
+              "fieldCategory": "advanced"
             },
             {
               "kind": "field",
@@ -11159,7 +11170,7 @@
               "fieldDefaultValue": 10000000000,
               "fieldFlag": "blocks-storage.tsdb.block-postings-for-matchers-cache-ttl",
               "fieldType": "duration",
-              "fieldCategory": "experimental"
+              "fieldCategory": "advanced"
             },
             {
               "kind": "field",
@@ -11181,7 +11192,7 @@
               "fieldDefaultValue": 104857600,
               "fieldFlag": "blocks-storage.tsdb.block-postings-for-matchers-cache-max-bytes",
               "fieldType": "int",
-              "fieldCategory": "experimental"
+              "fieldCategory": "advanced"
             },
             {
               "kind": "field",
@@ -11192,7 +11203,7 @@
               "fieldDefaultValue": false,
               "fieldFlag": "blocks-storage.tsdb.block-postings-for-matchers-cache-force",
               "fieldType": "boolean",
-              "fieldCategory": "experimental"
+              "fieldCategory": "advanced"
             },
             {
               "kind": "field",
@@ -11274,6 +11285,28 @@
                   "fieldValue": null,
                   "fieldDefaultValue": 10000,
                   "fieldFlag": "blocks-storage.tsdb.index-lookup-planning.min-series-per-block-for-query-planning",
+                  "fieldType": "int",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "label_cardinality_for_larger_sketch",
+                  "required": false,
+                  "desc": "Number of series for a label name above which larger count-min sketches are used for that label.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 1000000,
+                  "fieldFlag": "blocks-storage.tsdb.index-lookup-planning.label-cardinality-for-larger-sketch",
+                  "fieldType": "int",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "label_cardinality_for_smaller_sketch",
+                  "required": false,
+                  "desc": "Number of series for a label name above which smaller count-min sketches are used for that label.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 1000,
+                  "fieldFlag": "blocks-storage.tsdb.index-lookup-planning.label-cardinality-for-smaller-sketch",
                   "fieldType": "int",
                   "fieldCategory": "advanced"
                 },

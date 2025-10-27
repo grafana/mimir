@@ -1736,7 +1736,6 @@ type mockConfigProvider struct {
 	userPartialBlockDelay        map[string]time.Duration
 	userPartialBlockDelayInvalid map[string]bool
 	verifyChunks                 map[string]bool
-	perTenantInMemoryCache       map[string]int
 	maxLookback                  map[string]time.Duration
 	maxPerBlockUploadConcurrency map[string]int
 }
@@ -1752,7 +1751,6 @@ func newMockConfigProvider() *mockConfigProvider {
 		userPartialBlockDelay:        make(map[string]time.Duration),
 		userPartialBlockDelayInvalid: make(map[string]bool),
 		verifyChunks:                 make(map[string]bool),
-		perTenantInMemoryCache:       make(map[string]int),
 		maxLookback:                  make(map[string]time.Duration),
 		maxPerBlockUploadConcurrency: make(map[string]int),
 	}
@@ -1804,10 +1802,6 @@ func (m *mockConfigProvider) CompactorBlockUploadVerifyChunks(tenantID string) b
 
 func (m *mockConfigProvider) CompactorBlockUploadMaxBlockSizeBytes(user string) int64 {
 	return m.blockUploadMaxBlockSizeBytes[user]
-}
-
-func (m *mockConfigProvider) CompactorInMemoryTenantMetaCacheSize(userID string) int {
-	return m.perTenantInMemoryCache[userID]
 }
 
 func (m *mockConfigProvider) S3SSEType(string) string {

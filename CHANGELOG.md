@@ -4,6 +4,8 @@
 
 ### Grafana Mimir
 
+* [CHANGE] Ingester: limiting CPU and memory utilized by the read path (`-ingester.read-path-cpu-utilization-limit` and `-ingester.read-path-memory-utilization-limit`) is now considered stable. #13167
+* [CHANGE] Distributor: removed experimental flag `-distributor.metric-relabeling-enabled`. #13143
 * [CHANGE] Querier: `-querier.max-estimated-fetched-chunks-per-query-multiplier` is now stable and no longer experimental. #13120
 * [CHANGE] Compactor: removed experimental flag `-compactor.no-blocks-file-cleanup-enabled`. Cleanup of remaining files when no blocks exist is now always enabled. #13108
 * [CHANGE] Ruler: Add "unknown" alert rule state to alerts and rules on the `GET <prometheus-http-prefix>/api/v1/alerts` end point. Alerts are in the "unknown" state when they haven't yet been evaluated since the ruler started.  #13060
@@ -14,10 +16,20 @@
 * [CHANGE] Querier: `-querier.active-series-results-max-size-bytes` is now stable and no longer experimental. #13110
 * [CHANGE] All: remove experimental feature that allowed disabling ring heartbeats and timeouts. #13142
 * [CHANGE] Store-gateway: Removed experimental `-blocks-storage.bucket-store.index-header.eager-loading-startup-enabled` flag. The eager loading feature is now always enabled when lazy loading is enabled. #13126
-* [FEATURE] Query-frontends: Automatically adjust features used in query plans generated for remote execution based on what the available queriers support. #13017
+* [CHANGE] API: The `/api/v1/cardinality/active_series` endpoint is now stable and no longer experimental. #13111
+* [CHANGE] Compactor: remove experimental `-compactor.in-memory-tenant-meta-cache-size`. #13131
+* [FEATURE] Distributor: add `-distributor.otel-label-name-underscore-sanitization` and `-distributor.otel-label-name-preserve-underscores` that control sanitization of underscores during OTLP translation. #13133
+* [FEATURE] Query-frontends: Automatically adjust features used in query plans generated for remote execution based on what the available queriers support. #13017 #13164
 * [FEATURE] Memberlist: Add experimental support for zone-aware routing, in order to reduce memberlist cross-AZ data transfer. #13129
 * [ENHANCEMENT] Compactor, Store-gateway: Change default value of `-compactor.upload-sparse-index-headers` to `true`. This improves lazy loading performance in the store-gateway. #13089
 * [ENHANCEMENT] Store-gateway: Verify CRC32 checksums for 1 out of every 128 chunks read from object storage and the chunks cache to detect corruption. #13151
+* [ENHANCEMENT] Ingester: the per-tenant postings for matchers cache is now stable. Use the following configuration options: #13101
+  * `-blocks-storage.tsdb.head-postings-for-matchers-cache-ttl`
+  * `-blocks-storage.tsdb.head-postings-for-matchers-cache-max-bytes`
+  * `-blocks-storage.tsdb.head-postings-for-matchers-cache-force`
+  * `-blocks-storage.tsdb.block-postings-for-matchers-cache-ttl`
+  * `-blocks-storage.tsdb.block-postings-for-matchers-cache-max-bytes`
+  * `-blocks-storage.tsdb.block-postings-for-matchers-cache-force`
 * [BUGFIX] Compactor: Fix potential concurrent map writes. #13053
 * [BUGFIX] Query-frontend: Fix issue where queries sometimes fail with `failed to receive query result stream message: rpc error: code = Canceled desc = context canceled` if remote execution is enabled. #13084
 * [BUGFIX] Query-frontend: Fix issue where query stats, such as series read, did not include the parameters to the `histogram_quantile` and `histogram_fraction` functions if remote execution was enabled. #13084
@@ -27,12 +39,14 @@
 * [BUGFIX] Querier: Fix issue where a problem sending a response to a query-frontend may cause all other responses from the same querier to the same query-frontend to fail or be delayed. #13123
 * [BUGFIX] Ingester: fix index lookup planning with regular expressions which match empty strings on non-existent labels. #13117
 * [BUGFIX] Memberlist: Fix memberlist initialization when Mimir is executed with `-target=memberlist-kv`. #13129
+* [BUGFIX] Query-frontend: Fix issue where queriers may receive a `rpc error: code = Internal desc = cardinality violation: expected <EOF> for non server-streaming RPCs, but received another message` error while sending a query result to a query-frontend if remote execution is enabled. #13147
 
 ### Mixin
 
 ### Jsonnet
 
 * [CHANGE] Mimir-continuous-test: Use `mimir -target=continuous-test` instead of standalone binary/image. #13097 #13144
+* [CHANGE] Store-gateway: The store-gateway disk class now honors the one configured via `$._config.store_gateway_data_disk_class` and doesn't replace `fast` with `fast-dont-retain`. #13152
 * [ENHANCEMENT] Ruler querier and query-frontend: Add support for newly-introduced querier ring, which is used when performing query planning in query-frontends and distributing portions of the plan to queriers for execution. #13017
 
 ### Documentation
@@ -133,6 +147,7 @@
   * `cortex_storegateway_client_transferred_bytes_total{store_gateway_zone="..."}`
 * [ENHANCEMENT] Compactor: Add experimental `-compactor.first-level-compaction-skip-future-max-time` flag to skip first-level compaction if any source block has a MaxTime more recent than the wait period threshold. #13040
 * [ENHANCEMENT] Block-builder-scheduler: Add gap monitoring for planned and completed jobs via `cortex_blockbuilder_scheduler_job_gap_detected` metric. #11867
+* [ENHANCEMENT] Compactor, Store-gateway: Add metrics to track performance of in-memory and disk-based metadata caches. #13150
 * [BUGFIX] Distributor: Calculate `WriteResponseStats` before validation and `PushWrappers`. This prevents clients using Remote-Write 2.0 from seeing a diff in written samples, histograms and exemplars. #12682
 * [BUGFIX] Compactor: Fix cortex_compactor_block_uploads_failed_total metric showing type="unknown". #12477
 * [BUGFIX] Querier: Samples with the same timestamp are merged deterministically. Previously, this could lead to flapping query results when an out-of-order sample is ingested that conflicts with a previously ingested in-order sample's value. #8673
@@ -221,6 +236,7 @@
 ### Query-tee
 
 * [CHANGE] If you configure multiple secondary backends and enable comparisons, query-tee reports comparison results of the preferred backend against each of the secondaries. #13022
+* [CHANGE] Add backend configuration options for request proportion sampling and time-based query filtering. #13037
 
 ## 2.17.1
 

@@ -764,13 +764,13 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.tsdb.bigger-out-of-order-blocks-for-old-samples
     	[experimental] When enabled, ingester produces 24h blocks for out-of-order data that is before the current day, instead of the usual 2h blocks.
   -blocks-storage.tsdb.block-postings-for-matchers-cache-force
-    	[experimental] Force the cache to be used for postings for matchers in compacted blocks, even if it's not a concurrent (query-sharding) call.
+    	Force the cache to be used for postings for matchers in compacted blocks, even if it's not a concurrent (query-sharding) call.
   -blocks-storage.tsdb.block-postings-for-matchers-cache-max-bytes int
-    	[experimental] Maximum size in bytes of the cache for postings for matchers in each compacted block when TTL is greater than 0. (default 104857600)
+    	Maximum size in bytes of the cache for postings for matchers in each compacted block when TTL is greater than 0. (default 104857600)
   -blocks-storage.tsdb.block-postings-for-matchers-cache-size int
     	[deprecated] Maximum number of entries in the cache for postings for matchers in each compacted block when TTL is greater than 0. (default 100)
   -blocks-storage.tsdb.block-postings-for-matchers-cache-ttl duration
-    	[experimental] How long to cache postings for matchers in each compacted block queried from the ingester. 0 disables the cache and just deduplicates the in-flight calls. (default 10s)
+    	How long to cache postings for matchers in each compacted block queried from the ingester. 0 disables the cache and just deduplicates the in-flight calls. (default 10s)
   -blocks-storage.tsdb.close-idle-tsdb-timeout duration
     	If TSDB has not received any data for this duration, and all blocks from TSDB have been shipped, TSDB is closed and deleted from local disk. If set to positive value, this value should be equal or higher than -querier.query-ingesters-within flag to make sure that TSDB is not closed prematurely, which could cause partial query results. 0 or negative value disables closing of idle TSDB. (default 13h0m0s)
   -blocks-storage.tsdb.dir string
@@ -794,21 +794,25 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.tsdb.head-compaction-interval duration
     	How frequently the ingester checks whether the TSDB head should be compacted and, if so, triggers the compaction. Mimir applies a jitter to the first check, and subsequent checks will happen at the configured interval. A block is only created if data covers the smallest block range. The configured interval must be between 0 and 15 minutes. (default 1m0s)
   -blocks-storage.tsdb.head-postings-for-matchers-cache-force
-    	[experimental] Force the cache to be used for postings for matchers in the Head and OOOHead, even if it's not a concurrent (query-sharding) call.
+    	Force the cache to be used for postings for matchers in the Head and OOOHead, even if it's not a concurrent (query-sharding) call.
   -blocks-storage.tsdb.head-postings-for-matchers-cache-invalidation
     	[experimental] Whether head block postings should be tracked and invalidated when they change, allowing higher TTLs to be used. When not using invalidation, cache entries will be used until removed.
   -blocks-storage.tsdb.head-postings-for-matchers-cache-max-bytes int
-    	[experimental] Maximum size in bytes of the cache for postings for matchers in the Head and OOOHead when TTL is greater than 0. (default 104857600)
+    	Maximum size, in bytes, of the cache for postings for matchers in each compacted block when the TTL is greater than 0. (default 104857600)
   -blocks-storage.tsdb.head-postings-for-matchers-cache-size int
     	[deprecated] Maximum number of entries in the cache for postings for matchers in the Head and OOOHead when TTL is greater than 0. (default 100)
   -blocks-storage.tsdb.head-postings-for-matchers-cache-ttl duration
-    	[experimental] How long to cache postings for matchers in the Head and OOOHead. 0 disables the cache and just deduplicates the in-flight calls. (default 10s)
+    	How long to cache postings for matchers in the Head and OOOHead. Set to 0 to disable the cache and only deduplicate in-flight calls. (default 10s)
   -blocks-storage.tsdb.head-postings-for-matchers-cache-versions int
     	[experimental] The size of the metric versions cache in each ingester when invalidation is enabled. (default 2097152)
   -blocks-storage.tsdb.index-lookup-planning.comparison-portion float
     	[experimental] Portion of queries where a mirrored chunk querier compares results with and without index lookup planning. Value between 0 (disabled) and 1 (all queries).
   -blocks-storage.tsdb.index-lookup-planning.enabled
     	[experimental] Controls the collection of statistics and whether to defer some vector selector matchers to sequential scans. This leads to better performance.
+  -blocks-storage.tsdb.index-lookup-planning.label-cardinality-for-larger-sketch uint
+    	Number of series for a label name above which larger count-min sketches are used for that label. (default 1000000)
+  -blocks-storage.tsdb.index-lookup-planning.label-cardinality-for-smaller-sketch uint
+    	Number of series for a label name above which smaller count-min sketches are used for that label. (default 1000)
   -blocks-storage.tsdb.index-lookup-planning.min-series-per-block-for-query-planning uint
     	Minimum number of series a block must have for query planning to be used. (default 10000)
   -blocks-storage.tsdb.index-lookup-planning.retrieved-posting-cost float
@@ -1277,14 +1281,16 @@ Usage of ./cmd/mimir/mimir:
     	Max message size in bytes that the distributors will accept for incoming push requests to the remote write API. If exceeded, the request will be rejected. (default 104857600)
   -distributor.max-request-pool-buffer-size int
     	[experimental] Max size of the pooled buffers used for marshaling write requests. If 0, no max size is enforced.
-  -distributor.metric-relabeling-enabled
-    	[experimental] Enable metric relabeling for the tenant. This configuration option can be used to forcefully disable metric relabeling on a per-tenant basis. (default true)
   -distributor.otel-convert-histograms-to-nhcb
     	[experimental] Whether to convert OTel explicit histograms into native histograms with custom buckets.
   -distributor.otel-created-timestamp-zero-ingestion-enabled
     	[experimental] Whether to enable translation of OTel start timestamps to Prometheus zero samples in the OTLP endpoint.
   -distributor.otel-keep-identifying-resource-attributes
     	[experimental] Whether to keep identifying OTel resource attributes in the target_info metric on top of converting to job and instance labels.
+  -distributor.otel-label-name-preserve-underscores
+    	If enabled, keeps multiple consecutive underscores in label names when translating OTel attribute names. Defaults to true. (default true)
+  -distributor.otel-label-name-underscore-sanitization
+    	If enabled, prefixes label names starting with a single underscore with `key_` when translating OTel attribute names. Defaults to true. (default true)
   -distributor.otel-metric-suffixes-enabled
     	Whether to enable automatic suffixes to names of metrics ingested through OTLP.
   -distributor.otel-native-delta-ingestion
@@ -1704,9 +1710,9 @@ Usage of ./cmd/mimir/mimir:
   -ingester.read-circuit-breaker.thresholding-period duration
     	[experimental] Moving window of time that the percentage of failed requests is computed over (default 1m0s)
   -ingester.read-path-cpu-utilization-limit float
-    	[experimental] CPU utilization limit, as CPU cores, for CPU/memory utilization based read request limiting. Use 0 to disable it.
+    	CPU utilization limit, as CPU cores, for CPU/memory utilization based read request limiting. Use 0 to disable it.
   -ingester.read-path-memory-utilization-limit uint
-    	[experimental] Memory limit, in bytes, for CPU/memory utilization based read request limiting. Use 0 to disable it.
+    	Memory limit, in bytes, for CPU/memory utilization based read request limiting. Use 0 to disable it.
   -ingester.read-reactive-limiter.baseline-window-age uint
     	[experimental] The average age of baseline samples aggregated recent samples are added to (default 10)
   -ingester.read-reactive-limiter.correlation-window uint

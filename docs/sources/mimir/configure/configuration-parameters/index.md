@@ -1370,12 +1370,12 @@ instance_limits:
 # CLI flag: -ingester.ignore-series-limit-for-metric-names
 [ignore_series_limit_for_metric_names: <string> | default = ""]
 
-# (experimental) CPU utilization limit, as CPU cores, for CPU/memory utilization
+# (advanced) CPU utilization limit, as CPU cores, for CPU/memory utilization
 # based read request limiting. Use 0 to disable it.
 # CLI flag: -ingester.read-path-cpu-utilization-limit
 [read_path_cpu_utilization_limit: <float> | default = 0]
 
-# (experimental) Memory limit, in bytes, for CPU/memory utilization based read
+# (advanced) Memory limit, in bytes, for CPU/memory utilization based read
 # request limiting. Use 0 to disable it.
 # CLI flag: -ingester.read-path-memory-utilization-limit
 [read_path_memory_utilization_limit: <int> | default = 0]
@@ -3673,12 +3673,6 @@ The `limits` block configures default and per-tenant limits imposed by component
 # during the relabeling phase and cleaned afterwards: __meta_tenant_id
 [metric_relabel_configs: <relabel_config...> | default = ]
 
-# (experimental) Enable metric relabeling for the tenant. This configuration
-# option can be used to forcefully disable metric relabeling on a per-tenant
-# basis.
-# CLI flag: -distributor.metric-relabeling-enabled
-[metric_relabeling_enabled: <boolean> | default = true]
-
 # The maximum number of in-memory series per tenant, across the cluster before
 # replication. 0 to disable.
 # CLI flag: -ingester.max-global-series-per-user
@@ -4467,6 +4461,16 @@ ruler_alertmanager_client_config:
 # CLI flag: -distributor.otel-translation-strategy
 [otel_translation_strategy: <string> | default = ""]
 
+# (advanced) If enabled, prefixes label names starting with a single underscore
+# with `key_` when translating OTel attribute names. Defaults to true.
+# CLI flag: -distributor.otel-label-name-underscore-sanitization
+[otel_label_name_underscore_sanitization: <boolean> | default = true]
+
+# (advanced) If enabled, keeps multiple consecutive underscores in label names
+# when translating OTel attribute names. Defaults to true.
+# CLI flag: -distributor.otel-label-name-preserve-underscores
+[otel_label_name_preserve_multiple_underscores: <boolean> | default = true]
+
 # (experimental) The default consistency level to enforce for queries when using
 # the ingest storage. Supports values: strong, eventual.
 # CLI flag: -ingest-storage.read-consistency
@@ -5140,8 +5144,8 @@ tsdb:
   # CLI flag: -blocks-storage.tsdb.head-postings-for-matchers-cache-versions
   [head_postings_for_matchers_cache_versions: <int> | default = 2097152]
 
-  # (experimental) How long to cache postings for matchers in the Head and
-  # OOOHead. 0 disables the cache and just deduplicates the in-flight calls.
+  # (advanced) How long to cache postings for matchers in the Head and OOOHead.
+  # Set to 0 to disable the cache and only deduplicate in-flight calls.
   # CLI flag: -blocks-storage.tsdb.head-postings-for-matchers-cache-ttl
   [head_postings_for_matchers_cache_ttl: <duration> | default = 10s]
 
@@ -5150,19 +5154,19 @@ tsdb:
   # CLI flag: -blocks-storage.tsdb.head-postings-for-matchers-cache-size
   [head_postings_for_matchers_cache_size: <int> | default = 100]
 
-  # (experimental) Maximum size in bytes of the cache for postings for matchers
-  # in the Head and OOOHead when TTL is greater than 0.
+  # (advanced) Maximum size, in bytes, of the cache for postings for matchers in
+  # each compacted block when the TTL is greater than 0.
   # CLI flag: -blocks-storage.tsdb.head-postings-for-matchers-cache-max-bytes
   [head_postings_for_matchers_cache_max_bytes: <int> | default = 104857600]
 
-  # (experimental) Force the cache to be used for postings for matchers in the
-  # Head and OOOHead, even if it's not a concurrent (query-sharding) call.
+  # (advanced) Force the cache to be used for postings for matchers in the Head
+  # and OOOHead, even if it's not a concurrent (query-sharding) call.
   # CLI flag: -blocks-storage.tsdb.head-postings-for-matchers-cache-force
   [head_postings_for_matchers_cache_force: <boolean> | default = false]
 
-  # (experimental) How long to cache postings for matchers in each compacted
-  # block queried from the ingester. 0 disables the cache and just deduplicates
-  # the in-flight calls.
+  # (advanced) How long to cache postings for matchers in each compacted block
+  # queried from the ingester. 0 disables the cache and just deduplicates the
+  # in-flight calls.
   # CLI flag: -blocks-storage.tsdb.block-postings-for-matchers-cache-ttl
   [block_postings_for_matchers_cache_ttl: <duration> | default = 10s]
 
@@ -5171,13 +5175,13 @@ tsdb:
   # CLI flag: -blocks-storage.tsdb.block-postings-for-matchers-cache-size
   [block_postings_for_matchers_cache_size: <int> | default = 100]
 
-  # (experimental) Maximum size in bytes of the cache for postings for matchers
-  # in each compacted block when TTL is greater than 0.
+  # (advanced) Maximum size in bytes of the cache for postings for matchers in
+  # each compacted block when TTL is greater than 0.
   # CLI flag: -blocks-storage.tsdb.block-postings-for-matchers-cache-max-bytes
   [block_postings_for_matchers_cache_max_bytes: <int> | default = 104857600]
 
-  # (experimental) Force the cache to be used for postings for matchers in
-  # compacted blocks, even if it's not a concurrent (query-sharding) call.
+  # (advanced) Force the cache to be used for postings for matchers in compacted
+  # blocks, even if it's not a concurrent (query-sharding) call.
   # CLI flag: -blocks-storage.tsdb.block-postings-for-matchers-cache-force
   [block_postings_for_matchers_cache_force: <boolean> | default = false]
 
@@ -5224,6 +5228,16 @@ tsdb:
     # to be used.
     # CLI flag: -blocks-storage.tsdb.index-lookup-planning.min-series-per-block-for-query-planning
     [min_series_per_block_for_query_planning: <int> | default = 10000]
+
+    # (advanced) Number of series for a label name above which larger count-min
+    # sketches are used for that label.
+    # CLI flag: -blocks-storage.tsdb.index-lookup-planning.label-cardinality-for-larger-sketch
+    [label_cardinality_for_larger_sketch: <int> | default = 1000000]
+
+    # (advanced) Number of series for a label name above which smaller count-min
+    # sketches are used for that label.
+    # CLI flag: -blocks-storage.tsdb.index-lookup-planning.label-cardinality-for-smaller-sketch
+    [label_cardinality_for_smaller_sketch: <int> | default = 1000]
 
     # (experimental) Controls the collection of statistics and whether to defer
     # some vector selector matchers to sequential scans. This leads to better

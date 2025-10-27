@@ -747,11 +747,15 @@ func (f *Frontend) QueryResult(ctx context.Context, qrReq *frontendv2pb.QueryRes
 }
 
 func (f *Frontend) QueryResultStream(stream frontendv2pb.FrontendForQuerier_QueryResultStreamServer) (err error) {
-	closed := atomic.NewBool(false)
-	closeStream := func() {
-		if !closed.CompareAndSwap(false, true) {
-			return
-		}
+	closeStream := sync.OnceFunc(func() {
+		// We rely on two important properties of sync.OnceFunc here:
+		//
+		// 1. This method will only be called once
+		// 2. Callers of closeStream will block until this method has finished, regardless of whether they are the first caller or not.
+		//
+		// Property 2 is important: if another method calls closeStream, we still want to wait for this method to finish
+		// before returning from QueryResultStream, as otherwise that will cancel the stream's context and break the connection
+		// to the querier, causing the call below to fail and queriers to receive an EOF error (rather than a "stream closed" error).
 
 		err := stream.SendAndClose(&frontendv2pb.QueryResultResponse{})
 		if err == nil {
@@ -764,7 +768,7 @@ func (f *Frontend) QueryResultStream(stream frontendv2pb.FrontendForQuerier_Quer
 		}
 
 		level.Warn(f.log).Log("msg", "failed to close query result body stream", "err", err)
-	}
+	})
 
 	defer closeStream()
 
