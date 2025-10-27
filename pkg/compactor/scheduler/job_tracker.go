@@ -181,7 +181,7 @@ func (jt *JobTracker[V]) ExpireLeases(leaseDuration time.Duration) bool {
 // endLease removes a job from the active list and returns true if the job was returned to the queue or false otherwise
 func (jt *JobTracker[V]) endLease(e *list.Element, j *Job[V]) bool {
 	jt.active.Remove(e)
-	jt.metrics.activeJobs.WithLabelValues(jt.jobType).Set(float64(jt.pending.Len()))
+	jt.metrics.activeJobs.WithLabelValues(jt.jobType).Set(float64(jt.active.Len()))
 
 	// Can the job be returned to the queue?
 	if jt.maxLeases == InfiniteLeases || j.numLeases < jt.maxLeases {
