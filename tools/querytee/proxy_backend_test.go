@@ -115,7 +115,7 @@ func Test_ProxyBackend_RequestProportion(t *testing.T) {
 		{
 			name: "configured proportion from config",
 			config: BackendConfig{
-				RequestProportion: func() *float64 { v := 0.7; return &v }(),
+				RequestProportion: pointerToFloat(0.7),
 			},
 			expectedProportion: 0.7,
 		},
@@ -123,13 +123,13 @@ func Test_ProxyBackend_RequestProportion(t *testing.T) {
 			name:               "set proportion via method",
 			config:             BackendConfig{},
 			expectedProportion: DefaultRequestProportion,
-			setProportion:      func() *float64 { v := 0.3; return &v }(),
+			setProportion:      pointerToFloat(0.3),
 			finalProportion:    0.3,
 		},
 		{
 			name: "explicitly configured proportion of 1.0",
 			config: BackendConfig{
-				RequestProportion: func() *float64 { v := DefaultRequestProportion; return &v }(),
+				RequestProportion: pointerToFloat(DefaultRequestProportion),
 			},
 			expectedProportion: DefaultRequestProportion,
 		},

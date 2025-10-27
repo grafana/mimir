@@ -87,20 +87,20 @@ A request sent from the query-tee to a backend includes HTTP basic authenticatio
 - If the backend endpoint URL is configured only with a username, then query-tee keeps the configured username and injects the password received in the incoming request.
 - If the backend endpoint URL is configured without a username and password, then query-tee forwards the authentication credentials found in the incoming request.
 
-### Backend configuration
+### Configure the backend
 
 You can configure individual backend behavior using the `-backend.config-file` flag to specify a YAML or JSON configuration file.
 Each key in the configuration file corresponds to a backend hostname, and the value contains the configuration for that backend.
 
 The following configuration options are available for each backend:
 
-- **`request_headers`**: Additional HTTP headers to send to this backend
-- **`request_proportion`**: Proportion of requests to send to this backend (0.0 to 1.0). Overrides the global `-proxy.secondary-backends-request-proportion` setting for this backend.
-- **`min_time_threshold`**: Minimum time threshold for time-based query routing (Go duration format like "24h", "168h", "1h30m"). Default is "0s" which means serve all queries.
+- `request_headers`: Additional HTTP headers to send to this backend
+- `request_proportion`: Proportion of requests to send to this backend. Set between 0.0 -1.0. This value overrides the global `-proxy.secondary-backends-request-proportion` setting for this backend.
+- `min_data_queried_age`: Minimum time threshold for time-based query routing (Go duration format like "24h", "168h", "1h30m"). Default is "0s", which means to serve all queries.
 
 #### Backend configuration examples
 
-**JSON configuration example:**
+JSON configuration example:
 
 ```json
 {
@@ -115,7 +115,7 @@ The following configuration options are available for each backend:
       "Cache-Control": ["no-store"]
     },
     "request_proportion": 1.0,
-    "min_time_threshold": "0s"
+    "min_data_queried_age": "0s"
   },
   "prometheus-cold": {
     "request_headers": {
@@ -123,12 +123,12 @@ The following configuration options are available for each backend:
       "Cache-Control": ["no-store"]
     },
     "request_proportion": 1.0,
-    "min_time_threshold": "6h"
+    "min_data_queried_age": "6h"
   }
 }
 ```
 
-**YAML configuration example:**
+YAML configuration example:
 
 ```yaml
 prometheus-main:
@@ -139,54 +139,54 @@ prometheus-hot:
     X-Storage-Tier: ["hot"]
     Cache-Control: ["no-store"]
   request_proportion: 1.0
-  min_time_threshold: "0s" # serves all queries
+  min_data_queried_age: "0s" # serves all queries
 prometheus-cold:
   request_headers:
     X-Storage-Tier: ["warm"]
     Cache-Control: ["no-store"]
   request_proportion: 1.0
-  min_time_threshold: "6h" # 6 hours
+  min_data_queried_age: "6h" # 6 hours
 ```
 
-### Backend selection
+### Select backends
 
 You can use the query-tee to either send requests to all backends, or to send a proportion of requests to all backends and the remaining requests to only the preferred backend.
 
-#### Request proportion
+#### Configure request proportion
 
 You can configure request proportions in two ways:
 
-1. **Global setting**: Use the `-proxy.secondary-backends-request-proportion` CLI flag to set the default proportion for all secondary backends.
-2. **Per-backend setting**: Use the `request_proportion` field in the backend configuration file to override the global setting for individual backends.
+1. Global setting: Use the `-proxy.secondary-backends-request-proportion` CLI flag to set the default proportion for all secondary backends.
+2. Per-backend setting: Use the `request_proportion` field in the backend configuration file to override the global setting for individual backends.
 
 For example, if you set the `-proxy.secondary-backends-request-proportion` CLI flag to `1.0`, then all requests are sent to all backends.
 Alternatively, if you set the `-proxy.secondary-backends-request-proportion` CLI flag to `0.2`, then 20% of requests are sent to all backends, and the remaining 80% of requests are sent only to your preferred backend.
 
-Per-backend request proportions take precedence over the global setting. In the configuration example above, `prometheus-warm` would receive 80% of requests and `prometheus-cold` would receive 50% of requests, regardless of the global setting.
+Per-backend request proportions take precedence over the global setting. In the previous configuration example, `prometheus-warm` would receive 80% of requests and `prometheus-cold` would receive 50% of requests, regardless of the global setting.
 
-#### Time-based routing
+#### Configure time-based routing
 
-You can configure backends to only serve queries based on the time range of the requested data using the `min_time_threshold` setting. This is useful for implementing tiered storage architectures where different backends store data for different time periods.
+You can configure backends to only serve queries based on the time range of the requested data using the `min_data_queried_age` setting. This is useful for implementing tiered storage architectures where different backends store data for different time periods.
 
 **How time-based routing works:**
 
-- A backend with `min_time_threshold: "24h"` will only serve queries where the minimum query time is within the last 24 hours
-- A backend with `min_time_threshold: "0s"` (the default) will serve all queries regardless of their time range
-- The **preferred backend is always included** regardless of its time threshold
-- For range queries (`/api/v1/query_range`), the earliest time between `start` and `end` parameters is used
-- For instant queries (`/api/v1/query`), the `time` parameter is used, or current time if not specified
+- A backend with `min_data_queried_age: "24h"` only serves queries where the minimum query time is within the last 24 hours.
+- A backend with `min_data_queried_age: "0s"`, the default, serves all queries regardless of their time range.
+- The preferred backend is always included regardless of its time threshold.
+- Range queries, meaning`/api/v1/query_range`, use earliest time between the `start` and `end` parameters.
+- Instant queries, meaning `/api/v1/query` use, the `time` parameter or, if not specified, the current time.
 
-**Example scenario:**
+Example:
 
-With the configuration example above:
+With the preceding configuration example:
 
-- Recent queries (< 6 hours old) → sent to `prometheus-main` and `prometheus-hot` only (excludes `prometheus-cold`)
-- Old queries (> 6 hours old) → sent to all backends (`prometheus-main`, `prometheus-hot`, and `prometheus-cold`)
+- Recent queries (< 6 hours old) are sent to `prometheus-main` and `prometheus-hot` only. This excludes `prometheus-cold`.
+- Old queries (> 6 hours old) are sent to all backends, meaning `prometheus-main`, `prometheus-hot`, and `prometheus-cold`.
 
 This allows you to route queries to appropriate storage tiers based on data age, optimizing both performance and cost.
 
 {{< admonition type="note" >}}
-The `min_time_threshold` field supports Go duration format. Valid time units are `ns`, `us` (or `µs`), `ms`, `s`, `m`, `h`. Examples: `"30s"`, `"15m"`, `"24h"`, `"168h"` (7 days), `"1h30m"`. Days are not supported directly; use hours instead (e.g., `"168h"` for 7 days).
+The `min_data_queried_age` field supports Go duration format. Valid time units are `ns`, `us` (or `µs`), `ms`, `s`, `m`, `h`. Examples: `"30s"`, `"15m"`, `"24h"`, `"168h"` (7 days), `"1h30m"`. Days are not supported directly; use hours instead (e.g., `"168h"` for 7 days).
 {{< /admonition >}}
 
 ### Backend response selection

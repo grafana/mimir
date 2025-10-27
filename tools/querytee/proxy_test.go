@@ -28,8 +28,14 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
+	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
+	"github.com/grafana/mimir/pkg/util/propagation"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
+
+func pointerToFloat(v float64) *float64 {
+	return &v
+}
 
 var testRoutes = []Route{
 	{
@@ -803,13 +809,13 @@ func Test_NewProxy_BackendConfigPath(t *testing.T) {
 					RequestHeaders: http.Header{
 						"X-Custom-Header": {"value1"},
 					},
-					RequestProportion: func() *float64 { v := 0.8; return &v }(),
+					RequestProportion: pointerToFloat(0.8),
 				},
 				"backend2": {
 					RequestHeaders: http.Header{
 						"Authorization": {"Bearer token123"},
 					},
-					RequestProportion: func() *float64 { v := 0.5; return &v }(),
+					RequestProportion: pointerToFloat(0.5),
 				},
 			},
 		},
@@ -838,25 +844,25 @@ func Test_NewProxy_BackendConfigPath(t *testing.T) {
 					RequestHeaders: http.Header{
 						"X-Custom-Header": {"value1"},
 					},
-					RequestProportion: func() *float64 { v := 0.8; return &v }(),
+					RequestProportion: pointerToFloat(0.8),
 				},
 				"backend2": {
 					RequestHeaders: http.Header{
 						"Authorization": {"Bearer token123"},
 					},
-					RequestProportion: func() *float64 { v := 0.5; return &v }(),
+					RequestProportion: pointerToFloat(0.5),
 				},
 				"backend3": {
 					RequestHeaders: http.Header{
 						"X-Tenant-ID": {"tenant3"},
 					},
-					RequestProportion: func() *float64 { v := DefaultRequestProportion; return &v }(),
+					RequestProportion: pointerToFloat(DefaultRequestProportion),
 				},
 				"backend4": {
 					RequestHeaders: http.Header{
 						"X-Debug": {"true"},
 					},
-					RequestProportion: func() *float64 { v := 0.0; return &v }(),
+					RequestProportion: pointerToFloat(0.0),
 				},
 			},
 		},
@@ -970,54 +976,50 @@ func TestProxyEndpoint_TimeBasedBackendSelection(t *testing.T) {
 		requestPath      string
 		requestParams    map[string]string
 		expectedBackends []string // Names of backends expected to be selected
-		description      string
 	}{
-		"instant query with no time parameter - all backends selected": {
+		"instant query with no time parameter - only preferred backend": {
 			backends: []backendTestConfig{
-				{name: "preferred", preferred: true, minTimeThreshold: "0s"},
-				{name: "recent", preferred: false, minTimeThreshold: "1h"},
-				{name: "old", preferred: false, minTimeThreshold: "24h"},
+				{name: "preferred", preferred: true, minDataQueriedAge: "0s"},
+				{name: "recent", preferred: false, minDataQueriedAge: "1h"},
+				{name: "old", preferred: false, minDataQueriedAge: "24h"},
 			},
 			requestPath: "/api/v1/query",
 			requestParams: map[string]string{
 				"query": "up",
 			},
-			expectedBackends: []string{"preferred", "recent", "old"},
-			description:      "instant query without time defaults to now, should match all thresholds",
+			expectedBackends: []string{"preferred"},
 		},
-		"instant query with current time - all backends selected": {
+		"instant query with current time - only preferred backend": {
 			backends: []backendTestConfig{
-				{name: "preferred", preferred: true, minTimeThreshold: "0s"},
-				{name: "recent", preferred: false, minTimeThreshold: "1h"},
-				{name: "old", preferred: false, minTimeThreshold: "24h"},
+				{name: "preferred", preferred: true, minDataQueriedAge: "0s"},
+				{name: "recent", preferred: false, minDataQueriedAge: "1h"},
+				{name: "old", preferred: false, minDataQueriedAge: "24h"},
 			},
 			requestPath: "/api/v1/query",
 			requestParams: map[string]string{
 				"query": "up",
 				"time":  strconv.FormatInt(time.Now().Unix(), 10),
 			},
-			expectedBackends: []string{"preferred", "recent", "old"},
-			description:      "instant query with current time should match all thresholds",
+			expectedBackends: []string{"preferred"},
 		},
-		"instant query with old time - only preferred backend selected": {
+		"instant query with old time - all backends": {
 			backends: []backendTestConfig{
-				{name: "preferred", preferred: true, minTimeThreshold: "0s"},
-				{name: "recent", preferred: false, minTimeThreshold: "1h"},
-				{name: "old", preferred: false, minTimeThreshold: "24h"},
+				{name: "preferred", preferred: true, minDataQueriedAge: "0s"},
+				{name: "recent", preferred: false, minDataQueriedAge: "1h"},
+				{name: "old", preferred: false, minDataQueriedAge: "24h"},
 			},
 			requestPath: "/api/v1/query",
 			requestParams: map[string]string{
 				"query": "up",
 				"time":  strconv.FormatInt(time.Now().Add(-48*time.Hour).Unix(), 10),
 			},
-			expectedBackends: []string{"preferred"},
-			description:      "48-hour old instant query should only match preferred backend (has 0s threshold)",
+			expectedBackends: []string{"preferred", "recent", "old"},
 		},
-		"range query covering recent and old data - only preferred backend": {
+		"range query with old time - all backends": {
 			backends: []backendTestConfig{
-				{name: "preferred", preferred: true, minTimeThreshold: "0s"},
-				{name: "recent", preferred: false, minTimeThreshold: "1h"},
-				{name: "old", preferred: false, minTimeThreshold: "24h"},
+				{name: "preferred", preferred: true, minDataQueriedAge: "0s"},
+				{name: "recent", preferred: false, minDataQueriedAge: "1h"},
+				{name: "old", preferred: false, minDataQueriedAge: "24h"},
 			},
 			requestPath: "/api/v1/query_range",
 			requestParams: map[string]string{
@@ -1026,14 +1028,13 @@ func TestProxyEndpoint_TimeBasedBackendSelection(t *testing.T) {
 				"end":   strconv.FormatInt(time.Now().Unix(), 10),
 				"step":  "1h",
 			},
-			expectedBackends: []string{"preferred"},
-			description:      "range query with 48h-ago start should only match preferred backend (min time too old for others)",
+			expectedBackends: []string{"preferred", "recent", "old"},
 		},
-		"range query with very recent data - all backends selected": {
+		"range query with recent time - only preferred backend": {
 			backends: []backendTestConfig{
-				{name: "preferred", preferred: true, minTimeThreshold: "0s"},
-				{name: "recent", preferred: false, minTimeThreshold: "1h"},
-				{name: "old", preferred: false, minTimeThreshold: "24h"},
+				{name: "preferred", preferred: true, minDataQueriedAge: "0s"},
+				{name: "recent", preferred: false, minDataQueriedAge: "1h"},
+				{name: "old", preferred: false, minDataQueriedAge: "24h"},
 			},
 			requestPath: "/api/v1/query_range",
 			requestParams: map[string]string{
@@ -1042,62 +1043,57 @@ func TestProxyEndpoint_TimeBasedBackendSelection(t *testing.T) {
 				"end":   strconv.FormatInt(time.Now().Unix(), 10),
 				"step":  "1m",
 			},
-			expectedBackends: []string{"preferred", "recent", "old"},
-			description:      "range query with recent data should match all backends",
+			expectedBackends: []string{"preferred"},
 		},
 		"backends with zero threshold serve all queries": {
 			backends: []backendTestConfig{
-				{name: "preferred", preferred: true, minTimeThreshold: "0s"},
-				{name: "secondary", preferred: false, minTimeThreshold: "0s"},
+				{name: "preferred", preferred: true, minDataQueriedAge: "0s"},
+				{name: "secondary", preferred: false, minDataQueriedAge: "0s"},
 			},
 			requestPath: "/api/v1/query",
 			requestParams: map[string]string{
 				"query": "up",
-				"time":  strconv.FormatInt(time.Now().Add(-365*24*time.Hour).Unix(), 10), // 1 year old
+				"time":  strconv.FormatInt(time.Now().Unix(), 10),
 			},
 			expectedBackends: []string{"preferred", "secondary"},
-			description:      "backends with 0s threshold should serve all queries regardless of time",
 		},
 		"preferred backend always included regardless of threshold": {
 			backends: []backendTestConfig{
-				{name: "preferred", preferred: true, minTimeThreshold: "1h"},
-				{name: "secondary", preferred: false, minTimeThreshold: "1h"},
+				{name: "preferred", preferred: true, minDataQueriedAge: "1h"},
+				{name: "secondary", preferred: false, minDataQueriedAge: "1h"},
 			},
 			requestPath: "/api/v1/query",
 			requestParams: map[string]string{
 				"query": "up",
-				"time":  strconv.FormatInt(time.Now().Add(-48*time.Hour).Unix(), 10),
+				"time":  strconv.FormatInt(time.Now().Add(-30*time.Minute).Unix(), 10),
 			},
 			expectedBackends: []string{"preferred"},
-			description:      "preferred backend should always be included even if query time is outside its threshold",
 		},
 		"three backends with different thresholds - 2 should be selected": {
 			backends: []backendTestConfig{
-				{name: "preferred", preferred: true, minTimeThreshold: "0s"},   // serves all
-				{name: "short-term", preferred: false, minTimeThreshold: "1h"}, // serves last 1 hour
-				{name: "long-term", preferred: false, minTimeThreshold: "72h"}, // serves last 72 hours
+				{name: "preferred", preferred: true, minDataQueriedAge: "0s"},   // serves all
+				{name: "short-term", preferred: false, minDataQueriedAge: "1h"}, // serves past 1 hour
+				{name: "long-term", preferred: false, minDataQueriedAge: "72h"}, // serves past 72 hours
 			},
 			requestPath: "/api/v1/query",
 			requestParams: map[string]string{
 				"query": "up",
-				"time":  strconv.FormatInt(time.Now().Add(-36*time.Hour).Unix(), 10), // 36 hours ago
+				"time":  strconv.FormatInt(time.Now().Add(-2*time.Hour).Unix(), 10), // 2 hours ago
 			},
-			expectedBackends: []string{"preferred", "long-term"},
-			description:      "36-hour old query should be forwarded to preferred (0s threshold) and long-term (72h threshold) backends, but not short-term (1h threshold)",
+			expectedBackends: []string{"preferred", "short-term"},
 		},
-		"three backends with mixed thresholds - query within all thresholds": {
+		"three backends with mixed thresholds - all backends": {
 			backends: []backendTestConfig{
-				{name: "preferred", preferred: true, minTimeThreshold: "0s"},
-				{name: "medium", preferred: false, minTimeThreshold: "6h"},
-				{name: "long", preferred: false, minTimeThreshold: "24h"},
+				{name: "preferred", preferred: true, minDataQueriedAge: "0s"},
+				{name: "medium", preferred: false, minDataQueriedAge: "6h"},
+				{name: "long", preferred: false, minDataQueriedAge: "24h"},
 			},
 			requestPath: "/api/v1/query",
 			requestParams: map[string]string{
 				"query": "up",
-				"time":  strconv.FormatInt(time.Now().Add(-3*time.Hour).Unix(), 10), // 3 hours ago
+				"time":  strconv.FormatInt(time.Now().Add(-25*time.Hour).Unix(), 10), // 25 hours ago
 			},
 			expectedBackends: []string{"preferred", "medium", "long"},
-			description:      "3-hour old query should be forwarded to all backends as it's within all thresholds",
 		},
 	}
 
@@ -1110,7 +1106,7 @@ func TestProxyEndpoint_TimeBasedBackendSelection(t *testing.T) {
 				require.NoError(t, err)
 
 				cfg := BackendConfig{
-					MinTimeThreshold: backendCfg.minTimeThreshold,
+					MinDataQueriedAge: backendCfg.minDataQueriedAge,
 				}
 
 				backend := NewProxyBackend(
@@ -1124,6 +1120,7 @@ func TestProxyEndpoint_TimeBasedBackendSelection(t *testing.T) {
 				backends = append(backends, backend)
 			}
 
+			decoder := newTestQueryDecoder()
 			endpoint := NewProxyEndpoint(
 				backends,
 				Route{RouteName: "test"},
@@ -1133,6 +1130,7 @@ func TestProxyEndpoint_TimeBasedBackendSelection(t *testing.T) {
 				0,
 				1.0, // All secondary backends should be included by proportion
 				false,
+				decoder,
 			)
 
 			// Create test request
@@ -1144,7 +1142,8 @@ func TestProxyEndpoint_TimeBasedBackendSelection(t *testing.T) {
 			req.URL.RawQuery = q.Encode()
 
 			// Test backend selection
-			selectedBackends := endpoint.selectBackends(req)
+			selectedBackends, err := endpoint.selectBackends(req)
+			require.NoError(t, err)
 
 			// Extract names of selected backends
 			var selectedNames []string
@@ -1153,126 +1152,7 @@ func TestProxyEndpoint_TimeBasedBackendSelection(t *testing.T) {
 			}
 
 			// Verify expected backends were selected
-			assert.ElementsMatch(t, tc.expectedBackends, selectedNames, tc.description)
-		})
-	}
-}
-
-func TestTimeExtractionFunctions(t *testing.T) {
-	baseTime := time.Now().Truncate(time.Second).UTC()
-
-	testCases := map[string]struct {
-		method       string
-		path         string
-		params       map[string]string
-		expectedTime *time.Time // nil if expecting zero time
-		description  string
-	}{
-		"instant query without time parameter": {
-			method: "GET",
-			path:   "/api/v1/query",
-			params: map[string]string{
-				"query": "up",
-			},
-			expectedTime: &baseTime, // Will be compared with tolerance
-			description:  "should default to current time",
-		},
-		"instant query with Unix timestamp": {
-			method: "GET",
-			path:   "/api/v1/query",
-			params: map[string]string{
-				"query": "up",
-				"time":  strconv.FormatInt(baseTime.Add(-2*time.Hour).Unix(), 10), // 2 hours ago
-			},
-			expectedTime: func() *time.Time { t := baseTime.Add(-2 * time.Hour); return &t }(),
-			description:  "should parse Unix timestamp correctly",
-		},
-		"range query with start and end": {
-			method: "GET",
-			path:   "/api/v1/query_range",
-			params: map[string]string{
-				"query": "up",
-				"start": strconv.FormatInt(baseTime.Add(-3*time.Hour).Unix(), 10), // 3 hours ago
-				"end":   strconv.FormatInt(baseTime.Add(-2*time.Hour).Unix(), 10), // 2 hours ago
-				"step":  "60s",
-			},
-			expectedTime: func() *time.Time { t := baseTime.Add(-3 * time.Hour); return &t }(),
-			description:  "should extract start time as minimum",
-		},
-		"range query with end earlier than start": {
-			method: "GET",
-			path:   "/api/v1/query_range",
-			params: map[string]string{
-				"query": "up",
-				"start": strconv.FormatInt(baseTime.Add(-2*time.Hour).Unix(), 10), // 2 hours ago
-				"end":   strconv.FormatInt(baseTime.Add(-3*time.Hour).Unix(), 10), // 3 hours ago
-				"step":  "60s",
-			},
-			expectedTime: func() *time.Time { t := baseTime.Add(-3 * time.Hour); return &t }(),
-			description:  "should return earlier time even if it's the end parameter",
-		},
-		"range query with only start parameter": {
-			method: "GET",
-			path:   "/api/v1/query_range",
-			params: map[string]string{
-				"query": "up",
-				"start": strconv.FormatInt(baseTime.Add(-4*time.Hour).Unix(), 10), // 4 hours ago
-				"step":  "60s",
-			},
-			expectedTime: func() *time.Time { t := baseTime.Add(-4 * time.Hour); return &t }(),
-			description:  "should use start time when end is missing",
-		},
-		"range query with only end parameter": {
-			method: "GET",
-			path:   "/api/v1/query_range",
-			params: map[string]string{
-				"query": "up",
-				"end":   strconv.FormatInt(baseTime.Add(-5*time.Hour).Unix(), 10), // 5 hours ago
-				"step":  "60s",
-			},
-			expectedTime: func() *time.Time { t := baseTime.Add(-5 * time.Hour); return &t }(),
-			description:  "should use end time when start is missing",
-		},
-		"non-Prometheus API path": {
-			method:       "GET",
-			path:         "/api/v1/status/config",
-			params:       map[string]string{},
-			expectedTime: nil,
-			description:  "should return zero time for non-query paths",
-		},
-		"invalid time format": {
-			method: "GET",
-			path:   "/api/v1/query",
-			params: map[string]string{
-				"query": "up",
-				"time":  "invalid-time",
-			},
-			expectedTime: nil,
-			description:  "should return zero time for invalid time format",
-		},
-	}
-
-	for testName, tc := range testCases {
-		t.Run(testName, func(t *testing.T) {
-			req := httptest.NewRequest(tc.method, tc.path, nil)
-			q := req.URL.Query()
-			for key, value := range tc.params {
-				q.Set(key, value)
-			}
-			req.URL.RawQuery = q.Encode()
-
-			extractedTime := extractMinTimeFromRequest(req)
-
-			if tc.expectedTime == nil {
-				assert.True(t, extractedTime.IsZero(), tc.description)
-			} else {
-				// For "now" comparisons, allow some tolerance
-				if tc.params["time"] == "" && tc.path == "/api/v1/query" {
-					assert.WithinDuration(t, *tc.expectedTime, extractedTime, 5*time.Second, tc.description)
-				} else {
-					assert.Equal(t, *tc.expectedTime, extractedTime, tc.description)
-				}
-			}
+			assert.ElementsMatch(t, tc.expectedBackends, selectedNames)
 		})
 	}
 }
@@ -1287,7 +1167,7 @@ func TestBackendConfig_TimeThresholdValidation(t *testing.T) {
 		"valid time threshold": {
 			config: map[string]*BackendConfig{
 				"backend1": {
-					MinTimeThreshold: "24h",
+					MinDataQueriedAge: "24h",
 				},
 			},
 			expectError: false,
@@ -1295,9 +1175,9 @@ func TestBackendConfig_TimeThresholdValidation(t *testing.T) {
 		},
 		"multiple valid time thresholds": {
 			config: map[string]*BackendConfig{
-				"backend1": {MinTimeThreshold: "1h30m"},
-				"backend2": {MinTimeThreshold: "168h"}, // 7 days = 168 hours
-				"backend3": {MinTimeThreshold: "0s"},
+				"backend1": {MinDataQueriedAge: "1h30m"},
+				"backend2": {MinDataQueriedAge: "168h"}, // 7 days = 168 hours
+				"backend3": {MinDataQueriedAge: "0s"},
 			},
 			expectError: false,
 			description: "multiple valid duration formats should pass validation",
@@ -1305,17 +1185,17 @@ func TestBackendConfig_TimeThresholdValidation(t *testing.T) {
 		"invalid time threshold": {
 			config: map[string]*BackendConfig{
 				"backend1": {
-					MinTimeThreshold: "invalid-duration",
+					MinDataQueriedAge: "invalid-duration",
 				},
 			},
 			expectError:   true,
-			errorContains: "invalid min_time_threshold format",
+			errorContains: "invalid min_data_queried_age format",
 			description:   "invalid duration format should fail validation",
 		},
 		"empty time threshold": {
 			config: map[string]*BackendConfig{
 				"backend1": {
-					MinTimeThreshold: "",
+					MinDataQueriedAge: "",
 				},
 			},
 			expectError: false,
@@ -1347,7 +1227,12 @@ func TestBackendConfig_TimeThresholdValidation(t *testing.T) {
 }
 
 type backendTestConfig struct {
-	name             string
-	preferred        bool
-	minTimeThreshold string
+	name              string
+	preferred         bool
+	minDataQueriedAge string
+}
+
+// newTestQueryDecoder creates a decoder instance for use in tests
+func newTestQueryDecoder() QueryRequestDecoder {
+	return querymiddleware.NewCodec(nil, 5*time.Minute, "json", nil, &propagation.NoopInjector{})
 }

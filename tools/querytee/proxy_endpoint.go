@@ -20,11 +20,16 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 
+	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
 type ResponsesComparator interface {
 	Compare(expected, actual []byte, queryEvaluationTime time.Time) (ComparisonResult, error)
+}
+
+type QueryRequestDecoder interface {
+	DecodeMetricsQueryRequest(ctx context.Context, r *http.Request) (querymiddleware.MetricsQueryRequest, error)
 }
 
 type ProxyEndpoint struct {
@@ -36,13 +41,15 @@ type ProxyEndpoint struct {
 	secondaryBackendRequestProportion float64
 	skipPreferredBackendFailures      bool
 
+	decoder QueryRequestDecoder
+
 	// The preferred backend, if any.
 	preferredBackend ProxyBackendInterface
 
 	route Route
 }
 
-func NewProxyEndpoint(backends []ProxyBackendInterface, route Route, metrics *ProxyMetrics, logger log.Logger, comparator ResponsesComparator, slowResponseThreshold time.Duration, secondaryBackendRequestProportion float64, skipPreferredBackendFailures bool) *ProxyEndpoint {
+func NewProxyEndpoint(backends []ProxyBackendInterface, route Route, metrics *ProxyMetrics, logger log.Logger, comparator ResponsesComparator, slowResponseThreshold time.Duration, secondaryBackendRequestProportion float64, skipPreferredBackendFailures bool, decoder QueryRequestDecoder) *ProxyEndpoint {
 	var preferredBackend ProxyBackendInterface
 	for _, backend := range backends {
 		if backend.Preferred() {
@@ -61,12 +68,18 @@ func NewProxyEndpoint(backends []ProxyBackendInterface, route Route, metrics *Pr
 		secondaryBackendRequestProportion: secondaryBackendRequestProportion,
 		preferredBackend:                  preferredBackend,
 		skipPreferredBackendFailures:      skipPreferredBackendFailures,
+		decoder:                           decoder,
 	}
 }
 
 func (p *ProxyEndpoint) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Send the same request to all selected backends.
-	backends := p.selectBackends(r)
+	backends, err := p.selectBackends(r)
+	if err != nil {
+		level.Error(p.logger).Log("msg", "Unable to select backends", "err", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 	resCh := make(chan *backendResponse, len(backends))
 	go p.executeBackendRequests(r, backends, resCh)
 
@@ -86,12 +99,14 @@ func (p *ProxyEndpoint) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	p.metrics.responsesTotal.WithLabelValues(downstreamRes.backend.Name(), r.Method, p.route.RouteName).Inc()
 }
 
-func (p *ProxyEndpoint) selectBackends(r *http.Request) []ProxyBackendInterface {
+func (p *ProxyEndpoint) selectBackends(r *http.Request) ([]ProxyBackendInterface, error) {
 	if len(p.backends) == 1 {
-		return p.backends
+		return p.backends, nil
 	}
-
-	minQueryTime := extractMinTimeFromRequest(r)
+	minQueryTime, err := p.extractMinTimeFromRequest(r)
+	if err != nil {
+		return nil, fmt.Errorf("extract min query time: %w", err)
+	}
 
 	selected := []ProxyBackendInterface{}
 
@@ -119,8 +134,7 @@ func (p *ProxyEndpoint) selectBackends(r *http.Request) []ProxyBackendInterface 
 			selected = append(selected, backend)
 		}
 	}
-
-	return selected
+	return selected, nil
 }
 
 func (p *ProxyEndpoint) executeBackendRequests(req *http.Request, backends []ProxyBackendInterface, resCh chan *backendResponse) {
@@ -411,97 +425,19 @@ func (r *backendResponse) statusCode() int {
 
 // extractMinTimeFromRequest extracts the minimum time from a Prometheus API request
 // Returns zero time if time parameters cannot be parsed, which causes all backends to handle the query.
-func extractMinTimeFromRequest(r *http.Request) time.Time {
-	if err := r.ParseForm(); err != nil {
-		return time.Time{} // Return zero time on parse error
+func (p *ProxyEndpoint) extractMinTimeFromRequest(r *http.Request) (time.Time, error) {
+	queryRequest, err := p.decoder.DecodeMetricsQueryRequest(r.Context(), r)
+	if err != nil {
+		// If we can't decode the request as a metrics query request, return zero time
+		// which will cause all backends to handle the request
+		return time.Time{}, nil
 	}
 
-	path := r.URL.Path
-
-	switch {
-	case strings.HasSuffix(path, "/api/v1/query_range"):
-		return extractMinTimeFromRangeQuery(r)
-	case strings.HasSuffix(path, "/api/v1/query"):
-		return extractTimeFromInstantQuery(r)
-	default:
-		return extractTimeFromGenericQuery(r) // series, labels, exemplars endpoints all use start/end or time parameters
+	min, _, ok := querymiddleware.ExtractMinMaxTime(r.Context(), queryRequest, queryRequest.GetLookbackDelta())
+	if !ok {
+		// If we can't extract time information, return zero time
+		// which will cause all backends to handle the request
+		return time.Time{}, nil
 	}
-}
-
-// extractMinTimeFromRangeQuery extracts the minimum time from range query parameters
-func extractMinTimeFromRangeQuery(r *http.Request) time.Time {
-	start := r.FormValue("start")
-	end := r.FormValue("end")
-
-	if start == "" && end == "" {
-		return time.Time{} // No time parameters found
-	}
-
-	startTime, _ := parsePrometheusTime(start)
-	endTime, _ := parsePrometheusTime(end)
-
-	// Both times invalid
-	if startTime.IsZero() && endTime.IsZero() {
-		return time.Time{}
-	}
-
-	// Return the earlier time (minimum of start and end)
-	if startTime.IsZero() {
-		return endTime
-	}
-	if endTime.IsZero() {
-		return startTime
-	}
-
-	if startTime.Before(endTime) {
-		return startTime
-	}
-	return endTime
-}
-
-// extractTimeFromInstantQuery extracts time from instant query parameters
-func extractTimeFromInstantQuery(r *http.Request) time.Time {
-	timeParam := r.FormValue("time")
-	if timeParam == "" {
-		return time.Now()
-	}
-
-	t, _ := parsePrometheusTime(timeParam)
-	return t
-}
-
-// extractTimeFromGenericQuery tries to extract time from generic query parameters
-func extractTimeFromGenericQuery(r *http.Request) time.Time {
-	for _, param := range []string{"time", "start", "end"} {
-		if value := r.FormValue(param); value != "" {
-			if t, err := parsePrometheusTime(value); err == nil && !t.IsZero() {
-				return t
-			}
-		}
-	}
-
-	return time.Time{} // No time found
-}
-
-// parsePrometheusTime parses Prometheus time format (RFC3339 or Unix timestamp)
-// Based on parseTime function in Prometheus web/api/v1/api.go
-// https://github.com/prometheus/prometheus/blob/main/web/api/v1/api.go
-func parsePrometheusTime(s string) (time.Time, error) {
-	if s == "" {
-		return time.Time{}, fmt.Errorf("empty time string")
-	}
-
-	// Try parsing as Unix timestamp (float64) - same logic as Prometheus
-	if t, err := strconv.ParseFloat(s, 64); err == nil {
-		seconds := int64(t)
-		nanoseconds := int64((t - float64(seconds)) * 1e9)
-		return time.Unix(seconds, nanoseconds).UTC(), nil
-	}
-
-	// Try parsing as RFC3339Nano (Prometheus standard)
-	if t, err := time.Parse(time.RFC3339Nano, s); err == nil {
-		return t, nil
-	}
-
-	return time.Time{}, fmt.Errorf("cannot parse %q to a valid timestamp", s)
+	return time.UnixMilli(min), nil
 }

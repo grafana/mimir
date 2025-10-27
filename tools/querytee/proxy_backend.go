@@ -22,8 +22,8 @@ import (
 const (
 	// DefaultRequestProportion is the default proportion of requests to send to a backend
 	DefaultRequestProportion = 1.0
-	// DefaultMinTimeThreshold is the default minimum time threshold for a backend (0s means serve all queries)
-	DefaultMinTimeThreshold = 0 * time.Second
+	// DefaultMinDataQueriedAge is the default minimum data queried age for a backend (0s means serve all queries)
+	DefaultMinDataQueriedAge = 0 * time.Second
 )
 
 type ProxyBackendInterface interface {
@@ -33,7 +33,7 @@ type ProxyBackendInterface interface {
 	RequestProportion() float64
 	SetRequestProportion(proportion float64)
 	HasConfiguredProportion() bool
-	MinTimeThreshold() time.Duration
+	MinDataQueriedAge() time.Duration
 	ShouldHandleQuery(minQueryTime time.Time) bool
 	ForwardRequest(ctx context.Context, orig *http.Request, body io.ReadCloser) (time.Duration, int, []byte, *http.Response, error)
 }
@@ -53,8 +53,8 @@ type ProxyBackend struct {
 	// Request proportion for this backend (only applies to secondary backends)
 	requestProportion float64
 
-	// Minimum time threshold - backend serves queries with min time >= (now - threshold)
-	minTimeThreshold time.Duration
+	// Minimum data queried age - backend serves queries with min time >= (now - age)
+	minDataQueriedAge time.Duration
 }
 
 // NewProxyBackend makes a new ProxyBackend
@@ -81,10 +81,10 @@ func NewProxyBackend(name string, endpoint *url.URL, timeout time.Duration, pref
 		requestProportion = *cfg.RequestProportion
 	}
 
-	minTimeThreshold := DefaultMinTimeThreshold
-	if cfg.MinTimeThreshold != "" {
-		if d, err := time.ParseDuration(cfg.MinTimeThreshold); err == nil {
-			minTimeThreshold = d
+	minDataQueriedAge := DefaultMinDataQueriedAge
+	if cfg.MinDataQueriedAge != "" {
+		if d, err := time.ParseDuration(cfg.MinDataQueriedAge); err == nil {
+			minDataQueriedAge = d
 		}
 	}
 
@@ -95,7 +95,7 @@ func NewProxyBackend(name string, endpoint *url.URL, timeout time.Duration, pref
 		preferred:         preferred,
 		cfg:               cfg,
 		requestProportion: requestProportion,
-		minTimeThreshold:  minTimeThreshold,
+		minDataQueriedAge: minDataQueriedAge,
 		client: &http.Client{
 			CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
 				return errors.New("the query-tee proxy does not follow redirects")
@@ -129,8 +129,8 @@ func (b *ProxyBackend) HasConfiguredProportion() bool {
 	return b.cfg.RequestProportion != nil
 }
 
-func (b *ProxyBackend) MinTimeThreshold() time.Duration {
-	return b.minTimeThreshold
+func (b *ProxyBackend) MinDataQueriedAge() time.Duration {
+	return b.minDataQueriedAge
 }
 
 func (b *ProxyBackend) ShouldHandleQuery(minQueryTime time.Time) bool {
@@ -138,13 +138,13 @@ func (b *ProxyBackend) ShouldHandleQuery(minQueryTime time.Time) bool {
 	if minQueryTime.IsZero() {
 		return true
 	}
-	// If threshold is 0s, backend serves all queries
-	if b.minTimeThreshold == 0 {
+	// If age is 0s, backend serves all queries
+	if b.minDataQueriedAge == 0 {
 		return true
 	}
-	// Backend serves queries where min_query_time >= (now - threshold)
-	cutOffTs := time.Now().Add(-b.minTimeThreshold)
-	return !minQueryTime.Before(cutOffTs)
+	// Backend serves queries where min_query_time >= (now - age)
+	cutOffTs := time.Now().Add(-b.minDataQueriedAge)
+	return minQueryTime.Before(cutOffTs)
 }
 
 func (b *ProxyBackend) ForwardRequest(ctx context.Context, orig *http.Request, body io.ReadCloser) (time.Duration, int, []byte, *http.Response, error) {
