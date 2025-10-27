@@ -35,8 +35,22 @@ func NewStatisticsGenerator(l log.Logger) *StatisticsGenerator {
 	}
 }
 
+func setCountMinEpsilon(smallLabelCardinalityThreshold, largeLabelCardinalityThreshold uint64) func(numValues uint64) float64 {
+	// The more label values for a label name, the larger the sketch, ideally the more accurate the count per label value.
+	return func(numSeries uint64) float64 {
+		switch {
+		case numSeries >= largeLabelCardinalityThreshold:
+			return 0.005
+		case numSeries < smallLabelCardinalityThreshold:
+			return 0.05
+		default:
+			return 0.01
+		}
+	}
+}
+
 // Stats creates statistics using count-min sketches
-func (g StatisticsGenerator) Stats(meta tsdb.BlockMeta, r tsdb.IndexReader) (retStats index.Statistics, retErr error) {
+func (g StatisticsGenerator) Stats(meta tsdb.BlockMeta, r tsdb.IndexReader, smallLabelCardinalityThreshold, largeLabelCardinalityThreshold uint64) (retStats index.Statistics, retErr error) {
 	ctx := context.Background()
 
 	defer func(startTime time.Time) {
@@ -69,8 +83,8 @@ func (g StatisticsGenerator) Stats(meta tsdb.BlockMeta, r tsdb.IndexReader) (ret
 	}
 
 	// Build count-min sketches for each label
-	const countMinEpsilon = 0.005
 	labelSketches := make(map[string]*LabelValuesSketch)
+	selectEpsilon := setCountMinEpsilon(smallLabelCardinalityThreshold, largeLabelCardinalityThreshold)
 
 	for _, labelName := range labelNames {
 		// Get all values for this label
@@ -79,9 +93,15 @@ func (g StatisticsGenerator) Stats(meta tsdb.BlockMeta, r tsdb.IndexReader) (ret
 			return nil, fmt.Errorf("failed to get label values for label %s: %w", labelName, err)
 		}
 
+		labelCardinality, err := countPostings(r.PostingsForAllLabelValues(ctx, labelName))
+		if err != nil {
+			return nil, fmt.Errorf("error counting postings for label %s: %w", labelName, err)
+		}
+
+		epsilon := selectEpsilon(labelCardinality)
 		// Create count-min sketch for this label
 		sketch := &LabelValuesSketch{
-			s:              boom.NewCountMinSketch(countMinEpsilon, 0.01),
+			s:              boom.NewCountMinSketch(epsilon, 0.01),
 			distinctValues: uint64(len(values)),
 		}
 

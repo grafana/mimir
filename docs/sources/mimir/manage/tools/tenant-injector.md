@@ -7,8 +7,6 @@ title: Grafana Mimir tenant injector
 weight: 20
 ---
 
-<!-- Note: This topic is mounted in the GEM documentation. Ensure that all updates are also applicable to GEM. -->
-
 # Grafana Mimir tenant injector
 
 The tenant injector is a standalone HTTP proxy that injects the `X-Scope-OrgID` header with the value that you specify in the `-tenant-id` flag into incoming HTTP requests. It then forwards the modified requests to the URL you specify in the `-remote-address` flag.

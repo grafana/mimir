@@ -66,13 +66,16 @@ import (
 	"github.com/grafana/mimir/pkg/storegateway"
 	"github.com/grafana/mimir/pkg/streamingpromql"
 	streamingpromqlcompat "github.com/grafana/mimir/pkg/streamingpromql/compat"
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize/ast/sharding"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/remoteexec"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
+	"github.com/grafana/mimir/pkg/streamingpromql/planning/analysis"
 	"github.com/grafana/mimir/pkg/usagestats"
 	"github.com/grafana/mimir/pkg/usagetracker"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/activitytracker"
 	"github.com/grafana/mimir/pkg/util/chunkinfologger"
+	"github.com/grafana/mimir/pkg/util/limiter"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/propagation"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -105,7 +108,9 @@ const (
 	Overrides                        string = "overrides"
 	OverridesExporter                string = "overrides-exporter"
 	Querier                          string = "querier"
+	QuerierLifecycler                string = "querier-lifecycler"
 	QuerierQueryPlanner              string = "querier-query-planner"
+	QuerierRing                      string = "querier-ring"
 	QueryFrontend                    string = "query-frontend"
 	QueryFrontendCodec               string = "query-frontend-codec"
 	QueryFrontendQueryPlanner        string = "query-frontend-query-planner"
@@ -162,7 +167,7 @@ func (t *Mimir) initAPI() (services.Service, error) {
 		})
 
 	t.API = a
-	t.API.RegisterAPI(t.Cfg.Server.PathPrefix, t.Cfg, newDefaultConfig(), t.BuildInfoHandler)
+	t.API.RegisterAPI(t.Cfg, newDefaultConfig(), t.BuildInfoHandler)
 
 	return nil, nil
 }
@@ -228,6 +233,7 @@ func (t *Mimir) initVault() (services.Service, error) {
 	t.Cfg.Ingester.IngesterRing.KVStore.Etcd.TLS.Reader = t.Vault
 	t.Cfg.MemberlistKV.TCPTransport.TLS.Reader = t.Vault
 	t.Cfg.OverridesExporter.Ring.Common.KVStore.Etcd.TLS.Reader = t.Vault
+	t.Cfg.Querier.Ring.Common.KVStore.Etcd.TLS.Reader = t.Vault
 	t.Cfg.QueryScheduler.ServiceDiscovery.SchedulerRing.KVStore.Etcd.TLS.Reader = t.Vault
 	t.Cfg.Ruler.Ring.Common.KVStore.Etcd.TLS.Reader = t.Vault
 	t.Cfg.StoreGateway.ShardingRing.KVStore.Etcd.TLS.Reader = t.Vault
@@ -456,6 +462,7 @@ func (t *Mimir) initRuntimeConfig() (services.Service, error) {
 	t.Cfg.Ingester.IngesterPartitionRing.KVStore.Multi.ConfigProvider = multiClientRuntimeConfigChannel(t.RuntimeConfig)
 	t.Cfg.Ingester.IngesterRing.KVStore.Multi.ConfigProvider = multiClientRuntimeConfigChannel(t.RuntimeConfig)
 	t.Cfg.OverridesExporter.Ring.Common.KVStore.Multi.ConfigProvider = multiClientRuntimeConfigChannel(t.RuntimeConfig)
+	t.Cfg.Querier.Ring.Common.KVStore.Multi.ConfigProvider = multiClientRuntimeConfigChannel(t.RuntimeConfig)
 	t.Cfg.QueryScheduler.ServiceDiscovery.SchedulerRing.KVStore.Multi.ConfigProvider = multiClientRuntimeConfigChannel(t.RuntimeConfig)
 	t.Cfg.Ruler.Ring.Common.KVStore.Multi.ConfigProvider = multiClientRuntimeConfigChannel(t.RuntimeConfig)
 	t.Cfg.StoreGateway.ShardingRing.KVStore.Multi.ConfigProvider = multiClientRuntimeConfigChannel(t.RuntimeConfig)
@@ -572,6 +579,30 @@ func (t *Mimir) initTenantFederation() (serv services.Service, err error) {
 		t.MetadataSupplier = tenantfederation.NewMetadataSupplier(t.MetadataSupplier, t.Cfg.TenantFederation.MaxConcurrent, util_log.Logger)
 	}
 	return nil, nil
+}
+
+func (t *Mimir) initQuerierLifecycler() (services.Service, error) {
+	t.Cfg.Querier.Ring.Common.ListenPort = t.Cfg.Server.GRPCListenPort
+
+	lifecycler, err := querier.NewLifecycler(t.Cfg.Querier.Ring, util_log.Logger, t.Registerer)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create querier lifecycler: %w", err)
+	}
+
+	t.QuerierLifecycler = lifecycler
+
+	return lifecycler, nil
+}
+
+func (t *Mimir) initQuerierRing() (services.Service, error) {
+	r, err := querier.NewRing(t.Cfg.Querier.Ring, util_log.Logger, t.Registerer)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create querier ring: %w", err)
+	}
+
+	t.QuerierRing = r
+
+	return r, nil
 }
 
 // initQuerier registers an internal HTTP router with a Prometheus API backed by the
@@ -849,12 +880,14 @@ func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error
 	// Always eagerly load selectors so that they are loaded in parallel in the background.
 	mqeOpts.EagerLoadSelectors = true
 
+	t.Cfg.Frontend.QueryMiddleware.InternalFunctionNames.Add(sharding.ConcatFunction.Name)
+
 	// Use either the Prometheus engine or Mimir Query Engine (with optional fallback to Prometheus
 	// if it has been configured) for middlewares that require executing queries using a PromQL engine.
 	var eng promql.QueryEngine
 	switch t.Cfg.Frontend.QueryEngine {
 	case querier.PrometheusEngine:
-		eng = promql.NewEngine(promOpts)
+		eng = limiter.NewUnlimitedMemoryTrackerPromQLEngine(promql.NewEngine(promOpts))
 	case querier.MimirEngine:
 		var err error
 		t.QueryFrontendStreamingEngine, err = streamingpromql.NewEngine(mqeOpts, streamingpromql.NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(mqeOpts.CommonOpts.Reg), t.QueryFrontendQueryPlanner)
@@ -863,7 +896,7 @@ func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error
 		}
 
 		if t.Cfg.Frontend.EnableQueryEngineFallback {
-			eng = streamingpromqlcompat.NewEngineWithFallback(t.QueryFrontendStreamingEngine, promql.NewEngine(promOpts), mqeOpts.CommonOpts.Reg, util_log.Logger)
+			eng = streamingpromqlcompat.NewEngineWithFallback(t.QueryFrontendStreamingEngine, limiter.NewUnlimitedMemoryTrackerPromQLEngine(promql.NewEngine(promOpts)), mqeOpts.CommonOpts.Reg, util_log.Logger)
 		} else {
 			eng = t.QueryFrontendStreamingEngine
 		}
@@ -880,7 +913,7 @@ func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error
 		eng,
 		promOpts,
 		t.QueryFrontendTopicOffsetsReaders,
-		t.Cfg.Frontend.EnableRemoteExecution,
+		t.Cfg.Frontend.QueryMiddleware.EnableRemoteExecution,
 		t.QueryFrontendStreamingEngine,
 		t.Registerer,
 	)
@@ -920,7 +953,7 @@ func (t *Mimir) initQueryFrontend() (serv services.Service, err error) {
 
 	t.API.RegisterQueryFrontend2(frontend)
 
-	if t.QueryFrontendStreamingEngine != nil && t.Cfg.Frontend.EnableRemoteExecution {
+	if t.QueryFrontendStreamingEngine != nil && t.Cfg.Frontend.QueryMiddleware.EnableRemoteExecution {
 		executor := v2.NewRemoteExecutor(frontend, t.Cfg.Frontend.FrontendV2)
 
 		if err := t.QueryFrontendStreamingEngine.RegisterNodeMaterializer(planning.NODE_TYPE_REMOTE_EXEC, remoteexec.NewRemoteExecutionMaterializer(executor)); err != nil {
@@ -961,8 +994,12 @@ func (t *Mimir) initQuerierQueryPlanner() (services.Service, error) {
 	reg := prometheus.WrapRegistererWith(prometheus.Labels{"component": "querier"}, t.Registerer)
 	_, mqeOpts := engine.NewPromQLEngineOptions(t.Cfg.Querier.EngineConfig, t.ActivityTracker, util_log.Logger, reg)
 
+	// The query plan generated by this querier will only be used in this process, so we can
+	// allow anything this version of Mimir supports.
+	versionProvider := streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider()
+
 	var err error
-	t.QuerierQueryPlanner, err = streamingpromql.NewQueryPlanner(mqeOpts)
+	t.QuerierQueryPlanner, err = streamingpromql.NewQueryPlanner(mqeOpts, versionProvider)
 	if err != nil {
 		return nil, err
 	}
@@ -970,7 +1007,7 @@ func (t *Mimir) initQuerierQueryPlanner() (services.Service, error) {
 	// Only expose the querier's planner through the analysis endpoint if the query-frontend isn't running in this process.
 	// If the query-frontend is running in this process, it will expose its planner through the analysis endpoint.
 	if !t.Cfg.isQueryFrontendEnabled() {
-		analysisHandler := streamingpromql.AnalysisHandler(t.QuerierQueryPlanner)
+		analysisHandler := analysis.Handler(t.QuerierQueryPlanner)
 		t.API.RegisterQueryAnalysisAPI(analysisHandler)
 	}
 
@@ -981,20 +1018,35 @@ func (t *Mimir) initQueryFrontendQueryPlanner() (services.Service, error) {
 	reg := prometheus.WrapRegistererWith(prometheus.Labels{"component": "query-frontend"}, t.Registerer)
 	_, mqeOpts := engine.NewPromQLEngineOptions(t.Cfg.Querier.EngineConfig, t.ActivityTracker, util_log.Logger, reg)
 
+	var versionProvider streamingpromql.QueryPlanVersionProvider
+
+	if t.Cfg.Frontend.QueryMiddleware.EnableRemoteExecution {
+		versionProvider = querier.NewRingQueryPlanVersionProvider(t.QuerierRing, t.Registerer, util_log.Logger)
+	} else {
+		// If remote execution is not enabled, then the query plans we generate in the query-frontend will
+		// only be used in this process, so we can generate query plans up to whatever the maximum supported
+		// version is.
+		versionProvider = streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider()
+	}
+
 	var err error
-	t.QueryFrontendQueryPlanner, err = streamingpromql.NewQueryPlanner(mqeOpts)
+	t.QueryFrontendQueryPlanner, err = streamingpromql.NewQueryPlanner(mqeOpts, versionProvider)
 	if err != nil {
 		return nil, err
 	}
 
-	if t.Cfg.Frontend.EnableRemoteExecution {
+	if t.Cfg.Frontend.QueryMiddleware.EnableRemoteExecution {
 		t.QueryFrontendQueryPlanner.RegisterQueryPlanOptimizationPass(remoteexec.NewOptimizationPass())
+	}
+
+	if t.Cfg.Frontend.QueryMiddleware.UseMQEForSharding {
+		t.QueryFrontendQueryPlanner.RegisterASTOptimizationPass(sharding.NewOptimizationPass(t.Overrides, t.Cfg.Frontend.QueryMiddleware.TargetSeriesPerShard, reg, util_log.Logger))
 	}
 
 	// FIXME: results returned by the analysis endpoint won't include any changes made by query middlewares
 	// like sharding, splitting etc.
 	// Once these are running as MQE optimisation passes, they'll automatically be included in the analysis result.
-	analysisHandler := streamingpromql.AnalysisHandler(t.QueryFrontendQueryPlanner)
+	analysisHandler := analysis.Handler(t.QueryFrontendQueryPlanner)
 	t.API.RegisterQueryAnalysisAPI(analysisHandler)
 
 	return nil, nil
@@ -1229,7 +1281,7 @@ func (t *Mimir) initMemberlistKV() (services.Service, error) {
 	)
 	dnsProvider := dns.NewProvider(util_log.Logger, dnsProviderReg, dns.GolangResolverType)
 	t.MemberlistKV = memberlist.NewKVInitService(&t.Cfg.MemberlistKV, util_log.Logger, dnsProvider, t.Registerer)
-	t.API.RegisterMemberlistKV(t.Cfg.Server.PathPrefix, t.MemberlistKV)
+	t.API.RegisterMemberlistKV(t.MemberlistKV)
 
 	// Update the config.
 	// lint:sorted
@@ -1240,11 +1292,21 @@ func (t *Mimir) initMemberlistKV() (services.Service, error) {
 	t.Cfg.Ingester.IngesterPartitionRing.KVStore.MemberlistKV = t.MemberlistKV.GetMemberlistKV
 	t.Cfg.Ingester.IngesterRing.KVStore.MemberlistKV = t.MemberlistKV.GetMemberlistKV
 	t.Cfg.OverridesExporter.Ring.Common.KVStore.MemberlistKV = t.MemberlistKV.GetMemberlistKV
+	t.Cfg.Querier.Ring.Common.KVStore.MemberlistKV = t.MemberlistKV.GetMemberlistKV
 	t.Cfg.QueryScheduler.ServiceDiscovery.SchedulerRing.KVStore.MemberlistKV = t.MemberlistKV.GetMemberlistKV
 	t.Cfg.Ruler.Ring.Common.KVStore.MemberlistKV = t.MemberlistKV.GetMemberlistKV
 	t.Cfg.StoreGateway.ShardingRing.KVStore.MemberlistKV = t.MemberlistKV.GetMemberlistKV
 	t.Cfg.UsageTracker.InstanceRing.KVStore.MemberlistKV = t.MemberlistKV.GetMemberlistKV
 	t.Cfg.UsageTracker.PartitionRing.KVStore.MemberlistKV = t.MemberlistKV.GetMemberlistKV
+
+	// If the memberlist-kv is explicitly targets (e.g. running it as memberlist seed node)
+	// then we have to forcefully initialise the memberlist client, otherwise memberlist will
+	// not really run under the hood (it gets lazily initialised).
+	if t.Cfg.isModuleExplicitlyTargeted(MemberlistKV) {
+		if _, err := t.MemberlistKV.GetMemberlistKV(); err != nil {
+			return nil, fmt.Errorf("failed to initialise memberlist client instance: %w", err)
+		}
+	}
 
 	return t.MemberlistKV, nil
 }
@@ -1411,7 +1473,9 @@ func (t *Mimir) setupModuleManager() error {
 	mm.RegisterModule(Overrides, t.initOverrides, modules.UserInvisibleModule)
 	mm.RegisterModule(OverridesExporter, t.initOverridesExporter)
 	mm.RegisterModule(Querier, t.initQuerier)
+	mm.RegisterModule(QuerierLifecycler, t.initQuerierLifecycler, modules.UserInvisibleModule)
 	mm.RegisterModule(QuerierQueryPlanner, t.initQuerierQueryPlanner, modules.UserInvisibleModule)
+	mm.RegisterModule(QuerierRing, t.initQuerierRing, modules.UserInvisibleModule)
 	mm.RegisterModule(QueryFrontend, t.initQueryFrontend)
 	mm.RegisterModule(QueryFrontendCodec, t.initQueryFrontendCodec, modules.UserInvisibleModule)
 	mm.RegisterModule(QueryFrontendQueryPlanner, t.initQueryFrontendQueryPlanner, modules.UserInvisibleModule)
@@ -1456,10 +1520,12 @@ func (t *Mimir) setupModuleManager() error {
 		MemberlistKV:                     {API, Vault},
 		Overrides:                        {RuntimeConfig},
 		OverridesExporter:                {Overrides, MemberlistKV, Vault},
-		Querier:                          {TenantFederation, Vault},
+		Querier:                          {TenantFederation, Vault, QuerierLifecycler},
+		QuerierLifecycler:                {API, RuntimeConfig, MemberlistKV, Vault},
 		QuerierQueryPlanner:              {API, ActivityTracker},
+		QuerierRing:                      {API, RuntimeConfig, MemberlistKV, Vault},
 		QueryFrontend:                    {QueryFrontendTripperware, MemberlistKV, Vault},
-		QueryFrontendQueryPlanner:        {API, ActivityTracker},
+		QueryFrontendQueryPlanner:        {API, ActivityTracker, Overrides, QuerierRing},
 		QueryFrontendTopicOffsetsReaders: {IngesterPartitionRing},
 		QueryFrontendTripperware:         {API, Overrides, QueryFrontendCodec, QueryFrontendTopicOffsetsReaders, QueryFrontendQueryPlanner},
 		QueryScheduler:                   {API, Overrides, MemberlistKV, Vault},

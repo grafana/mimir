@@ -425,7 +425,7 @@ func TestRuler_PrometheusRules(t *testing.T) {
 		return &alertingRule{
 			Name:   name,
 			Query:  "up < 1",
-			State:  "inactive",
+			State:  "unknown",
 			Health: "unknown",
 			Type:   "alerting",
 			Alerts: []*Alert{},
@@ -468,7 +468,7 @@ func TestRuler_PrometheusRules(t *testing.T) {
 						&alertingRule{
 							Name:   "UP_ALERT",
 							Query:  "up < 1",
-							State:  "inactive",
+							State:  "unknown",
 							Health: "unknown",
 							Type:   "alerting",
 							Alerts: []*Alert{},
@@ -535,7 +535,7 @@ func TestRuler_PrometheusRules(t *testing.T) {
 						&alertingRule{
 							Name:   "UP_ALERT",
 							Query:  "up < 1",
-							State:  "inactive",
+							State:  "unknown",
 							Health: "unknown",
 							Type:   "alerting",
 							Alerts: []*Alert{},
@@ -592,7 +592,7 @@ func TestRuler_PrometheusRules(t *testing.T) {
 						&alertingRule{
 							Name:   "UP_ALERT",
 							Query:  "up < 1",
-							State:  "inactive",
+							State:  "unknown",
 							Health: "unknown",
 							Type:   "alerting",
 							Alerts: []*Alert{},
@@ -630,7 +630,7 @@ func TestRuler_PrometheusRules(t *testing.T) {
 						&alertingRule{
 							Name:   "UP_ALERT",
 							Query:  "up < 1",
-							State:  "inactive",
+							State:  "unknown",
 							Health: "unknown",
 							Type:   "alerting",
 							Alerts: []*Alert{},
@@ -665,7 +665,7 @@ func TestRuler_PrometheusRules(t *testing.T) {
 						&alertingRule{
 							Name:          "UP_ALERT_WITH_KEEP_FIRING_FOR",
 							Query:         "up < 1",
-							State:         "inactive",
+							State:         "unknown",
 							Health:        "unknown",
 							Type:          "alerting",
 							Duration:      time.Minute.Seconds(),
@@ -698,7 +698,7 @@ func TestRuler_PrometheusRules(t *testing.T) {
 						&alertingRule{
 							Name:   "UP_ALERT",
 							Query:  "up < 1",
-							State:  "inactive",
+							State:  "unknown",
 							Health: "unknown",
 							Type:   "alerting",
 							Alerts: []*Alert{},
@@ -758,7 +758,7 @@ func TestRuler_PrometheusRules(t *testing.T) {
 						&alertingRule{
 							Name:   "UP_ALERT",
 							Query:  "up < 1",
-							State:  "inactive",
+							State:  "unknown",
 							Health: "unknown",
 							Type:   "alerting",
 							Alerts: nil,
@@ -789,7 +789,7 @@ func TestRuler_PrometheusRules(t *testing.T) {
 						&alertingRule{
 							Name:   "UP_ALERT",
 							Query:  "up < 1",
-							State:  "inactive",
+							State:  "unknown",
 							Health: "unknown",
 							Type:   "alerting",
 							Alerts: []*Alert{},
@@ -1095,7 +1095,7 @@ func TestRuler_PrometheusRules(t *testing.T) {
 						&alertingRule{
 							Name:   "UniqueNamedRuleN3G2",
 							Query:  "up < 1",
-							State:  "inactive",
+							State:  "unknown",
 							Health: "unknown",
 							Type:   "alerting",
 							Alerts: []*Alert{},
@@ -1127,7 +1127,7 @@ func TestRuler_PrometheusRules(t *testing.T) {
 						&alertingRule{
 							Name:   "UniqueNamedRuleN3G2",
 							Query:  "up < 1",
-							State:  "inactive",
+							State:  "unknown",
 							Health: "unknown",
 							Type:   "alerting",
 							Alerts: []*Alert{},
@@ -1161,7 +1161,7 @@ func TestRuler_PrometheusRules(t *testing.T) {
 						&alertingRule{
 							Name:   "UniqueNamedRuleN3G2",
 							Query:  "up < 1",
-							State:  "inactive",
+							State:  "unknown",
 							Health: "unknown",
 							Type:   "alerting",
 							Alerts: []*Alert{},
@@ -1238,6 +1238,113 @@ func TestRuler_PrometheusRules(t *testing.T) {
 		})
 
 	}
+}
+
+func TestRuler_PrometheusRules_Evaluation(t *testing.T) {
+	const (
+		userID   = "user1"
+		interval = 5 * time.Second
+	)
+
+	groupName := func(group int) string {
+		return fmt.Sprintf(")(_+?/|group%d+/?", group)
+	}
+
+	namespaceName := func(ns int) string {
+		return fmt.Sprintf(")(_+?/|namespace%d+/?", ns)
+	}
+
+	cfg := defaultRulerConfig(t)
+	cfg.TenantFederation.Enabled = true
+	storageRules := map[string]rulespb.RuleGroupList{
+		userID: {
+			{
+				Name:      groupName(1),
+				Namespace: namespaceName(1),
+				User:      userID,
+				Rules: []*rulespb.RuleDesc{
+					createRecordingRule("NonUniqueNamedRule", "up"),
+					createAlertingRule(fmt.Sprintf("UniqueNamedRuleN%dG%d", 1, 1), "up < 1"),
+				},
+				Interval: interval,
+			},
+		},
+	}
+
+	r := prepareRuler(t, cfg, newMockRuleStore(storageRules), withRulerAddrAutomaticMapping(), withLimits(validation.MockDefaultOverrides()), withStart())
+
+	// Rules will be synchronized asynchronously, so we wait until the expected number of rule groups has been synched.
+	test.Poll(t, 5*time.Second, 1, func() interface{} {
+		ctx := user.InjectOrgID(context.Background(), userID)
+		rls, err := r.Rules(ctx, &RulesRequest{})
+		if err != nil {
+			return 0
+		}
+		return len(rls.Groups)
+	})
+
+	a := NewAPI(r, r.store, mimirtest.NewTestingLogger(t))
+	req := requestFor(t, http.MethodGet, "https://localhost:8080/prometheus/api/v1/rules?type=alert", nil, userID)
+
+	type apiResponse struct {
+		Data struct {
+			Groups []struct {
+				Rules []struct {
+					State string `json:"state"`
+				} `json:"rules"`
+				LastEvaluation time.Time `json:"lastEvaluation"`
+				EvaluationTime float64   `json:"evaluationTime"`
+			} `json:"groups"`
+		} `json:"data"`
+	}
+
+	t.Run("initially unknown (before evaluation)", func(t *testing.T) {
+		w := httptest.NewRecorder()
+		a.PrometheusRules(w, req)
+		resp := w.Result()
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+		body, err := io.ReadAll(resp.Body)
+		require.NoError(t, err)
+		var got apiResponse
+		require.NoError(t, json.Unmarshal(body, &got))
+		require.Len(t, got.Data.Groups, 1)
+		require.Zero(t, got.Data.Groups[0].LastEvaluation)
+		require.Zero(t, got.Data.Groups[0].EvaluationTime)
+		require.Len(t, got.Data.Groups[0].Rules, 1)
+		require.Equal(t, got.Data.Groups[0].Rules[0].State, "unknown")
+	})
+
+	// Wait for rule evaluations.
+	test.Poll(t, 5*time.Second, 1, func() interface{} {
+		ctx := user.InjectOrgID(context.Background(), userID)
+		rls, err := r.Rules(ctx, &RulesRequest{})
+		if err != nil {
+			return 0
+		}
+		var evaluated int
+		for _, group := range rls.Groups {
+			if !group.EvaluationTimestamp.IsZero() {
+				evaluated++
+			}
+		}
+		return evaluated
+	})
+
+	t.Run("inactive (after evaluation)", func(t *testing.T) {
+		w := httptest.NewRecorder()
+		a.PrometheusRules(w, req)
+		resp := w.Result()
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+		body, err := io.ReadAll(resp.Body)
+		require.NoError(t, err)
+		var got apiResponse
+		require.NoError(t, json.Unmarshal(body, &got))
+		require.Len(t, got.Data.Groups, 1)
+		require.NotZero(t, got.Data.Groups[0].LastEvaluation)
+		require.NotZero(t, got.Data.Groups[0].EvaluationTime)
+		require.Len(t, got.Data.Groups[0].Rules, 1)
+		require.Equal(t, got.Data.Groups[0].Rules[0].State, "inactive")
+	})
 }
 
 func TestRuler_PrometheusAlerts(t *testing.T) {

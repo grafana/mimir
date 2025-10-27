@@ -28,7 +28,7 @@ func TestFunctionDeduplicateAndMerge(t *testing.T) {
 
 	storage := promqltest.LoadedStorage(t, data)
 	opts := NewTestEngineOpts()
-	planner, err := NewQueryPlanner(opts)
+	planner, err := NewQueryPlanner(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(t, err)
 	engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), planner)
 	require.NoError(t, err)
@@ -86,6 +86,7 @@ func TestFunctionDeduplicateAndMerge(t *testing.T) {
 		"ln":                           `ln({__name__=~"float.*"})`,
 		"log10":                        `log10({__name__=~"float.*"})`,
 		"log2":                         `log2({__name__=~"float.*"})`,
+		"mad_over_time":                `mad_over_time({__name__=~"float.*"}[1m])`,
 		"max_over_time":                `max_over_time({__name__=~"float.*"}[1m])`,
 		"min_over_time":                `min_over_time({__name__=~"float.*"}[1m])`,
 		"minute":                       `minute({__name__=~"float.*"})`,

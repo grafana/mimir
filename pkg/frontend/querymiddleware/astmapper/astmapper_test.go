@@ -355,7 +355,7 @@ func TestSharding_BinaryExpressionsDontTakeExponentialTime(t *testing.T) {
 	defer cancel()
 
 	shardCount := 2
-	summer := NewQueryShardSummer(shardCount, false, EmbeddedQueriesSquasher, log.NewNopLogger(), NewMapperStats())
+	summer := NewQueryShardSummer(shardCount, EmbeddedQueriesSquasher, log.NewNopLogger(), NewMapperStats())
 	_, err = summer.Map(ctx, expr)
 	require.NoError(t, err)
 }

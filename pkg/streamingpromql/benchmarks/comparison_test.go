@@ -32,6 +32,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/streamingpromql"
 	"github.com/grafana/mimir/pkg/streamingpromql/testutils"
+	"github.com/grafana/mimir/pkg/util/limiter"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
@@ -43,7 +44,7 @@ func BenchmarkQuery(b *testing.B) {
 
 	opts := streamingpromql.NewTestEngineOpts()
 	prometheusEngine := promql.NewEngine(opts.CommonOpts)
-	planner, err := streamingpromql.NewQueryPlanner(opts)
+	planner, err := streamingpromql.NewQueryPlanner(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(b, err)
 	mimirEngine, err := streamingpromql.NewEngine(opts, streamingpromql.NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), planner)
 	require.NoError(b, err)
@@ -96,10 +97,10 @@ func TestBothEnginesReturnSameResultsForBenchmarkQueries(t *testing.T) {
 	cases := TestCases(metricSizes)
 
 	opts := streamingpromql.NewTestEngineOpts()
-	prometheusEngine := promql.NewEngine(opts.CommonOpts)
+	prometheusEngine := limiter.NewUnlimitedMemoryTrackerPromQLEngine(promql.NewEngine(opts.CommonOpts))
 	limitsProvider := streamingpromql.NewStaticQueryLimitsProvider(0)
 	queryMetrics := stats.NewQueryMetrics(nil)
-	planner, err := streamingpromql.NewQueryPlanner(opts)
+	planner, err := streamingpromql.NewQueryPlanner(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(t, err)
 	mimirEngine, err := streamingpromql.NewEngine(opts, limitsProvider, queryMetrics, planner)
 	require.NoError(t, err)
@@ -128,7 +129,7 @@ func TestBenchmarkSetup(t *testing.T) {
 	q := createBenchmarkQueryable(t, []int{1})
 
 	opts := streamingpromql.NewTestEngineOpts()
-	planner, err := streamingpromql.NewQueryPlanner(opts)
+	planner, err := streamingpromql.NewQueryPlanner(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(t, err)
 	mimirEngine, err := streamingpromql.NewEngine(opts, streamingpromql.NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), planner)
 	require.NoError(t, err)

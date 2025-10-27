@@ -58,7 +58,7 @@ type Config struct {
 
 	ShuffleShardingIngestersEnabled bool `yaml:"shuffle_sharding_ingesters_enabled" category:"advanced"`
 
-	PreferAvailabilityZone                         string        `yaml:"prefer_availability_zone" category:"experimental" doc:"hidden"`
+	PreferAvailabilityZone                         string        `yaml:"prefer_availability_zone" category:"experimental"`
 	StreamingChunksPerIngesterSeriesBufferSize     uint64        `yaml:"streaming_chunks_per_ingester_series_buffer_size" category:"advanced"`
 	StreamingChunksPerStoreGatewaySeriesBufferSize uint64        `yaml:"streaming_chunks_per_store_gateway_series_buffer_size" category:"advanced"`
 	MinimizeIngesterRequests                       bool          `yaml:"minimize_ingester_requests" category:"advanced"`
@@ -75,6 +75,8 @@ type Config struct {
 
 	// PromQL engine config.
 	EngineConfig engine.Config `yaml:",inline"`
+
+	Ring RingConfig `yaml:"ring"`
 }
 
 const (
@@ -88,12 +90,13 @@ const (
 )
 
 // RegisterFlags adds the flags required to config this to the given FlagSet.
-func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
+func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	cfg.StoreGatewayClient.RegisterFlagsWithPrefix("querier.store-gateway-client", f)
+	cfg.Ring.RegisterFlags(f, logger)
 
 	f.DurationVar(&cfg.QueryStoreAfter, queryStoreAfterFlag, 12*time.Hour, "The time after which a metric should be queried from storage and not just ingesters. 0 means all queries are sent to store. If this option is enabled, the time range of the query sent to the store-gateway will be manipulated to ensure the query end is not more recent than 'now - query-store-after'.")
 	f.BoolVar(&cfg.ShuffleShardingIngestersEnabled, "querier.shuffle-sharding-ingesters-enabled", true, fmt.Sprintf("Fetch in-memory series from the minimum set of required ingesters, selecting only ingesters which may have received series since -%s. If this setting is false or -%s is '0', queriers always query all ingesters (ingesters shuffle sharding on read path is disabled).", validation.QueryIngestersWithinFlag, validation.QueryIngestersWithinFlag))
-	f.StringVar(&cfg.PreferAvailabilityZone, "querier.prefer-availability-zone", "", "Preferred availability zone to query ingesters from when using the ingest storage.")
+	f.StringVar(&cfg.PreferAvailabilityZone, "querier.prefer-availability-zone", "", "When set, the querier prioritizes querying data from ingesters and store-gateways in this availability zone.")
 
 	f.BoolVar(&cfg.MinimizeIngesterRequests, minimiseIngesterRequestsFlag, true, "If true, when querying ingesters, only the minimum required ingesters required to reach quorum will be queried initially, with other ingesters queried only if needed due to failures from the initial set of ingesters. Enabling this option reduces resource consumption for the happy path at the cost of increased latency for the unhappy path.")
 	f.DurationVar(&cfg.MinimiseIngesterRequestsHedgingDelay, minimiseIngesterRequestsFlag+"-hedging-delay", 3*time.Second, "Delay before initiating requests to further ingesters when request minimization is enabled and the initially selected set of ingesters have not all responded. Ignored if -"+minimiseIngesterRequestsFlag+" is not enabled.")
@@ -199,7 +202,7 @@ func New(cfg Config, limits *validation.Overrides, distributor Distributor, quer
 
 	switch cfg.QueryEngine {
 	case PrometheusEngine:
-		eng = promql.NewEngine(opts)
+		eng = limiter.NewUnlimitedMemoryTrackerPromQLEngine(promql.NewEngine(opts))
 	case MimirEngine:
 		limitsProvider := NewTenantQueryLimitsProvider(limits)
 		var err error
@@ -209,7 +212,7 @@ func New(cfg Config, limits *validation.Overrides, distributor Distributor, quer
 		}
 
 		if cfg.EnableQueryEngineFallback {
-			prometheusEngine := promql.NewEngine(opts)
+			prometheusEngine := limiter.NewUnlimitedMemoryTrackerPromQLEngine(promql.NewEngine(opts))
 			eng = compat.NewEngineWithFallback(streamingEngine, prometheusEngine, reg, logger)
 		} else {
 			eng = streamingEngine
@@ -459,8 +462,7 @@ func (mq *multiQuerier) Select(ctx context.Context, _ bool, sp *storage.SelectHi
 		}
 	}
 
-	// we have all the sets from different sources (chunk from store, chunks from ingesters,
-	// time series from store and time series from ingesters).
+	// we have all the sets from different sources (chunk from store, chunks from ingesters).
 	// mergeSeriesSets will return sorted set.
 	return mq.mergeSeriesSets(result)
 }
@@ -814,6 +816,7 @@ type RequestMetrics struct {
 	ReceivedMessageSize *prometheus.HistogramVec
 	SentMessageSize     *prometheus.HistogramVec
 	InflightRequests    *prometheus.GaugeVec
+	PlansReceived       *prometheus.CounterVec
 }
 
 func NewRequestMetrics(reg prometheus.Registerer) *RequestMetrics {
@@ -840,5 +843,10 @@ func NewRequestMetrics(reg prometheus.Registerer) *RequestMetrics {
 			Name: "cortex_querier_inflight_requests",
 			Help: "Current number of inflight requests to the querier.",
 		}, []string{"method", "route"}),
+
+		PlansReceived: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_querier_received_query_plans_total",
+			Help: "Total number of query plans received by the querier.",
+		}, []string{"version"}),
 	}
 }
