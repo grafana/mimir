@@ -483,6 +483,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
             !=
             max by (%(alert_aggregation_labels)s, %(per_query_path_label)s) (cortex_querier_maximum_supported_query_plan_version)
           ||| % $._config,
+          'for': '15m',
           labels: {
             severity: 'warning',
           },
@@ -500,6 +501,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
             !=
             max by (%(alert_aggregation_labels)s, %(per_query_path_label)s) (cortex_query_frontend_querier_ring_calculated_maximum_supported_query_plan_version)
           ||| % $._config,
+          'for': '15m',
           labels: {
             severity: 'warning',
           },
@@ -534,6 +536,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
               )
             )
           ||| % $._config,
+          'for': '15m',
           labels: {
             severity: 'warning',
           },
@@ -549,6 +552,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
           expr: |||
             count by (%(alert_aggregation_labels)s, %(per_query_path_label)s) (cortex_query_frontend_querier_ring_calculated_maximum_supported_query_plan_version == -1) > 0
           ||| % $._config,
+          'for': '5m',
           labels: {
             severity: 'warning',
           },

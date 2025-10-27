@@ -278,6 +278,7 @@ groups:
             min by (cluster, namespace, container) (cortex_querier_maximum_supported_query_plan_version)
             !=
             max by (cluster, namespace, container) (cortex_querier_maximum_supported_query_plan_version)
+          for: 15m
           labels:
             severity: warning
         - alert: MimirMixedQueryFrontendQueryPlanVersionSupport
@@ -289,6 +290,7 @@ groups:
             min by (cluster, namespace, container) (cortex_query_frontend_querier_ring_calculated_maximum_supported_query_plan_version)
             !=
             max by (cluster, namespace, container) (cortex_query_frontend_querier_ring_calculated_maximum_supported_query_plan_version)
+          for: 15m
           labels:
             severity: warning
         - alert: MimirQueryFrontendsAndQueriersDisagreeOnSupportedQueryPlanVersion
@@ -317,6 +319,7 @@ groups:
                 "query_path", "$2", "container", "(query-frontend)?-?(.*)-?(query-frontend)?"
               )
             )
+          for: 15m
           labels:
             severity: warning
         - alert: MimirQueryFrontendNotComputingSupportedQueryPlanVersion
@@ -326,6 +329,7 @@ groups:
             runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirqueryfrontendnotcomputingsupportedqueryplanversion
           expr: |
             count by (cluster, namespace, container) (cortex_query_frontend_querier_ring_calculated_maximum_supported_query_plan_version == -1) > 0
+          for: 5m
           labels:
             severity: warning
     - name: mimir_instance_limits_alerts
