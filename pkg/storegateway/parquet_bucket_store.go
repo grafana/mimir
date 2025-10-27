@@ -369,6 +369,7 @@ func (s *ParquetBucketStore) LabelNames(ctx context.Context, req *storepb.LabelN
 				return
 			}
 			if !converted {
+				level.Warn(spanlogger.FromContext(gctx, s.logger)).Log("msg", "query touches a block that is not yet converted to Parquet", "block", b.meta.ULID.String())
 				return
 			}
 			b.MarkConverted()
