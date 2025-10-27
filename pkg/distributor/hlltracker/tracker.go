@@ -149,6 +149,12 @@ func (t *Tracker) starting(ctx context.Context) error {
 	// Initialize current minute
 	t.currentMinute = time.Now().Unix() / 60
 	level.Info(t.logger).Log("msg", "partition series tracker starting", "current_minute", t.currentMinute)
+
+	// If KV client is enabled, start watching for remote updates (Phase 2)
+	if t.kvClient != nil {
+		level.Info(t.logger).Log("msg", "starting KV watch for remote HLL updates")
+	}
+
 	return nil
 }
 
@@ -163,6 +169,9 @@ func (t *Tracker) running(ctx context.Context) error {
 		t.kvPushTicker = time.NewTicker(time.Duration(t.cfg.UpdateIntervalSeconds) * time.Second)
 		defer t.kvPushTicker.Stop()
 		kvPushChan = t.kvPushTicker.C
+
+		// Start KV watch in a separate goroutine
+		go t.watchKV(ctx)
 	}
 
 	for {
@@ -358,6 +367,87 @@ func (t *Tracker) pushToKV(ctx context.Context) {
 // Format: "partition-series/<partition_id>/<unix_minute>"
 func makePartitionHLLKey(partitionID int32, unixMinute int64) string {
 	return fmt.Sprintf("partition-series/%d/%d", partitionID, unixMinute)
+}
+
+// watchKV watches the KV store for remote HLL updates and merges them into local state.
+// This runs in a separate goroutine and blocks until context is cancelled.
+func (t *Tracker) watchKV(ctx context.Context) {
+	// Watch all keys with "partition-series/" prefix
+	// The KV client should have been created with the appropriate prefix/codec
+	t.kvClient.WatchPrefix(ctx, "partition-series/", func(key string, value interface{}) bool {
+		if value == nil {
+			// Key was deleted, ignore (cleanup happens during rotation)
+			return true
+		}
+
+		state, ok := value.(*PartitionHLLState)
+		if !ok {
+			level.Error(t.logger).Log("msg", "unexpected type in KV watch", "key", key, "type", fmt.Sprintf("%T", value))
+			return true // Continue watching
+		}
+
+		// Merge remote state into local
+		t.mergeRemoteState(state)
+
+		return true // Continue watching
+	})
+
+	level.Info(t.logger).Log("msg", "KV watch terminated")
+}
+
+// mergeRemoteState merges a remote HLL state into the local partition tracker.
+// This is called when we receive updates from other distributors via KV watch.
+func (t *Tracker) mergeRemoteState(remoteState *PartitionHLLState) {
+	if remoteState == nil || remoteState.HLL == nil {
+		return
+	}
+
+	pt := t.getOrCreatePartition(remoteState.PartitionID)
+
+	pt.mu.Lock()
+	defer pt.mu.Unlock()
+
+	// Get current minute to determine where to merge
+	t.currentMinuteMu.RLock()
+	currentMinute := t.currentMinute
+	t.currentMinuteMu.RUnlock()
+
+	if remoteState.UnixMinute == currentMinute {
+		// Merge into current HLL
+		pt.currentHLL.Merge(remoteState.HLL)
+		level.Debug(t.logger).Log(
+			"msg", "merged remote state into current HLL",
+			"partition", remoteState.PartitionID,
+			"minute", remoteState.UnixMinute,
+		)
+	} else if remoteState.UnixMinute < currentMinute && remoteState.UnixMinute >= currentMinute-int64(t.cfg.TimeWindowMinutes) {
+		// Merge into historical HLL for this minute
+		existingHLL, exists := pt.historicalHLLs[remoteState.UnixMinute]
+		if !exists {
+			// Create new historical HLL
+			pt.historicalHLLs[remoteState.UnixMinute] = remoteState.HLL.Clone()
+		} else {
+			// Merge with existing
+			existingHLL.Merge(remoteState.HLL)
+		}
+
+		// Rebuild merged historical cache
+		pt.rebuildMergedHistorical(uint8(t.cfg.HLLPrecision))
+
+		level.Debug(t.logger).Log(
+			"msg", "merged remote state into historical HLL",
+			"partition", remoteState.PartitionID,
+			"minute", remoteState.UnixMinute,
+		)
+	} else {
+		// State is too old or too far in future, ignore
+		level.Debug(t.logger).Log(
+			"msg", "ignoring remote state outside time window",
+			"partition", remoteState.PartitionID,
+			"minute", remoteState.UnixMinute,
+			"current_minute", currentMinute,
+		)
+	}
 }
 
 // getOrCreatePartition returns or creates a partition tracker.
