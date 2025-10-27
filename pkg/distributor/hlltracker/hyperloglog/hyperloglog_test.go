@@ -90,8 +90,8 @@ func TestAdd(t *testing.T) {
 
 	// Count should be approximately 100
 	count = hll.Count()
-	assert.Greater(t, count, uint64(80))  // Within ~20% error
-	assert.Less(t, count, uint64(120))    // Within ~20% error
+	assert.Greater(t, count, uint64(80)) // Within ~20% error
+	assert.Less(t, count, uint64(120))   // Within ~20% error
 }
 
 func TestMerge(t *testing.T) {
@@ -185,10 +185,10 @@ func TestClone(t *testing.T) {
 
 func TestAccuracyLargeCardinality(t *testing.T) {
 	tests := []struct {
-		name         string
-		precision    uint8
-		cardinality  uint32
-		maxErrorPct  float64
+		name        string
+		precision   uint8
+		cardinality uint32
+		maxErrorPct float64
 	}{
 		{
 			name:        "precision 11, 1K items",

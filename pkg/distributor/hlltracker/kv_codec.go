@@ -15,10 +15,10 @@ import (
 // PartitionHLLState represents the HyperLogLog state for a single partition and minute.
 // This is stored in the memberlist KV store and synchronized across distributors.
 type PartitionHLLState struct {
-	PartitionID  int32
-	UnixMinute   int64
-	HLL          *hyperloglog.HyperLogLog
-	UpdatedAtMs  int64
+	PartitionID int32
+	UnixMinute  int64
+	HLL         *hyperloglog.HyperLogLog
+	UpdatedAtMs int64
 }
 
 // partitionHLLCodec implements codec.Codec for PartitionHLLState.
