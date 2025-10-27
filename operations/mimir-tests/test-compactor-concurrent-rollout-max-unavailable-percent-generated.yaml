@@ -212,6 +212,14 @@ rules:
   - get
   - update
   - create
+- apiGroups:
+  - rollout-operator.grafana.com
+  resources:
+  - zoneawarepoddisruptionbudgets
+  verbs:
+  - get
+  - list
+  - watch
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
@@ -841,7 +849,7 @@ spec:
         - -kubernetes.namespace=default
         - -use-zone-tracker=true
         - -zone-tracker.config-map-name=rollout-operator-zone-tracker
-        image: grafana/rollout-operator:v0.29.0
+        image: grafana/rollout-operator:v0.31.1
         imagePullPolicy: IfNotPresent
         name: rollout-operator
         ports:
