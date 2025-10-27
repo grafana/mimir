@@ -128,7 +128,11 @@ func (r *Resolver) lookupSRV(ctx context.Context, conf *dns.ClientConfig, servic
 				Port:     addr.Port,
 			})
 		default:
-			return "", nil, fmt.Errorf("invalid SRV response record %s", record)
+			level.Warn(r.logger).Log(
+				"msg", "unexpected non-SRV response record",
+				"target", target,
+				"record", fmt.Sprintf("%+v", record),
+			)
 		}
 	}
 
