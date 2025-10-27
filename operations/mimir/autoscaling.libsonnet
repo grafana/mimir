@@ -602,16 +602,25 @@
     if !$._config.autoscaling_ruler_querier_enabled then {} else $.removeReplicasFromSpec
   ),
 
-  ruler_query_frontend_scaled_object: if !$._config.autoscaling_ruler_query_frontend_enabled || !$._config.ruler_remote_evaluation_enabled then null else
+  //
+  // Ruler-query-frontends
+  //
+
+  newRulerQueryFrontendScaledObject(name, extra_matchers='')::
     $.newResourceScaledObject(
-      name='ruler-query-frontend',
+      name=name,
+      container_name='ruler-query-frontend',
       cpu_requests=$.ruler_query_frontend_container.resources.requests.cpu,
       memory_requests=$.ruler_query_frontend_container.resources.requests.memory,
       min_replicas=$._config.autoscaling_ruler_query_frontend_min_replicas,
       max_replicas=$._config.autoscaling_ruler_query_frontend_max_replicas,
       cpu_target_utilization=$._config.autoscaling_ruler_query_frontend_cpu_target_utilization,
       memory_target_utilization=$._config.autoscaling_ruler_query_frontend_memory_target_utilization,
+      extra_matchers=extra_matchers,
     ),
+
+  ruler_query_frontend_scaled_object: if !$._config.autoscaling_ruler_query_frontend_enabled || !$._config.ruler_remote_evaluation_enabled then null else
+    $.newRulerQueryFrontendScaledObject('ruler-query-frontend'),
 
   ruler_query_frontend_deployment: overrideSuperIfExists(
     'ruler_query_frontend_deployment',
@@ -620,6 +629,10 @@
         queryFrontendReplicas($._config.autoscaling_ruler_querier_max_replicas) else
         {}
   ),
+
+  //
+  // Distributors
+  //
 
   newDistributorScaledObject(name, extra_matchers='')::
     $.newResourceScaledObject(
