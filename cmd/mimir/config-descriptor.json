@@ -5196,17 +5196,6 @@
         },
         {
           "kind": "field",
-          "name": "metric_relabeling_enabled",
-          "required": false,
-          "desc": "Enable metric relabeling for the tenant. This configuration option can be used to forcefully disable metric relabeling on a per-tenant basis.",
-          "fieldValue": null,
-          "fieldDefaultValue": true,
-          "fieldFlag": "distributor.metric-relabeling-enabled",
-          "fieldType": "boolean",
-          "fieldCategory": "experimental"
-        },
-        {
-          "kind": "field",
           "name": "max_global_series_per_user",
           "required": false,
           "desc": "The maximum number of in-memory series per tenant, across the cluster before replication. 0 to disable.",
