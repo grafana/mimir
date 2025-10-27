@@ -36,7 +36,7 @@ func TestRingQueryPlanVersionProvider(t *testing.T) {
 		expectedError   string
 	}{
 		"no instances in the ring": {
-			expectedError: "could not get all queriers from the ring: empty ring",
+			expectedError: "could not compute maximum supported query plan version: could not get all queriers from the ring: empty ring",
 		},
 		"one instance in the ring, has no version": {
 			instances: []mockInstance{
@@ -44,7 +44,7 @@ func TestRingQueryPlanVersionProvider(t *testing.T) {
 					state: ring.ACTIVE,
 				},
 			},
-			expectedError: "one or more queriers in the ring is not reporting a supported query plan version",
+			expectedError: "could not compute maximum supported query plan version: one or more queriers in the ring is not reporting a supported query plan version",
 		},
 		"one instance in the ring, has version and is active": {
 			instances: []mockInstance{
@@ -94,7 +94,7 @@ func TestRingQueryPlanVersionProvider(t *testing.T) {
 					state: ring.ACTIVE,
 				},
 			},
-			expectedError: "one or more queriers in the ring is not reporting a supported query plan version",
+			expectedError: "could not compute maximum supported query plan version: one or more queriers in the ring is not reporting a supported query plan version",
 		},
 		"many instances in the ring, some have no version": {
 			instances: []mockInstance{
@@ -109,7 +109,7 @@ func TestRingQueryPlanVersionProvider(t *testing.T) {
 					state: ring.ACTIVE,
 				},
 			},
-			expectedError: "one or more queriers in the ring is not reporting a supported query plan version",
+			expectedError: "could not compute maximum supported query plan version: one or more queriers in the ring is not reporting a supported query plan version",
 		},
 		"many instances in the ring, all have the same version": {
 			instances: []mockInstance{
@@ -175,7 +175,7 @@ func TestRingQueryPlanVersionProvider(t *testing.T) {
 			require.NoError(t, services.StartAndAwaitRunning(ctx, r))
 			t.Cleanup(func() { _ = services.StopAndAwaitTerminated(ctx, r) })
 
-			versionProvider := NewRingQueryPlanVersionProvider(r, reg)
+			versionProvider := NewRingQueryPlanVersionProvider(r, reg, log.NewNopLogger())
 			version, err := versionProvider.GetMaximumSupportedQueryPlanVersion(ctx)
 			if testCase.expectedError != "" {
 				require.EqualError(t, err, testCase.expectedError)
