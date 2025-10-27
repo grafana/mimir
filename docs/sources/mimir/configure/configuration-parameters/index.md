@@ -2816,14 +2816,14 @@ alertmanager_client:
 # CLI flag: -alertmanager.strict-initialization-enabled
 [strict_initialization: <boolean> | default = false]
 
-# (advanced) Enable UTF-8 strict mode. Allows UTF-8 characters in the matchers
-# for routes and inhibition rules, in silences, and in the labels for alerts. It
-# is recommended that all tenants run the `migrate-utf8` command in mimirtool
-# before enabling this mode. Otherwise, some tenant configurations might fail to
-# load. For more information, refer to [Enable
+# (deprecated) Enable UTF-8 strict mode. Allows UTF-8 characters in the matchers
+# for routes and inhibition rules, in silences, and in the labels for alerts.
+# This flag is deprecated since Mimir 3.1 and will be removed in Mimir 3.3.
+# UTF-8 strict mode will become the default behavior. For more information,
+# refer to [Enable
 # UTF-8](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/components/alertmanager/#enable-utf-8).
 # CLI flag: -alertmanager.utf8-strict-mode-enabled
-[utf8_strict_mode: <boolean> | default = false]
+[utf8_strict_mode: <boolean> | default = true]
 
 # (experimental) Enable logging when parsing label matchers. This flag is
 # intended to be used with -alertmanager.utf8-strict-mode-enabled to validate

@@ -1174,6 +1174,7 @@
   "alertmanager.alertmanager-client.cluster-validation.label": "",
   "alertmanager.persist-interval": 900000000000,
   "alertmanager.enable-state-cleanup": true,
+  "alertmanager.utf8-strict-mode-enabled": true,
   "alertmanager-storage.backend": "filesystem",
   "alertmanager-storage.s3.endpoint": "",
   "alertmanager-storage.s3.region": "",
