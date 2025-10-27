@@ -4,7 +4,6 @@ package plan
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/prometheus/prometheus/model/labels"
 
@@ -46,7 +45,7 @@ func NewEliminateDeduplicateAndMergeOptimizationPass(enableDelayedNameRemoval bo
 }
 
 func (e *EliminateDeduplicateAndMergeOptimizationPass) Name() string {
-	return fmt.Sprintf("Eliminate DeduplicateAndMerge (enableDelayedNameRemoval: %t)", e.enableDelayedNameRemoval)
+	return "Eliminate DeduplicateAndMerge"
 }
 
 func (e *EliminateDeduplicateAndMergeOptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan, _ planning.QueryPlanVersion) (*planning.QueryPlan, error) {
