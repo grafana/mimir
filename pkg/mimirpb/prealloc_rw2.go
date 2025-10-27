@@ -4,18 +4,84 @@ package mimirpb
 
 import (
 	"fmt"
+	"sync"
 
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/util/zeropool"
 )
+
+const (
+	minPreallocatedTimeseriesRW2 = 100
+	maxPreallocatedTimeseriesRW2 = 10000
+	minPreallocatedLabelsRefs    = 20
+	maxPreallocatedLabelsRefs    = 200
+)
+
+var (
+	preallocTimeseriesRW2SlicePool = sync.Pool{
+		New: func() interface{} {
+			return make([]TimeSeriesRW2, 0, minPreallocatedTimeseriesRW2)
+		},
+	}
+
+	// preallocLabelsRefsSlicePool pools a `*[]uint32` under the hood.
+	// Zeropool is a thin wrapper that encapsulates the extra pointer ref/deref for us.
+	// We can't just pool a []uint32 directly, as Go seems to try too hard to optimize around it and injects unexpected copies/allocations,
+	// in a way we don't see with slices of less primitive types.
+	preallocLabelsRefsSlicePool = zeropool.New(func() []uint32 {
+		return make([]uint32, 0, minPreallocatedLabelsRefs)
+	})
+)
+
+func labelsRefsSliceFromPool() []uint32 {
+	return preallocLabelsRefsSlicePool.Get()
+}
+
+func reuseLabelsRefsSlice(s []uint32) {
+	if cap(s) == 0 {
+		return
+	}
+
+	if cap(s) > maxPreallocatedLabelsRefs {
+		return
+	}
+
+	for i := range s {
+		s[i] = 0
+	}
+	preallocLabelsRefsSlicePool.Put(s[:0])
+}
+
+func timeSeriesRW2SliceFromPool() []TimeSeriesRW2 {
+	return preallocTimeseriesRW2SlicePool.Get().([]TimeSeriesRW2)
+}
+
+func reuseTimeSeriesRW2Slice(s []TimeSeriesRW2) {
+	if cap(s) == 0 {
+		return
+	}
+
+	if cap(s) > maxPreallocatedTimeseriesRW2 {
+		return
+	}
+
+	for i := range s {
+		reuseLabelsRefsSlice(s[i].LabelsRefs)
+		s[i] = TimeSeriesRW2{}
+	}
+	//nolint:staticcheck // SA6002: safe to ignore and actually fixing it has some performance penalty.
+	preallocTimeseriesRW2SlicePool.Put(s[:0])
+}
 
 func ReuseRW2(req *WriteRequest) {
 	reuseSymbolsSlice(req.SymbolsRW2)
+	reuseTimeSeriesRW2Slice(req.TimeseriesRW2)
 }
 
 // FromWriteRequestToRW2Request converts a write request with RW1 fields populated to a write request with RW2 fields populated.
 // It makes a new RW2 request, leaving the original request alone - it is still up to the caller to free the provided request.
 // It might retain references in the RW1 request. It's not safe to free the RW1 request until the RW2 request is no longer used.
-func FromWriteRequestToRW2Request(rw1 *WriteRequest, commonSymbols []string, offset uint32) (*WriteRequest, error) {
+func FromWriteRequestToRW2Request(rw1 *WriteRequest, commonSymbols *CommonSymbols, offset uint32) (*WriteRequest, error) {
 	if rw1 == nil {
 		return nil, nil
 	}
@@ -61,10 +127,21 @@ func FromWriteRequestToRW2Request(rw1 *WriteRequest, commonSymbols []string, off
 		}
 	}
 
-	rw2Timeseries := make([]TimeSeriesRW2, 0, len(rw1.Timeseries)+len(rw1.Metadata)) // TODO: Pool-ify this allocation
+	expTimeseriesCount := len(rw1.Timeseries) + len(rw1.Metadata)
+	rw2Timeseries := timeSeriesRW2SliceFromPool()
+	if cap(rw2Timeseries) < expTimeseriesCount {
+		rw2Timeseries = make([]TimeSeriesRW2, 0, expTimeseriesCount)
+	}
+
 	for _, ts := range rw1.Timeseries {
-		refs := make([]uint32, 0, len(ts.Labels)*2) // TODO: Pool-ify this allocation
 		metricName := ""
+		const stringsPerLabel = 2
+		expLabelsCount := len(ts.Labels) * stringsPerLabel
+		refs := labelsRefsSliceFromPool()
+		if cap(refs) < stringsPerLabel {
+			refs = make([]uint32, 0, expLabelsCount)
+		}
+
 		for i := range ts.Labels {
 			if ts.Labels[i].Name == labels.MetricName {
 				metricName = ts.Labels[i].Value

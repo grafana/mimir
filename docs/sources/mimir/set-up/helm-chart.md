@@ -5,11 +5,21 @@ title: Deploy Mimir with Helm
 weight: 10
 ---
 
-<!-- Note: This topic is mounted in the GEM documentation. Ensure that all updates are also applicable to GEM. -->
-
 # Deploy Mimir with Helm
 
 The [`mimir-distributed` Helm chart](https://github.com/grafana/mimir/blob/main/operations/helm/charts/mimir-distributed/) for Grafana Mimir and Grafana Enterprise Metrics allows you to configure, install, and upgrade Grafana Mimir or Grafana Enterprise Metrics within a Kubernetes cluster.
+
+## Use ingest storage
+
+Grafana Mimir uses the ingest storage architecture by default when deployed with the Helm chart.
+You can configure an external Kafka backend or disable ingest storage if needed.
+
+For details, refer to [Run Grafana Mimir in production using the Helm chart](https://grafana.com/docs/helm-charts/mimir-distributed/latest/run-production-environment-with-helm/), which provides complete setup and configuration guidance for production environments.
+
+To learn more about the ingest storage architecture and related configuration options, refer to:
+
+- [About ingest storage architecture](https://grafana.com/docs/mimir/<MIMIR_VERSION>/get-started/about-grafana-mimir-architecture/about-ingest-storage-architecture/)
+- [Configure the Kafka backend](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/configure-kafka-backend/)
 
 ## Example values files
 

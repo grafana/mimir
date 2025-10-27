@@ -5,17 +5,15 @@
 package mimirpb
 
 import (
+	"unsafe"
+
 	"github.com/prometheus/prometheus/model/labels"
 )
 
-// FromLabelAdaptersToLabels converts []LabelAdapter to labels.Labels.
-// Note this is relatively expensive; see FromLabelAdaptersOverwriteLabels for a fast unsafe way.
+// FromLabelAdaptersToLabels casts []LabelAdapter to labels.Labels and sorts the Labels. It uses unsafe.
 func FromLabelAdaptersToLabels(ls []LabelAdapter) labels.Labels {
-	builder := labels.NewScratchBuilder(len(ls))
-	for _, v := range ls {
-		builder.Add(v.Name, v.Value)
-	}
-	return builder.Labels()
+	l := *(*[]labels.Label)(unsafe.Pointer(&ls))
+	return labels.New(l...)
 }
 
 // FromLabelAdaptersToLabelsWithCopy converts []LabelAdapter to labels.Labels.

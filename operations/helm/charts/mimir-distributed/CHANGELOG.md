@@ -29,8 +29,13 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 ## main / unreleased
 
+* [ENHANCEMENT] Add Support to customize gossip ring k8s service annotations. #12718
+* [ENHANCEMENT] Ruler querier and query-frontend: Add support for newly-introduced querier ring, which is used when performing query planning in query-frontends and distributing portions of the plan to queriers for execution. #13017
 
-* [ENHANCEMENT] Added `trafficDistribution` configuration option to distributor, gateway, querier, query-frontend, query-scheduler, ingester, and store-gateway services to enable same-zone traffic routing. #12243
+## 6.0.0-rc.0
+
+* [CHANGE] Upgrade Mimir to [3.0.0](https://github.com/grafana/mimir/blob/main/CHANGELOG.md#300). #13078
+* [CHANGE] Remove all remaining GEM (enterprise) references from test configurations, reference files, and values.yaml. #13005 #13006 #13007 #13008 #13009 #13010
 * [CHANGE] Minimum compatible Kubernetes version was updated to v1.29. #12527
 * [CHANGE] Mimir is deployed in the ingest storage architecture by default. #12459 #12495
   * Ingest storage is the next generation architecture of Grafana Mimir. With this architecture, the Mimir read and write paths are decoupled with Apache Kafka or Kafka-compatible backend.
@@ -38,16 +43,20 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [CHANGE] Grafana Agent: Deprecate `metaMonitoring.grafanaAgent` values. #12307
   * Grafana Agent was deprecated in early 2024 and reaches End-of-Support at the end of 2025.
   * Instead of provisioning the agent's Kubernetes resources with the chart's `metaMonitoring.grafanaAgent.enabled`, collect Mimir's meta-monitoring data with an external collector. It's recommended to use Grafana k8s-monitoring, which manages the creation and lifecycle of Alloy instances and has built-in support for collecting telemetry from Grafana LGTM stacks.
+* [CHANGE] Remove deprecated `nginx` top-level values section. #12702
+  * Use the `gateway` instead. Refer to the [migration guided](https://grafana.com/docs/helm-charts/mimir-distributed/v5.6.x/migration-guides/migrate-to-unified-proxy-deployment/) for details.
 * [CHANGE] Distributor: Reduce calculated `GOMAXPROCS` to closer to the requested number of CPUs. #12150
 * [CHANGE] Query-scheduler: The query-scheduler is now a required component that is always used by queriers and query-frontends. #12188
 * [CHANGE] Provisioner: Replace the default kubectl image, used by the provisioner job, to `alpine/kubectl`. #12498
+* [CHANGE] Ingress: Change default routes to point to non-headless services. #13064
 * [ENHANCEMENT] Gateway ingress: Support labels for gateway ingress. #11964
 * [ENHANCEMENT] Store-gateway: Configure options for emptyDir. #11951
 * [ENHANCEMENT] Add support for `revisionhistorylimit` for all deployments. #12323
 * [ENHANCEMENT] Components with predefined `GOMAXPROCS` and/or `GOMEMLIMIT` environment variables (ie. distributor, ingester, querier, ruler-querier, store-gateway) allow user-defined overrides through the components `env` values. #11983
 * [ENHANCEMENT] Add documentation for livenessProbe support in Chart. #12182
-* [ENHANCEMENT] Upgrade rollout-operator to [0.33.0](https://github.com/grafana/helm-charts/blob/main/charts/rollout-operator/README.md#upgrade-of-grafana-rollout-operator). Note required actions for upgrading the rollout-operator chart. #12591
+* [ENHANCEMENT] Upgrade rollout-operator to [0.35.1](https://github.com/grafana/helm-charts/blob/main/charts/rollout-operator/README.md#upgrade-of-grafana-rollout-operator). Note required actions for upgrading the rollout-operator chart. #12591, #12996
 * [ENHANCEMENT] Add support for `dnsConfig` for all components. #12618
+* [ENHANCEMENT] Added `trafficDistribution` configuration option to distributor, gateway, querier, query-frontend, query-scheduler, ingester, and store-gateway services to enable same-zone traffic routing. #12243
 
 ## 5.8.0
 

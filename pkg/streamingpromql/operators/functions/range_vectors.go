@@ -332,29 +332,50 @@ func sumHistograms(head, tail []promql.HPoint, emitAnnotation types.EmitAnnotati
 	sum := head[0].H.Copy() // We must make a copy of the histogram, as the ring buffer may reuse the FloatHistogram instance on subsequent steps.
 	head = head[1:]
 
-	for _, p := range head {
-		if _, counterResetCollision, err := sum.Add(p.H); err != nil {
-			err = NativeHistogramErrorToAnnotation(err, emitAnnotation)
-			return nil, err
-		} else if counterResetCollision {
-			emitAnnotation(newAdditionCounterResetCollisionWarning)
+	counterResetSeen := false
+	notCounterResetSeen := false
+
+	trackCounterReset := func(h *histogram.FloatHistogram) {
+		switch h.CounterResetHint {
+		case histogram.CounterReset:
+			counterResetSeen = true
+		case histogram.NotCounterReset:
+			notCounterResetSeen = true
 		}
 	}
 
-	for _, p := range tail {
-		if _, counterResetCollision, err := sum.Add(p.H); err != nil {
-			err = NativeHistogramErrorToAnnotation(err, emitAnnotation)
-			return nil, err
-		} else if counterResetCollision {
-			emitAnnotation(newAdditionCounterResetCollisionWarning)
+	trackCounterReset(sum)
+
+	accumulate := func(points []promql.HPoint) (bool, error) {
+		for _, p := range points {
+			trackCounterReset(p.H)
+
+			if _, _, err := sum.Add(p.H); err != nil {
+				err = NativeHistogramErrorToAnnotation(err, emitAnnotation)
+				return false, err
+			}
 		}
+
+		return true, nil
+	}
+
+	if ok, err := accumulate(head); err != nil || !ok {
+		return nil, err
+	}
+
+	if ok, err := accumulate(tail); err != nil || !ok {
+		return nil, err
+	}
+
+	if counterResetSeen && notCounterResetSeen {
+		emitAnnotation(newAggregationCounterResetCollisionWarning)
 	}
 
 	return sum, nil
 }
 
-func newAdditionCounterResetCollisionWarning(_ string, expressionPosition posrange.PositionRange) error {
-	return annotations.NewHistogramCounterResetCollisionWarning(expressionPosition, annotations.HistogramAdd)
+func newAggregationCounterResetCollisionWarning(_ string, expressionPosition posrange.PositionRange) error {
+	return annotations.NewHistogramCounterResetCollisionWarning(expressionPosition, annotations.HistogramAgg)
 }
 
 var AvgOverTime = FunctionOverRangeVectorDefinition{
@@ -383,7 +404,7 @@ func avgOverTime(step *types.RangeVectorStepData, _ []types.ScalarData, _ types.
 		return avgFloats(fHead, fTail), true, nil, nil
 	}
 
-	h, err := avgHistograms(hHead, hTail)
+	h, err := avgHistograms(hHead, hTail, emitAnnotation)
 
 	if err != nil {
 		err = NativeHistogramErrorToAnnotation(err, emitAnnotation)
@@ -447,10 +468,24 @@ func avgFloats(head, tail []promql.FPoint) float64 {
 	return (sum + c) / count
 }
 
-func avgHistograms(head, tail []promql.HPoint) (*histogram.FloatHistogram, error) {
+func avgHistograms(head, tail []promql.HPoint, emitAnnotation types.EmitAnnotationFunc) (*histogram.FloatHistogram, error) {
 	avgSoFar := head[0].H.Copy() // We must make a copy of the histogram, as the ring buffer may reuse the FloatHistogram instance on subsequent steps.
 	head = head[1:]
 	count := 1.0
+
+	counterResetSeen := false
+	notCounterResetSeen := false
+
+	trackCounterReset := func(h *histogram.FloatHistogram) {
+		switch h.CounterResetHint {
+		case histogram.CounterReset:
+			counterResetSeen = true
+		case histogram.NotCounterReset:
+			notCounterResetSeen = true
+		}
+	}
+
+	trackCounterReset(avgSoFar)
 
 	// Reuse these instances if we need them, to avoid allocating two FloatHistograms for every remaining histogram in the range.
 	var contributionByP *histogram.FloatHistogram
@@ -459,6 +494,7 @@ func avgHistograms(head, tail []promql.HPoint) (*histogram.FloatHistogram, error
 	accumulate := func(points []promql.HPoint) error {
 		for _, p := range points {
 			count++
+			trackCounterReset(p.H)
 
 			// Make a copy of p.H, as the ring buffer may reuse the FloatHistogram instance on subsequent steps.
 			if contributionByP == nil {
@@ -497,6 +533,10 @@ func avgHistograms(head, tail []promql.HPoint) (*histogram.FloatHistogram, error
 
 	if err := accumulate(tail); err != nil {
 		return nil, err
+	}
+
+	if counterResetSeen && notCounterResetSeen {
+		emitAnnotation(newAggregationCounterResetCollisionWarning)
 	}
 
 	return avgSoFar, nil
@@ -1050,4 +1090,46 @@ func calculateDoubleExponentialSmoothing(fHead []promql.FPoint, fTail []promql.F
 	accumulate(fTail)
 
 	return smooth1, true, nil, nil
+}
+
+var MadOverTime = FunctionOverRangeVectorDefinition{
+	SeriesMetadataFunction:         DropSeriesName,
+	StepFunc:                       madOverTime,
+	NeedsSeriesNamesForAnnotations: true,
+}
+
+func madOverTime(step *types.RangeVectorStepData, _ []types.ScalarData, _ types.QueryTimeRange, emitAnnotation types.EmitAnnotationFunc, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (float64, bool, *histogram.FloatHistogram, error) {
+	head, tail := step.Floats.UnsafePoints()
+
+	if len(head) == 0 && len(tail) == 0 {
+		return 0, false, nil, nil
+	}
+
+	if step.Histograms.Any() {
+		emitAnnotation(annotations.NewHistogramIgnoredInMixedRangeInfo)
+	}
+
+	values, err := types.Float64SlicePool.Get(len(head)+len(tail), memoryConsumptionTracker)
+	if err != nil {
+		return 0, false, nil, err
+	}
+	defer types.Float64SlicePool.Put(&values, memoryConsumptionTracker)
+
+	// MAD = median( | xᵢ - median(x) | )
+
+	for _, p := range head {
+		values = append(values, p.F)
+	}
+
+	for _, p := range tail {
+		values = append(values, p.F)
+	}
+
+	median := floats.Quantile(0.5, values)
+
+	for i, p := range values {
+		values[i] = math.Abs(p - median)
+	}
+
+	return floats.Quantile(0.5, values), true, nil, nil
 }

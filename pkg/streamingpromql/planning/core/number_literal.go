@@ -75,3 +75,7 @@ func (n *NumberLiteral) QueriedTimeRange(queryTimeRange types.QueryTimeRange, lo
 func (n *NumberLiteral) ExpressionPosition() posrange.PositionRange {
 	return n.GetExpressionPosition().ToPrometheusType()
 }
+
+func (n *NumberLiteral) MinimumRequiredPlanVersion() planning.QueryPlanVersion {
+	return planning.QueryPlanVersionZero
+}

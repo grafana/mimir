@@ -146,7 +146,7 @@ type Config struct {
 	MemberlistKV        memberlist.KVConfig                        `yaml:"memberlist"`
 	QueryScheduler      scheduler.Config                           `yaml:"query_scheduler"`
 	UsageStats          usagestats.Config                          `yaml:"usage_stats"`
-	UsageTracker        usagetracker.Config                        `yaml:"usage_tracker"`
+	UsageTracker        usagetracker.Config                        `yaml:"usage_tracker" doc:"hidden"`
 	ContinuousTest      continuoustest.Config                      `yaml:"-"`
 	OverridesExporter   exporter.Config                            `yaml:"overrides_exporter"`
 
@@ -191,7 +191,7 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	c.registerServerFlagsWithChangedDefaultValues(f)
 	c.registerMemberlistKVFlagsWithChangedDefaultValues(f)
 	c.Distributor.RegisterFlags(f, logger)
-	c.Querier.RegisterFlags(f)
+	c.Querier.RegisterFlags(f, logger)
 	c.IngesterClient.RegisterFlags(f)
 	c.Ingester.RegisterFlags(f, logger)
 	c.Flusher.RegisterFlags(f)
@@ -285,6 +285,9 @@ func (c *Config) Validate(log log.Logger) error {
 		if !c.IngestStorage.Enabled && !c.Ingester.PushGrpcMethodEnabled {
 			return errors.New("cannot disable Push gRPC method in ingester, while ingest storage (-ingest-storage.enabled) is not enabled")
 		}
+	}
+	if err := c.MemberlistKV.Validate(); err != nil {
+		return errors.Wrap(err, "invalid memberlist config")
 	}
 	if err := c.BlocksStorage.Validate(c.Ingester.ActiveSeriesMetrics); err != nil {
 		return errors.Wrap(err, "invalid TSDB config")
@@ -861,6 +864,8 @@ type Mimir struct {
 	AdditionalStorageQueryables      []querier.TimeRangeQueryable
 	MetadataSupplier                 querier.MetadataSupplier
 	QuerierEngine                    promql.QueryEngine
+	QuerierLifecycler                *ring.BasicLifecycler
+	QuerierRing                      *ring.Ring
 	QuerierStreamingEngine           *streamingpromql.Engine // The MQE instance in QuerierEngine (without fallback wrapper), or nil if MQE is disabled.
 	QueryFrontendStreamingEngine     *streamingpromql.Engine // The MQE instance used by the query-frontend (without fallback wrapper), or nil if MQE is disabled.
 	QueryFrontendTripperware         querymiddleware.Tripperware
@@ -1025,6 +1030,14 @@ func (t *Mimir) Run() error {
 		t.API.RegisterIngesterRing(t.IngesterRing)
 	} else if t.Ingester != nil {
 		t.API.RegisterIngesterRing(t.Ingester.RingHandler())
+	}
+
+	// Register the querier ring handler if it exists,
+	// preferring the one exposed by the ring instance over the BasicLifecycler.
+	if t.QuerierRing != nil {
+		t.API.RegisterQuerierRing(t.QuerierRing)
+	} else if t.QuerierLifecycler != nil {
+		t.API.RegisterQuerierRing(t.QuerierLifecycler)
 	}
 
 	// get all services, create service manager and tell it to start

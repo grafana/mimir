@@ -374,6 +374,9 @@ func TestQuerierWithBlocksStorageRunningInSingleBinaryMode(t *testing.T) {
 				// Ruler.
 				"-ruler.ring.store":           "consul",
 				"-ruler.ring.consul.hostname": consul.NetworkHTTPEndpoint(),
+				// Querier.
+				"-querier.ring.store":           "consul",
+				"-querier.ring.consul.hostname": consul.NetworkHTTPEndpoint(),
 				// Query-frontend.
 				"-query-frontend.parallelize-shardable-queries": strconv.FormatBool(testCfg.queryShardingEnabled),
 			})
@@ -391,6 +394,7 @@ func TestQuerierWithBlocksStorageRunningInSingleBinaryMode(t *testing.T) {
 				numTokensPerInstance += 512     // Compactor ring.
 				numTokensPerInstance += 512 * 2 // Store-gateway ring (read both by the querier and store-gateway).
 				numTokensPerInstance += 128     // Ruler ring.
+				numTokensPerInstance++          // Querier ring
 
 				require.NoError(t, replica.WaitSumMetrics(e2e.Equals(float64(numTokensPerInstance*cluster.NumInstances())), "cortex_ring_tokens_total"))
 			}

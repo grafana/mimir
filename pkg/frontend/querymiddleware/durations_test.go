@@ -129,8 +129,7 @@ func TestDurationVisitorRejectInvalid(t *testing.T) {
 	}
 	for name, tc := range testCases {
 		t.Run(name, func(t *testing.T) {
-			v := &durationVisitor{}
-			err := parser.Walk(v, tc.expr, nil)
+			err := inspect(tc.expr, durationVisitor)
 			require.Error(t, err)
 			require.EqualError(t, err, tc.expectError)
 		})

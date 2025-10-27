@@ -1,62 +1,90 @@
 {
-    "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-    "extends": [
-      "config:recommended"
-    ],
-    "baseBranches": ["main", "release-2.17", "release-2.16"],
-    "postUpdateOptions": [
-      "gomodTidy",
-      "gomodUpdateImportPaths"
-    ],
-    "schedule": ["before 9am on Monday"],
-    "packageRules": [
-      {
-        "matchBaseBranches": ["release-2.17", "release-2.16"],
-        "packagePatterns": ["*"],
-        "enabled": false
-      },
-      {
-        // Don't update replace directives.
-        "matchPackageNames": [
-          "github.com/grafana/mimir-prometheus",
-          "github.com/grafana/memberlist",
-          "github.com/grafana/regexp",
-          "github.com/colega/go-yaml-yaml",
-          "github.com/grafana/goautoneg",
-          "github.com/grafana/opentracing-contrib-go-stdlib",
-          "github.com/charleskorn/go-grpc",
-          "github.com/grafana/mimir-otlptranslator",
-        ],
-        "enabled": false
-      },
-      {
-        // Update Go version everywhere at once: build image, go.mod and GitHub Actions workflows.
-        "matchDatasources": ["docker", "golang-version", "github-releases"],
-        "matchPackageNames": ["go", "golang", "actions/go-versions"],
-        "groupName": "Go"
-      },
-      // Keep deps for the dashboard screenshotting tool up to date
-      {
-        "description": "Enable updating Node.js dependencies in operations/mimir-mixin-tools/screenshots",
-        "paths": ["operations/mimir-mixin-tools/screenshots"],
-        "managers": ["npm"],
-        "enabled": true
-      },
-      {
-        "description": "Pin jaegertracing/all-in-one Docker image, since newer versions lack the agent we depend on",
-        "matchPackageNames": ["jaegertracing/all-in-one"],
-        "matchDatasources": [
-          "docker",
-        ],
-        "enabled": false
-      }
-    ],
-    "branchPrefix": "deps-update/",
-    "labels": ["dependency-update"],
-    "vulnerabilityAlerts": {
-      "enabled": true,
-      "labels": ["security-update"]
+  $schema: 'https://docs.renovatebot.com/renovate-schema.json',
+  extends: [
+    'config:recommended',
+  ],
+  baseBranchPatterns: [
+    'main',
+    'release-3.0',
+    'release-2.17',
+  ],
+  postUpdateOptions: [
+    'gomodTidy',
+    'gomodUpdateImportPaths',
+  ],
+  schedule: [
+    'before 9am on Monday',
+  ],
+  packageRules: [
+    {
+      matchBaseBranches: [
+        'release-3.0',
+        'release-2.17',
+      ],
+      enabled: false,
+      matchPackageNames: [
+        '*',
+      ],
     },
-    "osvVulnerabilityAlerts": true,
-    "dependencyDashboard": false
+    {
+      // Don't update replace directives.
+      matchPackageNames: [
+        'github.com/grafana/mimir-prometheus',
+        'github.com/grafana/memberlist',
+        'github.com/grafana/regexp',
+        'github.com/colega/go-yaml-yaml',
+        'github.com/grafana/goautoneg',
+        'github.com/grafana/opentracing-contrib-go-stdlib',
+        'github.com/charleskorn/go-grpc',
+        'github.com/grafana/mimir-otlptranslator',
+      ],
+      enabled: false,
+    },
+    {
+      // Update Go version everywhere at once: build image, go.mod and GitHub Actions workflows.
+      matchDatasources: [
+        'docker',
+        'golang-version',
+        'github-releases',
+      ],
+      matchPackageNames: [
+        'go',
+        'golang',
+        'actions/go-versions',
+      ],
+      groupName: 'Go',
+    },
+    {
+      description: 'Enable updating Node.js dependencies in operations/mimir-mixin-tools/screenshots',
+      matchFileNames: [
+        'operations/mimir-mixin-tools/screenshots/**',
+      ],
+      matchManagers: [
+        'npm',
+      ],
+      enabled: true,
+    },
+    {
+      description: 'Pin jaegertracing/all-in-one Docker image, since newer versions lack the agent we depend on',
+      matchPackageNames: [
+        'jaegertracing/all-in-one',
+      ],
+      matchDatasources: [
+        'docker',
+      ],
+      enabled: false,
+    },
+  ],
+  branchPrefix: 'deps-update/',
+  labels: [
+    'dependency-update',
+  ],
+  vulnerabilityAlerts: {
+    enabled: true,
+    labels: [
+      'security-update',
+    ],
+  },
+  osvVulnerabilityAlerts: true,
+  dependencyDashboard: false,
 }

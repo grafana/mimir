@@ -4,6 +4,10 @@
   local deployment = $.apps.v1.deployment,
   local service = $.core.v1.service,
 
+  _config+: {
+    distributor_gomemlimit_enabled: false,
+  },
+
   // When write requests go through distributors via gRPC, we want gRPC clients to re-resolve the distributors DNS
   // endpoint before the distributor process is terminated, in order to avoid any failures during graceful shutdown.
   // To achieve it, we set a shutdown delay greater than the gRPC max connection age, and we set an even higher
@@ -24,8 +28,8 @@
 
       'distributor.ha-tracker.enable': true,
       'distributor.ha-tracker.enable-for-all-users': true,
-      'distributor.ha-tracker.store': 'etcd',
-      'distributor.ha-tracker.etcd.endpoints': 'etcd-client.%(namespace)s.svc.%(cluster_domain)s:2379' % $._config,
+      // Memberlist is the default and recommended KV store for HA tracker. Etcd and Consul are deprecated for this purpose.
+      'distributor.ha-tracker.store': 'memberlist',
       'distributor.ha-tracker.prefix': 'prom_ha/',
 
       // The memory requests are 2G, and we barely use 100M.
@@ -67,7 +71,10 @@
         ),
       )
     ),
-  },
+  } + if $._config.distributor_gomemlimit_enabled then {
+    // Dynamically set GOMEMLIMIT based on memory request.
+    GOMEMLIMIT: std.toString(std.floor($.util.siToBytes($.distributor_container.resources.requests.memory))),
+  } else {},
 
   distributor_node_affinity_matchers:: [],
 

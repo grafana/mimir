@@ -27,6 +27,22 @@ import (
 
 type Pusher interface {
 	PushToStorageAndReleaseRequest(context.Context, *mimirpb.WriteRequest) error
+	PreCommitNotifier
+}
+
+type PreCommitNotifier interface {
+	// NotifyPreCommit is called before committing a Kafka offset to allow for
+	// synchronization or cleanup operations. The offset to commit is determined before this call.
+	// The committer waits for this method to complete before proceeding with the actual
+	// commit to Kafka.
+	NotifyPreCommit(ctx context.Context) error
+}
+
+type NoOpPreCommitNotifier struct {
+}
+
+func (n *NoOpPreCommitNotifier) NotifyPreCommit(_ context.Context) error {
+	return nil
 }
 
 type PusherCloser interface {

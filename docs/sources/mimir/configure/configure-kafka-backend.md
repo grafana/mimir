@@ -9,8 +9,9 @@ weight: 130
 
 # Configure the Grafana Mimir Kafka backend
 
-Grafana Mimir supports using Kafka for the first layer of ingestion. This is an experimental feature released in Mimir 2.14.
-This page is incomplete. It will be updated as the ingest storage feature matures and moves out of the experimental phase.
+Grafana Mimir supports using Kafka as the first layer of ingestion in the ingest storage architecture. This configuration allows for scalable, decoupled ingestion that separates write and read paths to improve performance and resilience.
+
+Starting with Grafana Mimir 3.0, ingest storage is the preferred and stable architecture for running Grafana Mimir.
 
 ## Configure ingest storage
 

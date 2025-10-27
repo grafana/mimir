@@ -237,7 +237,7 @@ var jsonFormatterInstance = jsonFormatter{}
 
 var knownFormats = []formatter{
 	jsonFormatterInstance,
-	protobufFormatter{},
+	ProtobufFormatter{},
 }
 
 func NewCodec(
@@ -260,7 +260,7 @@ func NewCodec(
 // MergeResponse merges responses from multiple requests into a single Response
 func (Codec) MergeResponse(responses ...Response) (Response, error) {
 	if len(responses) == 0 {
-		return newEmptyPrometheusResponse(), nil
+		return NewEmptyPrometheusResponse(), nil
 	}
 
 	promResponses := make([]*PrometheusResponse, 0, len(responses))
@@ -363,7 +363,7 @@ func (c Codec) decodeRangeQueryRequest(r *http.Request) (MetricsQueryRequest, er
 	}
 
 	var options Options
-	decodeOptions(r, &options)
+	DecodeOptions(r, &options)
 
 	stats := reqValues.Get("stats")
 	req := NewPrometheusRangeQueryRequest(
@@ -390,7 +390,7 @@ func (c Codec) decodeInstantQueryRequest(r *http.Request) (MetricsQueryRequest, 
 	}
 
 	var options Options
-	decodeOptions(r, &options)
+	DecodeOptions(r, &options)
 
 	stats := reqValues.Get("stats")
 
@@ -656,7 +656,7 @@ func decodeQueryMinMaxTime(queryExpr parser.Expr, start, end, step int64, lookba
 	return minTime, maxTime
 }
 
-func decodeOptions(r *http.Request, opts *Options) {
+func DecodeOptions(r *http.Request, opts *Options) {
 	opts.CacheDisabled = decodeCacheDisabledOption(r)
 
 	for _, value := range r.Header.Values(totalShardsControlHeader) {

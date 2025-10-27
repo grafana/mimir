@@ -36,7 +36,7 @@ import (
 const shardingTimeout = 10 * time.Second
 
 type querySharding struct {
-	sharder *querySharder
+	sharder *QuerySharder
 	engine  promql.QueryEngine
 	next    MetricsQueryHandler
 }
@@ -83,7 +83,7 @@ func newQueryShardingMiddleware(
 	maxSeriesPerShard uint64,
 	reg prometheus.Registerer,
 ) MetricsQueryMiddleware {
-	sharder := newQuerySharder(limit, maxSeriesPerShard, reg, logger)
+	sharder := NewQuerySharder(astmapper.EmbeddedQueriesSquasher, limit, maxSeriesPerShard, reg, logger)
 
 	return MetricsQueryMiddlewareFunc(func(next MetricsQueryHandler) MetricsQueryHandler {
 		return &querySharding{
@@ -123,7 +123,7 @@ func (s *querySharding) Do(ctx context.Context, r MetricsQueryRequest) (Response
 		return nil, apierror.New(apierror.TypeBadData, err.Error())
 	}
 
-	shardedQuery, err := s.sharder.shard(ctx, tenantIDs, queryExpr, requestedShardCount, seriesCount, totalQueries)
+	shardedQuery, err := s.sharder.Shard(ctx, tenantIDs, queryExpr, requestedShardCount, seriesCount, totalQueries)
 	if err != nil {
 		return nil, err
 	}
@@ -232,22 +232,30 @@ func mapEngineError(err error) error {
 	return apierror.New(errorType, cause.Error())
 }
 
-type querySharder struct {
+type QuerySharder struct {
 	squasher          astmapper.Squasher
-	limit             Limits
+	limit             ShardingLimits
 	maxSeriesPerShard uint64
 	logger            log.Logger
 	metrics           queryShardingMetrics
 }
 
-func newQuerySharder(
-	limit Limits,
+type ShardingLimits interface {
+	QueryShardingTotalShards(userID string) int
+	QueryShardingMaxRegexpSizeBytes(userID string) int
+	QueryShardingMaxShardedQueries(userID string) int
+	CompactorSplitAndMergeShards(userID string) int
+}
+
+func NewQuerySharder(
+	squasher astmapper.Squasher,
+	limit ShardingLimits,
 	maxSeriesPerShard uint64,
 	reg prometheus.Registerer,
 	logger log.Logger,
-) *querySharder {
-	return &querySharder{
-		squasher:          astmapper.EmbeddedQueriesSquasher,
+) *QuerySharder {
+	return &QuerySharder{
+		squasher:          squasher,
 		limit:             limit,
 		maxSeriesPerShard: maxSeriesPerShard,
 		metrics:           newQueryShardingMetrics(reg),
@@ -255,14 +263,15 @@ func newQuerySharder(
 	}
 }
 
-// shard attempts to rewrite expr in a sharded way.
+// Shard attempts to rewrite expr in a sharded way.
 //
 // expr may be modified in place, including if an error is returned.
 //
-// If the query can't be sharded, shard returns nil and no error, and expr is unchanged.
-func (s *querySharder) shard(ctx context.Context, tenantIDs []string, expr parser.Expr, requestedShardCount int, seriesCount *EstimatedSeriesCount, totalQueries int32) (parser.Expr, error) {
+// If the query can't be sharded, Shard returns nil and no error, and expr is unchanged.
+func (s *QuerySharder) Shard(ctx context.Context, tenantIDs []string, expr parser.Expr, requestedShardCount int, seriesCount *EstimatedSeriesCount, totalQueries int32) (parser.Expr, error) {
 	log := spanlogger.FromContext(ctx, s.logger)
 	log.DebugLog("msg", "attempting query sharding", "query", expr)
+	s.metrics.shardingAttempts.Inc()
 
 	totalShards, err := s.getShardsForQuery(ctx, tenantIDs, expr, requestedShardCount, seriesCount, totalQueries, log)
 	if err != nil {
@@ -275,8 +284,12 @@ func (s *querySharder) shard(ctx context.Context, tenantIDs []string, expr parse
 		return nil, nil
 	}
 
-	s.metrics.shardingAttempts.Inc()
-	shardedExpr, shardingStats, err := s.shardQuery(ctx, expr, totalShards, false)
+	log.DebugLog(
+		"msg", "computed shard count for query, rewriting in shardable form",
+		"total shards", totalShards,
+	)
+
+	shardedExpr, shardingStats, err := s.shardQuery(ctx, expr, totalShards)
 	if err != nil {
 		return nil, err
 	}
@@ -303,12 +316,12 @@ func (s *querySharder) shard(ctx context.Context, tenantIDs []string, expr parse
 // shardQuery attempts to rewrite the input query in a shardable way. Returns the rewritten query
 // to be executed by PromQL engine with shardedQueryable or an empty string if the input query
 // can't be sharded.
-func (s *querySharder) shardQuery(ctx context.Context, expr parser.Expr, totalShards int, inspectOnly bool) (parser.Expr, *astmapper.MapperStats, error) {
+func (s *QuerySharder) shardQuery(ctx context.Context, expr parser.Expr, totalShards int) (parser.Expr, *astmapper.MapperStats, error) {
 	stats := astmapper.NewMapperStats()
 	ctx, cancel := context.WithTimeoutCause(ctx, shardingTimeout, fmt.Errorf("%w: %s", context.DeadlineExceeded, "timeout while rewriting the input query into a shardable query"))
 	defer cancel()
 
-	summer := astmapper.NewQueryShardSummer(totalShards, inspectOnly, s.squasher, s.logger, stats)
+	summer := astmapper.NewQueryShardSummer(totalShards, s.squasher, s.logger, stats)
 	shardedQuery, err := summer.Map(ctx, expr)
 	if err != nil {
 		return nil, nil, err
@@ -318,7 +331,7 @@ func (s *querySharder) shardQuery(ctx context.Context, expr parser.Expr, totalSh
 }
 
 // getShardsForQuery calculates and return the number of shards that should be used to run the query.
-func (s *querySharder) getShardsForQuery(ctx context.Context, tenantIDs []string, queryExpr parser.Expr, requestedShardCount int, seriesCount *EstimatedSeriesCount, totalQueries int32, spanLog *spanlogger.SpanLogger) (int, error) {
+func (s *QuerySharder) getShardsForQuery(ctx context.Context, tenantIDs []string, queryExpr parser.Expr, requestedShardCount int, seriesCount *EstimatedSeriesCount, totalQueries int32, spanLog *spanlogger.SpanLogger) (int, error) {
 	// Check the default number of shards configured for the given tenant.
 	totalShards := validation.SmallestPositiveIntPerTenant(tenantIDs, s.limit.QueryShardingTotalShards)
 	if totalShards <= 1 {
@@ -340,6 +353,11 @@ func (s *querySharder) getShardsForQuery(ctx context.Context, tenantIDs []string
 	}
 
 	if requestedShardCount > 0 {
+		spanLog.DebugLog(
+			"msg", "number of shards has been adjusted to match the requested shard count",
+			"requested shard count", requestedShardCount,
+			"previous total shards", totalShards,
+		)
 		totalShards = requestedShardCount
 	}
 
@@ -359,31 +377,29 @@ func (s *querySharder) getShardsForQuery(ctx context.Context, tenantIDs []string
 		}
 	}
 
+	// Calculate how many legs are shardable.
+	analyzer := astmapper.NewShardingAnalyzer(s.logger)
+	result, err := analyzer.Analyze(queryExpr)
+	if err != nil {
+		return 0, err
+	}
+
+	spanLog.DebugLog(
+		"msg", "computed number of shardable legs for the query",
+		"shardable legs", result.ShardedSelectors,
+		"can shard all selectors", result.WillShardAllSelectors,
+	)
+
+	if !result.WillShardAllSelectors || result.ShardedSelectors == 0 {
+		// If we can't shard all selectors, then we won't shard the query at all.
+		return 1, nil
+	}
+
+	numShardableLegs := result.ShardedSelectors
+
 	// If total queries is provided through hints, then we adjust the number of shards for the query
 	// based on the configured max sharded queries limit.
 	if maxShardedQueries := validation.SmallestPositiveIntPerTenant(tenantIDs, s.limit.QueryShardingMaxShardedQueries); maxShardedQueries > 0 {
-		// Calculate how many legs are shardable. To do it we use a trick: rewrite the query passing 1
-		// total shards and then we check how many sharded queries are generated. In case of any error,
-		// we just consider as if there's only 1 shardable leg (the error will be detected anyway later on).
-		//
-		// "Leg" is the terminology we use in query sharding to mention a part of the query that can be sharded.
-		// For example, look at this query:
-		// sum(metric) / count(metric)
-		//
-		// This query has 2 shardable "legs":
-		// - sum(metric)
-		// - count(metric)
-		//
-		// Calling s.shardQuery() with 1 total shards we can see how many shardable legs the query has.
-		_, shardingStats, err := s.shardQuery(ctx, queryExpr, 1, true)
-		if err != nil {
-			return 0, err
-		}
-		numShardableLegs := 1
-		if shardingStats.GetShardedQueries() > 0 {
-			numShardableLegs = shardingStats.GetShardedQueries()
-		}
-
 		prevTotalShards := totalShards
 		totalShards = max(1, min(totalShards, (maxShardedQueries/int(totalQueries))/numShardableLegs))
 
