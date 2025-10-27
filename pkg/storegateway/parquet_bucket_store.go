@@ -362,6 +362,18 @@ func (s *ParquetBucketStore) LabelNames(ctx context.Context, req *storepb.LabelN
 	var blocksQueriedByBlockMeta = make(map[blockQueriedMeta]int)
 
 	s.blockSet.filter(req.Start, req.End, reqBlockMatchers, func(b *parquetBucketBlock) {
+		if !b.IsConverted() {
+			converted, err := s.isBlockConverted(gctx, b.meta.ULID)
+			if err != nil {
+				level.Error(spanlogger.FromContext(gctx, s.logger)).Log("msg", "failed to check if block is converted", "block", b.meta.ULID.String(), "err", err)
+				return
+			}
+			if !converted {
+				return
+			}
+			b.MarkConverted()
+		}
+
 		resHints.AddQueriedBlock(b.meta.ULID)
 		blocksQueriedByBlockMeta[newBlockQueriedMeta(b.meta)]++
 
@@ -1013,18 +1025,6 @@ func (s *ParquetBucketStore) syncBlocks(ctx context.Context) error {
 			continue
 		}
 
-		markPath := path.Join(id.String(), parquetconverter.ParquetConversionMarkFileName)
-		exists, err := s.bkt.Exists(ctx, markPath)
-		if err != nil {
-			level.Debug(s.logger).Log("msg", "failed to check parquet conversion mark existence, skipping block", "block", id, "err", err)
-			continue
-		}
-
-		if !exists {
-			level.Debug(s.logger).Log("msg", "parquet conversion mark not found, block not converted, skipping", "block", id)
-			continue
-		}
-
 		select {
 		case <-ctx.Done():
 		case blockc <- meta:
@@ -1123,6 +1123,15 @@ func (s *ParquetBucketStore) addBlock(ctx context.Context, meta *block.Meta) (er
 	}
 
 	return nil
+}
+
+func (s *ParquetBucketStore) isBlockConverted(ctx context.Context, blockID ulid.ULID) (bool, error) {
+	markPath := path.Join(blockID.String(), parquetconverter.ParquetConversionMarkFileName)
+	exists, err := s.bkt.Exists(ctx, markPath)
+	if err != nil {
+		return false, errors.Wrap(err, "check parquet conversion mark existence")
+	}
+	return exists, nil
 }
 
 // calculateNumShards calculates the number of parquet shards in the block by counting

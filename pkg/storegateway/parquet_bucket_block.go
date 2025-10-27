@@ -63,7 +63,8 @@ type parquetBucketBlock struct {
 	closedMtx      sync.RWMutex
 	closed         bool
 
-	queried atomic.Bool
+	queried   atomic.Bool
+	converted atomic.Bool
 }
 
 func newParquetBucketBlock(
@@ -106,6 +107,14 @@ func (b *parquetBucketBlock) overlapsClosedInterval(mint, maxt int64) bool {
 
 func (b *parquetBucketBlock) MarkQueried() {
 	b.queried.Store(true)
+}
+
+func (b *parquetBucketBlock) MarkConverted() {
+	b.converted.Store(true)
+}
+
+func (b *parquetBucketBlock) IsConverted() bool {
+	return b.converted.Load()
 }
 
 // Close waits for all pending readers to finish and then closes all underlying resources.
