@@ -424,7 +424,6 @@ local utils = import 'mixin-utils/utils.libsonnet';
             message: '%(product)s clients in %(alert_aggregation_variables)s are having requests rejected due to invalid cluster validation labels.' % $._config,
           },
         },
-      ] + [
         {
           alert: $.alertName('RingMembersMismatch'),
           expr: |||
