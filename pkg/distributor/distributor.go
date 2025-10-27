@@ -1066,9 +1066,9 @@ func (d *Distributor) wrapPushWithMiddlewares(next PushFunc) PushFunc {
 	middlewares = append(middlewares, d.prePushRelabelMiddleware)
 	middlewares = append(middlewares, d.prePushSortAndFilterMiddleware)
 	middlewares = append(middlewares, d.prePushValidationMiddleware)
-	middlewares = append(middlewares, d.cfg.PushWrappers...)              // TODO GEM has a BI middleware. It should probably be applied after prePushMaxSeriesLimitMiddleware
-	middlewares = append(middlewares, d.preKafkaPartitionLimitMiddleware) // Enforce partition series limits when using ingest storage
-	middlewares = append(middlewares, d.prePushMaxSeriesLimitMiddleware)  // Should be the very last, to enforce the max series limit on top of all filtering, relabelling and other changes (e.g. GEM aggregations) previous middlewares could do
+	middlewares = append(middlewares, d.cfg.PushWrappers...)                // TODO GEM has a BI middleware. It should probably be applied after prePushMaxSeriesLimitMiddleware
+	middlewares = append(middlewares, d.prePushMaxSeriesLimitMiddleware)    // Enforce per-tenant max series limit on top of all filtering, relabelling and other changes (e.g. GEM aggregations) previous middlewares could do
+	middlewares = append(middlewares, d.preKafkaPartitionLimitMiddleware)   // Should be the very last, to enforce global partition series limits right before writing to Kafka
 
 	for ix := len(middlewares) - 1; ix >= 0; ix-- {
 		next = middlewares[ix](next)
