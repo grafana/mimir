@@ -2773,6 +2773,26 @@ How to **fix** it:
 - If you use the batch processor in the OTLP collector, decrease the maximum batch size in the `send_batch_max_size` setting. Refer to [Batch Collector](https://github.com/open-telemetry/opentelemetry-collector/blob/main/processor/batchprocessor/README.md) for details.
 - Increase the allowed limit in the `-distributor.max-otlp-request-size` setting.
 
+### err-mimir-distributor-max-series-per-partition
+
+This error occurs when a distributor rejects a write request because the estimated number of series in a Kafka partition would exceed the configured limit.
+
+How it **works**:
+
+- When ingest storage is enabled, the distributor tracks the number of series per Kafka partition using HyperLogLog (HLL) for cardinality estimation.
+- The tracker maintains a sliding time window (default: 20 minutes) of series cardinality per partition.
+- If a write request would cause any partition to exceed its series limit, the entire request is rejected before writing to Kafka.
+- The limit is global across all tenants and protects ingesters from being overwhelmed by too many series in a single partition.
+- Enable tracking with `-distributor.partition-series-tracker.enabled` and configure the limit with `max_series_per_partition` in the runtime configuration.
+
+How to **fix** it:
+
+- Increase the per-partition series limit by adjusting `max_series_per_partition` in the runtime configuration.
+- Increase the time window by setting `-distributor.partition-series-tracker.time-window-minutes` to allow for more bursty traffic patterns.
+- Review tenant partition shard sizes to distribute series across more partitions using `-ingest-storage.ingestion-partition-tenant-shard-size`.
+- Consider increasing the total number of partitions in the Kafka topic to spread the load.
+- Investigate if specific tenants are causing hot partitions and consider tenant-specific limits.
+
 ### err-mimir-distributor-max-influx-request-size
 
 This error occurs when a distributor rejects an Influx write request because its message size is larger than the allowed limit before or after decompression.
