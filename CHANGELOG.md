@@ -4,6 +4,7 @@
 
 ### Grafana Mimir
 
+* [CHANGE] Ingester: limiting CPU and memory utilized by the read path (`-ingester.read-path-cpu-utilization-limit` and `-ingester.read-path-memory-utilization-limit`) is now considered stable. #13167
 * [CHANGE] Distributor: removed experimental flag `-distributor.metric-relabeling-enabled`. #13143
 * [CHANGE] Querier: `-querier.max-estimated-fetched-chunks-per-query-multiplier` is now stable and no longer experimental. #13120
 * [CHANGE] Compactor: removed experimental flag `-compactor.no-blocks-file-cleanup-enabled`. Cleanup of remaining files when no blocks exist is now always enabled. #13108
