@@ -216,8 +216,12 @@ func (at *ActiveSeriesTracker) Decrement(lbls labels.Labels, nativeHistogramBuck
 	panic(fmt.Errorf("decrementing non-existent active series: labels=%v, cost attribution keys: %v, the current observation map length: %d, the current cost attribution key: %s", lbls, at.labels, len(at.observed), buf.String()))
 }
 
-func (at *ActiveSeriesTracker) Collect(out chan<- prometheus.Metric) {
-	out <- prometheus.MustNewConstMetric(at.attributedOverflowLabels, prometheus.GaugeValue, 1, at.overflowLabels[:len(at.overflowLabels)-1]...)
+func (at *ActiveSeriesTracker) Collect(out chan<- prometheus.Metric) error {
+	if metric, err := prometheus.NewConstMetric(at.attributedOverflowLabels, prometheus.GaugeValue, 1, at.overflowLabels[:len(at.overflowLabels)-1]...); err != nil {
+		return err
+	} else {
+		out <- metric
+	}
 
 	at.observedMtx.RLock()
 	if !at.overflowSince.IsZero() {
@@ -230,33 +234,53 @@ func (at *ActiveSeriesTracker) Collect(out chan<- prometheus.Metric) {
 			nhBucketNum += c.nativeHistogramBuckets.Load()
 		}
 		at.observedMtx.RUnlock()
-		out <- prometheus.MustNewConstMetric(at.activeSeriesPerUserAttribution, prometheus.GaugeValue, float64(activeSeries+at.overflowCounter.activeSeries.Load()), at.overflowLabels[:len(at.overflowLabels)-1]...)
+		if metric, err := prometheus.NewConstMetric(at.activeSeriesPerUserAttribution, prometheus.GaugeValue, float64(activeSeries+at.overflowCounter.activeSeries.Load()), at.overflowLabels[:len(at.overflowLabels)-1]...); err != nil {
+			return err
+		} else {
+			out <- metric
+		}
 
 		if nhcounter := float64(nativeHistogram + at.overflowCounter.nativeHistograms.Load()); nhcounter > 0 {
-			out <- prometheus.MustNewConstMetric(at.activeNativeHistogramSeriesPerUserAttribution, prometheus.GaugeValue, nhcounter, at.overflowLabels[:len(at.overflowLabels)-1]...)
+			if metric, err := prometheus.NewConstMetric(at.activeNativeHistogramSeriesPerUserAttribution, prometheus.GaugeValue, nhcounter, at.overflowLabels[:len(at.overflowLabels)-1]...); err != nil {
+				return err
+			} else {
+				out <- metric
+			}
 		}
+
 		if bcounter := float64(nhBucketNum + at.overflowCounter.nativeHistogramBuckets.Load()); bcounter > 0 {
-			out <- prometheus.MustNewConstMetric(at.activeNativeHistogramBucketsPerUserAttribution, prometheus.GaugeValue, bcounter, at.overflowLabels[:len(at.overflowLabels)-1]...)
+			if metric, err := prometheus.NewConstMetric(at.activeNativeHistogramBucketsPerUserAttribution, prometheus.GaugeValue, bcounter, at.overflowLabels[:len(at.overflowLabels)-1]...); err != nil {
+				return err
+			} else {
+				out <- metric
+			}
 		}
-		return
+		return nil
 	}
 	// We don't know the performance of out receiver, so we don't want to hold the lock for too long
 	var prometheusMetrics []prometheus.Metric
 	for key, c := range at.observed {
 		keys := strings.Split(key, string(sep))
 		keys = append(keys, at.userID)
-		prometheusMetrics = append(prometheusMetrics,
-			prometheus.MustNewConstMetric(at.activeSeriesPerUserAttribution, prometheus.GaugeValue, float64(c.activeSeries.Load()), keys...),
-		)
+		if metric, err := prometheus.NewConstMetric(at.activeSeriesPerUserAttribution, prometheus.GaugeValue, float64(c.activeSeries.Load()), keys...); err != nil {
+			return err
+		} else {
+			prometheusMetrics = append(prometheusMetrics, metric)
+		}
+
 		if nhcounter := c.nativeHistograms.Load(); nhcounter > 0 {
-			prometheusMetrics = append(prometheusMetrics,
-				prometheus.MustNewConstMetric(at.activeNativeHistogramSeriesPerUserAttribution, prometheus.GaugeValue, float64(nhcounter), keys...),
-			)
+			if metric, err := prometheus.NewConstMetric(at.activeNativeHistogramSeriesPerUserAttribution, prometheus.GaugeValue, float64(nhcounter), keys...); err != nil {
+				return err
+			} else {
+				prometheusMetrics = append(prometheusMetrics, metric)
+			}
 		}
 		if nbcounter := c.nativeHistogramBuckets.Load(); nbcounter > 0 {
-			prometheusMetrics = append(prometheusMetrics,
-				prometheus.MustNewConstMetric(at.activeNativeHistogramBucketsPerUserAttribution, prometheus.GaugeValue, float64(nbcounter), keys...),
-			)
+			if metric, err := prometheus.NewConstMetric(at.activeNativeHistogramBucketsPerUserAttribution, prometheus.GaugeValue, float64(nbcounter), keys...); err != nil {
+				return err
+			} else {
+				prometheusMetrics = append(prometheusMetrics, metric)
+			}
 		}
 	}
 	at.observedMtx.RUnlock()
@@ -264,6 +288,7 @@ func (at *ActiveSeriesTracker) Collect(out chan<- prometheus.Metric) {
 	for _, m := range prometheusMetrics {
 		out <- m
 	}
+	return nil
 }
 
 func (at *ActiveSeriesTracker) fillKeyFromLabels(lbls labels.Labels, buf *bytes.Buffer) {

@@ -3,14 +3,18 @@
 package costattribution
 
 import (
+	"fmt"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/go-kit/log"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/costattribution/costattributionmodel"
 )
@@ -110,4 +114,73 @@ func TestActiveTracker_Concurrency(t *testing.T) {
 
 	assert.Equal(t, 0, len(ast.observed), "Observed set should be empty after all decrements")
 	assert.False(t, ast.overflowSince.IsZero(), "Expected state still to be Overflow")
+}
+
+func TestActiveTracker_Collect(t *testing.T) {
+	testCases := map[string]struct {
+		labelName   string
+		expectedErr error
+	}{
+		"happy case": {
+			labelName:   "good_label",
+			expectedErr: nil,
+		},
+		"incorrect label names cause an error": {
+			labelName:   "__bad_label__",
+			expectedErr: fmt.Errorf(`"__bad_label__" is not a valid label name for metric "cortex_attributed_series_overflow_labels"`),
+		},
+	}
+
+	for testName, testCase := range testCases {
+		t.Run(testName, func(t *testing.T) {
+			ast := NewActiveSeriesTracker("tenant-1", []costattributionmodel.Label{{Input: testCase.labelName, Output: testCase.labelName}}, 10, 1*time.Minute, log.NewNopLogger())
+			var wg sync.WaitGroup
+			var i int64
+			for i = 0; i < 5; i++ {
+				wg.Add(1)
+				go func(i int64) {
+					defer wg.Done()
+					lbls := labels.FromStrings(testCase.labelName, string(rune('A'+(i%26))))
+					ast.Increment(lbls, time.Unix(i, 0), 1)
+				}(i)
+			}
+			wg.Wait()
+
+			// Verify no data races or inconsistencies
+			assert.True(t, len(ast.observed) > 0)
+			assert.LessOrEqual(t, len(ast.observed), trackedSeriesFactor*ast.maxCardinality)
+			assert.True(t, ast.overflowSince.IsZero())
+
+			out := make(chan prometheus.Metric)
+			var err error
+
+			go func() {
+				err = ast.Collect(out)
+				close(out)
+			}()
+
+			count := 0
+
+			for {
+				_, ok := <-out
+				if ok == false {
+					break
+				}
+				count++
+			}
+
+			if testCase.expectedErr != nil {
+				require.Error(t, err)
+				require.Equal(t, testCase.expectedErr, err)
+				require.Equal(t, 0, count)
+			} else {
+				require.NoError(t, err)
+				// 1 (from cortex_attributed_series_overflow_labels) +
+				// 5 (from cortex_ingester_attributed_active_series) +
+				// 5 (from cortex_ingester_attributed_active_native_histogram_series) +
+				// 5 (from cortex_ingester_attributed_active_native_histogram_buckets)
+				require.Equal(t, 16, count)
+			}
+		})
+	}
 }

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus"
 
@@ -245,12 +246,18 @@ func (m *Manager) collectCostAttribution(out chan<- prometheus.Metric) {
 	activeTrackersByUserID := maps.Clone(m.activeTrackersByUserID)
 	m.atmtx.RUnlock()
 
-	for _, tracker := range sampleTrackersByUserID {
-		tracker.collectCostAttribution(out)
+	for tenantID, tracker := range sampleTrackersByUserID {
+		if err := tracker.collectCostAttribution(out); err != nil {
+			level.Warn(m.logger).Log("msg", "tenant cost attribution SampleTracker metrics collection failed; any collected data should be considered unreliable", "tenant", tenantID, "reason", err)
+			continue
+		}
 	}
 
-	for _, tracker := range activeTrackersByUserID {
-		tracker.Collect(out)
+	for tenantID, tracker := range activeTrackersByUserID {
+		if err := tracker.Collect(out); err != nil {
+			level.Warn(m.logger).Log("msg", "tenant cost attribution ActiveSeriesTracker metrics collection failed; any collected data should be considered unreliable", "tenant", tenantID, "reason", err)
+			continue
+		}
 	}
 }
 

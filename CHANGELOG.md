@@ -39,6 +39,7 @@
 * [BUGFIX] Ingester: fix index lookup planning with regular expressions which match empty strings on non-existent labels. #13117
 * [BUGFIX] Memberlist: Fix memberlist initialization when Mimir is executed with `-target=memberlist-kv`. #13129
 * [BUGFIX] Query-frontend: Fix issue where queriers may receive a `rpc error: code = Internal desc = cardinality violation: expected <EOF> for non server-streaming RPCs, but received another message` error while sending a query result to a query-frontend if remote execution is enabled. #13147
+* [BUGFIX] Cost attribution: Replace `prometheus.MustNewConstMetric` with `prometheus.NewConstMetric` to prevent panics when creating metrics with invalid labels. #13174
 
 ### Mixin
 

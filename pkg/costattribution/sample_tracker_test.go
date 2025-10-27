@@ -3,11 +3,14 @@
 package costattribution
 
 import (
+	"fmt"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/go-kit/log"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -159,4 +162,71 @@ func TestSampleTracker_Concurrency(t *testing.T) {
 
 `
 	assert.NoError(t, testutil.GatherAndCompare(costAttributionReg, strings.NewReader(expectedMetrics), "cortex_distributor_received_attributed_samples_total", "cortex_discarded_attributed_samples_total"))
+}
+
+func TestSampleTracker_collectCostAttribution(t *testing.T) {
+	testCases := map[string]struct {
+		labelName   string
+		expectedErr error
+	}{
+		"happy case": {
+			labelName:   "good_label",
+			expectedErr: nil,
+		},
+		"incorrect label names cause an error": {
+			labelName:   "__bad_label__",
+			expectedErr: fmt.Errorf(`"__bad_label__" is not a valid label name for metric "cortex_distributor_received_attributed_samples_total"`),
+		},
+	}
+
+	for testName, testCase := range testCases {
+		t.Run(testName, func(t *testing.T) {
+			st := newSampleTracker("tenant-1", []costattributionmodel.Label{{Input: testCase.labelName, Output: testCase.labelName}}, 10, 1*time.Minute, log.NewNopLogger())
+			var wg sync.WaitGroup
+			var i int64
+			for i = 0; i < 5; i++ {
+				wg.Add(1)
+				go func(i int64) {
+					defer wg.Done()
+					st.IncrementReceivedSamples(testutils.CreateRequest([]testutils.Series{{LabelValues: []string{testCase.labelName, string(rune('A' + (i % 26)))}, SamplesCount: 1}}), time.Unix(i, 0))
+					st.IncrementDiscardedSamples([]mimirpb.LabelAdapter{{Name: testCase.labelName, Value: string(rune('A' + (i % 26)))}}, 1, "sample-out-of-order", time.Unix(i, 0))
+				}(i)
+			}
+			wg.Wait()
+
+			// Verify no data races or inconsistencies
+			assert.True(t, len(st.observed) > 0)
+			assert.LessOrEqual(t, len(st.observed), trackedSeriesFactor*st.maxCardinality)
+			assert.True(t, st.overflowSince.IsZero())
+
+			out := make(chan prometheus.Metric)
+			var err error
+
+			go func() {
+				err = st.collectCostAttribution(out)
+				close(out)
+			}()
+
+			count := 0
+
+			for {
+				_, ok := <-out
+				if ok == false {
+					break
+				}
+				count++
+			}
+
+			if testCase.expectedErr != nil {
+				require.Error(t, err)
+				require.Equal(t, testCase.expectedErr, err)
+				require.Equal(t, 0, count)
+			} else {
+				require.NoError(t, err)
+				// 5 (from cortex_distributor_received_attributed_samples_total) +
+				// 5 (from cortex_discarded_attributed_samples_total)
+				require.Equal(t, 10, count)
+			}
+		})
+	}
 }
