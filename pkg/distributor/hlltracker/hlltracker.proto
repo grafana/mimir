@@ -1,0 +1,29 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
+syntax = "proto3";
+
+package hlltracker;
+
+option go_package = "github.com/grafana/mimir/pkg/distributor/hlltracker";
+
+// PartitionHLLState represents the HyperLogLog state for a single partition and minute.
+// This is stored in the memberlist KV store and synchronized across distributors.
+message PartitionHLLState {
+  // partition_id is the Kafka partition ID this state belongs to
+  int32 partition_id = 1;
+
+  // unix_minute is the timestamp in minutes since epoch (timestamp / 60)
+  int64 unix_minute = 2;
+
+  // hll_registers are the HyperLogLog register values
+  // The length depends on the configured precision (2^precision registers)
+  bytes hll_registers = 3;
+
+  // precision is the HyperLogLog precision parameter (b in the algorithm)
+  // This determines m = 2^precision registers
+  uint32 precision = 4;
+
+  // updated_at_ms is the last update timestamp in milliseconds
+  // Used for debugging and observability
+  int64 updated_at_ms = 5;
+}
