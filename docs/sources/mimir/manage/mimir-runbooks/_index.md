@@ -1562,6 +1562,61 @@ How to **investigate**:
 - If the number of streams has grown organically, consider setting the `-server.grpc-max-concurrent-streams` flag to a value higher than the current setting. Refer to the `cortex_grpc_concurrent_streams_limit` metric for the current value.
 - You can also horizontally scale up the component to reduce the number of concurrent streams on each replica.
 
+### MimirMixedQuerierQueryPlanVersionSupport
+
+How it **works**:
+
+This alert fires when queriers in the same query path (ordinary query path or ruler query path, if enabled) are reporting different maximum supported query plan versions.
+
+When queriers are reporting different maximum supported query plan versions, query-frontends will only generate query plans that are compatible with the lowest supported query plan version of all queriers.
+This may limit query performance or cause queries containing newer PromQL features to fail.
+
+Different versions are expected while some queriers are running an older version of Mimir such as during rollouts and upgrades. 
+However, under normal circumstances, all queriers should be running the same version of Mimir and so be reporting the same maximum supported query plan version.
+
+How to **investigate**:
+
+- Check that all queriers are running the same Mimir version.
+
+### MimirMixedQueryFrontendQueryPlanVersionSupport
+
+How it **works**:
+
+This alert fires when query-frontends in the same query path (ordinary query path or ruler query path, if enabled) are reporting different maximum supported query plan versions.
+
+Query-frontends compute the maximum supported query plan version by taking the minimum of the maximum supported query plan versions reported by all queriers in the same query path.
+Queriers share this information with query-frontends through the querier ring.
+Query-frontends in the same query path should therefore report the same maximum supported query plan version.
+
+Query-frontends reporting different query plan versions for an extended period of time may indicate a split brain scenario or issues with ring propagation.
+
+How to **investigate**:
+
+- Check that all query-frontends have the same view of the querier ring by checking the querier ring status page.
+- Check that all query-frontends are running the same Mimir version.
+
+### MimirQueryFrontendsAndQueriersDisagreeOnSupportedQueryPlanVersion
+
+This alert fires when query-frontends and queriers in the same query path (ordinary query path, or ruler query path, if enabled) disagree on the maximum supported query plan version.
+
+See [MimirMixedQueryFrontendQueryPlanVersionSupport](#mimirmixedqueryfrontendqueryplanversionsupport) for more information and suggestions on how to investigate this issue.
+
+### MimirQueryFrontendNotComputingSupportedQueryPlanVersion
+
+How it **works**:
+
+This alert fires when query-frontends are failing to compute a maximum supported query plan version.
+
+Query-frontends compute the maximum supported query plan version by taking the minimum of the maximum supported query plan versions reported by all queriers in the same query path.
+Queriers share this information with query-frontends through the querier ring.
+
+If the querier ring is empty, or some queriers are not reporting a maximum supported query plan version, query-frontends will not be able to compute a maximum supported query plan version.
+
+How to **investigate**:
+
+- Check query-frontend logs for `could not compute maximum supported query plan version` errors.
+- Check the querier ring status page on affected query-frontends to confirm if they have an up-to-date and complete view of the querier ring.
+
 ## Mimir ingest storage (experimental)
 
 This section contains runbooks for alerts related to experimental Mimir ingest storage.
