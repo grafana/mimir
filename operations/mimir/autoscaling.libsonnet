@@ -531,16 +531,25 @@
     if !$._config.autoscaling_querier_enabled then {} else $.removeReplicasFromSpec
   ),
 
-  query_frontend_scaled_object: if !$._config.autoscaling_query_frontend_enabled then null else
+  //
+  // Query-frontends
+  //
+
+  newQueryFrontendScaledObject(name, extra_matchers='')::
     $.newResourceScaledObject(
-      name='query-frontend',
+      name=name,
+      container_name='query-frontend',
       cpu_requests=$.query_frontend_container.resources.requests.cpu,
       memory_requests=$.query_frontend_container.resources.requests.memory,
       min_replicas=$._config.autoscaling_query_frontend_min_replicas,
       max_replicas=$._config.autoscaling_query_frontend_max_replicas,
       cpu_target_utilization=$._config.autoscaling_query_frontend_cpu_target_utilization,
       memory_target_utilization=$._config.autoscaling_query_frontend_memory_target_utilization,
+      extra_matchers=extra_matchers,
     ),
+
+  query_frontend_scaled_object: if !$._config.autoscaling_query_frontend_enabled then null else
+    $.newQueryFrontendScaledObject('query-frontend'),
 
   query_frontend_deployment: overrideSuperIfExists(
     'query_frontend_deployment',
@@ -593,16 +602,25 @@
     if !$._config.autoscaling_ruler_querier_enabled then {} else $.removeReplicasFromSpec
   ),
 
-  ruler_query_frontend_scaled_object: if !$._config.autoscaling_ruler_query_frontend_enabled || !$._config.ruler_remote_evaluation_enabled then null else
+  //
+  // Ruler-query-frontends
+  //
+
+  newRulerQueryFrontendScaledObject(name, extra_matchers='')::
     $.newResourceScaledObject(
-      name='ruler-query-frontend',
+      name=name,
+      container_name='ruler-query-frontend',
       cpu_requests=$.ruler_query_frontend_container.resources.requests.cpu,
       memory_requests=$.ruler_query_frontend_container.resources.requests.memory,
       min_replicas=$._config.autoscaling_ruler_query_frontend_min_replicas,
       max_replicas=$._config.autoscaling_ruler_query_frontend_max_replicas,
       cpu_target_utilization=$._config.autoscaling_ruler_query_frontend_cpu_target_utilization,
       memory_target_utilization=$._config.autoscaling_ruler_query_frontend_memory_target_utilization,
+      extra_matchers=extra_matchers,
     ),
+
+  ruler_query_frontend_scaled_object: if !$._config.autoscaling_ruler_query_frontend_enabled || !$._config.ruler_remote_evaluation_enabled then null else
+    $.newRulerQueryFrontendScaledObject('ruler-query-frontend'),
 
   ruler_query_frontend_deployment: overrideSuperIfExists(
     'ruler_query_frontend_deployment',
@@ -611,6 +629,10 @@
         queryFrontendReplicas($._config.autoscaling_ruler_querier_max_replicas) else
         {}
   ),
+
+  //
+  // Distributors
+  //
 
   newDistributorScaledObject(name, extra_matchers='')::
     $.newResourceScaledObject(
@@ -722,18 +744,23 @@
     if !isDistributorAutoscalingZoneCEnabled then {} else $.removeReplicasFromSpec
   ),
 
-  ruler_scaled_object: if !$._config.autoscaling_ruler_enabled then null else $.newResourceScaledObject(
-    name='ruler',
-    cpu_requests=$.ruler_container.resources.requests.cpu,
-    memory_requests=$.ruler_container.resources.requests.memory,
-    min_replicas=$._config.autoscaling_ruler_min_replicas,
-    max_replicas=$._config.autoscaling_ruler_max_replicas,
-    cpu_target_utilization=$._config.autoscaling_ruler_cpu_target_utilization,
-    memory_target_utilization=$._config.autoscaling_ruler_memory_target_utilization,
-    // To guarantee rule evaluation without any omissions, it is imperative to avoid the frequent scaling up and
-    // down of the ruler. As a result, we have made the decision to set the scale down period to 600 seconds.
-    scale_down_period=600,
-  ),
+  newRulerScaledObject(name, extra_matchers='')::
+    $.newResourceScaledObject(
+      name=name,
+      container_name='ruler',
+      cpu_requests=$.ruler_container.resources.requests.cpu,
+      memory_requests=$.ruler_container.resources.requests.memory,
+      min_replicas=$._config.autoscaling_ruler_min_replicas,
+      max_replicas=$._config.autoscaling_ruler_max_replicas,
+      cpu_target_utilization=$._config.autoscaling_ruler_cpu_target_utilization,
+      memory_target_utilization=$._config.autoscaling_ruler_memory_target_utilization,
+      // To guarantee rule evaluation without any omissions, it is imperative to avoid the frequent scaling up and
+      // down of the ruler. As a result, we have made the decision to set the scale down period to 600 seconds.
+      scale_down_period=600,
+      extra_matchers=extra_matchers,
+    ),
+
+  ruler_scaled_object: if !$._config.autoscaling_ruler_enabled then null else $.newRulerScaledObject('ruler'),
 
   ruler_deployment: overrideSuperIfExists(
     'ruler_deployment',
