@@ -14,7 +14,7 @@ draft: true
 
 **Type:** Feature
 
-**Status:** Draft
+**Status:** Implemented (Phase 1 & Phase 2)
 
 **Related issues/PRs:** TBD
 
@@ -94,6 +94,91 @@ When ingest storage is enabled, there is no mechanism to limit the number of ser
 ## Solution Overview
 
 We will implement a distributed cardinality tracking system using the **HyperLogLog (HLL)** probabilistic data structure with **memberlist gossip** for state synchronization.
+
+## Implementation Status
+
+Both Phase 1 (local tracking) and Phase 2 (distributed synchronization) have been completed.
+
+### Phase 1: Local HLL Tracking (✅ Completed)
+
+The core HLL tracking functionality has been implemented:
+
+- Created `pkg/distributor/hlltracker/` package
+- Forked HyperLogLog implementation to `pkg/distributor/hlltracker/hyperloglog/`
+- Implemented `Tracker` service with:
+  - Per-partition HLL structures (`partitionTracker`)
+  - Sliding time window with current + historical HLLs
+  - Minute rotation logic with automatic cleanup
+  - Thread-safe state management
+- Implemented distributor middleware (`preKafkaPartitionLimitMiddleware`):
+  - Positioned as the last middleware before Kafka write
+  - Calculates partition assignments using partition ring
+  - Updates local HLL copies with series hashes
+  - Checks limits and rejects requests if exceeded
+  - Only commits updates if all partitions are within limits
+- Added configuration flags:
+  - `-distributor.partition-series-tracker.enabled`
+  - `-distributor.partition-series-tracker.time-window-minutes` (default: 20)
+  - `-distributor.partition-series-tracker.hll-precision` (default: 11)
+  - `-distributor.partition-series-tracker.update-interval-seconds` (default: 1)
+- Added runtime limit configuration:
+  - `max_series_per_partition` in per-tenant limits
+  - Global limit when tracker is enabled
+- Comprehensive unit tests:
+  - HLL operations and accuracy tests
+  - Tracker state management tests
+  - Middleware behavior tests
+  - Concurrent update tests
+  - Time window cleanup tests
+
+### Phase 2: Distributed Synchronization (✅ Completed)
+
+Memberlist gossip integration has been implemented:
+
+- Implemented KV operations in `Tracker`:
+  - Binary codec for HLL state (`kv_codec.go`)
+  - CAS updates with automatic merge conflict resolution
+  - WatchPrefix pattern for receiving remote updates
+  - State loading on startup
+  - Automatic key cleanup for expired minutes
+- Implemented KV state structure (`PartitionHLLState`):
+  - Partition ID
+  - Unix minute timestamp
+  - HLL registers (binary serialized)
+  - Updated timestamp for ordering
+- Added background workers:
+  - KV push ticker (1 second): pushes dirty HLL state via CAS
+  - KV watch goroutine: merges remote updates into local state
+  - Rotation ticker (1 second): handles minute boundaries
+- Implemented merge logic:
+  - Current minute updates merge into `currentHLL`
+  - Historical minute updates merge into `historicalHLLs[minute]`
+  - Automatic rebuild of merged historical cache
+  - Time window validation (ignores stale data)
+- Wired up KV client in distributor:
+  - Uses same KV store config as distributor ring
+  - Creates separate KV client with partition HLL codec
+  - Automatically enables Phase 2 when distributor ring is enabled
+  - Falls back to Phase 1 (local-only) when ring is disabled
+- Added Phase 2 tests:
+  - Mock KV client for testing CAS and watch operations
+  - KV push tests
+  - Remote state merge tests
+  - Historical merge tests
+  - Stale data rejection tests
+- Key format: `partition-series/<partition_id>/<unix_minute>`
+
+### Current Behavior
+
+- **With distributor ring enabled**: Phase 2 mode
+  - HLL state is synchronized across all distributors via memberlist
+  - Provides cluster-wide per-partition cardinality tracking
+  - Eventual consistency across distributors (1-2 second lag)
+
+- **Without distributor ring**: Phase 1 mode
+  - Each distributor tracks only its own series locally
+  - Still provides protection against hot partitions
+  - Useful for single-distributor deployments or testing
 
 ### Key Components
 
