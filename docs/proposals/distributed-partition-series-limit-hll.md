@@ -98,10 +98,11 @@ We will implement a distributed cardinality tracking system using the **HyperLog
 ### Key Components
 
 1. **HyperLogLog Algorithm**: Provides space-efficient cardinality estimation
-   - Memory footprint: ~1-2 KB per partition per minute (configurable precision)
-   - Error rate: ~2% (standard deviation, configurable via precision parameter)
+   - Memory footprint: ~2 KB per partition per minute (2048 registers, precision 11)
+   - Error rate: ~5-6% (standard deviation with precision 11)
    - Mergeable: Multiple HLL instances can be combined efficiently
    - Fast operations: O(1) add, O(m) merge where m = number of registers
+   - **Note on precision**: The 5-6% error rate is acceptable for this use case. An ingester will not run out of memory if it ingests 3.3M series instead of 3M series. The variation in resource usage due to the nature of series (label cardinality, sample rate) is far greater than the difference caused by a 5% cardinality estimation error. This is not an exact science, and we prioritize low memory overhead over perfect accuracy.
 
 2. **Sliding Time Window**: Track series over a configurable window (default: 20 minutes)
    - Store N HLL structures per partition (one per minute)
@@ -169,11 +170,11 @@ We will implement a distributed cardinality tracking system using the **HyperLog
 
 **Ingestion path (per push request):**
 1. Request arrives at distributor
-2. Passes through middleware chain
+2. Passes through middleware chain (including HA-dedupe, relabel, validation)
 3. Pre-Kafka partition limit middleware:
    - Get read-only copies of historical merged HLL (cached)
    - Get writable copies of current HLL for affected partitions
-   - Calculate partition assignments for all series in request
+   - Calculate partition assignments for series in request (metadata is not counted)
    - Add series hashes to local copies of current HLL
    - For each affected partition:
      - Merge historical HLL + updated current HLL
@@ -192,12 +193,12 @@ We will implement a distributed cardinality tracking system using the **HyperLog
 5. Upon receiving update: merge remote HLL into local HLL
 
 **Minute rotation (every minute):**
-1. Ticker detects minute boundary crossed
-2. "Current" HLL becomes part of "historical" HLLs
-3. New empty HLL created as new "current"
-4. Rebuild cached merged historical HLL
-5. Delete HLL structures older than time window
-6. Delete corresponding KV keys (cleanup)
+1. Ticker detects minute boundary crossed (from minute M to minute M+1)
+2. "Current" HLL is moved to "historical" HLLs with key M (the minute that just ended)
+3. New empty HLL created as new "current" for minute M+1
+4. Rebuild cached merged historical HLL (merge of all historical HLLs)
+5. Delete HLL structures older than time window (minute < M+1 - window_minutes)
+6. Delete corresponding KV keys (cleanup for old minutes)
 
 ## Implementation Details
 
@@ -231,6 +232,10 @@ import (
 type Config struct {
     Enabled bool `yaml:"enabled"`
 
+    // KVStore is the backend storage for the partition series tracker.
+    // Memberlist is the recommended backend.
+    KVStore kv.Config `yaml:"kvstore"`
+
     // TimeWindowMinutes is the number of minutes to track series cardinality.
     // Default: 20
     TimeWindowMinutes int `yaml:"time_window_minutes"`
@@ -241,7 +246,7 @@ type Config struct {
 
     // HLLPrecision controls the HLL precision parameter (log2(m) where m is
     // the number of registers). Higher precision = lower error but more memory.
-    // Valid range: 4-18. Default: 14 (16384 registers, ~16KB per HLL, ~2% error)
+    // Valid range: 4-18. Default: 11 (2048 registers, ~2KB per HLL, ~5-6% error)
     HLLPrecision int `yaml:"hll_precision"`
 }
 
@@ -318,7 +323,6 @@ type CurrentState struct {
 ```go
 func New(
     cfg Config,
-    kvClient kv.Client,
     logger log.Logger,
     reg prometheus.Registerer,
 ) (*Tracker, error) {
@@ -330,16 +334,27 @@ func New(
         cfg.UpdateIntervalSeconds = 1
     }
     if cfg.HLLPrecision < 4 || cfg.HLLPrecision > 18 {
-        cfg.HLLPrecision = 14
+        cfg.HLLPrecision = 11  // Default to 2048 registers
     }
 
     t := &Tracker{
         cfg:        cfg,
-        kv:         kvClient,
         logger:     logger,
         partitions: make(map[int32]*partitionTracker),
         // ... initialize metrics
     }
+
+    // Create KV client (similar to HA-Tracker pattern)
+    kvClient, err := kv.NewClient(
+        cfg.KVStore,
+        GetPartitionSeriesCodec(),
+        kv.RegistererWithKVName(reg, "partition-series-tracker"),
+        logger,
+    )
+    if err != nil {
+        return nil, err
+    }
+    t.kv = kvClient
 
     t.Service = services.NewBasicService(t.starting, t.running, t.stopping)
     return t, nil
@@ -497,8 +512,16 @@ func kvKey(minute int64, partitionID int32) string {
 }
 
 // kvValue is the value stored in memberlist KV (just the HLL registers).
+// We use protobuf for encoding (consistent with Mimir conventions).
 type kvValue struct {
-    Registers []byte `json:"registers"`
+    Registers []byte `protobuf:"bytes,1,opt,name=registers,proto3" json:"registers,omitempty"`
+}
+
+// GetPartitionSeriesCodec returns the codec for encoding/decoding kvValue.
+func GetPartitionSeriesCodec() codec.Codec {
+    return codec.NewProtoCodec("partitionSeries", func() proto.Message {
+        return &kvValue{}
+    })
 }
 
 // pushUpdatesToKV performs CAS updates for all dirty partitions.
@@ -734,6 +757,9 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
         false,
         "Enable distributed partition series tracking using HyperLogLog.")
 
+    // Register KVStore flags with prefix
+    cfg.HLLTracker.KVStore.RegisterFlagsWithPrefix("distributor.partition-series-tracker.", "partition series tracker", f)
+
     f.IntVar(&cfg.HLLTracker.TimeWindowMinutes,
         "distributor.partition-series-tracker.time-window-minutes",
         20,
@@ -746,8 +772,8 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 
     f.IntVar(&cfg.HLLTracker.HLLPrecision,
         "distributor.partition-series-tracker.hll-precision",
-        14,
-        "HyperLogLog precision (log2 of number of registers). Valid range: 4-18. Higher = more accurate but more memory.")
+        11,
+        "HyperLogLog precision (log2 of number of registers). Valid range: 4-18. Default 11 (2048 registers, ~2KB, ~5-6% error). Higher = more accurate but more memory.")
 }
 ```
 
@@ -794,8 +820,7 @@ func New(cfg Config, ...) (*Distributor, error) {
     if cfg.HLLTracker.Enabled && cfg.IngestStorageConfig.Enabled {
         tracker, err := hlltracker.New(
             cfg.HLLTracker,
-            ingestersRing.KVClient(),
-            logger,
+            log.With(logger, "component", "partition-series-tracker"),
             registerer,
         )
         if err != nil {
@@ -869,8 +894,8 @@ func (d *Distributor) preKafkaPartitionLimitMiddleware(next PushFunc) PushFunc {
             return next(ctx, pushReq)
         }
 
-        // Get partition assignments for all series
-        keys, _ := getSeriesAndMetadataTokens(userID, req)
+        // Get series tokens only (not metadata) - we only limit series per partition
+        seriesKeys := getTokensForSeries(userID, req.Timeseries)
 
         subring, err := d.partitionsRing.ShuffleShard(
             userID,
@@ -885,7 +910,7 @@ func (d *Distributor) preKafkaPartitionLimitMiddleware(next PushFunc) PushFunc {
         // Group series by partition
         partitionSeries := make(map[int32][]uint32)
 
-        err = ring.DoBatchWithOptions(ctx, ring.WriteNoExtend, partitionRing, keys,
+        err = ring.DoBatchWithOptions(ctx, ring.WriteNoExtend, partitionRing, seriesKeys,
             func(partition ring.InstanceDesc, indexes []int) error {
                 partitionID, err := strconv.ParseInt(partition.Id, 10, 32)
                 if err != nil {
@@ -896,7 +921,7 @@ func (d *Distributor) preKafkaPartitionLimitMiddleware(next PushFunc) PushFunc {
                 for _, idx := range indexes {
                     partitionSeries[int32(partitionID)] = append(
                         partitionSeries[int32(partitionID)],
-                        keys[idx],
+                        seriesKeys[idx],
                     )
                 }
 
@@ -1089,7 +1114,7 @@ The implementation will be done in two phases to reduce complexity and enable in
    - Watch pattern for remote updates
    - Load state on startup
    - Key cleanup for old minutes
-2. Implement `kvValue` codec (protobuf or JSON)
+2. Implement `kvValue` protobuf message and codec
 3. Add background ticker for periodic CAS pushes
 4. Add merging logic for remote updates
 5. Update tests for distributed scenarios
@@ -1106,6 +1131,16 @@ The implementation will be done in two phases to reduce complexity and enable in
 - Accurate cluster-wide per-partition cardinality
 - Protection against hot partitions across distributors
 - Resilient to distributor failures and restarts
+
+### Implementation Notes
+
+1. **Proto file**: Create `pkg/distributor/hlltracker/hlltracker.proto` for the kvValue message
+2. **Codec registration**: Register the codec similar to HA-Tracker's ReplicaDesc codec
+3. **KV key prefix**: Use "partition-series/" to avoid conflicts with other KV data
+4. **Cleanup strategy**: Use two-phase deletion (mark, then delete) like HA-Tracker to ensure Watch notifications propagate
+5. **Error handling**: If KV operations fail, log warnings but don't fail requests (fail open for availability)
+6. **Metrics**: Add gauges for per-partition cardinality estimates, counters for CAS operations, rejected requests
+7. **Testing**: Mock time in tests to control minute rotation and window management
 
 ### Rollout Plan
 
@@ -1170,26 +1205,33 @@ The implementation will be done in two phases to reduce complexity and enable in
 
 ## Open Questions
 
-1. **HLL precision tuning**: Default precision of 14 (16KB per HLL, ~2% error). Should we make this dynamically tunable per tenant?
+1. **HLL precision tuning**: Default precision of 11 (2KB per HLL, ~5-6% error). Should we make this dynamically tunable per tenant?
+   - **Decision**: No, keep it simple with a single global precision setting. The 5-6% error is acceptable for all use cases.
 
-2. **Memory limits**: With 1000 partitions, 20-minute window, precision 14:
-   - Per partition: 20 minutes × 16 KB = 320 KB
-   - Total: 1000 × 320 KB = 320 MB
-   - Is this acceptable? Should we add memory limits?
+2. **Memory limits**: With 1000 partitions, 20-minute window, precision 11:
+   - Per partition: 20 minutes × 2 KB = 40 KB
+   - Total: 1000 × 40 KB = 40 MB
+   - This is very acceptable. Even with 10,000 partitions, we'd only use 400 MB.
 
 3. **KV bandwidth**: How much bandwidth will CAS updates consume?
    - Updates per second: number of partitions receiving writes
-   - Bytes per update: ~16 KB (registers)
-   - Need to measure in testing
+   - Bytes per update: ~2 KB (registers)
+   - With 1000 active partitions, 1 update/second: ~2 MB/s per distributor
+   - Need to measure in testing, but should be manageable
 
 4. **Limit threshold**: Default of 3M series per partition - is this appropriate?
    - Depends on ingester memory capacity
-   - Should be configurable per deployment
+   - Should be configurable per deployment via runtime config
+   - Operators should adjust based on their ingester specs
 
 5. **Error handling**: If memberlist is unavailable, should we:
-   - Allow writes (risk exceeding limits)
+   - Allow writes (risk exceeding limits) ← **Recommended**: Fail open for availability
    - Reject writes (risk false positives)
    - Fall back to local-only tracking
+   - Add a flag to configure this behavior
+
+6. **Series vs Metadata**: Should we only track series or also metadata?
+   - **Decision**: Only track series (not metadata). The limit is about ingester memory from series in TSDB HEAD, not metadata.
 
 ## Success Criteria
 
