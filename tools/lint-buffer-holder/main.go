@@ -6,19 +6,20 @@
 package main
 
 import (
-	"bufio"
 	"flag"
 	"fmt"
+	"go/ast"
+	"go/parser"
 	"go/token"
 	"go/types"
 	"iter"
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/grafana/dskit/flagext"
-	"github.com/grafana/regexp"
 	"golang.org/x/tools/go/packages"
 )
 
@@ -29,13 +30,14 @@ func main() {
 }
 
 func (l *linter) run(dirs ...string) {
-	services := slices.Collect(findGRPCServices(dirs...))
+	l.fset = new(token.FileSet)
+
+	services := slices.Collect(l.findGRPCServices(dirs...))
 	var pkgPaths []string
 	for _, s := range services {
 		pkgPaths = append(pkgPaths, "./"+filepath.Dir(s.protoPath))
 	}
 
-	l.fset = new(token.FileSet)
 	packages := must(packages.Load(&packages.Config{
 		Fset:  l.fset,
 		Mode:  packages.LoadAllSyntax,
@@ -86,25 +88,24 @@ type grpcService struct {
 
 // findGRPCServices finds all gRPC services in .proto files under ./pkg.
 // It returns an iterator that yields ServiceInfo for each service found.
-func findGRPCServices(dirs ...string) iter.Seq[grpcService] {
+func (l *linter) findGRPCServices(dirs ...string) iter.Seq[grpcService] {
 	if len(dirs) == 0 {
 		dirs = []string{"./pkg"}
 	}
 	return func(yield func(grpcService) bool) {
-		// Walk the directory tree looking for .proto files
+		// Walk the directory tree looking for .pb.go files
 		for _, dir := range dirs {
 			try(filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
 				if err != nil {
 					return err
 				}
 
-				// Skip directories and non-proto files
-				if d.IsDir() || !strings.HasSuffix(d.Name(), ".proto") {
+				if d.IsDir() || !strings.HasSuffix(d.Name(), ".pb.go") {
 					return nil
 				}
 
 				// Parse the proto file for service definitions
-				services, err := parseProtoServices(path)
+				services, err := l.parseProtoServices(path)
 				if err != nil {
 					return fmt.Errorf("failed to parse %s: %w", path, err)
 				}
@@ -125,34 +126,44 @@ func findGRPCServices(dirs ...string) iter.Seq[grpcService] {
 	}
 }
 
-// parseProtoServices extracts service names from a proto file
-func parseProtoServices(filePath string) ([]string, error) {
-	file, err := os.Open(filePath)
-	if err != nil {
-		return nil, err
-	}
-	defer file.Close()
+// parseProtoServices extracts service names from a proto generated file.
+// It finds all grpc.ServiceDesc.ServiceName.
+func (l *linter) parseProtoServices(filePath string) ([]string, error) {
+	content := must(os.ReadFile(filePath))
+	file := must(parser.ParseFile(l.fset, filePath, content, 0))
 
 	var services []string
-	scanner := bufio.NewScanner(file)
-
-	// Regular expression to match service declarations
-	// Matches: service ServiceName {
-	serviceRegex := regexp.MustCompile(`^\s*service\s+(\w+)\s*\{`)
-
-	for scanner.Scan() {
-		line := scanner.Text()
-
-		// Check if this line contains a service declaration
-		if matches := serviceRegex.FindStringSubmatch(line); matches != nil {
-			serviceName := matches[1]
-			services = append(services, serviceName)
+	ast.Inspect(file, func(n ast.Node) bool {
+		cl, ok := n.(*ast.CompositeLit)
+		if !ok {
+			return true
 		}
-	}
+		sel, ok := cl.Type.(*ast.SelectorExpr)
+		if !ok {
+			return true
+		}
+		ident, ok := sel.X.(*ast.Ident)
+		if !ok || ident.Name != "grpc" || sel.Sel.Name != "ServiceDesc" {
+			return true
+		}
 
-	if err := scanner.Err(); err != nil {
-		return nil, err
-	}
+		// Extract ServiceName field
+		for _, elt := range cl.Elts {
+			kv, ok := elt.(*ast.KeyValueExpr)
+			if !ok {
+				continue
+			}
+			if kv.Key.(*ast.Ident).Name != "ServiceName" {
+				continue
+			}
+			// Unquote the string and split by "."
+			fullName := must(strconv.Unquote(kv.Value.(*ast.BasicLit).Value))
+			_, name, _ := strings.Cut(fullName, ".")
+			services = append(services, name)
+		}
+
+		return true
+	})
 
 	return services, nil
 }
