@@ -36,8 +36,6 @@ var _ = math.Inf
 const _ = proto.GoGoProtoPackageIsVersion3 // please upgrade the proto package
 
 type QueryResultRequest struct {
-	mimirpb.BufferHolder
-
 	QueryID      uint64                                                `protobuf:"varint,1,opt,name=queryID,proto3" json:"queryID,omitempty"`
 	HttpResponse *httpgrpc.HTTPResponse                                `protobuf:"bytes,2,opt,name=httpResponse,proto3" json:"httpResponse,omitempty"`
 	Stats        *github_com_grafana_mimir_pkg_querier_stats.SafeStats `protobuf:"bytes,3,opt,name=stats,proto3,customtype=github.com/grafana/mimir/pkg/querier/stats.SafeStats" json:"stats,omitempty"`

@@ -75,7 +75,6 @@ func (l *linter) fillPackages(pkgs []*packages.Package) {
 
 	l.contextContext = l.packages["context"].Types.Scope().Lookup("Context").(*types.TypeName).Type()
 	l.errorType = types.Universe.Lookup("error").(*types.TypeName).Type()
-	l.byteType = types.Universe.Lookup("byte").(*types.TypeName).Type()
 	l.messageWithBufferRef = l.packages["github.com/grafana/mimir/pkg/mimirpb"].Types.Scope().Lookup("MessageWithBufferRef").(*types.TypeName).Type().Underlying().(*types.Interface)
 	l.unsafeMutableString = l.packages["github.com/grafana/mimir/pkg/mimirpb"].Types.Scope().Lookup("UnsafeMutableString").(*types.TypeName).Type().(*types.Alias)
 }
@@ -165,7 +164,6 @@ type linter struct {
 	contextContext       types.Type
 	errorType            types.Type
 	messageWithBufferRef *types.Interface
-	byteType             types.Type
 	unsafeMutableString  *types.Alias
 
 	seen map[types.Type]bool
@@ -316,9 +314,6 @@ func (l *linter) referencesToBuffer(pkg *types.Package, typ types.Type) iter.Seq
 				yield([]string{"(mimirpb.UnsafeMutableString)"})
 			}
 		case *types.Slice:
-			if typ.Elem() == l.byteType {
-				yield([]string{"([]byte)"})
-			}
 			for ref := range l.referencesToBuffer(pkg, typ.Elem()) {
 				if !yield(ref) {
 					return

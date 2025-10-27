@@ -10,7 +10,6 @@ import (
 	proto "github.com/gogo/protobuf/proto"
 	types "github.com/gogo/protobuf/types"
 	httpgrpc "github.com/grafana/dskit/httpgrpc"
-	mimirpb "github.com/grafana/mimir/pkg/mimirpb"
 	grpc "google.golang.org/grpc"
 	codes "google.golang.org/grpc/codes"
 	status "google.golang.org/grpc/status"
@@ -367,8 +366,6 @@ func (m *MetadataItem) GetValue() []string {
 }
 
 type FrontendToScheduler struct {
-	mimirpb.BufferHolder
-
 	Type FrontendToSchedulerType `protobuf:"varint,1,opt,name=type,proto3,enum=schedulerpb.FrontendToSchedulerType" json:"type,omitempty"`
 	// Used by INIT message. Will be put into all requests passed to querier.
 	FrontendAddress string `protobuf:"bytes,2,opt,name=frontendAddress,proto3" json:"frontendAddress,omitempty"`

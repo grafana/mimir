@@ -28,8 +28,6 @@ var _ = math.Inf
 const _ = proto.GoGoProtoPackageIsVersion3 // please upgrade the proto package
 
 type SeriesRequest struct {
-	mimirpb.BufferHolder
-
 	MinTime  int64          `protobuf:"varint,1,opt,name=min_time,json=minTime,proto3" json:"min_time,omitempty"`
 	MaxTime  int64          `protobuf:"varint,2,opt,name=max_time,json=maxTime,proto3" json:"max_time,omitempty"`
 	Matchers []LabelMatcher `protobuf:"bytes,3,rep,name=matchers,proto3" json:"matchers"`
@@ -263,8 +261,6 @@ func (*SeriesResponse) XXX_OneofWrappers() []interface{} {
 }
 
 type LabelNamesRequest struct {
-	mimirpb.BufferHolder
-
 	Start int64 `protobuf:"varint,3,opt,name=start,proto3" json:"start,omitempty"`
 	End   int64 `protobuf:"varint,4,opt,name=end,proto3" json:"end,omitempty"`
 	// hints is an opaque data structure that can be used to carry additional information.
@@ -349,8 +345,6 @@ func (m *LabelNamesResponse) XXX_DiscardUnknown() {
 var xxx_messageInfo_LabelNamesResponse proto.InternalMessageInfo
 
 type LabelValuesRequest struct {
-	mimirpb.BufferHolder
-
 	Label string `protobuf:"bytes,1,opt,name=label,proto3" json:"label,omitempty"`
 	Start int64  `protobuf:"varint,4,opt,name=start,proto3" json:"start,omitempty"`
 	End   int64  `protobuf:"varint,5,opt,name=end,proto3" json:"end,omitempty"`

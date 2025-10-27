@@ -1,5 +1,5 @@
 diff --git a/pkg/storegateway/storepb/rpc.pb.go b/pkg/storegateway/storepb/rpc.pb.go
-index f1408102fc..77a75acb2f 100644
+index 3bf7a4ec4d..77a75acb2f 100644
 --- a/pkg/storegateway/storepb/rpc.pb.go
 +++ b/pkg/storegateway/storepb/rpc.pb.go
 @@ -8,7 +8,6 @@ import (
@@ -10,16 +10,7 @@ index f1408102fc..77a75acb2f 100644
  	io "io"
  	math "math"
  	math_bits "math/bits"
-@@ -28,8 +27,6 @@ var _ = math.Inf
- const _ = proto.GoGoProtoPackageIsVersion3 // please upgrade the proto package
- 
- type SeriesRequest struct {
--	mimirpb.BufferHolder
--
- 	MinTime  int64          `protobuf:"varint,1,opt,name=min_time,json=minTime,proto3" json:"min_time,omitempty"`
- 	MaxTime  int64          `protobuf:"varint,2,opt,name=max_time,json=maxTime,proto3" json:"max_time,omitempty"`
- 	Matchers []LabelMatcher `protobuf:"bytes,3,rep,name=matchers,proto3" json:"matchers"`
-@@ -123,9 +120,6 @@ func (m *Stats) XXX_DiscardUnknown() {
+@@ -121,9 +120,6 @@ func (m *Stats) XXX_DiscardUnknown() {
  var xxx_messageInfo_Stats proto.InternalMessageInfo
  
  type SeriesResponse struct {
@@ -29,21 +20,3 @@ index f1408102fc..77a75acb2f 100644
  	// Types that are valid to be assigned to Result:
  	//	*SeriesResponse_Warning
  	//	*SeriesResponse_Hints
-@@ -263,8 +257,6 @@ func (*SeriesResponse) XXX_OneofWrappers() []interface{} {
- }
- 
- type LabelNamesRequest struct {
--	mimirpb.BufferHolder
--
- 	Start int64 `protobuf:"varint,3,opt,name=start,proto3" json:"start,omitempty"`
- 	End   int64 `protobuf:"varint,4,opt,name=end,proto3" json:"end,omitempty"`
- 	// hints is an opaque data structure that can be used to carry additional information.
-@@ -349,8 +341,6 @@ func (m *LabelNamesResponse) XXX_DiscardUnknown() {
- var xxx_messageInfo_LabelNamesResponse proto.InternalMessageInfo
- 
- type LabelValuesRequest struct {
--	mimirpb.BufferHolder
--
- 	Label string `protobuf:"bytes,1,opt,name=label,proto3" json:"label,omitempty"`
- 	Start int64  `protobuf:"varint,4,opt,name=start,proto3" json:"start,omitempty"`
- 	End   int64  `protobuf:"varint,5,opt,name=end,proto3" json:"end,omitempty"`
