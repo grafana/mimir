@@ -554,6 +554,73 @@ func requireTrackersSameData(t *testing.T, tracker1, tracker2 *trackerStore) {
 	}
 }
 
+func TestCurrentSeriesLimit(t *testing.T) {
+	tests := []struct {
+		name       string
+		series     uint64
+		limit      uint64
+		zonesCount uint64
+		expected   uint64
+	}{
+		{
+			name:       "normal case with room",
+			series:     100,
+			limit:      1000,
+			zonesCount: 2,
+			expected:   550, // 100 + (1000-100)/2 + (1000-100)%2 = 100 + 450 + 0 = 550
+		},
+		{
+			name:       "single zone",
+			series:     100,
+			limit:      1000,
+			zonesCount: 1,
+			expected:   1000, // 100 + (1000-100)/1 = 100 + 900 = 1000
+		},
+		{
+			name:       "at the limit",
+			series:     1000,
+			limit:      1000,
+			zonesCount: 2,
+			expected:   1000, // series >= limit, return limit
+		},
+		{
+			name:       "over the limit (underflow scenario)",
+			series:     1500,
+			limit:      1000,
+			zonesCount: 2,
+			expected:   1000, // series >= limit, return limit (prevents underflow)
+		},
+		{
+			name:       "far over the limit",
+			series:     10000,
+			limit:      100,
+			zonesCount: 3,
+			expected:   100, // series >= limit, return limit (prevents underflow)
+		},
+		{
+			name:       "zero limit",
+			series:     100,
+			limit:      0,
+			zonesCount: 2,
+			expected:   0, // series >= limit, return limit
+		},
+		{
+			name:       "with remainder",
+			series:     100,
+			limit:      1005,
+			zonesCount: 2,
+			expected:   553, // 100 + (1005-100)/2 + (1005-100)%2 = 100 + 452 + 1 = 553
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := currentSeriesLimit(tt.series, tt.limit, tt.zonesCount)
+			require.Equal(t, tt.expected, result)
+		})
+	}
+}
+
 func decodeSnapshot(t *testing.T, data []byte) map[string]map[uint64]clock.Minutes {
 	snapshot := encoding.Decbuf{B: data}
 	version := snapshot.Byte()

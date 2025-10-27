@@ -31,6 +31,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/chunk"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/limiter"
 	"github.com/grafana/mimir/pkg/util/test"
 )
 
@@ -92,6 +93,8 @@ func TestDistributorQuerier_Select_ShouldHonorQueryIngestersWithin(t *testing.T)
 
 			const tenantID = "test"
 			ctx := user.InjectOrgID(context.Background(), tenantID)
+			memoryTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
+			ctx = limiter.AddMemoryTrackerToContext(ctx, memoryTracker)
 			configProvider := newMockConfigProvider(testData.queryIngestersWithin)
 			queryable := NewDistributorQueryable(distributor, configProvider, nil, log.NewNopLogger())
 			querier, err := queryable.Querier(testData.queryMinT, testData.queryMaxT)
@@ -124,41 +127,9 @@ func TestDistributorQuerier_Select_ShouldHonorQueryIngestersWithin(t *testing.T)
 func TestDistributorQuerier_Select(t *testing.T) {
 	const mint, maxt = 0, 10
 
-	// We need to make sure that there is at least one chunk present,
-	// else no series will be selected.
-	promChunk, err := chunk.NewForEncoding(chunk.PrometheusXorChunk)
-	require.NoError(t, err)
-
-	// Ensure at least 1 sample is appended to the chunk otherwise it can't be marshalled.
-	_, err = promChunk.Add(model.SamplePair{Timestamp: mint, Value: 0})
-	require.NoError(t, err)
-
-	clientChunks, err := client.ToChunks([]chunk.Chunk{
-		chunk.NewChunk(labels.EmptyLabels(), promChunk, model.Earliest, model.Earliest),
-	})
-	require.NoError(t, err)
-
 	testCases := map[string]struct {
 		response client.CombinedQueryStreamResponse
 	}{
-		"chunk series": {
-			response: client.CombinedQueryStreamResponse{
-				Chunkseries: []client.TimeSeriesChunk{
-					{
-						Labels: []mimirpb.LabelAdapter{
-							{Name: "bar", Value: "baz"},
-						},
-						Chunks: clientChunks,
-					},
-					{
-						Labels: []mimirpb.LabelAdapter{
-							{Name: "foo", Value: "bar"},
-						},
-						Chunks: clientChunks,
-					},
-				},
-			},
-		},
 		"streaming series": {
 			response: client.CombinedQueryStreamResponse{
 				StreamingSeries: []client.StreamingSeries{
@@ -175,10 +146,16 @@ func TestDistributorQuerier_Select(t *testing.T) {
 
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
-			d := &mockDistributor{}
-			d.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(testCase.response, nil)
 
 			ctx := user.InjectOrgID(context.Background(), "0")
+			memoryTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
+			ctx = limiter.AddMemoryTrackerToContext(ctx, memoryTracker)
+
+			d := &mockDistributor{
+				memoryConsumptionTracker: memoryTracker,
+			}
+			d.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(testCase.response, nil)
+
 			queryable := NewDistributorQueryable(d, newMockConfigProvider(0), nil, log.NewNopLogger())
 			querier, err := queryable.Querier(mint, maxt)
 			require.NoError(t, err)
@@ -200,117 +177,6 @@ func TestDistributorQuerier_Select(t *testing.T) {
 	}
 }
 
-func TestDistributorQuerier_Select_MixedChunkseriesTimeseriesAndStreamingResults(t *testing.T) {
-	const (
-		mint = 0
-		maxt = 10000
-	)
-	s1 := []mimirpb.Sample{
-		{TimestampMs: 1000, Value: 1},
-		{TimestampMs: 2000, Value: 2},
-		{TimestampMs: 3000, Value: 3},
-		{TimestampMs: 4000, Value: 4},
-		{TimestampMs: 5000, Value: 5},
-	}
-	s2 := []mimirpb.Sample{
-		{TimestampMs: 1000, Value: 1},
-		{TimestampMs: 2500, Value: 2.5},
-		{TimestampMs: 3000, Value: 3},
-		{TimestampMs: 5500, Value: 5.5},
-	}
-	s3 := []mimirpb.Sample{
-		{TimestampMs: 3000, Value: 3},
-		{TimestampMs: 6000, Value: 6},
-		{TimestampMs: 7000, Value: 7},
-	}
-	s4 := []mimirpb.Sample{
-		{TimestampMs: 8000, Value: 8},
-		{TimestampMs: 9000, Value: 9},
-	}
-
-	mergedSamplesS1S2S3 := []interface{}{
-		mimirpb.Sample{TimestampMs: 1000, Value: 1},
-		mimirpb.Sample{TimestampMs: 2000, Value: 2},
-		mimirpb.Sample{TimestampMs: 2500, Value: 2.5},
-		mimirpb.Sample{TimestampMs: 3000, Value: 3},
-		mimirpb.Sample{TimestampMs: 4000, Value: 4},
-		mimirpb.Sample{TimestampMs: 5000, Value: 5},
-		mimirpb.Sample{TimestampMs: 5500, Value: 5.5},
-		mimirpb.Sample{TimestampMs: 6000, Value: 6},
-		mimirpb.Sample{TimestampMs: 7000, Value: 7},
-	}
-
-	streamReader := createTestStreamReader([]client.QueryStreamSeriesChunks{
-		{SeriesIndex: 0, Chunks: convertToChunks(t, samplesToInterface(s4), false)},
-		{SeriesIndex: 1, Chunks: convertToChunks(t, samplesToInterface(s3), false)},
-	})
-
-	d := &mockDistributor{}
-	d.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(
-		client.CombinedQueryStreamResponse{
-			Chunkseries: []client.TimeSeriesChunk{
-				{
-					Labels: []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "one"}},
-					Chunks: convertToChunks(t, samplesToInterface(s1), false),
-				},
-				{
-					Labels: []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "two"}},
-					Chunks: convertToChunks(t, samplesToInterface(s1), false),
-				},
-			},
-
-			Timeseries: []mimirpb.TimeSeries{
-				{
-					Labels:  []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "two"}},
-					Samples: s2,
-				},
-				{
-					Labels:  []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "three"}},
-					Samples: s1,
-				},
-			},
-
-			StreamingSeries: []client.StreamingSeries{
-				{
-					Labels: labels.FromStrings(labels.MetricName, "four"),
-					Sources: []client.StreamingSeriesSource{
-						{SeriesIndex: 0, StreamReader: streamReader},
-					},
-				},
-				{
-					Labels: labels.FromStrings(labels.MetricName, "two"),
-					Sources: []client.StreamingSeriesSource{
-						{SeriesIndex: 1, StreamReader: streamReader},
-					},
-				},
-			},
-		},
-		nil)
-
-	ctx := user.InjectOrgID(context.Background(), "0")
-	queryable := NewDistributorQueryable(d, newMockConfigProvider(0), stats.NewQueryMetrics(prometheus.NewPedanticRegistry()), log.NewNopLogger())
-	querier, err := queryable.Querier(mint, maxt)
-	require.NoError(t, err)
-
-	seriesSet := querier.Select(ctx, true, &storage.SelectHints{Start: mint, End: maxt}, labels.MustNewMatcher(labels.MatchRegexp, labels.MetricName, ".*"))
-	require.NoError(t, seriesSet.Err())
-
-	require.True(t, seriesSet.Next())
-	verifySeries(t, seriesSet.At(), labels.FromStrings(labels.MetricName, "four"), samplesToInterface(s4))
-
-	require.True(t, seriesSet.Next())
-	verifySeries(t, seriesSet.At(), labels.FromStrings(labels.MetricName, "one"), samplesToInterface(s1))
-
-	require.True(t, seriesSet.Next())
-	verifySeries(t, seriesSet.At(), labels.FromStrings(labels.MetricName, "three"), samplesToInterface(s1))
-
-	require.True(t, seriesSet.Next())
-	verifySeries(t, seriesSet.At(), labels.FromStrings(labels.MetricName, "two"), mergedSamplesS1S2S3)
-
-	require.False(t, seriesSet.Next())
-	require.NoError(t, seriesSet.Err())
-}
-
 func TestDistributorQuerier_Select_ClosedBeforeSelectFinishes(t *testing.T) {
 	const (
 		mint = 0
@@ -329,7 +195,13 @@ func TestDistributorQuerier_Select_ClosedBeforeSelectFinishes(t *testing.T) {
 		{SeriesIndex: 1, Chunks: convertToChunks(t, samplesToInterface(s2), false)},
 	})
 
-	d := &mockDistributor{}
+	ctx := user.InjectOrgID(context.Background(), "0")
+	memoryTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
+	ctx = limiter.AddMemoryTrackerToContext(ctx, memoryTracker)
+
+	d := &mockDistributor{
+		memoryConsumptionTracker: memoryTracker,
+	}
 	d.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(
 		client.CombinedQueryStreamResponse{
 			StreamingSeries: []client.StreamingSeries{
@@ -349,7 +221,6 @@ func TestDistributorQuerier_Select_ClosedBeforeSelectFinishes(t *testing.T) {
 		},
 		nil)
 
-	ctx := user.InjectOrgID(context.Background(), "0")
 	queryable := NewDistributorQueryable(d, newMockConfigProvider(0), stats.NewQueryMetrics(prometheus.NewPedanticRegistry()), log.NewNopLogger())
 	querier, err := queryable.Querier(mint, maxt)
 	require.NoError(t, err)
@@ -415,45 +286,68 @@ func TestDistributorQuerier_Select_MixedFloatAndIntegerHistograms(t *testing.T) 
 		genTestHistogram(5500, 55),
 	}
 
-	mergedSamplesS1S2 := []interface{}{
-		genTestHistogram(1000, 1),
-		genTestHistogram(2000, 2),
-		genTestFloatHistogram(2500, 25),
-		genTestHistogram(3000, 3),
-		genTestFloatHistogram(4000, 4),
-		genTestHistogram(5000, 5),
-		genTestHistogram(5500, 55),
+	expectMergedSamplesS1S2 := []interface{}{
+		genExpectedHistogram(1000, 1, mimirpb.Histogram_UNKNOWN),
+		genExpectedHistogram(2000, 2, mimirpb.Histogram_UNKNOWN),
+		genExpectedFloatHistogram(2500, 25, mimirpb.Histogram_UNKNOWN),
+		genExpectedHistogram(3000, 3, mimirpb.Histogram_UNKNOWN),
+		genExpectedFloatHistogram(4000, 4, mimirpb.Histogram_UNKNOWN),
+		genExpectedHistogram(5000, 5, mimirpb.Histogram_UNKNOWN),
+		genExpectedHistogram(5500, 55, mimirpb.Histogram_UNKNOWN),
 	}
 
-	d := &mockDistributor{}
+	ctx := user.InjectOrgID(context.Background(), "0")
+	memoryTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
+	ctx = limiter.AddMemoryTrackerToContext(ctx, memoryTracker)
+
+	d := &mockDistributor{
+		memoryConsumptionTracker: memoryTracker,
+	}
 	d.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(
 		client.CombinedQueryStreamResponse{
-			Chunkseries: []client.TimeSeriesChunk{
+			StreamingSeries: []client.StreamingSeries{
 				{
-					Labels: []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "one"}},
-					Chunks: convertToChunks(t, histogramsToInterface(s1), false),
+					Labels: labels.FromStrings(labels.MetricName, "one"),
+					Sources: []client.StreamingSeriesSource{
+						{
+							SeriesIndex: 0,
+							StreamReader: createTestStreamReader([]client.QueryStreamSeriesChunks{
+								{
+									SeriesIndex: 0,
+									Chunks:      convertToChunks(t, histogramsToInterface(s1), false),
+								},
+							}),
+						},
+					},
 				},
 				{
-					Labels: []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "two"}},
-					Chunks: convertToChunks(t, histogramsToInterface(s1), false),
-				},
-			},
-
-			Timeseries: []mimirpb.TimeSeries{
-				{
-					Labels:     []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "two"}},
-					Histograms: s2,
-				},
-				{
-					Labels:     []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "three"}},
-					Histograms: s1,
+					Labels: labels.FromStrings(labels.MetricName, "two"),
+					Sources: []client.StreamingSeriesSource{
+						{
+							SeriesIndex: 0,
+							StreamReader: createTestStreamReader([]client.QueryStreamSeriesChunks{
+								{
+									SeriesIndex: 0,
+									Chunks:      convertToChunks(t, histogramsToInterface(s1), false),
+								},
+							}),
+						},
+						{
+							SeriesIndex: 0,
+							StreamReader: createTestStreamReader([]client.QueryStreamSeriesChunks{
+								{
+									SeriesIndex: 0,
+									Chunks:      convertToChunks(t, histogramsToInterface(s2), false),
+								},
+							}),
+						},
+					},
 				},
 			},
 		},
 		nil)
 
-	ctx := user.InjectOrgID(context.Background(), "0")
-	queryable := NewDistributorQueryable(d, newMockConfigProvider(0), nil, log.NewNopLogger())
+	queryable := NewDistributorQueryable(d, newMockConfigProvider(0), stats.NewQueryMetrics(nil), log.NewNopLogger())
 	querier, err := queryable.Querier(mint, maxt)
 	require.NoError(t, err)
 
@@ -464,10 +358,7 @@ func TestDistributorQuerier_Select_MixedFloatAndIntegerHistograms(t *testing.T) 
 	verifySeries(t, seriesSet.At(), labels.FromStrings(labels.MetricName, "one"), histogramsToInterface(expectS1))
 
 	require.True(t, seriesSet.Next())
-	verifySeries(t, seriesSet.At(), labels.FromStrings(labels.MetricName, "three"), histogramsToInterface(s1))
-
-	require.True(t, seriesSet.Next())
-	verifySeries(t, seriesSet.At(), labels.FromStrings(labels.MetricName, "two"), mergedSamplesS1S2)
+	verifySeries(t, seriesSet.At(), labels.FromStrings(labels.MetricName, "two"), expectMergedSamplesS1S2)
 
 	require.False(t, seriesSet.Next())
 	require.NoError(t, seriesSet.Err())
@@ -510,7 +401,7 @@ func TestDistributorQuerier_Select_MixedHistogramsAndFloatSamples(t *testing.T) 
 		genTestFloatHistogram(8000, 80),
 	}
 
-	mergedSamples := []interface{}{
+	expectMergedSamples := []interface{}{
 		mimirpb.Sample{Value: 1, TimestampMs: 1000},
 		mimirpb.Sample{Value: 2, TimestampMs: 2000},
 		mimirpb.Sample{Value: 2.5, TimestampMs: 2500},
@@ -518,43 +409,64 @@ func TestDistributorQuerier_Select_MixedHistogramsAndFloatSamples(t *testing.T) 
 		mimirpb.Sample{Value: 4, TimestampMs: 4000},
 		mimirpb.Sample{Value: 5, TimestampMs: 5000},
 		// {Value: 5.5, TimestampMs: 5500},  masked by histograms
-		genTestFloatHistogram(5500, 55),
-		genTestFloatHistogram(6000, 60),
-		genTestFloatHistogram(7000, 70),
-		genTestFloatHistogram(8000, 80),
+		genExpectedFloatHistogram(5500, 55, mimirpb.Histogram_UNKNOWN),
+		genExpectedFloatHistogram(6000, 60, mimirpb.Histogram_NO),
+		genExpectedFloatHistogram(7000, 70, mimirpb.Histogram_NO),
+		genExpectedFloatHistogram(8000, 80, mimirpb.Histogram_NO),
 	}
 
-	d := &mockDistributor{}
+	ctx := user.InjectOrgID(context.Background(), "0")
+	memoryTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
+	ctx = limiter.AddMemoryTrackerToContext(ctx, memoryTracker)
+
+	d := &mockDistributor{
+		memoryConsumptionTracker: memoryTracker,
+	}
 	d.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(
 		client.CombinedQueryStreamResponse{
-			Chunkseries: []client.TimeSeriesChunk{
+			StreamingSeries: []client.StreamingSeries{
 				{
-					Labels: []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "one"}},
-					Chunks: convertToChunks(t, append(samplesToInterface(s1), histogramsToInterface(h1)...), false),
+					Labels: labels.FromStrings(labels.MetricName, "one"),
+					Sources: []client.StreamingSeriesSource{
+						{
+							SeriesIndex: 0,
+							StreamReader: createTestStreamReader([]client.QueryStreamSeriesChunks{
+								{
+									SeriesIndex: 0,
+									Chunks:      convertToChunks(t, append(samplesToInterface(s1), histogramsToInterface(h1)...), false),
+								},
+							}),
+						},
+					},
 				},
 				{
-					Labels: []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "two"}},
-					Chunks: convertToChunks(t, append(samplesToInterface(s1), histogramsToInterface(h1)...), false),
-				},
-			},
-
-			Timeseries: []mimirpb.TimeSeries{
-				{
-					Labels:     []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "two"}},
-					Samples:    s2,
-					Histograms: h2,
-				},
-				{
-					Labels:     []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "three"}},
-					Samples:    s1,
-					Histograms: h1,
+					Labels: labels.FromStrings(labels.MetricName, "two"),
+					Sources: []client.StreamingSeriesSource{
+						{
+							SeriesIndex: 0,
+							StreamReader: createTestStreamReader([]client.QueryStreamSeriesChunks{
+								{
+									SeriesIndex: 0,
+									Chunks:      convertToChunks(t, append(samplesToInterface(s1), histogramsToInterface(h1)...), false),
+								},
+							}),
+						},
+						{
+							SeriesIndex: 0,
+							StreamReader: createTestStreamReader([]client.QueryStreamSeriesChunks{
+								{
+									SeriesIndex: 0,
+									Chunks:      convertToChunks(t, append(samplesToInterface(s2), histogramsToInterface(h2)...), false),
+								},
+							}),
+						},
+					},
 				},
 			},
 		},
 		nil)
 
-	ctx := user.InjectOrgID(context.Background(), "0")
-	queryable := NewDistributorQueryable(d, newMockConfigProvider(0), nil, log.NewNopLogger())
+	queryable := NewDistributorQueryable(d, newMockConfigProvider(0), stats.NewQueryMetrics(nil), log.NewNopLogger())
 	querier, err := queryable.Querier(mint, maxt)
 	require.NoError(t, err)
 
@@ -565,10 +477,7 @@ func TestDistributorQuerier_Select_MixedHistogramsAndFloatSamples(t *testing.T) 
 	verifySeries(t, seriesSet.At(), labels.FromStrings(labels.MetricName, "one"), append(samplesToInterface(s1), histogramsToInterface(expectH1)...))
 
 	require.True(t, seriesSet.Next())
-	verifySeries(t, seriesSet.At(), labels.FromStrings(labels.MetricName, "three"), append(samplesToInterface(s1), histogramsToInterface(h1)...))
-
-	require.True(t, seriesSet.Next())
-	verifySeries(t, seriesSet.At(), labels.FromStrings(labels.MetricName, "two"), mergedSamples)
+	verifySeries(t, seriesSet.At(), labels.FromStrings(labels.MetricName, "two"), expectMergedSamples)
 
 	require.False(t, seriesSet.Next())
 	require.NoError(t, seriesSet.Err())
@@ -643,16 +552,6 @@ func TestDistributorQuerier_Select_CounterResets(t *testing.T) {
 			responseTypes := map[string]struct {
 				combinedResponse client.CombinedQueryStreamResponse
 			}{
-				"chunkseries": {
-					combinedResponse: client.CombinedQueryStreamResponse{
-						Chunkseries: []client.TimeSeriesChunk{
-							{
-								Labels: []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "one"}},
-								Chunks: tc.chunks,
-							},
-						},
-					},
-				},
 				"streamingseries": {
 					combinedResponse: client.CombinedQueryStreamResponse{
 						StreamingSeries: []client.StreamingSeries{
@@ -671,10 +570,15 @@ func TestDistributorQuerier_Select_CounterResets(t *testing.T) {
 
 			for responseName, responseType := range responseTypes {
 				t.Run(responseName, func(t *testing.T) {
-					d := &mockDistributor{}
+					ctx := user.InjectOrgID(context.Background(), "0")
+					memoryTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
+					ctx = limiter.AddMemoryTrackerToContext(ctx, memoryTracker)
+
+					d := &mockDistributor{
+						memoryConsumptionTracker: memoryTracker,
+					}
 					d.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(responseType.combinedResponse, nil)
 
-					ctx := user.InjectOrgID(context.Background(), "0")
 					queryable := NewDistributorQueryable(d, newMockConfigProvider(0), stats.NewQueryMetrics(prometheus.NewPedanticRegistry()), log.NewNopLogger())
 					querier, err := queryable.Querier(tc.queryStart, tc.queryEnd)
 					require.NoError(t, err)
@@ -757,22 +661,45 @@ func BenchmarkDistributorQuerier_Select(b *testing.B) {
 	commonLabelsBuilder.Sort()
 	commonLabels := commonLabelsBuilder.Labels()
 
-	response := client.CombinedQueryStreamResponse{Chunkseries: make([]client.TimeSeriesChunk, 0, numSeries)}
-	for i := 0; i < numSeries; i++ {
-		lbls := labels.NewBuilder(commonLabels)
-		lbls.Set("series_id", strconv.Itoa(i))
+	makeResponse := func() client.CombinedQueryStreamResponse {
+		response := client.CombinedQueryStreamResponse{
+			StreamingSeries: make([]client.StreamingSeries, 0, numSeries),
+		}
 
-		response.Chunkseries = append(response.Chunkseries, client.TimeSeriesChunk{
-			Labels: mimirpb.FromLabelsToLabelAdapters(lbls.Labels()),
-			Chunks: clientChunks,
-		})
+		for i := 0; i < numSeries; i++ {
+			lbls := labels.NewBuilder(commonLabels)
+			lbls.Set("series_id", strconv.Itoa(i))
+
+			reader := createTestStreamReader([]client.QueryStreamSeriesChunks{
+				{
+					SeriesIndex: 0,
+					Chunks:      clientChunks,
+				},
+			})
+
+			response.StreamingSeries = append(response.StreamingSeries, client.StreamingSeries{
+				Labels: lbls.Labels(),
+				Sources: []client.StreamingSeriesSource{
+					{
+						SeriesIndex:  0,
+						StreamReader: reader,
+					},
+				},
+			})
+		}
+
+		return response
 	}
 
+	// Streaming responses are stateful so we need to return a completely new one
+	// for each call of the QueryStream method.
 	d := &mockDistributor{}
-	d.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(response, nil)
+	for n := 0; n < b.N; n++ {
+		d.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(makeResponse(), nil).Once()
+	}
 
 	ctx := user.InjectOrgID(context.Background(), "0")
-	queryable := NewDistributorQueryable(d, newMockConfigProvider(0), nil, log.NewNopLogger())
+	queryable := NewDistributorQueryable(d, newMockConfigProvider(0), stats.NewQueryMetrics(nil), log.NewNopLogger())
 	querier, err := queryable.Querier(math.MinInt64, math.MaxInt64)
 	require.NoError(b, err)
 
@@ -895,6 +822,7 @@ func convertToChunks(t *testing.T, samples []interface{}, allowOverflow bool) []
 
 type mockDistributor struct {
 	mock.Mock
+	memoryConsumptionTracker *limiter.MemoryConsumptionTracker
 }
 
 func (m *mockDistributor) QueryExemplars(ctx context.Context, from, to model.Time, matchers ...[]*labels.Matcher) (*client.ExemplarQueryResponse, error) {
@@ -903,6 +831,14 @@ func (m *mockDistributor) QueryExemplars(ctx context.Context, from, to model.Tim
 }
 func (m *mockDistributor) QueryStream(ctx context.Context, queryMetrics *stats.QueryMetrics, from, to model.Time, matchers ...*labels.Matcher) (client.CombinedQueryStreamResponse, error) {
 	args := m.Called(ctx, queryMetrics, from, to, matchers)
+	response := args.Get(0).(client.CombinedQueryStreamResponse)
+	for _, ss := range response.StreamingSeries {
+		err := m.memoryConsumptionTracker.IncreaseMemoryConsumptionForLabels(ss.Labels)
+		if err != nil {
+			return client.CombinedQueryStreamResponse{}, err
+		}
+	}
+
 	return args.Get(0).(client.CombinedQueryStreamResponse), args.Error(1)
 }
 func (m *mockDistributor) LabelValuesForLabelName(ctx context.Context, from, to model.Time, lbl model.LabelName, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, error) {

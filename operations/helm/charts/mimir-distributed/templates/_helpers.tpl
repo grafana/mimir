@@ -28,18 +28,14 @@ If release name contains chart name it will be used as a full name.
 Calculate the infix for naming
 */}}
 {{- define "mimir.infixName" -}}
-{{- if and .Values.enterprise.enabled .Values.enterprise.legacyLabels -}}enterprise-metrics{{- else -}}mimir{{- end -}}
+mimir
 {{- end -}}
 
 {{/*
 Calculate the gateway url
 */}}
 {{- define "mimir.gatewayUrl" -}}
-{{- if eq (include "mimir.gateway.isEnabled" . ) "true" -}}
 http://{{ include "mimir.gateway.service.name" . }}.{{ .Release.Namespace }}.svc:{{ .Values.gateway.service.port | default (include "mimir.serverHttpListenPort" . ) }}
-{{- else -}}
-http://{{ template "mimir.fullname" . }}-nginx.{{ .Release.Namespace }}.svc:{{ .Values.nginx.service.port }}
-{{- end -}}
 {{- end -}}
 
 {{/*
@@ -50,7 +46,7 @@ Create chart name and version as used by the chart label.
 {{- end -}}
 
 {{/*
-Build mimir image reference based on whether enterprise features are requested. The component local values always take precedence.
+Build mimir image reference. The component local values always take precedence.
 Params:
   ctx = . context
   component = component name
@@ -58,19 +54,15 @@ Params:
 {{- define "mimir.imageReference" -}}
 {{- $componentSection := include "mimir.componentSectionFromName" . | fromYaml -}}
 {{- $image := $componentSection.image | default dict -}}
-{{- if .ctx.Values.enterprise.enabled -}}
-  {{- $image = mustMerge $image .ctx.Values.enterprise.image -}}
-{{- else -}}
-  {{- $image = mustMerge $image .ctx.Values.image -}}
-{{- end -}}
+{{- $image = mustMerge $image .ctx.Values.image -}}
 {{ $image.repository }}:{{ $image.tag }}
 {{- end -}}
 
 {{/*
-For compatibility and to support upgrade from enterprise-metrics chart calculate minio bucket name
+Calculate minio bucket prefix name
 */}}
 {{- define "mimir.minioBucketPrefix" -}}
-{{- if .Values.enterprise.legacyLabels -}}enterprise-metrics{{- else -}}mimir{{- end -}}
+mimir
 {{- end -}}
 
 {{/*
@@ -234,18 +226,6 @@ Params:
   rolloutZoneName = rollout zone name (optional)
 */}}
 {{- define "mimir.labels" -}}
-{{- if .ctx.Values.enterprise.legacyLabels }}
-{{- if .component -}}
-app: {{ include "mimir.name" .ctx }}-{{ .component }}
-{{- else -}}
-app: {{ include "mimir.name" .ctx }}
-{{- end }}
-chart: {{ template "mimir.chart" .ctx }}
-heritage: {{ .ctx.Release.Service }}
-release: {{ .ctx.Release.Name }}
-
-{{- else -}}
-
 helm.sh/chart: {{ include "mimir.chart" .ctx }}
 app.kubernetes.io/name: {{ include "mimir.name" .ctx }}
 app.kubernetes.io/instance: {{ .ctx.Release.Name }}
@@ -259,7 +239,6 @@ app.kubernetes.io/part-of: memberlist
 app.kubernetes.io/version: {{ .ctx.Chart.AppVersion | quote }}
 {{- end }}
 app.kubernetes.io/managed-by: {{ .ctx.Release.Service }}
-{{- end }}
 {{- if .rolloutZoneName }}
 {{-   if not .component }}
 {{-     printf "Component name cannot be empty if rolloutZoneName (%s) is set" .rolloutZoneName | fail }}
@@ -281,22 +260,7 @@ Params:
 {{- define "mimir.podLabels" -}}
 {{ with .ctx.Values.global.podLabels -}}
 {{ toYaml . }}
-{{ end }}
-{{- if .ctx.Values.enterprise.legacyLabels }}
-{{- if .component -}}
-app: {{ include "mimir.name" .ctx }}-{{ .component }}
-{{- if not .rolloutZoneName }}
-name: {{ .component }}
-{{- end }}
-{{- end }}
-{{- if .memberlist }}
-gossip_ring_member: "true"
 {{- end -}}
-{{- if .component }}
-target: {{ .component }}
-release: {{ .ctx.Release.Name }}
-{{- end }}
-{{- else -}}
 helm.sh/chart: {{ include "mimir.chart" .ctx }}
 app.kubernetes.io/name: {{ include "mimir.name" .ctx }}
 app.kubernetes.io/instance: {{ .ctx.Release.Name }}
@@ -307,7 +271,6 @@ app.kubernetes.io/component: {{ .component }}
 {{- end }}
 {{- if .memberlist }}
 app.kubernetes.io/part-of: memberlist
-{{- end }}
 {{- end }}
 {{- $componentSection := include "mimir.componentSectionFromName" . | fromYaml }}
 {{- with ($componentSection).podLabels }}
@@ -357,18 +320,11 @@ Params:
   rolloutZoneName = rollout zone name (optional)
 */}}
 {{- define "mimir.selectorLabels" -}}
-{{- if .ctx.Values.enterprise.legacyLabels }}
-{{- if .component -}}
-app: {{ include "mimir.name" .ctx }}-{{ .component }}
-{{- end }}
-release: {{ .ctx.Release.Name }}
-{{- else -}}
 app.kubernetes.io/name: {{ include "mimir.name" .ctx }}
 app.kubernetes.io/instance: {{ .ctx.Release.Name }}
 {{- if .component }}
 app.kubernetes.io/component: {{ .component }}
 {{- end }}
-{{- end -}}
 {{- if .rolloutZoneName }}
 {{-   if not .component }}
 {{-     printf "Component name cannot be empty if rolloutZoneName (%s) is set" .rolloutZoneName | fail }}
@@ -447,27 +403,18 @@ Examples:
 */}}
 {{- define "mimir.componentSectionFromName" -}}
 {{- $componentsMap := dict
-  "admin-api" "admin_api"
-  "admin-cache" "admin-cache"
   "alertmanager" "alertmanager"
   "chunks-cache" "chunks-cache"
   "compactor" "compactor"
   "continuous-test" "continuous_test"
   "distributor" "distributor"
-  "provisioner" "provisioner"
-  "federation-frontend" "federation_frontend"
   "gateway" "gateway"
-  "gr-aggr-cache" "gr-aggr-cache"
-  "gr-metricname-cache" "gr-metricname-cache"
-  "graphite-querier" "graphite.querier"
-  "graphite-write-proxy" "graphite.write_proxy"
   "index-cache" "index-cache"
   "ingester" "ingester"
   "kafka" "kafka"
   "memcached" "memcached"
   "meta-monitoring" "metaMonitoring.grafanaAgent"
   "metadata-cache" "metadata-cache"
-  "nginx" "nginx"
   "overrides-exporter" "overrides_exporter"
   "querier" "querier"
   "query-frontend" "query_frontend"
@@ -551,7 +498,7 @@ Return if we should create a SecurityContextConstraints. Takes into account user
 {{- end -}}
 
 {{- define "mimir.remoteWriteUrl.inCluster" -}}
-{{- if or (eq (include "mimir.gateway.isEnabled" . ) "true") .Values.nginx.enabled -}}
+{{- if (eq (include "mimir.gateway.isEnabled" . ) "true") -}}
 {{ include "mimir.gatewayUrl" . }}/api/v1/push
 {{- else -}}
 http://{{ template "mimir.fullname" . }}-distributor-headless.{{ .Release.Namespace }}.svc:{{ include "mimir.serverHttpListenPort" . }}/api/v1/push
@@ -559,7 +506,7 @@ http://{{ template "mimir.fullname" . }}-distributor-headless.{{ .Release.Namesp
 {{- end -}}
 
 {{- define "mimir.remoteReadUrl.inCluster" -}}
-{{- if or (eq (include "mimir.gateway.isEnabled" . ) "true") .Values.nginx.enabled -}}
+{{- if (eq (include "mimir.gateway.isEnabled" . ) "true") -}}
 {{ include "mimir.gatewayUrl" . }}{{ include "mimir.prometheusHttpPrefix" . }}
 {{- else -}}
 http://{{ template "mimir.fullname" . }}-query-frontend.{{ .Release.Namespace }}.svc:{{ include "mimir.serverHttpListenPort" . }}{{ include "mimir.prometheusHttpPrefix" . }}

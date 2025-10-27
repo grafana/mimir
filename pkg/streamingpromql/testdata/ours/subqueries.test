@@ -5,8 +5,8 @@
 
 load 1m
   metric{type="floats"} 0 4 3 6 -1 10
-  metric{type="histograms"} {{count:0}} {{count:4}} {{count:3}} {{count:6}} {{count:-1}} {{count:10}}
-  metric{type="mixed"} 0 4 3 6 {{count:-1}} {{count:10}}
+  metric{type="histograms"} {{count:0}} {{count:4}} {{count:3}} {{count:6}} {{count:1}} {{count:10}}
+  metric{type="mixed"} 0 4 3 6 {{count:1}} {{count:10}}
 
 # Test that the time range selected is left-open and right-closed.
 eval instant at 4m59s count_over_time(metric[4m1s:30s])
@@ -72,29 +72,29 @@ eval range from 0 to 5m step 1m last_over_time(metric[2m:1m] @ end())
 # Start with query without offset to show non-offset results
 eval range from 0 to 5m step 1m last_over_time(metric[2m:1m])
   metric{type="floats"} 0 4 3 6 -1 10
-  metric{type="histograms"} {{count:0}} {{count:4}} {{count:3}} {{count:6}} {{count:-1}} {{count:10}}
-  metric{type="mixed"} 0 4 3 6 {{count:-1}} {{count:10}}
+  metric{type="histograms"} {{count:0}} {{count:4}} {{count:3}} {{count:6}} {{count:1}} {{count:10}}
+  metric{type="mixed"} 0 4 3 6 {{count:1}} {{count:10}}
 
 eval instant at 5m last_over_time(metric[2m:1m] offset 1m)
   metric{type="floats"} -1
-  metric{type="histograms"} {{count:-1}}
-  metric{type="mixed"} {{count:-1}}
+  metric{type="histograms"} {{count:1}}
+  metric{type="mixed"} {{count:1}}
 
 eval range from 0 to 5m step 1m last_over_time(metric[2m:1m] offset 1m)
   metric{type="floats"} _ 0 4 3 6 -1
-  metric{type="histograms"} _ {{count:0}} {{count:4}} {{count:3}} {{count:6}} {{count:-1}}
-  metric{type="mixed"} _ 0 4 3 6 {{count:-1}}
+  metric{type="histograms"} _ {{count:0}} {{count:4}} {{count:3}} {{count:6}} {{count:1}}
+  metric{type="mixed"} _ 0 4 3 6 {{count:1}}
 
 # Subquery range smaller than subquery step
 eval instant at 5m last_over_time(metric[1m1s:2m])
   metric{type="floats"} -1
-  metric{type="histograms"} {{count:-1}}
-  metric{type="mixed"} {{count:-1}}
+  metric{type="histograms"} {{count:1}}
+  metric{type="mixed"} {{count:1}}
 
 eval range from 0 to 5m step 1m last_over_time(metric[1m1s:2m])
   metric{type="floats"} 0 0 3 3 -1 -1
-  metric{type="histograms"} {{count:0}} {{count:0}} {{count:3}} {{count:3}} {{count:-1}} {{count:-1}}
-  metric{type="mixed"} 0 0 3 3 {{count:-1}} {{count:-1}}
+  metric{type="histograms"} {{count:0}} {{count:0}} {{count:3}} {{count:3}} {{count:1}} {{count:1}}
+  metric{type="mixed"} 0 0 3 3 {{count:1}} {{count:1}}
 
 # Nesting
 #
@@ -106,14 +106,14 @@ eval instant at 5m sum_over_time(last_over_time(metric[2m:1m])[5m:90s])
   expect no_info
   expect warn
   {type="floats"} 9
-  {type="histograms"} {{count:9}}
+  {type="histograms"} {{count:11}}
   # No results for {type="mixed"} due to mixture of floats and histograms
 
 eval range from 0 to 5m step 1m sum_over_time(last_over_time(metric[2m:1m])[5m:90s])
   expect no_info
   expect warn
   {type="floats"} 0 0 4 10 10 9
-  {type="histograms"} {{count:0}} {{count:0}} {{count:4}} {{count:10}} {{count:10}} {{count:9}}
+  {type="histograms"} {{count:0}} {{count:0}} {{count:4}} {{count:10}} {{count:10}} {{count:11}}
   {type="mixed"} 0 0 4 10 10 _
   # Last sample for {type="mixed"} dropped due to mixture of floats and histograms
 

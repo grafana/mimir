@@ -10,7 +10,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/cespare/xxhash/v2"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/prometheus/prometheus/util/zeropool"
@@ -71,12 +70,8 @@ func (t *trackerStore) trackSeries(ctx context.Context, tenantID string, series 
 	tenant := t.getOrCreateTenant(tenantID)
 	defer tenant.RUnlock()
 
-	// Sort series by shard.
-	// Start each tenant on its own shard to avoid hotspots.
-	tenantStartingShard := xxhash.Sum64String(tenantID) % shards
-	slices.SortFunc(series, func(a, b uint64) int {
-		return int((a%shards+tenantStartingShard)%shards) - int((b%shards+tenantStartingShard)%shards)
-	})
+	// Sort series by shard to minimize lock contention by taking mutex once for each shard.
+	slices.SortFunc(series, func(a, b uint64) int { return int(a%shards) - int(b%shards) })
 
 	now := clock.ToMinutes(timeNow)
 
@@ -149,6 +144,11 @@ func (t *trackerStore) processCreatedSeriesEvent(tenantID string, series []uint6
 }
 
 func currentSeriesLimit(series uint64, limit uint64, zonesCount uint64) uint64 {
+	// If we're at or over the limit (can happen if limit was decreased or series exceeded limit),
+	// return the limit itself to avoid underflow in the subtraction below.
+	if series >= limit {
+		return limit
+	}
 	room := limit - series
 	allowance := room / zonesCount
 	if zonesCount > 1 {

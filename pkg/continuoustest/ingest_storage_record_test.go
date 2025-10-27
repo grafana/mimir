@@ -372,6 +372,82 @@ func TestDropExactDuplicatesPreservesOrder(t *testing.T) {
 	assert.Equal(t, 3, len(result))
 }
 
+func TestDropMeaninglessMetadata(t *testing.T) {
+	t.Run("valid metadata, no change", func(t *testing.T) {
+		input := []*mimirpb.MetricMetadata{
+			{
+				MetricFamilyName: "metric1",
+				Help:             "Help 1",
+				Type:             mimirpb.COUNTER,
+				Unit:             "seconds",
+			},
+			{
+				MetricFamilyName: "metric2",
+				Help:             "Help 2",
+				Type:             mimirpb.GAUGE,
+				Unit:             "bytes",
+			},
+		}
+
+		result := dropMeaninglessMetadata(input)
+
+		assert.Len(t, result, 2)
+		assert.Equal(t, "metric1", result[0].MetricFamilyName)
+		assert.Equal(t, "metric2", result[1].MetricFamilyName)
+	})
+
+	t.Run("meaningless metadata are dropped", func(t *testing.T) {
+		input := []*mimirpb.MetricMetadata{
+			{
+				MetricFamilyName: "metric1",
+				Help:             "Help 1",
+				Type:             mimirpb.COUNTER,
+				Unit:             "seconds",
+			},
+			{
+				MetricFamilyName: "metric3",
+				Help:             "",
+				Type:             mimirpb.UNKNOWN,
+				Unit:             "",
+			},
+			{
+				MetricFamilyName: "metric2",
+				Help:             "Help 2",
+				Type:             mimirpb.GAUGE,
+				Unit:             "bytes",
+			},
+		}
+
+		result := dropMeaninglessMetadata(input)
+
+		assert.Len(t, result, 2)
+		assert.Equal(t, "metric1", result[0].MetricFamilyName)
+		assert.Equal(t, "metric2", result[1].MetricFamilyName)
+	})
+
+	t.Run("all meaningless returns empty slice", func(t *testing.T) {
+		input := []*mimirpb.MetricMetadata{
+			{
+				MetricFamilyName: "metric1",
+				Help:             "",
+				Type:             mimirpb.UNKNOWN,
+				Unit:             "",
+			},
+			{
+				MetricFamilyName: "metric2",
+				Help:             "",
+				Type:             mimirpb.UNKNOWN,
+				Unit:             "",
+			},
+		}
+
+		result := dropMeaninglessMetadata(input)
+
+		assert.NotNil(t, result)
+		assert.Empty(t, result)
+	})
+}
+
 func TestExemplarEqual(t *testing.T) {
 	t.Run("equal", func(t *testing.T) {
 		exemplar1 := &mimirpb.Exemplar{

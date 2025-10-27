@@ -245,17 +245,8 @@ type binaryWriter struct {
 }
 
 func newBinaryWriter(fn string, buf []byte) (w *binaryWriter, err error) {
-	dir := filepath.Dir(fn)
-
-	df, err := fileutil.OpenDir(dir)
-	if os.IsNotExist(err) {
-		if err := os.MkdirAll(dir, os.ModePerm); err != nil {
-			return nil, err
-		}
-		df, err = fileutil.OpenDir(dir)
-	}
+	df, err := fileutil.OpenDir(filepath.Dir(fn))
 	if err != nil {
-
 		return nil, err
 	}
 

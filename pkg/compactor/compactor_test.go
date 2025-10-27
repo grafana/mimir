@@ -1803,6 +1803,8 @@ func prepareConfig(t *testing.T) Config {
 	// The new default is 25m, but tests rely on the previous value of 0s
 	compactorCfg.CompactionWaitPeriod = 0
 
+	compactorCfg.SparseIndexHeadersSamplingRate = 32
+
 	return compactorCfg
 }
 

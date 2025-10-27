@@ -1923,7 +1923,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
     ) +
     $.hiddenLegendQueryPanel(
       |||
-        histogram_quantile(1.0, sum by(pod) (rate(cortex_ingest_storage_reader_receive_delay_seconds{%(job_matcher)s, phase="running"}[$__rate_interval])))
+        histogram_quantile(1.0, sum by(%(per_instance_label)s) (rate(cortex_ingest_storage_reader_receive_delay_seconds{%(job_matcher)s, phase="running"}[$__rate_interval])))
 
         # Add a filter to show only the outliers. We consider an ingester an outlier if its
         # 100th percentile latency is greater than the 200%% of the average 100th of the 10%%

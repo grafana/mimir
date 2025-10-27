@@ -1267,6 +1267,32 @@ func TestQuerySharding_ShouldSkipShardingViaOption(t *testing.T) {
 	})
 }
 
+func TestQuerySharding_ShouldSkipShardingIfUnshardableAndMaxShardedQueriesIsZero(t *testing.T) {
+	req := &PrometheusRangeQueryRequest{
+		path:      "/query_range",
+		start:     util.TimeToMillis(start),
+		end:       util.TimeToMillis(end),
+		step:      step.Milliseconds(),
+		queryExpr: parseQuery(t, "clamp_max(max(foo), scalar(bar))"),
+	}
+
+	runForEngines(t, func(t *testing.T, opts promql.EngineOpts, eng promql.QueryEngine) {
+		shardingware := newQueryShardingMiddleware(log.NewNopLogger(), eng, mockLimits{totalShards: 16, maxShardedQueries: 0}, 0, nil)
+		downstream := &mockHandler{}
+		downstream.On("Do", mock.Anything, mock.Anything).Return(&PrometheusResponse{Status: statusSuccess}, nil)
+
+		res, err := shardingware.Wrap(downstream).Do(user.InjectOrgID(context.Background(), "test"), req)
+		require.NoError(t, err)
+		shardedPrometheusRes, ok := res.GetPrometheusResponse()
+		require.True(t, ok)
+
+		assert.Equal(t, statusSuccess, shardedPrometheusRes.GetStatus())
+		// Ensure we get the same request downstream. No sharding
+		downstream.AssertCalled(t, "Do", mock.Anything, req)
+		downstream.AssertNumberOfCalls(t, "Do", 1)
+	})
+}
+
 func TestQuerySharding_ShouldOverrideShardingSizeViaOption(t *testing.T) {
 	req := &PrometheusRangeQueryRequest{
 		path:      "/query_range",
@@ -2255,7 +2281,7 @@ func BenchmarkQueryShardingRewriting(b *testing.B) {
 
 	limits := mockLimits{totalShards: 3}
 	reg := prometheus.NewPedanticRegistry()
-	sharder := newQuerySharder(limits, 0, reg, log.NewNopLogger())
+	sharder := NewQuerySharder(astmapper.EmbeddedQueriesSquasher, limits, 0, reg, log.NewNopLogger())
 	tenants := []string{"tenant-1"}
 	ctx := context.Background()
 
@@ -2268,7 +2294,7 @@ func BenchmarkQueryShardingRewriting(b *testing.B) {
 					require.NoError(b, err)
 				}
 
-				_, err = sharder.shard(ctx, tenants, parsedExpr, 0, nil, 1)
+				_, err = sharder.Shard(ctx, tenants, parsedExpr, 0, nil, 1)
 				if err != nil {
 					require.NoError(b, err)
 				}

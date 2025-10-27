@@ -6,23 +6,12 @@
 package storepb
 
 import (
-	"slices"
-	"strings"
-
 	"github.com/gogo/protobuf/types"
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/model/labels"
 
 	"github.com/grafana/mimir/pkg/storage/chunk"
 )
-
-func NewSeriesResponse(series *Series) *SeriesResponse {
-	return &SeriesResponse{
-		Result: &SeriesResponse_Series{
-			Series: series,
-		},
-	}
-}
 
 func NewHintsSeriesResponse(hints *types.Any) *SeriesResponse {
 	return &SeriesResponse{
@@ -147,16 +136,5 @@ func (c AggrChunk) GetChunkEncoding() (chunk.Encoding, bool) {
 		return chunk.PrometheusFloatHistogramChunk, true
 	default:
 		return 0, false
-	}
-}
-
-// MakeReferencesSafeToRetain converts all of s' unsafe references to safe copies.
-func (s *Series) MakeReferencesSafeToRetain() {
-	for i, l := range s.Labels {
-		s.Labels[i].Name = strings.Clone(l.Name)
-		s.Labels[i].Value = strings.Clone(l.Value)
-	}
-	for i, c := range s.Chunks {
-		s.Chunks[i].Raw.Data = slices.Clone(c.Raw.Data)
 	}
 }

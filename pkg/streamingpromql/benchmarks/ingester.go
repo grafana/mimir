@@ -40,8 +40,10 @@ const NumIntervals = 10000 + int(time.Minute/interval) + 1 // The longest-range 
 
 const UserID = "benchmark-tenant"
 
-func StartIngesterAndLoadData(rootDataDir string, metricSizes []int) (string, func(), error) {
-	ing, addr, cleanup, err := startBenchmarkIngester(rootDataDir)
+type IngesterConfigOption func(*ingester.Config)
+
+func StartIngesterAndLoadData(rootDataDir string, metricSizes []int, opts ...IngesterConfigOption) (string, func(), error) {
+	ing, addr, cleanup, err := StartBenchmarkIngester(rootDataDir, opts...)
 
 	if err != nil {
 		return "", nil, fmt.Errorf("could not start ingester: %w", err)
@@ -55,7 +57,9 @@ func StartIngesterAndLoadData(rootDataDir string, metricSizes []int) (string, fu
 	return addr, cleanup, nil
 }
 
-func startBenchmarkIngester(rootDataDir string) (*ingester.Ingester, string, func(), error) {
+// StartBenchmarkIngester starts an ingester and returns the ingester instance.
+// It also starts a gRPC server and returns its address.
+func StartBenchmarkIngester(rootDataDir string, opts ...IngesterConfigOption) (*ingester.Ingester, string, func(), error) {
 	var cleanupFuncs []func() error
 	cleanup := func() {
 		for i := len(cleanupFuncs) - 1; i >= 0; i-- {
@@ -82,6 +86,10 @@ func startBenchmarkIngester(rootDataDir string) (*ingester.Ingester, string, fun
 	// Disable TSDB head compaction jitter to have predictable tests.
 	ingesterCfg.BlocksStorageConfig.TSDB.HeadCompactionIntervalJitterEnabled = false
 	ingesterCfg.BlocksStorageConfig.TSDB.HeadCompactionIdleTimeout = 0
+
+	for _, opt := range opts {
+		opt(&ingesterCfg)
+	}
 
 	ingestersRing, err := createAndStartRing(ingesterCfg.IngesterRing.ToRingConfig())
 	if err != nil {

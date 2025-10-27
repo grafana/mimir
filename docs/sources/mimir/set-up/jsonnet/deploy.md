@@ -106,8 +106,6 @@ You can use [Tanka](https://tanka.dev/) and [jsonnet-bundler](https://github.com
    To use a different namespace, change the `namespace` configuration option in the `environments/default/main.jsonnet` file, and re-generate the Kubernetes manifests.
    {{< /admonition >}}
 
-   {{< admonition type="warning" >}}
-   A Jsonnet-based installation uses etcd for the HA tracker by default.
-   The Jsonnet-based installation creates the etcd using the [etcd-operator](https://github.com/coreos/etcd-operator).
-   Before applying the `tk apply` or `kubectl apply` command, make sure that you have the etcd-operator running in your Kubernetes cluster.
+   {{< admonition type="note" >}}
+   Starting from Mimir 3.0, a Jsonnet-based installation uses `memberlist` for the HA tracker by default. No external dependencies are required. If you're upgrading from a previous version that used etcd or Consul for the HA tracker, refer to the migration guide.
    {{< /admonition >}}

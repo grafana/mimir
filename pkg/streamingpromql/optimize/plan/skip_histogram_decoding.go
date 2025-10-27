@@ -24,7 +24,7 @@ func (s *SkipHistogramDecodingOptimizationPass) Name() string {
 	return "Skip decoding histogram buckets"
 }
 
-func (s *SkipHistogramDecodingOptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan) (*planning.QueryPlan, error) {
+func (s *SkipHistogramDecodingOptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan, maximumSupportedQueryPlanVersion planning.QueryPlanVersion) (*planning.QueryPlan, error) {
 	duplicatedSelectors := map[planning.Node]bool{}
 	s.applyToNode(plan.Root, false, false, duplicatedSelectors)
 

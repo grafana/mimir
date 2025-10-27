@@ -176,6 +176,10 @@ func (b *BloomFilter) ReadFrom(stream io.Reader) (int64, error) {
 	b.m = uint(m)
 	b.k = uint(k)
 	b.buckets = &buckets
+	// Initialize hash function if not set (same fix as in GobDecode)
+	if b.hash == nil {
+		b.hash = fnv.New64()
+	}
 	return readSize + int64(3*binary.Size(uint64(0))), nil
 }
 
