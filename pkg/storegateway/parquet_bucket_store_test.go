@@ -429,8 +429,10 @@ func TestParquetBlockSet_Filter_ConversionCheck(t *testing.T) {
 	blockSet := &parquetBlockSet{}
 	nonConvertedBlock := newParquetBucketBlock(nonConvertedMeta, nil)
 	convertedBlock := newParquetBucketBlock(convertedMeta, nil)
-	blockSet.add(nonConvertedBlock)
-	blockSet.add(convertedBlock)
+	err = blockSet.add(nonConvertedBlock)
+	require.NoError(t, err)
+	err = blockSet.add(convertedBlock)
+	require.NoError(t, err)
 
 	// Filter should only return the converted block.
 	// Exercise caching logic by calling twice.
