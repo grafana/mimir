@@ -108,6 +108,27 @@ func (r *ruleRegistry) MapRules(user string, ruleConfigs map[string]rulespb.Rule
 	return anyUpdated, filenames, nil
 }
 
+func (r *ruleRegistry) get(user string, identifier string) *rulefmt.RuleGroups {
+	r.mtx.RLock()
+	defer r.mtx.RUnlock()
+
+	userRegistry := r.rules[user]
+	if userRegistry == nil {
+		return nil
+	}
+	groups := userRegistry[identifier]
+	if groups == nil {
+		return nil
+	}
+
+	fmtGroups := make([]rulefmt.RuleGroup, 0, len(groups))
+	for _, group := range groups {
+		fmtGroups = append(fmtGroups, rulespb.FromProto(group))
+	}
+
+	return &rulefmt.RuleGroups{Groups: fmtGroups}
+}
+
 // mapper is designed to enusre the provided rule sets are identical
 // to the on-disk rules tracked by the prometheus manager
 type mapper struct {
@@ -260,6 +281,29 @@ func (m *mapper) writeRuleGroupsIfNewer(groups []rulefmt.RuleGroup, filename str
 
 	return true, nil
 }
+
+// registryLoader is a GroupLoader implementation that reads groups from a ruleRegistry.
+type registryLoader struct {
+	registry *ruleRegistry
+	user     string
+}
+
+func newRegsitryLoader(registry *ruleRegistry, user string) registryLoader {
+	return registryLoader{
+		registry: registry,
+		user:     user,
+	}
+}
+
+func (r registryLoader) Load(identifier string, ignoreUnknownFields bool, nameValidationScheme model.ValidationScheme) (*rulefmt.RuleGroups, []error) {
+	rgs := r.registry.get(r.user, identifier)
+	if rgs == nil {
+		return nil, []error{fmt.Errorf("%s: rule group not found in registry", identifier)}
+	}
+	return rgs, nil
+}
+
+func (registryLoader) Parse(query string) (parser.Expr, error) { return parser.ParseExpr(query) }
 
 // FSLoader a GroupLoader implementation that reads files from a given afero.Fs.
 type FSLoader struct {
