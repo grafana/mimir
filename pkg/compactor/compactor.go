@@ -902,13 +902,6 @@ func (c *MultitenantCompactor) compactUser(ctx context.Context, userID string) e
 		return err
 	}
 
-	// Get meta cache for stats logging at the end
-	var metaCache *block.MetaCache
-	metaCacheSize := c.cfgProvider.CompactorInMemoryTenantMetaCacheSize(userID)
-	if metaCacheSize > 0 {
-		metaCache = c.metaCaches[userID]
-	}
-
 	compactor, err := c.newBucketCompactor(ctx, userID, userLogger, userBucket, syncer, reg)
 	if err != nil {
 		return errors.Wrap(err, "failed to create bucket compactor")
@@ -918,10 +911,6 @@ func (c *MultitenantCompactor) compactUser(ctx context.Context, userID string) e
 		return errors.Wrap(err, "compaction")
 	}
 
-	if metaCache != nil {
-		items, size, hits, misses := metaCache.Stats()
-		level.Info(userLogger).Log("msg", "per-user meta cache stats after compacting user", "items", items, "bytes_size", size, "hits", hits, "misses", misses)
-	}
 	return nil
 }
 
