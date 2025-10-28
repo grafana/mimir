@@ -68,6 +68,14 @@ The following features are currently experimental:
     - `-compactor.max-lookback`
   - Enable the compactor to upload sparse index headers to object storage during compaction cycles.
     - `-compactor.upload-sparse-index-headers`
+  - Scheduler mode for requesting compaction jobs from an external scheduler service instead of local planning
+    - `-compactor.planning-mode`
+    - `-compactor.scheduler-endpoint`
+    - `-compactor.scheduler-update-interval`
+    - `-compactor.scheduler-min-leasing-backoff`
+    - `-compactor.scheduler-max-leasing-backoff`
+    - `-compactor.executor-min-retry-backoff`
+    - `-compactor.executor-max-retry-backoff`
 - Ruler
   - Allow defining limits on the maximum number of rules allowed in a rule group by namespace and the maximum number of rule groups by namespace. If set, this supersedes the `-ruler.max-rules-per-rule-group` and `-ruler.max-rule-groups-per-tenant` limits.
   - `-ruler.max-rules-per-rule-group-by-namespace`
@@ -90,8 +98,6 @@ The following features are currently experimental:
     - `/api/v1/push/influx/write` endpoint
     - `-distributor.influx-endpoint-enabled`
     - `-distributor.max-influx-request-size`
-  - Metrics relabeling
-    - `-distributor.metric-relabeling-enabled`
   - Limit exemplars per series per request
     - `-distributor.max-exemplars-per-series-per-request`
   - Limit OTLP write request byte size
@@ -138,9 +144,6 @@ The following features are currently experimental:
   - Snapshotting of in-memory TSDB data on disk when shutting down (`-blocks-storage.tsdb.memory-snapshot-on-shutdown`)
   - Out-of-order samples ingestion (`-ingester.out-of-order-time-window`)
   - Shipper labeling out-of-order blocks before upload to cloud storage (`-ingester.out-of-order-blocks-external-label-enabled`)
-  - CPU/memory utilization based read request limiting:
-    - `-ingester.read-path-cpu-utilization-limit`
-    - `-ingester.read-path-memory-utilization-limit"`
   - Early TSDB Head compaction to reduce in-memory series:
     - `-blocks-storage.tsdb.early-head-compaction-min-in-memory-series`
     - `-blocks-storage.tsdb.early-head-compaction-min-estimated-series-reduction-percentage`
@@ -292,9 +295,7 @@ The following features or configuration parameters are currently deprecated and 
 - Rule group configuration file
   - `evaluation_delay` field: use `query_offset` instead
 - The `-store-gateway.sharding-ring.auto-forget-enabled` is deprecated and will be removed in a future release. Set the `-store-gateway.sharding-ring.auto-forget-unhealthy-periods` flag to 0 to disable the auto-forget feature. Deprecated since Mimir 2.17.
-- Consul and etcd are deprecated as backend storage options for the HA tracker as of Mimir 3.0.
-- Use `memberlist` instead. Refer to the migration guide for instructions on migrating from Consul or etcd to `memberlist` for the HA tracker.
-- The `-distributor.otel-start-time-quiet-zero` parameter no longer has any effect and will be removed in a future release. Deprecated since Mimir 2.18.
+- The `-distributor.otel-start-time-quiet-zero` parameter no longer has any effect and will be removed in a future release. Deprecated since Mimir 3.0.
 - Postings for matchers cache size (number of entries) configuration:
   - `-blocks-storage.tsdb.head-postings-for-matchers-cache-size`
   - `-blocks-storage.tsdb.block-postings-for-matchers-cache-size`
