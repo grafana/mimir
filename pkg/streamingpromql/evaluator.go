@@ -6,8 +6,8 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/cancellation"
-	"github.com/grafana/dskit/tracing"
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/util/annotations"
@@ -15,6 +15,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/limiter"
+	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
 var errQueryCancelled = cancellation.NewErrorf("query execution cancelled")
@@ -56,9 +57,45 @@ func NewEvaluator(root types.Operator, params *planning.OperatorParameters, time
 //
 // Evaluate will always call observer.EvaluationCompleted before returning nil.
 // It may return a non-nil error after calling observer.EvaluationCompleted if observer.EvaluationCompleted returned a non-nil error.
-func (e *Evaluator) Evaluate(ctx context.Context, observer EvaluationObserver) error {
-	span, ctx := tracing.StartSpanFromContext(ctx, "Evaluator.Evaluate")
-	defer span.Finish()
+func (e *Evaluator) Evaluate(ctx context.Context, observer EvaluationObserver) (err error) {
+	logger, ctx := spanlogger.New(ctx, e.engine.logger, tracer, "Evaluator.Evaluate")
+	defer logger.Finish()
+
+	defer func() {
+		msg := make([]interface{}, 0, 2*(3+4+2)) // 3 fields for all query types, plus worst case of 4 fields for range queries and 2 fields for a failed query
+
+		msg = append(msg,
+			"msg", "evaluation stats",
+			"estimatedPeakMemoryConsumption", int64(e.MemoryConsumptionTracker.PeakEstimatedMemoryConsumptionBytes()),
+			"originalExpression", e.originalExpression,
+		)
+
+		if e.timeRange.IsInstant {
+			msg = append(msg,
+				"timeRangeType", "instant",
+				"time", e.timeRange.StartT,
+			)
+		} else {
+			msg = append(msg,
+				"timeRangeType", "range",
+				"start", e.timeRange.StartT,
+				"end", e.timeRange.EndT,
+				"step", e.timeRange.IntervalMilliseconds,
+			)
+		}
+
+		if err == nil {
+			msg = append(msg, "status", "success")
+		} else {
+			msg = append(msg,
+				"status", "failed",
+				"err", err,
+			)
+		}
+
+		level.Info(logger).Log(msg...)
+		e.engine.estimatedPeakMemoryConsumption.Observe(float64(e.MemoryConsumptionTracker.PeakEstimatedMemoryConsumptionBytes()))
+	}()
 
 	// Add the memory consumption tracker to the context of this query before executing it so
 	// that we can pass it to the rest of the read path and keep track of memory used loading

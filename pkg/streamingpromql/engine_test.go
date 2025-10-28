@@ -1696,8 +1696,8 @@ func TestMemoryConsumptionLimit_SingleQueries(t *testing.T) {
 				attribute.String("level", "info"),
 				attribute.String("msg", "evaluation stats"),
 				attribute.Int64("estimatedPeakMemoryConsumption", int64(expectedMemoryConsumptionEstimate)),
-				attribute.String("expr", testCase.expr),
-				attribute.String("queryType", queryType),
+				attribute.String("originalExpression", testCase.expr),
+				attribute.String("timeRangeType", queryType),
 			}
 
 			switch queryType {
@@ -1759,7 +1759,7 @@ func TestMemoryConsumptionLimit_SingleQueries(t *testing.T) {
 					}
 
 					spanStubs := filter(spanExporter.GetSpans(), func(stub tracetest.SpanStub) bool {
-						return stub.Name == "Query.Exec"
+						return stub.Name == "Evaluator.Evaluate"
 					})
 					require.Len(t, spanStubs, 1)
 					assertEstimatedPeakMemoryConsumption(t, reg, spanStubs[0], memoryConsumptionLimit, expectedPeakMemoryConsumption, queryType, testCase.shouldSucceed)
