@@ -4,6 +4,7 @@ package costattribution
 
 import (
 	"bytes"
+	"fmt"
 	"slices"
 	"strings"
 	"sync"
@@ -44,6 +45,8 @@ type SampleTracker struct {
 	overflowSince time.Time
 
 	overflowCounter observation
+
+	isInvalid atomic.Bool
 }
 
 func newSampleTracker(userID string, trackedLabels []costattributionmodel.Label, limit int, cooldown time.Duration, logger log.Logger) *SampleTracker {
@@ -95,23 +98,36 @@ var bufferPool = sync.Pool{
 	},
 }
 
-func (st *SampleTracker) collectCostAttribution(out chan<- prometheus.Metric) error {
+func (st *SampleTracker) collectCostAttribution(out chan<- prometheus.Metric) (retErr error) {
+	if st == nil || st.isInvalid.Load() {
+		return nil
+	}
+
+	defer func() {
+		st.isInvalid.Store(retErr != nil)
+	}()
+
 	// We don't know the performance of out receiver, so we don't want to hold the lock for too long
 	var prometheusMetrics []prometheus.Metric
 	st.observedMtx.RLock()
 
 	if !st.overflowSince.IsZero() {
+		prometheusMetrics = make([]prometheus.Metric, 0, 2)
 		st.observedMtx.RUnlock()
 		if metric, err := prometheus.NewConstMetric(st.receivedSamplesAttribution, prometheus.CounterValue, st.overflowCounter.receivedSample.Load(), st.overflowLabels[:len(st.overflowLabels)-1]...); err != nil {
-			return err
+			return st.collectErr(err)
 		} else {
-			out <- metric
+			prometheusMetrics = append(prometheusMetrics, metric)
 		}
 
 		if metric, err := prometheus.NewConstMetric(st.discardedSampleAttribution, prometheus.CounterValue, st.overflowCounter.totalDiscarded.Load(), st.overflowLabels...); err != nil {
-			return err
+			return st.collectErr(err)
 		} else {
-			out <- metric
+			prometheusMetrics = append(prometheusMetrics, metric)
+		}
+
+		for _, m := range prometheusMetrics {
+			out <- m
 		}
 		return nil
 	}
@@ -121,7 +137,7 @@ func (st *SampleTracker) collectCostAttribution(out chan<- prometheus.Metric) er
 		keys = append(keys, st.userID)
 		if o.receivedSample.Load() > 0 {
 			if metric, err := prometheus.NewConstMetric(st.receivedSamplesAttribution, prometheus.CounterValue, o.receivedSample.Load(), keys...); err != nil {
-				return err
+				return st.collectErr(err)
 			} else {
 				prometheusMetrics = append(prometheusMetrics, metric)
 			}
@@ -129,7 +145,7 @@ func (st *SampleTracker) collectCostAttribution(out chan<- prometheus.Metric) er
 		o.discardedSampleMtx.RLock()
 		for reason, discarded := range o.discardedSample {
 			if metric, err := prometheus.NewConstMetric(st.discardedSampleAttribution, prometheus.CounterValue, discarded.Load(), append(keys, reason)...); err != nil {
-				return err
+				return st.collectErr(err)
 			} else {
 				prometheusMetrics = append(prometheusMetrics, metric)
 			}
@@ -144,8 +160,12 @@ func (st *SampleTracker) collectCostAttribution(out chan<- prometheus.Metric) er
 	return nil
 }
 
+func (st *SampleTracker) collectErr(err error) error {
+	return fmt.Errorf("it was impossible to collect metrics of SampleTracker for tenant %s and labels %s: %w", st.userID, costattributionmodel.FromCostAttributionLabelsToString(st.labels), err)
+}
+
 func (st *SampleTracker) IncrementDiscardedSamples(lbls []mimirpb.LabelAdapter, value float64, reason string, now time.Time) {
-	if st == nil {
+	if st == nil || st.isInvalid.Load() {
 		return
 	}
 	buf := bufferPool.Get().(*bytes.Buffer)
@@ -156,7 +176,7 @@ func (st *SampleTracker) IncrementDiscardedSamples(lbls []mimirpb.LabelAdapter, 
 }
 
 func (st *SampleTracker) IncrementReceivedSamples(req *mimirpb.WriteRequest, now time.Time) {
-	if st == nil {
+	if st == nil || st.isInvalid.Load() {
 		return
 	}
 

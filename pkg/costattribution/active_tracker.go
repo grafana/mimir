@@ -47,6 +47,8 @@ type ActiveSeriesTracker struct {
 	overflowSince time.Time
 
 	overflowCounter counters
+
+	isInvalid atomic.Bool
 }
 
 func NewActiveSeriesTracker(userID string, trackedLabels []costattributionmodel.Label, limit int, cooldownDuration time.Duration, logger log.Logger) *ActiveSeriesTracker {
@@ -98,7 +100,7 @@ func (at *ActiveSeriesTracker) hasSameLabels(labels []costattributionmodel.Label
 // If nativeHistogramBucketNum is not -1, it also increments the native histogram counter and the corresponding bucket.
 // Otherwise, only the active series count is updated.
 func (at *ActiveSeriesTracker) Increment(lbls labels.Labels, now time.Time, nativeHistogramBucketNum int) {
-	if at == nil {
+	if at == nil || at.isInvalid.Load() {
 		return
 	}
 	buf := bufferPool.Get().(*bytes.Buffer)
@@ -174,7 +176,7 @@ func (at *ActiveSeriesTracker) Increment(lbls labels.Labels, now time.Time, nati
 }
 
 func (at *ActiveSeriesTracker) Decrement(lbls labels.Labels, nativeHistogramBucketNum int) {
-	if at == nil {
+	if at == nil || at.isInvalid.Load() {
 		return
 	}
 	buf := bufferPool.Get().(*bytes.Buffer)
@@ -216,44 +218,57 @@ func (at *ActiveSeriesTracker) Decrement(lbls labels.Labels, nativeHistogramBuck
 	panic(fmt.Errorf("decrementing non-existent active series: labels=%v, cost attribution keys: %v, the current observation map length: %d, the current cost attribution key: %s", lbls, at.labels, len(at.observed), buf.String()))
 }
 
-func (at *ActiveSeriesTracker) Collect(out chan<- prometheus.Metric) error {
+func (at *ActiveSeriesTracker) Collect(out chan<- prometheus.Metric) (retErr error) {
+	if at == nil || at.isInvalid.Load() {
+		return nil
+	}
+	defer func() {
+		at.isInvalid.Store(retErr != nil)
+	}()
 	if metric, err := prometheus.NewConstMetric(at.attributedOverflowLabels, prometheus.GaugeValue, 1, at.overflowLabels[:len(at.overflowLabels)-1]...); err != nil {
-		return err
+		return at.collectErr(err)
 	} else {
 		out <- metric
 	}
 
 	at.observedMtx.RLock()
 	if !at.overflowSince.IsZero() {
-		var activeSeries int64
-		var nativeHistogram int64
-		var nhBucketNum int64
+		var (
+			activeSeries      int64
+			nativeHistogram   int64
+			nhBucketNum       int64
+			prometheusMetrics = make([]prometheus.Metric, 0, 3)
+		)
 		for _, c := range at.observed {
 			activeSeries += c.activeSeries.Load()
 			nativeHistogram += c.nativeHistograms.Load()
 			nhBucketNum += c.nativeHistogramBuckets.Load()
 		}
 		at.observedMtx.RUnlock()
+
 		if metric, err := prometheus.NewConstMetric(at.activeSeriesPerUserAttribution, prometheus.GaugeValue, float64(activeSeries+at.overflowCounter.activeSeries.Load()), at.overflowLabels[:len(at.overflowLabels)-1]...); err != nil {
-			return err
+			return at.collectErr(err)
 		} else {
-			out <- metric
+			prometheusMetrics = append(prometheusMetrics, metric)
 		}
 
 		if nhcounter := float64(nativeHistogram + at.overflowCounter.nativeHistograms.Load()); nhcounter > 0 {
 			if metric, err := prometheus.NewConstMetric(at.activeNativeHistogramSeriesPerUserAttribution, prometheus.GaugeValue, nhcounter, at.overflowLabels[:len(at.overflowLabels)-1]...); err != nil {
-				return err
+				return at.collectErr(err)
 			} else {
-				out <- metric
+				prometheusMetrics = append(prometheusMetrics, metric)
 			}
 		}
 
 		if bcounter := float64(nhBucketNum + at.overflowCounter.nativeHistogramBuckets.Load()); bcounter > 0 {
 			if metric, err := prometheus.NewConstMetric(at.activeNativeHistogramBucketsPerUserAttribution, prometheus.GaugeValue, bcounter, at.overflowLabels[:len(at.overflowLabels)-1]...); err != nil {
-				return err
+				return at.collectErr(err)
 			} else {
-				out <- metric
+				prometheusMetrics = append(prometheusMetrics, metric)
 			}
+		}
+		for _, m := range prometheusMetrics {
+			out <- m
 		}
 		return nil
 	}
@@ -263,21 +278,21 @@ func (at *ActiveSeriesTracker) Collect(out chan<- prometheus.Metric) error {
 		keys := strings.Split(key, string(sep))
 		keys = append(keys, at.userID)
 		if metric, err := prometheus.NewConstMetric(at.activeSeriesPerUserAttribution, prometheus.GaugeValue, float64(c.activeSeries.Load()), keys...); err != nil {
-			return err
+			return at.collectErr(err)
 		} else {
 			prometheusMetrics = append(prometheusMetrics, metric)
 		}
 
 		if nhcounter := c.nativeHistograms.Load(); nhcounter > 0 {
 			if metric, err := prometheus.NewConstMetric(at.activeNativeHistogramSeriesPerUserAttribution, prometheus.GaugeValue, float64(nhcounter), keys...); err != nil {
-				return err
+				return at.collectErr(err)
 			} else {
 				prometheusMetrics = append(prometheusMetrics, metric)
 			}
 		}
 		if nbcounter := c.nativeHistogramBuckets.Load(); nbcounter > 0 {
 			if metric, err := prometheus.NewConstMetric(at.activeNativeHistogramBucketsPerUserAttribution, prometheus.GaugeValue, float64(nbcounter), keys...); err != nil {
-				return err
+				return at.collectErr(err)
 			} else {
 				prometheusMetrics = append(prometheusMetrics, metric)
 			}
@@ -289,6 +304,10 @@ func (at *ActiveSeriesTracker) Collect(out chan<- prometheus.Metric) error {
 		out <- m
 	}
 	return nil
+}
+
+func (at *ActiveSeriesTracker) collectErr(err error) error {
+	return fmt.Errorf("it was impossible to collect metrics of ActiveSeriesTracker for tenant %s and labels %s: %w", at.userID, costattributionmodel.FromCostAttributionLabelsToString(at.labels), err)
 }
 
 func (at *ActiveSeriesTracker) fillKeyFromLabels(lbls labels.Labels, buf *bytes.Buffer) {

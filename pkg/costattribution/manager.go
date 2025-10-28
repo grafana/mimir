@@ -37,6 +37,8 @@ type Manager struct {
 	sampleTrackerOverflowDesc          *prometheus.Desc
 	activeSeriesTrackerCardinalityDesc *prometheus.Desc
 	activeSeriesTrackerOverflowDesc    *prometheus.Desc
+	invalidSampleTrackersDesc          *prometheus.Desc
+	invalidActivSeriesTrackersDesc     *prometheus.Desc
 
 	inactiveTimeout time.Duration
 	cleanupInterval time.Duration
@@ -73,6 +75,16 @@ func NewManager(cleanupInterval, inactiveTimeout time.Duration, logger log.Logge
 		),
 		activeSeriesTrackerOverflowDesc: prometheus.NewDesc("cortex_cost_attribution_active_series_tracker_overflown",
 			"This metric is exported with value 1 when an active series tracker for a user is overflown. It's not exported otherwise.",
+			[]string{"user"},
+			prometheus.Labels{trackerLabel: defaultTrackerName},
+		),
+		invalidSampleTrackersDesc: prometheus.NewDesc("cortex_cost_attribution_invalid_sample_trackers_total",
+			"The total number of invalid sample trackers for a user.",
+			[]string{"user"},
+			prometheus.Labels{trackerLabel: defaultTrackerName},
+		),
+		invalidActivSeriesTrackersDesc: prometheus.NewDesc("cortex_cost_attribution_invalid_active_series_trackers_total",
+			"The total number of invalid active series trackers for a user.",
 			[]string{"user"},
 			prometheus.Labels{trackerLabel: defaultTrackerName},
 		),
@@ -193,40 +205,76 @@ func (m *Manager) Collect(out chan<- prometheus.Metric) {
 	m.atmtx.RUnlock()
 
 	for _, tracker := range sampleTrackersByUserID {
-		cardinality, overflown := tracker.cardinality()
-
-		out <- prometheus.MustNewConstMetric(
-			m.sampleTrackerCardinalityDesc,
-			prometheus.GaugeValue,
-			float64(cardinality),
-			tracker.userID,
+		var (
+			invalidTracker float64
+			cardinality    int
+			overflown      bool
 		)
+
+		if tracker.isInvalid.Load() {
+			invalidTracker = 1
+			cardinality = 0
+			overflown = false
+		} else {
+			invalidTracker = 0
+			cardinality, overflown = tracker.cardinality()
+		}
+
+		if metric, err := prometheus.NewConstMetric(m.invalidSampleTrackersDesc, prometheus.GaugeValue, invalidTracker, tracker.userID); err != nil {
+			level.Warn(m.logger).Log("msg", "error updating cortex_cost_attribution_invalid_sample_trackers_total metric", "tenant", tracker.userID, "err", err)
+		} else {
+			out <- metric
+		}
+
+		if metric, err := prometheus.NewConstMetric(m.sampleTrackerCardinalityDesc, prometheus.GaugeValue, float64(cardinality), tracker.userID); err != nil {
+			level.Warn(m.logger).Log("msg", "error updating cortex_cost_attribution_sample_tracker_cardinality metric", "tenant", tracker.userID, "err", err)
+		} else {
+			out <- metric
+		}
+
 		if overflown {
-			out <- prometheus.MustNewConstMetric(
-				m.sampleTrackerOverflowDesc,
-				prometheus.GaugeValue,
-				1,
-				tracker.userID,
-			)
+			if metric, err := prometheus.NewConstMetric(m.sampleTrackerOverflowDesc, prometheus.GaugeValue, 1.0, tracker.userID); err != nil {
+				level.Warn(m.logger).Log("msg", "error updating cortex_cost_attribution_sample_tracker_overflown metric", "tenant", tracker.userID, "err", err)
+			} else {
+				out <- metric
+			}
 		}
 	}
 
 	for _, tracker := range activeTrackersByUserID {
-		cardinality, overflown := tracker.cardinality()
-
-		out <- prometheus.MustNewConstMetric(
-			m.activeSeriesTrackerCardinalityDesc,
-			prometheus.GaugeValue,
-			float64(cardinality),
-			tracker.userID,
+		var (
+			invalidTracker float64
+			cardinality    int
+			overflown      bool
 		)
+
+		if tracker.isInvalid.Load() {
+			invalidTracker = 1
+			cardinality = 0
+			overflown = false
+		} else {
+			invalidTracker = 0
+			cardinality, overflown = tracker.cardinality()
+		}
+
+		if metric, err := prometheus.NewConstMetric(m.invalidActivSeriesTrackersDesc, prometheus.GaugeValue, invalidTracker, tracker.userID); err != nil {
+			level.Warn(m.logger).Log("msg", "error updating cortex_cost_attribution_invalid_active_series_trackers_total metric", "tenant", tracker.userID, "err", err)
+		} else {
+			out <- metric
+		}
+
+		if metric, err := prometheus.NewConstMetric(m.activeSeriesTrackerCardinalityDesc, prometheus.GaugeValue, float64(cardinality), tracker.userID); err != nil {
+			level.Warn(m.logger).Log("msg", "error updating cortex_cost_attribution_active_series_tracker_cardinality metric", "tenant", tracker.userID, "err", err)
+		} else {
+			out <- metric
+		}
+
 		if overflown {
-			out <- prometheus.MustNewConstMetric(
-				m.activeSeriesTrackerOverflowDesc,
-				prometheus.GaugeValue,
-				1,
-				tracker.userID,
-			)
+			if metric, err := prometheus.NewConstMetric(m.activeSeriesTrackerOverflowDesc, prometheus.GaugeValue, 1.0, tracker.userID); err != nil {
+				level.Warn(m.logger).Log("msg", "error updating cortex_cost_attribution_active_series_tracker_overflown metric", "tenant", tracker.userID, "err", err)
+			} else {
+				out <- metric
+			}
 		}
 	}
 }
@@ -248,14 +296,14 @@ func (m *Manager) collectCostAttribution(out chan<- prometheus.Metric) {
 
 	for tenantID, tracker := range sampleTrackersByUserID {
 		if err := tracker.collectCostAttribution(out); err != nil {
-			level.Warn(m.logger).Log("msg", "tenant cost attribution SampleTracker metrics collection failed; any collected data should be considered unreliable", "tenant", tenantID, "reason", err)
+			level.Warn(m.logger).Log("msg", "tenant cost attribution SampleTracker metrics collection failed", "tenant", tenantID, "reason", err)
 			continue
 		}
 	}
 
 	for tenantID, tracker := range activeTrackersByUserID {
 		if err := tracker.Collect(out); err != nil {
-			level.Warn(m.logger).Log("msg", "tenant cost attribution ActiveSeriesTracker metrics collection failed; any collected data should be considered unreliable", "tenant", tenantID, "reason", err)
+			level.Warn(m.logger).Log("msg", "tenant cost attribution ActiveSeriesTracker metrics collection failed", "tenant", tenantID, "reason", err)
 			continue
 		}
 	}

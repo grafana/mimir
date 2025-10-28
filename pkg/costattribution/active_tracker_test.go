@@ -119,6 +119,7 @@ func TestActiveTracker_Concurrency(t *testing.T) {
 func TestActiveTracker_Collect(t *testing.T) {
 	testCases := map[string]struct {
 		labelName   string
+		isInvalid   bool
 		expectedErr error
 	}{
 		"happy case": {
@@ -127,13 +128,24 @@ func TestActiveTracker_Collect(t *testing.T) {
 		},
 		"incorrect label names cause an error": {
 			labelName:   "__bad_label__",
-			expectedErr: fmt.Errorf(`"__bad_label__" is not a valid label name for metric "cortex_attributed_series_overflow_labels"`),
+			expectedErr: fmt.Errorf(`it was impossible to collect metrics of ActiveSeriesTracker for tenant tenant-1 and labels __bad_label__:__bad_label__: "__bad_label__" is not a valid label name for metric "cortex_attributed_series_overflow_labels"`),
+		},
+		"happy case with invalid tracker": {
+			labelName:   "good_label",
+			isInvalid:   true,
+			expectedErr: nil,
+		},
+		"incorrect label names with invalid tracker": {
+			labelName:   "__bad_label__",
+			isInvalid:   true,
+			expectedErr: nil,
 		},
 	}
 
 	for testName, testCase := range testCases {
 		t.Run(testName, func(t *testing.T) {
 			ast := NewActiveSeriesTracker("tenant-1", []costattributionmodel.Label{{Input: testCase.labelName, Output: testCase.labelName}}, 10, 1*time.Minute, log.NewNopLogger())
+			ast.isInvalid.Store(testCase.isInvalid)
 			var wg sync.WaitGroup
 			var i int64
 			for i = 0; i < 5; i++ {
@@ -147,8 +159,12 @@ func TestActiveTracker_Collect(t *testing.T) {
 			wg.Wait()
 
 			// Verify no data races or inconsistencies
-			assert.True(t, len(ast.observed) > 0)
-			assert.LessOrEqual(t, len(ast.observed), trackedSeriesFactor*ast.maxCardinality)
+			if ast.isInvalid.Load() {
+				assert.Len(t, ast.observed, 0)
+			} else {
+				assert.True(t, len(ast.observed) > 0)
+				assert.LessOrEqual(t, len(ast.observed), trackedSeriesFactor*ast.maxCardinality)
+			}
 			assert.True(t, ast.overflowSince.IsZero())
 
 			out := make(chan prometheus.Metric)
@@ -171,15 +187,20 @@ func TestActiveTracker_Collect(t *testing.T) {
 
 			if testCase.expectedErr != nil {
 				require.Error(t, err)
-				require.Equal(t, testCase.expectedErr, err)
+				require.EqualError(t, err, testCase.expectedErr.Error())
 				require.Equal(t, 0, count)
+				require.True(t, ast.isInvalid.Load())
 			} else {
 				require.NoError(t, err)
-				// 1 (from cortex_attributed_series_overflow_labels) +
-				// 5 (from cortex_ingester_attributed_active_series) +
-				// 5 (from cortex_ingester_attributed_active_native_histogram_series) +
-				// 5 (from cortex_ingester_attributed_active_native_histogram_buckets)
-				require.Equal(t, 16, count)
+				if ast.isInvalid.Load() {
+					require.Equal(t, 0, count)
+				} else {
+					// 1 (from cortex_attributed_series_overflow_labels) +
+					// 5 (from cortex_ingester_attributed_active_series) +
+					// 5 (from cortex_ingester_attributed_active_native_histogram_series) +
+					// 5 (from cortex_ingester_attributed_active_native_histogram_buckets)
+					require.Equal(t, 16, count)
+				}
 			}
 		})
 	}

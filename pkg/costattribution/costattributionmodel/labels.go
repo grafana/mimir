@@ -2,6 +2,8 @@
 
 package costattributionmodel
 
+import "strings"
+
 // Label represents a label for cost attribution.
 type Label struct {
 	// Input is the source label name that exists in the input metrics.
@@ -30,4 +32,18 @@ func ParseCostAttributionLabels(labelStrings []string) []Label {
 	}
 
 	return output
+}
+
+func FromCostAttributionLabelsToString(labels []Label) string {
+	var b strings.Builder
+	for _, label := range labels {
+		if b.Len() > 0 {
+			b.WriteByte(',')
+		}
+		b.WriteString(label.Input)
+		b.WriteByte(':')
+		b.WriteString(label.Output)
+	}
+
+	return b.String()
 }

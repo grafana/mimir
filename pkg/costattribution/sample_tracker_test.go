@@ -167,6 +167,7 @@ func TestSampleTracker_Concurrency(t *testing.T) {
 func TestSampleTracker_collectCostAttribution(t *testing.T) {
 	testCases := map[string]struct {
 		labelName   string
+		isInvalid   bool
 		expectedErr error
 	}{
 		"happy case": {
@@ -175,13 +176,24 @@ func TestSampleTracker_collectCostAttribution(t *testing.T) {
 		},
 		"incorrect label names cause an error": {
 			labelName:   "__bad_label__",
-			expectedErr: fmt.Errorf(`"__bad_label__" is not a valid label name for metric "cortex_distributor_received_attributed_samples_total"`),
+			expectedErr: fmt.Errorf(`it was impossible to collect metrics of SampleTracker for tenant tenant-1 and labels __bad_label__:__bad_label__: "__bad_label__" is not a valid label name for metric "cortex_distributor_received_attributed_samples_total"`),
+		},
+		"happy case with invalid tracker": {
+			labelName:   "good_label",
+			isInvalid:   true,
+			expectedErr: nil,
+		},
+		"incorrect label name with invalid tracker": {
+			labelName:   "__bad_label__",
+			isInvalid:   true,
+			expectedErr: nil,
 		},
 	}
 
 	for testName, testCase := range testCases {
 		t.Run(testName, func(t *testing.T) {
 			st := newSampleTracker("tenant-1", []costattributionmodel.Label{{Input: testCase.labelName, Output: testCase.labelName}}, 10, 1*time.Minute, log.NewNopLogger())
+			st.isInvalid.Store(testCase.isInvalid)
 			var wg sync.WaitGroup
 			var i int64
 			for i = 0; i < 5; i++ {
@@ -195,8 +207,12 @@ func TestSampleTracker_collectCostAttribution(t *testing.T) {
 			wg.Wait()
 
 			// Verify no data races or inconsistencies
-			assert.True(t, len(st.observed) > 0)
-			assert.LessOrEqual(t, len(st.observed), trackedSeriesFactor*st.maxCardinality)
+			if st.isInvalid.Load() {
+				assert.Len(t, st.observed, 0)
+			} else {
+				assert.True(t, len(st.observed) > 0)
+				assert.LessOrEqual(t, len(st.observed), trackedSeriesFactor*st.maxCardinality)
+			}
 			assert.True(t, st.overflowSince.IsZero())
 
 			out := make(chan prometheus.Metric)
@@ -219,13 +235,18 @@ func TestSampleTracker_collectCostAttribution(t *testing.T) {
 
 			if testCase.expectedErr != nil {
 				require.Error(t, err)
-				require.Equal(t, testCase.expectedErr, err)
+				require.EqualError(t, err, testCase.expectedErr.Error())
 				require.Equal(t, 0, count)
+				require.True(t, st.isInvalid.Load())
 			} else {
 				require.NoError(t, err)
-				// 5 (from cortex_distributor_received_attributed_samples_total) +
-				// 5 (from cortex_discarded_attributed_samples_total)
-				require.Equal(t, 10, count)
+				if st.isInvalid.Load() {
+					require.Equal(t, 0, count)
+				} else {
+					// 5 (from cortex_distributor_received_attributed_samples_total) +
+					// 5 (from cortex_discarded_attributed_samples_total)
+					require.Equal(t, 10, count)
+				}
 			}
 		})
 	}
