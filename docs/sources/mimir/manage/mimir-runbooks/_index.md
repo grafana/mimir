@@ -1914,7 +1914,7 @@ How to **investigate**:
 ### MimirFewerIngestersConsumingThanActivePartitions
 
 This alert fires when the number of ingesters consuming partitions is less than the number of active partitions.
-This means that distributors are writing to partitions that are not being consumed by any ingester, leading to data missing from the short-term read path and potential data loss if this persists for too long, and block-builder is not used in the Mimir cluster.
+This means that distributors are writing to partitions that are not being consumed by any ingester, leading to data missing from the short-term read path and potential data loss if this persists for too long and you aren't using block-builder in the Mimir cluster.
 
 How it **works**:
 
