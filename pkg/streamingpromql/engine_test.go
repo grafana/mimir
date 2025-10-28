@@ -2205,7 +2205,7 @@ func TestAnnotations(t *testing.T) {
 		metric{series="custom-buckets-1"} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}}+{{schema:-53 sum:5 count:4 custom_values:[5 10] buckets:[1 2 1]}}x3
 		metric{series="custom-buckets-2"} {{schema:-53 sum:1 count:1 custom_values:[2 3] buckets:[1]}}+{{schema:-53 sum:5 count:4 custom_values:[2 3] buckets:[1 2 1]}}x3
 		metric{series="mixed-exponential-custom-buckets"} {{schema:0 sum:1 count:1 buckets:[1]}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}} {{schema:0 sum:5 count:4 buckets:[1 2 1]}}
-		metric{series="incompatible-custom-buckets"} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}} {{schema:-53 sum:1 count:1 custom_values:[2 3] buckets:[1]}} {{schema:-53 sum:5 count:4 custom_values:[5 10] buckets:[1 2 1]}}
+		metric{series="mismatched-custom-buckets"} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}} {{schema:-53 sum:1 count:1 custom_values:[2 3] buckets:[1]}} {{schema:-53 sum:5 count:4 custom_values:[5 10] buckets:[1 2 1]}}
 	`
 
 	nativeHistogramsWithResetHintsMix := `
@@ -2319,11 +2319,11 @@ func TestAnnotations(t *testing.T) {
 				`PromQL warning: vector contains a mix of histograms with exponential and custom buckets schemas for metric name "metric" (1:5)`,
 			},
 		},
-		"sum() over native histograms with incompatible custom buckets": {
+		"sum() over native histograms with mismatched custom buckets": {
 			data: nativeHistogramsWithCustomBucketsData,
 			expr: `sum(metric{series=~"custom-buckets-(1|2)"})`,
-			expectedWarningAnnotations: []string{
-				`PromQL warning: vector contains histograms with incompatible custom buckets for metric name "metric" (1:5)`,
+			expectedInfoAnnotations: []string{
+				`PromQL info: mismatched custom buckets were reconciled during aggregation (1:5)`,
 			},
 		},
 
@@ -2339,11 +2339,11 @@ func TestAnnotations(t *testing.T) {
 				`PromQL warning: vector contains a mix of histograms with exponential and custom buckets schemas for metric name "metric" (1:15)`,
 			},
 		},
-		"sum_over_time() over native histograms with incompatible custom buckets": {
+		"sum_over_time() over native histograms with mismatched custom buckets": {
 			data: nativeHistogramsWithCustomBucketsData,
-			expr: `sum_over_time(metric{series="incompatible-custom-buckets"}[1m1s])`,
-			expectedWarningAnnotations: []string{
-				`PromQL warning: vector contains histograms with incompatible custom buckets for metric name "metric" (1:15)`,
+			expr: `sum_over_time(metric{series="mismatched-custom-buckets"}[1m1s])`,
+			expectedInfoAnnotations: []string{
+				`PromQL info: mismatched custom buckets were reconciled during aggregation (1:15)`,
 			},
 		},
 
@@ -2359,11 +2359,11 @@ func TestAnnotations(t *testing.T) {
 				`PromQL warning: vector contains a mix of histograms with exponential and custom buckets schemas for metric name "metric" (1:15)`,
 			},
 		},
-		"avg_over_time() over native histograms with incompatible custom buckets": {
+		"avg_over_time() over native histograms with mismatched custom buckets": {
 			data: nativeHistogramsWithCustomBucketsData,
-			expr: `avg_over_time(metric{series="incompatible-custom-buckets"}[1m1s])`,
-			expectedWarningAnnotations: []string{
-				`PromQL warning: vector contains histograms with incompatible custom buckets for metric name "metric" (1:15)`,
+			expr: `avg_over_time(metric{series="mismatched-custom-buckets"}[1m1s])`,
+			expectedInfoAnnotations: []string{
+				`PromQL info: mismatched custom buckets were reconciled during aggregation (1:15)`,
 			},
 		},
 
@@ -2526,7 +2526,8 @@ func TestRateIncreaseAnnotations(t *testing.T) {
 		metric{series="custom-buckets-1"} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}}+{{schema:-53 sum:5 count:4 custom_values:[5 10] buckets:[1 2 1]}}x3
 		metric{series="custom-buckets-2"} {{schema:-53 sum:1 count:1 custom_values:[2 3] buckets:[1]}}+{{schema:-53 sum:5 count:4 custom_values:[2 3] buckets:[1 2 1]}}x3
 		metric{series="mixed-exponential-custom-buckets"} {{schema:0 sum:1 count:1 buckets:[1]}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}} {{schema:0 sum:5 count:4 buckets:[1 2 1]}}
-		metric{series="incompatible-custom-buckets"} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}} {{schema:-53 sum:1 count:1 custom_values:[2 3] buckets:[1]}} {{schema:-53 sum:5 count:4 custom_values:[5 10] buckets:[1 2 1]}}
+		metric{series="mismatched-custom-buckets"} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}} {{schema:-53 sum:1 count:1 custom_values:[2 3] buckets:[1]}} {{schema:-53 sum:5 count:4 custom_values:[2 10] buckets:[1 2 1]}}
+		metric{series="mismatched-custom-buckets-with-resets"} {{schema:-53 sum:10 count:1 custom_values:[5 10] buckets:[10]}} {{schema:-53 sum:1 count:1 custom_values:[2 3] buckets:[1]}}
     `
 
 	testCases := map[string]annotationTestCase{}
@@ -2608,13 +2609,22 @@ func TestRateIncreaseAnnotations(t *testing.T) {
 				fmt.Sprintf(`PromQL warning: vector contains a mix of histograms with exponential and custom buckets schemas for metric name "metric" (1:%d)`, position),
 			},
 		}
-		testCases[fmt.Sprintf("%s() over native histograms with incompatible custom buckets", function)] = annotationTestCase{
+
+		testCases[fmt.Sprintf("%s() over native histograms with mismatched custom buckets", function)] = annotationTestCase{
 			data:                       nativeHistogramsWithCustomBucketsData,
-			expr:                       fmt.Sprintf(`%s(metric{series="incompatible-custom-buckets"}[2m1s])`, function),
+			expr:                       fmt.Sprintf(`%s(metric{series="mismatched-custom-buckets"}[2m1s])`, function),
 			instantEvaluationTimestamp: &incompatibleSchemaEvaluationTimestamp,
-			expectedWarningAnnotations: []string{
-				fmt.Sprintf(`PromQL warning: vector contains histograms with incompatible custom buckets for metric name "metric" (1:%d)`, position),
+			expectedInfoAnnotations: []string{
+				fmt.Sprintf(`PromQL info: mismatched custom buckets were reconciled during subtraction (1:%d)`, position),
 			},
+			expectedWarningAnnotations: []string{},
+		}
+
+		testCases[fmt.Sprintf("%s() over native histograms with mismatched custom buckets with reset", function)] = annotationTestCase{
+			// No info annotation - as the mismatched buckets samples are also detected as a reset, no reconciled annotation is returned
+			data:                       nativeHistogramsWithCustomBucketsData,
+			expr:                       fmt.Sprintf(`%s(metric{series="mismatched-custom-buckets-with-resets"}[2m1s])`, function),
+			instantEvaluationTimestamp: &incompatibleSchemaEvaluationTimestamp,
 		}
 
 		testCases[fmt.Sprintf("%s() over metric without counter suffix with single float or histogram in range", function)] = annotationTestCase{
@@ -2669,7 +2679,8 @@ func TestIrateIdeltaAnnotations(t *testing.T) {
 		metric{series="nh"} {{schema:0 sum:1 count:1 buckets:[1]}} {{schema:0 sum:2 count:2 buckets:[2]}}
 		metric{series="mixed-float-nh"} 10 {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}} {{schema:-53 sum:5 count:4 custom_values:[5 10] buckets:[1]}}
 		metric{series="mixed-exponential-custom-buckets"} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}} {{schema:0 sum:1 count:1 buckets:[1]}} {{schema:0 sum:5 count:4 buckets:[1 2 1]}}
-		metric{series="incompatible-custom-buckets"} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}} {{schema:-53 sum:1 count:1 custom_values:[5 12] buckets:[1]}}
+		metric{series="mismatched-custom-buckets"} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}} {{schema:-53 sum:1 count:1 custom_values:[2 3] buckets:[1]}} {{schema:-53 sum:5 count:4 custom_values:[2 10] buckets:[1 2 1]}}
+		metric{series="mismatched-custom-buckets-with-resets"} {{schema:-53 sum:10 count:1 custom_values:[5 10] buckets:[10]}} {{schema:-53 sum:1 count:1 custom_values:[2 3] buckets:[1]}}
 		metric{series="nh-first-gauge"} {{schema:0 sum:1 count:1 buckets:[1] counter_reset_hint:gauge}} {{schema:0 sum:2 count:2 buckets:[2]}}
 		metric{series="nh-second-gauge"} {{schema:0 sum:1 count:1 buckets:[1]}} {{schema:0 sum:2 count:2 buckets:[2] counter_reset_hint:gauge}}
 	`
@@ -2679,7 +2690,7 @@ func TestIrateIdeltaAnnotations(t *testing.T) {
 		metric{series="nh"} {{schema:0 sum:1 count:1 buckets:[1] counter_reset_hint:gauge}} {{schema:0 sum:2 count:2 buckets:[2] counter_reset_hint:gauge}}
 		metric{series="mixed-float-nh"} 10 {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1] counter_reset_hint:gauge}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1] counter_reset_hint:gauge}} {{schema:-53 sum:5 count:4 custom_values:[5 10] buckets:[1] counter_reset_hint:gauge}}
 		metric{series="mixed-exponential-custom-buckets"} {{schema:0 sum:1 count:1 buckets:[1] counter_reset_hint:gauge}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1] counter_reset_hint:gauge}} {{schema:0 sum:5 count:4 buckets:[1 2 1] counter_reset_hint:gauge}}
-		metric{series="incompatible-custom-buckets"} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1] counter_reset_hint:gauge}} {{schema:-53 sum:1 count:1 custom_values:[5 12] buckets:[1] counter_reset_hint:gauge}}
+		metric{series="mismatched-custom-buckets"} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1] counter_reset_hint:gauge}} {{schema:-53 sum:1 count:1 custom_values:[5 12] buckets:[1] counter_reset_hint:gauge}}
 		metric{series="nh-first-not-gauge"} {{schema:0 sum:1 count:1 buckets:[1]}} {{schema:0 sum:2 count:2 buckets:[2] counter_reset_hint:gauge}}
 		metric{series="nh-second-not-gauge"} {{schema:0 sum:1 count:1 buckets:[1] counter_reset_hint:gauge}} {{schema:0 sum:2 count:2 buckets:[2]}}
 	`
@@ -2709,11 +2720,17 @@ func TestIrateIdeltaAnnotations(t *testing.T) {
 			expr:                       `irate(metric{series="mixed-exponential-custom-buckets"}[1m1s])`,
 			expectedWarningAnnotations: []string{},
 		},
-		// Similar to the case above: change in bucket layout counts as a reset, so we won't return an annotation.
-		"irate() over metric with incompatible custom buckets": {
-			data:                       irateData,
-			expr:                       `irate(metric{series="incompatible-custom-buckets"}[1m1s])`,
-			expectedWarningAnnotations: []string{},
+		"irate() over metric with mismatched custom buckets": {
+			data: irateData,
+			expr: `irate(metric{series="mismatched-custom-buckets"}[1m1s])`,
+			expectedInfoAnnotations: []string{
+				`PromQL info: mismatched custom buckets were reconciled during subtraction (1:7)`,
+			},
+		},
+		// If a reset is detected for mismatched buckets, no annotations are returned
+		"irate() over metric with mismatched custom buckets with reset": {
+			data: irateData,
+			expr: `irate(metric{series="mismatched-custom-buckets-with-resets"}[1m1s])`,
 		},
 		"irate() over metric with first point not being a counter native histogram": {
 			data: irateData,
@@ -2754,11 +2771,11 @@ func TestIrateIdeltaAnnotations(t *testing.T) {
 				`PromQL warning: vector contains a mix of histograms with exponential and custom buckets schemas for metric name "metric" (1:8)`,
 			},
 		},
-		"idelta() over metric with incompatible custom buckets": {
+		"idelta() over metric with mismatched custom buckets": {
 			data: ideltaData,
-			expr: `idelta(metric{series="incompatible-custom-buckets"}[1m1s])`,
-			expectedWarningAnnotations: []string{
-				`PromQL warning: vector contains histograms with incompatible custom buckets for metric name "metric" (1:8)`,
+			expr: `idelta(metric{series="mismatched-custom-buckets"}[1m1s])`,
+			expectedInfoAnnotations: []string{
+				`PromQL info: mismatched custom buckets were reconciled during subtraction (1:8)`,
 			},
 		},
 		"idelta() over metric with first point not being a gauge native histogram": {
@@ -2847,18 +2864,21 @@ func TestBinaryOperationAnnotations(t *testing.T) {
 		histogramHistogramSupported          bool
 		supportsBool                         bool
 		emitsWarningOnIncompatibleHistograms bool
+		emitsInfoOnMismatchedCustomBuckets   bool
 	}{
 		"+": {
 			floatHistogramSupported:              false,
 			histogramFloatSupported:              false,
 			histogramHistogramSupported:          true,
 			emitsWarningOnIncompatibleHistograms: true,
+			emitsInfoOnMismatchedCustomBuckets:   true,
 		},
 		"-": {
 			floatHistogramSupported:              false,
 			histogramFloatSupported:              false,
 			histogramHistogramSupported:          true,
 			emitsWarningOnIncompatibleHistograms: true,
+			emitsInfoOnMismatchedCustomBuckets:   true,
 		},
 		"*": {
 			floatHistogramSupported:     true,
@@ -2936,17 +2956,29 @@ func TestBinaryOperationAnnotations(t *testing.T) {
 		testCases[name] = testCase
 	}
 
-	addIncompatibleLayoutTestCase := func(op string, name string, expr string, shouldEmitAnnotation bool) {
-		testCase := annotationTestCase{
-			data: mixedFloatHistogramData,
-			expr: expr,
+	addIncompatibleLayoutWarningTestCase := func(op string, name string, expr string) {
+		testCases[name] = annotationTestCase{
+			data:                       mixedFloatHistogramData,
+			expr:                       expr,
+			expectedWarningAnnotations: []string{fmt.Sprintf(`PromQL warning: incompatible bucket layout encountered for binary operator %v (1:1)`, op)},
+		}
+	}
+
+	addMismatchedCustomBucketsInfoTestCase := func(op string, name string, expr string) {
+		opName := op
+
+		switch op {
+		case "+":
+			opName = "addition"
+		case "-":
+			opName = "subtraction"
 		}
 
-		if shouldEmitAnnotation {
-			testCase.expectedWarningAnnotations = []string{fmt.Sprintf(`PromQL warning: incompatible bucket layout encountered for binary operator %v (1:1)`, op)}
+		testCases[name] = annotationTestCase{
+			data:                    mixedFloatHistogramData,
+			expr:                    expr,
+			expectedInfoAnnotations: []string{fmt.Sprintf(`PromQL info: mismatched custom buckets were reconciled during %v (1:1)`, opName)},
 		}
-
-		testCases[name] = testCase
 	}
 
 	cardinalities := map[string]string{
@@ -2973,8 +3005,12 @@ func TestBinaryOperationAnnotations(t *testing.T) {
 				addIncompatibleTypesTestCase(op, fmt.Sprintf("binary %v between two histograms with %v matching", expr, cardinalityName), fmt.Sprintf(`metric{type="histogram"} %v ignoring(type) %v metric{type="histogram"}`, expr, cardinalityModifier), "histogram", "histogram", binop.histogramHistogramSupported)
 
 				if binop.histogramHistogramSupported {
-					addIncompatibleLayoutTestCase(op, fmt.Sprintf("binary %v between histograms with exponential and custom buckets with %v matching", expr, cardinalityName), fmt.Sprintf(`metric{type="histogram"} %v ignoring(type) %v metric{type="histogram-custom-buckets"}`, expr, cardinalityModifier), binop.emitsWarningOnIncompatibleHistograms)
-					addIncompatibleLayoutTestCase(op, fmt.Sprintf("binary %v between histograms with incompatible custom bucket schemas with %v matching", expr, cardinalityName), fmt.Sprintf(`metric{type="histogram-custom-buckets"} %v ignoring(type) %v metric{type="histogram-custom-buckets-other-layout"}`, expr, cardinalityModifier), binop.emitsWarningOnIncompatibleHistograms)
+					if binop.emitsWarningOnIncompatibleHistograms {
+						addIncompatibleLayoutWarningTestCase(op, fmt.Sprintf("binary %v between histograms with exponential and custom buckets with %v matching", expr, cardinalityName), fmt.Sprintf(`metric{type="histogram"} %v ignoring(type) %v metric{type="histogram-custom-buckets"}`, expr, cardinalityModifier))
+					}
+					if binop.emitsInfoOnMismatchedCustomBuckets {
+						addMismatchedCustomBucketsInfoTestCase(op, fmt.Sprintf("binary %v between histograms with incompatible custom bucket schemas with %v matching", expr, cardinalityName), fmt.Sprintf(`metric{type="histogram-custom-buckets"} %v ignoring(type) %v metric{type="histogram-custom-buckets-other-layout"}`, expr, cardinalityModifier))
+					}
 				}
 			}
 		}
