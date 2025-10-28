@@ -1467,11 +1467,13 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 func (d *Distributor) logLabelValueTooLongSummaries(userID string, valueTooLongSummaries labelValueTooLongSummaries) {
 	for key, summary := range valueTooLongSummaries.m {
 		var msg string
-		switch d.limits.LabelValueLengthOverLimitStrategy(userID) {
+		switch strategy := d.limits.LabelValueLengthOverLimitStrategy(userID); strategy {
 		case validation.LabelValueLengthOverLimitStrategyTruncate:
 			msg = truncatedLabelValueMsg
 		case validation.LabelValueLengthOverLimitStrategyDrop:
 			msg = droppedLabelValueMsg
+		default:
+			panic(fmt.Errorf("unexpected value: %v", strategy))
 		}
 		level.Warn(d.log).Log(
 			"msg", msg,
