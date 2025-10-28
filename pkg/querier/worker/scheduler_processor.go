@@ -208,17 +208,19 @@ func (sp *schedulerProcessor) querierLoop(execCtx context.Context, c schedulerpb
 		}
 	}
 
-	schedulerStreamError := atomic.NewError(nil)
+	var schedulerStreamError error
+	haveSchedulerStreamError := make(chan struct{})
 
 	for {
 		request, err := c.Recv()
 		if err != nil {
-			schedulerStreamError.Store(err)
+			schedulerStreamError = err
+			close(haveSchedulerStreamError)
 
 			if grpcutil.IsCanceled(err) {
 				cancel(cancellation.NewErrorf("query cancelled: %w", err))
 			} else {
-				// If we got another kind of error (eg. scheduler crashed), continue processing the query.
+				// If we got another kind of error (eg. scheduler crashed), continue processing the query before returning.
 				waitForQuery(err)
 			}
 
@@ -293,17 +295,33 @@ func (sp *schedulerProcessor) querierLoop(execCtx context.Context, c schedulerpb
 
 			// Report back to scheduler that processing of the query has finished.
 			if err := c.Send(&schedulerpb.QuerierToScheduler{}); err != nil {
-				if previousErr := schedulerStreamError.Load(); previousErr != nil {
-					// If the stream has already been broken, it's expected that the Send() call will fail too.
-					// The error returned by Recv() is often more descriptive, so we include it in this log line as well.
+				// If the stream has been broken, as happens when the scheduler wants to notify the querier of a cancelled query,
+				// it's expected that Send() will return an EOF and the 'real' error will be returned by Recv(). So if we get an
+				// EOF, try to get the error received by Recv() above.
+				// This is racy (we might get an error from Send() above before Recv() returns), so we wait a short while for
+				// the error to be received.
+				useSchedulerStreamError := false
+
+				if errors.Is(err, io.EOF) {
+					select {
+					case <-haveSchedulerStreamError:
+						useSchedulerStreamError = true
+					case <-time.After(500 * time.Millisecond):
+						// Give up.
+					}
+				}
+
+				if !useSchedulerStreamError {
+					level.Error(logger).Log("msg", "error notifying scheduler about finished query", "err", err, "addr", address)
+				} else if grpcutil.IsCanceled(schedulerStreamError) {
+					level.Debug(logger).Log("msg", "could not notify scheduler about finished query because query execution was cancelled", "err", schedulerStreamError, "addr", address)
+				} else {
 					level.Error(logger).Log(
-						"msg", "error notifying scheduler about finished query after the scheduler stream previously failed and returned error",
+						"msg", "error notifying scheduler about finished query after the scheduler stream failed",
 						"err", err,
 						"addr", address,
-						"previousErr", previousErr,
+						"schedulerStreamError", schedulerStreamError,
 					)
-				} else {
-					level.Error(logger).Log("msg", "error notifying scheduler about finished query", "err", err, "addr", address)
 				}
 			}
 		}()
