@@ -40,7 +40,6 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
-	"github.com/grafana/mimir/pkg/parquetconverter"
 	"github.com/grafana/mimir/pkg/storage/parquet"
 	parquetBlock "github.com/grafana/mimir/pkg/storage/parquet/block"
 	"github.com/grafana/mimir/pkg/storage/sharding"
@@ -361,20 +360,8 @@ func (s *ParquetBucketStore) LabelNames(ctx context.Context, req *storepb.LabelN
 	var sets [][]string
 	var blocksQueriedByBlockMeta = make(map[blockQueriedMeta]int)
 
-	s.blockSet.filter(req.Start, req.End, reqBlockMatchers, func(b *parquetBucketBlock) {
-		if !b.IsConverted() {
-			converted, err := s.isBlockConverted(gctx, b.meta.ULID)
-			if err != nil {
-				level.Error(spanlogger.FromContext(gctx, s.logger)).Log("msg", "failed to check if block is converted", "block", b.meta.ULID.String(), "err", err)
-				return
-			}
-			if !converted {
-				level.Warn(spanlogger.FromContext(gctx, s.logger)).Log("msg", "query touches a block that is not yet converted to Parquet", "block", b.meta.ULID.String())
-				return
-			}
-			b.MarkConverted()
-		}
-
+	logger := spanlogger.FromContext(ctx, s.logger)
+	s.blockSet.filter(ctx, s.bkt, req.Start, req.End, reqBlockMatchers, logger, func(b *parquetBucketBlock) {
 		resHints.AddQueriedBlock(b.meta.ULID)
 		blocksQueriedByBlockMeta[newBlockQueriedMeta(b.meta)]++
 
@@ -483,7 +470,8 @@ func (s *ParquetBucketStore) LabelValues(ctx context.Context, req *storepb.Label
 	var sets [][]string
 	var blocksQueriedByBlockMeta = make(map[blockQueriedMeta]int)
 
-	s.blockSet.filter(req.Start, req.End, reqBlockMatchers, func(b *parquetBucketBlock) {
+	logger := spanlogger.FromContext(ctx, s.logger)
+	s.blockSet.filter(ctx, s.bkt, req.Start, req.End, reqBlockMatchers, logger, func(b *parquetBucketBlock) {
 		resHints.AddQueriedBlock(b.meta.ULID)
 		blocksQueriedByBlockMeta[newBlockQueriedMeta(b.meta)]++
 
@@ -560,13 +548,13 @@ func (s *ParquetBucketStore) LabelValues(ctx context.Context, req *storepb.Label
 
 // Placeholder methods for parquet-specific functionality
 func (s *ParquetBucketStore) openParquetBlocksForReading(ctx context.Context, _ bool, minTime, maxTime int64, reqBlockMatchers []*labels.Matcher, stats *safeQueryStats) ([]*parquetBucketBlock, []ParquetShardReaderCloser) {
-	_, span := tracer.Start(ctx, "parquet_bucket_store_open_blocks_for_reading")
+	ctx, span := tracer.Start(ctx, "parquet_bucket_store_open_blocks_for_reading")
 	defer span.End()
 
 	var blocks []*parquetBucketBlock
 	var allShardReaders []ParquetShardReaderCloser
-
-	s.blockSet.filter(minTime, maxTime, reqBlockMatchers, func(b *parquetBucketBlock) {
+	logger := spanlogger.FromContext(ctx, s.logger)
+	s.blockSet.filter(ctx, s.bkt, minTime, maxTime, reqBlockMatchers, logger, func(b *parquetBucketBlock) {
 		blocks = append(blocks, b)
 		blockShardReaders := b.ShardReaders()
 		allShardReaders = append(allShardReaders, blockShardReaders...)
@@ -1124,15 +1112,6 @@ func (s *ParquetBucketStore) addBlock(ctx context.Context, meta *block.Meta) (er
 	}
 
 	return nil
-}
-
-func (s *ParquetBucketStore) isBlockConverted(ctx context.Context, blockID ulid.ULID) (bool, error) {
-	markPath := path.Join(blockID.String(), parquetconverter.ParquetConversionMarkFileName)
-	exists, err := s.bkt.Exists(ctx, markPath)
-	if err != nil {
-		return false, errors.Wrap(err, "check parquet conversion mark existence")
-	}
-	return exists, nil
 }
 
 // calculateNumShards calculates the number of parquet shards in the block by counting
