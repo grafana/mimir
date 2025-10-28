@@ -574,6 +574,7 @@
   newRulerQuerierScaledObject(name, querier_args, extra_matchers='')::
     $.newResourceScaledObject(
       name=name,
+      container_name='ruler-querier',
       cpu_requests=$.ruler_querier_container.resources.requests.cpu,
       memory_requests=$.ruler_querier_container.resources.requests.memory,
       min_replicas=$._config.autoscaling_ruler_querier_min_replicas,
