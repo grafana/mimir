@@ -37,6 +37,8 @@ type ChunksCacheConfig struct {
 	AttributesTTL              time.Duration `yaml:"attributes_ttl" category:"advanced"`
 	AttributesInMemoryMaxItems int           `yaml:"attributes_in_memory_max_items" category:"advanced"`
 	SubrangeTTL                time.Duration `yaml:"subrange_ttl" category:"advanced"`
+
+	CacheParquetLabelsFiles bool `yaml:"cache_parquet_labels_files" category:"advanced"`
 }
 
 func (cfg *ChunksCacheConfig) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix string) {
@@ -48,6 +50,8 @@ func (cfg *ChunksCacheConfig) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix st
 	f.DurationVar(&cfg.AttributesTTL, prefix+"attributes-ttl", 168*time.Hour, "TTL for caching object attributes for chunks. If the metadata cache is configured, attributes will be stored under this cache backend, otherwise attributes are stored in the chunks cache backend.")
 	f.IntVar(&cfg.AttributesInMemoryMaxItems, prefix+"attributes-in-memory-max-items", 50000, "Maximum number of object attribute items to keep in a first level in-memory LRU cache. Metadata will be stored and fetched in-memory before hitting the cache backend. 0 to disable the in-memory cache.")
 	f.DurationVar(&cfg.SubrangeTTL, prefix+"subrange-ttl", 24*time.Hour, "TTL for caching individual chunks subranges.")
+
+	f.BoolVar(&cfg.CacheParquetLabelsFiles, prefix+"cache-parquet-labels-files", true, "If true, get range calls to parquet labels files will be cached in the chunks cache.")
 }
 
 func (cfg *ChunksCacheConfig) Validate() error {
@@ -142,8 +146,10 @@ func CreateCachingBucket(chunksCache cache.Cache, chunksConfig ChunksCacheConfig
 		}
 		cfg.CacheGetRange("chunks", chunksCache, isTSDBChunkFile, subrangeSize, attributesCache, chunksConfig.AttributesTTL, chunksConfig.SubrangeTTL, chunksConfig.MaxGetRangeRequests)
 		cfg.CacheGetRange("parquet-chunks", chunksCache, isParquetChunksFile, subrangeSize, attributesCache, chunksConfig.AttributesTTL, chunksConfig.SubrangeTTL, chunksConfig.MaxGetRangeRequests)
-		// TODO Note that the parquet labels should go into a different cache than the chunks. We reuse the same cache to avoid changes across the codebase but if we're going with this implementation we should move it.
-		cfg.CacheGetRange("parquet-labels", chunksCache, IsParquetLabelsFile, subrangeSize, attributesCache, chunksConfig.AttributesTTL, chunksConfig.SubrangeTTL, chunksConfig.MaxGetRangeRequests)
+		if chunksConfig.CacheParquetLabelsFiles {
+			// TODO Note that the parquet labels should go into a different cache than the chunks. We reuse the same cache to avoid changes across the codebase but if we're going with this implementation we should move it.
+			cfg.CacheGetRange("parquet-labels", chunksCache, IsParquetLabelsFile, subrangeSize, attributesCache, chunksConfig.AttributesTTL, chunksConfig.SubrangeTTL, chunksConfig.MaxGetRangeRequests)
+		}
 	}
 
 	if !cachingConfigured {
