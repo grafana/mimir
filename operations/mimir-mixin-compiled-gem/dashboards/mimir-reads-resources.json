@@ -1763,7 +1763,7 @@
                   "span": 6,
                   "targets": [
                      {
-                        "expr": "sum by(pod) (cortex_prometheus_rule_group_rules{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir))\"})",
+                        "expr": "sum by(pod) (cortex_prometheus_rule_group_rules{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|ruler-zone-.*|cortex|mimir))\"})",
                         "format": "time_series",
                         "legendFormat": "{{pod}}",
                         "legendLink": null
