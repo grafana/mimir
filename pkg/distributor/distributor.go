@@ -3163,7 +3163,8 @@ func (d *Distributor) adjustQueryRequestLimit(ctx context.Context, userID string
 	if d.cfg.IngestStorageConfig.Enabled {
 		// Get the number of active partitions in the ring. Here the ShuffleShardSize handles cases when a tenant has 0 or negative
 		// number of shards, or more shards than the number of active partitions in the ring.
-		shardSize = d.partitionsRing.PartitionRing().ShuffleShardSize(d.limits.IngestionPartitionsTenantShardSize(userID))
+		// Use the read shard size, which may be overridden for graceful shard size migration.
+		shardSize = d.partitionsRing.PartitionRing().ShuffleShardSize(d.limits.IngestionPartitionsTenantReadShardSize(userID))
 	} else {
 		// The ShuffleShard filters out read-only instances, leaving us with the number of active ingesters.
 		// Note, this can be costly to compute if the ring's caching is not enabled.
