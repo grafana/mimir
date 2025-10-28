@@ -45,7 +45,7 @@ func (s *StepInvariantExpression) Children() []planning.Node {
 	return []planning.Node{s.Inner}
 }
 
-func (s *StepInvariantExpression) MinimumRequiredPlanVersion() uint64 {
+func (s *StepInvariantExpression) MinimumRequiredPlanVersion() planning.QueryPlanVersion {
 	return planning.QueryPlanV1
 }
 

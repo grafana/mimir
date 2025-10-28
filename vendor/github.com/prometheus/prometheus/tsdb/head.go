@@ -165,9 +165,6 @@ type HeadOptions struct {
 	OutOfOrderTimeWindow atomic.Int64
 	OutOfOrderCapMax     atomic.Int64
 
-	// EnableNativeHistograms enables the ingestion of native histograms.
-	EnableNativeHistograms atomic.Bool
-
 	ChunkRange int64
 	// ChunkDirRoot is the parent directory of the chunks directory.
 	ChunkDirRoot         string
@@ -1081,16 +1078,6 @@ func (h *Head) SetOutOfOrderTimeWindow(oooTimeWindow int64, wbl *wlog.WL) {
 	}
 
 	h.opts.OutOfOrderTimeWindow.Store(oooTimeWindow)
-}
-
-// EnableNativeHistograms enables the native histogram feature.
-func (h *Head) EnableNativeHistograms() {
-	h.opts.EnableNativeHistograms.Store(true)
-}
-
-// DisableNativeHistograms disables the native histogram feature.
-func (h *Head) DisableNativeHistograms() {
-	h.opts.EnableNativeHistograms.Store(false)
 }
 
 // PostingsForMatchersCache returns the postings for matchers cache used by the head, if any.

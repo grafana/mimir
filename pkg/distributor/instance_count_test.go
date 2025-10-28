@@ -35,9 +35,8 @@ func TestHealthyInstanceDelegate_OnRingInstanceHeartbeat(t *testing.T) {
 	}
 
 	tests := map[string]struct {
-		ringSetup        func(desc *ring.Desc)
-		heartbeatTimeout time.Duration
-		expectedCount    uint32
+		ringSetup     func(desc *ring.Desc)
+		expectedCount uint32
 	}{
 		"all instances healthy and active": {
 			ringSetup: func(desc *ring.Desc) {
@@ -46,8 +45,7 @@ func TestHealthyInstanceDelegate_OnRingInstanceHeartbeat(t *testing.T) {
 				addInstance(desc, "distributor-2", ring.ACTIVE, now.Unix())
 				addInstance(desc, "distributor-3", ring.ACTIVE, now.Unix())
 			},
-			heartbeatTimeout: time.Minute,
-			expectedCount:    3,
+			expectedCount: 3,
 		},
 
 		"all instances healthy not all instances active": {
@@ -57,8 +55,7 @@ func TestHealthyInstanceDelegate_OnRingInstanceHeartbeat(t *testing.T) {
 				addInstance(desc, "distributor-2", ring.LEAVING, now.Unix())
 				addInstance(desc, "distributor-3", ring.ACTIVE, now.Unix())
 			},
-			heartbeatTimeout: time.Minute,
-			expectedCount:    2,
+			expectedCount: 2,
 		},
 
 		"some instances healthy all instances active": {
@@ -81,7 +78,7 @@ func TestHealthyInstanceDelegate_OnRingInstanceHeartbeat(t *testing.T) {
 			testData.ringSetup(ringDesc)
 			instance := ringDesc.Ingesters["distributor-1"]
 
-			delegate := newHealthyInstanceDelegate(count, testData.heartbeatTimeout, &nopDelegate{})
+			delegate := newHealthyInstanceDelegate(count, time.Minute, &nopDelegate{})
 			delegate.OnRingInstanceHeartbeat(&ring.BasicLifecycler{}, ringDesc, &instance)
 
 			assert.Equal(t, testData.expectedCount, count.Load())

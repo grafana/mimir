@@ -424,7 +424,6 @@ local utils = import 'mixin-utils/utils.libsonnet';
             message: '%(product)s clients in %(alert_aggregation_variables)s are having requests rejected due to invalid cluster validation labels.' % $._config,
           },
         },
-      ] + [
         {
           alert: $.alertName('RingMembersMismatch'),
           expr: |||
@@ -473,6 +472,93 @@ local utils = import 'mixin-utils/utils.libsonnet';
           annotations: {
             message: |||
               Container {{ $labels.container }} in %(alert_aggregation_variables)s is experiencing high GRPC concurrent streams per connection.
+            ||| % $._config,
+          },
+        },
+
+        {
+          alert: $.alertName('MixedQuerierQueryPlanVersionSupport'),
+          expr: |||
+            min by (%(alert_aggregation_labels)s, %(per_query_path_label)s) (cortex_querier_maximum_supported_query_plan_version)
+            !=
+            max by (%(alert_aggregation_labels)s, %(per_query_path_label)s) (cortex_querier_maximum_supported_query_plan_version)
+          ||| % $._config,
+          'for': '15m',
+          labels: {
+            severity: 'warning',
+          },
+          annotations: {
+            message: |||
+              Queriers in the same %(product)s cluster and query path are reporting different maximum supported query plan versions.
+            |||,
+          },
+        },
+
+        {
+          alert: $.alertName('MixedQueryFrontendQueryPlanVersionSupport'),
+          expr: |||
+            min by (%(alert_aggregation_labels)s, %(per_query_path_label)s) (cortex_query_frontend_querier_ring_calculated_maximum_supported_query_plan_version)
+            !=
+            max by (%(alert_aggregation_labels)s, %(per_query_path_label)s) (cortex_query_frontend_querier_ring_calculated_maximum_supported_query_plan_version)
+          ||| % $._config,
+          'for': '15m',
+          labels: {
+            severity: 'warning',
+          },
+          annotations: {
+            message: |||
+              Query-frontends in the same %(product)s cluster and query path have calculated different maximum supported query plan versions.
+            ||| % $._config,
+          },
+        },
+
+        {
+          alert: $.alertName('QueryFrontendsAndQueriersDisagreeOnSupportedQueryPlanVersion'),
+          expr: |||
+            # The label_replace calls below are so that we can match queriers with container labels like "ruler-querier" to
+            # query-frontends with container labels like "ruler-query-frontend".
+            # We support having the querier/query-frontend part as both a prefix and a suffix to support situations where the
+            # query path name appears at the beginning (eg. "ruler-querier") or at the end (eg. "querier-mqe-test").
+
+            min by (%(alert_aggregation_labels)s, query_path) (
+              label_replace(
+                cortex_querier_maximum_supported_query_plan_version,
+                "query_path", "$2", "%(per_query_path_label)s", "(querier)?-?(.*)-?(querier)?"
+              )
+            )
+            !=
+            min by (%(alert_aggregation_labels)s, query_path) (
+              label_replace(
+                # Exclude the case where query-frontends failed to compute a maximum supported query plan version altogether (reporting -1), as
+                # that is covered by the QueryFrontendNotComputingSupportedQueryPlanVersion alert.
+                cortex_query_frontend_querier_ring_calculated_maximum_supported_query_plan_version != -1,
+                "query_path", "$2", "%(per_query_path_label)s", "(query-frontend)?-?(.*)-?(query-frontend)?"
+              )
+            )
+          ||| % $._config,
+          'for': '15m',
+          labels: {
+            severity: 'warning',
+          },
+          annotations: {
+            message: |||
+              Query-frontends and queriers are reporting different maximum supported query plan versions.
+            ||| % $._config,
+          },
+        },
+
+        {
+          alert: $.alertName('QueryFrontendNotComputingSupportedQueryPlanVersion'),
+          expr: |||
+            count by (%(alert_aggregation_labels)s, %(per_query_path_label)s) (cortex_query_frontend_querier_ring_calculated_maximum_supported_query_plan_version == -1) > 0
+          ||| % $._config,
+          'for': '5m',
+          labels: {
+            severity: 'warning',
+          },
+          annotations: {
+            message: |||
+              Query-frontends are failing to compute a maximum supported query plan version.
             ||| % $._config,
           },
         },

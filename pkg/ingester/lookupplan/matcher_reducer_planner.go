@@ -16,8 +16,7 @@ import (
 
 // MatcherReducerPlanner deduplicates matchers from the input plan,
 // and removes matchers that select for all non-empty values if a more selective matcher for the same label name already exists.
-// It returns the input index and scan matchers in the input order.
-// If matchers are duplicated across the index and scan matchers, they will be returned as index-only matchers.
+// It does not modify plans if the input plan has any scan matchers, and does not guarantee consistent matcher ordering in the output plan.
 type MatcherReducerPlanner struct{}
 
 // concreteLookupPlan implements LookupPlan by storing pre-computed index and scan matchers.

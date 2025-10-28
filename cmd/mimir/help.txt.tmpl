@@ -477,6 +477,8 @@ Usage of ./cmd/mimir/mimir:
     	The maximum number of in-memory series per metric name, across the cluster before replication. 0 to disable.
   -ingester.max-global-series-per-user int
     	The maximum number of in-memory series per tenant, across the cluster before replication. 0 to disable. (default 150000)
+  -ingester.out-of-order-time-window duration
+    	Non-zero value enables out-of-order support for most recent samples that are within the time window in relation to the TSDB's maximum time, i.e., within [db.maxTime-timeWindow, db.maxTime]). The ingester will need more memory as a factor of rate of out-of-order samples being ingested and the number of series that are getting out-of-order samples. If query falls into this window, cached results will use value from -query-frontend.results-cache-ttl-for-out-of-order-time-window option to specify TTL for resulting cache entry.
   -ingester.partition-ring.consul.hostname string
     	Hostname and port of Consul. (default "localhost:8500")
   -ingester.partition-ring.delete-inactive-partition-after duration
@@ -513,6 +515,12 @@ Usage of ./cmd/mimir/mimir:
     	Output log messages in the given format. Valid formats: [logfmt, json] (default "logfmt")
   -log.level value
     	Only log messages with the given severity or above. Valid levels: [debug, info, warn, error] (default info)
+  -log.rate-limit-enabled
+    	Use rate limited logger to reduce the number of logged messages per second.
+  -log.rate-limit-logs-burst-size int
+    	Burst size, i.e., maximum number of messages that can be logged at once, temporarily exceeding the configured maximum logs per second. (default 1000)
+  -log.rate-limit-logs-per-second float
+    	Maximum number of messages per second to be logged. (default 10000)
   -memberlist.abort-if-join-fails
     	Abort if this node fails to join memberlist cluster at startup. When enabled, it's not guaranteed that other services are started only after the cluster state has been successfully updated; use 'abort-if-fast-join-fails' instead.
   -memberlist.advertise-addr string

@@ -50,7 +50,6 @@ type BlocksCleanerConfig struct {
 	DeleteBlocksConcurrency       int
 	GetDeletionMarkersConcurrency int
 	UpdateBlocksConcurrency       int
-	NoBlocksFileCleanupEnabled    bool
 	CompactionBlockRanges         mimir_tsdb.DurationList // Used for estimating compaction jobs.
 }
 
@@ -490,7 +489,7 @@ func (c *BlocksCleaner) cleanUser(ctx context.Context, userID string, userLogger
 
 	// If there are no more blocks, clean up any remaining files
 	// Otherwise upload the updated index to the storage.
-	if c.cfg.NoBlocksFileCleanupEnabled && len(idx.Blocks) == 0 {
+	if len(idx.Blocks) == 0 {
 		if err := c.deleteRemainingData(ctx, userBucket, userID, userLogger); err != nil {
 			return err
 		}

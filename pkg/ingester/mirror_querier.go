@@ -7,6 +7,7 @@ import (
 	"errors"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -30,6 +31,7 @@ type mirroredChunkQuerier struct {
 
 	recordedRequest struct {
 		minT, maxT int64
+		finishedAt time.Time
 
 		ctx        context.Context
 		matchers   []*labels.Matcher
@@ -89,6 +91,7 @@ func (q *mirroredChunkQuerier) Select(ctx context.Context, sortSeries bool, hint
 	q.recordedRequest.matchers = slices.Clone(matchers)
 
 	ss := q.delegate.Select(ctx, sortSeries, hints, matchers...)
+	q.recordedRequest.finishedAt = time.Now()
 	q.returnedSeries = &retainingChunkSeriesSet{delegate: ss}
 	return q.returnedSeries
 }
@@ -102,6 +105,12 @@ func (q *mirroredChunkQuerier) compareResults(secondary storage.ChunkSeriesSet) 
 		secondaryLabels      labels.Labels
 		secondaryHasCurrent  bool
 		secondarySeriesCount int
+
+		// It's possible that a series appears between us finishing the primary query
+		// and running the secondary query. To avoid false positives, we ignore
+		// any series whose first chunk contains samples from after we finished the first query.
+		// This doesn't protect against out-of-order samples, but it's a reasonable compromise.
+		ignoreSeriesWithFirstChunkYoungerThan = q.recordedRequest.finishedAt.UnixMilli()
 	)
 
 	advanceSecondary := func() bool {
@@ -109,11 +118,12 @@ func (q *mirroredChunkQuerier) compareResults(secondary storage.ChunkSeriesSet) 
 			series := secondary.At()
 			seriesLabels := series.Labels()
 
-			// Check if this series should be ignored (first chunk beyond maxT)
+			// Check if this series was probably created after we started the primary query.
 			chunkIter := series.Iterator(nil)
 			if chunkIter.Next() {
+				// We only check the first chunk since that should contain the earliest sample.
 				chunk := chunkIter.At()
-				if chunk.MinTime > q.recordedRequest.maxT {
+				if chunk.MinTime > ignoreSeriesWithFirstChunkYoungerThan {
 					continue
 				}
 			}

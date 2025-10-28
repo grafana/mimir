@@ -196,8 +196,8 @@ type Config struct {
 
 	IgnoreSeriesLimitForMetricNames string `yaml:"ignore_series_limit_for_metric_names" category:"advanced"`
 
-	ReadPathCPUUtilizationLimit    float64 `yaml:"read_path_cpu_utilization_limit" category:"experimental"`
-	ReadPathMemoryUtilizationLimit uint64  `yaml:"read_path_memory_utilization_limit" category:"experimental"`
+	ReadPathCPUUtilizationLimit    float64 `yaml:"read_path_cpu_utilization_limit" category:"advanced"`
+	ReadPathMemoryUtilizationLimit uint64  `yaml:"read_path_memory_utilization_limit" category:"advanced"`
 
 	ErrorSampleRate int64 `yaml:"error_sample_rate" json:"error_sample_rate" category:"advanced"`
 
@@ -1012,12 +1012,6 @@ func (i *Ingester) applyTSDBSettings() {
 		}
 		if err := db.db.ApplyConfig(&cfg); err != nil {
 			level.Error(i.logger).Log("msg", "failed to apply config to TSDB", "user", userID, "err", err)
-		}
-		if i.limits.NativeHistogramsIngestionEnabled(userID) {
-			// there is not much overhead involved, so don't keep previous state, just overwrite the current setting
-			db.db.EnableNativeHistograms()
-		} else {
-			db.db.DisableNativeHistograms()
 		}
 	}
 }
@@ -2771,7 +2765,6 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 		HeadPostingsForMatchersCacheFactory:  i.headPostingsForMatchersCacheFactory,
 		BlockPostingsForMatchersCacheFactory: i.blockPostingsForMatchersCacheFactory,
 		PostingsClonerFactory:                lookupplan.ActualSelectedPostingsClonerFactory{},
-		EnableNativeHistograms:               i.limits.NativeHistogramsIngestionEnabled(userID),
 		SecondaryHashFunction:                secondaryTSDBHashFunctionForUser(userID),
 		IndexLookupPlannerFunc:               userDB.getIndexLookupPlannerFunc(),
 		BlockChunkQuerierFunc: func(b tsdb.BlockReader, mint, maxt int64) (storage.ChunkQuerier, error) {
@@ -2850,7 +2843,7 @@ func (i *Ingester) createBlockChunkQuerier(userID string, b tsdb.BlockReader, mi
 		return nil, err
 	}
 
-	lookupStatsQuerier := newStatsTrackingChunkQuerier(defaultQuerier, i.metrics, i.lookupPlanMetrics.ForUser(userID))
+	lookupStatsQuerier := newStatsTrackingChunkQuerier(b.Meta().ULID, defaultQuerier, i.metrics, i.lookupPlanMetrics.ForUser(userID))
 
 	if rand.Float64() > i.cfg.BlocksStorageConfig.TSDB.IndexLookupPlanning.ComparisonPortion {
 		return lookupStatsQuerier, nil

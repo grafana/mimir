@@ -15,6 +15,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestMatcherReducerPlanner_PlanIndexLookup tests output plans, given certain input matchers.
+// These tests verify cases where output matchers should and should not be dropped.
 func TestMatcherReducerPlanner_PlanIndexLookup(t *testing.T) {
 	ctxPlanningDisabled := ContextWithDisabledPlanning(context.Background())
 	tests := []struct {
@@ -142,6 +144,9 @@ func TestMatcherReducerPlanner_PlanIndexLookup(t *testing.T) {
 	}
 }
 
+// TestMatcherReducerPlanner_MatchedSeries verifies that the same set of series is returned by queries run
+// with or without the MatcherReducerPlanner. Not all tests will drop matchers,
+// and the set of matchers returned by PlanIndexLookup is not checked, only the series resulting from each query.
 func TestMatcherReducerPlanner_MatchedSeries(t *testing.T) {
 	// Create TSDB instance with sample data
 	db, err := tsdb.Open(t.TempDir(), promslog.NewNopLogger(), nil, tsdb.DefaultOptions(), nil)
