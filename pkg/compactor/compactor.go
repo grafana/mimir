@@ -816,13 +816,7 @@ func (c *MultitenantCompactor) compactUserWithRetries(ctx context.Context, userI
 	return lastErr
 }
 
-func (c *MultitenantCompactor) compactUser(ctx context.Context, userID string) error {
-	userBucket := bucket.NewUserBucketClient(userID, c.bucketClient, c.cfgProvider)
-	userLogger := util_log.WithUserID(userID, c.logger)
-
-	reg := prometheus.NewRegistry()
-	defer c.syncerMetrics.gatherThanosSyncerMetrics(reg, userLogger)
-
+func (c *MultitenantCompactor) createMetaSyncerForUser(userID string, userBucket objstore.InstrumentedBucket, userLogger log.Logger, reg prometheus.Registerer) (*metaSyncer, error) {
 	// Filters out duplicate blocks that can be formed from two or more overlapping
 	// blocks that fully submatch the source blocks of the older blocks.
 	deduplicateBlocksFilter := NewShardAwareDeduplicateFilter()
@@ -844,7 +838,7 @@ func (c *MultitenantCompactor) compactUser(ctx context.Context, userID string) e
 
 	fetcher, err := block.NewMetaFetcher(userLogger, c.compactorCfg.MetaSyncConcurrency, userBucket, c.metaSyncDirForUser(userID), reg, fetcherFilters, maxLookback)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	syncer, err := newMetaSyncer(
@@ -856,10 +850,38 @@ func (c *MultitenantCompactor) compactUser(ctx context.Context, userID string) e
 		c.blocksMarkedForDeletion,
 	)
 	if err != nil {
-		return fmt.Errorf("failed to create syncer: %w", err)
+		return nil, fmt.Errorf("failed to create syncer: %w", err)
 	}
 
-	compactor, err := NewBucketCompactor(
+	return syncer, nil
+}
+
+func (c *MultitenantCompactor) compactUser(ctx context.Context, userID string) error {
+	userBucket := bucket.NewUserBucketClient(userID, c.bucketClient, c.cfgProvider)
+	userLogger := util_log.WithUserID(userID, c.logger)
+
+	reg := prometheus.NewRegistry()
+	defer c.syncerMetrics.gatherThanosSyncerMetrics(reg, userLogger)
+
+	syncer, err := c.createMetaSyncerForUser(userID, userBucket, userLogger, reg)
+	if err != nil {
+		return err
+	}
+
+	compactor, err := c.newBucketCompactor(ctx, userID, userLogger, userBucket, syncer, reg)
+	if err != nil {
+		return fmt.Errorf("failed to create bucket compactor: %w", err)
+	}
+
+	if err := compactor.Compact(ctx, c.compactorCfg.MaxCompactionTime); err != nil {
+		return fmt.Errorf("compaction: %w", err)
+	}
+
+	return nil
+}
+
+func (c *MultitenantCompactor) newBucketCompactor(ctx context.Context, userID string, userLogger log.Logger, userBucket objstore.Bucket, syncer *metaSyncer, reg *prometheus.Registry) (*BucketCompactor, error) {
+	return NewBucketCompactor(
 		userLogger,
 		syncer,
 		c.blocksGrouperFactory(ctx, c.compactorCfg, c.cfgProvider, userID, userLogger, reg),
@@ -879,15 +901,6 @@ func (c *MultitenantCompactor) compactUser(ctx context.Context, userID string) e
 		c.compactorCfg.SparseIndexHeadersConfig,
 		c.cfgProvider.CompactorMaxPerBlockUploadConcurrency(userID),
 	)
-	if err != nil {
-		return fmt.Errorf("failed to create bucket compactor: %w", err)
-	}
-
-	if err := compactor.Compact(ctx, c.compactorCfg.MaxCompactionTime); err != nil {
-		return fmt.Errorf("compaction: %w", err)
-	}
-
-	return nil
 }
 
 func (c *MultitenantCompactor) discoverUsersWithRetries(ctx context.Context) ([]string, error) {
