@@ -682,7 +682,7 @@ func TestLabelValueTooLongSummaries(t *testing.T) {
 		name       string
 		userID     string
 		timeseries []mimirpb.PreallocTimeseries
-		wantLog    [][]string
+		wantLog    []string
 	}{
 		{
 			name:   "multiple series with truncated label values",
@@ -728,10 +728,24 @@ func TestLabelValueTooLongSummaries(t *testing.T) {
 					},
 				},
 			},
-			wantLog: [][]string{
-				{"label values were truncated and appended their hash value", "limit=75", "metric_name=truncate1", "label=longvalue1", "values_exceeding_limit=2", "insight=true", "sample_value=\"xxx", "sample_value_length=100"},
-				{"label values were truncated and appended their hash value", "limit=75", "metric_name=truncate1", "label=longvalue2", "values_exceeding_limit=1", "insight=true", "sample_value=\"zzz", "sample_value_length=120"},
-				{"label values were truncated and appended their hash value", "limit=75", "metric_name=truncate2", "label=longvalue2", "values_exceeding_limit=1", "insight=true", "sample_value=\"www", "sample_value_length=90"},
+			wantLog: []string{
+				"label values were truncated and appended their hash value", "insight=true",
+				"limit=75", "total_values_exceeding_limit=4",
+				"sample_1_metric_name=truncate1",
+				"sample_1_label_name=longvalue1",
+				"sample_1_values_exceeding_limit=2",
+				"sample_1_value=\"xxx",
+				"sample_1_value_length=100",
+				"sample_2_metric_name=truncate1",
+				"sample_2_label_name=longvalue2",
+				"sample_2_values_exceeding_limit=1",
+				"sample_2_value=\"zzz",
+				"sample_2_value_length=120",
+				"sample_3_metric_name=truncate2",
+				"sample_3_label_name=longvalue2",
+				"sample_3_values_exceeding_limit=1",
+				"sample_3_value=\"www",
+				"sample_3_value_length=90",
 			},
 		},
 		{
@@ -778,10 +792,24 @@ func TestLabelValueTooLongSummaries(t *testing.T) {
 					},
 				},
 			},
-			wantLog: [][]string{
-				{"label values were replaced by their hash value", "limit=75", "metric_name=drop1", "label=longvalue1", "values_exceeding_limit=2", "insight=true", "sample_value=\"xxx", "sample_value_length=100"},
-				{"label values were replaced by their hash value", "limit=75", "metric_name=drop1", "label=longvalue2", "values_exceeding_limit=1", "insight=true", "sample_value=\"zzz", "sample_value_length=120"},
-				{"label values were replaced by their hash value", "limit=75", "metric_name=drop2", "label=longvalue2", "values_exceeding_limit=1", "insight=true", "sample_value=\"www", "sample_value_length=90"},
+			wantLog: []string{
+				"label values were replaced by their hash value", "insight=true",
+				"limit=75", "total_values_exceeding_limit=4",
+				"sample_1_metric_name=drop1",
+				"sample_1_label_name=longvalue1",
+				"sample_1_values_exceeding_limit=2",
+				"sample_1_value=\"xxx",
+				"sample_1_value_length=100",
+				"sample_2_metric_name=drop1",
+				"sample_2_label_name=longvalue2",
+				"sample_2_values_exceeding_limit=1",
+				"sample_2_value=\"zzz",
+				"sample_2_value_length=120",
+				"sample_3_metric_name=drop2",
+				"sample_3_label_name=longvalue2",
+				"sample_3_values_exceeding_limit=1",
+				"sample_3_value=\"www",
+				"sample_3_value_length=90",
 			},
 		},
 	}
@@ -804,17 +832,17 @@ func TestLabelValueTooLongSummaries(t *testing.T) {
 
 			assert.Equal(t, 200, resp.Code, resp.Body.String())
 
-			for _, expectedParts := range tc.wantLog {
+			if len(tc.wantLog) > 0 {
 				found := false
 				for _, line := range logged.Writes() {
-					if stringContainsAll(line, expectedParts) {
+					if stringContainsAll(line, tc.wantLog) {
 						found = true
 						break
 					}
 				}
 				if !found {
-					t.Logf("Logged lines:\n%v", logged.Writes())
-					require.Fail(t, "Expected log line not found", "expected parts: %v", expectedParts)
+					t.Log(logged.Writes())
+					require.Fail(t, "Expected logs to contain line with parts", "parts: %q", tc.wantLog)
 				}
 			}
 		})

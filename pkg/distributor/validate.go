@@ -137,6 +137,8 @@ var (
 	nativeHistogramCustomBucketsNotReducibleMsgFormat = globalerror.NativeHistogramCustomBucketsNotReducible.Message("received a native histogram sample with more custom buckets than the limit, timestamp: %d series: %s, buckets: %d, limit: %d")
 )
 
+const labelValueTooLongSummariesLimit = 10
+
 type labelValueTooLongError struct {
 	Label  labels.Label
 	Series string
@@ -150,35 +152,44 @@ func (e labelValueTooLongError) Error() string {
 // labelValueTooLongSummaries holds a summary for each metric and label processed
 // in a write request that have values exceeding the limit.
 type labelValueTooLongSummaries struct {
-	m map[unsafeMetricAndLabel]labelValueTooLongSummary
+	globalCount int
+	summaries   []labelValueTooLongSummary
 }
 
 func (s *labelValueTooLongSummaries) measure(metric, label, originalValue mimirpb.UnsafeMutableString) {
 	if s == nil {
 		return
 	}
-	if s.m == nil {
-		s.m = make(map[unsafeMetricAndLabel]labelValueTooLongSummary)
+	s.globalCount++
+	if s.summaries == nil {
+		s.summaries = make([]labelValueTooLongSummary, 0, labelValueTooLongSummariesLimit)
 	}
-	key := unsafeMetricAndLabel{metric: metric, label: label}
-	summary := s.m[key]
-	summary.count++
-	if len(summary.sampleValue) == 0 {
-		summary.sampleValue = fmt.Sprintf("%.200s (truncated)", originalValue)
-		summary.sampleValueLength = len(originalValue)
+	if len(s.summaries) >= labelValueTooLongSummariesLimit {
+		return
 	}
-	s.m[key] = summary
+	i := s.indexOf(metric, label)
+	s.summaries[i].count++
+	if len(s.summaries[i].sampleValue) == 0 {
+		s.summaries[i].sampleValue = fmt.Sprintf("%.200s (truncated)", originalValue)
+		s.summaries[i].sampleValueLength = len(originalValue)
+	}
+}
+
+func (s *labelValueTooLongSummaries) indexOf(metric, label mimirpb.UnsafeMutableString) int {
+	for i, summary := range s.summaries {
+		if summary.metric == metric && summary.label == label {
+			return i
+		}
+	}
+	s.summaries = append(s.summaries, labelValueTooLongSummary{metric: metric, label: label})
+	return len(s.summaries) - 1
 }
 
 type labelValueTooLongSummary struct {
+	metric, label     mimirpb.UnsafeMutableString
 	count             int
 	sampleValueLength int
 	sampleValue       string
-}
-
-type unsafeMetricAndLabel struct {
-	metric mimirpb.UnsafeMutableString
-	label  mimirpb.UnsafeMutableString
 }
 
 // sampleValidationConfig helps with getting required config to validate sample.

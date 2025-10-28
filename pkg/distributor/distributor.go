@@ -1465,28 +1465,39 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 }
 
 func (d *Distributor) logLabelValueTooLongSummaries(userID string, valueTooLongSummaries labelValueTooLongSummaries) {
-	for key, summary := range valueTooLongSummaries.m {
-		var msg string
-		switch strategy := d.limits.LabelValueLengthOverLimitStrategy(userID); strategy {
-		case validation.LabelValueLengthOverLimitStrategyTruncate:
-			msg = truncatedLabelValueMsg
-		case validation.LabelValueLengthOverLimitStrategyDrop:
-			msg = droppedLabelValueMsg
-		default:
-			panic(fmt.Errorf("unexpected value: %v", strategy))
-		}
-		level.Warn(d.log).Log(
-			"msg", msg,
-			"limit", d.limits.MaxLabelValueLength(userID),
-			"metric_name", key.metric,
-			"label", key.label,
-			"values_exceeding_limit", summary.count,
-			"sample_value_length", summary.sampleValueLength,
-			"sample_value", summary.sampleValue,
-			"user", userID,
-			"insight", true,
-		)
+	if len(valueTooLongSummaries.summaries) == 0 {
+		return
 	}
+
+	var msg string
+	switch strategy := d.limits.LabelValueLengthOverLimitStrategy(userID); strategy {
+	case validation.LabelValueLengthOverLimitStrategyTruncate:
+		msg = truncatedLabelValueMsg
+	case validation.LabelValueLengthOverLimitStrategyDrop:
+		msg = droppedLabelValueMsg
+	default:
+		panic(fmt.Errorf("unexpected value: %v", strategy))
+	}
+
+	kvs := make([]any, 0, 10+len(valueTooLongSummaries.summaries)*10)
+	kvs = append(kvs,
+		"msg", msg,
+		"limit", d.limits.MaxLabelValueLength(userID),
+		"total_values_exceeding_limit", valueTooLongSummaries.globalCount,
+		"user", userID,
+		"insight", true)
+	for i, summary := range valueTooLongSummaries.summaries {
+		id := strconv.Itoa(i + 1)
+		kvs = append(kvs,
+			"sample_"+id+"_metric_name", summary.metric,
+			"sample_"+id+"_label_name", summary.label,
+			"sample_"+id+"_values_exceeding_limit", summary.count,
+			"sample_"+id+"_value_length", summary.sampleValueLength,
+			"sample_"+id+"_value", summary.sampleValue)
+	}
+
+	level.Warn(d.log).Log(kvs...)
+
 }
 
 // prePushMaxSeriesLimitMiddleware enforces the per-tenant max series limit when the usage-tracker service is enabled.
