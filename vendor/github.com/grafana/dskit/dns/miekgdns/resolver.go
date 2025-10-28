@@ -8,6 +8,8 @@ import (
 	"context"
 	"net"
 
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/miekg/dns"
 	"github.com/pkg/errors"
 )
@@ -18,6 +20,7 @@ const DefaultResolvConfPath = "/etc/resolv.conf"
 // Resolver is a drop-in Resolver for *part* of std lib Golang net.DefaultResolver methods.
 type Resolver struct {
 	ResolvConf string
+	Logger     log.Logger
 }
 
 func (r *Resolver) LookupSRV(_ context.Context, service, proto, name string) (cname string, addrs []*net.SRV, err error) {
@@ -43,7 +46,13 @@ func (r *Resolver) LookupSRV(_ context.Context, service, proto, name string) (cn
 				Port:     addr.Port,
 			})
 		default:
-			return "", nil, errors.Errorf("invalid SRV response record %s", record)
+			// Ignore unexpected non-SRV responses. This matches the behavior of the
+			// built-in go resolver. See https://github.com/grafana/mimir/issues/12713
+			level.Debug(r.Logger).Log(
+				"msg", "unexpected non-SRV response record",
+				"target", target,
+				"record", record,
+			)
 		}
 	}
 
