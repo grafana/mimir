@@ -15,6 +15,7 @@ import (
 	"github.com/grafana/dskit/gate"
 	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/services"
+	"github.com/oklog/ulid/v2"
 	"github.com/prometheus-community/parquet-common/convert"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/promslog"
@@ -23,11 +24,13 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore"
 
+	"github.com/grafana/mimir/pkg/parquetconverter"
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/bucket/filesystem"
 	"github.com/grafana/mimir/pkg/storage/indexheader"
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
+	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 	"github.com/grafana/mimir/pkg/util"
 )
@@ -385,4 +388,63 @@ func generateStorageBlockWithMultipleSeries(t *testing.T, storageDir, userID str
 
 	// Snapshot TSDB to the storage directory.
 	require.NoError(t, db.Snapshot(userDir, true))
+}
+
+func TestParquetBlockSet_Filter_ConversionCheck(t *testing.T) {
+	ctx := context.Background()
+	storageDir := t.TempDir()
+
+	bkt, err := filesystem.NewBucketClient(filesystem.Config{Directory: storageDir})
+	require.NoError(t, err)
+
+	logger := log.NewNopLogger()
+
+	// Two blocks: one converted, one not
+	nonConvertedID := ulid.MustNewDefault(time.Now())
+	convertedID := ulid.MustNewDefault(time.Now())
+
+	nonConvertedMeta := &block.Meta{
+		BlockMeta: tsdb.BlockMeta{
+			ULID:    nonConvertedID,
+			MinTime: 100,
+			MaxTime: 200,
+		},
+	}
+
+	convertedMeta := &block.Meta{
+		BlockMeta: tsdb.BlockMeta{
+			ULID:    convertedID,
+			MinTime: 100,
+			MaxTime: 200,
+		},
+	}
+	convertedBlockDir := filepath.Join(storageDir, convertedID.String())
+	err = os.MkdirAll(convertedBlockDir, 0755)
+	require.NoError(t, err)
+
+	markPath := filepath.Join(convertedBlockDir, parquetconverter.ParquetConversionMarkFileName)
+	err = os.WriteFile(markPath, []byte(`{"version": 1}`), 0644)
+	require.NoError(t, err)
+
+	blockSet := &parquetBlockSet{}
+	nonConvertedBlock := newParquetBucketBlock(nonConvertedMeta, nil)
+	convertedBlock := newParquetBucketBlock(convertedMeta, nil)
+	err = blockSet.add(nonConvertedBlock)
+	require.NoError(t, err)
+	err = blockSet.add(convertedBlock)
+	require.NoError(t, err)
+
+	// Filter should only return the converted block.
+	// Exercise caching logic by calling twice.
+	do := func() {
+		var filteredBlocks []*parquetBucketBlock
+		blockSet.filter(ctx, bkt, 100, 200, nil, logger, func(b *parquetBucketBlock) {
+			filteredBlocks = append(filteredBlocks, b)
+		})
+
+		require.Len(t, filteredBlocks, 1, "Only converted block should be included")
+		require.Equal(t, convertedID, filteredBlocks[0].meta.ULID)
+	}
+	do()
+	do()
 }

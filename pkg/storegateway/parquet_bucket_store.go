@@ -40,7 +40,6 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
-	"github.com/grafana/mimir/pkg/parquetconverter"
 	"github.com/grafana/mimir/pkg/storage/parquet"
 	parquetBlock "github.com/grafana/mimir/pkg/storage/parquet/block"
 	"github.com/grafana/mimir/pkg/storage/sharding"
@@ -361,7 +360,8 @@ func (s *ParquetBucketStore) LabelNames(ctx context.Context, req *storepb.LabelN
 	var sets [][]string
 	var blocksQueriedByBlockMeta = make(map[blockQueriedMeta]int)
 
-	s.blockSet.filter(req.Start, req.End, reqBlockMatchers, func(b *parquetBucketBlock) {
+	logger := spanlogger.FromContext(ctx, s.logger)
+	s.blockSet.filter(ctx, s.bkt, req.Start, req.End, reqBlockMatchers, logger, func(b *parquetBucketBlock) {
 		resHints.AddQueriedBlock(b.meta.ULID)
 		blocksQueriedByBlockMeta[newBlockQueriedMeta(b.meta)]++
 
@@ -470,7 +470,8 @@ func (s *ParquetBucketStore) LabelValues(ctx context.Context, req *storepb.Label
 	var sets [][]string
 	var blocksQueriedByBlockMeta = make(map[blockQueriedMeta]int)
 
-	s.blockSet.filter(req.Start, req.End, reqBlockMatchers, func(b *parquetBucketBlock) {
+	logger := spanlogger.FromContext(ctx, s.logger)
+	s.blockSet.filter(ctx, s.bkt, req.Start, req.End, reqBlockMatchers, logger, func(b *parquetBucketBlock) {
 		resHints.AddQueriedBlock(b.meta.ULID)
 		blocksQueriedByBlockMeta[newBlockQueriedMeta(b.meta)]++
 
@@ -547,13 +548,13 @@ func (s *ParquetBucketStore) LabelValues(ctx context.Context, req *storepb.Label
 
 // Placeholder methods for parquet-specific functionality
 func (s *ParquetBucketStore) openParquetBlocksForReading(ctx context.Context, _ bool, minTime, maxTime int64, reqBlockMatchers []*labels.Matcher, stats *safeQueryStats) ([]*parquetBucketBlock, []ParquetShardReaderCloser) {
-	_, span := tracer.Start(ctx, "parquet_bucket_store_open_blocks_for_reading")
+	ctx, span := tracer.Start(ctx, "parquet_bucket_store_open_blocks_for_reading")
 	defer span.End()
 
 	var blocks []*parquetBucketBlock
 	var allShardReaders []ParquetShardReaderCloser
-
-	s.blockSet.filter(minTime, maxTime, reqBlockMatchers, func(b *parquetBucketBlock) {
+	logger := spanlogger.FromContext(ctx, s.logger)
+	s.blockSet.filter(ctx, s.bkt, minTime, maxTime, reqBlockMatchers, logger, func(b *parquetBucketBlock) {
 		blocks = append(blocks, b)
 		blockShardReaders := b.ShardReaders()
 		allShardReaders = append(allShardReaders, blockShardReaders...)
@@ -1010,18 +1011,6 @@ func (s *ParquetBucketStore) syncBlocks(ctx context.Context) error {
 		level.Debug(s.logger).Log("msg", "syncing block", "id", id, "meta", meta)
 		if s.blockSet.contains(id) {
 			level.Debug(s.logger).Log("msg", "block already loaded, skipping", "id", id)
-			continue
-		}
-
-		markPath := path.Join(id.String(), parquetconverter.ParquetConversionMarkFileName)
-		exists, err := s.bkt.Exists(ctx, markPath)
-		if err != nil {
-			level.Debug(s.logger).Log("msg", "failed to check parquet conversion mark existence, skipping block", "block", id, "err", err)
-			continue
-		}
-
-		if !exists {
-			level.Debug(s.logger).Log("msg", "parquet conversion mark not found, block not converted, skipping", "block", id)
 			continue
 		}
 
