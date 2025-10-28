@@ -360,7 +360,6 @@
   "validation.past-grace-period": 0,
   "validation.enforce-metadata-metric-name": true,
   "distributor.ingestion-tenant-shard-size": 0,
-  "distributor.metric-relabeling-enabled": true,
   "ingester.max-global-series-per-user": 150000,
   "ingester.max-global-series-per-metric": 0,
   "ingester.max-global-metadata-per-user": 0,
