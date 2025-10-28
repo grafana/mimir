@@ -487,6 +487,7 @@ func avgHistograms(head, tail []promql.HPoint, emitAnnotation types.EmitAnnotati
 
 	counterResetSeen := false
 	notCounterResetSeen := false
+	nhcbBoundsReconciledSeen := false
 
 	trackCounterReset := func(h *histogram.FloatHistogram) {
 		switch h.CounterResetHint {
@@ -525,14 +526,20 @@ func avgHistograms(head, tail []promql.HPoint, emitAnnotation types.EmitAnnotati
 			contributionByP = contributionByP.Div(count)
 			contributionByAvgSoFar = contributionByAvgSoFar.Div(count)
 
-			change, _, _, err := contributionByP.Sub(contributionByAvgSoFar)
+			change, _, nhcbBoundsReconciled, err := contributionByP.Sub(contributionByAvgSoFar)
 			if err != nil {
 				return err
 			}
+			if nhcbBoundsReconciled {
+				nhcbBoundsReconciledSeen = true
+			}
 
-			avgSoFar, _, _, err = avgSoFar.Add(change)
+			avgSoFar, _, nhcbBoundsReconciled, err = avgSoFar.Add(change)
 			if err != nil {
 				return err
+			}
+			if nhcbBoundsReconciled {
+				nhcbBoundsReconciledSeen = true
 			}
 		}
 
@@ -549,6 +556,10 @@ func avgHistograms(head, tail []promql.HPoint, emitAnnotation types.EmitAnnotati
 
 	if counterResetSeen && notCounterResetSeen {
 		emitAnnotation(newAggregationCounterResetCollisionWarning)
+	}
+
+	if nhcbBoundsReconciledSeen {
+		emitAnnotation(newAggregationMismatchedCustomBucketsHistogramInfo)
 	}
 
 	return avgSoFar, nil
@@ -910,7 +921,7 @@ func histogramIrateIdelta(isRate bool, lastSample, secondLastSample promql.HPoin
 			return nil, err
 		}
 		if nhcbBoundsReconciled {
-			emitAnnotation(newMismatchedCustomBucketsHistogramInfo)
+			emitAnnotation(newSubMismatchedCustomBucketsHistogramInfo)
 		}
 	}
 

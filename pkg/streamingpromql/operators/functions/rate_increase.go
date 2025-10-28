@@ -131,7 +131,7 @@ func histogramRate(isRate bool, hCount int, hHead []promql.HPoint, hTail []promq
 		return nil, err
 	}
 	if nhcbBoundsReconciled {
-		emitAnnotation(newMismatchedCustomBucketsHistogramInfo)
+		emitAnnotation(newSubMismatchedCustomBucketsHistogramInfo)
 	}
 	previousValue := firstPoint.H
 
@@ -144,7 +144,7 @@ func histogramRate(isRate bool, hCount int, hHead []promql.HPoint, hTail []promq
 					return err
 				}
 				if nhcbBoundsReconciled {
-					emitAnnotation(newMismatchedCustomBucketsHistogramInfo)
+					emitAnnotation(newAddMismatchedCustomBucketsHistogramInfo)
 				}
 			}
 
@@ -388,13 +388,17 @@ func histogramDelta(hCount int, hHead []promql.HPoint, hTail []promql.HPoint, ra
 		emitAnnotation(annotations.NewNativeHistogramNotGaugeWarning)
 	}
 	if nhcbBoundsReconciled {
-		emitAnnotation(newMismatchedCustomBucketsHistogramInfo)
+		emitAnnotation(newSubMismatchedCustomBucketsHistogramInfo)
 	}
 
 	val := calculateHistogramRate(false, false, rangeStart, rangeEnd, rangeSeconds, firstPoint, lastPoint, delta, hCount, firstPoint.H.Count)
 	return val, nil
 }
 
-func newMismatchedCustomBucketsHistogramInfo(_ string, expressionPosition posrange.PositionRange) error {
-	return annotations.NewMismatchedCustomBucketsHistogramsInfo(expressionPosition, annotations.HistogramAgg)
+func newAddMismatchedCustomBucketsHistogramInfo(_ string, expressionPosition posrange.PositionRange) error {
+	return annotations.NewMismatchedCustomBucketsHistogramsInfo(expressionPosition, annotations.HistogramAdd)
+}
+
+func newSubMismatchedCustomBucketsHistogramInfo(_ string, expressionPosition posrange.PositionRange) error {
+	return annotations.NewMismatchedCustomBucketsHistogramsInfo(expressionPosition, annotations.HistogramSub)
 }
