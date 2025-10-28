@@ -694,7 +694,7 @@
       },
       ruler: {
         enabled: false,
-        hpa_name: $._config.autoscaling_hpa_prefix + '(?:qruler|ruler-zone-.*)',
+        hpa_name: $._config.autoscaling_hpa_prefix + '(?:ruler|ruler-zone-.*)',
       },
       gateway: {
         enabled: false,
