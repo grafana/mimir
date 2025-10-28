@@ -31,7 +31,7 @@ type mirroredChunkQuerier struct {
 
 	recordedRequest struct {
 		minT, maxT int64
-		startedAt  time.Time
+		finishedAt time.Time
 
 		ctx        context.Context
 		matchers   []*labels.Matcher
@@ -89,9 +89,9 @@ func (q *mirroredChunkQuerier) Select(ctx context.Context, sortSeries bool, hint
 	q.recordedRequest.sortSeries = sortSeries
 	q.recordedRequest.hints = copyParams(hints)
 	q.recordedRequest.matchers = slices.Clone(matchers)
-	q.recordedRequest.startedAt = time.Now()
 
 	ss := q.delegate.Select(ctx, sortSeries, hints, matchers...)
+	q.recordedRequest.finishedAt = time.Now()
 	q.returnedSeries = &retainingChunkSeriesSet{delegate: ss}
 	return q.returnedSeries
 }
@@ -106,11 +106,11 @@ func (q *mirroredChunkQuerier) compareResults(secondary storage.ChunkSeriesSet) 
 		secondaryHasCurrent  bool
 		secondarySeriesCount int
 
-		// It's possible that a series appears between us starting the query
+		// It's possible that a series appears between us finishing the primary query
 		// and running the secondary query. To avoid false positives, we ignore
-		// any series whose first chunk contains samples from after we started the first query.
+		// any series whose first chunk contains samples from after we finished the first query.
 		// This doesn't protect against out-of-order samples, but it's a reasonable compromise.
-		ignoreSeriesWithFirstChunkYoungerThan = q.recordedRequest.startedAt.Add(-time.Minute).UnixMilli()
+		ignoreSeriesWithFirstChunkYoungerThan = q.recordedRequest.finishedAt.UnixMilli()
 	)
 
 	advanceSecondary := func() bool {
