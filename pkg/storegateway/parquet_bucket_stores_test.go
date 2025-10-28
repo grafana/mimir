@@ -199,7 +199,7 @@ func generateParquetStorageBlock(
 
 }
 
-func queryParquetSeries(t *testing.T, store storegatewaypb.StoreGatewayServer, userID, metricName string, minT, maxT int64) ([]*storepb.Series, annotations.Annotations, error) {
+func queryParquetSeries(t *testing.T, store storegatewaypb.StoreGatewayServer, userID, metricName string, minT, maxT int64) ([]*storeTestSeries, annotations.Annotations, error) {
 	req := &storepb.SeriesRequest{
 		MinTime:                  minT,
 		MaxTime:                  maxT,
@@ -216,7 +216,7 @@ func queryParquetSeries(t *testing.T, store storegatewaypb.StoreGatewayServer, u
 	return grpcSeries(t, setUserIDToGRPCContext(context.Background(), userID), store, req)
 }
 
-func grpcSeries(t *testing.T, ctx context.Context, store storegatewaypb.StoreGatewayServer, req *storepb.SeriesRequest) ([]*storepb.Series, annotations.Annotations, error) {
+func grpcSeries(t *testing.T, ctx context.Context, store storegatewaypb.StoreGatewayServer, req *storepb.SeriesRequest) ([]*storeTestSeries, annotations.Annotations, error) {
 	srv := newStoreGatewayTestServer(t, store)
 	seriesSet, warnings, _, _, err := srv.Series(ctx, req)
 	return seriesSet, warnings, err

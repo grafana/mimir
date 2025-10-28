@@ -190,10 +190,14 @@ func (s *ParquetBucketStore) stop(err error) error {
 }
 
 func (s *ParquetBucketStore) Series(req *storepb.SeriesRequest, srv storegatewaypb.StoreGateway_SeriesServer) (err error) {
-	if req.SkipChunks {
-		// We don't do the streaming call if we are not requesting the chunks.
-		req.StreamingChunksBatchSize = 0
+	// Previously, a batch size of 0 was used to indicate this was a Prometheus series request
+	// that didn't need to load any chunk data (in addition to the SkipChunks field) and used
+	// the non-streaming path. Now that Prometheus series requests use the streaming path we
+	// need to make sure that the batch size is always non-zero.
+	if req.StreamingChunksBatchSize == 0 {
+		req.StreamingChunksBatchSize = fallbackStreamingBatchSize
 	}
+
 	defer func() { err = mapSeriesError(err) }()
 
 	matchers, err := storepb.MatchersToPromMatchers(req.Matchers...)
@@ -279,49 +283,36 @@ func (s *ParquetBucketStore) Series(req *storepb.SeriesRequest, srv storegateway
 	}
 
 	// Send the series back to the querier (same series set for both streaming and non-streaming)
-	if req.StreamingChunksBatchSize > 0 {
-		seriesLoadStart := time.Now()
-		var streamingSeriesCount int
-		streamingSeriesCount, err = s.sendStreamingSeriesLabelsAndStats(req, srv, stats, labelsIt)
-		if err != nil {
-			return err
-		}
-
-		spanLogger.DebugLog(
-			"msg", "sent streaming series",
-			"num_series", streamingSeriesCount,
-			"duration", time.Since(seriesLoadStart),
-		)
-
-		if streamingSeriesCount == 0 {
-			// There is no series to send chunks for.
-			return nil
-		}
-		err = s.sendStreamingChunks(req, srv, chunksIt, stats, streamingSeriesCount)
-	} else {
-		// Non-streaming mode, send all series and chunks in one go.
-		err = s.sendSeriesChunks(req, srv, labelsIt, chunksIt, stats)
+	seriesLoadStart := time.Now()
+	var streamingSeriesCount int
+	streamingSeriesCount, err = s.sendStreamingSeriesLabelsAndStats(req, srv, stats, labelsIt)
+	if err != nil {
+		return err
 	}
+
+	spanLogger.DebugLog(
+		"msg", "sent streaming series",
+		"num_series", streamingSeriesCount,
+		"duration", time.Since(seriesLoadStart),
+	)
+
+	if streamingSeriesCount == 0 || req.SkipChunks {
+		// There is no series to send chunks for.
+		return nil
+	}
+	err = s.sendStreamingChunks(req, srv, chunksIt, stats, streamingSeriesCount)
+
 	if err != nil {
 		return
 	}
 
 	numSeries, numChunks := stats.seriesAndChunksCount()
-	debugMessage := "sent series"
-	if req.StreamingChunksBatchSize > 0 {
-		debugMessage = "sent streaming chunks"
-	}
 	spanLogger.DebugLog(
-		"msg", debugMessage,
+		"msg", "sent streaming chunks",
 		"num_series", numSeries,
 		"num_chunks", numChunks,
 		"duration", time.Since(start),
 	)
-
-	if req.StreamingChunksBatchSize == 0 {
-		// Stats were not sent before, so send it now.
-		return s.sendStats(srv, stats)
-	}
 
 	return nil
 }
@@ -846,53 +837,6 @@ func (s *ParquetBucketStore) sendStreamingChunks(
 	}
 
 	return chunksIt.Err()
-}
-
-func (s *ParquetBucketStore) sendSeriesChunks(req *storepb.SeriesRequest, srv storegatewaypb.StoreGateway_SeriesServer, labelsIt iterator[labels.Labels], chunksIt iterator[[]storepb.AggrChunk], stats *safeQueryStats) error {
-	var (
-		encodeDuration           time.Duration
-		sendDuration             time.Duration
-		seriesCount, chunksCount int
-	)
-
-	defer stats.update(func(stats *queryStats) {
-		stats.mergedSeriesCount += seriesCount
-		stats.mergedChunksCount += chunksCount
-
-		stats.streamingSeriesEncodeResponseDuration += encodeDuration
-		stats.streamingSeriesSendResponseDuration += sendDuration
-	})
-
-	for labelsIt.Next() && (req.SkipChunks || chunksIt.Next()) {
-		lset := labelsIt.At()
-		seriesCount++
-		series := storepb.Series{
-			Labels: mimirpb.FromLabelsToLabelAdapters(lset),
-		}
-		if !req.SkipChunks {
-			chks := chunksIt.At()
-			series.Chunks = chks
-			chunksCount += len(chks)
-			s.metrics.chunkSizeBytes.Observe(float64(chunksSize(chks)))
-		}
-		pbSeriesResponse := &storepb.SeriesResponse{
-			Result: &storepb.SeriesResponse_Series{
-				Series: &series,
-			},
-		}
-		err := s.sendMessage("series", srv, pbSeriesResponse, &encodeDuration, &sendDuration)
-		if err != nil {
-			return err
-		}
-	}
-	if labelsIt.Err() != nil {
-		return errors.Wrap(labelsIt.Err(), "error iterating labels")
-	}
-	if !req.SkipChunks && chunksIt.Err() != nil {
-		return errors.Wrap(chunksIt.Err(), "error iterating chunks")
-	}
-
-	return nil
 }
 
 func (s *ParquetBucketStore) recordSeriesCallResult(stats *safeQueryStats) {
