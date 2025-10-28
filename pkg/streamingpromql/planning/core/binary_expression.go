@@ -148,7 +148,7 @@ func MaterializeBinaryExpression(b *BinaryExpression, materializer *planning.Mat
 	}
 
 	if lhsScalar != nil && rhsScalar != nil {
-		o, err := binops.NewScalarScalarBinaryOperation(lhsScalar, rhsScalar, op, params.MemoryConsumptionTracker, b.ExpressionPosition())
+		o, err := binops.NewScalarScalarBinaryOperation(lhsScalar, rhsScalar, op, params.MemoryConsumptionTracker, params.Annotations, b.ExpressionPosition())
 		if err != nil {
 			return nil, err
 		}

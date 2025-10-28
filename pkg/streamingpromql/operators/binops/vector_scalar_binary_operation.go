@@ -76,20 +76,24 @@ func NewVectorScalarBinaryOperation(
 		expressionPosition: expressionPosition,
 	}
 
+	emitAnnotation := func(generator types.AnnotationGenerator) {
+		b.annotations.Add(generator("", b.expressionPosition))
+	}
+
 	if !b.ScalarIsLeftSide {
 		b.opFunc = func(scalar float64, vectorF float64, vectorH *histogram.FloatHistogram) (float64, *histogram.FloatHistogram, bool, bool, error) {
-			return f(vectorF, scalar, vectorH, nil, true, true)
+			return f(vectorF, scalar, vectorH, nil, true, true, emitAnnotation)
 		}
 	} else if op.IsComparisonOperator() && !returnBool {
 		b.opFunc = func(scalar float64, vectorF float64, vectorH *histogram.FloatHistogram) (float64, *histogram.FloatHistogram, bool, bool, error) {
-			_, _, keep, valid, err := f(scalar, vectorF, nil, vectorH, true, true)
+			_, _, keep, valid, err := f(scalar, vectorF, nil, vectorH, true, true, emitAnnotation)
 
 			// We always want to return the value from the vector when we're doing a filter-style comparison.
 			return vectorF, vectorH, keep, valid, err
 		}
 	} else {
 		b.opFunc = func(scalar float64, vectorF float64, vectorH *histogram.FloatHistogram) (float64, *histogram.FloatHistogram, bool, bool, error) {
-			return f(scalar, vectorF, nil, vectorH, true, true)
+			return f(scalar, vectorF, nil, vectorH, true, true, emitAnnotation)
 		}
 	}
 
@@ -122,6 +126,10 @@ func (v *VectorScalarBinaryOperation) NextSeries(ctx context.Context) (types.Ins
 	series, err := v.Vector.NextSeries(ctx)
 	if err != nil {
 		return types.InstantVectorSeriesData{}, err
+	}
+
+	emitAnnotation := func(generator types.AnnotationGenerator) {
+		v.annotations.Add(generator("", v.expressionPosition))
 	}
 
 	returnInputFPointSlice := true
@@ -185,7 +193,7 @@ func (v *VectorScalarBinaryOperation) NextSeries(ctx context.Context) (types.Ins
 
 		f, h, keep, valid, err := v.opFunc(scalarValue, vectorF, vectorH)
 		if err != nil {
-			err = functions.NativeHistogramErrorToAnnotation(err, v.emitAnnotation)
+			err = functions.NativeHistogramErrorToAnnotation(err, emitAnnotation)
 			if err == nil {
 				// Error was converted to an annotation, continue without emitting a sample here.
 				continue
@@ -272,10 +280,6 @@ func (v *VectorScalarBinaryOperation) Close() {
 	v.Vector.Close()
 
 	types.FPointSlicePool.Put(&v.scalarData.Samples, v.MemoryConsumptionTracker)
-}
-
-func (v *VectorScalarBinaryOperation) emitAnnotation(generator types.AnnotationGenerator) {
-	v.annotations.Add(generator("", v.expressionPosition))
 }
 
 var _ types.InstantVectorOperator = &VectorScalarBinaryOperation{}
