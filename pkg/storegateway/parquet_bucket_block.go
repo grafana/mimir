@@ -13,6 +13,7 @@ import (
 	"path"
 	"sort"
 	"sync"
+	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -71,8 +72,11 @@ type parquetBucketBlock struct {
 	closedMtx      sync.RWMutex
 	closed         bool
 
-	queried   atomic.Bool
-	converted atomic.Bool
+	queried atomic.Bool
+
+	isConvertedMtx     sync.Mutex
+	isConvertedCache   bool
+	lastConvertedCheck time.Time
 }
 
 func newParquetBucketBlock(
@@ -117,10 +121,19 @@ func (b *parquetBucketBlock) MarkQueried() {
 	b.queried.Store(true)
 }
 
+// IsConverted checks whether the block has been converted to Parquet format.
+// It caches 'true' results forever, but re-checks 'false' results at most once per minute.
 func (b *parquetBucketBlock) IsConverted(ctx context.Context, bkt objstore.BucketReader) (bool, error) {
-	if b.converted.Load() {
+	b.isConvertedMtx.Lock()
+	defer b.isConvertedMtx.Unlock()
+	if b.isConvertedCache {
 		return true, nil
 	}
+	// Avoid checking too often if it's not yet converted.
+	if time.Since(b.lastConvertedCheck) < 1*time.Minute {
+		return b.isConvertedCache, nil
+	}
+	b.lastConvertedCheck = time.Now()
 	markPath := path.Join(b.meta.ULID.String(), parquetconverter.ParquetConversionMarkFileName)
 	exists, err := bkt.Exists(ctx, markPath)
 	if err != nil {
