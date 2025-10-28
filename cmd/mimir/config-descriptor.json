@@ -10332,6 +10332,17 @@
                   "fieldFlag": "blocks-storage.bucket-store.chunks-cache.subrange-ttl",
                   "fieldType": "duration",
                   "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "cache_parquet_labels_files",
+                  "required": false,
+                  "desc": "If true, get range calls to parquet labels files will be cached in the chunks cache.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": true,
+                  "fieldFlag": "blocks-storage.bucket-store.chunks-cache.cache-parquet-labels-files",
+                  "fieldType": "boolean",
+                  "fieldCategory": "advanced"
                 }
               ],
               "fieldValue": null,

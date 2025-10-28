@@ -5048,6 +5048,11 @@ bucket_store:
     # CLI flag: -blocks-storage.bucket-store.chunks-cache.subrange-ttl
     [subrange_ttl: <duration> | default = 24h]
 
+    # (advanced) If true, get range calls to parquet labels files will be cached
+    # in the chunks cache.
+    # CLI flag: -blocks-storage.bucket-store.chunks-cache.cache-parquet-labels-files
+    [cache_parquet_labels_files: <boolean> | default = true]
+
   metadata_cache:
     # Backend for metadata cache, if not empty. Supported values: memcached.
     # CLI flag: -blocks-storage.bucket-store.metadata-cache.backend
