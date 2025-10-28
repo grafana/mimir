@@ -211,6 +211,11 @@ func (o *PlanningObserver) OnAllASTStagesComplete(finalExpr parser.Expr) error {
 }
 
 func (o *PlanningObserver) OnPlanningStageComplete(stageName string, updatedPlan *planning.QueryPlan, duration time.Duration) error {
+	// Populate the plan version, so we can see the effect of different stages on the plan version.
+	if err := updatedPlan.DeterminePlanVersion(); err != nil {
+		return err
+	}
+
 	plan, err := updatedPlan.ToEncodedPlan(true, false)
 	if err != nil {
 		return err

@@ -599,12 +599,12 @@ func TestOptimizationPass(t *testing.T) {
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
 			opts := streamingpromql.NewTestEngineOpts()
-			plannerWithoutOptimizationPass, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts)
+			plannerWithoutOptimizationPass, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 			require.NoError(t, err)
 			plannerWithoutOptimizationPass.RegisterASTOptimizationPass(&ast.CollapseConstants{})
 
 			reg := prometheus.NewPedanticRegistry()
-			plannerWithOptimizationPass, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts)
+			plannerWithOptimizationPass, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 			require.NoError(t, err)
 			plannerWithOptimizationPass.RegisterASTOptimizationPass(&ast.CollapseConstants{})
 			plannerWithOptimizationPass.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(true, reg, opts.Logger))

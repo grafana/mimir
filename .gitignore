@@ -11,9 +11,6 @@ cmd/query-tee/query-tee_linux_arm64
 cmd/metaconvert/metaconvert
 cmd/metaconvert/metaconvert_linux_amd64
 cmd/metaconvert/metaconvert_linux_arm64
-cmd/mimir-continuous-test/mimir-continuous-test
-cmd/mimir-continuous-test/mimir-continuous-test_linux_amd64
-cmd/mimir-continuous-test/mimir-continuous-test_linux_arm64
 tools/config-inspector/config-inspector
 tools/kafkatool/kafkatool
 .bak
@@ -34,7 +31,6 @@ metrics-activity.log
 /mimirtool
 /query-tee
 /test-exporter
-/mimir-continuous-test
 
 # This is custom Makefile modification, if it exists.
 Makefile.local

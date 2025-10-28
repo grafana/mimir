@@ -171,6 +171,6 @@ func (a *AggregateExpression) ExpressionPosition() posrange.PositionRange {
 	return a.GetExpressionPosition().ToPrometheusType()
 }
 
-func (a *AggregateExpression) MinimumRequiredPlanVersion() int64 {
+func (a *AggregateExpression) MinimumRequiredPlanVersion() planning.QueryPlanVersion {
 	return planning.QueryPlanVersionZero
 }

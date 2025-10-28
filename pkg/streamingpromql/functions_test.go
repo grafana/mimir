@@ -28,7 +28,7 @@ func TestFunctionDeduplicateAndMerge(t *testing.T) {
 
 	storage := promqltest.LoadedStorage(t, data)
 	opts := NewTestEngineOpts()
-	planner, err := NewQueryPlanner(opts)
+	planner, err := NewQueryPlanner(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(t, err)
 	engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), planner)
 	require.NoError(t, err)

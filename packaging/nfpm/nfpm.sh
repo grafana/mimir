@@ -13,7 +13,7 @@ fi
 rm -rf dist/tmp && mkdir -p dist/tmp/packages
 cp dist/*-linux-* dist/tmp/packages
 
-for name in metaconvert mimir-continuous-test mimir mimirtool query-tee ; do
+for name in metaconvert mimir mimirtool query-tee ; do
     for arch in amd64 arm64; do
         for packager in deb rpm; do
             config_path="dist/tmp/config-${name}-${packager}-${arch}.json"

@@ -333,10 +333,7 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSets [
 	return resp, nil
 }
 
-// receiveResponse receives a response from stream, and:
-// * If the response has Timeseries, they are added to r.timeseriesBatches.
-// * If the response has Chunkseries, they are added to r.chunkseriesBatches.
-// * If the response has StreamingSeries, a slice is returned with the label sets of each series.
+// receiveResponse receives a response from stream returns the label sets of each series.
 // A bool is also returned to indicate whether the end of the stream has been reached.
 func (r *ingesterQueryResult) receiveResponse(stream ingester_client.Ingester_QueryStreamClient, queryLimiter *limiter.QueryLimiter, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) ([]labels.Labels, bool, error) {
 	resp, err := stream.Recv()

@@ -98,6 +98,6 @@ func (m *MatrixSelector) ExpressionPosition() posrange.PositionRange {
 	return m.GetExpressionPosition().ToPrometheusType()
 }
 
-func (m *MatrixSelector) MinimumRequiredPlanVersion() int64 {
+func (m *MatrixSelector) MinimumRequiredPlanVersion() planning.QueryPlanVersion {
 	return planning.QueryPlanVersionZero
 }

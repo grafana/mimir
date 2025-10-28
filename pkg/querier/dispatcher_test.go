@@ -35,6 +35,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/propagation"
+	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
 func TestDispatcher_HandleProtobuf(t *testing.T) {
@@ -53,7 +54,7 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 	opts.CommonOpts.EnablePerStepStats = true
 	opts.Pedantic = true
 	ctx := context.Background()
-	planner, err := streamingpromql.NewQueryPlanner(opts)
+	planner, err := streamingpromql.NewQueryPlanner(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(t, err)
 	engine, err := streamingpromql.NewEngine(opts, streamingpromql.NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), planner)
 	require.NoError(t, err)
@@ -107,11 +108,13 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 		expectedResponseMessages                     []*frontendv2pb.QueryResultStreamRequest
 		expectedStatusCode                           string
 		expectStorageToBeCalledWithPropagatedHeaders bool
+		dontExpectQueryPlanVersionMetric             bool
 	}{
 		"unknown payload type": {
 			req: &prototypes.Any{
 				TypeUrl: "grafana.com/something/unknown",
 			},
+			dontExpectQueryPlanVersionMetric: true,
 			expectedResponseMessages: []*frontendv2pb.QueryResultStreamRequest{
 				{
 					Data: &frontendv2pb.QueryResultStreamRequest_Error{
@@ -129,7 +132,8 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 			req: &prototypes.Any{
 				TypeUrl: "unknown",
 			},
-			dontSetTenantID: true,
+			dontSetTenantID:                  true,
+			dontExpectQueryPlanVersionMetric: true,
 			expectedResponseMessages: []*frontendv2pb.QueryResultStreamRequest{
 				{
 					Data: &frontendv2pb.QueryResultStreamRequest_Error{
@@ -144,8 +148,9 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 		},
 
 		"request without tenant ID": {
-			req:             createQueryRequest(`my_series`, types.NewInstantQueryTimeRange(startT)),
-			dontSetTenantID: true,
+			req:                              createQueryRequest(`my_series`, types.NewInstantQueryTimeRange(startT)),
+			dontSetTenantID:                  true,
+			dontExpectQueryPlanVersionMetric: true,
 			expectedResponseMessages: []*frontendv2pb.QueryResultStreamRequest{
 				{
 					Data: &frontendv2pb.QueryResultStreamRequest_Error{
@@ -991,6 +996,21 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 				require.NotNil(t, storage.ctx)
 				require.Equal(t, "some-value-from-the-request", storage.ctx.Value(testExtractorKey))
 			}
+
+			if !testCase.dontExpectQueryPlanVersionMetric {
+				req := &querierpb.EvaluateQueryRequest{}
+				require.NoError(t, prototypes.UnmarshalAny(testCase.req, req))
+
+				expectedVersion := req.Plan.Version
+
+				expectedMetrics := fmt.Sprintf(`
+					# HELP cortex_querier_received_query_plans_total Total number of query plans received by the querier.
+					# TYPE cortex_querier_received_query_plans_total counter
+					cortex_querier_received_query_plans_total{version="%[1]d"} 1
+				`, expectedVersion)
+
+				require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics), "cortex_querier_received_query_plans_total"))
+			}
 		})
 	}
 }
@@ -1007,7 +1027,7 @@ func TestDispatcher_HandleProtobuf_WithDelayedNameRemovalEnabled(t *testing.T) {
 	// Disable the optimization pass, since it requires delayed name removal to be enabled.
 	opts.EnableEliminateDeduplicateAndMerge = false
 	ctx := context.Background()
-	planner, err := streamingpromql.NewQueryPlanner(opts)
+	planner, err := streamingpromql.NewQueryPlanner(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(t, err)
 	engine, err := streamingpromql.NewEngine(opts, streamingpromql.NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), planner)
 	require.NoError(t, err)
@@ -1360,9 +1380,9 @@ func TestQueryResponseWriter_WriteError(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			reg, requestMetrics, serverMetrics := newMetrics()
 			stream := &mockQueryResultStream{t: t, route: "test-route", reg: reg}
-			writer := newQueryResponseWriter(stream, requestMetrics, serverMetrics, log.NewNopLogger())
-			writer.Start("test-route", 123)
 			ctx := context.Background()
+			writer := newQueryResponseWriter(stream, requestMetrics, serverMetrics, spanlogger.FromContext(ctx, log.NewNopLogger()))
+			writer.Start("test-route", 123)
 
 			writer.WriteError(ctx, apierror.TypeNotFound, testCase.err)
 

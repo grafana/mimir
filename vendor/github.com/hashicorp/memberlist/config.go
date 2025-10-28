@@ -210,6 +210,7 @@ type Config struct {
 	Merge                   MergeDelegate
 	Ping                    PingDelegate
 	Alive                   AliveDelegate
+	NodeSelection           NodeSelectionDelegate
 
 	// DNSConfigPath points to the system's DNS config file, usually located
 	// at /etc/resolv.conf. It can be overridden via config for easier testing.

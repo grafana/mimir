@@ -1153,16 +1153,12 @@ func (d *Distributor) prePushRelabelMiddleware(next PushFunc) PushFunc {
 		next, maybeCleanup := NextOrCleanup(next, pushReq)
 		defer maybeCleanup()
 
-		userID, err := tenant.TenantID(ctx)
+		req, err := pushReq.WriteRequest()
 		if err != nil {
 			return err
 		}
 
-		if !d.limits.MetricRelabelingEnabled(userID) {
-			return next(ctx, pushReq)
-		}
-
-		req, err := pushReq.WriteRequest()
+		userID, err := tenant.TenantID(ctx)
 		if err != nil {
 			return err
 		}

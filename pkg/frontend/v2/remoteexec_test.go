@@ -806,15 +806,15 @@ func TestRemoteExecutor_SendsQueryPlanVersion(t *testing.T) {
 	require.NotNil(t, frontendMock.request)
 	require.IsType(t, &querierpb.EvaluateQueryRequest{}, frontendMock.request)
 	request := frontendMock.request.(*querierpb.EvaluateQueryRequest)
-	require.Equal(t, int64(66), request.Plan.Version, "should set request plan version to match the original plan version")
+	require.Equal(t, planning.QueryPlanVersion(66), request.Plan.Version, "should set request plan version to match the original plan version")
 }
 
 type nodeWithOverriddenVersion struct {
 	planning.Node
-	version int64
+	version planning.QueryPlanVersion
 }
 
-func (n *nodeWithOverriddenVersion) MinimumRequiredPlanVersion() int64 {
+func (n *nodeWithOverriddenVersion) MinimumRequiredPlanVersion() planning.QueryPlanVersion {
 	return n.version
 }
 
@@ -1024,7 +1024,7 @@ func runQueryParallelismTestCase(t *testing.T, enableMQESharding bool) {
 	limits := &mockLimitedParallelismLimits{maxQueryParallelism: int(maxQueryParallelism)}
 
 	opts := streamingpromql.NewTestEngineOpts()
-	planner, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts)
+	planner, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(t, err)
 	planner.RegisterQueryPlanOptimizationPass(remoteexec.NewOptimizationPass())
 
