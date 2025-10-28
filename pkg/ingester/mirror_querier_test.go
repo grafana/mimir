@@ -236,9 +236,9 @@ func TestMirroredChunkQuerier_CompareResults(t *testing.T) {
 			primarySeries: []labels.Labels{series1.Labels()}, // Only series1 in primary
 			secondarySeries: []storage.ChunkSeries{
 				series1, // This should be included (chunk at 1000-2000, maxT=3000)
-				&mockChunkSeries{ // This should be ignored (chunk at 4000-5000, beyond now-1 minute)
+				&mockChunkSeries{ // This should be ignored (chunk at 4000-5000, beyond the time the query finished)
 					labels: labels.FromStrings("__name__", "metric3"),
-					chunks: []chunks.Meta{{MinTime: time.Now().UnixMilli(), MaxTime: time.Now().Add(time.Second).UnixMilli()}},
+					chunks: []chunks.Meta{{MinTime: time.Now().Add(time.Second).UnixMilli(), MaxTime: time.Now().Add(2 * time.Second).UnixMilli()}},
 				},
 			},
 			expectedMetricLabel: "success", // Should match because the beyond-maxT series is ignored
@@ -262,7 +262,7 @@ func TestMirroredChunkQuerier_CompareResults(t *testing.T) {
 				},
 			}
 			querier.recordedRequest.ctx = context.Background()
-			querier.recordedRequest.startedAt = time.Now()
+			querier.recordedRequest.finishedAt = time.Now()
 
 			secondary := &mockChunkSeriesSet{
 				series: tc.secondarySeries,
