@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 	"unicode"
@@ -164,25 +165,26 @@ func (s *labelValueTooLongSummaries) measure(metric, label, originalValue mimirp
 	if s.summaries == nil {
 		s.summaries = make([]labelValueTooLongSummary, 0, labelValueTooLongSummariesLimit)
 	}
+
+	i := slices.IndexFunc(s.summaries, func(summary labelValueTooLongSummary) bool {
+		return summary.metric == metric && summary.label == label
+	})
+	if i != -1 {
+		s.summaries[i].count++
+		return
+	}
+
 	if len(s.summaries) >= labelValueTooLongSummariesLimit {
 		return
 	}
-	i := s.indexOf(metric, label)
-	s.summaries[i].count++
-	if len(s.summaries[i].sampleValue) == 0 {
-		s.summaries[i].sampleValue = fmt.Sprintf("%.200s (truncated)", originalValue)
-		s.summaries[i].sampleValueLength = len(originalValue)
-	}
-}
 
-func (s *labelValueTooLongSummaries) indexOf(metric, label mimirpb.UnsafeMutableString) int {
-	for i, summary := range s.summaries {
-		if summary.metric == metric && summary.label == label {
-			return i
-		}
-	}
-	s.summaries = append(s.summaries, labelValueTooLongSummary{metric: metric, label: label})
-	return len(s.summaries) - 1
+	s.summaries = append(s.summaries, labelValueTooLongSummary{
+		metric:            metric,
+		label:             label,
+		sampleValue:       fmt.Sprintf("%.200s (truncated)", originalValue),
+		sampleValueLength: len(originalValue),
+		count:             1,
+	})
 }
 
 type labelValueTooLongSummary struct {
