@@ -2,7 +2,7 @@
 
 ## main / unreleased
 
-## 3.0.0-rc.1 2025-10-28
+## 3.0.0-rc.1
 
 ### Jsonnet
 
