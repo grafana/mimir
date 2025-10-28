@@ -2,6 +2,8 @@
 
 ## main / unreleased
 
+* [BUGFIX] Memcached: Ignore invalid responses when discovering cache servers using `dnssrv+` or `dnssrvnoa+` service discovery prefixes. #13203
+
 ## 3.0.0-rc.1
 
 ### Jsonnet
