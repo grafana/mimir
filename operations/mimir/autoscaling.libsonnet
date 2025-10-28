@@ -571,19 +571,24 @@
   // Ruler-queriers
   //
 
-  ruler_querier_scaled_object: if !$._config.autoscaling_ruler_querier_enabled || !$._config.ruler_remote_evaluation_enabled then null else
+  newRulerQuerierScaledObject(name, querier_args, extra_matchers='')::
     $.newResourceScaledObject(
-      name='ruler-querier',
+      name=name,
       cpu_requests=$.ruler_querier_container.resources.requests.cpu,
       memory_requests=$.ruler_querier_container.resources.requests.memory,
       min_replicas=$._config.autoscaling_ruler_querier_min_replicas,
       max_replicas=$._config.autoscaling_ruler_querier_max_replicas,
       cpu_target_utilization=$._config.autoscaling_ruler_querier_cpu_target_utilization,
       memory_target_utilization=$._config.autoscaling_ruler_querier_memory_target_utilization,
+      extra_matchers=extra_matchers,
       extra_triggers=if $._config.autoscaling_ruler_querier_workers_target_utilization <= 0 then [] else [
         {
           local name = 'ruler-querier-queries',
-          local querier_max_concurrent = $.ruler_querier_args['querier.max-concurrent'],
+          local querier_max_concurrent = querier_args['querier.max-concurrent'],
+          local query_params = {
+            namespace: $._config.namespace,
+            extra_matchers: if extra_matchers == '' then '' else ',%s' % extra_matchers,
+          },
 
           metric_name: '%s_hpa_%s' % [std.strReplace(name, '-', '_'), $._config.namespace],
 
@@ -594,7 +599,7 @@
           // This metric covers the case queries are piling up in the ruler-query-scheduler queue,
           // but ruler-querier replicas are not scaled up by other scaling metrics (e.g. CPU and memory)
           // because resources utilization is not increasing significantly.
-          query: 'sum(max_over_time(cortex_query_scheduler_inflight_requests{container="ruler-query-scheduler",namespace="%s",quantile="0.5"}[1m]))' % [$._config.namespace],
+          query: 'sum(max_over_time(cortex_query_scheduler_inflight_requests{container="ruler-query-scheduler",namespace="%(namespace)s",quantile="0.5"%(extra_matchers)s}[1m]))' % query_params,
 
           threshold: '%d' % std.floor(querier_max_concurrent * $._config.autoscaling_ruler_querier_workers_target_utilization),
 
@@ -604,6 +609,9 @@
         },
       ],
     ),
+
+  ruler_querier_scaled_object: if !$._config.autoscaling_ruler_querier_enabled || !$._config.ruler_remote_evaluation_enabled then null else
+    $.newRulerQuerierScaledObject('ruler-querier', $.ruler_querier_args),
 
   ruler_querier_deployment: overrideSuperIfExists(
     'ruler_querier_deployment',
