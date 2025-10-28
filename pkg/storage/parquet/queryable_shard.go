@@ -116,11 +116,13 @@ func (b queryableShard) QueryIter(ctx context.Context, sorted bool, sp *prom_sto
 	seriesWithChunks prom_storage.ChunkSeriesSet,
 	err error,
 ) {
-	errGroup, groupCtx := errgroup.WithContext(ctx)
+	errGroup, groupCtx := errgroup.WithContext(context.Background())
 	errGroup.SetLimit(b.concurrency)
 
 	rowGroupCount := len(b.shard.LabelsFile().RowGroups())
 	labelsSets := make([]prom_storage.ChunkSeriesSet, rowGroupCount)
+	//labelsSetsDebug := make([][]labels.Labels, rowGroupCount)
+	//labelsSetsAfterGrouping := make([][]labels.Labels, rowGroupCount)
 	var seriesSets []prom_storage.ChunkSeriesSet
 	if !skipChunks {
 		seriesSets = make([]prom_storage.ChunkSeriesSet, rowGroupCount)
@@ -151,6 +153,7 @@ func (b queryableShard) QueryIter(ctx context.Context, sorted bool, sp *prom_sto
 			}
 
 			labels, rr := b.m.FilterSeriesLabels(groupCtx, sp, labelsSlices, rr)
+			//labelsSetsDebug[rgi] = labels
 
 			labelsSets[rgi] = search.NewNoChunksConcreteLabelsSeriesSet(labels)
 			if skipChunks {
@@ -179,7 +182,7 @@ func (b queryableShard) QueryIter(ctx context.Context, sorted bool, sp *prom_sto
 					continue
 				}
 				// TODO: closeable
-				chunksIter, err := b.m.MaterializeChunks(ctx, rgi, mint, maxt, groupRR)
+				chunksIter, err := b.m.MaterializeChunks(groupCtx, rgi, mint, maxt, groupRR)
 				if err != nil {
 					return errors.Wrapf(err, "error materializing chunks for group %d", groupIdx)
 				}
@@ -188,6 +191,7 @@ func (b queryableShard) QueryIter(ctx context.Context, sorted bool, sp *prom_sto
 				// And, more importantly, labels for the series. In Prometheus world that violates the querier's
 				// interface. For us, whether or not that is problematic depends on how Queriers handle responses
 				// from Store Gateways that have labels for which there are no series. We'll see...
+				// labelsSetsAfterGrouping[rgi] = append(labelsSetsAfterGrouping[rgi], labelsGroups[groupIdx]...)
 				groupSeriesSet := newConcreteLabelsChunkSeriesSet(labelsGroups[groupIdx], chunksIter)
 				groupSeriesSets = append(groupSeriesSets, groupSeriesSet)
 			}
@@ -201,8 +205,10 @@ func (b queryableShard) QueryIter(ctx context.Context, sorted bool, sp *prom_sto
 		return nil, nil, err
 	}
 
-	return convert.NewMergeChunkSeriesSet(labelsSets, labels.Compare, prom_storage.NewConcatenatingChunkSeriesMerger()),
-		convert.NewMergeChunkSeriesSet(seriesSets, labels.Compare, prom_storage.NewConcatenatingChunkSeriesMerger()), nil
+	labelsMergeSeriesSet := convert.NewMergeChunkSeriesSet(labelsSets, labels.Compare, prom_storage.NewConcatenatingChunkSeriesMerger())
+	chunksMergeSeriesSet := convert.NewMergeChunkSeriesSet(seriesSets, labels.Compare, prom_storage.NewConcatenatingChunkSeriesMerger())
+
+	return labelsMergeSeriesSet, chunksMergeSeriesSet, nil
 }
 
 func (b queryableShard) LabelNames(ctx context.Context, limit int64, matchers []*labels.Matcher) ([]string, error) {

@@ -14,7 +14,6 @@
 package search
 
 import (
-	"slices"
 	"sort"
 )
 
@@ -82,9 +81,6 @@ func intersectRowRanges(lhs, rhs []RowRange) []RowRange {
 func complementRowRanges(lhs, rhs []RowRange) []RowRange {
 	res := make([]RowRange, 0)
 
-	// rhs is modified in place, to make it concurrency safe we need to clone it
-	rhs = slices.Clone(rhs)
-
 	l, r := 0, 0
 	for l < len(lhs) && r < len(rhs) {
 		al, bl := lhs[l].From, lhs[l].From+lhs[l].Count
@@ -135,9 +131,6 @@ func simplify(rr []RowRange) []RowRange {
 	if len(rr) == 0 {
 		return nil
 	}
-
-	// rr is modified in place, to make it concurrency safe we need to clone it
-	rr = slices.Clone(rr)
 
 	sort.Slice(rr, func(i, j int) bool {
 		return rr[i].From < rr[j].From

@@ -4,6 +4,7 @@ package parquet
 
 import (
 	"context"
+	"fmt"
 	"runtime"
 	"strings"
 
@@ -232,6 +233,36 @@ func (p parquetChunkQuerier) SelectIter(ctx context.Context, sortSeries bool, hi
 	if err := errGroup.Wait(); err != nil {
 		errSet := prom_storage.ErrChunkSeriesSet(err)
 		return errSet, errSet
+	}
+
+	count := 0
+	var labelsIterCollected []string
+	var chunksIterCollected []string
+	for i := range len(shards) {
+		labelsSetX := labelsSets[i]
+		seriesSetX := seriesSets[i]
+		done := false
+		for !done {
+			labelsNext := labelsSetX.Next()
+			labelsAt := labelsSetX.At()
+			chunksNext := seriesSetX.Next()
+			if labelsNext != chunksNext {
+				fmt.Printf("labels and chunks iter length mismatch")
+				break
+			}
+			chunksAt := seriesSetX.At()
+			labelsAtLabels := labelsAt.Labels()
+			chunksAtLabels := chunksAt.Labels()
+			labelsIterCollected = append(labelsIterCollected, labelsAtLabels.String())
+			chunksIterCollected = append(chunksIterCollected, chunksAtLabels.String())
+			if labelsAtLabels != chunksAtLabels {
+				fmt.Printf("labels and chunks iter labels mismatch; labels: %v, chunks: %v", labelsAtLabels, chunksAtLabels)
+				break
+			}
+			count++
+			done = !labelsNext
+		}
+
 	}
 
 	span.SetAttributes(
