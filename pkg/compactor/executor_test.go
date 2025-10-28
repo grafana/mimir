@@ -42,7 +42,6 @@ func makeTestCompactorConfig(PlanningMode, schedulerAddress string) Config {
 		SymbolsFlushersConcurrency:          1,
 		MaxBlockUploadValidationConcurrency: 1,
 		BlockRanges:                         mimir_tsdb.DurationList{2 * time.Hour, 12 * time.Hour, 24 * time.Hour},
-		CompactionConcurrency:               1,
 	}
 }
 
@@ -143,7 +142,7 @@ func TestSchedulerExecutor_JobStatusUpdates(t *testing.T) {
 			setupMock: func(mock *mockCompactorSchedulerClient) {
 				mock.LeaseJobFunc = func(_ context.Context, _ *compactorschedulerpb.LeaseJobRequest) (*compactorschedulerpb.LeaseJobResponse, error) {
 					return &compactorschedulerpb.LeaseJobResponse{
-						Key:  &compactorschedulerpb.JobKey{Id: "test-tenant"},
+						Key:  &compactorschedulerpb.JobKey{Id: "planning-job"},
 						Spec: &compactorschedulerpb.JobSpec{Tenant: "test-tenant", Job: &compactorschedulerpb.CompactionJob{}, JobType: compactorschedulerpb.PLANNING},
 					}, nil
 				}
@@ -177,8 +176,6 @@ func TestSchedulerExecutor_JobStatusUpdates(t *testing.T) {
 
 			c, _, _, _, _ := prepareWithConfigProvider(t, cfg, bucketClient, newMockConfigProvider())
 			c.bucketClient = bucketClient
-
-			c.shardingStrategy = newSplitAndMergeShardingStrategy(nil, nil, nil, c.cfgProvider)
 
 			gotWork, err := schedulerExec.leaseAndExecuteJob(context.Background(), c, "compactor-1")
 			require.NoError(t, err)
@@ -243,7 +240,7 @@ func TestSchedulerExecutor_BackoffBehavior(t *testing.T) {
 			setupMock: func(mock *mockCompactorSchedulerClient) {
 				mock.LeaseJobFunc = func(_ context.Context, _ *compactorschedulerpb.LeaseJobRequest) (*compactorschedulerpb.LeaseJobResponse, error) {
 					resp := &compactorschedulerpb.LeaseJobResponse{
-						Key: &compactorschedulerpb.JobKey{Id: "user-1"},
+						Key: &compactorschedulerpb.JobKey{Id: "planning-job"},
 						Spec: &compactorschedulerpb.JobSpec{
 							Tenant:  "user-1",
 							Job:     &compactorschedulerpb.CompactionJob{Split: false, BlockIds: [][]byte{}}, // Empty BlockIds = planning
@@ -287,8 +284,6 @@ func TestSchedulerExecutor_BackoffBehavior(t *testing.T) {
 
 			c, _, _, _, _ := prepareWithConfigProvider(t, cfg, bucketClient, newMockConfigProvider())
 			c.bucketClient = bucketClient
-
-			c.shardingStrategy = newSplitAndMergeShardingStrategy(nil, nil, nil, c.cfgProvider)
 
 			reg := prometheus.NewPedanticRegistry()
 			c.ring, c.ringLifecycler, _ = newRingAndLifecycler(cfg.ShardingRing, log.NewNopLogger(), reg)
@@ -388,7 +383,7 @@ func TestSchedulerExecutor_PlannedJobsRetryBehavior(t *testing.T) {
 	mockSchedulerClient := &mockCompactorSchedulerClient{
 		LeaseJobFunc: func(_ context.Context, _ *compactorschedulerpb.LeaseJobRequest) (*compactorschedulerpb.LeaseJobResponse, error) {
 			return &compactorschedulerpb.LeaseJobResponse{
-				Key:  &compactorschedulerpb.JobKey{Id: "test-tenant"},
+				Key:  &compactorschedulerpb.JobKey{Id: "planning-job"},
 				Spec: &compactorschedulerpb.JobSpec{Tenant: "test-tenant", Job: &compactorschedulerpb.CompactionJob{}, JobType: compactorschedulerpb.PLANNING},
 			}, nil
 		},
@@ -410,16 +405,7 @@ func TestSchedulerExecutor_PlannedJobsRetryBehavior(t *testing.T) {
 	require.NoError(t, err)
 	schedulerExec.schedulerClient = mockSchedulerClient
 
-	mcp := newMockConfigProvider()
-	mcp.maxPerBlockUploadConcurrency = map[string]int{"test-tenant": 1}
-	c, _, _, _, _ := prepareWithConfigProvider(t, cfg, &bucket.ClientMock{}, mcp)
-
-	bucketClient := &bucket.ClientMock{}
-	bucketClient.MockIter("test-tenant/", []string{}, nil)
-	bucketClient.MockIter("test-tenant/markers/", []string{}, nil)
-	c.bucketClient = bucketClient
-
-	c.shardingStrategy = newSplitAndMergeShardingStrategy(nil, nil, nil, c.cfgProvider)
+	c, _, _, _, _ := prepareWithConfigProvider(t, cfg, &bucket.ClientMock{}, newMockConfigProvider())
 
 	gotWork, err := schedulerExec.leaseAndExecuteJob(context.Background(), c, "compactor-1")
 	require.NoError(t, err, "should eventually succeed with plannedJobs retry policy")
@@ -461,8 +447,6 @@ func TestSchedulerExecutor_NoGoRoutineLeak(t *testing.T) {
 
 	c, _, _, _, _ := prepareWithConfigProvider(t, cfg, bucketClient, newMockConfigProvider())
 	c.bucketClient = bucketClient
-
-	c.shardingStrategy = newSplitAndMergeShardingStrategy(nil, nil, nil, c.cfgProvider)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	gotWork, err := schedulerExec.leaseAndExecuteJob(ctx, c, "compactor-1")

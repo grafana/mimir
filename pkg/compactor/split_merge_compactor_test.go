@@ -550,6 +550,7 @@ func TestMultitenantCompactor_ShouldSupportSplitAndMergeCompactor(t *testing.T) 
 				seriesID := 0
 
 				appendHistograms := func(db *tsdb.DB) {
+					db.EnableNativeHistograms()
 
 					appendHistogram := func(seriesID int, ts int64) {
 						lbls := labels.FromStrings("series_id", strconv.Itoa(seriesID))
@@ -658,6 +659,7 @@ func TestMultitenantCompactor_ShouldSupportSplitAndMergeCompactor(t *testing.T) 
 				fetcherDir,
 				reg,
 				nil,
+				nil,
 				0,
 			)
 			require.NoError(t, err)
@@ -749,6 +751,7 @@ func TestMultitenantCompactor_ShouldGuaranteeSeriesShardingConsistencyOverTheTim
 		userBucket,
 		fetcherDir,
 		reg,
+		nil,
 		nil,
 		0,
 	)

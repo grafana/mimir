@@ -1028,7 +1028,7 @@ Usage of ./cmd/mimir/mimir:
   -compactor.block-ranges comma-separated-list-of-durations
     	List of compaction time ranges. (default 2h0m0s,12h0m0s,24h0m0s)
   -compactor.block-sync-concurrency int
-    	Number of goroutines to use when downloading blocks for compaction and uploading resulting blocks. (default 8)
+    	Number of Go routines to use when downloading blocks for compaction and uploading resulting blocks. (default 8)
   -compactor.block-upload-enabled
     	Enable block upload API for the tenant.
   -compactor.block-upload-max-block-size-bytes int
@@ -1061,8 +1061,10 @@ Usage of ./cmd/mimir/mimir:
     	Comma separated list of tenants that cannot be compacted by the compactor. If specified, and the compactor would normally pick a given tenant for compaction (via -compactor.enabled-tenants or sharding), it will be ignored instead.
   -compactor.enabled-tenants comma-separated-list-of-strings
     	Comma separated list of tenants that can be compacted. If specified, only these tenants will be compacted by the compactor, otherwise all tenants can be compacted. Subject to sharding.
-  -compactor.first-level-compaction-skip-future-max-time
-    	[experimental] When enabled, the compactor skips first-level compaction jobs if any source block has a MaxTime more recent than the wait period threshold. This prevents premature compaction of blocks that may still receive late-arriving data.
+  -compactor.executor-max-retry-backoff duration
+    	[experimental] Maximum backoff time for compaction executor retries when sending scheduler status updates. (default 32s)
+  -compactor.executor-min-retry-backoff duration
+    	[experimental] Minimum backoff time for compaction executor retries when sending scheduler status updates. (default 1s)
   -compactor.first-level-compaction-wait-period duration
     	How long the compactor waits before compacting first-level blocks that are uploaded by the ingesters. This configuration option allows for the reduction of cases where the compactor begins to compact blocks before all ingesters have uploaded their blocks to the storage. (default 25m0s)
   -compactor.max-block-upload-validation-concurrency int
@@ -1078,13 +1080,15 @@ Usage of ./cmd/mimir/mimir:
   -compactor.max-per-block-upload-concurrency int
     	Maximum number of TSDB segment files that the compactor can upload concurrently per block. (default 8)
   -compactor.meta-sync-concurrency int
-    	Number of goroutines to use when syncing block meta files from the long term storage. (default 20)
+    	Number of Go routines to use when syncing block meta files from the long term storage. (default 20)
+  -compactor.no-blocks-file-cleanup-enabled
+    	[experimental] If enabled, will delete the bucket-index, markers and debug files in the tenant bucket when there are no blocks left in the index.
   -compactor.partial-block-deletion-delay duration
     	If a partial block (unfinished block without meta.json file) hasn't been modified for this time, it will be marked for deletion. The minimum accepted value is 4h0m0s: a lower value will be ignored and the feature disabled. 0 to disable. (default 1d)
   -compactor.planning-mode string
     	[experimental] Compactor operation mode. Supported values are: standalone (plan and execute compactions), scheduler (request jobs from a remote scheduler). (default "standalone")
   -compactor.ring.auto-forget-unhealthy-periods int
-    	Number of consecutive timeout periods after which Mimir automatically removes an unhealthy instance in the ring. Set to 0 to disable auto-forget. (default 10)
+    	Number of consecutive timeout periods an unhealthy instance in the ring is automatically removed after. Set to 0 to disable auto-forget. (default 10)
   -compactor.ring.consul.acl-token string
     	ACL Token used to interact with Consul.
   -compactor.ring.consul.cas-retry-delay duration
@@ -1220,9 +1224,9 @@ Usage of ./cmd/mimir/mimir:
   -compactor.tenant-cleanup-delay duration
     	For tenants marked for deletion, this is the time between deletion of the last block, and doing final cleanup (marker files, debug files) of the tenant. (default 6h0m0s)
   -compactor.update-blocks-concurrency int
-    	Number of goroutines to use when updating blocks metadata during bucket index updates. (default 1)
+    	Number of Go routines to use when updating blocks metadata during bucket index updates. (default 1)
   -compactor.upload-sparse-index-headers
-    	[experimental] If enabled, the compactor constructs and uploads sparse index headers to object storage during each compaction cycle. This allows store-gateway instances to use the sparse headers from object storage instead of recreating them locally. (default true)
+    	[experimental] If enabled, the compactor constructs and uploads sparse index headers to object storage during each compaction cycle. This allows store-gateway instances to use the sparse headers from object storage instead of recreating them locally.
   -config.expand-env
     	Expands ${var} or $var in config according to the values of the environment variables.
   -config.file value

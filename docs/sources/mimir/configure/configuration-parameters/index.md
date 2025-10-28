@@ -2920,6 +2920,7 @@ The `ingester_client` block configures how the distributors connect to the inges
 
 The `grpc_client` block configures the gRPC client used to communicate between two Mimir components. The supported CLI flags `<prefix>` used to reference this configuration block are:
 
+- `compactor.scheduler`
 - `ingester.client`
 - `querier.frontend-client`
 - `querier.scheduler-client`
@@ -5266,12 +5267,12 @@ The `compactor` block configures the compactor component.
 # CLI flag: -compactor.block-ranges
 [block_ranges: <list of durations> | default = 2h0m0s,12h0m0s,24h0m0s]
 
-# (advanced) Number of goroutines to use when downloading blocks for compaction
+# (advanced) Number of Go routines to use when downloading blocks for compaction
 # and uploading resulting blocks.
 # CLI flag: -compactor.block-sync-concurrency
 [block_sync_concurrency: <int> | default = 8]
 
-# (advanced) Number of goroutines to use when syncing block meta files from the
+# (advanced) Number of Go routines to use when syncing block meta files from the
 # long term storage.
 # CLI flag: -compactor.meta-sync-concurrency
 [meta_sync_concurrency: <int> | default = 20]
@@ -5300,13 +5301,6 @@ The `compactor` block configures the compactor component.
 # have uploaded their blocks to the storage.
 # CLI flag: -compactor.first-level-compaction-wait-period
 [first_level_compaction_wait_period: <duration> | default = 25m]
-
-# (experimental) When enabled, the compactor skips first-level compaction jobs
-# if any source block has a MaxTime more recent than the wait period threshold.
-# This prevents premature compaction of blocks that may still receive
-# late-arriving data.
-# CLI flag: -compactor.first-level-compaction-skip-future-max-time
-[first_level_compaction_skip_future_max_time: <boolean> | default = false]
 
 # (advanced) How frequently the compactor should run blocks cleanup and
 # maintenance, as well as update the bucket index.
@@ -5340,6 +5334,11 @@ The `compactor` block configures the compactor component.
 # CLI flag: -compactor.max-compaction-time
 [max_compaction_time: <duration> | default = 1h]
 
+# (experimental) If enabled, will delete the bucket-index, markers and debug
+# files in the tenant bucket when there are no blocks left in the index.
+# CLI flag: -compactor.no-blocks-file-cleanup-enabled
+[no_blocks_file_cleanup_enabled: <boolean> | default = false]
+
 # (advanced) Number of goroutines opening blocks before compaction.
 # CLI flag: -compactor.max-opening-blocks-concurrency
 [max_opening_blocks_concurrency: <int> | default = 1]
@@ -5359,7 +5358,7 @@ The `compactor` block configures the compactor component.
 # CLI flag: -compactor.max-block-upload-validation-concurrency
 [max_block_upload_validation_concurrency: <int> | default = 1]
 
-# (advanced) Number of goroutines to use when updating blocks metadata during
+# (advanced) Number of Go routines to use when updating blocks metadata during
 # bucket index updates.
 # CLI flag: -compactor.update-blocks-concurrency
 [update_blocks_concurrency: <int> | default = 1]
@@ -5459,9 +5458,8 @@ sharding_ring:
   # CLI flag: -compactor.ring.wait-active-instance-timeout
   [wait_active_instance_timeout: <duration> | default = 10m]
 
-  # (advanced) Number of consecutive timeout periods after which Mimir
-  # automatically removes an unhealthy instance in the ring. Set to 0 to disable
-  # auto-forget.
+  # (advanced) Number of consecutive timeout periods an unhealthy instance in
+  # the ring is automatically removed after. Set to 0 to disable auto-forget.
   # CLI flag: -compactor.ring.auto-forget-unhealthy-periods
   [auto_forget_unhealthy_periods: <int> | default = 10]
 
@@ -5476,7 +5474,45 @@ sharding_ring:
 # store-gateway instances to use the sparse headers from object storage instead
 # of recreating them locally.
 # CLI flag: -compactor.upload-sparse-index-headers
-[upload_sparse_index_headers: <boolean> | default = true]
+[upload_sparse_index_headers: <boolean> | default = false]
+
+# (experimental) Compactor operation mode. Supported values are: standalone
+# (plan and execute compactions), scheduler (request jobs from a remote
+# scheduler).
+# CLI flag: -compactor.planning-mode
+[planning_mode: <string> | default = "standalone"]
+
+# (experimental) Compactor scheduler endpoint. Required when compactor mode is
+# 'scheduler'.
+# CLI flag: -compactor.scheduler-endpoint
+[scheduler_address: <string> | default = ""]
+
+# (experimental) Interval between scheduler job lease updates.
+# CLI flag: -compactor.scheduler-update-interval
+[scheduler_update_interval: <duration> | default = 15s]
+
+# (experimental) Minimum backoff time between scheduler job lease requests.
+# CLI flag: -compactor.scheduler-min-leasing-backoff
+[scheduler_min_backoff: <duration> | default = 100ms]
+
+# (experimental) Maximum backoff time between scheduler job lease requests.
+# CLI flag: -compactor.scheduler-max-leasing-backoff
+[scheduler_max_backoff: <duration> | default = 2m]
+
+# The grpc_client block configures the gRPC client used to communicate between
+# two Mimir components.
+# The CLI flags prefix for this block configuration is: compactor.scheduler
+[grpc_client_config: <grpc_client>]
+
+# (experimental) Minimum backoff time for compaction executor retries when
+# sending scheduler status updates.
+# CLI flag: -compactor.executor-min-retry-backoff
+[executor_retry_min_backoff: <duration> | default = 1s]
+
+# (experimental) Maximum backoff time for compaction executor retries when
+# sending scheduler status updates.
+# CLI flag: -compactor.executor-max-retry-backoff
+[executor_retry_max_backoff: <duration> | default = 32s]
 ```
 
 ### store_gateway
