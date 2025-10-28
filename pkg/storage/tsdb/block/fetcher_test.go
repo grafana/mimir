@@ -5,6 +5,7 @@ package block
 import (
 	"context"
 	crypto_rand "crypto/rand"
+	"fmt"
 	"os"
 	"path"
 	"path/filepath"
@@ -560,4 +561,98 @@ func generateBlockUploadedAtTimestamp(t *testing.T, bkt objstore.Bucket, l log.L
 	_, err = Upload(context.Background(), l, bkt, fixedTimeULIDDir, meta)
 	require.NoError(t, err)
 	return fixedTimeULID
+}
+
+func TestMetaFetcher_CacheMetrics(t *testing.T) {
+	var (
+		ctx    = context.Background()
+		logger = log.NewNopLogger()
+	)
+
+	bkt, err := filesystem.NewBucketClient(filesystem.Config{Directory: t.TempDir()})
+	require.NoError(t, err)
+
+	blockID, blockDir := createTestBlock(t)
+	_, err = Upload(ctx, logger, bkt, blockDir, nil)
+	require.NoError(t, err)
+
+	testCases := map[string]struct {
+		setup               func(t *testing.T) (*prometheus.Registry, *MetaFetcher)
+		expectedLoads       int
+		expectedCachedLoads int
+		expectedDiskLoads   int
+	}{
+		"first fetch should hit object storage": {
+			setup: func(t *testing.T) (*prometheus.Registry, *MetaFetcher) {
+				reg := prometheus.NewPedanticRegistry()
+				fetcher, err := NewMetaFetcher(logger, 10, objstore.WrapWithMetrics(bkt, reg, "test"), t.TempDir(), reg, nil, 0)
+				require.NoError(t, err)
+				return reg, fetcher
+			},
+			expectedLoads: 1,
+		},
+		"second fetch with same fetcher should hit in-memory cache": {
+			setup: func(t *testing.T) (*prometheus.Registry, *MetaFetcher) {
+				reg := prometheus.NewPedanticRegistry()
+				fetcher, err := NewMetaFetcher(logger, 10, objstore.WrapWithMetrics(bkt, reg, "test"), t.TempDir(), reg, nil, 0)
+				require.NoError(t, err)
+				_, _, err = fetcher.Fetch(ctx)
+				require.NoError(t, err)
+				return reg, fetcher
+			},
+			expectedLoads:       2,
+			expectedCachedLoads: 1,
+		},
+		"new fetcher should hit disk cache": {
+			setup: func(t *testing.T) (*prometheus.Registry, *MetaFetcher) {
+				fetcherDir := t.TempDir()
+				reg1 := prometheus.NewPedanticRegistry()
+				fetcher1, err := NewMetaFetcher(logger, 10, objstore.WrapWithMetrics(bkt, reg1, "test"), fetcherDir, reg1, nil, 0)
+				require.NoError(t, err)
+				_, _, err = fetcher1.Fetch(ctx)
+				require.NoError(t, err)
+
+				reg2 := prometheus.NewPedanticRegistry()
+				fetcher2, err := NewMetaFetcher(logger, 10, objstore.WrapWithMetrics(bkt, reg2, "test"), fetcherDir, reg2, nil, 0)
+				require.NoError(t, err)
+				return reg2, fetcher2
+			},
+			expectedLoads:     1,
+			expectedDiskLoads: 1,
+		},
+		"no disk cache dir should not increment disk metrics": {
+			setup: func(t *testing.T) (*prometheus.Registry, *MetaFetcher) {
+				reg := prometheus.NewPedanticRegistry()
+				fetcher, err := NewMetaFetcher(logger, 10, objstore.WrapWithMetrics(bkt, reg, "test"), "", reg, nil, 0)
+				require.NoError(t, err)
+				return reg, fetcher
+			},
+			expectedLoads: 1,
+		},
+	}
+
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			reg, fetcher := tc.setup(t)
+
+			metas, _, err := fetcher.Fetch(ctx)
+			require.NoError(t, err)
+			require.Len(t, metas, 1)
+			require.Contains(t, metas, blockID)
+
+			require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
+				# HELP blocks_meta_cached_loads Block metadata loads served from in-memory cache
+				# TYPE blocks_meta_cached_loads counter
+				blocks_meta_cached_loads `+fmt.Sprintf("%d", tc.expectedCachedLoads)+`
+
+				# HELP blocks_meta_disk_loads Block metadata loads served from local disk
+				# TYPE blocks_meta_disk_loads counter
+				blocks_meta_disk_loads `+fmt.Sprintf("%d", tc.expectedDiskLoads)+`
+
+				# HELP blocks_meta_loads_total Total number of block metadata load attempts
+				# TYPE blocks_meta_loads_total counter
+				blocks_meta_loads_total `+fmt.Sprintf("%d", tc.expectedLoads)+`
+			`), "blocks_meta_loads_total", "blocks_meta_cached_loads", "blocks_meta_disk_loads"))
+		})
+	}
 }

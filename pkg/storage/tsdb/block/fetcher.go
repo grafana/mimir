@@ -39,6 +39,10 @@ type FetcherMetrics struct {
 	SyncDuration prometheus.Histogram
 
 	Synced *extprom.TxGaugeVec
+
+	Loads       prometheus.Counter
+	CachedLoads prometheus.Counter
+	DiskLoads   prometheus.Counter
 }
 
 // Submit applies new values for metrics tracked by transaction GaugeVec.
@@ -113,6 +117,18 @@ func NewFetcherMetrics(reg prometheus.Registerer, syncedExtraLabels [][]string) 
 			{LookbackExcludedMeta},
 		}, syncedExtraLabels...)...,
 	)
+	m.Loads = promauto.With(reg).NewCounter(prometheus.CounterOpts{
+		Name: "blocks_meta_loads_total",
+		Help: "Total number of block metadata load attempts",
+	})
+	m.CachedLoads = promauto.With(reg).NewCounter(prometheus.CounterOpts{
+		Name: "blocks_meta_cached_loads",
+		Help: "Block metadata loads served from in-memory cache",
+	})
+	m.DiskLoads = promauto.With(reg).NewCounter(prometheus.CounterOpts{
+		Name: "blocks_meta_disk_loads",
+		Help: "Block metadata loads served from local disk",
+	})
 	return &m
 }
 
@@ -182,6 +198,9 @@ var (
 // loadMeta returns metadata from object storage or error.
 // It returns ErrorSyncMetaNotFound and ErrorSyncMetaCorrupted sentinel errors in those cases.
 func (f *MetaFetcher) loadMeta(ctx context.Context, id ulid.ULID) (*Meta, error) {
+
+	f.metrics.Loads.Inc()
+
 	var (
 		metaFile       = path.Join(id.String(), MetaFilename)
 		cachedBlockDir = filepath.Join(f.cacheDir, id.String())
@@ -211,6 +230,7 @@ func (f *MetaFetcher) loadMeta(ctx context.Context, id ulid.ULID) (*Meta, error)
 	// - The block has been deleted: the loadMeta() function will not be called at all, because the block
 	//   was not discovered while iterating the bucket since all its files were already deleted.
 	if m, seen := f.cached[id]; seen {
+		f.metrics.CachedLoads.Inc()
 		return m, nil
 	}
 
@@ -218,6 +238,7 @@ func (f *MetaFetcher) loadMeta(ctx context.Context, id ulid.ULID) (*Meta, error)
 	if f.cacheDir != "" {
 		m, err := ReadMetaFromDir(cachedBlockDir)
 		if err == nil {
+			f.metrics.DiskLoads.Inc()
 			return m, nil
 		}
 
