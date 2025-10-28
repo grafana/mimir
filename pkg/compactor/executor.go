@@ -4,23 +4,25 @@ package compactor
 
 import (
 	"context"
-	"crypto/rand"
 	"fmt"
+	"sync"
 	"time"
 
+	"github.com/efficientgo/core/errors"
 	"github.com/failsafe-go/failsafe-go"
 	"github.com/failsafe-go/failsafe-go/retrypolicy"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/backoff"
 	"github.com/grafana/dskit/grpcutil"
-	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/client_golang/prometheus"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 
 	"github.com/grafana/mimir/pkg/compactor/scheduler/compactorschedulerpb"
+	"github.com/grafana/mimir/pkg/storage/bucket"
+	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/util"
 )
 
@@ -224,14 +226,19 @@ func (e *schedulerExecutor) leaseAndExecuteJob(ctx context.Context, c *Multitena
 
 	// Create a cancellable context for this job that can be canceled if the scheduler cancels the job
 	jobCtx, cancelJob := context.WithCancelCause(ctx)
-
+	wg := sync.WaitGroup{}
+	wg.Add(1)
 	// Start async keep-alive updater for periodic IN_PROGRESS messages
-	go e.startJobStatusUpdater(jobCtx, resp.Key, resp.Spec, cancelJob)
+	go func() {
+		e.startJobStatusUpdater(jobCtx, resp.Key, resp.Spec, cancelJob)
+		wg.Done()
+	}()
 
 	switch jobType {
 	case compactorschedulerpb.COMPACTION:
 		status, err := e.executeCompactionJob(jobCtx, c, resp.Spec)
 		cancelJob(err)
+		wg.Wait()
 		if err != nil {
 			level.Warn(e.logger).Log("msg", "failed to execute job", "job_id", jobID, "tenant", jobTenant, "job_type", jobType, "err", err)
 			e.sendFinalJobStatus(ctx, resp.Key, resp.Spec, compactorschedulerpb.REASSIGN)
@@ -240,8 +247,9 @@ func (e *schedulerExecutor) leaseAndExecuteJob(ctx context.Context, c *Multitena
 		e.sendFinalJobStatus(ctx, resp.Key, resp.Spec, status)
 		return true, nil
 	case compactorschedulerpb.PLANNING:
-		plannedJobs, planErr := e.executePlanningJob(jobCtx, c, resp.Spec)
+		plannedJobs, planErr := e.executePlanningJob(jobCtx, c, resp.Key.Id)
 		cancelJob(planErr)
+		wg.Wait()
 		if planErr != nil {
 			level.Warn(e.logger).Log("msg", "failed to execute planning job", "job_id", jobID, "tenant", jobTenant, "job_type", jobType, "err", planErr)
 			// Planning jobs only send final status updates on failure
@@ -250,7 +258,7 @@ func (e *schedulerExecutor) leaseAndExecuteJob(ctx context.Context, c *Multitena
 		}
 
 		// For planning jobs, no final status update is sent - results are communicated via PlannedJobs
-		if err := e.sendPlannedJobs(ctx, resp.Spec, resp.Key, plannedJobs); err != nil {
+		if err := e.sendPlannedJobs(ctx, resp.Key, plannedJobs); err != nil {
 			level.Warn(e.logger).Log("msg", "failed to send planned jobs", "job_id", jobID, "tenant", jobTenant, "num_jobs", len(plannedJobs), "err", err)
 			return true, err
 		}
@@ -279,25 +287,89 @@ func (e *schedulerExecutor) executeCompactionJob(ctx context.Context, c *Multite
 	return compactorschedulerpb.COMPLETE, nil
 }
 
-func (e *schedulerExecutor) executePlanningJob(ctx context.Context, c *MultitenantCompactor, spec *compactorschedulerpb.JobSpec) ([]*compactorschedulerpb.PlannedCompactionJob, error) {
-	randBlockID, err := ulid.New(ulid.Timestamp(time.Unix(0, 0)), rand.Reader)
+func (e *schedulerExecutor) executePlanningJob(ctx context.Context, c *MultitenantCompactor, tenant string) ([]*compactorschedulerpb.PlannedCompactionJob, error) {
+	userBucket := bucket.NewUserBucketClient(tenant, c.bucketClient, c.cfgProvider)
+	userLogger := log.With(e.logger, "user", tenant)
+
+	reg := prometheus.NewRegistry()
+	defer c.syncerMetrics.gatherThanosSyncerMetrics(reg, userLogger)
+
+	syncer, err := c.createMetaSyncerForUser(tenant, userBucket, userLogger, reg)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "failed to create meta syncer")
 	}
 
-	plannedJob := &compactorschedulerpb.PlannedCompactionJob{
-		Id: randBlockID.String(),
-		Job: &compactorschedulerpb.CompactionJob{
-			BlockIds: [][]byte{[]byte(randBlockID.String())},
-			Split:    false,
-		},
+	bucketCompactor, err := c.newBucketCompactor(ctx, tenant, userLogger, userBucket, syncer, reg)
+	if err != nil {
+		return nil, errors.Wrap(err, "creating bucket compactor")
 	}
 
-	return []*compactorschedulerpb.PlannedCompactionJob{plannedJob}, nil
+	level.Info(userLogger).Log("msg", "start sync of metas")
+	if err := syncer.SyncMetas(ctx); err != nil {
+		return nil, errors.Wrap(err, "sync")
+	}
+
+	level.Info(userLogger).Log("msg", "start of GC")
+	if err := syncer.GarbageCollect(ctx); err != nil {
+		return nil, errors.Wrap(err, "blocks garbage collect")
+	}
+
+	grouper := c.blocksGrouperFactory(ctx, c.compactorCfg, c.cfgProvider, tenant, userLogger, reg)
+	jobs, err := grouper.Groups(syncer.Metas())
+	if err != nil {
+		return nil, errors.Wrap(err, "group compaction jobs")
+	}
+
+	if c.jobsOrder != nil {
+		jobs = c.jobsOrder(jobs)
+	} else {
+		level.Info(userLogger).Log("msg", "unknown sorting, jobs will be unsorted")
+	}
+
+	jobs = bucketCompactor.filterJobsByWaitPeriod(ctx, jobs)
+
+	now := time.Now()
+	for _, delta := range bucketCompactor.blockMaxTimeDeltas(now, jobs) {
+		bucketCompactor.metrics.blocksMaxTimeDelta.Observe(delta)
+	}
+
+	plannedJobs := make([]*compactorschedulerpb.PlannedCompactionJob, 0, len(jobs))
+	for _, job := range jobs {
+		toCompact, err := c.blocksPlanner.Plan(ctx, job.metasByMinTime)
+		if err != nil {
+			// Planning is pass-through for the split-merge compactor besides a range double check. If one group of blocks fails it will continue
+			// to fail without intervention. In order to not stop all planning if that somehow occurs warn and continue
+			level.Warn(userLogger).Log("msg", "failed to plan job", "err", err)
+			continue
+		}
+		if len(toCompact) == 0 {
+			continue
+		}
+
+		plannedJob := &compactorschedulerpb.PlannedCompactionJob{
+			Id: job.key,
+			Job: &compactorschedulerpb.CompactionJob{
+				Split:    job.useSplitting,
+				BlockIds: serializeBlockIds(toCompact),
+			},
+		}
+		plannedJobs = append(plannedJobs, plannedJob)
+	}
+
+	level.Info(userLogger).Log("msg", "job planning completed", "num_jobs", len(plannedJobs))
+	return plannedJobs, nil
+}
+
+func serializeBlockIds(metas []*block.Meta) [][]byte {
+	ids := make([][]byte, 0, len(metas))
+	for _, meta := range metas {
+		ids = append(ids, meta.ULID.Bytes())
+	}
+	return ids
 }
 
 // sendPlannedJobs sends the planned compaction jobs back to the scheduler with retries.
-func (e *schedulerExecutor) sendPlannedJobs(ctx context.Context, spec *compactorschedulerpb.JobSpec, key *compactorschedulerpb.JobKey, plannedJobs []*compactorschedulerpb.PlannedCompactionJob) error {
+func (e *schedulerExecutor) sendPlannedJobs(ctx context.Context, key *compactorschedulerpb.JobKey, plannedJobs []*compactorschedulerpb.PlannedCompactionJob) error {
 	req := &compactorschedulerpb.PlannedJobsRequest{
 		Key:  key,
 		Jobs: plannedJobs,
