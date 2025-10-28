@@ -788,7 +788,7 @@ func TestLabelValueTooLongSummaries(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			logged.writes = nil // Clear previous logs
+			logged.Clear()
 
 			handler := Handler(100000, newRequestBuffers, nil, true, true, d.limits, RetryConfig{},
 				d.PushWithMiddlewares,
@@ -1460,6 +1460,12 @@ func (b *logRecorder) Writes() []string {
 	b.mtx.Lock()
 	defer b.mtx.Unlock()
 	return b.writes
+}
+
+func (b *logRecorder) Clear() {
+	b.mtx.Lock()
+	defer b.mtx.Unlock()
+	b.writes = nil
 }
 
 func stringContainsAll(s string, parts []string) bool {
