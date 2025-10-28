@@ -22,7 +22,7 @@ type ScalarScalarBinaryOperation struct {
 	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
 
 	opFunc             binaryOperationFunc
-	emitAnnotationFunc types.EmitAnnotationFunc
+	emitAnnotation     types.EmitAnnotationFunc
 	expressionPosition posrange.PositionRange
 	annotations        *annotations.Annotations
 }
@@ -55,7 +55,7 @@ func NewScalarScalarBinaryOperation(
 		return nil, compat.NewNotSupportedError(fmt.Sprintf("binary expression with '%s'", op))
 	}
 
-	s.emitAnnotationFunc = func(generator types.AnnotationGenerator) {
+	s.emitAnnotation = func(generator types.AnnotationGenerator) {
 		s.annotations.Add(generator("", s.expressionPosition))
 	}
 
@@ -84,7 +84,7 @@ func (s *ScalarScalarBinaryOperation) GetValues(ctx context.Context) (types.Scal
 	for i, left := range leftValues.Samples {
 		right := rightValues.Samples[i]
 
-		f, h, ok, valid, err := s.opFunc(left.F, right.F, nil, nil, true, true, s.emitAnnotationFunc)
+		f, h, ok, valid, err := s.opFunc(left.F, right.F, nil, nil, true, true, s.emitAnnotation)
 
 		if err != nil {
 			return types.ScalarData{}, err

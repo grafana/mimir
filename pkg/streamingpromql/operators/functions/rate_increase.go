@@ -6,8 +6,9 @@
 package functions
 
 import (
-	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"strings"
+
+	"github.com/prometheus/prometheus/promql/parser/posrange"
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/promql"

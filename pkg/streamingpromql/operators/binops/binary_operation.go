@@ -217,7 +217,7 @@ type vectorVectorBinaryOperationEvaluator struct {
 	memoryConsumptionTracker *limiter.MemoryConsumptionTracker
 	annotations              *annotations.Annotations
 	expressionPosition       posrange.PositionRange
-	emitAnnotationFunc       types.EmitAnnotationFunc
+	emitAnnotation           types.EmitAnnotationFunc
 }
 
 func newVectorVectorBinaryOperationEvaluator(
@@ -245,7 +245,7 @@ func newVectorVectorBinaryOperationEvaluator(
 		return vectorVectorBinaryOperationEvaluator{}, compat.NewNotSupportedError(fmt.Sprintf("binary expression with '%s'", op))
 	}
 
-	e.emitAnnotationFunc = func(generator types.AnnotationGenerator) {
+	e.emitAnnotation = func(generator types.AnnotationGenerator) {
 		e.annotations.Add(generator("", e.expressionPosition))
 	}
 
@@ -382,7 +382,7 @@ func (e *vectorVectorBinaryOperationEvaluator) computeResult(left types.InstantV
 	}
 
 	appendNextSample := func() error {
-		resultFloat, resultHist, keep, valid, err := e.opFunc(lF, rF, lH, rH, takeOwnershipOfLeft, takeOwnershipOfRight, e.emitAnnotationFunc)
+		resultFloat, resultHist, keep, valid, err := e.opFunc(lF, rF, lH, rH, takeOwnershipOfLeft, takeOwnershipOfRight, e.emitAnnotation)
 
 		if err != nil {
 			if errors.Is(err, histogram.ErrHistogramsIncompatibleSchema) {
