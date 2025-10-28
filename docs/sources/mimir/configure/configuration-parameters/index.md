@@ -582,20 +582,20 @@ parquet_converter:
         # CLI flag: -parquet-converter.ring.multi.secondary
         [secondary: <string> | default = ""]
 
-        # (advanced) Mirror writes to secondary store.
+        # (advanced) Mirror writes to the secondary store.
         # CLI flag: -parquet-converter.ring.multi.mirror-enabled
         [mirror_enabled: <boolean> | default = false]
 
-        # (advanced) Timeout for storing value to secondary store.
+        # (advanced) Timeout for storing a value to the secondary store.
         # CLI flag: -parquet-converter.ring.multi.mirror-timeout
         [mirror_timeout: <duration> | default = 2s]
 
-    # (advanced) Period at which to heartbeat to the ring. 0 = disabled.
+    # (advanced) Period at which to heartbeat to the ring.
     # CLI flag: -parquet-converter.ring.heartbeat-period
     [heartbeat_period: <duration> | default = 15s]
 
-    # (advanced) The heartbeat timeout after which parquet-converters are
-    # considered unhealthy within the ring. 0 = never (timeout disabled).
+    # (advanced) Heartbeat timeout after which Mimir marks parquet-converters as
+    # unhealthy in the ring.
     # CLI flag: -parquet-converter.ring.heartbeat-timeout
     [heartbeat_timeout: <duration> | default = 1m]
 
@@ -617,7 +617,7 @@ parquet_converter:
     # CLI flag: -parquet-converter.ring.instance-addr
     [instance_addr: <string> | default = ""]
 
-    # (advanced) Enable using a IPv6 instance address. (default false)
+    # (advanced) Enable using an IPv6 instance address.
     # CLI flag: -parquet-converter.ring.instance-enable-ipv6
     [instance_enable_ipv6: <boolean> | default = false]
 
@@ -3323,8 +3323,8 @@ The `etcd` block configures the etcd client. The supported CLI flags `<prefix>` 
 - `ingester.partition-ring`
 - `ingester.ring`
 - `overrides-exporter.ring`
-- `querier.ring`
 - `parquet-converter.ring`
+- `querier.ring`
 - `query-scheduler.ring`
 - `ruler.ring`
 - `store-gateway.sharding-ring`
@@ -3430,8 +3430,8 @@ The `consul` block configures the consul client. The supported CLI flags `<prefi
 - `ingester.partition-ring`
 - `ingester.ring`
 - `overrides-exporter.ring`
-- `querier.ring`
 - `parquet-converter.ring`
+- `querier.ring`
 - `query-scheduler.ring`
 - `ruler.ring`
 - `store-gateway.sharding-ring`

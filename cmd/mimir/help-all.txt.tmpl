@@ -2152,13 +2152,13 @@ Usage of ./cmd/mimir/mimir:
   -parquet-converter.ring.etcd.username string
     	Etcd username.
   -parquet-converter.ring.heartbeat-period duration
-    	Period at which to heartbeat to the ring. 0 = disabled. (default 15s)
+    	Period at which to heartbeat to the ring. (default 15s)
   -parquet-converter.ring.heartbeat-timeout duration
-    	The heartbeat timeout after which parquet-converters are considered unhealthy within the ring. 0 = never (timeout disabled). (default 1m0s)
+    	Heartbeat timeout after which Mimir marks parquet-converters as unhealthy in the ring. (default 1m0s)
   -parquet-converter.ring.instance-addr string
     	IP address to advertise in the ring. Default is auto-detected.
   -parquet-converter.ring.instance-enable-ipv6
-    	Enable using a IPv6 instance address. (default false)
+    	Enable using an IPv6 instance address.
   -parquet-converter.ring.instance-id string
     	Instance ID to register in the ring. (default "<hostname>")
   -parquet-converter.ring.instance-interface-names string
@@ -2166,9 +2166,9 @@ Usage of ./cmd/mimir/mimir:
   -parquet-converter.ring.instance-port int
     	Port to advertise in the ring (defaults to -server.grpc-listen-port).
   -parquet-converter.ring.multi.mirror-enabled
-    	Mirror writes to secondary store.
+    	Mirror writes to the secondary store.
   -parquet-converter.ring.multi.mirror-timeout duration
-    	Timeout for storing value to secondary store. (default 2s)
+    	Timeout for storing a value to the secondary store. (default 2s)
   -parquet-converter.ring.multi.primary string
     	Primary backend storage used by multi-client.
   -parquet-converter.ring.multi.secondary string
