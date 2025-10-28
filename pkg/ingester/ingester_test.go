@@ -8852,7 +8852,7 @@ func TestIngester_inflightPushRequestsBytes(t *testing.T) {
 		}
 
 		require.Eventually(t, func() bool {
-			return i.inflightPushRequestsBytes.Load() > 0
+			return i.inflightPushRequestsBytes.Load() == int64(requestSize)
 		}, targetRequestDuration/3, 3*time.Millisecond)
 
 		require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
