@@ -139,6 +139,7 @@ func (b *parquetBucketBlock) IsConverted(ctx context.Context, bkt objstore.Bucke
 	if err != nil {
 		return false, errors.Wrap(err, "check parquet conversion mark existence")
 	}
+	b.isConvertedCache = exists
 	return exists, nil
 }
 
