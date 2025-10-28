@@ -37,8 +37,8 @@ std.manifestYamlDoc({
 
     // If true, start parquet-converter
     enable_parquet: false,
-    // If true, emulate classic store-gateway behavior by loading the Parquet labels file to disk
-    parquet_store_gateway_load_index_to_disk: false,
+    // If true, use experimental (and currently incomplete) parquet chunks streaming
+    parquet_store_gateway_streaming_enabled: false,
   },
 
   // We explicitely list all important services here, so that it's easy to disable them by commenting out.
@@ -175,7 +175,7 @@ std.manifestYamlDoc({
   local extraStoreGatewayArgs = std.join(
     ' ', [
       (if $._config.enable_parquet then '-log.level=debug -store-gateway.parquet-enabled=true' else null),
-      (if ($._config.enable_parquet && !$._config.parquet_store_gateway_load_index_to_disk) then '-blocks-storage.bucket-store.parquet-load-index-to-disk=false' else null),
+      (if ($._config.enable_parquet && $._config.parquet_store_gateway_streaming_enabled) then '-blocks-storage.bucket-store.parquet-streaming-enabled=true' else null),
     ]
   ),
 
