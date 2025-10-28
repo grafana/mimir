@@ -2,6 +2,8 @@
 
 ## main / unreleased
 
+## 3.0.0-rc.1 2025-10-28
+
 ### Jsonnet
 
 * [CHANGE] Mimir-continuous-test: Use `mimir -target=continuous-test` instead of standalone binary/image. #13097
