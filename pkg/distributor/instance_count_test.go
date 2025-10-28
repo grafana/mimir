@@ -65,8 +65,7 @@ func TestHealthyInstanceDelegate_OnRingInstanceHeartbeat(t *testing.T) {
 				addInstance(desc, "distributor-2", ring.ACTIVE, now.Unix())
 				addInstance(desc, "distributor-3", ring.ACTIVE, now.Add(-5*time.Minute).Unix())
 			},
-			heartbeatTimeout: time.Minute,
-			expectedCount:    2,
+			expectedCount: 2,
 		},
 	}
 
