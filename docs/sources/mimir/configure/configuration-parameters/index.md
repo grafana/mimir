@@ -4473,6 +4473,15 @@ ruler_alertmanager_client_config:
 # CLI flag: -ingest-storage.ingestion-partition-tenant-shard-size
 [ingestion_partitions_tenant_shard_size: <int> | default = 0]
 
+# (experimental) Optional override for the number of partitions to query on the
+# read path when using ingest storage. When set to a value > 0, this overrides
+# -ingest-storage.ingestion-partition-tenant-shard-size for read operations
+# only. This is useful for gracefully migrating to a smaller shard size without
+# disabling shuffle sharding. 0 means use the value from
+# -ingest-storage.ingestion-partition-tenant-shard-size.
+# CLI flag: -ingest-storage.ingestion-partition-tenant-read-shard-size
+[ingestion_partitions_tenant_read_shard_size: <int> | default = 0]
+
 # (experimental) Validation scheme to use for metric and label names.
 # Distributors reject time series that do not adhere to this scheme. Rulers
 # reject rules with unsupported metric or label names. Supported values: legacy,

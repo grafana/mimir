@@ -6676,6 +6676,17 @@
         },
         {
           "kind": "field",
+          "name": "ingestion_partitions_tenant_read_shard_size",
+          "required": false,
+          "desc": "Optional override for the number of partitions to query on the read path when using ingest storage. When set to a value \u003e 0, this overrides -ingest-storage.ingestion-partition-tenant-shard-size for read operations only. This is useful for gracefully migrating to a smaller shard size without disabling shuffle sharding. 0 means use the value from -ingest-storage.ingestion-partition-tenant-shard-size.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "ingest-storage.ingestion-partition-tenant-read-shard-size",
+          "fieldType": "int",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "name_validation_scheme",
           "required": false,
           "desc": "Validation scheme to use for metric and label names. Distributors reject time series that do not adhere to this scheme. Rulers reject rules with unsupported metric or label names. Supported values: legacy, utf8.",
