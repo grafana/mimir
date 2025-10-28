@@ -1920,7 +1920,7 @@ How it **works**:
 
 - Distributors shard series across the active partitions in the partitions ring.
 - Each ingester owns and consumes from one partition.
-- If a partition is not being consumed by any ingester, it means that the data written to that partition is not being available for querying. Moreover, if block-builder is not used in the Mimir cluster, then the data won't be saved to a block.
+- If a partition is not being consumed by any ingester, it means that the data written to that partition is not available for querying. Moreover, if you aren't using block-builder in the Mimir cluster, the data isn't saved to a block.
 
 How to **investigate**:
 
