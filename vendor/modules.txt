@@ -350,7 +350,7 @@ github.com/coreos/go-semver/semver
 ## explicit; go 1.23
 github.com/coreos/go-systemd/v22/activation
 github.com/coreos/go-systemd/v22/journal
-# github.com/cortexproject/promqlsmith v0.0.0-20250908165950-c3fd3c65d5c0
+# github.com/cortexproject/promqlsmith v0.0.0-20251018201159-9e00e5e62e4e
 ## explicit; go 1.24.0
 github.com/cortexproject/promqlsmith
 # github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc
@@ -764,7 +764,7 @@ github.com/grafana/alerting/receivers/wecom/v1
 github.com/grafana/alerting/templates
 github.com/grafana/alerting/templates/gomplate
 github.com/grafana/alerting/templates/mimir
-# github.com/grafana/dskit v0.0.0-20251024134516-10fce42ed131
+# github.com/grafana/dskit v0.0.0-20251028145659-e39fe4d7b998
 ## explicit; go 1.24.0
 github.com/grafana/dskit/backoff
 github.com/grafana/dskit/ballast
