@@ -334,6 +334,7 @@ func sumHistograms(head, tail []promql.HPoint, emitAnnotation types.EmitAnnotati
 
 	counterResetSeen := false
 	notCounterResetSeen := false
+	nhcbBoundsReconciledSeen := false
 
 	trackCounterReset := func(h *histogram.FloatHistogram) {
 		switch h.CounterResetHint {
@@ -350,9 +351,13 @@ func sumHistograms(head, tail []promql.HPoint, emitAnnotation types.EmitAnnotati
 		for _, p := range points {
 			trackCounterReset(p.H)
 
-			if _, _, err := sum.Add(p.H); err != nil {
+			_, _, nhcbBoundsReconciled, err := sum.Add(p.H)
+			if err != nil {
 				err = NativeHistogramErrorToAnnotation(err, emitAnnotation)
 				return false, err
+			}
+			if nhcbBoundsReconciled {
+				nhcbBoundsReconciledSeen = true
 			}
 		}
 
@@ -370,12 +375,19 @@ func sumHistograms(head, tail []promql.HPoint, emitAnnotation types.EmitAnnotati
 	if counterResetSeen && notCounterResetSeen {
 		emitAnnotation(newAggregationCounterResetCollisionWarning)
 	}
+	if nhcbBoundsReconciledSeen {
+		emitAnnotation(newAggregationMismatchedCustomBucketsHistogramInfo)
+	}
 
 	return sum, nil
 }
 
 func newAggregationCounterResetCollisionWarning(_ string, expressionPosition posrange.PositionRange) error {
 	return annotations.NewHistogramCounterResetCollisionWarning(expressionPosition, annotations.HistogramAgg)
+}
+
+func newAggregationMismatchedCustomBucketsHistogramInfo(_ string, expressionPosition posrange.PositionRange) error {
+	return annotations.NewMismatchedCustomBucketsHistogramsInfo(expressionPosition, annotations.HistogramAgg)
 }
 
 var AvgOverTime = FunctionOverRangeVectorDefinition{
@@ -513,12 +525,12 @@ func avgHistograms(head, tail []promql.HPoint, emitAnnotation types.EmitAnnotati
 			contributionByP = contributionByP.Div(count)
 			contributionByAvgSoFar = contributionByAvgSoFar.Div(count)
 
-			change, _, err := contributionByP.Sub(contributionByAvgSoFar)
+			change, _, _, err := contributionByP.Sub(contributionByAvgSoFar)
 			if err != nil {
 				return err
 			}
 
-			avgSoFar, _, err = avgSoFar.Add(change)
+			avgSoFar, _, _, err = avgSoFar.Add(change)
 			if err != nil {
 				return err
 			}
@@ -891,11 +903,14 @@ func histogramIrateIdelta(isRate bool, lastSample, secondLastSample promql.HPoin
 	}
 
 	if !isRate || !lastSample.H.DetectReset(secondLastSample.H) {
-		_, _, err := resultValue.Sub(secondLastSample.H)
+		_, _, nhcbBoundsReconciled, err := resultValue.Sub(secondLastSample.H)
 		if err != nil {
 			// Convert the error to an annotation, if we can.
 			err = NativeHistogramErrorToAnnotation(err, emitAnnotation)
 			return nil, err
+		}
+		if nhcbBoundsReconciled {
+			emitAnnotation(newMismatchedCustomBucketsHistogramInfo)
 		}
 	}
 

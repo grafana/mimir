@@ -380,7 +380,7 @@ func (e *vectorVectorBinaryOperationEvaluator) computeResult(left types.InstantV
 		resultFloat, resultHist, keep, valid, err := e.opFunc(lF, rF, lH, rH, takeOwnershipOfLeft, takeOwnershipOfRight)
 
 		if err != nil {
-			if errors.Is(err, histogram.ErrHistogramsIncompatibleSchema) || errors.Is(err, histogram.ErrHistogramsIncompatibleBounds) {
+			if errors.Is(err, histogram.ErrHistogramsIncompatibleSchema) {
 				emitIncompatibleBucketLayoutAnnotation(e.annotations, e.op, e.expressionPosition)
 				err = nil
 			}
@@ -467,11 +467,11 @@ var arithmeticAndComparisonOperationFuncs = map[parser.ItemType]binaryOperationF
 			var _ bool
 
 			if canMutateLeft {
-				res, _, err = lH.Add(rH)
+				res, _, _, err = lH.Add(rH)
 			} else if canMutateRight {
-				res, _, err = rH.Add(lH)
+				res, _, _, err = rH.Add(lH)
 			} else {
-				res, _, err = lH.Copy().Add(rH)
+				res, _, _, err = lH.Copy().Add(rH)
 			}
 
 			if err != nil {
@@ -493,11 +493,11 @@ var arithmeticAndComparisonOperationFuncs = map[parser.ItemType]binaryOperationF
 			var _ bool
 
 			if canMutateLeft {
-				res, _, err = lH.Sub(rH)
+				res, _, _, err = lH.Sub(rH)
 			} else if canMutateRight {
-				res, _, err = rH.Mul(-1).Add(lH)
+				res, _, _, err = rH.Mul(-1).Add(lH)
 			} else {
-				res, _, err = lH.Copy().Sub(rH)
+				res, _, _, err = lH.Copy().Sub(rH)
 			}
 
 			if err != nil {
