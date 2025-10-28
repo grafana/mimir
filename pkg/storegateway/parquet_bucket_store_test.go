@@ -400,8 +400,8 @@ func TestParquetBlockSet_Filter_ConversionCheck(t *testing.T) {
 	logger := log.NewNopLogger()
 
 	// Two blocks: one converted, one not
-	nonConvertedID := ulid.MustNew(ulid.Now(), nil)
-	convertedID := ulid.MustNew(ulid.Now(), nil)
+	nonConvertedID := ulid.MustNewDefault(time.Now())
+	convertedID := ulid.MustNewDefault(time.Now())
 
 	nonConvertedMeta := &block.Meta{
 		BlockMeta: tsdb.BlockMeta{
