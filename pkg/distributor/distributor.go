@@ -1008,9 +1008,10 @@ func (d *Distributor) validateExemplars(ts *mimirpb.PreallocTimeseries, userID s
 // Returns an error explaining the first validation finding. Non-nil error means the timeseries should be removed from the request.
 // The returned error MUST NOT retain label strings - they point into a gRPC buffer which is re-used.
 // It uses the passed nowt time to observe the delay of sample timestamps.
-func (d *Distributor) validateSeries(nowt time.Time, ts *mimirpb.PreallocTimeseries, userID, group string, skipLabelValidation, skipLabelCountValidation bool, minExemplarTS, maxExemplarTS int64) error {
+func (d *Distributor) validateSeries(nowt time.Time, ts *mimirpb.PreallocTimeseries, userID, group string, skipLabelValidation, skipLabelCountValidation bool, minExemplarTS, maxExemplarTS int64, valueTooLongSummaries *labelValueTooLongSummaries) error {
 	cat := d.costAttributionMgr.SampleTracker(userID)
-	if err := validateLabels(d.sampleValidationMetrics, d.limits, userID, group, ts.Labels, skipLabelValidation, skipLabelCountValidation, cat, nowt, d.log); err != nil {
+
+	if err := validateLabels(d.sampleValidationMetrics, d.limits, userID, group, ts.Labels, skipLabelValidation, skipLabelCountValidation, cat, nowt, valueTooLongSummaries); err != nil {
 		return err
 	}
 
@@ -1320,6 +1321,7 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 		totalSamples, totalExemplars := 0, 0
 		const maxMetricsWithDeduplicatedSamplesToTrace = 10
 		var dedupedPerUnsafeMetricName map[string]int
+		var valueTooLongSummaries labelValueTooLongSummaries
 
 		for tsIdx, ts := range req.Timeseries {
 			totalSamples += len(ts.Samples)
@@ -1337,7 +1339,7 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 			// Note that validateSeries may drop some data in ts.
 			rawSamples := len(ts.Samples)
 			rawHistograms := len(ts.Histograms)
-			validationErr := d.validateSeries(now, &req.Timeseries[tsIdx], userID, pushReq.group, skipLabelValidation, skipLabelCountValidation, minExemplarTS, maxExemplarTS)
+			validationErr := d.validateSeries(now, &req.Timeseries[tsIdx], userID, pushReq.group, skipLabelValidation, skipLabelCountValidation, minExemplarTS, maxExemplarTS, &valueTooLongSummaries)
 
 			if countDroppedNativeHistograms {
 				droppedNativeHistograms += len(ts.Histograms)
@@ -1396,6 +1398,8 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 		if droppedNativeHistograms > 0 {
 			d.droppedNativeHistograms.WithLabelValues(userID).Add(float64(droppedNativeHistograms))
 		}
+
+		d.logLabelValueTooLongSummaries(userID, valueTooLongSummaries)
 
 		d.incomingSamplesPerRequest.WithLabelValues(userID).Observe(float64(totalSamples))
 		d.incomingExemplarsPerRequest.WithLabelValues(userID).Observe(float64(totalExemplars))
@@ -1462,6 +1466,42 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 
 		return firstPartialErr
 	}
+}
+
+func (d *Distributor) logLabelValueTooLongSummaries(userID string, valueTooLongSummaries labelValueTooLongSummaries) {
+	if len(valueTooLongSummaries.summaries) == 0 {
+		return
+	}
+
+	var msg string
+	switch strategy := d.limits.LabelValueLengthOverLimitStrategy(userID); strategy {
+	case validation.LabelValueLengthOverLimitStrategyTruncate:
+		msg = truncatedLabelValueMsg
+	case validation.LabelValueLengthOverLimitStrategyDrop:
+		msg = droppedLabelValueMsg
+	default:
+		panic(fmt.Errorf("unexpected value: %v", strategy))
+	}
+
+	kvs := make([]any, 0, 10+len(valueTooLongSummaries.summaries)*10)
+	kvs = append(kvs,
+		"msg", msg,
+		"limit", d.limits.MaxLabelValueLength(userID),
+		"total_values_exceeding_limit", valueTooLongSummaries.globalCount,
+		"user", userID,
+		"insight", true)
+	for i, summary := range valueTooLongSummaries.summaries {
+		id := strconv.Itoa(i + 1)
+		kvs = append(kvs,
+			"sample_"+id+"_metric_name", summary.metric,
+			"sample_"+id+"_label_name", summary.label,
+			"sample_"+id+"_values_exceeding_limit", summary.count,
+			"sample_"+id+"_value_length", summary.sampleValueLength,
+			"sample_"+id+"_value", summary.sampleValue)
+	}
+
+	level.Warn(d.log).Log(kvs...)
+
 }
 
 // prePushMaxSeriesLimitMiddleware enforces the per-tenant max series limit when the usage-tracker service is enabled.
