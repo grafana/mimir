@@ -314,7 +314,7 @@ func (sp *schedulerProcessor) querierLoop(execCtx context.Context, c schedulerpb
 				if !useSchedulerStreamError {
 					level.Error(logger).Log("msg", "error notifying scheduler about finished query", "err", err, "addr", address)
 				} else if grpcutil.IsCanceled(schedulerStreamError) {
-					level.Debug(logger).Log("msg", "query execution cancelled by frontend", "err", schedulerStreamError, "addr", address)
+					level.Debug(logger).Log("msg", "could not notify scheduler about finished query because query execution was cancelled", "err", schedulerStreamError, "addr", address)
 				} else {
 					level.Error(logger).Log(
 						"msg", "error notifying scheduler about finished query after the scheduler stream failed",

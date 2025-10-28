@@ -237,7 +237,7 @@ func TestSchedulerProcessor_processQueriesOnSingleStream(t *testing.T) {
 		}, time.Second, 10*time.Millisecond, "expected frontend to be informed of query result exactly once")
 
 		require.Eventuallyf(t, func() bool {
-			return strings.Contains(logs.String(), `level=debug user=user-1 msg="query execution cancelled by frontend" err="rpc error: code = Canceled desc = context canceled"`)
+			return strings.Contains(logs.String(), `level=debug user=user-1 msg="could not notify scheduler about finished query because query execution was cancelled" err="rpc error: code = Canceled desc = context canceled"`)
 		}, time.Second, 10*time.Millisecond, "expected cancellation to be logged, have logs:\n%s", logs)
 
 		workerCancel()
@@ -312,7 +312,7 @@ func TestSchedulerProcessor_processQueriesOnSingleStream(t *testing.T) {
 		workerCancel()
 
 		require.Eventuallyf(t, func() bool {
-			return strings.Contains(logs.String(), `level=debug user=user-1 msg="query execution cancelled by frontend" err="rpc error: code = Canceled desc = context canceled"`)
+			return strings.Contains(logs.String(), `level=debug user=user-1 msg="could not notify scheduler about finished query because query execution was cancelled" err="rpc error: code = Canceled desc = context canceled"`)
 		}, time.Second, 10*time.Millisecond, "expected cancellation to be logged, have logs:\n%s", logs)
 	})
 
