@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -24,8 +25,156 @@ import (
 	"github.com/spf13/afero"
 	"go.yaml.in/yaml/v3"
 
+	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/ruler/rulespb"
 	"github.com/grafana/mimir/pkg/util/promqlext"
 )
+
+type ruleRegistry struct {
+	prefix string
+	rules  map[string]map[string]rulespb.RuleGroupList // tenant -> rule file name -> groups
+	mtx    sync.RWMutex
+	logger log.Logger
+}
+
+func newRuleRegistry(prefix string, logger log.Logger) *ruleRegistry {
+	return &ruleRegistry{
+		prefix: prefix,
+		rules:  map[string]map[string]rulespb.RuleGroupList{},
+		mtx:    sync.RWMutex{},
+		logger: logger,
+	}
+}
+
+func (r *ruleRegistry) cleanupUser(userID string) {
+	r.mtx.Lock()
+	defer r.mtx.Unlock()
+	delete(r.rules, userID)
+}
+
+func (r *ruleRegistry) cleanup() {
+	r.mtx.Lock()
+	defer r.mtx.Unlock()
+	clear(r.rules)
+}
+
+func (r *ruleRegistry) users() ([]string, error) {
+	r.mtx.RLock()
+	defer r.mtx.RUnlock()
+
+	result := make([]string, 0, len(r.rules))
+	for userID := range r.rules {
+		if len(r.rules[userID]) > 0 {
+			result = append(result, userID)
+		}
+	}
+	return result, nil
+}
+
+func (r *ruleRegistry) MapRules(user string, ruleConfigs map[string]rulespb.RuleGroupList) (bool, []string, error) {
+	logger := log.With(r.logger, "user", user)
+	r.mtx.Lock()
+	defer r.mtx.Unlock()
+
+	// getLocalRules gets the namespace from the file name of each group.
+	// So the registry uses the same file names as the mapper.
+	path := filepath.Join(r.prefix, user)
+	if _, ok := r.rules[user]; !ok {
+		r.rules[user] = make(map[string]rulespb.RuleGroupList)
+	}
+
+	anyUpdated := false
+	var filenames []string
+
+	for filename, groups := range ruleConfigs {
+		encodedFileName := url.PathEscape(filename)
+		fullFileName := filepath.Join(path, encodedFileName)
+		filenames = append(filenames, fullFileName)
+
+		// Equal compares in order.
+		// The sort makes a new order of the same groups count as no change.
+		slices.SortFunc(groups, func(a, b *rulespb.RuleGroupDesc) int {
+			return strings.Compare(b.Name, a.Name)
+		})
+
+		if !groups.Equal(r.rules[user][fullFileName]) {
+			level.Info(logger).Log("msg", "updating rule namespace", "file", fullFileName)
+			cloneLabelStrings(groups)
+			anyUpdated = true
+			r.rules[user][fullFileName] = groups
+		}
+	}
+
+	// and clean up any that shouldn't exist TODO
+	existingFiles := make([]string, 0, len(r.rules[user]))
+	for key := range r.rules[user] {
+		existingFiles = append(existingFiles, key)
+	}
+
+	for _, existingFile := range existingFiles {
+		name := filepath.Base(existingFile)
+		decodedNamespace, err := url.PathUnescape(name)
+		if err != nil {
+			level.Warn(logger).Log("msg", "unable to remove rule file from registry", "file", existingFile, "err", err)
+			continue
+		}
+
+		ruleGroups := ruleConfigs[decodedNamespace]
+
+		if ruleGroups == nil {
+			delete(r.rules[user], existingFile)
+			anyUpdated = true
+		}
+	}
+
+	return anyUpdated, filenames, nil
+}
+
+// cloneLabelStrings copies the label and annotation strings of groups.
+// Unmarshal makes these strings point into the buffer that it reads the groups from.
+// The registry keeps the groups.
+// Without a copy, it also keeps each buffer.
+// The groups belong to this sync.
+// So the copy can replace the strings in place.
+func cloneLabelStrings(groups rulespb.RuleGroupList) {
+	clone := func(ls []mimirpb.LabelAdapter) {
+		for i := range ls {
+			ls[i].Name, ls[i].Value = strings.Clone(ls[i].Name), strings.Clone(ls[i].Value)
+		}
+	}
+	for _, g := range groups {
+		clone(g.Labels)
+		for _, r := range g.Rules {
+			clone(r.Labels)
+			clone(r.Annotations)
+		}
+	}
+}
+
+func (r *ruleRegistry) get(user string, identifier string) *rulefmt.RuleGroups {
+	r.mtx.RLock()
+	defer r.mtx.RUnlock()
+
+	userRegistry := r.rules[user]
+	if userRegistry == nil {
+		return nil
+	}
+	groups := userRegistry[identifier]
+	if groups == nil {
+		return nil
+	}
+
+	fmtGroups := make([]rulefmt.RuleGroup, 0, len(groups))
+	for _, group := range groups {
+		fmtGroup := rulespb.FromProto(group)
+		// tenant.NormalizeTenantIDs sorts and deduplicates SourceTenants in place.
+		// The registry keeps its protos, so each load needs its own copy.
+		fmtGroup.SourceTenants = slices.Clone(fmtGroup.SourceTenants)
+		fmtGroups = append(fmtGroups, fmtGroup)
+	}
+
+	return &rulefmt.RuleGroups{Groups: fmtGroups}
+}
 
 // mapper is designed to enusre the provided rule sets are identical
 // to the on-disk rules tracked by the prometheus manager
@@ -179,6 +328,31 @@ func (m *mapper) writeRuleGroupsIfNewer(groups []rulefmt.RuleGroup, filename str
 
 	return true, nil
 }
+
+// registryLoader is a GroupLoader implementation that reads groups from a ruleRegistry.
+type registryLoader struct {
+	registry *ruleRegistry
+	user     string
+	parser   parser.Parser
+}
+
+func newRegistryLoader(registry *ruleRegistry, user string) registryLoader {
+	return registryLoader{
+		registry: registry,
+		user:     user,
+		parser:   promqlext.NewPromQLParser(),
+	}
+}
+
+func (r registryLoader) Load(identifier string, ignoreUnknownFields bool, nameValidationScheme model.ValidationScheme) (*rulefmt.RuleGroups, []error) {
+	rgs := r.registry.get(r.user, identifier)
+	if rgs == nil {
+		return nil, []error{fmt.Errorf("%s: rule file not found in registry", identifier)}
+	}
+	return rgs, nil
+}
+
+func (r registryLoader) Parse(query string) (parser.Expr, error) { return r.parser.ParseExpr(query) }
 
 // FSLoader a GroupLoader implementation that reads files from a given afero.Fs.
 type FSLoader struct {
