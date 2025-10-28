@@ -13,15 +13,100 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/mimir/pkg/ruler/rulespb"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/spf13/afero"
 	"gopkg.in/yaml.v3"
 )
+
+type ruleRegistry struct {
+	prefix string
+	rules  map[string]map[string]rulespb.RuleGroupList // tenant -> namespace -> groups
+	mtx    sync.RWMutex
+	logger log.Logger
+}
+
+func (r *ruleRegistry) cleanupUser(userID string) {
+	r.mtx.Lock()
+	defer r.mtx.Unlock()
+	delete(r.rules, userID)
+}
+
+func (r *ruleRegistry) cleanup() {
+	r.mtx.Lock()
+	defer r.mtx.Unlock()
+	clear(r.rules)
+}
+
+func (r *ruleRegistry) users() ([]string, error) {
+	r.mtx.RLock()
+	defer r.mtx.RUnlock()
+
+	result := make([]string, 0, len(r.rules))
+	for userID := range r.rules {
+		result = append(result, userID)
+	}
+	return result, nil
+}
+
+func (r *ruleRegistry) MapRules(user string, ruleConfigs map[string]rulespb.RuleGroupList) (bool, []string, error) {
+	logger := log.With(r.logger, "user", user)
+	r.mtx.Lock()
+	defer r.mtx.Unlock()
+
+	path := filepath.Join(r.prefix, user)
+	if _, ok := r.rules[user]; !ok {
+		r.rules[user] = make(map[string]rulespb.RuleGroupList)
+	}
+
+	anyUpdated := false
+	var filenames []string
+
+	for filename, groups := range ruleConfigs {
+		encodedFileName := url.PathEscape(filename)
+		fullFileName := filepath.Join(path, encodedFileName)
+		filenames = append(filenames, fullFileName)
+
+		slices.SortFunc(groups, func(a, b *rulespb.RuleGroupDesc) int {
+			return strings.Compare(b.Name, a.Name)
+		})
+
+		if !groups.Equal(r.rules[user][fullFileName]) {
+			anyUpdated = true
+			r.rules[user][fullFileName] = groups
+		}
+	}
+
+	// and clean up any that shouldn't exist TODO
+	existingFiles := make([]string, 0, len(r.rules[user]))
+	for key := range r.rules[user] {
+		existingFiles = append(existingFiles, key)
+	}
+
+	for _, existingFile := range existingFiles {
+		name := filepath.Base(existingFile)
+		decodedNamespace, err := url.PathUnescape(name)
+		if err != nil {
+			level.Warn(logger).Log("msg", "unable to remove rule file from registry", "file", existingFile, "err", err)
+			continue
+		}
+
+		ruleGroups := ruleConfigs[decodedNamespace]
+
+		if ruleGroups == nil {
+			delete(r.rules[user], existingFile)
+			anyUpdated = true
+		}
+	}
+
+	return anyUpdated, filenames, nil
+}
 
 // mapper is designed to enusre the provided rule sets are identical
 // to the on-disk rules tracked by the prometheus manager
