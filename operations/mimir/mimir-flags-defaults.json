@@ -692,6 +692,7 @@
   "blocks-storage.bucket-store.chunks-cache.attributes-ttl": 604800000000000,
   "blocks-storage.bucket-store.chunks-cache.attributes-in-memory-max-items": 50000,
   "blocks-storage.bucket-store.chunks-cache.subrange-ttl": 86400000000000,
+  "blocks-storage.bucket-store.chunks-cache.cache-parquet-labels-files": true,
   "blocks-storage.bucket-store.metadata-cache.backend": "",
   "blocks-storage.bucket-store.metadata-cache.memcached.addresses": "",
   "blocks-storage.bucket-store.metadata-cache.memcached.timeout": 200000000,
