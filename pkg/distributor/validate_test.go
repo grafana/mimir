@@ -276,7 +276,7 @@ func TestValidateLabels(t *testing.T) {
 			},
 			wantLog: []string{
 				"badLabelValueToTruncate",
-				"label value was truncated and appended its hash value",
+				"label values were truncated and appended their hash value",
 				"insight=true",
 			},
 		},
@@ -294,7 +294,7 @@ func TestValidateLabels(t *testing.T) {
 			},
 			wantLog: []string{
 				"badLabelValueToDrop",
-				"label value was replaced by its hash value",
+				"label values were replaced by their hash value",
 				"insight=true",
 			},
 		},
@@ -637,6 +637,190 @@ func TestValidateLabels(t *testing.T) {
 	}
 }
 
+func TestLabelValueTooLongSummaries(t *testing.T) {
+	t.Parallel()
+
+	const truncatingUserID = "truncatingUserID"
+	const droppingUserID = "droppingUserID"
+
+	limits := prepareDefaultLimits()
+	limits.MaxLabelValueLength = 75 // must be higher than validation.LabelValueHashLen
+	perTenant := map[string]*validation.Limits{}
+	for _, userID := range []string{truncatingUserID, droppingUserID} {
+		limits := *limits
+		perTenant[userID] = &limits
+	}
+	require.NoError(t, perTenant[truncatingUserID].LabelValueLengthOverLimitStrategy.Set("truncate"))
+	require.NoError(t, perTenant[droppingUserID].LabelValueLengthOverLimitStrategy.Set("drop"))
+
+	overrides := func(limits *validation.Limits) *validation.Overrides {
+		return validation.NewOverrides(*limits, validation.NewMockTenantLimits(perTenant))
+	}
+	reg := prometheus.NewPedanticRegistry()
+	careg := prometheus.NewRegistry()
+	manager, err := costattribution.NewManager(5*time.Second, 10*time.Second, log.NewNopLogger(), overrides(limits), reg, careg)
+	require.NoError(t, err)
+
+	var logged logRecorder
+	ds, _, _, _ := prepare(t, prepConfig{
+		numIngesters:       2,
+		happyIngesters:     2,
+		numDistributors:    1,
+		limits:             limits,
+		overrides:          overrides,
+		reg:                reg,
+		costAttributionMgr: manager,
+		logger:             log.NewLogfmtLogger(&logged),
+	})
+	d := ds[0]
+
+	newRequestBuffers := func() *util.RequestBuffers {
+		return util.NewRequestBuffers(d.RequestBufferPool, util.TaintBuffersOnCleanUp([]byte("The beef is dead.")))
+	}
+
+	testCases := []struct {
+		name       string
+		userID     string
+		timeseries []mimirpb.PreallocTimeseries
+		wantLog    [][]string
+	}{
+		{
+			name:   "multiple series with truncated label values",
+			userID: truncatingUserID,
+			timeseries: []mimirpb.PreallocTimeseries{
+				{
+					TimeSeries: &mimirpb.TimeSeries{
+						Labels: []mimirpb.LabelAdapter{
+							{Name: model.MetricNameLabel, Value: "truncate1"},
+							{Name: "longvalue1", Value: strings.Repeat("x", 100)},
+							{Name: "oklabel", Value: "okvalue1"},
+						},
+						Samples: []mimirpb.Sample{{Value: 1, TimestampMs: time.Now().UnixMilli()}},
+					},
+				},
+				{
+					TimeSeries: &mimirpb.TimeSeries{
+						Labels: []mimirpb.LabelAdapter{
+							{Name: model.MetricNameLabel, Value: "truncate1"},
+							{Name: "longvalue1", Value: strings.Repeat("y", 100)},
+							{Name: "oklabel", Value: "okvalue2"},
+						},
+						Samples: []mimirpb.Sample{{Value: 1, TimestampMs: time.Now().UnixMilli()}},
+					},
+				},
+				{
+					TimeSeries: &mimirpb.TimeSeries{
+						Labels: []mimirpb.LabelAdapter{
+							{Name: model.MetricNameLabel, Value: "truncate1"},
+							{Name: "longvalue2", Value: strings.Repeat("z", 120)},
+							{Name: "oklabel", Value: "okvalue2"},
+						},
+						Samples: []mimirpb.Sample{{Value: 2, TimestampMs: time.Now().UnixMilli()}},
+					},
+				},
+				{
+					TimeSeries: &mimirpb.TimeSeries{
+						Labels: []mimirpb.LabelAdapter{
+							{Name: model.MetricNameLabel, Value: "truncate2"},
+							{Name: "longvalue2", Value: strings.Repeat("w", 90)},
+						},
+						Samples: []mimirpb.Sample{{Value: 3, TimestampMs: time.Now().UnixMilli()}},
+					},
+				},
+			},
+			wantLog: [][]string{
+				{"label values were truncated and appended their hash value", "limit=75", "metric_name=truncate1", "label=longvalue1", "values_exceeding_limit=2", "insight=true", "sample_value=\"xxx", "sample_value_length=100"},
+				{"label values were truncated and appended their hash value", "limit=75", "metric_name=truncate1", "label=longvalue2", "values_exceeding_limit=1", "insight=true", "sample_value=\"zzz", "sample_value_length=120"},
+				{"label values were truncated and appended their hash value", "limit=75", "metric_name=truncate2", "label=longvalue2", "values_exceeding_limit=1", "insight=true", "sample_value=\"www", "sample_value_length=90"},
+			},
+		},
+		{
+			name:   "multiple series with dropped label values",
+			userID: droppingUserID,
+			timeseries: []mimirpb.PreallocTimeseries{
+				{
+					TimeSeries: &mimirpb.TimeSeries{
+						Labels: []mimirpb.LabelAdapter{
+							{Name: model.MetricNameLabel, Value: "drop1"},
+							{Name: "longvalue1", Value: strings.Repeat("x", 100)},
+							{Name: "oklabel", Value: "okvalue1"},
+						},
+						Samples: []mimirpb.Sample{{Value: 1, TimestampMs: time.Now().UnixMilli()}},
+					},
+				},
+				{
+					TimeSeries: &mimirpb.TimeSeries{
+						Labels: []mimirpb.LabelAdapter{
+							{Name: model.MetricNameLabel, Value: "drop1"},
+							{Name: "longvalue1", Value: strings.Repeat("y", 100)},
+							{Name: "oklabel", Value: "okvalue2"},
+						},
+						Samples: []mimirpb.Sample{{Value: 1, TimestampMs: time.Now().UnixMilli()}},
+					},
+				},
+				{
+					TimeSeries: &mimirpb.TimeSeries{
+						Labels: []mimirpb.LabelAdapter{
+							{Name: model.MetricNameLabel, Value: "drop1"},
+							{Name: "longvalue2", Value: strings.Repeat("z", 120)},
+							{Name: "oklabel", Value: "okvalue2"},
+						},
+						Samples: []mimirpb.Sample{{Value: 2, TimestampMs: time.Now().UnixMilli()}},
+					},
+				},
+				{
+					TimeSeries: &mimirpb.TimeSeries{
+						Labels: []mimirpb.LabelAdapter{
+							{Name: model.MetricNameLabel, Value: "drop2"},
+							{Name: "longvalue2", Value: strings.Repeat("w", 90)},
+						},
+						Samples: []mimirpb.Sample{{Value: 3, TimestampMs: time.Now().UnixMilli()}},
+					},
+				},
+			},
+			wantLog: [][]string{
+				{"label values were replaced by their hash value", "limit=75", "metric_name=drop1", "label=longvalue1", "values_exceeding_limit=2", "insight=true", "sample_value=\"xxx", "sample_value_length=100"},
+				{"label values were replaced by their hash value", "limit=75", "metric_name=drop1", "label=longvalue2", "values_exceeding_limit=1", "insight=true", "sample_value=\"zzz", "sample_value_length=120"},
+				{"label values were replaced by their hash value", "limit=75", "metric_name=drop2", "label=longvalue2", "values_exceeding_limit=1", "insight=true", "sample_value=\"www", "sample_value_length=90"},
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			logged.writes = nil // Clear previous logs
+
+			handler := Handler(100000, newRequestBuffers, nil, true, true, d.limits, RetryConfig{},
+				d.PushWithMiddlewares,
+				nil, log.NewLogfmtLogger(&logged),
+			)
+
+			req := createRequest(t, createMimirWriteRequestProtobuf(t, false, false, tc.timeseries...))
+			req.Header.Set("X-Scope-OrgID", tc.userID)
+			req = req.WithContext(user.InjectOrgID(context.Background(), tc.userID))
+
+			resp := httptest.NewRecorder()
+			handler.ServeHTTP(resp, req)
+
+			assert.Equal(t, 200, resp.Code, resp.Body.String())
+
+			for _, expectedParts := range tc.wantLog {
+				found := false
+				for _, line := range logged.Writes() {
+					if stringContainsAll(line, expectedParts) {
+						found = true
+						break
+					}
+				}
+				if !found {
+					t.Logf("Logged lines:\n%v", logged.Writes())
+					require.Fail(t, "Expected log line not found", "expected parts: %v", expectedParts)
+				}
+			}
+		})
+	}
+}
+
 func TestValidateExemplars(t *testing.T) {
 	reg := prometheus.NewPedanticRegistry()
 	m := newExemplarValidationMetrics(reg)
@@ -812,7 +996,7 @@ func TestValidateLabelDuplication(t *testing.T) {
 	actual := validateLabels(newSampleValidationMetrics(nil), cfg, userID, "", []mimirpb.LabelAdapter{
 		{Name: model.MetricNameLabel, Value: "a"},
 		{Name: model.MetricNameLabel, Value: "b"},
-	}, false, false, nil, ts, log.NewNopLogger())
+	}, false, false, nil, ts, nil)
 	expected := fmt.Errorf(
 		duplicateLabelMsgFormat,
 		model.MetricNameLabel,
@@ -829,7 +1013,7 @@ func TestValidateLabelDuplication(t *testing.T) {
 		{Name: model.MetricNameLabel, Value: "a"},
 		{Name: "a", Value: "a"},
 		{Name: "a", Value: "a"},
-	}, false, false, nil, ts, log.NewNopLogger())
+	}, false, false, nil, ts, nil)
 	expected = fmt.Errorf(
 		duplicateLabelMsgFormat,
 		"a",
@@ -872,7 +1056,7 @@ func TestValidateLabel_UseAfterRelease(t *testing.T) {
 	careg := prometheus.NewRegistry()
 	manager, err := costattribution.NewManager(5*time.Second, 10*time.Second, log.NewNopLogger(), limits, reg, careg)
 	require.NoError(t, err)
-	err = validateLabels(s, cfg, userID, "custom label", ts.Labels, true, true, manager.SampleTracker(userID), time.Now(), log.NewNopLogger())
+	err = validateLabels(s, cfg, userID, "custom label", ts.Labels, true, true, manager.SampleTracker(userID), time.Now(), nil)
 	var lengthErr labelValueTooLongError
 	require.ErrorAs(t, err, &lengthErr)
 

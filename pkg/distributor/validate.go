@@ -15,8 +15,6 @@ import (
 	"unicode/utf8"
 	"unsafe"
 
-	"github.com/go-kit/log"
-	"github.com/go-kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
@@ -84,11 +82,11 @@ var (
 		validation.MaxLabelValueLengthFlag,
 	)
 	truncatedLabelValueMsg = globalerror.SeriesLabelValueTooLong.MessageWithPerTenantLimitConfig(
-		"received a series whose label value length exceeds the limit; label value was truncated and appended its hash value",
+		"received some series whose label value lengths exceed the limit; label values were truncated and appended their hash value",
 		validation.MaxLabelValueLengthFlag,
 	)
 	droppedLabelValueMsg = globalerror.SeriesLabelValueTooLong.MessageWithPerTenantLimitConfig(
-		"received a series whose label value length exceeds the limit; label value was replaced by its hash value",
+		"received some series whose label value lengths exceed the limit; label values were replaced by their hash value",
 		validation.MaxLabelValueLengthFlag,
 	)
 	invalidLabelMsgFormat      = globalerror.SeriesInvalidLabel.Message("received a series with an invalid label: '%.200s' series: '%.200s'")
@@ -147,6 +145,40 @@ type labelValueTooLongError struct {
 
 func (e labelValueTooLongError) Error() string {
 	return fmt.Sprintf(labelValueTooLongMsgFormat, len(e.Label.Value), e.Limit, e.Label.Name, e.Label.Value, e.Series)
+}
+
+// labelValueTooLongSummaries holds a summary for each metric and label processed
+// in a write request that have values exceeding the limit.
+type labelValueTooLongSummaries struct {
+	m map[unsafeMetricAndLabel]labelValueTooLongSummary
+}
+
+func (s *labelValueTooLongSummaries) measure(metric, label, originalValue mimirpb.UnsafeMutableString) {
+	if s == nil {
+		return
+	}
+	if s.m == nil {
+		s.m = make(map[unsafeMetricAndLabel]labelValueTooLongSummary)
+	}
+	key := unsafeMetricAndLabel{metric: metric, label: label}
+	summary := s.m[key]
+	summary.count++
+	if len(summary.sampleValue) == 0 {
+		summary.sampleValue = fmt.Sprintf("%.200s (truncated)", originalValue)
+		summary.sampleValueLength = len(originalValue)
+	}
+	s.m[key] = summary
+}
+
+type labelValueTooLongSummary struct {
+	count             int
+	sampleValueLength int
+	sampleValue       string
+}
+
+type unsafeMetricAndLabel struct {
+	metric mimirpb.UnsafeMutableString
+	label  mimirpb.UnsafeMutableString
 }
 
 // sampleValidationConfig helps with getting required config to validate sample.
@@ -432,7 +464,7 @@ func removeNonASCIIChars(in string) (out string) {
 // validateLabels returns an err if the labels are invalid.
 // The returned error MUST NOT retain label strings - they point into a gRPC buffer which is re-used.
 // It may mutate ls and the underlying UnsafeMutableLabel/Strings.
-func validateLabels(m *sampleValidationMetrics, cfg labelValidationConfig, userID, group string, ls []mimirpb.UnsafeMutableLabel, skipLabelValidation, skipLabelCountValidation bool, cat *costattribution.SampleTracker, ts time.Time, logger log.Logger) error {
+func validateLabels(m *sampleValidationMetrics, cfg labelValidationConfig, userID, group string, ls []mimirpb.UnsafeMutableLabel, skipLabelValidation, skipLabelCountValidation bool, cat *costattribution.SampleTracker, ts time.Time, valueTooLongSummaries *labelValueTooLongSummaries) error {
 	unsafeMetricName, err := extract.UnsafeMetricNameFromLabelAdapters(ls)
 	if err != nil {
 		cat.IncrementDiscardedSamples(ls, 1, reasonMissingMetricName, ts)
@@ -493,19 +525,11 @@ func validateLabels(m *sampleValidationMetrics, cfg labelValidationConfig, userI
 					Limit:  maxLabelValueLength,
 				}
 			case validation.LabelValueLengthOverLimitStrategyTruncate:
-				level.Warn(logger).Log("msg", truncatedLabelValueMsg,
-					"length", len(l.Value), "limit", maxLabelValueLength,
-					"label", l.Name, "value", fmt.Sprintf("%.200s (truncated)", l.Value),
-					"series", fmt.Sprintf("%.200s", mimirpb.FromLabelAdaptersToString(ls)),
-					"user", userID, "insight", true)
+				valueTooLongSummaries.measure(unsafeMetricName, l.Name, l.Value)
 				_ = hashLabelValueInto(l.Value[maxLabelValueLength-validation.LabelValueHashLen:], l.Value)
 				ls[i].Value = ls[i].Value[:maxLabelValueLength]
 			case validation.LabelValueLengthOverLimitStrategyDrop:
-				level.Warn(logger).Log("msg", droppedLabelValueMsg,
-					"length", len(l.Value), "limit", maxLabelValueLength,
-					"label", l.Name, "value", fmt.Sprintf("%.200s (truncated)", l.Value),
-					"series", fmt.Sprintf("%.200s", mimirpb.FromLabelAdaptersToString(ls)),
-					"user", userID, "insight", true)
+				valueTooLongSummaries.measure(unsafeMetricName, l.Name, l.Value)
 				ls[i].Value = hashLabelValueInto(l.Value[:validation.LabelValueHashLen], l.Value)
 			default:
 				panic(fmt.Errorf("unexpected value: %v", labelValueLengthOverLimitStrategy))
