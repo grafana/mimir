@@ -1919,7 +1919,7 @@ This means that distributors are writing to partitions that are not being consum
 How it **works**:
 
 - Distributors shard series across the active partitions in the partitions ring.
-- Each ingester owns one partition, and consumes from it.
+- Each ingester owns and consumes from one partition.
 - If a partition is not being consumed by any ingester, it means that the data written to that partition is not being available for querying. Moreover, if block-builder is not used in the Mimir cluster, then the data won't be saved to a block.
 
 How to **investigate**:
