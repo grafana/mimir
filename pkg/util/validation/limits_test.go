@@ -2379,11 +2379,11 @@ func getDefaultLimits() Limits {
 
 func TestOverrides_IngestionPartitionsTenantReadShardSize(t *testing.T) {
 	tests := []struct {
-		name                 string
-		writeShardSize       int
-		readShardSize        int
-		expectedReadSize     int
-		description          string
+		name             string
+		writeShardSize   int
+		readShardSize    int
+		expectedReadSize int
+		description      string
 	}{
 		{
 			name:             "read shard size not set - uses write shard size",

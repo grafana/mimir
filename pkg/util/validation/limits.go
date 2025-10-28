@@ -312,9 +312,9 @@ type Limits struct {
 	OTelTranslationStrategy                  OTelTranslationStrategyValue `yaml:"otel_translation_strategy" json:"otel_translation_strategy" category:"experimental"`
 
 	// Ingest storage.
-	IngestStorageReadConsistency                string `yaml:"ingest_storage_read_consistency" json:"ingest_storage_read_consistency" category:"experimental"`
-	IngestionPartitionsTenantShardSize          int    `yaml:"ingestion_partitions_tenant_shard_size" json:"ingestion_partitions_tenant_shard_size" category:"experimental"`
-	IngestionPartitionsTenantReadShardSize      int    `yaml:"ingestion_partitions_tenant_read_shard_size" json:"ingestion_partitions_tenant_read_shard_size" category:"experimental"`
+	IngestStorageReadConsistency           string `yaml:"ingest_storage_read_consistency" json:"ingest_storage_read_consistency" category:"experimental"`
+	IngestionPartitionsTenantShardSize     int    `yaml:"ingestion_partitions_tenant_shard_size" json:"ingestion_partitions_tenant_shard_size" category:"experimental"`
+	IngestionPartitionsTenantReadShardSize int    `yaml:"ingestion_partitions_tenant_read_shard_size" json:"ingestion_partitions_tenant_read_shard_size" category:"experimental"`
 
 	// NameValidationScheme is the validation scheme for metric and label names.
 	NameValidationScheme model.ValidationScheme `yaml:"name_validation_scheme" json:"name_validation_scheme" category:"experimental"`
