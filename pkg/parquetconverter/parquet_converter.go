@@ -256,13 +256,8 @@ func (c *ParquetConverter) starting(ctx context.Context) error {
 		return errors.Wrap(err, "failed to create bucket client")
 	}
 
-	c.loadBalancerWatcher = services.NewFailureWatcher()
-	c.loadBalancerWatcher.WatchService(c.loadBalancer)
-
-	graceCtx := context.WithoutCancel(ctx)
-
-	if err := services.StartAndAwaitRunning(graceCtx, c.loadBalancer); err != nil {
-		return errors.Wrap(err, "unable to start load balancer")
+	if err := c.loadBalancer.start(ctx); err != nil {
+		return errors.Wrap(err, "failed to start load balancer")
 	}
 
 	level.Info(c.logger).Log("msg", "parquet-converter started", "strategy", c.Cfg.LoadBalancingStrategy)
@@ -351,16 +346,7 @@ func (c *ParquetConverter) running(ctx context.Context) error {
 		})
 	}
 
-	for {
-		select {
-		case <-ctx.Done():
-			return g.Wait()
-		case err := <-c.loadBalancerWatcher.Chan():
-			return errors.Wrap(err, "parquet-converter load balancer failed")
-		case <-gCtx.Done():
-			return g.Wait()
-		}
-	}
+	return g.Wait()
 }
 
 // discoverAndEnqueueBlocks discovers blocks and adds them to the priority queue
@@ -569,8 +555,10 @@ func (c *ParquetConverter) processBlock(ctx context.Context, userID string, meta
 
 func (c *ParquetConverter) stopping(_ error) error {
 	c.conversionQueue.Close()
-
-	return services.StopAndAwaitTerminated(context.Background(), c.loadBalancer)
+	if err := c.loadBalancer.stop(); err != nil {
+		level.Warn(c.logger).Log("msg", "failed to stop load balancer", "err", err)
+	}
+	return nil
 }
 
 // discoverUsers scans the bucket for users and returns a list of user IDs that are allowed to be converted.
