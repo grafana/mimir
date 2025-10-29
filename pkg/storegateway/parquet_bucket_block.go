@@ -6,29 +6,20 @@
 package storegateway
 
 import (
-	"context"
 	"fmt"
 	"io"
 	"math"
-	"path"
 	"sort"
 	"sync"
-	"time"
 
-	"github.com/go-kit/log"
-	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/multierror"
 	"github.com/oklog/ulid/v2"
-	"github.com/pkg/errors"
 	"github.com/prometheus-community/parquet-common/schema"
 	"github.com/prometheus-community/parquet-common/storage"
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/thanos-io/objstore"
 	"go.uber.org/atomic"
 
-	"github.com/grafana/mimir/pkg/parquetconverter"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
-	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
 type ParquetShardReaderCloser interface {
@@ -73,10 +64,6 @@ type parquetBucketBlock struct {
 	closed         bool
 
 	queried atomic.Bool
-
-	isConvertedMtx     sync.Mutex
-	isConvertedCache   bool
-	lastConvertedCheck time.Time
 }
 
 func newParquetBucketBlock(
@@ -119,28 +106,6 @@ func (b *parquetBucketBlock) overlapsClosedInterval(mint, maxt int64) bool {
 
 func (b *parquetBucketBlock) MarkQueried() {
 	b.queried.Store(true)
-}
-
-// IsConverted checks whether the block has been converted to Parquet format.
-// It caches 'true' results forever, but re-checks 'false' results at most once per minute.
-func (b *parquetBucketBlock) IsConverted(ctx context.Context, bkt objstore.BucketReader) (bool, error) {
-	b.isConvertedMtx.Lock()
-	defer b.isConvertedMtx.Unlock()
-	if b.isConvertedCache {
-		return true, nil
-	}
-	// Avoid checking too often if it's not yet converted.
-	if time.Since(b.lastConvertedCheck) < 1*time.Minute {
-		return b.isConvertedCache, nil
-	}
-	b.lastConvertedCheck = time.Now()
-	markPath := path.Join(b.meta.ULID.String(), parquetconverter.ParquetConversionMarkFileName)
-	exists, err := bkt.Exists(ctx, markPath)
-	if err != nil {
-		return false, errors.Wrap(err, "check parquet conversion mark existence")
-	}
-	b.isConvertedCache = exists
-	return exists, nil
 }
 
 // Close waits for all pending readers to finish and then closes all underlying resources.
@@ -221,17 +186,9 @@ func (s *parquetBlockSet) len() int {
 	return len(s.sortedBlocks)
 }
 
-// filter iterates over a time-ordered list of non-closed blocks that cover date between mint and maxt
-// and have been converted to their Parquet version. It supports overlapping blocks. It only guaranties
-// that a block is held open during the execution of fn.
-func (s *parquetBlockSet) filter(
-	ctx context.Context,
-	bkt objstore.BucketReader,
-	mint, maxt int64,
-	blockMatchers []*labels.Matcher,
-	logger log.Logger,
-	fn func(b *parquetBucketBlock),
-) {
+// filter iterates over a time-ordered list of non-closed blocks that cover date between mint and maxt. It supports overlapping
+// blocks. It only guaranties that a block is held open during the execution of fn.
+func (s *parquetBlockSet) filter(mint, maxt int64, blockMatchers []*labels.Matcher, fn func(b *parquetBucketBlock)) {
 	if mint > maxt {
 		return
 	}
@@ -246,26 +203,13 @@ func (s *parquetBlockSet) filter(
 			break
 		}
 
-		if !b.overlapsClosedInterval(mint, maxt) {
-			continue
+		if b.overlapsClosedInterval(mint, maxt) {
+			// Include the block in the list of matching ones only if there are no block-level matchers
+			// or they actually match.
+			if len(blockMatchers) == 0 || b.matchLabels(blockMatchers) {
+				bs = append(bs, b)
+			}
 		}
-		// Include the block in the list of matching ones only if there are no block-level matchers
-		// or they actually match.
-		if len(blockMatchers) > 0 && !b.matchLabels(blockMatchers) {
-			continue
-		}
-
-		converted, err := b.IsConverted(ctx, bkt)
-		if err != nil {
-			level.Error(spanlogger.FromContext(ctx, logger)).Log("msg", "failed to check if block is converted, skipping", "block", b.meta.ULID.String(), "err", err)
-			continue
-		}
-		if !converted {
-			level.Warn(spanlogger.FromContext(ctx, logger)).Log("msg", "query touches a block that is not yet converted to Parquet, skipping", "block", b.meta.ULID.String())
-			continue
-		}
-
-		bs = append(bs, b)
 	}
 
 	s.mtx.RUnlock()
