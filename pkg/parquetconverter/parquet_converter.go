@@ -132,7 +132,6 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.IntVar(&cfg.ParquetShardWriteConcurrency, "parquet-converter.parquet-shard-write-concurrency", 4, "Maximum number of Go routines writing Parquet shards in parallel when converting a block.")
 
 	f.BoolVar(&cfg.CompressionEnabled, "parquet-converter.compression-enabled", true, "Whether compression is enabled for labels and chunks parquet files. When disabled, parquet files will be converted and stored uncompressed.")
-
 }
 
 type ParquetConverter struct {
@@ -144,9 +143,8 @@ type ParquetConverter struct {
 	limits              *validation.Overrides
 	bucketClientFactory func(ctx context.Context) (objstore.Bucket, error)
 
-	bucketClient        objstore.Bucket
-	loadBalancer        loadBalancer
-	loadBalancerWatcher *services.FailureWatcher
+	bucketClient objstore.Bucket
+	loadBalancer loadBalancer
 
 	blockConverter       blockConverter
 	baseConverterOptions []convert.ConvertOption
