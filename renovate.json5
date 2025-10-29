@@ -2,6 +2,7 @@
   $schema: 'https://docs.renovatebot.com/renovate-schema.json',
   extends: [
     'config:recommended',
+    'schedule:daily'
   ],
   baseBranchPatterns: [
     'main',
@@ -11,9 +12,6 @@
   postUpdateOptions: [
     'gomodTidy',
     'gomodUpdateImportPaths',
-  ],
-  schedule: [
-    'before 9am on Monday',
   ],
   packageRules: [
     {
@@ -73,6 +71,15 @@
         'docker',
       ],
       enabled: false,
+    },
+    {
+      description: 'Only update dependencies digests on Monday mornings to avoid PR spam from repos not using semver',
+      matchUpdateTypes: [
+        'digest',
+      ],
+      schedule: [
+        '* 0-4 * * 1'
+      ],
     },
   ],
   branchPrefix: 'deps-update/',
