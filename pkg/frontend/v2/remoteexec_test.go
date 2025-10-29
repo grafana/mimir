@@ -590,7 +590,7 @@ func TestEnsureFPointSliceCapacityIsPowerOfTwo(t *testing.T) {
 			expectedCapacity: 0,
 		},
 		"slice with length 0 and capacity 0": {
-			input:            make([]promql.FPoint, 0, 0),
+			input:            make([]promql.FPoint, 0),
 			expectedCapacity: 0,
 		},
 		"slice with length 0 and capacity 1": {
@@ -598,7 +598,7 @@ func TestEnsureFPointSliceCapacityIsPowerOfTwo(t *testing.T) {
 			expectedCapacity: 1,
 		},
 		"slice with length 1 and capacity 1": {
-			input:            make([]promql.FPoint, 1, 1),
+			input:            make([]promql.FPoint, 1),
 			expectedCapacity: 1,
 		},
 		"slice with length 0 and capacity 2": {
@@ -610,7 +610,7 @@ func TestEnsureFPointSliceCapacityIsPowerOfTwo(t *testing.T) {
 			expectedCapacity: 2,
 		},
 		"slice with length 2 and capacity 2": {
-			input:            make([]promql.FPoint, 2, 2),
+			input:            make([]promql.FPoint, 2),
 			expectedCapacity: 2,
 		},
 		"slice with length 2 and capacity 3": {
@@ -618,23 +618,23 @@ func TestEnsureFPointSliceCapacityIsPowerOfTwo(t *testing.T) {
 			expectedCapacity: 4,
 		},
 		"slice with length 3 and capacity 3": {
-			input:            make([]promql.FPoint, 3, 3),
+			input:            make([]promql.FPoint, 3),
 			expectedCapacity: 4,
 		},
 		"slice with length 4 and capacity 4": {
-			input:            make([]promql.FPoint, 4, 4),
+			input:            make([]promql.FPoint, 4),
 			expectedCapacity: 4,
 		},
 		"slice with length 5 and capacity 5": {
-			input:            make([]promql.FPoint, 5, 5),
+			input:            make([]promql.FPoint, 5),
 			expectedCapacity: 8,
 		},
 		"slice with length 6 and capacity 6": {
-			input:            make([]promql.FPoint, 6, 6),
+			input:            make([]promql.FPoint, 6),
 			expectedCapacity: 8,
 		},
 		"slice with length 7 and capacity 7": {
-			input:            make([]promql.FPoint, 7, 7),
+			input:            make([]promql.FPoint, 7),
 			expectedCapacity: 8,
 		},
 	}
@@ -677,7 +677,7 @@ func TestEnsureHPointSliceCapacityIsPowerOfTwo(t *testing.T) {
 			expectedCapacity: 0,
 		},
 		"slice with length 0 and capacity 0": {
-			input:            make([]promql.HPoint, 0, 0),
+			input:            make([]promql.HPoint, 0),
 			expectedCapacity: 0,
 		},
 		"slice with length 0 and capacity 1": {
@@ -685,7 +685,7 @@ func TestEnsureHPointSliceCapacityIsPowerOfTwo(t *testing.T) {
 			expectedCapacity: 1,
 		},
 		"slice with length 1 and capacity 1": {
-			input:            make([]promql.HPoint, 1, 1),
+			input:            make([]promql.HPoint, 1),
 			expectedCapacity: 1,
 		},
 		"slice with length 0 and capacity 2": {
@@ -697,7 +697,7 @@ func TestEnsureHPointSliceCapacityIsPowerOfTwo(t *testing.T) {
 			expectedCapacity: 2,
 		},
 		"slice with length 2 and capacity 2": {
-			input:            make([]promql.HPoint, 2, 2),
+			input:            make([]promql.HPoint, 2),
 			expectedCapacity: 2,
 		},
 		"slice with length 2 and capacity 3": {
@@ -705,23 +705,23 @@ func TestEnsureHPointSliceCapacityIsPowerOfTwo(t *testing.T) {
 			expectedCapacity: 4,
 		},
 		"slice with length 3 and capacity 3": {
-			input:            make([]promql.HPoint, 3, 3),
+			input:            make([]promql.HPoint, 3),
 			expectedCapacity: 4,
 		},
 		"slice with length 4 and capacity 4": {
-			input:            make([]promql.HPoint, 4, 4),
+			input:            make([]promql.HPoint, 4),
 			expectedCapacity: 4,
 		},
 		"slice with length 5 and capacity 5": {
-			input:            make([]promql.HPoint, 5, 5),
+			input:            make([]promql.HPoint, 5),
 			expectedCapacity: 8,
 		},
 		"slice with length 6 and capacity 6": {
-			input:            make([]promql.HPoint, 6, 6),
+			input:            make([]promql.HPoint, 6),
 			expectedCapacity: 8,
 		},
 		"slice with length 7 and capacity 7": {
-			input:            make([]promql.HPoint, 7, 7),
+			input:            make([]promql.HPoint, 7),
 			expectedCapacity: 8,
 		},
 	}
