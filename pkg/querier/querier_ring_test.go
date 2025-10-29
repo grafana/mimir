@@ -163,7 +163,7 @@ func TestRingQueryPlanVersionProvider(t *testing.T) {
 
 			cfg := ring.Config{
 				ReplicationFactor: 1,
-				HeartbeatTimeout:  time.Hour,
+				HeartbeatTimeout:  time.Minute,
 			}
 			store := &mockStore{desc: desc}
 			reg := prometheus.NewPedanticRegistry()
