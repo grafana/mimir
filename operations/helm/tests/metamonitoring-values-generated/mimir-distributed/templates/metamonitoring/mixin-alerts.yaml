@@ -1400,6 +1400,17 @@ spec:
             for: 15m
             labels:
               severity: critical
+          - alert: MimirBlockBuilderSchedulerNotRunning
+            annotations:
+              message: Mimir {{ $labels.pod }} in {{ $labels.cluster }}/{{ $labels.namespace }} is not running.
+              runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirblockbuilderschedulernotrunning
+            expr: |
+              max by (cluster, namespace, pod) (histogram_count(increase(cortex_blockbuilder_scheduler_schedule_update_seconds[5m])) == 0)
+              *
+              max by (cluster, namespace, pod) (kube_statefulset_status_current_revision{statefulset="block-builder-scheduler"})
+            for: 30m
+            labels:
+              severity: warning
           - alert: MimirBlockBuilderDataSkipped
             annotations:
               message: Mimir {{ $labels.pod }} in {{ $labels.cluster }}/{{ $labels.namespace }} has detected skipped data.
@@ -1407,7 +1418,7 @@ spec:
             expr: |
               increase(cortex_blockbuilder_scheduler_job_gap_detected[1m]) > 0
             labels:
-              severity: warning
+              severity: critical
           - alert: MimirFewerIngestersConsumingThanActivePartitions
             annotations:
               message: Mimir ingesters in {{ $labels.cluster }}/{{ $labels.namespace }} have fewer ingesters consuming than active partitions.
