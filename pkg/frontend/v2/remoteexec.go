@@ -462,6 +462,13 @@ func accountForHPointMemoryConsumption(d []promql.HPoint, memoryConsumptionTrack
 	return nil
 }
 
+// ensureFPointSliceCapacityIsPowerOfTwo returns d if its capacity is already a power of two, or otherwise a new slice with the same elements and a
+// capacity that is a power of two.
+//
+// If a new slice is created, the memory consumption estimate is adjusted assuming the old slice is no longer used.
+//
+// This exists because many places in MQE assume that slices have come from our pools and always have a capacity that is a power of two.
+// For example, the ring buffer implementations rely on the fact that slices have a capacity that is a power of two.
 func ensureFPointSliceCapacityIsPowerOfTwo(d []promql.FPoint, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) ([]promql.FPoint, error) {
 	if pool.IsPowerOfTwo(cap(d)) {
 		return d, nil
@@ -483,6 +490,7 @@ func ensureFPointSliceCapacityIsPowerOfTwo(d []promql.FPoint, memoryConsumptionT
 	return newSlice, nil
 }
 
+// ensureHPointSliceCapacityIsPowerOfTwo is like ensureFPointSliceCapacityIsPowerOfTwo, but for HPoint slices.
 func ensureHPointSliceCapacityIsPowerOfTwo(d []promql.HPoint, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) ([]promql.HPoint, error) {
 	if pool.IsPowerOfTwo(cap(d)) {
 		return d, nil
