@@ -20591,9 +20591,9 @@
           "kind": "field",
           "name": "lock_ttl",
           "required": false,
-          "desc": "Time-to-live for locks acquired by the cache-based load balancer (used when load-balancing-strategy is 'locking').",
+          "desc": "Time-to-live for locks acquired by the cache-based load balancer (used when load-balancing-strategy is 'locking'). Cache entries are refreshed periodically to avoid expiration before processing is complete. This TTL should be relevant only in case of crashes.",
           "fieldValue": null,
-          "fieldDefaultValue": 14400000000000,
+          "fieldDefaultValue": 300000000000,
           "fieldFlag": "parquet-converter.lock-ttl",
           "fieldType": "duration",
           "fieldCategory": "advanced"

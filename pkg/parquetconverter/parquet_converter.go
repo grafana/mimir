@@ -107,7 +107,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	cfg.ShardingRing.RegisterFlags(f, logger)
 	f.StringVar(&cfg.MemcachedLock.Backend, "parquet-converter.locking.backend", "", "Backend for parquet-converter locking cache (used when load-balancing-strategy is 'locking'). Supported values: memcached.")
 	cfg.MemcachedLock.Memcached.RegisterFlagsWithPrefix("parquet-converter.locking.memcached.", f)
-	f.DurationVar(&cfg.LockTTL, "parquet-converter.lock-ttl", 4*time.Hour, "Time-to-live for locks acquired by the cache-based load balancer (used when load-balancing-strategy is 'locking').")
+	f.DurationVar(&cfg.LockTTL, "parquet-converter.lock-ttl", 5*time.Minute, "Time-to-live for locks acquired by the cache-based load balancer (used when load-balancing-strategy is 'locking'). Cache entries are refreshed periodically to avoid expiration before processing is complete. This TTL should be relevant only in case of crashes.")
 	f.Var(&cfg.EnabledTenants, "parquet-converter.enabled-tenants", "Comma-separated list of tenants that can have their TSDB blocks converted into Parquet. If specified, the Parquet-converter only converts these tenants. Otherwise, it converts all tenants. Subject to sharding.")
 	f.Var(&cfg.DisabledTenants, "parquet-converter.disabled-tenants", "Comma-separated list of tenants that cannot have their TSDB blocks converted into Parquet. If specified, and the Parquet-converter would normally pick a given tenant to convert the blocks to Parquet (via -parquet-converter.enabled-tenants or sharding), it is ignored instead.")
 
