@@ -283,6 +283,23 @@
           },
         },
 
+        // Alert if block-builder-scheduler primary runloop doesn't seem to be running.
+        {
+          alert: $.alertName('BlockBuilderSchedulerNotRunning'),
+          'for': '30m',
+          expr: |||
+            max by (%(alert_aggregation_labels)s, %(per_instance_label)s) (histogram_count(increase(cortex_blockbuilder_scheduler_schedule_update_seconds[5m])) == 0)
+            *
+            max by (%(alert_aggregation_labels)s, %(per_instance_label)s) (kube_statefulset_status_current_revision{statefulset="block-builder-scheduler"})
+          ||| % $._config,
+          labels: {
+            severity: 'warning',
+          },
+          annotations: {
+            message: '%(product)s {{ $labels.%(per_instance_label)s }} in %(alert_aggregation_variables)s is not running.' % $._config,
+          },
+        },
+
         // Alert immediately if block-builder-scheduler detects an unexpected offset gap.
         {
           alert: $.alertName('BlockBuilderDataSkipped'),
@@ -290,7 +307,7 @@
             increase(cortex_blockbuilder_scheduler_job_gap_detected[1m]) > 0
           ||| % $._config,
           labels: {
-            severity: 'warning',
+            severity: 'critical',
           },
           annotations: {
             message: '%(product)s {{ $labels.%(per_instance_label)s }} in %(alert_aggregation_variables)s has detected skipped data.' % $._config,
