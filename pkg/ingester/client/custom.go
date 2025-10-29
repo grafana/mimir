@@ -6,41 +6,13 @@
 package client
 
 import (
-	"slices"
-	"strings"
+	"fmt"
 
-	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 
 	"github.com/grafana/mimir/pkg/storage/chunk"
 )
-
-func ChunksCount(series []TimeSeriesChunk) int {
-	if len(series) == 0 {
-		return 0
-	}
-
-	count := 0
-	for _, entry := range series {
-		count += len(entry.Chunks)
-	}
-	return count
-}
-
-func ChunksSize(series []TimeSeriesChunk) int {
-	if len(series) == 0 {
-		return 0
-	}
-
-	size := 0
-	for _, entry := range series {
-		for _, chunk := range entry.Chunks {
-			size += chunk.Size()
-		}
-	}
-	return size
-}
 
 func ChunkFromMeta(meta chunks.Meta) (Chunk, error) {
 	ch := Chunk{
@@ -57,7 +29,7 @@ func ChunkFromMeta(meta chunks.Meta) (Chunk, error) {
 	case chunkenc.EncFloatHistogram:
 		ch.Encoding = int32(chunk.PrometheusFloatHistogramChunk)
 	default:
-		return Chunk{}, errors.Errorf("unknown chunk encoding from TSDB chunk querier: %v", meta.Chunk.Encoding())
+		return Chunk{}, fmt.Errorf("unknown chunk encoding from TSDB chunk querier: %v", meta.Chunk.Encoding())
 	}
 
 	return ch, nil
@@ -67,15 +39,4 @@ func ChunkFromMeta(meta chunks.Meta) (Chunk, error) {
 // equivalent to no limits and no filtering.
 func DefaultMetricsMetadataRequest() *MetricsMetadataRequest {
 	return &MetricsMetadataRequest{Limit: -1, LimitPerMetric: -1, Metric: ""}
-}
-
-// MakeReferencesSafeToRetain converts all of c's unsafe references to safe copies.
-func (c *TimeSeriesChunk) MakeReferencesSafeToRetain() {
-	for i, l := range c.Labels {
-		c.Labels[i].Name = strings.Clone(l.Name)
-		c.Labels[i].Value = strings.Clone(l.Value)
-	}
-	for i, cc := range c.Chunks {
-		c.Chunks[i].Data = slices.Clone(cc.Data)
-	}
 }

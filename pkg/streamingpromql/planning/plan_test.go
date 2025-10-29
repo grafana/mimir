@@ -3,6 +3,7 @@
 package planning
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -65,8 +66,9 @@ func TestQueryPlan_String(t *testing.T) {
 }
 
 type testNode struct {
-	children    []Node
-	description string
+	children                   []Node
+	description                string
+	minimumRequiredPlanVersion QueryPlanVersion
 }
 
 func (t *testNode) Describe() string {
@@ -124,6 +126,85 @@ func (t *testNode) QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbac
 
 func (t *testNode) ExpressionPosition() posrange.PositionRange {
 	panic("not supported")
+}
+
+func (t *testNode) MinimumRequiredPlanVersion() QueryPlanVersion {
+	return t.minimumRequiredPlanVersion
+}
+
+func TestQueryPlanVersion(t *testing.T) {
+	v0 := QueryPlanVersion(0)
+	v1 := QueryPlanVersion(1)
+	v2 := QueryPlanVersion(2)
+
+	testCases := map[string]struct {
+		plan            QueryPlan
+		expectedVersion QueryPlanVersion
+		expectedError   error
+	}{
+		"no root node": {
+			plan:            QueryPlan{},
+			expectedVersion: v0,
+			expectedError:   errors.New("query plan version can not be determined without a root node"),
+		},
+		"single root node": {
+			plan: QueryPlan{
+				Root: &testNode{minimumRequiredPlanVersion: v1},
+			},
+			expectedVersion: v1,
+		},
+		"node with children": {
+			plan: QueryPlan{
+				Root: &testNode{
+					minimumRequiredPlanVersion: v1,
+					children: []Node{
+						&testNode{
+							minimumRequiredPlanVersion: v2,
+						},
+						&testNode{
+							minimumRequiredPlanVersion: v1,
+						},
+					},
+				},
+			},
+			expectedVersion: v2,
+		},
+		"node with deep children": {
+			plan: QueryPlan{
+				Root: &testNode{
+					minimumRequiredPlanVersion: v0,
+					children: []Node{
+						&testNode{
+							minimumRequiredPlanVersion: v1,
+							children: []Node{
+								&testNode{
+									minimumRequiredPlanVersion: v0,
+									children: []Node{
+										&testNode{
+											minimumRequiredPlanVersion: v2,
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			expectedVersion: v2,
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			err := testCase.plan.DeterminePlanVersion()
+			if err != nil {
+				require.Equal(t, testCase.expectedError, err)
+			} else {
+				require.NoError(t, err)
+				require.Equal(t, testCase.expectedVersion, testCase.plan.Version)
+			}
+		})
+	}
 }
 
 func TestQueriedTimeRange_Union(t *testing.T) {

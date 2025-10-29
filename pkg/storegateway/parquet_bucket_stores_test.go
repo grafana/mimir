@@ -15,6 +15,7 @@ import (
 	"github.com/oklog/ulid/v2"
 	"github.com/prometheus-community/parquet-common/convert"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/common/promslog"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/util/annotations"
@@ -151,7 +152,16 @@ func prepareParquetStorageConfig(t *testing.T) mimir_tsdb.BlocksStorageConfig {
 	return cfg
 }
 
-func generateParquetStorageBlock(t *testing.T, storageDir string, bkt objstore.Bucket, userID string, metricName string, numSeries int, minT, maxT int64, step int) {
+func generateParquetStorageBlock(
+	t *testing.T,
+	storageDir string,
+	bkt objstore.Bucket,
+	userID string,
+	metricName string,
+	numSeries int,
+	minT, maxT int64, step int,
+	opts ...convert.ConvertOption,
+) {
 	generateStorageBlockWithMultipleSeries(t, storageDir, userID, metricName, numSeries, minT, maxT, step)
 	userDir := filepath.Join(storageDir, userID)
 	bkt = bucket.NewPrefixedBucketClient(bkt, userID)
@@ -167,13 +177,16 @@ func generateParquetStorageBlock(t *testing.T, storageDir string, bkt objstore.B
 		require.NoError(t, err)
 		defer runutil.CloseWithErrCapture(&err, tsdbBlock, "close tsdb block")
 
+		// Put name first in case options override it.
+		blockOpts := append([]convert.ConvertOption{convert.WithName(blockId)}, opts...)
 		_, err = convert.ConvertTSDBBlock(
 			context.Background(),
 			bkt,
 			minT,
 			maxT,
 			[]convert.Convertible{tsdbBlock},
-			convert.WithName(blockId),
+			promslog.NewNopLogger(),
+			blockOpts...,
 		)
 		require.NoError(t, err)
 
@@ -186,7 +199,7 @@ func generateParquetStorageBlock(t *testing.T, storageDir string, bkt objstore.B
 
 }
 
-func queryParquetSeries(t *testing.T, store storegatewaypb.StoreGatewayServer, userID, metricName string, minT, maxT int64) ([]*storepb.Series, annotations.Annotations, error) {
+func queryParquetSeries(t *testing.T, store storegatewaypb.StoreGatewayServer, userID, metricName string, minT, maxT int64) ([]*storeTestSeries, annotations.Annotations, error) {
 	req := &storepb.SeriesRequest{
 		MinTime:                  minT,
 		MaxTime:                  maxT,
@@ -203,7 +216,7 @@ func queryParquetSeries(t *testing.T, store storegatewaypb.StoreGatewayServer, u
 	return grpcSeries(t, setUserIDToGRPCContext(context.Background(), userID), store, req)
 }
 
-func grpcSeries(t *testing.T, ctx context.Context, store storegatewaypb.StoreGatewayServer, req *storepb.SeriesRequest) ([]*storepb.Series, annotations.Annotations, error) {
+func grpcSeries(t *testing.T, ctx context.Context, store storegatewaypb.StoreGatewayServer, req *storepb.SeriesRequest) ([]*storeTestSeries, annotations.Annotations, error) {
 	srv := newStoreGatewayTestServer(t, store)
 	seriesSet, warnings, _, _, err := srv.Series(ctx, req)
 	return seriesSet, warnings, err

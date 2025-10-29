@@ -61,6 +61,7 @@ func (d defaultBlockConverter) ConvertBlock(ctx context.Context, meta *block.Met
 		meta.MinTime,
 		meta.MaxTime,
 		[]convert.Convertible{tsdbBlock},
+		util_log.SlogFromGoKit(logger),
 		opts...,
 	)
 	return err
@@ -75,19 +76,22 @@ type Config struct {
 
 	ConversionInterval time.Duration `yaml:"conversion_interval"`
 	DiscoveryInterval  time.Duration `yaml:"discovery_interval"`
-	MaxBlockAge        time.Duration `yaml:"max_block_age"`
-	MinBlockTimestamp  uint64        `yaml:"min_block_timestamp"`
+
+	TaskConcurrency       int `yaml:"task_concurrency" category:"advanced"`
+	ConversionConcurrency int `yaml:"conversion_concurrency" category:"advanced"`
+
 	MinDataAge         time.Duration `yaml:"min_data_age" category:"advanced"`
-
-	SortingLabels         flagext.StringSliceCSV `yaml:"sorting_labels" category:"advanced"`
-	ColDuration           time.Duration          `yaml:"col_duration" category:"advanced"`
-	MaxRowsPerGroup       int                    `yaml:"max_rows_per_group" category:"advanced"`
-	TSDBReadConcurrency   int                    `yaml:"tsdb_read_concurrency" category:"advanced"`
-	TaskConcurrency       int                    `yaml:"task_concurrency" category:"advanced"`
-	ConversionConcurrency int                    `yaml:"conversion_concurrency" category:"advanced"`
-
-	MinCompactionLevel int           `yaml:"min_compaction_level" category:"advanced"`
+	MinBlockTimestamp  uint64        `yaml:"min_block_timestamp"`
 	MinBlockDuration   time.Duration `yaml:"min_block_duration" category:"advanced"`
+	MaxBlockAge        time.Duration `yaml:"max_block_age"`
+	MinCompactionLevel int           `yaml:"min_compaction_level" category:"advanced"`
+
+	SortingLabels                flagext.StringSliceCSV `yaml:"sorting_labels" category:"advanced"`
+	ColDuration                  time.Duration          `yaml:"col_duration" category:"advanced"`
+	MaxRowsPerGroup              int                    `yaml:"max_rows_per_group" category:"advanced"`
+	MaxRowGroupsPerShard         int                    `yaml:"max_row_groups_per_shard" category:"advanced"`
+	TSDBReadConcurrency          int                    `yaml:"tsdb_read_concurrency" category:"advanced"`
+	ParquetShardWriteConcurrency int                    `yaml:"parquet_shard_write_concurrency" category:"advanced"`
 
 	CompressionEnabled bool `yaml:"compression_enabled" category:"advanced"`
 
@@ -104,21 +108,31 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	cfg.MemcachedLock.Memcached.RegisterFlagsWithPrefix("parquet-converter.locking.memcached.", f)
 	f.Var(&cfg.EnabledTenants, "parquet-converter.enabled-tenants", "Comma-separated list of tenants that can have their TSDB blocks converted into Parquet. If specified, the Parquet-converter only converts these tenants. Otherwise, it converts all tenants. Subject to sharding.")
 	f.Var(&cfg.DisabledTenants, "parquet-converter.disabled-tenants", "Comma-separated list of tenants that cannot have their TSDB blocks converted into Parquet. If specified, and the Parquet-converter would normally pick a given tenant to convert the blocks to Parquet (via -parquet-converter.enabled-tenants or sharding), it is ignored instead.")
+
+	f.StringVar(&cfg.DataDir, "parquet-converter.data-dir", "./data-parquet-converter/", "Directory to temporarily store blocks during conversion. This directory is not required to persist between restarts.")
+
 	f.DurationVar(&cfg.ConversionInterval, "parquet-converter.conversion-interval", time.Minute, "The frequency at which the conversion runs.")
 	f.DurationVar(&cfg.DiscoveryInterval, "parquet-converter.discovery-interval", 5*time.Minute, "The frequency at which user and block discovery runs.")
-	f.DurationVar(&cfg.MaxBlockAge, "parquet-converter.max-block-age", 0, "Maximum age of blocks to convert. Blocks older than this will be skipped. Set to 0 to disable age filtering.")
-	f.Uint64Var(&cfg.MinBlockTimestamp, "parquet-converter.min-block-timestamp", 0, "Minimum block timestamp (based on ULID) to convert. Set to 0 to disable timestamp filtering.")
+
+	f.IntVar(&cfg.TaskConcurrency, "parquet-converter.task-concurrency", 2, "Maximum number of Go routines processing tasks in parallel.")
+	f.IntVar(&cfg.ConversionConcurrency, "parquet-converter.conversion-concurrency", 1, "Maximum number of concurrent Go routines allowed to run the conversion code.")
+
 	f.DurationVar(&cfg.MinDataAge, "parquet-converter.min-data-age", 0, "Minimum age of data in blocks to convert. Only convert blocks containing data older than this duration from now, based on their MinTime. Set to 0 to disable age filtering.")
-	f.StringVar(&cfg.DataDir, "parquet-converter.data-dir", "./data-parquet-converter/", "Directory to temporarily store blocks during conversion. This directory is not required to persist between restarts.")
+	f.Uint64Var(&cfg.MinBlockTimestamp, "parquet-converter.min-block-timestamp", 0, "Minimum block timestamp (based on ULID) to convert. Set to 0 to disable timestamp filtering.")
+	f.DurationVar(&cfg.MinBlockDuration, "parquet-converter.min-block-duration", 0, "Minimum duration of blocks to convert. Blocks with a duration shorter than this will be skipped. Set to 0 to disable duration filtering.")
+	f.DurationVar(&cfg.MaxBlockAge, "parquet-converter.max-block-age", 0, "Maximum age of blocks to convert. Blocks older than this will be skipped. Set to 0 to disable age filtering.")
+	f.IntVar(&cfg.MinCompactionLevel, "parquet-converter.min-compaction-level", 2, "Minimum compaction level required for blocks to be converted to Parquet. Blocks equal or greater than this level will be converted.")
+
 	f.Var(&cfg.SortingLabels, "parquet-converter.sorting-labels", "Comma-separated list of labels to sort by when converting to Parquet format. If not the file will be sorted by '__name__'.")
 	f.DurationVar(&cfg.ColDuration, "parquet-converter.col-duration", 8*time.Hour, "Duration for column chunks in Parquet files.")
 	f.IntVar(&cfg.MaxRowsPerGroup, "parquet-converter.max-rows-per-group", 1e6, "Maximum number of rows per row group in Parquet files.")
-	f.IntVar(&cfg.TSDBReadConcurrency, "parquet-converter.tsdb-read-concurrency", 4, "Maximum number of Go routines reading TSDB series in parallel when converting a block.")
-	f.IntVar(&cfg.TaskConcurrency, "parquet-converter.task-concurrency", 2, "Maximum number of Go routines processing tasks in parallel.")
-	f.IntVar(&cfg.ConversionConcurrency, "parquet-converter.conversion-concurrency", 1, "Maximum number of concurrent Go routines allowed to run the conversion code.")
-	f.IntVar(&cfg.MinCompactionLevel, "parquet-converter.min-compaction-level", 2, "Minimum compaction level required for blocks to be converted to Parquet. Blocks equal or greater than this level will be converted.")
-	f.DurationVar(&cfg.MinBlockDuration, "parquet-converter.min-block-duration", 0, "Minimum duration of blocks to convert. Blocks with a duration shorter than this will be skipped. Set to 0 to disable duration filtering.")
+	f.IntVar(&cfg.MaxRowGroupsPerShard, "parquet-converter.max-row-groups-per-shard", 8, "Maximum number of row groups per Parquet shard file.")
+
+	f.IntVar(&cfg.TSDBReadConcurrency, "parquet-converter.tsdb-read-concurrency", 4, "Maximum number of Go routines reading TSDB series in concurrently when converting a block.")
+	f.IntVar(&cfg.ParquetShardWriteConcurrency, "parquet-converter.parquet-shard-write-concurrency", 4, "Maximum number of Go routines writing Parquet shards in parallel when converting a block.")
+
 	f.BoolVar(&cfg.CompressionEnabled, "parquet-converter.compression-enabled", true, "Whether compression is enabled for labels and chunks parquet files. When disabled, parquet files will be converted and stored uncompressed.")
+
 }
 
 type ParquetConverter struct {
@@ -161,8 +175,15 @@ func buildBaseConverterOptions(cfg Config) []convert.ConvertOption {
 		baseConverterOptions = append(baseConverterOptions, convert.WithRowGroupSize(cfg.MaxRowsPerGroup))
 	}
 
+	if cfg.MaxRowGroupsPerShard > 0 {
+		baseConverterOptions = append(baseConverterOptions, convert.WithNumRowGroups(cfg.MaxRowGroupsPerShard))
+	}
+
 	if cfg.TSDBReadConcurrency > 0 {
-		baseConverterOptions = append(baseConverterOptions, convert.WithConcurrency(cfg.TSDBReadConcurrency))
+		baseConverterOptions = append(baseConverterOptions, convert.WithReadConcurrency(cfg.TSDBReadConcurrency))
+	}
+	if cfg.ParquetShardWriteConcurrency > 0 {
+		baseConverterOptions = append(baseConverterOptions, convert.WithWriteConcurrency(cfg.ParquetShardWriteConcurrency))
 	}
 
 	baseConverterOptions = append(baseConverterOptions, convert.WithCompression(schema.WithCompressionEnabled(cfg.CompressionEnabled)))
@@ -364,8 +385,7 @@ func (c *ParquetConverter) discoverAndEnqueueBlocks(ctx context.Context) {
 			c.metaSyncDirForUser(u),
 			prometheus.NewRegistry(), // TODO: we are discarding metrics for now
 			[]block.MetadataFilter{},
-			nil, // TODO: No Meta cache for now
-			0,   // No lookback limit, we take all blocks
+			0, // No lookback limit, we take all blocks
 		)
 		if err != nil {
 			level.Error(ulogger).Log("msg", "error creating meta fetcher", "err", err)
@@ -426,6 +446,17 @@ func (c *ParquetConverter) discoverAndEnqueueBlocks(ctx context.Context) {
 
 // processBlock handles the conversion of a single block with proper metrics tracking.
 func (c *ParquetConverter) processBlock(ctx context.Context, userID string, meta *block.Meta, uBucket objstore.InstrumentedBucket, logger log.Logger) {
+	ulidTime := time.UnixMilli(int64(meta.ULID.Time()))
+	level.Info(logger).Log(
+		"msg", "starting block conversion",
+		"block", meta.ULID.String(),
+		"min_time", meta.MinTime,
+		"max_time", meta.MaxTime,
+		"ulid_timestamp_ms", meta.ULID.Time(),
+		"ulid_time_human", ulidTime.UTC().Format(time.RFC3339),
+		"compaction_level", meta.Compaction.Level,
+		"block_size_bytes", meta.BlockBytes(),
+	)
 	start := time.Now()
 	var err error
 	var skipped bool
@@ -503,22 +534,25 @@ func (c *ParquetConverter) processBlock(ctx context.Context, userID string, meta
 		level.Error(logger).Log("msg", "failed to acquire conversion semaphore", "err", err)
 		return
 	}
+	defer c.conversionSem.Release(1)
 
 	err = c.blockConverter.ConvertBlock(ctx, meta, localBlockDir, uBucket, logger, convertOpts)
-	c.conversionSem.Release(1)
+
 	if err != nil {
 		level.Error(logger).Log("msg", "failed to convert block", "block", meta.ULID.String(), "err", err)
 		return
 	}
 
-	ulidTime := time.UnixMilli(int64(meta.ULID.Time()))
 	level.Info(logger).Log(
-		"msg", "converted block",
+		"msg", "finished block conversion",
 		"block", meta.ULID.String(),
+		"min_time", meta.MinTime,
+		"max_time", meta.MaxTime,
 		"ulid_timestamp_ms", meta.ULID.Time(),
 		"ulid_time_human", ulidTime.UTC().Format(time.RFC3339),
-		"duration_seconds", time.Since(start).Seconds(),
+		"compaction_level", meta.Compaction.Level,
 		"block_size_bytes", meta.BlockBytes(),
+		"duration_seconds", time.Since(start).Seconds(),
 	)
 
 	err = WriteConversionMark(ctx, meta.ULID, uBucket)

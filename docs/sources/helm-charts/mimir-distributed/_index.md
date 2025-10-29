@@ -5,19 +5,15 @@ description: "Technical documentation for the mimir-distributed Helm chart"
 weight: 1
 keywords:
   - Grafana Mimir
-  - Grafana Enterprise Metrics
   - Grafana metrics
 cascade:
-  MIMIR_VERSION: "v2.17.x"
-  GEM_VERSION: "v2.17.x"
+  MIMIR_VERSION: "v3.0.x"
   ALLOY_VERSION: "latest"
 ---
 
 # Grafana mimir-distributed Helm chart documentation
 
-The mimir-distributed Helm chart allows you to install, configure, and upgrade [Grafana Mimir](https://grafana.com/docs/mimir/<MIMIR_VERSION>/) and [Grafana Enterprise Metrics](https://grafana.com/docs/enterprise-metrics/<GEM_VERSION>/) (GEM) within a Kubernetes cluster.
-
-> **Note:** By default, the mimir-distributed Helm chart documentation applies to both Grafana Mimir and GEM. If it only applies to GEM, it is explicitly stated.
+The mimir-distributed Helm chart allows you to install, configure, and upgrade [Grafana Mimir](https://grafana.com/docs/mimir/<MIMIR_VERSION>/) within a Kubernetes cluster.
 
 {{< section menuTitle="true" >}}
 

@@ -43,6 +43,9 @@ type blocksStoreReplicationSet struct {
 	dynamicReplication storegateway.DynamicReplication
 	limits             BlocksStoreLimits
 
+	// When non empty, the querier prioritise querying blocks from store-gateways in this zone.
+	preferredZone string
+
 	// Subservices manager.
 	subservices        *services.Manager
 	subservicesWatcher *services.FailureWatcher
@@ -52,6 +55,7 @@ func newBlocksStoreReplicationSet(
 	storesRing *ring.Ring,
 	balancingStrategy loadBalancingStrategy,
 	dynamicReplication storegateway.DynamicReplication,
+	preferredZone string,
 	limits BlocksStoreLimits,
 	clientConfig grpcclient.Config,
 	logger log.Logger,
@@ -62,6 +66,7 @@ func newBlocksStoreReplicationSet(
 		clientsPool:        newStoreGatewayClientPool(client.NewRingServiceDiscovery(storesRing), clientConfig, logger, reg),
 		dynamicReplication: dynamicReplication,
 		balancingStrategy:  balancingStrategy,
+		preferredZone:      preferredZone,
 		limits:             limits,
 		subservicesWatcher: services.NewFailureWatcher(),
 	}
@@ -121,7 +126,7 @@ func (s *blocksStoreReplicationSet) GetClientsFor(userID string, blocks bucketin
 		}
 
 		// Pick a non excluded store-gateway instance.
-		inst := getNonExcludedInstance(set, exclude[block.ID], s.balancingStrategy)
+		inst := getNonExcludedInstance(set, exclude[block.ID], s.balancingStrategy, s.preferredZone)
 		if inst == nil {
 			return nil, fmt.Errorf("no store-gateway instance left after checking exclude for block %s", block.ID)
 		}
@@ -145,12 +150,22 @@ func (s *blocksStoreReplicationSet) GetClientsFor(userID string, blocks bucketin
 	return clients, nil
 }
 
-func getNonExcludedInstance(set ring.ReplicationSet, exclude []string, balancingStrategy loadBalancingStrategy) *ring.InstanceDesc {
+func getNonExcludedInstance(set ring.ReplicationSet, exclude []string, balancingStrategy loadBalancingStrategy, preferredZone string) *ring.InstanceDesc {
 	if balancingStrategy == Random {
 		// Randomize the list of instances to not always query the same one.
 		rand.Shuffle(len(set.Instances), func(i, j int) {
 			set.Instances[i], set.Instances[j] = set.Instances[j], set.Instances[i]
 		})
+	}
+
+	if preferredZone != "" {
+		// Give priority to the preferred zone.
+		for idx, instance := range set.Instances {
+			if instance.Zone == preferredZone {
+				set.Instances[0], set.Instances[idx] = set.Instances[idx], set.Instances[0]
+				break
+			}
+		}
 	}
 
 	for _, instance := range set.Instances {

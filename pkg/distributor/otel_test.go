@@ -69,10 +69,14 @@ func TestOTelMetricsToTimeSeries(t *testing.T) {
 		appendCustomMetric                func(pmetric.MetricSlice)
 		expectedLabels                    []mimirpb.LabelAdapter
 		expectedInfoLabels                []mimirpb.LabelAdapter
+		underscoreSanitization            bool
+		preserveMultipleUnderscores       bool
 	}{
 		{
-			name:                      "Successful conversion without resource attribute promotion",
-			promoteResourceAttributes: nil,
+			name:                        "Successful conversion without resource attribute promotion",
+			promoteResourceAttributes:   nil,
+			underscoreSanitization:      true,
+			preserveMultipleUnderscores: true,
 			expectedLabels: []mimirpb.LabelAdapter{
 				{
 					Name:  "__name__",
@@ -118,6 +122,8 @@ func TestOTelMetricsToTimeSeries(t *testing.T) {
 			name:                              "Successful conversion without resource attribute promotion, and keep identifying resource attributes",
 			promoteResourceAttributes:         nil,
 			keepIdentifyingResourceAttributes: true,
+			underscoreSanitization:            true,
+			preserveMultipleUnderscores:       true,
 			expectedLabels: []mimirpb.LabelAdapter{
 				{
 					Name:  "__name__",
@@ -172,8 +178,10 @@ func TestOTelMetricsToTimeSeries(t *testing.T) {
 			},
 		},
 		{
-			name:                      "Successful conversion with resource attribute promotion",
-			promoteResourceAttributes: []string{"non-existent-attr", "existent-attr"},
+			name:                        "Successful conversion with resource attribute promotion",
+			promoteResourceAttributes:   []string{"non-existent-attr", "existent-attr"},
+			underscoreSanitization:      true,
+			preserveMultipleUnderscores: true,
 			expectedLabels: []mimirpb.LabelAdapter{
 				{
 					Name:  "__name__",
@@ -220,8 +228,10 @@ func TestOTelMetricsToTimeSeries(t *testing.T) {
 			},
 		},
 		{
-			name:                      "Successful conversion with resource attribute promotion, conflicting resource attributes are ignored",
-			promoteResourceAttributes: []string{"non-existent-attr", "existent-attr", "metric-attr", "job", "instance"},
+			name:                        "Successful conversion with resource attribute promotion, conflicting resource attributes are ignored",
+			promoteResourceAttributes:   []string{"non-existent-attr", "existent-attr", "metric-attr", "job", "instance"},
+			underscoreSanitization:      true,
+			preserveMultipleUnderscores: true,
 			expectedLabels: []mimirpb.LabelAdapter{
 				{
 					Name:  "__name__",
@@ -268,8 +278,10 @@ func TestOTelMetricsToTimeSeries(t *testing.T) {
 			},
 		},
 		{
-			name:                      "Successful conversion of cumulative non-monotonic sum",
-			promoteResourceAttributes: nil,
+			name:                        "Successful conversion of cumulative non-monotonic sum",
+			promoteResourceAttributes:   nil,
+			underscoreSanitization:      true,
+			preserveMultipleUnderscores: true,
 			appendCustomMetric: func(metricSlice pmetric.MetricSlice) {
 				m := metricSlice.AppendEmpty()
 				m.SetName("test_metric")
@@ -323,8 +335,10 @@ func TestOTelMetricsToTimeSeries(t *testing.T) {
 			},
 		},
 		{
-			name:                      "Successful conversion of cumulative monotonic sum",
-			promoteResourceAttributes: nil,
+			name:                        "Successful conversion of cumulative monotonic sum",
+			promoteResourceAttributes:   nil,
+			underscoreSanitization:      true,
+			preserveMultipleUnderscores: true,
 			appendCustomMetric: func(metricSlice pmetric.MetricSlice) {
 				m := metricSlice.AppendEmpty()
 				m.SetName("test_metric")
@@ -352,6 +366,207 @@ func TestOTelMetricsToTimeSeries(t *testing.T) {
 				{
 					Name:  "metric_attr",
 					Value: "metric value",
+				},
+			},
+			expectedInfoLabels: []mimirpb.LabelAdapter{
+				{
+					Name:  "__name__",
+					Value: "target_info",
+				},
+				{
+					Name:  "existent_attr",
+					Value: "resource value",
+				},
+				{
+					Name:  "metric_attr",
+					Value: "resource value",
+				},
+				{
+					Name:  "job",
+					Value: "service namespace/service name",
+				},
+				{
+					Name:  "instance",
+					Value: "service ID",
+				},
+			},
+		},
+		{
+			name:                        "Underscore sanitization",
+			promoteResourceAttributes:   nil,
+			underscoreSanitization:      true,
+			preserveMultipleUnderscores: true,
+			appendCustomMetric: func(metricSlice pmetric.MetricSlice) {
+				m := metricSlice.AppendEmpty()
+				m.SetName("test_metric")
+				sum := m.SetEmptySum()
+				sum.SetIsMonotonic(false)
+				sum.SetAggregationTemporality(pmetric.AggregationTemporalityCumulative)
+				dp := sum.DataPoints().AppendEmpty()
+				dp.SetIntValue(123)
+				dp.SetTimestamp(pcommon.NewTimestampFromTime(time.Now()))
+				dp.Attributes().PutStr("_foo", "bar")
+				dp.Attributes().PutStr("_1", "bar")
+				dp.Attributes().PutStr("some__thing", "bar")
+			},
+			expectedLabels: []mimirpb.LabelAdapter{
+				{
+					Name:  "__name__",
+					Value: "test_metric",
+				},
+				{
+					Name:  "key_foo",
+					Value: "bar",
+				},
+				{
+					Name:  "key_1",
+					Value: "bar",
+				},
+				{
+					Name:  "some__thing",
+					Value: "bar",
+				},
+				{
+					Name:  "instance",
+					Value: "service ID",
+				},
+				{
+					Name:  "job",
+					Value: "service namespace/service name",
+				},
+			},
+			expectedInfoLabels: []mimirpb.LabelAdapter{
+				{
+					Name:  "__name__",
+					Value: "target_info",
+				},
+				{
+					Name:  "existent_attr",
+					Value: "resource value",
+				},
+				{
+					Name:  "metric_attr",
+					Value: "resource value",
+				},
+				{
+					Name:  "job",
+					Value: "service namespace/service name",
+				},
+				{
+					Name:  "instance",
+					Value: "service ID",
+				},
+			},
+		},
+		{
+			name:                        "Disable underscore sanitization",
+			promoteResourceAttributes:   nil,
+			underscoreSanitization:      false,
+			preserveMultipleUnderscores: true,
+			appendCustomMetric: func(metricSlice pmetric.MetricSlice) {
+				m := metricSlice.AppendEmpty()
+				m.SetName("test_metric")
+				sum := m.SetEmptySum()
+				sum.SetIsMonotonic(false)
+				sum.SetAggregationTemporality(pmetric.AggregationTemporalityCumulative)
+				dp := sum.DataPoints().AppendEmpty()
+				dp.SetIntValue(123)
+				dp.SetTimestamp(pcommon.NewTimestampFromTime(time.Now()))
+				dp.Attributes().PutStr("_foo", "bar")
+				dp.Attributes().PutStr("_1", "bar")
+				dp.Attributes().PutStr("some__thing", "bar")
+			},
+			expectedLabels: []mimirpb.LabelAdapter{
+				{
+					Name:  "__name__",
+					Value: "test_metric",
+				},
+				{
+					Name:  "_foo",
+					Value: "bar",
+				},
+				{
+					Name:  "_1",
+					Value: "bar",
+				},
+				{
+					Name:  "some__thing",
+					Value: "bar",
+				},
+				{
+					Name:  "instance",
+					Value: "service ID",
+				},
+				{
+					Name:  "job",
+					Value: "service namespace/service name",
+				},
+			},
+			expectedInfoLabels: []mimirpb.LabelAdapter{
+				{
+					Name:  "__name__",
+					Value: "target_info",
+				},
+				{
+					Name:  "existent_attr",
+					Value: "resource value",
+				},
+				{
+					Name:  "metric_attr",
+					Value: "resource value",
+				},
+				{
+					Name:  "job",
+					Value: "service namespace/service name",
+				},
+				{
+					Name:  "instance",
+					Value: "service ID",
+				},
+			},
+		},
+		{
+			name:                        "Disable multiple underscore preservation",
+			promoteResourceAttributes:   nil,
+			underscoreSanitization:      false,
+			preserveMultipleUnderscores: false,
+			appendCustomMetric: func(metricSlice pmetric.MetricSlice) {
+				m := metricSlice.AppendEmpty()
+				m.SetName("test_metric")
+				sum := m.SetEmptySum()
+				sum.SetIsMonotonic(false)
+				sum.SetAggregationTemporality(pmetric.AggregationTemporalityCumulative)
+				dp := sum.DataPoints().AppendEmpty()
+				dp.SetIntValue(123)
+				dp.SetTimestamp(pcommon.NewTimestampFromTime(time.Now()))
+				dp.Attributes().PutStr("_foo", "bar")
+				dp.Attributes().PutStr("_1", "bar")
+				dp.Attributes().PutStr("some__thing", "bar")
+			},
+			expectedLabels: []mimirpb.LabelAdapter{
+				{
+					Name:  "__name__",
+					Value: "test_metric",
+				},
+				{
+					Name:  "_foo",
+					Value: "bar",
+				},
+				{
+					Name:  "_1",
+					Value: "bar",
+				},
+				{
+					Name:  "some_thing",
+					Value: "bar",
+				},
+				{
+					Name:  "instance",
+					Value: "service ID",
+				},
+				{
+					Name:  "job",
+					Value: "service namespace/service name",
 				},
 			},
 			expectedInfoLabels: []mimirpb.LabelAdapter{
@@ -408,6 +623,8 @@ func TestOTelMetricsToTimeSeries(t *testing.T) {
 					addSuffixes:                       true,
 					keepIdentifyingResourceAttributes: tc.keepIdentifyingResourceAttributes,
 					promoteResourceAttributes:         tc.promoteResourceAttributes,
+					underscoreSanitization:            tc.underscoreSanitization,
+					preserveMultipleUnderscores:       tc.preserveMultipleUnderscores,
 				},
 				log.NewNopLogger(),
 			)
@@ -893,7 +1110,10 @@ func BenchmarkOTLPHandler(b *testing.B) {
 		return nil
 	}
 	limits := validation.MockDefaultOverrides()
-	handler := OTLPHandler(10000000, nil, nil, limits, nil, RetryConfig{}, nil, pushFunc, nil, nil, log.NewNopLogger())
+	handler := OTLPHandler(
+		10000000, nil, nil, limits, nil, nil,
+		RetryConfig{}, nil, pushFunc, nil, nil, log.NewNopLogger(),
+	)
 
 	b.Run("protobuf", func(b *testing.B) {
 		req := createOTLPProtoRequest(b, exportReq, "")
@@ -1026,23 +1246,24 @@ func TestHandlerOTLPPush(t *testing.T) {
 	)
 
 	type testCase struct {
-		name                             string
-		series                           []prompb.TimeSeries
-		metadata                         []mimirpb.MetricMetadata
-		compression                      string
-		maxMsgSize                       int
-		verifyFunc                       func(*testing.T, context.Context, *Request, testCase) error
-		requestContentType               string
-		responseCode                     int
-		responseContentType              string
-		responseContentLength            int
-		errMessage                       string
-		expectedLogs                     []string
-		expectedRetryHeader              bool
-		expectedPartialSuccess           *colmetricpb.ExportMetricsPartialSuccess
-		promoteResourceAttributes        []string
-		expectedAttributePromotions      map[string]string
-		resourceAttributePromotionConfig OTelResourceAttributePromotionConfig
+		name                                        string
+		series                                      []prompb.TimeSeries
+		metadata                                    []mimirpb.MetricMetadata
+		compression                                 string
+		maxMsgSize                                  int
+		verifyFunc                                  func(*testing.T, context.Context, *Request, testCase) error
+		requestContentType                          string
+		responseCode                                int
+		responseContentType                         string
+		responseContentLength                       int
+		errMessage                                  string
+		expectedLogs                                []string
+		expectedRetryHeader                         bool
+		expectedPartialSuccess                      *colmetricpb.ExportMetricsPartialSuccess
+		promoteResourceAttributes                   []string
+		expectedAttributePromotions                 map[string]string
+		resourceAttributePromotionConfig            OTelResourceAttributePromotionConfig
+		keepIdentifyingOTelResourceAttributesConfig KeepIdentifyingOTelResourceAttributesConfig
 	}
 
 	samplesVerifierFunc := func(t *testing.T, _ context.Context, pushReq *Request, tc testCase) error {
@@ -1441,7 +1662,12 @@ func TestHandlerOTLPPush(t *testing.T) {
 
 			logs := &concurrency.SyncBuffer{}
 			retryConfig := RetryConfig{Enabled: true, MinBackoff: 5 * time.Second, MaxBackoff: 5 * time.Second}
-			handler := OTLPHandler(tt.maxMsgSize, nil, nil, limits, tt.resourceAttributePromotionConfig, retryConfig, nil, pusher, nil, nil, util_log.MakeLeveledLogger(logs, "info"))
+			handler := OTLPHandler(
+				tt.maxMsgSize, nil, nil, limits,
+				tt.resourceAttributePromotionConfig, tt.keepIdentifyingOTelResourceAttributesConfig,
+				retryConfig, nil, pusher, nil, nil,
+				util_log.MakeLeveledLogger(logs, "info"),
+			)
 
 			resp := httptest.NewRecorder()
 			handler.ServeHTTP(resp, req)
@@ -1531,14 +1757,17 @@ func TestHandler_otlpDroppedMetricsPanic(t *testing.T) {
 
 	req := createOTLPProtoRequest(t, pmetricotlp.NewExportRequestFromMetrics(md), "")
 	resp := httptest.NewRecorder()
-	handler := OTLPHandler(100000, nil, nil, limits, nil, RetryConfig{}, nil, func(_ context.Context, pushReq *Request) error {
-		request, err := pushReq.WriteRequest()
-		assert.NoError(t, err)
-		assert.Len(t, request.Timeseries, 3)
-		assert.False(t, request.SkipLabelValidation)
-		pushReq.CleanUp()
-		return nil
-	}, nil, nil, log.NewNopLogger())
+	handler := OTLPHandler(
+		100000, nil, nil, limits, nil, nil,
+		RetryConfig{}, nil, func(_ context.Context, pushReq *Request) error {
+			request, err := pushReq.WriteRequest()
+			assert.NoError(t, err)
+			assert.Len(t, request.Timeseries, 3)
+			assert.False(t, request.SkipLabelValidation)
+			pushReq.CleanUp()
+			return nil
+		}, nil, nil, log.NewNopLogger(),
+	)
 	handler.ServeHTTP(resp, req)
 	assert.Equal(t, http.StatusBadRequest, resp.Code)
 }
@@ -1573,14 +1802,17 @@ func TestHandler_otlpDroppedMetricsPanic2(t *testing.T) {
 
 	req := createOTLPProtoRequest(t, pmetricotlp.NewExportRequestFromMetrics(md), "")
 	resp := httptest.NewRecorder()
-	handler := OTLPHandler(100000, nil, nil, limits, nil, RetryConfig{}, nil, func(_ context.Context, pushReq *Request) error {
-		request, err := pushReq.WriteRequest()
-		t.Cleanup(pushReq.CleanUp)
-		require.NoError(t, err)
-		assert.Len(t, request.Timeseries, 1)
-		assert.False(t, request.SkipLabelValidation)
-		return nil
-	}, nil, nil, log.NewNopLogger())
+	handler := OTLPHandler(
+		100000, nil, nil, limits, nil, nil,
+		RetryConfig{}, nil, func(_ context.Context, pushReq *Request) error {
+			request, err := pushReq.WriteRequest()
+			t.Cleanup(pushReq.CleanUp)
+			require.NoError(t, err)
+			assert.Len(t, request.Timeseries, 1)
+			assert.False(t, request.SkipLabelValidation)
+			return nil
+		}, nil, nil, log.NewNopLogger(),
+	)
 	handler.ServeHTTP(resp, req)
 	assert.Equal(t, http.StatusBadRequest, resp.Code)
 
@@ -1599,14 +1831,17 @@ func TestHandler_otlpDroppedMetricsPanic2(t *testing.T) {
 
 	req = createOTLPProtoRequest(t, pmetricotlp.NewExportRequestFromMetrics(md), "")
 	resp = httptest.NewRecorder()
-	handler = OTLPHandler(100000, nil, nil, limits, nil, RetryConfig{}, nil, func(_ context.Context, pushReq *Request) error {
-		request, err := pushReq.WriteRequest()
-		t.Cleanup(pushReq.CleanUp)
-		require.NoError(t, err)
-		assert.Len(t, request.Timeseries, 9) // 6 buckets (including +Inf) + 2 sum/count + 2 from the first case
-		assert.False(t, request.SkipLabelValidation)
-		return nil
-	}, nil, nil, log.NewNopLogger())
+	handler = OTLPHandler(
+		100000, nil, nil, limits, nil, nil,
+		RetryConfig{}, nil, func(_ context.Context, pushReq *Request) error {
+			request, err := pushReq.WriteRequest()
+			t.Cleanup(pushReq.CleanUp)
+			require.NoError(t, err)
+			assert.Len(t, request.Timeseries, 9) // 6 buckets (including +Inf) + 2 sum/count + 2 from the first case
+			assert.False(t, request.SkipLabelValidation)
+			return nil
+		}, nil, nil, log.NewNopLogger(),
+	)
 	handler.ServeHTTP(resp, req)
 	assert.Equal(t, http.StatusBadRequest, resp.Code)
 }
@@ -1627,7 +1862,10 @@ func TestHandler_otlpWriteRequestTooBigWithCompression(t *testing.T) {
 
 	resp := httptest.NewRecorder()
 
-	handler := OTLPHandler(140, nil, nil, nil, nil, RetryConfig{}, nil, readBodyPushFunc(t), nil, nil, log.NewNopLogger())
+	handler := OTLPHandler(
+		140, nil, nil, nil, nil, nil,
+		RetryConfig{}, nil, readBodyPushFunc(t), nil, nil, log.NewNopLogger(),
+	)
 	handler.ServeHTTP(resp, req)
 	assert.Equal(t, http.StatusRequestEntityTooLarge, resp.Code)
 	body, err := io.ReadAll(resp.Body)
@@ -1781,16 +2019,16 @@ func TestHandler_toOtlpGRPCHTTPStatus(t *testing.T) {
 			expectedGRPCStatus: codes.Internal,
 			expectedSoft:       false,
 		},
-		"an ingesterPushError with INSTANCE_LIMIT cause gets translated into gRPC codes.Internal and HTTP 503 statuses": {
+		"an ingesterPushError with INSTANCE_LIMIT cause gets translated into gRPC codes.Unavailable and HTTP 503 statuses": {
 			err:                newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, originalMsg, mimirpb.ERROR_CAUSE_INSTANCE_LIMIT), ingesterID),
 			expectedHTTPStatus: http.StatusServiceUnavailable,
-			expectedGRPCStatus: codes.Internal,
+			expectedGRPCStatus: codes.Unavailable,
 			expectedSoft:       false,
 		},
-		"a DoNotLogError of an ingesterPushError with INSTANCE_LIMIT cause gets translated into gRPC codes.Internal and HTTP 503 statuses": {
+		"a DoNotLogError of an ingesterPushError with INSTANCE_LIMIT cause gets translated into gRPC codes.Unavailable and HTTP 503 statuses": {
 			err:                middleware.DoNotLogError{Err: newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, originalMsg, mimirpb.ERROR_CAUSE_INSTANCE_LIMIT), ingesterID)},
 			expectedHTTPStatus: http.StatusServiceUnavailable,
-			expectedGRPCStatus: codes.Internal,
+			expectedGRPCStatus: codes.Unavailable,
 			expectedSoft:       false,
 		},
 		"an ingesterPushError with UNKNOWN_CAUSE cause gets translated into gRPC codes.Internal and HTTP 503 statuses": {
@@ -1901,5 +2139,5 @@ type fakeResourceAttributePromotionConfig struct {
 }
 
 func (c fakeResourceAttributePromotionConfig) PromoteOTelResourceAttributes(string) []string {
-	return []string{"resource.attr"}
+	return c.promote
 }

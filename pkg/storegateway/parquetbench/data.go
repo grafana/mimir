@@ -114,6 +114,7 @@ func setupBenchmarkData(b *testing.B, user string, compression bool, sortByLabel
 		head.MinTime(),
 		head.MaxTime(),
 		[]convert.Convertible{head},
+		promslog.NewNopLogger(),
 		convertOpts...)
 
 	require.NoError(b, err, "error converting TSDB block to Parquet")

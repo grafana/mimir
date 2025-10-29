@@ -3,8 +3,10 @@
 package planning
 
 import (
+	"errors"
 	"fmt"
 	"reflect"
+	"strconv"
 	"strings"
 	"time"
 
@@ -21,7 +23,20 @@ import (
 	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
-var MaximumSupportedQueryPlanVersion = int64(0)
+type QueryPlanVersion uint64
+
+func (v QueryPlanVersion) String() string {
+	return strconv.FormatUint(uint64(v), 10)
+}
+
+var MaximumSupportedQueryPlanVersion = QueryPlanV1
+
+const QueryPlanVersionZero = QueryPlanVersion(0)
+
+// This version introduces:
+// 1. DropName node
+// 2. Step invariant expression node
+const QueryPlanV1 = QueryPlanVersion(1)
 
 type QueryPlan struct {
 	TimeRange types.QueryTimeRange
@@ -34,7 +49,7 @@ type QueryPlan struct {
 	//
 	// Queriers use this to ensure they do not attempt to execute a query plan that contains features they
 	// cannot safely or correctly execute (eg. new nodes or new meaning for existing node details).
-	Version int64
+	Version QueryPlanVersion
 }
 
 // Node represents a node in the query plan graph.
@@ -101,6 +116,9 @@ type Node interface {
 	// ExpressionPosition returns the position of the subexpression this node represents in the original
 	// expression.
 	ExpressionPosition() posrange.PositionRange
+
+	// MinimumRequiredPlanVersion returns the minimum query plan version required to execute a plan that includes these nodes.
+	MinimumRequiredPlanVersion() QueryPlanVersion
 
 	// FIXME: implementations for many of the above methods can be generated automatically
 }
@@ -179,6 +197,23 @@ func (p *QueryPlan) ToEncodedPlan(includeDescriptions bool, includeDetails bool)
 	}
 
 	return encoded, nil
+}
+
+// DeterminePlanVersion will set the plan Version to the largest MinimumRequiredPlanVersion found within the plan nodes.
+func (p *QueryPlan) DeterminePlanVersion() error {
+	if p.Root == nil {
+		return errors.New("query plan version can not be determined without a root node")
+	}
+	p.Version = p.maxMinimumRequiredPlanVersion(p.Root)
+	return nil
+}
+
+func (p *QueryPlan) maxMinimumRequiredPlanVersion(node Node) QueryPlanVersion {
+	maxVersion := node.MinimumRequiredPlanVersion()
+	for _, child := range node.Children() {
+		maxVersion = max(maxVersion, p.maxMinimumRequiredPlanVersion(child))
+	}
+	return maxVersion
 }
 
 func toEncodedTimeRange(t types.QueryTimeRange) EncodedQueryTimeRange {

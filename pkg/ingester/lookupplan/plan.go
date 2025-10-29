@@ -12,10 +12,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/grafana/mimir/pkg/util"
-)
-
-const (
-	costPerIteratedPosting = 0.01
+	"github.com/grafana/mimir/pkg/util/pool"
 )
 
 // plan is a representation of one way of executing a vector selector.
@@ -27,17 +24,22 @@ type plan struct {
 	indexPredicate []bool
 	// totalSeries is the total number of series in the index.
 	totalSeries uint64
+
+	config              CostConfig
+	indexPredicatesPool *pool.SlabPool[bool]
 }
 
 // newScanOnlyPlan returns a plan in which all predicates would be used to scan and none to reach from the index.
-func newScanOnlyPlan(ctx context.Context, stats index.Statistics, matchers []*labels.Matcher) plan {
+func newScanOnlyPlan(ctx context.Context, stats index.Statistics, config CostConfig, matchers []*labels.Matcher, predicatesPool *pool.SlabPool[bool]) plan {
 	p := plan{
-		predicates:     make([]planPredicate, 0, len(matchers)),
-		indexPredicate: make([]bool, 0, len(matchers)),
-		totalSeries:    stats.TotalSeries(),
+		predicates:          make([]planPredicate, 0, len(matchers)),
+		indexPredicate:      make([]bool, 0, len(matchers)),
+		totalSeries:         stats.TotalSeries(),
+		config:              config,
+		indexPredicatesPool: predicatesPool,
 	}
 	for _, m := range matchers {
-		pred := newPlanPredicate(ctx, m, stats)
+		pred := newPlanPredicate(ctx, m, stats, config)
 		p.predicates = append(p.predicates, pred)
 		p.indexPredicate = append(p.indexPredicate, false)
 	}
@@ -67,23 +69,27 @@ func (p plan) ScanMatchers() []*labels.Matcher {
 
 // useIndexFor returns a copy of this plan where predicate predicateIdx is used on the index.
 func (p plan) useIndexFor(predicateIdx int) plan {
-	p.indexPredicate = slices.Clone(p.indexPredicate)
+	var copied []bool
+	if p.indexPredicatesPool != nil {
+		copied = p.indexPredicatesPool.Get(len(p.indexPredicate))
+		copy(copied, p.indexPredicate)
+	} else {
+		copied = slices.Clone(p.indexPredicate)
+	}
+	p.indexPredicate = copied
 	p.indexPredicate[predicateIdx] = true
 	return p
 }
 
-// useScanFor returns a copy of this plan where the predicate at predicateIdx is used during sequential scanning.
-//
-//nolint:unused
-func (p plan) useScanFor(predicateIdx int) plan {
+func (p plan) withoutMemoryPool() plan {
 	p.indexPredicate = slices.Clone(p.indexPredicate)
-	p.indexPredicate[predicateIdx] = false
+	p.indexPredicatesPool = nil
 	return p
 }
 
 // totalCost returns the sum of indexLookupCost + intersectionCost + filterCost
 func (p plan) totalCost() float64 {
-	return p.indexLookupCost() + p.intersectionCost() + p.filterCost()
+	return p.indexLookupCost() + p.intersectionCost() + p.seriesRetrievalCost() + p.filterCost()
 }
 
 // indexLookupCost returns the cost of performing index lookups for all predicates that use the index
@@ -98,6 +104,7 @@ func (p plan) indexLookupCost() float64 {
 }
 
 // intersectionCost returns the cost of intersecting posting lists from multiple index predicates
+// This includes retrieving the series' labels from the index.
 func (p plan) intersectionCost() float64 {
 	iteratedPostings := uint64(0)
 	for i, pred := range p.predicates {
@@ -108,7 +115,13 @@ func (p plan) intersectionCost() float64 {
 		iteratedPostings += pred.cardinality
 	}
 
-	return float64(iteratedPostings) * costPerIteratedPosting
+	return float64(iteratedPostings) * p.config.RetrievedPostingCost
+}
+
+// seriesRetrievalCost returns the cost of retrieving series from the index after intersecting posting lists.
+// This includes retrieving the series' labels from the index and checking if the series belongs to the query's shard.
+func (p plan) seriesRetrievalCost() float64 {
+	return float64(p.intersectionSize()) * p.config.RetrievedSeriesCost
 }
 
 // filterCost returns the cost of applying scan predicates to the fetched series
@@ -184,6 +197,8 @@ func (p plan) addSpanEvent(span trace.Span, planName string) {
 		attribute.Float64("index_lookup_cost", p.indexLookupCost()),
 		attribute.Float64("filter_cost", p.filterCost()),
 		attribute.Float64("intersection_cost", p.intersectionCost()),
+		attribute.Int64("estimated_retrieved_series", int64(p.intersectionSize())),
+		attribute.Float64("series_retrieval_cost", p.seriesRetrievalCost()),
 		attribute.Int64("cardinality", int64(p.cardinality())),
 		attribute.Stringer("index_matchers", util.MatchersStringer(p.IndexMatchers())),
 		attribute.Stringer("scan_matchers", util.MatchersStringer(p.ScanMatchers())),

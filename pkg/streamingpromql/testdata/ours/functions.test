@@ -1421,3 +1421,113 @@ eval instant at 60s ts_of_first_over_time(metric_histogram{type="mix_first_missi
   {type="mix_first_missing"} 10
 
 clear
+
+# Additional tests specific to step invariant expression handling
+load 10s
+  metric{label="foo"} 28x10
+  metric{label="bar", group="a"} 5 4x9
+  metric{label="bar", group="b"} 3 4x9
+  metric{label="bar", group="c"} 0+1x10
+  metric_mixed{label="mixed"} 3 2 1 {{schema:1 sum:2 count:3}} 1 {{schema:1 sum:2 count:3}} {{schema:1 sum:2 count:3}}
+  metric_mixed{label="missing"} _ _ 1 4 _ _ _
+
+eval range from 0 to 60s step 10s metric{label="bar"} @ start()
+  {__name__="metric", label="bar", group="a"} 5 5 5 5 5 5 5
+  {__name__="metric", label="bar", group="b"} 3 3 3 3 3 3 3
+  {__name__="metric", label="bar", group="c"} 0 0 0 0 0 0 0
+
+eval range from 0 to 60s step 10s metric_mixed @ start()
+  {__name__="metric_mixed", label="mixed"} 3 3 3 3 3 3 3
+
+eval range from 0 to 60s step 10s metric_mixed @ end()
+  {__name__="metric_mixed", label="mixed"} {{schema:1 sum:2 count:3}} {{schema:1 sum:2 count:3}} {{schema:1 sum:2 count:3}} {{schema:1 sum:2 count:3}} {{schema:1 sum:2 count:3}} {{schema:1 sum:2 count:3}} {{schema:1 sum:2 count:3}}
+  {__name__="metric_mixed", label="missing"} 4 4 4 4 4 4 4
+
+eval range from 0 to 60s step 10s metric_mixed @ 30
+  {__name__="metric_mixed", label="mixed"} {{schema:1 sum:2 count:3}} {{schema:1 sum:2 count:3}} {{schema:1 sum:2 count:3}} {{schema:1 sum:2 count:3}} {{schema:1 sum:2 count:3}} {{schema:1 sum:2 count:3}} {{schema:1 sum:2 count:3}}
+  {__name__="metric_mixed", label="missing"} 4 4 4 4 4 4 4
+
+eval range from 0 to 60s step 10s metric{label="bar"} @ end()
+  {__name__="metric", label="bar", group="a"} 4 4 4 4 4 4 4
+  {__name__="metric", label="bar", group="b"} 4 4 4 4 4 4 4
+  {__name__="metric", label="bar", group="c"} 6 6 6 6 6 6 6
+
+eval range from 0 to 60s step 10s sum(metric{label="bar"} @ start())
+  {} 8 8 8 8 8 8 8
+
+eval range from 0 to 60s step 10s metric{label="foo"} / ignoring(label) sum(metric{label="bar"} @ end())
+  {} 2 2 2 2 2 2 2
+
+eval range from 0 to 60s step 10s 55
+  {} 55 55 55 55 55 55 55
+
+eval range from 0 to 60s step 10s timestamp(metric{label="bar"} @ 9)
+  {label="bar", group="a"} 0 0 0 0 0 0 0
+  {label="bar", group="b"} 0 0 0 0 0 0 0
+  {label="bar", group="c"} 0 0 0 0 0 0 0
+
+eval range from 0 to 60s step 10s timestamp(metric{label="bar"} @ 11)
+  {label="bar", group="a"} 10 10 10 10 10 10 10
+  {label="bar", group="b"} 10 10 10 10 10 10 10
+  {label="bar", group="c"} 10 10 10 10 10 10 10
+
+eval range from 0 to 60s step 10s metric_mixed @ 11
+  {__name__="metric_mixed", label="mixed"} 2 2 2 2 2 2 2
+
+eval range from 0 to 60s step 10s abs(metric_mixed @ 11)
+  {label="mixed"} 2 2 2 2 2 2 2
+
+eval range from 0 to 60s step 10s timestamp(metric_mixed @ 11)
+  {label="mixed"} 10 10 10 10 10 10 10
+
+eval range from 0 to 60s step 10s timestamp(abs(metric_mixed @ 11))
+  {label="mixed"} 0 10 20 30 40 50 60
+
+eval range from 0 to 60s step 10s timestamp(metric_mixed @ 30)
+  {label="mixed"} 30 30 30 30 30 30 30
+  {label="missing"} 30 30 30 30 30 30 30
+
+# Additional tests for mad_over_time.
+load 10s
+  metric_missing _ 0.6 1.7 _ 11.8 14 _
+  metric_single _ 5 _ _ _ _ _
+  metric_none _ _ _ _ _ _ _
+  metric_nan NaN NaN NaN NaN NaN NaN NaN
+  metric_zeros 0 0 0 0 0 0 0
+  metric_mix 0 -10 -6.3 7.8 0 -806.34 2
+  metric_mix_nan 0 NaN -6.3 -50 NaN -806.34 2
+  metric_histogram{type="mix"} 1 1 1 {{schema:1 sum:2 count:3}} {{schema:1 sum:2 count:3}}
+
+eval instant at 70s mad_over_time(metric_missing[80s])
+  expect no_info
+  {} 5.6
+
+eval instant at 70s mad_over_time(metric_nan[80s])
+  expect no_info
+  {} NaN
+
+eval instant at 70s mad_over_time(metric_single[80s])
+  expect no_info
+  {} 0
+
+eval instant at 70s mad_over_time(metric_zeros[80s])
+  expect no_info
+  {} 0
+
+eval instant at 70s mad_over_time(metric_mix[80s])
+  expect no_info
+  {} 6.3
+
+eval instant at 70s mad_over_time(metric_mix_nan[80s])
+  expect no_info
+  {} 43.7
+
+eval instant at 70s mad_over_time(metric_none[80s])
+  expect no_info
+  #empty
+
+eval instant at 70s mad_over_time(metric_histogram{type="mix"}[70s])
+  expect info regex: ignored histograms in a range containing both floats and histograms for metric name
+  {type="mix"} 0
+
+clear

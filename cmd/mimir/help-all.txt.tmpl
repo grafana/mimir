@@ -330,15 +330,15 @@ Usage of ./cmd/mimir/mimir:
   -alertmanager.sharding-ring.etcd.username string
     	Etcd username.
   -alertmanager.sharding-ring.heartbeat-period duration
-    	Period at which to heartbeat to the ring. 0 = disabled. (default 15s)
+    	Period at which to heartbeat to the ring. (default 15s)
   -alertmanager.sharding-ring.heartbeat-timeout duration
-    	The heartbeat timeout after which alertmanagers are considered unhealthy within the ring. 0 = never (timeout disabled). (default 1m0s)
+    	Heartbeat timeout after which Mimir marks alertmanagers as unhealthy in the ring. (default 1m0s)
   -alertmanager.sharding-ring.instance-addr string
     	IP address to advertise in the ring. Default is auto-detected.
   -alertmanager.sharding-ring.instance-availability-zone string
     	The availability zone where this instance is running. Required if zone-awareness is enabled.
   -alertmanager.sharding-ring.instance-enable-ipv6
-    	Enable using a IPv6 instance address. (default false)
+    	Enable using an IPv6 instance address.
   -alertmanager.sharding-ring.instance-id string
     	Instance ID to register in the ring. (default "<hostname>")
   -alertmanager.sharding-ring.instance-interface-names string
@@ -346,9 +346,9 @@ Usage of ./cmd/mimir/mimir:
   -alertmanager.sharding-ring.instance-port int
     	Port to advertise in the ring (defaults to -server.grpc-listen-port).
   -alertmanager.sharding-ring.multi.mirror-enabled
-    	Mirror writes to secondary store.
+    	Mirror writes to the secondary store.
   -alertmanager.sharding-ring.multi.mirror-timeout duration
-    	Timeout for storing value to secondary store. (default 2s)
+    	Timeout for storing a value to the secondary store. (default 2s)
   -alertmanager.sharding-ring.multi.primary string
     	Primary backend storage used by multi-client.
   -alertmanager.sharding-ring.multi.secondary string
@@ -439,6 +439,8 @@ Usage of ./cmd/mimir/mimir:
     	TTL for caching object attributes for chunks. If the metadata cache is configured, attributes will be stored under this cache backend, otherwise attributes are stored in the chunks cache backend. (default 168h0m0s)
   -blocks-storage.bucket-store.chunks-cache.backend string
     	Backend for chunks cache, if not empty. Supported values: memcached.
+  -blocks-storage.bucket-store.chunks-cache.cache-parquet-labels-files
+    	If true, get range calls to parquet labels files will be cached in the chunks cache. (default true)
   -blocks-storage.bucket-store.chunks-cache.max-get-range-requests int
     	Maximum number of sub-GetRange requests that a single GetRange request can be split into when fetching chunks. Zero or negative value = unlimited number of sub-requests. (default 3)
   -blocks-storage.bucket-store.chunks-cache.memcached.addresses comma-separated-list-of-strings
@@ -529,8 +531,6 @@ Usage of ./cmd/mimir/mimir:
     	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -blocks-storage.bucket-store.index-cache.memcached.tls-server-name string
     	Override the expected name on the server certificate.
-  -blocks-storage.bucket-store.index-header.eager-loading-startup-enabled
-    	[experimental] If enabled, store-gateway will periodically persist block IDs of lazy loaded index-headers and load them eagerly during startup. Ignored if index-header lazy loading is disabled. (default true)
   -blocks-storage.bucket-store.index-header.lazy-loading-concurrency int
     	Maximum number of concurrent index header loads across all tenants. If set to 0, concurrency is unlimited. (default 4)
   -blocks-storage.bucket-store.index-header.lazy-loading-concurrency-queue-timeout duration
@@ -548,7 +548,7 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.bucket-store.max-concurrent-queue-timeout duration
     	Timeout for the queue of queries waiting for execution. If the queue is full and the timeout is reached, the query will be retried on another store-gateway. 0 means no timeout and all queries will wait indefinitely for their turn. (default 5s)
   -blocks-storage.bucket-store.meta-sync-concurrency int
-    	Number of Go routines to use when syncing block meta files from object storage per tenant. (default 20)
+    	Number of goroutines to use when syncing block meta files from object storage per tenant. (default 20)
   -blocks-storage.bucket-store.metadata-cache.backend string
     	Backend for metadata cache, if not empty. Supported values: memcached.
   -blocks-storage.bucket-store.metadata-cache.block-index-attributes-ttl duration
@@ -615,8 +615,6 @@ Usage of ./cmd/mimir/mimir:
     	How long to cache list of blocks for each tenant. (default 5m0s)
   -blocks-storage.bucket-store.metadata-cache.tenants-list-ttl duration
     	How long to cache list of tenants in the bucket. (default 15m0s)
-  -blocks-storage.bucket-store.parquet-load-index-to-disk
-    	True to download the Parquet labels file to disk before opening it. False to open it directly from the bucket. (default true)
   -blocks-storage.bucket-store.parquet-max-chunk-size-bytes uint
     	Maximum size in bytes that can be fetched from the parquet chunks file. If the size exceeds this value the query will stop with limit error.
   -blocks-storage.bucket-store.parquet-max-data-size-bytes uint
@@ -780,13 +778,13 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.tsdb.bigger-out-of-order-blocks-for-old-samples
     	[experimental] When enabled, ingester produces 24h blocks for out-of-order data that is before the current day, instead of the usual 2h blocks.
   -blocks-storage.tsdb.block-postings-for-matchers-cache-force
-    	[experimental] Force the cache to be used for postings for matchers in compacted blocks, even if it's not a concurrent (query-sharding) call.
+    	Force the cache to be used for postings for matchers in compacted blocks, even if it's not a concurrent (query-sharding) call.
   -blocks-storage.tsdb.block-postings-for-matchers-cache-max-bytes int
-    	[experimental] Maximum size in bytes of the cache for postings for matchers in each compacted block when TTL is greater than 0. (default 104857600)
+    	Maximum size in bytes of the cache for postings for matchers in each compacted block when TTL is greater than 0. (default 104857600)
   -blocks-storage.tsdb.block-postings-for-matchers-cache-size int
     	[deprecated] Maximum number of entries in the cache for postings for matchers in each compacted block when TTL is greater than 0. (default 100)
   -blocks-storage.tsdb.block-postings-for-matchers-cache-ttl duration
-    	[experimental] How long to cache postings for matchers in each compacted block queried from the ingester. 0 disables the cache and just deduplicates the in-flight calls. (default 10s)
+    	How long to cache postings for matchers in each compacted block queried from the ingester. 0 disables the cache and just deduplicates the in-flight calls. (default 10s)
   -blocks-storage.tsdb.close-idle-tsdb-timeout duration
     	If TSDB has not received any data for this duration, and all blocks from TSDB have been shipped, TSDB is closed and deleted from local disk. If set to positive value, this value should be equal or higher than -querier.query-ingesters-within flag to make sure that TSDB is not closed prematurely, which could cause partial query results. 0 or negative value disables closing of idle TSDB. (default 13h0m0s)
   -blocks-storage.tsdb.dir string
@@ -810,23 +808,35 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.tsdb.head-compaction-interval duration
     	How frequently the ingester checks whether the TSDB head should be compacted and, if so, triggers the compaction. Mimir applies a jitter to the first check, and subsequent checks will happen at the configured interval. A block is only created if data covers the smallest block range. The configured interval must be between 0 and 15 minutes. (default 1m0s)
   -blocks-storage.tsdb.head-postings-for-matchers-cache-force
-    	[experimental] Force the cache to be used for postings for matchers in the Head and OOOHead, even if it's not a concurrent (query-sharding) call.
+    	Force the cache to be used for postings for matchers in the Head and OOOHead, even if it's not a concurrent (query-sharding) call.
   -blocks-storage.tsdb.head-postings-for-matchers-cache-invalidation
     	[experimental] Whether head block postings should be tracked and invalidated when they change, allowing higher TTLs to be used. When not using invalidation, cache entries will be used until removed.
   -blocks-storage.tsdb.head-postings-for-matchers-cache-max-bytes int
-    	[experimental] Maximum size in bytes of the cache for postings for matchers in the Head and OOOHead when TTL is greater than 0. (default 104857600)
+    	Maximum size, in bytes, of the cache for postings for matchers in each compacted block when the TTL is greater than 0. (default 104857600)
   -blocks-storage.tsdb.head-postings-for-matchers-cache-size int
     	[deprecated] Maximum number of entries in the cache for postings for matchers in the Head and OOOHead when TTL is greater than 0. (default 100)
   -blocks-storage.tsdb.head-postings-for-matchers-cache-ttl duration
-    	[experimental] How long to cache postings for matchers in the Head and OOOHead. 0 disables the cache and just deduplicates the in-flight calls. (default 10s)
+    	How long to cache postings for matchers in the Head and OOOHead. Set to 0 to disable the cache and only deduplicate in-flight calls. (default 10s)
   -blocks-storage.tsdb.head-postings-for-matchers-cache-versions int
     	[experimental] The size of the metric versions cache in each ingester when invalidation is enabled. (default 2097152)
-  -blocks-storage.tsdb.head-statistics-collection-frequency duration
-    	[experimental] How frequently to collect head statistics, which are used in query execution optimization. 0 to disable. (default 1h0m0s)
-  -blocks-storage.tsdb.index-lookup-planning-comparison-portion float
+  -blocks-storage.tsdb.index-lookup-planning.comparison-portion float
     	[experimental] Portion of queries where a mirrored chunk querier compares results with and without index lookup planning. Value between 0 (disabled) and 1 (all queries).
-  -blocks-storage.tsdb.index-lookup-planning-enabled
+  -blocks-storage.tsdb.index-lookup-planning.enabled
     	[experimental] Controls the collection of statistics and whether to defer some vector selector matchers to sequential scans. This leads to better performance.
+  -blocks-storage.tsdb.index-lookup-planning.label-cardinality-for-larger-sketch uint
+    	Number of series for a label name above which larger count-min sketches are used for that label. (default 1000000)
+  -blocks-storage.tsdb.index-lookup-planning.label-cardinality-for-smaller-sketch uint
+    	Number of series for a label name above which smaller count-min sketches are used for that label. (default 1000)
+  -blocks-storage.tsdb.index-lookup-planning.min-series-per-block-for-query-planning uint
+    	Minimum number of series a block must have for query planning to be used. (default 10000)
+  -blocks-storage.tsdb.index-lookup-planning.retrieved-posting-cost float
+    	Cost for iterating postings that have been retrieved from the index. (default 0.01)
+  -blocks-storage.tsdb.index-lookup-planning.retrieved-posting-list-cost float
+    	Cost for retrieving the posting list from disk or from memory. (default 10)
+  -blocks-storage.tsdb.index-lookup-planning.retrieved-series-cost float
+    	Cost for retrieving series from the index and checking if a series belongs to the query's shard. (default 10)
+  -blocks-storage.tsdb.index-lookup-planning.statistics-collection-frequency duration
+    	[experimental] How frequently to collect block statistics, which are used in query execution optimization. 0 to disable. (default 1h0m0s)
   -blocks-storage.tsdb.memory-snapshot-on-shutdown
     	[experimental] True to enable snapshotting of in-memory TSDB data on disk when shutting down.
   -blocks-storage.tsdb.out-of-order-capacity-max int
@@ -1032,7 +1042,7 @@ Usage of ./cmd/mimir/mimir:
   -compactor.block-ranges comma-separated-list-of-durations
     	List of compaction time ranges. (default 2h0m0s,12h0m0s,24h0m0s)
   -compactor.block-sync-concurrency int
-    	Number of Go routines to use when downloading blocks for compaction and uploading resulting blocks. (default 8)
+    	Number of goroutines to use when downloading blocks for compaction and uploading resulting blocks. (default 8)
   -compactor.block-upload-enabled
     	Enable block upload API for the tenant.
   -compactor.block-upload-max-block-size-bytes int
@@ -1065,6 +1075,8 @@ Usage of ./cmd/mimir/mimir:
     	Comma separated list of tenants that cannot be compacted by the compactor. If specified, and the compactor would normally pick a given tenant for compaction (via -compactor.enabled-tenants or sharding), it will be ignored instead.
   -compactor.enabled-tenants comma-separated-list-of-strings
     	Comma separated list of tenants that can be compacted. If specified, only these tenants will be compacted by the compactor, otherwise all tenants can be compacted. Subject to sharding.
+  -compactor.first-level-compaction-skip-future-max-time
+    	[experimental] When enabled, the compactor skips first-level compaction jobs if any source block has a MaxTime more recent than the wait period threshold. This prevents premature compaction of blocks that may still receive late-arriving data.
   -compactor.first-level-compaction-wait-period duration
     	How long the compactor waits before compacting first-level blocks that are uploaded by the ingesters. This configuration option allows for the reduction of cases where the compactor begins to compact blocks before all ingesters have uploaded their blocks to the storage. (default 25m0s)
   -compactor.max-block-upload-validation-concurrency int
@@ -1080,13 +1092,11 @@ Usage of ./cmd/mimir/mimir:
   -compactor.max-per-block-upload-concurrency int
     	Maximum number of TSDB segment files that the compactor can upload concurrently per block. (default 8)
   -compactor.meta-sync-concurrency int
-    	Number of Go routines to use when syncing block meta files from the long term storage. (default 20)
-  -compactor.no-blocks-file-cleanup-enabled
-    	[experimental] If enabled, will delete the bucket-index, markers and debug files in the tenant bucket when there are no blocks left in the index.
+    	Number of goroutines to use when syncing block meta files from the long term storage. (default 20)
   -compactor.partial-block-deletion-delay duration
     	If a partial block (unfinished block without meta.json file) hasn't been modified for this time, it will be marked for deletion. The minimum accepted value is 4h0m0s: a lower value will be ignored and the feature disabled. 0 to disable. (default 1d)
   -compactor.ring.auto-forget-unhealthy-periods int
-    	Number of consecutive timeout periods an unhealthy instance in the ring is automatically removed after. Set to 0 to disable auto-forget. (default 10)
+    	Number of consecutive timeout periods after which Mimir automatically removes an unhealthy instance in the ring. Set to 0 to disable auto-forget. (default 10)
   -compactor.ring.consul.acl-token string
     	ACL Token used to interact with Consul.
   -compactor.ring.consul.cas-retry-delay duration
@@ -1128,13 +1138,13 @@ Usage of ./cmd/mimir/mimir:
   -compactor.ring.etcd.username string
     	Etcd username.
   -compactor.ring.heartbeat-period duration
-    	Period at which to heartbeat to the ring. 0 = disabled. (default 15s)
+    	Period at which to heartbeat to the ring. (default 15s)
   -compactor.ring.heartbeat-timeout duration
-    	The heartbeat timeout after which compactors are considered unhealthy within the ring. 0 = never (timeout disabled). (default 1m0s)
+    	Heartbeat timeout after which Mimir marks compactors as unhealthy in the ring. (default 1m0s)
   -compactor.ring.instance-addr string
     	IP address to advertise in the ring. Default is auto-detected.
   -compactor.ring.instance-enable-ipv6
-    	Enable using a IPv6 instance address. (default false)
+    	Enable using an IPv6 instance address.
   -compactor.ring.instance-id string
     	Instance ID to register in the ring. (default "<hostname>")
   -compactor.ring.instance-interface-names string
@@ -1142,9 +1152,9 @@ Usage of ./cmd/mimir/mimir:
   -compactor.ring.instance-port int
     	Port to advertise in the ring (defaults to -server.grpc-listen-port).
   -compactor.ring.multi.mirror-enabled
-    	Mirror writes to secondary store.
+    	Mirror writes to the secondary store.
   -compactor.ring.multi.mirror-timeout duration
-    	Timeout for storing value to secondary store. (default 2s)
+    	Timeout for storing a value to the secondary store. (default 2s)
   -compactor.ring.multi.primary string
     	Primary backend storage used by multi-client.
   -compactor.ring.multi.secondary string
@@ -1168,9 +1178,9 @@ Usage of ./cmd/mimir/mimir:
   -compactor.tenant-cleanup-delay duration
     	For tenants marked for deletion, this is the time between deletion of the last block, and doing final cleanup (marker files, debug files) of the tenant. (default 6h0m0s)
   -compactor.update-blocks-concurrency int
-    	Number of Go routines to use when updating blocks metadata during bucket index updates. (default 1)
+    	Number of goroutines to use when updating blocks metadata during bucket index updates. (default 1)
   -compactor.upload-sparse-index-headers
-    	[experimental] If enabled, the compactor constructs and uploads sparse index headers to object storage during each compaction cycle. This allows store-gateway instances to use the sparse headers from object storage instead of recreating them locally.
+    	[experimental] If enabled, the compactor constructs and uploads sparse index headers to object storage during each compaction cycle. This allows store-gateway instances to use the sparse headers from object storage instead of recreating them locally. (default true)
   -config.expand-env
     	Expands ${var} or $var in config according to the values of the environment variables.
   -config.file value
@@ -1237,14 +1247,16 @@ Usage of ./cmd/mimir/mimir:
     	Override the expected name on the server certificate.
   -distributor.ha-tracker.etcd.username string
     	Etcd username.
+  -distributor.ha-tracker.failover-sample-timeout duration
+    	Additional timeout to use for failover that uses the earliest sample time instead of the current time. Defaults to 0, which is disabled. This is useful to prevent samples from being too close together during failover when write requests are delayed so that the sample time is earlier than the current time.
   -distributor.ha-tracker.failover-timeout duration
     	If we don't receive any samples from the accepted replica for a cluster in this amount of time we will failover to the next replica we receive a sample from. This value must be greater than the update timeout. (default 30s)
   -distributor.ha-tracker.max-clusters int
     	Maximum number of clusters that HA tracker will keep track of for a single tenant. 0 to disable the limit. (default 100)
   -distributor.ha-tracker.multi.mirror-enabled
-    	Mirror writes to secondary store.
+    	Mirror writes to the secondary store.
   -distributor.ha-tracker.multi.mirror-timeout duration
-    	Timeout for storing value to secondary store. (default 2s)
+    	Timeout for storing a value to the secondary store. (default 2s)
   -distributor.ha-tracker.multi.primary string
     	Primary backend storage used by multi-client.
   -distributor.ha-tracker.multi.secondary string
@@ -1254,7 +1266,7 @@ Usage of ./cmd/mimir/mimir:
   -distributor.ha-tracker.replica string
     	Prometheus label to look for in samples to identify a Prometheus HA replica. (default "__replica__")
   -distributor.ha-tracker.store string
-    	Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi. (default "consul")
+    	Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi. (default "memberlist")
   -distributor.ha-tracker.update-timeout duration
     	Update the timestamp in the KV store for a given cluster/replica only after this amount of time has passed since the current stored timestamp. (default 15s)
   -distributor.ha-tracker.update-timeout-jitter-max duration
@@ -1275,8 +1287,6 @@ Usage of ./cmd/mimir/mimir:
     	The sum of the request sizes in bytes of inflight push requests that this distributor can handle. This limit is per-distributor, not per-tenant. Additional requests will be rejected. 0 = unlimited.
   -distributor.instance-limits.max-ingestion-rate float
     	Max ingestion rate (samples/sec) that this distributor will accept. This limit is per-distributor, not per-tenant. Additional push requests will be rejected. Current ingestion rate is computed as exponentially weighted moving average, updated every second. 0 = unlimited.
-  -distributor.max-active-series-per-user int
-    	Maximum number of active series per user. 0 means no limit. This limit only applies with ingest storage enabled.
   -distributor.max-exemplars-per-series-per-request int
     	[experimental] Maximum number of exemplars per series per request. 0 to disable limit in request. The exceeding exemplars are dropped.
   -distributor.max-otlp-request-size int
@@ -1285,14 +1295,16 @@ Usage of ./cmd/mimir/mimir:
     	Max message size in bytes that the distributors will accept for incoming push requests to the remote write API. If exceeded, the request will be rejected. (default 104857600)
   -distributor.max-request-pool-buffer-size int
     	[experimental] Max size of the pooled buffers used for marshaling write requests. If 0, no max size is enforced.
-  -distributor.metric-relabeling-enabled
-    	[experimental] Enable metric relabeling for the tenant. This configuration option can be used to forcefully disable metric relabeling on a per-tenant basis. (default true)
   -distributor.otel-convert-histograms-to-nhcb
     	[experimental] Whether to convert OTel explicit histograms into native histograms with custom buckets.
   -distributor.otel-created-timestamp-zero-ingestion-enabled
     	[experimental] Whether to enable translation of OTel start timestamps to Prometheus zero samples in the OTLP endpoint.
   -distributor.otel-keep-identifying-resource-attributes
     	[experimental] Whether to keep identifying OTel resource attributes in the target_info metric on top of converting to job and instance labels.
+  -distributor.otel-label-name-preserve-underscores
+    	If enabled, keeps multiple consecutive underscores in label names when translating OTel attribute names. Defaults to true. (default true)
+  -distributor.otel-label-name-underscore-sanitization
+    	If enabled, prefixes label names starting with a single underscore with `key_` when translating OTel attribute names. Defaults to true. (default true)
   -distributor.otel-metric-suffixes-enabled
     	Whether to enable automatic suffixes to names of metrics ingested through OTLP.
   -distributor.otel-native-delta-ingestion
@@ -1303,6 +1315,32 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Whether to promote OTel scope metadata (scope name, version, schema URL, attributes) to corresponding metric labels, prefixed with otel_scope_.
   -distributor.otel-translation-strategy value
     	[experimental] Translation strategy to apply in OTLP endpoint for metric and label names. If unspecified (the default), the strategy is derived from -validation.name-validation-scheme and -distributor.otel-metric-suffixes-enabled. Supported values: "", UnderscoreEscapingWithSuffixes, UnderscoreEscapingWithoutSuffixes, NoUTF8EscapingWithSuffixes, NoTranslation.
+  -distributor.reactive-limiter.baseline-window-age uint
+    	[experimental] The average age of baseline samples aggregated recent samples are added to (default 10)
+  -distributor.reactive-limiter.correlation-window uint
+    	[experimental] How many recent limit and inflight time measurements are stored to detect whether increases in limits correlate with increases in inflight times (default 50)
+  -distributor.reactive-limiter.enabled
+    	[experimental] Enable reactive limiting when making requests to a service
+  -distributor.reactive-limiter.initial-limit uint
+    	[experimental] Initial inflight requests limit (default 20)
+  -distributor.reactive-limiter.initial-rejection-factor float
+    	[experimental] The number of allowed queued requests, as a multiple of current inflight requests, after which rejections start (default 1)
+  -distributor.reactive-limiter.max-limit uint
+    	[experimental] Maximum inflight requests limit (default 200)
+  -distributor.reactive-limiter.max-limit-factor float
+    	[experimental] The maximum inflight limit as a multiple of current inflight requests (default 5)
+  -distributor.reactive-limiter.max-rejection-factor float
+    	[experimental] The number of allowed queued requests, as a multiple of current inflight requests, after which all requests are rejected (default 2)
+  -distributor.reactive-limiter.min-limit uint
+    	[experimental] Minimum inflight requests limit (default 2)
+  -distributor.reactive-limiter.recent-quantile float
+    	[experimental] The quantile of recent recorded response times to consider when adjusting the concurrency limit (default 0.9)
+  -distributor.reactive-limiter.recent-window-max-duration duration
+    	[experimental] Maximum duration of the window that is used to collect recent response time samples (default 30s)
+  -distributor.reactive-limiter.recent-window-min-duration duration
+    	[experimental] Minimum duration of the window that is used to collect recent response time samples (default 1s)
+  -distributor.reactive-limiter.recent-window-min-samples uint
+    	[experimental] Minimum number of samples that must be recorded in the recent window before updating the limit (default 50)
   -distributor.remote-timeout duration
     	Timeout for downstream ingesters. (default 2s)
   -distributor.request-burst-size int
@@ -1318,7 +1356,7 @@ Usage of ./cmd/mimir/mimir:
   -distributor.reusable-ingester-push-workers int
     	Number of pre-allocated workers used to forward push requests to the ingesters. If 0, no workers will be used and a new goroutine will be spawned for each ingester push request. If not enough workers available, new goroutine will be spawned. (Note: this is a performance optimization, not a limiting feature.) (default 2000)
   -distributor.ring.auto-forget-unhealthy-periods int
-    	Number of consecutive timeout periods an unhealthy instance in the ring is automatically removed after. Set to 0 to disable auto-forget. (default 10)
+    	Number of consecutive timeout periods after which Mimir automatically removes an unhealthy instance in the ring. Set to 0 to disable auto-forget. (default 10)
   -distributor.ring.consul.acl-token string
     	ACL Token used to interact with Consul.
   -distributor.ring.consul.cas-retry-delay duration
@@ -1360,13 +1398,13 @@ Usage of ./cmd/mimir/mimir:
   -distributor.ring.etcd.username string
     	Etcd username.
   -distributor.ring.heartbeat-period duration
-    	Period at which to heartbeat to the ring. 0 = disabled. (default 15s)
+    	Period at which to heartbeat to the ring. (default 15s)
   -distributor.ring.heartbeat-timeout duration
-    	The heartbeat timeout after which distributors are considered unhealthy within the ring. 0 = never (timeout disabled). (default 1m0s)
+    	Heartbeat timeout after which Mimir marks distributors as unhealthy in the ring. (default 1m0s)
   -distributor.ring.instance-addr string
     	IP address to advertise in the ring. Default is auto-detected.
   -distributor.ring.instance-enable-ipv6
-    	Enable using a IPv6 instance address. (default false)
+    	Enable using an IPv6 instance address.
   -distributor.ring.instance-id string
     	Instance ID to register in the ring. (default "<hostname>")
   -distributor.ring.instance-interface-names string
@@ -1374,9 +1412,9 @@ Usage of ./cmd/mimir/mimir:
   -distributor.ring.instance-port int
     	Port to advertise in the ring (defaults to -server.grpc-listen-port).
   -distributor.ring.multi.mirror-enabled
-    	Mirror writes to secondary store.
+    	Mirror writes to the secondary store.
   -distributor.ring.multi.mirror-timeout duration
-    	Timeout for storing value to secondary store. (default 2s)
+    	Timeout for storing a value to the secondary store. (default 2s)
   -distributor.ring.multi.primary string
     	Primary backend storage used by multi-client.
   -distributor.ring.multi.secondary string
@@ -1385,62 +1423,6 @@ Usage of ./cmd/mimir/mimir:
     	The prefix for the keys in the store. Should end with a /. (default "collectors/")
   -distributor.ring.store string
     	Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi. (default "memberlist")
-  -distributor.service-overload-status-code-on-rate-limit-enabled
-    	[experimental] If enabled, rate limit errors will be reported to the client with HTTP status code 529 (Service is overloaded). If disabled, status code 429 (Too Many Requests) is used. Enabling -distributor.retry-after-header.enabled before utilizing this option is strongly recommended as it helps prevent premature request retries by the client.
-  -distributor.usage-tracker-client.grpc-client-config.backoff-max-period duration
-    	Maximum delay when backing off. (default 10s)
-  -distributor.usage-tracker-client.grpc-client-config.backoff-min-period duration
-    	Minimum delay when backing off. (default 100ms)
-  -distributor.usage-tracker-client.grpc-client-config.backoff-on-ratelimits
-    	Enable backoff and retry when we hit rate limits.
-  -distributor.usage-tracker-client.grpc-client-config.backoff-retries int
-    	Number of times to backoff and retry before failing. (default 10)
-  -distributor.usage-tracker-client.grpc-client-config.cluster-validation.label string
-    	[experimental] Primary cluster validation label.
-  -distributor.usage-tracker-client.grpc-client-config.connect-backoff-base-delay duration
-    	Initial backoff delay after first connection failure. Only relevant if ConnectTimeout > 0. (default 1s)
-  -distributor.usage-tracker-client.grpc-client-config.connect-backoff-max-delay duration
-    	Maximum backoff delay when establishing a connection. Only relevant if ConnectTimeout > 0. (default 5s)
-  -distributor.usage-tracker-client.grpc-client-config.connect-timeout duration
-    	The maximum amount of time to establish a connection. A value of 0 means default gRPC client connect timeout and backoff. (default 5s)
-  -distributor.usage-tracker-client.grpc-client-config.grpc-client-rate-limit float
-    	Rate limit for gRPC client; 0 means disabled.
-  -distributor.usage-tracker-client.grpc-client-config.grpc-client-rate-limit-burst int
-    	Rate limit burst for gRPC client.
-  -distributor.usage-tracker-client.grpc-client-config.grpc-compression string
-    	Use compression when sending messages. Supported values are: 'gzip', 'snappy' and '' (disable compression)
-  -distributor.usage-tracker-client.grpc-client-config.grpc-max-recv-msg-size int
-    	gRPC client max receive message size (bytes). (default 104857600)
-  -distributor.usage-tracker-client.grpc-client-config.grpc-max-send-msg-size int
-    	gRPC client max send message size (bytes). (default 104857600)
-  -distributor.usage-tracker-client.grpc-client-config.initial-connection-window-size value
-    	[experimental] Initial connection window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator. (default 63KiB1023B)
-  -distributor.usage-tracker-client.grpc-client-config.initial-stream-window-size value
-    	[experimental] Initial stream window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator. (default 63KiB1023B)
-  -distributor.usage-tracker-client.grpc-client-config.tls-ca-path string
-    	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
-  -distributor.usage-tracker-client.grpc-client-config.tls-cert-path string
-    	Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.
-  -distributor.usage-tracker-client.grpc-client-config.tls-cipher-suites string
-    	Override the default cipher suite list (separated by commas).
-  -distributor.usage-tracker-client.grpc-client-config.tls-enabled
-    	Enable TLS in the gRPC client. This flag needs to be enabled when any other TLS flag is set. If set to false, insecure connection to gRPC server will be used.
-  -distributor.usage-tracker-client.grpc-client-config.tls-insecure-skip-verify
-    	Skip validating server certificate.
-  -distributor.usage-tracker-client.grpc-client-config.tls-key-path string
-    	Path to the key for the client certificate. Also requires the client certificate to be configured.
-  -distributor.usage-tracker-client.grpc-client-config.tls-min-version string
-    	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
-  -distributor.usage-tracker-client.grpc-client-config.tls-server-name string
-    	Override the expected name on the server certificate.
-  -distributor.usage-tracker-client.ignore-rejected-series
-    	[experimental] Ignore rejected series when tracking series in usage-tracker. If enabled, the client will not return the list of rejected series, but it will still track them in usage-tracker. This is useful to validate the rollout process of this service.
-  -distributor.usage-tracker-client.prefer-availability-zone string
-    	Preferred availability zone to query usage-trackers.
-  -distributor.usage-tracker-client.requests-hedging-delay duration
-    	Delay before initiating requests to further usage-trackers (e.g. in other zones). (default 100ms)
-  -distributor.usage-tracker-client.reusable-workers int
-    	Number of pre-allocated workers used to send requests to usage-trackers. If 0, no workers pool will be used and a new goroutine will be spawned for each request. (default 500)
   -distributor.write-requests-buffer-pooling-enabled
     	[experimental] Enable pooling of buffers used for marshaling write requests. (default true)
   -enable-go-runtime-metrics
@@ -1533,6 +1515,10 @@ Usage of ./cmd/mimir/mimir:
     	The maximum time a write request that goes through the ingest storage waits before it times out. Set to `0` to disable the timeout.
   -ingest-storage.read-consistency string
     	[experimental] The default consistency level to enforce for queries when using the ingest storage. Supports values: strong, eventual. (default "eventual")
+  -ingest-storage.write-logs-fsync-before-kafka-commit-concurrency int
+    	[experimental] Number of tenants to concurrently fsync WAL and WBL before Kafka offsets are committed. Ignored if -ingest-storage.write-logs-fsync-before-kafka-commit-enabled=false (default 1)
+  -ingest-storage.write-logs-fsync-before-kafka-commit-enabled
+    	[experimental] Enable fsyncing of WAL and WBL before Kafka offsets are committed. (default true)
   -ingester.active-series-custom-trackers value
     	Additional active series metrics, matching the provided matchers. Matchers should be in form <name>:<matcher>, like 'foobar:{foo="bar"}'. Multiple matchers can be provided either providing the flag multiple times or providing multiple semicolon-separated values to a single flag.
   -ingester.active-series-metrics-enabled
@@ -1618,9 +1604,9 @@ Usage of ./cmd/mimir/mimir:
   -ingester.native-histograms-ingestion-enabled
     	[experimental] Enable ingestion of native histogram samples. If false, native histogram samples are ignored without an error. To query native histograms with query-sharding enabled make sure to set -query-frontend.query-result-response-format to 'protobuf'. (default true)
   -ingester.out-of-order-blocks-external-label-enabled
-    	[experimental] Whether the shipper should label out-of-order blocks with an external label before uploading them. Setting this label will compact out-of-order blocks separately from non-out-of-order blocks
+    	Whether the shipper should label out-of-order blocks with an external label before uploading them. Setting this label will compact out-of-order blocks separately from non-out-of-order blocks
   -ingester.out-of-order-time-window duration
-    	[experimental] Non-zero value enables out-of-order support for most recent samples that are within the time window in relation to the TSDB's maximum time, i.e., within [db.maxTime-timeWindow, db.maxTime]). The ingester will need more memory as a factor of rate of out-of-order samples being ingested and the number of series that are getting out-of-order samples. If query falls into this window, cached results will use value from -query-frontend.results-cache-ttl-for-out-of-order-time-window option to specify TTL for resulting cache entry.
+    	Non-zero value enables out-of-order support for most recent samples that are within the time window in relation to the TSDB's maximum time, i.e., within [db.maxTime-timeWindow, db.maxTime]). The ingester will need more memory as a factor of rate of out-of-order samples being ingested and the number of series that are getting out-of-order samples. If query falls into this window, cached results will use value from -query-frontend.results-cache-ttl-for-out-of-order-time-window option to specify TTL for resulting cache entry.
   -ingester.owned-series-update-interval duration
     	[experimental] How often to check for ring changes and possibly recompute owned series as a result of detected change. (default 15s)
   -ingester.partition-ring.consul.acl-token string
@@ -1670,9 +1656,9 @@ Usage of ./cmd/mimir/mimir:
   -ingester.partition-ring.min-partition-owners-duration duration
     	How long the minimum number of owners are enforced before a PENDING partition gets switched to ACTIVE. (default 10s)
   -ingester.partition-ring.multi.mirror-enabled
-    	Mirror writes to secondary store.
+    	Mirror writes to the secondary store.
   -ingester.partition-ring.multi.mirror-timeout duration
-    	Timeout for storing value to secondary store. (default 2s)
+    	Timeout for storing a value to the secondary store. (default 2s)
   -ingester.partition-ring.multi.primary string
     	Primary backend storage used by multi-client.
   -ingester.partition-ring.multi.secondary string
@@ -1738,9 +1724,9 @@ Usage of ./cmd/mimir/mimir:
   -ingester.read-circuit-breaker.thresholding-period duration
     	[experimental] Moving window of time that the percentage of failed requests is computed over (default 1m0s)
   -ingester.read-path-cpu-utilization-limit float
-    	[experimental] CPU utilization limit, as CPU cores, for CPU/memory utilization based read request limiting. Use 0 to disable it.
+    	CPU utilization limit, as CPU cores, for CPU/memory utilization based read request limiting. Use 0 to disable it.
   -ingester.read-path-memory-utilization-limit uint
-    	[experimental] Memory limit, in bytes, for CPU/memory utilization based read request limiting. Use 0 to disable it.
+    	Memory limit, in bytes, for CPU/memory utilization based read request limiting. Use 0 to disable it.
   -ingester.read-reactive-limiter.baseline-window-age uint
     	[experimental] The average age of baseline samples aggregated recent samples are added to (default 10)
   -ingester.read-reactive-limiter.correlation-window uint
@@ -1814,9 +1800,9 @@ Usage of ./cmd/mimir/mimir:
   -ingester.ring.final-sleep duration
     	Duration to sleep for before exiting, to ensure metrics are scraped.
   -ingester.ring.heartbeat-period duration
-    	Period at which to heartbeat to the ring. 0 = disabled. (default 15s)
+    	Period at which to heartbeat to the ring. (default 15s)
   -ingester.ring.heartbeat-timeout duration
-    	The heartbeat timeout after which ingesters are skipped for reads/writes. 0 = never (timeout disabled). This option needs be set on ingesters, distributors, queriers, and rulers when running in microservices mode. (default 1m0s)
+    	The heartbeat timeout after which ingesters are skipped for reads/writes. This option needs be set on ingesters, distributors, queriers, and rulers when running in microservices mode. (default 1m0s)
   -ingester.ring.instance-addr string
     	IP address to advertise in the ring. Default is auto-detected.
   -ingester.ring.instance-availability-zone string
@@ -1832,9 +1818,9 @@ Usage of ./cmd/mimir/mimir:
   -ingester.ring.min-ready-duration duration
     	Minimum duration to wait after the internal readiness checks have passed but before succeeding the readiness endpoint. This is used to slowdown deployment controllers (eg. Kubernetes) after an instance is ready and before they proceed with a rolling update, to give the rest of the cluster instances enough time to receive ring updates. (default 15s)
   -ingester.ring.multi.mirror-enabled
-    	Mirror writes to secondary store.
+    	Mirror writes to the secondary store.
   -ingester.ring.multi.mirror-timeout duration
-    	Timeout for storing value to secondary store. (default 2s)
+    	Timeout for storing a value to the secondary store. (default 2s)
   -ingester.ring.multi.primary string
     	Primary backend storage used by multi-client.
   -ingester.ring.multi.secondary string
@@ -1846,7 +1832,7 @@ Usage of ./cmd/mimir/mimir:
   -ingester.ring.prefix string
     	The prefix for the keys in the store. Should end with a /. (default "collectors/")
   -ingester.ring.replication-factor int
-    	Number of ingesters that each time series is replicated to. This option needs be set on ingesters, distributors, queriers, and rulers when running in microservices mode. (default 3)
+    	Number of ingesters that each time series is replicated to. This configuration is not used when ingest storage is enabled. This option needs be set on ingesters, distributors, queriers, and rulers when running in microservices mode. (default 3)
   -ingester.ring.spread-minimizing-join-ring-in-order
     	True to allow this ingester registering tokens in the ring only after all previous ingesters (with ID lower than the current one) have already been registered. This configuration option is supported only when the token generation strategy is set to "spread-minimizing".
   -ingester.ring.spread-minimizing-zones comma-separated-list-of-strings
@@ -1872,11 +1858,11 @@ Usage of ./cmd/mimir/mimir:
   -log.level value
     	Only log messages with the given severity or above. Valid levels: [debug, info, warn, error] (default info)
   -log.rate-limit-enabled
-    	[experimental] Use rate limited logger to reduce the number of logged messages per second.
+    	Use rate limited logger to reduce the number of logged messages per second.
   -log.rate-limit-logs-burst-size int
-    	[experimental] Burst size, i.e., maximum number of messages that can be logged at once, temporarily exceeding the configured maximum logs per second. (default 1000)
+    	Burst size, i.e., maximum number of messages that can be logged at once, temporarily exceeding the configured maximum logs per second. (default 1000)
   -log.rate-limit-logs-per-second float
-    	[experimental] Maximum number of messages per second to be logged. (default 10000)
+    	Maximum number of messages per second to be logged. (default 10000)
   -max-separate-metrics-groups-per-user int
     	[experimental] Maximum number of groups allowed per user by which specified distributor and ingester metrics can be further separated. (default 1000)
   -mem-ballast-size-bytes int
@@ -1967,12 +1953,18 @@ Usage of ./cmd/mimir/mimir:
     	Log debug transport messages. Note: global log.level must be at debug level as well.
   -memberlist.watch-prefix-buffer-size int
     	Size of the buffered channel for the WatchPrefix function. (default 128)
+  -memberlist.zone-aware-routing.enabled
+    	[experimental] Enable zone-aware routing for memberlist gossip.
+  -memberlist.zone-aware-routing.instance-availability-zone string
+    	[experimental] Availability zone where this node is running.
+  -memberlist.zone-aware-routing.role string
+    	[experimental] Role of this node in the cluster. Valid values: member, bridge. (default "member")
   -modules
     	List available values that can be used as target.
   -overrides-exporter.enabled-metrics comma-separated-list-of-strings
     	Comma-separated list of metrics to include in the exporter. Metric names must match yaml tags from the limits section of the configuration. (default ingestion_rate,ingestion_burst_size,max_global_series_per_user,max_global_series_per_metric,max_global_exemplars_per_user,max_fetched_chunks_per_query,max_fetched_series_per_query,max_fetched_chunk_bytes_per_query,ruler_max_rules_per_rule_group,ruler_max_rule_groups_per_tenant)
   -overrides-exporter.ring.auto-forget-unhealthy-periods int
-    	Number of consecutive timeout periods an unhealthy instance in the ring is automatically removed after. Set to 0 to disable auto-forget. (default 4)
+    	Number of consecutive timeout periods after which Mimir automatically removes an unhealthy instance in the ring. Set to 0 to disable auto-forget. (default 4)
   -overrides-exporter.ring.consul.acl-token string
     	ACL Token used to interact with Consul.
   -overrides-exporter.ring.consul.cas-retry-delay duration
@@ -2016,13 +2008,13 @@ Usage of ./cmd/mimir/mimir:
   -overrides-exporter.ring.etcd.username string
     	Etcd username.
   -overrides-exporter.ring.heartbeat-period duration
-    	Period at which to heartbeat to the ring. 0 = disabled. (default 15s)
+    	Period at which to heartbeat to the ring. (default 15s)
   -overrides-exporter.ring.heartbeat-timeout duration
-    	The heartbeat timeout after which overrides-exporters are considered unhealthy within the ring. 0 = never (timeout disabled). (default 1m0s)
+    	Heartbeat timeout after which Mimir marks overrides-exporters as unhealthy in the ring. (default 1m0s)
   -overrides-exporter.ring.instance-addr string
     	IP address to advertise in the ring. Default is auto-detected.
   -overrides-exporter.ring.instance-enable-ipv6
-    	Enable using a IPv6 instance address. (default false)
+    	Enable using an IPv6 instance address.
   -overrides-exporter.ring.instance-id string
     	Instance ID to register in the ring. (default "<hostname>")
   -overrides-exporter.ring.instance-interface-names string
@@ -2030,9 +2022,9 @@ Usage of ./cmd/mimir/mimir:
   -overrides-exporter.ring.instance-port int
     	Port to advertise in the ring (defaults to -server.grpc-listen-port).
   -overrides-exporter.ring.multi.mirror-enabled
-    	Mirror writes to secondary store.
+    	Mirror writes to the secondary store.
   -overrides-exporter.ring.multi.mirror-timeout duration
-    	Timeout for storing value to secondary store. (default 2s)
+    	Timeout for storing a value to the secondary store. (default 2s)
   -overrides-exporter.ring.multi.primary string
     	Primary backend storage used by multi-client.
   -overrides-exporter.ring.multi.secondary string
@@ -2105,6 +2097,8 @@ Usage of ./cmd/mimir/mimir:
     	Override the expected name on the server certificate.
   -parquet-converter.max-block-age duration
     	Maximum age of blocks to convert. Blocks older than this will be skipped. Set to 0 to disable age filtering.
+  -parquet-converter.max-row-groups-per-shard int
+    	Maximum number of row groups per Parquet shard file. (default 8)
   -parquet-converter.max-rows-per-group int
     	Maximum number of rows per row group in Parquet files. (default 1000000)
   -parquet-converter.min-block-duration duration
@@ -2115,6 +2109,8 @@ Usage of ./cmd/mimir/mimir:
     	Minimum compaction level required for blocks to be converted to Parquet. Blocks equal or greater than this level will be converted. (default 2)
   -parquet-converter.min-data-age duration
     	Minimum age of data in blocks to convert. Only convert blocks containing data older than this duration from now, based on their MinTime. Set to 0 to disable age filtering.
+  -parquet-converter.parquet-shard-write-concurrency int
+    	Maximum number of Go routines writing Parquet shards in parallel when converting a block. (default 4)
   -parquet-converter.ring.consul.acl-token string
     	ACL Token used to interact with Consul.
   -parquet-converter.ring.consul.cas-retry-delay duration
@@ -2156,13 +2152,13 @@ Usage of ./cmd/mimir/mimir:
   -parquet-converter.ring.etcd.username string
     	Etcd username.
   -parquet-converter.ring.heartbeat-period duration
-    	Period at which to heartbeat to the ring. 0 = disabled. (default 15s)
+    	Period at which to heartbeat to the ring. (default 15s)
   -parquet-converter.ring.heartbeat-timeout duration
-    	The heartbeat timeout after which parquet-converters are considered unhealthy within the ring. 0 = never (timeout disabled). (default 1m0s)
+    	Heartbeat timeout after which Mimir marks parquet-converters as unhealthy in the ring. (default 1m0s)
   -parquet-converter.ring.instance-addr string
     	IP address to advertise in the ring. Default is auto-detected.
   -parquet-converter.ring.instance-enable-ipv6
-    	Enable using a IPv6 instance address. (default false)
+    	Enable using an IPv6 instance address.
   -parquet-converter.ring.instance-id string
     	Instance ID to register in the ring. (default "<hostname>")
   -parquet-converter.ring.instance-interface-names string
@@ -2170,9 +2166,9 @@ Usage of ./cmd/mimir/mimir:
   -parquet-converter.ring.instance-port int
     	Port to advertise in the ring (defaults to -server.grpc-listen-port).
   -parquet-converter.ring.multi.mirror-enabled
-    	Mirror writes to secondary store.
+    	Mirror writes to the secondary store.
   -parquet-converter.ring.multi.mirror-timeout duration
-    	Timeout for storing value to secondary store. (default 2s)
+    	Timeout for storing a value to the secondary store. (default 2s)
   -parquet-converter.ring.multi.primary string
     	Primary backend storage used by multi-client.
   -parquet-converter.ring.multi.secondary string
@@ -2192,11 +2188,11 @@ Usage of ./cmd/mimir/mimir:
   -parquet-converter.task-concurrency int
     	Maximum number of Go routines processing tasks in parallel. (default 2)
   -parquet-converter.tsdb-read-concurrency int
-    	Maximum number of Go routines reading TSDB series in parallel when converting a block. (default 4)
+    	Maximum number of Go routines reading TSDB series in concurrently when converting a block. (default 4)
   -print.config
     	Print the config and exit.
   -querier.active-series-results-max-size-bytes int
-    	[experimental] Maximum size of an active series or active native histogram series request result shard in bytes. 0 to disable. (default 419430400)
+    	Maximum size of an active series or active native histogram series request result shard in bytes. 0 to disable. (default 419430400)
   -querier.cardinality-analysis-enabled
     	Enables endpoints used for cardinality analysis.
   -querier.cardinality-api-max-series-limit int
@@ -2270,7 +2266,7 @@ Usage of ./cmd/mimir/mimir:
   -querier.max-concurrent-remote-read-queries int
     	Maximum number of remote read queries that can be executed concurrently. 0 or negative values mean unlimited concurrency. (default 2)
   -querier.max-estimated-fetched-chunks-per-query-multiplier float
-    	[experimental] Maximum number of chunks estimated to be fetched in a single query from ingesters and store-gateways, as a multiple of -querier.max-fetched-chunks-per-query. This limit is enforced in the querier. Must be greater than or equal to 1, or 0 to disable.
+    	Maximum number of chunks estimated to be fetched in a single query from ingesters and store-gateways, as a multiple of -querier.max-fetched-chunks-per-query. This limit is enforced in the querier. Must be greater than or equal to 1, or 0 to disable.
   -querier.max-estimated-memory-consumption-per-query uint
     	[experimental] The maximum estimated memory a single query can consume at once, in bytes. This limit is only enforced when Mimir's query engine is in use. This limit is enforced in the querier. 0 to disable.
   -querier.max-fetched-chunk-bytes-per-query int
@@ -2293,6 +2289,8 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Enable common subexpression elimination when evaluating queries. (default true)
   -querier.mimir-query-engine.enable-common-subexpression-elimination-for-range-vector-expressions-in-instant-queries
     	[experimental] Enable common subexpression elimination for range vector expressions when evaluating instant queries. This has no effect if common subexpression elimination is disabled. (default true)
+  -querier.mimir-query-engine.enable-eliminate-deduplicate-and-merge
+    	[experimental] Enable eliminating redundant DeduplicateAndMerge nodes from the query plan when it can be proven that each input series produces a unique output series.
   -querier.mimir-query-engine.enable-narrow-binary-selectors
     	[experimental] Enable generating selectors for one side of a binary expression based on results from the other side.
   -querier.mimir-query-engine.enable-prune-toggles
@@ -2303,6 +2301,8 @@ Usage of ./cmd/mimir/mimir:
     	If true, when querying ingesters, only the minimum required ingesters required to reach quorum will be queried initially, with other ingesters queried only if needed due to failures from the initial set of ingesters. Enabling this option reduces resource consumption for the happy path at the cost of increased latency for the unhappy path. (default true)
   -querier.minimize-ingester-requests-hedging-delay duration
     	Delay before initiating requests to further ingesters when request minimization is enabled and the initially selected set of ingesters have not all responded. Ignored if -querier.minimize-ingester-requests is not enabled. (default 3s)
+  -querier.prefer-availability-zone string
+    	[experimental] When set, the querier prioritizes querying data from ingesters and store-gateways in this availability zone.
   -querier.query-engine string
     	[experimental] Query engine to use, either 'prometheus' or 'mimir' (default "mimir")
   -querier.query-ingesters-within duration
@@ -2311,6 +2311,74 @@ Usage of ./cmd/mimir/mimir:
     	The time after which a metric should be queried from storage and not just ingesters. 0 means all queries are sent to store. If this option is enabled, the time range of the query sent to the store-gateway will be manipulated to ensure the query end is not more recent than 'now - query-store-after'. (default 12h0m0s)
   -querier.response-streaming-enabled
     	[experimental] Enables streaming of responses from querier to query-frontend for response types that support it (currently only `active_series` responses do).
+  -querier.ring.auto-forget-unhealthy-periods int
+    	Number of consecutive timeout periods after which Mimir automatically removes an unhealthy instance in the ring. Set to 0 to disable auto-forget. (default 10)
+  -querier.ring.consul.acl-token string
+    	ACL Token used to interact with Consul.
+  -querier.ring.consul.cas-retry-delay duration
+    	Maximum duration to wait before retrying a Compare And Swap (CAS) operation. (default 1s)
+  -querier.ring.consul.client-timeout duration
+    	HTTP timeout when talking to Consul (default 20s)
+  -querier.ring.consul.consistent-reads
+    	Enable consistent reads to Consul.
+  -querier.ring.consul.hostname string
+    	Hostname and port of Consul. (default "localhost:8500")
+  -querier.ring.consul.watch-burst-size int
+    	Burst size used in rate limit. Values less than 1 are treated as 1. (default 1)
+  -querier.ring.consul.watch-rate-limit float
+    	Rate limit when watching key or prefix in Consul, in requests per second. 0 disables the rate limit. (default 1)
+  -querier.ring.etcd.dial-timeout duration
+    	The dial timeout for the etcd connection. (default 10s)
+  -querier.ring.etcd.endpoints string
+    	The etcd endpoints to connect to.
+  -querier.ring.etcd.max-retries int
+    	The maximum number of retries to do for failed ops. (default 10)
+  -querier.ring.etcd.password string
+    	Etcd password.
+  -querier.ring.etcd.tls-ca-path string
+    	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
+  -querier.ring.etcd.tls-cert-path string
+    	Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.
+  -querier.ring.etcd.tls-cipher-suites string
+    	Override the default cipher suite list (separated by commas).
+  -querier.ring.etcd.tls-enabled
+    	Enable TLS.
+  -querier.ring.etcd.tls-insecure-skip-verify
+    	Skip validating server certificate.
+  -querier.ring.etcd.tls-key-path string
+    	Path to the key for the client certificate. Also requires the client certificate to be configured.
+  -querier.ring.etcd.tls-min-version string
+    	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
+  -querier.ring.etcd.tls-server-name string
+    	Override the expected name on the server certificate.
+  -querier.ring.etcd.username string
+    	Etcd username.
+  -querier.ring.heartbeat-period duration
+    	Period at which to heartbeat to the ring. (default 15s)
+  -querier.ring.heartbeat-timeout duration
+    	Heartbeat timeout after which Mimir marks queriers as unhealthy in the ring. (default 1m0s)
+  -querier.ring.instance-addr string
+    	IP address to advertise in the ring. Default is auto-detected.
+  -querier.ring.instance-enable-ipv6
+    	Enable using an IPv6 instance address.
+  -querier.ring.instance-id string
+    	Instance ID to register in the ring. (default "<hostname>")
+  -querier.ring.instance-interface-names string
+    	List of network interface names to look up when finding the instance IP address. (default [<private network interfaces>])
+  -querier.ring.instance-port int
+    	Port to advertise in the ring (defaults to -server.grpc-listen-port).
+  -querier.ring.multi.mirror-enabled
+    	Mirror writes to the secondary store.
+  -querier.ring.multi.mirror-timeout duration
+    	Timeout for storing a value to the secondary store. (default 2s)
+  -querier.ring.multi.primary string
+    	Primary backend storage used by multi-client.
+  -querier.ring.multi.secondary string
+    	Secondary backend storage used by multi-client.
+  -querier.ring.prefix string
+    	The prefix for the keys in the store. Should end with a /. (default "collectors/")
+  -querier.ring.store string
+    	Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi. (default "memberlist")
   -querier.scheduler-address string
     	Address of the query-scheduler component, in host:port format. The host should resolve to all query-scheduler instances. This option should be set only when query-scheduler component is in use and -query-scheduler.service-discovery-mode is set to 'dns'.
   -querier.scheduler-client.backoff-max-period duration
@@ -2529,6 +2597,8 @@ Usage of ./cmd/mimir/mimir:
     	The amount of shards to use when doing parallelisation via query sharding by tenant. 0 to disable query sharding for tenant. Query sharding implementation will adjust the number of query shards based on compactor shards. This allows querier to not search the blocks which cannot possibly have the series for given query shard. (default 16)
   -query-frontend.query-stats-enabled
     	False to disable query statistics tracking. When enabled, a message with some statistics is logged for every query. (default true)
+  -query-frontend.remote-execution-batch-size uint
+    	[experimental] Maximum number of series to send in a single remote execution response from a querier. (default 128)
   -query-frontend.results-cache-ttl duration
     	Time to live duration for cached query results. If query falls into out-of-order time window, -query-frontend.results-cache-ttl-for-out-of-order-time-window is used instead. (default 1w)
   -query-frontend.results-cache-ttl-for-cardinality-query duration
@@ -2654,7 +2724,7 @@ Usage of ./cmd/mimir/mimir:
   -query-scheduler.querier-forget-delay duration
     	[experimental] If a querier disconnects without sending notification about graceful shutdown, the query-scheduler will keep the querier in the tenant's shard until the forget delay has passed. This feature is useful to reduce the blast radius when shuffle-sharding is enabled.
   -query-scheduler.ring.auto-forget-unhealthy-periods int
-    	Number of consecutive timeout periods an unhealthy instance in the ring is automatically removed after. Set to 0 to disable auto-forget. (default 10)
+    	Number of consecutive timeout periods after which Mimir automatically removes an unhealthy instance in the ring. Set to 0 to disable auto-forget. (default 10)
   -query-scheduler.ring.consul.acl-token string
     	ACL Token used to interact with Consul.
   -query-scheduler.ring.consul.cas-retry-delay duration
@@ -2696,7 +2766,7 @@ Usage of ./cmd/mimir/mimir:
   -query-scheduler.ring.etcd.username string
     	Etcd username.
   -query-scheduler.ring.heartbeat-period duration
-    	Period at which to heartbeat to the ring. 0 = disabled. (default 15s)
+    	Period at which to heartbeat to the ring. (default 15s)
   -query-scheduler.ring.heartbeat-timeout duration
     	The heartbeat timeout after which query-schedulers are considered unhealthy within the ring. When query-scheduler ring-based service discovery is enabled, this option needs be set on query-schedulers, query-frontends and queriers. (default 1m0s)
   -query-scheduler.ring.instance-addr string
@@ -2710,9 +2780,9 @@ Usage of ./cmd/mimir/mimir:
   -query-scheduler.ring.instance-port int
     	Port to advertise in the ring (defaults to -server.grpc-listen-port).
   -query-scheduler.ring.multi.mirror-enabled
-    	Mirror writes to secondary store.
+    	Mirror writes to the secondary store.
   -query-scheduler.ring.multi.mirror-timeout duration
-    	Timeout for storing value to secondary store. (default 2s)
+    	Timeout for storing a value to the secondary store. (default 2s)
   -query-scheduler.ring.multi.primary string
     	Primary backend storage used by multi-client.
   -query-scheduler.ring.multi.secondary string
@@ -3055,6 +3125,8 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Maximum number of independent rules that can run concurrently for each tenant. Depends on ruler.max-independent-rule-evaluation-concurrency being greater than 0. Ideally this flag should be a lower value. 0 to disable. (default 4)
   -ruler.max-notification-batch-size int
     	Maximum number of notifications to send to Alertmanager in one request. (default 256)
+  -ruler.max-rule-evaluation-results int
+    	[experimental] Maximum number of alerts or series one alerting rule or one recording rule respectively can produce. 0 is no limit.
   -ruler.max-rule-groups-per-tenant int
     	Maximum number of rule groups per-tenant. 0 to disable. (default 70)
   -ruler.max-rule-groups-per-tenant-by-namespace value
@@ -3136,7 +3208,7 @@ Usage of ./cmd/mimir/mimir:
   -ruler.resend-delay duration
     	Minimum amount of time to wait before resending an alert to Alertmanager. (default 1m0s)
   -ruler.ring.auto-forget-unhealthy-periods int
-    	Number of consecutive timeout periods an unhealthy instance in the ring is automatically removed after. Set to 0 to disable auto-forget. (default 2)
+    	Number of consecutive timeout periods after which Mimir automatically removes an unhealthy instance in the ring. Set to 0 to disable auto-forget. (default 2)
   -ruler.ring.consul.acl-token string
     	ACL Token used to interact with Consul.
   -ruler.ring.consul.cas-retry-delay duration
@@ -3178,13 +3250,13 @@ Usage of ./cmd/mimir/mimir:
   -ruler.ring.etcd.username string
     	Etcd username.
   -ruler.ring.heartbeat-period duration
-    	Period at which to heartbeat to the ring. 0 = disabled. (default 15s)
+    	Period at which to heartbeat to the ring. (default 15s)
   -ruler.ring.heartbeat-timeout duration
-    	The heartbeat timeout after which rulers are considered unhealthy within the ring. 0 = never (timeout disabled). (default 1m0s)
+    	Heartbeat timeout after which Mimir marks rulers as unhealthy in the ring. (default 1m0s)
   -ruler.ring.instance-addr string
     	IP address to advertise in the ring. Default is auto-detected.
   -ruler.ring.instance-enable-ipv6
-    	Enable using a IPv6 instance address. (default false)
+    	Enable using an IPv6 instance address.
   -ruler.ring.instance-id string
     	Instance ID to register in the ring. (default "<hostname>")
   -ruler.ring.instance-interface-names string
@@ -3192,9 +3264,9 @@ Usage of ./cmd/mimir/mimir:
   -ruler.ring.instance-port int
     	Port to advertise in the ring (defaults to -server.grpc-listen-port).
   -ruler.ring.multi.mirror-enabled
-    	Mirror writes to secondary store.
+    	Mirror writes to the secondary store.
   -ruler.ring.multi.mirror-timeout duration
-    	Timeout for storing value to secondary store. (default 2s)
+    	Timeout for storing a value to the secondary store. (default 2s)
   -ruler.ring.multi.primary string
     	Primary backend storage used by multi-client.
   -ruler.ring.multi.secondary string
@@ -3354,7 +3426,7 @@ Usage of ./cmd/mimir/mimir:
   -store-gateway.sharding-ring.auto-forget-enabled
     	[deprecated] When enabled, a store-gateway is automatically removed from the ring after failing to heartbeat the ring for a period longer than the configured -store-gateway.sharding-ring.auto-forget-unhealthy-periods times the configured -store-gateway.sharding-ring.heartbeat-timeout. This setting is deprecated. Set -store-gateway.sharding-ring.auto-forget-unhealthy-periods to 0 to disable auto-forget. (default true)
   -store-gateway.sharding-ring.auto-forget-unhealthy-periods int
-    	Number of consecutive timeout periods an unhealthy instance in the ring is automatically removed after. Set to 0 to disable auto-forget. (default 10)
+    	Number of consecutive timeout periods after which Mimir automatically removes an unhealthy instance in the ring. Set to 0 to disable auto-forget. (default 10)
   -store-gateway.sharding-ring.consul.acl-token string
     	ACL Token used to interact with Consul.
   -store-gateway.sharding-ring.consul.cas-retry-delay duration
@@ -3396,9 +3468,9 @@ Usage of ./cmd/mimir/mimir:
   -store-gateway.sharding-ring.etcd.username string
     	Etcd username.
   -store-gateway.sharding-ring.heartbeat-period duration
-    	Period at which to heartbeat to the ring. 0 = disabled. (default 15s)
+    	Period at which to heartbeat to the ring. (default 15s)
   -store-gateway.sharding-ring.heartbeat-timeout duration
-    	The heartbeat timeout after which store gateways are considered unhealthy within the ring. 0 = never (timeout disabled). This option needs be set both on the store-gateway, querier and ruler when running in microservices mode. (default 1m0s)
+    	The heartbeat timeout after which store gateways are considered unhealthy within the ring. This option needs be set both on the store-gateway, querier and ruler when running in microservices mode. (default 1m0s)
   -store-gateway.sharding-ring.instance-addr string
     	IP address to advertise in the ring. Default is auto-detected.
   -store-gateway.sharding-ring.instance-availability-zone string
@@ -3412,9 +3484,9 @@ Usage of ./cmd/mimir/mimir:
   -store-gateway.sharding-ring.instance-port int
     	Port to advertise in the ring (defaults to -server.grpc-listen-port).
   -store-gateway.sharding-ring.multi.mirror-enabled
-    	Mirror writes to secondary store.
+    	Mirror writes to the secondary store.
   -store-gateway.sharding-ring.multi.mirror-timeout duration
-    	Timeout for storing value to secondary store. (default 2s)
+    	Timeout for storing a value to the secondary store. (default 2s)
   -store-gateway.sharding-ring.multi.primary string
     	Primary backend storage used by multi-client.
   -store-gateway.sharding-ring.multi.secondary string
@@ -3503,596 +3575,6 @@ Usage of ./cmd/mimir/mimir:
     	Enable anonymous usage reporting. (default true)
   -usage-stats.installation-mode string
     	Installation mode. Supported values: custom, helm, jsonnet. (default "custom")
-  -usage-tracker.auto-forget-unhealthy-periods int
-    	Number of consecutive timeout periods an unhealthy instance in the ring is automatically removed after. Set to 0 to disable auto-forget. (default 4)
-  -usage-tracker.created-series-events-batch-ttl duration
-    	Time after which a batch of created series events is published even if it's not full. (default 250ms)
-  -usage-tracker.created-series-events-max-batch-size-bytes int
-    	Maximum size of a batch of created series events to be published. (default 1048576)
-  -usage-tracker.created-series-events-max-pending int
-    	Maximum number of pending created series events waiting to be published. (default 10000)
-  -usage-tracker.created-series-events-publish-concurrency int
-    	Number of concurrent workers publishing created series events. (default 10)
-  -usage-tracker.do-not-apply-series-limits
-    	If true, the usage-tracker service tracks all series and does not apply series limits.
-  -usage-tracker.enabled
-    	True to enable the usage-tracker.
-  -usage-tracker.events-storage.reader.address string
-    	The Kafka backend address.
-  -usage-tracker.events-storage.reader.auto-create-topic-default-partitions int
-    	When auto-creation of Kafka topic is enabled and this value is positive, Mimir creates the topic with this number of partitions. When the value is -1 the Kafka broker uses the default number of partitions (num.partitions configuration). (default -1)
-  -usage-tracker.events-storage.reader.auto-create-topic-enabled
-    	Enable auto-creation of Kafka topic on startup if it doesn't exist. If creating the topic fails and the topic doesn't already exist, Mimir fails to start. (default true)
-  -usage-tracker.events-storage.reader.client-id string
-    	The Kafka client ID.
-  -usage-tracker.events-storage.reader.consume-from-position-at-startup string
-    	From which position to start consuming the partition at startup. Supported options: last-offset, start, end, timestamp. (default "last-offset")
-  -usage-tracker.events-storage.reader.consume-from-timestamp-at-startup int
-    	Milliseconds timestamp after which the consumption of the partition starts at startup. Only applies when consume-from-position-at-startup is timestamp
-  -usage-tracker.events-storage.reader.consumer-group string
-    	The consumer group used by the consumer to track the last consumed offset. The consumer group must be different for each ingester. If the configured consumer group contains the '<partition>' placeholder, it is replaced with the actual partition ID owned by the ingester. When empty (recommended), Mimir uses the ingester instance ID to guarantee uniqueness.
-  -usage-tracker.events-storage.reader.consumer-group-offset-commit-interval duration
-    	How frequently a consumer should commit the consumed offset to Kafka. The last committed offset is used at startup to continue the consumption from where it was left. (default 1s)
-  -usage-tracker.events-storage.reader.dial-timeout duration
-    	The maximum time allowed to open a connection to a Kafka broker. (default 2s)
-  -usage-tracker.events-storage.reader.fetch-concurrency-max int
-    	The maximum number of concurrent fetch requests that the ingester makes when reading data from Kafka during startup. Concurrent fetch requests are issued only when there is sufficient backlog of records to consume. Set to 0 to disable.
-  -usage-tracker.events-storage.reader.fetch-max-wait duration
-    	The maximum amount of time a Kafka broker waits for some records before a Fetch response is returned. (default 5s)
-  -usage-tracker.events-storage.reader.ingestion-concurrency-batch-size int
-    	The number of timeseries to batch together before ingesting to the TSDB head. Only use this setting when -ingest-storage.kafka.ingestion-concurrency-max is greater than 0. (default 150)
-  -usage-tracker.events-storage.reader.ingestion-concurrency-estimated-bytes-per-sample int
-    	The estimated number of bytes a sample has at time of ingestion. This value is used to estimate the timeseries without decompressing them. Only use this setting when -ingest-storage.kafka.ingestion-concurrency-max is greater than 0. (default 500)
-  -usage-tracker.events-storage.reader.ingestion-concurrency-max int
-    	The maximum number of concurrent ingestion streams to the TSDB head. Every tenant has their own set of streams. 0 to disable.
-  -usage-tracker.events-storage.reader.ingestion-concurrency-queue-capacity int
-    	The number of batches to prepare and queue to ingest to the TSDB head. Only use this setting when -ingest-storage.kafka.ingestion-concurrency-max is greater than 0. (default 5)
-  -usage-tracker.events-storage.reader.ingestion-concurrency-target-flushes-per-shard int
-    	The expected number of times to ingest timeseries to the TSDB head after batching. With fewer flushes, the overhead of splitting up the work is higher than the benefit of parallelization. Only use this setting when -ingest-storage.kafka.ingestion-concurrency-max is greater than 0. (default 80)
-  -usage-tracker.events-storage.reader.last-produced-offset-poll-interval duration
-    	How frequently to poll the last produced offset, used to enforce strong read consistency. (default 1s)
-  -usage-tracker.events-storage.reader.last-produced-offset-retry-timeout duration
-    	How long to retry a failed request to get the last produced offset. (default 10s)
-  -usage-tracker.events-storage.reader.max-buffered-bytes int
-    	The maximum number of buffered records ready to be processed. This limit applies to the sum of all inflight requests. Set to 0 to disable the limit. (default 100000000)
-  -usage-tracker.events-storage.reader.max-consumer-lag-at-startup duration
-    	The guaranteed maximum lag before a consumer is considered to have caught up reading from a partition at startup, becomes ACTIVE in the hash ring and passes the readiness check. Set both -usage-tracker.events-storage.reader.target-consumer-lag-at-startup and -usage-tracker.events-storage.reader.max-consumer-lag-at-startup to 0 to disable waiting for maximum consumer lag being honored at startup. (default 15s)
-  -usage-tracker.events-storage.reader.producer-max-buffered-bytes int
-    	The maximum size of (uncompressed) buffered and unacknowledged produced records sent to Kafka. The produce request fails once this limit is reached. This limit is per Kafka client. 0 to disable the limit. (default 1073741824)
-  -usage-tracker.events-storage.reader.producer-max-record-size-bytes int
-    	The maximum size of a Kafka record data that should be generated by the producer. An incoming write request larger than this size is split into multiple Kafka records. We strongly recommend to not change this setting unless for testing purposes. (default 15983616)
-  -usage-tracker.events-storage.reader.producer-record-version int
-    	[experimental] The record version that this producer sends.
-  -usage-tracker.events-storage.reader.sasl-password string
-    	The password used to authenticate to Kafka using the SASL plain mechanism. To enable SASL, configure both the username and password.
-  -usage-tracker.events-storage.reader.sasl-username string
-    	The username used to authenticate to Kafka using the SASL plain mechanism. To enable SASL, configure both the username and password.
-  -usage-tracker.events-storage.reader.target-consumer-lag-at-startup duration
-    	The best-effort maximum lag a consumer tries to achieve at startup. Set both -usage-tracker.events-storage.reader.target-consumer-lag-at-startup and -usage-tracker.events-storage.reader.max-consumer-lag-at-startup to 0 to disable waiting for maximum consumer lag being honored at startup. (default 2s)
-  -usage-tracker.events-storage.reader.topic string
-    	The Kafka topic name.
-  -usage-tracker.events-storage.reader.use-compressed-bytes-as-fetch-max-bytes
-    	When enabled, the fetch request MaxBytes field is computed using the compressed size of previous records. When disabled, MaxBytes is computed using uncompressed bytes. Different Kafka implementations interpret MaxBytes differently. (default true)
-  -usage-tracker.events-storage.reader.wait-strong-read-consistency-timeout duration
-    	The maximum allowed for a read requests processed by an ingester to wait until strong read consistency is enforced. 0 to disable the timeout. (default 20s)
-  -usage-tracker.events-storage.reader.write-clients int
-    	The number of Kafka clients used by producers. When the configured number of clients is greater than 1, partitions are sharded among Kafka clients. A higher number of clients may provide higher write throughput at the cost of additional Metadata requests pressure to Kafka. (default 1)
-  -usage-tracker.events-storage.reader.write-timeout duration
-    	How long to wait for an incoming write request to be successfully committed to the Kafka backend. (default 10s)
-  -usage-tracker.events-storage.writer.address string
-    	The Kafka backend address.
-  -usage-tracker.events-storage.writer.auto-create-topic-default-partitions int
-    	When auto-creation of Kafka topic is enabled and this value is positive, Mimir creates the topic with this number of partitions. When the value is -1 the Kafka broker uses the default number of partitions (num.partitions configuration). (default -1)
-  -usage-tracker.events-storage.writer.auto-create-topic-enabled
-    	Enable auto-creation of Kafka topic on startup if it doesn't exist. If creating the topic fails and the topic doesn't already exist, Mimir fails to start. (default true)
-  -usage-tracker.events-storage.writer.client-id string
-    	The Kafka client ID.
-  -usage-tracker.events-storage.writer.consume-from-position-at-startup string
-    	From which position to start consuming the partition at startup. Supported options: last-offset, start, end, timestamp. (default "last-offset")
-  -usage-tracker.events-storage.writer.consume-from-timestamp-at-startup int
-    	Milliseconds timestamp after which the consumption of the partition starts at startup. Only applies when consume-from-position-at-startup is timestamp
-  -usage-tracker.events-storage.writer.consumer-group string
-    	The consumer group used by the consumer to track the last consumed offset. The consumer group must be different for each ingester. If the configured consumer group contains the '<partition>' placeholder, it is replaced with the actual partition ID owned by the ingester. When empty (recommended), Mimir uses the ingester instance ID to guarantee uniqueness.
-  -usage-tracker.events-storage.writer.consumer-group-offset-commit-interval duration
-    	How frequently a consumer should commit the consumed offset to Kafka. The last committed offset is used at startup to continue the consumption from where it was left. (default 1s)
-  -usage-tracker.events-storage.writer.dial-timeout duration
-    	The maximum time allowed to open a connection to a Kafka broker. (default 2s)
-  -usage-tracker.events-storage.writer.fetch-concurrency-max int
-    	The maximum number of concurrent fetch requests that the ingester makes when reading data from Kafka during startup. Concurrent fetch requests are issued only when there is sufficient backlog of records to consume. Set to 0 to disable.
-  -usage-tracker.events-storage.writer.fetch-max-wait duration
-    	The maximum amount of time a Kafka broker waits for some records before a Fetch response is returned. (default 5s)
-  -usage-tracker.events-storage.writer.ingestion-concurrency-batch-size int
-    	The number of timeseries to batch together before ingesting to the TSDB head. Only use this setting when -ingest-storage.kafka.ingestion-concurrency-max is greater than 0. (default 150)
-  -usage-tracker.events-storage.writer.ingestion-concurrency-estimated-bytes-per-sample int
-    	The estimated number of bytes a sample has at time of ingestion. This value is used to estimate the timeseries without decompressing them. Only use this setting when -ingest-storage.kafka.ingestion-concurrency-max is greater than 0. (default 500)
-  -usage-tracker.events-storage.writer.ingestion-concurrency-max int
-    	The maximum number of concurrent ingestion streams to the TSDB head. Every tenant has their own set of streams. 0 to disable.
-  -usage-tracker.events-storage.writer.ingestion-concurrency-queue-capacity int
-    	The number of batches to prepare and queue to ingest to the TSDB head. Only use this setting when -ingest-storage.kafka.ingestion-concurrency-max is greater than 0. (default 5)
-  -usage-tracker.events-storage.writer.ingestion-concurrency-target-flushes-per-shard int
-    	The expected number of times to ingest timeseries to the TSDB head after batching. With fewer flushes, the overhead of splitting up the work is higher than the benefit of parallelization. Only use this setting when -ingest-storage.kafka.ingestion-concurrency-max is greater than 0. (default 80)
-  -usage-tracker.events-storage.writer.last-produced-offset-poll-interval duration
-    	How frequently to poll the last produced offset, used to enforce strong read consistency. (default 1s)
-  -usage-tracker.events-storage.writer.last-produced-offset-retry-timeout duration
-    	How long to retry a failed request to get the last produced offset. (default 10s)
-  -usage-tracker.events-storage.writer.max-buffered-bytes int
-    	The maximum number of buffered records ready to be processed. This limit applies to the sum of all inflight requests. Set to 0 to disable the limit. (default 100000000)
-  -usage-tracker.events-storage.writer.max-consumer-lag-at-startup duration
-    	The guaranteed maximum lag before a consumer is considered to have caught up reading from a partition at startup, becomes ACTIVE in the hash ring and passes the readiness check. Set both -usage-tracker.events-storage.writer.target-consumer-lag-at-startup and -usage-tracker.events-storage.writer.max-consumer-lag-at-startup to 0 to disable waiting for maximum consumer lag being honored at startup. (default 15s)
-  -usage-tracker.events-storage.writer.producer-max-buffered-bytes int
-    	The maximum size of (uncompressed) buffered and unacknowledged produced records sent to Kafka. The produce request fails once this limit is reached. This limit is per Kafka client. 0 to disable the limit. (default 1073741824)
-  -usage-tracker.events-storage.writer.producer-max-record-size-bytes int
-    	The maximum size of a Kafka record data that should be generated by the producer. An incoming write request larger than this size is split into multiple Kafka records. We strongly recommend to not change this setting unless for testing purposes. (default 15983616)
-  -usage-tracker.events-storage.writer.producer-record-version int
-    	[experimental] The record version that this producer sends.
-  -usage-tracker.events-storage.writer.sasl-password string
-    	The password used to authenticate to Kafka using the SASL plain mechanism. To enable SASL, configure both the username and password.
-  -usage-tracker.events-storage.writer.sasl-username string
-    	The username used to authenticate to Kafka using the SASL plain mechanism. To enable SASL, configure both the username and password.
-  -usage-tracker.events-storage.writer.target-consumer-lag-at-startup duration
-    	The best-effort maximum lag a consumer tries to achieve at startup. Set both -usage-tracker.events-storage.writer.target-consumer-lag-at-startup and -usage-tracker.events-storage.writer.max-consumer-lag-at-startup to 0 to disable waiting for maximum consumer lag being honored at startup. (default 2s)
-  -usage-tracker.events-storage.writer.topic string
-    	The Kafka topic name.
-  -usage-tracker.events-storage.writer.use-compressed-bytes-as-fetch-max-bytes
-    	When enabled, the fetch request MaxBytes field is computed using the compressed size of previous records. When disabled, MaxBytes is computed using uncompressed bytes. Different Kafka implementations interpret MaxBytes differently. (default true)
-  -usage-tracker.events-storage.writer.wait-strong-read-consistency-timeout duration
-    	The maximum allowed for a read requests processed by an ingester to wait until strong read consistency is enforced. 0 to disable the timeout. (default 20s)
-  -usage-tracker.events-storage.writer.write-clients int
-    	The number of Kafka clients used by producers. When the configured number of clients is greater than 1, partitions are sharded among Kafka clients. A higher number of clients may provide higher write throughput at the cost of additional Metadata requests pressure to Kafka. (default 1)
-  -usage-tracker.events-storage.writer.write-timeout duration
-    	How long to wait for an incoming write request to be successfully committed to the Kafka backend. (default 10s)
-  -usage-tracker.idle-timeout duration
-    	The time after which series are considered idle and not active anymore. Must be greater than 0 and less than 1 hour. (default 20m0s)
-  -usage-tracker.instance-ring.consul.acl-token string
-    	ACL Token used to interact with Consul.
-  -usage-tracker.instance-ring.consul.cas-retry-delay duration
-    	Maximum duration to wait before retrying a Compare And Swap (CAS) operation. (default 1s)
-  -usage-tracker.instance-ring.consul.client-timeout duration
-    	HTTP timeout when talking to Consul (default 20s)
-  -usage-tracker.instance-ring.consul.consistent-reads
-    	Enable consistent reads to Consul.
-  -usage-tracker.instance-ring.consul.hostname string
-    	Hostname and port of Consul. (default "localhost:8500")
-  -usage-tracker.instance-ring.consul.watch-burst-size int
-    	Burst size used in rate limit. Values less than 1 are treated as 1. (default 1)
-  -usage-tracker.instance-ring.consul.watch-rate-limit float
-    	Rate limit when watching key or prefix in Consul, in requests per second. 0 disables the rate limit. (default 1)
-  -usage-tracker.instance-ring.etcd.dial-timeout duration
-    	The dial timeout for the etcd connection. (default 10s)
-  -usage-tracker.instance-ring.etcd.endpoints string
-    	The etcd endpoints to connect to.
-  -usage-tracker.instance-ring.etcd.max-retries int
-    	The maximum number of retries to do for failed ops. (default 10)
-  -usage-tracker.instance-ring.etcd.password string
-    	Etcd password.
-  -usage-tracker.instance-ring.etcd.tls-ca-path string
-    	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
-  -usage-tracker.instance-ring.etcd.tls-cert-path string
-    	Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.
-  -usage-tracker.instance-ring.etcd.tls-cipher-suites string
-    	Override the default cipher suite list (separated by commas).
-  -usage-tracker.instance-ring.etcd.tls-enabled
-    	Enable TLS.
-  -usage-tracker.instance-ring.etcd.tls-insecure-skip-verify
-    	Skip validating server certificate.
-  -usage-tracker.instance-ring.etcd.tls-key-path string
-    	Path to the key for the client certificate. Also requires the client certificate to be configured.
-  -usage-tracker.instance-ring.etcd.tls-min-version string
-    	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
-  -usage-tracker.instance-ring.etcd.tls-server-name string
-    	Override the expected name on the server certificate.
-  -usage-tracker.instance-ring.etcd.username string
-    	Etcd username.
-  -usage-tracker.instance-ring.heartbeat-period duration
-    	Period at which to heartbeat to the ring. 0 = disabled. (default 15s)
-  -usage-tracker.instance-ring.heartbeat-timeout duration
-    	The heartbeat timeout after which usage-trackers are considered unhealthy within the ring. (default 1m0s)
-  -usage-tracker.instance-ring.instance-addr string
-    	IP address to advertise in the ring. Default is auto-detected.
-  -usage-tracker.instance-ring.instance-availability-zone string
-    	The availability zone where this instance is running.
-  -usage-tracker.instance-ring.instance-enable-ipv6
-    	Enable using a IPv6 instance address. (default false)
-  -usage-tracker.instance-ring.instance-id string
-    	Instance ID to register in the ring. (default "<hostname>")
-  -usage-tracker.instance-ring.instance-interface-names string
-    	List of network interface names to look up when finding the instance IP address. (default [<private network interfaces>])
-  -usage-tracker.instance-ring.instance-port int
-    	Port to advertise in the ring (defaults to -server.grpc-listen-port).
-  -usage-tracker.instance-ring.multi.mirror-enabled
-    	Mirror writes to secondary store.
-  -usage-tracker.instance-ring.multi.mirror-timeout duration
-    	Timeout for storing value to secondary store. (default 2s)
-  -usage-tracker.instance-ring.multi.primary string
-    	Primary backend storage used by multi-client.
-  -usage-tracker.instance-ring.multi.secondary string
-    	Secondary backend storage used by multi-client.
-  -usage-tracker.instance-ring.prefix string
-    	The prefix for the keys in the store. Should end with a /. (default "collectors/")
-  -usage-tracker.instance-ring.store string
-    	Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi. (default "memberlist")
-  -usage-tracker.lost-partitions-shutdown-grace-period duration
-    	Time to wait before shutting down a partition handler that is no longer owned by this instance. (default 30s)
-  -usage-tracker.max-events-fetch-size int
-    	Maximum number of events to fetch from Kafka in a single request. This is used to limit the memory usage when fetching events. (default 100)
-  -usage-tracker.max-partitions-to-create-per-reconcile int
-    	Maximum number of partitions to create per reconcile interval. This avoids load avalanches and prevents shuffling when adding new instances. (default 1)
-  -usage-tracker.partition-reconcile-interval duration
-    	Interval to reconcile partitions. (default 10s)
-  -usage-tracker.partition-ring.consul.acl-token string
-    	ACL Token used to interact with Consul.
-  -usage-tracker.partition-ring.consul.cas-retry-delay duration
-    	Maximum duration to wait before retrying a Compare And Swap (CAS) operation. (default 1s)
-  -usage-tracker.partition-ring.consul.client-timeout duration
-    	HTTP timeout when talking to Consul (default 20s)
-  -usage-tracker.partition-ring.consul.consistent-reads
-    	Enable consistent reads to Consul.
-  -usage-tracker.partition-ring.consul.hostname string
-    	Hostname and port of Consul. (default "localhost:8500")
-  -usage-tracker.partition-ring.consul.watch-burst-size int
-    	Burst size used in rate limit. Values less than 1 are treated as 1. (default 1)
-  -usage-tracker.partition-ring.consul.watch-rate-limit float
-    	Rate limit when watching key or prefix in Consul, in requests per second. 0 disables the rate limit. (default 1)
-  -usage-tracker.partition-ring.etcd.dial-timeout duration
-    	The dial timeout for the etcd connection. (default 10s)
-  -usage-tracker.partition-ring.etcd.endpoints string
-    	The etcd endpoints to connect to.
-  -usage-tracker.partition-ring.etcd.max-retries int
-    	The maximum number of retries to do for failed ops. (default 10)
-  -usage-tracker.partition-ring.etcd.password string
-    	Etcd password.
-  -usage-tracker.partition-ring.etcd.tls-ca-path string
-    	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
-  -usage-tracker.partition-ring.etcd.tls-cert-path string
-    	Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.
-  -usage-tracker.partition-ring.etcd.tls-cipher-suites string
-    	Override the default cipher suite list (separated by commas).
-  -usage-tracker.partition-ring.etcd.tls-enabled
-    	Enable TLS.
-  -usage-tracker.partition-ring.etcd.tls-insecure-skip-verify
-    	Skip validating server certificate.
-  -usage-tracker.partition-ring.etcd.tls-key-path string
-    	Path to the key for the client certificate. Also requires the client certificate to be configured.
-  -usage-tracker.partition-ring.etcd.tls-min-version string
-    	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
-  -usage-tracker.partition-ring.etcd.tls-server-name string
-    	Override the expected name on the server certificate.
-  -usage-tracker.partition-ring.etcd.username string
-    	Etcd username.
-  -usage-tracker.partition-ring.multi.mirror-enabled
-    	Mirror writes to secondary store.
-  -usage-tracker.partition-ring.multi.mirror-timeout duration
-    	Timeout for storing value to secondary store. (default 2s)
-  -usage-tracker.partition-ring.multi.primary string
-    	Primary backend storage used by multi-client.
-  -usage-tracker.partition-ring.multi.secondary string
-    	Secondary backend storage used by multi-client.
-  -usage-tracker.partition-ring.prefix string
-    	The prefix for the keys in the store. Should end with a /. (default "collectors/")
-  -usage-tracker.partition-ring.store string
-    	Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi. (default "memberlist")
-  -usage-tracker.partitions int
-    	Number of partitions to use for the usage-tracker. This number isn't expected to change after you're already using the usage-tracker. (default 64)
-  -usage-tracker.skip-snapshot-loading-at-startup
-    	[experimental] If true, the usage-tracker will not load snapshots at startup. This means that the full state will not be reloaded during partition handler startup. Useful to skip corrupted snapshots or for testing purposes only.
-  -usage-tracker.snapshot-cleanup-interval duration
-    	Interval to clean up old snapshots. (default 1h0m0s)
-  -usage-tracker.snapshot-cleanup-interval-jitter float
-    	Jitter to apply to the snapshot cleanup interval. This is a percentage of the snapshot cleanup interval, e.g. 0.1 means 10% jitter. It should be between 0 and 1. (default 0.25)
-  -usage-tracker.snapshot-interval-jitter float
-    	Jitter to apply to the snapshot interval. This is a percentage of the snapshot interval, e.g. 0.1 means 10% jitter. It should be between 0 and 1. (default 0.1)
-  -usage-tracker.snapshots-load-backoff.backoff-max-period duration
-    	Maximum delay when backing off. (default 10s)
-  -usage-tracker.snapshots-load-backoff.backoff-min-period duration
-    	Minimum delay when backing off. (default 100ms)
-  -usage-tracker.snapshots-load-backoff.backoff-retries int
-    	Number of times to backoff and retry before failing. (default 10)
-  -usage-tracker.snapshots-metadata.reader.address string
-    	The Kafka backend address.
-  -usage-tracker.snapshots-metadata.reader.auto-create-topic-default-partitions int
-    	When auto-creation of Kafka topic is enabled and this value is positive, Mimir creates the topic with this number of partitions. When the value is -1 the Kafka broker uses the default number of partitions (num.partitions configuration). (default -1)
-  -usage-tracker.snapshots-metadata.reader.auto-create-topic-enabled
-    	Enable auto-creation of Kafka topic on startup if it doesn't exist. If creating the topic fails and the topic doesn't already exist, Mimir fails to start. (default true)
-  -usage-tracker.snapshots-metadata.reader.client-id string
-    	The Kafka client ID.
-  -usage-tracker.snapshots-metadata.reader.consume-from-position-at-startup string
-    	From which position to start consuming the partition at startup. Supported options: last-offset, start, end, timestamp. (default "last-offset")
-  -usage-tracker.snapshots-metadata.reader.consume-from-timestamp-at-startup int
-    	Milliseconds timestamp after which the consumption of the partition starts at startup. Only applies when consume-from-position-at-startup is timestamp
-  -usage-tracker.snapshots-metadata.reader.consumer-group string
-    	The consumer group used by the consumer to track the last consumed offset. The consumer group must be different for each ingester. If the configured consumer group contains the '<partition>' placeholder, it is replaced with the actual partition ID owned by the ingester. When empty (recommended), Mimir uses the ingester instance ID to guarantee uniqueness.
-  -usage-tracker.snapshots-metadata.reader.consumer-group-offset-commit-interval duration
-    	How frequently a consumer should commit the consumed offset to Kafka. The last committed offset is used at startup to continue the consumption from where it was left. (default 1s)
-  -usage-tracker.snapshots-metadata.reader.dial-timeout duration
-    	The maximum time allowed to open a connection to a Kafka broker. (default 2s)
-  -usage-tracker.snapshots-metadata.reader.fetch-concurrency-max int
-    	The maximum number of concurrent fetch requests that the ingester makes when reading data from Kafka during startup. Concurrent fetch requests are issued only when there is sufficient backlog of records to consume. Set to 0 to disable.
-  -usage-tracker.snapshots-metadata.reader.fetch-max-wait duration
-    	The maximum amount of time a Kafka broker waits for some records before a Fetch response is returned. (default 5s)
-  -usage-tracker.snapshots-metadata.reader.ingestion-concurrency-batch-size int
-    	The number of timeseries to batch together before ingesting to the TSDB head. Only use this setting when -ingest-storage.kafka.ingestion-concurrency-max is greater than 0. (default 150)
-  -usage-tracker.snapshots-metadata.reader.ingestion-concurrency-estimated-bytes-per-sample int
-    	The estimated number of bytes a sample has at time of ingestion. This value is used to estimate the timeseries without decompressing them. Only use this setting when -ingest-storage.kafka.ingestion-concurrency-max is greater than 0. (default 500)
-  -usage-tracker.snapshots-metadata.reader.ingestion-concurrency-max int
-    	The maximum number of concurrent ingestion streams to the TSDB head. Every tenant has their own set of streams. 0 to disable.
-  -usage-tracker.snapshots-metadata.reader.ingestion-concurrency-queue-capacity int
-    	The number of batches to prepare and queue to ingest to the TSDB head. Only use this setting when -ingest-storage.kafka.ingestion-concurrency-max is greater than 0. (default 5)
-  -usage-tracker.snapshots-metadata.reader.ingestion-concurrency-target-flushes-per-shard int
-    	The expected number of times to ingest timeseries to the TSDB head after batching. With fewer flushes, the overhead of splitting up the work is higher than the benefit of parallelization. Only use this setting when -ingest-storage.kafka.ingestion-concurrency-max is greater than 0. (default 80)
-  -usage-tracker.snapshots-metadata.reader.last-produced-offset-poll-interval duration
-    	How frequently to poll the last produced offset, used to enforce strong read consistency. (default 1s)
-  -usage-tracker.snapshots-metadata.reader.last-produced-offset-retry-timeout duration
-    	How long to retry a failed request to get the last produced offset. (default 10s)
-  -usage-tracker.snapshots-metadata.reader.max-buffered-bytes int
-    	The maximum number of buffered records ready to be processed. This limit applies to the sum of all inflight requests. Set to 0 to disable the limit. (default 100000000)
-  -usage-tracker.snapshots-metadata.reader.max-consumer-lag-at-startup duration
-    	The guaranteed maximum lag before a consumer is considered to have caught up reading from a partition at startup, becomes ACTIVE in the hash ring and passes the readiness check. Set both -usage-tracker.snapshots-metadata.reader.target-consumer-lag-at-startup and -usage-tracker.snapshots-metadata.reader.max-consumer-lag-at-startup to 0 to disable waiting for maximum consumer lag being honored at startup. (default 15s)
-  -usage-tracker.snapshots-metadata.reader.producer-max-buffered-bytes int
-    	The maximum size of (uncompressed) buffered and unacknowledged produced records sent to Kafka. The produce request fails once this limit is reached. This limit is per Kafka client. 0 to disable the limit. (default 1073741824)
-  -usage-tracker.snapshots-metadata.reader.producer-max-record-size-bytes int
-    	The maximum size of a Kafka record data that should be generated by the producer. An incoming write request larger than this size is split into multiple Kafka records. We strongly recommend to not change this setting unless for testing purposes. (default 15983616)
-  -usage-tracker.snapshots-metadata.reader.producer-record-version int
-    	[experimental] The record version that this producer sends.
-  -usage-tracker.snapshots-metadata.reader.sasl-password string
-    	The password used to authenticate to Kafka using the SASL plain mechanism. To enable SASL, configure both the username and password.
-  -usage-tracker.snapshots-metadata.reader.sasl-username string
-    	The username used to authenticate to Kafka using the SASL plain mechanism. To enable SASL, configure both the username and password.
-  -usage-tracker.snapshots-metadata.reader.target-consumer-lag-at-startup duration
-    	The best-effort maximum lag a consumer tries to achieve at startup. Set both -usage-tracker.snapshots-metadata.reader.target-consumer-lag-at-startup and -usage-tracker.snapshots-metadata.reader.max-consumer-lag-at-startup to 0 to disable waiting for maximum consumer lag being honored at startup. (default 2s)
-  -usage-tracker.snapshots-metadata.reader.topic string
-    	The Kafka topic name.
-  -usage-tracker.snapshots-metadata.reader.use-compressed-bytes-as-fetch-max-bytes
-    	When enabled, the fetch request MaxBytes field is computed using the compressed size of previous records. When disabled, MaxBytes is computed using uncompressed bytes. Different Kafka implementations interpret MaxBytes differently. (default true)
-  -usage-tracker.snapshots-metadata.reader.wait-strong-read-consistency-timeout duration
-    	The maximum allowed for a read requests processed by an ingester to wait until strong read consistency is enforced. 0 to disable the timeout. (default 20s)
-  -usage-tracker.snapshots-metadata.reader.write-clients int
-    	The number of Kafka clients used by producers. When the configured number of clients is greater than 1, partitions are sharded among Kafka clients. A higher number of clients may provide higher write throughput at the cost of additional Metadata requests pressure to Kafka. (default 1)
-  -usage-tracker.snapshots-metadata.reader.write-timeout duration
-    	How long to wait for an incoming write request to be successfully committed to the Kafka backend. (default 10s)
-  -usage-tracker.snapshots-metadata.writer.address string
-    	The Kafka backend address.
-  -usage-tracker.snapshots-metadata.writer.auto-create-topic-default-partitions int
-    	When auto-creation of Kafka topic is enabled and this value is positive, Mimir creates the topic with this number of partitions. When the value is -1 the Kafka broker uses the default number of partitions (num.partitions configuration). (default -1)
-  -usage-tracker.snapshots-metadata.writer.auto-create-topic-enabled
-    	Enable auto-creation of Kafka topic on startup if it doesn't exist. If creating the topic fails and the topic doesn't already exist, Mimir fails to start. (default true)
-  -usage-tracker.snapshots-metadata.writer.client-id string
-    	The Kafka client ID.
-  -usage-tracker.snapshots-metadata.writer.consume-from-position-at-startup string
-    	From which position to start consuming the partition at startup. Supported options: last-offset, start, end, timestamp. (default "last-offset")
-  -usage-tracker.snapshots-metadata.writer.consume-from-timestamp-at-startup int
-    	Milliseconds timestamp after which the consumption of the partition starts at startup. Only applies when consume-from-position-at-startup is timestamp
-  -usage-tracker.snapshots-metadata.writer.consumer-group string
-    	The consumer group used by the consumer to track the last consumed offset. The consumer group must be different for each ingester. If the configured consumer group contains the '<partition>' placeholder, it is replaced with the actual partition ID owned by the ingester. When empty (recommended), Mimir uses the ingester instance ID to guarantee uniqueness.
-  -usage-tracker.snapshots-metadata.writer.consumer-group-offset-commit-interval duration
-    	How frequently a consumer should commit the consumed offset to Kafka. The last committed offset is used at startup to continue the consumption from where it was left. (default 1s)
-  -usage-tracker.snapshots-metadata.writer.dial-timeout duration
-    	The maximum time allowed to open a connection to a Kafka broker. (default 2s)
-  -usage-tracker.snapshots-metadata.writer.fetch-concurrency-max int
-    	The maximum number of concurrent fetch requests that the ingester makes when reading data from Kafka during startup. Concurrent fetch requests are issued only when there is sufficient backlog of records to consume. Set to 0 to disable.
-  -usage-tracker.snapshots-metadata.writer.fetch-max-wait duration
-    	The maximum amount of time a Kafka broker waits for some records before a Fetch response is returned. (default 5s)
-  -usage-tracker.snapshots-metadata.writer.ingestion-concurrency-batch-size int
-    	The number of timeseries to batch together before ingesting to the TSDB head. Only use this setting when -ingest-storage.kafka.ingestion-concurrency-max is greater than 0. (default 150)
-  -usage-tracker.snapshots-metadata.writer.ingestion-concurrency-estimated-bytes-per-sample int
-    	The estimated number of bytes a sample has at time of ingestion. This value is used to estimate the timeseries without decompressing them. Only use this setting when -ingest-storage.kafka.ingestion-concurrency-max is greater than 0. (default 500)
-  -usage-tracker.snapshots-metadata.writer.ingestion-concurrency-max int
-    	The maximum number of concurrent ingestion streams to the TSDB head. Every tenant has their own set of streams. 0 to disable.
-  -usage-tracker.snapshots-metadata.writer.ingestion-concurrency-queue-capacity int
-    	The number of batches to prepare and queue to ingest to the TSDB head. Only use this setting when -ingest-storage.kafka.ingestion-concurrency-max is greater than 0. (default 5)
-  -usage-tracker.snapshots-metadata.writer.ingestion-concurrency-target-flushes-per-shard int
-    	The expected number of times to ingest timeseries to the TSDB head after batching. With fewer flushes, the overhead of splitting up the work is higher than the benefit of parallelization. Only use this setting when -ingest-storage.kafka.ingestion-concurrency-max is greater than 0. (default 80)
-  -usage-tracker.snapshots-metadata.writer.last-produced-offset-poll-interval duration
-    	How frequently to poll the last produced offset, used to enforce strong read consistency. (default 1s)
-  -usage-tracker.snapshots-metadata.writer.last-produced-offset-retry-timeout duration
-    	How long to retry a failed request to get the last produced offset. (default 10s)
-  -usage-tracker.snapshots-metadata.writer.max-buffered-bytes int
-    	The maximum number of buffered records ready to be processed. This limit applies to the sum of all inflight requests. Set to 0 to disable the limit. (default 100000000)
-  -usage-tracker.snapshots-metadata.writer.max-consumer-lag-at-startup duration
-    	The guaranteed maximum lag before a consumer is considered to have caught up reading from a partition at startup, becomes ACTIVE in the hash ring and passes the readiness check. Set both -usage-tracker.snapshots-metadata.writer.target-consumer-lag-at-startup and -usage-tracker.snapshots-metadata.writer.max-consumer-lag-at-startup to 0 to disable waiting for maximum consumer lag being honored at startup. (default 15s)
-  -usage-tracker.snapshots-metadata.writer.producer-max-buffered-bytes int
-    	The maximum size of (uncompressed) buffered and unacknowledged produced records sent to Kafka. The produce request fails once this limit is reached. This limit is per Kafka client. 0 to disable the limit. (default 1073741824)
-  -usage-tracker.snapshots-metadata.writer.producer-max-record-size-bytes int
-    	The maximum size of a Kafka record data that should be generated by the producer. An incoming write request larger than this size is split into multiple Kafka records. We strongly recommend to not change this setting unless for testing purposes. (default 15983616)
-  -usage-tracker.snapshots-metadata.writer.producer-record-version int
-    	[experimental] The record version that this producer sends.
-  -usage-tracker.snapshots-metadata.writer.sasl-password string
-    	The password used to authenticate to Kafka using the SASL plain mechanism. To enable SASL, configure both the username and password.
-  -usage-tracker.snapshots-metadata.writer.sasl-username string
-    	The username used to authenticate to Kafka using the SASL plain mechanism. To enable SASL, configure both the username and password.
-  -usage-tracker.snapshots-metadata.writer.target-consumer-lag-at-startup duration
-    	The best-effort maximum lag a consumer tries to achieve at startup. Set both -usage-tracker.snapshots-metadata.writer.target-consumer-lag-at-startup and -usage-tracker.snapshots-metadata.writer.max-consumer-lag-at-startup to 0 to disable waiting for maximum consumer lag being honored at startup. (default 2s)
-  -usage-tracker.snapshots-metadata.writer.topic string
-    	The Kafka topic name.
-  -usage-tracker.snapshots-metadata.writer.use-compressed-bytes-as-fetch-max-bytes
-    	When enabled, the fetch request MaxBytes field is computed using the compressed size of previous records. When disabled, MaxBytes is computed using uncompressed bytes. Different Kafka implementations interpret MaxBytes differently. (default true)
-  -usage-tracker.snapshots-metadata.writer.wait-strong-read-consistency-timeout duration
-    	The maximum allowed for a read requests processed by an ingester to wait until strong read consistency is enforced. 0 to disable the timeout. (default 20s)
-  -usage-tracker.snapshots-metadata.writer.write-clients int
-    	The number of Kafka clients used by producers. When the configured number of clients is greater than 1, partitions are sharded among Kafka clients. A higher number of clients may provide higher write throughput at the cost of additional Metadata requests pressure to Kafka. (default 1)
-  -usage-tracker.snapshots-metadata.writer.write-timeout duration
-    	How long to wait for an incoming write request to be successfully committed to the Kafka backend. (default 10s)
-  -usage-tracker.snapshots-storage.azure.account-key string
-    	Azure storage account key. If unset, Azure managed identities will be used for authentication instead.
-  -usage-tracker.snapshots-storage.azure.account-name string
-    	Azure storage account name
-  -usage-tracker.snapshots-storage.azure.connection-string string
-    	If `connection-string` is set, the value of `endpoint-suffix` will not be used. Use this method over `account-key` if you need to authenticate via a SAS token. Or if you use the Azurite emulator.
-  -usage-tracker.snapshots-storage.azure.container-name string
-    	Azure storage container name
-  -usage-tracker.snapshots-storage.azure.endpoint-suffix string
-    	Azure storage endpoint suffix without schema. The account name will be prefixed to this value to create the FQDN. If set to empty string, default endpoint suffix is used.
-  -usage-tracker.snapshots-storage.azure.expect-continue-timeout duration
-    	The time to wait for a server's first response headers after fully writing the request headers if the request has an Expect header. Set to 0 to send the request body immediately. (default 1s)
-  -usage-tracker.snapshots-storage.azure.http.idle-conn-timeout duration
-    	The time an idle connection remains idle before closing. (default 1m30s)
-  -usage-tracker.snapshots-storage.azure.http.insecure-skip-verify
-    	If the client connects to object storage via HTTPS and this option is enabled, the client accepts any certificate and hostname.
-  -usage-tracker.snapshots-storage.azure.http.response-header-timeout duration
-    	The amount of time the client waits for a server's response headers. (default 2m0s)
-  -usage-tracker.snapshots-storage.azure.http.tls-ca-path string
-    	Path to the Certificate Authority (CA) certificates to validate the server certificate. If not set, the host's root CA certificates are used.
-  -usage-tracker.snapshots-storage.azure.http.tls-cert-path string
-    	Path to the client certificate, which is used for authenticating with the server. This setting also requires you to configure the key path.
-  -usage-tracker.snapshots-storage.azure.http.tls-key-path string
-    	Path to the key for the client certificate. This setting also requires you to configure the client certificate.
-  -usage-tracker.snapshots-storage.azure.http.tls-server-name string
-    	Override the expected name on the server certificate.
-  -usage-tracker.snapshots-storage.azure.max-connections-per-host int
-    	Maximum number of connections per host. Set to 0 for no limit.
-  -usage-tracker.snapshots-storage.azure.max-idle-connections int
-    	Maximum number of idle (keep-alive) connections across all hosts. Set to 0 for no limit. (default 100)
-  -usage-tracker.snapshots-storage.azure.max-idle-connections-per-host int
-    	Maximum number of idle (keep-alive) connections to keep per-host. Set to 0 to use a built-in default value of 2. (default 100)
-  -usage-tracker.snapshots-storage.azure.max-retries int
-    	Number of retries for recoverable errors (default 20)
-  -usage-tracker.snapshots-storage.azure.tls-handshake-timeout duration
-    	Maximum time to wait for a TLS handshake. Set to 0 for no limit. (default 10s)
-  -usage-tracker.snapshots-storage.azure.user-assigned-id string
-    	User assigned managed identity. If empty, then System assigned identity is used.
-  -usage-tracker.snapshots-storage.backend string
-    	Backend storage to use. Supported backends are: s3, gcs, azure, swift, filesystem. (default "filesystem")
-  -usage-tracker.snapshots-storage.filesystem.dir string
-    	Local filesystem storage directory. (default "usagetrackersnapshots")
-  -usage-tracker.snapshots-storage.gcs.bucket-name string
-    	GCS bucket name
-  -usage-tracker.snapshots-storage.gcs.expect-continue-timeout duration
-    	The time to wait for a server's first response headers after fully writing the request headers if the request has an Expect header. Set to 0 to send the request body immediately. (default 1s)
-  -usage-tracker.snapshots-storage.gcs.http.idle-conn-timeout duration
-    	The time an idle connection remains idle before closing. (default 1m30s)
-  -usage-tracker.snapshots-storage.gcs.http.insecure-skip-verify
-    	If the client connects to object storage via HTTPS and this option is enabled, the client accepts any certificate and hostname.
-  -usage-tracker.snapshots-storage.gcs.http.response-header-timeout duration
-    	The amount of time the client waits for a server's response headers. (default 2m0s)
-  -usage-tracker.snapshots-storage.gcs.http.tls-ca-path string
-    	Path to the Certificate Authority (CA) certificates to validate the server certificate. If not set, the host's root CA certificates are used.
-  -usage-tracker.snapshots-storage.gcs.http.tls-cert-path string
-    	Path to the client certificate, which is used for authenticating with the server. This setting also requires you to configure the key path.
-  -usage-tracker.snapshots-storage.gcs.http.tls-key-path string
-    	Path to the key for the client certificate. This setting also requires you to configure the client certificate.
-  -usage-tracker.snapshots-storage.gcs.http.tls-server-name string
-    	Override the expected name on the server certificate.
-  -usage-tracker.snapshots-storage.gcs.max-connections-per-host int
-    	Maximum number of connections per host. Set to 0 for no limit.
-  -usage-tracker.snapshots-storage.gcs.max-idle-connections int
-    	Maximum number of idle (keep-alive) connections across all hosts. Set to 0 for no limit. (default 100)
-  -usage-tracker.snapshots-storage.gcs.max-idle-connections-per-host int
-    	Maximum number of idle (keep-alive) connections to keep per-host. Set to 0 to use a built-in default value of 2. (default 100)
-  -usage-tracker.snapshots-storage.gcs.service-account string
-    	JSON either from a Google Developers Console client_credentials.json file, or a Google Developers service account key. Needs to be valid JSON, not a filesystem path.
-  -usage-tracker.snapshots-storage.gcs.tls-handshake-timeout duration
-    	Maximum time to wait for a TLS handshake. Set to 0 for no limit. (default 10s)
-  -usage-tracker.snapshots-storage.s3.access-key-id string
-    	S3 access key ID
-  -usage-tracker.snapshots-storage.s3.bucket-lookup-type value
-    	Bucket lookup style type, used to access bucket in S3-compatible service. Default is auto. Supported values are: auto, path, virtual-hosted.
-  -usage-tracker.snapshots-storage.s3.bucket-name string
-    	S3 bucket name
-  -usage-tracker.snapshots-storage.s3.dualstack-enabled
-    	[experimental] When enabled, direct all AWS S3 requests to the dual-stack IPv4/IPv6 endpoint for the configured region. (default true)
-  -usage-tracker.snapshots-storage.s3.endpoint string
-    	The S3 bucket endpoint. It could be an AWS S3 endpoint listed at https://docs.aws.amazon.com/general/latest/gr/s3.html or the address of an S3-compatible service in hostname:port format.
-  -usage-tracker.snapshots-storage.s3.expect-continue-timeout duration
-    	The time to wait for a server's first response headers after fully writing the request headers if the request has an Expect header. Set to 0 to send the request body immediately. (default 1s)
-  -usage-tracker.snapshots-storage.s3.http.idle-conn-timeout duration
-    	The time an idle connection remains idle before closing. (default 1m30s)
-  -usage-tracker.snapshots-storage.s3.http.insecure-skip-verify
-    	If the client connects to object storage via HTTPS and this option is enabled, the client accepts any certificate and hostname.
-  -usage-tracker.snapshots-storage.s3.http.response-header-timeout duration
-    	The amount of time the client waits for a server's response headers. (default 2m0s)
-  -usage-tracker.snapshots-storage.s3.http.tls-ca-path string
-    	Path to the Certificate Authority (CA) certificates to validate the server certificate. If not set, the host's root CA certificates are used.
-  -usage-tracker.snapshots-storage.s3.http.tls-cert-path string
-    	Path to the client certificate, which is used for authenticating with the server. This setting also requires you to configure the key path.
-  -usage-tracker.snapshots-storage.s3.http.tls-key-path string
-    	Path to the key for the client certificate. This setting also requires you to configure the client certificate.
-  -usage-tracker.snapshots-storage.s3.http.tls-server-name string
-    	Override the expected name on the server certificate.
-  -usage-tracker.snapshots-storage.s3.insecure
-    	If enabled, use http:// for the S3 endpoint instead of https://. This could be useful in local dev/test environments while using an S3-compatible backend storage, like Minio.
-  -usage-tracker.snapshots-storage.s3.list-objects-version string
-    	Use a specific version of the S3 list object API. Supported values are v1 or v2. Default is unset.
-  -usage-tracker.snapshots-storage.s3.max-connections-per-host int
-    	Maximum number of connections per host. Set to 0 for no limit.
-  -usage-tracker.snapshots-storage.s3.max-idle-connections int
-    	Maximum number of idle (keep-alive) connections across all hosts. Set to 0 for no limit. (default 100)
-  -usage-tracker.snapshots-storage.s3.max-idle-connections-per-host int
-    	Maximum number of idle (keep-alive) connections to keep per-host. Set to 0 to use a built-in default value of 2. (default 100)
-  -usage-tracker.snapshots-storage.s3.native-aws-auth-enabled
-    	[experimental] If enabled, it will use the default authentication methods of the AWS SDK for go based on known environment variables and known AWS config files.
-  -usage-tracker.snapshots-storage.s3.part-size uint
-    	[experimental] The minimum file size in bytes used for multipart uploads. If 0, the value is optimally computed for each object.
-  -usage-tracker.snapshots-storage.s3.region string
-    	S3 region. If unset, the client will issue a S3 GetBucketLocation API call to autodetect it.
-  -usage-tracker.snapshots-storage.s3.secret-access-key string
-    	S3 secret access key
-  -usage-tracker.snapshots-storage.s3.send-content-md5
-    	[experimental] If enabled, a Content-MD5 header is sent with S3 Put Object requests. Consumes more resources to compute the MD5, but may improve compatibility with object storage services that do not support checksums.
-  -usage-tracker.snapshots-storage.s3.session-token string
-    	S3 session token
-  -usage-tracker.snapshots-storage.s3.signature-version string
-    	The signature version to use for authenticating against S3. Supported values are: v4, v2. (default "v4")
-  -usage-tracker.snapshots-storage.s3.sse.kms-encryption-context string
-    	KMS Encryption Context used for object encryption. It expects JSON formatted string.
-  -usage-tracker.snapshots-storage.s3.sse.kms-key-id string
-    	KMS Key ID used to encrypt objects in S3
-  -usage-tracker.snapshots-storage.s3.sse.type string
-    	Enable AWS Server Side Encryption. Supported values: SSE-KMS, SSE-S3.
-  -usage-tracker.snapshots-storage.s3.storage-class string
-    	[experimental] The S3 storage class to use, not set by default. Details can be found at https://aws.amazon.com/s3/storage-classes/. Supported values are: STANDARD, REDUCED_REDUNDANCY, STANDARD_IA, ONEZONE_IA, INTELLIGENT_TIERING, GLACIER, DEEP_ARCHIVE, OUTPOSTS, GLACIER_IR, SNOW, EXPRESS_ONEZONE, FSX_OPENZFS
-  -usage-tracker.snapshots-storage.s3.sts-endpoint string
-    	Accessing S3 resources using temporary, secure credentials provided by AWS Security Token Service.
-  -usage-tracker.snapshots-storage.s3.tls-handshake-timeout duration
-    	Maximum time to wait for a TLS handshake. Set to 0 for no limit. (default 10s)
-  -usage-tracker.snapshots-storage.s3.trace.enabled
-    	When enabled, low-level S3 HTTP operation information is logged at the debug level.
-  -usage-tracker.snapshots-storage.storage-prefix string
-    	Prefix for all objects stored in the backend storage. For simplicity, it may only contain digits and English alphabet letters.
-  -usage-tracker.snapshots-storage.swift.application-credential-id string
-    	OpenStack Swift application credential id
-  -usage-tracker.snapshots-storage.swift.application-credential-name string
-    	OpenStack Swift application credential name
-  -usage-tracker.snapshots-storage.swift.application-credential-secret string
-    	OpenStack Swift application credential secret
-  -usage-tracker.snapshots-storage.swift.auth-url string
-    	OpenStack Swift authentication URL
-  -usage-tracker.snapshots-storage.swift.auth-version int
-    	OpenStack Swift authentication API version. 0 to autodetect.
-  -usage-tracker.snapshots-storage.swift.connect-timeout duration
-    	Time after which a connection attempt is aborted. (default 10s)
-  -usage-tracker.snapshots-storage.swift.container-name string
-    	Name of the OpenStack Swift container to put chunks in.
-  -usage-tracker.snapshots-storage.swift.domain-id string
-    	OpenStack Swift user's domain ID.
-  -usage-tracker.snapshots-storage.swift.domain-name string
-    	OpenStack Swift user's domain name.
-  -usage-tracker.snapshots-storage.swift.max-retries int
-    	Max retries on requests error. (default 3)
-  -usage-tracker.snapshots-storage.swift.password string
-    	OpenStack Swift API key.
-  -usage-tracker.snapshots-storage.swift.project-domain-id string
-    	ID of the OpenStack Swift project's domain (v3 auth only), only needed if it differs the from user domain.
-  -usage-tracker.snapshots-storage.swift.project-domain-name string
-    	Name of the OpenStack Swift project's domain (v3 auth only), only needed if it differs from the user domain.
-  -usage-tracker.snapshots-storage.swift.project-id string
-    	OpenStack Swift project ID (v2,v3 auth only).
-  -usage-tracker.snapshots-storage.swift.project-name string
-    	OpenStack Swift project name (v2,v3 auth only).
-  -usage-tracker.snapshots-storage.swift.region-name string
-    	OpenStack Swift Region to use (v2,v3 auth only).
-  -usage-tracker.snapshots-storage.swift.request-timeout duration
-    	Time after which an idle request is aborted. The timeout watchdog is reset each time some data is received, so the timeout triggers after X time no data is received on a request. (default 5s)
-  -usage-tracker.snapshots-storage.swift.user-domain-id string
-    	OpenStack Swift user's domain ID.
-  -usage-tracker.snapshots-storage.swift.user-domain-name string
-    	OpenStack Swift user's domain name.
-  -usage-tracker.snapshots-storage.swift.user-id string
-    	OpenStack Swift user ID.
-  -usage-tracker.snapshots-storage.swift.username string
-    	OpenStack Swift username.
-  -usage-tracker.target-snapshot-file-size-bytes int
-    	Target size of a snapshot file in bytes. This is used to determine when to create a new snapshot file. It should be greater than 0. (default 104857600)
-  -usage-tracker.use-global-series-limits
-    	If true, the usage-tracker service uses global in-memory series limits instead of the active series limits. This is useful for testing purposes only.
   -validation.cost-attribution-cooldown duration
     	[experimental] Defines how long cost attribution stays in overflow before attempting a reset, with received/discarded samples extending the cooldown if overflow persists, while active series reset and restart tracking after the cooldown.
   -validation.create-grace-period duration

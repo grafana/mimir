@@ -115,7 +115,7 @@ func Test_ProxyEndpoint_waitBackendResponseForDownstream(t *testing.T) {
 		testData := testData
 
 		t.Run(testName, func(t *testing.T) {
-			endpoint := NewProxyEndpoint(testData.backends, testRoute, NewProxyMetrics(nil), log.NewNopLogger(), nil, 0, 1.0, false)
+			endpoint := NewProxyEndpoint(testData.backends, testRoute, NewProxyMetrics(nil), log.NewNopLogger(), nil, 0, 1.0, false, newTestQueryDecoder())
 
 			// Send the responses from a dedicated goroutine.
 			resCh := make(chan *backendResponse)
@@ -160,7 +160,7 @@ func Test_ProxyEndpoint_Requests(t *testing.T) {
 		NewProxyBackend("backend-1", backendURL1, time.Second, true, false, defaultBackendConfig()),
 		NewProxyBackend("backend-2", backendURL2, time.Second, false, false, defaultBackendConfig()),
 	}
-	endpoint := NewProxyEndpoint(backends, testRoute, NewProxyMetrics(nil), log.NewNopLogger(), nil, 0, 1.0, false)
+	endpoint := NewProxyEndpoint(backends, testRoute, NewProxyMetrics(nil), log.NewNopLogger(), nil, 0, 1.0, false, newTestQueryDecoder())
 
 	for _, tc := range []struct {
 		name    string
@@ -203,6 +203,7 @@ func Test_ProxyEndpoint_Requests(t *testing.T) {
 				strings := strings.NewReader("this-is-some-payload")
 				r, err := http.NewRequest("POST", "http://test/api/v1/test", strings)
 				require.NoError(t, err)
+				r.Header["Content-Type"] = []string{"application/x-www-form-urlencoded"}
 				r.Header["test-X"] = []string{"test-X-value"}
 				return r
 			},
@@ -354,7 +355,7 @@ func Test_ProxyEndpoint_Comparison(t *testing.T) {
 				comparisonError:  scenario.comparatorError,
 			}
 
-			endpoint := NewProxyEndpoint(backends, testRoute, NewProxyMetrics(reg), logger, comparator, 0, 1.0, scenario.skipPreferredBackendFailures)
+			endpoint := NewProxyEndpoint(backends, testRoute, NewProxyMetrics(reg), logger, comparator, 0, 1.0, scenario.skipPreferredBackendFailures, newTestQueryDecoder())
 
 			resp := httptest.NewRecorder()
 			req, err := http.NewRequest("GET", "http://test/api/v1/test", nil)
@@ -370,13 +371,13 @@ func Test_ProxyEndpoint_Comparison(t *testing.T) {
 
 			switch scenario.expectedComparisonResult {
 			case ComparisonSuccess:
-				requireNoLogMessages(t, logger.messages, "response comparison failed", "response comparison skipped")
+				requireNoLogMessages(t, logger.Messages(), "response comparison failed", "response comparison skipped")
 
 			case ComparisonFailed:
-				requireLogMessageWithError(t, logger.messages, "response comparison failed", scenario.expectedComparisonError)
+				requireLogMessageWithError(t, logger.Messages(), "response comparison failed", scenario.expectedComparisonError)
 
 			case ComparisonSkipped:
-				requireLogMessageWithError(t, logger.messages, "response comparison skipped", scenario.expectedComparisonError)
+				requireLogMessageWithError(t, logger.Messages(), "response comparison skipped", scenario.expectedComparisonError)
 			}
 		})
 	}
@@ -456,7 +457,7 @@ func Test_ProxyEndpoint_LogSlowQueries(t *testing.T) {
 				comparisonResult: ComparisonSuccess,
 			}
 
-			endpoint := NewProxyEndpoint(backends, testRoute, NewProxyMetrics(reg), logger, comparator, scenario.slowResponseThreshold, 1.0, false)
+			endpoint := NewProxyEndpoint(backends, testRoute, NewProxyMetrics(reg), logger, comparator, scenario.slowResponseThreshold, 1.0, false, newTestQueryDecoder())
 
 			resp := httptest.NewRecorder()
 			req, err := http.NewRequest("GET", "http://test/api/v1/test", nil)
@@ -468,13 +469,13 @@ func Test_ProxyEndpoint_LogSlowQueries(t *testing.T) {
 			waitForResponseComparisonMetric(t, reg, ComparisonSuccess, 1)
 
 			if scenario.expectLatencyExceedsThreshold {
-				requireLogKeyValues(t, logger.messages, map[string]string{
+				requireLogKeyValues(t, logger.Messages(), map[string]string{
 					"msg":             "response time difference between backends exceeded threshold",
 					"slowest_backend": scenario.slowestBackend,
 					"fastest_backend": scenario.fastestBackend,
 				})
 			} else {
-				requireNoLogMessages(t, logger.messages, "response time difference between backends exceeded threshold")
+				requireNoLogMessages(t, logger.Messages(), "response time difference between backends exceeded threshold")
 			}
 		})
 	}
@@ -525,7 +526,7 @@ func Test_ProxyEndpoint_RelativeDurationMetric(t *testing.T) {
 				comparisonResult: ComparisonSuccess,
 			}
 
-			endpoint := NewProxyEndpoint(backends, testRoute, NewProxyMetrics(reg), logger, comparator, 0, 1.0, false)
+			endpoint := NewProxyEndpoint(backends, testRoute, NewProxyMetrics(reg), logger, comparator, 0, 1.0, false, newTestQueryDecoder())
 
 			resp := httptest.NewRecorder()
 			req, err := http.NewRequest("GET", "http://test/api/v1/test", nil)
@@ -577,7 +578,7 @@ func waitForResponseComparisonMetric(t *testing.T, g prometheus.Gatherer, expect
 		expected := fmt.Sprintf(`
 			# HELP cortex_querytee_responses_compared_total Total number of responses compared per route name by result.
 			# TYPE cortex_querytee_responses_compared_total counter
-			cortex_querytee_responses_compared_total{result="%v",route="test"} %d
+			cortex_querytee_responses_compared_total{result="%v",route="test",secondary_backend="secondary-backend"} %d
 `, expectedResult, expectedCount)
 		err := testutil.GatherAndCompare(g, bytes.NewBufferString(expected), "cortex_querytee_responses_compared_total")
 
@@ -755,6 +756,15 @@ func (m *mockLogger) Log(keyvals ...interface{}) error {
 	return nil
 }
 
+func (m *mockLogger) Messages() []map[string]interface{} {
+	m.lock.Lock()
+	defer m.lock.Unlock()
+	// Return a copy to avoid races
+	result := make([]map[string]interface{}, len(m.messages))
+	copy(result, m.messages)
+	return result
+}
+
 type latencyPair struct {
 	preferredResponseLatency time.Duration
 	secondaryResponseLatency time.Duration
@@ -774,6 +784,7 @@ type mockProxyBackend struct {
 	preferred             bool
 	fakeResponseLatencies []time.Duration
 	responseIndex         int
+	requestProportion     float64
 }
 
 func newMockProxyBackend(name string, timeout time.Duration, preferred bool, fakeResponseLatencies []time.Duration) ProxyBackendInterface {
@@ -782,6 +793,7 @@ func newMockProxyBackend(name string, timeout time.Duration, preferred bool, fak
 		timeout:               timeout,
 		preferred:             preferred,
 		fakeResponseLatencies: fakeResponseLatencies,
+		requestProportion:     DefaultRequestProportion,
 	}
 }
 
@@ -795,6 +807,26 @@ func (b *mockProxyBackend) Endpoint() *url.URL {
 
 func (b *mockProxyBackend) Preferred() bool {
 	return b.preferred
+}
+
+func (b *mockProxyBackend) RequestProportion() float64 {
+	return b.requestProportion
+}
+
+func (b *mockProxyBackend) SetRequestProportion(proportion float64) {
+	b.requestProportion = proportion
+}
+
+func (b *mockProxyBackend) HasConfiguredProportion() bool {
+	return false // For simplicity in tests, assume it's not configured
+}
+
+func (b *mockProxyBackend) MinDataQueriedAge() time.Duration {
+	return DefaultMinDataQueriedAge // Default to DefaultMinDataQueriedAge (serve all queries) for tests
+}
+
+func (b *mockProxyBackend) ShouldHandleQuery(minQueryTime time.Time) bool {
+	return true // Default to handling all queries in tests
 }
 
 func (b *mockProxyBackend) ForwardRequest(_ context.Context, _ *http.Request, _ io.ReadCloser) (time.Duration, int, []byte, *http.Response, error) {
@@ -860,11 +892,13 @@ func TestProxyEndpoint_BackendSelection(t *testing.T) {
 
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
-			proxyEndpoint := NewProxyEndpoint(testCase.backends, Route{}, nil, nil, nil, 0, testCase.secondaryBackendRequestProportion, false)
+			proxyEndpoint := NewProxyEndpoint(testCase.backends, Route{}, nil, nil, nil, 0, testCase.secondaryBackendRequestProportion, false, newTestQueryDecoder())
 			preferredOnlySelectionCount := 0
 
 			for i := 0; i < runCount; i++ {
-				backends := proxyEndpoint.selectBackends()
+				req, _ := http.NewRequest("GET", "/api/v1/query", nil)
+				backends, err := proxyEndpoint.selectBackends(req)
+				require.NoError(t, err)
 				require.GreaterOrEqual(t, len(backends), 1)
 
 				if len(backends) == 1 {
@@ -883,4 +917,168 @@ func TestProxyEndpoint_BackendSelection(t *testing.T) {
 			}
 		})
 	}
+}
+
+func Test_ProxyEndpoint_MultipleSecondaryBackends(t *testing.T) {
+	testRoute := Route{RouteName: "test"}
+
+	scenarios := map[string]struct {
+		numSecondaryBackends int
+		resultsByBackend     map[string]ComparisonResult
+		expectedMetrics      string
+	}{
+		"1 preferred + 2 secondary backends (all succeed)": {
+			numSecondaryBackends: 2,
+			resultsByBackend: map[string]ComparisonResult{
+				"secondary response 0": ComparisonSuccess,
+				"secondary response 1": ComparisonSuccess,
+			},
+			expectedMetrics: `
+				# HELP cortex_querytee_responses_compared_total Total number of responses compared per route name by result.
+				# TYPE cortex_querytee_responses_compared_total counter
+				cortex_querytee_responses_compared_total{result="success",route="test",secondary_backend="secondary-backend-0"} 1
+				cortex_querytee_responses_compared_total{result="success",route="test",secondary_backend="secondary-backend-1"} 1
+			`,
+		},
+		"1 preferred + 3 secondary backends (all succeed)": {
+			numSecondaryBackends: 3,
+			resultsByBackend: map[string]ComparisonResult{
+				"secondary response 0": ComparisonSuccess,
+				"secondary response 1": ComparisonSuccess,
+				"secondary response 2": ComparisonSuccess,
+			},
+			expectedMetrics: `
+				# HELP cortex_querytee_responses_compared_total Total number of responses compared per route name by result.
+				# TYPE cortex_querytee_responses_compared_total counter
+				cortex_querytee_responses_compared_total{result="success",route="test",secondary_backend="secondary-backend-0"} 1
+				cortex_querytee_responses_compared_total{result="success",route="test",secondary_backend="secondary-backend-1"} 1
+				cortex_querytee_responses_compared_total{result="success",route="test",secondary_backend="secondary-backend-2"} 1
+			`,
+		},
+		"1 preferred + 2 secondary backends (one fails)": {
+			numSecondaryBackends: 2,
+			resultsByBackend: map[string]ComparisonResult{
+				"secondary response 0": ComparisonSuccess,
+				"secondary response 1": ComparisonFailed,
+			},
+			expectedMetrics: `
+				# HELP cortex_querytee_responses_compared_total Total number of responses compared per route name by result.
+				# TYPE cortex_querytee_responses_compared_total counter
+				cortex_querytee_responses_compared_total{result="success",route="test",secondary_backend="secondary-backend-0"} 1
+				cortex_querytee_responses_compared_total{result="fail",route="test",secondary_backend="secondary-backend-1"} 1
+			`,
+		},
+		"1 preferred + 3 secondary backends (mixed results)": {
+			numSecondaryBackends: 3,
+			resultsByBackend: map[string]ComparisonResult{
+				"secondary response 0": ComparisonSuccess,
+				"secondary response 1": ComparisonFailed,
+				"secondary response 2": ComparisonSkipped,
+			},
+			expectedMetrics: `
+				# HELP cortex_querytee_responses_compared_total Total number of responses compared per route name by result.
+				# TYPE cortex_querytee_responses_compared_total counter
+				cortex_querytee_responses_compared_total{result="success",route="test",secondary_backend="secondary-backend-0"} 1
+				cortex_querytee_responses_compared_total{result="fail",route="test",secondary_backend="secondary-backend-1"} 1
+				cortex_querytee_responses_compared_total{result="skip",route="test",secondary_backend="secondary-backend-2"} 1
+			`,
+		},
+	}
+
+	for name, scenario := range scenarios {
+		t.Run(name, func(t *testing.T) {
+			preferredBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusOK)
+				_, err := w.Write([]byte("preferred response"))
+				require.NoError(t, err)
+			}))
+			defer preferredBackend.Close()
+
+			preferredBackendURL, err := url.Parse(preferredBackend.URL)
+			require.NoError(t, err)
+
+			backends := []ProxyBackendInterface{
+				NewProxyBackend("preferred-backend", preferredBackendURL, time.Second, true, false, defaultBackendConfig()),
+			}
+
+			var secondaryServers []*httptest.Server
+			for i := 0; i < scenario.numSecondaryBackends; i++ {
+				secondaryServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+					w.Header().Set("Content-Type", "application/json")
+					w.WriteHeader(http.StatusOK)
+					_, err := fmt.Fprintf(w, "secondary response %d", i)
+					require.NoError(t, err)
+				}))
+				secondaryServers = append(secondaryServers, secondaryServer)
+
+				secondaryURL, err := url.Parse(secondaryServer.URL)
+				require.NoError(t, err)
+
+				backends = append(backends, NewProxyBackend(
+					fmt.Sprintf("secondary-backend-%d", i),
+					secondaryURL,
+					time.Second,
+					false,
+					false,
+					defaultBackendConfig(),
+				))
+			}
+
+			defer func() {
+				for _, server := range secondaryServers {
+					server.Close()
+				}
+			}()
+
+			logger := newMockLogger()
+			reg := prometheus.NewPedanticRegistry()
+
+			comparator := &multiCallComparator{
+				resultsByBackend: scenario.resultsByBackend,
+			}
+
+			endpoint := NewProxyEndpoint(backends, testRoute, NewProxyMetrics(reg), logger, comparator, 0, 1.0, false, newTestQueryDecoder())
+
+			resp := httptest.NewRecorder()
+			req, err := http.NewRequest("GET", "http://test/api/v1/test", nil)
+			require.NoError(t, err)
+			endpoint.ServeHTTP(resp, req)
+
+			require.Equal(t, "preferred response", resp.Body.String())
+			require.Equal(t, http.StatusOK, resp.Code)
+			require.Equal(t, "application/json", resp.Header().Get("Content-Type"))
+
+			require.Eventually(t, func() bool {
+				err := testutil.GatherAndCompare(reg, strings.NewReader(scenario.expectedMetrics), "cortex_querytee_responses_compared_total")
+				return err == nil
+			}, 2*time.Second, 50*time.Millisecond, "timed out waiting for multiple backend comparison metrics")
+
+			require.Equal(t, scenario.numSecondaryBackends, comparator.callCount, "comparator should be called once per secondary backend")
+		})
+	}
+}
+
+// multiCallComparator tracks calls and returns different results based on backend content
+type multiCallComparator struct {
+	resultsByBackend map[string]ComparisonResult
+	callCount        int
+	mu               sync.Mutex
+}
+
+func (m *multiCallComparator) Compare(_, secondaryResponse []byte, _ time.Time) (ComparisonResult, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	m.callCount++
+
+	// Determine which backend this is based on the response content
+	secondaryResponseStr := string(secondaryResponse)
+	for backendResponse, result := range m.resultsByBackend {
+		if secondaryResponseStr == backendResponse {
+			return result, nil
+		}
+	}
+
+	return ComparisonFailed, fmt.Errorf("unexpected secondary response: %s", secondaryResponseStr)
 }

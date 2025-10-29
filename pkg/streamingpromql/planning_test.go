@@ -12,8 +12,10 @@ import (
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
@@ -104,7 +106,8 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 
 			expectedPlan: &planning.EncodedQueryPlan{
 				TimeRange: instantQueryEncodedTimeRange,
-				RootNode:  0,
+				RootNode:  1,
+				Version:   planning.QueryPlanV1,
 				Nodes: []*planning.EncodedNode{
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
@@ -118,6 +121,13 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 						Type:        "VectorSelector",
 						Description: `{__name__="some_metric"} @ 0 (1970-01-01T00:00:00Z)`,
 					},
+					{
+						NodeType:       planning.NODE_TYPE_STEP_INVARIANT_EXPRESSION,
+						Details:        marshalDetails(&core.StepInvariantExpressionDetails{}),
+						ChildrenLabels: []string{""},
+						Children:       []int64{0},
+						Type:           "StepInvariantExpression",
+					},
 				},
 			},
 		},
@@ -127,7 +137,8 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 
 			expectedPlan: &planning.EncodedQueryPlan{
 				TimeRange: rangeQueryEncodedTimeRange,
-				RootNode:  0,
+				RootNode:  1,
+				Version:   planning.QueryPlanV1,
 				Nodes: []*planning.EncodedNode{
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
@@ -141,6 +152,13 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 						Type:        "VectorSelector",
 						Description: `{__name__="some_metric"} @ 3000 (1970-01-01T00:00:03Z)`,
 					},
+					{
+						NodeType:       planning.NODE_TYPE_STEP_INVARIANT_EXPRESSION,
+						Details:        marshalDetails(&core.StepInvariantExpressionDetails{}),
+						ChildrenLabels: []string{""},
+						Children:       []int64{0},
+						Type:           "StepInvariantExpression",
+					},
 				},
 			},
 		},
@@ -150,7 +168,8 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 
 			expectedPlan: &planning.EncodedQueryPlan{
 				TimeRange: rangeQueryEncodedTimeRange,
-				RootNode:  0,
+				RootNode:  1,
+				Version:   planning.QueryPlanV1,
 				Nodes: []*planning.EncodedNode{
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
@@ -163,6 +182,13 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 						}),
 						Type:        "VectorSelector",
 						Description: `{__name__="some_metric"} @ 5000 (1970-01-01T00:00:05Z)`,
+					},
+					{
+						NodeType:       planning.NODE_TYPE_STEP_INVARIANT_EXPRESSION,
+						Details:        marshalDetails(&core.StepInvariantExpressionDetails{}),
+						ChildrenLabels: []string{""},
+						Children:       []int64{0},
+						Type:           "StepInvariantExpression",
 					},
 				},
 			},
@@ -243,7 +269,8 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 
 			expectedPlan: &planning.EncodedQueryPlan{
 				TimeRange: rangeQueryEncodedTimeRange,
-				RootNode:  2,
+				RootNode:  3,
+				Version:   1,
 				Nodes: []*planning.EncodedNode{
 					{
 						NodeType: planning.NODE_TYPE_MATRIX_SELECTOR,
@@ -277,6 +304,14 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 						Description:    ``,
 						ChildrenLabels: []string{""},
 					},
+					{
+						NodeType:       planning.NODE_TYPE_STEP_INVARIANT_EXPRESSION,
+						Details:        marshalDetails(&core.StepInvariantExpressionDetails{}),
+						Type:           "StepInvariantExpression",
+						Children:       []int64{2},
+						Description:    ``,
+						ChildrenLabels: []string{""},
+					},
 				},
 			},
 		},
@@ -286,7 +321,8 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 
 			expectedPlan: &planning.EncodedQueryPlan{
 				TimeRange: rangeQueryEncodedTimeRange,
-				RootNode:  2,
+				RootNode:  3,
+				Version:   1,
 				Nodes: []*planning.EncodedNode{
 					{
 						NodeType: planning.NODE_TYPE_MATRIX_SELECTOR,
@@ -317,6 +353,14 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 						Details:        marshalDetails(&core.DeduplicateAndMergeDetails{}),
 						Type:           "DeduplicateAndMerge",
 						Children:       []int64{1},
+						Description:    ``,
+						ChildrenLabels: []string{""},
+					},
+					{
+						NodeType:       planning.NODE_TYPE_STEP_INVARIANT_EXPRESSION,
+						Details:        marshalDetails(&core.StepInvariantExpressionDetails{}),
+						Type:           "StepInvariantExpression",
+						Children:       []int64{2},
 						Description:    ``,
 						ChildrenLabels: []string{""},
 					},
@@ -625,7 +669,8 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 
 			expectedPlan: &planning.EncodedQueryPlan{
 				TimeRange: instantQueryEncodedTimeRange,
-				RootNode:  2,
+				RootNode:  3,
+				Version:   planning.QueryPlanV1,
 				Nodes: []*planning.EncodedNode{
 					{
 						NodeType: planning.NODE_TYPE_NUMBER_LITERAL,
@@ -655,6 +700,13 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 						Children:       []int64{0, 1},
 						Description:    `LHS + RHS`,
 						ChildrenLabels: []string{"LHS", "RHS"},
+					},
+					{
+						NodeType:       planning.NODE_TYPE_STEP_INVARIANT_EXPRESSION,
+						Details:        marshalDetails(&core.StepInvariantExpressionDetails{}),
+						ChildrenLabels: []string{""},
+						Children:       []int64{2},
+						Type:           "StepInvariantExpression",
 					},
 				},
 			},
@@ -1060,7 +1112,8 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 
 			expectedPlan: &planning.EncodedQueryPlan{
 				TimeRange: instantQueryEncodedTimeRange,
-				RootNode:  1,
+				RootNode:  2,
+				Version:   1,
 				Nodes: []*planning.EncodedNode{
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
@@ -1086,6 +1139,14 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 						Description:    `[1m0s:1s] @ 0 (1970-01-01T00:00:00Z)`,
 						ChildrenLabels: []string{""},
 					},
+					{
+						NodeType:       planning.NODE_TYPE_STEP_INVARIANT_EXPRESSION,
+						Details:        marshalDetails(&core.StepInvariantExpressionDetails{}),
+						Type:           "StepInvariantExpression",
+						Children:       []int64{1},
+						Description:    ``,
+						ChildrenLabels: []string{""},
+					},
 				},
 			},
 		},
@@ -1096,8 +1157,9 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 
 			expectedPlan: &planning.EncodedQueryPlan{
 				TimeRange:                instantQueryEncodedTimeRange,
-				RootNode:                 1,
+				RootNode:                 2,
 				EnableDelayedNameRemoval: true,
+				Version:                  planning.QueryPlanV1,
 				Nodes: []*planning.EncodedNode{
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
@@ -1111,11 +1173,200 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 						Description: `{__name__="some_metric"}`,
 					},
 					{
-						NodeType:       planning.NODE_TYPE_DEDUPLICATE_AND_MERGE,
-						Details:        marshalDetails(&core.DeduplicateAndMergeDetails{RunDelayedNameRemoval: true}),
-						Type:           "DeduplicateAndMerge",
-						Description:    "with delayed name removal",
+						NodeType:       planning.NODE_TYPE_DROP_NAME,
+						Details:        marshalDetails(&core.DropNameDetails{}),
+						Type:           "DropName",
+						Description:    "",
 						Children:       []int64{0},
+						ChildrenLabels: []string{""},
+					},
+					{
+						NodeType:       planning.NODE_TYPE_DEDUPLICATE_AND_MERGE,
+						Details:        marshalDetails(&core.DeduplicateAndMergeDetails{}),
+						Type:           "DeduplicateAndMerge",
+						Description:    "",
+						Children:       []int64{1},
+						ChildrenLabels: []string{""},
+					},
+				},
+			},
+		},
+		"timestamp not step invariant": {
+			expr:                     `timestamp(metric)`,
+			timeRange:                rangeQuery,
+			enableDelayedNameRemoval: true,
+
+			expectedPlan: &planning.EncodedQueryPlan{
+				TimeRange:                rangeQueryEncodedTimeRange,
+				RootNode:                 3,
+				Version:                  planning.QueryPlanV1,
+				EnableDelayedNameRemoval: true,
+				Nodes: []*planning.EncodedNode{
+					{
+						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
+						Details: marshalDetails(&core.VectorSelectorDetails{
+							Matchers: []*core.LabelMatcher{
+								{Type: 0, Name: "__name__", Value: "metric"},
+							},
+							Offset:                 0,
+							ExpressionPosition:     core.PositionRange{Start: 10, End: 16},
+							ReturnSampleTimestamps: true,
+						}),
+						Type:        "VectorSelector",
+						Description: `{__name__="metric"}, return sample timestamps`,
+					},
+					{
+						NodeType: planning.NODE_TYPE_FUNCTION_CALL,
+						Details: marshalDetails(&core.FunctionCallDetails{
+							Function:           functions.FUNCTION_TIMESTAMP,
+							ExpressionPosition: core.PositionRange{Start: 0, End: 17},
+						}),
+						Type:           "FunctionCall",
+						Description:    `timestamp(...)`,
+						Children:       []int64{0},
+						ChildrenLabels: []string{""},
+					},
+					{
+						NodeType:       planning.NODE_TYPE_DROP_NAME,
+						Details:        marshalDetails(&core.DropNameDetails{}),
+						Type:           "DropName",
+						Description:    "",
+						Children:       []int64{1},
+						ChildrenLabels: []string{""},
+					},
+					{
+						NodeType:       planning.NODE_TYPE_DEDUPLICATE_AND_MERGE,
+						Details:        marshalDetails(&core.DeduplicateAndMergeDetails{}),
+						Type:           "DeduplicateAndMerge",
+						Children:       []int64{2},
+						Description:    ``,
+						ChildrenLabels: []string{""},
+					},
+				},
+			},
+		},
+		"timestamp with step invariant": {
+			expr:                     `timestamp(metric @ 1)`,
+			timeRange:                rangeQuery,
+			enableDelayedNameRemoval: false,
+
+			expectedPlan: &planning.EncodedQueryPlan{
+				TimeRange:                rangeQueryEncodedTimeRange,
+				RootNode:                 3,
+				Version:                  planning.QueryPlanV1,
+				EnableDelayedNameRemoval: false,
+				Nodes: []*planning.EncodedNode{
+					{
+						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
+						Details: marshalDetails(&core.VectorSelectorDetails{
+							Matchers: []*core.LabelMatcher{
+								{Type: 0, Name: "__name__", Value: "metric"},
+							},
+							Timestamp:              timestampOf(1000),
+							Offset:                 0,
+							ExpressionPosition:     core.PositionRange{Start: 10, End: 20},
+							ReturnSampleTimestamps: true,
+						}),
+						Type:        "VectorSelector",
+						Description: `{__name__="metric"} @ 1000 (1970-01-01T00:00:01Z), return sample timestamps`,
+					},
+					{
+						NodeType: planning.NODE_TYPE_FUNCTION_CALL,
+						Details: marshalDetails(&core.FunctionCallDetails{
+							Function:           functions.FUNCTION_TIMESTAMP,
+							ExpressionPosition: core.PositionRange{Start: 0, End: 21},
+						}),
+						Type:           "FunctionCall",
+						Description:    `timestamp(...)`,
+						Children:       []int64{0},
+						ChildrenLabels: []string{""},
+					},
+					{
+						NodeType:       planning.NODE_TYPE_DEDUPLICATE_AND_MERGE,
+						Details:        marshalDetails(&core.DeduplicateAndMergeDetails{}),
+						Type:           "DeduplicateAndMerge",
+						Children:       []int64{1},
+						Description:    ``,
+						ChildrenLabels: []string{""},
+					},
+					{
+						NodeType:       planning.NODE_TYPE_STEP_INVARIANT_EXPRESSION,
+						Details:        marshalDetails(&core.StepInvariantExpressionDetails{}),
+						Type:           "StepInvariantExpression",
+						Children:       []int64{2},
+						ChildrenLabels: []string{""},
+					},
+				},
+			},
+		},
+		"timestamp with unsafe step invariant": {
+			expr:                     `timestamp(abs(metric @ 1))`,
+			timeRange:                rangeQuery,
+			enableDelayedNameRemoval: false,
+
+			expectedPlan: &planning.EncodedQueryPlan{
+				TimeRange:                rangeQueryEncodedTimeRange,
+				RootNode:                 5,
+				Version:                  planning.QueryPlanV1,
+				EnableDelayedNameRemoval: false,
+				Nodes: []*planning.EncodedNode{
+					{
+						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
+						Details: marshalDetails(&core.VectorSelectorDetails{
+							Matchers: []*core.LabelMatcher{
+								{Type: 0, Name: "__name__", Value: "metric"},
+							},
+							Timestamp:              timestampOf(1000),
+							Offset:                 0,
+							ExpressionPosition:     core.PositionRange{Start: 14, End: 24},
+							ReturnSampleTimestamps: false,
+						}),
+						Type:        "VectorSelector",
+						Description: `{__name__="metric"} @ 1000 (1970-01-01T00:00:01Z)`,
+					},
+					{
+						NodeType: planning.NODE_TYPE_FUNCTION_CALL,
+						Details: marshalDetails(&core.FunctionCallDetails{
+							Function:           functions.FUNCTION_ABS,
+							ExpressionPosition: core.PositionRange{Start: 10, End: 25},
+						}),
+						Type:           "FunctionCall",
+						Description:    `abs(...)`,
+						Children:       []int64{0},
+						ChildrenLabels: []string{""},
+					},
+					{
+						NodeType:       planning.NODE_TYPE_DEDUPLICATE_AND_MERGE,
+						Details:        marshalDetails(&core.DeduplicateAndMergeDetails{}),
+						Type:           "DeduplicateAndMerge",
+						Children:       []int64{1},
+						Description:    ``,
+						ChildrenLabels: []string{""},
+					},
+					{
+						NodeType:       planning.NODE_TYPE_STEP_INVARIANT_EXPRESSION,
+						Details:        marshalDetails(&core.StepInvariantExpressionDetails{}),
+						Type:           "StepInvariantExpression",
+						Children:       []int64{2},
+						ChildrenLabels: []string{""},
+					},
+					{
+						NodeType: planning.NODE_TYPE_FUNCTION_CALL,
+						Details: marshalDetails(&core.FunctionCallDetails{
+							Function:           functions.FUNCTION_TIMESTAMP,
+							ExpressionPosition: core.PositionRange{Start: 0, End: 26},
+						}),
+						Type:           "FunctionCall",
+						Description:    `timestamp(...)`,
+						Children:       []int64{3},
+						ChildrenLabels: []string{""},
+					},
+					{
+						NodeType:       planning.NODE_TYPE_DEDUPLICATE_AND_MERGE,
+						Details:        marshalDetails(&core.DeduplicateAndMergeDetails{}),
+						Type:           "DeduplicateAndMerge",
+						Children:       []int64{4},
+						Description:    ``,
 						ChildrenLabels: []string{""},
 					},
 				},
@@ -1136,7 +1387,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 			}
 			opts.CommonOpts.Reg = reg
 			opts.CommonOpts.EnableDelayedNameRemoval = testCase.enableDelayedNameRemoval
-			planner, err := NewQueryPlannerWithoutOptimizationPasses(opts)
+			planner, err := NewQueryPlannerWithoutOptimizationPasses(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
 			require.NoError(t, err)
 
 			originalPlan, err := planner.NewQueryPlan(ctx, testCase.expr, testCase.timeRange, NoopPlanningObserver{})
@@ -1147,6 +1398,13 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 {stage="Parsing", stage_type="AST"} 1
 {stage="Pre-processing", stage_type="AST"} 1
 			`)
+
+			expectedMetrics := fmt.Sprintf(`
+				# HELP cortex_mimir_query_engine_plans_generated_total Total number of query plans generated.
+				# TYPE cortex_mimir_query_engine_plans_generated_total counter
+				cortex_mimir_query_engine_plans_generated_total{version="%d"} 1
+			`, originalPlan.Version)
+			require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics), "cortex_mimir_query_engine_plans_generated_total"))
 
 			// Encode plan, confirm it matches what we expect
 			encoded, err := originalPlan.ToEncodedPlan(true, true)
@@ -1161,25 +1419,51 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 	}
 }
 
+func TestPlanCreation_OptimisationPassGeneratesPlanWithHigherVersionThanAllowed(t *testing.T) {
+	opts := NewTestEngineOpts()
+	planner, err := NewQueryPlannerWithoutOptimizationPasses(opts, NewStaticQueryPlanVersionProvider(12))
+	require.NoError(t, err)
+
+	planner.RegisterQueryPlanOptimizationPass(&optimizationPassThatGeneratesHigherVersionPlanThanAllowed{})
+
+	plan, err := planner.NewQueryPlan(context.Background(), "foo", types.NewInstantQueryTimeRange(time.Now()), NoopPlanningObserver{})
+	require.EqualError(t, err, "maximum supported query plan version is 12, but generated plan version is 13 - this is a bug")
+	require.Nil(t, plan)
+}
+
+type optimizationPassThatGeneratesHigherVersionPlanThanAllowed struct{}
+
+func (o *optimizationPassThatGeneratesHigherVersionPlanThanAllowed) Name() string {
+	return "test optimization pass"
+}
+
+func (o *optimizationPassThatGeneratesHigherVersionPlanThanAllowed) Apply(ctx context.Context, plan *planning.QueryPlan, maximumSupportedQueryPlanVersion planning.QueryPlanVersion) (*planning.QueryPlan, error) {
+	plan.Root = newTestNode(maximumSupportedQueryPlanVersion + 1)
+	return plan, nil
+}
+
 func TestPlanVersioning(t *testing.T) {
+	planning.RegisterNodeFactory(func() planning.Node {
+		return &versioningTestNode{NumberLiteralDetails: &core.NumberLiteralDetails{}}
+	})
+
 	originalMaximumPlanVersion := planning.MaximumSupportedQueryPlanVersion
 	planning.MaximumSupportedQueryPlanVersion = 9001
 	t.Cleanup(func() { planning.MaximumSupportedQueryPlanVersion = originalMaximumPlanVersion })
 
+	// Plan has a node which has a min required plan version of 9000
 	plan := &planning.QueryPlan{
-		TimeRange: types.NewInstantQueryTimeRange(time.Now()),
-		Root: &core.NumberLiteral{
-			NumberLiteralDetails: &core.NumberLiteralDetails{
-				Value: 123,
-			},
-		},
+		TimeRange:          types.NewInstantQueryTimeRange(time.Now()),
+		Root:               newTestNode(9000),
 		OriginalExpression: "123",
-		Version:            9000,
 	}
+
+	err := plan.DeterminePlanVersion()
+	require.NoError(t, err)
 
 	encoded, err := plan.ToEncodedPlan(false, true)
 	require.NoError(t, err)
-	require.Equal(t, int64(9000), encoded.Version)
+	require.Equal(t, planning.QueryPlanVersion(9000), encoded.Version)
 
 	decoded, _, err := encoded.ToDecodedPlan()
 	require.NoError(t, err)
@@ -1303,7 +1587,7 @@ func TestDeduplicateAndMergePlanning(t *testing.T) {
 	observer := NoopPlanningObserver{}
 
 	opts := NewTestEngineOpts()
-	planner, err := NewQueryPlannerWithoutOptimizationPasses(opts)
+	planner, err := NewQueryPlannerWithoutOptimizationPasses(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(t, err)
 
 	for name, testCase := range testCases {
@@ -1338,7 +1622,7 @@ func BenchmarkPlanEncodingAndDecoding(b *testing.B) {
 	}
 
 	opts := NewTestEngineOpts()
-	planner, err := NewQueryPlanner(opts)
+	planner, err := NewQueryPlanner(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(b, err)
 	ctx := context.Background()
 
@@ -1393,7 +1677,7 @@ func TestQueryPlanner_ActivityTracking(t *testing.T) {
 	opts := NewTestEngineOpts()
 	tracker := &testQueryTracker{}
 	opts.ActiveQueryTracker = tracker
-	planner, err := NewQueryPlanner(opts)
+	planner, err := NewQueryPlanner(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(t, err)
 
 	expr := "test"
@@ -1612,4 +1896,69 @@ func TestFunctionNeedsDeduplicationHandlesAllKnownFunctions(t *testing.T) {
 			}, "functionNeedsDeduplication should handle %s", name)
 		})
 	}
+}
+
+// versioningTestNode is a node for use with TestPlanVersioning.
+// It uses the NumberLiteralDetails to encode an arbitrary minimumRequiredPlanVersion
+// Note that most of the Node interface functions return dummy values, and it does not support children.
+type versioningTestNode struct {
+	*core.NumberLiteralDetails
+}
+
+func newTestNode(minimumRequiredPlanVersion planning.QueryPlanVersion) *versioningTestNode {
+	return &versioningTestNode{
+		NumberLiteralDetails: &core.NumberLiteralDetails{Value: float64(minimumRequiredPlanVersion)},
+	}
+}
+
+func (t *versioningTestNode) Describe() string {
+	return ""
+}
+
+func (t *versioningTestNode) ChildrenLabels() []string {
+	return []string{}
+}
+
+func (t *versioningTestNode) Details() proto.Message {
+	return t.NumberLiteralDetails
+}
+
+func (t *versioningTestNode) NodeType() planning.NodeType {
+	return planning.NODE_TYPE_TEST
+}
+
+func (t *versioningTestNode) Children() []planning.Node {
+	return []planning.Node{}
+}
+
+func (t *versioningTestNode) SetChildren(children []planning.Node) error {
+	if len(children) != 0 {
+		panic("not supported")
+	}
+	return nil
+}
+
+func (t *versioningTestNode) EquivalentTo(other planning.Node) bool {
+	otherTestNode, ok := other.(*versioningTestNode)
+	return ok && t.NumberLiteralDetails == otherTestNode.NumberLiteralDetails
+}
+
+func (t *versioningTestNode) ChildrenTimeRange(_ types.QueryTimeRange) types.QueryTimeRange {
+	return types.QueryTimeRange{}
+}
+
+func (t *versioningTestNode) ResultType() (parser.ValueType, error) {
+	return parser.ValueTypeScalar, nil
+}
+
+func (t *versioningTestNode) QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) planning.QueriedTimeRange {
+	return planning.NoDataQueried()
+}
+
+func (t *versioningTestNode) ExpressionPosition() posrange.PositionRange {
+	return posrange.PositionRange{}
+}
+
+func (t *versioningTestNode) MinimumRequiredPlanVersion() planning.QueryPlanVersion {
+	return planning.QueryPlanVersion(t.Value)
 }

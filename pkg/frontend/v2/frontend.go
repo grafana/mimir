@@ -35,6 +35,8 @@ import (
 	"github.com/prometheus/prometheus/model/timestamp"
 	"go.opentelemetry.io/otel"
 	"go.uber.org/atomic"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
@@ -70,6 +72,8 @@ type Config struct {
 	Addr string `yaml:"address" category:"advanced"`
 	Port int    `category:"advanced"`
 
+	RemoteExecutionBatchSize uint64 `yaml:"remote_execution_batch_size" category:"experimental"`
+
 	// These configuration options are injected internally.
 	QuerySchedulerDiscovery schedulerdiscovery.Config `yaml:"-"`
 	LookBackDelta           time.Duration             `yaml:"-"`
@@ -87,6 +91,8 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.StringVar(&cfg.Addr, "query-frontend.instance-addr", "", "IP address to advertise to the querier (via scheduler) (default is auto-detected from network interfaces).")
 	f.IntVar(&cfg.Port, "query-frontend.instance-port", 0, "Port to advertise to querier (via scheduler) (defaults to server.grpc-listen-port).")
 
+	f.Uint64Var(&cfg.RemoteExecutionBatchSize, "query-frontend.remote-execution-batch-size", 128, "Maximum number of series to send in a single remote execution response from a querier.")
+
 	cfg.GRPCClientConfig.CustomCompressors = []string{s2.Name}
 	cfg.GRPCClientConfig.RegisterFlagsWithPrefix("query-frontend.grpc-client-config", f)
 }
@@ -94,6 +100,10 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 func (cfg *Config) Validate() error {
 	if cfg.QuerySchedulerDiscovery.Mode == schedulerdiscovery.ModeRing && cfg.SchedulerAddress != "" {
 		return fmt.Errorf("scheduler address cannot be specified when query-scheduler service discovery mode is set to '%s'", cfg.QuerySchedulerDiscovery.Mode)
+	}
+
+	if cfg.RemoteExecutionBatchSize <= 0 {
+		return fmt.Errorf("remote execution batch size must be greater than 0")
 	}
 
 	return cfg.GRPCClientConfig.Validate()
@@ -397,6 +407,13 @@ func (f *Frontend) DoProtobufRequest(requestContext context.Context, req proto.M
 			f.inflightRequestCount.Dec()
 		}()
 
+		parallelismLimiter := querymiddleware.ParallelismLimiterFromContext(streamContext)
+		if err := parallelismLimiter.BeginRequest(streamContext); err != nil {
+			freq.protobufResponseStream.writeEnqueueError(err)
+			return
+		}
+		defer parallelismLimiter.RequestFinished()
+
 		cancelCh, err := f.enqueueRequestWithRetries(streamContext, freq)
 		if err != nil {
 			freq.protobufResponseStream.writeEnqueueError(err)
@@ -510,28 +527,26 @@ func (s *ProtobufResponseStream) writeEnqueueError(err error) {
 //
 // Calling Next after an error has been returned by a previous Next call may lead to
 // undefined behaviour.
+//
+// Callers are responsible for calling FreeBuffer on the returned message once they are
+// finished with it.
 func (s *ProtobufResponseStream) Next(ctx context.Context) (*frontendv2pb.QueryResultStreamRequest, error) {
-	// If the request has already been cancelled, then return immediately.
-	if s.requestContext.Err() != nil {
-		return nil, context.Cause(s.requestContext)
-	} else if ctx.Err() != nil {
-		return nil, context.Cause(ctx)
+	// If the request has already been cancelled or if this stream has been closed, then we should stop now.
+	if err := s.shouldAbortReading(ctx); err != nil {
+		return nil, err
 	}
 
 	select {
 	case resp, messagesChannelOpen := <-s.messages:
 		if !messagesChannelOpen {
-			// We've reached the end of the stream. Check if the request was cancelled and return the
-			// cancellation cause if so.
+			// We've reached the end of the stream. Check if the request was cancelled or if this stream was closed.
 			// Without this, the caller may receive a nil message if the original request was cancelled and there
 			// are no outstanding messages in s.messages, as the Go runtime may randomly select the s.messages branch
 			// if either s.requestContext or ctx are done as well.
 			// We don't need to check s.enqueueError as s.messages is only closed if we've received a response, which
 			// means the enqueue must have succeeded.
-			if s.requestContext.Err() != nil {
-				return nil, context.Cause(s.requestContext)
-			} else if ctx.Err() != nil {
-				return nil, context.Cause(ctx)
+			if err := s.shouldAbortReading(ctx); err != nil {
+				return nil, err
 			}
 		}
 
@@ -549,8 +564,25 @@ func (s *ProtobufResponseStream) Next(ctx context.Context) (*frontendv2pb.QueryR
 		// as the response has been completely received, but we want to continue reading any outstanding messages
 		// from the stream unless s.requestContext (which presumably represents the query as a whole) is cancelled.
 		return nil, context.Cause(s.requestContext)
+	case <-s.closed:
+		// If the stream was closed, then we should stop now as well.
+		return nil, errStreamClosed
 	case <-ctx.Done():
 		return nil, context.Cause(ctx)
+	}
+}
+
+// shouldAbortReading checks if the request has been cancelled or if this stream has been closed, and returns an error if so.
+func (s *ProtobufResponseStream) shouldAbortReading(ctx context.Context) error {
+	select {
+	case <-s.requestContext.Done():
+		return context.Cause(s.requestContext)
+	case <-ctx.Done():
+		return context.Cause(ctx)
+	case <-s.closed:
+		return errStreamClosed
+	default:
+		return nil
 	}
 }
 
@@ -691,11 +723,11 @@ func (f *Frontend) QueryResult(ctx context.Context, qrReq *frontendv2pb.QueryRes
 	// To avoid leaking query results between users, we verify the user here.
 	// To avoid mixing results from different queries, we randomize queryID counter on start.
 	if req == nil {
-		return nil, fmt.Errorf("query %d not found or response already received", qrReq.QueryID)
+		return nil, status.Errorf(codes.FailedPrecondition, "query %d not found, cancelled or response already received", qrReq.QueryID)
 	}
 
 	if req.userID != userID {
-		return nil, fmt.Errorf("got response for query ID %d, expected user %q, but response had %q", qrReq.QueryID, req.userID, userID)
+		return nil, status.Errorf(codes.FailedPrecondition, "got response for query ID %d, expected user %q, but response had %q", qrReq.QueryID, req.userID, userID)
 	}
 
 	if req.httpResponse == nil {
@@ -715,17 +747,28 @@ func (f *Frontend) QueryResult(ctx context.Context, qrReq *frontendv2pb.QueryRes
 }
 
 func (f *Frontend) QueryResultStream(stream frontendv2pb.FrontendForQuerier_QueryResultStreamServer) (err error) {
-	closed := atomic.NewBool(false)
-	closeStream := func() {
-		if !closed.CompareAndSwap(false, true) {
+	closeStream := sync.OnceFunc(func() {
+		// We rely on two important properties of sync.OnceFunc here:
+		//
+		// 1. This method will only be called once
+		// 2. Callers of closeStream will block until this method has finished, regardless of whether they are the first caller or not.
+		//
+		// Property 2 is important: if another method calls closeStream, we still want to wait for this method to finish
+		// before returning from QueryResultStream, as otherwise that will cancel the stream's context and break the connection
+		// to the querier, causing the call below to fail and queriers to receive an EOF error (rather than a "stream closed" error).
+
+		err := stream.SendAndClose(&frontendv2pb.QueryResultResponse{})
+		if err == nil {
 			return
 		}
 
-		err := stream.SendAndClose(&frontendv2pb.QueryResultResponse{})
-		if err != nil && !errors.Is(globalerror.WrapGRPCErrorWithContextError(stream.Context(), err), context.Canceled) {
-			level.Warn(f.log).Log("msg", "failed to close query result body stream", "err", err)
+		if errors.Is(globalerror.WrapGRPCErrorWithContextError(stream.Context(), err), context.Canceled) {
+			// If the stream was cancelled, we don't care.
+			return
 		}
-	}
+
+		level.Warn(f.log).Log("msg", "failed to close query result body stream", "err", err)
+	})
 
 	defer closeStream()
 
@@ -746,11 +789,11 @@ func (f *Frontend) QueryResultStream(stream frontendv2pb.FrontendForQuerier_Quer
 	req := f.requests.getAndDelete(firstMessage.QueryID)
 
 	if req == nil {
-		return fmt.Errorf("query %d not found or response already received", firstMessage.QueryID)
+		return status.Errorf(codes.FailedPrecondition, "query %d not found, cancelled or response already received", firstMessage.QueryID)
 	}
 
 	if req.userID != userID {
-		return fmt.Errorf("got response for query ID %d, expected user %q, but response had %q", firstMessage.QueryID, req.userID, userID)
+		return status.Errorf(codes.FailedPrecondition, "got response for query ID %d, expected user %q, but response had %q", firstMessage.QueryID, req.userID, userID)
 	}
 
 	switch d := firstMessage.Data.(type) {

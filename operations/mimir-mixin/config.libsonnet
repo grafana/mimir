@@ -195,6 +195,7 @@
     per_cluster_label: 'cluster',
     per_namespace_label: 'namespace',
     per_job_label: 'job',
+    per_query_path_label: 'container',  // Used to differentiate between queriers, query-frontends and query-schedulers in different query paths (eg. queriers in ordinary query path and queriers in dedicated ruler path).
     per_component_loki_label: 'name',
 
     // Grouping labels, to uniquely identify and group by {jobs, clusters}
@@ -226,6 +227,10 @@
 
     // The alertname is used to create a hyperlink to the runbooks. Currenlty we only have a single set of runbooks, so different products (e.g. GEM) should still use the same runbooks.
     alert_product: $._config.product,
+
+    // The Deployment or StatefulSet names (eg. 'querier' or 'ingester-zone-a') to exclude from the MimirRolloutStuck alert.
+    rollout_stuck_alert_ignore_deployments: [],
+    rollout_stuck_alert_ignore_statefulsets: [],
 
     // Whether alerts for experimental ingest storage are enabled.
     ingest_storage_enabled: true,
@@ -757,6 +762,6 @@
     show_grpc_ingestion_panels: true,
 
     // Show panels that use queries for "ingest storage" ingestion (distributor -> Kafka, Kafka -> ingesters)
-    show_ingest_storage_panels: false,
+    show_ingest_storage_panels: true,
   },
 }

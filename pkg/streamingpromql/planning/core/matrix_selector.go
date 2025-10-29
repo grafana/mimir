@@ -97,3 +97,7 @@ func (m *MatrixSelector) QueriedTimeRange(queryTimeRange types.QueryTimeRange, _
 func (m *MatrixSelector) ExpressionPosition() posrange.PositionRange {
 	return m.GetExpressionPosition().ToPrometheusType()
 }
+
+func (m *MatrixSelector) MinimumRequiredPlanVersion() planning.QueryPlanVersion {
+	return planning.QueryPlanVersionZero
+}

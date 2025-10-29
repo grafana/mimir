@@ -294,7 +294,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum(rate(cortex_ingester_client_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir))\", operation=\"/cortex.Ingester/Push\"}[$__rate_interval]))\n",
+                        "expr": "# Classic architecture.\n(sum(rate(cortex_ingester_client_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir))\", operation=\"/cortex.Ingester/Push\"}[$__rate_interval])) or vector(0))\n+\n# Ingest storage architecture.\n(sum(\n    # Old metric.\n    rate(cortex_ingest_storage_writer_produce_requests_total{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir))\"}[$__rate_interval])\n    or\n    # New metric.\n    rate(cortex_ingest_storage_writer_produce_records_enqueued_total{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir))\"}[$__rate_interval])\n) or vector(0))\n",
                         "format": "time_series",
                         "instant": true,
                         "refId": "A"
@@ -303,7 +303,7 @@
                   "thresholds": "70,80",
                   "timeFrom": null,
                   "timeShift": null,
-                  "title": "Writes to ingesters - RPS",
+                  "title": "Writes to ingesters / ingest storage - RPS",
                   "tooltip": {
                      "shared": false,
                      "sort": 0,
@@ -824,13 +824,13 @@
                   "span": 4,
                   "targets": [
                      {
-                        "expr": "(sum by (status) (\n  label_replace(label_replace(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((gateway|cortex-gw.*))\", route=~\"((api_prom_api_v1|prometheus_api_v1)_(rules|alerts|status_buildinfo))|((api_prom|api_v1|prometheus|prometheus_config_v1)_rules.*)\"}[$__rate_interval]),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-zA-Z]+)\"))\n) and on() (vector($latency_metrics) == 1)",
+                        "expr": "(sum by (status) (\n  label_replace(label_replace(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((gateway|cortex-gw.*))\", route=~\"((api_prom_api_v1|prometheus_api_v1)_(rules|alerts|status_buildinfo))|((api_prom|api_v1|prometheus|prometheus_config_v1)_rules.*)\"}[$__rate_interval]),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-zA-Z_]+)\"))\n) and on() (vector($latency_metrics) == 1)",
                         "format": "time_series",
                         "legendFormat": "{{status}}",
                         "refId": "A_classic"
                      },
                      {
-                        "expr": "(sum by (status) (\n  label_replace(label_replace(histogram_count(rate(cortex_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((gateway|cortex-gw.*))\", route=~\"((api_prom_api_v1|prometheus_api_v1)_(rules|alerts|status_buildinfo))|((api_prom|api_v1|prometheus|prometheus_config_v1)_rules.*)\"}[$__rate_interval])),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-zA-Z]+)\"))\n) and on() (vector($latency_metrics) == -1)",
+                        "expr": "(sum by (status) (\n  label_replace(label_replace(histogram_count(rate(cortex_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((gateway|cortex-gw.*))\", route=~\"((api_prom_api_v1|prometheus_api_v1)_(rules|alerts|status_buildinfo))|((api_prom|api_v1|prometheus|prometheus_config_v1)_rules.*)\"}[$__rate_interval])),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-zA-Z_]+)\"))\n) and on() (vector($latency_metrics) == -1)",
                         "format": "time_series",
                         "legendFormat": "{{status}}",
                         "refId": "A"
@@ -1174,7 +1174,7 @@
                   "span": 6,
                   "targets": [
                      {
-                        "expr": "sum by (status) (\n  label_replace(label_replace(rate(cortex_ingester_client_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir))\", operation=\"/cortex.Ingester/Push\"}[$__rate_interval]),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-zA-Z]+)\"))\n",
+                        "expr": "sum by (status) (\n  label_replace(label_replace(rate(cortex_ingester_client_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir))\", operation=\"/cortex.Ingester/Push\"}[$__rate_interval]),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-zA-Z_]+)\"))\n",
                         "format": "time_series",
                         "legendFormat": "{{status}}",
                         "refId": "A"
@@ -1268,6 +1268,156 @@
             "repeatRowId": null,
             "showTitle": true,
             "title": "Writes (ingesters)",
+            "titleSize": "h6"
+         },
+         {
+            "collapse": false,
+            "height": "250px",
+            "panels": [
+               {
+                  "datasource": "$datasource",
+                  "description": "### Kafka produced records / sec\nRate of records synchronously produced to Kafka.\n",
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 100,
+                           "lineWidth": 0,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "normal"
+                           }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "short"
+                     },
+                     "overrides": [
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "success"
+                           },
+                           "properties": [
+                              {
+                                 "id": "color",
+                                 "value": {
+                                    "fixedColor": "#7EB26D",
+                                    "mode": "fixed"
+                                 }
+                              }
+                           ]
+                        }
+                     ]
+                  },
+                  "id": 12,
+                  "links": [ ],
+                  "options": {
+                     "legend": {
+                        "showLegend": true
+                     },
+                     "tooltip": {
+                        "mode": "multi",
+                        "sort": "none"
+                     }
+                  },
+                  "span": 6,
+                  "targets": [
+                     {
+                        "expr": "sum(\n    # Old metric.\n    rate(cortex_ingest_storage_writer_produce_requests_total{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir))\"}[$__rate_interval])\n    or\n    # New metric.\n    rate(cortex_ingest_storage_writer_produce_records_enqueued_total{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir))\"}[$__rate_interval])\n)\n-\n(sum(\n    # Old metric.\n    rate(cortex_ingest_storage_writer_produce_failures_total{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir))\"}[$__rate_interval])\n    or\n    # New metric.\n    rate(cortex_ingest_storage_writer_produce_records_failed_total{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir))\"}[$__rate_interval])\n) or vector(0))\n",
+                        "format": "time_series",
+                        "legendFormat": "success",
+                        "legendLink": null
+                     },
+                     {
+                        "expr": "sum by(reason) (\n    # Old metric.\n    rate(cortex_ingest_storage_writer_produce_failures_total{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir))\"}[$__rate_interval])\n    or\n    # New metric.\n    rate(cortex_ingest_storage_writer_produce_records_failed_total{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir))\"}[$__rate_interval])\n)\n",
+                        "format": "time_series",
+                        "legendFormat": "failed - {{ reason }}",
+                        "legendLink": null
+                     }
+                  ],
+                  "title": "Kafka produced records / sec",
+                  "type": "timeseries"
+               },
+               {
+                  "datasource": "$datasource",
+                  "description": "### Kafka produced records latency\nLatency of records synchronously produced to Kafka.\n\n",
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 1,
+                           "lineWidth": 1,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "none"
+                           }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "s"
+                     },
+                     "overrides": [ ]
+                  },
+                  "id": 13,
+                  "links": [ ],
+                  "options": {
+                     "legend": {
+                        "showLegend": true
+                     },
+                     "tooltip": {
+                        "mode": "multi",
+                        "sort": "none"
+                     }
+                  },
+                  "span": 6,
+                  "targets": [
+                     {
+                        "expr": "histogram_avg(sum(rate(cortex_ingest_storage_writer_latency_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir))\"}[$__rate_interval])))",
+                        "format": "time_series",
+                        "legendFormat": "avg",
+                        "legendLink": null
+                     },
+                     {
+                        "expr": "histogram_quantile(0.99, sum(rate(cortex_ingest_storage_writer_latency_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir))\"}[$__rate_interval])))",
+                        "format": "time_series",
+                        "legendFormat": "99th percentile",
+                        "legendLink": null
+                     },
+                     {
+                        "expr": "histogram_quantile(0.999, sum(rate(cortex_ingest_storage_writer_latency_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir))\"}[$__rate_interval])))",
+                        "format": "time_series",
+                        "legendFormat": "99.9th percentile",
+                        "legendLink": null
+                     },
+                     {
+                        "expr": "histogram_quantile(1.0, sum(rate(cortex_ingest_storage_writer_latency_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir))\"}[$__rate_interval])))",
+                        "format": "time_series",
+                        "legendFormat": "100th percentile",
+                        "legendLink": null
+                     }
+                  ],
+                  "title": "Kafka produced records latency",
+                  "type": "timeseries"
+               }
+            ],
+            "repeat": null,
+            "repeatIteration": null,
+            "repeatRowId": null,
+            "showTitle": true,
+            "title": "Writes (ingest storage)",
             "titleSize": "h6"
          },
          {
@@ -1450,7 +1600,7 @@
                         }
                      ]
                   },
-                  "id": 12,
+                  "id": 14,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -1464,7 +1614,7 @@
                   "span": 6,
                   "targets": [
                      {
-                        "expr": "sum by (status) (\n  label_replace(label_replace(rate(cortex_ingester_client_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|ruler-querier.*))\", operation=\"/cortex.Ingester/QueryStream\"}[$__rate_interval]),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-zA-Z]+)\"))\n",
+                        "expr": "sum by (status) (\n  label_replace(label_replace(rate(cortex_ingester_client_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|ruler-querier.*))\", operation=\"/cortex.Ingester/QueryStream\"}[$__rate_interval]),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-zA-Z_]+)\"))\n",
                         "format": "time_series",
                         "legendFormat": "{{status}}",
                         "refId": "A"
@@ -1498,7 +1648,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 13,
+                  "id": 15,
                   "links": [ ],
                   "nullPointMode": "null as zero",
                   "options": {
@@ -1640,7 +1790,7 @@
                         }
                      ]
                   },
-                  "id": 14,
+                  "id": 16,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -1751,7 +1901,7 @@
                         }
                      ]
                   },
-                  "id": 15,
+                  "id": 17,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -1811,7 +1961,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 16,
+                  "id": 18,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -1921,7 +2071,7 @@
                         }
                      ]
                   },
-                  "id": 17,
+                  "id": 19,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -1982,7 +2132,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 18,
+                  "id": 20,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -2031,7 +2181,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 19,
+                  "id": 21,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -2080,7 +2230,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 20,
+                  "id": 22,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -2190,7 +2340,7 @@
                         }
                      ]
                   },
-                  "id": 21,
+                  "id": 23,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -2251,7 +2401,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 22,
+                  "id": 24,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -2300,7 +2450,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 23,
+                  "id": 25,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -2349,7 +2499,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 24,
+                  "id": 26,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -2560,7 +2710,7 @@
                         }
                      ]
                   },
-                  "id": 25,
+                  "id": 27,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -2574,7 +2724,7 @@
                   "span": 6,
                   "targets": [
                      {
-                        "expr": "sum by (status) (\n  label_replace(label_replace(rate(cortex_kv_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir))\", kv_name=~\"ruler\"}[$__rate_interval]),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-zA-Z]+)\"))\n",
+                        "expr": "sum by (status) (\n  label_replace(label_replace(rate(cortex_kv_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir))\", kv_name=~\"ruler\"}[$__rate_interval]),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-zA-Z_]+)\"))\n",
                         "format": "time_series",
                         "legendFormat": "{{status}}",
                         "refId": "A"
@@ -2608,7 +2758,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 26,
+                  "id": 28,
                   "links": [ ],
                   "nullPointMode": "null as zero",
                   "options": {
@@ -2699,7 +2849,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 27,
+                  "id": 29,
                   "links": [ ],
                   "nullPointMode": "null as zero",
                   "options": {
@@ -2778,7 +2928,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 28,
+                  "id": 30,
                   "links": [ ],
                   "nullPointMode": "null as zero",
                   "options": {
@@ -2875,7 +3025,7 @@
                         }
                      ]
                   },
-                  "id": 29,
+                  "id": 31,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -2936,7 +3086,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 30,
+                  "id": 32,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -2998,7 +3148,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 31,
+                  "id": 33,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -3053,7 +3203,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 32,
+                  "id": 34,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -3113,7 +3263,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 33,
+                  "id": 35,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -3161,7 +3311,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 34,
+                  "id": 36,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -3209,7 +3359,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 35,
+                  "id": 37,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -3269,7 +3419,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 36,
+                  "id": 38,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -3329,7 +3479,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 37,
+                  "id": 39,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -3362,7 +3512,7 @@
                         "unit": "percentunit"
                      }
                   },
-                  "id": 38,
+                  "id": 40,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -3410,7 +3560,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 39,
+                  "id": 41,
                   "links": [ ],
                   "nullPointMode": "null as zero",
                   "options": {
@@ -3489,7 +3639,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 40,
+                  "id": 42,
                   "links": [ ],
                   "nullPointMode": "null as zero",
                   "options": {
@@ -3580,7 +3730,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 41,
+                  "id": 43,
                   "links": [ ],
                   "nullPointMode": "null as zero",
                   "options": {
@@ -3659,7 +3809,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 42,
+                  "id": 44,
                   "links": [ ],
                   "nullPointMode": "null as zero",
                   "options": {
@@ -3738,7 +3888,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 43,
+                  "id": 45,
                   "links": [ ],
                   "nullPointMode": "null as zero",
                   "options": {
@@ -3817,7 +3967,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 44,
+                  "id": 46,
                   "links": [ ],
                   "nullPointMode": "null as zero",
                   "options": {

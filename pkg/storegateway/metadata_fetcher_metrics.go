@@ -17,10 +17,13 @@ type MetadataFetcherMetrics struct {
 	regs *dskit_metrics.TenantRegistries
 
 	// Exported metrics, gathered from Thanos MetaFetcher
-	syncs        *prometheus.Desc
-	syncFailures *prometheus.Desc
-	syncDuration *prometheus.Desc
-	synced       *prometheus.Desc
+	syncs           *prometheus.Desc
+	syncFailures    *prometheus.Desc
+	syncDuration    *prometheus.Desc
+	synced          *prometheus.Desc
+	metaLoads       *prometheus.Desc
+	metaCachedLoads *prometheus.Desc
+	metaDiskLoads   *prometheus.Desc
 }
 
 func NewMetadataFetcherMetrics(logger log.Logger) *MetadataFetcherMetrics {
@@ -45,6 +48,18 @@ func NewMetadataFetcherMetrics(logger log.Logger) *MetadataFetcherMetrics {
 			"cortex_blocks_meta_synced",
 			"Reflects current state of synced blocks (over all tenants).",
 			[]string{"state"}, nil),
+		metaLoads: prometheus.NewDesc(
+			"cortex_blocks_meta_loads_total",
+			"Total number of block metadata load attempts",
+			nil, nil),
+		metaCachedLoads: prometheus.NewDesc(
+			"cortex_blocks_meta_cached_loads",
+			"Block metadata loads served from in-memory cache",
+			nil, nil),
+		metaDiskLoads: prometheus.NewDesc(
+			"cortex_blocks_meta_disk_loads",
+			"Block metadata loads served from local disk",
+			nil, nil),
 	}
 }
 
@@ -61,6 +76,9 @@ func (m *MetadataFetcherMetrics) Describe(out chan<- *prometheus.Desc) {
 	out <- m.syncFailures
 	out <- m.syncDuration
 	out <- m.synced
+	out <- m.metaLoads
+	out <- m.metaCachedLoads
+	out <- m.metaDiskLoads
 }
 
 func (m *MetadataFetcherMetrics) Collect(out chan<- prometheus.Metric) {
@@ -70,4 +88,7 @@ func (m *MetadataFetcherMetrics) Collect(out chan<- prometheus.Metric) {
 	data.SendSumOfCounters(out, m.syncFailures, "blocks_meta_sync_failures_total")
 	data.SendSumOfHistograms(out, m.syncDuration, "blocks_meta_sync_duration_seconds")
 	data.SendSumOfGaugesWithLabels(out, m.synced, "blocks_meta_synced", "state")
+	data.SendSumOfCounters(out, m.metaLoads, "blocks_meta_loads_total")
+	data.SendSumOfCounters(out, m.metaCachedLoads, "blocks_meta_cached_loads")
+	data.SendSumOfCounters(out, m.metaDiskLoads, "blocks_meta_disk_loads")
 }

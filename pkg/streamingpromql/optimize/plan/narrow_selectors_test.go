@@ -162,21 +162,23 @@ func TestNarrowSelectorsOptimizationPass(t *testing.T) {
 		"binary expression with no selectors": {
 			expr: `vector(1) + vector(0)`,
 			expectedPlan: `
-				- BinaryExpression: LHS + RHS
-					- LHS: FunctionCall: vector(...)
-						- NumberLiteral: 1
-					- RHS: FunctionCall: vector(...)
-						- NumberLiteral: 0
+				- StepInvariantExpression
+					- BinaryExpression: LHS + RHS
+						- LHS: FunctionCall: vector(...)
+							- NumberLiteral: 1
+						- RHS: FunctionCall: vector(...)
+							- NumberLiteral: 0
 			`,
 		},
 		"binary expression on with no selectors": {
 			expr: `vector(1) + on (region) vector(0)`,
 			expectedPlan: `
-				- BinaryExpression: LHS + on (region) RHS
-					- LHS: FunctionCall: vector(...)
-						- NumberLiteral: 1
-					- RHS: FunctionCall: vector(...)
-						- NumberLiteral: 0
+				- StepInvariantExpression
+					- BinaryExpression: LHS + on (region) RHS
+						- LHS: FunctionCall: vector(...)
+							- NumberLiteral: 1
+						- RHS: FunctionCall: vector(...)
+							- NumberLiteral: 0
 			`,
 		},
 		// Make sure we don't modify query plans that have been rewritten to be sharded
@@ -207,7 +209,7 @@ func TestNarrowSelectorsOptimizationPass(t *testing.T) {
 	observer := streamingpromql.NoopPlanningObserver{}
 
 	opts := streamingpromql.NewTestEngineOpts()
-	planner, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts)
+	planner, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(t, err)
 	planner.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(true, nil, opts.Logger))
 	planner.RegisterQueryPlanOptimizationPass(plan.NewNarrowSelectorsOptimizationPass(opts.Logger))

@@ -332,10 +332,6 @@ func newMockSeriesServer(ctx context.Context) *mockSeriesServer {
 
 func (m *mockSeriesServer) Send(resp *storepb.SeriesResponse) error {
 	m.lastResponse = resp
-	if resp.GetSeries() != nil {
-		m.seriesCount++
-		m.chunksCount += len(resp.GetSeries().Chunks)
-	}
 	if recvSeries := resp.GetStreamingSeries(); recvSeries != nil {
 		recvSeriesData, err := recvSeries.Marshal()
 		if err != nil {

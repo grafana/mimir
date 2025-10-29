@@ -135,3 +135,7 @@ func (f *FunctionCall) QueriedTimeRange(queryTimeRange types.QueryTimeRange, loo
 func (f *FunctionCall) ExpressionPosition() posrange.PositionRange {
 	return f.GetExpressionPosition().ToPrometheusType()
 }
+
+func (f *FunctionCall) MinimumRequiredPlanVersion() planning.QueryPlanVersion {
+	return planning.QueryPlanVersionZero
+}

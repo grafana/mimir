@@ -1,4 +1,4 @@
-{{- if and (not .Values.enterprise.enabled) .Values.gateway.enabledNonEnterprise -}}
+{{- if .Values.gateway.enabled -}}
 apiVersion: v1
 kind: ConfigMap
 metadata:
