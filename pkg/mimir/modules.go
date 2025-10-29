@@ -1019,7 +1019,7 @@ func (t *Mimir) initQueryFrontendQueryPlanner() (services.Service, error) {
 	var versionProvider streamingpromql.QueryPlanVersionProvider
 
 	if t.Cfg.Frontend.QueryMiddleware.EnableRemoteExecution {
-		versionProvider = querier.NewRingQueryPlanVersionProvider(t.QuerierRing, t.Registerer)
+		versionProvider = querier.NewRingQueryPlanVersionProvider(t.QuerierRing, t.Registerer, util_log.Logger)
 	} else {
 		// If remote execution is not enabled, then the query plans we generate in the query-frontend will
 		// only be used in this process, so we can generate query plans up to whatever the maximum supported
@@ -1138,7 +1138,7 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 			t.Overrides,
 		)
 	}
-	rulesFS := afero.NewOsFs()
+	rulesFS := afero.NewMemMapFs()
 	managerFactory := ruler.DefaultTenantManagerFactory(
 		t.Cfg.Ruler,
 		t.Distributor,
@@ -1284,6 +1284,15 @@ func (t *Mimir) initMemberlistKV() (services.Service, error) {
 	t.Cfg.StoreGateway.ShardingRing.KVStore.MemberlistKV = t.MemberlistKV.GetMemberlistKV
 	t.Cfg.UsageTracker.InstanceRing.KVStore.MemberlistKV = t.MemberlistKV.GetMemberlistKV
 	t.Cfg.UsageTracker.PartitionRing.KVStore.MemberlistKV = t.MemberlistKV.GetMemberlistKV
+
+	// If the memberlist-kv is explicitly targets (e.g. running it as memberlist seed node)
+	// then we have to forcefully initialise the memberlist client, otherwise memberlist will
+	// not really run under the hood (it gets lazily initialised).
+	if t.Cfg.isModuleExplicitlyTargeted(MemberlistKV) {
+		if _, err := t.MemberlistKV.GetMemberlistKV(); err != nil {
+			return nil, fmt.Errorf("failed to initialise memberlist client instance: %w", err)
+		}
+	}
 
 	return t.MemberlistKV, nil
 }

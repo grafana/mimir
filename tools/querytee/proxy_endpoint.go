@@ -19,11 +19,16 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 
+	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
 type ResponsesComparator interface {
 	Compare(expected, actual []byte, queryEvaluationTime time.Time) (ComparisonResult, error)
+}
+
+type QueryRequestDecoder interface {
+	DecodeMetricsQueryRequest(ctx context.Context, r *http.Request) (querymiddleware.MetricsQueryRequest, error)
 }
 
 type ProxyEndpoint struct {
@@ -35,13 +40,15 @@ type ProxyEndpoint struct {
 	secondaryBackendRequestProportion float64
 	skipPreferredBackendFailures      bool
 
+	decoder QueryRequestDecoder
+
 	// The preferred backend, if any.
 	preferredBackend ProxyBackendInterface
 
 	route Route
 }
 
-func NewProxyEndpoint(backends []ProxyBackendInterface, route Route, metrics *ProxyMetrics, logger log.Logger, comparator ResponsesComparator, slowResponseThreshold time.Duration, secondaryBackendRequestProportion float64, skipPreferredBackendFailures bool) *ProxyEndpoint {
+func NewProxyEndpoint(backends []ProxyBackendInterface, route Route, metrics *ProxyMetrics, logger log.Logger, comparator ResponsesComparator, slowResponseThreshold time.Duration, secondaryBackendRequestProportion float64, skipPreferredBackendFailures bool, decoder QueryRequestDecoder) *ProxyEndpoint {
 	var preferredBackend ProxyBackendInterface
 	for _, backend := range backends {
 		if backend.Preferred() {
@@ -60,12 +67,18 @@ func NewProxyEndpoint(backends []ProxyBackendInterface, route Route, metrics *Pr
 		secondaryBackendRequestProportion: secondaryBackendRequestProportion,
 		preferredBackend:                  preferredBackend,
 		skipPreferredBackendFailures:      skipPreferredBackendFailures,
+		decoder:                           decoder,
 	}
 }
 
 func (p *ProxyEndpoint) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Send the same request to all selected backends.
-	backends := p.selectBackends()
+	backends, err := p.selectBackends(r)
+	if err != nil {
+		level.Error(p.logger).Log("msg", "Unable to select backends", "err", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 	resCh := make(chan *backendResponse, len(backends))
 	go p.executeBackendRequests(r, backends, resCh)
 
@@ -85,20 +98,42 @@ func (p *ProxyEndpoint) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	p.metrics.responsesTotal.WithLabelValues(downstreamRes.backend.Name(), r.Method, p.route.RouteName).Inc()
 }
 
-func (p *ProxyEndpoint) selectBackends() []ProxyBackendInterface {
-	if len(p.backends) == 1 || p.secondaryBackendRequestProportion == 1.0 {
-		return p.backends
+func (p *ProxyEndpoint) selectBackends(r *http.Request) ([]ProxyBackendInterface, error) {
+	if len(p.backends) == 1 {
+		return p.backends, nil
+	}
+	minQueryTime, err := p.extractMinTimeFromRequest(r)
+	if err != nil {
+		return nil, fmt.Errorf("extract min query time: %w", err)
 	}
 
-	if p.secondaryBackendRequestProportion == 0.0 {
-		return []ProxyBackendInterface{p.preferredBackend}
+	selected := []ProxyBackendInterface{}
+
+	if p.preferredBackend != nil {
+		selected = append(selected, p.preferredBackend)
 	}
 
-	if rand.Float64() > p.secondaryBackendRequestProportion {
-		return []ProxyBackendInterface{p.preferredBackend}
-	}
+	for _, backend := range p.backends {
+		if backend.Preferred() {
+			continue
+		}
 
-	return p.backends
+		if !backend.ShouldHandleQuery(minQueryTime) {
+			continue
+		}
+
+		var proportion float64
+		if backend.HasConfiguredProportion() {
+			proportion = backend.RequestProportion()
+		} else {
+			proportion = p.secondaryBackendRequestProportion
+		}
+
+		if rand.Float64() <= proportion {
+			selected = append(selected, backend)
+		}
+	}
+	return selected, nil
 }
 
 func (p *ProxyEndpoint) executeBackendRequests(req *http.Request, backends []ProxyBackendInterface, resCh chan *backendResponse) {
@@ -385,4 +420,23 @@ func (r *backendResponse) statusCode() int {
 	}
 
 	return r.status
+}
+
+// extractMinTimeFromRequest extracts the minimum time from a Prometheus API request
+// Returns zero time if time parameters cannot be parsed, which causes all backends to handle the query.
+func (p *ProxyEndpoint) extractMinTimeFromRequest(r *http.Request) (time.Time, error) {
+	queryRequest, err := p.decoder.DecodeMetricsQueryRequest(r.Context(), r)
+	if err != nil {
+		// If we can't decode the request as a metrics query request, return zero time
+		// which will cause all backends to handle the request
+		return time.Time{}, nil
+	}
+
+	min, _, ok := querymiddleware.ExtractMinMaxTime(r.Context(), queryRequest, queryRequest.GetLookbackDelta())
+	if !ok {
+		// If we can't extract time information, return zero time
+		// which will cause all backends to handle the request
+		return time.Time{}, nil
+	}
+	return time.UnixMilli(min), nil
 }

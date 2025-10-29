@@ -330,9 +330,9 @@ Usage of ./cmd/mimir/mimir:
   -alertmanager.sharding-ring.etcd.username string
     	Etcd username.
   -alertmanager.sharding-ring.heartbeat-period duration
-    	Period at which to heartbeat to the ring. 0 = disabled. (default 15s)
+    	Period at which to heartbeat to the ring. (default 15s)
   -alertmanager.sharding-ring.heartbeat-timeout duration
-    	Heartbeat timeout after which Mimir marks alertmanagers unhealthy in the ring. Set to 0 to disable. (default 1m0s)
+    	Heartbeat timeout after which Mimir marks alertmanagers as unhealthy in the ring. (default 1m0s)
   -alertmanager.sharding-ring.instance-addr string
     	IP address to advertise in the ring. Default is auto-detected.
   -alertmanager.sharding-ring.instance-availability-zone string
@@ -346,9 +346,9 @@ Usage of ./cmd/mimir/mimir:
   -alertmanager.sharding-ring.instance-port int
     	Port to advertise in the ring (defaults to -server.grpc-listen-port).
   -alertmanager.sharding-ring.multi.mirror-enabled
-    	Mirror writes to secondary store.
+    	Mirror writes to the secondary store.
   -alertmanager.sharding-ring.multi.mirror-timeout duration
-    	Timeout for storing value to secondary store. (default 2s)
+    	Timeout for storing a value to the secondary store. (default 2s)
   -alertmanager.sharding-ring.multi.primary string
     	Primary backend storage used by multi-client.
   -alertmanager.sharding-ring.multi.secondary string
@@ -529,8 +529,6 @@ Usage of ./cmd/mimir/mimir:
     	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -blocks-storage.bucket-store.index-cache.memcached.tls-server-name string
     	Override the expected name on the server certificate.
-  -blocks-storage.bucket-store.index-header.eager-loading-startup-enabled
-    	[experimental] If enabled, store-gateway will periodically persist block IDs of lazy loaded index-headers and load them eagerly during startup. Ignored if index-header lazy loading is disabled. (default true)
   -blocks-storage.bucket-store.index-header.lazy-loading-concurrency int
     	Maximum number of concurrent index header loads across all tenants. If set to 0, concurrency is unlimited. (default 4)
   -blocks-storage.bucket-store.index-header.lazy-loading-concurrency-queue-timeout duration
@@ -766,13 +764,13 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.tsdb.bigger-out-of-order-blocks-for-old-samples
     	[experimental] When enabled, ingester produces 24h blocks for out-of-order data that is before the current day, instead of the usual 2h blocks.
   -blocks-storage.tsdb.block-postings-for-matchers-cache-force
-    	[experimental] Force the cache to be used for postings for matchers in compacted blocks, even if it's not a concurrent (query-sharding) call.
+    	Force the cache to be used for postings for matchers in compacted blocks, even if it's not a concurrent (query-sharding) call.
   -blocks-storage.tsdb.block-postings-for-matchers-cache-max-bytes int
-    	[experimental] Maximum size in bytes of the cache for postings for matchers in each compacted block when TTL is greater than 0. (default 104857600)
+    	Maximum size in bytes of the cache for postings for matchers in each compacted block when TTL is greater than 0. (default 104857600)
   -blocks-storage.tsdb.block-postings-for-matchers-cache-size int
     	[deprecated] Maximum number of entries in the cache for postings for matchers in each compacted block when TTL is greater than 0. (default 100)
   -blocks-storage.tsdb.block-postings-for-matchers-cache-ttl duration
-    	[experimental] How long to cache postings for matchers in each compacted block queried from the ingester. 0 disables the cache and just deduplicates the in-flight calls. (default 10s)
+    	How long to cache postings for matchers in each compacted block queried from the ingester. 0 disables the cache and just deduplicates the in-flight calls. (default 10s)
   -blocks-storage.tsdb.close-idle-tsdb-timeout duration
     	If TSDB has not received any data for this duration, and all blocks from TSDB have been shipped, TSDB is closed and deleted from local disk. If set to positive value, this value should be equal or higher than -querier.query-ingesters-within flag to make sure that TSDB is not closed prematurely, which could cause partial query results. 0 or negative value disables closing of idle TSDB. (default 13h0m0s)
   -blocks-storage.tsdb.dir string
@@ -796,21 +794,25 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.tsdb.head-compaction-interval duration
     	How frequently the ingester checks whether the TSDB head should be compacted and, if so, triggers the compaction. Mimir applies a jitter to the first check, and subsequent checks will happen at the configured interval. A block is only created if data covers the smallest block range. The configured interval must be between 0 and 15 minutes. (default 1m0s)
   -blocks-storage.tsdb.head-postings-for-matchers-cache-force
-    	[experimental] Force the cache to be used for postings for matchers in the Head and OOOHead, even if it's not a concurrent (query-sharding) call.
+    	Force the cache to be used for postings for matchers in the Head and OOOHead, even if it's not a concurrent (query-sharding) call.
   -blocks-storage.tsdb.head-postings-for-matchers-cache-invalidation
     	[experimental] Whether head block postings should be tracked and invalidated when they change, allowing higher TTLs to be used. When not using invalidation, cache entries will be used until removed.
   -blocks-storage.tsdb.head-postings-for-matchers-cache-max-bytes int
-    	[experimental] Maximum size in bytes of the cache for postings for matchers in the Head and OOOHead when TTL is greater than 0. (default 104857600)
+    	Maximum size, in bytes, of the cache for postings for matchers in each compacted block when the TTL is greater than 0. (default 104857600)
   -blocks-storage.tsdb.head-postings-for-matchers-cache-size int
     	[deprecated] Maximum number of entries in the cache for postings for matchers in the Head and OOOHead when TTL is greater than 0. (default 100)
   -blocks-storage.tsdb.head-postings-for-matchers-cache-ttl duration
-    	[experimental] How long to cache postings for matchers in the Head and OOOHead. 0 disables the cache and just deduplicates the in-flight calls. (default 10s)
+    	How long to cache postings for matchers in the Head and OOOHead. Set to 0 to disable the cache and only deduplicate in-flight calls. (default 10s)
   -blocks-storage.tsdb.head-postings-for-matchers-cache-versions int
     	[experimental] The size of the metric versions cache in each ingester when invalidation is enabled. (default 2097152)
   -blocks-storage.tsdb.index-lookup-planning.comparison-portion float
     	[experimental] Portion of queries where a mirrored chunk querier compares results with and without index lookup planning. Value between 0 (disabled) and 1 (all queries).
   -blocks-storage.tsdb.index-lookup-planning.enabled
     	[experimental] Controls the collection of statistics and whether to defer some vector selector matchers to sequential scans. This leads to better performance.
+  -blocks-storage.tsdb.index-lookup-planning.label-cardinality-for-larger-sketch uint
+    	Number of series for a label name above which larger count-min sketches are used for that label. (default 1000000)
+  -blocks-storage.tsdb.index-lookup-planning.label-cardinality-for-smaller-sketch uint
+    	Number of series for a label name above which smaller count-min sketches are used for that label. (default 1000)
   -blocks-storage.tsdb.index-lookup-planning.min-series-per-block-for-query-planning uint
     	Minimum number of series a block must have for query planning to be used. (default 10000)
   -blocks-storage.tsdb.index-lookup-planning.retrieved-posting-cost float
@@ -1122,9 +1124,9 @@ Usage of ./cmd/mimir/mimir:
   -compactor.ring.etcd.username string
     	Etcd username.
   -compactor.ring.heartbeat-period duration
-    	Period at which to heartbeat to the ring. 0 = disabled. (default 15s)
+    	Period at which to heartbeat to the ring. (default 15s)
   -compactor.ring.heartbeat-timeout duration
-    	Heartbeat timeout after which Mimir marks compactors unhealthy in the ring. Set to 0 to disable. (default 1m0s)
+    	Heartbeat timeout after which Mimir marks compactors as unhealthy in the ring. (default 1m0s)
   -compactor.ring.instance-addr string
     	IP address to advertise in the ring. Default is auto-detected.
   -compactor.ring.instance-enable-ipv6
@@ -1136,9 +1138,9 @@ Usage of ./cmd/mimir/mimir:
   -compactor.ring.instance-port int
     	Port to advertise in the ring (defaults to -server.grpc-listen-port).
   -compactor.ring.multi.mirror-enabled
-    	Mirror writes to secondary store.
+    	Mirror writes to the secondary store.
   -compactor.ring.multi.mirror-timeout duration
-    	Timeout for storing value to secondary store. (default 2s)
+    	Timeout for storing a value to the secondary store. (default 2s)
   -compactor.ring.multi.primary string
     	Primary backend storage used by multi-client.
   -compactor.ring.multi.secondary string
@@ -1238,9 +1240,9 @@ Usage of ./cmd/mimir/mimir:
   -distributor.ha-tracker.max-clusters int
     	Maximum number of clusters that HA tracker will keep track of for a single tenant. 0 to disable the limit. (default 100)
   -distributor.ha-tracker.multi.mirror-enabled
-    	Mirror writes to secondary store.
+    	Mirror writes to the secondary store.
   -distributor.ha-tracker.multi.mirror-timeout duration
-    	Timeout for storing value to secondary store. (default 2s)
+    	Timeout for storing a value to the secondary store. (default 2s)
   -distributor.ha-tracker.multi.primary string
     	Primary backend storage used by multi-client.
   -distributor.ha-tracker.multi.secondary string
@@ -1279,14 +1281,16 @@ Usage of ./cmd/mimir/mimir:
     	Max message size in bytes that the distributors will accept for incoming push requests to the remote write API. If exceeded, the request will be rejected. (default 104857600)
   -distributor.max-request-pool-buffer-size int
     	[experimental] Max size of the pooled buffers used for marshaling write requests. If 0, no max size is enforced.
-  -distributor.metric-relabeling-enabled
-    	[experimental] Enable metric relabeling for the tenant. This configuration option can be used to forcefully disable metric relabeling on a per-tenant basis. (default true)
   -distributor.otel-convert-histograms-to-nhcb
     	[experimental] Whether to convert OTel explicit histograms into native histograms with custom buckets.
   -distributor.otel-created-timestamp-zero-ingestion-enabled
     	[experimental] Whether to enable translation of OTel start timestamps to Prometheus zero samples in the OTLP endpoint.
   -distributor.otel-keep-identifying-resource-attributes
     	[experimental] Whether to keep identifying OTel resource attributes in the target_info metric on top of converting to job and instance labels.
+  -distributor.otel-label-name-preserve-underscores
+    	If enabled, keeps multiple consecutive underscores in label names when translating OTel attribute names. Defaults to true. (default true)
+  -distributor.otel-label-name-underscore-sanitization
+    	If enabled, prefixes label names starting with a single underscore with `key_` when translating OTel attribute names. Defaults to true. (default true)
   -distributor.otel-metric-suffixes-enabled
     	Whether to enable automatic suffixes to names of metrics ingested through OTLP.
   -distributor.otel-native-delta-ingestion
@@ -1380,9 +1384,9 @@ Usage of ./cmd/mimir/mimir:
   -distributor.ring.etcd.username string
     	Etcd username.
   -distributor.ring.heartbeat-period duration
-    	Period at which to heartbeat to the ring. 0 = disabled. (default 15s)
+    	Period at which to heartbeat to the ring. (default 15s)
   -distributor.ring.heartbeat-timeout duration
-    	Heartbeat timeout after which Mimir marks distributors unhealthy in the ring. Set to 0 to disable. (default 1m0s)
+    	Heartbeat timeout after which Mimir marks distributors as unhealthy in the ring. (default 1m0s)
   -distributor.ring.instance-addr string
     	IP address to advertise in the ring. Default is auto-detected.
   -distributor.ring.instance-enable-ipv6
@@ -1394,9 +1398,9 @@ Usage of ./cmd/mimir/mimir:
   -distributor.ring.instance-port int
     	Port to advertise in the ring (defaults to -server.grpc-listen-port).
   -distributor.ring.multi.mirror-enabled
-    	Mirror writes to secondary store.
+    	Mirror writes to the secondary store.
   -distributor.ring.multi.mirror-timeout duration
-    	Timeout for storing value to secondary store. (default 2s)
+    	Timeout for storing a value to the secondary store. (default 2s)
   -distributor.ring.multi.primary string
     	Primary backend storage used by multi-client.
   -distributor.ring.multi.secondary string
@@ -1638,9 +1642,9 @@ Usage of ./cmd/mimir/mimir:
   -ingester.partition-ring.min-partition-owners-duration duration
     	How long the minimum number of owners are enforced before a PENDING partition gets switched to ACTIVE. (default 10s)
   -ingester.partition-ring.multi.mirror-enabled
-    	Mirror writes to secondary store.
+    	Mirror writes to the secondary store.
   -ingester.partition-ring.multi.mirror-timeout duration
-    	Timeout for storing value to secondary store. (default 2s)
+    	Timeout for storing a value to the secondary store. (default 2s)
   -ingester.partition-ring.multi.primary string
     	Primary backend storage used by multi-client.
   -ingester.partition-ring.multi.secondary string
@@ -1706,9 +1710,9 @@ Usage of ./cmd/mimir/mimir:
   -ingester.read-circuit-breaker.thresholding-period duration
     	[experimental] Moving window of time that the percentage of failed requests is computed over (default 1m0s)
   -ingester.read-path-cpu-utilization-limit float
-    	[experimental] CPU utilization limit, as CPU cores, for CPU/memory utilization based read request limiting. Use 0 to disable it.
+    	CPU utilization limit, as CPU cores, for CPU/memory utilization based read request limiting. Use 0 to disable it.
   -ingester.read-path-memory-utilization-limit uint
-    	[experimental] Memory limit, in bytes, for CPU/memory utilization based read request limiting. Use 0 to disable it.
+    	Memory limit, in bytes, for CPU/memory utilization based read request limiting. Use 0 to disable it.
   -ingester.read-reactive-limiter.baseline-window-age uint
     	[experimental] The average age of baseline samples aggregated recent samples are added to (default 10)
   -ingester.read-reactive-limiter.correlation-window uint
@@ -1782,9 +1786,9 @@ Usage of ./cmd/mimir/mimir:
   -ingester.ring.final-sleep duration
     	Duration to sleep for before exiting, to ensure metrics are scraped.
   -ingester.ring.heartbeat-period duration
-    	Period at which to heartbeat to the ring. 0 = disabled. (default 15s)
+    	Period at which to heartbeat to the ring. (default 15s)
   -ingester.ring.heartbeat-timeout duration
-    	The heartbeat timeout after which ingesters are skipped for reads/writes. 0 = never (timeout disabled). This option needs be set on ingesters, distributors, queriers, and rulers when running in microservices mode. (default 1m0s)
+    	The heartbeat timeout after which ingesters are skipped for reads/writes. This option needs be set on ingesters, distributors, queriers, and rulers when running in microservices mode. (default 1m0s)
   -ingester.ring.instance-addr string
     	IP address to advertise in the ring. Default is auto-detected.
   -ingester.ring.instance-availability-zone string
@@ -1800,9 +1804,9 @@ Usage of ./cmd/mimir/mimir:
   -ingester.ring.min-ready-duration duration
     	Minimum duration to wait after the internal readiness checks have passed but before succeeding the readiness endpoint. This is used to slowdown deployment controllers (eg. Kubernetes) after an instance is ready and before they proceed with a rolling update, to give the rest of the cluster instances enough time to receive ring updates. (default 15s)
   -ingester.ring.multi.mirror-enabled
-    	Mirror writes to secondary store.
+    	Mirror writes to the secondary store.
   -ingester.ring.multi.mirror-timeout duration
-    	Timeout for storing value to secondary store. (default 2s)
+    	Timeout for storing a value to the secondary store. (default 2s)
   -ingester.ring.multi.primary string
     	Primary backend storage used by multi-client.
   -ingester.ring.multi.secondary string
@@ -1935,6 +1939,12 @@ Usage of ./cmd/mimir/mimir:
     	Log debug transport messages. Note: global log.level must be at debug level as well.
   -memberlist.watch-prefix-buffer-size int
     	Size of the buffered channel for the WatchPrefix function. (default 128)
+  -memberlist.zone-aware-routing.enabled
+    	[experimental] Enable zone-aware routing for memberlist gossip.
+  -memberlist.zone-aware-routing.instance-availability-zone string
+    	[experimental] Availability zone where this node is running.
+  -memberlist.zone-aware-routing.role string
+    	[experimental] Role of this node in the cluster. Valid values: member, bridge. (default "member")
   -modules
     	List available values that can be used as target.
   -overrides-exporter.enabled-metrics comma-separated-list-of-strings
@@ -1984,9 +1994,9 @@ Usage of ./cmd/mimir/mimir:
   -overrides-exporter.ring.etcd.username string
     	Etcd username.
   -overrides-exporter.ring.heartbeat-period duration
-    	Period at which to heartbeat to the ring. 0 = disabled. (default 15s)
+    	Period at which to heartbeat to the ring. (default 15s)
   -overrides-exporter.ring.heartbeat-timeout duration
-    	Heartbeat timeout after which Mimir marks overrides-exporters unhealthy in the ring. Set to 0 to disable. (default 1m0s)
+    	Heartbeat timeout after which Mimir marks overrides-exporters as unhealthy in the ring. (default 1m0s)
   -overrides-exporter.ring.instance-addr string
     	IP address to advertise in the ring. Default is auto-detected.
   -overrides-exporter.ring.instance-enable-ipv6
@@ -1998,9 +2008,9 @@ Usage of ./cmd/mimir/mimir:
   -overrides-exporter.ring.instance-port int
     	Port to advertise in the ring (defaults to -server.grpc-listen-port).
   -overrides-exporter.ring.multi.mirror-enabled
-    	Mirror writes to secondary store.
+    	Mirror writes to the secondary store.
   -overrides-exporter.ring.multi.mirror-timeout duration
-    	Timeout for storing value to secondary store. (default 2s)
+    	Timeout for storing a value to the secondary store. (default 2s)
   -overrides-exporter.ring.multi.primary string
     	Primary backend storage used by multi-client.
   -overrides-exporter.ring.multi.secondary string
@@ -2178,9 +2188,9 @@ Usage of ./cmd/mimir/mimir:
   -querier.ring.etcd.username string
     	Etcd username.
   -querier.ring.heartbeat-period duration
-    	Period at which to heartbeat to the ring. 0 = disabled. (default 15s)
+    	Period at which to heartbeat to the ring. (default 15s)
   -querier.ring.heartbeat-timeout duration
-    	Heartbeat timeout after which Mimir marks queriers unhealthy in the ring. Set to 0 to disable. (default 1m0s)
+    	Heartbeat timeout after which Mimir marks queriers as unhealthy in the ring. (default 1m0s)
   -querier.ring.instance-addr string
     	IP address to advertise in the ring. Default is auto-detected.
   -querier.ring.instance-enable-ipv6
@@ -2192,9 +2202,9 @@ Usage of ./cmd/mimir/mimir:
   -querier.ring.instance-port int
     	Port to advertise in the ring (defaults to -server.grpc-listen-port).
   -querier.ring.multi.mirror-enabled
-    	Mirror writes to secondary store.
+    	Mirror writes to the secondary store.
   -querier.ring.multi.mirror-timeout duration
-    	Timeout for storing value to secondary store. (default 2s)
+    	Timeout for storing a value to the secondary store. (default 2s)
   -querier.ring.multi.primary string
     	Primary backend storage used by multi-client.
   -querier.ring.multi.secondary string
@@ -2588,7 +2598,7 @@ Usage of ./cmd/mimir/mimir:
   -query-scheduler.ring.etcd.username string
     	Etcd username.
   -query-scheduler.ring.heartbeat-period duration
-    	Period at which to heartbeat to the ring. 0 = disabled. (default 15s)
+    	Period at which to heartbeat to the ring. (default 15s)
   -query-scheduler.ring.heartbeat-timeout duration
     	The heartbeat timeout after which query-schedulers are considered unhealthy within the ring. When query-scheduler ring-based service discovery is enabled, this option needs be set on query-schedulers, query-frontends and queriers. (default 1m0s)
   -query-scheduler.ring.instance-addr string
@@ -2602,9 +2612,9 @@ Usage of ./cmd/mimir/mimir:
   -query-scheduler.ring.instance-port int
     	Port to advertise in the ring (defaults to -server.grpc-listen-port).
   -query-scheduler.ring.multi.mirror-enabled
-    	Mirror writes to secondary store.
+    	Mirror writes to the secondary store.
   -query-scheduler.ring.multi.mirror-timeout duration
-    	Timeout for storing value to secondary store. (default 2s)
+    	Timeout for storing a value to the secondary store. (default 2s)
   -query-scheduler.ring.multi.primary string
     	Primary backend storage used by multi-client.
   -query-scheduler.ring.multi.secondary string
@@ -3072,9 +3082,9 @@ Usage of ./cmd/mimir/mimir:
   -ruler.ring.etcd.username string
     	Etcd username.
   -ruler.ring.heartbeat-period duration
-    	Period at which to heartbeat to the ring. 0 = disabled. (default 15s)
+    	Period at which to heartbeat to the ring. (default 15s)
   -ruler.ring.heartbeat-timeout duration
-    	Heartbeat timeout after which Mimir marks rulers unhealthy in the ring. Set to 0 to disable. (default 1m0s)
+    	Heartbeat timeout after which Mimir marks rulers as unhealthy in the ring. (default 1m0s)
   -ruler.ring.instance-addr string
     	IP address to advertise in the ring. Default is auto-detected.
   -ruler.ring.instance-enable-ipv6
@@ -3086,9 +3096,9 @@ Usage of ./cmd/mimir/mimir:
   -ruler.ring.instance-port int
     	Port to advertise in the ring (defaults to -server.grpc-listen-port).
   -ruler.ring.multi.mirror-enabled
-    	Mirror writes to secondary store.
+    	Mirror writes to the secondary store.
   -ruler.ring.multi.mirror-timeout duration
-    	Timeout for storing value to secondary store. (default 2s)
+    	Timeout for storing a value to the secondary store. (default 2s)
   -ruler.ring.multi.primary string
     	Primary backend storage used by multi-client.
   -ruler.ring.multi.secondary string
@@ -3288,9 +3298,9 @@ Usage of ./cmd/mimir/mimir:
   -store-gateway.sharding-ring.etcd.username string
     	Etcd username.
   -store-gateway.sharding-ring.heartbeat-period duration
-    	Period at which to heartbeat to the ring. 0 = disabled. (default 15s)
+    	Period at which to heartbeat to the ring. (default 15s)
   -store-gateway.sharding-ring.heartbeat-timeout duration
-    	The heartbeat timeout after which store gateways are considered unhealthy within the ring. 0 = never (timeout disabled). This option needs be set both on the store-gateway, querier and ruler when running in microservices mode. (default 1m0s)
+    	The heartbeat timeout after which store gateways are considered unhealthy within the ring. This option needs be set both on the store-gateway, querier and ruler when running in microservices mode. (default 1m0s)
   -store-gateway.sharding-ring.instance-addr string
     	IP address to advertise in the ring. Default is auto-detected.
   -store-gateway.sharding-ring.instance-availability-zone string
@@ -3304,9 +3314,9 @@ Usage of ./cmd/mimir/mimir:
   -store-gateway.sharding-ring.instance-port int
     	Port to advertise in the ring (defaults to -server.grpc-listen-port).
   -store-gateway.sharding-ring.multi.mirror-enabled
-    	Mirror writes to secondary store.
+    	Mirror writes to the secondary store.
   -store-gateway.sharding-ring.multi.mirror-timeout duration
-    	Timeout for storing value to secondary store. (default 2s)
+    	Timeout for storing a value to the secondary store. (default 2s)
   -store-gateway.sharding-ring.multi.primary string
     	Primary backend storage used by multi-client.
   -store-gateway.sharding-ring.multi.secondary string

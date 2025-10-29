@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/kv"
 	"github.com/grafana/dskit/ring"
 	"github.com/prometheus/client_golang/prometheus"
@@ -110,7 +111,7 @@ func NewLifecycler(cfg RingConfig, logger log.Logger, reg prometheus.Registerer)
 	}
 
 	promauto.With(reg).NewGauge(prometheus.GaugeOpts{
-		Name: "cortex_querier_maximum_supported_query_plan_version",
+		Name: "querier_maximum_supported_query_plan_version",
 		Help: "The maximum supported query plan version this process was compiled to support.",
 	}).Set(float64(planning.MaximumSupportedQueryPlanVersion))
 
@@ -131,7 +132,7 @@ type RingQueryPlanVersionProvider struct {
 	ring ring.ReadRing
 }
 
-func NewRingQueryPlanVersionProvider(ring ring.ReadRing, reg prometheus.Registerer) streamingpromql.QueryPlanVersionProvider {
+func NewRingQueryPlanVersionProvider(ring ring.ReadRing, reg prometheus.Registerer, logger log.Logger) streamingpromql.QueryPlanVersionProvider {
 	provider := &RingQueryPlanVersionProvider{ring: ring}
 
 	// The metrics below are only expected to be exposed by query-frontends, hence the cortex_query_frontend_ prefix.
@@ -141,6 +142,7 @@ func NewRingQueryPlanVersionProvider(ring ring.ReadRing, reg prometheus.Register
 	}, func() float64 {
 		version, err := provider.GetMaximumSupportedQueryPlanVersion(context.Background())
 		if err != nil {
+			level.Warn(logger).Log("msg", "failed to compute maximum supported query plan version", "err", err)
 			return -1
 		}
 
@@ -161,7 +163,7 @@ var errQuerierHasNoSupportedQueryPlanVersion = fmt.Errorf("one or more queriers 
 func (r *RingQueryPlanVersionProvider) GetMaximumSupportedQueryPlanVersion(ctx context.Context) (planning.QueryPlanVersion, error) {
 	instances, err := r.ring.GetAllHealthy(queryPlanVersioningOp)
 	if err != nil {
-		return 0, fmt.Errorf("could not get all queriers from the ring: %w", err)
+		return 0, fmt.Errorf("could not compute maximum supported query plan version: could not get all queriers from the ring: %w", err)
 	}
 
 	lowestVersionSeen := uint64(math.MaxUint64)
@@ -169,7 +171,7 @@ func (r *RingQueryPlanVersionProvider) GetMaximumSupportedQueryPlanVersion(ctx c
 	for _, instance := range instances.Instances {
 		version, ok := instance.Versions[MaximumSupportedQueryPlanVersion]
 		if !ok {
-			return 0, errQuerierHasNoSupportedQueryPlanVersion
+			return 0, fmt.Errorf("could not compute maximum supported query plan version: %w", errQuerierHasNoSupportedQueryPlanVersion)
 		}
 
 		lowestVersionSeen = min(lowestVersionSeen, version)

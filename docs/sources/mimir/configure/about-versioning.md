@@ -64,8 +64,6 @@ The following features are currently experimental:
   - Enable support for any UTF-8 character as part of Alertmanager configuration/API matchers and labels.
     - `-alertmanager.utf8-strict-mode-enabled`
 - Compactor
-  - In-memory cache for parsed meta.json files:
-    - `-compactor.in-memory-tenant-meta-cache-size`
   - Limit blocks processed in each compaction cycle. Blocks uploaded prior to the maximum lookback aren't processed.
     - `-compactor.max-lookback`
   - Enable the compactor to upload sparse index headers to object storage during compaction cycles.
@@ -92,8 +90,6 @@ The following features are currently experimental:
     - `/api/v1/push/influx/write` endpoint
     - `-distributor.influx-endpoint-enabled`
     - `-distributor.max-influx-request-size`
-  - Metrics relabeling
-    - `-distributor.metric-relabeling-enabled`
   - Limit exemplars per series per request
     - `-distributor.max-exemplars-per-series-per-request`
   - Limit OTLP write request byte size
@@ -140,18 +136,6 @@ The following features are currently experimental:
   - Snapshotting of in-memory TSDB data on disk when shutting down (`-blocks-storage.tsdb.memory-snapshot-on-shutdown`)
   - Out-of-order samples ingestion (`-ingester.out-of-order-time-window`)
   - Shipper labeling out-of-order blocks before upload to cloud storage (`-ingester.out-of-order-blocks-external-label-enabled`)
-  - Postings for matchers cache configuration:
-    - `-blocks-storage.tsdb.head-postings-for-matchers-cache-ttl`
-    - `-blocks-storage.tsdb.head-postings-for-matchers-cache-size` (deprecated)
-    - `-blocks-storage.tsdb.head-postings-for-matchers-cache-max-bytes`
-    - `-blocks-storage.tsdb.head-postings-for-matchers-cache-force`
-    - `-blocks-storage.tsdb.block-postings-for-matchers-cache-ttl`
-    - `-blocks-storage.tsdb.block-postings-for-matchers-cache-size` (deprecated)
-    - `-blocks-storage.tsdb.block-postings-for-matchers-cache-max-bytes`
-    - `-blocks-storage.tsdb.block-postings-for-matchers-cache-force`
-  - CPU/memory utilization based read request limiting:
-    - `-ingester.read-path-cpu-utilization-limit`
-    - `-ingester.read-path-memory-utilization-limit"`
   - Early TSDB Head compaction to reduce in-memory series:
     - `-blocks-storage.tsdb.early-head-compaction-min-in-memory-series`
     - `-blocks-storage.tsdb.early-head-compaction-min-estimated-series-reduction-percentage`
@@ -252,7 +236,6 @@ The following features are currently experimental:
   - Allow more than the default of 3 store-gateways to own recent blocks `-store-gateway.dynamic-replication`
 - API endpoints:
   - `/api/v1/user_limits`
-  - `/api/v1/cardinality/active_series`
 - Metric separation by an additionally configured group label
   - `-validation.separate-metrics-group-label`
   - `-max-separate-metrics-groups-per-user`
@@ -287,6 +270,10 @@ The following features are currently experimental:
     - Requests with invalid cluster validation labels are tracked via the `cortex_client_invalid_cluster_validation_label_requests_total` metric.
 - Preferred available zone for querying ingesters and store-gateways
   - `-querier.prefer-availability-zone`
+- Memberlist zone-aware routing
+  - `-memberlist.zone-aware-routing.enabled`
+  - `-memberlist.zone-aware-routing.instance-availability-zone`
+  - `-memberlist.zone-aware-routing.role`
 
 ## Deprecated features
 
@@ -300,6 +287,7 @@ The following features or configuration parameters are currently deprecated and 
 - Rule group configuration file
   - `evaluation_delay` field: use `query_offset` instead
 - The `-store-gateway.sharding-ring.auto-forget-enabled` is deprecated and will be removed in a future release. Set the `-store-gateway.sharding-ring.auto-forget-unhealthy-periods` flag to 0 to disable the auto-forget feature. Deprecated since Mimir 2.17.
-- Consul and etcd are deprecated as backend storage options for the HA tracker as of Mimir 3.0.
-- Use `memberlist` instead. Refer to the migration guide for instructions on migrating from Consul or etcd to `memberlist` for the HA tracker.
-- The `-distributor.otel-start-time-quiet-zero` parameter no longer has any effect and will be removed in a future release. Deprecated since Mimir 2.18.
+- The `-distributor.otel-start-time-quiet-zero` parameter no longer has any effect and will be removed in a future release. Deprecated since Mimir 3.0.
+- Postings for matchers cache size (number of entries) configuration:
+  - `-blocks-storage.tsdb.head-postings-for-matchers-cache-size`
+  - `-blocks-storage.tsdb.block-postings-for-matchers-cache-size`

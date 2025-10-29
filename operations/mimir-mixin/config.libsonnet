@@ -195,6 +195,7 @@
     per_cluster_label: 'cluster',
     per_namespace_label: 'namespace',
     per_job_label: 'job',
+    per_query_path_label: 'container',  // Used to differentiate between queriers, query-frontends and query-schedulers in different query paths (eg. queriers in ordinary query path and queriers in dedicated ruler path).
     per_component_loki_label: 'name',
 
     // Grouping labels, to uniquely identify and group by {jobs, clusters}

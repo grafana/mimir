@@ -160,7 +160,6 @@ type Limits struct {
 	EnforceMetadataMetricName           bool                              `yaml:"enforce_metadata_metric_name" json:"enforce_metadata_metric_name" category:"advanced"`
 	IngestionTenantShardSize            int                               `yaml:"ingestion_tenant_shard_size" json:"ingestion_tenant_shard_size"`
 	MetricRelabelConfigs                []*relabel.Config                 `yaml:"metric_relabel_configs,omitempty" json:"metric_relabel_configs,omitempty" doc:"nocli|description=List of metric relabel configurations. Note that in most situations, it is more effective to use metrics relabeling directly in the Prometheus server, e.g. remote_write.write_relabel_configs. Labels available during the relabeling phase and cleaned afterwards: __meta_tenant_id" category:"experimental"`
-	MetricRelabelingEnabled             bool                              `yaml:"metric_relabeling_enabled" json:"metric_relabeling_enabled" category:"experimental"`
 
 	IngestionArtificialDelay                                         model.Duration `yaml:"ingestion_artificial_delay" json:"ingestion_artificial_delay" category:"experimental" doc:"hidden"`
 	IngestionArtificialDelayConditionForTenantsWithLessThanMaxSeries int            `yaml:"ingestion_artificial_delay_condition_for_tenants_with_less_than_max_series" json:"ingestion_artificial_delay_condition_for_tenants_with_less_than_max_series" category:"experimental" doc:"hidden"`
@@ -272,7 +271,6 @@ type Limits struct {
 	CompactorBlockUploadValidationEnabled bool           `yaml:"compactor_block_upload_validation_enabled" json:"compactor_block_upload_validation_enabled"`
 	CompactorBlockUploadVerifyChunks      bool           `yaml:"compactor_block_upload_verify_chunks" json:"compactor_block_upload_verify_chunks"`
 	CompactorBlockUploadMaxBlockSizeBytes int64          `yaml:"compactor_block_upload_max_block_size_bytes" json:"compactor_block_upload_max_block_size_bytes" category:"advanced"`
-	CompactorInMemoryTenantMetaCacheSize  int            `yaml:"compactor_in_memory_tenant_meta_cache_size" json:"compactor_in_memory_tenant_meta_cache_size" category:"experimental" doc:"hidden"`
 	CompactorMaxLookback                  model.Duration `yaml:"compactor_max_lookback" json:"compactor_max_lookback" category:"experimental"`
 	CompactorMaxPerBlockUploadConcurrency int            `yaml:"compactor_max_per_block_upload_concurrency" json:"compactor_max_per_block_upload_concurrency" category:"advanced"`
 
@@ -312,6 +310,8 @@ type Limits struct {
 	OTelPromoteScopeMetadata                 bool                         `yaml:"otel_promote_scope_metadata" json:"otel_promote_scope_metadata" category:"experimental"`
 	OTelNativeDeltaIngestion                 bool                         `yaml:"otel_native_delta_ingestion" json:"otel_native_delta_ingestion" category:"experimental"`
 	OTelTranslationStrategy                  OTelTranslationStrategyValue `yaml:"otel_translation_strategy" json:"otel_translation_strategy" category:"experimental"`
+	OTelLabelNameUnderscoreSanitization      bool                         `yaml:"otel_label_name_underscore_sanitization" json:"otel_label_name_underscore_sanitization" category:"advanced"`
+	OTelLabelNamePreserveMultipleUnderscores bool                         `yaml:"otel_label_name_preserve_multiple_underscores" json:"otel_label_name_preserve_multiple_underscores" category:"advanced"`
 
 	// Ingest storage.
 	IngestStorageReadConsistency       string `yaml:"ingest_storage_read_consistency" json:"ingest_storage_read_consistency" category:"experimental"`
@@ -359,7 +359,6 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.Var(&l.CreationGracePeriod, CreationGracePeriodFlag, "Controls how far into the future incoming samples and exemplars are accepted compared to the wall clock. Any sample or exemplar will be rejected if its timestamp is greater than '(now + creation_grace_period)'. This configuration is enforced in the distributor and ingester.")
 	f.Var(&l.PastGracePeriod, PastGracePeriodFlag, "Controls how far into the past incoming samples and exemplars are accepted compared to the wall clock. Any sample or exemplar will be rejected if its timestamp is lower than '(now - OOO window - past_grace_period)'. This configuration is enforced in the distributor and ingester. 0 to disable.")
 	f.BoolVar(&l.EnforceMetadataMetricName, "validation.enforce-metadata-metric-name", true, "Enforce every metadata has a metric name.")
-	f.BoolVar(&l.MetricRelabelingEnabled, "distributor.metric-relabeling-enabled", true, "Enable metric relabeling for the tenant. This configuration option can be used to forcefully disable metric relabeling on a per-tenant basis.")
 	f.BoolVar(&l.OTelMetricSuffixesEnabled, "distributor.otel-metric-suffixes-enabled", false, "Whether to enable automatic suffixes to names of metrics ingested through OTLP.")
 	f.BoolVar(&l.OTelCreatedTimestampZeroIngestionEnabled, "distributor.otel-created-timestamp-zero-ingestion-enabled", false, "Whether to enable translation of OTel start timestamps to Prometheus zero samples in the OTLP endpoint.")
 	f.Var(&l.PromoteOTelResourceAttributes, "distributor.otel-promote-resource-attributes", "Optionally specify OTel resource attributes to promote to labels.")
@@ -368,6 +367,8 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&l.OTelPromoteScopeMetadata, "distributor.otel-promote-scope-metadata", false, "Whether to promote OTel scope metadata (scope name, version, schema URL, attributes) to corresponding metric labels, prefixed with otel_scope_.")
 	f.BoolVar(&l.OTelNativeDeltaIngestion, "distributor.otel-native-delta-ingestion", false, "Whether to enable native ingestion of delta OTLP metrics, which will store the raw delta sample values without conversion. If disabled, delta metrics will be rejected. Delta support is in an early stage of development. The ingestion and querying process is likely to change over time.")
 	f.Var(&l.OTelTranslationStrategy, "distributor.otel-translation-strategy", fmt.Sprintf("Translation strategy to apply in OTLP endpoint for metric and label names. If unspecified (the default), the strategy is derived from -validation.name-validation-scheme and -distributor.otel-metric-suffixes-enabled. Supported values: %s.", strings.Join([]string{`""`, string(otlptranslator.UnderscoreEscapingWithSuffixes), string(otlptranslator.UnderscoreEscapingWithoutSuffixes), string(otlptranslator.NoUTF8EscapingWithSuffixes), string(otlptranslator.NoTranslation)}, ", ")))
+	f.BoolVar(&l.OTelLabelNameUnderscoreSanitization, "distributor.otel-label-name-underscore-sanitization", true, "If enabled, prefixes label names starting with a single underscore with `key_` when translating OTel attribute names. Defaults to true.")
+	f.BoolVar(&l.OTelLabelNamePreserveMultipleUnderscores, "distributor.otel-label-name-preserve-underscores", true, "If enabled, keeps multiple consecutive underscores in label names when translating OTel attribute names. Defaults to true.")
 
 	f.Var(&l.IngestionArtificialDelay, "distributor.ingestion-artificial-delay", "Target ingestion delay to apply to all tenants. If set to a non-zero value, the distributor will artificially delay ingestion time-frame by the specified duration by computing the difference between actual ingestion and the target. There is no delay on actual ingestion of samples, it is only the response back to the client.")
 	f.IntVar(&l.IngestionArtificialDelayConditionForTenantsWithLessThanMaxSeries, "distributor.ingestion-artificial-delay-condition-for-tenants-with-less-than-max-series", 0, "Condition to select tenants for which -distributor.ingestion-artificial-delay-duration-for-tenants-with-less-than-max-series should be applied.")
@@ -461,7 +462,6 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&l.CompactorBlockUploadValidationEnabled, "compactor.block-upload-validation-enabled", true, "Enable block upload validation for the tenant.")
 	f.BoolVar(&l.CompactorBlockUploadVerifyChunks, "compactor.block-upload-verify-chunks", true, "Verify chunks when uploading blocks via the upload API for the tenant.")
 	f.Int64Var(&l.CompactorBlockUploadMaxBlockSizeBytes, "compactor.block-upload-max-block-size-bytes", 0, "Maximum size in bytes of a block that is allowed to be uploaded or validated. 0 = no limit.")
-	f.IntVar(&l.CompactorInMemoryTenantMetaCacheSize, "compactor.in-memory-tenant-meta-cache-size", 0, "Size of per-tenant in-memory cache for parsed meta.json files. This is useful when meta.json files are big and parsing is expensive. Small meta.json files are not cached. 0 means this cache is disabled.")
 	f.Var(&l.CompactorMaxLookback, "compactor.max-lookback", "Blocks uploaded before the lookback aren't considered in compactor cycles. If set, this value should be larger than all values in `-blocks-storage.tsdb.block-ranges-period`. A value of 0s means that all blocks are considered regardless of their upload time.")
 	f.IntVar(&l.CompactorMaxPerBlockUploadConcurrency, "compactor.max-per-block-upload-concurrency", 8, "Maximum number of TSDB segment files that the compactor can upload concurrently per block.")
 
@@ -1084,10 +1084,6 @@ func (o *Overrides) CompactorTenantShardSize(userID string) int {
 	return o.getOverridesForUser(userID).CompactorTenantShardSize
 }
 
-func (o *Overrides) CompactorInMemoryTenantMetaCacheSize(userID string) int {
-	return o.getOverridesForUser(userID).CompactorInMemoryTenantMetaCacheSize
-}
-
 func (o *Overrides) CompactorMaxPerBlockUploadConcurrency(userID string) int {
 	return o.getOverridesForUser(userID).CompactorMaxPerBlockUploadConcurrency
 }
@@ -1166,10 +1162,6 @@ func (o *Overrides) MetricRelabelConfigs(userID string) []*relabel.Config {
 		relabelConfigs[i].NameValidationScheme = validationScheme
 	}
 	return relabelConfigs
-}
-
-func (o *Overrides) MetricRelabelingEnabled(userID string) bool {
-	return o.getOverridesForUser(userID).MetricRelabelingEnabled
 }
 
 // NativeHistogramsIngestionEnabled returns whether to ingest native histograms in the ingester
@@ -1512,6 +1504,14 @@ func (o *Overrides) OTelTranslationStrategy(tenantID string) otlptranslator.Tran
 		panic(fmt.Errorf("unrecognized name validation scheme: %s", scheme))
 	}
 	return strategy
+}
+
+func (o *Overrides) OTelLabelNameUnderscoreSanitization(tenantID string) bool {
+	return o.getOverridesForUser(tenantID).OTelLabelNameUnderscoreSanitization
+}
+
+func (o *Overrides) OTelLabelNamePreserveMultipleUnderscores(tenantID string) bool {
+	return o.getOverridesForUser(tenantID).OTelLabelNamePreserveMultipleUnderscores
 }
 
 // DistributorIngestionArtificialDelay returns the artificial ingestion latency for a given user.
