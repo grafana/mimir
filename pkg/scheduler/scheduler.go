@@ -171,6 +171,7 @@ func NewScheduler(cfg Config, limits Limits, log log.Logger, registerer promethe
 		s.queueLength,
 		s.discardedRequests,
 		enqueueDuration,
+		&s.schedulerInflightRequests,
 		querierInflightRequestsMetric,
 	)
 	if err != nil {
@@ -247,7 +248,7 @@ func (s *Scheduler) FrontendLoop(frontend schedulerpb.SchedulerForFrontend_Front
 
 	// We stop accepting new queries in Stopping state. By returning quickly, we disconnect frontends, which in turns
 	// cancels all their queries.
-	for s.State() == services.Running {
+	for s.isRunning() {
 		msg, err := frontend.Recv()
 		if err != nil {
 			// No need to report this as error, it is expected when query-frontend performs SendClose() (as frontendSchedulerWorker does).
@@ -255,10 +256,6 @@ func (s *Scheduler) FrontendLoop(frontend schedulerpb.SchedulerForFrontend_Front
 				return nil
 			}
 			return err
-		}
-
-		if s.State() != services.Running {
-			break // break out of the loop, and send SHUTTING_DOWN message.
 		}
 
 		var resp *schedulerpb.SchedulerToFrontend
@@ -687,7 +684,12 @@ func (s *Scheduler) running(ctx context.Context) error {
 // Close the Scheduler.
 func (s *Scheduler) stopping(_ error) error {
 	// This will also stop the requests queue, which stop accepting new requests and errors out any pending requests.
-	return services.StopManagerAndAwaitStopped(context.Background(), s.subservices)
+	err := services.StopManagerAndAwaitStopped(context.Background(), s.subservices)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func (s *Scheduler) cleanupMetricsForInactiveUser(user string) {

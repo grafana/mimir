@@ -119,6 +119,7 @@ type RequestQueue struct {
 
 	stopRequested chan struct{} // Written to by stop() to wake up dispatcherLoop() in response to a stop request.
 	stopCompleted chan struct{} // Closed by dispatcherLoop() after a stop is requested and the dispatcher has stopped.
+	isStopping    *atomic.Bool
 
 	requestsToEnqueue                     chan requestToEnqueue
 	requestsSent                          chan *SchedulerRequest
@@ -127,6 +128,7 @@ type RequestQueue struct {
 	waitingDequeueRequests                chan *QuerierWorkerDequeueRequest
 	waitingDequeueRequestsToDispatch      *list.List
 	waitingDequeueRequestsToDispatchCount *atomic.Int64
+	schedulerInflightRequests             *map[RequestKey]*SchedulerRequest
 
 	// QueryComponentUtilization encapsulates tracking requests from the time they are forwarded to a querier
 	// to the time are completed by the querier or failed due to cancel, timeout, or disconnect.
@@ -219,6 +221,7 @@ func NewRequestQueue(
 	queueLength *prometheus.GaugeVec,
 	discardedRequests *prometheus.CounterVec,
 	enqueueDuration prometheus.Histogram,
+	schedulerInflightRequests *map[RequestKey]*SchedulerRequest,
 	querierInflightRequestsMetric *prometheus.SummaryVec,
 ) (*RequestQueue, error) {
 	queryComponentCapacity, err := NewQueryComponentUtilization(querierInflightRequestsMetric)
@@ -241,6 +244,7 @@ func NewRequestQueue(
 		// channels must not be buffered so that we can detect when dispatcherLoop() has finished.
 		stopRequested: make(chan struct{}),
 		stopCompleted: make(chan struct{}),
+		isStopping:    atomic.NewBool(false),
 
 		requestsToEnqueue:                     make(chan requestToEnqueue),
 		requestsSent:                          make(chan *SchedulerRequest),
@@ -249,6 +253,7 @@ func NewRequestQueue(
 		waitingDequeueRequests:                make(chan *QuerierWorkerDequeueRequest),
 		waitingDequeueRequestsToDispatch:      list.New(),
 		waitingDequeueRequestsToDispatchCount: atomic.NewInt64(0),
+		schedulerInflightRequests:             schedulerInflightRequests,
 
 		QueryComponentUtilization: queryComponentCapacity,
 		queueBroker:               newQueueBroker(maxOutstandingPerTenant, forgetDelay),
@@ -293,15 +298,13 @@ func (q *RequestQueue) running(ctx context.Context) error {
 }
 
 func (q *RequestQueue) dispatcherLoop() {
-	stopping := false
-
 	for {
 		needToDispatchQueries := false
 
 		select {
 		case <-q.stopRequested:
 			// Nothing much to do here - fall through to the stop logic below to see if we can stop immediately.
-			stopping = true
+			q.isStopping.Store(true)
 		case querierWorkerOp := <-q.querierWorkerOperations:
 			// Need to attempt to dispatch queries only if querier-worker operation results in a resharding
 			needToDispatchQueries = q.processQuerierWorkerOperation(querierWorkerOp)
@@ -336,27 +339,40 @@ func (q *RequestQueue) dispatcherLoop() {
 			}
 		}
 
-		// if we have received a signal to stop, we continue to dispatch queries until
-		// the queue is empty or until we have no more connected querier workers.
-		if stopping && (q.queueBroker.isEmpty() || q.connectedQuerierWorkers.Load() == 0) {
-			// tell any waiting querier connections that nothing is coming
+		if q.isStopping.Load() && q.connectedQuerierWorkers.Load() == 0 {
+			if q.queueBroker.isEmpty() && len(*q.schedulerInflightRequests) == 0 {
+				level.Info(q.log).Log("msg", "shutting down dispatcher loop: there are no connected workers and the queue is empty")
+
+				// We are done.
+				close(q.stopCompleted)
+				return
+			}
+
+			level.Warn(q.log).Log("msg", "shutting down dispatcher loop: there are no connected workers but the queue is not empty, these requests will be abandoned", "queueBroker_count", q.queueBroker.itemCount(), "scheduler_inflight", len(*q.schedulerInflightRequests))
+
+			// We are done.
+			close(q.stopCompleted)
+			return
+		}
+
+		if q.isStopping.Load() && (len(*q.schedulerInflightRequests) == 0 && q.queueBroker.isEmpty()) {
+			level.Debug(q.log).Log("msg", "shutting down dispatcher loop: there are no requests pending")
+
 			currentElement := q.waitingDequeueRequestsToDispatch.Front()
 
 			for currentElement != nil {
 				waitingDequeueReq := currentElement.Value.(*QuerierWorkerDequeueRequest)
 				waitingDequeueReq.sendError(ErrStopped)
+
+				level.Debug(q.log).Log("msg", "shutting down dispatcher loop: cancelled dequeue request", "querier_id", waitingDequeueReq.QuerierID, "worker_id", waitingDequeueReq.WorkerID)
+
 				nextElement := currentElement.Next()
 				q.waitingDequeueRequestsToDispatchCount.Dec()
 				q.waitingDequeueRequestsToDispatch.Remove(currentElement)
 				currentElement = nextElement
 			}
 
-			if !q.queueBroker.isEmpty() {
-				// All queriers have disconnected, but we still have requests in the queue.
-				// Without any consumers we have nothing to do but stop the RequestQueue.
-				// This should never happen, but if this does happen, we want to know about it.
-				level.Warn(q.log).Log("msg", "shutting down dispatcher loop: have no connected querier workers, but request queue is not empty, so these requests will be abandoned")
-			}
+			level.Info(q.log).Log("msg", "shutting down dispatcher loop: all query dequeue requests closed")
 
 			// We are done.
 			close(q.stopCompleted)
@@ -603,6 +619,7 @@ func (q *RequestQueue) processRegisterQuerierWorkerConn(conn *QuerierWorkerConn)
 }
 
 func (q *RequestQueue) processUnregisterQuerierWorkerConn(conn *QuerierWorkerConn) (resharded bool) {
+	level.Info(q.log).Log("msg", "unregistering querier worker", "querier_id", conn.QuerierID, "worker_id", conn.WorkerID)
 	q.connectedQuerierWorkers.Dec()
 	return q.queueBroker.removeQuerierWorkerConn(conn, time.Now())
 }
