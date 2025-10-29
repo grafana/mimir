@@ -20,7 +20,6 @@ import (
 	"github.com/DmitriyVTitov/size"
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/user"
-	"github.com/grafana/mimir/pkg/ingester/lookupplan"
 	"github.com/prometheus/common/promslog"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb"
@@ -28,6 +27,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/ingester"
 	"github.com/grafana/mimir/pkg/ingester/client"
+	"github.com/grafana/mimir/pkg/ingester/lookupplan"
 	"github.com/grafana/mimir/pkg/streamingpromql/benchmarks"
 	"github.com/grafana/mimir/pkg/util/bench"
 )
