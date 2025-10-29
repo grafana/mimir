@@ -476,6 +476,232 @@ func TestRangeVectorExecutionResponse_ExpectedSeriesMismatch(t *testing.T) {
 	require.Zerof(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes(), "buffers should be released when closing response, have: %v", memoryConsumptionTracker.DescribeCurrentMemoryConsumption())
 }
 
+func TestRangeVectorExecutionResponse_PointSliceLengthNotAPowerOfTwo(t *testing.T) {
+	stream := &mockResponseStream{
+		responses: []mockResponse{
+			{
+				msg: newSeriesMetadata(
+					false,
+					labels.FromStrings("series", "1"),
+				),
+			},
+			{
+				msg: newRangeVectorStepData(
+					0,
+					1000,
+					500,
+					6000,
+					generateFPoints(1000, 3, 0),
+					generateHPoints(4000, 3, 0),
+				),
+			},
+		},
+	}
+
+	ctx := context.Background()
+	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
+
+	response := newRangeVectorExecutionResponse(stream, memoryConsumptionTracker)
+	series, err := response.GetSeriesMetadata(ctx)
+	require.NoError(t, err)
+
+	expectedSeries := []types.SeriesMetadata{
+		{Labels: labels.FromStrings("series", "1")},
+	}
+	require.Equal(t, expectedSeries, series)
+	require.NotZero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
+	types.SeriesMetadataSlicePool.Put(&series, memoryConsumptionTracker)
+	require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
+
+	require.NoError(t, response.AdvanceToNextSeries(ctx))
+	data, err := response.GetNextStepSamples(ctx)
+	require.NoError(t, err)
+	require.Equal(t, int64(1000), data.StepT)
+	require.Equal(t, int64(500), data.RangeStart)
+	require.Equal(t, int64(6000), data.RangeEnd)
+	requireEqualFPointRingBuffer(t, data.Floats, generateFPoints(1000, 3, 0))
+	requireEqualHPointRingBuffer(t, data.Histograms, generateHPoints(4000, 3, 0))
+	require.NotZero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
+
+	response.Close()
+	require.True(t, stream.closed)
+	require.Zerof(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes(), "buffers should be released when closing response, have: %v", memoryConsumptionTracker.DescribeCurrentMemoryConsumption())
+}
+
+func TestEnsureFPointSliceCapacityIsPowerOfTwo(t *testing.T) {
+	testCases := map[string]struct {
+		input            []promql.FPoint
+		expectedCapacity int
+	}{
+		"empty slice": {
+			input:            nil,
+			expectedCapacity: 0,
+		},
+		"slice with length 0 and capacity 0": {
+			input:            make([]promql.FPoint, 0, 0),
+			expectedCapacity: 0,
+		},
+		"slice with length 0 and capacity 1": {
+			input:            make([]promql.FPoint, 0, 1),
+			expectedCapacity: 1,
+		},
+		"slice with length 1 and capacity 1": {
+			input:            make([]promql.FPoint, 1, 1),
+			expectedCapacity: 1,
+		},
+		"slice with length 0 and capacity 2": {
+			input:            make([]promql.FPoint, 0, 2),
+			expectedCapacity: 2,
+		},
+		"slice with length 1 and capacity 2": {
+			input:            make([]promql.FPoint, 1, 2),
+			expectedCapacity: 2,
+		},
+		"slice with length 2 and capacity 2": {
+			input:            make([]promql.FPoint, 2, 2),
+			expectedCapacity: 2,
+		},
+		"slice with length 2 and capacity 3": {
+			input:            make([]promql.FPoint, 2, 3),
+			expectedCapacity: 4,
+		},
+		"slice with length 3 and capacity 3": {
+			input:            make([]promql.FPoint, 3, 3),
+			expectedCapacity: 4,
+		},
+		"slice with length 4 and capacity 4": {
+			input:            make([]promql.FPoint, 4, 4),
+			expectedCapacity: 4,
+		},
+		"slice with length 5 and capacity 5": {
+			input:            make([]promql.FPoint, 5, 5),
+			expectedCapacity: 8,
+		},
+		"slice with length 6 and capacity 6": {
+			input:            make([]promql.FPoint, 6, 6),
+			expectedCapacity: 8,
+		},
+		"slice with length 7 and capacity 7": {
+			input:            make([]promql.FPoint, 7, 7),
+			expectedCapacity: 8,
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			for idx := range testCase.input {
+				testCase.input[idx].T = int64(idx)
+				testCase.input[idx].F = float64(idx * 10)
+			}
+
+			memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(context.Background(), 0, nil, "")
+			err := memoryConsumptionTracker.IncreaseMemoryConsumption(uint64(cap(testCase.input))*types.FPointSize, limiter.FPointSlices)
+			require.NoError(t, err)
+
+			output, err := ensureFPointSliceCapacityIsPowerOfTwo(testCase.input, memoryConsumptionTracker)
+			require.NoError(t, err)
+			require.Len(t, output, len(testCase.input), "output length should be the same as the provided slice")
+			require.Equal(t, testCase.expectedCapacity, cap(output))
+			require.Equal(t, testCase.input, output, "output should contain the same elements as the provided slice")
+
+			require.Equal(t, uint64(testCase.expectedCapacity)*types.FPointSize, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
+
+			if cap(testCase.input) == testCase.expectedCapacity {
+				require.Equal(t, uint64(testCase.expectedCapacity)*types.FPointSize, memoryConsumptionTracker.PeakEstimatedMemoryConsumptionBytes(), "should not allocate a new slice if the provided slice already has a capacity that is a power of two")
+			} else {
+				require.Equal(t, uint64(testCase.expectedCapacity+cap(testCase.input))*types.FPointSize, memoryConsumptionTracker.PeakEstimatedMemoryConsumptionBytes())
+			}
+		})
+	}
+}
+
+func TestEnsureHPointSliceCapacityIsPowerOfTwo(t *testing.T) {
+	testCases := map[string]struct {
+		input            []promql.HPoint
+		expectedCapacity int
+	}{
+		"empty slice": {
+			input:            nil,
+			expectedCapacity: 0,
+		},
+		"slice with length 0 and capacity 0": {
+			input:            make([]promql.HPoint, 0, 0),
+			expectedCapacity: 0,
+		},
+		"slice with length 0 and capacity 1": {
+			input:            make([]promql.HPoint, 0, 1),
+			expectedCapacity: 1,
+		},
+		"slice with length 1 and capacity 1": {
+			input:            make([]promql.HPoint, 1, 1),
+			expectedCapacity: 1,
+		},
+		"slice with length 0 and capacity 2": {
+			input:            make([]promql.HPoint, 0, 2),
+			expectedCapacity: 2,
+		},
+		"slice with length 1 and capacity 2": {
+			input:            make([]promql.HPoint, 1, 2),
+			expectedCapacity: 2,
+		},
+		"slice with length 2 and capacity 2": {
+			input:            make([]promql.HPoint, 2, 2),
+			expectedCapacity: 2,
+		},
+		"slice with length 2 and capacity 3": {
+			input:            make([]promql.HPoint, 2, 3),
+			expectedCapacity: 4,
+		},
+		"slice with length 3 and capacity 3": {
+			input:            make([]promql.HPoint, 3, 3),
+			expectedCapacity: 4,
+		},
+		"slice with length 4 and capacity 4": {
+			input:            make([]promql.HPoint, 4, 4),
+			expectedCapacity: 4,
+		},
+		"slice with length 5 and capacity 5": {
+			input:            make([]promql.HPoint, 5, 5),
+			expectedCapacity: 8,
+		},
+		"slice with length 6 and capacity 6": {
+			input:            make([]promql.HPoint, 6, 6),
+			expectedCapacity: 8,
+		},
+		"slice with length 7 and capacity 7": {
+			input:            make([]promql.HPoint, 7, 7),
+			expectedCapacity: 8,
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			for idx := range testCase.input {
+				testCase.input[idx].T = int64(idx)
+				testCase.input[idx].H = &histogram.FloatHistogram{Count: float64(idx * 10)}
+			}
+
+			memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(context.Background(), 0, nil, "")
+			err := memoryConsumptionTracker.IncreaseMemoryConsumption(uint64(cap(testCase.input))*types.HPointSize, limiter.HPointSlices)
+			require.NoError(t, err)
+
+			output, err := ensureHPointSliceCapacityIsPowerOfTwo(testCase.input, memoryConsumptionTracker)
+			require.NoError(t, err)
+			require.Len(t, output, len(testCase.input), "output length should be the same as the provided slice")
+			require.Equal(t, testCase.expectedCapacity, cap(output))
+			require.Equal(t, testCase.input, output, "output should contain the same elements as the provided slice")
+
+			require.Equal(t, uint64(testCase.expectedCapacity)*types.HPointSize, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
+
+			if cap(testCase.input) == testCase.expectedCapacity {
+				require.Equal(t, uint64(testCase.expectedCapacity)*types.HPointSize, memoryConsumptionTracker.PeakEstimatedMemoryConsumptionBytes(), "should not allocate a new slice if the provided slice already has a capacity that is a power of two")
+			} else {
+				require.Equal(t, uint64(testCase.expectedCapacity+cap(testCase.input))*types.HPointSize, memoryConsumptionTracker.PeakEstimatedMemoryConsumptionBytes())
+			}
+		})
+	}
+}
+
 func TestExecutionResponses_GetEvaluationInfo(t *testing.T) {
 	responseCreators := map[string]func(stream responseStream, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) remoteexec.RemoteExecutionResponse{
 		"scalar": func(stream responseStream, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) remoteexec.RemoteExecutionResponse {

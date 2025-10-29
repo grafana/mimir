@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math/bits"
 	"sync"
 	"time"
 
@@ -280,6 +281,14 @@ func (r *rangeVectorExecutionResponse) GetNextStepSamples(ctx context.Context) (
 		return nil, err
 	}
 
+	if fPoints, err = ensureFPointSliceCapacityIsPowerOfTwo(fPoints, r.memoryConsumptionTracker); err != nil {
+		return nil, err
+	}
+
+	if hPoints, err = ensureHPointSliceCapacityIsPowerOfTwo(hPoints, r.memoryConsumptionTracker); err != nil {
+		return nil, err
+	}
+
 	if err := r.floats.Use(fPoints); err != nil {
 		return nil, err
 	}
@@ -437,6 +446,48 @@ func accountForHPointMemoryConsumption(d []promql.HPoint, memoryConsumptionTrack
 	}
 
 	return nil
+}
+
+func ensureFPointSliceCapacityIsPowerOfTwo(d []promql.FPoint, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) ([]promql.FPoint, error) {
+	if pool.IsPowerOfTwo(cap(d)) {
+		return d, nil
+	}
+
+	nextPowerOfTwo := 1 << bits.Len(uint(cap(d)-1))
+	newSlice, err := types.FPointSlicePool.Get(nextPowerOfTwo, memoryConsumptionTracker)
+	if err != nil {
+		return nil, err
+	}
+
+	newSlice = newSlice[:len(d)]
+	copy(newSlice, d)
+
+	// Don't return the old slice to the pool, but update the memory consumption estimate.
+	// The pool won't use it because it's not a power of two, so there's no point in calling Put() on it.
+	memoryConsumptionTracker.DecreaseMemoryConsumption(uint64(cap(d))*types.FPointSize, limiter.FPointSlices)
+
+	return newSlice, nil
+}
+
+func ensureHPointSliceCapacityIsPowerOfTwo(d []promql.HPoint, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) ([]promql.HPoint, error) {
+	if pool.IsPowerOfTwo(cap(d)) {
+		return d, nil
+	}
+
+	nextPowerOfTwo := 1 << bits.Len(uint(cap(d)-1))
+	newSlice, err := types.HPointSlicePool.Get(nextPowerOfTwo, memoryConsumptionTracker)
+	if err != nil {
+		return nil, err
+	}
+
+	newSlice = newSlice[:len(d)]
+	copy(newSlice, d)
+
+	// Don't return the old slice to the pool, but update the memory consumption estimate.
+	// The pool won't use it because it's not a power of two, so there's no point in calling Put() on it.
+	memoryConsumptionTracker.DecreaseMemoryConsumption(uint64(cap(d))*types.HPointSize, limiter.HPointSlices)
+
+	return newSlice, nil
 }
 
 type eagerLoadingResponseStream struct {
