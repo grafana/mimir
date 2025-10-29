@@ -650,9 +650,10 @@ parquet_converter:
 
   # (advanced) Time-to-live for locks acquired by the cache-based load balancer
   # (used when load-balancing-strategy is 'locking'). Cache entries are
-  # refreshed periodically to avoid expiration before processing is complete.
-  # This TTL should be relevant only in case of crashes.
-  # CLI flag: -parquet-converter.lock-ttl
+  # refreshed periodically to avoid expiration before processing is complete. A
+  # lower TTL means more frequent refreshes, but quicker unlocking of blocks if
+  # an instance crashes.
+  # CLI flag: -parquet-converter.locking.lock-ttl
   [lock_ttl: <duration> | default = 5m]
 
 # The common block holds configurations that configure multiple components at a

@@ -2055,10 +2055,10 @@ Usage of ./cmd/mimir/mimir:
     	Comma-separated list of tenants that can have their TSDB blocks converted into Parquet. If specified, the Parquet-converter only converts these tenants. Otherwise, it converts all tenants. Subject to sharding.
   -parquet-converter.load-balancing-strategy string
     	The strategy to use to balance blocks to convert across multiple parquet-converter instances. Supported values: ring, locking. (default "ring")
-  -parquet-converter.lock-ttl duration
-    	Time-to-live for locks acquired by the cache-based load balancer (used when load-balancing-strategy is 'locking'). Cache entries are refreshed periodically to avoid expiration before processing is complete. This TTL should be relevant only in case of crashes. (default 5m0s)
   -parquet-converter.locking.backend string
     	Backend for parquet-converter locking cache (used when load-balancing-strategy is 'locking'). Supported values: memcached.
+  -parquet-converter.locking.lock-ttl duration
+    	Time-to-live for locks acquired by the cache-based load balancer (used when load-balancing-strategy is 'locking'). Cache entries are refreshed periodically to avoid expiration before processing is complete. A lower TTL means more frequent refreshes, but quicker unlocking of blocks if an instance crashes. (default 5m0s)
   -parquet-converter.locking.memcached.addresses comma-separated-list-of-strings
     	Comma-separated list of memcached addresses. Each address can be an IP address, hostname, or an entry specified in the DNS Service Discovery format.
   -parquet-converter.locking.memcached.connect-timeout duration
