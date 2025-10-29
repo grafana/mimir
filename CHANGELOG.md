@@ -46,6 +46,7 @@
 * [BUGFIX] Querier: Fix issue where cancelled queries may cause a `error notifying scheduler about finished query` message to be logged. #13186
 * [BUGFIX] Memcached: Ignore invalid responses when discovering cache servers using `dnssrv+` or `dnssrvnoa+` service discovery prefixes. #13194
 * [BUGFIX] Querier: Fix issue where evaluation metrics and logs aren't emitted if remote execution is enabled. #13207
+* [BUGFIX] Query-frontend: Fix issue where queries containing subqueries could fail with `slice capacity must be a power of two, but is X` if remote execution is enabled. #13211
 
 ### Mixin
 
