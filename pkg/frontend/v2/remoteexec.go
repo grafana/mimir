@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math/bits"
 	"sync"
 	"time"
 
@@ -143,6 +144,10 @@ func (r *scalarExecutionResponse) GetValues(ctx context.Context) (types.ScalarDa
 		return types.ScalarData{}, err
 	}
 
+	if v.Samples, err = ensureFPointSliceCapacityIsPowerOfTwo(v.Samples, r.memoryConsumptionTracker); err != nil {
+		return types.ScalarData{}, err
+	}
+
 	return v, nil
 }
 
@@ -206,6 +211,16 @@ func (r *instantVectorExecutionResponse) GetNextSeries(ctx context.Context) (typ
 	mqeData := types.InstantVectorSeriesData{
 		Floats:     mimirpb.FromSamplesToFPoints(series.Floats),
 		Histograms: mimirpb.FromHistogramsToHPoints(series.Histograms),
+	}
+
+	var err error
+
+	if mqeData.Floats, err = ensureFPointSliceCapacityIsPowerOfTwo(mqeData.Floats, r.memoryConsumptionTracker); err != nil {
+		return types.InstantVectorSeriesData{}, err
+	}
+
+	if mqeData.Histograms, err = ensureHPointSliceCapacityIsPowerOfTwo(mqeData.Histograms, r.memoryConsumptionTracker); err != nil {
+		return types.InstantVectorSeriesData{}, err
 	}
 
 	return mqeData, nil
@@ -277,6 +292,14 @@ func (r *rangeVectorExecutionResponse) GetNextStepSamples(ctx context.Context) (
 	}
 
 	if err := accountForHPointMemoryConsumption(hPoints, r.memoryConsumptionTracker); err != nil {
+		return nil, err
+	}
+
+	if fPoints, err = ensureFPointSliceCapacityIsPowerOfTwo(fPoints, r.memoryConsumptionTracker); err != nil {
+		return nil, err
+	}
+
+	if hPoints, err = ensureHPointSliceCapacityIsPowerOfTwo(hPoints, r.memoryConsumptionTracker); err != nil {
 		return nil, err
 	}
 
@@ -423,20 +446,70 @@ func (r remoteAnnotation) Unwrap() error {
 	return r.inner
 }
 
-func accountForFPointMemoryConsumption(d []promql.FPoint, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) error {
-	if err := memoryConsumptionTracker.IncreaseMemoryConsumption(uint64(cap(d))*types.FPointSize, limiter.FPointSlices); err != nil {
+func accountForFPointMemoryConsumption(points []promql.FPoint, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) error {
+	if err := memoryConsumptionTracker.IncreaseMemoryConsumption(uint64(cap(points))*types.FPointSize, limiter.FPointSlices); err != nil {
 		return err
 	}
 
 	return nil
 }
 
-func accountForHPointMemoryConsumption(d []promql.HPoint, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) error {
-	if err := memoryConsumptionTracker.IncreaseMemoryConsumption(uint64(cap(d))*types.HPointSize, limiter.HPointSlices); err != nil {
+func accountForHPointMemoryConsumption(points []promql.HPoint, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) error {
+	if err := memoryConsumptionTracker.IncreaseMemoryConsumption(uint64(cap(points))*types.HPointSize, limiter.HPointSlices); err != nil {
 		return err
 	}
 
 	return nil
+}
+
+// ensureFPointSliceCapacityIsPowerOfTwo returns d if its capacity is already a power of two, or otherwise a new slice with the same elements and a
+// capacity that is a power of two.
+//
+// If a new slice is created, the memory consumption estimate is adjusted assuming the old slice is no longer used.
+//
+// This exists because many places in MQE assume that slices have come from our pools and always have a capacity that is a power of two.
+// For example, the ring buffer implementations rely on the fact that slices have a capacity that is a power of two.
+func ensureFPointSliceCapacityIsPowerOfTwo(points []promql.FPoint, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) ([]promql.FPoint, error) {
+	if pool.IsPowerOfTwo(cap(points)) {
+		return points, nil
+	}
+
+	nextPowerOfTwo := 1 << bits.Len(uint(cap(points)-1))
+	newSlice, err := types.FPointSlicePool.Get(nextPowerOfTwo, memoryConsumptionTracker)
+	if err != nil {
+		return nil, err
+	}
+
+	newSlice = newSlice[:len(points)]
+	copy(newSlice, points)
+
+	// Don't return the old slice to the pool, but update the memory consumption estimate.
+	// The pool won't use it because it's not a power of two, so there's no point in calling Put() on it.
+	memoryConsumptionTracker.DecreaseMemoryConsumption(uint64(cap(points))*types.FPointSize, limiter.FPointSlices)
+
+	return newSlice, nil
+}
+
+// ensureHPointSliceCapacityIsPowerOfTwo is like ensureFPointSliceCapacityIsPowerOfTwo, but for HPoint slices.
+func ensureHPointSliceCapacityIsPowerOfTwo(points []promql.HPoint, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) ([]promql.HPoint, error) {
+	if pool.IsPowerOfTwo(cap(points)) {
+		return points, nil
+	}
+
+	nextPowerOfTwo := 1 << bits.Len(uint(cap(points)-1))
+	newSlice, err := types.HPointSlicePool.Get(nextPowerOfTwo, memoryConsumptionTracker)
+	if err != nil {
+		return nil, err
+	}
+
+	newSlice = newSlice[:len(points)]
+	copy(newSlice, points)
+
+	// Don't return the old slice to the pool, but update the memory consumption estimate.
+	// The pool won't use it because it's not a power of two, so there's no point in calling Put() on it.
+	memoryConsumptionTracker.DecreaseMemoryConsumption(uint64(cap(points))*types.HPointSize, limiter.HPointSlices)
+
+	return newSlice, nil
 }
 
 type eagerLoadingResponseStream struct {
