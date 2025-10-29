@@ -17,6 +17,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/DmitriyVTitov/size"
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/user"
 	"github.com/grafana/mimir/pkg/ingester/lookupplan"
@@ -139,6 +140,7 @@ func BenchmarkQueryExecution(b *testing.B) {
 // BenchmarkStatisticsGeneration benchmarks block statistics generation.
 // Particularly useful for tuning thresholds for larger and smaller count-min sketches.
 // Usage:
+//
 //	go test -bench=BenchmarkStatisticsGeneration -data-dir=/path/to/data
 func BenchmarkStatisticsGeneration(b *testing.B) {
 	require.NotEmpty(b, *dataDirFlag, "-data-dir flag is required")
@@ -168,6 +170,7 @@ func BenchmarkStatisticsGeneration(b *testing.B) {
 					b.Fatalf("Failed to generate statistics: %v", err)
 				}
 				if i == 0 {
+					b.ReportMetric(float64(size.Of(stats)), "stats_size_bytes")
 					b.Logf("total_series=%d", stats.TotalSeries())
 				}
 			}
@@ -180,7 +183,6 @@ func BenchmarkStatisticsGeneration(b *testing.B) {
 	err = db.Close()
 	require.NoError(b, err)
 }
-
 
 // queryResult contains the result of executing a query against the ingester.
 type queryResult struct {
