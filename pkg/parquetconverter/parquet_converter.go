@@ -219,6 +219,7 @@ func NewParquetConverter(cfg Config, storageCfg mimir_tsdb.BlocksStorageConfig, 
 
 	return newParquetConverter(cfg, logger, registerer, bucketClientFactory, limits, defaultBlockConverter{}, loadBalancer)
 }
+
 func newParquetConverter(
 	cfg Config,
 	logger log.Logger,
@@ -258,7 +259,9 @@ func (c *ParquetConverter) starting(ctx context.Context) error {
 	c.loadBalancerWatcher = services.NewFailureWatcher()
 	c.loadBalancerWatcher.WatchService(c.loadBalancer)
 
-	if err := services.StartAndAwaitRunning(ctx, c.loadBalancer); err != nil {
+	graceCtx := context.WithoutCancel(ctx)
+
+	if err := services.StartAndAwaitRunning(graceCtx, c.loadBalancer); err != nil {
 		return errors.Wrap(err, "unable to start load balancer")
 	}
 
