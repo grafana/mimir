@@ -1681,52 +1681,6 @@ func TestMemoryConsumptionLimit_SingleQueries(t *testing.T) {
 	ctx := context.Background()
 
 	for name, testCase := range testCases {
-		assertEstimatedPeakMemoryConsumption := func(t *testing.T, reg *prometheus.Registry, span tracetest.SpanStub, memoryConsumptionLimit, expectedMemoryConsumptionEstimate uint64, queryType string, shouldSucceed bool) {
-			peakMemoryConsumptionHistogram := getHistogram(t, reg, "cortex_mimir_query_engine_estimated_query_peak_memory_consumption")
-			require.Equal(t, float64(expectedMemoryConsumptionEstimate), peakMemoryConsumptionHistogram.GetSampleSum())
-
-			require.NotEmpty(t, span.Events, "There should be events in the span.")
-
-			logEvents := filter(span.Events, func(e tracesdk.Event) bool {
-				return e.Name == "log" && slices.Contains(e.Attributes, attribute.String("msg", "evaluation stats"))
-			})
-			require.Len(t, logEvents, 1, "There should be exactly one log event in the span.")
-			logEvent := logEvents[0]
-			expectedFields := []attribute.KeyValue{
-				attribute.String("level", "info"),
-				attribute.String("msg", "evaluation stats"),
-				attribute.Int64("estimatedPeakMemoryConsumption", int64(expectedMemoryConsumptionEstimate)),
-				attribute.String("originalExpression", testCase.expr),
-				attribute.String("timeRangeType", queryType),
-			}
-
-			switch queryType {
-			case "instant":
-				expectedFields = append(expectedFields,
-					attribute.Int64("time", start.UnixMilli()),
-				)
-			case "range":
-				expectedFields = append(expectedFields,
-					attribute.Int64("start", start.UnixMilli()),
-					attribute.Int64("end", end.UnixMilli()),
-					attribute.Int64("step", step.Milliseconds()),
-				)
-			default:
-				panic(fmt.Sprintf("unknown query type: %s", queryType))
-			}
-
-			if shouldSucceed {
-				expectedFields = append(expectedFields, attribute.String("status", "success"))
-			} else {
-				expectedFields = append(expectedFields,
-					attribute.String("status", "failed"),
-					attribute.String("err", limiter.NewMaxEstimatedMemoryConsumptionPerQueryLimitError(memoryConsumptionLimit).Error()),
-				)
-			}
-
-			require.ElementsMatch(t, expectedFields, logEvent.Attributes)
-		}
-
 		t.Run(name, func(t *testing.T) {
 			queryTypes := map[string]func(t *testing.T) (promql.Query, *prometheus.Registry, uint64, uint64){
 				"range": func(t *testing.T) (promql.Query, *prometheus.Registry, uint64, uint64) {
@@ -1762,7 +1716,19 @@ func TestMemoryConsumptionLimit_SingleQueries(t *testing.T) {
 						return stub.Name == "Evaluator.Evaluate"
 					})
 					require.Len(t, spanStubs, 1)
-					assertEstimatedPeakMemoryConsumption(t, reg, spanStubs[0], memoryConsumptionLimit, expectedPeakMemoryConsumption, queryType, testCase.shouldSucceed)
+					assertEstimatedPeakMemoryConsumption(
+						t,
+						reg,
+						spanStubs[0],
+						memoryConsumptionLimit,
+						expectedPeakMemoryConsumption,
+						queryType,
+						testCase.expr,
+						start,
+						end,
+						step,
+						testCase.shouldSucceed,
+					)
 				})
 			}
 		})
@@ -1777,6 +1743,63 @@ func filter[T any](slice []T, fn func(T) bool) []T {
 		}
 	}
 	return result
+}
+
+func assertEstimatedPeakMemoryConsumption(
+	t *testing.T,
+	reg *prometheus.Registry,
+	span tracetest.SpanStub,
+	memoryConsumptionLimit, expectedMemoryConsumptionEstimate uint64,
+	queryType string,
+	expr string,
+	start time.Time,
+	end time.Time,
+	step time.Duration,
+	shouldSucceed bool,
+) {
+	peakMemoryConsumptionHistogram := getHistogram(t, reg, "cortex_mimir_query_engine_estimated_query_peak_memory_consumption")
+	require.Equal(t, float64(expectedMemoryConsumptionEstimate), peakMemoryConsumptionHistogram.GetSampleSum())
+
+	require.NotEmpty(t, span.Events, "There should be events in the span.")
+
+	logEvents := filter(span.Events, func(e tracesdk.Event) bool {
+		return e.Name == "log" && slices.Contains(e.Attributes, attribute.String("msg", "evaluation stats"))
+	})
+	require.Len(t, logEvents, 1, "There should be exactly one log event in the span.")
+	logEvent := logEvents[0]
+	expectedFields := []attribute.KeyValue{
+		attribute.String("level", "info"),
+		attribute.String("msg", "evaluation stats"),
+		attribute.Int64("estimatedPeakMemoryConsumption", int64(expectedMemoryConsumptionEstimate)),
+		attribute.String("originalExpression", expr),
+		attribute.String("timeRangeType", queryType),
+	}
+
+	switch queryType {
+	case "instant":
+		expectedFields = append(expectedFields,
+			attribute.Int64("time", start.UnixMilli()),
+		)
+	case "range":
+		expectedFields = append(expectedFields,
+			attribute.Int64("start", start.UnixMilli()),
+			attribute.Int64("end", end.UnixMilli()),
+			attribute.Int64("step", step.Milliseconds()),
+		)
+	default:
+		panic(fmt.Sprintf("unknown query type: %s", queryType))
+	}
+
+	if shouldSucceed {
+		expectedFields = append(expectedFields, attribute.String("status", "success"))
+	} else {
+		expectedFields = append(expectedFields,
+			attribute.String("status", "failed"),
+			attribute.String("err", limiter.NewMaxEstimatedMemoryConsumptionPerQueryLimitError(memoryConsumptionLimit).Error()),
+		)
+	}
+
+	require.ElementsMatch(t, expectedFields, logEvent.Attributes)
 }
 
 func TestMemoryConsumptionLimit_MultipleQueries(t *testing.T) {
@@ -1828,6 +1851,80 @@ func TestMemoryConsumptionLimit_MultipleQueries(t *testing.T) {
 
 	runQuery(`some_metric{idx=~"1|2|3"}`, true)
 	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(rejectedMetrics(2)), "cortex_querier_queries_rejected_total"))
+}
+
+func TestEvaluator_ReportsMemoryConsumptionLimit(t *testing.T) {
+	spanExporter.Reset()
+
+	storage := promqltest.LoadedStorage(t, `
+		load 1m
+			some_metric 0+1x5
+	`)
+	t.Cleanup(func() { require.NoError(t, storage.Close()) })
+
+	reg := prometheus.NewPedanticRegistry()
+	opts := NewTestEngineOpts()
+	opts.CommonOpts.Reg = reg
+
+	planner, err := NewQueryPlanner(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
+	require.NoError(t, err)
+	engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(reg), planner)
+	require.NoError(t, err)
+
+	ctx := context.Background()
+	expr := "some_metric"
+	plan, err := planner.NewQueryPlan(ctx, expr, types.NewInstantQueryTimeRange(timestamp.Time(0)), NoopPlanningObserver{})
+	require.NoError(t, err)
+
+	evaluator, err := engine.NewEvaluator(ctx, storage, nil, plan, plan.Root, plan.TimeRange)
+	require.NoError(t, err)
+
+	err = evaluator.Evaluate(ctx, noopEvaluationObserver{})
+	require.NoError(t, err)
+
+	spanStubs := filter(spanExporter.GetSpans(), func(stub tracetest.SpanStub) bool {
+		return stub.Name == "Evaluator.Evaluate"
+	})
+	require.Len(t, spanStubs, 1)
+	assertEstimatedPeakMemoryConsumption(
+		t,
+		reg,
+		spanStubs[0],
+		0,
+		61,
+		"instant",
+		expr,
+		timestamp.Time(0),
+		timestamp.Time(0),
+		0,
+		true,
+	)
+}
+
+type noopEvaluationObserver struct{}
+
+func (n noopEvaluationObserver) SeriesMetadataEvaluated(ctx context.Context, evaluator *Evaluator, series []types.SeriesMetadata) error {
+	return nil
+}
+
+func (n noopEvaluationObserver) InstantVectorSeriesDataEvaluated(ctx context.Context, evaluator *Evaluator, seriesIndex int, seriesData types.InstantVectorSeriesData) error {
+	return nil
+}
+
+func (n noopEvaluationObserver) RangeVectorStepSamplesEvaluated(ctx context.Context, evaluator *Evaluator, seriesIndex int, stepIndex int, stepData *types.RangeVectorStepData) error {
+	return nil
+}
+
+func (n noopEvaluationObserver) ScalarEvaluated(ctx context.Context, evaluator *Evaluator, data types.ScalarData) error {
+	return nil
+}
+
+func (n noopEvaluationObserver) StringEvaluated(ctx context.Context, evaluator *Evaluator, data string) error {
+	return nil
+}
+
+func (n noopEvaluationObserver) EvaluationCompleted(ctx context.Context, evaluator *Evaluator, annotations *annotations.Annotations, stats *types.QueryStats) error {
+	return nil
 }
 
 func rejectedMetrics(rejectedDueToMemoryConsumption int) string {
