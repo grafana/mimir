@@ -9052,6 +9052,16 @@
               "fieldType": "string"
             },
             {
+              "kind": "field",
+              "name": "enable_idempotent_uploads",
+              "required": false,
+              "desc": "Enable idempotent uploads to GCS. This makes uploads safe to retry but adds an extra Attrs() read before each upload.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "blocks-storage.gcs.enable-idempotent-uploads",
+              "fieldType": "boolean"
+            },
+            {
               "kind": "block",
               "name": "http",
               "required": false,
@@ -14884,6 +14894,16 @@
               "fieldType": "string"
             },
             {
+              "kind": "field",
+              "name": "enable_idempotent_uploads",
+              "required": false,
+              "desc": "Enable idempotent uploads to GCS. This makes uploads safe to retry but adds an extra Attrs() read before each upload.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "ruler-storage.gcs.enable-idempotent-uploads",
+              "fieldType": "boolean"
+            },
+            {
               "kind": "block",
               "name": "http",
               "required": false,
@@ -17151,6 +17171,16 @@
               "fieldDefaultValue": "",
               "fieldFlag": "alertmanager-storage.gcs.service-account",
               "fieldType": "string"
+            },
+            {
+              "kind": "field",
+              "name": "enable_idempotent_uploads",
+              "required": false,
+              "desc": "Enable idempotent uploads to GCS. This makes uploads safe to retry but adds an extra Attrs() read before each upload.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "alertmanager-storage.gcs.enable-idempotent-uploads",
+              "fieldType": "boolean"
             },
             {
               "kind": "block",
@@ -20021,6 +20051,16 @@
                   "fieldDefaultValue": "",
                   "fieldFlag": "common.storage.gcs.service-account",
                   "fieldType": "string"
+                },
+                {
+                  "kind": "field",
+                  "name": "enable_idempotent_uploads",
+                  "required": false,
+                  "desc": "Enable idempotent uploads to GCS. This makes uploads safe to retry but adds an extra Attrs() read before each upload.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": false,
+                  "fieldFlag": "common.storage.gcs.enable-idempotent-uploads",
+                  "fieldType": "boolean"
                 },
                 {
                   "kind": "block",

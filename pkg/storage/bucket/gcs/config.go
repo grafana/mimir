@@ -18,6 +18,12 @@ type Config struct {
 	BucketName     string         `yaml:"bucket_name"`
 	ServiceAccount flagext.Secret `yaml:"service_account" doc:"description_method=GCSServiceAccountLongDescription"`
 
+	// EnableIdempotentUploads enables idempotent uploads to GCS by using preconditions.
+	// When enabled, all uploads use either GenerationMatch (for existing objects) or
+	// DoesNotExist (for new objects) preconditions, making them safe to retry.
+	// This adds an extra Attrs() read before each upload.
+	EnableIdempotentUploads bool `yaml:"enable_idempotent_uploads"`
+
 	HTTP common.HTTPConfig `yaml:"http"`
 }
 
@@ -31,6 +37,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 func (cfg *Config) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 	f.StringVar(&cfg.BucketName, prefix+"gcs.bucket-name", "", "GCS bucket name")
 	f.Var(&cfg.ServiceAccount, prefix+"gcs.service-account", cfg.GCSServiceAccountShortDescription())
+	f.BoolVar(&cfg.EnableIdempotentUploads, prefix+"gcs.enable-idempotent-uploads", false, "Enable idempotent uploads to GCS. This makes uploads safe to retry but adds an extra Attrs() read before each upload.")
 	cfg.HTTP.RegisterFlagsWithPrefix(prefix+"gcs.", f)
 }
 

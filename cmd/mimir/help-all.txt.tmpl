@@ -47,6 +47,8 @@ Usage of ./cmd/mimir/mimir:
     	Local filesystem storage directory. (default "alertmanager")
   -alertmanager-storage.gcs.bucket-name string
     	GCS bucket name
+  -alertmanager-storage.gcs.enable-idempotent-uploads
+    	Enable idempotent uploads to GCS. This makes uploads safe to retry but adds an extra Attrs() read before each upload.
   -alertmanager-storage.gcs.expect-continue-timeout duration
     	The time to wait for a server's first response headers after fully writing the request headers if the request has an Expect header. Set to 0 to send the request body immediately. (default 1s)
   -alertmanager-storage.gcs.http.idle-conn-timeout duration
@@ -627,6 +629,8 @@ Usage of ./cmd/mimir/mimir:
     	Local filesystem storage directory. (default "blocks")
   -blocks-storage.gcs.bucket-name string
     	GCS bucket name
+  -blocks-storage.gcs.enable-idempotent-uploads
+    	Enable idempotent uploads to GCS. This makes uploads safe to retry but adds an extra Attrs() read before each upload.
   -blocks-storage.gcs.expect-continue-timeout duration
     	The time to wait for a server's first response headers after fully writing the request headers if the request has an Expect header. Set to 0 to send the request body immediately. (default 1s)
   -blocks-storage.gcs.http.idle-conn-timeout duration
@@ -893,6 +897,8 @@ Usage of ./cmd/mimir/mimir:
     	Local filesystem storage directory.
   -common.storage.gcs.bucket-name string
     	GCS bucket name
+  -common.storage.gcs.enable-idempotent-uploads
+    	Enable idempotent uploads to GCS. This makes uploads safe to retry but adds an extra Attrs() read before each upload.
   -common.storage.gcs.expect-continue-timeout duration
     	The time to wait for a server's first response headers after fully writing the request headers if the request has an Expect header. Set to 0 to send the request body immediately. (default 1s)
   -common.storage.gcs.http.idle-conn-timeout duration
@@ -2709,6 +2715,8 @@ Usage of ./cmd/mimir/mimir:
     	Local filesystem storage directory. (default "ruler")
   -ruler-storage.gcs.bucket-name string
     	GCS bucket name
+  -ruler-storage.gcs.enable-idempotent-uploads
+    	Enable idempotent uploads to GCS. This makes uploads safe to retry but adds an extra Attrs() read before each upload.
   -ruler-storage.gcs.expect-continue-timeout duration
     	The time to wait for a server's first response headers after fully writing the request headers if the request has an Expect header. Set to 0 to send the request body immediately. (default 1s)
   -ruler-storage.gcs.http.idle-conn-timeout duration
