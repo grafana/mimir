@@ -157,7 +157,7 @@ type labelValueTooLongSummaries struct {
 	summaries   []labelValueTooLongSummary
 }
 
-func (s *labelValueTooLongSummaries) measure(metric, label, originalValue mimirpb.UnsafeMutableString) {
+func (s *labelValueTooLongSummaries) measure(unsafeMetric, unsafeLabel, unsafeValue mimirpb.UnsafeMutableString) {
 	if s == nil {
 		return
 	}
@@ -167,7 +167,7 @@ func (s *labelValueTooLongSummaries) measure(metric, label, originalValue mimirp
 	}
 
 	i := slices.IndexFunc(s.summaries, func(summary labelValueTooLongSummary) bool {
-		return summary.metric == metric && summary.label == label
+		return summary.metric == unsafeMetric && summary.label == unsafeLabel
 	})
 	if i != -1 {
 		s.summaries[i].count++
@@ -179,16 +179,16 @@ func (s *labelValueTooLongSummaries) measure(metric, label, originalValue mimirp
 	}
 
 	s.summaries = append(s.summaries, labelValueTooLongSummary{
-		metric:            metric,
-		label:             label,
-		sampleValue:       fmt.Sprintf("%.200s (truncated)", originalValue),
-		sampleValueLength: len(originalValue),
+		metric:            strings.Clone(unsafeMetric),
+		label:             strings.Clone(unsafeLabel),
+		sampleValue:       fmt.Sprintf("%.200s (truncated)", unsafeValue),
+		sampleValueLength: len(unsafeValue),
 		count:             1,
 	})
 }
 
 type labelValueTooLongSummary struct {
-	metric, label     mimirpb.UnsafeMutableString
+	metric, label     string
 	count             int
 	sampleValueLength int
 	sampleValue       string
