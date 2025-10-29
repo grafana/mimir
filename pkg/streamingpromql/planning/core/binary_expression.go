@@ -116,13 +116,11 @@ func (b *BinaryExpression) SetChildren(children []planning.Node) error {
 	return nil
 }
 
-func (b *BinaryExpression) EquivalentTo(other planning.Node) bool {
+func (b *BinaryExpression) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
 	otherBinaryExpression, ok := other.(*BinaryExpression)
 
 	return ok &&
 		b.Op == otherBinaryExpression.Op &&
-		b.LHS.EquivalentTo(otherBinaryExpression.LHS) &&
-		b.RHS.EquivalentTo(otherBinaryExpression.RHS) &&
 		b.VectorMatching.Equals(otherBinaryExpression.VectorMatching) &&
 		b.ReturnBool == otherBinaryExpression.ReturnBool
 }

@@ -201,7 +201,7 @@ func TestAggregateExpression_Equivalence(t *testing.T) {
 				},
 				Inner: numberLiteralOf(13),
 			},
-			expectEquivalent: false,
+			expectEquivalent: true,
 		},
 		"different parameter child node": {
 			a: &AggregateExpression{
@@ -220,7 +220,7 @@ func TestAggregateExpression_Equivalence(t *testing.T) {
 				Inner: numberLiteralOf(12),
 				Param: numberLiteralOf(3),
 			},
-			expectEquivalent: false,
+			expectEquivalent: true,
 		},
 		"one with parameter, one without": {
 			a: &AggregateExpression{
@@ -238,7 +238,7 @@ func TestAggregateExpression_Equivalence(t *testing.T) {
 				},
 				Inner: numberLiteralOf(12),
 			},
-			expectEquivalent: false,
+			expectEquivalent: true,
 		},
 		"one with 'on', one with 'without'": {
 			a: &AggregateExpression{
@@ -281,11 +281,11 @@ func TestAggregateExpression_Equivalence(t *testing.T) {
 
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
-			require.Equal(t, testCase.expectEquivalent, testCase.a.EquivalentTo(testCase.b))
-			require.Equal(t, testCase.expectEquivalent, testCase.b.EquivalentTo(testCase.a))
+			require.Equal(t, testCase.expectEquivalent, testCase.a.EquivalentToIgnoringHintsAndChildren(testCase.b))
+			require.Equal(t, testCase.expectEquivalent, testCase.b.EquivalentToIgnoringHintsAndChildren(testCase.a))
 
-			require.True(t, testCase.a.EquivalentTo(testCase.a))
-			require.True(t, testCase.b.EquivalentTo(testCase.b))
+			require.True(t, testCase.a.EquivalentToIgnoringHintsAndChildren(testCase.a))
+			require.True(t, testCase.b.EquivalentToIgnoringHintsAndChildren(testCase.b))
 		})
 	}
 }

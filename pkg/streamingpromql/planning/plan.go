@@ -77,11 +77,13 @@ type Node interface {
 	// Calling SetChildren(Children()) is a no-op.
 	SetChildren(children []Node) error
 
-	// EquivalentTo returns true if other represents the same operation as this node.
+	// EquivalentToIgnoringHintsAndChildren returns true if other represents the same operation as this node.
+	//
+	// The equivalence of child nodes should not be considered when determining equivalence
 	//
 	// Information such as the position of the corresponding expression in the original query string
-	// should be ignored.
-	EquivalentTo(other Node) bool
+	// or hints should not be considered when determining equivalence.
+	EquivalentToIgnoringHintsAndChildren(other Node) bool
 
 	// Describe returns a human-readable representation of this node.
 	//

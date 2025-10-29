@@ -52,12 +52,11 @@ func (u *UnaryExpression) SetChildren(children []planning.Node) error {
 	return nil
 }
 
-func (u *UnaryExpression) EquivalentTo(other planning.Node) bool {
+func (u *UnaryExpression) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
 	otherUnaryExpression, ok := other.(*UnaryExpression)
 
 	return ok &&
-		u.Op == otherUnaryExpression.Op &&
-		u.Inner.EquivalentTo(otherUnaryExpression.Inner)
+		u.Op == otherUnaryExpression.Op
 }
 
 func (u *UnaryExpression) ChildrenLabels() []string {

@@ -179,7 +179,7 @@ func (e *OptimizationPass) groupPaths(paths []*path, offset int) [][]*path {
 				continue
 			}
 
-			if !leaf.EquivalentTo(otherPathLeaf) || !leafTimeRange.Equal(otherPathTimeRange) {
+			if !equivalentNodes(leaf, otherPathLeaf) || !leafTimeRange.Equal(otherPathTimeRange) {
 				continue
 			}
 
@@ -315,7 +315,7 @@ func (e *OptimizationPass) findCommonSubexpressionLength(group []*path, offset i
 				return length
 			}
 
-			if !firstNode.EquivalentTo(otherNode) || !firstNodeTimeRange.Equal(otherNodeTimeRange) {
+			if !equivalentNodes(firstNode, otherNode) || !firstNodeTimeRange.Equal(otherNodeTimeRange) {
 				// Nodes aren't the same, so the longest common subexpression is the length of the path not including the current node.
 				return length
 			}
@@ -383,4 +383,26 @@ func (p *path) String() string {
 
 	b.WriteRune(']')
 	return b.String()
+}
+
+// equivalentNodes returns true if a and b are equivalent, including their corresponding children.
+func equivalentNodes(a, b planning.Node) bool {
+	if !a.EquivalentToIgnoringHintsAndChildren(b) {
+		return false
+	}
+
+	aChildren := a.Children()
+	bChildren := b.Children()
+
+	if len(aChildren) != len(bChildren) {
+		return false
+	}
+
+	for idx := range aChildren {
+		if !equivalentNodes(aChildren[idx], bChildren[idx]) {
+			return false
+		}
+	}
+
+	return true
 }

@@ -104,15 +104,14 @@ func (s *Subquery) SetChildren(children []planning.Node) error {
 	return nil
 }
 
-func (s *Subquery) EquivalentTo(other planning.Node) bool {
+func (s *Subquery) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
 	otherSubquery, ok := other.(*Subquery)
 
 	return ok &&
 		((s.Timestamp == nil && otherSubquery.Timestamp == nil) || (s.Timestamp != nil && otherSubquery.Timestamp != nil && s.Timestamp.Equal(*otherSubquery.Timestamp))) &&
 		s.Offset == otherSubquery.Offset &&
 		s.Range == otherSubquery.Range &&
-		s.Step == otherSubquery.Step &&
-		s.Inner.EquivalentTo(otherSubquery.Inner)
+		s.Step == otherSubquery.Step
 }
 
 func (s *Subquery) ChildrenLabels() []string {

@@ -55,7 +55,7 @@ func (v *VectorSelector) SetChildren(children []planning.Node) error {
 	return nil
 }
 
-func (v *VectorSelector) EquivalentTo(other planning.Node) bool {
+func (v *VectorSelector) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
 	otherVectorSelector, ok := other.(*VectorSelector)
 
 	return ok &&

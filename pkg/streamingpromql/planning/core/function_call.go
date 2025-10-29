@@ -55,14 +55,11 @@ func (f *FunctionCall) SetChildren(children []planning.Node) error {
 	return nil
 }
 
-func (f *FunctionCall) EquivalentTo(other planning.Node) bool {
+func (f *FunctionCall) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
 	otherFunctionCall, ok := other.(*FunctionCall)
 
 	return ok &&
 		f.Function == otherFunctionCall.Function &&
-		slices.EqualFunc(f.Args, otherFunctionCall.Args, func(a, b planning.Node) bool {
-			return a.EquivalentTo(b)
-		}) &&
 		slices.Equal(f.AbsentLabels, otherFunctionCall.AbsentLabels)
 }
 

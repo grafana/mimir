@@ -49,7 +49,7 @@ func (m *MatrixSelector) SetChildren(children []planning.Node) error {
 	return nil
 }
 
-func (m *MatrixSelector) EquivalentTo(other planning.Node) bool {
+func (m *MatrixSelector) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
 	otherMatrixSelector, ok := other.(*MatrixSelector)
 
 	return ok &&

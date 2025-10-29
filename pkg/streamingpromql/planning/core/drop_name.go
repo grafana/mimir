@@ -42,10 +42,10 @@ func (n *DropName) SetChildren(children []planning.Node) error {
 	return nil
 }
 
-func (n *DropName) EquivalentTo(other planning.Node) bool {
-	otherDropName, ok := other.(*DropName)
+func (n *DropName) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
+	_, ok := other.(*DropName)
 
-	return ok && n.Inner.EquivalentTo(otherDropName.Inner)
+	return ok
 }
 
 func (n *DropName) Describe() string {

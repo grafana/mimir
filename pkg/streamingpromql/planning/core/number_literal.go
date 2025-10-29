@@ -48,7 +48,7 @@ func (n *NumberLiteral) SetChildren(children []planning.Node) error {
 	return nil
 }
 
-func (n *NumberLiteral) EquivalentTo(other planning.Node) bool {
+func (n *NumberLiteral) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
 	otherLiteral, ok := other.(*NumberLiteral)
 
 	return ok && n.Value == otherLiteral.Value

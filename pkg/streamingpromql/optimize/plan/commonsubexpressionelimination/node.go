@@ -47,10 +47,10 @@ func (d *Duplicate) SetChildren(children []planning.Node) error {
 	return nil
 }
 
-func (d *Duplicate) EquivalentTo(other planning.Node) bool {
-	otherDuplicate, ok := other.(*Duplicate)
+func (d *Duplicate) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
+	_, ok := other.(*Duplicate)
 
-	return ok && d.Inner.EquivalentTo(otherDuplicate.Inner)
+	return ok
 }
 
 func (d *Duplicate) Describe() string {

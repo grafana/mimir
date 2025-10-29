@@ -1938,7 +1938,7 @@ func (t *versioningTestNode) SetChildren(children []planning.Node) error {
 	return nil
 }
 
-func (t *versioningTestNode) EquivalentTo(other planning.Node) bool {
+func (t *versioningTestNode) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
 	otherTestNode, ok := other.(*versioningTestNode)
 	return ok && t.NumberLiteralDetails == otherTestNode.NumberLiteralDetails
 }

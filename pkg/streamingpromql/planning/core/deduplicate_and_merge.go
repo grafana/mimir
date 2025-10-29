@@ -42,10 +42,10 @@ func (d *DeduplicateAndMerge) SetChildren(children []planning.Node) error {
 	return nil
 }
 
-func (d *DeduplicateAndMerge) EquivalentTo(other planning.Node) bool {
-	otherDedup, ok := other.(*DeduplicateAndMerge)
+func (d *DeduplicateAndMerge) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
+	_, ok := other.(*DeduplicateAndMerge)
 
-	return ok && d.Inner.EquivalentTo(otherDedup.Inner)
+	return ok
 }
 
 func (d *DeduplicateAndMerge) Describe() string {

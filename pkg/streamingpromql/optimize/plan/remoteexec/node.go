@@ -47,10 +47,10 @@ func (r *RemoteExecution) SetChildren(children []planning.Node) error {
 	return nil
 }
 
-func (r *RemoteExecution) EquivalentTo(other planning.Node) bool {
-	otherDuplicate, ok := other.(*RemoteExecution)
+func (r *RemoteExecution) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
+	_, ok := other.(*RemoteExecution)
 
-	return ok && r.Inner.EquivalentTo(otherDuplicate.Inner)
+	return ok
 }
 
 func (r *RemoteExecution) Describe() string {

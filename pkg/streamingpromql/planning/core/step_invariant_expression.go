@@ -59,9 +59,9 @@ func (s *StepInvariantExpression) SetChildren(children []planning.Node) error {
 	return nil
 }
 
-func (s *StepInvariantExpression) EquivalentTo(other planning.Node) bool {
-	otherExpr, ok := other.(*StepInvariantExpression)
-	return ok && s.Inner.EquivalentTo(otherExpr.Inner)
+func (s *StepInvariantExpression) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
+	_, ok := other.(*StepInvariantExpression)
+	return ok
 }
 
 func (s *StepInvariantExpression) ChildrenLabels() []string {

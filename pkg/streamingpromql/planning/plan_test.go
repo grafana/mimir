@@ -108,7 +108,7 @@ func (t *testNode) SetChildren(_ []Node) error {
 	panic("not supported")
 }
 
-func (t *testNode) EquivalentTo(_ Node) bool {
+func (t *testNode) EquivalentToIgnoringHintsAndChildren(_ Node) bool {
 	panic("not supported")
 }
 
