@@ -1461,6 +1461,7 @@
   "parquet-converter.locking.memcached.tls-cipher-suites": "",
   "parquet-converter.locking.memcached.tls-min-version": "",
   "parquet-converter.locking.memcached.dns-ignore-startup-failures": true,
+  "parquet-converter.lock-ttl": 14400000000000,
   "common.storage.backend": "filesystem",
   "common.storage.s3.endpoint": "",
   "common.storage.s3.region": "",

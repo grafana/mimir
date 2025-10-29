@@ -648,6 +648,11 @@ parquet_converter:
     # parquet-converter.locking
     [memcached: <memcached>]
 
+  # (advanced) Time-to-live for locks acquired by the cache-based load balancer
+  # (used when load-balancing-strategy is 'locking').
+  # CLI flag: -parquet-converter.lock-ttl
+  [lock_ttl: <duration> | default = 4h]
+
 # The common block holds configurations that configure multiple components at a
 # time.
 [common: <common>]

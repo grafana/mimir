@@ -20586,6 +20586,17 @@
           ],
           "fieldValue": null,
           "fieldDefaultValue": null
+        },
+        {
+          "kind": "field",
+          "name": "lock_ttl",
+          "required": false,
+          "desc": "Time-to-live for locks acquired by the cache-based load balancer (used when load-balancing-strategy is 'locking').",
+          "fieldValue": null,
+          "fieldDefaultValue": 14400000000000,
+          "fieldFlag": "parquet-converter.lock-ttl",
+          "fieldType": "duration",
+          "fieldCategory": "advanced"
         }
       ],
       "fieldValue": null,

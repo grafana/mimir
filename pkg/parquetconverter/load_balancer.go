@@ -48,12 +48,15 @@ const (
 // cacheLockLoadBalancer implements loadBalancer with a best-effort distributed locking
 // using a cache backend.
 type cacheLockLoadBalancer struct {
-	cache cache.Cache
+	services.Service
+	cache   cache.Cache
+	lockTTL time.Duration
 }
 
-func newCacheLockLoadBalancer(cache cache.Cache) *cacheLockLoadBalancer {
+func newCacheLockLoadBalancer(cache cache.Cache, lockTTL time.Duration) *cacheLockLoadBalancer {
 	return &cacheLockLoadBalancer{
-		cache: cache,
+		cache:   cache,
+		lockTTL: lockTTL,
 	}
 }
 
@@ -72,7 +75,7 @@ func (l *cacheLockLoadBalancer) shouldEnqueue(ctx context.Context, blockID strin
 
 func (l *cacheLockLoadBalancer) lock(ctx context.Context, blockID string) (bool, error) {
 	lockKey := lockPrefix + blockID
-	err := l.cache.Add(ctx, lockKey, []byte("locked"), lockTTL)
+	err := l.cache.Add(ctx, lockKey, []byte("locked"), l.lockTTL)
 	if errors.Is(err, cache.ErrNotStored) {
 		return false, nil
 	}
