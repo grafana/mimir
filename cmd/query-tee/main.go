@@ -122,7 +122,6 @@ func mimirReadRoutes(cfg Config) []querytee.Route {
 	}
 
 	return []querytee.Route{
-		{Path: prefix + "/api/v1/read", RouteName: "api_v1_read", Methods: []string{"POST"}, ResponseComparator: nil},
 		{Path: prefix + "/api/v1/query", RouteName: "api_v1_query", Methods: []string{"GET", "POST"}, ResponseComparator: samplesComparator, RequestTransformers: instantQueryTransformers},
 		{Path: prefix + "/api/v1/query_range", RouteName: "api_v1_query_range", Methods: []string{"GET", "POST"}, ResponseComparator: samplesComparator},
 		{Path: prefix + "/api/v1/query_exemplars", RouteName: "api_v1_query_exemplars", Methods: []string{"GET", "POST"}, ResponseComparator: nil},
@@ -132,5 +131,6 @@ func mimirReadRoutes(cfg Config) []querytee.Route {
 		{Path: prefix + "/api/v1/metadata", RouteName: "api_v1_metadata", Methods: []string{"GET", "POST"}, ResponseComparator: nil},
 		{Path: prefix + "/prometheus/config/v1/rules", RouteName: "prometheus_config_v1_rules", Methods: []string{"GET", "POST"}, ResponseComparator: nil},
 		{Path: prefix + "/api/v1/alerts", RouteName: "api_v1_alerts", Methods: []string{"GET", "POST"}, ResponseComparator: nil},
+		{Path: prefix + "/api/v1/read", RouteName: "api_v1_read", Methods: []string{"POST"}, ResponseComparator: nil},
 	}
 }
