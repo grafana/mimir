@@ -44,7 +44,6 @@
 * [BUGFIX] Memberlist: Fix memberlist initialization when Mimir is executed with `-target=memberlist-kv`. #13129
 * [BUGFIX] Query-frontend: Fix issue where queriers may receive a `rpc error: code = Internal desc = cardinality violation: expected <EOF> for non server-streaming RPCs, but received another message` error while sending a query result to a query-frontend if remote execution is enabled. #13147
 * [BUGFIX] Querier: Fix issue where cancelled queries may cause a `error notifying scheduler about finished query` message to be logged. #13186
-* [BUGFIX] Memcached: Ignore invalid responses when discovering cache servers using `dnssrv+` or `dnssrvnoa+` service discovery prefixes. #13194
 * [BUGFIX] Querier: Fix issue where evaluation metrics and logs aren't emitted if remote execution is enabled. #13207
 * [BUGFIX] Query-frontend: Fix issue where queries containing subqueries could fail with `slice capacity must be a power of two, but is X` if remote execution is enabled. #13211
 
@@ -151,7 +150,6 @@
 * [ENHANCEMENT] Distributor: Add reactive concurrency limiters to protect push operations from overload. #12923 #13003 #13033
 * [ENHANCEMENT] Ingester: Add experimental matcher set reduction to cost-based lookup planning. #12831
 * [ENHANCEMENT] Ruler: Add `reason` label to `cortex_prometheus_rule_evaluation_failures_total` metric to distinguish between "user" and "operator" errors. #12971
-* [ENHANCEMENT] Update Docker base images from `alpine:3.22.1` to `alpine:3.22.2`. #12991
 * [ENHANCEMENT] Ruler: Add the `ruler_max_rule_evaluation_results` per-tenant configuration option to limit the maximum number of alerts an alerting rule or series a recording rule can produce for the group. By default, no limit is enforced. #12832
 * [ENHANCEMENT] Jsonnet: Changed the default KV store for the HA tracker from etcd to memberlist. Etcd and Consul are now deprecated for HA tracker usage but remain supported for backward compatibility. #13000
 * [ENHANCEMENT] Querier: prefer querying ingesters and store-gateways in a specific zone when `-querier.prefer-availability-zone` is configured. Added the following metrics tracking the data transfer between the querier and ingesters / store-gateways respectively: #13045
@@ -180,7 +178,6 @@
 * [BUGFIX] OTLP: Return HTTP OK for partially rejected requests, e.g. due to OOO exemplars. #12579
 * [BUGFIX] Store-gateway: Fix a panic in BucketChunkReader when chunk loading encounter a broken chunk length. #12693 #12729
 * [BUGFIX] Ingester, Block-builder: silently ignore duplicate sample if it's due to zero sample from created timestamp. Created timestamp equal to the timestamp of the first sample of series is a common case if created timestamp comes from OTLP where start time equal to timestamp of the first sample simply means unknown start time. #12726
-* [BUGFIX] Distributor: Fix error when native histograms bucket limit is set then no NHCB passes validation. #12741
 * [BUGFIX] Ingester: Fix continous reload of active series counters when cost-attribution labels are above the max cardinality. #12822
 * [BUGFIX] Distributor: Report the correct size in the `err-mimir-distributor-max-write-message-size` error. #12799
 * [BUGFIX] Query-frontend: Fix issue where expressions containing unary negation could be sharded incorrectly in some cases. #12911
@@ -239,17 +236,29 @@
 * [ENHANCEMENT] Improve the MimirIngesterReachingSeriesLimit runbook. #12356
 * [ENHANCEMENT] Improve the description of how to limit the number of buckets in native histograms. #12797
 * [ENHANCEMENT] Document native histograms with custom buckets. #12823
-* [BUGFIX] Add a missing attribute to the list of default promoted OTel resource attributes in the docs: deployment.environment. #12181
 
 ### Tools
 
-* [ENHANCEMENT] Base `mimirtool`, `metaconvert`, `copyblocks`, and `query-tee` images on `distroless/static-debian12`. #13014
 * [ENHANCEMENT] kafkatool: add `format=json` to `kafkatool dump print`. #12737
 
 ### Query-tee
 
 * [CHANGE] If you configure multiple secondary backends and enable comparisons, query-tee reports comparison results of the preferred backend against each of the secondaries. #13022
 * [CHANGE] Add backend configuration options for request proportion sampling and time-based query filtering. #13037
+
+## 2.17.2
+
+### Grafana Mimir
+
+* [BUGFIX] Add a missing attribute to the list of default promoted OTel resource attributes in the docs: deployment.environment. #12181
+* [BUGFIX] Ingest: Fix memory pool poisoning in Remote-Write 2.0/OTLP by not cleaning created timestamp field before returning time series to the memory pool. #12735
+* [BUGFIX] Distributor: Fix error when native histograms bucket limit is set then no NHCB passes validation. #12746
+* [BUGFIX] Update Docker base images for tools from `alpine:3.22.1` to `alpine:3.22.2` to address [CVE-2025-9230](https://nvd.nist.gov/vuln/detail/CVE-2025-9230), [CVE-2025-9231](https://nvd.nist.gov/vuln/detail/CVE-2025-9231), [CVE-2025-2025-9232](https://nvd.nist.gov/vuln/detail/CVE-2025-9232). #12993
+* [BUGFIX] Memcached: Ignore invalid responses when discovering cache servers using `dnssrv+` or `dnssrvnoa+` service discovery prefixes. #13206
+
+### Tools
+
+* [ENHANCEMENT] Base `mimirtool`, `metaconvert`, `copyblocks`, and `query-tee` images on `distroless/static-debian12`. #13014
 
 ## 2.17.1
 
