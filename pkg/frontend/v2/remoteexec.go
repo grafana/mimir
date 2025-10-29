@@ -446,16 +446,16 @@ func (r remoteAnnotation) Unwrap() error {
 	return r.inner
 }
 
-func accountForFPointMemoryConsumption(d []promql.FPoint, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) error {
-	if err := memoryConsumptionTracker.IncreaseMemoryConsumption(uint64(cap(d))*types.FPointSize, limiter.FPointSlices); err != nil {
+func accountForFPointMemoryConsumption(points []promql.FPoint, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) error {
+	if err := memoryConsumptionTracker.IncreaseMemoryConsumption(uint64(cap(points))*types.FPointSize, limiter.FPointSlices); err != nil {
 		return err
 	}
 
 	return nil
 }
 
-func accountForHPointMemoryConsumption(d []promql.HPoint, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) error {
-	if err := memoryConsumptionTracker.IncreaseMemoryConsumption(uint64(cap(d))*types.HPointSize, limiter.HPointSlices); err != nil {
+func accountForHPointMemoryConsumption(points []promql.HPoint, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) error {
+	if err := memoryConsumptionTracker.IncreaseMemoryConsumption(uint64(cap(points))*types.HPointSize, limiter.HPointSlices); err != nil {
 		return err
 	}
 
@@ -469,45 +469,45 @@ func accountForHPointMemoryConsumption(d []promql.HPoint, memoryConsumptionTrack
 //
 // This exists because many places in MQE assume that slices have come from our pools and always have a capacity that is a power of two.
 // For example, the ring buffer implementations rely on the fact that slices have a capacity that is a power of two.
-func ensureFPointSliceCapacityIsPowerOfTwo(d []promql.FPoint, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) ([]promql.FPoint, error) {
-	if pool.IsPowerOfTwo(cap(d)) {
-		return d, nil
+func ensureFPointSliceCapacityIsPowerOfTwo(points []promql.FPoint, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) ([]promql.FPoint, error) {
+	if pool.IsPowerOfTwo(cap(points)) {
+		return points, nil
 	}
 
-	nextPowerOfTwo := 1 << bits.Len(uint(cap(d)-1))
+	nextPowerOfTwo := 1 << bits.Len(uint(cap(points)-1))
 	newSlice, err := types.FPointSlicePool.Get(nextPowerOfTwo, memoryConsumptionTracker)
 	if err != nil {
 		return nil, err
 	}
 
-	newSlice = newSlice[:len(d)]
-	copy(newSlice, d)
+	newSlice = newSlice[:len(points)]
+	copy(newSlice, points)
 
 	// Don't return the old slice to the pool, but update the memory consumption estimate.
 	// The pool won't use it because it's not a power of two, so there's no point in calling Put() on it.
-	memoryConsumptionTracker.DecreaseMemoryConsumption(uint64(cap(d))*types.FPointSize, limiter.FPointSlices)
+	memoryConsumptionTracker.DecreaseMemoryConsumption(uint64(cap(points))*types.FPointSize, limiter.FPointSlices)
 
 	return newSlice, nil
 }
 
 // ensureHPointSliceCapacityIsPowerOfTwo is like ensureFPointSliceCapacityIsPowerOfTwo, but for HPoint slices.
-func ensureHPointSliceCapacityIsPowerOfTwo(d []promql.HPoint, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) ([]promql.HPoint, error) {
-	if pool.IsPowerOfTwo(cap(d)) {
-		return d, nil
+func ensureHPointSliceCapacityIsPowerOfTwo(points []promql.HPoint, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) ([]promql.HPoint, error) {
+	if pool.IsPowerOfTwo(cap(points)) {
+		return points, nil
 	}
 
-	nextPowerOfTwo := 1 << bits.Len(uint(cap(d)-1))
+	nextPowerOfTwo := 1 << bits.Len(uint(cap(points)-1))
 	newSlice, err := types.HPointSlicePool.Get(nextPowerOfTwo, memoryConsumptionTracker)
 	if err != nil {
 		return nil, err
 	}
 
-	newSlice = newSlice[:len(d)]
-	copy(newSlice, d)
+	newSlice = newSlice[:len(points)]
+	copy(newSlice, points)
 
 	// Don't return the old slice to the pool, but update the memory consumption estimate.
 	// The pool won't use it because it's not a power of two, so there's no point in calling Put() on it.
-	memoryConsumptionTracker.DecreaseMemoryConsumption(uint64(cap(d))*types.HPointSize, limiter.HPointSlices)
+	memoryConsumptionTracker.DecreaseMemoryConsumption(uint64(cap(points))*types.HPointSize, limiter.HPointSlices)
 
 	return newSlice, nil
 }
