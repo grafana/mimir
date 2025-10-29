@@ -87,32 +87,18 @@ type Group struct {
 // DefaultEvalIterationFunc is the default implementation.
 type GroupEvalIterationFunc func(ctx context.Context, g *Group, evalTimestamp time.Time)
 
-// OperatorControllableErrorClassifier classifies whether rule evaluation errors are operator-controllable.
-type OperatorControllableErrorClassifier interface {
-	IsOperatorControllable(error) bool
-}
-
 type GroupOptions struct {
-	Name, File                          string
-	Interval                            time.Duration
-	Limit                               int
-	Rules                               []Rule
-	SourceTenants                       []string
-	ShouldRestore                       bool
-	Opts                                *ManagerOptions
-	QueryOffset                         *time.Duration
-	done                                chan struct{}
-	EvalIterationFunc                   GroupEvalIterationFunc
-	AlignEvaluationTimeOnInterval       bool
-	OperatorControllableErrorClassifier OperatorControllableErrorClassifier
-}
-
-// DefaultOperatorControllableErrorClassifier is the default implementation of
-// OperatorControllableErrorClassifier that classifies no errors as operator-controllable.
-type DefaultOperatorControllableErrorClassifier struct{}
-
-func (*DefaultOperatorControllableErrorClassifier) IsOperatorControllable(_ error) bool {
-	return false
+	Name, File                    string
+	Interval                      time.Duration
+	Limit                         int
+	Rules                         []Rule
+	SourceTenants                 []string
+	ShouldRestore                 bool
+	Opts                          *ManagerOptions
+	QueryOffset                   *time.Duration
+	done                          chan struct{}
+	EvalIterationFunc             GroupEvalIterationFunc
+	AlignEvaluationTimeOnInterval bool
 }
 
 // NewGroup makes a new Group with the given name, options, and rules.
@@ -144,11 +130,6 @@ func NewGroup(o GroupOptions) *Group {
 		evalIterationFunc = DefaultEvalIterationFunc
 	}
 
-	operatorControllableErrorClassifier := o.OperatorControllableErrorClassifier
-	if operatorControllableErrorClassifier == nil {
-		operatorControllableErrorClassifier = &DefaultOperatorControllableErrorClassifier{}
-	}
-
 	if opts.Logger == nil {
 		opts.Logger = promslog.NewNopLogger()
 	}
@@ -172,7 +153,7 @@ func NewGroup(o GroupOptions) *Group {
 		evalIterationFunc:                   evalIterationFunc,
 		appOpts:                             &storage.AppendOptions{DiscardOutOfOrder: true},
 		alignEvaluationTimeOnInterval:       o.AlignEvaluationTimeOnInterval,
-		operatorControllableErrorClassifier: operatorControllableErrorClassifier,
+		operatorControllableErrorClassifier: opts.OperatorControllableErrorClassifier,
 	}
 }
 
