@@ -1393,7 +1393,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "topk($limit, sum by (rule_group, user) (cortex_prometheus_rule_group_rules{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir))\"}))",
+                        "expr": "topk($limit, sum by (rule_group, user) (cortex_prometheus_rule_group_rules{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|ruler-zone-.*|cortex|mimir))\"}))",
                         "format": "table",
                         "instant": true,
                         "legendFormat": "",
@@ -1545,7 +1545,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "topk($limit, sum by (rule_group, user) (cortex_prometheus_rule_group_last_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir))\"}))",
+                        "expr": "topk($limit, sum by (rule_group, user) (cortex_prometheus_rule_group_last_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|ruler-zone-.*|cortex|mimir))\"}))",
                         "format": "table",
                         "instant": true,
                         "legendFormat": "",
