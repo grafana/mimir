@@ -2,6 +2,10 @@
 
 ## main / unreleased
 
+## 3.0.0-rc.2
+
+### Grafana Mimir
+
 * [BUGFIX] Memcached: Ignore invalid responses when discovering cache servers using `dnssrv+` or `dnssrvnoa+` service discovery prefixes. #13203
 
 ## 3.0.0-rc.1
