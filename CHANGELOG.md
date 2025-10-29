@@ -67,7 +67,7 @@
 
 ### Query-tee
 
-* [CHANGE] Added `api/v1/read` as a registered route to query tee. #13227
+* [CHANGE] Added `/api/v1/read` as a registered route to query tee. #13227
 
 ## 3.0.0-rc.0
 
