@@ -20,7 +20,7 @@ var (
 
 // UnsafeMetricNameFromLabelAdapters extracts the metric name from a list of LabelPairs.
 // The returned metric name string is a reference to the label value (no copy).
-func UnsafeMetricNameFromLabelAdapters(labels []mimirpb.LabelAdapter) (mimirpb.UnsafeMutableString, error) {
+func UnsafeMetricNameFromLabelAdapters(labels []mimirpb.LabelAdapter) (string, error) {
 	for _, label := range labels {
 		if label.Name == model.MetricNameLabel {
 			return label.Value, nil
