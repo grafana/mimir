@@ -87,4 +87,6 @@
   },
   osvVulnerabilityAlerts: true,
   dependencyDashboard: false,
+  prHourlyLimit: 10,
+  prConcurrentLimit: 20,
 }
