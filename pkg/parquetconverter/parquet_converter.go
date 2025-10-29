@@ -212,7 +212,7 @@ func NewParquetConverter(cfg Config, storageCfg mimir_tsdb.BlocksStorageConfig, 
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to create locking cache client")
 		}
-		loadBalancer = newCacheLockLoadBalancer(lockingCache, cfg.LockTTL)
+		loadBalancer = newCacheLockLoadBalancer(lockingCache, cfg.LockTTL, logger)
 	default:
 		return nil, fmt.Errorf("unsupported load balancing strategy: %s (supported: ring, locking)", cfg.LoadBalancingStrategy)
 	}

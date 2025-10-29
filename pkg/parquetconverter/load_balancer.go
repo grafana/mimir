@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"hash/fnv"
+	"sync"
 	"time"
 
 	"github.com/go-kit/log"
@@ -41,7 +42,6 @@ type loadBalancer interface {
 }
 
 const (
-	lockTTL    = 4 * time.Hour
 	lockPrefix = "parquet-converter-lock:"
 )
 
@@ -51,22 +51,63 @@ type cacheLockLoadBalancer struct {
 	services.Service
 	cache   cache.Cache
 	lockTTL time.Duration
+
+	logger log.Logger
+
+	lockedBlocks map[string]struct{}
+	mu           sync.Mutex
+	stopCh       chan struct{}
 }
 
-func newCacheLockLoadBalancer(cache cache.Cache, lockTTL time.Duration) *cacheLockLoadBalancer {
+func newCacheLockLoadBalancer(cache cache.Cache, lockTTL time.Duration, logger log.Logger) *cacheLockLoadBalancer {
 	return &cacheLockLoadBalancer{
-		cache:   cache,
-		lockTTL: lockTTL,
+		cache:        cache,
+		lockTTL:      lockTTL,
+		logger:       log.With(logger, "component", "cache-lock-load-balancer"),
+		lockedBlocks: make(map[string]struct{}),
+		stopCh:       make(chan struct{}),
 	}
 }
 
 func (l *cacheLockLoadBalancer) start(ctx context.Context) error {
+	go func() {
+		ticker := time.NewTicker(l.lockTTL / 4)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-l.stopCh:
+				return
+			case <-ticker.C:
+				l.refreshLocks(ctx)
+			}
+		}
+	}()
 	return nil
 }
 
 func (l *cacheLockLoadBalancer) stop() error {
+	close(l.stopCh)
 	l.cache.Stop()
 	return nil
+}
+
+func (l *cacheLockLoadBalancer) refreshLocks(ctx context.Context) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	// Note that we are doing synchronous Set inside the mutex.
+	// This is *needed* to avoid re-locking a block that is being unlocked concurrently.
+	// This is *ok* because there is no contention on the mutex in practice,
+	// as a converter handles very few blocks at a time, and latency is measured in minutes.
+	// Cache operations have a low timeout anyway.
+	for blockID := range l.lockedBlocks {
+		lockKey := lockPrefix + blockID
+		err := l.cache.Set(ctx, lockKey, []byte("locked"), l.lockTTL)
+		if err != nil {
+			l.logger.Log("msg", "failed to refresh lock", "blockID", blockID, "err", err)
+		}
+	}
 }
 
 func (l *cacheLockLoadBalancer) shouldEnqueue(ctx context.Context, blockID string) (bool, error) {
@@ -79,10 +120,22 @@ func (l *cacheLockLoadBalancer) lock(ctx context.Context, blockID string) (bool,
 	if errors.Is(err, cache.ErrNotStored) {
 		return false, nil
 	}
-	return err == nil, err
+
+	if err != nil {
+		return false, err
+	}
+
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.lockedBlocks[blockID] = struct{}{}
+	return true, nil
 }
 
 func (l *cacheLockLoadBalancer) unlock(ctx context.Context, blockID string) error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	delete(l.lockedBlocks, blockID)
+
 	lockKey := lockPrefix + blockID
 	return l.cache.Delete(ctx, lockKey)
 }

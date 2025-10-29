@@ -58,7 +58,7 @@ func TestParquetConverter(t *testing.T) {
 		{
 			name: "locking strategy",
 			setupLoadBalancer: func(t *testing.T) loadBalancer {
-				return newCacheLockLoadBalancer(cache.NewMockCache(), 4*time.Hour)
+				return newCacheLockLoadBalancer(cache.NewMockCache(), 4*time.Hour, log.NewNopLogger())
 			},
 		},
 	}
@@ -287,7 +287,7 @@ func TestShouldProcessBlock(t *testing.T) {
 				cfg = tt.cfg(cfg)
 			}
 
-			c, _ := prepare(t, cfg, bucketClient, newCacheLockLoadBalancer(cache.NewMockCache(), 4*time.Hour))
+			c, _ := prepare(t, cfg, bucketClient, newCacheLockLoadBalancer(cache.NewMockCache(), 4*time.Hour, log.NewNopLogger()))
 
 			// Start services for ring functionality
 			require.NoError(t, services.StartAndAwaitRunning(context.Background(), c))
