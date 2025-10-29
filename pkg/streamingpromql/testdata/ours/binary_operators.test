@@ -327,8 +327,8 @@ load 1m
 # info is for nhcb reconciliation of different custom values
 # warning is for mixed exponential and custom buckets
 eval range from 0 to 3m step 1m left + right
-  expect info
-  expect warn
+  expect info msg: PromQL info: mismatched custom buckets were reconciled during addition
+  expect warn msg: PromQL warning: incompatible bucket layout encountered for binary operator +
   {}     {{schema:0 sum:4 count:5 buckets:[5]}}  _                                                                {{schema:-53 count:6 sum:2 buckets:[6]}}                         {{schema:-53 sum:3 count:9 custom_values:[2 3] buckets:[6 4]}}
 
 clear
