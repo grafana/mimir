@@ -144,6 +144,10 @@ func (r *scalarExecutionResponse) GetValues(ctx context.Context) (types.ScalarDa
 		return types.ScalarData{}, err
 	}
 
+	if v.Samples, err = ensureFPointSliceCapacityIsPowerOfTwo(v.Samples, r.memoryConsumptionTracker); err != nil {
+		return types.ScalarData{}, err
+	}
+
 	return v, nil
 }
 
@@ -207,6 +211,16 @@ func (r *instantVectorExecutionResponse) GetNextSeries(ctx context.Context) (typ
 	mqeData := types.InstantVectorSeriesData{
 		Floats:     mimirpb.FromSamplesToFPoints(series.Floats),
 		Histograms: mimirpb.FromHistogramsToHPoints(series.Histograms),
+	}
+
+	var err error
+
+	if mqeData.Floats, err = ensureFPointSliceCapacityIsPowerOfTwo(mqeData.Floats, r.memoryConsumptionTracker); err != nil {
+		return types.InstantVectorSeriesData{}, err
+	}
+
+	if mqeData.Histograms, err = ensureHPointSliceCapacityIsPowerOfTwo(mqeData.Histograms, r.memoryConsumptionTracker); err != nil {
+		return types.InstantVectorSeriesData{}, err
 	}
 
 	return mqeData, nil

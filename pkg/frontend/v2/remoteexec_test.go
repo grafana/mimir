@@ -68,6 +68,7 @@ func TestScalarExecutionResponse(t *testing.T) {
 		},
 	}
 	require.Equal(t, expected, d)
+	require.Equal(t, 4, cap(d.Samples), "should expand slice capacity to nearest power of two")
 
 	require.NotZero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
 	types.FPointSlicePool.Put(&d.Samples, memoryConsumptionTracker)
@@ -262,6 +263,57 @@ func TestInstantVectorExecutionResponse_DelayedNameRemoval(t *testing.T) {
 	require.NotZero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
 	types.SeriesMetadataSlicePool.Put(&series, memoryConsumptionTracker)
 	require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
+}
+
+func TestInstantVectorExecutionResponse_PointSliceLengthNotAPowerOfTwo(t *testing.T) {
+	stream := &mockResponseStream{
+		responses: []mockResponse{
+			{
+				msg: newSeriesMetadata(
+					false,
+					labels.FromStrings("series", "1"),
+				),
+			},
+			{
+				msg: newInstantVectorSeriesData(
+					generateFPoints(1000, 3, 0),
+					generateHPoints(4000, 9, 0),
+				),
+			},
+		},
+	}
+
+	ctx := context.Background()
+	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
+
+	response := &instantVectorExecutionResponse{stream: stream, memoryConsumptionTracker: memoryConsumptionTracker}
+	series, err := response.GetSeriesMetadata(ctx)
+	require.NoError(t, err)
+
+	expectedSeries := []types.SeriesMetadata{
+		{Labels: labels.FromStrings("series", "1")},
+	}
+	require.Equal(t, expectedSeries, series)
+	require.NotZero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
+	types.SeriesMetadataSlicePool.Put(&series, memoryConsumptionTracker)
+	require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
+
+	data, err := response.GetNextSeries(ctx)
+	require.NoError(t, err)
+
+	expectedData := types.InstantVectorSeriesData{
+		Floats:     generateFPoints(1000, 3, 0),
+		Histograms: generateHPoints(4000, 9, 0),
+	}
+	require.Equal(t, expectedData, data)
+	require.Equal(t, 4, cap(data.Floats), "should expand slice capacity to nearest power of two")
+	require.Equal(t, 16, cap(data.Histograms), "should expand slice capacity to nearest power of two")
+	require.NotZero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
+	types.PutInstantVectorSeriesData(data, memoryConsumptionTracker)
+	require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
+
+	response.Close()
+	require.True(t, stream.closed)
 }
 
 func TestRangeVectorExecutionResponse(t *testing.T) {
