@@ -25,6 +25,7 @@ local k = import 'ksonnet-util/kausal.libsonnet';
 
   continuous_test_container::
     container.new('continuous-test', $._images.continuous_test) +
+    container.withArgs(['-target=continuous-test']) +
     container.withArgsMixin(k.util.mapToFlags($.continuous_test_args)) +
     container.withPorts([
       k.core.v1.containerPort.new('http-metrics', 8080),
