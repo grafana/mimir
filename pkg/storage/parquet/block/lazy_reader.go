@@ -282,8 +282,6 @@ func (r *lazyReaderLoader) waitAndCloseReader(req readerRequest) {
 type LazyBucketReader struct {
 	ctx context.Context
 
-	blockID ulid.ULID
-
 	// bkt to open the labels and chunks files from
 	bkt objstore.InstrumentedBucketReader
 
@@ -308,7 +306,6 @@ func NewLazyBucketReader(
 
 	reader := &LazyBucketReader{
 		ctx:      ctx,
-		blockID:  blockID,
 		bkt:      bkt,
 		onClosed: onClosed,
 
@@ -340,8 +337,16 @@ func NewLazyBucketReader(
 	return reader, nil
 }
 
+func (r *LazyBucketReader) Name() string {
+	return r.readerLoader.blockID.String()
+}
+
 func (r *LazyBucketReader) BlockID() ulid.ULID {
-	return r.blockID
+	return r.readerLoader.blockID
+}
+
+func (r *LazyBucketReader) ShardIdx() int {
+	return r.readerLoader.shardIdx
 }
 
 func (r *LazyBucketReader) LabelsFile() storage.ParquetFileView {

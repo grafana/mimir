@@ -35,6 +35,14 @@ type parquetBucketShardReader struct {
 	shardIdx int
 }
 
+func (r *parquetBucketShardReader) Name() string {
+	return r.block.meta.ULID.String()
+}
+
+func (r *parquetBucketShardReader) ShardIdx() int {
+	return r.shardIdx
+}
+
 func (r *parquetBucketShardReader) LabelsFile() storage.ParquetFileView {
 	return r.block.shardReaderClosers[r.shardIdx].LabelsFile()
 }
