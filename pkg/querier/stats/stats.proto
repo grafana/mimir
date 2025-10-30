@@ -50,6 +50,8 @@ message Stats {
   uint32 spun_off_subqueries = 12;
   // SamplesProcessedPerStep represents the number of samples scanned per step timestamp while evaluating a query.
   repeated StepStat samples_processed_per_step = 13 [(gogoproto.nullable) = false];
+  // The number of remote execution requests that were made while evaluating a query.
+  uint32 remote_execution_request_count = 14;
 }
 
 // StepStat represents a sample count at a specific timestamp

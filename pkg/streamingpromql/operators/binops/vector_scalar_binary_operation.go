@@ -78,18 +78,18 @@ func NewVectorScalarBinaryOperation(
 
 	if !b.ScalarIsLeftSide {
 		b.opFunc = func(scalar float64, vectorF float64, vectorH *histogram.FloatHistogram) (float64, *histogram.FloatHistogram, bool, bool, error) {
-			return f(vectorF, scalar, vectorH, nil, true, true)
+			return f(vectorF, scalar, vectorH, nil, true, true, b.emitAnnotation)
 		}
 	} else if op.IsComparisonOperator() && !returnBool {
 		b.opFunc = func(scalar float64, vectorF float64, vectorH *histogram.FloatHistogram) (float64, *histogram.FloatHistogram, bool, bool, error) {
-			_, _, keep, valid, err := f(scalar, vectorF, nil, vectorH, true, true)
+			_, _, keep, valid, err := f(scalar, vectorF, nil, vectorH, true, true, b.emitAnnotation)
 
 			// We always want to return the value from the vector when we're doing a filter-style comparison.
 			return vectorF, vectorH, keep, valid, err
 		}
 	} else {
 		b.opFunc = func(scalar float64, vectorF float64, vectorH *histogram.FloatHistogram) (float64, *histogram.FloatHistogram, bool, bool, error) {
-			return f(scalar, vectorF, nil, vectorH, true, true)
+			return f(scalar, vectorF, nil, vectorH, true, true, b.emitAnnotation)
 		}
 	}
 

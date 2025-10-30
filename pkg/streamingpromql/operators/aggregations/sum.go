@@ -107,8 +107,8 @@ func (g *SumAggregationGroup) accumulateHistograms(data types.InstantVectorSerie
 			continue
 		}
 
-		var counterResetCollision bool
-		g.histogramSums[outputIdx], counterResetCollision, err = g.histogramSums[outputIdx].Add(p.H)
+		var counterResetCollision, nhcbBoundsReconciled bool
+		g.histogramSums[outputIdx], counterResetCollision, nhcbBoundsReconciled, err = g.histogramSums[outputIdx].Add(p.H)
 		if err != nil {
 			// Unable to add histograms together (likely due to invalid combination of histograms). Make sure we don't emit a sample at this timestamp.
 			g.histogramSums[outputIdx] = invalidCombinationOfHistograms
@@ -121,6 +121,9 @@ func (g *SumAggregationGroup) accumulateHistograms(data types.InstantVectorSerie
 		}
 		if counterResetCollision {
 			emitAnnotation(newAggregationCounterResetCollisionWarning)
+		}
+		if nhcbBoundsReconciled {
+			emitAnnotation(newAggregationMismatchedCustomBucketsHistogramInfo)
 		}
 	}
 
