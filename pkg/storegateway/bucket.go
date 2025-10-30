@@ -585,6 +585,7 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storegatewaypb.Stor
 	defer s.recordRequestAmbientTime(stats, time.Now())
 
 	var reqBlockMatchers []*labels.Matcher
+	var projectionLabels []string
 	if req.Hints != nil {
 		reqHints := &hintspb.SeriesRequestHints{}
 		if err := types.UnmarshalAny(req.Hints, reqHints); err != nil {
@@ -595,7 +596,13 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storegatewaypb.Stor
 		if err != nil {
 			return status.Error(codes.InvalidArgument, errors.Wrap(err, "translate request hints labels matchers").Error())
 		}
+
+		// Extract projection labels (not used yet, just received for future use)
+		projectionLabels = reqHints.ProjectionLabels
 	}
+
+	// TODO: labels projection: Use to filter labels when reading series from blocks
+	_ = projectionLabels
 
 	logSeriesRequestToSpan(spanLogger, req.MinTime, req.MaxTime, matchers, reqBlockMatchers, shardSelector, req.StreamingChunksBatchSize)
 
