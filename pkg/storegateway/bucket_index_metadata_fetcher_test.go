@@ -80,6 +80,7 @@ func TestBucketIndexMetadataFetcher_Fetch(t *testing.T) {
 		blocks_meta_synced{state="corrupted-meta-json"} 0
 		blocks_meta_synced{state="duplicate"} 0
 		blocks_meta_synced{state="failed"} 0
+		blocks_meta_synced{state="id-excluded"} 0
 		blocks_meta_synced{state="label-excluded"} 0
 		blocks_meta_synced{state="loaded"} 2
 		blocks_meta_synced{state="lookback-excluded"} 0
@@ -127,6 +128,7 @@ func TestBucketIndexMetadataFetcher_Fetch_NoBucketIndex(t *testing.T) {
 		blocks_meta_synced{state="corrupted-meta-json"} 0
 		blocks_meta_synced{state="duplicate"} 0
 		blocks_meta_synced{state="failed"} 0
+		blocks_meta_synced{state="id-excluded"} 0
 		blocks_meta_synced{state="label-excluded"} 0
 		blocks_meta_synced{state="loaded"} 0
 		blocks_meta_synced{state="lookback-excluded"} 0
@@ -177,6 +179,7 @@ func TestBucketIndexMetadataFetcher_Fetch_CorruptedBucketIndex(t *testing.T) {
 		blocks_meta_synced{state="corrupted-meta-json"} 0
 		blocks_meta_synced{state="duplicate"} 0
 		blocks_meta_synced{state="failed"} 0
+		blocks_meta_synced{state="id-excluded"} 0
 		blocks_meta_synced{state="label-excluded"} 0
 		blocks_meta_synced{state="loaded"} 0
 		blocks_meta_synced{state="lookback-excluded"} 0
