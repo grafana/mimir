@@ -33,6 +33,10 @@
 
       // Increased from 2s to 10s in order to accommodate writing large rule results ot he ingester.
       'distributor.remote-timeout': '10s',
+
+      // Set the memory ballast to help with extensive CPU usage due to GC at ruler's start. This prevents the autoscaler
+      // from adding more replicas around rollouts, and reduces the effect of GC on a restart overall.
+      'mem-ballast-size-bytes': 1 << 30,  // 1GiB
     } + if $._config.ingest_storage_enabled then {
       // Set the max buffered bytes in the Kafka client used by the ruler based on the expected max rule evaluation response size,
       // clamping it between 1 GB (default) and 4 GB.
