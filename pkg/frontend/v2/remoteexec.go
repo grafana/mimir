@@ -99,7 +99,10 @@ func (r *RemoteExecutor) startExecution(
 		BatchSize:          batchSize,
 	}
 
+	stats := stats.FromContext(ctx)
+	stats.AddRemoteExecutionRequests(1)
 	queriedTimeRange := node.QueriedTimeRange(timeRange, r.cfg.LookBackDelta)
+
 	var stream responseStream
 	stream, err = r.frontend.DoProtobufRequest(ctx, req, queriedTimeRange.MinT, queriedTimeRange.MaxT)
 	if err != nil {
