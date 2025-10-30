@@ -166,6 +166,16 @@ func TestOptimizationPass(t *testing.T) {
 					- RHS: ref#1 Duplicate ...
 			`,
 		},
+		"expression with common subexpression that is not sharded": {
+			expr: `foo + foo`,
+			expectedPlan: `
+				- RemoteExecution
+					- BinaryExpression: LHS + RHS
+						- LHS: ref#1 Duplicate
+							- VectorSelector: {__name__="foo"}
+						- RHS: ref#1 Duplicate ...
+			`,
+		},
 	}
 
 	ctx := user.InjectOrgID(context.Background(), "tenant-1")
