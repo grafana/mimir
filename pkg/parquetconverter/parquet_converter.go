@@ -377,7 +377,13 @@ func (c *ParquetConverter) discoverAndEnqueueBlocks(ctx context.Context) {
 
 		ulogger := util_log.WithUserID(u, c.logger)
 		uBucket := bucket.NewUserBucketClient(u, c.bucketClient, c.limits)
-
+		lookback := time.Duration(0)
+		if c.Cfg.MinBlockTimestamp > 0 {
+			// Because the lookback filter is relate to now and not an absolute time,
+			// we add an hour to lower the chances of missing blocks close to the boundary,
+			// we'll post-filter them properly later.
+			lookback = time.Since(time.UnixMilli(int64(c.Cfg.MinBlockTimestamp))) + time.Hour
+		}
 		fetcher, err := block.NewMetaFetcher(
 			ulogger,
 			20,
@@ -385,7 +391,7 @@ func (c *ParquetConverter) discoverAndEnqueueBlocks(ctx context.Context) {
 			c.metaSyncDirForUser(u),
 			prometheus.NewRegistry(), // TODO: we are discarding metrics for now
 			[]block.MetadataFilter{},
-			0, // No lookback limit, we take all blocks
+			lookback,
 		)
 		if err != nil {
 			level.Error(ulogger).Log("msg", "error creating meta fetcher", "err", err)
