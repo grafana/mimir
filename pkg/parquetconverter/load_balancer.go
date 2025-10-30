@@ -41,10 +41,6 @@ type loadBalancer interface {
 	start(ctx context.Context) error
 }
 
-const (
-	lockPrefix = "parquet-converter-lock:"
-)
-
 // cacheLockLoadBalancer implements loadBalancer with a best-effort distributed locking
 // using a cache backend.
 type cacheLockLoadBalancer struct {
@@ -102,8 +98,7 @@ func (l *cacheLockLoadBalancer) refreshLocks(ctx context.Context) {
 	// as a converter handles very few blocks at a time, and latency is measured in minutes.
 	// Cache operations have a low timeout anyway.
 	for blockID := range l.lockedBlocks {
-		lockKey := lockPrefix + blockID
-		err := l.cache.Set(ctx, lockKey, []byte("locked"), l.lockTTL)
+		err := l.cache.Set(ctx, keyForBlock(blockID), []byte("locked"), l.lockTTL)
 		if err != nil {
 			l.logger.Log("msg", "failed to refresh lock", "blockID", blockID, "err", err)
 		}
@@ -115,8 +110,7 @@ func (l *cacheLockLoadBalancer) shouldEnqueue(ctx context.Context, blockID strin
 }
 
 func (l *cacheLockLoadBalancer) lock(ctx context.Context, blockID string) (bool, error) {
-	lockKey := lockPrefix + blockID
-	err := l.cache.Add(ctx, lockKey, []byte("locked"), l.lockTTL)
+	err := l.cache.Add(ctx, keyForBlock(blockID), []byte("locked"), l.lockTTL)
 	if errors.Is(err, cache.ErrNotStored) {
 		return false, nil
 	}
@@ -136,8 +130,13 @@ func (l *cacheLockLoadBalancer) unlock(ctx context.Context, blockID string) erro
 	defer l.mu.Unlock()
 	delete(l.lockedBlocks, blockID)
 
-	lockKey := lockPrefix + blockID
-	return l.cache.Delete(ctx, lockKey)
+	return l.cache.Delete(ctx, keyForBlock(blockID))
+}
+
+const lockPrefix = "parquet-converter-lock:"
+
+func keyForBlock(blockID string) string {
+	return lockPrefix + blockID
 }
 
 // ringLoadBalancer implements loadBalancer using a ring for consistent hashing
