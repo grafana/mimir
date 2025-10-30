@@ -85,7 +85,11 @@ func WithMaterializedLabelsFilterCallback(cb search.MaterializedLabelsFilterCall
 	}
 }
 
-func NewParquetChunkQuerier(d *schema.PrometheusParquetChunksDecoder, shardFinder queryable.ShardsFinderFunction, opts ...QuerierOpts) (*parquetChunkQuerier, error) {
+func NewParquetChunkQuerier(
+	shardFinder queryable.ShardsFinderFunction,
+	constraintCacheFunc queryable.ConstraintCacheFunction,
+	chunksDecoder *schema.PrometheusParquetChunksDecoder,
+	opts ...QuerierOpts) (*parquetChunkQuerier, error) {
 	cfg := DefaultQuerierOpts
 
 	for _, opt := range opts {
@@ -93,17 +97,19 @@ func NewParquetChunkQuerier(d *schema.PrometheusParquetChunksDecoder, shardFinde
 	}
 
 	return &parquetChunkQuerier{
-		shardsFinder: shardFinder,
-		d:            d,
-		opts:         &cfg,
+		shardsFinder:        shardFinder,
+		constraintCacheFunc: constraintCacheFunc,
+		chunksDecoder:       chunksDecoder,
+		opts:                &cfg,
 	}, nil
 }
 
 type parquetChunkQuerier struct {
-	mint, maxt   int64
-	shardsFinder queryable.ShardsFinderFunction
-	d            *schema.PrometheusParquetChunksDecoder
-	opts         *querierOpts
+	mint, maxt          int64
+	shardsFinder        queryable.ShardsFinderFunction
+	constraintCacheFunc queryable.ConstraintCacheFunction
+	chunksDecoder       *schema.PrometheusParquetChunksDecoder
+	opts                *querierOpts
 }
 
 func (p parquetChunkQuerier) Close() error {
@@ -256,7 +262,20 @@ func (p parquetChunkQuerier) queryableShards(ctx context.Context, mint, maxt int
 	chunkBytesQuota := search.NewQuota(p.opts.chunkBytesLimitFunc(ctx))
 	dataBytesQuota := search.NewQuota(p.opts.dataBytesLimitFunc(ctx))
 	for i, shard := range shards {
-		qb, err := newQueryableShard(p.opts, shard, p.d, rowCountQuota, chunkBytesQuota, dataBytesQuota)
+		var err error
+
+		var constraintCache search.RowRangesForConstraintsCache
+		if p.constraintCacheFunc != nil {
+			constraintCache, err = p.constraintCacheFunc(ctx)
+			if err != nil {
+				return nil, err
+			}
+		}
+
+		qb, err := newQueryableShard(
+			shard, constraintCache, p.chunksDecoder,
+			p.opts, rowCountQuota, chunkBytesQuota, dataBytesQuota,
+		)
 		if err != nil {
 			return nil, err
 		}

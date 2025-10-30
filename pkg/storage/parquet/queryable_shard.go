@@ -20,25 +20,36 @@ import (
 )
 
 type queryableShard struct {
-	shard       storage.ParquetShard
-	m           *search.Materializer
-	concurrency int
+	shard           storage.ParquetShard
+	constraintCache search.RowRangesForConstraintsCache
+	materializer    *search.Materializer
+	concurrency     int
 }
 
-func newQueryableShard(opts *querierOpts, block storage.ParquetShard, d *schema.PrometheusParquetChunksDecoder, rowCountQuota *search.Quota, chunkBytesQuota *search.Quota, dataBytesQuota *search.Quota) (*queryableShard, error) {
-	s, err := block.TSDBSchema()
+func newQueryableShard(
+	shard storage.ParquetShard,
+	constraintCache search.RowRangesForConstraintsCache,
+	chunksDecoder *schema.PrometheusParquetChunksDecoder,
+	opts *querierOpts,
+	rowCountQuota *search.Quota,
+	chunkBytesQuota *search.Quota,
+	dataBytesQuota *search.Quota,
+) (*queryableShard, error) {
+	shardSchema, err := shard.TSDBSchema()
 	if err != nil {
 		return nil, err
 	}
-	m, err := search.NewMaterializer(s, d, block, opts.concurrency, rowCountQuota, chunkBytesQuota, dataBytesQuota, opts.materializedSeriesCallback, opts.materializedLabelsFilterCallback)
+	materializer, err := search.NewMaterializer(
+		shardSchema, chunksDecoder, shard, opts.concurrency, rowCountQuota, chunkBytesQuota, dataBytesQuota, opts.materializedSeriesCallback, opts.materializedLabelsFilterCallback)
 	if err != nil {
 		return nil, err
 	}
 
 	return &queryableShard{
-		shard:       block,
-		m:           m,
-		concurrency: opts.concurrency,
+		shard:           shard,
+		constraintCache: constraintCache,
+		materializer:    materializer,
+		concurrency:     opts.concurrency,
 	}, nil
 }
 
@@ -62,7 +73,7 @@ func (b queryableShard) Query(ctx context.Context, sorted bool, sp *prom_storage
 			if err != nil {
 				return err
 			}
-			rr, err := search.Filter(ctx, b.shard, rgi, cs...)
+			rr, err := search.Filter(ctx, b.shard, rgi, b.constraintCache, cs...)
 			if err != nil {
 				return err
 			}
@@ -71,7 +82,7 @@ func (b queryableShard) Query(ctx context.Context, sorted bool, sp *prom_storage
 				return nil
 			}
 
-			seriesSetIter, err := b.m.Materialize(ctx, sp, rgi, mint, maxt, skipChunks, rr)
+			seriesSetIter, err := b.materializer.Materialize(ctx, sp, rgi, mint, maxt, skipChunks, rr)
 			if err != nil {
 				return err
 			}
@@ -136,7 +147,7 @@ func (b queryableShard) QueryIter(ctx context.Context, sorted bool, sp *prom_sto
 			if err != nil {
 				return err
 			}
-			rr, err := search.Filter(groupCtx, b.shard, rgi, cs...)
+			rr, err := search.Filter(groupCtx, b.shard, rgi, b.constraintCache, cs...)
 			if err != nil {
 				return err
 			}
@@ -145,12 +156,12 @@ func (b queryableShard) QueryIter(ctx context.Context, sorted bool, sp *prom_sto
 				return nil
 			}
 
-			labelsSlices, err := b.m.MaterializeAllLabels(groupCtx, rgi, rr)
+			labelsSlices, err := b.materializer.MaterializeAllLabels(groupCtx, rgi, rr)
 			if err != nil {
 				return errors.Wrapf(err, "error materializing labels")
 			}
 
-			labels, rr := b.m.FilterSeriesLabels(groupCtx, sp, labelsSlices, rr)
+			labels, rr := b.materializer.FilterSeriesLabels(groupCtx, sp, labelsSlices, rr)
 
 			labelsSets[rgi] = search.NewNoChunksConcreteLabelsSeriesSet(labels)
 			if skipChunks {
@@ -179,7 +190,7 @@ func (b queryableShard) QueryIter(ctx context.Context, sorted bool, sp *prom_sto
 					continue
 				}
 				// TODO: closeable
-				chunksIter, err := b.m.MaterializeChunks(ctx, rgi, mint, maxt, groupRR)
+				chunksIter, err := b.materializer.MaterializeChunks(ctx, rgi, mint, maxt, groupRR)
 				if err != nil {
 					return errors.Wrapf(err, "error materializing chunks for group %d", groupIdx)
 				}
@@ -207,7 +218,7 @@ func (b queryableShard) QueryIter(ctx context.Context, sorted bool, sp *prom_sto
 
 func (b queryableShard) LabelNames(ctx context.Context, limit int64, matchers []*labels.Matcher) ([]string, error) {
 	if len(matchers) == 0 {
-		return b.m.MaterializeAllLabelNames(), nil
+		return b.materializer.MaterializeAllLabelNames(), nil
 	}
 
 	errGroup, ctx := errgroup.WithContext(ctx)
@@ -225,11 +236,11 @@ func (b queryableShard) LabelNames(ctx context.Context, limit int64, matchers []
 			if err != nil {
 				return err
 			}
-			rr, err := search.Filter(ctx, b.shard, rgi, cs...)
+			rr, err := search.Filter(ctx, b.shard, rgi, b.constraintCache, cs...)
 			if err != nil {
 				return err
 			}
-			series, err := b.m.MaterializeLabelNames(ctx, rgi, rr)
+			series, err := b.materializer.MaterializeLabelNames(ctx, rgi, rr)
 			if err != nil {
 				return err
 			}
@@ -265,11 +276,11 @@ func (b queryableShard) LabelValues(ctx context.Context, name string, limit int6
 			if err != nil {
 				return err
 			}
-			rr, err := search.Filter(ctx, b.shard, rgi, cs...)
+			rr, err := search.Filter(ctx, b.shard, rgi, b.constraintCache, cs...)
 			if err != nil {
 				return err
 			}
-			series, err := b.m.MaterializeLabelValues(ctx, name, rgi, rr)
+			series, err := b.materializer.MaterializeLabelValues(ctx, name, rgi, rr)
 			if err != nil {
 				return err
 			}
@@ -293,7 +304,7 @@ func (b queryableShard) allLabelValues(ctx context.Context, name string, limit i
 
 	for i := range b.shard.LabelsFile().RowGroups() {
 		errGroup.Go(func() error {
-			series, err := b.m.MaterializeAllLabelValues(ctx, name, i)
+			series, err := b.materializer.MaterializeAllLabelValues(ctx, name, i)
 			if err != nil {
 				return err
 			}
