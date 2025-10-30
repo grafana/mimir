@@ -10,12 +10,12 @@ import (
 	"hash/crc32"
 	"io"
 	"math"
-	"math/rand"
 	"slices"
 	"testing"
 
 	"github.com/go-kit/log"
 	"github.com/oklog/ulid/v2"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/labels"
 	promtsdb "github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
@@ -129,10 +129,9 @@ func TestBucketChunkReader_loadChunks_brokenChunkSize(t *testing.T) {
 // Helper to create chunk data with random content based on seed (data only, no encoding byte)
 func createChunkData(chunkDataSize, seed int) []byte {
 	data := make([]byte, chunkDataSize)
-	r := rand.New(rand.NewSource(int64(seed)))
-	// Fill with pseudo-random data based on seed
-	for i := 0; i < len(data); i++ {
-		data[i] = byte(r.Intn(256))
+	// start from seed and loop around to avoid overflow
+	for i := 0; i < chunkDataSize; i++ {
+		data[i] = byte((seed + i) % 256)
 	}
 	return data
 }
@@ -382,7 +381,7 @@ func TestBucketChunkReader_loadChunks_verifiesCRC32(t *testing.T) {
 					},
 				},
 				bkt:          bucketReader,
-				partitioners: blockPartitioners{naivePartitioner{}, naivePartitioner{}, naivePartitioner{}},
+				partitioners: newGapBasedPartitioners(1_000_000, prometheus.NewRegistry()),
 				chunkObjs:    []string{"segment-0"},
 			}
 
