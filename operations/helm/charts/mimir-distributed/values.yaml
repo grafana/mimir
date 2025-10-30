@@ -3899,6 +3899,3 @@ continuous_test:
 #   data: |
 #     extra.yml: "{{ include some-mimir-define }}"
 extraObjects: []
-enterprise:
-  image:
-    tag: r366-d0669dac
