@@ -246,7 +246,7 @@ func newParquetConverter(
 		metrics:              newParquetConverterMetrics(registerer),
 		conversionQueue:      newPriorityQueue(),
 		conversionBytesSem:   newTolerantSemaphore(int64(cfg.ConversionBytesConcurrency)),
-		taskBytesSem:         newTolerantSemaphore(int64(cfg.TaskConcurrency)),
+		taskBytesSem:         newTolerantSemaphore(int64(cfg.TaskBytesConcurrency)),
 		taskCountSem:         semaphore.NewWeighted(int64(cfg.TaskConcurrency)),
 	}
 
