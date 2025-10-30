@@ -15,6 +15,7 @@ import (
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware/astmapper"
 	"github.com/grafana/mimir/pkg/streamingpromql"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/ast/sharding"
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/commonsubexpressionelimination"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/remoteexec"
 	"github.com/grafana/mimir/pkg/streamingpromql/testutils"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
@@ -142,6 +143,29 @@ func TestOptimizationPass(t *testing.T) {
 						- MatrixSelector: {__query__="sum(my_metric)", __range__="6h0m0s", __step__="5m0s", __name__="__subquery_spinoff__"}[6h0m0s]
 			`,
 		},
+		"expression with common sharded subexpression": {
+			expr: `sum(foo) + sum(foo)`,
+			expectedPlan: `
+				- BinaryExpression: LHS + RHS
+					- LHS: ref#1 Duplicate
+						- AggregateExpression: sum
+							- FunctionCall: __sharded_concat__(...)
+								- param 0: RemoteExecution: eager load
+									- AggregateExpression: sum
+										- VectorSelector: {__query_shard__="1_of_2", __name__="foo"}
+								- param 1: RemoteExecution: eager load
+									- AggregateExpression: sum
+										- VectorSelector: {__query_shard__="2_of_2", __name__="foo"}
+					- RHS: ref#1 Duplicate ...
+			`,
+			expectedPlanWithMiddlewareSharding: `
+				- BinaryExpression: LHS + RHS
+					- LHS: ref#1 Duplicate
+						- AggregateExpression: sum
+							- VectorSelector: {__queries__="{\"Concat\":[{\"Expr\":\"sum(foo{__query_shard__=\\\"1_of_2\\\"})\"},{\"Expr\":\"sum(foo{__query_shard__=\\\"2_of_2\\\"})\"}]}", __name__="__embedded_queries__"}
+					- RHS: ref#1 Duplicate ...
+			`,
+		},
 	}
 
 	ctx := user.InjectOrgID(context.Background(), "tenant-1")
@@ -149,14 +173,17 @@ func TestOptimizationPass(t *testing.T) {
 	timeRange := types.NewInstantQueryTimeRange(time.Now())
 
 	opts := streamingpromql.NewTestEngineOpts()
+	logger := log.NewNopLogger()
 
 	plannerForMQESharding, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(t, err)
-	plannerForMQESharding.RegisterASTOptimizationPass(sharding.NewOptimizationPass(&mockLimits{}, 0, nil, log.NewNopLogger()))
+	plannerForMQESharding.RegisterASTOptimizationPass(sharding.NewOptimizationPass(&mockLimits{}, 0, nil, logger))
+	plannerForMQESharding.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(true, nil, logger))
 	plannerForMQESharding.RegisterQueryPlanOptimizationPass(remoteexec.NewOptimizationPass())
 
 	plannerForMiddlewareSharding, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(t, err)
+	plannerForMiddlewareSharding.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(true, nil, logger))
 	plannerForMiddlewareSharding.RegisterQueryPlanOptimizationPass(remoteexec.NewOptimizationPass())
 
 	runTestCase := func(t *testing.T, expr string, expected string, enableMiddlewareSharding bool, planner *streamingpromql.QueryPlanner) {
