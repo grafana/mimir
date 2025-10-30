@@ -84,6 +84,8 @@ type ParquetBucketStore struct {
 	actuallyStreamChunks bool
 	fileOpts             []parquetStorage.FileOption
 
+	constraintCacheFunc queryable.ConstraintCacheFunction
+
 	// chunksLimiterFactory creates a new limiter used to limit the number of chunks fetched by each Series() call.
 	chunksLimiterFactory ChunksLimiterFactory
 	// seriesLimiterFactory creates a new limiter used to limit the number of touched series by each Series() call,
@@ -138,6 +140,9 @@ func NewParquetBucketStore(
 			parquetStorage.WithFileOptions(parquetGo.SkipBloomFilters(false)),
 		),
 
+		constraintCacheFunc: func(ctx context.Context) (search.RowRangesForConstraintsCache, error) {
+			return search.NewConstraintRowRangeCacheSyncMap(), nil
+		},
 		chunksLimiterFactory: chunksLimiterFactory,
 		seriesLimiterFactory: seriesLimiterFactory,
 		maxSeriesPerBatch:    bucketStoreConfig.StreamingBatchSize,
@@ -367,7 +372,7 @@ func (s *ParquetBucketStore) LabelNames(ctx context.Context, req *storepb.LabelN
 				defer runutil.CloseWithLogOnErr(s.logger, shard, "close shard")
 
 				decoder := schema.NewPrometheusParquetChunksDecoder(chunkenc.NewPool())
-				parquetQueryable, err := queryable.NewParquetQueryable(decoder, shardsFinder)
+				parquetQueryable, err := queryable.NewParquetQueryable(shardsFinder, s.constraintCacheFunc, decoder)
 				if err != nil {
 					return errors.Wrap(err, "error creating parquet queryable")
 				}
@@ -476,7 +481,7 @@ func (s *ParquetBucketStore) LabelValues(ctx context.Context, req *storepb.Label
 				defer runutil.CloseWithLogOnErr(s.logger, shard, "close shard")
 
 				decoder := schema.NewPrometheusParquetChunksDecoder(chunkenc.NewPool())
-				parquetQueryable, err := queryable.NewParquetQueryable(decoder, shardsFinder)
+				parquetQueryable, err := queryable.NewParquetQueryable(shardsFinder, s.constraintCacheFunc, decoder)
 				if err != nil {
 					return errors.Wrap(err, "error creating parquet queryable")
 				}
@@ -615,7 +620,7 @@ func (s *ParquetBucketStore) createLabelsAndChunksIterators(
 		opts = append(opts, parquet.WithMaterializedLabelsFilterCallback(shardFilter))
 	}
 
-	q, err := parquet.NewParquetChunkQuerier(decoder, shardsFinder, opts...)
+	q, err := parquet.NewParquetChunkQuerier(shardsFinder, s.constraintCacheFunc, decoder, opts...)
 	if err != nil {
 		return nil, nil, errors.Wrap(err, "error creating parquet queryable")
 	}

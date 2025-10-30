@@ -52,6 +52,7 @@ func (o *ParquetLocalFileOpener) Open(
 // lazy-loading or other lifecycle management can be implemented by wrapping this type.
 type BasicReader struct {
 	blockID                ulid.ULID
+	shardIdx               int
 	labelsFile, chunksFile storage.ParquetFileView
 	schema                 *schema.TSDBSchema
 	o                      sync.Once
@@ -60,13 +61,13 @@ type BasicReader struct {
 func NewBasicReader(
 	ctx context.Context,
 	blockID ulid.ULID,
-	shard int,
+	shardIdx int,
 	labelsFileOpener storage.ParquetOpener,
 	chunksFileOpener storage.ParquetOpener,
 	opts ...storage.FileOption,
 ) (*BasicReader, error) {
-	labelsFileName := schema.LabelsPfileNameForShard(blockID.String(), shard)
-	chunksFileName := schema.ChunksPfileNameForShard(blockID.String(), shard)
+	labelsFileName := schema.LabelsPfileNameForShard(blockID.String(), shardIdx)
+	chunksFileName := schema.ChunksPfileNameForShard(blockID.String(), shardIdx)
 
 	errGroup := errgroup.Group{}
 
@@ -88,13 +89,22 @@ func NewBasicReader(
 
 	return &BasicReader{
 		blockID:    blockID,
+		shardIdx:   shardIdx,
 		labelsFile: labelsFile,
 		chunksFile: chunksFile,
 	}, nil
 }
 
+func (r *BasicReader) Name() string {
+	return r.blockID.String()
+}
+
 func (r *BasicReader) BlockID() ulid.ULID {
 	return r.blockID
+}
+
+func (r *BasicReader) ShardIdx() int {
+	return r.shardIdx
 }
 
 func (r *BasicReader) LabelsFile() storage.ParquetFileView {
