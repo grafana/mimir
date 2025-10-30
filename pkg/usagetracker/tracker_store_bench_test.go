@@ -16,6 +16,8 @@ import (
 	"go.uber.org/atomic"
 )
 
+const testIdleTimeout = 20 * time.Minute
+
 func BenchmarkTrackerStoreTrackSeries(b *testing.B) {
 	for _, totalSeries := range []int{10e6, 100e6} {
 		b.Run(fmt.Sprintf("totalSeries=%dM", totalSeries/1e6), func(b *testing.B) {
@@ -49,7 +51,7 @@ func BenchmarkTrackerStoreTrackSeries(b *testing.B) {
 func benckmarkTrackerStoreTrackSeries(b *testing.B, seriesRefs []uint64, seriesPerRequest, tenantsCount int, cleanupsEnabled bool) {
 	nowSeconds := atomic.NewInt64(0)
 	now := func() time.Time { return time.Unix(nowSeconds.Load(), 0) }
-	t := newTrackerStore(20*time.Minute, log.NewNopLogger(), limiterMock{}, noopEvents{})
+	t := newTrackerStore(testIdleTimeout, log.NewNopLogger(), limiterMock{}, noopEvents{})
 
 	seriesPerTenant := len(seriesRefs) / tenantsCount
 	// Warmup each tenant.
@@ -99,4 +101,63 @@ func benckmarkTrackerStoreTrackSeries(b *testing.B, seriesRefs []uint64, seriesP
 	})
 	close(cleanup)
 	wg.Wait()
+}
+
+func BenchmarkTrackerStoreLoadSnapshot(b *testing.B) {
+	now := time.Now()
+	snapshots := generateSnapshot(b, 1, 10e6, now)
+	b.Logf("Snapshots generation took %s", time.Since(now))
+
+	b.Run("concurrency=1", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			t := newTrackerStore(testIdleTimeout, log.NewNopLogger(), limiterMock{}, noopEvents{})
+			for _, d := range snapshots {
+				require.NoError(b, t.loadSnapshot(d, now))
+			}
+		}
+	})
+
+	b.Run("concurrency=shards", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			t := newTrackerStore(testIdleTimeout, log.NewNopLogger(), limiterMock{}, noopEvents{})
+			wg := &sync.WaitGroup{}
+			wg.Add(len(snapshots))
+			for _, d := range snapshots {
+				go func() {
+					defer wg.Done()
+					require.NoError(b, t.loadSnapshot(d, now))
+				}()
+			}
+			wg.Wait()
+		}
+	})
+}
+
+func generateSnapshot(b *testing.B, tenantsCount int, totalSeries int, now time.Time) [][]byte {
+	tenants := make([]string, tenantsCount)
+	for i := 0; i < tenantsCount; i++ {
+		tenants[i] = strconv.Itoa(i)
+	}
+	seriesPerTenant := totalSeries / tenantsCount
+	seriesPerTenantPerMinute := seriesPerTenant / int(testIdleTimeout.Minutes())
+
+	t := newTrackerStore(testIdleTimeout, log.NewNopLogger(), limiterMock{}, noopEvents{})
+	deterministicRand := rand.New(rand.NewSource(0))
+	for timestamp := now.Add(-testIdleTimeout); timestamp.Before(now); timestamp = timestamp.Add(time.Minute) {
+		for i := 0; i < tenantsCount; i++ {
+			for _, tenant := range tenants {
+				series := make([]uint64, seriesPerTenantPerMinute)
+				for j := range series {
+					series[j] = deterministicRand.Uint64()
+				}
+				_, err := t.trackSeries(context.Background(), tenant, series, timestamp)
+				require.NoError(b, err)
+			}
+		}
+	}
+	snapshots := make([][]byte, shards)
+	for shard := 0; shard < shards; shard++ {
+		snapshots[shard] = t.snapshot(uint8(shard), now, nil)
+	}
+	return snapshots
 }
