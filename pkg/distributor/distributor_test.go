@@ -8450,7 +8450,7 @@ func TestDistributor_AcquireReactiveLimiterPermit(t *testing.T) {
 		reactiveLimiterCanAcquire     bool
 		contextCanceled               bool
 		expectedError                 error
-		verifyCleanUpFunc             func(func(error), *mockPermit)
+		verifyCleanUpFunc             func(func(), *mockPermit)
 		expectedRejectedRequestsCount int
 		expectedAcquiredPermit        bool
 	}
@@ -8465,7 +8465,7 @@ func TestDistributor_AcquireReactiveLimiterPermit(t *testing.T) {
 			reactiveLimiterEnabled:    true,
 			reactiveLimiterCanAcquire: true,
 			expectedError:             nil,
-			verifyCleanUpFunc: func(cleanUp func(error), _ *mockPermit) {
+			verifyCleanUpFunc: func(cleanUp func(), _ *mockPermit) {
 				require.NotNil(t, cleanUp)
 			},
 			expectedRejectedRequestsCount: 0,
@@ -8481,24 +8481,11 @@ func TestDistributor_AcquireReactiveLimiterPermit(t *testing.T) {
 			reactiveLimiterEnabled:    true,
 			reactiveLimiterCanAcquire: true,
 			expectedError:             nil,
-			verifyCleanUpFunc: func(cleanUp func(error), permit *mockPermit) {
+			verifyCleanUpFunc: func(cleanUp func(), permit *mockPermit) {
 				require.NotNil(t, cleanUp)
-				cleanUp(nil)
+				cleanUp()
 				require.True(t, permit.recordCalled)
 				require.False(t, permit.dropCalled)
-			},
-			expectedRejectedRequestsCount: 0,
-			expectedAcquiredPermit:        true,
-		},
-		"cleanup function calls permit.Drop() on context.Canceled error": {
-			reactiveLimiterEnabled:    true,
-			reactiveLimiterCanAcquire: true,
-			expectedError:             nil,
-			verifyCleanUpFunc: func(cleanUp func(error), permit *mockPermit) {
-				require.NotNil(t, cleanUp)
-				cleanUp(context.Canceled)
-				require.False(t, permit.recordCalled)
-				require.True(t, permit.dropCalled)
 			},
 			expectedRejectedRequestsCount: 0,
 			expectedAcquiredPermit:        true,
@@ -8508,9 +8495,9 @@ func TestDistributor_AcquireReactiveLimiterPermit(t *testing.T) {
 			reactiveLimiterCanAcquire: true,
 			contextCanceled:           true,
 			expectedError:             nil,
-			verifyCleanUpFunc: func(cleanUp func(error), permit *mockPermit) {
+			verifyCleanUpFunc: func(cleanUp func(), permit *mockPermit) {
 				require.NotNil(t, cleanUp)
-				cleanUp(errors.New("some error"))
+				cleanUp()
 				require.False(t, permit.recordCalled)
 				require.True(t, permit.dropCalled)
 			},
@@ -8521,9 +8508,9 @@ func TestDistributor_AcquireReactiveLimiterPermit(t *testing.T) {
 			reactiveLimiterEnabled:    true,
 			reactiveLimiterCanAcquire: true,
 			expectedError:             nil,
-			verifyCleanUpFunc: func(cleanUp func(error), permit *mockPermit) {
+			verifyCleanUpFunc: func(cleanUp func(), permit *mockPermit) {
 				require.NotNil(t, cleanUp)
-				cleanUp(errors.New("some error"))
+				cleanUp()
 				require.True(t, permit.recordCalled)
 				require.False(t, permit.dropCalled)
 			},
