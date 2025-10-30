@@ -31,7 +31,7 @@ image:
   # -- Grafana Mimir container image repository
   repository: grafana/mimir
   # -- Grafana Mimir container image tag
-  tag: 3.0.0-rc.0
+  tag: r366-febf61b9
   # -- Container pull policy
   pullPolicy: IfNotPresent
   # -- Optionally specify an array of imagePullSecrets
@@ -3901,4 +3901,4 @@ continuous_test:
 extraObjects: []
 enterprise:
   image:
-    tag: r365-3fdf702d
+    tag: r366-d0669dac
