@@ -691,7 +691,7 @@ func TestMetaFetcher_BlockIDFilter(t *testing.T) {
 	require.NoError(t, err)
 	require.Subset(t, metas, blockIDs[:1])
 	require.Empty(t, partials)
-	
+
 	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 		# HELP blocks_meta_synced Number of block metadata synced
 		# TYPE blocks_meta_synced gauge
