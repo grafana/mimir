@@ -32,6 +32,15 @@ type ruleRegistry struct {
 	logger log.Logger
 }
 
+func newRuleRegistry(prefix string, logger log.Logger) *ruleRegistry {
+	return &ruleRegistry{
+		prefix: prefix,
+		rules:  map[string]map[string]rulespb.RuleGroupList{},
+		mtx:    sync.RWMutex{},
+		logger: logger,
+	}
+}
+
 func (r *ruleRegistry) cleanupUser(userID string) {
 	r.mtx.Lock()
 	defer r.mtx.Unlock()

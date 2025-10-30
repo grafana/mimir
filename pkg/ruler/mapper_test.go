@@ -15,6 +15,7 @@ import (
 	"github.com/spf13/afero"
 	"github.com/stretchr/testify/require"
 
+	"github.com/grafana/mimir/pkg/ruler/rulespb"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
@@ -221,6 +222,78 @@ func setupRuleSets() {
 			},
 		},
 	}
+}
+
+func testRuleSetAsProto(userID string, in map[string][]rulefmt.RuleGroup) map[string]rulespb.RuleGroupList {
+	result := make(map[string]rulespb.RuleGroupList, len(in))
+	for ns, groups := range in {
+		protoGroups := make(rulespb.RuleGroupList, 0, len(groups))
+		for _, group := range groups {
+			protoGroups = append(protoGroups, rulespb.ToProto(userID, ns, group))
+		}
+		result[ns] = protoGroups
+	}
+	return result
+}
+
+func Test_registry_MapRules(t *testing.T) {
+	l := util_log.MakeLeveledLogger(os.Stdout, "info")
+	setupRuleSets()
+	r := newRuleRegistry("/rules", l)
+
+	t.Run("basic rulegroup", func(t *testing.T) {
+		protoRules := testRuleSetAsProto(testUser, initialRuleSet)
+		updated, files, err := r.MapRules(testUser, protoRules)
+		require.True(t, updated)
+		require.Len(t, files, 1)
+		require.Equal(t, fileOnePath, files[0])
+		require.NoError(t, err)
+
+		userRules, ok := r.rules[testUser]
+		require.True(t, ok)
+		_, ok = userRules[fileOnePath]
+		require.True(t, ok)
+	})
+
+	t.Run("identical rulegroup", func(t *testing.T) {
+		protoRules := testRuleSetAsProto(testUser, initialRuleSet)
+		updated, files, err := r.MapRules(testUser, protoRules)
+		require.False(t, updated)
+		require.Len(t, files, 1)
+		require.NoError(t, err)
+
+		userRules, ok := r.rules[testUser]
+		require.True(t, ok)
+		_, ok = userRules[fileOnePath]
+		require.True(t, ok)
+	})
+
+	t.Run("out of order identical rulegroup", func(t *testing.T) {
+		protoRules := testRuleSetAsProto(testUser, outOfOrderRuleSet)
+		updated, files, err := r.MapRules(testUser, protoRules)
+		require.False(t, updated)
+		require.Len(t, files, 1)
+		require.NoError(t, err)
+
+		userRules, ok := r.rules[testUser]
+		require.True(t, ok)
+		_, ok = userRules[fileOnePath]
+		require.True(t, ok)
+	})
+
+	t.Run("updated rulegroup", func(t *testing.T) {
+		protoRules := testRuleSetAsProto(testUser, updatedRuleSet)
+		updated, files, err := r.MapRules(testUser, protoRules)
+		require.True(t, updated)
+		require.Len(t, files, 1)
+		require.Equal(t, fileOnePath, files[0])
+		require.NoError(t, err)
+
+		userRules, ok := r.rules[testUser]
+		require.True(t, ok)
+		_, ok = userRules[fileOnePath]
+		require.True(t, ok)
+	})
 }
 
 func Test_mapper_MapRules(t *testing.T) {
