@@ -21,8 +21,6 @@ import (
 // loadBalancer defines the interface for different load balancing strategies
 // to determine which instance should process a given block
 type loadBalancer interface {
-	services.Service
-
 	// shouldEnqueue returns true if the current instance should enqueue
 	// the block for processing. Before attempting to process a block,
 	// the instance should still call lock to acquire the right to process it.
@@ -34,6 +32,12 @@ type loadBalancer interface {
 
 	// unlock must be called after processing a block to release the lock.
 	unlock(ctx context.Context, blockID string) error
+
+	// stop stops the load balancer
+	stop() error
+
+	// start starts the load balancer
+	start(ctx context.Context) error
 }
 
 const (
@@ -44,23 +48,20 @@ const (
 // cacheLockLoadBalancer implements loadBalancer with a best-effort distributed locking
 // using a cache backend.
 type cacheLockLoadBalancer struct {
-	services.Service
 	cache cache.Cache
 }
 
 func newCacheLockLoadBalancer(cache cache.Cache) *cacheLockLoadBalancer {
-	l := &cacheLockLoadBalancer{
+	return &cacheLockLoadBalancer{
 		cache: cache,
 	}
-	l.Service = services.NewIdleService(l.starting, l.stopping).WithName("cache-lock-load-balancer")
-	return l
 }
 
-func (l *cacheLockLoadBalancer) starting(ctx context.Context) error {
+func (l *cacheLockLoadBalancer) start(ctx context.Context) error {
 	return nil
 }
 
-func (l *cacheLockLoadBalancer) stopping(error) error {
+func (l *cacheLockLoadBalancer) stop() error {
 	l.cache.Stop()
 	return nil
 }
@@ -85,7 +86,6 @@ func (l *cacheLockLoadBalancer) unlock(ctx context.Context, blockID string) erro
 
 // ringLoadBalancer implements loadBalancer using a ring for consistent hashing
 type ringLoadBalancer struct {
-	services.Service
 	ring           *ring.Ring
 	ringLifecycler *ring.BasicLifecycler
 	manager        *services.Manager
@@ -122,25 +122,15 @@ func newRingLoadBalancer(cfg RingConfig, logger log.Logger, registerer prometheu
 		manager:        ringServices,
 		watcher:        watcher,
 	}
-	r.Service = services.NewBasicService(r.starting, r.running, r.stopping).WithName("ring-load-balancer")
 	return r, nil
 }
 
-func (r *ringLoadBalancer) starting(ctx context.Context) error {
+func (r *ringLoadBalancer) start(ctx context.Context) error {
 	r.watcher.WatchManager(r.manager)
 	return services.StartManagerAndAwaitHealthy(ctx, r.manager)
 }
 
-func (r *ringLoadBalancer) running(ctx context.Context) error {
-	select {
-	case <-ctx.Done():
-		return nil
-	case err := <-r.watcher.Chan():
-		return err
-	}
-}
-
-func (r *ringLoadBalancer) stopping(error) error {
+func (r *ringLoadBalancer) stop() error {
 	return services.StopManagerAndAwaitStopped(context.Background(), r.manager)
 }
 
