@@ -114,8 +114,8 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.DurationVar(&cfg.ConversionInterval, "parquet-converter.conversion-interval", time.Minute, "The frequency at which the conversion runs.")
 	f.DurationVar(&cfg.DiscoveryInterval, "parquet-converter.discovery-interval", 5*time.Minute, "The frequency at which user and block discovery runs.")
 
-	f.IntVar(&cfg.TaskConcurrency, "parquet-converter.task-concurrency", 2, "Maximum number of Go routines processing tasks in parallel.")
-	f.IntVar(&cfg.ConversionConcurrency, "parquet-converter.conversion-concurrency", 1, "Maximum number of concurrent Go routines allowed to run the conversion code.")
+	f.IntVar(&cfg.TaskConcurrency, "parquet-converter.task-concurrency", 2e9, "Maximum number of bytes of the sum of all blocks sizes being processed concurrently.")
+	f.IntVar(&cfg.ConversionConcurrency, "parquet-converter.conversion-concurrency", 1e9, "Maximum number of bytes of the sum of all blocks being converted to Parquet concurrently.")
 
 	f.DurationVar(&cfg.MinDataAge, "parquet-converter.min-data-age", 0, "Minimum age of data in blocks to convert. Only convert blocks containing data older than this duration from now, based on their MinTime. Set to 0 to disable age filtering.")
 	f.Uint64Var(&cfg.MinBlockTimestamp, "parquet-converter.min-block-timestamp", 0, "Minimum block timestamp (based on ULID) to convert. Set to 0 to disable timestamp filtering.")
@@ -153,7 +153,8 @@ type ParquetConverter struct {
 	metrics              parquetConverterMetrics
 
 	conversionQueue *priorityQueue
-	conversionSem   *semaphore.Weighted
+	conversionSem   *tolerantSemaphore
+	taskSem         *tolerantSemaphore
 
 	queuedBlocks sync.Map // map[ulid.ULID]time.Time - persistent cache of blocks that have been queued
 }
@@ -241,7 +242,8 @@ func newParquetConverter(
 		baseConverterOptions: buildBaseConverterOptions(cfg),
 		metrics:              newParquetConverterMetrics(registerer),
 		conversionQueue:      newPriorityQueue(),
-		conversionSem:        semaphore.NewWeighted(int64(cfg.ConversionConcurrency)),
+		conversionSem:        newTolerantSemaphore(int64(cfg.ConversionConcurrency)),
+		taskSem:              newTolerantSemaphore(int64(cfg.TaskConcurrency)),
 	}
 
 	c.Service = services.NewBasicService(c.starting, c.running, c.stopping).WithName("parquet-converter")
@@ -304,50 +306,43 @@ func (c *ParquetConverter) running(ctx context.Context) error {
 		}
 	})
 
-	for range c.Cfg.TaskConcurrency {
-		g.Go(func() error {
-			defer func() {
-				if r := recover(); r != nil {
-					level.Error(c.logger).Log("msg", "parquet-converter processing goroutine panicked", "panic", r)
-					panic(r) // Re-panic to force service restart
-				}
-			}()
-
-			for {
-				select {
-				case <-gCtx.Done():
-					return nil
-				default:
-					task, ok := c.conversionQueue.Pop()
-					if !ok {
-						select {
-						case <-gCtx.Done():
-							return nil
-						case <-time.After(1 * time.Second):
-							continue
-						}
+	g.Go(func() error {
+		for {
+			select {
+			case <-gCtx.Done():
+				return nil
+			default:
+				task, ok := c.conversionQueue.Pop()
+				if !ok {
+					select {
+					case <-gCtx.Done():
+						return nil
+					case <-time.After(1 * time.Second):
+						continue
 					}
-
-					func() {
-						defer func() {
-							if r := recover(); r != nil {
-								level.Error(c.logger).Log("msg", "parquet-converter processBlock panicked", "panic", r, "block", task.Meta.ULID.String())
-							}
-						}()
-
-						c.metrics.queueSize.WithLabelValues(c.Cfg.LoadBalancingStrategy).Set(float64(c.conversionQueue.Size()))
-						c.metrics.queueItemsProcessed.WithLabelValues(task.UserID).Inc()
-
-						waitTime := time.Since(task.EnqueuedAt)
-						c.metrics.queueWaitTime.WithLabelValues(task.UserID).Observe(waitTime.Seconds())
-
-						ulogger := util_log.WithUserID(task.UserID, c.logger)
-						c.processBlock(gCtx, task.UserID, task.Meta, task.Bucket, ulogger)
-					}()
 				}
+				err := c.taskSem.Acquire(gCtx, task.Meta.BlockBytes())
+				if err != nil {
+					if errors.Is(err, context.Canceled) {
+						return nil
+					}
+					return err
+				}
+				go func() {
+					defer c.taskSem.Release(task.Meta.BlockBytes())
+
+					c.metrics.queueSize.WithLabelValues(c.Cfg.LoadBalancingStrategy).Set(float64(c.conversionQueue.Size()))
+					c.metrics.queueItemsProcessed.WithLabelValues(task.UserID).Inc()
+
+					waitTime := time.Since(task.EnqueuedAt)
+					c.metrics.queueWaitTime.WithLabelValues(task.UserID).Observe(waitTime.Seconds())
+
+					c.processBlock(gCtx, task.UserID, task.Meta, task.Bucket, c.logger)
+				}()
+
 			}
-		})
-	}
+		}
+	})
 
 	for {
 		select {
@@ -446,6 +441,12 @@ func (c *ParquetConverter) discoverAndEnqueueBlocks(ctx context.Context) {
 
 // processBlock handles the conversion of a single block with proper metrics tracking.
 func (c *ParquetConverter) processBlock(ctx context.Context, userID string, meta *block.Meta, uBucket objstore.InstrumentedBucket, logger log.Logger) {
+	defer func() {
+		if r := recover(); r != nil {
+			level.Error(c.logger).Log("msg", "parquet-converter processBlock panicked", "panic", r, "block", meta.ULID.String())
+		}
+	}()
+
 	ulidTime := time.UnixMilli(int64(meta.ULID.Time()))
 	level.Info(logger).Log(
 		"msg", "starting block conversion",
@@ -530,11 +531,11 @@ func (c *ParquetConverter) processBlock(ctx context.Context, userID string, meta
 	convertOpts[len(c.baseConverterOptions)] = convert.WithName(meta.ULID.String())
 
 	// Conversion is the intense part, so we limit the number of concurrent conversions.
-	if err := c.conversionSem.Acquire(ctx, 1); err != nil {
+	if err := c.conversionSem.Acquire(ctx, meta.BlockBytes()); err != nil {
 		level.Error(logger).Log("msg", "failed to acquire conversion semaphore", "err", err)
 		return
 	}
-	defer c.conversionSem.Release(1)
+	defer c.conversionSem.Release(meta.BlockBytes())
 
 	err = c.blockConverter.ConvertBlock(ctx, meta, localBlockDir, uBucket, logger, convertOpts)
 
@@ -659,4 +660,29 @@ func (c *ParquetConverter) shouldProcessBlock(ctx context.Context, meta *block.M
 	}
 
 	return "", nil
+}
+
+// tolerantSemaphore is a semaphore that tolerates acquire requests
+// larger than its size by capping them to its size.
+type tolerantSemaphore struct {
+	*semaphore.Weighted
+	size int64
+}
+
+func newTolerantSemaphore(size int64) *tolerantSemaphore {
+	return &tolerantSemaphore{
+		Weighted: semaphore.NewWeighted(size),
+		size:     size,
+	}
+}
+func (s *tolerantSemaphore) Acquire(ctx context.Context, n int64) error {
+	return s.Weighted.Acquire(ctx, min(n, s.size))
+}
+
+func (s *tolerantSemaphore) Release(n int64) {
+	s.Weighted.Release(min(n, s.size))
+}
+
+func (s *tolerantSemaphore) TryAcquire(n int64) bool {
+	return s.Weighted.TryAcquire(min(n, s.size))
 }
