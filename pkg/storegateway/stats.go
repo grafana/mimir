@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 )
 
@@ -109,6 +110,11 @@ func newBlockQueriedMeta(meta *block.Meta) blockQueriedMeta {
 	// Newly shipped blocks get level 1. Level 0 means that the meta of this block was included in the bucket index before we started adding compaction level in the bucket index.
 	if meta.Compaction.Level == 0 {
 		m.level = "unknown/old_block"
+	}
+
+	// The compactor doesn't preserve the "FromOutOfOrder" hints. Instead, we should check for the external label, that Mimir sets.
+	if !m.outOfOrder && meta.Thanos.Labels != nil {
+		m.outOfOrder = meta.Thanos.Labels[mimir_tsdb.OutOfOrderExternalLabel] == mimir_tsdb.OutOfOrderExternalLabelValue
 	}
 	return m
 }
