@@ -333,7 +333,7 @@ func (e *schedulerExecutor) executeCompactionJob(ctx context.Context, c *Multite
 	}
 
 	syncDir := c.metaSyncDirForUser(userID)
-	fetcher, err := block.NewMetaFetcher(userLogger, c.compactorCfg.MetaSyncConcurrency, userBucket, syncDir, reg, fetcherFilters, maxLookback)
+	fetcher, err := block.NewMetaFetcherWithBlockIDFilter(userLogger, c.compactorCfg.MetaSyncConcurrency, userBucket, syncDir, reg, fetcherFilters, maxLookback, blockIDs)
 	if err != nil {
 		return compactorschedulerpb.REASSIGN, errors.Wrap(err, "failed to create meta fetcher")
 	}
