@@ -77,6 +77,9 @@ const (
 
 	// LookbackExcludedMeta is label for blocks which are not loaded because their ULID pre-dates the fetcher's configured lookback period
 	LookbackExcludedMeta = "lookback-excluded"
+
+	// IDExcludedMeta is label for blocks which are not loaded because they were not in the fetcher's block ID filter
+	IDExcludedMeta = "id-excluded"
 )
 
 func NewFetcherMetrics(reg prometheus.Registerer, syncedExtraLabels [][]string) *FetcherMetrics {
@@ -115,6 +118,7 @@ func NewFetcherMetrics(reg prometheus.Registerer, syncedExtraLabels [][]string) 
 			{MarkedForDeletionMeta},
 			{MarkedForNoCompactionMeta},
 			{LookbackExcludedMeta},
+			{IDExcludedMeta},
 		}, syncedExtraLabels...)...,
 	)
 	m.Loads = promauto.With(reg).NewCounter(prometheus.CounterOpts{
@@ -162,10 +166,26 @@ type MetaFetcher struct {
 
 	mtx    sync.Mutex
 	cached map[ulid.ULID]*Meta
+
+	// Optional set of specific block IDs to fetch. If non-nil, only these blocks will be fetched.
+	allowedBlocks map[ulid.ULID]struct{}
 }
 
 // NewMetaFetcher returns a MetaFetcher.
 func NewMetaFetcher(logger log.Logger, concurrency int, bkt objstore.InstrumentedBucketReader, dir string, reg prometheus.Registerer, filters []MetadataFilter, lookback time.Duration) (*MetaFetcher, error) {
+	return newMetaFetcher(logger, concurrency, bkt, dir, reg, filters, lookback, nil)
+}
+
+// NewMetaFetcherWithBlockIDFilter returns a MetaFetcher that only fetches the specified block IDs.
+func NewMetaFetcherWithBlockIDFilter(logger log.Logger, concurrency int, bkt objstore.InstrumentedBucketReader, dir string, reg prometheus.Registerer, filters []MetadataFilter, lookback time.Duration, blockIDs []ulid.ULID) (*MetaFetcher, error) {
+	allowed := make(map[ulid.ULID]struct{}, len(blockIDs))
+	for _, id := range blockIDs {
+		allowed[id] = struct{}{}
+	}
+	return newMetaFetcher(logger, concurrency, bkt, dir, reg, filters, lookback, allowed)
+}
+
+func newMetaFetcher(logger log.Logger, concurrency int, bkt objstore.InstrumentedBucketReader, dir string, reg prometheus.Registerer, filters []MetadataFilter, lookback time.Duration, allowed map[ulid.ULID]struct{}) (*MetaFetcher, error) {
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
@@ -179,14 +199,15 @@ func NewMetaFetcher(logger log.Logger, concurrency int, bkt objstore.Instrumente
 	}
 
 	return &MetaFetcher{
-		logger:      log.With(logger, "component", "block.MetaFetcher"),
-		concurrency: concurrency,
-		bkt:         bkt,
-		cacheDir:    cacheDir,
-		cached:      map[ulid.ULID]*Meta{},
-		metrics:     NewFetcherMetrics(reg, nil),
-		filters:     filters,
-		maxLookback: lookback,
+		logger:        log.With(logger, "component", "block.MetaFetcher"),
+		concurrency:   concurrency,
+		bkt:           bkt,
+		cacheDir:      cacheDir,
+		cached:        map[ulid.ULID]*Meta{},
+		metrics:       NewFetcherMetrics(reg, nil),
+		filters:       filters,
+		maxLookback:   lookback,
+		allowedBlocks: allowed,
 	}, nil
 }
 
@@ -301,6 +322,7 @@ type response struct {
 	corruptedMetasCount    float64
 	markedForDeletionCount float64
 	exceededLookbackCount  float64
+	idExcludedCount        float64
 }
 
 func (f *MetaFetcher) fetchMetadata(ctx context.Context, excludeMarkedForDeletion bool) (interface{}, error) {
@@ -381,6 +403,16 @@ func (f *MetaFetcher) fetchMetadata(ctx context.Context, excludeMarkedForDeletio
 			id, ok := IsBlockDir(name)
 			if !ok {
 				return nil
+			}
+
+			// If a block ID filter is set, skip blocks not in the filter.
+			if f.allowedBlocks != nil {
+				if _, ok := f.allowedBlocks[id]; !ok {
+					mtx.Lock()
+					resp.idExcludedCount++
+					mtx.Unlock()
+					return nil
+				}
 			}
 
 			// If requested, skip any block marked for deletion.
@@ -505,6 +537,7 @@ func (f *MetaFetcher) fetch(ctx context.Context, excludeMarkedForDeletion bool) 
 	f.metrics.Synced.WithLabelValues(NoMeta).Set(resp.noMetasCount)
 	f.metrics.Synced.WithLabelValues(CorruptedMeta).Set(resp.corruptedMetasCount)
 	f.metrics.Synced.WithLabelValues(LookbackExcludedMeta).Set(resp.exceededLookbackCount)
+	f.metrics.Synced.WithLabelValues(IDExcludedMeta).Set(resp.idExcludedCount)
 	if excludeMarkedForDeletion {
 		f.metrics.Synced.WithLabelValues(MarkedForDeletionMeta).Set(resp.markedForDeletionCount)
 	}
