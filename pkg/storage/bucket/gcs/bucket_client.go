@@ -17,9 +17,8 @@ import (
 )
 
 // NewBucketClient creates a new GCS bucket client.
-// If cfg.EnableIdempotentUploads is true, all Upload operations will automatically use GCS
-// preconditions (GenerationMatch or DoesNotExist) to ensure idempotency, enabling automatic
-// retries by the GCS SDK. This adds an extra Attrs() read before each upload.
+// If cfg.EnableUploadRetries is true, all Upload operations will automatically be retried
+// on transient errors using the GCS RetryAlways policy.
 func NewBucketClient(ctx context.Context, cfg Config, name string, logger log.Logger) (objstore.Bucket, error) {
 	bucketConfig := gcs.Config{
 		Bucket:         cfg.BucketName,
@@ -31,46 +30,31 @@ func NewBucketClient(ctx context.Context, cfg Config, name string, logger log.Lo
 		return nil, errors.Wrap(err, "NewBucketClient: create bucket")
 	}
 
-	if !cfg.EnableIdempotentUploads {
+	if !cfg.EnableUploadRetries {
 		return gcsBucket, nil
 	}
 
-	return &idempotentBucket{
+	return &retryAlwaysBucket{
 		Bucket:    gcsBucket,
-		bkt:       gcsBucket.Handle(),
+		bkt:       gcsBucket.Handle().Retryer(storage.WithPolicy(storage.RetryAlways)),
 		chunkSize: bucketConfig.ChunkSizeBytes,
 	}, nil
 }
 
-// idempotentBucket wraps a GCS bucket to automatically add preconditions to Upload operations.
-// This makes all uploads idempotent by using GenerationMatch (for existing objects) or
-// DoesNotExist (for new objects), which enables GCS to safely retry them.
-type idempotentBucket struct {
+// retryAlwaysBucket wraps a GCS bucket to automatically retry Upload operations
+// using the RetryAlways policy. This retries all transient errors but does NOT
+// guarantee idempotency - concurrent writes or retries may overwrite objects.
+type retryAlwaysBucket struct {
 	*gcs.Bucket
 	bkt       *storage.BucketHandle
 	chunkSize int
 }
 
-// Upload performs an idempotent upload using GCS preconditions.
-// This reads the current object generation first, then uploads with a precondition
-// to ensure the upload is idempotent and safe to retry.
-func (b *idempotentBucket) Upload(ctx context.Context, name string, r io.Reader, opts ...objstore.ObjectUploadOption) error {
-	obj := b.bkt.Object(name)
-
-	attrs, err := obj.Attrs(ctx)
-	var conds storage.Conditions
-	if err != nil {
-		if !b.IsObjNotFoundErr(err) {
-			return errors.Wrap(err, "get object attrs for idempotent upload")
-		}
-
-		conds.DoesNotExist = true
-	} else {
-		conds.GenerationMatch = attrs.Generation
-	}
-
-	// Create writer with preconditions - this makes the upload idempotent.
-	w := obj.If(conds).NewWriter(ctx)
+// Upload performs an upload using a GCS handle wrapped with RetryAlways policy.
+// Uploads will be automatically retried on transient errors without any idempotency guarantees.
+func (b *retryAlwaysBucket) Upload(ctx context.Context, name string, r io.Reader, opts ...objstore.ObjectUploadOption) error {
+	// Use the retry-wrapped handle for automatic retries.
+	w := b.bkt.Object(name).NewWriter(ctx)
 
 	uploadOpts := objstore.ApplyObjectUploadOptions(opts...)
 	if b.chunkSize > 0 {
@@ -80,11 +64,11 @@ func (b *idempotentBucket) Upload(ctx context.Context, name string, r io.Reader,
 
 	if _, err := io.Copy(w, r); err != nil {
 		_ = w.Close()
-		return errors.Wrap(err, "write object with precondition")
+		return errors.Wrap(err, "write object")
 	}
 
 	if err := w.Close(); err != nil {
-		return errors.Wrap(err, "close writer with precondition")
+		return errors.Wrap(err, "close writer")
 	}
 
 	return nil

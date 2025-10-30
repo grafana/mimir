@@ -9053,12 +9053,12 @@
             },
             {
               "kind": "field",
-              "name": "enable_idempotent_uploads",
+              "name": "enable_upload_retries",
               "required": false,
-              "desc": "Enable idempotent uploads to GCS. This makes uploads safe to retry but adds an extra Attrs() read before each upload.",
+              "desc": "Enable automatic retries for GCS uploads using the RetryAlways policy. Uploads will be retried on transient errors. Note: this does not guarantee idempotency.",
               "fieldValue": null,
               "fieldDefaultValue": false,
-              "fieldFlag": "blocks-storage.gcs.enable-idempotent-uploads",
+              "fieldFlag": "blocks-storage.gcs.enable-upload-retries",
               "fieldType": "boolean"
             },
             {
@@ -14895,12 +14895,12 @@
             },
             {
               "kind": "field",
-              "name": "enable_idempotent_uploads",
+              "name": "enable_upload_retries",
               "required": false,
-              "desc": "Enable idempotent uploads to GCS. This makes uploads safe to retry but adds an extra Attrs() read before each upload.",
+              "desc": "Enable automatic retries for GCS uploads using the RetryAlways policy. Uploads will be retried on transient errors. Note: this does not guarantee idempotency.",
               "fieldValue": null,
               "fieldDefaultValue": false,
-              "fieldFlag": "ruler-storage.gcs.enable-idempotent-uploads",
+              "fieldFlag": "ruler-storage.gcs.enable-upload-retries",
               "fieldType": "boolean"
             },
             {
@@ -17174,12 +17174,12 @@
             },
             {
               "kind": "field",
-              "name": "enable_idempotent_uploads",
+              "name": "enable_upload_retries",
               "required": false,
-              "desc": "Enable idempotent uploads to GCS. This makes uploads safe to retry but adds an extra Attrs() read before each upload.",
+              "desc": "Enable automatic retries for GCS uploads using the RetryAlways policy. Uploads will be retried on transient errors. Note: this does not guarantee idempotency.",
               "fieldValue": null,
               "fieldDefaultValue": false,
-              "fieldFlag": "alertmanager-storage.gcs.enable-idempotent-uploads",
+              "fieldFlag": "alertmanager-storage.gcs.enable-upload-retries",
               "fieldType": "boolean"
             },
             {
@@ -20054,12 +20054,12 @@
                 },
                 {
                   "kind": "field",
-                  "name": "enable_idempotent_uploads",
+                  "name": "enable_upload_retries",
                   "required": false,
-                  "desc": "Enable idempotent uploads to GCS. This makes uploads safe to retry but adds an extra Attrs() read before each upload.",
+                  "desc": "Enable automatic retries for GCS uploads using the RetryAlways policy. Uploads will be retried on transient errors. Note: this does not guarantee idempotency.",
                   "fieldValue": null,
                   "fieldDefaultValue": false,
-                  "fieldFlag": "common.storage.gcs.enable-idempotent-uploads",
+                  "fieldFlag": "common.storage.gcs.enable-upload-retries",
                   "fieldType": "boolean"
                 },
                 {

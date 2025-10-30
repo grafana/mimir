@@ -5986,10 +5986,11 @@ The gcs_backend block configures the connection to Google Cloud Storage object s
 # CLI flag: -<prefix>.gcs.service-account
 [service_account: <string> | default = ""]
 
-# Enable idempotent uploads to GCS. This makes uploads safe to retry but adds an
-# extra Attrs() read before each upload.
-# CLI flag: -<prefix>.gcs.enable-idempotent-uploads
-[enable_idempotent_uploads: <boolean> | default = false]
+# Enable automatic retries for GCS uploads using the RetryAlways policy. Uploads
+# will be retried on transient errors. Note: this does not guarantee
+# idempotency.
+# CLI flag: -<prefix>.gcs.enable-upload-retries
+[enable_upload_retries: <boolean> | default = false]
 
 http:
   # (advanced) The time an idle connection remains idle before closing.
