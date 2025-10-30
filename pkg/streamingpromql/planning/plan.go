@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"strconv"
 	"strings"
 	"time"
 
@@ -22,14 +23,20 @@ import (
 	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
+type QueryPlanVersion uint64
+
+func (v QueryPlanVersion) String() string {
+	return strconv.FormatUint(uint64(v), 10)
+}
+
 var MaximumSupportedQueryPlanVersion = QueryPlanV1
 
-const QueryPlanVersionZero = uint64(0)
+const QueryPlanVersionZero = QueryPlanVersion(0)
 
 // This version introduces:
 // 1. DropName node
 // 2. Step invariant expression node
-const QueryPlanV1 = uint64(1)
+const QueryPlanV1 = QueryPlanVersion(1)
 
 type QueryPlan struct {
 	TimeRange types.QueryTimeRange
@@ -42,7 +49,7 @@ type QueryPlan struct {
 	//
 	// Queriers use this to ensure they do not attempt to execute a query plan that contains features they
 	// cannot safely or correctly execute (eg. new nodes or new meaning for existing node details).
-	Version uint64
+	Version QueryPlanVersion
 }
 
 // Node represents a node in the query plan graph.
@@ -111,7 +118,7 @@ type Node interface {
 	ExpressionPosition() posrange.PositionRange
 
 	// MinimumRequiredPlanVersion returns the minimum query plan version required to execute a plan that includes these nodes.
-	MinimumRequiredPlanVersion() uint64
+	MinimumRequiredPlanVersion() QueryPlanVersion
 
 	// FIXME: implementations for many of the above methods can be generated automatically
 }
@@ -201,7 +208,7 @@ func (p *QueryPlan) DeterminePlanVersion() error {
 	return nil
 }
 
-func (p *QueryPlan) maxMinimumRequiredPlanVersion(node Node) uint64 {
+func (p *QueryPlan) maxMinimumRequiredPlanVersion(node Node) QueryPlanVersion {
 	maxVersion := node.MinimumRequiredPlanVersion()
 	for _, child := range node.Children() {
 		maxVersion = max(maxVersion, p.maxMinimumRequiredPlanVersion(child))

@@ -6,7 +6,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strconv"
 	"time"
 
 	"github.com/go-kit/log"
@@ -67,11 +66,7 @@ func NewQueryPlanner(opts EngineOpts, versionProvider QueryPlanVersionProvider) 
 	// After CSE, the query plan may no longer be a tree due to multiple paths culminating in the same Duplicate node,
 	// which would make the elimination logic more complex.
 	if opts.EnableEliminateDeduplicateAndMerge {
-		if opts.CommonOpts.EnableDelayedNameRemoval {
-			return nil, errors.New("eliminating deduplicate and merge nodes is not supported with delayed name removal")
-		}
-
-		planner.RegisterQueryPlanOptimizationPass(plan.NewEliminateDeduplicateAndMergeOptimizationPass())
+		planner.RegisterQueryPlanOptimizationPass(plan.NewEliminateDeduplicateAndMergeOptimizationPass(opts.CommonOpts.EnableDelayedNameRemoval))
 	}
 
 	if opts.EnableCommonSubexpressionElimination {
@@ -263,7 +258,7 @@ func (p *QueryPlanner) NewQueryPlan(ctx context.Context, qs string, timeRange ty
 		return nil, fmt.Errorf("maximum supported query plan version is %d, but generated plan version is %d - this is a bug", maximumSupportedQueryPlanVersion, plan.Version)
 	}
 
-	p.generatedPlans.WithLabelValues(strconv.FormatUint(plan.Version, 10)).Inc()
+	p.generatedPlans.WithLabelValues(plan.Version.String()).Inc()
 
 	if err := observer.OnAllPlanningStagesComplete(plan); err != nil {
 		return nil, err
@@ -794,12 +789,12 @@ func (n NoopPlanningObserver) OnAllPlanningStagesComplete(*planning.QueryPlan) e
 }
 
 type QueryPlanVersionProvider interface {
-	GetMaximumSupportedQueryPlanVersion(ctx context.Context) (uint64, error)
+	GetMaximumSupportedQueryPlanVersion(ctx context.Context) (planning.QueryPlanVersion, error)
 }
 
 // NewStaticQueryPlanVersionProvider returns a QueryPlanVersionProvider that always returns the given version.
 // This is intended to be used only in tests.
-func NewStaticQueryPlanVersionProvider(version uint64) QueryPlanVersionProvider {
+func NewStaticQueryPlanVersionProvider(version planning.QueryPlanVersion) QueryPlanVersionProvider {
 	return &staticQueryPlanVersionProvider{
 		version: version,
 	}
@@ -812,9 +807,9 @@ func NewMaximumSupportedVersionQueryPlanVersionProvider() QueryPlanVersionProvid
 }
 
 type staticQueryPlanVersionProvider struct {
-	version uint64
+	version planning.QueryPlanVersion
 }
 
-func (s *staticQueryPlanVersionProvider) GetMaximumSupportedQueryPlanVersion(_ context.Context) (uint64, error) {
+func (s *staticQueryPlanVersionProvider) GetMaximumSupportedQueryPlanVersion(ctx context.Context) (planning.QueryPlanVersion, error) {
 	return s.version, nil
 }

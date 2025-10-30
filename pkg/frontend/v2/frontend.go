@@ -723,7 +723,7 @@ func (f *Frontend) QueryResult(ctx context.Context, qrReq *frontendv2pb.QueryRes
 	// To avoid leaking query results between users, we verify the user here.
 	// To avoid mixing results from different queries, we randomize queryID counter on start.
 	if req == nil {
-		return nil, status.Errorf(codes.FailedPrecondition, "query %d not found or response already received", qrReq.QueryID)
+		return nil, status.Errorf(codes.FailedPrecondition, "query %d not found, cancelled or response already received", qrReq.QueryID)
 	}
 
 	if req.userID != userID {
@@ -747,11 +747,15 @@ func (f *Frontend) QueryResult(ctx context.Context, qrReq *frontendv2pb.QueryRes
 }
 
 func (f *Frontend) QueryResultStream(stream frontendv2pb.FrontendForQuerier_QueryResultStreamServer) (err error) {
-	closed := atomic.NewBool(false)
-	closeStream := func() {
-		if !closed.CompareAndSwap(false, true) {
-			return
-		}
+	closeStream := sync.OnceFunc(func() {
+		// We rely on two important properties of sync.OnceFunc here:
+		//
+		// 1. This method will only be called once
+		// 2. Callers of closeStream will block until this method has finished, regardless of whether they are the first caller or not.
+		//
+		// Property 2 is important: if another method calls closeStream, we still want to wait for this method to finish
+		// before returning from QueryResultStream, as otherwise that will cancel the stream's context and break the connection
+		// to the querier, causing the call below to fail and queriers to receive an EOF error (rather than a "stream closed" error).
 
 		err := stream.SendAndClose(&frontendv2pb.QueryResultResponse{})
 		if err == nil {
@@ -764,7 +768,7 @@ func (f *Frontend) QueryResultStream(stream frontendv2pb.FrontendForQuerier_Quer
 		}
 
 		level.Warn(f.log).Log("msg", "failed to close query result body stream", "err", err)
-	}
+	})
 
 	defer closeStream()
 
@@ -785,7 +789,7 @@ func (f *Frontend) QueryResultStream(stream frontendv2pb.FrontendForQuerier_Quer
 	req := f.requests.getAndDelete(firstMessage.QueryID)
 
 	if req == nil {
-		return status.Errorf(codes.FailedPrecondition, "query %d not found or response already received", firstMessage.QueryID)
+		return status.Errorf(codes.FailedPrecondition, "query %d not found, cancelled or response already received", firstMessage.QueryID)
 	}
 
 	if req.userID != userID {

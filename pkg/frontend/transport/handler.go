@@ -58,6 +58,7 @@ const (
 	resultsCacheMissBytes        = "results_cache_miss_bytes"
 	shardedQueries               = "sharded_queries"
 	splitQueries                 = "split_queries"
+	remoteExecutionRequestCount  = "remote_execution_request_count"
 )
 
 var (
@@ -377,6 +378,7 @@ func (f *Handler) reportQueryStats(
 		estimatedSeriesCount, stats.LoadEstimatedSeriesCount(),
 		queueTimeSeconds, stats.LoadQueueTime().Seconds(),
 		encodeTimeSeconds, stats.LoadEncodeTime().Seconds(),
+		remoteExecutionRequestCount, stats.LoadRemoteExecutionRequestCount(),
 		"samples_processed", samplesProcessed,
 		"samples_processed_cache_adjusted", samplesProcessedCacheAdjusted,
 	}, formatQueryString(details, queryString)...)
@@ -563,6 +565,7 @@ func getResponseQueryStats(queryResponseTime time.Duration, contentLengthBytes i
 		statsValue(resultsCacheMissBytes, details.ResultsCacheMissBytes),
 		statsValue(shardedQueries, stats.LoadShardedQueries()),
 		statsValue(splitQueries, stats.LoadSplitQueries()),
+		statsValue(remoteExecutionRequestCount, stats.LoadRemoteExecutionRequestCount()),
 	}
 }
 

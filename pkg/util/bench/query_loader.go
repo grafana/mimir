@@ -185,7 +185,7 @@ func loadQueryLogsFromFile(filepath string, queryIDs []int) ([]Query, ParsingSta
 		}
 
 		var q Query
-		if err := json.Unmarshal(line, &q); err != nil || !q.valid {
+		if err = json.Unmarshal(line, &q); err != nil || !q.valid {
 			// Skip malformed lines
 			stats.MalformedLines++
 			continue

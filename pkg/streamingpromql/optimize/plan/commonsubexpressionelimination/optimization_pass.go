@@ -64,7 +64,7 @@ func (e *OptimizationPass) Name() string {
 	return "Eliminate common subexpressions"
 }
 
-func (e *OptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan, maximumSupportedQueryPlanVersion uint64) (*planning.QueryPlan, error) {
+func (e *OptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan, maximumSupportedQueryPlanVersion planning.QueryPlanVersion) (*planning.QueryPlan, error) {
 	// Find all the paths to leaves
 	paths := e.accumulatePaths(plan)
 

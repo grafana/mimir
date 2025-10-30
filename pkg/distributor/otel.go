@@ -65,6 +65,8 @@ type OTLPHandlerLimits interface {
 	OTelNativeDeltaIngestion(id string) bool
 	OTelTranslationStrategy(id string) otlptranslator.TranslationStrategyOption
 	NameValidationScheme(id string) model.ValidationScheme
+	OTelLabelNameUnderscoreSanitization(string) bool
+	OTelLabelNamePreserveMultipleUnderscores(string) bool
 }
 
 type OTLPPushMiddleware func(ctx context.Context, req *pmetricotlp.ExportRequest) error
@@ -357,6 +359,8 @@ func newOTLPParser(
 			promoteResourceAttributes:         promoteResourceAttributes,
 			allowDeltaTemporality:             allowDeltaTemporality,
 			allowUTF8:                         !translationStrategy.ShouldEscape(),
+			underscoreSanitization:            limits.OTelLabelNameUnderscoreSanitization(tenantID),
+			preserveMultipleUnderscores:       limits.OTelLabelNamePreserveMultipleUnderscores(tenantID),
 		}
 		metrics, metadata, metricsDropped, err := otelMetricsToSeriesAndMetadata(
 			ctx,
@@ -544,6 +548,8 @@ type conversionOptions struct {
 	promoteResourceAttributes         []string
 	allowDeltaTemporality             bool
 	allowUTF8                         bool
+	underscoreSanitization            bool
+	preserveMultipleUnderscores       bool
 }
 
 func otelMetricsToSeriesAndMetadata(
@@ -561,8 +567,8 @@ func otelMetricsToSeriesAndMetadata(
 		PromoteScopeMetadata:                 opts.promoteScopeMetadata,
 		AllowDeltaTemporality:                opts.allowDeltaTemporality,
 		AllowUTF8:                            opts.allowUTF8,
-		LabelNameUnderscoreSanitization:      true,
-		LabelNamePreserveMultipleUnderscores: true,
+		LabelNameUnderscoreSanitization:      opts.underscoreSanitization,
+		LabelNamePreserveMultipleUnderscores: opts.preserveMultipleUnderscores,
 	}
 	converter.appender.EnableCreatedTimestampZeroIngestion = opts.enableCTZeroIngestion
 	mimirTS, metadata := converter.ToSeriesAndMetadata(ctx, md, settings, logger)
