@@ -48,6 +48,11 @@ func (d *DeduplicateAndMerge) EquivalentToIgnoringHintsAndChildren(other plannin
 	return ok
 }
 
+func (d *DeduplicateAndMerge) MergeHints(_ planning.Node) error {
+	// Nothing to do.
+	return nil
+}
+
 func (d *DeduplicateAndMerge) Describe() string {
 	return ""
 }

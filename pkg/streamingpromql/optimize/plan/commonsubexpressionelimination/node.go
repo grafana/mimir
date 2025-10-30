@@ -53,6 +53,11 @@ func (d *Duplicate) EquivalentToIgnoringHintsAndChildren(other planning.Node) bo
 	return ok
 }
 
+func (d *Duplicate) MergeHints(_ planning.Node) error {
+	// Nothing to do.
+	return nil
+}
+
 func (d *Duplicate) Describe() string {
 	return ""
 }

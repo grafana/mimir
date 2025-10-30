@@ -48,6 +48,11 @@ func (n *DropName) EquivalentToIgnoringHintsAndChildren(other planning.Node) boo
 	return ok
 }
 
+func (n *DropName) MergeHints(_ planning.Node) error {
+	// Nothing to do.
+	return nil
+}
+
 func (n *DropName) Describe() string {
 	return ""
 }

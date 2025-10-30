@@ -85,6 +85,11 @@ type Node interface {
 	// or hints should not be considered when determining equivalence.
 	EquivalentToIgnoringHintsAndChildren(other Node) bool
 
+	// MergeHints merges any hints from other into this node.
+	//
+	// It does not apply this recursively to its children.
+	MergeHints(other Node) error
+
 	// Describe returns a human-readable representation of this node.
 	//
 	// Returning an empty string is valid.

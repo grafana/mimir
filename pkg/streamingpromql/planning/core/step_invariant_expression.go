@@ -64,6 +64,12 @@ func (s *StepInvariantExpression) EquivalentToIgnoringHintsAndChildren(other pla
 	return ok
 }
 
+
+func (s *StepInvariantExpression) MergeHints(_ planning.Node) error {
+	// Nothing to do.
+	return nil
+}
+
 func (s *StepInvariantExpression) ChildrenLabels() []string {
 	return []string{""}
 }

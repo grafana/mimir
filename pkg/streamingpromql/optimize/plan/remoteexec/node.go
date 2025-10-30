@@ -3,6 +3,7 @@
 package remoteexec
 
 import (
+	"errors"
 	"fmt"
 	"time"
 
@@ -51,6 +52,19 @@ func (r *RemoteExecution) EquivalentToIgnoringHintsAndChildren(other planning.No
 	_, ok := other.(*RemoteExecution)
 
 	return ok
+}
+
+func (r *RemoteExecution) MergeHints(other planning.Node) error {
+	otherRemoteExec, ok := other.(*RemoteExecution)
+	if !ok {
+		return fmt.Errorf("cannot merge hints from %T into %T", other, r)
+	}
+
+	if r.EagerLoad != otherRemoteExec.EagerLoad {
+		return errors.New("cannot merge RemoteExecution nodes with different eager load values")
+	}
+
+	return nil
 }
 
 func (r *RemoteExecution) Describe() string {

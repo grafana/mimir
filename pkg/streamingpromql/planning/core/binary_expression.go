@@ -3,6 +3,7 @@
 package core
 
 import (
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -17,6 +18,8 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
+
+var errCannotMergeBinaryExpressionHints = errors.New("cannot merge hints for binary expressions with different included labels")
 
 type BinaryExpression struct {
 	*BinaryExpressionDetails
@@ -123,6 +126,30 @@ func (b *BinaryExpression) EquivalentToIgnoringHintsAndChildren(other planning.N
 		b.Op == otherBinaryExpression.Op &&
 		b.VectorMatching.Equals(otherBinaryExpression.VectorMatching) &&
 		b.ReturnBool == otherBinaryExpression.ReturnBool
+}
+
+func (b *BinaryExpression) MergeHints(other planning.Node) error {
+	otherBinaryExpression, ok := other.(*BinaryExpression)
+	if !ok {
+		return fmt.Errorf("cannot merge hints from %T into %T", other, b)
+	}
+
+	var thisLabels []string
+	var otherLabels []string
+
+	if b.Hints != nil {
+		thisLabels = b.Hints.Include
+	}
+
+	if otherBinaryExpression.Hints != nil {
+		otherLabels = otherBinaryExpression.Hints.Include
+	}
+
+	if slices.Equal(thisLabels, otherLabels) {
+		return nil
+	}
+
+	return errCannotMergeBinaryExpressionHints
 }
 
 func (b *BinaryExpression) ChildrenLabels() []string {

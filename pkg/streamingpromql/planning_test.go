@@ -1943,6 +1943,10 @@ func (t *versioningTestNode) EquivalentToIgnoringHintsAndChildren(other planning
 	return ok && t.NumberLiteralDetails == otherTestNode.NumberLiteralDetails
 }
 
+func (t *versioningTestNode) MergeHints(_ planning.Node) error {
+	panic("not supported")
+}
+
 func (t *versioningTestNode) ChildrenTimeRange(_ types.QueryTimeRange) types.QueryTimeRange {
 	return types.QueryTimeRange{}
 }

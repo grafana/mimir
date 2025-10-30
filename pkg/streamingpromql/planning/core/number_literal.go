@@ -54,6 +54,11 @@ func (n *NumberLiteral) EquivalentToIgnoringHintsAndChildren(other planning.Node
 	return ok && n.Value == otherLiteral.Value
 }
 
+func (n *NumberLiteral) MergeHints(_ planning.Node) error {
+	// Nothing to do.
+	return nil
+}
+
 func (n *NumberLiteral) ChildrenLabels() []string {
 	return nil
 }

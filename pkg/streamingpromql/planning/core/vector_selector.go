@@ -62,8 +62,17 @@ func (v *VectorSelector) EquivalentToIgnoringHintsAndChildren(other planning.Nod
 		slices.EqualFunc(v.Matchers, otherVectorSelector.Matchers, matchersEqual) &&
 		((v.Timestamp == nil && otherVectorSelector.Timestamp == nil) || (v.Timestamp != nil && otherVectorSelector.Timestamp != nil && v.Timestamp.Equal(*otherVectorSelector.Timestamp))) &&
 		v.Offset == otherVectorSelector.Offset &&
-		v.ReturnSampleTimestamps == otherVectorSelector.ReturnSampleTimestamps &&
-		v.SkipHistogramBuckets == otherVectorSelector.SkipHistogramBuckets
+		v.ReturnSampleTimestamps == otherVectorSelector.ReturnSampleTimestamps
+}
+
+func (v *VectorSelector) MergeHints(other planning.Node) error {
+	otherVectorSelector, ok := other.(*VectorSelector)
+	if !ok {
+		return fmt.Errorf("cannot merge hints from %T into %T", other, v)
+	}
+
+	v.SkipHistogramBuckets = v.SkipHistogramBuckets && otherVectorSelector.SkipHistogramBuckets
+	return nil
 }
 
 func (v *VectorSelector) ChildrenLabels() []string {

@@ -59,6 +59,11 @@ func (u *UnaryExpression) EquivalentToIgnoringHintsAndChildren(other planning.No
 		u.Op == otherUnaryExpression.Op
 }
 
+func (u *UnaryExpression) MergeHints(_ planning.Node) error {
+	// Nothing to do.
+	return nil
+}
+
 func (u *UnaryExpression) ChildrenLabels() []string {
 	return []string{""}
 }

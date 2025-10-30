@@ -330,7 +330,7 @@ func TestMatrixSelector_Equivalence(t *testing.T) {
 					ExpressionPosition:   PositionRange{Start: 1, End: 2},
 				},
 			},
-			expectEquivalent: false,
+			expectEquivalent: true,
 		},
 	}
 
@@ -343,6 +343,41 @@ func TestMatrixSelector_Equivalence(t *testing.T) {
 			require.True(t, testCase.b.EquivalentToIgnoringHintsAndChildren(testCase.b))
 		})
 	}
+}
+
+func TestMatrixSelector_MergeHints(t *testing.T) {
+	runTest := func(t *testing.T, skipFirst, skipSecond bool, expectSkip bool) {
+		first := &MatrixSelector{
+			MatrixSelectorDetails: &MatrixSelectorDetails{
+				SkipHistogramBuckets: skipFirst,
+			},
+		}
+		second := &MatrixSelector{
+			MatrixSelectorDetails: &MatrixSelectorDetails{
+				SkipHistogramBuckets: skipSecond,
+			},
+		}
+
+		err := first.MergeHints(second)
+		require.NoError(t, err)
+		require.Equal(t, expectSkip, first.SkipHistogramBuckets)
+	}
+
+	t.Run("neither has skip histogram buckets enabled", func(t *testing.T) {
+		runTest(t, false, false, false)
+	})
+
+	t.Run("first has skip histogram buckets enabled, other does not", func(t *testing.T) {
+		runTest(t, true, false, false)
+	})
+
+	t.Run("first has skip histogram buckets disabled, other does not", func(t *testing.T) {
+		runTest(t, false, true, false)
+	})
+
+	t.Run("both have skip histogram buckets enabled", func(t *testing.T) {
+		runTest(t, true, true, true)
+	})
 }
 
 func TestMatrixSelector_QueriedTimeRange(t *testing.T) {

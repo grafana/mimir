@@ -112,6 +112,8 @@ func (t *testNode) EquivalentToIgnoringHintsAndChildren(_ Node) bool {
 	panic("not supported")
 }
 
+func (t *testNode) MergeHints(_ Node) error { panic("not supported") }
+
 func (t *testNode) ChildrenTimeRange(_ types.QueryTimeRange) types.QueryTimeRange {
 	panic("not supported")
 }

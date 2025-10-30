@@ -449,3 +449,82 @@ func TestBinaryExpression_Equivalence(t *testing.T) {
 		})
 	}
 }
+
+func TestBinaryExpression_MergeHints(t *testing.T) {
+	testCases := map[string]struct {
+		first       *BinaryExpressionHints
+		second      *BinaryExpressionHints
+		expected    *BinaryExpressionHints
+		expectError bool
+	}{
+		"both have nil hints": {
+			first:    nil,
+			second:   nil,
+			expected: nil,
+		},
+		"first has nil hints, other has empty hints": {
+			first:    nil,
+			second:   &BinaryExpressionHints{},
+			expected: nil,
+		},
+		"second has nil hints, other has empty hints": {
+			first:    &BinaryExpressionHints{},
+			second:   nil,
+			expected: &BinaryExpressionHints{},
+		},
+		"first has empty hints, other does not": {
+			first:       &BinaryExpressionHints{},
+			second:      &BinaryExpressionHints{Include: []string{"foo"}},
+			expectError: true,
+		},
+		"second has empty hints, other does not": {
+			first:       &BinaryExpressionHints{Include: []string{"foo"}},
+			second:      &BinaryExpressionHints{},
+			expectError: true,
+		},
+		"both have hints, no overlap in labels": {
+			first:       &BinaryExpressionHints{Include: []string{"first_1", "first_2"}},
+			second:      &BinaryExpressionHints{Include: []string{"second_1", "second_2"}},
+			expectError: true,
+		},
+		"both have the same labels": {
+			first:    &BinaryExpressionHints{Include: []string{"foo", "bar"}},
+			second:   &BinaryExpressionHints{Include: []string{"foo", "bar"}},
+			expected: &BinaryExpressionHints{Include: []string{"foo", "bar"}},
+		},
+		"both have the same labels in a different order": {
+			first:       &BinaryExpressionHints{Include: []string{"foo", "bar"}},
+			second:      &BinaryExpressionHints{Include: []string{"bar", "foo"}},
+			expectError: true,
+		},
+		"both have hints, some overlap in labels": {
+			first:       &BinaryExpressionHints{Include: []string{"first", "foo"}},
+			second:      &BinaryExpressionHints{Include: []string{"second", "foo"}},
+			expectError: true,
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			first := &BinaryExpression{
+				BinaryExpressionDetails: &BinaryExpressionDetails{
+					Hints: testCase.first,
+				},
+			}
+
+			second := &BinaryExpression{
+				BinaryExpressionDetails: &BinaryExpressionDetails{
+					Hints: testCase.second,
+				},
+			}
+
+			err := first.MergeHints(second)
+			if testCase.expectError {
+				require.EqualError(t, err, "cannot merge hints for binary expressions with different included labels")
+			} else {
+				require.NoError(t, err)
+				require.Equal(t, testCase.expected, first.BinaryExpressionDetails.Hints)
+			}
+		})
+	}
+}

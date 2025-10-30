@@ -56,8 +56,17 @@ func (m *MatrixSelector) EquivalentToIgnoringHintsAndChildren(other planning.Nod
 		slices.EqualFunc(m.Matchers, otherMatrixSelector.Matchers, matchersEqual) &&
 		((m.Timestamp == nil && otherMatrixSelector.Timestamp == nil) || (m.Timestamp != nil && otherMatrixSelector.Timestamp != nil && m.Timestamp.Equal(*otherMatrixSelector.Timestamp))) &&
 		m.Offset == otherMatrixSelector.Offset &&
-		m.Range == otherMatrixSelector.Range &&
-		m.SkipHistogramBuckets == otherMatrixSelector.SkipHistogramBuckets
+		m.Range == otherMatrixSelector.Range
+}
+
+func (m *MatrixSelector) MergeHints(other planning.Node) error {
+	otherMatrixSelector, ok := other.(*MatrixSelector)
+	if !ok {
+		return fmt.Errorf("cannot merge hints from %T into %T", other, m)
+	}
+
+	m.SkipHistogramBuckets = m.SkipHistogramBuckets && otherMatrixSelector.SkipHistogramBuckets
+	return nil
 }
 
 func (m *MatrixSelector) ChildrenLabels() []string {

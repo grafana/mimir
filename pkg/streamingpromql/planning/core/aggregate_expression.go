@@ -91,6 +91,11 @@ func (a *AggregateExpression) EquivalentToIgnoringHintsAndChildren(other plannin
 		a.Without == otherAggregateExpression.Without
 }
 
+func (a *AggregateExpression) MergeHints(_ planning.Node) error {
+	// Nothing to do.
+	return nil
+}
+
 func (a *AggregateExpression) ChildrenLabels() []string {
 	if a.Param == nil {
 		return []string{""}

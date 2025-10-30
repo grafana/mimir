@@ -63,6 +63,11 @@ func (f *FunctionCall) EquivalentToIgnoringHintsAndChildren(other planning.Node)
 		slices.Equal(f.AbsentLabels, otherFunctionCall.AbsentLabels)
 }
 
+func (f *FunctionCall) MergeHints(_ planning.Node) error {
+	// Nothing to do.
+	return nil
+}
+
 func (f *FunctionCall) ChildrenLabels() []string {
 	if len(f.Args) == 0 {
 		return nil

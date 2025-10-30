@@ -114,6 +114,11 @@ func (s *Subquery) EquivalentToIgnoringHintsAndChildren(other planning.Node) boo
 		s.Step == otherSubquery.Step
 }
 
+func (s *Subquery) MergeHints(_ planning.Node) error {
+	// Nothing to do.
+	return nil
+}
+
 func (s *Subquery) ChildrenLabels() []string {
 	return []string{""}
 }
