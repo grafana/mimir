@@ -186,9 +186,8 @@ func TestSchedulerExecutor_JobStatusUpdates(t *testing.T) {
 			cfg.SchedulerUpdateInterval = 1 * time.Hour
 			cfg.CompactionConcurrency = 1
 
-			bucketClient := &bucket.ClientMock{}
-			bucketClient.MockIter("test-tenant/", []string{}, nil)
-			bucketClient.MockIter("test-tenant/markers/", []string{}, nil)
+			bucketClient := objstore.NewInMemBucket()
+			tc.setupBucket(bucketClient)
 
 			schedulerExec, err := newSchedulerExecutor(cfg, log.NewNopLogger(), nil)
 			require.NoError(t, err)
