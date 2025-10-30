@@ -23,16 +23,6 @@ jobs:
     # publish new build images just by sending the PR. Hence this change.
     if: ${{ contains(fromJSON('["OWNER", "MEMBER"]'), github.event.pull_request.author_association ) || github.event.pull_request.user.login == 'renovate-sh-app[bot]' }}
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-        with:
-          persist-credentials: false
-
-      - name: Checkout Pull Request Branch
-        run: gh pr checkout ${{ github.event.pull_request.number }}
-        env:
-          GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
-
       - name: Check if Dockerfile was modified
         id: check_dockerfile
         run: |
@@ -43,6 +33,18 @@ jobs:
             echo "modified=false" >> $GITHUB_OUTPUT
             echo "Dockerfile was not modified"
           fi
+        env:
+          GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
+
+      - name: Checkout Repository
+        if: steps.check_dockerfile.outputs.modified == 'true'
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Checkout Pull Request Branch
+        if: steps.check_dockerfile.outputs.modified == 'true'
+        run: gh pr checkout ${{ github.event.pull_request.number }}
         env:
           GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
 
