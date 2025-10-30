@@ -64,6 +64,12 @@
 
 ### Documentation
 
+### Tools
+
+### Query-tee
+
+* [CHANGE] Added `/api/v1/read` as a registered route. #13227
+
 ## 3.0.0-rc.2
 
 ### Grafana Mimir
@@ -79,10 +85,6 @@
 ### Tools
 
 * [CHANGE] Mimir-continuous-test: Remove standalone binary and image. #13097
-
-### Query-tee
-
-* [CHANGE] Added `/api/v1/read` as a registered route to query tee. #13227
 
 ## 3.0.0-rc.0
 
