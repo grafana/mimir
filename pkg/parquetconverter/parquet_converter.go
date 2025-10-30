@@ -341,8 +341,7 @@ func (c *ParquetConverter) running(ctx context.Context) error {
 						waitTime := time.Since(task.EnqueuedAt)
 						c.metrics.queueWaitTime.WithLabelValues(task.UserID).Observe(waitTime.Seconds())
 
-						ulogger := util_log.WithUserID(task.UserID, c.logger)
-						c.processBlock(gCtx, task.UserID, task.Meta, task.Bucket, ulogger)
+						c.processBlock(gCtx, task.UserID, task.Meta, task.Bucket, c.logger)
 					}()
 				}
 			}
@@ -453,9 +452,9 @@ func (c *ParquetConverter) discoverAndEnqueueBlocks(ctx context.Context) {
 // processBlock handles the conversion of a single block with proper metrics tracking.
 func (c *ParquetConverter) processBlock(ctx context.Context, userID string, meta *block.Meta, uBucket objstore.InstrumentedBucket, logger log.Logger) {
 	ulidTime := time.UnixMilli(int64(meta.ULID.Time()))
+	logger = log.With(logger, "user", userID, "block", meta.ULID.String())
 	level.Info(logger).Log(
 		"msg", "starting block conversion",
-		"block", meta.ULID.String(),
 		"min_time", meta.MinTime,
 		"max_time", meta.MaxTime,
 		"ulid_timestamp_ms", meta.ULID.Time(),
@@ -481,24 +480,24 @@ func (c *ParquetConverter) processBlock(ctx context.Context, userID string, meta
 	var ok bool
 	ok, err = c.loadBalancer.lock(ctx, meta.ULID.String())
 	if err != nil {
-		level.Error(logger).Log("msg", "failed to acquire block processing rights", "block", meta.ULID.String(), "err", err)
+		level.Error(logger).Log("msg", "failed to acquire block processing rights", "err", err)
 		return
 	}
 	if !ok {
 		skipped = true
-		level.Debug(logger).Log("msg", "skipped block, already being processed by another instance", "block", meta.ULID.String())
+		level.Debug(logger).Log("msg", "skipped block, already being processed by another instance")
 		return
 	}
 	defer func() {
 		if err := c.loadBalancer.unlock(context.Background(), meta.ULID.String()); err != nil {
-			level.Warn(logger).Log("msg", "failed to notify block processing completion", "block", meta.ULID.String(), "err", err)
+			level.Warn(logger).Log("msg", "failed to notify block processing completion", "err", err)
 		}
 	}()
 
 	var mark *ConversionMark
 	mark, err = ReadConversionMark(ctx, meta.ULID, uBucket, logger)
 	if err != nil {
-		level.Error(logger).Log("msg", "failed to read conversion mark, skipping", "err", err, "block", meta.ULID.String())
+		level.Error(logger).Log("msg", "failed to read conversion mark, skipping", "err", err)
 		return
 	}
 
@@ -507,7 +506,6 @@ func (c *ParquetConverter) processBlock(ctx context.Context, userID string, meta
 		ulidTime := time.UnixMilli(int64(meta.ULID.Time()))
 		level.Info(logger).Log(
 			"msg", "skipped block, already converted",
-			"block", meta.ULID.String(),
 			"ulid_timestamp_ms", meta.ULID.Time(),
 			"ulid_time_human", ulidTime.UTC().Format(time.RFC3339),
 		)
@@ -525,7 +523,7 @@ func (c *ParquetConverter) processBlock(ctx context.Context, userID string, meta
 	cleanBlockDir()
 	defer cleanBlockDir()
 
-	level.Info(logger).Log("msg", "downloading block", "block", meta.ULID.String(), "maxTime", meta.MaxTime)
+	level.Info(logger).Log("msg", "downloading block", "maxTime", meta.MaxTime)
 	if err = block.Download(ctx, logger, uBucket, meta.ULID, localBlockDir, objstore.WithFetchConcurrency(10)); err != nil {
 		level.Error(logger).Log("msg", "error downloading block", "err", err)
 		return
@@ -545,13 +543,12 @@ func (c *ParquetConverter) processBlock(ctx context.Context, userID string, meta
 	err = c.blockConverter.ConvertBlock(ctx, meta, localBlockDir, uBucket, logger, convertOpts)
 
 	if err != nil {
-		level.Error(logger).Log("msg", "failed to convert block", "block", meta.ULID.String(), "err", err)
+		level.Error(logger).Log("msg", "failed to convert block", "err", err)
 		return
 	}
 
 	level.Info(logger).Log(
 		"msg", "finished block conversion",
-		"block", meta.ULID.String(),
 		"min_time", meta.MinTime,
 		"max_time", meta.MaxTime,
 		"ulid_timestamp_ms", meta.ULID.Time(),
@@ -563,7 +560,7 @@ func (c *ParquetConverter) processBlock(ctx context.Context, userID string, meta
 
 	err = WriteConversionMark(ctx, meta.ULID, uBucket)
 	if err != nil {
-		level.Error(logger).Log("msg", "failed to write conversion mark", "block", meta.ULID.String(), "err", err)
+		level.Error(logger).Log("msg", "failed to write conversion mark", "err", err)
 	}
 }
 
