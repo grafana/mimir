@@ -52,7 +52,7 @@ type cacheLockLoadBalancer struct {
 
 	lockedBlocks map[string]struct{}
 	mu           sync.Mutex
-	stopCh       chan struct{}
+	cancel       context.CancelFunc
 }
 
 func newCacheLockLoadBalancer(cache cache.Cache, lockTTL time.Duration, logger log.Logger) *cacheLockLoadBalancer {
@@ -61,19 +61,18 @@ func newCacheLockLoadBalancer(cache cache.Cache, lockTTL time.Duration, logger l
 		lockTTL:      lockTTL,
 		logger:       log.With(logger, "component", "cache-lock-load-balancer"),
 		lockedBlocks: make(map[string]struct{}),
-		stopCh:       make(chan struct{}),
 	}
 }
 
-func (l *cacheLockLoadBalancer) start(ctx context.Context) error {
+func (l *cacheLockLoadBalancer) start(_ context.Context) error {
+	ctx, cancel := context.WithCancel(context.Background())
+	l.cancel = cancel
 	go func() {
 		ticker := time.NewTicker(l.lockTTL / 4)
 		defer ticker.Stop()
 		for {
 			select {
 			case <-ctx.Done():
-				return
-			case <-l.stopCh:
 				return
 			case <-ticker.C:
 				l.refreshLocks(ctx)
@@ -84,7 +83,7 @@ func (l *cacheLockLoadBalancer) start(ctx context.Context) error {
 }
 
 func (l *cacheLockLoadBalancer) stop() error {
-	close(l.stopCh)
+	l.cancel()
 	l.cache.Stop()
 	return nil
 }
