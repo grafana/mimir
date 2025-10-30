@@ -71,6 +71,8 @@ Usage of ./cmd/mimir/mimir:
     	Maximum number of idle (keep-alive) connections across all hosts. Set to 0 for no limit. (default 100)
   -alertmanager-storage.gcs.max-idle-connections-per-host int
     	Maximum number of idle (keep-alive) connections to keep per-host. Set to 0 to use a built-in default value of 2. (default 100)
+  -alertmanager-storage.gcs.max-retries int
+    	Maximum number of attempts for GCS operations (0 = unlimited, 1 = no retries). Applies to both regular and upload retry modes. (default 20)
   -alertmanager-storage.gcs.service-account string
     	JSON either from a Google Developers Console client_credentials.json file, or a Google Developers service account key. Needs to be valid JSON, not a filesystem path.
   -alertmanager-storage.gcs.tls-handshake-timeout duration
@@ -653,6 +655,8 @@ Usage of ./cmd/mimir/mimir:
     	Maximum number of idle (keep-alive) connections across all hosts. Set to 0 for no limit. (default 100)
   -blocks-storage.gcs.max-idle-connections-per-host int
     	Maximum number of idle (keep-alive) connections to keep per-host. Set to 0 to use a built-in default value of 2. (default 100)
+  -blocks-storage.gcs.max-retries int
+    	Maximum number of attempts for GCS operations (0 = unlimited, 1 = no retries). Applies to both regular and upload retry modes. (default 20)
   -blocks-storage.gcs.service-account string
     	JSON either from a Google Developers Console client_credentials.json file, or a Google Developers service account key. Needs to be valid JSON, not a filesystem path.
   -blocks-storage.gcs.tls-handshake-timeout duration
@@ -921,6 +925,8 @@ Usage of ./cmd/mimir/mimir:
     	Maximum number of idle (keep-alive) connections across all hosts. Set to 0 for no limit. (default 100)
   -common.storage.gcs.max-idle-connections-per-host int
     	Maximum number of idle (keep-alive) connections to keep per-host. Set to 0 to use a built-in default value of 2. (default 100)
+  -common.storage.gcs.max-retries int
+    	Maximum number of attempts for GCS operations (0 = unlimited, 1 = no retries). Applies to both regular and upload retry modes. (default 20)
   -common.storage.gcs.service-account string
     	JSON either from a Google Developers Console client_credentials.json file, or a Google Developers service account key. Needs to be valid JSON, not a filesystem path.
   -common.storage.gcs.tls-handshake-timeout duration
@@ -2739,6 +2745,8 @@ Usage of ./cmd/mimir/mimir:
     	Maximum number of idle (keep-alive) connections across all hosts. Set to 0 for no limit. (default 100)
   -ruler-storage.gcs.max-idle-connections-per-host int
     	Maximum number of idle (keep-alive) connections to keep per-host. Set to 0 to use a built-in default value of 2. (default 100)
+  -ruler-storage.gcs.max-retries int
+    	Maximum number of attempts for GCS operations (0 = unlimited, 1 = no retries). Applies to both regular and upload retry modes. (default 20)
   -ruler-storage.gcs.service-account string
     	JSON either from a Google Developers Console client_credentials.json file, or a Google Developers service account key. Needs to be valid JSON, not a filesystem path.
   -ruler-storage.gcs.tls-handshake-timeout duration

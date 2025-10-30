@@ -9059,7 +9059,19 @@
               "fieldValue": null,
               "fieldDefaultValue": false,
               "fieldFlag": "blocks-storage.gcs.enable-upload-retries",
-              "fieldType": "boolean"
+              "fieldType": "boolean",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "max_retries",
+              "required": false,
+              "desc": "Maximum number of attempts for GCS operations (0 = unlimited, 1 = no retries). Applies to both regular and upload retry modes.",
+              "fieldValue": null,
+              "fieldDefaultValue": 20,
+              "fieldFlag": "blocks-storage.gcs.max-retries",
+              "fieldType": "int",
+              "fieldCategory": "advanced"
             },
             {
               "kind": "block",
@@ -14901,7 +14913,19 @@
               "fieldValue": null,
               "fieldDefaultValue": false,
               "fieldFlag": "ruler-storage.gcs.enable-upload-retries",
-              "fieldType": "boolean"
+              "fieldType": "boolean",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "max_retries",
+              "required": false,
+              "desc": "Maximum number of attempts for GCS operations (0 = unlimited, 1 = no retries). Applies to both regular and upload retry modes.",
+              "fieldValue": null,
+              "fieldDefaultValue": 20,
+              "fieldFlag": "ruler-storage.gcs.max-retries",
+              "fieldType": "int",
+              "fieldCategory": "advanced"
             },
             {
               "kind": "block",
@@ -17180,7 +17204,19 @@
               "fieldValue": null,
               "fieldDefaultValue": false,
               "fieldFlag": "alertmanager-storage.gcs.enable-upload-retries",
-              "fieldType": "boolean"
+              "fieldType": "boolean",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "max_retries",
+              "required": false,
+              "desc": "Maximum number of attempts for GCS operations (0 = unlimited, 1 = no retries). Applies to both regular and upload retry modes.",
+              "fieldValue": null,
+              "fieldDefaultValue": 20,
+              "fieldFlag": "alertmanager-storage.gcs.max-retries",
+              "fieldType": "int",
+              "fieldCategory": "advanced"
             },
             {
               "kind": "block",
@@ -20060,7 +20096,19 @@
                   "fieldValue": null,
                   "fieldDefaultValue": false,
                   "fieldFlag": "common.storage.gcs.enable-upload-retries",
-                  "fieldType": "boolean"
+                  "fieldType": "boolean",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "max_retries",
+                  "required": false,
+                  "desc": "Maximum number of attempts for GCS operations (0 = unlimited, 1 = no retries). Applies to both regular and upload retry modes.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 20,
+                  "fieldFlag": "common.storage.gcs.max-retries",
+                  "fieldType": "int",
+                  "fieldCategory": "advanced"
                 },
                 {
                   "kind": "block",

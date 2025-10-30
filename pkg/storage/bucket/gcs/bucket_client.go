@@ -24,6 +24,7 @@ func NewBucketClient(ctx context.Context, cfg Config, name string, logger log.Lo
 		Bucket:         cfg.BucketName,
 		ServiceAccount: cfg.ServiceAccount.String(),
 		HTTPConfig:     cfg.HTTP.ToExtHTTP(),
+		MaxRetries:     cfg.MaxRetries,
 	}
 	gcsBucket, err := gcs.NewBucketWithConfig(ctx, logger, bucketConfig, name, nil)
 	if err != nil {
@@ -34,9 +35,13 @@ func NewBucketClient(ctx context.Context, cfg Config, name string, logger log.Lo
 		return gcsBucket, nil
 	}
 
+	retryOpts := []storage.RetryOption{storage.WithPolicy(storage.RetryAlways)}
+	if cfg.MaxRetries > 0 {
+		retryOpts = append(retryOpts, storage.WithMaxAttempts(cfg.MaxRetries))
+	}
 	return &retryAlwaysBucket{
 		Bucket:    gcsBucket,
-		bkt:       gcsBucket.Handle().Retryer(storage.WithPolicy(storage.RetryAlways)),
+		bkt:       gcsBucket.Handle().Retryer(retryOpts...),
 		chunkSize: bucketConfig.ChunkSizeBytes,
 	}, nil
 }
