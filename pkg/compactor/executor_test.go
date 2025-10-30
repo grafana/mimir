@@ -139,6 +139,7 @@ func (m *mockCompactorSchedulerClient) GetUpdateJobCallCount() int {
 func TestSchedulerExecutor_JobStatusUpdates(t *testing.T) {
 	testCases := map[string]struct {
 		setupMock           func(*mockCompactorSchedulerClient)
+		setupBucket         func(objstore.Bucket)
 		expectedFinalStatus compactorschedulerpb.UpdateType
 	}{
 		"compaction_job_reassigns_when_block_not_found": {
@@ -153,13 +154,14 @@ func TestSchedulerExecutor_JobStatusUpdates(t *testing.T) {
 					return &compactorschedulerpb.UpdateJobResponse{}, nil
 				}
 			},
+			setupBucket:         func(bkt objstore.Bucket) {},
 			expectedFinalStatus: compactorschedulerpb.REASSIGN,
 		},
 		"successful_planning_job_no_status_update": {
 			setupMock: func(mock *mockCompactorSchedulerClient) {
 				mock.LeaseJobFunc = func(_ context.Context, _ *compactorschedulerpb.LeaseJobRequest) (*compactorschedulerpb.LeaseJobResponse, error) {
 					return &compactorschedulerpb.LeaseJobResponse{
-						Key:  &compactorschedulerpb.JobKey{Id: "test-tenant"},
+						Key:  &compactorschedulerpb.JobKey{Id: "planning-job"},
 						Spec: &compactorschedulerpb.JobSpec{Tenant: "test-tenant", Job: &compactorschedulerpb.CompactionJob{}, JobType: compactorschedulerpb.PLANNING},
 					}, nil
 				}
@@ -170,6 +172,7 @@ func TestSchedulerExecutor_JobStatusUpdates(t *testing.T) {
 					return &compactorschedulerpb.PlannedJobsResponse{}, nil
 				}
 			},
+			setupBucket:         func(bkt objstore.Bucket) {},
 			expectedFinalStatus: compactorschedulerpb.IN_PROGRESS,
 		},
 	}
@@ -197,7 +200,6 @@ func TestSchedulerExecutor_JobStatusUpdates(t *testing.T) {
 			c.shardingStrategy = newSplitAndMergeShardingStrategy(nil, nil, nil, c.cfgProvider)
 
 			gotWork, err := schedulerExec.leaseAndExecuteJob(context.Background(), c, "compactor-1")
-			// For compaction jobs that fail (REASSIGN), we expect an error
 			if tc.expectedFinalStatus == compactorschedulerpb.REASSIGN {
 				require.Error(t, err)
 			} else {
@@ -487,7 +489,7 @@ func TestSchedulerExecutor_NoGoRoutineLeak(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	gotWork, err := schedulerExec.leaseAndExecuteJob(ctx, c, "compactor-1")
-	require.Error(t, err) // Expect error since block doesn't exist in mocked bucket
+	require.Error(t, err) // expect an error since bucket has no test block
 	require.True(t, gotWork)
 
 	// wait for leaseAndExecuteJob internal updater to start, cancel the context, and then wait
@@ -688,7 +690,7 @@ func TestSchedulerExecutor_ExecuteCompactionJob_Compaction(t *testing.T) {
 			expectNewBlocksCount:    4,
 			expectUncompactedBlocks: 0,
 		},
-		"reassigns_when_requested_blocks_not_in_storage": {
+		"reassign_when_requested_blocks_not_in_obj_storage": {
 			setupBucket: func(t *testing.T, bkt objstore.Bucket) setupResult {
 				block1 := createTSDBBlock(t, bkt, "test-tenant", 10, 20, 2, nil)
 				block2 := ulid.MustNew(ulid.Timestamp(time.Unix(1600000002, 0)), rand.New(rand.NewSource(2)))
