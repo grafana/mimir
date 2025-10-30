@@ -20,7 +20,8 @@ import (
 )
 
 var (
-	testUser = "user1"
+	testUser  = "user1"
+	testUser2 = "user2"
 
 	fileOneEncoded = url.PathEscape("file /one")
 	fileTwoEncoded = url.PathEscape("file /two")
@@ -549,16 +550,134 @@ func Test_mapper_MapRulesSpecialCharNamespace(t *testing.T) {
 	})
 }
 
-func Test_mapper_CleanupShouldNotFailIfPathDoesNotExist(t *testing.T) {
+func Test_registry_users(t *testing.T) {
+	l := util_log.MakeLeveledLogger(os.Stdout, "info")
+	setupRuleSets()
+	r := newRuleRegistry("/rules", l)
+
+	t.Run("should not fail if path does not exist", func(t *testing.T) {
+		r := newRuleRegistry("/rules", l)
+
+		actual, err := r.users()
+		require.NoError(t, err)
+		require.Empty(t, actual)
+	})
+
+	t.Run("adding a rulegroup returns the user", func(t *testing.T) {
+		protoRules := testRuleSetAsProto(testUser, initialRuleSet)
+		_, _, err := r.MapRules(testUser, protoRules)
+		require.NoError(t, err)
+
+		result, err := r.users()
+
+		require.NoError(t, err)
+		require.Len(t, result, 1)
+		require.Contains(t, result, testUser)
+	})
+
+	t.Run("adding a rulegroup for a second user returns both users", func(t *testing.T) {
+		protoRules := testRuleSetAsProto(testUser2, initialRuleSet)
+		_, _, err := r.MapRules(testUser2, protoRules)
+		require.NoError(t, err)
+
+		result, err := r.users()
+
+		require.NoError(t, err)
+		require.Len(t, result, 2)
+		require.Contains(t, result, testUser)
+		require.Contains(t, result, testUser2)
+	})
+
+	t.Run("deleting a user's rule groups deschedules that user", func(t *testing.T) {
+		protoRules := testRuleSetAsProto(testUser, map[string][]rulefmt.RuleGroup{})
+		_, _, err := r.MapRules(testUser, protoRules)
+		require.NoError(t, err)
+
+		result, err := r.users()
+
+		require.NoError(t, err)
+		require.Len(t, result, 1)
+		require.NotContains(t, result, testUser)
+		require.Contains(t, result, testUser2)
+	})
+
+	t.Run("cleanup removes all users", func(t *testing.T) {
+		r.cleanup()
+
+		result, err := r.users()
+
+		require.NoError(t, err)
+		require.Empty(t, result)
+	})
+}
+
+func Test_mapper_users(t *testing.T) {
+	l := util_log.MakeLeveledLogger(os.Stdout, "info")
+	setupRuleSets()
 	m := &mapper{
-		Path:   "/path-does-not-exist",
+		Path:   "/rules",
 		FS:     afero.NewMemMapFs(),
-		logger: log.NewNopLogger(),
+		logger: l,
 	}
 
-	actual, err := m.users()
-	require.NoError(t, err)
-	require.Empty(t, actual)
+	t.Run("should not fail if path does not exist", func(t *testing.T) {
+		m := &mapper{
+			Path:   "/path-does-not-exist",
+			FS:     afero.NewMemMapFs(),
+			logger: log.NewNopLogger(),
+		}
+
+		actual, err := m.users()
+		require.NoError(t, err)
+		require.Empty(t, actual)
+	})
+
+	t.Run("adding a rulegroup returns the user", func(t *testing.T) {
+		_, _, err := m.MapRules(testUser, initialRuleSet)
+		require.NoError(t, err)
+
+		result, err := m.users()
+
+		require.NoError(t, err)
+		require.Len(t, result, 1)
+		require.Contains(t, result, testUser)
+	})
+
+	t.Run("adding a rulegroup for a second user returns both users", func(t *testing.T) {
+		_, _, err := m.MapRules(testUser2, initialRuleSet)
+		require.NoError(t, err)
+
+		result, err := m.users()
+
+		require.NoError(t, err)
+		require.Len(t, result, 2)
+		require.Contains(t, result, testUser)
+		require.Contains(t, result, testUser2)
+	})
+
+	t.Run("deleting a user's rule groups keeps that user", func(t *testing.T) {
+		_, _, err := m.MapRules(testUser, map[string][]rulefmt.RuleGroup{})
+		require.NoError(t, err)
+
+		// This happens because MapRules does not delete the user directory if it cleared all the files inside.
+		// However, users() only looks at the set of user directories.
+		// This is something that can be improved on in the future.
+		result, err := m.users()
+
+		require.NoError(t, err)
+		require.Len(t, result, 2)
+		require.Contains(t, result, testUser)
+		require.Contains(t, result, testUser2)
+	})
+
+	t.Run("cleanup removes all users", func(t *testing.T) {
+		m.cleanup()
+
+		result, err := m.users()
+
+		require.NoError(t, err)
+		require.Empty(t, result)
+	})
 }
 
 func sliceContains(t *testing.T, find string, in []string) bool {

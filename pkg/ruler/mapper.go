@@ -59,7 +59,9 @@ func (r *ruleRegistry) users() ([]string, error) {
 
 	result := make([]string, 0, len(r.rules))
 	for userID := range r.rules {
-		result = append(result, userID)
+		if len(r.rules[userID]) > 0 {
+			result = append(result, userID)
+		}
 	}
 	return result, nil
 }
