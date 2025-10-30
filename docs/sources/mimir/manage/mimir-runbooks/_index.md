@@ -1903,7 +1903,7 @@ If the block-builder permanently missed consuming some portion of the partition,
 
 #### MimirBlockBuilderSchedulerNotRunning
 
-This fires when the block-builder-scheduler's primary update loop has not been seen running in the last 30 minutes.
+This fires when the block-builder-scheduler has not performed its critical job scheduling duties in the last 30 minutes. It can indicate that the service is suddenly not running, or is degraded.
 
 How it **works**:
 
