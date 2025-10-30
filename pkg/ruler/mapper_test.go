@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/go-kit/log"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/spf13/afero"
 	"github.com/stretchr/testify/require"
@@ -837,6 +838,78 @@ func Test_mapper_users(t *testing.T) {
 
 		require.NoError(t, err)
 		require.Empty(t, result)
+	})
+}
+
+func Test_FSLoader_LoadRules(t *testing.T) {
+	l := util_log.MakeLeveledLogger(os.Stdout, "info")
+	setupRuleSets()
+	fs := afero.NewMemMapFs()
+	m := &mapper{
+		Path:   "/rules",
+		FS:     fs,
+		logger: l,
+	}
+
+	t.Run("basic rulegroup", func(t *testing.T) {
+		updated, files, err := m.MapRules(testUser, initialRuleSet)
+		require.True(t, updated)
+		require.Len(t, files, 1)
+		require.Equal(t, fileOnePath, files[0])
+		require.NoError(t, err)
+
+		loader := NewFSLoader(fs)
+		loaded, errs := loader.Load(fileOnePath, false, model.LegacyValidation)
+		require.Empty(t, errs)
+		require.NotNil(t, loaded)
+		require.Len(t, loaded.Groups, 2)
+		// Groups are sorted in reverse order by name, so "two" comes before "one".
+		require.Equal(t, "rulegroup_two", loaded.Groups[0].Name)
+		require.Equal(t, "rulegroup_one", loaded.Groups[1].Name)
+	})
+
+	t.Run("multiple files", func(t *testing.T) {
+		updated, files, err := m.MapRules(testUser, twoFilesRuleSet)
+		require.True(t, updated)
+		require.Len(t, files, 2)
+		require.NoError(t, err)
+
+		loader := NewFSLoader(fs)
+		loaded, errs := loader.Load(fileOnePath, false, model.LegacyValidation)
+		require.Empty(t, errs)
+		require.NotNil(t, loaded)
+		require.Len(t, loaded.Groups, 2)
+
+		loaded2, errs := loader.Load(fileTwoPath, false, model.LegacyValidation)
+		require.Empty(t, errs)
+		require.NotNil(t, loaded2)
+		require.Len(t, loaded2.Groups, 1)
+		require.Equal(t, "rulegroup_one", loaded2.Groups[0].Name)
+	})
+
+	t.Run("multiple tenants", func(t *testing.T) {
+		// Map rules for testUser2.
+		updated, files, err := m.MapRules(testUser2, twoFilesRuleSet)
+		require.True(t, updated)
+		require.Len(t, files, 2)
+		require.NoError(t, err)
+
+		loader := NewFSLoader(fs)
+		loaded, errs := loader.Load(fileOnePath, false, model.LegacyValidation)
+		require.Empty(t, errs)
+		require.NotNil(t, loaded)
+		require.Len(t, loaded.Groups, 2)
+
+		loadedUser2File1, errs := loader.Load(fileOneUserTwoPath, false, model.LegacyValidation)
+		require.Empty(t, errs)
+		require.NotNil(t, loadedUser2File1)
+		require.Len(t, loadedUser2File1.Groups, 2)
+
+		loadedUser2File2, errs := loader.Load(fileTwoUserTwoPath, false, model.LegacyValidation)
+		require.Empty(t, errs)
+		require.NotNil(t, loadedUser2File2)
+		require.Len(t, loadedUser2File2.Groups, 1)
+		require.Equal(t, "rulegroup_one", loadedUser2File2.Groups[0].Name)
 	})
 }
 
