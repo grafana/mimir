@@ -62,6 +62,18 @@
 
 ### Documentation
 
+## 3.0.0-rc.2
+
+### Grafana Mimir
+
+* [BUGFIX] Memcached: Ignore invalid responses when discovering cache servers using `dnssrv+` or `dnssrvnoa+` service discovery prefixes. #13203
+
+## 3.0.0-rc.1
+
+### Jsonnet
+
+* [CHANGE] Mimir-continuous-test: Use `mimir -target=continuous-test` instead of standalone binary/image. #13097
+
 ### Tools
 
 * [CHANGE] Mimir-continuous-test: Remove standalone binary and image. #13097
