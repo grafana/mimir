@@ -18,6 +18,8 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/commonsubexpressionelimination"
 	"github.com/grafana/mimir/pkg/streamingpromql/testutils"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
+
+	_ "github.com/grafana/mimir/pkg/streamingpromql/optimize/ast/sharding" // Imported for side effects: registering the __sharded_concat__ function with the parser.
 )
 
 func TestOptimizationPass(t *testing.T) {
@@ -658,4 +660,71 @@ func requireSelectorCounts(t *testing.T, g prometheus.Gatherer, expectedInspecte
 `, inspectedMetricName, expectedInspected, eliminatedMetricName, expectedEliminated)
 
 	require.NoError(t, testutil.GatherAndCompare(g, strings.NewReader(expectedMetrics), inspectedMetricName, eliminatedMetricName))
+}
+
+func BenchmarkOptimizationPass(b *testing.B) {
+	testCases := []string{
+		`foo`,
+		`foo[5m]`,
+		`foo[5m:10s]`,
+		`1 + 1`,
+		`label_join(foo, "abc", "-") + label_join(bar, "def", ",")`,
+		`foo + foo`,
+		`foo + foo + bar`,
+		`foo + foo + foo`,
+		`foo + foo + foo + bar + foo`,
+		`max(foo) - min(foo)`,
+		`max(foo) + max(foo)`,
+		`a + sum(a) + sum(a)`,
+		`(a - a) + (a - a)`,
+		`(a - a) + (a - a) + (a * b) + (a * b)`,
+		`(a - b) + (a - b)`,
+		`(rate(a[5m]) - rate(b[5m])) + (rate(a[5m]) - rate(b[5m]))`,
+		`foo + rate(foo[5m])`,
+		`rate(foo[5m]) + increase(foo[5m])`,
+		`rate(foo[5m]) + increase(foo[5m]) + rate(foo[5m])`,
+		`rate(foo[5m]) + rate(foo[5m])`,
+		`rate(foo[5m:]) + increase(foo[5m:])`,
+		`rate((a - b)[5m:]) + increase((a - b)[5m:])`,
+		`rate(foo[5m:]) + rate(foo[5m:])`,
+		`max_over_time(rate(foo[5m:])[10m:]) + max_over_time(rate(foo[5m:])[10m:])`,
+		`max_over_time(rate(foo[5m:])[10m:]) + max_over_time(rate(foo[5m:])[7m:])`,
+		`timestamp(foo) + timestamp(foo)`,
+		`timestamp(foo) + foo`,
+		`timestamp(abs(foo)) + foo`,
+		`topk(3, foo) + topk(5, foo)`,
+		`topk(5, foo) + topk(5, foo)`,
+		`histogram_count(some_metric) * histogram_quantile(0.5, some_metric)`,
+		`histogram_count(some_metric) * histogram_sum(some_metric)`,
+		`clamp_min(rate(foo[5m]), 1) + clamp_min(rate(foo[5m]), 1)`,
+		`clamp_min(rate(foo[5m]), 1) + clamp_max(rate(foo[5m]), 1)`,
+		`max(rate(foo[5m])) + min(rate(foo[5m]))`,
+		`foo + foo + foo + foo + foo + foo + foo + foo + foo + foo + foo + foo + foo + foo + foo + foo + foo + foo + foo + foo + foo + foo + foo + foo + foo`,
+		`a_1 + a_2 + a_3 + a_4 + a_5 + a_6 + a_7 + a_8 + a_9 + a_10 + a_11 + a_12 + a_13 + a_14 + a_15 + a_16 + a_17 + a_18 + a_19 + a_20 + a_21 + a_22 + a_23 + a_24 + a_25`,
+		`__sharded_concat__(a, b, c, d) + __sharded_concat__(a, b, c, d)`,
+		`__sharded_concat__(a, b, c, d, e, f, g, h) + __sharded_concat__(a, b, c, d, e, f, g, h)`,
+	}
+
+	opts := streamingpromql.NewTestEngineOpts()
+	ctx := context.Background()
+	observer := streamingpromql.NoopPlanningObserver{}
+
+	reg := prometheus.NewPedanticRegistry()
+	planner, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
+	require.NoError(b, err)
+	planner.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(true, reg, opts.Logger))
+
+	timeRange := types.NewInstantQueryTimeRange(time.Now())
+
+	for _, expr := range testCases {
+		b.Run(expr, func(b *testing.B) {
+			for b.Loop() {
+				_, err := planner.NewQueryPlan(ctx, expr, timeRange, observer)
+
+				if err != nil {
+					require.NoError(b, err)
+				}
+			}
+		})
+	}
 }
