@@ -66,7 +66,7 @@
 
 ### Tools
 
-### Query-tee 
+### Query-tee
 
 * [CHANGE] Added `/api/v1/read` as a registered route. #13227
 
