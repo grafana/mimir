@@ -1913,7 +1913,7 @@ How it **works**:
 How to **investigate**:
 
 - This will generally mean something is either wrong with the block-builder-scheduler replica or the Kafka system it is attempting to monitor. Viewing logs for block-builder-scheduler should shed light on the problem.
-- If there are no logs, then block-builder-scheduler may not be running at all, which can be investigated by examining the StatefulSet/pod details in Kubernetes.
+- If there are no logs, then the block-builder-scheduler may not be running, which you can investigate by examining the StatefulSet/pod details in Kubernetes.
 
 #### MimirBlockBuilderDataSkipped
 
