@@ -31,6 +31,10 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 * [ENHANCEMENT] Add Support to customize gossip ring k8s service annotations. #12718
 
+## 6.0.0-rc.1
+
+* [CHANGE] Upgrade Mimir to [3.0.0-rc.2](https://github.com/grafana/mimir/blob/main/CHANGELOG.md#300-rc2). #13252
+
 ## 6.0.0-rc.0
 
 * [CHANGE] Upgrade Mimir to [3.0.0](https://github.com/grafana/mimir/blob/main/CHANGELOG.md#300). #13078
