@@ -287,10 +287,11 @@
         {
           alert: $.alertName('BlockBuilderSchedulerNotRunning'),
           'for': '30m',
+          // We are taking advantage of Prometheus' behavior where it will only report an increase of zero
+          // if the series was previously present. Thus we do not need to predicate the alert on presence of
+          // a block-builder-scheduler.
           expr: |||
             max by (%(alert_aggregation_labels)s, %(per_instance_label)s) (histogram_count(increase(cortex_blockbuilder_scheduler_schedule_update_seconds[5m])) == 0)
-            *
-            max by (%(alert_aggregation_labels)s, %(per_instance_label)s) (kube_statefulset_status_current_revision{statefulset="block-builder-scheduler"})
           ||| % $._config,
           labels: {
             severity: 'warning',
