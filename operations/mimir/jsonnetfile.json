@@ -35,7 +35,7 @@
           "subdir": "operations/rollout-operator"
         }
       },
-      "version": "v0.31.1"
+      "version": "v0.32.0"
     }
   ],
   "legacyImports": true
