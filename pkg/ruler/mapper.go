@@ -299,7 +299,7 @@ type registryLoader struct {
 	user     string
 }
 
-func newRegsitryLoader(registry *ruleRegistry, user string) registryLoader {
+func newRegistryLoader(registry *ruleRegistry, user string) registryLoader {
 	return registryLoader{
 		registry: registry,
 		user:     user,

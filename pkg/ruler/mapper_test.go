@@ -26,8 +26,10 @@ var (
 	fileOneEncoded = url.PathEscape("file /one")
 	fileTwoEncoded = url.PathEscape("file /two")
 
-	fileOnePath = "/rules/user1/" + fileOneEncoded
-	fileTwoPath = "/rules/user1/" + fileTwoEncoded
+	fileOnePath        = "/rules/user1/" + fileOneEncoded
+	fileTwoPath        = "/rules/user1/" + fileTwoEncoded
+	fileOneUserTwoPath = "/rules/user2/" + fileOneEncoded
+	fileTwoUserTwoPath = "/rules/user2/" + fileTwoEncoded
 
 	specialCharFile        = "+A_/ReallyStrange<>NAME:SPACE/?"
 	specialCharFileEncoded = url.PathEscape(specialCharFile)
@@ -483,7 +485,165 @@ func Test_mapper_MapRulesMultipleFiles(t *testing.T) {
 		require.False(t, exists)
 		require.NoError(t, err)
 	})
+}
 
+func Test_registry_MapRulesMultipleTenants(t *testing.T) {
+	l := util_log.MakeLeveledLogger(os.Stdout, "info")
+	setupRuleSets()
+	r := newRuleRegistry("/rules", l)
+
+	t.Run("basic rulegroup tenant 1", func(t *testing.T) {
+		protoRules := testRuleSetAsProto(testUser, initialRuleSet)
+		updated, files, err := r.MapRules(testUser, protoRules)
+		require.True(t, updated)
+		require.Len(t, files, 1)
+		require.Equal(t, fileOnePath, files[0])
+		require.NoError(t, err)
+
+		userRules, ok := r.rules[testUser]
+		require.True(t, ok)
+		require.Contains(t, userRules, fileOnePath)
+	})
+
+	t.Run("basic rulegroup tenant 2 still considered new", func(t *testing.T) {
+		protoRules := testRuleSetAsProto(testUser2, initialRuleSet)
+		updated, files, err := r.MapRules(testUser2, protoRules)
+		require.True(t, updated)
+		require.Len(t, files, 1)
+		require.Equal(t, fileOneUserTwoPath, files[0])
+		require.NoError(t, err)
+
+		user2Rules, ok := r.rules[testUser2]
+		require.True(t, ok)
+		require.Contains(t, user2Rules, fileOneUserTwoPath)
+	})
+
+	t.Run("simultaneous update and add tenant 2", func(t *testing.T) {
+		protoRules := testRuleSetAsProto(testUser2, twoFilesRuleSet)
+		updated, files, err := r.MapRules(testUser2, protoRules)
+		require.True(t, updated)
+		require.Len(t, files, 2)
+		require.True(t, sliceContains(t, fileOneUserTwoPath, files))
+		require.True(t, sliceContains(t, fileTwoUserTwoPath, files))
+		require.NoError(t, err)
+
+		user1Rules, ok := r.rules[testUser]
+		require.True(t, ok)
+		require.Contains(t, user1Rules, fileOnePath)
+		user2Rules, ok := r.rules[testUser2]
+		require.True(t, ok)
+		require.Contains(t, user2Rules, fileOneUserTwoPath)
+		require.Contains(t, user2Rules, fileTwoUserTwoPath)
+	})
+
+	t.Run("identical rulegroup tenant 1 not considered updated", func(t *testing.T) {
+		protoRules := testRuleSetAsProto(testUser, initialRuleSet)
+		updated, files, err := r.MapRules(testUser, protoRules)
+		require.False(t, updated)
+		require.Len(t, files, 1)
+		require.NoError(t, err)
+
+		userRules, ok := r.rules[testUser]
+		require.True(t, ok)
+		require.Contains(t, userRules, fileOnePath)
+	})
+
+	t.Run("removal of tenant 1 groups keeps tenant 2 groups", func(t *testing.T) {
+		protoRules := testRuleSetAsProto(testUser, map[string][]rulefmt.RuleGroup{})
+		updated, files, err := r.MapRules(testUser, protoRules)
+		require.True(t, updated)
+		require.Len(t, files, 0)
+		require.NoError(t, err)
+
+		userRules, ok := r.rules[testUser]
+		require.True(t, ok)
+		require.Empty(t, userRules)
+		user2Rules, ok := r.rules[testUser2]
+		require.True(t, ok)
+		require.Contains(t, user2Rules, fileOneUserTwoPath)
+		require.Contains(t, user2Rules, fileTwoUserTwoPath)
+	})
+}
+
+func Test_mapper_MapRulesMultipleTenants(t *testing.T) {
+	l := util_log.MakeLeveledLogger(os.Stdout, "info")
+	setupRuleSets()
+	m := &mapper{
+		Path:   "/rules",
+		FS:     afero.NewMemMapFs(),
+		logger: l,
+	}
+
+	t.Run("basic rulegroup tenant 1", func(t *testing.T) {
+		updated, files, err := m.MapRules(testUser, initialRuleSet)
+		require.True(t, updated)
+		require.Len(t, files, 1)
+		require.Equal(t, fileOnePath, files[0])
+		require.NoError(t, err)
+
+		exists, err := afero.Exists(m.FS, fileOnePath)
+		require.True(t, exists)
+		require.NoError(t, err)
+	})
+
+	t.Run("basic rulegroup tenant 2 still considered new", func(t *testing.T) {
+		updated, files, err := m.MapRules(testUser2, initialRuleSet)
+		require.True(t, updated)
+		require.Len(t, files, 1)
+		require.Equal(t, fileOneUserTwoPath, files[0])
+		require.NoError(t, err)
+
+		exists, err := afero.Exists(m.FS, fileOneUserTwoPath)
+		require.True(t, exists)
+		require.NoError(t, err)
+	})
+
+	t.Run("simultaneous update and add tenant 2", func(t *testing.T) {
+		updated, files, err := m.MapRules(testUser2, twoFilesRuleSet)
+		require.True(t, updated)
+		require.Len(t, files, 2)
+		require.True(t, sliceContains(t, fileOneUserTwoPath, files))
+		require.True(t, sliceContains(t, fileTwoUserTwoPath, files))
+		require.NoError(t, err)
+
+		exists, err := afero.Exists(m.FS, fileOnePath)
+		require.True(t, exists)
+		require.NoError(t, err)
+		exists, err = afero.Exists(m.FS, fileOneUserTwoPath)
+		require.True(t, exists)
+		require.NoError(t, err)
+		exists, err = afero.Exists(m.FS, fileTwoUserTwoPath)
+		require.True(t, exists)
+		require.NoError(t, err)
+	})
+
+	t.Run("identical rulegroup tenant 1 not considered updated", func(t *testing.T) {
+		updated, files, err := m.MapRules(testUser, initialRuleSet)
+		require.False(t, updated)
+		require.Len(t, files, 1)
+		require.NoError(t, err)
+
+		exists, err := afero.Exists(m.FS, fileOnePath)
+		require.True(t, exists)
+		require.NoError(t, err)
+	})
+
+	t.Run("removal of tenant 1 groups keeps tenant 2 groups", func(t *testing.T) {
+		updated, files, err := m.MapRules(testUser, map[string][]rulefmt.RuleGroup{})
+		require.True(t, updated)
+		require.Len(t, files, 0)
+		require.NoError(t, err)
+
+		exists, err := afero.Exists(m.FS, fileOnePath)
+		require.False(t, exists)
+		require.NoError(t, err)
+		exists, err = afero.Exists(m.FS, fileOneUserTwoPath)
+		require.True(t, exists)
+		require.NoError(t, err)
+		exists, err = afero.Exists(m.FS, fileTwoUserTwoPath)
+		require.True(t, exists)
+		require.NoError(t, err)
+	})
 }
 
 func Test_registry_MapRulesSpecialCharNamespace(t *testing.T) {
