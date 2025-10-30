@@ -19753,9 +19753,9 @@
           "kind": "field",
           "name": "task_concurrency",
           "required": false,
-          "desc": "Maximum number of Go routines processing tasks in parallel.",
+          "desc": "Maximum number of bytes of the sum of all blocks sizes being processed concurrently.",
           "fieldValue": null,
-          "fieldDefaultValue": 2,
+          "fieldDefaultValue": 2000000000,
           "fieldFlag": "parquet-converter.task-concurrency",
           "fieldType": "int",
           "fieldCategory": "advanced"
@@ -19764,9 +19764,9 @@
           "kind": "field",
           "name": "conversion_concurrency",
           "required": false,
-          "desc": "Maximum number of concurrent Go routines allowed to run the conversion code.",
+          "desc": "Maximum number of bytes of the sum of all blocks being converted to Parquet concurrently.",
           "fieldValue": null,
-          "fieldDefaultValue": 1,
+          "fieldDefaultValue": 1000000000,
           "fieldFlag": "parquet-converter.conversion-concurrency",
           "fieldType": "int",
           "fieldCategory": "advanced"
