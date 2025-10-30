@@ -2356,7 +2356,7 @@ func (i *Ingester) QueryStream(req *client.QueryRequest, stream client.Ingester_
 		return err
 	}
 
-	from, through, matchers, err := client.FromQueryRequest(req)
+	from, through, projectionLabels, matchers, err := client.FromQueryRequest(req)
 	if err != nil {
 		return err
 	}
@@ -2385,7 +2385,7 @@ func (i *Ingester) QueryStream(req *client.QueryRequest, stream client.Ingester_
 	numSeries := 0
 
 	spanlog.DebugLog("msg", "using executeStreamingQuery")
-	numSeries, numSamples, err = i.executeStreamingQuery(ctx, db, int64(from), int64(through), matchers, shard, stream, req.StreamingChunksBatchSize, spanlog)
+	numSeries, numSamples, err = i.executeStreamingQuery(ctx, db, int64(from), int64(through), matchers, shard, projectionLabels, stream, req.StreamingChunksBatchSize, spanlog)
 	if err != nil {
 		return err
 	}
@@ -2396,7 +2396,7 @@ func (i *Ingester) QueryStream(req *client.QueryRequest, stream client.Ingester_
 	return nil
 }
 
-func (i *Ingester) executeStreamingQuery(ctx context.Context, db *userTSDB, from, through int64, matchers []*labels.Matcher, shard *sharding.ShardSelector, stream client.Ingester_QueryStreamServer, batchSize uint64, spanlog *spanlogger.SpanLogger) (numSeries, numSamples int, _ error) {
+func (i *Ingester) executeStreamingQuery(ctx context.Context, db *userTSDB, from, through int64, matchers []*labels.Matcher, shard *sharding.ShardSelector, projectionLabels []string, stream client.Ingester_QueryStreamServer, batchSize uint64, spanlog *spanlogger.SpanLogger) (numSeries, numSamples int, _ error) {
 	var q storage.ChunkQuerier
 	var err error
 	if i.limits.OutOfOrderTimeWindow(db.userID) > 0 {
@@ -2411,7 +2411,7 @@ func (i *Ingester) executeStreamingQuery(ctx context.Context, db *userTSDB, from
 	// The querier must remain open until we've finished streaming chunks.
 	defer q.Close()
 
-	allSeries, numSeries, err := i.sendStreamingQuerySeries(ctx, q, from, through, matchers, shard, stream)
+	allSeries, numSeries, err := i.sendStreamingQuerySeries(ctx, q, from, through, matchers, shard, projectionLabels, stream)
 	if err != nil {
 		return 0, 0, err
 	}
@@ -2461,12 +2461,13 @@ func putChunkSeriesNode(sn *chunkSeriesNode) {
 	chunkSeriesNodePool.Put(sn)
 }
 
-func (i *Ingester) sendStreamingQuerySeries(ctx context.Context, q storage.ChunkQuerier, from, through int64, matchers []*labels.Matcher, shard *sharding.ShardSelector, stream client.Ingester_QueryStreamServer) (*chunkSeriesNode, int, error) {
+func (i *Ingester) sendStreamingQuerySeries(ctx context.Context, q storage.ChunkQuerier, from, through int64, matchers []*labels.Matcher, shard *sharding.ShardSelector, projectionLabels []string, stream client.Ingester_QueryStreamServer) (*chunkSeriesNode, int, error) {
 	// Disable chunks trimming, so that we don't have to rewrite chunks which have samples outside
 	// the requested from/through range. PromQL engine can handle it.
 	hints := initSelectHints(from, through)
 	hints = configSelectHintsWithShard(hints, shard)
 	hints = configSelectHintsWithDisabledTrimming(hints)
+	hints = configSelectHintsWithProjection(hints, projectionLabels)
 
 	// Series must be sorted so that they can be read by the querier in the order the PromQL engine expects.
 	ss := q.Select(ctx, true, hints, matchers...)
@@ -4231,6 +4232,15 @@ func configSelectHintsWithDisabledTrimming(hints *storage.SelectHints) *storage.
 	return hints
 }
 
+func configSelectHintsWithProjection(hints *storage.SelectHints, projectionLabels []string) *storage.SelectHints {
+	if len(projectionLabels) > 0 {
+		hints.ProjectionLabels = projectionLabels
+		// TODO: label projections: I'm not sure what exactly this control keep it true for POC
+		hints.ProjectionInclude = true
+	}
+	return hints
+}
+
 // allOutOfBounds returns whether all the provided (float) samples are out of bounds.
 func allOutOfBoundsFloats(samples []mimirpb.Sample, minValidTime int64) bool {
 	for _, s := range samples {
@@ -4380,4 +4390,18 @@ func (i *Ingester) NotifyPreCommit(ctx context.Context) error {
 		}
 		return db.Head().FsyncWLSegments()
 	})
+}
+
+// computeSeriesHash computes a SHA256 hash of all labels in the series.
+// The hash is computed by iterating through all labels and including both
+// name and value separated by a delimiter
+func computeSeriesHash(lbls labels.Labels) string {
+	h := sha256.New()
+	lbls.Range(func(l labels.Label) {
+		h.Write([]byte(l.Name))
+		h.Write([]byte{'\xff'}) // separator
+		h.Write([]byte(l.Value))
+		h.Write([]byte{'\xff'})
+	})
+	return hex.EncodeToString(h.Sum(nil))
 }
