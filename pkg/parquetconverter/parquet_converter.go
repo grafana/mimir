@@ -114,8 +114,8 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.DurationVar(&cfg.ConversionInterval, "parquet-converter.conversion-interval", time.Minute, "The frequency at which the conversion runs.")
 	f.DurationVar(&cfg.DiscoveryInterval, "parquet-converter.discovery-interval", 5*time.Minute, "The frequency at which user and block discovery runs.")
 
-	f.IntVar(&cfg.TaskConcurrency, "parquet-converter.task-concurrency", 2e9, "Maximum number of bytes of the sum of all blocks sizes being processed concurrently.")
-	f.IntVar(&cfg.ConversionConcurrency, "parquet-converter.conversion-concurrency", 1e9, "Maximum number of bytes of the sum of all blocks being converted to Parquet concurrently.")
+	f.IntVar(&cfg.TaskConcurrency, "parquet-converter.task-concurrency", 2e9, "Maximum number of bytes of the sum of all blocks sizes being processed concurrently. If a block is larger than this value, it will be processed alone.")
+	f.IntVar(&cfg.ConversionConcurrency, "parquet-converter.conversion-concurrency", 1e9, "Maximum number of bytes of the sum of all blocks being converted to Parquet concurrently. If a block is larger than this value, it will be processed alone.")
 
 	f.DurationVar(&cfg.MinDataAge, "parquet-converter.min-data-age", 0, "Minimum age of data in blocks to convert. Only convert blocks containing data older than this duration from now, based on their MinTime. Set to 0 to disable age filtering.")
 	f.Uint64Var(&cfg.MinBlockTimestamp, "parquet-converter.min-block-timestamp", 0, "Minimum block timestamp (based on ULID) to convert. Set to 0 to disable timestamp filtering.")

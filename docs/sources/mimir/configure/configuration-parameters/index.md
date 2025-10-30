@@ -478,14 +478,17 @@ parquet_converter:
   # CLI flag: -parquet-converter.discovery-interval
   [discovery_interval: <duration> | default = 5m]
 
-  # (advanced) Maximum number of Go routines processing tasks in parallel.
+  # (advanced) Maximum number of bytes of the sum of all blocks sizes being
+  # processed concurrently. If a block is larger than this value, it will be
+  # processed alone.
   # CLI flag: -parquet-converter.task-concurrency
-  [task_concurrency: <int> | default = 2]
+  [task_concurrency: <int> | default = 2000000000]
 
-  # (advanced) Maximum number of concurrent Go routines allowed to run the
-  # conversion code.
+  # (advanced) Maximum number of bytes of the sum of all blocks being converted
+  # to Parquet concurrently. If a block is larger than this value, it will be
+  # processed alone.
   # CLI flag: -parquet-converter.conversion-concurrency
-  [conversion_concurrency: <int> | default = 1]
+  [conversion_concurrency: <int> | default = 1000000000]
 
   # (advanced) Minimum age of data in blocks to convert. Only convert blocks
   # containing data older than this duration from now, based on their MinTime.
