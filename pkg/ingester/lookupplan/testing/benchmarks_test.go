@@ -1,16 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 // Package benchmarks provides benchmark tests for the index lookup planner.
-//
-// These benchmarks execute real PromQL queries extracted from production logs
-// against a running ingester with actual data.
-//
 // Usage:
 //
 //	go test -bench=. -data-dir=/path/to/data -query-file=/path/to/queries.json
 //
 // For more flags see the individual flag descriptions below.
-package benchmarks
+package testing
 
 import (
 	"context"
@@ -21,12 +17,17 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/DmitriyVTitov/size"
+	"github.com/go-kit/log"
 	"github.com/grafana/dskit/user"
+	"github.com/prometheus/common/promslog"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/tsdb"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/ingester"
 	"github.com/grafana/mimir/pkg/ingester/client"
+	"github.com/grafana/mimir/pkg/ingester/lookupplan"
 	"github.com/grafana/mimir/pkg/streamingpromql/benchmarks"
 	"github.com/grafana/mimir/pkg/util/bench"
 )
@@ -72,7 +73,12 @@ func (m *mockQueryStreamServer) Context() context.Context {
 	return m.ctx
 }
 
-// BenchmarkQueryExecution benchmarks query execution against a running ingester
+// BenchmarkQueryExecution benchmarks query execution against a running ingester.
+// This benchmark executes real PromQL queries extracted from production logs
+// against a running ingester with actual data.
+// Usage:
+//
+//	go test -bench=BenchmarkQueryExecution -data-dir=/path/to/data -query-file=/path/to/queries.json
 func BenchmarkQueryExecution(b *testing.B) {
 	require.NotEmpty(b, *dataDirFlag, "-data-dir flag is required")
 	require.NotEmpty(b, *queryFileFlag, "-query-file flag is required")
@@ -129,6 +135,53 @@ func BenchmarkQueryExecution(b *testing.B) {
 			})
 		}
 	}
+}
+
+// BenchmarkStatisticsGeneration benchmarks block statistics generation.
+// Particularly useful for tuning thresholds for larger and smaller count-min sketches.
+// Usage:
+//
+//	go test -bench=BenchmarkStatisticsGeneration -data-dir=/path/to/data
+func BenchmarkStatisticsGeneration(b *testing.B) {
+	require.NotEmpty(b, *dataDirFlag, "-data-dir flag is required")
+
+	// Open the TSDB for this tenant
+	db, err := tsdb.Open(*dataDirFlag, promslog.NewNopLogger(), nil, nil, nil)
+	require.NoError(b, err)
+	blocks := db.Blocks()
+
+	// Benchmark each block's statistics generation
+	for _, block := range blocks {
+		b.Run(fmt.Sprintf("block=%s", block.Meta().ULID.String()), func(b *testing.B) {
+			b.ReportAllocs()
+
+			statsGen := lookupplan.NewStatisticsGenerator(log.NewNopLogger())
+			indexReader, err := block.Index()
+			require.NoError(b, err)
+
+			// Benchmark the Stats method
+			for i := 0; i < b.N; i++ {
+				stats, err := statsGen.Stats(
+					block.Meta(), indexReader,
+					lookupplan.DefaultLabelCardinalityForSmallerSketch,
+					lookupplan.DefaultLabelCardinalityForLargerSketch,
+				)
+				if err != nil {
+					b.Fatalf("Failed to generate statistics: %v", err)
+				}
+				if i == 0 {
+					b.ReportMetric(float64(size.Of(stats)), "stats_size_bytes")
+					b.Logf("total_series=%d", stats.TotalSeries())
+				}
+			}
+			err = indexReader.Close()
+			require.NoError(b, err)
+		})
+	}
+
+	// Close the TSDB after processing all blocks
+	err = db.Close()
+	require.NoError(b, err)
 }
 
 // queryResult contains the result of executing a query against the ingester.
