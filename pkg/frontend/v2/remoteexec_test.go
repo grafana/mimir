@@ -1032,7 +1032,7 @@ func requireEqualHPointRingBuffer(t *testing.T, buffer *types.HPointRingBufferVi
 	}
 }
 
-func TestRemoteExecutor_CorrectlyPassesQueriedTimeRange(t *testing.T) {
+func TestRemoteExecutor_CorrectlyPassesQueriedTimeRangeAndUpdatesQueryStats(t *testing.T) {
 	frontendMock := &timeRangeCapturingFrontend{}
 	cfg := Config{LookBackDelta: 7 * time.Minute}
 	executor := NewRemoteExecutor(frontendMock, cfg)
@@ -1041,13 +1041,15 @@ func TestRemoteExecutor_CorrectlyPassesQueriedTimeRange(t *testing.T) {
 	startT := endT.Add(-time.Hour)
 	timeRange := types.NewRangeQueryTimeRange(startT, endT, time.Minute)
 
-	ctx := context.Background()
+	stats, ctx := stats.ContextWithEmptyStats(context.Background())
+	stats.AddRemoteExecutionRequests(12)
 	node := &core.VectorSelector{VectorSelectorDetails: &core.VectorSelectorDetails{}}
 	_, err := executor.startExecution(ctx, &planning.QueryPlan{}, node, timeRange, false, false, 1)
 	require.NoError(t, err)
 
 	require.Equal(t, startT.Add(-cfg.LookBackDelta+time.Millisecond), frontendMock.minT)
 	require.Equal(t, endT, frontendMock.maxT)
+	require.Equal(t, uint32(13), stats.LoadRemoteExecutionRequestCount())
 }
 
 type timeRangeCapturingFrontend struct {
