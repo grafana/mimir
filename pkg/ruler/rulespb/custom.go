@@ -51,6 +51,7 @@ func (l RuleGroupList) FormattedProto() map[string]RuleGroupList {
 	for _, g := range l {
 		if _, exists := groupMap[g.Namespace]; !exists {
 			groupMap[g.Namespace] = []*RuleGroupDesc{g}
+			continue
 		}
 		groupMap[g.Namespace] = append(groupMap[g.Namespace], g)
 	}
