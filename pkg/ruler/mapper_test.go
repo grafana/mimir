@@ -352,6 +352,69 @@ func Test_mapper_MapRules(t *testing.T) {
 	})
 }
 
+func Test_registry_MapRulesMultipleFiles(t *testing.T) {
+	l := util_log.MakeLeveledLogger(os.Stdout, "info")
+	setupRuleSets()
+	r := newRuleRegistry("/rules", l)
+
+	t.Run("basic rulegroup", func(t *testing.T) {
+		protoRules := testRuleSetAsProto(testUser, initialRuleSet)
+		updated, files, err := r.MapRules(testUser, protoRules)
+		require.True(t, updated)
+		require.Len(t, files, 1)
+		require.Equal(t, fileOnePath, files[0])
+		require.NoError(t, err)
+
+		userRules, ok := r.rules[testUser]
+		require.True(t, ok)
+		require.Contains(t, userRules, fileOnePath)
+	})
+
+	t.Run("add a file", func(t *testing.T) {
+		protoRules := testRuleSetAsProto(testUser, twoFilesRuleSet)
+		updated, files, err := r.MapRules(testUser, protoRules)
+		require.True(t, updated)
+		require.Len(t, files, 2)
+		require.True(t, sliceContains(t, fileOnePath, files))
+		require.True(t, sliceContains(t, fileTwoPath, files))
+		require.NoError(t, err)
+
+		userRules, ok := r.rules[testUser]
+		require.True(t, ok)
+		require.Contains(t, userRules, fileOnePath)
+		require.Contains(t, userRules, fileTwoPath)
+	})
+
+	t.Run("update one file", func(t *testing.T) {
+		protoRules := testRuleSetAsProto(testUser, twoFilesUpdatedRuleSet)
+		updated, files, err := r.MapRules(testUser, protoRules)
+		require.True(t, updated)
+		require.Len(t, files, 2)
+		require.True(t, sliceContains(t, fileOnePath, files))
+		require.True(t, sliceContains(t, fileTwoPath, files))
+		require.NoError(t, err)
+
+		userRules, ok := r.rules[testUser]
+		require.True(t, ok)
+		require.Contains(t, userRules, fileOnePath)
+		require.Contains(t, userRules, fileTwoPath)
+	})
+
+	t.Run("delete one file", func(t *testing.T) {
+		protoRules := testRuleSetAsProto(testUser, twoFilesDeletedRuleSet)
+		updated, files, err := r.MapRules(testUser, protoRules)
+		require.True(t, updated)
+		require.Len(t, files, 1)
+		require.Equal(t, fileOnePath, files[0])
+		require.NoError(t, err)
+
+		userRules, ok := r.rules[testUser]
+		require.True(t, ok)
+		require.Contains(t, userRules, fileOnePath)
+		require.NotContains(t, userRules, fileTwoPath)
+	})
+}
+
 func Test_mapper_MapRulesMultipleFiles(t *testing.T) {
 	l := util_log.MakeLeveledLogger(os.Stdout, "info")
 	setupRuleSets()
@@ -420,6 +483,37 @@ func Test_mapper_MapRulesMultipleFiles(t *testing.T) {
 		require.NoError(t, err)
 	})
 
+}
+
+func Test_registry_MapRulesSpecialCharNamespace(t *testing.T) {
+	l := util_log.MakeLeveledLogger(os.Stdout, "info")
+	setupRuleSets()
+	r := newRuleRegistry("/rules", l)
+
+	t.Run("create special characters rulegroup", func(t *testing.T) {
+		protoRules := testRuleSetAsProto(testUser, specialCharactersRuleSet)
+		updated, files, err := r.MapRules(testUser, protoRules)
+		require.True(t, updated)
+		require.Len(t, files, 1)
+		require.Equal(t, specialCharFilePath, files[0])
+		require.NoError(t, err)
+
+		userRules, ok := r.rules[testUser]
+		require.True(t, ok)
+		require.Contains(t, userRules, specialCharFilePath)
+	})
+
+	t.Run("delete special characters rulegroup", func(t *testing.T) {
+		protoRules := testRuleSetAsProto(testUser, map[string][]rulefmt.RuleGroup{})
+		updated, files, err := r.MapRules(testUser, protoRules)
+		require.True(t, updated)
+		require.Len(t, files, 0)
+		require.NoError(t, err)
+
+		userRules, ok := r.rules[testUser]
+		require.True(t, ok)
+		require.NotContains(t, userRules, specialCharFilePath)
+	})
 }
 
 func Test_mapper_MapRulesSpecialCharNamespace(t *testing.T) {
