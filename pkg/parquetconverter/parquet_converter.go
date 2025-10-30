@@ -77,8 +77,9 @@ type Config struct {
 	ConversionInterval time.Duration `yaml:"conversion_interval"`
 	DiscoveryInterval  time.Duration `yaml:"discovery_interval"`
 
-	TaskConcurrency       int `yaml:"task_concurrency" category:"advanced"`
-	ConversionConcurrency int `yaml:"conversion_concurrency" category:"advanced"`
+	TaskConcurrency            int `yaml:"task_concurrency" category:"advanced"`
+	TaskBytesConcurrency       int `yaml:"task_bytes_concurrency" category:"advanced"`
+	ConversionBytesConcurrency int `yaml:"conversion_bytes_concurrency" category:"advanced"`
 
 	MinDataAge         time.Duration `yaml:"min_data_age" category:"advanced"`
 	MinBlockTimestamp  uint64        `yaml:"min_block_timestamp"`
@@ -114,8 +115,9 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.DurationVar(&cfg.ConversionInterval, "parquet-converter.conversion-interval", time.Minute, "The frequency at which the conversion runs.")
 	f.DurationVar(&cfg.DiscoveryInterval, "parquet-converter.discovery-interval", 5*time.Minute, "The frequency at which user and block discovery runs.")
 
-	f.IntVar(&cfg.TaskConcurrency, "parquet-converter.task-concurrency", 2e9, "Maximum number of bytes of the sum of all blocks sizes being processed concurrently. If a block is larger than this value, it will be processed alone.")
-	f.IntVar(&cfg.ConversionConcurrency, "parquet-converter.conversion-concurrency", 1e9, "Maximum number of bytes of the sum of all blocks being converted to Parquet concurrently. If a block is larger than this value, it will be processed alone.")
+	f.IntVar(&cfg.TaskConcurrency, "parquet-converter.task-concurrency", 2, "Maximum number of blocks being processed concurrently.")
+	f.IntVar(&cfg.TaskBytesConcurrency, "parquet-converter.task-bytes-concurrency", 2e9, "Maximum number of bytes of the sum of all blocks sizes being processed concurrently. If a block is larger than this value, it will be processed alone.")
+	f.IntVar(&cfg.ConversionBytesConcurrency, "parquet-converter.conversion-bytes-concurrency", 1e9, "Maximum number of bytes of the sum of all blocks being converted to Parquet concurrently. If a block is larger than this value, it will be processed alone.")
 
 	f.DurationVar(&cfg.MinDataAge, "parquet-converter.min-data-age", 0, "Minimum age of data in blocks to convert. Only convert blocks containing data older than this duration from now, based on their MinTime. Set to 0 to disable age filtering.")
 	f.Uint64Var(&cfg.MinBlockTimestamp, "parquet-converter.min-block-timestamp", 0, "Minimum block timestamp (based on ULID) to convert. Set to 0 to disable timestamp filtering.")
@@ -152,9 +154,10 @@ type ParquetConverter struct {
 	baseConverterOptions []convert.ConvertOption
 	metrics              parquetConverterMetrics
 
-	conversionQueue *priorityQueue
-	conversionSem   *tolerantSemaphore
-	taskSem         *tolerantSemaphore
+	conversionQueue    *priorityQueue
+	conversionBytesSem *tolerantSemaphore
+	taskBytesSem       *tolerantSemaphore
+	taskCountSem       *semaphore.Weighted
 
 	queuedBlocks sync.Map // map[ulid.ULID]time.Time - persistent cache of blocks that have been queued
 }
@@ -242,8 +245,9 @@ func newParquetConverter(
 		baseConverterOptions: buildBaseConverterOptions(cfg),
 		metrics:              newParquetConverterMetrics(registerer),
 		conversionQueue:      newPriorityQueue(),
-		conversionSem:        newTolerantSemaphore(int64(cfg.ConversionConcurrency)),
-		taskSem:              newTolerantSemaphore(int64(cfg.TaskConcurrency)),
+		conversionBytesSem:   newTolerantSemaphore(int64(cfg.ConversionBytesConcurrency)),
+		taskBytesSem:         newTolerantSemaphore(int64(cfg.TaskConcurrency)),
+		taskCountSem:         semaphore.NewWeighted(int64(cfg.TaskConcurrency)),
 	}
 
 	c.Service = services.NewBasicService(c.starting, c.running, c.stopping).WithName("parquet-converter")
@@ -321,7 +325,10 @@ func (c *ParquetConverter) running(ctx context.Context) error {
 						continue
 					}
 				}
-				err := c.taskSem.Acquire(gCtx, task.Meta.BlockBytes())
+				err := c.taskBytesSem.Acquire(gCtx, task.Meta.BlockBytes())
+				if err == nil {
+					err = c.taskCountSem.Acquire(gCtx, 1)
+				}
 				if err != nil {
 					if errors.Is(err, context.Canceled) {
 						return nil
@@ -329,7 +336,8 @@ func (c *ParquetConverter) running(ctx context.Context) error {
 					return err
 				}
 				go func() {
-					defer c.taskSem.Release(task.Meta.BlockBytes())
+					defer c.taskBytesSem.Release(task.Meta.BlockBytes())
+					defer c.taskCountSem.Release(1)
 
 					c.metrics.queueSize.WithLabelValues(c.Cfg.LoadBalancingStrategy).Set(float64(c.conversionQueue.Size()))
 					c.metrics.queueItemsProcessed.WithLabelValues(task.UserID).Inc()
@@ -531,11 +539,11 @@ func (c *ParquetConverter) processBlock(ctx context.Context, userID string, meta
 	convertOpts[len(c.baseConverterOptions)] = convert.WithName(meta.ULID.String())
 
 	// Conversion is the intense part, so we limit the number of concurrent conversions.
-	if err := c.conversionSem.Acquire(ctx, meta.BlockBytes()); err != nil {
+	if err := c.conversionBytesSem.Acquire(ctx, meta.BlockBytes()); err != nil {
 		level.Error(logger).Log("msg", "failed to acquire conversion semaphore", "err", err)
 		return
 	}
-	defer c.conversionSem.Release(meta.BlockBytes())
+	defer c.conversionBytesSem.Release(meta.BlockBytes())
 
 	err = c.blockConverter.ConvertBlock(ctx, meta, localBlockDir, uBucket, logger, convertOpts)
 
