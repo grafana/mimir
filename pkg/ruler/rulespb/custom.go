@@ -15,10 +15,12 @@ func (l RuleGroupList) Equal(that RuleGroupList) bool {
 		return l == nil
 	}
 
-	// Shortcut for pointer equality TODO
-
 	if len(l) != len(that) {
 		return false
+	}
+
+	if len(l) == 0 || &l[0] == &that[0] {
+		return true
 	}
 
 	for i := range l {
