@@ -243,9 +243,7 @@ func Test_mapper_MapRules(t *testing.T) {
 		require.Equal(t, fileOnePath, files[0])
 		require.NoError(t, err)
 
-		exists, err := afero.Exists(m.FS, fileOnePath)
-		require.True(t, exists)
-		require.NoError(t, err)
+		requireFileExists(t, m.FS, fileOnePath)
 	})
 
 	t.Run("identical rulegroup", func(t *testing.T) {
@@ -254,9 +252,7 @@ func Test_mapper_MapRules(t *testing.T) {
 		require.Len(t, files, 1)
 		require.NoError(t, err)
 
-		exists, err := afero.Exists(m.FS, fileOnePath)
-		require.True(t, exists)
-		require.NoError(t, err)
+		requireFileExists(t, m.FS, fileOnePath)
 	})
 
 	t.Run("out of order identical rulegroup", func(t *testing.T) {
@@ -265,9 +261,7 @@ func Test_mapper_MapRules(t *testing.T) {
 		require.Len(t, files, 1)
 		require.NoError(t, err)
 
-		exists, err := afero.Exists(m.FS, fileOnePath)
-		require.True(t, exists)
-		require.NoError(t, err)
+		requireFileExists(t, m.FS, fileOnePath)
 	})
 
 	t.Run("updated rulegroup", func(t *testing.T) {
@@ -277,9 +271,7 @@ func Test_mapper_MapRules(t *testing.T) {
 		require.Equal(t, fileOnePath, files[0])
 		require.NoError(t, err)
 
-		exists, err := afero.Exists(m.FS, fileOnePath)
-		require.True(t, exists)
-		require.NoError(t, err)
+		requireFileExists(t, m.FS, fileOnePath)
 	})
 }
 
@@ -299,9 +291,7 @@ func Test_mapper_MapRulesMultipleFiles(t *testing.T) {
 		require.Equal(t, fileOnePath, files[0])
 		require.NoError(t, err)
 
-		exists, err := afero.Exists(m.FS, fileOnePath)
-		require.True(t, exists)
-		require.NoError(t, err)
+		requireFileExists(t, m.FS, fileOnePath)
 	})
 
 	t.Run("add a file", func(t *testing.T) {
@@ -312,12 +302,8 @@ func Test_mapper_MapRulesMultipleFiles(t *testing.T) {
 		require.Contains(t, files, fileTwoPath)
 		require.NoError(t, err)
 
-		exists, err := afero.Exists(m.FS, fileOnePath)
-		require.True(t, exists)
-		require.NoError(t, err)
-		exists, err = afero.Exists(m.FS, fileTwoPath)
-		require.True(t, exists)
-		require.NoError(t, err)
+		requireFileExists(t, m.FS, fileOnePath)
+		requireFileExists(t, m.FS, fileTwoPath)
 	})
 
 	t.Run("update one file", func(t *testing.T) {
@@ -328,12 +314,8 @@ func Test_mapper_MapRulesMultipleFiles(t *testing.T) {
 		require.Contains(t, files, fileTwoPath)
 		require.NoError(t, err)
 
-		exists, err := afero.Exists(m.FS, fileOnePath)
-		require.True(t, exists)
-		require.NoError(t, err)
-		exists, err = afero.Exists(m.FS, fileTwoPath)
-		require.True(t, exists)
-		require.NoError(t, err)
+		requireFileExists(t, m.FS, fileOnePath)
+		requireFileExists(t, m.FS, fileTwoPath)
 	})
 
 	t.Run("delete one file", func(t *testing.T) {
@@ -343,12 +325,8 @@ func Test_mapper_MapRulesMultipleFiles(t *testing.T) {
 		require.Equal(t, fileOnePath, files[0])
 		require.NoError(t, err)
 
-		exists, err := afero.Exists(m.FS, fileOnePath)
-		require.True(t, exists)
-		require.NoError(t, err)
-		exists, err = afero.Exists(m.FS, fileTwoPath)
-		require.False(t, exists)
-		require.NoError(t, err)
+		requireFileExists(t, m.FS, fileOnePath)
+		requireFileNotExists(t, m.FS, fileTwoPath)
 	})
 }
 
@@ -368,9 +346,7 @@ func Test_mapper_MapRulesMultipleTenants(t *testing.T) {
 		require.Equal(t, fileOnePath, files[0])
 		require.NoError(t, err)
 
-		exists, err := afero.Exists(m.FS, fileOnePath)
-		require.True(t, exists)
-		require.NoError(t, err)
+		requireFileExists(t, m.FS, fileOnePath)
 	})
 
 	t.Run("basic rulegroup tenant 2 still considered new", func(t *testing.T) {
@@ -380,9 +356,7 @@ func Test_mapper_MapRulesMultipleTenants(t *testing.T) {
 		require.Equal(t, fileOneUserTwoPath, files[0])
 		require.NoError(t, err)
 
-		exists, err := afero.Exists(m.FS, fileOneUserTwoPath)
-		require.True(t, exists)
-		require.NoError(t, err)
+		requireFileExists(t, m.FS, fileOneUserTwoPath)
 	})
 
 	t.Run("simultaneous update and add tenant 2", func(t *testing.T) {
@@ -393,15 +367,9 @@ func Test_mapper_MapRulesMultipleTenants(t *testing.T) {
 		require.Contains(t, files, fileTwoUserTwoPath)
 		require.NoError(t, err)
 
-		exists, err := afero.Exists(m.FS, fileOnePath)
-		require.True(t, exists)
-		require.NoError(t, err)
-		exists, err = afero.Exists(m.FS, fileOneUserTwoPath)
-		require.True(t, exists)
-		require.NoError(t, err)
-		exists, err = afero.Exists(m.FS, fileTwoUserTwoPath)
-		require.True(t, exists)
-		require.NoError(t, err)
+		requireFileExists(t, m.FS, fileOnePath)
+		requireFileExists(t, m.FS, fileOneUserTwoPath)
+		requireFileExists(t, m.FS, fileTwoUserTwoPath)
 	})
 
 	t.Run("identical rulegroup tenant 1 not considered updated", func(t *testing.T) {
@@ -410,9 +378,7 @@ func Test_mapper_MapRulesMultipleTenants(t *testing.T) {
 		require.Len(t, files, 1)
 		require.NoError(t, err)
 
-		exists, err := afero.Exists(m.FS, fileOnePath)
-		require.True(t, exists)
-		require.NoError(t, err)
+		requireFileExists(t, m.FS, fileOnePath)
 	})
 
 	t.Run("removal of tenant 1 groups keeps tenant 2 groups", func(t *testing.T) {
@@ -421,15 +387,9 @@ func Test_mapper_MapRulesMultipleTenants(t *testing.T) {
 		require.Len(t, files, 0)
 		require.NoError(t, err)
 
-		exists, err := afero.Exists(m.FS, fileOnePath)
-		require.False(t, exists)
-		require.NoError(t, err)
-		exists, err = afero.Exists(m.FS, fileOneUserTwoPath)
-		require.True(t, exists)
-		require.NoError(t, err)
-		exists, err = afero.Exists(m.FS, fileTwoUserTwoPath)
-		require.True(t, exists)
-		require.NoError(t, err)
+		requireFileNotExists(t, m.FS, fileOnePath)
+		requireFileExists(t, m.FS, fileOneUserTwoPath)
+		requireFileExists(t, m.FS, fileOneUserTwoPath)
 	})
 }
 
@@ -449,9 +409,7 @@ func Test_mapper_MapRulesSpecialCharNamespace(t *testing.T) {
 		require.Len(t, files, 1)
 		require.Equal(t, specialCharFilePath, files[0])
 
-		exists, err := afero.Exists(m.FS, specialCharFilePath)
-		require.NoError(t, err)
-		require.True(t, exists)
+		requireFileExists(t, m.FS, specialCharFilePath)
 	})
 
 	t.Run("delete special characters rulegroup", func(t *testing.T) {
@@ -460,9 +418,7 @@ func Test_mapper_MapRulesSpecialCharNamespace(t *testing.T) {
 		require.True(t, updated)
 		require.Len(t, files, 0)
 
-		exists, err := afero.Exists(m.FS, specialCharFilePath)
-		require.NoError(t, err)
-		require.False(t, exists)
+		requireFileNotExists(t, m.FS, specialCharFilePath)
 	})
 }
 
@@ -605,4 +561,20 @@ func Test_FSLoader_LoadRules(t *testing.T) {
 		require.Len(t, loadedUser2File2.Groups, 1)
 		require.Equal(t, "rulegroup_one", loadedUser2File2.Groups[0].Name)
 	})
+}
+
+func requireFileExists(t *testing.T, fs afero.Fs, path string) {
+	t.Helper()
+
+	exists, err := afero.Exists(fs, path)
+	require.NoError(t, err)
+	require.True(t, exists, "file %s did not exist", path)
+}
+
+func requireFileNotExists(t *testing.T, fs afero.Fs, path string) {
+	t.Helper()
+
+	exists, err := afero.Exists(fs, path)
+	require.NoError(t, err)
+	require.False(t, exists, "file %s existed, but shouldn't", path)
 }
