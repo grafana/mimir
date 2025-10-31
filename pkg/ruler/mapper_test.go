@@ -20,14 +20,14 @@ import (
 )
 
 var (
-	testUser  = "user1"
+	testUser1 = "user1"
 	testUser2 = "user2"
 
 	fileOneEncoded = url.PathEscape("file /one")
 	fileTwoEncoded = url.PathEscape("file /two")
 
-	fileOnePath        = "/rules/user1/" + fileOneEncoded
-	fileTwoPath        = "/rules/user1/" + fileTwoEncoded
+	fileOneUserOnePath = "/rules/user1/" + fileOneEncoded
+	fileTwoUserOnePath = "/rules/user1/" + fileTwoEncoded
 	fileOneUserTwoPath = "/rules/user2/" + fileOneEncoded
 	fileTwoUserTwoPath = "/rules/user2/" + fileTwoEncoded
 
@@ -237,41 +237,41 @@ func Test_mapper_MapRules(t *testing.T) {
 	}
 
 	t.Run("basic rulegroup", func(t *testing.T) {
-		updated, files, err := m.MapRules(testUser, initialRuleSet)
+		updated, files, err := m.MapRules(testUser1, initialRuleSet)
 		require.True(t, updated)
 		require.Len(t, files, 1)
-		require.Equal(t, fileOnePath, files[0])
+		require.Equal(t, fileOneUserOnePath, files[0])
 		require.NoError(t, err)
 
-		requireFileExists(t, m.FS, fileOnePath)
+		requireFileExists(t, m.FS, fileOneUserOnePath)
 	})
 
 	t.Run("identical rulegroup", func(t *testing.T) {
-		updated, files, err := m.MapRules(testUser, initialRuleSet)
+		updated, files, err := m.MapRules(testUser1, initialRuleSet)
 		require.False(t, updated)
 		require.Len(t, files, 1)
 		require.NoError(t, err)
 
-		requireFileExists(t, m.FS, fileOnePath)
+		requireFileExists(t, m.FS, fileOneUserOnePath)
 	})
 
 	t.Run("out of order identical rulegroup", func(t *testing.T) {
-		updated, files, err := m.MapRules(testUser, outOfOrderRuleSet)
+		updated, files, err := m.MapRules(testUser1, outOfOrderRuleSet)
 		require.False(t, updated)
 		require.Len(t, files, 1)
 		require.NoError(t, err)
 
-		requireFileExists(t, m.FS, fileOnePath)
+		requireFileExists(t, m.FS, fileOneUserOnePath)
 	})
 
 	t.Run("updated rulegroup", func(t *testing.T) {
-		updated, files, err := m.MapRules(testUser, updatedRuleSet)
+		updated, files, err := m.MapRules(testUser1, updatedRuleSet)
 		require.True(t, updated)
 		require.Len(t, files, 1)
-		require.Equal(t, fileOnePath, files[0])
+		require.Equal(t, fileOneUserOnePath, files[0])
 		require.NoError(t, err)
 
-		requireFileExists(t, m.FS, fileOnePath)
+		requireFileExists(t, m.FS, fileOneUserOnePath)
 	})
 }
 
@@ -285,48 +285,48 @@ func Test_mapper_MapRulesMultipleFiles(t *testing.T) {
 	}
 
 	t.Run("basic rulegroup", func(t *testing.T) {
-		updated, files, err := m.MapRules(testUser, initialRuleSet)
+		updated, files, err := m.MapRules(testUser1, initialRuleSet)
 		require.True(t, updated)
 		require.Len(t, files, 1)
-		require.Equal(t, fileOnePath, files[0])
+		require.Equal(t, fileOneUserOnePath, files[0])
 		require.NoError(t, err)
 
-		requireFileExists(t, m.FS, fileOnePath)
+		requireFileExists(t, m.FS, fileOneUserOnePath)
 	})
 
 	t.Run("add a file", func(t *testing.T) {
-		updated, files, err := m.MapRules(testUser, twoFilesRuleSet)
+		updated, files, err := m.MapRules(testUser1, twoFilesRuleSet)
 		require.True(t, updated)
 		require.Len(t, files, 2)
-		require.Contains(t, files, fileOnePath)
-		require.Contains(t, files, fileTwoPath)
+		require.Contains(t, files, fileOneUserOnePath)
+		require.Contains(t, files, fileTwoUserOnePath)
 		require.NoError(t, err)
 
-		requireFileExists(t, m.FS, fileOnePath)
-		requireFileExists(t, m.FS, fileTwoPath)
+		requireFileExists(t, m.FS, fileOneUserOnePath)
+		requireFileExists(t, m.FS, fileTwoUserOnePath)
 	})
 
 	t.Run("update one file", func(t *testing.T) {
-		updated, files, err := m.MapRules(testUser, twoFilesUpdatedRuleSet)
+		updated, files, err := m.MapRules(testUser1, twoFilesUpdatedRuleSet)
 		require.True(t, updated)
 		require.Len(t, files, 2)
-		require.Contains(t, files, fileOnePath)
-		require.Contains(t, files, fileTwoPath)
+		require.Contains(t, files, fileOneUserOnePath)
+		require.Contains(t, files, fileTwoUserOnePath)
 		require.NoError(t, err)
 
-		requireFileExists(t, m.FS, fileOnePath)
-		requireFileExists(t, m.FS, fileTwoPath)
+		requireFileExists(t, m.FS, fileOneUserOnePath)
+		requireFileExists(t, m.FS, fileTwoUserOnePath)
 	})
 
 	t.Run("delete one file", func(t *testing.T) {
-		updated, files, err := m.MapRules(testUser, twoFilesDeletedRuleSet)
+		updated, files, err := m.MapRules(testUser1, twoFilesDeletedRuleSet)
 		require.True(t, updated)
 		require.Len(t, files, 1)
-		require.Equal(t, fileOnePath, files[0])
+		require.Equal(t, fileOneUserOnePath, files[0])
 		require.NoError(t, err)
 
-		requireFileExists(t, m.FS, fileOnePath)
-		requireFileNotExists(t, m.FS, fileTwoPath)
+		requireFileExists(t, m.FS, fileOneUserOnePath)
+		requireFileNotExists(t, m.FS, fileTwoUserOnePath)
 	})
 }
 
@@ -340,13 +340,13 @@ func Test_mapper_MapRulesMultipleTenants(t *testing.T) {
 	}
 
 	t.Run("basic rulegroup tenant 1", func(t *testing.T) {
-		updated, files, err := m.MapRules(testUser, initialRuleSet)
+		updated, files, err := m.MapRules(testUser1, initialRuleSet)
 		require.True(t, updated)
 		require.Len(t, files, 1)
-		require.Equal(t, fileOnePath, files[0])
+		require.Equal(t, fileOneUserOnePath, files[0])
 		require.NoError(t, err)
 
-		requireFileExists(t, m.FS, fileOnePath)
+		requireFileExists(t, m.FS, fileOneUserOnePath)
 	})
 
 	t.Run("basic rulegroup tenant 2 still considered new", func(t *testing.T) {
@@ -367,27 +367,27 @@ func Test_mapper_MapRulesMultipleTenants(t *testing.T) {
 		require.Contains(t, files, fileTwoUserTwoPath)
 		require.NoError(t, err)
 
-		requireFileExists(t, m.FS, fileOnePath)
+		requireFileExists(t, m.FS, fileOneUserOnePath)
 		requireFileExists(t, m.FS, fileOneUserTwoPath)
 		requireFileExists(t, m.FS, fileTwoUserTwoPath)
 	})
 
 	t.Run("identical rulegroup tenant 1 not considered updated", func(t *testing.T) {
-		updated, files, err := m.MapRules(testUser, initialRuleSet)
+		updated, files, err := m.MapRules(testUser1, initialRuleSet)
 		require.False(t, updated)
 		require.Len(t, files, 1)
 		require.NoError(t, err)
 
-		requireFileExists(t, m.FS, fileOnePath)
+		requireFileExists(t, m.FS, fileOneUserOnePath)
 	})
 
 	t.Run("removal of tenant 1 groups keeps tenant 2 groups", func(t *testing.T) {
-		updated, files, err := m.MapRules(testUser, map[string][]rulefmt.RuleGroup{})
+		updated, files, err := m.MapRules(testUser1, map[string][]rulefmt.RuleGroup{})
 		require.True(t, updated)
 		require.Len(t, files, 0)
 		require.NoError(t, err)
 
-		requireFileNotExists(t, m.FS, fileOnePath)
+		requireFileNotExists(t, m.FS, fileOneUserOnePath)
 		requireFileExists(t, m.FS, fileOneUserTwoPath)
 		requireFileExists(t, m.FS, fileOneUserTwoPath)
 	})
@@ -403,7 +403,7 @@ func Test_mapper_MapRulesSpecialCharNamespace(t *testing.T) {
 	}
 
 	t.Run("create special characters rulegroup", func(t *testing.T) {
-		updated, files, err := m.MapRules(testUser, specialCharactersRuleSet)
+		updated, files, err := m.MapRules(testUser1, specialCharactersRuleSet)
 		require.NoError(t, err)
 		require.True(t, updated)
 		require.Len(t, files, 1)
@@ -413,7 +413,7 @@ func Test_mapper_MapRulesSpecialCharNamespace(t *testing.T) {
 	})
 
 	t.Run("delete special characters rulegroup", func(t *testing.T) {
-		updated, files, err := m.MapRules(testUser, map[string][]rulefmt.RuleGroup{})
+		updated, files, err := m.MapRules(testUser1, map[string][]rulefmt.RuleGroup{})
 		require.NoError(t, err)
 		require.True(t, updated)
 		require.Len(t, files, 0)
@@ -444,14 +444,14 @@ func Test_mapper_users(t *testing.T) {
 	})
 
 	t.Run("adding a rulegroup returns the user", func(t *testing.T) {
-		_, _, err := m.MapRules(testUser, initialRuleSet)
+		_, _, err := m.MapRules(testUser1, initialRuleSet)
 		require.NoError(t, err)
 
 		result, err := m.users()
 
 		require.NoError(t, err)
 		require.Len(t, result, 1)
-		require.Contains(t, result, testUser)
+		require.Contains(t, result, testUser1)
 	})
 
 	t.Run("adding a rulegroup for a second user returns both users", func(t *testing.T) {
@@ -462,12 +462,12 @@ func Test_mapper_users(t *testing.T) {
 
 		require.NoError(t, err)
 		require.Len(t, result, 2)
-		require.Contains(t, result, testUser)
+		require.Contains(t, result, testUser1)
 		require.Contains(t, result, testUser2)
 	})
 
 	t.Run("deleting a user's rule groups keeps that user", func(t *testing.T) {
-		_, _, err := m.MapRules(testUser, map[string][]rulefmt.RuleGroup{})
+		_, _, err := m.MapRules(testUser1, map[string][]rulefmt.RuleGroup{})
 		require.NoError(t, err)
 
 		// This happens because MapRules does not delete the user directory if it cleared all the files inside.
@@ -477,7 +477,7 @@ func Test_mapper_users(t *testing.T) {
 
 		require.NoError(t, err)
 		require.Len(t, result, 2)
-		require.Contains(t, result, testUser)
+		require.Contains(t, result, testUser1)
 		require.Contains(t, result, testUser2)
 	})
 
@@ -502,14 +502,14 @@ func Test_FSLoader_LoadRules(t *testing.T) {
 	}
 
 	t.Run("basic rulegroup", func(t *testing.T) {
-		updated, files, err := m.MapRules(testUser, initialRuleSet)
+		updated, files, err := m.MapRules(testUser1, initialRuleSet)
 		require.True(t, updated)
 		require.Len(t, files, 1)
-		require.Equal(t, fileOnePath, files[0])
+		require.Equal(t, fileOneUserOnePath, files[0])
 		require.NoError(t, err)
 
 		loader := NewFSLoader(fs)
-		loaded, errs := loader.Load(fileOnePath, false, model.LegacyValidation)
+		loaded, errs := loader.Load(fileOneUserOnePath, false, model.LegacyValidation)
 		require.Empty(t, errs)
 		require.NotNil(t, loaded)
 		require.Len(t, loaded.Groups, 2)
@@ -519,18 +519,18 @@ func Test_FSLoader_LoadRules(t *testing.T) {
 	})
 
 	t.Run("multiple files", func(t *testing.T) {
-		updated, files, err := m.MapRules(testUser, twoFilesRuleSet)
+		updated, files, err := m.MapRules(testUser1, twoFilesRuleSet)
 		require.True(t, updated)
 		require.Len(t, files, 2)
 		require.NoError(t, err)
 
 		loader := NewFSLoader(fs)
-		loaded, errs := loader.Load(fileOnePath, false, model.LegacyValidation)
+		loaded, errs := loader.Load(fileOneUserOnePath, false, model.LegacyValidation)
 		require.Empty(t, errs)
 		require.NotNil(t, loaded)
 		require.Len(t, loaded.Groups, 2)
 
-		loaded2, errs := loader.Load(fileTwoPath, false, model.LegacyValidation)
+		loaded2, errs := loader.Load(fileTwoUserOnePath, false, model.LegacyValidation)
 		require.Empty(t, errs)
 		require.NotNil(t, loaded2)
 		require.Len(t, loaded2.Groups, 1)
@@ -545,7 +545,7 @@ func Test_FSLoader_LoadRules(t *testing.T) {
 		require.NoError(t, err)
 
 		loader := NewFSLoader(fs)
-		loaded, errs := loader.Load(fileOnePath, false, model.LegacyValidation)
+		loaded, errs := loader.Load(fileOneUserOnePath, false, model.LegacyValidation)
 		require.Empty(t, errs)
 		require.NotNil(t, loaded)
 		require.Len(t, loaded.Groups, 2)
