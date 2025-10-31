@@ -46,7 +46,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: querier
-          image: test/querier:1-querier
+          image: docker.io/test/querier:1-querier
           imagePullPolicy: IfNotPresent
           args:
             - "-target=querier"

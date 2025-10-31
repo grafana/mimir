@@ -82,7 +82,7 @@ spec:
             name: test-oss-component-image-values-mimir-alertmanager-fallback-config
       containers:
         - name: alertmanager
-          image: test/alertmanager:1-alertmanager
+          image: docker.io/test/alertmanager:1-alertmanager
           imagePullPolicy: IfNotPresent
           args:
             - "-target=alertmanager"
