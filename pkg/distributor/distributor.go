@@ -3177,10 +3177,12 @@ respsLoop:
 
 	result := make([]labels.Labels, 0, len(metrics))
 	for _, m := range metrics {
-		if err := queryLimiter.AddSeries(m); err != nil {
+		// TODO: pass correct memoryTracker here
+		canonicalLabels, err := queryLimiter.AddSeries(m, mimir_limiter.NewUnlimitedMemoryConsumptionTracker(ctx))
+		if err != nil {
 			return nil, err
 		}
-		result = append(result, m)
+		result = append(result, canonicalLabels)
 	}
 	return result, nil
 }
