@@ -1032,7 +1032,7 @@ spec:
               sum by(cluster, namespace) (rate(cortex_bucket_store_series_blocks_queried_sum{component="store-gateway",level="1",out_of_order="false",job=~".*/(store-gateway.*|cortex|mimir)"}[10m]))
               /
               sum by(cluster, namespace) (rate(cortex_bucket_store_series_blocks_queried_sum{component="store-gateway",out_of_order="false",job=~".*/(store-gateway.*|cortex|mimir)"}[10m]))
-              ) > 0.5
+              ) > 0.05
             for: 6h
             labels:
               severity: warning
