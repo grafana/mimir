@@ -287,7 +287,7 @@ func groupBlocksByShardID(blocks []*block.Meta) map[string][]*block.Meta {
 	for _, block := range blocks {
 		// If the label doesn't exist, we'll group together such blocks using an
 		// empty string as shard ID.
-		shardID := block.Thanos.Labels[mimir_tsdb.CompactorShardIDExternalLabel]
+		shardID := block.Thanos.Labels[block.CompactorShardIDExternalLabel]
 		groups[shardID] = append(groups[shardID], block)
 	}
 
@@ -388,7 +388,7 @@ func defaultGroupKeyWithoutShardID(meta block.ThanosMeta) string {
 func labelsWithoutShard(base map[string]string) labels.Labels {
 	b := labels.NewScratchBuilder(len(base))
 	for k, v := range base {
-		if k != mimir_tsdb.CompactorShardIDExternalLabel {
+		if k != block.CompactorShardIDExternalLabel {
 			b.Add(k, v)
 		}
 	}

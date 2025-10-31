@@ -26,7 +26,6 @@ import (
 	"github.com/thanos-io/objstore"
 
 	"github.com/grafana/mimir/pkg/storage/bucket/filesystem"
-	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -377,7 +376,7 @@ func TestShipper_AddOOOLabel(t *testing.T) {
 				},
 			}),
 			oooCompactionHintExpected: true,
-			expectedLabels:            map[string]string{mimir_tsdb.OutOfOrderExternalLabel: mimir_tsdb.OutOfOrderExternalLabelValue},
+			expectedLabels:            map[string]string{block.OutOfOrderExternalLabel: block.OutOfOrderExternalLabelValue},
 		},
 		{
 			name:        "OOO block, addOOOLabel = true, additional labels",
@@ -395,7 +394,7 @@ func TestShipper_AddOOOLabel(t *testing.T) {
 				Thanos: block.ThanosMeta{Labels: map[string]string{"a": "b"}},
 			}),
 			oooCompactionHintExpected: true,
-			expectedLabels:            map[string]string{"a": "b", mimir_tsdb.OutOfOrderExternalLabel: mimir_tsdb.OutOfOrderExternalLabelValue},
+			expectedLabels:            map[string]string{"a": "b", block.OutOfOrderExternalLabel: block.OutOfOrderExternalLabelValue},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
