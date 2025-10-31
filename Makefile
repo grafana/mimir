@@ -449,6 +449,9 @@ lint: check-makefiles check-merge-conflicts
 		-path ./integration \
 		-include '*.go'
 
+	# Ensure gRPC buffers aren't released too early
+	go run ./tools/lint-buffer-holder
+
 format: ## Run gofmt and goimports.
 	find . $(DONT_FIND) -name '*.pb.go' -prune -o -type f -name '*.go' -exec gofmt -w -s {} \;
 	find . $(DONT_FIND) -name '*.pb.go' -prune -o -type f -name '*.go' -exec goimports -w -local github.com/grafana/mimir {} \;
