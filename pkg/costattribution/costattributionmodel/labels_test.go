@@ -105,3 +105,32 @@ func TestLabel_Validate(t *testing.T) {
 		})
 	}
 }
+
+func TestFromCostAttributionLabelsToString(t *testing.T) {
+	tc := map[string]struct {
+		input    []Label
+		expected string
+	}{
+		"no labels": {
+			input:    []Label{},
+			expected: "",
+		},
+		"single": {
+			input:    []Label{{Input: "team", Output: "my_team"}},
+			expected: "team:my_team",
+		},
+		"regular list": {
+			input: []Label{
+				{Input: "team", Output: "my_team"},
+				{Input: "service", Output: "my_service"},
+			},
+			expected: "team:my_team,service:my_service",
+		},
+	}
+	for name, tt := range tc {
+		t.Run(name, func(t *testing.T) {
+			result := FromCostAttributionLabelsToString(tt.input)
+			require.Equal(t, tt.expected, result)
+		})
+	}
+}

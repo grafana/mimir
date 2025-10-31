@@ -28,10 +28,10 @@ type counters struct {
 
 type ActiveSeriesTracker struct {
 	userID                                         string
-	activeSeriesPerUserAttribution                 *prometheus.Desc
-	attributedOverflowLabels                       *prometheus.Desc
-	activeNativeHistogramSeriesPerUserAttribution  *prometheus.Desc
-	activeNativeHistogramBucketsPerUserAttribution *prometheus.Desc
+	activeSeriesPerUserAttribution                 *descriptor
+	attributedOverflowLabels                       *descriptor
+	activeNativeHistogramSeriesPerUserAttribution  *descriptor
+	activeNativeHistogramBucketsPerUserAttribution *descriptor
 	logger                                         log.Logger
 
 	labels         []costattributionmodel.Label
@@ -49,15 +49,14 @@ type ActiveSeriesTracker struct {
 	overflowCounter counters
 }
 
-func NewActiveSeriesTracker(userID string, trackedLabels []costattributionmodel.Label, limit int, cooldownDuration time.Duration, logger log.Logger) *ActiveSeriesTracker {
+func NewActiveSeriesTracker(userID string, trackedLabels []costattributionmodel.Label, limit int, cooldownDuration time.Duration, logger log.Logger) (*ActiveSeriesTracker, error) {
 	// Create a map for overflow labels to export when overflow happens
-	overflowLabels := make([]string, len(trackedLabels)+2)
+	overflowLabels := make([]string, len(trackedLabels)+1)
 	for i := range trackedLabels {
 		overflowLabels[i] = overflowValue
 	}
 
 	overflowLabels[len(trackedLabels)] = userID
-	overflowLabels[len(trackedLabels)+1] = overflowValue
 
 	ast := &ActiveSeriesTracker{
 		userID:           userID,
@@ -69,25 +68,42 @@ func NewActiveSeriesTracker(userID string, trackedLabels []costattributionmodel.
 		cooldownDuration: cooldownDuration,
 	}
 
-	variableLabels := make([]string, 0, len(trackedLabels)+2)
-	for _, label := range trackedLabels {
-		variableLabels = append(variableLabels, label.OutputLabel())
+	if err := ast.createAndValidateDescriptors(trackedLabels); err != nil {
+		return nil, fmt.Errorf("failed to create Prometheus descriptors for tenant %s and cost attribution labels %s: %w", userID, costattributionmodel.FromCostAttributionLabelsToString(trackedLabels), err)
 	}
-	variableLabels = append(variableLabels, tenantLabel, "reason")
+	return ast, nil
+}
 
-	ast.activeSeriesPerUserAttribution = prometheus.NewDesc("cortex_ingester_attributed_active_series",
-		"The total number of active series per user and attribution.", variableLabels[:len(variableLabels)-1],
+func (at *ActiveSeriesTracker) createAndValidateDescriptors(trackedLabels []costattributionmodel.Label) error {
+	variableLabels := make([]string, 0, len(trackedLabels)+1)
+	variableLabels = append(variableLabels, costattributionmodel.FromCostAttributionLabelsToOutputLabels(trackedLabels)...)
+	variableLabels = append(variableLabels, tenantLabel)
+
+	at.activeSeriesPerUserAttribution = newDescriptor("cortex_ingester_attributed_active_series",
+		"The total number of active series per user and attribution.", variableLabels,
 		prometheus.Labels{trackerLabel: defaultTrackerName})
-	ast.attributedOverflowLabels = prometheus.NewDesc("cortex_attributed_series_overflow_labels",
-		"The overflow labels for this tenant. This metric is always 1 for tenants with active series, it is only used to have the overflow labels available in the recording rules without knowing their names.", variableLabels[:len(variableLabels)-1],
+	if err := at.activeSeriesPerUserAttribution.validate(); err != nil {
+		return err
+	}
+	at.attributedOverflowLabels = newDescriptor("cortex_attributed_series_overflow_labels",
+		"The overflow labels for this tenant. This metric is always 1 for tenants with active series, it is only used to have the overflow labels available in the recording rules without knowing their names.", variableLabels,
 		prometheus.Labels{trackerLabel: defaultTrackerName})
-	ast.activeNativeHistogramSeriesPerUserAttribution = prometheus.NewDesc("cortex_ingester_attributed_active_native_histogram_series",
-		"The total number of active native histogram series per user and attribution.", variableLabels[:len(variableLabels)-1],
+	if err := at.attributedOverflowLabels.validate(); err != nil {
+		return err
+	}
+	at.activeNativeHistogramSeriesPerUserAttribution = newDescriptor("cortex_ingester_attributed_active_native_histogram_series",
+		"The total number of active native histogram series per user and attribution.", variableLabels,
 		prometheus.Labels{trackerLabel: defaultTrackerName})
-	ast.activeNativeHistogramBucketsPerUserAttribution = prometheus.NewDesc("cortex_ingester_attributed_active_native_histogram_buckets",
-		"The total number of active native histogram buckets per user and attribution.", variableLabels[:len(variableLabels)-1],
+	if err := at.activeNativeHistogramSeriesPerUserAttribution.validate(); err != nil {
+		return err
+	}
+	at.activeNativeHistogramBucketsPerUserAttribution = newDescriptor("cortex_ingester_attributed_active_native_histogram_buckets",
+		"The total number of active native histogram buckets per user and attribution.", variableLabels,
 		prometheus.Labels{trackerLabel: defaultTrackerName})
-	return ast
+	if err := at.activeNativeHistogramBucketsPerUserAttribution.validate(); err != nil {
+		return err
+	}
+	return nil
 }
 
 func (at *ActiveSeriesTracker) hasSameLabels(labels []costattributionmodel.Label) bool {
@@ -217,7 +233,7 @@ func (at *ActiveSeriesTracker) Decrement(lbls labels.Labels, nativeHistogramBuck
 }
 
 func (at *ActiveSeriesTracker) Collect(out chan<- prometheus.Metric) {
-	out <- prometheus.MustNewConstMetric(at.attributedOverflowLabels, prometheus.GaugeValue, 1, at.overflowLabels[:len(at.overflowLabels)-1]...)
+	out <- at.attributedOverflowLabels.newConstGauge(1, at.overflowLabels...)
 
 	at.observedMtx.RLock()
 	if !at.overflowSince.IsZero() {
@@ -230,13 +246,13 @@ func (at *ActiveSeriesTracker) Collect(out chan<- prometheus.Metric) {
 			nhBucketNum += c.nativeHistogramBuckets.Load()
 		}
 		at.observedMtx.RUnlock()
-		out <- prometheus.MustNewConstMetric(at.activeSeriesPerUserAttribution, prometheus.GaugeValue, float64(activeSeries+at.overflowCounter.activeSeries.Load()), at.overflowLabels[:len(at.overflowLabels)-1]...)
+		out <- at.activeSeriesPerUserAttribution.newConstGauge(float64(activeSeries+at.overflowCounter.activeSeries.Load()), at.overflowLabels...)
 
 		if nhcounter := float64(nativeHistogram + at.overflowCounter.nativeHistograms.Load()); nhcounter > 0 {
-			out <- prometheus.MustNewConstMetric(at.activeNativeHistogramSeriesPerUserAttribution, prometheus.GaugeValue, nhcounter, at.overflowLabels[:len(at.overflowLabels)-1]...)
+			out <- at.activeNativeHistogramSeriesPerUserAttribution.newConstGauge(nhcounter, at.overflowLabels...)
 		}
 		if bcounter := float64(nhBucketNum + at.overflowCounter.nativeHistogramBuckets.Load()); bcounter > 0 {
-			out <- prometheus.MustNewConstMetric(at.activeNativeHistogramBucketsPerUserAttribution, prometheus.GaugeValue, bcounter, at.overflowLabels[:len(at.overflowLabels)-1]...)
+			out <- at.activeNativeHistogramBucketsPerUserAttribution.newConstGauge(bcounter, at.overflowLabels...)
 		}
 		return
 	}
@@ -245,18 +261,12 @@ func (at *ActiveSeriesTracker) Collect(out chan<- prometheus.Metric) {
 	for key, c := range at.observed {
 		keys := strings.Split(key, string(sep))
 		keys = append(keys, at.userID)
-		prometheusMetrics = append(prometheusMetrics,
-			prometheus.MustNewConstMetric(at.activeSeriesPerUserAttribution, prometheus.GaugeValue, float64(c.activeSeries.Load()), keys...),
-		)
+		prometheusMetrics = append(prometheusMetrics, at.activeSeriesPerUserAttribution.newConstGauge(float64(c.activeSeries.Load()), keys...))
 		if nhcounter := c.nativeHistograms.Load(); nhcounter > 0 {
-			prometheusMetrics = append(prometheusMetrics,
-				prometheus.MustNewConstMetric(at.activeNativeHistogramSeriesPerUserAttribution, prometheus.GaugeValue, float64(nhcounter), keys...),
-			)
+			prometheusMetrics = append(prometheusMetrics, at.activeNativeHistogramSeriesPerUserAttribution.newConstGauge(float64(nhcounter), keys...))
 		}
 		if nbcounter := c.nativeHistogramBuckets.Load(); nbcounter > 0 {
-			prometheusMetrics = append(prometheusMetrics,
-				prometheus.MustNewConstMetric(at.activeNativeHistogramBucketsPerUserAttribution, prometheus.GaugeValue, float64(nbcounter), keys...),
-			)
+			prometheusMetrics = append(prometheusMetrics, at.activeNativeHistogramBucketsPerUserAttribution.newConstGauge(float64(nbcounter), keys...))
 		}
 	}
 	at.observedMtx.RUnlock()

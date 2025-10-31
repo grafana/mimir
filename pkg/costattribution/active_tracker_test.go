@@ -3,17 +3,64 @@
 package costattribution
 
 import (
+	"fmt"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/costattribution/costattributionmodel"
 )
+
+func TestNewActiveTracker(t *testing.T) {
+	testCases := map[string]struct {
+		costAttributionLabels []costattributionmodel.Label
+		expectedErr           error
+	}{
+		"happy case single label": {
+			costAttributionLabels: []costattributionmodel.Label{{Input: "good_label", Output: "good_label"}},
+			expectedErr:           nil,
+		},
+		"happy case multiple labels": {
+			costAttributionLabels: []costattributionmodel.Label{
+				{Input: "good_label", Output: "good_label"},
+				{Input: "another_good_label", Output: "another_good_label"},
+			},
+			expectedErr: nil,
+		},
+		"incorrect label name causes an error single label": {
+			costAttributionLabels: []costattributionmodel.Label{{Input: "__bad_label__", Output: "__bad_label__"}},
+			expectedErr:           fmt.Errorf(`failed to create Prometheus descriptors for tenant tenant-1 and cost attribution labels __bad_label__:__bad_label__: descriptor Desc{fqName: "cortex_ingester_attributed_active_series", help: "The total number of active series per user and attribution.", constLabels: {}, variableLabels: {__bad_label__,tenant}} is invalid: "__bad_label__" is not a valid label name for metric "cortex_ingester_attributed_active_series"`),
+		},
+		"incorrect label name causes an error multiple labels": {
+			costAttributionLabels: []costattributionmodel.Label{
+				{Input: "good_label", Output: "good_label"},
+				{Input: "__bad_label__", Output: "__bad_label__"},
+			},
+			expectedErr: fmt.Errorf(`failed to create Prometheus descriptors for tenant tenant-1 and cost attribution labels good_label:good_label,__bad_label__:__bad_label__: descriptor Desc{fqName: "cortex_ingester_attributed_active_series", help: "The total number of active series per user and attribution.", constLabels: {}, variableLabels: {good_label,__bad_label__,tenant}} is invalid: "__bad_label__" is not a valid label name for metric "cortex_ingester_attributed_active_series"`),
+		},
+	}
+
+	for testName, testCase := range testCases {
+		t.Run(testName, func(t *testing.T) {
+			ast, astErr := NewActiveSeriesTracker("tenant-1", testCase.costAttributionLabels, 10, 1*time.Minute, log.NewNopLogger())
+			if testCase.expectedErr == nil {
+				require.NoError(t, astErr)
+				require.NotNil(t, ast)
+			} else {
+				require.Error(t, astErr)
+				require.EqualError(t, astErr, testCase.expectedErr.Error())
+				require.Nil(t, ast)
+			}
+		})
+	}
+}
 
 func TestActiveTracker_hasSameLabels(t *testing.T) {
 	manager, _, _ := newTestManager()
