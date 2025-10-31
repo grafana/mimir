@@ -70,6 +70,7 @@ func (l *cacheLockLoadBalancer) start(_ context.Context) error {
 	go func() {
 		ticker := time.NewTicker(l.lockTTL / 4)
 		defer ticker.Stop()
+		defer l.cache.Stop()
 		for {
 			select {
 			case <-ctx.Done():
@@ -84,7 +85,6 @@ func (l *cacheLockLoadBalancer) start(_ context.Context) error {
 
 func (l *cacheLockLoadBalancer) stop() error {
 	l.cancel()
-	l.cache.Stop()
 	return nil
 }
 
