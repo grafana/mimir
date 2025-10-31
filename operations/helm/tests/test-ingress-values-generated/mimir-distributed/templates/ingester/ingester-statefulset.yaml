@@ -94,6 +94,7 @@ spec:
           emptyDir: {}
       containers:
         - name: ingester
+          image: docker.io/grafana/mimir:r366-febf61b9
           imagePullPolicy: IfNotPresent
           args:
             - "-target=ingester"
@@ -237,6 +238,7 @@ spec:
           emptyDir: {}
       containers:
         - name: ingester
+          image: docker.io/grafana/mimir:r366-febf61b9
           imagePullPolicy: IfNotPresent
           args:
             - "-target=ingester"
@@ -380,6 +382,7 @@ spec:
           emptyDir: {}
       containers:
         - name: ingester
+          image: docker.io/grafana/mimir:r366-febf61b9
           imagePullPolicy: IfNotPresent
           args:
             - "-target=ingester"

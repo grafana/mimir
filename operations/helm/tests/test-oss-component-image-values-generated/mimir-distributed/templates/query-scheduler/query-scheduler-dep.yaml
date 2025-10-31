@@ -43,7 +43,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: query-scheduler
-          image: test/query_scheduler:1-query-scheduler
+          image: docker.io/test/query_scheduler:1-query-scheduler
           imagePullPolicy: IfNotPresent
           args:
             - "-target=query-scheduler"
