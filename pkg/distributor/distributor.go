@@ -1689,9 +1689,6 @@ type requestState struct {
 	// If positive, it means that size of mimirpb.WriteRequest has been checked and added to inflightPushRequestsBytes.
 	writeRequestSize int64
 
-	// If set, represents the error obtained by executing the respective push request.
-	pushErr error
-
 	// If set to true, it means that a reactive limiter permit has already been acquired for the respective push request.
 	reactiveLimiterPermitAcquired bool
 	// If set, represents the reactive limiter clean up function to be executed on cleaning up the respective push request.
@@ -1862,9 +1859,6 @@ func (d *Distributor) cleanupAfterPushFinished(rs *requestState) {
 	if rs.writeRequestSize > 0 {
 		d.inflightPushRequestsBytes.Sub(rs.writeRequestSize)
 	}
-	if rs.reactiveLimiterCleanup != nil {
-		rs.reactiveLimiterCleanup(rs.pushErr)
-	}
 }
 
 // limitsMiddleware checks for instance limits and rejects request if this instance cannot process it at the moment.
@@ -1887,7 +1881,7 @@ func (d *Distributor) limitsMiddleware(next PushFunc) PushFunc {
 			return reactiveLimiterErr
 		}
 		defer func() {
-			rs.pushErr = retErr
+			rs.reactiveLimiterCleanup(retErr)
 		}()
 
 		rs.pushHandlerPerformsCleanup = true
