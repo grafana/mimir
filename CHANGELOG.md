@@ -2,23 +2,7 @@
 
 ## main / unreleased
 
-## 3.0.0-rc.2
-
-### Grafana Mimir
-
-* [BUGFIX] Memcached: Ignore invalid responses when discovering cache servers using `dnssrv+` or `dnssrvnoa+` service discovery prefixes. #13203
-
-## 3.0.0-rc.1
-
-### Jsonnet
-
-* [CHANGE] Mimir-continuous-test: Use `mimir -target=continuous-test` instead of standalone binary/image. #13097
-
-### Tools
-
-* [CHANGE] Mimir-continuous-test: Remove standalone binary and image. #13097
-
-## 3.0.0-rc.0
+## 3.0.0
 
 ### Grafana Mimir
 
@@ -139,6 +123,7 @@
 * [BUGFIX] MQE: Fix invalid source label name in `label_join` error message, so it refers to the source label rather than the destination label. #12185
 * [BUGFIX] Continuous test: Fix false positive in metadata assertion when duplicate metadata is present in ingest-storage record correctness test. #12891
 * [BUGFIX] Query-frontend: Fix issue where the query-frontend could behave unpredictably if a response was received from queriers multiple times for the same query. #12639
+* [BUGFIX] Memcached: Ignore invalid responses when discovering cache servers using `dnssrv+` or `dnssrvnoa+` service discovery prefixes. #13203
 
 ### Mixin
 
@@ -165,6 +150,7 @@
 * [CHANGE] Distributor: Increase `server.grpc-max-concurrent-streams` from 100 to 1000. #12742
 * [CHANGE] Ruler Query Frontend: Increase `server.grpc-max-concurrent-streams` from 100 to 300. #12742
 * [CHANGE] Rollout-operator: Vendor jsonnet from rollout-operator repository. #12688 #12962 #12996
+* [CHANGE] Mimir-continuous-test: Use `mimir -target=continuous-test` instead of standalone binary/image. #13097
 * [CHANGE] Removed per-component configuration options to set the pods toleration when multi-zone is enabled. Tolerations can still be configured globally using `_config.multi_zone_schedule_toleration`. The following configuration options have been removed: #13043
   * `_config.multi_zone_distributor_schedule_toleration`
   * `_config.multi_zone_etcd_schedule_toleration`
@@ -192,6 +178,7 @@
 
 ### Tools
 
+* [CHANGE] Mimir-continuous-test: Remove standalone binary and image. #13097
 * [ENHANCEMENT] Base `mimirtool`, `metaconvert`, `copyblocks`, and `query-tee` images on `distroless/static-debian12`. #13014
 * [ENHANCEMENT] kafkatool: add `format=json` to `kafkatool dump print`. #12737
 
