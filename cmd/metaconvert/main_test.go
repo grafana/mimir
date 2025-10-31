@@ -16,7 +16,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/storage/bucket/filesystem"
-	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 )
 
@@ -78,9 +77,9 @@ func TestConvertTenantBlocks(t *testing.T) {
 
 			Thanos: block.ThanosMeta{
 				Labels: map[string]string{
-					"__org_id__":                             "fake",
-					mimir_tsdb.CompactorShardIDExternalLabel: "1_of_10",
-					"__ingester_id__":                        "ingester-1",
+					"__org_id__":                        "fake",
+					block.CompactorShardIDExternalLabel: "1_of_10",
+					"__ingester_id__":                   "ingester-1",
 				},
 			},
 		},
@@ -145,7 +144,7 @@ func TestConvertTenantBlocks(t *testing.T) {
 
 			Thanos: block.ThanosMeta{
 				Labels: map[string]string{
-					mimir_tsdb.CompactorShardIDExternalLabel: "1_of_10",
+					block.CompactorShardIDExternalLabel: "1_of_10",
 				},
 			},
 		},
@@ -242,9 +241,9 @@ func TestConvertTenantBlocksDryMode(t *testing.T) {
 
 			Thanos: block.ThanosMeta{
 				Labels: map[string]string{
-					"__org_id__":                             "fake",
-					mimir_tsdb.CompactorShardIDExternalLabel: "1_of_10",
-					"__ingester_id__":                        "ingester-1",
+					"__org_id__":                        "fake",
+					block.CompactorShardIDExternalLabel: "1_of_10",
+					"__ingester_id__":                   "ingester-1",
 				},
 			},
 		},

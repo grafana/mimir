@@ -26,7 +26,6 @@ import (
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"github.com/thanos-io/objstore"
 
-	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
@@ -198,7 +197,7 @@ func (s *shipper) upload(ctx context.Context, logger log.Logger, meta *block.Met
 
 	if meta.Compaction.FromOutOfOrder() && s.cfgProvider.OutOfOrderBlocksExternalLabelEnabled(s.userID) {
 		// At this point the OOO data was already ingested and compacted, so there's no point in checking for the OOO feature flag
-		meta.Thanos.Labels[mimir_tsdb.OutOfOrderExternalLabel] = mimir_tsdb.OutOfOrderExternalLabelValue
+		meta.Thanos.Labels[block.OutOfOrderExternalLabel] = block.OutOfOrderExternalLabelValue
 	}
 
 	// Upload block with custom metadata.

@@ -1277,7 +1277,7 @@ func TestComputeCompactionJobs(t *testing.T) {
 				// Compactor wouldn't produce a job for this pair as their external labels differ:
 				&bucketindex.Block{ID: ulid.MustNew(ulid.Now(), rand.Reader), MinTime: 5 * dayMS, MaxTime: 6 * dayMS,
 					Labels: map[string]string{
-						tsdb.OutOfOrderExternalLabel: tsdb.OutOfOrderExternalLabelValue,
+						block.OutOfOrderExternalLabel: block.OutOfOrderExternalLabelValue,
 					},
 				},
 				&bucketindex.Block{ID: ulid.MustNew(ulid.Now(), rand.Reader), MinTime: 5 * dayMS, MaxTime: 6 * dayMS,
@@ -1294,16 +1294,16 @@ func TestComputeCompactionJobs(t *testing.T) {
 				// Compactor will ignore deprecated labels when computing jobs. Estimation should do the same.
 				&bucketindex.Block{ID: ulid.MustNew(ulid.Now(), rand.Reader), MinTime: 5 * dayMS, MaxTime: 6 * dayMS,
 					Labels: map[string]string{
-						"honored_label":                        "12345",
-						tsdb.DeprecatedTenantIDExternalLabel:   "tenant1",
-						tsdb.DeprecatedIngesterIDExternalLabel: "ingester1",
+						"honored_label":                         "12345",
+						block.DeprecatedTenantIDExternalLabel:   "tenant1",
+						block.DeprecatedIngesterIDExternalLabel: "ingester1",
 					},
 				},
 				&bucketindex.Block{ID: ulid.MustNew(ulid.Now(), rand.Reader), MinTime: 5 * dayMS, MaxTime: 6 * dayMS,
 					Labels: map[string]string{
-						"honored_label":                        "12345",
-						tsdb.DeprecatedTenantIDExternalLabel:   "tenant2",
-						tsdb.DeprecatedIngesterIDExternalLabel: "ingester2",
+						"honored_label":                         "12345",
+						block.DeprecatedTenantIDExternalLabel:   "tenant2",
+						block.DeprecatedIngesterIDExternalLabel: "ingester2",
 					},
 				},
 			},
@@ -1371,29 +1371,29 @@ func TestConvertBucketIndexToMetasForCompactionJobPlanning(t *testing.T) {
 				},
 			},
 			expectedMetas: map[ulid.ULID]*block.Meta{
-				makeUlid(1): makeMeta(makeUlid(1), map[string]string{tsdb.CompactorShardIDExternalLabel: "78"}),
+				makeUlid(1): makeMeta(makeUlid(1), map[string]string{block.CompactorShardIDExternalLabel: "78"}),
 			},
 		},
 		"use labeled shard ID": {
 			index: &bucketindex.Index{
 				Blocks: bucketindex.Blocks{
 					&bucketindex.Block{ID: makeUlid(1), MinTime: 0, MaxTime: twoHoursMS,
-						Labels: map[string]string{tsdb.CompactorShardIDExternalLabel: "3"}},
+						Labels: map[string]string{block.CompactorShardIDExternalLabel: "3"}},
 				},
 			},
 			expectedMetas: map[ulid.ULID]*block.Meta{
-				makeUlid(1): makeMeta(makeUlid(1), map[string]string{tsdb.CompactorShardIDExternalLabel: "3"}),
+				makeUlid(1): makeMeta(makeUlid(1), map[string]string{block.CompactorShardIDExternalLabel: "3"}),
 			},
 		},
 		"don't overwrite labeled shard ID": {
 			index: &bucketindex.Index{
 				Blocks: bucketindex.Blocks{
 					&bucketindex.Block{ID: makeUlid(1), MinTime: 0, MaxTime: twoHoursMS, CompactorShardID: "78",
-						Labels: map[string]string{tsdb.CompactorShardIDExternalLabel: "3"}},
+						Labels: map[string]string{block.CompactorShardIDExternalLabel: "3"}},
 				},
 			},
 			expectedMetas: map[ulid.ULID]*block.Meta{
-				makeUlid(1): makeMeta(makeUlid(1), map[string]string{tsdb.CompactorShardIDExternalLabel: "3"}),
+				makeUlid(1): makeMeta(makeUlid(1), map[string]string{block.CompactorShardIDExternalLabel: "3"}),
 			},
 		},
 		"honor deletion marks": {

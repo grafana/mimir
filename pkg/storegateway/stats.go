@@ -10,7 +10,6 @@ import (
 	"sync"
 	"time"
 
-	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 )
 
@@ -100,7 +99,7 @@ func newBlockQueriedMeta(meta *block.Meta) blockQueriedMeta {
 	m := blockQueriedMeta{
 		source:     meta.Thanos.Source,
 		level:      strconv.Itoa(meta.Compaction.Level),
-		outOfOrder: meta.Compaction.FromOutOfOrder(),
+		outOfOrder: meta.IsOutOfOrder(),
 	}
 
 	if m.source == "" {
@@ -112,10 +111,6 @@ func newBlockQueriedMeta(meta *block.Meta) blockQueriedMeta {
 		m.level = "unknown/old_block"
 	}
 
-	// The compactor doesn't preserve the "FromOutOfOrder" hints. Instead, we should check for the external label, that Mimir sets.
-	if !m.outOfOrder && meta.Thanos.Labels != nil {
-		m.outOfOrder = meta.Thanos.Labels[mimir_tsdb.OutOfOrderExternalLabel] == mimir_tsdb.OutOfOrderExternalLabelValue
-	}
 	return m
 }
 

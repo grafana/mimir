@@ -19,7 +19,6 @@ import (
 	"github.com/thanos-io/objstore"
 
 	"github.com/grafana/mimir/pkg/storage/sharding"
-	"github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 )
 
@@ -165,8 +164,8 @@ func SortBlocks(metas map[ulid.ULID]*block.Meta) []*block.Meta {
 		}
 
 		// Compactor shard
-		sharda := a.Thanos.Labels[tsdb.CompactorShardIDExternalLabel]
-		shardb := b.Thanos.Labels[tsdb.CompactorShardIDExternalLabel]
+		sharda := a.Thanos.Labels[block.CompactorShardIDExternalLabel]
+		shardb := b.Thanos.Labels[block.CompactorShardIDExternalLabel]
 
 		if sharda != "" && shardb != "" && sharda != shardb {
 			shardaIndex, shardaCount, erra := sharding.ParseShardIDLabelValue(sharda)

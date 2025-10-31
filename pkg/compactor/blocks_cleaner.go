@@ -778,8 +778,8 @@ func ConvertBucketIndexToMetasForCompactionJobPlanning(idx *bucketindex.Index) m
 		// always persist labels into the bucket index, but we may have tracked
 		// the shard ID label, so copy that back over if it isn't there.
 		if b.CompactorShardID != "" {
-			if _, found := metas[b.ID].Thanos.Labels[mimir_tsdb.CompactorShardIDExternalLabel]; !found {
-				metas[b.ID].Thanos.Labels[mimir_tsdb.CompactorShardIDExternalLabel] = b.CompactorShardID
+			if _, found := metas[b.ID].Thanos.Labels[block.CompactorShardIDExternalLabel]; !found {
+				metas[b.ID].Thanos.Labels[block.CompactorShardIDExternalLabel] = b.CompactorShardID
 			}
 		}
 	}
