@@ -4,6 +4,7 @@
 
 ### Grafana Mimir
 
+* [CHANGE] API: The `/api/v1/user_limits` endpoint is now stable and no longer experimental. #13218
 * [CHANGE] Hash ring: removed experimental support for disabling heartbeats (setting `-*.ring.heartbeat-period=0`) and heartbeat timeouts (setting `-*.ring.heartbeat-timeout=0`). These configurations are now invalid. #13104
 * [CHANGE] Ingester: limiting CPU and memory utilized by the read path (`-ingester.read-path-cpu-utilization-limit` and `-ingester.read-path-memory-utilization-limit`) is now considered stable. #13167
 * [CHANGE] Distributor: removed experimental flag `-distributor.metric-relabeling-enabled`. #13143
