@@ -38,6 +38,7 @@
 * [BUGFIX] Query-frontend: Fix issue where queriers may receive a `rpc error: code = Internal desc = cardinality violation: expected <EOF> for non server-streaming RPCs, but received another message` error while sending a query result to a query-frontend if remote execution is enabled. #13147
 * [BUGFIX] Querier: Fix issue where evaluation metrics and logs aren't emitted if remote execution is enabled. #13207
 * [BUGFIX] Query-frontend: Fix issue where queries containing subqueries could fail with `slice capacity must be a power of two, but is X` if remote execution is enabled. #13211
+* [BUGFIX] Cost attribution: Fix panic when metrics are created with invalid labels. #13273
 
 ### Mixin
 
