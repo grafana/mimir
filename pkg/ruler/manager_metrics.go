@@ -168,3 +168,50 @@ func (m *ManagerMetrics) Collect(out chan<- prometheus.Metric) {
 	data.SendSumOfGaugesPerTenant(out, m.GroupRules, "prometheus_rule_group_rules", dskit_metrics.WithLabels("rule_group"))
 	data.SendSumOfGaugesPerTenant(out, m.GroupLastEvalSamples, "prometheus_rule_group_last_evaluation_samples", dskit_metrics.WithLabels("rule_group"))
 }
+
+type NotifierMetrics struct {
+	regs *dskit_metrics.TenantRegistries
+
+	NotificationsSendSum   *prometheus.Desc
+	NotificationsErrorsSum *prometheus.Desc
+}
+
+func NewNotifierMetrics(logger log.Logger) *NotifierMetrics {
+	return &NotifierMetrics{
+		regs: dskit_metrics.NewTenantRegistries(logger),
+		NotificationsSendSum: prometheus.NewDesc(
+			"cortex_prometheus_notifications_sent_sum",
+			"The sum of notifications sent for all users.",
+			[]string{"alertmanager"},
+			nil,
+		),
+		NotificationsErrorsSum: prometheus.NewDesc(
+			"cortex_prometheus_notifications_errors_sum",
+			"The sum of notification errors for all users.",
+			[]string{"alertmanager"},
+			nil,
+		),
+	}
+}
+
+func (m *NotifierMetrics) AddUserRegistry(user string, reg *prometheus.Registry) {
+	m.regs.AddTenantRegistry(user, reg)
+}
+
+func (m *NotifierMetrics) RemoveUserRegistry(user string) {
+	m.regs.RemoveTenantRegistry(user, true)
+}
+
+// Describe implements the Collector interface
+func (m *NotifierMetrics) Describe(out chan<- *prometheus.Desc) {
+	out <- m.NotificationsSendSum
+	out <- m.NotificationsErrorsSum
+}
+
+// Collect implements the Collector interface
+func (m *NotifierMetrics) Collect(out chan<- prometheus.Metric) {
+	data := m.regs.BuildMetricFamiliesPerTenant()
+
+	data.SendSumOfCountersWithLabels(out, m.NotificationsSendSum, "prometheus_notifications_sent_total", "alertmanager")
+	data.SendSumOfCountersWithLabels(out, m.NotificationsErrorsSum, "prometheus_notifications_errors_total", "alertmanager")
+}

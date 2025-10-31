@@ -49,7 +49,7 @@ type DefaultMultiTenantManager struct {
 
 	// Prometheus rules managers metrics.
 	userManagerMetrics *ManagerMetrics
-
+	notifierMetrics    *NotifierMetrics
 	// Per-user notifiers with separate queues.
 	notifiersMtx sync.Mutex
 	notifiers    map[string]*rulerNotifier
@@ -72,6 +72,11 @@ func NewDefaultMultiTenantManager(cfg Config, managerFactory ManagerFactory, reg
 		reg.MustRegister(userManagerMetrics)
 	}
 
+	notifierMetrics := NewNotifierMetrics(logger)
+	if reg != nil {
+		reg.MustRegister(notifierMetrics)
+	}
+
 	return &DefaultMultiTenantManager{
 		cfg:                cfg,
 		managerFactory:     managerFactory,
@@ -82,6 +87,7 @@ func NewDefaultMultiTenantManager(cfg Config, managerFactory ManagerFactory, reg
 		mapper:             newMapper(cfg.RulePath, rulesFS, logger),
 		userManagers:       map[string]RulesManager{},
 		userManagerMetrics: userManagerMetrics,
+		notifierMetrics:    notifierMetrics,
 		managersTotal: promauto.With(reg).NewGauge(prometheus.GaugeOpts{
 			Name: "cortex_ruler_managers_total",
 			Help: "Total number of managers registered and running in the ruler",
@@ -276,6 +282,9 @@ func (r *DefaultMultiTenantManager) newManager(userID string) (RulesManager, err
 	// our metrics struct for the provided user.
 	reg := prometheus.NewRegistry()
 	r.userManagerMetrics.AddUserRegistry(userID, reg)
+	// Add the notifier metrics to the user's registry
+	// to be aggregated for all users.
+	r.notifierMetrics.AddUserRegistry(userID, reg)
 
 	// We pass context.Background() to the managerFactory because the manager is shut down via Stop()
 	// instead of context cancellations. Cancelling the context might cause inflight evaluations to be immediately
@@ -358,6 +367,7 @@ func (r *DefaultMultiTenantManager) removeUsersIf(shouldRemove func(userID strin
 		r.lastReloadSuccessfulTimestamp.DeleteLabelValues(userID)
 		r.configUpdatesTotal.DeleteLabelValues(userID)
 		r.userManagerMetrics.RemoveUserRegistry(userID)
+		r.notifierMetrics.RemoveUserRegistry(userID)
 		level.Info(r.logger).Log("msg", "deleted rule manager and local rule files", "user", userID)
 	}
 
