@@ -79,8 +79,8 @@ const (
 
 var (
 	errInvalidIngestStorageReadConsistency         = fmt.Errorf("invalid ingest storage read consistency (supported values: %s)", strings.Join(api.ReadConsistencies, ", "))
-	errInvalidMaxEstimatedChunksPerQueryMultiplier = errors.New("invalid value for -" + MaxEstimatedChunksPerQueryMultiplierFlag + ": must be 0 or greater than or equal to 1")
-	errNegativeUpdateTimeoutJitterMax              = errors.New("HA tracker max update timeout jitter shouldn't be negative")
+	errInvalidMaxEstimatedChunksPerQueryMultiplier = fmt.Errorf("invalid value for -%s: must be 0 or greater than or equal to 1", MaxEstimatedChunksPerQueryMultiplierFlag)
+	errNegativeUpdateTimeoutJitterMax              = fmt.Errorf("HA tracker max update timeout jitter shouldn't be negative")
 )
 
 const (
@@ -645,7 +645,7 @@ func (l *Limits) Validate() error {
 	}
 	for _, cfg := range l.MetricRelabelConfigs {
 		if cfg == nil {
-			return errors.New("invalid metric_relabel_configs")
+			return fmt.Errorf("invalid metric_relabel_configs")
 		}
 		cfg.NameValidationScheme = validationScheme
 	}
@@ -673,6 +673,12 @@ func (l *Limits) Validate() error {
 	case LabelValueLengthOverLimitStrategyTruncate, LabelValueLengthOverLimitStrategyDrop:
 		if l.MaxLabelValueLength < LabelValueHashLen {
 			return fmt.Errorf(errLabelValueHashExceedsLimit, l.LabelValueLengthOverLimitStrategy, l.MaxLabelValueLength)
+		}
+	}
+
+	for _, label := range l.CostAttributionLabelsStructured {
+		if err := label.Validate(); err != nil {
+			return err
 		}
 	}
 

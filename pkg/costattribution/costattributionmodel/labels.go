@@ -2,6 +2,15 @@
 
 package costattributionmodel
 
+import (
+	"fmt"
+	"strings"
+
+	"github.com/prometheus/common/model"
+)
+
+const reservedLabelPrefix = "__"
+
 // Label represents a label for cost attribution.
 type Label struct {
 	// Input is the source label name that exists in the input metrics.
@@ -9,6 +18,35 @@ type Label struct {
 	// Output is the label name that will be used at the output of the cost attribution.
 	// If empty, the input label should be used as the output label.
 	Output string `yaml:"output,omitempty" json:"output,omitempty"`
+}
+
+func (l Label) Validate() error {
+	isValid := func(l string, checkPrefixNeeded bool) bool {
+		if !model.UTF8Validation.IsValidLabelName(l) {
+			return false
+		}
+		if checkPrefixNeeded && strings.HasPrefix(l, reservedLabelPrefix) {
+			return false
+		}
+		return true
+	}
+
+	if l.Input == "" {
+		return fmt.Errorf("cost attribution input label must not be empty: %q", l.String())
+	}
+
+	if !isValid(l.Input, false) {
+		return fmt.Errorf("invalid cost attribution input label: %q", l.String())
+	}
+
+	if l.Output != "" && !isValid(l.Output, true) {
+		return fmt.Errorf("invalid cost attribution output label: %q", l.String())
+	}
+	return nil
+}
+
+func (l Label) String() string {
+	return fmt.Sprintf("%s:%s", l.Input, l.Output)
 }
 
 // OutputLabel returns the output label for the label.

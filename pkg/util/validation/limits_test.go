@@ -26,6 +26,7 @@ import (
 	"golang.org/x/time/rate"
 	"gopkg.in/yaml.v3"
 
+	"github.com/grafana/mimir/pkg/costattribution/costattributionmodel"
 	"github.com/grafana/mimir/pkg/ruler/notifier"
 )
 
@@ -1908,6 +1909,42 @@ func TestLimits_Validate(t *testing.T) {
 				return cfg
 			}(),
 			expectedErr: nil,
+		},
+		"should pass if cost_attribution_labels_struct is correct": {
+			cfg: func() Limits {
+				cfg := Limits{}
+				flagext.DefaultValues(&cfg)
+				cfg.CostAttributionLabelsStructured = []costattributionmodel.Label{
+					{Input: "team", Output: "my_team"},
+					{Input: "service", Output: "my_service"},
+				}
+				return cfg
+			}(),
+			expectedErr: nil,
+		},
+		"should fail if the first cost attribution label is invalid": {
+			cfg: func() Limits {
+				cfg := Limits{}
+				flagext.DefaultValues(&cfg)
+				cfg.CostAttributionLabelsStructured = []costattributionmodel.Label{
+					{Input: "__team__", Output: "my_team"},
+					{Input: "service", Output: "my_service"},
+				}
+				return cfg
+			}(),
+			expectedErr: errors.New(`invalid cost attribution input label: "__team__:my_team"`),
+		},
+		"should fail if the second cost attribution label is invalid": {
+			cfg: func() Limits {
+				cfg := Limits{}
+				flagext.DefaultValues(&cfg)
+				cfg.CostAttributionLabelsStructured = []costattributionmodel.Label{
+					{Input: "team", Output: "my_team"},
+					{Input: "service", Output: "__my_service__"},
+				}
+				return cfg
+			}(),
+			expectedErr: errors.New(`invalid cost attribution output label: "service:__my_service__"`),
 		},
 	}
 
