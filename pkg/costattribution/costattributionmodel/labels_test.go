@@ -3,6 +3,7 @@
 package costattributionmodel
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -54,6 +55,53 @@ func TestLabel_OutputLabel(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			result := tt.input.OutputLabel()
 			require.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+func TestLabel_Validate(t *testing.T) {
+	tc := map[string]struct {
+		input       Label
+		expectedErr error
+	}{
+		"valid label with input and output": {
+			input:       Label{Input: "team", Output: "eng_team"},
+			expectedErr: nil,
+		},
+		"valid label with input only": {
+			input:       Label{Input: "team", Output: ""},
+			expectedErr: nil,
+		},
+		"valid label with underscores": {
+			input:       Label{Input: "team_name", Output: "eng_team_name"},
+			expectedErr: nil,
+		},
+		"valid label with numbers": {
+			input:       Label{Input: "team1", Output: "team2"},
+			expectedErr: nil,
+		},
+		"input label with reserved prefix is valid": {
+			input:       Label{Input: "__team", Output: "team"},
+			expectedErr: nil,
+		},
+		"invalid output label with reserved prefix": {
+			input:       Label{Input: "team", Output: "__team"},
+			expectedErr: fmt.Errorf(`invalid cost attribution output label: "team:__team"`),
+		},
+		"empty input label": {
+			input:       Label{Input: "", Output: "team"},
+			expectedErr: fmt.Errorf(`cost attribution input label must not be empty: ":team"`),
+		},
+	}
+
+	for name, tt := range tc {
+		t.Run(name, func(t *testing.T) {
+			err := tt.input.Validate()
+			if tt.expectedErr != nil {
+				require.EqualError(t, err, tt.expectedErr.Error())
+			} else {
+				require.NoError(t, err)
+			}
 		})
 	}
 }
