@@ -21,11 +21,11 @@ type Label struct {
 }
 
 func (l Label) Validate() error {
-	isValid := func(l string, checkPrefixNeeded bool) bool {
+	isValid := func(l string, checkPrefix bool) bool {
 		if !model.UTF8Validation.IsValidLabelName(l) {
 			return false
 		}
-		if checkPrefixNeeded && strings.HasPrefix(l, reservedLabelPrefix) {
+		if checkPrefix && strings.HasPrefix(l, reservedLabelPrefix) {
 			return false
 		}
 		return true
