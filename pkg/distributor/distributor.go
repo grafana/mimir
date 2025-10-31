@@ -1689,10 +1689,13 @@ type requestState struct {
 	// If positive, it means that size of mimirpb.WriteRequest has been checked and added to inflightPushRequestsBytes.
 	writeRequestSize int64
 
+	// If set, represents the error obtained by executing the respective push request.
+	pushErr error
+
 	// If set to true, it means that a reactive limiter permit has already been acquired for the respective push request.
 	reactiveLimiterPermitAcquired bool
 	// If set, represents the reactive limiter clean up function to be executed on cleaning up the respective push request.
-	reactiveLimiterCleanup func()
+	reactiveLimiterCleanup func(error)
 }
 
 func (d *Distributor) StartPushRequest(ctx context.Context, httpgrpcRequestSize int64) (context.Context, error) {
@@ -1731,8 +1734,8 @@ func (d *Distributor) acquireReactiveLimiterPermit(ctx context.Context) error {
 		d.rejectedRequests.WithLabelValues(reasonDistributorMaxInflightPushRequests).Inc()
 		return errReactiveLimiterLimitExceeded
 	}
-	cleanup := func() {
-		if ctx.Err() != nil {
+	cleanup := func(err error) {
+		if errors.Is(err, context.Canceled) || ctx.Err() != nil {
 			permit.Drop()
 		} else {
 			permit.Record()
@@ -1860,7 +1863,7 @@ func (d *Distributor) cleanupAfterPushFinished(rs *requestState) {
 		d.inflightPushRequestsBytes.Sub(rs.writeRequestSize)
 	}
 	if rs.reactiveLimiterCleanup != nil {
-		rs.reactiveLimiterCleanup()
+		rs.reactiveLimiterCleanup(rs.pushErr)
 	}
 }
 
@@ -1883,6 +1886,9 @@ func (d *Distributor) limitsMiddleware(next PushFunc) PushFunc {
 			d.rejectedRequests.WithLabelValues(reasonDistributorMaxInflightPushRequests).Inc()
 			return reactiveLimiterErr
 		}
+		defer func() {
+			rs.pushErr = retErr
+		}()
 
 		rs.pushHandlerPerformsCleanup = true
 		// Decrement counter after all ingester calls have finished or been cancelled.
