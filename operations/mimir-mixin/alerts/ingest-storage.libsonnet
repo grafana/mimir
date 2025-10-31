@@ -315,6 +315,20 @@
           },
         },
 
+        // Alert immediately if block-builder-scheduler detects a persistently failing job.
+        {
+          alert: $.alertName('BlockBuilderPersistentJobFailure'),
+          expr: |||
+            increase(cortex_blockbuilder_scheduler_persistent_job_failures_total[1m]) > 0
+          ||| % $._config,
+          labels: {
+            severity: 'critical',
+          },
+          annotations: {
+            message: '%(product)s {{ $labels.%(per_instance_label)s }} in %(alert_aggregation_variables)s has detected a persistently failing job.' % $._config,
+          },
+        },
+
         // Alert if the number of ingesters consuming partitions is less than the number of active partitions.
         {
           alert: $.alertName('FewerIngestersConsumingThanActivePartitions'),
