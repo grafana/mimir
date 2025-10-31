@@ -10,6 +10,27 @@ import "github.com/prometheus/prometheus/model/rulefmt"
 // RuleGroupList contains a set of rule groups
 type RuleGroupList []*RuleGroupDesc
 
+func (l RuleGroupList) Equal(that RuleGroupList) bool {
+	if that == nil {
+		return l == nil
+	}
+
+	if len(l) != len(that) {
+		return false
+	}
+
+	if len(l) == 0 || &l[0] == &that[0] {
+		return true
+	}
+
+	for i := range l {
+		if !l[i].Equal(that[i]) {
+			return false
+		}
+	}
+	return true
+}
+
 // Formatted returns the rule group list as a set of formatted rule groups mapped
 // by namespace
 func (l RuleGroupList) Formatted() map[string][]rulefmt.RuleGroup {
@@ -23,4 +44,16 @@ func (l RuleGroupList) Formatted() map[string][]rulefmt.RuleGroup {
 
 	}
 	return ruleMap
+}
+
+func (l RuleGroupList) FormattedProto() map[string]RuleGroupList {
+	groupMap := map[string]RuleGroupList{}
+	for _, g := range l {
+		if _, exists := groupMap[g.Namespace]; !exists {
+			groupMap[g.Namespace] = []*RuleGroupDesc{g}
+			continue
+		}
+		groupMap[g.Namespace] = append(groupMap[g.Namespace], g)
+	}
+	return groupMap
 }
