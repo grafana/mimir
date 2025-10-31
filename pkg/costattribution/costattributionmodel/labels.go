@@ -69,3 +69,11 @@ func ParseCostAttributionLabels(labelStrings []string) []Label {
 
 	return output
 }
+
+func FromCostAttributionLabelsToOutputLabels(labels []Label) []string {
+	res := make([]string, 0, len(labels))
+	for _, label := range labels {
+		res = append(res, label.OutputLabel())
+	}
+	return res
+}
