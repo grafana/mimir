@@ -1934,7 +1934,7 @@ Data recovery / temporary mitigation:
 
 You need to make block-builder consume the skipped data. Refer to the section under "Data recovery" for the `MimirBlockBuilderHasNotShippedBlocks` alert.
 
-#### MimrBlockBuilderPersistentJobFailure
+#### MimirBlockBuilderPersistentJobFailure
 
 This alert fires when the block-builder-scheduler has detected a single job failing multiple times.
 
