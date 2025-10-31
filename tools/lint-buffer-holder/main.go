@@ -25,11 +25,13 @@ import (
 
 func main() {
 	args := must(flagext.ParseFlagsAndArguments(new(flag.FlagSet)))
-	new(linter).run(args...)
-	os.Exit(exitCode)
+	ok := new(linter).run(args...)
+	if !ok {
+		os.Exit(1)
+	}
 }
 
-func (l *linter) run(dirs ...string) {
+func (l *linter) run(dirs ...string) (ok bool) {
 	l.fset = new(token.FileSet)
 
 	services := slices.Collect(l.findGRPCServices(dirs...))
@@ -54,6 +56,8 @@ func (l *linter) run(dirs ...string) {
 			l.analyzeGRPCServer(p, service.name)
 		}
 	}
+
+	return !l.failed
 }
 
 func (l *linter) fillPackages(pkgs []*packages.Package) {
@@ -177,19 +181,20 @@ type linter struct {
 	messageWithBufferRef *types.Interface
 	unsafeMutableString  *types.Alias
 
-	seen map[types.Type]bool
+	seen   map[types.Type]bool
+	failed bool
 }
 
 func (l *linter) analyzeGRPCServer(pkg *packages.Package, serviceName string) {
 	obj := pkg.Types.Scope().Lookup(serviceName + "Server")
 	typeName, ok := obj.(*types.TypeName)
 	if !ok {
-		report(pkg.Fset, obj.Pos(), "expected %s to be a type name, found %T", obj.Name(), obj)
+		l.report(obj.Pos(), "expected %s to be a type name, found %T", obj.Name(), obj)
 		return
 	}
 	iface, ok := typeName.Type().Underlying().(*types.Interface)
 	if !ok {
-		report(pkg.Fset, obj.Pos(), "expected %s to be an interface, found %T", obj.Name(), typeName.Type().Underlying())
+		l.report(obj.Pos(), "expected %s to be an interface, found %T", obj.Name(), typeName.Type().Underlying())
 		return
 	}
 
@@ -266,7 +271,7 @@ func (l *linter) analyzeMessage(pkg *packages.Package, serverName string, typ ty
 	}
 
 	for refPath := range l.referencesToBuffer(named.Obj().Pkg(), struc) {
-		report(l.fset, named.Obj().Pos(), "%s used as request in \"%s\".%s should embed mimirpb.BufferHolder because it has a reference to the buffer through:\n\t%v", named.Obj().Name(), pkg.PkgPath, serverName, formatRefPath(refPath))
+		l.report(named.Obj().Pos(), "%s used as request in \"%s\".%s should embed mimirpb.BufferHolder because it has a reference to the buffer through:\n\t%v", named.Obj().Name(), pkg.PkgPath, serverName, formatRefPath(refPath))
 	}
 }
 
@@ -338,11 +343,9 @@ func formatRefPath(refPath []string) string {
 	return strings.Join(refPath, ".")
 }
 
-var exitCode = 0
-
-func report(fset *token.FileSet, pos token.Pos, format string, args ...any) {
-	fmt.Fprintf(os.Stderr, "%s: %s\n", fset.Position(pos), fmt.Sprintf(format, args...))
-	exitCode = 1
+func (l *linter) report(pos token.Pos, format string, args ...any) {
+	fmt.Fprintf(os.Stderr, "%s: %s\n", l.fset.Position(pos), fmt.Sprintf(format, args...))
+	l.failed = true
 }
 
 func must[T any](v T, err error) T {
