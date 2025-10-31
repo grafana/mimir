@@ -20,12 +20,18 @@ type descriptor struct {
 }
 
 // newDescriptor creates a new descriptor with the specified metric name, help text, variable labels, and constant labels.
-func newDescriptor(name string, help string, labels []string, constLabels prometheus.Labels) *descriptor {
-	return &descriptor{
+// It returns an error if a creation of the underlying prometheus.Desc is not successful, for example when the metric name
+// or any of the label names don't conform to Prometheus naming conventions.
+func newDescriptor(name string, help string, labels []string, constLabels prometheus.Labels) (*descriptor, error) {
+	desc := &descriptor{
 		desc:   prometheus.NewDesc(name, help, labels, constLabels),
 		name:   name,
 		labels: labels,
 	}
+	if err := desc.validate(); err != nil {
+		return nil, err
+	}
+	return desc, nil
 }
 
 // validate checks whether the underlying prometheus.Desc is valid.
@@ -53,32 +59,28 @@ func (d *descriptor) Collect(_ chan<- prometheus.Metric) {
 	// Empty implementation - we only need Describe for validation
 }
 
-// newConstGauge creates a new constant gauge metric with the specified value and label values.
+// gauge creates a new gauge metric with the specified value and label values.
 // This has the same effect as calling prometheus.NewConstMetric with value type prometheus.GaugeValue
 // but without any validation.
-func (d *descriptor) newConstGauge(v float64, labelValues ...string) prometheus.Metric {
+func (d *descriptor) gauge(v float64, labelValues ...string) prometheus.Metric {
 	return &constMetric{
 		desc: d.desc,
-		metric: &dto.Metric{
+		metric: dto.Metric{
 			Label: prometheus.MakeLabelPairs(d.desc, labelValues),
 			Gauge: &dto.Gauge{Value: proto.Float64(v)},
 		},
 	}
 }
 
-// newConstCounter creates a new constant counter metric with the specified value and label values.
+// counter creates a new counter metric with the specified value and label values.
 // This has the same effect as calling prometheus.NewConstMetric with value type prometheus.CounterValue
 // but without any validation.
-func (d *descriptor) newConstCounter(v float64, labelValues ...string) prometheus.Metric {
+func (d *descriptor) counter(v float64, labelValues ...string) prometheus.Metric {
 	return &constMetric{
 		desc: d.desc,
-		metric: &dto.Metric{
-			Label: prometheus.MakeLabelPairs(d.desc, labelValues),
-			Counter: &dto.Counter{
-				Value:            proto.Float64(v),
-				Exemplar:         nil,
-				CreatedTimestamp: nil,
-			},
+		metric: dto.Metric{
+			Label:   prometheus.MakeLabelPairs(d.desc, labelValues),
+			Counter: &dto.Counter{Value: proto.Float64(v)},
 		},
 	}
 }
@@ -87,7 +89,7 @@ func (d *descriptor) newConstCounter(v float64, labelValues ...string) prometheu
 // It corresponds to prometheus.constMetric, which is not exported.
 type constMetric struct {
 	desc   *prometheus.Desc
-	metric *dto.Metric
+	metric dto.Metric
 }
 
 func (m *constMetric) Desc() *prometheus.Desc {

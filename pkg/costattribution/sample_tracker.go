@@ -82,19 +82,18 @@ func (st *SampleTracker) createAndValidateDescriptors(trackedLabels []costattrib
 	}
 	variableLabels = append(variableLabels, tenantLabel, reasonLabel)
 
-	st.receivedSamplesAttribution = newDescriptor("cortex_distributor_received_attributed_samples_total",
+	var err error
+	if st.receivedSamplesAttribution, err = newDescriptor("cortex_distributor_received_attributed_samples_total",
 		"The total number of samples that were received per attribution.",
 		variableLabels[:len(variableLabels)-1],
-		prometheus.Labels{trackerLabel: defaultTrackerName})
-	if err := st.receivedSamplesAttribution.validate(); err != nil {
+		prometheus.Labels{trackerLabel: defaultTrackerName}); err != nil {
 		return err
 	}
 
-	st.discardedSampleAttribution = newDescriptor("cortex_discarded_attributed_samples_total",
+	if st.discardedSampleAttribution, err = newDescriptor("cortex_discarded_attributed_samples_total",
 		"The total number of samples that were discarded per attribution.",
 		variableLabels,
-		prometheus.Labels{trackerLabel: defaultTrackerName})
-	if err := st.discardedSampleAttribution.validate(); err != nil {
+		prometheus.Labels{trackerLabel: defaultTrackerName}); err != nil {
 		return err
 	}
 	return nil
@@ -117,8 +116,8 @@ func (st *SampleTracker) collectCostAttribution(out chan<- prometheus.Metric) {
 
 	if !st.overflowSince.IsZero() {
 		st.observedMtx.RUnlock()
-		out <- st.receivedSamplesAttribution.newConstCounter(st.overflowCounter.receivedSample.Load(), st.overflowLabels[:len(st.overflowLabels)-1]...)
-		out <- st.discardedSampleAttribution.newConstCounter(st.overflowCounter.totalDiscarded.Load(), st.overflowLabels...)
+		out <- st.receivedSamplesAttribution.counter(st.overflowCounter.receivedSample.Load(), st.overflowLabels[:len(st.overflowLabels)-1]...)
+		out <- st.discardedSampleAttribution.counter(st.overflowCounter.totalDiscarded.Load(), st.overflowLabels...)
 		return
 	}
 
@@ -126,11 +125,11 @@ func (st *SampleTracker) collectCostAttribution(out chan<- prometheus.Metric) {
 		keys := strings.Split(key, string(sep))
 		keys = append(keys, st.userID)
 		if o.receivedSample.Load() > 0 {
-			prometheusMetrics = append(prometheusMetrics, st.receivedSamplesAttribution.newConstCounter(o.receivedSample.Load(), keys...))
+			prometheusMetrics = append(prometheusMetrics, st.receivedSamplesAttribution.counter(o.receivedSample.Load(), keys...))
 		}
 		o.discardedSampleMtx.RLock()
 		for reason, discarded := range o.discardedSample {
-			prometheusMetrics = append(prometheusMetrics, st.discardedSampleAttribution.newConstCounter(discarded.Load(), append(keys, reason)...))
+			prometheusMetrics = append(prometheusMetrics, st.discardedSampleAttribution.counter(discarded.Load(), append(keys, reason)...))
 		}
 		o.discardedSampleMtx.RUnlock()
 	}

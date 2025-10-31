@@ -12,20 +12,6 @@ import (
 )
 
 func TestNewDescriptor(t *testing.T) {
-	name := "test_metric"
-	help := "A test metric"
-	labels := []string{"label1", "label2"}
-	constLabels := prometheus.Labels{"const_label": "value"}
-
-	desc := newDescriptor(name, help, labels, constLabels)
-
-	assert.NotNil(t, desc)
-	assert.NotNil(t, desc.desc)
-	assert.Equal(t, name, desc.name)
-	assert.Equal(t, labels, desc.labels)
-}
-
-func TestDescriptor_Validate_Valid(t *testing.T) {
 	testCases := map[string]struct {
 		metricName  string
 		help        string
@@ -58,13 +44,16 @@ func TestDescriptor_Validate_Valid(t *testing.T) {
 
 	for name, tc := range testCases {
 		t.Run(name, func(t *testing.T) {
-			desc := newDescriptor(tc.metricName, tc.help, tc.labels, tc.constLabels)
-			err := desc.validate()
+			desc, err := newDescriptor(tc.metricName, tc.help, tc.labels, tc.constLabels)
 			if tc.expectedErr != nil {
 				require.Error(t, err)
 				require.EqualError(t, err, tc.expectedErr.Error())
+				require.Nil(t, desc)
 			} else {
 				require.NoError(t, err)
+				assert.NotNil(t, desc.desc)
+				assert.Equal(t, tc.metricName, desc.name)
+				assert.Equal(t, tc.labels, desc.labels)
 			}
 		})
 	}
