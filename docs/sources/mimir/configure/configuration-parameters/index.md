@@ -1751,6 +1751,11 @@ mimir_query_engine:
   # CLI flag: -querier.mimir-query-engine.enable-eliminate-deduplicate-and-merge
   [enable_eliminate_deduplicate_and_merge: <boolean> | default = false]
 
+  # (experimental) Enable eliminating duplicate or redundant matchers that are
+  # part of selector expressions.
+  # CLI flag: -querier.mimir-query-engine.enable-reduce-matchers
+  [enable_reduce_matchers: <boolean> | default = true]
+
 ring:
   # The key-value store used to share the hash ring across multiple instances.
   kvstore:

@@ -1,0 +1,205 @@
+# Tests for the ReduceMatchers AST optimization pass
+
+load 5m
+  series{system="http_requests", method="GET", status="200", handler="/api"} 10
+  series{system="http_requests", method="POST", status="200", handler="/api"} 20
+  series{system="http_requests", method="GET", status="404", handler="/api"} 30
+  series{system="http_requests", method="GET", status="500", handler="/api"} 40
+  series{system="http_requests", method="GET", status="504", handler="/api"} 50
+  series{system="cpu_usage", instance="web-1", job="webserver"} 0.9
+  series{system="cache_requests", backend="memcached"} 33
+
+# intersecting (duplicate) equals matcher for the same label name
+eval instant at 0m series{system="http_requests", system="http_requests"}
+  series{system="http_requests", method="GET", status="200", handler="/api"} 10
+  series{system="http_requests", method="POST", status="200", handler="/api"} 20
+  series{system="http_requests", method="GET", status="404", handler="/api"} 30
+  series{system="http_requests", method="GET", status="500", handler="/api"} 40
+  series{system="http_requests", method="GET", status="504", handler="/api"} 50
+
+# non-intersecting equals matchers for the same label name
+eval instant at 0m series{system="http_requests", system="cpu_usage"}
+
+# multiple equals matchers for different label names
+eval instant at 0m series{system="http_requests", method="GET"}
+  series{system="http_requests", method="GET", status="200", handler="/api"} 10
+  series{system="http_requests", method="GET", status="404", handler="/api"} 30
+  series{system="http_requests", method="GET", status="500", handler="/api"} 40
+  series{system="http_requests", method="GET", status="504", handler="/api"} 50
+
+# not equals matcher only
+eval instant at 0m series{status!="500"}
+  series{system="http_requests", method="GET", status="200", handler="/api"} 10
+  series{system="http_requests", method="POST", status="200", handler="/api"} 20
+  series{system="http_requests", method="GET", status="404", handler="/api"} 30
+  series{system="http_requests", method="GET", status="504", handler="/api"} 50
+  series{system="cpu_usage", instance="web-1", job="webserver"} 0.9
+  series{system="cache_requests", backend="memcached"} 33
+
+# not-regex matcher only
+eval instant at 0m series{system!~".*requests.*"}
+  series{system="cpu_usage", instance="web-1", job="webserver"} 0.9
+
+# wildcard matcher only
+eval instant at 0m series{system=~".*"}
+  series{system="http_requests", method="GET", status="200", handler="/api"} 10
+  series{system="http_requests", method="POST", status="200", handler="/api"} 20
+  series{system="http_requests", method="GET", status="404", handler="/api"} 30
+  series{system="http_requests", method="GET", status="500", handler="/api"} 40
+  series{system="http_requests", method="GET", status="504", handler="/api"} 50
+  series{system="cpu_usage", instance="web-1", job="webserver"} 0.9
+  series{system="cache_requests", backend="memcached"} 33
+
+# wildcard matcher and not-equals matcher for different label names
+eval instant at 0m series{instance=~".*", system!=""}
+  series{system="http_requests", method="GET", status="200", handler="/api"} 10
+  series{system="http_requests", method="POST", status="200", handler="/api"} 20
+  series{system="http_requests", method="GET", status="404", handler="/api"} 30
+  series{system="http_requests", method="GET", status="500", handler="/api"} 40
+  series{system="http_requests", method="GET", status="504", handler="/api"} 50
+  series{system="cpu_usage", instance="web-1", job="webserver"} 0.9
+  series{system="cache_requests", backend="memcached"} 33
+
+# regex matcher and overlapping equals matcher
+eval instant at 0m series{system=~".*requests.*", system="http_requests"}
+  series{system="http_requests", method="GET", status="200", handler="/api"} 10
+  series{system="http_requests", method="POST", status="200", handler="/api"} 20
+  series{system="http_requests", method="GET", status="404", handler="/api"} 30
+  series{system="http_requests", method="GET", status="500", handler="/api"} 40
+  series{system="http_requests", method="GET", status="504", handler="/api"} 50
+
+# regex matcher and non-overlapping equals matcher
+eval instant at 0m series{system=~".*requests.*", system="cpu_usage"}
+
+# regex matcher and overlapping, non-subtractive not-equals matcher.
+# An "overlapping" matcher matches a set of series that overlaps with (and may be fully
+# identical to) the other matcher. A "non-subtractive" not-equals matcher matches all the
+# same series as the other matcher.
+eval instant at 0m series{system=~".*requests.*", system!="cpu_usage"}
+  series{system="http_requests", method="GET", status="200", handler="/api"} 10
+  series{system="http_requests", method="POST", status="200", handler="/api"} 20
+  series{system="http_requests", method="GET", status="404", handler="/api"} 30
+  series{system="http_requests", method="GET", status="500", handler="/api"} 40
+  series{system="http_requests", method="GET", status="504", handler="/api"} 50
+  series{system="cache_requests", backend="memcached"} 33
+
+# regex matcher and overlapping, partially subtractive not-equals matcher
+# A "partially subtractive" not-equals matcher matches a strict subset of series matched by
+# the other matcher.
+eval instant at 0m series{system=~".*requests.*", system!="http_requests"}
+  series{system="cache_requests", backend="memcached"} 33
+
+# regex matcher and non-overlapping, fully subtractive not-equals matcher
+# A "fully subtractive" not-equals matcher results in the exclusion of all series from the result set.
+# "Non-overlapping" and "fully subtractive" are equivalent descriptors.
+eval instant at 0m series{system=~".*http_requests.*", system!="http_requests"}
+
+# regex matcher and overlapping regex matcher
+eval instant at 0m series{system=~".*http.*", method=~"(GET|POST)"}
+  series{system="http_requests", method="GET", status="200", handler="/api"} 10
+  series{system="http_requests", method="POST", status="200", handler="/api"} 20
+  series{system="http_requests", method="GET", status="404", handler="/api"} 30
+  series{system="http_requests", method="GET", status="500", handler="/api"} 40
+  series{system="http_requests", method="GET", status="504", handler="/api"} 50
+
+# regex matcher and non-overlapping regex matcher
+eval instant at 0m series{system=~".*requests.*", system=~".*cpu.*"}
+
+# regex matcher and partially overlapping regex matcher
+eval instant at 0m series{system=~".*requests.*", system=~".*http.*"}
+  series{system="http_requests", method="GET", status="200", handler="/api"} 10
+  series{system="http_requests", method="POST", status="200", handler="/api"} 20
+  series{system="http_requests", method="GET", status="404", handler="/api"} 30
+  series{system="http_requests", method="GET", status="500", handler="/api"} 40
+  series{system="http_requests", method="GET", status="504", handler="/api"} 50
+
+# regex matcher and overlapping not-regex matcher
+eval instant at 0m series{system=~".*requests.*", system!~".*usage.*"}
+  series{system="http_requests", method="GET", status="200", handler="/api"} 10
+  series{system="http_requests", method="POST", status="200", handler="/api"} 20
+  series{system="http_requests", method="GET", status="404", handler="/api"} 30
+  series{system="http_requests", method="GET", status="500", handler="/api"} 40
+  series{system="http_requests", method="GET", status="504", handler="/api"} 50
+  series{system="cache_requests", backend="memcached"} 33
+
+# regex matcher and non-overlapping not-regex matcher
+eval instant at 0m series{system=~".*requests.*", system!~".*"}
+
+# regex matcher and partially overlapping not-regex matcher
+eval instant at 0m series{system=~".*requests.*", system!~".*cache.*"}
+  series{system="http_requests", method="GET", status="200", handler="/api"} 10
+  series{system="http_requests", method="POST", status="200", handler="/api"} 20
+  series{system="http_requests", method="GET", status="404", handler="/api"} 30
+  series{system="http_requests", method="GET", status="500", handler="/api"} 40
+  series{system="http_requests", method="GET", status="504", handler="/api"} 50
+
+# not-equals matcher and equivalent not-regex matcher
+eval instant at 0m series{system!="", system!~""}
+  series{system="http_requests", method="GET", status="200", handler="/api"} 10
+  series{system="http_requests", method="POST", status="200", handler="/api"} 20
+  series{system="http_requests", method="GET", status="404", handler="/api"} 30
+  series{system="http_requests", method="GET", status="500", handler="/api"} 40
+  series{system="http_requests", method="GET", status="504", handler="/api"} 50
+  series{system="cpu_usage", instance="web-1", job="webserver"} 0.9
+  series{system="cache_requests", backend="memcached"} 33
+
+# not-equals matcher and non-overlapping, partially subtractive not-regex matcher
+eval instant at 0m series{system!="http_requests", system!~".*usage.*"}
+  series{system="cache_requests", backend="memcached"} 33
+
+# not-equals matcher and overlapping, non-subtractive not-regex matcher
+eval instant at 0m series{system!="http_requests", system!~".*bananas.*"}
+  series{system="cpu_usage", instance="web-1", job="webserver"} 0.9
+  series{system="cache_requests", backend="memcached"} 33
+
+# not-equals matcher and overlapping equals matcher
+eval instant at 0m series{system!="", system="http_requests"}
+  series{system="http_requests", method="GET", status="200", handler="/api"} 10
+  series{system="http_requests", method="POST", status="200", handler="/api"} 20
+  series{system="http_requests", method="GET", status="404", handler="/api"} 30
+  series{system="http_requests", method="GET", status="500", handler="/api"} 40
+  series{system="http_requests", method="GET", status="504", handler="/api"} 50
+
+# not-equals matcher and non-overlapping equals matcher
+eval instant at 0m series{system!="http_requests", system="http_requests"}
+
+# not-equals matcher and overlapping not-equals matcher
+eval instant at 0m series{system!="", system!="cache_requests"}
+  series{system="http_requests", method="GET", status="200", handler="/api"} 10
+  series{system="http_requests", method="POST", status="200", handler="/api"} 20
+  series{system="http_requests", method="GET", status="404", handler="/api"} 30
+  series{system="http_requests", method="GET", status="500", handler="/api"} 40
+  series{system="http_requests", method="GET", status="504", handler="/api"} 50
+  series{system="cpu_usage", instance="web-1", job="webserver"} 0.9
+
+# not-equals matcher and non-overlapping not-equals matcher for different label names
+eval instant at 0m series{backend!="", system!="cache_requests"}
+
+# not-regex matcher and not-regex matcher
+eval instant at 0m series{system!~"", system!~"http_requests"}
+  series{system="cpu_usage", instance="web-1", job="webserver"} 0.9
+  series{system="cache_requests", backend="memcached"} 33
+
+# not-regex matcher and not-regex matcher, empty set
+eval instant at 0m series{system!~"", system!~".*requests.*", system!~".*cpu.*"}
+
+# not equals matcher with positive regex matcher for the same label name
+eval instant at 0m series{status!="500", status=~".04"}
+  series{system="http_requests", method="GET", status="404", handler="/api"} 30
+  series{system="http_requests", method="GET", status="504", handler="/api"} 50
+
+# all matcher types
+eval instant at 0m series{system="http_requests", method="GET", status!="500", handler=~"/.*"}
+  series{system="http_requests", method="GET", status="200", handler="/api"} 10
+  series{system="http_requests", method="GET", status="404", handler="/api"} 30
+  series{system="http_requests", method="GET", status="504", handler="/api"} 50
+
+# multiple wildcard matchers
+eval instant at 0m series{system=~".*", method=~".*"}
+  series{system="http_requests", method="GET", status="200", handler="/api"} 10
+  series{system="http_requests", method="POST", status="200", handler="/api"} 20
+  series{system="http_requests", method="GET", status="404", handler="/api"} 30
+  series{system="http_requests", method="GET", status="500", handler="/api"} 40
+  series{system="http_requests", method="GET", status="504", handler="/api"} 50
+  series{system="cpu_usage", instance="web-1", job="webserver"} 0.9
+  series{system="cache_requests", backend="memcached"} 33
