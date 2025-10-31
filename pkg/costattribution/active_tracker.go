@@ -69,7 +69,7 @@ func NewActiveSeriesTracker(userID string, trackedLabels []costattributionmodel.
 	}
 
 	if err := ast.createAndValidateDescriptors(trackedLabels); err != nil {
-		return nil, fmt.Errorf("failed to create Prometheus descriptors for tenant %s and cost attribution labels %s: %w", userID, costattributionmodel.FromCostAttributionLabelsToString(trackedLabels), err)
+		return nil, fmt.Errorf("failed to create an active series tracker for tenant %s: %w", userID, err)
 	}
 	return ast, nil
 }

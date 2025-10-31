@@ -69,7 +69,7 @@ func newSampleTracker(userID string, trackedLabels []costattributionmodel.Label,
 	}
 
 	if err := tracker.createAndValidateDescriptors(trackedLabels); err != nil {
-		return nil, fmt.Errorf("failed to create Prometheus descriptors for tenant %s and cost attribution labels %s: %w", userID, costattributionmodel.FromCostAttributionLabelsToString(trackedLabels), err)
+		return nil, fmt.Errorf("failed to create a sample tracker for tenant %s: %w", userID, err)
 	}
 
 	return tracker, nil

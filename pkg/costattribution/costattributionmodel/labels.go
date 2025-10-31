@@ -70,20 +70,6 @@ func ParseCostAttributionLabels(labelStrings []string) []Label {
 	return output
 }
 
-func FromCostAttributionLabelsToString(labels []Label) string {
-	var b strings.Builder
-	for _, label := range labels {
-		if b.Len() > 0 {
-			b.WriteByte(',')
-		}
-		b.WriteString(label.Input)
-		b.WriteByte(':')
-		b.WriteString(label.Output)
-	}
-
-	return b.String()
-}
-
 func FromCostAttributionLabelsToOutputLabels(labels []Label) []string {
 	res := make([]string, 0, len(labels))
 	for _, label := range labels {
