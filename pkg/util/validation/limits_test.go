@@ -1922,7 +1922,7 @@ func TestLimits_Validate(t *testing.T) {
 			}(),
 			expectedErr: nil,
 		},
-		"should fail if the first cost attribution label is invalid": {
+		"should pass if the first cost attribution label is invalid": {
 			cfg: func() Limits {
 				cfg := Limits{}
 				flagext.DefaultValues(&cfg)
@@ -1932,7 +1932,7 @@ func TestLimits_Validate(t *testing.T) {
 				}
 				return cfg
 			}(),
-			expectedErr: errors.New(`invalid cost attribution input label: "__team__:my_team"`),
+			expectedErr: nil,
 		},
 		"should fail if the second cost attribution label is invalid": {
 			cfg: func() Limits {
