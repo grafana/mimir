@@ -8202,8 +8202,6 @@ func TestDistributor_StartFinishRequest(t *testing.T) {
 
 	// Pretend push went OK, make sure to call CleanUp. Also check for expected values of inflight requests and inflight request size.
 	finishPush := func(ctx context.Context, pushReq *Request) error {
-		defer pushReq.CleanUp()
-
 		distrib := ctx.Value(distributorKey).(*Distributor)
 		expReq := ctx.Value(expectedInflightRequestsKey).(int64)
 		expBytes := ctx.Value(expectedInflightBytesKey).(int64)
@@ -8217,6 +8215,11 @@ func TestDistributor_StartFinishRequest(t *testing.T) {
 		if expBytes != bs {
 			return errors.Errorf("unexpected number of inflight request bytes: %d, expected: %d", bs, expBytes)
 		}
+
+		// dskit/ring runs cleanup on a separate, untracked goroutine, so mimick
+		// that to uncover races.
+		go pushReq.CleanUp()
+
 		return nil
 	}
 
@@ -8381,7 +8384,12 @@ func TestDistributor_StartFinishRequest(t *testing.T) {
 					config.DefaultLimits.MaxInflightPushRequestsBytes = inflightBytesLimit
 				},
 			})
-			wrappedPush := ds[0].wrapPushWithMiddlewares(finishPush)
+			var cleanupWg sync.WaitGroup
+			wrappedPush := ds[0].wrapPushWithMiddlewares(func(ctx context.Context, pushReq *Request) error {
+				cleanupWg.Add(1)
+				pushReq.AddCleanup(cleanupWg.Done)
+				return finishPush(ctx, pushReq)
+			})
 
 			// Setup reactive limiter if needed
 			if tc.reactiveLimiterEnabled {
@@ -8438,6 +8446,7 @@ func TestDistributor_StartFinishRequest(t *testing.T) {
 			}
 
 			// Verify that inflight metrics are the same as before the request.
+			require.Eventually(t, func() bool { cleanupWg.Wait(); return true }, time.Second, time.Millisecond)
 			require.Equal(t, int64(tc.inflightRequestsBeforePush), ds[0].inflightPushRequests.Load())
 			require.Equal(t, tc.inflightRequestsSizeBeforePush, ds[0].inflightPushRequestsBytes.Load())
 		})
