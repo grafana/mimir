@@ -308,8 +308,8 @@ func Test_mapper_MapRulesMultipleFiles(t *testing.T) {
 		updated, files, err := m.MapRules(testUser, twoFilesRuleSet)
 		require.True(t, updated)
 		require.Len(t, files, 2)
-		require.True(t, sliceContains(t, fileOnePath, files))
-		require.True(t, sliceContains(t, fileTwoPath, files))
+		require.Contains(t, files, fileOnePath)
+		require.Contains(t, files, fileTwoPath)
 		require.NoError(t, err)
 
 		exists, err := afero.Exists(m.FS, fileOnePath)
@@ -324,8 +324,8 @@ func Test_mapper_MapRulesMultipleFiles(t *testing.T) {
 		updated, files, err := m.MapRules(testUser, twoFilesUpdatedRuleSet)
 		require.True(t, updated)
 		require.Len(t, files, 2)
-		require.True(t, sliceContains(t, fileOnePath, files))
-		require.True(t, sliceContains(t, fileTwoPath, files))
+		require.Contains(t, files, fileOnePath)
+		require.Contains(t, files, fileTwoPath)
 		require.NoError(t, err)
 
 		exists, err := afero.Exists(m.FS, fileOnePath)
@@ -389,8 +389,8 @@ func Test_mapper_MapRulesMultipleTenants(t *testing.T) {
 		updated, files, err := m.MapRules(testUser2, twoFilesRuleSet)
 		require.True(t, updated)
 		require.Len(t, files, 2)
-		require.True(t, sliceContains(t, fileOneUserTwoPath, files))
-		require.True(t, sliceContains(t, fileTwoUserTwoPath, files))
+		require.Contains(t, files, fileOneUserTwoPath)
+		require.Contains(t, files, fileTwoUserTwoPath)
 		require.NoError(t, err)
 
 		exists, err := afero.Exists(m.FS, fileOnePath)
@@ -605,16 +605,4 @@ func Test_FSLoader_LoadRules(t *testing.T) {
 		require.Len(t, loadedUser2File2.Groups, 1)
 		require.Equal(t, "rulegroup_one", loadedUser2File2.Groups[0].Name)
 	})
-}
-
-func sliceContains(t *testing.T, find string, in []string) bool {
-	t.Helper()
-
-	for _, s := range in {
-		if find == s {
-			return true
-		}
-	}
-
-	return false
 }
