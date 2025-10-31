@@ -2408,3 +2408,89 @@ func getDefaultLimits() Limits {
 	flagext.DefaultValues(&limits)
 	return limits
 }
+
+func TestOverrides_IngestionPartitionsTenantReadShardSize(t *testing.T) {
+	tests := []struct {
+		name             string
+		writeShardSize   int
+		readShardSize    int
+		expectedReadSize int
+		description      string
+	}{
+		{
+			name:             "read shard size not set - uses write shard size",
+			writeShardSize:   10,
+			readShardSize:    0,
+			expectedReadSize: 10,
+			description:      "When read shard size is 0 (not set), should return write shard size",
+		},
+		{
+			name:             "read shard size set - overrides write shard size",
+			writeShardSize:   10,
+			readShardSize:    20,
+			expectedReadSize: 20,
+			description:      "When read shard size is > 0, should return read shard size",
+		},
+		{
+			name:             "both disabled - returns 0",
+			writeShardSize:   0,
+			readShardSize:    0,
+			expectedReadSize: 0,
+			description:      "When both are 0, should return 0 (shuffle sharding disabled)",
+		},
+		{
+			name:             "write disabled but read enabled",
+			writeShardSize:   0,
+			readShardSize:    5,
+			expectedReadSize: 5,
+			description:      "Can have read shard size set even if write is disabled (edge case)",
+		},
+		{
+			name:             "read shard size smaller than write - migration scenario",
+			writeShardSize:   20,
+			readShardSize:    10,
+			expectedReadSize: 10,
+			description:      "During shard size decrease, read uses larger old value while writes use smaller new value",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			limits := Limits{
+				IngestionPartitionsTenantShardSize:     tt.writeShardSize,
+				IngestionPartitionsTenantReadShardSize: tt.readShardSize,
+			}
+
+			overrides := NewOverrides(limits, nil)
+			actual := overrides.IngestionPartitionsTenantReadShardSize("user1")
+
+			assert.Equal(t, tt.expectedReadSize, actual, tt.description)
+		})
+	}
+}
+
+func TestOverrides_IngestionPartitionsTenantReadShardSize_PerTenantOverride(t *testing.T) {
+	defaults := Limits{
+		IngestionPartitionsTenantShardSize:     10,
+		IngestionPartitionsTenantReadShardSize: 0,
+	}
+
+	tenantLimits := map[string]*Limits{
+		"tenant-with-override": {
+			IngestionPartitionsTenantShardSize:     5,  // New smaller write shard size
+			IngestionPartitionsTenantReadShardSize: 10, // Keep reading from old larger shard
+		},
+	}
+
+	overrides := NewOverrides(defaults, NewMockTenantLimits(tenantLimits))
+
+	// Tenant without override uses defaults
+	assert.Equal(t, 10, overrides.IngestionPartitionsTenantReadShardSize("tenant-default"),
+		"Tenant without override should use default write shard size (read=0 means use write)")
+
+	// Tenant with override
+	assert.Equal(t, 10, overrides.IngestionPartitionsTenantReadShardSize("tenant-with-override"),
+		"Tenant with read override should use read shard size")
+	assert.Equal(t, 5, overrides.IngestionPartitionsTenantShardSize("tenant-with-override"),
+		"Tenant should still use smaller write shard size for writes")
+}

@@ -1429,6 +1429,8 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Include tenant ID in pprof labels for profiling. Currently only supported by the ingester. This can help debug performance issues for specific tenants.
   -ingest-storage.enabled
     	True to enable the ingestion via object storage.
+  -ingest-storage.ingestion-partition-tenant-read-shard-size int
+    	[experimental] Optional override for the number of partitions to query on the read path when using ingest storage. When set to a value > 0, this overrides -ingest-storage.ingestion-partition-tenant-shard-size for read operations only. This is useful for gracefully migrating to a smaller shard size without disabling shuffle sharding. 0 means use the value from -ingest-storage.ingestion-partition-tenant-shard-size.
   -ingest-storage.ingestion-partition-tenant-shard-size int
     	[experimental] The number of partitions a tenant's data should be sharded to when using the ingest storage. Tenants are sharded across partitions using shuffle-sharding. 0 disables shuffle sharding and tenant is sharded across all partitions.
   -ingest-storage.kafka.address string

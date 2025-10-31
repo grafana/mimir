@@ -120,7 +120,8 @@ func (d *Distributor) getIngesterReplicationSetsForQuery(ctx context.Context) ([
 	}
 
 	if d.cfg.IngestStorageConfig.Enabled {
-		shardSize := d.limits.IngestionPartitionsTenantShardSize(userID)
+		// Use the read shard size, which may be overridden for graceful shard size migration.
+		shardSize := d.limits.IngestionPartitionsTenantReadShardSize(userID)
 		r := d.partitionsRing
 
 		// If tenant uses shuffle sharding, we should only query partitions which are part of the tenant's subring.
