@@ -37,37 +37,35 @@ func NewConfig(jsonData json.RawMessage, decryptFn receivers.DecryptFunc) (Confi
 	return settings, nil
 }
 
-func Schema() schema.IntegrationSchemaVersion {
-	return schema.IntegrationSchemaVersion{
-		TypeAlias: "line",
-		Version:   Version,
-		CanCreate: true,
-		Options: []schema.Field{
-			{
-				Label:        "Token",
-				Element:      schema.ElementTypeInput,
-				InputType:    schema.InputTypeText,
-				Placeholder:  "LINE notify token key",
-				PropertyName: "token",
-				Required:     true,
-				Secure:       true,
-			},
-			{ // New in 9.3
-				Label:        "Title",
-				Element:      schema.ElementTypeTextArea,
-				InputType:    schema.InputTypeText,
-				Description:  "Templated title of the message",
-				PropertyName: "title",
-				Placeholder:  templates.DefaultMessageTitleEmbed,
-			},
-			{ // New in 9.3
-				Label:        "Description",
-				Element:      schema.ElementTypeTextArea,
-				InputType:    schema.InputTypeText,
-				Description:  "Templated description of the message",
-				PropertyName: "description",
-				Placeholder:  templates.DefaultMessageEmbed,
-			},
+var Schema = schema.IntegrationSchemaVersion{
+	TypeAlias: "line",
+	Version:   Version,
+	CanCreate: true,
+	Options: []schema.Field{
+		{
+			Label:        "Token",
+			Element:      schema.ElementTypeInput,
+			InputType:    schema.InputTypeText,
+			Placeholder:  "LINE notify token key",
+			PropertyName: "token",
+			Required:     true,
+			Secure:       true,
 		},
-	}
+		{ // New in 9.3
+			Label:        "Title",
+			Element:      schema.ElementTypeTextArea,
+			InputType:    schema.InputTypeText,
+			Description:  "Templated title of the message",
+			PropertyName: "title",
+			Placeholder:  templates.DefaultMessageTitleEmbed,
+		},
+		{ // New in 9.3
+			Label:        "Description",
+			Element:      schema.ElementTypeTextArea,
+			InputType:    schema.InputTypeText,
+			Description:  "Templated description of the message",
+			PropertyName: "description",
+			Placeholder:  templates.DefaultMessageEmbed,
+		},
+	},
 }
