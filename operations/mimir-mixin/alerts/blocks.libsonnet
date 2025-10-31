@@ -256,7 +256,7 @@
             sum by(%(alert_aggregation_labels)s) (rate(cortex_bucket_store_series_blocks_queried_sum{component="store-gateway",level="1",out_of_order="false",%(job)s}[%(range_interval)s]))
             /
             sum by(%(alert_aggregation_labels)s) (rate(cortex_bucket_store_series_blocks_queried_sum{component="store-gateway",out_of_order="false",%(job)s}[%(range_interval)s]))
-            ) > 0.5
+            ) > 0.05
           ||| % $._config {
             job: $.jobMatcher($._config.job_names.store_gateway),
             range_interval: $.alertRangeInterval(10),
