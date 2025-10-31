@@ -31,7 +31,6 @@ import (
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/sharding"
-	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/util"
 	util_log "github.com/grafana/mimir/pkg/util/log"
@@ -444,7 +443,7 @@ func (c *MultitenantCompactor) sanitizeMeta(logger log.Logger, userID string, bl
 	for l, v := range meta.Thanos.Labels {
 		switch l {
 		// Preserve this label
-		case mimir_tsdb.CompactorShardIDExternalLabel:
+		case block.CompactorShardIDExternalLabel:
 			if v == "" {
 				level.Debug(logger).Log("msg", "removing empty external label",
 					"label", l)
@@ -454,10 +453,10 @@ func (c *MultitenantCompactor) sanitizeMeta(logger log.Logger, userID string, bl
 
 			if _, _, err := sharding.ParseShardIDLabelValue(v); err != nil {
 				return fmt.Sprintf("invalid %s external label: %q",
-					mimir_tsdb.CompactorShardIDExternalLabel, v)
+					block.CompactorShardIDExternalLabel, v)
 			}
 		// Remove unused labels
-		case mimir_tsdb.DeprecatedTenantIDExternalLabel, mimir_tsdb.DeprecatedIngesterIDExternalLabel, mimir_tsdb.DeprecatedShardIDExternalLabel:
+		case block.DeprecatedTenantIDExternalLabel, block.DeprecatedIngesterIDExternalLabel, block.DeprecatedShardIDExternalLabel:
 			level.Debug(logger).Log("msg", "removing unused external label",
 				"label", l, "value", v)
 			delete(meta.Thanos.Labels, l)

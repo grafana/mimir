@@ -13,7 +13,6 @@ import (
 	"github.com/oklog/ulid/v2"
 
 	"github.com/grafana/mimir/pkg/storage/sharding"
-	"github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 )
 
@@ -174,7 +173,7 @@ type blockWithSuccessors struct {
 func newBlockWithSuccessors(m *block.Meta) *blockWithSuccessors {
 	b := &blockWithSuccessors{meta: m}
 	if m != nil {
-		b.shardID = m.Thanos.Labels[tsdb.CompactorShardIDExternalLabel]
+		b.shardID = m.Thanos.Labels[block.CompactorShardIDExternalLabel]
 		b.sources = make(map[ulid.ULID]struct{}, len(m.Compaction.Sources))
 
 		for _, bid := range m.Compaction.Sources {
