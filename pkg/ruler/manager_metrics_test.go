@@ -11,6 +11,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/prometheus/rules"
@@ -221,5 +222,113 @@ func TestMetricsArePerUser(t *testing.T) {
 		}
 
 		assert.True(t, foundUserLabel, "user label not found for metric %s", desc.String())
+	}
+}
+
+func TestNotifierMetrics(t *testing.T) {
+	mainReg := prometheus.NewPedanticRegistry()
+
+	notifierMetrics := NewNotifierMetrics(log.NewNopLogger())
+	mainReg.MustRegister(notifierMetrics)
+	notifierMetrics.AddUserRegistry("user1", populateNotifier(1))
+	notifierMetrics.AddUserRegistry("user2", populateNotifier(10))
+	notifierMetrics.AddUserRegistry("user3", populateNotifier(100))
+
+	err := testutil.GatherAndCompare(mainReg, bytes.NewBufferString(`
+# HELP cortex_prometheus_notifications_errors_sum The sum of notification errors for all users.
+# TYPE cortex_prometheus_notifications_errors_sum counter
+cortex_prometheus_notifications_errors_sum{alertmanager="alertmanager1"} 111
+cortex_prometheus_notifications_errors_sum{alertmanager="alertmanager2"} 111
+cortex_prometheus_notifications_errors_sum{alertmanager="alertmanager3"} 111
+# HELP cortex_prometheus_notifications_sent_sum The sum of notifications sent for all users.
+# TYPE cortex_prometheus_notifications_sent_sum counter
+cortex_prometheus_notifications_sent_sum{alertmanager="alertmanager1"} 111
+cortex_prometheus_notifications_sent_sum{alertmanager="alertmanager2"} 111
+cortex_prometheus_notifications_sent_sum{alertmanager="alertmanager3"} 111
+`))
+	require.NoError(t, err)
+}
+
+type mockNotifierMetrics struct {
+	Sent   *prometheus.CounterVec
+	Errors *prometheus.CounterVec
+}
+
+func newMockNotifierMetrics(reg prometheus.Registerer) *mockNotifierMetrics {
+	return &mockNotifierMetrics{
+		Sent: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name: "prometheus_notifications_sent_total",
+			Help: "The total number of notifications sent.",
+		}, []string{"alertmanager"}),
+		Errors: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name: "prometheus_notifications_errors_total",
+			Help: "The total number of notifications failed.",
+		}, []string{"alertmanager"}),
+	}
+}
+
+func populateNotifier(base float64) *prometheus.Registry {
+	r := prometheus.NewRegistry()
+
+	metrics := newMockNotifierMetrics(r)
+
+	metrics.Sent.WithLabelValues("alertmanager1").Add(base)
+	metrics.Sent.WithLabelValues("alertmanager2").Add(base)
+	metrics.Sent.WithLabelValues("alertmanager3").Add(base)
+
+	metrics.Errors.WithLabelValues("alertmanager1").Add(base)
+	metrics.Errors.WithLabelValues("alertmanager2").Add(base)
+	metrics.Errors.WithLabelValues("alertmanager3").Add(base)
+
+	return r
+}
+
+func TestNotifierMetricsAreAggregated(t *testing.T) {
+	mainReg := prometheus.NewPedanticRegistry()
+
+	notifierMetrics := NewNotifierMetrics(log.NewNopLogger())
+	mainReg.MustRegister(notifierMetrics)
+	notifierMetrics.AddUserRegistry("user1", populateNotifier(1))
+	notifierMetrics.AddUserRegistry("user2", populateNotifier(10))
+	notifierMetrics.AddUserRegistry("user3", populateNotifier(100))
+
+	ch := make(chan prometheus.Metric)
+
+	defer func() {
+		// drain the channel, so that collecting goroutine can stop.
+		// This is useful if test fails.
+		// nolint:revive // We want to drain the channel.
+		for range ch {
+		}
+	}()
+
+	go func() {
+		notifierMetrics.Collect(ch)
+		close(ch)
+	}()
+
+	for m := range ch {
+		desc := m.Desc()
+
+		dtoM := &dto.Metric{}
+		err := m.Write(dtoM)
+
+		require.NoError(t, err)
+
+		foundUserLabel := false
+		foundAlertmanagerLabel := false
+		for _, l := range dtoM.Label {
+			if l.GetName() == "user" {
+				foundUserLabel = true
+				break
+			}
+			if l.GetName() == "alertmanager" {
+				foundAlertmanagerLabel = true
+				break
+			}
+		}
+
+		assert.False(t, foundUserLabel, "user label found for metric %s", desc.String())
+		assert.True(t, foundAlertmanagerLabel, "alertmanager label not found for metric %s", desc.String())
 	}
 }

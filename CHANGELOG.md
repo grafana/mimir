@@ -39,6 +39,7 @@
 * [ENHANCEMENT] Update Docker base images from `alpine:3.22.1` to `alpine:3.22.2`. #12991
 * [ENHANCEMENT] Compactor, Store-gateway: Add metrics to track performance of in-memory and disk-based metadata caches. #13150
 * [ENHANCEMENT] Ruler: Removed disk interaction when loading rules. #13156
+* [ENHANCEMENT] Ruler: Add `cortex_prometheus_notifications_errors_sum` and `cortex_prometheus_notifications_sent_sum` metrics to enable low-cardinality SLO alerting. #13271
 * [BUGFIX] Compactor: Fix potential concurrent map writes. #13053
 * [BUGFIX] Query-frontend: Fix issue where queries sometimes fail with `failed to receive query result stream message: rpc error: code = Canceled desc = context canceled` if remote execution is enabled. #13084
 * [BUGFIX] Query-frontend: Fix issue where query stats, such as series read, did not include the parameters to the `histogram_quantile` and `histogram_fraction` functions if remote execution was enabled. #13084
