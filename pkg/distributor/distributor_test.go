@@ -8202,8 +8202,6 @@ func TestDistributor_StartFinishRequest(t *testing.T) {
 
 	// Pretend push went OK, make sure to call CleanUp. Also check for expected values of inflight requests and inflight request size.
 	finishPush := func(ctx context.Context, pushReq *Request) error {
-		defer pushReq.CleanUp()
-
 		distrib := ctx.Value(distributorKey).(*Distributor)
 		expReq := ctx.Value(expectedInflightRequestsKey).(int64)
 		expBytes := ctx.Value(expectedInflightBytesKey).(int64)
@@ -8217,6 +8215,11 @@ func TestDistributor_StartFinishRequest(t *testing.T) {
 		if expBytes != bs {
 			return errors.Errorf("unexpected number of inflight request bytes: %d, expected: %d", bs, expBytes)
 		}
+
+		// dskit/ring runs cleanup on a separate, untracked goroutine, so mimick
+		// that to uncover races.
+		go pushReq.CleanUp()
+
 		return nil
 	}
 
@@ -8381,7 +8384,12 @@ func TestDistributor_StartFinishRequest(t *testing.T) {
 					config.DefaultLimits.MaxInflightPushRequestsBytes = inflightBytesLimit
 				},
 			})
-			wrappedPush := ds[0].wrapPushWithMiddlewares(finishPush)
+			var cleanupWg sync.WaitGroup
+			wrappedPush := ds[0].wrapPushWithMiddlewares(func(ctx context.Context, pushReq *Request) error {
+				cleanupWg.Add(1)
+				pushReq.AddCleanup(cleanupWg.Done)
+				return finishPush(ctx, pushReq)
+			})
 
 			// Setup reactive limiter if needed
 			if tc.reactiveLimiterEnabled {
@@ -8438,6 +8446,7 @@ func TestDistributor_StartFinishRequest(t *testing.T) {
 			}
 
 			// Verify that inflight metrics are the same as before the request.
+			require.Eventually(t, func() bool { cleanupWg.Wait(); return true }, time.Second, time.Millisecond)
 			require.Equal(t, int64(tc.inflightRequestsBeforePush), ds[0].inflightPushRequests.Load())
 			require.Equal(t, tc.inflightRequestsSizeBeforePush, ds[0].inflightPushRequestsBytes.Load())
 		})
@@ -8568,8 +8577,8 @@ func TestDistributor_AcquireReactiveLimiterPermit(t *testing.T) {
 				cancel() // Cancel immediately
 			}
 
-			// Call PreparePushRequest
-			err := ds[0].acquireReactiveLimiterPermit(ctx)
+			// Call acquireReactiveLimiterPermit
+			cleanup, err := ds[0].acquireReactiveLimiterPermit(ctx)
 			rs, ok := ctx.Value(requestStateKey).(*requestState)
 			// Check error
 			if tc.expectedError != nil {
@@ -8582,10 +8591,10 @@ func TestDistributor_AcquireReactiveLimiterPermit(t *testing.T) {
 
 			// Check cleanup function
 			if tc.verifyCleanUpFunc != nil {
-				require.NotNil(t, rs.reactiveLimiterCleanup)
-				tc.verifyCleanUpFunc(rs.reactiveLimiterCleanup, mockLimiter.permit)
+				require.NotNil(t, cleanup)
+				tc.verifyCleanUpFunc(cleanup, mockLimiter.permit)
 			} else {
-				require.Nil(t, rs.reactiveLimiterCleanup)
+				require.Nil(t, cleanup)
 			}
 
 			// Verify rejected requests metric
@@ -8639,10 +8648,11 @@ func TestDistributor_AcquireReactiveLimiterPermitIdempotent(t *testing.T) {
 			// Create context
 			ctx := user.InjectOrgID(context.Background(), "user")
 			if !tc.enabled {
-				err := ds[0].acquireReactiveLimiterPermit(ctx)
+				cleanup, err := ds[0].acquireReactiveLimiterPermit(ctx)
 				require.NoError(t, err)
+				require.Nil(t, cleanup)
 			} else if !tc.addRequestState {
-				err := ds[0].acquireReactiveLimiterPermit(ctx)
+				_, err := ds[0].acquireReactiveLimiterPermit(ctx)
 				require.Error(t, err)
 				require.ErrorIs(t, errMissingRequestState, err)
 			} else {
@@ -8650,12 +8660,13 @@ func TestDistributor_AcquireReactiveLimiterPermitIdempotent(t *testing.T) {
 				checkRequestState(t, ctx, false)
 
 				// First call to acquireReactiveLimiterPermit should actually get a new permit.
-				err := ds[0].acquireReactiveLimiterPermit(ctx)
+				cleanup, err := ds[0].acquireReactiveLimiterPermit(ctx)
 				require.NoError(t, err)
+				require.NotNil(t, cleanup)
 				checkRequestState(t, ctx, true)
 
 				// Second call to acquireReactiveLimiterPermit should fail.
-				err = ds[0].acquireReactiveLimiterPermit(ctx)
+				_, err = ds[0].acquireReactiveLimiterPermit(ctx)
 				require.Error(t, err)
 				require.ErrorIs(t, err, errReactiveLimiterPermitAlreadyAcquired)
 				checkRequestState(t, ctx, true)
@@ -8667,12 +8678,7 @@ func TestDistributor_AcquireReactiveLimiterPermitIdempotent(t *testing.T) {
 func checkRequestState(t *testing.T, ctx context.Context, acquiredPermit bool) {
 	rs, ok := ctx.Value(requestStateKey).(*requestState)
 	require.True(t, ok)
-	if !acquiredPermit {
-		require.False(t, rs.reactiveLimiterPermitAcquired)
-		return
-	}
-	require.True(t, rs.reactiveLimiterPermitAcquired)
-	require.NotNil(t, rs.reactiveLimiterCleanup)
+	require.Equal(t, acquiredPermit, rs.reactiveLimiterPermitAcquired)
 }
 
 // mockReactiveLimiter is a mock implementation of ReactiveLimiter for testing
