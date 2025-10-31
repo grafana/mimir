@@ -5986,6 +5986,17 @@ The gcs_backend block configures the connection to Google Cloud Storage object s
 # CLI flag: -<prefix>.gcs.service-account
 [service_account: <string> | default = ""]
 
+# (advanced) Enable automatic retries for GCS uploads using the RetryAlways
+# policy. Uploads will be retried on transient errors. Note: this does not
+# guarantee idempotency.
+# CLI flag: -<prefix>.gcs.enable-upload-retries
+[enable_upload_retries: <boolean> | default = false]
+
+# (advanced) Maximum number of attempts for GCS operations (0 = unlimited, 1 =
+# no retries). Applies to both regular and upload retry modes.
+# CLI flag: -<prefix>.gcs.max-retries
+[max_retries: <int> | default = 20]
+
 http:
   # (advanced) The time an idle connection remains idle before closing.
   # CLI flag: -<prefix>.gcs.http.idle-conn-timeout

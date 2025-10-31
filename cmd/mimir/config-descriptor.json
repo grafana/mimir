@@ -9052,6 +9052,28 @@
               "fieldType": "string"
             },
             {
+              "kind": "field",
+              "name": "enable_upload_retries",
+              "required": false,
+              "desc": "Enable automatic retries for GCS uploads using the RetryAlways policy. Uploads will be retried on transient errors. Note: this does not guarantee idempotency.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "blocks-storage.gcs.enable-upload-retries",
+              "fieldType": "boolean",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "max_retries",
+              "required": false,
+              "desc": "Maximum number of attempts for GCS operations (0 = unlimited, 1 = no retries). Applies to both regular and upload retry modes.",
+              "fieldValue": null,
+              "fieldDefaultValue": 20,
+              "fieldFlag": "blocks-storage.gcs.max-retries",
+              "fieldType": "int",
+              "fieldCategory": "advanced"
+            },
+            {
               "kind": "block",
               "name": "http",
               "required": false,
@@ -14884,6 +14906,28 @@
               "fieldType": "string"
             },
             {
+              "kind": "field",
+              "name": "enable_upload_retries",
+              "required": false,
+              "desc": "Enable automatic retries for GCS uploads using the RetryAlways policy. Uploads will be retried on transient errors. Note: this does not guarantee idempotency.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "ruler-storage.gcs.enable-upload-retries",
+              "fieldType": "boolean",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "max_retries",
+              "required": false,
+              "desc": "Maximum number of attempts for GCS operations (0 = unlimited, 1 = no retries). Applies to both regular and upload retry modes.",
+              "fieldValue": null,
+              "fieldDefaultValue": 20,
+              "fieldFlag": "ruler-storage.gcs.max-retries",
+              "fieldType": "int",
+              "fieldCategory": "advanced"
+            },
+            {
               "kind": "block",
               "name": "http",
               "required": false,
@@ -17151,6 +17195,28 @@
               "fieldDefaultValue": "",
               "fieldFlag": "alertmanager-storage.gcs.service-account",
               "fieldType": "string"
+            },
+            {
+              "kind": "field",
+              "name": "enable_upload_retries",
+              "required": false,
+              "desc": "Enable automatic retries for GCS uploads using the RetryAlways policy. Uploads will be retried on transient errors. Note: this does not guarantee idempotency.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "alertmanager-storage.gcs.enable-upload-retries",
+              "fieldType": "boolean",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "max_retries",
+              "required": false,
+              "desc": "Maximum number of attempts for GCS operations (0 = unlimited, 1 = no retries). Applies to both regular and upload retry modes.",
+              "fieldValue": null,
+              "fieldDefaultValue": 20,
+              "fieldFlag": "alertmanager-storage.gcs.max-retries",
+              "fieldType": "int",
+              "fieldCategory": "advanced"
             },
             {
               "kind": "block",
@@ -20021,6 +20087,28 @@
                   "fieldDefaultValue": "",
                   "fieldFlag": "common.storage.gcs.service-account",
                   "fieldType": "string"
+                },
+                {
+                  "kind": "field",
+                  "name": "enable_upload_retries",
+                  "required": false,
+                  "desc": "Enable automatic retries for GCS uploads using the RetryAlways policy. Uploads will be retried on transient errors. Note: this does not guarantee idempotency.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": false,
+                  "fieldFlag": "common.storage.gcs.enable-upload-retries",
+                  "fieldType": "boolean",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "max_retries",
+                  "required": false,
+                  "desc": "Maximum number of attempts for GCS operations (0 = unlimited, 1 = no retries). Applies to both regular and upload retry modes.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 20,
+                  "fieldFlag": "common.storage.gcs.max-retries",
+                  "fieldType": "int",
+                  "fieldCategory": "advanced"
                 },
                 {
                   "kind": "block",
