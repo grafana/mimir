@@ -7,6 +7,7 @@ package functions
 
 import (
 	"fmt"
+	"github.com/grafana/mimir/pkg/streamingpromql/cache"
 	"math"
 
 	"github.com/prometheus/prometheus/model/histogram"
@@ -287,6 +288,8 @@ func minOverTime(step *types.RangeVectorStepData, _ []types.ScalarData, _ types.
 var SumOverTime = FunctionOverRangeVectorDefinition{
 	SeriesMetadataFunction:         DropSeriesName,
 	StepFunc:                       sumOverTime,
+	GenerateFunc:                   sumOverTimeGenerate,
+	CombineFunc:                    sumOverTimeCombine,
 	NeedsSeriesNamesForAnnotations: true,
 }
 
@@ -312,6 +315,46 @@ func sumOverTime(step *types.RangeVectorStepData, _ []types.ScalarData, _ types.
 
 	h, err := sumHistograms(hHead, hTail, emitAnnotation)
 	return 0, false, h, err
+}
+
+func sumOverTimeGenerate(step *types.RangeVectorStepData, _ float64, _ []types.ScalarData, queryRange types.QueryTimeRange, emitAnnotation types.EmitAnnotationFunc, _ *limiter.MemoryConsumptionTracker) (cache.IntermediateResult, error) {
+	f, hasFloat, h, err := sumOverTime(step, nil, queryRange, emitAnnotation, nil)
+	if err != nil {
+		return cache.IntermediateResult{}, err
+	}
+	return cache.IntermediateResult{SumOverTime: cache.SumOverTimeIntermediate{SumF: f, HasFloat: hasFloat, SumH: h}}, nil
+}
+
+func sumOverTimeCombine(pieces []cache.IntermediateResult, emitAnnotation types.EmitAnnotationFunc, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (float64, bool, *histogram.FloatHistogram, error) {
+	haveFloats := false
+	sumF, c := 0.0, 0.0
+	var sumH *histogram.FloatHistogram
+
+	for _, ir := range pieces {
+		p := ir.SumOverTime
+		if p.HasFloat {
+			haveFloats = true
+			sumF, c = floats.KahanSumInc(p.SumF, sumF, c)
+		}
+		if p.SumH != nil {
+			if sumH == nil {
+				sumH = p.SumH.Copy()
+			} else {
+				if _, _, _, err := sumH.Add(p.SumH); err != nil {
+					// TODO: handle annotations
+					err = NativeHistogramErrorToAnnotation(err, emitAnnotation)
+					return 0, false, nil, err
+				}
+			}
+		}
+	}
+
+	if haveFloats && sumH != nil {
+		emitAnnotation(annotations.NewMixedFloatsHistogramsWarning)
+		return 0, false, nil, nil
+	}
+
+	return sumF, haveFloats, sumH, nil
 }
 
 func sumFloats(head, tail []promql.FPoint) float64 {
