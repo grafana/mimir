@@ -1405,6 +1405,14 @@ groups:
             increase(cortex_blockbuilder_scheduler_job_gap_detected[1m]) > 0
           labels:
             severity: critical
+        - alert: MimirBlockBuilderPersistentJobFailure
+          annotations:
+            message: GEM {{ $labels.pod }} in {{ $labels.cluster }}/{{ $labels.namespace }} has detected a persistently failing job.
+            runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirblockbuilderpersistentjobfailure
+          expr: |
+            increase(cortex_blockbuilder_scheduler_persistent_job_failures_total[1m]) > 0
+          labels:
+            severity: critical
         - alert: MimirFewerIngestersConsumingThanActivePartitions
           annotations:
             message: GEM ingesters in {{ $labels.cluster }}/{{ $labels.namespace }} have fewer ingesters consuming than active partitions.

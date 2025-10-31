@@ -1934,6 +1934,23 @@ Data recovery / temporary mitigation:
 
 You need to make block-builder consume the skipped data. Refer to the section under "Data recovery" for the `MimirBlockBuilderHasNotShippedBlocks` alert.
 
+#### MimrBlockBuilderPersistentJobFailure
+
+This alert fires when the block-builder-scheduler has detected a single job failing multiple times.
+
+How it **works**:
+
+- Block-builder-scheduler schedules and assigns jobs to workers, but it is the workers who carry out the consumption work.
+- Block-builder-scheduler notices when a worker fails to complete a job, and maintains a failure count on each job.
+- Block-builder-scheduler increments the `cortex_blockbuilder_scheduler_persistent_job_failures_total` metric when a job's failure count exceeds the `block-builder-scheduler.job-failures-allowed` setting.
+
+How to **investigate**:
+
+- Consult the block-builder-scheduler logs and look for logs with level=error. This will show you the failing job ID and worker assignee that most recently failed the job. Example:
+   > ERROR ts=2025-10-30T15:20:55.134630922Z caller=jobs.go:236 level=error msg="job failed in a persistent manner" job_id=ingest/25/11740286308 epoch=104901 assignee=block-builder-7786c54c8-hsr6h fail_count=8
+- Now look at the logs on the assigned worker corresponding with the job ID found previously to understand the nature of the failure.
+- If there is no clear failure, check to see if the worker pod was terminated due to an out-of-memory condition. If this is the case, give the block-builder workers more memory.
+
 ### MimirServerInvalidClusterValidationLabelRequests
 
 This alert fires when Mimir components receive requests with a different cluster validation label than the Mimir components themselves are configured with.
