@@ -31,13 +31,9 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 * [ENHANCEMENT] Add Support to customize gossip ring k8s service annotations. #12718
 
-## 6.0.0-rc.1
+## 6.0.0
 
-* [CHANGE] Upgrade Mimir to [3.0.0-rc.2](https://github.com/grafana/mimir/blob/main/CHANGELOG.md#300-rc2). #13254
-
-## 6.0.0-rc.0
-
-* [CHANGE] Upgrade Mimir to [3.0.0](https://github.com/grafana/mimir/blob/main/CHANGELOG.md#300). #13078
+* [CHANGE] Upgrade Mimir to [3.0.0](https://github.com/grafana/mimir/blob/main/CHANGELOG.md#300). #13276
 * [CHANGE] Remove all remaining GEM (enterprise) references from test configurations, reference files, and values.yaml. #13005 #13006 #13007 #13008 #13009 #13010
 * [CHANGE] Minimum compatible Kubernetes version was updated to v1.29. #12527
 * [CHANGE] Mimir is deployed in the ingest storage architecture by default. #12459 #12495
