@@ -125,6 +125,43 @@ func (m *Map) Put(key uint64, value clock.Minutes, series, limit *atomic.Uint64,
 	}
 }
 
+// Load inserts |key| and |value| into the map without checking if it already exists.
+// No limits are checked, and series count should be incremented by the caller.
+func (m *Map) Load(key uint64, value clock.Minutes) {
+	if m.resident >= m.limit {
+		m.rehash(m.nextSize())
+	}
+
+	if value == 0xff {
+		// We can't store 0xff because it's stored as 0 which has a special meaning.
+		panic("value is too large")
+	}
+
+	pfx, sfx := splitHash(key)
+	i := probeStart(sfx, len(m.index))
+	looped := false
+	for {
+		// Find an empty slot and insert without checking if it already exists.
+		matches := metaMatchEmpty(&m.index[i])
+		if matches != 0 { // insert
+			s := nextMatch(&matches)
+			m.index[i][s] = pfx
+			m.keys[i][s] = key
+			m.data[i][s] = ^value
+			m.resident++
+			return
+		}
+		i++ // linear probing
+		if i >= uint32(len(m.index)) {
+			if looped {
+				panic("infinite loop in Load(), this should not happen")
+			}
+			looped = true
+			i = 0
+		}
+	}
+}
+
 // count returns the number of alive elements in the Map.
 func (m *Map) count() int {
 	return int(m.resident - m.dead)
@@ -173,7 +210,7 @@ func (m *Map) rehash(n uint32) {
 				continue
 			}
 			// We don't need to mask the key here, data suffix of the key is always masked out.
-			m.Put(ks[g][s], ^datas[g][s], nil, nil, false)
+			m.Load(ks[g][s], ^datas[g][s])
 		}
 	}
 }
