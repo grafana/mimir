@@ -1931,6 +1931,12 @@ func (t *versioningTestNode) Children() []planning.Node {
 	return []planning.Node{}
 }
 
+func (t *versioningTestNode) ChildrenIter() func(func(planning.Node) bool) {
+	return func(yield func(planning.Node) bool) {
+		// Nothing to do.
+	}
+}
+
 func (t *versioningTestNode) SetChildren(children []planning.Node) error {
 	if len(children) != 0 {
 		panic("not supported")

@@ -94,6 +94,14 @@ func (s *Subquery) Children() []planning.Node {
 	return []planning.Node{s.Inner}
 }
 
+func (s *Subquery) ChildrenIter() func(func(planning.Node) bool) {
+	return func(yield func(planning.Node) bool) {
+		if !yield(s.Inner) {
+			return
+		}
+	}
+}
+
 func (s *Subquery) SetChildren(children []planning.Node) error {
 	if len(children) != 1 {
 		return fmt.Errorf("node of type Subquery expects 1 child, but got %d", len(children))

@@ -50,6 +50,16 @@ func (f *FunctionCall) Children() []planning.Node {
 	return f.Args
 }
 
+func (f *FunctionCall) ChildrenIter() func(func(planning.Node) bool) {
+	return func(yield func(planning.Node) bool) {
+		for _, arg := range f.Args {
+			if !yield(arg) {
+				return
+			}
+		}
+	}
+}
+
 func (f *FunctionCall) SetChildren(children []planning.Node) error {
 	f.Args = children
 	return nil

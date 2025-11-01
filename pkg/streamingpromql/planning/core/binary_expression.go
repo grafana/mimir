@@ -109,6 +109,18 @@ func (b *BinaryExpression) Children() []planning.Node {
 	return []planning.Node{b.LHS, b.RHS}
 }
 
+func (b *BinaryExpression) ChildrenIter() func(func(planning.Node) bool) {
+	return func(yield func(planning.Node) bool) {
+		if !yield(b.LHS) {
+			return
+		}
+
+		if !yield(b.RHS) {
+			return
+		}
+	}
+}
+
 func (b *BinaryExpression) SetChildren(children []planning.Node) error {
 	if len(children) != 2 {
 		return fmt.Errorf("node of type BinaryExpression expects 2 children, but got %d", len(children))

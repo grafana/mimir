@@ -68,7 +68,13 @@ type Node interface {
 	// eg. Children()[0] = nil has no effect
 	//
 	// eg. Children()[0].DoStuff = true modifies the first child of this node
+	// Deprecated: use ChildrenIter instead
 	Children() []Node
+
+	// ChildrenIter returns an iterator over all children of this node.
+	//
+	// Children are returned in the same order as they are provided to SetChildren.
+	ChildrenIter() func(func(Node) bool)
 
 	// SetChildren replaces the children of this node with the provided nodes.
 	//

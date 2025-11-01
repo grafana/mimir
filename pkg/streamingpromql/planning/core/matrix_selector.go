@@ -41,6 +41,12 @@ func (m *MatrixSelector) Children() []planning.Node {
 	return nil
 }
 
+func (m *MatrixSelector) ChildrenIter() func(func(planning.Node) bool) {
+	return func(yield func(planning.Node) bool) {
+		// Nothing to do.
+	}
+}
+
 func (m *MatrixSelector) SetChildren(children []planning.Node) error {
 	if len(children) != 0 {
 		return fmt.Errorf("node of type MatrixSelector expects 0 children, but got %d", len(children))

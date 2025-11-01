@@ -32,6 +32,14 @@ func (d *DeduplicateAndMerge) Children() []planning.Node {
 	return []planning.Node{d.Inner}
 }
 
+func (d *DeduplicateAndMerge) ChildrenIter() func(func(planning.Node) bool) {
+	return func(yield func(planning.Node) bool) {
+		if !yield(d.Inner) {
+			return
+		}
+	}
+}
+
 func (d *DeduplicateAndMerge) SetChildren(children []planning.Node) error {
 	if len(children) != 1 {
 		return fmt.Errorf("node of type DeduplicateAndMerge supports 1 child, but got %d", len(children))

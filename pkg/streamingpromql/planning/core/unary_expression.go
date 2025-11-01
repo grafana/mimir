@@ -42,6 +42,14 @@ func (u *UnaryExpression) Children() []planning.Node {
 	return []planning.Node{u.Inner}
 }
 
+func (u *UnaryExpression) ChildrenIter() func(func(planning.Node) bool) {
+	return func(yield func(planning.Node) bool) {
+		if !yield(u.Inner) {
+			return
+		}
+	}
+}
+
 func (u *UnaryExpression) SetChildren(children []planning.Node) error {
 	if len(children) != 1 {
 		return fmt.Errorf("node of type UnaryExpression expects 1 child, but got %d", len(children))

@@ -45,6 +45,14 @@ func (s *StepInvariantExpression) Children() []planning.Node {
 	return []planning.Node{s.Inner}
 }
 
+func (s *StepInvariantExpression) ChildrenIter() func(func(planning.Node) bool) {
+	return func(yield func(planning.Node) bool) {
+		if !yield(s.Inner) {
+			return
+		}
+	}
+}
+
 func (s *StepInvariantExpression) MinimumRequiredPlanVersion() planning.QueryPlanVersion {
 	return planning.QueryPlanV1
 }
@@ -63,7 +71,6 @@ func (s *StepInvariantExpression) EquivalentToIgnoringHintsAndChildren(other pla
 	_, ok := other.(*StepInvariantExpression)
 	return ok
 }
-
 
 func (s *StepInvariantExpression) MergeHints(_ planning.Node) error {
 	// Nothing to do.

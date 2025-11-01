@@ -32,6 +32,14 @@ func (n *DropName) Children() []planning.Node {
 	return []planning.Node{n.Inner}
 }
 
+func (n *DropName) ChildrenIter() func(func(planning.Node) bool) {
+	return func(yield func(planning.Node) bool) {
+		if !yield(n.Inner) {
+			return
+		}
+	}
+}
+
 func (n *DropName) SetChildren(children []planning.Node) error {
 	if len(children) != 1 {
 		return fmt.Errorf("node of type DropName supports 1 child, but got %d", len(children))

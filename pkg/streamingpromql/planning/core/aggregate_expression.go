@@ -69,6 +69,20 @@ func (a *AggregateExpression) Children() []planning.Node {
 	return []planning.Node{a.Inner, a.Param}
 }
 
+func (a *AggregateExpression) ChildrenIter() func(func(planning.Node) bool) {
+	return func(yield func(planning.Node) bool) {
+		if !yield(a.Inner) {
+			return
+		}
+
+		if a.Param != nil {
+			if !yield(a.Param) {
+				return
+			}
+		}
+	}
+}
+
 func (a *AggregateExpression) SetChildren(children []planning.Node) error {
 	switch len(children) {
 	case 1:

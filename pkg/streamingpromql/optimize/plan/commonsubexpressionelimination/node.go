@@ -37,6 +37,14 @@ func (d *Duplicate) Children() []planning.Node {
 	return []planning.Node{d.Inner}
 }
 
+func (d *Duplicate) ChildrenIter() func(func(planning.Node) bool) {
+	return func(yield func(planning.Node) bool) {
+		if !yield(d.Inner) {
+			return
+		}
+	}
+}
+
 func (d *Duplicate) SetChildren(children []planning.Node) error {
 	if len(children) != 1 {
 		return fmt.Errorf("node of type Duplicate supports 1 child, but got %d", len(children))
