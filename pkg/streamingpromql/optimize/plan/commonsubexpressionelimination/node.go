@@ -33,8 +33,16 @@ func (d *Duplicate) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_DUPLICATE
 }
 
-func (d *Duplicate) Children() []planning.Node {
-	return []planning.Node{d.Inner}
+func (d *Duplicate) Child(idx int) planning.Node {
+	if idx != 0 {
+		panic(fmt.Sprintf("node of type Duplicate supports 1 child, but attempted to get child at index %d", idx))
+	}
+
+	return d.Inner
+}
+
+func (d *Duplicate) ChildCount() int {
+	return 1
 }
 
 func (d *Duplicate) SetChildren(children []planning.Node) error {
@@ -47,10 +55,24 @@ func (d *Duplicate) SetChildren(children []planning.Node) error {
 	return nil
 }
 
-func (d *Duplicate) EquivalentTo(other planning.Node) bool {
-	otherDuplicate, ok := other.(*Duplicate)
+func (d *Duplicate) ReplaceChild(idx int, node planning.Node) error {
+	if idx != 0 {
+		return fmt.Errorf("node of type Duplicate supports 1 child, but attempted to replace child at index %d", idx)
+	}
 
-	return ok && d.Inner.EquivalentTo(otherDuplicate.Inner)
+	d.Inner = node
+	return nil
+}
+
+func (d *Duplicate) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
+	_, ok := other.(*Duplicate)
+
+	return ok
+}
+
+func (d *Duplicate) MergeHints(_ planning.Node) error {
+	// Nothing to do.
+	return nil
 }
 
 func (d *Duplicate) Describe() string {

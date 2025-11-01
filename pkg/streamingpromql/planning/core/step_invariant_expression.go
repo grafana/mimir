@@ -41,8 +41,16 @@ func (s *StepInvariantExpression) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_STEP_INVARIANT_EXPRESSION
 }
 
-func (s *StepInvariantExpression) Children() []planning.Node {
-	return []planning.Node{s.Inner}
+func (s *StepInvariantExpression) Child(idx int) planning.Node {
+	if idx != 0 {
+		panic(fmt.Sprintf("node of type StepInvariantExpression supports 1 child, but attempted to get child at index %d", idx))
+	}
+
+	return s.Inner
+}
+
+func (s *StepInvariantExpression) ChildCount() int {
+	return 1
 }
 
 func (s *StepInvariantExpression) MinimumRequiredPlanVersion() planning.QueryPlanVersion {
@@ -59,9 +67,23 @@ func (s *StepInvariantExpression) SetChildren(children []planning.Node) error {
 	return nil
 }
 
-func (s *StepInvariantExpression) EquivalentTo(other planning.Node) bool {
-	otherExpr, ok := other.(*StepInvariantExpression)
-	return ok && s.Inner.EquivalentTo(otherExpr.Inner)
+func (s *StepInvariantExpression) ReplaceChild(idx int, node planning.Node) error {
+	if idx != 0 {
+		return fmt.Errorf("node of type StepInvariantExpression supports 1 child, but attempted to replace child at index %d", idx)
+	}
+
+	s.Inner = node
+	return nil
+}
+
+func (s *StepInvariantExpression) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
+	_, ok := other.(*StepInvariantExpression)
+	return ok
+}
+
+func (s *StepInvariantExpression) MergeHints(_ planning.Node) error {
+	// Nothing to do.
+	return nil
 }
 
 func (s *StepInvariantExpression) ChildrenLabels() []string {
