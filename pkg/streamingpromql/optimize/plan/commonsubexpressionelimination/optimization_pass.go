@@ -283,7 +283,7 @@ func (e *OptimizationPass) introduceDuplicateNode(group []path, duplicatePathLen
 
 	for _, path := range group {
 		parentOfDuplicate, _ := path.NodeAtOffsetFromLeaf(duplicatePathLength)
-		err := replaceChild(parentOfDuplicate, path.ChildIndexAtOffsetFromLeaf(duplicatedExpressionOffset), duplicate)
+		err := parentOfDuplicate.ReplaceChild(path.ChildIndexAtOffsetFromLeaf(duplicatedExpressionOffset), duplicate)
 		if err != nil {
 			return false, err
 		}
@@ -333,12 +333,6 @@ func (e *OptimizationPass) findCommonSubexpressionLength(group []path, offset in
 	}
 
 	return length
-}
-
-func replaceChild(parent planning.Node, childIndex int, newChild planning.Node) error {
-	children := parent.Children()
-	children[childIndex] = newChild
-	return parent.SetChildren(children)
 }
 
 func mergeHints(retainedNode planning.Node, eliminatedNode planning.Node) error {
