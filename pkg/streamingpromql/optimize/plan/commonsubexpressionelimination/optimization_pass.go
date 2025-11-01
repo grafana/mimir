@@ -87,15 +87,18 @@ func (e *OptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan, 
 // accumulatePaths returns a list of paths from root that terminate in VectorSelector or MatrixSelector nodes.
 func (e *OptimizationPass) accumulatePaths(plan *planning.QueryPlan) []*path {
 	return e.accumulatePath(&path{
-		nodes:        []planning.Node{plan.Root},
-		childIndices: []int{0},
-		timeRanges:   []types.QueryTimeRange{plan.TimeRange},
+		elements: []pathElement{
+			{
+				node:       plan.Root,
+				childIndex: 0,
+				timeRange:  plan.TimeRange,
+			},
+		},
 	})
 }
 
 func (e *OptimizationPass) accumulatePath(soFar *path) []*path {
-	nodeIdx := len(soFar.nodes) - 1
-	node := soFar.nodes[nodeIdx]
+	node, nodeTimeRange := soFar.NodeAtOffsetFromLeaf(0)
 
 	_, isVS := node.(*core.VectorSelector)
 	_, isMS := node.(*core.MatrixSelector)
@@ -110,7 +113,7 @@ func (e *OptimizationPass) accumulatePath(soFar *path) []*path {
 		return nil
 	}
 
-	childTimeRange := node.ChildrenTimeRange(soFar.timeRanges[nodeIdx])
+	childTimeRange := node.ChildrenTimeRange(nodeTimeRange)
 
 	if len(children) == 1 {
 		// If there's only one child, we can reuse soFar.
@@ -304,11 +307,11 @@ func (e *OptimizationPass) findCommonSubexpressionLength(group []*path, offset i
 	length := offset
 	firstPath := group[0]
 
-	for length < len(firstPath.nodes)-1 { // -1 to exclude root node (otherwise the longest common subexpression for "a + a" would be 2, not 1)
+	for length < len(firstPath.elements)-1 { // -1 to exclude root node (otherwise the longest common subexpression for "a + a" would be 2, not 1)
 		firstNode, firstNodeTimeRange := firstPath.NodeAtOffsetFromLeaf(length)
 
 		for _, path := range group[1:] {
-			if length >= len(path.nodes) {
+			if length >= len(path.elements) {
 				// We've reached the end of this path, so the longest common subexpression is the length of this path.
 				return length
 			}
@@ -373,32 +376,35 @@ func isDuplicateNode(node planning.Node) bool {
 }
 
 type path struct {
-	nodes        []planning.Node
-	childIndices []int                  // childIndices[x] contains the position of node x in its parent
-	timeRanges   []types.QueryTimeRange // timeRanges[x] contains the time range that node x will be evaluated over
+	elements []pathElement
+}
+
+type pathElement struct {
+	node       planning.Node
+	childIndex int // The position of node in its parent. 0 for root nodes.
+	timeRange  types.QueryTimeRange
 }
 
 func (p *path) Append(n planning.Node, childIndex int, timeRange types.QueryTimeRange) {
-	p.nodes = append(p.nodes, n)
-	p.childIndices = append(p.childIndices, childIndex)
-	p.timeRanges = append(p.timeRanges, timeRange)
+	p.elements = append(p.elements, pathElement{
+		node:       n,
+		childIndex: childIndex,
+		timeRange:  timeRange,
+	})
 }
 
 func (p *path) NodeAtOffsetFromLeaf(offset int) (planning.Node, types.QueryTimeRange) {
-	idx := len(p.nodes) - offset - 1
-	return p.nodes[idx], p.timeRanges[idx]
+	idx := len(p.elements) - offset - 1
+	e := p.elements[idx]
+	return e.node, e.timeRange
 }
 
 func (p *path) ChildIndexAtOffsetFromLeaf(offset int) int {
-	return p.childIndices[len(p.nodes)-offset-1]
+	return p.elements[len(p.elements)-offset-1].childIndex
 }
 
 func (p *path) Clone() *path {
-	return &path{
-		nodes:        slices.Clone(p.nodes),
-		childIndices: slices.Clone(p.childIndices),
-		timeRanges:   slices.Clone(p.timeRanges),
-	}
+	return &path{elements: slices.Clone(p.elements)}
 }
 
 // String returns a string representation of the path, useful for debugging.
@@ -406,13 +412,13 @@ func (p *path) String() string {
 	b := &strings.Builder{}
 	b.WriteRune('[')
 
-	for i, n := range p.nodes {
+	for i, e := range p.elements {
 		if i != 0 {
 			b.WriteString(" -> ")
 		}
 
-		b.WriteString(planning.NodeTypeName(n))
-		desc := n.Describe()
+		b.WriteString(planning.NodeTypeName(e.node))
+		desc := e.node.Describe()
 
 		if desc != "" {
 			b.WriteString(": ")
