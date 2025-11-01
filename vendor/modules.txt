@@ -167,7 +167,7 @@ github.com/armon/go-metrics
 # github.com/asaskevich/govalidator v0.0.0-20230301143203-a9d515a09cc2
 ## explicit; go 1.13
 github.com/asaskevich/govalidator
-# github.com/at-wat/mqtt-go v0.19.4
+# github.com/at-wat/mqtt-go v0.19.6
 ## explicit; go 1.18
 github.com/at-wat/mqtt-go
 # github.com/aws/aws-sdk-go v1.55.7
@@ -689,7 +689,7 @@ github.com/gosimple/slug
 # github.com/grafana-tools/sdk v0.0.0-20220919052116-6562121319fc
 ## explicit; go 1.13
 github.com/grafana-tools/sdk
-# github.com/grafana/alerting v0.0.0-20251002141545-d513d62d3210
+# github.com/grafana/alerting v0.0.0-20251030155542-64c16bb928db
 ## explicit; go 1.24.0
 github.com/grafana/alerting/cluster
 github.com/grafana/alerting/definition

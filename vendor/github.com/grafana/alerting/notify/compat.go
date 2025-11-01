@@ -2,9 +2,13 @@ package notify
 
 import (
 	"encoding/json"
+	"fmt"
+	"reflect"
+	"slices"
 
 	"github.com/grafana/alerting/definition"
 	"github.com/grafana/alerting/models"
+	"github.com/grafana/alerting/receivers/schema"
 	"github.com/grafana/alerting/templates"
 )
 
@@ -64,4 +68,59 @@ func PostableAPITemplatesToTemplateDefinitions(ts []definition.PostableApiTempla
 		defs = append(defs, PostableAPITemplateToTemplateDefinition(t))
 	}
 	return defs
+}
+
+// ConfigReceiverToMimirIntegrations converts a ConfigReceiver to a list of MimirIntegrationConfig
+func ConfigReceiverToMimirIntegrations(receiver ConfigReceiver) ([]MimirIntegrationConfig, error) {
+	result := make([]MimirIntegrationConfig, 0)
+	receiverVal := reflect.ValueOf(&receiver).Elem()
+	receiverType := receiverVal.Type()
+	for i := 0; i < receiverType.NumField(); i++ {
+		integrationField := receiverType.Field(i)
+		if integrationField.Type.Kind() != reflect.Slice {
+			continue
+		}
+		sliceType := integrationField.Type
+		elemType := sliceType.Elem()
+		sliceVal := receiverVal.Field(i)
+		if sliceVal.Len() == 0 {
+			continue
+		}
+		iType, err := IntegrationTypeFromMimirTypeReflect(elemType)
+		if err != nil {
+			return nil, err
+		}
+
+		sch, ok := GetSchemaForIntegration(iType)
+		if !ok {
+			return nil, fmt.Errorf("cannot find schema by integration type %s", iType)
+		}
+		var version schema.IntegrationSchemaVersion
+		if sch.Type == iType {
+			version, ok = sch.GetVersion(schema.V0mimir1)
+			if !ok {
+				return nil, fmt.Errorf(" integration type %s does not have version %s", iType, schema.V0mimir1)
+			}
+		} else {
+			version, ok = sch.GetVersionByTypeAlias(iType)
+			if !ok {
+				return nil, fmt.Errorf("cannot find schema version by integration type alias %s", iType)
+			}
+		}
+		result = slices.Grow(result, sliceVal.Len())
+		for j := 0; j < sliceVal.Len(); j++ {
+			var elem any
+			item := sliceVal.Index(j)
+			if elemType.Kind() == reflect.Ptr {
+				elem = item.Elem().Interface()
+			} else {
+				elem = item.Interface()
+			}
+			result = append(result, MimirIntegrationConfig{
+				Schema: version,
+				Config: elem,
+			})
+		}
+	}
+	return result, nil
 }
