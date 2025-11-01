@@ -720,6 +720,25 @@ func TestOptimizationPass_HintsHandling(t *testing.T) {
 									- param 1: ref#1 Duplicate ...
 			`,
 		},
+		"duplicate vector selector with multiple levels of duplication": {
+			expr: `histogram_sum(foo) + histogram_sum(foo) + histogram_count(foo) + histogram_count(foo)`,
+			expectedPlan: `
+				- BinaryExpression: LHS + RHS
+					- LHS: BinaryExpression: LHS + RHS
+						- LHS: BinaryExpression: LHS + RHS
+							- LHS: ref#1 Duplicate
+								- DeduplicateAndMerge
+									- FunctionCall: histogram_sum(...)
+										- ref#2 Duplicate
+											- VectorSelector: {__name__="foo"}, skip histogram buckets
+							- RHS: ref#1 Duplicate ...
+						- RHS: ref#3 Duplicate
+							- DeduplicateAndMerge
+								- FunctionCall: histogram_count(...)
+									- ref#2 Duplicate ...
+					- RHS: ref#3 Duplicate ...
+			`,
+		},
 		"duplicate vector selector, both eligible for skipping histogram decoding": {
 			expr: `histogram_sum(some_metric) * histogram_count(some_metric)`,
 			expectedPlan: `
