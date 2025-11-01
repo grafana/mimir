@@ -593,6 +593,44 @@ func TestOptimizationPass(t *testing.T) {
 			expectedSelectorsEliminated: 1,
 			expectedSelectorsInspected:  2,
 		},
+		"equivalent expressions that differ in the number of children but are otherwise duplicated (first side with fewer arguments)": {
+			// This test ensures that we don't incorrectly deduplicate the __sharded_concat__ calls.
+			expr: `__sharded_concat__(foo, bar) + __sharded_concat__(foo, bar, baz)`,
+			expectedPlan: `
+				- BinaryExpression: LHS + RHS
+					- LHS: FunctionCall: __sharded_concat__(...)
+						- param 0: ref#1 Duplicate
+							- VectorSelector: {__name__="foo"}
+						- param 1: ref#2 Duplicate
+							- VectorSelector: {__name__="bar"}
+					- RHS: FunctionCall: __sharded_concat__(...)
+						- param 0: ref#1 Duplicate ...
+						- param 1: ref#2 Duplicate ...
+						- param 2: VectorSelector: {__name__="baz"}
+			`,
+			expectedDuplicateNodes:      2,
+			expectedSelectorsEliminated: 2,
+			expectedSelectorsInspected:  5,
+		},
+		"equivalent expressions that differ in the number of children but are otherwise duplicated (first side with more arguments)": {
+			// This test ensures that we don't incorrectly deduplicate the __sharded_concat__ calls.
+			expr: `__sharded_concat__(foo, bar, baz) + __sharded_concat__(foo, bar)`,
+			expectedPlan: `
+				- BinaryExpression: LHS + RHS
+					- LHS: FunctionCall: __sharded_concat__(...)
+						- param 0: ref#1 Duplicate
+							- VectorSelector: {__name__="foo"}
+						- param 1: ref#2 Duplicate
+							- VectorSelector: {__name__="bar"}
+						- param 2: VectorSelector: {__name__="baz"}
+					- RHS: FunctionCall: __sharded_concat__(...)
+						- param 0: ref#1 Duplicate ...
+						- param 1: ref#2 Duplicate ...
+			`,
+			expectedDuplicateNodes:      2,
+			expectedSelectorsEliminated: 2,
+			expectedSelectorsInspected:  5,
+		},
 	}
 
 	ctx := context.Background()
