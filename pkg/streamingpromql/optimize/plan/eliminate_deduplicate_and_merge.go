@@ -124,8 +124,8 @@ func (e *EliminateDeduplicateAndMergeOptimizationPass) collect(node planning.Nod
 		}
 	}
 
-	for i, child := range node.Children() {
-		e.collect(child, node, i, nodes)
+	for i := range node.ChildCount() {
+		e.collect(node.Child(i), node, i, nodes)
 	}
 }
 

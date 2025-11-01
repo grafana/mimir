@@ -290,13 +290,14 @@ func newQueryPlanEncoder(includeDescriptions bool, includeDetails bool) *queryPl
 
 func (e *queryPlanEncoder) encodeNode(n Node) (int64, error) {
 	encoded := &EncodedNode{}
-	children := n.Children()
+	childCount := n.ChildCount()
 
-	if len(children) > 0 {
-		childIndices := make([]int64, 0, len(children))
+	if childCount > 0 {
+		childIndices := make([]int64, 0, childCount)
 
 		// Check all children have been encoded already.
-		for _, child := range children {
+		for childIdx := range childCount {
+			child := n.Child(childIdx)
 			idx, haveWritten := e.nodesToIndex[child]
 
 			if !haveWritten {
@@ -520,9 +521,8 @@ func (p *planPrinter) printNode(n Node, indent int, label string) {
 	}
 
 	p.builder.WriteRune('\n')
-	childLabels := n.ChildrenLabels()
 
-	for childIdx, child := range n.Children() {
-		p.printNode(child, indent+1, childLabels[childIdx])
+	for childIdx, label := range n.ChildrenLabels() {
+		p.printNode(n.Child(childIdx), indent+1, label)
 	}
 }

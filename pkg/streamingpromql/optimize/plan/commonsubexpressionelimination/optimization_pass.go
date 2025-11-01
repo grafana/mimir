@@ -105,25 +105,25 @@ func (e *OptimizationPass) accumulatePath(soFar path) []path {
 		return []path{soFar}
 	}
 
-	children := node.Children()
-	if len(children) == 0 {
+	childCount := node.ChildCount()
+	if childCount == 0 {
 		// No children and not a vector selector or matrix selector, we're not interested in this path.
 		return nil
 	}
 
 	childTimeRange := node.ChildrenTimeRange(nodeTimeRange)
 
-	if len(children) == 1 {
+	if childCount == 1 {
 		// If there's only one child, we can reuse soFar.
-		soFar = soFar.Append(children[0], 0, childTimeRange)
+		soFar = soFar.Append(node.Child(0), 0, childTimeRange)
 		return e.accumulatePath(soFar)
 	}
 
-	paths := make([]path, 0, len(children))
+	paths := make([]path, 0, childCount)
 
-	for childIdx, child := range children {
+	for childIdx := range childCount {
 		path := soFar.Clone()
-		path = path.Append(child, childIdx, childTimeRange)
+		path = path.Append(node.Child(childIdx), childIdx, childTimeRange)
 		childPaths := e.accumulatePath(path)
 		paths = append(paths, childPaths...)
 	}
@@ -271,7 +271,7 @@ func (e *OptimizationPass) introduceDuplicateNode(group []path, duplicatePathLen
 	// when searching from the "b" selectors.
 	firstPath := group[0]
 	parentOfDuplicate, _ := firstPath.NodeAtOffsetFromLeaf(duplicatePathLength)
-	expectedDuplicatedExpression := parentOfDuplicate.Children()[firstPath.ChildIndexAtOffsetFromLeaf(duplicatePathLength-1)] // Note that we can't take this from the path, as the path will not reflect any Duplicate nodes introduced previously.
+	expectedDuplicatedExpression := parentOfDuplicate.Child(firstPath.ChildIndexAtOffsetFromLeaf(duplicatePathLength - 1)) // Note that we can't take this from the path, as the path will not reflect any Duplicate nodes introduced previously.
 	if isDuplicateNode(expectedDuplicatedExpression) {
 		return true, nil
 	}
@@ -346,15 +346,15 @@ func mergeHints(retainedNode planning.Node, eliminatedNode planning.Node) error 
 		return err
 	}
 
-	retainedChildren := retainedNode.Children()
-	eliminatedChildren := eliminatedNode.Children()
+	retainedNodeChildCount := retainedNode.ChildCount()
+	eliminatedNodeChildCount := eliminatedNode.ChildCount()
 
-	if len(retainedChildren) != len(eliminatedChildren) {
-		return fmt.Errorf("retained and eliminated nodes have different number of children: %v vs %v", len(retainedChildren), len(eliminatedChildren))
+	if retainedNodeChildCount != eliminatedNodeChildCount {
+		return fmt.Errorf("retained and eliminated nodes have different number of children: %d vs %d", retainedNodeChildCount, eliminatedNodeChildCount)
 	}
 
-	for idx := range retainedChildren {
-		if err := mergeHints(retainedChildren[idx], eliminatedChildren[idx]); err != nil {
+	for idx := range retainedNodeChildCount {
+		if err := mergeHints(retainedNode.Child(idx), eliminatedNode.Child(idx)); err != nil {
 			return err
 		}
 	}
@@ -426,15 +426,15 @@ func equivalentNodes(a, b planning.Node) bool {
 		return false
 	}
 
-	aChildren := a.Children()
-	bChildren := b.Children()
+	aChildCount := a.ChildCount()
+	bChildCount := b.ChildCount()
 
-	if len(aChildren) != len(bChildren) {
+	if aChildCount != bChildCount {
 		return false
 	}
 
-	for idx := range aChildren {
-		if !equivalentNodes(aChildren[idx], bChildren[idx]) {
+	for idx := range aChildCount {
+		if !equivalentNodes(a.Child(idx), b.Child(idx)) {
 			return false
 		}
 	}
