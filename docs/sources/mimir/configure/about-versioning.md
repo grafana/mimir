@@ -61,8 +61,6 @@ The following features are currently experimental:
 - Alertmanager
   - Enable a set of experimental API endpoints to help support the migration of the Grafana Alertmanager to the Mimir Alertmanager.
     - `-alertmanager.grafana-alertmanager-compatibility-enabled`
-  - Enable support for any UTF-8 character as part of Alertmanager configuration/API matchers and labels.
-    - `-alertmanager.utf8-strict-mode-enabled`
 - Compactor
   - Limit blocks processed in each compaction cycle. Blocks uploaded prior to the maximum lookback aren't processed.
     - `-compactor.max-lookback`
