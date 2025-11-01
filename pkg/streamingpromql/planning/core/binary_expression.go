@@ -121,6 +121,10 @@ func (b *BinaryExpression) ChildrenIter() func(func(planning.Node) bool) {
 	}
 }
 
+func (b *BinaryExpression) ChildCount() int {
+	return 2
+}
+
 func (b *BinaryExpression) SetChildren(children []planning.Node) error {
 	if len(children) != 2 {
 		return fmt.Errorf("node of type BinaryExpression expects 2 children, but got %d", len(children))
@@ -129,6 +133,19 @@ func (b *BinaryExpression) SetChildren(children []planning.Node) error {
 	b.LHS, b.RHS = children[0], children[1]
 
 	return nil
+}
+
+func (b *BinaryExpression) ReplaceChild(idx int, node planning.Node) error {
+	switch idx {
+	case 0:
+		b.LHS = node
+		return nil
+	case 1:
+		b.RHS = node
+		return nil
+	default:
+		return fmt.Errorf("node of type BinaryExpression expects 1 or 2 children, but attempted to replace child at index %d", idx)
+	}
 }
 
 func (b *BinaryExpression) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {

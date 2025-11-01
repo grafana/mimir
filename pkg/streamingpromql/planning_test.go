@@ -1937,11 +1937,19 @@ func (t *versioningTestNode) ChildrenIter() func(func(planning.Node) bool) {
 	}
 }
 
+func (t *versioningTestNode) ChildCount() int {
+	return 0
+}
+
 func (t *versioningTestNode) SetChildren(children []planning.Node) error {
 	if len(children) != 0 {
 		panic("not supported")
 	}
 	return nil
+}
+
+func (t *versioningTestNode) ReplaceChild(_ int, _ planning.Node) error {
+	panic("not supported")
 }
 
 func (t *versioningTestNode) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {

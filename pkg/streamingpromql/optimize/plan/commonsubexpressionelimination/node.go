@@ -45,6 +45,10 @@ func (d *Duplicate) ChildrenIter() func(func(planning.Node) bool) {
 	}
 }
 
+func (d *Duplicate) ChildCount() int {
+	return 1
+}
+
 func (d *Duplicate) SetChildren(children []planning.Node) error {
 	if len(children) != 1 {
 		return fmt.Errorf("node of type Duplicate supports 1 child, but got %d", len(children))
@@ -52,6 +56,15 @@ func (d *Duplicate) SetChildren(children []planning.Node) error {
 
 	d.Inner = children[0]
 
+	return nil
+}
+
+func (d *Duplicate) ReplaceChild(idx int, node planning.Node) error {
+	if idx != 0 {
+		return fmt.Errorf("node of type Duplicate supports 1 child, but attempted to replace child at index %d", idx)
+	}
+
+	d.Inner = node
 	return nil
 }
 

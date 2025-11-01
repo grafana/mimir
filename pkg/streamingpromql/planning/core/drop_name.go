@@ -40,6 +40,10 @@ func (n *DropName) ChildrenIter() func(func(planning.Node) bool) {
 	}
 }
 
+func (n *DropName) ChildCount() int {
+	return 1
+}
+
 func (n *DropName) SetChildren(children []planning.Node) error {
 	if len(children) != 1 {
 		return fmt.Errorf("node of type DropName supports 1 child, but got %d", len(children))
@@ -47,6 +51,15 @@ func (n *DropName) SetChildren(children []planning.Node) error {
 
 	n.Inner = children[0]
 
+	return nil
+}
+
+func (n *DropName) ReplaceChild(idx int, node planning.Node) error {
+	if idx != 0 {
+		return fmt.Errorf("node of type DropName supports 1 child, but attempted to replace child at index %d", idx)
+	}
+
+	n.Inner = node
 	return nil
 }
 

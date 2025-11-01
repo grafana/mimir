@@ -53,6 +53,10 @@ func (s *StepInvariantExpression) ChildrenIter() func(func(planning.Node) bool) 
 	}
 }
 
+func (s *StepInvariantExpression) ChildCount() int {
+	return 1
+}
+
 func (s *StepInvariantExpression) MinimumRequiredPlanVersion() planning.QueryPlanVersion {
 	return planning.QueryPlanV1
 }
@@ -64,6 +68,15 @@ func (s *StepInvariantExpression) SetChildren(children []planning.Node) error {
 
 	s.Inner = children[0]
 
+	return nil
+}
+
+func (s *StepInvariantExpression) ReplaceChild(idx int, node planning.Node) error {
+	if idx != 0 {
+		return fmt.Errorf("node of type StepInvariantExpression supports 1 child, but attempted to replace child at index %d", idx)
+	}
+
+	s.Inner = node
 	return nil
 }
 

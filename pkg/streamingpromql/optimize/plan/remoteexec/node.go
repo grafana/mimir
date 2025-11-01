@@ -46,6 +46,10 @@ func (r *RemoteExecution) ChildrenIter() func(func(planning.Node) bool) {
 	}
 }
 
+func (r *RemoteExecution) ChildCount() int {
+	return 1
+}
+
 func (r *RemoteExecution) SetChildren(children []planning.Node) error {
 	if len(children) != 1 {
 		return fmt.Errorf("node of type RemoteExecution supports 1 child, but got %d", len(children))
@@ -53,6 +57,15 @@ func (r *RemoteExecution) SetChildren(children []planning.Node) error {
 
 	r.Inner = children[0]
 
+	return nil
+}
+
+func (r *RemoteExecution) ReplaceChild(idx int, node planning.Node) error {
+	if idx != 0 {
+		return fmt.Errorf("node of type RemoteExecution supports 1 child, but attempted to replace child at index %d", idx)
+	}
+
+	r.Inner = node
 	return nil
 }
 

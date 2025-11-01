@@ -60,8 +60,21 @@ func (f *FunctionCall) ChildrenIter() func(func(planning.Node) bool) {
 	}
 }
 
+func (f *FunctionCall) ChildCount() int {
+	return len(f.Args)
+}
+
 func (f *FunctionCall) SetChildren(children []planning.Node) error {
 	f.Args = children
+	return nil
+}
+
+func (f *FunctionCall) ReplaceChild(idx int, node planning.Node) error {
+	if idx >= len(f.Args) {
+		return fmt.Errorf("this FunctionCall node has %d elements, but attempted to replace child at index %d", len(f.Args), idx)
+	}
+
+	f.Args[idx] = node
 	return nil
 }
 

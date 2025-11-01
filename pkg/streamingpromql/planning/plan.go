@@ -73,8 +73,11 @@ type Node interface {
 
 	// ChildrenIter returns an iterator over all children of this node.
 	//
-	// Children are returned in the same order as they are provided to SetChildren.
+	// Children are returned in the same order as they are provided to SetChildren and ReplaceChild.
 	ChildrenIter() func(func(Node) bool)
+
+	// ChildCount returns the number of children of this node.
+	ChildCount() int
 
 	// SetChildren replaces the children of this node with the provided nodes.
 	//
@@ -82,6 +85,13 @@ type Node interface {
 	//
 	// Calling SetChildren(Children()) is a no-op.
 	SetChildren(children []Node) error
+
+	// ReplaceChild replaces the child at index idx with the provided node.
+	//
+	// idx is zero-based and counts in the same order as ChildrenIter and SetChildren.
+	//
+	// ReplaceChild will return an error if idx is out of range.
+	ReplaceChild(idx int, child Node) error
 
 	// EquivalentToIgnoringHintsAndChildren returns true if other represents the same operation as this node.
 	//

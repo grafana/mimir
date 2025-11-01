@@ -50,6 +50,10 @@ func (u *UnaryExpression) ChildrenIter() func(func(planning.Node) bool) {
 	}
 }
 
+func (u *UnaryExpression) ChildCount() int {
+	return 1
+}
+
 func (u *UnaryExpression) SetChildren(children []planning.Node) error {
 	if len(children) != 1 {
 		return fmt.Errorf("node of type UnaryExpression expects 1 child, but got %d", len(children))
@@ -57,6 +61,15 @@ func (u *UnaryExpression) SetChildren(children []planning.Node) error {
 
 	u.Inner = children[0]
 
+	return nil
+}
+
+func (u *UnaryExpression) ReplaceChild(idx int, node planning.Node) error {
+	if idx != 0 {
+		return fmt.Errorf("node of type UnaryExpression supports 1 child, but attempted to replace child at index %d", idx)
+	}
+
+	u.Inner = node
 	return nil
 }
 

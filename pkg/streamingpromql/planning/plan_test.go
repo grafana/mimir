@@ -114,7 +114,15 @@ func (t *testNode) ChildrenIter() func(func(Node) bool) {
 	}
 }
 
+func (t *testNode) ChildCount() int {
+	return len(t.children)
+}
+
 func (t *testNode) SetChildren(_ []Node) error {
+	panic("not supported")
+}
+
+func (t *testNode) ReplaceChild(_ int, _ Node) error {
 	panic("not supported")
 }
 
