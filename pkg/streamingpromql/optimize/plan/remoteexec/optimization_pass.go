@@ -68,7 +68,7 @@ func (o *OptimizationPass) wrapShardedExpressions(n planning.Node) (bool, error)
 
 	wrappedAnyChild := false
 
-	for _, child := range n.Children() {
+	for child := range n.ChildrenIter() {
 		wrapped, err := o.wrapShardedExpressions(child)
 		if err != nil {
 			return false, err

@@ -1047,7 +1047,7 @@ func countDeduplicateAndMergeNodes(node planning.Node) int {
 	if _, ok := node.(*core.DeduplicateAndMerge); ok {
 		count = 1
 	}
-	for _, child := range node.Children() {
+	for child := range node.ChildrenIter() {
 		count += countDeduplicateAndMergeNodes(child)
 	}
 	return count

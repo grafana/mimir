@@ -36,7 +36,7 @@ func Inspect(node planning.Node) InspectResult {
 	default:
 		anyChildContainsSelectors := false
 
-		for _, c := range e.Children() {
+		for c := range e.ChildrenIter() {
 			res := Inspect(c)
 			if res.IsRewrittenByMiddleware {
 				return InspectResult{

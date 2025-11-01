@@ -223,7 +223,7 @@ func (p *QueryPlan) DeterminePlanVersion() error {
 
 func (p *QueryPlan) maxMinimumRequiredPlanVersion(node Node) QueryPlanVersion {
 	maxVersion := node.MinimumRequiredPlanVersion()
-	for _, child := range node.Children() {
+	for child := range node.ChildrenIter() {
 		maxVersion = max(maxVersion, p.maxMinimumRequiredPlanVersion(child))
 	}
 	return maxVersion
@@ -455,7 +455,7 @@ func (p *planPrinter) identifyRepeatedNodes(n Node) {
 		return
 	}
 
-	for _, child := range n.Children() {
+	for child := range n.ChildrenIter() {
 		p.identifyRepeatedNodes(child)
 	}
 }
