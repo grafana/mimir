@@ -41,10 +41,8 @@ func (m *MatrixSelector) Children() []planning.Node {
 	return nil
 }
 
-func (m *MatrixSelector) ChildrenIter() func(func(planning.Node) bool) {
-	return func(yield func(planning.Node) bool) {
-		// Nothing to do.
-	}
+func (m *MatrixSelector) Child(idx int) planning.Node {
+	panic(fmt.Sprintf("node of type MatrixSelector has no children, but attempted to get child at index %d", idx))
 }
 
 func (m *MatrixSelector) ChildCount() int {

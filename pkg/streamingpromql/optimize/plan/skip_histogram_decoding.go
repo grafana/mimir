@@ -56,7 +56,7 @@ func (s *SkipHistogramDecodingOptimizationPass) applyToNode(node planning.Node, 
 		}
 	}
 
-	for child := range node.ChildrenIter() {
+	for child := range planning.ChildrenIter(node) {
 		s.applyToNode(child, skipHistogramBuckets)
 	}
 }

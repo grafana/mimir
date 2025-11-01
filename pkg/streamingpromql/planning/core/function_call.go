@@ -50,14 +50,12 @@ func (f *FunctionCall) Children() []planning.Node {
 	return f.Args
 }
 
-func (f *FunctionCall) ChildrenIter() func(func(planning.Node) bool) {
-	return func(yield func(planning.Node) bool) {
-		for _, arg := range f.Args {
-			if !yield(arg) {
-				return
-			}
-		}
+func (f *FunctionCall) Child(idx int) planning.Node {
+	if idx >= len(f.Args) {
+		panic(fmt.Sprintf("this FunctionCall node has %d children, but attempted to get child at index %d", len(f.Args), idx))
 	}
+
+	return f.Args[idx]
 }
 
 func (f *FunctionCall) ChildCount() int {
@@ -71,7 +69,7 @@ func (f *FunctionCall) SetChildren(children []planning.Node) error {
 
 func (f *FunctionCall) ReplaceChild(idx int, node planning.Node) error {
 	if idx >= len(f.Args) {
-		return fmt.Errorf("this FunctionCall node has %d elements, but attempted to replace child at index %d", len(f.Args), idx)
+		return fmt.Errorf("this FunctionCall node has %d children, but attempted to replace child at index %d", len(f.Args), idx)
 	}
 
 	f.Args[idx] = node

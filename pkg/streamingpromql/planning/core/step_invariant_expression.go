@@ -45,12 +45,12 @@ func (s *StepInvariantExpression) Children() []planning.Node {
 	return []planning.Node{s.Inner}
 }
 
-func (s *StepInvariantExpression) ChildrenIter() func(func(planning.Node) bool) {
-	return func(yield func(planning.Node) bool) {
-		if !yield(s.Inner) {
-			return
-		}
+func (s *StepInvariantExpression) Child(idx int) planning.Node {
+	if idx != 0 {
+		panic(fmt.Sprintf("node of type StepInvariantExpression supports 1 child, but attempted to get child at index %d", idx))
 	}
+
+	return s.Inner
 }
 
 func (s *StepInvariantExpression) ChildCount() int {

@@ -1931,10 +1931,8 @@ func (t *versioningTestNode) Children() []planning.Node {
 	return []planning.Node{}
 }
 
-func (t *versioningTestNode) ChildrenIter() func(func(planning.Node) bool) {
-	return func(yield func(planning.Node) bool) {
-		// Nothing to do.
-	}
+func (t *versioningTestNode) Child(idx int) planning.Node {
+	panic("this test node has no children")
 }
 
 func (t *versioningTestNode) ChildCount() int {

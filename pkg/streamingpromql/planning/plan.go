@@ -71,10 +71,12 @@ type Node interface {
 	// Deprecated: use ChildrenIter instead
 	Children() []Node
 
-	// ChildrenIter returns an iterator over all children of this node.
+	// Child returns the child at index idx.
 	//
 	// Children are returned in the same order as they are provided to SetChildren and ReplaceChild.
-	ChildrenIter() func(func(Node) bool)
+	//
+	// Child panics if idx is out of range.
+	Child(idx int) Node
 
 	// ChildCount returns the number of children of this node.
 	ChildCount() int
@@ -144,6 +146,21 @@ type Node interface {
 	MinimumRequiredPlanVersion() QueryPlanVersion
 
 	// FIXME: implementations for many of the above methods can be generated automatically
+}
+
+// ChildrenIter returns an iterator over all children of n.
+//
+// Children are returned in the same order as they are provided to SetChildren and ReplaceChild.
+func ChildrenIter(n Node) func(func(Node) bool) {
+	return func(yield func(Node) bool) {
+		count := n.ChildCount()
+
+		for idx := range count {
+			if !yield(n.Child(idx)) {
+				return
+			}
+		}
+	}
 }
 
 type QueriedTimeRange struct {
@@ -233,7 +250,7 @@ func (p *QueryPlan) DeterminePlanVersion() error {
 
 func (p *QueryPlan) maxMinimumRequiredPlanVersion(node Node) QueryPlanVersion {
 	maxVersion := node.MinimumRequiredPlanVersion()
-	for child := range node.ChildrenIter() {
+	for child := range ChildrenIter(node) {
 		maxVersion = max(maxVersion, p.maxMinimumRequiredPlanVersion(child))
 	}
 	return maxVersion
@@ -465,7 +482,7 @@ func (p *planPrinter) identifyRepeatedNodes(n Node) {
 		return
 	}
 
-	for child := range n.ChildrenIter() {
+	for child := range ChildrenIter(n) {
 		p.identifyRepeatedNodes(child)
 	}
 }

@@ -32,12 +32,12 @@ func (d *DeduplicateAndMerge) Children() []planning.Node {
 	return []planning.Node{d.Inner}
 }
 
-func (d *DeduplicateAndMerge) ChildrenIter() func(func(planning.Node) bool) {
-	return func(yield func(planning.Node) bool) {
-		if !yield(d.Inner) {
-			return
-		}
+func (d *DeduplicateAndMerge) Child(idx int) planning.Node {
+	if idx != 0 {
+		panic(fmt.Sprintf("node of type DeduplicateAndMerge supports 1 child, but attempted to get child at index %d", idx))
 	}
+
+	return d.Inner
 }
 
 func (d *DeduplicateAndMerge) ChildCount() int {

@@ -32,12 +32,12 @@ func (n *DropName) Children() []planning.Node {
 	return []planning.Node{n.Inner}
 }
 
-func (n *DropName) ChildrenIter() func(func(planning.Node) bool) {
-	return func(yield func(planning.Node) bool) {
-		if !yield(n.Inner) {
-			return
-		}
+func (n *DropName) Child(idx int) planning.Node {
+	if idx != 0 {
+		panic(fmt.Sprintf("node of type DropName supports 1 child, but attempted to get child at index %d", idx))
 	}
+
+	return n.Inner
 }
 
 func (n *DropName) ChildCount() int {

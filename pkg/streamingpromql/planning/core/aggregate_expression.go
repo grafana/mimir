@@ -69,17 +69,17 @@ func (a *AggregateExpression) Children() []planning.Node {
 	return []planning.Node{a.Inner, a.Param}
 }
 
-func (a *AggregateExpression) ChildrenIter() func(func(planning.Node) bool) {
-	return func(yield func(planning.Node) bool) {
-		if !yield(a.Inner) {
-			return
+func (a *AggregateExpression) Child(idx int) planning.Node {
+	switch idx {
+	case 0:
+		return a.Inner
+	case 1:
+		if a.Param == nil {
+			panic("cannot get AggregateExpression child at index 1 if there is no parameter")
 		}
-
-		if a.Param != nil {
-			if !yield(a.Param) {
-				return
-			}
-		}
+		return a.Param
+	default:
+		panic(fmt.Sprintf("node of type AggregateExpression supports at most 2 children, but attempted to get child at index %d", idx))
 	}
 }
 

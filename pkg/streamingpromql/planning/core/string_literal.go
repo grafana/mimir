@@ -40,10 +40,8 @@ func (s *StringLiteral) Children() []planning.Node {
 	return nil
 }
 
-func (s *StringLiteral) ChildrenIter() func(func(planning.Node) bool) {
-	return func(yield func(planning.Node) bool) {
-		// Nothing to do.
-	}
+func (s *StringLiteral) Child(idx int) planning.Node {
+	panic(fmt.Sprintf("node of type StringLiteral has no children, but attempted to get child at index %d", idx))
 }
 
 func (s *StringLiteral) ChildCount() int {

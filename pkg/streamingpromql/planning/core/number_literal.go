@@ -40,10 +40,8 @@ func (n *NumberLiteral) Children() []planning.Node {
 	return nil
 }
 
-func (n *NumberLiteral) ChildrenIter() func(func(planning.Node) bool) {
-	return func(yield func(planning.Node) bool) {
-		// Nothing to do.
-	}
+func (n *NumberLiteral) Child(idx int) planning.Node {
+	panic(fmt.Sprintf("node of type NumberLiteral has no children, but attempted to get child at index %d", idx))
 }
 
 func (n *NumberLiteral) ChildCount() int {

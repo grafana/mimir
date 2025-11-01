@@ -42,12 +42,12 @@ func (u *UnaryExpression) Children() []planning.Node {
 	return []planning.Node{u.Inner}
 }
 
-func (u *UnaryExpression) ChildrenIter() func(func(planning.Node) bool) {
-	return func(yield func(planning.Node) bool) {
-		if !yield(u.Inner) {
-			return
-		}
+func (u *UnaryExpression) Child(idx int) planning.Node {
+	if idx != 0 {
+		panic(fmt.Sprintf("node of type UnaryExpression supports 1 child, but attempted to get child at index %d", idx))
 	}
+
+	return u.Inner
 }
 
 func (u *UnaryExpression) ChildCount() int {

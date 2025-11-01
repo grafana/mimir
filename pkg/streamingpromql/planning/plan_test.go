@@ -104,14 +104,8 @@ func (t *testNode) Children() []Node {
 	return t.children
 }
 
-func (t *testNode) ChildrenIter() func(func(Node) bool) {
-	return func(yield func(Node) bool) {
-		for _, child := range t.children {
-			if !yield(child) {
-				return
-			}
-		}
-	}
+func (t *testNode) Child(idx int) Node {
+	return t.children[idx]
 }
 
 func (t *testNode) ChildCount() int {

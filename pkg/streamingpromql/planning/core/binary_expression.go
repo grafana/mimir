@@ -109,15 +109,14 @@ func (b *BinaryExpression) Children() []planning.Node {
 	return []planning.Node{b.LHS, b.RHS}
 }
 
-func (b *BinaryExpression) ChildrenIter() func(func(planning.Node) bool) {
-	return func(yield func(planning.Node) bool) {
-		if !yield(b.LHS) {
-			return
-		}
-
-		if !yield(b.RHS) {
-			return
-		}
+func (b *BinaryExpression) Child(idx int) planning.Node {
+	switch idx {
+	case 0:
+		return b.LHS
+	case 1:
+		return b.RHS
+	default:
+		panic(fmt.Sprintf("node of type BinaryExpression supports 2 children, but attempted to get child at index %d", idx))
 	}
 }
 

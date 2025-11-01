@@ -37,12 +37,12 @@ func (d *Duplicate) Children() []planning.Node {
 	return []planning.Node{d.Inner}
 }
 
-func (d *Duplicate) ChildrenIter() func(func(planning.Node) bool) {
-	return func(yield func(planning.Node) bool) {
-		if !yield(d.Inner) {
-			return
-		}
+func (d *Duplicate) Child(idx int) planning.Node {
+	if idx != 0 {
+		panic(fmt.Sprintf("node of type Duplicate supports 1 child, but attempted to get child at index %d", idx))
 	}
+
+	return d.Inner
 }
 
 func (d *Duplicate) ChildCount() int {

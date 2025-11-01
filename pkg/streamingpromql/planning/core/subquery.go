@@ -94,12 +94,12 @@ func (s *Subquery) Children() []planning.Node {
 	return []planning.Node{s.Inner}
 }
 
-func (s *Subquery) ChildrenIter() func(func(planning.Node) bool) {
-	return func(yield func(planning.Node) bool) {
-		if !yield(s.Inner) {
-			return
-		}
+func (s *Subquery) Child(idx int) planning.Node {
+	if idx != 0 {
+		panic(fmt.Sprintf("node of type Subquery supports 1 child, but attempted to get child at index %d", idx))
 	}
+
+	return s.Inner
 }
 
 func (s *Subquery) ChildCount() int {

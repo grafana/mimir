@@ -38,12 +38,12 @@ func (r *RemoteExecution) Children() []planning.Node {
 	return []planning.Node{r.Inner}
 }
 
-func (r *RemoteExecution) ChildrenIter() func(func(planning.Node) bool) {
-	return func(yield func(planning.Node) bool) {
-		if !yield(r.Inner) {
-			return
-		}
+func (r *RemoteExecution) Child(idx int) planning.Node {
+	if idx != 0 {
+		panic(fmt.Sprintf("node of type RemoteExecution supports 1 child, but attempted to get child at index %d", idx))
 	}
+
+	return r.Inner
 }
 
 func (r *RemoteExecution) ChildCount() int {
