@@ -28,6 +28,8 @@ nameOverride: null
 fullnameOverride: null
 
 image:
+  # -- Grafana Mimir container image registry
+  registry: docker.io
   # -- Grafana Mimir container image repository
   repository: grafana/mimir
   # -- Grafana Mimir container image tag

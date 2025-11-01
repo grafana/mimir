@@ -95,6 +95,7 @@ spec:
           emptyDir: {}
       containers:
         - name: store-gateway
+          image: docker.io/grafana/mimir:r366-febf61b9
           imagePullPolicy: IfNotPresent
           args:
             - "-target=store-gateway"
@@ -241,6 +242,7 @@ spec:
           emptyDir: {}
       containers:
         - name: store-gateway
+          image: docker.io/grafana/mimir:r366-febf61b9
           imagePullPolicy: IfNotPresent
           args:
             - "-target=store-gateway"
@@ -387,6 +389,7 @@ spec:
           emptyDir: {}
       containers:
         - name: store-gateway
+          image: docker.io/grafana/mimir:r366-febf61b9
           imagePullPolicy: IfNotPresent
           args:
             - "-target=store-gateway"
