@@ -5,6 +5,7 @@ package cache
 import (
 	"flag"
 	"fmt"
+	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"slices"
 	"strings"
 	"time"
@@ -123,7 +124,7 @@ func newResultsCache(cfg ResultsCacheConfig, logger log.Logger, reg prometheus.R
 		cache.NewSpanlessTracingCache(client, logger, tenant.NewMultiResolver()),
 		resultsCacheVersion,
 	)
-	return intermediateResultsCache{c: c}, nil
+	return &intermediateResultsCache{c: c}, nil
 }
 
 type intermediateResultsCache struct {
@@ -131,9 +132,32 @@ type intermediateResultsCache struct {
 }
 
 type IntermediateResultsCache interface {
-	Get(user, function, selector string, start int64, duration time.Duration) []IntermediateResultBlock
+	Get(user, function, selector string, start int64, duration time.Duration) (IntermediateResultBlock, bool)
 }
 
-func (ic intermediateResultsCache) Get(user, function, selector string, start int64, duration time.Duration) []IntermediateResultBlock {
-	return nil
+func (ic *intermediateResultsCache) Get(user, function, selector string, start int64, duration time.Duration) (IntermediateResultBlock, bool) {
+	return IntermediateResultBlock{}, false
+}
+
+//TODO: implement me!
+func (ic *intermediateResultsCache) Write() {
+
+}
+
+type IntermediateResultTenantCache struct {
+	user  string
+	inner IntermediateResultsCache
+}
+
+func NewIntermediateResultTenantCache(user string, c IntermediateResultsCache) *IntermediateResultTenantCache {
+	return &IntermediateResultTenantCache{user: user, inner: c}
+}
+
+func (c *IntermediateResultTenantCache) Get(function, selector string, start int64, duration time.Duration) (IntermediateResultBlock, bool) {
+	return c.inner.Get(c.user, function, selector, start, duration)
+}
+
+// TODO: make a method for each node instead
+func CacheKey(node planning.Node) string {
+	panic("implement me")
 }
