@@ -9,7 +9,6 @@ import (
 	"context"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
-	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/commonsubexpressionelimination"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
 )
@@ -25,34 +24,19 @@ func (s *SkipHistogramDecodingOptimizationPass) Name() string {
 }
 
 func (s *SkipHistogramDecodingOptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan, maximumSupportedQueryPlanVersion planning.QueryPlanVersion) (*planning.QueryPlan, error) {
-	duplicatedSelectors := map[planning.Node]bool{}
-	s.applyToNode(plan.Root, false, false, duplicatedSelectors)
+	s.applyToNode(plan.Root, false)
 
 	return plan, nil
 }
 
-func (s *SkipHistogramDecodingOptimizationPass) applyToNode(node planning.Node, skipHistogramBuckets bool, childOfDuplicateNode bool, duplicatedSelectors duplicatedSelectorTracker) {
+func (s *SkipHistogramDecodingOptimizationPass) applyToNode(node planning.Node, skipHistogramBuckets bool) {
 	if vs, ok := node.(*core.VectorSelector); ok {
-		if childOfDuplicateNode {
-			skipHistogramBuckets = duplicatedSelectors.canSkipHistogramBuckets(node, skipHistogramBuckets)
-		}
-
 		vs.SkipHistogramBuckets = skipHistogramBuckets
-
 		return
 	}
 
 	if ms, ok := node.(*core.MatrixSelector); ok {
-		if childOfDuplicateNode {
-			skipHistogramBuckets = duplicatedSelectors.canSkipHistogramBuckets(node, skipHistogramBuckets)
-		}
-
 		ms.SkipHistogramBuckets = skipHistogramBuckets
-		return
-	}
-
-	if dup, ok := node.(*commonsubexpressionelimination.Duplicate); ok {
-		s.applyToNode(dup.Inner, skipHistogramBuckets, true, duplicatedSelectors)
 		return
 	}
 
@@ -73,15 +57,6 @@ func (s *SkipHistogramDecodingOptimizationPass) applyToNode(node planning.Node, 
 	}
 
 	for _, child := range node.Children() {
-		s.applyToNode(child, skipHistogramBuckets, childOfDuplicateNode, duplicatedSelectors)
+		s.applyToNode(child, skipHistogramBuckets)
 	}
-}
-
-type duplicatedSelectorTracker map[planning.Node]bool
-
-func (t duplicatedSelectorTracker) canSkipHistogramBuckets(node planning.Node, pathSeenAllowsSkippingHistogramBuckets bool) bool {
-	otherInstancesCanSkipBuckets, seenOtherInstancesAlready := t[node]
-	skipHistogramBuckets := pathSeenAllowsSkippingHistogramBuckets && (otherInstancesCanSkipBuckets || !seenOtherInstancesAlready)
-	t[node] = skipHistogramBuckets
-	return skipHistogramBuckets
 }

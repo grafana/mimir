@@ -15,6 +15,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/streamingpromql"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/ast"
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/commonsubexpressionelimination"
 	"github.com/grafana/mimir/pkg/streamingpromql/testutils"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
@@ -698,6 +699,152 @@ func requireSelectorCounts(t *testing.T, g prometheus.Gatherer, expectedInspecte
 `, inspectedMetricName, expectedInspected, eliminatedMetricName, expectedEliminated)
 
 	require.NoError(t, testutil.GatherAndCompare(g, strings.NewReader(expectedMetrics), inspectedMetricName, eliminatedMetricName))
+}
+
+func TestOptimizationPass_HintsHandling(t *testing.T) {
+	testCases := map[string]struct {
+		expr         string
+		expectedPlan string
+	}{
+		"duplicate vector selector not eligible for skipping histogram decoding due to nesting": {
+			expr: `histogram_sum(some_metric * histogram_quantile(0.5, some_metric))`,
+			expectedPlan: `
+				- DeduplicateAndMerge
+					- FunctionCall: histogram_sum(...)
+						- BinaryExpression: LHS * RHS
+							- LHS: ref#1 Duplicate
+								- VectorSelector: {__name__="some_metric"}
+							- RHS: DeduplicateAndMerge
+								- FunctionCall: histogram_quantile(...)
+									- param 0: NumberLiteral: 0.5
+									- param 1: ref#1 Duplicate ...
+			`,
+		},
+		"duplicate vector selector, both eligible for skipping histogram decoding": {
+			expr: `histogram_sum(some_metric) * histogram_count(some_metric)`,
+			expectedPlan: `
+				- BinaryExpression: LHS * RHS
+					- LHS: DeduplicateAndMerge
+						- FunctionCall: histogram_sum(...)
+							- ref#1 Duplicate
+								- VectorSelector: {__name__="some_metric"}, skip histogram buckets
+					- RHS: DeduplicateAndMerge
+						- FunctionCall: histogram_count(...)
+							- ref#1 Duplicate ...
+			`,
+		},
+		"duplicate vector selector, only first instance eligible for skipping histogram decoding": {
+			expr: `histogram_sum(some_metric) * histogram_quantile(0.5, some_metric)`,
+			expectedPlan: `
+				- BinaryExpression: LHS * RHS
+					- LHS: DeduplicateAndMerge
+						- FunctionCall: histogram_sum(...)
+							- ref#1 Duplicate
+								- VectorSelector: {__name__="some_metric"}
+					- RHS: DeduplicateAndMerge
+						- FunctionCall: histogram_quantile(...)
+							- param 0: NumberLiteral: 0.5
+							- param 1: ref#1 Duplicate ...
+			`,
+		},
+		"duplicate vector selector, only second instance eligible for skipping histogram decoding": {
+			expr: `histogram_quantile(0.5, some_metric) * histogram_sum(some_metric)`,
+			expectedPlan: `
+				- BinaryExpression: LHS * RHS
+					- LHS: DeduplicateAndMerge
+						- FunctionCall: histogram_quantile(...)
+							- param 0: NumberLiteral: 0.5
+							- param 1: ref#1 Duplicate
+								- VectorSelector: {__name__="some_metric"}
+					- RHS: DeduplicateAndMerge
+						- FunctionCall: histogram_sum(...)
+							- ref#1 Duplicate ...
+			`,
+		},
+		"duplicate matrix selector not eligible for skipping histogram decoding due to nesting": {
+			expr: `histogram_sum(rate(some_metric[1m]) * histogram_quantile(0.5, rate(some_metric[1m])))`,
+			expectedPlan: `
+				- DeduplicateAndMerge
+					- FunctionCall: histogram_sum(...)
+						- BinaryExpression: LHS * RHS
+							- LHS: ref#1 Duplicate
+								- DeduplicateAndMerge
+									- FunctionCall: rate(...)
+										- MatrixSelector: {__name__="some_metric"}[1m0s]
+							- RHS: DeduplicateAndMerge
+								- FunctionCall: histogram_quantile(...)
+									- param 0: NumberLiteral: 0.5
+									- param 1: ref#1 Duplicate ...
+			`,
+		},
+		"duplicate matrix selector, both eligible for skipping histogram decoding": {
+			expr: `histogram_sum(rate(some_metric[1m])) * histogram_count(rate(some_metric[1m]))`,
+			expectedPlan: `
+				- BinaryExpression: LHS * RHS
+					- LHS: DeduplicateAndMerge
+						- FunctionCall: histogram_sum(...)
+							- ref#1 Duplicate
+								- DeduplicateAndMerge
+									- FunctionCall: rate(...)
+										- MatrixSelector: {__name__="some_metric"}[1m0s], skip histogram buckets
+					- RHS: DeduplicateAndMerge
+						- FunctionCall: histogram_count(...)
+							- ref#1 Duplicate ...
+			`,
+		},
+		"duplicate matrix selector, only first instance eligible for skipping histogram decoding": {
+			expr: `histogram_sum(rate(some_metric[1m])) * histogram_quantile(0.5, rate(some_metric[1m]))`,
+			expectedPlan: `
+				- BinaryExpression: LHS * RHS
+					- LHS: DeduplicateAndMerge
+						- FunctionCall: histogram_sum(...)
+							- ref#1 Duplicate
+								- DeduplicateAndMerge
+									- FunctionCall: rate(...)
+										- MatrixSelector: {__name__="some_metric"}[1m0s]
+					- RHS: DeduplicateAndMerge
+						- FunctionCall: histogram_quantile(...)
+							- param 0: NumberLiteral: 0.5
+							- param 1: ref#1 Duplicate ...
+			`,
+		},
+		"duplicate matrix selector, only second instance eligible for skipping histogram decoding": {
+			expr: `histogram_quantile(0.5, rate(some_metric[1m])) * histogram_sum(rate(some_metric[1m]))`,
+			expectedPlan: `
+				- BinaryExpression: LHS * RHS
+					- LHS: DeduplicateAndMerge
+						- FunctionCall: histogram_quantile(...)
+							- param 0: NumberLiteral: 0.5
+							- param 1: ref#1 Duplicate
+								- DeduplicateAndMerge
+									- FunctionCall: rate(...)
+										- MatrixSelector: {__name__="some_metric"}[1m0s]
+					- RHS: DeduplicateAndMerge
+						- FunctionCall: histogram_sum(...)
+							- ref#1 Duplicate ...
+			`,
+		},
+	}
+
+	ctx := context.Background()
+	timeRange := types.NewInstantQueryTimeRange(time.Now())
+	observer := streamingpromql.NoopPlanningObserver{}
+
+	opts := streamingpromql.NewTestEngineOpts()
+	planner, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
+	require.NoError(t, err)
+	planner.RegisterQueryPlanOptimizationPass(plan.NewSkipHistogramDecodingOptimizationPass())
+	planner.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(true, nil, opts.Logger))
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+
+			p, err := planner.NewQueryPlan(ctx, testCase.expr, timeRange, observer)
+			require.NoError(t, err)
+			actual := p.String()
+			require.Equal(t, testutils.TrimIndent(testCase.expectedPlan), actual)
+		})
+	}
 }
 
 func BenchmarkOptimizationPass(b *testing.B) {

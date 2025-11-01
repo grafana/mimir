@@ -4,6 +4,7 @@ package commonsubexpressionelimination
 
 import (
 	"context"
+	"fmt"
 	"slices"
 	"strings"
 
@@ -270,18 +271,24 @@ func (e *OptimizationPass) introduceDuplicateNode(group []*path, duplicatePathLe
 	firstPath := group[0]
 	parentOfDuplicate, _ := firstPath.NodeAtOffsetFromLeaf(duplicatePathLength)
 	expectedDuplicatedExpression := parentOfDuplicate.Children()[firstPath.ChildIndexAtOffsetFromLeaf(duplicatePathLength-1)] // Note that we can't take this from the path, as the path will not reflect any Duplicate nodes introduced previously.
-	if _, isDuplicate := expectedDuplicatedExpression.(*Duplicate); isDuplicate {
+	if isDuplicateNode(expectedDuplicatedExpression) {
 		return true, nil
 	}
 
-	duplicatedExpression, _ := firstPath.NodeAtOffsetFromLeaf(duplicatePathLength - 1)
+	duplicatedExpressionOffset := duplicatePathLength - 1
+	duplicatedExpression, _ := firstPath.NodeAtOffsetFromLeaf(duplicatedExpressionOffset)
 	duplicate := &Duplicate{Inner: duplicatedExpression, DuplicateDetails: &DuplicateDetails{}}
 	e.duplicationNodesIntroduced.Inc()
 
 	for _, path := range group {
 		parentOfDuplicate, _ := path.NodeAtOffsetFromLeaf(duplicatePathLength)
-		err := replaceChild(parentOfDuplicate, path.ChildIndexAtOffsetFromLeaf(duplicatePathLength-1), duplicate)
+		err := replaceChild(parentOfDuplicate, path.ChildIndexAtOffsetFromLeaf(duplicatedExpressionOffset), duplicate)
 		if err != nil {
+			return false, err
+		}
+
+		eliminatedExpression, _ := path.NodeAtOffsetFromLeaf(duplicatedExpressionOffset)
+		if err := mergeHints(duplicatedExpression, eliminatedExpression); err != nil {
 			return false, err
 		}
 	}
@@ -331,6 +338,38 @@ func replaceChild(parent planning.Node, childIndex int, newChild planning.Node) 
 	children := parent.Children()
 	children[childIndex] = newChild
 	return parent.SetChildren(children)
+}
+
+func mergeHints(retainedNode planning.Node, eliminatedNode planning.Node) error {
+	if isDuplicateNode(retainedNode) {
+		// If we reach another Duplicate node, then we don't need to continue, as we would
+		// have previously merged hints for the children of this node.
+		return nil
+	}
+
+	if err := retainedNode.MergeHints(eliminatedNode); err != nil {
+		return err
+	}
+
+	retainedChildren := retainedNode.Children()
+	eliminatedChildren := eliminatedNode.Children()
+
+	if len(retainedChildren) != len(eliminatedChildren) {
+		return fmt.Errorf("retained and eliminated nodes have different number of children: %v vs %v", len(retainedChildren), len(eliminatedChildren))
+	}
+
+	for idx := range retainedChildren {
+		if err := mergeHints(retainedChildren[idx], eliminatedChildren[idx]); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func isDuplicateNode(node planning.Node) bool {
+	_, isDuplicate := node.(*Duplicate)
+	return isDuplicate
 }
 
 type path struct {
