@@ -34,10 +34,6 @@ func (r *RemoteExecution) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_REMOTE_EXEC
 }
 
-func (r *RemoteExecution) Children() []planning.Node {
-	return []planning.Node{r.Inner}
-}
-
 func (r *RemoteExecution) Child(idx int) planning.Node {
 	if idx != 0 {
 		panic(fmt.Sprintf("node of type RemoteExecution supports 1 child, but attempted to get child at index %d", idx))

@@ -46,10 +46,6 @@ func (f *FunctionCall) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_FUNCTION_CALL
 }
 
-func (f *FunctionCall) Children() []planning.Node {
-	return f.Args
-}
-
 func (f *FunctionCall) Child(idx int) planning.Node {
 	if idx >= len(f.Args) {
 		panic(fmt.Sprintf("this FunctionCall node has %d children, but attempted to get child at index %d", len(f.Args), idx))

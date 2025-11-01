@@ -33,10 +33,6 @@ func (d *Duplicate) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_DUPLICATE
 }
 
-func (d *Duplicate) Children() []planning.Node {
-	return []planning.Node{d.Inner}
-}
-
 func (d *Duplicate) Child(idx int) planning.Node {
 	if idx != 0 {
 		panic(fmt.Sprintf("node of type Duplicate supports 1 child, but attempted to get child at index %d", idx))

@@ -41,10 +41,6 @@ func (s *StepInvariantExpression) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_STEP_INVARIANT_EXPRESSION
 }
 
-func (s *StepInvariantExpression) Children() []planning.Node {
-	return []planning.Node{s.Inner}
-}
-
 func (s *StepInvariantExpression) Child(idx int) planning.Node {
 	if idx != 0 {
 		panic(fmt.Sprintf("node of type StepInvariantExpression supports 1 child, but attempted to get child at index %d", idx))

@@ -37,10 +37,6 @@ func (m *MatrixSelector) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_MATRIX_SELECTOR
 }
 
-func (m *MatrixSelector) Children() []planning.Node {
-	return nil
-}
-
 func (m *MatrixSelector) Child(idx int) planning.Node {
 	panic(fmt.Sprintf("node of type MatrixSelector has no children, but attempted to get child at index %d", idx))
 }

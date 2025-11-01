@@ -43,10 +43,6 @@ func (v *VectorSelector) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_VECTOR_SELECTOR
 }
 
-func (v *VectorSelector) Children() []planning.Node {
-	return nil
-}
-
 func (v *VectorSelector) Child(idx int) planning.Node {
 	panic(fmt.Sprintf("node of type VectorSelector has no children, but attempted to get child at index %d", idx))
 }

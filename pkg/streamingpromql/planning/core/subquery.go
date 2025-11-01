@@ -90,10 +90,6 @@ func (s *Subquery) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_SUBQUERY
 }
 
-func (s *Subquery) Children() []planning.Node {
-	return []planning.Node{s.Inner}
-}
-
 func (s *Subquery) Child(idx int) planning.Node {
 	if idx != 0 {
 		panic(fmt.Sprintf("node of type Subquery supports 1 child, but attempted to get child at index %d", idx))

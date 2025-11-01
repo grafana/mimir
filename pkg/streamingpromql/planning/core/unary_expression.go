@@ -38,10 +38,6 @@ func (u *UnaryExpression) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_UNARY_EXPRESSION
 }
 
-func (u *UnaryExpression) Children() []planning.Node {
-	return []planning.Node{u.Inner}
-}
-
 func (u *UnaryExpression) Child(idx int) planning.Node {
 	if idx != 0 {
 		panic(fmt.Sprintf("node of type UnaryExpression supports 1 child, but attempted to get child at index %d", idx))

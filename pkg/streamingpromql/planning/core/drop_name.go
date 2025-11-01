@@ -28,10 +28,6 @@ func (n *DropName) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_DROP_NAME
 }
 
-func (n *DropName) Children() []planning.Node {
-	return []planning.Node{n.Inner}
-}
-
 func (n *DropName) Child(idx int) planning.Node {
 	if idx != 0 {
 		panic(fmt.Sprintf("node of type DropName supports 1 child, but attempted to get child at index %d", idx))

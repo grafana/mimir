@@ -36,10 +36,6 @@ func (s *StringLiteral) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_STRING_LITERAL
 }
 
-func (s *StringLiteral) Children() []planning.Node {
-	return nil
-}
-
 func (s *StringLiteral) Child(idx int) planning.Node {
 	panic(fmt.Sprintf("node of type StringLiteral has no children, but attempted to get child at index %d", idx))
 }

@@ -28,10 +28,6 @@ func (d *DeduplicateAndMerge) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_DEDUPLICATE_AND_MERGE
 }
 
-func (d *DeduplicateAndMerge) Children() []planning.Node {
-	return []planning.Node{d.Inner}
-}
-
 func (d *DeduplicateAndMerge) Child(idx int) planning.Node {
 	if idx != 0 {
 		panic(fmt.Sprintf("node of type DeduplicateAndMerge supports 1 child, but attempted to get child at index %d", idx))

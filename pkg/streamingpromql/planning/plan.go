@@ -60,17 +60,6 @@ type Node interface {
 	// NodeType returns the identifier of this node that should be used during serialization.
 	NodeType() NodeType
 
-	// Children returns a slice of all children of this node, if any.
-	//
-	// Modifying the returned slice has no effect, however, modifying the elements of the returned slice
-	// modifies the corresponding child of this node.
-	//
-	// eg. Children()[0] = nil has no effect
-	//
-	// eg. Children()[0].DoStuff = true modifies the first child of this node
-	// Deprecated: use ChildrenIter instead
-	Children() []Node
-
 	// Child returns the child at index idx.
 	//
 	// Children are returned in the same order as they are provided to SetChildren and ReplaceChild.
@@ -84,8 +73,6 @@ type Node interface {
 	// SetChildren replaces the children of this node with the provided nodes.
 	//
 	// SetChildren will return an error if an unsupported number of children is provided.
-	//
-	// Calling SetChildren(Children()) is a no-op.
 	SetChildren(children []Node) error
 
 	// ReplaceChild replaces the child at index idx with the provided node.

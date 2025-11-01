@@ -61,14 +61,6 @@ func (a *AggregateExpression) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_AGGREGATE_EXPRESSION
 }
 
-func (a *AggregateExpression) Children() []planning.Node {
-	if a.Param == nil {
-		return []planning.Node{a.Inner}
-	}
-
-	return []planning.Node{a.Inner, a.Param}
-}
-
 func (a *AggregateExpression) Child(idx int) planning.Node {
 	switch idx {
 	case 0:

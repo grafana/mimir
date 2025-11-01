@@ -1927,10 +1927,6 @@ func (t *versioningTestNode) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_TEST
 }
 
-func (t *versioningTestNode) Children() []planning.Node {
-	return []planning.Node{}
-}
-
 func (t *versioningTestNode) Child(idx int) planning.Node {
 	panic("this test node has no children")
 }

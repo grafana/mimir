@@ -100,10 +100,6 @@ func (t *testNode) NodeType() NodeType {
 	panic("not supported")
 }
 
-func (t *testNode) Children() []Node {
-	return t.children
-}
-
 func (t *testNode) Child(idx int) Node {
 	return t.children[idx]
 }
