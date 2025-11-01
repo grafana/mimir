@@ -44,7 +44,11 @@ func (t *trackerStore) snapshot(shard uint8, now time.Time, buf []byte) []byte {
 	return snapshot.Get()
 }
 
-func (t *trackerStore) loadSnapshot(data []byte, now time.Time) error {
+// loadSnapshot loads the snapshot data into the tracker.
+// It returns an error if the snapshot is invalid.
+// When first is true, it assumes that the tracker is empty and not being concurrently loaded with other data,
+// this allows skipping the lookups when loading items into the tenant shards.
+func (t *trackerStore) loadSnapshot(data []byte, now time.Time, first bool) error {
 	snapshot := encoding.Decbuf{B: data}
 	version := snapshot.Byte()
 	if err := snapshot.Err(); err != nil {
@@ -116,8 +120,15 @@ func (t *trackerStore) loadSnapshot(data []byte, now time.Time) error {
 		tenant := t.getOrCreateTenant(tenantID)
 		m := tenant.shards[shard]
 		m.Lock()
-		for _, ref := range refs {
-			_, _ = m.Put(ref.Ref, ref.Timestamp, tenant.series, nil, false)
+		if first {
+			for _, ref := range refs {
+				m.Load(ref.Ref, ref.Timestamp)
+			}
+			tenant.series.Add(uint64(len(refs)))
+		} else {
+			for _, ref := range refs {
+				_, _ = m.Put(ref.Ref, ref.Timestamp, tenant.series, nil, false)
+			}
 		}
 		m.Unlock()
 		tenant.RUnlock()
