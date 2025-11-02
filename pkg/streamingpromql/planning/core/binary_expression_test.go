@@ -523,7 +523,7 @@ func TestBinaryExpression_MergeHints(t *testing.T) {
 				require.EqualError(t, err, "cannot merge hints for binary expressions with different included labels")
 			} else {
 				require.NoError(t, err)
-				require.Equal(t, testCase.expected, first.BinaryExpressionDetails.Hints)
+				require.Equal(t, testCase.expected, first.Hints)
 			}
 		})
 	}
