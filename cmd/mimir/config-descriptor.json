@@ -5829,16 +5829,6 @@
         },
         {
           "kind": "field",
-          "name": "cost_attribution_labels",
-          "required": false,
-          "desc": "",
-          "fieldValue": null,
-          "fieldDefaultValue": "",
-          "fieldType": "string",
-          "fieldCategory": "experimental"
-        },
-        {
-          "kind": "field",
           "name": "cost_attribution_labels_structured",
           "required": false,
           "desc": "",
