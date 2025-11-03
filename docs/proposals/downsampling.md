@@ -22,15 +22,20 @@ draft: true
 
 ## Background
 
-The `compactor` is a component that improves query performance by compacting multiple blocks in larger optimized ones.
+The `compactor` is a component that improves query performance and storage efficiency by consolidating multiple smaller and/or sparse blocks into larger, optimized ones.
 The `query-frontend` is a component that is responsible for query acceleration through splitting, sharding, caching, and other techniques.
 
 ## Problem statement
 
-Tenants could either scrape samples at a high frequency (e.g: ~1Hz) or query data over a wide time range (e.g: 1 year query for KPIs or QoS dashboards).
+Tenants may either scrape samples at a high frequency (e.g: ~1Hz) or query data over a wide time range (e.g: 1 year query for KPIs or QoS dashboards).
 In both cases, the full resolution is not needed unless the tenant needs to zoom-in the time range.
 
-Querying such data can be slow or expensive due to the amount of samples to pull from the storage and the related processing.
+Querying such data can be slow or expensive due to the number of samples to pull from the storage and the related processing.
+
+Downsampling serves two distinct motivations:
+
+1. **Query acceleration** – a separate set of metric segments containing only downsampled data allows wide‑range queries to retrieve and sort far fewer samples, improving latency and reducing load on the query‑frontend.
+2. **Storage optimization** – by discarding the bulk of original‑frequency samples after a defined age (e.g., keeping only one‑hour samples for segments older than six months), the system can retain data for much longer periods on the same storage capacity.
 
 ## Goals
 
