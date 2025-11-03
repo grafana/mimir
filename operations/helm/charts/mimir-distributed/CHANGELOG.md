@@ -10,7 +10,7 @@ remove a deprecated item from the third major release after it has been deprecat
 * GEM gateway: remove port 8080 on the Service resource. Deprecated in `3.1.0` and will be removed in `6.0.0`.
   * __How to migrate__: replace usages of port 8080 with port 80; these usages can be in dashboards, Prometheus remote-write configurations, or automation for updating rules.
 * NGINX configuration via `nginx` top-level values sections is being merged with by the `gateway` section. The
-  `nginx` section is deprecated in `4.0.0` and will be removed in `7.0.0`.
+  `nginx` section is deprecated in `4.0.0` and was removed in `6.0.0` (originally planned for `7.0.0`).
   * __How to migrate__: refer to [Migrate to using the unified proxy deployment for NGINX and GEM gateway](https://grafana.com/docs/mimir/latest/operators-guide/deploying-grafana-mimir/migrate-to-unified-gateway-deployment/)
 
 ## Format of changelog
