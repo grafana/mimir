@@ -4027,9 +4027,6 @@ blocked_requests:
 [active_series_results_max_size_bytes: <int> | default = 419430400]
 
 # (experimental)
-[cost_attribution_labels: <string> | default = ""]
-
-# (experimental)
 cost_attribution_labels_structured:
   -     [input: <string> | default = ""]
 

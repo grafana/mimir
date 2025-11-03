@@ -9,33 +9,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestParseCostAttributionLabels(t *testing.T) {
-	tc := map[string]struct {
-		input    []string
-		expected []Label
-	}{
-		"no labels": {
-			input:    []string{},
-			expected: []Label{},
-		},
-		"single": {
-			input:    []string{"team"},
-			expected: []Label{{Input: "team", Output: ""}},
-		},
-		"regular list": {
-			input:    []string{"team", "service"},
-			expected: []Label{{Input: "team", Output: ""}, {Input: "service", Output: ""}},
-		},
-	}
-
-	for name, tt := range tc {
-		t.Run(name, func(t *testing.T) {
-			result := ParseCostAttributionLabels(tt.input)
-			require.Equal(t, tt.expected, result)
-		})
-	}
-}
-
 func TestLabel_OutputLabel(t *testing.T) {
 	tc := map[string]struct {
 		input    Label
