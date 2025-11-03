@@ -90,6 +90,7 @@
 
 * [CHANGE] Query-Tee: Added `/api/v1/read` as a registered route. #13227
 * [CHANGE] Query-tee: Added cluster validation label configuration `-query-tee.client-cluster-validation.label`. If set, query-tee will set `X-Cluster` header before forwarding the request to both primary and secondary backends. #13302
+* [ENHANCEMENT] Query-tee: Make grpc options configurable through flags such as `-server.grpc-max-recv-msg-size-bytes`. #13326
 
 ## 3.0.0
 
