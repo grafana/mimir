@@ -60,13 +60,26 @@ services:
     ports:
       - 9191:9091
 
-  grafana-alloy:
+  grafana-alloy-remote-write:
     profiles:
       - grafana-alloy
+      - grafana-alloy-remote-write
     image: grafana/alloy:v1.11.3@sha256:8c7256f412feb9f5f48f9f6f9394dc97ca887f63dea9304f347970ecc1787669
     command: ["run", "--server.http.listen-addr=0.0.0.0:9092", "--storage.path=/var/lib/alloy/data", "/etc/alloy/config.alloy"]
     volumes:
-      - ./config/config.alloy:/etc/alloy/config.alloy
+      - ./config/config-remote-write.alloy:/etc/alloy/config.alloy
+    ports:
+      - 9092:9092
+
+  grafana-alloy-otlp:
+    profiles:
+      - grafana-alloy-otlp-push
+    image: grafana/alloy:v1.11.3@sha256:8c7256f412feb9f5f48f9f6f9394dc97ca887f63dea9304f347970ecc1787669
+    # Currently component "otelcol.receiver.prometheus" need stability level experimental to enable native histograms.
+    # Currently component "prometheus.scrape" needs stability level experimental to be able to use "honor_metadata" flag.
+    command: ["run", "--server.http.listen-addr=0.0.0.0:9092", "--stability.level=experimental", "--storage.path=/var/lib/alloy/data", "/etc/alloy/config.alloy"]
+    volumes:
+      - ./config/config-otlp-push.alloy:/etc/alloy/config.alloy
     ports:
       - 9092:9092
 
@@ -123,6 +136,7 @@ services:
     image: otel/opentelemetry-collector-contrib:0.136.0
     command: ["--config=file:/etc/otelcol-contrib/config.yaml", "--feature-gates", "receiver.prometheusreceiver.EnableNativeHistograms,receiver.prometheusreceiver.RemoveStartTimeAdjustment"]
     profiles:
+      - otel-collector
       - otel-collector-remote-write
     volumes:
       - ./config/otel-collector-remote-write-config.yaml:/etc/otelcol-contrib/config.yaml
