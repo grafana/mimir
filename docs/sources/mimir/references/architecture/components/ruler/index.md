@@ -24,7 +24,7 @@ The ruler supports two different rule evaluation modes:
 This is the default mode. The ruler internally runs a querier, and evaluates recording and alerting rules in the ruler process itself.
 To evaluate rules, the ruler connects directly to ingesters and store-gateways, and writes any resulting series to the ingesters.
 
-Configuration of the built-in querier uses [its respective configuration parameters](../../../../configure/configuration-parameters/#querier).
+Configuration of the built-in querier uses [its configuration parameters](../../../../configure/configuration-parameters/#querier).
 
 {{< admonition type="note" >}}
 When you use the internal mode, the ruler uses no query acceleration techniques and the evaluation of very high cardinality queries could take longer than the evaluation interval, which may lead to missing data points in the evaluated recording rules.
