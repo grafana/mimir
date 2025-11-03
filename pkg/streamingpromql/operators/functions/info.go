@@ -26,6 +26,9 @@ type InfoFunction struct {
 	timeRange                types.QueryTimeRange
 	expressionPosition       posrange.PositionRange
 	enableDelayedNameRemoval bool
+
+	skipInnerMetadata    map[int]struct{}
+	nextInnerSeriesIndex int
 }
 
 func NewInfoFunction(
@@ -186,6 +189,7 @@ func (f *InfoFunction) combineSeriesMetadata(innerMetadata, infoMetadata []types
 
 	lb := labels.NewBuilder(labels.EmptyLabels())
 
+	f.skipInnerMetadata = make(map[int]struct{})
 	for i, innerSeries := range innerMetadata {
 		if _, shouldIgnore := ignoreSeries[i]; shouldIgnore {
 			err := f.MemoryConsumptionTracker.IncreaseMemoryConsumptionForLabels(innerSeries.Labels)
@@ -247,6 +251,7 @@ func (f *InfoFunction) combineSeriesMetadata(innerMetadata, infoMetadata []types
 			}
 		}
 		if shouldSkip {
+			f.skipInnerMetadata[i] = struct{}{}
 			continue
 		}
 
@@ -267,7 +272,23 @@ func (f *InfoFunction) combineSeriesMetadata(innerMetadata, infoMetadata []types
 }
 
 func (f *InfoFunction) NextSeries(ctx context.Context) (types.InstantVectorSeriesData, error) {
-	return f.Inner.NextSeries(ctx)
+	for {
+		result, err := f.Inner.NextSeries(ctx)
+		if err != nil {
+			return types.InstantVectorSeriesData{}, err
+		}
+
+		// If this series was skipped in metadata, skip it here as well.
+		if _, shouldSkip := f.skipInnerMetadata[f.nextInnerSeriesIndex]; shouldSkip {
+			types.HPointSlicePool.Put(&result.Histograms, f.MemoryConsumptionTracker)
+			types.FPointSlicePool.Put(&result.Floats, f.MemoryConsumptionTracker)
+			f.nextInnerSeriesIndex++
+			continue
+		}
+		f.nextInnerSeriesIndex++
+
+		return result, nil
+	}
 }
 
 func (f *InfoFunction) ExpressionPosition() posrange.PositionRange {
