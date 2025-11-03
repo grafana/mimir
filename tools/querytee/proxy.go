@@ -37,35 +37,40 @@ import (
 var tracer = otel.Tracer("pkg/tools/querytee")
 
 type ProxyConfig struct {
-	ServerHTTPServiceAddress            string
-	ServerHTTPServicePort               int
-	ServerGracefulShutdownTimeout       time.Duration
-	ServerGRPCServiceAddress            string
-	ServerGRPCServicePort               int
-	BackendEndpoints                    string
-	PreferredBackend                    string
-	BackendReadTimeout                  time.Duration
-	BackendConfigFile                   string
-	parsedBackendConfig                 map[string]*BackendConfig
-	CompareResponses                    bool
-	LogSlowQueryResponseThreshold       time.Duration
-	ValueComparisonTolerance            float64
-	UseRelativeError                    bool
-	PassThroughNonRegisteredRoutes      bool
-	SkipRecentSamples                   time.Duration
-	SkipSamplesBefore                   flagext.Time
-	RequireExactErrorMatch              bool
-	BackendSkipTLSVerify                bool
+	// lint:sorted
+	ServerHTTPServiceAddress      string
+	ServerHTTPServicePort         int
+	ServerGracefulShutdownTimeout time.Duration
+	ServerGRPCServiceAddress      string
+	ServerGRPCServicePort         int
+
+	//lint:sorted
+	GRPCServerMaxRecvMsgSize           int
+	GRPCServerMaxSendMsgSize           int
+	GRPCServerMaxConcurrentStreams     uint
+	GRPCServerMinTimeBetweenPings      time.Duration
+	GRPCServerPingWithoutStreamAllowed bool
+
+	// lint:sorted
 	AddMissingTimeParamToInstantQueries bool
-	SecondaryBackendsRequestProportion  float64
-	SkipPreferredBackendFailures        bool
+	BackendConfigFile                   string
+	BackendEndpoints                    string
+	BackendReadTimeout                  time.Duration
+	BackendSkipTLSVerify                bool
 	BackendsLookbackDelta               time.Duration
 	ClusterValidation                   clusterutil.ClusterValidationConfig
-	GRPCServerMaxRecvMsgSize            int
-	GRPCServerMaxSendMsgSize            int
-	GRPCServerMaxConcurrentStreams      uint
-	GRPCServerMinTimeBetweenPings       time.Duration
-	GRPCServerPingWithoutStreamAllowed  bool
+	CompareResponses                    bool
+	LogSlowQueryResponseThreshold       time.Duration
+	PassThroughNonRegisteredRoutes      bool
+	PreferredBackend                    string
+	RequireExactErrorMatch              bool
+	SecondaryBackendsRequestProportion  float64
+	SkipPreferredBackendFailures        bool
+	SkipRecentSamples                   time.Duration
+	SkipSamplesBefore                   flagext.Time
+	UseRelativeError                    bool
+	ValueComparisonTolerance            float64
+	parsedBackendConfig                 map[string]*BackendConfig
 }
 
 type BackendConfig struct {
@@ -95,7 +100,14 @@ func (cfg *ProxyConfig) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&cfg.ServerHTTPServicePort, "server.http-service-port", 80, "The HTTP port where the query-tee service listens for HTTP requests.")
 	f.DurationVar(&cfg.ServerGracefulShutdownTimeout, "server.graceful-shutdown-timeout", 30*time.Second, "Time to wait for inflight requests to complete when shutting down. Setting this to 0 will terminate all inflight requests immediately when a shutdown signal is received.")
 	f.StringVar(&cfg.ServerGRPCServiceAddress, "server.grpc-service-address", "", "Bind address for server where query-tee service listens for HTTP over gRPC requests.")
+
 	f.IntVar(&cfg.ServerGRPCServicePort, "server.grpc-service-port", 9095, "The GRPC port where the query-tee service listens for HTTP over gRPC messages.")
+	f.IntVar(&cfg.GRPCServerMaxRecvMsgSize, "server.grpc-max-recv-msg-size-bytes", DefaultGRPCMaxRecvMsgSize, "Limit on the size of a gRPC message this server can receive (bytes).")
+	f.IntVar(&cfg.GRPCServerMaxSendMsgSize, "server.grpc-max-send-msg-size-bytes", DefaultGRPCMaxSendMsgSize, "Limit on the size of a gRPC message this server can send (bytes).")
+	f.UintVar(&cfg.GRPCServerMaxConcurrentStreams, "server.grpc-max-concurrent-streams", DefaultGRPCMaxConcurrentStreams, "Limit on the number of concurrent streams for gRPC calls per client connection (0 = unlimited)")
+	f.DurationVar(&cfg.GRPCServerMinTimeBetweenPings, "server.grpc.keepalive.min-time-between-pings", DefaultGRPCMinTimeBetweenPings, "Minimum amount of time a client should wait before sending a keepalive ping.")
+	f.BoolVar(&cfg.GRPCServerPingWithoutStreamAllowed, "server.grpc.keepalive.ping-without-stream-allowed", DefaultGRPCPingWithoutStreamAllowed, "If true, server allows keepalive pings even when there are no active streams(RPCs).")
+
 	f.StringVar(&cfg.BackendEndpoints, "backend.endpoints", "",
 		"Comma-separated list of backend endpoints to query. If the client request contains basic auth, it will be forwarded to the backend. "+
 			"Basic auth is also accepted as part of the endpoint URL and takes precedence over the basic auth in the client request. "+
@@ -118,11 +130,6 @@ func (cfg *ProxyConfig) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.AddMissingTimeParamToInstantQueries, "proxy.add-missing-time-parameter-to-instant-queries", true, "Add a 'time' parameter to proxied instant query requests if they do not have one.")
 	f.Float64Var(&cfg.SecondaryBackendsRequestProportion, "proxy.secondary-backends-request-proportion", DefaultRequestProportion, "Proportion of requests to send to secondary backends. Must be between 0 and 1 (inclusive), and if not 1, then -backend.preferred must be set. Optionally this global setting can be overrided on a per-backend basis via the backend config file.")
 	f.DurationVar(&cfg.BackendsLookbackDelta, "proxy.backends-lookback-delta", 5*time.Minute, "The lookback configured in the backends query engines. Used to accurately extract min time from queries for backends that require it.")
-	f.IntVar(&cfg.GRPCServerMaxRecvMsgSize, "server.grpc-max-recv-msg-size-bytes", DefaultGRPCMaxRecvMsgSize, "Limit on the size of a gRPC message this server can receive (bytes).")
-	f.IntVar(&cfg.GRPCServerMaxSendMsgSize, "server.grpc-max-send-msg-size-bytes", DefaultGRPCMaxSendMsgSize, "Limit on the size of a gRPC message this server can send (bytes).")
-	f.UintVar(&cfg.GRPCServerMaxConcurrentStreams, "server.grpc-max-concurrent-streams", DefaultGRPCMaxConcurrentStreams, "Limit on the number of concurrent streams for gRPC calls per client connection (0 = unlimited)")
-	f.DurationVar(&cfg.GRPCServerMinTimeBetweenPings, "server.grpc.keepalive.min-time-between-pings", DefaultGRPCMinTimeBetweenPings, "Minimum amount of time a client should wait before sending a keepalive ping.")
-	f.BoolVar(&cfg.GRPCServerPingWithoutStreamAllowed, "server.grpc.keepalive.ping-without-stream-allowed", DefaultGRPCPingWithoutStreamAllowed, "If true, server allows keepalive pings even when there are no active streams(RPCs).")
 	cfg.ClusterValidation.RegisterFlagsWithPrefix("query-tee.client-cluster-validation.", f)
 }
 
@@ -312,9 +319,8 @@ func (p *Proxy) Start() error {
 		ServerGracefulShutdownTimeout: p.cfg.ServerGracefulShutdownTimeout,
 
 		// gRPC configs
-		GRPCListenAddress: p.cfg.ServerGRPCServiceAddress,
-		GRPCListenPort:    p.cfg.ServerGRPCServicePort,
-		// Use configurable gRPC server settings
+		GRPCListenAddress:                  p.cfg.ServerGRPCServiceAddress,
+		GRPCListenPort:                     p.cfg.ServerGRPCServicePort,
 		GRPCServerMaxRecvMsgSize:           p.cfg.GRPCServerMaxRecvMsgSize,
 		GRPCServerMaxSendMsgSize:           p.cfg.GRPCServerMaxSendMsgSize,
 		GRPCServerMaxConcurrentStreams:     p.cfg.GRPCServerMaxConcurrentStreams,
