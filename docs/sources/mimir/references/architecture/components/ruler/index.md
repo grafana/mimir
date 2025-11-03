@@ -13,7 +13,7 @@ The ruler is an optional component that evaluates PromQL expressions defined in 
 Each tenant has a set of recording and alerting rules and can group those rules into namespaces.
 
 Evaluating rules generates new samples. Those samples are then passed to an in-process [distributor](../distributor) to be ingested and made available for further queries.
-Configuration of the built-in distributor uses [its respective configuration parameters](../../../../configure/configuration-parameters/#distributor).
+Configuration of the built-in distributor uses [its configuration parameters](../../../../configure/configuration-parameters/#distributor).
 
 ## Operational modes
 
