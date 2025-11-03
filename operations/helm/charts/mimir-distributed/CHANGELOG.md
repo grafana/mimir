@@ -32,6 +32,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [ENHANCEMENT] Add Support to customize gossip ring k8s service annotations. #12718
 * [ENHANCEMENT] Ruler querier and query-frontend: Add support for newly-introduced querier ring, which is used when performing query planning in query-frontends and distributing portions of the plan to queriers for execution. #13017
 * [ENHANCEMENT] Upgrade rollout-operator chart to [0.37.0](https://github.com/grafana/helm-charts/blob/main/charts/rollout-operator/README.md#upgrade-of-grafana-rollout-operator). Note required actions for upgrading the rollout-operator chart. #13245
+* [BUGFIX] Use Mimir 3.0.0 Container Images instead of 3.0.0-rc.2 #13291
 
 ## 6.0.0
 
