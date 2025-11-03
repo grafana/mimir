@@ -37,6 +37,20 @@ func pointerToFloat(v float64) *float64 {
 	return &v
 }
 
+func newTestProxyConfig() ProxyConfig {
+	return ProxyConfig{
+		ServerHTTPServiceAddress:           "localhost",
+		ServerHTTPServicePort:              0,
+		ServerGRPCServiceAddress:           "localhost",
+		ServerGRPCServicePort:              0,
+		GRPCServerMaxRecvMsgSize:           DefaultGRPCMaxRecvMsgSize,
+		GRPCServerMaxSendMsgSize:           DefaultGRPCMaxSendMsgSize,
+		GRPCServerMaxConcurrentStreams:     DefaultGRPCMaxConcurrentStreams,
+		GRPCServerMinTimeBetweenPings:      DefaultGRPCMinTimeBetweenPings,
+		GRPCServerPingWithoutStreamAllowed: DefaultGRPCPingWithoutStreamAllowed,
+	}
+}
+
 var testRoutes = []Route{
 	{
 		Path:               "/api/v1/query",
@@ -81,147 +95,128 @@ func Test_NewProxy(t *testing.T) {
 		expectedError string
 	}{
 		"empty config": {
-			cfg: ProxyConfig{
-				SecondaryBackendsRequestProportion: 1.0,
-				GRPCServerMaxRecvMsgSize:           DefaultGRPCMaxRecvMsgSize,
-				GRPCServerMaxSendMsgSize:           DefaultGRPCMaxSendMsgSize,
-				GRPCServerMaxConcurrentStreams:     DefaultGRPCMaxConcurrentStreams,
-				GRPCServerMinTimeBetweenPings:      DefaultGRPCMinTimeBetweenPings,
-				GRPCServerPingWithoutStreamAllowed: DefaultGRPCPingWithoutStreamAllowed,
-			},
+			cfg: func() ProxyConfig {
+				cfg := newTestProxyConfig()
+				cfg.SecondaryBackendsRequestProportion = 1.0
+				return cfg
+			}(),
 			expectedError: "at least 1 backend is required",
 		},
 		"single endpoint, preferred backend set and exists": {
-			cfg: ProxyConfig{
-				BackendEndpoints:                   "http://blah",
-				PreferredBackend:                   "blah",
-				SecondaryBackendsRequestProportion: 1.0,
-				GRPCServerMaxRecvMsgSize:           DefaultGRPCMaxRecvMsgSize,
-				GRPCServerMaxSendMsgSize:           DefaultGRPCMaxSendMsgSize,
-				GRPCServerMaxConcurrentStreams:     DefaultGRPCMaxConcurrentStreams,
-				GRPCServerMinTimeBetweenPings:      DefaultGRPCMinTimeBetweenPings,
-				GRPCServerPingWithoutStreamAllowed: DefaultGRPCPingWithoutStreamAllowed,
-			},
+			cfg: func() ProxyConfig {
+				cfg := newTestProxyConfig()
+				cfg.BackendEndpoints = "http://blah"
+				cfg.PreferredBackend = "blah"
+				cfg.SecondaryBackendsRequestProportion = 1.0
+				return cfg
+			}(),
 			expectedError: "",
 		},
 		"single endpoint with subdirectory and port, preferred backend set and exists": {
-			cfg: ProxyConfig{
-				BackendEndpoints:                   "http://blah.com:1234/some-sub-dir/and-another",
-				PreferredBackend:                   "blah.com",
-				SecondaryBackendsRequestProportion: 1.0,
-				GRPCServerMaxRecvMsgSize:           DefaultGRPCMaxRecvMsgSize,
-				GRPCServerMaxSendMsgSize:           DefaultGRPCMaxSendMsgSize,
-				GRPCServerMaxConcurrentStreams:     DefaultGRPCMaxConcurrentStreams,
-				GRPCServerMinTimeBetweenPings:      DefaultGRPCMinTimeBetweenPings,
-				GRPCServerPingWithoutStreamAllowed: DefaultGRPCPingWithoutStreamAllowed,
-			},
+			cfg: func() ProxyConfig {
+				cfg := newTestProxyConfig()
+				cfg.BackendEndpoints = "http://blah.com:1234/some-sub-dir/and-another"
+				cfg.PreferredBackend = "blah.com"
+				cfg.SecondaryBackendsRequestProportion = 1.0
+				return cfg
+			}(),
 			expectedError: "",
 		},
 		"single endpoint, preferred backend set and does not exist": {
-			cfg: ProxyConfig{
-				BackendEndpoints:                   "http://blah",
-				PreferredBackend:                   "blah-2",
-				SecondaryBackendsRequestProportion: 1.0,
-				GRPCServerMaxRecvMsgSize:           DefaultGRPCMaxRecvMsgSize,
-				GRPCServerMaxSendMsgSize:           DefaultGRPCMaxSendMsgSize,
-				GRPCServerMaxConcurrentStreams:     DefaultGRPCMaxConcurrentStreams,
-				GRPCServerMinTimeBetweenPings:      DefaultGRPCMinTimeBetweenPings,
-				GRPCServerPingWithoutStreamAllowed: DefaultGRPCPingWithoutStreamAllowed,
-			},
+			cfg: func() ProxyConfig {
+				cfg := newTestProxyConfig()
+				cfg.BackendEndpoints = "http://blah"
+				cfg.PreferredBackend = "blah-2"
+				cfg.SecondaryBackendsRequestProportion = 1.0
+				return cfg
+			}(),
 			expectedError: "the preferred backend (hostname) has not been found among the list of configured backends",
 		},
 		"multiple endpoints, preferred backend set and exists": {
-			cfg: ProxyConfig{
-				BackendEndpoints:                   "http://blah,http://other-blah",
-				PreferredBackend:                   "blah",
-				SecondaryBackendsRequestProportion: 1.0,
-				GRPCServerMaxRecvMsgSize:           DefaultGRPCMaxRecvMsgSize,
-				GRPCServerMaxSendMsgSize:           DefaultGRPCMaxSendMsgSize,
-				GRPCServerMaxConcurrentStreams:     DefaultGRPCMaxConcurrentStreams,
-				GRPCServerMinTimeBetweenPings:      DefaultGRPCMinTimeBetweenPings,
-				GRPCServerPingWithoutStreamAllowed: DefaultGRPCPingWithoutStreamAllowed,
-			},
+			cfg: func() ProxyConfig {
+				cfg := newTestProxyConfig()
+				cfg.BackendEndpoints = "http://blah,http://other-blah"
+				cfg.PreferredBackend = "blah"
+				cfg.SecondaryBackendsRequestProportion = 1.0
+				return cfg
+			}(),
 			expectedError: "",
 		},
 		"multiple endpoints, preferred backend set and does not exist": {
-			cfg: ProxyConfig{
-				BackendEndpoints:                   "http://blah,http://other-blah",
-				PreferredBackend:                   "blah-2",
-				SecondaryBackendsRequestProportion: 1.0,
-				GRPCServerMaxRecvMsgSize:           DefaultGRPCMaxRecvMsgSize,
-				GRPCServerMaxSendMsgSize:           DefaultGRPCMaxSendMsgSize,
-				GRPCServerMaxConcurrentStreams:     DefaultGRPCMaxConcurrentStreams,
-				GRPCServerMinTimeBetweenPings:      DefaultGRPCMinTimeBetweenPings,
-				GRPCServerPingWithoutStreamAllowed: DefaultGRPCPingWithoutStreamAllowed,
-			},
+			cfg: func() ProxyConfig {
+				cfg := newTestProxyConfig()
+				cfg.BackendEndpoints = "http://blah,http://other-blah"
+				cfg.PreferredBackend = "blah-2"
+				cfg.SecondaryBackendsRequestProportion = 1.0
+				return cfg
+			}(),
 			expectedError: "the preferred backend (hostname) has not been found among the list of configured backends",
 		},
 		"invalid endpoint": {
-			cfg: ProxyConfig{
-				BackendEndpoints:                   "://blah",
-				SecondaryBackendsRequestProportion: 1.0,
-				GRPCServerMaxRecvMsgSize:           DefaultGRPCMaxRecvMsgSize,
-				GRPCServerMaxSendMsgSize:           DefaultGRPCMaxSendMsgSize,
-				GRPCServerMaxConcurrentStreams:     DefaultGRPCMaxConcurrentStreams,
-				GRPCServerMinTimeBetweenPings:      DefaultGRPCMinTimeBetweenPings,
-				GRPCServerPingWithoutStreamAllowed: DefaultGRPCPingWithoutStreamAllowed,
-			},
+			cfg: func() ProxyConfig {
+				cfg := newTestProxyConfig()
+				cfg.BackendEndpoints = "://blah"
+				cfg.SecondaryBackendsRequestProportion = 1.0
+				return cfg
+			}(),
 			expectedError: `invalid backend endpoint ://blah: parse "://blah": missing protocol scheme`,
 		},
 		"multiple endpoints, secondary request proportion less than 0": {
-			cfg: ProxyConfig{
-				BackendEndpoints:                   "http://blah,http://other-blah",
-				PreferredBackend:                   "blah",
-				SecondaryBackendsRequestProportion: -0.1,
-			},
+			cfg: func() ProxyConfig {
+				cfg := newTestProxyConfig()
+				cfg.BackendEndpoints = "http://blah,http://other-blah"
+				cfg.PreferredBackend = "blah"
+				cfg.SecondaryBackendsRequestProportion = -0.1
+				return cfg
+			}(),
 			expectedError: "secondary request proportion must be between 0 and 1 (inclusive)",
 		},
 		"multiple endpoints, secondary request proportion greater than 1": {
-			cfg: ProxyConfig{
-				BackendEndpoints:                   "http://blah,http://other-blah",
-				PreferredBackend:                   "blah",
-				SecondaryBackendsRequestProportion: 1.1,
-			},
+			cfg: func() ProxyConfig {
+				cfg := newTestProxyConfig()
+				cfg.BackendEndpoints = "http://blah,http://other-blah"
+				cfg.PreferredBackend = "blah"
+				cfg.SecondaryBackendsRequestProportion = 1.1
+				return cfg
+			}(),
 			expectedError: "secondary request proportion must be between 0 and 1 (inclusive)",
 		},
 		"multiple endpoints, secondary request proportion 1 and preferred backend set": {
-			cfg: ProxyConfig{
-				BackendEndpoints:                   "http://blah,http://other-blah",
-				PreferredBackend:                   "blah",
-				SecondaryBackendsRequestProportion: 1.0,
-				GRPCServerMaxRecvMsgSize:           DefaultGRPCMaxRecvMsgSize,
-				GRPCServerMaxSendMsgSize:           DefaultGRPCMaxSendMsgSize,
-				GRPCServerMaxConcurrentStreams:     DefaultGRPCMaxConcurrentStreams,
-				GRPCServerMinTimeBetweenPings:      DefaultGRPCMinTimeBetweenPings,
-				GRPCServerPingWithoutStreamAllowed: DefaultGRPCPingWithoutStreamAllowed,
-			},
+			cfg: func() ProxyConfig {
+				cfg := newTestProxyConfig()
+				cfg.BackendEndpoints = "http://blah,http://other-blah"
+				cfg.PreferredBackend = "blah"
+				cfg.SecondaryBackendsRequestProportion = 1.0
+				return cfg
+			}(),
 			expectedError: "",
 		},
 		"multiple endpoints, secondary request proportion 1 and preferred backend not set": {
-			cfg: ProxyConfig{
-				BackendEndpoints:                   "http://blah,http://other-blah",
-				SecondaryBackendsRequestProportion: 1.0,
-				GRPCServerMaxRecvMsgSize:           DefaultGRPCMaxRecvMsgSize,
-				GRPCServerMaxSendMsgSize:           DefaultGRPCMaxSendMsgSize,
-				GRPCServerMaxConcurrentStreams:     DefaultGRPCMaxConcurrentStreams,
-				GRPCServerMinTimeBetweenPings:      DefaultGRPCMinTimeBetweenPings,
-				GRPCServerPingWithoutStreamAllowed: DefaultGRPCPingWithoutStreamAllowed,
-			},
+			cfg: func() ProxyConfig {
+				cfg := newTestProxyConfig()
+				cfg.BackendEndpoints = "http://blah,http://other-blah"
+				cfg.SecondaryBackendsRequestProportion = 1.0
+				return cfg
+			}(),
 			expectedError: "",
 		},
 		"multiple endpoints, secondary request proportion not 1 and preferred backend set": {
-			cfg: ProxyConfig{
-				BackendEndpoints:                   "http://blah,http://other-blah",
-				PreferredBackend:                   "blah",
-				SecondaryBackendsRequestProportion: 0.7,
-			},
+			cfg: func() ProxyConfig {
+				cfg := newTestProxyConfig()
+				cfg.BackendEndpoints = "http://blah,http://other-blah"
+				cfg.PreferredBackend = "blah"
+				cfg.SecondaryBackendsRequestProportion = 0.7
+				return cfg
+			}(),
 			expectedError: "",
 		},
 		"multiple endpoints, secondary request proportion not 1 and preferred backend not set": {
-			cfg: ProxyConfig{
-				BackendEndpoints:                   "http://blah,http://other-blah",
-				SecondaryBackendsRequestProportion: 0.7,
-			},
+			cfg: func() ProxyConfig {
+				cfg := newTestProxyConfig()
+				cfg.BackendEndpoints = "http://blah,http://other-blah"
+				cfg.SecondaryBackendsRequestProportion = 0.7
+				return cfg
+			}(),
 			expectedError: "preferred backend must be set when secondary backends request proportion is not 1",
 		},
 	}
@@ -415,22 +410,11 @@ func Test_Proxy_RequestsForwarding(t *testing.T) {
 			}
 
 			// Start the proxy.
-			cfg := ProxyConfig{
-				BackendEndpoints:                   strings.Join(backendURLs, ","),
-				PreferredBackend:                   strconv.Itoa(testData.preferredBackendIdx),
-				parsedBackendConfig:                testData.backendConfig,
-				ServerHTTPServiceAddress:           "localhost",
-				ServerHTTPServicePort:              0,
-				ServerGRPCServiceAddress:           "localhost",
-				ServerGRPCServicePort:              0,
-				BackendReadTimeout:                 time.Second,
-				SecondaryBackendsRequestProportion: 1.0,
-				GRPCServerMaxRecvMsgSize:           DefaultGRPCMaxRecvMsgSize,
-				GRPCServerMaxSendMsgSize:           DefaultGRPCMaxSendMsgSize,
-				GRPCServerMaxConcurrentStreams:     DefaultGRPCMaxConcurrentStreams,
-				GRPCServerMinTimeBetweenPings:      DefaultGRPCMinTimeBetweenPings,
-				GRPCServerPingWithoutStreamAllowed: DefaultGRPCPingWithoutStreamAllowed,
-			}
+			cfg := newTestProxyConfig()
+			cfg.BackendEndpoints = strings.Join(backendURLs, ",")
+			cfg.PreferredBackend = strconv.Itoa(testData.preferredBackendIdx)
+			cfg.parsedBackendConfig = testData.backendConfig
+			cfg.SecondaryBackendsRequestProportion = 1.0
 
 			if len(backendURLs) == 2 {
 				cfg.CompareResponses = true
@@ -580,21 +564,10 @@ func TestProxy_Passthrough(t *testing.T) {
 			}
 
 			// Start the proxy.
-			cfg := ProxyConfig{
-				BackendEndpoints:               strings.Join(backendURLs, ","),
-				PreferredBackend:               strconv.Itoa(testData.preferredBackendIdx),
-				ServerHTTPServiceAddress:       "localhost",
-				ServerHTTPServicePort:          0,
-				ServerGRPCServiceAddress:       "localhost",
-				ServerGRPCServicePort:          0,
-				BackendReadTimeout:             time.Second,
-				PassThroughNonRegisteredRoutes: true,
-				GRPCServerMaxRecvMsgSize:           DefaultGRPCMaxRecvMsgSize,
-				GRPCServerMaxSendMsgSize:           DefaultGRPCMaxSendMsgSize,
-				GRPCServerMaxConcurrentStreams:     DefaultGRPCMaxConcurrentStreams,
-				GRPCServerMinTimeBetweenPings:      DefaultGRPCMinTimeBetweenPings,
-				GRPCServerPingWithoutStreamAllowed: DefaultGRPCPingWithoutStreamAllowed,
-			}
+			cfg := newTestProxyConfig()
+			cfg.BackendEndpoints = strings.Join(backendURLs, ",")
+			cfg.PreferredBackend = strconv.Itoa(testData.preferredBackendIdx)
+			cfg.PassThroughNonRegisteredRoutes = true
 
 			p, err := NewProxy(cfg, log.NewNopLogger(), testRoutes, prometheus.NewRegistry())
 			require.NoError(t, err)
@@ -663,20 +636,9 @@ func TestProxyHTTPGRPC(t *testing.T) {
 		}
 
 		// Start the proxy.
-		cfg := ProxyConfig{
-			BackendEndpoints:         strings.Join(backendURLs, ","),
-			PreferredBackend:         strconv.Itoa(0), // First backend server is preferred response
-			ServerHTTPServiceAddress: "localhost",
-			ServerHTTPServicePort:    0,
-			ServerGRPCServiceAddress: "localhost",
-			ServerGRPCServicePort:    0,
-			BackendReadTimeout:       time.Second,
-			GRPCServerMaxRecvMsgSize:           DefaultGRPCMaxRecvMsgSize,
-			GRPCServerMaxSendMsgSize:           DefaultGRPCMaxSendMsgSize,
-			GRPCServerMaxConcurrentStreams:     DefaultGRPCMaxConcurrentStreams,
-			GRPCServerMinTimeBetweenPings:      DefaultGRPCMinTimeBetweenPings,
-			GRPCServerPingWithoutStreamAllowed: DefaultGRPCPingWithoutStreamAllowed,
-		}
+		cfg := newTestProxyConfig()
+		cfg.BackendEndpoints = strings.Join(backendURLs, ",")
+		cfg.PreferredBackend = strconv.Itoa(0) // First backend server is preferred response
 
 		p, err := NewProxy(cfg, logger, testRoutes, prometheus.NewRegistry())
 		require.NoError(t, err)
@@ -724,20 +686,9 @@ func TestProxyHTTPGRPC(t *testing.T) {
 		}
 
 		// Start the proxy.
-		cfg := ProxyConfig{
-			BackendEndpoints:         strings.Join(backendURLs, ","),
-			PreferredBackend:         strconv.Itoa(0), // First backend server is preferred response
-			ServerHTTPServiceAddress: "localhost",
-			ServerHTTPServicePort:    0,
-			ServerGRPCServiceAddress: "localhost",
-			ServerGRPCServicePort:    0,
-			BackendReadTimeout:       time.Second,
-			GRPCServerMaxRecvMsgSize:           DefaultGRPCMaxRecvMsgSize,
-			GRPCServerMaxSendMsgSize:           DefaultGRPCMaxSendMsgSize,
-			GRPCServerMaxConcurrentStreams:     DefaultGRPCMaxConcurrentStreams,
-			GRPCServerMinTimeBetweenPings:      DefaultGRPCMinTimeBetweenPings,
-			GRPCServerPingWithoutStreamAllowed: DefaultGRPCPingWithoutStreamAllowed,
-		}
+		cfg := newTestProxyConfig()
+		cfg.BackendEndpoints = strings.Join(backendURLs, ",")
+		cfg.PreferredBackend = strconv.Itoa(0) // First backend server is preferred response
 
 		p, err := NewProxy(cfg, logger, testRoutes, prometheus.NewRegistry())
 		require.NoError(t, err)
@@ -959,19 +910,9 @@ func Test_NewProxy_BackendConfigPath(t *testing.T) {
 				backendEndpoints = "http://backend1:9090,http://backend2:9090,http://backend3:9090,http://backend4:9090"
 			}
 
-			cfg := ProxyConfig{
-				BackendEndpoints:                   backendEndpoints,
-				ServerHTTPServiceAddress:           "localhost",
-				ServerHTTPServicePort:              0,
-				ServerGRPCServiceAddress:           "localhost",
-				ServerGRPCServicePort:              0,
-				SecondaryBackendsRequestProportion: 1.0,
-				GRPCServerMaxRecvMsgSize:           DefaultGRPCMaxRecvMsgSize,
-				GRPCServerMaxSendMsgSize:           DefaultGRPCMaxSendMsgSize,
-				GRPCServerMaxConcurrentStreams:     DefaultGRPCMaxConcurrentStreams,
-				GRPCServerMinTimeBetweenPings:      DefaultGRPCMinTimeBetweenPings,
-				GRPCServerPingWithoutStreamAllowed: DefaultGRPCPingWithoutStreamAllowed,
-			}
+			cfg := newTestProxyConfig()
+			cfg.BackendEndpoints = backendEndpoints
+			cfg.SecondaryBackendsRequestProportion = 1.0
 
 			if !testCase.createFile {
 				cfg.BackendConfigFile = "/nonexistent/path"
