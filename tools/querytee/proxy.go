@@ -61,6 +61,11 @@ type ProxyConfig struct {
 	SkipPreferredBackendFailures        bool
 	BackendsLookbackDelta               time.Duration
 	ClusterValidation                   clusterutil.ClusterValidationConfig
+	GRPCServerMaxRecvMsgSize            int
+	GRPCServerMaxSendMsgSize            int
+	GRPCServerMaxConcurrentStreams      uint
+	GRPCServerMinTimeBetweenPings       time.Duration
+	GRPCServerPingWithoutStreamAllowed  bool
 }
 
 type BackendConfig struct {
@@ -113,6 +118,11 @@ func (cfg *ProxyConfig) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.AddMissingTimeParamToInstantQueries, "proxy.add-missing-time-parameter-to-instant-queries", true, "Add a 'time' parameter to proxied instant query requests if they do not have one.")
 	f.Float64Var(&cfg.SecondaryBackendsRequestProportion, "proxy.secondary-backends-request-proportion", DefaultRequestProportion, "Proportion of requests to send to secondary backends. Must be between 0 and 1 (inclusive), and if not 1, then -backend.preferred must be set. Optionally this global setting can be overrided on a per-backend basis via the backend config file.")
 	f.DurationVar(&cfg.BackendsLookbackDelta, "proxy.backends-lookback-delta", 5*time.Minute, "The lookback configured in the backends query engines. Used to accurately extract min time from queries for backends that require it.")
+	f.IntVar(&cfg.GRPCServerMaxRecvMsgSize, "server.grpc-max-recv-msg-size-bytes", DefaultGRPCMaxRecvMsgSize, "Limit on the size of a gRPC message this server can receive (bytes).")
+	f.IntVar(&cfg.GRPCServerMaxSendMsgSize, "server.grpc-max-send-msg-size-bytes", DefaultGRPCMaxSendMsgSize, "Limit on the size of a gRPC message this server can send (bytes).")
+	f.UintVar(&cfg.GRPCServerMaxConcurrentStreams, "server.grpc-max-concurrent-streams", DefaultGRPCMaxConcurrentStreams, "Limit on the number of concurrent streams for gRPC calls per client connection (0 = unlimited)")
+	f.DurationVar(&cfg.GRPCServerMinTimeBetweenPings, "server.grpc.keepalive.min-time-between-pings", DefaultGRPCMinTimeBetweenPings, "Minimum amount of time a client should wait before sending a keepalive ping.")
+	f.BoolVar(&cfg.GRPCServerPingWithoutStreamAllowed, "server.grpc.keepalive.ping-without-stream-allowed", DefaultGRPCPingWithoutStreamAllowed, "If true, server allows keepalive pings even when there are no active streams(RPCs).")
 	cfg.ClusterValidation.RegisterFlagsWithPrefix("query-tee.client-cluster-validation.", f)
 }
 
@@ -304,12 +314,12 @@ func (p *Proxy) Start() error {
 		// gRPC configs
 		GRPCListenAddress: p.cfg.ServerGRPCServiceAddress,
 		GRPCListenPort:    p.cfg.ServerGRPCServicePort,
-		// Same size configurations as in Mimir default gRPC configuration values
-		GRPCServerMaxRecvMsgSize:           100 * 1024 * 1024,
-		GRPCServerMaxSendMsgSize:           100 * 1024 * 1024,
-		GRPCServerMaxConcurrentStreams:     10000,
-		GRPCServerMinTimeBetweenPings:      10 * time.Second,
-		GRPCServerPingWithoutStreamAllowed: true,
+		// Use configurable gRPC server settings
+		GRPCServerMaxRecvMsgSize:           p.cfg.GRPCServerMaxRecvMsgSize,
+		GRPCServerMaxSendMsgSize:           p.cfg.GRPCServerMaxSendMsgSize,
+		GRPCServerMaxConcurrentStreams:     p.cfg.GRPCServerMaxConcurrentStreams,
+		GRPCServerMinTimeBetweenPings:      p.cfg.GRPCServerMinTimeBetweenPings,
+		GRPCServerPingWithoutStreamAllowed: p.cfg.GRPCServerPingWithoutStreamAllowed,
 
 		// Allow reporting HTTP 4xx codes in status_code label of request duration metrics
 		ReportHTTP4XXCodesInInstrumentationLabel: true,

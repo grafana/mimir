@@ -83,6 +83,11 @@ func Test_NewProxy(t *testing.T) {
 		"empty config": {
 			cfg: ProxyConfig{
 				SecondaryBackendsRequestProportion: 1.0,
+				GRPCServerMaxRecvMsgSize:           DefaultGRPCMaxRecvMsgSize,
+				GRPCServerMaxSendMsgSize:           DefaultGRPCMaxSendMsgSize,
+				GRPCServerMaxConcurrentStreams:     DefaultGRPCMaxConcurrentStreams,
+				GRPCServerMinTimeBetweenPings:      DefaultGRPCMinTimeBetweenPings,
+				GRPCServerPingWithoutStreamAllowed: DefaultGRPCPingWithoutStreamAllowed,
 			},
 			expectedError: "at least 1 backend is required",
 		},
@@ -91,6 +96,11 @@ func Test_NewProxy(t *testing.T) {
 				BackendEndpoints:                   "http://blah",
 				PreferredBackend:                   "blah",
 				SecondaryBackendsRequestProportion: 1.0,
+				GRPCServerMaxRecvMsgSize:           DefaultGRPCMaxRecvMsgSize,
+				GRPCServerMaxSendMsgSize:           DefaultGRPCMaxSendMsgSize,
+				GRPCServerMaxConcurrentStreams:     DefaultGRPCMaxConcurrentStreams,
+				GRPCServerMinTimeBetweenPings:      DefaultGRPCMinTimeBetweenPings,
+				GRPCServerPingWithoutStreamAllowed: DefaultGRPCPingWithoutStreamAllowed,
 			},
 			expectedError: "",
 		},
@@ -99,6 +109,11 @@ func Test_NewProxy(t *testing.T) {
 				BackendEndpoints:                   "http://blah.com:1234/some-sub-dir/and-another",
 				PreferredBackend:                   "blah.com",
 				SecondaryBackendsRequestProportion: 1.0,
+				GRPCServerMaxRecvMsgSize:           DefaultGRPCMaxRecvMsgSize,
+				GRPCServerMaxSendMsgSize:           DefaultGRPCMaxSendMsgSize,
+				GRPCServerMaxConcurrentStreams:     DefaultGRPCMaxConcurrentStreams,
+				GRPCServerMinTimeBetweenPings:      DefaultGRPCMinTimeBetweenPings,
+				GRPCServerPingWithoutStreamAllowed: DefaultGRPCPingWithoutStreamAllowed,
 			},
 			expectedError: "",
 		},
@@ -107,6 +122,11 @@ func Test_NewProxy(t *testing.T) {
 				BackendEndpoints:                   "http://blah",
 				PreferredBackend:                   "blah-2",
 				SecondaryBackendsRequestProportion: 1.0,
+				GRPCServerMaxRecvMsgSize:           DefaultGRPCMaxRecvMsgSize,
+				GRPCServerMaxSendMsgSize:           DefaultGRPCMaxSendMsgSize,
+				GRPCServerMaxConcurrentStreams:     DefaultGRPCMaxConcurrentStreams,
+				GRPCServerMinTimeBetweenPings:      DefaultGRPCMinTimeBetweenPings,
+				GRPCServerPingWithoutStreamAllowed: DefaultGRPCPingWithoutStreamAllowed,
 			},
 			expectedError: "the preferred backend (hostname) has not been found among the list of configured backends",
 		},
@@ -115,6 +135,11 @@ func Test_NewProxy(t *testing.T) {
 				BackendEndpoints:                   "http://blah,http://other-blah",
 				PreferredBackend:                   "blah",
 				SecondaryBackendsRequestProportion: 1.0,
+				GRPCServerMaxRecvMsgSize:           DefaultGRPCMaxRecvMsgSize,
+				GRPCServerMaxSendMsgSize:           DefaultGRPCMaxSendMsgSize,
+				GRPCServerMaxConcurrentStreams:     DefaultGRPCMaxConcurrentStreams,
+				GRPCServerMinTimeBetweenPings:      DefaultGRPCMinTimeBetweenPings,
+				GRPCServerPingWithoutStreamAllowed: DefaultGRPCPingWithoutStreamAllowed,
 			},
 			expectedError: "",
 		},
@@ -123,6 +148,11 @@ func Test_NewProxy(t *testing.T) {
 				BackendEndpoints:                   "http://blah,http://other-blah",
 				PreferredBackend:                   "blah-2",
 				SecondaryBackendsRequestProportion: 1.0,
+				GRPCServerMaxRecvMsgSize:           DefaultGRPCMaxRecvMsgSize,
+				GRPCServerMaxSendMsgSize:           DefaultGRPCMaxSendMsgSize,
+				GRPCServerMaxConcurrentStreams:     DefaultGRPCMaxConcurrentStreams,
+				GRPCServerMinTimeBetweenPings:      DefaultGRPCMinTimeBetweenPings,
+				GRPCServerPingWithoutStreamAllowed: DefaultGRPCPingWithoutStreamAllowed,
 			},
 			expectedError: "the preferred backend (hostname) has not been found among the list of configured backends",
 		},
@@ -130,6 +160,11 @@ func Test_NewProxy(t *testing.T) {
 			cfg: ProxyConfig{
 				BackendEndpoints:                   "://blah",
 				SecondaryBackendsRequestProportion: 1.0,
+				GRPCServerMaxRecvMsgSize:           DefaultGRPCMaxRecvMsgSize,
+				GRPCServerMaxSendMsgSize:           DefaultGRPCMaxSendMsgSize,
+				GRPCServerMaxConcurrentStreams:     DefaultGRPCMaxConcurrentStreams,
+				GRPCServerMinTimeBetweenPings:      DefaultGRPCMinTimeBetweenPings,
+				GRPCServerPingWithoutStreamAllowed: DefaultGRPCPingWithoutStreamAllowed,
 			},
 			expectedError: `invalid backend endpoint ://blah: parse "://blah": missing protocol scheme`,
 		},
@@ -154,6 +189,11 @@ func Test_NewProxy(t *testing.T) {
 				BackendEndpoints:                   "http://blah,http://other-blah",
 				PreferredBackend:                   "blah",
 				SecondaryBackendsRequestProportion: 1.0,
+				GRPCServerMaxRecvMsgSize:           DefaultGRPCMaxRecvMsgSize,
+				GRPCServerMaxSendMsgSize:           DefaultGRPCMaxSendMsgSize,
+				GRPCServerMaxConcurrentStreams:     DefaultGRPCMaxConcurrentStreams,
+				GRPCServerMinTimeBetweenPings:      DefaultGRPCMinTimeBetweenPings,
+				GRPCServerPingWithoutStreamAllowed: DefaultGRPCPingWithoutStreamAllowed,
 			},
 			expectedError: "",
 		},
@@ -161,6 +201,11 @@ func Test_NewProxy(t *testing.T) {
 			cfg: ProxyConfig{
 				BackendEndpoints:                   "http://blah,http://other-blah",
 				SecondaryBackendsRequestProportion: 1.0,
+				GRPCServerMaxRecvMsgSize:           DefaultGRPCMaxRecvMsgSize,
+				GRPCServerMaxSendMsgSize:           DefaultGRPCMaxSendMsgSize,
+				GRPCServerMaxConcurrentStreams:     DefaultGRPCMaxConcurrentStreams,
+				GRPCServerMinTimeBetweenPings:      DefaultGRPCMinTimeBetweenPings,
+				GRPCServerPingWithoutStreamAllowed: DefaultGRPCPingWithoutStreamAllowed,
 			},
 			expectedError: "",
 		},
@@ -380,6 +425,11 @@ func Test_Proxy_RequestsForwarding(t *testing.T) {
 				ServerGRPCServicePort:              0,
 				BackendReadTimeout:                 time.Second,
 				SecondaryBackendsRequestProportion: 1.0,
+				GRPCServerMaxRecvMsgSize:           DefaultGRPCMaxRecvMsgSize,
+				GRPCServerMaxSendMsgSize:           DefaultGRPCMaxSendMsgSize,
+				GRPCServerMaxConcurrentStreams:     DefaultGRPCMaxConcurrentStreams,
+				GRPCServerMinTimeBetweenPings:      DefaultGRPCMinTimeBetweenPings,
+				GRPCServerPingWithoutStreamAllowed: DefaultGRPCPingWithoutStreamAllowed,
 			}
 
 			if len(backendURLs) == 2 {
@@ -539,6 +589,11 @@ func TestProxy_Passthrough(t *testing.T) {
 				ServerGRPCServicePort:          0,
 				BackendReadTimeout:             time.Second,
 				PassThroughNonRegisteredRoutes: true,
+				GRPCServerMaxRecvMsgSize:           DefaultGRPCMaxRecvMsgSize,
+				GRPCServerMaxSendMsgSize:           DefaultGRPCMaxSendMsgSize,
+				GRPCServerMaxConcurrentStreams:     DefaultGRPCMaxConcurrentStreams,
+				GRPCServerMinTimeBetweenPings:      DefaultGRPCMinTimeBetweenPings,
+				GRPCServerPingWithoutStreamAllowed: DefaultGRPCPingWithoutStreamAllowed,
 			}
 
 			p, err := NewProxy(cfg, log.NewNopLogger(), testRoutes, prometheus.NewRegistry())
@@ -616,6 +671,11 @@ func TestProxyHTTPGRPC(t *testing.T) {
 			ServerGRPCServiceAddress: "localhost",
 			ServerGRPCServicePort:    0,
 			BackendReadTimeout:       time.Second,
+			GRPCServerMaxRecvMsgSize:           DefaultGRPCMaxRecvMsgSize,
+			GRPCServerMaxSendMsgSize:           DefaultGRPCMaxSendMsgSize,
+			GRPCServerMaxConcurrentStreams:     DefaultGRPCMaxConcurrentStreams,
+			GRPCServerMinTimeBetweenPings:      DefaultGRPCMinTimeBetweenPings,
+			GRPCServerPingWithoutStreamAllowed: DefaultGRPCPingWithoutStreamAllowed,
 		}
 
 		p, err := NewProxy(cfg, logger, testRoutes, prometheus.NewRegistry())
@@ -672,6 +732,11 @@ func TestProxyHTTPGRPC(t *testing.T) {
 			ServerGRPCServiceAddress: "localhost",
 			ServerGRPCServicePort:    0,
 			BackendReadTimeout:       time.Second,
+			GRPCServerMaxRecvMsgSize:           DefaultGRPCMaxRecvMsgSize,
+			GRPCServerMaxSendMsgSize:           DefaultGRPCMaxSendMsgSize,
+			GRPCServerMaxConcurrentStreams:     DefaultGRPCMaxConcurrentStreams,
+			GRPCServerMinTimeBetweenPings:      DefaultGRPCMinTimeBetweenPings,
+			GRPCServerPingWithoutStreamAllowed: DefaultGRPCPingWithoutStreamAllowed,
 		}
 
 		p, err := NewProxy(cfg, logger, testRoutes, prometheus.NewRegistry())
@@ -901,6 +966,11 @@ func Test_NewProxy_BackendConfigPath(t *testing.T) {
 				ServerGRPCServiceAddress:           "localhost",
 				ServerGRPCServicePort:              0,
 				SecondaryBackendsRequestProportion: 1.0,
+				GRPCServerMaxRecvMsgSize:           DefaultGRPCMaxRecvMsgSize,
+				GRPCServerMaxSendMsgSize:           DefaultGRPCMaxSendMsgSize,
+				GRPCServerMaxConcurrentStreams:     DefaultGRPCMaxConcurrentStreams,
+				GRPCServerMinTimeBetweenPings:      DefaultGRPCMinTimeBetweenPings,
+				GRPCServerPingWithoutStreamAllowed: DefaultGRPCPingWithoutStreamAllowed,
 			}
 
 			if !testCase.createFile {
