@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/grafana/dskit/clusterutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -188,7 +189,7 @@ func Test_ProxyBackend_ClusterValidationLabel(t *testing.T) {
 			backendReq, err := b.(*ProxyBackend).createBackendRequest(context.Background(), req, nil)
 			require.NoError(t, err)
 
-			actualHeader := backendReq.Header.Get("X-Cluster")
+			actualHeader := backendReq.Header.Get(clusterutil.ClusterValidationLabelHeader)
 			if tc.shouldHaveXCluster {
 				assert.Equal(t, tc.expectedXClusterHeader, actualHeader)
 			} else {

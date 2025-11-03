@@ -15,6 +15,7 @@ import (
 	"path"
 	"time"
 
+	"github.com/grafana/dskit/clusterutil"
 	"github.com/pkg/errors"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
@@ -56,7 +57,7 @@ type ProxyBackend struct {
 	// Minimum data queried age - backend serves queries with min time >= (now - age)
 	minDataQueriedAge time.Duration
 
-	// Cluster validation label to set in outgoing requests
+	// Cluster validation label to set in outgoing requests.
 	clusterLabel string
 }
 
@@ -205,7 +206,7 @@ func (b *ProxyBackend) createBackendRequest(ctx context.Context, orig *http.Requ
 
 	// Set cluster validation header if configured
 	if b.clusterLabel != "" {
-		req.Header.Set("X-Cluster", b.clusterLabel)
+		req.Header.Set(clusterutil.ClusterValidationLabelHeader, b.clusterLabel)
 	}
 
 	for headerName, headerValues := range b.cfg.RequestHeaders {
