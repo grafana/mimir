@@ -111,15 +111,11 @@ func (m *Manager) enabledForUser(userID string) bool {
 		return false
 	}
 
-	return len(m.limits.CostAttributionLabels(userID)) > 0 || len(m.limits.CostAttributionLabelsStructured(userID)) > 0
+	return len(m.limits.CostAttributionLabelsStructured(userID)) > 0
 }
 
 func (m *Manager) labels(userID string) []costattributionmodel.Label {
-	// We prefer the structured labels over the string labels, if provided.
-	if s := m.limits.CostAttributionLabelsStructured(userID); len(s) > 0 {
-		return s
-	}
-	return costattributionmodel.ParseCostAttributionLabels(m.limits.CostAttributionLabels(userID))
+	return m.limits.CostAttributionLabelsStructured(userID)
 }
 
 func (m *Manager) SampleTracker(userID string) *SampleTracker {
