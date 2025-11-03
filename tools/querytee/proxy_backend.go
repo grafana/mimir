@@ -27,7 +27,7 @@ const (
 	DefaultMinDataQueriedAge = 0 * time.Second
 	// DefaultGRPCMaxRecvMsgSize is the default maximum size of a gRPC message this server can receive (100MB)
 	DefaultGRPCMaxRecvMsgSize = 100 * 1024 * 1024
-	// DefaultGRPCMaxSendMsgSize is the default maximum size of a gRPC message this server can send (100MB)  
+	// DefaultGRPCMaxSendMsgSize is the default maximum size of a gRPC message this server can send (100MB)
 	DefaultGRPCMaxSendMsgSize = 100 * 1024 * 1024
 	// DefaultGRPCMaxConcurrentStreams is the default maximum number of concurrent streams for gRPC calls
 	DefaultGRPCMaxConcurrentStreams = 10000
