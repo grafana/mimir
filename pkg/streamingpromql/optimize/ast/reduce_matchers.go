@@ -86,8 +86,8 @@ func (c *ReduceMatchers) Apply(ctx context.Context, root parser.Expr) (parser.Ex
 }
 
 func reduceMatchers(existing []*labels.Matcher) (retained []*labels.Matcher, dropped []*labels.Matcher) {
-	// If there's only one matcher in addition to the __name__ matcher, don't try to do any optimizations
-	if len(existing) <= 2 {
+	// If there's only one matcher, we can't reduce anything.
+	if len(existing) <= 1 {
 		return existing, nil
 	}
 

@@ -49,11 +49,6 @@ func TestReduceMatchers_Apply_Vectors(t *testing.T) {
 			expectedQuery: `test_series{foo="bar",foo=~".*baz.*"}`,
 		},
 		{
-			name:          "do not drop wildcard matcher if it is the only matcher",
-			inputQuery:    `test_series{foo=~".*"}`,
-			expectedQuery: `test_series{foo=~".*"}`,
-		},
-		{
 			name:          "do not drop wildcard negative regex matcher",
 			inputQuery:    `test_series{foo!~".*"}`,
 			expectedQuery: `test_series{foo!~".*"}`,
