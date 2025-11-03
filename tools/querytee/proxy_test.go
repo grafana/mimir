@@ -43,6 +43,7 @@ func newTestProxyConfig() ProxyConfig {
 		ServerHTTPServicePort:              0,
 		ServerGRPCServiceAddress:           "localhost",
 		ServerGRPCServicePort:              0,
+		SecondaryBackendsRequestProportion: 1.0,
 		GRPCServerMaxRecvMsgSize:           DefaultGRPCMaxRecvMsgSize,
 		GRPCServerMaxSendMsgSize:           DefaultGRPCMaxSendMsgSize,
 		GRPCServerMaxConcurrentStreams:     DefaultGRPCMaxConcurrentStreams,
@@ -95,11 +96,7 @@ func Test_NewProxy(t *testing.T) {
 		expectedError string
 	}{
 		"empty config": {
-			cfg: func() ProxyConfig {
-				cfg := newTestProxyConfig()
-				cfg.SecondaryBackendsRequestProportion = 1.0
-				return cfg
-			}(),
+			cfg:           newTestProxyConfig(),
 			expectedError: "at least 1 backend is required",
 		},
 		"single endpoint, preferred backend set and exists": {
@@ -107,7 +104,6 @@ func Test_NewProxy(t *testing.T) {
 				cfg := newTestProxyConfig()
 				cfg.BackendEndpoints = "http://blah"
 				cfg.PreferredBackend = "blah"
-				cfg.SecondaryBackendsRequestProportion = 1.0
 				return cfg
 			}(),
 			expectedError: "",
@@ -117,7 +113,6 @@ func Test_NewProxy(t *testing.T) {
 				cfg := newTestProxyConfig()
 				cfg.BackendEndpoints = "http://blah.com:1234/some-sub-dir/and-another"
 				cfg.PreferredBackend = "blah.com"
-				cfg.SecondaryBackendsRequestProportion = 1.0
 				return cfg
 			}(),
 			expectedError: "",
@@ -127,7 +122,6 @@ func Test_NewProxy(t *testing.T) {
 				cfg := newTestProxyConfig()
 				cfg.BackendEndpoints = "http://blah"
 				cfg.PreferredBackend = "blah-2"
-				cfg.SecondaryBackendsRequestProportion = 1.0
 				return cfg
 			}(),
 			expectedError: "the preferred backend (hostname) has not been found among the list of configured backends",
@@ -137,7 +131,6 @@ func Test_NewProxy(t *testing.T) {
 				cfg := newTestProxyConfig()
 				cfg.BackendEndpoints = "http://blah,http://other-blah"
 				cfg.PreferredBackend = "blah"
-				cfg.SecondaryBackendsRequestProportion = 1.0
 				return cfg
 			}(),
 			expectedError: "",
@@ -147,7 +140,6 @@ func Test_NewProxy(t *testing.T) {
 				cfg := newTestProxyConfig()
 				cfg.BackendEndpoints = "http://blah,http://other-blah"
 				cfg.PreferredBackend = "blah-2"
-				cfg.SecondaryBackendsRequestProportion = 1.0
 				return cfg
 			}(),
 			expectedError: "the preferred backend (hostname) has not been found among the list of configured backends",
@@ -156,7 +148,6 @@ func Test_NewProxy(t *testing.T) {
 			cfg: func() ProxyConfig {
 				cfg := newTestProxyConfig()
 				cfg.BackendEndpoints = "://blah"
-				cfg.SecondaryBackendsRequestProportion = 1.0
 				return cfg
 			}(),
 			expectedError: `invalid backend endpoint ://blah: parse "://blah": missing protocol scheme`,
@@ -186,7 +177,6 @@ func Test_NewProxy(t *testing.T) {
 				cfg := newTestProxyConfig()
 				cfg.BackendEndpoints = "http://blah,http://other-blah"
 				cfg.PreferredBackend = "blah"
-				cfg.SecondaryBackendsRequestProportion = 1.0
 				return cfg
 			}(),
 			expectedError: "",
@@ -195,7 +185,6 @@ func Test_NewProxy(t *testing.T) {
 			cfg: func() ProxyConfig {
 				cfg := newTestProxyConfig()
 				cfg.BackendEndpoints = "http://blah,http://other-blah"
-				cfg.SecondaryBackendsRequestProportion = 1.0
 				return cfg
 			}(),
 			expectedError: "",
@@ -414,7 +403,6 @@ func Test_Proxy_RequestsForwarding(t *testing.T) {
 			cfg.BackendEndpoints = strings.Join(backendURLs, ",")
 			cfg.PreferredBackend = strconv.Itoa(testData.preferredBackendIdx)
 			cfg.parsedBackendConfig = testData.backendConfig
-			cfg.SecondaryBackendsRequestProportion = 1.0
 
 			if len(backendURLs) == 2 {
 				cfg.CompareResponses = true
@@ -912,7 +900,6 @@ func Test_NewProxy_BackendConfigPath(t *testing.T) {
 
 			cfg := newTestProxyConfig()
 			cfg.BackendEndpoints = backendEndpoints
-			cfg.SecondaryBackendsRequestProportion = 1.0
 
 			if !testCase.createFile {
 				cfg.BackendConfigFile = "/nonexistent/path"
