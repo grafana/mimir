@@ -80,7 +80,7 @@
 ### Jsonnet
 
 * [CHANGE] Store-gateway: The store-gateway disk class now honors the one configured via `$._config.store_gateway_data_disk_class` and doesn't replace `fast` with `fast-dont-retain`. #13152
-* [CHANGE] Rollout-operator: Vendor jsonnet from rollout-operator repository. #13245
+* [CHANGE] Rollout-operator: Vendor jsonnet from rollout-operator repository. #13245 #13317
 * [ENHANCEMENT] Ruler querier and query-frontend: Add support for newly-introduced querier ring, which is used when performing query planning in query-frontends and distributing portions of the plan to queriers for execution. #13017
 
 ### Documentation
