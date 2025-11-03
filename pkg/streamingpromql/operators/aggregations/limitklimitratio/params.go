@@ -17,18 +17,15 @@ import (
 	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
-var _ param = (*ratioParam)(nil)
-var _ param = (*kParam)(nil)
-
 type param interface {
 	quietCloser
 	allZero() bool
 }
 
-// ratioParam is a utility to assisting in the parsing and management of the ratio parameter used in each step of a query
+// ratioParam is a utility to assisting in the parsing and management of the ratio parameter used in each step of a limit_ratio aggregation
 type ratioParam struct {
-	r              []float64 // The ratio value for each step
-	rStepInvariant bool      // True if r is constant across all steps
+	r        []float64 // The ratio value for each step
+	rAllZero bool      // True if all the r values are set to 0
 
 	annotations                     *annotations.Annotations
 	haveEmittedRatioAboveAnnotation bool
@@ -40,7 +37,6 @@ type ratioParam struct {
 
 func newRatioParam(ctx context.Context, annotations *annotations.Annotations, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, stepCount int, param types.ScalarOperator) (*ratioParam, error) {
 	r := &ratioParam{
-		rStepInvariant:           true, // this is updated in init()
 		annotations:              annotations,
 		memoryConsumptionTracker: memoryConsumptionTracker,
 		stepCount:                stepCount,
@@ -55,7 +51,7 @@ func newRatioParam(ctx context.Context, annotations *annotations.Annotations, me
 }
 
 func (p *ratioParam) allZero() bool {
-	return p.r[0] == float64(0) && p.rStepInvariant
+	return p.rAllZero
 }
 
 func (p *ratioParam) init(ctx context.Context) error {
@@ -73,6 +69,7 @@ func (p *ratioParam) init(ctx context.Context) error {
 		return err
 	}
 	p.r = p.r[:p.stepCount]
+	p.rAllZero = true
 
 	for stepIdx := 0; stepIdx < p.stepCount; stepIdx++ {
 		v := paramValues.Samples[stepIdx].F
@@ -83,17 +80,16 @@ func (p *ratioParam) init(ctx context.Context) error {
 
 		if v < -1 {
 			v = float64(-1)
+		} else if v > 1 {
+			v = float64(1)
 		}
 
-		if v > 1 {
-			v = float64(1)
+		if v != float64(0) {
+			p.rAllZero = false
 		}
 
 		p.r[stepIdx] = v
 
-		if stepIdx > 0 && p.r[stepIdx-1] != p.r[stepIdx] {
-			p.rStepInvariant = false
-		}
 	}
 
 	return nil
@@ -128,11 +124,11 @@ func (p *ratioParam) validateLimitRatioParam(v float64) error {
 	return nil
 }
 
-// kParam is a utility to assisting in the parsing and management of the k parameter used in each step of a query
+// kParam is a utility to assisting in the parsing and management of the k parameter used in each step of a limitk aggregation
 type kParam struct {
-	k              []int64 // The k value for each step - only used when ratio==false
-	kMax           int64   // The max(k) across all steps
-	kStepInvariant bool    // True if r is constant across all steps
+	k        []int64 // The k value for each step - only used when ratio==false
+	kMax     int64   // The max(k) across all steps
+	kAllZero bool    // True if k is zero across all steps
 
 	memoryConsumptionTracker *limiter.MemoryConsumptionTracker
 	stepCount                int
@@ -141,7 +137,6 @@ type kParam struct {
 
 func newKParam(ctx context.Context, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, stepCount int, param types.ScalarOperator) (*kParam, error) {
 	r := &kParam{
-		kStepInvariant:           true, // this is updated in init()
 		memoryConsumptionTracker: memoryConsumptionTracker,
 		stepCount:                stepCount,
 		param:                    param,
@@ -155,7 +150,7 @@ func newKParam(ctx context.Context, memoryConsumptionTracker *limiter.MemoryCons
 }
 
 func (p *kParam) allZero() bool {
-	return p.k[0] == int64(0) && p.kStepInvariant
+	return p.kAllZero
 }
 
 func (p *kParam) init(ctx context.Context) error {
@@ -172,7 +167,7 @@ func (p *kParam) init(ctx context.Context) error {
 		return err
 	}
 	p.k = p.k[:p.stepCount]
-
+	p.kAllZero = true
 	p.kMax = int64(0)
 
 	for stepIdx := 0; stepIdx < p.stepCount; stepIdx++ {
@@ -186,6 +181,7 @@ func (p *kParam) init(ctx context.Context) error {
 
 		if p.k[stepIdx] > 0 {
 			p.kMax = max(p.kMax, p.k[stepIdx])
+			p.kAllZero = false
 		}
 	}
 

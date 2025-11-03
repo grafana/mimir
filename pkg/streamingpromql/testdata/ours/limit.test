@@ -9,10 +9,10 @@ load 5m
   http_requests{job="api-server", instance="histogram_2", group="canary"}       {{schema:0 sum:20 count:20}}x11
   mixed{instance="1"}       {{schema:0 sum:20 count:20}}x2 0+10x5 {{schema:0 sum:20 count:20}}x2 0+10x2
   mixed{instance="2"}       0+10x5 {{schema:0 sum:20 count:20}}x2 0+10x2 {{schema:0 sum:20 count:20}}x2
-  missing{instance="1"}       0+10x5 _ _ _ _ _ 0+10x2 _
-  missing{instance="2"}       _ _ _ _ _ 0+10x5 _ 0+10x2 _
-  nans{instance="1"}        NaN -NaN 0+10x5 NaN -NaN
-  nans{instance="2"}        0+10x5 NaN -NaN NaN -NaN
+  missing{instance="1"}     0 10 20 30 40 _ _ _ _ _ 0 10 _
+  missing{instance="2"}     _ _ _ _ _ 0 10 20 30 40 _ 0 10 _
+  nans{instance="1"}        NaN -NaN 0 10 20 30 40 NaN -NaN
+  nans{instance="2"}        0 10 20 30 40 NaN -NaN NaN -NaN
   empty{}                   _ _ _ _ _ _ _ _ _ _
   foo 1+1x10
   bar 0 1 0 -1 0 1 0 -1 0 1 0
@@ -109,8 +109,12 @@ eval instant at 40m count(limitk(2, missing))
   {} 1
 
 # A point where we have a value in both series
-eval instant at 60m count(limitk(2, missing))
+eval instant at 55m count(limitk(2, missing))
   {} 2
+
+# A point where we have a value in both series
+eval instant at 60m count(limitk(2, missing))
+  {} 1
 
 eval instant at 10m limitk(1, empty)
   expect no_info
@@ -243,3 +247,85 @@ eval range from 0 to 50m step 5m limit_ratio(1, http_requests{instance="histogra
 eval range from 0m to 50m step 5m count(limit_ratio(scalar(bar), http_requests))
   {} _ 8 _ 8 _ 8 _ 8 _ 8 _
 
+clear
+
+load 1m
+  mixed{instance="1"} {{schema:0 sum:20 count:20}} {{schema:0 sum:20 count:20}} {{schema:0 sum:20 count:20}} _ 10 10 10
+  mixed{instance="2"} 10 10 10 _ {{schema:0 sum:20 count:20}} {{schema:0 sum:20 count:20}} {{schema:0 sum:20 count:20}}
+  foo 1 2 1 2 1 2 1 2 1 2 1 2
+
+eval instant at 0m limitk(1, mixed{instance="1"})
+  {__name__="mixed", instance="1"} {{schema:0 sum:20 count:20}}
+
+eval instant at 0m count(limitk(2, mixed))
+  {} 2
+
+eval instant at 2m limitk(1, mixed{instance="1"})
+  {__name__="mixed", instance="1"} {{schema:0 sum:20 count:20}}
+
+eval instant at 3m limitk(1, mixed{instance="1"})
+  {__name__="mixed", instance="1"} {{schema:0 sum:20 count:20}}
+
+eval instant at 4m limitk(1, mixed{instance="1"})
+  {__name__="mixed", instance="1"} 10
+
+eval instant at 5m limitk(1, mixed{instance="1"})
+  {__name__="mixed", instance="1"} 10
+
+eval instant at 3m count(limitk(2, mixed))
+  {} 2
+
+eval instant at 4m count(limitk(2, mixed))
+  {} 2
+
+eval instant at 5m count(limitk(2, mixed))
+  {} 2
+
+eval range from 0m to 5m step 1m limitk(1, mixed{instance="1"})
+  {__name__="mixed", instance="1"} {{schema:0 sum:20 count:20}} {{schema:0 sum:20 count:20}} {{schema:0 sum:20 count:20}} {{schema:0 sum:20 count:20}} 10 10
+
+eval range from 0m to 5m step 1m limitk(1, mixed{instance="2"})
+  {__name__="mixed", instance="2"} 10 10 10 10 {{schema:0 sum:20 count:20}} {{schema:0 sum:20 count:20}}
+
+eval range from 0m to 5m step 1m count(limitk(2, mixed))
+  {} 2 2 2 2 2 2
+
+eval range from 0m to 5m step 1m count(limitk(2, mixed))
+  {} 2 2 2 2 2 2
+
+eval range from 0m to 5m step 1m count(limitk(scalar(foo), mixed))
+  {} 1 2 1 2 1 2
+
+clear
+
+load 1m
+  empty{instance="1"} _ _ _ _ _ _
+  empty{instance="2"} _ _ _ _ _ _
+  sparse{instance="1"} 1 _ _ _ _ _
+  sparse{instance="2"} 2 _ _ _ _ _
+
+eval instant at 0 count(limitk(2, empty))
+
+eval instant at 0 count(limitk(2, sparse))
+  {} 2
+
+eval instant at 5m count(limitk(2, sparse))
+
+eval instant at 0 count(limit_ratio(1.0, empty))
+
+eval instant at 0 count(limit_ratio(1.0, sparse))
+  {} 2
+
+eval instant at 5m count(limit_ratio(1.0, sparse))
+
+eval instant at 0 count(limit_ratio(-1.0, empty))
+
+eval instant at 0 count(limit_ratio(-1.0, sparse))
+  {} 2
+
+eval instant at 5m count(limit_ratio(-1.0, sparse))
+
+eval range from 0m to 5m step 1m count(limitk(2, empty))
+
+eval range from 0m to 5m step 1m count(limitk(2, sparse))
+  {} 2 2 2 2 2

@@ -189,5 +189,9 @@ func (a *AggregateExpression) ExpressionPosition() posrange.PositionRange {
 }
 
 func (a *AggregateExpression) MinimumRequiredPlanVersion() planning.QueryPlanVersion {
+	switch a.Op {
+	case AGGREGATION_LIMITK, AGGREGATION_LIMIT_RATIO:
+		return planning.QueryPlanV2
+	}
 	return planning.QueryPlanVersionZero
 }

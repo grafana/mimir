@@ -245,6 +245,8 @@ The following features are currently experimental:
   - Remote execution of queries in queriers: `-query-frontend.enable-remote-execution=true`
   - Performing query sharding within MQE: `-query-frontend.use-mimir-query-engine-for-sharding=true`
   - Rewriting of queries to optimize processing: `-query-frontend.rewrite-histogram-queries` and `-query-frontend.rewrite-propagate-matchers`
+  - Enable selective experimental Prometheus functions and aggregates `mad_over_time`, `ts_of_min_over_time`, `ts_of_max_over_time`, `ts_of_first_over_time`, `ts_of_last_over_time`, `sort_by_label`, `sort_by_label_desc`, `limitk` and `limit_ratio` (`-query-frontend.enabled-promql-experimental-functions=mad_over_time,ts_of_min_over_time,...`)
+
 - Query-scheduler
   - `-query-scheduler.querier-forget-delay`
 - Store-gateway

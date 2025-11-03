@@ -20,10 +20,6 @@ type stepCounter interface {
 	count(step int) int
 }
 
-var _ stepCounter = (*stepCounterImpl)(nil)
-var _ stepCounter = (*stepCounterNoOp)(nil)
-var _ quietCloser = (*queryGroup)(nil)
-
 type stepCounterNoOp struct{}
 
 func (s *stepCounterNoOp) inc(_ int)       {}
@@ -86,7 +82,7 @@ func (q *queryGroup) close() {
 
 type querySeries struct {
 	metadata types.SeriesMetadata
-	value    *types.InstantVectorSeriesData
+	value    types.InstantVectorSeriesData
 }
 
 func newQueryGroup(size int, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, needsStepCounter bool) (*queryGroup, error) {
