@@ -38,16 +38,16 @@ var tracer = otel.Tracer("pkg/tools/querytee")
 
 type ProxyConfig struct {
 	// lint:sorted
-	ServerHTTPServiceAddress      string
-	ServerHTTPServicePort         int
-	ServerGracefulShutdownTimeout time.Duration
 	ServerGRPCServiceAddress      string
 	ServerGRPCServicePort         int
+	ServerGracefulShutdownTimeout time.Duration
+	ServerHTTPServiceAddress      string
+	ServerHTTPServicePort         int
 
 	//lint:sorted
+	GRPCServerMaxConcurrentStreams     uint
 	GRPCServerMaxRecvMsgSize           int
 	GRPCServerMaxSendMsgSize           int
-	GRPCServerMaxConcurrentStreams     uint
 	GRPCServerMinTimeBetweenPings      time.Duration
 	GRPCServerPingWithoutStreamAllowed bool
 
