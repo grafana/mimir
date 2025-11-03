@@ -4,7 +4,7 @@ FROM grafana/mimirtool:3.0.0 AS mimirtool
 
 FROM alpine:3.22.2
 
-COPY --from=mimirtool /bin/mimirtool .
+COPY --from=mimirtool /bin/mimirtool /bin/mimirtool
 
 COPY entrypoint.sh /entrypoint.sh
 

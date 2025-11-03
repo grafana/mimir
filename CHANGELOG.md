@@ -66,6 +66,7 @@
 * [BUGFIX] Runtime config: Fix issue when inconsistent map key types (numbers and strings) caused some of the runtime config files silently skipped from loading. #13270
 * [BUGFIX] Store-gateway: Fix how out-of-order blocks are tracked in the `cortex_bucket_store_series_blocks_queried` metric. #13261
 * [BUGFIX] Cost attribution: Fix panic when metrics are created with invalid labels. #13273
+* [BUGFIX] mimir-tool-action: Fix base image of the Github action. #13303
 
 ### Mixin
 
