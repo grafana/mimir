@@ -137,6 +137,14 @@ func (m *Map) Load(key uint64, value clock.Minutes) {
 		panic("value is too large")
 	}
 
+	m.load(key, value)
+}
+
+// load inserts |key| and |value| into the map without checking if it already exists.
+// No limits are checked, and series count should be incremented by the caller.
+// This also assumes that map has enough capacity to hold the new element, and that the element is valid.
+// This is only expected to be called from rehash().
+func (m *Map) load(key uint64, value clock.Minutes) {
 	pfx, sfx := splitHash(key)
 	i := probeStart(sfx, len(m.index))
 	looped := false
@@ -206,11 +214,9 @@ func (m *Map) rehash(n uint32) {
 	for g := range indices {
 		for s := range indices[g] {
 			c := indices[g][s]
-			if c == empty || c == tombstone {
-				continue
+			if c != empty && c != tombstone {
+				m.load(ks[g][s], ^datas[g][s])
 			}
-			// We don't need to mask the key here, data suffix of the key is always masked out.
-			m.Load(ks[g][s], ^datas[g][s])
 		}
 	}
 }
