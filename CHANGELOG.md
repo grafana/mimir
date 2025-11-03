@@ -83,6 +83,8 @@
 
 ### Documentation
 
+* [ENHANCEMENT] Ruler: clarify that internal distributor applies to both operational modes. #13300
+
 ### Tools
 
 ### Query-tee
