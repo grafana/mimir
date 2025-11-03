@@ -55,10 +55,13 @@ type ProxyBackend struct {
 
 	// Minimum data queried age - backend serves queries with min time >= (now - age)
 	minDataQueriedAge time.Duration
+
+	// Cluster validation label to set in outgoing requests
+	clusterLabel string
 }
 
 // NewProxyBackend makes a new ProxyBackend
-func NewProxyBackend(name string, endpoint *url.URL, timeout time.Duration, preferred bool, skipTLSVerify bool, cfg BackendConfig) ProxyBackendInterface {
+func NewProxyBackend(name string, endpoint *url.URL, timeout time.Duration, preferred bool, skipTLSVerify bool, clusterLabel string, cfg BackendConfig) ProxyBackendInterface {
 	innerTransport := &http.Transport{
 		Proxy: http.ProxyFromEnvironment,
 		TLSClientConfig: &tls.Config{
@@ -96,6 +99,7 @@ func NewProxyBackend(name string, endpoint *url.URL, timeout time.Duration, pref
 		cfg:               cfg,
 		requestProportion: requestProportion,
 		minDataQueriedAge: minDataQueriedAge,
+		clusterLabel:      clusterLabel,
 		client: &http.Client{
 			CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
 				return errors.New("the query-tee proxy does not follow redirects")
@@ -198,6 +202,11 @@ func (b *ProxyBackend) createBackendRequest(ctx context.Context, orig *http.Requ
 
 	// Remove Accept-Encoding header to avoid sending compressed responses
 	req.Header.Del("Accept-Encoding")
+
+	// Set cluster validation header if configured
+	if b.clusterLabel != "" {
+		req.Header.Set("X-Cluster", b.clusterLabel)
+	}
 
 	for headerName, headerValues := range b.cfg.RequestHeaders {
 		for _, headerValue := range headerValues {
