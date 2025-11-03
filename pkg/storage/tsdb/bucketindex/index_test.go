@@ -12,7 +12,6 @@ import (
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/stretchr/testify/assert"
 
-	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 )
 
@@ -256,9 +255,9 @@ func TestBlockFromThanosMeta(t *testing.T) {
 				},
 				Thanos: block.ThanosMeta{
 					Labels: map[string]string{
-						"a":                                      "b",
-						"c":                                      "d",
-						mimir_tsdb.CompactorShardIDExternalLabel: "10_of_20",
+						"a":                                 "b",
+						"c":                                 "d",
+						block.CompactorShardIDExternalLabel: "10_of_20",
 					},
 				},
 			},
@@ -268,9 +267,9 @@ func TestBlockFromThanosMeta(t *testing.T) {
 				MaxTime:          20,
 				CompactorShardID: "10_of_20",
 				Labels: map[string]string{
-					"a":                                      "b",
-					"c":                                      "d",
-					mimir_tsdb.CompactorShardIDExternalLabel: "10_of_20",
+					"a":                                 "b",
+					"c":                                 "d",
+					block.CompactorShardIDExternalLabel: "10_of_20",
 				},
 			},
 		},
@@ -283,9 +282,9 @@ func TestBlockFromThanosMeta(t *testing.T) {
 				},
 				Thanos: block.ThanosMeta{
 					Labels: map[string]string{
-						"a":                                      "b",
-						"c":                                      "d",
-						mimir_tsdb.CompactorShardIDExternalLabel: "some weird value",
+						"a":                                 "b",
+						"c":                                 "d",
+						block.CompactorShardIDExternalLabel: "some weird value",
 					},
 				},
 			},
@@ -295,9 +294,9 @@ func TestBlockFromThanosMeta(t *testing.T) {
 				MaxTime:          20,
 				CompactorShardID: "some weird value",
 				Labels: map[string]string{
-					"a":                                      "b",
-					"c":                                      "d",
-					mimir_tsdb.CompactorShardIDExternalLabel: "some weird value",
+					"a":                                 "b",
+					"c":                                 "d",
+					block.CompactorShardIDExternalLabel: "some weird value",
 				},
 			},
 		},

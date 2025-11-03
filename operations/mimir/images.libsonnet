@@ -21,8 +21,5 @@
 
     query_tee: 'grafana/query-tee:3.0.0',
     continuous_test: self.mimir,
-
-    // See: https://github.com/grafana/rollout-operator
-    rollout_operator: 'grafana/rollout-operator:v0.28.0',
   },
 }

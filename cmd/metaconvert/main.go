@@ -25,7 +25,6 @@ import (
 	"github.com/thanos-io/objstore"
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
-	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/util/log"
 )
@@ -120,7 +119,7 @@ func convertTenantBlocks(ctx context.Context, userBucketClient objstore.Bucket, 
 
 		for _, l := range labels {
 			switch l {
-			case mimir_tsdb.CompactorShardIDExternalLabel:
+			case block.CompactorShardIDExternalLabel:
 				continue
 			}
 

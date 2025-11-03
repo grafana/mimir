@@ -15,7 +15,6 @@ import (
 	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/prometheus/tsdb"
 
-	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/util"
 )
@@ -182,7 +181,7 @@ func BlockFromThanosMeta(meta block.Meta) *Block {
 		MaxTime:          meta.MaxTime,
 		SegmentsFormat:   segmentsFormat,
 		SegmentsNum:      segmentsNum,
-		CompactorShardID: meta.Thanos.Labels[mimir_tsdb.CompactorShardIDExternalLabel],
+		CompactorShardID: meta.Thanos.Labels[block.CompactorShardIDExternalLabel],
 		Source:           string(meta.Thanos.Source),
 		CompactionLevel:  meta.Compaction.Level,
 		OutOfOrder:       meta.Compaction.FromOutOfOrder(),

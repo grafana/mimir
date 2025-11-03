@@ -64,6 +64,7 @@
 * [BUGFIX] Query-frontend: Fix issue where queries containing subqueries could fail with `slice capacity must be a power of two, but is X` if remote execution is enabled. #13211
 * [BUGFIX] Query-frontend: Fix issue where queries containing duplicated shardable expressions would fail with `could not materialize query: no registered node materializer for node of type NODE_TYPE_REMOTE_EXEC` if running sharding inside MQE is enabled. #13247
 * [BUGFIX] Runtime config: Fix issue when inconsistent map key types (numbers and strings) caused some of the runtime config files silently skipped from loading. #13270
+* [BUGFIX] Store-gateway: Fix how out-of-order blocks are tracked in the `cortex_bucket_store_series_blocks_queried` metric. #13261
 * [BUGFIX] Cost attribution: Fix panic when metrics are created with invalid labels. #13273
 
 ### Mixin
@@ -79,7 +80,7 @@
 ### Jsonnet
 
 * [CHANGE] Store-gateway: The store-gateway disk class now honors the one configured via `$._config.store_gateway_data_disk_class` and doesn't replace `fast` with `fast-dont-retain`. #13152
-* [CHANGE] Rollout-operator: Vendor jsonnet from rollout-operator repository. #13245
+* [CHANGE] Rollout-operator: Vendor jsonnet from rollout-operator repository. #13245 #13317
 * [ENHANCEMENT] Ruler querier and query-frontend: Add support for newly-introduced querier ring, which is used when performing query planning in query-frontends and distributing portions of the plan to queriers for execution. #13017
 
 ### Documentation
@@ -88,7 +89,8 @@
 
 ### Query-tee
 
-* [CHANGE] Added `/api/v1/read` as a registered route. #13227
+* [CHANGE] Query-Tee: Added `/api/v1/read` as a registered route. #13227
+* [CHANGE] Query-tee: Added cluster validation label configuration `-query-tee.client-cluster-validation.label`. If set, query-tee will set `X-Cluster` header before forwarding the request to both primary and secondary backends. #13302
 
 ## 3.0.0
 

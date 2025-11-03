@@ -1115,6 +1115,7 @@ func TestProxyEndpoint_TimeBasedBackendSelection(t *testing.T) {
 					time.Second,
 					backendCfg.preferred,
 					false,
+					"",
 					cfg,
 				)
 				backends = append(backends, backend)
@@ -1208,7 +1209,7 @@ func TestBackendConfig_TimeThresholdValidation(t *testing.T) {
 			var backends []ProxyBackendInterface
 			for backendName := range tc.config {
 				u, _ := url.Parse("http://localhost:9090")
-				backend := NewProxyBackend(backendName, u, time.Second, false, false, *tc.config[backendName])
+				backend := NewProxyBackend(backendName, u, time.Second, false, false, "", *tc.config[backendName])
 				backends = append(backends, backend)
 			}
 
