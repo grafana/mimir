@@ -5,8 +5,11 @@ package functions
 import (
 	"context"
 	"fmt"
+	"sort"
+	"strings"
 
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/selectors"
@@ -27,8 +30,25 @@ type InfoFunction struct {
 	expressionPosition       posrange.PositionRange
 	enableDelayedNameRemoval bool
 
-	skipInnerMetadata    map[int]struct{}
-	nextInnerSeriesIndex int
+	sigFunctionLabelsOnly func(labels.Labels) string
+	// labels hash:function to generate signature from labels
+	sigFunctions map[string]func(labels.Labels) string
+	infoSigs     map[uint64]string
+	// timestamp:(signature:labels)
+	sigTimestamps map[int64]map[string]labels.Labels
+	// timestamp:(labels only signature:array of labels)
+	sigLabelsOnlyTimestamps map[int64]map[string][]labels.Labels
+	// labels only signature:(label sets hash:array of labels)
+	labelSets map[string]map[string][]labels.Labels
+	// inner series index - array of info series label sets hashes
+	labelSetsOrder [][]string
+	// inner series index - inner series labels only signature
+	innerSigLabelsOnly []string
+	// stored series results for current inner series
+	storedSeriesResults []types.InstantVectorSeriesData
+
+	nextInnerSeriesIndex  int
+	nextStoredSeriesIndex int
 }
 
 func NewInfoFunction(
@@ -68,7 +88,60 @@ func (f *InfoFunction) SeriesMetadata(ctx context.Context, matchers types.Matche
 	}
 	defer types.SeriesMetadataSlicePool.Put(&infoMetadata, f.MemoryConsumptionTracker)
 
+	infoSigs, err := f.processSamplesFromInfoSeries(ctx, infoMetadata)
+	if err != nil {
+		return nil, err
+	}
+	ignoreSeries := f.identifyIgnoreSeries(innerMetadata, ivs.Selector.Matchers)
+	innerSigs := f.generateInnerSignatures(innerMetadata, infoMetadata)
+	return f.combineSeriesMetadata(innerMetadata, infoMetadata, innerSigs, infoSigs, ignoreSeries, ivs.Selector.Matchers)
+}
+
+func (f *InfoFunction) processSamplesFromInfoSeries(ctx context.Context, infoMetadata []types.SeriesMetadata) (map[uint64]string, error) {
+	buf := make([]byte, 0, 1024)
+	lb := labels.NewScratchBuilder(0)
+
+	sigFunction := func(name string) func(labels.Labels) string {
+		// Signature is the info metric name + identifying labels.
+		return func(lset labels.Labels) string {
+			lb.Reset()
+			lb.Add(labels.MetricName, name)
+			lset.MatchLabels(true, identifyingLabels...).Range(func(l labels.Label) {
+				lb.Add(l.Name, l.Value)
+			})
+			lb.Sort()
+			return string(lb.Labels().Bytes(buf))
+		}
+	}
+
+	f.sigFunctionLabelsOnly = func(lset labels.Labels) string {
+		lb.Reset()
+		lset.MatchLabels(true, identifyingLabels...).Range(func(l labels.Label) {
+			lb.Add(l.Name, l.Value)
+		})
+		lb.Sort()
+		return string(lb.Labels().Bytes(buf))
+	}
+
+	f.sigFunctions = make(map[string]func(labels.Labels) string)
+	// hash:signature
+	infoSigs := make(map[uint64]string)
+	f.sigTimestamps = make(map[int64]map[string]labels.Labels)
+	f.sigLabelsOnlyTimestamps = make(map[int64]map[string][]labels.Labels)
+	f.labelSets = make(map[string]map[string][]labels.Labels)
+
 	for _, metadata := range infoMetadata {
+		metricName := metadata.Labels.Get(labels.MetricName)
+		sigFunc, exists := f.sigFunctions[metricName]
+		if !exists {
+			sigFunc = sigFunction(metricName)
+			f.sigFunctions[metricName] = sigFunc
+		}
+		hash := metadata.Labels.Hash()
+		sig := sigFunc(metadata.Labels)
+		infoSigs[hash] = sig
+		sigLabelsOnly := f.sigFunctionLabelsOnly(metadata.Labels)
+
 		d, err := f.Info.NextSeries(ctx)
 		if err != nil {
 			return nil, err
@@ -78,13 +151,66 @@ func (f *InfoFunction) SeriesMetadata(ctx context.Context, matchers types.Matche
 			return nil, fmt.Errorf("this should be an info metric, with float samples: %s", metadata.Labels)
 		}
 
+		timestamps := make(map[int64]struct{})
+		for _, sample := range d.Floats {
+			timestamps[sample.T] = struct{}{}
+
+			sigsAtTimestamp, exists := f.sigTimestamps[sample.T]
+			if !exists {
+				sigsAtTimestamp = make(map[string]labels.Labels)
+			}
+			if metricLabels, exists := sigsAtTimestamp[sig]; exists {
+				return nil, fmt.Errorf("found duplicate series for info metric: existing %s @ %d, new %s @ %d", metricLabels.String(), sample.T, metadata.Labels.String(), sample.T)
+			}
+			sigsAtTimestamp[sig] = metadata.Labels
+			f.sigTimestamps[sample.T] = sigsAtTimestamp
+
+			sigLabelsOnlyAtTimestamp, exists := f.sigLabelsOnlyTimestamps[sample.T]
+			if !exists {
+				sigLabelsOnlyAtTimestamp = make(map[string][]labels.Labels)
+			}
+			sigLabelsOnlyAtTimestamp[sigLabelsOnly] = append(sigLabelsOnlyAtTimestamp[sigLabelsOnly], metadata.Labels)
+			f.sigLabelsOnlyTimestamps[sample.T] = sigLabelsOnlyAtTimestamp
+		}
+
 		types.HPointSlicePool.Put(&d.Histograms, f.MemoryConsumptionTracker)
 		types.FPointSlicePool.Put(&d.Floats, f.MemoryConsumptionTracker)
 	}
 
-	ignoreSeries := f.identifyIgnoreSeries(innerMetadata, ivs.Selector.Matchers)
-	innerSigs, infoSigs := f.generateSignatures(innerMetadata, infoMetadata)
-	return f.combineSeriesMetadata(innerMetadata, infoMetadata, innerSigs, infoSigs, ignoreSeries, ivs.Selector.Matchers)
+	for _, sigLabelsOnlyAtTimestamp := range f.sigLabelsOnlyTimestamps {
+		for sigLabelsOnly, labelSets := range sigLabelsOnlyAtTimestamp {
+			labelsArr := make([]labels.Labels, 0, len(labelSets))
+			for _, labels := range labelSets {
+				labelsArr = append(labelsArr, labels)
+			}
+			if _, exists := f.labelSets[sigLabelsOnly]; !exists {
+				f.labelSets[sigLabelsOnly] = make(map[string][]labels.Labels)
+			}
+			f.labelSets[sigLabelsOnly][makeLabelSetsHash(labelSets)] = labelsArr
+		}
+	}
+
+	return infoSigs, nil
+}
+
+func makeLabelSetsHash(labelSets []labels.Labels) string {
+	if len(labelSets) == 0 {
+		return "inner"
+	}
+
+	hashArr := make([]uint64, 0, len(labelSets))
+	for _, labels := range labelSets {
+		hashArr = append(hashArr, labels.Hash())
+	}
+
+	sort.Slice(hashArr, func(i, j int) bool { return hashArr[i] < hashArr[j] })
+
+	hashStrArr := make([]string, 0, len(hashArr))
+	for _, h := range hashArr {
+		hashStrArr = append(hashStrArr, fmt.Sprintf("%d", h))
+	}
+
+	return strings.Join(hashStrArr, ",")
 }
 
 // identifyIgnoreSeries marks inner series that are info metrics.
@@ -112,63 +238,22 @@ func (f *InfoFunction) identifyIgnoreSeries(innerMetadata []types.SeriesMetadata
 	return ignoreSeries
 }
 
-// generateSignatures creates signature functions and computes signatures for matching.
-func (f *InfoFunction) generateSignatures(innerMetadata, infoMetadata []types.SeriesMetadata) ([]map[string]string, map[uint64]string) {
-	buf := make([]byte, 0, 1024)
-	lb := labels.NewScratchBuilder(0)
-
-	sigFunction := func(name string) func(labels.Labels) string {
-		return func(lset labels.Labels) string {
-			lb.Reset()
-			lb.Add(labels.MetricName, name)
-			lset.MatchLabels(true, identifyingLabels...).Range(func(l labels.Label) {
-				lb.Add(l.Name, l.Value)
-			})
-			lb.Sort()
-			return string(lb.Labels().Bytes(buf))
-		}
-	}
-
-	infoMetrics := make(map[string]struct{})
-	for _, s := range infoMetadata {
-		name := s.Labels.Get(labels.MetricName)
-		infoMetrics[name] = struct{}{}
-	}
-
-	sigFunctions := make(map[string]func(labels.Labels) string)
-	for name := range infoMetrics {
-		sigFunctions[name] = sigFunction(name)
-	}
-
+// generateInnerSignatures computes signatures of the inner series for matching with each info series.
+func (f *InfoFunction) generateInnerSignatures(innerMetadata, infoMetadata []types.SeriesMetadata) []map[string]string {
 	innerSigs := make([]map[string]string, len(innerMetadata))
 	for i, s := range innerMetadata {
-		sigs := make(map[string]string, len(infoMetrics))
-		for infoName := range infoMetrics {
-			sigs[infoName] = sigFunctions[infoName](s.Labels)
+		sigs := make(map[string]string, len(f.sigFunctions))
+		for infoName, sigFunc := range f.sigFunctions {
+			sigs[infoName] = sigFunc(s.Labels)
 		}
 		innerSigs[i] = sigs
 	}
 
-	infoSigs := make(map[uint64]string)
-	for _, s := range infoMetadata {
-		name := s.Labels.Get(labels.MetricName)
-		if sigFunc, exists := sigFunctions[name]; exists {
-			infoSigs[s.Labels.Hash()] = sigFunc(s.Labels)
-		}
-	}
-
-	return innerSigs, infoSigs
+	return innerSigs
 }
 
 // combineSeriesMetadata combines inner series metadata with info series labels.
 func (f *InfoFunction) combineSeriesMetadata(innerMetadata, infoMetadata []types.SeriesMetadata, innerSigs []map[string]string, infoSigs map[uint64]string, ignoreSeries map[int]struct{}, dataLabelMatchers types.Matchers) ([]types.SeriesMetadata, error) {
-	infoBySignature := make(map[string]labels.Labels)
-	for _, s := range infoMetadata {
-		if sig, exists := infoSigs[s.Labels.Hash()]; exists {
-			infoBySignature[sig] = s.Labels
-		}
-	}
-
 	result, err := types.SeriesMetadataSlicePool.Get(len(innerMetadata), f.MemoryConsumptionTracker)
 	if err != nil {
 		return nil, err
@@ -189,7 +274,9 @@ func (f *InfoFunction) combineSeriesMetadata(innerMetadata, infoMetadata []types
 
 	lb := labels.NewBuilder(labels.EmptyLabels())
 
-	f.skipInnerMetadata = make(map[int]struct{})
+	f.labelSetsOrder = make([][]string, len(innerMetadata))
+	f.innerSigLabelsOnly = make([]string, len(innerMetadata))
+
 	for i, innerSeries := range innerMetadata {
 		if _, shouldIgnore := ignoreSeries[i]; shouldIgnore {
 			err := f.MemoryConsumptionTracker.IncreaseMemoryConsumptionForLabels(innerSeries.Labels)
@@ -197,27 +284,66 @@ func (f *InfoFunction) combineSeriesMetadata(innerMetadata, infoMetadata []types
 				return nil, err
 			}
 			result = append(result, innerSeries)
+
+			f.labelSetsOrder[i] = []string{"inner"}
 			continue
 		}
 
-		innerLabels := innerSeries.Labels.Map()
+		sigLabelsOnly := f.sigFunctionLabelsOnly(innerSeries.Labels)
+		f.innerSigLabelsOnly[i] = sigLabelsOnly
+		labelSetsMap, exists := f.labelSets[sigLabelsOnly]
+		if !exists {
+			if len(dataLabelMatchersMap) > 0 {
+				continue
+			}
 
-		lb.Reset(innerSeries.Labels)
+			err := f.MemoryConsumptionTracker.IncreaseMemoryConsumptionForLabels(innerSeries.Labels)
+			if err != nil {
+				return nil, err
+			}
+			result = append(result, innerSeries)
 
+			f.labelSetsOrder[i] = []string{"inner"}
+			continue
+		}
+
+		err := f.MemoryConsumptionTracker.IncreaseMemoryConsumptionForLabels(innerSeries.Labels)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, innerSeries)
+
+		f.labelSetsOrder[i] = []string{"inner"}
+
+		newLabelSets, labelSetsOrder := combineLabels(lb, innerSeries, labelSetsMap, dataLabelMatchersMap)
+		for _, newLabels := range newLabelSets {
+			err := f.MemoryConsumptionTracker.IncreaseMemoryConsumptionForLabels(newLabels)
+			if err != nil {
+				return nil, err
+			}
+
+			result = append(result, types.SeriesMetadata{
+				Labels:   newLabels,
+				DropName: innerSeries.DropName,
+			})
+		}
+		f.labelSetsOrder[i] = append(f.labelSetsOrder[i], labelSetsOrder...)
+	}
+
+	return result, nil
+}
+
+func combineLabels(lb *labels.Builder, innerSeries types.SeriesMetadata, labelSetsMap map[string][]labels.Labels, dataLabelMatchersMap map[string]*labels.Matcher) ([]labels.Labels, []string) {
+	innerLabels := innerSeries.Labels.Map()
+
+	lb.Reset(innerSeries.Labels)
+
+	newLabelSets := make([]labels.Labels, 0, len(labelSetsMap))
+	labelSetsOrder := make([]string, 0, len(labelSetsMap))
+	for _, labelSets := range labelSetsMap {
 		savedLabels := make(map[string]struct{})
 
-		seenInfoMetrics := make(map[string]struct{})
-		for infoName, sig := range innerSigs[i] {
-			if _, seen := seenInfoMetrics[infoName]; seen {
-				continue
-			}
-
-			// Find matching info series.
-			infoLabels, exists := infoBySignature[sig]
-			if !exists {
-				continue
-			}
-
+		for _, infoLabels := range labelSets {
 			// Add requested labels to inner series, skipping conflicts and metric name.
 			infoLabels.Range(func(l labels.Label) {
 				if l.Name == labels.MetricName {
@@ -239,8 +365,6 @@ func (f *InfoFunction) combineSeriesMetadata(innerMetadata, infoMetadata []types
 				lb.Set(l.Name, l.Value)
 				savedLabels[l.Name] = struct{}{}
 			})
-
-			seenInfoMetrics[infoName] = struct{}{}
 		}
 
 		shouldSkip := false
@@ -251,44 +375,94 @@ func (f *InfoFunction) combineSeriesMetadata(innerMetadata, infoMetadata []types
 			}
 		}
 		if shouldSkip {
-			f.skipInnerMetadata[i] = struct{}{}
 			continue
 		}
 
-		newLabels := lb.Labels()
-
-		err := f.MemoryConsumptionTracker.IncreaseMemoryConsumptionForLabels(newLabels)
-		if err != nil {
-			return nil, err
-		}
-
-		result = append(result, types.SeriesMetadata{
-			Labels:   newLabels,
-			DropName: innerSeries.DropName,
-		})
+		newLabelSets = append(newLabelSets, lb.Labels())
+		labelSetsOrder = append(labelSetsOrder, makeLabelSetsHash(labelSets))
 	}
 
-	return result, nil
+	return newLabelSets, labelSetsOrder
 }
 
 func (f *InfoFunction) NextSeries(ctx context.Context) (types.InstantVectorSeriesData, error) {
+	if f.nextStoredSeriesIndex < len(f.storedSeriesResults) {
+		result := f.storedSeriesResults[f.nextStoredSeriesIndex]
+		f.nextStoredSeriesIndex++
+		return result, nil
+	}
+
 	for {
 		result, err := f.Inner.NextSeries(ctx)
 		if err != nil {
 			return types.InstantVectorSeriesData{}, err
 		}
 
-		// If this series was skipped in metadata, skip it here as well.
-		if _, shouldSkip := f.skipInnerMetadata[f.nextInnerSeriesIndex]; shouldSkip {
-			types.HPointSlicePool.Put(&result.Histograms, f.MemoryConsumptionTracker)
-			types.FPointSlicePool.Put(&result.Floats, f.MemoryConsumptionTracker)
-			f.nextInnerSeriesIndex++
-			continue
+		labelSetsOrder := f.labelSetsOrder[f.nextInnerSeriesIndex]
+		sigLabelsOnly := f.innerSigLabelsOnly[f.nextInnerSeriesIndex]
+		storedSeriesResults := make(map[string]types.InstantVectorSeriesData)
+
+		for _, point := range result.Floats {
+			splitResult, labelSetsHash := f.getSplitResult(point.T, sigLabelsOnly, storedSeriesResults)
+			splitResult.Floats = append(splitResult.Floats, point)
+			storedSeriesResults[labelSetsHash] = splitResult
 		}
+
+		for _, point := range result.Histograms {
+			splitResult, labelSetsHash := f.getSplitResult(point.T, sigLabelsOnly, storedSeriesResults)
+			splitResult.Histograms = append(splitResult.Histograms, point)
+			storedSeriesResults[labelSetsHash] = splitResult
+		}
+
+		f.storedSeriesResults = make([]types.InstantVectorSeriesData, 0, len(labelSetsOrder))
+		for _, labelSetsHash := range labelSetsOrder {
+			storedResults, exists := storedSeriesResults[labelSetsHash]
+			if !exists {
+				storedResults = types.InstantVectorSeriesData{
+					Floats:     make([]promql.FPoint, 0),
+					Histograms: make([]promql.HPoint, 0),
+				}
+			}
+			f.storedSeriesResults = append(f.storedSeriesResults, storedResults)
+			// cleanup the unused storedSeriesResults key value pairs
+		}
+
+		storedSeriesResults = nil
+
 		f.nextInnerSeriesIndex++
 
-		return result, nil
+		if len(labelSetsOrder) == 0 {
+			continue
+		}
+
+		f.nextStoredSeriesIndex = 1
+
+		return f.storedSeriesResults[0], nil
 	}
+}
+
+func (f *InfoFunction) getSplitResult(ts int64, sigLabelsOnly string, storedSeriesResults map[string]types.InstantVectorSeriesData) (types.InstantVectorSeriesData, string) {
+	var labelSetsHash string
+	labelSetsBySig, exists := f.sigLabelsOnlyTimestamps[ts]
+	if exists {
+		labelSets, exists := labelSetsBySig[sigLabelsOnly]
+		if exists {
+			labelSetsHash = makeLabelSetsHash(labelSets)
+		} else {
+			labelSetsHash = "inner"
+		}
+	} else {
+		labelSetsHash = "inner"
+	}
+
+	splitResult, exists := storedSeriesResults[labelSetsHash]
+	if !exists {
+		splitResult = types.InstantVectorSeriesData{
+			Floats:     make([]promql.FPoint, 0),
+			Histograms: make([]promql.HPoint, 0),
+		}
+	}
+	return splitResult, labelSetsHash
 }
 
 func (f *InfoFunction) ExpressionPosition() posrange.PositionRange {
