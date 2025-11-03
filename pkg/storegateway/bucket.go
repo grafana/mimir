@@ -601,9 +601,6 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storegatewaypb.Stor
 		projectionLabels = reqHints.ProjectionLabels
 	}
 
-	// TODO: labels projection: Use to filter labels when reading series from blocks
-	_ = projectionLabels
-
 	logSeriesRequestToSpan(spanLogger, req.MinTime, req.MaxTime, matchers, reqBlockMatchers, shardSelector, req.StreamingChunksBatchSize)
 
 	blocks, indexReaders, chunkReaders := s.openBlocksForReading(ctx, req.SkipChunks, req.MinTime, req.MaxTime, reqBlockMatchers, stats)
@@ -646,7 +643,7 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storegatewaypb.Stor
 		return err
 	}
 
-	streamingSeriesCount, err = s.sendStreamingSeriesLabelsAndStats(req, srv, stats, seriesSet)
+	streamingSeriesCount, err = s.sendStreamingSeriesLabelsAndStats(req, srv, stats, seriesSet, projectionLabels)
 	if err != nil {
 		return err
 	}
@@ -749,6 +746,7 @@ func (s *BucketStore) sendStreamingSeriesLabelsAndStats(
 	srv storegatewaypb.StoreGateway_SeriesServer,
 	stats *safeQueryStats,
 	seriesSet storepb.SeriesSet,
+	projectionLabels []string,
 ) (numSeries int, err error) {
 	var (
 		encodeDuration = time.Duration(0)
@@ -776,7 +774,8 @@ func (s *BucketStore) sendStreamingSeriesLabelsAndStats(
 
 		// We are re-using the slice for every batch this way.
 		seriesBatch.Series = seriesBatch.Series[:len(seriesBatch.Series)+1]
-		seriesBatch.Series[len(seriesBatch.Series)-1].Labels = mimirpb.FromLabelsToLabelAdapters(lset)
+		projectedLabels := mimirpb.FilterLabelsForProjection(lset, projectionLabels)
+		seriesBatch.Series[len(seriesBatch.Series)-1].Labels = mimirpb.FromLabelsToLabelAdapters(projectedLabels)
 
 		if len(seriesBatch.Series) == int(req.StreamingChunksBatchSize) {
 			err := s.sendMessage("streaming series", srv, storepb.NewStreamingSeriesResponse(seriesBatch), &encodeDuration, &sendDuration)

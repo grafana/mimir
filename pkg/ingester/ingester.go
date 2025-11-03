@@ -2504,8 +2504,10 @@ func (i *Ingester) sendStreamingQuerySeries(ctx context.Context, q storage.Chunk
 			return nil, 0, errors.Wrap(err, "getting ChunkSeries chunk count")
 		}
 
+		// TODO: labels projection: optimize how labels are removed. Make it same pass with FromLabelsToLabelAdapters conversion?
+		projectedLabels := mimirpb.FilterLabelsForProjection(series.Labels(), projectionLabels)
 		seriesInBatch = append(seriesInBatch, client.QueryStreamSeries{
-			Labels:     mimirpb.FromLabelsToLabelAdapters(series.Labels()),
+			Labels:     mimirpb.FromLabelsToLabelAdapters(projectedLabels),
 			ChunkCount: int64(chunkCount),
 		})
 
@@ -4235,7 +4237,7 @@ func configSelectHintsWithDisabledTrimming(hints *storage.SelectHints) *storage.
 func configSelectHintsWithProjection(hints *storage.SelectHints, projectionLabels []string) *storage.SelectHints {
 	if len(projectionLabels) > 0 {
 		hints.ProjectionLabels = projectionLabels
-		// TODO: label projections: I'm not sure what exactly this control keep it true for POC
+		// TODO: label_projection: I'm not sure what exactly ProjectionInclude controls, keep it true for POC
 		hints.ProjectionInclude = true
 	}
 	return hints

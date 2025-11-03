@@ -225,6 +225,31 @@ func (p *PreallocTimeseries) AddSeriesHashLabel() {
 	p.SortLabelsIfNeeded()
 }
 
+// FilterLabelsForProjection filters labels based on projectionLabels.
+// Keeps only specified labels plus __series_hash__ if it exists.
+// Labels that don't exist in the series are silently skipped.
+func FilterLabelsForProjection(originalLabels labels.Labels, projectionLabels []string) labels.Labels {
+	if len(projectionLabels) == 0 {
+		return originalLabels
+	}
+	projectionSet := make(map[string]struct{}, len(projectionLabels)+1)
+	for _, name := range projectionLabels {
+		projectionSet[name] = struct{}{}
+	}
+	// Always keep __series_hash__ if it exists
+	projectionSet["__series_hash__"] = struct{}{}
+
+	// Filter labels
+	builder := labels.NewBuilder(originalLabels)
+	originalLabels.Range(func(label labels.Label) {
+		if _, keep := projectionSet[label.Name]; !keep {
+			builder.Del(label.Name)
+		}
+	})
+
+	return builder.Labels()
+}
+
 // SortLabelsIfNeeded sorts labels if they were not sorted before.
 func (p *PreallocTimeseries) SortLabelsIfNeeded() {
 	// no need to run slices.SortFunc, if labels are already sorted, which is most of the time.
