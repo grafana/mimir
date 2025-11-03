@@ -156,6 +156,48 @@ func Test_ProxyBackend_RequestProportion(t *testing.T) {
 	}
 }
 
+func Test_ProxyBackend_ClusterValidationLabel(t *testing.T) {
+	tests := map[string]struct {
+		clusterLabel           string
+		expectedXClusterHeader string
+		shouldHaveXCluster     bool
+	}{
+		"no cluster label set": {
+			clusterLabel:       "",
+			shouldHaveXCluster: false,
+		},
+		"cluster label set": {
+			clusterLabel:           "test-cluster",
+			expectedXClusterHeader: "test-cluster",
+			shouldHaveXCluster:     true,
+		},
+	}
+
+	for testName, tc := range tests {
+		t.Run(testName, func(t *testing.T) {
+			backend := httptest.NewServer(nil)
+			defer backend.Close()
+
+			u, err := url.Parse(backend.URL)
+			require.NoError(t, err)
+
+			b := NewProxyBackend("test", u, time.Second, false, false, tc.clusterLabel, defaultBackendConfig())
+
+			req := httptest.NewRequest("GET", "http://test/api/v1/query", nil)
+
+			backendReq, err := b.(*ProxyBackend).createBackendRequest(context.Background(), req, nil)
+			require.NoError(t, err)
+
+			actualHeader := backendReq.Header.Get("X-Cluster")
+			if tc.shouldHaveXCluster {
+				assert.Equal(t, tc.expectedXClusterHeader, actualHeader)
+			} else {
+				assert.Empty(t, actualHeader)
+			}
+		})
+	}
+}
+
 func defaultBackendConfig() BackendConfig {
 	return BackendConfig{}
 }
