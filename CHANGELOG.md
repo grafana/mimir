@@ -64,6 +64,7 @@
 * [BUGFIX] Query-frontend: Fix issue where queries containing subqueries could fail with `slice capacity must be a power of two, but is X` if remote execution is enabled. #13211
 * [BUGFIX] Query-frontend: Fix issue where queries containing duplicated shardable expressions would fail with `could not materialize query: no registered node materializer for node of type NODE_TYPE_REMOTE_EXEC` if running sharding inside MQE is enabled. #13247
 * [BUGFIX] Runtime config: Fix issue when inconsistent map key types (numbers and strings) caused some of the runtime config files silently skipped from loading. #13270
+* [BUGFIX] Store-gateway: Fix how out-of-order blocks are tracked in the `cortex_bucket_store_series_blocks_queried` metric. #13261
 * [BUGFIX] Cost attribution: Fix panic when metrics are created with invalid labels. #13273
 
 ### Mixin

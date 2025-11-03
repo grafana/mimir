@@ -63,8 +63,8 @@ var (
 	// drop/ignore when planning jobs so that they don't keep blocks from
 	// compacting together.
 	compactionIgnoredLabels = []string{
-		mimir_tsdb.DeprecatedIngesterIDExternalLabel,
-		mimir_tsdb.DeprecatedTenantIDExternalLabel,
+		block.DeprecatedIngesterIDExternalLabel,
+		block.DeprecatedTenantIDExternalLabel,
 	}
 )
 
