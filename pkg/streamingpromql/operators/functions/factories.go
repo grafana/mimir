@@ -549,9 +549,9 @@ func SortOperatorFactory(descending bool) FunctionOperatorFactory {
 }
 
 func InfoFunctionOperatorFactory(args []types.Operator, _ labels.Labels, opParams *planning.OperatorParameters, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.Operator, error) {
-	if len(args) > 2 || len(args) < 1 {
+	if len(args) != 2 {
 		// Should be caught by the PromQL parser, but we check here for safety.
-		return nil, fmt.Errorf("expected exactly 1 or 2 arguments for info, got %v", len(args))
+		return nil, fmt.Errorf("expected exactly 2 arguments for info, got %v", len(args))
 	}
 
 	inner, ok := args[0].(types.InstantVectorOperator)
@@ -560,22 +560,13 @@ func InfoFunctionOperatorFactory(args []types.Operator, _ labels.Labels, opParam
 		return nil, fmt.Errorf("expected an instant vector for 1st argument for info, got %T", args[0])
 	}
 
-	if len(args) == 2 {
-		_, ok = args[1].(types.InstantVectorOperator)
-		if !ok {
-			// Should be caught by the PromQL parser, but we check here for safety.
-			return nil, fmt.Errorf("expected an instant vector for 2nd argument for info, got %T", args[1])
-		}
+	info, ok := args[1].(types.InstantVectorOperator)
+	if !ok {
+		// Should be caught by the PromQL parser, but we check here for safety.
+		return nil, fmt.Errorf("expected an instant vector for 2nd argument for info, got %T", args[1])
 	}
 
-	f := FunctionOverInstantVectorDefinition{
-		SeriesDataFunc: PassthroughData,
-		SeriesMetadataFunction: SeriesMetadataFunctionDefinition{
-			Func: InfoFactory(),
-		},
-	}
-
-	return NewFunctionOverInstantVector(inner, nil, opParams.MemoryConsumptionTracker, f, expressionPosition, timeRange, opParams.EnableDelayedNameRemoval), nil
+	return NewInfoFunction(inner, info, opParams.MemoryConsumptionTracker, timeRange, expressionPosition, opParams.EnableDelayedNameRemoval), nil
 }
 
 // RegisteredFunctions contains information for each registered function.
