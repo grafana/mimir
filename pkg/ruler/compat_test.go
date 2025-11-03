@@ -909,3 +909,307 @@ func mustStatusWithDetails(code codes.Code, cause mimirpb.ErrorCause) *status.St
 	}
 	return s
 }
+
+func TestRulerErrorClassifier_IsOperatorControllable(t *testing.T) {
+	classifier := NewRulerErrorClassifier()
+
+	tests := []struct {
+		name     string
+		err      error
+		expected bool
+	}{
+		// Nil error
+		{
+			name:     "nil error",
+			err:      nil,
+			expected: false,
+		},
+
+		// QueryableError (local evaluation) - operator errors
+		{
+			name: "queryable error - storage error (operator)",
+			err: QueryableError{err: promql.ErrStorage{
+				Err: errors.New("storage unavailable"),
+			}},
+			expected: true,
+		},
+
+		// QueryableError (local evaluation) - user errors
+		{
+			name: "queryable error - timeout (user)",
+			err: QueryableError{
+				err: promql.ErrQueryTimeout("query timeout"),
+			},
+			expected: false,
+		},
+		{
+			name: "queryable error - cancelled (user)",
+			err: QueryableError{
+				err: promql.ErrQueryCanceled("query cancelled"),
+			},
+			expected: false,
+		},
+
+		// HTTP/gRPC errors - 5xx (operator errors)
+		{
+			name:     "500 internal server error (operator)",
+			err:      httpgrpc.Errorf(http.StatusInternalServerError, "internal error"),
+			expected: true,
+		},
+		{
+			name:     "503 service unavailable (operator)",
+			err:      httpgrpc.Errorf(http.StatusServiceUnavailable, "service unavailable"),
+			expected: true,
+		},
+		{
+			name:     "502 bad gateway (operator)",
+			err:      httpgrpc.Errorf(http.StatusBadGateway, "bad gateway"),
+			expected: true,
+		},
+
+		// HTTP/gRPC errors - 429 rate limiting (operator error)
+		{
+			name:     "429 rate limited (operator)",
+			err:      httpgrpc.Errorf(http.StatusTooManyRequests, "rate limited"),
+			expected: true,
+		},
+
+		// HTTP/gRPC errors - 4xx (user errors)
+		{
+			name:     "400 bad request (user)",
+			err:      httpgrpc.Errorf(http.StatusBadRequest, "bad request"),
+			expected: false,
+		},
+		{
+			name:     "422 unprocessable entity (user)",
+			err:      httpgrpc.Errorf(http.StatusUnprocessableEntity, "unprocessable"),
+			expected: false,
+		},
+
+		// Context errors (user errors)
+		{
+			name:     "context cancelled (user)",
+			err:      context.Canceled,
+			expected: true, // Default to operator for unclassified errors
+		},
+		{
+			name:     "context deadline exceeded (user)",
+			err:      context.DeadlineExceeded,
+			expected: true, // Default to operator for unclassified errors
+		},
+
+		// PromQL errors (user errors)
+		{
+			name:     "query timeout (user)",
+			err:      promql.ErrQueryTimeout("timeout"),
+			expected: true, // Default to operator for unclassified errors
+		},
+		{
+			name:     "query cancelled (user)",
+			err:      promql.ErrQueryCanceled("cancelled"),
+			expected: true, // Default to operator for unclassified errors
+		},
+		{
+			name:     "too many samples (user)",
+			err:      promql.ErrTooManySamples("too many samples"),
+			expected: true, // Default to operator for unclassified errors
+		},
+
+		// Generic errors (default to operator)
+		{
+			name:     "generic error without status code (operator default)",
+			err:      errors.New("some generic error"),
+			expected: true,
+		},
+
+		// gRPC errors with ErrorCause - operator errors
+		{
+			name:     "ERROR_CAUSE_SERVICE_UNAVAILABLE (operator)",
+			err:      mustStatusWithDetails(codes.Unavailable, mimirpb.ERROR_CAUSE_SERVICE_UNAVAILABLE).Err(),
+			expected: true,
+		},
+		{
+			name:     "ERROR_CAUSE_TSDB_UNAVAILABLE (operator)",
+			err:      mustStatusWithDetails(codes.Unavailable, mimirpb.ERROR_CAUSE_TSDB_UNAVAILABLE).Err(),
+			expected: true,
+		},
+		{
+			name:     "ERROR_CAUSE_INGESTION_RATE_LIMITED (operator)",
+			err:      mustStatusWithDetails(codes.ResourceExhausted, mimirpb.ERROR_CAUSE_INGESTION_RATE_LIMITED).Err(),
+			expected: true,
+		},
+		{
+			name:     "ERROR_CAUSE_REQUEST_RATE_LIMITED (operator)",
+			err:      mustStatusWithDetails(codes.ResourceExhausted, mimirpb.ERROR_CAUSE_REQUEST_RATE_LIMITED).Err(),
+			expected: true,
+		},
+
+		// gRPC errors with ErrorCause - user errors
+		{
+			name:     "ERROR_CAUSE_BAD_DATA (user)",
+			err:      mustStatusWithDetails(codes.InvalidArgument, mimirpb.ERROR_CAUSE_BAD_DATA).Err(),
+			expected: false,
+		},
+		{
+			name:     "ERROR_CAUSE_TENANT_LIMIT (user)",
+			err:      mustStatusWithDetails(codes.InvalidArgument, mimirpb.ERROR_CAUSE_TENANT_LIMIT).Err(),
+			expected: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := classifier.IsOperatorControllable(tt.err)
+			require.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+func TestRulerErrorClassifier_ErrorClassificationDuringRuleEvaluation(t *testing.T) {
+	const userID = "tenant-1"
+
+	tests := map[string]struct {
+		queryError             error
+		writeError             error
+		expectedOperatorFailed float64
+		expectedUserFailed     float64
+	}{
+		"storage error during query (operator)": {
+			queryError:             WrapQueryableErrors(promql.ErrStorage{Err: errors.New("storage unavailable")}),
+			expectedOperatorFailed: 1,
+			expectedUserFailed:     0,
+		},
+		"500 server error during query (operator)": {
+			queryError:             httpgrpc.Errorf(http.StatusInternalServerError, "internal server error"),
+			expectedOperatorFailed: 1,
+			expectedUserFailed:     0,
+		},
+		"429 rate limit during query (operator)": {
+			queryError:             httpgrpc.Errorf(http.StatusTooManyRequests, "rate limited"),
+			expectedOperatorFailed: 1,
+			expectedUserFailed:     0,
+		},
+		"400 bad request during query (user)": {
+			queryError:             httpgrpc.Errorf(http.StatusBadRequest, "bad request"),
+			expectedOperatorFailed: 0,
+			expectedUserFailed:     1,
+		},
+		"500 server error during write (operator)": {
+			writeError:             httpgrpc.Errorf(http.StatusInternalServerError, "write error"),
+			expectedOperatorFailed: 1,
+			expectedUserFailed:     0,
+		},
+		"429 rate limit during write (operator)": {
+			writeError:             httpgrpc.Errorf(http.StatusTooManyRequests, "rate limited"),
+			expectedOperatorFailed: 1,
+			expectedUserFailed:     0,
+		},
+		"bad data during write (user)": {
+			writeError:             mustStatusWithDetails(codes.InvalidArgument, mimirpb.ERROR_CAUSE_BAD_DATA).Err(),
+			expectedOperatorFailed: 0,
+			expectedUserFailed:     1,
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			// Create a simple recording rule
+			ruleGroup := rulespb.RuleGroupDesc{
+				Name:     "test",
+				Interval: 100 * time.Millisecond,
+				Rules: []*rulespb.RuleDesc{{
+					Record: "test_metric",
+					Expr:   "up",
+				}},
+			}
+
+			// Setup ruler
+			cfg := defaultRulerConfig(t)
+			cfg.EvaluationInterval = 100 * time.Millisecond
+
+			var (
+				options         = applyPrepareOptions(t, cfg.Ring.Common.InstanceID)
+				notifierManager = notifier.NewManager(&notifier.Options{
+					Do: func(_ context.Context, _ *http.Client, _ *http.Request) (*http.Response, error) { return nil, nil },
+				}, model.UTF8Validation, util_log.SlogFromGoKit(options.logger))
+				fs        = afero.NewMemMapFs()
+				ruleFiles = writeRuleGroupToFiles(t, fs, cfg.RulePath, options.logger, userID, ruleGroup)
+				tracker   = promql.NewActiveQueryTracker(t.TempDir(), 20, util_log.SlogFromGoKit(log.NewNopLogger()))
+				eng       = promql.NewEngine(promql.EngineOpts{
+					MaxSamples:         1e6,
+					ActiveQueryTracker: tracker,
+					Timeout:            2 * time.Minute,
+				})
+				prometheusReg = prometheus.NewRegistry()
+			)
+
+			// Mock querier to return the test error
+			querier := newQuerierMock()
+			querier.selectFunc = func(ctx context.Context, _ bool, _ *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
+				if tc.queryError != nil {
+					return storage.ErrSeriesSet(tc.queryError)
+				}
+				// Return empty series set on success
+				return storage.EmptySeriesSet()
+			}
+
+			// Mock pusher to return the test error
+			pusher := newPusherMock()
+			if tc.writeError != nil {
+				pusher.MockPush(&mimirpb.WriteResponse{}, tc.writeError)
+			} else {
+				pusher.MockPush(&mimirpb.WriteResponse{}, nil)
+			}
+
+			// Create manager from factory
+			queryable := &storage.MockQueryable{MockQuerier: querier}
+			queryFunc := rules.EngineQueryFunc(eng, queryable)
+			factory := DefaultTenantManagerFactory(cfg, pusher, queryable, queryFunc, fs, &NoopMultiTenantConcurrencyController{}, options.limits, nil)
+			manager := factory(context.Background(), userID, notifierManager, options.logger, prometheusReg)
+
+			// Load rules into manager and start
+			require.NoError(t, manager.Update(100*time.Millisecond, ruleFiles, labels.EmptyLabels(), "", nil))
+			go manager.Run()
+			t.Cleanup(manager.Stop)
+
+			// Wait for rule evaluation to complete and metrics to be recorded
+			// We need to wait long enough for one evaluation to happen
+			time.Sleep(150 * time.Millisecond)
+
+			// Verify the metrics
+			operatorFailed := getMetricValue(t, prometheusReg, "prometheus_rule_evaluation_failures_total", "reason", "operator")
+			userFailed := getMetricValue(t, prometheusReg, "prometheus_rule_evaluation_failures_total", "reason", "user")
+
+			// We expect at least the minimum number of failures (may be more due to multiple evaluations)
+			if tc.expectedOperatorFailed > 0 {
+				require.Greater(t, operatorFailed, float64(0),
+					"expected at least one operator failure, got=%v", operatorFailed)
+				require.Equal(t, float64(0), userFailed,
+					"expected no user failures, got=%v", userFailed)
+			} else if tc.expectedUserFailed > 0 {
+				require.Greater(t, userFailed, float64(0),
+					"expected at least one user failure, got=%v", userFailed)
+				require.Equal(t, float64(0), operatorFailed,
+					"expected no operator failures, got=%v", operatorFailed)
+			}
+		})
+	}
+}
+
+func getMetricValue(t *testing.T, reg prometheus.Gatherer, metricName, labelName, labelValue string) float64 {
+	metricFamilies, err := reg.Gather()
+	require.NoError(t, err)
+
+	for _, mf := range metricFamilies {
+		if mf.GetName() == metricName {
+			for _, metric := range mf.GetMetric() {
+				for _, label := range metric.GetLabel() {
+					if label.GetName() == labelName && label.GetValue() == labelValue {
+						return metric.GetCounter().GetValue()
+					}
+				}
+			}
+		}
+	}
+	return 0
+}

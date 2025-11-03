@@ -8,10 +8,12 @@ package ruler
 import (
 	"context"
 	"errors"
+	"net/http"
 	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -246,7 +248,7 @@ func MetricsQueryFunc(qf rules.QueryFunc, userID string, queries, failedQueries 
 			//
 			// All errors will still be counted towards "evaluation failures" metrics and logged by Prometheus Ruler,
 			// but we only want internal errors here.
-			if _, ok := querier.TranslateToPromqlAPIError(origErr).(promql.ErrStorage); ok {
+			if isStorageError(origErr) {
 				failedQueries.WithLabelValues(userID, failureReason).Inc()
 			}
 
@@ -261,6 +263,13 @@ func MetricsQueryFunc(qf rules.QueryFunc, userID string, queries, failedQueries 
 		}
 		return result, err
 	}
+}
+
+// isStorageError returns true if the error is classified as a storage error (5xx)
+// by querier.TranslateToPromqlAPIError.
+func isStorageError(err error) bool {
+	_, ok := querier.TranslateToPromqlAPIError(err).(promql.ErrStorage)
+	return ok
 }
 
 func RecordAndReportRuleQueryMetrics(qf rules.QueryFunc, queryTime, zeroFetchedSeriesCount prometheus.Counter, remoteQuerier bool, logger log.Logger) rules.QueryFunc {
@@ -435,7 +444,8 @@ func DefaultTenantManagerFactory(
 				// to metric that haven't been forwarded to Mimir yet.
 				return overrides.RulerEvaluationDelay(userID)
 			},
-			RuleConcurrencyController: concurrencyController.NewTenantConcurrencyControllerFor(userID),
+			RuleConcurrencyController:           concurrencyController.NewTenantConcurrencyControllerFor(userID),
+			OperatorControllableErrorClassifier: NewRulerErrorClassifier(),
 		})
 	}
 }
@@ -458,4 +468,47 @@ func WrapQueryableErrors(err error) error {
 	}
 
 	return QueryableError{err: err}
+}
+
+type rulerErrorClassifier struct{}
+
+func NewRulerErrorClassifier() *rulerErrorClassifier {
+	return &rulerErrorClassifier{}
+}
+
+// IsOperatorControllable classifies rule evaluation errors as operator-controllable or user-controllable.
+//
+// Operator errors include:
+//   - Query reads failing due to rate-limiting (429) or 5xx remote querier errors (not malformed queries)
+//   - Writes failing due to rate-limiting (429) or 5xx errors (excludes samples too old, duplicated, or out-of-order)
+//
+// Classification:
+//   - QueryableError: operator if isStorageError returns true (5xx)
+//   - Remote querier/write errors: 4xx = user (except 429), 5xx = operator
+//   - Default: operator (conservative for unclassified errors)
+func (c *rulerErrorClassifier) IsOperatorControllable(err error) bool {
+	if err == nil {
+		return false
+	}
+	
+	// QueryableError: check if isStorageError (5xx)
+	var qerr QueryableError
+	if errors.As(err, &qerr) {
+		return isStorageError(qerr.Unwrap())
+	}
+
+	// Remote querier/write errors: 4xx = user (except 429), 5xx = operator
+	if mimirpb.IsClientError(err) {
+		return c.extractStatusCode(err) == http.StatusTooManyRequests
+	}
+
+	// Default: operator error for server errors (5xx and unclassified errors)
+	return true
+}
+
+func (c *rulerErrorClassifier) extractStatusCode(err error) int {
+	if resp, ok := httpgrpc.HTTPResponseFromError(err); ok {
+		return int(resp.Code)
+	}
+	return 0
 }
