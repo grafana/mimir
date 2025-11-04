@@ -10,6 +10,7 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 
+	"github.com/grafana/mimir/pkg/streamingpromql/cache"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/scalars"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/selectors"
@@ -138,8 +139,12 @@ func FunctionOverRangeVectorOperatorFactory(
 			op.InnerNode = opParams.PlanningNodes[0]
 		}
 
-		// TODO: Wire up IRCache properly in production
-		// For now, it must be set via exported field IRCache (e.g., in tests)
+		// Set intermediate result cache if configured
+		if opParams.IntermediateResultCache != nil {
+			if tenantCache, ok := opParams.IntermediateResultCache.(*cache.IntermediateResultTenantCache); ok {
+				op.IRCache = tenantCache
+			}
+		}
 
 		return op, nil
 	}

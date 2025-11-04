@@ -181,6 +181,24 @@ type OperatorParameters struct {
 
 	// hacky way to get the planning nodes to the operator
 	PlanningNodes []Node
+
+	// Intermediate result cache for function operators
+	// Type is *cache.IntermediateResultTenantCache but stored as any to avoid import cycle
+	IntermediateResultCache any
+}
+
+// CacheKey generates a unique cache key for a planning node for use with intermediate result caching.
+// Currently only supports MatrixSelector nodes (range vector selectors).
+// For other node types, this function panics.
+func CacheKey(node Node) string {
+	// Only support MatrixSelector for now
+	if node.NodeType() != NODE_TYPE_MATRIX_SELECTOR {
+		panic(fmt.Sprintf("CacheKey only supports MatrixSelector nodes, got node type %v", node.NodeType()))
+	}
+
+	// Use the Describe() method which already produces a unique string representation
+	// that includes matchers, range, timestamp, offset, and skipHistogramBuckets
+	return node.Describe()
 }
 
 func (p *QueryPlan) ToEncodedPlan(includeDescriptions bool, includeDetails bool) (*EncodedQueryPlan, error) {

@@ -9,6 +9,8 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/prometheus/prometheus/promql"
+
+	"github.com/grafana/mimir/pkg/streamingpromql/cache"
 )
 
 type EngineOpts struct {
@@ -34,6 +36,9 @@ type EngineOpts struct {
 	EnableSkippingHistogramDecoding                                               bool `yaml:"enable_skipping_histogram_decoding" category:"experimental"`
 	EnableNarrowBinarySelectors                                                   bool `yaml:"enable_narrow_binary_selectors" category:"experimental"`
 	EnableEliminateDeduplicateAndMerge                                            bool `yaml:"enable_eliminate_deduplicate_and_merge" category:"experimental"`
+
+	// Intermediate result cache for caching function computations (e.g., sum_over_time)
+	IntermediateResultCache cache.IntermediateResultsCache `yaml:"-"`
 }
 
 func (o *EngineOpts) RegisterFlags(f *flag.FlagSet) {

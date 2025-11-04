@@ -17,7 +17,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/model/histogram"
 
-	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
@@ -161,15 +160,4 @@ func (c *IntermediateResultTenantCache) Get(function, selector string, start int
 
 func (c *IntermediateResultTenantCache) Set(function, selector string, start int64, duration time.Duration, block IntermediateResultBlock) error {
 	return c.inner.Set(c.user, function, selector, start, duration, block)
-}
-
-// TODO: implement as method on each node
-func CacheKey(node planning.Node) string {
-	// only support matrix selector nodes for now
-	if node.NodeType() != planning.NODE_TYPE_MATRIX_SELECTOR {
-		panic(fmt.Sprintf("CacheKey only supports MatrixSelector nodes, got node type %v", node.NodeType()))
-	}
-
-	// TODO: use a less verbose key?
-	return node.Describe()
 }

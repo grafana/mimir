@@ -38,12 +38,12 @@ import (
 	tracesdk "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 
+	"github.com/grafana/dskit/user"
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/lazyquery"
 	"github.com/grafana/mimir/pkg/streamingpromql/cache"
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
-	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/testutils"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
@@ -274,11 +274,24 @@ func TestOurTestCases(t *testing.T) {
 }
 
 func TestBryan(t *testing.T) {
+	// Create a test cache
+	testCache := &testIntermediateResultsCache{
+		data:    make(map[string]cache.IntermediateResultBlock),
+		t:       t,
+		tracker: limiter.NewMemoryConsumptionTracker(context.Background(), 0, nil, "test-cache"),
+	}
+
 	opts := NewTestEngineOpts()
+	opts.IntermediateResultCache = testCache // Wire cache through engine config
+
 	queryPlanner, err := NewQueryPlanner(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(t, err)
 	mimirEngine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), queryPlanner)
 	require.NoError(t, err)
+
+	t.Cleanup(func() {
+		testCache.Close()
+	})
 
 	baseT := timestamp.Time(0)
 	storage := promqltest.LoadedStorage(t, `
@@ -325,20 +338,24 @@ func TestBryan(t *testing.T) {
 	}
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
-			// Set up caching for this test
-			testCache, cleanup := setupCachingForTest(t, testCase.expr, testCase.ts)
-			defer cleanup()
+			// Add tenant ID to context for cache keying
+			ctx := user.InjectOrgID(context.Background(), "test-user")
 
 			runTest := func(t *testing.T, eng promql.QueryEngine, expr string, ts time.Time, expected *promql.Result) {
-				q, err := eng.NewInstantQuery(context.Background(), storage, nil, expr, ts)
+				q, err := eng.NewInstantQuery(ctx, storage, nil, expr, ts)
 				require.NoError(t, err)
 				defer q.Close()
 
-				res := q.Exec(context.Background())
+				res := q.Exec(ctx)
 				if expected != nil {
 					require.Equal(t, expected, res)
 				}
 			}
+
+			// Reset cache stats for this test case
+			testCache.gets = 0
+			testCache.hits = 0
+			testCache.sets = 0
 
 			// Run query first time (should populate cache)
 			runTest(t, mimirEngine, testCase.expr, testCase.ts, testCase.expected)
@@ -363,27 +380,6 @@ func TestBryan(t *testing.T) {
 				float64(testCache.hits)/float64(max(testCache.gets, 1))*100,
 				testCache.sets)
 		})
-	}
-}
-
-func setupCachingForTest(t *testing.T, expr string, ts time.Time) (*testIntermediateResultsCache, func()) {
-	// Create a simple test cache that tracks its own memory
-	testCache := &testIntermediateResultsCache{
-		data:    make(map[string]cache.IntermediateResultBlock),
-		t:       t,
-		tracker: limiter.NewMemoryConsumptionTracker(context.Background(), 0, nil, "test-cache"),
-	}
-	tenantCache := cache.NewIntermediateResultTenantCache("test-user", testCache)
-
-	// Set up the test hook to inject cache before Prepare()
-	functions.SetTestCacheHook(func() *cache.IntermediateResultTenantCache {
-		return tenantCache
-	})
-
-	return testCache, func() {
-		functions.SetTestCacheHook(nil)
-		// Clean up cache memory on teardown
-		testCache.Close()
 	}
 }
 
@@ -429,34 +425,6 @@ func (c *testIntermediateResultsCache) Close() {
 		}
 	}
 	c.data = nil
-}
-
-func findMatrixSelector(node planning.Node, result *planning.Node) {
-	if node.NodeType() == planning.NODE_TYPE_MATRIX_SELECTOR {
-		*result = node
-		return
-	}
-	for _, child := range node.Children() {
-		findMatrixSelector(child, result)
-	}
-}
-
-type noopPlanningObserver struct{}
-
-func (n *noopPlanningObserver) OnASTStageComplete(stageName string, updatedExpr parser.Expr, duration time.Duration) error {
-	return nil
-}
-
-func (n *noopPlanningObserver) OnAllASTStagesComplete(finalExpr parser.Expr) error {
-	return nil
-}
-
-func (n *noopPlanningObserver) OnPlanningStageComplete(stageName string, updatedPlan *planning.QueryPlan, duration time.Duration) error {
-	return nil
-}
-
-func (n *noopPlanningObserver) OnAllPlanningStagesComplete(finalPlan *planning.QueryPlan) error {
-	return nil
 }
 
 // Testing instant queries that return a range vector is not supported by Prometheus' PromQL testing framework,

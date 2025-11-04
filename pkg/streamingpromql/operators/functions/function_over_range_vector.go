@@ -46,7 +46,6 @@ type FunctionOverRangeVector struct {
 	seriesValidationFunc RangeVectorSeriesValidationFunction
 
 	// Intermediate result caching
-	// TODO: set these properly during materialization
 	InnerNode           planning.Node
 	intermediateResults []IntermediateResultBlock
 	// seriesToIRRefs is in the same order as metadata returned from []SeriesMetadata
@@ -69,9 +68,6 @@ type IntermediateResultBlock struct {
 }
 
 var _ types.InstantVectorOperator = &FunctionOverRangeVector{}
-
-// testPrepareHook allows tests to inject setup before Prepare. Not for production use.
-var testPrepareHook func(*FunctionOverRangeVector)
 
 func NewFunctionOverRangeVector(
 	inner types.RangeVectorOperator,
@@ -134,7 +130,7 @@ func (m *FunctionOverRangeVector) SeriesMetadata(ctx context.Context, matchers t
 		} else {
 			// Load from cache
 			for i := range m.intermediateResults {
-				b, found := m.IRCache.Get(m.Func.Name, cache.CacheKey(m.InnerNode), m.intermediateResults[i].startTimestamp, m.intermediateResults[i].duration)
+				b, found := m.IRCache.Get(m.Func.Name, planning.CacheKey(m.InnerNode), m.intermediateResults[i].startTimestamp, m.intermediateResults[i].duration)
 				if found {
 					m.intermediateResults[i].ir = b
 					m.intermediateResults[i].loadedFromCache = true
@@ -253,7 +249,7 @@ func (m *FunctionOverRangeVector) NextSeries(ctx context.Context) (types.Instant
 			for i := range m.intermediateResults {
 				// Any irs that were not loaded from cache should be filled and ready to be written to cache
 				if !m.intermediateResults[i].loadedFromCache {
-					m.IRCache.Set(m.Func.Name, cache.CacheKey(m.InnerNode), m.intermediateResults[i].startTimestamp, m.intermediateResults[i].duration, m.intermediateResults[i].ir)
+					m.IRCache.Set(m.Func.Name, planning.CacheKey(m.InnerNode), m.intermediateResults[i].startTimestamp, m.intermediateResults[i].duration, m.intermediateResults[i].ir)
 				}
 			}
 			return types.InstantVectorSeriesData{}, types.EOS
@@ -583,11 +579,6 @@ func (m *FunctionOverRangeVector) emitAnnotation(generator types.AnnotationGener
 }
 
 func (m *FunctionOverRangeVector) Prepare(ctx context.Context, params *types.PrepareParams) error {
-	// Hook for tests to inject cache (TODO: remove once wired up properly)
-	if testPrepareHook != nil {
-		testPrepareHook(m)
-	}
-
 	// Create intermediate result blocks and load from cache if using caching
 	if m.splittable() {
 		m.intermediateResults = m.CreateIRBlocks()
@@ -598,7 +589,7 @@ func (m *FunctionOverRangeVector) Prepare(ctx context.Context, params *types.Pre
 		} else {
 			// Load from cache
 			for i := range m.intermediateResults {
-				b, found := m.IRCache.Get(m.Func.Name, cache.CacheKey(m.InnerNode), m.intermediateResults[i].startTimestamp, m.intermediateResults[i].duration)
+				b, found := m.IRCache.Get(m.Func.Name, planning.CacheKey(m.InnerNode), m.intermediateResults[i].startTimestamp, m.intermediateResults[i].duration)
 				if found {
 					m.intermediateResults[i].ir = b
 					m.intermediateResults[i].loadedFromCache = true
@@ -724,7 +715,7 @@ func (m *FunctionOverRangeVector) Finalize(ctx context.Context) error {
 		for i := range m.intermediateResults {
 			// Only write blocks that we computed (not loaded from cache)
 			if !m.intermediateResults[i].loadedFromCache {
-				_ = m.IRCache.Set(m.Func.Name, cache.CacheKey(m.InnerNode), m.intermediateResults[i].startTimestamp, m.intermediateResults[i].duration, m.intermediateResults[i].ir)
+				_ = m.IRCache.Set(m.Func.Name, planning.CacheKey(m.InnerNode), m.intermediateResults[i].startTimestamp, m.intermediateResults[i].duration, m.intermediateResults[i].ir)
 				// Mark as loaded so we don't write again on subsequent Finalize() calls (pedantic mode calls twice)
 				m.intermediateResults[i].loadedFromCache = true
 				// Ignore errors - cache write failures shouldn't fail the query
