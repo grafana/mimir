@@ -37,24 +37,16 @@ import (
 var tracer = otel.Tracer("pkg/tools/querytee")
 
 const (
-	// DefaultReportGRPCCodesInInstrumentationLabel is the default setting for enabling gRPC status code labels in instrumentation
-	DefaultReportGRPCCodesInInstrumentationLabel = true
+	defaultReportGRPCCodesInInstrumentationLabel = true
 
-	// DefaultHTTPServerReadTimeOut is the default server read timeout for the entire HTTP request
-	DefaultHTTPServerReadTimeOut = 1 * time.Minute
-	// DefaultHTTPServerWriteTimeout is the default write timeout for the HTTP server
-	DefaultHTTPServerWriteTimeout = 2 * time.Minute
+	defaultHTTPServerReadTimeOut  = 1 * time.Minute
+	defaultHTTPServerWriteTimeout = 2 * time.Minute
 
-	// DefaultGRPCMaxRecvMsgSize is the default maximum size of a gRPC message this server can receive
-	DefaultGRPCMaxRecvMsgSize = 100 * 1024 * 1024
-	// DefaultGRPCMaxSendMsgSize is the default maximum size of a gRPC message this server can send
-	DefaultGRPCMaxSendMsgSize = 100 * 1024 * 1024
-	// DefaultGRPCServerMaxConcurrentStreams is the default maximum number of concurrent streams for gRPC calls
-	DefaultGRPCServerMaxConcurrentStreams = 10000
-	// DefaultGRPCServerMinTimeBetweenPings is the default minimum time between keepalive pings
-	DefaultGRPCServerMinTimeBetweenPings = 10 * time.Second
-	// DefaultGRPCPingWithoutStreamAllowed is the default setting for allowing keepalive pings without streams
-	DefaultGRPCPingWithoutStreamAllowed = true
+	defaultGRPCMaxRecvMsgSize             = 100 * 1024 * 1024
+	defaultGRPCMaxSendMsgSize             = 100 * 1024 * 1024
+	defaultGRPCServerMaxConcurrentStreams = 10000
+	defaultGRPCServerMinTimeBetweenPings  = 10 * time.Second
+	defaultGRPCPingWithoutStreamAllowed   = true
 )
 
 type ProxyConfig struct {
@@ -97,16 +89,16 @@ func (cfg *ProxyConfig) registerServerFlagsWithChangedDefaultValues(fs *flag.Fla
 	cfg.Server.RegisterFlags(throwaway)
 
 	defaultsOverrides := map[string]string{
-		"server.report-grpc-codes-in-instrumentation-label-enabled": strconv.FormatBool(DefaultReportGRPCCodesInInstrumentationLabel),
+		"server.report-grpc-codes-in-instrumentation-label-enabled": strconv.FormatBool(defaultReportGRPCCodesInInstrumentationLabel),
 
-		"server.http-read-timeout":  DefaultHTTPServerReadTimeOut.String(),
-		"server.http-write-timeout": DefaultHTTPServerWriteTimeout.String(),
+		"server.http-read-timeout":  defaultHTTPServerReadTimeOut.String(),
+		"server.http-write-timeout": defaultHTTPServerWriteTimeout.String(),
 
-		"server.grpc-max-recv-msg-size-bytes":               strconv.Itoa(DefaultGRPCMaxRecvMsgSize),
-		"server.grpc-max-send-msg-size-bytes":               strconv.Itoa(DefaultGRPCMaxSendMsgSize),
-		"server.grpc-max-concurrent-streams":                strconv.Itoa(DefaultGRPCServerMaxConcurrentStreams),
-		"server.grpc.keepalive.min-time-between-pings":      DefaultGRPCServerMinTimeBetweenPings.String(),
-		"server.grpc.keepalive.ping-without-stream-allowed": strconv.FormatBool(DefaultGRPCPingWithoutStreamAllowed),
+		"server.grpc-max-recv-msg-size-bytes":               strconv.Itoa(defaultGRPCMaxRecvMsgSize),
+		"server.grpc-max-send-msg-size-bytes":               strconv.Itoa(defaultGRPCMaxSendMsgSize),
+		"server.grpc-max-concurrent-streams":                strconv.Itoa(defaultGRPCServerMaxConcurrentStreams),
+		"server.grpc.keepalive.min-time-between-pings":      defaultGRPCServerMinTimeBetweenPings.String(),
+		"server.grpc.keepalive.ping-without-stream-allowed": strconv.FormatBool(defaultGRPCPingWithoutStreamAllowed),
 	}
 
 	throwaway.VisitAll(func(f *flag.Flag) {
