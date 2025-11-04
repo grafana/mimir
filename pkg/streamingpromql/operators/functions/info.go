@@ -21,6 +21,11 @@ import (
 // Currently hard coded, so we don't need knowledge of individual info metrics.
 var identifyingLabels = []string{"instance", "job"}
 
+type labelsTime struct {
+	labels labels.Labels
+	time   int64
+}
+
 type InfoFunction struct {
 	Inner                    types.InstantVectorOperator
 	Info                     types.InstantVectorOperator
@@ -34,8 +39,8 @@ type InfoFunction struct {
 	// labels hash:function to generate signature from labels
 	sigFunctions map[string]func(labels.Labels) string
 	infoSigs     map[uint64]string
-	// timestamp:(signature:labels)
-	sigTimestamps map[int64]map[string]labels.Labels
+	// timestamp:(signature:labels + timestamp)
+	sigTimestamps map[int64]map[string]labelsTime
 	// timestamp:(labels only signature:array of labels)
 	sigLabelsOnlyTimestamps map[int64]map[string][]labels.Labels
 	// labels only signature:(label sets hash:array of labels)
@@ -129,7 +134,7 @@ func (f *InfoFunction) processSamplesFromInfoSeries(ctx context.Context, infoMet
 	f.sigFunctions = make(map[string]func(labels.Labels) string)
 	// hash:signature
 	infoSigs := make(map[uint64]string)
-	f.sigTimestamps = make(map[int64]map[string]labels.Labels)
+	f.sigTimestamps = make(map[int64]map[string]labelsTime)
 	f.sigLabelsOnlyTimestamps = make(map[int64]map[string][]labels.Labels)
 	f.labelSets = make(map[string]map[string][]labels.Labels)
 
@@ -156,28 +161,32 @@ func (f *InfoFunction) processSamplesFromInfoSeries(ctx context.Context, infoMet
 
 		timestamps := make(map[int64]struct{})
 		for _, sample := range d.Floats {
-			ts := int64(sample.F * 1000)
-			timestamps[ts] = struct{}{}
+			origTs := int64(sample.F * 1000)
+			timestamps[sample.T] = struct{}{}
 
-			sigsAtTimestamp, exists := f.sigTimestamps[ts]
+			sigsAtTimestamp, exists := f.sigTimestamps[sample.T]
 			if !exists {
-				sigsAtTimestamp = make(map[string]labels.Labels)
+				sigsAtTimestamp = make(map[string]labelsTime)
 			}
 			if metricLabels, exists := sigsAtTimestamp[sig]; exists {
-				if metricLabels.Hash() == metadata.Labels.Hash() {
+				if metricLabels.time == origTs {
+					return nil, fmt.Errorf("found duplicate series for info metric: existing %s @ %d, new %s @ %d", metricLabels.labels.String(), sample.T, metadata.Labels.String(), sample.T)
+				} else if metricLabels.time > origTs {
 					continue
 				}
-				return nil, fmt.Errorf("found duplicate series for info metric: existing %s @ %d, new %s @ %d", metricLabels.String(), ts, metadata.Labels.String(), ts)
 			}
-			sigsAtTimestamp[sig] = metadata.Labels
-			f.sigTimestamps[ts] = sigsAtTimestamp
+			sigsAtTimestamp[sig] = labelsTime{
+				labels: metadata.Labels,
+				time:   origTs,
+			}
+			f.sigTimestamps[sample.T] = sigsAtTimestamp
 
-			sigLabelsOnlyAtTimestamp, exists := f.sigLabelsOnlyTimestamps[ts]
+			sigLabelsOnlyAtTimestamp, exists := f.sigLabelsOnlyTimestamps[sample.T]
 			if !exists {
 				sigLabelsOnlyAtTimestamp = make(map[string][]labels.Labels)
 			}
 			sigLabelsOnlyAtTimestamp[sigLabelsOnly] = append(sigLabelsOnlyAtTimestamp[sigLabelsOnly], metadata.Labels)
-			f.sigLabelsOnlyTimestamps[ts] = sigLabelsOnlyAtTimestamp
+			f.sigLabelsOnlyTimestamps[sample.T] = sigLabelsOnlyAtTimestamp
 		}
 
 		types.PutInstantVectorSeriesData(d, f.MemoryConsumptionTracker)
