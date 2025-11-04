@@ -23,10 +23,11 @@ import (
 )
 
 type InstantVectorSelector struct {
-	Selector                 *Selector
-	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
-	Stats                    *types.QueryStats
-	ReturnSampleTimestamps   bool // true if this operator is wrapped directly in the timestamp() function and so should return the underlying sample timestamps
+	Selector                                 *Selector
+	MemoryConsumptionTracker                 *limiter.MemoryConsumptionTracker
+	Stats                                    *types.QueryStats
+	ReturnSampleTimestamps                   bool // true if this operator is wrapped directly in the timestamp() function and so should return the underlying sample timestamps. Also used for info() function.
+	ReturnSampleTimestampsPreserveHistograms bool // Used for info() function to preserve histograms in info metrics. Defaults to false, has to be set to true directly instead of when calling constructor.
 
 	chunkIterator    chunkenc.Iterator
 	memoizedIterator *storage.MemoizedSeriesIterator
@@ -147,7 +148,7 @@ func (v *InstantVectorSelector) NextSeries(ctx context.Context) (types.InstantVe
 			continue
 		}
 
-		if v.ReturnSampleTimestamps {
+		if v.ReturnSampleTimestamps && (!v.ReturnSampleTimestampsPreserveHistograms || h == nil) {
 			f = float64(t) / 1000
 			h = nil
 		}
