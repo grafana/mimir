@@ -20,7 +20,7 @@ jobs:
       id-token: write
     # We want to allow running github actions for all contributors, but don't want all contributors to be able to
     # publish new build images just by sending the PR. Hence this change.
-    if: ${{ contains(fromJSON('["OWNER", "MEMBER"]'), github.event.pull_request.author_association ) || github.event.pull_request.user.login == 'renovate[bot]' }}
+    if: ${{ contains(fromJSON('["OWNER", "MEMBER"]'), github.event.pull_request.author_association ) || github.event.pull_request.user.login == 'renovate-sh-app[bot]' }}
     steps:
       # We only want for this workflow to do anything when mimir-build-image/Dockerfile is modified.
       # However, we want for it to be able to run for all PRs, just so it can be made a required check
