@@ -22,7 +22,7 @@ func NewReduceMatchers(reg prometheus.Registerer, logger log.Logger) *ReduceMatc
 			Help: "Total number of queries that the optimization pass has attempted to reduce matchers for.",
 		}),
 		success: promauto.With(reg).NewCounter(prometheus.CounterOpts{
-			Name: "cortex_mimir_query_engine_reduce_matchers_success_total",
+			Name: "cortex_mimir_query_engine_reduce_matchers_modified_total",
 			Help: "Total number of queries where the optimization pass has been able to reduce matchers for.",
 		}),
 		logger: logger,
@@ -69,7 +69,7 @@ func (c *ReduceMatchers) Apply(ctx context.Context, root parser.Expr) (parser.Ex
 				expr.VectorSelector.(*parser.VectorSelector).LabelMatchers = retained
 				matchersReduced = true
 				spanlog.DebugLog(
-					"msg", "dropped matchers for vector selector",
+					"msg", "dropped matchers for matrix selector",
 					"retained", util.MatchersStringer(retained),
 					"dropped", util.MatchersStringer(dropped),
 				)
