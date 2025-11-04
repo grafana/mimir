@@ -80,7 +80,6 @@ func (f *InfoFunction) SeriesMetadata(ctx context.Context, matchers types.Matche
 	if !ok {
 		return nil, fmt.Errorf("info function 2nd argument is not an instant vector selector")
 	}
-	ivs.ReturnSampleTimestamps = true
 	ivs.ReturnSampleTimestampsPreserveHistograms = true
 
 	innerMetadata, err := f.Inner.SeriesMetadata(ctx, matchers)
