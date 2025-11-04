@@ -19,7 +19,7 @@ jobs:
         id: check
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          ORG: your-org-name  # <-- replace with your organization name
+          ORG: grafana  # <-- replace with your organization name
           AUTHOR: ${{ github.event.pull_request.user.login }}
         run: |
           echo "Checking if $AUTHOR is a member of $ORG..."
