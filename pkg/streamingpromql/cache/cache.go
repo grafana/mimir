@@ -5,7 +5,6 @@ package cache
 import (
 	"flag"
 	"fmt"
-	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"slices"
 	"strings"
 	"time"
@@ -18,6 +17,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/model/histogram"
 
+	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
@@ -140,7 +140,7 @@ func (ic *intermediateResultsCache) Get(user, function, selector string, start i
 	return IntermediateResultBlock{}, false
 }
 
-//TODO: implement me!
+// TODO: implement me!
 func (ic *intermediateResultsCache) Set(user, function, selector string, start int64, duration time.Duration, block IntermediateResultBlock) error {
 	block.Version = 1
 	panic("implement me")
@@ -163,7 +163,13 @@ func (c *IntermediateResultTenantCache) Set(function, selector string, start int
 	return c.inner.Set(c.user, function, selector, start, duration, block)
 }
 
-// TODO: make a method for each node instead
+// TODO: implement as method on each node
 func CacheKey(node planning.Node) string {
-	panic("implement me")
+	// only support matrix selector nodes for now
+	if node.NodeType() != planning.NODE_TYPE_MATRIX_SELECTOR {
+		panic(fmt.Sprintf("CacheKey only supports MatrixSelector nodes, got node type %v", node.NodeType()))
+	}
+
+	// TODO: use a less verbose key?
+	return node.Describe()
 }

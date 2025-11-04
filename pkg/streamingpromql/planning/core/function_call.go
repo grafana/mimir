@@ -106,6 +106,8 @@ func MaterializeFunctionCall(f *FunctionCall, materializer *planning.Materialize
 		absentLabels = mimirpb.FromLabelAdaptersToLabels(f.AbsentLabels)
 	}
 
+	// Pass the planning nodes alongside operators for intermediate result caching
+	params.PlanningNodes = f.Args
 	o, err := fnc.OperatorFactory(children, absentLabels, params, f.ExpressionPosition(), timeRange)
 	if err != nil {
 		return nil, err

@@ -178,6 +178,9 @@ type OperatorParameters struct {
 	Plan                     *QueryPlan
 	EnableDelayedNameRemoval bool
 	Logger                   log.Logger
+
+	// hacky way to get the planning nodes to the operator
+	PlanningNodes []Node
 }
 
 func (p *QueryPlan) ToEncodedPlan(includeDescriptions bool, includeDetails bool) (*EncodedQueryPlan, error) {

@@ -46,20 +46,18 @@ type FunctionOverRangeVector struct {
 	seriesValidationFunc RangeVectorSeriesValidationFunction
 
 	// Intermediate result caching
-	// TODO: set these
-	innerNode           planning.Node
-	usingIntermediate   bool
+	// TODO: set these properly during materialization
+	InnerNode           planning.Node
 	intermediateResults []IntermediateResultBlock
 	// seriesToIRRefs is in the same order as metadata returned from []SeriesMetadata
 	// If there is uncached data, it will be the first element in the slice, all other refs will be ordered by time
 	seriesToIRRefs [][]IRSeriesRef
-	irCache        *cache.IntermediateResultTenantCache
+	IRCache        *cache.IntermediateResultTenantCache
 	stepMover      *StepMover
 	metadata       []types.SeriesMetadata
 }
 
 type IntermediateResultBlock struct {
-	cacheable       bool
 	loadedFromCache bool
 	startTimestamp  int64
 	duration        time.Duration
@@ -119,7 +117,7 @@ func (m *FunctionOverRangeVector) SeriesMetadata(ctx context.Context, matchers t
 
 	var metadata []types.SeriesMetadata
 	var err error
-	if m.usingIntermediate {
+	if m.splittable() {
 		m.metadata, m.seriesToIRRefs, err = m.seriesMetadataWithIntermediate(ctx, matchers)
 		if err != nil {
 			return nil, err
@@ -213,13 +211,13 @@ func (m *FunctionOverRangeVector) NextSeries(ctx context.Context) (types.Instant
 	// Also load inner series if necessary
 	var cachedResult []IRSeriesRef
 	var hasUncached bool
-	if m.usingIntermediate {
+	if m.splittable() {
 		if m.currentSeriesIndex >= len(m.seriesToIRRefs) {
 			// Write to cache
 			for i := range m.intermediateResults {
-				// Any irs with version -1 should have been filled in
-				if m.intermediateResults[i].ir.Version == -1 {
-					m.irCache.Set(m.Func.Name, cache.CacheKey(m.innerNode), m.intermediateResults[i].startTimestamp, m.intermediateResults[i].duration, m.intermediateResults[i].ir)
+				// Any irs that were not loaded from cache should be filled and ready to be written to cache
+				if !m.intermediateResults[i].loadedFromCache {
+					m.IRCache.Set(m.Func.Name, cache.CacheKey(m.InnerNode), m.intermediateResults[i].startTimestamp, m.intermediateResults[i].duration, m.intermediateResults[i].ir)
 				}
 			}
 			return types.InstantVectorSeriesData{}, types.EOS
@@ -251,8 +249,9 @@ func (m *FunctionOverRangeVector) NextSeries(ctx context.Context) (types.Instant
 
 	var pieces []cache.IntermediateResult
 	var stepMover *StepMover
-	if m.usingIntermediate {
-		pieces = make([]cache.IntermediateResult, (m.splitInterval())+2) // add two for head and tail
+	if m.splittable() {
+		numBlocks := int((m.timeRange.EndT - m.timeRange.StartT) / m.splitInterval().Milliseconds())
+		pieces = make([]cache.IntermediateResult, numBlocks+2) // add two for head and tail
 		stepMover = NewStepMover(m.timeRange, m.Inner.StepCalculationParams())
 	}
 
@@ -263,7 +262,7 @@ func (m *FunctionOverRangeVector) NextSeries(ctx context.Context) (types.Instant
 		var err error
 		var step *types.RangeVectorStepData
 
-		if !m.usingIntermediate {
+		if !m.splittable() {
 			step, err = m.Inner.NextStepSamples(ctx)
 			// nolint:errorlint // errors.Is introduces a performance overhead, and NextStepSamples is guaranteed to return exactly EOS, never a wrapped error.
 			if err == types.EOS {
@@ -314,7 +313,7 @@ func (m *FunctionOverRangeVector) NextSeries(ctx context.Context) (types.Instant
 				m.scalarArgsData,
 				m.emitAnnotationFunc,
 				m.MemoryConsumptionTracker)
-			if err == nil {
+			if err != nil {
 				return types.InstantVectorSeriesData{}, err
 			}
 			pieces[0] = headPiece
@@ -324,11 +323,11 @@ func (m *FunctionOverRangeVector) NextSeries(ctx context.Context) (types.Instant
 			for ; cachedStart < cachedEnd; cachedStart += blockLengthMs {
 				// find the cached piece/series that corresponds to this value
 				for ; cachedIdx < len(cachedResult); cachedIdx++ {
-					if m.intermediateResults[cachedResult[cachedIdx].IRBlockIdx].ir.StartTimestampMs < int(cachedStart) {
+					if int64(m.intermediateResults[cachedResult[cachedIdx].IRBlockIdx].ir.StartTimestampMs) < cachedStart {
 						continue
 					}
 
-					if m.intermediateResults[cachedResult[cachedIdx].IRBlockIdx].ir.StartTimestampMs == int(cachedStart) {
+					if int64(m.intermediateResults[cachedResult[cachedIdx].IRBlockIdx].ir.StartTimestampMs) == cachedStart {
 						break
 					}
 					return types.InstantVectorSeriesData{}, errors.New("can't find cached block")
@@ -356,7 +355,7 @@ func (m *FunctionOverRangeVector) NextSeries(ctx context.Context) (types.Instant
 			tailPiece, err := m.Func.GenerateFunc(
 				updatedStep,
 				m.scalarArgsData, m.emitAnnotationFunc, m.MemoryConsumptionTracker)
-			if err == nil {
+			if err != nil {
 				return types.InstantVectorSeriesData{}, err
 			}
 			pieces[piecesIdx] = tailPiece
@@ -398,10 +397,15 @@ func (m *FunctionOverRangeVector) NextSeries(ctx context.Context) (types.Instant
 
 // TODO: splitStep currently copies samples to new ring buffers, this should be modified to reuse the current ring buffer instead
 func splitStep(step *types.RangeVectorStepData, start int64, end int64, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) *types.RangeVectorStepData {
+	emptyFloatView := &types.FPointRingBufferView{}
+	emptyHistView := &types.HPointRingBufferView{}
+
 	newStep := &types.RangeVectorStepData{
 		StepT:      step.StepT,
 		RangeStart: start,
 		RangeEnd:   end,
+		Floats:     emptyFloatView, // Initialize to empty view, not nil
+		Histograms: emptyHistView,  // Initialize to empty view, not nil
 	}
 
 	// Filter floats to only include points in the range (start, end]
@@ -524,9 +528,15 @@ func (m *FunctionOverRangeVector) Prepare(ctx context.Context, params *types.Pre
 	// Is this the best place to load cache?
 	if m.splittable() {
 		m.intermediateResults = m.CreateIRBlocks()
-		for i := range m.CreateIRBlocks() {
-			if m.intermediateResults[i].cacheable {
-				b, found := m.irCache.Get(m.Func.Name, cache.CacheKey(m.innerNode), m.intermediateResults[i].startTimestamp, m.intermediateResults[i].duration)
+
+		// If no complete blocks can be cached, disable caching by clearing the cache reference
+		if len(m.intermediateResults) == 0 {
+			// DEBUG: log why we're disabling caching
+			// fmt.Printf("DEBUG Prepare: No complete blocks, disabling caching\n")
+			m.IRCache = nil // This will make splittable() return false
+		} else {
+			for i := range m.intermediateResults {
+				b, found := m.IRCache.Get(m.Func.Name, cache.CacheKey(m.InnerNode), m.intermediateResults[i].startTimestamp, m.intermediateResults[i].duration)
 				if found {
 					m.intermediateResults[i].ir = b
 					m.intermediateResults[i].loadedFromCache = true
@@ -559,16 +569,91 @@ func (m *FunctionOverRangeVector) Prepare(ctx context.Context, params *types.Pre
 	return nil
 }
 
-// ignores head and tail
-// returns the start time of each interval
+// CreateIRBlocks creates intermediate result blocks for caching.
+// It divides the query's data range into fixed-size blocks based on splitInterval().
+// The head and tail blocks that might be partial are not cached.
 func (m *FunctionOverRangeVector) CreateIRBlocks() []IntermediateResultBlock {
-	panic("implement me")
+	params := m.Inner.StepCalculationParams()
+	
+	// Calculate the actual data range that will be queried
+	// For the first step:
+	firstStepT := m.timeRange.StartT
+	firstRangeEnd := firstStepT
+	if params.Timestamp != nil {
+		firstRangeEnd = *params.Timestamp
+	}
+	firstRangeEnd = firstRangeEnd - params.Offset
+	earliestDataT := firstRangeEnd - params.RangeMilliseconds
+	
+	// For the last step:
+	lastStepT := m.timeRange.EndT
+	lastRangeEnd := lastStepT
+	if params.Timestamp != nil {
+		lastRangeEnd = *params.Timestamp
+	}
+	lastRangeEnd = lastRangeEnd - params.Offset
+	latestDataT := lastRangeEnd
+	
+	blockLengthMs := m.splitInterval().Milliseconds()
+	
+	// Find the first complete block boundary (aligned to splitInterval)
+	// This is the first block boundary >= earliestDataT
+	firstBlockStart := ((earliestDataT / blockLengthMs) + 1) * blockLengthMs
+	
+	// Find the last complete block boundary (aligned to splitInterval)
+	// This is the last block boundary <= latestDataT
+	lastBlockEnd := (latestDataT / blockLengthMs) * blockLengthMs
+	
+	// DEBUG logging
+	fmt.Printf("DEBUG CreateIRBlocks: range=%dms, earliest=%d, latest=%d, firstBlock=%d, lastBlock=%d, blockLen=%d\n",
+		params.RangeMilliseconds, earliestDataT, latestDataT, firstBlockStart, lastBlockEnd, blockLengthMs)
+	
+	// If there are no complete blocks, return empty
+	if firstBlockStart >= lastBlockEnd {
+		return nil
+	}
+
+	// Calculate number of complete blocks
+	numBlocks := int((lastBlockEnd - firstBlockStart) / blockLengthMs)
+	if numBlocks <= 0 {
+		return nil
+	}
+
+	blocks := make([]IntermediateResultBlock, numBlocks)
+	blockStart := firstBlockStart
+
+	for i := 0; i < numBlocks; i++ {
+		blocks[i] = IntermediateResultBlock{
+			loadedFromCache: false,
+			startTimestamp:  blockStart,
+			duration:        m.splitInterval(),
+		}
+		blockStart += blockLengthMs
+	}
+
+	return blocks
 }
 
-// TODO: where to decide this?
+// splittable returns true if this query can benefit from intermediate result caching.
 func (m *FunctionOverRangeVector) splittable() bool {
-	// TODO: there can be cases where splitting is not worthwhile
-	return m.Func.GenerateFunc != nil && m.irCache != nil
+	if m.Func.GenerateFunc == nil || m.IRCache == nil || m.InnerNode == nil {
+		return false
+	}
+
+	// Only support caching for range vector selectors (MatrixSelector nodes).
+	// CacheKey() will panic for other node types.
+	if m.InnerNode.NodeType() != planning.NODE_TYPE_MATRIX_SELECTOR {
+		return false
+	}
+
+	// Also check if we'd actually have any complete blocks to cache.
+	// CreateIRBlocks() might return zero blocks if the query range is too short.
+	// We only want to use caching if there would be at least one complete block.
+	if m.intermediateResults == nil {
+		// Not initialized yet, can't determine
+		return true
+	}
+	return len(m.intermediateResults) > 0
 }
 
 func (m *FunctionOverRangeVector) splitInterval() time.Duration {
@@ -616,8 +701,6 @@ const UncachedSeriesRef = -1
 //
 //	we might just have to filter out cases where that happens (while sort() only works on instant queries, if we might make multiple instant queries over different time ranges)
 //	sort_by_label() (experimental) might have similar effects though in this case the order should be the same (assuming a stable sort), it just can't be assumed to be lexicographical wrt all series
-//
-// Currently assumed t
 func (m *FunctionOverRangeVector) seriesMetadataWithIntermediate(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, [][]IRSeriesRef, error) {
 	// Why use a string, rather than the labels hash as a key here? This avoids any issues with hash collisions.
 	labelsToRefUncached := map[string][]IRSeriesRef{}
@@ -661,11 +744,7 @@ func (m *FunctionOverRangeVector) seriesMetadataWithIntermediate(ctx context.Con
 		}
 	}
 
-	seriesToBlockRefs := make([][]IRSeriesRef, 0, len(labelsToRefUncached))
-
-	for _, group := range labelsToRefUncached {
-		seriesToBlockRefs = append(seriesToBlockRefs, group)
-	}
+	seriesToBlockRefs := make([][]IRSeriesRef, 0, len(labelsToRefUncached)+len(labelsToRefCachedOnly))
 
 	// order by uncached metadata (as Inner.NextSeries() is called in defined order)
 	// TODO: if multiple uncached calls, they might give different orders. This might make this approach untenable.

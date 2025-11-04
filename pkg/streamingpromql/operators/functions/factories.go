@@ -131,9 +131,24 @@ func FunctionOverRangeVectorOperatorFactory(
 			return nil, fmt.Errorf("expected a range vector argument for %s, got %T", name, args[0])
 		}
 
-		return NewFunctionOverRangeVector(inner, nil, opParams.MemoryConsumptionTracker, f, opParams.Annotations, expressionPosition, timeRange, opParams.EnableDelayedNameRemoval), nil
+		op := NewFunctionOverRangeVector(inner, nil, opParams.MemoryConsumptionTracker, f, opParams.Annotations, expressionPosition, timeRange, opParams.EnableDelayedNameRemoval)
+
+		// Set the inner planning node for intermediate result caching
+		if len(opParams.PlanningNodes) > 0 && opParams.PlanningNodes[0] != nil {
+			op.InnerNode = opParams.PlanningNodes[0]
+		}
+
+		// Hook for testing: allow injecting cache and planning node
+		if TestCachingHook != nil {
+			TestCachingHook(op)
+		}
+
+		return op, nil
 	}
 }
+
+// TestCachingHook allows tests to inject caching setup. Not for production use.
+var TestCachingHook func(*FunctionOverRangeVector)
 
 func PredictLinearFactory(args []types.Operator, _ labels.Labels, opParams *planning.OperatorParameters, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.Operator, error) {
 	f := PredictLinear

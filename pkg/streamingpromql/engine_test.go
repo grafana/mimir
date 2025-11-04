@@ -41,7 +41,9 @@ import (
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/lazyquery"
+	"github.com/grafana/mimir/pkg/streamingpromql/cache"
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
+	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/testutils"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
@@ -269,6 +271,157 @@ func TestOurTestCases(t *testing.T) {
 			})
 		})
 	}
+}
+
+func TestBryan(t *testing.T) {
+	opts := NewTestEngineOpts()
+	queryPlanner, err := NewQueryPlanner(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
+	require.NoError(t, err)
+	mimirEngine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), queryPlanner)
+	require.NoError(t, err)
+
+	baseT := timestamp.Time(0)
+	storage := promqltest.LoadedStorage(t, `
+		load 10m
+			some_metric{env="1"} 0+1x40
+	`)
+
+	t.Cleanup(func() { require.NoError(t, storage.Close()) })
+
+	testCases := map[string]struct {
+		expr     string
+		expected *promql.Result
+		ts       time.Time
+	}{
+		"instant query with 1h range (won't use cache - no complete blocks)": {
+			expr: "sum_over_time(some_metric[1h])",
+			ts:   baseT.Add(2 * time.Hour),
+			expected: &promql.Result{
+				Value: promql.Vector{
+					{
+						Metric: labels.FromStrings("env", "1"),
+						T:      timestamp.FromTime(baseT.Add(2 * time.Hour)),
+						F:      7 + 8 + 9 + 10 + 11 + 12,
+					},
+				},
+			},
+		},
+		"instant query with 5h range at 6h (should use cache - has complete 2h blocks)": {
+			expr: "sum_over_time(some_metric[5h])",
+			ts:   baseT.Add(6 * time.Hour),
+			expected: &promql.Result{
+				Value: promql.Vector{
+					{
+						Metric: labels.FromStrings("env", "1"),
+						// Data from (1h, 6h] (5h lookback, RangeStart is exclusive)
+						// Points: t=1h10m(7), t=1h20m(8), ..., t=6h(36)
+						// Sum = 7+8+...+36 = (36-7+1)*(7+36)/2 = 30*43/2 = 645
+						T: timestamp.FromTime(baseT.Add(6 * time.Hour)),
+						F: 645,
+					},
+				},
+			},
+		},
+	}
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			// Set up caching for this test
+			defer setupCachingForTest(t, testCase.expr, testCase.ts)()
+
+			runTest := func(t *testing.T, eng promql.QueryEngine, expr string, ts time.Time, expected *promql.Result) {
+				q, err := eng.NewInstantQuery(context.Background(), storage, nil, expr, ts)
+				require.NoError(t, err)
+				defer q.Close()
+
+				res := q.Exec(context.Background())
+				require.Equal(t, expected, res)
+			}
+			runTest(t, mimirEngine, testCase.expr, testCase.ts, testCase.expected)
+		})
+	}
+}
+
+func setupCachingForTest(t *testing.T, expr string, ts time.Time) func() {
+	// Create a simple test cache
+	testCache := &testIntermediateResultsCache{
+		data: make(map[string]cache.IntermediateResultBlock),
+		t:    t,
+	}
+	tenantCache := cache.NewIntermediateResultTenantCache("test-user", testCache)
+
+	// Set up the hook to inject caching into FunctionOverRangeVector operators
+	// InnerNode is automatically set during materialization via opParams.PlanningNodes.
+	// We just need to provide the cache.
+	functions.TestCachingHook = func(op *functions.FunctionOverRangeVector) {
+		op.IRCache = tenantCache
+		t.Logf("TestCachingHook: InnerNode=%v, IRCache=%v, GenerateFunc=%v",
+			op.InnerNode != nil, op.IRCache != nil, op.Func.GenerateFunc != nil)
+	}
+
+	return func() {
+		functions.TestCachingHook = nil
+		t.Logf("Cache stats: %d gets, %d hits (%.1f%%), %d sets",
+			testCache.gets, testCache.hits,
+			float64(testCache.hits)/float64(testCache.gets)*100,
+			testCache.sets)
+	}
+}
+
+type testIntermediateResultsCache struct {
+	data map[string]cache.IntermediateResultBlock
+	gets int
+	hits int
+	sets int
+	t    *testing.T
+}
+
+func (c *testIntermediateResultsCache) Get(user, function, selector string, start int64, duration time.Duration) (cache.IntermediateResultBlock, bool) {
+	key := fmt.Sprintf("%s:%s:%s:%d:%d", user, function, selector, start, duration.Milliseconds())
+	c.gets++
+	block, ok := c.data[key]
+	if ok {
+		c.hits++
+		c.t.Logf("Cache HIT: %s", key)
+	} else {
+		c.t.Logf("Cache MISS: %s", key)
+	}
+	return block, ok
+}
+
+func (c *testIntermediateResultsCache) Set(user, function, selector string, start int64, duration time.Duration, block cache.IntermediateResultBlock) error {
+	key := fmt.Sprintf("%s:%s:%s:%d:%d", user, function, selector, start, duration.Milliseconds())
+	c.sets++
+	c.data[key] = block
+	c.t.Logf("Cache SET: %s (series=%d)", key, len(block.Series))
+	return nil
+}
+
+func findMatrixSelector(node planning.Node, result *planning.Node) {
+	if node.NodeType() == planning.NODE_TYPE_MATRIX_SELECTOR {
+		*result = node
+		return
+	}
+	for _, child := range node.Children() {
+		findMatrixSelector(child, result)
+	}
+}
+
+type noopPlanningObserver struct{}
+
+func (n *noopPlanningObserver) OnASTStageComplete(stageName string, updatedExpr parser.Expr, duration time.Duration) error {
+	return nil
+}
+
+func (n *noopPlanningObserver) OnAllASTStagesComplete(finalExpr parser.Expr) error {
+	return nil
+}
+
+func (n *noopPlanningObserver) OnPlanningStageComplete(stageName string, updatedPlan *planning.QueryPlan, duration time.Duration) error {
+	return nil
+}
+
+func (n *noopPlanningObserver) OnAllPlanningStagesComplete(finalPlan *planning.QueryPlan) error {
+	return nil
 }
 
 // Testing instant queries that return a range vector is not supported by Prometheus' PromQL testing framework,
