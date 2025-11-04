@@ -37,22 +37,22 @@ jobs:
             echo "is_member=false" >> $GITHUB_OUTPUT
           fi
 
-    run-if-member:
-      needs: check-author
-      if: needs.check-author.outputs.is_member == 'true'
-      runs-on: ubuntu-latest
-      steps:
-        - name: Run the job
-          run: echo "✅ Running job because author is an org member."
+  run-if-member:
+    needs: check-author
+    if: needs.check-author.outputs.is_member == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run the job
+        run: echo "✅ Running job because author is an org member."
 
-    skip-non-member:
-      needs: check-author
-      if: needs.check-author.outputs.is_member == 'false'
-      runs-on: ubuntu-latest
-      steps:
-        - name: Skip notice
-          run:
-            echo "🚫 Skipping job — PR author is not an org member."
+  skip-non-member:
+    needs: check-author
+    if: needs.check-author.outputs.is_member == 'false'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Skip notice
+        run:
+          echo "🚫 Skipping job — PR author is not an org member."
   check_if:
     runs-on: ubuntu-latest
     steps:
