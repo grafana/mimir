@@ -33,6 +33,7 @@ jobs:
             echo "User is a member."
             echo "is_member=true" >> $GITHUB_OUTPUT
           else
+            echo $STATUS
             echo "User is NOT a member."
             echo "is_member=false" >> $GITHUB_OUTPUT
           fi
