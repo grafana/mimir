@@ -89,6 +89,8 @@
 
 ### Tools
 
+* [BUGFIX] mimir-tool-action: Fix base image of the Github action. #13303
+
 ### Query-tee
 
 * [CHANGE] Query-Tee: Added `/api/v1/read` as a registered route. #13227
