@@ -75,6 +75,8 @@ func (f *InfoFunction) SeriesMetadata(ctx context.Context, matchers types.Matche
 	if !ok {
 		return nil, fmt.Errorf("info function 2nd argument is not an instant vector selector")
 	}
+	ivs.ReturnSampleTimestamps = true
+	ivs.ReturnSampleTimestampsPreserveHistograms = true
 
 	innerMetadata, err := f.Inner.SeriesMetadata(ctx, matchers)
 	if err != nil {
@@ -154,24 +156,28 @@ func (f *InfoFunction) processSamplesFromInfoSeries(ctx context.Context, infoMet
 
 		timestamps := make(map[int64]struct{})
 		for _, sample := range d.Floats {
-			timestamps[sample.T] = struct{}{}
+			ts := int64(sample.F * 1000)
+			timestamps[ts] = struct{}{}
 
-			sigsAtTimestamp, exists := f.sigTimestamps[sample.T]
+			sigsAtTimestamp, exists := f.sigTimestamps[ts]
 			if !exists {
 				sigsAtTimestamp = make(map[string]labels.Labels)
 			}
 			if metricLabels, exists := sigsAtTimestamp[sig]; exists {
-				return nil, fmt.Errorf("found duplicate series for info metric: existing %s @ %d, new %s @ %d", metricLabels.String(), sample.T, metadata.Labels.String(), sample.T)
+				if metricLabels.Hash() == metadata.Labels.Hash() {
+					continue
+				}
+				return nil, fmt.Errorf("found duplicate series for info metric: existing %s @ %d, new %s @ %d", metricLabels.String(), ts, metadata.Labels.String(), ts)
 			}
 			sigsAtTimestamp[sig] = metadata.Labels
-			f.sigTimestamps[sample.T] = sigsAtTimestamp
+			f.sigTimestamps[ts] = sigsAtTimestamp
 
-			sigLabelsOnlyAtTimestamp, exists := f.sigLabelsOnlyTimestamps[sample.T]
+			sigLabelsOnlyAtTimestamp, exists := f.sigLabelsOnlyTimestamps[ts]
 			if !exists {
 				sigLabelsOnlyAtTimestamp = make(map[string][]labels.Labels)
 			}
 			sigLabelsOnlyAtTimestamp[sigLabelsOnly] = append(sigLabelsOnlyAtTimestamp[sigLabelsOnly], metadata.Labels)
-			f.sigLabelsOnlyTimestamps[sample.T] = sigLabelsOnlyAtTimestamp
+			f.sigLabelsOnlyTimestamps[ts] = sigLabelsOnlyAtTimestamp
 		}
 
 		types.PutInstantVectorSeriesData(d, f.MemoryConsumptionTracker)
