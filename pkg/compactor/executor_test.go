@@ -195,7 +195,6 @@ func TestSchedulerExecutor_JobStatusUpdates(t *testing.T) {
 
 			c, _, _, _, _ := prepareWithConfigProvider(t, cfg, bucketClient, newMockConfigProvider())
 			c.bucketClient = bucketClient
-
 			c.shardingStrategy = newSplitAndMergeShardingStrategy(nil, nil, nil, c.cfgProvider)
 
 			gotWork, err := schedulerExec.leaseAndExecuteJob(context.Background(), c, "compactor-1")
@@ -726,6 +725,7 @@ func TestSchedulerExecutor_ExecuteCompactionJob_Compaction(t *testing.T) {
 			}
 			c, _, _, _, _ := prepareWithConfigProvider(t, cfg, bkt, mockCfg)
 			c.bucketClient = bkt
+			c.shardingStrategy = newSplitAndMergeShardingStrategy(nil, nil, nil, c.cfgProvider)
 
 			compactor, planner, err := splitAndMergeCompactorFactory(context.Background(), cfg, log.NewNopLogger(), prometheus.NewRegistry())
 			require.NoError(t, err)

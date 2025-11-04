@@ -7,7 +7,6 @@ import (
 	"context"
 	"fmt"
 	"math"
-	"path"
 	"slices"
 	"sync"
 	"time"
@@ -362,29 +361,7 @@ func (e *schedulerExecutor) executeCompactionJob(ctx context.Context, c *Multite
 		return compactorschedulerpb.REASSIGN, err
 	}
 
-	// Create BucketCompactor directly instead of using c.newBucketCompactor() so we can set ownership function.
-	// Because the scheduler already assigned this job to this instance, we should pass all ownership checks we execute.
-	compactor, err := NewBucketCompactor(
-		userLogger,
-		syncer,
-		c.blocksGrouperFactory(ctx, c.compactorCfg, c.cfgProvider, userID, userLogger, reg),
-		c.blocksPlanner,
-		c.blocksCompactor,
-		path.Join(c.compactorCfg.DataDir, "compact"),
-		userBucket,
-		c.compactorCfg.CompactionConcurrency,
-		true, // Skip unhealthy blocks, and mark them for no-compaction.
-		ownAllJobs,
-		c.jobsOrder,
-		c.compactorCfg.CompactionWaitPeriod,
-		c.compactorCfg.CompactionSkipFutureMaxTime,
-		c.compactorCfg.BlockSyncConcurrency,
-		c.bucketCompactorMetrics,
-		c.compactorCfg.UploadSparseIndexHeaders,
-		c.compactorCfg.SparseIndexHeadersSamplingRate,
-		c.compactorCfg.SparseIndexHeadersConfig,
-		c.cfgProvider.CompactorMaxPerBlockUploadConcurrency(userID),
-	)
+	compactor, err := c.newBucketCompactor(ctx, userID, userLogger, userBucket, syncer, reg)
 	if err != nil {
 		return compactorschedulerpb.REASSIGN, errors.Wrap(err, "failed to create bucket compactor")
 	}
