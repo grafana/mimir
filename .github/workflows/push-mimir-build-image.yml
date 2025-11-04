@@ -18,14 +18,16 @@ jobs:
       pull-requests: write
       # Necessary to authenticate with Vault which happens in dockerhub-login
       id-token: write
-    # We want to allow running github actions for all contributors, but don't want all contributors to be able to
-    # publish new build images just by sending the PR. Hence this change.
-    if: ${{ contains(fromJSON('["OWNER", "MEMBER"]'), github.event.pull_request.author_association ) || github.event.pull_request.user.login == 'renovate-sh-app[bot]' }}
     steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
       # We only want for this workflow to do anything when mimir-build-image/Dockerfile is modified.
       # However, we want for it to be able to run for all PRs, just so it can be made a required check
       # (i.e. so PRs can't be merged until it's done).
-      - name: Check if Dockerfile was modified
+      - name: Check if mimir-build-image/Dockerfile was modified
         id: check_dockerfile
         run: |
           if gh pr diff ${{ github.event.pull_request.number }} --name-only | grep -q '^mimir-build-image/Dockerfile$'; then
@@ -36,34 +38,92 @@ jobs:
             echo "Dockerfile was not modified"
           fi
         env:
-          GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Checkout Repository
+      # Retrieve GitHub App credentials to get a token with org member read permissions.
+      # GITHUB_TOKEN doesn't have org-level permissions, so we use the mimir-github-bot GitHub App.
+      - name: Retrieve GitHub App Credentials from Vault
         if: steps.check_dockerfile.outputs.modified == 'true'
-        uses: actions/checkout@v4
+        id: get-secrets
+        uses: grafana/shared-workflows/actions/get-vault-secrets@28361cdb22223e5f1e34358c86c20908e7248760 # v1.1.0
         with:
-          persist-credentials: false
+          repo_secrets: |
+            APP_ID=mimir-github-bot:app_id
+            PRIVATE_KEY=mimir-github-bot:private_key
+
+      - name: Generate GitHub App Token
+        if: steps.check_dockerfile.outputs.modified == 'true'
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ env.APP_ID }}
+          private-key: ${{ env.PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+
+      # Check if PR author is a Grafana organization member using the GitHub API.
+      # This is more reliable than author_association which depends on public membership visibility.
+      # Uses the GitHub App token because GITHUB_TOKEN doesn't have org-level permissions.
+      - name: Check if PR author is org member
+        if: steps.check_dockerfile.outputs.modified == 'true'
+        id: check_membership
+        run: |
+          # Check membership, capturing the HTTP status code
+          status_code=$(gh api \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "/orgs/grafana/members/${PR_AUTHOR}" \
+            --include 2>&1 | head -1 | awk '{print $2}')
+          if [ "$status_code" = "204" ]; then
+            echo "is_member=true" >> $GITHUB_OUTPUT
+            echo "✓ User ${PR_AUTHOR} is a Grafana organization member"
+          else
+            echo "is_member=false" >> $GITHUB_OUTPUT
+            echo "✗ User ${PR_AUTHOR} is not a Grafana organization member (HTTP $status_code)"
+          fi
+        env:
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+
+      # We want to allow running github actions for all contributors, but don't want all contributors to be able to
+      # publish new build images just by sending the PR. Only Grafana org members and Renovate can proceed.
+      # This step sets an 'authorized' output that all subsequent privileged steps depend on.
+      - name: Check authorization
+        if: steps.check_dockerfile.outputs.modified == 'true'
+        id: authorize
+        run: |
+          if [ "${{ steps.check_membership.outputs.is_member }}" = "true" ] || [ "${PR_AUTHOR}" = "renovate-sh-app[bot]" ]; then
+            echo "authorized=true" >> $GITHUB_OUTPUT
+            echo "✓ User ${PR_AUTHOR} is authorized to build images"
+          else
+            echo "authorized=false" >> $GITHUB_OUTPUT
+            # We want to fail the workflow here because we only get here if the build image Dockerfile
+            # has changed, and such a PR shouldn't pass without a successful build and push.
+            echo "::error::Only Grafana organization members and Renovate can trigger build image updates"
+            exit 1
+          fi
+        env:
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
 
       - name: Checkout Pull Request Branch
-        if: steps.check_dockerfile.outputs.modified == 'true'
+        if: steps.check_dockerfile.outputs.modified == 'true' && steps.authorize.outputs.authorized == 'true'
         run: gh pr checkout ${{ github.event.pull_request.number }}
         env:
           GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
 
       - name: Setup QEMU
-        if: steps.check_dockerfile.outputs.modified == 'true'
+        if: steps.check_dockerfile.outputs.modified == 'true' && steps.authorize.outputs.authorized == 'true'
         uses: docker/setup-qemu-action@29109295f81e9208d7d86ff1c6c12d2833863392 # v3.6.0
 
       - name: Set up Docker Buildx
-        if: steps.check_dockerfile.outputs.modified == 'true'
+        if: steps.check_dockerfile.outputs.modified == 'true' && steps.authorize.outputs.authorized == 'true'
         uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
 
       - name: Login to Docker Hub
-        if: steps.check_dockerfile.outputs.modified == 'true'
+        if: steps.check_dockerfile.outputs.modified == 'true' && steps.authorize.outputs.authorized == 'true'
         uses: grafana/shared-workflows/actions/dockerhub-login@13fb504e3bfe323c1188bf244970d94b2d336e86 # v1.0.1
 
       - name: Prepare Variables
-        if: steps.check_dockerfile.outputs.modified == 'true'
+        if: steps.check_dockerfile.outputs.modified == 'true' && steps.authorize.outputs.authorized == 'true'
         id: prepare
         run: |
           echo "path=mimir-build-image/Dockerfile" >> $GITHUB_OUTPUT
@@ -74,7 +134,7 @@ jobs:
           echo "main_image_tag=$main_image_tag" >> $GITHUB_OUTPUT
 
       - name: Compute Image Tag
-        if: steps.check_dockerfile.outputs.modified == 'true'
+        if: steps.check_dockerfile.outputs.modified == 'true' && steps.authorize.outputs.authorized == 'true'
         id: compute_hash
         run: |
           current_hash=$(md5sum ${{ steps.prepare.outputs.path }} | awk '{print substr($1, 0, 10)}')
@@ -84,7 +144,7 @@ jobs:
           echo "tag=$tag" >> $GITHUB_OUTPUT
 
       - name: Check Should Build Image
-        if: steps.check_dockerfile.outputs.modified == 'true'
+        if: steps.check_dockerfile.outputs.modified == 'true' && steps.authorize.outputs.authorized == 'true'
         id: check_build
         run: |
           echo "Checking if image should be built"
@@ -97,7 +157,7 @@ jobs:
           fi
 
       - name: Add Comment to the PR
-        if: steps.check_dockerfile.outputs.modified == 'true'
+        if: steps.check_dockerfile.outputs.modified == 'true' && steps.authorize.outputs.authorized == 'true'
         id: notification
         run: |
           if [ ${{ steps.check_build.outputs.build }} == 'true' ]; then
@@ -114,13 +174,13 @@ jobs:
           IMAGE: ${{ steps.prepare.outputs.image }}
 
       - name: Build and Push Docker Image
-        if: steps.check_dockerfile.outputs.modified == 'true' && steps.check_build.outputs.build == 'true'
+        if: steps.check_dockerfile.outputs.modified == 'true' && steps.authorize.outputs.authorized == 'true' && steps.check_build.outputs.build == 'true'
         run: |
           echo "Building and Pushing Docker Image"
           make push-multiarch-build-image IMAGE_TAG=${{ steps.compute_hash.outputs.tag }}
 
       - name: Compare built tag with Makefile
-        if: steps.check_dockerfile.outputs.modified == 'true'
+        if: steps.check_dockerfile.outputs.modified == 'true' && steps.authorize.outputs.authorized == 'true'
         id: compare_tag
         run: |
           echo "Comparing built tag with Makefile"
@@ -132,30 +192,12 @@ jobs:
             echo "isDifferent=true" >> $GITHUB_OUTPUT
           fi
 
-      # This job uses "Mimir bot" instead of "github-actions bot" (secrets.GITHUB_TOKEN)
-      # because any events triggered by the latter don't spawn GitHub actions.
+      # This step uses "Mimir bot" token (generated at the start of the workflow) instead of
+      # "github-actions bot" (secrets.GITHUB_TOKEN) because any events triggered by the latter
+      # don't spawn GitHub actions.
       # Refer to https://docs.github.com/en/actions/security-for-github-actions/security-guides/automatic-token-authentication#using-the-github_token-in-a-workflow
-      - name: Retrieve GitHub App Credentials from Vault
-        if: steps.check_dockerfile.outputs.modified == 'true'
-        id: get-secrets
-        uses: grafana/shared-workflows/actions/get-vault-secrets@28361cdb22223e5f1e34358c86c20908e7248760 # v1.1.0
-        with:
-          repo_secrets: |
-            APP_ID=mimir-github-bot:app_id
-            PRIVATE_KEY=mimir-github-bot:private_key
-
-      - name: Generate GitHub App Token
-        if: steps.check_dockerfile.outputs.modified == 'true'
-        id: app-token
-        uses: actions/create-github-app-token@v1
-        with:
-          # Variables generated by the previous step get-secrets
-          app-id: ${{ env.APP_ID }}
-          private-key: ${{ env.PRIVATE_KEY }}
-          owner: ${{ github.repository_owner }}
-
       - name: Add commit to PR in order to update Build Image version
-        if: steps.check_dockerfile.outputs.modified == 'true' && steps.compare_tag.outputs.isDifferent == 'true'
+        if: steps.check_dockerfile.outputs.modified == 'true' && steps.authorize.outputs.authorized == 'true' && steps.compare_tag.outputs.isDifferent == 'true'
         run: |
           echo "Get current Build Image Version"
           echo "Current Build Image Version is $MAIN_TAG"
