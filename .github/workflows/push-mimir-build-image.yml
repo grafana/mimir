@@ -7,8 +7,52 @@ on:
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
   cancel-in-progress: true
-
+permissions:
+  contents: read
 jobs:
+  check-author:
+    runs-on: ubuntu-latest
+    outputs:
+      is_member: ${{ steps.check.outputs.is_member }}
+    steps:
+      - name: Check if PR author is a member of the organization
+        id: check
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ORG: your-org-name  # <-- replace with your organization name
+          AUTHOR: ${{ github.event.pull_request.user.login }}
+        run: |
+          echo "Checking if $AUTHOR is a member of $ORG..."
+          # GitHub API request
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            -H "Authorization: token $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            https://api.github.com/orgs/$ORG/members/$AUTHOR)
+          
+          if [ "$STATUS" = "204" ]; then
+            echo "User is a member."
+            echo "is_member=true" >> $GITHUB_OUTPUT
+          else
+            echo "User is NOT a member."
+            echo "is_member=false" >> $GITHUB_OUTPUT
+          fi
+
+    run-if-member:
+      needs: check-author
+      if: needs.check-author.outputs.is_member == 'true'
+      runs-on: ubuntu-latest
+      steps:
+        - name: Run the job
+          run: echo "✅ Running job because author is an org member."
+
+    skip-non-member:
+      needs: check-author
+      if: needs.check-author.outputs.is_member == 'false'
+      runs-on: ubuntu-latest
+      steps:
+        - name: Skip notice
+          run:
+            echo "🚫 Skipping job — PR author is not an org member."
   check_if:
     runs-on: ubuntu-latest
     steps:
