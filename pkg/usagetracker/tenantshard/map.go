@@ -248,10 +248,6 @@ func fastModN(x, n uint32) uint32 {
 	return uint32((uint64(x) * uint64(n)) >> 32)
 }
 
-type LengthCallback func(int)
-
-type IteratorCallback func(k uint64, v clock.Minutes)
-
 var (
 	keysPool = &sync.Pool{New: func() any { return new([]keys) }}
 	dataPool = &sync.Pool{New: func() any { return new([]data) }}
