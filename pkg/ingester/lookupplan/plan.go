@@ -3,6 +3,7 @@
 package lookupplan
 
 import (
+	"cmp"
 	"context"
 	"slices"
 
@@ -58,12 +59,21 @@ func (p plan) IndexMatchers() []*labels.Matcher {
 }
 
 func (p plan) ScanMatchers() []*labels.Matcher {
-	var matchers []*labels.Matcher
-	for i, pred := range p.predicates {
-		if !p.indexPredicate[i] {
-			matchers = append(matchers, pred.matcher)
+	scanPredicateIdxs := make([]int, 0, len(p.predicates))
+	for i, indexIsIndexPredicate := range p.indexPredicate {
+		if !indexIsIndexPredicate {
+			scanPredicateIdxs = append(scanPredicateIdxs, i)
 		}
 	}
+	slices.SortFunc(scanPredicateIdxs, func(a, b int) int {
+		return cmp.Compare(p.predicates[a].singleMatchCost, p.predicates[b].singleMatchCost)
+	})
+
+	var matchers []*labels.Matcher
+	for _, idx := range scanPredicateIdxs {
+		matchers = append(matchers, p.predicates[idx].matcher)
+	}
+
 	return matchers
 }
 
