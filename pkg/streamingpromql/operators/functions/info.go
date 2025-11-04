@@ -40,8 +40,8 @@ type InfoFunction struct {
 	sigLabelsOnlyTimestamps map[int64]map[string][]labels.Labels
 	// labels only signature:(label sets hash:array of labels)
 	labelSets map[string]map[string][]labels.Labels
-	// inner series index - array of info series label sets hashes
-	labelSetsOrder [][]string
+	// inner series index - (info series label sets hash: index for ordering)
+	labelSetsOrder []map[string]int
 	// inner series index - inner series labels only signature
 	innerSigLabelsOnly []string
 	// stored series results for current inner series
@@ -174,8 +174,7 @@ func (f *InfoFunction) processSamplesFromInfoSeries(ctx context.Context, infoMet
 			f.sigLabelsOnlyTimestamps[sample.T] = sigLabelsOnlyAtTimestamp
 		}
 
-		types.HPointSlicePool.Put(&d.Histograms, f.MemoryConsumptionTracker)
-		types.FPointSlicePool.Put(&d.Floats, f.MemoryConsumptionTracker)
+		types.PutInstantVectorSeriesData(d, f.MemoryConsumptionTracker)
 	}
 
 	for _, sigLabelsOnlyAtTimestamp := range f.sigLabelsOnlyTimestamps {
@@ -259,7 +258,6 @@ func (f *InfoFunction) combineSeriesMetadata(innerMetadata, infoMetadata []types
 	if err != nil {
 		return nil, err
 	}
-	result = result[:0]
 
 	dataLabelMatchersMap := make(map[string]*labels.Matcher)
 	for _, m := range dataLabelMatchers {
@@ -275,13 +273,13 @@ func (f *InfoFunction) combineSeriesMetadata(innerMetadata, infoMetadata []types
 
 	lb := labels.NewBuilder(labels.EmptyLabels())
 
-	f.labelSetsOrder = make([][]string, len(innerMetadata))
+	f.labelSetsOrder = make([]map[string]int, len(innerMetadata))
 	f.innerSigLabelsOnly = make([]string, len(innerMetadata))
 
 	for i, innerSeries := range innerMetadata {
 		if _, shouldIgnore := ignoreSeries[i]; shouldIgnore {
 			result = append(result, innerSeries)
-			f.labelSetsOrder[i] = []string{"inner"}
+			f.labelSetsOrder[i] = map[string]int{"inner": 0}
 			continue
 		}
 
@@ -295,12 +293,12 @@ func (f *InfoFunction) combineSeriesMetadata(innerMetadata, infoMetadata []types
 			}
 
 			result = append(result, innerSeries)
-			f.labelSetsOrder[i] = []string{"inner"}
+			f.labelSetsOrder[i] = map[string]int{"inner": 0}
 			continue
 		}
 
 		result = append(result, innerSeries)
-		f.labelSetsOrder[i] = []string{"inner"}
+		f.labelSetsOrder[i] = map[string]int{"inner": 0}
 
 		newLabelSets, labelSetsOrder := combineLabels(lb, innerSeries, labelSetsMap, dataLabelMatchersMap)
 		for _, newLabels := range newLabelSets {
@@ -312,7 +310,9 @@ func (f *InfoFunction) combineSeriesMetadata(innerMetadata, infoMetadata []types
 				return nil, err
 			}
 		}
-		f.labelSetsOrder[i] = append(f.labelSetsOrder[i], labelSetsOrder...)
+		for j, labelSetsHash := range labelSetsOrder {
+			f.labelSetsOrder[i][labelSetsHash] = j + 1
+		}
 	}
 
 	return result, nil
@@ -382,25 +382,41 @@ func (f *InfoFunction) NextSeries(ctx context.Context) (types.InstantVectorSerie
 		if err != nil {
 			return types.InstantVectorSeriesData{}, err
 		}
+		defer types.PutInstantVectorSeriesData(result, f.MemoryConsumptionTracker)
 
 		labelSetsOrder := f.labelSetsOrder[f.nextInnerSeriesIndex]
 		sigLabelsOnly := f.innerSigLabelsOnly[f.nextInnerSeriesIndex]
 		storedSeriesResults := make(map[string]types.InstantVectorSeriesData)
 
+		lenFloats := len(result.Floats)
+		lenHistograms := len(result.Histograms)
+
 		for _, point := range result.Floats {
-			splitResult, labelSetsHash := f.getSplitResult(point.T, sigLabelsOnly, storedSeriesResults)
-			splitResult.Floats = append(splitResult.Floats, point)
+			splitResult, labelSetsHash, skip, err := f.getSplitResult(point.T, sigLabelsOnly, storedSeriesResults, labelSetsOrder, lenFloats, lenHistograms)
+			if err != nil {
+				return types.InstantVectorSeriesData{}, err
+			}
+			if skip {
+				continue
+			}
+			splitResult.Floats = append(splitResult.Floats, promql.FPoint{T: point.T, F: point.F})
 			storedSeriesResults[labelSetsHash] = splitResult
 		}
 
 		for _, point := range result.Histograms {
-			splitResult, labelSetsHash := f.getSplitResult(point.T, sigLabelsOnly, storedSeriesResults)
-			splitResult.Histograms = append(splitResult.Histograms, point)
+			splitResult, labelSetsHash, skip, err := f.getSplitResult(point.T, sigLabelsOnly, storedSeriesResults, labelSetsOrder, lenFloats, lenHistograms)
+			if err != nil {
+				return types.InstantVectorSeriesData{}, err
+			}
+			if skip {
+				continue
+			}
+			splitResult.Histograms = append(splitResult.Histograms, promql.HPoint{T: point.T, H: point.H.Copy()})
 			storedSeriesResults[labelSetsHash] = splitResult
 		}
 
-		f.storedSeriesResults = make([]types.InstantVectorSeriesData, 0, len(labelSetsOrder))
-		for _, labelSetsHash := range labelSetsOrder {
+		f.storedSeriesResults = make([]types.InstantVectorSeriesData, len(labelSetsOrder))
+		for labelSetsHash, i := range labelSetsOrder {
 			storedResults, exists := storedSeriesResults[labelSetsHash]
 			if !exists {
 				storedResults = types.InstantVectorSeriesData{
@@ -408,19 +424,7 @@ func (f *InfoFunction) NextSeries(ctx context.Context) (types.InstantVectorSerie
 					Histograms: make([]promql.HPoint, 0),
 				}
 			}
-			f.storedSeriesResults = append(f.storedSeriesResults, storedResults)
-
-			// Clear this so we know what not to free up later.
-			storedSeriesResults[labelSetsHash] = types.InstantVectorSeriesData{}
-		}
-
-		for _, storedResults := range storedSeriesResults {
-			if len(storedResults.Floats) > 0 {
-				types.FPointSlicePool.Put(&storedResults.Floats, f.MemoryConsumptionTracker)
-			}
-			if len(storedResults.Histograms) > 0 {
-				types.HPointSlicePool.Put(&storedResults.Histograms, f.MemoryConsumptionTracker)
-			}
+			f.storedSeriesResults[i] = storedResults
 		}
 
 		f.nextInnerSeriesIndex++
@@ -435,7 +439,7 @@ func (f *InfoFunction) NextSeries(ctx context.Context) (types.InstantVectorSerie
 	}
 }
 
-func (f *InfoFunction) getSplitResult(ts int64, sigLabelsOnly string, storedSeriesResults map[string]types.InstantVectorSeriesData) (types.InstantVectorSeriesData, string) {
+func (f *InfoFunction) getSplitResult(ts int64, sigLabelsOnly string, storedSeriesResults map[string]types.InstantVectorSeriesData, labelSetsOrder map[string]int, lenFloats, lenHistograms int) (types.InstantVectorSeriesData, string, bool, error) {
 	var labelSetsHash string
 	labelSetsBySig, exists := f.sigLabelsOnlyTimestamps[ts]
 	if exists {
@@ -449,14 +453,26 @@ func (f *InfoFunction) getSplitResult(ts int64, sigLabelsOnly string, storedSeri
 		labelSetsHash = "inner"
 	}
 
+	if _, exists := labelSetsOrder[labelSetsHash]; !exists {
+		return types.InstantVectorSeriesData{}, "", true, nil
+	}
+
 	splitResult, exists := storedSeriesResults[labelSetsHash]
 	if !exists {
+		floats, err := types.FPointSlicePool.Get(lenFloats, f.MemoryConsumptionTracker)
+		if err != nil {
+			return types.InstantVectorSeriesData{}, "", false, err
+		}
+		hists, err := types.HPointSlicePool.Get(lenHistograms, f.MemoryConsumptionTracker)
+		if err != nil {
+			return types.InstantVectorSeriesData{}, "", false, err
+		}
 		splitResult = types.InstantVectorSeriesData{
-			Floats:     make([]promql.FPoint, 0),
-			Histograms: make([]promql.HPoint, 0),
+			Floats:     floats,
+			Histograms: hists,
 		}
 	}
-	return splitResult, labelSetsHash
+	return splitResult, labelSetsHash, false, nil
 }
 
 func (f *InfoFunction) ExpressionPosition() posrange.PositionRange {
