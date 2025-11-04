@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 # Provenance-includes-location: https://github.com/cortexproject/cortex/build-image/Dockerfile
 # Provenance-includes-license: Apache-2.0
-# Provenance-includes-copyright: The Cortex Authors.
+# Provenance-includes-copyright: The Cortex Authors. bla
 
 FROM registry.k8s.io/kustomize/kustomize:v5.4.3 AS kustomize
 FROM alpine/helm:3.17.2 AS helm
