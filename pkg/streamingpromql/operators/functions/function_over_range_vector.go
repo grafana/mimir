@@ -8,7 +8,7 @@ package functions
 
 import (
 	"context"
-	"errors"
+	"fmt"
 	"time"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/cache"
@@ -55,6 +55,10 @@ type FunctionOverRangeVector struct {
 	IRCache        *cache.IntermediateResultTenantCache
 	stepMover      *StepMover
 	metadata       []types.SeriesMetadata
+
+	// Track temporary buffers created by splitStep for cleanup
+	tempFloatBuffers []*types.FPointRingBuffer
+	tempHistBuffers  []*types.HPointRingBuffer
 }
 
 type IntermediateResultBlock struct {
@@ -65,6 +69,9 @@ type IntermediateResultBlock struct {
 }
 
 var _ types.InstantVectorOperator = &FunctionOverRangeVector{}
+
+// testPrepareHook allows tests to inject setup before Prepare. Not for production use.
+var testPrepareHook func(*FunctionOverRangeVector)
 
 func NewFunctionOverRangeVector(
 	inner types.RangeVectorOperator,
@@ -113,6 +120,35 @@ func (m *FunctionOverRangeVector) SeriesMetadata(ctx context.Context, matchers t
 	if m.stepMover == nil {
 		params := m.Inner.StepCalculationParams()
 		m.stepMover = NewStepMover(m.timeRange, params)
+	}
+
+	// Create intermediate result blocks for caching if enabled
+	// This must be done before calling seriesMetadataWithIntermediate() but after
+	// StepCalculationParams() is available
+	if m.splittable() && m.intermediateResults == nil {
+		m.intermediateResults = m.CreateIRBlocks()
+
+		// If no complete blocks can be cached, disable caching
+		if len(m.intermediateResults) == 0 {
+			m.IRCache = nil
+		} else {
+			// Load from cache
+			for i := range m.intermediateResults {
+				b, found := m.IRCache.Get(m.Func.Name, cache.CacheKey(m.InnerNode), m.intermediateResults[i].startTimestamp, m.intermediateResults[i].duration)
+				if found {
+					m.intermediateResults[i].ir = b
+					m.intermediateResults[i].loadedFromCache = true
+				} else {
+					m.intermediateResults[i].ir = cache.IntermediateResultBlock{
+						Version:          -1, // -1 means not found in cache
+						StartTimestampMs: int(m.intermediateResults[i].startTimestamp),
+						DurationMs:       int(m.intermediateResults[i].duration.Milliseconds()),
+						Series:           nil,
+						Results:          nil,
+					}
+				}
+			}
+		}
 	}
 
 	var metadata []types.SeriesMetadata
@@ -226,7 +262,7 @@ func (m *FunctionOverRangeVector) NextSeries(ctx context.Context) (types.Instant
 
 		// If the ordered series groups has an uncached component, move to the next inner series
 		// The uncached component is always the first elem in the slice
-		if result[0].SeriesIdx == UncachedSeriesRef {
+		if len(result) > 0 && result[0].IRBlockIdx == UncachedSeriesRef {
 			hasUncached = true
 			if err := m.Inner.NextSeries(ctx); err != nil {
 				return types.InstantVectorSeriesData{}, err
@@ -247,11 +283,8 @@ func (m *FunctionOverRangeVector) NextSeries(ctx context.Context) (types.Instant
 
 	data := types.InstantVectorSeriesData{}
 
-	var pieces []cache.IntermediateResult
 	var stepMover *StepMover
 	if m.splittable() {
-		numBlocks := int((m.timeRange.EndT - m.timeRange.StartT) / m.splitInterval().Milliseconds())
-		pieces = make([]cache.IntermediateResult, numBlocks+2) // add two for head and tail
 		stepMover = NewStepMover(m.timeRange, m.Inner.StepCalculationParams())
 	}
 
@@ -307,7 +340,11 @@ func (m *FunctionOverRangeVector) NextSeries(ctx context.Context) (types.Instant
 			cachedStart := ((step.RangeStart / blockLengthMs) + 1) * blockLengthMs
 			cachedEnd := (step.RangeEnd / blockLengthMs) * blockLengthMs
 
-			updatedStep := splitStep(step, step.RangeStart, cachedStart, m.MemoryConsumptionTracker)
+			// Allocate pieces for this step: head + middle blocks + tail
+			numMiddleBlocks := int((cachedEnd - cachedStart) / blockLengthMs)
+			pieces := make([]cache.IntermediateResult, numMiddleBlocks+2)
+
+			updatedStep := m.splitStep(step, step.RangeStart, cachedStart)
 			headPiece, err := m.Func.GenerateFunc(
 				updatedStep,
 				m.scalarArgsData,
@@ -321,21 +358,38 @@ func (m *FunctionOverRangeVector) NextSeries(ctx context.Context) (types.Instant
 			cachedIdx := 0
 			// calculate missing pieces in the middle (or use cached version)
 			for ; cachedStart < cachedEnd; cachedStart += blockLengthMs {
-				// find the cached piece/series that corresponds to this value
-				for ; cachedIdx < len(cachedResult); cachedIdx++ {
-					if int64(m.intermediateResults[cachedResult[cachedIdx].IRBlockIdx].ir.StartTimestampMs) < cachedStart {
-						continue
-					}
+				var irBlockIdx int = -1
 
-					if int64(m.intermediateResults[cachedResult[cachedIdx].IRBlockIdx].ir.StartTimestampMs) == cachedStart {
+				// Find which IR block corresponds to this timestamp
+				for i := range m.intermediateResults {
+					if int64(m.intermediateResults[i].startTimestamp) == cachedStart {
+						irBlockIdx = i
 						break
 					}
-					return types.InstantVectorSeriesData{}, errors.New("can't find cached block")
 				}
-				if m.intermediateResults[cachedResult[cachedIdx].IRBlockIdx].ir.Version != -1 {
-					pieces[piecesIdx] = m.intermediateResults[cachedResult[cachedIdx].IRBlockIdx].ir.Results[cachedResult[cachedIdx].SeriesIdx]
+
+				if irBlockIdx == -1 {
+					return types.InstantVectorSeriesData{}, fmt.Errorf("can't find IR block for timestamp %d", cachedStart)
+				}
+
+				// Check if this block has cached data for this series
+				var cachedSeriesIdx int = -1
+				if len(cachedResult) > 0 {
+					// Try to find it in cachedResult
+					for ; cachedIdx < len(cachedResult); cachedIdx++ {
+						if cachedResult[cachedIdx].IRBlockIdx == irBlockIdx {
+							cachedSeriesIdx = cachedResult[cachedIdx].SeriesIdx
+							break
+						}
+					}
+				}
+
+				// Use cached data if available, otherwise compute
+				if cachedSeriesIdx != -1 && m.intermediateResults[irBlockIdx].ir.Version != -1 {
+					pieces[piecesIdx] = m.intermediateResults[irBlockIdx].ir.Results[cachedSeriesIdx]
 				} else {
-					updatedStep = splitStep(step, cachedStart, cachedStart+m.splitInterval().Milliseconds(), m.MemoryConsumptionTracker)
+					// Compute this block's intermediate result
+					updatedStep = m.splitStep(step, cachedStart, cachedStart+m.splitInterval().Milliseconds())
 					// TODO: this can be reused for later steps for the same series - we should make pieces wrap around to avoid recalculating when not necessary
 					pieces[piecesIdx], err = m.Func.GenerateFunc(
 						updatedStep,
@@ -343,15 +397,16 @@ func (m *FunctionOverRangeVector) NextSeries(ctx context.Context) (types.Instant
 					if err != nil {
 						return types.InstantVectorSeriesData{}, err
 					}
-					m.intermediateResults[cachedResult[cachedIdx].IRBlockIdx].ir.Series = append(m.intermediateResults[cachedResult[cachedIdx].IRBlockIdx].ir.Series, m.metadata[m.currentSeriesIndex])
-					m.intermediateResults[cachedResult[cachedIdx].IRBlockIdx].ir.Results = append(m.intermediateResults[cachedResult[cachedIdx].IRBlockIdx].ir.Results, pieces[piecesIdx])
-
+					// Store in IR block for caching
+					// Note: Cache will track labels separately when Set() is called
+					m.intermediateResults[irBlockIdx].ir.Series = append(m.intermediateResults[irBlockIdx].ir.Series, m.metadata[m.currentSeriesIndex])
+					m.intermediateResults[irBlockIdx].ir.Results = append(m.intermediateResults[irBlockIdx].ir.Results, pieces[piecesIdx])
 				}
 				piecesIdx++
 			}
 
 			// calculate tail piece
-			updatedStep = splitStep(step, cachedEnd, step.RangeEnd, m.MemoryConsumptionTracker)
+			updatedStep = m.splitStep(step, cachedEnd, step.RangeEnd)
 			tailPiece, err := m.Func.GenerateFunc(
 				updatedStep,
 				m.scalarArgsData, m.emitAnnotationFunc, m.MemoryConsumptionTracker)
@@ -396,7 +451,7 @@ func (m *FunctionOverRangeVector) NextSeries(ctx context.Context) (types.Instant
 }
 
 // TODO: splitStep currently copies samples to new ring buffers, this should be modified to reuse the current ring buffer instead
-func splitStep(step *types.RangeVectorStepData, start int64, end int64, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) *types.RangeVectorStepData {
+func (m *FunctionOverRangeVector) splitStep(step *types.RangeVectorStepData, start int64, end int64) *types.RangeVectorStepData {
 	emptyFloatView := &types.FPointRingBufferView{}
 	emptyHistView := &types.HPointRingBufferView{}
 
@@ -411,18 +466,18 @@ func splitStep(step *types.RangeVectorStepData, start int64, end int64, memoryCo
 	// Filter floats to only include points in the range (start, end]
 	// RangeStart is exclusive, RangeEnd is inclusive
 	if step.Floats != nil && step.Floats.Any() {
-		newStep.Floats = filterFloatsView(step.Floats, start, end, memoryConsumptionTracker)
+		newStep.Floats = filterFloatsView(step.Floats, start, end, m.MemoryConsumptionTracker, &m.tempFloatBuffers)
 	}
 
 	// Filter histograms to only include points in the range (start, end]
 	if step.Histograms != nil && step.Histograms.Any() {
-		newStep.Histograms = filterHistogramsView(step.Histograms, start, end, memoryConsumptionTracker)
+		newStep.Histograms = filterHistogramsView(step.Histograms, start, end, m.MemoryConsumptionTracker, &m.tempHistBuffers)
 	}
 
 	return newStep
 }
 
-func filterFloatsView(view *types.FPointRingBufferView, start int64, end int64, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) *types.FPointRingBufferView {
+func filterFloatsView(view *types.FPointRingBufferView, start int64, end int64, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, tempBuffers *[]*types.FPointRingBuffer) *types.FPointRingBufferView {
 	if !view.Any() {
 		return &types.FPointRingBufferView{}
 	}
@@ -455,9 +510,10 @@ func filterFloatsView(view *types.FPointRingBufferView, start int64, end int64, 
 	}
 
 	// Create a new buffer and populate it with filtered points
-	// Note: This creates a new buffer which needs to be managed/closed by the caller
-	// This is a temporary solution - ideally we'd have a way to create offset views
+	// Track this buffer for cleanup
 	buffer := types.NewFPointRingBuffer(memoryConsumptionTracker)
+	*tempBuffers = append(*tempBuffers, buffer)
+
 	for i := firstInRange; i < firstInRange+count; i++ {
 		if err := buffer.Append(allPoints[i]); err != nil {
 			// If we can't append, return empty view
@@ -468,7 +524,7 @@ func filterFloatsView(view *types.FPointRingBufferView, start int64, end int64, 
 	return buffer.ViewUntilSearchingBackwards(end, nil)
 }
 
-func filterHistogramsView(view *types.HPointRingBufferView, start int64, end int64, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) *types.HPointRingBufferView {
+func filterHistogramsView(view *types.HPointRingBufferView, start int64, end int64, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, tempBuffers *[]*types.HPointRingBuffer) *types.HPointRingBufferView {
 	if !view.Any() {
 		return &types.HPointRingBufferView{}
 	}
@@ -501,7 +557,10 @@ func filterHistogramsView(view *types.HPointRingBufferView, start int64, end int
 	}
 
 	// Create a new buffer and populate it with filtered points
+	// Track this buffer for cleanup
 	buffer := types.NewHPointRingBuffer(memoryConsumptionTracker)
+	*tempBuffers = append(*tempBuffers, buffer)
+
 	for i := firstInRange; i < firstInRange+count; i++ {
 		if err := buffer.Append(allPoints[i]); err != nil {
 			// If we can't append, return empty view
@@ -524,17 +583,20 @@ func (m *FunctionOverRangeVector) emitAnnotation(generator types.AnnotationGener
 }
 
 func (m *FunctionOverRangeVector) Prepare(ctx context.Context, params *types.PrepareParams) error {
-	// Load results from cache if using cache
-	// Is this the best place to load cache?
+	// Hook for tests to inject cache (TODO: remove once wired up properly)
+	if testPrepareHook != nil {
+		testPrepareHook(m)
+	}
+
+	// Create intermediate result blocks and load from cache if using caching
 	if m.splittable() {
 		m.intermediateResults = m.CreateIRBlocks()
 
-		// If no complete blocks can be cached, disable caching by clearing the cache reference
+		// If no complete blocks can be cached, disable caching
 		if len(m.intermediateResults) == 0 {
-			// DEBUG: log why we're disabling caching
-			// fmt.Printf("DEBUG Prepare: No complete blocks, disabling caching\n")
-			m.IRCache = nil // This will make splittable() return false
+			m.IRCache = nil
 		} else {
+			// Load from cache
 			for i := range m.intermediateResults {
 				b, found := m.IRCache.Get(m.Func.Name, cache.CacheKey(m.InnerNode), m.intermediateResults[i].startTimestamp, m.intermediateResults[i].duration)
 				if found {
@@ -542,7 +604,7 @@ func (m *FunctionOverRangeVector) Prepare(ctx context.Context, params *types.Pre
 					m.intermediateResults[i].loadedFromCache = true
 				} else {
 					m.intermediateResults[i].ir = cache.IntermediateResultBlock{
-						Version:          -1, // -1 means not found in cache i guess
+						Version:          -1, // -1 means not found in cache
 						StartTimestampMs: int(m.intermediateResults[i].startTimestamp),
 						DurationMs:       int(m.intermediateResults[i].duration.Milliseconds()),
 						Series:           nil,
@@ -551,7 +613,6 @@ func (m *FunctionOverRangeVector) Prepare(ctx context.Context, params *types.Pre
 				}
 			}
 		}
-		//TODO: merge uncached blocks?
 	}
 
 	err := m.Inner.Prepare(ctx, params)
@@ -574,7 +635,7 @@ func (m *FunctionOverRangeVector) Prepare(ctx context.Context, params *types.Pre
 // The head and tail blocks that might be partial are not cached.
 func (m *FunctionOverRangeVector) CreateIRBlocks() []IntermediateResultBlock {
 	params := m.Inner.StepCalculationParams()
-	
+
 	// Calculate the actual data range that will be queried
 	// For the first step:
 	firstStepT := m.timeRange.StartT
@@ -584,7 +645,7 @@ func (m *FunctionOverRangeVector) CreateIRBlocks() []IntermediateResultBlock {
 	}
 	firstRangeEnd = firstRangeEnd - params.Offset
 	earliestDataT := firstRangeEnd - params.RangeMilliseconds
-	
+
 	// For the last step:
 	lastStepT := m.timeRange.EndT
 	lastRangeEnd := lastStepT
@@ -593,21 +654,17 @@ func (m *FunctionOverRangeVector) CreateIRBlocks() []IntermediateResultBlock {
 	}
 	lastRangeEnd = lastRangeEnd - params.Offset
 	latestDataT := lastRangeEnd
-	
+
 	blockLengthMs := m.splitInterval().Milliseconds()
-	
+
 	// Find the first complete block boundary (aligned to splitInterval)
 	// This is the first block boundary >= earliestDataT
 	firstBlockStart := ((earliestDataT / blockLengthMs) + 1) * blockLengthMs
-	
+
 	// Find the last complete block boundary (aligned to splitInterval)
 	// This is the last block boundary <= latestDataT
 	lastBlockEnd := (latestDataT / blockLengthMs) * blockLengthMs
-	
-	// DEBUG logging
-	fmt.Printf("DEBUG CreateIRBlocks: range=%dms, earliest=%d, latest=%d, firstBlock=%d, lastBlock=%d, blockLen=%d\n",
-		params.RangeMilliseconds, earliestDataT, latestDataT, firstBlockStart, lastBlockEnd, blockLengthMs)
-	
+
 	// If there are no complete blocks, return empty
 	if firstBlockStart >= lastBlockEnd {
 		return nil
@@ -662,6 +719,19 @@ func (m *FunctionOverRangeVector) splitInterval() time.Duration {
 }
 
 func (m *FunctionOverRangeVector) Finalize(ctx context.Context) error {
+	// Write intermediate results to cache
+	if m.splittable() && len(m.intermediateResults) > 0 {
+		for i := range m.intermediateResults {
+			// Only write blocks that we computed (not loaded from cache)
+			if !m.intermediateResults[i].loadedFromCache {
+				_ = m.IRCache.Set(m.Func.Name, cache.CacheKey(m.InnerNode), m.intermediateResults[i].startTimestamp, m.intermediateResults[i].duration, m.intermediateResults[i].ir)
+				// Mark as loaded so we don't write again on subsequent Finalize() calls (pedantic mode calls twice)
+				m.intermediateResults[i].loadedFromCache = true
+				// Ignore errors - cache write failures shouldn't fail the query
+			}
+		}
+	}
+
 	err := m.Inner.Finalize(ctx)
 	if err != nil {
 		return err
@@ -685,6 +755,22 @@ func (m *FunctionOverRangeVector) Close() {
 	}
 
 	m.scalarArgsData = nil
+
+	// Clean up temporary buffers created during split operations
+	for _, buf := range m.tempFloatBuffers {
+		buf.Close()
+	}
+	m.tempFloatBuffers = nil
+
+	for _, buf := range m.tempHistBuffers {
+		buf.Close()
+	}
+	m.tempHistBuffers = nil
+
+	// Note: m.metadata is returned from SeriesMetadata() and owned by the caller (Query),
+	// which will clean it up in returnResultToPool(). We don't clean it up here.
+
+	m.intermediateResults = nil
 }
 
 type IRSeriesRef struct {
@@ -768,15 +854,22 @@ func (m *FunctionOverRangeVector) seriesMetadataWithIntermediate(ctx context.Con
 	for _, blockRefs := range seriesToBlockRefs {
 		first := blockRefs[0]
 		if first.IRBlockIdx == UncachedSeriesRef {
+			// Uncached metadata: labels are tracked in uncachedMetadata slice, need to track in outputMetadata too
 			outputMetadata, err = types.AppendSeriesMetadata(m.MemoryConsumptionTracker, outputMetadata, uncachedMetadata[first.SeriesIdx])
+			if err != nil {
+				return nil, nil, err
+			}
 		} else {
+			// Cached metadata needs to be tracked (it's coming from cache into query memory)
 			outputMetadata, err = types.AppendSeriesMetadata(m.MemoryConsumptionTracker, outputMetadata, m.intermediateResults[first.IRBlockIdx].ir.Series[first.SeriesIdx])
-		}
-
-		if err != nil {
-			return nil, nil, err
+			if err != nil {
+				return nil, nil, err
+			}
 		}
 	}
+
+	// Now we have a new metadata slice with all labels tracked, return uncachedMetadata to pool
+	types.SeriesMetadataSlicePool.Put(&uncachedMetadata, m.MemoryConsumptionTracker)
 
 	return outputMetadata, seriesToBlockRefs, nil
 }

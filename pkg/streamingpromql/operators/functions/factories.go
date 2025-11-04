@@ -138,17 +138,12 @@ func FunctionOverRangeVectorOperatorFactory(
 			op.InnerNode = opParams.PlanningNodes[0]
 		}
 
-		// Hook for testing: allow injecting cache and planning node
-		if TestCachingHook != nil {
-			TestCachingHook(op)
-		}
+		// TODO: Wire up IRCache properly in production
+		// For now, it must be set via exported field IRCache (e.g., in tests)
 
 		return op, nil
 	}
 }
-
-// TestCachingHook allows tests to inject caching setup. Not for production use.
-var TestCachingHook func(*FunctionOverRangeVector)
 
 func PredictLinearFactory(args []types.Operator, _ labels.Labels, opParams *planning.OperatorParameters, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.Operator, error) {
 	f := PredictLinear

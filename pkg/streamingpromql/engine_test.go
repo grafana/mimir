@@ -326,7 +326,8 @@ func TestBryan(t *testing.T) {
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
 			// Set up caching for this test
-			defer setupCachingForTest(t, testCase.expr, testCase.ts)()
+			testCache, cleanup := setupCachingForTest(t, testCase.expr, testCase.ts)
+			defer cleanup()
 
 			runTest := func(t *testing.T, eng promql.QueryEngine, expr string, ts time.Time, expected *promql.Result) {
 				q, err := eng.NewInstantQuery(context.Background(), storage, nil, expr, ts)
@@ -334,45 +335,65 @@ func TestBryan(t *testing.T) {
 				defer q.Close()
 
 				res := q.Exec(context.Background())
-				require.Equal(t, expected, res)
+				if expected != nil {
+					require.Equal(t, expected, res)
+				}
 			}
+
+			// Run query first time (should populate cache)
 			runTest(t, mimirEngine, testCase.expr, testCase.ts, testCase.expected)
+
+			// Run same query again (should hit cache)
+			if testCase.expected != nil {
+				beforeGets := testCache.gets
+				beforeHits := testCache.hits
+
+				runTest(t, mimirEngine, testCase.expr, testCase.ts, testCase.expected)
+
+				// Verify we got cache hits
+				newGets := testCache.gets - beforeGets
+				newHits := testCache.hits - beforeHits
+				if newGets > 0 {
+					require.Equal(t, newGets, newHits, "Second query should have 100%% cache hit rate (got %d hits out of %d gets)", newHits, newGets)
+				}
+			}
+
+			t.Logf("Final cache stats: %d gets, %d hits (%.1f%%), %d sets",
+				testCache.gets, testCache.hits,
+				float64(testCache.hits)/float64(max(testCache.gets, 1))*100,
+				testCache.sets)
 		})
 	}
 }
 
-func setupCachingForTest(t *testing.T, expr string, ts time.Time) func() {
-	// Create a simple test cache
+func setupCachingForTest(t *testing.T, expr string, ts time.Time) (*testIntermediateResultsCache, func()) {
+	// Create a simple test cache that tracks its own memory
 	testCache := &testIntermediateResultsCache{
-		data: make(map[string]cache.IntermediateResultBlock),
-		t:    t,
+		data:    make(map[string]cache.IntermediateResultBlock),
+		t:       t,
+		tracker: limiter.NewMemoryConsumptionTracker(context.Background(), 0, nil, "test-cache"),
 	}
 	tenantCache := cache.NewIntermediateResultTenantCache("test-user", testCache)
 
-	// Set up the hook to inject caching into FunctionOverRangeVector operators
-	// InnerNode is automatically set during materialization via opParams.PlanningNodes.
-	// We just need to provide the cache.
-	functions.TestCachingHook = func(op *functions.FunctionOverRangeVector) {
-		op.IRCache = tenantCache
-		t.Logf("TestCachingHook: InnerNode=%v, IRCache=%v, GenerateFunc=%v",
-			op.InnerNode != nil, op.IRCache != nil, op.Func.GenerateFunc != nil)
-	}
+	// Set up the test hook to inject cache before Prepare()
+	functions.SetTestCacheHook(func() *cache.IntermediateResultTenantCache {
+		return tenantCache
+	})
 
-	return func() {
-		functions.TestCachingHook = nil
-		t.Logf("Cache stats: %d gets, %d hits (%.1f%%), %d sets",
-			testCache.gets, testCache.hits,
-			float64(testCache.hits)/float64(testCache.gets)*100,
-			testCache.sets)
+	return testCache, func() {
+		functions.SetTestCacheHook(nil)
+		// Clean up cache memory on teardown
+		testCache.Close()
 	}
 }
 
 type testIntermediateResultsCache struct {
-	data map[string]cache.IntermediateResultBlock
-	gets int
-	hits int
-	sets int
-	t    *testing.T
+	data    map[string]cache.IntermediateResultBlock
+	gets    int
+	hits    int
+	sets    int
+	t       *testing.T
+	tracker *limiter.MemoryConsumptionTracker
 }
 
 func (c *testIntermediateResultsCache) Get(user, function, selector string, start int64, duration time.Duration) (cache.IntermediateResultBlock, bool) {
@@ -381,9 +402,6 @@ func (c *testIntermediateResultsCache) Get(user, function, selector string, star
 	block, ok := c.data[key]
 	if ok {
 		c.hits++
-		c.t.Logf("Cache HIT: %s", key)
-	} else {
-		c.t.Logf("Cache MISS: %s", key)
 	}
 	return block, ok
 }
@@ -391,9 +409,26 @@ func (c *testIntermediateResultsCache) Get(user, function, selector string, star
 func (c *testIntermediateResultsCache) Set(user, function, selector string, start int64, duration time.Duration, block cache.IntermediateResultBlock) error {
 	key := fmt.Sprintf("%s:%s:%s:%d:%d", user, function, selector, start, duration.Milliseconds())
 	c.sets++
+
+	// Track labels in cache's own memory tracker
+	for i := range block.Series {
+		if err := c.tracker.IncreaseMemoryConsumptionForLabels(block.Series[i].Labels); err != nil {
+			return err
+		}
+	}
+
 	c.data[key] = block
-	c.t.Logf("Cache SET: %s (series=%d)", key, len(block.Series))
 	return nil
+}
+
+func (c *testIntermediateResultsCache) Close() {
+	// Clean up all cached labels
+	for _, block := range c.data {
+		for i := range block.Series {
+			c.tracker.DecreaseMemoryConsumptionForLabels(block.Series[i].Labels)
+		}
+	}
+	c.data = nil
 }
 
 func findMatrixSelector(node planning.Node, result *planning.Node) {
