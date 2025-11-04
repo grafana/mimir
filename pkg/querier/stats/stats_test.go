@@ -150,6 +150,23 @@ func TestStats_SamplesProcessed(t *testing.T) {
 	})
 }
 
+func TestStats_AddRemoteExecutionRequests(t *testing.T) {
+	t.Run("add and load requests", func(t *testing.T) {
+		stats, _ := ContextWithEmptyStats(context.Background())
+		stats.AddRemoteExecutionRequests(4096)
+		stats.AddRemoteExecutionRequests(4096)
+
+		assert.Equal(t, uint32(8192), stats.LoadRemoteExecutionRequestCount())
+	})
+
+	t.Run("add and load requests nil receiver", func(t *testing.T) {
+		var stats *SafeStats
+		stats.AddRemoteExecutionRequests(1024)
+
+		assert.Equal(t, uint32(0), stats.LoadRemoteExecutionRequestCount())
+	})
+}
+
 func TestStats_Merge(t *testing.T) {
 	t.Run("merge two stats objects", func(t *testing.T) {
 		stats1 := &SafeStats{}
@@ -165,6 +182,7 @@ func TestStats_Merge(t *testing.T) {
 			{Timestamp: 1, Value: 10},
 			{Timestamp: 2, Value: 20},
 		})
+		stats1.AddRemoteExecutionRequests(12)
 
 		stats2 := &SafeStats{}
 		stats2.AddWallTime(time.Second)
@@ -179,6 +197,7 @@ func TestStats_Merge(t *testing.T) {
 			{Timestamp: 1, Value: 10},
 			{Timestamp: 2, Value: 20},
 		})
+		stats2.AddRemoteExecutionRequests(14)
 
 		stats1.Merge(stats2)
 
@@ -194,6 +213,7 @@ func TestStats_Merge(t *testing.T) {
 			{Timestamp: 1, Value: 20},
 			{Timestamp: 2, Value: 40},
 		}, stats1.LoadSamplesProcessedPerStep())
+		assert.Equal(t, uint32(26), stats1.LoadRemoteExecutionRequestCount())
 	})
 
 	t.Run("merge two nil stats objects", func(t *testing.T) {
@@ -210,6 +230,7 @@ func TestStats_Merge(t *testing.T) {
 		assert.Equal(t, uint32(0), stats1.LoadSplitQueries())
 		assert.Equal(t, time.Duration(0), stats1.LoadQueueTime())
 		assert.Equal(t, uint64(0), stats1.LoadSamplesProcessed())
+		assert.Equal(t, uint32(0), stats1.LoadRemoteExecutionRequestCount())
 	})
 }
 
@@ -230,6 +251,7 @@ func TestStats_Copy(t *testing.T) {
 				{Timestamp: 1, Value: 5},
 				{Timestamp: 2, Value: 5},
 			},
+			RemoteExecutionRequestCount: 12,
 		},
 	}
 	s2 := s1.Copy()
@@ -275,6 +297,7 @@ func TestStats_ConcurrentMerge(t *testing.T) {
 			{Timestamp: 9, Value: 9},
 			{Timestamp: 10, Value: 10},
 		})
+		child.AddRemoteExecutionRequests(12)
 
 		childStats[i] = child
 	}
@@ -312,6 +335,7 @@ func TestStats_ConcurrentMerge(t *testing.T) {
 	expectedSplitQueries := uint32(numChildren * 10)
 	expectedQueueTime := time.Duration(numChildren) * 200 * time.Millisecond
 	expectedSamplesProcessed := uint64(numChildren * 100)
+	expectedRemoteExecutionRequestCount := uint32(numChildren * 12)
 
 	// Verify all values match expected totals
 	assert.Equal(t, expectedWallTime, parentStats.LoadWallTime(), "WallTime should be sum of all children")
@@ -322,6 +346,7 @@ func TestStats_ConcurrentMerge(t *testing.T) {
 	assert.Equal(t, expectedSplitQueries, parentStats.LoadSplitQueries(), "SplitQueries should be sum of all children")
 	assert.Equal(t, expectedQueueTime, parentStats.LoadQueueTime(), "QueueTime should be sum of all children")
 	assert.Equal(t, expectedSamplesProcessed, parentStats.LoadSamplesProcessed(), "SamplesProcessed should be sum of all children")
+	assert.Equal(t, expectedRemoteExecutionRequestCount, parentStats.LoadRemoteExecutionRequestCount(), "RemoteExecutionRequestCount should be sum of all children")
 
 	// Verify that SamplesProcessedPerStep was merged correctly
 	expectedPerStepStats := []StepStat{

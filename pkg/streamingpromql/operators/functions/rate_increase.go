@@ -10,6 +10,7 @@ import (
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/util/annotations"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
@@ -125,9 +126,12 @@ func histogramRate(isRate bool, hCount int, hHead []promql.HPoint, hTail []promq
 	}
 
 	delta := lastPoint.H.CopyToSchema(desiredSchema)
-	_, _, err := delta.Sub(firstPoint.H)
+	_, _, nhcbBoundsReconciled, err := delta.Sub(firstPoint.H)
 	if err != nil {
 		return nil, err
+	}
+	if nhcbBoundsReconciled {
+		emitAnnotation(newSubMismatchedCustomBucketsHistogramInfo)
 	}
 	previousValue := firstPoint.H
 
@@ -135,8 +139,12 @@ func histogramRate(isRate bool, hCount int, hHead []promql.HPoint, hTail []promq
 		for _, p := range points {
 			if p.H.DetectReset(previousValue) {
 				// Counter reset.
-				if _, _, err := delta.Add(previousValue); err != nil {
+				_, _, nhcbBoundsReconciled, err := delta.Add(previousValue)
+				if err != nil {
 					return err
+				}
+				if nhcbBoundsReconciled {
+					emitAnnotation(newAddMismatchedCustomBucketsHistogramInfo)
 				}
 			}
 
@@ -372,14 +380,25 @@ func histogramDelta(hCount int, hHead []promql.HPoint, hTail []promql.HPoint, ra
 		return nil, histogram.ErrHistogramsIncompatibleSchema
 	}
 
-	delta, _, err := lastPoint.H.Copy().Sub(firstPoint.H)
+	delta, _, nhcbBoundsReconciled, err := lastPoint.H.Copy().Sub(firstPoint.H)
 	if err != nil {
 		return nil, err
 	}
 	if firstPoint.H.CounterResetHint != histogram.GaugeType || lastPoint.H.CounterResetHint != histogram.GaugeType {
 		emitAnnotation(annotations.NewNativeHistogramNotGaugeWarning)
 	}
+	if nhcbBoundsReconciled {
+		emitAnnotation(newSubMismatchedCustomBucketsHistogramInfo)
+	}
 
 	val := calculateHistogramRate(false, false, rangeStart, rangeEnd, rangeSeconds, firstPoint, lastPoint, delta, hCount, firstPoint.H.Count)
 	return val, nil
+}
+
+func newAddMismatchedCustomBucketsHistogramInfo(_ string, expressionPosition posrange.PositionRange) error {
+	return annotations.NewMismatchedCustomBucketsHistogramsInfo(expressionPosition, annotations.HistogramAdd)
+}
+
+func newSubMismatchedCustomBucketsHistogramInfo(_ string, expressionPosition posrange.PositionRange) error {
+	return annotations.NewMismatchedCustomBucketsHistogramsInfo(expressionPosition, annotations.HistogramSub)
 }

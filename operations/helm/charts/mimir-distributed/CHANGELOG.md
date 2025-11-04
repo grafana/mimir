@@ -10,7 +10,7 @@ remove a deprecated item from the third major release after it has been deprecat
 * GEM gateway: remove port 8080 on the Service resource. Deprecated in `3.1.0` and will be removed in `6.0.0`.
   * __How to migrate__: replace usages of port 8080 with port 80; these usages can be in dashboards, Prometheus remote-write configurations, or automation for updating rules.
 * NGINX configuration via `nginx` top-level values sections is being merged with by the `gateway` section. The
-  `nginx` section is deprecated in `4.0.0` and will be removed in `7.0.0`.
+  `nginx` section is deprecated in `4.0.0` and was removed in `6.0.0` (originally planned for `7.0.0`).
   * __How to migrate__: refer to [Migrate to using the unified proxy deployment for NGINX and GEM gateway](https://grafana.com/docs/helm-charts/mimir-distributed/latest/migration-guides/migrate-to-unified-proxy-deployment/)
 
 ## Format of changelog
@@ -29,11 +29,13 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 ## main / unreleased
 
+* [ENHANCEMENT] Add Support to customize gossip ring k8s service annotations. #12718
 * [ENHANCEMENT] Ruler querier and query-frontend: Add support for newly-introduced querier ring, which is used when performing query planning in query-frontends and distributing portions of the plan to queriers for execution. #13017
+* [ENHANCEMENT] Upgrade rollout-operator chart to [0.37.0](https://github.com/grafana/helm-charts/blob/main/charts/rollout-operator/README.md#upgrade-of-grafana-rollout-operator). Note required actions for upgrading the rollout-operator chart. #13245
 
-## 6.0.0-rc.0
+## 6.0.0
 
-* [CHANGE] Upgrade Mimir to [3.0.0](https://github.com/grafana/mimir/blob/main/CHANGELOG.md#300). #13078
+* [CHANGE] Upgrade Mimir to [3.0.0](https://github.com/grafana/mimir/blob/main/CHANGELOG.md#300). #13276
 * [CHANGE] Remove all remaining GEM (enterprise) references from test configurations, reference files, and values.yaml. #13005 #13006 #13007 #13008 #13009 #13010
 * [CHANGE] Minimum compatible Kubernetes version was updated to v1.29. #12527
 * [CHANGE] Mimir is deployed in the ingest storage architecture by default. #12459 #12495

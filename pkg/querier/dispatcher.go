@@ -9,7 +9,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strconv"
 	"strings"
 	"time"
 
@@ -123,7 +122,7 @@ func (d *Dispatcher) evaluateQuery(ctx context.Context, body []byte, resp *query
 		return
 	}
 
-	d.querierMetrics.PlansReceived.WithLabelValues(strconv.FormatUint(req.Plan.Version, 10)).Inc()
+	d.querierMetrics.PlansReceived.WithLabelValues(req.Plan.Version.String()).Inc()
 
 	if len(req.Nodes) != 1 {
 		resp.WriteError(ctx, apierror.TypeBadData, fmt.Errorf("this querier only supports evaluating exactly one node, got %d", len(req.Nodes)))
@@ -256,13 +255,15 @@ func (w *queryResponseWriter) Write(ctx context.Context, r querierpb.EvaluateQue
 func (w *queryResponseWriter) WriteError(ctx context.Context, fallbackType apierror.Type, err error) {
 	typ := errorTypeForError(err, fallbackType)
 	msg := err.Error()
-	span := trace.SpanFromContext(ctx)
 
-	if typ != mimirpb.QUERY_ERROR_TYPE_CANCELED {
+	if typ == mimirpb.QUERY_ERROR_TYPE_CANCELED {
+		level.Debug(w.logger).Log("msg", "returning cancelled status", "type", typ.String(), "msg", msg)
+	} else {
+		span := trace.SpanFromContext(ctx)
 		span.SetStatus(codes.Error, msg)
-	}
 
-	span.AddEvent("returning error", trace.WithAttributes(attribute.String("type", typ.String()), attribute.String("msg", msg)))
+		level.Warn(w.logger).Log("msg", "returning error", "type", typ.String(), "msg", msg)
+	}
 
 	w.status = "ERROR_" + strings.TrimPrefix(typ.String(), "QUERY_ERROR_TYPE_")
 

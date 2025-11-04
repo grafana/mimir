@@ -60,6 +60,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/cardinality"
 	"github.com/grafana/mimir/pkg/costattribution"
+	"github.com/grafana/mimir/pkg/costattribution/costattributionmodel"
 	"github.com/grafana/mimir/pkg/ingester"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -1653,7 +1654,7 @@ func TestDistributor_ValidateSeries(t *testing.T) {
 
 			now := mtime.Now()
 			for _, ts := range tc.req.Timeseries {
-				err := ds[0].validateSeries(now, &ts, "user", "test-group", true, true, 0, 0)
+				err := ds[0].validateSeries(now, &ts, "user", "test-group", true, true, 0, 0, nil)
 				require.NoError(t, err)
 			}
 
@@ -1829,7 +1830,7 @@ func BenchmarkDistributor_SampleDuplicateTimestamp(b *testing.B) {
 			b.ResetTimer()
 			for n := 0; n < b.N; n++ {
 				for _, ts := range timeseries[n] {
-					err := ds[0].validateSeries(now, &ts, "user", "test-group", true, true, 0, 0)
+					err := ds[0].validateSeries(now, &ts, "user", "test-group", true, true, 0, 0, nil)
 					if err != nil {
 						b.Fatal(err)
 					}
@@ -2072,7 +2073,7 @@ func TestDistributor_ExemplarValidation(t *testing.T) {
 			require.Len(t, regs, 1)
 
 			for _, ts := range tc.req.Timeseries {
-				err := ds[0].validateSeries(now, &ts, "user", "test-group", false, false, tc.minExemplarTS, tc.maxExemplarTS)
+				err := ds[0].validateSeries(now, &ts, "user", "test-group", false, false, tc.minExemplarTS, tc.maxExemplarTS, nil)
 				assert.NoError(t, err)
 			}
 
@@ -2179,7 +2180,7 @@ func TestDistributor_HistogramReduction(t *testing.T) {
 			require.Len(t, regs, 1)
 
 			for _, ts := range tc.req.Timeseries {
-				err := ds[0].validateSeries(now, &ts, "user", "test-group", false, false, 0, 0)
+				err := ds[0].validateSeries(now, &ts, "user", "test-group", false, false, 0, 0, nil)
 				if tc.expectedError != nil {
 					require.ErrorAs(t, err, &tc.expectedError)
 				} else {
@@ -2384,7 +2385,7 @@ func BenchmarkDistributor_Push(b *testing.B) {
 			state:          "enabled",
 			customRegistry: prometheus.NewRegistry(),
 			cfg: func(limits *validation.Limits) {
-				limits.CostAttributionLabels = []string{"team"}
+				limits.CostAttributionLabelsStructured = []costattributionmodel.Label{{Input: "team"}}
 				limits.MaxCostAttributionCardinality = 100
 			},
 		},
@@ -5269,53 +5270,40 @@ func TestRelabelMiddleware(t *testing.T) {
 	ctxWithUser := user.InjectOrgID(context.Background(), "user")
 
 	type testCase struct {
-		name              string
-		ctx               context.Context
-		relabelConfigs    []*relabel.Config
-		dropLabels        []string
-		relabelingEnabled bool
-		reqs              []*mimirpb.WriteRequest
-		expectedReqs      []*mimirpb.WriteRequest
-		expectErrs        []bool
+		name           string
+		ctx            context.Context
+		relabelConfigs []*relabel.Config
+		dropLabels     []string
+		reqs           []*mimirpb.WriteRequest
+		expectedReqs   []*mimirpb.WriteRequest
+		expectErrs     []bool
 	}
 	testCases := []testCase{
 		{
-			name:              "do nothing",
-			ctx:               ctxWithUser,
-			relabelConfigs:    nil,
-			dropLabels:        nil,
-			relabelingEnabled: true,
-			reqs:              []*mimirpb.WriteRequest{makeWriteRequestForGenerators(5, labelSetGenForStringPairs(t, "__name__", "metric1", "label", "value_%d"), nil, nil)},
-			expectedReqs:      []*mimirpb.WriteRequest{makeWriteRequestForGenerators(5, labelSetGenForStringPairs(t, "__name__", "metric1", "label", "value_%d"), nil, nil)},
-			expectErrs:        []bool{false},
+			name:           "do nothing",
+			ctx:            ctxWithUser,
+			relabelConfigs: nil,
+			dropLabels:     nil,
+			reqs:           []*mimirpb.WriteRequest{makeWriteRequestForGenerators(5, labelSetGenForStringPairs(t, "__name__", "metric1", "label", "value_%d"), nil, nil)},
+			expectedReqs:   []*mimirpb.WriteRequest{makeWriteRequestForGenerators(5, labelSetGenForStringPairs(t, "__name__", "metric1", "label", "value_%d"), nil, nil)},
+			expectErrs:     []bool{false},
 		}, {
-			name:              "no user in context",
-			ctx:               context.Background(),
-			relabelConfigs:    nil,
-			dropLabels:        nil,
-			relabelingEnabled: true,
-			reqs:              []*mimirpb.WriteRequest{makeWriteRequestForGenerators(5, labelSetGenForStringPairs(t, "__name__", "metric1", "label", "value_%d"), nil, nil)},
-			expectedReqs:      nil,
-			expectErrs:        []bool{true},
+			name:           "no user in context",
+			ctx:            context.Background(),
+			relabelConfigs: nil,
+			dropLabels:     nil,
+			reqs:           []*mimirpb.WriteRequest{makeWriteRequestForGenerators(5, labelSetGenForStringPairs(t, "__name__", "metric1", "label", "value_%d"), nil, nil)},
+			expectedReqs:   nil,
+			expectErrs:     []bool{true},
 		}, {
-			name:              "apply a relabel rule",
-			ctx:               ctxWithUser,
-			relabelConfigs:    nil,
-			dropLabels:        []string{"label1", "label3"},
-			relabelingEnabled: true,
-			reqs:              []*mimirpb.WriteRequest{makeWriteRequestForGenerators(5, labelSetGenForStringPairs(t, "__name__", "metric1", "label1", "value1", "label2", "value2", "label3", "value3"), nil, nil)},
-			expectedReqs:      []*mimirpb.WriteRequest{makeWriteRequestForGenerators(5, labelSetGenForStringPairs(t, "__name__", "metric1", "label2", "value2"), nil, nil)},
-			expectErrs:        []bool{false},
+			name:           "apply a relabel rule",
+			ctx:            ctxWithUser,
+			relabelConfigs: nil,
+			dropLabels:     []string{"label1", "label3"},
+			reqs:           []*mimirpb.WriteRequest{makeWriteRequestForGenerators(5, labelSetGenForStringPairs(t, "__name__", "metric1", "label1", "value1", "label2", "value2", "label3", "value3"), nil, nil)},
+			expectedReqs:   []*mimirpb.WriteRequest{makeWriteRequestForGenerators(5, labelSetGenForStringPairs(t, "__name__", "metric1", "label2", "value2"), nil, nil)},
+			expectErrs:     []bool{false},
 		}, {
-			name:              "relabeling disabled",
-			ctx:               ctxWithUser,
-			relabelConfigs:    nil,
-			dropLabels:        []string{"label1", "label3"},
-			relabelingEnabled: false,
-			reqs:              []*mimirpb.WriteRequest{makeWriteRequestForGenerators(5, labelSetGenForStringPairs(t, "__name__", "metric1", "label1", "value1", "label2", "value2", "label3", "value3"), nil, nil)},
-			expectedReqs:      []*mimirpb.WriteRequest{makeWriteRequestForGenerators(5, labelSetGenForStringPairs(t, "__name__", "metric1", "label1", "value1", "label2", "value2", "label3", "value3"), nil, nil)},
-			expectErrs:        []bool{false},
-		}, {}, {
 			name: "drop two out of three labels",
 			ctx:  ctxWithUser,
 			relabelConfigs: []*relabel.Config{
@@ -5327,15 +5315,13 @@ func TestRelabelMiddleware(t *testing.T) {
 					Replacement:  "prefix_$1",
 				},
 			},
-			relabelingEnabled: true,
-			reqs:              []*mimirpb.WriteRequest{makeWriteRequestForGenerators(5, labelSetGenForStringPairs(t, "__name__", "metric1", "label1", "value1"), nil, nil)},
-			expectedReqs:      []*mimirpb.WriteRequest{makeWriteRequestForGenerators(5, labelSetGenForStringPairs(t, "__name__", "metric1", "label1", "value1", "target", "prefix_value1"), nil, nil)},
-			expectErrs:        []bool{false},
+			reqs:         []*mimirpb.WriteRequest{makeWriteRequestForGenerators(5, labelSetGenForStringPairs(t, "__name__", "metric1", "label1", "value1"), nil, nil)},
+			expectedReqs: []*mimirpb.WriteRequest{makeWriteRequestForGenerators(5, labelSetGenForStringPairs(t, "__name__", "metric1", "label1", "value1", "target", "prefix_value1"), nil, nil)},
+			expectErrs:   []bool{false},
 		}, {
-			name:              "drop entire series if they have no labels",
-			ctx:               ctxWithUser,
-			dropLabels:        []string{"__name__", "label2", "label3"},
-			relabelingEnabled: true,
+			name:       "drop entire series if they have no labels",
+			ctx:        ctxWithUser,
+			dropLabels: []string{"__name__", "label2", "label3"},
 			reqs: []*mimirpb.WriteRequest{
 				makeWriteRequestForGenerators(5, labelSetGenForStringPairs(t, "__name__", "metric1", "label1", "value1"), nil, nil),
 				makeWriteRequestForGenerators(5, labelSetGenForStringPairs(t, "__name__", "metric2", "label2", "value2"), nil, nil),
@@ -5361,7 +5347,6 @@ func TestRelabelMiddleware(t *testing.T) {
 					Replacement:  "$1",
 				},
 			},
-			relabelingEnabled: true,
 			reqs: []*mimirpb.WriteRequest{{
 				Timeseries: []mimirpb.PreallocTimeseries{makeTimeseries(
 					[]string{
@@ -5416,7 +5401,6 @@ func TestRelabelMiddleware(t *testing.T) {
 			flagext.DefaultValues(&limits)
 			limits.MetricRelabelConfigs = tc.relabelConfigs
 			limits.DropLabels = tc.dropLabels
-			limits.MetricRelabelingEnabled = tc.relabelingEnabled
 			ds, _, _, _ := prepare(t, prepConfig{
 				numDistributors: 1,
 				limits:          &limits,
@@ -8219,8 +8203,6 @@ func TestDistributor_StartFinishRequest(t *testing.T) {
 
 	// Pretend push went OK, make sure to call CleanUp. Also check for expected values of inflight requests and inflight request size.
 	finishPush := func(ctx context.Context, pushReq *Request) error {
-		defer pushReq.CleanUp()
-
 		distrib := ctx.Value(distributorKey).(*Distributor)
 		expReq := ctx.Value(expectedInflightRequestsKey).(int64)
 		expBytes := ctx.Value(expectedInflightBytesKey).(int64)
@@ -8234,6 +8216,11 @@ func TestDistributor_StartFinishRequest(t *testing.T) {
 		if expBytes != bs {
 			return errors.Errorf("unexpected number of inflight request bytes: %d, expected: %d", bs, expBytes)
 		}
+
+		// dskit/ring runs cleanup on a separate, untracked goroutine, so mimick
+		// that to uncover races.
+		go pushReq.CleanUp()
+
 		return nil
 	}
 
@@ -8398,7 +8385,12 @@ func TestDistributor_StartFinishRequest(t *testing.T) {
 					config.DefaultLimits.MaxInflightPushRequestsBytes = inflightBytesLimit
 				},
 			})
-			wrappedPush := ds[0].wrapPushWithMiddlewares(finishPush)
+			var cleanupWg sync.WaitGroup
+			wrappedPush := ds[0].wrapPushWithMiddlewares(func(ctx context.Context, pushReq *Request) error {
+				cleanupWg.Add(1)
+				pushReq.AddCleanup(cleanupWg.Done)
+				return finishPush(ctx, pushReq)
+			})
 
 			// Setup reactive limiter if needed
 			if tc.reactiveLimiterEnabled {
@@ -8455,6 +8447,7 @@ func TestDistributor_StartFinishRequest(t *testing.T) {
 			}
 
 			// Verify that inflight metrics are the same as before the request.
+			require.Eventually(t, func() bool { cleanupWg.Wait(); return true }, time.Second, time.Millisecond)
 			require.Equal(t, int64(tc.inflightRequestsBeforePush), ds[0].inflightPushRequests.Load())
 			require.Equal(t, tc.inflightRequestsSizeBeforePush, ds[0].inflightPushRequestsBytes.Load())
 		})
@@ -8585,8 +8578,8 @@ func TestDistributor_AcquireReactiveLimiterPermit(t *testing.T) {
 				cancel() // Cancel immediately
 			}
 
-			// Call PreparePushRequest
-			err := ds[0].acquireReactiveLimiterPermit(ctx)
+			// Call acquireReactiveLimiterPermit
+			cleanup, err := ds[0].acquireReactiveLimiterPermit(ctx)
 			rs, ok := ctx.Value(requestStateKey).(*requestState)
 			// Check error
 			if tc.expectedError != nil {
@@ -8599,10 +8592,10 @@ func TestDistributor_AcquireReactiveLimiterPermit(t *testing.T) {
 
 			// Check cleanup function
 			if tc.verifyCleanUpFunc != nil {
-				require.NotNil(t, rs.reactiveLimiterCleanup)
-				tc.verifyCleanUpFunc(rs.reactiveLimiterCleanup, mockLimiter.permit)
+				require.NotNil(t, cleanup)
+				tc.verifyCleanUpFunc(cleanup, mockLimiter.permit)
 			} else {
-				require.Nil(t, rs.reactiveLimiterCleanup)
+				require.Nil(t, cleanup)
 			}
 
 			// Verify rejected requests metric
@@ -8656,10 +8649,11 @@ func TestDistributor_AcquireReactiveLimiterPermitIdempotent(t *testing.T) {
 			// Create context
 			ctx := user.InjectOrgID(context.Background(), "user")
 			if !tc.enabled {
-				err := ds[0].acquireReactiveLimiterPermit(ctx)
+				cleanup, err := ds[0].acquireReactiveLimiterPermit(ctx)
 				require.NoError(t, err)
+				require.Nil(t, cleanup)
 			} else if !tc.addRequestState {
-				err := ds[0].acquireReactiveLimiterPermit(ctx)
+				_, err := ds[0].acquireReactiveLimiterPermit(ctx)
 				require.Error(t, err)
 				require.ErrorIs(t, errMissingRequestState, err)
 			} else {
@@ -8667,12 +8661,13 @@ func TestDistributor_AcquireReactiveLimiterPermitIdempotent(t *testing.T) {
 				checkRequestState(t, ctx, false)
 
 				// First call to acquireReactiveLimiterPermit should actually get a new permit.
-				err := ds[0].acquireReactiveLimiterPermit(ctx)
+				cleanup, err := ds[0].acquireReactiveLimiterPermit(ctx)
 				require.NoError(t, err)
+				require.NotNil(t, cleanup)
 				checkRequestState(t, ctx, true)
 
 				// Second call to acquireReactiveLimiterPermit should fail.
-				err = ds[0].acquireReactiveLimiterPermit(ctx)
+				_, err = ds[0].acquireReactiveLimiterPermit(ctx)
 				require.Error(t, err)
 				require.ErrorIs(t, err, errReactiveLimiterPermitAlreadyAcquired)
 				checkRequestState(t, ctx, true)
@@ -8684,12 +8679,7 @@ func TestDistributor_AcquireReactiveLimiterPermitIdempotent(t *testing.T) {
 func checkRequestState(t *testing.T, ctx context.Context, acquiredPermit bool) {
 	rs, ok := ctx.Value(requestStateKey).(*requestState)
 	require.True(t, ok)
-	if !acquiredPermit {
-		require.False(t, rs.reactiveLimiterPermitAcquired)
-		return
-	}
-	require.True(t, rs.reactiveLimiterPermitAcquired)
-	require.NotNil(t, rs.reactiveLimiterCleanup)
+	require.Equal(t, acquiredPermit, rs.reactiveLimiterPermitAcquired)
 }
 
 // mockReactiveLimiter is a mock implementation of ReactiveLimiter for testing

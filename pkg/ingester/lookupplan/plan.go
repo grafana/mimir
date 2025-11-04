@@ -197,6 +197,7 @@ func (p plan) addSpanEvent(span trace.Span, planName string) {
 		attribute.Float64("index_lookup_cost", p.indexLookupCost()),
 		attribute.Float64("filter_cost", p.filterCost()),
 		attribute.Float64("intersection_cost", p.intersectionCost()),
+		attribute.Int64("estimated_retrieved_series", int64(p.intersectionSize())),
 		attribute.Float64("series_retrieval_cost", p.seriesRetrievalCost()),
 		attribute.Int64("cardinality", int64(p.cardinality())),
 		attribute.Stringer("index_matchers", util.MatchersStringer(p.IndexMatchers())),

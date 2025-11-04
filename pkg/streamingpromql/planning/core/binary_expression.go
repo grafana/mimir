@@ -148,7 +148,7 @@ func MaterializeBinaryExpression(b *BinaryExpression, materializer *planning.Mat
 	}
 
 	if lhsScalar != nil && rhsScalar != nil {
-		o, err := binops.NewScalarScalarBinaryOperation(lhsScalar, rhsScalar, op, params.MemoryConsumptionTracker, b.ExpressionPosition())
+		o, err := binops.NewScalarScalarBinaryOperation(lhsScalar, rhsScalar, op, params.MemoryConsumptionTracker, params.Annotations, b.ExpressionPosition())
 		if err != nil {
 			return nil, err
 		}
@@ -256,7 +256,7 @@ func (b *BinaryExpression) ExpressionPosition() posrange.PositionRange {
 	return b.GetExpressionPosition().ToPrometheusType()
 }
 
-func (b *BinaryExpression) MinimumRequiredPlanVersion() uint64 {
+func (b *BinaryExpression) MinimumRequiredPlanVersion() planning.QueryPlanVersion {
 	return planning.QueryPlanVersionZero
 }
 

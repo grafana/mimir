@@ -44,14 +44,14 @@ func TestManager_CreateDeleteTracker(t *testing.T) {
 	t.Run("Tracker existence and attributes", func(t *testing.T) {
 		user1SampleTracker := manager.SampleTracker("user1")
 		assert.NotNil(t, user1SampleTracker)
-		assert.True(t, user1SampleTracker.hasSameLabels([]costattributionmodel.Label{{Input: "team", Output: ""}}))
+		assert.True(t, user1SampleTracker.hasSameLabels([]costattributionmodel.Label{{Input: "team", Output: "my_team"}}))
 		assert.Equal(t, 5, user1SampleTracker.maxCardinality)
 
 		assert.Nil(t, manager.SampleTracker("user2"))
 
 		user3ActiveTracker := manager.ActiveSeriesTracker("user3")
 		assert.NotNil(t, user3ActiveTracker)
-		assert.True(t, user3ActiveTracker.hasSameLabels([]costattributionmodel.Label{{Input: "department", Output: ""}, {Input: "service", Output: ""}}))
+		assert.True(t, user3ActiveTracker.hasSameLabels([]costattributionmodel.Label{{Input: "department", Output: "my_department"}, {Input: "service", Output: "my_service"}}))
 		assert.Equal(t, 2, user3ActiveTracker.maxCardinality)
 	})
 
@@ -66,24 +66,24 @@ func TestManager_CreateDeleteTracker(t *testing.T) {
 		expectedMetrics := `
 		# HELP cortex_discarded_attributed_samples_total The total number of samples that were discarded per attribution.
 		# TYPE cortex_discarded_attributed_samples_total counter
-		cortex_discarded_attributed_samples_total{reason="invalid-metrics-name",team="bar",tenant="user1",tracker="cost-attribution"} 1
-		cortex_discarded_attributed_samples_total{reason="invalid-metrics-name",team="foo",tenant="user1",tracker="cost-attribution"} 1
+		cortex_discarded_attributed_samples_total{my_team="bar",reason="invalid-metrics-name",tenant="user1",tracker="cost-attribution"} 1
+		cortex_discarded_attributed_samples_total{my_team="foo",reason="invalid-metrics-name",tenant="user1",tracker="cost-attribution"} 1
 		# HELP cortex_distributor_received_attributed_samples_total The total number of samples that were received per attribution.
 		# TYPE cortex_distributor_received_attributed_samples_total counter
-		cortex_distributor_received_attributed_samples_total{department="foo",service="dodo",tenant="user3",tracker="cost-attribution"} 1
+		cortex_distributor_received_attributed_samples_total{my_department="foo",my_service="dodo",tenant="user3",tracker="cost-attribution"} 1
 		# HELP cortex_ingester_attributed_active_native_histogram_buckets The total number of active native histogram buckets per user and attribution.
         # TYPE cortex_ingester_attributed_active_native_histogram_buckets gauge
-        cortex_ingester_attributed_active_native_histogram_buckets{team="bar",tenant="user1",tracker="cost-attribution"} 52
+        cortex_ingester_attributed_active_native_histogram_buckets{my_team="bar",tenant="user1",tracker="cost-attribution"} 52
         # HELP cortex_ingester_attributed_active_native_histogram_series The total number of active native histogram series per user and attribution.
         # TYPE cortex_ingester_attributed_active_native_histogram_series gauge
-        cortex_ingester_attributed_active_native_histogram_series{team="bar",tenant="user1",tracker="cost-attribution"} 2
+        cortex_ingester_attributed_active_native_histogram_series{my_team="bar",tenant="user1",tracker="cost-attribution"} 2
 		# HELP cortex_ingester_attributed_active_series The total number of active series per user and attribution.
         # TYPE cortex_ingester_attributed_active_series gauge
-        cortex_ingester_attributed_active_series{team="bar",tenant="user1",tracker="cost-attribution"} 3
+        cortex_ingester_attributed_active_series{my_team="bar",tenant="user1",tracker="cost-attribution"} 3
 		# HELP cortex_attributed_series_overflow_labels The overflow labels for this tenant. This metric is always 1 for tenants with active series, it is only used to have the overflow labels available in the recording rules without knowing their names.
 		# TYPE cortex_attributed_series_overflow_labels gauge
-		cortex_attributed_series_overflow_labels{team="__overflow__",tenant="user1",tracker="cost-attribution"} 1
-		cortex_attributed_series_overflow_labels{department="__overflow__",service="__overflow__",tenant="user3",tracker="cost-attribution"} 1
+		cortex_attributed_series_overflow_labels{my_team="__overflow__",tenant="user1",tracker="cost-attribution"} 1
+		cortex_attributed_series_overflow_labels{my_department="__overflow__",my_service="__overflow__",tenant="user3",tracker="cost-attribution"} 1
 		`
 		assert.NoError(t, testutil.GatherAndCompare(costAttributionReg,
 			strings.NewReader(expectedMetrics),
@@ -99,20 +99,20 @@ func TestManager_CreateDeleteTracker(t *testing.T) {
 		expectedMetrics = `
 		# HELP cortex_discarded_attributed_samples_total The total number of samples that were discarded per attribution.
 		# TYPE cortex_discarded_attributed_samples_total counter
-        cortex_discarded_attributed_samples_total{reason="invalid-metrics-name",team="bar",tenant="user1",tracker="cost-attribution"} 1
-        cortex_discarded_attributed_samples_total{reason="invalid-metrics-name",team="foo",tenant="user1",tracker="cost-attribution"} 1
+        cortex_discarded_attributed_samples_total{my_team="bar",reason="invalid-metrics-name",tenant="user1",tracker="cost-attribution"} 1
+        cortex_discarded_attributed_samples_total{my_team="foo",reason="invalid-metrics-name",tenant="user1",tracker="cost-attribution"} 1
         # HELP cortex_distributor_received_attributed_samples_total The total number of samples that were received per attribution.
         # TYPE cortex_distributor_received_attributed_samples_total counter
-        cortex_distributor_received_attributed_samples_total{department="foo",service="dodo",tenant="user3",tracker="cost-attribution"} 1
+        cortex_distributor_received_attributed_samples_total{my_department="foo",my_service="dodo",tenant="user3",tracker="cost-attribution"} 1
 		# HELP cortex_ingester_attributed_active_native_histogram_buckets The total number of active native histogram buckets per user and attribution.
         # TYPE cortex_ingester_attributed_active_native_histogram_buckets gauge
-        cortex_ingester_attributed_active_native_histogram_buckets{team="bar",tenant="user1",tracker="cost-attribution"} 2
+        cortex_ingester_attributed_active_native_histogram_buckets{my_team="bar",tenant="user1",tracker="cost-attribution"} 2
         # HELP cortex_ingester_attributed_active_native_histogram_series The total number of active native histogram series per user and attribution.
         # TYPE cortex_ingester_attributed_active_native_histogram_series gauge
-        cortex_ingester_attributed_active_native_histogram_series{team="bar",tenant="user1",tracker="cost-attribution"} 1
+        cortex_ingester_attributed_active_native_histogram_series{my_team="bar",tenant="user1",tracker="cost-attribution"} 1
 		# HELP cortex_ingester_attributed_active_series The total number of active series per user and attribution.
         # TYPE cortex_ingester_attributed_active_series gauge
-        cortex_ingester_attributed_active_series{team="bar",tenant="user1",tracker="cost-attribution"} 2
+        cortex_ingester_attributed_active_series{my_team="bar",tenant="user1",tracker="cost-attribution"} 2
 		`
 		assert.NoError(t, testutil.GatherAndCompare(costAttributionReg,
 			strings.NewReader(expectedMetrics),
@@ -127,14 +127,14 @@ func TestManager_CreateDeleteTracker(t *testing.T) {
 		expectedMetrics = `
 		# HELP cortex_discarded_attributed_samples_total The total number of samples that were discarded per attribution.
 		# TYPE cortex_discarded_attributed_samples_total counter
-        cortex_discarded_attributed_samples_total{reason="invalid-metrics-name",team="bar",tenant="user1",tracker="cost-attribution"} 1
-        cortex_discarded_attributed_samples_total{reason="invalid-metrics-name",team="foo",tenant="user1",tracker="cost-attribution"} 1
+        cortex_discarded_attributed_samples_total{my_team="bar",reason="invalid-metrics-name",tenant="user1",tracker="cost-attribution"} 1
+        cortex_discarded_attributed_samples_total{my_team="foo",reason="invalid-metrics-name",tenant="user1",tracker="cost-attribution"} 1
         # HELP cortex_distributor_received_attributed_samples_total The total number of samples that were received per attribution.
         # TYPE cortex_distributor_received_attributed_samples_total counter
-        cortex_distributor_received_attributed_samples_total{department="foo",service="dodo",tenant="user3",tracker="cost-attribution"} 1
+        cortex_distributor_received_attributed_samples_total{my_department="foo",my_service="dodo",tenant="user3",tracker="cost-attribution"} 1
 		# HELP cortex_ingester_attributed_active_series The total number of active series per user and attribution.
 		# TYPE cortex_ingester_attributed_active_series gauge
-		cortex_ingester_attributed_active_series{team="bar",tenant="user1",tracker="cost-attribution"} 1
+		cortex_ingester_attributed_active_series{my_team="bar",tenant="user1",tracker="cost-attribution"} 1
 		`
 		assert.NoError(t, testutil.GatherAndCompare(costAttributionReg,
 			strings.NewReader(expectedMetrics),
@@ -168,10 +168,10 @@ func TestManager_CreateDeleteTracker(t *testing.T) {
 		expectedMetrics := `
 		# HELP cortex_discarded_attributed_samples_total The total number of samples that were discarded per attribution.
 		# TYPE cortex_discarded_attributed_samples_total counter
-		cortex_discarded_attributed_samples_total{reason="invalid-metrics-name",team="foo",tenant="user1",tracker="cost-attribution"} 1
+		cortex_discarded_attributed_samples_total{my_team="foo",reason="invalid-metrics-name",tenant="user1",tracker="cost-attribution"} 1
 		# HELP cortex_ingester_attributed_active_series The total number of active series per user and attribution.
         # TYPE cortex_ingester_attributed_active_series gauge
-        cortex_ingester_attributed_active_series{team="bar",tenant="user1",tracker="cost-attribution"} 1
+        cortex_ingester_attributed_active_series{my_team="bar",tenant="user1",tracker="cost-attribution"} 1
 		`
 		assert.NoError(t, testutil.GatherAndCompare(costAttributionReg, strings.NewReader(expectedMetrics), "cortex_discarded_attributed_samples_total", "cortex_ingester_attributed_active_series"))
 	})
@@ -184,7 +184,7 @@ func TestManager_CreateDeleteTracker(t *testing.T) {
 		expectedMetrics := `
 		# HELP cortex_distributor_received_attributed_samples_total The total number of samples that were received per attribution.
 		# TYPE cortex_distributor_received_attributed_samples_total counter
-		cortex_distributor_received_attributed_samples_total{department="foo",service="dodo",tenant="user3",tracker="cost-attribution"} 1
+		cortex_distributor_received_attributed_samples_total{my_department="foo",my_service="dodo",tenant="user3",tracker="cost-attribution"} 1
 		`
 		assert.NoError(t, testutil.GatherAndCompare(costAttributionReg, strings.NewReader(expectedMetrics), "cortex_discarded_attributed_samples_total", "cortex_distributor_received_attributed_samples_total", "cortex_ingester_attributed_active_series"))
 	})
@@ -193,14 +193,14 @@ func TestManager_CreateDeleteTracker(t *testing.T) {
 		manager.limits = testutils.NewMockCostAttributionLimits(2)
 		manager.purgeInactiveAttributionsUntil(time.Unix(12, 0).Add(manager.inactiveTimeout))
 		assert.Equal(t, 1, len(manager.sampleTrackersByUserID))
-		assert.True(t, manager.SampleTracker("user3").hasSameLabels([]costattributionmodel.Label{{Input: "feature", Output: ""}, {Input: "team", Output: ""}}))
-		assert.True(t, manager.ActiveSeriesTracker("user3").hasSameLabels([]costattributionmodel.Label{{Input: "feature", Output: ""}, {Input: "team", Output: ""}}))
+		assert.True(t, manager.SampleTracker("user3").hasSameLabels([]costattributionmodel.Label{{Input: "feature", Output: "my_feature"}, {Input: "team", Output: "my_team"}}))
+		assert.True(t, manager.ActiveSeriesTracker("user3").hasSameLabels([]costattributionmodel.Label{{Input: "feature", Output: "my_feature"}, {Input: "team", Output: "my_team"}}))
 
 		manager.SampleTracker("user3").IncrementDiscardedSamples([]mimirpb.LabelAdapter{{Name: "team", Value: "foo"}}, 1, "invalid-metrics-name", time.Unix(13, 0))
 		expectedMetrics := `
 		# HELP cortex_discarded_attributed_samples_total The total number of samples that were discarded per attribution.
 		# TYPE cortex_discarded_attributed_samples_total counter
-		cortex_discarded_attributed_samples_total{feature="__missing__",reason="invalid-metrics-name",team="foo",tenant="user3",tracker="cost-attribution"} 1
+		cortex_discarded_attributed_samples_total{my_feature="__missing__",my_team="foo",reason="invalid-metrics-name",tenant="user3",tracker="cost-attribution"} 1
 		`
 		assert.NoError(t, testutil.GatherAndCompare(costAttributionReg, strings.NewReader(expectedMetrics), "cortex_discarded_attributed_samples_total"))
 	})
@@ -212,7 +212,7 @@ func TestManager_CreateDeleteTracker(t *testing.T) {
 		expectedMetrics := `
 		# HELP cortex_distributor_received_attributed_samples_total The total number of samples that were received per attribution.
 		# TYPE cortex_distributor_received_attributed_samples_total counter
-		cortex_distributor_received_attributed_samples_total{feature="__overflow__",team="__overflow__",tenant="user3",tracker="cost-attribution"} 2
+		cortex_distributor_received_attributed_samples_total{my_feature="__overflow__",my_team="__overflow__",tenant="user3",tracker="cost-attribution"} 2
 		`
 		assert.NoError(t, testutil.GatherAndCompare(costAttributionReg, strings.NewReader(expectedMetrics), "cortex_distributor_received_attributed_samples_total"))
 
@@ -251,8 +251,8 @@ func TestManager_PurgeInactiveAttributionsUntil(t *testing.T) {
 		expectedMetrics := `
 		# HELP cortex_discarded_attributed_samples_total The total number of samples that were discarded per attribution.
 		# TYPE cortex_discarded_attributed_samples_total counter
-		cortex_discarded_attributed_samples_total{reason="invalid-metrics-name",team="foo",tenant="user1",tracker="cost-attribution"} 1
-		cortex_discarded_attributed_samples_total{department="foo",reason="out-of-window",service="bar",tenant="user3",tracker="cost-attribution"} 1
+		cortex_discarded_attributed_samples_total{my_team="foo",reason="invalid-metrics-name",tenant="user1",tracker="cost-attribution"} 1
+		cortex_discarded_attributed_samples_total{my_department="foo",my_service="bar",reason="out-of-window",tenant="user3",tracker="cost-attribution"} 1
 		`
 		assert.NoError(t, testutil.GatherAndCompare(costAttributionReg, strings.NewReader(expectedMetrics), "cortex_discarded_attributed_samples_total"))
 	})
@@ -270,7 +270,7 @@ func TestManager_PurgeInactiveAttributionsUntil(t *testing.T) {
 		expectedMetrics := `
 		# HELP cortex_discarded_attributed_samples_total The total number of samples that were discarded per attribution.
 		# TYPE cortex_discarded_attributed_samples_total counter
-		cortex_discarded_attributed_samples_total{department="foo",reason="out-of-window",service="bar",tenant="user3",tracker="cost-attribution"} 1
+		cortex_discarded_attributed_samples_total{my_department="foo",my_service="bar",reason="out-of-window",tenant="user3",tracker="cost-attribution"} 1
 		`
 		assert.NoError(t, testutil.GatherAndCompare(costAttributionReg, strings.NewReader(expectedMetrics), "cortex_discarded_attributed_samples_total"))
 	})
@@ -426,4 +426,194 @@ func TestManager_OutputLabels(t *testing.T) {
 		"cortex_ingester_attributed_active_native_histogram_series",
 		"cortex_ingester_attributed_active_native_histogram_buckets",
 	))
+}
+
+func TestManager_InvalidTrackers(t *testing.T) {
+	manager, reg, costAttributionReg := newTestManager()
+
+	t.Run("Tracker existence and attributes", func(t *testing.T) {
+		user1SampleTracker := manager.SampleTracker("user1")
+		assert.NotNil(t, user1SampleTracker)
+		assert.True(t, user1SampleTracker.hasSameLabels([]costattributionmodel.Label{{Input: "team", Output: "my_team"}}))
+		assert.Equal(t, 5, user1SampleTracker.maxCardinality)
+
+		assert.Nil(t, manager.SampleTracker("user2"))
+
+		user3ActiveTracker := manager.ActiveSeriesTracker("user3")
+		assert.NotNil(t, user3ActiveTracker)
+		assert.True(t, user3ActiveTracker.hasSameLabels([]costattributionmodel.Label{{Input: "department", Output: "my_department"}, {Input: "service", Output: "my_service"}}))
+		assert.Equal(t, 2, user3ActiveTracker.maxCardinality)
+	})
+
+	t.Run("Metrics tracking", func(t *testing.T) {
+		manager.SampleTracker("user1").IncrementDiscardedSamples([]mimirpb.LabelAdapter{{Name: "team", Value: "bar"}}, 1, "invalid-metrics-name", time.Unix(6, 0))
+		manager.SampleTracker("user1").IncrementDiscardedSamples([]mimirpb.LabelAdapter{{Name: "team", Value: "foo"}}, 1, "invalid-metrics-name", time.Unix(12, 0))
+		manager.SampleTracker("user3").IncrementReceivedSamples(testutils.CreateRequest([]testutils.Series{{LabelValues: []string{"department", "foo", "service", "dodo"}, SamplesCount: 1}}), time.Unix(20, 0))
+		manager.ActiveSeriesTracker("user1").Increment(labels.FromStrings("team", "bar"), time.Unix(10, 0), 50)
+		manager.ActiveSeriesTracker("user1").Increment(labels.FromStrings("team", "bar"), time.Unix(10, 0), -1)
+		manager.ActiveSeriesTracker("user3").Increment(labels.FromStrings("department", "foo", "service", "dodo"), time.Unix(10, 0), 2)
+
+		expectedMetrics := `
+		# HELP cortex_discarded_attributed_samples_total The total number of samples that were discarded per attribution.
+		# TYPE cortex_discarded_attributed_samples_total counter
+		cortex_discarded_attributed_samples_total{my_team="bar",reason="invalid-metrics-name",tenant="user1",tracker="cost-attribution"} 1
+		cortex_discarded_attributed_samples_total{my_team="foo",reason="invalid-metrics-name",tenant="user1",tracker="cost-attribution"} 1
+		# HELP cortex_distributor_received_attributed_samples_total The total number of samples that were received per attribution.
+		# TYPE cortex_distributor_received_attributed_samples_total counter
+		cortex_distributor_received_attributed_samples_total{my_department="foo",my_service="dodo",tenant="user3",tracker="cost-attribution"} 1
+		# HELP cortex_ingester_attributed_active_native_histogram_buckets The total number of active native histogram buckets per user and attribution.
+        # TYPE cortex_ingester_attributed_active_native_histogram_buckets gauge
+        cortex_ingester_attributed_active_native_histogram_buckets{my_team="bar",tenant="user1",tracker="cost-attribution"} 50
+        cortex_ingester_attributed_active_native_histogram_buckets{my_department="foo",my_service="dodo",tenant="user3",tracker="cost-attribution"} 2
+        # HELP cortex_ingester_attributed_active_native_histogram_series The total number of active native histogram series per user and attribution.
+        # TYPE cortex_ingester_attributed_active_native_histogram_series gauge
+        cortex_ingester_attributed_active_native_histogram_series{my_team="bar",tenant="user1",tracker="cost-attribution"} 1
+        cortex_ingester_attributed_active_native_histogram_series{my_department="foo",my_service="dodo",tenant="user3",tracker="cost-attribution"} 1
+		# HELP cortex_ingester_attributed_active_series The total number of active series per user and attribution.
+        # TYPE cortex_ingester_attributed_active_series gauge
+        cortex_ingester_attributed_active_series{my_team="bar",tenant="user1",tracker="cost-attribution"} 2
+        cortex_ingester_attributed_active_series{my_department="foo",my_service="dodo",tenant="user3",tracker="cost-attribution"} 1
+		# HELP cortex_attributed_series_overflow_labels The overflow labels for this tenant. This metric is always 1 for tenants with active series, it is only used to have the overflow labels available in the recording rules without knowing their names.
+		# TYPE cortex_attributed_series_overflow_labels gauge
+		cortex_attributed_series_overflow_labels{my_team="__overflow__",tenant="user1",tracker="cost-attribution"} 1
+		cortex_attributed_series_overflow_labels{my_department="__overflow__",my_service="__overflow__",tenant="user3",tracker="cost-attribution"} 1
+		`
+		assert.NoError(t, testutil.GatherAndCompare(costAttributionReg,
+			strings.NewReader(expectedMetrics),
+			"cortex_discarded_attributed_samples_total",
+			"cortex_distributor_received_attributed_samples_total",
+			"cortex_ingester_attributed_active_series",
+			"cortex_ingester_attributed_active_native_histogram_series",
+			"cortex_ingester_attributed_active_native_histogram_buckets",
+			"cortex_attributed_series_overflow_labels",
+		))
+
+		expectedMetrics = `
+		# HELP cortex_cost_attribution_active_series_tracker_cardinality The cardinality of a cost attribution active series tracker for each user.
+		# TYPE cortex_cost_attribution_active_series_tracker_cardinality gauge
+		cortex_cost_attribution_active_series_tracker_cardinality{tracker="cost-attribution",user="user1"} 1
+		cortex_cost_attribution_active_series_tracker_cardinality{tracker="cost-attribution",user="user3"} 1
+		# HELP cortex_cost_attribution_sample_tracker_cardinality The cardinality of a cost attribution sample tracker for each user.
+		# TYPE cortex_cost_attribution_sample_tracker_cardinality gauge
+		cortex_cost_attribution_sample_tracker_cardinality{tracker="cost-attribution",user="user1"} 2
+		cortex_cost_attribution_sample_tracker_cardinality{tracker="cost-attribution",user="user3"} 1
+		`
+		assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics),
+			"cortex_cost_attribution_sample_tracker_cardinality",
+			"cortex_cost_attribution_sample_tracker_overflown",
+			"cortex_cost_attribution_active_series_tracker_cardinality",
+			"cortex_cost_attribution_active_series_tracker_overflown",
+			"cortex_cost_attribution_tracker_creation_errors_total",
+		))
+	})
+
+	t.Run("Update cost attribution labels with a bad label name", func(t *testing.T) {
+		manager.limits = testutils.NewMockCostAttributionLimits(0, []string{"user1", "__team__"})
+		manager.purgeInactiveAttributionsUntil(time.Unix(11, 0).Add(manager.inactiveTimeout))
+
+		expectedMetrics := `
+		# HELP cortex_distributor_received_attributed_samples_total The total number of samples that were received per attribution.
+		# TYPE cortex_distributor_received_attributed_samples_total counter
+		cortex_distributor_received_attributed_samples_total{my_department="foo",my_service="dodo",tenant="user3",tracker="cost-attribution"} 1
+		# HELP cortex_ingester_attributed_active_native_histogram_buckets The total number of active native histogram buckets per user and attribution.
+        # TYPE cortex_ingester_attributed_active_native_histogram_buckets gauge
+        cortex_ingester_attributed_active_native_histogram_buckets{my_department="foo",my_service="dodo",tenant="user3",tracker="cost-attribution"} 2
+        # HELP cortex_ingester_attributed_active_native_histogram_series The total number of active native histogram series per user and attribution.
+        # TYPE cortex_ingester_attributed_active_native_histogram_series gauge
+        cortex_ingester_attributed_active_native_histogram_series{my_department="foo",my_service="dodo",tenant="user3",tracker="cost-attribution"} 1
+		# HELP cortex_ingester_attributed_active_series The total number of active series per user and attribution.
+        # TYPE cortex_ingester_attributed_active_series gauge
+        cortex_ingester_attributed_active_series{my_department="foo",my_service="dodo",tenant="user3",tracker="cost-attribution"} 1
+		# HELP cortex_attributed_series_overflow_labels The overflow labels for this tenant. This metric is always 1 for tenants with active series, it is only used to have the overflow labels available in the recording rules without knowing their names.
+		# TYPE cortex_attributed_series_overflow_labels gauge
+		cortex_attributed_series_overflow_labels{my_department="__overflow__",my_service="__overflow__",tenant="user3",tracker="cost-attribution"} 1
+		`
+		assert.NoError(t, testutil.GatherAndCompare(costAttributionReg,
+			strings.NewReader(expectedMetrics),
+			"cortex_discarded_attributed_samples_total",
+			"cortex_distributor_received_attributed_samples_total",
+			"cortex_ingester_attributed_active_series",
+			"cortex_ingester_attributed_active_native_histogram_series",
+			"cortex_ingester_attributed_active_native_histogram_buckets",
+			"cortex_attributed_series_overflow_labels",
+		))
+
+		expectedMetrics = `
+		# HELP cortex_cost_attribution_active_series_tracker_cardinality The cardinality of a cost attribution active series tracker for each user.
+		# TYPE cortex_cost_attribution_active_series_tracker_cardinality gauge
+		cortex_cost_attribution_active_series_tracker_cardinality{tracker="cost-attribution",user="user3"} 1
+		# HELP cortex_cost_attribution_sample_tracker_cardinality The cardinality of a cost attribution sample tracker for each user.
+		# TYPE cortex_cost_attribution_sample_tracker_cardinality gauge
+		cortex_cost_attribution_sample_tracker_cardinality{tracker="cost-attribution",user="user3"} 1
+        # HELP cortex_cost_attribution_tracker_creation_errors_total The total number of errors creating cost attribution trackers for each user.
+        # TYPE cortex_cost_attribution_tracker_creation_errors_total counter
+        cortex_cost_attribution_tracker_creation_errors_total{tracker="active-series",user="user1"} 1
+        cortex_cost_attribution_tracker_creation_errors_total{tracker="samples",user="user1"} 1
+		`
+		assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics),
+			"cortex_cost_attribution_sample_tracker_cardinality",
+			"cortex_cost_attribution_sample_tracker_overflown",
+			"cortex_cost_attribution_active_series_tracker_cardinality",
+			"cortex_cost_attribution_active_series_tracker_overflown",
+			"cortex_cost_attribution_tracker_creation_errors_total",
+		))
+	})
+
+	t.Run("Update cost attribution labels with a good label name", func(t *testing.T) {
+		manager.limits = testutils.NewMockCostAttributionLimits(0, []string{"user1", "team"})
+		manager.purgeInactiveAttributionsUntil(time.Unix(11, 0).Add(manager.inactiveTimeout))
+		manager.ActiveSeriesTracker("user1").Increment(labels.FromStrings("team", "bar"), time.Unix(10, 0), 50)
+
+		expectedMetrics := `
+		# HELP cortex_distributor_received_attributed_samples_total The total number of samples that were received per attribution.
+		# TYPE cortex_distributor_received_attributed_samples_total counter
+		cortex_distributor_received_attributed_samples_total{my_department="foo",my_service="dodo",tenant="user3",tracker="cost-attribution"} 1
+		# HELP cortex_ingester_attributed_active_native_histogram_buckets The total number of active native histogram buckets per user and attribution.
+        # TYPE cortex_ingester_attributed_active_native_histogram_buckets gauge
+        cortex_ingester_attributed_active_native_histogram_buckets{team="bar",tenant="user1",tracker="cost-attribution"} 50
+        cortex_ingester_attributed_active_native_histogram_buckets{my_department="foo",my_service="dodo",tenant="user3",tracker="cost-attribution"} 2
+        # HELP cortex_ingester_attributed_active_native_histogram_series The total number of active native histogram series per user and attribution.
+        # TYPE cortex_ingester_attributed_active_native_histogram_series gauge
+        cortex_ingester_attributed_active_native_histogram_series{team="bar",tenant="user1",tracker="cost-attribution"} 1
+        cortex_ingester_attributed_active_native_histogram_series{my_department="foo",my_service="dodo",tenant="user3",tracker="cost-attribution"} 1
+		# HELP cortex_ingester_attributed_active_series The total number of active series per user and attribution.
+        # TYPE cortex_ingester_attributed_active_series gauge
+        cortex_ingester_attributed_active_series{team="bar",tenant="user1",tracker="cost-attribution"} 1
+        cortex_ingester_attributed_active_series{my_department="foo",my_service="dodo",tenant="user3",tracker="cost-attribution"} 1
+		# HELP cortex_attributed_series_overflow_labels The overflow labels for this tenant. This metric is always 1 for tenants with active series, it is only used to have the overflow labels available in the recording rules without knowing their names.
+		# TYPE cortex_attributed_series_overflow_labels gauge
+        cortex_attributed_series_overflow_labels{team="__overflow__",tenant="user1",tracker="cost-attribution"} 1
+		cortex_attributed_series_overflow_labels{my_department="__overflow__",my_service="__overflow__",tenant="user3",tracker="cost-attribution"} 1
+		`
+		assert.NoError(t, testutil.GatherAndCompare(costAttributionReg,
+			strings.NewReader(expectedMetrics),
+			"cortex_discarded_attributed_samples_total",
+			"cortex_distributor_received_attributed_samples_total",
+			"cortex_ingester_attributed_active_series",
+			"cortex_ingester_attributed_active_native_histogram_series",
+			"cortex_ingester_attributed_active_native_histogram_buckets",
+			"cortex_attributed_series_overflow_labels",
+		))
+
+		expectedMetrics = `
+		# HELP cortex_cost_attribution_active_series_tracker_cardinality The cardinality of a cost attribution active series tracker for each user.
+		# TYPE cortex_cost_attribution_active_series_tracker_cardinality gauge
+        cortex_cost_attribution_active_series_tracker_cardinality{tracker="cost-attribution",user="user1"} 1
+		cortex_cost_attribution_active_series_tracker_cardinality{tracker="cost-attribution",user="user3"} 1
+		# HELP cortex_cost_attribution_sample_tracker_cardinality The cardinality of a cost attribution sample tracker for each user.
+		# TYPE cortex_cost_attribution_sample_tracker_cardinality gauge
+        cortex_cost_attribution_sample_tracker_cardinality{tracker="cost-attribution",user="user3"} 1
+        # HELP cortex_cost_attribution_tracker_creation_errors_total The total number of errors creating cost attribution trackers for each user.
+        # TYPE cortex_cost_attribution_tracker_creation_errors_total counter
+        cortex_cost_attribution_tracker_creation_errors_total{tracker="active-series",user="user1"} 1
+        cortex_cost_attribution_tracker_creation_errors_total{tracker="samples",user="user1"} 1
+		`
+		assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics),
+			"cortex_cost_attribution_sample_tracker_cardinality",
+			"cortex_cost_attribution_sample_tracker_overflown",
+			"cortex_cost_attribution_active_series_tracker_cardinality",
+			"cortex_cost_attribution_active_series_tracker_overflown",
+			"cortex_cost_attribution_tracker_creation_errors_total",
+		))
+	})
 }

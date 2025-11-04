@@ -13,6 +13,7 @@ local k = import 'ksonnet-util/kausal.libsonnet';
   local deployment = k.apps.v1.deployment,
 
   continuous_test_args:: {
+    target: 'continuous-test',
     'tests.write-endpoint': $._config.continuous_test_write_endpoint,
     'tests.read-endpoint': $._config.continuous_test_read_endpoint,
     'tests.tenant-id': $._config.continuous_test_tenant_id,
@@ -24,7 +25,6 @@ local k = import 'ksonnet-util/kausal.libsonnet';
 
   continuous_test_container::
     container.new('continuous-test', $._images.continuous_test) +
-    container.withArgs(['-target=continuous-test']) +
     container.withArgsMixin(k.util.mapToFlags($.continuous_test_args)) +
     container.withPorts([
       k.core.v1.containerPort.new('http-metrics', 8080),

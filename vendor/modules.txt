@@ -7,8 +7,8 @@ cloud.google.com/go/internal
 cloud.google.com/go/internal/optional
 cloud.google.com/go/internal/trace
 cloud.google.com/go/internal/version
-# cloud.google.com/go/auth v0.16.5
-## explicit; go 1.23.0
+# cloud.google.com/go/auth v0.17.0
+## explicit; go 1.24.0
 cloud.google.com/go/auth
 cloud.google.com/go/auth/credentials
 cloud.google.com/go/auth/credentials/internal/externalaccount
@@ -22,12 +22,15 @@ cloud.google.com/go/auth/internal
 cloud.google.com/go/auth/internal/compute
 cloud.google.com/go/auth/internal/credsfile
 cloud.google.com/go/auth/internal/jwt
+cloud.google.com/go/auth/internal/retry
 cloud.google.com/go/auth/internal/transport
 cloud.google.com/go/auth/internal/transport/cert
+cloud.google.com/go/auth/internal/transport/headers
+cloud.google.com/go/auth/internal/trustboundary
 # cloud.google.com/go/auth/oauth2adapt v0.2.8
 ## explicit; go 1.23.0
 cloud.google.com/go/auth/oauth2adapt
-# cloud.google.com/go/compute/metadata v0.8.4
+# cloud.google.com/go/compute/metadata v0.9.0
 ## explicit; go 1.24.0
 cloud.google.com/go/compute/metadata
 # cloud.google.com/go/iam v1.5.2
@@ -350,7 +353,7 @@ github.com/coreos/go-semver/semver
 ## explicit; go 1.23
 github.com/coreos/go-systemd/v22/activation
 github.com/coreos/go-systemd/v22/journal
-# github.com/cortexproject/promqlsmith v0.0.0-20250908165950-c3fd3c65d5c0
+# github.com/cortexproject/promqlsmith v0.0.0-20251018201159-9e00e5e62e4e
 ## explicit; go 1.24.0
 github.com/cortexproject/promqlsmith
 # github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc
@@ -764,8 +767,8 @@ github.com/grafana/alerting/receivers/wecom/v1
 github.com/grafana/alerting/templates
 github.com/grafana/alerting/templates/gomplate
 github.com/grafana/alerting/templates/mimir
-# github.com/grafana/dskit v0.0.0-20251021225208-61d6b413e947
-## explicit; go 1.23.0
+# github.com/grafana/dskit v0.0.0-20251031165806-a6f15387939b
+## explicit; go 1.24.0
 github.com/grafana/dskit/backoff
 github.com/grafana/dskit/ballast
 github.com/grafana/dskit/cache
@@ -824,7 +827,7 @@ github.com/grafana/gomemcache/memcache
 # github.com/grafana/otel-profiling-go v0.5.1
 ## explicit; go 1.16
 github.com/grafana/otel-profiling-go
-# github.com/grafana/pyroscope-go/godeltaprof v0.1.8
+# github.com/grafana/pyroscope-go/godeltaprof v0.1.9
 ## explicit; go 1.18
 github.com/grafana/pyroscope-go/godeltaprof
 github.com/grafana/pyroscope-go/godeltaprof/http/pprof
@@ -901,7 +904,7 @@ github.com/hashicorp/hcl/hcl/token
 github.com/hashicorp/hcl/json/parser
 github.com/hashicorp/hcl/json/scanner
 github.com/hashicorp/hcl/json/token
-# github.com/hashicorp/memberlist v0.5.2 => github.com/grafana/memberlist v0.3.1-0.20250428154222-f7d51a6f6700
+# github.com/hashicorp/memberlist v0.5.2 => github.com/grafana/memberlist v0.3.1-0.20251024121533-a7f5f8dad077
 ## explicit; go 1.20
 github.com/hashicorp/memberlist
 # github.com/hashicorp/serf v0.10.2
@@ -970,6 +973,7 @@ github.com/klauspost/compress/internal/le
 github.com/klauspost/compress/internal/race
 github.com/klauspost/compress/internal/snapref
 github.com/klauspost/compress/s2
+github.com/klauspost/compress/snappy
 github.com/klauspost/compress/zlib
 github.com/klauspost/compress/zstd
 github.com/klauspost/compress/zstd/internal/xxhash
@@ -1217,10 +1221,14 @@ github.com/prometheus/client_golang/prometheus/push
 github.com/prometheus/client_golang/prometheus/testutil
 github.com/prometheus/client_golang/prometheus/testutil/promlint
 github.com/prometheus/client_golang/prometheus/testutil/promlint/validations
+# github.com/prometheus/client_golang/exp v0.0.0-20250914183048-a974e0d45e0a
+## explicit; go 1.23.0
+github.com/prometheus/client_golang/exp/api/remote
+github.com/prometheus/client_golang/exp/internal/github.com/efficientgo/core/backoff
 # github.com/prometheus/client_model v0.6.2
 ## explicit; go 1.22.0
 github.com/prometheus/client_model/go
-# github.com/prometheus/common v0.67.1
+# github.com/prometheus/common v0.67.2
 ## explicit; go 1.24.0
 github.com/prometheus/common/config
 github.com/prometheus/common/expfmt
@@ -1243,7 +1251,7 @@ github.com/prometheus/otlptranslator
 github.com/prometheus/procfs
 github.com/prometheus/procfs/internal/fs
 github.com/prometheus/procfs/internal/util
-# github.com/prometheus/prometheus v1.99.0 => github.com/grafana/mimir-prometheus v1.8.2-0.20251017130133-a3bd7ade820f
+# github.com/prometheus/prometheus v1.99.0 => github.com/grafana/mimir-prometheus v1.8.2-0.20251028174623-d52365e937be
 ## explicit; go 1.24.0
 github.com/prometheus/prometheus/config
 github.com/prometheus/prometheus/discovery
@@ -1580,7 +1588,7 @@ go.opentelemetry.io/contrib/detectors/gcp
 # go.opentelemetry.io/contrib/exporters/autoexport v0.61.0
 ## explicit; go 1.23.0
 go.opentelemetry.io/contrib/exporters/autoexport
-# go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.61.0
+# go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.63.0
 ## explicit; go 1.23.0
 go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc
 go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc/internal
@@ -1615,11 +1623,11 @@ go.opentelemetry.io/otel/semconv/v1.20.0
 go.opentelemetry.io/otel/semconv/v1.21.0
 go.opentelemetry.io/otel/semconv/v1.24.0
 go.opentelemetry.io/otel/semconv/v1.26.0
-go.opentelemetry.io/otel/semconv/v1.30.0
 go.opentelemetry.io/otel/semconv/v1.34.0
 go.opentelemetry.io/otel/semconv/v1.37.0
 go.opentelemetry.io/otel/semconv/v1.37.0/httpconv
 go.opentelemetry.io/otel/semconv/v1.37.0/otelconv
+go.opentelemetry.io/otel/semconv/v1.37.0/rpcconv
 # go.opentelemetry.io/otel/exporters/jaeger v1.17.0
 ## explicit; go 1.19
 go.opentelemetry.io/otel/exporters/jaeger
@@ -1777,7 +1785,7 @@ golang.org/x/crypto/pbkdf2
 golang.org/x/crypto/pkcs12
 golang.org/x/crypto/pkcs12/internal/rc2
 golang.org/x/crypto/scrypt
-# golang.org/x/exp v0.0.0-20251009144603-d2f985daa21b
+# golang.org/x/exp v0.0.0-20251023183803-a4bb9ffd2546
 ## explicit; go 1.24.0
 golang.org/x/exp/constraints
 golang.org/x/exp/slices
@@ -1803,7 +1811,7 @@ golang.org/x/net/netutil
 golang.org/x/net/publicsuffix
 golang.org/x/net/trace
 golang.org/x/net/websocket
-# golang.org/x/oauth2 v0.31.0
+# golang.org/x/oauth2 v0.32.0
 ## explicit; go 1.24.0
 golang.org/x/oauth2
 golang.org/x/oauth2/authhandler
@@ -1868,9 +1876,7 @@ golang.org/x/tools/internal/stdlib
 golang.org/x/tools/internal/typeparams
 golang.org/x/tools/internal/typesinternal
 golang.org/x/tools/internal/versions
-# golang.org/x/tools/godoc v0.1.0-deprecated
-## explicit; go 1.24.0
-# google.golang.org/api v0.250.0
+# google.golang.org/api v0.252.0
 ## explicit; go 1.24.0
 google.golang.org/api/googleapi
 google.golang.org/api/googleapi/transport
@@ -2193,8 +2199,8 @@ sigs.k8s.io/kustomize/kyaml/yaml/walk
 sigs.k8s.io/yaml
 sigs.k8s.io/yaml/goyaml.v2
 sigs.k8s.io/yaml/goyaml.v3
-# github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v1.8.2-0.20251017130133-a3bd7ade820f
-# github.com/hashicorp/memberlist => github.com/grafana/memberlist v0.3.1-0.20250428154222-f7d51a6f6700
+# github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v1.8.2-0.20251028174623-d52365e937be
+# github.com/hashicorp/memberlist => github.com/grafana/memberlist v0.3.1-0.20251024121533-a7f5f8dad077
 # gopkg.in/yaml.v3 => github.com/colega/go-yaml-yaml v0.0.0-20220720105220-255a8d16d094
 # github.com/grafana/regexp => github.com/grafana/regexp v0.0.0-20250905101755-5eb4f3acbf71
 # github.com/munnerz/goautoneg => github.com/grafana/goautoneg v0.0.0-20240607115440-f335c04c58ce

@@ -283,6 +283,24 @@
           },
         },
 
+        // Alert if block-builder-scheduler primary runloop doesn't seem to be running.
+        {
+          alert: $.alertName('BlockBuilderSchedulerNotRunning'),
+          'for': '30m',
+          // We are taking advantage of Prometheus' behavior where it will only report an increase of zero
+          // if the series was previously present. Thus we do not need to predicate the alert on presence of
+          // a block-builder-scheduler.
+          expr: |||
+            max by (%(alert_aggregation_labels)s, %(per_instance_label)s) (histogram_count(increase(cortex_blockbuilder_scheduler_schedule_update_seconds[5m])) == 0)
+          ||| % $._config,
+          labels: {
+            severity: 'warning',
+          },
+          annotations: {
+            message: '%(product)s {{ $labels.%(per_instance_label)s }} in %(alert_aggregation_variables)s is not running.' % $._config,
+          },
+        },
+
         // Alert immediately if block-builder-scheduler detects an unexpected offset gap.
         {
           alert: $.alertName('BlockBuilderDataSkipped'),
@@ -290,10 +308,39 @@
             increase(cortex_blockbuilder_scheduler_job_gap_detected[1m]) > 0
           ||| % $._config,
           labels: {
-            severity: 'warning',
+            severity: 'critical',
           },
           annotations: {
             message: '%(product)s {{ $labels.%(per_instance_label)s }} in %(alert_aggregation_variables)s has detected skipped data.' % $._config,
+          },
+        },
+
+        // Alert immediately if block-builder-scheduler detects a persistently failing job.
+        {
+          alert: $.alertName('BlockBuilderPersistentJobFailure'),
+          expr: |||
+            increase(cortex_blockbuilder_scheduler_persistent_job_failures_total[1m]) > 0
+          ||| % $._config,
+          labels: {
+            severity: 'critical',
+          },
+          annotations: {
+            message: '%(product)s {{ $labels.%(per_instance_label)s }} in %(alert_aggregation_variables)s has detected a persistently failing job.' % $._config,
+          },
+        },
+
+        // Alert if the number of ingesters consuming partitions is less than the number of active partitions.
+        {
+          alert: $.alertName('FewerIngestersConsumingThanActivePartitions'),
+          expr: |||
+            max(cortex_partition_ring_partitions{name="ingester-partitions", state="Active"}) by (%(alert_aggregation_labels)s) > count(count(cortex_ingest_storage_reader_last_consumed_offset{}) by (%(alert_aggregation_labels)s, partition)) by (%(alert_aggregation_labels)s)
+          ||| % $._config,
+          'for': '15m',
+          labels: {
+            severity: 'critical',
+          },
+          annotations: {
+            message: '%(product)s ingesters in %(alert_aggregation_variables)s have fewer ingesters consuming than active partitions.' % $._config,
           },
         },
       ],

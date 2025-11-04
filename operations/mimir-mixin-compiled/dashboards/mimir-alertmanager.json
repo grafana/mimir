@@ -596,13 +596,13 @@
                   "span": 6,
                   "targets": [
                      {
-                        "expr": "(sum by (status) (\n  label_replace(label_replace(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((alertmanager|cortex|mimir))\", route=~\"/alertmanagerpb.Alertmanager/HandleRequest\"}[$__rate_interval]),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-zA-Z]+)\"))\n) and on() (vector($latency_metrics) == 1)",
+                        "expr": "(sum by (status) (\n  label_replace(label_replace(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((alertmanager|cortex|mimir))\", route=~\"/alertmanagerpb.Alertmanager/HandleRequest\"}[$__rate_interval]),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-zA-Z_]+)\"))\n) and on() (vector($latency_metrics) == 1)",
                         "format": "time_series",
                         "legendFormat": "{{status}}",
                         "refId": "A_classic"
                      },
                      {
-                        "expr": "(sum by (status) (\n  label_replace(label_replace(histogram_count(rate(cortex_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((alertmanager|cortex|mimir))\", route=~\"/alertmanagerpb.Alertmanager/HandleRequest\"}[$__rate_interval])),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-zA-Z]+)\"))\n) and on() (vector($latency_metrics) == -1)",
+                        "expr": "(sum by (status) (\n  label_replace(label_replace(histogram_count(rate(cortex_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((alertmanager|cortex|mimir))\", route=~\"/alertmanagerpb.Alertmanager/HandleRequest\"}[$__rate_interval])),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-zA-Z_]+)\"))\n) and on() (vector($latency_metrics) == -1)",
                         "format": "time_series",
                         "legendFormat": "{{status}}",
                         "refId": "A"

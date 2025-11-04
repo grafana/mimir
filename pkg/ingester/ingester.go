@@ -196,8 +196,8 @@ type Config struct {
 
 	IgnoreSeriesLimitForMetricNames string `yaml:"ignore_series_limit_for_metric_names" category:"advanced"`
 
-	ReadPathCPUUtilizationLimit    float64 `yaml:"read_path_cpu_utilization_limit" category:"experimental"`
-	ReadPathMemoryUtilizationLimit uint64  `yaml:"read_path_memory_utilization_limit" category:"experimental"`
+	ReadPathCPUUtilizationLimit    float64 `yaml:"read_path_cpu_utilization_limit" category:"advanced"`
+	ReadPathMemoryUtilizationLimit uint64  `yaml:"read_path_memory_utilization_limit" category:"advanced"`
 
 	ErrorSampleRate int64 `yaml:"error_sample_rate" json:"error_sample_rate" category:"advanced"`
 
@@ -2717,12 +2717,6 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 	if i.cfg.BlocksStorageConfig.TSDB.IndexLookupPlanning.Enabled {
 		plannerFactory := lookupplan.NewPlannerFactory(i.lookupPlanMetrics.ForUser(userID), userLogger, lookupplan.NewStatisticsGenerator(userLogger), i.cfg.BlocksStorageConfig.TSDB.IndexLookupPlanning.CostConfig)
 		userDB.plannerProvider = newPlannerProvider(plannerFactory)
-		// Generate initial statistics only after the TSDB has been opened and initialized.
-		defer func() {
-			if err := userDB.generateHeadStatistics(); err != nil {
-				level.Error(userLogger).Log("msg", "failed to generate initial TSDB head statistics", "err", err)
-			}
-		}()
 	}
 
 	userDBHasDB := atomic.NewBool(false)
@@ -2832,6 +2826,14 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 	}
 
 	i.tsdbMetrics.setRegistryForUser(userID, tsdbPromReg)
+
+	if i.cfg.BlocksStorageConfig.TSDB.IndexLookupPlanning.Enabled {
+		// Generate initial statistics only after the TSDB has been opened and initialized.
+		if err := userDB.generateHeadStatistics(); err != nil {
+			level.Error(userLogger).Log("msg", "failed to generate initial TSDB head statistics", "err", err)
+		}
+	}
+
 	return userDB, nil
 }
 
@@ -2843,7 +2845,7 @@ func (i *Ingester) createBlockChunkQuerier(userID string, b tsdb.BlockReader, mi
 		return nil, err
 	}
 
-	lookupStatsQuerier := newStatsTrackingChunkQuerier(defaultQuerier, i.metrics, i.lookupPlanMetrics.ForUser(userID))
+	lookupStatsQuerier := newStatsTrackingChunkQuerier(b.Meta().ULID, defaultQuerier, i.metrics, i.lookupPlanMetrics.ForUser(userID))
 
 	if rand.Float64() > i.cfg.BlocksStorageConfig.TSDB.IndexLookupPlanning.ComparisonPortion {
 		return lookupStatsQuerier, nil

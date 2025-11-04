@@ -1562,6 +1562,61 @@ How to **investigate**:
 - If the number of streams has grown organically, consider setting the `-server.grpc-max-concurrent-streams` flag to a value higher than the current setting. Refer to the `cortex_grpc_concurrent_streams_limit` metric for the current value.
 - You can also horizontally scale up the component to reduce the number of concurrent streams on each replica.
 
+### MimirMixedQuerierQueryPlanVersionSupport
+
+How it **works**:
+
+This alert fires when queriers within the same query path, either the ordinary query path or the ruler query path, if enabled, report different maximum supported query plan versions.
+
+When queriers report different maximum supported query plan versions, query-frontends only generate query plans that are compatible with the lowest supported query plan version of all queriers.
+This may limit query performance or cause queries containing newer PromQL features to fail.
+
+Different maximum supported query plan versions are expected while some queriers are running an older version of Mimir, such as during rollouts and upgrades.
+However, under normal circumstances, all queriers should run the same version of Mimir and, therefore, report the same maximum supported query plan version.
+
+How to **investigate**:
+
+- Check that all queriers are running the same Mimir version.
+
+### MimirMixedQueryFrontendQueryPlanVersionSupport
+
+How it **works**:
+
+This alert fires when query-frontends within the same query path, either the ordinary query path or ruler query path, if enabled, report different maximum supported query plan versions.
+
+Query-frontends compute the maximum supported query plan version by taking the minimum of the maximum supported query plan versions reported by all queriers in the same query path.
+Queriers share this information with query-frontends through the querier ring.
+Query-frontends in the same query path should therefore report the same maximum supported query plan version.
+
+Query-frontends reporting different query plan versions for an extended period of time may indicate a split brain scenario or issues with ring propagation.
+
+How to **investigate**:
+
+- Check that all query-frontends have the same view of the querier ring by checking the querier ring status page.
+- Check that all query-frontends are running the same Mimir version.
+
+### MimirQueryFrontendsAndQueriersDisagreeOnSupportedQueryPlanVersion
+
+This alert fires when query-frontends and queriers in the same query path, such as the ordinary query path, or ruler query path, if enabled, disagree on the maximum supported query plan version.
+
+Refer to [MimirMixedQueryFrontendQueryPlanVersionSupport](#mimirmixedqueryfrontendqueryplanversionsupport) for more information and suggestions on how to investigate this issue.
+
+### MimirQueryFrontendNotComputingSupportedQueryPlanVersion
+
+How it **works**:
+
+This alert fires when query-frontends fail to compute a maximum supported query plan version.
+
+Query-frontends compute the maximum supported query plan version by taking the minimum of the maximum supported query plan versions reported by all queriers in the same query path.
+Queriers share this information with query-frontends through the querier ring.
+
+If the querier ring is empty, or if some queriers are not reporting a maximum supported query plan version, query-frontends can't compute a maximum supported query plan version.
+
+How to **investigate**:
+
+- Check query-frontend logs for `could not compute maximum supported query plan version` errors.
+- Check the querier ring status page on affected query-frontends to confirm if they have an up-to-date and complete view of the querier ring.
+
 ## Mimir ingest storage (experimental)
 
 This section contains runbooks for alerts related to experimental Mimir ingest storage.
@@ -1846,6 +1901,20 @@ If the block-builder permanently missed consuming some portion of the partition,
 - If the `block-builder-scheduler.lookback-on-no-commit` does not cover the time when the issue started, set it long enough so that these new block-builders start back far enough to cover the missing data.
 - Investigate why the block-builder fails, while the ingesters, who consumed the same data, don't.
 
+#### MimirBlockBuilderSchedulerNotRunning
+
+This fires when the block-builder-scheduler has not performed its critical job scheduling duties in the last 30 minutes. It can indicate that the service is suddenly not running, or is degraded.
+
+How it **works**:
+
+- The alert fires when the block-builder-scheduler StatefulSet is present yet the update loop execution metric (`cortex_blockbuilder_scheduler_schedule_update_seconds`)
+  hasn't been incremented in the last 30 minutes.
+
+How to **investigate**:
+
+- This generally means something is either wrong with the block-builder-scheduler replica or the Kafka system it is attempting to monitor. Viewing logs for the block-builder-scheduler should help you to identify the problem.
+- If there are no logs, then the block-builder-scheduler may not be running, which you can investigate by examining the StatefulSet/pod details in Kubernetes.
+
 #### MimirBlockBuilderDataSkipped
 
 This alert fires when the block-builder-scheduler has detected a gap in either committed jobs or planned jobs.
@@ -1864,6 +1933,23 @@ How to **investigate**:
 Data recovery / temporary mitigation:
 
 You need to make block-builder consume the skipped data. Refer to the section under "Data recovery" for the `MimirBlockBuilderHasNotShippedBlocks` alert.
+
+#### MimirBlockBuilderPersistentJobFailure
+
+This alert fires when the block-builder-scheduler has detected a single job failing multiple times.
+
+How it **works**:
+
+- Block-builder-scheduler schedules and assigns jobs to workers, but it is the workers who carry out the consumption work.
+- Block-builder-scheduler notices when a worker fails to complete a job, and maintains a failure count on each job.
+- Block-builder-scheduler increments the `cortex_blockbuilder_scheduler_persistent_job_failures_total` metric when a job's failure count exceeds the `block-builder-scheduler.job-failures-allowed` setting.
+
+How to **investigate**:
+
+- Consult the block-builder-scheduler logs and look for logs with level=error. This will show you the failing job ID and worker assignee that most recently failed the job. Example:
+  > ERROR ts=2025-10-30T15:20:55.134630922Z caller=jobs.go:236 level=error msg="job failed in a persistent manner" job_id=ingest/25/11740286308 epoch=104901 assignee=block-builder-7786c54c8-hsr6h fail_count=8
+- Now look at the logs on the assigned worker corresponding with the job ID found previously to understand the nature of the failure.
+- If there is no clear failure, check to see if the worker pod was terminated due to an out-of-memory condition. If this is the case, give the block-builder workers more memory.
 
 ### MimirServerInvalidClusterValidationLabelRequests
 
@@ -1910,6 +1996,24 @@ How to **investigate**:
 - Check the process stack trace to find common patterns in where the goroutines are blocked on syscall:
   - If the application panicked with error like `runtime: program exceeds 10000-thread limit`, check the panic stack trace
   - If the application has not panicked yet, issue `kill -QUIT <pid>` to dump the current stack trace of the process
+
+### MimirFewerIngestersConsumingThanActivePartitions
+
+This alert fires when the number of ingesters consuming partitions is less than the number of active partitions.
+This means that distributors are writing to partitions that are not being consumed by any ingester, leading to data missing from the short-term read path and potential data loss if this persists for too long and you aren't using block-builder in the Mimir cluster.
+
+How it **works**:
+
+- Distributors shard series across the active partitions in the partitions ring.
+- Each ingester owns and consumes from one partition.
+- If a partition is not being consumed by any ingester, it means that the data written to that partition is not available for querying. Moreover, if you aren't using block-builder in the Mimir cluster, the data isn't saved to a block.
+
+How to **investigate**:
+
+This shouldn't happen in normal circumstances and is most likely indicative of a bug in the distributors or ingesters. Investigate and fix this issue as soon as possible.
+
+- Immediately scale out ingesters to the number of active partitions to consume the data.
+- Check that the ingester shutdowns are working as expected. When ingesters are downscaled, they should set their partition as INACTIVE before shutting down. Ingesters are most likely the cause of this issue.
 
 ## Errors catalog
 

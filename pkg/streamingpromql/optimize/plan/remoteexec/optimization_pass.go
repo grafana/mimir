@@ -23,7 +23,7 @@ func (o *OptimizationPass) Name() string {
 	return "Remote execution"
 }
 
-func (o *OptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan, maximumSupportedQueryPlanVersion uint64) (*planning.QueryPlan, error) {
+func (o *OptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan, maximumSupportedQueryPlanVersion planning.QueryPlanVersion) (*planning.QueryPlan, error) {
 	inspectResult := optimize.Inspect(plan.Root)
 	if !inspectResult.HasSelectors || inspectResult.IsRewrittenByMiddleware {
 		return plan, nil
@@ -82,6 +82,18 @@ func (o *OptimizationPass) wrapShardedExpressions(n planning.Node) (bool, error)
 
 func (o *OptimizationPass) wrapShardedConcat(functionCall *core.FunctionCall) error {
 	children := functionCall.Children()
+
+	if len(children) == 0 {
+		// It shouldn't happen that there are no children, but the condition below will panic if there are no children,
+		// so check it just to be safe.
+		return nil
+	}
+
+	if _, isRemoteExec := children[0].(*RemoteExecution); isRemoteExec {
+		// We've already wrapped the first child, which means we've wrapped all of the children as well.
+		// This can happen if the sharded expression is duplicated, in which case we can visit it multiple times.
+		return nil
+	}
 
 	for idx, child := range children {
 		var err error
