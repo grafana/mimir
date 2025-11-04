@@ -50,11 +50,11 @@ const (
 )
 
 type ProxyConfig struct {
-	DeprecatedServerHTTPServiceAddress      string        // Deprecated: Deprecated in favor of dskit server.Config built-in server.http-listen-address
-	DeprecatedServerHTTPServicePort         int           // Deprecated: Deprecated in favor of dskit server.Config built-in server.http-listen-port
-	DeprecatedServerGracefulShutdownTimeout time.Duration // Deprecated: Deprecated in favor of dskit server.Config built-in server.graceful-shutdown-timeout
-	DeprecatedServerGRPCServiceAddress      string        // Deprecated: Deprecated in favor of dskit server.Config built-in server.grpc-listen-address
-	DeprecatedServerGRPCServicePort         int           // Deprecated: Deprecated in favor of dskit server.Config built-in server.grpc-listen-port
+	DeprecatedServerHTTPServiceAddress      string        // Deprecated: Deprecated in favor of dskit server.Config built-in server.http-listen-address. Deprecated in Mimir 3.1, remove in Mimir 3.3.
+	DeprecatedServerHTTPServicePort         int           // Deprecated: Deprecated in favor of dskit server.Config built-in server.http-listen-port. Deprecated in Mimir 3.1, remove in Mimir 3.3.
+	DeprecatedServerGracefulShutdownTimeout time.Duration // Deprecated: Deprecated in favor of dskit server.Config built-in server.graceful-shutdown-timeout. Deprecated in Mimir 3.1, remove in Mimir 3.3.
+	DeprecatedServerGRPCServiceAddress      string        // Deprecated: Deprecated in favor of dskit server.Config built-in server.grpc-listen-address. Deprecated in Mimir 3.1, remove in Mimir 3.3.
+	DeprecatedServerGRPCServicePort         int           // Deprecated: Deprecated in favor of dskit server.Config built-in server.grpc-listen-port. Deprecated in Mimir 3.1, remove in Mimir 3.3.
 
 	Server server.Config
 
