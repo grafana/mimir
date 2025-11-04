@@ -9,6 +9,14 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  check_if:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo start
+      - run: echo 0 ${{ github.event.pull_request.author_association }}
+      - run: echo 1 ${{ contains(fromJSON('["OWNER", "MEMBER"]'), github.event.pull_request.author_association ) }}
+      - run: echo 2 ${{ github.event.pull_request.user.login == 'renovate-sh-app[bot]' }}
+      - run: echo 3 ${{ contains(fromJSON('["OWNER", "MEMBER"]'), github.event.pull_request.author_association ) || github.event.pull_request.user.login == 'renovate-sh-app[bot]' }}
   build_and_push:
     runs-on: ubuntu-latest
     permissions:
