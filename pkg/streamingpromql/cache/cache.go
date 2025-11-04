@@ -133,6 +133,7 @@ type intermediateResultsCache struct {
 
 type IntermediateResultsCache interface {
 	Get(user, function, selector string, start int64, duration time.Duration) (IntermediateResultBlock, bool)
+	Set(user, function, selector string, start int64, duration time.Duration, block IntermediateResultBlock) error
 }
 
 func (ic *intermediateResultsCache) Get(user, function, selector string, start int64, duration time.Duration) (IntermediateResultBlock, bool) {
@@ -140,8 +141,9 @@ func (ic *intermediateResultsCache) Get(user, function, selector string, start i
 }
 
 //TODO: implement me!
-func (ic *intermediateResultsCache) Write() {
-
+func (ic *intermediateResultsCache) Set(user, function, selector string, start int64, duration time.Duration, block IntermediateResultBlock) error {
+	block.Version = 1
+	panic("implement me")
 }
 
 type IntermediateResultTenantCache struct {
@@ -155,6 +157,10 @@ func NewIntermediateResultTenantCache(user string, c IntermediateResultsCache) *
 
 func (c *IntermediateResultTenantCache) Get(function, selector string, start int64, duration time.Duration) (IntermediateResultBlock, bool) {
 	return c.inner.Get(c.user, function, selector, start, duration)
+}
+
+func (c *IntermediateResultTenantCache) Set(function, selector string, start int64, duration time.Duration, block IntermediateResultBlock) error {
+	return c.inner.Set(c.user, function, selector, start, duration, block)
 }
 
 // TODO: make a method for each node instead

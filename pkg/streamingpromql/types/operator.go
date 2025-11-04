@@ -79,6 +79,23 @@ type RangeVectorOperator interface {
 	// current series and the timestamps of the next time step, or returns EOS if no more time
 	// steps are available.
 	NextStepSamples(ctx context.Context) (*RangeVectorStepData, error)
+
+	// StepCalculationParams returns the parameters needed to calculate step boundaries without calling NextStepSamples.
+	// This is useful for operations that need to know step boundaries (e.g., for caching) without loading samples.
+	StepCalculationParams() StepCalculationParams
+}
+
+// StepCalculationParams contains the parameters needed to calculate step boundaries
+// for range vector operators without calling NextStepSamples.
+type StepCalculationParams struct {
+	// RangeMilliseconds is the lookback duration in milliseconds (e.g., 5m for metric[5m]).
+	RangeMilliseconds int64
+
+	// Offset is the offset in milliseconds from the offset modifier.
+	Offset int64
+
+	// Timestamp is the timestamp in milliseconds from the @ modifier, or nil if not present.
+	Timestamp *int64
 }
 
 // ScalarOperator represents all operators that produce scalars.

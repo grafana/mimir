@@ -317,8 +317,9 @@ func sumOverTime(step *types.RangeVectorStepData, _ []types.ScalarData, _ types.
 	return 0, false, h, err
 }
 
-func sumOverTimeGenerate(step *types.RangeVectorStepData, _ float64, _ []types.ScalarData, queryRange types.QueryTimeRange, emitAnnotation types.EmitAnnotationFunc, _ *limiter.MemoryConsumptionTracker) (cache.IntermediateResult, error) {
-	f, hasFloat, h, err := sumOverTime(step, nil, queryRange, emitAnnotation, nil)
+func sumOverTimeGenerate(step *types.RangeVectorStepData, _ []types.ScalarData, emitAnnotation types.EmitAnnotationFunc, _ *limiter.MemoryConsumptionTracker) (cache.IntermediateResult, error) {
+	// Query time range isn't used for sum over time
+	f, hasFloat, h, err := sumOverTime(step, nil, types.QueryTimeRange{}, emitAnnotation, nil)
 	if err != nil {
 		return cache.IntermediateResult{}, err
 	}

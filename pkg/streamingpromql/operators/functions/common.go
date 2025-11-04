@@ -109,11 +109,10 @@ type FunctionOverInstantVectorDefinition struct {
 	SeriesMetadataFunction SeriesMetadataFunctionDefinition
 }
 
+// TODO: do we need querytimerange as a parameter? what uses it?
 type RangeVectorPiecewiseGenerateFunction func(
 	step *types.RangeVectorStepData,
-	rangeSeconds float64,
 	scalarArgsData []types.ScalarData,
-	timeRange types.QueryTimeRange,
 	emitAnnotation types.EmitAnnotationFunc,
 	memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
 ) (intermediateResult cache.IntermediateResult, err error)

@@ -165,6 +165,14 @@ func (s *Subquery) samplesProcessedInSubqueryPerParentStep(step *types.RangeVect
 	return sum
 }
 
+func (s *Subquery) StepCalculationParams() types.StepCalculationParams {
+	return types.StepCalculationParams{
+		RangeMilliseconds: s.rangeMilliseconds,
+		Offset:            s.SubqueryOffset,
+		Timestamp:         s.SubqueryTimestamp,
+	}
+}
+
 func (s *Subquery) ExpressionPosition() posrange.PositionRange {
 	return s.expressionPosition
 }

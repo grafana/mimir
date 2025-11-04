@@ -8,10 +8,12 @@ package functions
 
 import (
 	"context"
+	"errors"
+	"time"
+
 	"github.com/grafana/mimir/pkg/streamingpromql/cache"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/prometheus/prometheus/model/histogram"
-	"time"
 
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
@@ -52,6 +54,8 @@ type FunctionOverRangeVector struct {
 	// If there is uncached data, it will be the first element in the slice, all other refs will be ordered by time
 	seriesToIRRefs [][]IRSeriesRef
 	irCache        *cache.IntermediateResultTenantCache
+	stepMover      *StepMover
+	metadata       []types.SeriesMetadata
 }
 
 type IntermediateResultBlock struct {
@@ -107,13 +111,20 @@ func (m *FunctionOverRangeVector) SeriesMetadata(ctx context.Context, matchers t
 		return nil, err
 	}
 
+	// Initialize step mover for cached path (where we don't call Inner.NextStepSamples)
+	if m.stepMover == nil {
+		params := m.Inner.StepCalculationParams()
+		m.stepMover = NewStepMover(m.timeRange, params)
+	}
+
 	var metadata []types.SeriesMetadata
 	var err error
 	if m.usingIntermediate {
-		metadata, m.seriesToIRRefs, err = m.seriesMetadataWithIntermediate(ctx, matchers)
+		m.metadata, m.seriesToIRRefs, err = m.seriesMetadataWithIntermediate(ctx, matchers)
 		if err != nil {
 			return nil, err
 		}
+		metadata = m.metadata
 	} else {
 		metadata, err = m.Inner.SeriesMetadata(ctx, matchers)
 		if err != nil {
@@ -150,6 +161,53 @@ func (m *FunctionOverRangeVector) processScalarArgs(ctx context.Context) error {
 	return nil
 }
 
+// StepMover keeps track of the step for a range query
+// used by intermediate result caching to keep track of steps
+type StepMover struct {
+	nextStepT         int64
+	endT              int64
+	intervalMs        int64
+	rangeMilliseconds int64
+	offset            int64
+	timestamp         *int64
+}
+
+func NewStepMover(timeRange types.QueryTimeRange, params types.StepCalculationParams) *StepMover {
+	return &StepMover{
+		nextStepT:         timeRange.StartT,
+		endT:              timeRange.EndT,
+		intervalMs:        timeRange.IntervalMilliseconds,
+		rangeMilliseconds: params.RangeMilliseconds,
+		offset:            params.Offset,
+		timestamp:         params.Timestamp,
+	}
+}
+
+func (s *StepMover) NextStep() (*types.RangeVectorStepData, error) {
+	if s.nextStepT > s.endT {
+		return nil, types.EOS
+	}
+
+	stepT := s.nextStepT
+	rangeEnd := stepT
+	s.nextStepT += s.intervalMs
+
+	if s.timestamp != nil {
+		// Timestamp from @ modifier takes precedence over query evaluation timestamp.
+		rangeEnd = *s.timestamp
+	}
+
+	// Apply offset after adjusting for timestamp from @ modifier.
+	rangeEnd = rangeEnd - s.offset
+	rangeStart := rangeEnd - s.rangeMilliseconds
+
+	return &types.RangeVectorStepData{
+		StepT:      stepT,
+		RangeStart: rangeStart,
+		RangeEnd:   rangeEnd,
+	}, nil
+}
+
 func (m *FunctionOverRangeVector) NextSeries(ctx context.Context) (types.InstantVectorSeriesData, error) {
 	// Decide whether we need to move to the next uncached series
 	// Also load inner series if necessary
@@ -157,14 +215,19 @@ func (m *FunctionOverRangeVector) NextSeries(ctx context.Context) (types.Instant
 	var hasUncached bool
 	if m.usingIntermediate {
 		if m.currentSeriesIndex >= len(m.seriesToIRRefs) {
+			// Write to cache
+			for i := range m.intermediateResults {
+				// Any irs with version -1 should have been filled in
+				if m.intermediateResults[i].ir.Version == -1 {
+					m.irCache.Set(m.Func.Name, cache.CacheKey(m.innerNode), m.intermediateResults[i].startTimestamp, m.intermediateResults[i].duration, m.intermediateResults[i].ir)
+				}
+			}
 			return types.InstantVectorSeriesData{}, types.EOS
 		}
 		result := m.seriesToIRRefs[m.currentSeriesIndex]
 
 		// If the ordered series groups has an uncached component, move to the next inner series
 		// The uncached component is always the first elem in the slice
-		// TODO: refactor and encapsulate cached pieces more, so instead of all this lookups being done here, the logic
-		// should just be to check the next series coming which source (cached, uncached, or both).
 		if result[0].SeriesIdx == UncachedSeriesRef {
 			hasUncached = true
 			if err := m.Inner.NextSeries(ctx); err != nil {
@@ -180,10 +243,6 @@ func (m *FunctionOverRangeVector) NextSeries(ctx context.Context) (types.Instant
 		}
 	}
 
-	if err := m.Inner.NextSeries(ctx); err != nil {
-		return types.InstantVectorSeriesData{}, err
-	}
-
 	defer func() {
 		m.currentSeriesIndex++
 	}()
@@ -191,42 +250,70 @@ func (m *FunctionOverRangeVector) NextSeries(ctx context.Context) (types.Instant
 	data := types.InstantVectorSeriesData{}
 
 	var pieces []cache.IntermediateResult
+	var stepMover *StepMover
 	if m.usingIntermediate {
 		pieces = make([]cache.IntermediateResult, (m.splitInterval())+2) // add two for head and tail
+		stepMover = NewStepMover(m.timeRange, m.Inner.StepCalculationParams())
 	}
+
 	for {
-		var step *types.RangeVectorStepData // this will not be set if all pieces are cached
+		var f float64
+		var hasFloat bool
+		var h *histogram.FloatHistogram
 		var err error
-		if hasUncached {
+		var step *types.RangeVectorStepData
+
+		if !m.usingIntermediate {
 			step, err = m.Inner.NextStepSamples(ctx)
 			// nolint:errorlint // errors.Is introduces a performance overhead, and NextStepSamples is guaranteed to return exactly EOS, never a wrapped error.
-			if err == types.EOS { // FIXME: need to detect end for cache-only path too? is cache-only possible?
+			if err == types.EOS {
 				if m.seriesValidationFunc != nil {
-					// TODO: make sure this works with the combined metadata
 					m.seriesValidationFunc(data, m.metricNames.GetMetricNameForSeries(m.currentSeriesIndex), m.emitAnnotationFunc)
 				}
 				return data, nil
 			} else if err != nil {
 				return types.InstantVectorSeriesData{}, err
 			}
-		}
+			f, hasFloat, h, err = m.Func.StepFunc(step, m.scalarArgsData, m.timeRange, m.emitAnnotationFunc, m.MemoryConsumptionTracker)
+			if err != nil {
+				return types.InstantVectorSeriesData{}, err
+			}
+		} else {
+			step, err = stepMover.NextStep()
+			// nolint:errorlint // errors.Is introduces a performance overhead, and NextStepSamples is guaranteed to return exactly EOS, never a wrapped error.
+			if err == types.EOS {
+				if m.seriesValidationFunc != nil {
+					m.seriesValidationFunc(data, m.metricNames.GetMetricNameForSeries(m.currentSeriesIndex), m.emitAnnotationFunc)
+				}
+				return data, nil
+			} else if err != nil {
+				return types.InstantVectorSeriesData{}, err
+			}
 
-		var f float64
-		var hasFloat bool
-		var h *histogram.FloatHistogram
+			if hasUncached {
+				step, err = m.Inner.NextStepSamples(ctx)
+				// nolint:errorlint // errors.Is introduces a performance overhead, and NextStepSamples is guaranteed to return exactly EOS, never a wrapped error.
+				if err == types.EOS {
+					// We should never get here, the stepmover would have detected the EOS
+					if m.seriesValidationFunc != nil {
+						m.seriesValidationFunc(data, m.metricNames.GetMetricNameForSeries(m.currentSeriesIndex), m.emitAnnotationFunc)
+					}
+					return data, nil
+				} else if err != nil {
+					return types.InstantVectorSeriesData{}, err
+				}
+			}
 
-		if m.usingIntermediate {
 			blockLengthMs := m.splitInterval().Milliseconds()
 			cachedStart := ((step.RangeStart / blockLengthMs) + 1) * blockLengthMs
 			cachedEnd := (step.RangeEnd / blockLengthMs) * blockLengthMs
-			// calculate head piece
 
-			// todo: create splitStep function to split the current step into a selected time range
-			updatedStep := splitStep(step, step.RangeStart, cachedStart)
+			updatedStep := splitStep(step, step.RangeStart, cachedStart, m.MemoryConsumptionTracker)
 			headPiece, err := m.Func.GenerateFunc(
 				updatedStep,
-				0, //FIXME
-				m.scalarArgsData, m.timeRange, m.emitAnnotationFunc, m.MemoryConsumptionTracker)
+				m.scalarArgsData,
+				m.emitAnnotationFunc,
+				m.MemoryConsumptionTracker)
 			if err == nil {
 				return types.InstantVectorSeriesData{}, err
 			}
@@ -236,54 +323,45 @@ func (m *FunctionOverRangeVector) NextSeries(ctx context.Context) (types.Instant
 			// calculate missing pieces in the middle (or use cached version)
 			for ; cachedStart < cachedEnd; cachedStart += blockLengthMs {
 				// find the cached piece/series that corresponds to this value
-				foundCached := false
 				for ; cachedIdx < len(cachedResult); cachedIdx++ {
 					if m.intermediateResults[cachedResult[cachedIdx].IRBlockIdx].ir.StartTimestampMs < int(cachedStart) {
 						continue
 					}
 
 					if m.intermediateResults[cachedResult[cachedIdx].IRBlockIdx].ir.StartTimestampMs == int(cachedStart) {
-						foundCached = true
 						break
 					}
-					// getting here means too far
-					break
+					return types.InstantVectorSeriesData{}, errors.New("can't find cached block")
 				}
-
-				if foundCached {
+				if m.intermediateResults[cachedResult[cachedIdx].IRBlockIdx].ir.Version != -1 {
 					pieces[piecesIdx] = m.intermediateResults[cachedResult[cachedIdx].IRBlockIdx].ir.Results[cachedResult[cachedIdx].SeriesIdx]
 				} else {
-					updatedStep = splitStep(step, cachedStart, cachedStart+m.splitInterval().Milliseconds())
-
-					// TODO: cache this
+					updatedStep = splitStep(step, cachedStart, cachedStart+m.splitInterval().Milliseconds(), m.MemoryConsumptionTracker)
+					// TODO: this can be reused for later steps for the same series - we should make pieces wrap around to avoid recalculating when not necessary
 					pieces[piecesIdx], err = m.Func.GenerateFunc(
 						updatedStep,
-						0, //FIXME
-						m.scalarArgsData, m.timeRange, m.emitAnnotationFunc, m.MemoryConsumptionTracker)
+						m.scalarArgsData, m.emitAnnotationFunc, m.MemoryConsumptionTracker)
 					if err != nil {
 						return types.InstantVectorSeriesData{}, err
 					}
+					m.intermediateResults[cachedResult[cachedIdx].IRBlockIdx].ir.Series = append(m.intermediateResults[cachedResult[cachedIdx].IRBlockIdx].ir.Series, m.metadata[m.currentSeriesIndex])
+					m.intermediateResults[cachedResult[cachedIdx].IRBlockIdx].ir.Results = append(m.intermediateResults[cachedResult[cachedIdx].IRBlockIdx].ir.Results, pieces[piecesIdx])
+
 				}
 				piecesIdx++
 			}
 
 			// calculate tail piece
-			updatedStep = splitStep(step, cachedEnd, step.RangeEnd)
+			updatedStep = splitStep(step, cachedEnd, step.RangeEnd, m.MemoryConsumptionTracker)
 			tailPiece, err := m.Func.GenerateFunc(
 				updatedStep,
-				0, //FIXME
-				m.scalarArgsData, m.timeRange, m.emitAnnotationFunc, m.MemoryConsumptionTracker)
+				m.scalarArgsData, m.emitAnnotationFunc, m.MemoryConsumptionTracker)
 			if err == nil {
 				return types.InstantVectorSeriesData{}, err
 			}
 			pieces[piecesIdx] = tailPiece
 
 			f, hasFloat, h, err = m.Func.CombineFunc(pieces, m.emitAnnotationFunc, m.MemoryConsumptionTracker)
-			if err != nil {
-				return types.InstantVectorSeriesData{}, err
-			}
-		} else {
-			f, hasFloat, h, err = m.Func.StepFunc(step, m.scalarArgsData, m.timeRange, m.emitAnnotationFunc, m.MemoryConsumptionTracker)
 			if err != nil {
 				return types.InstantVectorSeriesData{}, err
 			}
@@ -318,8 +396,116 @@ func (m *FunctionOverRangeVector) NextSeries(ctx context.Context) (types.Instant
 	}
 }
 
-func splitStep(step *types.RangeVectorStepData, start int64, start2 int64) *types.RangeVectorStepData {
-	panic("implement me")
+// TODO: splitStep currently copies samples to new ring buffers, this should be modified to reuse the current ring buffer instead
+func splitStep(step *types.RangeVectorStepData, start int64, end int64, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) *types.RangeVectorStepData {
+	newStep := &types.RangeVectorStepData{
+		StepT:      step.StepT,
+		RangeStart: start,
+		RangeEnd:   end,
+	}
+
+	// Filter floats to only include points in the range (start, end]
+	// RangeStart is exclusive, RangeEnd is inclusive
+	if step.Floats != nil && step.Floats.Any() {
+		newStep.Floats = filterFloatsView(step.Floats, start, end, memoryConsumptionTracker)
+	}
+
+	// Filter histograms to only include points in the range (start, end]
+	if step.Histograms != nil && step.Histograms.Any() {
+		newStep.Histograms = filterHistogramsView(step.Histograms, start, end, memoryConsumptionTracker)
+	}
+
+	return newStep
+}
+
+func filterFloatsView(view *types.FPointRingBufferView, start int64, end int64, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) *types.FPointRingBufferView {
+	if !view.Any() {
+		return &types.FPointRingBufferView{}
+	}
+
+	// Get all points from the view
+	head, tail := view.UnsafePoints()
+
+	// Count points in the range (start, end]
+	// RangeStart is exclusive, RangeEnd is inclusive
+	count := 0
+	firstInRange := -1
+
+	allPoints := append(head, tail...)
+	for i, p := range allPoints {
+		if p.T > start && p.T <= end {
+			if firstInRange == -1 {
+				firstInRange = i
+			}
+			count++
+		}
+	}
+
+	if count == 0 {
+		return &types.FPointRingBufferView{}
+	}
+
+	// If all points are in range, return the original view
+	if firstInRange == 0 && count == len(allPoints) {
+		return view
+	}
+
+	// Create a new buffer and populate it with filtered points
+	// Note: This creates a new buffer which needs to be managed/closed by the caller
+	// This is a temporary solution - ideally we'd have a way to create offset views
+	buffer := types.NewFPointRingBuffer(memoryConsumptionTracker)
+	for i := firstInRange; i < firstInRange+count; i++ {
+		if err := buffer.Append(allPoints[i]); err != nil {
+			// If we can't append, return empty view
+			return &types.FPointRingBufferView{}
+		}
+	}
+
+	return buffer.ViewUntilSearchingBackwards(end, nil)
+}
+
+func filterHistogramsView(view *types.HPointRingBufferView, start int64, end int64, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) *types.HPointRingBufferView {
+	if !view.Any() {
+		return &types.HPointRingBufferView{}
+	}
+
+	// Get all points from the view
+	head, tail := view.UnsafePoints()
+
+	// Count points in the range (start, end]
+	// RangeStart is exclusive, RangeEnd is inclusive
+	count := 0
+	firstInRange := -1
+
+	allPoints := append(head, tail...)
+	for i, p := range allPoints {
+		if p.T > start && p.T <= end {
+			if firstInRange == -1 {
+				firstInRange = i
+			}
+			count++
+		}
+	}
+
+	if count == 0 {
+		return &types.HPointRingBufferView{}
+	}
+
+	// If all points are in range, return the original view
+	if firstInRange == 0 && count == len(allPoints) {
+		return view
+	}
+
+	// Create a new buffer and populate it with filtered points
+	buffer := types.NewHPointRingBuffer(memoryConsumptionTracker)
+	for i := firstInRange; i < firstInRange+count; i++ {
+		if err := buffer.Append(allPoints[i]); err != nil {
+			// If we can't append, return empty view
+			return &types.HPointRingBufferView{}
+		}
+	}
+
+	return buffer.ViewUntilSearchingBackwards(end, nil)
 }
 
 func (m *FunctionOverRangeVector) emitAnnotation(generator types.AnnotationGenerator) {
@@ -346,7 +532,7 @@ func (m *FunctionOverRangeVector) Prepare(ctx context.Context, params *types.Pre
 					m.intermediateResults[i].loadedFromCache = true
 				} else {
 					m.intermediateResults[i].ir = cache.IntermediateResultBlock{
-						Version:          0, // TODO: should be set by cache
+						Version:          -1, // -1 means not found in cache i guess
 						StartTimestampMs: int(m.intermediateResults[i].startTimestamp),
 						DurationMs:       int(m.intermediateResults[i].duration.Milliseconds()),
 						Series:           nil,
@@ -427,8 +613,10 @@ const UncachedSeriesRef = -1
 // This code is mostly copied from deduplicate_and_merge.go
 // Merges the series metadata from uncached samples with the cached pieces
 // TODO: can we guarantee series are sorted in lexiographical order? or a stable order? I don't think so, e.g. if there's a subquery with sort(), then different time ranges might return values in different orders
-//  we might just have to filter out cases where that happens (while sort() only works on instant queries, if we might make multiple instant queries over different time ranges)
-//  sort_by_label() (experimental) might have similar effects though in this case the order should be the same (assuming a stable sort), it just can't be assumed to be lexicographical wrt all series
+//
+//	we might just have to filter out cases where that happens (while sort() only works on instant queries, if we might make multiple instant queries over different time ranges)
+//	sort_by_label() (experimental) might have similar effects though in this case the order should be the same (assuming a stable sort), it just can't be assumed to be lexicographical wrt all series
+//
 // Currently assumed t
 func (m *FunctionOverRangeVector) seriesMetadataWithIntermediate(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, [][]IRSeriesRef, error) {
 	// Why use a string, rather than the labels hash as a key here? This avoids any issues with hash collisions.
