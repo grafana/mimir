@@ -449,7 +449,8 @@ func TestSchedulerExecutor_PlannedJobsRetryBehavior(t *testing.T) {
 }
 
 func TestSchedulerExecutor_NoGoRoutineLeak(t *testing.T) {
-	defer testutil.VerifyNoLeak(t, goleak.IgnoreCurrent())
+	initialGoroutines := goleak.IgnoreCurrent()
+	defer testutil.VerifyNoLeak(t, initialGoroutines)
 
 	mockSchedulerClient := &mockCompactorSchedulerClient{
 		LeaseJobFunc: func(_ context.Context, _ *compactorschedulerpb.LeaseJobRequest) (*compactorschedulerpb.LeaseJobResponse, error) {
@@ -474,12 +475,6 @@ func TestSchedulerExecutor_NoGoRoutineLeak(t *testing.T) {
 	require.NoError(t, err)
 	schedulerExec.schedulerClient = mockSchedulerClient
 
-	defer func(t *testing.T) {
-		if schedulerExec.schedulerConn != nil {
-			schedulerExec.schedulerConn.Close()
-		}
-	}(t)
-
 	c, _, _, _, _ := prepareWithConfigProvider(t, cfg, bucketClient, newMockConfigProvider())
 	c.bucketClient = bucketClient
 
@@ -490,11 +485,16 @@ func TestSchedulerExecutor_NoGoRoutineLeak(t *testing.T) {
 	require.Error(t, err) // expect an error since bucket has no test block
 	require.True(t, gotWork)
 
-	// wait for leaseAndExecuteJob internal updater to start, cancel the context, and then wait
-	// to verify no goroutine leak, goleak.VerifyNone will fail if there are any leaked goroutines
-	time.Sleep(50 * time.Millisecond)
 	cancel()
-	time.Sleep(50 * time.Millisecond)
+
+	if schedulerExec.schedulerConn != nil {
+		require.NoError(t, schedulerExec.schedulerConn.Close())
+	}
+
+	require.Eventually(t, func() bool {
+		err := goleak.Find(initialGoroutines)
+		return err == nil
+	}, 2*time.Second, 50*time.Millisecond, "goroutines should be cleaned up")
 }
 
 func TestSchedulerExecutor_JobCancellationOn_NotFoundResponse(t *testing.T) {
