@@ -111,11 +111,7 @@ func (m *Map) Put(key uint64, value clock.Minutes, series, limit *atomic.Uint64,
 				}
 				series.Inc()
 			}
-			s := nextMatch(&matches)
-			m.index[i][s] = pfx
-			m.keys[i][s] = key
-			m.data[i][s] = ^value
-			m.resident++
+			m.insert(key, pfx, value, i, matches)
 			return true, false
 		}
 		i++ // linear probing
@@ -123,6 +119,14 @@ func (m *Map) Put(key uint64, value clock.Minutes, series, limit *atomic.Uint64,
 			i = 0
 		}
 	}
+}
+
+func (m *Map) insert(key uint64, pfx prefix, value clock.Minutes, i uint32, matches bitset) {
+	s := nextMatch(&matches)
+	m.index[i][s] = pfx
+	m.keys[i][s] = key
+	m.data[i][s] = ^value
+	m.resident++
 }
 
 // Load inserts |key| and |value| into the map without checking if it already exists.
@@ -152,11 +156,7 @@ func (m *Map) load(key uint64, value clock.Minutes) {
 		// Find an empty slot and insert without checking if it already exists.
 		matches := metaMatchEmpty(&m.index[i])
 		if matches != 0 { // insert
-			s := nextMatch(&matches)
-			m.index[i][s] = pfx
-			m.keys[i][s] = key
-			m.data[i][s] = ^value
-			m.resident++
+			m.insert(key, pfx, value, i, matches)
 			return
 		}
 		i++ // linear probing
