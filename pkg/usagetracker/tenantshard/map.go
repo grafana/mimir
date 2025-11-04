@@ -111,15 +111,60 @@ func (m *Map) Put(key uint64, value clock.Minutes, series, limit *atomic.Uint64,
 				}
 				series.Inc()
 			}
-			s := nextMatch(&matches)
-			m.index[i][s] = pfx
-			m.keys[i][s] = key
-			m.data[i][s] = ^value
-			m.resident++
+			m.insert(key, pfx, value, i, matches)
 			return true, false
 		}
 		i++ // linear probing
 		if i >= uint32(len(m.index)) {
+			i = 0
+		}
+	}
+}
+
+func (m *Map) insert(key uint64, pfx prefix, value clock.Minutes, i uint32, matches bitset) {
+	s := nextMatch(&matches)
+	m.index[i][s] = pfx
+	m.keys[i][s] = key
+	m.data[i][s] = ^value
+	m.resident++
+}
+
+// Load inserts |key| and |value| into the map without checking if it already exists.
+// No limits are checked, and series count should be incremented by the caller.
+func (m *Map) Load(key uint64, value clock.Minutes) {
+	if m.resident >= m.limit {
+		m.rehash(m.nextSize())
+	}
+
+	if value == 0xff {
+		// We can't store 0xff because it's stored as 0 which has a special meaning.
+		panic("value is too large")
+	}
+
+	m.load(key, value)
+}
+
+// load inserts |key| and |value| into the map without checking if it already exists.
+// No limits are checked, and series count should be incremented by the caller.
+// This also assumes that map has enough capacity to hold the new element, and that the element is valid.
+// This is only expected to be called from rehash().
+func (m *Map) load(key uint64, value clock.Minutes) {
+	pfx, sfx := splitHash(key)
+	i := probeStart(sfx, len(m.index))
+	looped := false
+	for {
+		// Find an empty slot and insert without checking if it already exists.
+		matches := metaMatchEmpty(&m.index[i])
+		if matches != 0 { // insert
+			m.insert(key, pfx, value, i, matches)
+			return
+		}
+		i++ // linear probing
+		if i >= uint32(len(m.index)) {
+			if looped {
+				panic("infinite loop in Load(), this should not happen")
+			}
+			looped = true
 			i = 0
 		}
 	}
@@ -169,11 +214,9 @@ func (m *Map) rehash(n uint32) {
 	for g := range indices {
 		for s := range indices[g] {
 			c := indices[g][s]
-			if c == empty || c == tombstone {
-				continue
+			if c != empty && c != tombstone {
+				m.load(ks[g][s], ^datas[g][s])
 			}
-			// We don't need to mask the key here, data suffix of the key is always masked out.
-			m.Put(ks[g][s], ^datas[g][s], nil, nil, false)
 		}
 	}
 }
@@ -204,10 +247,6 @@ func probeStart(s suffix, groups int) uint32 {
 func fastModN(x, n uint32) uint32 {
 	return uint32((uint64(x) * uint64(n)) >> 32)
 }
-
-type LengthCallback func(int)
-
-type IteratorCallback func(k uint64, v clock.Minutes)
 
 var (
 	keysPool = &sync.Pool{New: func() any { return new([]keys) }}

@@ -3,6 +3,7 @@
 package tenantshard
 
 import (
+	"fmt"
 	"math/rand"
 	"testing"
 
@@ -87,4 +88,20 @@ func TestMapValues(t *testing.T) {
 		got[key] = value
 	}
 	require.Equal(t, stored, got)
+}
+
+func BenchmarkMapRehash(b *testing.B) {
+	for _, size := range []uint32{1e6, 10e6} {
+		b.Run(fmt.Sprintf("size=%d", size), func(b *testing.B) {
+			m := New(size)
+			r := rand.New(rand.NewSource(1))
+			for i := 0; i < int(size); i++ {
+				m.Put(r.Uint64(), clock.Minutes(i%128), nil, nil, false)
+			}
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				m.rehash(size)
+			}
+		})
+	}
 }
