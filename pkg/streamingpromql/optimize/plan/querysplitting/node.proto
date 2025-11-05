@@ -1,0 +1,32 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
+syntax = "proto3";
+
+package querysplitting;
+
+import "gogoproto/gogo.proto";
+
+option (gogoproto.equal_all) = false;
+option (gogoproto.marshaler_all) = true;
+option (gogoproto.messagename_all) = true;
+option (gogoproto.unmarshaler_all) = true;
+
+message SplitRangeVectorDetails {
+  // CacheBlocks defines the fixed-interval blocks that can be cached.
+  // Each block represents a complete time interval aligned to the split interval (e.g., 2 hours).
+  // These blocks are calculated during the planning phase.
+  repeated CacheBlock cacheBlocks = 1 [(gogoproto.nullable) = false];
+  
+  // CacheKey is the unique identifier for this query's cacheable computation.
+  // Calculated during planning from the inner node (typically a matrix selector).
+  string cacheKey = 2;
+}
+
+message CacheBlock {
+  // StartTimestampMs is the start of this block's time range (inclusive).
+  int64 startTimestampMs = 1;
+  
+  // DurationMs is the duration of this block in milliseconds.
+  int64 durationMs = 2;
+}
+

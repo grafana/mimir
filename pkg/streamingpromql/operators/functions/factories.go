@@ -10,7 +10,6 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 
-	"github.com/grafana/mimir/pkg/streamingpromql/cache"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/scalars"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/selectors"
@@ -132,21 +131,16 @@ func FunctionOverRangeVectorOperatorFactory(
 			return nil, fmt.Errorf("expected a range vector argument for %s, got %T", name, args[0])
 		}
 
-		op := NewFunctionOverRangeVector(inner, nil, opParams.MemoryConsumptionTracker, f, opParams.Annotations, expressionPosition, timeRange, opParams.EnableDelayedNameRemoval)
-
-		// Set the inner planning node for intermediate result caching
-		if len(opParams.PlanningNodes) > 0 && opParams.PlanningNodes[0] != nil {
-			op.InnerNode = opParams.PlanningNodes[0]
-		}
-
-		// Set intermediate result cache if configured
-		if opParams.IntermediateResultCache != nil {
-			if tenantCache, ok := opParams.IntermediateResultCache.(*cache.IntermediateResultTenantCache); ok {
-				op.IRCache = tenantCache
-			}
-		}
-
-		return op, nil
+		return NewFunctionOverRangeVector(
+			inner,
+			nil, // scalarArgs
+			opParams.MemoryConsumptionTracker,
+			f,
+			opParams.Annotations,
+			expressionPosition,
+			timeRange,
+			opParams.EnableDelayedNameRemoval,
+		), nil
 	}
 }
 

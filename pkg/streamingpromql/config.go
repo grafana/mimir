@@ -39,6 +39,11 @@ type EngineOpts struct {
 
 	// Intermediate result cache for caching function computations (e.g., sum_over_time)
 	IntermediateResultCache cache.IntermediateResultsCache `yaml:"-"`
+
+	// QuerySplitInterval is the time interval used for splitting range vector computations into cacheable blocks.
+	// For example, with a 2-hour interval, rate(metric[6h]) will be split into 3 blocks of 2 hours each.
+	// Must be greater than 0. Defaults to 2 hours if not specified.
+	QuerySplitInterval time.Duration `yaml:"query_split_interval" category:"experimental"`
 }
 
 func (o *EngineOpts) RegisterFlags(f *flag.FlagSet) {
