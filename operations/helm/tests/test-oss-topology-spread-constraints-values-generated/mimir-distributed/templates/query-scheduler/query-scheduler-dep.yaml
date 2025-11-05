@@ -27,11 +27,13 @@ spec:
   template:
     metadata:
       labels:
+        foo: bar
         app.kubernetes.io/name: mimir
         app.kubernetes.io/instance: test-oss-topology-spread-constraints-values
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/component: query-scheduler
       annotations:
+        baz: qux
     spec:
       serviceAccountName: test-oss-topology-spread-constraints-values-mimir
       securityContext:
