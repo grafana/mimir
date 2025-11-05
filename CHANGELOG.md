@@ -71,6 +71,26 @@
 
 ### Mixin
 
+* [CHANGE] Alerts: Renamed the following alerts to fit within 40 characters: #13363
+  * `MimirAlertmanagerPartialStateMergeFailing` → `MimirAlertmanagerStateMergeFailing`
+  * `MimirServerInvalidClusterValidationLabelRequests` → `MimirServerInvalidClusterLabelRequests`
+  * `MimirClientInvalidClusterValidationLabelRequests` → `MimirClientInvalidClusterLabelRequests`
+  * `MimirHighGRPCConcurrentStreamsPerConnection` → `MimirHighGRPCStreamsPerConnection`
+  * `MimirDistributorReachingInflightPushRequestLimit` → `MimirDistributorInflightRequestsHigh`
+  * `MimirIngesterHasNotShippedBlocks` → `MimirIngesterNotShippingBlocks`
+  * `MimirIngesterHasNotShippedBlocksSinceStart` → `MimirIngesterNotShippingBlocksSinceStart`
+  * `MimirIngesterTSDBCheckpointCreationFailed` → `MimirIngesterTSDBCheckpointCreateFailed`
+  * `MimirIngesterTSDBCheckpointDeletionFailed` → `MimirIngesterTSDBCheckpointDeleteFailed`
+  * `MimirCompactorHasNotSuccessfullyCleanedUpBlocks` → `MimirCompactorNotCleaningUpBlocks`
+  * `MimirCompactorHasNotSuccessfullyRunCompaction` → `MimirCompactorNotRunningCompaction`
+  * `MimirCompactorFailingToBuildSparseIndexHeaders` → `MimirCompactorBuildingSparseIndexFailed`
+  * `MimirIngesterLastConsumedOffsetCommitFailed` → `MimirIngesterOffsetCommitFailed`
+  * `MimirIngesterFailedToReadRecordsFromKafka` → `MimirIngesterKafkaReadFailed`
+  * `MimirStartingIngesterKafkaReceiveDelayIncreasing` → `MimirStartingIngesterKafkaDelayGrowing`
+  * `MimirIngesterFailsToProcessRecordsFromKafka` → `MimirIngesterKafkaProcessingFailed`
+  * `MimirIngesterStuckProcessingRecordsFromKafka` → `MimirIngesterKafkaProcessingStuck`
+  * `MimirStrongConsistencyOffsetNotPropagatedToIngesters` → `MimirStrongConsistencyOffsetMissing`
+  * `MimirKafkaClientBufferedProduceBytesTooHigh` → `MimirKafkaClientProduceBufferHigh`
 * [ENHANCEMENT] Alerts: Add `MimirFewerIngestersConsumingThanActivePartitions` alert. #13159
 * [ENHANCEMENT] Querier and query-frontend: Add alerts for querier ring, which is used when performing query planning in query-frontends and distributing portions of the plan to queriers for execution. #13165
 * [ENHANCEMENT] Alerts: Add `MimirBlockBuilderSchedulerNotRunning` alert. #13208

@@ -34,7 +34,7 @@
           },
         },
         {
-          alert: $.alertName('AlertmanagerPartialStateMergeFailing'),
+          alert: $.alertName('AlertmanagerStateMergeFailing'),
           expr: |||
             rate(cortex_alertmanager_partial_state_merges_failed_total[%s]) > 0
           ||| % $.alertRangeInterval(2),
