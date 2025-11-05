@@ -27,17 +27,13 @@ import (
 
 type Config struct {
 	ServerMetricsPort int
-	LogLevel          log.Level
 	ProxyConfig       querytee.ProxyConfig
-	PathPrefix        string
 }
 
 func main() {
 	// Parse CLI flags.
 	cfg := Config{}
 	flag.IntVar(&cfg.ServerMetricsPort, "server.metrics-port", 9900, "The port where metrics are exposed.")
-	flag.StringVar(&cfg.PathPrefix, "server.path-prefix", "", "Path prefix for API paths (query-tee will accept Prometheus API calls at <prefix>/api/v1/...). Example: -server.path-prefix=/prometheus")
-	cfg.LogLevel.RegisterFlags(flag.CommandLine)
 	cfg.ProxyConfig.RegisterFlags(flag.CommandLine)
 
 	// Parse CLI arguments.
@@ -46,7 +42,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	util_log.InitLogger(log.LogfmtFormat, cfg.LogLevel, false, util_log.RateLimitedLoggerCfg{})
+	util_log.InitLogger(log.LogfmtFormat, cfg.ProxyConfig.Server.LogLevel, false, util_log.RateLimitedLoggerCfg{})
 
 	if closer := initTracing(); closer != nil {
 		defer closer.Close()
@@ -100,7 +96,7 @@ func initTracing() io.Closer {
 }
 
 func mimirReadRoutes(cfg Config) []querytee.Route {
-	prefix := cfg.PathPrefix
+	prefix := cfg.ProxyConfig.Server.PathPrefix
 
 	// Strip trailing slashes.
 	for len(prefix) > 0 && prefix[len(prefix)-1] == '/' {
