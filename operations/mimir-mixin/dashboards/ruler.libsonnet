@@ -22,15 +22,15 @@ local filename = 'mimir-ruler.json';
        })
       .addPanel(
         $.panel('Active configurations') +
-        $.statPanel('sum(cortex_ruler_managers_total{%s})' % $.jobMatcher($._config.job_names.ruler), format='short')
+        $.statPanel('sum(cortex_ruler_managers_total{%s})' % $.jobContainerMatchers($._config.job_names.ruler, $._config.container_names.ruler), format='short')
       )
       .addPanel(
         $.panel('Total rules') +
-        $.statPanel('sum(cortex_prometheus_rule_group_rules{%s})' % $.jobMatcher($._config.job_names.ruler), format='short')
+        $.statPanel('sum(cortex_prometheus_rule_group_rules{%s})' % $.jobContainerMatchers($._config.job_names.ruler, $._config.container_names.ruler), format='short')
       )
       .addPanel(
         $.panel('Reads from ingesters - RPS') +
-        $.statPanel('sum(rate(cortex_ingester_client_request_duration_seconds_count{%s, operation="/cortex.Ingester/QueryStream"}[$__rate_interval]))' % $.jobMatcher($._config.job_names.ruler + $._config.job_names.ruler_querier), format='reqps') +
+        $.statPanel('sum(rate(cortex_ingester_client_request_duration_seconds_count{%s, operation="/cortex.Ingester/QueryStream"}[$__rate_interval]))' % $.jobContainerMatchers($._config.job_names.ruler + $._config.job_names.ruler_querier, $._config.container_names.ruler), format='reqps') +
         $.panelDescription(
           'Reads from ingesters - RPS',
           |||
@@ -64,11 +64,11 @@ local filename = 'mimir-ruler.json';
                     # New metric.
                     rate(cortex_ingest_storage_writer_produce_records_enqueued_total{%(job_matcher)s}[$__rate_interval])
                 ) or vector(0))
-              ||| % { job_matcher: $.jobMatcher($._config.job_names.ruler) }
+              ||| % { job_matcher: $.jobContainerMatchers($._config.job_names.ruler, $._config.container_names.ruler) }
             else
               |||
                 sum(rate(cortex_ingester_client_request_duration_seconds_count{%(job_matcher)s, operation="/cortex.Ingester/Push"}[$__rate_interval]))
-              ||| % { job_matcher: $.jobMatcher($._config.job_names.ruler) };
+              ||| % { job_matcher: $.jobContainerMatchers($._config.job_names.ruler, $._config.container_names.ruler) };
 
           query, format='reqps'
         )
@@ -120,11 +120,11 @@ local filename = 'mimir-ruler.json';
       $.row('Writes (ingesters)')
       .addPanel(
         $.timeseriesPanel('Requests / sec') +
-        $.qpsPanel('cortex_ingester_client_request_duration_seconds_count{%s, operation="/cortex.Ingester/Push"}' % $.jobMatcher($._config.job_names.ruler))
+        $.qpsPanel('cortex_ingester_client_request_duration_seconds_count{%s, operation="/cortex.Ingester/Push"}' % $.jobContainerMatchers($._config.job_names.ruler, $._config.container_names.ruler))
       )
       .addPanel(
         $.timeseriesPanel('Latency') +
-        $.latencyPanel('cortex_ingester_client_request_duration_seconds', '{%s, operation="/cortex.Ingester/Push"}' % $.jobMatcher($._config.job_names.ruler))
+        $.latencyPanel('cortex_ingester_client_request_duration_seconds', '{%s, operation="/cortex.Ingester/Push"}' % $.jobContainerMatchers($._config.job_names.ruler, $._config.container_names.ruler))
       )
     )
     .addRowIf(
@@ -141,11 +141,11 @@ local filename = 'mimir-ruler.json';
       $.row('Reads (ingesters)')
       .addPanel(
         $.timeseriesPanel('QPS') +
-        $.qpsPanel('cortex_ingester_client_request_duration_seconds_count{%s, operation="/cortex.Ingester/QueryStream"}' % $.jobMatcher($._config.job_names.ruler + $._config.job_names.ruler_querier))
+        $.qpsPanel('cortex_ingester_client_request_duration_seconds_count{%s, operation="/cortex.Ingester/QueryStream"}' % $.jobContainerMatchers($._config.job_names.ruler + $._config.job_names.ruler_querier, $._config.container_names.ruler))
       )
       .addPanel(
         $.timeseriesPanel('Latency') +
-        $.latencyPanel('cortex_ingester_client_request_duration_seconds', '{%s, operation="/cortex.Ingester/QueryStream"}' % $.jobMatcher($._config.job_names.ruler + $._config.job_names.ruler_querier))
+        $.latencyPanel('cortex_ingester_client_request_duration_seconds', '{%s, operation="/cortex.Ingester/QueryStream"}' % $.jobContainerMatchers($._config.job_names.ruler + $._config.job_names.ruler_querier, $._config.container_names.ruler))
       )
     )
     .addRow(
@@ -175,17 +175,17 @@ local filename = 'mimir-ruler.json';
       $.row('Ruler - blocks storage')
       .addPanel(
         $.timeseriesPanel('Number of store-gateways hit per query') +
-        $.latencyPanel('cortex_querier_storegateway_instances_hit_per_query', '{%s}' % $.jobMatcher($._config.job_names.ruler), multiplier=1) +
+        $.latencyPanel('cortex_querier_storegateway_instances_hit_per_query', '{%s}' % $.jobContainerMatchers($._config.job_names.ruler, $._config.container_names.ruler), multiplier=1) +
         { fieldConfig+: { defaults+: { unit: 'short' } } },
       )
       .addPanel(
         $.timeseriesPanel('Refetches of missing blocks per query') +
-        $.latencyPanel('cortex_querier_storegateway_refetches_per_query', '{%s}' % $.jobMatcher($._config.job_names.ruler), multiplier=1) +
+        $.latencyPanel('cortex_querier_storegateway_refetches_per_query', '{%s}' % $.jobContainerMatchers($._config.job_names.ruler, $._config.container_names.ruler), multiplier=1) +
         { fieldConfig+: { defaults+: { unit: 'short' } } },
       )
       .addPanel(
         $.timeseriesPanel('Consistency checks failed') +
-        $.failurePanel('sum(rate(cortex_querier_blocks_consistency_checks_failed_total{%s}[$__rate_interval])) / sum(rate(cortex_querier_blocks_consistency_checks_total{%s}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.ruler), $.jobMatcher($._config.job_names.ruler)], 'Failures / sec') +
+        $.failurePanel('sum(rate(cortex_querier_blocks_consistency_checks_failed_total{%s}[$__rate_interval])) / sum(rate(cortex_querier_blocks_consistency_checks_total{%s}[$__rate_interval]))' % [$.jobContainerMatchers($._config.job_names.ruler, $._config.container_names.ruler), $.jobContainerMatchers($._config.job_names.ruler, $._config.container_names.ruler)], 'Failures / sec') +
         { fieldConfig+: { defaults+: { unit: 'percentunit', min: 0, max: 1 } } } +
         $.panelDescription(
           'Consistency checks failed',
@@ -200,9 +200,9 @@ local filename = 'mimir-ruler.json';
       .addPanel(
         $.timeseriesPanel('Notifications') +
         $.queryPanel([
-          'sum(rate(cortex_prometheus_notifications_sent_total{%s}[$__rate_interval])) > 0' % $.jobMatcher($._config.job_names.ruler),
-          'sum(rate(cortex_prometheus_notifications_errors_total{%s}[$__rate_interval])) > 0' % $.jobMatcher($._config.job_names.ruler),
-          'sum(rate(cortex_prometheus_notifications_dropped_total{%s}[$__rate_interval])) > 0' % $.jobMatcher($._config.job_names.ruler),
+          'sum(rate(cortex_prometheus_notifications_sent_total{%s}[$__rate_interval])) > 0' % $.jobContainerMatchers($._config.job_names.ruler, $._config.container_names.ruler),
+          'sum(rate(cortex_prometheus_notifications_errors_total{%s}[$__rate_interval])) > 0' % $.jobContainerMatchers($._config.job_names.ruler, $._config.container_names.ruler),
+          'sum(rate(cortex_prometheus_notifications_dropped_total{%s}[$__rate_interval])) > 0' % $.jobContainerMatchers($._config.job_names.ruler, $._config.container_names.ruler),
         ], [
           'sent',
           'errors',
@@ -245,9 +245,9 @@ local filename = 'mimir-ruler.json';
             )
             > 0
           ||| % [
-            $.jobMatcher($._config.job_names.ruler),
-            $.jobMatcher($._config.job_names.ruler),
-            $.jobMatcher($._config.job_names.ruler),
+            $.jobContainerMatchers($._config.job_names.ruler, $._config.container_names.ruler),
+            $.jobContainerMatchers($._config.job_names.ruler, $._config.container_names.ruler),
+            $.jobContainerMatchers($._config.job_names.ruler, $._config.container_names.ruler),
           ],
           // Dropped notifications percentage
           |||
@@ -260,9 +260,9 @@ local filename = 'mimir-ruler.json';
             )
             > 0
           ||| % [
-            $.jobMatcher($._config.job_names.ruler),
-            $.jobMatcher($._config.job_names.ruler),
-            $.jobMatcher($._config.job_names.ruler),
+            $.jobContainerMatchers($._config.job_names.ruler, $._config.container_names.ruler),
+            $.jobContainerMatchers($._config.job_names.ruler, $._config.container_names.ruler),
+            $.jobContainerMatchers($._config.job_names.ruler, $._config.container_names.ruler),
           ],
         ], [
           '{{user}} - errors',
@@ -286,7 +286,7 @@ local filename = 'mimir-ruler.json';
           sum by(user) (cortex_prometheus_notifications_queue_length{%s})
             /
           sum by(user) (cortex_prometheus_notifications_queue_capacity{%s}) > 0
-        ||| % [$.jobMatcher($._config.job_names.ruler), $.jobMatcher($._config.job_names.ruler)], '{{ user }}') +
+        ||| % [$.jobContainerMatchers($._config.job_names.ruler, $._config.container_names.ruler), $.jobContainerMatchers($._config.job_names.ruler, $._config.container_names.ruler)], '{{ user }}') +
         { fieldConfig+: { defaults+: { unit: 'percentunit', min: 0, max: 1 } } }
       )
     )
@@ -294,7 +294,7 @@ local filename = 'mimir-ruler.json';
       ($.row('Group evaluations') + { collapse: true })
       .addPanel(
         $.timeseriesPanel('Missed iterations') +
-        $.queryPanel('sum by(user) (rate(cortex_prometheus_rule_group_iterations_missed_total{%s}[$__rate_interval])) > 0' % $.jobMatcher($._config.job_names.ruler), '{{ user }}'),
+        $.queryPanel('sum by(user) (rate(cortex_prometheus_rule_group_iterations_missed_total{%s}[$__rate_interval])) > 0' % $.jobContainerMatchers($._config.job_names.ruler, $._config.container_names.ruler), '{{ user }}'),
       )
       .addPanel(
         $.timeseriesPanel('Latency') +
@@ -303,7 +303,7 @@ local filename = 'mimir-ruler.json';
             rate(cortex_prometheus_rule_group_duration_seconds_sum{%s}[$__rate_interval])
               /
             rate(cortex_prometheus_rule_group_duration_seconds_count{%s}[$__rate_interval])
-          ||| % [$.jobMatcher($._config.job_names.ruler), $.jobMatcher($._config.job_names.ruler)],
+          ||| % [$.jobContainerMatchers($._config.job_names.ruler, $._config.container_names.ruler), $.jobContainerMatchers($._config.job_names.ruler, $._config.container_names.ruler)],
           '{{ user }}'
         ) +
         { fieldConfig+: { defaults+: { unit: 's' } } },
@@ -311,7 +311,7 @@ local filename = 'mimir-ruler.json';
       .addPanel(
         $.timeseriesPanel('Failures') +
         $.queryPanel(
-          'sum by(rule_group) (rate(cortex_prometheus_rule_evaluation_failures_total{%s}[$__rate_interval])) > 0' % [$.jobMatcher($._config.job_names.ruler)], '{{ rule_group }}'
+          'sum by(rule_group) (rate(cortex_prometheus_rule_evaluation_failures_total{%s}[$__rate_interval])) > 0' % [$.jobContainerMatchers($._config.job_names.ruler, $._config.container_names.ruler)], '{{ rule_group }}'
         )
       )
     )
@@ -324,7 +324,7 @@ local filename = 'mimir-ruler.json';
             sum by(user) (rate(cortex_prometheus_rule_evaluation_duration_seconds_sum{%s}[$__rate_interval]))
               /
             sum by(user) (rate(cortex_prometheus_rule_evaluation_duration_seconds_count{%s}[$__rate_interval]))
-          ||| % [$.jobMatcher($._config.job_names.ruler), $.jobMatcher($._config.job_names.ruler)],
+          ||| % [$.jobContainerMatchers($._config.job_names.ruler, $._config.container_names.ruler), $.jobContainerMatchers($._config.job_names.ruler, $._config.container_names.ruler)],
           '{{ user }}'
         ) +
         { fieldConfig+: { defaults+: { unit: 's' } } },

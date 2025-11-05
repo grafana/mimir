@@ -25,7 +25,7 @@ local filename = 'mimir-alertmanager.json';
       )
       .addPanel(
         $.panel('Tenants') +
-        $.statPanel('max(cortex_alertmanager_tenants_discovered{%s})' % $.jobMatcher($._config.job_names.alertmanager), format='short')
+        $.statPanel('max(cortex_alertmanager_tenants_discovered{%s})' % $.jobContainerMatchers($._config.job_names.alertmanager, $._config.container_names.alertmanager), format='short')
       )
     )
     .addRow(
@@ -65,7 +65,7 @@ local filename = 'mimir-alertmanager.json';
       .addPanel(
         $.timeseriesPanel('per %s Active Aggregation Groups' % $._config.per_instance_label) +
         $.queryPanel(
-          'cortex_alertmanager_dispatcher_aggregation_groups{%s}' % $.jobMatcher($._config.job_names.alertmanager),
+          'cortex_alertmanager_dispatcher_aggregation_groups{%s}' % $.jobContainerMatchers($._config.job_names.alertmanager, $._config.container_names.alertmanager),
           '{{%s}}' % $._config.per_instance_label
         ) +
         $.stack
@@ -105,7 +105,7 @@ local filename = 'mimir-alertmanager.json';
       )
       .addPanel(
         $.timeseriesPanel('Latency') +
-        $.latencyPanel('cortex_alertmanager_notification_latency_seconds', '{%s}' % $.jobMatcher($._config.job_names.alertmanager))
+        $.latencyPanel('cortex_alertmanager_notification_latency_seconds', '{%s}' % $.jobContainerMatchers($._config.job_names.alertmanager, $._config.container_names.alertmanager))
       )
     )
     .addRowIf(
@@ -128,7 +128,7 @@ local filename = 'mimir-alertmanager.json';
       .addPanel(
         $.timeseriesPanel('Per %s tenants' % $._config.per_instance_label) +
         $.queryPanel(
-          'max by(%s) (cortex_alertmanager_tenants_owned{%s})' % [$._config.per_instance_label, $.jobMatcher($._config.job_names.alertmanager)],
+          'max by(%s) (cortex_alertmanager_tenants_owned{%s})' % [$._config.per_instance_label, $.jobContainerMatchers($._config.job_names.alertmanager, $._config.container_names.alertmanager)],
           '{{%s}}' % $._config.per_instance_label
         ) +
         $.stack
@@ -159,21 +159,21 @@ local filename = 'mimir-alertmanager.json';
             sum(rate(cortex_alertmanager_sync_configs_total{%s}[$__rate_interval]))
             -
             sum(rate(cortex_alertmanager_sync_configs_failed_total{%s}[$__rate_interval]))
-          ||| % [$.jobMatcher($._config.job_names.alertmanager), $.jobMatcher($._config.job_names.alertmanager)],
-          'sum(rate(cortex_alertmanager_sync_configs_failed_total{%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.alertmanager),
+          ||| % [$.jobContainerMatchers($._config.job_names.alertmanager, $._config.container_names.alertmanager), $.jobContainerMatchers($._config.job_names.alertmanager, $._config.container_names.alertmanager)],
+          'sum(rate(cortex_alertmanager_sync_configs_failed_total{%s}[$__rate_interval]))' % $.jobContainerMatchers($._config.job_names.alertmanager, $._config.container_names.alertmanager),
         )
       )
       .addPanel(
         $.timeseriesPanel('Syncs/sec (by reason)') +
         $.queryPanel(
-          'sum by(reason) (rate(cortex_alertmanager_sync_configs_total{%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.alertmanager),
+          'sum by(reason) (rate(cortex_alertmanager_sync_configs_total{%s}[$__rate_interval]))' % $.jobContainerMatchers($._config.job_names.alertmanager, $._config.container_names.alertmanager),
           '{{reason}}'
         )
       )
       .addPanel(
         $.timeseriesPanel('Ring check errors/sec') +
         $.queryPanel(
-          'sum (rate(cortex_alertmanager_ring_check_errors_total{%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.alertmanager),
+          'sum (rate(cortex_alertmanager_ring_check_errors_total{%s}[$__rate_interval]))' % $.jobContainerMatchers($._config.job_names.alertmanager, $._config.container_names.alertmanager),
           'errors'
         )
       )
@@ -183,7 +183,7 @@ local filename = 'mimir-alertmanager.json';
       .addPanel(
         $.timeseriesPanel('Initial syncs /sec') +
         $.queryPanel(
-          'sum by(outcome) (rate(cortex_alertmanager_state_initial_sync_completed_total{%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.alertmanager),
+          'sum by(outcome) (rate(cortex_alertmanager_state_initial_sync_completed_total{%s}[$__rate_interval]))' % $.jobContainerMatchers($._config.job_names.alertmanager, $._config.container_names.alertmanager),
           '{{outcome}}'
         ) + {
           targets: [
@@ -196,7 +196,7 @@ local filename = 'mimir-alertmanager.json';
       )
       .addPanel(
         $.timeseriesPanel('Initial sync duration') +
-        $.latencyPanel('cortex_alertmanager_state_initial_sync_duration_seconds', '{%s}' % $.jobMatcher($._config.job_names.alertmanager)) + {
+        $.latencyPanel('cortex_alertmanager_state_initial_sync_duration_seconds', '{%s}' % $.jobContainerMatchers($._config.job_names.alertmanager, $._config.container_names.alertmanager)) + {
           targets: [
             target {
               interval: '1m',
@@ -212,8 +212,8 @@ local filename = 'mimir-alertmanager.json';
             sum(rate(cortex_alertmanager_state_fetch_replica_state_total{%s}[$__rate_interval]))
             -
             sum(rate(cortex_alertmanager_state_fetch_replica_state_failed_total{%s}[$__rate_interval]))
-          ||| % [$.jobMatcher($._config.job_names.alertmanager), $.jobMatcher($._config.job_names.alertmanager)],
-          'sum(rate(cortex_alertmanager_state_fetch_replica_state_failed_total{%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.alertmanager),
+          ||| % [$.jobContainerMatchers($._config.job_names.alertmanager, $._config.container_names.alertmanager), $.jobContainerMatchers($._config.job_names.alertmanager, $._config.container_names.alertmanager)],
+          'sum(rate(cortex_alertmanager_state_fetch_replica_state_failed_total{%s}[$__rate_interval]))' % $.jobContainerMatchers($._config.job_names.alertmanager, $._config.container_names.alertmanager),
         ) + {
           targets: [
             target {
@@ -267,8 +267,8 @@ local filename = 'mimir-alertmanager.json';
             sum(rate(cortex_alertmanager_state_persist_total{%s}[$__rate_interval]))
             -
             sum(rate(cortex_alertmanager_state_persist_failed_total{%s}[$__rate_interval]))
-          ||| % [$.jobMatcher($._config.job_names.alertmanager), $.jobMatcher($._config.job_names.alertmanager)],
-          'sum(rate(cortex_alertmanager_state_persist_failed_total{%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.alertmanager),
+          ||| % [$.jobContainerMatchers($._config.job_names.alertmanager, $._config.container_names.alertmanager), $.jobContainerMatchers($._config.job_names.alertmanager, $._config.container_names.alertmanager)],
+          'sum(rate(cortex_alertmanager_state_persist_failed_total{%s}[$__rate_interval]))' % $.jobContainerMatchers($._config.job_names.alertmanager, $._config.container_names.alertmanager),
         )
       )
     ),

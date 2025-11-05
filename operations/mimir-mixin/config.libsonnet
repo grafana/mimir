@@ -122,6 +122,7 @@
       federation_frontend: ['federation-frontend.*'],  // Match federation-frontend deployments
     },
 
+
     // Name selectors for different application instances, using the "per_instance_label".
     instance_names: {
       // Wrap the regexp into an Helm compatible matcher if the deployment type is "kubernetes".
@@ -180,6 +181,7 @@
       alertmanager: componentNameRegexp.alertmanager,
       alertmanager_im: componentNameRegexp.alertmanager_im,
       compactor: componentNameRegexp.compactor,
+      overrides_exporter: componentNameRegexp.overrides_exporter,
 
       // The following are container matchers used to select all components in a given "path".
       local componentsGroupMatcher = function(components) std.join('|', std.map(function(name) componentNameRegexp[name], components)),

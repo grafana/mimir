@@ -40,7 +40,7 @@ local filename = 'mimir-reads.json';
        })
       .addPanel(
         local addRuleEvalRate(q) = {
-          local ruleEvalRate = ' + sum(rate(cortex_prometheus_rule_evaluations_total{' + $.jobMatcher($._config.job_names.ruler) + '}[$__rate_interval]))',
+          local ruleEvalRate = ' + sum(rate(cortex_prometheus_rule_evaluations_total{' + $.jobContainerMatchers($._config.job_names.ruler, $._config.container_names.ruler) + '}[$__rate_interval]))',
           classic: q.classic + ruleEvalRate,
           native: q.native + ruleEvalRate,
         };
@@ -284,7 +284,7 @@ local filename = 'mimir-reads.json';
         $.panelDescription('Replicas', 'Number of store-gateway replicas per zone.') +
         $.queryPanel(
           [
-            'sum by (%s) (up{%s})' % [$._config.per_job_label, $.jobMatcher($._config.job_names.store_gateway)],
+            'sum by (%s) (up{%s})' % [$._config.per_job_label, $.jobContainerMatchers($._config.job_names.store_gateway, $._config.container_names.store_gateway)],
           ],
           [
             '{{ %(per_job_label)s }}' % $._config.per_job_label,
@@ -316,7 +316,7 @@ local filename = 'mimir-reads.json';
                 }[$__rate_interval]
               )
             )
-          ||| % $.jobMatcher($._config.job_names.store_gateway),
+          ||| % $.jobContainerMatchers($._config.job_names.store_gateway, $._config.container_names.store_gateway),
           '{{operation}}'
         ) +
         $.stack +
@@ -333,7 +333,7 @@ local filename = 'mimir-reads.json';
               component="store-gateway",
               name="index-cache"
             }
-          ||| % $.jobMatcher($._config.job_names.store_gateway)
+          ||| % $.jobContainerMatchers($._config.job_names.store_gateway, $._config.container_names.store_gateway)
         )
       )
       .addPanel(
@@ -358,8 +358,8 @@ local filename = 'mimir-reads.json';
               )
             )
           ||| % [
-            $.jobMatcher($._config.job_names.store_gateway),
-            $.jobMatcher($._config.job_names.store_gateway),
+            $.jobContainerMatchers($._config.job_names.store_gateway, $._config.container_names.store_gateway),
+            $.jobContainerMatchers($._config.job_names.store_gateway, $._config.container_names.store_gateway),
           ],
           '{{item_type}}'
         ) +
@@ -376,7 +376,7 @@ local filename = 'mimir-reads.json';
     .addRow(
       $.thanosMemcachedCache(
         'Memcached – chunks cache (store-gateway accesses)',
-        $._config.job_names.store_gateway,
+        $.jobContainerMatchers($._config.job_names.store_gateway, $._config.container_names.store_gateway),
         'store-gateway',
         'chunks-cache'
       )
@@ -384,7 +384,7 @@ local filename = 'mimir-reads.json';
     .addRow(
       $.thanosMemcachedCache(
         'Memcached – metadata cache (store-gateway accesses)',
-        $._config.job_names.store_gateway,
+        $.jobContainerMatchers($._config.job_names.store_gateway, $._config.container_names.store_gateway),
         'store-gateway',
         'metadata-cache'
       )
@@ -392,7 +392,7 @@ local filename = 'mimir-reads.json';
     .addRow(
       $.thanosMemcachedCache(
         'Memcached – metadata cache (querier accesses)',
-        $._config.job_names.querier,
+        $.jobContainerMatchers($._config.job_names.querier, $._config.container_names.querier),
         'querier',
         'metadata-cache'
       )
@@ -412,7 +412,7 @@ local filename = 'mimir-reads.json';
         $.timeseriesPanel('Ingester per %s queued requests' % $._config.per_instance_label) +
         $.hiddenLegendQueryPanel(
           'sum by (%s) (cortex_ingester_reactive_limiter_queued_requests{%s, request_type="read"})'
-          % [$._config.per_instance_label, $.jobMatcher($._config.job_names.ingester)], '',
+          % [$._config.per_instance_label, $.jobContainerMatchers($._config.job_names.ingester, $._config.container_names.ingester)], '',
         ) +
         { fieldConfig+: { defaults+: { unit: 'req' } } }
       )
@@ -420,7 +420,7 @@ local filename = 'mimir-reads.json';
         $.timeseriesPanel('Ingester per %s inflight requests' % $._config.per_instance_label) +
         $.hiddenLegendQueryPanel(
           'sum by (%s) (cortex_ingester_reactive_limiter_inflight_requests{%s, request_type="read"})'
-          % [$._config.per_instance_label, $.jobMatcher($._config.job_names.ingester)], '',
+          % [$._config.per_instance_label, $.jobContainerMatchers($._config.job_names.ingester, $._config.container_names.ingester)], '',
         ) +
         { fieldConfig+: { defaults+: { unit: 'req' } } }
       )
@@ -428,7 +428,7 @@ local filename = 'mimir-reads.json';
         $.timeseriesPanel('Ingester per %s inflight request limit' % $._config.per_instance_label) +
         $.hiddenLegendQueryPanel(
           'sum by (%s) (cortex_ingester_reactive_limiter_inflight_limit{%s, request_type="read"})'
-          % [$._config.per_instance_label, $.jobMatcher($._config.job_names.ingester)], '',
+          % [$._config.per_instance_label, $.jobContainerMatchers($._config.job_names.ingester, $._config.container_names.ingester)], '',
         ) +
         { fieldConfig+: { defaults+: { unit: 'req' } } }
       )
@@ -436,7 +436,7 @@ local filename = 'mimir-reads.json';
         $.timeseriesPanel('Rejected ingester requests') +
         $.queryPanel(
           'sum by (reason) (rate(cortex_ingester_instance_rejected_requests_total{%s, reason="ingester_max_inflight_read_requests"}[$__rate_interval]))'
-          % $.jobMatcher($._config.job_names.ingester),
+          % $.jobContainerMatchers($._config.job_names.ingester, $._config.container_names.ingester),
           '{{reason}}',
         ) +
         { fieldConfig+: { defaults+: { unit: 'reqps' } } }

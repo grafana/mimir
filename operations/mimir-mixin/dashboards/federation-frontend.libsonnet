@@ -15,7 +15,7 @@ local filename = 'federation-frontend.json';
       $.row('Overview')
       .addPanel(
         $.timeseriesPanel('Requests / sec') +
-        $.qpsPanel('cortex_request_duration_seconds_count{%s, route=~"%s"}' % [$.jobMatcher($._config.job_names.federation_frontend), $.queries.read_http_routes_regex]) +
+        $.qpsPanel('cortex_request_duration_seconds_count{%s, route=~"%s"}' % [$.jobContainerMatchers($._config.job_names.federation_frontend, $._config.container_names.federation_frontend), $.queries.read_http_routes_regex]) +
         $.panelDescription(
           'Requests / sec',
           |||
@@ -39,7 +39,7 @@ local filename = 'federation-frontend.json';
         $.hiddenLegendQueryPanel(
           'histogram_quantile(0.99, sum by(le, %s) (rate(cortex_request_duration_seconds_bucket{%s, route=~"%s"}[$__rate_interval])))' % [
             $._config.per_instance_label,
-            $.jobMatcher($._config.job_names.federation_frontend),
+            $.jobContainerMatchers($._config.job_names.federation_frontend, $._config.container_names.federation_frontend),
             $.queries.read_http_routes_regex,
           ],
           ''
@@ -65,7 +65,7 @@ local filename = 'federation-frontend.json';
         // This panel graphs the cortex_request_duration_seconds_count metric by `route`
         $.queryPanel(
           'sum by (route) (rate(cortex_request_duration_seconds_count{%s, route=~"%s"}[$__rate_interval]))' %
-          [$.jobMatcher($._config.job_names.federation_frontend), $.queries.read_http_routes_regex],
+          [$.jobContainerMatchers($._config.job_names.federation_frontend, $._config.container_names.federation_frontend), $.queries.read_http_routes_regex],
           '{{route}}'
         ) +
         { fieldConfig+: { defaults+: { unit: 'reqps' } } }
@@ -75,7 +75,7 @@ local filename = 'federation-frontend.json';
         // This panel computes p99 latency per route using histogram_quantile with grouping by `route`
         $.queryPanel(
           'histogram_quantile(0.99, sum by(le, route) (rate(cortex_request_duration_seconds_bucket{%s, route=~"%s"}[$__rate_interval])))' %
-          [$.jobMatcher($._config.job_names.federation_frontend), $.queries.read_http_routes_regex],
+          [$.jobContainerMatchers($._config.job_names.federation_frontend, $._config.container_names.federation_frontend), $.queries.read_http_routes_regex],
           '{{route}}'
         ) +
         { fieldConfig+: { defaults+: { unit: 's' } } }
@@ -89,7 +89,7 @@ local filename = 'federation-frontend.json';
           |||
             sum(rate(cortex_federation_frontend_cluster_sharding_rewrites_succeeded_total{%s}[$__rate_interval])) /
             sum(rate(cortex_federation_frontend_cluster_sharding_rewrites_attempted_total{%s}[$__rate_interval]))
-          ||| % [$.jobMatcher($._config.job_names.federation_frontend), $.jobMatcher($._config.job_names.federation_frontend)],
+          ||| % [$.jobContainerMatchers($._config.job_names.federation_frontend, $._config.container_names.federation_frontend), $.jobContainerMatchers($._config.job_names.federation_frontend, $._config.container_names.federation_frontend)],
           ' ',
         )
         { fieldConfig+: { defaults+: { unit: 'percentunit', min: 0, max: 1 } } } +
@@ -105,7 +105,7 @@ local filename = 'federation-frontend.json';
       )
       .addPanel(
         $.timeseriesPanel('Number of sharded queries per query') +
-        $.latencyPanel('cortex_federation_frontend_cluster_sharded_queries_per_query', '{%s}' % $.jobMatcher($._config.job_names.federation_frontend), multiplier=1) +
+        $.latencyPanel('cortex_federation_frontend_cluster_sharded_queries_per_query', '{%s}' % $.jobContainerMatchers($._config.job_names.federation_frontend, $._config.container_names.federation_frontend), multiplier=1) +
         { fieldConfig+: { defaults+: { unit: 'short' } } } +
         $.panelDescription(
           'Number of sharded queries per shardable query',
@@ -122,7 +122,7 @@ local filename = 'federation-frontend.json';
         $.timeseriesPanel('Complete response ratio quantiles') +
         $.queryPanel(
           '1 - avg by (quantile) (cortex_federation_frontend_partial_results{%s})' %
-          [$.jobMatcher($._config.job_names.federation_frontend)],
+          [$.jobContainerMatchers($._config.job_names.federation_frontend, $._config.container_names.federation_frontend)],
           '{{quantile}}'
         ) +
         {
@@ -159,7 +159,7 @@ local filename = 'federation-frontend.json';
       }
       .addPanel(
         $.timeseriesPanel('Remote requests / sec by status') +
-        $.qpsPanel('cortex_federation_frontend_cluster_remote_latency_seconds_count{remote_cluster=~"$remote_cluster", %s}' % $.jobMatcher($._config.job_names.federation_frontend)) +
+        $.qpsPanel('cortex_federation_frontend_cluster_remote_latency_seconds_count{remote_cluster=~"$remote_cluster", %s}' % $.jobContainerMatchers($._config.job_names.federation_frontend, $._config.container_names.federation_frontend)) +
         { fieldConfig+: { defaults+: { unit: 'reqps' } } } +
         $.aliasColors({
           client_error: 'orange',
@@ -178,7 +178,7 @@ local filename = 'federation-frontend.json';
       .addPanel(
         $.timeseriesPanel('Remote requests / sec by request type') +
         $.queryPanel(
-          'sum by (request_type) (rate(cortex_federation_frontend_cluster_remote_latency_seconds_count{remote_cluster=~"$remote_cluster", %s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.federation_frontend),
+          'sum by (request_type) (rate(cortex_federation_frontend_cluster_remote_latency_seconds_count{remote_cluster=~"$remote_cluster", %s}[$__rate_interval]))' % $.jobContainerMatchers($._config.job_names.federation_frontend, $._config.container_names.federation_frontend),
           ['{{request_type}}'],
         ) +
         $.stack +
@@ -194,15 +194,15 @@ local filename = 'federation-frontend.json';
         $.timeseriesPanel('Remote latency') +
         $.queryPanel(
           [
-            'histogram_quantile(0.99, sum by(le, remote_cluster) (rate(cortex_federation_frontend_cluster_remote_latency_seconds_bucket{remote_cluster=~"$remote_cluster", %s}[$__rate_interval])))' % $.jobMatcher($._config.job_names.federation_frontend),
-            'histogram_quantile(0.50, sum by(le, remote_cluster) (rate(cortex_federation_frontend_cluster_remote_latency_seconds_bucket{remote_cluster=~"$remote_cluster", %s}[$__rate_interval])))' % $.jobMatcher($._config.job_names.federation_frontend),
+            'histogram_quantile(0.99, sum by(le, remote_cluster) (rate(cortex_federation_frontend_cluster_remote_latency_seconds_bucket{remote_cluster=~"$remote_cluster", %s}[$__rate_interval])))' % $.jobContainerMatchers($._config.job_names.federation_frontend, $._config.container_names.federation_frontend),
+            'histogram_quantile(0.50, sum by(le, remote_cluster) (rate(cortex_federation_frontend_cluster_remote_latency_seconds_bucket{remote_cluster=~"$remote_cluster", %s}[$__rate_interval])))' % $.jobContainerMatchers($._config.job_names.federation_frontend, $._config.container_names.federation_frontend),
             |||
               sum(rate(cortex_federation_frontend_cluster_remote_latency_seconds_sum{remote_cluster=~"$remote_cluster", %s}[$__rate_interval]))
               /
               sum(rate(cortex_federation_frontend_cluster_remote_latency_seconds_count{remote_cluster=~"$remote_cluster", %s}[$__rate_interval]))
             ||| % [
-              $.jobMatcher($._config.job_names.federation_frontend),
-              $.jobMatcher($._config.job_names.federation_frontend),
+              $.jobContainerMatchers($._config.job_names.federation_frontend, $._config.container_names.federation_frontend),
+              $.jobContainerMatchers($._config.job_names.federation_frontend, $._config.container_names.federation_frontend),
             ],
           ],
           ['99th Percentile', '50th Percentile', 'Average']

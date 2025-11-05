@@ -63,7 +63,7 @@ local filename = 'mimir-writes.json';
         local title = 'In-memory series';
         $.panel(title) +
         $.statPanel(
-          $.queries.ingester.ingestOrClassicDeduplicatedQuery('cortex_ingester_memory_series{%s}' % [$.jobMatcher($._config.job_names.ingester)]),
+          $.queries.ingester.ingestOrClassicDeduplicatedQuery('cortex_ingester_memory_series{%s}' % [$.jobContainerMatchers($._config.job_names.ingester, $._config.container_names.ingester)]),
           format='short'
         ) +
         $.panelDescription(
@@ -79,7 +79,7 @@ local filename = 'mimir-writes.json';
         local title = 'Exemplars in ingesters';
         $.panel(title) +
         $.statPanel(
-          $.queries.ingester.ingestOrClassicDeduplicatedQuery('cortex_ingester_tsdb_exemplar_exemplars_in_storage{%s}' % [$.jobMatcher($._config.job_names.ingester)]),
+          $.queries.ingester.ingestOrClassicDeduplicatedQuery('cortex_ingester_tsdb_exemplar_exemplars_in_storage{%s}' % [$.jobContainerMatchers($._config.job_names.ingester, $._config.container_names.ingester)]),
           format='short'
         ) +
         $.panelDescription(
@@ -93,7 +93,7 @@ local filename = 'mimir-writes.json';
       )
       .addPanel(
         $.panel('Tenants') +
-        $.statPanel('count(count by(user) (cortex_ingester_active_series{%s}))' % $.jobMatcher($._config.job_names.ingester), format='short')
+        $.statPanel('count(count by(user) (cortex_ingester_active_series{%s}))' % $.jobContainerMatchers($._config.job_names.ingester, $._config.container_names.ingester), format='short')
       )
       .addPanelIf(
         $._config.gateway_enabled,
@@ -170,7 +170,7 @@ local filename = 'mimir-writes.json';
       $.row('Added latency')
       .addPanel(
         $.timeseriesPanel('Request added latency') +
-        $.requestAddedLatencyPanelNativeHistogram($.queries.request_added_latency_metric, $.jobMatcher($._config.job_names.gateway))
+        $.requestAddedLatencyPanelNativeHistogram($.queries.request_added_latency_metric, $.jobContainerMatchers($._config.job_names.gateway, $._config.container_names.gateway))
       )
     )
     .addRow(
@@ -192,7 +192,7 @@ local filename = 'mimir-writes.json';
             targets: [
               {
                 legendLink: null,
-                expr: 'sum (rate(cortex_distributor_instance_rejected_requests_total{%s}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.distributor)],
+                expr: 'sum (rate(cortex_distributor_instance_rejected_requests_total{%s}[$__rate_interval]))' % [$.jobContainerMatchers($._config.job_names.distributor, $._config.container_names.distributor)],
                 format: 'time_series',
                 intervalFactor: 2,
                 legendFormat: 'rejected',
@@ -244,7 +244,7 @@ local filename = 'mimir-writes.json';
             targets: [
               {
                 legendLink: null,
-                expr: 'sum (rate(cortex_ingester_instance_rejected_requests_total{%s, reason=~"ingester_max_inflight_push_requests|ingester_max_ingestion_rate"}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.ingester)],
+                expr: 'sum (rate(cortex_ingester_instance_rejected_requests_total{%s, reason=~"ingester_max_inflight_push_requests|ingester_max_ingestion_rate"}[$__rate_interval]))' % [$.jobContainerMatchers($._config.job_names.ingester, $._config.container_names.ingester)],
                 format: 'time_series',
                 intervalFactor: 2,
                 legendFormat: 'rejected',
@@ -283,10 +283,10 @@ local filename = 'mimir-writes.json';
               sum (rate (cortex_ingest_storage_reader_fetches_total{%s}[$__rate_interval]))
               -
               sum (rate (cortex_ingest_storage_reader_fetch_errors_total{%s}[$__rate_interval]))
-            ||| % [$.jobMatcher($._config.job_names.ingester), $.jobMatcher($._config.job_names.ingester)],
-            'sum (rate (cortex_ingest_storage_reader_fetch_errors_total{%s}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.ingester)],
+            ||| % [$.jobContainerMatchers($._config.job_names.ingester, $._config.container_names.ingester), $.jobContainerMatchers($._config.job_names.ingester, $._config.container_names.ingester)],
+            'sum (rate (cortex_ingest_storage_reader_fetch_errors_total{%s}[$__rate_interval]))' % [$.jobContainerMatchers($._config.job_names.ingester, $._config.container_names.ingester)],
             // cortex_ingest_storage_reader_read_errors_total metric is reported by Kafka client.
-            'sum (rate (cortex_ingest_storage_reader_read_errors_total{%s}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.ingester)],
+            'sum (rate (cortex_ingest_storage_reader_read_errors_total{%s}[$__rate_interval]))' % [$.jobContainerMatchers($._config.job_names.ingester, $._config.container_names.ingester)],
           ],
           [
             'successful',
@@ -310,8 +310,8 @@ local filename = 'mimir-writes.json';
         ) +
         $.withExemplars($.queryPanel(
           [
-            'histogram_avg(sum(rate(cortex_ingest_storage_reader_records_batch_process_duration_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
-            'histogram_avg(sum(rate(cortex_ingest_storage_reader_records_batch_wait_duration_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
+            'histogram_avg(sum(rate(cortex_ingest_storage_reader_records_batch_process_duration_seconds{%s}[$__rate_interval])))' % [$.jobContainerMatchers($._config.job_names.ingester, $._config.container_names.ingester)],
+            'histogram_avg(sum(rate(cortex_ingest_storage_reader_records_batch_wait_duration_seconds{%s}[$__rate_interval])))' % [$.jobContainerMatchers($._config.job_names.ingester, $._config.container_names.ingester)],
           ],
           [
             'Batch processing avg',
@@ -338,11 +338,11 @@ local filename = 'mimir-writes.json';
             sum(rate(cortex_ingest_storage_reader_fetch_bytes_total{%s}[$__rate_interval]))
             /
             sum(rate(cortex_ingest_storage_reader_records_per_fetch_sum{%s}[$__rate_interval]))
-          ||| % [$.jobMatcher($._config.job_names.ingester), $.jobMatcher($._config.job_names.ingester)],
+          ||| % [$.jobContainerMatchers($._config.job_names.ingester, $._config.container_names.ingester), $.jobContainerMatchers($._config.job_names.ingester, $._config.container_names.ingester)],
           |||
             histogram_avg(sum(rate(cortex_ingest_storage_reader_estimated_bytes_per_record{%s}[$__rate_interval])))
           |||
-          % [$.jobMatcher($._config.job_names.ingester)],
+          % [$.jobContainerMatchers($._config.job_names.ingester, $._config.container_names.ingester)],
         ], [
           'Actual bytes per record (avg)',
           'Estimated bytes per record (avg)',
@@ -369,8 +369,8 @@ local filename = 'mimir-writes.json';
           |||
         ) +
         $.queryPanel([
-          'sum(rate(cortex_ingest_storage_reader_fetch_bytes_total{%s}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.ingester)],
-          'sum(rate(cortex_ingest_storage_reader_fetched_discarded_bytes_total{%s}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.ingester)],
+          'sum(rate(cortex_ingest_storage_reader_fetch_bytes_total{%s}[$__rate_interval]))' % [$.jobContainerMatchers($._config.job_names.ingester, $._config.container_names.ingester)],
+          'sum(rate(cortex_ingest_storage_reader_fetched_discarded_bytes_total{%s}[$__rate_interval]))' % [$.jobContainerMatchers($._config.job_names.ingester, $._config.container_names.ingester)],
         ], [
           'Fetched bytes (decompressed)',
           'Discarded bytes (decompressed)',
@@ -405,19 +405,19 @@ local filename = 'mimir-writes.json';
                 or
                 rate(cortex_ingest_storage_reader_requests_failed_total{%s}[$__rate_interval])
               )
-            ||| % [$.jobMatcher($._config.job_names.ingester), $.jobMatcher($._config.job_names.ingester), $.jobMatcher($._config.job_names.ingester), $.jobMatcher($._config.job_names.ingester)],
+            ||| % [$.jobContainerMatchers($._config.job_names.ingester, $._config.container_names.ingester), $.jobContainerMatchers($._config.job_names.ingester, $._config.container_names.ingester), $.jobContainerMatchers($._config.job_names.ingester, $._config.container_names.ingester), $.jobContainerMatchers($._config.job_names.ingester, $._config.container_names.ingester)],
             'sum (
                 # This is the old metric name. We\'re keeping support for backward compatibility.
                 rate(cortex_ingest_storage_reader_records_failed_total{%s, cause="client"}[$__rate_interval])
                 or
                 rate(cortex_ingest_storage_reader_requests_failed_total{%s, cause="client"}[$__rate_interval])
-              )' % [$.jobMatcher($._config.job_names.ingester), $.jobMatcher($._config.job_names.ingester)],
+              )' % [$.jobContainerMatchers($._config.job_names.ingester, $._config.container_names.ingester), $.jobContainerMatchers($._config.job_names.ingester, $._config.container_names.ingester)],
             'sum (
               # This is the old metric name. We\'re keeping support for backward compatibility.
               rate(cortex_ingest_storage_reader_records_failed_total{%s, cause="server"}[$__rate_interval])
               or
               rate(cortex_ingest_storage_reader_requests_failed_total{%s, cause="server"}[$__rate_interval])
-            )' % [$.jobMatcher($._config.job_names.ingester), $.jobMatcher($._config.job_names.ingester)],
+            )' % [$.jobContainerMatchers($._config.job_names.ingester, $._config.container_names.ingester), $.jobContainerMatchers($._config.job_names.ingester, $._config.container_names.ingester)],
           ],
           [
             'successful',
@@ -437,8 +437,8 @@ local filename = 'mimir-writes.json';
           |||
         ) +
         $.queryPanel([
-          'histogram_sum(sum(rate(cortex_ingest_storage_reader_pusher_timeseries_per_flush{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
-          'sum(rate(cortex_ingest_storage_reader_pusher_estimated_timeseries_total{%s}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.ingester)],
+          'histogram_sum(sum(rate(cortex_ingest_storage_reader_pusher_timeseries_per_flush{%s}[$__rate_interval])))' % [$.jobContainerMatchers($._config.job_names.ingester, $._config.container_names.ingester)],
+          'sum(rate(cortex_ingest_storage_reader_pusher_estimated_timeseries_total{%s}[$__rate_interval]))' % [$.jobContainerMatchers($._config.job_names.ingester, $._config.container_names.ingester)],
         ], [
           'Actual series',
           'Estimated series',
@@ -476,8 +476,8 @@ local filename = 'mimir-writes.json';
               sum (rate (cortex_ingest_storage_reader_offset_commit_requests_total{%s}[$__rate_interval]))
               -
               sum (rate (cortex_ingest_storage_reader_offset_commit_failures_total{%s}[$__rate_interval]))
-            ||| % [$.jobMatcher($._config.job_names.ingester), $.jobMatcher($._config.job_names.ingester)],
-            'sum (rate (cortex_ingest_storage_reader_offset_commit_failures_total{%s}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.ingester)],
+            ||| % [$.jobContainerMatchers($._config.job_names.ingester, $._config.container_names.ingester), $.jobContainerMatchers($._config.job_names.ingester, $._config.container_names.ingester)],
+            'sum (rate (cortex_ingest_storage_reader_offset_commit_failures_total{%s}[$__rate_interval]))' % [$.jobContainerMatchers($._config.job_names.ingester, $._config.container_names.ingester)],
           ],
           [
             'successful',
@@ -495,10 +495,10 @@ local filename = 'mimir-writes.json';
         ) +
         $.queryPanel(
           [
-            'histogram_avg(sum(rate(cortex_ingest_storage_reader_offset_commit_request_duration_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
-            'histogram_quantile(0.99, sum(rate(cortex_ingest_storage_reader_offset_commit_request_duration_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
-            'histogram_quantile(0.999, sum(rate(cortex_ingest_storage_reader_offset_commit_request_duration_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
-            'histogram_quantile(1.0, sum(rate(cortex_ingest_storage_reader_offset_commit_request_duration_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
+            'histogram_avg(sum(rate(cortex_ingest_storage_reader_offset_commit_request_duration_seconds{%s}[$__rate_interval])))' % [$.jobContainerMatchers($._config.job_names.ingester, $._config.container_names.ingester)],
+            'histogram_quantile(0.99, sum(rate(cortex_ingest_storage_reader_offset_commit_request_duration_seconds{%s}[$__rate_interval])))' % [$.jobContainerMatchers($._config.job_names.ingester, $._config.container_names.ingester)],
+            'histogram_quantile(0.999, sum(rate(cortex_ingest_storage_reader_offset_commit_request_duration_seconds{%s}[$__rate_interval])))' % [$.jobContainerMatchers($._config.job_names.ingester, $._config.container_names.ingester)],
+            'histogram_quantile(1.0, sum(rate(cortex_ingest_storage_reader_offset_commit_request_duration_seconds{%s}[$__rate_interval])))' % [$.jobContainerMatchers($._config.job_names.ingester, $._config.container_names.ingester)],
           ],
           [
             'avg',
@@ -561,8 +561,8 @@ local filename = 'mimir-writes.json';
           |||
         ) + $.queryPanel(
           [
-            'sum by (%s) (up{%s})' % [$._config.per_job_label, $.jobMatcher($._config.job_names.ingester)],
-            'sum by (%s) (cortex_lifecycler_read_only{%s}) unless on (%s) (cortex_partition_ring_partitions{name="ingester-partitions"})' % [$._config.per_job_label, $.jobMatcher($._config.job_names.ingester), $._config.per_job_label],
+            'sum by (%s) (up{%s})' % [$._config.per_job_label, $.jobContainerMatchers($._config.job_names.ingester, $._config.container_names.ingester)],
+            'sum by (%s) (cortex_lifecycler_read_only{%s}) unless on (%s) (cortex_partition_ring_partitions{name="ingester-partitions"})' % [$._config.per_job_label, $.jobContainerMatchers($._config.job_names.ingester, $._config.container_names.ingester), $._config.per_job_label],
             'max(cortex_partition_ring_partitions{%s,name="ingester-partitions",state="Inactive"})' % [$.namespaceMatcher()],
           ],
           [
@@ -593,8 +593,8 @@ local filename = 'mimir-writes.json';
       .addPanel(
         $.timeseriesPanel('Uploaded blocks / sec') +
         $.successFailurePanel(
-          'sum(rate(cortex_ingester_shipper_uploads_total{%s}[$__rate_interval])) - sum(rate(cortex_ingester_shipper_upload_failures_total{%s}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.ingester), $.jobMatcher($._config.job_names.ingester)],
-          'sum(rate(cortex_ingester_shipper_upload_failures_total{%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.ingester),
+          'sum(rate(cortex_ingester_shipper_uploads_total{%s}[$__rate_interval])) - sum(rate(cortex_ingester_shipper_upload_failures_total{%s}[$__rate_interval]))' % [$.jobContainerMatchers($._config.job_names.ingester, $._config.container_names.ingester), $.jobContainerMatchers($._config.job_names.ingester, $._config.container_names.ingester)],
+          'sum(rate(cortex_ingester_shipper_upload_failures_total{%s}[$__rate_interval]))' % $.jobContainerMatchers($._config.job_names.ingester, $._config.container_names.ingester),
         ) +
         $.panelDescription(
           'Uploaded blocks / sec',
@@ -607,7 +607,7 @@ local filename = 'mimir-writes.json';
       )
       .addPanel(
         $.timeseriesPanel('Upload latency') +
-        $.latencyPanel('thanos_objstore_bucket_operation_duration_seconds', '{%s,component="ingester",operation="upload"}' % $.jobMatcher($._config.job_names.ingester)) +
+        $.latencyPanel('thanos_objstore_bucket_operation_duration_seconds', '{%s,component="ingester",operation="upload"}' % $.jobContainerMatchers($._config.job_names.ingester, $._config.container_names.ingester)) +
         $.panelDescription(
           'Upload latency',
           |||
@@ -622,8 +622,8 @@ local filename = 'mimir-writes.json';
       .addPanel(
         $.timeseriesPanel('Compactions / sec') +
         $.successFailurePanel(
-          'sum(rate(cortex_ingester_tsdb_compactions_total{%s}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.ingester)],
-          'sum(rate(cortex_ingester_tsdb_compactions_failed_total{%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.ingester),
+          'sum(rate(cortex_ingester_tsdb_compactions_total{%s}[$__rate_interval]))' % [$.jobContainerMatchers($._config.job_names.ingester, $._config.container_names.ingester)],
+          'sum(rate(cortex_ingester_tsdb_compactions_failed_total{%s}[$__rate_interval]))' % $.jobContainerMatchers($._config.job_names.ingester, $._config.container_names.ingester),
         ) +
         $.panelDescription(
           'Compactions per second',
@@ -637,7 +637,7 @@ local filename = 'mimir-writes.json';
       )
       .addPanel(
         $.timeseriesPanel('Compactions latency') +
-        $.latencyPanel('cortex_ingester_tsdb_compaction_duration_seconds', '{%s}' % $.jobMatcher($._config.job_names.ingester)) +
+        $.latencyPanel('cortex_ingester_tsdb_compaction_duration_seconds', '{%s}' % $.jobContainerMatchers($._config.job_names.ingester, $._config.container_names.ingester)) +
         $.panelDescription(
           'Compaction latency',
           |||
@@ -652,8 +652,8 @@ local filename = 'mimir-writes.json';
       .addPanel(
         $.timeseriesPanel('WAL truncations / sec') +
         $.successFailurePanel(
-          'sum(rate(cortex_ingester_tsdb_wal_truncations_total{%s}[$__rate_interval])) - sum(rate(cortex_ingester_tsdb_wal_truncations_failed_total{%s}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.ingester), $.jobMatcher($._config.job_names.ingester)],
-          'sum(rate(cortex_ingester_tsdb_wal_truncations_failed_total{%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.ingester),
+          'sum(rate(cortex_ingester_tsdb_wal_truncations_total{%s}[$__rate_interval])) - sum(rate(cortex_ingester_tsdb_wal_truncations_failed_total{%s}[$__rate_interval]))' % [$.jobContainerMatchers($._config.job_names.ingester, $._config.container_names.ingester), $.jobContainerMatchers($._config.job_names.ingester, $._config.container_names.ingester)],
+          'sum(rate(cortex_ingester_tsdb_wal_truncations_failed_total{%s}[$__rate_interval]))' % $.jobContainerMatchers($._config.job_names.ingester, $._config.container_names.ingester),
         ) +
         $.panelDescription(
           'WAL truncations per second',
@@ -667,8 +667,8 @@ local filename = 'mimir-writes.json';
       .addPanel(
         $.timeseriesPanel('Checkpoints created / sec') +
         $.successFailurePanel(
-          'sum(rate(cortex_ingester_tsdb_checkpoint_creations_total{%s}[$__rate_interval])) - sum(rate(cortex_ingester_tsdb_checkpoint_creations_failed_total{%s}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.ingester), $.jobMatcher($._config.job_names.ingester)],
-          'sum(rate(cortex_ingester_tsdb_checkpoint_creations_failed_total{%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.ingester),
+          'sum(rate(cortex_ingester_tsdb_checkpoint_creations_total{%s}[$__rate_interval])) - sum(rate(cortex_ingester_tsdb_checkpoint_creations_failed_total{%s}[$__rate_interval]))' % [$.jobContainerMatchers($._config.job_names.ingester, $._config.container_names.ingester), $.jobContainerMatchers($._config.job_names.ingester, $._config.container_names.ingester)],
+          'sum(rate(cortex_ingester_tsdb_checkpoint_creations_failed_total{%s}[$__rate_interval]))' % $.jobContainerMatchers($._config.job_names.ingester, $._config.container_names.ingester),
         ) +
         $.panelDescription(
           'Checkpoints created per second',
@@ -686,7 +686,7 @@ local filename = 'mimir-writes.json';
             sum(rate(cortex_ingester_tsdb_wal_truncate_duration_seconds_sum{%s}[$__rate_interval]))
             /
             sum(rate(cortex_ingester_tsdb_wal_truncate_duration_seconds_count{%s}[$__rate_interval])) >= 0
-          ||| % [$.jobMatcher($._config.job_names.ingester), $.jobMatcher($._config.job_names.ingester)], 'avg'
+          ||| % [$.jobContainerMatchers($._config.job_names.ingester, $._config.container_names.ingester), $.jobContainerMatchers($._config.job_names.ingester, $._config.container_names.ingester)], 'avg'
         ) +
         { fieldConfig+: { defaults+: { unit: 's', noValue: '0' } } } +
         $.panelDescription(
@@ -700,8 +700,8 @@ local filename = 'mimir-writes.json';
       .addPanel(
         $.timeseriesPanel('Corruptions / sec') +
         $.queryPanel([
-          'sum(rate(cortex_ingester_tsdb_wal_corruptions_total{%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.ingester),
-          'sum(rate(cortex_ingester_tsdb_mmap_chunk_corruptions_total{%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.ingester),
+          'sum(rate(cortex_ingester_tsdb_wal_corruptions_total{%s}[$__rate_interval]))' % $.jobContainerMatchers($._config.job_names.ingester, $._config.container_names.ingester),
+          'sum(rate(cortex_ingester_tsdb_mmap_chunk_corruptions_total{%s}[$__rate_interval]))' % $.jobContainerMatchers($._config.job_names.ingester, $._config.container_names.ingester),
         ], [
           'WAL',
           'mmap-ed chunks',
@@ -721,7 +721,7 @@ local filename = 'mimir-writes.json';
         $.timeseriesPanel(title) +
         $.queryPanel(
           'sum(%(group_prefix_jobs)s:cortex_distributor_exemplars_in:rate5m{%(job)s})'
-          % { job: $.jobMatcher($._config.job_names.distributor), group_prefix_jobs: $._config.group_prefix_jobs },
+          % { job: $.jobContainerMatchers($._config.job_names.distributor, $._config.container_names.distributor), group_prefix_jobs: $._config.group_prefix_jobs },
           'incoming exemplars',
         ) +
         { fieldConfig+: { defaults+: { unit: 'ex/s' } } } +
@@ -737,7 +737,7 @@ local filename = 'mimir-writes.json';
         $.timeseriesPanel(title) +
         $.queryPanel(
           'sum(%(group_prefix_jobs)s:cortex_distributor_received_exemplars:rate5m{%(job)s})'
-          % { job: $.jobMatcher($._config.job_names.distributor), group_prefix_jobs: $._config.group_prefix_jobs },
+          % { job: $.jobContainerMatchers($._config.job_names.distributor, $._config.container_names.distributor), group_prefix_jobs: $._config.group_prefix_jobs },
           'received exemplars',
         ) +
         { fieldConfig+: { defaults+: { unit: 'ex/s' } } } +
@@ -754,7 +754,7 @@ local filename = 'mimir-writes.json';
         $.timeseriesPanel(title) +
         $.queryPanel(
           $.queries.ingester.ingestOrClassicDeduplicatedQuery('%(group_prefix_jobs)s:cortex_ingester_ingested_exemplars:rate5m{%(ingester)s}' % {
-            ingester: $.jobMatcher($._config.job_names.ingester),
+            ingester: $.jobContainerMatchers($._config.job_names.ingester, $._config.container_names.ingester),
             group_prefix_jobs: $._config.group_prefix_jobs,
           }),
           'ingested exemplars',
@@ -775,7 +775,7 @@ local filename = 'mimir-writes.json';
         $.timeseriesPanel(title) +
         $.queryPanel(
           $.queries.ingester.ingestOrClassicDeduplicatedQuery('%(group_prefix_jobs)s:cortex_ingester_tsdb_exemplar_exemplars_appended:rate5m{%(ingester)s}' % {
-            ingester: $.jobMatcher($._config.job_names.ingester),
+            ingester: $.jobContainerMatchers($._config.job_names.ingester, $._config.container_names.ingester),
             group_prefix_jobs: $._config.group_prefix_jobs,
           }),
           'appended exemplars',
@@ -797,7 +797,7 @@ local filename = 'mimir-writes.json';
         $.timeseriesPanel('Ingester per %s queued requests' % $._config.per_instance_label) +
         $.hiddenLegendQueryPanel(
           'sum by (%s) (cortex_ingester_reactive_limiter_blocked_requests{%s, request_type="push"})'
-          % [$._config.per_instance_label, $.jobMatcher($._config.job_names.ingester)], '',
+          % [$._config.per_instance_label, $.jobContainerMatchers($._config.job_names.ingester, $._config.container_names.ingester)], '',
         ) +
         { fieldConfig+: { defaults+: { unit: 'req' } } }
       )
@@ -805,7 +805,7 @@ local filename = 'mimir-writes.json';
         $.timeseriesPanel('Ingester per %s inflight requests' % $._config.per_instance_label) +
         $.hiddenLegendQueryPanel(
           'sum by (%s) (cortex_ingester_reactive_limiter_inflight_requests{%s, request_type="push"})'
-          % [$._config.per_instance_label, $.jobMatcher($._config.job_names.ingester)], '',
+          % [$._config.per_instance_label, $.jobContainerMatchers($._config.job_names.ingester, $._config.container_names.ingester)], '',
         ) +
         { fieldConfig+: { defaults+: { unit: 'req' } } }
       )
@@ -813,7 +813,7 @@ local filename = 'mimir-writes.json';
         $.timeseriesPanel('Ingester per %s inflight request limit' % $._config.per_instance_label) +
         $.hiddenLegendQueryPanel(
           'sum by (%s) (cortex_ingester_reactive_limiter_inflight_limit{%s, request_type="push"})'
-          % [$._config.per_instance_label, $.jobMatcher($._config.job_names.ingester)], '',
+          % [$._config.per_instance_label, $.jobContainerMatchers($._config.job_names.ingester, $._config.container_names.ingester)], '',
         ) +
         { fieldConfig+: { defaults+: { unit: 'req' } } }
       ),
@@ -824,7 +824,7 @@ local filename = 'mimir-writes.json';
         $.timeseriesPanel('Rejected distributor requests') +
         $.queryPanel(
           'sum by (reason) (rate(cortex_distributor_instance_rejected_requests_total{%s}[$__rate_interval]))'
-          % $.jobMatcher($._config.job_names.distributor),
+          % $.jobContainerMatchers($._config.job_names.distributor, $._config.container_names.distributor),
           '{{reason}}',
         ) +
         { fieldConfig+: { defaults+: { unit: 'reqps' } } }
@@ -833,7 +833,7 @@ local filename = 'mimir-writes.json';
         $.timeseriesPanel('Rejected ingester requests') +
         $.queryPanel(
           'sum by (reason) (rate(cortex_ingester_instance_rejected_requests_total{%s}[$__rate_interval]))'
-          % $.jobMatcher($._config.job_names.ingester),
+          % $.jobContainerMatchers($._config.job_names.ingester, $._config.container_names.ingester),
           '{{reason}}',
         ) +
         { fieldConfig+: { defaults+: { unit: 'reqps' } } }
@@ -843,7 +843,7 @@ local filename = 'mimir-writes.json';
         $.timeseriesPanel('Ingester per %s rejection rate' % $._config.per_instance_label) +
         $.hiddenLegendQueryPanel(
           'sum by (%s) (cortex_ingester_rejection_rate{%s})'
-          % [$._config.per_instance_label, $.jobMatcher($._config.job_names.ingester)], '',
+          % [$._config.per_instance_label, $.jobContainerMatchers($._config.job_names.ingester, $._config.container_names.ingester)], '',
         ) +
         { fieldConfig+: { defaults+: { unit: 'percentunit', max: '1' } } }
       ),

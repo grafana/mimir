@@ -178,15 +178,16 @@ local utils = import 'mixin-utils/utils.libsonnet';
 
   // The mixin allow specialism of the job selector depending on if its a single binary
   // deployment or a namespaced one.
-  jobMatcher(job)::
+  jobContainerMatchers(job, containerName)::
     if $._config.singleBinary
-    then '%s=~"$job"' % $._config.per_job_label
-    else '%s=~"$cluster", %s=~"%s(%s)"' % [$._config.per_cluster_label, $._config.per_job_label, $._config.job_prefix, formatJobForQuery(job)],
+    then '%s=~"$job", container="%s"' % [$._config.per_job_label, containerName]
+    else '%s=~"$cluster", %s=~"%s(%s)", container="%s"' % [$._config.per_cluster_label, $._config.per_job_label, $._config.job_prefix, formatJobForQuery(job), containerName],
 
   local formatJobForQuery(job) =
     if std.isArray(job) then '(%s)' % std.join('|', job)
     else if std.isString(job) then job
     else error 'expected job "%s" to be a string or an array, but it is type "%s"' % [job, std.type(job)],
+
 
   namespaceMatcher()::
     if $._config.singleBinary
@@ -638,11 +639,11 @@ local utils = import 'mixin-utils/utils.libsonnet';
     super.row(title)
     .addPanel(
       $.timeseriesPanel('Requests / sec') +
-      $.qpsPanel('cortex_kv_request_duration_seconds_count{%s, kv_name=~"%s"}' % [$.jobMatcher($._config.job_names[jobName]), kvName])
+      $.qpsPanel('cortex_kv_request_duration_seconds_count{%s, kv_name=~"%s"}' % [$.jobContainerMatchers($._config.job_names[jobName], $._config.container_names[jobName]), kvName])
     )
     .addPanel(
       $.timeseriesPanel('Latency') +
-      $.latencyPanel('cortex_kv_request_duration_seconds', '{%s, kv_name=~"%s"}' % [$.jobMatcher($._config.job_names[jobName]), kvName])
+      $.latencyPanel('cortex_kv_request_duration_seconds', '{%s, kv_name=~"%s"}' % [$.jobContainerMatchers($._config.job_names[jobName], $._config.container_names[jobName]), kvName])
     ),
 
   // The provided componentName should be the name of a component among the ones defined in $._config.autoscaling.
@@ -1215,9 +1216,9 @@ local utils = import 'mixin-utils/utils.libsonnet';
     ),
   ],
 
-  thanosMemcachedCache(title, jobName, component, cacheName)::
+  thanosMemcachedCache(title, jobMatcher, component, cacheName)::
     local config = {
-      jobMatcher: $.jobMatcher(jobName),
+      jobMatcher: jobMatcher,
       component: component,
       cacheName: cacheName,
     };
@@ -1598,7 +1599,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         $.queryPanel(
           |||
             sum(rate(cortex_query_scheduler_queue_duration_seconds_count{%s}[$__rate_interval]))
-          ||| % $.jobMatcher(querySchedulerJobName),
+          ||| % $.jobContainerMatchers(querySchedulerJobName, $._config.container_names.query_scheduler),
           'Requests/s'
         ) +
         $.stack +
@@ -1608,14 +1609,14 @@ local utils = import 'mixin-utils/utils.libsonnet';
         local title = 'Latency (Time in Queue)';
         $.timeseriesPanel(title) +
         $.onlyRelevantIfQuerySchedulerEnabled(title) +
-        $.latencyPanel('cortex_query_scheduler_queue_duration_seconds', '{%s}' % $.jobMatcher(querySchedulerJobName))
+        $.latencyPanel('cortex_query_scheduler_queue_duration_seconds', '{%s}' % $.jobContainerMatchers(querySchedulerJobName, $._config.container_names.query_scheduler))
       )
       .addPanel(
         local title = 'Queue length';
         $.timeseriesPanel(title) +
         $.onlyRelevantIfQuerySchedulerEnabled(title) +
         $.hiddenLegendQueryPanel(
-          'sum(min_over_time(cortex_query_scheduler_queue_length{%s}[$__interval]))' % [$.jobMatcher(querySchedulerJobName)],
+          'sum(min_over_time(cortex_query_scheduler_queue_length{%s}[$__interval]))' % [$.jobContainerMatchers(querySchedulerJobName, $._config.container_names.query_scheduler)],
           'Queue length'
         ) +
         {
@@ -1638,7 +1639,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         </p>
       |||;
       local metricName = 'cortex_query_scheduler_queue_duration_seconds';
-      local selector = '{%s}' % $.jobMatcher(querySchedulerJobName);
+      local selector = '{%s}' % $.jobContainerMatchers(querySchedulerJobName, $._config.container_names.query_scheduler);
       local labels = ['additional_queue_dimensions'];
       local labelReplaceArgSets = [
         {
@@ -1704,7 +1705,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         </p>
       |||;
       local metricName = 'cortex_query_scheduler_querier_inflight_requests';
-      local selector = '{%s}' % $.jobMatcher(querySchedulerJobName);
+      local selector = '{%s}' % $.jobContainerMatchers(querySchedulerJobName, $._config.container_names.query_scheduler);
       local labels = ['additional_queue_dimensions'];
       local labelReplaceArgSets = [
         {
@@ -1722,8 +1723,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
         $.panelDescription(title, description) +
         $.queryPanel(
           [
-            'sum by(query_component) (cortex_query_scheduler_querier_inflight_requests{quantile="0.99", %s})' % [$.jobMatcher(querySchedulerJobName)],
-            'sum(cortex_query_scheduler_connected_querier_clients{%s})' % [$.jobMatcher(querySchedulerJobName)],
+            'sum by(query_component) (cortex_query_scheduler_querier_inflight_requests{quantile="0.99", %s})' % [$.jobContainerMatchers(querySchedulerJobName, $._config.container_names.query_scheduler)],
+            'sum(cortex_query_scheduler_connected_querier_clients{%s})' % [$.jobContainerMatchers(querySchedulerJobName, $._config.container_names.query_scheduler)],
           ],
           [
             '99th Percentile Inflight Requests: {{query_component}}',
@@ -1743,7 +1744,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
                 rate(thanos_cache_operations_total{name="frontend-cache", %(frontend)s}[$__rate_interval])
               )
             ||| % {
-              frontend: $.jobMatcher(queryFrontendJobName),
+              frontend: $.jobContainerMatchers(queryFrontendJobName, $._config.container_names.query_frontend),
             },
             'Requests/s'
           ) +
@@ -1753,7 +1754,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
           $.timeseriesPanel('Latency') +
           $.latencyPanel(
             'thanos_cache_operation_duration_seconds',
-            '{%s, name="frontend-cache"}' % $.jobMatcher(queryFrontendJobName)
+            '{%s, name="frontend-cache"}' % $.jobContainerMatchers(queryFrontendJobName, $._config.container_names.query_frontend)
           )
         ),
       ]
@@ -1761,7 +1762,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       $.row($.capitalize(rowTitlePrefix + 'querier'))
       .addPanel(
         $.timeseriesPanel('Requests / sec') +
-        $.qpsPanel('cortex_querier_request_duration_seconds_count{%s, route=~"%s"}' % [$.jobMatcher(querierJobName), $.queries.querier_read_routes_regex])
+        $.qpsPanel('cortex_querier_request_duration_seconds_count{%s, route=~"%s"}' % [$.jobContainerMatchers(querierJobName, $._config.container_names.querier), $.queries.querier_read_routes_regex])
       )
       .addPanel(
         $.timeseriesPanel('Latency') +
@@ -1770,7 +1771,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       .addPanel(
         $.timeseriesPanel('Per %s p99 latency' % $._config.per_instance_label) +
         $.hiddenLegendQueryPanel(
-          'histogram_quantile(0.99, sum by(le, %s) (rate(cortex_querier_request_duration_seconds_bucket{%s, route=~"%s"}[$__rate_interval])))' % [$._config.per_instance_label, $.jobMatcher(querierJobName), $.queries.querier_read_routes_regex], ''
+          'histogram_quantile(0.99, sum by(le, %s) (rate(cortex_querier_request_duration_seconds_bucket{%s, route=~"%s"}[$__rate_interval])))' % [$._config.per_instance_label, $.jobContainerMatchers(querierJobName, $._config.container_names.querier), $.queries.querier_read_routes_regex], ''
         )
       ),
     ] +
@@ -1867,10 +1868,10 @@ local utils = import 'mixin-utils/utils.libsonnet';
     ) +
     $.queryPanel(
       [
-        'histogram_avg(sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{%s, phase="starting"}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
-        'histogram_quantile(0.99, sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{%s, phase="starting"}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
-        'histogram_quantile(0.999, sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{%s, phase="starting"}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
-        'histogram_quantile(1.0, sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{%s, phase="starting"}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
+        'histogram_avg(sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{%s, phase="starting"}[$__rate_interval])))' % [$.jobContainerMatchers($._config.job_names.ingester, $._config.container_names.ingester)],
+        'histogram_quantile(0.99, sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{%s, phase="starting"}[$__rate_interval])))' % [$.jobContainerMatchers($._config.job_names.ingester, $._config.container_names.ingester)],
+        'histogram_quantile(0.999, sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{%s, phase="starting"}[$__rate_interval])))' % [$.jobContainerMatchers($._config.job_names.ingester, $._config.container_names.ingester)],
+        'histogram_quantile(1.0, sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{%s, phase="starting"}[$__rate_interval])))' % [$.jobContainerMatchers($._config.job_names.ingester, $._config.container_names.ingester)],
       ],
       [
         'avg',
@@ -1894,10 +1895,10 @@ local utils = import 'mixin-utils/utils.libsonnet';
     ) +
     $.queryPanel(
       [
-        'histogram_avg(sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{%s, phase="running"}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
-        'histogram_quantile(0.99, sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{%s, phase="running"}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
-        'histogram_quantile(0.999, sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{%s, phase="running"}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
-        'histogram_quantile(1.0, sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{%s, phase="running"}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
+        'histogram_avg(sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{%s, phase="running"}[$__rate_interval])))' % [$.jobContainerMatchers($._config.job_names.ingester, $._config.container_names.ingester)],
+        'histogram_quantile(0.99, sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{%s, phase="running"}[$__rate_interval])))' % [$.jobContainerMatchers($._config.job_names.ingester, $._config.container_names.ingester)],
+        'histogram_quantile(0.999, sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{%s, phase="running"}[$__rate_interval])))' % [$.jobContainerMatchers($._config.job_names.ingester, $._config.container_names.ingester)],
+        'histogram_quantile(1.0, sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{%s, phase="running"}[$__rate_interval])))' % [$.jobContainerMatchers($._config.job_names.ingester, $._config.container_names.ingester)],
       ],
       [
         'avg',
@@ -1947,7 +1948,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
           * 2
         )
       ||| % {
-        job_matcher: $.jobMatcher($._config.job_names.ingester),
+        job_matcher: $.jobContainerMatchers($._config.job_names.ingester, $._config.container_names.ingester),
         per_instance_label: $._config.per_instance_label,
         per_namespace_label: $._config.per_namespace_label,
       },
@@ -1981,7 +1982,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
             # New metric.
             rate(cortex_ingest_storage_writer_produce_records_failed_total{%(job_matcher)s}[$__rate_interval])
         ) or vector(0))
-      ||| % { job_matcher: $.jobMatcher($._config.job_names[jobName]) },
+      ||| % { job_matcher: $.jobContainerMatchers($._config.job_names[jobName], $._config.container_names[jobName]) },
       |||
         sum by(reason) (
             # Old metric.
@@ -1990,7 +1991,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
             # New metric.
             rate(cortex_ingest_storage_writer_produce_records_failed_total{%(job_matcher)s}[$__rate_interval])
         )
-      ||| % { job_matcher: $.jobMatcher($._config.job_names[jobName]) },
+      ||| % { job_matcher: $.jobContainerMatchers($._config.job_names[jobName], $._config.container_names[jobName]) },
     ], [
       'success',
       'failed - {{ reason }}',
@@ -2010,10 +2011,10 @@ local utils = import 'mixin-utils/utils.libsonnet';
     ) +
     $.queryPanel(
       [
-        'histogram_avg(sum(rate(cortex_ingest_storage_writer_latency_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names[jobName])],
-        'histogram_quantile(0.99, sum(rate(cortex_ingest_storage_writer_latency_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names[jobName])],
-        'histogram_quantile(0.999, sum(rate(cortex_ingest_storage_writer_latency_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names[jobName])],
-        'histogram_quantile(1.0, sum(rate(cortex_ingest_storage_writer_latency_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names[jobName])],
+        'histogram_avg(sum(rate(cortex_ingest_storage_writer_latency_seconds{%s}[$__rate_interval])))' % [$.jobContainerMatchers($._config.job_names[jobName], $._config.container_names[jobName])],
+        'histogram_quantile(0.99, sum(rate(cortex_ingest_storage_writer_latency_seconds{%s}[$__rate_interval])))' % [$.jobContainerMatchers($._config.job_names[jobName], $._config.container_names[jobName])],
+        'histogram_quantile(0.999, sum(rate(cortex_ingest_storage_writer_latency_seconds{%s}[$__rate_interval])))' % [$.jobContainerMatchers($._config.job_names[jobName], $._config.container_names[jobName])],
+        'histogram_quantile(1.0, sum(rate(cortex_ingest_storage_writer_latency_seconds{%s}[$__rate_interval])))' % [$.jobContainerMatchers($._config.job_names[jobName], $._config.container_names[jobName])],
       ],
       [
         'avg',

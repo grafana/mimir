@@ -67,7 +67,7 @@ local fixTargetsForTransformations(panel, refIds) = panel {
       )
     ||| % {
       instance: $._config.per_instance_label,
-      job: $.jobMatcher($._config.job_names.compactor),
+      job: $.jobContainerMatchers($._config.job_names.compactor, $._config.container_names.compactor),
     },
 
   local lastRunCommonTransformations = [
@@ -96,9 +96,9 @@ local fixTargetsForTransformations(panel, refIds) = panel {
       .addPanel(
         $.startedCompletedFailedPanel(
           'Per-instance runs / sec',
-          'sum(rate(cortex_compactor_runs_started_total{%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.compactor),
-          'sum(rate(cortex_compactor_runs_completed_total{%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.compactor),
-          'sum(rate(cortex_compactor_runs_failed_total{%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.compactor)
+          'sum(rate(cortex_compactor_runs_started_total{%s}[$__rate_interval]))' % $.jobContainerMatchers($._config.job_names.compactor, $._config.container_names.compactor),
+          'sum(rate(cortex_compactor_runs_completed_total{%s}[$__rate_interval]))' % $.jobContainerMatchers($._config.job_names.compactor, $._config.container_names.compactor),
+          'sum(rate(cortex_compactor_runs_failed_total{%s}[$__rate_interval]))' % $.jobContainerMatchers($._config.job_names.compactor, $._config.container_names.compactor)
         ) +
         $.bars +
         { fieldConfig+: { defaults+: { unit: 'ops' } } } +
@@ -121,7 +121,7 @@ local fixTargetsForTransformations(panel, refIds) = panel {
             /
             cortex_compactor_tenants_discovered{%(job)s} > 0
           ||| % {
-            job: $.jobMatcher($._config.job_names.compactor),
+            job: $.jobContainerMatchers($._config.job_names.compactor, $._config.container_names.compactor),
           },
           '{{%s}}' % $._config.per_instance_label
         ) +
@@ -239,7 +239,7 @@ local fixTargetsForTransformations(panel, refIds) = panel {
       .addPanel(
         $.timeseriesPanel('Estimated Compaction Jobs') +
         $.queryPanel('sum(cortex_bucket_index_estimated_compaction_jobs{%s}) and (sum(rate(cortex_bucket_index_estimated_compaction_jobs_errors_total{%s}[$__rate_interval])) == 0)' %
-                     [$.jobMatcher($._config.job_names.compactor), $.jobMatcher($._config.job_names.compactor)], 'Jobs') +
+                     [$.jobContainerMatchers($._config.job_names.compactor, $._config.container_names.compactor), $.jobContainerMatchers($._config.job_names.compactor, $._config.container_names.compactor)], 'Jobs') +
         $.panelDescription(
           'Estimated Compaction Jobs',
           |||
@@ -257,7 +257,7 @@ local fixTargetsForTransformations(panel, refIds) = panel {
       )
       .addPanel(
         $.timeseriesPanel('Source blocks age') +
-        $.latencyPanel('cortex_compactor_block_max_time_delta_seconds', '{%s}' % $.jobMatcher($._config.job_names.compactor)) +
+        $.latencyPanel('cortex_compactor_block_max_time_delta_seconds', '{%s}' % $.jobContainerMatchers($._config.job_names.compactor, $._config.container_names.compactor)) +
         $.panelDescription(
           'Source blocks age',
           |||
@@ -269,7 +269,7 @@ local fixTargetsForTransformations(panel, refIds) = panel {
       )
       .addPanel(
         $.timeseriesPanel('TSDB compactions / sec') +
-        $.queryPanel('sum(rate(prometheus_tsdb_compactions_total{%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.compactor), 'compactions') +
+        $.queryPanel('sum(rate(prometheus_tsdb_compactions_total{%s}[$__rate_interval]))' % $.jobContainerMatchers($._config.job_names.compactor, $._config.container_names.compactor), 'compactions') +
         { fieldConfig+: { defaults+: { unit: 'ops' } } } +
         $.panelDescription(
           'TSDB compactions / sec',
@@ -280,7 +280,7 @@ local fixTargetsForTransformations(panel, refIds) = panel {
       )
       .addPanel(
         $.timeseriesPanel('TSDB compaction duration') +
-        $.latencyPanel('prometheus_tsdb_compaction_duration_seconds', '{%s}' % $.jobMatcher($._config.job_names.compactor)) +
+        $.latencyPanel('prometheus_tsdb_compaction_duration_seconds', '{%s}' % $.jobContainerMatchers($._config.job_names.compactor, $._config.container_names.compactor)) +
         $.panelDescription(
           'TSDB compaction duration',
           |||
@@ -293,11 +293,11 @@ local fixTargetsForTransformations(panel, refIds) = panel {
       $.row('')
       .addPanel(
         $.timeseriesPanel('Average blocks / tenant') +
-        $.queryPanel('avg(max by(user) (cortex_bucket_blocks_count{%s}))' % $.jobMatcher($._config.job_names.compactor), 'avg'),
+        $.queryPanel('avg(max by(user) (cortex_bucket_blocks_count{%s}))' % $.jobContainerMatchers($._config.job_names.compactor, $._config.container_names.compactor), 'avg'),
       )
       .addPanel(
         $.timeseriesPanel('Tenants with largest number of blocks') +
-        $.queryPanel('topk(10, max by(user) (cortex_bucket_blocks_count{%s}))' % $.jobMatcher($._config.job_names.compactor), '{{user}}') +
+        $.queryPanel('topk(10, max by(user) (cortex_bucket_blocks_count{%s}))' % $.jobContainerMatchers($._config.job_names.compactor, $._config.container_names.compactor), '{{user}}') +
         $.panelDescription(
           'Tenants with largest number of blocks',
           |||
@@ -314,7 +314,7 @@ local fixTargetsForTransformations(panel, refIds) = panel {
           |||
             sum(rate(cortex_compactor_blocks_marked_for_deletion_total{%(job)s}[$__rate_interval]))
           ||| % {
-            job: $.jobMatcher($._config.job_names.compactor),
+            job: $.jobContainerMatchers($._config.job_names.compactor, $._config.container_names.compactor),
           },
           'blocks'
         ) +
@@ -328,12 +328,12 @@ local fixTargetsForTransformations(panel, refIds) = panel {
           |||
             sum(rate(cortex_compactor_blocks_cleaned_total{%(job)s}[$__rate_interval]))
           ||| % {
-            job: $.jobMatcher($._config.job_names.compactor),
+            job: $.jobContainerMatchers($._config.job_names.compactor, $._config.container_names.compactor),
           },
           |||
             sum(rate(cortex_compactor_block_cleanup_failures_total{%(job)s}[$__rate_interval]))
           ||| % {
-            job: $.jobMatcher($._config.job_names.compactor),
+            job: $.jobContainerMatchers($._config.job_names.compactor, $._config.container_names.compactor),
           },
         ) +
         $.stack +
@@ -352,12 +352,12 @@ local fixTargetsForTransformations(panel, refIds) = panel {
             -
             sum(rate(cortex_compactor_meta_sync_failures_total{%(job)s}[$__rate_interval]))
           ||| % {
-            job: $.jobMatcher($._config.job_names.compactor),
+            job: $.jobContainerMatchers($._config.job_names.compactor, $._config.container_names.compactor),
           },
           |||
             sum(rate(cortex_compactor_meta_sync_failures_total{%(job)s}[$__rate_interval]))
           ||| % {
-            job: $.jobMatcher($._config.job_names.compactor),
+            job: $.jobContainerMatchers($._config.job_names.compactor, $._config.container_names.compactor),
           },
         ) +
         $.stack +
@@ -366,7 +366,7 @@ local fixTargetsForTransformations(panel, refIds) = panel {
       .addPanel(
         $.timeseriesPanel('Metadata sync duration') +
         // This metric tracks the duration of a per-tenant metadata sync.
-        $.latencyPanel('cortex_compactor_meta_sync_duration_seconds', '{%s}' % $.jobMatcher($._config.job_names.compactor)),
+        $.latencyPanel('cortex_compactor_meta_sync_duration_seconds', '{%s}' % $.jobContainerMatchers($._config.job_names.compactor, $._config.container_names.compactor)),
       )
     )
     .addRows($.getObjectStoreRows('Object Store', 'compactor'))

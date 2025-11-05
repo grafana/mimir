@@ -16,8 +16,8 @@ local filename = 'mimir-block-builder.json';
         ) +
         $.queryPanel(
           [
-            'sum(cortex_blockbuilder_scheduler_outstanding_jobs{%(job)s})' % { job: $.jobMatcher($._config.job_names.block_builder_scheduler) },
-            'sum(cortex_blockbuilder_scheduler_assigned_jobs{%(job)s})' % { job: $.jobMatcher($._config.job_names.block_builder_scheduler) },
+            'sum(cortex_blockbuilder_scheduler_outstanding_jobs{%(job)s})' % { job: $.jobContainerMatchers($._config.job_names.block_builder_scheduler, $._config.container_names.block_builder_scheduler) },
+            'sum(cortex_blockbuilder_scheduler_assigned_jobs{%(job)s})' % { job: $.jobContainerMatchers($._config.job_names.block_builder_scheduler, $._config.container_names.block_builder_scheduler) },
           ],
           [
             'outstanding',
@@ -34,9 +34,9 @@ local filename = 'mimir-block-builder.json';
         ) +
         $.queryPanel(
           [
-            'histogram_quantile(0.50, sum (rate(cortex_blockbuilder_scheduler_schedule_update_seconds{%(job)s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.block_builder_scheduler)],
-            'histogram_quantile(0.99, sum (rate(cortex_blockbuilder_scheduler_schedule_update_seconds{%(job)s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.block_builder_scheduler)],
-            'histogram_avg(sum (rate(cortex_blockbuilder_scheduler_schedule_update_seconds{%(job)s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.block_builder_scheduler)],
+            'histogram_quantile(0.50, sum (rate(cortex_blockbuilder_scheduler_schedule_update_seconds{%(job)s}[$__rate_interval])))' % [$.jobContainerMatchers($._config.job_names.block_builder_scheduler, $._config.container_names.block_builder_scheduler)],
+            'histogram_quantile(0.99, sum (rate(cortex_blockbuilder_scheduler_schedule_update_seconds{%(job)s}[$__rate_interval])))' % [$.jobContainerMatchers($._config.job_names.block_builder_scheduler, $._config.container_names.block_builder_scheduler)],
+            'histogram_avg(sum (rate(cortex_blockbuilder_scheduler_schedule_update_seconds{%(job)s}[$__rate_interval])))' % [$.jobContainerMatchers($._config.job_names.block_builder_scheduler, $._config.container_names.block_builder_scheduler)],
           ],
           [
             '50th percentile',
@@ -54,9 +54,9 @@ local filename = 'mimir-block-builder.json';
         ) +
         $.queryPanel(
           [
-            'sum(increase(cortex_blockbuilder_scheduler_fetch_offsets_failed_total{%(job)s}[$__rate_interval]))' % { job: $.jobMatcher($._config.job_names.block_builder_scheduler) },
-            'sum(increase(cortex_blockbuilder_scheduler_flush_failed_total{%(job)s}[$__rate_interval]))' % { job: $.jobMatcher($._config.job_names.block_builder_scheduler) },
-            'sum(increase(cortex_blockbuilder_scheduler_job_gap_detected{%(job)s}[$__rate_interval]))' % { job: $.jobMatcher($._config.job_names.block_builder_scheduler) },
+            'sum(increase(cortex_blockbuilder_scheduler_fetch_offsets_failed_total{%(job)s}[$__rate_interval]))' % { job: $.jobContainerMatchers($._config.job_names.block_builder_scheduler, $._config.container_names.block_builder_scheduler) },
+            'sum(increase(cortex_blockbuilder_scheduler_flush_failed_total{%(job)s}[$__rate_interval]))' % { job: $.jobContainerMatchers($._config.job_names.block_builder_scheduler, $._config.container_names.block_builder_scheduler) },
+            'sum(increase(cortex_blockbuilder_scheduler_job_gap_detected{%(job)s}[$__rate_interval]))' % { job: $.jobContainerMatchers($._config.job_names.block_builder_scheduler, $._config.container_names.block_builder_scheduler) },
           ],
           [
             'fetch offsets failed',
@@ -75,7 +75,7 @@ local filename = 'mimir-block-builder.json';
           'Number of records in the backlog of a partition.',
         ) +
         $.queryPanel(
-          '(cortex_blockbuilder_scheduler_partition_end_offset{%(job)s} -cortex_blockbuilder_scheduler_partition_committed_offset{%(job)s}) > 0' % { job: $.jobMatcher($._config.job_names.block_builder_scheduler) },
+          '(cortex_blockbuilder_scheduler_partition_end_offset{%(job)s} -cortex_blockbuilder_scheduler_partition_committed_offset{%(job)s}) > 0' % { job: $.jobContainerMatchers($._config.job_names.block_builder_scheduler, $._config.container_names.block_builder_scheduler) },
           '{{partition}}',
         ) +
         { fieldConfig+: { defaults+: { custom+: { unit: 'short', fillOpacity: 0 } } } },
@@ -91,7 +91,7 @@ local filename = 'mimir-block-builder.json';
           |||,
         ) +
         $.queryPanel(
-          'sum by (partition) (cortex_blockbuilder_scheduler_pending_jobs{%(job)s}) > 0' % { job: $.jobMatcher($._config.job_names.block_builder_scheduler) },
+          'sum by (partition) (cortex_blockbuilder_scheduler_pending_jobs{%(job)s}) > 0' % { job: $.jobContainerMatchers($._config.job_names.block_builder_scheduler, $._config.container_names.block_builder_scheduler) },
           '{{partition}}',
         ) +
         { fieldConfig+: { defaults+: { custom+: { unit: 'short', fillOpacity: 0 } } } },
@@ -107,8 +107,8 @@ local filename = 'mimir-block-builder.json';
         ) +
         $.queryPanel(
           [
-            'sum (rate(cortex_ingest_storage_reader_fetch_records_total{%(job)s}[$__rate_interval]))' % { job: $.jobMatcher($._config.job_names.block_builder) },
-            'sum (rate(cortex_ingest_storage_reader_read_errors_total{%(job)s}[$__rate_interval]))' % { job: $.jobMatcher($._config.job_names.block_builder) },
+            'sum (rate(cortex_ingest_storage_reader_fetch_records_total{%(job)s}[$__rate_interval]))' % { job: $.jobContainerMatchers($._config.job_names.block_builder, $._config.container_names.block_builder) },
+            'sum (rate(cortex_ingest_storage_reader_read_errors_total{%(job)s}[$__rate_interval]))' % { job: $.jobContainerMatchers($._config.job_names.block_builder, $._config.container_names.block_builder) },
           ],
           [
             'successful',
@@ -124,7 +124,7 @@ local filename = 'mimir-block-builder.json';
           'Overview of per-second rate of records fetched from Kafka split by pods.',
         ) +
         $.queryPanel(
-          'sum by (pod) (rate(cortex_ingest_storage_reader_fetch_records_total{%(job)s}[$__rate_interval]))' % { job: $.jobMatcher($._config.job_names.block_builder) },
+          'sum by (pod) (rate(cortex_ingest_storage_reader_fetch_records_total{%(job)s}[$__rate_interval]))' % { job: $.jobContainerMatchers($._config.job_names.block_builder, $._config.container_names.block_builder) },
           '{{pod}}'
         ),
       )
@@ -136,9 +136,9 @@ local filename = 'mimir-block-builder.json';
         ) +
         $.queryPanel(
           [
-            'histogram_quantile(0.50, sum (rate(cortex_blockbuilder_consume_job_duration_seconds{%(job)s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.block_builder)],
-            'histogram_quantile(0.99, sum (rate(cortex_blockbuilder_consume_job_duration_seconds{%(job)s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.block_builder)],
-            'histogram_avg(sum (rate(cortex_blockbuilder_consume_job_duration_seconds{%(job)s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.block_builder)],
+            'histogram_quantile(0.50, sum (rate(cortex_blockbuilder_consume_job_duration_seconds{%(job)s}[$__rate_interval])))' % [$.jobContainerMatchers($._config.job_names.block_builder, $._config.container_names.block_builder)],
+            'histogram_quantile(0.99, sum (rate(cortex_blockbuilder_consume_job_duration_seconds{%(job)s}[$__rate_interval])))' % [$.jobContainerMatchers($._config.job_names.block_builder, $._config.container_names.block_builder)],
+            'histogram_avg(sum (rate(cortex_blockbuilder_consume_job_duration_seconds{%(job)s}[$__rate_interval])))' % [$.jobContainerMatchers($._config.job_names.block_builder, $._config.container_names.block_builder)],
           ],
           [
             '50th percentile',
@@ -159,8 +159,8 @@ local filename = 'mimir-block-builder.json';
         ) +
         $.queryPanel(
           [
-            'sum (histogram_count(rate(cortex_blockbuilder_tsdb_compact_and_upload_duration_seconds{%(job)s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.block_builder)],
-            'sum (rate(cortex_blockbuilder_tsdb_compact_and_upload_failed_total{%(job)s}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.block_builder)],
+            'sum (histogram_count(rate(cortex_blockbuilder_tsdb_compact_and_upload_duration_seconds{%(job)s}[$__rate_interval])))' % [$.jobContainerMatchers($._config.job_names.block_builder, $._config.container_names.block_builder)],
+            'sum (rate(cortex_blockbuilder_tsdb_compact_and_upload_failed_total{%(job)s}[$__rate_interval]))' % [$.jobContainerMatchers($._config.job_names.block_builder, $._config.container_names.block_builder)],
           ],
           [
             'successful',
@@ -177,9 +177,9 @@ local filename = 'mimir-block-builder.json';
         ) +
         $.queryPanel(
           [
-            'histogram_quantile(0.50, sum (rate(cortex_blockbuilder_tsdb_compact_and_upload_duration_seconds{%(job)s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.block_builder)],
-            'histogram_quantile(0.99, sum (rate(cortex_blockbuilder_tsdb_compact_and_upload_duration_seconds{%(job)s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.block_builder)],
-            'histogram_avg(sum (rate(cortex_blockbuilder_tsdb_compact_and_upload_duration_seconds{%(job)s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.block_builder)],
+            'histogram_quantile(0.50, sum (rate(cortex_blockbuilder_tsdb_compact_and_upload_duration_seconds{%(job)s}[$__rate_interval])))' % [$.jobContainerMatchers($._config.job_names.block_builder, $._config.container_names.block_builder)],
+            'histogram_quantile(0.99, sum (rate(cortex_blockbuilder_tsdb_compact_and_upload_duration_seconds{%(job)s}[$__rate_interval])))' % [$.jobContainerMatchers($._config.job_names.block_builder, $._config.container_names.block_builder)],
+            'histogram_avg(sum (rate(cortex_blockbuilder_tsdb_compact_and_upload_duration_seconds{%(job)s}[$__rate_interval])))' % [$.jobContainerMatchers($._config.job_names.block_builder, $._config.container_names.block_builder)],
           ],
           [
             '50th percentile',

@@ -8,7 +8,7 @@ local filename = 'mimir-tenants.json';
     or
     max(cortex_limits_defaults{%(overrides_exporter)s, limit_name="%(limit_name)s"})
   ||| % {
-    overrides_exporter: $.jobMatcher($._config.job_names.overrides_exporter),
+    overrides_exporter: $.jobContainerMatchers($._config.job_names.overrides_exporter, $._config.container_names.overrides_exporter),
     limit_name: limit_name,
   },
 
@@ -60,13 +60,13 @@ local filename = 'mimir-tenants.json';
                 - cortex_ingester_memory_series_removed_total{%(ingester)s, user="$user"}
               )
             ||| % {
-              ingester: $.jobMatcher($._config.job_names.ingester),
+              ingester: $.jobContainerMatchers($._config.job_names.ingester, $._config.container_names.ingester),
             };
             $.queries.ingester.ingestOrClassicDeduplicatedQuery(perIngesterInMemorySeries),
             user_limits_overrides_query('max_global_series_per_user'),
-            $.queries.ingester.ingestOrClassicDeduplicatedQuery('cortex_ingester_active_series{%s, user="$user"}' % [$.jobMatcher($._config.job_names.ingester)]),
-            $.queries.ingester.ingestOrClassicDeduplicatedQuery('cortex_ingester_owned_series{%s, user="$user"}' % [$.jobMatcher($._config.job_names.ingester)]),
-            $.queries.ingester.ingestOrClassicDeduplicatedQuery('cortex_ingester_active_series_custom_tracker{%s, user="$user"}' % [$.jobMatcher($._config.job_names.ingester)], groupByLabels='name'),
+            $.queries.ingester.ingestOrClassicDeduplicatedQuery('cortex_ingester_active_series{%s, user="$user"}' % [$.jobContainerMatchers($._config.job_names.ingester, $._config.container_names.ingester)]),
+            $.queries.ingester.ingestOrClassicDeduplicatedQuery('cortex_ingester_owned_series{%s, user="$user"}' % [$.jobContainerMatchers($._config.job_names.ingester, $._config.container_names.ingester)]),
+            $.queries.ingester.ingestOrClassicDeduplicatedQuery('cortex_ingester_active_series_custom_tracker{%s, user="$user"}' % [$.jobContainerMatchers($._config.job_names.ingester, $._config.container_names.ingester)], groupByLabels='name'),
           ],
           [
             'in-memory',
@@ -94,13 +94,13 @@ local filename = 'mimir-tenants.json';
             |||
               min by (job) (cortex_ingester_local_limits{%(ingester)s, limit="max_global_series_per_user", user="$user"})
             ||| % {
-              ingester: $.jobMatcher($._config.job_names.ingester),
+              ingester: $.jobContainerMatchers($._config.job_names.ingester, $._config.container_names.ingester),
             },
             |||
               cortex_ingester_memory_series_created_total{%(ingester)s, user="$user"}
               - cortex_ingester_memory_series_removed_total{%(ingester)s, user="$user"}
             ||| % {
-              ingester: $.jobMatcher($._config.job_names.ingester),
+              ingester: $.jobContainerMatchers($._config.job_names.ingester, $._config.container_names.ingester),
             },
           ],
           [
@@ -140,12 +140,12 @@ local filename = 'mimir-tenants.json';
             |||
               min by (job) (cortex_ingester_local_limits{%(ingester)s, limit="max_global_series_per_user", user="$user"})
             ||| % {
-              ingester: $.jobMatcher($._config.job_names.ingester),
+              ingester: $.jobContainerMatchers($._config.job_names.ingester, $._config.container_names.ingester),
             },
             |||
               cortex_ingester_owned_series{%(ingester)s, user="$user"}
             ||| % {
-              ingester: $.jobMatcher($._config.job_names.ingester),
+              ingester: $.jobContainerMatchers($._config.job_names.ingester, $._config.container_names.ingester),
             },
           ],
           [
@@ -199,7 +199,7 @@ local filename = 'mimir-tenants.json';
         local title = 'Series with exemplars';
         $.timeseriesPanel(title) +
         $.queryPanel(
-          $.queries.ingester.ingestOrClassicDeduplicatedQuery('cortex_ingester_tsdb_exemplar_series_with_exemplars_in_storage{%(ingester)s, user="$user"}' % [$.jobMatcher($._config.job_names.ingester)]),
+          $.queries.ingester.ingestOrClassicDeduplicatedQuery('cortex_ingester_tsdb_exemplar_series_with_exemplars_in_storage{%(ingester)s, user="$user"}' % [$.jobContainerMatchers($._config.job_names.ingester, $._config.container_names.ingester)]),
           'series',
         ) +
         { options+: { legend+: { showLegend: false } } } +
@@ -215,7 +215,7 @@ local filename = 'mimir-tenants.json';
         $.timeseriesPanel(title) +
         $.queryPanel(
           'time() - min(cortex_ingester_tsdb_exemplar_last_exemplars_timestamp_seconds{%(ingester)s, user="$user"} > 0)'
-          % { ingester: $.jobMatcher($._config.job_names.ingester) },
+          % { ingester: $.jobContainerMatchers($._config.job_names.ingester, $._config.container_names.ingester) },
           'age',
         ) +
         {
@@ -237,8 +237,8 @@ local filename = 'mimir-tenants.json';
         $.timeseriesPanel(title) +
         $.queryPanel(
           [
-            $.queries.ingester.ingestOrClassicDeduplicatedQuery('cortex_ingester_active_native_histogram_series{%(ingester)s, user="$user"}' % [$.jobMatcher($._config.job_names.ingester)]),
-            $.queries.ingester.ingestOrClassicDeduplicatedQuery('cortex_ingester_active_native_histogram_series_custom_tracker{%(ingester)s, user="$user"}' % [$.jobMatcher($._config.job_names.ingester)], groupByLabels='name'),
+            $.queries.ingester.ingestOrClassicDeduplicatedQuery('cortex_ingester_active_native_histogram_series{%(ingester)s, user="$user"}' % [$.jobContainerMatchers($._config.job_names.ingester, $._config.container_names.ingester)]),
+            $.queries.ingester.ingestOrClassicDeduplicatedQuery('cortex_ingester_active_native_histogram_series_custom_tracker{%(ingester)s, user="$user"}' % [$.jobContainerMatchers($._config.job_names.ingester, $._config.container_names.ingester)], groupByLabels='name'),
           ],
           [
             'active',
@@ -259,8 +259,8 @@ local filename = 'mimir-tenants.json';
         $.timeseriesPanel(title) +
         $.queryPanel(
           [
-            $.queries.ingester.ingestOrClassicDeduplicatedQuery('cortex_ingester_active_native_histogram_buckets{%(ingester)s, user="$user"}' % [$.jobMatcher($._config.job_names.ingester)]),
-            $.queries.ingester.ingestOrClassicDeduplicatedQuery('cortex_ingester_active_native_histogram_buckets_custom_tracker{%(ingester)s, user="$user"}' % [$.jobMatcher($._config.job_names.ingester)], groupByLabels='name'),
+            $.queries.ingester.ingestOrClassicDeduplicatedQuery('cortex_ingester_active_native_histogram_buckets{%(ingester)s, user="$user"}' % [$.jobContainerMatchers($._config.job_names.ingester, $._config.container_names.ingester)]),
+            $.queries.ingester.ingestOrClassicDeduplicatedQuery('cortex_ingester_active_native_histogram_buckets_custom_tracker{%(ingester)s, user="$user"}' % [$.jobContainerMatchers($._config.job_names.ingester, $._config.container_names.ingester)], groupByLabels='name'),
           ],
           [
             'buckets',
@@ -284,7 +284,7 @@ local filename = 'mimir-tenants.json';
         $.timeseriesPanel(title) +
         $.queryPanel(
           'sum by (version) (label_replace(rate(cortex_distributor_requests_in_total{%(job)s, user="$user"}[$__rate_interval]), "version", "1.0", "version", ""))'
-          % { job: $.jobMatcher($._config.job_names.distributor) },
+          % { job: $.jobContainerMatchers($._config.job_names.distributor, $._config.container_names.distributor) },
           'rate (remote-write {{version}})',
         ) +
         { options+: { legend+: { showLegend: false } } } +
@@ -301,7 +301,7 @@ local filename = 'mimir-tenants.json';
         $.queryPanel(
           [
             'sum(rate(cortex_distributor_received_requests_total{%(job)s, user="$user"}[$__rate_interval]))'
-            % { job: $.jobMatcher($._config.job_names.distributor) },
+            % { job: $.jobContainerMatchers($._config.job_names.distributor, $._config.container_names.distributor) },
             user_limits_overrides_query('request_rate'),
           ],
           [
@@ -322,7 +322,7 @@ local filename = 'mimir-tenants.json';
         $.timeseriesPanel(title) +
         $.queryPanel(
           'time() - max(cortex_distributor_latest_seen_sample_timestamp_seconds{%(distributor)s, user="$user"} > 0)'
-          % { distributor: $.jobMatcher($._config.job_names.distributor) },
+          % { distributor: $.jobContainerMatchers($._config.job_names.distributor, $._config.container_names.distributor) },
           'age',
         ) +
         {
@@ -342,7 +342,7 @@ local filename = 'mimir-tenants.json';
         $.queryPanel(
           [
             'sum by (reason) (rate(cortex_discarded_requests_total{%(job)s, user="$user"}[$__rate_interval]))'
-            % { job: $.jobMatcher($._config.job_names.distributor) },
+            % { job: $.jobContainerMatchers($._config.job_names.distributor, $._config.container_names.distributor) },
           ],
           [
             '{{ reason }}',
@@ -365,7 +365,7 @@ local filename = 'mimir-tenants.json';
         $.timeseriesPanel(title) +
         $.queryPanel(
           'sum(rate(cortex_distributor_samples_in_total{%(job)s, user="$user"}[$__rate_interval]))'
-          % { job: $.jobMatcher($._config.job_names.distributor) },
+          % { job: $.jobContainerMatchers($._config.job_names.distributor, $._config.container_names.distributor) },
           'rate',
         ) +
         { options+: { legend+: { showLegend: false } } } +
@@ -382,7 +382,7 @@ local filename = 'mimir-tenants.json';
         $.queryPanel(
           [
             'sum(rate(cortex_distributor_received_samples_total{%(job)s, user="$user"}[$__rate_interval]))'
-            % { job: $.jobMatcher($._config.job_names.distributor) },
+            % { job: $.jobContainerMatchers($._config.job_names.distributor, $._config.container_names.distributor) },
             user_limits_overrides_query('ingestion_rate'),
           ],
           [
@@ -404,9 +404,9 @@ local filename = 'mimir-tenants.json';
         $.queryPanel(
           [
             'sum(rate(cortex_distributor_deduped_samples_total{%(job)s, user="$user"}[$__rate_interval]))'
-            % { job: $.jobMatcher($._config.job_names.distributor) },
+            % { job: $.jobContainerMatchers($._config.job_names.distributor, $._config.container_names.distributor) },
             'sum(rate(cortex_distributor_non_ha_samples_received_total{%(job)s, user="$user"}[$__rate_interval]))'
-            % { job: $.jobMatcher($._config.job_names.distributor) },
+            % { job: $.jobContainerMatchers($._config.job_names.distributor, $._config.container_names.distributor) },
           ],
           [
             'deduplicated',
@@ -426,9 +426,9 @@ local filename = 'mimir-tenants.json';
         $.queryPanel(
           [
             'sum by (reason) (rate(cortex_discarded_samples_total{%(job)s, user="$user"}[$__rate_interval]))'
-            % { job: $.jobMatcher($._config.job_names.distributor) },
+            % { job: $.jobContainerMatchers($._config.job_names.distributor, $._config.container_names.distributor) },
             'sum by (reason) (rate(cortex_discarded_samples_total{%(job)s, user="$user"}[$__rate_interval]))'
-            % { job: $.jobMatcher($._config.job_names.ingester) },
+            % { job: $.jobContainerMatchers($._config.job_names.ingester, $._config.container_names.ingester) },
           ],
           [
             '{{ reason }} (distributor)',
@@ -448,7 +448,7 @@ local filename = 'mimir-tenants.json';
         $.timeseriesPanel(title) +
         $.queryPanel(
           'sum(rate(cortex_ingester_tsdb_out_of_order_samples_appended_total{%(job)s, user="$user"}[$__rate_interval]))'
-          % { job: $.jobMatcher($._config.job_names.ingester) },
+          % { job: $.jobContainerMatchers($._config.job_names.ingester, $._config.container_names.ingester) },
           'rate',
         ) +
         { options+: { legend+: { showLegend: false } } } +
@@ -469,7 +469,7 @@ local filename = 'mimir-tenants.json';
         $.timeseriesPanel(title) +
         $.queryPanel(
           'sum(rate(cortex_distributor_exemplars_in_total{%(job)s, user="$user"}[$__rate_interval]))'
-          % { job: $.jobMatcher($._config.job_names.distributor) },
+          % { job: $.jobContainerMatchers($._config.job_names.distributor, $._config.container_names.distributor) },
           'rate',
         ) +
         { options+: { legend+: { showLegend: false } } } +
@@ -485,7 +485,7 @@ local filename = 'mimir-tenants.json';
         $.timeseriesPanel(title) +
         $.queryPanel(
           'sum(rate(cortex_distributor_received_exemplars_total{%(job)s, user="$user"}[$__rate_interval]))'
-          % { job: $.jobMatcher($._config.job_names.distributor), group_prefix_users: $._config.group_prefix_users },
+          % { job: $.jobContainerMatchers($._config.job_names.distributor, $._config.container_names.distributor), group_prefix_users: $._config.group_prefix_users },
           'rate',
         ) +
         { options+: { legend+: { showLegend: false } } } +
@@ -503,7 +503,7 @@ local filename = 'mimir-tenants.json';
         $.timeseriesPanel(title) +
         $.queryPanel(
           'sum by (reason) (rate(cortex_discarded_exemplars_total{%(job)s, user="$user"}[$__rate_interval]))'
-          % { job: $.jobMatcher($._config.job_names.distributor) },
+          % { job: $.jobContainerMatchers($._config.job_names.distributor, $._config.container_names.distributor) },
           '{{ reason }}',
         ) +
         $.panelDescription(
@@ -517,7 +517,7 @@ local filename = 'mimir-tenants.json';
         local title = 'Ingester appended exemplars rate';
         $.timeseriesPanel(title) +
         $.queryPanel(
-          $.queries.ingester.ingestOrClassicDeduplicatedQuery('rate(cortex_ingester_tsdb_exemplar_exemplars_appended_total{%(ingester)s, user="$user"}[$__rate_interval])' % [$.jobMatcher($._config.job_names.ingester)]),
+          $.queries.ingester.ingestOrClassicDeduplicatedQuery('rate(cortex_ingester_tsdb_exemplar_exemplars_appended_total{%(ingester)s, user="$user"}[$__rate_interval])' % [$.jobContainerMatchers($._config.job_names.ingester, $._config.container_names.ingester)]),
           'rate',
         ) +
         { options+: { legend+: { showLegend: false } } } +
@@ -541,7 +541,7 @@ local filename = 'mimir-tenants.json';
         $.timeseriesPanel(title) +
         $.queryPanel(
           'sum by (job) (cortex_ingester_tsdb_symbol_table_size_bytes{%(ingester)s, user="$user"})'
-          % { ingester: $.jobMatcher($._config.job_names.ingester) },
+          % { ingester: $.jobContainerMatchers($._config.job_names.ingester, $._config.container_names.ingester) },
           '{{ job }}',
         ) +
         { fieldConfig+: { defaults+: { unit: 'bytes' } } } +
@@ -557,7 +557,7 @@ local filename = 'mimir-tenants.json';
         $.timeseriesPanel(title) +
         $.queryPanel(
           'sum by (job) (cortex_ingester_tsdb_storage_blocks_bytes{%(ingester)s, user="$user"})'
-          % { ingester: $.jobMatcher($._config.job_names.ingester) },
+          % { ingester: $.jobContainerMatchers($._config.job_names.ingester, $._config.container_names.ingester) },
           '{{ job }}',
         ) +
         { fieldConfig+: { defaults+: { unit: 'bytes' } } } +
@@ -578,7 +578,7 @@ local filename = 'mimir-tenants.json';
         $.queryPanel(
           [
             'count(sum by (rule_group) (cortex_prometheus_rule_group_rules{%(job)s, user="$user"}))'
-            % { job: $.jobMatcher($._config.job_names.ruler) },
+            % { job: $.jobContainerMatchers($._config.job_names.ruler, $._config.container_names.ruler) },
             user_limits_overrides_query('ruler_max_rule_groups_per_tenant'),
           ],
           [
@@ -599,7 +599,7 @@ local filename = 'mimir-tenants.json';
         $.timeseriesPanel(title) +
         $.queryPanel(
           'sum(cortex_prometheus_rule_group_rules{%(job)s, user="$user"})'
-          % { job: $.jobMatcher($._config.job_names.ruler) },
+          % { job: $.jobContainerMatchers($._config.job_names.ruler, $._config.container_names.ruler) },
           'rules',
         ) +
         { options+: { legend+: { showLegend: false } } } +
@@ -615,7 +615,7 @@ local filename = 'mimir-tenants.json';
         $.timeseriesPanel(title) +
         $.queryPanel(
           'sum(rate(cortex_prometheus_rule_evaluations_total{%(job)s, user="$user"}[$__rate_interval]))'
-          % { job: $.jobMatcher($._config.job_names.ruler) },
+          % { job: $.jobContainerMatchers($._config.job_names.ruler, $._config.container_names.ruler) },
           'rate',
         ) +
         { options+: { legend+: { showLegend: false } } },
@@ -625,7 +625,7 @@ local filename = 'mimir-tenants.json';
         $.timeseriesPanel(title) +
         $.queryPanel(
           'topk(50, sum by (rule_group) (rate(cortex_prometheus_rule_evaluation_failures_total{%(job)s, user="$user"}[$__rate_interval])) > 0)'
-          % { job: $.jobMatcher($._config.job_names.ruler) },
+          % { job: $.jobContainerMatchers($._config.job_names.ruler, $._config.container_names.ruler) },
           '{{ rule_group }}',
         ) +
         {
@@ -648,7 +648,7 @@ local filename = 'mimir-tenants.json';
         $.tablePanel(
           [
             'topk($limit, sum by (rule_group) (cortex_prometheus_rule_group_rules{%(job)s, user="$user"}))'
-            % { job: $.jobMatcher($._config.job_names.ruler) },
+            % { job: $.jobContainerMatchers($._config.job_names.ruler, $._config.container_names.ruler) },
           ],
           { 'Value #A': { alias: 'rules' } }
         )
@@ -659,7 +659,7 @@ local filename = 'mimir-tenants.json';
         $.tablePanel(
           [
             'topk($limit, sum by (rule_group) (cortex_prometheus_rule_group_last_duration_seconds{%(job)s, user="$user"}))'
-            % { job: $.jobMatcher($._config.job_names.ruler) },
+            % { job: $.jobContainerMatchers($._config.job_names.ruler, $._config.container_names.ruler) },
           ],
           { 'Value #A': { alias: 'seconds' } }
         )
@@ -673,7 +673,7 @@ local filename = 'mimir-tenants.json';
         $.timeseriesPanel(title) +
         $.queryPanel(
           'sum(rate(cortex_prometheus_notifications_sent_total{%(job)s, user="$user"}[$__rate_interval]))'
-          % { job: $.jobMatcher($._config.job_names.ruler) },
+          % { job: $.jobContainerMatchers($._config.job_names.ruler, $._config.container_names.ruler) },
           'rate',
         ) +
         { options+: { legend+: { showLegend: false } } },
@@ -683,7 +683,7 @@ local filename = 'mimir-tenants.json';
         $.timeseriesPanel(title) +
         $.failurePanel(
           'sum(rate(cortex_prometheus_notifications_errors_total{%(job)s, user="$user"}[$__rate_interval]))'
-          % { job: $.jobMatcher($._config.job_names.ruler) },
+          % { job: $.jobContainerMatchers($._config.job_names.ruler, $._config.container_names.ruler) },
           'rate',
         ) +
         { options+: { legend+: { showLegend: false } } },
@@ -696,8 +696,8 @@ local filename = 'mimir-tenants.json';
         $.timeseriesPanel('Alerts') +
         $.queryPanel(
           [
-            'sum by (user) (cortex_alertmanager_alerts{%(job)s, user="$user"})' % { job: $.jobMatcher($._config.job_names.alertmanager) },
-            'sum by (user) (cortex_alertmanager_silences{%(job)s, user="$user"})' % { job: $.jobMatcher($._config.job_names.alertmanager) },
+            'sum by (user) (cortex_alertmanager_alerts{%(job)s, user="$user"})' % { job: $.jobContainerMatchers($._config.job_names.alertmanager, $._config.container_names.alertmanager) },
+            'sum by (user) (cortex_alertmanager_silences{%(job)s, user="$user"})' % { job: $.jobContainerMatchers($._config.job_names.alertmanager, $._config.container_names.alertmanager) },
           ],
           ['alerts', 'silences']
         )
@@ -712,10 +712,10 @@ local filename = 'mimir-tenants.json';
             on() (sum(rate(cortex_alertmanager_notifications_failed_total{%(job)s, user="$user"}[$__rate_interval])) or on () vector(0))
             ) > 0
           ||| % {
-            job: $.jobMatcher($._config.job_names.alertmanager),
+            job: $.jobContainerMatchers($._config.job_names.alertmanager, $._config.container_names.alertmanager),
           },
           'sum(rate(cortex_alertmanager_notifications_failed_total{%(job)s, user="$user"}[$__rate_interval]))' % {
-            job: $.jobMatcher($._config.job_names.alertmanager),
+            job: $.jobContainerMatchers($._config.job_names.alertmanager, $._config.container_names.alertmanager),
           },
         )
       )
@@ -731,10 +731,10 @@ local filename = 'mimir-tenants.json';
                (sum(rate(cortex_alertmanager_notifications_total{%(job)s, user="$user"}[$__rate_interval])) by(integration) * 0)
               )) > 0
             ||| % {
-              job: $.jobMatcher($._config.job_names.alertmanager),
+              job: $.jobContainerMatchers($._config.job_names.alertmanager, $._config.container_names.alertmanager),
             },
             'sum(rate(cortex_alertmanager_notifications_failed_total{%(job)s, user="$user"}[$__rate_interval])) by(integration)' % {
-              job: $.jobMatcher($._config.job_names.alertmanager),
+              job: $.jobContainerMatchers($._config.job_names.alertmanager, $._config.container_names.alertmanager),
             },
           ],
           ['success - {{ integration }}', 'failed - {{ integration }}']
@@ -749,7 +749,7 @@ local filename = 'mimir-tenants.json';
         $.timeseriesPanel(title) +
         $.queryPanel(
           'sum(rate(cortex_query_frontend_queries_total{%(job)s, user="$user"}[$__rate_interval]))'
-          % { job: $.jobMatcher($._config.job_names.query_frontend) },
+          % { job: $.jobContainerMatchers($._config.job_names.query_frontend, $._config.container_names.query_frontend) },
           'Queries / Sec'
         )
       )
@@ -760,7 +760,7 @@ local filename = 'mimir-tenants.json';
         $.queryPanel(
           [
             'sum(cortex_query_scheduler_queue_length{%(job)s, user="$user"})'
-            % { job: $.jobMatcher($._config.job_names.query_scheduler) },
+            % { job: $.jobContainerMatchers($._config.job_names.query_scheduler, $._config.container_names.query_scheduler) },
           ],
           [
             'Queue Length',
@@ -771,11 +771,11 @@ local filename = 'mimir-tenants.json';
         $.timeseriesPanel('Query Expression Length - query-frontend') +
         $.queryPanel([
           'histogram_quantile(0.99, sum(rate(cortex_query_frontend_queries_expression_bytes{%(job)s, user="$user"}[$__rate_interval])))'
-          % { job: $.jobMatcher($._config.job_names.query_frontend) },
+          % { job: $.jobContainerMatchers($._config.job_names.query_frontend, $._config.container_names.query_frontend) },
           'histogram_quantile(0.90, sum(rate(cortex_query_frontend_queries_expression_bytes{%(job)s, user="$user"}[$__rate_interval])))'
-          % { job: $.jobMatcher($._config.job_names.query_frontend) },
+          % { job: $.jobContainerMatchers($._config.job_names.query_frontend, $._config.container_names.query_frontend) },
           'histogram_avg(sum(rate(cortex_query_frontend_queries_expression_bytes{%(job)s, user="$user"}[$__rate_interval])))'
-          % { job: $.jobMatcher($._config.job_names.query_frontend) },
+          % { job: $.jobContainerMatchers($._config.job_names.query_frontend, $._config.container_names.query_frontend) },
         ], [
           '99th Percentile',
           '90th Percentile',
@@ -791,7 +791,7 @@ local filename = 'mimir-tenants.json';
         $.timeseriesPanel(title) +
         $.queryPanel(
           'sum(rate(cortex_query_frontend_queries_total{%(job)s, user="$user"}[$__rate_interval]))'
-          % { job: $.jobMatcher($._config.job_names.ruler_query_frontend) },
+          % { job: $.jobContainerMatchers($._config.job_names.ruler_query_frontend, $._config.container_names.ruler_query_frontend) },
           'Queries / Sec'
         )
       )
@@ -802,7 +802,7 @@ local filename = 'mimir-tenants.json';
         $.queryPanel(
           [
             'sum(cortex_query_scheduler_queue_length{%(job)s, user="$user"})'
-            % { job: $.jobMatcher($._config.job_names.ruler_query_scheduler) },
+            % { job: $.jobContainerMatchers($._config.job_names.ruler_query_scheduler, $._config.container_names.ruler_query_scheduler) },
           ],
           [
             'Queue Length',
@@ -813,11 +813,11 @@ local filename = 'mimir-tenants.json';
         $.timeseriesPanel('Query Expression Length - ruler-query-frontend') +
         $.queryPanel([
           'histogram_quantile(0.99, sum(rate(cortex_query_frontend_queries_expression_bytes{%(job)s, user="$user"}[$__rate_interval])))'
-          % { job: $.jobMatcher($._config.job_names.ruler_query_frontend) },
+          % { job: $.jobContainerMatchers($._config.job_names.ruler_query_frontend, $._config.container_names.ruler_query_frontend) },
           'histogram_quantile(0.90, sum(rate(cortex_query_frontend_queries_expression_bytes{%(job)s, user="$user"}[$__rate_interval])))'
-          % { job: $.jobMatcher($._config.job_names.ruler_query_frontend) },
+          % { job: $.jobContainerMatchers($._config.job_names.ruler_query_frontend, $._config.container_names.ruler_query_frontend) },
           'histogram_avg(sum(rate(cortex_query_frontend_queries_expression_bytes{%(job)s, user="$user"}[$__rate_interval])))'
-          % { job: $.jobMatcher($._config.job_names.ruler_query_frontend) },
+          % { job: $.jobContainerMatchers($._config.job_names.ruler_query_frontend, $._config.container_names.ruler_query_frontend) },
         ], [
           '99th Percentile',
           '90th Percentile',
@@ -836,7 +836,7 @@ local filename = 'mimir-tenants.json';
             sum by (type) (cortex_bucket_index_estimated_compaction_jobs{%s, user="$user"})
             and ignoring(type)
             (sum(rate(cortex_bucket_index_estimated_compaction_jobs_errors_total{%s}[$__rate_interval])) == 0)
-          ||| % [$.jobMatcher($._config.job_names.compactor), $.jobMatcher($._config.job_names.compactor)],
+          ||| % [$.jobContainerMatchers($._config.job_names.compactor, $._config.container_names.compactor), $.jobContainerMatchers($._config.job_names.compactor, $._config.container_names.compactor)],
           '{{ job }}',
         ) +
         $.showAllTooltip + {
@@ -867,7 +867,7 @@ local filename = 'mimir-tenants.json';
         $.queryPanel(
           |||
             max by (user) (cortex_bucket_blocks_count{%s, user="$user"})
-          ||| % [$.jobMatcher($._config.job_names.compactor)],
+          ||| % [$.jobContainerMatchers($._config.job_names.compactor, $._config.container_names.compactor)],
           '{{ job }}',
         ) +
         $.panelDescription(
@@ -883,7 +883,7 @@ local filename = 'mimir-tenants.json';
           {
             name: 'Active Series Reload',
             datasource: '$datasource',
-            expr: 'sum by (user) (cortex_ingester_active_series_loading{%s, user="$user"}) > 0' % [$.jobMatcher($._config.job_names.ingester)],
+            expr: 'sum by (user) (cortex_ingester_active_series_loading{%s, user="$user"}) > 0' % [$.jobContainerMatchers($._config.job_names.ingester, $._config.container_names.ingester)],
             titleFormat: 'Active series reloading for user {{user}}',
             enable: true,
             hide: true,

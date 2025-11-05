@@ -14,9 +14,9 @@ local filename = 'mimir-queries.json';
     // (e.g. cortex_query_frontend_* metrics are only exposed by query-frontend) or on metrics
     // that have other labels that allow to distinguish the component (e.g. component="query-frontend").
     .addCustomTemplate('Read path', 'read_path_matcher', [
-      { label: 'All', value: $.jobMatcher(std.uniq(std.sort($._config.job_names.main_read_path + $._config.job_names.remote_ruler_read_path))) },
-      { label: 'Main', value: $.jobMatcher($._config.job_names.main_read_path) },
-      { label: 'Remote ruler', value: $.jobMatcher($._config.job_names.remote_ruler_read_path) },
+      { label: 'All', value: $.jobContainerMatchers(std.uniq(std.sort($._config.job_names.main_read_path + $._config.job_names.remote_ruler_read_path)), $._config.container_names.querier) },
+      { label: 'Main', value: $.jobContainerMatchers($._config.job_names.main_read_path, $._config.container_names.querier) },
+      { label: 'Remote ruler', value: $.jobContainerMatchers($._config.job_names.remote_ruler_read_path, $._config.container_names.ruler_querier) },
     ])
     .addRowIf(
       $._config.gateway_enabled,
@@ -30,7 +30,7 @@ local filename = 'mimir-queries.json';
           |||
         ) +
         $.queryPanel(
-          'label_replace(label_replace(sum by (proxy)(histogram_count(rate(cortex_conditional_handler_request_duration_seconds{%s}[$__rate_interval]))), "proxy", "Remote ruler read path", "proxy", "^alternate_query_proxy$"),"proxy", "Main read path", "proxy", "^query_proxy$")' % $.jobMatcher($._config.job_names.gateway),
+          'label_replace(label_replace(sum by (proxy)(histogram_count(rate(cortex_conditional_handler_request_duration_seconds{%s}[$__rate_interval]))), "proxy", "Remote ruler read path", "proxy", "^alternate_query_proxy$"),"proxy", "Main read path", "proxy", "^query_proxy$")' % $.jobContainerMatchers($._config.job_names.gateway, $._config.container_names.gateway),
           '{{proxy}}'
         ) +
         { fieldConfig+: { defaults+: { unit: 'reqps' } } }
@@ -268,7 +268,7 @@ local filename = 'mimir-queries.json';
       $._config.show_ingest_storage_panels,
       ($.row('Ingester – strong consistency (ingest storage)'))
       .addPanel(
-        $.ingestStorageStrongConsistencyRequestsPanel('partition-reader', $.jobMatcher($._config.job_names.ingester))
+        $.ingestStorageStrongConsistencyRequestsPanel('partition-reader', $.jobContainerMatchers($._config.job_names.ingester, $._config.container_names.ingester))
       )
       .addPanel(
         $.timeseriesPanel('Requests with strong read consistency ratio') +
@@ -287,11 +287,11 @@ local filename = 'mimir-queries.json';
                 -
                 sum(rate(cortex_ingest_storage_strong_consistency_failures_total{%s}[$__rate_interval]))
               )
-            ||| % [$.jobMatcher($._config.job_names.ingester), $.jobMatcher($._config.job_names.ingester)];
+            ||| % [$.jobContainerMatchers($._config.job_names.ingester, $._config.container_names.ingester), $.jobContainerMatchers($._config.job_names.ingester, $._config.container_names.ingester)];
           local scFailed =
             |||
               sum(rate(cortex_ingest_storage_strong_consistency_failures_total{%s}[$__rate_interval]))
-            ||| % [$.jobMatcher($._config.job_names.ingester)];
+            ||| % [$.jobContainerMatchers($._config.job_names.ingester, $._config.container_names.ingester)];
           local scRate(sc, rate) = std.join(' / ', [sc, rate]);
           [
             scRate(scSuccessful, utils.showClassicHistogramQuery(ncSumRate)),
@@ -306,17 +306,17 @@ local filename = 'mimir-queries.json';
         + $.stack
       )
       .addPanel(
-        $.ingestStorageStrongConsistencyWaitLatencyPanel('partition-reader', $.jobMatcher($._config.job_names.ingester)),
+        $.ingestStorageStrongConsistencyWaitLatencyPanel('partition-reader', $.jobContainerMatchers($._config.job_names.ingester, $._config.container_names.ingester)),
       )
     )
     .addRowIf(
       $._config.show_ingest_storage_panels,
       $.row('')
       .addPanel(
-        $.ingestStorageFetchLastProducedOffsetRequestsPanel($.jobMatcher($._config.job_names.ingester)),
+        $.ingestStorageFetchLastProducedOffsetRequestsPanel($.jobContainerMatchers($._config.job_names.ingester, $._config.container_names.ingester)),
       )
       .addPanel(
-        $.ingestStorageFetchLastProducedOffsetLatencyPanel($.jobMatcher($._config.job_names.ingester)),
+        $.ingestStorageFetchLastProducedOffsetLatencyPanel($.jobContainerMatchers($._config.job_names.ingester, $._config.container_names.ingester)),
       )
       .addPanel(
         $.ingestStorageIngesterEndToEndLatencyWhenRunningPanel(),
@@ -446,8 +446,8 @@ local filename = 'mimir-queries.json';
         ) +
         $.queryPanel(
           [
-            'sum by (level) (rate(cortex_bucket_store_series_blocks_queried_sum{component="store-gateway",level=~"[0-4]",%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.store_gateway),
-            'sum(rate(cortex_bucket_store_series_blocks_queried_sum{component="store-gateway",level!~"[0-4]",%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.store_gateway),
+            'sum by (level) (rate(cortex_bucket_store_series_blocks_queried_sum{component="store-gateway",level=~"[0-4]",%s}[$__rate_interval]))' % $.jobContainerMatchers($._config.job_names.store_gateway, $._config.container_names.store_gateway),
+            'sum(rate(cortex_bucket_store_series_blocks_queried_sum{component="store-gateway",level!~"[0-4]",%s}[$__rate_interval]))' % $.jobContainerMatchers($._config.job_names.store_gateway, $._config.container_names.store_gateway),
           ],
           ['{{level}}', '5+'],
         ) +
@@ -461,7 +461,7 @@ local filename = 'mimir-queries.json';
             # Exclude "chunks refetched".
             rate(cortex_bucket_store_series_data_size_fetched_bytes_sum{component="store-gateway", stage!="refetched", %(jobMatcher)s}[$__rate_interval])
           )
-        ||| % { jobMatcher: $.jobMatcher($._config.job_names.store_gateway) }, '{{data_type}}') +
+        ||| % { jobMatcher: $.jobContainerMatchers($._config.job_names.store_gateway, $._config.container_names.store_gateway) }, '{{data_type}}') +
         $.stack +
         { fieldConfig+: { defaults+: { unit: 'binBps' } } },
       )
@@ -472,7 +472,7 @@ local filename = 'mimir-queries.json';
             # Exclude "chunks processed" to only count "chunks returned", other than postings and series.
             rate(cortex_bucket_store_series_data_size_touched_bytes_sum{component="store-gateway", stage!="processed",%(jobMatcher)s}[$__rate_interval])
           )
-        ||| % { jobMatcher: $.jobMatcher($._config.job_names.store_gateway) }, '{{data_type}}') +
+        ||| % { jobMatcher: $.jobContainerMatchers($._config.job_names.store_gateway, $._config.container_names.store_gateway) }, '{{data_type}}') +
         $.stack +
         { fieldConfig+: { defaults+: { unit: 'binBps' } } },
       )
@@ -486,7 +486,7 @@ local filename = 'mimir-queries.json';
             sum by(stage) (rate(cortex_bucket_store_series_request_stage_duration_seconds_sum{%s}[$__rate_interval]))
             /
             sum by(stage) (rate(cortex_bucket_store_series_request_stage_duration_seconds_count{%s}[$__rate_interval]))
-          ||| % [$.jobMatcher($._config.job_names.store_gateway), $.jobMatcher($._config.job_names.store_gateway)],
+          ||| % [$.jobContainerMatchers($._config.job_names.store_gateway, $._config.container_names.store_gateway), $.jobContainerMatchers($._config.job_names.store_gateway, $._config.container_names.store_gateway)],
           '{{stage}}'
         ) +
         $.stack +
@@ -498,7 +498,7 @@ local filename = 'mimir-queries.json';
         $.queryPanel(
           |||
             histogram_quantile(0.99, sum by(stage, le) (rate(cortex_bucket_store_series_request_stage_duration_seconds_bucket{%s}[$__rate_interval])))
-          ||| % [$.jobMatcher($._config.job_names.store_gateway)],
+          ||| % [$.jobContainerMatchers($._config.job_names.store_gateway, $._config.container_names.store_gateway)],
           '{{stage}}'
         ) +
         $.stack +
@@ -516,7 +516,7 @@ local filename = 'mimir-queries.json';
                 /
                 sum(rate(cortex_bucket_store_series_batch_preloading_load_duration_seconds_sum{%s}[$__rate_interval]))
             ), 0)
-          ||| % [$.jobMatcher($._config.job_names.store_gateway), $.jobMatcher($._config.job_names.store_gateway)],
+          ||| % [$.jobContainerMatchers($._config.job_names.store_gateway, $._config.container_names.store_gateway), $.jobContainerMatchers($._config.job_names.store_gateway, $._config.container_names.store_gateway)],
           '% of time reduced by preloading'
         ) +
         { fieldConfig+: { defaults+: { unit: 'percentunit', min: 0, max: 1 } } } +
@@ -534,7 +534,7 @@ local filename = 'mimir-queries.json';
       $.row('')
       .addPanel(
         $.timeseriesPanel('Blocks currently owned') +
-        $.queryPanel('cortex_bucket_store_blocks_loaded{component="store-gateway",%s}' % $.jobMatcher($._config.job_names.store_gateway), '{{%s}}' % $._config.per_instance_label) +
+        $.queryPanel('cortex_bucket_store_blocks_loaded{component="store-gateway",%s}' % $.jobContainerMatchers($._config.job_names.store_gateway, $._config.container_names.store_gateway), '{{%s}}' % $._config.per_instance_label) +
         { fieldConfig+: { defaults+: { custom+: { fillOpacity: 0 } } } } +
         $.panelDescription(
           'Blocks currently owned',
@@ -549,16 +549,16 @@ local filename = 'mimir-queries.json';
       .addPanel(
         $.timeseriesPanel('Blocks loaded / sec') +
         $.successFailurePanel(
-          'sum(rate(cortex_bucket_store_block_loads_total{component="store-gateway",%s}[$__rate_interval])) - sum(rate(cortex_bucket_store_block_load_failures_total{component="store-gateway",%s}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.store_gateway), $.jobMatcher($._config.job_names.store_gateway)],
-          'sum(rate(cortex_bucket_store_block_load_failures_total{component="store-gateway",%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.store_gateway),
+          'sum(rate(cortex_bucket_store_block_loads_total{component="store-gateway",%s}[$__rate_interval])) - sum(rate(cortex_bucket_store_block_load_failures_total{component="store-gateway",%s}[$__rate_interval]))' % [$.jobContainerMatchers($._config.job_names.store_gateway, $._config.container_names.store_gateway), $.jobContainerMatchers($._config.job_names.store_gateway, $._config.container_names.store_gateway)],
+          'sum(rate(cortex_bucket_store_block_load_failures_total{component="store-gateway",%s}[$__rate_interval]))' % $.jobContainerMatchers($._config.job_names.store_gateway, $._config.container_names.store_gateway),
         ) +
         $.stack
       )
       .addPanel(
         $.timeseriesPanel('Blocks dropped / sec') +
         $.successFailurePanel(
-          'sum(rate(cortex_bucket_store_block_drops_total{component="store-gateway",%s}[$__rate_interval])) - sum(rate(cortex_bucket_store_block_drop_failures_total{component="store-gateway",%s}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.store_gateway), $.jobMatcher($._config.job_names.store_gateway)],
-          'sum(rate(cortex_bucket_store_block_drop_failures_total{component="store-gateway",%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.store_gateway),
+          'sum(rate(cortex_bucket_store_block_drops_total{component="store-gateway",%s}[$__rate_interval])) - sum(rate(cortex_bucket_store_block_drop_failures_total{component="store-gateway",%s}[$__rate_interval]))' % [$.jobContainerMatchers($._config.job_names.store_gateway, $._config.container_names.store_gateway), $.jobContainerMatchers($._config.job_names.store_gateway, $._config.container_names.store_gateway)],
+          'sum(rate(cortex_bucket_store_block_drop_failures_total{component="store-gateway",%s}[$__rate_interval]))' % $.jobContainerMatchers($._config.job_names.store_gateway, $._config.container_names.store_gateway),
         ) +
         $.stack
       )
@@ -567,16 +567,16 @@ local filename = 'mimir-queries.json';
       $.row('')
       .addPanel(
         $.timeseriesPanel('Lazy loaded index-headers') +
-        $.queryPanel('cortex_bucket_store_indexheader_lazy_load_total{%s} - cortex_bucket_store_indexheader_lazy_unload_total{%s}' % [$.jobMatcher($._config.job_names.store_gateway), $.jobMatcher($._config.job_names.store_gateway)], '{{%s}}' % $._config.per_instance_label) +
+        $.queryPanel('cortex_bucket_store_indexheader_lazy_load_total{%s} - cortex_bucket_store_indexheader_lazy_unload_total{%s}' % [$.jobContainerMatchers($._config.job_names.store_gateway, $._config.container_names.store_gateway), $.jobContainerMatchers($._config.job_names.store_gateway, $._config.container_names.store_gateway)], '{{%s}}' % $._config.per_instance_label) +
         { fieldConfig+: { defaults+: { custom+: { fillOpacity: 0 } } } }
       )
       .addPanel(
         $.timeseriesPanel('Index-header lazy load duration') +
-        $.latencyPanel('cortex_bucket_store_indexheader_lazy_load_duration_seconds', '{%s}' % $.jobMatcher($._config.job_names.store_gateway)),
+        $.latencyPanel('cortex_bucket_store_indexheader_lazy_load_duration_seconds', '{%s}' % $.jobContainerMatchers($._config.job_names.store_gateway, $._config.container_names.store_gateway)),
       )
       .addPanel(
         $.timeseriesPanel('Index-header lazy load gate latency') +
-        $.latencyPanel('cortex_bucket_stores_gate_duration_seconds', '{%s,gate="index_header"}' % $.jobMatcher($._config.job_names.store_gateway)) +
+        $.latencyPanel('cortex_bucket_stores_gate_duration_seconds', '{%s,gate="index_header"}' % $.jobContainerMatchers($._config.job_names.store_gateway, $._config.container_names.store_gateway)) +
         $.panelDescription(
           'Index-header lazy load gate latency',
           |||
@@ -593,7 +593,7 @@ local filename = 'mimir-queries.json';
           sum(rate(cortex_bucket_store_series_hash_cache_hits_total{%s}[$__rate_interval]))
           /
           sum(rate(cortex_bucket_store_series_hash_cache_requests_total{%s}[$__rate_interval]))
-        ||| % [$.jobMatcher($._config.job_names.store_gateway), $.jobMatcher($._config.job_names.store_gateway)], 'hit ratio') +
+        ||| % [$.jobContainerMatchers($._config.job_names.store_gateway, $._config.container_names.store_gateway), $.jobContainerMatchers($._config.job_names.store_gateway, $._config.container_names.store_gateway)], 'hit ratio') +
         { fieldConfig+: { defaults+: { unit: 'percentunit', min: 0, max: 1 } } },
       )
       .addPanel(
@@ -602,7 +602,7 @@ local filename = 'mimir-queries.json';
           sum(rate(thanos_store_index_cache_hits_total{item_type="ExpandedPostings",%s}[$__rate_interval]))
           /
           sum(rate(thanos_store_index_cache_requests_total{item_type="ExpandedPostings",%s}[$__rate_interval]))
-        ||| % [$.jobMatcher($._config.job_names.store_gateway), $.jobMatcher($._config.job_names.store_gateway)], 'hit ratio') +
+        ||| % [$.jobContainerMatchers($._config.job_names.store_gateway, $._config.container_names.store_gateway), $.jobContainerMatchers($._config.job_names.store_gateway, $._config.container_names.store_gateway)], 'hit ratio') +
         { fieldConfig+: { defaults+: { unit: 'percentunit', min: 0, max: 1 } } },
       )
       .addPanel(
@@ -611,7 +611,7 @@ local filename = 'mimir-queries.json';
           sum(rate(cortex_cache_memory_hits_total{name="chunks-attributes-cache",%s}[$__rate_interval]))
           /
           sum(rate(cortex_cache_memory_requests_total{name="chunks-attributes-cache",%s}[$__rate_interval]))
-        ||| % [$.jobMatcher($._config.job_names.store_gateway), $.jobMatcher($._config.job_names.store_gateway)], 'hit ratio') +
+        ||| % [$.jobContainerMatchers($._config.job_names.store_gateway, $._config.container_names.store_gateway), $.jobContainerMatchers($._config.job_names.store_gateway, $._config.container_names.store_gateway)], 'hit ratio') +
         { fieldConfig+: { defaults+: { unit: 'percentunit', min: 0, max: 1 } } },
       )
     ),

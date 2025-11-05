@@ -55,7 +55,7 @@ local filename = 'mimir-writes-resources.json';
         $.timeseriesPanel('In-memory series') +
         $.queryPanel(
           [
-            'sum by(%s) (cortex_ingester_memory_series{%s})' % [$._config.per_instance_label, $.jobMatcher($._config.job_names.ingester)],
+            'sum by(%s) (cortex_ingester_memory_series{%s})' % [$._config.per_instance_label, $.jobContainerMatchers($._config.job_names.ingester, $._config.container_names.ingester)],
             'min by(%(label)s) (cortex_ingester_instance_limits{%(label)s="$namespace", limit="max_series"})' % { label: $._config.per_namespace_label },
           ],
           [

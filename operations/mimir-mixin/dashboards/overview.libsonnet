@@ -301,7 +301,7 @@ local filename = 'mimir-overview.json';
         $.timeseriesPanel('Total number of blocks in the storage') +
         // Look at the max over the last 15m to correctly work during rollouts
         // (the metrics disappear until the next cleanup runs).
-        $.queryPanel('sum(max by(user) (max_over_time(cortex_bucket_blocks_count{%s}[15m])))' % $.jobMatcher($._config.job_names.compactor), 'blocks'),
+        $.queryPanel('sum(max by(user) (max_over_time(cortex_bucket_blocks_count{%s}[15m])))' % $.jobContainerMatchers($._config.job_names.compactor, $._config.container_names.compactor), 'blocks'),
       )
     ),
 }
