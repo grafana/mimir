@@ -115,7 +115,7 @@ func MaterializeSplitRangeVector(s *SplitRangeVector, materializer *planning.Mat
 	}
 
 	// Create the split version with pre-calculated blocks and cache key
-	splitOp := functions.NewFunctionOverRangeVectorSplitWithBlocks(
+	splitOp := functions.NewFunctionOverRangeVectorSplit(
 		baseFuncRange.Inner,
 		baseFuncRange.ScalarArgs,
 		baseFuncRange.MemoryConsumptionTracker,
