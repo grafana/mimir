@@ -1,0 +1,99 @@
+---
+description: "Migrate the Helm chart from version 5.x to 6.0"
+title: "Migrate the Helm chart from version 5.x to 6.0"
+menuTitle: "Migrate Helm chart 5.x to 6.0"
+weight: 120
+---
+
+# Migrate the Helm chart from version 5.x to 6.0
+
+The `mimir-distributed` Helm chart version 6.0 deploys Kafka and enables ingest storage by default. The bundled Kafka deployment is for demo and testing purposes only and is not suitable for production use. The rollout operator chart now installs webhooks by default, which requires installing CRDs before upgrading. The top-level `nginx` values section has been removed; you must migrate to the unified gateway deployment before upgrading to version 6.0.
+
+## Prerequisites
+
+- You are running `mimir-distributed` Helm chart version 5.x.
+- If using the rollout operator, you have cluster permissions to install CRDs.
+- If you use the top-level `nginx` values, you have already migrated to the unified gateway deployment.
+
+## Procedure
+
+### 1. Migrate to unified gateway deployment (if needed)
+
+If your values file contains a top-level `nginx` section, you must migrate to the unified gateway deployment before upgrading to version 6.0.
+
+Follow the [Migrate to unified proxy deployment](https://grafana.com/docs/helm-charts/mimir-distributed/v5.8.x/migration-guides/migrate-to-unified-proxy-deployment/) guide to complete this migration.
+
+### 2. Install rollout operator CRDs (if using rollout operator)
+
+If you use the rollout operator, install the CRDs from the rollout operator chart:
+
+```bash
+kubectl apply -f https://raw.githubusercontent.com/grafana/helm-charts/main/charts/rollout-operator/crds/crds.yaml
+```
+
+Alternatively, you can install the CRDs from your local clone of the [grafana/helm-charts](https://github.com/grafana/helm-charts/tree/main/charts/rollout-operator/crds) repository.
+
+### 3. Choose your ingest storage strategy
+
+Choose one of the following options:
+
+#### Option A: Keep using classic architecture (disable ingest storage)
+
+If you want to continue using the classic architecture without ingest storage, add the following to your values file:
+
+```yaml
+mimir:
+  structuredConfig:
+    ingest_storage:
+      enabled: false
+  ingester:
+    push_grpc_method_enabled: true
+kafka:
+  enabled: false
+```
+
+After adding these values, proceed to upgrade to version 6.0.
+
+#### Option B: Migrate to ingest storage
+
+If you want to migrate your existing installation to use ingest storage, follow the [Migrate from classic to ingest storage architecture](../../../mimir/set-up/migrate/migrate-ingest-storage/) guide.
+
+{{% admonition type="note" %}}
+The Kafka deployment included in the Helm chart is for demo and testing purposes only. For production deployments, set up your own Kafka-compatible backend and configure Mimir to connect to it.
+{{% /admonition %}}
+
+To use your own Kafka cluster:
+
+1. Set up a production-grade Kafka-compatible backend (such as Apache Kafka, Amazon MSK, or Confluent Cloud).
+1. Disable the bundled Kafka deployment in your values file:
+   ```yaml
+   kafka:
+     enabled: false
+   ```
+1. Configure Mimir to connect to your Kafka cluster. Refer to the [Configure the Kafka backend](../../../mimir/configure/configure-kafka-backend/) documentation for configuration details.
+
+### 4. Upgrade to version 6.0
+
+After completing the prerequisites and choosing your ingest storage strategy, upgrade the Helm release:
+
+```bash
+helm upgrade <RELEASE_NAME> grafana/mimir-distributed --version 6.0.0 -f <VALUES_FILE>
+```
+
+## Troubleshooting
+
+### Kafka pods fail to start
+
+If the bundled Kafka pods fail to start, ensure you have sufficient resources in your cluster. The demo Kafka deployment requires resources that might not be available in smaller clusters.
+
+If you don't need ingest storage, follow [Option A](#option-a-keep-using-classic-architecture-disable-ingest-storage) to disable Kafka.
+
+### Rollout operator webhook errors
+
+If you see errors related to rollout operator webhooks, verify that the CRDs are properly installed:
+
+```bash
+kubectl get crd rollouts.operator.grafana.com
+```
+
+If the CRD is missing, follow [step 2](#2-install-rollout-operator-crds-if-using-rollout-operator) to install it.
