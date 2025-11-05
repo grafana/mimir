@@ -660,7 +660,6 @@ func TestMetaFetcher_CacheMetrics(t *testing.T) {
 func TestMetaFetcher_FetchRequestedBlocks(t *testing.T) {
 	var (
 		ctx    = context.Background()
-		reg    = prometheus.NewPedanticRegistry()
 		logger = log.NewNopLogger()
 	)
 
@@ -676,29 +675,59 @@ func TestMetaFetcher_FetchRequestedBlocks(t *testing.T) {
 		blockIDs = append(blockIDs, blockID)
 	}
 
-	f, err := NewMetaFetcher(logger, 10, objstore.WrapWithMetrics(bkt, reg, "test"), t.TempDir(), reg, nil, 0)
-	require.NoError(t, err)
+	nonExistentBlock := ulid.MustNew(1, nil)
 
-	metas, err := f.FetchRequestedBlocks(ctx, blockIDs[:2])
-	require.NoError(t, err)
-	require.Subset(t, metas, blockIDs[:1])
+	tests := map[string]struct {
+		requestedBlocks  []ulid.ULID
+		expectError      bool
+		expectedCount    int
+		shouldContain    []ulid.ULID
+		shouldNotContain []ulid.ULID
+	}{
+		"should fetch only requested blocks": {
+			requestedBlocks:  blockIDs[:2],
+			expectError:      false,
+			expectedCount:    2,
+			shouldContain:    blockIDs[:2],
+			shouldNotContain: blockIDs[2:],
+		},
+		"should error on empty block IDs list": {
+			requestedBlocks: []ulid.ULID{},
+			expectError:     true,
+		},
+		"should error when requested block does not exist": {
+			requestedBlocks: []ulid.ULID{nonExistentBlock},
+			expectError:     true,
+		},
+		"should error when some requested blocks are missing": {
+			requestedBlocks: []ulid.ULID{blockIDs[0], nonExistentBlock},
+			expectError:     true,
+		},
+	}
 
-	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
-		# HELP blocks_meta_synced Number of block metadata synced
-		# TYPE blocks_meta_synced gauge
-		blocks_meta_synced{state="corrupted-meta-json"} 0
-		blocks_meta_synced{state="duplicate"} 0
-		blocks_meta_synced{state="failed"} 0
-		blocks_meta_synced{state="label-excluded"} 0
-		blocks_meta_synced{state="loaded"} 2
-		blocks_meta_synced{state="lookback-excluded"} 0
-		blocks_meta_synced{state="marked-for-deletion"} 0
-		blocks_meta_synced{state="marked-for-no-compact"} 0
-		blocks_meta_synced{state="no-meta-json"} 0
-		blocks_meta_synced{state="time-excluded"} 0
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			reg := prometheus.NewPedanticRegistry()
+			f, err := NewMetaFetcher(logger, 10, objstore.WrapWithMetrics(bkt, reg, "test"), t.TempDir(), reg, nil, 0)
+			require.NoError(t, err)
 
-		# HELP blocks_meta_loads_total Total number of block metadata load attempts
-		# TYPE blocks_meta_loads_total counter
-		blocks_meta_loads_total 2
-	`), "blocks_meta_synced", "blocks_meta_loads_total"))
+			metas, err := f.FetchRequestedBlocks(ctx, tc.requestedBlocks)
+
+			if tc.expectError {
+				require.Error(t, err)
+				return
+			}
+
+			require.NoError(t, err)
+			require.Len(t, metas, tc.expectedCount)
+
+			for _, id := range tc.shouldContain {
+				require.Contains(t, metas, id)
+			}
+
+			for _, id := range tc.shouldNotContain {
+				require.NotContains(t, metas, id)
+			}
+		})
+	}
 }

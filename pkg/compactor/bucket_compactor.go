@@ -120,6 +120,7 @@ func (s *metaSyncer) SyncMetas(ctx context.Context) error {
 	return nil
 }
 
+// SyncRequestedMetas fetches and synchronizes metadata for a given set of blocks.
 func (s *metaSyncer) SyncRequestedMetas(ctx context.Context, blockIDs []ulid.ULID) error {
 	s.mtx.Lock()
 	defer s.mtx.Unlock()
