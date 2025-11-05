@@ -392,7 +392,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         },
         {
           // Alert if servers are receiving requests with invalid cluster validation labels (i.e. meant for other clusters).
-          alert: $.alertName('ServerInvalidClusterValidationLabelRequests'),
+          alert: $.alertName('ServerInvalidClusterLabelRequests'),
           expr: |||
             (sum by (%(alert_aggregation_labels)s, protocol) (rate(cortex_server_invalid_cluster_validation_label_requests_total{}[%(range_interval)s]))) > 0
             # Alert only for namespaces with Mimir clusters.
@@ -409,7 +409,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         },
         {
           // Alert if clients' requests are rejected due to invalid cluster validation labels (i.e. there's a mismatch between clients' and servers' cluster validation labels).
-          alert: $.alertName('ClientInvalidClusterValidationLabelRequests'),
+          alert: $.alertName('ClientInvalidClusterLabelRequests'),
           expr: |||
             (sum by (%(alert_aggregation_labels)s, protocol) (rate(cortex_client_invalid_cluster_validation_label_requests_total{}[%(range_interval)s]))) > 0
             # Alert only for namespaces with Mimir clusters.
@@ -458,7 +458,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         },
 
         {
-          alert: $.alertName('HighGRPCConcurrentStreamsPerConnection'),
+          alert: $.alertName('HighGRPCStreamsPerConnection'),
           expr: |||
             max(avg_over_time(grpc_concurrent_streams_by_conn_max[10m])) by (%(alert_aggregation_labels)s, container)
             /
@@ -660,7 +660,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
           },
         },
         {
-          alert: $.alertName('DistributorReachingInflightPushRequestLimit'),
+          alert: $.alertName('DistributorInflightRequestsHigh'),
           expr: |||
             (
                 (cortex_distributor_inflight_push_requests / ignoring(limit) cortex_distributor_instance_limits{limit="max_inflight_push_requests"})

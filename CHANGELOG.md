@@ -71,6 +71,26 @@
 
 ### Mixin
 
+* [CHANGE] Alerts: Renamed the following alerts to fit within 40 characters: #13363
+  * `AlertmanagerPartialStateMergeFailing` → `AlertmanagerStateMergeFailing`
+  * `ServerInvalidClusterValidationLabelRequests` → `ServerInvalidClusterLabelRequests`
+  * `ClientInvalidClusterValidationLabelRequests` → `ClientInvalidClusterLabelRequests`
+  * `HighGRPCConcurrentStreamsPerConnection` → `HighGRPCStreamsPerConnection`
+  * `DistributorReachingInflightPushRequestLimit` → `DistributorInflightRequestsHigh`
+  * `IngesterHasNotShippedBlocks` → `IngesterNotShippingBlocks`
+  * `IngesterHasNotShippedBlocksSinceStart` → `IngesterNotShippingBlocksSinceStart`
+  * `IngesterTSDBCheckpointCreationFailed` → `IngesterTSDBCheckpointCreateFailed`
+  * `IngesterTSDBCheckpointDeletionFailed` → `IngesterTSDBCheckpointDeleteFailed`
+  * `CompactorHasNotSuccessfullyCleanedUpBlocks` → `CompactorNotCleaningUpBlocks`
+  * `CompactorHasNotSuccessfullyRunCompaction` → `CompactorNotRunningCompaction`
+  * `CompactorFailingToBuildSparseIndexHeaders` → `CompactorBuildingSparseIndexFailed`
+  * `IngesterLastConsumedOffsetCommitFailed` → `IngesterOffsetCommitFailed`
+  * `IngesterFailedToReadRecordsFromKafka` → `IngesterKafkaReadFailed`
+  * `StartingIngesterKafkaReceiveDelayIncreasing` → `StartingIngesterKafkaDelayGrowing`
+  * `IngesterFailsToProcessRecordsFromKafka` → `IngesterKafkaProcessingFailed`
+  * `IngesterStuckProcessingRecordsFromKafka` → `IngesterKafkaProcessingStuck`
+  * `StrongConsistencyOffsetNotPropagatedToIngesters` → `StrongConsistencyOffsetMissing`
+  * `KafkaClientBufferedProduceBytesTooHigh` → `KafkaClientProduceBufferHigh`
 * [ENHANCEMENT] Alerts: Add `MimirFewerIngestersConsumingThanActivePartitions` alert. #13159
 * [ENHANCEMENT] Querier and query-frontend: Add alerts for querier ring, which is used when performing query planning in query-frontends and distributing portions of the plan to queriers for execution. #13165
 * [ENHANCEMENT] Alerts: Add `MimirBlockBuilderSchedulerNotRunning` alert. #13208
