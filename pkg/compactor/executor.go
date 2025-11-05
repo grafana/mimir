@@ -304,16 +304,6 @@ func (e *schedulerExecutor) executeCompactionJob(ctx context.Context, c *Multite
 	userID := spec.Tenant
 	userLogger := util_log.WithUserID(userID, e.logger)
 
-	blockIDs := make([]ulid.ULID, 0, len(spec.Job.BlockIds))
-	for _, id := range spec.Job.BlockIds {
-		blockID, err := ulid.Parse(string(id))
-		if err != nil {
-			level.Error(userLogger).Log("msg", "invalid block ID, abandoning job", "tenant", userID, "err", err)
-			return compactorschedulerpb.ABANDON, errors.Wrapf(err, "failed to parse block ID")
-		}
-		blockIDs = append(blockIDs, blockID)
-	}
-
 	reg := prometheus.NewRegistry()
 	defer c.syncerMetrics.gatherThanosSyncerMetrics(reg, userLogger)
 
@@ -342,6 +332,16 @@ func (e *schedulerExecutor) executeCompactionJob(ctx context.Context, c *Multite
 		return compactorschedulerpb.REASSIGN, errors.Wrap(err, "failed to create syncer")
 	}
 
+	blockIDs := make([]ulid.ULID, 0, len(spec.Job.BlockIds))
+	for _, id := range spec.Job.BlockIds {
+		blockID, err := ulid.Parse(string(id))
+		if err != nil {
+			level.Error(userLogger).Log("msg", "invalid block ID, abandoning job", "tenant", userID, "err", err)
+			return compactorschedulerpb.ABANDON, errors.Wrapf(err, "failed to parse block ID")
+		}
+		blockIDs = append(blockIDs, blockID)
+	}
+
 	if err := syncer.SyncRequestedMetas(ctx, blockIDs); err != nil {
 		return compactorschedulerpb.REASSIGN, errors.Wrap(err, "failed to sync metas")
 	}
@@ -349,10 +349,6 @@ func (e *schedulerExecutor) executeCompactionJob(ctx context.Context, c *Multite
 	jobMetas, err := getJobMetasFromSyncer(syncer, blockIDs)
 	if err != nil {
 		return compactorschedulerpb.REASSIGN, err
-	}
-
-	if len(jobMetas) == 0 {
-		return compactorschedulerpb.ABANDON, errors.New("no block metadata available after filtering")
 	}
 
 	var splitNumShards uint32
