@@ -40,23 +40,6 @@ kubectl apply -f https://raw.githubusercontent.com/grafana/helm-charts/main/char
 
 Choose one of the following options:
 
-#### Continue using classic architecture (disable ingest storage)
-
-Classic architecture is supported in Mimir version 3.0. If you want to continue using the classic architecture without ingest storage, add the following to your values file:
-
-```yaml
-mimir:
-  structuredConfig:
-    ingest_storage:
-      enabled: false
-  ingester:
-    push_grpc_method_enabled: true
-kafka:
-  enabled: false
-```
-
-After adding these values, upgrade to version 6.0.
-
 #### Migrate to ingest storage
 
 If you want to migrate your existing installation to use ingest storage, follow the [Migrate from classic to ingest storage architecture](https://grafana.com/docs/mimir/latest/set-up/migrate/migrate-ingest-storage/) guide.
@@ -74,6 +57,23 @@ To use your own Kafka cluster:
      enabled: false
    ```
 1. Configure Mimir to connect to your Kafka cluster. Refer to the [Configure the Kafka backend](https://grafana.com/docs/mimir/latest/configure/configure-kafka-backend/) documentation for configuration details.
+
+#### Continue using classic architecture (disable ingest storage)
+
+Classic architecture is supported in Mimir version 3.0. If you want to continue using the classic architecture without ingest storage, add the following to your values file:
+
+```yaml
+mimir:
+  structuredConfig:
+    ingest_storage:
+      enabled: false
+  ingester:
+    push_grpc_method_enabled: true
+kafka:
+  enabled: false
+```
+
+After adding these values, upgrade to version 6.0.
 
 ### Upgrade to version 6.0
 
