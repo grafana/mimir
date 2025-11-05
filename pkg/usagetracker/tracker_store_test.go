@@ -257,7 +257,7 @@ func TestTrackerStore_Snapshot_E2E(t *testing.T) {
 	var data []byte
 	for shard := uint8(0); shard < shards; shard++ {
 		data = tracker1.snapshot(shard, now, data[:0])
-		err := tracker2.loadSnapshot(data, now)
+		err := tracker2.loadSnapshot(data, now, true)
 		require.NoError(t, err)
 	}
 	require.Equal(t, map[string]uint64{
@@ -271,7 +271,7 @@ func TestTrackerStore_Snapshot_E2E(t *testing.T) {
 	// Loading same snapshot again should be a noop.
 	for shard := uint8(0); shard < shards; shard++ {
 		data = tracker1.snapshot(shard, now, data[:0])
-		err := tracker2.loadSnapshot(data, now)
+		err := tracker2.loadSnapshot(data, now, false)
 		require.NoError(t, err)
 	}
 
