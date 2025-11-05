@@ -301,14 +301,24 @@ func TestBryan(t *testing.T) {
 
 	t.Cleanup(func() { require.NoError(t, storage.Close()) })
 
-	testCases := map[string]struct {
-		expr     string
-		expected *promql.Result
-		ts       time.Time
+	instantTestCases := map[string]struct {
+		expr              string
+		expected          *promql.Result
+		ts                time.Time
+		expectedCacheGets int // Total gets across both runs
+		expectedCacheHits int // Hits on second run only
+		expectedCacheSets int // Sets on first run only
 	}{
 		"instant query with 1h range (won't use cache - no complete blocks)": {
 			expr: "sum_over_time(some_metric[1h])",
 			ts:   baseT.Add(2 * time.Hour),
+			// Cache: DISABLED (1h range ≤ 2h split interval)
+			// - Range vector lookback is only 1h
+			// - 2h blocks cannot fit completely within 1h range
+			// - splittable() returns false → no cache operations
+			expectedCacheGets: 0,
+			expectedCacheHits: 0,
+			expectedCacheSets: 0,
 			expected: &promql.Result{
 				Value: promql.Vector{
 					{
@@ -322,21 +332,133 @@ func TestBryan(t *testing.T) {
 		"instant query with 5h range at 6h (should use cache - has complete 2h blocks)": {
 			expr: "sum_over_time(some_metric[5h])",
 			ts:   baseT.Add(6 * time.Hour),
+			// Cache behavior:
+			// - Data range: (1h, 6h] (5h lookback from t=6h)
+			// - Complete 2h blocks in range: [2h-4h], [4h-6h]
+			// - Run 1: Check 2 blocks (2 gets), both miss, compute and store (2 sets)
+			// - Run 2: Check same 2 blocks (2 gets), both hit (2 hits)
+			// - Total: 4 gets, 2 hits (50%), 2 sets
+			expectedCacheGets: 4,
+			expectedCacheHits: 2,
+			expectedCacheSets: 2,
 			expected: &promql.Result{
 				Value: promql.Vector{
 					{
 						Metric: labels.FromStrings("env", "1"),
-						// Data from (1h, 6h] (5h lookback, RangeStart is exclusive)
-						// Points: t=1h10m(7), t=1h20m(8), ..., t=6h(36)
-						// Sum = 7+8+...+36 = (36-7+1)*(7+36)/2 = 30*43/2 = 645
-						T: timestamp.FromTime(baseT.Add(6 * time.Hour)),
-						F: 645,
+						T:      timestamp.FromTime(baseT.Add(6 * time.Hour)),
+						F:      645,
+						// How this value is computed using cache:
+						// - Step range: (1h, 6h] (5h lookback)
+						// - Head piece: (1h, 2h] → computed fresh (before first block boundary)
+						// - Cached block [2h-4h]: Used from cache (or computed if cache miss)
+						// - Cached block [4h-6h]: Used from cache (or computed if cache miss)
+						// - Tail piece: (6h, 6h] → empty (range end aligns with block boundary)
+						// - Result: head + [2h-4h] + [4h-6h] + tail = 645
+						// - On run 2: Both cached blocks are hits → partial computation saved!
 					},
 				},
 			},
 		},
 	}
-	for name, testCase := range testCases {
+
+	rangeTestCases := map[string]struct {
+		expr              string
+		start             time.Time
+		end               time.Time
+		interval          time.Duration
+		expected          *promql.Result
+		expectedCacheGets int // Total gets across both runs
+		expectedCacheHits int // Hits on second run only
+		expectedCacheSets int // Sets on first run only
+	}{
+		"range query with 30m range, 6h duration, 1h step (won't cache - blocks don't fit)": {
+			expr:     "sum_over_time(some_metric[30m])",
+			start:    baseT,
+			end:      baseT.Add(6 * time.Hour),
+			interval: 1 * time.Hour,
+			// Cache: DISABLED (30m range ≤ 2h split interval)
+			// - Range vector lookback is only 30m
+			// - 2h blocks cannot fit completely within 30m range
+			// - splittable() returns false before Prepare() → no cache operations
+			// - All 7 steps (t=0h, 1h, 2h, 3h, 4h, 5h, 6h) computed normally
+			expectedCacheGets: 0,
+			expectedCacheHits: 0,
+			expectedCacheSets: 0,
+			expected: &promql.Result{
+				Value: promql.Matrix{
+					{
+						Metric: labels.FromStrings("env", "1"),
+						Floats: []promql.FPoint{
+							// Data: 41 points every 10m from t=0(0) to t=6h40m(40)
+							// 30m lookback, RangeStart is exclusive
+							{T: timestamp.FromTime(baseT), F: 0},                      // t=0h, (-30m, 0h]: only point 0 (at t=0)
+							{T: timestamp.FromTime(baseT.Add(1 * time.Hour)), F: 15},  // t=1h, (30m, 1h]: 4+5+6
+							{T: timestamp.FromTime(baseT.Add(2 * time.Hour)), F: 33},  // t=2h, (1h30m, 2h]: 10+11+12
+							{T: timestamp.FromTime(baseT.Add(3 * time.Hour)), F: 51},  // t=3h, (2h30m, 3h]: 16+17+18
+							{T: timestamp.FromTime(baseT.Add(4 * time.Hour)), F: 69},  // t=4h, (3h30m, 4h]: 22+23+24
+							{T: timestamp.FromTime(baseT.Add(5 * time.Hour)), F: 87},  // t=5h, (4h30m, 5h]: 28+29+30
+							{T: timestamp.FromTime(baseT.Add(6 * time.Hour)), F: 105}, // t=6h, (5h30m, 6h]: 34+35+36
+						},
+					},
+				},
+			},
+		},
+		"range query with 5h range, 12h duration, 2h step (should use cache extensively)": {
+			expr:     "sum_over_time(some_metric[5h])",
+			start:    baseT.Add(5 * time.Hour),
+			end:      baseT.Add(12 * time.Hour),
+			interval: 2 * time.Hour,
+			// Cache: ENABLED (5h range > 2h split interval)
+			// - Query has 4 steps: t=5h, 7h, 9h, 11h
+			// - Overall data range: (0h, 11h] (5h lookback from first/last steps)
+			// - Complete 2h blocks in overall range: [2h-4h], [4h-6h], [6h-8h] (3 blocks created in Prepare)
+			expectedCacheGets: 10,
+			expectedCacheHits: 7,
+			expectedCacheSets: 3,
+			expected: &promql.Result{
+				Value: promql.Matrix{
+					{
+						Metric: labels.FromStrings("env", "1"),
+						Floats: []promql.FPoint{
+							{T: timestamp.FromTime(baseT.Add(5 * time.Hour)), F: 465},
+							// Step t=5h, range (0h, 5h]:
+							//   - Head: (0h, 2h] → computed fresh (sum of points 1-12)
+							//   - Block [2h-4h]: cached/computed (sum of points 13-24) ← CACHED
+							//   - Tail: (4h, 5h] → computed fresh (sum of points 25-30)
+							//   - Result: head + [2h-4h] + tail = 465
+
+							{T: timestamp.FromTime(baseT.Add(7 * time.Hour)), F: 742},
+							// Step t=7h, range (2h, 7h]:
+							//   - Head: (2h, 2h] → empty (range start aligns with block)
+							//   - Block [2h-4h]: cached/computed (reused from t=5h step!) ← CACHED
+							//   - Block [4h-6h]: cached/computed ← CACHED
+							//   - Tail: (6h, 7h] → but data ends at 6h40m (sum of points 37-40)
+							//   - Result: [2h-4h] + [4h-6h] + tail = 742
+
+							{T: timestamp.FromTime(baseT.Add(9 * time.Hour)), F: 520},
+							// Step t=9h, range (4h, 9h]:
+							//   - Head: (4h, 4h] → empty
+							//   - Block [4h-6h]: cached/computed (reused from t=7h step!) ← CACHED
+							//   - Block [6h-8h]: cached/computed ← CACHED
+							//   - Tail: (8h, 9h] → but data ends at 6h40m (empty)
+							//   - Result: [4h-6h] + [6h-8h] + tail = 520
+
+							{T: timestamp.FromTime(baseT.Add(11 * time.Hour)), F: 154},
+							// Step t=11h, range (6h, 11h]:
+							//   - Head: (6h, 8h] → computed fresh (sum of points 37-40)
+							//   - Block [8h-10h]: cached/computed (but no data in this range) ← CACHED
+							//   - Tail: (10h, 11h] → computed fresh (no data)
+							//   - Result: head + [8h-10h] + tail = 154
+							// Note: Even though [8h-10h] has no data, we still check cache for it!
+							// Blocks [2h-4h], [4h-6h], [6h-8h] were reused across multiple steps.
+						},
+					},
+				},
+			},
+		},
+	}
+	// Test instant queries
+	for name, testCase := range instantTestCases {
 		t.Run(name, func(t *testing.T) {
 			// Add tenant ID to context for cache keying
 			ctx := user.InjectOrgID(context.Background(), "test-user")
@@ -357,10 +479,10 @@ func TestBryan(t *testing.T) {
 			testCache.hits = 0
 			testCache.sets = 0
 
-			// Run query first time (should populate cache)
+			// Run query first time (should populate cache if cacheable)
 			runTest(t, mimirEngine, testCase.expr, testCase.ts, testCase.expected)
 
-			// Run same query again (should hit cache)
+			// Run same query again (should hit cache if cacheable)
 			if testCase.expected != nil {
 				beforeGets := testCache.gets
 				beforeHits := testCache.hits
@@ -375,7 +497,62 @@ func TestBryan(t *testing.T) {
 				}
 			}
 
-			t.Logf("Final cache stats: %d gets, %d hits (%.1f%%), %d sets",
+			// Verify expected cache behavior
+			require.Equal(t, testCase.expectedCacheGets, testCache.gets, "Expected %d cache gets, got %d", testCase.expectedCacheGets, testCache.gets)
+			require.Equal(t, testCase.expectedCacheHits, testCache.hits, "Expected %d cache hits, got %d", testCase.expectedCacheHits, testCache.hits)
+			require.Equal(t, testCase.expectedCacheSets, testCache.sets, "Expected %d cache sets, got %d", testCase.expectedCacheSets, testCache.sets)
+
+			t.Logf("Cache stats: %d gets, %d hits (%.1f%%), %d sets ✓",
+				testCache.gets, testCache.hits,
+				float64(testCache.hits)/float64(max(testCache.gets, 1))*100,
+				testCache.sets)
+		})
+	}
+
+	// Test range queries
+	for name, testCase := range rangeTestCases {
+		t.Run(name, func(t *testing.T) {
+			// Add tenant ID to context for cache keying
+			ctx := user.InjectOrgID(context.Background(), "test-user")
+
+			runTest := func(t *testing.T, eng promql.QueryEngine, expr string, start, end time.Time, interval time.Duration, expected *promql.Result) *promql.Result {
+				q, err := eng.NewRangeQuery(ctx, storage, nil, expr, start, end, interval)
+				require.NoError(t, err)
+				defer q.Close()
+
+				res := q.Exec(ctx)
+				require.Equal(t, expected, res)
+
+				return res
+			}
+
+			// Reset cache stats for this test case
+			testCache.gets = 0
+			testCache.hits = 0
+			testCache.sets = 0
+
+			// Run query first time (may or may not use cache depending on whether blocks fit)
+			runTest(t, mimirEngine, testCase.expr, testCase.start, testCase.end, testCase.interval, testCase.expected)
+
+			// Run same query again (should hit cache if first query used cache)
+			beforeGets := testCache.gets
+			beforeHits := testCache.hits
+
+			runTest(t, mimirEngine, testCase.expr, testCase.start, testCase.end, testCase.interval, testCase.expected)
+
+			// Verify we got cache hits on second run
+			newGets := testCache.gets - beforeGets
+			newHits := testCache.hits - beforeHits
+			if newGets > 0 {
+				require.Equal(t, newGets, newHits, "Second query should have 100%% cache hit rate (got %d hits out of %d gets)", newHits, newGets)
+			}
+
+			// Verify expected cache behavior
+			require.Equal(t, testCase.expectedCacheGets, testCache.gets, "Expected %d cache gets, got %d", testCase.expectedCacheGets, testCache.gets)
+			require.Equal(t, testCase.expectedCacheHits, testCache.hits, "Expected %d cache hits, got %d", testCase.expectedCacheHits, testCache.hits)
+			require.Equal(t, testCase.expectedCacheSets, testCache.sets, "Expected %d cache sets, got %d", testCase.expectedCacheSets, testCache.sets)
+
+			t.Logf("Cache stats: %d gets, %d hits (%.1f%%), %d sets ✓",
 				testCache.gets, testCache.hits,
 				float64(testCache.hits)/float64(max(testCache.gets, 1))*100,
 				testCache.sets)

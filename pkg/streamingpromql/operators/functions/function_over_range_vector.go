@@ -193,6 +193,7 @@ func (m *FunctionOverRangeVector) processScalarArgs(ctx context.Context) error {
 
 // StepMover keeps track of the step for a range query
 // used by intermediate result caching to keep track of steps
+// Does what subquery/range vector selector does, but without going throught data
 type StepMover struct {
 	nextStepT         int64
 	endT              int64
@@ -336,84 +337,94 @@ func (m *FunctionOverRangeVector) NextSeries(ctx context.Context) (types.Instant
 			cachedStart := ((step.RangeStart / blockLengthMs) + 1) * blockLengthMs
 			cachedEnd := (step.RangeEnd / blockLengthMs) * blockLengthMs
 
-			// Allocate pieces for this step: head + middle blocks + tail
-			numMiddleBlocks := int((cachedEnd - cachedStart) / blockLengthMs)
-			pieces := make([]cache.IntermediateResult, numMiddleBlocks+2)
-
-			updatedStep := m.splitStep(step, step.RangeStart, cachedStart)
-			headPiece, err := m.Func.GenerateFunc(
-				updatedStep,
-				m.scalarArgsData,
-				m.emitAnnotationFunc,
-				m.MemoryConsumptionTracker)
-			if err != nil {
-				return types.InstantVectorSeriesData{}, err
-			}
-			pieces[0] = headPiece
-			piecesIdx := 1
-			cachedIdx := 0
-			// calculate missing pieces in the middle (or use cached version)
-			for ; cachedStart < cachedEnd; cachedStart += blockLengthMs {
-				var irBlockIdx int = -1
-
-				// Find which IR block corresponds to this timestamp
-				for i := range m.intermediateResults {
-					if int64(m.intermediateResults[i].startTimestamp) == cachedStart {
-						irBlockIdx = i
-						break
-					}
+			// If no complete blocks fit in this step's range, fall back to non-cached computation
+			if cachedStart >= cachedEnd {
+				// No complete blocks in range, compute entire step normally
+				f, hasFloat, h, err = m.Func.StepFunc(step, m.scalarArgsData, m.timeRange, m.emitAnnotationFunc, m.MemoryConsumptionTracker)
+				if err != nil {
+					return types.InstantVectorSeriesData{}, err
 				}
+			} else {
+				// We have complete blocks, split into head/middle/tail
+				// Allocate pieces for this step: head + middle blocks + tail
+				numMiddleBlocks := int((cachedEnd - cachedStart) / blockLengthMs)
+				pieces := make([]cache.IntermediateResult, numMiddleBlocks+2)
 
-				if irBlockIdx == -1 {
-					return types.InstantVectorSeriesData{}, fmt.Errorf("can't find IR block for timestamp %d", cachedStart)
+				updatedStep := m.splitStep(step, step.RangeStart, cachedStart)
+				headPiece, err := m.Func.GenerateFunc(
+					updatedStep,
+					m.scalarArgsData,
+					m.emitAnnotationFunc,
+					m.MemoryConsumptionTracker)
+				if err != nil {
+					return types.InstantVectorSeriesData{}, err
 				}
+				pieces[0] = headPiece
+				piecesIdx := 1
+				cachedIdx := 0
+				// calculate missing pieces in the middle (or use cached version)
+				for ; cachedStart < cachedEnd; cachedStart += blockLengthMs {
+					var irBlockIdx int = -1
 
-				// Check if this block has cached data for this series
-				var cachedSeriesIdx int = -1
-				if len(cachedResult) > 0 {
-					// Try to find it in cachedResult
-					for ; cachedIdx < len(cachedResult); cachedIdx++ {
-						if cachedResult[cachedIdx].IRBlockIdx == irBlockIdx {
-							cachedSeriesIdx = cachedResult[cachedIdx].SeriesIdx
+					// Find which IR block corresponds to this timestamp
+					for i := range m.intermediateResults {
+						if int64(m.intermediateResults[i].startTimestamp) == cachedStart {
+							irBlockIdx = i
 							break
 						}
 					}
-				}
 
-				// Use cached data if available, otherwise compute
-				if cachedSeriesIdx != -1 && m.intermediateResults[irBlockIdx].ir.Version != -1 {
-					pieces[piecesIdx] = m.intermediateResults[irBlockIdx].ir.Results[cachedSeriesIdx]
-				} else {
-					// Compute this block's intermediate result
-					updatedStep = m.splitStep(step, cachedStart, cachedStart+m.splitInterval().Milliseconds())
-					// TODO: this can be reused for later steps for the same series - we should make pieces wrap around to avoid recalculating when not necessary
-					pieces[piecesIdx], err = m.Func.GenerateFunc(
-						updatedStep,
-						m.scalarArgsData, m.emitAnnotationFunc, m.MemoryConsumptionTracker)
-					if err != nil {
-						return types.InstantVectorSeriesData{}, err
+					if irBlockIdx == -1 {
+						return types.InstantVectorSeriesData{}, fmt.Errorf("can't find IR block for timestamp %d", cachedStart)
 					}
-					// Store in IR block for caching
-					// Note: Cache will track labels separately when Set() is called
-					m.intermediateResults[irBlockIdx].ir.Series = append(m.intermediateResults[irBlockIdx].ir.Series, m.metadata[m.currentSeriesIndex])
-					m.intermediateResults[irBlockIdx].ir.Results = append(m.intermediateResults[irBlockIdx].ir.Results, pieces[piecesIdx])
+
+					// Check if this block has cached data for this series
+					var cachedSeriesIdx int = -1
+					if len(cachedResult) > 0 {
+						// Try to find it in cachedResult
+						for ; cachedIdx < len(cachedResult); cachedIdx++ {
+							if cachedResult[cachedIdx].IRBlockIdx == irBlockIdx {
+								cachedSeriesIdx = cachedResult[cachedIdx].SeriesIdx
+								break
+							}
+						}
+					}
+
+					// Use cached data if available, otherwise compute
+					if cachedSeriesIdx != -1 && m.intermediateResults[irBlockIdx].ir.Version != -1 {
+						pieces[piecesIdx] = m.intermediateResults[irBlockIdx].ir.Results[cachedSeriesIdx]
+					} else {
+						// Compute this block's intermediate result
+						updatedStep = m.splitStep(step, cachedStart, cachedStart+m.splitInterval().Milliseconds())
+						// TODO: pieces can be reused for later steps for the same series - we should make pieces wrap around to avoid recalculating when not necessary
+						pieces[piecesIdx], err = m.Func.GenerateFunc(
+							updatedStep,
+							m.scalarArgsData, m.emitAnnotationFunc, m.MemoryConsumptionTracker)
+						if err != nil {
+							return types.InstantVectorSeriesData{}, err
+						}
+						// Store in IR block for caching
+						// Note: Cache will track labels separately when Set() is called
+						m.intermediateResults[irBlockIdx].ir.Series = append(m.intermediateResults[irBlockIdx].ir.Series, m.metadata[m.currentSeriesIndex])
+						m.intermediateResults[irBlockIdx].ir.Results = append(m.intermediateResults[irBlockIdx].ir.Results, pieces[piecesIdx])
+					}
+					piecesIdx++
 				}
-				piecesIdx++
-			}
 
-			// calculate tail piece
-			updatedStep = m.splitStep(step, cachedEnd, step.RangeEnd)
-			tailPiece, err := m.Func.GenerateFunc(
-				updatedStep,
-				m.scalarArgsData, m.emitAnnotationFunc, m.MemoryConsumptionTracker)
-			if err != nil {
-				return types.InstantVectorSeriesData{}, err
-			}
-			pieces[piecesIdx] = tailPiece
+				// calculate tail piece
+				updatedStep = m.splitStep(step, cachedEnd, step.RangeEnd)
+				tailPiece, err := m.Func.GenerateFunc(
+					updatedStep,
+					m.scalarArgsData, m.emitAnnotationFunc, m.MemoryConsumptionTracker)
+				if err != nil {
+					return types.InstantVectorSeriesData{}, err
+				}
+				pieces[piecesIdx] = tailPiece
 
-			f, hasFloat, h, err = m.Func.CombineFunc(pieces, m.emitAnnotationFunc, m.MemoryConsumptionTracker)
-			if err != nil {
-				return types.InstantVectorSeriesData{}, err
+				f, hasFloat, h, err = m.Func.CombineFunc(pieces, m.emitAnnotationFunc, m.MemoryConsumptionTracker)
+				if err != nil {
+					return types.InstantVectorSeriesData{}, err
+				}
 			}
 		}
 
@@ -691,6 +702,14 @@ func (m *FunctionOverRangeVector) splittable() bool {
 	// Only support caching for range vector selectors (MatrixSelector nodes).
 	// CacheKey() will panic for other node types.
 	if m.InnerNode.NodeType() != planning.NODE_TYPE_MATRIX_SELECTOR {
+		return false
+	}
+
+	// Cached blocks can only be used if they fit COMPLETELY within a step's range.
+	// If the range vector duration <= splitInterval, cached blocks won't fit.
+	// We need range > splitInterval so blocks can fit inside.
+	params := m.Inner.StepCalculationParams()
+	if params.RangeMilliseconds <= m.splitInterval().Milliseconds() {
 		return false
 	}
 

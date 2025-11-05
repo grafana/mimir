@@ -71,6 +71,12 @@ func (r *RangeVectorRemoteExec) ExpressionPosition() posrange.PositionRange {
 	return r.Node.ExpressionPosition()
 }
 
+func (r *RangeVectorRemoteExec) StepCalculationParams() types.StepCalculationParams {
+	// Remote execution doesn't support intermediate result caching yet,
+	// so return empty params
+	return types.StepCalculationParams{}
+}
+
 func (r *RangeVectorRemoteExec) Close() {
 	if r.resp != nil {
 		r.resp.Close()
