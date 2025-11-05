@@ -727,6 +727,9 @@ func TestRulerMetricsForInvalidQueriesAndNoFetchedSeries(t *testing.T) {
 			// Very low limit so that ruler hits it.
 			"-querier.max-fetched-chunks-per-query": "5",
 
+			// Low series limit to trigger client errors during query evaluation
+			"-querier.max-fetched-series-per-query": "3",
+
 			// Do not involve the block storage as we don't upload blocks.
 			"-querier.query-store-after": "12h",
 
@@ -795,22 +798,64 @@ func TestRulerMetricsForInvalidQueriesAndNoFetchedSeries(t *testing.T) {
 		require.NoError(t, ruler.WaitSumMetricsWithOptions(e2e.Equals(0), []string{"cortex_prometheus_rule_group_rules"}, e2e.SkipMissingMetrics))
 	}
 
-	// Verify that user-failures don't increase cortex_ruler_queries_failed_total.
-	for groupName, expression := range map[string]string{
-		// Syntactically correct expression (passes check in ruler), but failing because of invalid regex. This fails in PromQL engine.
-		// This selects the label "nolabel" which does not exist, thus too many chunks doesn't apply.
-		"invalid_group": `label_replace(metric{nolabel="none"}, "foo", "$1", "service", "[")`,
+	// Test cases for error classification and query metrics
+	testCases := []struct {
+		name              string
+		expression        string
+		expectedErrorType string // "user" or "operator"
+	}{
+		{
+			name:              "invalid_regex_should_be_user_error",
+			expression:        `label_replace(metric{nolabel="none"}, "foo", "$1", "service", "[")`,
+			expectedErrorType: "user",
+		},
+		{
+			name:              "too_many_chunks_should_be_user_error",
+			expression:        `sum(metric)`,
+			expectedErrorType: "user",
+		},
+		{
+			name:              "invalid_and_too_many_chunks_group",
+			expression:        `label_replace(metric, "foo", "$1", "service", "[")`,
+			expectedErrorType: "user",
+		},
+	}
 
-		// This one fails in querier code, because of limits.
-		"too_many_chunks_group": `sum(metric)`,
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			addNewRuleAndWait(t, tc.name, tc.expression, true)
 
-		// Combine the errors above to have a compound error.
-		"invalid_and_too_many_chunks_group": `label_replace(metric, "foo", "$1", "service", "[")`,
-	} {
-		t.Run(groupName, func(t *testing.T) {
-			addNewRuleAndWait(t, groupName, expression, true)
+			time.Sleep(1 * time.Second)
 
-			// Ensure that these failures are not reported in the rest of "failed queries" reasons.
+			m := ruleGroupMatcher(user, namespace, tc.name)
+
+			// Verify error classification
+			userErrorMatcher := labels.MustNewMatcher(labels.MatchEqual, "reason", "user")
+			operatorErrorMatcher := labels.MustNewMatcher(labels.MatchEqual, "reason", "operator")
+
+			userErrors, err := ruler.SumMetrics(
+				[]string{"cortex_prometheus_rule_evaluation_failures_total"},
+				e2e.SkipMissingMetrics,
+				e2e.WithLabelMatchers(m, userErrorMatcher),
+			)
+			require.NoError(t, err)
+
+			operatorErrors, err := ruler.SumMetrics(
+				[]string{"cortex_prometheus_rule_evaluation_failures_total"},
+				e2e.SkipMissingMetrics,
+				e2e.WithLabelMatchers(m, operatorErrorMatcher),
+			)
+			require.NoError(t, err)
+
+			if tc.expectedErrorType == "user" {
+				require.Greater(t, userErrors[0], float64(0), "Expected user errors for %s", tc.name)
+				require.Equal(t, float64(0), operatorErrors[0], "Expected no operator errors for %s", tc.name)
+			} else {
+				require.Greater(t, operatorErrors[0], float64(0), "Expected operator errors for %s", tc.name)
+				require.Equal(t, float64(0), userErrors[0], "Expected no user errors for %s", tc.name)
+			}
+
+			// Ensure that these failures are not reported in the "error" reason for cortex_ruler_queries_failed_total.
 			sum, err := ruler.SumMetrics(
 				[]string{"cortex_ruler_queries_failed_total"},
 				e2e.SkipMissingMetrics,
@@ -819,15 +864,13 @@ func TestRulerMetricsForInvalidQueriesAndNoFetchedSeries(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, float64(0), sum[0])
 
-			// Delete rule before checking "cortex_ruler_queries_total", as we want to reuse value for next test.
-			deleteRuleAndWait(t, groupName)
+			deleteRuleAndWait(t, tc.name)
 
 			// Check that cortex_ruler_queries_total went up since last test.
 			newTotalQueries, err := ruler.SumMetrics([]string{"cortex_ruler_queries_total"}, e2e.WithLabelMatchers(userMatcher))
 			require.NoError(t, err)
 			require.Greater(t, newTotalQueries[0], totalQueries[0])
 
-			// Remember totalQueries and totalFailures for next test.
 			totalQueries = newTotalQueries
 		})
 	}
@@ -844,7 +887,7 @@ func TestRulerMetricsForInvalidQueriesAndNoFetchedSeries(t *testing.T) {
 		return int(sum[0])
 	}
 
-	// Now let's upload a non-failing rule, and make sure that it works.
+	//// Now let's upload a non-failing rule, and make sure that it works.
 	t.Run("real_error", func(t *testing.T) {
 		const groupName = "good_rule"
 		const expression = `sum(metric{foo=~"1|2"})`
@@ -855,6 +898,9 @@ func TestRulerMetricsForInvalidQueriesAndNoFetchedSeries(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, float64(0), sum[0])
 
+		sum, err = ruler.SumMetrics([]string{"cortex_prometheus_rule_evaluation_failures_total"}, e2e.SkipMissingMetrics)
+		require.NoError(t, err)
+		require.Equal(t, float64(0), sum[0])
 		deleteRuleAndWait(t, groupName)
 	})
 

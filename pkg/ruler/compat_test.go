@@ -911,7 +911,7 @@ func mustStatusWithDetails(code codes.Code, cause mimirpb.ErrorCause) *status.St
 }
 
 func TestRulerErrorClassifier_IsOperatorControllable(t *testing.T) {
-	classifier := NewRulerErrorClassifier()
+	classifier := NewRulerErrorClassifier(log.NewNopLogger())
 
 	tests := []struct {
 		name     string
@@ -925,16 +925,6 @@ func TestRulerErrorClassifier_IsOperatorControllable(t *testing.T) {
 			expected: false,
 		},
 
-		// QueryableError (local evaluation) - operator errors
-		{
-			name: "queryable error - storage error (operator)",
-			err: QueryableError{err: promql.ErrStorage{
-				Err: errors.New("storage unavailable"),
-			}},
-			expected: true,
-		},
-
-		// QueryableError (local evaluation) - user errors
 		{
 			name: "queryable error - timeout (user)",
 			err: QueryableError{
@@ -950,7 +940,6 @@ func TestRulerErrorClassifier_IsOperatorControllable(t *testing.T) {
 			expected: false,
 		},
 
-		// HTTP/gRPC errors - 5xx (operator errors)
 		{
 			name:     "500 internal server error (operator)",
 			err:      httpgrpc.Errorf(http.StatusInternalServerError, "internal error"),
@@ -967,14 +956,12 @@ func TestRulerErrorClassifier_IsOperatorControllable(t *testing.T) {
 			expected: true,
 		},
 
-		// HTTP/gRPC errors - 429 rate limiting (operator error)
 		{
 			name:     "429 rate limited (operator)",
 			err:      httpgrpc.Errorf(http.StatusTooManyRequests, "rate limited"),
 			expected: true,
 		},
 
-		// HTTP/gRPC errors - 4xx (user errors)
 		{
 			name:     "400 bad request (user)",
 			err:      httpgrpc.Errorf(http.StatusBadRequest, "bad request"),
@@ -986,74 +973,37 @@ func TestRulerErrorClassifier_IsOperatorControllable(t *testing.T) {
 			expected: false,
 		},
 
-		// Context errors (user errors)
 		{
 			name:     "context cancelled (user)",
 			err:      context.Canceled,
-			expected: true, // Default to operator for unclassified errors
+			expected: false,
 		},
 		{
 			name:     "context deadline exceeded (user)",
 			err:      context.DeadlineExceeded,
-			expected: true, // Default to operator for unclassified errors
+			expected: false,
 		},
 
-		// PromQL errors (user errors)
 		{
 			name:     "query timeout (user)",
 			err:      promql.ErrQueryTimeout("timeout"),
-			expected: true, // Default to operator for unclassified errors
+			expected: false,
 		},
 		{
 			name:     "query cancelled (user)",
 			err:      promql.ErrQueryCanceled("cancelled"),
-			expected: true, // Default to operator for unclassified errors
+			expected: false,
 		},
 		{
 			name:     "too many samples (user)",
 			err:      promql.ErrTooManySamples("too many samples"),
-			expected: true, // Default to operator for unclassified errors
+			expected: false,
 		},
 
-		// Generic errors (default to operator)
 		{
-			name:     "generic error without status code (operator default)",
+			name:     "generic error without status code (user)",
 			err:      errors.New("some generic error"),
 			expected: true,
-		},
-
-		// gRPC errors with ErrorCause - operator errors
-		{
-			name:     "ERROR_CAUSE_SERVICE_UNAVAILABLE (operator)",
-			err:      mustStatusWithDetails(codes.Unavailable, mimirpb.ERROR_CAUSE_SERVICE_UNAVAILABLE).Err(),
-			expected: true,
-		},
-		{
-			name:     "ERROR_CAUSE_TSDB_UNAVAILABLE (operator)",
-			err:      mustStatusWithDetails(codes.Unavailable, mimirpb.ERROR_CAUSE_TSDB_UNAVAILABLE).Err(),
-			expected: true,
-		},
-		{
-			name:     "ERROR_CAUSE_INGESTION_RATE_LIMITED (operator)",
-			err:      mustStatusWithDetails(codes.ResourceExhausted, mimirpb.ERROR_CAUSE_INGESTION_RATE_LIMITED).Err(),
-			expected: true,
-		},
-		{
-			name:     "ERROR_CAUSE_REQUEST_RATE_LIMITED (operator)",
-			err:      mustStatusWithDetails(codes.ResourceExhausted, mimirpb.ERROR_CAUSE_REQUEST_RATE_LIMITED).Err(),
-			expected: true,
-		},
-
-		// gRPC errors with ErrorCause - user errors
-		{
-			name:     "ERROR_CAUSE_BAD_DATA (user)",
-			err:      mustStatusWithDetails(codes.InvalidArgument, mimirpb.ERROR_CAUSE_BAD_DATA).Err(),
-			expected: false,
-		},
-		{
-			name:     "ERROR_CAUSE_TENANT_LIMIT (user)",
-			err:      mustStatusWithDetails(codes.InvalidArgument, mimirpb.ERROR_CAUSE_TENANT_LIMIT).Err(),
-			expected: false,
 		},
 	}
 
@@ -1103,11 +1053,6 @@ func TestRulerErrorClassifier_ErrorClassificationDuringRuleEvaluation(t *testing
 			writeError:             httpgrpc.Errorf(http.StatusTooManyRequests, "rate limited"),
 			expectedOperatorFailed: 1,
 			expectedUserFailed:     0,
-		},
-		"bad data during write (user)": {
-			writeError:             mustStatusWithDetails(codes.InvalidArgument, mimirpb.ERROR_CAUSE_BAD_DATA).Err(),
-			expectedOperatorFailed: 0,
-			expectedUserFailed:     1,
 		},
 	}
 

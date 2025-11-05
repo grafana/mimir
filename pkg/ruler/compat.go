@@ -8,6 +8,7 @@ package ruler
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -401,7 +402,6 @@ func DefaultTenantManagerFactory(
 			queryTime = rulerQuerySeconds.WithLabelValues(userID)
 			zeroFetchedSeriesCount = zeroFetchedSeriesQueries.WithLabelValues(userID)
 		}
-
 		// Wrap the query function with our custom logic.
 		wrappedQueryFunc := WrapQueryFuncWithReadConsistency(queryFunc, overrides, userID, logger)
 		remoteQuerier := cfg.QueryFrontend.Address != ""
@@ -445,7 +445,7 @@ func DefaultTenantManagerFactory(
 				return overrides.RulerEvaluationDelay(userID)
 			},
 			RuleConcurrencyController:           concurrencyController.NewTenantConcurrencyControllerFor(userID),
-			OperatorControllableErrorClassifier: NewRulerErrorClassifier(),
+			OperatorControllableErrorClassifier: NewRulerErrorClassifier(logger),
 		})
 	}
 }
@@ -470,40 +470,58 @@ func WrapQueryableErrors(err error) error {
 	return QueryableError{err: err}
 }
 
-type rulerErrorClassifier struct{}
+type rulerErrorClassifier struct {
+	logger log.Logger
+}
 
-func NewRulerErrorClassifier() *rulerErrorClassifier {
-	return &rulerErrorClassifier{}
+func NewRulerErrorClassifier(logger log.Logger) *rulerErrorClassifier {
+	return &rulerErrorClassifier{
+		logger: logger,
+	}
 }
 
 // IsOperatorControllable classifies rule evaluation errors as operator-controllable or user-controllable.
 //
 // Operator errors include:
 //   - Query reads failing due to rate-limiting (429) or 5xx remote querier errors (not malformed queries)
-//   - Writes failing due to rate-limiting (429) or 5xx errors (excludes samples too old, duplicated, or out-of-order)
+//   - Writes failing due to rate-limiting (429) or 5xx errors
 //
-// Classification:
-//   - QueryableError: operator if isStorageError returns true (5xx)
-//   - Remote querier/write errors: 4xx = user (except 429), 5xx = operator
-//   - Default: operator (conservative for unclassified errors)
+// Classification logic:
+//   - Storage errors are considered operator controllable. Non-storage errors: User errors
+//   - RPC/Client errors with status codes (remote eval or write errors):
+//   - 4xx (except 429): User errors
+//   - 429 or 5xx: Operator errors
+//   - Plain errors (errorString, validation errors): User errors (bad query, validation failure)
 func (c *rulerErrorClassifier) IsOperatorControllable(err error) bool {
 	if err == nil {
 		return false
 	}
-	
-	// QueryableError: check if isStorageError (5xx)
-	var qerr QueryableError
-	if errors.As(err, &qerr) {
-		return isStorageError(qerr.Unwrap())
+	var (
+		errStorage promql.ErrStorage
+	)
+
+	level.Warn(c.logger).Log(
+		"msg", "Classifying ruler evaluation error",
+		"error_type", fmt.Sprintf("%T", err),
+		"error", fmt.Sprintf("%+v", err),
+	)
+
+	// Storage errors: 5xx = operator.
+	if errors.As(err, &errStorage) {
+		return true
 	}
 
 	// Remote querier/write errors: 4xx = user (except 429), 5xx = operator
-	if mimirpb.IsClientError(err) {
-		return c.extractStatusCode(err) == http.StatusTooManyRequests
+	statusCode := c.extractStatusCode(err)
+	if mimirpb.IsClientError(err) || statusCode != 0 {
+		if mimirpb.IsClientError(err) {
+			return statusCode == http.StatusTooManyRequests
+		}
+		// 5xx errors are operator errors
+		return true
 	}
 
-	// Default: operator error for server errors (5xx and unclassified errors)
-	return true
+	return false
 }
 
 func (c *rulerErrorClassifier) extractStatusCode(err error) int {
