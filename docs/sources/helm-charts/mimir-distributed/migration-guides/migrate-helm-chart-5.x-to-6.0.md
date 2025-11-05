@@ -55,14 +55,14 @@ kafka:
   enabled: false
 ```
 
-After adding these values, proceed to upgrade to version 6.0.
+After adding these values, upgrade to version 6.0.
 
-#### Option B: Migrate to ingest storage
+#### Migrate to ingest storage
 
 If you want to migrate your existing installation to use ingest storage, follow the [Migrate from classic to ingest storage architecture](https://grafana.com/docs/mimir/latest/set-up/migrate/migrate-ingest-storage/) guide.
 
 {{% admonition type="note" %}}
-The Kafka deployment included in the Helm chart is for demo and testing purposes only. For production deployments, set up your own Kafka-compatible backend and configure Mimir to connect to it.
+The Kafka deployment included in the Helm chart is for demonstration and testing purposes only. For production deployments, set up your own Kafka-compatible backend and configure Mimir to connect to it.
 {{% /admonition %}}
 
 To use your own Kafka cluster:
@@ -75,7 +75,7 @@ To use your own Kafka cluster:
    ```
 1. Configure Mimir to connect to your Kafka cluster. Refer to the [Configure the Kafka backend](https://grafana.com/docs/mimir/latest/configure/configure-kafka-backend/) documentation for configuration details.
 
-### 4. Upgrade to version 6.0
+### Upgrade to version 6.0
 
 After completing the prerequisites and choosing your ingest storage strategy, upgrade the Helm release:
 
