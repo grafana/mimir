@@ -80,23 +80,5 @@ To use your own Kafka cluster:
 After completing the prerequisites and choosing your ingest storage strategy, upgrade the Helm release:
 
 ```bash
-helm upgrade <RELEASE_NAME> grafana/mimir-distributed --version 6.0.0 -f <VALUES_FILE>
+helm upgrade <RELEASE_NAME> grafana/mimir-distributed --version 6.0.2 -f <VALUES_FILE>
 ```
-
-## Troubleshooting
-
-### Kafka pods fail to start
-
-If the bundled Kafka pods fail to start, ensure you have sufficient resources in your cluster. The demo Kafka deployment requires resources that might not be available in smaller clusters.
-
-If you don't need ingest storage, follow [Option A](#option-a-keep-using-classic-architecture-disable-ingest-storage) to disable Kafka.
-
-### rollout-operator webhook errors
-
-If you see errors related to rollout-operator webhooks, verify that the CRDs are properly installed:
-
-```bash
-kubectl get crd rollouts.operator.grafana.com
-```
-
-If the CRD is missing, follow [step 2](#2-install-rollout-operator-crds-if-using-rollout-operator) to install it.
