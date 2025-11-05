@@ -1,5 +1,5 @@
 apiVersion: v2
-version: 6.0.1
+version: 6.0.2
 appVersion: 3.0.0
 description: "Grafana Mimir"
 home: https://grafana.com/docs/helm-charts/mimir-distributed/latest/
