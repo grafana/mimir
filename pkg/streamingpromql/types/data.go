@@ -6,6 +6,7 @@
 package types
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/prometheus/prometheus/model/histogram"
@@ -155,6 +156,45 @@ type RangeVectorStepData struct {
 	// produced by the query.
 	// RangeEnd is inclusive (ie. points with timestamp <= RangeEnd are included in the range).
 	RangeEnd int64
+}
+
+// SubStep returns a new RangeVectorStepData with the same StepT but filtered samples for the specified time range.
+// This creates filtered views of the sample buffers without copying data.
+// rangeStart is exclusive, rangeEnd is inclusive (consistent with PromQL range semantics).
+// Returns an error if the requested range is not within the parent step's range.
+func (s *RangeVectorStepData) SubStep(rangeStart, rangeEnd int64) (*RangeVectorStepData, error) {
+	// Validate that the substep range is within the parent step's range
+	if rangeStart < s.RangeStart {
+		return nil, fmt.Errorf("substep rangeStart (%d) is before parent step's RangeStart (%d)", rangeStart, s.RangeStart)
+	}
+	if rangeEnd > s.RangeEnd {
+		return nil, fmt.Errorf("substep rangeEnd (%d) is after parent step's RangeEnd (%d)", rangeEnd, s.RangeEnd)
+	}
+	if rangeStart >= rangeEnd {
+		return nil, fmt.Errorf("substep rangeStart (%d) must be less than rangeEnd (%d)", rangeStart, rangeEnd)
+	}
+
+	newStep := &RangeVectorStepData{
+		StepT:      s.StepT,
+		RangeStart: rangeStart,
+		RangeEnd:   rangeEnd,
+		Floats:     &FPointRingBufferView{}, // Initialize to empty view, not nil
+		Histograms: &HPointRingBufferView{}, // Initialize to empty view, not nil
+	}
+
+	// Filter floats to only include points in the range (rangeStart, rangeEnd]
+	if s.Floats != nil && s.Floats.Any() {
+		subview := s.Floats.SubView(rangeStart, rangeEnd)
+		newStep.Floats = &subview
+	}
+
+	// Filter histograms to only include points in the range (rangeStart, rangeEnd]
+	if s.Histograms != nil && s.Histograms.Any() {
+		subview := s.Histograms.SubView(rangeStart, rangeEnd)
+		newStep.Histograms = &subview
+	}
+
+	return newStep, nil
 }
 
 type ScalarData struct {

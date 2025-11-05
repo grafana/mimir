@@ -8,6 +8,7 @@ package functions
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -53,10 +54,6 @@ type FunctionOverRangeVectorSplit struct {
 	seriesToIRRefs [][]IRSeriesRef
 	IRCache        *cache.IntermediateResultTenantCache
 	metadata       []types.SeriesMetadata
-
-	// Track temporary buffers created by splitStep for cleanup
-	tempFloatBuffers []*types.FPointRingBuffer
-	tempHistBuffers  []*types.HPointRingBuffer
 }
 
 type IntermediateResultBlock struct {
@@ -294,11 +291,7 @@ func (m *FunctionOverRangeVectorSplit) NextSeries(ctx context.Context) (types.In
 			step, err = m.Inner.NextStepSamples(ctx)
 			// nolint:errorlint // errors.Is introduces a performance overhead, and NextStepSamples is guaranteed to return exactly EOS, never a wrapped error.
 			if err == types.EOS {
-				// We should never get here, the stepmover should have detected the EOS
-				if m.seriesValidationFunc != nil {
-					m.seriesValidationFunc(data, m.metricNames.GetMetricNameForSeries(m.currentSeriesIndex), m.emitAnnotationFunc)
-				}
-				return data, nil
+				return types.InstantVectorSeriesData{}, errors.New("unexpected EOS from Inner.NextStepSamples()")
 			} else if err != nil {
 				return types.InstantVectorSeriesData{}, err
 			}
@@ -317,21 +310,39 @@ func (m *FunctionOverRangeVectorSplit) NextSeries(ctx context.Context) (types.In
 			}
 		} else {
 			// We have complete blocks, split into head/middle/tail
-			// Allocate pieces for this step: head + middle blocks + tail
+			// Calculate number of pieces: head (if needed) + middle blocks + tail (if needed)
 			numMiddleBlocks := int((cachedEnd - cachedStart) / blockLengthMs)
-			pieces := make([]cache.IntermediateResult, numMiddleBlocks+2)
-
-			updatedStep := m.splitStep(step, step.RangeStart, cachedStart)
-			headPiece, err := m.Func.GenerateFunc(
-				updatedStep,
-				m.scalarArgsData,
-				m.emitAnnotationFunc,
-				m.MemoryConsumptionTracker)
-			if err != nil {
-				return types.InstantVectorSeriesData{}, err
+			hasHead := step.RangeStart < cachedStart
+			hasTail := cachedEnd < step.RangeEnd
+			numPieces := numMiddleBlocks
+			if hasHead {
+				numPieces++
 			}
-			pieces[0] = headPiece
-			piecesIdx := 1
+			if hasTail {
+				numPieces++
+			}
+			pieces := make([]cache.IntermediateResult, numPieces)
+
+			piecesIdx := 0
+
+			// Generate head piece if needed
+			if hasHead {
+				headStep, err := step.SubStep(step.RangeStart, cachedStart)
+				if err != nil {
+					return types.InstantVectorSeriesData{}, err
+				}
+				headPiece, err := m.Func.GenerateFunc(
+					headStep,
+					m.scalarArgsData,
+					m.emitAnnotationFunc,
+					m.MemoryConsumptionTracker)
+				if err != nil {
+					return types.InstantVectorSeriesData{}, err
+				}
+				pieces[piecesIdx] = headPiece
+				piecesIdx++
+			}
+
 			cachedIdx := 0
 			// calculate missing pieces in the middle (or use cached version)
 			for ; cachedStart < cachedEnd; cachedStart += blockLengthMs {
@@ -366,10 +377,13 @@ func (m *FunctionOverRangeVectorSplit) NextSeries(ctx context.Context) (types.In
 					pieces[piecesIdx] = m.intermediateResults[irBlockIdx].ir.Results[cachedSeriesIdx]
 				} else {
 					// Compute this block's intermediate result
-					updatedStep = m.splitStep(step, cachedStart, cachedStart+blockLengthMs)
 					// TODO: pieces can be reused for later steps for the same series - we should make pieces wrap around to avoid recalculating when not necessary
+					blockStep, err := step.SubStep(cachedStart, cachedStart+blockLengthMs)
+					if err != nil {
+						return types.InstantVectorSeriesData{}, err
+					}
 					pieces[piecesIdx], err = m.Func.GenerateFunc(
-						updatedStep,
+						blockStep,
 						m.scalarArgsData, m.emitAnnotationFunc, m.MemoryConsumptionTracker)
 					if err != nil {
 						return types.InstantVectorSeriesData{}, err
@@ -382,15 +396,20 @@ func (m *FunctionOverRangeVectorSplit) NextSeries(ctx context.Context) (types.In
 				piecesIdx++
 			}
 
-			// calculate tail piece
-			updatedStep = m.splitStep(step, cachedEnd, step.RangeEnd)
-			tailPiece, err := m.Func.GenerateFunc(
-				updatedStep,
-				m.scalarArgsData, m.emitAnnotationFunc, m.MemoryConsumptionTracker)
-			if err != nil {
-				return types.InstantVectorSeriesData{}, err
+			// Generate tail piece if needed
+			if hasTail {
+				tailStep, err := step.SubStep(cachedEnd, step.RangeEnd)
+				if err != nil {
+					return types.InstantVectorSeriesData{}, err
+				}
+				tailPiece, err := m.Func.GenerateFunc(
+					tailStep,
+					m.scalarArgsData, m.emitAnnotationFunc, m.MemoryConsumptionTracker)
+				if err != nil {
+					return types.InstantVectorSeriesData{}, err
+				}
+				pieces[piecesIdx] = tailPiece
 			}
-			pieces[piecesIdx] = tailPiece
 
 			f, hasFloat, h, err = m.Func.CombineFunc(pieces, m.emitAnnotationFunc, m.MemoryConsumptionTracker)
 			if err != nil {
@@ -425,127 +444,6 @@ func (m *FunctionOverRangeVectorSplit) NextSeries(ctx context.Context) (types.In
 			data.Histograms = append(data.Histograms, promql.HPoint{T: step.StepT, H: h})
 		}
 	}
-}
-
-// TODO: splitStep currently copies samples to new ring buffers, this should be modified to reuse the current ring buffer instead
-func (m *FunctionOverRangeVectorSplit) splitStep(step *types.RangeVectorStepData, start int64, end int64) *types.RangeVectorStepData {
-	emptyFloatView := &types.FPointRingBufferView{}
-	emptyHistView := &types.HPointRingBufferView{}
-
-	newStep := &types.RangeVectorStepData{
-		StepT:      step.StepT,
-		RangeStart: start,
-		RangeEnd:   end,
-		Floats:     emptyFloatView, // Initialize to empty view, not nil
-		Histograms: emptyHistView,  // Initialize to empty view, not nil
-	}
-
-	// Filter floats to only include points in the range (start, end]
-	// RangeStart is exclusive, RangeEnd is inclusive
-	if step.Floats != nil && step.Floats.Any() {
-		newStep.Floats = filterFloatsView(step.Floats, start, end, m.MemoryConsumptionTracker, &m.tempFloatBuffers)
-	}
-
-	// Filter histograms to only include points in the range (start, end]
-	if step.Histograms != nil && step.Histograms.Any() {
-		newStep.Histograms = filterHistogramsView(step.Histograms, start, end, m.MemoryConsumptionTracker, &m.tempHistBuffers)
-	}
-
-	return newStep
-}
-
-func filterFloatsView(view *types.FPointRingBufferView, start int64, end int64, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, tempBuffers *[]*types.FPointRingBuffer) *types.FPointRingBufferView {
-	if !view.Any() {
-		return &types.FPointRingBufferView{}
-	}
-
-	// Get all points from the view
-	head, tail := view.UnsafePoints()
-
-	// Count points in the range (start, end]
-	// RangeStart is exclusive, RangeEnd is inclusive
-	count := 0
-	firstInRange := -1
-
-	allPoints := append(head, tail...)
-	for i, p := range allPoints {
-		if p.T > start && p.T <= end {
-			if firstInRange == -1 {
-				firstInRange = i
-			}
-			count++
-		}
-	}
-
-	if count == 0 {
-		return &types.FPointRingBufferView{}
-	}
-
-	// If all points are in range, return the original view
-	if firstInRange == 0 && count == len(allPoints) {
-		return view
-	}
-
-	// Create a new buffer and populate it with filtered points
-	// Track this buffer for cleanup
-	buffer := types.NewFPointRingBuffer(memoryConsumptionTracker)
-	*tempBuffers = append(*tempBuffers, buffer)
-
-	for i := firstInRange; i < firstInRange+count; i++ {
-		if err := buffer.Append(allPoints[i]); err != nil {
-			// If we can't append, return empty view
-			return &types.FPointRingBufferView{}
-		}
-	}
-
-	return buffer.ViewUntilSearchingBackwards(end, nil)
-}
-
-func filterHistogramsView(view *types.HPointRingBufferView, start int64, end int64, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, tempBuffers *[]*types.HPointRingBuffer) *types.HPointRingBufferView {
-	if !view.Any() {
-		return &types.HPointRingBufferView{}
-	}
-
-	// Get all points from the view
-	head, tail := view.UnsafePoints()
-
-	// Count points in the range (start, end]
-	// RangeStart is exclusive, RangeEnd is inclusive
-	count := 0
-	firstInRange := -1
-
-	allPoints := append(head, tail...)
-	for i, p := range allPoints {
-		if p.T > start && p.T <= end {
-			if firstInRange == -1 {
-				firstInRange = i
-			}
-			count++
-		}
-	}
-
-	if count == 0 {
-		return &types.HPointRingBufferView{}
-	}
-
-	// If all points are in range, return the original view
-	if firstInRange == 0 && count == len(allPoints) {
-		return view
-	}
-
-	// Create a new buffer and populate it with filtered points
-	// Track this buffer for cleanup
-	buffer := types.NewHPointRingBuffer(memoryConsumptionTracker)
-	*tempBuffers = append(*tempBuffers, buffer)
-
-	for i := firstInRange; i < firstInRange+count; i++ {
-		if err := buffer.Append(allPoints[i]); err != nil {
-			// If we can't append, return empty view
-			return &types.HPointRingBufferView{}
-		}
-	}
-
-	return buffer.ViewUntilSearchingBackwards(end, nil)
 }
 
 func (m *FunctionOverRangeVectorSplit) emitAnnotation(generator types.AnnotationGenerator) {
@@ -613,17 +511,6 @@ func (m *FunctionOverRangeVectorSplit) Close() {
 	}
 
 	m.scalarArgsData = nil
-
-	// Clean up temporary buffers created during split operations
-	for _, buf := range m.tempFloatBuffers {
-		buf.Close()
-	}
-	m.tempFloatBuffers = nil
-
-	for _, buf := range m.tempHistBuffers {
-		buf.Close()
-	}
-	m.tempHistBuffers = nil
 
 	// Note: m.metadata is returned from SeriesMetadata() and owned by the caller (Query),
 	// which will clean it up in returnResultToPool(). We don't clean it up here.

@@ -563,3 +563,118 @@ func setupRingBufferTestingPools(t *testing.T) {
 		putHPointSliceForRingBuffer = originalPutHPointSlice
 	})
 }
+
+func TestRingBufferView_SubView(t *testing.T) {
+	setupRingBufferTestingPools(t)
+
+	t.Run("FPoint ring buffer", func(t *testing.T) {
+		memoryTracker := limiter.NewMemoryConsumptionTracker(context.Background(), 0, nil, "")
+		buf := NewFPointRingBuffer(memoryTracker)
+
+		// Add points with timestamps 10, 20, 30, 40, 50
+		points := []promql.FPoint{
+			{T: 10, F: 100},
+			{T: 20, F: 200},
+			{T: 30, F: 300},
+			{T: 40, F: 400},
+			{T: 50, F: 500},
+		}
+		for _, p := range points {
+			require.NoError(t, buf.Append(p))
+		}
+
+		// Create a full view
+		fullView := buf.ViewUntilSearchingBackwards(50, nil)
+		require.Equal(t, 5, fullView.Count())
+
+		// Test SubView with range (15, 35] - should get points at T=20, T=30
+		subView := fullView.SubView(15, 35)
+		require.Equal(t, 2, subView.Count())
+		require.Equal(t, int64(20), subView.First().T)
+		last, hasLast := subView.Last()
+		require.True(t, hasLast)
+		require.Equal(t, int64(30), last.T)
+
+		// Test SubView with range (5, 55] - should get all points
+		subView = fullView.SubView(5, 55)
+		require.Equal(t, 5, subView.Count())
+		require.Equal(t, int64(10), subView.First().T)
+
+		// Test SubView with range (25, 45] - should get points at T=30, T=40
+		subView = fullView.SubView(25, 45)
+		require.Equal(t, 2, subView.Count())
+		require.Equal(t, int64(30), subView.First().T)
+		last, hasLast = subView.Last()
+		require.True(t, hasLast)
+		require.Equal(t, int64(40), last.T)
+
+		// Test SubView with range (60, 70] - should get no points
+		subView = fullView.SubView(60, 70)
+		require.Equal(t, 0, subView.Count())
+
+		// Test SubView with range (5, 15] - should get point at T=10
+		subView = fullView.SubView(5, 15)
+		require.Equal(t, 1, subView.Count())
+		require.Equal(t, int64(10), subView.First().T)
+
+		// Test SubView on a SubView (nested filtering)
+		midView := fullView.SubView(15, 45)
+		require.Equal(t, 3, midView.Count()) // T=20, T=30, T=40
+		nestedView := midView.SubView(25, 35)
+		require.Equal(t, 1, nestedView.Count()) // T=30
+		require.Equal(t, int64(30), nestedView.First().T)
+	})
+
+	t.Run("HPoint ring buffer", func(t *testing.T) {
+		memoryTracker := limiter.NewMemoryConsumptionTracker(context.Background(), 0, nil, "")
+		buf := NewHPointRingBuffer(memoryTracker)
+
+		// Add points with timestamps 10, 20, 30, 40, 50
+		points := []promql.HPoint{
+			{T: 10, H: &histogram.FloatHistogram{Count: 100}},
+			{T: 20, H: &histogram.FloatHistogram{Count: 200}},
+			{T: 30, H: &histogram.FloatHistogram{Count: 300}},
+			{T: 40, H: &histogram.FloatHistogram{Count: 400}},
+			{T: 50, H: &histogram.FloatHistogram{Count: 500}},
+		}
+		for _, p := range points {
+			require.NoError(t, buf.Append(p))
+		}
+
+		// Create a full view
+		fullView := buf.ViewUntilSearchingBackwards(50, nil)
+		require.Equal(t, 5, fullView.Count())
+
+		// Test SubView with range (15, 35] - should get points at T=20, T=30
+		subView := fullView.SubView(15, 35)
+		require.Equal(t, 2, subView.Count())
+		require.Equal(t, int64(20), subView.First().T)
+		last, hasLast := subView.Last()
+		require.True(t, hasLast)
+		require.Equal(t, int64(30), last.T)
+
+		// Test SubView with range (5, 55] - should get all points
+		subView = fullView.SubView(5, 55)
+		require.Equal(t, 5, subView.Count())
+		require.Equal(t, int64(10), subView.First().T)
+
+		// Test SubView with range (25, 45] - should get points at T=30, T=40
+		subView = fullView.SubView(25, 45)
+		require.Equal(t, 2, subView.Count())
+		require.Equal(t, int64(30), subView.First().T)
+		last, hasLast = subView.Last()
+		require.True(t, hasLast)
+		require.Equal(t, int64(40), last.T)
+
+		// Test SubView with range (60, 70] - should get no points
+		subView = fullView.SubView(60, 70)
+		require.Equal(t, 0, subView.Count())
+
+		// Test nested SubView
+		midView := fullView.SubView(15, 45)
+		require.Equal(t, 3, midView.Count()) // T=20, T=30, T=40
+		nestedView := midView.SubView(25, 35)
+		require.Equal(t, 1, nestedView.Count()) // T=30
+		require.Equal(t, int64(30), nestedView.First().T)
+	})
+}

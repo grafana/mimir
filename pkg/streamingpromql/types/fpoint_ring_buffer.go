@@ -93,7 +93,7 @@ func (b *FPointRingBuffer) Append(p promql.FPoint) error {
 // The returned view is no longer valid if this buffer is modified (eg. a point is added, or the buffer is reset or closed).
 func (b *FPointRingBuffer) ViewUntilSearchingForwards(maxT int64, existing *FPointRingBufferView) *FPointRingBufferView {
 	if existing == nil {
-		existing = &FPointRingBufferView{buffer: b}
+		existing = &FPointRingBufferView{buffer: b, offset: 0}
 	}
 
 	size := 0
@@ -102,6 +102,7 @@ func (b *FPointRingBuffer) ViewUntilSearchingForwards(maxT int64, existing *FPoi
 		size++
 	}
 
+	existing.offset = 0
 	existing.size = size
 	return existing
 }
@@ -110,7 +111,7 @@ func (b *FPointRingBuffer) ViewUntilSearchingForwards(maxT int64, existing *FPoi
 // is preferred over ViewUntilSearchingForwards if it is expected that only a few of the points will have timestamp greater than maxT.
 func (b *FPointRingBuffer) ViewUntilSearchingBackwards(maxT int64, existing *FPointRingBufferView) *FPointRingBufferView {
 	if existing == nil {
-		existing = &FPointRingBufferView{buffer: b}
+		existing = &FPointRingBufferView{buffer: b, offset: 0}
 	}
 
 	nextPositionToCheck := b.size - 1
@@ -119,6 +120,7 @@ func (b *FPointRingBuffer) ViewUntilSearchingBackwards(maxT int64, existing *FPo
 		nextPositionToCheck--
 	}
 
+	existing.offset = 0
 	existing.size = nextPositionToCheck + 1
 	return existing
 }
@@ -171,6 +173,7 @@ func (b *FPointRingBuffer) Close() {
 
 type FPointRingBufferView struct {
 	buffer *FPointRingBuffer
+	offset int // Offset from buffer's firstIndex where this view starts
 	size   int
 }
 
@@ -188,16 +191,17 @@ func (v FPointRingBufferView) UnsafePoints() (head []promql.FPoint, tail []promq
 		return nil, nil
 	}
 
-	endOfHeadSegment := v.buffer.firstIndex + v.size
+	startIdx := (v.buffer.firstIndex + v.offset) & v.buffer.pointsIndexMask
+	endOfHeadSegment := startIdx + v.size
 
 	if endOfHeadSegment > len(v.buffer.points) {
 		// Need to wrap around.
 		endOfTailSegment := endOfHeadSegment - len(v.buffer.points)
 		endOfHeadSegment = len(v.buffer.points)
-		return v.buffer.points[v.buffer.firstIndex:endOfHeadSegment], v.buffer.points[0:endOfTailSegment]
+		return v.buffer.points[startIdx:endOfHeadSegment], v.buffer.points[0:endOfTailSegment]
 	}
 
-	return v.buffer.points[v.buffer.firstIndex:endOfHeadSegment], nil
+	return v.buffer.points[startIdx:endOfHeadSegment], nil
 }
 
 // CopyPoints returns a single slice of the points in this buffer view.
@@ -225,7 +229,7 @@ func (v FPointRingBufferView) CopyPoints() ([]promql.FPoint, error) {
 // ForEach calls f for each point in this buffer view.
 func (v FPointRingBufferView) ForEach(f func(p promql.FPoint)) {
 	for i := 0; i < v.size; i++ {
-		f(v.buffer.pointAt(i))
+		f(v.buffer.pointAt(v.offset + i))
 	}
 }
 
@@ -236,7 +240,7 @@ func (v FPointRingBufferView) First() promql.FPoint {
 		panic("Can't get first element of empty buffer")
 	}
 
-	return v.buffer.points[v.buffer.firstIndex]
+	return v.buffer.pointAt(v.offset)
 }
 
 // Last returns the last point in this ring buffer view.
@@ -246,7 +250,7 @@ func (v FPointRingBufferView) Last() (promql.FPoint, bool) {
 		return promql.FPoint{}, false
 	}
 
-	return v.buffer.pointAt(v.size - 1), true
+	return v.buffer.pointAt(v.offset + v.size - 1), true
 }
 
 // Count returns the number of points in this ring buffer view.
@@ -266,7 +270,7 @@ func (v FPointRingBufferView) PointAt(i int) promql.FPoint {
 		panic(fmt.Sprintf("PointAt(): out of range, requested index %v but have length %v", i, v.size))
 	}
 
-	return v.buffer.pointAt(i)
+	return v.buffer.pointAt(v.offset + i)
 }
 
 // Clone returns a clone of this view and its underlying ring buffer.
@@ -288,10 +292,43 @@ func (v FPointRingBufferView) Clone() (*FPointRingBufferView, *FPointRingBuffer,
 
 	view := &FPointRingBufferView{
 		buffer: buffer,
+		offset: 0,
 		size:   v.size,
 	}
 
 	return view, buffer, nil
+}
+
+// SubView returns a new view that is a subset of this view, containing only points with timestamps in the range (minT, maxT].
+// minT is exclusive, maxT is inclusive (consistent with PromQL range semantics).
+// The returned view shares the same underlying buffer and is no longer valid if the buffer is modified.
+func (v FPointRingBufferView) SubView(minT int64, maxT int64) FPointRingBufferView {
+	if v.size == 0 {
+		return FPointRingBufferView{buffer: v.buffer, offset: v.offset, size: 0}
+	}
+
+	// Find the first point with T > minT
+	firstIdx := 0
+	for firstIdx < v.size && v.PointAt(firstIdx).T <= minT {
+		firstIdx++
+	}
+
+	// Find the last point with T <= maxT, starting from firstIdx
+	lastIdx := firstIdx - 1
+	for lastIdx+1 < v.size && v.PointAt(lastIdx+1).T <= maxT {
+		lastIdx++
+	}
+
+	newSize := lastIdx - firstIdx + 1
+	if newSize < 0 {
+		newSize = 0
+	}
+
+	return FPointRingBufferView{
+		buffer: v.buffer,
+		offset: v.offset + firstIdx,
+		size:   newSize,
+	}
 }
 
 // These hooks exist so we can override them during unit tests.
