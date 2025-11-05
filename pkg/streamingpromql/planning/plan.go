@@ -64,7 +64,7 @@ type Node interface {
 	//
 	// Children are returned in the same order as they are provided to SetChildren and ReplaceChild.
 	//
-	// Child panics if idx is out of range.
+	// Child panics if idx is out of range. The number of children can be determined by calling ChildCount.
 	Child(idx int) Node
 
 	// ChildCount returns the number of children of this node.
