@@ -20,10 +20,12 @@ func TestMimirReadRoutes(t *testing.T) {
 		assert.True(t, strings.HasPrefix(r.Path, "/api/v1/") || strings.HasPrefix(r.Path, "/prometheus/"))
 	}
 
+	// With dskit server integration, routes no longer include the path prefix
+	// since dskit handles prefix stripping automatically via PathPrefix().Subrouter()
 	cfg = Config{}
 	cfg.ProxyConfig.Server.PathPrefix = "/some/random/prefix///"
 	routes = mimirReadRoutes(cfg)
 	for _, r := range routes {
-		assert.Regexp(t, "/some/random/prefix/[a-z].*", r.Path)
+		assert.True(t, strings.HasPrefix(r.Path, "/api/v1/") || strings.HasPrefix(r.Path, "/prometheus/"))
 	}
 }
