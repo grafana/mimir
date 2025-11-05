@@ -1003,7 +1003,7 @@ func TestRulerErrorClassifier_IsOperatorControllable(t *testing.T) {
 		{
 			name:     "generic error without status code (user)",
 			err:      errors.New("some generic error"),
-			expected: true,
+			expected: false,
 		},
 	}
 
