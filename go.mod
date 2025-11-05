@@ -29,7 +29,7 @@ require (
 	github.com/opentracing-contrib/go-stdlib v1.1.0 // indirect
 	github.com/opentracing/opentracing-go v1.2.1-0.20220228012449-10b1cf09e00b // indirect
 	github.com/pkg/errors v0.9.1
-	github.com/prometheus-community/parquet-common v0.0.0-20251105021657-de3dfd4c9c96
+	github.com/prometheus-community/parquet-common v0.0.0-20251105190615-e6ad49b9e59c
 	github.com/prometheus/alertmanager v0.28.1
 	github.com/prometheus/client_golang v1.23.2
 	github.com/prometheus/client_model v0.6.2

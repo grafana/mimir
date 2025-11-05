@@ -58,6 +58,10 @@ func (c SymbolizedChunksSeries) Iterator(_ chunks.Iterator) chunks.Iterator {
 	return prom_storage.NewListChunkSeriesIterator(c.chks...)
 }
 
+func (c SymbolizedChunksSeries) ChunkCount() (int, error) {
+	return len(c.chks), nil
+}
+
 type ChunkSeriesSetCloser interface {
 	prom_storage.ChunkSeriesSet
 
