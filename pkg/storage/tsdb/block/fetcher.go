@@ -77,9 +77,6 @@ const (
 
 	// LookbackExcludedMeta is label for blocks which are not loaded because their ULID pre-dates the fetcher's configured lookback period
 	LookbackExcludedMeta = "lookback-excluded"
-
-	// IDExcludedMeta is label for blocks which are not loaded because they were not in the fetcher's block ID filter
-	IDExcludedMeta = "id-excluded"
 )
 
 func NewFetcherMetrics(reg prometheus.Registerer, syncedExtraLabels [][]string) *FetcherMetrics {
@@ -118,7 +115,6 @@ func NewFetcherMetrics(reg prometheus.Registerer, syncedExtraLabels [][]string) 
 			{MarkedForDeletionMeta},
 			{MarkedForNoCompactionMeta},
 			{LookbackExcludedMeta},
-			{IDExcludedMeta},
 		}, syncedExtraLabels...)...,
 	)
 	m.Loads = promauto.With(reg).NewCounter(prometheus.CounterOpts{
@@ -166,26 +162,10 @@ type MetaFetcher struct {
 
 	mtx    sync.Mutex
 	cached map[ulid.ULID]*Meta
-
-	// Optional set of specific block IDs to fetch. If non-nil, only these blocks will be fetched.
-	allowedBlocks map[ulid.ULID]struct{}
 }
 
 // NewMetaFetcher returns a MetaFetcher.
 func NewMetaFetcher(logger log.Logger, concurrency int, bkt objstore.InstrumentedBucketReader, dir string, reg prometheus.Registerer, filters []MetadataFilter, lookback time.Duration) (*MetaFetcher, error) {
-	return newMetaFetcher(logger, concurrency, bkt, dir, reg, filters, lookback, nil)
-}
-
-// NewMetaFetcherWithBlockIDFilter returns a MetaFetcher that only fetches the specified block IDs.
-func NewMetaFetcherWithBlockIDFilter(logger log.Logger, concurrency int, bkt objstore.InstrumentedBucketReader, dir string, reg prometheus.Registerer, filters []MetadataFilter, lookback time.Duration, blockIDs []ulid.ULID) (*MetaFetcher, error) {
-	allowed := make(map[ulid.ULID]struct{}, len(blockIDs))
-	for _, id := range blockIDs {
-		allowed[id] = struct{}{}
-	}
-	return newMetaFetcher(logger, concurrency, bkt, dir, reg, filters, lookback, allowed)
-}
-
-func newMetaFetcher(logger log.Logger, concurrency int, bkt objstore.InstrumentedBucketReader, dir string, reg prometheus.Registerer, filters []MetadataFilter, lookback time.Duration, allowed map[ulid.ULID]struct{}) (*MetaFetcher, error) {
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
@@ -199,15 +179,14 @@ func newMetaFetcher(logger log.Logger, concurrency int, bkt objstore.Instrumente
 	}
 
 	return &MetaFetcher{
-		logger:        log.With(logger, "component", "block.MetaFetcher"),
-		concurrency:   concurrency,
-		bkt:           bkt,
-		cacheDir:      cacheDir,
-		cached:        map[ulid.ULID]*Meta{},
-		metrics:       NewFetcherMetrics(reg, nil),
-		filters:       filters,
-		maxLookback:   lookback,
-		allowedBlocks: allowed,
+		logger:      log.With(logger, "component", "block.MetaFetcher"),
+		concurrency: concurrency,
+		bkt:         bkt,
+		cacheDir:    cacheDir,
+		cached:      map[ulid.ULID]*Meta{},
+		metrics:     NewFetcherMetrics(reg, nil),
+		filters:     filters,
+		maxLookback: lookback,
 	}, nil
 }
 
@@ -322,10 +301,9 @@ type response struct {
 	corruptedMetasCount    float64
 	markedForDeletionCount float64
 	exceededLookbackCount  float64
-	idExcludedCount        float64
 }
 
-func (f *MetaFetcher) fetchMetadata(ctx context.Context, excludeMarkedForDeletion bool) (interface{}, error) {
+func (f *MetaFetcher) fetchMetadata(ctx context.Context, excludeMarkedForDeletion bool, blockIDs []ulid.ULID) (interface{}, error) {
 	var (
 		resp = response{
 			metas:   make(map[ulid.ULID]*Meta),
@@ -399,20 +377,24 @@ func (f *MetaFetcher) fetchMetadata(ctx context.Context, excludeMarkedForDeletio
 	// Workers scheduled, distribute blocks.
 	eg.Go(func() error {
 		defer close(ch)
+
+		// If specific block IDs are provided, download directly without iterating over the bucket,
+		// otherwise, discover blocks via f.bkt.Iter
+		if len(blockIDs) > 0 {
+			for _, id := range blockIDs {
+				select {
+				case <-ctx.Done():
+					return ctx.Err()
+				case ch <- id:
+				}
+			}
+			return nil
+		}
+
 		return f.bkt.Iter(ctx, "", func(name string) error {
 			id, ok := IsBlockDir(name)
 			if !ok {
 				return nil
-			}
-
-			// If a block ID filter is set, skip blocks not in the filter.
-			if f.allowedBlocks != nil {
-				if _, ok := f.allowedBlocks[id]; !ok {
-					mtx.Lock()
-					resp.idExcludedCount++
-					mtx.Unlock()
-					return nil
-				}
 			}
 
 			// If requested, skip any block marked for deletion.
@@ -492,7 +474,7 @@ func (f *MetaFetcher) fetchMetadata(ctx context.Context, excludeMarkedForDeletio
 //
 // Returned error indicates a failure in fetching metadata. Returned meta can be assumed as correct, with some blocks missing.
 func (f *MetaFetcher) Fetch(ctx context.Context) (metas map[ulid.ULID]*Meta, partials map[ulid.ULID]error, err error) {
-	metas, partials, err = f.fetch(ctx, false)
+	metas, partials, err = f.fetch(ctx, false, nil)
 	return
 }
 
@@ -502,11 +484,11 @@ func (f *MetaFetcher) Fetch(ctx context.Context) (metas map[ulid.ULID]*Meta, par
 //
 // Returned error indicates a failure in fetching metadata. Returned meta can be assumed as correct, with some blocks missing.
 func (f *MetaFetcher) FetchWithoutMarkedForDeletion(ctx context.Context) (metas map[ulid.ULID]*Meta, partials map[ulid.ULID]error, err error) {
-	metas, partials, err = f.fetch(ctx, true)
+	metas, partials, err = f.fetch(ctx, true, nil)
 	return
 }
 
-func (f *MetaFetcher) fetch(ctx context.Context, excludeMarkedForDeletion bool) (_ map[ulid.ULID]*Meta, _ map[ulid.ULID]error, err error) {
+func (f *MetaFetcher) fetch(ctx context.Context, excludeMarkedForDeletion bool, blockIDs []ulid.ULID) (_ map[ulid.ULID]*Meta, _ map[ulid.ULID]error, err error) {
 	start := time.Now()
 	defer func() {
 		f.metrics.SyncDuration.Observe(time.Since(start).Seconds())
@@ -520,7 +502,7 @@ func (f *MetaFetcher) fetch(ctx context.Context, excludeMarkedForDeletion bool) 
 	// Run this in thread safe run group.
 	v, err := f.g.Do("", func() (i interface{}, err error) {
 		// NOTE: First go routine context will go through.
-		return f.fetchMetadata(ctx, excludeMarkedForDeletion)
+		return f.fetchMetadata(ctx, excludeMarkedForDeletion, blockIDs)
 	})
 	if err != nil {
 		return nil, nil, err
@@ -537,7 +519,6 @@ func (f *MetaFetcher) fetch(ctx context.Context, excludeMarkedForDeletion bool) 
 	f.metrics.Synced.WithLabelValues(NoMeta).Set(resp.noMetasCount)
 	f.metrics.Synced.WithLabelValues(CorruptedMeta).Set(resp.corruptedMetasCount)
 	f.metrics.Synced.WithLabelValues(LookbackExcludedMeta).Set(resp.exceededLookbackCount)
-	f.metrics.Synced.WithLabelValues(IDExcludedMeta).Set(resp.idExcludedCount)
 	if excludeMarkedForDeletion {
 		f.metrics.Synced.WithLabelValues(MarkedForDeletionMeta).Set(resp.markedForDeletionCount)
 	}
@@ -565,6 +546,25 @@ func (f *MetaFetcher) countCached() int {
 	defer f.mtx.Unlock()
 
 	return len(f.cached)
+}
+
+// FetchRequestedBlocks fetches metadata for specific block IDs without iterating through the bucket
+// Assumes metas exist and returns an error if any blocks fail to download.
+func (f *MetaFetcher) FetchRequestedBlocks(ctx context.Context, blockIDs []ulid.ULID) (map[ulid.ULID]*Meta, error) {
+	if len(blockIDs) == 0 {
+		return nil, errors.New("no block IDs provided")
+	}
+
+	metas, partial, err := f.fetch(ctx, false, blockIDs)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(partial) > 0 {
+		return nil, errors.Errorf("failed to sync %d requested blocks' metas", len(blockIDs)-len(partial))
+	}
+
+	return metas, nil
 }
 
 // BlockIDLabel is a special label that will have an ULID of the meta.json being referenced to.

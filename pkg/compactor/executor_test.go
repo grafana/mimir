@@ -37,7 +37,6 @@ import (
 )
 
 var (
-	// Test block IDs in valid ULID format
 	testBlockID1 = []byte(ulid.MustNew(ulid.Timestamp(time.Unix(1600000000, 0)), rand.New(rand.NewSource(1))).String())
 	testBlockID2 = []byte(ulid.MustNew(ulid.Timestamp(time.Unix(1600000001, 0)), rand.New(rand.NewSource(2))).String())
 )
@@ -305,6 +304,8 @@ func TestSchedulerExecutor_BackoffBehavior(t *testing.T) {
 			bucketClient := &bucket.ClientMock{}
 			bucketClient.MockIter("user-1/", []string{}, nil)
 			bucketClient.MockIter("user-1/markers/", []string{}, nil)
+			bucketClient.MockGet(fmt.Sprintf("user-1/%s/meta.json", testBlockID1), "", block.ErrorSyncMetaNotFound)
+			bucketClient.MockGet(fmt.Sprintf("user-1/%s/meta.json", testBlockID2), "", block.ErrorSyncMetaNotFound)
 
 			c, _, _, _, _ := prepareWithConfigProvider(t, cfg, bucketClient, newMockConfigProvider())
 			c.bucketClient = bucketClient
@@ -470,6 +471,7 @@ func TestSchedulerExecutor_NoGoRoutineLeak(t *testing.T) {
 	bucketClient := &bucket.ClientMock{}
 	bucketClient.MockIter("test-tenant/", []string{}, nil)
 	bucketClient.MockIter("test-tenant/markers/", []string{}, nil)
+	bucketClient.MockGet(fmt.Sprintf("test-tenant/%s/meta.json", testBlockID1), "", block.ErrorSyncMetaNotFound)
 
 	schedulerExec, err := newSchedulerExecutor(cfg, log.NewNopLogger(), nil)
 	require.NoError(t, err)

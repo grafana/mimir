@@ -120,6 +120,18 @@ func (s *metaSyncer) SyncMetas(ctx context.Context) error {
 	return nil
 }
 
+func (s *metaSyncer) SyncRequestedMetas(ctx context.Context, blockIDs []ulid.ULID) error {
+	s.mtx.Lock()
+	defer s.mtx.Unlock()
+	metas, err := s.fetcher.FetchRequestedBlocks(ctx, blockIDs)
+	if err != nil {
+		return err
+	}
+
+	s.blocks = metas
+	return nil
+}
+
 // Metas returns loaded metadata blocks since last sync.
 func (s *metaSyncer) Metas() map[ulid.ULID]*block.Meta {
 	s.mtx.Lock()
@@ -311,14 +323,30 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 	// Once we have a plan we need to download the actual data.
 	downloadBegin := time.Now()
 
+	ignored := objstore.WithDownloadIgnoredPaths([]string{block.MetaFilename}...)
 	err = concurrency.ForEachJob(ctx, len(toCompact), c.blockSyncConcurrency, func(ctx context.Context, idx int) error {
 		meta := toCompact[idx]
 
 		// Must be the same as in blocksToCompactDirs.
 		bdir := filepath.Join(subDir, meta.ULID.String())
 
-		if err := block.Download(ctx, jobLogger, c.bkt, meta.ULID, bdir); err != nil {
+		// Write meta.json to disk and then download blocks' directory w. metadata excluded
+		if err := os.MkdirAll(bdir, 0750); err != nil {
+			return errors.Wrapf(err, "create block dir %s", meta.ULID)
+		}
+		if err := meta.WriteToDir(jobLogger, bdir); err != nil {
+			return errors.Wrapf(err, "write meta for block %s", meta.ULID)
+		}
+
+		if err := objstore.DownloadDir(ctx, jobLogger, c.bkt, meta.ULID.String(), meta.ULID.String(), bdir, ignored); err != nil {
 			return errors.Wrapf(err, "download block %s", meta.ULID)
+		}
+
+		chunksDir := filepath.Join(bdir, block.ChunksDirname)
+		if _, err := os.Stat(chunksDir); os.IsNotExist(err) {
+			if err := os.Mkdir(chunksDir, os.ModePerm); err != nil {
+				return errors.Wrapf(err, "create chunks dir for block %s", meta.ULID)
+			}
 		}
 
 		// Ensure all source blocks are valid.

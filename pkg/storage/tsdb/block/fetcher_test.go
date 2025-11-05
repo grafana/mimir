@@ -60,7 +60,6 @@ func TestMetaFetcher_Fetch_ShouldReturnDiscoveredBlocksIncludingMarkedForDeletio
 			blocks_meta_synced{state="failed"} 0
 			blocks_meta_synced{state="label-excluded"} 0
 			blocks_meta_synced{state="loaded"} 0
-			blocks_meta_synced{state="id-excluded"} 0
 			blocks_meta_synced{state="lookback-excluded"} 0
 			blocks_meta_synced{state="marked-for-deletion"} 0
 			blocks_meta_synced{state="marked-for-no-compact"} 0
@@ -104,7 +103,6 @@ func TestMetaFetcher_Fetch_ShouldReturnDiscoveredBlocksIncludingMarkedForDeletio
 			blocks_meta_synced{state="failed"} 0
 			blocks_meta_synced{state="label-excluded"} 0
 			blocks_meta_synced{state="loaded"} 1
-			blocks_meta_synced{state="id-excluded"} 0
 			blocks_meta_synced{state="lookback-excluded"} 0
 			blocks_meta_synced{state="marked-for-deletion"} 0
 			blocks_meta_synced{state="marked-for-no-compact"} 0
@@ -142,7 +140,6 @@ func TestMetaFetcher_Fetch_ShouldReturnDiscoveredBlocksIncludingMarkedForDeletio
 			blocks_meta_synced{state="corrupted-meta-json"} 0
 			blocks_meta_synced{state="duplicate"} 0
 			blocks_meta_synced{state="failed"} 0
-			blocks_meta_synced{state="id-excluded"} 0
 			blocks_meta_synced{state="label-excluded"} 0
 			blocks_meta_synced{state="loaded"} 2
 			blocks_meta_synced{state="lookback-excluded"} 0
@@ -191,7 +188,6 @@ func TestMetaFetcher_FetchWithoutMarkedForDeletion_ShouldReturnDiscoveredBlocksE
 			blocks_meta_synced{state="failed"} 0
 			blocks_meta_synced{state="label-excluded"} 0
 			blocks_meta_synced{state="loaded"} 0
-			blocks_meta_synced{state="id-excluded"} 0
 			blocks_meta_synced{state="lookback-excluded"} 0
 			blocks_meta_synced{state="marked-for-deletion"} 0
 			blocks_meta_synced{state="marked-for-no-compact"} 0
@@ -235,7 +231,6 @@ func TestMetaFetcher_FetchWithoutMarkedForDeletion_ShouldReturnDiscoveredBlocksE
 			blocks_meta_synced{state="failed"} 0
 			blocks_meta_synced{state="label-excluded"} 0
 			blocks_meta_synced{state="loaded"} 1
-			blocks_meta_synced{state="id-excluded"} 0
 			blocks_meta_synced{state="lookback-excluded"} 0
 			blocks_meta_synced{state="marked-for-deletion"} 0
 			blocks_meta_synced{state="marked-for-no-compact"} 0
@@ -272,7 +267,6 @@ func TestMetaFetcher_FetchWithoutMarkedForDeletion_ShouldReturnDiscoveredBlocksE
 			blocks_meta_synced{state="corrupted-meta-json"} 0
 			blocks_meta_synced{state="duplicate"} 0
 			blocks_meta_synced{state="failed"} 0
-			blocks_meta_synced{state="id-excluded"} 0
 			blocks_meta_synced{state="label-excluded"} 0
 			blocks_meta_synced{state="loaded"} 1
 			blocks_meta_synced{state="lookback-excluded"} 0
@@ -407,7 +401,6 @@ func TestMetaFetcher_Fetch_ShouldReturnDiscoveredBlocksWithinCompactorLookback(t
 			blocks_meta_synced{state="failed"} 0
 			blocks_meta_synced{state="label-excluded"} 0
 			blocks_meta_synced{state="loaded"} 3
-			blocks_meta_synced{state="id-excluded"} 0
 			blocks_meta_synced{state="lookback-excluded"} 0
 			blocks_meta_synced{state="marked-for-deletion"} 0
 			blocks_meta_synced{state="marked-for-no-compact"} 0
@@ -447,7 +440,6 @@ func TestMetaFetcher_Fetch_ShouldReturnDiscoveredBlocksWithinCompactorLookback(t
 			blocks_meta_synced{state="corrupted-meta-json"} 0
 			blocks_meta_synced{state="duplicate"} 0
 			blocks_meta_synced{state="failed"} 0
-			blocks_meta_synced{state="id-excluded"} 0
 			blocks_meta_synced{state="label-excluded"} 0
 			blocks_meta_synced{state="loaded"} 2
 			blocks_meta_synced{state="lookback-excluded"} 1
@@ -665,7 +657,7 @@ func TestMetaFetcher_CacheMetrics(t *testing.T) {
 	}
 }
 
-func TestMetaFetcher_BlockIDFilter(t *testing.T) {
+func TestMetaFetcher_FetchRequestedBlocks(t *testing.T) {
 	var (
 		ctx    = context.Background()
 		reg    = prometheus.NewPedanticRegistry()
@@ -684,13 +676,12 @@ func TestMetaFetcher_BlockIDFilter(t *testing.T) {
 		blockIDs = append(blockIDs, blockID)
 	}
 
-	f, err := NewMetaFetcherWithBlockIDFilter(logger, 10, objstore.WrapWithMetrics(bkt, reg, "test"), t.TempDir(), reg, nil, 0, blockIDs[:2])
+	f, err := NewMetaFetcher(logger, 10, objstore.WrapWithMetrics(bkt, reg, "test"), t.TempDir(), reg, nil, 0)
 	require.NoError(t, err)
 
-	metas, partials, err := f.FetchWithoutMarkedForDeletion(ctx)
+	metas, err := f.FetchRequestedBlocks(ctx, blockIDs[:2])
 	require.NoError(t, err)
 	require.Subset(t, metas, blockIDs[:1])
-	require.Empty(t, partials)
 
 	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 		# HELP blocks_meta_synced Number of block metadata synced
@@ -698,7 +689,6 @@ func TestMetaFetcher_BlockIDFilter(t *testing.T) {
 		blocks_meta_synced{state="corrupted-meta-json"} 0
 		blocks_meta_synced{state="duplicate"} 0
 		blocks_meta_synced{state="failed"} 0
-		blocks_meta_synced{state="id-excluded"} 2
 		blocks_meta_synced{state="label-excluded"} 0
 		blocks_meta_synced{state="loaded"} 2
 		blocks_meta_synced{state="lookback-excluded"} 0

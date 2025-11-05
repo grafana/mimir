@@ -332,7 +332,7 @@ func (e *schedulerExecutor) executeCompactionJob(ctx context.Context, c *Multite
 	}
 
 	syncDir := c.metaSyncDirForUser(userID)
-	fetcher, err := block.NewMetaFetcherWithBlockIDFilter(userLogger, c.compactorCfg.MetaSyncConcurrency, userBucket, syncDir, reg, fetcherFilters, maxLookback, blockIDs)
+	fetcher, err := block.NewMetaFetcher(userLogger, c.compactorCfg.MetaSyncConcurrency, userBucket, syncDir, reg, fetcherFilters, maxLookback)
 	if err != nil {
 		return compactorschedulerpb.REASSIGN, errors.Wrap(err, "failed to create meta fetcher")
 	}
@@ -342,13 +342,17 @@ func (e *schedulerExecutor) executeCompactionJob(ctx context.Context, c *Multite
 		return compactorschedulerpb.REASSIGN, errors.Wrap(err, "failed to create syncer")
 	}
 
-	if err := syncer.SyncMetas(ctx); err != nil {
+	if err := syncer.SyncRequestedMetas(ctx, blockIDs); err != nil {
 		return compactorschedulerpb.REASSIGN, errors.Wrap(err, "failed to sync metas")
 	}
 
 	jobMetas, err := getJobMetasFromSyncer(syncer, blockIDs)
 	if err != nil {
 		return compactorschedulerpb.REASSIGN, err
+	}
+
+	if len(jobMetas) == 0 {
+		return compactorschedulerpb.ABANDON, errors.New("no block metadata available after filtering")
 	}
 
 	var splitNumShards uint32
