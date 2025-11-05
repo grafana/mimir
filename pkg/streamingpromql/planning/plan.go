@@ -93,6 +93,9 @@ type Node interface {
 	// MergeHints merges any hints from other into this node.
 	//
 	// It does not apply this recursively to its children.
+	//
+	// Calling MergeHints with two nodes that are different types or not equivalent may result
+	// in an error or undefined behavior.
 	MergeHints(other Node) error
 
 	// Describe returns a human-readable representation of this node.
