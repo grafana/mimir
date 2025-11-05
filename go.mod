@@ -81,7 +81,7 @@ require (
 	github.com/twmb/franz-go v1.19.5
 	github.com/twmb/franz-go/pkg/kadm v1.15.0
 	github.com/twmb/franz-go/pkg/kfake v0.0.0-20251006031941-e8cd62789735
-	github.com/twmb/franz-go/pkg/kmsg v1.11.2
+	github.com/twmb/franz-go/pkg/kmsg v1.12.1-0.20251024215757-aea970d4d0d2
 	github.com/twmb/franz-go/plugin/kotel v1.5.0
 	github.com/twmb/franz-go/plugin/kprom v1.1.0
 	github.com/tylertreat/BoomFilters v0.0.0-20251001182300-5b3723cc64ae
