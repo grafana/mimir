@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/cache"
-	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/util/annotations"
@@ -165,27 +164,28 @@ func (m *FunctionOverRangeVectorSplit) processScalarArgs(ctx context.Context) er
 }
 
 func (m *FunctionOverRangeVectorSplit) NextSeries(ctx context.Context) (types.InstantVectorSeriesData, error) {
-	// Decide whether we need to move to the next uncached series
-	// Also load inner series if necessary
-	var cachedBlockRefsForSeries []IRSeriesRef
-	var hasUncached bool
+	// For now, only support instant queries (range queries will fall back to non-split version)
+	if !m.timeRange.IsInstant {
+		return types.InstantVectorSeriesData{}, fmt.Errorf("FunctionOverRangeVectorSplit only supports instant queries for now")
+	}
 
 	if m.currentSeriesIndex >= len(m.seriesToIRRefs) {
 		return types.InstantVectorSeriesData{}, types.EOS
 	}
 
 	result := m.seriesToIRRefs[m.currentSeriesIndex]
+	var cachedBlockRefsForSeries []IRSeriesRef
+	var hasUncached bool
 
-	// If the ordered series groups has an uncached component, move to the next inner series
-	// The uncached component is always the first elem in the slice
+	// If the series has an uncached component, get the next series from inner operator
 	if len(result) > 0 && result[0].IRBlockIdx == UncachedSeriesRef {
 		hasUncached = true
 		if err := m.Inner.NextSeries(ctx); err != nil {
 			return types.InstantVectorSeriesData{}, err
 		}
-		cachedBlockRefsForSeries = result[1:] // ignore uncached result
+		cachedBlockRefsForSeries = result[1:] // cached blocks for this series
 	} else {
-		cachedBlockRefsForSeries = result
+		cachedBlockRefsForSeries = result // purely cached series
 	}
 
 	defer func() {
@@ -194,173 +194,140 @@ func (m *FunctionOverRangeVectorSplit) NextSeries(ctx context.Context) (types.In
 
 	data := types.InstantVectorSeriesData{}
 
-	stepMover := NewStepMover(m.timeRange, m.Inner.StepCalculationParams())
+	// For instant query, there's only one step
+	var step *types.RangeVectorStepData
+	var err error
 
-	currentIRBlockStart := 0
-	currentIRBlockEnd := 0
-
-	for {
-		var f float64
-		var hasFloat bool
-		var h *histogram.FloatHistogram
-		var err error
-		var step *types.RangeVectorStepData
-
-		if hasUncached {
-			// Get step samples from inner operator - we need the sample data for computing head/tail/uncached blocks
-			step, err = m.Inner.NextStepSamples(ctx)
-			// nolint:errorlint // errors.Is introduces a performance overhead, and NextStepSamples is guaranteed to return exactly EOS, never a wrapped error.
-			if err == types.EOS {
-				if m.seriesValidationFunc != nil {
-					m.seriesValidationFunc(data, m.metricNames.GetMetricNameForSeries(m.currentSeriesIndex), m.emitAnnotationFunc)
-				}
-				return data, nil
-			} else if err != nil {
-				return types.InstantVectorSeriesData{}, err
-			}
-		} else {
-			// No uncached data - use StepMover to iterate through steps for purely cached series
-			step, err = stepMover.NextStep()
-			// nolint:errorlint
-			if err == types.EOS {
-				if m.seriesValidationFunc != nil {
-					m.seriesValidationFunc(data, m.metricNames.GetMetricNameForSeries(m.currentSeriesIndex), m.emitAnnotationFunc)
-				}
-				return data, nil
-			} else if err != nil {
-				return types.InstantVectorSeriesData{}, err
-			}
-		}
-
-		// find the cached blocks within the range of the step
-		for ; currentIRBlockStart < len(m.intermediateResults) && step.RangeStart >= m.intermediateResults[currentIRBlockStart].StartTimestampMs+m.intermediateResults[currentIRBlockStart].DurationMs; currentIRBlockStart++ {
-		}
-		for ; currentIRBlockEnd < len(m.intermediateResults) && step.RangeEnd >= m.intermediateResults[currentIRBlockEnd].StartTimestampMs+m.intermediateResults[currentIRBlockEnd].DurationMs; currentIRBlockEnd++ {
-		}
-
-		pieces := []cache.IntermediateResult{}
-
-		// calculate head piece (only if we have uncached data with samples)
-		if hasUncached && currentIRBlockStart < len(m.intermediateResults) && step.RangeStart < m.intermediateResults[currentIRBlockStart].StartTimestampMs {
-			var headStep *types.RangeVectorStepData
-			var err error
-
-			if step.RangeEnd < m.intermediateResults[currentIRBlockStart].StartTimestampMs {
-				headStep, err = step.SubStep(step.RangeStart, step.RangeEnd)
-			} else {
-				headStep, err = step.SubStep(step.RangeStart, m.intermediateResults[currentIRBlockStart].StartTimestampMs)
-			}
-
-			if err != nil {
-				return types.InstantVectorSeriesData{}, err
-			}
-			headPiece, err := m.Func.GenerateFunc(
-				headStep,
-				m.scalarArgsData,
-				m.emitAnnotationFunc,
-				m.MemoryConsumptionTracker)
-			if err != nil {
-				return types.InstantVectorSeriesData{}, err
-			}
-			pieces = append(pieces, headPiece)
-		}
-
-		// calculate middle (possibly cached) pieces
-		currentCachedBlockRefIdx := 0
-		for currentBlock := currentIRBlockStart; currentBlock < currentIRBlockEnd; currentBlock++ {
-			if m.intermediateResults[currentBlock].loadedFromCache && len(cachedBlockRefsForSeries) > 0 {
-				// Advance to find the cached block ref for this block
-				for ; currentCachedBlockRefIdx < len(cachedBlockRefsForSeries) && cachedBlockRefsForSeries[currentCachedBlockRefIdx].IRBlockIdx < currentBlock; currentCachedBlockRefIdx++ {
-				}
-				// If the cached block actually contains this series
-				if currentCachedBlockRefIdx < len(cachedBlockRefsForSeries) && cachedBlockRefsForSeries[currentCachedBlockRefIdx].IRBlockIdx == currentBlock {
-					pieces = append(pieces, m.intermediateResults[currentBlock].ir.Results[cachedBlockRefsForSeries[currentCachedBlockRefIdx].SeriesIdx])
-					continue // Use cached piece, don't recompute
-				}
-			}
-
-			// Block not cached or cache miss - compute it (only if we have uncached data with samples)
-			if hasUncached {
-				blockStep, err := step.SubStep(m.intermediateResults[currentBlock].StartTimestampMs, m.intermediateResults[currentBlock].StartTimestampMs+m.intermediateResults[currentBlock].DurationMs)
-				if err != nil {
-					return types.InstantVectorSeriesData{}, err
-				}
-				// TODO: cache piece recomputations across steps
-				piece, err := m.Func.GenerateFunc(
-					blockStep,
-					m.scalarArgsData, m.emitAnnotationFunc, m.MemoryConsumptionTracker)
-				if err != nil {
-					return types.InstantVectorSeriesData{}, err
-				}
-				pieces = append(pieces, piece)
-			}
-		}
-
-		// calculate tail piece (only if we have uncached data with samples)
-		// Tail exists if there's data after the last complete block
-		if hasUncached {
-			var tailStart int64
-			if currentIRBlockEnd > 0 && currentIRBlockEnd <= len(m.intermediateResults) {
-				// Tail starts from the end of the last processed block
-				tailStart = m.intermediateResults[currentIRBlockEnd-1].StartTimestampMs + m.intermediateResults[currentIRBlockEnd-1].DurationMs
-			} else if currentIRBlockStart < len(m.intermediateResults) {
-				// No blocks were processed, tail starts from the start of the first block
-				tailStart = m.intermediateResults[currentIRBlockStart].StartTimestampMs
-			} else {
-				// No blocks at all, tail covers everything after head
-				tailStart = step.RangeStart
-			}
-
-			if tailStart < step.RangeEnd {
-				tailStep, err := step.SubStep(tailStart, step.RangeEnd)
-				if err != nil {
-					return types.InstantVectorSeriesData{}, err
-				}
-				tailPiece, err := m.Func.GenerateFunc(
-					tailStep,
-					m.scalarArgsData,
-					m.emitAnnotationFunc,
-					m.MemoryConsumptionTracker)
-				if err != nil {
-					return types.InstantVectorSeriesData{}, err
-				}
-				pieces = append(pieces, tailPiece)
-			}
-		}
-
-		// Combine all pieces (head, middle cached/computed, tail)
-		f, hasFloat, h, err = m.Func.CombineFunc(pieces, m.emitAnnotationFunc, m.MemoryConsumptionTracker)
+	if hasUncached {
+		// Get the single step from inner operator
+		step, err = m.Inner.NextStepSamples(ctx)
 		if err != nil {
 			return types.InstantVectorSeriesData{}, err
 		}
-
-		if hasFloat {
-			if data.Floats == nil {
-				// Only get FPoint slice once we are sure we have float points.
-				// This potentially over-allocates as some points may be histograms, but this is expected to be rare.
-
-				remainingStepCount := m.timeRange.StepCount - int(m.timeRange.PointIndex(step.StepT)) // Only get a slice for the number of points remaining in the query range.
-				data.Floats, err = types.FPointSlicePool.Get(remainingStepCount, m.MemoryConsumptionTracker)
-				if err != nil {
-					return types.InstantVectorSeriesData{}, err
-				}
-			}
-			data.Floats = append(data.Floats, promql.FPoint{T: step.StepT, F: f})
+	} else {
+		// For purely cached series, calculate step info directly
+		// (no need for StepMover since instant queries have only one step)
+		params := m.Inner.StepCalculationParams()
+		stepT := m.timeRange.StartT
+		rangeEnd := stepT
+		if params.Timestamp != nil {
+			rangeEnd = *params.Timestamp
 		}
-		if h != nil {
-			if data.Histograms == nil {
-				// Only get HPoint slice once we are sure we have histogram points.
-				// This potentially over-allocates as some points may be floats, but this is expected to be rare.
+		rangeEnd = rangeEnd - params.Offset
+		rangeStart := rangeEnd - params.RangeMilliseconds
 
-				remainingStepCount := m.timeRange.StepCount - int(m.timeRange.PointIndex(step.StepT)) // Only get a slice for the number of points remaining in the query range.
-				data.Histograms, err = types.HPointSlicePool.Get(remainingStepCount, m.MemoryConsumptionTracker)
-				if err != nil {
-					return types.InstantVectorSeriesData{}, err
-				}
-			}
-			data.Histograms = append(data.Histograms, promql.HPoint{T: step.StepT, H: h})
+		step = &types.RangeVectorStepData{
+			StepT:      stepT,
+			RangeStart: rangeStart,
+			RangeEnd:   rangeEnd,
 		}
 	}
+
+	// Find which cached blocks overlap with this step's range
+	var currentIRBlockStart, currentIRBlockEnd int
+	for ; currentIRBlockStart < len(m.intermediateResults) && step.RangeStart >= m.intermediateResults[currentIRBlockStart].StartTimestampMs+m.intermediateResults[currentIRBlockStart].DurationMs; currentIRBlockStart++ {
+	}
+	for ; currentIRBlockEnd < len(m.intermediateResults) && step.RangeEnd >= m.intermediateResults[currentIRBlockEnd].StartTimestampMs+m.intermediateResults[currentIRBlockEnd].DurationMs; currentIRBlockEnd++ {
+	}
+
+	pieces := []cache.IntermediateResult{}
+
+	// Calculate head piece (data before first cached block)
+	if hasUncached && currentIRBlockStart < len(m.intermediateResults) && step.RangeStart < m.intermediateResults[currentIRBlockStart].StartTimestampMs {
+		headEnd := m.intermediateResults[currentIRBlockStart].StartTimestampMs
+		if step.RangeEnd < headEnd {
+			headEnd = step.RangeEnd
+		}
+		headStep, err := step.SubStep(step.RangeStart, headEnd)
+		if err != nil {
+			return types.InstantVectorSeriesData{}, err
+		}
+		headPiece, err := m.Func.GenerateFunc(headStep, m.scalarArgsData, m.emitAnnotationFunc, m.MemoryConsumptionTracker)
+		if err != nil {
+			return types.InstantVectorSeriesData{}, err
+		}
+		pieces = append(pieces, headPiece)
+	}
+
+	// Process middle blocks (use cached results if available, otherwise compute)
+	currentCachedBlockRefIdx := 0
+	for currentBlock := currentIRBlockStart; currentBlock < currentIRBlockEnd; currentBlock++ {
+		var foundCached bool
+		if m.intermediateResults[currentBlock].loadedFromCache && len(cachedBlockRefsForSeries) > 0 {
+			// Find the cached result for this block and series (if it exists)
+			for ; currentCachedBlockRefIdx < len(cachedBlockRefsForSeries) && cachedBlockRefsForSeries[currentCachedBlockRefIdx].IRBlockIdx < currentBlock; currentCachedBlockRefIdx++ {
+			}
+			if currentCachedBlockRefIdx < len(cachedBlockRefsForSeries) && cachedBlockRefsForSeries[currentCachedBlockRefIdx].IRBlockIdx == currentBlock {
+				pieces = append(pieces, m.intermediateResults[currentBlock].ir.Results[cachedBlockRefsForSeries[currentCachedBlockRefIdx].SeriesIdx])
+				foundCached = true
+			}
+		}
+
+		// If not cached, compute it (only if we have sample data)
+		if !foundCached && hasUncached {
+			blockStep, err := step.SubStep(m.intermediateResults[currentBlock].StartTimestampMs, m.intermediateResults[currentBlock].StartTimestampMs+m.intermediateResults[currentBlock].DurationMs)
+			if err != nil {
+				return types.InstantVectorSeriesData{}, err
+			}
+			piece, err := m.Func.GenerateFunc(blockStep, m.scalarArgsData, m.emitAnnotationFunc, m.MemoryConsumptionTracker)
+			if err != nil {
+				return types.InstantVectorSeriesData{}, err
+			}
+			pieces = append(pieces, piece)
+		}
+	}
+
+	// Calculate tail piece (data after last cached block)
+	if hasUncached {
+		var tailStart int64
+		if currentIRBlockEnd > 0 && currentIRBlockEnd <= len(m.intermediateResults) {
+			tailStart = m.intermediateResults[currentIRBlockEnd-1].StartTimestampMs + m.intermediateResults[currentIRBlockEnd-1].DurationMs
+		} else if currentIRBlockStart < len(m.intermediateResults) {
+			tailStart = m.intermediateResults[currentIRBlockStart].StartTimestampMs
+		} else {
+			tailStart = step.RangeStart
+		}
+
+		if tailStart < step.RangeEnd {
+			tailStep, err := step.SubStep(tailStart, step.RangeEnd)
+			if err != nil {
+				return types.InstantVectorSeriesData{}, err
+			}
+			tailPiece, err := m.Func.GenerateFunc(tailStep, m.scalarArgsData, m.emitAnnotationFunc, m.MemoryConsumptionTracker)
+			if err != nil {
+				return types.InstantVectorSeriesData{}, err
+			}
+			pieces = append(pieces, tailPiece)
+		}
+	}
+
+	// Combine all pieces into final result
+	f, hasFloat, h, err := m.Func.CombineFunc(pieces, m.emitAnnotationFunc, m.MemoryConsumptionTracker)
+	if err != nil {
+		return types.InstantVectorSeriesData{}, err
+	}
+
+	// For instant query, we only have one point
+	if hasFloat {
+		data.Floats, err = types.FPointSlicePool.Get(1, m.MemoryConsumptionTracker)
+		if err != nil {
+			return types.InstantVectorSeriesData{}, err
+		}
+		data.Floats = append(data.Floats, promql.FPoint{T: step.StepT, F: f})
+	}
+	if h != nil {
+		data.Histograms, err = types.HPointSlicePool.Get(1, m.MemoryConsumptionTracker)
+		if err != nil {
+			return types.InstantVectorSeriesData{}, err
+		}
+		data.Histograms = append(data.Histograms, promql.HPoint{T: step.StepT, H: h})
+	}
+
+	if m.seriesValidationFunc != nil {
+		m.seriesValidationFunc(data, m.metricNames.GetMetricNameForSeries(m.currentSeriesIndex), m.emitAnnotationFunc)
+	}
+
+	return data, nil
 }
 
 func (m *FunctionOverRangeVectorSplit) emitAnnotation(generator types.AnnotationGenerator) {
@@ -435,12 +402,8 @@ func (m *FunctionOverRangeVectorSplit) Close() {
 	m.intermediateResults = nil
 }
 
-// This code is mostly copied from deduplicate_and_merge.go
-// Merges the series metadata from uncached samples with the cached pieces
-// TODO: can we guarantee series are sorted in lexiographical order? or a stable order? I don't think so, e.g. if there's a subquery with sort(), then different time ranges might return values in different orders
-//
-//	we might just have to filter out cases where that happens (while sort() only works on instant queries, if we might make multiple instant queries over different time ranges)
-//	sort_by_label() (experimental) might have similar effects though in this case the order should be the same (assuming a stable sort), it just can't be assumed to be lexicographical wrt all series
+// seriesMetadataWithIntermediate merges the series metadata from uncached samples with cached blocks.
+// This logic is based on deduplicate_and_merge.go but simplified for instant queries only.
 func (m *FunctionOverRangeVectorSplit) seriesMetadataWithIntermediate(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, [][]IRSeriesRef, error) {
 	// Why use a string, rather than the labels hash as a key here? This avoids any issues with hash collisions.
 	labelsToRefUncached := map[string][]IRSeriesRef{}
@@ -448,7 +411,7 @@ func (m *FunctionOverRangeVectorSplit) seriesMetadataWithIntermediate(ctx contex
 	// Why 1024 bytes? It's what labels.Labels.String() uses as a buffer size, so we use that as a sensible starting point too.
 	labelBytes := make([]byte, 0, 1024)
 
-	// Currently loads metadata for entire time range
+	// Get metadata for uncached series (instant query has single time point)
 	uncachedMetadata, err := m.Inner.SeriesMetadata(ctx, matchers)
 	if err != nil {
 		return nil, nil, err
@@ -464,7 +427,7 @@ func (m *FunctionOverRangeVectorSplit) seriesMetadataWithIntermediate(ctx contex
 		}
 	}
 
-	// separate map for cache-only (as we need the uncached parts to be ordered as they are returned, as iterating through nextseries() for the uncached will be in order of their metadata)
+	// Separate map for cache-only series (uncached series must maintain their original order)
 	labelsToRefCachedOnly := make(map[string][]IRSeriesRef)
 
 	for irIdx, result := range m.intermediateResults {
@@ -486,15 +449,16 @@ func (m *FunctionOverRangeVectorSplit) seriesMetadataWithIntermediate(ctx contex
 
 	seriesToBlockRefs := make([][]IRSeriesRef, 0, len(labelsToRefUncached)+len(labelsToRefCachedOnly))
 
-	// order by uncached metadata (as Inner.NextSeries() is called in defined order)
-	// TODO: if multiple uncached calls, they might give different orders. This might make this approach untenable.
+	// Order by uncached metadata (as Inner.NextSeries() is called in this order)
+	// TODO: Series ordering might not be stable if we make multiple SeriesMetadata calls for different time ranges.
+	// This could be an issue if the underlying data source doesn't guarantee stable ordering.
 	for _, metadata := range uncachedMetadata {
 		labelBytes = metadata.Labels.Bytes(labelBytes)
 		seriesToBlockRefs = append(seriesToBlockRefs, labelsToRefUncached[string(labelBytes)])
 	}
 
-	// Add any cache-only groups to the end of the list
-	// TODO: deterministic order
+	// Add any cache-only series to the end
+	// TODO: Deterministic order needed for cache-only series
 	for _, metadata := range labelsToRefCachedOnly {
 		seriesToBlockRefs = append(seriesToBlockRefs, metadata)
 	}
@@ -542,54 +506,3 @@ type IRSeriesRef struct {
 }
 
 const UncachedSeriesRef = -1
-
-// StepMover keeps track of the step for a range query
-// used by intermediate result caching to keep track of steps
-// Does what subquery/range vector selector does, but without going through data
-type StepMover struct {
-	nextStepT         int64
-	endT              int64
-	intervalMs        int64
-	rangeMilliseconds int64
-	offset            int64
-	timestamp         *int64
-}
-
-func NewStepMover(timeRange types.QueryTimeRange, params types.StepCalculationParams) *StepMover {
-	return &StepMover{
-		nextStepT:         timeRange.StartT,
-		endT:              timeRange.EndT,
-		intervalMs:        timeRange.IntervalMilliseconds,
-		rangeMilliseconds: params.RangeMilliseconds,
-		offset:            params.Offset,
-		timestamp:         params.Timestamp,
-	}
-}
-
-func (s *StepMover) NextStep() (*types.RangeVectorStepData, error) {
-	if s.nextStepT > s.endT {
-		return nil, types.EOS
-	}
-
-	stepT := s.nextStepT
-	rangeEnd := stepT
-	s.nextStepT += s.intervalMs
-
-	if s.timestamp != nil {
-		// Timestamp from @ modifier takes precedence over query evaluation timestamp.
-		rangeEnd = *s.timestamp
-	}
-
-	// Apply offset after adjusting for timestamp from @ modifier.
-	rangeEnd = rangeEnd - s.offset
-	rangeStart := rangeEnd - s.rangeMilliseconds
-
-	return &types.RangeVectorStepData{
-		StepT:      stepT,
-		RangeStart: rangeStart,
-		RangeEnd:   rangeEnd,
-	}, nil
-}
-
-type perSeriesIRBuffer struct {
-}

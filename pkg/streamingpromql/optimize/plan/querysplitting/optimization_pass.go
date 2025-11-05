@@ -74,6 +74,11 @@ func (o *OptimizationPass) wrapSplittableRangeVectorFunctions(n planning.Node, t
 }
 
 func (o *OptimizationPass) shouldSplitFunction(functionCall *core.FunctionCall, timeRange types.QueryTimeRange) bool {
+	// For now, only support instant queries (range queries are more complex)
+	if !timeRange.IsInstant {
+		return false
+	}
+
 	if _, exists := functions.RegisteredFunctions[functionCall.Function]; !exists {
 		return false
 	}
@@ -102,7 +107,6 @@ func (o *OptimizationPass) shouldSplitFunction(functionCall *core.FunctionCall, 
 
 	// Check if the range is large enough to benefit from splitting
 	// The range must be larger than the split interval for caching to be useful
-	// TODO: for range queries, the step should also be taken into account (e.g. if step = 6h, range = 2h, we don't want to cache the 4h blocks in-between)
 	splitIntervalMs := o.splitInterval.Milliseconds()
 	rangeMs := matrixSelector.Range.Milliseconds()
 	if rangeMs <= splitIntervalMs {
@@ -167,6 +171,7 @@ func (o *OptimizationPass) calculateCacheBlocks(functionCall *core.FunctionCall,
 	// - Older data (>24h): Use 24h blocks to align with final compacted blocks
 
 	// Calculate the actual data range that will be queried
+	// For instant queries, firstStepT == lastStepT, so earliestDataT == latestDataT - range
 	firstStepT := timeRange.StartT
 	firstRangeEnd := firstStepT
 	if matrixSelector.Timestamp != nil {
