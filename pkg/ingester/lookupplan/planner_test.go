@@ -64,7 +64,7 @@ func TestCostBasedPlannerPlanIndexLookup(t *testing.T) {
 				indexMatchers: tc.inputMatchers,
 			}
 
-			result, err := planner.PlanIndexLookup(ctx, inputPlan, 0, 0)
+			result, err := planner.PlanIndexLookup(ctx, inputPlan, nil)
 			require.NoError(t, err)
 			require.NotNil(t, result)
 
@@ -123,7 +123,7 @@ func BenchmarkCostBasedPlannerPlanIndexLookup(b *testing.B) {
 			b.ReportAllocs()
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
-				_, err := planner.PlanIndexLookup(ctx, inputPlan, 0, 0)
+				_, err := planner.PlanIndexLookup(ctx, inputPlan, nil)
 				if err != nil {
 					b.Fatal(err)
 				}
@@ -158,7 +158,7 @@ func TestCostBasedPlannerTooManyMatchers(t *testing.T) {
 		scanMatchers:  []*labels.Matcher{},
 	}
 
-	result, err := planner.PlanIndexLookup(ctx, inputPlan, 0, 0)
+	result, err := planner.PlanIndexLookup(ctx, inputPlan, nil)
 
 	// Should return the original plan without error (aborted early)
 	require.NoError(t, err)
@@ -202,7 +202,7 @@ func TestCostBasedPlannerPreservesAllMatchers(t *testing.T) {
 			scanMatchers:  scanMatchers,
 		}
 
-		result, err := planner.PlanIndexLookup(ctx, inputPlan, 0, 0)
+		result, err := planner.PlanIndexLookup(ctx, inputPlan, nil)
 		require.NoError(t, err)
 		require.NotNil(t, result)
 
@@ -233,7 +233,7 @@ func TestCostBasedPlannerPreservesAllMatchers(t *testing.T) {
 			scanMatchers:  scanOnlyMatchers,
 		}
 
-		result, err := planner.PlanIndexLookup(ctx, inputPlan, 0, 0)
+		result, err := planner.PlanIndexLookup(ctx, inputPlan, nil)
 		require.NoError(t, err)
 		require.NotNil(t, result)
 
@@ -262,7 +262,7 @@ func TestCostBasedPlannerPrefersIndexMatchersOverCheapestPlan(t *testing.T) {
 		scanMatchers:  []*labels.Matcher{},
 	}
 
-	result, err := planner.PlanIndexLookup(ctx, inputPlan, 0, 0)
+	result, err := planner.PlanIndexLookup(ctx, inputPlan, nil)
 	assert.NoError(t, err)
 	assert.NotEmpty(t, result.IndexMatchers(), "Result should have index matchers despite potentially higher cost")
 }
@@ -273,7 +273,7 @@ func TestCostBasedPlannerDoesntAllowNoMatcherLookups(t *testing.T) {
 	metrics := NewMetrics(nil).ForUser("test-user")
 	planner := NewCostBasedPlanner(metrics, stats, defaultCostConfig)
 
-	result, err := planner.PlanIndexLookup(ctx, &basicLookupPlan{}, 0, 0)
+	result, err := planner.PlanIndexLookup(ctx, &basicLookupPlan{}, nil)
 	assert.ErrorContains(t, err, "no plan with index matchers found out of 1 plans")
 	assert.Nil(t, result, "Result should be nil when no matchers are provided")
 }
@@ -294,7 +294,7 @@ func TestCostBasedPlannerWithDisabledPlanning(t *testing.T) {
 
 	t.Run("disabled_planning_returns_input_plan", func(t *testing.T) {
 		ctx := ContextWithDisabledPlanning(context.Background())
-		result, err := planner.PlanIndexLookup(ctx, inputPlan, 0, 0)
+		result, err := planner.PlanIndexLookup(ctx, inputPlan, nil)
 		require.NoError(t, err)
 		require.NotNil(t, result)
 
@@ -316,7 +316,7 @@ func TestCostBasedPlannerWithDisabledPlanning(t *testing.T) {
 		}
 
 		ctx := ContextWithDisabledPlanning(context.Background())
-		result, err := planner.PlanIndexLookup(ctx, mixedPlan, 0, 0)
+		result, err := planner.PlanIndexLookup(ctx, mixedPlan, nil)
 		require.NoError(t, err)
 		require.NotNil(t, result)
 
@@ -333,7 +333,7 @@ func TestCostBasedPlannerWithDisabledPlanning(t *testing.T) {
 		}
 
 		ctx := ContextWithDisabledPlanning(context.Background())
-		result, err := planner.PlanIndexLookup(ctx, emptyPlan, 0, 0)
+		result, err := planner.PlanIndexLookup(ctx, emptyPlan, nil)
 		require.NoError(t, err)
 		require.NotNil(t, result)
 
