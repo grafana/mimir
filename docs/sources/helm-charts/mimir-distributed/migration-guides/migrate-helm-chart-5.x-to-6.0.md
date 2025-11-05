@@ -9,40 +9,40 @@ weight: 120
 
 The `mimir-distributed` Helm chart version 6.0 introduces several breaking changes:
 
-- Ingest storage and Kafka are enabled by default. The bundled Kafka deployment is for demo and testing purposes only and is not suitable for production use.
+- Ingest storage and Kafka are enabled by default. The bundled Kafka deployment is for demonstration and testing purposes only and is not suitable for production use.
 - Rollout-operator webhooks are enabled by default, which requires installing CRDs before upgrading.
-- The top-level `nginx` values section has been removed; you must migrate to the unified gateway deployment before upgrading to version 6.0.
+- The top-level `nginx` values section is removed. You must migrate to the unified gateway deployment before upgrading to version 6.0.
 
-## Prerequisites
+## Before you begin
 
 - You are running `mimir-distributed` Helm chart version 5.x.
-- If using the rollout-operator, you have cluster permissions to install CRDs.
-- If you use the top-level `nginx` values, you have already migrated to the unified gateway deployment.
+- If you're using the rollout-operator, you have cluster permissions to install CRDs.
+- If you're using the top-level `nginx` values, you have already migrated to the unified gateway deployment.
 
 ## Procedure
 
-### 1. Migrate to unified gateway deployment (if needed)
+### Migrate to unified gateway deployment (if needed)
 
 If your values file contains a top-level `nginx` section, you must migrate to the unified gateway deployment before upgrading to version 6.0.
 
 Follow the [Migrate to unified proxy deployment](https://grafana.com/docs/helm-charts/mimir-distributed/v5.8.x/migration-guides/migrate-to-unified-proxy-deployment/) guide to complete this migration.
 
-### 2. Install rollout-operator CRDs (if using rollout-operator)
+### Install rollout-operator CRDs (if using rollout-operator)
 
-If you use the rollout-operator, install the CRDs from the rollout-operator chart:
+If you're using the rollout-operator, install the CRDs from the rollout-operator chart:
 
 ```bash
 kubectl apply -f https://raw.githubusercontent.com/grafana/helm-charts/main/charts/rollout-operator/crds/replica-templates-custom-resource-definition.yaml
 kubectl apply -f https://raw.githubusercontent.com/grafana/helm-charts/main/charts/rollout-operator/crds/zone-aware-pod-disruption-budget-custom-resource-definition.yaml
 ```
 
-### 3. Choose your ingest storage strategy
+### Choose your ingest storage strategy
 
 Choose one of the following options:
 
-#### Option A: Keep using classic architecture (disable ingest storage)
+#### Continue using classic architecture (disable ingest storage)
 
-Classic architecture will be supported until Mimir 4.0 and removed in 5.0. If you want to continue using the classic architecture without ingest storage, add the following to your values file:
+Classic architecture is supported in Mimir version 3.0. If you want to continue using the classic architecture without ingest storage, add the following to your values file:
 
 ```yaml
 mimir:
