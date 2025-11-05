@@ -13,12 +13,16 @@ import (
 )
 
 func TestMimirReadRoutes(t *testing.T) {
-	routes := mimirReadRoutes(Config{PathPrefix: ""})
+	cfg := Config{}
+	cfg.ProxyConfig.Server.PathPrefix = ""
+	routes := mimirReadRoutes(cfg)
 	for _, r := range routes {
 		assert.True(t, strings.HasPrefix(r.Path, "/api/v1/") || strings.HasPrefix(r.Path, "/prometheus/"))
 	}
 
-	routes = mimirReadRoutes(Config{PathPrefix: "/some/random/prefix///"})
+	cfg = Config{}
+	cfg.ProxyConfig.Server.PathPrefix = "/some/random/prefix///"
+	routes = mimirReadRoutes(cfg)
 	for _, r := range routes {
 		assert.Regexp(t, "/some/random/prefix/[a-z].*", r.Path)
 	}
