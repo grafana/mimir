@@ -27,9 +27,9 @@ Entries should be ordered as follows:
 
 Entries should include a reference to the Pull Request that introduced the change.
 
-## main / unreleased
+## 6.0.2
 
-* [ENHANCEMENT] Add Support to customize gossip ring k8s service annotations. #12718
+* [BUGFIX] Upgrade rollout-operator chart to 0.37.1, which fixes server-tls.self-signed-cert.dns-name to use the full release name instead of always being set to `rollout-operator.NAMESPACE.svc`. If upgrading from 6.0.0 or 6.0.1, delete the `certificate` secret created by the rollout-operator pod and recreate the rollout-operator pod. #13357
 
 ## 6.0.1
 
@@ -60,6 +60,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [ENHANCEMENT] Upgrade rollout-operator to [0.35.1](https://github.com/grafana/helm-charts/blob/main/charts/rollout-operator/README.md#upgrade-of-grafana-rollout-operator). Note required actions for upgrading the rollout-operator chart. #12591, #12996
 * [ENHANCEMENT] Add support for `dnsConfig` for all components. #12618
 * [ENHANCEMENT] Added `trafficDistribution` configuration option to distributor, gateway, querier, query-frontend, query-scheduler, ingester, and store-gateway services to enable same-zone traffic routing. #12243
+* [ENHANCEMENT] Add Support to customize gossip ring k8s service annotations. #12718
 
 ## 5.8.0
 
