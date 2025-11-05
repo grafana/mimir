@@ -178,10 +178,10 @@ local utils = import 'mixin-utils/utils.libsonnet';
 
   // The mixin allow specialism of the job selector depending on if its a single binary
   // deployment or a namespaced one.
-  jobContainerMatchers(job, containerName)::
+  jobContainerMatchers(job, container)::
     if $._config.singleBinary
-    then '%s=~"$job", container="%s"' % [$._config.per_job_label, containerName]
-    else '%s=~"$cluster", %s=~"%s(%s)", container="%s"' % [$._config.per_cluster_label, $._config.per_job_label, $._config.job_prefix, formatJobForQuery(job), containerName],
+    then '%s=~"$job", container=~"%s"' % [$._config.per_job_label, container]
+    else '%s=~"$cluster", %s=~"%s(%s)", container=~"%s"' % [$._config.per_cluster_label, $._config.per_job_label, $._config.job_prefix, formatJobForQuery(job), container],
 
   local formatJobForQuery(job) =
     if std.isArray(job) then '(%s)' % std.join('|', job)
