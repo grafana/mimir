@@ -97,6 +97,7 @@
 * [ENHANCEMENT] Alerts: Add `MimirBlockBuilderPersistentJobFailure` alert. #13278
 * [ENHANCEMENT] Dashboards: Update default regular expressions to match multi-zone deployments for query-frontend, querier, distributor and ruler. #13200
 * [ENHANCEMENT] Alerts: Update `MimirHighVolumeLevel1BlocksQueried` alert to fire on a percentage of the level 1 blocks queried. #13229
+* [ENHANCEMENT] Dashboards: Plot OMMKilled events in the workingset memory panels of resources dashboards. #13377
 * [BUGFIX] Dashboards: Fix issue where throughput dashboard panels would group all gRPC requests that resulted in a status containing an underscore into one series with no name. #13184
 
 ### Jsonnet
