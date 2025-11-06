@@ -563,6 +563,14 @@
         memory_rss_limit: 'min(container_spec_memory_limit_bytes{%(namespace)s,container=~"%(containerName)s"} > 0)',
         memory_rss_request: 'min(kube_pod_container_resource_requests{%(namespace)s,container=~"%(containerName)s",resource="memory"})',
         memory_go_heap_usage: 'sum by(%(instanceLabel)s) (go_memstats_heap_inuse_bytes{%(namespace)s,container=~"%(containerName)s"})',
+        memory_oom_killed: |||
+          group by (%(instanceLabel)s, reason) (
+            kube_pod_container_status_last_terminated_reason{%(namespace)s,container=~"%(containerName)s",reason="OOMKilled"}
+            unless
+            # Note, this leg offsets by the "$__interval" to find the first occurrence of OOMKilled in the gauge.
+            (kube_pod_container_status_last_terminated_reason{%(namespace)s,container=~"%(containerName)s",reason="OOMKilled"} offset $__interval == bool 0)
+          ) != 0
+        |||,
         network_receive_bytes: 'sum by(%(instanceLabel)s) (rate(container_network_receive_bytes_total{%(namespaceMatcher)s,%(instanceLabel)s=~"%(instanceName)s"}[$__rate_interval]))',
         network_transmit_bytes: 'sum by(%(instanceLabel)s) (rate(container_network_transmit_bytes_total{%(namespaceMatcher)s,%(instanceLabel)s=~"%(instanceName)s"}[$__rate_interval]))',
         disk_writes:

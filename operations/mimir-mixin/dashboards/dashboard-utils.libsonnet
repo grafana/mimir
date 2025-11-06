@@ -23,6 +23,12 @@ local utils = import 'mixin-utils/utils.libsonnet';
     $.overrideProperty('custom.fillOpacity', 0),
     $.overrideProperty('custom.lineStyle', { fill: 'dash' }),
   ]),
+  local ommKilledStyle = $.overrideField('byRegexp', '/.+ - ommkilled/', [
+    $.overrideProperty('color', { mode: 'fixed', fixedColor: $._colors.failed }),
+    $.overrideProperty('custom.axisPlacement', 'hidden'),
+    $.overrideProperty('custom.drawStyle', 'points'),
+    $.overrideProperty('unit', 'none'),
+  ]),
 
   local sortAscending = 1,
   local sortNaturalAscending = 7,
@@ -422,14 +428,33 @@ local utils = import 'mixin-utils/utils.libsonnet';
   // The provided instanceName should be a regexp from $._config.instance_names, while
   // the provided containerName should be a regexp from $._config.container_names.
   containerMemoryWorkingSetPanel(instanceName, containerName)::
+    local queries =
+      $.resourceUtilizationAndLimitQueries('memory_working', instanceName, containerName)
+      + if $._config.deployment_type == 'kubernetes'
+      then [
+        $._config.resources_panel_queries[$._config.deployment_type].memory_oom_killed % {
+          instanceLabel: $._config.per_instance_label,
+          namespace: $.namespaceMatcher(),
+          instanceName: instanceName,
+          containerName: containerName,
+        },
+      ]
+      else [];
+    local legends =
+      $.resourceUtilizationAndLimitLegend('{{%s}}' % $._config.per_instance_label)
+      + if $._config.deployment_type == 'kubernetes'
+      then ['{{%s}} - ommkilled' % $._config.per_instance_label]
+      else [];
+
     $.timeseriesPanel('Memory (workingset)') +
-    $.queryPanel($.resourceUtilizationAndLimitQueries('memory_working', instanceName, containerName), $.resourceUtilizationAndLimitLegend('{{%s}}' % $._config.per_instance_label)) +
+    $.queryPanel(queries, legends) +
     $.showAllTooltip +
     {
       fieldConfig+: {
         overrides+: [
           resourceRequestStyle,
           resourceLimitStyle,
+          ommKilledStyle,
         ],
         defaults+: {
           unit: 'bytes',
