@@ -111,7 +111,6 @@ type Config struct {
 	PersisterConfig   PersisterConfig
 
 	GrafanaAlertmanagerCompatibility bool
-	EnableNotifyHooks                bool
 }
 
 // An Alertmanager manages the alerts for one user.
@@ -156,8 +155,6 @@ type Alertmanager struct {
 	configHashMetric prometheus.Gauge
 
 	rateLimitedNotifications *prometheus.CounterVec
-
-	notifyHooksMetrics *notifyHooksMetrics
 }
 
 var (
@@ -219,10 +216,6 @@ func New(cfg *Config, reg *prometheus.Registry) (*Alertmanager, error) {
 			Name: "alertmanager_notification_rate_limited_total",
 			Help: "Number of rate-limited notifications per integration.",
 		}, []string{"integration"}), // "integration" is consistent with other alertmanager metrics.
-	}
-
-	if am.cfg.EnableNotifyHooks {
-		am.notifyHooksMetrics = newNotifyHooksMetrics(reg)
 	}
 
 	am.registry = reg
@@ -627,16 +620,6 @@ func (am *Alertmanager) getFullState() (*clusterpb.FullState, error) {
 }
 
 func (am *Alertmanager) wrapNotifier(integrationName string, notifier notify.Notifier) notify.Notifier {
-	if am.cfg.EnableNotifyHooks {
-		n, err := newNotifyHooksNotifier(notifier, am.cfg.Limits, am.cfg.UserID, am.logger, am.notifyHooksMetrics)
-		if err != nil {
-			// It's rare an error is returned, but in theory it can happen.
-			level.Error(am.logger).Log("msg", "Failed to setup notify hooks", "err", err)
-		} else {
-			notifier = n
-		}
-	}
-
 	if am.cfg.Limits != nil {
 		rl := &tenantRateLimits{
 			tenant:      am.cfg.UserID,

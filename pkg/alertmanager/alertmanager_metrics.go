@@ -247,22 +247,6 @@ func newAlertmanagerMetrics(logger log.Logger) *alertmanagerMetrics {
 			"cortex_alertmanager_state_persist_failed_total",
 			"Number of times we have failed to persist the running state to storage.",
 			nil, nil),
-		notifyHookTotal: prometheus.NewDesc(
-			"cortex_alertmanager_notify_hook_total",
-			"Number of times a pre-notify hook was invoked.",
-			nil, nil),
-		notifyHookNoop: prometheus.NewDesc(
-			"cortex_alertmanager_notify_hook_noop_total",
-			"Number of times a pre-notify hook was invoked successfully but did nothing.",
-			nil, nil),
-		notifyHookFailed: prometheus.NewDesc(
-			"cortex_alertmanager_notify_hook_failed_total",
-			"Number of times a pre-notify was attempted but failed.",
-			[]string{"status_code"}, nil),
-		notifyHookDuration: prometheus.NewDesc(
-			"cortex_alertmanager_notify_hook_duration_seconds",
-			"Time spent invoking pre-notify hooks.",
-			nil, nil),
 		dispatcherAggrGroups: prometheus.NewDesc(
 			"cortex_alertmanager_dispatcher_aggregation_groups",
 			"Number of active aggregation groups",
