@@ -848,6 +848,7 @@ spec:
         - -ingester.ring.prefix=
         - -ingester.ring.replication-factor=3
         - -ingester.ring.store=memberlist
+        - -mem-ballast-size-bytes=1073741824
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
         - -querier.max-partial-query-length=768h
