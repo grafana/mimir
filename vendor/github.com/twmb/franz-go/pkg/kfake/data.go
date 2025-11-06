@@ -84,7 +84,7 @@ func (fs followers) has(b *broker) bool {
 	return false
 }
 
-func (d *data) mkt(t string, nparts int, nreplicas int, configs map[string]*string) {
+func (d *data) mkt(t string, nparts, nreplicas int, configs map[string]*string) {
 	if d.tps != nil {
 		if _, exists := d.tps[t]; exists {
 			panic("should have checked existence already")
@@ -157,7 +157,7 @@ func (pd *partData) pushBatch(nbytes int, b kmsg.RecordBatch) {
 	}
 }
 
-func (pd *partData) searchOffset(o int64) (index int, found bool, atEnd bool) {
+func (pd *partData) searchOffset(o int64) (index int, found, atEnd bool) {
 	if o < pd.logStartOffset || o > pd.highWatermark {
 		return 0, false, false
 	}
@@ -275,7 +275,7 @@ func (c *Cluster) setBrokerConfig(k string, v *string, dry bool) bool {
 	return true
 }
 
-func (d *data) setTopicConfig(t string, k string, v *string, dry bool) bool {
+func (d *data) setTopicConfig(t, k string, v *string, dry bool) bool {
 	if dry {
 		return true
 	}
