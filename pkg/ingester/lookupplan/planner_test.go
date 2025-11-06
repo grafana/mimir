@@ -29,24 +29,24 @@ func TestCostBasedPlannerPlanIndexLookup(t *testing.T) {
 	ctx := context.Background()
 
 	data := newCSVTestData(
-		[]string{"testName", "inputMatchers", "expectedIndexMatchers", "expectedScanMatchers", "queryShard"},
+		[]string{"queryShard", "testName", "inputMatchers", "expectedIndexMatchers", "expectedScanMatchers"},
 		filepath.Join("testdata", "planner_test_cases.csv"),
 		func(record []string) plannerTestCase {
 			return plannerTestCase{
-				name:                  record[0],
-				inputMatchers:         parseVectorSelector(t, record[1]),
-				expectedIndexMatchers: parseVectorSelector(t, record[2]),
-				expectedScanMatchers:  parseVectorSelector(t, record[3]),
-				queryShard:            record[4],
+				queryShard:            record[0],
+				name:                  record[1],
+				inputMatchers:         parseVectorSelector(t, record[2]),
+				expectedIndexMatchers: parseVectorSelector(t, record[3]),
+				expectedScanMatchers:  parseVectorSelector(t, record[4]),
 			}
 		},
 		func(tc plannerTestCase) []string {
 			return []string{
+				tc.queryShard,
 				tc.name,
 				fmt.Sprintf("{%s}", util.MatchersStringer(tc.inputMatchers)),
 				fmt.Sprintf("{%s}", util.MatchersStringer(tc.expectedIndexMatchers)),
 				fmt.Sprintf("{%s}", util.MatchersStringer(tc.expectedScanMatchers)),
-				tc.queryShard,
 			}
 		},
 	)
@@ -71,7 +71,7 @@ func TestCostBasedPlannerPlanIndexLookup(t *testing.T) {
 
 			// Parse query shard if specified
 			var hints *storage.SelectHints
-			if tc.queryShard != "" {
+			if tc.queryShard != "" && tc.queryShard != "0_of_0" {
 				shardIndex, shardCount, err := sharding.ParseShardIDLabelValue(tc.queryShard)
 				require.NoError(t, err, "failed to parse queryShard: %q", tc.queryShard)
 				hints = &storage.SelectHints{
@@ -106,15 +106,15 @@ func BenchmarkCostBasedPlannerPlanIndexLookup(b *testing.B) {
 	ctx := context.Background()
 
 	data := newCSVTestData(
-		[]string{"testName", "inputMatchers", "expectedIndexMatchers", "expectedScanMatchers", "queryShard"},
+		[]string{"queryShard", "testName", "inputMatchers", "expectedIndexMatchers", "expectedScanMatchers"},
 		filepath.Join("testdata", "planner_test_cases.csv"),
 		func(record []string) plannerTestCase {
 			return plannerTestCase{
-				name:                  record[0],
-				inputMatchers:         parseVectorSelector(b, record[1]),
-				expectedIndexMatchers: parseVectorSelector(b, record[2]),
-				expectedScanMatchers:  parseVectorSelector(b, record[3]),
-				queryShard:            record[4],
+				queryShard:            record[0],
+				name:                  record[1],
+				inputMatchers:         parseVectorSelector(b, record[2]),
+				expectedIndexMatchers: parseVectorSelector(b, record[3]),
+				expectedScanMatchers:  parseVectorSelector(b, record[4]),
 			}
 		},
 		func(tc plannerTestCase) []string {
@@ -139,7 +139,7 @@ func BenchmarkCostBasedPlannerPlanIndexLookup(b *testing.B) {
 
 			// Parse query shard if specified
 			var hints *storage.SelectHints
-			if tc.queryShard != "" {
+			if tc.queryShard != "" && tc.queryShard != "0_of_0" {
 				shardIndex, shardCount, err := sharding.ParseShardIDLabelValue(tc.queryShard)
 				require.NoError(b, err, "failed to parse queryShard: %q", tc.queryShard)
 				hints = &storage.SelectHints{
