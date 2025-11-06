@@ -9,9 +9,11 @@ import (
 	"testing"
 
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/storage"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/util"
 )
 
@@ -20,13 +22,14 @@ type plannerTestCase struct {
 	inputMatchers         []*labels.Matcher
 	expectedIndexMatchers []*labels.Matcher
 	expectedScanMatchers  []*labels.Matcher
+	queryShard            string // Format: "shardIndex_of_shardCount" (e.g., "1_of_16") or empty for no sharding
 }
 
 func TestCostBasedPlannerPlanIndexLookup(t *testing.T) {
 	ctx := context.Background()
 
 	data := newCSVTestData(
-		[]string{"testName", "inputMatchers", "expectedIndexMatchers", "expectedScanMatchers"},
+		[]string{"testName", "inputMatchers", "expectedIndexMatchers", "expectedScanMatchers", "queryShard"},
 		filepath.Join("testdata", "planner_test_cases.csv"),
 		func(record []string) plannerTestCase {
 			return plannerTestCase{
@@ -34,6 +37,7 @@ func TestCostBasedPlannerPlanIndexLookup(t *testing.T) {
 				inputMatchers:         parseVectorSelector(t, record[1]),
 				expectedIndexMatchers: parseVectorSelector(t, record[2]),
 				expectedScanMatchers:  parseVectorSelector(t, record[3]),
+				queryShard:            record[4],
 			}
 		},
 		func(tc plannerTestCase) []string {
@@ -42,6 +46,7 @@ func TestCostBasedPlannerPlanIndexLookup(t *testing.T) {
 				fmt.Sprintf("{%s}", util.MatchersStringer(tc.inputMatchers)),
 				fmt.Sprintf("{%s}", util.MatchersStringer(tc.expectedIndexMatchers)),
 				fmt.Sprintf("{%s}", util.MatchersStringer(tc.expectedScanMatchers)),
+				tc.queryShard,
 			}
 		},
 	)
@@ -64,7 +69,18 @@ func TestCostBasedPlannerPlanIndexLookup(t *testing.T) {
 				indexMatchers: tc.inputMatchers,
 			}
 
-			result, err := planner.PlanIndexLookup(ctx, inputPlan, nil)
+			// Parse query shard if specified
+			var hints *storage.SelectHints
+			if tc.queryShard != "" {
+				shardIndex, shardCount, err := sharding.ParseShardIDLabelValue(tc.queryShard)
+				require.NoError(t, err, "failed to parse queryShard: %q", tc.queryShard)
+				hints = &storage.SelectHints{
+					ShardIndex: shardIndex,
+					ShardCount: shardCount,
+				}
+			}
+
+			result, err := planner.PlanIndexLookup(ctx, inputPlan, hints)
 			require.NoError(t, err)
 			require.NotNil(t, result)
 
@@ -90,7 +106,7 @@ func BenchmarkCostBasedPlannerPlanIndexLookup(b *testing.B) {
 	ctx := context.Background()
 
 	data := newCSVTestData(
-		[]string{"testName", "inputMatchers", "expectedIndexMatchers", "expectedScanMatchers"},
+		[]string{"testName", "inputMatchers", "expectedIndexMatchers", "expectedScanMatchers", "queryShard"},
 		filepath.Join("testdata", "planner_test_cases.csv"),
 		func(record []string) plannerTestCase {
 			return plannerTestCase{
@@ -98,6 +114,7 @@ func BenchmarkCostBasedPlannerPlanIndexLookup(b *testing.B) {
 				inputMatchers:         parseVectorSelector(b, record[1]),
 				expectedIndexMatchers: parseVectorSelector(b, record[2]),
 				expectedScanMatchers:  parseVectorSelector(b, record[3]),
+				queryShard:            record[4],
 			}
 		},
 		func(tc plannerTestCase) []string {
@@ -120,10 +137,21 @@ func BenchmarkCostBasedPlannerPlanIndexLookup(b *testing.B) {
 				indexMatchers: tc.inputMatchers,
 			}
 
+			// Parse query shard if specified
+			var hints *storage.SelectHints
+			if tc.queryShard != "" {
+				shardIndex, shardCount, err := sharding.ParseShardIDLabelValue(tc.queryShard)
+				require.NoError(b, err, "failed to parse queryShard: %q", tc.queryShard)
+				hints = &storage.SelectHints{
+					ShardIndex: shardIndex,
+					ShardCount: shardCount,
+				}
+			}
+
 			b.ReportAllocs()
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
-				_, err := planner.PlanIndexLookup(ctx, inputPlan, nil)
+				_, err := planner.PlanIndexLookup(ctx, inputPlan, hints)
 				if err != nil {
 					b.Fatal(err)
 				}

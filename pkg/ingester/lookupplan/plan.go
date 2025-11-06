@@ -211,7 +211,7 @@ func (p plan) addPredicatesToSpan(span trace.Span) {
 }
 
 func (p plan) addSpanEvent(span trace.Span, planName string) {
-	span.AddEvent("lookup plan", trace.WithAttributes(
+	attrs := []attribute.KeyValue{
 		attribute.String("plan_name", planName),
 		attribute.Float64("total_cost", p.totalCost()),
 		attribute.Float64("index_lookup_cost", p.indexLookupCost()),
@@ -222,5 +222,15 @@ func (p plan) addSpanEvent(span trace.Span, planName string) {
 		attribute.Int64("cardinality", int64(p.cardinality())),
 		attribute.Stringer("index_matchers", util.MatchersStringer(p.IndexMatchers())),
 		attribute.Stringer("scan_matchers", util.MatchersStringer(p.ScanMatchers())),
-	))
+	}
+
+	// Add query shard information if sharding is enabled
+	if p.shard != nil && p.shard.ShardCount > 0 {
+		attrs = append(attrs,
+			attribute.Int64("shard_index", int64(p.shard.ShardIndex)),
+			attribute.Int64("shard_count", int64(p.shard.ShardCount)),
+		)
+	}
+
+	span.AddEvent("lookup plan", trace.WithAttributes(attrs...))
 }
