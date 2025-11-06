@@ -66,6 +66,8 @@ func (p plan) ScanMatchers() []*labels.Matcher {
 		}
 	}
 	slices.SortFunc(scanPredicateIdxs, func(a, b int) int {
+		// We use the single match cost because all these matchers will be compared against the same set of series
+		// (the ones selected by index matchers)
 		return cmp.Compare(p.predicates[a].singleMatchCost, p.predicates[b].singleMatchCost)
 	})
 
