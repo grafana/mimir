@@ -124,17 +124,16 @@ func (p plan) intersectionCost() float64 {
 
 // seriesRetrievalCost returns the cost of retrieving series from the index after intersecting posting lists.
 // This includes retrieving the series' labels from the index and checking if the series belongs to the query's shard.
+// Realistically we don't retrieve every series because we have the series hash cache, but we ignore that for simplicity.
 func (p plan) seriesRetrievalCost() float64 {
-	return float64(p.intersectionSize()) * p.config.RetrievedSeriesCost
+	return float64(p.numSelectedPostings()) * p.config.RetrievedSeriesCost
 }
 
 // filterCost returns the cost of applying scan predicates to the fetched series.
 // The sequence is: intersection → retrieve series → check shard → apply scan matchers.
-// Therefore, filter cost uses cardinality AFTER sharding since the shard check happens before filtering.
 func (p plan) filterCost() float64 {
 	cost := 0.0
-	// Use cardinality() which accounts for query sharding, since sharding happens before filtering.
-	seriesToFilter := p.cardinality()
+	seriesToFilter := p.numSelectedPostingsInOurShard()
 	for i, pred := range p.predicates {
 		// In reality, we will apply all the predicates for each series and stop once one predicate doesn't match.
 		// But we calculate for the worst case where we have to run all predicates for all series.
@@ -145,7 +144,23 @@ func (p plan) filterCost() float64 {
 	return cost
 }
 
-func (p plan) intersectionSize() uint64 {
+func (p plan) numSelectedPostingsInOurShard() uint64 {
+	postings := p.numSelectedPostings()
+
+	if p.shard == nil || p.shard.ShardCount == 0 {
+		return postings
+	}
+
+	// If query sharding is enabled, divide by the shard count since only series in this shard will be returned.
+	shardedPostings := postings / p.shard.ShardCount
+	// Ensure we return at least 1 if postings > 0, to avoid returning 0 when we have series.
+	if postings > 0 && shardedPostings == 0 {
+		return 1
+	}
+	return shardedPostings
+}
+
+func (p plan) numSelectedPostings() uint64 {
 	finalSelectivity := 1.0
 	for i, pred := range p.predicates {
 		if !p.indexPredicate[i] {
@@ -178,29 +193,21 @@ func (p plan) nonShardedCardinality() uint64 {
 	return uint64(finalSelectivity * float64(p.totalSeries))
 }
 
-// shardedCardinality returns an estimate of the number of series after query sharding is applied.
-// If query sharding is not enabled, it returns the same as nonShardedCardinality().
-func (p plan) shardedCardinality() uint64 {
+// finalCardinality returns an estimate of the total number of series that this plan would return.
+func (p plan) finalCardinality() uint64 {
 	baseCardinality := p.nonShardedCardinality()
 
-	// If query sharding is enabled, divide by the shard count since only series in this shard will be returned.
-	// Query sharding filters series by hash(labels) % shardCount == shardIndex.
-	if p.shard != nil && p.shard.ShardCount > 0 {
-		shardedCardinality := baseCardinality / p.shard.ShardCount
-		// Ensure we return at least 1 if baseCardinality > 0, to avoid returning 0 when we have series.
-		if baseCardinality > 0 && shardedCardinality == 0 {
-			return 1
-		}
-		return shardedCardinality
+	if p.shard == nil || p.shard.ShardCount == 0 {
+		return baseCardinality
 	}
 
-	return baseCardinality
-}
-
-// cardinality returns an estimate of the total number of series that this plan would return.
-// This is an alias for shardedCardinality() for backward compatibility.
-func (p plan) cardinality() uint64 {
-	return p.shardedCardinality()
+	// If query sharding is enabled, divide by the shard count since only series in this shard will be returned.
+	shardedCardinality := baseCardinality / p.shard.ShardCount
+	// Ensure we return at least 1 if baseCardinality > 0, to avoid returning 0 when we have series.
+	if baseCardinality > 0 && shardedCardinality == 0 {
+		return 1
+	}
+	return shardedCardinality
 }
 
 func (p plan) addPredicatesToSpan(span trace.Span) {
@@ -224,26 +231,25 @@ func (p plan) addPredicatesToSpan(span trace.Span) {
 }
 
 func (p plan) addSpanEvent(span trace.Span, planName string) {
-	attrs := []attribute.KeyValue{
-		attribute.String("plan_name", planName),
+	span.AddEvent("lookup plan", trace.WithAttributes(attribute.String("plan_name", planName),
+		attribute.Int64("shard_count", int64(maybe(p.shard).ShardCount)),
 		attribute.Float64("total_cost", p.totalCost()),
 		attribute.Float64("index_lookup_cost", p.indexLookupCost()),
-		attribute.Float64("filter_cost", p.filterCost()),
 		attribute.Float64("intersection_cost", p.intersectionCost()),
-		attribute.Int64("estimated_retrieved_series", int64(p.intersectionSize())),
+		attribute.Int64("estimated_retrieved_series", int64(p.numSelectedPostings())),
 		attribute.Float64("series_retrieval_cost", p.seriesRetrievalCost()),
-		attribute.Int64("estimated_series_before_sharding", int64(p.nonShardedCardinality())),
-		attribute.Int64("estimated_series_after_sharding", int64(p.shardedCardinality())),
+		attribute.Int64("estimated_series_after_sharding", int64(p.numSelectedPostingsInOurShard())),
+		attribute.Float64("filter_cost", p.filterCost()),
+		attribute.Int64("estimated_final_cardinality", int64(p.finalCardinality())),
+
 		attribute.Stringer("index_matchers", util.MatchersStringer(p.IndexMatchers())),
-		attribute.Stringer("scan_matchers", util.MatchersStringer(p.ScanMatchers())),
-	}
+		attribute.Stringer("scan_matchers", util.MatchersStringer(p.ScanMatchers()))))
+}
 
-	// Add query shard count if sharding is enabled
-	if p.shard != nil && p.shard.ShardCount > 0 {
-		attrs = append(attrs,
-			attribute.Int64("shard_count", int64(p.shard.ShardCount)),
-		)
+func maybe[T any](ptr *T) T {
+	if ptr != nil {
+		return *ptr
 	}
-
-	span.AddEvent("lookup plan", trace.WithAttributes(attrs...))
+	var zero T
+	return zero
 }

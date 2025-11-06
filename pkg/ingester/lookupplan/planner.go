@@ -209,8 +209,8 @@ func (p CostBasedPlanner) recordPlanningOutcome(ctx context.Context, start time.
 	default:
 		selectedPlan := allPlans[0]
 		if queryStats := QueryStatsFromContext(ctx); queryStats != nil {
-			queryStats.SetEstimatedSelectedPostings(selectedPlan.intersectionSize())
-			queryStats.SetEstimatedFinalCardinality(selectedPlan.cardinality())
+			queryStats.SetEstimatedSelectedPostings(selectedPlan.numSelectedPostings())
+			queryStats.SetEstimatedFinalCardinality(selectedPlan.finalCardinality())
 		}
 
 		outcome = "success"

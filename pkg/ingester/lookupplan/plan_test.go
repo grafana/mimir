@@ -89,7 +89,7 @@ func TestPlanCosts(t *testing.T) {
 
 			const errorMsg = "Expected cost doesn't match actual cost. If you want to keep the new cost, set `writeOutNewCost = true` to persist the new cost in /testdata"
 			const delta = 1e-5
-			assert.Equal(t, int(tc.cardinality), int(p.cardinality()), errorMsg)
+			assert.Equal(t, int(tc.cardinality), int(p.finalCardinality()), errorMsg)
 			assert.InDelta(t, tc.indexCost, p.indexLookupCost(), delta, errorMsg)
 			assert.InDelta(t, tc.intersectionCost, p.intersectionCost(), delta, errorMsg)
 			assert.InDelta(t, tc.seriesRetrievalCost, p.seriesRetrievalCost(), delta, errorMsg)
@@ -102,7 +102,7 @@ func TestPlanCosts(t *testing.T) {
 			assert.GreaterOrEqual(t, tc.filterCost, 0.0, "can't have negative costs")
 			assert.GreaterOrEqual(t, tc.totalCost, 0.0, "can't have negative costs")
 
-			testCases[tcIdx].cardinality = p.cardinality()
+			testCases[tcIdx].cardinality = p.finalCardinality()
 			testCases[tcIdx].indexCost = p.indexLookupCost()
 			testCases[tcIdx].intersectionCost = p.intersectionCost()
 			testCases[tcIdx].seriesRetrievalCost = p.seriesRetrievalCost()
