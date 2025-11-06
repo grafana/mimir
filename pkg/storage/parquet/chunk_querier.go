@@ -89,7 +89,8 @@ func NewParquetChunkQuerier(
 	shardFinder queryable.ShardsFinderFunction,
 	constraintCacheFunc queryable.ConstraintCacheFunction,
 	chunksDecoder *schema.PrometheusParquetChunksDecoder,
-	opts ...QuerierOpts) (*parquetChunkQuerier, error) {
+	opts ...QuerierOpts,
+) (*parquetChunkQuerier, error) {
 	cfg := DefaultQuerierOpts
 
 	for _, opt := range opts {

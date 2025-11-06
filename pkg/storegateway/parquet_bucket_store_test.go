@@ -264,7 +264,7 @@ func createTestParquetBucketStore(
 		fetcher,
 		gate.NewNoop(),
 		gate.NewNoop(),
-		true,
+		false,
 		nil,
 		newStaticChunksLimiterFactory(0),
 		newStaticSeriesLimiterFactory(0),

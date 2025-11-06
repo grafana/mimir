@@ -23,6 +23,7 @@ type queryableShard struct {
 	shard           storage.ParquetShard
 	constraintCache search.RowRangesForConstraintsCache
 	materializer    *search.Materializer
+	symbolsTable    search.SymbolsTable
 	concurrency     int
 }
 
@@ -40,7 +41,17 @@ func newQueryableShard(
 		return nil, err
 	}
 	materializer, err := search.NewMaterializer(
-		shardSchema, chunksDecoder, shard, opts.concurrency, rowCountQuota, chunkBytesQuota, dataBytesQuota, opts.materializedSeriesCallback, opts.materializedLabelsFilterCallback)
+		shardSchema,
+		chunksDecoder,
+		shard,
+		opts.concurrency,
+		rowCountQuota,
+		chunkBytesQuota,
+		dataBytesQuota,
+		opts.materializedSeriesCallback,
+		opts.materializedLabelsFilterCallback,
+		false,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -49,6 +60,7 @@ func newQueryableShard(
 		shard:           shard,
 		constraintCache: constraintCache,
 		materializer:    materializer,
+		symbolsTable:    NewSyncMapSymbolsTable(),
 		concurrency:     opts.concurrency,
 	}, nil
 }
@@ -82,7 +94,7 @@ func (b queryableShard) Query(ctx context.Context, sorted bool, sp *prom_storage
 				return nil
 			}
 
-			seriesSetIter, err := b.materializer.Materialize(ctx, sp, rgi, mint, maxt, skipChunks, rr)
+			seriesSetIter, err := b.materializer.MaterializeSymbolized(ctx, sp, rgi, rr, mint, maxt, b.symbolsTable, skipChunks)
 			if err != nil {
 				return err
 			}
@@ -122,7 +134,7 @@ func (b queryableShard) Query(ctx context.Context, sorted bool, sp *prom_storage
 // Their underlying structures are independent of each other.
 // Although seriesWithoutChunks only has labels, we use ChunkSeriesSet to play nicely
 // with other helpers. Arguably hacky.
-func (b queryableShard) QueryIter(ctx context.Context, sorted bool, sp *prom_storage.SelectHints, mint, maxt int64, skipChunks bool, matchers []*labels.Matcher) (
+func (b queryableShard) QueryIter(ctx context.Context, sorted bool, selectHints *prom_storage.SelectHints, mint, maxt int64, skipChunks bool, matchers []*labels.Matcher) (
 	seriesWithoutChunks prom_storage.ChunkSeriesSet,
 	seriesWithChunks prom_storage.ChunkSeriesSet,
 	err error,
@@ -156,12 +168,12 @@ func (b queryableShard) QueryIter(ctx context.Context, sorted bool, sp *prom_sto
 				return nil
 			}
 
-			labelsSlices, err := b.materializer.MaterializeAllLabels(groupCtx, rgi, rr)
+			labelsSlices, err := b.materializer.MaterializeLabels(groupCtx, selectHints, rgi, rr)
 			if err != nil {
 				return errors.Wrapf(err, "error materializing labels")
 			}
 
-			labels, rr := b.materializer.FilterSeriesLabels(groupCtx, sp, labelsSlices, rr)
+			labels, rr := b.materializer.FilterSeriesLabels(groupCtx, selectHints, labelsSlices, rr)
 
 			labelsSets[rgi] = search.NewNoChunksConcreteLabelsSeriesSet(labels)
 			if skipChunks {

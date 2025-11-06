@@ -54,6 +54,8 @@ type Materializer struct {
 
 	materializedSeriesCallback       MaterializedSeriesFunc
 	materializedLabelsFilterCallback MaterializedLabelsFilterCallback
+
+	honorProjectionHints bool
 }
 
 // MaterializedSeriesFunc is a callback function that can be used to add limiter or statistic logics for
@@ -93,6 +95,7 @@ func NewMaterializer(s *schema.TSDBSchema,
 	dataBytesQuota *Quota,
 	materializeSeriesCallback MaterializedSeriesFunc,
 	materializeLabelsFilterCallback MaterializedLabelsFilterCallback,
+	honorProjectionHints bool,
 ) (*Materializer, error) {
 	colIdx, ok := block.LabelsFile().Schema().Lookup(schema.ColIndexesColumn)
 	if !ok {
@@ -122,6 +125,7 @@ func NewMaterializer(s *schema.TSDBSchema,
 		dataBytesQuota:                   dataBytesQuota,
 		materializedSeriesCallback:       materializeSeriesCallback,
 		materializedLabelsFilterCallback: materializeLabelsFilterCallback,
+		honorProjectionHints:             honorProjectionHints,
 	}, nil
 }
 
@@ -146,7 +150,11 @@ func (m *Materializer) Materialize(ctx context.Context, hints *prom_storage.Sele
 		attribute.Int("row_ranges_count", len(rr)),
 	)
 
-	sLbls, err := m.MaterializeAllLabels(ctx, rgi, rr)
+	if err := m.checkRowCountQuota(rr); err != nil {
+		span.SetAttributes(attribute.String("quota_failure", "row_count"))
+		return nil, err
+	}
+	sLbls, err := m.MaterializeLabels(ctx, hints, rgi, rr)
 	if err != nil {
 		return nil, errors.Wrapf(err, "error materializing labels")
 	}
@@ -165,6 +173,61 @@ func (m *Materializer) Materialize(ctx context.Context, hints *prom_storage.Sele
 	seriesSetIter := NewFilterEmptyChunkSeriesSet(ctx, seriesSetLabels, chksIter, m.materializedSeriesCallback)
 
 	span.SetAttributes(attribute.Int("materialized_series_count", len(seriesSetLabels)))
+	return seriesSetIter, nil
+}
+
+// MaterializeSymbolized creates an iterator to reconstruct the ChunkSeries that belong to the specified row ranges (rr).
+// It uses the row group index (rgi) and time bounds (mint, maxt) to filter and decode the series.
+func (m *Materializer) MaterializeSymbolized(
+	ctx context.Context,
+	hints *prom_storage.SelectHints,
+	rgi int, rr []RowRange,
+	mint, maxt int64,
+	symbolsTable SymbolsTable,
+	skipChunks bool,
+) (ChunkSeriesSetCloser, error) {
+	var err error
+	ctx, span := tracer.Start(ctx, "Materializer.Materialize")
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+		}
+		span.End()
+	}()
+
+	span.SetAttributes(
+		attribute.Int("row_group_index", rgi),
+		attribute.Int64("mint", mint),
+		attribute.Int64("maxt", maxt),
+		attribute.Bool("skip_chunks", skipChunks),
+		attribute.Int("row_ranges_count", len(rr)),
+	)
+
+	symbolizedLabels, symbolsTable, err := m.MaterializeLabelsSymbolized(ctx, rgi, rr, symbolsTable)
+	if err != nil {
+		return nil, errors.Wrapf(err, "error materializing labels")
+	}
+
+	filteredSymbolizedLabels, rr, err := m.FilterSeriesLabelsSymbolized(ctx, hints, symbolizedLabels, symbolsTable, rr)
+	if err != nil {
+		return nil, errors.Wrapf(err, "failed to filter symbolized labels")
+	}
+
+	lb := labels.NewScratchBuilder(10)
+
+	if skipChunks {
+		return NewNoChunksSymbolizedLabelsSeriesSet(&lb, filteredSymbolizedLabels, symbolsTable), nil
+	}
+
+	chksIter, err := m.MaterializeChunks(ctx, rgi, mint, maxt, rr)
+	if err != nil {
+		return nil, errors.Wrap(err, "materializer failed to create chunks iterator")
+	}
+
+	seriesSetIter := NewFilterEmptyChunkSymbolizedLabelsSeriesSet(ctx, &lb, filteredSymbolizedLabels, symbolsTable, chksIter, m.materializedSeriesCallback)
+
+	span.SetAttributes(attribute.Int("materialized_series_count", len(filteredSymbolizedLabels)))
 	return seriesSetIter, nil
 }
 
@@ -229,6 +292,76 @@ func (m *Materializer) FilterSeriesLabels(ctx context.Context, hints *prom_stora
 	}
 
 	return seriesLabels, filteredRR
+}
+
+func (m *Materializer) FilterSeriesLabelsSymbolized(
+	ctx context.Context,
+	hints *prom_storage.SelectHints,
+	sLbls [][]SymbolizedLabel,
+	symbolsTable SymbolsTable,
+	rr []RowRange,
+) ([][]SymbolizedLabel, []RowRange, error) {
+	labelsFilter, ok := m.materializedLabelsFilterCallback(ctx, hints)
+	if !ok {
+		return sLbls, rr, nil
+	}
+
+	defer labelsFilter.Close()
+
+	lb := labels.NewScratchBuilder(10)
+	filteredLabels := make([][]SymbolizedLabel, 0, len(sLbls))
+	filteredRR := make([]RowRange, 0, len(rr))
+	var currentRange RowRange
+	inRange := false
+	seriesIdx := 0
+
+	for _, rowRange := range rr {
+		for i := int64(0); i < rowRange.Count; i++ {
+			actualRowID := rowRange.From + i
+			lbls, err := symbolsTable.DesymbolizeLabels(sLbls[seriesIdx], &lb, false)
+			if err != nil {
+				return nil, nil, errors.Wrapf(err, "failed to desymbolize series labels")
+			}
+
+			if labelsFilter.Filter(lbls) {
+				filteredLabels = append(filteredLabels, sLbls[seriesIdx])
+
+				// Handle row range collection
+				if !inRange {
+					// Start new range
+					currentRange = RowRange{
+						From:  actualRowID,
+						Count: 1,
+					}
+					inRange = true
+				} else if actualRowID == currentRange.From+currentRange.Count {
+					// Extend current range
+					currentRange.Count++
+				} else {
+					// Save current range and start new range (non-contiguous)
+					filteredRR = append(filteredRR, currentRange)
+					currentRange = RowRange{
+						From:  actualRowID,
+						Count: 1,
+					}
+				}
+			} else {
+				// Save current range and reset when we hit a non-matching series
+				if inRange {
+					filteredRR = append(filteredRR, currentRange)
+					inRange = false
+				}
+			}
+			seriesIdx++
+		}
+	}
+
+	// Save the final range if we have one
+	if inRange {
+		filteredRR = append(filteredRR, currentRange)
+	}
+
+	return filteredLabels, filteredRR, nil
 }
 
 // MaterializeAllLabelNames extracts and returns all label names from the schema
@@ -371,7 +504,245 @@ func (m *Materializer) MaterializeAllLabelValues(ctx context.Context, name strin
 	return r, nil
 }
 
-func (m *Materializer) MaterializeAllLabels(ctx context.Context, rgi int, rr []RowRange) ([][]labels.Label, error) {
+// MaterializeLabels retrieves series labels, optionally filtered by projection hints.
+// Returns all labels when projection is disabled, or only requested labels in the hints when enabled.
+// The s_series_hash column is included only when explicitly requested.
+func (m *Materializer) MaterializeLabels(ctx context.Context, hints *prom_storage.SelectHints, rgi int, rr []RowRange) ([][]labels.Label, error) {
+	ctx, span := tracer.Start(ctx, "Materializer.MaterializeLabels")
+	var err error
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+		}
+		span.End()
+	}()
+
+	totalRowsRequested := totalRows(rr)
+	span.SetAttributes(
+		attribute.Int("row_group_index", rgi),
+		attribute.Int("row_ranges_count", len(rr)),
+		attribute.Int64("total_rows_requested", totalRowsRequested),
+		attribute.Bool("honor_projection_hints", m.honorProjectionHints),
+	)
+
+	// If projection hints are not enabled, materialize all labels by letting it fall through to default case
+	if !m.honorProjectionHints {
+		span.SetAttributes(attribute.String("projection_mode", "all_labels"))
+		hints = nil
+	}
+
+	// Get column indexes for all rows in the specified ranges
+	columnIndexes, err := m.getColumnIndexes(ctx, rgi, rr)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to get column indexes")
+	}
+
+	var (
+		colsMap   = make(map[int][]RowRange, 10)
+		needsHash bool
+	)
+
+	labelsSchema := m.b.LabelsFile().Schema()
+
+	columnToRowRanges, _, err := m.buildColumnMappings(rr, columnIndexes)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to build column mapping")
+	}
+
+	switch {
+	case hints != nil && hints.ProjectionInclude:
+		span.SetAttributes(attribute.String("projection_mode", "include"))
+		span.SetAttributes(attribute.StringSlice("projection_labels", hints.ProjectionLabels))
+
+		for _, labelName := range hints.ProjectionLabels {
+			if labelName == schema.SeriesHashColumn {
+				needsHash = true
+				col, ok := labelsSchema.Lookup(schema.SeriesHashColumn)
+				if ok {
+					colsMap[col.ColumnIndex] = []RowRange{}
+				}
+			} else {
+				col, ok := labelsSchema.Lookup(schema.LabelToColumn(labelName))
+				if !ok {
+					continue
+				}
+				colsMap[col.ColumnIndex] = []RowRange{}
+			}
+		}
+
+		for columnId := range colsMap {
+			if rowRanges, exists := columnToRowRanges[columnId]; exists {
+				colsMap[columnId] = rowRanges
+			}
+		}
+
+	case hints != nil && !hints.ProjectionInclude:
+		span.SetAttributes(attribute.String("projection_mode", "exclude"))
+		span.SetAttributes(attribute.StringSlice("projection_labels", hints.ProjectionLabels))
+
+		for columnId, rowRanges := range columnToRowRanges {
+			colsMap[columnId] = rowRanges
+		}
+
+		seriesHashExcluded := false
+		for _, labelName := range hints.ProjectionLabels {
+			if labelName == schema.SeriesHashColumn {
+				seriesHashExcluded = true
+				break
+			}
+		}
+		needsHash = !seriesHashExcluded
+
+		for _, labelName := range hints.ProjectionLabels {
+			if labelName == schema.SeriesHashColumn {
+				col, ok := labelsSchema.Lookup(schema.SeriesHashColumn)
+				if ok {
+					delete(colsMap, col.ColumnIndex)
+				}
+			} else {
+				col, ok := labelsSchema.Lookup(schema.LabelToColumn(labelName))
+				if !ok {
+					continue
+				}
+				delete(colsMap, col.ColumnIndex)
+			}
+		}
+
+	default:
+		span.SetAttributes(attribute.String("projection_mode", "all_labels_fallback"))
+		// Materialize all columns when no projection hints are provided
+		for columnId, rowRanges := range columnToRowRanges {
+			colsMap[columnId] = rowRanges
+		}
+	}
+
+	span.SetAttributes(attribute.Int("columns_to_materialize", len(colsMap)))
+
+	results := make([][]labels.Label, len(columnIndexes))
+	mtx := sync.Mutex{}
+	errGroup := &errgroup.Group{}
+	errGroup.SetLimit(m.concurrency)
+	labelsRowGroup := m.b.LabelsFile().RowGroups()[rgi]
+
+	span.SetAttributes(attribute.Int("goroutine_pool_limit", m.concurrency))
+
+	rowRangeToStartIndex := make(map[RowRange]int, len(rr))
+	resultIndex := 0
+	for _, rowRange := range rr {
+		rowRangeToStartIndex[rowRange] = resultIndex
+		resultIndex += int(rowRange.Count)
+	}
+
+	for columnIndex, rowRanges := range colsMap {
+		errGroup.Go(func() error {
+			ctx, span := tracer.Start(ctx, "Materializer.MaterializeLabels.column")
+			var err error
+			defer func() {
+				if err != nil {
+					span.RecordError(err)
+					span.SetStatus(codes.Error, err.Error())
+				}
+				span.End()
+			}()
+
+			columnChunk := labelsRowGroup.ColumnChunks()[columnIndex]
+			columnName := labelsSchema.Columns()[columnIndex][0]
+
+			var labelName string
+			var ok bool
+
+			if columnName == schema.SeriesHashColumn {
+				labelName = schema.SeriesHashColumn
+				ok = true
+			} else {
+				labelName, ok = schema.ExtractLabelFromColumn(columnName)
+			}
+
+			if !ok {
+				return fmt.Errorf("column %d not found in schema", columnIndex)
+			}
+
+			span.SetAttributes(
+				attribute.Int("column_index", columnIndex),
+				attribute.String("label_name", labelName),
+				attribute.Int("row_ranges_count", len(rowRanges)),
+			)
+
+			labelValues, err := m.materializeColumnSlice(ctx, m.b.LabelsFile(), rgi, rowRanges, columnChunk, false)
+			if err != nil {
+				return errors.Wrap(err, "failed to materialize label values")
+			}
+
+			span.SetAttributes(attribute.Int("label_values_count", len(labelValues)))
+
+			mtx.Lock()
+			defer mtx.Unlock()
+
+			valueIndex := 0
+			for _, rowRange := range rowRanges {
+				startIndex := rowRangeToStartIndex[rowRange]
+
+				for rowInRange := 0; rowInRange < int(rowRange.Count); rowInRange++ {
+					if !labelValues[valueIndex].IsNull() {
+						results[startIndex+rowInRange] = append(results[startIndex+rowInRange], labels.Label{
+							Name:  labelName,
+							Value: util.YoloString(labelValues[valueIndex].ByteArray()),
+						})
+					}
+					valueIndex++
+				}
+			}
+			return nil
+		})
+	}
+
+	var hashes []parquet.Value
+	if needsHash {
+		errGroup.Go(func() error {
+			col, ok := labelsSchema.Lookup(schema.SeriesHashColumn)
+			if !ok {
+				return fmt.Errorf("unable to find series hash column %q", schema.SeriesHashColumn)
+			}
+			columnChunk := labelsRowGroup.ColumnChunks()[col.ColumnIndex]
+
+			h, err := m.materializeColumnSlice(ctx, m.b.LabelsFile(), rgi, rr, columnChunk, false)
+			if err != nil {
+				return fmt.Errorf("unable to materialize hash values: %w", err)
+			}
+			hashes = h
+			return nil
+		})
+	}
+
+	if err := errGroup.Wait(); err != nil {
+		return nil, err
+	}
+
+	if needsHash {
+		for i := range hashes {
+			if !hashes[i].IsNull() {
+				results[i] = append(results[i], labels.Label{
+					Name:  schema.SeriesHashColumn,
+					Value: util.YoloString(hashes[i].ByteArray()),
+				})
+			}
+		}
+	}
+
+	span.SetAttributes(
+		attribute.Int("materialized_labels_count", len(results)),
+		attribute.Int("columns_materialized", len(colsMap)),
+	)
+	return results, nil
+}
+
+func (m *Materializer) MaterializeLabelsSymbolized(
+	ctx context.Context,
+	rgi int,
+	rr []RowRange,
+	symbolsTable SymbolsTable,
+) ([][]SymbolizedLabel, SymbolsTable, error) {
 	ctx, span := tracer.Start(ctx, "Materializer.MaterializeAllLabels")
 	var err error
 	defer func() {
@@ -391,23 +762,26 @@ func (m *Materializer) MaterializeAllLabels(ctx context.Context, rgi int, rr []R
 
 	if err := m.checkRowCountQuota(rr); err != nil {
 		span.SetAttributes(attribute.String("quota_failure", "row_count"))
-		return nil, err
+		return nil, nil, err
 	}
 
 	// Get column indexes for all rows in the specified ranges
 	columnIndexes, err := m.getColumnIndexes(ctx, rgi, rr)
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to get column indexes")
+		return nil, nil, errors.Wrap(err, "failed to get column indexes")
 	}
 
 	// Build mapping of which columns are needed for which row ranges
 	columnToRowRanges, rowRangeToStartIndex, err := m.buildColumnMappings(rr, columnIndexes)
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to build collum mapping")
+		return nil, nil, errors.Wrap(err, "failed to build column mapping")
 	}
 
 	// Materialize label values for each column concurrently
-	results := make([][]labels.Label, len(columnIndexes))
+	if symbolsTable == nil {
+		symbolsTable = NewStringMapSymbolsTable()
+	}
+	results := make([][]SymbolizedLabel, len(columnIndexes))
 	mtx := sync.Mutex{}
 	errGroup := &errgroup.Group{}
 	errGroup.SetLimit(m.concurrency)
@@ -458,9 +832,9 @@ func (m *Materializer) MaterializeAllLabels(ctx context.Context, rgi int, rr []R
 
 				for rowInRange := 0; rowInRange < int(rowRange.Count); rowInRange++ {
 					if !labelValues[valueIndex].IsNull() {
-						results[startIndex+rowInRange] = append(results[startIndex+rowInRange], labels.Label{
-							Name:  labelName,
-							Value: util.YoloString(labelValues[valueIndex].ByteArray()),
+						results[startIndex+rowInRange] = append(results[startIndex+rowInRange], SymbolizedLabel{
+							Name:  symbolsTable.Symbolize(labelName),
+							Value: symbolsTable.Symbolize(util.YoloString(labelValues[valueIndex].ByteArray())),
 						})
 					}
 					valueIndex++
@@ -470,14 +844,14 @@ func (m *Materializer) MaterializeAllLabels(ctx context.Context, rgi int, rr []R
 		})
 	}
 	if err := errGroup.Wait(); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	span.SetAttributes(
 		attribute.Int("materialized_labels_count", len(results)),
 		attribute.Int("columns_materialized", len(columnToRowRanges)),
 	)
-	return results, nil
+	return results, symbolsTable, nil
 }
 
 // getColumnIndexes retrieves the column index data for all rows in the specified ranges

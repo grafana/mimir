@@ -25,9 +25,7 @@ import (
 	"go.uber.org/atomic"
 )
 
-var (
-	errNotIdle = errors.New("the reader is not idle")
-)
+var errNotIdle = errors.New("the reader is not idle")
 
 // LazyParquetReaderMetrics holds metrics tracked by LazyReaderLocalLabelsBucketChunks.
 type LazyParquetReaderMetrics struct {
@@ -229,7 +227,6 @@ func (r *lazyReaderLoader) loadReader() (Reader, error) {
 		r.chunksFileOpener,
 		r.fileOpts...,
 	)
-
 	if err != nil {
 		r.metrics.loadFailedCount.Inc()
 		return nil, errors.Wrapf(err, "lazy open parquet labels file")

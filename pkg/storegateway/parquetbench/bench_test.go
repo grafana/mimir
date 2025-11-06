@@ -6,6 +6,7 @@ import (
 	"context"
 	"flag"
 	"io"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -33,7 +34,7 @@ import (
 )
 
 var benchmarkStore = flag.String("benchmark-store", "parquet", "Store type to benchmark: 'parquet' or 'tsdb'")
-var benchmarkCompression = flag.Bool("benchmark-compression", true, "Enable compression for parquet data")
+var benchmarkCompression = flag.Bool("benchmark-compression", false, "Enable compression for parquet data")
 var benchmarkSortBy = flag.String("benchmark-sort-by", "", "Comma-separated list of fields to sort by in parquet data")
 var benchmarkTSDBDir = flag.String("benchmark-tsdb-dir", "", "Path to directory containing pre-generated TSDB blocks (if not set, generates data on the fly)")
 
@@ -248,8 +249,18 @@ func runBenchmark(b *testing.B, ctx context.Context, bkt objstore.Bucket, operat
 	b.ReportAllocs()
 	benchBkt.reset()
 	b.ResetTimer()
+
+	var heapAllocDiff, heapInUseDiff uint64
 	for b.Loop() {
+		var m1, m2 runtime.MemStats
+		runtime.GC()
+		runtime.ReadMemStats(&m1)
+
 		operation(store)
+
+		runtime.ReadMemStats(&m2)
+		heapAllocDiff += m2.HeapAlloc - m1.HeapAlloc
+		heapInUseDiff += m2.HeapInuse - m1.HeapInuse
 	}
 
 	// Note: latency is accumulated over all calls, which might happen concurrently.
@@ -257,6 +268,10 @@ func runBenchmark(b *testing.B, ctx context.Context, bkt objstore.Bucket, operat
 	b.ReportMetric(float64(benchBkt.latency.Nanoseconds())/float64(b.N), "ns-bucket-wait/op")
 	b.ReportMetric(float64(benchBkt.getCount)/float64(b.N), "bucket-get/op")
 	b.ReportMetric(float64(benchBkt.getRangeCount)/float64(b.N), "bucket-get-range/op")
+
+	b.ReportMetric(float64(heapAllocDiff/uint64(b.N)), "B-alloc-diff")
+	b.ReportMetric(float64(heapInUseDiff/uint64(b.N)), "B-inuse-diff")
+
 	b.StopTimer()
 }
 
@@ -275,7 +290,7 @@ func createTestParquetBucketStores(b *testing.B, bkt objstore.Bucket) *storegate
 	flagext.DefaultValues(&cfg)
 	cfg.BucketStore.SyncDir = b.TempDir()
 	cfg.BucketStore.IgnoreBlocksWithin = 0 // Load all blocks
-	cfg.BucketStore.ParquetStreamingEnabled = true
+	cfg.BucketStore.ParquetStreamingEnabled = false
 
 	allowedTenants := util.NewAllowList(nil, nil)
 	shardingStrategy := newNoShardingStrategy()
