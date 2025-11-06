@@ -128,15 +128,18 @@ func (p plan) seriesRetrievalCost() float64 {
 	return float64(p.intersectionSize()) * p.config.RetrievedSeriesCost
 }
 
-// filterCost returns the cost of applying scan predicates to the fetched series
+// filterCost returns the cost of applying scan predicates to the fetched series.
+// The sequence is: intersection → retrieve series → check shard → apply scan matchers.
+// Therefore, filter cost uses cardinality AFTER sharding since the shard check happens before filtering.
 func (p plan) filterCost() float64 {
 	cost := 0.0
-	fetchedSeries := p.intersectionSize()
+	// Use cardinality() which accounts for query sharding, since sharding happens before filtering.
+	seriesToFilter := p.cardinality()
 	for i, pred := range p.predicates {
 		// In reality, we will apply all the predicates for each series and stop once one predicate doesn't match.
 		// But we calculate for the worst case where we have to run all predicates for all series.
 		if !p.indexPredicate[i] {
-			cost += pred.filterCost(fetchedSeries)
+			cost += pred.filterCost(seriesToFilter)
 		}
 	}
 	return cost
@@ -171,7 +174,20 @@ func (p plan) cardinality() uint64 {
 		// For example, the selectivity of {pod=~prometheus.*} doesn't depend on if we have already applied {statefulset=prometheus}.
 		finalSelectivity *= float64(pred.cardinality) / float64(p.totalSeries)
 	}
-	return uint64(finalSelectivity * float64(p.totalSeries))
+	baseCardinality := uint64(finalSelectivity * float64(p.totalSeries))
+
+	// If query sharding is enabled, divide by the shard count since only series in this shard will be returned.
+	// Query sharding filters series by hash(labels) % shardCount == shardIndex.
+	if p.shard != nil && p.shard.ShardCount > 0 {
+		shardedCardinality := baseCardinality / p.shard.ShardCount
+		// Ensure we return at least 1 if baseCardinality > 0, to avoid returning 0 when we have series.
+		if baseCardinality > 0 && shardedCardinality == 0 {
+			return 1
+		}
+		return shardedCardinality
+	}
+
+	return baseCardinality
 }
 
 func (p plan) addPredicatesToSpan(span trace.Span) {
