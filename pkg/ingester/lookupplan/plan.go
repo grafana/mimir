@@ -11,6 +11,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 
+	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/pool"
 )
@@ -24,17 +25,20 @@ type plan struct {
 	indexPredicate []bool
 	// totalSeries is the total number of series in the index.
 	totalSeries uint64
+	// shard contains query sharding information. nil means no sharding.
+	shard *sharding.ShardSelector
 
 	config              CostConfig
 	indexPredicatesPool *pool.SlabPool[bool]
 }
 
 // newScanOnlyPlan returns a plan in which all predicates would be used to scan and none to reach from the index.
-func newScanOnlyPlan(ctx context.Context, stats index.Statistics, config CostConfig, matchers []*labels.Matcher, predicatesPool *pool.SlabPool[bool]) plan {
+func newScanOnlyPlan(ctx context.Context, stats index.Statistics, config CostConfig, matchers []*labels.Matcher, predicatesPool *pool.SlabPool[bool], shard *sharding.ShardSelector) plan {
 	p := plan{
 		predicates:          make([]planPredicate, 0, len(matchers)),
 		indexPredicate:      make([]bool, 0, len(matchers)),
 		totalSeries:         stats.TotalSeries(),
+		shard:               shard,
 		config:              config,
 		indexPredicatesPool: predicatesPool,
 	}
