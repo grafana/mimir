@@ -236,7 +236,7 @@ activity_tracker:
 # supported by the ingester. This can help debug performance issues for specific
 # tenants.
 # CLI flag: -include-tenant-id-in-profile-labels
-[include_tenant_id_in_profile_labels: <boolean> | default = false]
+[include_tenant_id_in_profile_labels: <boolean> | default = true]
 
 vault:
   # (experimental) Enables fetching of keys and certificates from Vault
