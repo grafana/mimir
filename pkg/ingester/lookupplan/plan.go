@@ -163,8 +163,9 @@ func (p plan) intersectionSize() uint64 {
 	return uint64(finalSelectivity * float64(p.totalSeries))
 }
 
-// cardinality returns an estimate of the total number of series that this plan would return.
-func (p plan) cardinality() uint64 {
+// nonShardedCardinality returns an estimate of the total number of series before query sharding is applied.
+// This is the base cardinality considering only the selectivity of all predicates.
+func (p plan) nonShardedCardinality() uint64 {
 	finalSelectivity := 1.0
 	for _, pred := range p.predicates {
 		// We use the selectivity across all series instead of the selectivity across label values.
@@ -174,7 +175,13 @@ func (p plan) cardinality() uint64 {
 		// For example, the selectivity of {pod=~prometheus.*} doesn't depend on if we have already applied {statefulset=prometheus}.
 		finalSelectivity *= float64(pred.cardinality) / float64(p.totalSeries)
 	}
-	baseCardinality := uint64(finalSelectivity * float64(p.totalSeries))
+	return uint64(finalSelectivity * float64(p.totalSeries))
+}
+
+// shardedCardinality returns an estimate of the number of series after query sharding is applied.
+// If query sharding is not enabled, it returns the same as nonShardedCardinality().
+func (p plan) shardedCardinality() uint64 {
+	baseCardinality := p.nonShardedCardinality()
 
 	// If query sharding is enabled, divide by the shard count since only series in this shard will be returned.
 	// Query sharding filters series by hash(labels) % shardCount == shardIndex.
@@ -188,6 +195,12 @@ func (p plan) cardinality() uint64 {
 	}
 
 	return baseCardinality
+}
+
+// cardinality returns an estimate of the total number of series that this plan would return.
+// This is an alias for shardedCardinality() for backward compatibility.
+func (p plan) cardinality() uint64 {
+	return p.shardedCardinality()
 }
 
 func (p plan) addPredicatesToSpan(span trace.Span) {
@@ -219,15 +232,15 @@ func (p plan) addSpanEvent(span trace.Span, planName string) {
 		attribute.Float64("intersection_cost", p.intersectionCost()),
 		attribute.Int64("estimated_retrieved_series", int64(p.intersectionSize())),
 		attribute.Float64("series_retrieval_cost", p.seriesRetrievalCost()),
-		attribute.Int64("cardinality", int64(p.cardinality())),
+		attribute.Int64("estimated_series_before_sharding", int64(p.nonShardedCardinality())),
+		attribute.Int64("estimated_series_after_sharding", int64(p.shardedCardinality())),
 		attribute.Stringer("index_matchers", util.MatchersStringer(p.IndexMatchers())),
 		attribute.Stringer("scan_matchers", util.MatchersStringer(p.ScanMatchers())),
 	}
 
-	// Add query shard information if sharding is enabled
+	// Add query shard count if sharding is enabled
 	if p.shard != nil && p.shard.ShardCount > 0 {
 		attrs = append(attrs,
-			attribute.Int64("shard_index", int64(p.shard.ShardIndex)),
 			attribute.Int64("shard_count", int64(p.shard.ShardCount)),
 		)
 	}
