@@ -83,7 +83,23 @@
 
     // Optional overrides to the HPA behavior.
     ingest_storage_ingester_hpa_behavior: {},
-  },
+  } + (
+    if !$._config.ingest_storage_ingester_autoscaling_enabled then {} else {
+      // In the ingest storage architecture, if we hit the max series per ingester it causes a read path outage but
+      // not a write path outage, so it's a bit less severe than the classic architecture. For this reason, we intentionally
+      // set an higher in-memory series threshold before TSDB head early compaction triggers, as a last resort to push
+      // in-memory series down before the hard limit is hit.
+      local max_series_per_ingester =
+        if $._config.ingester_instance_limits != null && std.objectHas($._config.ingester_instance_limits, 'max_series') then
+          $._config.ingester_instance_limits.max_series
+        else
+          3e6,
+      ingester_tsdb_head_early_compaction_min_in_memory_series: std.max(
+        std.ceil(1.2 * $._config.ingest_storage_ingester_autoscaling_max_owned_series_threshold),
+        std.ceil(max_series_per_ingester * 0.8)
+      ),
+    }
+  ),
 
   // Validate the configuration.
   assert !$._config.ingest_storage_ingester_autoscaling_enabled || $._config.multi_zone_ingester_enabled : 'partitions ingester autoscaling is only supported with multi-zone ingesters in namespace %s' % $._config.namespace,
