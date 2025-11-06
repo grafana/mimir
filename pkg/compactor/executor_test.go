@@ -229,6 +229,7 @@ func TestSchedulerExecutor_BackoffBehavior(t *testing.T) {
 		setupMock           func(*mockCompactorSchedulerClient)
 		expectedLeaseCalls  int
 		expectedUpdateCalls int
+		planJob             bool
 	}{
 		"scheduler_errors_should_trigger_backoff": {
 			setupMock: func(mock *mockCompactorSchedulerClient) {
@@ -281,6 +282,7 @@ func TestSchedulerExecutor_BackoffBehavior(t *testing.T) {
 			},
 			expectedLeaseCalls:  3,
 			expectedUpdateCalls: 0, // Planning jobs no longer send initial IN_PROGRESS updates, only periodic ones from ticker
+			planJob:             true,
 		},
 	}
 
@@ -302,7 +304,9 @@ func TestSchedulerExecutor_BackoffBehavior(t *testing.T) {
 			cfg.SchedulerUpdateInterval = 1 * time.Hour
 
 			bucketClient := &bucket.ClientMock{}
-			bucketClient.MockIter("user-1/", []string{}, nil)
+			if tc.planJob {
+				bucketClient.MockIter("user-1/", []string{}, nil)
+			}
 			bucketClient.MockIter("user-1/markers/", []string{}, nil)
 			bucketClient.MockGet(fmt.Sprintf("user-1/%s/meta.json", testBlockID1), "", block.ErrorSyncMetaNotFound)
 			bucketClient.MockGet(fmt.Sprintf("user-1/%s/meta.json", testBlockID2), "", block.ErrorSyncMetaNotFound)
@@ -469,7 +473,6 @@ func TestSchedulerExecutor_NoGoRoutineLeak(t *testing.T) {
 	cfg.SchedulerUpdateInterval = 10 * time.Millisecond // Short interval to trigger the updater quickly
 
 	bucketClient := &bucket.ClientMock{}
-	bucketClient.MockIter("test-tenant/", []string{}, nil)
 	bucketClient.MockIter("test-tenant/markers/", []string{}, nil)
 	bucketClient.MockGet(fmt.Sprintf("test-tenant/%s/meta.json", testBlockID1), "", block.ErrorSyncMetaNotFound)
 
@@ -607,7 +610,8 @@ func TestSchedulerExecutor_ExecuteCompactionJob_InvalidInput(t *testing.T) {
 
 			c, _, _, _, _ := prepareWithConfigProvider(t, cfg, &bucket.ClientMock{}, newMockConfigProvider())
 
-			status, err := schedulerExec.executeCompactionJob(context.Background(), c, tc.spec)
+			key := &compactorschedulerpb.JobKey{Id: "test-job-id"}
+			status, err := schedulerExec.executeCompactionJob(context.Background(), c, key, tc.spec)
 
 			require.Error(t, err)
 			assert.Equal(t, tc.expectedStatus, status)
@@ -748,7 +752,8 @@ func TestSchedulerExecutor_ExecuteCompactionJob_Compaction(t *testing.T) {
 				JobType: compactorschedulerpb.COMPACTION,
 			}
 
-			status, err := schedulerExec.executeCompactionJob(context.Background(), c, spec)
+			key := &compactorschedulerpb.JobKey{Id: "test-job-id"}
+			status, err := schedulerExec.executeCompactionJob(context.Background(), c, key, spec)
 
 			if tc.expectError {
 				require.Error(t, err)
@@ -837,7 +842,7 @@ func TestBuildCompactionJobFromMetas(t *testing.T) {
 	for testName, tc := range tests {
 		t.Run(testName, func(t *testing.T) {
 			spec := &compactorschedulerpb.JobSpec{Job: &compactorschedulerpb.CompactionJob{Split: tc.split}}
-			job, err := buildCompactionJobFromMetas("test-tenant", tc.metas, spec, tc.splitNumShards)
+			job, err := buildCompactionJobFromMetas("test-tenant", "test-group-key", tc.metas, spec, tc.splitNumShards)
 
 			if tc.expectError {
 				require.Error(t, err)

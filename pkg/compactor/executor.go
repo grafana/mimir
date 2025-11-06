@@ -3,11 +3,9 @@
 package compactor
 
 import (
-	"cmp"
 	"context"
 	"fmt"
 	"math"
-	"slices"
 	"sync"
 	"time"
 
@@ -248,7 +246,7 @@ func (e *schedulerExecutor) leaseAndExecuteJob(ctx context.Context, c *Multitena
 
 	switch jobType {
 	case compactorschedulerpb.COMPACTION:
-		status, err := e.executeCompactionJob(jobCtx, c, resp.Spec)
+		status, err := e.executeCompactionJob(jobCtx, c, resp.Key, resp.Spec)
 		cancelJob(err)
 		wg.Wait()
 		if err != nil {
@@ -295,7 +293,7 @@ func (e *schedulerExecutor) updateJobStatus(ctx context.Context, key *compactors
 	}
 }
 
-func (e *schedulerExecutor) executeCompactionJob(ctx context.Context, c *MultitenantCompactor, spec *compactorschedulerpb.JobSpec) (compactorschedulerpb.UpdateType, error) {
+func (e *schedulerExecutor) executeCompactionJob(ctx context.Context, c *MultitenantCompactor, key *compactorschedulerpb.JobKey, spec *compactorschedulerpb.JobSpec) (compactorschedulerpb.UpdateType, error) {
 	if spec.Job == nil || len(spec.Job.BlockIds) == 0 {
 		level.Error(e.logger).Log("msg", "invalid compaction plan, abandoning job", "tenant", spec.Tenant)
 		return compactorschedulerpb.ABANDON, errCompactionJobHasNoBlocks
@@ -309,11 +307,10 @@ func (e *schedulerExecutor) executeCompactionJob(ctx context.Context, c *Multite
 
 	userBucket := bucket.NewUserBucketClient(userID, c.bucketClient, c.cfgProvider)
 
-	deduplicateBlocksFilter := NewShardAwareDeduplicateFilter()
+	// Omit ShardAwareDeduplicateFilter. Duplicates are cleaned up during planning via GarbageCollect().
+	// Keep LabelRemoverFilter to remove deprecated labels if applicable.
 	fetcherFilters := []block.MetadataFilter{
 		NewLabelRemoverFilter(compactionIgnoredLabels),
-		deduplicateBlocksFilter,
-		NewNoCompactionMarkFilter(userBucket),
 	}
 
 	var maxLookback = c.cfgProvider.CompactorMaxLookback(userID)
@@ -327,7 +324,7 @@ func (e *schedulerExecutor) executeCompactionJob(ctx context.Context, c *Multite
 		return compactorschedulerpb.REASSIGN, errors.Wrap(err, "failed to create meta fetcher")
 	}
 
-	syncer, err := newMetaSyncer(userLogger, reg, userBucket, fetcher, deduplicateBlocksFilter, c.blocksMarkedForDeletion)
+	syncer, err := newMetaSyncer(userLogger, reg, userBucket, fetcher, nil, c.blocksMarkedForDeletion)
 	if err != nil {
 		return compactorschedulerpb.REASSIGN, errors.Wrap(err, "failed to create syncer")
 	}
@@ -356,7 +353,7 @@ func (e *schedulerExecutor) executeCompactionJob(ctx context.Context, c *Multite
 		splitNumShards = uint32(c.cfgProvider.CompactorSplitAndMergeShards(userID))
 	}
 
-	job, err := buildCompactionJobFromMetas(userID, jobMetas, spec, splitNumShards)
+	job, err := buildCompactionJobFromMetas(userID, key.Id, jobMetas, spec, splitNumShards)
 	if err != nil {
 		return compactorschedulerpb.REASSIGN, err
 	}
@@ -483,21 +480,21 @@ func getJobMetasFromSyncer(syncer *metaSyncer, blockIDs []ulid.ULID) ([]*block.M
 	return jobMetas, nil
 }
 
-func buildCompactionJobFromMetas(userID string, jobMetas []*block.Meta, spec *compactorschedulerpb.JobSpec, splitNumShards uint32) (*Job, error) {
+func buildCompactionJobFromMetas(userID string, groupKey string, jobMetas []*block.Meta, spec *compactorschedulerpb.JobSpec, splitNumShards uint32) (*Job, error) {
 	if len(jobMetas) == 0 {
 		return nil, errNoBlockMetadataProvided
 	}
 
+	// Blocks are already sorted by MinTime from planning
 	var rangeStart, rangeEnd = int64(math.MaxInt64), int64(math.MinInt64)
-	slices.SortFunc(jobMetas, func(a, b *block.Meta) int {
-		if a.MinTime < rangeStart {
-			rangeStart = a.MinTime
+	for _, meta := range jobMetas {
+		if meta.MinTime < rangeStart {
+			rangeStart = meta.MinTime
 		}
-		if a.MaxTime > rangeEnd {
-			rangeEnd = a.MaxTime
+		if meta.MaxTime > rangeEnd {
+			rangeEnd = meta.MaxTime
 		}
-		return cmp.Compare(a.MinTime, b.MinTime)
-	})
+	}
 
 	resolution := jobMetas[0].Thanos.Downsample.Resolution
 	externalLabels := labels.FromMap(jobMetas[0].Thanos.Labels)
@@ -512,8 +509,7 @@ func buildCompactionJobFromMetas(userID string, jobMetas []*block.Meta, spec *co
 		shardID = jobMetas[0].Thanos.Labels[mimir_tsdb.CompactorShardIDExternalLabel]
 	}
 
-	key := defaultGroupKey(resolution, labelsWithoutShard(jobMetas[0].Thanos.Labels))
-	groupKey := fmt.Sprintf("%s-%s-%s-%d-%d", key, stage, shardID, rangeStart, rangeEnd)
+	// groupKey is provided by the scheduler and is already constructed
 	shardingKey := fmt.Sprintf("%s-%s-%d-%d-%s", userID, stage, rangeStart, rangeEnd, shardID)
 
 	job := newJob(userID, groupKey, externalLabels, resolution, spec.Job.Split, splitNumShards, shardingKey)

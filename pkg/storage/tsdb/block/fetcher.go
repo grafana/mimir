@@ -193,6 +193,7 @@ func NewMetaFetcher(logger log.Logger, concurrency int, bkt objstore.Instrumente
 var (
 	ErrorSyncMetaNotFound  = errors.New("meta.json not found")
 	ErrorSyncMetaCorrupted = errors.New("meta.json corrupted")
+	errNoBlocksProvided    = errors.New("no block metadata provided")
 )
 
 // loadMeta returns metadata from object storage or error.
@@ -552,7 +553,7 @@ func (f *MetaFetcher) countCached() int {
 // Assumes metas exist and returns an error if any blocks fail to download.
 func (f *MetaFetcher) FetchRequestedBlocks(ctx context.Context, blockIDs []ulid.ULID) (map[ulid.ULID]*Meta, error) {
 	if len(blockIDs) == 0 {
-		return nil, errors.New("no block IDs provided")
+		return nil, errNoBlocksProvided
 	}
 
 	metas, partial, err := f.fetch(ctx, false, blockIDs)
