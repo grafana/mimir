@@ -10,11 +10,6 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 )
 
-type StringMapSymbolsTable struct {
-	strings    []string
-	symbolsMap map[string]uint32
-}
-
 // SyncMapSymbolsTable is a SymbolsTable implementation which can be used concurrently.
 // Re-using the SyncMapSymbolsTable across goroutines for concurrent label materialization may reduce in-use memory.
 // The sync.Map is optimized to offer write-once-read-many usage with minimal lock contention.
