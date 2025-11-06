@@ -8,14 +8,15 @@ package ruler
 import (
 	"context"
 	"errors"
-	"fmt"
 	"net/http"
 	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/grafana/dskit/httpgrpc"
+	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/user"
+	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/validation"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/common/model"
@@ -234,7 +235,6 @@ func MetricsQueryFunc(qf rules.QueryFunc, userID string, queries, failedQueries 
 		if err == nil {
 			return result, nil
 		}
-
 		failureReason := failureReasonServerError
 		qerr := QueryableError{}
 		if errors.As(err, &qerr) {
@@ -405,6 +405,7 @@ func DefaultTenantManagerFactory(
 		// Wrap the query function with our custom logic.
 		wrappedQueryFunc := WrapQueryFuncWithReadConsistency(queryFunc, overrides, userID, logger)
 		remoteQuerier := cfg.QueryFrontend.Address != ""
+
 		wrappedQueryFunc = MetricsQueryFunc(wrappedQueryFunc, userID, totalQueries, failedQueries, remoteQuerier)
 		wrappedQueryFunc = RecordAndReportRuleQueryMetrics(wrappedQueryFunc, queryTime, zeroFetchedSeriesCount, remoteQuerier, logger)
 
@@ -481,52 +482,45 @@ func NewRulerErrorClassifier(logger log.Logger) *rulerErrorClassifier {
 }
 
 // IsOperatorControllable classifies rule evaluation errors as operator-controllable or user-controllable.
-//
-// Operator errors include:
-//   - Query reads failing due to rate-limiting (429) or 5xx remote querier errors (not malformed queries)
-//   - Writes failing due to rate-limiting (429) or 5xx errors
-//
-// Classification logic:
-//   - Storage errors are considered operator controllable. Non-storage errors: User errors
-//   - RPC/Client errors with status codes (remote eval or write errors):
-//   - 4xx (except 429): User errors
-//   - 429 or 5xx: Operator errors
-//   - Plain errors (errorString, validation errors): User errors (bad query, validation failure)
 func (c *rulerErrorClassifier) IsOperatorControllable(err error) bool {
 	if err == nil {
 		return false
 	}
-	var (
-		errStorage promql.ErrStorage
-	)
 
-	level.Warn(c.logger).Log(
-		"msg", "Classifying ruler evaluation error",
-		"error_type", fmt.Sprintf("%T", err),
-		"error", fmt.Sprintf("%+v", err),
-	)
-
-	// Storage errors: 5xx = operator.
+	var errStorage promql.ErrStorage
 	if errors.As(err, &errStorage) {
 		return true
 	}
 
-	// Remote querier/write errors: 4xx = user (except 429), 5xx = operator
-	statusCode := c.extractStatusCode(err)
-	if mimirpb.IsClientError(err) || statusCode != 0 {
-		if mimirpb.IsClientError(err) {
-			return statusCode == http.StatusTooManyRequests
+	var (
+		errQueryTimeout   promql.ErrQueryTimeout
+		errQueryCanceled  promql.ErrQueryCanceled
+		errTooManySamples promql.ErrTooManySamples
+	)
+
+	if errors.As(err, &errQueryTimeout) || errors.As(err, &errQueryCanceled) || errors.As(err, &errTooManySamples) {
+		return false
+	}
+
+	if validation.IsLimitError(err) || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return false
+	}
+
+	if s, ok := grpcutil.ErrorToStatus(err); ok {
+		if code := s.Code(); util.IsHTTPStatusCode(code) {
+			if code >= 400 && code < 500 {
+				return code == http.StatusTooManyRequests
+			}
+			return true // 5xx
 		}
-		// 5xx errors are operator errors
-		return true
+
+		for _, detail := range s.Details() {
+			if errDetails, ok := detail.(*mimirpb.ErrorDetails); ok {
+				return !mimirpb.IsClientErrorCause(errDetails.GetCause())
+			}
+		}
 	}
 
-	return false
-}
-
-func (c *rulerErrorClassifier) extractStatusCode(err error) int {
-	if resp, ok := httpgrpc.HTTPResponseFromError(err); ok {
-		return int(resp.Code)
-	}
-	return 0
+	// Unknown errors are operator errors
+	return true
 }

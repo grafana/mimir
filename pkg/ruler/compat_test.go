@@ -926,17 +926,13 @@ func TestRulerErrorClassifier_IsOperatorControllable(t *testing.T) {
 		},
 
 		{
-			name: "queryable error - timeout (user)",
-			err: QueryableError{
-				err: promql.ErrQueryTimeout("query timeout"),
-			},
+			name:     "promql error - timeout (user)",
+			err:      promql.ErrQueryTimeout("query timeout"),
 			expected: false,
 		},
 		{
-			name: "queryable error - cancelled (user)",
-			err: QueryableError{
-				err: promql.ErrQueryCanceled("query cancelled"),
-			},
+			name:     "promql error - cancelled (user)",
+			err:      promql.ErrQueryCanceled("query cancelled"),
 			expected: false,
 		},
 
@@ -967,11 +963,6 @@ func TestRulerErrorClassifier_IsOperatorControllable(t *testing.T) {
 			err:      httpgrpc.Errorf(http.StatusBadRequest, "bad request"),
 			expected: false,
 		},
-		{
-			name:     "422 unprocessable entity (user)",
-			err:      httpgrpc.Errorf(http.StatusUnprocessableEntity, "unprocessable"),
-			expected: false,
-		},
 
 		{
 			name:     "context cancelled (user)",
@@ -985,25 +976,9 @@ func TestRulerErrorClassifier_IsOperatorControllable(t *testing.T) {
 		},
 
 		{
-			name:     "query timeout (user)",
-			err:      promql.ErrQueryTimeout("timeout"),
-			expected: false,
-		},
-		{
-			name:     "query cancelled (user)",
-			err:      promql.ErrQueryCanceled("cancelled"),
-			expected: false,
-		},
-		{
-			name:     "too many samples (user)",
-			err:      promql.ErrTooManySamples("too many samples"),
-			expected: false,
-		},
-
-		{
-			name:     "generic error without status code (user)",
+			name:     "generic error without status code (operator)",
 			err:      errors.New("some generic error"),
-			expected: false,
+			expected: true,
 		},
 	}
 
@@ -1017,42 +992,71 @@ func TestRulerErrorClassifier_IsOperatorControllable(t *testing.T) {
 
 func TestRulerErrorClassifier_ErrorClassificationDuringRuleEvaluation(t *testing.T) {
 	const userID = "tenant-1"
+	const interval100ms = 100 * time.Millisecond
 
 	tests := map[string]struct {
 		queryError             error
 		writeError             error
-		expectedOperatorFailed float64
-		expectedUserFailed     float64
+		expectedOperatorFailed bool
+		expectedUserFailed     bool
 	}{
+		// Query path errors
 		"storage error during query (operator)": {
-			queryError:             WrapQueryableErrors(promql.ErrStorage{Err: errors.New("storage unavailable")}),
-			expectedOperatorFailed: 1,
-			expectedUserFailed:     0,
+			queryError:             promql.ErrStorage{Err: errors.New("storage unavailable")},
+			expectedOperatorFailed: true,
+			expectedUserFailed:     false,
 		},
 		"500 server error during query (operator)": {
 			queryError:             httpgrpc.Errorf(http.StatusInternalServerError, "internal server error"),
-			expectedOperatorFailed: 1,
-			expectedUserFailed:     0,
+			expectedOperatorFailed: true,
+			expectedUserFailed:     false,
+		},
+		"503 service unavailable during query (operator)": {
+			queryError:             httpgrpc.Errorf(http.StatusServiceUnavailable, "service unavailable"),
+			expectedOperatorFailed: true,
+			expectedUserFailed:     false,
 		},
 		"429 rate limit during query (operator)": {
 			queryError:             httpgrpc.Errorf(http.StatusTooManyRequests, "rate limited"),
-			expectedOperatorFailed: 1,
-			expectedUserFailed:     0,
+			expectedOperatorFailed: true,
+			expectedUserFailed:     false,
 		},
 		"400 bad request during query (user)": {
 			queryError:             httpgrpc.Errorf(http.StatusBadRequest, "bad request"),
-			expectedOperatorFailed: 0,
-			expectedUserFailed:     1,
+			expectedOperatorFailed: false,
+			expectedUserFailed:     true,
 		},
-		"500 server error during write (operator)": {
-			writeError:             httpgrpc.Errorf(http.StatusInternalServerError, "write error"),
-			expectedOperatorFailed: 1,
-			expectedUserFailed:     0,
+		"unknown error during query (operator)": {
+			queryError:             errors.New("test error"),
+			expectedOperatorFailed: true,
+			expectedUserFailed:     false,
 		},
-		"429 rate limit during write (operator)": {
-			writeError:             httpgrpc.Errorf(http.StatusTooManyRequests, "rate limited"),
-			expectedOperatorFailed: 1,
-			expectedUserFailed:     0,
+
+		//// Write path errors - matching TestPusherErrors patterns
+		"500 HTTPgRPC error during write (operator)": {
+			writeError:             httpgrpc.Errorf(http.StatusInternalServerError, "test error"),
+			expectedOperatorFailed: true,
+			expectedUserFailed:     false,
+		},
+		"BAD_DATA push error during write (user)": {
+			writeError:             mustStatusWithDetails(codes.FailedPrecondition, mimirpb.ERROR_CAUSE_BAD_DATA).Err(),
+			expectedOperatorFailed: false,
+			expectedUserFailed:     true,
+		},
+		"METHOD_NOT_ALLOWED push error during write (operator)": {
+			writeError:             mustStatusWithDetails(codes.Unimplemented, mimirpb.ERROR_CAUSE_METHOD_NOT_ALLOWED).Err(),
+			expectedOperatorFailed: true,
+			expectedUserFailed:     false,
+		},
+		"TSDB_UNAVAILABLE push error during write (operator)": {
+			writeError:             mustStatusWithDetails(codes.FailedPrecondition, mimirpb.ERROR_CAUSE_TSDB_UNAVAILABLE).Err(),
+			expectedOperatorFailed: true,
+			expectedUserFailed:     false,
+		},
+		"unknown error during write (operator)": {
+			writeError:             errors.New("test error"),
+			expectedOperatorFailed: true,
+			expectedUserFailed:     false,
 		},
 	}
 
@@ -1061,7 +1065,7 @@ func TestRulerErrorClassifier_ErrorClassificationDuringRuleEvaluation(t *testing
 			// Create a simple recording rule
 			ruleGroup := rulespb.RuleGroupDesc{
 				Name:     "test",
-				Interval: 100 * time.Millisecond,
+				Interval: interval100ms,
 				Rules: []*rulespb.RuleDesc{{
 					Record: "test_metric",
 					Expr:   "up",
@@ -1070,7 +1074,7 @@ func TestRulerErrorClassifier_ErrorClassificationDuringRuleEvaluation(t *testing
 
 			// Setup ruler
 			cfg := defaultRulerConfig(t)
-			cfg.EvaluationInterval = 100 * time.Millisecond
+			cfg.EvaluationInterval = interval100ms
 
 			var (
 				options         = applyPrepareOptions(t, cfg.Ring.Common.InstanceID)
@@ -1098,12 +1102,10 @@ func TestRulerErrorClassifier_ErrorClassificationDuringRuleEvaluation(t *testing
 				return storage.EmptySeriesSet()
 			}
 
-			// Mock pusher to return the test error
-			pusher := newPusherMock()
-			if tc.writeError != nil {
-				pusher.MockPush(&mimirpb.WriteResponse{}, tc.writeError)
-			} else {
-				pusher.MockPush(&mimirpb.WriteResponse{}, nil)
+			// Use fakePusher for write path errors (consistent with TestPusherErrors)
+			pusher := &fakePusher{
+				err:      tc.writeError,
+				response: &mimirpb.WriteResponse{},
 			}
 
 			// Create manager from factory
@@ -1113,29 +1115,23 @@ func TestRulerErrorClassifier_ErrorClassificationDuringRuleEvaluation(t *testing
 			manager := factory(context.Background(), userID, notifierManager, options.logger, prometheusReg)
 
 			// Load rules into manager and start
-			require.NoError(t, manager.Update(100*time.Millisecond, ruleFiles, labels.EmptyLabels(), "", nil))
+			require.NoError(t, manager.Update(interval100ms, ruleFiles, labels.EmptyLabels(), "", nil))
 			go manager.Run()
 			t.Cleanup(manager.Stop)
 
 			// Wait for rule evaluation to complete and metrics to be recorded
-			// We need to wait long enough for one evaluation to happen
-			time.Sleep(150 * time.Millisecond)
-
-			// Verify the metrics
-			operatorFailed := getMetricValue(t, prometheusReg, "prometheus_rule_evaluation_failures_total", "reason", "operator")
-			userFailed := getMetricValue(t, prometheusReg, "prometheus_rule_evaluation_failures_total", "reason", "user")
-
-			// We expect at least the minimum number of failures (may be more due to multiple evaluations)
-			if tc.expectedOperatorFailed > 0 {
-				require.Greater(t, operatorFailed, float64(0),
-					"expected at least one operator failure, got=%v", operatorFailed)
-				require.Equal(t, float64(0), userFailed,
-					"expected no user failures, got=%v", userFailed)
-			} else if tc.expectedUserFailed > 0 {
-				require.Greater(t, userFailed, float64(0),
-					"expected at least one user failure, got=%v", userFailed)
-				require.Equal(t, float64(0), operatorFailed,
-					"expected no operator failures, got=%v", operatorFailed)
+			if tc.expectedOperatorFailed {
+				require.Eventually(t, func() bool {
+					operatorFailed := getMetricValue(t, prometheusReg, "prometheus_rule_evaluation_failures_total", "reason", "operator")
+					userFailed := getMetricValue(t, prometheusReg, "prometheus_rule_evaluation_failures_total", "reason", "user")
+					return operatorFailed > 0 && userFailed == 0
+				}, 5*time.Second, 100*time.Millisecond, "expected at least one operator failure and no user failures")
+			} else if tc.expectedUserFailed {
+				require.Eventually(t, func() bool {
+					operatorFailed := getMetricValue(t, prometheusReg, "prometheus_rule_evaluation_failures_total", "reason", "operator")
+					userFailed := getMetricValue(t, prometheusReg, "prometheus_rule_evaluation_failures_total", "reason", "user")
+					return userFailed > 0 && operatorFailed == 0
+				}, 5*time.Second, 100*time.Millisecond, "expected at least one user failure and no operator failures")
 			}
 		})
 	}

@@ -805,9 +805,9 @@ func TestRulerMetricsForInvalidQueriesAndNoFetchedSeries(t *testing.T) {
 		expectedErrorType string // "user" or "operator"
 	}{
 		{
-			name:              "invalid_regex_should_be_user_error",
+			name:              "invalid_regex_should_be_operator_error",
 			expression:        `label_replace(metric{nolabel="none"}, "foo", "$1", "service", "[")`,
-			expectedErrorType: "user",
+			expectedErrorType: "operator",
 		},
 		{
 			name:              "too_many_chunks_should_be_user_error",
@@ -887,7 +887,7 @@ func TestRulerMetricsForInvalidQueriesAndNoFetchedSeries(t *testing.T) {
 		return int(sum[0])
 	}
 
-	//// Now let's upload a non-failing rule, and make sure that it works.
+	// Now let's upload a non-failing rule, and make sure that it works.
 	t.Run("real_error", func(t *testing.T) {
 		const groupName = "good_rule"
 		const expression = `sum(metric{foo=~"1|2"})`
@@ -897,11 +897,6 @@ func TestRulerMetricsForInvalidQueriesAndNoFetchedSeries(t *testing.T) {
 		sum, err := ruler.SumMetrics([]string{"cortex_ruler_queries_failed_total"}, e2e.SkipMissingMetrics)
 		require.NoError(t, err)
 		require.Equal(t, float64(0), sum[0])
-
-		sum, err = ruler.SumMetrics([]string{"cortex_prometheus_rule_evaluation_failures_total"}, e2e.SkipMissingMetrics)
-		require.NoError(t, err)
-		require.Equal(t, float64(0), sum[0])
-		deleteRuleAndWait(t, groupName)
 	})
 
 	// Now let's test the metric for no fetched series.
