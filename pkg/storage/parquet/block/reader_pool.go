@@ -113,7 +113,6 @@ func (p *ReaderPool) GetReader(
 		nil,
 		logger,
 	)
-
 	if err != nil {
 		return nil, err
 	}
