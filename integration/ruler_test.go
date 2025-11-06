@@ -805,9 +805,9 @@ func TestRulerMetricsForInvalidQueriesAndNoFetchedSeries(t *testing.T) {
 		expectedErrorType string // "user" or "operator"
 	}{
 		{
-			name:              "invalid_regex_should_be_operator_error",
+			name:              "invalid_regex_should_be_user_error",
 			expression:        `label_replace(metric{nolabel="none"}, "foo", "$1", "service", "[")`,
-			expectedErrorType: "operator",
+			expectedErrorType: "user",
 		},
 		{
 			name:              "too_many_chunks_should_be_user_error",
@@ -864,6 +864,7 @@ func TestRulerMetricsForInvalidQueriesAndNoFetchedSeries(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, float64(0), sum[0])
 
+			// Delete rule before checking "cortex_ruler_queries_total", as we want to reuse value for next test.
 			deleteRuleAndWait(t, tc.name)
 
 			// Check that cortex_ruler_queries_total went up since last test.
@@ -871,6 +872,7 @@ func TestRulerMetricsForInvalidQueriesAndNoFetchedSeries(t *testing.T) {
 			require.NoError(t, err)
 			require.Greater(t, newTotalQueries[0], totalQueries[0])
 
+			// Remember totalQueries and totalFailures for next test.
 			totalQueries = newTotalQueries
 		})
 	}
@@ -897,6 +899,8 @@ func TestRulerMetricsForInvalidQueriesAndNoFetchedSeries(t *testing.T) {
 		sum, err := ruler.SumMetrics([]string{"cortex_ruler_queries_failed_total"}, e2e.SkipMissingMetrics)
 		require.NoError(t, err)
 		require.Equal(t, float64(0), sum[0])
+
+		deleteRuleAndWait(t, groupName)
 	})
 
 	// Now let's test the metric for no fetched series.

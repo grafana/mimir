@@ -29,14 +29,13 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/spf13/afero"
 
-	"github.com/grafana/mimir/pkg/util"
-	"github.com/grafana/mimir/pkg/util/validation"
-
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier"
 	querier_stats "github.com/grafana/mimir/pkg/querier/stats"
 	notifierCfg "github.com/grafana/mimir/pkg/ruler/notifier"
+	"github.com/grafana/mimir/pkg/util"
 	util_log "github.com/grafana/mimir/pkg/util/log"
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 const (
@@ -522,6 +521,6 @@ func (c *rulerErrorClassifier) IsOperatorControllable(err error) bool {
 		}
 	}
 
-	// Unknown errors are operator errors
-	return true
+	// Unknown errors are considered user errors
+	return false
 }

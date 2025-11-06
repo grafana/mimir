@@ -978,7 +978,7 @@ func TestRulerErrorClassifier_IsOperatorControllable(t *testing.T) {
 		{
 			name:     "generic error without status code (operator)",
 			err:      errors.New("some generic error"),
-			expected: true,
+			expected: false,
 		},
 	}
 
@@ -1026,10 +1026,10 @@ func TestRulerErrorClassifier_ErrorClassificationDuringRuleEvaluation(t *testing
 			expectedOperatorFailed: false,
 			expectedUserFailed:     true,
 		},
-		"unknown error during query (operator)": {
+		"unknown error during query (user)": {
 			queryError:             errors.New("test error"),
-			expectedOperatorFailed: true,
-			expectedUserFailed:     false,
+			expectedOperatorFailed: false,
+			expectedUserFailed:     true,
 		},
 
 		//// Write path errors - matching TestPusherErrors patterns
@@ -1053,10 +1053,10 @@ func TestRulerErrorClassifier_ErrorClassificationDuringRuleEvaluation(t *testing
 			expectedOperatorFailed: true,
 			expectedUserFailed:     false,
 		},
-		"unknown error during write (operator)": {
+		"unknown error during write (user)": {
 			writeError:             errors.New("test error"),
-			expectedOperatorFailed: true,
-			expectedUserFailed:     false,
+			expectedOperatorFailed: false,
+			expectedUserFailed:     true,
 		},
 	}
 
