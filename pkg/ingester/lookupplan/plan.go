@@ -145,19 +145,7 @@ func (p plan) filterCost() float64 {
 }
 
 func (p plan) numSelectedPostingsInOurShard() uint64 {
-	postings := p.NumSelectedPostings()
-
-	if p.shard == nil || p.shard.ShardCount == 0 {
-		return postings
-	}
-
-	// If query sharding is enabled, divide by the shard count since only series in this shard will be returned.
-	shardedPostings := postings / p.shard.ShardCount
-	// Ensure we return at least 1 if postings > 0, to avoid returning 0 when we have series.
-	if postings > 0 && shardedPostings == 0 {
-		return 1
-	}
-	return shardedPostings
+	return shardedCardinality(p.NumSelectedPostings(), p.shard)
 }
 
 func (p plan) NumSelectedPostings() uint64 {
@@ -195,16 +183,18 @@ func (p plan) nonShardedCardinality() uint64 {
 
 // FinalCardinality returns an estimate of the total number of series that this plan would return.
 func (p plan) FinalCardinality() uint64 {
-	baseCardinality := p.nonShardedCardinality()
+	return shardedCardinality(p.nonShardedCardinality(), p.shard)
+}
 
-	if p.shard == nil || p.shard.ShardCount == 0 {
-		return baseCardinality
+func shardedCardinality(cardinality uint64, shard *sharding.ShardSelector) uint64 {
+	if shard == nil || shard.ShardCount == 0 {
+		return cardinality
 	}
 
 	// If query sharding is enabled, divide by the shard count since only series in this shard will be returned.
-	shardedCardinality := baseCardinality / p.shard.ShardCount
-	// Ensure we return at least 1 if baseCardinality > 0, to avoid returning 0 when we have series.
-	if baseCardinality > 0 && shardedCardinality == 0 {
+	shardedCardinality := cardinality / shard.ShardCount
+	if cardinality > 0 && shardedCardinality == 0 {
+		// Ensure we return at least 1 if cardinality > 0, to avoid returning 0 when we have series.
 		return 1
 	}
 	return shardedCardinality
