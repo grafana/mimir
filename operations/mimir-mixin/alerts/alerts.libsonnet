@@ -278,6 +278,29 @@ local utils = import 'mixin-utils/utils.libsonnet';
           },
         },
         {
+          alert: $.alertName('KVStoreFailureNativeHistogram'),
+          expr: |||
+            (
+              sum by(%(alert_aggregation_labels)s, %(per_instance_label)s, status_code, kv_name) (histogram_count(rate(cortex_kv_request_duration_seconds{status_code!~"2.+"}[%(range_interval)s])))
+              /
+              sum by(%(alert_aggregation_labels)s, %(per_instance_label)s, status_code, kv_name) (histogram_count(rate(cortex_kv_request_duration_seconds[%(range_interval)s])))
+            )
+            # We want to get alerted only in case there's a constant failure.
+            == 1
+          ||| % $._config {
+            range_interval: $.alertRangeInterval(1),
+          },
+          'for': '5m',
+          labels: {
+            severity: 'critical',
+          },
+          annotations: {
+            message: |||
+              %(product)s %(alert_instance_variable)s in  %(alert_aggregation_variables)s is failing to talk to the KV store {{ $labels.kv_name }}.
+            ||| % $._config,
+          },
+        },
+        {
           alert: $.alertName('MemoryMapAreasTooHigh'),
           expr: |||
             process_memory_map_areas{%(job_regex)s} / process_memory_map_areas_limit{%(job_regex)s} > 0.8
