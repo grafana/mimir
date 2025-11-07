@@ -8228,8 +8228,9 @@ func TestDistributor_StartFinishRequest(t *testing.T) {
 		externalCheck       bool  // Start request "externally", from outside of distributor.
 		httpgrpcRequestSize int64 // only used for external check.
 
-		reactiveLimiterEnabled    bool
-		reactiveLimiterCanAcquire bool
+		reactiveLimiterEnabled       bool
+		reactiveLimiterCanAcquire    bool
+		reactiveLimiterFailOnAcquire bool
 
 		inflightRequestsBeforePush     int
 		inflightRequestsSizeBeforePush int64
@@ -8365,6 +8366,23 @@ func TestDistributor_StartFinishRequest(t *testing.T) {
 			expectedStartError:        errReactiveLimiterLimitExceeded,
 			expectedPushError:         errReactiveLimiterLimitExceeded,
 		},
+
+		"enabled reactive limiter acquire permit fails, internal": {
+			reactiveLimiterEnabled:       true,
+			reactiveLimiterCanAcquire:    true,
+			reactiveLimiterFailOnAcquire: true,
+			expectedStartError:           nil,
+			expectedPushError:            errReactiveLimiterLimitExceeded,
+		},
+
+		"enabled reactive limiter acquire permit fails, external": {
+			externalCheck:                true,
+			reactiveLimiterEnabled:       true,
+			reactiveLimiterCanAcquire:    true,
+			reactiveLimiterFailOnAcquire: true,
+			expectedStartError:           nil,
+			expectedPushError:            errReactiveLimiterLimitExceeded,
+		},
 	}
 
 	for name, tc := range testcases {
@@ -8395,8 +8413,9 @@ func TestDistributor_StartFinishRequest(t *testing.T) {
 			// Setup reactive limiter if needed
 			if tc.reactiveLimiterEnabled {
 				mockLimiter := &mockReactiveLimiter{
-					canAcquire: tc.reactiveLimiterCanAcquire,
-					permit:     &mockPermit{},
+					canAcquire:    tc.reactiveLimiterCanAcquire,
+					failOnAcquire: tc.reactiveLimiterFailOnAcquire,
+					permit:        &mockPermit{},
 				}
 				ds[0].reactiveLimiter = mockLimiter
 			}
@@ -8561,8 +8580,8 @@ func TestDistributor_AcquireReactiveLimiterPermit(t *testing.T) {
 			var mockLimiter *mockReactiveLimiter
 			if tc.reactiveLimiterEnabled {
 				mockLimiter = &mockReactiveLimiter{
-					canAcquire: tc.reactiveLimiterCanAcquire,
-					permit:     &mockPermit{},
+					failOnAcquire: !tc.reactiveLimiterCanAcquire,
+					permit:        &mockPermit{},
 				}
 				ds[0].reactiveLimiter = mockLimiter
 			}
@@ -8640,8 +8659,9 @@ func TestDistributor_AcquireReactiveLimiterPermitIdempotent(t *testing.T) {
 			// Setup reactive limiter if needed
 			if tc.enabled {
 				mockLimiter := &mockReactiveLimiter{
-					canAcquire: true,
-					permit:     &mockPermit{},
+					canAcquire:    true,
+					failOnAcquire: false,
+					permit:        &mockPermit{},
 				}
 				ds[0].reactiveLimiter = mockLimiter
 			}
@@ -8684,12 +8704,13 @@ func checkRequestState(t *testing.T, ctx context.Context, acquiredPermit bool) {
 
 // mockReactiveLimiter is a mock implementation of ReactiveLimiter for testing
 type mockReactiveLimiter struct {
-	canAcquire bool
-	permit     *mockPermit
+	canAcquire    bool
+	failOnAcquire bool
+	permit        *mockPermit
 }
 
 func (m *mockReactiveLimiter) AcquirePermit(_ context.Context) (adaptivelimiter.Permit, error) {
-	if !m.canAcquire {
+	if m.failOnAcquire {
 		return nil, adaptivelimiter.ErrExceeded
 	}
 	return m.permit, nil
