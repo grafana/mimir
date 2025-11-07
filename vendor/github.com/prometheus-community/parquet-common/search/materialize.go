@@ -20,6 +20,7 @@ import (
 	"maps"
 	"slices"
 	"sync"
+	"unique"
 
 	"github.com/parquet-go/parquet-go"
 	"github.com/pkg/errors"
@@ -273,7 +274,7 @@ func (m *Materializer) MaterializeLabelNames(ctx context.Context, rgi int, rr []
 	seen := make(map[string]struct{})
 	colsMap := make(map[string]struct{}, 10)
 	for _, colsIdx := range colsIdxs {
-		key := util.YoloString(colsIdx.ByteArray())
+		key := unique.Make(string(colsIdx.ByteArray())).Value()
 		if _, ok := seen[key]; !ok {
 			idxs, err := schema.DecodeUintSlice(colsIdx.ByteArray())
 			if err != nil {
@@ -324,7 +325,7 @@ func (m *Materializer) MaterializeLabelValues(ctx context.Context, name string, 
 	r := make([]string, 0, len(values))
 	vMap := make(map[string]struct{}, 10)
 	for _, v := range values {
-		strValue := util.YoloString(v.ByteArray())
+		strValue := unique.Make(string(v.ByteArray())).Value()
 		if _, ok := vMap[strValue]; !ok {
 			r = append(r, strValue)
 			vMap[strValue] = struct{}{}
@@ -460,7 +461,7 @@ func (m *Materializer) MaterializeAllLabels(ctx context.Context, rgi int, rr []R
 					if !labelValues[valueIndex].IsNull() {
 						results[startIndex+rowInRange] = append(results[startIndex+rowInRange], labels.Label{
 							Name:  labelName,
-							Value: util.YoloString(labelValues[valueIndex].ByteArray()),
+							Value: unique.Make(string(labelValues[valueIndex].ByteArray())).Value(),
 						})
 					}
 					valueIndex++
