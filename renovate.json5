@@ -96,5 +96,4 @@
   dependencyDashboard: false,
   prHourlyLimit: 10,
   prConcurrentLimit: 20,
-  branchConcurrentLimit: 20,
 }
