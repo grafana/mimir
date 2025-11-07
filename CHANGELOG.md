@@ -41,7 +41,7 @@
 * [ENHANCEMENT] Update Docker base images from `alpine:3.22.1` to `alpine:3.22.2`. #12991
 * [ENHANCEMENT] Compactor, Store-gateway: Add metrics to track performance of in-memory and disk-based metadata caches. #13150
 * [ENHANCEMENT] Ruler: Removed disk interaction when loading rules. #13156
-* [ENHANCEMENT] Ingester: Cost-based index lookup planner now accounts for query sharding when estimating cardinality and filter costs. #13374
+* [ENHANCEMENT] Ingester: Cost-based index lookup planner accounts for query sharding when estimating cardinality and filter costs. #13374
 * [ENHANCEMENT] GCS: Make uploads optionally retryable. Use the following advanced flags: #13226
   * `-alertmanager-storage.gcs.enable-upload-retries`
   * `-blocks-storage.gcs.enable-upload-retries`
