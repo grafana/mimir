@@ -144,6 +144,8 @@ func cloneExpr(expr parser.Expr) (parser.Expr, error) {
 			LabelMatchers:           matchers,
 			BypassEmptyMatcherCheck: e.BypassEmptyMatcherCheck,
 			PosRange:                e.PosRange,
+			Anchored:                e.Anchored,
+			Smoothed:                e.Smoothed,
 		}, nil
 
 	case *parser.MatrixSelector:
