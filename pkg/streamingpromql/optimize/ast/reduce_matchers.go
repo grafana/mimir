@@ -1,63 +1,100 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-package lookupplan
+package ast
 
 import (
 	"context"
 
-	"github.com/grafana/dskit/tracing"
+	"github.com/go-kit/log"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/storage"
-	"github.com/prometheus/prometheus/tsdb/index"
-	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/trace"
+	"github.com/prometheus/prometheus/promql/parser"
 
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
-// MatcherReducerPlanner deduplicates matchers from the input plan,
-// and removes matchers that select for all non-empty values if a more selective matcher for the same label name already exists.
-// It does not modify plans if the input plan has any scan matchers, and does not guarantee consistent matcher ordering in the output plan.
-type MatcherReducerPlanner struct{}
-
-// concreteLookupPlan implements LookupPlan by storing pre-computed index and scan matchers.
-type concreteLookupPlan struct {
-	indexMatchers []*labels.Matcher
-	scanMatchers  []*labels.Matcher
+func NewReduceMatchers(reg prometheus.Registerer, logger log.Logger) *ReduceMatchers {
+	return &ReduceMatchers{
+		attempts: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_mimir_query_engine_reduce_matchers_attempted_total",
+			Help: "Total number of queries that the optimization pass has attempted to reduce matchers for.",
+		}),
+		success: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_mimir_query_engine_reduce_matchers_modified_total",
+			Help: "Total number of queries where the optimization pass has been able to reduce matchers for.",
+		}),
+		logger: logger,
+	}
 }
 
-func (p concreteLookupPlan) ScanMatchers() []*labels.Matcher {
-	return p.scanMatchers
+// ReduceMatchers deduplicates matchers from vector or matrix selectors, removes matchers that
+// select for all non-empty values if a more selective matcher for the same label name already
+// exists, and removes matchers that select a superset of other matchers. Input order of matchers
+// is NOT preserved in the rewritten expression.
+type ReduceMatchers struct {
+	attempts prometheus.Counter
+	success  prometheus.Counter
+	logger   log.Logger
 }
 
-func (p concreteLookupPlan) IndexMatchers() []*labels.Matcher {
-	return p.indexMatchers
+func (c *ReduceMatchers) Name() string {
+	return "Reduce matchers"
 }
 
-// PlanIndexLookup takes an index.LookupPlan and removes matchers that match only supersets of other matchers.
-// It does not modify plans if the input plan has any scan matchers. It does not guarantee matcher order of the output plan.
-func (p MatcherReducerPlanner) PlanIndexLookup(ctx context.Context, inPlan index.LookupPlan, _ *storage.SelectHints) (index.LookupPlan, error) {
-	// For simplicity, we don't process plans with scan matchers
-	if planningDisabled(ctx) || len(inPlan.ScanMatchers()) > 0 {
-		return inPlan, nil
-	}
-	// If there's only one matcher, don't try to do any optimizations
-	if len(inPlan.IndexMatchers()) <= 1 {
-		return inPlan, nil
-	}
-	allowedMatchers := setReduceMatchers(inPlan.IndexMatchers())
+func (c *ReduceMatchers) Apply(ctx context.Context, root parser.Expr) (parser.Expr, error) {
+	spanlog := spanlogger.FromContext(ctx, c.logger)
+	c.attempts.Inc()
 
-	// Rebuild the index and scan matchers in the input order, less the filtered/deduplicated matchers
-	// droppedMatchers is used for logging purposes to record all matchers have been removed from the plan.
-	outMatchers, droppedMatchers := buildOutMatchers(inPlan.IndexMatchers(), allowedMatchers)
+	matchersReduced := false
+	parser.Inspect(root, func(node parser.Node, _ []parser.Node) error {
+		switch expr := node.(type) {
+		case *parser.VectorSelector:
+			retained, dropped := reduceMatchers(expr.LabelMatchers)
 
-	span, _, traceSampled := tracing.SpanFromContext(ctx)
-	if traceSampled && len(droppedMatchers) > 0 {
-		span.AddEvent("dropped matchers", trace.WithAttributes(
-			attribute.Stringer("matchers", util.MatchersStringer(droppedMatchers)),
-		))
+			if len(dropped) > 0 {
+				expr.LabelMatchers = retained
+				matchersReduced = true
+				spanlog.DebugLog(
+					"msg", "dropped matchers for vector selector",
+					"retained", util.MatchersStringer(retained),
+					"dropped", util.MatchersStringer(dropped),
+				)
+			}
+		case *parser.MatrixSelector:
+			retained, dropped := reduceMatchers(expr.VectorSelector.(*parser.VectorSelector).LabelMatchers)
+
+			if len(dropped) > 0 {
+				expr.VectorSelector.(*parser.VectorSelector).LabelMatchers = retained
+				matchersReduced = true
+				spanlog.DebugLog(
+					"msg", "dropped matchers for matrix selector",
+					"retained", util.MatchersStringer(retained),
+					"dropped", util.MatchersStringer(dropped),
+				)
+			}
+		}
+		return nil
+	})
+
+	if matchersReduced {
+		c.success.Inc()
 	}
-	return &concreteLookupPlan{indexMatchers: outMatchers}, nil
+
+	return root, nil
+}
+
+func reduceMatchers(existing []*labels.Matcher) (retained []*labels.Matcher, dropped []*labels.Matcher) {
+	// If there's only one matcher, we can't reduce anything.
+	if len(existing) <= 1 {
+		return existing, nil
+	}
+
+	allowedMatchers := setReduceMatchers(existing)
+	// Rebuild a list of retained and dropped matchers. The dropped matchers are used for
+	// logging purposes to record all matchers have been removed from the query.
+	return buildOutMatchers(existing, allowedMatchers)
 }
 
 // buildOutMatchers takes a slice of matchers, and returns a slice of matchers which are included in allowedOutMatchers,
