@@ -132,7 +132,7 @@ func TestMatcherReducerPlanner_PlanIndexLookup(t *testing.T) {
 			inPlan := concreteLookupPlan{inIndex, inScan}
 
 			planner := MatcherReducerPlanner{}
-			outPlan, err := planner.PlanIndexLookup(tt.ctx, inPlan, 0, 0)
+			outPlan, err := planner.PlanIndexLookup(tt.ctx, inPlan, nil)
 			require.NoError(t, err)
 
 			expectedIndex := parseMatchers(t, tt.expectedIndexMatchers)
@@ -335,7 +335,7 @@ func querySeriesWithPlanner(t *testing.T, db *tsdb.DB, matchers []*labels.Matche
 	require.NoError(t, err)
 	defer indexReader.Close()
 	inPlan := concreteLookupPlan{indexMatchers: matchers}
-	outPlan, err := planner.PlanIndexLookup(ctx, inPlan, 0, 0)
+	outPlan, err := planner.PlanIndexLookup(ctx, inPlan, nil)
 	require.NoError(t, err)
 
 	postings, err := tsdb.PostingsForMatchers(ctx, indexReader, outPlan.IndexMatchers()...)

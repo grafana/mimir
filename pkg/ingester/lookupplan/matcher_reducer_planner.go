@@ -7,6 +7,7 @@ import (
 
 	"github.com/grafana/dskit/tracing"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
@@ -35,7 +36,7 @@ func (p concreteLookupPlan) IndexMatchers() []*labels.Matcher {
 
 // PlanIndexLookup takes an index.LookupPlan and removes matchers that match only supersets of other matchers.
 // It does not modify plans if the input plan has any scan matchers. It does not guarantee matcher order of the output plan.
-func (p MatcherReducerPlanner) PlanIndexLookup(ctx context.Context, inPlan index.LookupPlan, _, _ int64) (index.LookupPlan, error) {
+func (p MatcherReducerPlanner) PlanIndexLookup(ctx context.Context, inPlan index.LookupPlan, _ *storage.SelectHints) (index.LookupPlan, error) {
 	// For simplicity, we don't process plans with scan matchers
 	if planningDisabled(ctx) || len(inPlan.ScanMatchers()) > 0 {
 		return inPlan, nil

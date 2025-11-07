@@ -99,7 +99,7 @@ func newBlockQueriedMeta(meta *block.Meta) blockQueriedMeta {
 	m := blockQueriedMeta{
 		source:     meta.Thanos.Source,
 		level:      strconv.Itoa(meta.Compaction.Level),
-		outOfOrder: meta.Compaction.FromOutOfOrder(),
+		outOfOrder: meta.IsOutOfOrder(),
 	}
 
 	if m.source == "" {
@@ -110,6 +110,7 @@ func newBlockQueriedMeta(meta *block.Meta) blockQueriedMeta {
 	if meta.Compaction.Level == 0 {
 		m.level = "unknown/old_block"
 	}
+
 	return m
 }
 

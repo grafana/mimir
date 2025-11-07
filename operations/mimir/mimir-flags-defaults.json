@@ -899,6 +899,7 @@
   "tenant-federation.max-tenants": 0,
   "activity-tracker.filepath": "./metrics-activity.log",
   "activity-tracker.max-entries": 1024,
+  "include-tenant-id-in-profile-labels": true,
   "vault.url": "",
   "vault.mount-path": "",
   "vault.auth.type": "",

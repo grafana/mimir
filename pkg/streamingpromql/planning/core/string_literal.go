@@ -36,8 +36,12 @@ func (s *StringLiteral) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_STRING_LITERAL
 }
 
-func (s *StringLiteral) Children() []planning.Node {
-	return nil
+func (s *StringLiteral) Child(idx int) planning.Node {
+	panic(fmt.Sprintf("node of type StringLiteral has no children, but attempted to get child at index %d", idx))
+}
+
+func (s *StringLiteral) ChildCount() int {
+	return 0
 }
 
 func (s *StringLiteral) SetChildren(children []planning.Node) error {
@@ -48,10 +52,19 @@ func (s *StringLiteral) SetChildren(children []planning.Node) error {
 	return nil
 }
 
-func (s *StringLiteral) EquivalentTo(other planning.Node) bool {
+func (s *StringLiteral) ReplaceChild(idx int, node planning.Node) error {
+	return fmt.Errorf("node of type StringLiteral supports no children, but attempted to replace child at index %d", idx)
+}
+
+func (s *StringLiteral) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
 	otherLiteral, ok := other.(*StringLiteral)
 
 	return ok && s.Value == otherLiteral.Value
+}
+
+func (s *StringLiteral) MergeHints(_ planning.Node) error {
+	// Nothing to do.
+	return nil
 }
 
 func (s *StringLiteral) ChildrenLabels() []string {

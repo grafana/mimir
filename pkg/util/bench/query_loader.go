@@ -218,15 +218,8 @@ func extractLabelMatchers(query string) ([][]*labels.Matcher, error) {
 		if n, ok := node.(*parser.VectorSelector); ok {
 			var matchers []*labels.Matcher
 
-			// Add the metric name matcher if present
-			if n.Name != "" {
-				matcher, err := labels.NewMatcher(labels.MatchEqual, labels.MetricName, n.Name)
-				if err == nil {
-					matchers = append(matchers, matcher)
-				}
-			}
-
 			// Add all label matchers
+			// This includes the __name__ matcher even if it was provided as a metric name (e.g. metric{...})
 			for _, lm := range n.LabelMatchers {
 				if lm != nil {
 					matchers = append(matchers, lm)

@@ -3,7 +3,7 @@ module github.com/grafana/mimir
 go 1.25.1
 
 require (
-	github.com/Azure/azure-sdk-for-go/sdk/storage/azblob v1.6.2
+	github.com/Azure/azure-sdk-for-go/sdk/storage/azblob v1.6.3
 	github.com/alecthomas/units v0.0.0-20240927000941-0f3dac36c52b
 	github.com/dustin/go-humanize v1.0.1
 	github.com/edsrzf/mmap-go v1.2.0
@@ -78,10 +78,10 @@ require (
 	github.com/spf13/pflag v1.0.10
 	github.com/thanos-io/objstore v0.0.0-20250813080715-4e5fd4289b50
 	github.com/tjhop/slog-gokit v0.1.4
-	github.com/twmb/franz-go v1.19.5
-	github.com/twmb/franz-go/pkg/kadm v1.15.0
-	github.com/twmb/franz-go/pkg/kfake v0.0.0-20251006031941-e8cd62789735
-	github.com/twmb/franz-go/pkg/kmsg v1.11.2
+	github.com/twmb/franz-go v1.20.2
+	github.com/twmb/franz-go/pkg/kadm v1.17.2-0.20251024215757-aea970d4d0d2
+	github.com/twmb/franz-go/pkg/kfake v0.0.0-20251024215757-aea970d4d0d2
+	github.com/twmb/franz-go/pkg/kmsg v1.12.1-0.20251024215757-aea970d4d0d2
 	github.com/twmb/franz-go/plugin/kotel v1.5.0
 	github.com/twmb/franz-go/plugin/kprom v1.1.0
 	github.com/tylertreat/BoomFilters v0.0.0-20251001182300-5b3723cc64ae
@@ -106,7 +106,7 @@ require (
 	cloud.google.com/go/auth/oauth2adapt v0.2.8 // indirect
 	cloud.google.com/go/monitoring v1.24.2 // indirect
 	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.19.1 // indirect
-	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.12.0 // indirect
+	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.13.0 // indirect
 	github.com/Azure/azure-sdk-for-go/sdk/internal v1.11.2 // indirect
 	github.com/AzureAD/microsoft-authentication-library-for-go v1.5.0 // indirect
 	github.com/GoogleCloudPlatform/opentelemetry-operations-go/detectors/gcp v1.29.0 // indirect
@@ -296,7 +296,7 @@ require (
 	github.com/josharian/intern v1.0.0 // indirect
 	github.com/jpillora/backoff v1.0.0 // indirect
 	github.com/julienschmidt/httprouter v1.3.0 // indirect
-	github.com/klauspost/compress v1.18.0
+	github.com/klauspost/compress v1.18.1
 	github.com/klauspost/cpuid/v2 v2.2.11 // indirect
 	github.com/kylelemons/godebug v1.1.0 // indirect
 	github.com/mailru/easyjson v0.9.0 // indirect
@@ -349,7 +349,7 @@ require (
 	sigs.k8s.io/yaml v1.6.0 // indirect
 )
 
-replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v1.8.2-0.20251028174623-d52365e937be
+replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v1.8.2-0.20251105194601-2ed549ed945d
 
 // Replace memberlist with our fork which includes some changes that haven't been
 // merged upstream yet for years and we don't expect to change anytime soon.

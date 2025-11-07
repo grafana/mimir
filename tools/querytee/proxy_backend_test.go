@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/grafana/dskit/clusterutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -84,7 +85,7 @@ func Test_ProxyBackend_createBackendRequest_HTTPBasicAuthentication(t *testing.T
 				orig.Header.Set("X-Scope-OrgID", testData.clientTenant)
 			}
 
-			b := NewProxyBackend("test", u, time.Second, false, false, defaultBackendConfig())
+			b := NewProxyBackend("test", u, time.Second, false, false, "", defaultBackendConfig())
 			bp, ok := b.(*ProxyBackend)
 			if !ok {
 				t.Fatalf("Type assertion to *ProxyBackend failed")
@@ -140,7 +141,7 @@ func Test_ProxyBackend_RequestProportion(t *testing.T) {
 			u, err := url.Parse("http://localhost:9090")
 			require.NoError(t, err)
 
-			backend := NewProxyBackend("test", u, time.Second, false, false, tc.config)
+			backend := NewProxyBackend("test", u, time.Second, false, false, "", tc.config)
 
 			assert.Equal(t, tc.expectedProportion, backend.RequestProportion())
 
@@ -151,6 +152,48 @@ func Test_ProxyBackend_RequestProportion(t *testing.T) {
 			if tc.setProportion != nil {
 				backend.SetRequestProportion(*tc.setProportion)
 				assert.Equal(t, tc.finalProportion, backend.RequestProportion())
+			}
+		})
+	}
+}
+
+func Test_ProxyBackend_ClusterValidationLabel(t *testing.T) {
+	tests := map[string]struct {
+		clusterLabel           string
+		expectedXClusterHeader string
+		shouldHaveXCluster     bool
+	}{
+		"no cluster label set": {
+			clusterLabel:       "",
+			shouldHaveXCluster: false,
+		},
+		"cluster label set": {
+			clusterLabel:           "test-cluster",
+			expectedXClusterHeader: "test-cluster",
+			shouldHaveXCluster:     true,
+		},
+	}
+
+	for testName, tc := range tests {
+		t.Run(testName, func(t *testing.T) {
+			backend := httptest.NewServer(nil)
+			defer backend.Close()
+
+			u, err := url.Parse(backend.URL)
+			require.NoError(t, err)
+
+			b := NewProxyBackend("test", u, time.Second, false, false, tc.clusterLabel, defaultBackendConfig())
+
+			req := httptest.NewRequest("GET", "http://test/api/v1/query", nil)
+
+			backendReq, err := b.(*ProxyBackend).createBackendRequest(context.Background(), req, nil)
+			require.NoError(t, err)
+
+			actualHeader := backendReq.Header.Get(clusterutil.ClusterValidationLabelHeader)
+			if tc.shouldHaveXCluster {
+				assert.Equal(t, tc.expectedXClusterHeader, actualHeader)
+			} else {
+				assert.Empty(t, actualHeader)
 			}
 		})
 	}

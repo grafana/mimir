@@ -18,12 +18,13 @@ import (
 	"slices"
 
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/storage"
 )
 
 // LookupPlanner plans how to execute index lookups by deciding which matchers
 // to apply during index lookup versus after series retrieval.
 type LookupPlanner interface {
-	PlanIndexLookup(ctx context.Context, plan LookupPlan, minT, maxT int64) (LookupPlan, error)
+	PlanIndexLookup(ctx context.Context, plan LookupPlan, hints *storage.SelectHints) (LookupPlan, error)
 }
 
 // ChainLookupPlanners is useful to break up the planning logic into multiple independent planners and connect them in sequence.
@@ -36,10 +37,10 @@ type chainedLookupPlanner struct {
 	planners []LookupPlanner
 }
 
-func (c chainedLookupPlanner) PlanIndexLookup(ctx context.Context, plan LookupPlan, minT, maxT int64) (LookupPlan, error) {
+func (c chainedLookupPlanner) PlanIndexLookup(ctx context.Context, plan LookupPlan, hints *storage.SelectHints) (LookupPlan, error) {
 	var err error
 	for _, p := range c.planners {
-		plan, err = p.PlanIndexLookup(ctx, plan, minT, maxT)
+		plan, err = p.PlanIndexLookup(ctx, plan, hints)
 		if err != nil {
 			return nil, err
 		}
@@ -74,7 +75,7 @@ func (l indexOnlyLookupPlan) IndexMatchers() []*labels.Matcher {
 // ScanEmptyMatchersLookupPlanner implements LookupPlanner by deferring empty matchers such as l="", l=~".+" to scan matchers.
 type ScanEmptyMatchersLookupPlanner struct{}
 
-func (p *ScanEmptyMatchersLookupPlanner) PlanIndexLookup(_ context.Context, plan LookupPlan, _, _ int64) (LookupPlan, error) {
+func (p *ScanEmptyMatchersLookupPlanner) PlanIndexLookup(_ context.Context, plan LookupPlan, _ *storage.SelectHints) (LookupPlan, error) {
 	indexMatchers := plan.IndexMatchers()
 	if len(indexMatchers) <= 1 || !p.canOptimizeIndexMatchers(indexMatchers) {
 		// If there is only one matcher, then using the index is usually more efficient.

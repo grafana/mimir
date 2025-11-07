@@ -1,6 +1,12 @@
 # Pin kube version so results are the same for running in CI and locally where the installed kube version may be different.
 kubeVersionOverride: "1.29"
 
+global:
+  podLabels:
+    foo: bar
+  podAnnotations:
+    baz: qux
+
 alertmanager:
   podLabels:
     foo: bar

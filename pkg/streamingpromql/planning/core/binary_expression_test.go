@@ -276,7 +276,7 @@ func TestBinaryExpression_Equivalence(t *testing.T) {
 				LHS: numberLiteralOf(13),
 				RHS: numberLiteralOf(14),
 			},
-			expectEquivalent: false,
+			expectEquivalent: true,
 		},
 		"different right-hand side": {
 			a: &BinaryExpression{
@@ -295,7 +295,7 @@ func TestBinaryExpression_Equivalence(t *testing.T) {
 				LHS: numberLiteralOf(13),
 				RHS: numberLiteralOf(14),
 			},
-			expectEquivalent: false,
+			expectEquivalent: true,
 		},
 		"one with 'bool', one without": {
 			a: &BinaryExpression{
@@ -441,11 +441,90 @@ func TestBinaryExpression_Equivalence(t *testing.T) {
 
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
-			require.Equal(t, testCase.expectEquivalent, testCase.a.EquivalentTo(testCase.b))
-			require.Equal(t, testCase.expectEquivalent, testCase.b.EquivalentTo(testCase.a))
+			require.Equal(t, testCase.expectEquivalent, testCase.a.EquivalentToIgnoringHintsAndChildren(testCase.b), "a.EquivalentToIgnoringHintsAndChildren(b) did not return expected value")
+			require.Equal(t, testCase.expectEquivalent, testCase.b.EquivalentToIgnoringHintsAndChildren(testCase.a), "b.EquivalentToIgnoringHintsAndChildren(a) did not return expected value")
 
-			require.True(t, testCase.a.EquivalentTo(testCase.a))
-			require.True(t, testCase.b.EquivalentTo(testCase.b))
+			require.True(t, testCase.a.EquivalentToIgnoringHintsAndChildren(testCase.a), "a should be equivalent to itself")
+			require.True(t, testCase.b.EquivalentToIgnoringHintsAndChildren(testCase.b), "b should be equivalent to itself")
+		})
+	}
+}
+
+func TestBinaryExpression_MergeHints(t *testing.T) {
+	testCases := map[string]struct {
+		first       *BinaryExpressionHints
+		second      *BinaryExpressionHints
+		expected    *BinaryExpressionHints
+		expectError bool
+	}{
+		"both have nil hints": {
+			first:    nil,
+			second:   nil,
+			expected: nil,
+		},
+		"first has nil hints, other has empty hints": {
+			first:    nil,
+			second:   &BinaryExpressionHints{},
+			expected: nil,
+		},
+		"second has nil hints, other has empty hints": {
+			first:    &BinaryExpressionHints{},
+			second:   nil,
+			expected: &BinaryExpressionHints{},
+		},
+		"first has empty hints, other does not": {
+			first:       &BinaryExpressionHints{},
+			second:      &BinaryExpressionHints{Include: []string{"foo"}},
+			expectError: true,
+		},
+		"second has empty hints, other does not": {
+			first:       &BinaryExpressionHints{Include: []string{"foo"}},
+			second:      &BinaryExpressionHints{},
+			expectError: true,
+		},
+		"both have hints, no overlap in labels": {
+			first:       &BinaryExpressionHints{Include: []string{"first_1", "first_2"}},
+			second:      &BinaryExpressionHints{Include: []string{"second_1", "second_2"}},
+			expectError: true,
+		},
+		"both have the same labels": {
+			first:    &BinaryExpressionHints{Include: []string{"foo", "bar"}},
+			second:   &BinaryExpressionHints{Include: []string{"foo", "bar"}},
+			expected: &BinaryExpressionHints{Include: []string{"foo", "bar"}},
+		},
+		"both have the same labels in a different order": {
+			first:       &BinaryExpressionHints{Include: []string{"foo", "bar"}},
+			second:      &BinaryExpressionHints{Include: []string{"bar", "foo"}},
+			expectError: true,
+		},
+		"both have hints, some overlap in labels": {
+			first:       &BinaryExpressionHints{Include: []string{"first", "foo"}},
+			second:      &BinaryExpressionHints{Include: []string{"second", "foo"}},
+			expectError: true,
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			first := &BinaryExpression{
+				BinaryExpressionDetails: &BinaryExpressionDetails{
+					Hints: testCase.first,
+				},
+			}
+
+			second := &BinaryExpression{
+				BinaryExpressionDetails: &BinaryExpressionDetails{
+					Hints: testCase.second,
+				},
+			}
+
+			err := first.MergeHints(second)
+			if testCase.expectError {
+				require.EqualError(t, err, "cannot merge hints for binary expressions with different included labels")
+			} else {
+				require.NoError(t, err)
+				require.Equal(t, testCase.expected, first.Hints)
+			}
 		})
 	}
 }

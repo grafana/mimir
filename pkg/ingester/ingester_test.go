@@ -60,6 +60,7 @@ import (
 	"google.golang.org/grpc/codes"
 
 	"github.com/grafana/mimir/pkg/costattribution"
+	"github.com/grafana/mimir/pkg/costattribution/costattributionmodel"
 	asmodel "github.com/grafana/mimir/pkg/ingester/activeseries/model"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -4540,7 +4541,7 @@ func BenchmarkIngesterPush(b *testing.B) {
 				if limits == nil {
 					return
 				}
-				limits.CostAttributionLabels = []string{"cpu"}
+				limits.CostAttributionLabelsStructured = []costattributionmodel.Label{{Input: "cpu"}}
 				limits.MaxCostAttributionCardinality = 100
 			},
 			customRegistry: prometheus.NewRegistry(),
@@ -10878,7 +10879,7 @@ func Test_Ingester_ShipperLabelsOutOfOrderBlocksOnUpload(t *testing.T) {
 			require.Len(t, oooMeta, 1, "only one of the blocks should have an ooo compactor hint")
 			require.Empty(t, inOrderMeta[0].Thanos.Labels, "in-order block should not have the ooo label")
 			if addOOOLabel {
-				require.Equal(t, map[string]string{mimir_tsdb.OutOfOrderExternalLabel: mimir_tsdb.OutOfOrderExternalLabelValue}, oooMeta[0].Thanos.Labels)
+				require.Equal(t, map[string]string{block.OutOfOrderExternalLabel: block.OutOfOrderExternalLabelValue}, oooMeta[0].Thanos.Labels)
 			} else {
 				require.Empty(t, oooMeta[0].Thanos.Labels)
 			}
