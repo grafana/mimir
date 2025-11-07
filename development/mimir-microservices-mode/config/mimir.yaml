@@ -198,3 +198,6 @@ limits:
 
 runtime_config:
   file: ./config/runtime.yaml
+
+server:
+  log_level: error

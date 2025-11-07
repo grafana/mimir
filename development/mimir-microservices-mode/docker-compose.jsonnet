@@ -311,7 +311,7 @@ std.manifestYamlDoc({
 
   prometheus:: {
     prometheus: {
-      image: 'prom/prometheus:v3.5.0',
+      image: 'prom/prometheus:v3.6.0',
       command: [
         '--config.file=/etc/prometheus/prometheus.yaml',
         '--enable-feature=exemplar-storage',

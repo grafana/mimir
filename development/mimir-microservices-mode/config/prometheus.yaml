@@ -2,6 +2,7 @@ global:
   scrape_interval: 5s
   external_labels:
     scraped_by: prometheus
+  convert_classic_histograms_to_nhcb: true
   always_scrape_classic_histograms: true
 
 scrape_configs:
@@ -47,6 +48,7 @@ remote_write:
   - url: http://distributor-1:8000/api/v1/push
     send_native_histograms: true
     send_exemplars: true
+    protobuf_message: "io.prometheus.write.v2.Request"
 
 rule_files:
   - '/etc/mixin/mimir-alerts.yaml'
