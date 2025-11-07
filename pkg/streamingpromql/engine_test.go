@@ -58,6 +58,7 @@ func init() {
 	types.EnableManglingReturnedSlices = true
 	parser.ExperimentalDurationExpr = true
 	parser.EnableExperimentalFunctions = true
+	parser.EnableExtendedRangeSelectors = true
 
 	// Set a tracer provider with in memory span exporter so we can check the spans later.
 	otel.SetTracerProvider(
@@ -181,12 +182,6 @@ func TestNewInstantQuery_Strings(t *testing.T) {
 // Test cases that are not supported by the streaming engine are commented out (or, if the entire file is not supported, .disabled is appended to the file name).
 // Once the streaming engine supports all PromQL features exercised by Prometheus' test cases, we can remove these files and instead call promql.RunBuiltinTests here instead.
 func TestUpstreamTestCases(t *testing.T) {
-
-	parser.EnableExtendedRangeSelectors = true
-	t.Cleanup(func() {
-		parser.EnableExtendedRangeSelectors = false
-	})
-
 	opts := NewTestEngineOpts()
 	opts.CommonOpts.EnableDelayedNameRemoval = true
 	// Disable the optimization pass, since it requires delayed name removal to be enabled.
@@ -226,12 +221,6 @@ func TestOurTestCases(t *testing.T) {
 
 		return mimirEngine, prometheusEngine
 	}
-
-	parser.EnableExtendedRangeSelectors = true
-	t.Cleanup(func() {
-		parser.EnableExtendedRangeSelectors = false
-	})
-
 	opts := NewTestEngineOpts()
 	mimirEngine, prometheusEngine := makeEngines(t, opts)
 
@@ -4481,11 +4470,6 @@ func TestEngine_RegisterNodeMaterializer(t *testing.T) {
 // TestExtendedRangeSelectors has tests specific to the anchored and smoothed range modifiers.
 // The results can have points which are not aligned to the step interval, and as such creating promql *.test scripts which inspect the raw range result is not possible.
 func TestExtendedRangeSelectors(t *testing.T) {
-	parser.EnableExtendedRangeSelectors = true
-	t.Cleanup(func() {
-		parser.EnableExtendedRangeSelectors = false
-	})
-
 	storage := promqltest.LoadedStorage(t, `
 	load 1m
     	metric 1 2 _ 4 5
@@ -4669,11 +4653,6 @@ func TestExtendedRangeSelectors(t *testing.T) {
 // The results can have points which are not aligned to the step interval, and as such creating promql *.test scripts which inspect the raw range result is not possible.
 // These tests also cover the anchored and smoothed errors. These errors are returned during the planning phase, rather than the execution phase so the *.test promql test harness does not handle this correctly.
 func TestExtendedRangeSelectorsIrregular(t *testing.T) {
-	parser.EnableExtendedRangeSelectors = true
-	t.Cleanup(func() {
-		parser.EnableExtendedRangeSelectors = false
-	})
-
 	storage := promqltest.LoadedStorage(t, `
 	load 10s
 		metric 1+1x10
