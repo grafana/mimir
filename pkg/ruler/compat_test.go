@@ -1032,7 +1032,7 @@ func TestRulerErrorClassifier_ErrorClassificationDuringRuleEvaluation(t *testing
 			expectedUserFailed:     true,
 		},
 
-		//// Write path errors - matching TestPusherErrors patterns
+		// Write path errors - matching TestPusherErrors patterns
 		"500 HTTPgRPC error during write (operator)": {
 			writeError:             httpgrpc.Errorf(http.StatusInternalServerError, "test error"),
 			expectedOperatorFailed: true,
