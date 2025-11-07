@@ -1,8 +1,3 @@
-// SPDX-License-Identifier: AGPL-3.0-only
-// Provenance-includes-location: https://github.com/prometheus/prometheus/blob/main/promql/engine.go
-// Provenance-includes-license: Apache-2.0
-// Provenance-includes-copyright: The Prometheus Authors
-
 package limitklimitratio
 
 import (
@@ -56,7 +51,7 @@ func newStepCounterImpl(size int, memoryConsumptionTracker *limiter.MemoryConsum
 	}, nil
 }
 
-type queryGroup struct {
+type limitGroup struct {
 	seriesCount              int            // Total number of series that contribute to this group.
 	filled                   bool           // Flag to indicate we have identified k series for this group and no more series need to be accumulated
 	accumulatedSeries        []*querySeries // A place to store the series we will return for this group
@@ -64,19 +59,19 @@ type queryGroup struct {
 	memoryConsumptionTracker *limiter.MemoryConsumptionTracker
 }
 
-func (q *queryGroup) initAccumulatedSeries(size int) {
+func (q *limitGroup) initAccumulatedSeries(size int) {
 	q.accumulatedSeries = make([]*querySeries, 0, size)
 }
 
-func (q *queryGroup) incStepCounter(step int) {
+func (q *limitGroup) incStepCounter(step int) {
 	q.stepCounter.inc(step)
 }
 
-func (q *queryGroup) countAtStep(step int) int {
+func (q *limitGroup) countAtStep(step int) int {
 	return q.stepCounter.count(step)
 }
 
-func (q *queryGroup) close() {
+func (q *limitGroup) close() {
 	q.stepCounter.close()
 }
 
@@ -85,7 +80,7 @@ type querySeries struct {
 	value    types.InstantVectorSeriesData
 }
 
-func newQueryGroup(size int, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, needsStepCounter bool) (*queryGroup, error) {
+func newLimitGroup(size int, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, needsStepCounter bool) (*limitGroup, error) {
 	var counter stepCounter
 	var err error
 
@@ -102,7 +97,7 @@ func newQueryGroup(size int, memoryConsumptionTracker *limiter.MemoryConsumption
 		counter = &stepCounterNoOp{}
 	}
 
-	return &queryGroup{
+	return &limitGroup{
 		memoryConsumptionTracker: memoryConsumptionTracker,
 		stepCounter:              counter,
 	}, nil

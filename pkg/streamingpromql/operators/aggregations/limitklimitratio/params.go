@@ -17,7 +17,7 @@ import (
 	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
-type param interface {
+type stepArgument interface {
 	quietCloser
 	allZero() bool
 }

@@ -33,20 +33,20 @@ var ratiosampler promql.RatioSampler = promql.NewHashRatioSampler()
 // {series1}[v, v, v]
 // {series2}[_, v, v]
 // {series3}[_, _, v]
-var discardPointAtStepK = func(_ types.SeriesMetadata, step int, g *queryGroup, p param) bool {
+var discardPointAtStepK = func(_ types.SeriesMetadata, step int, g *limitGroup, p stepArgument) bool {
 	k := p.(*kParam).k[step]
 	return int64(g.countAtStep(step)) == k
 }
 
 // discardPointAtStepR is the function we use in limit_ratio mode to determine if a series should be accumulated for a group at the given step.
 // As above, the ratio value for each step may not be step invariant so each series in the group may be sparse.
-var discardPointAtStepR = func(metadata types.SeriesMetadata, step int, g *queryGroup, p param) bool {
+var discardPointAtStepR = func(metadata types.SeriesMetadata, step int, g *limitGroup, p stepArgument) bool {
 	r := p.(*ratioParam).r[step]
 	return !ratiosampler.AddRatioSample(r, &promql.Sample{Metric: metadata.Labels})
 }
 
 type Operator struct {
-	param param
+	stepArg stepArgument
 
 	Param                    types.ScalarOperator
 	Inner                    types.InstantVectorOperator
@@ -79,9 +79,9 @@ func (t *Operator) initParam(ctx context.Context, annotations *annotations.Annot
 	var err error
 
 	if t.isRatio {
-		t.param, err = newRatioParam(ctx, annotations, memoryConsumptionTracker, stepCount, param)
+		t.stepArg, err = newRatioParam(ctx, annotations, memoryConsumptionTracker, stepCount, param)
 	} else {
-		t.param, err = newKParam(ctx, memoryConsumptionTracker, stepCount, param)
+		t.stepArg, err = newKParam(ctx, memoryConsumptionTracker, stepCount, param)
 	}
 	return err
 }
@@ -93,10 +93,10 @@ func (t *Operator) SeriesMetadata(ctx context.Context, matchers types.Matchers) 
 	if err = t.initParam(ctx, t.annotations, t.MemoryConsumptionTracker, t.TimeRange.StepCount, t.Param); err != nil {
 		return nil, err
 	}
-	defer t.param.close()
+	defer t.stepArg.close()
 
 	// all the k/ratio values are 0 so we will have nothing to return
-	if t.param.allZero() {
+	if t.stepArg.allZero() {
 		return nil, nil
 	}
 
@@ -108,8 +108,8 @@ func (t *Operator) SeriesMetadata(ctx context.Context, matchers types.Matchers) 
 	defer types.SeriesMetadataSlicePool.Put(&innerSeries, t.MemoryConsumptionTracker)
 
 	groupLabelsBytesFunc := aggregations.GroupLabelsBytesFunc(t.Grouping, t.Without)
-	groups := map[string]*queryGroup{}
-	seriesToGroups := make([]*queryGroup, 0, len(innerSeries))
+	groups := map[string]*limitGroup{}
+	seriesToGroups := make([]*limitGroup, len(innerSeries))
 
 	defer func() {
 		for _, group := range seriesToGroups {
@@ -121,13 +121,13 @@ func (t *Operator) SeriesMetadata(ctx context.Context, matchers types.Matchers) 
 	// We do this separately to the loop below so that we know the number of series in each group when we allocate
 	// each group's `series` slice inside accumulateValue - this allows us to avoid allocating a huge slice if the
 	// group only has a few series and `k` is large.
-	for _, series := range innerSeries {
+	for idx, series := range innerSeries {
 		groupLabelsString := groupLabelsBytesFunc(series.Labels)
 		g, groupExists := groups[string(groupLabelsString)] // Important: don't extract the string(...) call here - passing it directly allows us to avoid allocating it.
 
 		if !groupExists {
 			// note - only limitk uses the step counter
-			g, err = newQueryGroup(t.TimeRange.StepCount, t.MemoryConsumptionTracker, t.isLimitK())
+			g, err = newLimitGroup(t.TimeRange.StepCount, t.MemoryConsumptionTracker, t.isLimitK())
 			if err != nil {
 				// in the case of an early exit all the groups can be closed
 				return nil, err
@@ -137,7 +137,7 @@ func (t *Operator) SeriesMetadata(ctx context.Context, matchers types.Matchers) 
 		}
 
 		g.seriesCount++
-		seriesToGroups = append(seriesToGroups, g)
+		seriesToGroups[idx] = g
 	}
 
 	outputSeriesCount := 0
@@ -184,9 +184,9 @@ func (t *Operator) SeriesMetadata(ctx context.Context, matchers types.Matchers) 
 	}
 
 	// these slices are returned by NextSeries()
-	t.values = make([]*types.InstantVectorSeriesData, 0, outputSeriesCount)
+	t.values = make([]*types.InstantVectorSeriesData, outputSeriesCount)
 
-	t.values = t.values[:outputSeriesCount]
+	// ensure that the len(outputSeries) == outputSeriesCount so we can directly by index
 	outputSeries = outputSeries[:outputSeriesCount]
 
 	firstOutputSeriesIndexForNextGroup := 0
@@ -218,7 +218,7 @@ func (t *Operator) SeriesMetadata(ctx context.Context, matchers types.Matchers) 
 }
 
 // Returns true if accumulating this series means that the group will return an additional series.
-func (t *Operator) accumulateValue(metadata types.SeriesMetadata, value types.InstantVectorSeriesData, g *queryGroup, discardFunc func(types.SeriesMetadata, int, *queryGroup, param) bool) (bool, error) {
+func (t *Operator) accumulateValue(metadata types.SeriesMetadata, value types.InstantVectorSeriesData, g *limitGroup, discardFunc func(types.SeriesMetadata, int, *limitGroup, stepArgument) bool) (bool, error) {
 
 	if g.accumulatedSeries == nil {
 		// This is deferred until we know how many series fit within a group.
@@ -227,7 +227,7 @@ func (t *Operator) accumulateValue(metadata types.SeriesMetadata, value types.In
 		maxPossibleSeries := g.seriesCount
 
 		if t.isLimitK() {
-			maxPossibleSeries = int(min(t.param.(*kParam).kMax, int64(g.seriesCount)))
+			maxPossibleSeries = int(min(t.stepArg.(*kParam).kMax, int64(g.seriesCount)))
 		}
 
 		g.initAccumulatedSeries(maxPossibleSeries)
@@ -237,7 +237,7 @@ func (t *Operator) accumulateValue(metadata types.SeriesMetadata, value types.In
 	iterator.Reset(value)
 
 	// timestamps of the points we will discard
-	tsNotNeeded := make(map[int64]bool, len(value.Floats)+len(value.Histograms))
+	tsNotNeeded := make(map[int64]struct{}, len(value.Floats)+len(value.Histograms))
 
 	// read the first point in the series
 	ts, _, _, _, ok := iterator.Next()
@@ -259,11 +259,11 @@ func (t *Operator) accumulateValue(metadata types.SeriesMetadata, value types.In
 		}
 
 		// a point at this step may not be required if there are already k series with a point at this step (limitk) or the ratio for this series at this step is not met (limit_ratio)
-		if discardFunc(metadata, step, g, t.param) {
+		if discardFunc(metadata, step, g, t.stepArg) {
 			step++
 
 			if ts == pt {
-				tsNotNeeded[ts] = true
+				tsNotNeeded[ts] = struct{}{}
 			}
 
 			continue
@@ -273,7 +273,7 @@ func (t *Operator) accumulateValue(metadata types.SeriesMetadata, value types.In
 		g.incStepCounter(step)
 
 		// Track if the group has filled each step to k series
-		if t.isLimitK() && int64(g.countAtStep(step)) < t.param.(*kParam).k[step] {
+		if t.isLimitK() && int64(g.countAtStep(step)) < t.stepArg.(*kParam).k[step] {
 			allFilled = false
 		}
 
@@ -283,11 +283,13 @@ func (t *Operator) accumulateValue(metadata types.SeriesMetadata, value types.In
 	// prune / zero out the discarded points. Note that the slice capacity will remain the same, but the length will be reduced.
 	if len(tsNotNeeded) > 0 {
 		value.Histograms = slices.DeleteFunc(value.Histograms, func(point promql.HPoint) bool {
-			return tsNotNeeded[point.T]
+			_, ok := tsNotNeeded[point.T]
+			return ok
 		})
 
 		value.Floats = slices.DeleteFunc(value.Floats, func(point promql.FPoint) bool {
-			return tsNotNeeded[point.T]
+			_, ok := tsNotNeeded[point.T]
+			return ok
 		})
 	}
 
