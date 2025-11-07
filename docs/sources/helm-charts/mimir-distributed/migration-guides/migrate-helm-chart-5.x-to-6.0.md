@@ -67,8 +67,8 @@ mimir:
   structuredConfig:
     ingest_storage:
       enabled: false
-  ingester:
-    push_grpc_method_enabled: true
+    ingester:
+      push_grpc_method_enabled: true
 kafka:
   enabled: false
 ```
