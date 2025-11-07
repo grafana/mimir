@@ -8473,6 +8473,91 @@ func TestDistributor_StartFinishRequest(t *testing.T) {
 	}
 }
 
+func TestDistributor_PushWithReactiveLimiterInflightMetrics(t *testing.T) {
+	uniqueMetricsGen := func(sampleIdx int) []mimirpb.LabelAdapter {
+		return []mimirpb.LabelAdapter{
+			{Name: "__name__", Value: fmt.Sprintf("metric_%d", sampleIdx)},
+		}
+	}
+
+	type testCase struct {
+		reactiveLimiterCanAcquire    bool
+		reactiveLimiterFailOnAcquire bool
+	}
+
+	testcases := map[string]testCase{
+		"reactive limiter cannot acquire permit": {
+			reactiveLimiterCanAcquire: false,
+		},
+		"reactive limiter can acquire permit": {
+			reactiveLimiterCanAcquire:    true,
+			reactiveLimiterFailOnAcquire: false,
+		},
+		"reactive limiter fails on acquire permit": {
+			reactiveLimiterCanAcquire:    true,
+			reactiveLimiterFailOnAcquire: true,
+		},
+	}
+
+	for name, tc := range testcases {
+		t.Run(name, func(t *testing.T) {
+			pushReq := makeWriteRequestForGenerators(1, uniqueMetricsGen, nil, nil)
+
+			var limits validation.Limits
+			flagext.DefaultValues(&limits)
+
+			// Prepare distributor
+			ds, _, regs, _ := prepare(t, prepConfig{
+				numDistributors: 1,
+				happyIngesters:  3,
+				numIngesters:    3,
+				limits:          &limits,
+				enableTracker:   true,
+			})
+
+			// Setup reactive limiter
+			mockLimiter := &mockReactiveLimiter{
+				canAcquire:    tc.reactiveLimiterCanAcquire,
+				failOnAcquire: tc.reactiveLimiterFailOnAcquire,
+				permit:        &mockPermit{},
+			}
+			ds[0].reactiveLimiter = mockLimiter
+
+			ctx := user.InjectOrgID(context.Background(), "user")
+
+			// Get initial inflight count
+			initialInflight := ds[0].inflightPushRequests.Load()
+
+			// Call Push
+			_, _ = ds[0].Push(ctx, pushReq)
+
+			require.Eventually(t, func() bool {
+				return ds[0].inflightPushRequests.Load() == 0
+			}, time.Second, 10*time.Millisecond)
+
+			// Verify that inflight requests metric was incremented
+			/*inflightAfterPush := ds[0].inflightPushRequests.Load()
+			if tc.reactiveLimiterFailOnAcquire {
+				require.Greater(t, inflightAfterPush, initialInflight, "inflight requests should be incremented but not decremented during push")
+			} else {
+				require.Equal(t, inflightAfterPush, initialInflight, "inflight requests should be incremented and decremented during push")
+			}*/
+			inflightAfterPush := ds[0].inflightPushRequests.Load()
+			require.Equal(t, initialInflight, inflightAfterPush, "inflight requests should be incremented and decremented during push")
+
+			// Also verify via the actual Prometheus metric
+			expectedMetrics := fmt.Sprintf(`
+				# HELP cortex_distributor_inflight_push_requests Current number of inflight push requests in distributor.
+				# TYPE cortex_distributor_inflight_push_requests gauge
+				cortex_distributor_inflight_push_requests %d
+			`, inflightAfterPush)
+
+			err := testutil.GatherAndCompare(regs[0], strings.NewReader(expectedMetrics), "cortex_distributor_inflight_push_requests")
+			require.NoError(t, err)
+		})
+	}
+}
+
 func TestDistributor_AcquireReactiveLimiterPermit(t *testing.T) {
 	type testCase struct {
 		reactiveLimiterEnabled        bool
