@@ -156,8 +156,17 @@ type RangeVectorStepData struct {
 	// RangeEnd is inclusive (ie. points with timestamp <= RangeEnd are included in the range).
 	RangeEnd int64
 
-	Anchored          bool
-	Smoothed          bool
+	// Anchored is set to true when the anchored modifier has been requested on a range query
+	Anchored bool
+
+	// Smoothed is set to true when the smoothed modifier has been requested on a range query
+	Smoothed bool
+
+	// SmoothedHeadPoint and SmoothedTailPoint are set when a smoothed modifier has been requested on a range query.
+	// When the smoothed range is used by a rate/increase function the points on the range boundaries
+	// are calculated differently to accommodate counter arithmetic for the derived values spanning the boundary.
+	// To avoid needing to re-calculate these alternate points they are included here for the rate/increate function
+	// handler to substitute in.
 	SmoothedHeadPoint *promql.FPoint
 	SmoothedTailPoint *promql.FPoint
 }
