@@ -7,6 +7,7 @@ package validation
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"reflect"
 	"strings"
@@ -17,7 +18,6 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/grafana/dskit/flagext"
-	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/otlptranslator"
 	"github.com/prometheus/prometheus/model/relabel"
@@ -2196,7 +2196,7 @@ func TestIsLimitError(t *testing.T) {
 			expectedOutcome: true,
 		},
 		"wrapped LimitErrors are LimitErrors": {
-			err:             errors.Wrap(NewLimitError(msg), "wrapped"),
+			err:             fmt.Errorf("wrapped: %w", NewLimitError(msg)),
 			expectedOutcome: true,
 		},
 	}

@@ -4,12 +4,13 @@ package objtools
 
 import (
 	"context"
+	"errors"
 	"flag"
+	fmt "fmt"
 	"io"
 
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
-	"github.com/pkg/errors"
 )
 
 type S3ClientConfig struct {
@@ -52,7 +53,7 @@ func (c *S3ClientConfig) ToBucket() (Bucket, error) {
 		Secure: c.Secure,
 	})
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to initialize S3 client")
+		return nil, fmt.Errorf("failed to initialize S3 client: %w", err)
 	}
 	return &s3Bucket{
 		client:     client,
@@ -119,17 +120,21 @@ func (bkt *s3Bucket) ClientSideCopy(ctx context.Context, objectName string, dstB
 		VersionID: options.SourceVersionID,
 	})
 	if err != nil {
-		return errors.Wrap(err, "failed to get source object from S3")
+		return fmt.Errorf("failed to get source object from S3: %w", err)
 	}
 	objInfo, err := obj.Stat()
 	if err != nil {
-		return errors.Wrap(err, "failed to get source object information from S3")
+		return fmt.Errorf("failed to get source object information from S3: %w", err)
 	}
 	if err := dstBucket.Upload(ctx, options.destinationObjectName(objectName), obj, objInfo.Size); err != nil {
 		_ = obj.Close()
-		return errors.Wrap(err, "failed to upload source object from S3 to destination")
+		return fmt.Errorf("failed to upload source object from S3 to destination: %w", err)
 	}
-	return errors.Wrap(obj.Close(), "failed to close source object reader from S3")
+	if err := obj.Close(); err != nil {
+		return fmt.Errorf("failed to close source object reader from S3: %w", err)
+	}
+
+	return nil
 }
 
 func (bkt *s3Bucket) List(ctx context.Context, options ListOptions) (*ListResult, error) {
