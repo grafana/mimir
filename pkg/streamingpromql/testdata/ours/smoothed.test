@@ -1,0 +1,510 @@
+load 15s
+  metric 1+1x4 9+1x4
+
+eval instant at 5s increase(metric[1m] smoothed)
+  {} 0.333333333
+
+eval instant at 20s increase(metric[1m] smoothed)
+  {} 1.333333333
+
+eval instant at 35s increase(metric[1m] smoothed)
+  {} 2.333333333
+
+eval instant at 50s increase(metric[1m] smoothed)
+  {} 3.333333333
+
+eval instant at 65s increase(metric[1m] smoothed)
+  {} 5
+
+eval instant at 80s increase(metric[1m] smoothed)
+  {} 7
+
+eval instant at 95s increase(metric[1m] smoothed)
+  {} 7
+
+eval instant at 110s increase(metric[1m] smoothed)
+  {} 7
+
+eval instant at 125s increase(metric[1m] smoothed)
+  {} 6
+
+clear
+load 15s
+  metric 1+1x2 _ _ 9+1x4
+
+eval instant at 5s increase(metric[1m] smoothed)
+  {} 0.333333333
+
+eval instant at 20s increase(metric[1m] smoothed)
+  {} 1.333333333
+
+eval instant at 35s increase(metric[1m] smoothed)
+  {} 2.666666666
+
+eval instant at 50s increase(metric[1m] smoothed)
+  {} 4.666666666
+
+eval instant at 65s increase(metric[1m] smoothed)
+  {} 6.333333333
+
+eval instant at 80s increase(metric[1m] smoothed)
+  {} 7
+
+eval instant at 95s increase(metric[1m] smoothed)
+  {} 6.666666666
+
+eval instant at 110s increase(metric[1m] smoothed)
+  {} 5.666666666
+
+eval instant at 125s increase(metric[1m] smoothed)
+  {} 4.666666666
+
+# Test that interval is left-open.
+
+clear
+load 1m
+  metric 1 2 _ 4 5
+
+eval instant at 2m increase(metric[1m] smoothed)
+  {} 1
+
+# Basic test with counter resets
+
+clear
+load 1m
+  metric{id="1"} 1+1x4 1+1x4
+  metric{id="2"} 3 2+2x9
+  metric{id="3"} 5+3x2 3+3x6
+
+eval instant at 1m30s increase(metric[1m] smoothed)
+  {id="1"} 1
+  {id="2"} 2
+  {id="3"} 3
+
+eval instant at 6m15s increase(metric[5m] smoothed)
+  {id="1"} 5
+  {id="2"} 10
+  {id="3"} 15
+
+eval instant at 6m increase(metric[5m] smoothed)
+  {id="1"} 5
+  {id="2"} 10
+  {id="3"} 15
+
+clear
+load 1m
+  metric{id="1"} 11 -1 100 0
+  metric{id="2"} 0 0 100 0 0 11 -1
+
+eval instant at 5m30s delta(metric[5m] smoothed)
+  {id="1"} -5
+  {id="2"} 5
+
+eval instant at 5m45s delta(metric[5m] smoothed)
+  {id="1"} -2
+  {id="2"} 2
+
+clear
+load 1m
+  metric 9 8 5 4
+
+eval instant at 2m15s increase(metric[2m] smoothed)
+  {} 12
+
+clear
+load 10s
+  metric 1+1x10
+  withreset 1+1x4 1+1x5
+  notregular 0 5 100 2 8
+
+eval instant at 10s metric smoothed
+  metric 2
+
+eval instant at 15s metric smoothed
+  metric 2.5
+
+eval instant at 5s metric smoothed
+  metric 1.5
+
+eval instant at 105s metric smoothed
+  metric 11
+
+eval instant at 45s withreset smoothed
+  withreset 3
+
+eval instant at 30s notregular smoothed
+  notregular 2
+
+clear
+load 1s
+  mixed 0 {{schema:0 sum:5 count:4 buckets:[1 2 1]}} 2 {{schema:0 sum:5 count:4 buckets:[1 2 1]}} 4 {{schema:0 sum:5 count:4 buckets:[1 2 1]}} 6 {{schema:0 sum:5 count:4 buckets:[1 2 1]}}
+  missing 0 _ 2 _ _ 5 _ _ _ _ _
+  nans 0 NaN 2 NaN NaN 5 NaN NaN NaN NaN NaN
+  infs 0 Inf 2 Inf Inf 5 Inf Inf Inf Inf Inf
+
+eval instant at 1s mixed smoothed
+  expect fail msg: smoothed and anchored modifiers do not work with native histograms
+
+eval instant at 8s mixed smoothed
+  expect fail msg: smoothed and anchored modifiers do not work with native histograms
+
+eval instant at 0 missing smoothed
+  missing 0
+
+eval instant at 1s missing smoothed
+  missing 1
+
+eval instant at 4s missing smoothed
+  missing 4
+
+eval instant at 8s missing smoothed
+  missing 5
+
+eval instant at 10s missing smoothed
+  missing 5
+
+eval instant at 30s missing smoothed
+  missing 5
+
+eval instant at 30m missing smoothed
+
+eval instant at 0 nans smoothed
+  nans 0
+
+eval instant at 1s nans smoothed
+  nans NaN
+
+eval instant at 2s nans smoothed
+  nans 2
+
+eval instant at 4s nans smoothed
+  nans NaN
+
+eval instant at 8s nans smoothed
+  nans NaN
+
+eval instant at 10s nans smoothed
+  nans NaN
+
+eval instant at 30s nans smoothed
+  nans NaN
+
+eval instant at 30m nans smoothed
+
+eval instant at 0 infs smoothed
+  infs 0
+
+eval instant at 1s infs smoothed
+  infs Inf
+
+eval instant at 2s infs smoothed
+  infs 2
+
+eval instant at 4s infs smoothed
+  infs Inf
+
+eval instant at 8s infs smoothed
+  infs Inf
+
+eval instant at 10s infs smoothed
+  infs Inf
+
+eval instant at 30s infs smoothed
+  infs Inf
+
+eval instant at 30m infs smoothed
+
+clear
+load 1s
+  zeros 0 0 _ 0 0
+  const 1 1 _ 1 1
+  inc 0 1 2 _ 4 5
+  dec 5 4 3 _ 1 0
+  var 2 1 3 _ 4 3
+
+eval instant at 0s zeros smoothed
+  zeros 0
+
+eval instant at 1s zeros smoothed
+  zeros 0
+
+eval instant at 2s zeros smoothed
+  zeros 0
+
+eval instant at 3s zeros smoothed
+  zeros 0
+
+eval instant at 4s zeros smoothed
+  zeros 0
+
+eval instant at 0s const smoothed
+  const 1
+
+eval instant at 1s const smoothed
+  const 1
+
+eval instant at 2s const smoothed
+  const 1
+
+eval instant at 3s const smoothed
+  const 1
+
+eval instant at 4s const smoothed
+  const 1
+
+eval instant at 0s inc smoothed
+  inc 0
+
+eval instant at 1s inc smoothed
+  inc 1
+
+eval instant at 2s inc smoothed
+  inc 2
+
+eval instant at 3s inc smoothed
+  inc 3
+
+eval instant at 4s inc smoothed
+  inc 4
+
+eval instant at 0s dec smoothed
+  dec 5
+
+eval instant at 1s dec smoothed
+  dec 4
+
+eval instant at 2s dec smoothed
+  dec 3
+
+eval instant at 3s dec smoothed
+  dec 2
+
+eval instant at 4s dec smoothed
+  dec 1
+
+eval instant at 0s var smoothed
+  var 2
+
+eval instant at 1s var smoothed
+  var 1
+
+eval instant at 2s var smoothed
+  var 3
+
+eval instant at 3s var smoothed
+  var 3.5
+
+eval instant at 4s var smoothed
+  var 4
+
+clear
+load 1s
+  metric{instance="1"} 1+1x10 _ _ 10-1x10
+  metric{instance="2"} 1 5 6 3 1 8 7 3 0 19 NaN NaN 10-1x10
+  metric{instance="3"} 0x10 {{schema:0 sum:5 count:4 buckets:[1 2 1]}} {{schema:0 sum:5 count:4 buckets:[1 2 1]}} 10-1x10
+
+eval instant at 0 increase(metric[1m] smoothed)
+  expect fail msg: smoothed and anchored modifiers do not work with native histograms
+
+eval instant at 10m increase(metric[1s] smoothed)
+
+eval instant at 0 increase(metric{instance="1"}[1m] smoothed)
+  {instance="1"} 0
+
+eval instant at 0 increase(metric{instance="2"}[1m] smoothed)
+  {instance="2"} 0
+
+eval instant at 1m40s increase(metric{instance="1"}[1m] smoothed)
+
+eval instant at 1m40s increase(metric{instance="2"}[1m] smoothed)
+
+eval instant at 2m increase(metric{instance="1"}[1m] smoothed)
+
+eval instant at 2m increase(metric{instance="2"}[1m] smoothed)
+
+eval instant at 3m increase(metric{instance="1"}[10s] smoothed)
+
+eval instant at 3m increase(metric{instance="2"}[10s] smoothed)
+
+eval instant at 5m increase(metric{instance="1"}[1m] smoothed)
+
+eval instant at 5m increase(metric{instance="2"}[1m] smoothed)
+
+eval instant at 0 rate(metric[1m] smoothed)
+  expect fail msg: smoothed and anchored modifiers do not work with native histograms
+
+eval instant at 10m rate(metric[1s] smoothed)
+
+eval instant at 0 rate(metric{instance="1"}[1m] smoothed)
+  {instance="1"} 0
+
+eval instant at 0 rate(metric{instance="2"}[1m] smoothed)
+  {instance="2"} 0
+
+eval instant at 1m40s rate(metric{instance="1"}[1m] smoothed)
+
+eval instant at 1m40s rate(metric{instance="2"}[1m] smoothed)
+
+eval instant at 2m rate(metric{instance="1"}[1m] smoothed)
+
+eval instant at 2m rate(metric{instance="2"}[1m] smoothed)
+
+eval instant at 3m rate(metric{instance="1"}[10s] smoothed)
+
+eval instant at 3m rate(metric{instance="2"}[10s] smoothed)
+
+eval instant at 5m rate(metric{instance="1"}[1m] smoothed)
+
+eval instant at 5m rate(metric{instance="2"}[1m] smoothed)
+
+eval instant at 0 delta(metric[1m] smoothed)
+  expect fail msg: smoothed and anchored modifiers do not work with native histograms
+
+eval instant at 10m delta(metric[1s] smoothed)
+
+eval instant at 0 delta(metric{instance="1"}[1m] smoothed)
+  {instance="1"} 0
+
+eval instant at 0 delta(metric{instance="2"}[1m] smoothed)
+  {instance="2"} 0
+
+eval instant at 1m40s delta(metric{instance="1"}[1m] smoothed)
+
+eval instant at 1m40s delta(metric{instance="2"}[1m] smoothed)
+
+eval instant at 2m delta(metric{instance="1"}[1m] smoothed)
+
+eval instant at 2m delta(metric{instance="2"}[1m] smoothed)
+
+eval instant at 3m delta(metric{instance="1"}[10s] smoothed)
+
+eval instant at 3m delta(metric{instance="2"}[10s] smoothed)
+
+eval instant at 5m delta(metric{instance="1"}[1m] smoothed)
+
+eval instant at 5m delta(metric{instance="2"}[1m] smoothed)
+
+clear
+load 1m
+  metric{instance="1"} 1+1x10 _ _ 10-1x1000
+  metric{instance="2"} 1 5 6 3 1 8 7 3 0 19 18 17 10-1x1000
+
+eval instant at 0 increase(metric[1m] smoothed)
+  {instance="1"} 0
+  {instance="2"} 0
+
+eval instant at 30s increase(metric[1m] smoothed)
+  {instance="1"} 0.5
+  {instance="2"} 2
+
+eval instant at 59s increase(metric[1m] smoothed)
+  {instance="1"} 0.9833333333333334
+  {instance="2"} 3.9333333333333336
+
+eval instant at 60s increase(metric[1m] smoothed)
+  {instance="1"} 1
+  {instance="2"} 4
+
+eval instant at 61s increase(metric[1m] smoothed)
+  {instance="1"} 1
+  {instance="2"} 3.95
+
+eval instant at 69s increase(metric[1m] smoothed)
+  {instance="1"} 1
+  {instance="2"} 3.5500000000000003
+
+eval instant at 98s increase(metric[1m1s] smoothed)
+  {instance="1"} 1.0166666666666666
+  {instance="2"} 2.166666666666666
+
+eval instant at 100m increase(metric[10m38s] smoothed)
+  {instance="1"} -792
+  {instance="2"} -803
+
+eval instant at 100m increase(metric[100m] smoothed)
+  {instance="1"} -2938
+  {instance="2"} -2946
+
+eval instant at 100m increase(metric[500m] smoothed)
+  {instance="1"} -2938
+  {instance="2"} -2946
+
+eval instant at 0 rate(metric[1m] smoothed)
+  {instance="1"} 0
+  {instance="2"} 0
+
+eval instant at 30s rate(metric[1m] smoothed)
+  {instance="1"} 0.008333333333333333
+  {instance="2"} 0.03333333333333333
+
+eval instant at 59s rate(metric[1m] smoothed)
+  {instance="1"} 0.01638888888888889
+  {instance="2"} 0.06555555555555556
+
+eval instant at 60s rate(metric[1m] smoothed)
+  {instance="1"} 0.016666666666666666
+  {instance="2"} 0.06666666666666667
+
+eval instant at 61s rate(metric[1m] smoothed)
+  {instance="1"} 0.016666666666666666
+  {instance="2"} 0.06583333333333334
+
+eval instant at 69s rate(metric[1m] smoothed)
+  {instance="1"} 0.016666666666666666
+  {instance="2"} 0.05916666666666667
+
+eval instant at 98s rate(metric[1m1s] smoothed)
+  {instance="1"} 0.016666666666666666
+  {instance="2"} 0.0355191256830601
+
+eval instant at 100m rate(metric[10m38s] smoothed)
+  {instance="1"} -1.2413793103448276
+  {instance="2"} -1.2586206896551724
+
+eval instant at 100m rate(metric[100m] smoothed)
+  {instance="1"} -0.48966666666666664
+  {instance="2"} -0.491
+
+eval instant at 100m rate(metric[500m] smoothed)
+  {instance="1"} -0.09793333333333333
+  {instance="2"} -0.0982
+
+eval instant at 0 delta(metric[1m] smoothed)
+  {instance="1"} 0
+  {instance="2"} 0
+
+eval instant at 30s delta(metric[1m] smoothed)
+  {instance="1"} 0.5
+  {instance="2"} 2
+
+eval instant at 59s delta(metric[1m] smoothed)
+  {instance="1"} 0.9833333333333334
+  {instance="2"} 3.9333333333333336
+
+eval instant at 60s delta(metric[1m] smoothed)
+  {instance="1"} 1
+  {instance="2"} 4
+
+eval instant at 61s delta(metric[1m] smoothed)
+  {instance="1"} 1
+  {instance="2"} 3.95
+
+eval instant at 69s delta(metric[1m] smoothed)
+  {instance="1"} 1
+  {instance="2"} 3.5500000000000003
+
+eval instant at 98s increase(metric[1m1s] smoothed)
+  {instance="1"} 1.0166666666666666
+  {instance="2"} 2.166666666666666
+
+eval instant at 100m delta(metric[10m38s] smoothed)
+  {instance="1"} -10.63333333333334
+  {instance="2"} -10.63333333333334
+
+eval instant at 100m delta(metric[100m] smoothed)
+  {instance="1"} -78
+  {instance="2"} -79
+
+eval instant at 100m delta(metric[500m] smoothed)
+  {instance="1"} -78
+  {instance="2"} -79

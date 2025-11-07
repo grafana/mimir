@@ -373,6 +373,7 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
 				Timestamp:          core.TimeFromTimestamp(expr.Timestamp),
 				Offset:             expr.OriginalOffset,
 				ExpressionPosition: core.PositionRangeFrom(expr.PositionRange()),
+				Smoothed:           expr.Smoothed,
 				// Note that we deliberately do not propagate SkipHistogramBuckets from the expression here.
 				// This is done in the skip histogram buckets optimization pass, after common subexpression elimination is applied,
 				// to simplify the logic in the common subexpression elimination optimization pass. Otherwise it would have to deal
@@ -393,6 +394,8 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
 				Offset:             vs.OriginalOffset,
 				Range:              expr.Range,
 				ExpressionPosition: core.PositionRangeFrom(expr.PositionRange()),
+				Anchored:           vs.Anchored,
+				Smoothed:           vs.Smoothed,
 				// Note that we deliberately do not propagate SkipHistogramBuckets from the expression here. See the explanation above.
 			},
 		}, nil
@@ -496,6 +499,21 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
 			node, err := p.nodeFromExpr(arg)
 			if err != nil {
 				return nil, err
+			}
+			matrixSelector, ok := node.(*core.MatrixSelector)
+			if ok && matrixSelector.Anchored {
+				_, supported := functions.FunctionsSupportingAnchoredMatrix[fnc]
+				if !supported {
+					// note that this error string matches a prometheus query evaluation error
+					return nil, fmt.Errorf("anchored modifier can only be used with: changes, delta, increase, rate, resets - not with %s", expr.Func.Name)
+				}
+			}
+			if ok && matrixSelector.Smoothed {
+				_, supported := functions.FunctionsSupportingSmoothedMatrix[fnc]
+				if !supported {
+					// note that this error string matches a prometheus query evaluation error
+					return nil, fmt.Errorf("smoothed modifier can only be used with: delta, increase, rate - not with %s", expr.Func.Name)
+				}
 			}
 
 			args = append(args, node)

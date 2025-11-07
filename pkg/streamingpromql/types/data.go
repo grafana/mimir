@@ -155,6 +155,11 @@ type RangeVectorStepData struct {
 	// produced by the query.
 	// RangeEnd is inclusive (ie. points with timestamp <= RangeEnd are included in the range).
 	RangeEnd int64
+
+	Anchored          bool
+	Smoothed          bool
+	SmoothedHeadPoint *promql.FPoint
+	SmoothedTailPoint *promql.FPoint
 }
 
 type ScalarData struct {

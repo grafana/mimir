@@ -197,6 +197,9 @@ func New(cfg Config, limits *validation.Overrides, distributor Distributor, quer
 	// This enables duration arithmetic https://github.com/prometheus/prometheus/pull/16249.
 	parser.ExperimentalDurationExpr = true
 
+	// This enables the anchored and smoothed selector modifiers
+	parser.EnableExtendedRangeSelectors = true
+
 	var eng promql.QueryEngine
 	var streamingEngine *streamingpromql.Engine
 

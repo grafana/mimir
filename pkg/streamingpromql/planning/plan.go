@@ -29,7 +29,7 @@ func (v QueryPlanVersion) String() string {
 	return strconv.FormatUint(uint64(v), 10)
 }
 
-var MaximumSupportedQueryPlanVersion = QueryPlanV1
+var MaximumSupportedQueryPlanVersion = QueryPlanV3
 
 const QueryPlanVersionZero = QueryPlanVersion(0)
 
@@ -37,6 +37,9 @@ const QueryPlanVersionZero = QueryPlanVersion(0)
 // 1. DropName node
 // 2. Step invariant expression node
 const QueryPlanV1 = QueryPlanVersion(1)
+
+// This version introduces the anchored & smoothed range selector modifiers
+const QueryPlanV3 = QueryPlanVersion(3)
 
 type QueryPlan struct {
 	TimeRange types.QueryTimeRange

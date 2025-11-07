@@ -82,6 +82,7 @@ func MaterializeVectorSelector(v *VectorSelector, _ *planning.Materializer, time
 		SkipHistogramBuckets:     v.SkipHistogramBuckets,
 		ExpressionPosition:       v.ExpressionPosition(),
 		MemoryConsumptionTracker: params.MemoryConsumptionTracker,
+		Smoothed:                 v.Smoothed,
 	}
 
 	return planning.NewSingleUseOperatorFactory(selectors.NewInstantVectorSelector(selector, params.MemoryConsumptionTracker, v.ReturnSampleTimestamps)), nil
@@ -92,8 +93,7 @@ func (v *VectorSelector) ResultType() (parser.ValueType, error) {
 }
 
 func (v *VectorSelector) QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) planning.QueriedTimeRange {
-	minT, maxT := selectors.ComputeQueriedTimeRange(queryTimeRange, TimestampFromTime(v.Timestamp), 0, v.Offset.Milliseconds(), lookbackDelta)
-
+	minT, maxT := selectors.ComputeQueriedTimeRange(queryTimeRange, TimestampFromTime(v.Timestamp), 0, v.Offset.Milliseconds(), lookbackDelta, false, v.Smoothed)
 	return planning.NewQueriedTimeRange(timestamp.Time(minT), timestamp.Time(maxT))
 }
 
@@ -102,5 +102,8 @@ func (v *VectorSelector) ExpressionPosition() posrange.PositionRange {
 }
 
 func (v *VectorSelector) MinimumRequiredPlanVersion() planning.QueryPlanVersion {
+	if v.Smoothed {
+		return planning.QueryPlanV3
+	}
 	return planning.QueryPlanVersionZero
 }

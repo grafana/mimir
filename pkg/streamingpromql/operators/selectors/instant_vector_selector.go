@@ -7,6 +7,7 @@ package selectors
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 
@@ -114,16 +115,29 @@ func (v *InstantVectorSelector) NextSeries(ctx context.Context) (types.InstantVe
 
 		if valueType == chunkenc.ValNone || t > ts {
 			var ok bool
+
+			// Keep this a copy of this point for use with smoothed case below.
+			right := promql.FPoint{T: t, F: f}
+
 			t, f, h, ok = v.memoizedIterator.PeekPrev()
 			if !ok || t <= ts-v.Selector.LookbackDelta.Milliseconds() {
 				continue
 			}
+
 			if h != nil {
 				if t == lastHistogramT && lastHistogram != nil {
 					// Reuse exactly the same FloatHistogram as last time, don't bother creating another FloatHistogram yet.
 					// PeekPrev can return a new FloatHistogram instance with the same underlying bucket slices as a previous call
 					// to AtFloatHistogram, so if we're going to return this histogram, we'll make a copy below.
 					h = lastHistogram
+				}
+			} else {
+				// If this query uses the 'smoothed' modifier, we look back within the look-back delta
+				// to find the most recent float value before the requested timestamp.
+				// If both a previous and a next point are found, the value at the requested time
+				// is computed as the linear interpolation between those two points.
+				if v.Selector.Smoothed && valueType == chunkenc.ValFloat {
+					f = f + (right.F-f)*float64(ts-t)/float64(right.T-t)
 				}
 			}
 		}
@@ -142,6 +156,11 @@ func (v *InstantVectorSelector) NextSeries(ctx context.Context) (types.InstantVe
 		// PeekPrev will set the histogram to nil, or the value to 0 if the other type exists.
 		// So check if histograms is nil first. If we don't have a histogram, then we should have a value and vice-versa.
 		if h != nil {
+
+			if v.Selector.Smoothed {
+				return types.InstantVectorSeriesData{}, errors.New("smoothed and anchored modifiers do not work with native histograms")
+			}
+
 			// Only create the slice once we know the series is a histogram or not.
 			// (It is possible to over-allocate in the case where we have both floats and histograms, but that won't be common).
 			if len(data.Histograms) == 0 {

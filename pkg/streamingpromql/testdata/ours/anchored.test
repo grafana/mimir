@@ -1,0 +1,434 @@
+load 15s
+  metric 1+1x4 9+1x4
+
+eval instant at 5s increase(metric[1m])
+
+eval instant at 20s increase(metric[1m])
+  {} 1.833333333
+
+eval instant at 35s increase(metric[1m])
+  {} 2.833333333
+
+eval instant at 50s increase(metric[1m])
+  {} 4
+
+eval instant at 65s increase(metric[1m])
+  {} 4
+
+eval instant at 80s increase(metric[1m])
+  {} 8
+
+eval instant at 95s increase(metric[1m])
+  {} 8
+
+eval instant at 110s increase(metric[1m])
+  {} 8
+
+eval instant at 125s increase(metric[1m])
+  {} 4
+
+eval instant at 5s increase(metric[1m] anchored)
+  {} 0
+
+# The increase = 2-1 = 1 {F: 1, T: -40000}, {F: 1, T: 0}, {F: 2, T: 15000}, {F: 2, T: 20000}
+eval instant at 20s increase(metric[1m] anchored)
+  {} 1
+
+eval instant at 35s increase(metric[1m] anchored)
+  {} 2
+
+eval instant at 50s increase(metric[1m] anchored)
+  {} 3
+
+eval instant at 65s increase(metric[1m] anchored)
+  {} 4
+
+eval instant at 80s increase(metric[1m] anchored)
+  {} 7
+
+eval instant at 95s increase(metric[1m] anchored)
+  {} 7
+
+eval instant at 110s increase(metric[1m] anchored)
+  {} 7
+
+eval instant at 125s increase(metric[1m] anchored)
+  {} 7
+
+clear
+load 15s
+  metric 1+1x2 _ _ 9+1x4
+
+eval instant at 5s increase(metric[1m])
+
+eval instant at 20s increase(metric[1m])
+  {} 1.833333333
+
+eval instant at 35s increase(metric[1m])
+  {} 2.833333333
+
+eval instant at 50s increase(metric[1m])
+  {} 3.166666666
+
+eval instant at 65s increase(metric[1m])
+  {} 2.166666666
+
+eval instant at 80s increase(metric[1m])
+  {} 8
+
+eval instant at 95s increase(metric[1m])
+  {} 1.833333333
+
+eval instant at 110s increase(metric[1m])
+  {} 2.833333333
+
+eval instant at 125s increase(metric[1m])
+  {} 4
+
+eval instant at 5s increase(metric[1m] anchored)
+  {} 0
+
+eval instant at 20s increase(metric[1m] anchored)
+  {} 1
+
+eval instant at 35s increase(metric[1m] anchored)
+  {} 2
+
+eval instant at 50s increase(metric[1m] anchored)
+  {} 2
+
+eval instant at 65s increase(metric[1m] anchored)
+  {} 2
+
+eval instant at 80s increase(metric[1m] anchored)
+  {} 7
+
+eval instant at 95s increase(metric[1m] anchored)
+  {} 7
+
+eval instant at 110s increase(metric[1m] anchored)
+  {} 8
+
+eval instant at 125s increase(metric[1m] anchored)
+  {} 9
+
+# Test that inverval is left-open.
+
+clear
+load 1m
+  metric 1 2 _ 4 5
+
+# There is no values within the range of 1m-2m (left-open / right-closed).
+# In this case the anchoring does not fill from the extended look-back.
+eval instant at 2m increase(metric[1m] anchored)
+
+eval instant at 2m rate(metric[1m] anchored)
+
+eval instant at 2m delta(metric[1m] anchored)
+
+# In this case the series is 1, 2, 2
+# The 1 is picked up in the look-back <= 59s, the 2 is in the range, and the 2 is re-used for the end of the range value
+eval instant at 2m increase(metric[1m1s] anchored)
+  {} 1
+
+# Basic test with counter resets
+
+clear
+load 1m
+  metric{id="1"} 1+1x4 1+1x4
+  metric{id="2"} 3 2+2x9
+  metric{id="3"} 5+3x2 3+3x6
+
+# Without the anchored modifier only a single point is returned for the range query
+eval instant at 1m30s metric[1m]
+  expect range vector from 1m to 1m step 0
+  {__name__="metric", id="1"} 2
+  {__name__="metric", id="2"} 2
+  {__name__="metric", id="3"} 8
+
+# Since there is only a single point in the range, the increase can not return a value
+eval instant at 1m30s increase(metric[1m])
+
+# When the anchor modifier is used, the range query will return the following;
+# id=1 - {F: 1, T: 30000}, {F: 2, T: 60000}, {F: 2, T: 90000}
+# id=2 - {F: 3, T: 30000}, {F: 2, T: 60000}, {F: 2, T: 90000}
+# id=3 - {F: 5, T: 30000}, {F: 8, T: 60000}, {F: 8, T: 90000}
+# Note that for id=2, the value goes down and this is series is treated as a counter
+eval instant at 1m30s increase(metric[1m] anchored)
+  {id="1"} 1
+  {id="2"} 2
+  {id="3"} 3
+
+# Since there is only a single point in the range, the delta can not return a value
+eval instant at 1m30s delta(metric[1m])
+
+eval instant at 1m30s delta(metric[1m] anchored)
+  {id="1"} 1
+  {id="2"} -1
+  {id="3"} 3
+
+# Since there is only a single point in the range, the rate can not return a value
+eval instant at 1m30s rate(metric[1m])
+
+eval instant at 1m30s rate(metric[1m] anchored)
+  {id="1"} 0.016666666666666666
+  {id="2"} 0.03333333333333333
+  {id="3"} 0.05
+
+# Since there is only a single point in the range, the resets tally is 0
+eval instant at 1m30s resets(metric[1m])
+  {id="1"} 0
+  {id="2"} 0
+  {id="3"} 0
+
+eval instant at 1m30s resets(metric[1m] anchored)
+  {id="1"} 0
+  {id="2"} 1
+  {id="3"} 0
+
+eval instant at 3m delta(metric[1m] anchored)
+  {id="1"} 1
+  {id="2"} 2
+  {id="3"} -8
+
+eval instant at 3m increase(metric[1m] anchored)
+  {id="1"} 1
+  {id="2"} 2
+  {id="3"} 3
+
+eval instant at 3m resets(metric[1m] anchored)
+  {id="1"} 0
+  {id="2"} 0
+  {id="3"} 1
+
+eval instant at 3m changes(metric[1m] anchored)
+  {id="1"} 1
+  {id="2"} 1
+  {id="3"} 1
+
+eval instant at 3m rate(metric[1m] anchored)
+  {id="1"} 0.016666666666666666
+  {id="2"} 0.03333333333333333
+  {id="3"} 0.05
+
+eval instant at 3m30s delta(metric[1m] anchored)
+  {id="1"} 1
+  {id="2"} 2
+  {id="3"} -8
+
+eval instant at 6m increase(metric[5m])
+  {id="1"} 5
+  {id="2"} 10
+  {id="3"} 15
+
+eval instant at 5m increase(metric[5m] anchored)
+  {id="1"} 5
+  {id="2"} 10
+  {id="3"} 15
+
+eval instant at 15m increase(metric[5m] anchored)
+
+clear
+load 1m
+  metric{id="1"} 1+1x10
+  metric{id="2"} 1 1+1x10
+  metric{id="3"} 99-1x10
+  metric{id="4"} 99 99-1x10
+
+eval instant at 5m changes(metric[5m])
+  {id="1"} 4
+  {id="2"} 4
+  {id="3"} 4
+  {id="4"} 4
+
+eval instant at 5m30s changes(metric[5m])
+  {id="1"} 4
+  {id="2"} 4
+  {id="3"} 4
+  {id="4"} 4
+
+eval instant at 5m0s changes(metric[5m] anchored)
+  {id="1"} 5
+  {id="2"} 4
+  {id="3"} 5
+  {id="4"} 4
+
+eval instant at 6m changes(metric[5m] anchored)
+  {id="1"} 5
+  {id="2"} 5
+  {id="3"} 5
+  {id="4"} 5
+
+eval instant at 5m30s changes(metric[5m] anchored)
+  {id="1"} 5
+  {id="2"} 4
+  {id="3"} 5
+  {id="4"} 4
+
+eval instant at 5m30s resets(metric[5m])
+  {id="1"} 0
+  {id="2"} 0
+  {id="3"} 4
+  {id="4"} 4
+
+eval instant at 5m30s resets(metric[5m] anchored)
+  {id="1"} 0
+  {id="2"} 0
+  {id="3"} 5
+  {id="4"} 4
+
+clear
+load 1m
+  metric{id="1"} 2 _ 1 _ _ _ _ _ 0
+  metric{id="2"} 99-1x10
+
+eval instant at 2m changes(metric[1m])
+  {id="1"} 0
+  {id="2"} 0
+
+eval instant at 3m changes(metric[1m])
+  {id="2"} 0
+
+eval instant at 2m changes(metric[1m] anchored)
+  {id="1"} 1
+  {id="2"} 1
+
+# I dont think this is correct as metric{id="1"}[1m] anchored returns an empty matrix
+#eval instant at 3m changes(metric[1m] anchored)
+#    {id="1"} 1
+#    {id="2"} 1
+
+# {F: 0, T: 420000}, {F: 0, T: 480000}
+eval instant at 8m changes(metric[1m] anchored)
+  {id="1"} 0
+  {id="2"} 1
+
+# {F: 1, T: 419999}, {F: 0, T: 480000}
+eval instant at 8m changes(metric[1m1ms] anchored)
+  {id="1"} 1
+  {id="2"} 2
+
+eval instant at 2m resets(metric[1m])
+  {id="1"} 0
+  {id="2"} 0
+
+eval instant at 3m resets(metric[1m])
+  {id="2"} 0
+
+eval instant at 2m resets(metric[1m] anchored)
+  {id="1"} 1
+  {id="2"} 1
+
+eval instant at 3m metric[1m] anchored
+  expect range vector from 2m to 3m step 1m
+  {__name__="metric", id="2"} 97 96
+
+# I dont think this is correct as metric{id="1"}[1m] anchored returns an empty matrix - see above
+#eval instant at 3m resets(metric[1m] anchored)
+#    {id="1"} 1
+#    {id="2"} 1
+
+eval instant at 8m resets(metric[1m] anchored)
+  {id="1"} 0
+  {id="2"} 1
+
+eval instant at 8m resets(metric[1m1ms] anchored)
+  {id="1"} 1
+  {id="2"} 2
+
+clear
+
+eval instant at 1m resets(foo[3m] anchored)
+
+eval instant at 1m changes(foo[3m] anchored)
+
+clear
+
+load 1m
+  mixed 1 2 3 {{schema:0 sum:5 count:4 buckets:[1 2 1]}} 4 5 6 7+1x60
+
+eval instant at 1m resets(mixed[1m] anchored)
+  {} 0
+
+eval instant at 3m resets(mixed[1m] anchored)
+  expect fail msg: smoothed and anchored modifiers do not work with native histograms
+
+eval instant at 4m resets(mixed[1m] anchored)
+  expect fail msg: smoothed and anchored modifiers do not work with native histograms
+
+eval instant at 5m resets(mixed[1m] anchored)
+  expect fail msg: smoothed and anchored modifiers do not work with native histograms
+
+# Whilst the histogram is within the range + look-back window the query will fail
+eval instant at 8m resets(mixed[1m] anchored)
+  expect fail msg: smoothed and anchored modifiers do not work with native histograms
+
+eval instant at 10m resets(mixed[1m] anchored)
+  {} 0
+
+clear
+
+load 1m
+  metric 1 2 3 NaN -NaN 4 5 6
+  metric_inf 1 2 3 Inf Inf 4 5 6
+
+eval instant at 1m resets(metric[1m] anchored)
+  {} 0
+
+eval instant at 3m resets(metric[1m] anchored)
+  {} 0
+
+eval instant at 4m resets(metric[1m] anchored)
+  {} 0
+
+eval instant at 2m metric[2m] anchored
+  expect range vector from 0 to 2m step 1m
+  {__name__="metric"} 1 2 3
+
+eval instant at 3m metric[2m] anchored
+  expect range vector from 1m to 3m step 1m
+  {__name__="metric"} 2 3 NaN
+
+eval instant at 4m metric[2m] anchored
+  expect range vector from 2m to 4m step 1m
+  {__name__="metric"} 3 NaN NaN
+
+eval instant at 5m metric[2m] anchored
+  expect range vector from 3m to 5m step 1m
+  {__name__="metric"} NaN NaN 4
+
+eval instant at 6m metric[2m] anchored
+  expect range vector from 4m to 6m step 1m
+  {__name__="metric"} NaN 4 5
+
+eval instant at 2m metric_inf[2m] anchored
+  expect range vector from 0 to 2m step 1m
+  {__name__="metric_inf"} 1 2 3
+
+eval instant at 3m metric_inf[2m] anchored
+  expect range vector from 1m to 3m step 1m
+  {__name__="metric_inf"} 2 3 Inf
+
+eval instant at 4m metric_inf[2m] anchored
+  expect range vector from 2m to 4m step 1m
+  {__name__="metric_inf"} 3 Inf Inf
+
+eval instant at 5m metric_inf[2m] anchored
+  expect range vector from 3m to 5m step 1m
+  {__name__="metric_inf"} Inf Inf 4
+
+eval instant at 6m metric_inf[2m] anchored
+  expect range vector from 4m to 6m step 1m
+  {__name__="metric_inf"} Inf 4 5
+
+clear
+
+load 1m
+  metric 1+1x10000
+
+eval instant at 30m metric[20m] anchored
+  expect range vector from 10m to 30m step 1m
+  {__name__="metric"} 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31
+
+eval range from 0 to 10m step 1m increase(metric[1m] anchored)
+  {} 0 1 1 1 1 1 1 1 1 1 1

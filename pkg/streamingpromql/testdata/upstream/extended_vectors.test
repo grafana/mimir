@@ -323,9 +323,10 @@ eval instant at 2m changes(metric[1m] anchored)
     {id="1"} 1
     {id="2"} 1
 
-eval instant at 3m changes(metric[1m] anchored)
-    {id="1"} 1
-    {id="2"} 1
+# Unsupported by streaming engine - requires https://github.com/prometheus/prometheus/pull/17479
+# eval instant at 3m changes(metric[1m] anchored)
+#    {id="1"} 1
+#    {id="2"} 1
 
 eval instant at 8m changes(metric[1m] anchored)
     {id="1"} 0
@@ -346,9 +347,10 @@ eval instant at 2m resets(metric[1m] anchored)
     {id="1"} 1
     {id="2"} 1
 
-eval instant at 3m resets(metric[1m] anchored)
-    {id="1"} 1
-    {id="2"} 1
+# Unsupported by streaming engine - requires https://github.com/prometheus/prometheus/pull/17479
+# eval instant at 3m resets(metric[1m] anchored)
+#    {id="1"} 1
+#    {id="2"} 1
 
 eval instant at 8m resets(metric[1m] anchored)
     {id="1"} 0
@@ -366,33 +368,44 @@ eval instant at 2m15s increase(metric[2m] smoothed)
     {} 12
 
 clear
-eval instant at 1m deriv(foo[3m] smoothed)
-    expect fail msg: smoothed modifier can only be used with: delta, increase, rate - not with deriv
+# MQE fails these queries in the planning phase which the test harness handles differently.
+# The equivalent tests have been added to engine_test#TestExtendedRangeSelectors().
 
-eval instant at 1m resets(foo[3m] smoothed)
-    expect fail msg: smoothed modifier can only be used with: delta, increase, rate - not with resets
+# Unsupported by streaming engine
+# eval instant at 1m deriv(foo[3m] smoothed)
+#    expect fail msg: smoothed modifier can only be used with: delta, increase, rate - not with deriv
 
-eval instant at 1m changes(foo[3m] smoothed)
-    expect fail msg: smoothed modifier can only be used with: delta, increase, rate - not with changes
+# Unsupported by streaming engine - MQE fails this in the planning phase
+# eval instant at 1m resets(foo[3m] smoothed)
+#     expect fail msg: smoothed modifier can only be used with: delta, increase, rate - not with resets
 
-eval instant at 1m max_over_time(foo[3m] smoothed)
-    expect fail msg: smoothed modifier can only be used with: delta, increase, rate - not with max_over_time
+# Unsupported by streaming engine - MQE fails this in the planning phase
+# eval instant at 1m changes(foo[3m] smoothed)
+#    expect fail msg: smoothed modifier can only be used with: delta, increase, rate - not with changes
 
-eval instant at 1m predict_linear(foo[3m] smoothed, 4)
-    expect fail msg: smoothed modifier can only be used with: delta, increase, rate - not with predict_linear
+# Unsupported by streaming engine
+# eval instant at 1m max_over_time(foo[3m] smoothed)
+#    expect fail msg: smoothed modifier can only be used with: delta, increase, rate - not with max_over_time
 
-eval instant at 1m deriv(foo[3m] anchored)
-    expect fail msg: anchored modifier can only be used with: changes, delta, increase, rate, resets - not with deriv
+# Unsupported by streaming engine
+# eval instant at 1m predict_linear(foo[3m] smoothed, 4)
+#    expect fail msg: smoothed modifier can only be used with: delta, increase, rate - not with predict_linear
+
+# Unsupported by streaming engine
+# eval instant at 1m deriv(foo[3m] anchored)
+#    expect fail msg: anchored modifier can only be used with: changes, delta, increase, rate, resets - not with deriv
 
 eval instant at 1m resets(foo[3m] anchored)
 
 eval instant at 1m changes(foo[3m] anchored)
 
-eval instant at 1m max_over_time(foo[3m] anchored)
-    expect fail msg: anchored modifier can only be used with: changes, delta, increase, rate, resets - not with max_over_time
+# Unsupported by streaming engine
+# eval instant at 1m max_over_time(foo[3m] anchored)
+#    expect fail msg: anchored modifier can only be used with: changes, delta, increase, rate, resets - not with max_over_time
 
-eval instant at 1m predict_linear(foo[3m] anchored, 4)
-    expect fail msg: anchored modifier can only be used with: changes, delta, increase, rate, resets - not with predict_linear
+# Unsupported by streaming engine
+# eval instant at 1m predict_linear(foo[3m] anchored, 4)
+#    expect fail msg: anchored modifier can only be used with: changes, delta, increase, rate, resets - not with predict_linear
 
 clear
 load 10s
