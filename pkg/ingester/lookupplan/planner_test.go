@@ -71,7 +71,7 @@ func TestCostBasedPlannerPlanIndexLookup(t *testing.T) {
 
 			// Parse query shard if specified
 			var hints *storage.SelectHints
-			if tc.queryShard != "" && tc.queryShard != "0_of_0" {
+			if tc.queryShard != "" {
 				shardIndex, shardCount, err := sharding.ParseShardIDLabelValue(tc.queryShard)
 				require.NoError(t, err, "failed to parse queryShard: %q", tc.queryShard)
 				hints = &storage.SelectHints{
@@ -139,7 +139,7 @@ func BenchmarkCostBasedPlannerPlanIndexLookup(b *testing.B) {
 
 			// Parse query shard if specified
 			var hints *storage.SelectHints
-			if tc.queryShard != "" && tc.queryShard != "0_of_0" {
+			if tc.queryShard != "" {
 				shardIndex, shardCount, err := sharding.ParseShardIDLabelValue(tc.queryShard)
 				require.NoError(b, err, "failed to parse queryShard: %q", tc.queryShard)
 				hints = &storage.SelectHints{
