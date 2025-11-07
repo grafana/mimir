@@ -10,7 +10,7 @@ require (
 	github.com/failsafe-go/failsafe-go v0.9.1
 	github.com/go-kit/log v0.2.1
 	github.com/go-openapi/strfmt v0.24.0
-	github.com/go-openapi/swag v0.25.1
+	github.com/go-openapi/swag v0.25.1 // indirect
 	github.com/gogo/protobuf v1.3.2
 	github.com/gogo/status v1.1.1
 	github.com/golang/protobuf v1.5.4
@@ -58,6 +58,7 @@ require (
 	github.com/cortexproject/promqlsmith v0.0.0-20251018201159-9e00e5e62e4e
 	github.com/dennwc/varint v1.0.0
 	github.com/felixge/fgprof v0.9.5
+	github.com/go-openapi/swag/jsonutils v0.25.1
 	github.com/golang/groupcache v0.0.0-20241129210726-2c02b8208cf8
 	github.com/google/go-cmp v0.7.0
 	github.com/google/go-github/v57 v57.0.0
@@ -132,7 +133,6 @@ require (
 	github.com/go-openapi/swag/conv v0.25.1 // indirect
 	github.com/go-openapi/swag/fileutils v0.25.1 // indirect
 	github.com/go-openapi/swag/jsonname v0.25.1 // indirect
-	github.com/go-openapi/swag/jsonutils v0.25.1 // indirect
 	github.com/go-openapi/swag/loading v0.25.1 // indirect
 	github.com/go-openapi/swag/mangling v0.25.1 // indirect
 	github.com/go-openapi/swag/netutils v0.25.1 // indirect
