@@ -247,9 +247,11 @@ func enableExperimentalParserFeaturesDuringTest(t *testing.T) {
 	oldExperimentalFunctions := parser.EnableExperimentalFunctions
 	parser.ExperimentalDurationExpr = true
 	parser.EnableExperimentalFunctions = true
+	parser.EnableExtendedRangeSelectors = true
 	t.Cleanup(func() {
 		parser.ExperimentalDurationExpr = oldDurationExpressions
 		parser.EnableExperimentalFunctions = oldExperimentalFunctions
+		parser.EnableExtendedRangeSelectors = false
 	})
 }
 
