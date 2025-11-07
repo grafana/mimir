@@ -142,8 +142,8 @@ func (m *RangeVectorSelector) NextStepSamples(ctx context.Context) (*types.Range
 		}
 
 		// Store the smoothed points in the range step data result so that consumers of this data can reference these values
-		// without having to re-calculate off the original points.
-		m.stepData.Floats = m.extendedRangeFloats.View()
+		// without having to re-calculate off the original points. Re-use the view
+		m.stepData.Floats = m.extendedRangeFloats.View(m.stepData.Floats)
 		m.stepData.SmoothedHeadPoint = smoothedHead
 		m.stepData.SmoothedTailPoint = smoothedTail
 	} else {

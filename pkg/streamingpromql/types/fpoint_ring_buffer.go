@@ -108,10 +108,12 @@ func (b *FPointRingBuffer) ViewUntilSearchingForwards(maxT int64, existing *FPoi
 
 // View returns a view which includes all points in the ring buffer.
 // The returned view is no longer valid if this buffer is modified (eg. a point is added, or the buffer is reset or closed).
-func (b *FPointRingBuffer) View() *FPointRingBufferView {
-	view := &FPointRingBufferView{buffer: b}
-	view.size = b.size
-	return view
+func (b *FPointRingBuffer) View(existing *FPointRingBufferView) *FPointRingBufferView {
+	if existing == nil {
+		existing = &FPointRingBufferView{buffer: b}
+	}
+	existing.size = b.size
+	return existing
 }
 
 // ViewUntilSearchingBackwards is like ViewUntilSearchingForwards, except it examines the points from the end of the buffer, so
