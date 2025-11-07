@@ -911,7 +911,7 @@ func mustStatusWithDetails(code codes.Code, cause mimirpb.ErrorCause) *status.St
 }
 
 func TestRulerErrorClassifier_IsOperatorControllable(t *testing.T) {
-	classifier := NewRulerErrorClassifier(log.NewNopLogger())
+	classifier := NewRulerErrorClassifier()
 
 	tests := []struct {
 		name     string

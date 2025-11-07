@@ -267,7 +267,6 @@ func MetricsQueryFunc(qf rules.QueryFunc, userID string, queries, failedQueries 
 }
 
 // isStorageError returns true if the error is classified as a storage error (5xx)
-// by querier.TranslateToPromqlAPIError.
 func isStorageError(err error) bool {
 	_, ok := querier.TranslateToPromqlAPIError(err).(promql.ErrStorage)
 	return ok
@@ -405,7 +404,6 @@ func DefaultTenantManagerFactory(
 		// Wrap the query function with our custom logic.
 		wrappedQueryFunc := WrapQueryFuncWithReadConsistency(queryFunc, overrides, userID, logger)
 		remoteQuerier := cfg.QueryFrontend.Address != ""
-
 		wrappedQueryFunc = MetricsQueryFunc(wrappedQueryFunc, userID, totalQueries, failedQueries, remoteQuerier)
 		wrappedQueryFunc = RecordAndReportRuleQueryMetrics(wrappedQueryFunc, queryTime, zeroFetchedSeriesCount, remoteQuerier, logger)
 
@@ -446,7 +444,7 @@ func DefaultTenantManagerFactory(
 				return overrides.RulerEvaluationDelay(userID)
 			},
 			RuleConcurrencyController:           concurrencyController.NewTenantConcurrencyControllerFor(userID),
-			OperatorControllableErrorClassifier: NewRulerErrorClassifier(logger),
+			OperatorControllableErrorClassifier: NewRulerErrorClassifier(),
 		})
 	}
 }
@@ -471,14 +469,10 @@ func WrapQueryableErrors(err error) error {
 	return QueryableError{err: err}
 }
 
-type rulerErrorClassifier struct {
-	logger log.Logger
-}
+type rulerErrorClassifier struct{}
 
-func NewRulerErrorClassifier(logger log.Logger) *rulerErrorClassifier {
-	return &rulerErrorClassifier{
-		logger: logger,
-	}
+func NewRulerErrorClassifier() *rulerErrorClassifier {
+	return &rulerErrorClassifier{}
 }
 
 // IsOperatorControllable classifies rule evaluation errors as operator-controllable or user-controllable.
