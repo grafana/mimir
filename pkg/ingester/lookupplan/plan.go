@@ -71,8 +71,8 @@ func (p plan) ScanMatchers() []*labels.Matcher {
 	return matchers
 }
 
-// useIndexFor returns a copy of this plan where predicate predicateIdx is used on the index.
-func (p plan) useIndexFor(predicateIdx int) plan {
+// UseIndexFor returns a copy of this plan where predicate predicateIdx is used on the index.
+func (p plan) UseIndexFor(predicateIdx int) plan {
 	var copied []bool
 	if p.indexPredicatesPool != nil {
 		copied = p.indexPredicatesPool.Get(len(p.indexPredicate))
@@ -91,8 +91,8 @@ func (p plan) withoutMemoryPool() plan {
 	return p
 }
 
-// totalCost returns the sum of indexLookupCost + intersectionCost + filterCost
-func (p plan) totalCost() float64 {
+// TotalCost returns the sum of indexLookupCost + intersectionCost + filterCost
+func (p plan) TotalCost() float64 {
 	return p.indexLookupCost() + p.intersectionCost() + p.seriesRetrievalCost() + p.filterCost()
 }
 
@@ -126,7 +126,7 @@ func (p plan) intersectionCost() float64 {
 // This includes retrieving the series' labels from the index and checking if the series belongs to the query's shard.
 // Realistically we don't retrieve every series because we have the series hash cache, but we ignore that for simplicity.
 func (p plan) seriesRetrievalCost() float64 {
-	return float64(p.numSelectedPostings()) * p.config.RetrievedSeriesCost
+	return float64(p.NumSelectedPostings()) * p.config.RetrievedSeriesCost
 }
 
 // filterCost returns the cost of applying scan predicates to the fetched series.
@@ -145,7 +145,7 @@ func (p plan) filterCost() float64 {
 }
 
 func (p plan) numSelectedPostingsInOurShard() uint64 {
-	postings := p.numSelectedPostings()
+	postings := p.NumSelectedPostings()
 
 	if p.shard == nil || p.shard.ShardCount == 0 {
 		return postings
@@ -160,7 +160,7 @@ func (p plan) numSelectedPostingsInOurShard() uint64 {
 	return shardedPostings
 }
 
-func (p plan) numSelectedPostings() uint64 {
+func (p plan) NumSelectedPostings() uint64 {
 	finalSelectivity := 1.0
 	for i, pred := range p.predicates {
 		if !p.indexPredicate[i] {
@@ -193,8 +193,8 @@ func (p plan) nonShardedCardinality() uint64 {
 	return uint64(finalSelectivity * float64(p.totalSeries))
 }
 
-// finalCardinality returns an estimate of the total number of series that this plan would return.
-func (p plan) finalCardinality() uint64 {
+// FinalCardinality returns an estimate of the total number of series that this plan would return.
+func (p plan) FinalCardinality() uint64 {
 	baseCardinality := p.nonShardedCardinality()
 
 	if p.shard == nil || p.shard.ShardCount == 0 {
@@ -210,7 +210,7 @@ func (p plan) finalCardinality() uint64 {
 	return shardedCardinality
 }
 
-func (p plan) addPredicatesToSpan(span trace.Span) {
+func (p plan) AddPredicatesToSpan(span trace.Span) {
 	// Preallocate the attributes. Use an array to ensure the capacity is correct at compile time.
 	const numAttributesPerPredicate = 7
 	attributes := make([]attribute.KeyValue, 0, len(p.predicates)*numAttributesPerPredicate)
@@ -230,17 +230,17 @@ func (p plan) addPredicatesToSpan(span trace.Span) {
 	span.AddEvent("lookup_plan_predicate", trace.WithAttributes(attributes...))
 }
 
-func (p plan) addSpanEvent(span trace.Span, planName string) {
+func (p plan) AddSpanEvent(span trace.Span, planName string) {
 	span.AddEvent("lookup plan", trace.WithAttributes(attribute.String("plan_name", planName),
 		attribute.Int64("shard_count", int64(maybe(p.shard).ShardCount)),
-		attribute.Float64("total_cost", p.totalCost()),
+		attribute.Float64("total_cost", p.TotalCost()),
 		attribute.Float64("index_lookup_cost", p.indexLookupCost()),
 		attribute.Float64("intersection_cost", p.intersectionCost()),
-		attribute.Int64("estimated_retrieved_series", int64(p.numSelectedPostings())),
+		attribute.Int64("estimated_retrieved_series", int64(p.NumSelectedPostings())),
 		attribute.Float64("series_retrieval_cost", p.seriesRetrievalCost()),
 		attribute.Int64("estimated_series_after_sharding", int64(p.numSelectedPostingsInOurShard())),
 		attribute.Float64("filter_cost", p.filterCost()),
-		attribute.Int64("estimated_final_cardinality", int64(p.finalCardinality())),
+		attribute.Int64("estimated_final_cardinality", int64(p.FinalCardinality())),
 
 		attribute.Stringer("index_matchers", util.MatchersStringer(p.IndexMatchers())),
 		attribute.Stringer("scan_matchers", util.MatchersStringer(p.ScanMatchers()))))

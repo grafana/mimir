@@ -129,7 +129,7 @@ func (p CostBasedPlanner) PlanIndexLookup(ctx context.Context, inPlan index.Look
 	// calculate the cost of all plans once, instead of calculating them every time we compare during sort
 	allPlansWithCosts := memPools.plansWithCostPool.Get(len(allPlansUnordered))
 	for i, p := range allPlansUnordered {
-		allPlansWithCosts[i] = planWithCost{plan: p, totalCost: p.totalCost()}
+		allPlansWithCosts[i] = planWithCost{plan: p, totalCost: p.TotalCost()}
 	}
 
 	slices.SortFunc(allPlansWithCosts, func(a, b planWithCost) int {
@@ -176,7 +176,7 @@ func generatePredicateCombinations(plans []plan, currentPlan plan, decidedPredic
 	// The copy is then added to the list of plans to be returned.
 	plans = generatePredicateCombinations(plans, currentPlan, decidedPredicates+1)
 
-	p := currentPlan.useIndexFor(decidedPredicates)
+	p := currentPlan.UseIndexFor(decidedPredicates)
 	plans = generatePredicateCombinations(plans, p, decidedPredicates+1)
 
 	return plans
@@ -209,8 +209,8 @@ func (p CostBasedPlanner) recordPlanningOutcome(ctx context.Context, start time.
 	default:
 		selectedPlan := allPlans[0]
 		if queryStats := QueryStatsFromContext(ctx); queryStats != nil {
-			queryStats.SetEstimatedSelectedPostings(selectedPlan.numSelectedPostings())
-			queryStats.SetEstimatedFinalCardinality(selectedPlan.finalCardinality())
+			queryStats.SetEstimatedSelectedPostings(selectedPlan.NumSelectedPostings())
+			queryStats.SetEstimatedFinalCardinality(selectedPlan.FinalCardinality())
 		}
 
 		outcome = "success"
@@ -226,7 +226,7 @@ func (p CostBasedPlanner) addSpanEvents(span trace.Span, start time.Time, select
 	span.AddEvent("selected lookup plan", trace.WithAttributes(
 		attribute.Stringer("duration", time.Since(start)),
 	))
-	selectedPlan.addPredicatesToSpan(span)
+	selectedPlan.AddPredicatesToSpan(span)
 
 	const topKPlans = 2
 	for i, plan := range allPlans[:min(topKPlans, len(allPlans))] {
@@ -234,7 +234,7 @@ func (p CostBasedPlanner) addSpanEvents(span trace.Span, start time.Time, select
 		if i > 0 {
 			planName = strconv.Itoa(i + 1)
 		}
-		plan.addSpanEvent(span, planName)
+		plan.AddSpanEvent(span, planName)
 	}
 }
 
