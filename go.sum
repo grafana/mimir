@@ -1050,8 +1050,8 @@ github.com/twmb/franz-go/pkg/kfake v0.0.0-20251024215757-aea970d4d0d2 h1:Iwo/KHm
 github.com/twmb/franz-go/pkg/kfake v0.0.0-20251024215757-aea970d4d0d2/go.mod h1:d8HaJtUEgZfU2n+Ps/fCtzlFLtgdrlZgTWwvCqQ3eDo=
 github.com/twmb/franz-go/pkg/kmsg v1.12.1-0.20251024215757-aea970d4d0d2 h1:TW+DZqmgR3Xm1VcjqfpvOliiML3O4f/YZRBTXDcIsOs=
 github.com/twmb/franz-go/pkg/kmsg v1.12.1-0.20251024215757-aea970d4d0d2/go.mod h1:+DPt4NC8RmI6hqb8G09+3giKObE6uD2Eya6CfqBpeJY=
-github.com/twmb/franz-go/plugin/kotel v1.5.0 h1:TiPfGUbQK384OO7ZYGdo7JuPCbJn+/8njQ/D9Je9CDE=
-github.com/twmb/franz-go/plugin/kotel v1.5.0/go.mod h1:wRXzRo76x1myOUMaVHAyraXoGBdEcvlLChGTVv5+DWU=
+github.com/twmb/franz-go/plugin/kotel v1.6.0 h1:hmvLn/cVw/Hn56H3aJVJu/a/fh6m8J6Ajwp0IcEHbH8=
+github.com/twmb/franz-go/plugin/kotel v1.6.0/go.mod h1:ADmLuCa/NzHdXdWfl22FsIlGCack+YrHjivirHCBJaY=
 github.com/twmb/franz-go/plugin/kprom v1.1.0 h1:grGeIJbm4llUBF8jkDjTb/b8rKllWSXjMwIqeCCcNYQ=
 github.com/twmb/franz-go/plugin/kprom v1.1.0/go.mod h1:cTDrPMSkyrO99LyGx3AtiwF9W6+THHjZrkDE2+TEBIU=
 github.com/tylertreat/BoomFilters v0.0.0-20251001182300-5b3723cc64ae h1:/QxawF0jKTcr2BjwxqdfxkZCCTiIUUd8pQk6ldX904k=
