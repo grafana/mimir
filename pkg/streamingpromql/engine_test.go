@@ -3762,6 +3762,21 @@ func TestQueryStats(t *testing.T) {
 			expectedTotalSamplesWithMQE:        1,
 			expectedTotalSamplesPerStepWithMQE: []int64{1},
 		},
+		"common subexpression elimination inside subquery, instant query": {
+			expr:                               `sum_over_time((sum(dense_series))[5m:1m]) + sum_over_time((count(dense_series))[5m:1m])`,
+			isInstantQuery:                     true,
+			expectedTotalSamples:               10,
+			expectedTotalSamplesPerStep:        []int64{10},
+			expectedTotalSamplesWithMQE:        5,
+			expectedTotalSamplesPerStepWithMQE: []int64{5},
+		},
+		"common subexpression elimination inside subquery, range query": {
+			expr:                               `sum_over_time((sum(dense_series))[5m:1m]) + sum_over_time((count(dense_series))[5m:1m])`,
+			expectedTotalSamples:               90,
+			expectedTotalSamplesPerStep:        []int64{2, 4, 6, 8, 10, 10, 10, 10, 10, 10, 10},
+			expectedTotalSamplesWithMQE:        45,
+			expectedTotalSamplesPerStepWithMQE: []int64{1, 2, 3, 4, 5, 5, 5, 5, 5, 5, 5},
+		},
 		// Three tests below cover PQE bug: sample counting is incorrect when subqueries with range vector selectors are wrapped in functions.
 		// In MQE it's fixed, so that's why cases have a skipCompareWithPrometheus set.
 		// See this for details: https://github.com/prometheus/prometheus/issues/16638
