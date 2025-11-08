@@ -22,7 +22,8 @@ var errQueryClosed = cancellation.NewErrorf("Query.Close() called")
 var errQueryFinished = cancellation.NewErrorf("query execution finished")
 
 type Evaluator struct {
-	root               types.Operator
+	rootOperator       types.Operator
+	rootNode           planning.Node
 	engine             *Engine
 	originalExpression string
 	timeRange          types.QueryTimeRange
@@ -34,9 +35,10 @@ type Evaluator struct {
 	cancel      context.CancelCauseFunc
 }
 
-func NewEvaluator(root types.Operator, params *planning.OperatorParameters, timeRange types.QueryTimeRange, engine *Engine, originalExpression string) (*Evaluator, error) {
+func NewEvaluator(rootOperator types.Operator, rootNode planning.Node, params *planning.OperatorParameters, timeRange types.QueryTimeRange, engine *Engine, originalExpression string) (*Evaluator, error) {
 	return &Evaluator{
-		root:               root,
+		rootOperator:       rootOperator,
+		rootNode:           rootNode,
 		engine:             engine,
 		originalExpression: originalExpression,
 		timeRange:          timeRange,
@@ -117,20 +119,20 @@ func (e *Evaluator) Evaluate(ctx context.Context, observer EvaluationObserver) (
 	// cancel with errQueryFinished and not a timeout, so we must defer this function last
 	// (so that it runs before the cancellation of the context with timeout created above).
 	defer func() {
-		e.root.Close()
+		e.rootOperator.Close()
 		cancel(errQueryFinished)
 	}()
 
 	if e.engine.pedantic {
 		// Close the root operator a second time to ensure all operators behave correctly if Close is called multiple times.
-		defer e.root.Close()
+		defer e.rootOperator.Close()
 	}
 
-	if err := e.root.Prepare(ctx, &types.PrepareParams{}); err != nil {
+	if err := e.rootOperator.Prepare(ctx, &types.PrepareParams{}); err != nil {
 		return fmt.Errorf("failed to prepare query: %w", err)
 	}
 
-	switch root := e.root.(type) {
+	switch root := e.rootOperator.(type) {
 	case types.InstantVectorOperator:
 		if err := e.evaluateInstantVectorOperator(ctx, root, observer); err != nil {
 			return err
@@ -155,13 +157,13 @@ func (e *Evaluator) Evaluate(ctx context.Context, observer EvaluationObserver) (
 		return fmt.Errorf("operator type %T produces unknown result type", root)
 	}
 
-	if err := e.root.Finalize(ctx); err != nil {
+	if err := e.rootOperator.Finalize(ctx); err != nil {
 		return err
 	}
 
 	if e.engine.pedantic {
 		// Finalize the root operator a second time to ensure all operators behave correctly if Finalize is called multiple times.
-		if err := e.root.Finalize(ctx); err != nil {
+		if err := e.rootOperator.Finalize(ctx); err != nil {
 			return fmt.Errorf("pedantic mode: failed to finalize operator a second time after successfully finalizing the first time: %w", err)
 		}
 	}
@@ -182,7 +184,7 @@ func (e *Evaluator) evaluateInstantVectorOperator(ctx context.Context, op types.
 
 	seriesCount := len(series) // Take the length now, as the observer takes ownership of the slice when SeriesMetadataEvaluated is called.
 
-	if err := observer.SeriesMetadataEvaluated(ctx, e, series); err != nil {
+	if err := observer.SeriesMetadataEvaluated(ctx, e, e.rootNode, series); err != nil {
 		return err
 	}
 
@@ -196,7 +198,7 @@ func (e *Evaluator) evaluateInstantVectorOperator(ctx context.Context, op types.
 			return err
 		}
 
-		if err := observer.InstantVectorSeriesDataEvaluated(ctx, e, seriesIdx, d); err != nil {
+		if err := observer.InstantVectorSeriesDataEvaluated(ctx, e, e.rootNode, seriesIdx, d); err != nil {
 			return err
 		}
 	}
@@ -212,7 +214,7 @@ func (e *Evaluator) evaluateRangeVectorOperator(ctx context.Context, op types.Ra
 
 	seriesCount := len(series) // Take the length now, as the observer takes ownership of the slice when SeriesMetadataEvaluated is called.
 
-	if err := observer.SeriesMetadataEvaluated(ctx, e, series); err != nil {
+	if err := observer.SeriesMetadataEvaluated(ctx, e, e.rootNode, series); err != nil {
 		return err
 	}
 
@@ -239,7 +241,7 @@ func (e *Evaluator) evaluateRangeVectorOperator(ctx context.Context, op types.Ra
 				return err
 			}
 
-			if err := observer.RangeVectorStepSamplesEvaluated(ctx, e, seriesIdx, stepIdx, step); err != nil {
+			if err := observer.RangeVectorStepSamplesEvaluated(ctx, e, e.rootNode, seriesIdx, stepIdx, step); err != nil {
 				return err
 			}
 
@@ -256,13 +258,13 @@ func (e *Evaluator) evaluateScalarOperator(ctx context.Context, op types.ScalarO
 		return err
 	}
 
-	return observer.ScalarEvaluated(ctx, e, d)
+	return observer.ScalarEvaluated(ctx, e, e.rootNode, d)
 }
 
 func (e *Evaluator) evaluateStringOperator(ctx context.Context, op types.StringOperator, observer EvaluationObserver) error {
 	v := op.GetValue()
 
-	return observer.StringEvaluated(ctx, e, v)
+	return observer.StringEvaluated(ctx, e, e.rootNode, v)
 }
 
 func (e *Evaluator) GetQueryTimeRange() types.QueryTimeRange {
@@ -285,24 +287,24 @@ type EvaluationObserver interface {
 	// SeriesMetadataEvaluated notifies this observer when series metadata has been evaluated.
 	// Implementations of this method are responsible for returning the series slice to the pool when it is no longer needed.
 	// Implementations of this method may mutate the series slice before returning it to the pool.
-	SeriesMetadataEvaluated(ctx context.Context, evaluator *Evaluator, series []types.SeriesMetadata) error
+	SeriesMetadataEvaluated(ctx context.Context, evaluator *Evaluator, node planning.Node, series []types.SeriesMetadata) error
 
 	// InstantVectorSeriesDataEvaluated notifies this observer when samples for an instant vector series have been evaluated.
 	// Implementations of this method are responsible for returning seriesData to the pool when it is no longer needed.
 	// Implementations of this method may mutate seriesData before returning it to the pool.
-	InstantVectorSeriesDataEvaluated(ctx context.Context, evaluator *Evaluator, seriesIndex int, seriesData types.InstantVectorSeriesData) error
+	InstantVectorSeriesDataEvaluated(ctx context.Context, evaluator *Evaluator, node planning.Node, seriesIndex int, seriesData types.InstantVectorSeriesData) error
 
 	// RangeVectorStepSamplesEvaluated notifies this observer when samples for a range vector step have been evaluated.
 	// Implementations of this method must not mutate stepData, and should copy any data they wish to retain from stepData before returning.
-	RangeVectorStepSamplesEvaluated(ctx context.Context, evaluator *Evaluator, seriesIndex int, stepIndex int, stepData *types.RangeVectorStepData) error
+	RangeVectorStepSamplesEvaluated(ctx context.Context, evaluator *Evaluator, node planning.Node, seriesIndex int, stepIndex int, stepData *types.RangeVectorStepData) error
 
 	// ScalarEvaluated notifies this observer when a scalar has been evaluated.
 	// Implementations of this method are responsible for returning data to the pool when it is no longer needed.
 	// Implementations of this method may mutate data before returning it to the pool.
-	ScalarEvaluated(ctx context.Context, evaluator *Evaluator, data types.ScalarData) error
+	ScalarEvaluated(ctx context.Context, evaluator *Evaluator, node planning.Node, data types.ScalarData) error
 
 	// StringEvaluated notifies this observer when a string has been evaluated.
-	StringEvaluated(ctx context.Context, evaluator *Evaluator, data string) error
+	StringEvaluated(ctx context.Context, evaluator *Evaluator, node planning.Node, data string) error
 
 	// EvaluationCompleted notifies this observer when evaluation is complete.
 	EvaluationCompleted(ctx context.Context, evaluator *Evaluator, annotations *annotations.Annotations, stats *types.QueryStats) error

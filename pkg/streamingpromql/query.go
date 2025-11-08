@@ -16,6 +16,7 @@ import (
 	"github.com/prometheus/prometheus/util/annotations"
 	promstats "github.com/prometheus/prometheus/util/stats"
 
+	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/limiter"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
@@ -52,7 +53,7 @@ func (q *Query) Exec(ctx context.Context) (res *promql.Result) {
 	logger, ctx := spanlogger.New(ctx, q.engine.logger, tracer, "Query.Exec")
 	defer logger.Finish()
 
-	_, isInstantVectorOperator := q.evaluator.root.(types.InstantVectorOperator)
+	_, isInstantVectorOperator := q.evaluator.rootOperator.(types.InstantVectorOperator)
 	q.resultIsVector = q.topLevelQueryTimeRange.IsInstant && isInstantVectorOperator
 
 	if err := q.evaluator.Evaluate(ctx, q); err != nil {
@@ -100,13 +101,13 @@ func (q *Query) Exec(ctx context.Context) (res *promql.Result) {
 }
 
 // SeriesMetadataEvaluated implements the EvaluationObserver interface.
-func (q *Query) SeriesMetadataEvaluated(ctx context.Context, evaluator *Evaluator, series []types.SeriesMetadata) error {
+func (q *Query) SeriesMetadataEvaluated(ctx context.Context, evaluator *Evaluator, node planning.Node, series []types.SeriesMetadata) error {
 	q.seriesMetadata = series
 	return nil
 }
 
 // InstantVectorSeriesDataEvaluated implements the EvaluationObserver interface.
-func (q *Query) InstantVectorSeriesDataEvaluated(ctx context.Context, evaluator *Evaluator, seriesIndex int, seriesData types.InstantVectorSeriesData) error {
+func (q *Query) InstantVectorSeriesDataEvaluated(ctx context.Context, evaluator *Evaluator, node planning.Node, seriesIndex int, seriesData types.InstantVectorSeriesData) error {
 	if len(seriesData.Floats) == 0 && len(seriesData.Histograms) == 0 {
 		// Nothing to do.
 		types.PutInstantVectorSeriesData(seriesData, q.memoryConsumptionTracker)
@@ -173,7 +174,7 @@ func (q *Query) appendSeriesToMatrix(series types.SeriesMetadata, seriesData typ
 }
 
 // RangeVectorStepSamplesEvaluated implements the EvaluationObserver interface.
-func (q *Query) RangeVectorStepSamplesEvaluated(ctx context.Context, evaluator *Evaluator, seriesIndex int, stepIndex int, stepData *types.RangeVectorStepData) error {
+func (q *Query) RangeVectorStepSamplesEvaluated(ctx context.Context, evaluator *Evaluator, node planning.Node, seriesIndex int, stepIndex int, stepData *types.RangeVectorStepData) error {
 	if stepIndex != 0 {
 		// Top-level range vector expressions should only ever have one step (ie. be an instant query).
 		return fmt.Errorf("unexpected step index for range vector result: %d", stepIndex)
@@ -211,7 +212,7 @@ func (q *Query) RangeVectorStepSamplesEvaluated(ctx context.Context, evaluator *
 }
 
 // ScalarEvaluated implements the EvaluationObserver interface.
-func (q *Query) ScalarEvaluated(ctx context.Context, evaluator *Evaluator, data types.ScalarData) error {
+func (q *Query) ScalarEvaluated(ctx context.Context, evaluator *Evaluator, node planning.Node, data types.ScalarData) error {
 	if q.topLevelQueryTimeRange.IsInstant {
 		defer types.FPointSlicePool.Put(&data.Samples, q.memoryConsumptionTracker)
 
@@ -233,7 +234,7 @@ func (q *Query) ScalarEvaluated(ctx context.Context, evaluator *Evaluator, data 
 }
 
 // StringEvaluated implements the EvaluationObserver interface.
-func (q *Query) StringEvaluated(ctx context.Context, evaluator *Evaluator, data string) error {
+func (q *Query) StringEvaluated(ctx context.Context, evaluator *Evaluator, node planning.Node, data string) error {
 	q.string = &promql.String{
 		T: q.topLevelQueryTimeRange.StartT,
 		V: data,

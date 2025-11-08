@@ -268,7 +268,7 @@ func (e *Engine) materializeAndCreateEvaluator(ctx context.Context, queryable st
 		return nil, err
 	}
 
-	return NewEvaluator(op, operatorParams, nodeTimeRange, e, plan.OriginalExpression)
+	return NewEvaluator(op, node, operatorParams, nodeTimeRange, e, plan.OriginalExpression)
 }
 
 type QueryLimitsProvider interface {

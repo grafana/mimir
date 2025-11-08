@@ -1903,23 +1903,23 @@ func TestEvaluator_ReportsMemoryConsumptionLimit(t *testing.T) {
 
 type noopEvaluationObserver struct{}
 
-func (n noopEvaluationObserver) SeriesMetadataEvaluated(ctx context.Context, evaluator *Evaluator, series []types.SeriesMetadata) error {
+func (n noopEvaluationObserver) SeriesMetadataEvaluated(ctx context.Context, evaluator *Evaluator, node planning.Node, series []types.SeriesMetadata) error {
 	return nil
 }
 
-func (n noopEvaluationObserver) InstantVectorSeriesDataEvaluated(ctx context.Context, evaluator *Evaluator, seriesIndex int, seriesData types.InstantVectorSeriesData) error {
+func (n noopEvaluationObserver) InstantVectorSeriesDataEvaluated(ctx context.Context, evaluator *Evaluator, node planning.Node, seriesIndex int, seriesData types.InstantVectorSeriesData) error {
 	return nil
 }
 
-func (n noopEvaluationObserver) RangeVectorStepSamplesEvaluated(ctx context.Context, evaluator *Evaluator, seriesIndex int, stepIndex int, stepData *types.RangeVectorStepData) error {
+func (n noopEvaluationObserver) RangeVectorStepSamplesEvaluated(ctx context.Context, evaluator *Evaluator, node planning.Node, seriesIndex int, stepIndex int, stepData *types.RangeVectorStepData) error {
 	return nil
 }
 
-func (n noopEvaluationObserver) ScalarEvaluated(ctx context.Context, evaluator *Evaluator, data types.ScalarData) error {
+func (n noopEvaluationObserver) ScalarEvaluated(ctx context.Context, evaluator *Evaluator, node planning.Node, data types.ScalarData) error {
 	return nil
 }
 
-func (n noopEvaluationObserver) StringEvaluated(ctx context.Context, evaluator *Evaluator, data string) error {
+func (n noopEvaluationObserver) StringEvaluated(ctx context.Context, evaluator *Evaluator, node planning.Node, data string) error {
 	return nil
 }
 
