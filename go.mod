@@ -87,7 +87,7 @@ require (
 	github.com/twmb/franz-go/plugin/kprom v1.1.0
 	github.com/tylertreat/BoomFilters v0.0.0-20251001182300-5b3723cc64ae
 	github.com/xlab/treeprint v1.2.0
-	go.opentelemetry.io/collector/pdata v1.42.0
+	go.opentelemetry.io/collector/pdata v1.45.0
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.63.0
 	go.opentelemetry.io/contrib/propagators/jaeger v1.38.0
 	go.opentelemetry.io/otel v1.38.0
@@ -190,15 +190,13 @@ require (
 	github.com/yusufpapurcu/wmi v1.2.4 // indirect
 	github.com/zeebo/errs v1.4.0 // indirect
 	go.opentelemetry.io/auto/sdk v1.1.0 // indirect
-	go.opentelemetry.io/collector/component v1.42.0 // indirect
-	go.opentelemetry.io/collector/confmap v1.42.0 // indirect
+	go.opentelemetry.io/collector/component v1.45.0 // indirect
+	go.opentelemetry.io/collector/confmap v1.45.0 // indirect
 	go.opentelemetry.io/collector/confmap/xconfmap v0.136.0 // indirect
-	go.opentelemetry.io/collector/consumer v1.42.0 // indirect
-	go.opentelemetry.io/collector/featuregate v1.42.0 // indirect
-	go.opentelemetry.io/collector/internal/telemetry v0.136.0 // indirect
-	go.opentelemetry.io/collector/pipeline v1.42.0 // indirect
-	go.opentelemetry.io/collector/processor v1.42.0 // indirect
-	go.opentelemetry.io/contrib/bridges/otelzap v0.12.0 // indirect
+	go.opentelemetry.io/collector/consumer v1.45.0 // indirect
+	go.opentelemetry.io/collector/featuregate v1.45.0 // indirect
+	go.opentelemetry.io/collector/pipeline v1.45.0 // indirect
+	go.opentelemetry.io/collector/processor v1.45.0 // indirect
 	go.opentelemetry.io/contrib/bridges/prometheus v0.61.0 // indirect
 	go.opentelemetry.io/contrib/detectors/gcp v1.36.0 // indirect
 	go.opentelemetry.io/contrib/exporters/autoexport v0.61.0 // indirect
