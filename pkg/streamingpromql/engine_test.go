@@ -3792,17 +3792,18 @@ func TestQueryStats(t *testing.T) {
 			prometheusSamplesStats := runQueryAndGetSamplesStats(t, prometheusEngine, testCase.expr, testCase.isInstantQuery)
 			if testCase.skipCompareWithPrometheus == "" {
 				require.Equal(t, testCase.expectedTotalSamples, prometheusSamplesStats.TotalSamples, "invalid test case: expected total samples does not match value from Prometheus' engine")
-				require.Equal(t, testCase.expectedTotalSamplesPerStep, prometheusSamplesStats.TotalSamplesPerStep, "invalid test case: expected per stepsamples does not match value from Prometheus' engine")
+				require.Equal(t, testCase.expectedTotalSamplesPerStep, prometheusSamplesStats.TotalSamplesPerStep, "invalid test case: expected per step samples does not match value from Prometheus' engine")
 			}
 
 			mimirSamplesStatsWithPlanning := runQueryAndGetSamplesStats(t, mimirEngine, testCase.expr, testCase.isInstantQuery)
-			if testCase.expectedTotalSamplesWithMQE != 0 {
-				require.Equal(t, testCase.expectedTotalSamplesWithMQE, mimirSamplesStatsWithPlanning.TotalSamples)
-				require.Equal(t, testCase.expectedTotalSamplesPerStepWithMQE, mimirSamplesStatsWithPlanning.TotalSamplesPerStep)
-			} else {
-				require.Equal(t, testCase.expectedTotalSamples, mimirSamplesStatsWithPlanning.TotalSamples)
-				require.Equal(t, testCase.expectedTotalSamplesPerStep, mimirSamplesStatsWithPlanning.TotalSamplesPerStep)
+
+			if testCase.expectedTotalSamplesWithMQE == 0 {
+				testCase.expectedTotalSamplesWithMQE = testCase.expectedTotalSamples
+				testCase.expectedTotalSamplesPerStepWithMQE = testCase.expectedTotalSamplesPerStep
 			}
+
+			require.Equal(t, testCase.expectedTotalSamplesWithMQE, mimirSamplesStatsWithPlanning.TotalSamples, "total samples from MQE does not match expected")
+			require.Equal(t, testCase.expectedTotalSamplesPerStepWithMQE, mimirSamplesStatsWithPlanning.TotalSamplesPerStep, "per-step samples from MQE does not match expected")
 		})
 	}
 }
