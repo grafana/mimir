@@ -239,6 +239,11 @@ func (m *usageTrackerClientMock) TrackSeries(ctx context.Context, userID string,
 	return args.Get(0).([]uint64), args.Error(1)
 }
 
+func (m *usageTrackerClientMock) isTenantCloseToLimit(userID string) bool {
+	args := m.Called(userID)
+	return args.Bool(0)
+}
+
 type usageTrackerClientRejectionMock struct {
 	services.Service
 
@@ -258,4 +263,10 @@ func (m *usageTrackerClientRejectionMock) TrackSeries(_ context.Context, _ strin
 	copy(rejected, series[len(series)-len(rejected):])
 
 	return rejected, nil
+}
+
+func (m *usageTrackerClientRejectionMock) isTenantCloseToLimit(_ string) bool {
+	// For testing purposes, we assume tenants are always close to limit in this mock.
+	// This ensures synchronous tracking behavior in tests.
+	return true
 }

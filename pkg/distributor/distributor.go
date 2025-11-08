@@ -103,6 +103,7 @@ const (
 type usageTrackerGenericClient interface {
 	services.Service
 	TrackSeries(ctx context.Context, userID string, series []uint64) ([]uint64, error)
+	isTenantCloseToLimit(userID string) bool
 }
 
 // Distributor forwards appends and queries to individual ingesters.
@@ -1554,9 +1555,30 @@ func (d *Distributor) prePushMaxSeriesLimitMiddleware(next PushFunc) PushFunc {
 		}
 
 		// Track the series and check if anyone should be rejected because over the limit.
-		rejectedHashes, err := d.usageTrackerClient.TrackSeries(ctx, userID, seriesHashes)
-		if err != nil {
-			return errors.Wrap(err, "failed to enforce max series limit")
+		// For tenants that are far from their limits, we can do this asynchronously.
+		var rejectedHashes []uint64
+		if d.usageTrackerClient.isTenantCloseToLimit(userID) {
+			// Tenant is close to limit, track synchronously.
+			rejectedHashes, err = d.usageTrackerClient.TrackSeries(ctx, userID, seriesHashes)
+			if err != nil {
+				return errors.Wrap(err, "failed to enforce max series limit")
+			}
+		} else {
+			// Tenant is far from limit, track asynchronously.
+			// Spawn a goroutine with the request context and add a cleanup function to wait for it.
+			done := make(chan error, 1)
+			go func() {
+				_, trackErr := d.usageTrackerClient.TrackSeries(ctx, userID, seriesHashes)
+				done <- trackErr
+				close(done)
+			}()
+
+			// Add a cleanup function that will wait for the async tracking to complete.
+			pushReq.AddCleanup(func() { <-done })
+
+			// For async tracking, we don't reject any series in the middleware.
+			// The series will be tracked eventually.
+			rejectedHashes = nil
 		}
 
 		if len(rejectedHashes) > 0 {
