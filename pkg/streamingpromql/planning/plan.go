@@ -214,23 +214,52 @@ type OperatorParameters struct {
 	Logger                   log.Logger
 }
 
-func (p *QueryPlan) ToEncodedPlan(includeDescriptions bool, includeDetails bool) (*EncodedQueryPlan, error) {
+// ToEncodedPlan converts this query plan to its encoded form.
+//
+// If nodes is not empty:
+// - only nodes reachable from the provided nodes will be encoded
+// - the corresponding indices in the encoded plan for the provided nodes will be returned
+// - RootNode on the returned plan will not be populated
+//
+// If nodes is empty:
+// - all nodes reachable from the plan's root will be encoded
+// - the corresponding index in the encoded plan for the root node will be returned
+// - RootNode on the returned plan will be populated
+func (p *QueryPlan) ToEncodedPlan(includeDescriptions bool, includeDetails bool, nodes ...Node) (*EncodedQueryPlan, []int64, error) {
 	encoder := newQueryPlanEncoder(includeDescriptions, includeDetails)
-	rootNode, err := encoder.encodeNode(p.Root)
-	if err != nil {
-		return nil, err
-	}
 
 	encoded := &EncodedQueryPlan{
 		TimeRange:                toEncodedTimeRange(p.TimeRange),
-		Nodes:                    encoder.nodes,
-		RootNode:                 rootNode,
 		OriginalExpression:       p.OriginalExpression,
 		EnableDelayedNameRemoval: p.EnableDelayedNameRemoval,
 		Version:                  p.Version,
 	}
 
-	return encoded, nil
+	var encodedNodeIndices []int64
+
+	if len(nodes) > 0 {
+		encodedNodeIndices = make([]int64, 0, len(nodes))
+
+		for _, n := range nodes {
+			idx, err := encoder.encodeNode(n)
+			if err != nil {
+				return nil, nil, err
+			}
+
+			encodedNodeIndices = append(encodedNodeIndices, idx)
+		}
+	} else {
+		idx, err := encoder.encodeNode(p.Root)
+		if err != nil {
+			return nil, nil, err
+		}
+		encoded.RootNode = idx
+		encodedNodeIndices = []int64{idx}
+	}
+
+	encoded.Nodes = encoder.nodes
+
+	return encoded, encodedNodeIndices, nil
 }
 
 // DeterminePlanVersion will set the plan Version to the largest MinimumRequiredPlanVersion found within the plan nodes.
@@ -283,6 +312,10 @@ func newQueryPlanEncoder(includeDescriptions bool, includeDetails bool) *queryPl
 }
 
 func (e *queryPlanEncoder) encodeNode(n Node) (int64, error) {
+	if idx, haveWritten := e.nodesToIndex[n]; haveWritten {
+		return idx, nil
+	}
+
 	encoded := &EncodedNode{}
 	childCount := n.ChildCount()
 
@@ -292,15 +325,9 @@ func (e *queryPlanEncoder) encodeNode(n Node) (int64, error) {
 		// Check all children have been encoded already.
 		for childIdx := range childCount {
 			child := n.Child(childIdx)
-			idx, haveWritten := e.nodesToIndex[child]
-
-			if !haveWritten {
-				var err error
-				idx, err = e.encodeNode(child)
-
-				if err != nil {
-					return -1, err
-				}
+			idx, err := e.encodeNode(child)
+			if err != nil {
+				return -1, err
 			}
 
 			childIndices = append(childIndices, idx)

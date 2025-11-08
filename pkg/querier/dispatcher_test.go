@@ -34,6 +34,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier/querierpb"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/streamingpromql"
+	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/propagation"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
@@ -59,42 +60,22 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 	engine, err := streamingpromql.NewEngine(opts, streamingpromql.NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), planner)
 	require.NoError(t, err)
 
-	createQueryRequestForSpecificNodes := func(expr string, timeRange types.QueryTimeRange, batchSize uint64, nodeIndices ...int64) *prototypes.Any {
-		plan, err := planner.NewQueryPlan(ctx, expr, timeRange, streamingpromql.NoopPlanningObserver{})
-		require.NoError(t, err)
+	createQueryRequest := func(expr string, timeRange types.QueryTimeRange) *prototypes.Any {
+		return createQueryRequestForSpecificNodes(t, ctx, planner, expr, timeRange, 1, nil)
+	}
 
-		encodedPlan, err := plan.ToEncodedPlan(false, true)
-		require.NoError(t, err)
+	createQueryRequestWithBatchSize := func(expr string, timeRange types.QueryTimeRange, batchSize uint64) *prototypes.Any {
+		return createQueryRequestForSpecificNodes(t, ctx, planner, expr, timeRange, batchSize, nil)
+	}
 
-		nodes := make([]querierpb.EvaluationNode, 0, len(nodeIndices))
-		for _, nodeIndex := range nodeIndices {
-			if nodeIndex == -1 {
-				nodeIndex = encodedPlan.RootNode
-			}
-
-			nodes = append(nodes, querierpb.EvaluationNode{
-				TimeRange: encodedPlan.TimeRange,
-				NodeIndex: nodeIndex,
-			})
-		}
-
+	createQueryRequestWithNoNodes := func() *prototypes.Any {
 		body := &querierpb.EvaluateQueryRequest{
-			Plan:      *encodedPlan,
-			Nodes:     nodes,
-			BatchSize: batchSize,
+			BatchSize: 1,
 		}
 
 		req, err := prototypes.MarshalAny(body)
 		require.NoError(t, err)
 		return req
-	}
-
-	createQueryRequest := func(expr string, timeRange types.QueryTimeRange) *prototypes.Any {
-		return createQueryRequestForSpecificNodes(expr, timeRange, 1, -1)
-	}
-
-	createQueryRequestWithBatchSize := func(expr string, timeRange types.QueryTimeRange, batchSize uint64) *prototypes.Any {
-		return createQueryRequestForSpecificNodes(expr, timeRange, batchSize, -1)
 	}
 
 	startT := timestamp.Time(0)
@@ -163,7 +144,7 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 		},
 
 		"request with no nodes": {
-			req: createQueryRequestForSpecificNodes(`my_series`, types.NewInstantQueryTimeRange(startT), 1),
+			req: createQueryRequestWithNoNodes(),
 			expectedResponseMessages: []*frontendv2pb.QueryResultStreamRequest{
 				{
 					Data: &frontendv2pb.QueryResultStreamRequest_Error{
@@ -178,7 +159,7 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 		},
 
 		"request with the same node provided multiple times": {
-			req: createQueryRequestForSpecificNodes(`my_series`, types.NewInstantQueryTimeRange(startT), 1, 0, 0),
+			req: createQueryRequestForSpecificNodes(t, ctx, planner, `my_series`, types.NewInstantQueryTimeRange(startT), 1, nil, nil),
 			expectedResponseMessages: []*frontendv2pb.QueryResultStreamRequest{
 				{
 					Data: &frontendv2pb.QueryResultStreamRequest_Error{
@@ -516,10 +497,11 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 
 		"query that returns a range vector": {
 			req: createQueryRequestForSpecificNodes(
+				t, ctx, planner,
 				`max_over_time(my_series[11s:10s])`,
 				types.NewRangeQueryTimeRange(startT, startT.Add(20*time.Second), 10*time.Second),
 				1,
-				1, // Evaluate the subquery expression (my_series[11s:10s])
+				[]string{"FunctionCall: max_over_time(...)", "Subquery: [11s:10s]"},
 			),
 			expectedResponseMessages: []*frontendv2pb.QueryResultStreamRequest{
 				{
@@ -840,6 +822,755 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 			expectedStatusCode:                           "ERROR_EXECUTION",
 			expectStorageToBeCalledWithPropagatedHeaders: true,
 		},
+
+		"request with multiple instant vector operators": {
+			req: createQueryRequestForSpecificNodes(
+				t, ctx, planner,
+				`my_series + my_other_series`,
+				types.NewRangeQueryTimeRange(startT, startT.Add(20*time.Second), 10*time.Second),
+				1,
+				[]string{"BinaryExpression: LHS + RHS", `LHS: VectorSelector: {__name__="my_series"}`},
+				[]string{"BinaryExpression: LHS + RHS", `RHS: VectorSelector: {__name__="my_other_series"}`},
+			),
+			expectedResponseMessages: []*frontendv2pb.QueryResultStreamRequest{
+				{
+					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
+						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
+							Message: &querierpb.EvaluateQueryResponse_SeriesMetadata{
+								SeriesMetadata: &querierpb.EvaluateQueryResponseSeriesMetadata{
+									NodeIndex: 0,
+									Series: []querierpb.SeriesMetadata{
+										{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "my_series", "idx", "0"))},
+										{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "my_series", "idx", "1"))},
+									},
+								},
+							},
+						},
+					},
+				},
+				{
+					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
+						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
+							Message: &querierpb.EvaluateQueryResponse_InstantVectorSeriesData{
+								InstantVectorSeriesData: &querierpb.EvaluateQueryResponseInstantVectorSeriesData{
+									NodeIndex: 0,
+									Series: []querierpb.InstantVectorSeriesData{
+										{
+											Floats: []mimirpb.Sample{
+												{TimestampMs: 0, Value: 0},
+												{TimestampMs: 10_000, Value: 1},
+												{TimestampMs: 20_000, Value: 2},
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+				{
+					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
+						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
+							Message: &querierpb.EvaluateQueryResponse_InstantVectorSeriesData{
+								InstantVectorSeriesData: &querierpb.EvaluateQueryResponseInstantVectorSeriesData{
+									NodeIndex: 0,
+									Series: []querierpb.InstantVectorSeriesData{
+										{
+											Floats: []mimirpb.Sample{
+												{TimestampMs: 0, Value: 1},
+												{TimestampMs: 10_000, Value: 3},
+												{TimestampMs: 20_000, Value: 5},
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+				{
+					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
+						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
+							Message: &querierpb.EvaluateQueryResponse_SeriesMetadata{
+								SeriesMetadata: &querierpb.EvaluateQueryResponseSeriesMetadata{
+									NodeIndex: 1,
+									Series: []querierpb.SeriesMetadata{
+										{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "my_other_series", "idx", "0"))},
+									},
+								},
+							},
+						},
+					},
+				},
+				{
+					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
+						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
+							Message: &querierpb.EvaluateQueryResponse_InstantVectorSeriesData{
+								InstantVectorSeriesData: &querierpb.EvaluateQueryResponseInstantVectorSeriesData{
+									NodeIndex: 1,
+									Series: []querierpb.InstantVectorSeriesData{
+										{
+											Floats: []mimirpb.Sample{
+												{TimestampMs: 0, Value: 2},
+												{TimestampMs: 10_000, Value: 5},
+												{TimestampMs: 20_000, Value: 8},
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+				{
+					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
+						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
+							Message: &querierpb.EvaluateQueryResponse_EvaluationCompleted{
+								EvaluationCompleted: &querierpb.EvaluateQueryResponseEvaluationCompleted{
+									Stats: stats.Stats{
+										SamplesProcessed:   9,
+										QueueTime:          3 * time.Second,
+										WallTime:           expectedQueryWallTime,
+										FetchedSeriesCount: 123,
+										FetchedChunksCount: 456,
+										FetchedChunkBytes:  789,
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			expectedStatusCode:                           "OK",
+			expectStorageToBeCalledWithPropagatedHeaders: true,
+		},
+
+		"request with multiple instant vector operators with batching enabled": {
+			req: createQueryRequestForSpecificNodes(
+				t, ctx, planner,
+				`my_three_item_series{idx=~"(0|1|2)"} + my_three_item_series{idx=~".*"}`, // Make the selectors different so that CSE doesn't deduplicate them.
+				types.NewRangeQueryTimeRange(startT, startT.Add(20*time.Second), 10*time.Second),
+				2,
+				[]string{"BinaryExpression: LHS + RHS", `LHS: VectorSelector: {__name__="my_three_item_series", idx=~"(0|1|2)"}`},
+				[]string{"BinaryExpression: LHS + RHS", `RHS: VectorSelector: {__name__="my_three_item_series", idx=~".*"}`},
+			),
+			expectedResponseMessages: []*frontendv2pb.QueryResultStreamRequest{
+				{
+					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
+						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
+							Message: &querierpb.EvaluateQueryResponse_SeriesMetadata{
+								SeriesMetadata: &querierpb.EvaluateQueryResponseSeriesMetadata{
+									NodeIndex: 0,
+									Series: []querierpb.SeriesMetadata{
+										{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "my_three_item_series", "idx", "0"))},
+										{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "my_three_item_series", "idx", "1"))},
+										{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "my_three_item_series", "idx", "2"))},
+									},
+								},
+							},
+						},
+					},
+				},
+				{
+					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
+						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
+							Message: &querierpb.EvaluateQueryResponse_InstantVectorSeriesData{
+								InstantVectorSeriesData: &querierpb.EvaluateQueryResponseInstantVectorSeriesData{
+									NodeIndex: 0,
+									Series: []querierpb.InstantVectorSeriesData{
+										{
+											Floats: []mimirpb.Sample{
+												{TimestampMs: 0, Value: 3},
+												{TimestampMs: 10_000, Value: 7},
+												{TimestampMs: 20_000, Value: 11},
+											},
+										},
+										{
+											Floats: []mimirpb.Sample{
+												{TimestampMs: 0, Value: 4},
+												{TimestampMs: 10_000, Value: 9},
+												{TimestampMs: 20_000, Value: 14},
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+				{
+					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
+						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
+							Message: &querierpb.EvaluateQueryResponse_InstantVectorSeriesData{
+								InstantVectorSeriesData: &querierpb.EvaluateQueryResponseInstantVectorSeriesData{
+									NodeIndex: 0,
+									Series: []querierpb.InstantVectorSeriesData{
+										{
+											Floats: []mimirpb.Sample{
+												{TimestampMs: 0, Value: 5},
+												{TimestampMs: 10_000, Value: 11},
+												{TimestampMs: 20_000, Value: 17},
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+				{
+					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
+						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
+							Message: &querierpb.EvaluateQueryResponse_SeriesMetadata{
+								SeriesMetadata: &querierpb.EvaluateQueryResponseSeriesMetadata{
+									NodeIndex: 1,
+									Series: []querierpb.SeriesMetadata{
+										{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "my_three_item_series", "idx", "0"))},
+										{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "my_three_item_series", "idx", "1"))},
+										{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "my_three_item_series", "idx", "2"))},
+									},
+								},
+							},
+						},
+					},
+				},
+				{
+					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
+						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
+							Message: &querierpb.EvaluateQueryResponse_InstantVectorSeriesData{
+								InstantVectorSeriesData: &querierpb.EvaluateQueryResponseInstantVectorSeriesData{
+									NodeIndex: 1,
+									Series: []querierpb.InstantVectorSeriesData{
+										{
+											Floats: []mimirpb.Sample{
+												{TimestampMs: 0, Value: 3},
+												{TimestampMs: 10_000, Value: 7},
+												{TimestampMs: 20_000, Value: 11},
+											},
+										},
+										{
+											Floats: []mimirpb.Sample{
+												{TimestampMs: 0, Value: 4},
+												{TimestampMs: 10_000, Value: 9},
+												{TimestampMs: 20_000, Value: 14},
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+				{
+					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
+						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
+							Message: &querierpb.EvaluateQueryResponse_InstantVectorSeriesData{
+								InstantVectorSeriesData: &querierpb.EvaluateQueryResponseInstantVectorSeriesData{
+									NodeIndex: 1,
+									Series: []querierpb.InstantVectorSeriesData{
+										{
+											Floats: []mimirpb.Sample{
+												{TimestampMs: 0, Value: 5},
+												{TimestampMs: 10_000, Value: 11},
+												{TimestampMs: 20_000, Value: 17},
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+				{
+					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
+						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
+							Message: &querierpb.EvaluateQueryResponse_EvaluationCompleted{
+								EvaluationCompleted: &querierpb.EvaluateQueryResponseEvaluationCompleted{
+									Stats: stats.Stats{
+										SamplesProcessed:   18,
+										QueueTime:          3 * time.Second,
+										WallTime:           expectedQueryWallTime,
+										FetchedSeriesCount: 123,
+										FetchedChunksCount: 456,
+										FetchedChunkBytes:  789,
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			expectedStatusCode:                           "OK",
+			expectStorageToBeCalledWithPropagatedHeaders: true,
+		},
+
+		"request with multiple range vector operators": {
+			req: createQueryRequestForSpecificNodes(
+				t, ctx, planner,
+				`max_over_time(my_series[11s:10s]) + min_over_time(my_other_series[11s:10s])`,
+				types.NewRangeQueryTimeRange(startT, startT.Add(20*time.Second), 10*time.Second),
+				1,
+				[]string{"BinaryExpression: LHS + RHS", "LHS: DeduplicateAndMerge", "FunctionCall: max_over_time(...)", "Subquery: [11s:10s]"},
+				[]string{"BinaryExpression: LHS + RHS", "RHS: DeduplicateAndMerge", "FunctionCall: min_over_time(...)", "Subquery: [11s:10s]"},
+			),
+			expectedResponseMessages: []*frontendv2pb.QueryResultStreamRequest{
+				{
+					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
+						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
+							Message: &querierpb.EvaluateQueryResponse_SeriesMetadata{
+								SeriesMetadata: &querierpb.EvaluateQueryResponseSeriesMetadata{
+									NodeIndex: 1,
+									Series: []querierpb.SeriesMetadata{
+										{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "my_series", "idx", "0"))},
+										{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "my_series", "idx", "1"))},
+									},
+								},
+							},
+						},
+					},
+				},
+				{
+					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
+						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
+							Message: &querierpb.EvaluateQueryResponse_RangeVectorStepData{
+								RangeVectorStepData: &querierpb.EvaluateQueryResponseRangeVectorStepData{
+									NodeIndex:   1,
+									SeriesIndex: 0,
+									StepT:       0,
+									RangeStart:  -11_000,
+									RangeEnd:    0,
+									Floats: []mimirpb.Sample{
+										{TimestampMs: 0, Value: 0},
+									},
+								},
+							},
+						},
+					},
+				},
+				{
+					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
+						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
+							Message: &querierpb.EvaluateQueryResponse_RangeVectorStepData{
+								RangeVectorStepData: &querierpb.EvaluateQueryResponseRangeVectorStepData{
+									NodeIndex:   1,
+									SeriesIndex: 0,
+									StepT:       10_000,
+									RangeStart:  -1_000,
+									RangeEnd:    10_000,
+									Floats: []mimirpb.Sample{
+										{TimestampMs: 0, Value: 0},
+										{TimestampMs: 10_000, Value: 1},
+									},
+								},
+							},
+						},
+					},
+				},
+				{
+					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
+						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
+							Message: &querierpb.EvaluateQueryResponse_RangeVectorStepData{
+								RangeVectorStepData: &querierpb.EvaluateQueryResponseRangeVectorStepData{
+									NodeIndex:   1,
+									SeriesIndex: 0,
+									StepT:       20_000,
+									RangeStart:  9_000,
+									RangeEnd:    20_000,
+									Floats: []mimirpb.Sample{
+										{TimestampMs: 10_000, Value: 1},
+										{TimestampMs: 20_000, Value: 2},
+									},
+								},
+							},
+						},
+					},
+				},
+				{
+					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
+						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
+							Message: &querierpb.EvaluateQueryResponse_RangeVectorStepData{
+								RangeVectorStepData: &querierpb.EvaluateQueryResponseRangeVectorStepData{
+									NodeIndex:   1,
+									SeriesIndex: 1,
+									StepT:       0,
+									RangeStart:  -11_000,
+									RangeEnd:    0,
+									Floats: []mimirpb.Sample{
+										{TimestampMs: 0, Value: 1},
+									},
+								},
+							},
+						},
+					},
+				},
+				{
+					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
+						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
+							Message: &querierpb.EvaluateQueryResponse_RangeVectorStepData{
+								RangeVectorStepData: &querierpb.EvaluateQueryResponseRangeVectorStepData{
+									NodeIndex:   1,
+									SeriesIndex: 1,
+									StepT:       10_000,
+									RangeStart:  -1_000,
+									RangeEnd:    10_000,
+									Floats: []mimirpb.Sample{
+										{TimestampMs: 0, Value: 1},
+										{TimestampMs: 10_000, Value: 3},
+									},
+								},
+							},
+						},
+					},
+				},
+				{
+					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
+						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
+							Message: &querierpb.EvaluateQueryResponse_RangeVectorStepData{
+								RangeVectorStepData: &querierpb.EvaluateQueryResponseRangeVectorStepData{
+									NodeIndex:   1,
+									SeriesIndex: 1,
+									StepT:       20_000,
+									RangeStart:  9_000,
+									RangeEnd:    20_000,
+									Floats: []mimirpb.Sample{
+										{TimestampMs: 10_000, Value: 3},
+										{TimestampMs: 20_000, Value: 5},
+									},
+								},
+							},
+						},
+					},
+				},
+				{
+					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
+						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
+							Message: &querierpb.EvaluateQueryResponse_SeriesMetadata{
+								SeriesMetadata: &querierpb.EvaluateQueryResponseSeriesMetadata{
+									NodeIndex: 3,
+									Series: []querierpb.SeriesMetadata{
+										{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "my_other_series", "idx", "0"))},
+									},
+								},
+							},
+						},
+					},
+				},
+				{
+					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
+						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
+							Message: &querierpb.EvaluateQueryResponse_RangeVectorStepData{
+								RangeVectorStepData: &querierpb.EvaluateQueryResponseRangeVectorStepData{
+									NodeIndex:   3,
+									SeriesIndex: 0,
+									StepT:       0,
+									RangeStart:  -11_000,
+									RangeEnd:    0,
+									Floats: []mimirpb.Sample{
+										{TimestampMs: 0, Value: 2},
+									},
+								},
+							},
+						},
+					},
+				},
+				{
+					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
+						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
+							Message: &querierpb.EvaluateQueryResponse_RangeVectorStepData{
+								RangeVectorStepData: &querierpb.EvaluateQueryResponseRangeVectorStepData{
+									NodeIndex:   3,
+									SeriesIndex: 0,
+									StepT:       10_000,
+									RangeStart:  -1_000,
+									RangeEnd:    10_000,
+									Floats: []mimirpb.Sample{
+										{TimestampMs: 0, Value: 2},
+										{TimestampMs: 10_000, Value: 5},
+									},
+								},
+							},
+						},
+					},
+				},
+				{
+					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
+						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
+							Message: &querierpb.EvaluateQueryResponse_RangeVectorStepData{
+								RangeVectorStepData: &querierpb.EvaluateQueryResponseRangeVectorStepData{
+									NodeIndex:   3,
+									SeriesIndex: 0,
+									StepT:       20_000,
+									RangeStart:  9_000,
+									RangeEnd:    20_000,
+									Floats: []mimirpb.Sample{
+										{TimestampMs: 10_000, Value: 5},
+										{TimestampMs: 20_000, Value: 8},
+									},
+								},
+							},
+						},
+					},
+				},
+				{
+					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
+						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
+							Message: &querierpb.EvaluateQueryResponse_EvaluationCompleted{
+								EvaluationCompleted: &querierpb.EvaluateQueryResponseEvaluationCompleted{
+									Stats: stats.Stats{
+										SamplesProcessed:   9,
+										QueueTime:          3 * time.Second,
+										WallTime:           expectedQueryWallTime,
+										FetchedSeriesCount: 123,
+										FetchedChunksCount: 456,
+										FetchedChunkBytes:  789,
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			expectedStatusCode:                           "OK",
+			expectStorageToBeCalledWithPropagatedHeaders: true,
+		},
+
+		"request with multiple scalar operators": {
+			req: createQueryRequestForSpecificNodes(
+				t, ctx, planner,
+				`10 + foo + 20`, // We can't just use '10 + 20' here because the planner will collapse that to a constant.
+				types.NewRangeQueryTimeRange(startT, startT.Add(20*time.Second), 10*time.Second),
+				1,
+				[]string{"DeduplicateAndMerge", "BinaryExpression: LHS + RHS", "LHS: DeduplicateAndMerge", "BinaryExpression: LHS + RHS", "LHS: NumberLiteral: 10"},
+				[]string{"DeduplicateAndMerge", "BinaryExpression: LHS + RHS", "RHS: NumberLiteral: 20"},
+			),
+			expectedResponseMessages: []*frontendv2pb.QueryResultStreamRequest{
+				{
+					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
+						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
+							Message: &querierpb.EvaluateQueryResponse_ScalarValue{
+								ScalarValue: &querierpb.EvaluateQueryResponseScalarValue{
+									NodeIndex: 0,
+									Values: []mimirpb.Sample{
+										{TimestampMs: 0, Value: 10},
+										{TimestampMs: 10_000, Value: 10},
+										{TimestampMs: 20_000, Value: 10},
+									},
+								},
+							},
+						},
+					},
+				},
+				{
+					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
+						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
+							Message: &querierpb.EvaluateQueryResponse_ScalarValue{
+								ScalarValue: &querierpb.EvaluateQueryResponseScalarValue{
+									NodeIndex: 1,
+									Values: []mimirpb.Sample{
+										{TimestampMs: 0, Value: 20},
+										{TimestampMs: 10_000, Value: 20},
+										{TimestampMs: 20_000, Value: 20},
+									},
+								},
+							},
+						},
+					},
+				},
+				{
+					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
+						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
+							Message: &querierpb.EvaluateQueryResponse_EvaluationCompleted{
+								EvaluationCompleted: &querierpb.EvaluateQueryResponseEvaluationCompleted{
+									Stats: stats.Stats{
+										QueueTime:          3 * time.Second,
+										WallTime:           expectedQueryWallTime,
+										FetchedSeriesCount: 123,
+										FetchedChunksCount: 456,
+										FetchedChunkBytes:  789,
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			expectedStatusCode: "OK",
+		},
+
+		"request with multiple operator types": {
+			req: createQueryRequestForSpecificNodes(
+				t, ctx, planner,
+				`12 + my_series + min_over_time(my_other_series[11s:10s])`,
+				types.NewRangeQueryTimeRange(startT, startT.Add(20*time.Second), 10*time.Second),
+				1,
+				[]string{"BinaryExpression: LHS + RHS", "LHS: DeduplicateAndMerge", "BinaryExpression: LHS + RHS", "LHS: NumberLiteral: 12"},
+				[]string{"BinaryExpression: LHS + RHS", "LHS: DeduplicateAndMerge", "BinaryExpression: LHS + RHS", `RHS: VectorSelector: {__name__="my_series"}`},
+				[]string{"BinaryExpression: LHS + RHS", "RHS: DeduplicateAndMerge", "FunctionCall: min_over_time(...)", "Subquery: [11s:10s]"},
+			),
+			expectedResponseMessages: []*frontendv2pb.QueryResultStreamRequest{
+				{
+					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
+						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
+							Message: &querierpb.EvaluateQueryResponse_ScalarValue{
+								ScalarValue: &querierpb.EvaluateQueryResponseScalarValue{
+									NodeIndex: 0,
+									Values: []mimirpb.Sample{
+										{TimestampMs: 0, Value: 12},
+										{TimestampMs: 10_000, Value: 12},
+										{TimestampMs: 20_000, Value: 12},
+									},
+								},
+							},
+						},
+					},
+				},
+				{
+					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
+						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
+							Message: &querierpb.EvaluateQueryResponse_SeriesMetadata{
+								SeriesMetadata: &querierpb.EvaluateQueryResponseSeriesMetadata{
+									NodeIndex: 1,
+									Series: []querierpb.SeriesMetadata{
+										{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "my_series", "idx", "0"))},
+										{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "my_series", "idx", "1"))},
+									},
+								},
+							},
+						},
+					},
+				},
+				{
+					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
+						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
+							Message: &querierpb.EvaluateQueryResponse_InstantVectorSeriesData{
+								InstantVectorSeriesData: &querierpb.EvaluateQueryResponseInstantVectorSeriesData{
+									NodeIndex: 1,
+									Series: []querierpb.InstantVectorSeriesData{
+										{
+											Floats: []mimirpb.Sample{
+												{TimestampMs: 0, Value: 0},
+												{TimestampMs: 10_000, Value: 1},
+												{TimestampMs: 20_000, Value: 2},
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+				{
+					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
+						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
+							Message: &querierpb.EvaluateQueryResponse_InstantVectorSeriesData{
+								InstantVectorSeriesData: &querierpb.EvaluateQueryResponseInstantVectorSeriesData{
+									NodeIndex: 1,
+									Series: []querierpb.InstantVectorSeriesData{
+										{
+											Floats: []mimirpb.Sample{
+												{TimestampMs: 0, Value: 1},
+												{TimestampMs: 10_000, Value: 3},
+												{TimestampMs: 20_000, Value: 5},
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+				{
+					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
+						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
+							Message: &querierpb.EvaluateQueryResponse_SeriesMetadata{
+								SeriesMetadata: &querierpb.EvaluateQueryResponseSeriesMetadata{
+									NodeIndex: 3,
+									Series: []querierpb.SeriesMetadata{
+										{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "my_other_series", "idx", "0"))},
+									},
+								},
+							},
+						},
+					},
+				},
+				{
+					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
+						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
+							Message: &querierpb.EvaluateQueryResponse_RangeVectorStepData{
+								RangeVectorStepData: &querierpb.EvaluateQueryResponseRangeVectorStepData{
+									NodeIndex:   3,
+									SeriesIndex: 0,
+									StepT:       0,
+									RangeStart:  -11_000,
+									RangeEnd:    0,
+									Floats: []mimirpb.Sample{
+										{TimestampMs: 0, Value: 2},
+									},
+								},
+							},
+						},
+					},
+				},
+				{
+					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
+						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
+							Message: &querierpb.EvaluateQueryResponse_RangeVectorStepData{
+								RangeVectorStepData: &querierpb.EvaluateQueryResponseRangeVectorStepData{
+									NodeIndex:   3,
+									SeriesIndex: 0,
+									StepT:       10_000,
+									RangeStart:  -1_000,
+									RangeEnd:    10_000,
+									Floats: []mimirpb.Sample{
+										{TimestampMs: 0, Value: 2},
+										{TimestampMs: 10_000, Value: 5},
+									},
+								},
+							},
+						},
+					},
+				},
+				{
+					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
+						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
+							Message: &querierpb.EvaluateQueryResponse_RangeVectorStepData{
+								RangeVectorStepData: &querierpb.EvaluateQueryResponseRangeVectorStepData{
+									NodeIndex:   3,
+									SeriesIndex: 0,
+									StepT:       20_000,
+									RangeStart:  9_000,
+									RangeEnd:    20_000,
+									Floats: []mimirpb.Sample{
+										{TimestampMs: 10_000, Value: 5},
+										{TimestampMs: 20_000, Value: 8},
+									},
+								},
+							},
+						},
+					},
+				},
+				{
+					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
+						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
+							Message: &querierpb.EvaluateQueryResponse_EvaluationCompleted{
+								EvaluationCompleted: &querierpb.EvaluateQueryResponseEvaluationCompleted{
+									Stats: stats.Stats{
+										SamplesProcessed:   9,
+										QueueTime:          3 * time.Second,
+										WallTime:           expectedQueryWallTime,
+										FetchedSeriesCount: 123,
+										FetchedChunksCount: 456,
+										FetchedChunkBytes:  789,
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			expectedStatusCode:                           "OK",
+			expectStorageToBeCalledWithPropagatedHeaders: true,
+		},
 	}
 
 	for name, testCase := range testCases {
@@ -956,6 +1687,93 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 	}
 }
 
+func createQueryRequestForSpecificNodes(t *testing.T, ctx context.Context, planner *streamingpromql.QueryPlanner, expr string, timeRange types.QueryTimeRange, batchSize uint64, nodePaths ...[]string) *prototypes.Any {
+	require.NotEmpty(t, nodePaths, "invalid test case: must provide at least one node path to evaluate")
+
+	plan, err := planner.NewQueryPlan(ctx, expr, timeRange, streamingpromql.NoopPlanningObserver{})
+	require.NoError(t, err)
+
+	nodes := make([]planning.Node, 0, len(nodePaths))
+	for _, nodePath := range nodePaths {
+		node := findNodeFromPath(t, plan, plan.Root, nodePath)
+		nodes = append(nodes, node)
+	}
+
+	encodedPlan, nodeIndices, err := plan.ToEncodedPlan(false, true, nodes...)
+	require.NoError(t, err)
+
+	evaluationNodes := make([]querierpb.EvaluationNode, 0, len(nodeIndices))
+	for _, nodeIndex := range nodeIndices {
+		evaluationNodes = append(evaluationNodes, querierpb.EvaluationNode{
+			TimeRange: encodedPlan.TimeRange,
+			NodeIndex: nodeIndex,
+		})
+	}
+
+	body := &querierpb.EvaluateQueryRequest{
+		Plan:      *encodedPlan,
+		Nodes:     evaluationNodes,
+		BatchSize: batchSize,
+	}
+
+	req, err := prototypes.MarshalAny(body)
+	require.NoError(t, err)
+	return req
+}
+
+func findNodeFromPath(t *testing.T, plan *planning.QueryPlan, root planning.Node, path []string) planning.Node {
+	if len(path) == 0 {
+		return root
+	}
+
+	current := root
+	currentDescription := describe(current, "")
+	require.Equal(t, path[0], currentDescription, "first segment of path does not match root node of plan:\n%s", plan)
+
+PathSegment:
+	for segmentIdx, childDescription := range path[1:] {
+		currentChildDescriptions := make([]string, 0, current.ChildCount())
+		childrenLabels := current.ChildrenLabels()
+
+		for idx, label := range childrenLabels {
+			child := current.Child(idx)
+			description := describe(child, label)
+
+			if description == childDescription {
+				current = child
+				currentDescription = description
+				continue PathSegment
+			}
+
+			currentChildDescriptions = append(currentChildDescriptions, description)
+		}
+
+		// If we get here, we couldn't find a matching child.
+		require.Failf(t, "invalid path", "at position %v in path: could not find child with description %q in node %q, have children %v in plan:\n%s", segmentIdx+1, childDescription, currentDescription, currentChildDescriptions, plan)
+	}
+
+	return current
+}
+
+func describe(node planning.Node, label string) string {
+	builder := &strings.Builder{}
+
+	if len(label) > 0 {
+		builder.WriteString(label)
+		builder.WriteString(": ")
+	}
+
+	builder.WriteString(planning.NodeTypeName(node))
+
+	description := node.Describe()
+	if description != "" {
+		builder.WriteString(": ")
+		builder.WriteString(description)
+	}
+
+	return builder.String()
+}
+
 func TestDispatcher_HandleProtobuf_WithDelayedNameRemovalEnabled(t *testing.T) {
 	storage := promqltest.LoadedStorage(t, `
 		load 1s
@@ -973,29 +1791,6 @@ func TestDispatcher_HandleProtobuf_WithDelayedNameRemovalEnabled(t *testing.T) {
 	engine, err := streamingpromql.NewEngine(opts, streamingpromql.NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), planner)
 	require.NoError(t, err)
 
-	createQueryRequestForSpecificNode := func(expr string, timeRange types.QueryTimeRange, nodeIndex int64) *prototypes.Any {
-		plan, err := planner.NewQueryPlan(ctx, expr, timeRange, streamingpromql.NoopPlanningObserver{})
-		require.NoError(t, err)
-
-		encodedPlan, err := plan.ToEncodedPlan(false, true)
-		require.NoError(t, err)
-
-		body := &querierpb.EvaluateQueryRequest{
-			Plan: *encodedPlan,
-			Nodes: []querierpb.EvaluationNode{
-				{
-					TimeRange: encodedPlan.TimeRange,
-					NodeIndex: nodeIndex,
-				},
-			},
-			BatchSize: 1,
-		}
-
-		req, err := prototypes.MarshalAny(body)
-		require.NoError(t, err)
-		return req
-	}
-
 	startT := timestamp.Time(0)
 	expectedQueryWallTime := 3 * time.Second
 
@@ -1004,10 +1799,12 @@ func TestDispatcher_HandleProtobuf_WithDelayedNameRemovalEnabled(t *testing.T) {
 		expectedResponseMessages []*frontendv2pb.QueryResultStreamRequest
 	}{
 		"inner part of query": {
-			req: createQueryRequestForSpecificNode(
+			req: createQueryRequestForSpecificNodes(
+				t, ctx, planner,
 				`rate(some_total[5s])`,
 				types.NewInstantQueryTimeRange(startT.Add(9*time.Second)),
-				1, // Evaluate the rate() directly, rather than the root node, which is the deduplicate and merge operation that removes the metric name.
+				1,
+				[]string{"DeduplicateAndMerge", "DropName", "FunctionCall: rate(...)"}, // Evaluate the rate() directly, rather than the root node, which is the deduplicate and merge operation that removes the metric name.
 			),
 			expectedResponseMessages: []*frontendv2pb.QueryResultStreamRequest{
 				{
@@ -1059,10 +1856,12 @@ func TestDispatcher_HandleProtobuf_WithDelayedNameRemovalEnabled(t *testing.T) {
 			},
 		},
 		"root of query": {
-			req: createQueryRequestForSpecificNode(
+			req: createQueryRequestForSpecificNodes(
+				t, ctx, planner,
 				`rate(some_total[5s])`,
 				types.NewInstantQueryTimeRange(startT.Add(9*time.Second)),
-				2, // The root of the query (0=selector, 1=rate(), 2=deduplicate and merge operation).
+				1,
+				nil, // The root of the query
 			),
 			expectedResponseMessages: []*frontendv2pb.QueryResultStreamRequest{
 				{
@@ -1070,7 +1869,7 @@ func TestDispatcher_HandleProtobuf_WithDelayedNameRemovalEnabled(t *testing.T) {
 						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
 							Message: &querierpb.EvaluateQueryResponse_SeriesMetadata{
 								SeriesMetadata: &querierpb.EvaluateQueryResponseSeriesMetadata{
-									NodeIndex: 2,
+									NodeIndex: 3,
 									Series: []querierpb.SeriesMetadata{
 										{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("idx", "0"))},
 									},
@@ -1084,7 +1883,7 @@ func TestDispatcher_HandleProtobuf_WithDelayedNameRemovalEnabled(t *testing.T) {
 						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
 							Message: &querierpb.EvaluateQueryResponse_InstantVectorSeriesData{
 								InstantVectorSeriesData: &querierpb.EvaluateQueryResponseInstantVectorSeriesData{
-									NodeIndex: 2,
+									NodeIndex: 3,
 									Series: []querierpb.InstantVectorSeriesData{
 										{
 											Floats: []mimirpb.Sample{

@@ -22,11 +22,9 @@ var errQueryClosed = cancellation.NewErrorf("Query.Close() called")
 var errQueryFinished = cancellation.NewErrorf("query execution finished")
 
 type Evaluator struct {
-	rootOperator       types.Operator
-	rootNode           planning.Node
+	nodeRequests       []NodeEvaluationRequest
 	engine             *Engine
 	originalExpression string
-	timeRange          types.QueryTimeRange
 
 	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
 
@@ -35,13 +33,11 @@ type Evaluator struct {
 	cancel      context.CancelCauseFunc
 }
 
-func NewEvaluator(rootOperator types.Operator, rootNode planning.Node, params *planning.OperatorParameters, timeRange types.QueryTimeRange, engine *Engine, originalExpression string) (*Evaluator, error) {
+func NewEvaluator(nodeRequests []NodeEvaluationRequest, params *planning.OperatorParameters, engine *Engine, originalExpression string) (*Evaluator, error) {
 	return &Evaluator{
-		rootOperator:       rootOperator,
-		rootNode:           rootNode,
+		nodeRequests:       nodeRequests,
 		engine:             engine,
 		originalExpression: originalExpression,
-		timeRange:          timeRange,
 
 		MemoryConsumptionTracker: params.MemoryConsumptionTracker,
 		annotations:              params.Annotations,
@@ -58,26 +54,31 @@ func (e *Evaluator) Evaluate(ctx context.Context, observer EvaluationObserver) (
 	defer logger.Finish()
 
 	defer func() {
-		msg := make([]interface{}, 0, 2*(3+4+2)) // 3 fields for all query types, plus worst case of 4 fields for range queries and 2 fields for a failed query
+		msg := make([]interface{}, 0, 2*(6+4+2)) // 3 fields for all query types, plus worst case of 4 fields for range queries and 2 fields for a failed query
 
 		msg = append(msg,
 			"msg", "evaluation stats",
 			"estimatedPeakMemoryConsumption", int64(e.MemoryConsumptionTracker.PeakEstimatedMemoryConsumptionBytes()),
 			"originalExpression", e.originalExpression,
+			"nodeCount", len(e.nodeRequests),
 		)
 
-		if e.timeRange.IsInstant {
-			msg = append(msg,
-				"timeRangeType", "instant",
-				"time", e.timeRange.StartT,
-			)
-		} else {
-			msg = append(msg,
-				"timeRangeType", "range",
-				"start", e.timeRange.StartT,
-				"end", e.timeRange.EndT,
-				"step", e.timeRange.IntervalMilliseconds,
-			)
+		if len(e.nodeRequests) == 1 {
+			timeRange := e.nodeRequests[0].TimeRange
+
+			if timeRange.IsInstant {
+				msg = append(msg,
+					"timeRangeType", "instant",
+					"time", timeRange.StartT,
+				)
+			} else {
+				msg = append(msg,
+					"timeRangeType", "range",
+					"start", timeRange.StartT,
+					"end", timeRange.EndT,
+					"step", timeRange.IntervalMilliseconds,
+				)
+			}
 		}
 
 		if err == nil {
@@ -108,7 +109,7 @@ func (e *Evaluator) Evaluate(ctx context.Context, observer EvaluationObserver) (
 		defer cancelTimeoutCtx()
 	}
 
-	queryID, err := e.engine.activeQueryTracker.InsertWithDetails(ctx, e.originalExpression, "evaluation", e.timeRange)
+	queryID, err := e.engine.activeQueryTracker.InsertWithDetails(ctx, e.originalExpression, "evaluation", len(e.nodeRequests) == 1, e.nodeRequests[0].TimeRange)
 	if err != nil {
 		return err
 	}
@@ -119,52 +120,60 @@ func (e *Evaluator) Evaluate(ctx context.Context, observer EvaluationObserver) (
 	// cancel with errQueryFinished and not a timeout, so we must defer this function last
 	// (so that it runs before the cancellation of the context with timeout created above).
 	defer func() {
-		e.rootOperator.Close()
+		e.closeOperators()
 		cancel(errQueryFinished)
 	}()
 
 	if e.engine.pedantic {
-		// Close the root operator a second time to ensure all operators behave correctly if Close is called multiple times.
-		defer e.rootOperator.Close()
+		// Close all operators a second time to ensure all operators behave correctly if Close is called multiple times.
+		defer e.closeOperators()
 	}
 
-	if err := e.rootOperator.Prepare(ctx, &types.PrepareParams{}); err != nil {
-		return fmt.Errorf("failed to prepare query: %w", err)
+	for _, req := range e.nodeRequests {
+		if err := req.operator.Prepare(ctx, &types.PrepareParams{}); err != nil {
+			return fmt.Errorf("failed to prepare query: %w", err)
+		}
 	}
 
-	switch root := e.rootOperator.(type) {
-	case types.InstantVectorOperator:
-		if err := e.evaluateInstantVectorOperator(ctx, root, observer); err != nil {
-			return err
-		}
+	for _, req := range e.nodeRequests {
+		switch op := req.operator.(type) {
+		case types.InstantVectorOperator:
+			if err := e.evaluateInstantVectorOperator(ctx, op, req.Node, observer); err != nil {
+				return err
+			}
 
-	case types.RangeVectorOperator:
-		if err := e.evaluateRangeVectorOperator(ctx, root, observer); err != nil {
-			return err
-		}
+		case types.RangeVectorOperator:
+			if err := e.evaluateRangeVectorOperator(ctx, op, req.Node, observer); err != nil {
+				return err
+			}
 
-	case types.ScalarOperator:
-		if err := e.evaluateScalarOperator(ctx, root, observer); err != nil {
-			return err
-		}
+		case types.ScalarOperator:
+			if err := e.evaluateScalarOperator(ctx, op, req.Node, observer); err != nil {
+				return err
+			}
 
-	case types.StringOperator:
-		if err := e.evaluateStringOperator(ctx, root, observer); err != nil {
-			return err
-		}
+		case types.StringOperator:
+			if err := e.evaluateStringOperator(ctx, op, req.Node, observer); err != nil {
+				return err
+			}
 
-	default:
-		return fmt.Errorf("operator type %T produces unknown result type", root)
+		default:
+			return fmt.Errorf("operator type %T produces unknown result type", op)
+		}
 	}
 
-	if err := e.rootOperator.Finalize(ctx); err != nil {
-		return err
+	for _, req := range e.nodeRequests {
+		if err := req.operator.Finalize(ctx); err != nil {
+			return err
+		}
 	}
 
 	if e.engine.pedantic {
-		// Finalize the root operator a second time to ensure all operators behave correctly if Finalize is called multiple times.
-		if err := e.rootOperator.Finalize(ctx); err != nil {
-			return fmt.Errorf("pedantic mode: failed to finalize operator a second time after successfully finalizing the first time: %w", err)
+		// Finalize the all operators a second time to ensure all operators behave correctly if Finalize is called multiple times.
+		for _, req := range e.nodeRequests {
+			if err := req.operator.Finalize(ctx); err != nil {
+				return fmt.Errorf("pedantic mode: failed to finalize operator a second time after successfully finalizing the first time: %w", err)
+			}
 		}
 	}
 
@@ -176,7 +185,13 @@ func (e *Evaluator) Evaluate(ctx context.Context, observer EvaluationObserver) (
 	return observer.EvaluationCompleted(ctx, e, e.annotations, e.stats)
 }
 
-func (e *Evaluator) evaluateInstantVectorOperator(ctx context.Context, op types.InstantVectorOperator, observer EvaluationObserver) error {
+func (e *Evaluator) closeOperators() {
+	for _, req := range e.nodeRequests {
+		req.operator.Close()
+	}
+}
+
+func (e *Evaluator) evaluateInstantVectorOperator(ctx context.Context, op types.InstantVectorOperator, node planning.Node, observer EvaluationObserver) error {
 	series, err := op.SeriesMetadata(ctx, nil)
 	if err != nil {
 		return err
@@ -184,7 +199,7 @@ func (e *Evaluator) evaluateInstantVectorOperator(ctx context.Context, op types.
 
 	seriesCount := len(series) // Take the length now, as the observer takes ownership of the slice when SeriesMetadataEvaluated is called.
 
-	if err := observer.SeriesMetadataEvaluated(ctx, e, e.rootNode, series); err != nil {
+	if err := observer.SeriesMetadataEvaluated(ctx, e, node, series); err != nil {
 		return err
 	}
 
@@ -198,7 +213,7 @@ func (e *Evaluator) evaluateInstantVectorOperator(ctx context.Context, op types.
 			return err
 		}
 
-		if err := observer.InstantVectorSeriesDataEvaluated(ctx, e, e.rootNode, seriesIdx, d); err != nil {
+		if err := observer.InstantVectorSeriesDataEvaluated(ctx, e, node, seriesIdx, seriesCount, d); err != nil {
 			return err
 		}
 	}
@@ -206,7 +221,7 @@ func (e *Evaluator) evaluateInstantVectorOperator(ctx context.Context, op types.
 	return nil
 }
 
-func (e *Evaluator) evaluateRangeVectorOperator(ctx context.Context, op types.RangeVectorOperator, observer EvaluationObserver) error {
+func (e *Evaluator) evaluateRangeVectorOperator(ctx context.Context, op types.RangeVectorOperator, node planning.Node, observer EvaluationObserver) error {
 	series, err := op.SeriesMetadata(ctx, nil)
 	if err != nil {
 		return err
@@ -214,7 +229,7 @@ func (e *Evaluator) evaluateRangeVectorOperator(ctx context.Context, op types.Ra
 
 	seriesCount := len(series) // Take the length now, as the observer takes ownership of the slice when SeriesMetadataEvaluated is called.
 
-	if err := observer.SeriesMetadataEvaluated(ctx, e, e.rootNode, series); err != nil {
+	if err := observer.SeriesMetadataEvaluated(ctx, e, node, series); err != nil {
 		return err
 	}
 
@@ -241,7 +256,7 @@ func (e *Evaluator) evaluateRangeVectorOperator(ctx context.Context, op types.Ra
 				return err
 			}
 
-			if err := observer.RangeVectorStepSamplesEvaluated(ctx, e, e.rootNode, seriesIdx, stepIdx, step); err != nil {
+			if err := observer.RangeVectorStepSamplesEvaluated(ctx, e, node, seriesIdx, stepIdx, step); err != nil {
 				return err
 			}
 
@@ -252,23 +267,19 @@ func (e *Evaluator) evaluateRangeVectorOperator(ctx context.Context, op types.Ra
 	return nil
 }
 
-func (e *Evaluator) evaluateScalarOperator(ctx context.Context, op types.ScalarOperator, observer EvaluationObserver) error {
+func (e *Evaluator) evaluateScalarOperator(ctx context.Context, op types.ScalarOperator, node planning.Node, observer EvaluationObserver) error {
 	d, err := op.GetValues(ctx)
 	if err != nil {
 		return err
 	}
 
-	return observer.ScalarEvaluated(ctx, e, e.rootNode, d)
+	return observer.ScalarEvaluated(ctx, e, node, d)
 }
 
-func (e *Evaluator) evaluateStringOperator(ctx context.Context, op types.StringOperator, observer EvaluationObserver) error {
+func (e *Evaluator) evaluateStringOperator(ctx context.Context, op types.StringOperator, node planning.Node, observer EvaluationObserver) error {
 	v := op.GetValue()
 
-	return observer.StringEvaluated(ctx, e, e.rootNode, v)
-}
-
-func (e *Evaluator) GetQueryTimeRange() types.QueryTimeRange {
-	return e.timeRange
+	return observer.StringEvaluated(ctx, e, node, v)
 }
 
 func (e *Evaluator) Cancel() {
@@ -292,7 +303,7 @@ type EvaluationObserver interface {
 	// InstantVectorSeriesDataEvaluated notifies this observer when samples for an instant vector series have been evaluated.
 	// Implementations of this method are responsible for returning seriesData to the pool when it is no longer needed.
 	// Implementations of this method may mutate seriesData before returning it to the pool.
-	InstantVectorSeriesDataEvaluated(ctx context.Context, evaluator *Evaluator, node planning.Node, seriesIndex int, seriesData types.InstantVectorSeriesData) error
+	InstantVectorSeriesDataEvaluated(ctx context.Context, evaluator *Evaluator, node planning.Node, seriesIndex int, seriesCount int, seriesData types.InstantVectorSeriesData) error
 
 	// RangeVectorStepSamplesEvaluated notifies this observer when samples for a range vector step have been evaluated.
 	// Implementations of this method must not mutate stepData, and should copy any data they wish to retain from stepData before returning.

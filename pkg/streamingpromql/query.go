@@ -44,7 +44,8 @@ type Query struct {
 	annotations    *annotations.Annotations
 	stats          *types.QueryStats
 
-	resultIsVector bool // This is necessary as we need to know what kind of result to return (vector or matrix) if the result is empty.
+	topLevelValueType parser.ValueType
+	resultIsVector    bool // This is necessary as we need to know what kind of result to return (vector or matrix) if the result is empty.
 
 	succeeded bool
 }
@@ -53,8 +54,7 @@ func (q *Query) Exec(ctx context.Context) (res *promql.Result) {
 	logger, ctx := spanlogger.New(ctx, q.engine.logger, tracer, "Query.Exec")
 	defer logger.Finish()
 
-	_, isInstantVectorOperator := q.evaluator.rootOperator.(types.InstantVectorOperator)
-	q.resultIsVector = q.topLevelQueryTimeRange.IsInstant && isInstantVectorOperator
+	q.resultIsVector = q.topLevelQueryTimeRange.IsInstant && q.topLevelValueType == parser.ValueTypeVector
 
 	if err := q.evaluator.Evaluate(ctx, q); err != nil {
 		q.returnResultToPool()
@@ -107,7 +107,7 @@ func (q *Query) SeriesMetadataEvaluated(ctx context.Context, evaluator *Evaluato
 }
 
 // InstantVectorSeriesDataEvaluated implements the EvaluationObserver interface.
-func (q *Query) InstantVectorSeriesDataEvaluated(ctx context.Context, evaluator *Evaluator, node planning.Node, seriesIndex int, seriesData types.InstantVectorSeriesData) error {
+func (q *Query) InstantVectorSeriesDataEvaluated(ctx context.Context, evaluator *Evaluator, node planning.Node, seriesIndex int, seriesCount int, seriesData types.InstantVectorSeriesData) error {
 	if len(seriesData.Floats) == 0 && len(seriesData.Histograms) == 0 {
 		// Nothing to do.
 		types.PutInstantVectorSeriesData(seriesData, q.memoryConsumptionTracker)
