@@ -133,27 +133,27 @@ func (d *Dispatcher) evaluateQuery(ctx context.Context, body []byte, resp *query
 		return
 	}
 
-	evaluationNode := req.Nodes[0]
+	nodeIndices := make([]int64, 0, len(req.Nodes))
+	for _, node := range req.Nodes {
+		nodeIndices = append(nodeIndices, node.NodeIndex)
+	}
 
-	plan, nodes, err := req.Plan.ToDecodedPlan(evaluationNode.NodeIndex)
+	plan, nodes, err := req.Plan.ToDecodedPlan(nodeIndices...)
 	if err != nil {
 		resp.WriteError(ctx, apierror.TypeBadData, fmt.Errorf("could not decode plan: %w", err))
 		return
 	}
 
-	opts := promql.NewPrometheusQueryOpts(false, 0)
-	e, err := d.engine.NewEvaluator(ctx, d.queryable, opts, plan, nodes[0], evaluationNode.TimeRange.ToDecodedTimeRange())
-	if err != nil {
-		resp.WriteError(ctx, apierror.TypeBadData, fmt.Errorf("could not materialize query: %w", err))
-		return
-	}
-
-	defer e.Close()
-
-	nodeIndices := make(map[planning.Node]int64, len(nodes))
+	nodeRequests := make([]streamingpromql.NodeEvaluationRequest, 0, len(nodes))
+	nodeToIndexMap := make(map[planning.Node]int64, len(nodes))
 	instantVectorNodeCount := 0
 	for idx, node := range nodes {
-		nodeIndices[node] = req.Nodes[idx].NodeIndex
+		nodeRequests = append(nodeRequests, streamingpromql.NodeEvaluationRequest{
+			Node:      node,
+			TimeRange: req.Nodes[idx].TimeRange.ToDecodedTimeRange(),
+		})
+
+		nodeToIndexMap[node] = req.Nodes[idx].NodeIndex
 
 		if typ, err := node.ResultType(); err != nil {
 			resp.WriteError(ctx, apierror.TypeInternal, fmt.Errorf("could not get result type for node: %w", err))
@@ -163,14 +163,23 @@ func (d *Dispatcher) evaluateQuery(ctx context.Context, body []byte, resp *query
 		}
 	}
 
-	if len(nodeIndices) != len(req.Nodes) {
-		resp.WriteError(ctx, apierror.TypeBadData, fmt.Errorf("request contains at least one node multiple times: have %v requested node(s), but only %v unique node(s)", len(req.Nodes), len(nodeIndices)))
+	if len(nodeToIndexMap) != len(req.Nodes) {
+		resp.WriteError(ctx, apierror.TypeBadData, fmt.Errorf("request contains at least one node multiple times: have %v requested node(s), but only %v unique node(s)", len(req.Nodes), len(nodeToIndexMap)))
 		return
 	}
 
+	opts := promql.NewPrometheusQueryOpts(false, 0)
+	e, err := d.engine.NewEvaluator(ctx, d.queryable, opts, plan, nodeRequests)
+	if err != nil {
+		resp.WriteError(ctx, apierror.TypeBadData, fmt.Errorf("could not materialize query: %w", err))
+		return
+	}
+
+	defer e.Close()
+
 	observer := &evaluationObserver{
 		w:                              resp,
-		nodeIndices:                    nodeIndices,
+		nodeIndices:                    nodeToIndexMap,
 		startTime:                      startTime,
 		timeNow:                        d.timeNow,
 		originalExpression:             req.Plan.OriginalExpression,

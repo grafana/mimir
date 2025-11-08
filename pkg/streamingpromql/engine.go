@@ -118,7 +118,7 @@ func DetermineLookbackDelta(opts promql.EngineOpts) time.Duration {
 
 // QueryTracker is like promql.QueryTracker, but includes more information about the query.
 type QueryTracker interface {
-	InsertWithDetails(ctx context.Context, query string, stage string, timeRange types.QueryTimeRange) (int, error)
+	InsertWithDetails(ctx context.Context, query string, stage string, includeTimeRange bool, timeRange types.QueryTimeRange) (int, error)
 
 	Delete(insertIndex int)
 }
@@ -188,7 +188,14 @@ func (e *Engine) newQueryFromPlanner(ctx context.Context, queryable storage.Quer
 		lookbackDelta = e.lookbackDelta
 	}
 
-	evaluator, err := e.materializeAndCreateEvaluator(ctx, queryable, opts, plan, plan.Root, plan.TimeRange, lookbackDelta)
+	nodeRequests := []NodeEvaluationRequest{
+		{
+			Node:      plan.Root,
+			TimeRange: timeRange,
+		},
+	}
+
+	evaluator, err := e.materializeAndCreateEvaluator(ctx, queryable, opts, plan, nodeRequests, lookbackDelta)
 	if err != nil {
 		return nil, err
 	}
@@ -205,6 +212,11 @@ func (e *Engine) newQueryFromPlanner(ctx context.Context, queryable storage.Quer
 		statement.Interval = 0 // MQE uses an interval of 1ms in instant queries, but the Prometheus API contract expects this to be 0 in this case.
 	}
 
+	topLevelValueType, err := plan.Root.ResultType()
+	if err != nil {
+		return nil, err
+	}
+
 	return &Query{
 		evaluator:                evaluator,
 		engine:                   e,
@@ -212,10 +224,18 @@ func (e *Engine) newQueryFromPlanner(ctx context.Context, queryable storage.Quer
 		memoryConsumptionTracker: evaluator.MemoryConsumptionTracker,
 		originalExpression:       plan.OriginalExpression,
 		topLevelQueryTimeRange:   plan.TimeRange,
+		topLevelValueType:        topLevelValueType,
 	}, nil
 }
 
-func (e *Engine) NewEvaluator(ctx context.Context, queryable storage.Queryable, opts promql.QueryOpts, plan *planning.QueryPlan, node planning.Node, nodeTimeRange types.QueryTimeRange) (*Evaluator, error) {
+type NodeEvaluationRequest struct {
+	Node      planning.Node
+	TimeRange types.QueryTimeRange
+
+	operator types.Operator
+}
+
+func (e *Engine) NewEvaluator(ctx context.Context, queryable storage.Queryable, opts promql.QueryOpts, plan *planning.QueryPlan, nodeRequests []NodeEvaluationRequest) (*Evaluator, error) {
 	if opts == nil {
 		opts = promql.NewPrometheusQueryOpts(false, 0)
 	}
@@ -225,14 +245,14 @@ func (e *Engine) NewEvaluator(ctx context.Context, queryable storage.Queryable, 
 		lookbackDelta = e.lookbackDelta
 	}
 
-	return e.materializeAndCreateEvaluator(ctx, queryable, opts, plan, node, nodeTimeRange, lookbackDelta)
+	return e.materializeAndCreateEvaluator(ctx, queryable, opts, plan, nodeRequests, lookbackDelta)
 }
 
-func (e *Engine) materializeAndCreateEvaluator(ctx context.Context, queryable storage.Queryable, opts promql.QueryOpts, plan *planning.QueryPlan, node planning.Node, nodeTimeRange types.QueryTimeRange, lookbackDelta time.Duration) (*Evaluator, error) {
+func (e *Engine) materializeAndCreateEvaluator(ctx context.Context, queryable storage.Queryable, opts promql.QueryOpts, plan *planning.QueryPlan, nodeRequests []NodeEvaluationRequest, lookbackDelta time.Duration) (*Evaluator, error) {
 	span, ctx := tracing.StartSpanFromContext(ctx, "Engine.materializeAndCreateEvaluator")
 	defer span.Finish()
 
-	queryID, err := e.activeQueryTracker.InsertWithDetails(ctx, plan.OriginalExpression, "materialization", plan.TimeRange)
+	queryID, err := e.activeQueryTracker.InsertWithDetails(ctx, plan.OriginalExpression, "materialization", true, plan.TimeRange)
 	if err != nil {
 		return nil, err
 	}
@@ -263,12 +283,16 @@ func (e *Engine) materializeAndCreateEvaluator(ctx context.Context, queryable st
 	}
 
 	materializer := planning.NewMaterializer(operatorParams, e.nodeMaterializers)
-	op, err := materializer.ConvertNodeToOperator(node, nodeTimeRange)
-	if err != nil {
-		return nil, err
+	for idx, req := range nodeRequests {
+		op, err := materializer.ConvertNodeToOperator(req.Node, req.TimeRange)
+		if err != nil {
+			return nil, err
+		}
+
+		nodeRequests[idx].operator = op
 	}
 
-	return NewEvaluator(op, node, operatorParams, nodeTimeRange, e, plan.OriginalExpression)
+	return NewEvaluator(nodeRequests, operatorParams, e, plan.OriginalExpression)
 }
 
 type QueryLimitsProvider interface {
@@ -299,7 +323,7 @@ func (n *NoopQueryTracker) GetMaxConcurrent() int {
 	return math.MaxInt
 }
 
-func (n *NoopQueryTracker) InsertWithDetails(_ context.Context, _ string, _ string, _ types.QueryTimeRange) (int, error) {
+func (n *NoopQueryTracker) InsertWithDetails(ctx context.Context, query string, stage string, includeTimeRange bool, timeRange types.QueryTimeRange) (int, error) {
 	// Nothing to do.
 	return 0, nil
 }

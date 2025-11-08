@@ -2088,7 +2088,7 @@ func (qt *testQueryTracker) GetMaxConcurrent() int {
 	return 0
 }
 
-func (qt *testQueryTracker) InsertWithDetails(_ context.Context, query string, stage string, timeRange types.QueryTimeRange) (int, error) {
+func (qt *testQueryTracker) InsertWithDetails(ctx context.Context, query string, stage string, includeTimeRange bool, timeRange types.QueryTimeRange) (int, error) {
 	qt.queries = append(qt.queries, trackedQuery{
 		expr:      query,
 		stage:     stage,
@@ -2179,7 +2179,7 @@ func (t *timeoutTestingQueryTracker) GetMaxConcurrent() int {
 	return 0
 }
 
-func (t *timeoutTestingQueryTracker) InsertWithDetails(ctx context.Context, _ string, _ string, _ types.QueryTimeRange) (int, error) {
+func (t *timeoutTestingQueryTracker) InsertWithDetails(ctx context.Context, query string, stage string, includeTimeRange bool, timeRange types.QueryTimeRange) (int, error) {
 	if !t.shouldWaitForTimeout {
 		return 0, nil
 	}

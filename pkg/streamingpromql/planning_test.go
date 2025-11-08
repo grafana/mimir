@@ -1419,6 +1419,9 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 	}
 }
 
+// TODO: add test for case where same node provided multiple times to ToEncodedPlan
+// TODO: add test for case where explicit nodes provided to ToEncodedPlan
+
 func TestPlanCreation_OptimisationPassGeneratesPlanWithHigherVersionThanAllowed(t *testing.T) {
 	opts := NewTestEngineOpts()
 	planner, err := NewQueryPlannerWithoutOptimizationPasses(opts, NewStaticQueryPlanVersionProvider(12))
