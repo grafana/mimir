@@ -45,7 +45,8 @@ type Config struct {
 	TLSEnabled bool             `yaml:"tls_enabled" category:"advanced"`
 	TLS        tls.ClientConfig `yaml:",inline"`
 
-	TenantsCloseToLimitPollInterval time.Duration `yaml:"tenants_close_to_limit_poll_interval" category:"advanced"`
+	TenantsCloseToLimitPollInterval        time.Duration `yaml:"tenants_close_to_limit_poll_interval" category:"advanced"`
+	TenantsCloseToLimitCacheStartupRetries int           `yaml:"tenants_close_to_limit_cache_startup_retries" category:"advanced"`
 
 	// Allow to inject custom client factory in tests.
 	ClientFactory client.PoolFactory `yaml:"-"`
@@ -63,6 +64,7 @@ func (cfg *Config) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 	f.DurationVar(&cfg.RequestsHedgingDelay, prefix+"requests-hedging-delay", 100*time.Millisecond, "Delay before initiating requests to further usage-trackers (e.g. in other zones).")
 	f.IntVar(&cfg.ReusableWorkers, prefix+"reusable-workers", 500, "Number of pre-allocated workers used to send requests to usage-trackers. If 0, no workers pool will be used and a new goroutine will be spawned for each request.")
 	f.DurationVar(&cfg.TenantsCloseToLimitPollInterval, prefix+"tenants-close-to-limit-poll-interval", time.Second, "Interval to poll usage-tracker instances for the list of tenants close to their series limit. This list is used to determine whether to track series synchronously or asynchronously.")
+	f.IntVar(&cfg.TenantsCloseToLimitCacheStartupRetries, prefix+"tenants-close-to-limit-cache-startup-retries", 3, "Number of retries to populate the tenants close to limit cache at startup. If all retries fail, the client will start with an empty cache.")
 
 	cfg.GRPCClientConfig.RegisterFlagsWithPrefix(prefix+"grpc-client-config", f)
 }
@@ -91,6 +93,7 @@ type UsageTrackerClient struct {
 	trackSeriesDuration                  *prometheus.HistogramVec
 	tenantsCloseToLimitCount             prometheus.Gauge
 	tenantsCloseToLimitLastUpdateSeconds prometheus.Gauge
+	tenantsCloseToLimitUpdateFailures    prometheus.Counter
 }
 
 func NewUsageTrackerClient(clientName string, clientCfg Config, partitionRing *ring.MultiPartitionInstanceRing, instanceRing ring.ReadRing, logger log.Logger, registerer prometheus.Registerer) *UsageTrackerClient {
@@ -118,6 +121,10 @@ func NewUsageTrackerClient(clientName string, clientCfg Config, partitionRing *r
 			Name: "cortex_usage_tracker_client_tenants_close_to_limit_last_update_timestamp_seconds",
 			Help: "Unix timestamp of the last update to the tenants close to limit cache.",
 		}),
+		tenantsCloseToLimitUpdateFailures: promauto.With(registerer).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_usage_tracker_client_tenants_close_to_limit_update_failures_total",
+			Help: "Total number of failed attempts to update the tenants close to limit cache.",
+		}),
 	}
 
 	c.Service = services.NewBasicService(c.starting, c.running, c.stopping)
@@ -126,6 +133,29 @@ func NewUsageTrackerClient(clientName string, clientCfg Config, partitionRing *r
 
 // starting implements services.StartingFn.
 func (c *UsageTrackerClient) starting(ctx context.Context) error {
+	// Try to populate the cache at startup with retries.
+	// If all retries fail, we still start with an empty cache.
+	maxRetries := c.cfg.TenantsCloseToLimitCacheStartupRetries
+	if maxRetries <= 0 {
+		maxRetries = 1 // At least try once
+	}
+
+	for attempt := 0; attempt < maxRetries; attempt++ {
+		if attempt > 0 {
+			level.Warn(c.logger).Log("msg", "retrying tenants close to limit cache population at startup", "attempt", attempt+1, "max_retries", maxRetries)
+		}
+
+		c.updateTenantsCloseToLimitCache(ctx)
+
+		// Check if the cache was successfully populated (non-zero size indicates success).
+		if c.tenantCacheSize.Load() > 0 {
+			level.Info(c.logger).Log("msg", "successfully populated tenants close to limit cache at startup", "tenant_count", c.tenantCacheSize.Load(), "attempt", attempt+1)
+			return nil
+		}
+	}
+
+	// All retries failed, but we still start with an empty cache.
+	level.Warn(c.logger).Log("msg", "failed to populate tenants close to limit cache at startup after all retries, starting with empty cache", "max_retries", maxRetries)
 	return nil
 }
 
@@ -338,17 +368,20 @@ func (c *UsageTrackerClient) updateTenantsCloseToLimitCache(ctx context.Context)
 	partitions := c.partitionRing.PartitionRing().Partitions()
 	if len(partitions) == 0 {
 		level.Warn(c.logger).Log("msg", "no partitions available in ring for tenants close to limit poll")
+		c.tenantsCloseToLimitUpdateFailures.Inc()
 		return
 	}
 	randomPartitionID := uint32(rand.IntN(len(partitions)))
 	replicationSet, err := partitionBatchRing.Get(randomPartitionID, TrackSeriesOp, nil, nil, nil)
 	if err != nil {
 		level.Error(c.logger).Log("msg", "failed to get partition from ring for tenants close to limit poll", "err", err)
+		c.tenantsCloseToLimitUpdateFailures.Inc()
 		return
 	}
 
 	if len(replicationSet.Instances) == 0 {
 		level.Warn(c.logger).Log("msg", "no instances available for tenants close to limit poll")
+		c.tenantsCloseToLimitUpdateFailures.Inc()
 		return
 	}
 
@@ -370,6 +403,7 @@ func (c *UsageTrackerClient) updateTenantsCloseToLimitCache(ctx context.Context)
 	grpcClient, err := c.clientsPool.GetClientFor(instance.Addr)
 	if err != nil {
 		level.Error(c.logger).Log("msg", "failed to get client for tenants close to limit poll", "addr", instance.Addr, "err", err)
+		c.tenantsCloseToLimitUpdateFailures.Inc()
 		return
 	}
 
@@ -378,6 +412,7 @@ func (c *UsageTrackerClient) updateTenantsCloseToLimitCache(ctx context.Context)
 	resp, err := usageTrackerClient.GetTenantsCloseToLimit(ctx, req)
 	if err != nil {
 		level.Error(c.logger).Log("msg", "failed to get tenants close to limit", "partition", req.Partition, "err", err)
+		c.tenantsCloseToLimitUpdateFailures.Inc()
 		return
 	}
 
