@@ -991,12 +991,19 @@ func (c *BucketCompactor) compactOnce(ctx context.Context, syncer *metaSyncer, m
 		wg                     sync.WaitGroup
 		workCtx, workCtxCancel = context.WithCancelCause(ctx)
 		jobChan                = make(chan *Job)
+		jobChanClosed          = false
 		errChan                = make(chan error, c.concurrency)
 		finishedAllJobs        = true
 		mtx                    sync.Mutex
 	)
 
 	defer workCtxCancel(errCompactionIterationCancelled)
+	defer func() {
+		if !jobChanClosed {
+			close(jobChan)
+			wg.Wait()
+		}
+	}()
 
 	// Set up workers which will compact the jobs when the jobs are ready.
 	// They will compact available jobs until they encounter an error, after which they will stop.
@@ -1125,6 +1132,7 @@ jobLoop:
 		}
 	}
 	close(jobChan)
+	jobChanClosed = true
 	wg.Wait()
 
 	// Collect any other error reported by the workers, or any error reported

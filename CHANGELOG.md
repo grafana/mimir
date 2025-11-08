@@ -255,6 +255,7 @@
 * [BUGFIX] MQE: Fix internal error when executing a subquery with delayed name removal enabled. #14946
 * [BUGFIX] Alertmanager: Fix deadlock when trying to broadcast after stopping a tenant #14922
 * [BUGFIX] Query-frontend: Fix max total query length limit (`-query-frontend.max-total-query-length`) not being enforced on instant queries with subqueries or range selectors. #14985
+* [BUGFIX] Compactor: Fix potential goroutine leak when compaction iteration exits early due to errors. #13420
 
 ### Mixin
 
