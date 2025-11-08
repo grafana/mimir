@@ -50,6 +50,7 @@
   * `-blocks-storage.gcs.enable-upload-retries`
   * `-common.storage.gcs.enable-upload-retries`
   * `-ruler-storage.gcs.enable-upload-retries`
+* [ENHANCEMENT] Usage-tracker: Improved write path performance by tracking series asynchronously for tenants that are far from their series limits. Tenants close to their limits continue to be tracked synchronously to enforce limits strictly. The usage-tracker client now polls for the list of tenants close to limits every 1 second by default (configurable via `-usage-tracker-client.tenants-close-to-limit-poll-interval`). Two new configuration options control when a tenant is considered close to their limit: `-usage-tracker.tenant-close-to-limit-percentage-threshold` (default: 85%) and `-usage-tracker.tenant-close-to-limit-absolute-threshold` (default: 25000 series). #13427
   * `-alertmanager-storage.gcs.max-retries`
   * `-blocks-storage.gcs.max-retries`
   * `-common.storage.gcs.max-retries`
