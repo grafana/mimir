@@ -680,6 +680,41 @@ func (t *UsageTracker) TrackSeries(_ context.Context, req *usagetrackerpb.TrackS
 	return &usagetrackerpb.TrackSeriesResponse{RejectedSeriesHashes: rejected}, nil
 }
 
+// GetTenantsCloseToLimit implements usagetrackerpb.UsageTrackerServer.
+func (t *UsageTracker) GetTenantsCloseToLimit(_ context.Context, req *usagetrackerpb.GetTenantsCloseToLimitRequest) (*usagetrackerpb.GetTenantsCloseToLimitResponse, error) {
+	partition := req.Partition
+
+	// If partition is not specified or is -1, select a random partition.
+	if partition < 0 {
+		t.partitionsMtx.RLock()
+		partitionCount := int32(len(t.partitions))
+		if partitionCount == 0 {
+			t.partitionsMtx.RUnlock()
+			return nil, fmt.Errorf("no partitions available")
+		}
+		// Select a random partition from the available ones.
+		// We iterate over the map to get a random partition (map iteration order is random in Go).
+		for p := range t.partitions {
+			partition = p
+			break
+		}
+		t.partitionsMtx.RUnlock()
+	}
+
+	t.partitionsMtx.RLock()
+	p, ok := t.partitions[partition]
+	t.partitionsMtx.RUnlock()
+	if !ok {
+		return nil, fmt.Errorf("partition handler %d not found", partition)
+	}
+
+	tenantIDs := p.store.getTenantsCloseToLimit()
+	return &usagetrackerpb.GetTenantsCloseToLimitResponse{
+		TenantIds: tenantIDs,
+		Partition: partition,
+	}, nil
+}
+
 // CheckReady performs a readiness check.
 // An instance is ready when it has instantiated all the partitions that should belong to it according to the ring.
 func (t *UsageTracker) CheckReady(_ context.Context) error {
