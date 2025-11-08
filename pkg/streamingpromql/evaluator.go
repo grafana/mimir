@@ -106,6 +106,13 @@ func (e *Evaluator) Evaluate(ctx context.Context, observer EvaluationObserver) (
 		defer cancelTimeoutCtx()
 	}
 
+	queryID, err := e.engine.activeQueryTracker.InsertWithDetails(ctx, e.originalExpression, "evaluation", e.timeRange)
+	if err != nil {
+		return err
+	}
+
+	defer e.engine.activeQueryTracker.Delete(queryID)
+
 	// The order of the deferred cancellations is important: we want to close all operators first, then
 	// cancel with errQueryFinished and not a timeout, so we must defer this function last
 	// (so that it runs before the cancellation of the context with timeout created above).
@@ -118,13 +125,6 @@ func (e *Evaluator) Evaluate(ctx context.Context, observer EvaluationObserver) (
 		// Close the root operator a second time to ensure all operators behave correctly if Close is called multiple times.
 		defer e.root.Close()
 	}
-
-	queryID, err := e.engine.activeQueryTracker.InsertWithDetails(ctx, e.originalExpression, "evaluation", e.timeRange)
-	if err != nil {
-		return err
-	}
-
-	defer e.engine.activeQueryTracker.Delete(queryID)
 
 	if err := e.root.Prepare(ctx, &types.PrepareParams{}); err != nil {
 		return fmt.Errorf("failed to prepare query: %w", err)
