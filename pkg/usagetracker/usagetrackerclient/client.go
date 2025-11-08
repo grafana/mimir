@@ -8,7 +8,6 @@ import (
 	"math/rand/v2"
 	"strconv"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/go-kit/log"
@@ -22,6 +21,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/usagetracker/usagetrackerpb"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
@@ -84,8 +84,8 @@ type UsageTrackerClient struct {
 	tenantsCloseToLimitCache sync.Map // map[string]struct{}
 
 	// Atomic fields for metrics.
-	tenantCacheLastUpdateTimestamp atomic.Int64 // Unix timestamp in seconds
-	tenantCacheSize                atomic.Int64 // Count of tenants in cache
+	tenantCacheLastUpdateTimestamp *atomic.Int64 // Unix timestamp in seconds
+	tenantCacheSize                *atomic.Int64 // Count of tenants in cache
 
 	// Metrics.
 	trackSeriesDuration                  *prometheus.HistogramVec
@@ -95,11 +95,13 @@ type UsageTrackerClient struct {
 
 func NewUsageTrackerClient(clientName string, clientCfg Config, partitionRing *ring.MultiPartitionInstanceRing, instanceRing ring.ReadRing, logger log.Logger, registerer prometheus.Registerer) *UsageTrackerClient {
 	c := &UsageTrackerClient{
-		cfg:                    clientCfg,
-		logger:                 logger,
-		partitionRing:          partitionRing,
-		clientsPool:            newUsageTrackerClientPool(client.NewRingServiceDiscovery(instanceRing), clientName, clientCfg, logger, registerer),
-		trackSeriesWorkersPool: concurrency.NewReusableGoroutinesPool(clientCfg.ReusableWorkers),
+		cfg:                            clientCfg,
+		logger:                         logger,
+		partitionRing:                  partitionRing,
+		clientsPool:                    newUsageTrackerClientPool(client.NewRingServiceDiscovery(instanceRing), clientName, clientCfg, logger, registerer),
+		trackSeriesWorkersPool:         concurrency.NewReusableGoroutinesPool(clientCfg.ReusableWorkers),
+		tenantCacheLastUpdateTimestamp: atomic.NewInt64(0),
+		tenantCacheSize:                atomic.NewInt64(0),
 		trackSeriesDuration: promauto.With(registerer).NewHistogramVec(prometheus.HistogramOpts{
 			Name:                            "cortex_usage_tracker_client_track_series_duration_seconds",
 			Help:                            "Time taken to track all series in remote write request, eventually sharding the tracking among multiple usage-tracker instances.",
