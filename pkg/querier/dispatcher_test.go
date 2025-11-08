@@ -59,25 +59,28 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 	engine, err := streamingpromql.NewEngine(opts, streamingpromql.NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), planner)
 	require.NoError(t, err)
 
-	createQueryRequestForSpecificNode := func(expr string, timeRange types.QueryTimeRange, nodeIndex int64, batchSize uint64) *prototypes.Any {
+	createQueryRequestForSpecificNodes := func(expr string, timeRange types.QueryTimeRange, batchSize uint64, nodeIndices ...int64) *prototypes.Any {
 		plan, err := planner.NewQueryPlan(ctx, expr, timeRange, streamingpromql.NoopPlanningObserver{})
 		require.NoError(t, err)
 
 		encodedPlan, err := plan.ToEncodedPlan(false, true)
 		require.NoError(t, err)
 
-		if nodeIndex == -1 {
-			nodeIndex = encodedPlan.RootNode
+		nodes := make([]querierpb.EvaluationNode, 0, len(nodeIndices))
+		for _, nodeIndex := range nodeIndices {
+			if nodeIndex == -1 {
+				nodeIndex = encodedPlan.RootNode
+			}
+
+			nodes = append(nodes, querierpb.EvaluationNode{
+				TimeRange: encodedPlan.TimeRange,
+				NodeIndex: nodeIndex,
+			})
 		}
 
 		body := &querierpb.EvaluateQueryRequest{
-			Plan: *encodedPlan,
-			Nodes: []querierpb.EvaluationNode{
-				{
-					TimeRange: encodedPlan.TimeRange,
-					NodeIndex: nodeIndex,
-				},
-			},
+			Plan:      *encodedPlan,
+			Nodes:     nodes,
 			BatchSize: batchSize,
 		}
 
@@ -87,11 +90,11 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 	}
 
 	createQueryRequest := func(expr string, timeRange types.QueryTimeRange) *prototypes.Any {
-		return createQueryRequestForSpecificNode(expr, timeRange, -1, 1)
+		return createQueryRequestForSpecificNodes(expr, timeRange, 1, -1)
 	}
 
 	createQueryRequestWithBatchSize := func(expr string, timeRange types.QueryTimeRange, batchSize uint64) *prototypes.Any {
-		return createQueryRequestForSpecificNode(expr, timeRange, -1, batchSize)
+		return createQueryRequestForSpecificNodes(expr, timeRange, batchSize, -1)
 	}
 
 	startT := timestamp.Time(0)
@@ -152,6 +155,36 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 						Error: &querierpb.Error{
 							Type:    mimirpb.QUERY_ERROR_TYPE_BAD_DATA,
 							Message: `no org id`,
+						},
+					},
+				},
+			},
+			expectedStatusCode: "ERROR_BAD_DATA",
+		},
+
+		"request with no nodes": {
+			req: createQueryRequestForSpecificNodes(`my_series`, types.NewInstantQueryTimeRange(startT), 1),
+			expectedResponseMessages: []*frontendv2pb.QueryResultStreamRequest{
+				{
+					Data: &frontendv2pb.QueryResultStreamRequest_Error{
+						Error: &querierpb.Error{
+							Type:    mimirpb.QUERY_ERROR_TYPE_BAD_DATA,
+							Message: `request contains no nodes to evaluate`,
+						},
+					},
+				},
+			},
+			expectedStatusCode: "ERROR_BAD_DATA",
+		},
+
+		"request with the same node provided multiple times": {
+			req: createQueryRequestForSpecificNodes(`my_series`, types.NewInstantQueryTimeRange(startT), 1, 0, 0),
+			expectedResponseMessages: []*frontendv2pb.QueryResultStreamRequest{
+				{
+					Data: &frontendv2pb.QueryResultStreamRequest_Error{
+						Error: &querierpb.Error{
+							Type:    mimirpb.QUERY_ERROR_TYPE_BAD_DATA,
+							Message: `request contains at least one node multiple times: have 2 requested node(s), but only 1 unique node(s)`,
 						},
 					},
 				},
@@ -482,11 +515,11 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 		},
 
 		"query that returns a range vector": {
-			req: createQueryRequestForSpecificNode(
+			req: createQueryRequestForSpecificNodes(
 				`max_over_time(my_series[11s:10s])`,
 				types.NewRangeQueryTimeRange(startT, startT.Add(20*time.Second), 10*time.Second),
-				1, // Evaluate the subquery expression (my_series[11s:10s])
 				1,
+				1, // Evaluate the subquery expression (my_series[11s:10s])
 			),
 			expectedResponseMessages: []*frontendv2pb.QueryResultStreamRequest{
 				{

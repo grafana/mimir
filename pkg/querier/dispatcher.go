@@ -45,6 +45,7 @@ var evaluateQueryRequestMessageName = proto.MessageName(&querierpb.EvaluateQuery
 
 var errMQENotEnabled = errors.New("MQE is not enabled on this querier")
 var errZeroBatchSize = errors.New("requested batch size cannot be 0 for an instant vector result")
+var errNoNodesInRequest = errors.New("request contains no nodes to evaluate")
 
 type Dispatcher struct {
 	engine    *streamingpromql.Engine
@@ -127,8 +128,8 @@ func (d *Dispatcher) evaluateQuery(ctx context.Context, body []byte, resp *query
 
 	d.querierMetrics.PlansReceived.WithLabelValues(req.Plan.Version.String()).Inc()
 
-	if len(req.Nodes) != 1 {
-		resp.WriteError(ctx, apierror.TypeBadData, fmt.Errorf("this querier only supports evaluating exactly one node, got %d", len(req.Nodes)))
+	if len(req.Nodes) == 0 {
+		resp.WriteError(ctx, apierror.TypeBadData, errNoNodesInRequest)
 		return
 	}
 
@@ -160,6 +161,11 @@ func (d *Dispatcher) evaluateQuery(ctx context.Context, body []byte, resp *query
 		} else if typ == parser.ValueTypeVector {
 			instantVectorNodeCount++
 		}
+	}
+
+	if len(nodeIndices) != len(req.Nodes) {
+		resp.WriteError(ctx, apierror.TypeBadData, fmt.Errorf("request contains at least one node multiple times: have %v requested node(s), but only %v unique node(s)", len(req.Nodes), len(nodeIndices)))
+		return
 	}
 
 	observer := &evaluationObserver{
