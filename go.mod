@@ -98,7 +98,7 @@ require (
 	golang.org/x/term v0.36.0
 	google.golang.org/api v0.252.0
 	google.golang.org/protobuf v1.36.10
-	sigs.k8s.io/kustomize/kyaml v0.18.1
+	sigs.k8s.io/kustomize/kyaml v0.20.1
 )
 
 require (

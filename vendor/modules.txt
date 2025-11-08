@@ -2179,7 +2179,7 @@ k8s.io/kube-openapi/pkg/validation/validate
 k8s.io/utils/clock
 k8s.io/utils/internal/third_party/forked/golang/net
 k8s.io/utils/net
-# sigs.k8s.io/kustomize/kyaml v0.18.1
+# sigs.k8s.io/kustomize/kyaml v0.20.1
 ## explicit; go 1.22.7
 sigs.k8s.io/kustomize/kyaml/comments
 sigs.k8s.io/kustomize/kyaml/errors
@@ -2215,8 +2215,6 @@ sigs.k8s.io/kustomize/kyaml/yaml/walk
 # sigs.k8s.io/yaml v1.6.0
 ## explicit; go 1.22
 sigs.k8s.io/yaml
-sigs.k8s.io/yaml/goyaml.v2
-sigs.k8s.io/yaml/goyaml.v3
 # github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v1.8.2-0.20251105194601-2ed549ed945d
 # github.com/hashicorp/memberlist => github.com/grafana/memberlist v0.3.1-0.20251024121533-a7f5f8dad077
 # gopkg.in/yaml.v3 => github.com/colega/go-yaml-yaml v0.0.0-20220720105220-255a8d16d094
