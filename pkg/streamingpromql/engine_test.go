@@ -3765,21 +3765,21 @@ func TestQueryStats(t *testing.T) {
 		// Three tests below cover PQE bug: sample counting is incorrect when subqueries with range vector selectors are wrapped in functions.
 		// In MQE it's fixed, so that's why cases have a skipCompareWithPrometheus set.
 		// See this for details: https://github.com/prometheus/prometheus/issues/16638
-		"subquery with ranged vector selector": {
+		"subquery with range vector selector": {
 			expr:                        `rate(dense_series[1m30s])[5m:1m]`,
 			expectedTotalSamples:        10,
 			isInstantQuery:              true,
 			expectedTotalSamplesPerStep: []int64{10},
 			skipCompareWithPrometheus:   "Prometheus undercounts samples when range vector selector wrapped in function inside subquery",
 		},
-		"aggregation over subquery with ranged vector selector": {
+		"aggregation over subquery with range vector selector": {
 			expr:                        `max_over_time(rate(dense_series[1m30s])[5m:1m])`,
 			expectedTotalSamples:        10,
 			isInstantQuery:              true,
 			expectedTotalSamplesPerStep: []int64{10},
 			skipCompareWithPrometheus:   "Prometheus undercounts samples when range vector selector wrapped in function inside subquery",
 		},
-		"aggregation over subquery with ranged vector selector, range query": {
+		"aggregation over subquery with range vector selector, range query": {
 			expr:                        `max_over_time(rate(dense_series[1m30s])[5m:1m])`,
 			expectedTotalSamples:        85,
 			expectedTotalSamplesPerStep: []int64{1, 3, 5, 7, 9, 10, 10, 10, 10, 10, 10},
