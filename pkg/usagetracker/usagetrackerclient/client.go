@@ -333,7 +333,13 @@ func (c *UsageTrackerClient) updateTenantsCloseToLimitCache(ctx context.Context)
 
 	// Get a random partition from the partition ring.
 	partitionBatchRing := ring.NewActivePartitionBatchRing(c.partitionRing.PartitionRing())
-	replicationSet, err := partitionBatchRing.Get(uint32(rand.IntN(int(c.partitionRing.PartitionsCount()))), TrackSeriesOp, nil, nil, nil)
+	partitions := c.partitionRing.PartitionRing().Partitions()
+	if len(partitions) == 0 {
+		level.Warn(c.logger).Log("msg", "no partitions available in ring for tenants close to limit poll")
+		return
+	}
+	randomPartitionID := uint32(rand.IntN(len(partitions)))
+	replicationSet, err := partitionBatchRing.Get(randomPartitionID, TrackSeriesOp, nil, nil, nil)
 	if err != nil {
 		level.Error(c.logger).Log("msg", "failed to get partition from ring for tenants close to limit poll", "err", err)
 		return
@@ -397,8 +403,8 @@ func (c *UsageTrackerClient) updateTenantsCloseToLimitCache(ctx context.Context)
 	level.Debug(c.logger).Log("msg", "updated tenants close to limit cache", "partition", resp.Partition, "tenant_count", len(resp.TenantIds))
 }
 
-// isTenantCloseToLimit returns true if the tenant is in the cache of tenants close to their limit.
-func (c *UsageTrackerClient) isTenantCloseToLimit(userID string) bool {
+// IsTenantCloseToLimit returns true if the tenant is in the cache of tenants close to their limit.
+func (c *UsageTrackerClient) IsTenantCloseToLimit(userID string) bool {
 	_, ok := c.tenantsCloseToLimitCache.Load(userID)
 	return ok
 }
