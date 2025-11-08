@@ -197,7 +197,7 @@ func newPartitionHandler(
 	}
 
 	eventsPublisher := chanEventsPublisher{events: p.pendingCreatedSeriesMarshaledEvents, logger: logger}
-	p.store = newTrackerStore(cfg.IdleTimeout, logger, lim, eventsPublisher)
+	p.store = newTrackerStore(cfg.IdleTimeout, cfg.TenantCloseToLimitPercentageThreshold, cfg.TenantCloseToLimitAbsoluteThreshold, logger, lim, eventsPublisher)
 	p.Service = services.NewBasicService(p.start, p.run, p.stop)
 	return p, nil
 }

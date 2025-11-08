@@ -31,12 +31,18 @@ type trackerStore struct {
 	mtx     sync.RWMutex
 	tenants map[string]*trackedTenant
 
+	// tenantsCloseToLimit is an immutable list of tenant IDs that are close to their limits.
+	// This field is replaced atomically in updateLimits() and read without the lock.
+	tenantsCloseToLimit []string
+
 	// dependencies
 	limiter limiter
 	events  events
 
 	// config
-	idleTimeout time.Duration
+	idleTimeout                           time.Duration
+	tenantCloseToLimitPercentageThreshold int
+	tenantCloseToLimitAbsoluteThreshold   int
 
 	// misc
 	logger log.Logger
@@ -53,13 +59,16 @@ type events interface {
 	publishCreatedSeries(ctx context.Context, tenantID string, series []uint64, timestamp time.Time) error
 }
 
-func newTrackerStore(idleTimeout time.Duration, logger log.Logger, l limiter, ev events) *trackerStore {
+func newTrackerStore(idleTimeout time.Duration, tenantCloseToLimitPercentageThreshold, tenantCloseToLimitAbsoluteThreshold int, logger log.Logger, l limiter, ev events) *trackerStore {
 	t := &trackerStore{
-		tenants:     make(map[string]*trackedTenant),
-		limiter:     l,
-		events:      ev,
-		logger:      logger,
-		idleTimeout: idleTimeout,
+		tenants:                               make(map[string]*trackedTenant),
+		limiter:                               l,
+		events:                                ev,
+		logger:                                logger,
+		idleTimeout:                           idleTimeout,
+		tenantCloseToLimitPercentageThreshold: tenantCloseToLimitPercentageThreshold,
+		tenantCloseToLimitAbsoluteThreshold:   tenantCloseToLimitAbsoluteThreshold,
+		tenantsCloseToLimit:                   nil, // will be populated by updateLimits
 	}
 	return t
 }
@@ -246,10 +255,43 @@ func (t *trackerStore) updateLimits() {
 	t.mtx.RUnlock()
 
 	zonesCount := t.limiter.zonesCount()
+	var closeToLimit []string
+
 	for tenantID, tenant := range tenantsClone {
 		limit := zeroAsNoLimit(t.limiter.localSeriesLimit(tenantID))
-		tenant.currentLimit.Store(currentSeriesLimit(tenant.series.Load(), limit, zonesCount))
+		series := tenant.series.Load()
+		tenant.currentLimit.Store(currentSeriesLimit(series, limit, zonesCount))
+
+		// Determine if this tenant is close to their limit.
+		// A tenant is close if either:
+		// 1. series >= (limit * percentageThreshold / 100), OR
+		// 2. series >= (limit - absoluteThreshold)
+		if limit != noLimit {
+			percentageThreshold := uint64(limit) * uint64(t.tenantCloseToLimitPercentageThreshold) / 100
+			absoluteThreshold := uint64(0)
+			if limit > uint64(t.tenantCloseToLimitAbsoluteThreshold) {
+				absoluteThreshold = limit - uint64(t.tenantCloseToLimitAbsoluteThreshold)
+			}
+
+			if series >= percentageThreshold || series >= absoluteThreshold {
+				closeToLimit = append(closeToLimit, tenantID)
+			}
+		}
 	}
+
+	// Replace the tenants close to limit list atomically.
+	// We build a new slice every time instead of mutating the existing one.
+	t.mtx.Lock()
+	t.tenantsCloseToLimit = closeToLimit
+	t.mtx.Unlock()
+}
+
+// getTenantsCloseToLimit returns the list of tenant IDs that are close to their series limit.
+// The returned slice is safe to read concurrently as it's immutable and replaced atomically in updateLimits().
+func (t *trackerStore) getTenantsCloseToLimit() []string {
+	t.mtx.RLock()
+	defer t.mtx.RUnlock()
+	return t.tenantsCloseToLimit
 }
 
 // seriesCountsForTests should only be used in tests because it holds the mutex while loading all atomic values.

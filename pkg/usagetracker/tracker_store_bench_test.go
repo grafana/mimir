@@ -51,7 +51,7 @@ func BenchmarkTrackerStoreTrackSeries(b *testing.B) {
 func benckmarkTrackerStoreTrackSeries(b *testing.B, seriesRefs []uint64, seriesPerRequest, tenantsCount int, cleanupsEnabled bool) {
 	nowSeconds := atomic.NewInt64(0)
 	now := func() time.Time { return time.Unix(nowSeconds.Load(), 0) }
-	t := newTrackerStore(testIdleTimeout, log.NewNopLogger(), limiterMock{}, noopEvents{})
+	t := newTrackerStore(testIdleTimeout, 85, 25000, log.NewNopLogger(), limiterMock{}, noopEvents{})
 
 	seriesPerTenant := len(seriesRefs) / tenantsCount
 	// Warmup each tenant.
@@ -110,7 +110,7 @@ func BenchmarkTrackerStoreLoadSnapshot(b *testing.B) {
 
 	b.Run("concurrency=1", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
-			t := newTrackerStore(testIdleTimeout, log.NewNopLogger(), lim, noopEvents{})
+			t := newTrackerStore(testIdleTimeout, 85, 25000, log.NewNopLogger(), lim, noopEvents{})
 			for _, d := range snapshots {
 				require.NoError(b, t.loadSnapshot(d, now, true))
 			}
@@ -119,7 +119,7 @@ func BenchmarkTrackerStoreLoadSnapshot(b *testing.B) {
 
 	b.Run("concurrency=shards", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
-			t := newTrackerStore(testIdleTimeout, log.NewNopLogger(), lim, noopEvents{})
+			t := newTrackerStore(testIdleTimeout, 85, 25000, log.NewNopLogger(), lim, noopEvents{})
 			wg := &sync.WaitGroup{}
 			wg.Add(len(snapshots))
 			for _, d := range snapshots {
@@ -144,7 +144,7 @@ func generateSnapshot(b *testing.B, tenantsCount int, totalSeries int, now time.
 	}
 	seriesPerTenantPerMinute := seriesPerTenant / int(testIdleTimeout.Minutes())
 
-	t := newTrackerStore(testIdleTimeout, log.NewNopLogger(), lim, noopEvents{})
+	t := newTrackerStore(testIdleTimeout, 85, 25000, log.NewNopLogger(), lim, noopEvents{})
 	deterministicRand := rand.New(rand.NewSource(0))
 	for timestamp := now.Add(-testIdleTimeout); timestamp.Before(now); timestamp = timestamp.Add(time.Minute) {
 		for i := 0; i < tenantsCount; i++ {

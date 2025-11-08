@@ -85,6 +85,9 @@ type Config struct {
 	SnapshotCleanupIntervalJitter float64       `yaml:"snapshot_cleanup_interval_jitter"`
 
 	MaxEventsFetchSize int `yaml:"max_events_fetch_size"`
+
+	TenantCloseToLimitPercentageThreshold int `yaml:"tenant_close_to_limit_percentage_threshold"`
+	TenantCloseToLimitAbsoluteThreshold   int `yaml:"tenant_close_to_limit_absolute_threshold"`
 }
 
 func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
@@ -124,6 +127,9 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.Float64Var(&c.SnapshotCleanupIntervalJitter, "usage-tracker.snapshot-cleanup-interval-jitter", 0.25, "Jitter to apply to the snapshot cleanup interval. This is a percentage of the snapshot cleanup interval, e.g. 0.1 means 10% jitter. It should be between 0 and 1.")
 
 	f.IntVar(&c.MaxEventsFetchSize, "usage-tracker.max-events-fetch-size", 100, "Maximum number of events to fetch from Kafka in a single request. This is used to limit the memory usage when fetching events.")
+
+	f.IntVar(&c.TenantCloseToLimitPercentageThreshold, "usage-tracker.tenant-close-to-limit-percentage-threshold", 85, "Percentage of the local series limit after which a tenant is considered close to the limit. A tenant is close to the limit if their series count is above this percentage of their local limit.")
+	f.IntVar(&c.TenantCloseToLimitAbsoluteThreshold, "usage-tracker.tenant-close-to-limit-absolute-threshold", 25000, "Absolute threshold in number of series. A tenant is considered close to the limit if their series count is within this many series from their local limit.")
 }
 
 func (c *Config) ValidateForClient() error {
