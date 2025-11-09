@@ -86,17 +86,16 @@ func (f *InfoFunction) SeriesMetadata(ctx context.Context, matchers types.Matche
 	if err != nil {
 		return nil, err
 	}
+	defer types.SeriesMetadataSlicePool.Put(&innerMetadata, f.MemoryConsumptionTracker)
 
 	infoMetadata, err := f.Info.SeriesMetadata(ctx, matchers)
 	if err != nil {
-		types.SeriesMetadataSlicePool.Put(&innerMetadata, f.MemoryConsumptionTracker)
 		return nil, err
 	}
 	defer types.SeriesMetadataSlicePool.Put(&infoMetadata, f.MemoryConsumptionTracker)
 
 	infoSigs, err := f.processSamplesFromInfoSeries(ctx, infoMetadata)
 	if err != nil {
-		types.SeriesMetadataSlicePool.Put(&innerMetadata, f.MemoryConsumptionTracker)
 		return nil, err
 	}
 	ignoreSeries := f.identifyIgnoreSeries(innerMetadata, ivs.Selector.Matchers)
@@ -268,7 +267,7 @@ func (f *InfoFunction) generateInnerSignatures(innerMetadata, infoMetadata []typ
 
 // combineSeriesMetadata combines inner series metadata with info series labels.
 func (f *InfoFunction) combineSeriesMetadata(innerMetadata, infoMetadata []types.SeriesMetadata, innerSigs []map[string]string, infoSigs map[uint64]string, ignoreSeries map[int]struct{}, dataLabelMatchers types.Matchers) ([]types.SeriesMetadata, error) {
-	result, err := types.SeriesMetadataSlicePool.Get(len(innerMetadata), f.MemoryConsumptionTracker)
+	result, err := types.SeriesMetadataSlicePool.Get(len(innerMetadata)+20, f.MemoryConsumptionTracker)
 	if err != nil {
 		return nil, err
 	}
@@ -292,7 +291,10 @@ func (f *InfoFunction) combineSeriesMetadata(innerMetadata, infoMetadata []types
 
 	for i, innerSeries := range innerMetadata {
 		if _, shouldIgnore := ignoreSeries[i]; shouldIgnore {
-			result = append(result, innerSeries)
+			result, err = types.AppendSeriesMetadata(f.MemoryConsumptionTracker, result, innerSeries)
+			if err != nil {
+				return nil, err
+			}
 			f.labelSetsOrder[i] = map[string]int{"inner": 0}
 			continue
 		}
@@ -302,16 +304,21 @@ func (f *InfoFunction) combineSeriesMetadata(innerMetadata, infoMetadata []types
 		labelSetsMap, exists := f.labelSets[sigLabelsOnly]
 		if !exists {
 			if len(dataLabelMatchersMap) > 0 {
-				types.SeriesMetadataSlicePool.Put(&[]types.SeriesMetadata{innerSeries}, f.MemoryConsumptionTracker)
 				continue
 			}
 
-			result = append(result, innerSeries)
+			result, err = types.AppendSeriesMetadata(f.MemoryConsumptionTracker, result, innerSeries)
+			if err != nil {
+				return nil, err
+			}
 			f.labelSetsOrder[i] = map[string]int{"inner": 0}
 			continue
 		}
 
-		result = append(result, innerSeries)
+		result, err = types.AppendSeriesMetadata(f.MemoryConsumptionTracker, result, innerSeries)
+		if err != nil {
+			return nil, err
+		}
 		f.labelSetsOrder[i] = map[string]int{"inner": 0}
 
 		newLabelSets, labelSetsOrder := combineLabels(lb, innerSeries, labelSetsMap, dataLabelMatchersMap)
