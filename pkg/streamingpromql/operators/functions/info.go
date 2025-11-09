@@ -267,11 +267,6 @@ func (f *InfoFunction) generateInnerSignatures(innerMetadata, infoMetadata []typ
 
 // combineSeriesMetadata combines inner series metadata with info series labels.
 func (f *InfoFunction) combineSeriesMetadata(innerMetadata, infoMetadata []types.SeriesMetadata, innerSigs []map[string]string, infoSigs map[uint64]string, ignoreSeries map[int]struct{}, dataLabelMatchers types.Matchers) ([]types.SeriesMetadata, error) {
-	result, err := types.SeriesMetadataSlicePool.Get(len(innerMetadata)+20, f.MemoryConsumptionTracker)
-	if err != nil {
-		return nil, err
-	}
-
 	dataLabelMatchersMap := make(map[string]*labels.Matcher)
 	for _, m := range dataLabelMatchers {
 		if m.Name == labels.MetricName {
@@ -289,13 +284,15 @@ func (f *InfoFunction) combineSeriesMetadata(innerMetadata, infoMetadata []types
 	f.labelSetsOrder = make([]map[string]int, len(innerMetadata))
 	f.innerSigLabelsOnly = make([]string, len(innerMetadata))
 
+	passInner := make(map[int]struct{})
+	extraLabelSets := make(map[int][]labels.Labels)
+	extraLabelSetsCount := 0
+
 	for i, innerSeries := range innerMetadata {
+		f.labelSetsOrder[i] = make(map[string]int)
+
 		if _, shouldIgnore := ignoreSeries[i]; shouldIgnore {
-			result, err = types.AppendSeriesMetadata(f.MemoryConsumptionTracker, result, innerSeries)
-			if err != nil {
-				return nil, err
-			}
-			f.labelSetsOrder[i] = map[string]int{"inner": 0}
+			passInner[i] = struct{}{}
 			continue
 		}
 
@@ -306,22 +303,38 @@ func (f *InfoFunction) combineSeriesMetadata(innerMetadata, infoMetadata []types
 			if len(dataLabelMatchersMap) > 0 {
 				continue
 			}
+			passInner[i] = struct{}{}
+			continue
+		}
 
+		passInner[i] = struct{}{}
+
+		newLabelSets, labelSetsOrder := combineLabels(lb, innerSeries, labelSetsMap, dataLabelMatchersMap)
+		extraLabelSets[i] = newLabelSets
+		extraLabelSetsCount += len(newLabelSets)
+		for j, labelSetsHash := range labelSetsOrder {
+			f.labelSetsOrder[i][labelSetsHash] = j + 1
+		}
+	}
+
+	result, err := types.SeriesMetadataSlicePool.Get(len(passInner)+extraLabelSetsCount, f.MemoryConsumptionTracker)
+	if err != nil {
+		return nil, err
+	}
+
+	for i, innerSeries := range innerMetadata {
+		if _, shouldPassInner := passInner[i]; shouldPassInner {
 			result, err = types.AppendSeriesMetadata(f.MemoryConsumptionTracker, result, innerSeries)
 			if err != nil {
 				return nil, err
 			}
-			f.labelSetsOrder[i] = map[string]int{"inner": 0}
+			f.labelSetsOrder[i]["inner"] = 0
+		}
+
+		newLabelSets, exists := extraLabelSets[i]
+		if !exists {
 			continue
 		}
-
-		result, err = types.AppendSeriesMetadata(f.MemoryConsumptionTracker, result, innerSeries)
-		if err != nil {
-			return nil, err
-		}
-		f.labelSetsOrder[i] = map[string]int{"inner": 0}
-
-		newLabelSets, labelSetsOrder := combineLabels(lb, innerSeries, labelSetsMap, dataLabelMatchersMap)
 		for _, newLabels := range newLabelSets {
 			result, err = types.AppendSeriesMetadata(f.MemoryConsumptionTracker, result, types.SeriesMetadata{
 				Labels:   newLabels,
@@ -330,9 +343,6 @@ func (f *InfoFunction) combineSeriesMetadata(innerMetadata, infoMetadata []types
 			if err != nil {
 				return nil, err
 			}
-		}
-		for j, labelSetsHash := range labelSetsOrder {
-			f.labelSetsOrder[i][labelSetsHash] = j + 1
 		}
 	}
 
