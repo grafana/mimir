@@ -12,6 +12,7 @@ import (
 	"log/slog"
 	"math"
 	"net"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -30,6 +31,7 @@ import (
 	"github.com/grafana/mimir/pkg/ingester"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
@@ -72,7 +74,8 @@ func StartBenchmarkIngester(rootDataDir string, opts ...IngesterConfigOption) (*
 
 	overrides := validation.NewOverrides(limits, nil)
 
-	ingesterCfg, closer := defaultIngesterTestConfig()
+	logger := util_log.MakeLeveledLogger(os.Stderr, "warn")
+	ingesterCfg, closer := defaultIngesterTestConfig(logger)
 	cleanupFuncs = append(cleanupFuncs, closer.Close)
 	ingesterCfg.BlocksStorageConfig.TSDB.Dir = filepath.Join(rootDataDir, "data")
 	ingesterCfg.BlocksStorageConfig.Bucket.Backend = "filesystem"
@@ -91,7 +94,7 @@ func StartBenchmarkIngester(rootDataDir string, opts ...IngesterConfigOption) (*
 		opt(&ingesterCfg)
 	}
 
-	ingestersRing, err := createAndStartRing(ingesterCfg.IngesterRing.ToRingConfig())
+	ingestersRing, err := createAndStartRing(ingesterCfg.IngesterRing.ToRingConfig(), logger)
 	if err != nil {
 		cleanup()
 		return nil, "", nil, fmt.Errorf("could not create and start ring: %w", err)
@@ -101,7 +104,7 @@ func StartBenchmarkIngester(rootDataDir string, opts ...IngesterConfigOption) (*
 		return services.StopAndAwaitTerminated(context.Background(), ingestersRing)
 	})
 
-	ing, err := ingester.New(ingesterCfg, overrides, ingestersRing, nil, nil, nil, nil, log.NewNopLogger())
+	ing, err := ingester.New(ingesterCfg, overrides, ingestersRing, nil, nil, nil, nil, logger)
 	if err != nil {
 		cleanup()
 		return nil, "", nil, fmt.Errorf("could not create ingester: %w", err)
@@ -137,8 +140,8 @@ func StartBenchmarkIngester(rootDataDir string, opts ...IngesterConfigOption) (*
 	return ing, listener.Addr().String(), cleanup, nil
 }
 
-func defaultIngesterTestConfig() (ingester.Config, io.Closer) {
-	consul, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
+func defaultIngesterTestConfig(logger log.Logger) (ingester.Config, io.Closer) {
+	consul, closer := consul.NewInMemoryClient(ring.GetCodec(), logger, nil)
 
 	cfg := ingester.Config{}
 	flagext.DefaultValues(&cfg)
@@ -161,8 +164,8 @@ func defaultLimitsTestConfig() validation.Limits {
 	return limits
 }
 
-func createAndStartRing(ringConfig ring.Config) (*ring.Ring, error) {
-	rng, err := ring.New(ringConfig, "ingester", ingester.IngesterRingKey, log.NewNopLogger(), nil)
+func createAndStartRing(ringConfig ring.Config, logger log.Logger) (*ring.Ring, error) {
+	rng, err := ring.New(ringConfig, "ingester", ingester.IngesterRingKey, logger, nil)
 	if err != nil {
 		return nil, fmt.Errorf("could not create ring: %w", err)
 	}

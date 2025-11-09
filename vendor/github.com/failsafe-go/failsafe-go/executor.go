@@ -6,57 +6,17 @@ import (
 	"github.com/failsafe-go/failsafe-go/common"
 )
 
-// Run executes the fn, with failures being handled by the policies, until successful or until the policies are exceeded.
-func Run(fn func() error, policies ...Policy[any]) error {
-	return NewExecutor[any](policies...).Run(fn)
-}
-
-// RunWithExecution executes the fn, with failures being handled by the policies, until successful or until the policies
-// are exceeded.
-func RunWithExecution(fn func(exec Execution[any]) error, policies ...Policy[any]) error {
-	return NewExecutor[any](policies...).RunWithExecution(fn)
-}
-
-// Get executes the fn, with failures being handled by the policies, until a successful result is returned or the
-// policies are exceeded.
-func Get[R any](fn func() (R, error), policies ...Policy[R]) (R, error) {
-	return NewExecutor[R](policies...).Get(fn)
-}
-
-// GetWithExecution executes the fn, with failures being handled by the policies, until a successful result is returned
-// or the policies are exceeded.
-func GetWithExecution[R any](fn func(exec Execution[R]) (R, error), policies ...Policy[R]) (R, error) {
-	return NewExecutor[R](policies...).GetWithExecution(fn)
-}
-
-// RunAsync executes the fn in a goroutine, with failures being handled by the policies, until successful or until the
-// policies are exceeded.
-func RunAsync(fn func() error, policies ...Policy[any]) ExecutionResult[any] {
-	return NewExecutor[any](policies...).RunAsync(fn)
-}
-
-// RunWithExecutionAsync executes the fn in a goroutine, with failures being handled by the policies, until successful or
-// until the policies are exceeded.
-func RunWithExecutionAsync(fn func(exec Execution[any]) error, policies ...Policy[any]) ExecutionResult[any] {
-	return NewExecutor[any](policies...).RunWithExecutionAsync(fn)
-}
-
-// GetAsync executes the fn in a goroutine, with failures being handled by the policies, until a successful result is returned
-// or the policies are exceeded.
-func GetAsync[R any](fn func() (R, error), policies ...Policy[R]) ExecutionResult[R] {
-	return NewExecutor[R](policies...).GetAsync(fn)
-}
-
-// GetWithExecutionAsync executes the fn in a goroutine, with failures being handled by the policies, until a successful
-// result is returned or the policies are exceeded.
-func GetWithExecutionAsync[R any](fn func(exec Execution[R]) (R, error), policies ...Policy[R]) ExecutionResult[R] {
-	return NewExecutor[R](policies...).GetWithExecutionAsync(fn)
-}
-
-// Executor handles failures according to configured policies. See [NewExecutor] for details.
+// Executor handles failures according to configured policies. See [With] for details on creating an Executor.
 //
-// This type is concurrency safe.
+// R is the result type. This type is concurrency safe.
 type Executor[R any] interface {
+	// Compose returns the Executor with the currently configured policies composed around the innerPolicy.
+	Compose(innerPolicy Policy[R]) Executor[R]
+
+	// ComposeAny returns the Executor with the currently configured policies composed around the innerPolicy. This method
+	// allows composing policies that have any result type with policies that have a specific result type.
+	ComposeAny(innerPolicy ResultAgnosticPolicy[any]) Executor[R]
+
 	// Context returns the configured Context, else context.Background() by default.
 	Context() context.Context
 
@@ -104,22 +64,23 @@ type Executor[R any] interface {
 	// Any panic causes the execution to stop immediately without calling any event listeners.
 	RunAsync(fn func() error) ExecutionResult[R]
 
-	// RunWithExecutionAsync executes the fn in a goroutine until successful or until the configured policies are exceeded,
+	// RunAsyncWithExecution executes the fn in a goroutine until successful or until the configured policies are exceeded,
 	// while providing an Execution to the fn.
 	//
 	// Any panic causes the execution to stop immediately without calling any event listeners.
-	RunWithExecutionAsync(fn func(exec Execution[R]) error) ExecutionResult[R]
+	RunAsyncWithExecution(fn func(exec Execution[R]) error) ExecutionResult[R]
 
-	// GetAsync executes the fn in a goroutine until a successful result is returned or the configured policies are exceeded.
+	// GetAsync executes the fn in a goroutine until a successful result is returned or the configured policies are
+	// exceeded.
 	//
 	// Any panic causes the execution to stop immediately without calling any event listeners.
 	GetAsync(fn func() (R, error)) ExecutionResult[R]
 
-	// GetWithExecutionAsync executes the fn in a goroutine until a successful result is returned or the configured policies
+	// GetAsyncWithExecution executes the fn in a goroutine until a successful result is returned or the configured policies
 	// are exceeded, while providing an Execution to the fn.
 	//
 	// Any panic causes the execution to stop immediately without calling any event listeners.
-	GetWithExecutionAsync(fn func(exec Execution[R]) (R, error)) ExecutionResult[R]
+	GetAsyncWithExecution(fn func(exec Execution[R]) (R, error)) ExecutionResult[R]
 }
 
 type executor[R any] struct {
@@ -130,19 +91,38 @@ type executor[R any] struct {
 	onFailure func(ExecutionDoneEvent[R])
 }
 
-// NewExecutor creates and returns a new Executor for result type R that will handle failures according to the given
+// With creates and returns a new Executor for result type R that will handle failures according to the given
 // policies. The policies are composed around a func and will handle its results in reverse order. For example, consider:
 //
-//	failsafe.NewExecutor(fallback, retryPolicy, circuitBreaker).Get(fn)
+//	failsafe.With(fallback, retryPolicy, circuitBreaker).Get(fn)
 //
 // This creates the following composition when executing a func and handling its result:
 //
 //	Fallback(RetryPolicy(CircuitBreaker(func)))
-func NewExecutor[R any](policies ...Policy[R]) Executor[R] {
+func With[R any](policies ...Policy[R]) Executor[R] {
 	return &executor[R]{
 		policies: policies,
 		ctx:      context.Background(),
 	}
+}
+
+// WithAny creates and returns a new Executor that can be used to compose other policies with the result type R, for the
+// final composed execution. The executor will handle failures according to the given policies.
+func WithAny[R any](policy ResultAgnosticPolicy[any]) Executor[R] {
+	return &executor[R]{
+		policies: []Policy[R]{&policyAnyWrapper[R]{inner: policy}},
+		ctx:      context.Background(),
+	}
+}
+
+func (e *executor[R]) Compose(innerPolicy Policy[R]) Executor[R] {
+	e.policies = append(e.policies, innerPolicy)
+	return e
+}
+
+func (e *executor[R]) ComposeAny(innerPolicy ResultAgnosticPolicy[any]) Executor[R] {
+	e.policies = append(e.policies, &policyAnyWrapper[R]{inner: innerPolicy})
+	return e
 }
 
 func (e *executor[R]) Context() context.Context {
@@ -204,19 +184,19 @@ func (e *executor[R]) RunAsync(fn func() error) ExecutionResult[R] {
 	}, false)
 }
 
-func (e *executor[R]) RunWithExecutionAsync(fn func(exec Execution[R]) error) ExecutionResult[R] {
+func (e *executor[R]) RunAsyncWithExecution(fn func(exec Execution[R]) error) ExecutionResult[R] {
 	return e.executeAsync(func(exec Execution[R]) (R, error) {
 		return *new(R), fn(exec)
 	}, true)
 }
 
 func (e *executor[R]) GetAsync(fn func() (R, error)) ExecutionResult[R] {
-	return e.executeAsync(func(e Execution[R]) (R, error) {
+	return e.executeAsync(func(_ Execution[R]) (R, error) {
 		return fn()
 	}, false)
 }
 
-func (e *executor[R]) GetWithExecutionAsync(fn func(exec Execution[R]) (R, error)) ExecutionResult[R] {
+func (e *executor[R]) GetAsyncWithExecution(fn func(exec Execution[R]) (R, error)) ExecutionResult[R] {
 	return e.executeAsync(func(exec Execution[R]) (R, error) {
 		return fn(exec)
 	}, true)
@@ -287,4 +267,30 @@ func (e *executor[R]) execute(fn func(exec Execution[R]) (R, error), outerExec *
 		e.onDone(newExecutionDoneEvent(outerExec, er))
 	}
 	return er
+}
+
+// policyAnyWrapper adapts Policy[R] to Policy[any], allowing Policy[any] to be used in compositions with Policy[R].
+type policyAnyWrapper[R any] struct {
+	inner Policy[any]
+}
+
+func (p *policyAnyWrapper[R]) ToExecutor(_ R) any {
+	anyExecutor := p.inner.ToExecutor(nil).(policyExecutor[any])
+	return &policyExecutorAnyWrapper[R]{inner: anyExecutor}
+}
+
+type policyExecutorAnyWrapper[R any] struct {
+	inner policyExecutor[any]
+}
+
+func (pe *policyExecutorAnyWrapper[R]) Apply(innerFn func(Execution[R]) *common.PolicyResult[R]) func(Execution[R]) *common.PolicyResult[R] {
+	return func(exec Execution[R]) *common.PolicyResult[R] {
+		// Adapt func(Execution[any]) *PolicyResult[any] to func(Execution[R]) *PolicyResult[R]
+		anyFn := pe.inner.Apply(func(anyExec Execution[any]) *common.PolicyResult[any] {
+			result := innerFn(exec)
+			return resultToAny(result)
+		})
+		anyResult := anyFn(&executionAnyWrapper[R]{exec.(*execution[R])})
+		return resultFromAny[R](anyResult)
+	}
 }

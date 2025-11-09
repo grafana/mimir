@@ -14,6 +14,7 @@ import (
 
 	"github.com/grafana/dskit/tracing"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
@@ -23,7 +24,7 @@ import (
 
 type NoopPlanner struct{}
 
-func (i NoopPlanner) PlanIndexLookup(_ context.Context, plan index.LookupPlan, _, _ int64) (index.LookupPlan, error) {
+func (i NoopPlanner) PlanIndexLookup(_ context.Context, plan index.LookupPlan, _ *storage.SelectHints) (index.LookupPlan, error) {
 	return plan, nil
 }
 
@@ -86,7 +87,7 @@ func NewCostBasedPlanner(metrics Metrics, statistics index.Statistics, config Co
 	}
 }
 
-func (p CostBasedPlanner) PlanIndexLookup(ctx context.Context, inPlan index.LookupPlan, _, _ int64) (retPlan index.LookupPlan, retErr error) {
+func (p CostBasedPlanner) PlanIndexLookup(ctx context.Context, inPlan index.LookupPlan, _ *storage.SelectHints) (retPlan index.LookupPlan, retErr error) {
 	if planningDisabled(ctx) {
 		return inPlan, nil
 	}

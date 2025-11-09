@@ -48,14 +48,14 @@ func TestMultitenantCompactor_ShouldSupportSplitAndMergeCompactor(t *testing.T) 
 		labels := map[string]string{}
 
 		if shardID != "" {
-			labels[mimir_tsdb.CompactorShardIDExternalLabel] = shardID
+			labels[block.CompactorShardIDExternalLabel] = shardID
 		}
 		return labels
 	}
 
 	externalLabelsWithTenantID := func(shardID string) map[string]string {
 		labels := externalLabels(shardID)
-		labels[mimir_tsdb.DeprecatedTenantIDExternalLabel] = userID
+		labels[block.DeprecatedTenantIDExternalLabel] = userID
 		return labels
 	}
 
@@ -80,7 +80,7 @@ func TestMultitenantCompactor_ShouldSupportSplitAndMergeCompactor(t *testing.T) 
 						},
 						Thanos: block.ThanosMeta{
 							Labels: map[string]string{
-								mimir_tsdb.CompactorShardIDExternalLabel: "1_of_2",
+								block.CompactorShardIDExternalLabel: "1_of_2",
 							},
 						},
 					}, {
@@ -93,7 +93,7 @@ func TestMultitenantCompactor_ShouldSupportSplitAndMergeCompactor(t *testing.T) 
 						},
 						Thanos: block.ThanosMeta{
 							Labels: map[string]string{
-								mimir_tsdb.CompactorShardIDExternalLabel: "2_of_2",
+								block.CompactorShardIDExternalLabel: "2_of_2",
 							},
 						},
 					},
@@ -117,7 +117,7 @@ func TestMultitenantCompactor_ShouldSupportSplitAndMergeCompactor(t *testing.T) 
 						},
 						Thanos: block.ThanosMeta{
 							Labels: map[string]string{
-								mimir_tsdb.CompactorShardIDExternalLabel: "1_of_2",
+								block.CompactorShardIDExternalLabel: "1_of_2",
 							},
 						},
 					}, {
@@ -130,7 +130,7 @@ func TestMultitenantCompactor_ShouldSupportSplitAndMergeCompactor(t *testing.T) 
 						},
 						Thanos: block.ThanosMeta{
 							Labels: map[string]string{
-								mimir_tsdb.CompactorShardIDExternalLabel: "2_of_2",
+								block.CompactorShardIDExternalLabel: "2_of_2",
 							},
 						},
 					},
@@ -154,7 +154,7 @@ func TestMultitenantCompactor_ShouldSupportSplitAndMergeCompactor(t *testing.T) 
 						},
 						Thanos: block.ThanosMeta{
 							Labels: map[string]string{
-								mimir_tsdb.CompactorShardIDExternalLabel: "1_of_2",
+								block.CompactorShardIDExternalLabel: "1_of_2",
 							},
 						},
 					}, {
@@ -167,7 +167,7 @@ func TestMultitenantCompactor_ShouldSupportSplitAndMergeCompactor(t *testing.T) 
 						},
 						Thanos: block.ThanosMeta{
 							Labels: map[string]string{
-								mimir_tsdb.CompactorShardIDExternalLabel: "2_of_2",
+								block.CompactorShardIDExternalLabel: "2_of_2",
 							},
 						},
 					},
@@ -191,7 +191,7 @@ func TestMultitenantCompactor_ShouldSupportSplitAndMergeCompactor(t *testing.T) 
 						},
 						Thanos: block.ThanosMeta{
 							Labels: map[string]string{
-								mimir_tsdb.CompactorShardIDExternalLabel: "1_of_2",
+								block.CompactorShardIDExternalLabel: "1_of_2",
 							},
 						},
 					}, {
@@ -204,7 +204,7 @@ func TestMultitenantCompactor_ShouldSupportSplitAndMergeCompactor(t *testing.T) 
 						},
 						Thanos: block.ThanosMeta{
 							Labels: map[string]string{
-								mimir_tsdb.CompactorShardIDExternalLabel: "2_of_2",
+								block.CompactorShardIDExternalLabel: "2_of_2",
 							},
 						},
 					},
@@ -228,7 +228,7 @@ func TestMultitenantCompactor_ShouldSupportSplitAndMergeCompactor(t *testing.T) 
 						},
 						Thanos: block.ThanosMeta{
 							Labels: map[string]string{
-								mimir_tsdb.CompactorShardIDExternalLabel: "1_of_2",
+								block.CompactorShardIDExternalLabel: "1_of_2",
 							},
 						},
 					}, {
@@ -241,7 +241,7 @@ func TestMultitenantCompactor_ShouldSupportSplitAndMergeCompactor(t *testing.T) 
 						},
 						Thanos: block.ThanosMeta{
 							Labels: map[string]string{
-								mimir_tsdb.CompactorShardIDExternalLabel: "2_of_2",
+								block.CompactorShardIDExternalLabel: "2_of_2",
 							},
 						},
 					},
@@ -283,7 +283,7 @@ func TestMultitenantCompactor_ShouldSupportSplitAndMergeCompactor(t *testing.T) 
 						},
 						Thanos: block.ThanosMeta{
 							Labels: map[string]string{
-								mimir_tsdb.CompactorShardIDExternalLabel: "1_of_2",
+								block.CompactorShardIDExternalLabel: "1_of_2",
 							},
 						},
 					}, {
@@ -296,7 +296,7 @@ func TestMultitenantCompactor_ShouldSupportSplitAndMergeCompactor(t *testing.T) 
 						},
 						Thanos: block.ThanosMeta{
 							Labels: map[string]string{
-								mimir_tsdb.CompactorShardIDExternalLabel: "2_of_2",
+								block.CompactorShardIDExternalLabel: "2_of_2",
 							},
 						},
 					},
@@ -312,7 +312,7 @@ func TestMultitenantCompactor_ShouldSupportSplitAndMergeCompactor(t *testing.T) 
 						},
 						Thanos: block.ThanosMeta{
 							Labels: map[string]string{
-								mimir_tsdb.CompactorShardIDExternalLabel: "1_of_2",
+								block.CompactorShardIDExternalLabel: "1_of_2",
 							},
 						},
 					}, {
@@ -325,7 +325,7 @@ func TestMultitenantCompactor_ShouldSupportSplitAndMergeCompactor(t *testing.T) 
 						},
 						Thanos: block.ThanosMeta{
 							Labels: map[string]string{
-								mimir_tsdb.CompactorShardIDExternalLabel: "2_of_2",
+								block.CompactorShardIDExternalLabel: "2_of_2",
 							},
 						},
 					},
@@ -353,7 +353,7 @@ func TestMultitenantCompactor_ShouldSupportSplitAndMergeCompactor(t *testing.T) 
 						},
 						Thanos: block.ThanosMeta{
 							Labels: map[string]string{
-								mimir_tsdb.CompactorShardIDExternalLabel: "1_of_2",
+								block.CompactorShardIDExternalLabel: "1_of_2",
 							},
 						},
 					}, {
@@ -366,7 +366,7 @@ func TestMultitenantCompactor_ShouldSupportSplitAndMergeCompactor(t *testing.T) 
 						},
 						Thanos: block.ThanosMeta{
 							Labels: map[string]string{
-								mimir_tsdb.CompactorShardIDExternalLabel: "2_of_2",
+								block.CompactorShardIDExternalLabel: "2_of_2",
 							},
 						},
 					},
@@ -394,7 +394,7 @@ func TestMultitenantCompactor_ShouldSupportSplitAndMergeCompactor(t *testing.T) 
 						},
 						Thanos: block.ThanosMeta{
 							Labels: map[string]string{
-								mimir_tsdb.CompactorShardIDExternalLabel: "1_of_2",
+								block.CompactorShardIDExternalLabel: "1_of_2",
 							},
 						},
 					}, {
@@ -407,7 +407,7 @@ func TestMultitenantCompactor_ShouldSupportSplitAndMergeCompactor(t *testing.T) 
 						},
 						Thanos: block.ThanosMeta{
 							Labels: map[string]string{
-								mimir_tsdb.CompactorShardIDExternalLabel: "2_of_2",
+								block.CompactorShardIDExternalLabel: "2_of_2",
 							},
 						},
 					},
@@ -432,7 +432,7 @@ func TestMultitenantCompactor_ShouldSupportSplitAndMergeCompactor(t *testing.T) 
 						},
 						Thanos: block.ThanosMeta{
 							Labels: map[string]string{
-								mimir_tsdb.CompactorShardIDExternalLabel: "1_of_2",
+								block.CompactorShardIDExternalLabel: "1_of_2",
 							},
 						},
 					},
@@ -495,7 +495,7 @@ func TestMultitenantCompactor_ShouldSupportSplitAndMergeCompactor(t *testing.T) 
 						},
 						Thanos: block.ThanosMeta{
 							Labels: map[string]string{
-								mimir_tsdb.CompactorShardIDExternalLabel: "1_of_2",
+								block.CompactorShardIDExternalLabel: "1_of_2",
 							},
 						},
 					}, {
@@ -508,7 +508,7 @@ func TestMultitenantCompactor_ShouldSupportSplitAndMergeCompactor(t *testing.T) 
 						},
 						Thanos: block.ThanosMeta{
 							Labels: map[string]string{
-								mimir_tsdb.CompactorShardIDExternalLabel: "2_of_2",
+								block.CompactorShardIDExternalLabel: "2_of_2",
 							},
 						},
 					},
@@ -584,7 +584,7 @@ func TestMultitenantCompactor_ShouldSupportSplitAndMergeCompactor(t *testing.T) 
 						},
 						Thanos: block.ThanosMeta{
 							Labels: map[string]string{
-								mimir_tsdb.CompactorShardIDExternalLabel: "1_of_2",
+								block.CompactorShardIDExternalLabel: "1_of_2",
 							},
 						},
 					},
@@ -598,7 +598,7 @@ func TestMultitenantCompactor_ShouldSupportSplitAndMergeCompactor(t *testing.T) 
 						},
 						Thanos: block.ThanosMeta{
 							Labels: map[string]string{
-								mimir_tsdb.CompactorShardIDExternalLabel: "2_of_2",
+								block.CompactorShardIDExternalLabel: "2_of_2",
 							},
 						},
 					},
@@ -766,13 +766,13 @@ func TestMultitenantCompactor_ShouldGuaranteeSeriesShardingConsistencyOverTheTim
 		assert.Equal(t, blockRangeMillis, actualMeta.MinTime)
 		assert.Equal(t, 2*blockRangeMillis, actualMeta.MaxTime)
 		assert.Equal(t, []ulid.ULID{blockID}, actualMeta.Compaction.Sources)
-		assert.Equal(t, sharding.FormatShardIDLabelValue(uint64(idx), numShards), actualMeta.Thanos.Labels[mimir_tsdb.CompactorShardIDExternalLabel])
+		assert.Equal(t, sharding.FormatShardIDLabelValue(uint64(idx), numShards), actualMeta.Thanos.Labels[block.CompactorShardIDExternalLabel])
 	}
 
 	// Ensure each split block contains the right series, based on a series labels
 	// hashing function which doesn't change over time.
 	for _, actualMeta := range actualMetas {
-		expectedSeriesIDs := expectedSeriesIDByShard[actualMeta.Thanos.Labels[mimir_tsdb.CompactorShardIDExternalLabel]]
+		expectedSeriesIDs := expectedSeriesIDByShard[actualMeta.Thanos.Labels[block.CompactorShardIDExternalLabel]]
 
 		b, err := tsdb.OpenBlock(util_log.SlogFromGoKit(logger), filepath.Join(storageDir, userID, actualMeta.ULID.String()), nil, nil)
 		require.NoError(t, err)

@@ -112,7 +112,7 @@ func BenchmarkTrackerStoreLoadSnapshot(b *testing.B) {
 		for i := 0; i < b.N; i++ {
 			t := newTrackerStore(testIdleTimeout, log.NewNopLogger(), lim, noopEvents{})
 			for _, d := range snapshots {
-				require.NoError(b, t.loadSnapshot(d, now))
+				require.NoError(b, t.loadSnapshot(d, now, true))
 			}
 		}
 	})
@@ -125,7 +125,7 @@ func BenchmarkTrackerStoreLoadSnapshot(b *testing.B) {
 			for _, d := range snapshots {
 				go func() {
 					defer wg.Done()
-					require.NoError(b, t.loadSnapshot(d, now))
+					require.NoError(b, t.loadSnapshot(d, now, true))
 				}()
 			}
 			wg.Wait()

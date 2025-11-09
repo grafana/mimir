@@ -314,19 +314,54 @@ func TestVectorSelector_Equivalence(t *testing.T) {
 					ExpressionPosition:   PositionRange{Start: 1, End: 2},
 				},
 			},
-			expectEquivalent: false,
+			expectEquivalent: true,
 		},
 	}
 
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
-			require.Equal(t, testCase.expectEquivalent, testCase.a.EquivalentTo(testCase.b))
-			require.Equal(t, testCase.expectEquivalent, testCase.b.EquivalentTo(testCase.a))
+			require.Equal(t, testCase.expectEquivalent, testCase.a.EquivalentToIgnoringHintsAndChildren(testCase.b), "a.EquivalentToIgnoringHintsAndChildren(b) did not return expected value")
+			require.Equal(t, testCase.expectEquivalent, testCase.b.EquivalentToIgnoringHintsAndChildren(testCase.a), "b.EquivalentToIgnoringHintsAndChildren(a) did not return expected value")
 
-			require.True(t, testCase.a.EquivalentTo(testCase.a))
-			require.True(t, testCase.b.EquivalentTo(testCase.b))
+			require.True(t, testCase.a.EquivalentToIgnoringHintsAndChildren(testCase.a), "a should be equivalent to itself")
+			require.True(t, testCase.b.EquivalentToIgnoringHintsAndChildren(testCase.b), "b should be equivalent to itself")
 		})
 	}
+}
+
+func TestVectorSelector_MergeHints(t *testing.T) {
+	runTest := func(t *testing.T, skipFirst, skipSecond bool, expectSkip bool) {
+		first := &VectorSelector{
+			VectorSelectorDetails: &VectorSelectorDetails{
+				SkipHistogramBuckets: skipFirst,
+			},
+		}
+		second := &VectorSelector{
+			VectorSelectorDetails: &VectorSelectorDetails{
+				SkipHistogramBuckets: skipSecond,
+			},
+		}
+
+		err := first.MergeHints(second)
+		require.NoError(t, err)
+		require.Equal(t, expectSkip, first.SkipHistogramBuckets)
+	}
+
+	t.Run("neither has skip histogram buckets enabled", func(t *testing.T) {
+		runTest(t, false, false, false)
+	})
+
+	t.Run("first has skip histogram buckets enabled, other does not", func(t *testing.T) {
+		runTest(t, true, false, false)
+	})
+
+	t.Run("first has skip histogram buckets disabled, other does not", func(t *testing.T) {
+		runTest(t, false, true, false)
+	})
+
+	t.Run("both have skip histogram buckets enabled", func(t *testing.T) {
+		runTest(t, true, true, true)
+	})
 }
 
 func timestampOf(ts int64) *time.Time {

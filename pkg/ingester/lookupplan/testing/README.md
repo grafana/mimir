@@ -32,10 +32,10 @@ INGESTER_POD="ingester-zone-a-0"
 kubectl debug -n $NAMESPACE $INGESTER_POD --image ubuntu -it --target=ingester --container=copy-container -- sh
 # In a separate terminal:
 kubectl cp -n $NAMESPACE --container=copy-container $INGESTER_POD:/proc/1/root/data ./ingester-data
-mv ./ingester-data/tsdb ./ingester-data/tsdb-data
+mv ./ingester-data/tsdb ./ingester-data/data
 
 # 2. Extract query logs
-logcli query -q --timezone=UTC --limit=1000000 \
+logcli query -q --forward --timezone=UTC --limit=1000000 \
   --from='2025-10-15T15:15:21.0Z' --to='2025-10-15T16:15:21.0Z' \
   --output=jsonl \
   '{namespace="'$NAMESPACE'", name="query-frontend"} |= "query stats" | logfmt | path=~".*/query(_range)?"' \

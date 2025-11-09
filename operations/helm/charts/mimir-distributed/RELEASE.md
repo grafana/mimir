@@ -76,9 +76,7 @@ Weekly releases have the version `x.y.z-weekly.w`, for example `3.1.0-weekly.196
 
 1. Update versions and links in the `user/update-mimir-distributed-release-x.y` branch.
 
-   - Set the image version in [values.yaml](https://github.com/grafana/mimir/blob/main/operations/helm/charts/mimir-distributed/values.yaml):
-
-     - `image.tag` (Mimir)
+   - Set the `image.tag` version in [values.yaml](https://github.com/grafana/mimir/blob/main/operations/helm/charts/mimir-distributed/values.yaml):
 
    - Set the `version` field, in the [Chart.yaml](https://github.com/grafana/mimir/blob/main/operations/helm/charts/mimir-distributed/Chart.yaml) file, to the desired release candidate version.
 
@@ -151,9 +149,11 @@ The [release process](https://github.com/grafana/mimir/blob/main/.github/workflo
 
    For example `user/update-mimir-distributed-release-x.y-final`.
 
-1. Optionally finalize release note and update version in the `user/update-mimir-distributed-release-x.y-final` branch.
+1. Update versions and links in the `user/update-mimir-distributed-release-x.y-final` branch.
 
-   - Update and finalize the release notes in `docs/sources/helm-charts/mimir-distributed/release-notes` directory if there has been some changes after release candidate.
+   - Set the `image.tag` version in [values.yaml](https://github.com/grafana/mimir/blob/main/operations/helm/charts/mimir-distributed/values.yaml):
+
+   - Optionally finalize release note and update version in the `user/update-mimir-distributed-release-x.y-final` branch.
 
    - Finalize the chart's changelog. Update the title of the release section by setting it to the final release version number.
 

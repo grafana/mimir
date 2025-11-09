@@ -36,14 +36,13 @@ type Manager struct {
 	logger log.Logger
 	limits *validation.Overrides
 
-	sampleTrackerCardinalityDesc       *prometheus.Desc
-	sampleTrackerOverflowDesc          *prometheus.Desc
-	activeSeriesTrackerCardinalityDesc *prometheus.Desc
-	activeSeriesTrackerOverflowDesc    *prometheus.Desc
+	sampleTrackerCardinalityDesc       *descriptor
+	sampleTrackerOverflowDesc          *descriptor
+	activeSeriesTrackerCardinalityDesc *descriptor
+	activeSeriesTrackerOverflowDesc    *descriptor
 	trackerCreationErrors              *prometheus.CounterVec
 
 	inactiveTimeout time.Duration
-	cleanupInterval time.Duration
 
 	stmtx                  sync.RWMutex
 	sampleTrackersByUserID map[string]*SampleTracker
@@ -60,26 +59,6 @@ func NewManager(cleanupInterval, inactiveTimeout time.Duration, logger log.Logge
 		atmtx:                  sync.RWMutex{},
 		activeTrackersByUserID: make(map[string]*ActiveSeriesTracker),
 
-		sampleTrackerCardinalityDesc: prometheus.NewDesc("cortex_cost_attribution_sample_tracker_cardinality",
-			"The cardinality of a cost attribution sample tracker for each user.",
-			[]string{"user"},
-			prometheus.Labels{trackerLabel: defaultTrackerName},
-		),
-		sampleTrackerOverflowDesc: prometheus.NewDesc("cortex_cost_attribution_sample_tracker_overflown",
-			"This metric is exported with value 1 when a sample tracker for a user is overflown. It's not exported otherwise.",
-			[]string{"user"},
-			prometheus.Labels{trackerLabel: defaultTrackerName},
-		),
-		activeSeriesTrackerCardinalityDesc: prometheus.NewDesc("cortex_cost_attribution_active_series_tracker_cardinality",
-			"The cardinality of a cost attribution active series tracker for each user.",
-			[]string{"user"},
-			prometheus.Labels{trackerLabel: defaultTrackerName},
-		),
-		activeSeriesTrackerOverflowDesc: prometheus.NewDesc("cortex_cost_attribution_active_series_tracker_overflown",
-			"This metric is exported with value 1 when an active series tracker for a user is overflown. It's not exported otherwise.",
-			[]string{"user"},
-			prometheus.Labels{trackerLabel: defaultTrackerName},
-		),
 		trackerCreationErrors: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_cost_attribution_tracker_creation_errors_total",
 			Help: "The total number of errors creating cost attribution trackers for each user.",
@@ -88,7 +67,10 @@ func NewManager(cleanupInterval, inactiveTimeout time.Duration, logger log.Logge
 		limits:          limits,
 		inactiveTimeout: inactiveTimeout,
 		logger:          logger,
-		cleanupInterval: cleanupInterval,
+	}
+
+	if err := m.createAndValidateDescriptors(); err != nil {
+		return nil, err
 	}
 
 	m.Service = services.NewTimerService(cleanupInterval, nil, m.iteration, nil).WithName("cost attribution manager")
@@ -101,6 +83,35 @@ func NewManager(cleanupInterval, inactiveTimeout time.Duration, logger log.Logge
 	return m, nil
 }
 
+func (m *Manager) createAndValidateDescriptors() error {
+	var err error
+	if m.sampleTrackerCardinalityDesc, err = newDescriptor("cortex_cost_attribution_sample_tracker_cardinality",
+		"The cardinality of a cost attribution sample tracker for each user.",
+		[]string{"user"},
+		prometheus.Labels{trackerLabel: defaultTrackerName}); err != nil {
+		return err
+	}
+	if m.sampleTrackerOverflowDesc, err = newDescriptor("cortex_cost_attribution_sample_tracker_overflown",
+		"This metric is exported with value 1 when a sample tracker for a user is overflown. It's not exported otherwise.",
+		[]string{"user"},
+		prometheus.Labels{trackerLabel: defaultTrackerName}); err != nil {
+		return err
+	}
+	if m.activeSeriesTrackerCardinalityDesc, err = newDescriptor("cortex_cost_attribution_active_series_tracker_cardinality",
+		"The cardinality of a cost attribution active series tracker for each user.",
+		[]string{"user"},
+		prometheus.Labels{trackerLabel: defaultTrackerName}); err != nil {
+		return err
+	}
+	if m.activeSeriesTrackerOverflowDesc, err = newDescriptor("cortex_cost_attribution_active_series_tracker_overflown",
+		"This metric is exported with value 1 when an active series tracker for a user is overflown. It's not exported otherwise.",
+		[]string{"user"},
+		prometheus.Labels{trackerLabel: defaultTrackerName}); err != nil {
+		return err
+	}
+	return nil
+}
+
 func (m *Manager) iteration(_ context.Context) error {
 	m.purgeInactiveAttributionsUntil(time.Now())
 	return nil
@@ -111,15 +122,11 @@ func (m *Manager) enabledForUser(userID string) bool {
 		return false
 	}
 
-	return len(m.limits.CostAttributionLabels(userID)) > 0 || len(m.limits.CostAttributionLabelsStructured(userID)) > 0
+	return len(m.limits.CostAttributionLabelsStructured(userID)) > 0
 }
 
 func (m *Manager) labels(userID string) []costattributionmodel.Label {
-	// We prefer the structured labels over the string labels, if provided.
-	if s := m.limits.CostAttributionLabelsStructured(userID); len(s) > 0 {
-		return s
-	}
-	return costattributionmodel.ParseCostAttributionLabels(m.limits.CostAttributionLabels(userID))
+	return m.limits.CostAttributionLabelsStructured(userID)
 }
 
 func (m *Manager) SampleTracker(userID string) *SampleTracker {
@@ -211,38 +218,18 @@ func (m *Manager) Collect(out chan<- prometheus.Metric) {
 	for _, tracker := range sampleTrackersByUserID {
 		cardinality, overflown := tracker.cardinality()
 
-		out <- prometheus.MustNewConstMetric(
-			m.sampleTrackerCardinalityDesc,
-			prometheus.GaugeValue,
-			float64(cardinality),
-			tracker.userID,
-		)
+		out <- m.sampleTrackerCardinalityDesc.gauge(float64(cardinality), tracker.userID)
 		if overflown {
-			out <- prometheus.MustNewConstMetric(
-				m.sampleTrackerOverflowDesc,
-				prometheus.GaugeValue,
-				1,
-				tracker.userID,
-			)
+			out <- m.sampleTrackerOverflowDesc.gauge(1, tracker.userID)
 		}
 	}
 
 	for _, tracker := range activeTrackersByUserID {
 		cardinality, overflown := tracker.cardinality()
 
-		out <- prometheus.MustNewConstMetric(
-			m.activeSeriesTrackerCardinalityDesc,
-			prometheus.GaugeValue,
-			float64(cardinality),
-			tracker.userID,
-		)
+		out <- m.activeSeriesTrackerCardinalityDesc.gauge(float64(cardinality), tracker.userID)
 		if overflown {
-			out <- prometheus.MustNewConstMetric(
-				m.activeSeriesTrackerOverflowDesc,
-				prometheus.GaugeValue,
-				1,
-				tracker.userID,
-			)
+			out <- m.activeSeriesTrackerOverflowDesc.gauge(1, tracker.userID)
 		}
 	}
 }

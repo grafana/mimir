@@ -153,13 +153,18 @@ func TestDistributor_Push_ShouldSupportIngestStorage(t *testing.T) {
 			kafkaCluster.ControlKey(int16(kmsg.Produce), func(request kmsg.Request) (kmsg.Response, error, bool) {
 				kafkaCluster.KeepControl()
 
-				for _, topic := range request.(*kmsg.ProduceRequest).Topics {
+				produceReq := request.(*kmsg.ProduceRequest)
+				for _, topic := range produceReq.Topics {
 					// For this test to work correctly we expect each request to write only to 1 partition,
 					// because we'll fail the entire request.
 					require.Len(t, topic.Partitions, 1)
 
 					if res := testData.kafkaPartitionCustomResponse[topic.Partitions[0].Partition]; res != nil {
 						res.SetVersion(request.GetVersion())
+						// Copy the TopicID from the request to the response (required for produce v13+)
+						if len(res.Topics) > 0 {
+							res.Topics[0].TopicID = topic.TopicID
+						}
 						return res, nil, true
 					}
 				}
@@ -419,8 +424,13 @@ func TestDistributor_Push_ShouldSupportWriteBothToIngestersAndPartitions(t *test
 				kafkaCluster.ControlKey(int16(kmsg.Produce), func(req kmsg.Request) (kmsg.Response, error, bool) {
 					kafkaCluster.KeepControl()
 
-					partitionID := req.(*kmsg.ProduceRequest).Topics[0].Partitions[0].Partition
+					produceReq := req.(*kmsg.ProduceRequest)
+					partitionID := produceReq.Topics[0].Partitions[0].Partition
 					res := testkafka.CreateProduceResponseError(req.GetVersion(), kafkaTopic, partitionID, kerr.InvalidTopicException)
+					// Copy the TopicID from the request to the response (required for produce v13+)
+					if len(res.Topics) > 0 {
+						res.Topics[0].TopicID = produceReq.Topics[0].TopicID
+					}
 
 					return res, nil, true
 				})

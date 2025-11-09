@@ -100,17 +100,27 @@ func (t *testNode) NodeType() NodeType {
 	panic("not supported")
 }
 
-func (t *testNode) Children() []Node {
-	return t.children
+func (t *testNode) Child(idx int) Node {
+	return t.children[idx]
+}
+
+func (t *testNode) ChildCount() int {
+	return len(t.children)
 }
 
 func (t *testNode) SetChildren(_ []Node) error {
 	panic("not supported")
 }
 
-func (t *testNode) EquivalentTo(_ Node) bool {
+func (t *testNode) ReplaceChild(_ int, _ Node) error {
 	panic("not supported")
 }
+
+func (t *testNode) EquivalentToIgnoringHintsAndChildren(_ Node) bool {
+	panic("not supported")
+}
+
+func (t *testNode) MergeHints(_ Node) error { panic("not supported") }
 
 func (t *testNode) ChildrenTimeRange(_ types.QueryTimeRange) types.QueryTimeRange {
 	panic("not supported")

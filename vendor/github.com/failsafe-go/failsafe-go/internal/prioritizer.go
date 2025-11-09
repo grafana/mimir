@@ -40,7 +40,7 @@ func (c *BasePrioritizerConfig[S]) OnThresholdChanged(listener func(event priori
 func (c *BasePrioritizerConfig[S]) Build() priority.Prioritizer {
 	pCopy := *c
 	if pCopy.LevelTracker == nil {
-		pCopy.LevelTracker = priority.NewLevelTracker()
+		pCopy.LevelTracker = priority.NewLevelTracker(1000)
 	}
 	return &BasePrioritizer[S]{
 		BasePrioritizerConfig: pCopy, // TODO copy base fields

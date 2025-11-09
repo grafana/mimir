@@ -65,7 +65,7 @@ func TestNewActiveTracker(t *testing.T) {
 func TestActiveTracker_hasSameLabels(t *testing.T) {
 	manager, _, _ := newTestManager()
 	ast := manager.ActiveSeriesTracker("user1")
-	assert.True(t, ast.hasSameLabels([]costattributionmodel.Label{{Input: "team", Output: ""}}), "Expected cost attribution labels mismatch")
+	assert.True(t, ast.hasSameLabels([]costattributionmodel.Label{{Input: "team", Output: "my_team"}}), "Expected cost attribution labels mismatch")
 }
 
 func TestActiveTracker_IncrementDecrement(t *testing.T) {
@@ -130,13 +130,13 @@ func TestActiveTracker_Concurrency(t *testing.T) {
 	expectedMetrics := `
 	# HELP cortex_ingester_attributed_active_native_histogram_buckets The total number of active native histogram buckets per user and attribution.
     # TYPE cortex_ingester_attributed_active_native_histogram_buckets gauge
-    cortex_ingester_attributed_active_native_histogram_buckets{team="__overflow__",tenant="user1",tracker="cost-attribution"} 200
+    cortex_ingester_attributed_active_native_histogram_buckets{my_team="__overflow__",tenant="user1",tracker="cost-attribution"} 200
     # HELP cortex_ingester_attributed_active_native_histogram_series The total number of active native histogram series per user and attribution.
     # TYPE cortex_ingester_attributed_active_native_histogram_series gauge
-    cortex_ingester_attributed_active_native_histogram_series{team="__overflow__",tenant="user1",tracker="cost-attribution"} 100
+    cortex_ingester_attributed_active_native_histogram_series{my_team="__overflow__",tenant="user1",tracker="cost-attribution"} 100
     # HELP cortex_ingester_attributed_active_series The total number of active series per user and attribution.
     # TYPE cortex_ingester_attributed_active_series gauge
-	cortex_ingester_attributed_active_series{team="__overflow__",tenant="user1",tracker="cost-attribution"} 100
+	cortex_ingester_attributed_active_series{my_team="__overflow__",tenant="user1",tracker="cost-attribution"} 100
 `
 	assert.NoError(t, testutil.GatherAndCompare(costAttributionReg,
 		strings.NewReader(expectedMetrics),

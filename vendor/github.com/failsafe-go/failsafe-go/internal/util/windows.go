@@ -4,6 +4,9 @@ import (
 	"math"
 )
 
+// RollingSum maintains a sum over a rolling window.
+//
+// This type is not concurrency safe.
 type RollingSum struct {
 	// For variation and covariance
 	samples []float64
@@ -76,6 +79,9 @@ func (r *RollingSum) Reset() {
 	r.sumSquares = 0
 }
 
+// CorrelationWindow maintains the correlation between two rolling windows.
+//
+// This type is not concurrency safe.
 type CorrelationWindow struct {
 	warmupSamples uint8
 
@@ -143,7 +149,10 @@ func (w *CorrelationWindow) Reset() {
 	w.corrSumXY = 0
 }
 
-// BucketedWindow is a time based bucketed sliding window.
+// BucketedWindow is a time based bucketed sliding buckets.
+// T is the bucket type.
+//
+// This type is not concurrency safe.
 type BucketedWindow[T any] struct {
 	Clock
 	BucketCount int64
@@ -161,7 +170,7 @@ type BucketedWindow[T any] struct {
 	HeadTime int64
 }
 
-// ExpireBuckets resets any old Buckets and returns the current bucket, sliding the window as needed.
+// ExpireBuckets resets any old buckets and returns the current bucket, sliding the window as needed.
 func (w *BucketedWindow[T]) ExpireBuckets() *T {
 	newHead := w.Clock.Now().UnixNano() / w.BucketNanos
 

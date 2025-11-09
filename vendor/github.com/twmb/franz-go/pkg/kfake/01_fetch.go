@@ -18,7 +18,7 @@ import (
 // * Out of range fetch causes early return
 // * Raw bytes of batch counts against wait bytes
 
-func init() { regKey(1, 4, 17) }
+func init() { regKey(1, 4, 18) }
 
 func (c *Cluster) handleFetch(creq *clientReq, w *watchFetch) (kmsg.Response, error) {
 	var (
@@ -150,6 +150,7 @@ func (c *Cluster) handleFetch(creq *clientReq, w *watchFetch) (kmsg.Response, er
 	}()
 
 	var batchesAdded int
+	nbytes = 0
 full:
 	for _, rt := range req.Topics {
 		for _, rp := range rt.Partitions {

@@ -114,7 +114,7 @@ type MultitenantAlertmanagerConfig struct {
 	// of the old regular expression parser, referred to as classic mode.
 	// Enable this mode once confident that all tenant configurations are forwards
 	// compatible.
-	UTF8StrictMode bool `yaml:"utf8_strict_mode" category:"experimental"`
+	UTF8StrictMode bool `yaml:"utf8_strict_mode" category:"advanced"`
 	// Enables logging when parsing label matchers. If UTF-8 strict mode is enabled,
 	// then the UTF-8 parser will be logged. If it is disabled, then the old regular
 	// expression parser will be logged.
@@ -158,7 +158,7 @@ func (cfg *MultitenantAlertmanagerConfig) RegisterFlags(f *flag.FlagSet, logger 
 
 	f.BoolVar(&cfg.StrictInitializationEnabled, "alertmanager.strict-initialization-enabled", false, "Skip initializing Alertmanagers for tenants without a non-default, non-empty configuration. For Grafana Alertmanager tenants, configurations not marked as 'promoted' will also be skipped.")
 
-	f.BoolVar(&cfg.UTF8StrictMode, "alertmanager.utf8-strict-mode-enabled", false, "Enable UTF-8 strict mode. Allows UTF-8 characters in the matchers for routes and inhibition rules, in silences, and in the labels for alerts. It is recommended that all tenants run the `migrate-utf8` command in mimirtool before enabling this mode. Otherwise, some tenant configurations might fail to load. For more information, refer to [Enable UTF-8](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/components/alertmanager/#enable-utf-8). Enabling and then disabling UTF-8 strict mode can break existing Alertmanager configurations if tenants added UTF-8 characters to their Alertmanager configuration while it was enabled.")
+	f.BoolVar(&cfg.UTF8StrictMode, "alertmanager.utf8-strict-mode-enabled", false, "Enable UTF-8 strict mode. Allows UTF-8 characters in the matchers for routes and inhibition rules, in silences, and in the labels for alerts. It is recommended that all tenants run the `migrate-utf8` command in mimirtool before enabling this mode. Otherwise, some tenant configurations might fail to load. For more information, refer to [Enable UTF-8](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/components/alertmanager/#enable-utf-8).")
 	f.BoolVar(&cfg.LogParsingLabelMatchers, "alertmanager.log-parsing-label-matchers", false, "Enable logging when parsing label matchers. This flag is intended to be used with -alertmanager.utf8-strict-mode-enabled to validate UTF-8 strict mode is working as intended.")
 	f.BoolVar(&cfg.UTF8MigrationLogging, "alertmanager.utf8-migration-logging-enabled", false, "Enable logging of tenant configurations that are incompatible with UTF-8 strict mode.")
 

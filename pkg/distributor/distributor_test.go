@@ -60,6 +60,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/cardinality"
 	"github.com/grafana/mimir/pkg/costattribution"
+	"github.com/grafana/mimir/pkg/costattribution/costattributionmodel"
 	"github.com/grafana/mimir/pkg/ingester"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -2384,7 +2385,7 @@ func BenchmarkDistributor_Push(b *testing.B) {
 			state:          "enabled",
 			customRegistry: prometheus.NewRegistry(),
 			cfg: func(limits *validation.Limits) {
-				limits.CostAttributionLabels = []string{"team"}
+				limits.CostAttributionLabelsStructured = []costattributionmodel.Label{{Input: "team"}}
 				limits.MaxCostAttributionCardinality = 100
 			},
 		},

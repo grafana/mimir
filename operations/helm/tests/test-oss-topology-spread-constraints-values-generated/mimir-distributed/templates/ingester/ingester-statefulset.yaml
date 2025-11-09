@@ -47,6 +47,7 @@ spec:
   template:
     metadata:
       labels:
+        foo: bar
         app.kubernetes.io/name: mimir
         app.kubernetes.io/instance: test-oss-topology-spread-constraints-values
         app.kubernetes.io/managed-by: Helm
@@ -56,6 +57,7 @@ spec:
         rollout-group: ingester
         zone: zone-a
       annotations:
+        baz: qux
       namespace: "citestns"
     spec:
       serviceAccountName: test-oss-topology-spread-constraints-values-mimir
@@ -202,6 +204,7 @@ spec:
   template:
     metadata:
       labels:
+        foo: bar
         app.kubernetes.io/name: mimir
         app.kubernetes.io/instance: test-oss-topology-spread-constraints-values
         app.kubernetes.io/managed-by: Helm
@@ -211,6 +214,7 @@ spec:
         rollout-group: ingester
         zone: zone-b
       annotations:
+        baz: qux
       namespace: "citestns"
     spec:
       serviceAccountName: test-oss-topology-spread-constraints-values-mimir
@@ -357,6 +361,7 @@ spec:
   template:
     metadata:
       labels:
+        foo: bar
         app.kubernetes.io/name: mimir
         app.kubernetes.io/instance: test-oss-topology-spread-constraints-values
         app.kubernetes.io/managed-by: Helm
@@ -366,6 +371,7 @@ spec:
         rollout-group: ingester
         zone: zone-c
       annotations:
+        baz: qux
       namespace: "citestns"
     spec:
       serviceAccountName: test-oss-topology-spread-constraints-values-mimir

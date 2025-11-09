@@ -28,7 +28,6 @@ import (
 	"github.com/grafana/mimir/pkg/blockbuilder/schedulerpb"
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/ingest"
-	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
@@ -481,7 +480,7 @@ func (b *BlockBuilder) uploadBlocks(ctx context.Context, tenantID, dbDir string,
 			if meta.Thanos.Labels == nil {
 				meta.Thanos.Labels = map[string]string{}
 			}
-			meta.Thanos.Labels[mimir_tsdb.OutOfOrderExternalLabel] = mimir_tsdb.OutOfOrderExternalLabelValue
+			meta.Thanos.Labels[block.OutOfOrderExternalLabel] = block.OutOfOrderExternalLabelValue
 		}
 
 		boff := backoff.New(ctx, backoff.Config{

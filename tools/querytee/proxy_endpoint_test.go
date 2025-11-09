@@ -37,9 +37,9 @@ func Test_ProxyEndpoint_waitBackendResponseForDownstream(t *testing.T) {
 	backendURL3, err := url.Parse("http://backend-3/")
 	require.NoError(t, err)
 
-	backendPref := NewProxyBackend("backend-1", backendURL1, time.Second, true, false, defaultBackendConfig())
-	backendOther1 := NewProxyBackend("backend-2", backendURL2, time.Second, false, false, defaultBackendConfig())
-	backendOther2 := NewProxyBackend("backend-3", backendURL3, time.Second, false, false, defaultBackendConfig())
+	backendPref := NewProxyBackend("backend-1", backendURL1, time.Second, true, false, "", defaultBackendConfig())
+	backendOther1 := NewProxyBackend("backend-2", backendURL2, time.Second, false, false, "", defaultBackendConfig())
+	backendOther2 := NewProxyBackend("backend-3", backendURL3, time.Second, false, false, "", defaultBackendConfig())
 
 	tests := map[string]struct {
 		backends  []ProxyBackendInterface
@@ -157,8 +157,8 @@ func Test_ProxyEndpoint_Requests(t *testing.T) {
 	require.NoError(t, err)
 
 	backends := []ProxyBackendInterface{
-		NewProxyBackend("backend-1", backendURL1, time.Second, true, false, defaultBackendConfig()),
-		NewProxyBackend("backend-2", backendURL2, time.Second, false, false, defaultBackendConfig()),
+		NewProxyBackend("backend-1", backendURL1, time.Second, true, false, "", defaultBackendConfig()),
+		NewProxyBackend("backend-2", backendURL2, time.Second, false, false, "", defaultBackendConfig()),
 	}
 	endpoint := NewProxyEndpoint(backends, testRoute, NewProxyMetrics(nil), log.NewNopLogger(), nil, 0, 1.0, false, newTestQueryDecoder())
 
@@ -344,8 +344,8 @@ func Test_ProxyEndpoint_Comparison(t *testing.T) {
 			require.NoError(t, err)
 
 			backends := []ProxyBackendInterface{
-				NewProxyBackend("preferred-backend", preferredBackendURL, time.Second, true, false, defaultBackendConfig()),
-				NewProxyBackend("secondary-backend", secondaryBackendURL, time.Second, false, false, defaultBackendConfig()),
+				NewProxyBackend("preferred-backend", preferredBackendURL, time.Second, true, false, "", defaultBackendConfig()),
+				NewProxyBackend("secondary-backend", secondaryBackendURL, time.Second, false, false, "", defaultBackendConfig()),
 			}
 
 			logger := newMockLogger()
@@ -999,7 +999,7 @@ func Test_ProxyEndpoint_MultipleSecondaryBackends(t *testing.T) {
 			require.NoError(t, err)
 
 			backends := []ProxyBackendInterface{
-				NewProxyBackend("preferred-backend", preferredBackendURL, time.Second, true, false, defaultBackendConfig()),
+				NewProxyBackend("preferred-backend", preferredBackendURL, time.Second, true, false, "", defaultBackendConfig()),
 			}
 
 			var secondaryServers []*httptest.Server
@@ -1021,6 +1021,7 @@ func Test_ProxyEndpoint_MultipleSecondaryBackends(t *testing.T) {
 					time.Second,
 					false,
 					false,
+					"",
 					defaultBackendConfig(),
 				))
 			}

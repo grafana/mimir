@@ -16,7 +16,7 @@ import (
 //
 // R is the execution result type. This type is concurrency safe.
 type PriorityLimiter[R any] interface {
-	failsafe.Policy[R]
+	failsafe.ResultAgnosticPolicy[R]
 	Metrics
 
 	// AcquirePermit attempts to acquire a permit for an execution at the priority or level contained in the context,
@@ -86,6 +86,8 @@ type priorityLimiter[R any] struct {
 	prioritizer *internal.BasePrioritizer[*queueStats]
 }
 
+func (*priorityLimiter[R]) ResultAgnostic() {}
+
 func (l *priorityLimiter[R]) AcquirePermit(ctx context.Context) (Permit, error) {
 	return l.AcquirePermitWithLevel(ctx, l.prioritizer.LevelFromContext(ctx))
 }
@@ -96,11 +98,17 @@ func (l *priorityLimiter[R]) AcquirePermitWithMaxWait(ctx context.Context, maxWa
 		return nil, ErrExceeded
 	}
 
+	// Record levels when overloaded
+	if l.adaptiveLimiter.semaphore.IsFull() {
+		l.prioritizer.LevelTracker.RecordLevel(level)
+	}
+
+	// Acquire, blocking if necessary
 	permit, err := l.adaptiveLimiter.AcquirePermitWithMaxWait(ctx, maxWaitTime)
 	if err != nil {
 		return nil, err
 	}
-	l.prioritizer.LevelTracker.RecordLevel(level)
+
 	return l.enhancedPermit(ctx, permit), nil
 }
 
@@ -113,11 +121,17 @@ func (l *priorityLimiter[R]) AcquirePermitWithLevel(ctx context.Context, level i
 		return nil, ErrExceeded
 	}
 
+	// Record levels when overloaded
+	if l.adaptiveLimiter.semaphore.IsFull() {
+		l.prioritizer.LevelTracker.RecordLevel(level)
+	}
+
+	// Acquire, blocking if necessary
 	permit, err := l.adaptiveLimiter.AcquirePermit(ctx)
 	if err != nil {
 		return nil, err
 	}
-	l.prioritizer.LevelTracker.RecordLevel(level)
+
 	return l.enhancedPermit(ctx, permit), nil
 }
 
@@ -150,7 +164,7 @@ func (l *priorityLimiter[R]) CanAcquirePermitWithLevel(level int) bool {
 
 func (l *priorityLimiter[R]) ToExecutor(_ R) any {
 	e := &executor[R]{
-		BaseExecutor:    &policy.BaseExecutor[R]{},
+		BaseExecutor:    policy.BaseExecutor[R]{},
 		blockingLimiter: l,
 	}
 	e.Executor = e

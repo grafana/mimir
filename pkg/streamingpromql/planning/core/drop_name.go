@@ -28,8 +28,16 @@ func (n *DropName) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_DROP_NAME
 }
 
-func (n *DropName) Children() []planning.Node {
-	return []planning.Node{n.Inner}
+func (n *DropName) Child(idx int) planning.Node {
+	if idx != 0 {
+		panic(fmt.Sprintf("node of type DropName supports 1 child, but attempted to get child at index %d", idx))
+	}
+
+	return n.Inner
+}
+
+func (n *DropName) ChildCount() int {
+	return 1
 }
 
 func (n *DropName) SetChildren(children []planning.Node) error {
@@ -42,10 +50,24 @@ func (n *DropName) SetChildren(children []planning.Node) error {
 	return nil
 }
 
-func (n *DropName) EquivalentTo(other planning.Node) bool {
-	otherDropName, ok := other.(*DropName)
+func (n *DropName) ReplaceChild(idx int, node planning.Node) error {
+	if idx != 0 {
+		return fmt.Errorf("node of type DropName supports 1 child, but attempted to replace child at index %d", idx)
+	}
 
-	return ok && n.Inner.EquivalentTo(otherDropName.Inner)
+	n.Inner = node
+	return nil
+}
+
+func (n *DropName) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
+	_, ok := other.(*DropName)
+
+	return ok
+}
+
+func (n *DropName) MergeHints(_ planning.Node) error {
+	// Nothing to do.
+	return nil
 }
 
 func (n *DropName) Describe() string {

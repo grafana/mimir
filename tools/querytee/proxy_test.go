@@ -7,6 +7,7 @@ package querytee
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"io"
 	"net/http"
@@ -374,10 +375,10 @@ func Test_Proxy_RequestsForwarding(t *testing.T) {
 				BackendEndpoints:                   strings.Join(backendURLs, ","),
 				PreferredBackend:                   strconv.Itoa(testData.preferredBackendIdx),
 				parsedBackendConfig:                testData.backendConfig,
-				ServerHTTPServiceAddress:           "localhost",
-				ServerHTTPServicePort:              0,
-				ServerGRPCServiceAddress:           "localhost",
-				ServerGRPCServicePort:              0,
+				DeprecatedServerHTTPServiceAddress: "localhost",
+				DeprecatedServerHTTPServicePort:    0,
+				DeprecatedServerGRPCServiceAddress: "localhost",
+				DeprecatedServerGRPCServicePort:    0,
 				BackendReadTimeout:                 time.Second,
 				SecondaryBackendsRequestProportion: 1.0,
 			}
@@ -531,14 +532,14 @@ func TestProxy_Passthrough(t *testing.T) {
 
 			// Start the proxy.
 			cfg := ProxyConfig{
-				BackendEndpoints:               strings.Join(backendURLs, ","),
-				PreferredBackend:               strconv.Itoa(testData.preferredBackendIdx),
-				ServerHTTPServiceAddress:       "localhost",
-				ServerHTTPServicePort:          0,
-				ServerGRPCServiceAddress:       "localhost",
-				ServerGRPCServicePort:          0,
-				BackendReadTimeout:             time.Second,
-				PassThroughNonRegisteredRoutes: true,
+				BackendEndpoints:                   strings.Join(backendURLs, ","),
+				PreferredBackend:                   strconv.Itoa(testData.preferredBackendIdx),
+				DeprecatedServerHTTPServiceAddress: "localhost",
+				DeprecatedServerHTTPServicePort:    0,
+				DeprecatedServerGRPCServiceAddress: "localhost",
+				DeprecatedServerGRPCServicePort:    0,
+				BackendReadTimeout:                 time.Second,
+				PassThroughNonRegisteredRoutes:     true,
 			}
 
 			p, err := NewProxy(cfg, log.NewNopLogger(), testRoutes, prometheus.NewRegistry())
@@ -609,13 +610,13 @@ func TestProxyHTTPGRPC(t *testing.T) {
 
 		// Start the proxy.
 		cfg := ProxyConfig{
-			BackendEndpoints:         strings.Join(backendURLs, ","),
-			PreferredBackend:         strconv.Itoa(0), // First backend server is preferred response
-			ServerHTTPServiceAddress: "localhost",
-			ServerHTTPServicePort:    0,
-			ServerGRPCServiceAddress: "localhost",
-			ServerGRPCServicePort:    0,
-			BackendReadTimeout:       time.Second,
+			BackendEndpoints:                   strings.Join(backendURLs, ","),
+			PreferredBackend:                   strconv.Itoa(0), // First backend server is preferred response
+			DeprecatedServerHTTPServiceAddress: "localhost",
+			DeprecatedServerHTTPServicePort:    0,
+			DeprecatedServerGRPCServiceAddress: "localhost",
+			DeprecatedServerGRPCServicePort:    0,
+			BackendReadTimeout:                 time.Second,
 		}
 
 		p, err := NewProxy(cfg, logger, testRoutes, prometheus.NewRegistry())
@@ -663,16 +664,18 @@ func TestProxyHTTPGRPC(t *testing.T) {
 			backendURLs = append(backendURLs, getServerAddress("http", server)+backend.pathPrefix)
 		}
 
-		// Start the proxy.
 		cfg := ProxyConfig{
-			BackendEndpoints:         strings.Join(backendURLs, ","),
-			PreferredBackend:         strconv.Itoa(0), // First backend server is preferred response
-			ServerHTTPServiceAddress: "localhost",
-			ServerHTTPServicePort:    0,
-			ServerGRPCServiceAddress: "localhost",
-			ServerGRPCServicePort:    0,
-			BackendReadTimeout:       time.Second,
+			BackendEndpoints:                   strings.Join(backendURLs, ","),
+			PreferredBackend:                   strconv.Itoa(0), // First backend server is preferred response
+			DeprecatedServerHTTPServiceAddress: "localhost",
+			DeprecatedServerHTTPServicePort:    0,
+			DeprecatedServerGRPCServiceAddress: "localhost",
+			DeprecatedServerGRPCServicePort:    0,
+			// Server:                             serverConfig,
+			BackendReadTimeout: time.Second,
 		}
+		// bring in updated dskit server.Config defaults as would be done in query-tee main
+		cfg.registerServerFlagsWithChangedDefaultValues(flag.CommandLine)
 
 		p, err := NewProxy(cfg, logger, testRoutes, prometheus.NewRegistry())
 		require.NoError(t, err)
@@ -896,10 +899,10 @@ func Test_NewProxy_BackendConfigPath(t *testing.T) {
 
 			cfg := ProxyConfig{
 				BackendEndpoints:                   backendEndpoints,
-				ServerHTTPServiceAddress:           "localhost",
-				ServerHTTPServicePort:              0,
-				ServerGRPCServiceAddress:           "localhost",
-				ServerGRPCServicePort:              0,
+				DeprecatedServerHTTPServiceAddress: "localhost",
+				DeprecatedServerHTTPServicePort:    0,
+				DeprecatedServerGRPCServiceAddress: "localhost",
+				DeprecatedServerGRPCServicePort:    0,
 				SecondaryBackendsRequestProportion: 1.0,
 			}
 
@@ -1115,6 +1118,7 @@ func TestProxyEndpoint_TimeBasedBackendSelection(t *testing.T) {
 					time.Second,
 					backendCfg.preferred,
 					false,
+					"",
 					cfg,
 				)
 				backends = append(backends, backend)
@@ -1208,7 +1212,7 @@ func TestBackendConfig_TimeThresholdValidation(t *testing.T) {
 			var backends []ProxyBackendInterface
 			for backendName := range tc.config {
 				u, _ := url.Parse("http://localhost:9090")
-				backend := NewProxyBackend(backendName, u, time.Second, false, false, *tc.config[backendName])
+				backend := NewProxyBackend(backendName, u, time.Second, false, false, "", *tc.config[backendName])
 				backends = append(backends, backend)
 			}
 

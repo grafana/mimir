@@ -61,12 +61,26 @@ func (a *AggregateExpression) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_AGGREGATE_EXPRESSION
 }
 
-func (a *AggregateExpression) Children() []planning.Node {
+func (a *AggregateExpression) Child(idx int) planning.Node {
+	switch idx {
+	case 0:
+		return a.Inner
+	case 1:
+		if a.Param == nil {
+			panic("cannot get AggregateExpression child at index 1 if there is no parameter")
+		}
+		return a.Param
+	default:
+		panic(fmt.Sprintf("node of type AggregateExpression supports at most 2 children, but attempted to get child at index %d", idx))
+	}
+}
+
+func (a *AggregateExpression) ChildCount() int {
 	if a.Param == nil {
-		return []planning.Node{a.Inner}
+		return 1
 	}
 
-	return []planning.Node{a.Inner, a.Param}
+	return 2
 }
 
 func (a *AggregateExpression) SetChildren(children []planning.Node) error {
@@ -82,16 +96,31 @@ func (a *AggregateExpression) SetChildren(children []planning.Node) error {
 	return nil
 }
 
-func (a *AggregateExpression) EquivalentTo(other planning.Node) bool {
+func (a *AggregateExpression) ReplaceChild(idx int, node planning.Node) error {
+	switch idx {
+	case 0:
+		a.Inner = node
+		return nil
+	case 1:
+		a.Param = node
+		return nil
+	default:
+		return fmt.Errorf("node of type AggregateExpression expects 1 or 2 children, but attempted to replace child at index %d", idx)
+	}
+}
+
+func (a *AggregateExpression) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
 	otherAggregateExpression, ok := other.(*AggregateExpression)
 
 	return ok &&
 		a.Op == otherAggregateExpression.Op &&
-		a.Inner.EquivalentTo(otherAggregateExpression.Inner) &&
-		((a.Param == nil && otherAggregateExpression.Param == nil) ||
-			(a.Param != nil && otherAggregateExpression.Param != nil && a.Param.EquivalentTo(otherAggregateExpression.Param))) &&
 		slices.Equal(a.Grouping, otherAggregateExpression.Grouping) &&
 		a.Without == otherAggregateExpression.Without
+}
+
+func (a *AggregateExpression) MergeHints(_ planning.Node) error {
+	// Nothing to do.
+	return nil
 }
 
 func (a *AggregateExpression) ChildrenLabels() []string {

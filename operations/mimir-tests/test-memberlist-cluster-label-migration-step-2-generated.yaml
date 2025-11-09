@@ -849,6 +849,7 @@ spec:
         - -ingester.ring.prefix=
         - -ingester.ring.replication-factor=3
         - -ingester.ring.store=memberlist
+        - -mem-ballast-size-bytes=1073741824
         - -memberlist.bind-port=7946
         - -memberlist.cluster-label=my-cluster-label
         - -memberlist.cluster-label-verification-disabled=true

@@ -38,8 +38,16 @@ func (u *UnaryExpression) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_UNARY_EXPRESSION
 }
 
-func (u *UnaryExpression) Children() []planning.Node {
-	return []planning.Node{u.Inner}
+func (u *UnaryExpression) Child(idx int) planning.Node {
+	if idx != 0 {
+		panic(fmt.Sprintf("node of type UnaryExpression supports 1 child, but attempted to get child at index %d", idx))
+	}
+
+	return u.Inner
+}
+
+func (u *UnaryExpression) ChildCount() int {
+	return 1
 }
 
 func (u *UnaryExpression) SetChildren(children []planning.Node) error {
@@ -52,12 +60,25 @@ func (u *UnaryExpression) SetChildren(children []planning.Node) error {
 	return nil
 }
 
-func (u *UnaryExpression) EquivalentTo(other planning.Node) bool {
+func (u *UnaryExpression) ReplaceChild(idx int, node planning.Node) error {
+	if idx != 0 {
+		return fmt.Errorf("node of type UnaryExpression supports 1 child, but attempted to replace child at index %d", idx)
+	}
+
+	u.Inner = node
+	return nil
+}
+
+func (u *UnaryExpression) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
 	otherUnaryExpression, ok := other.(*UnaryExpression)
 
 	return ok &&
-		u.Op == otherUnaryExpression.Op &&
-		u.Inner.EquivalentTo(otherUnaryExpression.Inner)
+		u.Op == otherUnaryExpression.Op
+}
+
+func (u *UnaryExpression) MergeHints(_ planning.Node) error {
+	// Nothing to do.
+	return nil
 }
 
 func (u *UnaryExpression) ChildrenLabels() []string {

@@ -2717,12 +2717,6 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 	if i.cfg.BlocksStorageConfig.TSDB.IndexLookupPlanning.Enabled {
 		plannerFactory := lookupplan.NewPlannerFactory(i.lookupPlanMetrics.ForUser(userID), userLogger, lookupplan.NewStatisticsGenerator(userLogger), i.cfg.BlocksStorageConfig.TSDB.IndexLookupPlanning.CostConfig)
 		userDB.plannerProvider = newPlannerProvider(plannerFactory)
-		// Generate initial statistics only after the TSDB has been opened and initialized.
-		defer func() {
-			if err := userDB.generateHeadStatistics(); err != nil {
-				level.Error(userLogger).Log("msg", "failed to generate initial TSDB head statistics", "err", err)
-			}
-		}()
 	}
 
 	userDBHasDB := atomic.NewBool(false)
@@ -2832,6 +2826,14 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 	}
 
 	i.tsdbMetrics.setRegistryForUser(userID, tsdbPromReg)
+
+	if i.cfg.BlocksStorageConfig.TSDB.IndexLookupPlanning.Enabled {
+		// Generate initial statistics only after the TSDB has been opened and initialized.
+		if err := userDB.generateHeadStatistics(); err != nil {
+			level.Error(userLogger).Log("msg", "failed to generate initial TSDB head statistics", "err", err)
+		}
+	}
+
 	return userDB, nil
 }
 

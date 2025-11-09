@@ -21,6 +21,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/ingester/lookupplan"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
 type mirroredChunkQuerier struct {
@@ -197,8 +198,8 @@ func (q *mirroredChunkQuerier) recordComparisonOutcome(extraSeries []string, mis
 	if len(extraSeries) > 0 || len(missingSeries) > 0 {
 		tenantID, _ := tenant.TenantID(q.recordedRequest.ctx)
 		traceID, sampled := tracing.ExtractSampledTraceID(q.recordedRequest.ctx)
-
-		level.Warn(q.logger).Log(
+		logger := spanlogger.FromContext(q.recordedRequest.ctx, q.logger)
+		level.Warn(logger).Log(
 			"msg", "series comparison found differences",
 			"user", tenantID,
 			"trace_id", traceID,

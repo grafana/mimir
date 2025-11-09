@@ -1927,8 +1927,12 @@ func (t *versioningTestNode) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_TEST
 }
 
-func (t *versioningTestNode) Children() []planning.Node {
-	return []planning.Node{}
+func (t *versioningTestNode) Child(idx int) planning.Node {
+	panic("this test node has no children")
+}
+
+func (t *versioningTestNode) ChildCount() int {
+	return 0
 }
 
 func (t *versioningTestNode) SetChildren(children []planning.Node) error {
@@ -1938,9 +1942,17 @@ func (t *versioningTestNode) SetChildren(children []planning.Node) error {
 	return nil
 }
 
-func (t *versioningTestNode) EquivalentTo(other planning.Node) bool {
+func (t *versioningTestNode) ReplaceChild(_ int, _ planning.Node) error {
+	panic("not supported")
+}
+
+func (t *versioningTestNode) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
 	otherTestNode, ok := other.(*versioningTestNode)
 	return ok && t.NumberLiteralDetails == otherTestNode.NumberLiteralDetails
+}
+
+func (t *versioningTestNode) MergeHints(_ planning.Node) error {
+	panic("not supported")
 }
 
 func (t *versioningTestNode) ChildrenTimeRange(_ types.QueryTimeRange) types.QueryTimeRange {

@@ -941,7 +941,7 @@ func (c *Cluster) admin(fn func()) {
 
 // MoveTopicPartition simulates the rebalancing of a partition to an alternative
 // broker. This returns an error if the topic, partition, or node does not exit.
-func (c *Cluster) MoveTopicPartition(topic string, partition int32, nodeID int32) error {
+func (c *Cluster) MoveTopicPartition(topic string, partition, nodeID int32) error {
 	var err error
 	c.admin(func() {
 		var br *broker
