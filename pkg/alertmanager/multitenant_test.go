@@ -47,7 +47,7 @@ import (
 	"github.com/grafana/dskit/test"
 	"github.com/grafana/dskit/user"
 	"github.com/grafana/regexp"
-	"github.com/matttproud/golang_protobuf_extensions/pbutil"
+	"github.com/matttproud/golang_protobuf_extensions/v2/pbutil"
 	"github.com/prometheus/alertmanager/cluster/clusterpb"
 	amconfig "github.com/prometheus/alertmanager/config"
 	"github.com/prometheus/alertmanager/featurecontrol"
