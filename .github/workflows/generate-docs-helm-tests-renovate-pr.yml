@@ -81,7 +81,7 @@ jobs:
           git config --global user.name "${GITHUB_LOGIN}"
 
       - name: Install the gh cli
-        uses: ksivamuthu/actions-setup-gh-cli@52a7c6659db375e08e92b1bd0ff31be356f574f8 # v2
+        uses: ksivamuthu/actions-setup-gh-cli@c78dbed4be2f8d6133a14a9a597ee12fd4ed5c93 # v3
 
       - name: Checkout Pull Request Branch
         run: gh pr checkout ${{ github.event.pull_request.number }}
