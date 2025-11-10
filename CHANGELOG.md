@@ -111,6 +111,7 @@
 * [CHANGE] Rollout-operator: Vendor jsonnet from rollout-operator repository. #13245 #13317
 * [CHANGE] Ruler: Set default memory ballast to 1GiB to reduce GC pressure during startup. #13376
 * [ENHANCEMENT] Ruler querier and query-frontend: Add support for newly-introduced querier ring, which is used when performing query planning in query-frontends and distributing portions of the plan to queriers for execution. #13017
+* [BUGFIX] Ingester: Fix `$._config.ingest_storage_ingester_autoscaling_max_owned_series_threshold` default value, to compute it based on the configured `$._config.ingester_instance_limits.max_series`. #13448
 
 ### Documentation
 

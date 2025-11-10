@@ -12,7 +12,7 @@
 
     // The target max of owned series across all ingesters.
     // Our ideal max series per ingester is 2/3 of the instance limit, but we target 90% of that to account for scaling delays and the 10% HPA tolerance.
-    ingest_storage_ingester_autoscaling_max_owned_series_threshold: if 'ingester_instance_limits.max_series' in $._config then
+    ingest_storage_ingester_autoscaling_max_owned_series_threshold: if $._config.ingester_instance_limits != null && std.objectHas($._config.ingester_instance_limits, 'max_series') then
       0.9 * $._config.ingester_instance_limits.max_series * (2 / 3)
     else
       1800000,
