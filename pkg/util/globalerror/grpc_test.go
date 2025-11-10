@@ -4,6 +4,8 @@ package globalerror
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"io"
 	"net"
 	"testing"
@@ -16,7 +18,6 @@ import (
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/middleware"
 	dskitserver "github.com/grafana/dskit/server"
-	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
@@ -52,14 +53,14 @@ func TestWrapContextError(t *testing.T) {
 			"wrapped gogo Canceled error": {
 				ctxCanceled:         true,
 				ctxDeadlineExceeded: false,
-				origErr:             errors.Wrap(status.Error(codes.Canceled, context.Canceled.Error()), "custom message"),
+				origErr:             fmt.Errorf("custom message: %w", status.Error(codes.Canceled, context.Canceled.Error())),
 				expectedGrpcCode:    codes.Canceled,
 				expectedContextErr:  context.Canceled,
 			},
 			"wrapped gRPC Canceled error": {
 				ctxCanceled:         true,
 				ctxDeadlineExceeded: false,
-				origErr:             errors.Wrap(grpcstatus.Error(codes.Canceled, context.Canceled.Error()), "custom message"),
+				origErr:             fmt.Errorf("custom message: %w", grpcstatus.Error(codes.Canceled, context.Canceled.Error())),
 				expectedGrpcCode:    codes.Canceled,
 				expectedContextErr:  context.Canceled,
 			},
@@ -80,14 +81,14 @@ func TestWrapContextError(t *testing.T) {
 			"wrapped gogo DeadlineExceeded error": {
 				ctxCanceled:         false,
 				ctxDeadlineExceeded: true,
-				origErr:             errors.Wrap(status.Error(codes.DeadlineExceeded, context.DeadlineExceeded.Error()), "custom message"),
+				origErr:             fmt.Errorf("custom message: %w", status.Error(codes.DeadlineExceeded, context.DeadlineExceeded.Error())),
 				expectedGrpcCode:    codes.DeadlineExceeded,
 				expectedContextErr:  context.DeadlineExceeded,
 			},
 			"wrapped gRPC DeadlineExceeded error": {
 				ctxCanceled:         false,
 				ctxDeadlineExceeded: true,
-				origErr:             errors.Wrap(grpcstatus.Error(codes.DeadlineExceeded, context.DeadlineExceeded.Error()), "custom message"),
+				origErr:             fmt.Errorf("custom message: %w", grpcstatus.Error(codes.DeadlineExceeded, context.DeadlineExceeded.Error())),
 				expectedGrpcCode:    codes.DeadlineExceeded,
 				expectedContextErr:  context.DeadlineExceeded,
 			},

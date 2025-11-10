@@ -6,15 +6,15 @@
 package validation
 
 import (
+	"fmt"
 	"slices"
 
 	"github.com/grafana/dskit/flagext"
-	"github.com/pkg/errors"
 )
 
 func validateIntegrationLimit(k string, _ float64) error {
 	if !slices.Contains(allowedIntegrationNames, k) {
-		return errors.Errorf("unknown integration name: %s", k)
+		return fmt.Errorf("unknown integration name: %s", k)
 	}
 	return nil
 }
