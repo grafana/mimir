@@ -290,13 +290,6 @@ lint-packaging-scripts: packaging/nfpm/mimir/postinstall.sh packaging/nfpm/mimir
 lint-gh-action: operations/mimir-rules-action/entrypoint.sh
 	shellcheck $?
 
-doc: ## Generates the config file documentation.
-doc: reference-help clean-doc $(DOC_TEMPLATES:.template=.md) $(DOC_EMBED:.md=.md.embedmd)
-	# Make up markdown files prettier. When running with check-doc target, it will fail if this produces any change.
-	prettier --write "**/*.md"
-	# Make operations/helm/charts/*/README.md
-	helm-docs
-
 lint: ## Run lints to check for style issues.
 lint: check-makefiles check-merge-conflicts
 	misspell -error $(DOC_SOURCES_PATH)
@@ -513,6 +506,13 @@ check-protobuf-format:
 .PHONY: %.md.embedmd
 %.md.embedmd : %.md
 	embedmd -w $<
+
+doc: ## Generates the config file documentation.
+doc: clean-doc $(DOC_TEMPLATES:.template=.md) $(DOC_EMBED:.md=.md.embedmd)
+	# Make up markdown files prettier. When running with check-doc target, it will fail if this produces any change.
+	prettier --write "**/*.md"
+	# Make operations/helm/charts/*/README.md
+	helm-docs
 
 license: ## Add license header to files.
 	go run ./tools/add-license ./cmd ./integration ./pkg ./tools ./packaging ./development ./mimir-build-image ./operations ./.github
