@@ -190,7 +190,7 @@ func TestKafkaProducer_ProduceSync_ShouldTrackBufferedProduceBytes(t *testing.T)
 
 	// At this point, the buffered produced bytes metric should have tracked 2 records.
 	require.EventuallyWithT(t, func(collect *assert.CollectT) {
-		assert.InDelta(collect, 2*expectedRecordSize, getSummaryQuantileValue(collect, reg, "cortex_ingest_storage_writer_buffered_produce_bytes", 1), 0.0001)
+		assert.InDelta(collect, 2*expectedRecordSize, getSummaryQuantileValue(collect, reg, "cortex_ingest_storage_writer_buffered_produce_bytes_distribution", 1), 0.0001)
 	}, time.Second, 100*time.Millisecond)
 
 	// Release Produce requests and wait until done.
