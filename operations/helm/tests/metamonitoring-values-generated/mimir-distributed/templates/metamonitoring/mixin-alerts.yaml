@@ -1366,7 +1366,13 @@ spec:
               message: Mimir {{ $labels.pod }} in {{ $labels.cluster }}/{{ $labels.namespace }} Kafka client produce buffer utilization is {{ printf "%.2f" $value }}%.
               runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirkafkaclientproducebufferhigh
             expr: |
-              max by(cluster, namespace, pod) (max_over_time(cortex_ingest_storage_writer_buffered_produce_bytes{quantile="1.0"}[1m]))
+              max by(cluster, namespace, pod) (
+                  # New metric.
+                  max_over_time(cortex_ingest_storage_writer_buffered_produce_bytes_distribution{quantile="1.0"}[1m])
+                  or
+                  # Old metric.
+                  max_over_time(cortex_ingest_storage_writer_buffered_produce_bytes{quantile="1.0"}[1m])
+              )
               /
               min by(cluster, namespace, pod) (min_over_time(cortex_ingest_storage_writer_buffered_produce_bytes_limit[1m]))
               * 100 > 50
