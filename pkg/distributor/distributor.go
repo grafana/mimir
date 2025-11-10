@@ -1872,6 +1872,15 @@ func (d *Distributor) limitsMiddleware(next PushFunc) PushFunc {
 			return middleware.DoNotLogError{Err: err}
 		}
 
+		rs.pushHandlerPerformsCleanup = true
+		// Decrement counter after all ingester calls have finished or been cancelled.
+		pushReq.AddCleanup(func() {
+			d.cleanupAfterPushFinished(rs)
+		})
+
+		next, maybeCleanup := NextOrCleanup(next, pushReq)
+		defer maybeCleanup()
+
 		reactiveLimiterCleanup, reactiveLimiterErr := d.acquireReactiveLimiterPermit(ctx)
 		if reactiveLimiterErr != nil {
 			d.rejectedRequests.WithLabelValues(reasonDistributorMaxInflightPushRequests).Inc()
@@ -1882,15 +1891,6 @@ func (d *Distributor) limitsMiddleware(next PushFunc) PushFunc {
 				reactiveLimiterCleanup(retErr)
 			}()
 		}
-
-		rs.pushHandlerPerformsCleanup = true
-		// Decrement counter after all ingester calls have finished or been cancelled.
-		pushReq.AddCleanup(func() {
-			d.cleanupAfterPushFinished(rs)
-		})
-
-		next, maybeCleanup := NextOrCleanup(next, pushReq)
-		defer maybeCleanup()
 
 		userID, err := tenant.TenantID(ctx)
 		if err != nil {
