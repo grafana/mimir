@@ -468,7 +468,7 @@ alertmanager:
   revisionHistoryLimit: null
 
   # -- Allows to override the container image of the alertmanager component.
-  # When set it takes precedence over what is defined in global "image" .
+  # When set it takes precedence over what is defined in global "image".
   image:
     # repository: grafana/mimir
     # tag: 3.0.0
@@ -764,7 +764,7 @@ distributor:
   enabled: true
 
   # -- Allows to override the container image of the distributor component.
-  # When set it takes precedence over what is defined in global "image" .
+  # When set it takes precedence over what is defined in global "image".
   image:
     # repository: grafana/mimir
     # tag: 3.0.0
@@ -889,7 +889,7 @@ ingester:
   enabled: true
 
   # -- Allows to override the container image of the ingester component.
-  # When set it takes precedence over what is defined in global "image" .
+  # When set it takes precedence over what is defined in global "image".
   image:
     # repository: grafana/mimir
     # tag: 3.0.0
@@ -1154,7 +1154,7 @@ overrides_exporter:
   enabled: true
 
   # -- Allows to override the container image of the overrides-exporter component.
-  # When set it takes precedence over what is defined in global "image" .
+  # When set it takes precedence over what is defined in global "image".
   image:
     # repository: grafana/mimir
     # tag: 3.0.0
@@ -1249,7 +1249,7 @@ ruler:
   enabled: true
 
   # -- Allows to override the container image of the ruler component.
-  # When set it takes precedence over what is defined in global "image" .
+  # When set it takes precedence over what is defined in global "image".
   image:
     # repository: grafana/mimir
     # tag: 3.0.0
@@ -1380,7 +1380,7 @@ ruler:
 # -- Only deployed if .Values.ruler.remoteEvaluationDedicatedQueryPath
 ruler_querier:
   # -- Allows to override the container image of the ruler-querier component.
-  # When set it takes precedence over what is defined in global "image" .
+  # When set it takes precedence over what is defined in global "image".
   image:
     # repository: grafana/mimir
     # tag: 3.0.0
@@ -1503,7 +1503,7 @@ ruler_querier:
 # -- Only deployed if .Values.ruler.remoteEvaluationDedicatedQueryPath
 ruler_query_frontend:
   # -- Allows to override the container image of the ruler-query-frontend component.
-  # When set it takes precedence over what is defined in global "image" .
+  # When set it takes precedence over what is defined in global "image".
   image:
     # repository: grafana/mimir
     # tag: 3.0.0
@@ -1622,7 +1622,7 @@ ruler_query_frontend:
 # -- Only deployed if .Values.ruler.remoteEvaluationDedicatedQueryPath
 ruler_query_scheduler:
   # -- Allows to override the container image of the ruler-query-scheduler component.
-  # When set it takes precedence over what is defined in global "image" .
+  # When set it takes precedence over what is defined in global "image".
   image:
     # repository: grafana/mimir
     # tag: 3.0.0
@@ -1716,7 +1716,7 @@ querier:
   enabled: true
 
   # -- Allows to override the container image of the querier component.
-  # When set it takes precedence over what is defined in global "image" .
+  # When set it takes precedence over what is defined in global "image".
   image:
     # repository: grafana/mimir
     # tag: 3.0.0
@@ -1854,7 +1854,7 @@ query_frontend:
   enabled: true
 
   # -- Allows to override the container image of the query-frontend component.
-  # When set it takes precedence over what is defined in global "image" .
+  # When set it takes precedence over what is defined in global "image".
   image:
     # repository: grafana/mimir
     # tag: 3.0.0
@@ -1976,7 +1976,7 @@ query_scheduler:
   enabled: true
 
   # -- Allows to override the container image of the query-scheduler component.
-  # When set it takes precedence over what is defined in global "image" .
+  # When set it takes precedence over what is defined in global "image".
   image:
     # repository: grafana/mimir
     # tag: 3.0.0
@@ -2072,7 +2072,7 @@ store_gateway:
   enabled: true
 
   # -- Allows to override the container image of the store-gateway component.
-  # When set it takes precedence over what is defined in global "image" .
+  # When set it takes precedence over what is defined in global "image".
   image:
     # repository: grafana/mimir
     # tag: 3.0.0
@@ -2336,7 +2336,7 @@ compactor:
   enabled: true
 
   # -- Allows to override the container image of the compactor component.
-  # When set it takes precedence over what is defined in global "image" .
+  # When set it takes precedence over what is defined in global "image".
   image:
     # repository: grafana/mimir
     # tag: 3.0.0
@@ -3770,7 +3770,7 @@ grafana-agent-operator:
 
 smoke_test:
   # -- Allows to override the container image of the smoke-test component.
-  # When set it takes precedence over what is defined in global "image" .
+  # When set it takes precedence over what is defined in global "image".
   image:
     # repository: grafana/mimir
     # tag: 3.0.0
@@ -3795,7 +3795,7 @@ smoke_test:
 continuous_test:
   enabled: false
   # -- Allows to override the container image of the continuous-test component.
-  # When set it takes precedence over what is defined in global "image" .
+  # When set it takes precedence over what is defined in global "image".
   image:
     # repository: grafana/mimir-continuous-test
     # tag: 3.0.0
