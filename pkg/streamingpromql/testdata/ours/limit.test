@@ -303,6 +303,8 @@ load 1m
   empty{instance="2"} _ _ _ _ _ _
   sparse{instance="1"} 1 _ _ _ _ _
   sparse{instance="2"} 2 _ _ _ _ _
+  filtered 1 1 1 1 1 1
+  filtered2 1 2 1 2 1 2
 
 eval instant at 0 count(limitk(2, empty))
 
@@ -329,3 +331,12 @@ eval range from 0m to 5m step 1m count(limitk(2, empty))
 
 eval range from 0m to 5m step 1m count(limitk(2, sparse))
   {} 2 2 2 2 2
+
+eval instant at 0 count(limitk(2, filtered > 1))
+
+eval instant at 5m count(limitk(2, filtered > 1))
+
+eval range from 0m to 5m step 1m count(limitk(2, filtered > 1))
+
+eval range from 0m to 5m step 1m count(limitk(2, filtered2 > 1))
+    {} _ 1 _ 1 _ 1

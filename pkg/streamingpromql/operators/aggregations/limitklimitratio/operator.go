@@ -112,7 +112,7 @@ func (t *Operator) SeriesMetadata(ctx context.Context, matchers types.Matchers) 
 	seriesToGroups := make([]*limitGroup, len(innerSeries))
 
 	defer func() {
-		for _, group := range seriesToGroups {
+		for _, group := range groups {
 			group.close()
 		}
 	}()
@@ -184,18 +184,13 @@ func (t *Operator) SeriesMetadata(ctx context.Context, matchers types.Matchers) 
 	}
 
 	// these slices are returned by NextSeries()
-	t.values = make([]*types.InstantVectorSeriesData, outputSeriesCount)
-
-	// ensure that the len(outputSeries) == outputSeriesCount so we can directly by index
-	outputSeries = outputSeries[:outputSeriesCount]
+	t.values = make([]*types.InstantVectorSeriesData, 0, outputSeriesCount)
 
 	firstOutputSeriesIndexForNextGroup := 0
 
 	// walk all the groups and match up the output series indexes with group series data
 	// ie series[0] = groups[0].accumulatedSeries[0], series[1] = groups[0].accumulatedSeries[1], series[2] = groups[1].accumulatedSeries[0] ...
 	for _, g := range groups {
-		lastOutputSeriesIndexForGroup := firstOutputSeriesIndexForNextGroup + len(g.accumulatedSeries) - 1
-		nextOutputSeriesIndex := lastOutputSeriesIndexForGroup
 		firstOutputSeriesIndexForNextGroup += len(g.accumulatedSeries)
 
 		for _, series := range g.accumulatedSeries {
@@ -204,10 +199,8 @@ func (t *Operator) SeriesMetadata(ctx context.Context, matchers types.Matchers) 
 				return nil, err
 			}
 
-			outputSeries[nextOutputSeriesIndex] = series.metadata
-			t.values[nextOutputSeriesIndex] = &series.value
-
-			nextOutputSeriesIndex--
+			outputSeries = append(outputSeries, series.metadata)
+			t.values = append(t.values, &series.value)
 		}
 
 		// this close is also registered in a defer, but this allows an early release
@@ -406,4 +399,102 @@ func NewLimitRatio(
 		annotations:              annotations,
 		isRatio:                  true,
 	}
+}
+
+type quietCloser interface {
+	close()
+}
+
+type stepCounter interface {
+	quietCloser
+	inc(step int)
+	count(step int) int
+}
+
+type noOpStepCounter struct{}
+
+func (s *noOpStepCounter) inc(_ int)       {}
+func (s *noOpStepCounter) close()          {}
+func (s *noOpStepCounter) count(_ int) int { return 0 }
+
+type stepCounterImpl struct {
+	// index by step --> number of series (which have a point at this step) we have included for the group
+	seriesIncludedAtStep     []int
+	memoryConsumptionTracker *limiter.MemoryConsumptionTracker
+}
+
+func (s *stepCounterImpl) close() {
+	types.IntSlicePool.Put(&s.seriesIncludedAtStep, s.memoryConsumptionTracker)
+}
+
+func (s *stepCounterImpl) inc(step int) {
+	s.seriesIncludedAtStep[step]++
+}
+
+func (s *stepCounterImpl) count(step int) int {
+	return s.seriesIncludedAtStep[step]
+}
+
+func newStepCounterImpl(size int, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (stepCounter, error) {
+	intSlice, err := types.IntSlicePool.Get(size, memoryConsumptionTracker)
+	if err != nil {
+		return nil, err
+	}
+	intSlice = intSlice[:size]
+	return &stepCounterImpl{
+		memoryConsumptionTracker: memoryConsumptionTracker,
+		seriesIncludedAtStep:     intSlice,
+	}, nil
+}
+
+type limitGroup struct {
+	seriesCount              int            // Total number of series that contribute to this group.
+	filled                   bool           // Flag to indicate we have identified k series for this group and no more series need to be accumulated
+	accumulatedSeries        []*querySeries // A place to store the series we will return for this group
+	stepCounter              stepCounter    // A utility to track the number of series points for each step across the group
+	memoryConsumptionTracker *limiter.MemoryConsumptionTracker
+}
+
+func (q *limitGroup) initAccumulatedSeries(size int) {
+	q.accumulatedSeries = make([]*querySeries, 0, size)
+}
+
+func (q *limitGroup) incStepCounter(step int) {
+	q.stepCounter.inc(step)
+}
+
+func (q *limitGroup) countAtStep(step int) int {
+	return q.stepCounter.count(step)
+}
+
+func (q *limitGroup) close() {
+	q.stepCounter.close()
+}
+
+type querySeries struct {
+	metadata types.SeriesMetadata
+	value    types.InstantVectorSeriesData
+}
+
+func newLimitGroup(size int, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, needsStepCounter bool) (*limitGroup, error) {
+	var counter stepCounter
+	var err error
+
+	// The step counter is only needed for the limitk query internals implementation.
+	// Keeping the counter here avoids having to maintain a separate map of group --> counter references.
+	// Although the counter could be safely used for limit_ratio queries, it would be a waste to allocate the counter slice for each group and not need it.
+	// The noop counter is used to avoid having a nil counter which needs a conditionally checked for each possible counter increment.
+	if needsStepCounter {
+		counter, err = newStepCounterImpl(size, memoryConsumptionTracker)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		counter = &noOpStepCounter{}
+	}
+
+	return &limitGroup{
+		memoryConsumptionTracker: memoryConsumptionTracker,
+		stepCounter:              counter,
+	}, nil
 }
