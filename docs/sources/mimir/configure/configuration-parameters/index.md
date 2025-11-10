@@ -5217,7 +5217,7 @@ tsdb:
     # (advanced) Cost for retrieving series from the index and checking if a
     # series belongs to the query's shard.
     # CLI flag: -blocks-storage.tsdb.index-lookup-planning.retrieved-series-cost
-    [retrieved_series_cost: <float> | default = 10]
+    [retrieved_series_cost: <float> | default = 15]
 
     # (advanced) Cost for retrieving the posting list from disk or from memory.
     # CLI flag: -blocks-storage.tsdb.index-lookup-planning.retrieved-posting-list-cost

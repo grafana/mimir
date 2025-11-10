@@ -794,7 +794,7 @@
   "blocks-storage.tsdb.early-head-compaction-min-in-memory-series": 0,
   "blocks-storage.tsdb.early-head-compaction-min-estimated-series-reduction-percentage": 15,
   "blocks-storage.tsdb.index-lookup-planning.retrieved-posting-cost": 0.01,
-  "blocks-storage.tsdb.index-lookup-planning.retrieved-series-cost": 10,
+  "blocks-storage.tsdb.index-lookup-planning.retrieved-series-cost": 15,
   "blocks-storage.tsdb.index-lookup-planning.retrieved-posting-list-cost": 10,
   "blocks-storage.tsdb.index-lookup-planning.min-series-per-block-for-query-planning": 10000,
   "blocks-storage.tsdb.index-lookup-planning.label-cardinality-for-larger-sketch": 1000000,
