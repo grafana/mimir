@@ -8535,13 +8535,6 @@ func TestDistributor_PushWithReactiveLimiterInflightMetrics(t *testing.T) {
 				return ds[0].inflightPushRequests.Load() == 0
 			}, time.Second, 10*time.Millisecond)
 
-			// Verify that inflight requests metric was incremented
-			/*inflightAfterPush := ds[0].inflightPushRequests.Load()
-			if tc.reactiveLimiterFailOnAcquire {
-				require.Greater(t, inflightAfterPush, initialInflight, "inflight requests should be incremented but not decremented during push")
-			} else {
-				require.Equal(t, inflightAfterPush, initialInflight, "inflight requests should be incremented and decremented during push")
-			}*/
 			inflightAfterPush := ds[0].inflightPushRequests.Load()
 			require.Equal(t, initialInflight, inflightAfterPush, "inflight requests should be incremented and decremented during push")
 
