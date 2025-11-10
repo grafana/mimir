@@ -2141,6 +2141,8 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Enable generating selectors for one side of a binary expression based on results from the other side.
   -querier.mimir-query-engine.enable-prune-toggles
     	[experimental] Enable pruning query expressions that are toggled off with constants. (default true)
+  -querier.mimir-query-engine.enable-reduce-matchers
+    	[experimental] Enable eliminating duplicate or redundant matchers that are part of selector expressions. (default true)
   -querier.mimir-query-engine.enable-skipping-histogram-decoding
     	[experimental] Enable skipping decoding native histograms when evaluating queries that do not require full histograms. (default true)
   -querier.minimize-ingester-requests

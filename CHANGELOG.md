@@ -29,6 +29,7 @@
 * [FEATURE] Memberlist: Add experimental support for zone-aware routing, in order to reduce memberlist cross-AZ data transfer. #13129
 * [FEATURE] Query-frontend and querier: Add experimental support for performing query planning in query-frontends and distributing portions of the plan to queriers for execution. #13058
 * [FEATURE] MQE: Add support for experimental extended range selector modifiers `smoothed` and `anchored`. #13398
+* [FEATURE] Querier: Add `querier.mimir-query-engine.enable-reduce-matchers` flag that enables a new MQE AST optimization pass that eliminates duplicate or redundant matchers that are part of selector expressions. #13178
 * [ENHANCEMENT] Compactor, Store-gateway: Change default value of `-compactor.upload-sparse-index-headers` to `true`. This improves lazy loading performance in the store-gateway. #13089
 * [ENHANCEMENT] Store-gateway: Verify CRC32 checksums for 1 out of every 128 chunks read from object storage and the chunks cache to detect corruption. #13151
 * [ENHANCEMENT] Ingester: the per-tenant postings for matchers cache is now stable. Use the following configuration options: #13101
@@ -53,6 +54,7 @@
   * `-common.storage.gcs.max-retries`
   * `-ruler-storage.gcs.max-retries`
 * [ENHANCEMENT] Usage-tracker: Improve first snapshot loading & rehash speed. #13284
+* [ENHANCEMENT] Ruler: Implemented `OperatorControllableErrorClassifier` for rule evaluation, allowing differentiation between operator-controllable errors (e.g., storage failures, 5xx errors, rate limiting) and user-controllable errors (e.g., bad queries, validation errors, 4xx errors). This change affects the rule evaluation failure metric `prometheus_rule_evaluation_failures_total`, which now includes a `reason` label with values `operator` or `user` to distinguish between them. #13313
 * [BUGFIX] Compactor: Fix potential concurrent map writes. #13053
 * [BUGFIX] Query-frontend: Fix issue where queries sometimes fail with `failed to receive query result stream message: rpc error: code = Canceled desc = context canceled` if remote execution is enabled. #13084
 * [BUGFIX] Query-frontend: Fix issue where query stats, such as series read, did not include the parameters to the `histogram_quantile` and `histogram_fraction` functions if remote execution was enabled. #13084
@@ -100,6 +102,7 @@
 * [ENHANCEMENT] Dashboards: Update default regular expressions to match multi-zone deployments for query-frontend, querier, distributor and ruler. #13200
 * [ENHANCEMENT] Alerts: Update `MimirHighVolumeLevel1BlocksQueried` alert to fire on a percentage of the level 1 blocks queried. #13229
 * [ENHANCEMENT] Dashboards: Plot OMMKilled events in the workingset memory panels of resources dashboards. #13377
+* [ENHANCEMENT] Dashboards: Add variable to compactor and object store dashboards to switch between classic and native latencies. Use native histogram `thanos_objstore_bucket_operation_duration_seconds`. #12137
 * [BUGFIX] Dashboards: Fix issue where throughput dashboard panels would group all gRPC requests that resulted in a status containing an underscore into one series with no name. #13184
 
 ### Jsonnet
