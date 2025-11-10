@@ -957,12 +957,21 @@ func (c *BucketCompactor) Compact(ctx context.Context, maxCompactionTime time.Du
 			wg                     sync.WaitGroup
 			workCtx, workCtxCancel = context.WithCancelCause(ctx)
 			jobChan                = make(chan *Job)
-			errChan                = make(chan error, c.concurrency)
-			finishedAllJobs        = true
-			mtx                    sync.Mutex
+			// jobChanClosed tracks whether jobChan has been closed to prevent double-close panics.
+			// This flag ensures that the defer function can safely close jobChan on early returns
+			// without causing a panic when the normal flow also closes the channel.
+			jobChanClosed   = false
+			errChan         = make(chan error, c.concurrency)
+			finishedAllJobs = true
+			mtx             sync.Mutex
 		)
 
 		defer workCtxCancel(errCompactionIterationCancelled)
+		defer func() {
+			if !jobChanClosed {
+				close(jobChan)
+			}
+		}()
 
 		// Set up workers which will compact the jobs when the jobs are ready.
 		// They will compact available jobs until they encounter an error, after which they will stop.
@@ -1133,6 +1142,7 @@ func (c *BucketCompactor) Compact(ctx context.Context, maxCompactionTime time.Du
 			}
 		}
 		close(jobChan)
+		jobChanClosed = true
 		wg.Wait()
 
 		// Collect any other error reported by the workers, or any error reported
