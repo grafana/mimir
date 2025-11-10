@@ -87,9 +87,11 @@ func runQuerierTenantFederationTest(t *testing.T, cfg querierTenantFederationCon
 	distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags)
 	querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), flags)
 
+	querierCount := 1
 	var querier2 *e2emimir.MimirService
 	if cfg.shuffleShardingEnabled {
 		querier2 = e2emimir.NewQuerier("querier-2", consul.NetworkHTTPEndpoint(), flags)
+		querierCount = 2
 	}
 
 	require.NoError(t, s.StartAndWaitReady(querier, ingester, distributor))
@@ -102,7 +104,7 @@ func runQuerierTenantFederationTest(t *testing.T, cfg querierTenantFederationCon
 	// The distributor should have 512 tokens for the ingester ring and 1 for the distributor ring
 	require.NoError(t, distributor.WaitSumMetrics(e2e.Equals(512+1), "cortex_ring_tokens_total"))
 	require.NoError(t, querier.WaitSumMetrics(e2e.Equals(512), "cortex_ring_tokens_total"))
-	require.NoError(t, queryFrontend.WaitSumMetrics(e2e.Equals(1), "cortex_ring_tokens_total"), "query-frontend should have 1 token for the querier ring")
+	require.NoError(t, queryFrontend.WaitSumMetrics(e2e.Equals(float64(querierCount)), "cortex_ring_tokens_total"), "query-frontend should have 1 token per querier for the querier ring")
 	if cfg.shuffleShardingEnabled {
 		require.NoError(t, querier2.WaitSumMetrics(e2e.Equals(512), "cortex_ring_tokens_total"))
 	}
