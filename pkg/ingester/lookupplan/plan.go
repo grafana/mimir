@@ -11,6 +11,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 
+	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/pool"
 )
@@ -24,17 +25,20 @@ type plan struct {
 	indexPredicate []bool
 	// totalSeries is the total number of series in the index.
 	totalSeries uint64
+	// shard contains query sharding information. nil means no sharding.
+	shard *sharding.ShardSelector
 
 	config              CostConfig
 	indexPredicatesPool *pool.SlabPool[bool]
 }
 
 // newScanOnlyPlan returns a plan in which all predicates would be used to scan and none to reach from the index.
-func newScanOnlyPlan(ctx context.Context, stats index.Statistics, config CostConfig, matchers []*labels.Matcher, predicatesPool *pool.SlabPool[bool]) plan {
+func newScanOnlyPlan(ctx context.Context, stats index.Statistics, config CostConfig, matchers []*labels.Matcher, predicatesPool *pool.SlabPool[bool], shard *sharding.ShardSelector) plan {
 	p := plan{
 		predicates:          make([]planPredicate, 0, len(matchers)),
 		indexPredicate:      make([]bool, 0, len(matchers)),
 		totalSeries:         stats.TotalSeries(),
+		shard:               shard,
 		config:              config,
 		indexPredicatesPool: predicatesPool,
 	}
@@ -67,8 +71,8 @@ func (p plan) ScanMatchers() []*labels.Matcher {
 	return matchers
 }
 
-// useIndexFor returns a copy of this plan where predicate predicateIdx is used on the index.
-func (p plan) useIndexFor(predicateIdx int) plan {
+// UseIndexFor returns a copy of this plan where predicate predicateIdx is used on the index.
+func (p plan) UseIndexFor(predicateIdx int) plan {
 	var copied []bool
 	if p.indexPredicatesPool != nil {
 		copied = p.indexPredicatesPool.Get(len(p.indexPredicate))
@@ -87,8 +91,8 @@ func (p plan) withoutMemoryPool() plan {
 	return p
 }
 
-// totalCost returns the sum of indexLookupCost + intersectionCost + filterCost
-func (p plan) totalCost() float64 {
+// TotalCost returns the sum of indexLookupCost + intersectionCost + filterCost
+func (p plan) TotalCost() float64 {
 	return p.indexLookupCost() + p.intersectionCost() + p.seriesRetrievalCost() + p.filterCost()
 }
 
@@ -120,25 +124,31 @@ func (p plan) intersectionCost() float64 {
 
 // seriesRetrievalCost returns the cost of retrieving series from the index after intersecting posting lists.
 // This includes retrieving the series' labels from the index and checking if the series belongs to the query's shard.
+// Realistically we don't retrieve every series because we have the series hash cache, but we ignore that for simplicity.
 func (p plan) seriesRetrievalCost() float64 {
-	return float64(p.intersectionSize()) * p.config.RetrievedSeriesCost
+	return float64(p.NumSelectedPostings()) * p.config.RetrievedSeriesCost
 }
 
-// filterCost returns the cost of applying scan predicates to the fetched series
+// filterCost returns the cost of applying scan predicates to the fetched series.
+// The sequence is: intersection → retrieve series → check shard → apply scan matchers.
 func (p plan) filterCost() float64 {
 	cost := 0.0
-	fetchedSeries := p.intersectionSize()
+	seriesToFilter := p.numSelectedPostingsInOurShard()
 	for i, pred := range p.predicates {
 		// In reality, we will apply all the predicates for each series and stop once one predicate doesn't match.
 		// But we calculate for the worst case where we have to run all predicates for all series.
 		if !p.indexPredicate[i] {
-			cost += pred.filterCost(fetchedSeries)
+			cost += pred.filterCost(seriesToFilter)
 		}
 	}
 	return cost
 }
 
-func (p plan) intersectionSize() uint64 {
+func (p plan) numSelectedPostingsInOurShard() uint64 {
+	return shardedCardinality(p.NumSelectedPostings(), p.shard)
+}
+
+func (p plan) NumSelectedPostings() uint64 {
 	finalSelectivity := 1.0
 	for i, pred := range p.predicates {
 		if !p.indexPredicate[i] {
@@ -156,8 +166,9 @@ func (p plan) intersectionSize() uint64 {
 	return uint64(finalSelectivity * float64(p.totalSeries))
 }
 
-// cardinality returns an estimate of the total number of series that this plan would return.
-func (p plan) cardinality() uint64 {
+// nonShardedCardinality returns an estimate of the total number of series before query sharding is applied.
+// This is the base cardinality considering only the selectivity of all predicates.
+func (p plan) nonShardedCardinality() uint64 {
 	finalSelectivity := 1.0
 	for _, pred := range p.predicates {
 		// We use the selectivity across all series instead of the selectivity across label values.
@@ -170,7 +181,26 @@ func (p plan) cardinality() uint64 {
 	return uint64(finalSelectivity * float64(p.totalSeries))
 }
 
-func (p plan) addPredicatesToSpan(span trace.Span) {
+// FinalCardinality returns an estimate of the total number of series that this plan would return.
+func (p plan) FinalCardinality() uint64 {
+	return shardedCardinality(p.nonShardedCardinality(), p.shard)
+}
+
+func shardedCardinality(cardinality uint64, shard *sharding.ShardSelector) uint64 {
+	if shard == nil || shard.ShardCount == 0 {
+		return cardinality
+	}
+
+	// If query sharding is enabled, divide by the shard count since only series in this shard will be returned.
+	shardedCardinality := cardinality / shard.ShardCount
+	if cardinality > 0 && shardedCardinality == 0 {
+		// Ensure we return at least 1 if cardinality > 0, to avoid returning 0 when we have series.
+		return 1
+	}
+	return shardedCardinality
+}
+
+func (p plan) AddPredicatesToSpan(span trace.Span) {
 	// Preallocate the attributes. Use an array to ensure the capacity is correct at compile time.
 	const numAttributesPerPredicate = 7
 	attributes := make([]attribute.KeyValue, 0, len(p.predicates)*numAttributesPerPredicate)
@@ -190,17 +220,26 @@ func (p plan) addPredicatesToSpan(span trace.Span) {
 	span.AddEvent("lookup_plan_predicate", trace.WithAttributes(attributes...))
 }
 
-func (p plan) addSpanEvent(span trace.Span, planName string) {
-	span.AddEvent("lookup plan", trace.WithAttributes(
-		attribute.String("plan_name", planName),
-		attribute.Float64("total_cost", p.totalCost()),
+func (p plan) AddSpanEvent(span trace.Span, planName string) {
+	span.AddEvent("lookup plan", trace.WithAttributes(attribute.String("plan_name", planName),
+		attribute.Int64("shard_count", int64(maybe(p.shard).ShardCount)),
+		attribute.Float64("total_cost", p.TotalCost()),
 		attribute.Float64("index_lookup_cost", p.indexLookupCost()),
-		attribute.Float64("filter_cost", p.filterCost()),
 		attribute.Float64("intersection_cost", p.intersectionCost()),
-		attribute.Int64("estimated_retrieved_series", int64(p.intersectionSize())),
+		attribute.Int64("estimated_retrieved_series", int64(p.NumSelectedPostings())),
 		attribute.Float64("series_retrieval_cost", p.seriesRetrievalCost()),
-		attribute.Int64("cardinality", int64(p.cardinality())),
+		attribute.Int64("estimated_series_after_sharding", int64(p.numSelectedPostingsInOurShard())),
+		attribute.Float64("filter_cost", p.filterCost()),
+		attribute.Int64("estimated_final_cardinality", int64(p.FinalCardinality())),
+
 		attribute.Stringer("index_matchers", util.MatchersStringer(p.IndexMatchers())),
-		attribute.Stringer("scan_matchers", util.MatchersStringer(p.ScanMatchers())),
-	))
+		attribute.Stringer("scan_matchers", util.MatchersStringer(p.ScanMatchers()))))
+}
+
+func maybe[T any](ptr *T) T {
+	if ptr != nil {
+		return *ptr
+	}
+	var zero T
+	return zero
 }
