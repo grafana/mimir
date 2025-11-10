@@ -6,7 +6,7 @@ import (
 	"context"
 	"errors"
 	"flag"
-	fmt "fmt"
+	"fmt"
 	"io"
 
 	"github.com/minio/minio-go/v7"
