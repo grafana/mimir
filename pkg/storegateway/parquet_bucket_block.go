@@ -10,6 +10,7 @@ import (
 	"io"
 	"math"
 	"sort"
+	"strconv"
 	"sync"
 
 	"github.com/grafana/dskit/multierror"
@@ -36,7 +37,7 @@ type parquetBucketShardReader struct {
 }
 
 func (r *parquetBucketShardReader) Name() string {
-	return r.block.meta.ULID.String()
+	return r.block.meta.ULID.String() + "/" + strconv.Itoa(r.shardIdx)
 }
 
 func (r *parquetBucketShardReader) ShardIdx() int {
