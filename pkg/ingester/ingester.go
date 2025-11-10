@@ -1368,61 +1368,22 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 					return newPerMetricSeriesLimitReachedError(i.limiter.limits.MaxGlobalSeriesPerMetric(userID), labels)
 				})
 			},
-			func(err error, timestamp int64, labels []mimirpb.LabelAdapter) {
+			func(fullErr error, timestamp int64, labels []mimirpb.LabelAdapter) bool {
+				nativeHistogramErr, ok := newNativeHistogramValidationError(fullErr, model.Time(timestamp), labels)
+
+				if !ok {
+					level.Warn(i.logger).Log("msg", "unknown histogram error", "err", fullErr)
+					return false
+				}
+
 				stats.invalidNativeHistogramCount++
 				cast.IncrementDiscardedSamples(labels, 1, reasonInvalidNativeHistogram, startAppend)
+
 				updateFirstPartial(i.errorSamplers.nativeHistogramValidationError, func() softError {
-					return newNativeHistogramValidationError(globalerror.NativeHistogramCountMismatch, err, model.Time(timestamp), labels)
+					return nativeHistogramErr
 				})
-			},
-			func(err error, timestamp int64, labels []mimirpb.LabelAdapter) {
-				stats.invalidNativeHistogramCount++
-				cast.IncrementDiscardedSamples(labels, 1, reasonInvalidNativeHistogram, startAppend)
-				updateFirstPartial(i.errorSamplers.nativeHistogramValidationError, func() softError {
-					return newNativeHistogramValidationError(globalerror.NativeHistogramCountNotBigEnough, err, model.Time(timestamp), labels)
-				})
-			},
-			func(err error, timestamp int64, labels []mimirpb.LabelAdapter) {
-				stats.invalidNativeHistogramCount++
-				cast.IncrementDiscardedSamples(labels, 1, reasonInvalidNativeHistogram, startAppend)
-				updateFirstPartial(i.errorSamplers.nativeHistogramValidationError, func() softError {
-					return newNativeHistogramValidationError(globalerror.NativeHistogramNegativeBucketCount, err, model.Time(timestamp), labels)
-				})
-			},
-			func(err error, timestamp int64, labels []mimirpb.LabelAdapter) {
-				stats.invalidNativeHistogramCount++
-				cast.IncrementDiscardedSamples(labels, 1, reasonInvalidNativeHistogram, startAppend)
-				updateFirstPartial(i.errorSamplers.nativeHistogramValidationError, func() softError {
-					return newNativeHistogramValidationError(globalerror.NativeHistogramSpanNegativeOffset, err, model.Time(timestamp), labels)
-				})
-			},
-			func(err error, timestamp int64, labels []mimirpb.LabelAdapter) {
-				stats.invalidNativeHistogramCount++
-				cast.IncrementDiscardedSamples(labels, 1, reasonInvalidNativeHistogram, startAppend)
-				updateFirstPartial(i.errorSamplers.nativeHistogramValidationError, func() softError {
-					return newNativeHistogramValidationError(globalerror.NativeHistogramSpansBucketsMismatch, err, model.Time(timestamp), labels)
-				})
-			},
-			func(err error, timestamp int64, labels []mimirpb.LabelAdapter) {
-				stats.invalidNativeHistogramCount++
-				cast.IncrementDiscardedSamples(labels, 1, reasonInvalidNativeHistogram, startAppend)
-				updateFirstPartial(i.errorSamplers.nativeHistogramValidationError, func() softError {
-					return newNativeHistogramValidationError(globalerror.NativeHistogramCustomBucketsMismatch, err, model.Time(timestamp), labels)
-				})
-			},
-			func(err error, timestamp int64, labels []mimirpb.LabelAdapter) {
-				stats.invalidNativeHistogramCount++
-				cast.IncrementDiscardedSamples(labels, 1, reasonInvalidNativeHistogram, startAppend)
-				updateFirstPartial(i.errorSamplers.nativeHistogramValidationError, func() softError {
-					return newNativeHistogramValidationError(globalerror.NativeHistogramCustomBucketsInvalid, err, model.Time(timestamp), labels)
-				})
-			},
-			func(err error, timestamp int64, labels []mimirpb.LabelAdapter) {
-				stats.invalidNativeHistogramCount++
-				cast.IncrementDiscardedSamples(labels, 1, reasonInvalidNativeHistogram, startAppend)
-				updateFirstPartial(i.errorSamplers.nativeHistogramValidationError, func() softError {
-					return newNativeHistogramValidationError(globalerror.NativeHistogramCustomBucketsInfinite, err, model.Time(timestamp), labels)
-				})
+
+				return true
 			},
 		)
 	)

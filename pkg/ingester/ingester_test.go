@@ -353,6 +353,12 @@ func TestIngester_StartReadRequest(t *testing.T) {
 	}
 }
 
+func mustNewNativeHistogramValidationError(t *testing.T, originalErr error, timestamp model.Time, seriesLabels []mimirpb.LabelAdapter) nativeHistogramValidationError {
+	res, ok := newNativeHistogramValidationError(originalErr, timestamp, seriesLabels)
+	require.True(t, ok)
+	return res
+}
+
 func TestIngester_Push(t *testing.T) {
 	metricLabelAdapters := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "test"}}
 	metricLabelSet := mimirpb.FromLabelAdaptersToMetric(metricLabelAdapters)
@@ -1791,7 +1797,7 @@ func TestIngester_Push(t *testing.T) {
 				),
 			},
 			// Expect the error string instead of constructing the error to catch if Prometheus changes the error message.
-			expectedErr: newErrorWithStatus(wrapOrAnnotateWithUser(newNativeHistogramValidationError(globalerror.NativeHistogramCountMismatch, fmt.Errorf("21 observations found in buckets, but the Count field is 22: histogram's observation count should equal the number of observations found in the buckets (in absence of NaN)"), model.Time(10), []mimirpb.LabelAdapter{metricLabelAdapters[0]}), userID), codes.InvalidArgument),
+			expectedErr: newErrorWithStatus(wrapOrAnnotateWithUser(mustNewNativeHistogramValidationError(t, fmt.Errorf("21 observations found in buckets, but the Count field is 22: %w", histogram.ErrHistogramCountMismatch), model.Time(10), []mimirpb.LabelAdapter{metricLabelAdapters[0]}), userID), codes.InvalidArgument),
 			expectedMetrics: `
 				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
 				# TYPE cortex_ingester_ingested_samples_total counter
@@ -1832,7 +1838,7 @@ func TestIngester_Push(t *testing.T) {
 				),
 			},
 			// Expect the error string instead of constructing the error to catch if Prometheus changes the error message.
-			expectedErr: newErrorWithStatus(wrapOrAnnotateWithUser(newNativeHistogramValidationError(globalerror.NativeHistogramCountNotBigEnough, fmt.Errorf("21 observations found in buckets, but the Count field is 20: histogram's observation count should be at least the number of observations found in the buckets"), model.Time(10), []mimirpb.LabelAdapter{metricLabelAdapters[0]}), userID), codes.InvalidArgument),
+			expectedErr: newErrorWithStatus(wrapOrAnnotateWithUser(mustNewNativeHistogramValidationError(t, fmt.Errorf("21 observations found in buckets, but the Count field is 20: %w", histogram.ErrHistogramCountNotBigEnough), model.Time(10), []mimirpb.LabelAdapter{metricLabelAdapters[0]}), userID), codes.InvalidArgument),
 			expectedMetrics: `
 				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
 				# TYPE cortex_ingester_ingested_samples_total counter
@@ -1873,7 +1879,7 @@ func TestIngester_Push(t *testing.T) {
 				),
 			},
 			// Expect the error string instead of constructing the error to catch if Prometheus changes the error message.
-			expectedErr: newErrorWithStatus(wrapOrAnnotateWithUser(newNativeHistogramValidationError(globalerror.NativeHistogramSpanNegativeOffset, fmt.Errorf("positive side: span number 2 with offset -2: histogram has a span whose offset is negative"), model.Time(10), []mimirpb.LabelAdapter{metricLabelAdapters[0]}), userID), codes.InvalidArgument),
+			expectedErr: newErrorWithStatus(wrapOrAnnotateWithUser(mustNewNativeHistogramValidationError(t, fmt.Errorf("positive side: span number 2 with offset -2: %w", histogram.ErrHistogramSpanNegativeOffset), model.Time(10), []mimirpb.LabelAdapter{metricLabelAdapters[0]}), userID), codes.InvalidArgument),
 			expectedMetrics: `
 				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
 				# TYPE cortex_ingester_ingested_samples_total counter
@@ -1914,7 +1920,7 @@ func TestIngester_Push(t *testing.T) {
 				),
 			},
 			// Expect the error string instead of constructing the error to catch if Prometheus changes the error message.
-			expectedErr: newErrorWithStatus(wrapOrAnnotateWithUser(newNativeHistogramValidationError(globalerror.NativeHistogramSpansBucketsMismatch, fmt.Errorf("positive side: spans need 5 buckets, have 4 buckets: histogram spans specify different number of buckets than provided"), model.Time(10), []mimirpb.LabelAdapter{metricLabelAdapters[0]}), userID), codes.InvalidArgument),
+			expectedErr: newErrorWithStatus(wrapOrAnnotateWithUser(mustNewNativeHistogramValidationError(t, fmt.Errorf("positive side: spans need 5 buckets, have 4 buckets: %w", histogram.ErrHistogramSpansBucketsMismatch), model.Time(10), []mimirpb.LabelAdapter{metricLabelAdapters[0]}), userID), codes.InvalidArgument),
 			expectedMetrics: `
 				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
 				# TYPE cortex_ingester_ingested_samples_total counter
@@ -2006,7 +2012,7 @@ func TestIngester_Push(t *testing.T) {
 				),
 			},
 			// Expect the error string instead of constructing the error to catch if Prometheus changes the error message.
-			expectedErr: newErrorWithStatus(wrapOrAnnotateWithUser(newNativeHistogramValidationError(globalerror.NativeHistogramCustomBucketsMismatch, fmt.Errorf("custom buckets: only 1 custom bounds defined which is insufficient to cover total span length of 5: histogram custom bounds are too few"), model.Time(10), []mimirpb.LabelAdapter{metricLabelAdapters[0]}), userID), codes.InvalidArgument),
+			expectedErr: newErrorWithStatus(wrapOrAnnotateWithUser(mustNewNativeHistogramValidationError(t, fmt.Errorf("custom buckets: only 1 custom bounds defined which is insufficient to cover total span length of 5: %w", histogram.ErrHistogramCustomBucketsMismatch), model.Time(10), []mimirpb.LabelAdapter{metricLabelAdapters[0]}), userID), codes.InvalidArgument),
 			expectedMetrics: `
 				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
 				# TYPE cortex_ingester_ingested_samples_total counter
@@ -2047,7 +2053,7 @@ func TestIngester_Push(t *testing.T) {
 				),
 			},
 			// Expect the error string instead of constructing the error to catch if Prometheus changes the error message.
-			expectedErr: newErrorWithStatus(wrapOrAnnotateWithUser(newNativeHistogramValidationError(globalerror.NativeHistogramCustomBucketsInvalid, fmt.Errorf("custom buckets: previous bound is 100.000000 and current is 50.000000: histogram custom bounds must be in strictly increasing order"), model.Time(10), []mimirpb.LabelAdapter{metricLabelAdapters[0]}), userID), codes.InvalidArgument),
+			expectedErr: newErrorWithStatus(wrapOrAnnotateWithUser(mustNewNativeHistogramValidationError(t, fmt.Errorf("custom buckets: previous bound is 100.000000 and current is 50.000000: %w", histogram.ErrHistogramCustomBucketsInvalid), model.Time(10), []mimirpb.LabelAdapter{metricLabelAdapters[0]}), userID), codes.InvalidArgument),
 			expectedMetrics: `
 				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
 				# TYPE cortex_ingester_ingested_samples_total counter
@@ -2088,7 +2094,7 @@ func TestIngester_Push(t *testing.T) {
 				),
 			},
 			// Expect the error string instead of constructing the error to catch if Prometheus changes the error message.
-			expectedErr: newErrorWithStatus(wrapOrAnnotateWithUser(newNativeHistogramValidationError(globalerror.NativeHistogramCustomBucketsInfinite, fmt.Errorf("custom buckets: last +Inf bound must not be explicitly defined: histogram custom bounds must be finite"), model.Time(10), []mimirpb.LabelAdapter{metricLabelAdapters[0]}), userID), codes.InvalidArgument),
+			expectedErr: newErrorWithStatus(wrapOrAnnotateWithUser(mustNewNativeHistogramValidationError(t, fmt.Errorf("custom buckets: last +Inf bound must not be explicitly defined: %w", histogram.ErrHistogramCustomBucketsInfinite), model.Time(10), []mimirpb.LabelAdapter{metricLabelAdapters[0]}), userID), codes.InvalidArgument),
 			expectedMetrics: `
 				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
 				# TYPE cortex_ingester_ingested_samples_total counter
@@ -2247,7 +2253,7 @@ func TestIngester_Push(t *testing.T) {
 				),
 			},
 			// Expect the error string instead of constructing the error to catch if Prometheus changes the error message.
-			expectedErr: newErrorWithStatus(wrapOrAnnotateWithUser(newNativeHistogramValidationError(globalerror.NativeHistogramNegativeBucketCount, fmt.Errorf("negative side: bucket number 2 has observation count of -98: histogram has a bucket whose observation count is negative"), model.Time(10), []mimirpb.LabelAdapter{metricLabelAdapters[0]}), userID), codes.InvalidArgument),
+			expectedErr: newErrorWithStatus(wrapOrAnnotateWithUser(mustNewNativeHistogramValidationError(t, fmt.Errorf("negative side: bucket number 2 has observation count of -98: %w", histogram.ErrHistogramNegativeBucketCount), model.Time(10), []mimirpb.LabelAdapter{metricLabelAdapters[0]}), userID), codes.InvalidArgument),
 			expectedMetrics: `
 				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
 				# TYPE cortex_ingester_ingested_samples_total counter
