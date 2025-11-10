@@ -199,7 +199,7 @@ func (bkt *azureBucket) ClientSideCopy(ctx context.Context, objectName string, d
 	body := response.Body
 	if err := dstBucket.Upload(ctx, options.destinationObjectName(objectName), body, *response.ContentLength); err != nil {
 		_ = body.Close()
-		return errors.New("failed uploading source object from Azure to destination")
+		return fmt.Errorf("failed uploading source object from Azure to destination: %w", err)
 	}
 	if err := body.Close(); err != nil {
 		return fmt.Errorf("failed closing Azure source object reader: %w", err)
