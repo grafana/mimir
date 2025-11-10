@@ -145,7 +145,7 @@ func TestDistributor_Push_ShouldSupportIngestStorage(t *testing.T) {
 				},
 			}
 
-			distributors, _, regs, kafkaCluster := prepare(t, testConfig)
+			distributors, _, regs, kafkaCluster := prepare(t, testConfig, true)
 			require.Len(t, distributors, 1)
 			require.Len(t, regs, 1)
 
@@ -276,7 +276,7 @@ func TestDistributor_Push_ShouldReturnErrorMappedTo4xxStatusCodeIfWriteRequestCo
 		limits:                  limits,
 	}
 
-	distributors, _, regs, _ := prepare(t, testConfig)
+	distributors, _, regs, _ := prepare(t, testConfig, true)
 	require.Len(t, distributors, 1)
 	require.Len(t, regs, 1)
 
@@ -415,7 +415,7 @@ func TestDistributor_Push_ShouldSupportWriteBothToIngestersAndPartitions(t *test
 				},
 			}
 
-			distributors, ingesters, regs, kafkaCluster := prepare(t, testConfig)
+			distributors, ingesters, regs, kafkaCluster := prepare(t, testConfig, true)
 			require.Len(t, distributors, 1)
 			require.Len(t, ingesters, 3)
 			require.Len(t, regs, 1)
@@ -500,7 +500,7 @@ func TestDistributor_Push_ShouldCleanupWriteRequestAfterWritingBothToIngestersAn
 		},
 	}
 
-	distributors, ingesters, regs, kafkaCluster := prepare(t, testConfig)
+	distributors, ingesters, regs, kafkaCluster := prepare(t, testConfig, true)
 	require.Len(t, distributors, 1)
 	require.Len(t, ingesters, 3)
 	require.Len(t, regs, 1)
@@ -618,7 +618,7 @@ func TestDistributor_Push_IgnoreIngestStorageErrorsDuringMigration(t *testing.T)
 				},
 			}
 
-			distributors, ingesters, _, kafkaCluster := prepare(t, testConfig)
+			distributors, ingesters, _, kafkaCluster := prepare(t, testConfig, true)
 
 			require.Len(t, distributors, 1)
 			require.Len(t, ingesters, 1)
@@ -685,7 +685,7 @@ func TestDistributor_Push_ShouldGivePrecedenceToPartitionsErrorWhenWritingBothTo
 		},
 	}
 
-	distributors, ingesters, regs, kafkaCluster := prepare(t, testConfig)
+	distributors, ingesters, regs, kafkaCluster := prepare(t, testConfig, true)
 	require.Len(t, distributors, 1)
 	require.Len(t, ingesters, 1)
 	require.Len(t, regs, 1)
@@ -993,7 +993,7 @@ func TestDistributor_UserStats_ShouldSupportIngestStorage(t *testing.T) {
 							limits.IngestionPartitionsTenantShardSize = testData.shardSize
 							return limits
 						}(),
-					})
+					}, true)
 
 					// Fetch user stats.
 					ctx := user.InjectOrgID(context.Background(), "test")
@@ -1291,7 +1291,7 @@ func TestDistributor_LabelValuesCardinality_AvailabilityAndConsistencyWithIngest
 							limits.IngestionPartitionsTenantShardSize = testData.shardSize
 							return limits
 						}(),
-					})
+					}, true)
 
 					// Fetch label values cardinality.
 					ctx := user.InjectOrgID(context.Background(), "test")
@@ -1580,7 +1580,7 @@ func TestDistributor_ActiveSeries_AvailabilityAndConsistencyWithIngestStorage(t 
 							limits.IngestionPartitionsTenantShardSize = testData.shardSize
 							return limits
 						}(),
-					})
+					}, true)
 
 					ctx := user.InjectOrgID(context.Background(), "test")
 					qStats, ctx := stats.ContextWithEmptyStats(ctx)

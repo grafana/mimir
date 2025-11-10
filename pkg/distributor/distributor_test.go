@@ -283,7 +283,7 @@ func TestDistributor_Push(t *testing.T) {
 				limits:          limits,
 				timeOut:         tc.timeOut,
 				configure:       tc.configure,
-			})
+			}, true)
 
 			var request *mimirpb.WriteRequest
 			if tc.customRequest != nil {
@@ -376,7 +376,7 @@ func TestDistributor_PushWithDoBatchWorkers(t *testing.T) {
 			// 2 workers, so 1 push would need to spawn a new goroutine.
 			cfg.ReusableIngesterPushWorkers = 2
 		},
-	})
+	}, true)
 	require.Len(t, ds, 1)
 	distributor := ds[0]
 
@@ -406,7 +406,7 @@ func TestDistributor_ContextCanceledRequest(t *testing.T) {
 		numIngesters:    3,
 		happyIngesters:  3,
 		numDistributors: 1,
-	})
+	}, true)
 
 	// Lock all mockIngester instances, so they will be waiting
 	for _, ing := range ings {
@@ -428,7 +428,7 @@ func TestDistributor_ContextCanceledRequest(t *testing.T) {
 func TestDistributor_MetricsCleanup(t *testing.T) {
 	dists, _, regs, _ := prepare(t, prepConfig{
 		numDistributors: 1,
-	})
+	}, true)
 	d := dists[0]
 	reg := regs[0]
 
@@ -606,7 +606,7 @@ func TestDistributor_PushRequestRateLimiter(t *testing.T) {
 				happyIngesters:  3,
 				numDistributors: testData.distributors,
 				limits:          limits,
-			})
+			}, true)
 
 			// Send multiple requests to the first distributor
 			for _, push := range testData.pushes {
@@ -711,7 +711,7 @@ func TestDistributor_PushIngestionRateLimiter(t *testing.T) {
 				happyIngesters:  3,
 				numDistributors: testData.distributors,
 				limits:          limits,
-			})
+			}, true)
 
 			// Push samples in multiple requests to only the first distributor
 			for _, push := range testData.pushes {
@@ -883,7 +883,7 @@ func TestDistributor_PushInstanceLimits(t *testing.T) {
 					config.DefaultLimits.MaxInflightPushRequests = testData.inflightLimit
 					config.DefaultLimits.MaxInflightPushRequestsBytes = testData.inflightBytesLimit
 				},
-			})
+			}, true)
 
 			d := distributors[0]
 			d.inflightPushRequests.Add(int64(testData.preInflight))
@@ -982,7 +982,7 @@ func TestDistributor_PushHAInstances(t *testing.T) {
 				numDistributors: 1,
 				limits:          &limits,
 				enableTracker:   tc.enableTracker,
-			})
+			}, true)
 
 			d := ds[0]
 
@@ -1120,7 +1120,7 @@ func TestDistributor_PushQuery(t *testing.T) {
 
 			cfg.shuffleShardSize = tc.shuffleShardSize
 
-			ds, ingesters, reg, _ := prepare(t, cfg)
+			ds, ingesters, reg, _ := prepare(t, cfg, true)
 
 			request := makeWriteRequest(0, tc.samples, tc.metadata, false, true, metricName)
 			writeResponse, err := ds[0].Push(ctx, request)
@@ -1231,7 +1231,7 @@ func TestDistributor_Push_LabelRemoval(t *testing.T) {
 			happyIngesters:  2,
 			numDistributors: 1,
 			limits:          &limits,
-		})
+		}, true)
 
 		// Push the series to the distributor
 		req := mockWriteRequest(tc.inputSeries, 1, 1)
@@ -1298,7 +1298,7 @@ func TestDistributor_Push_ShouldGuaranteeShardingTokenConsistencyOverTheTime(t *
 				happyIngesters:  2,
 				numDistributors: 1,
 				limits:          &limits,
-			})
+			}, true)
 
 			// Push the series to the distributor
 			req := mockWriteRequest(testData.inputSeries, 1, 1)
@@ -1362,7 +1362,7 @@ func TestDistributor_Push_LabelNameValidation(t *testing.T) {
 				configure: func(config *Config) {
 					config.SkipLabelValidation = tc.skipLabelNameValidationCfg
 				},
-			})
+			}, true)
 			req := mockWriteRequest(tc.inputLabels, 42, 100000)
 			req.SkipLabelValidation = tc.skipLabelNameValidationReq
 			_, err := ds[0].Push(ctx, req)
@@ -1440,7 +1440,7 @@ func TestDistributor_Push_ExemplarValidation(t *testing.T) {
 				happyIngesters:   2,
 				numDistributors:  1,
 				shuffleShardSize: 0,
-			})
+			}, true)
 			_, err = ds[0].Push(ctx, reqCopy)
 			if tc.expectedErrMsg != "" {
 				require.Error(t, err)
@@ -1523,7 +1523,7 @@ func TestDistributor_Push_HistogramValidation(t *testing.T) {
 				numDistributors:  1,
 				shuffleShardSize: 0,
 				limits:           limits,
-			})
+			}, true)
 
 			resp, err := ds[0].Push(ctx, tc.req)
 			if tc.expectedErr == nil {
@@ -1566,7 +1566,7 @@ func TestDistributor_Push_CountDroppedNativeHistograms(t *testing.T) {
 				happyIngesters:  2,
 				numDistributors: 1,
 				limits:          limits,
-			})
+			}, true)
 
 			// Pre-condition check.
 			require.Len(t, ds, 1)
@@ -1646,7 +1646,7 @@ func TestDistributor_ValidateSeries(t *testing.T) {
 			ds, _, regs, _ := prepare(t, prepConfig{
 				limits:          limits,
 				numDistributors: 1,
-			})
+			}, true)
 
 			// Pre-condition check.
 			require.Len(t, ds, 1)
@@ -1817,7 +1817,7 @@ func BenchmarkDistributor_SampleDuplicateTimestamp(b *testing.B) {
 	ds, _, regs, _ := prepare(b, prepConfig{
 		limits:          limits,
 		numDistributors: 1,
-	})
+	}, true)
 
 	// Pre-condition check.
 	require.Len(b, ds, 1)
@@ -2066,7 +2066,7 @@ func TestDistributor_ExemplarValidation(t *testing.T) {
 			ds, _, regs, _ := prepare(t, prepConfig{
 				limits:          limits,
 				numDistributors: 1,
-			})
+			}, true)
 
 			// Pre-condition check.
 			require.Len(t, ds, 1)
@@ -2173,7 +2173,7 @@ func TestDistributor_HistogramReduction(t *testing.T) {
 			ds, _, regs, _ := prepare(t, prepConfig{
 				limits:          limits,
 				numDistributors: 1,
-			})
+			}, true)
 
 			// Pre-condition check.
 			require.Len(t, ds, 1)
@@ -2499,7 +2499,7 @@ func TestSlowQueries(t *testing.T) {
 				happyIngesters:  happy,
 				numDistributors: 1,
 				queryDelay:      100 * time.Millisecond,
-			})
+			}, true)
 
 			queryMetrics := stats.NewQueryMetrics(reg[0])
 			_, err := ds[0].QueryStream(ctx, queryMetrics, 0, 10, nameMatcher)
@@ -2656,7 +2656,7 @@ func TestDistributor_MetricsForLabelMatchers(t *testing.T) {
 					}
 
 					// Create distributor
-					ds, ingesters, _, _ := prepare(t, testConfig)
+					ds, ingesters, _, _ := prepare(t, testConfig, true)
 
 					// Ensure strong read consistency, required to have no flaky tests when ingest storage is enabled.
 					ctx := user.InjectOrgID(context.Background(), "test")
@@ -2775,7 +2775,7 @@ func TestDistributor_MetricsForLabelMatchers_adjustPushDownLimit(t *testing.T) {
 				testData.setupFunc(&testConfig)
 			}
 
-			ds, ingesters, _, _ := prepare(t, testConfig)
+			ds, ingesters, _, _ := prepare(t, testConfig, true)
 
 			// Ensure strong read consistency, required to have no flaky tests when ingest storage is enabled.
 			ctx := user.InjectOrgID(context.Background(), "test")
@@ -2907,7 +2907,7 @@ func TestDistributor_ActiveSeries(t *testing.T) {
 					}
 
 					// Create distributor and ingesters.
-					distributors, ingesters, _, _ := prepare(t, testConfig)
+					distributors, ingesters, _, _ := prepare(t, testConfig, true)
 					d := distributors[0]
 
 					// Ensure strong read consistency, required to have no flaky tests when ingest storage is enabled.
@@ -3092,7 +3092,7 @@ func TestDistributor_ActiveNativeHistogramSeries(t *testing.T) {
 					}
 
 					// Create distributor and ingesters.
-					distributors, ingesters, _, _ := prepare(t, testConfig)
+					distributors, ingesters, _, _ := prepare(t, testConfig, true)
 					d := distributors[0]
 
 					// Ensure strong read consistency, required to have no flaky tests when ingest storage is enabled.
@@ -3489,7 +3489,7 @@ func TestDistributor_ActiveSeries_AvailabilityAndConsistency(t *testing.T) {
 						configure: func(config *Config) {
 							config.MinimizeIngesterRequests = minimizeIngesterRequests
 						},
-					})
+					}, true)
 
 					ctx := user.InjectOrgID(context.Background(), "test")
 					qStats, ctx := stats.ContextWithEmptyStats(ctx)
@@ -3521,7 +3521,7 @@ func BenchmarkDistributor_ActiveSeries(b *testing.B) {
 		numIngesters:    numIngesters,
 		happyIngesters:  numIngesters,
 		numDistributors: 1,
-	})
+	}, true)
 
 	ctx := user.InjectOrgID(context.Background(), "user")
 
@@ -3682,7 +3682,7 @@ func TestDistributor_LabelNames(t *testing.T) {
 					}
 
 					// Create distributor
-					ds, ingesters, _, _ := prepare(t, testConfig)
+					ds, ingesters, _, _ := prepare(t, testConfig, true)
 
 					// Ensure strong read consistency, required to have no flaky tests when ingest storage is enabled.
 					ctx := user.InjectOrgID(context.Background(), "test")
@@ -3757,7 +3757,7 @@ func TestDistributor_MetricsMetadata(t *testing.T) {
 					}
 
 					// Create distributor
-					ds, ingesters, _, _ := prepare(t, testConfig)
+					ds, ingesters, _, _ := prepare(t, testConfig, true)
 
 					// Ensure strong read consistency, required to have no flaky tests when ingest storage is enabled.
 					ctx := user.InjectOrgID(context.Background(), "test")
@@ -3847,7 +3847,7 @@ func TestDistributor_LabelNamesAndValuesLimitTest(t *testing.T) {
 						numDistributors:      1,
 						limits:               &limits,
 						ingestStorageEnabled: ingestStorageEnabled,
-					})
+					}, true)
 
 					// Push fixtures
 					for _, series := range fixtures {
@@ -3945,7 +3945,7 @@ func TestDistributor_LabelValuesForLabelName(t *testing.T) {
 						numDistributors:      1,
 						replicationFactor:    3,
 						ingestStorageEnabled: ingestStorageEnabled,
-					})
+					}, true)
 
 					// Push fixtures
 					for _, series := range fixtures {
@@ -4004,7 +4004,7 @@ func TestDistributor_LabelNamesAndValues(t *testing.T) {
 					numDistributors:      1,
 					replicationFactor:    3,
 					ingestStorageEnabled: ingestStorageEnabled,
-				})
+				}, true)
 
 				// Push fixtures
 				for _, series := range fixtures {
@@ -4038,7 +4038,7 @@ func TestDistributor_LabelNamesAndValues(t *testing.T) {
 			replicationFactor:                  3,
 			ingesterZones:                      []string{"A", "B", "C"},
 			labelNamesStreamZonesResponseDelay: map[string]time.Duration{"C": slowZoneDelay},
-		})
+		}, true)
 
 		// Push fixtures
 		for _, series := range fixtures {
@@ -4120,7 +4120,7 @@ func prepareWithZoneAwarenessAndZoneDelay(t *testing.T, count int) (context.Cont
 			"ZONE-B": 1 * time.Second,
 			"ZONE-C": 2 * time.Second,
 		},
-	})
+	}, true)
 
 	// Push test series.
 	for i := 0; i < count; i++ {
@@ -4511,7 +4511,7 @@ func TestDistributor_UserStats(t *testing.T) {
 						configure: func(config *Config) {
 							config.MinimizeIngesterRequests = minimizeIngesterRequests
 						},
-					})
+					}, true)
 
 					// Fetch user stats.
 					ctx := user.InjectOrgID(context.Background(), "test")
@@ -4628,7 +4628,7 @@ func TestDistributor_LabelValuesCardinality(t *testing.T) {
 						configure: func(config *Config) {
 							config.MinimizeIngesterRequests = minimizeIngesterRequests
 						},
-					})
+					}, true)
 
 					// Push fixtures
 					ctx := user.InjectOrgID(context.Background(), "label-values-cardinality")
@@ -4941,7 +4941,7 @@ func TestDistributor_LabelValuesCardinality_AvailabilityAndConsistency(t *testin
 						configure: func(config *Config) {
 							config.MinimizeIngesterRequests = minimizeIngesterRequests
 						},
-					})
+					}, true)
 
 					// Fetch label values cardinality.
 					ctx := user.InjectOrgID(context.Background(), "test")
@@ -5001,7 +5001,7 @@ func TestDistributor_LabelValuesCardinality_Limit(t *testing.T) {
 				happyIngesters:  3,
 				numDistributors: 1,
 				limits:          &limits,
-			})
+			}, true)
 
 			// Push fixtures
 			ctx := user.InjectOrgID(context.Background(), "label-values-cardinality")
@@ -5031,7 +5031,7 @@ func TestDistributor_LabelValuesCardinality_Concurrency(t *testing.T) {
 			numIngesters:    numIngesters,
 			happyIngesters:  numIngesters,
 			numDistributors: 1,
-		})
+		}, true)
 
 		// Push fixtures
 		ctx := user.InjectOrgID(context.Background(), "label-values-cardinality")
@@ -5173,7 +5173,7 @@ func TestHaDedupeMiddleware(t *testing.T) {
 				numDistributors: 1,
 				limits:          &limits,
 				enableTracker:   tc.enableHaTracker,
-			})
+			}, true)
 
 			middleware := ds[0].prePushHaDedupeMiddleware(next)
 
@@ -5241,7 +5241,7 @@ func TestInstanceLimitsBeforeHaDedupe(t *testing.T) {
 		configure: func(config *Config) {
 			config.DefaultLimits.MaxInflightPushRequests = 1
 		},
-	})
+	}, true)
 	wrappedMockPush := ds[0].wrapPushWithMiddlewares(mockPush)
 
 	// Make sure first request hits the limit.
@@ -5404,7 +5404,7 @@ func TestRelabelMiddleware(t *testing.T) {
 			ds, _, _, _ := prepare(t, prepConfig{
 				numDistributors: 1,
 				limits:          &limits,
-			})
+			}, true)
 			middleware := ds[0].prePushRelabelMiddleware(next)
 
 			var gotErrs []bool
@@ -5479,7 +5479,7 @@ func TestSortAndFilterMiddleware(t *testing.T) {
 			ds, _, _, _ := prepare(t, prepConfig{
 				numDistributors: 1,
 				limits:          &limits,
-			})
+			}, true)
 			middleware := ds[0].prePushSortAndFilterMiddleware(next)
 
 			var gotErrs []bool
@@ -5828,7 +5828,7 @@ func prepareDefaultLimits() *validation.Limits {
 	return limits
 }
 
-func prepare(t testing.TB, cfg prepConfig) ([]*Distributor, []*mockIngester, []*prometheus.Registry, *kfake.Cluster) {
+func prepare(t testing.TB, cfg prepConfig, startDistributorService bool) ([]*Distributor, []*mockIngester, []*prometheus.Registry, *kfake.Cluster) {
 	ctx := context.Background()
 
 	// Apply default config.
@@ -5979,10 +5979,12 @@ func prepare(t testing.TB, cfg prepConfig) ([]*Distributor, []*mockIngester, []*
 		}
 		d, err := New(distributorCfg, clientConfig, overrides, nil, cfg.costAttributionMgr, ingestersRing, partitionsRing, true, nil, nil, reg, logger)
 		require.NoError(t, err)
-		require.NoError(t, services.StartAndAwaitRunning(ctx, d))
-		t.Cleanup(func() {
-			require.NoError(t, services.StopAndAwaitTerminated(context.Background(), d))
-		})
+		if startDistributorService {
+			require.NoError(t, services.StartAndAwaitRunning(ctx, d))
+			t.Cleanup(func() {
+				require.NoError(t, services.StopAndAwaitTerminated(context.Background(), d))
+			})
+		}
 
 		distributors = append(distributors, d)
 		distributorRegistries = append(distributorRegistries, reg)
@@ -5991,7 +5993,11 @@ func prepare(t testing.TB, cfg prepConfig) ([]*Distributor, []*mockIngester, []*
 	// If the distributors ring is setup, wait until the first distributor
 	// updates to the expected size
 	if distributors[0].distributorsRing != nil {
-		test.Poll(t, time.Second, cfg.numDistributors, func() interface{} {
+		expectedNumDistributors := 0
+		if startDistributorService {
+			expectedNumDistributors = cfg.numDistributors
+		}
+		test.Poll(t, time.Second, expectedNumDistributors, func() interface{} {
 			return distributors[0].HealthyInstancesCount()
 		})
 	}
@@ -7401,7 +7407,7 @@ func TestDistributorValidation(t *testing.T) {
 				happyIngesters:  3,
 				numDistributors: 1,
 				limits:          &limits,
-			})
+			}, true)
 
 			resp, err := ds[0].Push(ctx, mimirpb.ToWriteRequest(tc.labels, tc.samples, tc.exemplars, tc.metadata, mimirpb.API))
 			if tc.expectedErr == nil {
@@ -7457,7 +7463,7 @@ func TestDistributor_Push_Relabel(t *testing.T) {
 			happyIngesters:  2,
 			numDistributors: 1,
 			limits:          &limits,
-		})
+		}, true)
 
 		// Push the series to the distributor
 		req := mockWriteRequest(tc.inputSeries, 1, 1)
@@ -7513,7 +7519,7 @@ func TestDistributor_MetricsWithRequestModifications(t *testing.T) {
 		}
 	}
 	getDistributor := func(config prepConfig) (*Distributor, *prometheus.Registry) {
-		ds, _, regs, _ := prepare(t, config)
+		ds, _, regs, _ := prepare(t, config, true)
 		return ds[0], regs[0]
 	}
 	type expectedMetricsCfg struct {
@@ -7909,7 +7915,7 @@ func TestDistributor_StorageConfigMetrics(t *testing.T) {
 			numIngesters:      3,
 			happyIngesters:    3,
 			replicationFactor: 3,
-		})
+		}, true)
 		assert.NoError(t, testutil.GatherAndCompare(regs[0], strings.NewReader(`
 			# HELP cortex_distributor_replication_factor The configured replication factor.
 			# TYPE cortex_distributor_replication_factor gauge
@@ -7930,7 +7936,7 @@ func TestDistributor_StorageConfigMetrics(t *testing.T) {
 			numIngesters:                  3,
 			happyIngesters:                3,
 			replicationFactor:             3,
-		})
+		}, true)
 		assert.NoError(t, testutil.GatherAndCompare(regs[0], strings.NewReader(`
 			# HELP cortex_distributor_replication_factor The configured replication factor.
 			# TYPE cortex_distributor_replication_factor gauge
@@ -7950,7 +7956,7 @@ func TestDistributor_StorageConfigMetrics(t *testing.T) {
 			numIngesters:         3,
 			happyIngesters:       3,
 			replicationFactor:    3,
-		})
+		}, true)
 		assert.NoError(t, testutil.GatherAndCompare(regs[0], strings.NewReader(`
 			# HELP cortex_distributor_ingest_storage_enabled Whether writes are being processed via ingest storage. Equal to 1 if ingest storage is enabled, 0 if disabled.
 			# TYPE cortex_distributor_ingest_storage_enabled gauge
@@ -7975,7 +7981,7 @@ func TestDistributor_CleanupIsDoneAfterLastIngesterReturns(t *testing.T) {
 		configure: func(config *Config) {
 			config.DefaultLimits.MaxInflightPushRequests = 1
 		},
-	})
+	}, true)
 	ingesters[2].pushDelay = time.Second // give the test enough time to do assertions
 
 	lbls := labelAdapters("__name__", "metric_1", "key", "value_1")
@@ -7997,7 +8003,7 @@ func TestSeriesAreShardedToCorrectIngesters(t *testing.T) {
 		numDistributors:   1,
 		replicationFactor: 1, // push each series to single ingester only
 	}
-	d, ingesters, _, _ := prepare(t, config)
+	d, ingesters, _, _ := prepare(t, config, true)
 
 	uniqueMetricsGen := func(sampleIdx int) []mimirpb.LabelAdapter {
 		return []mimirpb.LabelAdapter{
@@ -8095,7 +8101,7 @@ func TestHandlePushError(t *testing.T) {
 		numDistributors:   1,
 		replicationFactor: 1, // push each series to single ingester only
 	}
-	d, _, _, _ := prepare(t, config)
+	d, _, _, _ := prepare(t, config, true)
 
 	for testName, testData := range test {
 		t.Run(testName, func(t *testing.T) {
@@ -8225,8 +8231,9 @@ func TestDistributor_StartFinishRequest(t *testing.T) {
 	}
 
 	type testCase struct {
-		externalCheck       bool  // Start request "externally", from outside of distributor.
-		httpgrpcRequestSize int64 // only used for external check.
+		disableDistributrorService bool
+		externalCheck              bool  // Start request "externally", from outside of distributor.
+		httpgrpcRequestSize        int64 // only used for external check.
 
 		reactiveLimiterEnabled       bool
 		reactiveLimiterCanAcquire    bool
@@ -8248,6 +8255,18 @@ func TestDistributor_StartFinishRequest(t *testing.T) {
 	)
 
 	testcases := map[string]testCase{
+		"distributor not runnint, internal": {
+			disableDistributrorService: true,
+			expectedPushError:          newUnavailableError(services.New),
+		},
+
+		"distributor not runnint, external": {
+			disableDistributrorService: true,
+			externalCheck:              true,
+			expectedStartError:         newUnavailableError(services.New),
+			expectedPushError:          newUnavailableError(services.New),
+		},
+
 		"request succeeds, internal": {
 			expectedStartError: nil,
 			expectedPushError:  nil,
@@ -8402,7 +8421,7 @@ func TestDistributor_StartFinishRequest(t *testing.T) {
 					config.DefaultLimits.MaxInflightPushRequests = inflightLimit
 					config.DefaultLimits.MaxInflightPushRequestsBytes = inflightBytesLimit
 				},
-			})
+			}, !tc.disableDistributrorService)
 			var cleanupWg sync.WaitGroup
 			wrappedPush := ds[0].wrapPushWithMiddlewares(func(ctx context.Context, pushReq *Request) error {
 				cleanupWg.Add(1)
@@ -8513,7 +8532,7 @@ func TestDistributor_PushWithReactiveLimiterInflightMetrics(t *testing.T) {
 				numIngesters:    3,
 				limits:          &limits,
 				enableTracker:   true,
-			})
+			}, true)
 
 			// Setup reactive limiter
 			mockLimiter := &mockReactiveLimiter{
@@ -8649,7 +8668,7 @@ func TestDistributor_AcquireReactiveLimiterPermit(t *testing.T) {
 				numDistributors: 1,
 				limits:          &limits,
 				enableTracker:   true,
-			})
+			}, true)
 
 			// Get initial rejected requests count
 			initialRejectedCount := testutil.ToFloat64(ds[0].rejectedRequests.WithLabelValues(reasonDistributorMaxInflightPushRequests))
@@ -8732,7 +8751,7 @@ func TestDistributor_AcquireReactiveLimiterPermitIdempotent(t *testing.T) {
 				numDistributors: 1,
 				limits:          &limits,
 				enableTracker:   true,
-			})
+			}, true)
 
 			// Setup reactive limiter if needed
 			if tc.enabled {
@@ -8826,7 +8845,7 @@ func TestDistributor_Push_SendMessageMetadata(t *testing.T) {
 		happyIngesters:    1,
 		numDistributors:   1,
 		replicationFactor: 1,
-	})
+	}, true)
 
 	require.Len(t, distributors, 1)
 	require.Len(t, ingesters, 1)

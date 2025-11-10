@@ -116,7 +116,7 @@ func TestDistributor_QueryExemplars(t *testing.T) {
 					}
 
 					// Create distributor
-					ds, ingesters, _, _ := prepare(t, testConfig)
+					ds, ingesters, _, _ := prepare(t, testConfig, true)
 
 					// Ensure strong read consistency, required to have no flaky tests when ingest storage is enabled.
 					ctx := user.InjectOrgID(context.Background(), "test")
@@ -196,7 +196,7 @@ func TestDistributor_QueryStream_ShouldReturnErrorIfMaxChunksPerQueryLimitIsReac
 						configure: func(config *Config) {
 							config.MinimizeIngesterRequests = minimizeIngesterRequests
 						},
-					})
+					}, true)
 
 					// Push a number of series below the max chunks limit. Each series has 1 sample,
 					// so expect 1 chunk per series when querying back.
@@ -275,7 +275,7 @@ func TestDistributor_QueryStream_ShouldReturnErrorIfMaxSeriesPerQueryLimitIsReac
 				configure: func(config *Config) {
 					config.MinimizeIngesterRequests = minimizeIngesterRequests
 				},
-			})
+			}, true)
 
 			// Push a number of series below the max series limit.
 			initialSeries := maxSeriesLimit
@@ -345,7 +345,7 @@ func TestDistributor_QueryStream_ShouldReturnErrorIfMaxChunkBytesPerQueryLimitIs
 		numDistributors:   1,
 		limits:            limits,
 		replicationFactor: 1,
-	})
+	}, true)
 
 	allSeriesMatchers := []*labels.Matcher{
 		labels.MustNewMatcher(labels.MatchRegexp, model.MetricNameLabel, ".+"),
@@ -438,7 +438,7 @@ func TestDistributor_QueryStream_ShouldSuccessfullyRunOnSlowIngesterWithStreamin
 				replicationFactor:       1, // Use replication factor of 1 so that we always wait the response from all ingesters.
 				ingestStorageEnabled:    ingestStorageEnabled,
 				ingestStoragePartitions: 3,
-			})
+			}, true)
 
 			// Mock 1 ingester to be slow.
 			ingesters[0].queryDelay = time.Second

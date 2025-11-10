@@ -1677,7 +1677,7 @@ const requestStateKey ctxKey = 1
 
 // requestState represents state of checks for given request. If this object is stored in context,
 // it means that request has been checked against inflight requests limit, and FinishPushRequest,
-// cleanupAfterPushFinished (or both) must be called for given context.
+// decreaseInflightPushRequestCounters (or both) must be called for given context.
 type requestState struct {
 	// If set to true, push request will perform cleanup of inflight metrics after request has actually finished
 	// (which can be after push handler returns).
@@ -1751,6 +1751,12 @@ func (d *Distributor) acquireReactiveLimiterPermit(ctx context.Context) (cleanup
 // This object describes which checks were already performed on the request,
 // and which component is responsible for doing a cleanup.
 func (d *Distributor) startPushRequest(ctx context.Context, httpgrpcRequestSize int64) (context.Context, *requestState, error) {
+	// The distributor service and all its dependent services must be running
+	// before any push request can be started.
+	if s := d.State(); s != services.Running {
+		return ctx, nil, newUnavailableError(s)
+	}
+
 	// If requestState is already in context, it means that StartPushRequest already ran for this request.
 	// This check must be performed first, before any other logic in this function.
 	rs, alreadyInContext := ctx.Value(requestStateKey).(*requestState)
@@ -1771,7 +1777,7 @@ func (d *Distributor) startPushRequest(ctx context.Context, httpgrpcRequestSize 
 	inflight := d.inflightPushRequests.Inc()
 	defer func() {
 		if cleanupInDefer {
-			d.cleanupAfterPushFinished(rs)
+			d.decreaseInflightPushRequestCounters(rs)
 		}
 	}()
 
@@ -1844,10 +1850,10 @@ func (d *Distributor) FinishPushRequest(ctx context.Context) {
 		return
 	}
 
-	d.cleanupAfterPushFinished(rs)
+	d.decreaseInflightPushRequestCounters(rs)
 }
 
-func (d *Distributor) cleanupAfterPushFinished(rs *requestState) {
+func (d *Distributor) decreaseInflightPushRequestCounters(rs *requestState) {
 	d.inflightPushRequests.Dec()
 	if rs.httpgrpcRequestSize > 0 {
 		d.inflightPushRequestsBytes.Sub(rs.httpgrpcRequestSize)
@@ -1860,12 +1866,8 @@ func (d *Distributor) cleanupAfterPushFinished(rs *requestState) {
 // limitsMiddleware checks for instance limits and rejects request if this instance cannot process it at the moment.
 func (d *Distributor) limitsMiddleware(next PushFunc) PushFunc {
 	return func(ctx context.Context, pushReq *Request) (retErr error) {
-		// Make sure the distributor service and all its dependent services have been
-		// started. The following checks in this middleware depend on the runtime config
-		// service having been started.
-		if s := d.State(); s != services.Running {
-			return newUnavailableError(s)
-		}
+		next, maybeCleanup := NextOrCleanup(next, pushReq)
+		defer maybeCleanup()
 
 		ctx, rs, err := d.startPushRequest(ctx, pushReq.contentLength)
 		if err != nil {
@@ -1873,13 +1875,10 @@ func (d *Distributor) limitsMiddleware(next PushFunc) PushFunc {
 		}
 
 		rs.pushHandlerPerformsCleanup = true
-		// Decrement counter after all ingester calls have finished or been cancelled.
+		// Decrement in-flight request counters as soon as limitsMiddleware returns.
 		pushReq.AddCleanup(func() {
-			d.cleanupAfterPushFinished(rs)
+			d.decreaseInflightPushRequestCounters(rs)
 		})
-
-		next, maybeCleanup := NextOrCleanup(next, pushReq)
-		defer maybeCleanup()
 
 		reactiveLimiterCleanup, reactiveLimiterErr := d.acquireReactiveLimiterPermit(ctx)
 		if reactiveLimiterErr != nil {
