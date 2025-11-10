@@ -235,7 +235,11 @@ mimir:
       kafka:
         {{- if .Values.kafka.enabled }}
         # Address of Kafka broker to bootstrap the connection.
+        {{- if .Values.kafka.address }}
+        address: {{ .Values.kafka.address }}
+        {{- else }}
         address: {{ template "mimir.fullname" . }}-kafka.{{ .Release.Namespace }}.svc.{{ $.Values.global.clusterDomain }}:{{ $.Values.kafka.service.port }}
+        {{- end }}
         {{- end }}
         # Topic name.
         topic: mimir-ingest
@@ -2986,6 +2990,10 @@ minio:
 kafka:
   # -- Enable Kafka for ingest-storage architecture
   enabled: true
+
+  # address of existing kafka API
+  # kafka won't be installed if you set this
+  address: ""
 
   image:
     # -- The container image registry

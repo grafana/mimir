@@ -1,4 +1,4 @@
-{{- if .Values.kafka.enabled -}}
+{{- if and .Values.kafka.enabled (eq .Values.kafka.address "") -}}
 {{- with .Values.kafka -}}
 {{- $replicas := .replicas | default 1 -}}
 apiVersion: apps/v1
