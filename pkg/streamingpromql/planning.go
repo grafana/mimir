@@ -502,16 +502,14 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
 			}
 			matrixSelector, ok := node.(*core.MatrixSelector)
 			if ok && matrixSelector.Anchored {
-				_, supported := functions.FunctionsSupportingAnchoredMatrix[fnc]
+				_, supported := promql.AnchoredSafeFunctions[expr.Func.Name]
 				if !supported {
-					// note that this error string matches a prometheus query evaluation error
 					return nil, fmt.Errorf("anchored modifier can only be used with: changes, delta, increase, rate, resets - not with %s", expr.Func.Name)
 				}
 			}
 			if ok && matrixSelector.Smoothed {
-				_, supported := functions.FunctionsSupportingSmoothedMatrix[fnc]
+				_, supported := promql.SmoothedSafeFunctions[expr.Func.Name]
 				if !supported {
-					// note that this error string matches a prometheus query evaluation error
 					return nil, fmt.Errorf("smoothed modifier can only be used with: delta, increase, rate - not with %s", expr.Func.Name)
 				}
 			}

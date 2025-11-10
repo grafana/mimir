@@ -100,6 +100,18 @@ func containedExperimentalFunctions(expr parser.Expr) map[string]struct{} {
 			if n.Op.IsExperimentalAggregator() {
 				expFuncNames[n.Op.String()] = struct{}{}
 			}
+		case *parser.MatrixSelector:
+			// technically anchored & smoothed are range selectors not functions
+			vs, ok := n.VectorSelector.(*parser.VectorSelector)
+			if ok && vs.Anchored {
+				expFuncNames["anchored"] = struct{}{}
+			} else if ok && vs.Smoothed {
+				expFuncNames["smoothed"] = struct{}{}
+			}
+		case *parser.VectorSelector:
+			if n.Smoothed {
+				expFuncNames["smoothed"] = struct{}{}
+			}
 		}
 		return nil
 	})

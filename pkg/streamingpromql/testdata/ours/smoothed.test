@@ -1,3 +1,46 @@
+load 1m
+    metric{id="1"} 0 1+1x60 _ _ _ _ _ _ 2
+    metric{id="2"} 0 1+1x60 _ _ _ _ _ 2
+
+eval instant at 59m metric smoothed
+   metric{id="1"} 59
+   metric{id="2"} 59
+
+eval instant at 60m metric smoothed
+   metric{id="1"} 60
+   metric{id="2"} 60
+
+eval instant at 61m metric smoothed
+   metric{id="1"} 61
+   metric{id="2"} 61
+
+eval instant at 62m metric smoothed
+   metric{id="1"} 61
+   metric{id="2"} 51.166666666666664
+
+eval instant at 63m metric smoothed
+   metric{id="1"} 44.14285714285714
+   metric{id="2"} 41.33333333333333
+
+clear
+
+# This test exercises the handling of the smoothed head and tail points
+load 1s
+    metric _ 1 2 3 4 _ 6 7 8 9 10
+
+# This query will have a nil smoothedHead and smoothed tail
+eval instant at 1s increase(metric[1s] smoothed)
+    {} 0
+
+# This query will have a nil smoothedHead, but a value for the smoothedTail
+eval instant at 5s increase(metric[1s] smoothed)
+    {} 1
+
+# This query will have a value for smoothedHead, but a nil for the smoothedTail
+eval instant at 6s increase(metric[1s] smoothed)
+    {} 1
+
+clear
 load 15s
   metric 1+1x4 9+1x4
 

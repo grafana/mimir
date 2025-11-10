@@ -139,6 +139,12 @@ func TestCloneExpr(t *testing.T) {
 		`foo and bar`,
 		`foo == bar`,
 		`foo == bool bar`,
+
+		// Range modifiers
+		`metric[1m] anchored`,
+		`metric[1m] smoothed`,
+		`rate(metric[1m] anchored)`,
+		`increase(metric[1m] smoothed)`,
 	}
 
 	for i, tc := range testCases {
@@ -245,13 +251,14 @@ func loadTestExpressionsFromDirectory(t *testing.T, dir string, accumulatedExpre
 func enableExperimentalParserFeaturesDuringTest(t *testing.T) {
 	oldDurationExpressions := parser.ExperimentalDurationExpr
 	oldExperimentalFunctions := parser.EnableExperimentalFunctions
+	oldEnableExtendedRangeSelectors := parser.EnableExtendedRangeSelectors
 	parser.ExperimentalDurationExpr = true
 	parser.EnableExperimentalFunctions = true
 	parser.EnableExtendedRangeSelectors = true
 	t.Cleanup(func() {
 		parser.ExperimentalDurationExpr = oldDurationExpressions
 		parser.EnableExperimentalFunctions = oldExperimentalFunctions
-		parser.EnableExtendedRangeSelectors = false
+		parser.EnableExtendedRangeSelectors = oldEnableExtendedRangeSelectors
 	})
 }
 

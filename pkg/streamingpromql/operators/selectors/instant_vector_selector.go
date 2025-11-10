@@ -136,7 +136,7 @@ func (v *InstantVectorSelector) NextSeries(ctx context.Context) (types.InstantVe
 				// to find the most recent float value before the requested timestamp.
 				// If both a previous and a next point are found, the value at the requested time
 				// is computed as the linear interpolation between those two points.
-				if v.Selector.Smoothed && valueType == chunkenc.ValFloat {
+				if v.Selector.Smoothed && valueType == chunkenc.ValFloat && right.T <= ts+v.Selector.LookbackDelta.Milliseconds() {
 					f = f + (right.F-f)*float64(ts-t)/float64(right.T-t)
 				}
 			}

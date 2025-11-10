@@ -10,8 +10,12 @@ import (
 )
 
 func TestContainedExperimentalFunctions(t *testing.T) {
-	t.Cleanup(func() { parser.EnableExperimentalFunctions = false })
+	t.Cleanup(func() {
+		parser.EnableExperimentalFunctions = false
+		parser.EnableExtendedRangeSelectors = false
+	})
 	parser.EnableExperimentalFunctions = true
+	parser.EnableExtendedRangeSelectors = true
 
 	testCases := map[string]struct {
 		query  string
@@ -47,6 +51,26 @@ func TestContainedExperimentalFunctions(t *testing.T) {
 		"limit_ratio with mad_over_time": {
 			query:  `limit_ratio(0.5, mad_over_time(up[5m]))`,
 			expect: []string{"limit_ratio", "mad_over_time"},
+		},
+		"metric smoothed": {
+			query:  `metric smoothed`,
+			expect: []string{"smoothed"},
+		},
+		"metric[1m] smoothed": {
+			query:  `metric[1m] smoothed`,
+			expect: []string{"smoothed"},
+		},
+		"metric[1m] anchored": {
+			query:  `metric[1m] anchored`,
+			expect: []string{"anchored"},
+		},
+		"rate(metric[1m] smoothed)": {
+			query:  `rate(metric[1m] smoothed)`,
+			expect: []string{"smoothed"},
+		},
+		"increase(metric[1m] anchored)": {
+			query:  `increase(metric[1m] anchored)`,
+			expect: []string{"anchored"},
 		},
 	}
 

@@ -210,6 +210,7 @@ The following features are currently experimental:
   - Remote execution of queries in queriers: `-query-frontend.enable-remote-execution=true`
   - Performing query sharding within MQE: `-query-frontend.use-mimir-query-engine-for-sharding=true`
   - Rewriting of queries to optimize processing: `-query-frontend.rewrite-histogram-queries` and `-query-frontend.rewrite-propagate-matchers`
+  - Enable experimental Prometheus extended range selector modifiers `smoothed` and `anchored`. Note that this flag is shared with enabling experimental Prometheus functions (`-query-frontend.enabled-promql-experimental-functions=smoothed, anchored, ...`)
 - Query-scheduler
   - `-query-scheduler.querier-forget-delay`
 - Store-gateway

@@ -131,9 +131,9 @@ func (m *RangeVectorSelector) NextStepSamples(ctx context.Context) (*types.Range
 			return nil, err
 		}
 
-		// Reset the temporary ring buffer and initialise it off our given buff.
-		// The ring buffer will release the buff back to the slice pool when it is reset.
-		m.extendedRangeFloats.Reset()
+		// Release the temporary ring buffer and initialise it off our given buff.
+		// The ring buffer will release the buff back to the slice pool.
+		m.extendedRangeFloats.Release()
 		if buff != nil {
 			err := m.extendedRangeFloats.Use(buff)
 			if err != nil {
@@ -143,7 +143,7 @@ func (m *RangeVectorSelector) NextStepSamples(ctx context.Context) (*types.Range
 
 		// Store the smoothed points in the range step data result so that consumers of this data can reference these values
 		// without having to re-calculate off the original points. Re-use the view
-		m.stepData.Floats = m.extendedRangeFloats.View(m.stepData.Floats)
+		m.stepData.Floats = m.extendedRangeFloats.ViewAll(m.stepData.Floats)
 		m.stepData.SmoothedHeadPoint = smoothedHead
 		m.stepData.SmoothedTailPoint = smoothedTail
 	} else {

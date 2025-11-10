@@ -106,9 +106,9 @@ func (b *FPointRingBuffer) ViewUntilSearchingForwards(maxT int64, existing *FPoi
 	return existing
 }
 
-// View returns a view which includes all points in the ring buffer.
+// ViewAll returns a view which includes all points in the ring buffer.
 // The returned view is no longer valid if this buffer is modified (eg. a point is added, or the buffer is reset or closed).
-func (b *FPointRingBuffer) View(existing *FPointRingBufferView) *FPointRingBufferView {
+func (b *FPointRingBuffer) ViewAll(existing *FPointRingBufferView) *FPointRingBufferView {
 	if existing == nil {
 		existing = &FPointRingBufferView{buffer: b}
 	}
