@@ -254,13 +254,9 @@ GOVOLUMES=	-v mimir-go-cache:/go/cache \
 # Mount local ssh credentials to be able to clone private repos when doing `mod-check`
 SSHVOLUME=  -v ~/.ssh/:/root/.ssh:$(CONTAINER_MOUNT_OPTIONS)
 
-exes $(EXES) $(EXES_RACE) protos $(PROTO_GOS) lint lint-gh-action lint-packaging-scripts test test-with-race cover shell mod-check check-protos format dist build-mixin format-mixin check-mixin-tests license check-license conftest-fmt check-conftest-fmt helm-conftest-test helm-conftest-quick-test conftest-verify check-helm-tests build-helm-tests print-go-version format-promql-tests check-promql-tests format-protobuf check-protobuf-format: fetch-build-image
+exes $(EXES) $(EXES_RACE) protos $(PROTO_GOS) lint lint-gh-action lint-packaging-scripts test test-with-race cover shell mod-check check-protos doc format dist build-mixin format-mixin check-mixin-tests license check-license conftest-fmt check-conftest-fmt helm-conftest-test helm-conftest-quick-test conftest-verify check-helm-tests build-helm-tests print-go-version format-promql-tests check-promql-tests format-protobuf check-protobuf-format: fetch-build-image
 	@echo ">>>> Entering build container: $@"
 	$(SUDO) time docker run --rm $(TTY) -i $(SSHVOLUME) $(GOVOLUMES) $(BUILD_IMAGE) GOOS=$(GOOS) GOARCH=$(GOARCH) BINARY_SUFFIX=$(BINARY_SUFFIX) $@;
-
-doc: fetch-build-image
-	@echo ">>>> Entering build container: $@"
-	$(SUDO) time docker run --rm $(TTY) -i $(SSHVOLUME) $(GOVOLUMES) $(BUILD_IMAGE) GOOS=$(GOOS) GOARCH=$(GOARCH) BINARY_SUFFIX=$(BINARY_SUFFIX) BUILD_IN_CONTAINER=false $@;
 
 else
 
@@ -648,14 +644,17 @@ clean-doc: ## Clean the documentation files generated from templates.
 
 check-doc: ## Check the documentation files are up to date.
 check-doc: doc
+	@find . -name "*.md" | xargs git diff --exit-code -- \
+	|| (echo "Please update generated documentation by running 'make doc' and committing the changes" && false)
+
+check-reference-help: ## Check the reference help documentation is up to date.
+check-reference-help: reference-help
 	@git diff --exit-code -- \
 		cmd/mimir/help.txt.tmpl \
 		cmd/mimir/help-all.txt.tmpl \
 		cmd/mimir/config-descriptor.json \
 		operations/mimir/mimir-flags-defaults.json \
-	|| (echo "Please update generated reference documentation by running 'make doc' and committing the changes" && false)
-	@find . -name "*.md" | xargs git diff --exit-code -- \
-	|| (echo "Please update generated documentation by running 'make doc' and committing the changes" && false)
+	|| (echo "Please update generated reference documentation by running 'make reference-help' and committing the changes" && false)
 
 # Tool is developed in the grafana/technical-documentation repository:
 # https://github.com/grafana/technical-documentation/tree/main/tools/doc-validator
