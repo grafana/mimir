@@ -8,6 +8,7 @@ package alertmanager
 import (
 	"context"
 	"encoding/binary"
+	"errors"
 	"flag"
 	"fmt"
 	"hash/fnv"
@@ -35,7 +36,6 @@ import (
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/tenant"
 	"github.com/grafana/dskit/user"
-	"github.com/pkg/errors"
 	"github.com/prometheus/alertmanager/cluster/clusterpb"
 	amconfig "github.com/prometheus/alertmanager/config"
 	"github.com/prometheus/alertmanager/featurecontrol"
@@ -384,7 +384,7 @@ func NewMultitenantAlertmanager(cfg *MultitenantAlertmanagerConfig, store alerts
 		logger,
 	)
 	if err != nil {
-		return nil, errors.Wrap(err, "create KV store client")
+		return nil, fmt.Errorf("create KV store client: %w", err)
 	}
 
 	return createMultitenantAlertmanager(cfg, fallbackConfig, store, ringStore, limits, features, logger, registerer)
@@ -467,7 +467,7 @@ func createMultitenantAlertmanager(cfg *MultitenantAlertmanagerConfig, fallbackC
 
 	lifecyclerCfg, err := am.cfg.ShardingRing.ToLifecyclerConfig(am.logger)
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to initialize Alertmanager's lifecycler config")
+		return nil, fmt.Errorf("failed to initialize Alertmanager's lifecycler config: %w", err)
 	}
 
 	// Define lifecycler delegates in reverse order (last to be called defined first because they're
@@ -478,12 +478,12 @@ func createMultitenantAlertmanager(cfg *MultitenantAlertmanagerConfig, fallbackC
 
 	am.ringLifecycler, err = ring.NewBasicLifecycler(lifecyclerCfg, RingNameForServer, RingKey, ringStore, delegate, am.logger, prometheus.WrapRegistererWithPrefix("cortex_", am.registry))
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to initialize Alertmanager's lifecycler")
+		return nil, fmt.Errorf("failed to initialize Alertmanager's lifecycler: %w", err)
 	}
 
 	am.ring, err = ring.NewWithStoreClientAndStrategy(am.cfg.ShardingRing.toRingConfig(), RingNameForServer, RingKey, ringStore, ring.NewIgnoreUnhealthyInstancesReplicationStrategy(), prometheus.WrapRegistererWithPrefix("cortex_", am.registry), am.logger)
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to initialize Alertmanager's ring")
+		return nil, fmt.Errorf("failed to initialize Alertmanager's ring: %w", err)
 	}
 
 	am.grpcServer = server.NewServer(&handlerForGRPCServer{am: am}, server.WithReturn4XXErrors)
@@ -491,7 +491,7 @@ func createMultitenantAlertmanager(cfg *MultitenantAlertmanagerConfig, fallbackC
 	am.alertmanagerClientsPool = newAlertmanagerClientsPool(client.NewRingServiceDiscovery(am.ring), cfg.AlertmanagerClient, logger, am.registry)
 	am.distributor, err = NewDistributor(cfg.AlertmanagerClient, cfg.MaxRecvMsgSize, am.ring, am.alertmanagerClientsPool, log.With(logger, "component", "AlertmanagerDistributor"), am.registry)
 	if err != nil {
-		return nil, errors.Wrap(err, "create distributor")
+		return nil, fmt.Errorf("create distributor: %w", err)
 	}
 
 	if registerer != nil {
@@ -525,11 +525,11 @@ func (am *MultitenantAlertmanager) starting(ctx context.Context) (err error) {
 	}()
 
 	if am.subservices, err = services.NewManager(am.ringLifecycler, am.ring, am.distributor); err != nil {
-		return errors.Wrap(err, "failed to start alertmanager's subservices")
+		return fmt.Errorf("failed to start alertmanager's subservices: %w", err)
 	}
 
 	if err = services.StartManagerAndAwaitHealthy(ctx, am.subservices); err != nil {
-		return errors.Wrap(err, "failed to start alertmanager's subservices")
+		return fmt.Errorf("failed to start alertmanager's subservices: %w", err)
 	}
 
 	am.subservicesWatcher = services.NewFailureWatcher()
@@ -557,13 +557,13 @@ func (am *MultitenantAlertmanager) starting(ctx context.Context) (err error) {
 	// reduce the possibility that we lose state when new instances join/leave.
 	level.Info(am.logger).Log("msg", "waiting until initial state sync is complete for all users")
 	if err := am.waitInitialStateSync(ctx); err != nil {
-		return errors.Wrap(err, "failed to wait for initial state sync")
+		return fmt.Errorf("failed to wait for initial state sync: %w", err)
 	}
 	level.Info(am.logger).Log("msg", "initial state sync is complete")
 
 	// With the initial sync now completed, we should have loaded all assigned alertmanager configurations to this instance. We can switch it to ACTIVE and start serving requests.
 	if err := am.ringLifecycler.ChangeState(ctx, ring.ACTIVE); err != nil {
-		return errors.Wrapf(err, "switch instance to %s in the ring", ring.ACTIVE)
+		return fmt.Errorf("switch instance to %s in the ring: %w", ring.ACTIVE, err)
 	}
 
 	// Wait until the ring client detected this instance in the ACTIVE state.
@@ -588,7 +588,7 @@ func (am *MultitenantAlertmanager) run(ctx context.Context) error {
 		case <-ctx.Done():
 			return nil
 		case err := <-am.subservicesWatcher.Chan():
-			return errors.Wrap(err, "alertmanager subservices failed")
+			return fmt.Errorf("alertmanager subservices failed: %w", err)
 		case <-tick.C:
 			// We don't want to halt execution here but instead just log what happened.
 			if err := am.loadAndSyncConfigs(ctx, reasonPeriodic); err != nil {
@@ -670,7 +670,7 @@ func (am *MultitenantAlertmanager) loadAlertmanagerConfigs(ctx context.Context) 
 	// Find all users with an alertmanager config.
 	allUserIDs, err := am.store.ListAllUsers(ctx)
 	if err != nil {
-		return nil, nil, errors.Wrap(err, "failed to list users with alertmanager configuration")
+		return nil, nil, fmt.Errorf("failed to list users with alertmanager configuration: %w", err)
 	}
 	numUsersDiscovered := len(allUserIDs)
 	ownedUserIDs := make([]string, 0, len(allUserIDs))
@@ -686,7 +686,7 @@ func (am *MultitenantAlertmanager) loadAlertmanagerConfigs(ctx context.Context) 
 	// Load the configs for the owned users.
 	configs, err := am.store.GetAlertConfigs(ctx, ownedUserIDs)
 	if err != nil {
-		return nil, nil, errors.Wrapf(err, "failed to load alertmanager configurations for owned users")
+		return nil, nil, fmt.Errorf("failed to load alertmanager configurations for owned users: %w", err)
 	}
 
 	am.tenantsDiscovered.Set(float64(numUsersDiscovered))
@@ -1101,7 +1101,7 @@ func (am *MultitenantAlertmanager) newAlertmanager(userID string, amConfig *defi
 	tenantDir := am.getTenantDirectory(userID)
 	err := os.MkdirAll(tenantDir, 0777)
 	if err != nil {
-		return nil, errors.Wrapf(err, "failed to create per-tenant directory %v", tenantDir)
+		return nil, fmt.Errorf("failed to create per-tenant directory %v: %w", tenantDir, err)
 	}
 
 	newAM, err := New(&Config{
@@ -1244,7 +1244,7 @@ func (am *MultitenantAlertmanager) startAlertmanager(ctx context.Context, userID
 	// Avoid starting the Alertmanager for tenants not owned by this instance.
 	if !am.isUserOwned(userID) {
 		am.lastRequestTime.Delete(userID)
-		return nil, errors.Wrap(errNotUploadingFallback, "user not owned by this instance")
+		return nil, fmt.Errorf("user not owned by this instance: %w", errNotUploadingFallback)
 	}
 
 	cfgMap, err := am.store.GetAlertConfigs(ctx, []string{userID})
@@ -1276,7 +1276,7 @@ func (am *MultitenantAlertmanager) alertmanagerFromFallbackConfig(ctx context.Co
 	// any tenants which are not meant to be in an instance, but it is confusing and potentially
 	// wasteful to have them start-up when they are not needed.
 	if !am.isUserOwned(userID) {
-		return nil, errors.Wrap(errNotUploadingFallback, "user not owned by this instance")
+		return nil, fmt.Errorf("user not owned by this instance: %w", errNotUploadingFallback)
 	}
 
 	// We should be careful never to replace an existing configuration with the fallback.
@@ -1285,10 +1285,10 @@ func (am *MultitenantAlertmanager) alertmanagerFromFallbackConfig(ctx context.Co
 	_, err := am.store.GetAlertConfig(ctx, userID)
 	if err == nil {
 		// If there is a configuration, then the polling cycle should pick it up.
-		return nil, errors.Wrap(errNotUploadingFallback, "user has a configuration")
+		return nil, fmt.Errorf("user has a configuration: %w", errNotUploadingFallback)
 	}
 	if !errors.Is(err, alertspb.ErrNotFound) {
-		return nil, errors.Wrap(err, "failed to check for existing configuration")
+		return nil, fmt.Errorf("failed to check for existing configuration: %w", err)
 	}
 
 	level.Warn(am.logger).Log("msg", "no configuration exists for user; uploading fallback configuration", "user", userID)
