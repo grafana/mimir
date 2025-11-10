@@ -508,7 +508,7 @@ check-protobuf-format:
 	embedmd -w $<
 
 doc: ## Generates the config file documentation.
-doc: clean-doc $(DOC_TEMPLATES:.template=.md) $(DOC_EMBED:.md=.md.embedmd)
+doc: reference-help clean-doc $(DOC_TEMPLATES:.template=.md) $(DOC_EMBED:.md=.md.embedmd)
 	# Make up markdown files prettier. When running with check-doc target, it will fail if this produces any change.
 	prettier --write "**/*.md"
 	# Make operations/helm/charts/*/README.md
@@ -644,6 +644,12 @@ clean-doc: ## Clean the documentation files generated from templates.
 
 check-doc: ## Check the documentation files are up to date.
 check-doc: doc
+	@git diff --exit-code -- \
+		cmd/mimir/help.txt.tmpl \
+		cmd/mimir/help-all.txt.tmpl \
+		cmd/mimir/config-descriptor.json \
+		operations/mimir/mimir-flags-defaults.json \
+	|| (echo "Please update generated reference documentation by running 'make doc' and committing the changes" && false)
 	@find . -name "*.md" | xargs git diff --exit-code -- \
 	|| (echo "Please update generated documentation by running 'make doc' and committing the changes" && false)
 
