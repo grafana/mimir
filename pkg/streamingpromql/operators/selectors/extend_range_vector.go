@@ -20,7 +20,7 @@ type headTailIterator struct {
 
 func (i *headTailIterator) len() int {
 	// avoid having to do len(i.head) + len(i.tail) on each call
-	if i.lazyLen == 0 && len(i.head) > 0 || len(i.tail) > 0 {
+	if i.lazyLen == 0 && (len(i.head) > 0 || len(i.tail) > 0) {
 		i.lazyLen = len(i.head) + len(i.tail)
 	}
 	return i.lazyLen
