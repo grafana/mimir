@@ -15,6 +15,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/user"
+	"github.com/grafana/mimir/pkg/util/validation"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/common/model"
@@ -499,10 +500,12 @@ func (c *rulerErrorClassifier) IsOperatorControllable(err error) bool {
 		}
 	}
 
-	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+	if validation.IsLimitError(err) || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		return false
 	}
 
+	// If internal Ruler is used, then we classify only promql.ErrStorage errors as operator-controllable.
+	// Internal Ruler unknown errors are considered user-controllable.
 	if !c.remoteQuerier {
 		var (
 			errStorage promql.ErrStorage
