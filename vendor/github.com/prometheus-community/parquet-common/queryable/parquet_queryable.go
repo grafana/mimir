@@ -47,8 +47,8 @@ type queryableOpts struct {
 	dataBytesLimitFunc               search.QuotaLimitFunc
 	materializedSeriesCallback       search.MaterializedSeriesFunc
 	materializedLabelsFilterCallback search.MaterializedLabelsFilterCallback
-
-	cacheRowRangesForConstraints bool
+	cacheRowRangesForConstraints     bool
+	honorProjectionHints             bool
 }
 
 var DefaultQueryableOpts = queryableOpts{
@@ -58,8 +58,8 @@ var DefaultQueryableOpts = queryableOpts{
 	dataBytesLimitFunc:               search.NoopQuotaLimitFunc,
 	materializedSeriesCallback:       search.NoopMaterializedSeriesFunc,
 	materializedLabelsFilterCallback: search.NoopMaterializedLabelsFilterCallback,
-
-	cacheRowRangesForConstraints: false,
+	cacheRowRangesForConstraints:     false,
+	honorProjectionHints:             false,
 }
 
 type QueryableOpts func(*queryableOpts)
@@ -112,6 +112,14 @@ func WithMaterializedLabelsFilterCallback(cb search.MaterializedLabelsFilterCall
 func WithCacheRowRangesForConstraints(cache bool) QueryableOpts {
 	return func(opts *queryableOpts) {
 		opts.cacheRowRangesForConstraints = cache
+	}
+}
+
+// WithHonorProjectionHints enables or disables projection pushdown optimization.
+// When enabled, only the labels specified in SelectHints.ProjectionLabels will be materialized.
+func WithHonorProjectionHints(honor bool) QueryableOpts {
+	return func(opts *queryableOpts) {
+		opts.honorProjectionHints = honor
 	}
 }
 
@@ -390,7 +398,7 @@ func newQueryableShard(
 		return nil, err
 	}
 	materializer, err := search.NewMaterializer(
-		shardSchema, chunksDecoder, shard, opts.concurrency, rowCountQuota, chunkBytesQuota, dataBytesQuota, opts.materializedSeriesCallback, opts.materializedLabelsFilterCallback)
+		shardSchema, chunksDecoder, shard, opts.concurrency, rowCountQuota, chunkBytesQuota, dataBytesQuota, opts.materializedSeriesCallback, opts.materializedLabelsFilterCallback, opts.honorProjectionHints)
 	if err != nil {
 		return nil, err
 	}
