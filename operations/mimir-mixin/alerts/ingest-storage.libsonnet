@@ -220,7 +220,13 @@
           alert: $.alertName('KafkaClientProduceBufferHigh'),
           'for': '5m',
           expr: |||
-            max by(%(alert_aggregation_labels)s, %(per_instance_label)s) (max_over_time(cortex_ingest_storage_writer_buffered_produce_bytes{quantile="1.0"}[1m]))
+            max by(%(alert_aggregation_labels)s, %(per_instance_label)s) (
+                # New metric.
+                max_over_time(cortex_ingest_storage_writer_buffered_produce_bytes_distribution{quantile="1.0"}[1m])
+                or
+                # Old metric.
+                max_over_time(cortex_ingest_storage_writer_buffered_produce_bytes{quantile="1.0"}[1m])
+            )
             /
             min by(%(alert_aggregation_labels)s, %(per_instance_label)s) (min_over_time(cortex_ingest_storage_writer_buffered_produce_bytes_limit[1m]))
             * 100 > 50
