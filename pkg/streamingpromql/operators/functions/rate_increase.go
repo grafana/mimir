@@ -184,7 +184,7 @@ func histogramRate(isRate bool, hCount int, hHead []promql.HPoint, hTail []promq
 	return val, err
 }
 
-func floatRate(isRate bool, fCount int, fHead []promql.FPoint, fTail []promql.FPoint, rangeStart int64, rangeEnd int64, rangeSeconds float64, smoothedOrAnchored bool, smoothedHead, smoothedTail *promql.FPoint) float64 {
+func floatRate(isRate bool, fCount int, fHead []promql.FPoint, fTail []promql.FPoint, rangeStart int64, rangeEnd int64, rangeSeconds float64, smoothedOrAnchored bool, smoothedBasisForHeadPoint, smoothedBasisForTailPoint *promql.FPoint) float64 {
 	firstPoint := fHead[0]
 	fHead = fHead[1:]
 
@@ -195,12 +195,12 @@ func floatRate(isRate bool, fCount int, fHead []promql.FPoint, fTail []promql.FP
 		lastPoint = fHead[len(fHead)-1]
 	}
 
-	if smoothedOrAnchored && smoothedHead != nil && smoothedTail != nil {
-		// We only need to consider samples exactly within the range as the pre-calculated smoothedHead & smoothedTail have already handled the resets at boundaries.
+	if smoothedOrAnchored && smoothedBasisForHeadPoint != nil && smoothedBasisForTailPoint != nil {
+		// We only need to consider samples exactly within the range as the pre-calculated smoothedBasisForHeadPoint & smoothedBasisForTailPoint have already handled the resets at boundaries.
 		// For smoothed rate/increase range queries, the interpolated points at the range boundaries are calculated differently to compensate for counter values.
-		// These alternate head/tail points have been pre-calculated by the range vector selector.
-		firstPoint = *smoothedHead
-		lastPoint = *smoothedTail
+		// These alternate boundary points have been pre-calculated by the range vector selector.
+		firstPoint = *smoothedBasisForHeadPoint
+		lastPoint = *smoothedBasisForTailPoint
 
 		if len(fTail) > 0 {
 			fTail = fTail[:len(fTail)-1]
