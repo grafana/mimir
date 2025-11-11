@@ -40,7 +40,7 @@ func newQueryableShard(
 		return nil, err
 	}
 	materializer, err := search.NewMaterializer(
-		shardSchema, chunksDecoder, shard, opts.concurrency, rowCountQuota, chunkBytesQuota, dataBytesQuota, opts.materializedSeriesCallback, opts.materializedLabelsFilterCallback)
+		shardSchema, chunksDecoder, shard, opts.concurrency, rowCountQuota, chunkBytesQuota, dataBytesQuota, opts.materializedSeriesCallback, opts.materializedLabelsFilterCallback, false)
 	if err != nil {
 		return nil, err
 	}
@@ -156,7 +156,7 @@ func (b queryableShard) QueryIter(ctx context.Context, sorted bool, sp *prom_sto
 				return nil
 			}
 
-			labelsSlices, err := b.materializer.MaterializeAllLabels(groupCtx, rgi, rr)
+			labelsSlices, err := b.materializer.MaterializeLabels(groupCtx, nil, rgi, rr)
 			if err != nil {
 				return errors.Wrapf(err, "error materializing labels")
 			}
