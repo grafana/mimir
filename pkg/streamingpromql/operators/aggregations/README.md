@@ -13,7 +13,7 @@ Note that additional label matchers applied during query evaluation may further 
 
 ### Aggregation Exceptions
 
-Certain aggregation operators — `topk`, `bottomk`, `limitk`, `limit_ratio`, and `count_values` — diverge from this pattern.
+Certain aggregation operators — `topk`, `bottomk`, and `count_values` — diverge from this pattern.
 
 These operators require analysis of all input series and their results before the series metadata can be determined, so they perform data fetching and aggregation within their `SeriesMetadata()` implementation.
 
