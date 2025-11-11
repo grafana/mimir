@@ -302,8 +302,8 @@ type Config struct {
 // PushWrapper wraps around a push. It is similar to middleware.Interface.
 type PushWrapper func(next PushFunc) PushFunc
 
-// WithCleanup wraps the provided PushFunc with automatic cleanup handling.
-// It ensures Request.CleanUp() is called via defer if the next handler isn't invoked.
+// WithCleanup wraps the given pushWrapper function with automatic resource cleanup handling.
+// It ensures Request.CleanUp() is called via defer if the given next PushFunc isn't invoked.
 // See NextOrCleanup for the cleanup detection mechanism.
 func WithCleanup(next PushFunc, pushWrapper func(next PushFunc, ctx context.Context, pushReq *Request) error) PushFunc {
 	return func(ctx context.Context, pushReq *Request) error {
@@ -311,6 +311,23 @@ func WithCleanup(next PushFunc, pushWrapper func(next PushFunc, ctx context.Cont
 		defer maybeCleanup()
 		return pushWrapper(next, ctx, pushReq)
 	}
+}
+
+// NextOrCleanup returns a new PushFunc and a cleanup function that should be deferred by the caller.
+// The cleanup function will only call Request.CleanUp() if next() wasn't called previously.
+//
+// This function is used outside of this codebase.
+func NextOrCleanup(next PushFunc, pushReq *Request) (_ PushFunc, maybeCleanup func()) {
+	cleanupInDefer := true
+	return func(ctx context.Context, req *Request) error {
+			cleanupInDefer = false
+			return next(ctx, req)
+		},
+		func() {
+			if cleanupInDefer {
+				pushReq.CleanUp()
+			}
+		}
 }
 
 // RegisterFlags adds the flags required to config this to the given FlagSet
@@ -1907,23 +1924,6 @@ func (d *Distributor) limitsMiddleware(next PushFunc) PushFunc {
 
 		return next(ctx, pushReq)
 	})
-}
-
-// NextOrCleanup returns a new PushFunc and a cleanup function that should be deferred by the caller.
-// The cleanup function will only call Request.CleanUp() if next() wasn't called previously.
-//
-// This function is used outside of this codebase.
-func NextOrCleanup(next PushFunc, pushReq *Request) (_ PushFunc, maybeCleanup func()) {
-	cleanupInDefer := true
-	return func(ctx context.Context, req *Request) error {
-			cleanupInDefer = false
-			return next(ctx, req)
-		},
-		func() {
-			if cleanupInDefer {
-				pushReq.CleanUp()
-			}
-		}
 }
 
 // Push is gRPC method registered as client.IngesterServer and distributor.DistributorServer.
