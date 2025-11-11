@@ -34,7 +34,6 @@ import (
 
 	"github.com/grafana/mimir/pkg/storage/indexheader"
 	"github.com/grafana/mimir/pkg/storage/sharding"
-	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 )
 
@@ -407,7 +406,7 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 		// When splitting is enabled, we need to inject the shard ID as an external label.
 		newLabels := job.Labels().Map()
 		if job.UseSplitting() {
-			newLabels[mimir_tsdb.CompactorShardIDExternalLabel] = sharding.FormatShardIDLabelValue(uint64(blockToUpload.shardIndex), uint64(job.SplittingShards()))
+			newLabels[block.CompactorShardIDExternalLabel] = sharding.FormatShardIDLabelValue(uint64(blockToUpload.shardIndex), uint64(job.SplittingShards()))
 		}
 		blocksToUpload[idx].labels = newLabels
 
@@ -874,6 +873,7 @@ type BucketCompactor struct {
 	ownJob                        ownCompactionJobFunc
 	sortJobs                      JobsOrderFunc
 	waitPeriod                    time.Duration
+	skipFutureMaxTime             bool
 	blockSyncConcurrency          int
 	metrics                       *BucketCompactorMetrics
 }
@@ -892,6 +892,7 @@ func NewBucketCompactor(
 	ownJob ownCompactionJobFunc,
 	sortJobs JobsOrderFunc,
 	waitPeriod time.Duration,
+	skipFutureMaxTime bool,
 	blockSyncConcurrency int,
 	metrics *BucketCompactorMetrics,
 	uploadSparseIndexHeaders bool,
@@ -920,6 +921,7 @@ func NewBucketCompactor(
 		ownJob:                        ownJob,
 		sortJobs:                      sortJobs,
 		waitPeriod:                    waitPeriod,
+		skipFutureMaxTime:             skipFutureMaxTime,
 		blockSyncConcurrency:          blockSyncConcurrency,
 		metrics:                       metrics,
 		uploadSparseIndexHeaders:      uploadSparseIndexHeaders,
@@ -1184,7 +1186,7 @@ func (c *BucketCompactor) filterOwnJobs(jobs []*Job) ([]*Job, error) {
 // filterJobsByWaitPeriod filters out jobs for which the configured wait period hasn't been honored yet.
 func (c *BucketCompactor) filterJobsByWaitPeriod(ctx context.Context, jobs []*Job) []*Job {
 	for i := 0; i < len(jobs); {
-		if elapsed, notElapsedBlock, err := jobWaitPeriodElapsed(ctx, jobs[i], c.waitPeriod, c.bkt); err != nil {
+		if elapsed, notElapsedBlock, err := jobWaitPeriodElapsed(ctx, jobs[i], c.waitPeriod, c.skipFutureMaxTime, c.bkt); err != nil {
 			level.Warn(c.logger).Log("msg", "not enforcing compaction wait period because the check if compaction job contains recently uploaded blocks has failed", "groupKey", jobs[i].Key(), "err", err)
 
 			// Keep the job.

@@ -147,10 +147,5 @@ func NativeHistogramErrorToAnnotation(err error, emitAnnotation types.EmitAnnota
 		return nil
 	}
 
-	if errors.Is(err, histogram.ErrHistogramsIncompatibleBounds) {
-		emitAnnotation(annotations.NewIncompatibleCustomBucketsHistogramsWarning)
-		return nil
-	}
-
 	return err
 }

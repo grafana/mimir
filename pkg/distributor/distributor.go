@@ -221,6 +221,12 @@ type OTelResourceAttributePromotionConfig interface {
 	PromoteOTelResourceAttributes(id string) []string
 }
 
+// KeepIdentifyingOTelResourceAttributesConfig contains methods for configuring keeping of identifying OTel resource attributes.
+type KeepIdentifyingOTelResourceAttributesConfig interface {
+	// OTelKeepIdentifyingResourceAttributes returns whether to keep identifying OTel resource attributes.
+	OTelKeepIdentifyingResourceAttributes(tenantID string) bool
+}
+
 // Config contains the configuration required to
 // create a Distributor
 type Config struct {
@@ -276,6 +282,9 @@ type Config struct {
 
 	// OTelResourceAttributePromotionConfig allows for specializing OTel resource attribute promotion.
 	OTelResourceAttributePromotionConfig OTelResourceAttributePromotionConfig `yaml:"-"`
+
+	// KeepIdentifyingOTelResourceAttributesConfig allows for specializing keeping of identifying OTel resource attributes.
+	KeepIdentifyingOTelResourceAttributesConfig KeepIdentifyingOTelResourceAttributesConfig `yaml:"-"`
 
 	// Influx endpoint disabled by default
 	EnableInfluxEndpoint bool `yaml:"influx_endpoint_enabled" category:"experimental" doc:"hidden"`
@@ -999,9 +1008,10 @@ func (d *Distributor) validateExemplars(ts *mimirpb.PreallocTimeseries, userID s
 // Returns an error explaining the first validation finding. Non-nil error means the timeseries should be removed from the request.
 // The returned error MUST NOT retain label strings - they point into a gRPC buffer which is re-used.
 // It uses the passed nowt time to observe the delay of sample timestamps.
-func (d *Distributor) validateSeries(nowt time.Time, ts *mimirpb.PreallocTimeseries, userID, group string, skipLabelValidation, skipLabelCountValidation bool, minExemplarTS, maxExemplarTS int64) error {
+func (d *Distributor) validateSeries(nowt time.Time, ts *mimirpb.PreallocTimeseries, userID, group string, skipLabelValidation, skipLabelCountValidation bool, minExemplarTS, maxExemplarTS int64, valueTooLongSummaries *labelValueTooLongSummaries) error {
 	cat := d.costAttributionMgr.SampleTracker(userID)
-	if err := validateLabels(d.sampleValidationMetrics, d.limits, userID, group, ts.Labels, skipLabelValidation, skipLabelCountValidation, cat, nowt, d.log); err != nil {
+
+	if err := validateLabels(d.sampleValidationMetrics, d.limits, userID, group, ts.Labels, skipLabelValidation, skipLabelCountValidation, cat, nowt, valueTooLongSummaries); err != nil {
 		return err
 	}
 
@@ -1144,16 +1154,12 @@ func (d *Distributor) prePushRelabelMiddleware(next PushFunc) PushFunc {
 		next, maybeCleanup := NextOrCleanup(next, pushReq)
 		defer maybeCleanup()
 
-		userID, err := tenant.TenantID(ctx)
+		req, err := pushReq.WriteRequest()
 		if err != nil {
 			return err
 		}
 
-		if !d.limits.MetricRelabelingEnabled(userID) {
-			return next(ctx, pushReq)
-		}
-
-		req, err := pushReq.WriteRequest()
+		userID, err := tenant.TenantID(ctx)
 		if err != nil {
 			return err
 		}
@@ -1311,6 +1317,7 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 		totalSamples, totalExemplars := 0, 0
 		const maxMetricsWithDeduplicatedSamplesToTrace = 10
 		var dedupedPerUnsafeMetricName map[string]int
+		var valueTooLongSummaries labelValueTooLongSummaries
 
 		for tsIdx, ts := range req.Timeseries {
 			totalSamples += len(ts.Samples)
@@ -1328,7 +1335,7 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 			// Note that validateSeries may drop some data in ts.
 			rawSamples := len(ts.Samples)
 			rawHistograms := len(ts.Histograms)
-			validationErr := d.validateSeries(now, &req.Timeseries[tsIdx], userID, pushReq.group, skipLabelValidation, skipLabelCountValidation, minExemplarTS, maxExemplarTS)
+			validationErr := d.validateSeries(now, &req.Timeseries[tsIdx], userID, pushReq.group, skipLabelValidation, skipLabelCountValidation, minExemplarTS, maxExemplarTS, &valueTooLongSummaries)
 
 			if countDroppedNativeHistograms {
 				droppedNativeHistograms += len(ts.Histograms)
@@ -1387,6 +1394,8 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 		if droppedNativeHistograms > 0 {
 			d.droppedNativeHistograms.WithLabelValues(userID).Add(float64(droppedNativeHistograms))
 		}
+
+		d.logLabelValueTooLongSummaries(userID, valueTooLongSummaries)
 
 		d.incomingSamplesPerRequest.WithLabelValues(userID).Observe(float64(totalSamples))
 		d.incomingExemplarsPerRequest.WithLabelValues(userID).Observe(float64(totalExemplars))
@@ -1453,6 +1462,42 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 
 		return firstPartialErr
 	}
+}
+
+func (d *Distributor) logLabelValueTooLongSummaries(userID string, valueTooLongSummaries labelValueTooLongSummaries) {
+	if len(valueTooLongSummaries.summaries) == 0 {
+		return
+	}
+
+	var msg string
+	switch strategy := d.limits.LabelValueLengthOverLimitStrategy(userID); strategy {
+	case validation.LabelValueLengthOverLimitStrategyTruncate:
+		msg = truncatedLabelValueMsg
+	case validation.LabelValueLengthOverLimitStrategyDrop:
+		msg = droppedLabelValueMsg
+	default:
+		panic(fmt.Errorf("unexpected value: %v", strategy))
+	}
+
+	kvs := make([]any, 0, 10+len(valueTooLongSummaries.summaries)*10)
+	kvs = append(kvs,
+		"msg", msg,
+		"limit", d.limits.MaxLabelValueLength(userID),
+		"total_values_exceeding_limit", valueTooLongSummaries.globalCount,
+		"user", userID,
+		"insight", true)
+	for i, summary := range valueTooLongSummaries.summaries {
+		id := strconv.Itoa(i + 1)
+		kvs = append(kvs,
+			"sample_"+id+"_metric_name", summary.metric,
+			"sample_"+id+"_label_name", summary.label,
+			"sample_"+id+"_values_exceeding_limit", summary.count,
+			"sample_"+id+"_value_length", summary.sampleValueLength,
+			"sample_"+id+"_value", summary.sampleValue)
+	}
+
+	level.Warn(d.log).Log(kvs...)
+
 }
 
 // prePushMaxSeriesLimitMiddleware enforces the per-tenant max series limit when the usage-tracker service is enabled.
@@ -1643,6 +1688,9 @@ type requestState struct {
 
 	// If positive, it means that size of mimirpb.WriteRequest has been checked and added to inflightPushRequestsBytes.
 	writeRequestSize int64
+
+	// If set to true, it means that a reactive limiter permit has already been acquired for the respective push request.
+	reactiveLimiterPermitAcquired bool
 }
 
 func (d *Distributor) StartPushRequest(ctx context.Context, httpgrpcRequestSize int64) (context.Context, error) {
@@ -1650,23 +1698,45 @@ func (d *Distributor) StartPushRequest(ctx context.Context, httpgrpcRequestSize 
 	return ctx, err
 }
 
-func (d *Distributor) PreparePushRequest(ctx context.Context) (func(error), error) {
+func (d *Distributor) PreparePushRequest(_ context.Context) (func(error), error) {
+	return nil, nil
+}
+
+// acquireReactiveLimiterPermit acquires a reactive limiter permit to control inflight push requests.
+//
+// If a permit is successfully acquired, it is recorded in the requestState associated with the provided context
+// by setting its reactiveLimiterPermitAcquired field. The function returns a cleanup function that must be called
+// when the request completes, which will either record or drop the permit based on the request outcome.
+//
+// If no requestState is found in the provided context, acquireReactiveLimiterPermit returns errMissingRequestState.
+// If called more than once for the same request, it returns errReactiveLimiterPermitAlreadyAcquired.
+func (d *Distributor) acquireReactiveLimiterPermit(ctx context.Context) (cleanup func(error), _ error) {
 	if d.reactiveLimiter == nil {
 		return nil, nil
 	}
+	rs, alreadyInContext := ctx.Value(requestStateKey).(*requestState)
+	if !alreadyInContext {
+		return nil, errMissingRequestState
+	}
+	if rs.reactiveLimiterPermitAcquired {
+		return nil, errReactiveLimiterPermitAlreadyAcquired
+	}
+
 	// Acquire a permit, blocking if needed
 	permit, err := d.reactiveLimiter.AcquirePermit(ctx)
 	if err != nil {
 		d.rejectedRequests.WithLabelValues(reasonDistributorMaxInflightPushRequests).Inc()
 		return nil, errReactiveLimiterLimitExceeded
 	}
-	return func(err error) {
+	cleanup = func(err error) {
 		if errors.Is(err, context.Canceled) || ctx.Err() != nil {
 			permit.Drop()
 		} else {
 			permit.Record()
 		}
-	}, nil
+	}
+	rs.reactiveLimiterPermitAcquired = true
+	return cleanup, nil
 }
 
 // startPushRequest does limits checks at the beginning of Push request in distributor.
@@ -1681,15 +1751,16 @@ func (d *Distributor) PreparePushRequest(ctx context.Context) (func(error), erro
 // This object describes which checks were already performed on the request,
 // and which component is responsible for doing a cleanup.
 func (d *Distributor) startPushRequest(ctx context.Context, httpgrpcRequestSize int64) (context.Context, *requestState, error) {
-	if d.reactiveLimiter != nil && !d.reactiveLimiter.CanAcquirePermit() {
-		d.rejectedRequests.WithLabelValues(reasonDistributorMaxInflightPushRequests).Inc()
-		return ctx, nil, errReactiveLimiterLimitExceeded
-	}
-
 	// If requestState is already in context, it means that StartPushRequest already ran for this request.
+	// This check must be performed first, before any other logic in this function.
 	rs, alreadyInContext := ctx.Value(requestStateKey).(*requestState)
 	if alreadyInContext {
 		return ctx, rs, nil
+	}
+
+	if d.reactiveLimiter != nil && !d.reactiveLimiter.CanAcquirePermit() {
+		d.rejectedRequests.WithLabelValues(reasonDistributorMaxInflightPushRequests).Inc()
+		return ctx, nil, errReactiveLimiterLimitExceeded
 	}
 
 	rs = &requestState{}
@@ -1788,7 +1859,7 @@ func (d *Distributor) cleanupAfterPushFinished(rs *requestState) {
 
 // limitsMiddleware checks for instance limits and rejects request if this instance cannot process it at the moment.
 func (d *Distributor) limitsMiddleware(next PushFunc) PushFunc {
-	return func(ctx context.Context, pushReq *Request) error {
+	return func(ctx context.Context, pushReq *Request) (retErr error) {
 		// Make sure the distributor service and all its dependent services have been
 		// started. The following checks in this middleware depend on the runtime config
 		// service having been started.
@@ -1809,6 +1880,17 @@ func (d *Distributor) limitsMiddleware(next PushFunc) PushFunc {
 
 		next, maybeCleanup := NextOrCleanup(next, pushReq)
 		defer maybeCleanup()
+
+		reactiveLimiterCleanup, reactiveLimiterErr := d.acquireReactiveLimiterPermit(ctx)
+		if reactiveLimiterErr != nil {
+			d.rejectedRequests.WithLabelValues(reasonDistributorMaxInflightPushRequests).Inc()
+			return reactiveLimiterErr
+		}
+		if reactiveLimiterCleanup != nil {
+			defer func() {
+				reactiveLimiterCleanup(retErr)
+			}()
+		}
 
 		userID, err := tenant.TenantID(ctx)
 		if err != nil {
@@ -1867,11 +1949,11 @@ func (d *Distributor) Push(ctx context.Context, req *mimirpb.WriteRequest) (*mim
 	if pushErr == nil {
 		return &mimirpb.WriteResponse{}, nil
 	}
-	handledErr := d.handlePushError(ctx, pushErr)
+	handledErr := d.handlePushError(pushErr)
 	return nil, handledErr
 }
 
-func (d *Distributor) handlePushError(ctx context.Context, pushErr error) error {
+func (d *Distributor) handlePushError(pushErr error) error {
 	if errors.Is(pushErr, context.Canceled) {
 		return pushErr
 	}
@@ -1880,12 +1962,7 @@ func (d *Distributor) handlePushError(ctx context.Context, pushErr error) error 
 		return pushErr
 	}
 
-	serviceOverloadErrorEnabled := false
-	userID, err := tenant.TenantID(ctx)
-	if err == nil {
-		serviceOverloadErrorEnabled = d.limits.ServiceOverloadStatusCodeOnRateLimitEnabled(userID)
-	}
-	return toErrorWithGRPCStatus(pushErr, serviceOverloadErrorEnabled)
+	return toErrorWithGRPCStatus(pushErr)
 }
 
 // push takes a write request and distributes it to ingesters using the ring.

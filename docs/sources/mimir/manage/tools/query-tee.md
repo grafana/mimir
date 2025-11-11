@@ -7,8 +7,6 @@ title: Grafana Mimir query-tee
 weight: 30
 ---
 
-<!-- Note: This topic is mounted in the GEM documentation. Ensure that all updates are also applicable to GEM. -->
-
 # Grafana Mimir query-tee
 
 The query-tee is a standalone tool that you can use for testing purposes when comparing the query results and performance of two Grafana Mimir clusters.
@@ -89,13 +87,107 @@ A request sent from the query-tee to a backend includes HTTP basic authenticatio
 - If the backend endpoint URL is configured only with a username, then query-tee keeps the configured username and injects the password received in the incoming request.
 - If the backend endpoint URL is configured without a username and password, then query-tee forwards the authentication credentials found in the incoming request.
 
-### Backend selection
+### Configure the backend
+
+You can configure individual backend behavior using the `-backend.config-file` flag to specify a YAML or JSON configuration file.
+Each key in the configuration file corresponds to a backend hostname, and the value contains the configuration for that backend.
+
+The following configuration options are available for each backend:
+
+- `request_headers`: Additional HTTP headers to send to this backend
+- `request_proportion`: Proportion of requests to send to this backend. Set between 0.0 -1.0. This value overrides the global `-proxy.secondary-backends-request-proportion` setting for this backend.
+- `min_data_queried_age`: Minimum time threshold for time-based query routing (Go duration format like "24h", "168h", "1h30m"). Default is "0s", which means to serve all queries.
+
+#### Backend configuration examples
+
+JSON configuration example:
+
+```json
+{
+  "prometheus-main": {
+    "request_headers": {
+      "X-Storage-Tier": ["main"]
+    }
+  },
+  "prometheus-hot": {
+    "request_headers": {
+      "X-Storage-Tier": ["hot"],
+      "Cache-Control": ["no-store"]
+    },
+    "request_proportion": 1.0,
+    "min_data_queried_age": "0s"
+  },
+  "prometheus-cold": {
+    "request_headers": {
+      "X-Storage-Tier": ["warm"],
+      "Cache-Control": ["no-store"]
+    },
+    "request_proportion": 1.0,
+    "min_data_queried_age": "6h"
+  }
+}
+```
+
+YAML configuration example:
+
+```yaml
+prometheus-main:
+  request_headers:
+    X-Storage-Tier: ["main"]
+prometheus-hot:
+  request_headers:
+    X-Storage-Tier: ["hot"]
+    Cache-Control: ["no-store"]
+  request_proportion: 1.0
+  min_data_queried_age: "0s" # serves all queries
+prometheus-cold:
+  request_headers:
+    X-Storage-Tier: ["warm"]
+    Cache-Control: ["no-store"]
+  request_proportion: 1.0
+  min_data_queried_age: "6h" # 6 hours
+```
+
+### Select backends
 
 You can use the query-tee to either send requests to all backends, or to send a proportion of requests to all backends and the remaining requests to only the preferred backend.
-You can configure this with the `-proxy.secondary-backends-request-proportion` CLI flag.
+
+#### Configure request proportion
+
+You can configure request proportions in two ways:
+
+1. Global setting: Use the `-proxy.secondary-backends-request-proportion` CLI flag to set the default proportion for all secondary backends.
+2. Per-backend setting: Use the `request_proportion` field in the backend configuration file to override the global setting for individual backends.
 
 For example, if you set the `-proxy.secondary-backends-request-proportion` CLI flag to `1.0`, then all requests are sent to all backends.
 Alternatively, if you set the `-proxy.secondary-backends-request-proportion` CLI flag to `0.2`, then 20% of requests are sent to all backends, and the remaining 80% of requests are sent only to your preferred backend.
+
+Per-backend request proportions take precedence over the global setting. In the previous configuration example, `prometheus-warm` would receive 80% of requests and `prometheus-cold` would receive 50% of requests, regardless of the global setting.
+
+#### Configure time-based routing
+
+You can configure backends to only serve queries based on the time range of the requested data using the `min_data_queried_age` setting. This is useful for implementing tiered storage architectures where different backends store data for different time periods.
+
+**How time-based routing works:**
+
+- A backend with `min_data_queried_age: "24h"` only serves queries where the minimum query time is within the last 24 hours.
+- A backend with `min_data_queried_age: "0s"`, the default, serves all queries regardless of their time range.
+- The preferred backend is always included regardless of its time threshold.
+- Range queries, meaning`/api/v1/query_range`, use earliest time between the `start` and `end` parameters.
+- Instant queries, meaning `/api/v1/query` use, the `time` parameter or, if not specified, the current time.
+
+Example:
+
+With the preceding configuration example:
+
+- Recent queries (< 6 hours old) are sent to `prometheus-main` and `prometheus-hot` only. This excludes `prometheus-cold`.
+- Old queries (> 6 hours old) are sent to all backends, meaning `prometheus-main`, `prometheus-hot`, and `prometheus-cold`.
+
+This allows you to route queries to appropriate storage tiers based on data age, optimizing both performance and cost.
+
+{{< admonition type="note" >}}
+The `min_data_queried_age` field supports Go duration format. Valid time units are `ns`, `us` (or `µs`), `ms`, `s`, `m`, `h`. Examples: `"30s"`, `"15m"`, `"24h"`, `"168h"` (7 days), `"1h30m"`. Days are not supported directly; use hours instead (e.g., `"168h"` for 7 days).
+{{< /admonition >}}
 
 ### Backend response selection
 
@@ -117,13 +209,13 @@ The query-tee considers a 4xx response as a valid response to select because a 4
 
 ### Backend results comparison
 
-The query-tee can optionally compare the query results received by two backends.
+You can use the query-tee to compare query results received from multiple backends.
 The query results comparison can be enabled setting the flag `-proxy.compare-responses=true` and requires that:
 
-1. Two backends have been configured setting `-backend.endpoints`.
-1. A preferred backend is configured setting `-backend.preferred`.
+1. You've configured at least two backends by setting `-backend.endpoints`.
+1. You've configured a preferred backend by setting `-backend.preferred`.
 
-When the query results comparison is enabled, the query-tee compares the response received from the two configured backends and logs a message for each query whose results don't match. Query-tee keeps track of the number of successful and failed comparison through the metric `cortex_querytee_responses_compared_total`.
+When you enable the query results comparison, the query-tee compares the response received from the preferred backend against each secondary backend individually and logs a message for each query whose results don't match. Query-tee keeps track of the number of successful and failed comparison through the metric `cortex_querytee_responses_compared_total`, with separate metrics for each secondary backend.
 
 By default, query-tee considers equivalent error messages as matching, even if they are not exactly the same.
 This ensures that comparison does not fail for known situations where error messages are non-deterministic.
@@ -168,13 +260,13 @@ cortex_querytee_responses_total{backend="<hostname>",method="<method>",route="<r
 
 # HELP cortex_querytee_responses_compared_total Total number of responses compared per route name by result.
 # TYPE cortex_querytee_responses_compared_total counter
-cortex_querytee_responses_compared_total{route="<route>",result="<success|fail>"}
+cortex_querytee_responses_compared_total{route="<route>",secondary_backend="<hostname>",result="<success|fail|skip>"}
 ```
 
 Additionally, if backend results comparison is configured, two native histograms are available:
 
-- `cortex_querytee_backend_response_relative_duration_seconds`: Time (in seconds) of secondary backend less preferred backend.
-- `cortex_querytee_backend_response_relative_duration_proportional`: Response time of secondary backend less preferred backend, as a proportion of preferred backend response time.
+- `cortex_querytee_backend_response_relative_duration_seconds{route="<route>",secondary_backend="<hostname>"}`: Time (in seconds) of the secondary backend minus the preferred backend, for each secondary backend.
+- `cortex_querytee_backend_response_relative_duration_proportional{route="<route>",secondary_backend="<hostname>"}`: Response time of the secondary backend minus the preferred backend, as a proportion of the preferred backend response time.
 
 ### Ruler remote operational mode test
 

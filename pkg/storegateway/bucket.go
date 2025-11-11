@@ -242,7 +242,7 @@ func NewBucketStore(
 
 	s.indexReaderPool = indexheader.NewReaderPool(s.logger, bucketStoreConfig.IndexHeader, s.lazyLoadingGate, metrics.indexHeaderReaderMetrics)
 
-	if bucketStoreConfig.IndexHeader.EagerLoadingStartupEnabled {
+	if bucketStoreConfig.IndexHeader.LazyLoadingEnabled {
 		snapConfig := indexheader.SnapshotterConfig{
 			Path:            dir,
 			UserID:          userID,
@@ -372,7 +372,7 @@ func (s *BucketStore) InitialSync(ctx context.Context) error {
 	if err := s.syncBlocks(ctx); err != nil {
 		return errors.Wrap(err, "sync block")
 	}
-	if s.indexHeaderCfg.EagerLoadingStartupEnabled {
+	if s.indexHeaderCfg.LazyLoadingEnabled {
 		s.loadBlocks(ctx, previouslyLoadedBlocks)
 	}
 

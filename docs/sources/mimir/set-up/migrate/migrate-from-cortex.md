@@ -7,8 +7,6 @@ title: Migrate from Cortex to Grafana Mimir
 weight: 10
 ---
 
-<!-- Note: This topic is mounted in the GEM documentation. Ensure that all updates are also applicable to GEM. -->
-
 # Migrate from Cortex to Grafana Mimir
 
 As an operator, you can migrate a Jsonnet deployment of [Cortex](https://cortexmetrics.io/) to Grafana Mimir.

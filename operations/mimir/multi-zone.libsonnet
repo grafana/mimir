@@ -36,6 +36,10 @@
     // the regex subexpression group number - only required if the above regular expression has more then 1 grouping
     multi_zone_ingester_zpdb_partition_group: 1,
 
+    // Ordered list of availability zones where multi-zone components should be deployed to.
+    // Mimir zone-a deployments are scheduled to the first AZ in the list, zone-b deployment to the second AZ,
+    // and zone-c deployments to the third AZ. Maximum 3 AZs are supported.
+    multi_zone_availability_zones: [],
 
     // We can update the queryBlocksStorageConfig only once the migration is over. During the migration
     // we don't want to apply these changes to single-zone store-gateways too.
@@ -44,10 +48,24 @@
       'store-gateway.sharding-ring.prefix': 'multi-zone/',
     },
 
+    // Toleration to add to all Mimir components when multi-zone deployment is enabled.
     multi_zone_schedule_toleration: 'secondary-az',
   },
 
   assert !$._config.multi_zone_zpdb_enabled || $._config.rollout_operator_webhooks_enabled : 'zpdb configuration requires rollout_operator_webhooks_enabled=true',
+  assert std.length($._config.multi_zone_availability_zones) <= 3 : 'Mimir jsonnet supports a maximum of 3 availability zones',
+
+  //
+  // Utilities.
+  //
+
+  newMimirMultiZoneToleration()::
+    if $._config.multi_zone_schedule_toleration == '' then [] else [
+      $.core.v1.toleration.withKey('topology') +
+      $.core.v1.toleration.withOperator('Equal') +
+      $.core.v1.toleration.withValue($._config.multi_zone_schedule_toleration) +
+      $.core.v1.toleration.withEffect('NoSchedule'),
+    ],
 
   //
   // Zone-aware replication.
@@ -110,7 +128,7 @@
   newIngesterZoneStatefulSet(zone, container, nodeAffinityMatchers=[])::
     local name = 'ingester-zone-%s' % zone;
 
-    self.newIngesterStatefulSet(name, container, withAntiAffinity=false, nodeAffinityMatchers=nodeAffinityMatchers) +
+    $.newIngesterStatefulSet(name, container, withAntiAffinity=false, nodeAffinityMatchers=nodeAffinityMatchers) +
     statefulSet.mixin.metadata.withLabels({ 'rollout-group': 'ingester' }) +
     statefulSet.mixin.metadata.withAnnotations({ 'rollout-max-unavailable': std.toString($._config.multi_zone_ingester_max_unavailable) }) +
     statefulSet.mixin.spec.template.metadata.withLabels({ name: name, 'rollout-group': 'ingester' }) +
@@ -143,28 +161,28 @@
     service.mixin.spec.withClusterIp('None'),  // Headless.
 
   ingester_zone_a_container:: if !$._config.multi_zone_ingester_enabled then null else
-    self.newIngesterZoneContainer('a', $.ingester_zone_a_args, $.ingester_zone_a_env_map),
+    $.newIngesterZoneContainer('a', $.ingester_zone_a_args, $.ingester_zone_a_env_map),
 
   ingester_zone_a_statefulset: if !$._config.multi_zone_ingester_enabled then null else
-    self.newIngesterZoneStatefulSet('a', $.ingester_zone_a_container, $.ingester_zone_a_node_affinity_matchers),
+    $.newIngesterZoneStatefulSet('a', $.ingester_zone_a_container, $.ingester_zone_a_node_affinity_matchers),
 
   ingester_zone_a_service: if !$._config.multi_zone_ingester_enabled then null else
     $.newIngesterZoneService($.ingester_zone_a_statefulset),
 
   ingester_zone_b_container:: if !$._config.multi_zone_ingester_enabled then null else
-    self.newIngesterZoneContainer('b', $.ingester_zone_b_args, $.ingester_zone_b_env_map),
+    $.newIngesterZoneContainer('b', $.ingester_zone_b_args, $.ingester_zone_b_env_map),
 
   ingester_zone_b_statefulset: if !$._config.multi_zone_ingester_enabled then null else
-    self.newIngesterZoneStatefulSet('b', $.ingester_zone_b_container, $.ingester_zone_b_node_affinity_matchers),
+    $.newIngesterZoneStatefulSet('b', $.ingester_zone_b_container, $.ingester_zone_b_node_affinity_matchers),
 
   ingester_zone_b_service: if !$._config.multi_zone_ingester_enabled then null else
     $.newIngesterZoneService($.ingester_zone_b_statefulset),
 
   ingester_zone_c_container:: if !$._config.multi_zone_ingester_enabled then null else
-    self.newIngesterZoneContainer('c', $.ingester_zone_c_args, $.ingester_zone_c_env_map),
+    $.newIngesterZoneContainer('c', $.ingester_zone_c_args, $.ingester_zone_c_env_map),
 
   ingester_zone_c_statefulset: if !$._config.multi_zone_ingester_enabled then null else
-    self.newIngesterZoneStatefulSet('c', $.ingester_zone_c_container, $.ingester_zone_c_node_affinity_matchers),
+    $.newIngesterZoneStatefulSet('c', $.ingester_zone_c_container, $.ingester_zone_c_node_affinity_matchers),
 
   ingester_zone_c_service: if !$._config.multi_zone_ingester_enabled then null else
     $.newIngesterZoneService($.ingester_zone_c_statefulset),
@@ -241,7 +259,7 @@
   newStoreGatewayZoneStatefulSet(zone, container, nodeAffinityMatchers=[])::
     local name = 'store-gateway-zone-%s' % zone;
 
-    self.newStoreGatewayStatefulSet(name, container, withAntiAffinity=false, nodeAffinityMatchers=nodeAffinityMatchers) +
+    $.newStoreGatewayStatefulSet(name, container, withAntiAffinity=false, nodeAffinityMatchers=nodeAffinityMatchers) +
     statefulSet.mixin.metadata.withLabels({ 'rollout-group': 'store-gateway' }) +
     statefulSet.mixin.metadata.withAnnotations({ 'rollout-max-unavailable': std.toString($._config.multi_zone_store_gateway_max_unavailable) }) +
     statefulSet.mixin.spec.template.metadata.withLabels({ name: name, 'rollout-group': 'store-gateway' }) +
@@ -271,40 +289,32 @@
     $.util.serviceFor(sts, $._config.service_ignored_labels) +
     service.mixin.spec.withClusterIp('None'),  // Headless.
 
-  local nonRetainablePVCs = {
-    _config+: {
-      store_gateway_data_disk_class:
-        if super.store_gateway_data_disk_class == 'fast' then 'fast-dont-retain'
-        else super.store_gateway_data_disk_class,
-    },
-  },
-
   store_gateway_zone_a_container:: if !$._config.multi_zone_store_gateway_enabled then null else
-    self.newStoreGatewayZoneContainer('a', $.store_gateway_zone_a_args, $.store_gateway_zone_a_env_map),
+    $.newStoreGatewayZoneContainer('a', $.store_gateway_zone_a_args, $.store_gateway_zone_a_env_map),
 
   store_gateway_zone_a_statefulset: if !$._config.multi_zone_store_gateway_enabled then null else
-    (self + nonRetainablePVCs).newStoreGatewayZoneStatefulSet('a', $.store_gateway_zone_a_container, $.store_gateway_zone_a_node_affinity_matchers),
+    $.newStoreGatewayZoneStatefulSet('a', $.store_gateway_zone_a_container, $.store_gateway_zone_a_node_affinity_matchers),
 
   store_gateway_zone_a_service: if !$._config.multi_zone_store_gateway_enabled then null else
-    self.newStoreGatewayZoneService($.store_gateway_zone_a_statefulset),
+    $.newStoreGatewayZoneService($.store_gateway_zone_a_statefulset),
 
   store_gateway_zone_b_container:: if !$._config.multi_zone_store_gateway_enabled then null else
-    self.newStoreGatewayZoneContainer('b', $.store_gateway_zone_b_args, $.store_gateway_zone_b_env_map),
+    $.newStoreGatewayZoneContainer('b', $.store_gateway_zone_b_args, $.store_gateway_zone_b_env_map),
 
   store_gateway_zone_b_statefulset: if !$._config.multi_zone_store_gateway_enabled then null else
-    (self + nonRetainablePVCs).newStoreGatewayZoneStatefulSet('b', $.store_gateway_zone_b_container, $.store_gateway_zone_b_node_affinity_matchers),
+    $.newStoreGatewayZoneStatefulSet('b', $.store_gateway_zone_b_container, $.store_gateway_zone_b_node_affinity_matchers),
 
   store_gateway_zone_b_service: if !$._config.multi_zone_store_gateway_enabled then null else
-    self.newStoreGatewayZoneService($.store_gateway_zone_b_statefulset),
+    $.newStoreGatewayZoneService($.store_gateway_zone_b_statefulset),
 
   store_gateway_zone_c_container:: if !$._config.multi_zone_store_gateway_enabled then null else
-    self.newStoreGatewayZoneContainer('c', $.store_gateway_zone_c_args, $.store_gateway_zone_c_env_map),
+    $.newStoreGatewayZoneContainer('c', $.store_gateway_zone_c_args, $.store_gateway_zone_c_env_map),
 
   store_gateway_zone_c_statefulset: if !$._config.multi_zone_store_gateway_enabled then null else
-    (self + nonRetainablePVCs).newStoreGatewayZoneStatefulSet('c', $.store_gateway_zone_c_container, $.store_gateway_zone_c_node_affinity_matchers),
+    $.newStoreGatewayZoneStatefulSet('c', $.store_gateway_zone_c_container, $.store_gateway_zone_c_node_affinity_matchers),
 
   store_gateway_zone_c_service: if !$._config.multi_zone_store_gateway_enabled then null else
-    self.newStoreGatewayZoneService($.store_gateway_zone_c_statefulset),
+    $.newStoreGatewayZoneService($.store_gateway_zone_c_statefulset),
 
   // Create a service backed by all store-gateway replicas (in all zone).
   // This service is used to access the store-gateway admin UI.

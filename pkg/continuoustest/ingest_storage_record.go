@@ -410,8 +410,11 @@ func (t *IngestStorageRecordTest) testRec(rec *kgo.Record, report batchReport) b
 		sortMetadata := cmpopts.SortSlices(func(m1, m2 *mimirpb.MetricMetadata) bool {
 			return m1.MetricFamilyName < m2.MetricFamilyName
 		})
-		if !cmp.Equal(dropExactDuplicates(req.Metadata), dropExactDuplicates(v2Req.Metadata), sortMetadata) {
-			diff := cmp.Diff(dropExactDuplicates(req.Metadata), dropExactDuplicates(v2Req.Metadata), sortMetadata)
+		clean := func(m []*mimirpb.MetricMetadata) []*mimirpb.MetricMetadata {
+			return dropExactDuplicates(dropMeaninglessMetadata(m))
+		}
+		if !cmp.Equal(clean(req.Metadata), clean(v2Req.Metadata), sortMetadata) {
+			diff := cmp.Diff(clean(req.Metadata), clean(v2Req.Metadata), sortMetadata)
 			return report.Error(fmt.Errorf("metadata did not match (adjusting for ordering, exact duplicates dropped). numTimeseries: %d, numMetadata: %d,\noriginalMetadata: %v,\nv2Metadata: %v\n Diff: %s", len(req.Timeseries), len(req.Metadata), req.Metadata, v2Req.Metadata, diff))
 		}
 	}
@@ -485,6 +488,18 @@ metaLoop:
 		result = append(result, meta)
 	}
 
+	return result
+}
+
+// A metadata that doesn't carry a unit, help, or type info, has no effect.
+// There is no need to send such metadata through v2 in the first place.
+func dropMeaninglessMetadata(metadata []*mimirpb.MetricMetadata) []*mimirpb.MetricMetadata {
+	result := make([]*mimirpb.MetricMetadata, 0, len(metadata))
+	for _, meta := range metadata {
+		if meta.Unit != "" || meta.Help != "" || meta.Type != 0 {
+			result = append(result, meta)
+		}
+	}
 	return result
 }
 

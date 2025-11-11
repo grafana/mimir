@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math/bits"
 	"sync"
 	"time"
 
@@ -81,6 +82,7 @@ func (r *RemoteExecutor) startExecution(
 		TimeRange:          timeRange,
 		Root:               node,
 		OriginalExpression: fullPlan.OriginalExpression,
+		Version:            fullPlan.Version,
 	}
 
 	encodedPlan, err := subsetPlan.ToEncodedPlan(false, true)
@@ -97,7 +99,10 @@ func (r *RemoteExecutor) startExecution(
 		BatchSize:          batchSize,
 	}
 
+	stats := stats.FromContext(ctx)
+	stats.AddRemoteExecutionRequests(1)
 	queriedTimeRange := node.QueriedTimeRange(timeRange, r.cfg.LookBackDelta)
+
 	var stream responseStream
 	stream, err = r.frontend.DoProtobufRequest(ctx, req, queriedTimeRange.MinT, queriedTimeRange.MaxT)
 	if err != nil {
@@ -122,10 +127,12 @@ type scalarExecutionResponse struct {
 }
 
 func (r *scalarExecutionResponse) GetValues(ctx context.Context) (types.ScalarData, error) {
-	resp, err := readNextEvaluateQueryResponse(ctx, r.stream)
+	resp, releaseMessage, err := readNextEvaluateQueryResponse(ctx, r.stream)
 	if err != nil {
 		return types.ScalarData{}, err
 	}
+
+	defer releaseMessage()
 
 	scalar := resp.GetScalarValue()
 	if scalar == nil {
@@ -137,6 +144,10 @@ func (r *scalarExecutionResponse) GetValues(ctx context.Context) (types.ScalarDa
 	}
 
 	if err := accountForFPointMemoryConsumption(v.Samples, r.memoryConsumptionTracker); err != nil {
+		return types.ScalarData{}, err
+	}
+
+	if v.Samples, err = ensureFPointSliceCapacityIsPowerOfTwo(v.Samples, r.memoryConsumptionTracker); err != nil {
 		return types.ScalarData{}, err
 	}
 
@@ -170,10 +181,12 @@ func (r *instantVectorExecutionResponse) GetSeriesMetadata(ctx context.Context) 
 
 func (r *instantVectorExecutionResponse) GetNextSeries(ctx context.Context) (types.InstantVectorSeriesData, error) {
 	if len(r.currentBatch) == 0 {
-		resp, err := readNextEvaluateQueryResponse(ctx, r.stream)
+		resp, releaseMessage, err := readNextEvaluateQueryResponse(ctx, r.stream)
 		if err != nil {
 			return types.InstantVectorSeriesData{}, err
 		}
+
+		defer releaseMessage()
 
 		data := resp.GetInstantVectorSeriesData()
 		if data == nil {
@@ -201,6 +214,16 @@ func (r *instantVectorExecutionResponse) GetNextSeries(ctx context.Context) (typ
 	mqeData := types.InstantVectorSeriesData{
 		Floats:     mimirpb.FromSamplesToFPoints(series.Floats),
 		Histograms: mimirpb.FromHistogramsToHPoints(series.Histograms),
+	}
+
+	var err error
+
+	if mqeData.Floats, err = ensureFPointSliceCapacityIsPowerOfTwo(mqeData.Floats, r.memoryConsumptionTracker); err != nil {
+		return types.InstantVectorSeriesData{}, err
+	}
+
+	if mqeData.Histograms, err = ensureHPointSliceCapacityIsPowerOfTwo(mqeData.Histograms, r.memoryConsumptionTracker); err != nil {
+		return types.InstantVectorSeriesData{}, err
 	}
 
 	return mqeData, nil
@@ -248,10 +271,12 @@ func (r *rangeVectorExecutionResponse) GetNextStepSamples(ctx context.Context) (
 	r.floats.Release()
 	r.histograms.Release()
 
-	resp, err := readNextEvaluateQueryResponse(ctx, r.stream)
+	resp, releaseMessage, err := readNextEvaluateQueryResponse(ctx, r.stream)
 	if err != nil {
 		return nil, err
 	}
+
+	defer releaseMessage()
 
 	data := resp.GetRangeVectorStepData()
 	if data == nil {
@@ -270,6 +295,14 @@ func (r *rangeVectorExecutionResponse) GetNextStepSamples(ctx context.Context) (
 	}
 
 	if err := accountForHPointMemoryConsumption(hPoints, r.memoryConsumptionTracker); err != nil {
+		return nil, err
+	}
+
+	if fPoints, err = ensureFPointSliceCapacityIsPowerOfTwo(fPoints, r.memoryConsumptionTracker); err != nil {
+		return nil, err
+	}
+
+	if hPoints, err = ensureHPointSliceCapacityIsPowerOfTwo(hPoints, r.memoryConsumptionTracker); err != nil {
 		return nil, err
 	}
 
@@ -302,28 +335,35 @@ func (r *rangeVectorExecutionResponse) Close() {
 
 var errUnexpectedEndOfStream = errors.New("expected EvaluateQueryResponse, got end of stream")
 
-func readNextEvaluateQueryResponse(ctx context.Context, stream responseStream) (*querierpb.EvaluateQueryResponse, error) {
+type releaseMessageFunc func()
+
+func readNextEvaluateQueryResponse(ctx context.Context, stream responseStream) (*querierpb.EvaluateQueryResponse, releaseMessageFunc, error) {
 	msg, err := stream.Next(ctx)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if msg == nil {
-		return nil, errUnexpectedEndOfStream
+		return nil, nil, errUnexpectedEndOfStream
 	}
 
 	resp := msg.GetEvaluateQueryResponse()
 	if resp == nil {
-		return nil, fmt.Errorf("expected EvaluateQueryResponse, got %T", msg.Data)
+		return nil, nil, fmt.Errorf("expected EvaluateQueryResponse, got %T", msg.Data)
 	}
 
-	return resp, nil
+	return resp, msg.FreeBuffer, nil
 }
 
 func readSeriesMetadata(ctx context.Context, stream responseStream, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) ([]types.SeriesMetadata, error) {
-	resp, err := readNextEvaluateQueryResponse(ctx, stream)
+	resp, releaseMessage, err := readNextEvaluateQueryResponse(ctx, stream)
 	if err != nil {
 		return nil, err
 	}
+
+	// The labels in the message contain references to the underlying buffer, so we can't release it immediately.
+	// The value returned by FromLabelAdaptersToLabels does not retain a reference to the underlying buffer,
+	// so we can release the buffer once that method returns.
+	defer releaseMessage()
 
 	seriesMetadata := resp.GetSeriesMetadata()
 	if seriesMetadata == nil {
@@ -352,17 +392,19 @@ func readSeriesMetadata(ctx context.Context, stream responseStream, memoryConsum
 func readEvaluationCompleted(ctx context.Context, stream responseStream) (*annotations.Annotations, stats.Stats, error) {
 	// Keep reading the stream until we get to an evaluation completed message.
 	for {
-		resp, err := readNextEvaluateQueryResponse(ctx, stream)
+		resp, releaseMessage, err := readNextEvaluateQueryResponse(ctx, stream)
 		if err != nil {
 			return nil, stats.Stats{}, err
 		}
 
 		completion := resp.GetEvaluationCompleted()
 		if completion == nil {
+			releaseMessage()
 			continue // Try the next message.
 		}
 
 		annos, stats := decodeEvaluationCompletedMessage(completion)
+		releaseMessage()
 		return annos, stats, nil
 	}
 }
@@ -407,20 +449,70 @@ func (r remoteAnnotation) Unwrap() error {
 	return r.inner
 }
 
-func accountForFPointMemoryConsumption(d []promql.FPoint, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) error {
-	if err := memoryConsumptionTracker.IncreaseMemoryConsumption(uint64(cap(d))*types.FPointSize, limiter.FPointSlices); err != nil {
+func accountForFPointMemoryConsumption(points []promql.FPoint, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) error {
+	if err := memoryConsumptionTracker.IncreaseMemoryConsumption(uint64(cap(points))*types.FPointSize, limiter.FPointSlices); err != nil {
 		return err
 	}
 
 	return nil
 }
 
-func accountForHPointMemoryConsumption(d []promql.HPoint, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) error {
-	if err := memoryConsumptionTracker.IncreaseMemoryConsumption(uint64(cap(d))*types.HPointSize, limiter.HPointSlices); err != nil {
+func accountForHPointMemoryConsumption(points []promql.HPoint, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) error {
+	if err := memoryConsumptionTracker.IncreaseMemoryConsumption(uint64(cap(points))*types.HPointSize, limiter.HPointSlices); err != nil {
 		return err
 	}
 
 	return nil
+}
+
+// ensureFPointSliceCapacityIsPowerOfTwo returns d if its capacity is already a power of two, or otherwise a new slice with the same elements and a
+// capacity that is a power of two.
+//
+// If a new slice is created, the memory consumption estimate is adjusted assuming the old slice is no longer used.
+//
+// This exists because many places in MQE assume that slices have come from our pools and always have a capacity that is a power of two.
+// For example, the ring buffer implementations rely on the fact that slices have a capacity that is a power of two.
+func ensureFPointSliceCapacityIsPowerOfTwo(points []promql.FPoint, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) ([]promql.FPoint, error) {
+	if pool.IsPowerOfTwo(cap(points)) {
+		return points, nil
+	}
+
+	nextPowerOfTwo := 1 << bits.Len(uint(cap(points)-1))
+	newSlice, err := types.FPointSlicePool.Get(nextPowerOfTwo, memoryConsumptionTracker)
+	if err != nil {
+		return nil, err
+	}
+
+	newSlice = newSlice[:len(points)]
+	copy(newSlice, points)
+
+	// Don't return the old slice to the pool, but update the memory consumption estimate.
+	// The pool won't use it because it's not a power of two, so there's no point in calling Put() on it.
+	memoryConsumptionTracker.DecreaseMemoryConsumption(uint64(cap(points))*types.FPointSize, limiter.FPointSlices)
+
+	return newSlice, nil
+}
+
+// ensureHPointSliceCapacityIsPowerOfTwo is like ensureFPointSliceCapacityIsPowerOfTwo, but for HPoint slices.
+func ensureHPointSliceCapacityIsPowerOfTwo(points []promql.HPoint, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) ([]promql.HPoint, error) {
+	if pool.IsPowerOfTwo(cap(points)) {
+		return points, nil
+	}
+
+	nextPowerOfTwo := 1 << bits.Len(uint(cap(points)-1))
+	newSlice, err := types.HPointSlicePool.Get(nextPowerOfTwo, memoryConsumptionTracker)
+	if err != nil {
+		return nil, err
+	}
+
+	newSlice = newSlice[:len(points)]
+	copy(newSlice, points)
+
+	// Don't return the old slice to the pool, but update the memory consumption estimate.
+	// The pool won't use it because it's not a power of two, so there's no point in calling Put() on it.
+	memoryConsumptionTracker.DecreaseMemoryConsumption(uint64(cap(points))*types.HPointSize, limiter.HPointSlices)
+
+	return newSlice, nil
 }
 
 type eagerLoadingResponseStream struct {

@@ -637,9 +637,8 @@ spec:
       - args:
         - -distributor.ha-tracker.enable=true
         - -distributor.ha-tracker.enable-for-all-users=true
-        - -distributor.ha-tracker.etcd.endpoints=etcd-client.default.svc.cluster.local.:2379
         - -distributor.ha-tracker.prefix=prom_ha/
-        - -distributor.ha-tracker.store=etcd
+        - -distributor.ha-tracker.store=memberlist
         - -distributor.health-check-ingesters=true
         - -distributor.ingestion-burst-size=200000
         - -distributor.ingestion-rate-limit=10000
@@ -668,7 +667,7 @@ spec:
         env:
         - name: GOMAXPROCS
           value: "8"
-        image: grafana/mimir:2.17.1
+        image: grafana/mimir:3.0.0
         imagePullPolicy: IfNotPresent
         name: distributor
         ports:
@@ -767,7 +766,7 @@ spec:
         env:
         - name: GOMAXPROCS
           value: "5"
-        image: grafana/mimir:2.17.1
+        image: grafana/mimir:3.0.0
         imagePullPolicy: IfNotPresent
         name: querier
         ports:
@@ -850,7 +849,7 @@ spec:
         - -shutdown-delay=90s
         - -target=query-frontend
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.17.1
+        image: grafana/mimir:3.0.0
         imagePullPolicy: IfNotPresent
         name: query-frontend
         ports:
@@ -930,7 +929,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=query-scheduler
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.17.1
+        image: grafana/mimir:3.0.0
         imagePullPolicy: IfNotPresent
         name: query-scheduler
         ports:
@@ -1000,6 +999,7 @@ spec:
         - -ingester.ring.prefix=
         - -ingester.ring.replication-factor=3
         - -ingester.ring.store=memberlist
+        - -mem-ballast-size-bytes=1073741824
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
         - -querier.max-partial-query-length=768h
@@ -1026,7 +1026,7 @@ spec:
         - -store-gateway.sharding-ring.store=memberlist
         - -target=ruler
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.17.1
+        image: grafana/mimir:3.0.0
         imagePullPolicy: IfNotPresent
         name: ruler
         ports:
@@ -1107,6 +1107,7 @@ spec:
         - -querier.frontend-client.grpc-max-send-msg-size=104857600
         - -querier.max-concurrent=8
         - -querier.max-partial-query-length=768h
+        - -querier.ring.prefix=ruler-querier/
         - -querier.store-gateway-client.grpc-max-recv-msg-size=209715200
         - -query-scheduler.ring.prefix=ruler-query-scheduler/
         - -query-scheduler.ring.store=memberlist
@@ -1122,7 +1123,7 @@ spec:
         - -target=querier
         - -usage-stats.installation-mode=jsonnet
         env: []
-        image: grafana/mimir:2.17.1
+        image: grafana/mimir:3.0.0
         imagePullPolicy: IfNotPresent
         name: ruler-querier
         ports:
@@ -1186,6 +1187,7 @@ spec:
       - args:
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
+        - -querier.ring.prefix=ruler-querier/
         - -query-frontend.cache-results=false
         - -query-frontend.max-cache-freshness=10m
         - -query-frontend.max-total-query-length=12000h
@@ -1210,7 +1212,7 @@ spec:
         - -shutdown-delay=90s
         - -target=query-frontend
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.17.1
+        image: grafana/mimir:3.0.0
         imagePullPolicy: IfNotPresent
         name: ruler-query-frontend
         ports:
@@ -1290,7 +1292,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=query-scheduler
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.17.1
+        image: grafana/mimir:3.0.0
         imagePullPolicy: IfNotPresent
         name: ruler-query-scheduler
         ports:
@@ -1363,7 +1365,7 @@ spec:
           valueFrom:
             fieldRef:
               fieldPath: status.podIP
-        image: grafana/mimir:2.17.1
+        image: grafana/mimir:3.0.0
         imagePullPolicy: IfNotPresent
         name: alertmanager
         ports:
@@ -1463,7 +1465,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=compactor
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.17.1
+        image: grafana/mimir:3.0.0
         imagePullPolicy: IfNotPresent
         name: compactor
         ports:
@@ -1574,7 +1576,7 @@ spec:
         env:
         - name: GOMAXPROCS
           value: "9"
-        image: grafana/mimir:2.17.1
+        image: grafana/mimir:3.0.0
         imagePullPolicy: IfNotPresent
         name: ingester
         ports:
@@ -1939,7 +1941,7 @@ spec:
           value: "5"
         - name: GOMEMLIMIT
           value: "12884901888"
-        image: grafana/mimir:2.17.1
+        image: grafana/mimir:3.0.0
         imagePullPolicy: IfNotPresent
         name: store-gateway
         ports:
@@ -1987,36 +1989,3 @@ spec:
         requests:
           storage: 50Gi
       storageClassName: standard
----
-apiVersion: etcd.database.coreos.com/v1beta2
-kind: EtcdCluster
-metadata:
-  annotations:
-    etcd.database.coreos.com/scope: clusterwide
-  name: etcd
-  namespace: default
-spec:
-  pod:
-    affinity:
-      podAntiAffinity:
-        requiredDuringSchedulingIgnoredDuringExecution:
-        - labelSelector:
-            matchLabels:
-              etcd_cluster: etcd
-          topologyKey: kubernetes.io/hostname
-    annotations:
-      prometheus.io/port: "2379"
-      prometheus.io/scrape: "true"
-    etcdEnv:
-    - name: ETCD_AUTO_COMPACTION_RETENTION
-      value: 1h
-    labels:
-      name: etcd
-    resources:
-      limits:
-        memory: 512Mi
-      requests:
-        cpu: 500m
-        memory: 512Mi
-  size: 3
-  version: 3.3.13

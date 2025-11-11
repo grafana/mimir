@@ -10,8 +10,6 @@ title: Grafana Mimir runbooks
 weight: 110
 ---
 
-<!-- Note: This topic is mounted in the GEM documentation. Ensure that all updates are also applicable to GEM. -->
-
 # Grafana Mimir runbooks
 
 This document contains runbooks, or at least a checklist of what to look for, for alerts in the mimir-mixin and logs from Mimir. This document assumes that you are running a Mimir cluster:
@@ -222,7 +220,7 @@ How to **fix** it:
    equal GC-related CPU usage. If there are pods using far more GC CPU than others, examine the nodes housing those pods, and if they're over-taxed, CPU-wise,
    you can attempt to move these pods to different nodes by deleting them.
 
-### MimirDistributorReachingInflightPushRequestLimit
+### MimirDistributorInflightRequestsHigh
 
 This alert fires when the `cortex_distributor_inflight_push_requests` per distributor instance limit is enabled and the actual number of in-flight push requests is approaching the set limit. Once the limit is reached, push requests to the distributor will fail (5xx) for new requests, while existing in-flight push requests will continue to succeed.
 
@@ -447,7 +445,7 @@ How to **investigate**:
   - **High latency**
     - Check the `Mimir / Remote ruler reads resources` dashboard to see if CPU or Memory usage increased unexpectedly
 
-### MimirIngesterHasNotShippedBlocks
+### MimirIngesterNotShippingBlocks
 
 This alert fires when a Mimir ingester is not uploading any block to the long-term storage. An ingester is expected to upload a block to the storage every block range period (defaults to 2h) and if a longer time elapse since the last successful upload it means something is not working correctly.
 
@@ -468,9 +466,9 @@ If the ingester hit the disk capacity, any attempt to append samples will fail. 
 - Was the disk just too small?
 - Was there an issue compacting TSDB head and the WAL is increasing indefinitely?
 
-### MimirIngesterHasNotShippedBlocksSinceStart
+### MimirIngesterNotShippingBlocksSinceStart
 
-Same as [`MimirIngesterHasNotShippedBlocks`](#MimirIngesterHasNotShippedBlocks).
+Same as [`MimirIngesterNotShippingBlocks`](#MimirIngesterNotShippingBlocks).
 
 ### MimirIngesterHasUnshippedBlocks
 
@@ -506,7 +504,7 @@ How to **investigate**:
 
 - Look for details in the ingester logs
 
-### MimirIngesterTSDBCheckpointCreationFailed
+### MimirIngesterTSDBCheckpointCreateFailed
 
 This alert fires when a Mimir ingester fails to create a TSDB checkpoint.
 
@@ -515,7 +513,7 @@ How to **investigate**:
 - Look for details in the ingester logs
 - If the checkpoint fails because of a `corruption in segment`, you can restart the ingester because at next startup TSDB will try to "repair" it. After restart, if the issue is repaired and the ingester is running, you should also get paged by `MimirIngesterTSDBWALCorrupted` to signal you the WAL was corrupted and manual investigation is required.
 
-### MimirIngesterTSDBCheckpointDeletionFailed
+### MimirIngesterTSDBCheckpointDeleteFailed
 
 This alert fires when a Mimir ingester fails to delete a TSDB checkpoint.
 
@@ -553,7 +551,7 @@ WAL corruption can occur after pods are rescheduled following a fault with the u
 kubectl get events --field-selector involvedObject.name=ingester-X
 ```
 
-If this alert fires during a **checkpoint creation**, you should have also been paged with `MimirIngesterTSDBCheckpointCreationFailed`, and you can follow the steps under that alert.
+If this alert fires during a **checkpoint creation**, you should have also been paged with `MimirIngesterTSDBCheckpointCreateFailed`, and you can follow the steps under that alert.
 
 ### MimirIngesterTSDBWALWritesFailed
 
@@ -625,7 +623,7 @@ There are three options:
 - Increase the shard size of one or more tenants to match the number of replicas or
 - Set the shard size of one or more tenant to `0`; this will shard this tenant's blocks across all store-gateways.
 
-### MimirCompactorHasNotSuccessfullyCleanedUpBlocks
+### MimirCompactorNotCleaningUpBlocks
 
 This alert fires when a Mimir compactor is not successfully deleting blocks marked for deletion for a long time.
 
@@ -634,9 +632,9 @@ How to **investigate**:
 - Ensure the compactor is not crashing during compaction (ie. `OOMKilled`)
 - Look for any error in the compactor logs (ie. bucket Delete API errors)
 
-### MimirCompactorHasNotSuccessfullyCleanedUpBlocksSinceStart
+### MimirCompactorNotCleaningUpBlocksSinceStart
 
-Same as [`MimirCompactorHasNotSuccessfullyCleanedUpBlocks`](#MimirCompactorHasNotSuccessfullyCleanedUpBlocks).
+Same as [`MimirCompactorNotCleaningUpBlocks`](#MimirCompactorNotCleaningUpBlocks).
 
 ### MimirCompactorHasNotUploadedBlocks
 
@@ -644,8 +642,8 @@ This alert fires when a Mimir compactor is not uploading any compacted blocks to
 
 How to **investigate**:
 
-- If the alert `MimirCompactorHasNotSuccessfullyRunCompaction` has fired as well, then investigate that issue first
-- If the alert `MimirIngesterHasNotShippedBlocks` or `MimirIngesterHasNotShippedBlocksSinceStart` have fired as well, then investigate that issue first
+- If the alert `MimirCompactorNotRunningCompaction` has fired as well, then investigate that issue first
+- If the alert `MimirIngesterNotShippingBlocks` or `MimirIngesterNotShippingBlocksSinceStart` have fired as well, then investigate that issue first
 - Ensure ingesters are successfully shipping blocks to the storage
 - Look for any error in the compactor logs
 
@@ -675,7 +673,7 @@ How to **fix**:
 - Verify store-gateway auto-scaling has sufficient headroom to handle increased load during compactor catch-up
 - If the issue persists, investigate for corrupted blocks that might be blocking compaction
 
-### MimirCompactorHasNotSuccessfullyRunCompaction
+### MimirCompactorNotRunningCompaction
 
 This alert fires if the compactor is not able to successfully compact all discovered compactable blocks (across all tenants).
 
@@ -789,7 +787,7 @@ Where:
 - `TENANT` is the tenant id reported in the example error message above as `REDACTED-TENANT`
 - `BLOCK` is the last part of the file path reported as `REDACTED-BLOCK` in the example error message above
 
-### MimirCompactorFailingToBuildSparseIndexHeaders
+### MimirCompactorBuildingSparseIndexFailed
 
 This alert fires when `-compactor.upload-sparse-index-headers` is set to `true` but the compactor fails to build some sparse index headers.
 
@@ -1109,27 +1107,6 @@ How to **investigate**:
        $.apps.v1.statefulSet.spec.template.metadata.withLabelsMixin({ [$._config.gossip_member_label]: 'false' }),
      ```
 
-### EtcdAllocatingTooMuchMemory
-
-This can be triggered if there are too many HA dedupe keys in etcd. We saw this when one of our clusters hit 20K tenants that were using HA dedupe config. Raise the etcd limits via:
-
-```
-  etcd+: {
-    spec+: {
-      pod+: {
-        resources+: {
-          limits: {
-            memory: '2Gi',
-          },
-        },
-      },
-    },
-  },
-```
-
-Note that you may need to recreate each etcd pod in order for this change to take effect, as etcd-operator does not automatically recreate pods in response to changes like these.
-First, check that all etcd pods are running and healthy. Then delete one pod at a time and wait for it to be recreated and become healthy before repeating for the next pod until all pods have been recreated.
-
 ### MimirAlertmanagerSyncConfigsFailing
 
 How it **works**:
@@ -1165,7 +1142,7 @@ How to **investigate**:
 - Look at the error message that is logged and attempt to understand what is causing the failure. In most cases the error will be encountered when attempting to read from the ring, which can fail if there is an issue with in-use backend implementation.
 - When using Memberlist as KV store for hash rings, ensure that Memberlist is working correctly. See instructions for the [`MimirGossipMembersTooHigh`](#MimirGossipMembersTooHigh) and [`MimirGossipMembersTooLow`](#MimirGossipMembersTooLow) alerts.
 
-### MimirAlertmanagerPartialStateMergeFailing
+### MimirAlertmanagerStateMergeFailing
 
 How it **works**:
 
@@ -1267,14 +1244,14 @@ When using Memberlist as KV store for hash rings, all read and update operations
 How it **works**:
 
 - Consul is typically used to store the hash ring state.
-- Etcd is typically used to store by the HA tracker (distributor) to deduplicate samples.
+- Memberlist (default since Mimir 3.0) or etcd/Consul (deprecated) are used by the HA tracker (distributor) to deduplicate samples.
 - If an instance is failing operations on the **hash ring**, either the instance can't update the heartbeat in the ring or is failing to receive ring updates.
 - If an instance is failing operations on the **HA tracker** backend, either the instance can't update the authoritative replica or is failing to receive updates.
 
 How to **investigate**:
 
-- Ensure Consul/Etcd is up and running.
-- Investigate the logs of the affected instance to find the specific error occurring when talking to Consul/Etcd.
+- Ensure the KV store backend (Consul, etcd, or memberlist) is up and running.
+- Investigate the logs of the affected instance to find the specific error occurring when talking to the KV store backend.
 
 ### MimirReachingTCPConnectionsLimit
 
@@ -1571,7 +1548,7 @@ How to **investigate** and **fix** it:
 
   - After the resizing process finishes, revert this change.
 
-### MimirHighGRPCConcurrentStreamsPerConnection
+### MimirHighGRPCStreamsPerConnection
 
 How it **works**:
 
@@ -1585,12 +1562,67 @@ How to **investigate**:
 - If the number of streams has grown organically, consider setting the `-server.grpc-max-concurrent-streams` flag to a value higher than the current setting. Refer to the `cortex_grpc_concurrent_streams_limit` metric for the current value.
 - You can also horizontally scale up the component to reduce the number of concurrent streams on each replica.
 
+### MimirMixedQuerierQueryPlanVersionSupport
+
+How it **works**:
+
+This alert fires when queriers within the same query path, either the ordinary query path or the ruler query path, if enabled, report different maximum supported query plan versions.
+
+When queriers report different maximum supported query plan versions, query-frontends only generate query plans that are compatible with the lowest supported query plan version of all queriers.
+This may limit query performance or cause queries containing newer PromQL features to fail.
+
+Different maximum supported query plan versions are expected while some queriers are running an older version of Mimir, such as during rollouts and upgrades.
+However, under normal circumstances, all queriers should run the same version of Mimir and, therefore, report the same maximum supported query plan version.
+
+How to **investigate**:
+
+- Check that all queriers are running the same Mimir version.
+
+### MimirMixedQueryFrontendQueryPlanVersionSupport
+
+How it **works**:
+
+This alert fires when query-frontends within the same query path, either the ordinary query path or ruler query path, if enabled, report different maximum supported query plan versions.
+
+Query-frontends compute the maximum supported query plan version by taking the minimum of the maximum supported query plan versions reported by all queriers in the same query path.
+Queriers share this information with query-frontends through the querier ring.
+Query-frontends in the same query path should therefore report the same maximum supported query plan version.
+
+Query-frontends reporting different query plan versions for an extended period of time may indicate a split brain scenario or issues with ring propagation.
+
+How to **investigate**:
+
+- Check that all query-frontends have the same view of the querier ring by checking the querier ring status page.
+- Check that all query-frontends are running the same Mimir version.
+
+### MimirQueryFrontendsAndQueriersDisagreeOnSupportedQueryPlanVersion
+
+This alert fires when query-frontends and queriers in the same query path, such as the ordinary query path, or ruler query path, if enabled, disagree on the maximum supported query plan version.
+
+Refer to [MimirMixedQueryFrontendQueryPlanVersionSupport](#mimirmixedqueryfrontendqueryplanversionsupport) for more information and suggestions on how to investigate this issue.
+
+### MimirQueryFrontendNotComputingSupportedQueryPlanVersion
+
+How it **works**:
+
+This alert fires when query-frontends fail to compute a maximum supported query plan version.
+
+Query-frontends compute the maximum supported query plan version by taking the minimum of the maximum supported query plan versions reported by all queriers in the same query path.
+Queriers share this information with query-frontends through the querier ring.
+
+If the querier ring is empty, or if some queriers are not reporting a maximum supported query plan version, query-frontends can't compute a maximum supported query plan version.
+
+How to **investigate**:
+
+- Check query-frontend logs for `could not compute maximum supported query plan version` errors.
+- Check the querier ring status page on affected query-frontends to confirm if they have an up-to-date and complete view of the querier ring.
+
 ## Mimir ingest storage (experimental)
 
 This section contains runbooks for alerts related to experimental Mimir ingest storage.
 In this context, any reference to Kafka means a Kafka protocol-compatible backend.
 
-### MimirIngesterLastConsumedOffsetCommitFailed
+### MimirIngesterOffsetCommitFailed
 
 This alert fires when an ingester is failing to commit the last consumed offset to the Kafka backend.
 
@@ -1605,7 +1637,7 @@ How to **investigate**:
 - Check ingester logs to find details about the error.
 - Check Kafka logs and health.
 
-### MimirIngesterFailedToReadRecordsFromKafka
+### MimirIngesterKafkaReadFailed
 
 This alert fires when an ingester is failing to read records from Kafka backend.
 
@@ -1636,7 +1668,7 @@ How to **investigate**:
 - Check ingester logs to find details about the error.
 - Check Kafka logs and health.
 
-### MimirStartingIngesterKafkaReceiveDelayIncreasing
+### MimirStartingIngesterKafkaDelayGrowing
 
 This alert fires when "receive delay" reported by ingester during "starting" phase is not decreasing.
 
@@ -1662,7 +1694,7 @@ This alert fires when "receive delay" reported by ingester while it's running re
 How it **works**:
 
 - After ingester start and catches up with records in Kafka, ingester switches to "running" mode.
-- In running mode, ingester continues to process incoming records from Kafka and continues to report "receive delay". See [`MimirStartingIngesterKafkaReceiveDelayIncreasing`](#MimirStartingIngesterKafkaReceiveDelayIncreasing) runbook for details about this metric.
+- In running mode, ingester continues to process incoming records from Kafka and continues to report "receive delay". See [`MimirStartingIngesterKafkaDelayGrowing`](#MimirStartingIngesterKafkaDelayGrowing) runbook for details about this metric.
 - Under normal conditions when ingester is running and it is processing records faster than records are appearing, receive delay should be stable and low.
 - If observed "receive delay" increases and reaches certain threshold, alert is raised.
 
@@ -1673,7 +1705,7 @@ How to **investigate**:
 
 See also "[Ingester is overloaded when consuming from Kafka](#ingester-is-overloaded-when-consuming-from-kafka)".
 
-### MimirIngesterFailsToProcessRecordsFromKafka
+### MimirIngesterKafkaProcessingFailed
 
 This alert fires when ingester is unable to process incoming records from Kafka due to internal errors. If ingest-storage wasn't used, such push requests would end up with 5xx errors.
 
@@ -1687,7 +1719,7 @@ How to **investigate**:
 
 - Check ingester logs to see why requests are failing, and troubleshoot based on that.
 
-### MimirIngesterStuckProcessingRecordsFromKafka
+### MimirIngesterKafkaProcessingStuck
 
 This alert fires when an ingester has successfully fetched records from Kafka but it's not processing them at all.
 
@@ -1739,7 +1771,7 @@ How to **investigate**:
 - Check if ingesters are processing too many records, and they need to be scaled up (vertically or horizontally).
 - Check actual error in the query-frontend and/or ingester logs to see whether the `-ingest-storage.kafka.wait-strong-read-consistency-timeout` or the request timeout has been hit first.
 
-### MimirStrongConsistencyOffsetNotPropagatedToIngesters
+### MimirStrongConsistencyOffsetMissing
 
 This alert fires when ingesters receive an unexpected high number of strongly consistent requests without an offset specified.
 
@@ -1751,7 +1783,7 @@ How to **investigate**:
 
 - We expect query-frontend to fetch the last produced offsets and then propagate it down to ingesters. If it's not happening, then it's likely we introduced a bug in Mimir that's breaking the propagation of offsets from query-frontend to ingester. You should investigate the Mimir code changes and fix it.
 
-### MimirKafkaClientBufferedProduceBytesTooHigh
+### MimirKafkaClientProduceBufferHigh
 
 This alert fires when the Kafka client buffer, used to write incoming write requests to Kafka, is getting full.
 
@@ -1775,7 +1807,7 @@ This runbook covers the case an ingester is overloaded when ingesting metrics da
 
 For example, if the amount of active series written to a partition exceeds the ingester capacity, the write-path will keep writing to the partition, but then the ingesters owning that partition will fail ingesting the data. Possible symptoms of this situation:
 
-- The ingester is lagging behind replaying metrics data from Kafka, and [`MimirStartingIngesterKafkaReceiveDelayIncreasing`](#MimirStartingIngesterKafkaReceiveDelayIncreasing) or [`MimirRunningIngesterReceiveDelayTooHigh`](#MimirRunningIngesterReceiveDelayTooHigh) alerts are firing.
+- The ingester is lagging behind replaying metrics data from Kafka, and [`MimirStartingIngesterKafkaDelayGrowing`](#MimirStartingIngesterKafkaDelayGrowing) or [`MimirRunningIngesterReceiveDelayTooHigh`](#MimirRunningIngesterReceiveDelayTooHigh) alerts are firing.
 - The ingester logs [`err-mimir-ingester-max-series`](#err-mimir-ingester-max-series) when ingesting metrics data from Kafka.
 - The ingester is OOMKilled.
 
@@ -1847,7 +1879,7 @@ Data recovery / temporary mitigation: Refer the runbook for `MimirBlockBuilderNo
 
 #### MimirBlockBuilderHasNotShippedBlocks
 
-Similar to [`MimirIngesterHasNotShippedBlocks`](#MimirIngesterHasNotShippedBlocks) but for block-builder.
+Similar to [`MimirIngesterNotShippingBlocks`](#MimirIngesterNotShippingBlocks) but for block-builder.
 
 This alert fires when the block-builder stops shipping any blocks for an unexpectedly long time.
 
@@ -1869,6 +1901,20 @@ If the block-builder permanently missed consuming some portion of the partition,
 - If the `block-builder-scheduler.lookback-on-no-commit` does not cover the time when the issue started, set it long enough so that these new block-builders start back far enough to cover the missing data.
 - Investigate why the block-builder fails, while the ingesters, who consumed the same data, don't.
 
+#### MimirBlockBuilderSchedulerNotRunning
+
+This fires when the block-builder-scheduler has not performed its critical job scheduling duties in the last 30 minutes. It can indicate that the service is suddenly not running, or is degraded.
+
+How it **works**:
+
+- The alert fires when the block-builder-scheduler StatefulSet is present yet the update loop execution metric (`cortex_blockbuilder_scheduler_schedule_update_seconds`)
+  hasn't been incremented in the last 30 minutes.
+
+How to **investigate**:
+
+- This generally means something is either wrong with the block-builder-scheduler replica or the Kafka system it is attempting to monitor. Viewing logs for the block-builder-scheduler should help you to identify the problem.
+- If there are no logs, then the block-builder-scheduler may not be running, which you can investigate by examining the StatefulSet/pod details in Kubernetes.
+
 #### MimirBlockBuilderDataSkipped
 
 This alert fires when the block-builder-scheduler has detected a gap in either committed jobs or planned jobs.
@@ -1888,7 +1934,24 @@ Data recovery / temporary mitigation:
 
 You need to make block-builder consume the skipped data. Refer to the section under "Data recovery" for the `MimirBlockBuilderHasNotShippedBlocks` alert.
 
-### MimirServerInvalidClusterValidationLabelRequests
+#### MimirBlockBuilderPersistentJobFailure
+
+This alert fires when the block-builder-scheduler has detected a single job failing multiple times.
+
+How it **works**:
+
+- Block-builder-scheduler schedules and assigns jobs to workers, but it is the workers who carry out the consumption work.
+- Block-builder-scheduler notices when a worker fails to complete a job, and maintains a failure count on each job.
+- Block-builder-scheduler increments the `cortex_blockbuilder_scheduler_persistent_job_failures_total` metric when a job's failure count exceeds the `block-builder-scheduler.job-failures-allowed` setting.
+
+How to **investigate**:
+
+- Consult the block-builder-scheduler logs and look for logs with level=error. This will show you the failing job ID and worker assignee that most recently failed the job. Example:
+  > ERROR ts=2025-10-30T15:20:55.134630922Z caller=jobs.go:236 level=error msg="job failed in a persistent manner" job_id=ingest/25/11740286308 epoch=104901 assignee=block-builder-7786c54c8-hsr6h fail_count=8
+- Now look at the logs on the assigned worker corresponding with the job ID found previously to understand the nature of the failure.
+- If there is no clear failure, check to see if the worker pod was terminated due to an out-of-memory condition. If this is the case, give the block-builder workers more memory.
+
+### MimirServerInvalidClusterLabelRequests
 
 This alert fires when Mimir components receive requests with a different cluster validation label than the Mimir components themselves are configured with.
 
@@ -1902,7 +1965,7 @@ How to **investigate**:
 Unless Mimir is configured with soft validation of cluster validation labels on the server side, it should be rejecting the corresponding requests and the clients sending the requests should be increasing the corresponding client side metric `cortex_client_invalid_cluster_validation_label_requests_total`.
 By querying for the latter, you should be able to determine which clients are sending the mislabeled requests.
 
-### MimirClientInvalidClusterValidationLabelRequests
+### MimirClientInvalidClusterLabelRequests
 
 This alert fires when requests between Mimir components are rejected due to having different cluster validation labels than the components receiving the requests are configured with.
 
@@ -1933,6 +1996,24 @@ How to **investigate**:
 - Check the process stack trace to find common patterns in where the goroutines are blocked on syscall:
   - If the application panicked with error like `runtime: program exceeds 10000-thread limit`, check the panic stack trace
   - If the application has not panicked yet, issue `kill -QUIT <pid>` to dump the current stack trace of the process
+
+### MimirFewerIngestersConsumingThanActivePartitions
+
+This alert fires when the number of ingesters consuming partitions is less than the number of active partitions.
+This means that distributors are writing to partitions that are not being consumed by any ingester, leading to data missing from the short-term read path and potential data loss if this persists for too long and you aren't using block-builder in the Mimir cluster.
+
+How it **works**:
+
+- Distributors shard series across the active partitions in the partitions ring.
+- Each ingester owns and consumes from one partition.
+- If a partition is not being consumed by any ingester, it means that the data written to that partition is not available for querying. Moreover, if you aren't using block-builder in the Mimir cluster, the data isn't saved to a block.
+
+How to **investigate**:
+
+This shouldn't happen in normal circumstances and is most likely indicative of a bug in the distributors or ingesters. Investigate and fix this issue as soon as possible.
+
+- Immediately scale out ingesters to the number of active partitions to consume the data.
+- Check that the ingester shutdowns are working as expected. When ingesters are downscaled, they should set their partition as INACTIVE before shutting down. Ingesters are most likely the cause of this issue.
 
 ## Errors catalog
 
@@ -2163,7 +2244,7 @@ Invalid series are skipped during ingestion. Valid series in the same request ar
 ### err-mimir-label-value-too-long
 
 This non-critical error occurs when Mimir receives a write request that contains a series with a label value whose length exceeds the configured limit.
-The limit protects the system’s stability from potential abuse or mistakes. To configure the limit for all tenants, use the `-validation.max-length-label-name` option. To configure the limit per-tenant, use the `max_label_name_length` option in the runtime configuration file.
+The limit protects the system’s stability from potential abuse or mistakes. To configure the limit for all tenants, use the `-validation.max-length-label-value` option. To configure the limit per-tenant, use the `max_label_value_length` option in the runtime configuration file.
 
 {{< admonition type="note" >}}
 Invalid series are skipped during ingestion. Valid series in the same request are ingested.

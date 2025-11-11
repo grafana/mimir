@@ -301,28 +301,24 @@ func (p *partitionHandler) loadAllSnapshotShards(ctx context.Context, files []st
 	downloaded := make(chan downloadedSnapshot, 1)
 	errs := make(chan error, 1)
 	go func() {
-		t0 := time.Now()
-		i := 0
 		for snapshot := range downloaded {
+			snapshotT0 := time.Now()
 			for j, data := range snapshot.data {
-				if err := p.store.loadSnapshot(data, time.Now()); err != nil {
-					errs <- errors.Wrapf(err, "failed to load snapshot data %d from file %q", j, snapshot.filename)
+				if err := p.store.loadSnapshot(data, time.Now(), true); err != nil {
+					errs <- errors.Wrapf(err, "failed to load snapshot data shard %d from file %q", j, snapshot.filename)
 					return
 				}
 			}
-			if i == 0 {
-				level.Info(p.logger).Log("msg", "loaded the first snapshot file", "filename", snapshot.filename, "shards", len(snapshot.data), "load_time", time.Since(t0))
-			}
-			i++
+			level.Info(p.logger).Log("msg", "loaded snapshot file", "filename", snapshot.filename, "shards", len(snapshot.data), "snapshot_load_time", time.Since(snapshotT0), "total_elapsed", time.Since(t0))
 		}
 		errs <- nil
 	}()
 
 	go func() {
 		defer close(downloaded)
-		t0 := time.Now()
 		buf := new(bytes.Buffer)
-		for _, filename := range files {
+		for i, filename := range files {
+			fileT0 := time.Now()
 			n, err := p.loadSnapshotIntoBufferWithBackoff(ctx, filename, buf)
 			if err != nil {
 				errs <- errors.Wrapf(err, "failed to load snapshot file %s from bucket %s", filename, p.snapshotsBucket.Name())
@@ -335,7 +331,7 @@ func (p *partitionHandler) loadAllSnapshotShards(ctx context.Context, files []st
 				return
 			}
 
-			level.Info(p.logger).Log("msg", "downloaded first snapshot file", "filename", filename, "elapsed", time.Since(t0), "bytes", n)
+			level.Info(p.logger).Log("msg", "downloaded snapshot file", "file_index", i, "filename", filename, "file_download_time", time.Since(fileT0), "total_elapsed", time.Since(t0), "bytes", n)
 			select {
 			case downloaded <- downloadedSnapshot{filename, file.Data}:
 			case <-ctx.Done():
@@ -639,7 +635,7 @@ func (p *partitionHandler) loadSnapshot(ctx context.Context, r *usagetrackerpb.S
 		return
 	}
 
-	td := time.Now()
+	tl := time.Now()
 
 	var file usagetrackerpb.SnapshotFile
 	if err := file.Unmarshal(buf.Bytes()); err != nil {
@@ -649,15 +645,20 @@ func (p *partitionHandler) loadSnapshot(ctx context.Context, r *usagetrackerpb.S
 	}
 
 	for i, data := range file.Data {
-		if err := p.store.loadSnapshot(data, time.Now()); err != nil {
+		// Each one of the datas belongs to a different shard.
+		// Most of the write requests touch all shards.
+		// We're going to block each one of the requests with snapshot loading anyway,
+		// so let's use this opportunity to load all of them together.
+		ts := time.Now()
+		if err := p.store.loadSnapshot(data, time.Now(), false); err != nil {
 			p.snapshotEventsTotalErrors.WithLabelValues("load").Inc()
 			level.Error(p.logger).Log("msg", "failed to load snapshot data", "filename", r.Filename, "shard_index", i, "err", err)
 			return
 		}
-		level.Debug(p.logger).Log("msg", "loaded snapshot shard", "filename", r.Filename, "shard_index", i, "bytes", len(data))
+		level.Debug(p.logger).Log("msg", "loaded snapshot shard", "filename", r.Filename, "shard_index", i, "bytes", len(data), "elapsed_shard", time.Since(ts), "elapsed_load", time.Since(tl))
 	}
 
-	level.Info(p.logger).Log("msg", "loaded snapshot from events", "filename", r.Filename, "shards", len(file.Data), "bytes", n, "elapsed_download", time.Since(t0), "elapsed_total", time.Since(td))
+	level.Info(p.logger).Log("msg", "loaded snapshot from events", "filename", r.Filename, "shards", len(file.Data), "bytes", n, "elapsed_total", time.Since(t0), "elapsed_load", time.Since(tl))
 }
 
 func (p *partitionHandler) publishSeriesCreatedEvents(ctx context.Context) {

@@ -4,30 +4,13 @@
 package common
 
 import (
-	"context"
+	"errors"
 	"fmt"
-	"os"
-	"os/exec"
-	"strings"
 	"unsafe"
 
 	"github.com/ebitengine/purego"
 	"golang.org/x/sys/unix"
 )
-
-func DoSysctrlWithContext(ctx context.Context, mib string) ([]string, error) {
-	cmd := exec.CommandContext(ctx, "sysctl", "-n", mib)
-	cmd.Env = getSysctrlEnv(os.Environ())
-	out, err := cmd.Output()
-	if err != nil {
-		return []string{}, err
-	}
-	v := strings.Replace(string(out), "{ ", "", 1)
-	v = strings.Replace(string(v), " }", "", 1)
-	values := strings.Fields(string(v))
-
-	return values, nil
-}
 
 func CallSyscall(mib []int32) ([]byte, uint64, error) {
 	miblen := uint64(len(mib))
@@ -306,7 +289,7 @@ const (
 
 func NewSMC(ioKit *Library) (*SMC, error) {
 	if ioKit.path != IOKit {
-		return nil, fmt.Errorf("library is not IOKit")
+		return nil, errors.New("library is not IOKit")
 	}
 
 	ioServiceGetMatchingService := GetFunc[IOServiceGetMatchingServiceFunc](ioKit, IOServiceGetMatchingServiceSym)
@@ -324,7 +307,7 @@ func NewSMC(ioKit *Library) (*SMC, error) {
 
 	var conn uint32
 	if result := ioServiceOpen(service, machTaskSelf(), 0, &conn); result != 0 {
-		return nil, fmt.Errorf("ERROR: IOServiceOpen failed")
+		return nil, errors.New("ERROR: IOServiceOpen failed")
 	}
 
 	ioObjectRelease(service)
@@ -343,7 +326,7 @@ func (s *SMC) Close() error {
 	ioServiceClose := GetFunc[IOServiceCloseFunc](s.lib, IOServiceCloseSym)
 
 	if result := ioServiceClose(s.conn); result != 0 {
-		return fmt.Errorf("ERROR: IOServiceClose failed")
+		return errors.New("ERROR: IOServiceClose failed")
 	}
 	return nil
 }
@@ -367,8 +350,8 @@ func (s CStr) Ptr() *byte {
 	return &s[0]
 }
 
-func (c CStr) Addr() uintptr {
-	return uintptr(unsafe.Pointer(c.Ptr()))
+func (s CStr) Addr() uintptr {
+	return uintptr(unsafe.Pointer(s.Ptr()))
 }
 
 func (s CStr) GoString() string {
@@ -392,10 +375,7 @@ func GoString(cStr *byte) string {
 		return ""
 	}
 	var length int
-	for {
-		if *(*byte)(unsafe.Add(unsafe.Pointer(cStr), uintptr(length))) == '\x00' {
-			break
-		}
+	for *(*byte)(unsafe.Add(unsafe.Pointer(cStr), uintptr(length))) != '\x00' {
 		length++
 	}
 	return string(unsafe.Slice(cStr, length))

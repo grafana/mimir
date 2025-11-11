@@ -546,7 +546,8 @@ func TestDefaultManagerFactory_CorrectQueryableUsed(t *testing.T) {
 			notifierManager := notifier.NewManager(&notifier.Options{
 				Do: func(_ context.Context, _ *http.Client, _ *http.Request) (*http.Response, error) { return nil, nil },
 			}, model.UTF8Validation, util_log.SlogFromGoKit(options.logger))
-			ruleFiles := writeRuleGroupToFiles(t, cfg.RulePath, options.logger, userID, tc.ruleGroup)
+			fs := afero.NewMemMapFs()
+			ruleFiles := writeRuleGroupToFiles(t, fs, cfg.RulePath, options.logger, userID, tc.ruleGroup)
 			regularQueryable, federatedQueryable := newMockQueryable(), newMockQueryable()
 
 			tracker := promql.NewActiveQueryTracker(t.TempDir(), 20, promslog.NewNopLogger())
@@ -563,7 +564,7 @@ func TestDefaultManagerFactory_CorrectQueryableUsed(t *testing.T) {
 			// create and use manager factory
 			pusher := newPusherMock()
 			pusher.MockPush(&mimirpb.WriteResponse{}, nil)
-			managerFactory := DefaultTenantManagerFactory(cfg, pusher, federatedQueryable, queryFunc, afero.NewOsFs(), &NoopMultiTenantConcurrencyController{}, options.limits, nil)
+			managerFactory := DefaultTenantManagerFactory(cfg, pusher, federatedQueryable, queryFunc, fs, &NoopMultiTenantConcurrencyController{}, options.limits, nil)
 
 			manager := managerFactory(context.Background(), userID, notifierManager, options.logger, nil)
 
@@ -616,7 +617,8 @@ func TestDefaultManagerFactory_ShouldNotWriteRecordingRuleResultsWhenDisabled(t 
 				notifierManager = notifier.NewManager(&notifier.Options{
 					Do: func(_ context.Context, _ *http.Client, _ *http.Request) (*http.Response, error) { return nil, nil },
 				}, model.UTF8Validation, util_log.SlogFromGoKit(options.logger))
-				ruleFiles = writeRuleGroupToFiles(t, cfg.RulePath, options.logger, userID, ruleGroup)
+				fs        = afero.NewMemMapFs()
+				ruleFiles = writeRuleGroupToFiles(t, fs, cfg.RulePath, options.logger, userID, ruleGroup)
 				queryable = newMockQueryable()
 				tracker   = promql.NewActiveQueryTracker(t.TempDir(), 20, util_log.SlogFromGoKit(log.NewNopLogger()))
 				eng       = promql.NewEngine(promql.EngineOpts{
@@ -630,7 +632,7 @@ func TestDefaultManagerFactory_ShouldNotWriteRecordingRuleResultsWhenDisabled(t 
 			pusher := newPusherMock()
 			pusher.MockPush(&mimirpb.WriteResponse{}, nil)
 
-			factory := DefaultTenantManagerFactory(cfg, pusher, queryable, queryFunc, afero.NewOsFs(), &NoopMultiTenantConcurrencyController{}, options.limits, nil)
+			factory := DefaultTenantManagerFactory(cfg, pusher, queryable, queryFunc, fs, &NoopMultiTenantConcurrencyController{}, options.limits, nil)
 			manager := factory(context.Background(), userID, notifierManager, options.logger, nil)
 
 			// Load rules into manager and start it.
@@ -749,11 +751,12 @@ func TestDefaultManagerFactory_ShouldInjectReadConsistencyToContextBasedOnRuleDe
 
 			// Create the manager from the factory.
 			queryable := &storage.MockQueryable{MockQuerier: querier}
-			managerFactory := DefaultTenantManagerFactory(cfg, pusher, queryable, rules.EngineQueryFunc(eng, queryable), afero.NewOsFs(), &NoopMultiTenantConcurrencyController{}, options.limits, nil)
+			fs := afero.NewMemMapFs()
+			managerFactory := DefaultTenantManagerFactory(cfg, pusher, queryable, rules.EngineQueryFunc(eng, queryable), fs, &NoopMultiTenantConcurrencyController{}, options.limits, nil)
 			manager := managerFactory(context.Background(), userID, notifierManager, options.logger, nil)
 
 			// Load rules into manager.
-			ruleFiles := writeRuleGroupToFiles(t, cfg.RulePath, options.logger, userID, testData.ruleGroup)
+			ruleFiles := writeRuleGroupToFiles(t, fs, cfg.RulePath, options.logger, userID, testData.ruleGroup)
 			require.NoError(t, manager.Update(time.Millisecond, ruleFiles, labels.EmptyLabels(), "", nil))
 
 			// Start the manager.
@@ -847,11 +850,12 @@ func TestDefaultManagerFactory_ShouldInjectStrongReadConsistencyToContextWhenQue
 
 	// Create the manager from the factory.
 	queryable := &storage.MockQueryable{MockQuerier: querier}
-	managerFactory := DefaultTenantManagerFactory(cfg, pusher, queryable, rules.EngineQueryFunc(eng, queryable), afero.NewOsFs(), &NoopMultiTenantConcurrencyController{}, options.limits, nil)
+	fs := afero.NewMemMapFs()
+	managerFactory := DefaultTenantManagerFactory(cfg, pusher, queryable, rules.EngineQueryFunc(eng, queryable), fs, &NoopMultiTenantConcurrencyController{}, options.limits, nil)
 	manager := managerFactory(context.Background(), userID, notifierManager, options.logger, nil)
 
 	// Load rules into manager.
-	ruleFiles := writeRuleGroupToFiles(t, cfg.RulePath, options.logger, userID, ruleGroup)
+	ruleFiles := writeRuleGroupToFiles(t, fs, cfg.RulePath, options.logger, userID, ruleGroup)
 	require.NoError(t, manager.Update(time.Millisecond, ruleFiles, labels.EmptyLabels(), "", nil))
 
 	// Start the manager.
@@ -866,8 +870,8 @@ func TestDefaultManagerFactory_ShouldInjectStrongReadConsistencyToContextWhenQue
 	}
 }
 
-func writeRuleGroupToFiles(t *testing.T, path string, logger log.Logger, userID string, ruleGroup rulespb.RuleGroupDesc) []string {
-	_, files, err := newMapper(path, afero.NewOsFs(), logger).MapRules(userID, map[string][]rulefmt.RuleGroup{
+func writeRuleGroupToFiles(t *testing.T, fs afero.Fs, path string, logger log.Logger, userID string, ruleGroup rulespb.RuleGroupDesc) []string {
+	_, files, err := newMapper(path, fs, logger).MapRules(userID, map[string][]rulefmt.RuleGroup{
 		"namespace": {rulespb.FromProto(&ruleGroup)},
 	})
 	require.NoError(t, err)
@@ -904,4 +908,249 @@ func mustStatusWithDetails(code codes.Code, cause mimirpb.ErrorCause) *status.St
 		panic(err)
 	}
 	return s
+}
+
+func TestRulerErrorClassifier_IsOperatorControllable(t *testing.T) {
+	classifier := NewRulerErrorClassifier()
+
+	tests := []struct {
+		name     string
+		err      error
+		expected bool
+	}{
+		// Nil error
+		{
+			name:     "nil error",
+			err:      nil,
+			expected: false,
+		},
+
+		{
+			name:     "promql error - timeout (user)",
+			err:      promql.ErrQueryTimeout("query timeout"),
+			expected: false,
+		},
+		{
+			name:     "promql error - cancelled (user)",
+			err:      promql.ErrQueryCanceled("query cancelled"),
+			expected: false,
+		},
+
+		{
+			name:     "500 internal server error (operator)",
+			err:      httpgrpc.Errorf(http.StatusInternalServerError, "internal error"),
+			expected: true,
+		},
+		{
+			name:     "503 service unavailable (operator)",
+			err:      httpgrpc.Errorf(http.StatusServiceUnavailable, "service unavailable"),
+			expected: true,
+		},
+		{
+			name:     "502 bad gateway (operator)",
+			err:      httpgrpc.Errorf(http.StatusBadGateway, "bad gateway"),
+			expected: true,
+		},
+
+		{
+			name:     "429 rate limited (operator)",
+			err:      httpgrpc.Errorf(http.StatusTooManyRequests, "rate limited"),
+			expected: true,
+		},
+
+		{
+			name:     "400 bad request (user)",
+			err:      httpgrpc.Errorf(http.StatusBadRequest, "bad request"),
+			expected: false,
+		},
+
+		{
+			name:     "context cancelled (user)",
+			err:      context.Canceled,
+			expected: false,
+		},
+		{
+			name:     "context deadline exceeded (user)",
+			err:      context.DeadlineExceeded,
+			expected: false,
+		},
+
+		{
+			name:     "generic error without status code (operator)",
+			err:      errors.New("some generic error"),
+			expected: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := classifier.IsOperatorControllable(tt.err)
+			require.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+func TestRulerErrorClassifier_ErrorClassificationDuringRuleEvaluation(t *testing.T) {
+	const userID = "tenant-1"
+	const interval100ms = 100 * time.Millisecond
+
+	tests := map[string]struct {
+		queryError             error
+		writeError             error
+		expectedOperatorFailed bool
+		expectedUserFailed     bool
+	}{
+		// Query path errors
+		"storage error during query (operator)": {
+			queryError:             promql.ErrStorage{Err: errors.New("storage unavailable")},
+			expectedOperatorFailed: true,
+			expectedUserFailed:     false,
+		},
+		"500 server error during query (operator)": {
+			queryError:             httpgrpc.Errorf(http.StatusInternalServerError, "internal server error"),
+			expectedOperatorFailed: true,
+			expectedUserFailed:     false,
+		},
+		"503 service unavailable during query (operator)": {
+			queryError:             httpgrpc.Errorf(http.StatusServiceUnavailable, "service unavailable"),
+			expectedOperatorFailed: true,
+			expectedUserFailed:     false,
+		},
+		"429 rate limit during query (operator)": {
+			queryError:             httpgrpc.Errorf(http.StatusTooManyRequests, "rate limited"),
+			expectedOperatorFailed: true,
+			expectedUserFailed:     false,
+		},
+		"400 bad request during query (user)": {
+			queryError:             httpgrpc.Errorf(http.StatusBadRequest, "bad request"),
+			expectedOperatorFailed: false,
+			expectedUserFailed:     true,
+		},
+		"unknown error during query (user)": {
+			queryError:             errors.New("test error"),
+			expectedOperatorFailed: false,
+			expectedUserFailed:     true,
+		},
+
+		// Write path errors - matching TestPusherErrors patterns
+		"500 HTTPgRPC error during write (operator)": {
+			writeError:             httpgrpc.Errorf(http.StatusInternalServerError, "test error"),
+			expectedOperatorFailed: true,
+			expectedUserFailed:     false,
+		},
+		"BAD_DATA push error during write (user)": {
+			writeError:             mustStatusWithDetails(codes.FailedPrecondition, mimirpb.ERROR_CAUSE_BAD_DATA).Err(),
+			expectedOperatorFailed: false,
+			expectedUserFailed:     true,
+		},
+		"METHOD_NOT_ALLOWED push error during write (operator)": {
+			writeError:             mustStatusWithDetails(codes.Unimplemented, mimirpb.ERROR_CAUSE_METHOD_NOT_ALLOWED).Err(),
+			expectedOperatorFailed: true,
+			expectedUserFailed:     false,
+		},
+		"TSDB_UNAVAILABLE push error during write (operator)": {
+			writeError:             mustStatusWithDetails(codes.FailedPrecondition, mimirpb.ERROR_CAUSE_TSDB_UNAVAILABLE).Err(),
+			expectedOperatorFailed: true,
+			expectedUserFailed:     false,
+		},
+		"unknown error during write (user)": {
+			writeError:             errors.New("test error"),
+			expectedOperatorFailed: false,
+			expectedUserFailed:     true,
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			// Create a simple recording rule
+			ruleGroup := rulespb.RuleGroupDesc{
+				Name:     "test",
+				Interval: interval100ms,
+				Rules: []*rulespb.RuleDesc{{
+					Record: "test_metric",
+					Expr:   "up",
+				}},
+			}
+
+			// Setup ruler
+			cfg := defaultRulerConfig(t)
+			cfg.EvaluationInterval = interval100ms
+
+			var (
+				options         = applyPrepareOptions(t, cfg.Ring.Common.InstanceID)
+				notifierManager = notifier.NewManager(&notifier.Options{
+					Do: func(_ context.Context, _ *http.Client, _ *http.Request) (*http.Response, error) { return nil, nil },
+				}, model.UTF8Validation, util_log.SlogFromGoKit(options.logger))
+				fs        = afero.NewMemMapFs()
+				ruleFiles = writeRuleGroupToFiles(t, fs, cfg.RulePath, options.logger, userID, ruleGroup)
+				tracker   = promql.NewActiveQueryTracker(t.TempDir(), 20, util_log.SlogFromGoKit(log.NewNopLogger()))
+				eng       = promql.NewEngine(promql.EngineOpts{
+					MaxSamples:         1e6,
+					ActiveQueryTracker: tracker,
+					Timeout:            2 * time.Minute,
+				})
+				prometheusReg = prometheus.NewRegistry()
+			)
+
+			// Mock querier to return the test error
+			querier := newQuerierMock()
+			querier.selectFunc = func(ctx context.Context, _ bool, _ *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
+				if tc.queryError != nil {
+					return storage.ErrSeriesSet(tc.queryError)
+				}
+				// Return empty series set on success
+				return storage.EmptySeriesSet()
+			}
+
+			// Use fakePusher for write path errors (consistent with TestPusherErrors)
+			pusher := &fakePusher{
+				err:      tc.writeError,
+				response: &mimirpb.WriteResponse{},
+			}
+
+			// Create manager from factory
+			queryable := &storage.MockQueryable{MockQuerier: querier}
+			queryFunc := rules.EngineQueryFunc(eng, queryable)
+			factory := DefaultTenantManagerFactory(cfg, pusher, queryable, queryFunc, fs, &NoopMultiTenantConcurrencyController{}, options.limits, nil)
+			manager := factory(context.Background(), userID, notifierManager, options.logger, prometheusReg)
+
+			// Load rules into manager and start
+			require.NoError(t, manager.Update(interval100ms, ruleFiles, labels.EmptyLabels(), "", nil))
+			go manager.Run()
+			t.Cleanup(manager.Stop)
+
+			// Wait for rule evaluation to complete and metrics to be recorded
+			if tc.expectedOperatorFailed {
+				require.Eventually(t, func() bool {
+					operatorFailed := getMetricValue(t, prometheusReg, "prometheus_rule_evaluation_failures_total", "reason", "operator")
+					userFailed := getMetricValue(t, prometheusReg, "prometheus_rule_evaluation_failures_total", "reason", "user")
+					return operatorFailed > 0 && userFailed == 0
+				}, 5*time.Second, 100*time.Millisecond, "expected at least one operator failure and no user failures")
+			} else if tc.expectedUserFailed {
+				require.Eventually(t, func() bool {
+					operatorFailed := getMetricValue(t, prometheusReg, "prometheus_rule_evaluation_failures_total", "reason", "operator")
+					userFailed := getMetricValue(t, prometheusReg, "prometheus_rule_evaluation_failures_total", "reason", "user")
+					return userFailed > 0 && operatorFailed == 0
+				}, 5*time.Second, 100*time.Millisecond, "expected at least one user failure and no operator failures")
+			}
+		})
+	}
+}
+
+func getMetricValue(t *testing.T, reg prometheus.Gatherer, metricName, labelName, labelValue string) float64 {
+	metricFamilies, err := reg.Gather()
+	require.NoError(t, err)
+
+	for _, mf := range metricFamilies {
+		if mf.GetName() == metricName {
+			for _, metric := range mf.GetMetric() {
+				for _, label := range metric.GetLabel() {
+					if label.GetName() == labelName && label.GetValue() == labelValue {
+						return metric.GetCounter().GetValue()
+					}
+				}
+			}
+		}
+	}
+	return 0
 }

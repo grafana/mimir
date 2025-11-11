@@ -11,10 +11,13 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/gogo/status"
 	"github.com/grafana/regexp"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/codes"
+	googlestatus "google.golang.org/grpc/status"
 )
 
 func TestAllPrometheusErrorTypeValues(t *testing.T) {
@@ -102,7 +105,7 @@ func TestIsRetryableAPIError(t *testing.T) {
 }
 
 func TestTypeForError(t *testing.T) {
-	fallback := TypeNotFound
+	fallback := TypeNotAcceptable
 
 	testCases := map[string]struct {
 		err      error
@@ -135,6 +138,38 @@ func TestTypeForError(t *testing.T) {
 		"APIError": {
 			err:      New(TypeNotAcceptable, "request is not acceptable"),
 			expected: TypeNotAcceptable,
+		},
+		"gRPC error with canceled code": {
+			err:      status.Error(codes.Canceled, "request was canceled"),
+			expected: TypeCanceled,
+		},
+		"gRPC error with unknown code": {
+			err:      status.Error(codes.Unknown, "something went wrong"),
+			expected: fallback,
+		},
+		"gRPC error with invalid argument code": {
+			err:      status.Error(codes.InvalidArgument, "request has invalid argument"),
+			expected: TypeBadData,
+		},
+		"gRPC error with deadline exceeded code": {
+			err:      status.Error(codes.DeadlineExceeded, "request timed out"),
+			expected: TypeTimeout,
+		},
+		"gRPC error with not found code": {
+			err:      status.Error(codes.NotFound, "resource not found"),
+			expected: TypeNotFound,
+		},
+		"gRPC error with internal code": {
+			err:      status.Error(codes.Internal, "something went wrong"),
+			expected: TypeInternal,
+		},
+		"gRPC error with unavailable code": {
+			err:      status.Error(codes.Unavailable, "resource not available"),
+			expected: TypeUnavailable,
+		},
+		"gRPC error from Google's gRPC library": {
+			err:      googlestatus.Error(codes.Canceled, "request was canceled"),
+			expected: TypeCanceled,
 		},
 	}
 

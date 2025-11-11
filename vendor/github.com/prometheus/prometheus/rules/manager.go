@@ -109,6 +109,19 @@ type NotifyFunc func(ctx context.Context, expr string, alerts ...*Alert)
 
 type ContextWrapFunc func(ctx context.Context, g *Group) context.Context
 
+// OperatorControllableErrorClassifier classifies whether rule evaluation errors are operator-controllable.
+type OperatorControllableErrorClassifier interface {
+	IsOperatorControllable(error) bool
+}
+
+// DefaultOperatorControllableErrorClassifier is the default implementation of
+// OperatorControllableErrorClassifier that classifies no errors as operator-controllable.
+type DefaultOperatorControllableErrorClassifier struct{}
+
+func (*DefaultOperatorControllableErrorClassifier) IsOperatorControllable(_ error) bool {
+	return false
+}
+
 // ManagerOptions bundles options for the Manager.
 type ManagerOptions struct {
 	NameValidationScheme      model.ValidationScheme
@@ -139,6 +152,10 @@ type ManagerOptions struct {
 	GroupEvaluationContextFunc ContextWrapFunc
 
 	Metrics *Metrics
+
+	// OperatorControllableErrorClassifier classifies rule evaluation errors as operator-controllable
+	// or user-controllable. If nil, defaults to treating all errors as user errors.
+	OperatorControllableErrorClassifier OperatorControllableErrorClassifier
 }
 
 // NewManager returns an implementation of Manager, ready to be started
@@ -177,6 +194,10 @@ func NewManager(o *ManagerOptions) *Manager {
 
 	if o.Logger == nil {
 		o.Logger = promslog.NewNopLogger()
+	}
+
+	if o.OperatorControllableErrorClassifier == nil {
+		o.OperatorControllableErrorClassifier = &DefaultOperatorControllableErrorClassifier{}
 	}
 
 	m := &Manager{
@@ -295,7 +316,8 @@ func (m *Manager) Update(interval time.Duration, files []string, externalLabels 
 				m.IterationsMissed.DeleteLabelValues(n)
 				m.IterationsScheduled.DeleteLabelValues(n)
 				m.EvalTotal.DeleteLabelValues(n)
-				m.EvalFailures.DeleteLabelValues(n)
+				m.EvalFailures.DeleteLabelValues(n, "user")
+				m.EvalFailures.DeleteLabelValues(n, "operator")
 				m.GroupInterval.DeleteLabelValues(n)
 				m.GroupLastEvalTime.DeleteLabelValues(n)
 				m.GroupLastDuration.DeleteLabelValues(n)

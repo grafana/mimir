@@ -14,15 +14,6 @@
       "source": {
         "git": {
           "remote": "https://github.com/grafana/jsonnet-libs.git",
-          "subdir": "etcd-operator"
-        }
-      },
-      "version": "master"
-    },
-    {
-      "source": {
-        "git": {
-          "remote": "https://github.com/grafana/jsonnet-libs.git",
           "subdir": "ksonnet-util"
         }
       },
@@ -44,7 +35,7 @@
           "subdir": "operations/rollout-operator"
         }
       },
-      "version": "4d563316583fdc8120c6ee7dfb393bb59a537bae"
+      "version": "e6aa01b8577b3cc4101f3d620f85e12511cee346"
     }
   ],
   "legacyImports": true

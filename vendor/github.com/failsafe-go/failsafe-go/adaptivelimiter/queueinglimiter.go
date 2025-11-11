@@ -57,7 +57,7 @@ func (l *queueingLimiter[R]) CanAcquirePermit() bool {
 
 func (l *queueingLimiter[R]) ToExecutor(_ R) any {
 	e := &executor[R]{
-		BaseExecutor:    &policy.BaseExecutor[R]{},
+		BaseExecutor:    policy.BaseExecutor[R]{},
 		blockingLimiter: l,
 	}
 	e.Executor = e

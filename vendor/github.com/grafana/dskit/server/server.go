@@ -85,6 +85,9 @@ type Config struct {
 	// https://pkg.go.dev/github.com/prometheus/client_golang/prometheus#HistogramOpts
 	// for details. A generally useful value is 1.1.
 	MetricsNativeHistogramFactor float64 `yaml:"-"`
+	// MetricsMessageSizeNativeHistograms enables use of MetricsNativeHistogramFactor for response_message_bytes,
+	// request_message_bytes metrics
+	MetricsMessageSizeNativeHistograms bool `yaml:"-"`
 
 	HTTPListenNetwork           string `yaml:"http_listen_network"`
 	HTTPListenAddress           string `yaml:"http_listen_address"`
@@ -471,7 +474,7 @@ func newServer(cfg Config, metrics *Metrics) (*Server, error) {
 
 	var grpcServerLimit *grpcInflightLimitCheck
 	if cfg.GrpcMethodLimiter != nil {
-		grpcServerLimit = newGrpcInflightLimitCheck(cfg.GrpcMethodLimiter)
+		grpcServerLimit = newGrpcInflightLimitCheck(cfg.GrpcMethodLimiter, logger)
 		grpcMiddleware = append(grpcMiddleware, grpcServerLimit.UnaryServerInterceptor)
 		grpcStreamMiddleware = append(grpcStreamMiddleware, grpcServerLimit.StreamServerInterceptor)
 	}

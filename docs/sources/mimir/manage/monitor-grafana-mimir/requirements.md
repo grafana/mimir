@@ -9,8 +9,6 @@ title: About Grafana Mimir dashboards and alerts requirements
 weight: 10
 ---
 
-<!-- Note: This topic is mounted in the GEM documentation. Ensure that all updates are also applicable to GEM. -->
-
 # About Grafana Mimir dashboards and alerts requirements
 
 Grafana Mimir dashboards and alerts require certain labels to exist on metrics scraped from Grafana Mimir.

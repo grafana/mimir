@@ -141,7 +141,8 @@ func TestIngester_Start(t *testing.T) {
 				ring.LEAVING,
 				time.Now(),
 				false,
-				time.Time{})
+				time.Time{},
+				nil)
 
 			return desc, true, nil
 		}))

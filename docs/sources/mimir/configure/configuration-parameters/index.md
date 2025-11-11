@@ -191,8 +191,7 @@ api:
 # The frontend block configures the query-frontend.
 [frontend: <frontend>]
 
-# The ingest_storage block configures the experimental Kafka-based ingest
-# storage.
+# The ingest_storage block configures the Kafka-based ingest storage.
 [ingest_storage: <ingest_storage>]
 
 # The blocks_storage block configures the blocks storage.
@@ -237,7 +236,7 @@ activity_tracker:
 # supported by the ingester. This can help debug performance issues for specific
 # tenants.
 # CLI flag: -include-tenant-id-in-profile-labels
-[include_tenant_id_in_profile_labels: <boolean> | default = false]
+[include_tenant_id_in_profile_labels: <boolean> | default = true]
 
 vault:
   # (experimental) Enables fetching of keys and certificates from Vault
@@ -391,20 +390,20 @@ overrides_exporter:
         # CLI flag: -overrides-exporter.ring.multi.secondary
         [secondary: <string> | default = ""]
 
-        # (advanced) Mirror writes to secondary store.
+        # (advanced) Mirror writes to the secondary store.
         # CLI flag: -overrides-exporter.ring.multi.mirror-enabled
         [mirror_enabled: <boolean> | default = false]
 
-        # (advanced) Timeout for storing value to secondary store.
+        # (advanced) Timeout for storing a value to the secondary store.
         # CLI flag: -overrides-exporter.ring.multi.mirror-timeout
         [mirror_timeout: <duration> | default = 2s]
 
-    # (advanced) Period at which to heartbeat to the ring. 0 = disabled.
+    # (advanced) Period at which to heartbeat to the ring.
     # CLI flag: -overrides-exporter.ring.heartbeat-period
     [heartbeat_period: <duration> | default = 15s]
 
-    # (advanced) The heartbeat timeout after which overrides-exporters are
-    # considered unhealthy within the ring. 0 = never (timeout disabled).
+    # (advanced) Heartbeat timeout after which Mimir marks overrides-exporters
+    # as unhealthy in the ring.
     # CLI flag: -overrides-exporter.ring.heartbeat-timeout
     [heartbeat_timeout: <duration> | default = 1m]
 
@@ -426,7 +425,7 @@ overrides_exporter:
     # CLI flag: -overrides-exporter.ring.instance-addr
     [instance_addr: <string> | default = ""]
 
-    # (advanced) Enable using a IPv6 instance address. (default false)
+    # (advanced) Enable using an IPv6 instance address.
     # CLI flag: -overrides-exporter.ring.instance-enable-ipv6
     [instance_enable_ipv6: <boolean> | default = false]
 
@@ -441,8 +440,9 @@ overrides_exporter:
     # CLI flag: -overrides-exporter.ring.wait-stability-max-duration
     [wait_stability_max_duration: <duration> | default = 5m]
 
-    # (advanced) Number of consecutive timeout periods an unhealthy instance in
-    # the ring is automatically removed after. Set to 0 to disable auto-forget.
+    # (advanced) Number of consecutive timeout periods after which Mimir
+    # automatically removes an unhealthy instance in the ring. Set to 0 to
+    # disable auto-forget.
     # CLI flag: -overrides-exporter.ring.auto-forget-unhealthy-periods
     [auto_forget_unhealthy_periods: <int> | default = 4]
 
@@ -871,13 +871,13 @@ ha_tracker:
   # CLI flag: -distributor.ha-tracker.enable-elected-replica-metric
   [enable_elected_replica_metric: <boolean> | default = false]
 
-  # Backend storage to use for the ring. Supported values are: consul, etcd,
-  # inmemory, memberlist, multi. Note that etcd is deprecated.
+  # Backend storage to use for the HA tracker. Supported values are: consul,
+  # etcd, inmemory, memberlist, multi. Memberlist is recommended.
   kvstore:
     # Backend storage to use for the ring. Supported values are: consul, etcd,
     # inmemory, memberlist, multi.
     # CLI flag: -distributor.ha-tracker.store
-    [store: <string> | default = "consul"]
+    [store: <string> | default = "memberlist"]
 
     # (advanced) The prefix for the keys in the store. Should end with a /.
     # CLI flag: -distributor.ha-tracker.prefix
@@ -902,11 +902,11 @@ ha_tracker:
       # CLI flag: -distributor.ha-tracker.multi.secondary
       [secondary: <string> | default = ""]
 
-      # (advanced) Mirror writes to secondary store.
+      # (advanced) Mirror writes to the secondary store.
       # CLI flag: -distributor.ha-tracker.multi.mirror-enabled
       [mirror_enabled: <boolean> | default = false]
 
-      # (advanced) Timeout for storing value to secondary store.
+      # (advanced) Timeout for storing a value to the secondary store.
       # CLI flag: -distributor.ha-tracker.multi.mirror-timeout
       [mirror_timeout: <duration> | default = 2s]
 
@@ -959,20 +959,20 @@ ring:
       # CLI flag: -distributor.ring.multi.secondary
       [secondary: <string> | default = ""]
 
-      # (advanced) Mirror writes to secondary store.
+      # (advanced) Mirror writes to the secondary store.
       # CLI flag: -distributor.ring.multi.mirror-enabled
       [mirror_enabled: <boolean> | default = false]
 
-      # (advanced) Timeout for storing value to secondary store.
+      # (advanced) Timeout for storing a value to the secondary store.
       # CLI flag: -distributor.ring.multi.mirror-timeout
       [mirror_timeout: <duration> | default = 2s]
 
-  # (advanced) Period at which to heartbeat to the ring. 0 = disabled.
+  # (advanced) Period at which to heartbeat to the ring.
   # CLI flag: -distributor.ring.heartbeat-period
   [heartbeat_period: <duration> | default = 15s]
 
-  # (advanced) The heartbeat timeout after which distributors are considered
-  # unhealthy within the ring. 0 = never (timeout disabled).
+  # (advanced) Heartbeat timeout after which Mimir marks distributors as
+  # unhealthy in the ring.
   # CLI flag: -distributor.ring.heartbeat-timeout
   [heartbeat_timeout: <duration> | default = 1m]
 
@@ -994,12 +994,13 @@ ring:
   # CLI flag: -distributor.ring.instance-addr
   [instance_addr: <string> | default = ""]
 
-  # (advanced) Enable using a IPv6 instance address. (default false)
+  # (advanced) Enable using an IPv6 instance address.
   # CLI flag: -distributor.ring.instance-enable-ipv6
   [instance_enable_ipv6: <boolean> | default = false]
 
-  # (advanced) Number of consecutive timeout periods an unhealthy instance in
-  # the ring is automatically removed after. Set to 0 to disable auto-forget.
+  # (advanced) Number of consecutive timeout periods after which Mimir
+  # automatically removes an unhealthy instance in the ring. Set to 0 to disable
+  # auto-forget.
   # CLI flag: -distributor.ring.auto-forget-unhealthy-periods
   [auto_forget_unhealthy_periods: <int> | default = 10]
 
@@ -1135,28 +1136,28 @@ ring:
       # CLI flag: -ingester.ring.multi.secondary
       [secondary: <string> | default = ""]
 
-      # (advanced) Mirror writes to secondary store.
+      # (advanced) Mirror writes to the secondary store.
       # CLI flag: -ingester.ring.multi.mirror-enabled
       [mirror_enabled: <boolean> | default = false]
 
-      # (advanced) Timeout for storing value to secondary store.
+      # (advanced) Timeout for storing a value to the secondary store.
       # CLI flag: -ingester.ring.multi.mirror-timeout
       [mirror_timeout: <duration> | default = 2s]
 
-  # (advanced) Period at which to heartbeat to the ring. 0 = disabled.
+  # (advanced) Period at which to heartbeat to the ring.
   # CLI flag: -ingester.ring.heartbeat-period
   [heartbeat_period: <duration> | default = 15s]
 
   # (advanced) The heartbeat timeout after which ingesters are skipped for
-  # reads/writes. 0 = never (timeout disabled). This option needs be set on
-  # ingesters, distributors, queriers, and rulers when running in microservices
-  # mode.
+  # reads/writes. This option needs be set on ingesters, distributors, queriers,
+  # and rulers when running in microservices mode.
   # CLI flag: -ingester.ring.heartbeat-timeout
   [heartbeat_timeout: <duration> | default = 1m]
 
-  # Number of ingesters that each time series is replicated to. This option
-  # needs be set on ingesters, distributors, queriers, and rulers when running
-  # in microservices mode.
+  # Number of ingesters that each time series is replicated to. This
+  # configuration is not used when ingest storage is enabled. This option needs
+  # be set on ingesters, distributors, queriers, and rulers when running in
+  # microservices mode.
   # CLI flag: -ingester.ring.replication-factor
   [replication_factor: <int> | default = 3]
 
@@ -1284,11 +1285,11 @@ partition_ring:
       # CLI flag: -ingester.partition-ring.multi.secondary
       [secondary: <string> | default = ""]
 
-      # (advanced) Mirror writes to secondary store.
+      # (advanced) Mirror writes to the secondary store.
       # CLI flag: -ingester.partition-ring.multi.mirror-enabled
       [mirror_enabled: <boolean> | default = false]
 
-      # (advanced) Timeout for storing value to secondary store.
+      # (advanced) Timeout for storing a value to the secondary store.
       # CLI flag: -ingester.partition-ring.multi.mirror-timeout
       [mirror_timeout: <duration> | default = 2s]
 
@@ -1369,12 +1370,12 @@ instance_limits:
 # CLI flag: -ingester.ignore-series-limit-for-metric-names
 [ignore_series_limit_for_metric_names: <string> | default = ""]
 
-# (experimental) CPU utilization limit, as CPU cores, for CPU/memory utilization
+# (advanced) CPU utilization limit, as CPU cores, for CPU/memory utilization
 # based read request limiting. Use 0 to disable it.
 # CLI flag: -ingester.read-path-cpu-utilization-limit
 [read_path_cpu_utilization_limit: <float> | default = 0]
 
-# (experimental) Memory limit, in bytes, for CPU/memory utilization based read
+# (advanced) Memory limit, in bytes, for CPU/memory utilization based read
 # request limiting. Use 0 to disable it.
 # CLI flag: -ingester.read-path-memory-utilization-limit
 [read_path_memory_utilization_limit: <int> | default = 0]
@@ -1633,6 +1634,11 @@ The `querier` block configures the querier.
 # CLI flag: -querier.shuffle-sharding-ingesters-enabled
 [shuffle_sharding_ingesters_enabled: <boolean> | default = true]
 
+# (experimental) When set, the querier prioritizes querying data from ingesters
+# and store-gateways in this availability zone.
+# CLI flag: -querier.prefer-availability-zone
+[prefer_availability_zone: <string> | default = ""]
+
 # (advanced) Number of series to buffer per ingester when streaming chunks from
 # ingesters.
 # CLI flag: -querier.streaming-chunks-per-ingester-buffer-size
@@ -1738,6 +1744,91 @@ mimir_query_engine:
   # expression based on results from the other side.
   # CLI flag: -querier.mimir-query-engine.enable-narrow-binary-selectors
   [enable_narrow_binary_selectors: <boolean> | default = false]
+
+  # (experimental) Enable eliminating redundant DeduplicateAndMerge nodes from
+  # the query plan when it can be proven that each input series produces a
+  # unique output series.
+  # CLI flag: -querier.mimir-query-engine.enable-eliminate-deduplicate-and-merge
+  [enable_eliminate_deduplicate_and_merge: <boolean> | default = false]
+
+  # (experimental) Enable eliminating duplicate or redundant matchers that are
+  # part of selector expressions.
+  # CLI flag: -querier.mimir-query-engine.enable-reduce-matchers
+  [enable_reduce_matchers: <boolean> | default = true]
+
+ring:
+  # The key-value store used to share the hash ring across multiple instances.
+  kvstore:
+    # Backend storage to use for the ring. Supported values are: consul, etcd,
+    # inmemory, memberlist, multi.
+    # CLI flag: -querier.ring.store
+    [store: <string> | default = "memberlist"]
+
+    # (advanced) The prefix for the keys in the store. Should end with a /.
+    # CLI flag: -querier.ring.prefix
+    [prefix: <string> | default = "collectors/"]
+
+    # The consul block configures the consul client.
+    # The CLI flags prefix for this block configuration is: querier.ring
+    [consul: <consul>]
+
+    # The etcd block configures the etcd client.
+    # The CLI flags prefix for this block configuration is: querier.ring
+    [etcd: <etcd>]
+
+    multi:
+      # (advanced) Primary backend storage used by multi-client.
+      # CLI flag: -querier.ring.multi.primary
+      [primary: <string> | default = ""]
+
+      # (advanced) Secondary backend storage used by multi-client.
+      # CLI flag: -querier.ring.multi.secondary
+      [secondary: <string> | default = ""]
+
+      # (advanced) Mirror writes to the secondary store.
+      # CLI flag: -querier.ring.multi.mirror-enabled
+      [mirror_enabled: <boolean> | default = false]
+
+      # (advanced) Timeout for storing a value to the secondary store.
+      # CLI flag: -querier.ring.multi.mirror-timeout
+      [mirror_timeout: <duration> | default = 2s]
+
+  # (advanced) Period at which to heartbeat to the ring.
+  # CLI flag: -querier.ring.heartbeat-period
+  [heartbeat_period: <duration> | default = 15s]
+
+  # (advanced) Heartbeat timeout after which Mimir marks queriers as unhealthy
+  # in the ring.
+  # CLI flag: -querier.ring.heartbeat-timeout
+  [heartbeat_timeout: <duration> | default = 1m]
+
+  # (advanced) Instance ID to register in the ring.
+  # CLI flag: -querier.ring.instance-id
+  [instance_id: <string> | default = "<hostname>"]
+
+  # List of network interface names to look up when finding the instance IP
+  # address.
+  # CLI flag: -querier.ring.instance-interface-names
+  [instance_interface_names: <list of strings> | default = [<private network interfaces>]]
+
+  # (advanced) Port to advertise in the ring (defaults to
+  # -server.grpc-listen-port).
+  # CLI flag: -querier.ring.instance-port
+  [instance_port: <int> | default = 0]
+
+  # (advanced) IP address to advertise in the ring. Default is auto-detected.
+  # CLI flag: -querier.ring.instance-addr
+  [instance_addr: <string> | default = ""]
+
+  # (advanced) Enable using an IPv6 instance address.
+  # CLI flag: -querier.ring.instance-enable-ipv6
+  [instance_enable_ipv6: <boolean> | default = false]
+
+  # (advanced) Number of consecutive timeout periods after which Mimir
+  # automatically removes an unhealthy instance in the ring. Set to 0 to disable
+  # auto-forget.
+  # CLI flag: -querier.ring.auto-forget-unhealthy-periods
+  [auto_forget_unhealthy_periods: <int> | default = 10]
 ```
 
 ### frontend
@@ -1994,15 +2085,15 @@ ring:
       # CLI flag: -query-scheduler.ring.multi.secondary
       [secondary: <string> | default = ""]
 
-      # (advanced) Mirror writes to secondary store.
+      # (advanced) Mirror writes to the secondary store.
       # CLI flag: -query-scheduler.ring.multi.mirror-enabled
       [mirror_enabled: <boolean> | default = false]
 
-      # (advanced) Timeout for storing value to secondary store.
+      # (advanced) Timeout for storing a value to the secondary store.
       # CLI flag: -query-scheduler.ring.multi.mirror-timeout
       [mirror_timeout: <duration> | default = 2s]
 
-  # (advanced) Period at which to heartbeat to the ring. 0 = disabled.
+  # (advanced) Period at which to heartbeat to the ring.
   # CLI flag: -query-scheduler.ring.heartbeat-period
   [heartbeat_period: <duration> | default = 15s]
 
@@ -2013,8 +2104,9 @@ ring:
   # CLI flag: -query-scheduler.ring.heartbeat-timeout
   [heartbeat_timeout: <duration> | default = 1m]
 
-  # (advanced) Number of consecutive timeout periods an unhealthy instance in
-  # the ring is automatically removed after. Set to 0 to disable auto-forget.
+  # (advanced) Number of consecutive timeout periods after which Mimir
+  # automatically removes an unhealthy instance in the ring. Set to 0 to disable
+  # auto-forget.
   # CLI flag: -query-scheduler.ring.auto-forget-unhealthy-periods
   [auto_forget_unhealthy_periods: <int> | default = 10]
 
@@ -2225,20 +2317,20 @@ ring:
       # CLI flag: -ruler.ring.multi.secondary
       [secondary: <string> | default = ""]
 
-      # (advanced) Mirror writes to secondary store.
+      # (advanced) Mirror writes to the secondary store.
       # CLI flag: -ruler.ring.multi.mirror-enabled
       [mirror_enabled: <boolean> | default = false]
 
-      # (advanced) Timeout for storing value to secondary store.
+      # (advanced) Timeout for storing a value to the secondary store.
       # CLI flag: -ruler.ring.multi.mirror-timeout
       [mirror_timeout: <duration> | default = 2s]
 
-  # (advanced) Period at which to heartbeat to the ring. 0 = disabled.
+  # (advanced) Period at which to heartbeat to the ring.
   # CLI flag: -ruler.ring.heartbeat-period
   [heartbeat_period: <duration> | default = 15s]
 
-  # (advanced) The heartbeat timeout after which rulers are considered unhealthy
-  # within the ring. 0 = never (timeout disabled).
+  # (advanced) Heartbeat timeout after which Mimir marks rulers as unhealthy in
+  # the ring.
   # CLI flag: -ruler.ring.heartbeat-timeout
   [heartbeat_timeout: <duration> | default = 1m]
 
@@ -2260,12 +2352,13 @@ ring:
   # CLI flag: -ruler.ring.instance-addr
   [instance_addr: <string> | default = ""]
 
-  # (advanced) Enable using a IPv6 instance address. (default false)
+  # (advanced) Enable using an IPv6 instance address.
   # CLI flag: -ruler.ring.instance-enable-ipv6
   [instance_enable_ipv6: <boolean> | default = false]
 
-  # (advanced) Number of consecutive timeout periods an unhealthy instance in
-  # the ring is automatically removed after. Set to 0 to disable auto-forget.
+  # (advanced) Number of consecutive timeout periods after which Mimir
+  # automatically removes an unhealthy instance in the ring. Set to 0 to disable
+  # auto-forget.
   # CLI flag: -ruler.ring.auto-forget-unhealthy-periods
   [auto_forget_unhealthy_periods: <int> | default = 2]
 
@@ -2485,20 +2578,20 @@ sharding_ring:
       # CLI flag: -alertmanager.sharding-ring.multi.secondary
       [secondary: <string> | default = ""]
 
-      # (advanced) Mirror writes to secondary store.
+      # (advanced) Mirror writes to the secondary store.
       # CLI flag: -alertmanager.sharding-ring.multi.mirror-enabled
       [mirror_enabled: <boolean> | default = false]
 
-      # (advanced) Timeout for storing value to secondary store.
+      # (advanced) Timeout for storing a value to the secondary store.
       # CLI flag: -alertmanager.sharding-ring.multi.mirror-timeout
       [mirror_timeout: <duration> | default = 2s]
 
-  # (advanced) Period at which to heartbeat to the ring. 0 = disabled.
+  # (advanced) Period at which to heartbeat to the ring.
   # CLI flag: -alertmanager.sharding-ring.heartbeat-period
   [heartbeat_period: <duration> | default = 15s]
 
-  # (advanced) The heartbeat timeout after which alertmanagers are considered
-  # unhealthy within the ring. 0 = never (timeout disabled).
+  # (advanced) Heartbeat timeout after which Mimir marks alertmanagers as
+  # unhealthy in the ring.
   # CLI flag: -alertmanager.sharding-ring.heartbeat-timeout
   [heartbeat_timeout: <duration> | default = 1m]
 
@@ -2520,7 +2613,7 @@ sharding_ring:
   # CLI flag: -alertmanager.sharding-ring.instance-addr
   [instance_addr: <string> | default = ""]
 
-  # (advanced) Enable using a IPv6 instance address. (default false)
+  # (advanced) Enable using an IPv6 instance address.
   # CLI flag: -alertmanager.sharding-ring.instance-enable-ipv6
   [instance_enable_ipv6: <boolean> | default = false]
 
@@ -2732,15 +2825,12 @@ alertmanager_client:
 # CLI flag: -alertmanager.strict-initialization-enabled
 [strict_initialization: <boolean> | default = false]
 
-# (experimental) Enable UTF-8 strict mode. Allows UTF-8 characters in the
-# matchers for routes and inhibition rules, in silences, and in the labels for
-# alerts. It is recommended that all tenants run the `migrate-utf8` command in
-# mimirtool before enabling this mode. Otherwise, some tenant configurations
-# might fail to load. For more information, refer to [Enable
+# (advanced) Enable UTF-8 strict mode. Allows UTF-8 characters in the matchers
+# for routes and inhibition rules, in silences, and in the labels for alerts. It
+# is recommended that all tenants run the `migrate-utf8` command in mimirtool
+# before enabling this mode. Otherwise, some tenant configurations might fail to
+# load. For more information, refer to [Enable
 # UTF-8](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/components/alertmanager/#enable-utf-8).
-# Enabling and then disabling UTF-8 strict mode can break existing Alertmanager
-# configurations if tenants added UTF-8 characters to their Alertmanager
-# configuration while it was enabled.
 # CLI flag: -alertmanager.utf8-strict-mode-enabled
 [utf8_strict_mode: <boolean> | default = false]
 
@@ -3033,6 +3123,7 @@ The `etcd` block configures the etcd client. The supported CLI flags `<prefix>` 
 - `ingester.partition-ring`
 - `ingester.ring`
 - `overrides-exporter.ring`
+- `querier.ring`
 - `query-scheduler.ring`
 - `ruler.ring`
 - `store-gateway.sharding-ring`
@@ -3138,6 +3229,7 @@ The `consul` block configures the consul client. The supported CLI flags `<prefi
 - `ingester.partition-ring`
 - `ingester.ring`
 - `overrides-exporter.ring`
+- `querier.ring`
 - `query-scheduler.ring`
 - `ruler.ring`
 - `store-gateway.sharding-ring`
@@ -3414,6 +3506,20 @@ The `memberlist` block configures the Gossip memberlist.
 # VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
 # CLI flag: -memberlist.tls-min-version
 [tls_min_version: <string> | default = ""]
+
+zone_aware_routing:
+  # (experimental) Enable zone-aware routing for memberlist gossip.
+  # CLI flag: -memberlist.zone-aware-routing.enabled
+  [enabled: <boolean> | default = false]
+
+  # (experimental) Availability zone where this node is running.
+  # CLI flag: -memberlist.zone-aware-routing.instance-availability-zone
+  [instance_availability_zone: <string> | default = ""]
+
+  # (experimental) Role of this node in the cluster. Valid values: member,
+  # bridge.
+  # CLI flag: -memberlist.zone-aware-routing.role
+  [role: <string> | default = "member"]
 ```
 
 ### limits
@@ -3421,11 +3527,6 @@ The `memberlist` block configures the Gossip memberlist.
 The `limits` block configures default and per-tenant limits imposed by components.
 
 ```yaml
-# Maximum number of active series per user. 0 means no limit. This limit only
-# applies with ingest storage enabled.
-# CLI flag: -distributor.max-active-series-per-user
-[max_active_series_per_user: <int> | default = 0]
-
 # Per-tenant push request rate limit in requests per second. 0 to disable.
 # CLI flag: -distributor.request-rate-limit
 [request_rate: <float> | default = 0]
@@ -3574,21 +3675,6 @@ The `limits` block configures default and per-tenant limits imposed by component
 # during the relabeling phase and cleaned afterwards: __meta_tenant_id
 [metric_relabel_configs: <relabel_config...> | default = ]
 
-# (experimental) Enable metric relabeling for the tenant. This configuration
-# option can be used to forcefully disable metric relabeling on a per-tenant
-# basis.
-# CLI flag: -distributor.metric-relabeling-enabled
-[metric_relabeling_enabled: <boolean> | default = true]
-
-# (experimental) If enabled, rate limit errors will be reported to the client
-# with HTTP status code 529 (Service is overloaded). If disabled, status code
-# 429 (Too Many Requests) is used. Enabling
-# -distributor.retry-after-header.enabled before utilizing this option is
-# strongly recommended as it helps prevent premature request retries by the
-# client.
-# CLI flag: -distributor.service-overload-status-code-on-rate-limit-enabled
-[service_overload_status_code_on_rate_limit_enabled: <boolean> | default = false]
-
 # The maximum number of in-memory series per tenant, across the cluster before
 # replication. 0 to disable.
 # CLI flag: -ingester.max-global-series-per-user
@@ -3653,18 +3739,18 @@ The `limits` block configures default and per-tenant limits imposed by component
 #       prod: '{namespace=~"prod-.*"}'
 [active_series_additional_custom_trackers: <map of tracker name (string) to matcher (string)> | default = ]
 
-# (experimental) Non-zero value enables out-of-order support for most recent
-# samples that are within the time window in relation to the TSDB's maximum
-# time, i.e., within [db.maxTime-timeWindow, db.maxTime]). The ingester will
-# need more memory as a factor of rate of out-of-order samples being ingested
-# and the number of series that are getting out-of-order samples. If query falls
-# into this window, cached results will use value from
+# Non-zero value enables out-of-order support for most recent samples that are
+# within the time window in relation to the TSDB's maximum time, i.e., within
+# [db.maxTime-timeWindow, db.maxTime]). The ingester will need more memory as a
+# factor of rate of out-of-order samples being ingested and the number of series
+# that are getting out-of-order samples. If query falls into this window, cached
+# results will use value from
 # -query-frontend.results-cache-ttl-for-out-of-order-time-window option to
 # specify TTL for resulting cache entry.
 # CLI flag: -ingester.out-of-order-time-window
 [out_of_order_time_window: <duration> | default = 0s]
 
-# (experimental) Whether the shipper should label out-of-order blocks with an
+# (advanced) Whether the shipper should label out-of-order blocks with an
 # external label before uploading them. Setting this label will compact
 # out-of-order blocks separately from non-out-of-order blocks
 # CLI flag: -ingester.out-of-order-blocks-external-label-enabled
@@ -3685,8 +3771,8 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -querier.max-fetched-chunks-per-query
 [max_fetched_chunks_per_query: <int> | default = 2000000]
 
-# (experimental) Maximum number of chunks estimated to be fetched in a single
-# query from ingesters and store-gateways, as a multiple of
+# (advanced) Maximum number of chunks estimated to be fetched in a single query
+# from ingesters and store-gateways, as a multiple of
 # -querier.max-fetched-chunks-per-query. This limit is enforced in the querier.
 # Must be greater than or equal to 1, or 0 to disable.
 # CLI flag: -querier.max-estimated-fetched-chunks-per-query-multiplier
@@ -3826,7 +3912,7 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -query-frontend.max-query-expression-size-bytes
 [max_query_expression_size_bytes: <int> | default = 0]
 
-# (experimental) List of queries to block.
+# List of queries to block.
 # Example:
 #   The following configuration blocks the query "rate(metric_counter[5m])".
 #   Setting the pattern to ".*" and regex to true blocks all queries.
@@ -3937,13 +4023,10 @@ blocked_requests:
 # CLI flag: -querier.cardinality-api-max-series-limit
 [cardinality_analysis_max_results: <int> | default = 500]
 
-# (experimental) Maximum size of an active series or active native histogram
-# series request result shard in bytes. 0 to disable.
+# (advanced) Maximum size of an active series or active native histogram series
+# request result shard in bytes. 0 to disable.
 # CLI flag: -querier.active-series-results-max-size-bytes
 [active_series_results_max_size_bytes: <int> | default = 419430400]
-
-# (experimental)
-[cost_attribution_labels: <string> | default = ""]
 
 # (experimental)
 cost_attribution_labels_structured:
@@ -4155,6 +4238,11 @@ ruler_alertmanager_client_config:
 # (experimental) Minimum allowable evaluation interval for rule groups.
 # CLI flag: -ruler.min-rule-evaluation-interval
 [ruler_min_rule_evaluation_interval: <duration> | default = 0s]
+
+# (experimental) Maximum number of alerts or series one alerting rule or one
+# recording rule respectively can produce. 0 is no limit.
+# CLI flag: -ruler.max-rule-evaluation-results
+[ruler_max_rule_evaluation_results: <int> | default = 0]
 
 # The tenant's shard size, used when store-gateway sharding is enabled. Value of
 # 0 disables shuffle sharding for the tenant, that is all tenant blocks are
@@ -4372,6 +4460,16 @@ ruler_alertmanager_client_config:
 # CLI flag: -distributor.otel-translation-strategy
 [otel_translation_strategy: <string> | default = ""]
 
+# (advanced) If enabled, prefixes label names starting with a single underscore
+# with `key_` when translating OTel attribute names. Defaults to true.
+# CLI flag: -distributor.otel-label-name-underscore-sanitization
+[otel_label_name_underscore_sanitization: <boolean> | default = true]
+
+# (advanced) If enabled, keeps multiple consecutive underscores in label names
+# when translating OTel attribute names. Defaults to true.
+# CLI flag: -distributor.otel-label-name-preserve-underscores
+[otel_label_name_preserve_multiple_underscores: <boolean> | default = true]
+
 # (experimental) The default consistency level to enforce for queries when using
 # the ingest storage. Supports values: strong, eventual.
 # CLI flag: -ingest-storage.read-consistency
@@ -4394,7 +4492,7 @@ ruler_alertmanager_client_config:
 
 ### ingest_storage
 
-The `ingest_storage` block configures the experimental Kafka-based ingest storage.
+The `ingest_storage` block configures the Kafka-based ingest storage.
 
 ```yaml
 # True to enable the ingestion via object storage.
@@ -4596,6 +4694,17 @@ migration:
   # before it times out. Set to `0` to disable the timeout.
   # CLI flag: -ingest-storage.migration.ingest-storage-max-wait-time
   [ingest_storage_max_wait_time: <duration> | default = 0s]
+
+# (experimental) Enable fsyncing of WAL and WBL before Kafka offsets are
+# committed.
+# CLI flag: -ingest-storage.write-logs-fsync-before-kafka-commit-enabled
+[write_logs_fsync_before_kafka_commit_enabled: <boolean> | default = true]
+
+# (experimental) Number of tenants to concurrently fsync WAL and WBL before
+# Kafka offsets are committed. Ignored if
+# -ingest-storage.write-logs-fsync-before-kafka-commit-enabled=false
+# CLI flag: -ingest-storage.write-logs-fsync-before-kafka-commit-concurrency
+[write_logs_fsync_before_kafka_commit_concurrency: <int> | default = 1]
 ```
 
 ### blocks_storage
@@ -4673,7 +4782,7 @@ bucket_store:
   # CLI flag: -blocks-storage.bucket-store.block-sync-concurrency
   [block_sync_concurrency: <int> | default = 4]
 
-  # (advanced) Number of Go routines to use when syncing block meta files from
+  # (advanced) Number of goroutines to use when syncing block meta files from
   # object storage per tenant.
   # CLI flag: -blocks-storage.bucket-store.meta-sync-concurrency
   [meta_sync_concurrency: <int> | default = 20]
@@ -4852,12 +4961,6 @@ bucket_store:
     # open for each index-header file.
     # CLI flag: -blocks-storage.bucket-store.index-header.max-idle-file-handles
     [max_idle_file_handles: <int> | default = 1]
-
-    # (experimental) If enabled, store-gateway will periodically persist block
-    # IDs of lazy loaded index-headers and load them eagerly during startup.
-    # Ignored if index-header lazy loading is disabled.
-    # CLI flag: -blocks-storage.bucket-store.index-header.eager-loading-startup-enabled
-    [eager_loading_startup_enabled: <boolean> | default = true]
 
     # (advanced) If enabled, store-gateway will lazy load an index-header only
     # once required by a query.
@@ -5040,8 +5143,8 @@ tsdb:
   # CLI flag: -blocks-storage.tsdb.head-postings-for-matchers-cache-versions
   [head_postings_for_matchers_cache_versions: <int> | default = 2097152]
 
-  # (experimental) How long to cache postings for matchers in the Head and
-  # OOOHead. 0 disables the cache and just deduplicates the in-flight calls.
+  # (advanced) How long to cache postings for matchers in the Head and OOOHead.
+  # Set to 0 to disable the cache and only deduplicate in-flight calls.
   # CLI flag: -blocks-storage.tsdb.head-postings-for-matchers-cache-ttl
   [head_postings_for_matchers_cache_ttl: <duration> | default = 10s]
 
@@ -5050,19 +5153,19 @@ tsdb:
   # CLI flag: -blocks-storage.tsdb.head-postings-for-matchers-cache-size
   [head_postings_for_matchers_cache_size: <int> | default = 100]
 
-  # (experimental) Maximum size in bytes of the cache for postings for matchers
-  # in the Head and OOOHead when TTL is greater than 0.
+  # (advanced) Maximum size, in bytes, of the cache for postings for matchers in
+  # each compacted block when the TTL is greater than 0.
   # CLI flag: -blocks-storage.tsdb.head-postings-for-matchers-cache-max-bytes
   [head_postings_for_matchers_cache_max_bytes: <int> | default = 104857600]
 
-  # (experimental) Force the cache to be used for postings for matchers in the
-  # Head and OOOHead, even if it's not a concurrent (query-sharding) call.
+  # (advanced) Force the cache to be used for postings for matchers in the Head
+  # and OOOHead, even if it's not a concurrent (query-sharding) call.
   # CLI flag: -blocks-storage.tsdb.head-postings-for-matchers-cache-force
   [head_postings_for_matchers_cache_force: <boolean> | default = false]
 
-  # (experimental) How long to cache postings for matchers in each compacted
-  # block queried from the ingester. 0 disables the cache and just deduplicates
-  # the in-flight calls.
+  # (advanced) How long to cache postings for matchers in each compacted block
+  # queried from the ingester. 0 disables the cache and just deduplicates the
+  # in-flight calls.
   # CLI flag: -blocks-storage.tsdb.block-postings-for-matchers-cache-ttl
   [block_postings_for_matchers_cache_ttl: <duration> | default = 10s]
 
@@ -5071,13 +5174,13 @@ tsdb:
   # CLI flag: -blocks-storage.tsdb.block-postings-for-matchers-cache-size
   [block_postings_for_matchers_cache_size: <int> | default = 100]
 
-  # (experimental) Maximum size in bytes of the cache for postings for matchers
-  # in each compacted block when TTL is greater than 0.
+  # (advanced) Maximum size in bytes of the cache for postings for matchers in
+  # each compacted block when TTL is greater than 0.
   # CLI flag: -blocks-storage.tsdb.block-postings-for-matchers-cache-max-bytes
   [block_postings_for_matchers_cache_max_bytes: <int> | default = 104857600]
 
-  # (experimental) Force the cache to be used for postings for matchers in
-  # compacted blocks, even if it's not a concurrent (query-sharding) call.
+  # (advanced) Force the cache to be used for postings for matchers in compacted
+  # blocks, even if it's not a concurrent (query-sharding) call.
   # CLI flag: -blocks-storage.tsdb.block-postings-for-matchers-cache-force
   [block_postings_for_matchers_cache_force: <boolean> | default = false]
 
@@ -5125,6 +5228,16 @@ tsdb:
     # CLI flag: -blocks-storage.tsdb.index-lookup-planning.min-series-per-block-for-query-planning
     [min_series_per_block_for_query_planning: <int> | default = 10000]
 
+    # (advanced) Number of series for a label name above which larger count-min
+    # sketches are used for that label.
+    # CLI flag: -blocks-storage.tsdb.index-lookup-planning.label-cardinality-for-larger-sketch
+    [label_cardinality_for_larger_sketch: <int> | default = 1000000]
+
+    # (advanced) Number of series for a label name above which smaller count-min
+    # sketches are used for that label.
+    # CLI flag: -blocks-storage.tsdb.index-lookup-planning.label-cardinality-for-smaller-sketch
+    [label_cardinality_for_smaller_sketch: <int> | default = 1000]
+
     # (experimental) Controls the collection of statistics and whether to defer
     # some vector selector matchers to sequential scans. This leads to better
     # performance.
@@ -5152,12 +5265,12 @@ The `compactor` block configures the compactor component.
 # CLI flag: -compactor.block-ranges
 [block_ranges: <list of durations> | default = 2h0m0s,12h0m0s,24h0m0s]
 
-# (advanced) Number of Go routines to use when downloading blocks for compaction
+# (advanced) Number of goroutines to use when downloading blocks for compaction
 # and uploading resulting blocks.
 # CLI flag: -compactor.block-sync-concurrency
 [block_sync_concurrency: <int> | default = 8]
 
-# (advanced) Number of Go routines to use when syncing block meta files from the
+# (advanced) Number of goroutines to use when syncing block meta files from the
 # long term storage.
 # CLI flag: -compactor.meta-sync-concurrency
 [meta_sync_concurrency: <int> | default = 20]
@@ -5186,6 +5299,13 @@ The `compactor` block configures the compactor component.
 # have uploaded their blocks to the storage.
 # CLI flag: -compactor.first-level-compaction-wait-period
 [first_level_compaction_wait_period: <duration> | default = 25m]
+
+# (experimental) When enabled, the compactor skips first-level compaction jobs
+# if any source block has a MaxTime more recent than the wait period threshold.
+# This prevents premature compaction of blocks that may still receive
+# late-arriving data.
+# CLI flag: -compactor.first-level-compaction-skip-future-max-time
+[first_level_compaction_skip_future_max_time: <boolean> | default = false]
 
 # (advanced) How frequently the compactor should run blocks cleanup and
 # maintenance, as well as update the bucket index.
@@ -5219,11 +5339,6 @@ The `compactor` block configures the compactor component.
 # CLI flag: -compactor.max-compaction-time
 [max_compaction_time: <duration> | default = 1h]
 
-# (experimental) If enabled, will delete the bucket-index, markers and debug
-# files in the tenant bucket when there are no blocks left in the index.
-# CLI flag: -compactor.no-blocks-file-cleanup-enabled
-[no_blocks_file_cleanup_enabled: <boolean> | default = false]
-
 # (advanced) Number of goroutines opening blocks before compaction.
 # CLI flag: -compactor.max-opening-blocks-concurrency
 [max_opening_blocks_concurrency: <int> | default = 1]
@@ -5243,7 +5358,7 @@ The `compactor` block configures the compactor component.
 # CLI flag: -compactor.max-block-upload-validation-concurrency
 [max_block_upload_validation_concurrency: <int> | default = 1]
 
-# (advanced) Number of Go routines to use when updating blocks metadata during
+# (advanced) Number of goroutines to use when updating blocks metadata during
 # bucket index updates.
 # CLI flag: -compactor.update-blocks-concurrency
 [update_blocks_concurrency: <int> | default = 1]
@@ -5290,20 +5405,20 @@ sharding_ring:
       # CLI flag: -compactor.ring.multi.secondary
       [secondary: <string> | default = ""]
 
-      # (advanced) Mirror writes to secondary store.
+      # (advanced) Mirror writes to the secondary store.
       # CLI flag: -compactor.ring.multi.mirror-enabled
       [mirror_enabled: <boolean> | default = false]
 
-      # (advanced) Timeout for storing value to secondary store.
+      # (advanced) Timeout for storing a value to the secondary store.
       # CLI flag: -compactor.ring.multi.mirror-timeout
       [mirror_timeout: <duration> | default = 2s]
 
-  # (advanced) Period at which to heartbeat to the ring. 0 = disabled.
+  # (advanced) Period at which to heartbeat to the ring.
   # CLI flag: -compactor.ring.heartbeat-period
   [heartbeat_period: <duration> | default = 15s]
 
-  # (advanced) The heartbeat timeout after which compactors are considered
-  # unhealthy within the ring. 0 = never (timeout disabled).
+  # (advanced) Heartbeat timeout after which Mimir marks compactors as unhealthy
+  # in the ring.
   # CLI flag: -compactor.ring.heartbeat-timeout
   [heartbeat_timeout: <duration> | default = 1m]
 
@@ -5325,7 +5440,7 @@ sharding_ring:
   # CLI flag: -compactor.ring.instance-addr
   [instance_addr: <string> | default = ""]
 
-  # (advanced) Enable using a IPv6 instance address. (default false)
+  # (advanced) Enable using an IPv6 instance address.
   # CLI flag: -compactor.ring.instance-enable-ipv6
   [instance_enable_ipv6: <boolean> | default = false]
 
@@ -5343,8 +5458,9 @@ sharding_ring:
   # CLI flag: -compactor.ring.wait-active-instance-timeout
   [wait_active_instance_timeout: <duration> | default = 10m]
 
-  # (advanced) Number of consecutive timeout periods an unhealthy instance in
-  # the ring is automatically removed after. Set to 0 to disable auto-forget.
+  # (advanced) Number of consecutive timeout periods after which Mimir
+  # automatically removes an unhealthy instance in the ring. Set to 0 to disable
+  # auto-forget.
   # CLI flag: -compactor.ring.auto-forget-unhealthy-periods
   [auto_forget_unhealthy_periods: <int> | default = 10]
 
@@ -5359,7 +5475,7 @@ sharding_ring:
 # store-gateway instances to use the sparse headers from object storage instead
 # of recreating them locally.
 # CLI flag: -compactor.upload-sparse-index-headers
-[upload_sparse_index_headers: <boolean> | default = false]
+[upload_sparse_index_headers: <boolean> | default = true]
 ```
 
 ### store_gateway
@@ -5401,22 +5517,21 @@ sharding_ring:
       # CLI flag: -store-gateway.sharding-ring.multi.secondary
       [secondary: <string> | default = ""]
 
-      # (advanced) Mirror writes to secondary store.
+      # (advanced) Mirror writes to the secondary store.
       # CLI flag: -store-gateway.sharding-ring.multi.mirror-enabled
       [mirror_enabled: <boolean> | default = false]
 
-      # (advanced) Timeout for storing value to secondary store.
+      # (advanced) Timeout for storing a value to the secondary store.
       # CLI flag: -store-gateway.sharding-ring.multi.mirror-timeout
       [mirror_timeout: <duration> | default = 2s]
 
-  # (advanced) Period at which to heartbeat to the ring. 0 = disabled.
+  # (advanced) Period at which to heartbeat to the ring.
   # CLI flag: -store-gateway.sharding-ring.heartbeat-period
   [heartbeat_period: <duration> | default = 15s]
 
   # (advanced) The heartbeat timeout after which store gateways are considered
-  # unhealthy within the ring. 0 = never (timeout disabled). This option needs
-  # be set both on the store-gateway, querier and ruler when running in
-  # microservices mode.
+  # unhealthy within the ring. This option needs be set both on the
+  # store-gateway, querier and ruler when running in microservices mode.
   # CLI flag: -store-gateway.sharding-ring.heartbeat-timeout
   [heartbeat_timeout: <duration> | default = 1m]
 
@@ -5430,8 +5545,9 @@ sharding_ring:
   # CLI flag: -store-gateway.sharding-ring.auto-forget-enabled
   [auto_forget_enabled: <boolean> | default = true]
 
-  # (advanced) Number of consecutive timeout periods an unhealthy instance in
-  # the ring is automatically removed after. Set to 0 to disable auto-forget.
+  # (advanced) Number of consecutive timeout periods after which Mimir
+  # automatically removes an unhealthy instance in the ring. Set to 0 to disable
+  # auto-forget.
   # CLI flag: -store-gateway.sharding-ring.auto-forget-unhealthy-periods
   [auto_forget_unhealthy_periods: <int> | default = 10]
 
@@ -5868,6 +5984,17 @@ The gcs_backend block configures the connection to Google Cloud Storage object s
 # 3. On Google Compute Engine it fetches credentials from the metadata server.
 # CLI flag: -<prefix>.gcs.service-account
 [service_account: <string> | default = ""]
+
+# (advanced) Enable automatic retries for GCS uploads using the RetryAlways
+# policy. Uploads will be retried on transient errors. Note: this does not
+# guarantee idempotency.
+# CLI flag: -<prefix>.gcs.enable-upload-retries
+[enable_upload_retries: <boolean> | default = false]
+
+# (advanced) Maximum number of attempts for GCS operations (0 = unlimited, 1 =
+# no retries). Applies to both regular and upload retry modes.
+# CLI flag: -<prefix>.gcs.max-retries
+[max_retries: <int> | default = 20]
 
 http:
   # (advanced) The time an idle connection remains idle before closing.

@@ -60,6 +60,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/cardinality"
 	"github.com/grafana/mimir/pkg/costattribution"
+	"github.com/grafana/mimir/pkg/costattribution/costattributionmodel"
 	"github.com/grafana/mimir/pkg/ingester"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -553,11 +554,10 @@ func TestDistributor_PushRequestRateLimiter(t *testing.T) {
 	}
 	ctx := user.InjectOrgID(context.Background(), "user")
 	tests := map[string]struct {
-		distributors               int
-		requestRate                float64
-		requestBurstSize           int
-		pushes                     []testPush
-		enableServiceOverloadError bool
+		distributors     int
+		requestRate      float64
+		requestBurstSize int
+		pushes           []testPush
 	}{
 		"request limit should be evenly shared across distributors": {
 			distributors:     2,
@@ -590,17 +590,6 @@ func TestDistributor_PushRequestRateLimiter(t *testing.T) {
 				{expectedError: status.New(codes.ResourceExhausted, newRequestRateLimitedError(2, 3).Error())},
 			},
 		},
-		"request limit is reached return 529 when enable service overload error set to true": {
-			distributors:               2,
-			requestRate:                4,
-			requestBurstSize:           2,
-			enableServiceOverloadError: true,
-			pushes: []testPush{
-				{expectedError: nil},
-				{expectedError: nil},
-				{expectedError: status.New(codes.Unavailable, newRequestRateLimitedError(4, 2).Error())},
-			},
-		},
 	}
 
 	expectedDetails := &mimirpb.ErrorDetails{Cause: mimirpb.ERROR_CAUSE_REQUEST_RATE_LIMITED}
@@ -610,7 +599,6 @@ func TestDistributor_PushRequestRateLimiter(t *testing.T) {
 			limits := prepareDefaultLimits()
 			limits.RequestRate = testData.requestRate
 			limits.RequestBurstSize = testData.requestBurstSize
-			limits.ServiceOverloadStatusCodeOnRateLimitEnabled = testData.enableServiceOverloadError
 
 			// Start all expected distributors
 			distributors, _, _, _ := prepare(t, prepConfig{
@@ -1017,6 +1005,7 @@ func TestDistributor_PushHAInstances(t *testing.T) {
 func TestDistributor_PushQuery(t *testing.T) {
 	const metricName = "foo"
 	ctx := user.InjectOrgID(context.Background(), "user")
+	ctx = limiter.ContextWithNewUnlimitedMemoryConsumptionTracker(ctx)
 	nameMatcher := mustEqualMatcher(model.MetricNameLabel, metricName)
 	barMatcher := mustEqualMatcher("bar", "baz")
 
@@ -1151,12 +1140,7 @@ func TestDistributor_PushQuery(t *testing.T) {
 				assert.True(t, ok, fmt.Sprintf("expected error to be a status error, but got: %T", err))
 			}
 
-			var m model.Matrix
-			if len(resp.Chunkseries) == 0 {
-				m, err = client.StreamingSeriesToMatrix(0, 10, resp.StreamingSeries)
-			} else {
-				m, err = client.TimeSeriesChunksToMatrix(0, 10, resp.Chunkseries)
-			}
+			m, err := client.StreamingSeriesToMatrix(0, 10, resp.StreamingSeries)
 			assert.NoError(t, err)
 			assert.Equal(t, tc.expectedResponse.String(), m.String())
 
@@ -1670,7 +1654,7 @@ func TestDistributor_ValidateSeries(t *testing.T) {
 
 			now := mtime.Now()
 			for _, ts := range tc.req.Timeseries {
-				err := ds[0].validateSeries(now, &ts, "user", "test-group", true, true, 0, 0)
+				err := ds[0].validateSeries(now, &ts, "user", "test-group", true, true, 0, 0, nil)
 				require.NoError(t, err)
 			}
 
@@ -1846,7 +1830,7 @@ func BenchmarkDistributor_SampleDuplicateTimestamp(b *testing.B) {
 			b.ResetTimer()
 			for n := 0; n < b.N; n++ {
 				for _, ts := range timeseries[n] {
-					err := ds[0].validateSeries(now, &ts, "user", "test-group", true, true, 0, 0)
+					err := ds[0].validateSeries(now, &ts, "user", "test-group", true, true, 0, 0, nil)
 					if err != nil {
 						b.Fatal(err)
 					}
@@ -2089,7 +2073,7 @@ func TestDistributor_ExemplarValidation(t *testing.T) {
 			require.Len(t, regs, 1)
 
 			for _, ts := range tc.req.Timeseries {
-				err := ds[0].validateSeries(now, &ts, "user", "test-group", false, false, tc.minExemplarTS, tc.maxExemplarTS)
+				err := ds[0].validateSeries(now, &ts, "user", "test-group", false, false, tc.minExemplarTS, tc.maxExemplarTS, nil)
 				assert.NoError(t, err)
 			}
 
@@ -2196,7 +2180,7 @@ func TestDistributor_HistogramReduction(t *testing.T) {
 			require.Len(t, regs, 1)
 
 			for _, ts := range tc.req.Timeseries {
-				err := ds[0].validateSeries(now, &ts, "user", "test-group", false, false, 0, 0)
+				err := ds[0].validateSeries(now, &ts, "user", "test-group", false, false, 0, 0, nil)
 				if tc.expectedError != nil {
 					require.ErrorAs(t, err, &tc.expectedError)
 				} else {
@@ -2401,7 +2385,7 @@ func BenchmarkDistributor_Push(b *testing.B) {
 			state:          "enabled",
 			customRegistry: prometheus.NewRegistry(),
 			cfg: func(limits *validation.Limits) {
-				limits.CostAttributionLabels = []string{"team"}
+				limits.CostAttributionLabelsStructured = []costattributionmodel.Label{{Input: "team"}}
 				limits.MaxCostAttributionCardinality = 100
 			},
 		},
@@ -2418,7 +2402,7 @@ func BenchmarkDistributor_Push(b *testing.B) {
 					err := kvStore.CAS(context.Background(), ingester.IngesterRingKey,
 						func(_ interface{}) (interface{}, bool, error) {
 							d := &ring.Desc{}
-							d.AddIngester("ingester-1", "127.0.0.1", "", ring.NewRandomTokenGenerator().GenerateTokens(128, nil), ring.ACTIVE, time.Now(), false, time.Time{})
+							d.AddIngester("ingester-1", "127.0.0.1", "", ring.NewRandomTokenGenerator().GenerateTokens(128, nil), ring.ACTIVE, time.Now(), false, time.Time{}, nil)
 							return d, true, nil
 						},
 					)
@@ -2500,6 +2484,7 @@ func BenchmarkDistributor_Push(b *testing.B) {
 
 func TestSlowQueries(t *testing.T) {
 	ctx := user.InjectOrgID(context.Background(), "user")
+	ctx = limiter.ContextWithNewUnlimitedMemoryConsumptionTracker(ctx)
 	nameMatcher := mustEqualMatcher(model.MetricNameLabel, "foo")
 	nIngesters := 3
 	for happy := 0; happy <= nIngesters; happy++ {
@@ -5199,7 +5184,7 @@ func TestHaDedupeMiddleware(t *testing.T) {
 				err := middleware(tc.ctx, pushReq)
 				handledErr := err
 				if handledErr != nil {
-					handledErr = ds[0].handlePushError(tc.ctx, err)
+					handledErr = ds[0].handlePushError(err)
 				}
 				gotErrs = append(gotErrs, handledErr)
 			}
@@ -5285,53 +5270,40 @@ func TestRelabelMiddleware(t *testing.T) {
 	ctxWithUser := user.InjectOrgID(context.Background(), "user")
 
 	type testCase struct {
-		name              string
-		ctx               context.Context
-		relabelConfigs    []*relabel.Config
-		dropLabels        []string
-		relabelingEnabled bool
-		reqs              []*mimirpb.WriteRequest
-		expectedReqs      []*mimirpb.WriteRequest
-		expectErrs        []bool
+		name           string
+		ctx            context.Context
+		relabelConfigs []*relabel.Config
+		dropLabels     []string
+		reqs           []*mimirpb.WriteRequest
+		expectedReqs   []*mimirpb.WriteRequest
+		expectErrs     []bool
 	}
 	testCases := []testCase{
 		{
-			name:              "do nothing",
-			ctx:               ctxWithUser,
-			relabelConfigs:    nil,
-			dropLabels:        nil,
-			relabelingEnabled: true,
-			reqs:              []*mimirpb.WriteRequest{makeWriteRequestForGenerators(5, labelSetGenForStringPairs(t, "__name__", "metric1", "label", "value_%d"), nil, nil)},
-			expectedReqs:      []*mimirpb.WriteRequest{makeWriteRequestForGenerators(5, labelSetGenForStringPairs(t, "__name__", "metric1", "label", "value_%d"), nil, nil)},
-			expectErrs:        []bool{false},
+			name:           "do nothing",
+			ctx:            ctxWithUser,
+			relabelConfigs: nil,
+			dropLabels:     nil,
+			reqs:           []*mimirpb.WriteRequest{makeWriteRequestForGenerators(5, labelSetGenForStringPairs(t, "__name__", "metric1", "label", "value_%d"), nil, nil)},
+			expectedReqs:   []*mimirpb.WriteRequest{makeWriteRequestForGenerators(5, labelSetGenForStringPairs(t, "__name__", "metric1", "label", "value_%d"), nil, nil)},
+			expectErrs:     []bool{false},
 		}, {
-			name:              "no user in context",
-			ctx:               context.Background(),
-			relabelConfigs:    nil,
-			dropLabels:        nil,
-			relabelingEnabled: true,
-			reqs:              []*mimirpb.WriteRequest{makeWriteRequestForGenerators(5, labelSetGenForStringPairs(t, "__name__", "metric1", "label", "value_%d"), nil, nil)},
-			expectedReqs:      nil,
-			expectErrs:        []bool{true},
+			name:           "no user in context",
+			ctx:            context.Background(),
+			relabelConfigs: nil,
+			dropLabels:     nil,
+			reqs:           []*mimirpb.WriteRequest{makeWriteRequestForGenerators(5, labelSetGenForStringPairs(t, "__name__", "metric1", "label", "value_%d"), nil, nil)},
+			expectedReqs:   nil,
+			expectErrs:     []bool{true},
 		}, {
-			name:              "apply a relabel rule",
-			ctx:               ctxWithUser,
-			relabelConfigs:    nil,
-			dropLabels:        []string{"label1", "label3"},
-			relabelingEnabled: true,
-			reqs:              []*mimirpb.WriteRequest{makeWriteRequestForGenerators(5, labelSetGenForStringPairs(t, "__name__", "metric1", "label1", "value1", "label2", "value2", "label3", "value3"), nil, nil)},
-			expectedReqs:      []*mimirpb.WriteRequest{makeWriteRequestForGenerators(5, labelSetGenForStringPairs(t, "__name__", "metric1", "label2", "value2"), nil, nil)},
-			expectErrs:        []bool{false},
+			name:           "apply a relabel rule",
+			ctx:            ctxWithUser,
+			relabelConfigs: nil,
+			dropLabels:     []string{"label1", "label3"},
+			reqs:           []*mimirpb.WriteRequest{makeWriteRequestForGenerators(5, labelSetGenForStringPairs(t, "__name__", "metric1", "label1", "value1", "label2", "value2", "label3", "value3"), nil, nil)},
+			expectedReqs:   []*mimirpb.WriteRequest{makeWriteRequestForGenerators(5, labelSetGenForStringPairs(t, "__name__", "metric1", "label2", "value2"), nil, nil)},
+			expectErrs:     []bool{false},
 		}, {
-			name:              "relabeling disabled",
-			ctx:               ctxWithUser,
-			relabelConfigs:    nil,
-			dropLabels:        []string{"label1", "label3"},
-			relabelingEnabled: false,
-			reqs:              []*mimirpb.WriteRequest{makeWriteRequestForGenerators(5, labelSetGenForStringPairs(t, "__name__", "metric1", "label1", "value1", "label2", "value2", "label3", "value3"), nil, nil)},
-			expectedReqs:      []*mimirpb.WriteRequest{makeWriteRequestForGenerators(5, labelSetGenForStringPairs(t, "__name__", "metric1", "label1", "value1", "label2", "value2", "label3", "value3"), nil, nil)},
-			expectErrs:        []bool{false},
-		}, {}, {
 			name: "drop two out of three labels",
 			ctx:  ctxWithUser,
 			relabelConfigs: []*relabel.Config{
@@ -5343,15 +5315,13 @@ func TestRelabelMiddleware(t *testing.T) {
 					Replacement:  "prefix_$1",
 				},
 			},
-			relabelingEnabled: true,
-			reqs:              []*mimirpb.WriteRequest{makeWriteRequestForGenerators(5, labelSetGenForStringPairs(t, "__name__", "metric1", "label1", "value1"), nil, nil)},
-			expectedReqs:      []*mimirpb.WriteRequest{makeWriteRequestForGenerators(5, labelSetGenForStringPairs(t, "__name__", "metric1", "label1", "value1", "target", "prefix_value1"), nil, nil)},
-			expectErrs:        []bool{false},
+			reqs:         []*mimirpb.WriteRequest{makeWriteRequestForGenerators(5, labelSetGenForStringPairs(t, "__name__", "metric1", "label1", "value1"), nil, nil)},
+			expectedReqs: []*mimirpb.WriteRequest{makeWriteRequestForGenerators(5, labelSetGenForStringPairs(t, "__name__", "metric1", "label1", "value1", "target", "prefix_value1"), nil, nil)},
+			expectErrs:   []bool{false},
 		}, {
-			name:              "drop entire series if they have no labels",
-			ctx:               ctxWithUser,
-			dropLabels:        []string{"__name__", "label2", "label3"},
-			relabelingEnabled: true,
+			name:       "drop entire series if they have no labels",
+			ctx:        ctxWithUser,
+			dropLabels: []string{"__name__", "label2", "label3"},
 			reqs: []*mimirpb.WriteRequest{
 				makeWriteRequestForGenerators(5, labelSetGenForStringPairs(t, "__name__", "metric1", "label1", "value1"), nil, nil),
 				makeWriteRequestForGenerators(5, labelSetGenForStringPairs(t, "__name__", "metric2", "label2", "value2"), nil, nil),
@@ -5377,7 +5347,6 @@ func TestRelabelMiddleware(t *testing.T) {
 					Replacement:  "$1",
 				},
 			},
-			relabelingEnabled: true,
 			reqs: []*mimirpb.WriteRequest{{
 				Timeseries: []mimirpb.PreallocTimeseries{makeTimeseries(
 					[]string{
@@ -5432,7 +5401,6 @@ func TestRelabelMiddleware(t *testing.T) {
 			flagext.DefaultValues(&limits)
 			limits.MetricRelabelConfigs = tc.relabelConfigs
 			limits.DropLabels = tc.dropLabels
-			limits.MetricRelabelingEnabled = tc.relabelingEnabled
 			ds, _, _, _ := prepare(t, prepConfig{
 				numDistributors: 1,
 				limits:          &limits,
@@ -5630,12 +5598,6 @@ type prepConfig struct {
 	ingestStorageMigrationEnabled bool
 	ingestStoragePartitions       int32 // Number of partitions. Auto-detected from configured ingesters if not explicitly set.
 	ingestStorageKafka            *kfake.Cluster
-
-	// We need this setting to simulate a response from ingesters that didn't support responding
-	// with a stream of chunks, and were responding with chunk series instead. This is needed to
-	// ensure backwards compatibility, i.e., that queriers can still correctly handle both types
-	// or responses.
-	disableStreamingResponse bool
 }
 
 // totalIngesters takes into account ingesterStateByZone and numIngesters.
@@ -5781,7 +5743,6 @@ func prepareIngesterZone(t testing.TB, zone string, state ingesterZoneState, cfg
 			zone:                          zone,
 			labelNamesStreamResponseDelay: labelNamesStreamResponseDelay,
 			timeOut:                       cfg.timeOut,
-			disableStreamingResponse:      cfg.disableStreamingResponse,
 		}
 
 		// Init the partition reader if the ingester should consume from Kafka.
@@ -6392,7 +6353,6 @@ type mockIngester struct {
 	timeOut                       bool
 	tokens                        []uint32
 	id                            int
-	disableStreamingResponse      bool
 
 	// partitionReader is responsible to consume a partition from Kafka when the
 	// ingest storage is enabled. This field is nil if the ingest storage is disabled.
@@ -6590,7 +6550,6 @@ func (i *mockIngester) QueryStream(ctx context.Context, req *client.QueryRequest
 		return nil, err
 	}
 
-	nonStreamingResponses := []*client.QueryStreamResponse{}
 	streamingLabelResponses := []*client.QueryStreamResponse{}
 	streamingChunkResponses := []*client.QueryStreamResponse{}
 
@@ -6682,47 +6641,32 @@ func (i *mockIngester) QueryStream(ctx context.Context, req *client.QueryRequest
 			}
 		}
 
-		if i.disableStreamingResponse || req.StreamingChunksBatchSize == 0 {
-			nonStreamingResponses = append(nonStreamingResponses, &client.QueryStreamResponse{
-				Chunkseries: []client.TimeSeriesChunk{
-					{
-						Labels: slices.Clone(ts.Labels), // Clone labels to avoid data races between reading label values in this mock ingester and cloning them in receiveResponse().
-						Chunks: wireChunks,
-					},
+		streamingLabelResponses = append(streamingLabelResponses, &client.QueryStreamResponse{
+			StreamingSeries: []client.QueryStreamSeries{
+				{
+					Labels:     ts.Labels,
+					ChunkCount: int64(len(wireChunks)),
 				},
-			})
-		} else {
-			streamingLabelResponses = append(streamingLabelResponses, &client.QueryStreamResponse{
-				StreamingSeries: []client.QueryStreamSeries{
-					{
-						Labels:     ts.Labels,
-						ChunkCount: int64(len(wireChunks)),
-					},
-				},
-			})
+			},
+		})
 
-			streamingChunkResponses = append(streamingChunkResponses, &client.QueryStreamResponse{
-				StreamingSeriesChunks: []client.QueryStreamSeriesChunks{
-					{
-						SeriesIndex: uint64(seriesIndex),
-						Chunks:      wireChunks,
-					},
+		streamingChunkResponses = append(streamingChunkResponses, &client.QueryStreamResponse{
+			StreamingSeriesChunks: []client.QueryStreamSeriesChunks{
+				{
+					SeriesIndex: uint64(seriesIndex),
+					Chunks:      wireChunks,
 				},
-			})
-		}
+			},
+		})
+
 	}
 
 	var results []*client.QueryStreamResponse
-
-	if i.disableStreamingResponse {
-		results = nonStreamingResponses
-	} else {
-		endOfLabelsMessage := &client.QueryStreamResponse{
-			IsEndOfSeriesStream: true,
-		}
-		results = append(streamingLabelResponses, endOfLabelsMessage)
-		results = append(results, streamingChunkResponses...)
+	endOfLabelsMessage := &client.QueryStreamResponse{
+		IsEndOfSeriesStream: true,
 	}
+	results = append(streamingLabelResponses, endOfLabelsMessage)
+	results = append(results, streamingChunkResponses...)
 
 	return &stream{
 		ctx:     ctx,
@@ -7219,6 +7163,10 @@ func newMockIngesterPusherAdapter(ingester *mockIngester) *mockIngesterPusherAda
 func (c *mockIngesterPusherAdapter) PushToStorageAndReleaseRequest(ctx context.Context, req *mimirpb.WriteRequest) error {
 	_, err := c.ingester.Push(ctx, req)
 	return err
+}
+
+func (c *mockIngesterPusherAdapter) NotifyPreCommit(_ context.Context) error {
+	return nil
 }
 
 // noopIngester is a mocked ingester which does nothing.
@@ -8133,7 +8081,7 @@ func TestHandlePushError(t *testing.T) {
 		},
 		"an Error gives the error returned by toErrorWithGRPCStatus()": {
 			pushError:         mockDistributorErr(testErrorMsg),
-			expectedGRPCError: status.Convert(toErrorWithGRPCStatus(mockDistributorErr(testErrorMsg), false)),
+			expectedGRPCError: status.Convert(toErrorWithGRPCStatus(mockDistributorErr(testErrorMsg))),
 		},
 		"a random error without status gives an Internal gRPC error": {
 			pushError:         errWithUserID,
@@ -8148,11 +8096,10 @@ func TestHandlePushError(t *testing.T) {
 		replicationFactor: 1, // push each series to single ingester only
 	}
 	d, _, _, _ := prepare(t, config)
-	ctx := context.Background()
 
 	for testName, testData := range test {
 		t.Run(testName, func(t *testing.T) {
-			err := d[0].handlePushError(ctx, testData.pushError)
+			err := d[0].handlePushError(testData.pushError)
 			if testData.expectedGRPCError == nil {
 				require.Equal(t, testData.expectedOtherError, err)
 			} else {
@@ -8256,8 +8203,6 @@ func TestDistributor_StartFinishRequest(t *testing.T) {
 
 	// Pretend push went OK, make sure to call CleanUp. Also check for expected values of inflight requests and inflight request size.
 	finishPush := func(ctx context.Context, pushReq *Request) error {
-		defer pushReq.CleanUp()
-
 		distrib := ctx.Value(distributorKey).(*Distributor)
 		expReq := ctx.Value(expectedInflightRequestsKey).(int64)
 		expBytes := ctx.Value(expectedInflightBytesKey).(int64)
@@ -8271,6 +8216,11 @@ func TestDistributor_StartFinishRequest(t *testing.T) {
 		if expBytes != bs {
 			return errors.Errorf("unexpected number of inflight request bytes: %d, expected: %d", bs, expBytes)
 		}
+
+		// dskit/ring runs cleanup on a separate, untracked goroutine, so mimick
+		// that to uncover races.
+		go pushReq.CleanUp()
+
 		return nil
 	}
 
@@ -8278,8 +8228,9 @@ func TestDistributor_StartFinishRequest(t *testing.T) {
 		externalCheck       bool  // Start request "externally", from outside of distributor.
 		httpgrpcRequestSize int64 // only used for external check.
 
-		reactiveLimiterEnabled    bool
-		reactiveLimiterCanAcquire bool
+		reactiveLimiterEnabled       bool
+		reactiveLimiterCanAcquire    bool
+		reactiveLimiterFailOnAcquire bool
 
 		inflightRequestsBeforePush     int
 		inflightRequestsSizeBeforePush int64
@@ -8415,6 +8366,23 @@ func TestDistributor_StartFinishRequest(t *testing.T) {
 			expectedStartError:        errReactiveLimiterLimitExceeded,
 			expectedPushError:         errReactiveLimiterLimitExceeded,
 		},
+
+		"enabled reactive limiter acquire permit fails, internal": {
+			reactiveLimiterEnabled:       true,
+			reactiveLimiterCanAcquire:    true,
+			reactiveLimiterFailOnAcquire: true,
+			expectedStartError:           nil,
+			expectedPushError:            errReactiveLimiterLimitExceeded,
+		},
+
+		"enabled reactive limiter acquire permit fails, external": {
+			externalCheck:                true,
+			reactiveLimiterEnabled:       true,
+			reactiveLimiterCanAcquire:    true,
+			reactiveLimiterFailOnAcquire: true,
+			expectedStartError:           nil,
+			expectedPushError:            errReactiveLimiterLimitExceeded,
+		},
 	}
 
 	for name, tc := range testcases {
@@ -8435,13 +8403,19 @@ func TestDistributor_StartFinishRequest(t *testing.T) {
 					config.DefaultLimits.MaxInflightPushRequestsBytes = inflightBytesLimit
 				},
 			})
-			wrappedPush := ds[0].wrapPushWithMiddlewares(finishPush)
+			var cleanupWg sync.WaitGroup
+			wrappedPush := ds[0].wrapPushWithMiddlewares(func(ctx context.Context, pushReq *Request) error {
+				cleanupWg.Add(1)
+				pushReq.AddCleanup(cleanupWg.Done)
+				return finishPush(ctx, pushReq)
+			})
 
 			// Setup reactive limiter if needed
 			if tc.reactiveLimiterEnabled {
 				mockLimiter := &mockReactiveLimiter{
-					canAcquire: tc.reactiveLimiterCanAcquire,
-					permit:     &mockPermit{},
+					canAcquire:    tc.reactiveLimiterCanAcquire,
+					failOnAcquire: tc.reactiveLimiterFailOnAcquire,
+					permit:        &mockPermit{},
 				}
 				ds[0].reactiveLimiter = mockLimiter
 			}
@@ -8492,13 +8466,92 @@ func TestDistributor_StartFinishRequest(t *testing.T) {
 			}
 
 			// Verify that inflight metrics are the same as before the request.
+			require.Eventually(t, func() bool { cleanupWg.Wait(); return true }, time.Second, time.Millisecond)
 			require.Equal(t, int64(tc.inflightRequestsBeforePush), ds[0].inflightPushRequests.Load())
 			require.Equal(t, tc.inflightRequestsSizeBeforePush, ds[0].inflightPushRequestsBytes.Load())
 		})
 	}
 }
 
-func TestDistributor_PreparePushRequest(t *testing.T) {
+func TestDistributor_PushWithReactiveLimiterInflightMetrics(t *testing.T) {
+	uniqueMetricsGen := func(sampleIdx int) []mimirpb.LabelAdapter {
+		return []mimirpb.LabelAdapter{
+			{Name: "__name__", Value: fmt.Sprintf("metric_%d", sampleIdx)},
+		}
+	}
+
+	type testCase struct {
+		reactiveLimiterCanAcquire    bool
+		reactiveLimiterFailOnAcquire bool
+	}
+
+	testcases := map[string]testCase{
+		"reactive limiter cannot acquire permit": {
+			reactiveLimiterCanAcquire: false,
+		},
+		"reactive limiter can acquire permit": {
+			reactiveLimiterCanAcquire:    true,
+			reactiveLimiterFailOnAcquire: false,
+		},
+		"reactive limiter fails on acquire permit": {
+			reactiveLimiterCanAcquire:    true,
+			reactiveLimiterFailOnAcquire: true,
+		},
+	}
+
+	for name, tc := range testcases {
+		t.Run(name, func(t *testing.T) {
+			pushReq := makeWriteRequestForGenerators(1, uniqueMetricsGen, nil, nil)
+
+			var limits validation.Limits
+			flagext.DefaultValues(&limits)
+
+			// Prepare distributor
+			ds, _, regs, _ := prepare(t, prepConfig{
+				numDistributors: 1,
+				happyIngesters:  3,
+				numIngesters:    3,
+				limits:          &limits,
+				enableTracker:   true,
+			})
+
+			// Setup reactive limiter
+			mockLimiter := &mockReactiveLimiter{
+				canAcquire:    tc.reactiveLimiterCanAcquire,
+				failOnAcquire: tc.reactiveLimiterFailOnAcquire,
+				permit:        &mockPermit{},
+			}
+			ds[0].reactiveLimiter = mockLimiter
+
+			ctx := user.InjectOrgID(context.Background(), "user")
+
+			// Get initial inflight count
+			initialInflight := ds[0].inflightPushRequests.Load()
+
+			// Call Push
+			_, _ = ds[0].Push(ctx, pushReq)
+
+			require.Eventually(t, func() bool {
+				return ds[0].inflightPushRequests.Load() == 0
+			}, time.Second, 10*time.Millisecond)
+
+			inflightAfterPush := ds[0].inflightPushRequests.Load()
+			require.Equal(t, initialInflight, inflightAfterPush, "inflight requests should be incremented and decremented during push")
+
+			// Also verify via the actual Prometheus metric
+			expectedMetrics := fmt.Sprintf(`
+				# HELP cortex_distributor_inflight_push_requests Current number of inflight push requests in distributor.
+				# TYPE cortex_distributor_inflight_push_requests gauge
+				cortex_distributor_inflight_push_requests %d
+			`, inflightAfterPush)
+
+			err := testutil.GatherAndCompare(regs[0], strings.NewReader(expectedMetrics), "cortex_distributor_inflight_push_requests")
+			require.NoError(t, err)
+		})
+	}
+}
+
+func TestDistributor_AcquireReactiveLimiterPermit(t *testing.T) {
 	type testCase struct {
 		reactiveLimiterEnabled        bool
 		reactiveLimiterCanAcquire     bool
@@ -8506,6 +8559,7 @@ func TestDistributor_PreparePushRequest(t *testing.T) {
 		expectedError                 error
 		verifyCleanUpFunc             func(func(error), *mockPermit)
 		expectedRejectedRequestsCount int
+		expectedAcquiredPermit        bool
 	}
 
 	testCases := map[string]testCase{
@@ -8522,6 +8576,7 @@ func TestDistributor_PreparePushRequest(t *testing.T) {
 				require.NotNil(t, cleanUp)
 			},
 			expectedRejectedRequestsCount: 0,
+			expectedAcquiredPermit:        true,
 		},
 		"reactive limiter enabled but cannot acquire permit": {
 			reactiveLimiterEnabled:        true,
@@ -8540,6 +8595,7 @@ func TestDistributor_PreparePushRequest(t *testing.T) {
 				require.False(t, permit.dropCalled)
 			},
 			expectedRejectedRequestsCount: 0,
+			expectedAcquiredPermit:        true,
 		},
 		"cleanup function calls permit.Drop() on context.Canceled error": {
 			reactiveLimiterEnabled:    true,
@@ -8552,6 +8608,7 @@ func TestDistributor_PreparePushRequest(t *testing.T) {
 				require.True(t, permit.dropCalled)
 			},
 			expectedRejectedRequestsCount: 0,
+			expectedAcquiredPermit:        true,
 		},
 		"cleanup function calls permit.Drop() on regular error with canceled context": {
 			reactiveLimiterEnabled:    true,
@@ -8565,6 +8622,7 @@ func TestDistributor_PreparePushRequest(t *testing.T) {
 				require.True(t, permit.dropCalled)
 			},
 			expectedRejectedRequestsCount: 0,
+			expectedAcquiredPermit:        true,
 		},
 		"cleanup function calls permit.Record() on regular error with non-canceled context": {
 			reactiveLimiterEnabled:    true,
@@ -8577,6 +8635,7 @@ func TestDistributor_PreparePushRequest(t *testing.T) {
 				require.False(t, permit.dropCalled)
 			},
 			expectedRejectedRequestsCount: 0,
+			expectedAcquiredPermit:        true,
 		},
 	}
 
@@ -8599,14 +8658,15 @@ func TestDistributor_PreparePushRequest(t *testing.T) {
 			var mockLimiter *mockReactiveLimiter
 			if tc.reactiveLimiterEnabled {
 				mockLimiter = &mockReactiveLimiter{
-					canAcquire: tc.reactiveLimiterCanAcquire,
-					permit:     &mockPermit{},
+					failOnAcquire: !tc.reactiveLimiterCanAcquire,
+					permit:        &mockPermit{},
 				}
 				ds[0].reactiveLimiter = mockLimiter
 			}
 
 			// Create context
 			ctx := user.InjectOrgID(context.Background(), "user")
+			ctx = context.WithValue(ctx, requestStateKey, &requestState{})
 
 			// Cancel context if needed for testing
 			var cancel context.CancelFunc
@@ -8615,19 +8675,24 @@ func TestDistributor_PreparePushRequest(t *testing.T) {
 				cancel() // Cancel immediately
 			}
 
-			// Call PreparePushRequest
-			cleanupFunc, err := ds[0].PreparePushRequest(ctx)
-
+			// Call acquireReactiveLimiterPermit
+			cleanup, err := ds[0].acquireReactiveLimiterPermit(ctx)
+			rs, ok := ctx.Value(requestStateKey).(*requestState)
 			// Check error
 			if tc.expectedError != nil {
 				require.ErrorIs(t, err, tc.expectedError)
 			} else {
 				require.NoError(t, err)
+				require.True(t, ok)
+				require.Equal(t, tc.expectedAcquiredPermit, rs.reactiveLimiterPermitAcquired)
 			}
 
 			// Check cleanup function
 			if tc.verifyCleanUpFunc != nil {
-				tc.verifyCleanUpFunc(cleanupFunc, mockLimiter.permit)
+				require.NotNil(t, cleanup)
+				tc.verifyCleanUpFunc(cleanup, mockLimiter.permit)
+			} else {
+				require.Nil(t, cleanup)
 			}
 
 			// Verify rejected requests metric
@@ -8637,14 +8702,93 @@ func TestDistributor_PreparePushRequest(t *testing.T) {
 	}
 }
 
+func TestDistributor_AcquireReactiveLimiterPermitIdempotent(t *testing.T) {
+	testCases := map[string]struct {
+		enabled         bool
+		addRequestState bool
+		expectedError   error
+	}{
+		"no permit when reactive limiter is disabled": {
+			enabled: false,
+		},
+		"context with no request state causes an error": {
+			enabled:         true,
+			addRequestState: false,
+			expectedError:   errMissingRequestState,
+		},
+		"happy case": {
+			enabled:         true,
+			addRequestState: true,
+		},
+	}
+
+	for testName, tc := range testCases {
+		t.Run(testName, func(t *testing.T) {
+			var limits validation.Limits
+			flagext.DefaultValues(&limits)
+
+			// Prepare distributor
+			ds, _, _, _ := prepare(t, prepConfig{
+				numDistributors: 1,
+				limits:          &limits,
+				enableTracker:   true,
+			})
+
+			// Setup reactive limiter if needed
+			if tc.enabled {
+				mockLimiter := &mockReactiveLimiter{
+					canAcquire:    true,
+					failOnAcquire: false,
+					permit:        &mockPermit{},
+				}
+				ds[0].reactiveLimiter = mockLimiter
+			}
+
+			// Create context
+			ctx := user.InjectOrgID(context.Background(), "user")
+			if !tc.enabled {
+				cleanup, err := ds[0].acquireReactiveLimiterPermit(ctx)
+				require.NoError(t, err)
+				require.Nil(t, cleanup)
+			} else if !tc.addRequestState {
+				_, err := ds[0].acquireReactiveLimiterPermit(ctx)
+				require.Error(t, err)
+				require.ErrorIs(t, errMissingRequestState, err)
+			} else {
+				ctx = context.WithValue(ctx, requestStateKey, &requestState{})
+				checkRequestState(t, ctx, false)
+
+				// First call to acquireReactiveLimiterPermit should actually get a new permit.
+				cleanup, err := ds[0].acquireReactiveLimiterPermit(ctx)
+				require.NoError(t, err)
+				require.NotNil(t, cleanup)
+				checkRequestState(t, ctx, true)
+
+				// Second call to acquireReactiveLimiterPermit should fail.
+				_, err = ds[0].acquireReactiveLimiterPermit(ctx)
+				require.Error(t, err)
+				require.ErrorIs(t, err, errReactiveLimiterPermitAlreadyAcquired)
+				checkRequestState(t, ctx, true)
+			}
+		})
+	}
+}
+
+func checkRequestState(t *testing.T, ctx context.Context, acquiredPermit bool) {
+	rs, ok := ctx.Value(requestStateKey).(*requestState)
+	require.True(t, ok)
+	require.Equal(t, acquiredPermit, rs.reactiveLimiterPermitAcquired)
+}
+
 // mockReactiveLimiter is a mock implementation of ReactiveLimiter for testing
 type mockReactiveLimiter struct {
-	canAcquire bool
-	permit     *mockPermit
+	canAcquire    bool
+	failOnAcquire bool
+	permit        *mockPermit
 }
 
 func (m *mockReactiveLimiter) AcquirePermit(_ context.Context) (adaptivelimiter.Permit, error) {
-	if !m.canAcquire {
+	if m.failOnAcquire {
 		return nil, adaptivelimiter.ErrExceeded
 	}
 	return m.permit, nil
@@ -8940,7 +9084,7 @@ func TestCheckStartedMiddleware(t *testing.T) {
 	err := kvStore.CAS(context.Background(), ingester.IngesterRingKey,
 		func(_ interface{}) (interface{}, bool, error) {
 			d := &ring.Desc{}
-			d.AddIngester("ingester-1", "127.0.0.1", "", ring.NewRandomTokenGenerator().GenerateTokens(128, nil), ring.ACTIVE, time.Now(), false, time.Time{})
+			d.AddIngester("ingester-1", "127.0.0.1", "", ring.NewRandomTokenGenerator().GenerateTokens(128, nil), ring.ACTIVE, time.Now(), false, time.Time{}, nil)
 			return d, true, nil
 		},
 	)

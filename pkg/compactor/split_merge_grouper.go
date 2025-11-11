@@ -284,11 +284,11 @@ func planSplitting(userID string, group blocksGroup, splitGroups uint32) []*job 
 func groupBlocksByShardID(blocks []*block.Meta) map[string][]*block.Meta {
 	groups := map[string][]*block.Meta{}
 
-	for _, block := range blocks {
+	for _, b := range blocks {
 		// If the label doesn't exist, we'll group together such blocks using an
 		// empty string as shard ID.
-		shardID := block.Thanos.Labels[mimir_tsdb.CompactorShardIDExternalLabel]
-		groups[shardID] = append(groups[shardID], block)
+		shardID := b.Thanos.Labels[block.CompactorShardIDExternalLabel]
+		groups[shardID] = append(groups[shardID], b)
 	}
 
 	return groups
@@ -388,7 +388,7 @@ func defaultGroupKeyWithoutShardID(meta block.ThanosMeta) string {
 func labelsWithoutShard(base map[string]string) labels.Labels {
 	b := labels.NewScratchBuilder(len(base))
 	for k, v := range base {
-		if k != mimir_tsdb.CompactorShardIDExternalLabel {
+		if k != block.CompactorShardIDExternalLabel {
 			b.Add(k, v)
 		}
 	}

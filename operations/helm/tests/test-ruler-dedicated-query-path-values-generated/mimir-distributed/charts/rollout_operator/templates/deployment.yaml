@@ -6,10 +6,10 @@ metadata:
   name: test-ruler-dedicated-query-path-values-rollout-operator
   namespace: "citestns"
   labels:
-    helm.sh/chart: rollout-operator-0.33.2
+    helm.sh/chart: rollout-operator-0.37.1
     app.kubernetes.io/name: rollout-operator
     app.kubernetes.io/instance: test-ruler-dedicated-query-path-values
-    app.kubernetes.io/version: "v0.29.0"
+    app.kubernetes.io/version: "v0.32.0"
     app.kubernetes.io/managed-by: Helm
 spec:
   replicas: 1
@@ -46,12 +46,13 @@ spec:
               drop:
               - ALL
             readOnlyRootFilesystem: true
-          image: "grafana/rollout-operator:v0.29.0"
+          image: grafana/rollout-operator:v0.32.0
           imagePullPolicy: IfNotPresent
           args:
           - -kubernetes.namespace=citestns
           - -server-tls.enabled=true
           - -server-tls.self-signed-cert.secret-name=certificate
+          - -server-tls.self-signed-cert.dns-name=test-ruler-dedicated-query-path-values-rollout-operator.citestns.svc
           ports:
             - name: http-metrics
               containerPort: 8001

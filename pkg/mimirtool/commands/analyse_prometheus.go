@@ -316,13 +316,17 @@ func withBackoff(ctx context.Context, fn func() error) error {
 	backoff := backoff.New(ctx, backoff.Config{
 		MaxRetries: 10,
 	})
-
+	var err error
 	for backoff.Ongoing() {
-		if err := fn(); err == nil {
+		if err = fn(); err == nil {
 			return nil
 		}
 
 		backoff.Wait()
+	}
+
+	if err != nil {
+		return err
 	}
 
 	return backoff.Err()

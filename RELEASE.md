@@ -27,6 +27,7 @@ The following table contains past releases and tentative dates for upcoming rele
 | 2.15.0  | 2025-01-06 | Casie Chen         |
 | 2.16.0  | 2025-03-17 | Nick Pillitteri    |
 | 2.17.0  | 2025-07-07 | Jeanette Tan       |
+| 3.0.0   | 2025-10-20 | Dimitar Dimitrov   |
 
 ## Release shepherd responsibilities
 
@@ -108,8 +109,6 @@ If something is not clear, you can get back to this document to learn more about
     This prepares a PR into `main` branch. On approval, **use** the `merge-approved-pr-branch-to-main.sh` script, following the [instruction](https://github.com/grafana/mimir/blob/main/RELEASE.md#merging-release-branch-into-main) on how to merge the PR with "Merge commit" (i.e. we DO NOT "Squash and merge" this one).
   - [ ] Publish the Github pre-release draft after getting review from at least one maintainer
   - [ ] Announce the release candidate on social media such as on Mimir community slack using your own Twitter, Mastodon or LinkedIn account
-- [ ] Vendor the release commit of Mimir into Grafana Enterprise Metrics (GEM)
-  - _This is addressed by Grafana Labs_
 - [ ] Publish a `mimir-distributed` Helm chart release candidate. Follow the instructions in [Release process for a release candidate](https://github.com/grafana/mimir/blob/main/operations/helm/charts/mimir-distributed/RELEASE.md#release-process-for-a-release-candidate)
 - [ ] Promote experimental features to stable and remove deprecated features for the **next** release:
   - [ ] Open a PR into `main` branch for every experimental feature we want to promote to stable
@@ -154,7 +153,7 @@ If something is not clear, you can get back to this document to learn more about
     - _This is addressed by Grafana Labs_
   - [ ] [Publish dashboards to grafana.com](https://github.com/grafana/mimir/blob/main/RELEASE.md#publish-a-stable-release)
     - _This is addressed by Grafana Labs_
-  - [ ] After publishing a GEM release publish the `mimir-distributed` Helm chart. Follow the instructions in [Release process for a final release](https://github.com/grafana/mimir/blob/main/operations/helm/charts/mimir-distributed/RELEASE.md#release-process-for-a-final-release)
+  - [ ] Publish the `mimir-distributed` Helm chart. Follow the instructions in [Release process for a final release](https://github.com/grafana/mimir/blob/main/operations/helm/charts/mimir-distributed/RELEASE.md#release-process-for-a-final-release)
 ````
 
 ### Branch management and versioning strategy

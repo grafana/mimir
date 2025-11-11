@@ -11,6 +11,7 @@ import (
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -30,7 +31,6 @@ import (
 	alertingReceivers "github.com/grafana/alerting/receivers"
 	alertingTemplates "github.com/grafana/alerting/templates"
 	"github.com/grafana/dskit/flagext"
-	"github.com/pkg/errors"
 	"github.com/prometheus/alertmanager/api"
 	"github.com/prometheus/alertmanager/cluster"
 	"github.com/prometheus/alertmanager/cluster/clusterpb"
@@ -273,11 +273,11 @@ func New(cfg *Config, reg *prometheus.Registry) (*Alertmanager, error) {
 
 	// State replication needs to be started after the state keys are defined.
 	if err := am.state.StartAsync(context.Background()); err != nil {
-		return nil, errors.Wrap(err, "failed to start ring-based replication service")
+		return nil, fmt.Errorf("failed to start ring-based replication service: %w", err)
 	}
 
 	if err := am.persister.StartAsync(context.Background()); err != nil {
-		return nil, errors.Wrap(err, "failed to start state persister service")
+		return nil, fmt.Errorf("failed to start state persister service: %w", err)
 	}
 
 	am.pipelineBuilder = notify.NewPipelineBuilder(am.registry, cfg.Features)
@@ -477,7 +477,7 @@ func (am *Alertmanager) TestReceiversHandler(w http.ResponseWriter, r *http.Requ
 
 func (am *Alertmanager) WaitInitialStateSync(ctx context.Context) error {
 	if err := am.state.AwaitRunning(ctx); err != nil {
-		return errors.Wrap(err, "failed to wait for ring-based replication service")
+		return fmt.Errorf("failed to wait for ring-based replication service: %w", err)
 	}
 	return nil
 }

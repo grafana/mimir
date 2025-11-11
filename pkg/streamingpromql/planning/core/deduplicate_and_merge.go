@@ -28,8 +28,16 @@ func (d *DeduplicateAndMerge) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_DEDUPLICATE_AND_MERGE
 }
 
-func (d *DeduplicateAndMerge) Children() []planning.Node {
-	return []planning.Node{d.Inner}
+func (d *DeduplicateAndMerge) Child(idx int) planning.Node {
+	if idx != 0 {
+		panic(fmt.Sprintf("node of type DeduplicateAndMerge supports 1 child, but attempted to get child at index %d", idx))
+	}
+
+	return d.Inner
+}
+
+func (d *DeduplicateAndMerge) ChildCount() int {
+	return 1
 }
 
 func (d *DeduplicateAndMerge) SetChildren(children []planning.Node) error {
@@ -42,16 +50,27 @@ func (d *DeduplicateAndMerge) SetChildren(children []planning.Node) error {
 	return nil
 }
 
-func (d *DeduplicateAndMerge) EquivalentTo(other planning.Node) bool {
-	otherDedup, ok := other.(*DeduplicateAndMerge)
+func (d *DeduplicateAndMerge) ReplaceChild(idx int, node planning.Node) error {
+	if idx != 0 {
+		return fmt.Errorf("node of type DeduplicateAndMerge supports 1 child, but attempted to replace child at index %d", idx)
+	}
 
-	return ok && d.Inner.EquivalentTo(otherDedup.Inner)
+	d.Inner = node
+	return nil
+}
+
+func (d *DeduplicateAndMerge) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
+	_, ok := other.(*DeduplicateAndMerge)
+
+	return ok
+}
+
+func (d *DeduplicateAndMerge) MergeHints(_ planning.Node) error {
+	// Nothing to do.
+	return nil
 }
 
 func (d *DeduplicateAndMerge) Describe() string {
-	if d.RunDelayedNameRemoval {
-		return "with delayed name removal"
-	}
 	return ""
 }
 
@@ -75,13 +94,17 @@ func (d *DeduplicateAndMerge) ExpressionPosition() posrange.PositionRange {
 	return d.Inner.ExpressionPosition()
 }
 
+func (d *DeduplicateAndMerge) MinimumRequiredPlanVersion() planning.QueryPlanVersion {
+	return planning.QueryPlanVersionZero
+}
+
 func MaterializeDeduplicateAndMerge(d *DeduplicateAndMerge, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
 	inner, err := materializer.ConvertNodeToInstantVectorOperator(d.Inner, timeRange)
 	if err != nil {
 		return nil, err
 	}
 
-	o := operators.NewDeduplicateAndMerge(inner, params.MemoryConsumptionTracker, d.RunDelayedNameRemoval)
+	o := operators.NewDeduplicateAndMerge(inner, params.MemoryConsumptionTracker)
 
 	return planning.NewSingleUseOperatorFactory(o), nil
 }

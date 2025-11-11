@@ -44,7 +44,7 @@ import (
 
 func TestSchedulerProcessor_processQueriesOnSingleStream(t *testing.T) {
 	t.Run("should immediately return if worker context is canceled and there's no inflight query", func(t *testing.T) {
-		sp, loopClient, _, _, _ := prepareSchedulerProcessor(t)
+		sp, loopClient, _, _, _ := prepareSchedulerProcessor(t, true)
 
 		workerCtx, workerCancel := context.WithCancel(context.Background())
 
@@ -68,7 +68,7 @@ func TestSchedulerProcessor_processQueriesOnSingleStream(t *testing.T) {
 	})
 
 	t.Run("should wait until inflight query execution is completed before returning when worker context is canceled for HTTP payloads", func(t *testing.T) {
-		sp, loopClient, httpRequestHandler, _, frontend := prepareSchedulerProcessor(t)
+		sp, loopClient, httpRequestHandler, _, frontend := prepareSchedulerProcessor(t, true)
 
 		recvCount := atomic.NewInt64(0)
 
@@ -117,7 +117,7 @@ func TestSchedulerProcessor_processQueriesOnSingleStream(t *testing.T) {
 	})
 
 	t.Run("should wait until inflight query execution is completed before returning when worker context is canceled for Protobuf payloads", func(t *testing.T) {
-		sp, loopClient, _, protobufRequestHandler, frontend := prepareSchedulerProcessor(t)
+		sp, loopClient, _, protobufRequestHandler, frontend := prepareSchedulerProcessor(t, true)
 
 		recvCount := atomic.NewInt64(0)
 
@@ -166,7 +166,10 @@ func TestSchedulerProcessor_processQueriesOnSingleStream(t *testing.T) {
 	})
 
 	t.Run("should abort query if query is cancelled for HTTP payload", func(t *testing.T) {
-		sp, loopClient, httpRequestHandler, _, frontend := prepareSchedulerProcessor(t)
+		sp, loopClient, httpRequestHandler, _, frontend := prepareSchedulerProcessor(t, false)
+
+		logs := &concurrency.SyncBuffer{}
+		sp.log = log.NewLogfmtLogger(logs)
 
 		recvCount := atomic.NewInt64(0)
 		queryEvaluationBegun := make(chan struct{})
@@ -188,6 +191,19 @@ func TestSchedulerProcessor_processQueriesOnSingleStream(t *testing.T) {
 				loopClient.cancelCtx()
 
 				return nil, toRPCErr(context.Canceled)
+			}
+		})
+
+		sendCount := atomic.NewInt64(0)
+		loopClient.On("Send", mock.Anything).Return(func() error {
+			switch sendCount.Inc() {
+			case 1:
+				// First Send() call is querier connecting to scheduler.
+				return nil
+			default:
+				// Subsequent Send() calls are after the query is completed.
+				// Emulate the behaviour of the gRPC client: if the server broke the connection, then Send returns EOF and the true error is available through Recv().
+				return io.EOF
 			}
 		})
 
@@ -220,11 +236,18 @@ func TestSchedulerProcessor_processQueriesOnSingleStream(t *testing.T) {
 			return frontend.queryResultCalls.Load() == 1
 		}, time.Second, 10*time.Millisecond, "expected frontend to be informed of query result exactly once")
 
+		require.Eventuallyf(t, func() bool {
+			return strings.Contains(logs.String(), `level=debug user=user-1 msg="could not notify scheduler about finished query because query execution was cancelled" err="rpc error: code = Canceled desc = context canceled"`)
+		}, time.Second, 10*time.Millisecond, "expected cancellation to be logged, have logs:\n%s", logs)
+
 		workerCancel()
 	})
 
 	t.Run("should abort query if query is cancelled for Protobuf payload", func(t *testing.T) {
-		sp, loopClient, _, protobufRequestHandler, frontend := prepareSchedulerProcessor(t)
+		sp, loopClient, _, protobufRequestHandler, frontend := prepareSchedulerProcessor(t, false)
+
+		logs := &concurrency.SyncBuffer{}
+		sp.log = log.NewLogfmtLogger(logs)
 
 		recvCount := atomic.NewInt64(0)
 		queryEvaluationBegun := make(chan struct{})
@@ -246,6 +269,19 @@ func TestSchedulerProcessor_processQueriesOnSingleStream(t *testing.T) {
 				loopClient.cancelCtx()
 
 				return nil, toRPCErr(context.Canceled)
+			}
+		})
+
+		sendCount := atomic.NewInt64(0)
+		loopClient.On("Send", mock.Anything).Return(func() error {
+			switch sendCount.Inc() {
+			case 1:
+				// First Send() call is querier connecting to scheduler.
+				return nil
+			default:
+				// Subsequent Send() calls are after the query is completed.
+				// Emulate the behaviour of the gRPC client: if the server broke the connection, then Send returns EOF and the true error is available through Recv().
+				return io.EOF
 			}
 		})
 
@@ -273,12 +309,15 @@ func TestSchedulerProcessor_processQueriesOnSingleStream(t *testing.T) {
 
 		// Unlike in the HTTP payload case above, it is the responsibility of the request handler to send a message to the frontend
 		// if the request is cancelled, so we don't expect the scheduler worker to do that here.
-
 		workerCancel()
+
+		require.Eventuallyf(t, func() bool {
+			return strings.Contains(logs.String(), `level=debug user=user-1 msg="could not notify scheduler about finished query because query execution was cancelled" err="rpc error: code = Canceled desc = context canceled"`)
+		}, time.Second, 10*time.Millisecond, "expected cancellation to be logged, have logs:\n%s", logs)
 	})
 
 	t.Run("should not log an error when the query-scheduler is terminated while waiting for the next query to run", func(t *testing.T) {
-		sp, loopClient, _, _, _ := prepareSchedulerProcessor(t)
+		sp, loopClient, _, _, _ := prepareSchedulerProcessor(t, true)
 
 		// Override the logger to capture the logs.
 		logs := &concurrency.SyncBuffer{}
@@ -306,7 +345,7 @@ func TestSchedulerProcessor_processQueriesOnSingleStream(t *testing.T) {
 	})
 
 	t.Run("should not cancel query execution if scheduler client returns a non-cancellation error", func(t *testing.T) {
-		sp, loopClient, httpRequestHandler, _, frontend := prepareSchedulerProcessor(t)
+		sp, loopClient, httpRequestHandler, _, frontend := prepareSchedulerProcessor(t, true)
 
 		recvCount := atomic.NewInt64(0)
 		executionStarted := make(chan struct{})
@@ -370,7 +409,7 @@ func TestSchedulerProcessor_processQueriesOnSingleStream(t *testing.T) {
 
 func TestSchedulerProcessor_QueryTime(t *testing.T) {
 	runTest := func(t *testing.T, statsEnabled bool, statsRace bool, useHTTPGRPC bool) {
-		fp, processClient, httpRequestHandler, protobufRequestHandler, frontend := prepareSchedulerProcessor(t)
+		fp, processClient, httpRequestHandler, protobufRequestHandler, frontend := prepareSchedulerProcessor(t, true)
 
 		recvCount := atomic.NewInt64(0)
 		queueTime := 3 * time.Second
@@ -531,7 +570,7 @@ func TestSchedulerProcessor_ResponseStream(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			reqProcessor, processClient, httpRequestHandler, _, frontend := prepareSchedulerProcessor(t)
+			reqProcessor, processClient, httpRequestHandler, _, frontend := prepareSchedulerProcessor(t, true)
 			// enable response streaming
 			reqProcessor.streamingEnabled = true
 			// make sure responses don't get rejected as too large
@@ -571,7 +610,7 @@ func TestSchedulerProcessor_ResponseStream(t *testing.T) {
 	}
 
 	t.Run("should abort streaming if query is cancelled", func(t *testing.T) {
-		sp, loopClient, httpRequestHandler, _, frontend := prepareSchedulerProcessor(t)
+		sp, loopClient, httpRequestHandler, _, frontend := prepareSchedulerProcessor(t, true)
 		sp.streamingEnabled = true
 		sp.maxMessageSize = 5 * responseStreamingBodyChunkSizeBytes
 
@@ -617,7 +656,7 @@ func TestSchedulerProcessor_ResponseStream(t *testing.T) {
 	})
 
 	t.Run("should finish streaming if worker context is canceled", func(t *testing.T) {
-		sp, loopClient, httpRequestHandler, _, frontend := prepareSchedulerProcessor(t)
+		sp, loopClient, httpRequestHandler, _, frontend := prepareSchedulerProcessor(t, true)
 		sp.streamingEnabled = true
 		sp.maxMessageSize = 5 * responseStreamingBodyChunkSizeBytes
 
@@ -660,7 +699,7 @@ func TestSchedulerProcessor_ResponseStream(t *testing.T) {
 	})
 
 	t.Run("should finish streaming if scheduler client returns a non-cancellation error", func(t *testing.T) {
-		sp, loopClient, httpRequestHandler, _, frontend := prepareSchedulerProcessor(t)
+		sp, loopClient, httpRequestHandler, _, frontend := prepareSchedulerProcessor(t, true)
 		sp.streamingEnabled = true
 		sp.maxMessageSize = 5 * responseStreamingBodyChunkSizeBytes
 
@@ -704,7 +743,7 @@ func TestSchedulerProcessor_ResponseStream(t *testing.T) {
 	})
 
 	t.Run("should retry streamed responses", func(t *testing.T) {
-		reqProcessor, processClient, httpRequestHandler, _, frontend := prepareSchedulerProcessor(t)
+		reqProcessor, processClient, httpRequestHandler, _, frontend := prepareSchedulerProcessor(t, true)
 		// enable response streaming
 		reqProcessor.streamingEnabled = true
 		// make sure responses don't get rejected as too large
@@ -800,7 +839,7 @@ func TestSchedulerProcessor_responseSize(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			sp, loopClient, httpRequestHandler, _, frontend := prepareSchedulerProcessor(t)
+			sp, loopClient, httpRequestHandler, _, frontend := prepareSchedulerProcessor(t, true)
 			if tc.maxMessageSize != 0 {
 				sp.maxMessageSize = tc.maxMessageSize
 			}
@@ -847,12 +886,15 @@ func TestSchedulerProcessor_responseSize(t *testing.T) {
 	}
 }
 
-func prepareSchedulerProcessor(t *testing.T) (*schedulerProcessor, *querierLoopClientMock, *httpRequestHandlerMock, *protobufRequestHandlerMock, *frontendForQuerierMockServer) {
+func prepareSchedulerProcessor(t *testing.T, schedulerSendSucceeds bool) (*schedulerProcessor, *querierLoopClientMock, *httpRequestHandlerMock, *protobufRequestHandlerMock, *frontendForQuerierMockServer) {
 	loopClient := &querierLoopClientMock{}
-	loopClient.On("Send", mock.Anything).Return(nil)
 	loopClient.On("Context").Return(func() context.Context {
 		return loopClient.ctx
 	})
+
+	if schedulerSendSucceeds {
+		loopClient.On("Send", mock.Anything).Return(nil)
+	}
 
 	schedulerClient := &schedulerForQuerierClientMock{}
 	schedulerClient.On("QuerierLoop", mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
@@ -916,6 +958,11 @@ type querierLoopClientMock struct {
 
 func (m *querierLoopClientMock) Send(msg *schedulerpb.QuerierToScheduler) error {
 	args := m.Called(msg)
+
+	if fn, ok := args.Get(0).(func() error); ok {
+		return fn()
+	}
+
 	return args.Error(0)
 }
 
@@ -1048,8 +1095,10 @@ func (f *frontendForQuerierMockServer) QueryResultStream(s frontendv2pb.Frontend
 				return errors.New("expected metadata to be sent before body")
 			}
 			f.responses[resp.QueryID].body = append(f.responses[resp.QueryID].body, data.Body.Chunk...)
+		case *frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse, *frontendv2pb.QueryResultStreamRequest_Error:
+			// Nothing to do.
 		default:
-			return errors.New("unexpected request type")
+			return fmt.Errorf("unexpected request type %T", data)
 		}
 	}
 
@@ -1094,7 +1143,6 @@ func TestGrpcStreamWriter_HappyPath(t *testing.T) {
 	require.Equal(t, queryID, msg3.QueryID, "should set query ID on sent message")
 
 	require.Equal(t, 1, pool.retrievedClientCount, "should retrieve client from pool once and use for all messages")
-	require.Equal(t, 0, pool.removedClientCount, "should not remove client from pool")
 	require.True(t, pool.streamClosed, "stream should have been closed")
 }
 
@@ -1136,8 +1184,6 @@ func TestGrpcStreamWriter_InitialSendSucceedsAfterRetry(t *testing.T) {
 				pool.nextSendCallsShouldFail +
 				1 // Successful attempt
 
-			expectedRemovedClientCount := pool.nextQueryResultStreamCallsShouldFail + pool.nextSendCallsShouldFail // If GetClientFor fails, then we have nothing to remove from the pool.
-
 			writer := newGrpcStreamWriter(queryID, frontendAddress, pool, log.NewNopLogger())
 			ctx := context.Background()
 
@@ -1147,7 +1193,6 @@ func TestGrpcStreamWriter_InitialSendSucceedsAfterRetry(t *testing.T) {
 			require.Equal(t, queryID, msg1.QueryID, "should set query ID on sent message")
 
 			require.Equal(t, expectedRetrievedClientCount, pool.retrievedClientCount, "should retrieve client from pool for each attempt")
-			require.Equal(t, expectedRemovedClientCount, pool.removedClientCount, "should remove failing client from pool if one was returned")
 
 			msg2 := createTestStreamingMessage("second message")
 			require.NoError(t, writer.Write(ctx, msg2))
@@ -1160,7 +1205,6 @@ func TestGrpcStreamWriter_InitialSendSucceedsAfterRetry(t *testing.T) {
 			require.Equal(t, queryID, msg3.QueryID, "should set query ID on sent message")
 
 			require.Equal(t, expectedRetrievedClientCount, pool.retrievedClientCount, "should not retrieve client again for subsequent messages")
-			require.Equal(t, expectedRemovedClientCount, pool.removedClientCount, "should not return client again for subsequent messages")
 			require.True(t, pool.streamClosed, "stream should have been closed")
 		})
 	}
@@ -1194,8 +1238,6 @@ func TestGrpcStreamWriter_InitialSendFails(t *testing.T) {
 				pool.nextQueryResultStreamCallsShouldFail +
 				pool.nextSendCallsShouldFail
 
-			expectedRemovedClientCount := pool.nextQueryResultStreamCallsShouldFail + pool.nextSendCallsShouldFail // If GetClientFor fails, then we have nothing to remove from the pool.
-
 			writer := newGrpcStreamWriter(queryID, frontendAddress, pool, log.NewNopLogger())
 			ctx := context.Background()
 
@@ -1204,12 +1246,10 @@ func TestGrpcStreamWriter_InitialSendFails(t *testing.T) {
 			require.Empty(t, pool.sentMessages, "should not have sent message")
 
 			require.Equal(t, expectedRetrievedClientCount, pool.retrievedClientCount, "should retrieve client from pool for each attempt")
-			require.Equal(t, expectedRemovedClientCount, pool.removedClientCount, "should remove failing client from pool if one was returned")
 
 			msg2 := createTestStreamingMessage("second message")
 			require.EqualError(t, writer.Write(ctx, msg2), "the query-frontend stream has already failed")
 			require.Equal(t, expectedRetrievedClientCount, pool.retrievedClientCount, "should not retrieve client again for subsequent messages")
-			require.Equal(t, expectedRemovedClientCount, pool.removedClientCount, "should not return client again for subsequent messages")
 
 			writer.Close(ctx)
 			require.Empty(t, pool.sentMessages, "should not have sent any messages")
@@ -1241,7 +1281,6 @@ func TestGrpcStreamWriter_SubsequentSendFails(t *testing.T) {
 	require.EqualError(t, writer.Write(ctx, msg2), "calling Send failed")
 
 	require.Equal(t, 1, pool.retrievedClientCount, "should not attempt to retrieve another client")
-	require.Equal(t, 1, pool.removedClientCount, "should remove client from pool")
 
 	writer.Close(ctx)
 	require.True(t, pool.streamClosed, "stream should have been closed")
@@ -1269,7 +1308,6 @@ func TestGrpcStreamWriter_ClosedWithNoMessagesSent_HappyPath(t *testing.T) {
 
 	require.Equal(t, []*frontendv2pb.QueryResultStreamRequest{expectedMessage}, pool.sentMessages, "should have sent message to frontend")
 	require.Equal(t, 1, pool.retrievedClientCount, "should retrieve client from pool once")
-	require.Equal(t, 0, pool.removedClientCount, "should not remove client from pool")
 	require.True(t, pool.streamClosed, "stream should have been closed")
 }
 
@@ -1301,14 +1339,11 @@ func TestGrpcStreamWriter_ClosedWithNoMessageSent_SendingMessageFails(t *testing
 				pool.nextQueryResultStreamCallsShouldFail +
 				pool.nextSendCallsShouldFail
 
-			expectedRemovedClientCount := pool.nextQueryResultStreamCallsShouldFail + pool.nextSendCallsShouldFail // If GetClientFor fails, then we have nothing to remove from the pool.
-
 			writer := newGrpcStreamWriter(queryID, frontendAddress, pool, log.NewNopLogger())
 			ctx := context.Background()
 
 			writer.Close(ctx)
 			require.Equal(t, expectedRetrievedClientCount, pool.retrievedClientCount, "should retrieve client from pool for each attempt")
-			require.Equal(t, expectedRemovedClientCount, pool.removedClientCount, "should remove failing client from pool if one was returned")
 			require.Empty(t, pool.sentMessages, "should not have sent any messages")
 		})
 	}
@@ -1334,7 +1369,6 @@ func TestGrpcStreamWriter_CancelledRequestContext(t *testing.T) {
 	require.Equal(t, []*frontendv2pb.QueryResultStreamRequest{msg1, msg2, msg3}, pool.sentMessages, "should have sent all messages")
 	require.False(t, pool.sendCalledWithClosedContext, "should not use a cancelled context for sending messages")
 	require.Equal(t, 1, pool.retrievedClientCount, "should retrieve client from pool once and use for all messages")
-	require.Equal(t, 0, pool.removedClientCount, "should not remove client from pool")
 	require.True(t, pool.streamClosed, "stream should have been closed")
 }
 
@@ -1357,7 +1391,6 @@ type mockFrontendClientPool struct {
 	nextSendCallsShouldFail              int // The remaining number of Send calls that should fail
 
 	retrievedClientCount int
-	removedClientCount   int
 
 	sentMessages                []*frontendv2pb.QueryResultStreamRequest
 	sendCalledWithClosedContext bool
@@ -1373,10 +1406,6 @@ func (m *mockFrontendClientPool) GetClientFor(addr string) (client.PoolClient, e
 	}
 
 	return &mockFrontendClient{pool: m}, nil
-}
-
-func (m *mockFrontendClientPool) RemoveClient(c client.PoolClient, addr string) {
-	m.removedClientCount++
 }
 
 type mockFrontendClient struct {

@@ -94,6 +94,7 @@ type Head struct {
 	floatHistogramsPool zeropool.Pool[[]record.RefFloatHistogramSample]
 	metadataPool        zeropool.Pool[[]record.RefMetadata]
 	seriesPool          zeropool.Pool[[]*memSeries]
+	typeMapPool         zeropool.Pool[map[chunks.HeadSeriesRef]sampleType]
 	bytesPool           zeropool.Pool[[]byte]
 	memChunkPool        sync.Pool
 
@@ -163,9 +164,6 @@ type HeadOptions struct {
 
 	OutOfOrderTimeWindow atomic.Int64
 	OutOfOrderCapMax     atomic.Int64
-
-	// EnableNativeHistograms enables the ingestion of native histograms.
-	EnableNativeHistograms atomic.Bool
 
 	ChunkRange int64
 	// ChunkDirRoot is the parent directory of the chunks directory.
@@ -1082,16 +1080,6 @@ func (h *Head) SetOutOfOrderTimeWindow(oooTimeWindow int64, wbl *wlog.WL) {
 	h.opts.OutOfOrderTimeWindow.Store(oooTimeWindow)
 }
 
-// EnableNativeHistograms enables the native histogram feature.
-func (h *Head) EnableNativeHistograms() {
-	h.opts.EnableNativeHistograms.Store(true)
-}
-
-// DisableNativeHistograms disables the native histogram feature.
-func (h *Head) DisableNativeHistograms() {
-	h.opts.EnableNativeHistograms.Store(false)
-}
-
 // PostingsForMatchersCache returns the postings for matchers cache used by the head, if any.
 func (h *Head) PostingsForMatchersCache() *PostingsForMatchersCache {
 	return h.pfmc
@@ -1863,6 +1851,25 @@ func (h *Head) mmapHeadChunks() {
 		h.series.locks[i].RUnlock()
 	}
 	h.metrics.mmapChunksTotal.Add(float64(count))
+}
+
+func (h *Head) FsyncWLSegments() error {
+	if h.wal == nil {
+		return errors.New("wal not initialized")
+	}
+	err := h.wal.FsyncSegmentsUntilCurrent()
+	if err != nil {
+		return fmt.Errorf("could not fsync wal segments: %w", err)
+	}
+	if h.wbl == nil {
+		// WBL is not initialized, which is expected when OOO is disabled
+		return nil
+	}
+	err = h.wbl.FsyncSegmentsUntilCurrent()
+	if err != nil {
+		return fmt.Errorf("could not fsync wbl segments: %w", err)
+	}
+	return nil
 }
 
 // seriesHashmap lets TSDB find a memSeries by its label set, via a 64-bit hash.

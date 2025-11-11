@@ -65,6 +65,8 @@ type OTLPHandlerLimits interface {
 	OTelNativeDeltaIngestion(id string) bool
 	OTelTranslationStrategy(id string) otlptranslator.TranslationStrategyOption
 	NameValidationScheme(id string) model.ValidationScheme
+	OTelLabelNameUnderscoreSanitization(string) bool
+	OTelLabelNamePreserveMultipleUnderscores(string) bool
 }
 
 type OTLPPushMiddleware func(ctx context.Context, req *pmetricotlp.ExportRequest) error
@@ -76,6 +78,7 @@ func OTLPHandler(
 	sourceIPs *middleware.SourceIPExtractor,
 	limits OTLPHandlerLimits,
 	resourceAttributePromotionConfig OTelResourceAttributePromotionConfig,
+	keepIdentifyingOTelResourceAttributesConfig KeepIdentifyingOTelResourceAttributesConfig,
 	retryCfg RetryConfig,
 	OTLPPushMiddlewares []OTLPPushMiddleware,
 	push PushFunc,
@@ -97,7 +100,11 @@ func OTLPHandler(
 
 		otlpConverter := newOTLPMimirConverter(otlpappender.NewCombinedAppender())
 
-		parser := newOTLPParser(limits, resourceAttributePromotionConfig, otlpConverter, pushMetrics, discardedDueToOtelParseError, OTLPPushMiddlewares)
+		parser := newOTLPParser(
+			limits, resourceAttributePromotionConfig, keepIdentifyingOTelResourceAttributesConfig,
+			otlpConverter, pushMetrics, discardedDueToOtelParseError,
+			OTLPPushMiddlewares,
+		)
 
 		supplier := func() (*mimirpb.WriteRequest, func(), error) {
 			rb := util.NewRequestBuffers(requestBufferPool)
@@ -203,11 +210,18 @@ func handlePartialOTLPPush(pushErr error, w http.ResponseWriter, r *http.Request
 func newOTLPParser(
 	limits OTLPHandlerLimits,
 	resourceAttributePromotionConfig OTelResourceAttributePromotionConfig,
+	keepIdentifyingOTelResourceAttributesConfig KeepIdentifyingOTelResourceAttributesConfig,
 	otlpConverter *otlpMimirConverter,
 	pushMetrics *PushMetrics,
 	discardedDueToOtelParseError *prometheus.CounterVec,
 	OTLPPushMiddlewares []OTLPPushMiddleware,
 ) parserFunc {
+	if resourceAttributePromotionConfig == nil {
+		resourceAttributePromotionConfig = limits
+	}
+	if keepIdentifyingOTelResourceAttributesConfig == nil {
+		keepIdentifyingOTelResourceAttributesConfig = limits
+	}
 	return func(ctx context.Context, r *http.Request, maxRecvMsgSize int, buffers *util.RequestBuffers, req *mimirpb.PreallocWriteRequest, logger log.Logger) error {
 		contentType := r.Header.Get("Content-Type")
 		contentEncoding := r.Header.Get("Content-Encoding")
@@ -325,11 +339,8 @@ func newOTLPParser(
 			return err
 		}
 		enableCTZeroIngestion := limits.OTelCreatedTimestampZeroIngestionEnabled(tenantID)
-		if resourceAttributePromotionConfig == nil {
-			resourceAttributePromotionConfig = limits
-		}
 		promoteResourceAttributes := resourceAttributePromotionConfig.PromoteOTelResourceAttributes(tenantID)
-		keepIdentifyingResourceAttributes := limits.OTelKeepIdentifyingResourceAttributes(tenantID)
+		keepIdentifyingResourceAttributes := keepIdentifyingOTelResourceAttributesConfig.OTelKeepIdentifyingResourceAttributes(tenantID)
 		convertHistogramsToNHCB := limits.OTelConvertHistogramsToNHCB(tenantID)
 		promoteScopeMetadata := limits.OTelPromoteScopeMetadata(tenantID)
 		allowDeltaTemporality := limits.OTelNativeDeltaIngestion(tenantID)
@@ -348,6 +359,8 @@ func newOTLPParser(
 			promoteResourceAttributes:         promoteResourceAttributes,
 			allowDeltaTemporality:             allowDeltaTemporality,
 			allowUTF8:                         !translationStrategy.ShouldEscape(),
+			underscoreSanitization:            limits.OTelLabelNameUnderscoreSanitization(tenantID),
+			preserveMultipleUnderscores:       limits.OTelLabelNamePreserveMultipleUnderscores(tenantID),
 		}
 		metrics, metadata, metricsDropped, err := otelMetricsToSeriesAndMetadata(
 			ctx,
@@ -429,8 +442,8 @@ func toOtlpGRPCHTTPStatus(pushErr error) (codes.Code, int, bool) {
 		return codes.Internal, http.StatusServiceUnavailable, false
 	}
 
-	grpcStatusCode := errorCauseToGRPCStatusCode(distributorErr.Cause(), false)
-	httpStatusCode := errorCauseToHTTPStatusCode(distributorErr.Cause(), false)
+	grpcStatusCode := errorCauseToGRPCStatusCode(distributorErr.Cause())
+	httpStatusCode := errorCauseToHTTPStatusCode(distributorErr.Cause())
 	return grpcStatusCode, httpRetryableToOTLPRetryable(httpStatusCode), distributorErr.IsSoft()
 }
 
@@ -535,6 +548,8 @@ type conversionOptions struct {
 	promoteResourceAttributes         []string
 	allowDeltaTemporality             bool
 	allowUTF8                         bool
+	underscoreSanitization            bool
+	preserveMultipleUnderscores       bool
 }
 
 func otelMetricsToSeriesAndMetadata(
@@ -545,13 +560,15 @@ func otelMetricsToSeriesAndMetadata(
 	logger log.Logger,
 ) ([]mimirpb.PreallocTimeseries, []*mimirpb.MetricMetadata, int, error) {
 	settings := prometheusremotewrite.Settings{
-		AddMetricSuffixes:                 opts.addSuffixes,
-		PromoteResourceAttributes:         prometheusremotewrite.NewPromoteResourceAttributes(config.OTLPConfig{PromoteResourceAttributes: opts.promoteResourceAttributes}),
-		KeepIdentifyingResourceAttributes: opts.keepIdentifyingResourceAttributes,
-		ConvertHistogramsToNHCB:           opts.convertHistogramsToNHCB,
-		PromoteScopeMetadata:              opts.promoteScopeMetadata,
-		AllowDeltaTemporality:             opts.allowDeltaTemporality,
-		AllowUTF8:                         opts.allowUTF8,
+		AddMetricSuffixes:                    opts.addSuffixes,
+		PromoteResourceAttributes:            prometheusremotewrite.NewPromoteResourceAttributes(config.OTLPConfig{PromoteResourceAttributes: opts.promoteResourceAttributes}),
+		KeepIdentifyingResourceAttributes:    opts.keepIdentifyingResourceAttributes,
+		ConvertHistogramsToNHCB:              opts.convertHistogramsToNHCB,
+		PromoteScopeMetadata:                 opts.promoteScopeMetadata,
+		AllowDeltaTemporality:                opts.allowDeltaTemporality,
+		AllowUTF8:                            opts.allowUTF8,
+		LabelNameUnderscoreSanitization:      opts.underscoreSanitization,
+		LabelNamePreserveMultipleUnderscores: opts.preserveMultipleUnderscores,
 	}
 	converter.appender.EnableCreatedTimestampZeroIngestion = opts.enableCTZeroIngestion
 	mimirTS, metadata := converter.ToSeriesAndMetadata(ctx, md, settings, logger)

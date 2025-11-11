@@ -12,8 +12,6 @@ title: Grafana Mimir HTTP API
 weight: 120
 ---
 
-<!-- Note: This topic is mounted in the GEM documentation. Ensure that all updates are also applicable to GEM. -->
-
 # Grafana Mimir HTTP API
 
 Grafana Mimir exposes an HTTP API that you can use to write and query time series data, and operate the cluster.
@@ -286,7 +284,6 @@ GET /api/v1/user_limits
 ```
 
 Returns realtime limits for the authenticated tenant, in `JSON` format.
-This API is experimental.
 
 Requires [authentication](#authentication).
 
@@ -1372,8 +1369,6 @@ use [Check block upload](#check-block-upload) API endpoint.
 
 Requires [authentication](#authentication).
 
-This API endpoint is experimental and subject to change.
-
 ### Check block upload
 
 ```
@@ -1400,8 +1395,6 @@ Returns state of the block upload. State is returned as JSON object with field `
 ```
 
 Requires [authentication](#authentication).
-
-This API endpoint is experimental and subject to change.
 
 ### Tenant Delete Request
 

@@ -135,7 +135,7 @@ func selectSeriesSet(ctx context.Context, sortSeries bool, hints *storage.Select
 		indexMatchers = ms
 		scanMatchers  []*labels.Matcher
 	)
-	plan, err := ix.IndexLookupPlanner().PlanIndexLookup(ctx, index.NewIndexOnlyLookupPlan(ms), mint, maxt)
+	plan, err := ix.IndexLookupPlanner().PlanIndexLookup(ctx, index.NewIndexOnlyLookupPlan(ms), hints)
 	// We ignore errors from the planner because we prefer returning a result even if it's not optimally executed.
 	if err == nil {
 		indexMatchers = plan.IndexMatchers()
@@ -196,7 +196,7 @@ func selectChunkSeriesSet(ctx context.Context, sortSeries bool, hints *storage.S
 		indexMatchers = ms
 		scanMatchers  []*labels.Matcher
 	)
-	plan, err := ix.IndexLookupPlanner().PlanIndexLookup(ctx, index.NewIndexOnlyLookupPlan(ms), mint, maxt)
+	plan, err := ix.IndexLookupPlanner().PlanIndexLookup(ctx, index.NewIndexOnlyLookupPlan(ms), hints)
 	// We ignore errors from the planner because we prefer returning a result even if it's not optimally executed.
 	if err == nil {
 		indexMatchers = plan.IndexMatchers()

@@ -29,12 +29,14 @@ spec:
   template:
     metadata:
       labels:
+        foo: bar
         app.kubernetes.io/name: mimir
         app.kubernetes.io/instance: test-oss-topology-spread-constraints-values
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/component: querier
         app.kubernetes.io/part-of: memberlist
       annotations:
+        baz: qux
     spec:
       serviceAccountName: test-oss-topology-spread-constraints-values-mimir
       securityContext:
@@ -55,8 +57,6 @@ spec:
           volumeMounts:
             - name: config
               mountPath: /etc/mimir
-            - name: license
-              mountPath: /license
             - name: runtime-config
               mountPath: /var/mimir
             - name: storage
@@ -115,9 +115,6 @@ spec:
             items:
               - key: "mimir.yaml"
                 path: "mimir.yaml"
-        - name: license
-          secret:
-            secretName: test-oss-topology-spread-constraints-values-mimir-license
         - name: runtime-config
           configMap:
             name: test-oss-topology-spread-constraints-values-mimir-runtime

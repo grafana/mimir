@@ -31,7 +31,7 @@ func (n *NarrowSelectorsOptimizationPass) Name() string {
 	return "narrow selectors"
 }
 
-func (n *NarrowSelectorsOptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan) (*planning.QueryPlan, error) {
+func (n *NarrowSelectorsOptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan, maximumSupportedQueryPlanVersion planning.QueryPlanVersion) (*planning.QueryPlan, error) {
 	// If this query plan doesn't contain any selectors for us to apply hints for or if the
 	// query has been rewritten to be sharded or spun off, don't attempt to generate any query
 	// hints since there are no selectors that we understand and can add matchers to.
@@ -62,7 +62,7 @@ func (n *NarrowSelectorsOptimizationPass) applyToNode(ctx context.Context, node 
 	}
 
 	// Set hints for any child binary expressions of the current node.
-	for _, child := range node.Children() {
+	for child := range planning.ChildrenIter(node) {
 		if err := n.applyToNode(ctx, child); err != nil {
 			return err
 		}
@@ -94,7 +94,7 @@ func (n *NarrowSelectorsOptimizationPass) hintsFromNode(ctx context.Context, nod
 
 	// If the current node isn't a binary expression or aggregation, keep looking at the
 	// children to see if there are any that we can use to find a suitable query hint.
-	for _, child := range node.Children() {
+	for child := range planning.ChildrenIter(node) {
 		if h := n.hintsFromNode(ctx, child); h != nil {
 			return h
 		}

@@ -74,6 +74,8 @@ type Group struct {
 	// defaults to DefaultEvalIterationFunc.
 	evalIterationFunc GroupEvalIterationFunc
 
+	operatorControllableErrorClassifier OperatorControllableErrorClassifier
+
 	appOpts                       *storage.AppendOptions
 	alignEvaluationTimeOnInterval bool
 }
@@ -114,7 +116,8 @@ func NewGroup(o GroupOptions) *Group {
 	metrics.IterationsMissed.WithLabelValues(key)
 	metrics.IterationsScheduled.WithLabelValues(key)
 	metrics.EvalTotal.WithLabelValues(key)
-	metrics.EvalFailures.WithLabelValues(key)
+	metrics.EvalFailures.WithLabelValues(key, "user")
+	metrics.EvalFailures.WithLabelValues(key, "operator")
 	metrics.GroupLastEvalTime.WithLabelValues(key)
 	metrics.GroupLastDuration.WithLabelValues(key)
 	metrics.GroupLastRuleDurationSum.WithLabelValues(key)
@@ -132,24 +135,25 @@ func NewGroup(o GroupOptions) *Group {
 	}
 
 	return &Group{
-		name:                          o.Name,
-		file:                          o.File,
-		interval:                      o.Interval,
-		queryOffset:                   o.QueryOffset,
-		limit:                         o.Limit,
-		rules:                         o.Rules,
-		shouldRestore:                 o.ShouldRestore,
-		opts:                          opts,
-		sourceTenants:                 o.SourceTenants,
-		seriesInPreviousEval:          make([]map[string]labels.Labels, len(o.Rules)),
-		done:                          make(chan struct{}),
-		managerDone:                   o.done,
-		terminated:                    make(chan struct{}),
-		logger:                        opts.Logger.With("file", o.File, "group", o.Name),
-		metrics:                       metrics,
-		evalIterationFunc:             evalIterationFunc,
-		appOpts:                       &storage.AppendOptions{DiscardOutOfOrder: true},
-		alignEvaluationTimeOnInterval: o.AlignEvaluationTimeOnInterval,
+		name:                                o.Name,
+		file:                                o.File,
+		interval:                            o.Interval,
+		queryOffset:                         o.QueryOffset,
+		limit:                               o.Limit,
+		rules:                               o.Rules,
+		shouldRestore:                       o.ShouldRestore,
+		opts:                                opts,
+		sourceTenants:                       o.SourceTenants,
+		seriesInPreviousEval:                make([]map[string]labels.Labels, len(o.Rules)),
+		done:                                make(chan struct{}),
+		managerDone:                         o.done,
+		terminated:                          make(chan struct{}),
+		logger:                              opts.Logger.With("file", o.File, "group", o.Name),
+		metrics:                             metrics,
+		evalIterationFunc:                   evalIterationFunc,
+		appOpts:                             &storage.AppendOptions{DiscardOutOfOrder: true},
+		alignEvaluationTimeOnInterval:       o.AlignEvaluationTimeOnInterval,
+		operatorControllableErrorClassifier: opts.OperatorControllableErrorClassifier,
 	}
 }
 
@@ -546,7 +550,7 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 			rule.SetHealth(HealthBad)
 			rule.SetLastError(err)
 			sp.SetStatus(codes.Error, err.Error())
-			g.metrics.EvalFailures.WithLabelValues(GroupKey(g.File(), g.Name())).Inc()
+			g.incrementEvalFailures(err)
 
 			// Canceled queries are intentional termination of queries. This normally
 			// happens on shutdown and thus we skip logging of any errors here.
@@ -576,7 +580,7 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 				rule.SetHealth(HealthBad)
 				rule.SetLastError(err)
 				sp.SetStatus(codes.Error, err.Error())
-				g.metrics.EvalFailures.WithLabelValues(GroupKey(g.File(), g.Name())).Inc()
+				g.incrementEvalFailures(err)
 
 				logger.Warn("Rule sample appending failed", "err", err)
 				return
@@ -699,6 +703,14 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 
 	g.metrics.GroupSamples.WithLabelValues(GroupKey(g.File(), g.Name())).Set(samplesTotal.Load())
 	g.cleanupStaleSeries(ctx, ts)
+}
+
+func (g *Group) incrementEvalFailures(err error) {
+	reason := "user"
+	if g.operatorControllableErrorClassifier != nil && g.operatorControllableErrorClassifier.IsOperatorControllable(err) {
+		reason = "operator"
+	}
+	g.metrics.EvalFailures.WithLabelValues(GroupKey(g.File(), g.Name()), reason).Inc()
 }
 
 func (g *Group) QueryOffset() time.Duration {
@@ -1010,7 +1022,7 @@ func NewGroupMetrics(reg prometheus.Registerer) *Metrics {
 				Name:      "rule_evaluation_failures_total",
 				Help:      "The total number of rule evaluation failures.",
 			},
-			[]string{"rule_group"},
+			[]string{"rule_group", "reason"},
 		),
 		GroupInterval: prometheus.NewGaugeVec(
 			prometheus.GaugeOpts{

@@ -196,8 +196,8 @@ type Config struct {
 
 	IgnoreSeriesLimitForMetricNames string `yaml:"ignore_series_limit_for_metric_names" category:"advanced"`
 
-	ReadPathCPUUtilizationLimit    float64 `yaml:"read_path_cpu_utilization_limit" category:"experimental"`
-	ReadPathMemoryUtilizationLimit uint64  `yaml:"read_path_memory_utilization_limit" category:"experimental"`
+	ReadPathCPUUtilizationLimit    float64 `yaml:"read_path_cpu_utilization_limit" category:"advanced"`
+	ReadPathMemoryUtilizationLimit uint64  `yaml:"read_path_memory_utilization_limit" category:"advanced"`
 
 	ErrorSampleRate int64 `yaml:"error_sample_rate" json:"error_sample_rate" category:"advanced"`
 
@@ -499,6 +499,7 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 		// This is injected already higher up for methods invoked via the network.
 		// Here we use it so that pushes from kafka also get a tenant assigned since the PartitionReader invokes the ingester.
 		profilingIngester := NewIngesterProfilingWrapper(i)
+
 		i.ingestReader, err = ingest.NewPartitionReaderForPusher(kafkaCfg, i.ingestPartitionID, cfg.IngesterRing.InstanceID, profilingIngester, log.With(logger, "component", "ingest_reader"), registerer)
 		if err != nil {
 			return nil, errors.Wrap(err, "creating ingest storage reader")
@@ -1011,12 +1012,6 @@ func (i *Ingester) applyTSDBSettings() {
 		}
 		if err := db.db.ApplyConfig(&cfg); err != nil {
 			level.Error(i.logger).Log("msg", "failed to apply config to TSDB", "user", userID, "err", err)
-		}
-		if i.limits.NativeHistogramsIngestionEnabled(userID) {
-			// there is not much overhead involved, so don't keep previous state, just overwrite the current setting
-			db.db.EnableNativeHistograms()
-		} else {
-			db.db.DisableNativeHistograms()
 		}
 	}
 }
@@ -2629,27 +2624,6 @@ func (i *Ingester) getTSDB(userID string) *userTSDB {
 	return db
 }
 
-// getIndexLookupPlannerFunc returns the appropriate index lookup planner function based on configuration.
-// When index lookup planning is enabled, it first checks if a pre-computed planner exists in the repository.
-// If found, it uses the cached planner; otherwise, it falls back to generating statistics on-demand.
-// When disabled, it uses NoopPlanner which performs no optimization.
-func (i *Ingester) getIndexLookupPlannerFunc(userID string) tsdb.IndexLookupPlannerFunc {
-	if !i.cfg.BlocksStorageConfig.TSDB.IndexLookupPlanning.Enabled {
-		return func(tsdb.BlockMeta, tsdb.IndexReader) index.LookupPlanner { return lookupplan.NoopPlanner{} }
-	}
-
-	return func(meta tsdb.BlockMeta, reader tsdb.IndexReader) index.LookupPlanner {
-		// Get the userTSDB for this tenant
-		userDB := i.getTSDB(userID)
-		if userDB == nil {
-			// This might happen if a query runs while we're initializing the TSDB for a user.
-			return lookupplan.NoopPlanner{}
-		}
-
-		return userDB.getIndexLookupPlanner(meta, reader)
-	}
-}
-
 // List all users for which we have a TSDB. We do it here in order
 // to keep the mutex locked for the shortest time possible.
 func (i *Ingester) getTSDBUsers() []string {
@@ -2721,6 +2695,7 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 	}
 
 	userDB := &userTSDB{
+		cfg:                     &i.cfg,
 		userID:                  userID,
 		activeSeries:            activeseries.NewActiveSeries(asmodel.NewMatchers(matchersConfig), i.cfg.ActiveSeriesMetrics.IdleTimeout, i.costAttributionMgr.ActiveSeriesTracker(userID)),
 		seriesInMetric:          newMetricCounter(i.limiter, i.cfg.getIgnoreSeriesLimitForMetricNamesMap()),
@@ -2742,12 +2717,6 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 	if i.cfg.BlocksStorageConfig.TSDB.IndexLookupPlanning.Enabled {
 		plannerFactory := lookupplan.NewPlannerFactory(i.lookupPlanMetrics.ForUser(userID), userLogger, lookupplan.NewStatisticsGenerator(userLogger), i.cfg.BlocksStorageConfig.TSDB.IndexLookupPlanning.CostConfig)
 		userDB.plannerProvider = newPlannerProvider(plannerFactory)
-		// Generate initial statistics only after the TSDB has been opened and initialized.
-		defer func() {
-			if err := userDB.generateHeadStatistics(); err != nil {
-				level.Error(userLogger).Log("msg", "failed to generate initial TSDB head statistics", "err", err)
-			}
-		}()
 	}
 
 	userDBHasDB := atomic.NewBool(false)
@@ -2790,9 +2759,8 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 		HeadPostingsForMatchersCacheFactory:  i.headPostingsForMatchersCacheFactory,
 		BlockPostingsForMatchersCacheFactory: i.blockPostingsForMatchersCacheFactory,
 		PostingsClonerFactory:                lookupplan.ActualSelectedPostingsClonerFactory{},
-		EnableNativeHistograms:               i.limits.NativeHistogramsIngestionEnabled(userID),
 		SecondaryHashFunction:                secondaryTSDBHashFunctionForUser(userID),
-		IndexLookupPlannerFunc:               i.getIndexLookupPlannerFunc(userID),
+		IndexLookupPlannerFunc:               userDB.getIndexLookupPlannerFunc(),
 		BlockChunkQuerierFunc: func(b tsdb.BlockReader, mint, maxt int64) (storage.ChunkQuerier, error) {
 			return i.createBlockChunkQuerier(userID, b, mint, maxt)
 		},
@@ -2858,6 +2826,14 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 	}
 
 	i.tsdbMetrics.setRegistryForUser(userID, tsdbPromReg)
+
+	if i.cfg.BlocksStorageConfig.TSDB.IndexLookupPlanning.Enabled {
+		// Generate initial statistics only after the TSDB has been opened and initialized.
+		if err := userDB.generateHeadStatistics(); err != nil {
+			level.Error(userLogger).Log("msg", "failed to generate initial TSDB head statistics", "err", err)
+		}
+	}
+
 	return userDB, nil
 }
 
@@ -2869,7 +2845,7 @@ func (i *Ingester) createBlockChunkQuerier(userID string, b tsdb.BlockReader, mi
 		return nil, err
 	}
 
-	lookupStatsQuerier := newStatsTrackingChunkQuerier(defaultQuerier, i.metrics, i.lookupPlanMetrics.ForUser(userID))
+	lookupStatsQuerier := newStatsTrackingChunkQuerier(b.Meta().ULID, defaultQuerier, i.metrics, i.lookupPlanMetrics.ForUser(userID))
 
 	if rand.Float64() > i.cfg.BlocksStorageConfig.TSDB.IndexLookupPlanning.ComparisonPortion {
 		return lookupStatsQuerier, nil
@@ -4387,4 +4363,20 @@ func timeUntilCompaction(now time.Time, compactionInterval, zoneOffset time.Dura
 	}
 
 	return compactionInterval - timeSinceLastCompaction
+}
+
+func (i *Ingester) NotifyPreCommit(ctx context.Context) error {
+	if !i.cfg.IngestStorageConfig.WriteLogsFsyncBeforeKafkaCommit {
+		return nil
+	}
+
+	level.Debug(i.logger).Log("msg", "fsyncing tsdbs")
+
+	return concurrency.ForEachUser(ctx, i.getTSDBUsers(), i.cfg.IngestStorageConfig.WriteLogsFsyncBeforeKafkaCommitConcurrency, func(ctx context.Context, userID string) error {
+		db := i.getTSDB(userID)
+		if db == nil {
+			return nil
+		}
+		return db.Head().FsyncWLSegments()
+	})
 }

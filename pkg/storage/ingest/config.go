@@ -51,10 +51,15 @@ type Config struct {
 	Enabled     bool            `yaml:"enabled"`
 	KafkaConfig KafkaConfig     `yaml:"kafka"`
 	Migration   MigrationConfig `yaml:"migration"`
+
+	WriteLogsFsyncBeforeKafkaCommit            bool `yaml:"write_logs_fsync_before_kafka_commit_enabled" category:"experimental"`
+	WriteLogsFsyncBeforeKafkaCommitConcurrency int  `yaml:"write_logs_fsync_before_kafka_commit_concurrency" category:"experimental"`
 }
 
 func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.Enabled, "ingest-storage.enabled", false, "True to enable the ingestion via object storage.")
+	f.BoolVar(&cfg.WriteLogsFsyncBeforeKafkaCommit, "ingest-storage.write-logs-fsync-before-kafka-commit-enabled", true, "Enable fsyncing of WAL and WBL before Kafka offsets are committed.")
+	f.IntVar(&cfg.WriteLogsFsyncBeforeKafkaCommitConcurrency, "ingest-storage.write-logs-fsync-before-kafka-commit-concurrency", 1, "Number of tenants to concurrently fsync WAL and WBL before Kafka offsets are committed. Ignored if -ingest-storage.write-logs-fsync-before-kafka-commit-enabled=false")
 
 	cfg.KafkaConfig.RegisterFlagsWithPrefix("ingest-storage.kafka.", f)
 	cfg.Migration.RegisterFlagsWithPrefix("ingest-storage.migration.", f)

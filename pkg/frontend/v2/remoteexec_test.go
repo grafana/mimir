@@ -68,6 +68,7 @@ func TestScalarExecutionResponse(t *testing.T) {
 		},
 	}
 	require.Equal(t, expected, d)
+	require.Equal(t, 4, cap(d.Samples), "should expand slice capacity to nearest power of two")
 
 	require.NotZero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
 	types.FPointSlicePool.Put(&d.Samples, memoryConsumptionTracker)
@@ -262,6 +263,57 @@ func TestInstantVectorExecutionResponse_DelayedNameRemoval(t *testing.T) {
 	require.NotZero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
 	types.SeriesMetadataSlicePool.Put(&series, memoryConsumptionTracker)
 	require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
+}
+
+func TestInstantVectorExecutionResponse_PointSliceLengthNotAPowerOfTwo(t *testing.T) {
+	stream := &mockResponseStream{
+		responses: []mockResponse{
+			{
+				msg: newSeriesMetadata(
+					false,
+					labels.FromStrings("series", "1"),
+				),
+			},
+			{
+				msg: newInstantVectorSeriesData(
+					generateFPoints(1000, 3, 0),
+					generateHPoints(4000, 9, 0),
+				),
+			},
+		},
+	}
+
+	ctx := context.Background()
+	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
+
+	response := &instantVectorExecutionResponse{stream: stream, memoryConsumptionTracker: memoryConsumptionTracker}
+	series, err := response.GetSeriesMetadata(ctx)
+	require.NoError(t, err)
+
+	expectedSeries := []types.SeriesMetadata{
+		{Labels: labels.FromStrings("series", "1")},
+	}
+	require.Equal(t, expectedSeries, series)
+	require.NotZero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
+	types.SeriesMetadataSlicePool.Put(&series, memoryConsumptionTracker)
+	require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
+
+	data, err := response.GetNextSeries(ctx)
+	require.NoError(t, err)
+
+	expectedData := types.InstantVectorSeriesData{
+		Floats:     generateFPoints(1000, 3, 0),
+		Histograms: generateHPoints(4000, 9, 0),
+	}
+	require.Equal(t, expectedData, data)
+	require.Equal(t, 4, cap(data.Floats), "should expand slice capacity to nearest power of two")
+	require.Equal(t, 16, cap(data.Histograms), "should expand slice capacity to nearest power of two")
+	require.NotZero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
+	types.PutInstantVectorSeriesData(data, memoryConsumptionTracker)
+	require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
+
+	response.Close()
+	require.True(t, stream.closed)
 }
 
 func TestRangeVectorExecutionResponse(t *testing.T) {
@@ -474,6 +526,232 @@ func TestRangeVectorExecutionResponse_ExpectedSeriesMismatch(t *testing.T) {
 	response.Close()
 	require.True(t, stream.closed)
 	require.Zerof(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes(), "buffers should be released when closing response, have: %v", memoryConsumptionTracker.DescribeCurrentMemoryConsumption())
+}
+
+func TestRangeVectorExecutionResponse_PointSliceLengthNotAPowerOfTwo(t *testing.T) {
+	stream := &mockResponseStream{
+		responses: []mockResponse{
+			{
+				msg: newSeriesMetadata(
+					false,
+					labels.FromStrings("series", "1"),
+				),
+			},
+			{
+				msg: newRangeVectorStepData(
+					0,
+					1000,
+					500,
+					6000,
+					generateFPoints(1000, 3, 0),
+					generateHPoints(4000, 3, 0),
+				),
+			},
+		},
+	}
+
+	ctx := context.Background()
+	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
+
+	response := newRangeVectorExecutionResponse(stream, memoryConsumptionTracker)
+	series, err := response.GetSeriesMetadata(ctx)
+	require.NoError(t, err)
+
+	expectedSeries := []types.SeriesMetadata{
+		{Labels: labels.FromStrings("series", "1")},
+	}
+	require.Equal(t, expectedSeries, series)
+	require.NotZero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
+	types.SeriesMetadataSlicePool.Put(&series, memoryConsumptionTracker)
+	require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
+
+	require.NoError(t, response.AdvanceToNextSeries(ctx))
+	data, err := response.GetNextStepSamples(ctx)
+	require.NoError(t, err)
+	require.Equal(t, int64(1000), data.StepT)
+	require.Equal(t, int64(500), data.RangeStart)
+	require.Equal(t, int64(6000), data.RangeEnd)
+	requireEqualFPointRingBuffer(t, data.Floats, generateFPoints(1000, 3, 0))
+	requireEqualHPointRingBuffer(t, data.Histograms, generateHPoints(4000, 3, 0))
+	require.NotZero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
+
+	response.Close()
+	require.True(t, stream.closed)
+	require.Zerof(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes(), "buffers should be released when closing response, have: %v", memoryConsumptionTracker.DescribeCurrentMemoryConsumption())
+}
+
+func TestEnsureFPointSliceCapacityIsPowerOfTwo(t *testing.T) {
+	testCases := map[string]struct {
+		input            []promql.FPoint
+		expectedCapacity int
+	}{
+		"empty slice": {
+			input:            nil,
+			expectedCapacity: 0,
+		},
+		"slice with length 0 and capacity 0": {
+			input:            make([]promql.FPoint, 0),
+			expectedCapacity: 0,
+		},
+		"slice with length 0 and capacity 1": {
+			input:            make([]promql.FPoint, 0, 1),
+			expectedCapacity: 1,
+		},
+		"slice with length 1 and capacity 1": {
+			input:            make([]promql.FPoint, 1),
+			expectedCapacity: 1,
+		},
+		"slice with length 0 and capacity 2": {
+			input:            make([]promql.FPoint, 0, 2),
+			expectedCapacity: 2,
+		},
+		"slice with length 1 and capacity 2": {
+			input:            make([]promql.FPoint, 1, 2),
+			expectedCapacity: 2,
+		},
+		"slice with length 2 and capacity 2": {
+			input:            make([]promql.FPoint, 2),
+			expectedCapacity: 2,
+		},
+		"slice with length 2 and capacity 3": {
+			input:            make([]promql.FPoint, 2, 3),
+			expectedCapacity: 4,
+		},
+		"slice with length 3 and capacity 3": {
+			input:            make([]promql.FPoint, 3),
+			expectedCapacity: 4,
+		},
+		"slice with length 4 and capacity 4": {
+			input:            make([]promql.FPoint, 4),
+			expectedCapacity: 4,
+		},
+		"slice with length 5 and capacity 5": {
+			input:            make([]promql.FPoint, 5),
+			expectedCapacity: 8,
+		},
+		"slice with length 6 and capacity 6": {
+			input:            make([]promql.FPoint, 6),
+			expectedCapacity: 8,
+		},
+		"slice with length 7 and capacity 7": {
+			input:            make([]promql.FPoint, 7),
+			expectedCapacity: 8,
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			for idx := range testCase.input {
+				testCase.input[idx].T = int64(idx)
+				testCase.input[idx].F = float64(idx * 10)
+			}
+
+			memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(context.Background(), 0, nil, "")
+			err := memoryConsumptionTracker.IncreaseMemoryConsumption(uint64(cap(testCase.input))*types.FPointSize, limiter.FPointSlices)
+			require.NoError(t, err)
+
+			output, err := ensureFPointSliceCapacityIsPowerOfTwo(testCase.input, memoryConsumptionTracker)
+			require.NoError(t, err)
+			require.Len(t, output, len(testCase.input), "output length should be the same as the provided slice")
+			require.Equal(t, testCase.expectedCapacity, cap(output))
+			require.Equal(t, testCase.input, output, "output should contain the same elements as the provided slice")
+
+			require.Equal(t, uint64(testCase.expectedCapacity)*types.FPointSize, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
+
+			if cap(testCase.input) == testCase.expectedCapacity {
+				require.Equal(t, uint64(testCase.expectedCapacity)*types.FPointSize, memoryConsumptionTracker.PeakEstimatedMemoryConsumptionBytes(), "should not allocate a new slice if the provided slice already has a capacity that is a power of two")
+			} else {
+				require.Equal(t, uint64(testCase.expectedCapacity+cap(testCase.input))*types.FPointSize, memoryConsumptionTracker.PeakEstimatedMemoryConsumptionBytes())
+			}
+		})
+	}
+}
+
+func TestEnsureHPointSliceCapacityIsPowerOfTwo(t *testing.T) {
+	testCases := map[string]struct {
+		input            []promql.HPoint
+		expectedCapacity int
+	}{
+		"empty slice": {
+			input:            nil,
+			expectedCapacity: 0,
+		},
+		"slice with length 0 and capacity 0": {
+			input:            make([]promql.HPoint, 0),
+			expectedCapacity: 0,
+		},
+		"slice with length 0 and capacity 1": {
+			input:            make([]promql.HPoint, 0, 1),
+			expectedCapacity: 1,
+		},
+		"slice with length 1 and capacity 1": {
+			input:            make([]promql.HPoint, 1),
+			expectedCapacity: 1,
+		},
+		"slice with length 0 and capacity 2": {
+			input:            make([]promql.HPoint, 0, 2),
+			expectedCapacity: 2,
+		},
+		"slice with length 1 and capacity 2": {
+			input:            make([]promql.HPoint, 1, 2),
+			expectedCapacity: 2,
+		},
+		"slice with length 2 and capacity 2": {
+			input:            make([]promql.HPoint, 2),
+			expectedCapacity: 2,
+		},
+		"slice with length 2 and capacity 3": {
+			input:            make([]promql.HPoint, 2, 3),
+			expectedCapacity: 4,
+		},
+		"slice with length 3 and capacity 3": {
+			input:            make([]promql.HPoint, 3),
+			expectedCapacity: 4,
+		},
+		"slice with length 4 and capacity 4": {
+			input:            make([]promql.HPoint, 4),
+			expectedCapacity: 4,
+		},
+		"slice with length 5 and capacity 5": {
+			input:            make([]promql.HPoint, 5),
+			expectedCapacity: 8,
+		},
+		"slice with length 6 and capacity 6": {
+			input:            make([]promql.HPoint, 6),
+			expectedCapacity: 8,
+		},
+		"slice with length 7 and capacity 7": {
+			input:            make([]promql.HPoint, 7),
+			expectedCapacity: 8,
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			for idx := range testCase.input {
+				testCase.input[idx].T = int64(idx)
+				testCase.input[idx].H = &histogram.FloatHistogram{Count: float64(idx * 10)}
+			}
+
+			memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(context.Background(), 0, nil, "")
+			err := memoryConsumptionTracker.IncreaseMemoryConsumption(uint64(cap(testCase.input))*types.HPointSize, limiter.HPointSlices)
+			require.NoError(t, err)
+
+			output, err := ensureHPointSliceCapacityIsPowerOfTwo(testCase.input, memoryConsumptionTracker)
+			require.NoError(t, err)
+			require.Len(t, output, len(testCase.input), "output length should be the same as the provided slice")
+			require.Equal(t, testCase.expectedCapacity, cap(output))
+			require.Equal(t, testCase.input, output, "output should contain the same elements as the provided slice")
+
+			require.Equal(t, uint64(testCase.expectedCapacity)*types.HPointSize, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
+
+			if cap(testCase.input) == testCase.expectedCapacity {
+				require.Equal(t, uint64(testCase.expectedCapacity)*types.HPointSize, memoryConsumptionTracker.PeakEstimatedMemoryConsumptionBytes(), "should not allocate a new slice if the provided slice already has a capacity that is a power of two")
+			} else {
+				require.Equal(t, uint64(testCase.expectedCapacity+cap(testCase.input))*types.HPointSize, memoryConsumptionTracker.PeakEstimatedMemoryConsumptionBytes())
+			}
+		})
+	}
 }
 
 func TestExecutionResponses_GetEvaluationInfo(t *testing.T) {
@@ -754,7 +1032,7 @@ func requireEqualHPointRingBuffer(t *testing.T, buffer *types.HPointRingBufferVi
 	}
 }
 
-func TestRemoteExecutor_CorrectlyPassesQueriedTimeRange(t *testing.T) {
+func TestRemoteExecutor_CorrectlyPassesQueriedTimeRangeAndUpdatesQueryStats(t *testing.T) {
 	frontendMock := &timeRangeCapturingFrontend{}
 	cfg := Config{LookBackDelta: 7 * time.Minute}
 	executor := NewRemoteExecutor(frontendMock, cfg)
@@ -763,13 +1041,15 @@ func TestRemoteExecutor_CorrectlyPassesQueriedTimeRange(t *testing.T) {
 	startT := endT.Add(-time.Hour)
 	timeRange := types.NewRangeQueryTimeRange(startT, endT, time.Minute)
 
-	ctx := context.Background()
+	stats, ctx := stats.ContextWithEmptyStats(context.Background())
+	stats.AddRemoteExecutionRequests(12)
 	node := &core.VectorSelector{VectorSelectorDetails: &core.VectorSelectorDetails{}}
 	_, err := executor.startExecution(ctx, &planning.QueryPlan{}, node, timeRange, false, false, 1)
 	require.NoError(t, err)
 
 	require.Equal(t, startT.Add(-cfg.LookBackDelta+time.Millisecond), frontendMock.minT)
 	require.Equal(t, endT, frontendMock.maxT)
+	require.Equal(t, uint32(13), stats.LoadRemoteExecutionRequestCount())
 }
 
 type timeRangeCapturingFrontend struct {
@@ -780,6 +1060,50 @@ type timeRangeCapturingFrontend struct {
 func (m *timeRangeCapturingFrontend) DoProtobufRequest(ctx context.Context, req proto.Message, minT, maxT time.Time) (*ProtobufResponseStream, error) {
 	m.minT = minT
 	m.maxT = maxT
+	return nil, nil
+}
+
+func TestRemoteExecutor_SendsQueryPlanVersion(t *testing.T) {
+	frontendMock := &requestCapturingFrontendMock{}
+	executor := NewRemoteExecutor(frontendMock, Config{})
+
+	ctx := context.Background()
+	timeRange := types.NewInstantQueryTimeRange(time.Now())
+
+	node := &nodeWithOverriddenVersion{
+		Node: &nodeWithOverriddenVersion{
+			Node:    &core.NumberLiteral{NumberLiteralDetails: &core.NumberLiteralDetails{Value: 1234}},
+			version: 55,
+		},
+		version: 44,
+	}
+
+	fullPlan := &planning.QueryPlan{Version: 66}
+
+	_, err := executor.startExecution(ctx, fullPlan, node, timeRange, false, false, 1)
+	require.NoError(t, err)
+
+	require.NotNil(t, frontendMock.request)
+	require.IsType(t, &querierpb.EvaluateQueryRequest{}, frontendMock.request)
+	request := frontendMock.request.(*querierpb.EvaluateQueryRequest)
+	require.Equal(t, planning.QueryPlanVersion(66), request.Plan.Version, "should set request plan version to match the original plan version")
+}
+
+type nodeWithOverriddenVersion struct {
+	planning.Node
+	version planning.QueryPlanVersion
+}
+
+func (n *nodeWithOverriddenVersion) MinimumRequiredPlanVersion() planning.QueryPlanVersion {
+	return n.version
+}
+
+type requestCapturingFrontendMock struct {
+	request proto.Message
+}
+
+func (m *requestCapturingFrontendMock) DoProtobufRequest(ctx context.Context, req proto.Message, minT, maxT time.Time) (*ProtobufResponseStream, error) {
+	m.request = req
 	return nil, nil
 }
 
@@ -980,7 +1304,7 @@ func runQueryParallelismTestCase(t *testing.T, enableMQESharding bool) {
 	limits := &mockLimitedParallelismLimits{maxQueryParallelism: int(maxQueryParallelism)}
 
 	opts := streamingpromql.NewTestEngineOpts()
-	planner, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts)
+	planner, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(t, err)
 	planner.RegisterQueryPlanOptimizationPass(remoteexec.NewOptimizationPass())
 
@@ -1001,11 +1325,14 @@ func runQueryParallelismTestCase(t *testing.T, enableMQESharding bool) {
 			maxMtx.Lock()
 			maxConcurrent = max(current, maxConcurrent)
 			maxMtx.Unlock()
-			defer count.Dec()
+			afterLastMessageSent := func() {
+				count.Dec()
+			}
 
 			// Simulate doing some work, then send an empty response.
 			time.Sleep(20 * time.Millisecond)
-			sendStreamingResponse(t, f, msg.UserID, msg.QueryID, newSeriesMetadata(false), newEvaluationCompleted(0, nil, nil))
+			err := sendStreamingResponseWithErrorCapture(f, msg.UserID, msg.QueryID, afterLastMessageSent, newSeriesMetadata(false), newEvaluationCompleted(0, nil, nil))
+			require.NoError(t, err)
 		}()
 
 		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}

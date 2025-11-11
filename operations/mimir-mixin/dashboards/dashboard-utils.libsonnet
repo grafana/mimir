@@ -23,6 +23,12 @@ local utils = import 'mixin-utils/utils.libsonnet';
     $.overrideProperty('custom.fillOpacity', 0),
     $.overrideProperty('custom.lineStyle', { fill: 'dash' }),
   ]),
+  local ommKilledStyle = $.overrideField('byRegexp', '/.+ - ommkilled/', [
+    $.overrideProperty('color', { mode: 'fixed', fixedColor: $._colors.failed }),
+    $.overrideProperty('custom.axisPlacement', 'hidden'),
+    $.overrideProperty('custom.drawStyle', 'points'),
+    $.overrideProperty('unit', 'none'),
+  ]),
 
   local sortAscending = 1,
   local sortNaturalAscending = 7,
@@ -278,6 +284,9 @@ local utils = import 'mixin-utils/utils.libsonnet';
       },
     },
 
+  ncLatencyPanel(metricName, selector, multiplier='1e3')::
+    super.latencyPanelNativeHistogram(metricName, selector, multiplier),
+
   // hiddenLegendQueryPanel adds on to 'timeseriesPanel', not the deprecated 'panel'.
   // It is a standard query panel designed to handle a large number of series.  it hides the legend, doesn't fill the series and
   // shows all values on tooltip, descending. Also turns on exemplars, unless 4th parameter is false.
@@ -422,14 +431,33 @@ local utils = import 'mixin-utils/utils.libsonnet';
   // The provided instanceName should be a regexp from $._config.instance_names, while
   // the provided containerName should be a regexp from $._config.container_names.
   containerMemoryWorkingSetPanel(instanceName, containerName)::
+    local queries =
+      $.resourceUtilizationAndLimitQueries('memory_working', instanceName, containerName)
+      + if $._config.deployment_type == 'kubernetes'
+      then [
+        $._config.resources_panel_queries[$._config.deployment_type].memory_oom_killed % {
+          instanceLabel: $._config.per_instance_label,
+          namespace: $.namespaceMatcher(),
+          instanceName: instanceName,
+          containerName: containerName,
+        },
+      ]
+      else [];
+    local legends =
+      $.resourceUtilizationAndLimitLegend('{{%s}}' % $._config.per_instance_label)
+      + if $._config.deployment_type == 'kubernetes'
+      then ['{{%s}} - ommkilled' % $._config.per_instance_label]
+      else [];
+
     $.timeseriesPanel('Memory (workingset)') +
-    $.queryPanel($.resourceUtilizationAndLimitQueries('memory_working', instanceName, containerName), $.resourceUtilizationAndLimitLegend('{{%s}}' % $._config.per_instance_label)) +
+    $.queryPanel(queries, legends) +
     $.showAllTooltip +
     {
       fieldConfig+: {
         overrides+: [
           resourceRequestStyle,
           resourceLimitStyle,
+          ommKilledStyle,
         ],
         defaults+: {
           unit: 'bytes',
@@ -1190,28 +1218,28 @@ local utils = import 'mixin-utils/utils.libsonnet';
     )
     .addPanel(
       $.timeseriesPanel('Latency of op: Attributes') +
-      $.latencyPanel('thanos_objstore_bucket_operation_duration_seconds', '{%s,component="%s",operation="attributes"}' % [$.namespaceMatcher(), component]),
+      $.ncLatencyPanel('thanos_objstore_bucket_operation_duration_seconds', '%s,component="%s",operation="attributes"' % [$.namespaceMatcher(), component]),
     )
     .addPanel(
       $.timeseriesPanel('Latency of op: Exists') +
-      $.latencyPanel('thanos_objstore_bucket_operation_duration_seconds', '{%s,component="%s",operation="exists"}' % [$.namespaceMatcher(), component]),
+      $.ncLatencyPanel('thanos_objstore_bucket_operation_duration_seconds', '%s,component="%s",operation="exists"' % [$.namespaceMatcher(), component]),
     ),
     $.row('')
     .addPanel(
       $.timeseriesPanel('Latency of op: Get') +
-      $.latencyPanel('thanos_objstore_bucket_operation_duration_seconds', '{%s,component="%s",operation="get"}' % [$.namespaceMatcher(), component]),
+      $.ncLatencyPanel('thanos_objstore_bucket_operation_duration_seconds', '%s,component="%s",operation="get"' % [$.namespaceMatcher(), component]),
     )
     .addPanel(
       $.timeseriesPanel('Latency of op: GetRange') +
-      $.latencyPanel('thanos_objstore_bucket_operation_duration_seconds', '{%s,component="%s",operation="get_range"}' % [$.namespaceMatcher(), component]),
+      $.ncLatencyPanel('thanos_objstore_bucket_operation_duration_seconds', '%s,component="%s",operation="get_range"' % [$.namespaceMatcher(), component]),
     )
     .addPanel(
       $.timeseriesPanel('Latency of op: Upload') +
-      $.latencyPanel('thanos_objstore_bucket_operation_duration_seconds', '{%s,component="%s",operation="upload"}' % [$.namespaceMatcher(), component]),
+      $.ncLatencyPanel('thanos_objstore_bucket_operation_duration_seconds', '%s,component="%s",operation="upload"' % [$.namespaceMatcher(), component]),
     )
     .addPanel(
       $.timeseriesPanel('Latency of op: Delete') +
-      $.latencyPanel('thanos_objstore_bucket_operation_duration_seconds', '{%s,component="%s",operation="delete"}' % [$.namespaceMatcher(), component]),
+      $.ncLatencyPanel('thanos_objstore_bucket_operation_duration_seconds', '%s,component="%s",operation="delete"' % [$.namespaceMatcher(), component]),
     ),
   ],
 
@@ -1923,7 +1951,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
     ) +
     $.hiddenLegendQueryPanel(
       |||
-        histogram_quantile(1.0, sum by(pod) (rate(cortex_ingest_storage_reader_receive_delay_seconds{%(job_matcher)s, phase="running"}[$__rate_interval])))
+        histogram_quantile(1.0, sum by(%(per_instance_label)s) (rate(cortex_ingest_storage_reader_receive_delay_seconds{%(job_matcher)s, phase="running"}[$__rate_interval])))
 
         # Add a filter to show only the outliers. We consider an ingester an outlier if its
         # 100th percentile latency is greater than the 200%% of the average 100th of the 10%%
