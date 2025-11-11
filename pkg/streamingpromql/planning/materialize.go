@@ -8,10 +8,15 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
+type operatorCacheKey struct {
+	node      Node
+	timeRange types.QueryTimeRange
+}
+
 // Materializer is responsible for converting query plan nodes to operators for a single query plan.
 // This type is not thread safe.
 type Materializer struct {
-	operatorFactories map[Node]OperatorFactory
+	operatorFactories map[operatorCacheKey]OperatorFactory
 	operatorParams    *OperatorParameters
 
 	nodeMaterializers map[NodeType]NodeMaterializer
@@ -19,15 +24,15 @@ type Materializer struct {
 
 func NewMaterializer(params *OperatorParameters, nodeMaterializers map[NodeType]NodeMaterializer) *Materializer {
 	return &Materializer{
-		operatorFactories: make(map[Node]OperatorFactory),
+		operatorFactories: make(map[operatorCacheKey]OperatorFactory),
 		operatorParams:    params,
 		nodeMaterializers: nodeMaterializers,
 	}
 }
 
 func (m *Materializer) ConvertNodeToOperator(node Node, timeRange types.QueryTimeRange) (types.Operator, error) {
-	// FIXME: we should check that we're not trying to get the same operator but with a different time range
-	if f, ok := m.operatorFactories[node]; ok {
+	key := operatorCacheKey{node: node, timeRange: timeRange}
+	if f, ok := m.operatorFactories[key]; ok {
 		return f.Produce()
 	}
 
@@ -41,7 +46,7 @@ func (m *Materializer) ConvertNodeToOperator(node Node, timeRange types.QueryTim
 		return nil, err
 	}
 
-	m.operatorFactories[node] = f
+	m.operatorFactories[key] = f
 
 	return f.Produce()
 }

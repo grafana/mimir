@@ -300,7 +300,6 @@ func (v FPointRingBufferView) Clone() (*FPointRingBufferView, *FPointRingBuffer,
 }
 
 // SubView returns a new view that is a subset of this view, containing only points with timestamps in the range (minT, maxT].
-// minT is exclusive, maxT is inclusive (consistent with PromQL range semantics).
 // The returned view shares the same underlying buffer and is no longer valid if the buffer is modified.
 func (v FPointRingBufferView) SubView(minT int64, maxT int64) FPointRingBufferView {
 	if v.size == 0 {

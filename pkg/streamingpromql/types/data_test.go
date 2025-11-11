@@ -332,3 +332,62 @@ func TestQueryTimeRange(t *testing.T) {
 		})
 	}
 }
+
+func TestRangeVectorStepData_SubStep_ErrorCases(t *testing.T) {
+	memoryTracker := limiter.NewMemoryConsumptionTracker(context.Background(), 0, nil, "")
+	floats := NewFPointRingBuffer(memoryTracker)
+	histograms := NewHPointRingBuffer(memoryTracker)
+
+	step := &RangeVectorStepData{
+		StepT:      150,
+		RangeStart: 100,
+		RangeEnd:   200,
+		Floats:     floats.ViewUntilSearchingBackwards(200, nil),
+		Histograms: histograms.ViewUntilSearchingBackwards(200, nil),
+	}
+
+	testCases := []struct {
+		name        string
+		rangeStart  int64
+		rangeEnd    int64
+		expectedErr string
+	}{
+		{
+			name:        "start before parent start",
+			rangeStart:  50,
+			rangeEnd:    150,
+			expectedErr: "substep start (50) is before parent step's start (100)",
+		},
+		{
+			name:        "rangeEnd after parent end",
+			rangeStart:  150,
+			rangeEnd:    250,
+			expectedErr: "substep start (250) is after parent step's end (200)",
+		},
+		{
+			name:        "rangeStart equals end",
+			rangeStart:  150,
+			rangeEnd:    150,
+			expectedErr: "substep start (150) must be less than end (150)",
+		},
+		{
+			name:        "rangeStart greater than end",
+			rangeStart:  180,
+			rangeEnd:    170,
+			expectedErr: "substep start (180) must be less than end (170)",
+		},
+		{
+			name:        "start before parent and end after parent",
+			rangeStart:  50,
+			rangeEnd:    250,
+			expectedErr: "substep start (50) is before parent step's start (100)",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := step.SubStep(tc.rangeStart, tc.rangeEnd)
+			require.EqualError(t, err, tc.expectedErr)
+		})
+	}
+}

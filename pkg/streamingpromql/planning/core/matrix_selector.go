@@ -101,3 +101,20 @@ func (m *MatrixSelector) ExpressionPosition() posrange.PositionRange {
 func (m *MatrixSelector) MinimumRequiredPlanVersion() planning.QueryPlanVersion {
 	return planning.QueryPlanVersionZero
 }
+
+func (m *MatrixSelector) GetRange() time.Duration {
+	return m.Range
+}
+
+func (m *MatrixSelector) CreateNodeForSubRange(updatedRange time.Duration) planning.Node {
+	return &MatrixSelector{
+		MatrixSelectorDetails: &MatrixSelectorDetails{
+			Matchers:             m.Matchers,
+			Timestamp:            m.Timestamp,
+			Offset:               m.Offset,
+			Range:                updatedRange,
+			ExpressionPosition:   m.MatrixSelectorDetails.ExpressionPosition,
+			SkipHistogramBuckets: m.SkipHistogramBuckets,
+		},
+	}
+}

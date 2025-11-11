@@ -19,6 +19,7 @@ import (
 	"github.com/prometheus/prometheus/util/annotations"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
+	"github.com/grafana/mimir/pkg/streamingpromql/cache"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/limiter"
 )
@@ -183,8 +184,7 @@ type OperatorParameters struct {
 	PlanningNodes []Node
 
 	// Intermediate result cache for function operators
-	// Type is *cache.IntermediateResultTenantCache but stored as any to avoid import cycle
-	IntermediateResultCache any
+	IntermediateResultCache *cache.IntermediateResultTenantCache
 }
 
 // CacheKey generates a unique cache key for a planning node for use with intermediate result caching.
@@ -196,8 +196,7 @@ func CacheKey(node Node) string {
 		panic(fmt.Sprintf("CacheKey only supports MatrixSelector nodes, got node type %v", node.NodeType()))
 	}
 
-	// Use the Describe() method which already produces a unique string representation
-	// that includes matchers, range, timestamp, offset, and skipHistogramBuckets
+	// TODO: Use a better cache key
 	return node.Describe()
 }
 

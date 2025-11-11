@@ -25,27 +25,24 @@ var _ = math.Inf
 // proto package needs to be updated.
 const _ = proto.GoGoProtoPackageIsVersion3 // please upgrade the proto package
 
-type SplitRangeVectorDetails struct {
-	// CacheBlocks defines the fixed-interval blocks that can be cached.
-	// Each block represents a complete time interval aligned to the split interval (e.g., 2 hours).
-	// These blocks are calculated during the planning phase.
-	CacheBlocks []CacheBlock `protobuf:"bytes,1,rep,name=cacheBlocks,proto3" json:"cacheBlocks"`
-	// CacheKey is the unique identifier for this query's cacheable computation.
-	// Calculated during planning from the inner node (typically a matrix selector).
-	CacheKey string `protobuf:"bytes,2,opt,name=cacheKey,proto3" json:"cacheKey,omitempty"`
+type SplittableFunctionCallDetails struct {
+	// SplitDuration is the duration of each cache split/segment (e.g., 1 minute).
+	// Splits are computed at runtime in SeriesMetadata() after checking cache.
+	// Duration in milliseconds.
+	SplitDurationMs int64 `protobuf:"varint,1,opt,name=splitDurationMs,proto3" json:"splitDurationMs,omitempty"`
 }
 
-func (m *SplitRangeVectorDetails) Reset()      { *m = SplitRangeVectorDetails{} }
-func (*SplitRangeVectorDetails) ProtoMessage() {}
-func (*SplitRangeVectorDetails) Descriptor() ([]byte, []int) {
+func (m *SplittableFunctionCallDetails) Reset()      { *m = SplittableFunctionCallDetails{} }
+func (*SplittableFunctionCallDetails) ProtoMessage() {}
+func (*SplittableFunctionCallDetails) Descriptor() ([]byte, []int) {
 	return fileDescriptor_0c843d59d2d938e7, []int{0}
 }
-func (m *SplitRangeVectorDetails) XXX_Unmarshal(b []byte) error {
+func (m *SplittableFunctionCallDetails) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
 }
-func (m *SplitRangeVectorDetails) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+func (m *SplittableFunctionCallDetails) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
 	if deterministic {
-		return xxx_messageInfo_SplitRangeVectorDetails.Marshal(b, m, deterministic)
+		return xxx_messageInfo_SplittableFunctionCallDetails.Marshal(b, m, deterministic)
 	} else {
 		b = b[:cap(b)]
 		n, err := m.MarshalToSizedBuffer(b)
@@ -55,145 +52,57 @@ func (m *SplitRangeVectorDetails) XXX_Marshal(b []byte, deterministic bool) ([]b
 		return b[:n], nil
 	}
 }
-func (m *SplitRangeVectorDetails) XXX_Merge(src proto.Message) {
-	xxx_messageInfo_SplitRangeVectorDetails.Merge(m, src)
+func (m *SplittableFunctionCallDetails) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_SplittableFunctionCallDetails.Merge(m, src)
 }
-func (m *SplitRangeVectorDetails) XXX_Size() int {
+func (m *SplittableFunctionCallDetails) XXX_Size() int {
 	return m.Size()
 }
-func (m *SplitRangeVectorDetails) XXX_DiscardUnknown() {
-	xxx_messageInfo_SplitRangeVectorDetails.DiscardUnknown(m)
+func (m *SplittableFunctionCallDetails) XXX_DiscardUnknown() {
+	xxx_messageInfo_SplittableFunctionCallDetails.DiscardUnknown(m)
 }
 
-var xxx_messageInfo_SplitRangeVectorDetails proto.InternalMessageInfo
+var xxx_messageInfo_SplittableFunctionCallDetails proto.InternalMessageInfo
 
-func (m *SplitRangeVectorDetails) GetCacheBlocks() []CacheBlock {
+func (m *SplittableFunctionCallDetails) GetSplitDurationMs() int64 {
 	if m != nil {
-		return m.CacheBlocks
-	}
-	return nil
-}
-
-func (m *SplitRangeVectorDetails) GetCacheKey() string {
-	if m != nil {
-		return m.CacheKey
-	}
-	return ""
-}
-
-func (*SplitRangeVectorDetails) XXX_MessageName() string {
-	return "querysplitting.SplitRangeVectorDetails"
-}
-
-type CacheBlock struct {
-	// StartTimestampMs is the start of this block's time range (inclusive).
-	StartTimestampMs int64 `protobuf:"varint,1,opt,name=startTimestampMs,proto3" json:"startTimestampMs,omitempty"`
-	// DurationMs is the duration of this block in milliseconds.
-	DurationMs int64 `protobuf:"varint,2,opt,name=durationMs,proto3" json:"durationMs,omitempty"`
-}
-
-func (m *CacheBlock) Reset()      { *m = CacheBlock{} }
-func (*CacheBlock) ProtoMessage() {}
-func (*CacheBlock) Descriptor() ([]byte, []int) {
-	return fileDescriptor_0c843d59d2d938e7, []int{1}
-}
-func (m *CacheBlock) XXX_Unmarshal(b []byte) error {
-	return m.Unmarshal(b)
-}
-func (m *CacheBlock) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
-	if deterministic {
-		return xxx_messageInfo_CacheBlock.Marshal(b, m, deterministic)
-	} else {
-		b = b[:cap(b)]
-		n, err := m.MarshalToSizedBuffer(b)
-		if err != nil {
-			return nil, err
-		}
-		return b[:n], nil
-	}
-}
-func (m *CacheBlock) XXX_Merge(src proto.Message) {
-	xxx_messageInfo_CacheBlock.Merge(m, src)
-}
-func (m *CacheBlock) XXX_Size() int {
-	return m.Size()
-}
-func (m *CacheBlock) XXX_DiscardUnknown() {
-	xxx_messageInfo_CacheBlock.DiscardUnknown(m)
-}
-
-var xxx_messageInfo_CacheBlock proto.InternalMessageInfo
-
-func (m *CacheBlock) GetStartTimestampMs() int64 {
-	if m != nil {
-		return m.StartTimestampMs
+		return m.SplitDurationMs
 	}
 	return 0
 }
 
-func (m *CacheBlock) GetDurationMs() int64 {
-	if m != nil {
-		return m.DurationMs
-	}
-	return 0
-}
-
-func (*CacheBlock) XXX_MessageName() string {
-	return "querysplitting.CacheBlock"
+func (*SplittableFunctionCallDetails) XXX_MessageName() string {
+	return "querysplitting.SplittableFunctionCallDetails"
 }
 func init() {
-	proto.RegisterType((*SplitRangeVectorDetails)(nil), "querysplitting.SplitRangeVectorDetails")
-	proto.RegisterType((*CacheBlock)(nil), "querysplitting.CacheBlock")
+	proto.RegisterType((*SplittableFunctionCallDetails)(nil), "querysplitting.SplittableFunctionCallDetails")
 }
 
 func init() { proto.RegisterFile("node.proto", fileDescriptor_0c843d59d2d938e7) }
 
 var fileDescriptor_0c843d59d2d938e7 = []byte{
-	// 267 bytes of a gzipped FileDescriptorProto
+	// 184 bytes of a gzipped FileDescriptorProto
 	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xe2, 0xe2, 0xca, 0xcb, 0x4f, 0x49,
 	0xd5, 0x2b, 0x28, 0xca, 0x2f, 0xc9, 0x17, 0xe2, 0x2b, 0x2c, 0x4d, 0x2d, 0xaa, 0x2c, 0x2e, 0xc8,
 	0xc9, 0x2c, 0x29, 0xc9, 0xcc, 0x4b, 0x97, 0x12, 0x49, 0xcf, 0x4f, 0xcf, 0x07, 0x4b, 0xe9, 0x83,
-	0x58, 0x10, 0x55, 0x4a, 0x95, 0x5c, 0xe2, 0xc1, 0x20, 0x25, 0x41, 0x89, 0x79, 0xe9, 0xa9, 0x61,
-	0xa9, 0xc9, 0x25, 0xf9, 0x45, 0x2e, 0xa9, 0x25, 0x89, 0x99, 0x39, 0xc5, 0x42, 0x4e, 0x5c, 0xdc,
-	0xc9, 0x89, 0xc9, 0x19, 0xa9, 0x4e, 0x39, 0xf9, 0xc9, 0xd9, 0xc5, 0x12, 0x8c, 0x0a, 0xcc, 0x1a,
-	0xdc, 0x46, 0x52, 0x7a, 0xa8, 0xc6, 0xea, 0x39, 0xc3, 0x95, 0x38, 0xb1, 0x9c, 0xb8, 0x27, 0xcf,
-	0x10, 0x84, 0xac, 0x49, 0x48, 0x8a, 0x8b, 0x03, 0xcc, 0xf5, 0x4e, 0xad, 0x94, 0x60, 0x52, 0x60,
-	0xd4, 0xe0, 0x0c, 0x82, 0xf3, 0x95, 0x22, 0xb8, 0xb8, 0x10, 0x9a, 0x85, 0xb4, 0xb8, 0x04, 0x8a,
-	0x4b, 0x12, 0x8b, 0x4a, 0x42, 0x32, 0x73, 0x53, 0x8b, 0x4b, 0x12, 0x73, 0x0b, 0x7c, 0x41, 0x56,
-	0x32, 0x6a, 0x30, 0x07, 0x61, 0x88, 0x0b, 0xc9, 0x71, 0x71, 0xa5, 0x94, 0x16, 0x25, 0x96, 0x64,
-	0xe6, 0xe7, 0xf9, 0x16, 0x83, 0xcd, 0x65, 0x0e, 0x42, 0x12, 0x71, 0xb2, 0xb8, 0xf0, 0x50, 0x8e,
-	0xe1, 0xc6, 0x43, 0x39, 0x86, 0x0f, 0x0f, 0xe5, 0x18, 0x1b, 0x1e, 0xc9, 0x31, 0xae, 0x78, 0x24,
-	0xc7, 0x70, 0xe2, 0x91, 0x1c, 0xe3, 0x85, 0x47, 0x72, 0x8c, 0x0f, 0x1e, 0xc9, 0x31, 0xbe, 0x78,
-	0x24, 0xc7, 0xf0, 0xe1, 0x91, 0x1c, 0xe3, 0x84, 0xc7, 0x72, 0x0c, 0x27, 0x1e, 0xcb, 0x31, 0x5e,
-	0x78, 0x2c, 0xc7, 0x70, 0xe3, 0xb1, 0x1c, 0x43, 0x12, 0x1b, 0x38, 0x54, 0x8c, 0x01, 0x01, 0x00,
-	0x00, 0xff, 0xff, 0xe0, 0x9d, 0x65, 0x5d, 0x49, 0x01, 0x00, 0x00,
+	0x58, 0x10, 0x55, 0x4a, 0x9e, 0x5c, 0xb2, 0xc1, 0x60, 0x25, 0x89, 0x49, 0x39, 0xa9, 0x6e, 0xa5,
+	0x79, 0xc9, 0x25, 0x99, 0xf9, 0x79, 0xce, 0x89, 0x39, 0x39, 0x2e, 0xa9, 0x25, 0x89, 0x99, 0x39,
+	0xc5, 0x42, 0x1a, 0x5c, 0xfc, 0x60, 0x33, 0x5c, 0x4a, 0x8b, 0x12, 0x41, 0x72, 0xbe, 0xc5, 0x12,
+	0x8c, 0x0a, 0x8c, 0x1a, 0xcc, 0x41, 0xe8, 0xc2, 0x4e, 0x16, 0x17, 0x1e, 0xca, 0x31, 0xdc, 0x78,
+	0x28, 0xc7, 0xf0, 0xe1, 0xa1, 0x1c, 0x63, 0xc3, 0x23, 0x39, 0xc6, 0x15, 0x8f, 0xe4, 0x18, 0x4e,
+	0x3c, 0x92, 0x63, 0xbc, 0xf0, 0x48, 0x8e, 0xf1, 0xc1, 0x23, 0x39, 0xc6, 0x17, 0x8f, 0xe4, 0x18,
+	0x3e, 0x3c, 0x92, 0x63, 0x9c, 0xf0, 0x58, 0x8e, 0xe1, 0xc4, 0x63, 0x39, 0xc6, 0x0b, 0x8f, 0xe5,
+	0x18, 0x6e, 0x3c, 0x96, 0x63, 0x48, 0x62, 0x03, 0xbb, 0xc5, 0x18, 0x10, 0x00, 0x00, 0xff, 0xff,
+	0xb4, 0x4b, 0xab, 0x48, 0xbf, 0x00, 0x00, 0x00,
 }
 
-func (this *SplitRangeVectorDetails) GoString() string {
+func (this *SplittableFunctionCallDetails) GoString() string {
 	if this == nil {
 		return "nil"
 	}
-	s := make([]string, 0, 6)
-	s = append(s, "&querysplitting.SplitRangeVectorDetails{")
-	if this.CacheBlocks != nil {
-		vs := make([]CacheBlock, len(this.CacheBlocks))
-		for i := range vs {
-			vs[i] = this.CacheBlocks[i]
-		}
-		s = append(s, "CacheBlocks: "+fmt.Sprintf("%#v", vs)+",\n")
-	}
-	s = append(s, "CacheKey: "+fmt.Sprintf("%#v", this.CacheKey)+",\n")
-	s = append(s, "}")
-	return strings.Join(s, "")
-}
-func (this *CacheBlock) GoString() string {
-	if this == nil {
-		return "nil"
-	}
-	s := make([]string, 0, 6)
-	s = append(s, "&querysplitting.CacheBlock{")
-	s = append(s, "StartTimestampMs: "+fmt.Sprintf("%#v", this.StartTimestampMs)+",\n")
-	s = append(s, "DurationMs: "+fmt.Sprintf("%#v", this.DurationMs)+",\n")
+	s := make([]string, 0, 5)
+	s = append(s, "&querysplitting.SplittableFunctionCallDetails{")
+	s = append(s, "SplitDurationMs: "+fmt.Sprintf("%#v", this.SplitDurationMs)+",\n")
 	s = append(s, "}")
 	return strings.Join(s, "")
 }
@@ -205,7 +114,7 @@ func valueToGoStringNode(v interface{}, typ string) string {
 	pv := reflect.Indirect(rv).Interface()
 	return fmt.Sprintf("func(v %v) *%v { return &v } ( %#v )", typ, typ, pv)
 }
-func (m *SplitRangeVectorDetails) Marshal() (dAtA []byte, err error) {
+func (m *SplittableFunctionCallDetails) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
 	dAtA = make([]byte, size)
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
@@ -215,67 +124,18 @@ func (m *SplitRangeVectorDetails) Marshal() (dAtA []byte, err error) {
 	return dAtA[:n], nil
 }
 
-func (m *SplitRangeVectorDetails) MarshalTo(dAtA []byte) (int, error) {
+func (m *SplittableFunctionCallDetails) MarshalTo(dAtA []byte) (int, error) {
 	size := m.Size()
 	return m.MarshalToSizedBuffer(dAtA[:size])
 }
 
-func (m *SplitRangeVectorDetails) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+func (m *SplittableFunctionCallDetails) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	i := len(dAtA)
 	_ = i
 	var l int
 	_ = l
-	if len(m.CacheKey) > 0 {
-		i -= len(m.CacheKey)
-		copy(dAtA[i:], m.CacheKey)
-		i = encodeVarintNode(dAtA, i, uint64(len(m.CacheKey)))
-		i--
-		dAtA[i] = 0x12
-	}
-	if len(m.CacheBlocks) > 0 {
-		for iNdEx := len(m.CacheBlocks) - 1; iNdEx >= 0; iNdEx-- {
-			{
-				size, err := m.CacheBlocks[iNdEx].MarshalToSizedBuffer(dAtA[:i])
-				if err != nil {
-					return 0, err
-				}
-				i -= size
-				i = encodeVarintNode(dAtA, i, uint64(size))
-			}
-			i--
-			dAtA[i] = 0xa
-		}
-	}
-	return len(dAtA) - i, nil
-}
-
-func (m *CacheBlock) Marshal() (dAtA []byte, err error) {
-	size := m.Size()
-	dAtA = make([]byte, size)
-	n, err := m.MarshalToSizedBuffer(dAtA[:size])
-	if err != nil {
-		return nil, err
-	}
-	return dAtA[:n], nil
-}
-
-func (m *CacheBlock) MarshalTo(dAtA []byte) (int, error) {
-	size := m.Size()
-	return m.MarshalToSizedBuffer(dAtA[:size])
-}
-
-func (m *CacheBlock) MarshalToSizedBuffer(dAtA []byte) (int, error) {
-	i := len(dAtA)
-	_ = i
-	var l int
-	_ = l
-	if m.DurationMs != 0 {
-		i = encodeVarintNode(dAtA, i, uint64(m.DurationMs))
-		i--
-		dAtA[i] = 0x10
-	}
-	if m.StartTimestampMs != 0 {
-		i = encodeVarintNode(dAtA, i, uint64(m.StartTimestampMs))
+	if m.SplitDurationMs != 0 {
+		i = encodeVarintNode(dAtA, i, uint64(m.SplitDurationMs))
 		i--
 		dAtA[i] = 0x8
 	}
@@ -293,36 +153,14 @@ func encodeVarintNode(dAtA []byte, offset int, v uint64) int {
 	dAtA[offset] = uint8(v)
 	return base
 }
-func (m *SplitRangeVectorDetails) Size() (n int) {
+func (m *SplittableFunctionCallDetails) Size() (n int) {
 	if m == nil {
 		return 0
 	}
 	var l int
 	_ = l
-	if len(m.CacheBlocks) > 0 {
-		for _, e := range m.CacheBlocks {
-			l = e.Size()
-			n += 1 + l + sovNode(uint64(l))
-		}
-	}
-	l = len(m.CacheKey)
-	if l > 0 {
-		n += 1 + l + sovNode(uint64(l))
-	}
-	return n
-}
-
-func (m *CacheBlock) Size() (n int) {
-	if m == nil {
-		return 0
-	}
-	var l int
-	_ = l
-	if m.StartTimestampMs != 0 {
-		n += 1 + sovNode(uint64(m.StartTimestampMs))
-	}
-	if m.DurationMs != 0 {
-		n += 1 + sovNode(uint64(m.DurationMs))
+	if m.SplitDurationMs != 0 {
+		n += 1 + sovNode(uint64(m.SplitDurationMs))
 	}
 	return n
 }
@@ -333,29 +171,12 @@ func sovNode(x uint64) (n int) {
 func sozNode(x uint64) (n int) {
 	return sovNode(uint64((x << 1) ^ uint64((int64(x) >> 63))))
 }
-func (this *SplitRangeVectorDetails) String() string {
+func (this *SplittableFunctionCallDetails) String() string {
 	if this == nil {
 		return "nil"
 	}
-	repeatedStringForCacheBlocks := "[]CacheBlock{"
-	for _, f := range this.CacheBlocks {
-		repeatedStringForCacheBlocks += strings.Replace(strings.Replace(f.String(), "CacheBlock", "CacheBlock", 1), `&`, ``, 1) + ","
-	}
-	repeatedStringForCacheBlocks += "}"
-	s := strings.Join([]string{`&SplitRangeVectorDetails{`,
-		`CacheBlocks:` + repeatedStringForCacheBlocks + `,`,
-		`CacheKey:` + fmt.Sprintf("%v", this.CacheKey) + `,`,
-		`}`,
-	}, "")
-	return s
-}
-func (this *CacheBlock) String() string {
-	if this == nil {
-		return "nil"
-	}
-	s := strings.Join([]string{`&CacheBlock{`,
-		`StartTimestampMs:` + fmt.Sprintf("%v", this.StartTimestampMs) + `,`,
-		`DurationMs:` + fmt.Sprintf("%v", this.DurationMs) + `,`,
+	s := strings.Join([]string{`&SplittableFunctionCallDetails{`,
+		`SplitDurationMs:` + fmt.Sprintf("%v", this.SplitDurationMs) + `,`,
 		`}`,
 	}, "")
 	return s
@@ -368,7 +189,7 @@ func valueToStringNode(v interface{}) string {
 	pv := reflect.Indirect(rv).Interface()
 	return fmt.Sprintf("*%v", pv)
 }
-func (m *SplitRangeVectorDetails) Unmarshal(dAtA []byte) error {
+func (m *SplittableFunctionCallDetails) Unmarshal(dAtA []byte) error {
 	l := len(dAtA)
 	iNdEx := 0
 	for iNdEx < l {
@@ -391,133 +212,17 @@ func (m *SplitRangeVectorDetails) Unmarshal(dAtA []byte) error {
 		fieldNum := int32(wire >> 3)
 		wireType := int(wire & 0x7)
 		if wireType == 4 {
-			return fmt.Errorf("proto: SplitRangeVectorDetails: wiretype end group for non-group")
+			return fmt.Errorf("proto: SplittableFunctionCallDetails: wiretype end group for non-group")
 		}
 		if fieldNum <= 0 {
-			return fmt.Errorf("proto: SplitRangeVectorDetails: illegal tag %d (wire type %d)", fieldNum, wire)
-		}
-		switch fieldNum {
-		case 1:
-			if wireType != 2 {
-				return fmt.Errorf("proto: wrong wireType = %d for field CacheBlocks", wireType)
-			}
-			var msglen int
-			for shift := uint(0); ; shift += 7 {
-				if shift >= 64 {
-					return ErrIntOverflowNode
-				}
-				if iNdEx >= l {
-					return io.ErrUnexpectedEOF
-				}
-				b := dAtA[iNdEx]
-				iNdEx++
-				msglen |= int(b&0x7F) << shift
-				if b < 0x80 {
-					break
-				}
-			}
-			if msglen < 0 {
-				return ErrInvalidLengthNode
-			}
-			postIndex := iNdEx + msglen
-			if postIndex < 0 {
-				return ErrInvalidLengthNode
-			}
-			if postIndex > l {
-				return io.ErrUnexpectedEOF
-			}
-			m.CacheBlocks = append(m.CacheBlocks, CacheBlock{})
-			if err := m.CacheBlocks[len(m.CacheBlocks)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
-				return err
-			}
-			iNdEx = postIndex
-		case 2:
-			if wireType != 2 {
-				return fmt.Errorf("proto: wrong wireType = %d for field CacheKey", wireType)
-			}
-			var stringLen uint64
-			for shift := uint(0); ; shift += 7 {
-				if shift >= 64 {
-					return ErrIntOverflowNode
-				}
-				if iNdEx >= l {
-					return io.ErrUnexpectedEOF
-				}
-				b := dAtA[iNdEx]
-				iNdEx++
-				stringLen |= uint64(b&0x7F) << shift
-				if b < 0x80 {
-					break
-				}
-			}
-			intStringLen := int(stringLen)
-			if intStringLen < 0 {
-				return ErrInvalidLengthNode
-			}
-			postIndex := iNdEx + intStringLen
-			if postIndex < 0 {
-				return ErrInvalidLengthNode
-			}
-			if postIndex > l {
-				return io.ErrUnexpectedEOF
-			}
-			m.CacheKey = string(dAtA[iNdEx:postIndex])
-			iNdEx = postIndex
-		default:
-			iNdEx = preIndex
-			skippy, err := skipNode(dAtA[iNdEx:])
-			if err != nil {
-				return err
-			}
-			if (skippy < 0) || (iNdEx+skippy) < 0 {
-				return ErrInvalidLengthNode
-			}
-			if (iNdEx + skippy) > l {
-				return io.ErrUnexpectedEOF
-			}
-			iNdEx += skippy
-		}
-	}
-
-	if iNdEx > l {
-		return io.ErrUnexpectedEOF
-	}
-	return nil
-}
-func (m *CacheBlock) Unmarshal(dAtA []byte) error {
-	l := len(dAtA)
-	iNdEx := 0
-	for iNdEx < l {
-		preIndex := iNdEx
-		var wire uint64
-		for shift := uint(0); ; shift += 7 {
-			if shift >= 64 {
-				return ErrIntOverflowNode
-			}
-			if iNdEx >= l {
-				return io.ErrUnexpectedEOF
-			}
-			b := dAtA[iNdEx]
-			iNdEx++
-			wire |= uint64(b&0x7F) << shift
-			if b < 0x80 {
-				break
-			}
-		}
-		fieldNum := int32(wire >> 3)
-		wireType := int(wire & 0x7)
-		if wireType == 4 {
-			return fmt.Errorf("proto: CacheBlock: wiretype end group for non-group")
-		}
-		if fieldNum <= 0 {
-			return fmt.Errorf("proto: CacheBlock: illegal tag %d (wire type %d)", fieldNum, wire)
+			return fmt.Errorf("proto: SplittableFunctionCallDetails: illegal tag %d (wire type %d)", fieldNum, wire)
 		}
 		switch fieldNum {
 		case 1:
 			if wireType != 0 {
-				return fmt.Errorf("proto: wrong wireType = %d for field StartTimestampMs", wireType)
+				return fmt.Errorf("proto: wrong wireType = %d for field SplitDurationMs", wireType)
 			}
-			m.StartTimestampMs = 0
+			m.SplitDurationMs = 0
 			for shift := uint(0); ; shift += 7 {
 				if shift >= 64 {
 					return ErrIntOverflowNode
@@ -527,26 +232,7 @@ func (m *CacheBlock) Unmarshal(dAtA []byte) error {
 				}
 				b := dAtA[iNdEx]
 				iNdEx++
-				m.StartTimestampMs |= int64(b&0x7F) << shift
-				if b < 0x80 {
-					break
-				}
-			}
-		case 2:
-			if wireType != 0 {
-				return fmt.Errorf("proto: wrong wireType = %d for field DurationMs", wireType)
-			}
-			m.DurationMs = 0
-			for shift := uint(0); ; shift += 7 {
-				if shift >= 64 {
-					return ErrIntOverflowNode
-				}
-				if iNdEx >= l {
-					return io.ErrUnexpectedEOF
-				}
-				b := dAtA[iNdEx]
-				iNdEx++
-				m.DurationMs |= int64(b&0x7F) << shift
+				m.SplitDurationMs |= int64(b&0x7F) << shift
 				if b < 0x80 {
 					break
 				}

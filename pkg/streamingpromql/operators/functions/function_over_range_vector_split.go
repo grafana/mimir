@@ -12,88 +12,92 @@ import (
 	"time"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/cache"
+	promts "github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/util/annotations"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/operators"
+	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
-// FunctionOverRangeVectorSplit performs a range vector function calculation with intermediate result caching.
-// It splits the query range into fixed-size blocks and caches intermediate results to improve performance
-// for repeated queries.
+// FunctionOverRangeVectorSplit performs range vector function calculation with intermediate result caching.
+// TODO: Add scalar args support if splitting support is added for functions with scalar args
 type FunctionOverRangeVectorSplit struct {
-	Inner                    types.RangeVectorOperator
-	ScalarArgs               []types.ScalarOperator
 	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
 	Func                     FunctionOverRangeVectorDefinition
-
-	Annotations *annotations.Annotations
-
-	scalarArgsData []types.ScalarData
-
-	metricNames        *operators.MetricNames
-	currentSeriesIndex int
-
+	Annotations              *annotations.Annotations
+	metricNames              *operators.MetricNames
 	timeRange                types.QueryTimeRange
 	enableDelayedNameRemoval bool
+	expressionPosition       posrange.PositionRange
+	emitAnnotationFunc       types.EmitAnnotationFunc
+	seriesValidationFunc     RangeVectorSeriesValidationFunction
 
-	expressionPosition   posrange.PositionRange
-	emitAnnotationFunc   types.EmitAnnotationFunc
-	seriesValidationFunc RangeVectorSeriesValidationFunction
+	irCache *cache.IntermediateResultTenantCache
 
-	// Intermediate result caching
-	cacheKey            string
-	intermediateResults []IntermediateResultBlock
-	// seriesToIRRefs is in the same order as metadata returned from []SeriesMetadata
-	// If there is uncached data, it will be the first element in the slice, all other refs will be ordered by time
-	seriesToIRRefs [][]IRSeriesRef
-	IRCache        *cache.IntermediateResultTenantCache
-	metadata       []types.SeriesMetadata
+	innerNode      RangeVectorNode
+	materializer   *planning.Materializer
+	queryTimeRange types.QueryTimeRange
+	splitDuration  time.Duration
+	innerCacheKey  string
+
+	splits []Split
+	// seriesToSplits is ordered the same way as SeriesMetadata
+	seriesToSplits   [][]SplitSeries
+	currentSeriesIdx int
 }
 
 var _ types.InstantVectorOperator = &FunctionOverRangeVectorSplit{}
 
+// TODO: Add scalarArgs parameter when splitting support is added for functions with scalar args.
+// Currently only sum_over_time is supported, which doesn't have scalar args.
 func NewFunctionOverRangeVectorSplit(
-	inner types.RangeVectorOperator,
-	scalarArgs []types.ScalarOperator,
-	memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
-	f FunctionOverRangeVectorDefinition,
-	annotations *annotations.Annotations,
-	expressionPosition posrange.PositionRange,
+	innerNode RangeVectorNode,
+	materializer *planning.Materializer,
 	timeRange types.QueryTimeRange,
-	enableDelayedNameRemoval bool,
-	cacheKey string,
+	splitDuration time.Duration,
 	irCache *cache.IntermediateResultTenantCache,
-	blocks []IntermediateResultBlock,
-) *FunctionOverRangeVectorSplit {
+	funcDef FunctionOverRangeVectorDefinition,
+	expressionPosition posrange.PositionRange,
+	annotations *annotations.Annotations,
+	memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
+	enableDelayedNameRemoval bool,
+) (*FunctionOverRangeVectorSplit, error) {
+	if !timeRange.IsInstant {
+		return nil, fmt.Errorf("FunctionOverRangeVectorSplit only supports instant queries")
+	}
+
+	innerCacheKey := planning.CacheKey(innerNode)
+
 	o := &FunctionOverRangeVectorSplit{
-		Inner:                    inner,
-		ScalarArgs:               scalarArgs,
-		MemoryConsumptionTracker: memoryConsumptionTracker,
-		Func:                     f,
+		innerNode:                innerNode,
+		materializer:             materializer,
+		queryTimeRange:           timeRange,
+		splitDuration:            splitDuration,
+		innerCacheKey:            innerCacheKey,
+		irCache:                  irCache,
+		Func:                     funcDef,
 		Annotations:              annotations,
+		MemoryConsumptionTracker: memoryConsumptionTracker,
 		expressionPosition:       expressionPosition,
 		timeRange:                timeRange,
 		enableDelayedNameRemoval: enableDelayedNameRemoval,
-		cacheKey:                 cacheKey,
-		IRCache:                  irCache,
-		intermediateResults:      blocks,
 	}
 
-	if f.SeriesValidationFuncFactory != nil {
-		o.seriesValidationFunc = f.SeriesValidationFuncFactory()
+	if funcDef.SeriesValidationFuncFactory != nil {
+		o.seriesValidationFunc = funcDef.SeriesValidationFuncFactory()
 	}
 
-	if f.NeedsSeriesNamesForAnnotations {
+	if funcDef.NeedsSeriesNamesForAnnotations {
 		o.metricNames = &operators.MetricNames{}
 	}
 
 	o.emitAnnotationFunc = o.emitAnnotation
 
-	return o
+	return o, nil
 }
 
 func (m *FunctionOverRangeVectorSplit) ExpressionPosition() posrange.PositionRange {
@@ -101,285 +105,100 @@ func (m *FunctionOverRangeVectorSplit) ExpressionPosition() posrange.PositionRan
 }
 
 func (m *FunctionOverRangeVectorSplit) SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
-	if err := m.processScalarArgs(ctx); err != nil {
+	var err error
+
+	m.splits, err = m.createSplits()
+	if err != nil {
 		return nil, err
 	}
 
-	// Blocks must have been calculated during the planning phase
-	if m.intermediateResults == nil {
-		return nil, fmt.Errorf("BUG: FunctionOverRangeVectorSplit created without cache blocks - blocks must be calculated in planning phase")
-	}
-
-	// Load blocks from cache
-	for i := range m.intermediateResults {
-		duration := time.Duration(m.intermediateResults[i].DurationMs) * time.Millisecond
-		b, found := m.IRCache.Get(m.Func.Name, m.cacheKey, m.intermediateResults[i].StartTimestampMs, duration)
-		if found {
-			m.intermediateResults[i].ir = b
-			m.intermediateResults[i].loadedFromCache = true
-		} else {
-			m.intermediateResults[i].ir = cache.IntermediateResultBlock{
-				Version:          -1, // -1 means not found in cache
-				StartTimestampMs: int(m.intermediateResults[i].StartTimestampMs),
-				DurationMs:       int(m.intermediateResults[i].DurationMs),
-				Series:           nil,
-				Results:          nil,
-			}
-		}
-	}
-
-	var err error
-	m.metadata, m.seriesToIRRefs, err = m.seriesMetadataWithIntermediate(ctx, matchers)
+	var metadata []types.SeriesMetadata
+	metadata, m.seriesToSplits, err = m.mergeSplitsMetadata(ctx, matchers)
 	if err != nil {
 		return nil, err
 	}
 
 	if m.metricNames != nil {
-		m.metricNames.CaptureMetricNames(m.metadata)
+		m.metricNames.CaptureMetricNames(metadata)
 	}
 
 	if m.Func.SeriesMetadataFunction.Func != nil {
-		return m.Func.SeriesMetadataFunction.Func(m.metadata, m.MemoryConsumptionTracker, m.enableDelayedNameRemoval)
+		return m.Func.SeriesMetadataFunction.Func(metadata, m.MemoryConsumptionTracker, m.enableDelayedNameRemoval)
 	}
 
-	return m.metadata, nil
-}
-
-func (m *FunctionOverRangeVectorSplit) processScalarArgs(ctx context.Context) error {
-	if len(m.ScalarArgs) == 0 {
-		return nil
-	}
-
-	m.scalarArgsData = make([]types.ScalarData, 0, len(m.ScalarArgs))
-
-	for _, arg := range m.ScalarArgs {
-		d, err := arg.GetValues(ctx)
-		if err != nil {
-			return err
-		}
-		m.scalarArgsData = append(m.scalarArgsData, d)
-	}
-
-	return nil
+	return metadata, nil
 }
 
 func (m *FunctionOverRangeVectorSplit) NextSeries(ctx context.Context) (types.InstantVectorSeriesData, error) {
-	// For now, only support instant queries (range queries will fall back to non-split version)
-	if !m.timeRange.IsInstant {
-		return types.InstantVectorSeriesData{}, fmt.Errorf("FunctionOverRangeVectorSplit only supports instant queries for now")
-	}
-
-	if m.currentSeriesIndex >= len(m.seriesToIRRefs) {
+	if m.currentSeriesIdx >= len(m.seriesToSplits) {
 		return types.InstantVectorSeriesData{}, types.EOS
 	}
 
-	result := m.seriesToIRRefs[m.currentSeriesIndex]
-	var cachedBlockRefsForSeries []IRSeriesRef
-	var hasUncached bool
-
-	// If the series has an uncached component, get the next series from inner operator
-	if len(result) > 0 && result[0].IRBlockIdx == UncachedSeriesRef {
-		hasUncached = true
-		if err := m.Inner.NextSeries(ctx); err != nil {
-			return types.InstantVectorSeriesData{}, err
-		}
-		cachedBlockRefsForSeries = result[1:] // cached blocks for this series
-	} else {
-		cachedBlockRefsForSeries = result // purely cached series
-	}
-
 	defer func() {
-		m.currentSeriesIndex++
+		m.currentSeriesIdx++
 	}()
 
-	data := types.InstantVectorSeriesData{}
+	splitSeriesList := m.seriesToSplits[m.currentSeriesIdx]
 
-	// For instant query, there's only one step
-	var step *types.RangeVectorStepData
-	var err error
-
-	if hasUncached {
-		// Get the single step from inner operator
-		step, err = m.Inner.NextStepSamples(ctx)
+	var pieces []cache.IntermediateResult
+	for _, splitSeries := range splitSeriesList {
+		split := m.splits[splitSeries.SplitIdx]
+		results, err := split.GetResultsAtIdx(ctx, splitSeries.SplitLocalIdx)
 		if err != nil {
 			return types.InstantVectorSeriesData{}, err
 		}
-	} else {
-		// For purely cached series, calculate step info directly
-		// (no need for StepMover since instant queries have only one step)
-		params := m.Inner.StepCalculationParams()
-		stepT := m.timeRange.StartT
-		rangeEnd := stepT
-		if params.Timestamp != nil {
-			rangeEnd = *params.Timestamp
-		}
-		rangeEnd = rangeEnd - params.Offset
-		rangeStart := rangeEnd - params.RangeMilliseconds
-
-		step = &types.RangeVectorStepData{
-			StepT:      stepT,
-			RangeStart: rangeStart,
-			RangeEnd:   rangeEnd,
-		}
+		pieces = append(pieces, results...)
 	}
 
-	// Find which cached blocks overlap with this step's range
-	var currentIRBlockStart, currentIRBlockEnd int
-	for ; currentIRBlockStart < len(m.intermediateResults) && step.RangeStart >= m.intermediateResults[currentIRBlockStart].StartTimestampMs+m.intermediateResults[currentIRBlockStart].DurationMs; currentIRBlockStart++ {
-	}
-	for ; currentIRBlockEnd < len(m.intermediateResults) && step.RangeEnd >= m.intermediateResults[currentIRBlockEnd].StartTimestampMs+m.intermediateResults[currentIRBlockEnd].DurationMs; currentIRBlockEnd++ {
-	}
-
-	pieces := []cache.IntermediateResult{}
-
-	// Calculate head piece (data before first cached block)
-	if hasUncached && currentIRBlockStart < len(m.intermediateResults) && step.RangeStart < m.intermediateResults[currentIRBlockStart].StartTimestampMs {
-		headEnd := m.intermediateResults[currentIRBlockStart].StartTimestampMs
-		if step.RangeEnd < headEnd {
-			headEnd = step.RangeEnd
-		}
-		headStep, err := step.SubStep(step.RangeStart, headEnd)
-		if err != nil {
-			return types.InstantVectorSeriesData{}, err
-		}
-		headPiece, err := m.Func.GenerateFunc(headStep, m.scalarArgsData, m.emitAnnotationFunc, m.MemoryConsumptionTracker)
-		if err != nil {
-			return types.InstantVectorSeriesData{}, err
-		}
-		pieces = append(pieces, headPiece)
-	}
-
-	// Process middle blocks (use cached results if available, otherwise compute)
-	currentCachedBlockRefIdx := 0
-	for currentBlock := currentIRBlockStart; currentBlock < currentIRBlockEnd; currentBlock++ {
-		var foundCached bool
-		if m.intermediateResults[currentBlock].loadedFromCache && len(cachedBlockRefsForSeries) > 0 {
-			// Find the cached result for this block and series (if it exists)
-			for ; currentCachedBlockRefIdx < len(cachedBlockRefsForSeries) && cachedBlockRefsForSeries[currentCachedBlockRefIdx].IRBlockIdx < currentBlock; currentCachedBlockRefIdx++ {
-			}
-			if currentCachedBlockRefIdx < len(cachedBlockRefsForSeries) && cachedBlockRefsForSeries[currentCachedBlockRefIdx].IRBlockIdx == currentBlock {
-				pieces = append(pieces, m.intermediateResults[currentBlock].ir.Results[cachedBlockRefsForSeries[currentCachedBlockRefIdx].SeriesIdx])
-				foundCached = true
-			}
-		}
-
-		// If not cached, compute it (only if we have sample data)
-		if !foundCached && hasUncached {
-			blockStep, err := step.SubStep(m.intermediateResults[currentBlock].StartTimestampMs, m.intermediateResults[currentBlock].StartTimestampMs+m.intermediateResults[currentBlock].DurationMs)
-			if err != nil {
-				return types.InstantVectorSeriesData{}, err
-			}
-			piece, err := m.Func.GenerateFunc(blockStep, m.scalarArgsData, m.emitAnnotationFunc, m.MemoryConsumptionTracker)
-			if err != nil {
-				return types.InstantVectorSeriesData{}, err
-			}
-			pieces = append(pieces, piece)
-		}
-	}
-
-	// Calculate tail piece (data after last cached block)
-	if hasUncached {
-		var tailStart int64
-		if currentIRBlockEnd > 0 && currentIRBlockEnd <= len(m.intermediateResults) {
-			tailStart = m.intermediateResults[currentIRBlockEnd-1].StartTimestampMs + m.intermediateResults[currentIRBlockEnd-1].DurationMs
-		} else if currentIRBlockStart < len(m.intermediateResults) {
-			tailStart = m.intermediateResults[currentIRBlockStart].StartTimestampMs
-		} else {
-			tailStart = step.RangeStart
-		}
-
-		if tailStart < step.RangeEnd {
-			tailStep, err := step.SubStep(tailStart, step.RangeEnd)
-			if err != nil {
-				return types.InstantVectorSeriesData{}, err
-			}
-			tailPiece, err := m.Func.GenerateFunc(tailStep, m.scalarArgsData, m.emitAnnotationFunc, m.MemoryConsumptionTracker)
-			if err != nil {
-				return types.InstantVectorSeriesData{}, err
-			}
-			pieces = append(pieces, tailPiece)
-		}
-	}
-
-	// Combine all pieces into final result
 	f, hasFloat, h, err := m.Func.CombineFunc(pieces, m.emitAnnotationFunc, m.MemoryConsumptionTracker)
 	if err != nil {
 		return types.InstantVectorSeriesData{}, err
 	}
 
-	// For instant query, we only have one point
+	data := types.InstantVectorSeriesData{}
+
+	stepT := m.queryTimeRange.StartT
+
 	if hasFloat {
 		data.Floats, err = types.FPointSlicePool.Get(1, m.MemoryConsumptionTracker)
 		if err != nil {
 			return types.InstantVectorSeriesData{}, err
 		}
-		data.Floats = append(data.Floats, promql.FPoint{T: step.StepT, F: f})
+		data.Floats = append(data.Floats, promql.FPoint{T: stepT, F: f})
 	}
 	if h != nil {
 		data.Histograms, err = types.HPointSlicePool.Get(1, m.MemoryConsumptionTracker)
 		if err != nil {
 			return types.InstantVectorSeriesData{}, err
 		}
-		data.Histograms = append(data.Histograms, promql.HPoint{T: step.StepT, H: h})
+		data.Histograms = append(data.Histograms, promql.HPoint{T: stepT, H: h})
 	}
 
+	// Validation after single step, won't work for range queries if we supported them for splitting.
 	if m.seriesValidationFunc != nil {
-		m.seriesValidationFunc(data, m.metricNames.GetMetricNameForSeries(m.currentSeriesIndex), m.emitAnnotationFunc)
+		m.seriesValidationFunc(data, m.metricNames.GetMetricNameForSeries(m.currentSeriesIdx), m.emitAnnotationFunc)
 	}
 
 	return data, nil
 }
 
 func (m *FunctionOverRangeVectorSplit) emitAnnotation(generator types.AnnotationGenerator) {
-	metricName := m.metricNames.GetMetricNameForSeries(m.currentSeriesIndex)
-	pos := m.Inner.ExpressionPosition()
-
-	if m.Func.UseFirstArgumentPositionForAnnotations {
-		pos = m.ScalarArgs[0].ExpressionPosition()
-	}
+	metricName := m.metricNames.GetMetricNameForSeries(m.currentSeriesIdx)
+	// TODO: When scalar args support is added, check UseFirstArgumentPositionForAnnotations
+	// and use scalar args[0].ExpressionPosition() if applicable as the non-split version does
+	pos := m.innerNode.ExpressionPosition()
 
 	m.Annotations.Add(generator(metricName, pos))
 }
 
 func (m *FunctionOverRangeVectorSplit) Prepare(ctx context.Context, params *types.PrepareParams) error {
-	err := m.Inner.Prepare(ctx, params)
-	if err != nil {
-		return err
-	}
-
-	for _, sa := range m.ScalarArgs {
-		err := sa.Prepare(ctx, params)
-		if err != nil {
-			return err
-		}
-	}
-
 	return nil
 }
 
 func (m *FunctionOverRangeVectorSplit) Finalize(ctx context.Context) error {
-	// Write intermediate results to cache
-	if len(m.intermediateResults) > 0 {
-		for i := range m.intermediateResults {
-			// Only write blocks that we computed (not loaded from cache)
-			if !m.intermediateResults[i].loadedFromCache {
-				duration := time.Duration(m.intermediateResults[i].DurationMs) * time.Millisecond
-				_ = m.IRCache.Set(m.Func.Name, m.cacheKey, m.intermediateResults[i].StartTimestampMs, duration, m.intermediateResults[i].ir)
-				// Mark as loaded so we don't write again on subsequent Finalize() calls (pedantic mode calls twice)
-				m.intermediateResults[i].loadedFromCache = true
-				// Ignore errors - cache write failures shouldn't fail the query
-			}
-		}
-	}
-
-	err := m.Inner.Finalize(ctx)
-	if err != nil {
-		return err
-	}
-
-	for _, sa := range m.ScalarArgs {
-		err := sa.Finalize(ctx)
-		if err != nil {
+	for _, split := range m.splits {
+		// TODO: ideally write results to cache earlier than this so we avoid holding all intermediate results in memory when not needed
+		if err := split.Finalize(ctx); err != nil {
 			return err
 		}
 	}
@@ -388,121 +207,352 @@ func (m *FunctionOverRangeVectorSplit) Finalize(ctx context.Context) error {
 }
 
 func (m *FunctionOverRangeVectorSplit) Close() {
-	m.Inner.Close()
-
-	for _, d := range m.scalarArgsData {
-		types.FPointSlicePool.Put(&d.Samples, m.MemoryConsumptionTracker)
+	for _, split := range m.splits {
+		split.Close()
 	}
-
-	m.scalarArgsData = nil
-
-	// Note: m.metadata is returned from SeriesMetadata() and owned by the caller (Query),
-	// which will clean it up in returnResultToPool(). We don't clean it up here.
-
-	m.intermediateResults = nil
 }
 
-// seriesMetadataWithIntermediate merges the series metadata from uncached samples with cached blocks.
-// This logic is based on deduplicate_and_merge.go but simplified for instant queries only.
-func (m *FunctionOverRangeVectorSplit) seriesMetadataWithIntermediate(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, [][]IRSeriesRef, error) {
-	// Why use a string, rather than the labels hash as a key here? This avoids any issues with hash collisions.
-	labelsToRefUncached := map[string][]IRSeriesRef{}
+// createSplits creates splits for the given time range, checking for cache entries and merging contiguous uncached
+// split ranges to create uncached splits.
+// Uses query time range (m.timeRange.StartT - innerRange to m.timeRange.StartT) to calculate split boundaries.
+// Currently calculates split boundaries based on the query time range (m.timeRange.StartT - innerRange to m.timeRange.StartT).
+// TODO: Should instead account for timestamp and offset to align with how samples are divided into blocks in storage.
+// Possibly can use some logic in QueriedTimeRange to decide on best way to create splits
+func (m *FunctionOverRangeVectorSplit) createSplits() ([]Split, error) {
+	var splits []Split
+	splitDurationMs := m.splitDuration.Milliseconds()
 
-	// Why 1024 bytes? It's what labels.Labels.String() uses as a buffer size, so we use that as a sensible starting point too.
+	innerRange := m.innerNode.GetRange().Milliseconds()
+	startTs := m.timeRange.StartT - innerRange
+	endTs := m.timeRange.StartT
+
+	alignedStart := (startTs / splitDurationMs) * splitDurationMs
+	if alignedStart < startTs {
+		alignedStart += splitDurationMs
+	}
+
+	var currentUncachedStart int64
+	var currentUncachedRanges []SplitRange
+	currentPos := startTs
+
+	if currentPos < alignedStart {
+		headRange := SplitRange{
+			Start:     currentPos,
+			End:       alignedStart,
+			Cacheable: false,
+		}
+		currentUncachedStart = currentPos
+		currentUncachedRanges = []SplitRange{headRange}
+		currentPos = alignedStart + 1
+	}
+
+	for splitStart := alignedStart; splitStart+splitDurationMs <= endTs; splitStart += splitDurationMs {
+		splitEnd := splitStart + splitDurationMs
+
+		cachedBlock, found := m.irCache.Get(m.Func.Name, m.innerCacheKey, splitStart, splitEnd)
+
+		if found {
+			if currentUncachedRanges != nil {
+				lastRange := currentUncachedRanges[len(currentUncachedRanges)-1]
+				operator, err := m.materializeOperatorForTimeRange(currentUncachedStart, lastRange.End)
+				if err != nil {
+					return nil, err
+				}
+
+				splits = append(splits, NewUncachedSplit(
+					currentUncachedRanges,
+					operator,
+					m,
+				))
+				currentUncachedRanges = nil
+			}
+
+			splits = append(splits, NewCachedSplit(
+				&cachedBlock,
+			))
+			currentPos = splitEnd + 1
+		} else {
+			uncachedRange := SplitRange{
+				Start:     splitStart,
+				End:       splitEnd,
+				Cacheable: true,
+			}
+
+			if currentUncachedRanges == nil {
+				currentUncachedStart = splitStart
+				currentUncachedRanges = []SplitRange{uncachedRange}
+			} else {
+				currentUncachedRanges = append(currentUncachedRanges, uncachedRange)
+			}
+			currentPos = splitEnd + 1
+		}
+	}
+
+	if currentPos < endTs {
+		tailRange := SplitRange{
+			Start:     currentPos,
+			End:       endTs,
+			Cacheable: false,
+		}
+
+		if currentUncachedRanges == nil {
+			operator, err := m.materializeOperatorForTimeRange(currentPos, endTs)
+			if err != nil {
+				return nil, err
+			}
+
+			splits = append(splits, NewUncachedSplit(
+				[]SplitRange{tailRange},
+				operator,
+				m,
+			))
+		} else {
+			currentUncachedRanges = append(currentUncachedRanges, tailRange)
+		}
+	}
+
+	if currentUncachedRanges != nil {
+		lastRange := currentUncachedRanges[len(currentUncachedRanges)-1]
+		operator, err := m.materializeOperatorForTimeRange(currentUncachedStart, lastRange.End)
+		if err != nil {
+			return nil, err
+		}
+
+		splits = append(splits, NewUncachedSplit(
+			currentUncachedRanges,
+			operator,
+			m,
+		))
+	}
+
+	return splits, nil
+}
+
+func (m *FunctionOverRangeVectorSplit) materializeOperatorForTimeRange(start int64, end int64) (types.RangeVectorOperator, error) {
+	subRange := time.Duration(end-start) * time.Millisecond
+	subNode := m.innerNode.CreateNodeForSubRange(subRange)
+	// Set the time range for the split rather than adding to the offset so right timestamps get returned
+	splitTimeRange := types.NewInstantQueryTimeRange(promts.Time(end))
+
+	op, err := m.materializer.ConvertNodeToOperator(subNode, splitTimeRange)
+	if err != nil {
+		return nil, err
+	}
+
+	innerOperator, ok := op.(types.RangeVectorOperator)
+	if !ok {
+		return nil, fmt.Errorf("error materializing subnode: expected RangeVectorOperator, got %T", op)
+	}
+
+	return innerOperator, nil
+}
+
+func (m *FunctionOverRangeVectorSplit) mergeSplitsMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, [][]SplitSeries, error) {
+	seriesMap := make(map[string]int)
+	var mergedMetadata []types.SeriesMetadata
+	var seriesToSplits [][]SplitSeries
+
 	labelBytes := make([]byte, 0, 1024)
 
-	// Get metadata for uncached series (instant query has single time point)
-	uncachedMetadata, err := m.Inner.SeriesMetadata(ctx, matchers)
-	if err != nil {
-		return nil, nil, err
-	}
+	for splitIdx, split := range m.splits {
+		splitSeries, err := split.SeriesMetadata(ctx, matchers)
+		if err != nil {
+			return nil, nil, err
+		}
 
-	for seriesIdx, series := range uncachedMetadata {
-		labelBytes = series.Labels.Bytes(labelBytes)
-		g, groupExists := labelsToRefUncached[string(labelBytes)]
-		if !groupExists {
-			labelsToRefUncached[string(labelBytes)] = []IRSeriesRef{{UncachedSeriesRef, seriesIdx}}
-		} else {
-			labelsToRefUncached[string(labelBytes)] = append(g, IRSeriesRef{UncachedSeriesRef, seriesIdx})
+		for splitLocalIdx, serieMetadata := range splitSeries {
+			labelBytes = serieMetadata.Labels.Bytes(labelBytes)
+			key := string(labelBytes)
+
+			mergedIdx, exists := seriesMap[key]
+			if !exists {
+				mergedIdx = len(mergedMetadata)
+				seriesMap[key] = mergedIdx
+				mergedMetadata = append(mergedMetadata, serieMetadata)
+				seriesToSplits = append(seriesToSplits, nil)
+			}
+			seriesToSplits[mergedIdx] = append(seriesToSplits[mergedIdx], SplitSeries{
+				SplitIdx:      splitIdx,
+				SplitLocalIdx: splitLocalIdx,
+			})
+
+			labelBytes = labelBytes[:0]
 		}
 	}
 
-	// Separate map for cache-only series (uncached series must maintain their original order)
-	labelsToRefCachedOnly := make(map[string][]IRSeriesRef)
+	return mergedMetadata, seriesToSplits, nil
+}
 
-	for irIdx, result := range m.intermediateResults {
-		for seriesIdx, series := range result.ir.Series {
-			labelBytes = series.Labels.Bytes(labelBytes)
-			g, groupExists := labelsToRefUncached[string(labelBytes)]
-			if !groupExists {
-				cg, cgroupExists := labelsToRefCachedOnly[string(labelBytes)]
-				if !cgroupExists {
-					labelsToRefCachedOnly[string(labelBytes)] = []IRSeriesRef{{irIdx, seriesIdx}}
-				} else {
-					labelsToRefCachedOnly[string(labelBytes)] = append(cg, IRSeriesRef{irIdx, seriesIdx})
+type RangeVectorNode interface {
+	planning.Node
+	GetRange() time.Duration
+	CreateNodeForSubRange(updatedRange time.Duration) planning.Node
+}
+
+// SplitRange represents a time range within a split.
+// Start is exclusive (points with timestamp > Start are included).
+// End is inclusive (points with timestamp <= End are included).
+type SplitRange struct {
+	Start     int64
+	End       int64
+	Cacheable bool
+}
+
+type Split interface {
+	SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error)
+	GetResultsAtIdx(ctx context.Context, splitLocalIdx int) ([]cache.IntermediateResult, error)
+	Finalize(ctx context.Context) error
+	Close()
+}
+
+type SplitSeries struct {
+	SplitIdx      int
+	SplitLocalIdx int
+}
+
+type CachedSplit struct {
+	cachedResults *cache.IntermediateResultBlock
+}
+
+func NewCachedSplit(cachedResults *cache.IntermediateResultBlock) *CachedSplit {
+	return &CachedSplit{
+		cachedResults: cachedResults,
+	}
+}
+
+func (c *CachedSplit) SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
+	return c.cachedResults.Series, nil
+}
+
+func (c *CachedSplit) GetResultsAtIdx(ctx context.Context, splitLocalIdx int) ([]cache.IntermediateResult, error) {
+	if splitLocalIdx >= len(c.cachedResults.Results) {
+		return nil, fmt.Errorf("series index %d out of range (have %d series)", splitLocalIdx, len(c.cachedResults.Results))
+	}
+	return []cache.IntermediateResult{c.cachedResults.Results[splitLocalIdx]}, nil
+}
+
+func (c *CachedSplit) Finalize(ctx context.Context) error {
+	return nil
+}
+
+func (c *CachedSplit) Close() {
+}
+
+type UncachedSplit struct {
+	ranges   []SplitRange
+	operator types.RangeVectorOperator
+
+	parent *FunctionOverRangeVectorSplit
+
+	seriesMetadata []types.SeriesMetadata
+	computedBlocks []cache.IntermediateResultBlock
+	writtenToCache bool
+}
+
+func NewUncachedSplit(
+	ranges []SplitRange,
+	operator types.RangeVectorOperator,
+	parent *FunctionOverRangeVectorSplit,
+) *UncachedSplit {
+	return &UncachedSplit{
+		ranges:         ranges,
+		operator:       operator,
+		parent:         parent,
+		writtenToCache: false,
+	}
+}
+
+func (p *UncachedSplit) SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
+	var err error
+	p.seriesMetadata, err = p.operator.SeriesMetadata(ctx, matchers)
+	if err != nil {
+		return nil, err
+	}
+
+	p.computedBlocks = make([]cache.IntermediateResultBlock, len(p.ranges))
+	for rangeIdx := range p.ranges {
+		p.computedBlocks[rangeIdx].Series = make([]types.SeriesMetadata, 0, len(p.seriesMetadata))
+		p.computedBlocks[rangeIdx].Results = make([]cache.IntermediateResult, 0, len(p.seriesMetadata))
+	}
+
+	for seriesIdx := 0; seriesIdx < len(p.seriesMetadata); seriesIdx++ {
+		if err := p.operator.NextSeries(ctx); err != nil {
+			return nil, err
+		}
+
+		step, err := p.operator.NextStepSamples(ctx)
+		if err != nil {
+			return nil, err
+		}
+
+		for rangeIdx, splitRange := range p.ranges {
+			if splitRange.End < splitRange.Start {
+				zeroResult := cache.IntermediateResult{
+					SumOverTime: cache.SumOverTimeIntermediate{ // TODO: empty rather than zero?
+						SumF:     0,
+						HasFloat: true,
+					},
 				}
-			} else {
-				labelsToRefUncached[string(labelBytes)] = append(g, IRSeriesRef{irIdx, seriesIdx})
+				p.computedBlocks[rangeIdx].Series = append(p.computedBlocks[rangeIdx].Series, p.seriesMetadata[seriesIdx])
+				p.computedBlocks[rangeIdx].Results = append(p.computedBlocks[rangeIdx].Results, zeroResult)
+				continue
 			}
+
+			rangeStep, err := step.SubStep(splitRange.Start, splitRange.End)
+			if err != nil {
+				return nil, err
+			}
+
+			// TODO: Pass scalar args data when scalar args support is added
+			result, err := p.parent.Func.GenerateFunc(rangeStep, []types.ScalarData{}, p.parent.emitAnnotationFunc, p.parent.MemoryConsumptionTracker)
+			if err != nil {
+				return nil, err
+			}
+			p.computedBlocks[rangeIdx].Series = append(p.computedBlocks[rangeIdx].Series, p.seriesMetadata[seriesIdx])
+			p.computedBlocks[rangeIdx].Results = append(p.computedBlocks[rangeIdx].Results, result)
 		}
 	}
 
-	seriesToBlockRefs := make([][]IRSeriesRef, 0, len(labelsToRefUncached)+len(labelsToRefCachedOnly))
+	return p.seriesMetadata, nil
+}
 
-	// Order by uncached metadata (as Inner.NextSeries() is called in this order)
-	// TODO: Series ordering might not be stable if we make multiple SeriesMetadata calls for different time ranges.
-	// This could be an issue if the underlying data source doesn't guarantee stable ordering.
-	for _, metadata := range uncachedMetadata {
-		labelBytes = metadata.Labels.Bytes(labelBytes)
-		seriesToBlockRefs = append(seriesToBlockRefs, labelsToRefUncached[string(labelBytes)])
+func (p *UncachedSplit) GetResultsAtIdx(ctx context.Context, splitLocalIdx int) ([]cache.IntermediateResult, error) {
+	if splitLocalIdx >= len(p.seriesMetadata) {
+		return nil, fmt.Errorf("series index %d out of range (have %d series)", splitLocalIdx, len(p.seriesMetadata))
 	}
 
-	// Add any cache-only series to the end
-	// TODO: Deterministic order needed for cache-only series
-	for _, metadata := range labelsToRefCachedOnly {
-		seriesToBlockRefs = append(seriesToBlockRefs, metadata)
-	}
-
-	outputMetadata, err := types.SeriesMetadataSlicePool.Get(len(seriesToBlockRefs), m.MemoryConsumptionTracker)
-
-	if err != nil {
-		return nil, nil, err
-	}
-
-	for _, blockRefs := range seriesToBlockRefs {
-		first := blockRefs[0]
-		if first.IRBlockIdx == UncachedSeriesRef {
-			// Uncached metadata: labels are tracked in uncachedMetadata slice, need to track in outputMetadata too
-			outputMetadata, err = types.AppendSeriesMetadata(m.MemoryConsumptionTracker, outputMetadata, uncachedMetadata[first.SeriesIdx])
-			if err != nil {
-				return nil, nil, err
-			}
-		} else {
-			// Cached metadata needs to be tracked (it's coming from cache into query memory)
-			outputMetadata, err = types.AppendSeriesMetadata(m.MemoryConsumptionTracker, outputMetadata, m.intermediateResults[first.IRBlockIdx].ir.Series[first.SeriesIdx])
-			if err != nil {
-				return nil, nil, err
-			}
+	results := make([]cache.IntermediateResult, 0, len(p.computedBlocks))
+	for _, block := range p.computedBlocks {
+		if splitLocalIdx < len(block.Results) {
+			results = append(results, block.Results[splitLocalIdx])
 		}
 	}
-
-	// Now we have a new metadata slice with all labels tracked, return uncachedMetadata to pool
-	types.SeriesMetadataSlicePool.Put(&uncachedMetadata, m.MemoryConsumptionTracker)
-
-	return outputMetadata, seriesToBlockRefs, nil
+	return results, nil
 }
 
-type IntermediateResultBlock struct {
-	loadedFromCache  bool
-	StartTimestampMs int64 // Exported for use by querysplitting package
-	DurationMs       int64 // Exported for use by querysplitting package
-	ir               cache.IntermediateResultBlock
+func (p *UncachedSplit) Finalize(ctx context.Context) error {
+	if p.writtenToCache {
+		return nil
+	}
+
+	for rangeIdx, splitRange := range p.ranges {
+		if !splitRange.Cacheable {
+			continue
+		}
+
+		block := p.computedBlocks[rangeIdx]
+		block.Version = 1
+		block.StartTimestampMs = int(splitRange.Start)
+		block.EndTimestampMs = int(splitRange.End)
+		_ = p.parent.irCache.Set(p.parent.Func.Name, p.parent.innerCacheKey, splitRange.Start, splitRange.End, block)
+	}
+
+	p.writtenToCache = true
+	return nil
 }
 
-type IRSeriesRef struct {
-	IRBlockIdx int
-	// SeriesIdx is the index of the series in the intermediate result block
-	SeriesIdx int
+func (p *UncachedSplit) Close() {
+	if p.operator != nil {
+		p.operator.Close()
+	}
 }
-
-const UncachedSeriesRef = -1

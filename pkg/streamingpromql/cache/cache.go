@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"slices"
 	"strings"
-	"time"
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/cache"
@@ -27,8 +26,8 @@ const (
 
 type IntermediateResultBlock struct {
 	Version          int
-	StartTimestampMs int
-	DurationMs       int
+	StartTimestampMs int // Exclusive start
+	EndTimestampMs   int // Inclusive end
 	Series           []types.SeriesMetadata
 	Results          []IntermediateResult // Per-series, matching indexes of Series.
 }
@@ -131,16 +130,16 @@ type intermediateResultsCache struct {
 }
 
 type IntermediateResultsCache interface {
-	Get(user, function, selector string, start int64, duration time.Duration) (IntermediateResultBlock, bool)
-	Set(user, function, selector string, start int64, duration time.Duration, block IntermediateResultBlock) error
+	Get(user, function, selector string, start int64, end int64) (IntermediateResultBlock, bool)      // start is exclusive, end is inclusive
+	Set(user, function, selector string, start int64, end int64, block IntermediateResultBlock) error // start is exclusive, end is inclusive
 }
 
-func (ic *intermediateResultsCache) Get(user, function, selector string, start int64, duration time.Duration) (IntermediateResultBlock, bool) {
+func (ic *intermediateResultsCache) Get(user, function, selector string, start int64, end int64) (IntermediateResultBlock, bool) {
 	return IntermediateResultBlock{}, false
 }
 
 // TODO: implement me!
-func (ic *intermediateResultsCache) Set(user, function, selector string, start int64, duration time.Duration, block IntermediateResultBlock) error {
+func (ic *intermediateResultsCache) Set(user, function, selector string, start int64, end int64, block IntermediateResultBlock) error {
 	block.Version = 1
 	panic("implement me")
 }
@@ -154,10 +153,10 @@ func NewIntermediateResultTenantCache(user string, c IntermediateResultsCache) *
 	return &IntermediateResultTenantCache{user: user, inner: c}
 }
 
-func (c *IntermediateResultTenantCache) Get(function, selector string, start int64, duration time.Duration) (IntermediateResultBlock, bool) {
-	return c.inner.Get(c.user, function, selector, start, duration)
+func (c *IntermediateResultTenantCache) Get(function, selector string, start int64, end int64) (IntermediateResultBlock, bool) {
+	return c.inner.Get(c.user, function, selector, start, end)
 }
 
-func (c *IntermediateResultTenantCache) Set(function, selector string, start int64, duration time.Duration, block IntermediateResultBlock) error {
-	return c.inner.Set(c.user, function, selector, start, duration, block)
+func (c *IntermediateResultTenantCache) Set(function, selector string, start int64, end int64, block IntermediateResultBlock) error {
+	return c.inner.Set(c.user, function, selector, start, end, block)
 }

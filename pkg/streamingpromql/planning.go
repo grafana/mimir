@@ -83,8 +83,7 @@ func NewQueryPlanner(opts EngineOpts, versionProvider QueryPlanVersionProvider) 
 		planner.RegisterQueryPlanOptimizationPass(plan.NewNarrowSelectorsOptimizationPass(opts.Logger))
 	}
 
-	// Query splitting should be registered after other optimizations so we can split
-	// the final query plan structure
+	// TODO: figure out how query splitting iteracts with other optimisation passes
 	if opts.IntermediateResultCache != nil {
 		splitInterval := opts.QuerySplitInterval
 		if splitInterval <= 0 {

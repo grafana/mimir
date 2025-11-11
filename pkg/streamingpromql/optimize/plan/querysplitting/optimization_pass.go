@@ -14,6 +14,7 @@ import (
 
 // OptimizationPass identifies range vector function calls that can benefit from splitting
 // their computation into fixed-interval blocks for intermediate result caching.
+// TODO: does this affect other optimisation passes? e.g. query sharding
 type OptimizationPass struct {
 	splitInterval time.Duration
 }
@@ -41,7 +42,7 @@ func (o *OptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan, 
 func (o *OptimizationPass) wrapSplittableRangeVectorFunctions(n planning.Node, timeRange types.QueryTimeRange) (planning.Node, error) {
 	if functionCall, isFunctionCall := n.(*core.FunctionCall); isFunctionCall {
 		if o.shouldSplitFunction(functionCall, timeRange) {
-			wrappedNode, err := o.wrapInSplitNode(functionCall, timeRange)
+			wrappedNode, err := o.wrapInSplitNode(functionCall)
 			if err != nil {
 				return nil, err
 			}
@@ -79,12 +80,13 @@ func (o *OptimizationPass) shouldSplitFunction(functionCall *core.FunctionCall, 
 		return false
 	}
 
-	if _, exists := functions.RegisteredFunctions[functionCall.Function]; !exists {
+	fn := functionCall.GetFunction()
+	if _, exists := functions.RegisteredFunctions[fn]; !exists {
 		return false
 	}
 
 	// TODO: add more functions
-	switch functionCall.Function {
+	switch fn {
 	case functions.FUNCTION_SUM_OVER_TIME:
 	default:
 		return false
@@ -114,46 +116,30 @@ func (o *OptimizationPass) shouldSplitFunction(functionCall *core.FunctionCall, 
 	}
 
 	// Additional check: verify there would be at least one complete block to cache
-	// Calculate the actual data range that will be queried
-	firstStepT := timeRange.StartT
-	firstRangeEnd := firstStepT
-	if matrixSelector.Timestamp != nil {
-		firstRangeEnd = matrixSelector.Timestamp.UnixMilli()
+	// Calculate split boundaries using query time (matching what the operator does in createSplits)
+	// TODO: Should instead account for timestamp and offset to align with how samples are divided into blocks in storage.
+	startTs := timeRange.StartT - rangeMs
+	endTs := timeRange.StartT
+
+	alignedStart := (startTs / splitIntervalMs) * splitIntervalMs
+	if alignedStart < startTs {
+		alignedStart += splitIntervalMs
 	}
-	firstRangeEnd = firstRangeEnd - matrixSelector.Offset.Milliseconds()
-	earliestDataT := firstRangeEnd - rangeMs
 
-	lastStepT := timeRange.EndT
-	lastRangeEnd := lastStepT
-	if matrixSelector.Timestamp != nil {
-		lastRangeEnd = matrixSelector.Timestamp.UnixMilli()
-	}
-	lastRangeEnd = lastRangeEnd - matrixSelector.Offset.Milliseconds()
-	latestDataT := lastRangeEnd
-
-	firstBlockStart := ((earliestDataT / splitIntervalMs) + 1) * splitIntervalMs
-	lastBlockEnd := (latestDataT / splitIntervalMs) * splitIntervalMs
-
-	// If no complete blocks would fit, don't use the split operator
-	if firstBlockStart >= lastBlockEnd {
+	if alignedStart+splitIntervalMs > endTs {
 		return false
 	}
 
 	return true
 }
 
-func (o *OptimizationPass) wrapInSplitNode(functionCall *core.FunctionCall, timeRange types.QueryTimeRange) (planning.Node, error) {
-	// Calculate cache blocks during planning
-	blocks := o.calculateCacheBlocks(functionCall, timeRange)
+func (o *OptimizationPass) wrapInSplitNode(functionCall *core.FunctionCall) (planning.Node, error) {
+	// Split duration is passed to the operator - splits are computed at runtime
+	splitDurationMs := o.splitInterval.Milliseconds()
 
-	// Calculate cache key from the inner node (matrix selector)
-	innerNode := functionCall.Children()[0]
-	cacheKey := planning.CacheKey(innerNode)
-
-	n := &SplitRangeVector{
-		SplitRangeVectorDetails: &SplitRangeVectorDetails{
-			CacheBlocks: blocks,
-			CacheKey:    cacheKey,
+	n := &SplittableFunctionCall{
+		SplittableFunctionCallDetails: &SplittableFunctionCallDetails{
+			SplitDurationMs: splitDurationMs,
 		},
 	}
 	if err := n.SetChildren([]planning.Node{functionCall}); err != nil {
@@ -161,55 +147,4 @@ func (o *OptimizationPass) wrapInSplitNode(functionCall *core.FunctionCall, time
 	}
 
 	return n, nil
-}
-
-func (o *OptimizationPass) calculateCacheBlocks(functionCall *core.FunctionCall, timeRange types.QueryTimeRange) []CacheBlock {
-	matrixSelector := functionCall.Children()[0].(*core.MatrixSelector)
-
-	// TODO: Split interval could vary based on data age to align with storage block boundaries:
-	// - Recent data (last 2-24h): Use 2h blocks to align with ingester blocks
-	// - Older data (>24h): Use 24h blocks to align with final compacted blocks
-
-	// Calculate the actual data range that will be queried
-	// For instant queries, firstStepT == lastStepT, so earliestDataT == latestDataT - range
-	firstStepT := timeRange.StartT
-	firstRangeEnd := firstStepT
-	if matrixSelector.Timestamp != nil {
-		firstRangeEnd = matrixSelector.Timestamp.UnixMilli()
-	}
-	firstRangeEnd = firstRangeEnd - matrixSelector.Offset.Milliseconds()
-	earliestDataT := firstRangeEnd - matrixSelector.Range.Milliseconds()
-
-	lastStepT := timeRange.EndT
-	lastRangeEnd := lastStepT
-	if matrixSelector.Timestamp != nil {
-		lastRangeEnd = matrixSelector.Timestamp.UnixMilli()
-	}
-	lastRangeEnd = lastRangeEnd - matrixSelector.Offset.Milliseconds()
-	latestDataT := lastRangeEnd
-
-	splitIntervalMs := o.splitInterval.Milliseconds()
-
-	// Find block boundaries
-	firstBlockStart := ((earliestDataT / splitIntervalMs) + 1) * splitIntervalMs
-	lastBlockEnd := (latestDataT / splitIntervalMs) * splitIntervalMs
-
-	// Calculate number of complete blocks
-	numBlocks := int((lastBlockEnd - firstBlockStart) / splitIntervalMs)
-	if numBlocks <= 0 {
-		return nil
-	}
-
-	blocks := make([]CacheBlock, numBlocks)
-	blockStart := firstBlockStart
-
-	for i := 0; i < numBlocks; i++ {
-		blocks[i] = CacheBlock{
-			StartTimestampMs: blockStart,
-			DurationMs:       splitIntervalMs,
-		}
-		blockStart += splitIntervalMs
-	}
-
-	return blocks
 }

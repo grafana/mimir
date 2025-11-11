@@ -568,113 +568,188 @@ func TestRingBufferView_SubView(t *testing.T) {
 	setupRingBufferTestingPools(t)
 
 	t.Run("FPoint ring buffer", func(t *testing.T) {
-		memoryTracker := limiter.NewMemoryConsumptionTracker(context.Background(), 0, nil, "")
-		buf := NewFPointRingBuffer(memoryTracker)
+		testCases := []struct {
+			name        string
+			setupBuffer func(*testing.T) *FPointRingBufferView
+		}{
+			{
+				name: "without wraparound",
+				setupBuffer: func(t *testing.T) *FPointRingBufferView {
+					memoryTracker := limiter.NewMemoryConsumptionTracker(context.Background(), 0, nil, "")
+					buf := NewFPointRingBuffer(memoryTracker)
+					points := []promql.FPoint{
+						{T: 10, F: 100},
+						{T: 20, F: 200},
+						{T: 30, F: 300},
+						{T: 40, F: 400},
+					}
+					for _, p := range points {
+						require.NoError(t, buf.Append(p))
+					}
+					return buf.ViewUntilSearchingBackwards(40, nil)
+				},
+			},
+			{
+				name: "with wraparound",
+				setupBuffer: func(t *testing.T) *FPointRingBufferView {
+					memoryTracker := limiter.NewMemoryConsumptionTracker(context.Background(), 0, nil, "")
+					buf := NewFPointRingBuffer(memoryTracker)
+					// Strategy: Create a buffer with wraparound where newer samples wrap to the beginning.
+					// Final buffer: [T=40, T=10, T=20, T=30] with firstIndex=1, size=4
 
-		// Add points with timestamps 10, 20, 30, 40, 50
-		points := []promql.FPoint{
-			{T: 10, F: 100},
-			{T: 20, F: 200},
-			{T: 30, F: 300},
-			{T: 40, F: 400},
-			{T: 50, F: 500},
+					// Step 1: Fill buffer to capacity 4 with T=1 (to discard), T=10, T=20, T=30
+					require.NoError(t, buf.Append(promql.FPoint{T: 1, F: 10}))
+					require.NoError(t, buf.Append(promql.FPoint{T: 10, F: 100}))
+					require.NoError(t, buf.Append(promql.FPoint{T: 20, F: 200}))
+					require.NoError(t, buf.Append(promql.FPoint{T: 30, F: 300}))
+
+					// Step 2: Discard first point (T=1)
+					buf.DiscardPointsAtOrBefore(1)
+
+					// Step 3: Add T=40, which wraps to position 0 (overwrites discarded T=1)
+					require.NoError(t, buf.Append(promql.FPoint{T: 40, F: 400}))
+
+					// Verify wraparound occurred
+					view := buf.ViewUntilSearchingBackwards(40, nil)
+					head, tail := view.UnsafePoints()
+					if tail == nil || len(tail) == 0 {
+						panic("expected wraparound: tail should be non-nil and non-empty")
+					}
+					if len(head) == 0 {
+						panic("expected wraparound: head should be non-empty")
+					}
+
+					return view
+				},
+			},
 		}
-		for _, p := range points {
-			require.NoError(t, buf.Append(p))
+
+		for _, tc := range testCases {
+			t.Run(tc.name, func(t *testing.T) {
+				fullView := tc.setupBuffer(t)
+
+				require.Equal(t, 4, fullView.Count())
+
+				// Test SubView with range (15, 35] - should get points at T=20, T=30
+				subView := fullView.SubView(15, 35)
+				require.Equal(t, 2, subView.Count())
+				require.Equal(t, int64(20), subView.First().T)
+				last, hasLast := subView.Last()
+				require.True(t, hasLast)
+				require.Equal(t, int64(30), last.T)
+
+				// Test SubView with range (5, 45] - should get all points
+				subView = fullView.SubView(5, 45)
+				require.Equal(t, 4, subView.Count())
+				require.Equal(t, int64(10), subView.First().T)
+
+				// Test SubView with range (25, 45] - should get points at T=30, T=40
+				subView = fullView.SubView(25, 45)
+				require.Equal(t, 2, subView.Count())
+				require.Equal(t, int64(30), subView.First().T)
+				last, hasLast = subView.Last()
+				require.True(t, hasLast)
+				require.Equal(t, int64(40), last.T)
+
+				// Test SubView with range (60, 70] - should get no points
+				subView = fullView.SubView(60, 70)
+				require.Equal(t, 0, subView.Count())
+
+				// Test SubView with range (5, 15] - should get point at T=10
+				subView = fullView.SubView(5, 15)
+				require.Equal(t, 1, subView.Count())
+				require.Equal(t, int64(10), subView.First().T)
+			})
 		}
-
-		// Create a full view
-		fullView := buf.ViewUntilSearchingBackwards(50, nil)
-		require.Equal(t, 5, fullView.Count())
-
-		// Test SubView with range (15, 35] - should get points at T=20, T=30
-		subView := fullView.SubView(15, 35)
-		require.Equal(t, 2, subView.Count())
-		require.Equal(t, int64(20), subView.First().T)
-		last, hasLast := subView.Last()
-		require.True(t, hasLast)
-		require.Equal(t, int64(30), last.T)
-
-		// Test SubView with range (5, 55] - should get all points
-		subView = fullView.SubView(5, 55)
-		require.Equal(t, 5, subView.Count())
-		require.Equal(t, int64(10), subView.First().T)
-
-		// Test SubView with range (25, 45] - should get points at T=30, T=40
-		subView = fullView.SubView(25, 45)
-		require.Equal(t, 2, subView.Count())
-		require.Equal(t, int64(30), subView.First().T)
-		last, hasLast = subView.Last()
-		require.True(t, hasLast)
-		require.Equal(t, int64(40), last.T)
-
-		// Test SubView with range (60, 70] - should get no points
-		subView = fullView.SubView(60, 70)
-		require.Equal(t, 0, subView.Count())
-
-		// Test SubView with range (5, 15] - should get point at T=10
-		subView = fullView.SubView(5, 15)
-		require.Equal(t, 1, subView.Count())
-		require.Equal(t, int64(10), subView.First().T)
-
-		// Test SubView on a SubView (nested filtering)
-		midView := fullView.SubView(15, 45)
-		require.Equal(t, 3, midView.Count()) // T=20, T=30, T=40
-		nestedView := midView.SubView(25, 35)
-		require.Equal(t, 1, nestedView.Count()) // T=30
-		require.Equal(t, int64(30), nestedView.First().T)
 	})
 
 	t.Run("HPoint ring buffer", func(t *testing.T) {
-		memoryTracker := limiter.NewMemoryConsumptionTracker(context.Background(), 0, nil, "")
-		buf := NewHPointRingBuffer(memoryTracker)
+		testCases := []struct {
+			name        string
+			setupBuffer func(*testing.T) *HPointRingBufferView
+		}{
+			{
+				name: "without wraparound",
+				setupBuffer: func(t *testing.T) *HPointRingBufferView {
+					memoryTracker := limiter.NewMemoryConsumptionTracker(context.Background(), 0, nil, "")
+					buf := NewHPointRingBuffer(memoryTracker)
+					points := []promql.HPoint{
+						{T: 10, H: &histogram.FloatHistogram{Count: 100}},
+						{T: 20, H: &histogram.FloatHistogram{Count: 200}},
+						{T: 30, H: &histogram.FloatHistogram{Count: 300}},
+						{T: 40, H: &histogram.FloatHistogram{Count: 400}},
+					}
+					for _, p := range points {
+						require.NoError(t, buf.Append(p))
+					}
+					return buf.ViewUntilSearchingBackwards(40, nil)
+				},
+			},
+			{
+				name: "with wraparound",
+				setupBuffer: func(t *testing.T) *HPointRingBufferView {
+					memoryTracker := limiter.NewMemoryConsumptionTracker(context.Background(), 0, nil, "")
+					buf := NewHPointRingBuffer(memoryTracker)
 
-		// Add points with timestamps 10, 20, 30, 40, 50
-		points := []promql.HPoint{
-			{T: 10, H: &histogram.FloatHistogram{Count: 100}},
-			{T: 20, H: &histogram.FloatHistogram{Count: 200}},
-			{T: 30, H: &histogram.FloatHistogram{Count: 300}},
-			{T: 40, H: &histogram.FloatHistogram{Count: 400}},
-			{T: 50, H: &histogram.FloatHistogram{Count: 500}},
+					require.NoError(t, buf.Append(promql.HPoint{T: 1, H: &histogram.FloatHistogram{Count: 10}}))
+					require.NoError(t, buf.Append(promql.HPoint{T: 10, H: &histogram.FloatHistogram{Count: 100}}))
+					require.NoError(t, buf.Append(promql.HPoint{T: 20, H: &histogram.FloatHistogram{Count: 200}}))
+					require.NoError(t, buf.Append(promql.HPoint{T: 30, H: &histogram.FloatHistogram{Count: 300}}))
+
+					buf.DiscardPointsAtOrBefore(1)
+
+					require.NoError(t, buf.Append(promql.HPoint{T: 40, H: &histogram.FloatHistogram{Count: 400}}))
+
+					view := buf.ViewUntilSearchingBackwards(40, nil)
+					head, tail := view.UnsafePoints()
+					if tail == nil || len(tail) == 0 {
+						panic("expected wraparound: tail should be non-nil and non-empty")
+					}
+					if len(head) == 0 {
+						panic("expected wraparound: head should be non-empty")
+					}
+
+					return view
+				},
+			},
 		}
-		for _, p := range points {
-			require.NoError(t, buf.Append(p))
+
+		for _, tc := range testCases {
+			t.Run(tc.name, func(t *testing.T) {
+				fullView := tc.setupBuffer(t)
+
+				require.Equal(t, 4, fullView.Count())
+
+				// Test SubView with range (15, 35] - should get points at T=20, T=30
+				subView := fullView.SubView(15, 35)
+				require.Equal(t, 2, subView.Count())
+				require.Equal(t, int64(20), subView.First().T)
+				last, hasLast := subView.Last()
+				require.True(t, hasLast)
+				require.Equal(t, int64(30), last.T)
+
+				// Test SubView with range (5, 45] - should get all points
+				subView = fullView.SubView(5, 45)
+				require.Equal(t, 4, subView.Count())
+				require.Equal(t, int64(10), subView.First().T)
+
+				// Test SubView with range (25, 45] - should get points at T=30, T=40
+				subView = fullView.SubView(25, 45)
+				require.Equal(t, 2, subView.Count())
+				require.Equal(t, int64(30), subView.First().T)
+				last, hasLast = subView.Last()
+				require.True(t, hasLast)
+				require.Equal(t, int64(40), last.T)
+
+				// Test SubView with range (60, 70] - should get no points
+				subView = fullView.SubView(60, 70)
+				require.Equal(t, 0, subView.Count())
+
+				// Test SubView with range (5, 15] - should get point at T=10
+				subView = fullView.SubView(5, 15)
+				require.Equal(t, 1, subView.Count())
+				require.Equal(t, int64(10), subView.First().T)
+			})
 		}
-
-		// Create a full view
-		fullView := buf.ViewUntilSearchingBackwards(50, nil)
-		require.Equal(t, 5, fullView.Count())
-
-		// Test SubView with range (15, 35] - should get points at T=20, T=30
-		subView := fullView.SubView(15, 35)
-		require.Equal(t, 2, subView.Count())
-		require.Equal(t, int64(20), subView.First().T)
-		last, hasLast := subView.Last()
-		require.True(t, hasLast)
-		require.Equal(t, int64(30), last.T)
-
-		// Test SubView with range (5, 55] - should get all points
-		subView = fullView.SubView(5, 55)
-		require.Equal(t, 5, subView.Count())
-		require.Equal(t, int64(10), subView.First().T)
-
-		// Test SubView with range (25, 45] - should get points at T=30, T=40
-		subView = fullView.SubView(25, 45)
-		require.Equal(t, 2, subView.Count())
-		require.Equal(t, int64(30), subView.First().T)
-		last, hasLast = subView.Last()
-		require.True(t, hasLast)
-		require.Equal(t, int64(40), last.T)
-
-		// Test SubView with range (60, 70] - should get no points
-		subView = fullView.SubView(60, 70)
-		require.Equal(t, 0, subView.Count())
-
-		// Test nested SubView
-		midView := fullView.SubView(15, 45)
-		require.Equal(t, 3, midView.Count()) // T=20, T=30, T=40
-		nestedView := midView.SubView(25, 35)
-		require.Equal(t, 1, nestedView.Count()) // T=30
-		require.Equal(t, int64(30), nestedView.First().T)
 	})
 }

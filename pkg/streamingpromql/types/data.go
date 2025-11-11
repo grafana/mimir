@@ -160,39 +160,33 @@ type RangeVectorStepData struct {
 
 // SubStep returns a new RangeVectorStepData with the same StepT but filtered samples for the specified time range.
 // This creates filtered views of the sample buffers without copying data.
-// rangeStart is exclusive, rangeEnd is inclusive (consistent with PromQL range semantics).
-// Returns an error if the requested range is not within the parent step's range.
 func (s *RangeVectorStepData) SubStep(rangeStart, rangeEnd int64) (*RangeVectorStepData, error) {
 	// Validate that the substep range is within the parent step's range
 	if rangeStart < s.RangeStart {
-		return nil, fmt.Errorf("substep rangeStart (%d) is before parent step's RangeStart (%d)", rangeStart, s.RangeStart)
+		return nil, fmt.Errorf("substep start (%d) is before parent step's start (%d)", rangeStart, s.RangeStart)
 	}
 	if rangeEnd > s.RangeEnd {
-		return nil, fmt.Errorf("substep rangeEnd (%d) is after parent step's RangeEnd (%d)", rangeEnd, s.RangeEnd)
+		return nil, fmt.Errorf("substep start (%d) is after parent step's end (%d)", rangeEnd, s.RangeEnd)
 	}
 	if rangeStart >= rangeEnd {
-		return nil, fmt.Errorf("substep rangeStart (%d) must be less than rangeEnd (%d)", rangeStart, rangeEnd)
+		return nil, fmt.Errorf("substep start (%d) must be less than end (%d)", rangeStart, rangeEnd)
 	}
 
 	newStep := &RangeVectorStepData{
 		StepT:      s.StepT,
 		RangeStart: rangeStart,
 		RangeEnd:   rangeEnd,
-		Floats:     &FPointRingBufferView{}, // Initialize to empty view, not nil
-		Histograms: &HPointRingBufferView{}, // Initialize to empty view, not nil
 	}
 
 	// Filter floats to only include points in the range (rangeStart, rangeEnd]
-	if s.Floats != nil && s.Floats.Any() {
-		subview := s.Floats.SubView(rangeStart, rangeEnd)
-		newStep.Floats = &subview
-	}
+	// s.Floats is assumed to be non-nil (steps from NextStepSamples always have non-nil views).
+	floatSubview := s.Floats.SubView(rangeStart, rangeEnd)
+	newStep.Floats = &floatSubview
 
 	// Filter histograms to only include points in the range (rangeStart, rangeEnd]
-	if s.Histograms != nil && s.Histograms.Any() {
-		subview := s.Histograms.SubView(rangeStart, rangeEnd)
-		newStep.Histograms = &subview
-	}
+	// s.Histograms is assumed to be non-nil (steps from NextStepSamples always have non-nil views).
+	histogramSubview := s.Histograms.SubView(rangeStart, rangeEnd)
+	newStep.Histograms = &histogramSubview
 
 	return newStep, nil
 }

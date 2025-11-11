@@ -3,6 +3,7 @@
 package querysplitting
 
 import (
+	"errors"
 	"fmt"
 	"time"
 
@@ -10,124 +11,115 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 
-	"github.com/grafana/mimir/pkg/streamingpromql/cache"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
+	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
 func init() {
 	planning.RegisterNodeFactory(func() planning.Node {
-		return &SplitRangeVector{SplitRangeVectorDetails: &SplitRangeVectorDetails{}}
+		return &SplittableFunctionCall{SplittableFunctionCallDetails: &SplittableFunctionCallDetails{}}
 	})
 }
 
-// SplitRangeVector wraps a range vector function call to split its computation into
+// SplittableFunctionCall wraps a range vector function call to split its computation into
 // fixed-interval blocks for intermediate result caching.
-type SplitRangeVector struct {
-	*SplitRangeVectorDetails
+type SplittableFunctionCall struct {
+	*SplittableFunctionCallDetails
 	Inner planning.Node
 }
 
-func (s *SplitRangeVector) Details() proto.Message {
-	return s.SplitRangeVectorDetails
+func (s *SplittableFunctionCall) Details() proto.Message {
+	return s.SplittableFunctionCallDetails
 }
 
-func (s *SplitRangeVector) NodeType() planning.NodeType {
+func (s *SplittableFunctionCall) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_SPLIT_RANGE_VECTOR
 }
 
-func (s *SplitRangeVector) Children() []planning.Node {
+func (s *SplittableFunctionCall) Children() []planning.Node {
 	return []planning.Node{s.Inner}
 }
 
-func (s *SplitRangeVector) SetChildren(children []planning.Node) error {
+func (s *SplittableFunctionCall) SetChildren(children []planning.Node) error {
 	if len(children) != 1 {
-		return fmt.Errorf("node of type SplitRangeVector supports 1 child, but got %d", len(children))
+		return fmt.Errorf("node of type SplittableFunctionCall supports 1 child, but got %d", len(children))
 	}
 
 	s.Inner = children[0]
 	return nil
 }
 
-func (s *SplitRangeVector) EquivalentTo(other planning.Node) bool {
-	otherSplit, ok := other.(*SplitRangeVector)
+func (s *SplittableFunctionCall) EquivalentTo(other planning.Node) bool {
+	otherSplit, ok := other.(*SplittableFunctionCall)
 	return ok && s.Inner.EquivalentTo(otherSplit.Inner)
 }
 
-func (s *SplitRangeVector) Describe() string {
+func (s *SplittableFunctionCall) Describe() string {
 	return "split into cacheable blocks"
 }
 
-func (s *SplitRangeVector) ChildrenLabels() []string {
+func (s *SplittableFunctionCall) ChildrenLabels() []string {
 	return []string{""}
 }
 
-func (s *SplitRangeVector) ChildrenTimeRange(parentTimeRange types.QueryTimeRange) types.QueryTimeRange {
+func (s *SplittableFunctionCall) ChildrenTimeRange(parentTimeRange types.QueryTimeRange) types.QueryTimeRange {
 	return parentTimeRange
 }
 
-func (s *SplitRangeVector) ResultType() (parser.ValueType, error) {
+func (s *SplittableFunctionCall) ResultType() (parser.ValueType, error) {
 	return s.Inner.ResultType()
 }
 
-func (s *SplitRangeVector) QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) planning.QueriedTimeRange {
+func (s *SplittableFunctionCall) QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) planning.QueriedTimeRange {
 	return s.Inner.QueriedTimeRange(queryTimeRange, lookbackDelta)
 }
 
-func (s *SplitRangeVector) ExpressionPosition() posrange.PositionRange {
+func (s *SplittableFunctionCall) ExpressionPosition() posrange.PositionRange {
 	return s.Inner.ExpressionPosition()
 }
 
-func (s *SplitRangeVector) MinimumRequiredPlanVersion() planning.QueryPlanVersion {
+func (s *SplittableFunctionCall) MinimumRequiredPlanVersion() planning.QueryPlanVersion {
 	return s.Inner.MinimumRequiredPlanVersion()
 }
 
-func MaterializeSplitRangeVector(s *SplitRangeVector, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
-	// Get the inner operator (which should be a FunctionOverRangeVector)
-	innerOp, err := materializer.ConvertNodeToOperator(s.Inner, timeRange)
+func MaterializeSplitRangeVector(s *SplittableFunctionCall, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
+	innerFunctionCall, ok := s.Inner.(*core.FunctionCall)
+	if !ok {
+		return nil, fmt.Errorf("SplittableFunctionCall node should only wrap FunctionCall nodes, got %T", s.Inner)
+	}
+
+	var funcDef functions.FunctionOverRangeVectorDefinition
+	switch innerFunctionCall.Function {
+	case functions.FUNCTION_SUM_OVER_TIME:
+		funcDef = functions.SumOverTime
+	default:
+		return nil, fmt.Errorf("function %v is not yet supported for split range vector optimization", innerFunctionCall.Function)
+	}
+
+	splitDuration := time.Duration(s.SplittableFunctionCallDetails.SplitDurationMs) * time.Millisecond
+
+	matrixSelector, ok := s.Inner.Children()[0].(*core.MatrixSelector)
+	if !ok {
+		return nil, errors.New("inner.children[0] is expected to be a matrix selector")
+	}
+
+	splitOp, err := functions.NewFunctionOverRangeVectorSplit(
+		matrixSelector, // Pass Node, not operator
+		materializer,
+		timeRange,
+		splitDuration,
+		params.IntermediateResultCache,
+		funcDef,
+		innerFunctionCall.ExpressionPosition(),
+		params.Annotations,
+		params.MemoryConsumptionTracker,
+		params.EnableDelayedNameRemoval,
+	)
 	if err != nil {
 		return nil, err
 	}
-
-	// The inner MUST be a FunctionOverRangeVector - the optimization pass should only wrap FunctionCall
-	// nodes that produce FunctionOverRangeVector operators. If not, it's a programming error.
-	baseFuncRange, ok := innerOp.(*functions.FunctionOverRangeVector)
-	if !ok {
-		return nil, fmt.Errorf("SplitRangeVector node should only wrap operators that produce FunctionOverRangeVector, got %T", innerOp)
-	}
-
-	// Get the cache
-	var irCache *cache.IntermediateResultTenantCache
-	if params.IntermediateResultCache != nil {
-		if tenantCache, ok := params.IntermediateResultCache.(*cache.IntermediateResultTenantCache); ok {
-			irCache = tenantCache
-		}
-	}
-
-	// Convert proto CacheBlocks to IntermediateResultBlocks
-	intermediateBlocks := make([]functions.IntermediateResultBlock, len(s.CacheBlocks))
-	for i, block := range s.CacheBlocks {
-		intermediateBlocks[i] = functions.IntermediateResultBlock{
-			StartTimestampMs: block.StartTimestampMs,
-			DurationMs:       block.DurationMs,
-		}
-	}
-
-	// Create the split version with pre-calculated blocks and cache key
-	splitOp := functions.NewFunctionOverRangeVectorSplit(
-		baseFuncRange.Inner,
-		baseFuncRange.ScalarArgs,
-		baseFuncRange.MemoryConsumptionTracker,
-		baseFuncRange.Func,
-		baseFuncRange.Annotations,
-		baseFuncRange.ExpressionPosition(),
-		timeRange,
-		params.EnableDelayedNameRemoval,
-		s.CacheKey,
-		irCache,
-		intermediateBlocks,
-	)
 
 	return planning.NewSingleUseOperatorFactory(splitOp), nil
 }

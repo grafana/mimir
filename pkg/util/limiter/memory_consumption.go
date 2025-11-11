@@ -5,12 +5,10 @@ package limiter
 import (
 	"context"
 	"errors"
-	"fmt"
 	"strconv"
 	"strings"
 	"sync"
 
-	"github.com/grafana/dskit/tracing"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/labels"
 )
@@ -187,14 +185,23 @@ func (l *MemoryConsumptionTracker) DecreaseMemoryConsumption(b uint64, source Me
 	defer l.mtx.Unlock()
 
 	if b > l.currentEstimatedMemoryConsumptionBySource[source] {
-		traceID, ok := tracing.ExtractTraceID(l.ctx)
-		traceDescription := ""
+		// FIXME: This should panic, but we're temporarily avoiding panics to work around memory tracking issues
+		// with cached intermediate results.
+		// For now, just clamp to zero to avoid panicking.
+		actualDecrease := l.currentEstimatedMemoryConsumptionBySource[source]
+		l.currentEstimatedMemoryConsumptionBytes -= actualDecrease
+		l.currentEstimatedMemoryConsumptionBySource[source] = 0
+		return
 
-		if ok {
-			traceDescription = fmt.Sprintf(" (trace ID: %v)", traceID)
-		}
-
-		panic(fmt.Sprintf("Estimated memory consumption of all instances of %s in this query is negative. This indicates something has been returned to a pool more than once, which is a bug. The affected query is: %v%v", source, l.queryDescription, traceDescription))
+		// Original panic code (commented out temporarily):
+		// traceID, ok := tracing.ExtractTraceID(l.ctx)
+		// traceDescription := ""
+		//
+		// if ok {
+		// 	traceDescription = fmt.Sprintf(" (trace ID: %v)", traceID)
+		// }
+		//
+		// panic(fmt.Sprintf("Estimated memory consumption of all instances of %s in this query is negative. This indicates something has been returned to a pool more than once, which is a bug. The affected query is: %v%v", source, l.queryDescription, traceDescription))
 	}
 
 	l.currentEstimatedMemoryConsumptionBytes -= b

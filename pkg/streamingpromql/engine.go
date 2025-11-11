@@ -81,7 +81,7 @@ func NewEngine(opts EngineOpts, limitsProvider QueryLimitsProvider, metrics *sta
 
 		planning.NODE_TYPE_DUPLICATE:                 planning.NodeMaterializerFunc[*commonsubexpressionelimination.Duplicate](commonsubexpressionelimination.MaterializeDuplicate),
 		planning.NODE_TYPE_STEP_INVARIANT_EXPRESSION: planning.NodeMaterializerFunc[*core.StepInvariantExpression](core.MaterializeStepInvariantExpression),
-		planning.NODE_TYPE_SPLIT_RANGE_VECTOR:        planning.NodeMaterializerFunc[*querysplitting.SplitRangeVector](querysplitting.MaterializeSplitRangeVector),
+		planning.NODE_TYPE_SPLIT_RANGE_VECTOR:        planning.NodeMaterializerFunc[*querysplitting.SplittableFunctionCall](querysplitting.MaterializeSplitRangeVector),
 	}
 
 	return &Engine{
