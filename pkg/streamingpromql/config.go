@@ -39,8 +39,6 @@ type EngineOpts struct {
 	EnableNarrowBinarySelectors                                                   bool `yaml:"enable_narrow_binary_selectors" category:"experimental"`
 	EnableEliminateDeduplicateAndMerge                                            bool `yaml:"enable_eliminate_deduplicate_and_merge" category:"experimental"`
 
-	// InstantQuerySplitting configures splitting range vector queries in instant queries into smaller blocks.
-	// This enables caching intermediate results and can help with memory management.
 	InstantQuerySplitting QuerySplittingConfig `yaml:"instant_query_splitting" category:"experimental"`
 
 	// Intermediate result cache instance (populated from InstantQuerySplitting config)
@@ -59,7 +57,6 @@ type QuerySplittingConfig struct {
 	SplitInterval time.Duration `yaml:"split_interval" category:"experimental"`
 
 	// IntermediateResultsCache configures caching of intermediate results from split queries.
-	// If not configured, query splitting will still work but results won't be cached.
 	IntermediateResultsCache cache.ResultsCacheConfig `yaml:"intermediate_results_cache" category:"experimental"`
 }
 

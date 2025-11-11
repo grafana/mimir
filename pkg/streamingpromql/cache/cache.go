@@ -224,7 +224,6 @@ func blockToCachedSeries(cacheKey string, block IntermediateResultBlock) (Cached
 		}
 		if result.SumOverTime.SumH != nil {
 			// Convert histogram.FloatHistogram to mimirpb.Histogram
-			// Use timestamp 0 since we're storing intermediate results, not time-series data
 			histProto := mimirpb.FromFloatHistogramToHistogramProto(0, result.SumOverTime.SumH)
 			proto.SumH = &histProto
 		}

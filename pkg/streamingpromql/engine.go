@@ -255,8 +255,7 @@ func (e *Engine) materializeAndCreateEvaluator(ctx context.Context, queryable st
 	if e.intermediateResultCache != nil {
 		tenantID, err := user.ExtractOrgID(ctx)
 		if err != nil {
-			// If we can't get tenant ID, disable caching for this query
-			e.logger.Log("msg", "failed to get tenant ID for intermediate result caching, disabling cache for this query", "err", err)
+			return nil, err
 		} else {
 			tenantCache = cache.NewIntermediateResultTenantCache(tenantID, e.intermediateResultCache)
 		}

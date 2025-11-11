@@ -24,7 +24,6 @@ import (
 )
 
 // FunctionOverRangeVectorSplit performs range vector function calculation with intermediate result caching.
-// TODO: Add scalar args support if splitting support is added for functions with scalar args
 type FunctionOverRangeVectorSplit struct {
 	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
 	Func                     FunctionOverRangeVectorDefinition
@@ -52,8 +51,6 @@ type FunctionOverRangeVectorSplit struct {
 
 var _ types.InstantVectorOperator = &FunctionOverRangeVectorSplit{}
 
-// TODO: Add scalarArgs parameter when splitting support is added for functions with scalar args.
-// Currently only sum_over_time is supported, which doesn't have scalar args.
 func NewFunctionOverRangeVectorSplit(
 	innerNode RangeVectorNode,
 	materializer *planning.Materializer,
@@ -184,8 +181,6 @@ func (m *FunctionOverRangeVectorSplit) NextSeries(ctx context.Context) (types.In
 
 func (m *FunctionOverRangeVectorSplit) emitAnnotation(generator types.AnnotationGenerator) {
 	metricName := m.metricNames.GetMetricNameForSeries(m.currentSeriesIdx)
-	// TODO: When scalar args support is added, check UseFirstArgumentPositionForAnnotations
-	// and use scalar args[0].ExpressionPosition() if applicable as the non-split version does
 	pos := m.innerNode.ExpressionPosition()
 
 	m.Annotations.Add(generator(metricName, pos))
@@ -503,7 +498,6 @@ func (p *UncachedSplit) SeriesMetadata(ctx context.Context, matchers types.Match
 				return nil, err
 			}
 
-			// TODO: Pass scalar args data when scalar args support is added
 			result, err := p.parent.Func.GenerateFunc(rangeStep, []types.ScalarData{}, p.parent.emitAnnotationFunc, p.parent.MemoryConsumptionTracker)
 			if err != nil {
 				return nil, err

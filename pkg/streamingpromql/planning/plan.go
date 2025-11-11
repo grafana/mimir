@@ -196,7 +196,7 @@ func CacheKey(node Node) string {
 		panic(fmt.Sprintf("CacheKey only supports MatrixSelector nodes, got node type %v", node.NodeType()))
 	}
 
-	// TODO: Use a better cache key
+	// TODO: Use a better cache key - this encodes the range too which is not necessary (sum_over_time(metric[2h]) and sum_over_time(metric[6h]) could use the same cache blocks)
 	return node.Describe()
 }
 

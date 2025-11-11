@@ -158,19 +158,6 @@ func (m *RangeVectorSelector) Prepare(ctx context.Context, params *types.Prepare
 	return m.Selector.Prepare(ctx, params)
 }
 
-func (m *RangeVectorSelector) StepCalculationParams() types.StepCalculationParams {
-	rangeMs := m.rangeMilliseconds
-	if rangeMs == 0 {
-		rangeMs = m.Selector.Range.Milliseconds()
-	}
-
-	return types.StepCalculationParams{
-		RangeMilliseconds: rangeMs,
-		Offset:            m.Selector.Offset,
-		Timestamp:         m.Selector.Timestamp,
-	}
-}
-
 func (m *RangeVectorSelector) Finalize(ctx context.Context) error {
 	// Nothing to do.
 	return nil

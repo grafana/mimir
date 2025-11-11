@@ -131,16 +131,7 @@ func FunctionOverRangeVectorOperatorFactory(
 			return nil, fmt.Errorf("expected a range vector argument for %s, got %T", name, args[0])
 		}
 
-		return NewFunctionOverRangeVector(
-			inner,
-			nil, // scalarArgs
-			opParams.MemoryConsumptionTracker,
-			f,
-			opParams.Annotations,
-			expressionPosition,
-			timeRange,
-			opParams.EnableDelayedNameRemoval,
-		), nil
+		return NewFunctionOverRangeVector(inner, nil, opParams.MemoryConsumptionTracker, f, opParams.Annotations, expressionPosition, timeRange, opParams.EnableDelayedNameRemoval), nil
 	}
 }
 

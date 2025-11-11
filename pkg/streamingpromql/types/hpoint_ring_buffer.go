@@ -370,27 +370,25 @@ func (v HPointRingBufferView) SubView(minT int64, maxT int64) HPointRingBufferVi
 		return HPointRingBufferView{buffer: v.buffer, offset: v.offset, size: 0}
 	}
 
-	// Find the first point with T > minT
-	firstIdx := 0
-	for firstIdx < v.size && v.PointAt(firstIdx).T <= minT {
-		firstIdx++
+	// TODO: for the query splitting use case, the next subview's start index would be equal to the previous subview's end index
+	// so we don't need to iterate through all the points. Also we should reuse the subview instance but just adjust the start
+	// and end when moving to the next subview
+	parentIdx := 0
+	for parentIdx < v.size && v.PointAt(parentIdx).T <= minT {
+		parentIdx++
 	}
+	offset := parentIdx
 
-	// Find the last point with T <= maxT, starting from firstIdx
-	lastIdx := firstIdx - 1
-	for lastIdx+1 < v.size && v.PointAt(lastIdx+1).T <= maxT {
-		lastIdx++
-	}
-
-	newSize := lastIdx - firstIdx + 1
-	if newSize < 0 {
-		newSize = 0
+	size := 0
+	for parentIdx < v.size && v.PointAt(parentIdx).T <= maxT {
+		size++
+		parentIdx++
 	}
 
 	return HPointRingBufferView{
 		buffer: v.buffer,
-		offset: v.offset + firstIdx,
-		size:   newSize,
+		offset: v.offset + offset,
+		size:   size,
 	}
 }
 

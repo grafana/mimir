@@ -79,7 +79,5 @@ func NewPromQLEngineOptions(cfg Config, activityTracker *activitytracker.Activit
 	cfg.MimirQueryEngine.ActiveQueryTracker = tracker
 	cfg.MimirQueryEngine.Logger = logger
 
-	// Cache is initialized by caller (querier.New) where queries are executed
-
 	return commonOpts, cfg.MimirQueryEngine
 }

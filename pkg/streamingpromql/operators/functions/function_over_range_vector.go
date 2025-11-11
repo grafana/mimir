@@ -19,8 +19,6 @@ import (
 )
 
 // FunctionOverRangeVector performs a rate calculation over a range vector.
-// This is the simple, non-caching version. For queries that can benefit from
-// intermediate result caching, use FunctionOverRangeVectorSplit instead.
 type FunctionOverRangeVector struct {
 	Inner                    types.RangeVectorOperator
 	ScalarArgs               []types.ScalarOperator

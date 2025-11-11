@@ -343,10 +343,6 @@ func (d *RangeVectorDuplicationConsumer) ExpressionPosition() posrange.PositionR
 	return d.Buffer.Inner.ExpressionPosition()
 }
 
-func (d *RangeVectorDuplicationConsumer) StepCalculationParams() types.StepCalculationParams {
-	return d.Buffer.Inner.StepCalculationParams()
-}
-
 func (d *RangeVectorDuplicationConsumer) Prepare(ctx context.Context, params *types.PrepareParams) error {
 	return d.Buffer.Prepare(ctx, params)
 }

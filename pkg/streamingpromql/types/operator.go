@@ -79,10 +79,6 @@ type RangeVectorOperator interface {
 	// current series and the timestamps of the next time step, or returns EOS if no more time
 	// steps are available.
 	NextStepSamples(ctx context.Context) (*RangeVectorStepData, error)
-
-	// StepCalculationParams returns the parameters needed to calculate step boundaries without calling NextStepSamples.
-	// This is useful for operations that need to know step boundaries (e.g., for caching) without loading samples.
-	StepCalculationParams() StepCalculationParams
 }
 
 // StepCalculationParams contains the parameters needed to calculate step boundaries

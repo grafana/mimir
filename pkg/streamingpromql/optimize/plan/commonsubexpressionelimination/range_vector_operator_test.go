@@ -474,14 +474,6 @@ func (t *testRangeVectorOperator) ExpressionPosition() posrange.PositionRange {
 	return posrange.PositionRange{}
 }
 
-func (t *testRangeVectorOperator) StepCalculationParams() types.StepCalculationParams {
-	return types.StepCalculationParams{
-		RangeMilliseconds: t.stepRange.Milliseconds(),
-		Offset:            0,
-		Timestamp:         nil,
-	}
-}
-
 func (t *testRangeVectorOperator) Prepare(_ context.Context, _ *types.PrepareParams) error {
 	// Nothing to do.
 	return nil
@@ -574,14 +566,6 @@ func (o *failingRangeVectorOperator) Range() time.Duration {
 
 func (o *failingRangeVectorOperator) ExpressionPosition() posrange.PositionRange {
 	return posrange.PositionRange{}
-}
-
-func (o *failingRangeVectorOperator) StepCalculationParams() types.StepCalculationParams {
-	return types.StepCalculationParams{
-		RangeMilliseconds: 0,
-		Offset:            0,
-		Timestamp:         nil,
-	}
 }
 
 func (o *failingRangeVectorOperator) Prepare(_ context.Context, _ *types.PrepareParams) error {
