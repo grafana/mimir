@@ -24,6 +24,7 @@
     "volumes":
       - "./config:/mimir/config"
       - "./activity:/activity"
+      - ".blocks-data:/blocks-data:delegated"
   "block-builder-0":
     "build":
       "context": "."
@@ -49,6 +50,7 @@
     "volumes":
       - "./config:/mimir/config"
       - "./activity:/activity"
+      - ".blocks-data:/blocks-data:delegated"
   "block-builder-scheduler-0":
     "build":
       "context": "."
@@ -74,6 +76,7 @@
     "volumes":
       - "./config:/mimir/config"
       - "./activity:/activity"
+      - ".blocks-data:/blocks-data:delegated"
   "compactor":
     "build":
       "context": "."
@@ -99,6 +102,7 @@
     "volumes":
       - "./config:/mimir/config"
       - "./activity:/activity"
+      - ".blocks-data:/blocks-data:delegated"
   "distributor-1":
     "build":
       "context": "."
@@ -124,6 +128,7 @@
     "volumes":
       - "./config:/mimir/config"
       - "./activity:/activity"
+      - ".blocks-data:/blocks-data:delegated"
   "grafana":
     "environment":
       - "GF_AUTH_ANONYMOUS_ENABLED=true"
@@ -335,6 +340,7 @@
     "volumes":
       - "./config:/mimir/config"
       - "./activity:/activity"
+      - ".blocks-data:/blocks-data:delegated"
   "query-frontend":
     "build":
       "context": "."
@@ -360,6 +366,7 @@
     "volumes":
       - "./config:/mimir/config"
       - "./activity:/activity"
+      - ".blocks-data:/blocks-data:delegated"
   "query-scheduler":
     "build":
       "context": "."
@@ -385,6 +392,7 @@
     "volumes":
       - "./config:/mimir/config"
       - "./activity:/activity"
+      - ".blocks-data:/blocks-data:delegated"
   "redpanda_console":
     "environment":
       - "KAFKA_BROKERS=kafka_1:9092,kafka_2:9092,kafka_3:9092"
@@ -416,6 +424,7 @@
     "volumes":
       - "./config:/mimir/config"
       - "./activity:/activity"
+      - ".blocks-data:/blocks-data:delegated"
   "store-gateway-zone-a-1":
     "build":
       "context": "."
@@ -441,6 +450,7 @@
     "volumes":
       - "./config:/mimir/config"
       - "./activity:/activity"
+      - ".blocks-data:/blocks-data:delegated"
   "store-gateway-zone-b-1":
     "build":
       "context": "."
@@ -466,6 +476,7 @@
     "volumes":
       - "./config:/mimir/config"
       - "./activity:/activity"
+      - ".blocks-data:/blocks-data:delegated"
   "tempo":
     "command":
       - "-config.file=/etc/config/tempo.yaml"
@@ -502,6 +513,7 @@
     "volumes":
       - "./config:/mimir/config"
       - "./activity:/activity"
+      - ".blocks-data:/blocks-data:delegated"
   "usage-tracker-zone-a-1":
     "build":
       "context": "."
@@ -527,6 +539,7 @@
     "volumes":
       - "./config:/mimir/config"
       - "./activity:/activity"
+      - ".blocks-data:/blocks-data:delegated"
   "usage-tracker-zone-b-0":
     "build":
       "context": "."
@@ -552,3 +565,4 @@
     "volumes":
       - "./config:/mimir/config"
       - "./activity:/activity"
+      - ".blocks-data:/blocks-data:delegated"

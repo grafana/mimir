@@ -379,7 +379,8 @@ std.manifestYamlDoc({
       extraArguments: [],
       debug: false,
       debugPort: self.publishedHttpPort + 3000,
-      extraVolumes: [],
+      // Temp: add volume for filesystem while testing query splitting
+      extraVolumes: ['.blocks-data:/blocks-data:delegated'],
       memberlistBindPort: self.publishedHttpPort + 2000,
     },
 

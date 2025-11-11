@@ -39,14 +39,18 @@ block_builder_scheduler:
   startup_observe_time: 5s
 
 blocks_storage:
-  s3:
-    bucket_name:       mimir-blocks
+  backend: filesystem
+  filesystem:
+    dir: /blocks-data
   tsdb:
     dir: /data
     head_postings_for_matchers_cache_force: true
     block_postings_for_matchers_cache_force: true
 
   bucket_store:
+    bucket_index:
+      max_stale_period: 168h
+
     index_cache:
       backend: memcached
       memcached:
