@@ -463,16 +463,6 @@ func (c *UsageTrackerClient) selectRandomPartition() (int32, ring.ReplicationSet
 // 1. The user is NOT in the cache of users close to their limit, AND
 // 2. The user's series limit is >= MinSeriesLimitForAsyncTracking (if configured)
 func (c *UsageTrackerClient) CanTrackAsync(userID string) bool {
-	// Check if user is close to their limit.
-	c.usersCloseToLimitsMtx.RLock()
-	_, found := slices.BinarySearch(c.usersCloseToLimit, userID)
-	c.usersCloseToLimitsMtx.RUnlock()
-
-	if found {
-		// User is close to limit, must track synchronously.
-		return false
-	}
-
 	// Check if user's limit is below the minimum threshold for async tracking.
 	if c.cfg.MinSeriesLimitForAsyncTracking > 0 {
 		userLimit := c.limits.MaxActiveSeriesPerUser(userID)
@@ -482,6 +472,10 @@ func (c *UsageTrackerClient) CanTrackAsync(userID string) bool {
 		}
 	}
 
-	// User is far from limit and has sufficient limit, can track asynchronously.
-	return true
-}
+	// Check if user is close to their limit.
+	c.usersCloseToLimitsMtx.RLock()
+	_, found := slices.BinarySearch(c.usersCloseToLimit, userID)
+	c.usersCloseToLimitsMtx.RUnlock()
+
+	// Can track async if it's not in the list of users close to their limit.
+	return !found
