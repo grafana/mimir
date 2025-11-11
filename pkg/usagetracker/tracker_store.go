@@ -4,6 +4,7 @@ package usagetracker
 
 import (
 	"context"
+	"fmt"
 	"maps"
 	"math"
 	"slices"
@@ -28,11 +29,13 @@ const noLimit = math.MaxUint64
 // trackerStore should not depend on wall clock: time.Now() should be always injected as a parameter,
 // and timer calls should be made from the outside.
 type trackerStore struct {
-	mtx     sync.RWMutex
-	tenants map[string]*trackedTenant
+	mtx           sync.RWMutex
+	sortedTenants []string
+	tenants       map[string]*trackedTenant
 
 	// usersCloseToLimit is an immutable list of user IDs that are close to their limits.
 	// This field is replaced atomically in updateLimits() and read without the lock.
+	// This list is sorted.
 	usersCloseToLimit []string
 
 	// dependencies
@@ -199,7 +202,15 @@ func (t *trackerStore) getOrCreateTenant(tenantID string) *trackedTenant {
 	for i := range tenant.shards {
 		tenant.shards[i] = tenantshard.New(uint32(capacity))
 	}
+
 	t.tenants[tenantID] = tenant
+	i, found := slices.BinarySearch(t.sortedTenants, tenantID)
+	if found {
+		// This should never happen, let's panic instead of having an inconsistent list.
+		panic(fmt.Errorf("tenant %s already exists in the sorted list: %v", tenantID, t.sortedTenants))
+	}
+	t.sortedTenants = slices.Insert(t.sortedTenants, i, tenantID)
+
 	tenant.RLock()
 	t.mtx.Unlock()
 	return tenant
@@ -241,6 +252,11 @@ func (t *trackerStore) cleanup(now time.Time) {
 		tenant.Lock()
 		if tenant.series.Load() == 0 {
 			delete(t.tenants, tenantID)
+			index, found := slices.BinarySearch(t.sortedTenants, tenantID)
+			if !found {
+				panic(fmt.Errorf("tenant %s not found in the sorted list: %v", tenantID, t.sortedTenants))
+			}
+			t.sortedTenants = slices.Delete(t.sortedTenants, index, index+1)
 		}
 		tenant.Unlock()
 	}
@@ -250,12 +266,14 @@ func (t *trackerStore) cleanup(now time.Time) {
 func (t *trackerStore) updateLimits() {
 	t.mtx.RLock()
 	tenantsClone := maps.Clone(t.tenants)
+	sortedTenants := slices.Clone(t.sortedTenants)
 	t.mtx.RUnlock()
 
 	zonesCount := t.limiter.zonesCount()
 	var closeToLimit []string
 
-	for tenantID, tenant := range tenantsClone {
+	for _, tenantID := range sortedTenants {
+		tenant := tenantsClone[tenantID]
 		limit := zeroAsNoLimit(t.limiter.localSeriesLimit(tenantID))
 		series := tenant.series.Load()
 		tenant.currentLimit.Store(currentSeriesLimit(series, limit, zonesCount))
@@ -263,7 +281,7 @@ func (t *trackerStore) updateLimits() {
 		// Determine if this user is close to their limit.
 		// A user is close if: series >= (limit * percentageThreshold / 100)
 		if limit != noLimit {
-			percentageThreshold := uint64(limit) * uint64(t.userCloseToLimitPercentageThreshold) / 100
+			percentageThreshold := limit * uint64(t.userCloseToLimitPercentageThreshold) / 100
 
 			if series >= percentageThreshold {
 				closeToLimit = append(closeToLimit, tenantID)

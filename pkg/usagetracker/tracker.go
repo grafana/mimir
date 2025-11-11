@@ -682,23 +682,6 @@ func (t *UsageTracker) TrackSeries(_ context.Context, req *usagetrackerpb.TrackS
 func (t *UsageTracker) GetUsersCloseToLimit(_ context.Context, req *usagetrackerpb.GetUsersCloseToLimitRequest) (*usagetrackerpb.GetUsersCloseToLimitResponse, error) {
 	partition := req.Partition
 
-	// If partition is not specified or is -1, select a random partition.
-	if partition < 0 {
-		t.partitionsMtx.RLock()
-		partitionCount := int32(len(t.partitions))
-		if partitionCount == 0 {
-			t.partitionsMtx.RUnlock()
-			return nil, fmt.Errorf("no partitions available")
-		}
-		// Select a random partition from the available ones.
-		// We iterate over the map to get a random partition (map iteration order is random in Go).
-		for p := range t.partitions {
-			partition = p
-			break
-		}
-		t.partitionsMtx.RUnlock()
-	}
-
 	t.partitionsMtx.RLock()
 	p, ok := t.partitions[partition]
 	t.partitionsMtx.RUnlock()

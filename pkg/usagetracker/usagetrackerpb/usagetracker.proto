@@ -66,6 +66,7 @@ message GetUsersCloseToLimitRequest {
 
 message GetUsersCloseToLimitResponse {
   // The list of user IDs that are close to their series limit.
+  // This list is sorted.
   repeated string user_ids = 1;
 
   // The partition that was queried.

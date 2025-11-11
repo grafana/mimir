@@ -97,7 +97,7 @@ func TestDistributor_Push_ShouldEnforceMaxSeriesLimits(t *testing.T) {
 
 			// Enable the usage-tracker using a client mock.
 			usageTracker := &usageTrackerClientMock{}
-			usageTracker.On("IsUserCloseToLimit", userID).Return(true) // Assume user is close to limit for test to use sync tracking
+			usageTracker.On("CanTrackAsync", userID).Return(false) // Assume user is close to limit for test to use sync tracking
 			usageTracker.On("TrackSeries", mock.Anything, userID, mock.Anything).Return(testData.trackSeriesRejectedHashes, testData.trackSeriesErr)
 
 			distributors[0].cfg.UsageTrackerEnabled = true
@@ -240,7 +240,7 @@ func (m *usageTrackerClientMock) TrackSeries(ctx context.Context, userID string,
 	return args.Get(0).([]uint64), args.Error(1)
 }
 
-func (m *usageTrackerClientMock) IsUserCloseToLimit(userID string) bool {
+func (m *usageTrackerClientMock) CanTrackAsync(userID string) bool {
 	args := m.Called(userID)
 	return args.Bool(0)
 }
@@ -266,8 +266,7 @@ func (m *usageTrackerClientRejectionMock) TrackSeries(_ context.Context, _ strin
 	return rejected, nil
 }
 
-func (m *usageTrackerClientRejectionMock) IsUserCloseToLimit(_ string) bool {
-	// For testing purposes, we assume users are always close to limit in this mock.
-	// This ensures synchronous tracking behavior in tests.
-	return true
+func (m *usageTrackerClientRejectionMock) CanTrackAsync(_ string) bool {
+	// For testing purposes, we force all users to be tracked synchronously.
+	return false
 }

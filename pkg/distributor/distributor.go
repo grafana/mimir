@@ -103,7 +103,7 @@ const (
 type usageTrackerGenericClient interface {
 	services.Service
 	TrackSeries(ctx context.Context, userID string, series []uint64) ([]uint64, error)
-	IsUserCloseToLimit(userID string) bool
+	CanTrackAsync(userID string) bool
 }
 
 // Distributor forwards appends and queries to individual ingesters.
@@ -702,7 +702,7 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 			return nil, errors.New("usage-tracker instance ring is required")
 		}
 
-		d.usageTrackerClient = usagetrackerclient.NewUsageTrackerClient("distributor", d.cfg.UsageTrackerClient, usageTrackerPartitionRing, usageTrackerInstanceRing, log, reg)
+		d.usageTrackerClient = usagetrackerclient.NewUsageTrackerClient("distributor", d.cfg.UsageTrackerClient, usageTrackerPartitionRing, usageTrackerInstanceRing, d.limits, log, reg)
 		subservices = append(subservices, d.usageTrackerClient)
 	}
 
@@ -1556,29 +1556,47 @@ func (d *Distributor) prePushMaxSeriesLimitMiddleware(next PushFunc) PushFunc {
 
 		// Track the series and check if anyone should be rejected because over the limit.
 		// For users that are far from their limits, we can do this asynchronously.
-		var rejectedHashes []uint64
-		if d.usageTrackerClient.IsUserCloseToLimit(userID) {
-			// User is close to limit, track synchronously.
-			rejectedHashes, err = d.usageTrackerClient.TrackSeries(ctx, userID, seriesHashes)
-			if err != nil {
-				return errors.Wrap(err, "failed to enforce max series limit")
-			}
-		} else {
+		if d.usageTrackerClient.CanTrackAsync(userID) {
 			// Tenant is far from limit, track asynchronously.
 			// Spawn a goroutine with the request context and add a cleanup function to wait for it.
 			done := make(chan error, 1)
+			t0 := time.Now()
+			asyncTrackingCtx, cancelAsyncTracking := context.WithCancel(ctx)
 			go func() {
-				_, trackErr := d.usageTrackerClient.TrackSeries(ctx, userID, seriesHashes)
-				done <- trackErr
+				_, err := d.usageTrackerClient.TrackSeries(asyncTrackingCtx, userID, seriesHashes)
+				if err != nil {
+					level.Error(d.log).Log("msg", "failed to track series asynchronously", "err", err, "user", userID, "series", len(seriesHashes))
+				}
 				close(done)
 			}()
 
 			// Add a cleanup function that will wait for the async tracking to complete.
-			pushReq.AddCleanup(func() { <-done })
+			pushReq.AddCleanup(func() {
+				tCleanup := time.Now()
+				select {
+				case <-done:
+					// No need to wait.
+					return
+				default:
+				}
 
-			// For async tracking, we don't reject any series in the middleware.
-			// The series will be tracked eventually.
-			rejectedHashes = nil
+				select {
+				case <-done:
+					level.Info(d.log).Log("msg", "async tracking call took more than ingestion", "user", userID, "series", len(seriesHashes), "tracking_time", time.Since(t0), "time_since_cleanup", tCleanup)
+				case <-time.After(d.cfg.UsageTrackerClient.MaxTimeToWaitForAsyncTrackingResponseAfterIngestion):
+					level.Warn(d.log).Log("msg", "async tracking call took too long, canceling", "user", userID, "series", len(seriesHashes), "tracking_time", time.Since(t0), "time_since_cleanup", tCleanup)
+					cancelAsyncTracking()
+				}
+			})
+
+			// If there's an error coming from the ingesters, prioritize that one.
+			return next(ctx, pushReq)
+		}
+
+		// User is close to limit, track synchronously.
+		rejectedHashes, err := d.usageTrackerClient.TrackSeries(ctx, userID, seriesHashes)
+		if err != nil {
+			return errors.Wrap(err, "failed to enforce max series limit")
 		}
 
 		if len(rejectedHashes) > 0 {

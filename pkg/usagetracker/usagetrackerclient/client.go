@@ -6,6 +6,7 @@ import (
 	"context"
 	"flag"
 	"math/rand/v2"
+	"slices"
 	"strconv"
 	"sync"
 	"time"
@@ -32,6 +33,11 @@ var (
 	TrackSeriesOp = ring.NewOp([]ring.InstanceState{ring.ACTIVE}, nil)
 )
 
+// limitsProvider provides access to user limits.
+type limitsProvider interface {
+	MaxActiveSeriesPerUser(userID string) int
+}
+
 type Config struct {
 	IgnoreRejectedSeries bool `yaml:"ignore_rejected_series" category:"experimental"`
 	IgnoreErrors         bool `yaml:"ignore_errors" category:"experimental"`
@@ -47,6 +53,13 @@ type Config struct {
 
 	UsersCloseToLimitPollInterval        time.Duration `yaml:"users_close_to_limit_poll_interval" category:"advanced"`
 	UsersCloseToLimitCacheStartupRetries int           `yaml:"users_close_to_limit_cache_startup_retries" category:"advanced"`
+
+	MaxTimeToWaitForAsyncTrackingResponseAfterIngestion time.Duration `yaml:"max_time_to_wait_for_async_tracking_response_after_ingestion" category:"advanced"`
+
+	// MinSeriesLimitForAsyncTracking is the minimum series limit for a user to be eligible for async tracking.
+	// Users with a series limit below this threshold will always be tracked synchronously.
+	// Set to 0 to disable this check (all users eligible for async tracking based on proximity to limit).
+	MinSeriesLimitForAsyncTracking int `yaml:"min_series_limit_for_async_tracking" category:"advanced"`
 
 	// Allow to inject custom client factory in tests.
 	ClientFactory client.PoolFactory `yaml:"-"`
@@ -66,6 +79,9 @@ func (cfg *Config) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 	f.DurationVar(&cfg.UsersCloseToLimitPollInterval, prefix+"users-close-to-limit-poll-interval", time.Second, "Interval to poll usage-tracker instances for the list of users close to their series limit. This list is used to determine whether to track series synchronously or asynchronously.")
 	f.IntVar(&cfg.UsersCloseToLimitCacheStartupRetries, prefix+"users-close-to-limit-cache-startup-retries", 3, "Number of retries to populate the users close to limit cache at startup. If all retries fail, the client will start with an empty cache.")
 
+	f.DurationVar(&cfg.MaxTimeToWaitForAsyncTrackingResponseAfterIngestion, prefix+"max-time-to-wait-for-async-tracking-response-after-ingestion", 250*time.Millisecond, "Maximum time to wait for an asynchronous tracking response after ingestion request is completed.")
+	f.IntVar(&cfg.MinSeriesLimitForAsyncTracking, prefix+"min-series-limit-for-async-tracking", 0, "Minimum series limit for a user to be eligible for async tracking. Users with a series limit below this threshold will always be tracked synchronously. Set to 0 to disable this check.")
+
 	cfg.GRPCClientConfig.RegisterFlagsWithPrefix(prefix+"grpc-client-config", f)
 }
 
@@ -74,6 +90,7 @@ type UsageTrackerClient struct {
 
 	cfg    Config
 	logger log.Logger
+	limits limitsProvider
 
 	partitionRing *ring.MultiPartitionInstanceRing
 
@@ -83,11 +100,11 @@ type UsageTrackerClient struct {
 	trackSeriesWorkersPool *concurrency.ReusableGoroutinesPool
 
 	// Cache for users close to their limits.
-	usersCloseToLimitCache sync.Map // map[string]struct{}
+	usersCloseToLimitsMtx sync.RWMutex
+	usersCloseToLimit     []string
 
 	// Atomic fields for metrics.
 	userCacheLastUpdateTimestamp *atomic.Int64 // Unix timestamp in seconds
-	userCacheSize                *atomic.Int64 // Count of users in cache
 
 	// Metrics.
 	trackSeriesDuration                *prometheus.HistogramVec
@@ -96,15 +113,15 @@ type UsageTrackerClient struct {
 	usersCloseToLimitUpdateFailures    prometheus.Counter
 }
 
-func NewUsageTrackerClient(clientName string, clientCfg Config, partitionRing *ring.MultiPartitionInstanceRing, instanceRing ring.ReadRing, logger log.Logger, registerer prometheus.Registerer) *UsageTrackerClient {
+func NewUsageTrackerClient(clientName string, clientCfg Config, partitionRing *ring.MultiPartitionInstanceRing, instanceRing ring.ReadRing, limits limitsProvider, logger log.Logger, registerer prometheus.Registerer) *UsageTrackerClient {
 	c := &UsageTrackerClient{
 		cfg:                          clientCfg,
 		logger:                       logger,
+		limits:                       limits,
 		partitionRing:                partitionRing,
 		clientsPool:                  newUsageTrackerClientPool(client.NewRingServiceDiscovery(instanceRing), clientName, clientCfg, logger, registerer),
 		trackSeriesWorkersPool:       concurrency.NewReusableGoroutinesPool(clientCfg.ReusableWorkers),
 		userCacheLastUpdateTimestamp: atomic.NewInt64(0),
-		userCacheSize:                atomic.NewInt64(0),
 		trackSeriesDuration: promauto.With(registerer).NewHistogramVec(prometheus.HistogramOpts{
 			Name:                            "cortex_usage_tracker_client_track_series_duration_seconds",
 			Help:                            "Time taken to track all series in remote write request, eventually sharding the tracking among multiple usage-tracker instances.",
@@ -148,8 +165,11 @@ func (c *UsageTrackerClient) starting(ctx context.Context) error {
 		c.updateUsersCloseToLimitCache(ctx)
 
 		// Check if the cache was successfully populated (non-zero size indicates success).
-		if c.userCacheSize.Load() > 0 {
-			level.Info(c.logger).Log("msg", "successfully populated users close to limit cache at startup", "user_count", c.userCacheSize.Load(), "attempt", attempt+1)
+		if c.userCacheLastUpdateTimestamp.Load() > 0 {
+			c.usersCloseToLimitsMtx.Lock()
+			count := len(c.usersCloseToLimit)
+			c.usersCloseToLimitsMtx.Unlock()
+			level.Info(c.logger).Log("msg", "successfully populated users close to limit cache at startup", "user_count", count, "attempt", attempt+1)
 			return nil
 		}
 	}
@@ -357,91 +377,111 @@ func (c *UsageTrackerClient) sortZones(zones []string) []string {
 
 // updateUsersCloseToLimitCache polls a random usage-tracker partition for the list of users
 // close to their series limit and updates the local cache.
-func (c *UsageTrackerClient) updateUsersCloseToLimitCache(ctx context.Context) {
-	// Select a random partition. We pass -1 to let the server choose a random one.
-	req := &usagetrackerpb.GetUsersCloseToLimitRequest{
-		Partition: -1,
+func (c *UsageTrackerClient) updateUsersCloseToLimitCache(ctx context.Context) (ok bool) {
+	partitionID, set, ok := c.selectRandomPartition()
+	if !ok {
+		c.usersCloseToLimitUpdateFailures.Inc()
+		return false
 	}
 
-	// Get a random partition from the partition ring.
-	partitionBatchRing := ring.NewActivePartitionBatchRing(c.partitionRing.PartitionRing())
-	partitions := c.partitionRing.PartitionRing().Partitions()
-	if len(partitions) == 0 {
-		level.Warn(c.logger).Log("msg", "no partitions available in ring for users close to limit poll")
-		c.usersCloseToLimitUpdateFailures.Inc()
-		return
-	}
-	randomPartitionID := uint32(rand.IntN(len(partitions)))
-	replicationSet, err := partitionBatchRing.Get(randomPartitionID, TrackSeriesOp, nil, nil, nil)
-	if err != nil {
-		level.Error(c.logger).Log("msg", "failed to get partition from ring for users close to limit poll", "err", err)
-		c.usersCloseToLimitUpdateFailures.Inc()
-		return
+	cfg := ring.DoUntilQuorumConfig{
+		Logger: spanlogger.FromContext(ctx, c.logger),
+
+		MinimizeRequests: true,
+		HedgingDelay:     c.cfg.RequestsHedgingDelay,
+
+		// Give precedence to the client's zone.
+		ZoneSorter: c.sortZones,
+
+		// No error is a terminal error, and a failing request should be retried on another usage-tracker
+		// replica for the same partition (if available).
+		IsTerminalError: func(_ error) bool { return false },
 	}
 
-	if len(replicationSet.Instances) == 0 {
-		level.Warn(c.logger).Log("msg", "no instances available for users close to limit poll")
-		c.usersCloseToLimitUpdateFailures.Inc()
-		return
-	}
-
-	// Try to find an instance in the preferred zone, otherwise pick the first one.
-	var instance ring.InstanceDesc
-	if c.cfg.PreferAvailabilityZone != "" {
-		for _, inst := range replicationSet.Instances {
-			if inst.Zone == c.cfg.PreferAvailabilityZone {
-				instance = inst
-				break
-			}
+	_, err := ring.DoUntilQuorum[[]string](ctx, set, cfg, func(ctx context.Context, instance *ring.InstanceDesc) ([]string, error) {
+		if instance == nil {
+			// This should never happen.
+			return nil, errors.New("instance is nil")
 		}
-	}
-	if instance.Addr == "" {
-		instance = replicationSet.Instances[0]
-	}
 
-	// Get the client for this instance.
-	grpcClient, err := c.clientsPool.GetClientFor(instance.Addr)
+		poolClient, err := c.clientsPool.GetClientForInstance(*instance)
+		if err != nil {
+			return nil, errors.Errorf("usage-tracker instance %s (%s)", instance.Id, instance.Addr)
+		}
+
+		trackerClient := poolClient.(usagetrackerpb.UsageTrackerClient)
+		resp, err := trackerClient.GetUsersCloseToLimit(ctx, &usagetrackerpb.GetUsersCloseToLimitRequest{Partition: partitionID})
+		if err != nil {
+			return nil, errors.Wrapf(err, "failed to get users close to limit from partition %d", partitionID)
+		}
+
+		c.usersCloseToLimitsMtx.Lock()
+		c.usersCloseToLimit = slices.Clone(resp.UserIds)
+		c.usersCloseToLimitsMtx.Unlock()
+
+		// Update metrics.
+		first := c.userCacheLastUpdateTimestamp.Load() == 0
+		c.userCacheLastUpdateTimestamp.Store(time.Now().Unix())
+		c.usersCloseToLimitCount.Set(float64(len(resp.UserIds)))
+		c.usersCloseToLimitLastUpdateSeconds.Set(float64(time.Now().Unix()))
+
+		lvl := level.Debug
+		if first {
+			lvl = level.Info
+		}
+		lvl(c.logger).Log("msg", "updated users close to limit cache", "partition", resp.Partition, "user_count", len(resp.UserIds))
+		return nil, nil
+	}, func([]string) {})
+
 	if err != nil {
-		level.Error(c.logger).Log("msg", "failed to get client for users close to limit poll", "addr", instance.Addr, "err", err)
 		c.usersCloseToLimitUpdateFailures.Inc()
-		return
+		level.Error(c.logger).Log("msg", "failed to get users close to limit from usage-tracker", "err", err)
+		return false
 	}
 
-	// Make the RPC call.
-	usageTrackerClient := grpcClient.(usagetrackerpb.UsageTrackerClient)
-	resp, err := usageTrackerClient.GetUsersCloseToLimit(ctx, req)
-	if err != nil {
-		level.Error(c.logger).Log("msg", "failed to get users close to limit", "partition", req.Partition, "err", err)
-		c.usersCloseToLimitUpdateFailures.Inc()
-		return
-	}
-
-	// Update the cache: clear it and repopulate with the new list.
-	newCache := make(map[string]struct{}, len(resp.UserIds))
-	for _, userID := range resp.UserIds {
-		newCache[userID] = struct{}{}
-	}
-
-	// Replace the cache contents atomically.
-	c.usersCloseToLimitCache.Range(func(key, value interface{}) bool {
-		c.usersCloseToLimitCache.Delete(key)
-		return true
-	})
-	for userID := range newCache {
-		c.usersCloseToLimitCache.Store(userID, struct{}{})
-	}
-
-	// Update metrics.
-	c.userCacheSize.Store(int64(len(resp.UserIds)))
-	c.userCacheLastUpdateTimestamp.Store(time.Now().Unix())
-	c.usersCloseToLimitCount.Set(float64(len(resp.UserIds)))
-	c.usersCloseToLimitLastUpdateSeconds.Set(float64(time.Now().Unix()))
-
-	level.Debug(c.logger).Log("msg", "updated users close to limit cache", "partition", resp.Partition, "user_count", len(resp.UserIds))
+	return true
 }
 
-// IsUserCloseToLimit returns true if the user is in the cache of users close to their limit.
-func (c *UsageTrackerClient) IsUserCloseToLimit(userID string) bool {
-	_, ok := c.usersCloseToLimitCache.Load(userID)
-	return ok
+func (c *UsageTrackerClient) selectRandomPartition() (int32, ring.ReplicationSet, bool) {
+	partitions := c.partitionRing.PartitionRing().PartitionIDs()
+	if len(partitions) == 0 {
+		level.Error(c.logger).Log("msg", "no partitions available in ring for users close to limit poll")
+		return 0, ring.ReplicationSet{}, false
+	}
+	partitionID := partitions[rand.IntN(len(partitions))]
+	set, err := c.partitionRing.GetReplicationSetForPartitionAndOperation(partitionID, TrackSeriesOp)
+	if err != nil {
+		level.Error(c.logger).Log("msg", "failed to get replication set for partition", "partition", partitionID, "err", err)
+		return 0, ring.ReplicationSet{}, false
+	}
+
+	return partitionID, set, true
+}
+
+// CanTrackAsync returns true if the user can be tracked asynchronously.
+// A user can be tracked async if:
+// 1. The user is NOT in the cache of users close to their limit, AND
+// 2. The user's series limit is >= MinSeriesLimitForAsyncTracking (if configured)
+func (c *UsageTrackerClient) CanTrackAsync(userID string) bool {
+	// Check if user is close to their limit.
+	c.usersCloseToLimitsMtx.RLock()
+	_, found := slices.BinarySearch(c.usersCloseToLimit, userID)
+	c.usersCloseToLimitsMtx.RUnlock()
+
+	if found {
+		// User is close to limit, must track synchronously.
+		return false
+	}
+
+	// Check if user's limit is below the minimum threshold for async tracking.
+	if c.cfg.MinSeriesLimitForAsyncTracking > 0 {
+		userLimit := c.limits.MaxActiveSeriesPerUser(userID)
+		if userLimit > 0 && userLimit < c.cfg.MinSeriesLimitForAsyncTracking {
+			// User's limit is too low, must track synchronously.
+			return false
+		}
+	}
+
+	// User is far from limit and has sufficient limit, can track asynchronously.
+	return true
 }

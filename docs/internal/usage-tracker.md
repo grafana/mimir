@@ -235,95 +235,106 @@ It's based on a swiss-map design, specialized for our use case.
 
 ### Overview
 
-To improve write path performance for users that are far from their series limits, the distributor implements **conditional asynchronous tracking**:
+To improve write path performance, the distributor uses **conditional asynchronous tracking**:
 
-- **Users close to limit**: Series are tracked synchronously (same as before) to enforce limits strictly
-- **Users far from limit**: Series are tracked asynchronously to reduce write request latency
+- **Users close to limit**: Tracked synchronously (blocks the write request) for strict enforcement
+- **Users far from limit**: Tracked asynchronously (doesn't block the write request) for better performance
+- **Users with low limits**: Optionally forced to track synchronously regardless of proximity
 
-This approach maintains eventual consistency while optimizing the common case where most users are not close to their limits.
+This approach maintains strict consistency for users at risk of hitting limits while optimizing latency for the majority of users.
 
-### How it Works
+### Architecture
 
-#### 1. User Proximity Detection
-
-Usage tracker maintains a list of users that are "close to their limit" based on a percentage threshold:
-
-- **Percentage threshold** (default: 85%): User is close if `series >= (localSeriesLimit * 85 / 100)`
-
-Configuration flag:
-- `-usage-tracker.user-close-to-limit-percentage-threshold`
-
-#### 2. GetUsersCloseToLimit API
-
-Usage tracker exposes a new gRPC method `GetUsersCloseToLimit` that returns the list of user IDs close to their limits for a given partition:
-
-```protobuf
-rpc GetUsersCloseToLimit(GetUsersCloseToLimitRequest) returns (GetUsersCloseToLimitResponse);
-
-message GetUsersCloseToLimitRequest {
-  int32 partition = 1;  // -1 for random partition selection
-}
-
-message GetUsersCloseToLimitResponse {
-  repeated string user_ids = 1;
-  int32 partition = 2;  // Actual partition queried
-}
+```
+┌──────────────────────────────────────────────────────────────────┐
+│                         Distributor                               │
+│                                                                    │
+│  1. Receive Write Request                                         │
+│  2. Check: Can track async?                                       │
+│     ├─ User close to limit? → NO (sync)                          │
+│     ├─ User limit too low?  → NO (sync)                          │
+│     └─ Otherwise           → YES (async)                          │
+│                                                                    │
+│  3a. SYNC: TrackSeries() → Wait for result → Process             │
+│  3b. ASYNC: Spawn goroutine → Send to ingesters immediately      │
+│            └─ Cleanup waits for tracking (with timeout)           │
+└──────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+                    ┌─────────────────────┐
+                    │  Usage Tracker      │
+                    │  - Track series     │
+                    │  - Return rejections│
+                    └─────────────────────┘
+                              ▲
+                              │
+                    Periodic polling (1s)
+                    GetUsersCloseToLimit()
 ```
 
-The list is calculated during the periodic limit update cycle and cached in memory for efficient access.
+### User Proximity Detection
 
-#### 3. Client-Side Caching
+Usage tracker maintains a sorted list of users "close to their limit":
 
-`UsageTrackerClient` in the distributor:
+- **Threshold**: Users with `series >= (limit * percentage / 100)` are considered close
+- **Default percentage**: 85% (configurable via `-usage-tracker.user-close-to-limit-percentage-threshold`)
+- **Update frequency**: List recalculated during periodic limit updates
+- **List characteristics**: Sorted lexicographically, stored in-memory per partition
 
-- Runs as a `services.Service` with a polling loop
-- Polls a random usage-tracker partition every 1 second (configurable via `-usage-tracker-client.users-close-to-limit-poll-interval`)
-- Maintains an in-memory cache (`sync.Map`) of users close to their limits
-- Prefers instances in the same availability zone when polling
-- Populates the cache at startup with configurable retries (default: 3, via `-usage-tracker-client.users-close-to-limit-cache-startup-retries`)
+### Distributor Client Behavior
 
-The cache is completely replaced on each poll to ensure consistency.
+The usage tracker client in distributors:
 
-#### 4. Conditional Tracking in Distributor
+1. **Startup**: Populates cache with retries (default: 3 attempts)
+2. **Runtime**: Polls random partition every 1 second for updated user list
+3. **Zone preference**: Prefers same-zone instances to reduce cross-zone traffic
+4. **Cache replacement**: Completely replaces cache on each successful poll
 
-In `prePushMaxSeriesLimitMiddleware`:
+**Configuration:**
+- `-usage-tracker-client.users-close-to-limit-poll-interval` (default: 1s)
+- `-usage-tracker-client.users-close-to-limit-cache-startup-retries` (default: 3)
 
-```go
-if d.usageTrackerClient.IsUserCloseToLimit(userID) {
-    // Sync tracking - blocks the request
-    rejectedHashes, err = d.usageTrackerClient.TrackSeries(ctx, userID, seriesHashes)
-} else {
-    // Async tracking - doesn't block the request
-    done := make(chan error, 1)
-    go func() {
-        _, trackErr := d.usageTrackerClient.TrackSeries(ctx, userID, seriesHashes)
-        done <- trackErr
-        close(done)
-    }()
-    pushReq.AddCleanup(func() { <-done })
-    rejectedHashes = nil
-}
-```
+### Decision Logic for Async vs Sync
 
-The async goroutine waits in the request cleanup function to ensure tracking completes before the request finishes, maintaining eventual consistency.
+A user's series tracking mode is determined by:
+
+1. **Proximity check**: Is user in the "close to limit" cache?
+   - If YES → Track synchronously
+
+2. **Minimum limit check**: Is user's limit below minimum threshold?
+   - Configurable via `-usage-tracker-client.min-series-limit-for-async-tracking` (default: 0, disabled)
+   - If limit < threshold → Track synchronously
+   - Use case: Force smaller customers to always track synchronously for stricter enforcement
+
+3. **Default**: If both checks pass → Track asynchronously
+
+### Async Tracking Guarantees
+
+For async tracking:
+- Tracking request spawned in goroutine immediately
+- Write proceeds to ingesters without waiting
+- Cleanup function waits for tracking completion (with timeout)
+- Timeout configurable via `-usage-tracker-client.max-time-to-wait-for-async-tracking-response-after-ingestion` (default: 250ms)
+- Failed async tracking logged but doesn't fail the write request
+
+This ensures eventual consistency while maintaining request isolation.
 
 ### Metrics
 
-The client exports metrics to monitor the caching mechanism:
-
-- `cortex_usage_tracker_client_users_close_to_limit_count`: Number of users currently in the cache
-- `cortex_usage_tracker_client_users_close_to_limit_last_update_timestamp_seconds`: Unix timestamp of last cache update
-- `cortex_usage_tracker_client_users_close_to_limit_update_failures_total`: Counter of failed cache update attempts
+- `cortex_usage_tracker_client_users_close_to_limit_count`: Current number of users in "close to limit" cache
+- `cortex_usage_tracker_client_users_close_to_limit_last_update_timestamp_seconds`: Last successful cache update time
+- `cortex_usage_tracker_client_users_close_to_limit_update_failures_total`: Failed cache update attempts
 
 ### Trade-offs
 
 **Benefits:**
-- Reduces write latency for users far from limits (majority case)
-- No impact on limit enforcement strictness for users close to limits
-- Lightweight polling mechanism (1 RPC/second)
-- Small memory footprint (cache only stores user IDs close to limits)
+- Significantly reduces write latency for users far from limits (the common case)
+- Maintains strict enforcement for users at risk
+- Lightweight: only 1 RPC/second per distributor
+- Small memory overhead: cache only stores user IDs close to limits
 
 **Considerations:**
-- Eventual consistency: Users transitioning from "far" to "close" may briefly experience async behavior
-- Cache staleness bounded by poll interval (default: 1 second)
-- Cache accuracy depends on usage-tracker availability during startup
+- **Eventual consistency window**: User transitioning from "far" to "close" may experience 1-2 seconds of async tracking
+- **Cache staleness**: Bounded by poll interval (1 second default)
+- **Startup behavior**: If cache fails to populate, all users tracked synchronously until first successful poll
+- **Low-limit users**: May track synchronously despite being far from limit if minimum threshold is configured

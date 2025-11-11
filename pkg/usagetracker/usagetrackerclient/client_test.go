@@ -29,6 +29,24 @@ import (
 	"github.com/grafana/mimir/pkg/usagetracker/usagetrackerpb"
 )
 
+// mockLimitsProvider is a mock implementation of usagetrackerclient.limitsProvider.
+type mockLimitsProvider struct {
+	limits map[string]int
+}
+
+func newMockLimitsProvider() *mockLimitsProvider {
+	return &mockLimitsProvider{
+		limits: make(map[string]int),
+	}
+}
+
+func (m *mockLimitsProvider) MaxActiveSeriesPerUser(userID string) int {
+	if limit, ok := m.limits[userID]; ok {
+		return limit
+	}
+	return 0 // No limit
+}
+
 func TestUsageTrackerClient_TrackSeries(t *testing.T) {
 	var (
 		ctx    = context.Background()
@@ -132,7 +150,7 @@ func TestUsageTrackerClient_TrackSeries(t *testing.T) {
 			return nil, fmt.Errorf("usage-tracker with ID %s not found", instance.Id)
 		})
 
-		c := usagetrackerclient.NewUsageTrackerClient("test", clientCfg, partitionRing, instanceRing, logger, registerer)
+		c := usagetrackerclient.NewUsageTrackerClient("test", clientCfg, partitionRing, instanceRing, newMockLimitsProvider(), logger, registerer)
 		require.NoError(t, services.StartAndAwaitRunning(ctx, c))
 		t.Cleanup(func() {
 			require.NoError(t, services.StopAndAwaitTerminated(ctx, c))
@@ -196,7 +214,7 @@ func TestUsageTrackerClient_TrackSeries(t *testing.T) {
 			return nil, fmt.Errorf("usage-tracker with ID %s not found", instance.Id)
 		})
 
-		c := usagetrackerclient.NewUsageTrackerClient("test", clientCfg, partitionRing, instanceRing, logger, registerer)
+		c := usagetrackerclient.NewUsageTrackerClient("test", clientCfg, partitionRing, instanceRing, newMockLimitsProvider(), logger, registerer)
 		require.NoError(t, services.StartAndAwaitRunning(ctx, c))
 		t.Cleanup(func() {
 			require.NoError(t, services.StopAndAwaitTerminated(ctx, c))
@@ -254,7 +272,7 @@ func TestUsageTrackerClient_TrackSeries(t *testing.T) {
 			return nil, fmt.Errorf("usage-tracker with ID %s not found", instance.Id)
 		})
 
-		c := usagetrackerclient.NewUsageTrackerClient("test", clientCfg, partitionRing, instanceRing, logger, registerer)
+		c := usagetrackerclient.NewUsageTrackerClient("test", clientCfg, partitionRing, instanceRing, newMockLimitsProvider(), logger, registerer)
 		require.NoError(t, services.StartAndAwaitRunning(ctx, c))
 		t.Cleanup(func() {
 			require.NoError(t, services.StopAndAwaitTerminated(ctx, c))
@@ -346,7 +364,7 @@ func TestUsageTrackerClient_TrackSeries(t *testing.T) {
 				return nil, fmt.Errorf("usage-tracker with ID %s not found", instance.Id)
 			})
 
-			c := usagetrackerclient.NewUsageTrackerClient("test", clientCfg, partitionRing, instanceRing, logger, registerer)
+			c := usagetrackerclient.NewUsageTrackerClient("test", clientCfg, partitionRing, instanceRing, newMockLimitsProvider(), logger, registerer)
 			require.NoError(t, services.StartAndAwaitRunning(ctx, c))
 			t.Cleanup(func() {
 				require.NoError(t, services.StopAndAwaitTerminated(ctx, c))
@@ -418,7 +436,7 @@ func TestUsageTrackerClient_TrackSeries(t *testing.T) {
 			return nil, fmt.Errorf("usage-tracker with ID %s not found", instance.Id)
 		})
 
-		c := usagetrackerclient.NewUsageTrackerClient("test", clientCfg, partitionRing, instanceRing, logger, registerer)
+		c := usagetrackerclient.NewUsageTrackerClient("test", clientCfg, partitionRing, instanceRing, newMockLimitsProvider(), logger, registerer)
 		require.NoError(t, services.StartAndAwaitRunning(ctx, c))
 		t.Cleanup(func() {
 			require.NoError(t, services.StopAndAwaitTerminated(ctx, c))
@@ -474,7 +492,7 @@ func TestUsageTrackerClient_TrackSeries(t *testing.T) {
 			return nil, fmt.Errorf("usage-tracker with ID %s not found", instance.Id)
 		})
 
-		c := usagetrackerclient.NewUsageTrackerClient("test", clientCfg, partitionRing, instanceRing, logger, registerer)
+		c := usagetrackerclient.NewUsageTrackerClient("test", clientCfg, partitionRing, instanceRing, newMockLimitsProvider(), logger, registerer)
 		require.NoError(t, services.StartAndAwaitRunning(ctx, c))
 		t.Cleanup(func() {
 			require.NoError(t, services.StopAndAwaitTerminated(ctx, c))
@@ -511,7 +529,7 @@ func TestUsageTrackerClient_TrackSeries(t *testing.T) {
 			return nil, fmt.Errorf("usage-tracker with ID %s not found", instance.Id)
 		})
 
-		c := usagetrackerclient.NewUsageTrackerClient("test", clientCfg, partitionRing, instanceRing, logger, registerer)
+		c := usagetrackerclient.NewUsageTrackerClient("test", clientCfg, partitionRing, instanceRing, newMockLimitsProvider(), logger, registerer)
 		require.NoError(t, services.StartAndAwaitRunning(ctx, c))
 		t.Cleanup(func() {
 			require.NoError(t, services.StopAndAwaitTerminated(ctx, c))
@@ -594,6 +612,14 @@ func (m *usageTrackerMock) TrackSeries(ctx context.Context, req *usagetrackerpb.
 	}
 
 	return nil, args.Error(1)
+}
+
+func (m *usageTrackerMock) GetUsersCloseToLimit(ctx context.Context, req *usagetrackerpb.GetUsersCloseToLimitRequest, _ ...grpc.CallOption) (*usagetrackerpb.GetUsersCloseToLimitResponse, error) {
+	// Return empty list by default for tests that don't need to check async tracking behavior
+	return &usagetrackerpb.GetUsersCloseToLimitResponse{
+		UserIds:   []string{},
+		Partition: req.Partition,
+	}, nil
 }
 
 func (m *usageTrackerMock) Close() error {

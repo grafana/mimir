@@ -105,6 +105,8 @@ type partitionHandler struct {
 
 	// Testing
 	onConsumeEvent func(eventType string)
+
+	forceUpdateLimitsForTests chan chan struct{}
 }
 
 func newPartitionHandler(
@@ -170,6 +172,8 @@ func newPartitionHandler(
 		}),
 
 		instanceIDBytes: []byte(cfg.InstanceRing.InstanceID),
+
+		forceUpdateLimitsForTests: make(chan chan struct{}),
 	}
 
 	// In the partition ring lifecycler one owner can only have one partition, so we create a sub-owner for this partition, because we (may) own multiple partitions.
@@ -503,6 +507,9 @@ func (p *partitionHandler) run(ctx context.Context) error {
 			p.store.cleanup(now)
 		case <-updateLimits.C:
 			p.store.updateLimits()
+		case done := <-p.forceUpdateLimitsForTests:
+			p.store.updateLimits()
+			close(done)
 		case <-ctx.Done():
 			return nil
 		case err := <-p.subservicesWatcher.Chan():

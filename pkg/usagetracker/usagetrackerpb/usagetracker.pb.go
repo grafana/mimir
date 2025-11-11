@@ -405,6 +405,7 @@ func (m *GetUsersCloseToLimitRequest) GetPartition() int32 {
 
 type GetUsersCloseToLimitResponse struct {
 	// The list of user IDs that are close to their series limit.
+	// This list is sorted.
 	UserIds []string `protobuf:"bytes,1,rep,name=user_ids,json=userIds,proto3" json:"user_ids,omitempty"`
 	// The partition that was queried.
 	Partition int32 `protobuf:"varint,2,opt,name=partition,proto3" json:"partition,omitempty"`
