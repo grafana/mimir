@@ -338,7 +338,14 @@ func NewLazyBucketReader(
 }
 
 func (r *LazyBucketReader) Name() string {
-	return r.readerLoader.blockID.String()
+	loaded := r.readerLoader.getOrLoadReader(r.ctx)
+	if loaded.err != nil {
+		// TODO: the current interface does not allow to return an error
+		level.Error(r.logger).Log("msg", "failed to get name from lazy reader", "err", loaded.err)
+		return ""
+	}
+	defer loaded.inUse.Done()
+	return loaded.reader.Name()
 }
 
 func (r *LazyBucketReader) BlockID() ulid.ULID {

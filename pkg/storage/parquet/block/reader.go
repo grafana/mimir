@@ -9,6 +9,7 @@ import (
 	"context"
 	"io"
 	"path/filepath"
+	"strconv"
 	"sync"
 	"time"
 
@@ -96,7 +97,7 @@ func NewBasicReader(
 }
 
 func (r *BasicReader) Name() string {
-	return r.blockID.String()
+	return r.blockID.String() + "/" + strconv.Itoa(r.shardIdx)
 }
 
 func (r *BasicReader) BlockID() ulid.ULID {
