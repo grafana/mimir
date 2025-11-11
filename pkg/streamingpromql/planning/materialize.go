@@ -40,7 +40,7 @@ func (m *Materializer) ConvertNodeToOperator(node Node, timeRange types.QueryTim
 		return nil, err
 	}
 
-	m.operatorFactories[key] = f
+	m.operatorFactories[node] = f
 
 	return f.Produce()
 }
