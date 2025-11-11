@@ -8231,9 +8231,9 @@ func TestDistributor_StartFinishRequest(t *testing.T) {
 	}
 
 	type testCase struct {
-		disableDistributrorService bool
-		externalCheck              bool  // Start request "externally", from outside of distributor.
-		httpgrpcRequestSize        int64 // only used for external check.
+		disableDistributorService bool
+		externalCheck             bool  // Start request "externally", from outside of distributor.
+		httpgrpcRequestSize       int64 // only used for external check.
 
 		reactiveLimiterEnabled       bool
 		reactiveLimiterCanAcquire    bool
@@ -8256,15 +8256,15 @@ func TestDistributor_StartFinishRequest(t *testing.T) {
 
 	testcases := map[string]testCase{
 		"distributor not runnint, internal": {
-			disableDistributrorService: true,
-			expectedPushError:          newUnavailableError(services.New),
+			disableDistributorService: true,
+			expectedPushError:         newUnavailableError(services.New),
 		},
 
 		"distributor not runnint, external": {
-			disableDistributrorService: true,
-			externalCheck:              true,
-			expectedStartError:         newUnavailableError(services.New),
-			expectedPushError:          newUnavailableError(services.New),
+			disableDistributorService: true,
+			externalCheck:             true,
+			expectedStartError:        newUnavailableError(services.New),
+			expectedPushError:         newUnavailableError(services.New),
 		},
 
 		"request succeeds, internal": {
@@ -8421,7 +8421,7 @@ func TestDistributor_StartFinishRequest(t *testing.T) {
 					config.DefaultLimits.MaxInflightPushRequests = inflightLimit
 					config.DefaultLimits.MaxInflightPushRequestsBytes = inflightBytesLimit
 				},
-			}, !tc.disableDistributrorService)
+			}, !tc.disableDistributorService)
 			var cleanupWg sync.WaitGroup
 			wrappedPush := ds[0].wrapPushWithMiddlewares(func(ctx context.Context, pushReq *Request) error {
 				cleanupWg.Add(1)
