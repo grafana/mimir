@@ -35,7 +35,6 @@ import (
 	notifierCfg "github.com/grafana/mimir/pkg/ruler/notifier"
 	"github.com/grafana/mimir/pkg/util"
 	util_log "github.com/grafana/mimir/pkg/util/log"
-	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 const (
@@ -444,7 +443,7 @@ func DefaultTenantManagerFactory(
 				return overrides.RulerEvaluationDelay(userID)
 			},
 			RuleConcurrencyController:           concurrencyController.NewTenantConcurrencyControllerFor(userID),
-			OperatorControllableErrorClassifier: NewRulerErrorClassifier(),
+			OperatorControllableErrorClassifier: NewRulerErrorClassifier(remoteQuerier),
 		})
 	}
 }
@@ -469,10 +468,14 @@ func WrapQueryableErrors(err error) error {
 	return QueryableError{err: err}
 }
 
-type rulerErrorClassifier struct{}
+type rulerErrorClassifier struct {
+	remoteQuerier bool
+}
 
-func NewRulerErrorClassifier() *rulerErrorClassifier {
-	return &rulerErrorClassifier{}
+func NewRulerErrorClassifier(remoteQuerier bool) *rulerErrorClassifier {
+	return &rulerErrorClassifier{
+		remoteQuerier: remoteQuerier,
+	}
 }
 
 // IsOperatorControllable classifies rule evaluation errors as operator-controllable or user-controllable.
@@ -481,40 +484,32 @@ func (c *rulerErrorClassifier) IsOperatorControllable(err error) bool {
 		return false
 	}
 
-	var errStorage promql.ErrStorage
-	if errors.As(err, &errStorage) {
-		return true
-	}
-
-	var (
-		errQueryTimeout   promql.ErrQueryTimeout
-		errQueryCanceled  promql.ErrQueryCanceled
-		errTooManySamples promql.ErrTooManySamples
-	)
-
-	if errors.As(err, &errQueryTimeout) || errors.As(err, &errQueryCanceled) || errors.As(err, &errTooManySamples) {
-		return false
-	}
-
-	if validation.IsLimitError(err) || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-		return false
-	}
-
-	if s, ok := grpcutil.ErrorToStatus(err); ok {
-		if code := s.Code(); util.IsHTTPStatusCode(code) {
-			if code >= 400 && code < 500 {
-				return code == http.StatusTooManyRequests
-			}
-			return true // 5xx
+	if code := grpcutil.ErrorToStatusCode(err); util.IsHTTPStatusCode(code) {
+		if code >= 400 && code < 500 {
+			return code == http.StatusTooManyRequests
 		}
+		return true // 5xx
+	}
 
-		for _, detail := range s.Details() {
-			if errDetails, ok := detail.(*mimirpb.ErrorDetails); ok {
+	if status, ok := grpcutil.ErrorToStatus(err); ok {
+		for _, details := range status.Details() {
+			if errDetails, ok := details.(*mimirpb.ErrorDetails); ok {
 				return !mimirpb.IsClientErrorCause(errDetails.GetCause())
 			}
 		}
 	}
 
-	// Unknown errors are considered user errors
-	return false
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return false
+	}
+
+	if !c.remoteQuerier {
+		var (
+			errStorage promql.ErrStorage
+		)
+		return errors.As(err, &errStorage)
+	}
+
+	// Unknown errors
+	return true
 }
