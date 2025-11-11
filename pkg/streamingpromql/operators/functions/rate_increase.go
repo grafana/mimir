@@ -360,7 +360,7 @@ func delta(step *types.RangeVectorStepData, _ []types.ScalarData, _ types.QueryT
 	rangeSeconds := float64(step.RangeEnd-step.RangeStart) / 1000
 
 	if fCount >= 2 {
-		val := floatDelta(fCount, fHead, fTail, step.RangeStart, step.RangeEnd, rangeSeconds, step.Anchored)
+		val := floatDelta(fCount, fHead, fTail, step.RangeStart, step.RangeEnd, rangeSeconds, step.Anchored || step.Smoothed)
 		return val, true, nil, nil
 	}
 
@@ -376,7 +376,7 @@ func delta(step *types.RangeVectorStepData, _ []types.ScalarData, _ types.QueryT
 	return 0, false, nil, nil
 }
 
-func floatDelta(fCount int, fHead []promql.FPoint, fTail []promql.FPoint, rangeStart int64, rangeEnd int64, rangeSeconds float64, anchored bool) float64 {
+func floatDelta(fCount int, fHead []promql.FPoint, fTail []promql.FPoint, rangeStart int64, rangeEnd int64, rangeSeconds float64, anchoredOrSmoothed bool) float64 {
 	firstPoint := fHead[0]
 
 	var lastPoint promql.FPoint
@@ -387,7 +387,7 @@ func floatDelta(fCount int, fHead []promql.FPoint, fTail []promql.FPoint, rangeS
 	}
 
 	delta := lastPoint.F - firstPoint.F
-	return calculateFloatRate(false, false, rangeStart, rangeEnd, rangeSeconds, firstPoint, lastPoint, delta, fCount, anchored)
+	return calculateFloatRate(false, false, rangeStart, rangeEnd, rangeSeconds, firstPoint, lastPoint, delta, fCount, anchoredOrSmoothed)
 }
 
 func histogramDelta(hCount int, hHead []promql.HPoint, hTail []promql.HPoint, rangeStart int64, rangeEnd int64, rangeSeconds float64, emitAnnotation types.EmitAnnotationFunc) (*histogram.FloatHistogram, error) {

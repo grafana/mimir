@@ -95,9 +95,12 @@ func MaterializeMatrixSelector(m *MatrixSelector, _ *planning.Materializer, time
 		SkipHistogramBuckets:     m.SkipHistogramBuckets,
 		ExpressionPosition:       m.ExpressionPosition(),
 		MemoryConsumptionTracker: params.MemoryConsumptionTracker,
-		LookbackDelta:            params.LookbackDelta,
 		Anchored:                 m.Anchored,
 		Smoothed:                 m.Smoothed,
+	}
+
+	if m.Anchored || m.Smoothed {
+		selector.LookbackDelta = params.LookbackDelta
 	}
 
 	o := selectors.NewRangeVectorSelector(selector, params.MemoryConsumptionTracker, m.Anchored, m.Smoothed)
