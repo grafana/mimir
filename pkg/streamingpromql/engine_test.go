@@ -4836,7 +4836,6 @@ func TestExtendedRangeSelectorsIrregular(t *testing.T) {
 
 			engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), planner)
 			require.NoError(t, err)
-			require.NoError(t, err)
 
 			qry, err := engine.NewInstantQuery(context.Background(), storage, nil, tc.query, tc.t)
 			if len(tc.error) > 0 {
