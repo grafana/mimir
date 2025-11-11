@@ -246,14 +246,12 @@ This approach maintains eventual consistency while optimizing the common case wh
 
 #### 1. User Proximity Detection
 
-Usage tracker maintains a list of users that are "close to their limit" based on two thresholds:
+Usage tracker maintains a list of users that are "close to their limit" based on a percentage threshold:
 
 - **Percentage threshold** (default: 85%): User is close if `series >= (localSeriesLimit * 85 / 100)`
-- **Absolute threshold** (default: 25000): User is close if `series >= (localSeriesLimit - 25000)`
 
-Configuration flags:
+Configuration flag:
 - `-usage-tracker.user-close-to-limit-percentage-threshold`
-- `-usage-tracker.user-close-to-limit-absolute-threshold`
 
 #### 2. GetUsersCloseToLimit API
 

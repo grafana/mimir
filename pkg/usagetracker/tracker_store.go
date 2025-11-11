@@ -42,7 +42,6 @@ type trackerStore struct {
 	// config
 	idleTimeout                         time.Duration
 	userCloseToLimitPercentageThreshold int
-	userCloseToLimitAbsoluteThreshold   int
 
 	// misc
 	logger log.Logger
@@ -59,16 +58,15 @@ type events interface {
 	publishCreatedSeries(ctx context.Context, tenantID string, series []uint64, timestamp time.Time) error
 }
 
-func newTrackerStore(idleTimeout time.Duration, userCloseToLimitPercentageThreshold, userCloseToLimitAbsoluteThreshold int, logger log.Logger, l limiter, ev events) *trackerStore {
+func newTrackerStore(idleTimeout time.Duration, userCloseToLimitPercentageThreshold int, logger log.Logger, l limiter, ev events) *trackerStore {
 	t := &trackerStore{
-		tenants:                         make(map[string]*trackedTenant),
-		limiter:                         l,
-		events:                          ev,
-		logger:                          logger,
-		idleTimeout:                     idleTimeout,
+		tenants:                             make(map[string]*trackedTenant),
+		limiter:                             l,
+		events:                              ev,
+		logger:                              logger,
+		idleTimeout:                         idleTimeout,
 		userCloseToLimitPercentageThreshold: userCloseToLimitPercentageThreshold,
-		userCloseToLimitAbsoluteThreshold:   userCloseToLimitAbsoluteThreshold,
-		usersCloseToLimit:               nil, // will be populated by updateLimits
+		usersCloseToLimit:                   nil, // will be populated by updateLimits
 	}
 	return t
 }
@@ -263,17 +261,11 @@ func (t *trackerStore) updateLimits() {
 		tenant.currentLimit.Store(currentSeriesLimit(series, limit, zonesCount))
 
 		// Determine if this user is close to their limit.
-		// A user is close if either:
-		// 1. series >= (limit * percentageThreshold / 100), OR
-		// 2. series >= (limit - absoluteThreshold)
+		// A user is close if: series >= (limit * percentageThreshold / 100)
 		if limit != noLimit {
 			percentageThreshold := uint64(limit) * uint64(t.userCloseToLimitPercentageThreshold) / 100
-			absoluteThreshold := uint64(0)
-			if limit > uint64(t.userCloseToLimitAbsoluteThreshold) {
-				absoluteThreshold = limit - uint64(t.userCloseToLimitAbsoluteThreshold)
-			}
 
-			if series >= percentageThreshold || series >= absoluteThreshold {
+			if series >= percentageThreshold {
 				closeToLimit = append(closeToLimit, tenantID)
 			}
 		}
