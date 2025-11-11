@@ -6,7 +6,7 @@ import (
 	"fmt"
 
 	"github.com/prometheus/alertmanager/config"
-	"gopkg.in/yaml.v2"
+	"gopkg.in/yaml.v3"
 )
 
 // shadowCfg is a special version of an Alertmanager configuration that uses yaml.MapSlice
