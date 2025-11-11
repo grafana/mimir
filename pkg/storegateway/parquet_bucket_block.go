@@ -36,7 +36,7 @@ type parquetBucketShardReader struct {
 }
 
 func (r *parquetBucketShardReader) Name() string {
-	return r.block.meta.ULID.String()
+	return r.block.shardReaderClosers[r.shardIdx].Name()
 }
 
 func (r *parquetBucketShardReader) ShardIdx() int {
