@@ -488,7 +488,7 @@ func (q *groupLimiterK) onStepAccumulated(step int, hasValue bool) {
 }
 
 func (q *groupLimiterK) endAccumulatingSeries() {
-	if q.tmpFilled && q.nextExpectedStep+1 == q.stepArg.stepCount {
+	if q.tmpFilled && q.nextExpectedStep == q.stepArg.stepCount {
 		q.filled = true
 	}
 }
