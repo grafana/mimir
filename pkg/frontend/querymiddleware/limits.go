@@ -101,6 +101,9 @@ type Limits interface {
 	// EnabledPromQLExperimentalFunctions returns the names of PromQL experimental functions allowed for the tenant.
 	EnabledPromQLExperimentalFunctions(userID string) []string
 
+	// EnabledPromQLExtendedRangeSelectors returns the names of PromQL experimental extended range selectors modifiers allowed for the tenant.
+	EnabledPromQLExtendedRangeSelectors(userID string) []string
+
 	// Prom2RangeCompat returns if Prometheus 2/3 range compatibility fixes are enabled for the tenant.
 	Prom2RangeCompat(userID string) bool
 

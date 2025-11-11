@@ -3986,6 +3986,13 @@ blocked_requests:
 # CLI flag: -query-frontend.enabled-promql-experimental-functions
 [enabled_promql_experimental_functions: <string> | default = ""]
 
+# Enable certain experimental PromQL extended range selector modifiers, which
+# are subject to being changed or removed at any time, on a per-tenant basis.
+# Defaults to empty which means all experimental modifiers are disabled. Set to
+# 'all' to enable all experimental modifiers.
+# CLI flag: -query-frontend.enabled-promql-extended-range-selectors
+[enabled_promql_extended_range_selectors: <string> | default = ""]
+
 # (experimental) Rewrite queries using the same range selector and resolution
 # [X:X] which don't work in Prometheus 3.0 to a nearly identical form that works
 # with Prometheus 3.0 semantics

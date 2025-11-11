@@ -57,7 +57,7 @@ func rate(isRate bool) RangeVectorStepFunction {
 
 		if fCount >= 2 {
 			// TODO: just pass step here? (and below)
-			val := floatRate(isRate, fCount, fHead, fTail, step.RangeStart, step.RangeEnd, rangeSeconds, step.Smoothed || step.Anchored, step.SmoothedHeadPoint, step.SmoothedTailPoint)
+			val := floatRate(isRate, fCount, fHead, fTail, step.RangeStart, step.RangeEnd, rangeSeconds, step.Smoothed || step.Anchored, step.SmoothedBasisForHeadPoint, step.SmoothedBasisForTailPoint)
 			return val, true, nil, nil
 		}
 

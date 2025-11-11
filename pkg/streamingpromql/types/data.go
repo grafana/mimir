@@ -162,13 +162,16 @@ type RangeVectorStepData struct {
 	// Smoothed is set to true when the smoothed modifier has been requested on a range query
 	Smoothed bool
 
-	// SmoothedHeadPoint and SmoothedTailPoint are set when a smoothed modifier has been requested on a range query.
+	// SmoothedBasisForHeadPoint and SmoothedBasisForTailPoint are set when a smoothed modifier has been applied to a range vector selector.
+	// They are derived points using samples from outside the range and can not be re-calculated from Floats.
+	// Either can be nil if there was no point within the lookback window immediately before or after the range, respectively.
+	//
 	// When the smoothed range is used by a rate/increase function the points on the range boundaries
 	// are calculated differently to accommodate counter arithmetic for the derived values spanning the boundary.
 	// To avoid needing to re-calculate these alternate points they are included here for the rate/increate function
 	// handler to substitute in.
-	SmoothedHeadPoint *promql.FPoint
-	SmoothedTailPoint *promql.FPoint
+	SmoothedBasisForHeadPoint *promql.FPoint
+	SmoothedBasisForTailPoint *promql.FPoint
 }
 
 type ScalarData struct {

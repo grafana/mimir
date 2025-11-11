@@ -110,8 +110,8 @@ func (m *RangeVectorSelector) NextStepSamples(ctx context.Context) (*types.Range
 
 	m.floats.DiscardPointsAtOrBefore(rangeStart)
 	m.histograms.DiscardPointsAtOrBefore(rangeStart)
-	m.stepData.SmoothedHeadPoint = nil
-	m.stepData.SmoothedTailPoint = nil
+	m.stepData.SmoothedBasisForHeadPoint = nil
+	m.stepData.SmoothedBasisForTailPoint = nil
 
 	// Fill the buffer with an extended range of points (smoothed/anchored) - these will be filtered out in the extendRangeVectorPoints() below
 	if err := m.fillBuffer(m.floats, m.histograms, rangeStart, rangeEnd); err != nil {
@@ -144,8 +144,8 @@ func (m *RangeVectorSelector) NextStepSamples(ctx context.Context) (*types.Range
 		// Store the smoothed points in the range step data result so that consumers of this data can reference these values
 		// without having to re-calculate off the original points. Re-use the view
 		m.stepData.Floats = m.extendedRangeFloats.ViewAll(m.stepData.Floats)
-		m.stepData.SmoothedHeadPoint = smoothedHead
-		m.stepData.SmoothedTailPoint = smoothedTail
+		m.stepData.SmoothedBasisForHeadPoint = smoothedHead
+		m.stepData.SmoothedBasisForTailPoint = smoothedTail
 	} else {
 		m.stepData.Floats = m.floats.ViewUntilSearchingBackwards(rangeEnd, m.stepData.Floats)
 	}
