@@ -339,4 +339,4 @@ eval instant at 5m count(limitk(2, filtered > 1))
 eval range from 0m to 5m step 1m count(limitk(2, filtered > 1))
 
 eval range from 0m to 5m step 1m count(limitk(2, filtered2 > 1))
-    {} _ 1 _ 1 _ 1
+  {} _ 1 _ 1 _ 1
