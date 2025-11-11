@@ -21,7 +21,6 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/flagext"
 	dslog "github.com/grafana/dskit/log"
-	"github.com/pkg/errors"
 	"github.com/thanos-io/objstore"
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
@@ -142,7 +141,7 @@ func convertTenantBlocks(ctx context.Context, userBucketClient objstore.Bucket, 
 		level.Info(logger).Log("msg", "changes required, uploading meta.json file", "block", blockID.String())
 
 		if err := uploadMetadata(ctx, userBucketClient, meta, path.Join(blockID.String(), block.MetaFilename)); err != nil {
-			return errors.Wrapf(err, "failed to upload meta.json for block %s", blockID.String())
+			return fmt.Errorf("failed to upload meta.json for block %s: %w", blockID.String(), err)
 		}
 
 		level.Info(logger).Log("msg", "meta.json file uploaded successfully", "block", blockID.String())
@@ -153,7 +152,7 @@ func convertTenantBlocks(ctx context.Context, userBucketClient objstore.Bucket, 
 func uploadMetadata(ctx context.Context, bkt objstore.Bucket, meta block.Meta, path string) error {
 	var body bytes.Buffer
 	if err := meta.Write(&body); err != nil {
-		return errors.Wrap(err, "encode meta.json")
+		return fmt.Errorf("failed to encode meta.json: %w", err)
 	}
 
 	return bkt.Upload(ctx, path, bytes.NewReader(body.Bytes()))

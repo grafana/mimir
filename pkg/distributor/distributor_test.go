@@ -8228,8 +8228,9 @@ func TestDistributor_StartFinishRequest(t *testing.T) {
 		externalCheck       bool  // Start request "externally", from outside of distributor.
 		httpgrpcRequestSize int64 // only used for external check.
 
-		reactiveLimiterEnabled    bool
-		reactiveLimiterCanAcquire bool
+		reactiveLimiterEnabled       bool
+		reactiveLimiterCanAcquire    bool
+		reactiveLimiterFailOnAcquire bool
 
 		inflightRequestsBeforePush     int
 		inflightRequestsSizeBeforePush int64
@@ -8365,6 +8366,23 @@ func TestDistributor_StartFinishRequest(t *testing.T) {
 			expectedStartError:        errReactiveLimiterLimitExceeded,
 			expectedPushError:         errReactiveLimiterLimitExceeded,
 		},
+
+		"enabled reactive limiter acquire permit fails, internal": {
+			reactiveLimiterEnabled:       true,
+			reactiveLimiterCanAcquire:    true,
+			reactiveLimiterFailOnAcquire: true,
+			expectedStartError:           nil,
+			expectedPushError:            errReactiveLimiterLimitExceeded,
+		},
+
+		"enabled reactive limiter acquire permit fails, external": {
+			externalCheck:                true,
+			reactiveLimiterEnabled:       true,
+			reactiveLimiterCanAcquire:    true,
+			reactiveLimiterFailOnAcquire: true,
+			expectedStartError:           nil,
+			expectedPushError:            errReactiveLimiterLimitExceeded,
+		},
 	}
 
 	for name, tc := range testcases {
@@ -8395,8 +8413,9 @@ func TestDistributor_StartFinishRequest(t *testing.T) {
 			// Setup reactive limiter if needed
 			if tc.reactiveLimiterEnabled {
 				mockLimiter := &mockReactiveLimiter{
-					canAcquire: tc.reactiveLimiterCanAcquire,
-					permit:     &mockPermit{},
+					canAcquire:    tc.reactiveLimiterCanAcquire,
+					failOnAcquire: tc.reactiveLimiterFailOnAcquire,
+					permit:        &mockPermit{},
 				}
 				ds[0].reactiveLimiter = mockLimiter
 			}
@@ -8450,6 +8469,84 @@ func TestDistributor_StartFinishRequest(t *testing.T) {
 			require.Eventually(t, func() bool { cleanupWg.Wait(); return true }, time.Second, time.Millisecond)
 			require.Equal(t, int64(tc.inflightRequestsBeforePush), ds[0].inflightPushRequests.Load())
 			require.Equal(t, tc.inflightRequestsSizeBeforePush, ds[0].inflightPushRequestsBytes.Load())
+		})
+	}
+}
+
+func TestDistributor_PushWithReactiveLimiterInflightMetrics(t *testing.T) {
+	uniqueMetricsGen := func(sampleIdx int) []mimirpb.LabelAdapter {
+		return []mimirpb.LabelAdapter{
+			{Name: "__name__", Value: fmt.Sprintf("metric_%d", sampleIdx)},
+		}
+	}
+
+	type testCase struct {
+		reactiveLimiterCanAcquire    bool
+		reactiveLimiterFailOnAcquire bool
+	}
+
+	testcases := map[string]testCase{
+		"reactive limiter cannot acquire permit": {
+			reactiveLimiterCanAcquire: false,
+		},
+		"reactive limiter can acquire permit": {
+			reactiveLimiterCanAcquire:    true,
+			reactiveLimiterFailOnAcquire: false,
+		},
+		"reactive limiter fails on acquire permit": {
+			reactiveLimiterCanAcquire:    true,
+			reactiveLimiterFailOnAcquire: true,
+		},
+	}
+
+	for name, tc := range testcases {
+		t.Run(name, func(t *testing.T) {
+			pushReq := makeWriteRequestForGenerators(1, uniqueMetricsGen, nil, nil)
+
+			var limits validation.Limits
+			flagext.DefaultValues(&limits)
+
+			// Prepare distributor
+			ds, _, regs, _ := prepare(t, prepConfig{
+				numDistributors: 1,
+				happyIngesters:  3,
+				numIngesters:    3,
+				limits:          &limits,
+				enableTracker:   true,
+			})
+
+			// Setup reactive limiter
+			mockLimiter := &mockReactiveLimiter{
+				canAcquire:    tc.reactiveLimiterCanAcquire,
+				failOnAcquire: tc.reactiveLimiterFailOnAcquire,
+				permit:        &mockPermit{},
+			}
+			ds[0].reactiveLimiter = mockLimiter
+
+			ctx := user.InjectOrgID(context.Background(), "user")
+
+			// Get initial inflight count
+			initialInflight := ds[0].inflightPushRequests.Load()
+
+			// Call Push
+			_, _ = ds[0].Push(ctx, pushReq)
+
+			require.Eventually(t, func() bool {
+				return ds[0].inflightPushRequests.Load() == 0
+			}, time.Second, 10*time.Millisecond)
+
+			inflightAfterPush := ds[0].inflightPushRequests.Load()
+			require.Equal(t, initialInflight, inflightAfterPush, "inflight requests should be incremented and decremented during push")
+
+			// Also verify via the actual Prometheus metric
+			expectedMetrics := fmt.Sprintf(`
+				# HELP cortex_distributor_inflight_push_requests Current number of inflight push requests in distributor.
+				# TYPE cortex_distributor_inflight_push_requests gauge
+				cortex_distributor_inflight_push_requests %d
+			`, inflightAfterPush)
+
+			err := testutil.GatherAndCompare(regs[0], strings.NewReader(expectedMetrics), "cortex_distributor_inflight_push_requests")
+			require.NoError(t, err)
 		})
 	}
 }
@@ -8561,8 +8658,8 @@ func TestDistributor_AcquireReactiveLimiterPermit(t *testing.T) {
 			var mockLimiter *mockReactiveLimiter
 			if tc.reactiveLimiterEnabled {
 				mockLimiter = &mockReactiveLimiter{
-					canAcquire: tc.reactiveLimiterCanAcquire,
-					permit:     &mockPermit{},
+					failOnAcquire: !tc.reactiveLimiterCanAcquire,
+					permit:        &mockPermit{},
 				}
 				ds[0].reactiveLimiter = mockLimiter
 			}
@@ -8640,8 +8737,9 @@ func TestDistributor_AcquireReactiveLimiterPermitIdempotent(t *testing.T) {
 			// Setup reactive limiter if needed
 			if tc.enabled {
 				mockLimiter := &mockReactiveLimiter{
-					canAcquire: true,
-					permit:     &mockPermit{},
+					canAcquire:    true,
+					failOnAcquire: false,
+					permit:        &mockPermit{},
 				}
 				ds[0].reactiveLimiter = mockLimiter
 			}
@@ -8684,12 +8782,13 @@ func checkRequestState(t *testing.T, ctx context.Context, acquiredPermit bool) {
 
 // mockReactiveLimiter is a mock implementation of ReactiveLimiter for testing
 type mockReactiveLimiter struct {
-	canAcquire bool
-	permit     *mockPermit
+	canAcquire    bool
+	failOnAcquire bool
+	permit        *mockPermit
 }
 
 func (m *mockReactiveLimiter) AcquirePermit(_ context.Context) (adaptivelimiter.Permit, error) {
-	if !m.canAcquire {
+	if m.failOnAcquire {
 		return nil, adaptivelimiter.ErrExceeded
 	}
 	return m.permit, nil

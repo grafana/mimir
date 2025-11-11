@@ -44,6 +44,7 @@
 * [ENHANCEMENT] Update Docker base images from `alpine:3.22.1` to `alpine:3.22.2`. #12991
 * [ENHANCEMENT] Compactor, Store-gateway: Add metrics to track performance of in-memory and disk-based metadata caches. #13150
 * [ENHANCEMENT] Ruler: Removed disk interaction when loading rules. #13156
+* [ENHANCEMENT] Ingester: Cost-based index lookup planner accounts for query sharding when estimating cardinality and filter costs. #13374
 * [ENHANCEMENT] GCS: Make uploads optionally retryable. Use the following advanced flags: #13226
   * `-alertmanager-storage.gcs.enable-upload-retries`
   * `-blocks-storage.gcs.enable-upload-retries`
@@ -72,6 +73,7 @@
 * [BUGFIX] Runtime config: Fix issue when inconsistent map key types (numbers and strings) caused some of the runtime config files silently skipped from loading. #13270
 * [BUGFIX] Store-gateway: Fix how out-of-order blocks are tracked in the `cortex_bucket_store_series_blocks_queried` metric. #13261
 * [BUGFIX] Cost attribution: Fix panic when metrics are created with invalid labels. #13273
+* [BUGFIX]: Distributor: Fix in-flight request counter when the reactive limiter is full. #13406
 
 ### Mixin
 
@@ -104,6 +106,7 @@
 * [ENHANCEMENT] Dashboards: Plot OMMKilled events in the workingset memory panels of resources dashboards. #13377
 * [ENHANCEMENT] Dashboards: Add variable to compactor and object store dashboards to switch between classic and native latencies. Use native histogram `thanos_objstore_bucket_operation_duration_seconds`. #12137
 * [BUGFIX] Dashboards: Fix issue where throughput dashboard panels would group all gRPC requests that resulted in a status containing an underscore into one series with no name. #13184
+* [BUGFIX] Dashboards: Filter out 0s from `max_series` limit on Writes Resources > Ingester > In-memory series panel. #13419
 
 ### Jsonnet
 
@@ -111,6 +114,8 @@
 * [CHANGE] Rollout-operator: Vendor jsonnet from rollout-operator repository. #13245 #13317
 * [CHANGE] Ruler: Set default memory ballast to 1GiB to reduce GC pressure during startup. #13376
 * [ENHANCEMENT] Ruler querier and query-frontend: Add support for newly-introduced querier ring, which is used when performing query planning in query-frontends and distributing portions of the plan to queriers for execution. #13017
+* [ENHANCEMENT] Ingester: Increase `$._config.ingester_tsdb_head_early_compaction_min_in_memory_series` default when Mimir is running with the ingest storage architecture. #13450
+* [BUGFIX] Ingester: Fix `$._config.ingest_storage_ingester_autoscaling_max_owned_series_threshold` default value, to compute it based on the configured `$._config.ingester_instance_limits.max_series`. #13448
 
 ### Documentation
 

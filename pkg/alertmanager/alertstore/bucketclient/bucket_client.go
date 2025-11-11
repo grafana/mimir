@@ -8,6 +8,7 @@ package bucketclient
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"strings"
 	"sync"
@@ -16,7 +17,6 @@ import (
 	"github.com/gogo/protobuf/proto"
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/runutil"
-	"github.com/pkg/errors"
 	"github.com/thanos-io/objstore"
 
 	"github.com/grafana/mimir/pkg/alertmanager/alertspb"
@@ -117,7 +117,7 @@ func (s *BucketAlertStore) GetAlertConfigs(ctx context.Context, userIDs []string
 		if s.alertsBucket.IsObjNotFoundErr(err) {
 			return nil
 		} else if err != nil {
-			return errors.Wrapf(err, "failed to fetch alertmanager config for user %s", userID)
+			return fmt.Errorf("failed to fetch alertmanager config for user %s: %w", userID, err)
 		}
 		cfg.Mimir = mimirCfg
 
@@ -125,7 +125,7 @@ func (s *BucketAlertStore) GetAlertConfigs(ctx context.Context, userIDs []string
 			grafanaCfg, err := s.getGrafanaAlertConfig(ctx, userID)
 			// Users not having a Grafana alerting configuration is expected.
 			if err != nil && !s.alertsBucket.IsObjNotFoundErr(err) {
-				return errors.Wrapf(err, "failed to fetch grafana alertmanager config for user %s", userID)
+				return fmt.Errorf("failed to fetch grafana alertmanager config for user %s: %w", userID, err)
 			}
 			cfg.Grafana = grafanaCfg
 		}
@@ -303,12 +303,12 @@ func (s *BucketAlertStore) get(ctx context.Context, bkt objstore.Bucket, name st
 
 	buf, err := io.ReadAll(readCloser)
 	if err != nil {
-		return errors.Wrapf(err, "failed to read alertmanager config for user %s", name)
+		return fmt.Errorf("failed to read alertmanager config for user %s: %w", name, err)
 	}
 
 	err = proto.Unmarshal(buf, msg)
 	if err != nil {
-		return errors.Wrapf(err, "failed to deserialize alertmanager config for user %s", name)
+		return fmt.Errorf("failed to deserialize alertmanager config for user %s: %w", name, err)
 	}
 
 	return nil

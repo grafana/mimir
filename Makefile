@@ -329,6 +329,16 @@ lint: check-makefiles check-merge-conflicts
 	# Ensure all errors are reported as APIError
 	faillint -paths "github.com/weaveworks/common/httpgrpc.{Errorf}=github.com/grafana/mimir/pkg/api/error.Newf" ./pkg/frontend/querymiddleware/...
 
+	# Gradually removing use of the github.com/pkg/errors package entirely. It's unmaintained and all functionality
+	# now exists in the standard library errors package. Prevent it from being used in packages that have already
+	# completely migrated.
+	faillint -paths "github.com/pkg/errors=errors" \
+		./pkg/alertmanager/... \
+		./pkg/api/... \
+		./pkg/util/... \
+		./cmd/... \
+		./integration/...
+
 	# errors.Cause() only work on errors wrapped by github.com/pkg/errors, while it doesn't work
 	# on errors wrapped by golang standard errors package. In Mimir we currently use github.com/pkg/errors
 	# but other vendors we depend on (e.g. Prometheus) just uses the standard errors package.

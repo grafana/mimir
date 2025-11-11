@@ -8,12 +8,12 @@ package error
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 
 	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/httpgrpc"
-	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/promql"
 	"google.golang.org/grpc/codes"
 )
@@ -189,7 +189,7 @@ func IsAPIError(err error) bool {
 func AddDetails(err error, details string) error {
 	apiErr := &APIError{}
 	if !errors.As(err, &apiErr) {
-		return errors.Wrap(err, details)
+		return fmt.Errorf("%s: %w", details, err)
 	}
 	apiErr.Message = fmt.Sprintf("%s: %s", details, apiErr.Message)
 	return apiErr

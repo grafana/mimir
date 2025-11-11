@@ -21,7 +21,6 @@ import (
 	"github.com/grafana/dskit/ballast"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/tracing"
-	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"gopkg.in/yaml.v3"
 
@@ -282,7 +281,7 @@ func parseConfigFileParameter(args []string) (configFile string, expandEnv bool)
 func LoadConfig(filename string, expandEnv bool, cfg *mimir.Config) error {
 	buf, err := os.ReadFile(filename)
 	if err != nil {
-		return errors.Wrap(err, "Error reading config file")
+		return fmt.Errorf("error reading config file: %w", err)
 	}
 
 	// create a sha256 hash of the config before expansion and expose it via
@@ -300,7 +299,7 @@ func LoadConfig(filename string, expandEnv bool, cfg *mimir.Config) error {
 
 	// Unmarshal with common config unmarshaler.
 	if err := dec.Decode((*mimir.ConfigWithCommon)(cfg)); err != nil {
-		return errors.Wrap(err, "Error parsing config file")
+		return fmt.Errorf("error parsing config file: %w", err)
 	}
 
 	return nil
