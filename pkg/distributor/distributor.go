@@ -302,6 +302,17 @@ type Config struct {
 // PushWrapper wraps around a push. It is similar to middleware.Interface.
 type PushWrapper func(next PushFunc) PushFunc
 
+// WithCleanup wraps the provided PushFunc with automatic cleanup handling.
+// It ensures Request.CleanUp() is called via defer if the next handler isn't invoked.
+// See NextOrCleanup for the cleanup detection mechanism.
+func WithCleanup(next PushFunc, pushWrapper func(next PushFunc, ctx context.Context, pushReq *Request) error) PushFunc {
+	return func(ctx context.Context, pushReq *Request) error {
+		next, maybeCleanup := NextOrCleanup(next, pushReq)
+		defer maybeCleanup()
+		return pushWrapper(next, ctx, pushReq)
+	}
+}
+
 // RegisterFlags adds the flags required to config this to the given FlagSet
 func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	cfg.PoolConfig.RegisterFlags(f)
@@ -1063,10 +1074,7 @@ func (d *Distributor) wrapPushWithMiddlewares(next PushFunc) PushFunc {
 }
 
 func (d *Distributor) prePushHaDedupeMiddleware(next PushFunc) PushFunc {
-	return func(ctx context.Context, pushReq *Request) error {
-		next, maybeCleanup := NextOrCleanup(next, pushReq)
-		defer maybeCleanup()
-
+	return WithCleanup(next, func(next PushFunc, ctx context.Context, pushReq *Request) error {
 		req, err := pushReq.WriteRequest()
 		if err != nil {
 			return err
@@ -1146,14 +1154,11 @@ func (d *Distributor) prePushHaDedupeMiddleware(next PushFunc) PushFunc {
 		}
 
 		return next(ctx, pushReq)
-	}
+	})
 }
 
 func (d *Distributor) prePushRelabelMiddleware(next PushFunc) PushFunc {
-	return func(ctx context.Context, pushReq *Request) error {
-		next, maybeCleanup := NextOrCleanup(next, pushReq)
-		defer maybeCleanup()
-
+	return WithCleanup(next, func(next PushFunc, ctx context.Context, pushReq *Request) error {
 		req, err := pushReq.WriteRequest()
 		if err != nil {
 			return err
@@ -1202,16 +1207,13 @@ func (d *Distributor) prePushRelabelMiddleware(next PushFunc) PushFunc {
 		}
 
 		return next(ctx, pushReq)
-	}
+	})
 }
 
 // prePushSortAndFilterMiddleware is responsible for sorting labels and
 // filtering empty values. This is a protection mechanism for ingesters.
 func (d *Distributor) prePushSortAndFilterMiddleware(next PushFunc) PushFunc {
-	return func(ctx context.Context, pushReq *Request) error {
-		next, maybeCleanup := NextOrCleanup(next, pushReq)
-		defer maybeCleanup()
-
+	return WithCleanup(next, func(next PushFunc, ctx context.Context, pushReq *Request) error {
 		req, err := pushReq.WriteRequest()
 		if err != nil {
 			return err
@@ -1247,14 +1249,11 @@ func (d *Distributor) prePushSortAndFilterMiddleware(next PushFunc) PushFunc {
 		}
 
 		return next(ctx, pushReq)
-	}
+	})
 }
 
 func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
-	return func(ctx context.Context, pushReq *Request) error {
-		next, maybeCleanup := NextOrCleanup(next, pushReq)
-		defer maybeCleanup()
-
+	return WithCleanup(next, func(next PushFunc, ctx context.Context, pushReq *Request) error {
 		req, err := pushReq.WriteRequest()
 		if err != nil {
 			return err
@@ -1461,7 +1460,7 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 		}
 
 		return firstPartialErr
-	}
+	})
 }
 
 func (d *Distributor) logLabelValueTooLongSummaries(userID string, valueTooLongSummaries labelValueTooLongSummaries) {
@@ -1502,15 +1501,12 @@ func (d *Distributor) logLabelValueTooLongSummaries(userID string, valueTooLongS
 
 // prePushMaxSeriesLimitMiddleware enforces the per-tenant max series limit when the usage-tracker service is enabled.
 func (d *Distributor) prePushMaxSeriesLimitMiddleware(next PushFunc) PushFunc {
-	return func(ctx context.Context, pushReq *Request) error {
+	return WithCleanup(next, func(next PushFunc, ctx context.Context, pushReq *Request) error {
 		// If the usage-tracker client hasn't been created it means usage-tracker is disabled
 		// for this instance.
 		if d.usageTrackerClient == nil {
 			return next(ctx, pushReq)
 		}
-
-		next, maybeCleanup := NextOrCleanup(next, pushReq)
-		defer maybeCleanup()
 
 		req, err := pushReq.WriteRequest()
 		if err != nil {
@@ -1593,16 +1589,13 @@ func (d *Distributor) prePushMaxSeriesLimitMiddleware(next PushFunc) PushFunc {
 		}
 
 		return nil
-	}
+	})
 }
 
 // metricsMiddleware updates metrics which are expected to account for all received data,
 // including data that later gets modified or dropped.
 func (d *Distributor) metricsMiddleware(next PushFunc) PushFunc {
-	return func(ctx context.Context, pushReq *Request) error {
-		next, maybeCleanup := NextOrCleanup(next, pushReq)
-		defer maybeCleanup()
-
+	return WithCleanup(next, func(next PushFunc, ctx context.Context, pushReq *Request) error {
 		req, err := pushReq.WriteRequest()
 		if err != nil {
 			return err
@@ -1639,7 +1632,7 @@ func (d *Distributor) metricsMiddleware(next PushFunc) PushFunc {
 		updateWriteResponseStatsCtx(ctx, numSamples, numHistograms, numExemplars)
 
 		return next(ctx, pushReq)
-	}
+	})
 }
 
 // outerMaybeDelayMiddleware is a middleware that may delay ingestion if configured.
@@ -1865,10 +1858,7 @@ func (d *Distributor) decreaseInflightPushRequestCounters(rs *requestState) {
 
 // limitsMiddleware checks for instance limits and rejects request if this instance cannot process it at the moment.
 func (d *Distributor) limitsMiddleware(next PushFunc) PushFunc {
-	return func(ctx context.Context, pushReq *Request) (retErr error) {
-		next, maybeCleanup := NextOrCleanup(next, pushReq)
-		defer maybeCleanup()
-
+	return WithCleanup(next, func(next PushFunc, ctx context.Context, pushReq *Request) (retErr error) {
 		ctx, rs, err := d.startPushRequest(ctx, pushReq.contentLength)
 		if err != nil {
 			return middleware.DoNotLogError{Err: err}
@@ -1916,7 +1906,7 @@ func (d *Distributor) limitsMiddleware(next PushFunc) PushFunc {
 		}
 
 		return next(ctx, pushReq)
-	}
+	})
 }
 
 // NextOrCleanup returns a new PushFunc and a cleanup function that should be deferred by the caller.

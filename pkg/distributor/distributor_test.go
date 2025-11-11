@@ -9096,55 +9096,21 @@ func clonePreallocTimeseries(orig mimirpb.PreallocTimeseries) (mimirpb.PreallocT
 }
 
 func TestCheckStartedMiddleware(t *testing.T) {
-	// Create an in-memory KV store for the ring with 1 ingester registered.
-	kvStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
-	t.Cleanup(func() { require.NoError(t, closer.Close()) })
-
-	err := kvStore.CAS(context.Background(), ingester.IngesterRingKey,
-		func(_ interface{}) (interface{}, bool, error) {
-			d := &ring.Desc{}
-			d.AddIngester("ingester-1", "127.0.0.1", "", ring.NewRandomTokenGenerator().GenerateTokens(128, nil), ring.ACTIVE, time.Now(), false, time.Time{}, nil)
-			return d, true, nil
-		},
-	)
-	require.NoError(t, err)
-
-	ingestersRing, err := ring.New(ring.Config{
-		KVStore:           kv.Config{Mock: kvStore},
-		HeartbeatTimeout:  60 * time.Minute,
-		ReplicationFactor: 1,
-	}, ingester.IngesterRingKey, ingester.IngesterRingKey, log.NewNopLogger(), nil)
-	require.NoError(t, err)
-	require.NoError(t, services.StartAndAwaitRunning(context.Background(), ingestersRing))
-	t.Cleanup(func() {
-		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), ingestersRing))
-	})
-
-	test.Poll(t, time.Second, 1, func() interface{} {
-		return ingestersRing.InstancesCount()
-	})
-
-	var distributorConfig Config
-	var clientConfig client.Config
 	limits := validation.Limits{}
-	flagext.DefaultValues(&distributorConfig, &clientConfig, &limits)
-	distributorConfig.DistributorRing.Common.KVStore.Store = "inmemory"
+	flagext.DefaultValues(&limits)
 
-	limits.IngestionRate = float64(rate.Inf) // Unlimited.
-
-	distributorConfig.IngesterClientFactory = ring_client.PoolInstFunc(func(ring.InstanceDesc) (ring_client.PoolClient, error) {
-		return &noopIngester{}, nil
-	})
-
-	overrides := validation.NewOverrides(limits, nil)
-	distributor, err := New(distributorConfig, clientConfig, overrides, nil, nil, ingestersRing, nil, true, nil, nil, nil, log.NewNopLogger())
-	require.NoError(t, err)
+	// Prepare distributor and wrap the mock push function with its middlewares.
+	ds, _, _, _ := prepare(t, prepConfig{
+		numDistributors: 1,
+		limits:          &limits,
+		enableTracker:   true,
+	}, false)
 
 	ctx := user.InjectOrgID(context.Background(), "user")
 	ctx, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
 	defer cancel()
 
-	_, err = distributor.Push(ctx, mimirpb.ToWriteRequest(
+	_, err := ds[0].Push(ctx, mimirpb.ToWriteRequest(
 		[][]mimirpb.LabelAdapter{
 			{
 				{
