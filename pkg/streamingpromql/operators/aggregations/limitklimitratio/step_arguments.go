@@ -18,12 +18,12 @@ import (
 )
 
 type stepArgument interface {
-	quietCloser
+	close()
 	allZero() bool
 }
 
-// ratioParam is a utility to assisting in the parsing and management of the ratio parameter used in each step of a limit_ratio aggregation
-type ratioParam struct {
+// stepArgumentRatio is a utility to assisting in the parsing and management of the ratio parameter used in each step of a limit_ratio aggregation
+type stepArgumentRatio struct {
 	r        []float64 // The ratio value for each step
 	rAllZero bool      // True if all the r values are set to 0
 
@@ -35,8 +35,8 @@ type ratioParam struct {
 	param                           types.ScalarOperator
 }
 
-func newRatioParam(ctx context.Context, annotations *annotations.Annotations, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, stepCount int, param types.ScalarOperator) (*ratioParam, error) {
-	r := &ratioParam{
+func newStepArgumentRatio(ctx context.Context, annotations *annotations.Annotations, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, stepCount int, param types.ScalarOperator) (*stepArgumentRatio, error) {
+	r := &stepArgumentRatio{
 		annotations:              annotations,
 		memoryConsumptionTracker: memoryConsumptionTracker,
 		stepCount:                stepCount,
@@ -50,11 +50,11 @@ func newRatioParam(ctx context.Context, annotations *annotations.Annotations, me
 	return r, nil
 }
 
-func (p *ratioParam) allZero() bool {
+func (p *stepArgumentRatio) allZero() bool {
 	return p.rAllZero
 }
 
-func (p *ratioParam) init(ctx context.Context) error {
+func (p *stepArgumentRatio) init(ctx context.Context) error {
 	// note that k can change per step. ie count(limit_ratio(scalar(foo), http_requests))
 	paramValues, err := p.param.GetValues(ctx)
 	if err != nil {
@@ -80,6 +80,7 @@ func (p *ratioParam) init(ctx context.Context) error {
 
 		if v < -1 {
 			v = float64(-1)
+
 		} else if v > 1 {
 			v = float64(1)
 		}
@@ -95,11 +96,11 @@ func (p *ratioParam) init(ctx context.Context) error {
 	return nil
 }
 
-func (p *ratioParam) close() {
+func (p *stepArgumentRatio) close() {
 	types.Float64SlicePool.Put(&p.r, p.memoryConsumptionTracker)
 }
 
-func (p *ratioParam) validateLimitRatioParam(v float64) error {
+func (p *stepArgumentRatio) validateLimitRatioParam(v float64) error {
 
 	if math.IsNaN(v) {
 		// Note that this error string needs to match the prometheus engine
@@ -124,8 +125,8 @@ func (p *ratioParam) validateLimitRatioParam(v float64) error {
 	return nil
 }
 
-// kParam is a utility to assisting in the parsing and management of the k parameter used in each step of a limitk aggregation
-type kParam struct {
+// stepArgumentK is a utility to assisting in the parsing and management of the k parameter used in each step of a limitk aggregation
+type stepArgumentK struct {
 	k        []int64 // The k value for each step - only used when ratio==false
 	kMax     int64   // The max(k) across all steps
 	kAllZero bool    // True if k is zero across all steps
@@ -135,8 +136,8 @@ type kParam struct {
 	param                    types.ScalarOperator
 }
 
-func newKParam(ctx context.Context, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, stepCount int, param types.ScalarOperator) (*kParam, error) {
-	r := &kParam{
+func newStepArgumentK(ctx context.Context, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, stepCount int, param types.ScalarOperator) (*stepArgumentK, error) {
+	r := &stepArgumentK{
 		memoryConsumptionTracker: memoryConsumptionTracker,
 		stepCount:                stepCount,
 		param:                    param,
@@ -149,11 +150,11 @@ func newKParam(ctx context.Context, memoryConsumptionTracker *limiter.MemoryCons
 	return r, nil
 }
 
-func (p *kParam) allZero() bool {
+func (p *stepArgumentK) allZero() bool {
 	return p.kAllZero
 }
 
-func (p *kParam) init(ctx context.Context) error {
+func (p *stepArgumentK) init(ctx context.Context) error {
 	// note that k can change per step. ie count(limitk(scalar(foo), http_requests))
 	paramValues, err := p.param.GetValues(ctx)
 	if err != nil {
@@ -188,22 +189,22 @@ func (p *kParam) init(ctx context.Context) error {
 	return nil
 }
 
-func (p *kParam) close() {
+func (p *stepArgumentK) close() {
 	types.Int64SlicePool.Put(&p.k, p.memoryConsumptionTracker)
 }
 
-func (p *kParam) validateLimitKParam(v float64) error {
+func (p *stepArgumentK) validateLimitKParam(v float64) error {
 	// Note that these error strings need to match the prometheus engine.
-	//nolint:staticcheck
 	if math.IsNaN(v) {
+		//nolint:staticcheck
 		return errors.New("Parameter value is NaN")
 	}
-	//nolint:staticcheck
 	if v <= math.MinInt64 {
+		//nolint:staticcheck
 		return fmt.Errorf("Scalar value %v underflows int64", v)
 	}
-	//nolint:staticcheck
 	if v >= math.MaxInt64 {
+		//nolint:staticcheck
 		return fmt.Errorf("Scalar value %v overflows int64", v)
 	}
 
