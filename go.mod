@@ -78,7 +78,7 @@ require (
 	github.com/shirou/gopsutil/v4 v4.25.10
 	github.com/spf13/pflag v1.0.10
 	github.com/thanos-io/objstore v0.0.0-20250813080715-4e5fd4289b50
-	github.com/tjhop/slog-gokit v0.1.4
+	github.com/tjhop/slog-gokit v0.1.5
 	github.com/twmb/franz-go v1.20.3
 	github.com/twmb/franz-go/pkg/kadm v1.17.2-0.20251024215757-aea970d4d0d2
 	github.com/twmb/franz-go/pkg/kfake v0.0.0-20251024215757-aea970d4d0d2
