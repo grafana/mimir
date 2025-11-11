@@ -359,22 +359,22 @@ func (m *SnapshotFile) GetData() [][]byte {
 	return nil
 }
 
-type GetTenantsCloseToLimitRequest struct {
+type GetUsersCloseToLimitRequest struct {
 	// Optional partition to query. If not specified or -1, a random partition will be selected.
 	Partition int32 `protobuf:"varint,1,opt,name=partition,proto3" json:"partition,omitempty"`
 }
 
-func (m *GetTenantsCloseToLimitRequest) Reset()      { *m = GetTenantsCloseToLimitRequest{} }
-func (*GetTenantsCloseToLimitRequest) ProtoMessage() {}
-func (*GetTenantsCloseToLimitRequest) Descriptor() ([]byte, []int) {
+func (m *GetUsersCloseToLimitRequest) Reset()      { *m = GetUsersCloseToLimitRequest{} }
+func (*GetUsersCloseToLimitRequest) ProtoMessage() {}
+func (*GetUsersCloseToLimitRequest) Descriptor() ([]byte, []int) {
 	return fileDescriptor_24aa1621a7eb7fd6, []int{6}
 }
-func (m *GetTenantsCloseToLimitRequest) XXX_Unmarshal(b []byte) error {
+func (m *GetUsersCloseToLimitRequest) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
 }
-func (m *GetTenantsCloseToLimitRequest) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+func (m *GetUsersCloseToLimitRequest) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
 	if deterministic {
-		return xxx_messageInfo_GetTenantsCloseToLimitRequest.Marshal(b, m, deterministic)
+		return xxx_messageInfo_GetUsersCloseToLimitRequest.Marshal(b, m, deterministic)
 	} else {
 		b = b[:cap(b)]
 		n, err := m.MarshalToSizedBuffer(b)
@@ -384,43 +384,43 @@ func (m *GetTenantsCloseToLimitRequest) XXX_Marshal(b []byte, deterministic bool
 		return b[:n], nil
 	}
 }
-func (m *GetTenantsCloseToLimitRequest) XXX_Merge(src proto.Message) {
-	xxx_messageInfo_GetTenantsCloseToLimitRequest.Merge(m, src)
+func (m *GetUsersCloseToLimitRequest) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_GetUsersCloseToLimitRequest.Merge(m, src)
 }
-func (m *GetTenantsCloseToLimitRequest) XXX_Size() int {
+func (m *GetUsersCloseToLimitRequest) XXX_Size() int {
 	return m.Size()
 }
-func (m *GetTenantsCloseToLimitRequest) XXX_DiscardUnknown() {
-	xxx_messageInfo_GetTenantsCloseToLimitRequest.DiscardUnknown(m)
+func (m *GetUsersCloseToLimitRequest) XXX_DiscardUnknown() {
+	xxx_messageInfo_GetUsersCloseToLimitRequest.DiscardUnknown(m)
 }
 
-var xxx_messageInfo_GetTenantsCloseToLimitRequest proto.InternalMessageInfo
+var xxx_messageInfo_GetUsersCloseToLimitRequest proto.InternalMessageInfo
 
-func (m *GetTenantsCloseToLimitRequest) GetPartition() int32 {
+func (m *GetUsersCloseToLimitRequest) GetPartition() int32 {
 	if m != nil {
 		return m.Partition
 	}
 	return 0
 }
 
-type GetTenantsCloseToLimitResponse struct {
-	// The list of tenant IDs that are close to their series limit.
-	TenantIds []string `protobuf:"bytes,1,rep,name=tenant_ids,json=tenantIds,proto3" json:"tenant_ids,omitempty"`
+type GetUsersCloseToLimitResponse struct {
+	// The list of user IDs that are close to their series limit.
+	UserIds []string `protobuf:"bytes,1,rep,name=user_ids,json=userIds,proto3" json:"user_ids,omitempty"`
 	// The partition that was queried.
 	Partition int32 `protobuf:"varint,2,opt,name=partition,proto3" json:"partition,omitempty"`
 }
 
-func (m *GetTenantsCloseToLimitResponse) Reset()      { *m = GetTenantsCloseToLimitResponse{} }
-func (*GetTenantsCloseToLimitResponse) ProtoMessage() {}
-func (*GetTenantsCloseToLimitResponse) Descriptor() ([]byte, []int) {
+func (m *GetUsersCloseToLimitResponse) Reset()      { *m = GetUsersCloseToLimitResponse{} }
+func (*GetUsersCloseToLimitResponse) ProtoMessage() {}
+func (*GetUsersCloseToLimitResponse) Descriptor() ([]byte, []int) {
 	return fileDescriptor_24aa1621a7eb7fd6, []int{7}
 }
-func (m *GetTenantsCloseToLimitResponse) XXX_Unmarshal(b []byte) error {
+func (m *GetUsersCloseToLimitResponse) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
 }
-func (m *GetTenantsCloseToLimitResponse) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+func (m *GetUsersCloseToLimitResponse) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
 	if deterministic {
-		return xxx_messageInfo_GetTenantsCloseToLimitResponse.Marshal(b, m, deterministic)
+		return xxx_messageInfo_GetUsersCloseToLimitResponse.Marshal(b, m, deterministic)
 	} else {
 		b = b[:cap(b)]
 		n, err := m.MarshalToSizedBuffer(b)
@@ -430,26 +430,26 @@ func (m *GetTenantsCloseToLimitResponse) XXX_Marshal(b []byte, deterministic boo
 		return b[:n], nil
 	}
 }
-func (m *GetTenantsCloseToLimitResponse) XXX_Merge(src proto.Message) {
-	xxx_messageInfo_GetTenantsCloseToLimitResponse.Merge(m, src)
+func (m *GetUsersCloseToLimitResponse) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_GetUsersCloseToLimitResponse.Merge(m, src)
 }
-func (m *GetTenantsCloseToLimitResponse) XXX_Size() int {
+func (m *GetUsersCloseToLimitResponse) XXX_Size() int {
 	return m.Size()
 }
-func (m *GetTenantsCloseToLimitResponse) XXX_DiscardUnknown() {
-	xxx_messageInfo_GetTenantsCloseToLimitResponse.DiscardUnknown(m)
+func (m *GetUsersCloseToLimitResponse) XXX_DiscardUnknown() {
+	xxx_messageInfo_GetUsersCloseToLimitResponse.DiscardUnknown(m)
 }
 
-var xxx_messageInfo_GetTenantsCloseToLimitResponse proto.InternalMessageInfo
+var xxx_messageInfo_GetUsersCloseToLimitResponse proto.InternalMessageInfo
 
-func (m *GetTenantsCloseToLimitResponse) GetTenantIds() []string {
+func (m *GetUsersCloseToLimitResponse) GetUserIds() []string {
 	if m != nil {
-		return m.TenantIds
+		return m.UserIds
 	}
 	return nil
 }
 
-func (m *GetTenantsCloseToLimitResponse) GetPartition() int32 {
+func (m *GetUsersCloseToLimitResponse) GetPartition() int32 {
 	if m != nil {
 		return m.Partition
 	}
@@ -463,46 +463,46 @@ func init() {
 	proto.RegisterType((*SnapshotRecord)(nil), "usagetrackerpb.SnapshotRecord")
 	proto.RegisterType((*SnapshotEvent)(nil), "usagetrackerpb.SnapshotEvent")
 	proto.RegisterType((*SnapshotFile)(nil), "usagetrackerpb.SnapshotFile")
-	proto.RegisterType((*GetTenantsCloseToLimitRequest)(nil), "usagetrackerpb.GetTenantsCloseToLimitRequest")
-	proto.RegisterType((*GetTenantsCloseToLimitResponse)(nil), "usagetrackerpb.GetTenantsCloseToLimitResponse")
+	proto.RegisterType((*GetUsersCloseToLimitRequest)(nil), "usagetrackerpb.GetUsersCloseToLimitRequest")
+	proto.RegisterType((*GetUsersCloseToLimitResponse)(nil), "usagetrackerpb.GetUsersCloseToLimitResponse")
 }
 
 func init() { proto.RegisterFile("usagetracker.proto", fileDescriptor_24aa1621a7eb7fd6) }
 
 var fileDescriptor_24aa1621a7eb7fd6 = []byte{
 	// 513 bytes of a gzipped FileDescriptorProto
-	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x8c, 0x54, 0xcd, 0x6e, 0x13, 0x3d,
-	0x14, 0x1d, 0x37, 0xf9, 0xaa, 0x6f, 0x2e, 0xa1, 0x0b, 0x53, 0x95, 0x51, 0xd4, 0x5a, 0xd1, 0x20,
-	0xa1, 0x6c, 0x08, 0x52, 0xd9, 0xb0, 0x61, 0xd3, 0x96, 0x9f, 0x48, 0x48, 0x20, 0x27, 0x74, 0x81,
-	0x84, 0x90, 0x93, 0xb9, 0x49, 0x0c, 0xc9, 0x78, 0xb0, 0x1d, 0xd8, 0xf2, 0x08, 0x3c, 0x06, 0x8f,
-	0xc2, 0x32, 0xcb, 0xae, 0x80, 0x4c, 0x36, 0x2c, 0xfb, 0x08, 0x28, 0x9e, 0x0c, 0xc9, 0x84, 0x36,
-	0x64, 0x37, 0xf7, 0xdc, 0xe3, 0xe3, 0x63, 0xcf, 0xb9, 0x06, 0x3a, 0x36, 0xa2, 0x8f, 0x56, 0x8b,
-	0xee, 0x7b, 0xd4, 0x8d, 0x44, 0x2b, 0xab, 0xe8, 0xde, 0x2a, 0x96, 0x74, 0xaa, 0xfb, 0x7d, 0xd5,
-	0x57, 0xae, 0x75, 0x7f, 0xfe, 0x95, 0xb1, 0xc2, 0x18, 0x68, 0x7b, 0x4e, 0x69, 0xa1, 0x96, 0x68,
-	0x38, 0x7e, 0x18, 0xa3, 0xb1, 0xf4, 0x00, 0x76, 0xc7, 0x06, 0x75, 0xf3, 0x2c, 0x20, 0x35, 0x52,
-	0xf7, 0xf9, 0xa2, 0xa2, 0x87, 0xe0, 0x27, 0x42, 0x5b, 0x69, 0xa5, 0x8a, 0x83, 0x9d, 0x1a, 0xa9,
-	0xff, 0xc7, 0x97, 0x00, 0x0d, 0xa1, 0x62, 0x9c, 0xcc, 0x33, 0x61, 0x06, 0x68, 0x82, 0x52, 0xad,
-	0x54, 0x2f, 0xf3, 0x02, 0x16, 0x36, 0xe1, 0x56, 0x61, 0x3f, 0x93, 0xa8, 0xd8, 0x20, 0x3d, 0x86,
-	0x7d, 0x8d, 0xef, 0xb0, 0x6b, 0x31, 0x6a, 0xad, 0x4a, 0x10, 0x27, 0x71, 0x65, 0x6f, 0x6e, 0x3d,
-	0xab, 0x4f, 0x35, 0x0a, 0x8b, 0xd1, 0xe3, 0x8f, 0x18, 0x6f, 0xb4, 0x6e, 0xe5, 0x08, 0x8d, 0x15,
-	0xa3, 0xc4, 0x59, 0x2f, 0xf1, 0x25, 0xb0, 0x95, 0xf5, 0xef, 0x04, 0xf6, 0x5a, 0xb1, 0x48, 0xcc,
-	0x40, 0x59, 0x8e, 0x5d, 0xa5, 0xa3, 0xa2, 0x28, 0x59, 0x17, 0x3d, 0x04, 0xbf, 0x27, 0x87, 0x18,
-	0x8b, 0x11, 0x9a, 0x60, 0xa7, 0x56, 0xaa, 0xfb, 0x7c, 0x09, 0xd0, 0x73, 0xb8, 0x3b, 0x14, 0xc6,
-	0x3a, 0xd7, 0x2f, 0x7a, 0x3d, 0x83, 0xf6, 0xe5, 0xb8, 0x33, 0x94, 0x66, 0x80, 0xd1, 0x09, 0xf6,
-	0x94, 0xc6, 0x7c, 0xaf, 0xa0, 0xe4, 0x84, 0xb7, 0x64, 0xd3, 0x87, 0x70, 0x7b, 0xce, 0xcc, 0xeb,
-	0x95, 0x15, 0x41, 0xd9, 0x09, 0x5d, 0xd7, 0x0e, 0x9b, 0x70, 0xb3, 0x00, 0xff, 0xe3, 0x78, 0x55,
-	0xf8, 0x3f, 0x3f, 0x8d, 0xbb, 0x50, 0x9f, 0xff, 0xa9, 0xc3, 0x10, 0x2a, 0xb9, 0xd4, 0x13, 0x39,
-	0x44, 0x4a, 0xa1, 0x1c, 0x09, 0x2b, 0xdc, 0xff, 0xac, 0x70, 0xf7, 0x1d, 0x3e, 0x82, 0xa3, 0xa7,
-	0x68, 0xdb, 0x18, 0x8b, 0xd8, 0x9a, 0xd3, 0xa1, 0x32, 0xd8, 0x56, 0xcf, 0xe5, 0x48, 0xda, 0x3c,
-	0x85, 0x85, 0xb4, 0x91, 0xb5, 0xb4, 0x85, 0x6f, 0x80, 0x5d, 0xb7, 0x7c, 0x11, 0xaa, 0x23, 0x00,
-	0xeb, 0xda, 0x6f, 0x65, 0x94, 0x45, 0xc9, 0xe7, 0x7e, 0x86, 0x34, 0x23, 0xb3, 0x39, 0xcc, 0xc7,
-	0x3f, 0x08, 0x54, 0x5e, 0xcd, 0x27, 0xa8, 0x9d, 0x4d, 0x10, 0x3d, 0x87, 0x1b, 0x2b, 0xc9, 0xa5,
-	0x61, 0xa3, 0x38, 0x5f, 0x8d, 0xbf, 0xc7, 0xa8, 0x7a, 0x67, 0x23, 0x67, 0xe1, 0xf2, 0x13, 0x1c,
-	0x5c, 0x7d, 0x0e, 0x7a, 0x6f, 0x7d, 0xf9, 0xc6, 0xeb, 0xaa, 0x36, 0xb6, 0xa5, 0x67, 0x1b, 0x9f,
-	0x9c, 0x4d, 0xa6, 0xcc, 0xbb, 0x98, 0x32, 0xef, 0x72, 0xca, 0xc8, 0xe7, 0x94, 0x91, 0xaf, 0x29,
-	0x23, 0xdf, 0x52, 0x46, 0x26, 0x29, 0x23, 0x3f, 0x53, 0x46, 0x7e, 0xa5, 0xcc, 0xbb, 0x4c, 0x19,
-	0xf9, 0x32, 0x63, 0xde, 0x64, 0xc6, 0xbc, 0x8b, 0x19, 0xf3, 0x5e, 0xaf, 0x3d, 0x2b, 0x9d, 0x5d,
-	0xf7, 0x8e, 0x3c, 0xf8, 0x1d, 0x00, 0x00, 0xff, 0xff, 0xdc, 0xa4, 0xd1, 0x38, 0x83, 0x04, 0x00,
+	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x8c, 0x54, 0x4f, 0x8f, 0x12, 0x3f,
+	0x18, 0x9e, 0x2e, 0xfc, 0xf6, 0xb7, 0xf3, 0x8a, 0x7b, 0xa8, 0x44, 0x47, 0x24, 0x0d, 0x19, 0x13,
+	0x43, 0xa2, 0xc1, 0x64, 0xbd, 0x98, 0x78, 0xdb, 0x5d, 0xff, 0x90, 0x98, 0x68, 0x06, 0x76, 0x4d,
+	0xbc, 0x98, 0xc2, 0xbc, 0x40, 0x15, 0xa6, 0xb3, 0x6d, 0xf1, 0xec, 0x47, 0xf0, 0x63, 0xf8, 0x51,
+	0x3c, 0x72, 0x5c, 0x2f, 0x46, 0x86, 0x8b, 0xc7, 0xfd, 0x08, 0x66, 0x0a, 0x23, 0x0c, 0x22, 0x72,
+	0xeb, 0xfb, 0xf4, 0xe9, 0xd3, 0xa7, 0xed, 0xf3, 0x16, 0xe8, 0x58, 0xf3, 0x3e, 0x1a, 0xc5, 0xbb,
+	0x1f, 0x50, 0x35, 0x62, 0x25, 0x8d, 0xa4, 0x87, 0xab, 0x58, 0xdc, 0xa9, 0x94, 0xfb, 0xb2, 0x2f,
+	0xed, 0xd4, 0xc3, 0x74, 0x34, 0x67, 0xf9, 0x11, 0xd0, 0x76, 0x4a, 0x69, 0xa1, 0x12, 0xa8, 0x03,
+	0xbc, 0x18, 0xa3, 0x36, 0xf4, 0x26, 0xec, 0x8f, 0x35, 0xaa, 0xe6, 0xa9, 0x47, 0x6a, 0xa4, 0xee,
+	0x06, 0x8b, 0x8a, 0x56, 0xc1, 0x8d, 0xb9, 0x32, 0xc2, 0x08, 0x19, 0x79, 0x7b, 0x35, 0x52, 0xff,
+	0x2f, 0x58, 0x02, 0xd4, 0x87, 0x92, 0xb6, 0x32, 0x2f, 0xb8, 0x1e, 0xa0, 0xf6, 0x0a, 0xb5, 0x42,
+	0xbd, 0x18, 0xe4, 0x30, 0xbf, 0x09, 0x37, 0x72, 0xfb, 0xe9, 0x58, 0x46, 0x1a, 0xe9, 0x11, 0x94,
+	0x15, 0xbe, 0xc7, 0xae, 0xc1, 0xb0, 0xb5, 0x2a, 0x41, 0xac, 0xc4, 0xc6, 0xb9, 0xd4, 0xfa, 0xbc,
+	0x3e, 0x51, 0xc8, 0x0d, 0x86, 0x4f, 0x3f, 0x62, 0xb4, 0xd5, 0xba, 0x11, 0x23, 0xd4, 0x86, 0x8f,
+	0x62, 0x6b, 0xbd, 0x10, 0x2c, 0x81, 0x9d, 0xac, 0x7f, 0x27, 0x70, 0xd8, 0x8a, 0x78, 0xac, 0x07,
+	0xd2, 0x04, 0xd8, 0x95, 0x2a, 0xcc, 0x8b, 0x92, 0x75, 0xd1, 0x2a, 0xb8, 0x3d, 0x31, 0xc4, 0x88,
+	0x8f, 0x50, 0x7b, 0x7b, 0xb5, 0x42, 0xdd, 0x0d, 0x96, 0x00, 0x3d, 0x87, 0x7b, 0x43, 0xae, 0x8d,
+	0x75, 0xfd, 0xaa, 0xd7, 0xd3, 0x68, 0x5e, 0x8f, 0x3b, 0x43, 0xa1, 0x07, 0x18, 0x1e, 0x63, 0x4f,
+	0x2a, 0xcc, 0xf6, 0xf2, 0x0a, 0x56, 0x78, 0x47, 0x36, 0x7d, 0x0c, 0xb7, 0x52, 0x66, 0x56, 0xaf,
+	0xac, 0xf0, 0x8a, 0x56, 0xe8, 0x6f, 0xd3, 0x7e, 0x13, 0xae, 0xe7, 0xe0, 0x7f, 0x1c, 0xaf, 0x02,
+	0x07, 0xd9, 0x69, 0xec, 0x85, 0xba, 0xc1, 0xef, 0xda, 0xf7, 0xa1, 0x94, 0x49, 0x3d, 0x13, 0x43,
+	0xa4, 0x14, 0x8a, 0x21, 0x37, 0xdc, 0xbe, 0x67, 0x29, 0xb0, 0x63, 0xff, 0x09, 0xdc, 0x79, 0x8e,
+	0xe6, 0x4c, 0xa3, 0xd2, 0x27, 0x43, 0xa9, 0xb1, 0x2d, 0x5f, 0x8a, 0x91, 0x30, 0x59, 0x06, 0x73,
+	0x59, 0x23, 0x6b, 0x59, 0xf3, 0xdf, 0x40, 0x75, 0xf3, 0xe2, 0x45, 0xa0, 0x6e, 0xc3, 0x41, 0xfa,
+	0xf0, 0xef, 0x44, 0x38, 0x0f, 0x91, 0x1b, 0xfc, 0x6f, 0x83, 0x10, 0xea, 0xed, 0x21, 0x3e, 0xfa,
+	0x46, 0xa0, 0x74, 0x96, 0x76, 0x4e, 0x7b, 0xde, 0x39, 0xf4, 0x1c, 0xae, 0xad, 0x24, 0x96, 0xfa,
+	0x8d, 0x7c, 0x5f, 0x35, 0xfe, 0x6c, 0x9f, 0xca, 0xdd, 0xad, 0x9c, 0x85, 0xc3, 0x0b, 0x28, 0x6f,
+	0x3a, 0x01, 0xbd, 0xbf, 0xbe, 0x78, 0xcb, 0x25, 0x55, 0x1e, 0xec, 0x46, 0x9e, 0x6f, 0x79, 0x7c,
+	0x3a, 0x99, 0x32, 0xe7, 0x72, 0xca, 0x9c, 0xab, 0x29, 0x23, 0x9f, 0x12, 0x46, 0xbe, 0x24, 0x8c,
+	0x7c, 0x4d, 0x18, 0x99, 0x24, 0x8c, 0xfc, 0x48, 0x18, 0xf9, 0x99, 0x30, 0xe7, 0x2a, 0x61, 0xe4,
+	0xf3, 0x8c, 0x39, 0x93, 0x19, 0x73, 0x2e, 0x67, 0xcc, 0x79, 0xbb, 0xf6, 0x91, 0x74, 0xf6, 0xed,
+	0xcf, 0xf1, 0xe8, 0x57, 0x00, 0x00, 0x00, 0xff, 0xff, 0x8e, 0x29, 0xe7, 0xc5, 0x75, 0x04, 0x00,
 	0x00,
 }
 
@@ -699,14 +699,14 @@ func (this *SnapshotFile) Equal(that interface{}) bool {
 	}
 	return true
 }
-func (this *GetTenantsCloseToLimitRequest) Equal(that interface{}) bool {
+func (this *GetUsersCloseToLimitRequest) Equal(that interface{}) bool {
 	if that == nil {
 		return this == nil
 	}
 
-	that1, ok := that.(*GetTenantsCloseToLimitRequest)
+	that1, ok := that.(*GetUsersCloseToLimitRequest)
 	if !ok {
-		that2, ok := that.(GetTenantsCloseToLimitRequest)
+		that2, ok := that.(GetUsersCloseToLimitRequest)
 		if ok {
 			that1 = &that2
 		} else {
@@ -723,14 +723,14 @@ func (this *GetTenantsCloseToLimitRequest) Equal(that interface{}) bool {
 	}
 	return true
 }
-func (this *GetTenantsCloseToLimitResponse) Equal(that interface{}) bool {
+func (this *GetUsersCloseToLimitResponse) Equal(that interface{}) bool {
 	if that == nil {
 		return this == nil
 	}
 
-	that1, ok := that.(*GetTenantsCloseToLimitResponse)
+	that1, ok := that.(*GetUsersCloseToLimitResponse)
 	if !ok {
-		that2, ok := that.(GetTenantsCloseToLimitResponse)
+		that2, ok := that.(GetUsersCloseToLimitResponse)
 		if ok {
 			that1 = &that2
 		} else {
@@ -742,11 +742,11 @@ func (this *GetTenantsCloseToLimitResponse) Equal(that interface{}) bool {
 	} else if this == nil {
 		return false
 	}
-	if len(this.TenantIds) != len(that1.TenantIds) {
+	if len(this.UserIds) != len(that1.UserIds) {
 		return false
 	}
-	for i := range this.TenantIds {
-		if this.TenantIds[i] != that1.TenantIds[i] {
+	for i := range this.UserIds {
+		if this.UserIds[i] != that1.UserIds[i] {
 			return false
 		}
 	}
@@ -823,23 +823,23 @@ func (this *SnapshotFile) GoString() string {
 	s = append(s, "}")
 	return strings.Join(s, "")
 }
-func (this *GetTenantsCloseToLimitRequest) GoString() string {
+func (this *GetUsersCloseToLimitRequest) GoString() string {
 	if this == nil {
 		return "nil"
 	}
 	s := make([]string, 0, 5)
-	s = append(s, "&usagetrackerpb.GetTenantsCloseToLimitRequest{")
+	s = append(s, "&usagetrackerpb.GetUsersCloseToLimitRequest{")
 	s = append(s, "Partition: "+fmt.Sprintf("%#v", this.Partition)+",\n")
 	s = append(s, "}")
 	return strings.Join(s, "")
 }
-func (this *GetTenantsCloseToLimitResponse) GoString() string {
+func (this *GetUsersCloseToLimitResponse) GoString() string {
 	if this == nil {
 		return "nil"
 	}
 	s := make([]string, 0, 6)
-	s = append(s, "&usagetrackerpb.GetTenantsCloseToLimitResponse{")
-	s = append(s, "TenantIds: "+fmt.Sprintf("%#v", this.TenantIds)+",\n")
+	s = append(s, "&usagetrackerpb.GetUsersCloseToLimitResponse{")
+	s = append(s, "UserIds: "+fmt.Sprintf("%#v", this.UserIds)+",\n")
 	s = append(s, "Partition: "+fmt.Sprintf("%#v", this.Partition)+",\n")
 	s = append(s, "}")
 	return strings.Join(s, "")
@@ -866,7 +866,7 @@ const _ = grpc.SupportPackageIsVersion4
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://godoc.org/google.golang.org/grpc#ClientConn.NewStream.
 type UsageTrackerClient interface {
 	TrackSeries(ctx context.Context, in *TrackSeriesRequest, opts ...grpc.CallOption) (*TrackSeriesResponse, error)
-	GetTenantsCloseToLimit(ctx context.Context, in *GetTenantsCloseToLimitRequest, opts ...grpc.CallOption) (*GetTenantsCloseToLimitResponse, error)
+	GetUsersCloseToLimit(ctx context.Context, in *GetUsersCloseToLimitRequest, opts ...grpc.CallOption) (*GetUsersCloseToLimitResponse, error)
 }
 
 type usageTrackerClient struct {
@@ -886,9 +886,9 @@ func (c *usageTrackerClient) TrackSeries(ctx context.Context, in *TrackSeriesReq
 	return out, nil
 }
 
-func (c *usageTrackerClient) GetTenantsCloseToLimit(ctx context.Context, in *GetTenantsCloseToLimitRequest, opts ...grpc.CallOption) (*GetTenantsCloseToLimitResponse, error) {
-	out := new(GetTenantsCloseToLimitResponse)
-	err := c.cc.Invoke(ctx, "/usagetrackerpb.UsageTracker/GetTenantsCloseToLimit", in, out, opts...)
+func (c *usageTrackerClient) GetUsersCloseToLimit(ctx context.Context, in *GetUsersCloseToLimitRequest, opts ...grpc.CallOption) (*GetUsersCloseToLimitResponse, error) {
+	out := new(GetUsersCloseToLimitResponse)
+	err := c.cc.Invoke(ctx, "/usagetrackerpb.UsageTracker/GetUsersCloseToLimit", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -898,7 +898,7 @@ func (c *usageTrackerClient) GetTenantsCloseToLimit(ctx context.Context, in *Get
 // UsageTrackerServer is the server API for UsageTracker service.
 type UsageTrackerServer interface {
 	TrackSeries(context.Context, *TrackSeriesRequest) (*TrackSeriesResponse, error)
-	GetTenantsCloseToLimit(context.Context, *GetTenantsCloseToLimitRequest) (*GetTenantsCloseToLimitResponse, error)
+	GetUsersCloseToLimit(context.Context, *GetUsersCloseToLimitRequest) (*GetUsersCloseToLimitResponse, error)
 }
 
 // UnimplementedUsageTrackerServer can be embedded to have forward compatible implementations.
@@ -908,8 +908,8 @@ type UnimplementedUsageTrackerServer struct {
 func (*UnimplementedUsageTrackerServer) TrackSeries(ctx context.Context, req *TrackSeriesRequest) (*TrackSeriesResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method TrackSeries not implemented")
 }
-func (*UnimplementedUsageTrackerServer) GetTenantsCloseToLimit(ctx context.Context, req *GetTenantsCloseToLimitRequest) (*GetTenantsCloseToLimitResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method GetTenantsCloseToLimit not implemented")
+func (*UnimplementedUsageTrackerServer) GetUsersCloseToLimit(ctx context.Context, req *GetUsersCloseToLimitRequest) (*GetUsersCloseToLimitResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetUsersCloseToLimit not implemented")
 }
 
 func RegisterUsageTrackerServer(s *grpc.Server, srv UsageTrackerServer) {
@@ -934,20 +934,20 @@ func _UsageTracker_TrackSeries_Handler(srv interface{}, ctx context.Context, dec
 	return interceptor(ctx, in, info, handler)
 }
 
-func _UsageTracker_GetTenantsCloseToLimit_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(GetTenantsCloseToLimitRequest)
+func _UsageTracker_GetUsersCloseToLimit_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetUsersCloseToLimitRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(UsageTrackerServer).GetTenantsCloseToLimit(ctx, in)
+		return srv.(UsageTrackerServer).GetUsersCloseToLimit(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: "/usagetrackerpb.UsageTracker/GetTenantsCloseToLimit",
+		FullMethod: "/usagetrackerpb.UsageTracker/GetUsersCloseToLimit",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(UsageTrackerServer).GetTenantsCloseToLimit(ctx, req.(*GetTenantsCloseToLimitRequest))
+		return srv.(UsageTrackerServer).GetUsersCloseToLimit(ctx, req.(*GetUsersCloseToLimitRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -961,8 +961,8 @@ var _UsageTracker_serviceDesc = grpc.ServiceDesc{
 			Handler:    _UsageTracker_TrackSeries_Handler,
 		},
 		{
-			MethodName: "GetTenantsCloseToLimit",
-			Handler:    _UsageTracker_GetTenantsCloseToLimit_Handler,
+			MethodName: "GetUsersCloseToLimit",
+			Handler:    _UsageTracker_GetUsersCloseToLimit_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
@@ -1230,7 +1230,7 @@ func (m *SnapshotFile) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	return len(dAtA) - i, nil
 }
 
-func (m *GetTenantsCloseToLimitRequest) Marshal() (dAtA []byte, err error) {
+func (m *GetUsersCloseToLimitRequest) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
 	dAtA = make([]byte, size)
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
@@ -1240,12 +1240,12 @@ func (m *GetTenantsCloseToLimitRequest) Marshal() (dAtA []byte, err error) {
 	return dAtA[:n], nil
 }
 
-func (m *GetTenantsCloseToLimitRequest) MarshalTo(dAtA []byte) (int, error) {
+func (m *GetUsersCloseToLimitRequest) MarshalTo(dAtA []byte) (int, error) {
 	size := m.Size()
 	return m.MarshalToSizedBuffer(dAtA[:size])
 }
 
-func (m *GetTenantsCloseToLimitRequest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+func (m *GetUsersCloseToLimitRequest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	i := len(dAtA)
 	_ = i
 	var l int
@@ -1258,7 +1258,7 @@ func (m *GetTenantsCloseToLimitRequest) MarshalToSizedBuffer(dAtA []byte) (int, 
 	return len(dAtA) - i, nil
 }
 
-func (m *GetTenantsCloseToLimitResponse) Marshal() (dAtA []byte, err error) {
+func (m *GetUsersCloseToLimitResponse) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
 	dAtA = make([]byte, size)
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
@@ -1268,12 +1268,12 @@ func (m *GetTenantsCloseToLimitResponse) Marshal() (dAtA []byte, err error) {
 	return dAtA[:n], nil
 }
 
-func (m *GetTenantsCloseToLimitResponse) MarshalTo(dAtA []byte) (int, error) {
+func (m *GetUsersCloseToLimitResponse) MarshalTo(dAtA []byte) (int, error) {
 	size := m.Size()
 	return m.MarshalToSizedBuffer(dAtA[:size])
 }
 
-func (m *GetTenantsCloseToLimitResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+func (m *GetUsersCloseToLimitResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	i := len(dAtA)
 	_ = i
 	var l int
@@ -1283,11 +1283,11 @@ func (m *GetTenantsCloseToLimitResponse) MarshalToSizedBuffer(dAtA []byte) (int,
 		i--
 		dAtA[i] = 0x10
 	}
-	if len(m.TenantIds) > 0 {
-		for iNdEx := len(m.TenantIds) - 1; iNdEx >= 0; iNdEx-- {
-			i -= len(m.TenantIds[iNdEx])
-			copy(dAtA[i:], m.TenantIds[iNdEx])
-			i = encodeVarintUsagetracker(dAtA, i, uint64(len(m.TenantIds[iNdEx])))
+	if len(m.UserIds) > 0 {
+		for iNdEx := len(m.UserIds) - 1; iNdEx >= 0; iNdEx-- {
+			i -= len(m.UserIds[iNdEx])
+			copy(dAtA[i:], m.UserIds[iNdEx])
+			i = encodeVarintUsagetracker(dAtA, i, uint64(len(m.UserIds[iNdEx])))
 			i--
 			dAtA[i] = 0xa
 		}
@@ -1423,7 +1423,7 @@ func (m *SnapshotFile) Size() (n int) {
 	return n
 }
 
-func (m *GetTenantsCloseToLimitRequest) Size() (n int) {
+func (m *GetUsersCloseToLimitRequest) Size() (n int) {
 	if m == nil {
 		return 0
 	}
@@ -1435,14 +1435,14 @@ func (m *GetTenantsCloseToLimitRequest) Size() (n int) {
 	return n
 }
 
-func (m *GetTenantsCloseToLimitResponse) Size() (n int) {
+func (m *GetUsersCloseToLimitResponse) Size() (n int) {
 	if m == nil {
 		return 0
 	}
 	var l int
 	_ = l
-	if len(m.TenantIds) > 0 {
-		for _, s := range m.TenantIds {
+	if len(m.UserIds) > 0 {
+		for _, s := range m.UserIds {
 			l = len(s)
 			n += 1 + l + sovUsagetracker(uint64(l))
 		}
@@ -1527,22 +1527,22 @@ func (this *SnapshotFile) String() string {
 	}, "")
 	return s
 }
-func (this *GetTenantsCloseToLimitRequest) String() string {
+func (this *GetUsersCloseToLimitRequest) String() string {
 	if this == nil {
 		return "nil"
 	}
-	s := strings.Join([]string{`&GetTenantsCloseToLimitRequest{`,
+	s := strings.Join([]string{`&GetUsersCloseToLimitRequest{`,
 		`Partition:` + fmt.Sprintf("%v", this.Partition) + `,`,
 		`}`,
 	}, "")
 	return s
 }
-func (this *GetTenantsCloseToLimitResponse) String() string {
+func (this *GetUsersCloseToLimitResponse) String() string {
 	if this == nil {
 		return "nil"
 	}
-	s := strings.Join([]string{`&GetTenantsCloseToLimitResponse{`,
-		`TenantIds:` + fmt.Sprintf("%v", this.TenantIds) + `,`,
+	s := strings.Join([]string{`&GetUsersCloseToLimitResponse{`,
+		`UserIds:` + fmt.Sprintf("%v", this.UserIds) + `,`,
 		`Partition:` + fmt.Sprintf("%v", this.Partition) + `,`,
 		`}`,
 	}, "")
@@ -2358,7 +2358,7 @@ func (m *SnapshotFile) Unmarshal(dAtA []byte) error {
 	}
 	return nil
 }
-func (m *GetTenantsCloseToLimitRequest) Unmarshal(dAtA []byte) error {
+func (m *GetUsersCloseToLimitRequest) Unmarshal(dAtA []byte) error {
 	l := len(dAtA)
 	iNdEx := 0
 	for iNdEx < l {
@@ -2381,10 +2381,10 @@ func (m *GetTenantsCloseToLimitRequest) Unmarshal(dAtA []byte) error {
 		fieldNum := int32(wire >> 3)
 		wireType := int(wire & 0x7)
 		if wireType == 4 {
-			return fmt.Errorf("proto: GetTenantsCloseToLimitRequest: wiretype end group for non-group")
+			return fmt.Errorf("proto: GetUsersCloseToLimitRequest: wiretype end group for non-group")
 		}
 		if fieldNum <= 0 {
-			return fmt.Errorf("proto: GetTenantsCloseToLimitRequest: illegal tag %d (wire type %d)", fieldNum, wire)
+			return fmt.Errorf("proto: GetUsersCloseToLimitRequest: illegal tag %d (wire type %d)", fieldNum, wire)
 		}
 		switch fieldNum {
 		case 1:
@@ -2427,7 +2427,7 @@ func (m *GetTenantsCloseToLimitRequest) Unmarshal(dAtA []byte) error {
 	}
 	return nil
 }
-func (m *GetTenantsCloseToLimitResponse) Unmarshal(dAtA []byte) error {
+func (m *GetUsersCloseToLimitResponse) Unmarshal(dAtA []byte) error {
 	l := len(dAtA)
 	iNdEx := 0
 	for iNdEx < l {
@@ -2450,15 +2450,15 @@ func (m *GetTenantsCloseToLimitResponse) Unmarshal(dAtA []byte) error {
 		fieldNum := int32(wire >> 3)
 		wireType := int(wire & 0x7)
 		if wireType == 4 {
-			return fmt.Errorf("proto: GetTenantsCloseToLimitResponse: wiretype end group for non-group")
+			return fmt.Errorf("proto: GetUsersCloseToLimitResponse: wiretype end group for non-group")
 		}
 		if fieldNum <= 0 {
-			return fmt.Errorf("proto: GetTenantsCloseToLimitResponse: illegal tag %d (wire type %d)", fieldNum, wire)
+			return fmt.Errorf("proto: GetUsersCloseToLimitResponse: illegal tag %d (wire type %d)", fieldNum, wire)
 		}
 		switch fieldNum {
 		case 1:
 			if wireType != 2 {
-				return fmt.Errorf("proto: wrong wireType = %d for field TenantIds", wireType)
+				return fmt.Errorf("proto: wrong wireType = %d for field UserIds", wireType)
 			}
 			var stringLen uint64
 			for shift := uint(0); ; shift += 7 {
@@ -2486,7 +2486,7 @@ func (m *GetTenantsCloseToLimitResponse) Unmarshal(dAtA []byte) error {
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
 			}
-			m.TenantIds = append(m.TenantIds, string(dAtA[iNdEx:postIndex]))
+			m.UserIds = append(m.UserIds, string(dAtA[iNdEx:postIndex]))
 			iNdEx = postIndex
 		case 2:
 			if wireType != 0 {

@@ -103,7 +103,7 @@ const (
 type usageTrackerGenericClient interface {
 	services.Service
 	TrackSeries(ctx context.Context, userID string, series []uint64) ([]uint64, error)
-	IsTenantCloseToLimit(userID string) bool
+	IsUserCloseToLimit(userID string) bool
 }
 
 // Distributor forwards appends and queries to individual ingesters.
@@ -1555,10 +1555,10 @@ func (d *Distributor) prePushMaxSeriesLimitMiddleware(next PushFunc) PushFunc {
 		}
 
 		// Track the series and check if anyone should be rejected because over the limit.
-		// For tenants that are far from their limits, we can do this asynchronously.
+		// For users that are far from their limits, we can do this asynchronously.
 		var rejectedHashes []uint64
-		if d.usageTrackerClient.IsTenantCloseToLimit(userID) {
-			// Tenant is close to limit, track synchronously.
+		if d.usageTrackerClient.IsUserCloseToLimit(userID) {
+			// User is close to limit, track synchronously.
 			rejectedHashes, err = d.usageTrackerClient.TrackSeries(ctx, userID, seriesHashes)
 			if err != nil {
 				return errors.Wrap(err, "failed to enforce max series limit")

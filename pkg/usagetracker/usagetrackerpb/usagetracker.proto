@@ -12,7 +12,7 @@ option (gogoproto.unmarshaler_all) = true;
 
 service UsageTracker {
   rpc TrackSeries(TrackSeriesRequest) returns (TrackSeriesResponse);
-  rpc GetTenantsCloseToLimit(GetTenantsCloseToLimitRequest) returns (GetTenantsCloseToLimitResponse);
+  rpc GetUsersCloseToLimit(GetUsersCloseToLimitRequest) returns (GetUsersCloseToLimitResponse);
 }
 
 message TrackSeriesRequest {
@@ -59,14 +59,14 @@ message SnapshotFile {
   repeated bytes data = 1;
 }
 
-message GetTenantsCloseToLimitRequest {
+message GetUsersCloseToLimitRequest {
   // Optional partition to query. If not specified or -1, a random partition will be selected.
   int32 partition = 1;
 }
 
-message GetTenantsCloseToLimitResponse {
-  // The list of tenant IDs that are close to their series limit.
-  repeated string tenant_ids = 1;
+message GetUsersCloseToLimitResponse {
+  // The list of user IDs that are close to their series limit.
+  repeated string user_ids = 1;
 
   // The partition that was queried.
   int32 partition = 2;
