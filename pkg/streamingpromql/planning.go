@@ -84,12 +84,15 @@ func NewQueryPlanner(opts EngineOpts, versionProvider QueryPlanVersionProvider) 
 	}
 
 	// TODO: figure out how query splitting iteracts with other optimisation passes
-	if opts.IntermediateResultCache != nil {
-		splitInterval := opts.QuerySplitInterval
+	if opts.InstantQuerySplitting.Enabled {
+		splitInterval := opts.InstantQuerySplitting.SplitInterval
 		if splitInterval <= 0 {
 			splitInterval = 2 * time.Hour
 		}
-		planner.RegisterQueryPlanOptimizationPass(querysplitting.NewOptimizationPass(splitInterval))
+		planner.RegisterQueryPlanOptimizationPass(querysplitting.NewOptimizationPass(splitInterval, opts.Logger))
+		opts.Logger.Log("msg", "query splitting optimization pass enabled", "split_interval", splitInterval)
+	} else {
+		opts.Logger.Log("msg", "query splitting optimization pass disabled")
 	}
 
 	return planner, nil

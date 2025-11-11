@@ -6,6 +6,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/go-kit/log"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
@@ -17,11 +18,13 @@ import (
 // TODO: does this affect other optimisation passes? e.g. query sharding
 type OptimizationPass struct {
 	splitInterval time.Duration
+	logger        log.Logger
 }
 
-func NewOptimizationPass(splitInterval time.Duration) *OptimizationPass {
+func NewOptimizationPass(splitInterval time.Duration, logger log.Logger) *OptimizationPass {
 	return &OptimizationPass{
 		splitInterval: splitInterval,
+		logger:        logger,
 	}
 }
 
@@ -41,12 +44,17 @@ func (o *OptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan, 
 
 func (o *OptimizationPass) wrapSplittableRangeVectorFunctions(n planning.Node, timeRange types.QueryTimeRange) (planning.Node, error) {
 	if functionCall, isFunctionCall := n.(*core.FunctionCall); isFunctionCall {
-		if o.shouldSplitFunction(functionCall, timeRange) {
+		shouldSplit, reason := o.shouldSplitFunction(functionCall, timeRange)
+		if shouldSplit {
 			wrappedNode, err := o.wrapInSplitNode(functionCall)
 			if err != nil {
 				return nil, err
 			}
+			matrixSelector := functionCall.Children()[0].(*core.MatrixSelector)
+			o.logger.Log("msg", "query splitting applied to function", "function", functionCall.GetFunction().PromQLName(), "range_ms", matrixSelector.Range.Milliseconds(), "split_interval_ms", o.splitInterval.Milliseconds())
 			return wrappedNode, nil
+		} else if reason != "" {
+			o.logger.Log("msg", "query splitting not applied to function", "function", functionCall.GetFunction().PromQLName(), "reason", reason)
 		}
 	}
 
@@ -74,37 +82,37 @@ func (o *OptimizationPass) wrapSplittableRangeVectorFunctions(n planning.Node, t
 	return n, nil
 }
 
-func (o *OptimizationPass) shouldSplitFunction(functionCall *core.FunctionCall, timeRange types.QueryTimeRange) bool {
+func (o *OptimizationPass) shouldSplitFunction(functionCall *core.FunctionCall, timeRange types.QueryTimeRange) (bool, string) {
 	// For now, only support instant queries (range queries are more complex)
 	if !timeRange.IsInstant {
-		return false
+		return false, "not an instant query"
 	}
 
 	fn := functionCall.GetFunction()
 	if _, exists := functions.RegisteredFunctions[fn]; !exists {
-		return false
+		return false, "function not registered"
 	}
 
 	// TODO: add more functions
 	switch fn {
 	case functions.FUNCTION_SUM_OVER_TIME:
 	default:
-		return false
+		return false, "function not supported for splitting"
 	}
 
 	// TODO: not all splittable functions will have the first child as the range vector operator
 	children := functionCall.Children()
 	if len(children) == 0 {
-		return false
+		return false, "function has no children"
 	}
 
 	if children[0].NodeType() != planning.NODE_TYPE_MATRIX_SELECTOR {
-		return false
+		return false, "first child is not a matrix selector"
 	}
 
 	matrixSelector, ok := children[0].(*core.MatrixSelector)
 	if !ok {
-		return false
+		return false, "failed to cast first child to matrix selector"
 	}
 
 	// Check if the range is large enough to benefit from splitting
@@ -112,7 +120,7 @@ func (o *OptimizationPass) shouldSplitFunction(functionCall *core.FunctionCall, 
 	splitIntervalMs := o.splitInterval.Milliseconds()
 	rangeMs := matrixSelector.Range.Milliseconds()
 	if rangeMs <= splitIntervalMs {
-		return false
+		return false, "range is not larger than split interval"
 	}
 
 	// Additional check: verify there would be at least one complete block to cache
@@ -127,10 +135,10 @@ func (o *OptimizationPass) shouldSplitFunction(functionCall *core.FunctionCall, 
 	}
 
 	if alignedStart+splitIntervalMs > endTs {
-		return false
+		return false, "no complete blocks to cache"
 	}
 
-	return true
+	return true, ""
 }
 
 func (o *OptimizationPass) wrapInSplitNode(functionCall *core.FunctionCall) (planning.Node, error) {

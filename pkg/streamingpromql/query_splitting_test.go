@@ -23,12 +23,6 @@ import (
 func TestQuerySplitting_InstantQueryWith1hRange_NotCached(t *testing.T) {
 	testCache, mimirEngine := setupEngineAndCache(t)
 
-	// Cache: DISABLED (1h range ≤ 2h split interval)
-	// - Range vector lookback is only 1h
-	// - 2h blocks cannot fit completely within 1h range
-	// - splittable() returns false → no cache operations
-	testCache.ResetStats()
-
 	storage := promqltest.LoadedStorage(t, `
 		load 10m
 			some_metric{env="1"} 0+1x40
@@ -82,7 +76,9 @@ func TestQuerySplitting_InstantQueryWith5hRange_UsesCache(t *testing.T) {
 			{
 				Metric: labels.FromStrings("env", "1"),
 				T:      timestamp.FromTime(ts),
-				F:      645, // first sample = 7, last sample = 36, number of samples = 30 -> (7+36)*(30/2) = 645
+				F:      645,
+				// first sample @ 1h10m = 7, last sample @ 6h = 36, number of samples = 30
+				// (7+36)*(30/2) = 645
 			},
 		},
 	}
@@ -110,7 +106,9 @@ func TestQuerySplitting_InstantQueryWith5hRange_UsesCache(t *testing.T) {
 			{
 				Metric: labels.FromStrings("env", "1"),
 				T:      timestamp.FromTime(ts),
-				F:      675, // first sample = 8, last sample = 37, number of samples = 30 -> (8+37)*(30/2) = 675
+				F:      675,
+				// first sample @ 1h20m = 8, last sample @ 6h10m = 37, number of samples = 30
+				// (8+37)*(30/2) = 675
 			},
 		},
 	}
@@ -130,7 +128,9 @@ func TestQuerySplitting_InstantQueryWith5hRange_UsesCache(t *testing.T) {
 			{
 				Metric: labels.FromStrings("env", "1"),
 				T:      timestamp.FromTime(ts),
-				F:      825, // first sample = 13, last sample = 42, number of samples = 30 -> (13+42)*(30/2) = 825
+				F:      825,
+				// first sample @ 2h10m = 13, last sample @ 7h = 42, number of samples = 30
+				// (13+42)*(30/2) = 825
 			},
 		},
 	}
@@ -150,7 +150,9 @@ func TestQuerySplitting_InstantQueryWith5hRange_UsesCache(t *testing.T) {
 			{
 				Metric: labels.FromStrings("env", "1"),
 				T:      timestamp.FromTime(ts),
-				F:      1065, // first sample = 21, last sample = 50, number of samples = 30 -> (21+50)*(30/2) = 1065
+				F:      1065,
+				// first sample @ 3h30m = 21, last sample @ 8h20m = 50, number of samples = 30
+				// (21+50)*(30/2) = 1065
 			},
 		},
 	}
@@ -163,47 +165,52 @@ func TestQuerySplitting_InstantQueryWith5hRange_UsesCache(t *testing.T) {
 func TestQuerySplitting_MultipleSeriesWithGaps_UsesCache(t *testing.T) {
 	testCache, mimirEngine := setupEngineAndCache(t)
 
-	// series1: continuous from 0h-9h (54 samples to cover up to 8h50m)
-	// series2: 0h-2h, gap 2h-4h, then 4h-6h
-	// series3: gap 0h-3h, then 3h-6h (18 samples), then gap
+	// series1: continuous from 0h-9h
+	// series2: 10m-2h, gap 2h-4h, then 4h10m-6h
+	// series3: gap 0h-3h10m, then 3h10m-6h, then gap
 	promStorage := promqltest.LoadedStorage(t, `
 		load 10m
-			series1{env="1"} 0+1x54
-			series2{env="2"} 0+1x12 _ _ _ _ _ _ _ _ _ _ _ 12+1x12
-			series3{env="3"} _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 0+1x18 _ _ _ _ _ _
+			some_metric{env="1"} 0+1x54
+			some_metric{env="2"} _ 0+1x11 _ _ _ _ _ _ _ _ _ _ _ 12+1x11
+			some_metric{env="3"} _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 0+1x17 _ _ _ _ _ _
 	`)
 	t.Cleanup(func() { require.NoError(t, promStorage.Close()) })
 
 	baseT := timestamp.Time(0)
-	expr := "sum_over_time({__name__=~\"series.*\"}[5h])"
+	expr := "sum_over_time(some_metric[5h])"
 	ts := baseT.Add(6 * time.Hour)
 
+	// Splits:
+	// - Head: (1h, 2h]
+	// - Cached: (2h-4h], (4h-6h] (cache hit on second query)
+	// - Tail: (6h, 6h] → empty
 	expected := &promql.Result{
 		Value: promql.Vector{
 			{
 				Metric: labels.FromStrings("env", "1"),
 				T:      timestamp.FromTime(ts),
-				F:      645, // first sample = 7, last sample = 36, number of samples = 30 -> (7+36)*(30/2) = 645
+				F:      645,
+				// first sample @ 1h10m = 7, last sample @ 6h = 36, number of samples = 30
+				// (7+36)*(30/2) = 645
 			},
 			{
 				Metric: labels.FromStrings("env", "2"),
 				T:      timestamp.FromTime(ts),
-				F:      291, // first sample = 7, last sample = 11 (first part) + first sample = 12, last sample = 22 (second part) -> (7+11)*(5/2) + (12+22)*(11/2) = 45 + 246 = 291
+				F:      261,
+				// first range: first sample @ 1h10m = 6, last sample @ 2h = 11, 6 samples
+				// second range: first sample @ 4h10m = 12, last sample @ 6h = 23, 12 samples
+				// (6+11)*(6/2) + (12+23)*(12/2) = 51 + 210 = 261
 			},
 			{
 				Metric: labels.FromStrings("env", "3"),
 				T:      timestamp.FromTime(ts),
-				F:      153, // first sample = 0, last sample = 17, number of samples = 18 -> (0+17)*(18/2) = 153
+				F:      153,
+				// first sample @ 3h10m = 0, last sample @ 6h = 17, number of samples = 18
+				// (0+17)*(18/2) = 153
 			},
 		},
 	}
 
-	// Run query first time (should populate cache)
-	// Splits:
-	// - Head: (1h, 2h]
-	// - Cached: (2h-4h], (4h-6h] (cache misses, will be stored)
-	// Note: Block (2h-4h] contains only series1 (series2 and series3 have gaps)
-	// Note: Block (4h-6h] contains series1, series2, and series3 (series3 starts at 3h10m, so has data in 4h-6h)
 	result := runInstantQuery(t, mimirEngine, promStorage, expr, ts)
 	require.Equal(t, expected, result)
 	verifyCacheStats(t, testCache, 2, 0, 2)
@@ -224,17 +231,23 @@ func TestQuerySplitting_MultipleSeriesWithGaps_UsesCache(t *testing.T) {
 			{
 				Metric: labels.FromStrings("env", "1"),
 				T:      timestamp.FromTime(ts),
-				F:      825, // first sample = 13, last sample = 42, number of samples = 30 -> (13+42)*(30/2) = 825
+				F:      825,
+				// first sample @ 2h10m = 13, last sample @ 7h = 42, number of samples = 30
+				// (13+42)*(30/2) = 825
 			},
 			{
 				Metric: labels.FromStrings("env", "2"),
 				T:      timestamp.FromTime(ts),
-				F:      234, // cached (4h-6h) only, no data in (2h-4h] gap or (6h-7h]
+				F:      210,
+				// first sample @ 4h10m = 12, last sample @ 6h = 23, 12 samples
+				// (12+23)*(12/2) = 210
 			},
 			{
 				Metric: labels.FromStrings("env", "3"),
 				T:      timestamp.FromTime(ts),
-				F:      171, // head (2h-4h] = 15 (from 3h10m-4h), cached (4h-6h) = 138, tail (6h-7h] = 18, total = 171
+				F:      153,
+				// first sample @ 3h10m = 0, last sample @ 6h = 17, number of samples = 18
+				// (0+17)*(18/2) = 153
 			},
 		},
 	}
@@ -253,17 +266,24 @@ func TestQuerySplitting_MultipleSeriesWithGaps_UsesCache(t *testing.T) {
 			{
 				Metric: labels.FromStrings("env", "1"),
 				T:      timestamp.FromTime(ts),
-				F:      1065, // first sample = 21, last sample = 50, number of samples = 30 -> (21+50)*(30/2) = 1065
+				F:      1065,
+				// first sample @ 3h30m = 21, last sample @ 8h20m = 50, number of samples = 30
+				// (21+50)*(30/2) = 1065
 			},
 			{
 				Metric: labels.FromStrings("env", "2"),
 				T:      timestamp.FromTime(ts),
-				F:      234, // cached (4h-6h) only, no data after 6h
+				F:      210,
+				// first range: 10m-2h outside window (3h20m, 8h20m]
+				// second range: first sample @ 4h10m = 12, last sample @ 6h = 23, 12 samples
+				// (12+23)*(12/2) = 210
 			},
 			{
 				Metric: labels.FromStrings("env", "3"),
 				T:      timestamp.FromTime(ts),
-				F:      170, // head (3h20m-4h) = 14, cached (4h-6h) = 138, tail (6h-8h20m] = 18, total = 170
+				F:      152,
+				// first sample @ 3h30m = 2, last sample @ 6h = 17, number of samples = 16
+				// (2+17)*(16/2) = 152
 			},
 		},
 	}
@@ -276,6 +296,8 @@ func setupEngineAndCache(t *testing.T) (*testIntermediateResultsCache, promql.Qu
 	testCache := newTestIntermediateResultsCache(t)
 
 	opts := NewTestEngineOpts()
+	opts.InstantQuerySplitting.Enabled = true
+	opts.InstantQuerySplitting.SplitInterval = 2 * time.Hour
 	opts.IntermediateResultCache = testCache
 	// FIXME: Re-enable pedantic mode once memory tracking is fixed for query splitting.
 	opts.Pedantic = false

@@ -3,10 +3,14 @@
 package cache
 
 import (
+	"context"
+	"encoding/hex"
 	"flag"
 	"fmt"
+	"hash/fnv"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/cache"
@@ -16,12 +20,16 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/model/histogram"
 
+	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
 const (
 	// resultsCacheVersion should be increased every time the cache format changes.
 	resultsCacheVersion = 1
+
+	// defaultIntermediateResultsCacheTTL is the default TTL for intermediate results cache entries.
+	defaultIntermediateResultsCacheTTL = 24 * time.Hour
 )
 
 type IntermediateResultBlock struct {
@@ -58,9 +66,14 @@ type ResultsCacheConfig struct {
 
 // RegisterFlags registers flags.
 func (cfg *ResultsCacheConfig) RegisterFlags(f *flag.FlagSet) {
-	f.StringVar(&cfg.Backend, "querier.mimir-query-engine.intermediate-results-cache.backend", "", fmt.Sprintf("Backend for query-frontend results cache, if not empty. Supported values: %s.", strings.Join(supportedResultsCacheBackends, ", ")))
-	cfg.Memcached.RegisterFlagsWithPrefix("querier.mimir-query-engine.intermediate-results-cache.memcached.", f)
-	cfg.Compression.RegisterFlagsWithPrefix(f, "querier.mimir-query-engine.intermediate-results-cache.")
+	cfg.RegisterFlagsWithPrefix(f, "querier.mimir-query-engine.intermediate-results-cache.")
+}
+
+// RegisterFlagsWithPrefix registers flags with the given prefix.
+func (cfg *ResultsCacheConfig) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix string) {
+	f.StringVar(&cfg.Backend, prefix+"backend", "", fmt.Sprintf("Backend for intermediate results cache, if not empty. Supported values: %s.", strings.Join(supportedResultsCacheBackends, ", ")))
+	cfg.Memcached.RegisterFlagsWithPrefix(prefix+"memcached.", f)
+	cfg.Compression.RegisterFlagsWithPrefix(f, prefix)
 }
 
 func (cfg *ResultsCacheConfig) Validate() error {
@@ -90,6 +103,7 @@ type resultsCacheMetrics struct {
 	cacheHits     prometheus.Counter
 }
 
+// TODO: use this
 func newResultsCacheMetrics(requestType string, reg prometheus.Registerer) *resultsCacheMetrics {
 	return &resultsCacheMetrics{
 		cacheRequests: promauto.With(reg).NewCounter(prometheus.CounterOpts{
@@ -105,12 +119,7 @@ func newResultsCacheMetrics(requestType string, reg prometheus.Registerer) *resu
 	}
 }
 
-// newResultsCache creates a new results cache based on the input configuration.
-func newResultsCache(cfg ResultsCacheConfig, logger log.Logger, reg prometheus.Registerer) (IntermediateResultsCache, error) {
-	// Add the "component" label similarly to other components, so that metrics don't clash and have the same labels set
-	// when running in monolithic mode.
-	reg = prometheus.WrapRegistererWith(prometheus.Labels{"component": "querier"}, reg)
-
+func NewResultsCache(cfg ResultsCacheConfig, logger log.Logger, reg prometheus.Registerer) (IntermediateResultsCache, error) {
 	client, err := cache.CreateClient("intermediate-result-cache", cfg.BackendConfig, logger, prometheus.WrapRegistererWithPrefix("mimir_", reg))
 	if err != nil {
 		return nil, err
@@ -122,11 +131,14 @@ func newResultsCache(cfg ResultsCacheConfig, logger log.Logger, reg prometheus.R
 		cache.NewSpanlessTracingCache(client, logger, tenant.NewMultiResolver()),
 		resultsCacheVersion,
 	)
-	return &intermediateResultsCache{c: c}, nil
+
+	logger.Log("msg", "intermediate results cache initialized", "backend", cfg.Backend)
+	return &intermediateResultsCache{c: c, logger: logger}, nil
 }
 
 type intermediateResultsCache struct {
-	c cache.Cache
+	c      cache.Cache
+	logger log.Logger
 }
 
 type IntermediateResultsCache interface {
@@ -135,13 +147,131 @@ type IntermediateResultsCache interface {
 }
 
 func (ic *intermediateResultsCache) Get(user, function, selector string, start int64, end int64) (IntermediateResultBlock, bool) {
-	return IntermediateResultBlock{}, false
+	cacheKey := generateCacheKey(user, function, selector, start, end)
+	hashedKey := cacheHashKey(cacheKey)
+
+	ctx := context.Background()
+	found := ic.c.GetMulti(ctx, []string{hashedKey})
+	data, ok := found[hashedKey]
+	if !ok || len(data) == 0 {
+		return IntermediateResultBlock{}, false
+	}
+
+	var cached CachedSeries
+	if err := cached.Unmarshal(data); err != nil {
+		return IntermediateResultBlock{}, false
+	}
+
+	if cached.CacheKey != cacheKey {
+		return IntermediateResultBlock{}, false
+	}
+
+	block, err := cachedSeriesToBlock(cached)
+	if err != nil {
+		return IntermediateResultBlock{}, false
+	}
+
+	ic.logger.Log("msg", "intermediate results cache hit", "user", user, "function", function, "selector", selector, "start", start, "end", end)
+	return block, true
 }
 
-// TODO: implement me!
 func (ic *intermediateResultsCache) Set(user, function, selector string, start int64, end int64, block IntermediateResultBlock) error {
-	block.Version = 1
-	panic("implement me")
+	block.Version = resultsCacheVersion
+
+	cacheKey := generateCacheKey(user, function, selector, start, end)
+	cached, err := blockToCachedSeries(cacheKey, block)
+	if err != nil {
+		return errors.Wrap(err, "converting block to cached series")
+	}
+
+	data, err := cached.Marshal()
+	if err != nil {
+		return errors.Wrap(err, "marshalling cached series")
+	}
+
+	hashedKey := cacheHashKey(cacheKey)
+	ic.c.SetMultiAsync(map[string][]byte{hashedKey: data}, defaultIntermediateResultsCacheTTL)
+	ic.logger.Log("msg", "intermediate results cache set", "user", user, "function", function, "selector", selector, "start", start, "end", end, "series_count", len(block.Series))
+	return nil
+}
+
+// generateCacheKey generates a cache key from the given parameters.
+func generateCacheKey(user, function, selector string, start, end int64) string {
+	return fmt.Sprintf("%s:%s:%s:%d:%d", user, function, selector, start, end)
+}
+
+// cacheHashKey is needed due to memcached key limit
+func cacheHashKey(key string) string {
+	hasher := fnv.New64a()
+	_, _ = hasher.Write([]byte(key))
+	return hex.EncodeToString(hasher.Sum(nil))
+}
+
+func blockToCachedSeries(cacheKey string, block IntermediateResultBlock) (CachedSeries, error) {
+	series := make([]mimirpb.Metric, len(block.Series))
+	for i, sm := range block.Series {
+		series[i] = mimirpb.Metric{
+			Labels: mimirpb.FromLabelsToLabelAdapters(sm.Labels),
+		}
+	}
+
+	results := make([]IntermediateResultProto, len(block.Results))
+	for i, result := range block.Results {
+		proto := IntermediateResultProto{
+			SumF:     result.SumOverTime.SumF,
+			HasFloat: result.SumOverTime.HasFloat,
+			SumC:     result.SumOverTime.SumC,
+		}
+		if result.SumOverTime.SumH != nil {
+			// Convert histogram.FloatHistogram to mimirpb.Histogram
+			// Use timestamp 0 since we're storing intermediate results, not time-series data
+			histProto := mimirpb.FromFloatHistogramToHistogramProto(0, result.SumOverTime.SumH)
+			proto.SumH = &histProto
+		}
+		results[i] = proto
+	}
+
+	return CachedSeries{
+		CacheKey: cacheKey,
+		Version:  int64(block.Version),
+		Start:    int64(block.StartTimestampMs),
+		End:      int64(block.EndTimestampMs),
+		Series:   series,
+		Results:  results,
+	}, nil
+}
+
+// cachedSeriesToBlock converts CachedSeries proto back to IntermediateResultBlock.
+func cachedSeriesToBlock(cached CachedSeries) (IntermediateResultBlock, error) {
+	series := make([]types.SeriesMetadata, len(cached.Series))
+	for i, m := range cached.Series {
+		series[i] = types.SeriesMetadata{
+			Labels: mimirpb.FromLabelAdaptersToLabels(m.Labels),
+		}
+	}
+
+	results := make([]IntermediateResult, len(cached.Results))
+	for i, proto := range cached.Results {
+		result := IntermediateResult{
+			SumOverTime: SumOverTimeIntermediate{
+				SumF:     proto.SumF,
+				HasFloat: proto.HasFloat,
+				SumC:     proto.SumC,
+			},
+		}
+		if proto.SumH != nil {
+			result.SumOverTime.SumH = mimirpb.FromFloatHistogramProtoToFloatHistogram(proto.SumH)
+		}
+		results[i] = result
+	}
+
+	return IntermediateResultBlock{
+		Version:          int(cached.Version),
+		StartTimestampMs: int(cached.Start),
+		EndTimestampMs:   int(cached.End),
+		Series:           series,
+		Results:          results,
+	}, nil
 }
 
 type IntermediateResultTenantCache struct {

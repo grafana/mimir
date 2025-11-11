@@ -4,10 +4,12 @@ package streamingpromql
 
 import (
 	"flag"
+	"fmt"
 	"math"
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/promql"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/cache"
@@ -37,13 +39,28 @@ type EngineOpts struct {
 	EnableNarrowBinarySelectors                                                   bool `yaml:"enable_narrow_binary_selectors" category:"experimental"`
 	EnableEliminateDeduplicateAndMerge                                            bool `yaml:"enable_eliminate_deduplicate_and_merge" category:"experimental"`
 
-	// Intermediate result cache for caching function computations (e.g., sum_over_time)
-	IntermediateResultCache cache.IntermediateResultsCache `yaml:"-"`
+	// InstantQuerySplitting configures splitting range vector queries in instant queries into smaller blocks.
+	// This enables caching intermediate results and can help with memory management.
+	InstantQuerySplitting QuerySplittingConfig `yaml:"instant_query_splitting" category:"experimental"`
 
-	// QuerySplitInterval is the time interval used for splitting range vector computations into cacheable blocks.
+	// Intermediate result cache instance (populated from InstantQuerySplitting config)
+	IntermediateResultCache cache.IntermediateResultsCache `yaml:"-"`
+}
+
+// QuerySplittingConfig configures query splitting for range vector queries in instant queries.
+type QuerySplittingConfig struct {
+	// Enabled enables splitting range vector queries into smaller blocks.
+	// When enabled, queries like rate(metric[6h]) are split into multiple blocks based on SplitInterval.
+	Enabled bool `yaml:"enabled" category:"experimental"`
+
+	// SplitInterval is the time interval used for splitting range vector computations into cacheable blocks.
 	// For example, with a 2-hour interval, rate(metric[6h]) will be split into 3 blocks of 2 hours each.
 	// Must be greater than 0. Defaults to 2 hours if not specified.
-	QuerySplitInterval time.Duration `yaml:"query_split_interval" category:"experimental"`
+	SplitInterval time.Duration `yaml:"split_interval" category:"experimental"`
+
+	// IntermediateResultsCache configures caching of intermediate results from split queries.
+	// If not configured, query splitting will still work but results won't be cached.
+	IntermediateResultsCache cache.ResultsCacheConfig `yaml:"intermediate_results_cache" category:"experimental"`
 }
 
 func (o *EngineOpts) RegisterFlags(f *flag.FlagSet) {
@@ -53,6 +70,25 @@ func (o *EngineOpts) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&o.EnableSkippingHistogramDecoding, "querier.mimir-query-engine.enable-skipping-histogram-decoding", true, "Enable skipping decoding native histograms when evaluating queries that do not require full histograms.")
 	f.BoolVar(&o.EnableNarrowBinarySelectors, "querier.mimir-query-engine.enable-narrow-binary-selectors", false, "Enable generating selectors for one side of a binary expression based on results from the other side.")
 	f.BoolVar(&o.EnableEliminateDeduplicateAndMerge, "querier.mimir-query-engine.enable-eliminate-deduplicate-and-merge", false, "Enable eliminating redundant DeduplicateAndMerge nodes from the query plan when it can be proven that each input series produces a unique output series.")
+	o.InstantQuerySplitting.RegisterFlags(f)
+}
+
+// RegisterFlags registers flags for query splitting configuration.
+func (c *QuerySplittingConfig) RegisterFlags(f *flag.FlagSet) {
+	f.BoolVar(&c.Enabled, "querier.mimir-query-engine.instant-query-splitting.enabled", false, "Enable splitting range vector queries in instant queries into smaller blocks for caching and memory management.")
+	f.DurationVar(&c.SplitInterval, "querier.mimir-query-engine.instant-query-splitting.split-interval", 2*time.Hour, "Time interval used for splitting range vector computations into cacheable blocks. For example, with a 2-hour interval, rate(metric[6h]) will be split into 3 blocks of 2 hours each. Must be greater than 0.")
+	c.IntermediateResultsCache.RegisterFlagsWithPrefix(f, "querier.mimir-query-engine.instant-query-splitting.")
+}
+
+// Validate validates the query splitting configuration.
+func (c *QuerySplittingConfig) Validate() error {
+	if c.Enabled && c.IntermediateResultsCache.Backend == "" {
+		return fmt.Errorf("instant query splitting is enabled but intermediate results cache backend is not configured")
+	}
+	if err := c.IntermediateResultsCache.Validate(); err != nil {
+		return errors.Wrap(err, "invalid intermediate results cache config")
+	}
+	return nil
 }
 
 func NewTestEngineOpts() EngineOpts {
