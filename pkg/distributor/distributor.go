@@ -1561,7 +1561,7 @@ func (d *Distributor) prePushMaxSeriesLimitMiddleware(next PushFunc) PushFunc {
 			// Spawn a goroutine with the request context and add a cleanup function to wait for it.
 			done := make(chan error, 1)
 			t0 := time.Now()
-			asyncTrackingCtx, cancelAsyncTracking := context.WithCancel(ctx)
+			asyncTrackingCtx, cancelAsyncTracking := context.WithCancelCause(ctx)
 			go func() {
 				_, err := d.usageTrackerClient.TrackSeries(asyncTrackingCtx, userID, seriesHashes)
 				if err != nil {
@@ -1585,7 +1585,7 @@ func (d *Distributor) prePushMaxSeriesLimitMiddleware(next PushFunc) PushFunc {
 					level.Info(d.log).Log("msg", "async tracking call took more than ingestion", "user", userID, "series", len(seriesHashes), "tracking_time", time.Since(t0), "time_since_cleanup", tCleanup)
 				case <-time.After(d.cfg.UsageTrackerClient.MaxTimeToWaitForAsyncTrackingResponseAfterIngestion):
 					level.Warn(d.log).Log("msg", "async tracking call took too long, canceling", "user", userID, "series", len(seriesHashes), "tracking_time", time.Since(t0), "time_since_cleanup", tCleanup)
-					cancelAsyncTracking()
+					cancelAsyncTracking(errors.New("async tracking call took too long"))
 				}
 			})
 
