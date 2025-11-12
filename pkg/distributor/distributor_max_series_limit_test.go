@@ -3,6 +3,7 @@
 package distributor
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -53,23 +54,53 @@ func TestDistributor_Push_ShouldEnforceMaxSeriesLimits(t *testing.T) {
 	series5Hash := labels.StableHash(mimirpb.FromLabelAdaptersToLabels(sampleReq.Timeseries[4].Labels))
 
 	testCases := map[string]struct {
-		trackSeriesRejectedHashes []uint64
-		trackSeriesErr            error
-		expectedAcceptedSeries    []string
+		trackSeriesRejectedHashes             []uint64
+		trackSeriesErr                        error
+		expectedAcceptedSeries                []string
+		expectedResourceExhaustedErrorCode    bool
+		expectedFailedToEnforceSeriesLimitErr bool
+		canTrackAsync                         bool
 	}{
 		"no series rejected": {
-			expectedAcceptedSeries: []string{"series_1", "series_2", "series_3", "series_4", "series_5"},
+			expectedAcceptedSeries:             []string{"series_1", "series_2", "series_3", "series_4", "series_5"},
+			expectedResourceExhaustedErrorCode: false,
+			canTrackAsync:                      false,
 		},
 		"some series rejected": {
-			trackSeriesRejectedHashes: []uint64{series4Hash, series2Hash}, // Rejected hashes in different order than series in the request.
-			expectedAcceptedSeries:    []string{"series_1", "series_3", "series_5"},
+			trackSeriesRejectedHashes:          []uint64{series4Hash, series2Hash}, // Rejected hashes in different order than series in the request.
+			expectedAcceptedSeries:             []string{"series_1", "series_3", "series_5"},
+			expectedResourceExhaustedErrorCode: true,
+			canTrackAsync:                      false,
 		},
 		"all series rejected": {
-			trackSeriesRejectedHashes: []uint64{series1Hash, series2Hash, series3Hash, series4Hash, series5Hash},
-			expectedAcceptedSeries:    []string{},
+			trackSeriesRejectedHashes:          []uint64{series1Hash, series2Hash, series3Hash, series4Hash, series5Hash},
+			expectedAcceptedSeries:             []string{},
+			expectedResourceExhaustedErrorCode: true,
+			canTrackAsync:                      false,
 		},
 		"failed to track series via usage-tracker": {
-			trackSeriesErr: errors.New("usage-tracker service is unavailable"),
+			trackSeriesErr:                        errors.New("usage-tracker service is unavailable"),
+			expectedFailedToEnforceSeriesLimitErr: true,
+			canTrackAsync:                         false,
+		},
+
+		"async: no series rejected": {
+			expectedAcceptedSeries:             []string{"series_1", "series_2", "series_3", "series_4", "series_5"},
+			expectedResourceExhaustedErrorCode: false,
+			canTrackAsync:                      true,
+		},
+		"async: some series rejected": {
+			trackSeriesRejectedHashes:          []uint64{series4Hash, series2Hash}, // Rejected asynchronously so they're still ingested.
+			expectedAcceptedSeries:             []string{"series_1", "series_2", "series_3", "series_4", "series_5"},
+			expectedResourceExhaustedErrorCode: false,
+			canTrackAsync:                      true,
+		},
+		"async: failed to track series via usage-tracker": {
+			trackSeriesErr:                        errors.New("usage-tracker service is unavailable"), // Failed asynchronously, so series are still ingested.
+			expectedAcceptedSeries:                []string{"series_1", "series_2", "series_3", "series_4", "series_5"},
+			expectedResourceExhaustedErrorCode:    false,
+			expectedFailedToEnforceSeriesLimitErr: false,
+			canTrackAsync:                         true,
 		},
 	}
 
@@ -97,7 +128,7 @@ func TestDistributor_Push_ShouldEnforceMaxSeriesLimits(t *testing.T) {
 
 			// Enable the usage-tracker using a client mock.
 			usageTracker := &usageTrackerClientMock{}
-			usageTracker.On("CanTrackAsync", userID).Return(false) // Assume user is close to limit for test to use sync tracking
+			usageTracker.On("CanTrackAsync", userID).Return(testData.canTrackAsync)
 			usageTracker.On("TrackSeries", mock.Anything, userID, mock.Anything).Return(testData.trackSeriesRejectedHashes, testData.trackSeriesErr)
 
 			distributors[0].cfg.UsageTrackerEnabled = true
@@ -106,8 +137,11 @@ func TestDistributor_Push_ShouldEnforceMaxSeriesLimits(t *testing.T) {
 			// Send write request.
 			ctx := user.InjectOrgID(context.Background(), userID)
 			res, err := distributors[0].Push(ctx, createWriteRequest())
-			if testData.trackSeriesErr == nil {
-				if len(testData.trackSeriesRejectedHashes) > 0 {
+			if testData.expectedFailedToEnforceSeriesLimitErr {
+				require.ErrorContains(t, err, "failed to enforce max series limit")
+				require.Nil(t, res)
+			} else {
+				if testData.expectedResourceExhaustedErrorCode {
 					require.NotNil(t, err)
 					st, ok := grpcutil.ErrorToStatus(err)
 					require.True(t, ok, "Expected error to be a gRPC status error")
@@ -116,9 +150,6 @@ func TestDistributor_Push_ShouldEnforceMaxSeriesLimits(t *testing.T) {
 					require.NoError(t, err)
 					require.NotNil(t, res)
 				}
-			} else {
-				require.ErrorContains(t, err, "failed to enforce max series limit")
-				require.Nil(t, res)
 			}
 
 			// We expect TrackSeries() has been called with all input series hashes, in the same order.
@@ -134,14 +165,36 @@ func TestDistributor_Push_ShouldEnforceMaxSeriesLimits(t *testing.T) {
 			}
 
 			// Ensure the number of discarded samples has been correctly tracked.
-			if expectedDiscardedSamples := len(testData.trackSeriesRejectedHashes); expectedDiscardedSamples > 0 {
+			if testData.expectedResourceExhaustedErrorCode {
 				require.NoError(t, testutil.GatherAndCompare(regs[0], strings.NewReader(fmt.Sprintf(`
 					# HELP cortex_discarded_samples_total The total number of samples that were discarded.
 					# TYPE cortex_discarded_samples_total counter
 					cortex_discarded_samples_total{group="",reason="per_user_active_series_limit",user="user-1"} %d
-				`, expectedDiscardedSamples)), "cortex_discarded_samples_total"))
+				`, len(testData.trackSeriesRejectedHashes))), "cortex_discarded_samples_total"))
 			} else {
 				require.NoError(t, testutil.GatherAndCompare(regs[0], strings.NewReader(""), "cortex_discarded_samples_total"))
+			}
+
+			if testData.canTrackAsync {
+				require.NoError(t, testutil.GatherAndCompare(regs[0], strings.NewReader(`
+					# HELP cortex_distributor_async_usage_tracker_calls_total The total number of asynchronous usage-tracker calls performed per user.
+					# TYPE cortex_distributor_async_usage_tracker_calls_total counter
+					cortex_distributor_async_usage_tracker_calls_total{user="user-1"} 1
+				`), "cortex_distributor_async_usage_tracker_calls_total"))
+				if len(testData.trackSeriesRejectedHashes) > 0 {
+					require.NoError(t, testutil.GatherAndCompare(regs[0], strings.NewReader(`
+						# HELP cortex_distributor_async_usage_tracker_calls_with_rejected_series_total The total number of asynchronous usage-tracker calls that rejected series per user.
+						# TYPE cortex_distributor_async_usage_tracker_calls_with_rejected_series_total counter
+						cortex_distributor_async_usage_tracker_calls_with_rejected_series_total{user="user-1"} 1
+					`), "cortex_distributor_async_usage_tracker_calls_with_rejected_series_total"))
+				} else {
+					require.NoError(t, testutil.GatherAndCompare(regs[0], &bytes.Buffer{}, "cortex_distributor_async_usage_tracker_calls_with_rejected_series_total"))
+				}
+			} else {
+				require.NoError(t, testutil.GatherAndCompare(regs[0], &bytes.Buffer{},
+					"cortex_distributor_async_usage_tracker_calls_total",
+					"cortex_distributor_async_usage_tracker_calls_with_rejected_series_total",
+				))
 			}
 		})
 	}

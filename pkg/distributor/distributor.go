@@ -165,6 +165,10 @@ type Distributor struct {
 	// Metric for silently dropped native histogram samples
 	droppedNativeHistograms *prometheus.CounterVec
 
+	// Metrics for async usage tracking.
+	asyncUsageTrackerCalls                   *prometheus.CounterVec
+	asyncUsageTrackerCallsWithRejectedSeries *prometheus.CounterVec
+
 	// Metrics for data rejected for hitting per-tenant limits
 	discardedSamplesTooManyHaClusters  *prometheus.CounterVec
 	discardedSamplesPerUserSeriesLimit *prometheus.CounterVec
@@ -549,6 +553,15 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 			Help: "The total number of native histograms that were silently dropped because native histograms ingestion is disabled.",
 		}, []string{"user"}),
 
+		asyncUsageTrackerCalls: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_distributor_async_usage_tracker_calls_total",
+			Help: "The total number of asynchronous usage-tracker calls performed per user.",
+		}, []string{"user"}),
+		asyncUsageTrackerCallsWithRejectedSeries: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_distributor_async_usage_tracker_calls_with_rejected_series_total",
+			Help: "The total number of asynchronous usage-tracker calls that rejected series per user.",
+		}, []string{"user"}),
+
 		discardedSamplesTooManyHaClusters:  validation.DiscardedSamplesCounter(reg, reasonTooManyHAClusters),
 		discardedSamplesPerUserSeriesLimit: validation.DiscardedSamplesCounter(reg, reasonPerUserActiveSeriesLimit),
 		discardedSamplesRateLimited:        validation.DiscardedSamplesCounter(reg, reasonRateLimited),
@@ -831,6 +844,8 @@ func (d *Distributor) cleanupInactiveUser(userID string) {
 	d.PushMetrics.deleteUserMetrics(userID)
 
 	d.droppedNativeHistograms.DeleteLabelValues(userID)
+	d.asyncUsageTrackerCalls.DeleteLabelValues(userID)
+	d.asyncUsageTrackerCallsWithRejectedSeries.DeleteLabelValues(userID)
 
 	filter := prometheus.Labels{"user": userID}
 	d.incomingRequests.DeletePartialMatch(filter)
@@ -1557,39 +1572,10 @@ func (d *Distributor) prePushMaxSeriesLimitMiddleware(next PushFunc) PushFunc {
 		// Track the series and check if anyone should be rejected because over the limit.
 		// For users that are far from their limits, we can do this asynchronously.
 		if d.usageTrackerClient.CanTrackAsync(userID) {
-			// Tenant is far from limit, track asynchronously.
-			// Spawn a goroutine with the request context and add a cleanup function to wait for it.
-			done := make(chan error, 1)
-			t0 := time.Now()
-			asyncTrackingCtx, cancelAsyncTracking := context.WithCancelCause(ctx)
-			go func() {
-				_, err := d.usageTrackerClient.TrackSeries(asyncTrackingCtx, userID, seriesHashes)
-				if err != nil {
-					level.Error(d.log).Log("msg", "failed to track series asynchronously", "err", err, "user", userID, "series", len(seriesHashes))
-				}
-				close(done)
-			}()
-
-			// Add a cleanup function that will wait for the async tracking to complete.
-			pushReq.AddCleanup(func() {
-				tCleanup := time.Now()
-				select {
-				case <-done:
-					// No need to wait.
-					return
-				default:
-				}
-
-				select {
-				case <-done:
-					level.Info(d.log).Log("msg", "async tracking call took more than ingestion", "user", userID, "series", len(seriesHashes), "tracking_time", time.Since(t0), "time_since_cleanup", tCleanup)
-				case <-time.After(d.cfg.UsageTrackerClient.MaxTimeToWaitForAsyncTrackingResponseAfterIngestion):
-					level.Warn(d.log).Log("msg", "async tracking call took too long, canceling", "user", userID, "series", len(seriesHashes), "tracking_time", time.Since(t0), "time_since_cleanup", tCleanup)
-					cancelAsyncTracking(errors.New("async tracking call took too long"))
-				}
-			})
-
-			// If there's an error coming from the ingesters, prioritize that one.
+			// User is far from limit.
+			// We can perform the track call in parallel with the metrics ingestion hoping that no series would be rejected.
+			cleanup := d.parallelUsageTrackerClientTrackSeriesCall(ctx, userID, seriesHashes)
+			pushReq.AddCleanup(cleanup)
 			return next(ctx, pushReq)
 		}
 
@@ -1600,34 +1586,7 @@ func (d *Distributor) prePushMaxSeriesLimitMiddleware(next PushFunc) PushFunc {
 		}
 
 		if len(rejectedHashes) > 0 {
-			// Build a map of rejected hashes so that it's easier to lookup.
-			rejectedHashesMap := make(map[uint64]struct{}, len(rejectedHashes))
-			for _, hash := range rejectedHashes {
-				rejectedHashesMap[hash] = struct{}{}
-			}
-
-			// Filter out rejected series.
-			discardedSamples := 0
-			o := 0
-			for i := 0; i < len(req.Timeseries); i++ {
-				seriesHash := seriesHashes[i]
-
-				if _, rejected := rejectedHashesMap[seriesHash]; !rejected {
-					// Keep this series.
-					req.Timeseries[o] = req.Timeseries[i]
-					o++
-					continue
-				}
-
-				// Keep track of the discarded samples and histograms.
-				discardedSamples += len(req.Timeseries[i].Samples) + len(req.Timeseries[i].Histograms)
-
-				// This series has been rejected and filtered out from the WriteRequest. We can reuse its memory.
-				mimirpb.ReusePreallocTimeseries(&req.Timeseries[i])
-			}
-
-			req.Timeseries = req.Timeseries[:o]
-
+			discardedSamples := filterOutRejectedSeries(req, seriesHashes, rejectedHashes)
 			d.discardedSamplesPerUserSeriesLimit.WithLabelValues(userID, pushReq.group).Add(float64(discardedSamples))
 		}
 
@@ -1647,6 +1606,78 @@ func (d *Distributor) prePushMaxSeriesLimitMiddleware(next PushFunc) PushFunc {
 
 		return nil
 	})
+}
+
+func (d *Distributor) parallelUsageTrackerClientTrackSeriesCall(ctx context.Context, userID string, seriesHashes []uint64) func() {
+	d.asyncUsageTrackerCalls.WithLabelValues(userID).Inc()
+	done := make(chan error, 1)
+	t0 := time.Now()
+	asyncTrackingCtx, cancelAsyncTracking := context.WithCancelCause(ctx)
+	go func() {
+		defer close(done)
+		rejected, err := d.usageTrackerClient.TrackSeries(asyncTrackingCtx, userID, seriesHashes)
+		if err != nil {
+			level.Error(d.log).Log("msg", "failed to track series asynchronously", "err", err, "user", userID, "series", len(seriesHashes))
+		}
+		if len(rejected) > 0 {
+			level.Warn(d.log).Log("msg", "tracked series asynchronously, but some of them were rejected", "user", userID, "rejected", len(rejected))
+			d.asyncUsageTrackerCallsWithRejectedSeries.WithLabelValues(userID).Inc()
+		}
+	}()
+
+	// Add a cleanup function that will wait for the async tracking to complete.
+	cleanup := func() {
+		tCleanup := time.Now()
+		select {
+		case <-done:
+			// No need to wait.
+			return
+		default:
+		}
+
+		select {
+		case <-done:
+			level.Info(d.log).Log("msg", "async tracking call took longer than ingestion", "user", userID, "series", len(seriesHashes), "tracking_time", time.Since(t0), "time_since_cleanup", tCleanup)
+		case <-time.After(d.cfg.UsageTrackerClient.MaxTimeToWaitForAsyncTrackingResponseAfterIngestion):
+			level.Warn(d.log).Log("msg", "async tracking call took too long, canceling", "user", userID, "series", len(seriesHashes), "tracking_time", time.Since(t0), "time_since_cleanup", tCleanup)
+			cancelAsyncTracking(errors.New("async tracking call took too long"))
+		}
+	}
+	return cleanup
+}
+
+// filterOutRejectedSeries filters out time series from the WriteRequest based on rejected hashes and returns discarded samples count.
+// It updates the WriteRequest in place and optimizes memory by reusing preallocated time series.
+// seriesHashes should contain the hashes of req.Timeseries in the same order.
+func filterOutRejectedSeries(req *mimirpb.WriteRequest, seriesHashes []uint64, rejectedHashes []uint64) int {
+	// Build a map of rejected hashes so that it's easier to lookup.
+	rejectedHashesMap := make(map[uint64]struct{}, len(rejectedHashes))
+	for _, hash := range rejectedHashes {
+		rejectedHashesMap[hash] = struct{}{}
+	}
+
+	// Filter out rejected series.
+	discardedSamples := 0
+	o := 0
+	for i := 0; i < len(req.Timeseries); i++ {
+		seriesHash := seriesHashes[i]
+
+		if _, rejected := rejectedHashesMap[seriesHash]; !rejected {
+			// Keep this series.
+			req.Timeseries[o] = req.Timeseries[i]
+			o++
+			continue
+		}
+
+		// Keep track of the discarded samples and histograms.
+		discardedSamples += len(req.Timeseries[i].Samples) + len(req.Timeseries[i].Histograms)
+
+		// This series has been rejected and filtered out from the WriteRequest. We can reuse its memory.
+		mimirpb.ReusePreallocTimeseries(&req.Timeseries[i])
+	}
+
+	req.Timeseries = req.Timeseries[:o]
+	return discardedSamples
 }
 
 // metricsMiddleware updates metrics which are expected to account for all received data,
