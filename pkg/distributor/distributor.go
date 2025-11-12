@@ -1627,6 +1627,8 @@ func (d *Distributor) parallelUsageTrackerClientTrackSeriesCall(ctx context.Cont
 
 	// Add a cleanup function that will wait for the async tracking to complete.
 	cleanup := func() {
+		defer cancelAsyncTracking(nil)
+		
 		tCleanup := time.Now()
 		select {
 		case <-done:
