@@ -692,16 +692,16 @@ func TestQuerySharding_Correctness(t *testing.T) {
 							}
 
 							require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
-					# HELP cortex_frontend_query_sharding_rewrites_attempted_total Total number of queries the query-frontend attempted to shard.
-					# TYPE cortex_frontend_query_sharding_rewrites_attempted_total counter
-					cortex_frontend_query_sharding_rewrites_attempted_total 1
-					# HELP cortex_frontend_query_sharding_rewrites_succeeded_total Total number of queries the query-frontend successfully rewritten in a shardable way.
-					# TYPE cortex_frontend_query_sharding_rewrites_succeeded_total counter
-					cortex_frontend_query_sharding_rewrites_succeeded_total %d
-					# HELP cortex_frontend_sharded_queries_total Total number of sharded queries.
-					# TYPE cortex_frontend_sharded_queries_total counter
-					cortex_frontend_sharded_queries_total %d
-				`, expectedSharded, testData.expectedShardedQueries*numShards)),
+								# HELP cortex_frontend_query_sharding_rewrites_attempted_total Total number of queries the query-frontend attempted to shard.
+								# TYPE cortex_frontend_query_sharding_rewrites_attempted_total counter
+								cortex_frontend_query_sharding_rewrites_attempted_total 1
+								# HELP cortex_frontend_query_sharding_rewrites_succeeded_total Total number of queries the query-frontend successfully rewritten in a shardable way.
+								# TYPE cortex_frontend_query_sharding_rewrites_succeeded_total counter
+								cortex_frontend_query_sharding_rewrites_succeeded_total %d
+								# HELP cortex_frontend_sharded_queries_total Total number of sharded queries.
+								# TYPE cortex_frontend_sharded_queries_total counter
+								cortex_frontend_sharded_queries_total %d
+							`, expectedSharded, testData.expectedShardedQueries*numShards)),
 								"cortex_frontend_query_sharding_rewrites_attempted_total",
 								"cortex_frontend_query_sharding_rewrites_succeeded_total",
 								"cortex_frontend_sharded_queries_total"))
