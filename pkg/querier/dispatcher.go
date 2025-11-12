@@ -246,7 +246,12 @@ func (w *queryResponseWriter) Write(ctx context.Context, r querierpb.EvaluateQue
 	}
 
 	if err := w.write(ctx, resp); err != nil {
-		level.Warn(w.logger).Log("msg", "failed to write message to stream", "err", err)
+		if grpcutil.IsCanceled(err) {
+			level.Debug(w.logger).Log("msg", "failed to write message to query-frontend stream because the request was canceled", "err", err)
+		} else {
+			level.Warn(w.logger).Log("msg", "failed to write message to query-frontend stream", "err", err)
+		}
+
 		return err
 	}
 
