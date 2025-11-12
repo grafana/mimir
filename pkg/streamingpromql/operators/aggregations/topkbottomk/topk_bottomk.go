@@ -29,6 +29,7 @@ func New(
 	expressionPosition posrange.PositionRange,
 ) types.InstantVectorOperator {
 	if without {
+		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 		grouping = append(grouping, labels.MetricName)
 	}
 

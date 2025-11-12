@@ -193,59 +193,78 @@ func TestHasDuplicateSeries(t *testing.T) {
 		},
 		"one series": {
 			input: []SeriesMetadata{
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				{Labels: labels.FromStrings(labels.MetricName, "foo")},
 			},
 			hasDuplicate: false,
 		},
 		"two series, both different": {
 			input: []SeriesMetadata{
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				{Labels: labels.FromStrings(labels.MetricName, "foo")},
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				{Labels: labels.FromStrings(labels.MetricName, "bar")},
 			},
 			hasDuplicate: false,
 		},
 		"two series, some common labels but not completely the same": {
 			input: []SeriesMetadata{
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				{Labels: labels.FromStrings(labels.MetricName, "foo", "bar", "1")},
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				{Labels: labels.FromStrings(labels.MetricName, "foo", "bar", "2")},
 			},
 			hasDuplicate: false,
 		},
 		"two series, both the same": {
 			input: []SeriesMetadata{
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				{Labels: labels.FromStrings(labels.MetricName, "foo", "bar", "1")},
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				{Labels: labels.FromStrings(labels.MetricName, "foo", "bar", "1")},
 			},
 			hasDuplicate: true,
 		},
 		"three series, all different": {
 			input: []SeriesMetadata{
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				{Labels: labels.FromStrings(labels.MetricName, "foo")},
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				{Labels: labels.FromStrings(labels.MetricName, "bar")},
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				{Labels: labels.FromStrings(labels.MetricName, "baz")},
 			},
 			hasDuplicate: false,
 		},
 		"three series, some with common labels but none completely the same": {
 			input: []SeriesMetadata{
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				{Labels: labels.FromStrings(labels.MetricName, "foo", "bar", "1")},
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				{Labels: labels.FromStrings(labels.MetricName, "foo", "bar", "2")},
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				{Labels: labels.FromStrings(labels.MetricName, "foo", "bar", "3")},
 			},
 			hasDuplicate: false,
 		},
 		"three series, some the same": {
 			input: []SeriesMetadata{
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				{Labels: labels.FromStrings(labels.MetricName, "foo", "bar", "1")},
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				{Labels: labels.FromStrings(labels.MetricName, "foo", "bar", "1")},
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				{Labels: labels.FromStrings(labels.MetricName, "foo", "bar", "3")},
 			},
 			hasDuplicate: true,
 		},
 		"three series, all the same": {
 			input: []SeriesMetadata{
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				{Labels: labels.FromStrings(labels.MetricName, "foo", "bar", "1")},
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				{Labels: labels.FromStrings(labels.MetricName, "foo", "bar", "1")},
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				{Labels: labels.FromStrings(labels.MetricName, "foo", "bar", "1")},
 			},
 			hasDuplicate: true,

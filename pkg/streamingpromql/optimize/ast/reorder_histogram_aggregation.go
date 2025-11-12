@@ -42,6 +42,7 @@ func (mapper *reorderHistogramAggregation) MapExpr(ctx context.Context, expr par
 	}
 
 	for _, label := range agg.Grouping {
+		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 		if label == labels.MetricName {
 			// Do not reorder if __name__ is used in grouping, as it can lead to incorrect aggregations.
 			return expr, false, nil
@@ -83,6 +84,7 @@ func vectorSelectorContainsNonExactMetricNameMatcher(expr parser.Expr) bool {
 	switch e := expr.(type) {
 	case *parser.VectorSelector:
 		for _, matcher := range e.LabelMatchers {
+			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 			if matcher.Name == labels.MetricName && matcher.Type != labels.MatchEqual {
 				return true
 			}

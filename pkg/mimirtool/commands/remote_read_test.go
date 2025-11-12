@@ -58,6 +58,7 @@ func TestExport(t *testing.T) {
 			series: []*prompb.TimeSeries{
 				{
 					Labels: []prompb.Label{
+						//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 						{Name: labels.MetricName, Value: metricName},
 						{Name: "idx", Value: "0"},
 					},
@@ -68,6 +69,7 @@ func TestExport(t *testing.T) {
 				},
 				{
 					Labels: []prompb.Label{
+						//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 						{Name: labels.MetricName, Value: metricName},
 						{Name: "idx", Value: "1"},
 					},
@@ -86,6 +88,7 @@ func TestExport(t *testing.T) {
 			series: []*prompb.TimeSeries{
 				{
 					Labels: []prompb.Label{
+						//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 						{Name: labels.MetricName, Value: metricName},
 						{Name: "idx", Value: "0"},
 					},
@@ -96,6 +99,7 @@ func TestExport(t *testing.T) {
 				},
 				{
 					Labels: []prompb.Label{
+						//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 						{Name: labels.MetricName, Value: metricName},
 						{Name: "idx", Value: "1"},
 					},
@@ -113,6 +117,7 @@ func TestExport(t *testing.T) {
 			series: []*prompb.TimeSeries{
 				{
 					Labels: []prompb.Label{
+						//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 						{Name: labels.MetricName, Value: metricName},
 						{Name: "idx", Value: "0"},
 					},
@@ -130,6 +135,7 @@ func TestExport(t *testing.T) {
 			series: []*prompb.TimeSeries{
 				{
 					Labels: []prompb.Label{
+						//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 						{Name: labels.MetricName, Value: metricName},
 						{Name: "idx", Value: "0"},
 					},
@@ -147,6 +153,7 @@ func TestExport(t *testing.T) {
 			series: []*prompb.TimeSeries{
 				{
 					Labels: []prompb.Label{
+						//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 						{Name: labels.MetricName, Value: metricName},
 						{Name: "idx", Value: "0"},
 					},
@@ -164,6 +171,7 @@ func TestExport(t *testing.T) {
 			series: []*prompb.TimeSeries{
 				{
 					Labels: []prompb.Label{
+						//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 						{Name: labels.MetricName, Value: metricName},
 						{Name: "idx", Value: "0"},
 					},
@@ -181,6 +189,7 @@ func TestExport(t *testing.T) {
 			series: []*prompb.TimeSeries{
 				{
 					Labels: []prompb.Label{
+						//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 						{Name: labels.MetricName, Value: metricName},
 						{Name: "case", Value: "entirely in first block"},
 					},
@@ -191,6 +200,7 @@ func TestExport(t *testing.T) {
 				},
 				{
 					Labels: []prompb.Label{
+						//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 						{Name: labels.MetricName, Value: metricName},
 						{Name: "case", Value: "entirely in second block"},
 					},
@@ -201,6 +211,7 @@ func TestExport(t *testing.T) {
 				},
 				{
 					Labels: []prompb.Label{
+						//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 						{Name: labels.MetricName, Value: metricName},
 						{Name: "case", Value: "entirely in last block"},
 					},
@@ -211,6 +222,7 @@ func TestExport(t *testing.T) {
 				},
 				{
 					Labels: []prompb.Label{
+						//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 						{Name: labels.MetricName, Value: metricName},
 						{Name: "case", Value: "across multiple blocks"},
 					},
@@ -221,6 +233,7 @@ func TestExport(t *testing.T) {
 				},
 				{
 					Labels: []prompb.Label{
+						//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 						{Name: labels.MetricName, Value: metricName},
 						{Name: "case", Value: "across multiple blocks, with sample on block boundary"},
 					},
@@ -232,6 +245,7 @@ func TestExport(t *testing.T) {
 				},
 				{
 					Labels: []prompb.Label{
+						//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 						{Name: labels.MetricName, Value: metricName},
 						{Name: "case", Value: "across multiple blocks, from first to last"},
 					},
@@ -316,6 +330,7 @@ func generateLargeDataset(from time.Time, metricName string) []*prompb.TimeSerie
 
 		series = append(series, &prompb.TimeSeries{
 			Labels: []prompb.Label{
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				{Name: labels.MetricName, Value: metricName},
 				{Name: "idx", Value: strconv.Itoa(seriesIdx)},
 			},
@@ -454,6 +469,7 @@ func queryAllSamples(t *testing.T, db *tsdb.DB, metricName string) ([]*prompb.Ti
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, querier.Close()) })
 
+	//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 	ss := querier.Select(context.Background(), true, nil, labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, metricName))
 	var writtenSeries []*prompb.TimeSeries
 	totalSamples := 0
@@ -636,6 +652,7 @@ func TestParseArgsAndPrepareClient(t *testing.T) {
 			expectedSeries: []*prompb.TimeSeries{
 				{
 					Labels: []prompb.Label{
+						//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 						{Name: labels.MetricName, Value: metricNames[0]},
 						{Name: "job", Value: "test"},
 					},
@@ -651,6 +668,7 @@ func TestParseArgsAndPrepareClient(t *testing.T) {
 			expectedSeries: []*prompb.TimeSeries{
 				{
 					Labels: []prompb.Label{
+						//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 						{Name: labels.MetricName, Value: metricNames[0]},
 						{Name: "job", Value: "test"},
 					},
@@ -661,6 +679,7 @@ func TestParseArgsAndPrepareClient(t *testing.T) {
 				},
 				{
 					Labels: []prompb.Label{
+						//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 						{Name: labels.MetricName, Value: metricNames[1]},
 						{Name: "instance", Value: "localhost:8080"},
 					},

@@ -691,7 +691,9 @@ func TestOneToOneVectorVectorBinaryOperation_ReleasesIntermediateStateIfClosedEa
 	for _, closeAfterFirstSeries := range []bool{true, false} {
 		t.Run(fmt.Sprintf("close after first series=%v", closeAfterFirstSeries), func(t *testing.T) {
 			leftSeries := []labels.Labels{
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				labels.FromStrings("group", "1", labels.MetricName, "left_1"),
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				labels.FromStrings("group", "1", labels.MetricName, "left_2"),
 			}
 

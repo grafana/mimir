@@ -30,6 +30,7 @@ func TestIngester_ActiveSeries(t *testing.T) {
 		return mimirpb.PreallocTimeseries{
 			TimeSeries: &mimirpb.TimeSeries{
 				Labels: mimirpb.FromLabelsToLabelAdapters(
+					//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 					labels.FromStrings(labels.MetricName, "test", "lbl", fmt.Sprintf(tpl, index))),
 				Samples: samples,
 			},
@@ -55,6 +56,7 @@ func TestIngester_ActiveSeries(t *testing.T) {
 
 	// Get active series
 	req, err := client.ToActiveSeriesRequest([]*labels.Matcher{
+		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 		labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "test"),
 	})
 	require.NoError(t, err)
@@ -88,6 +90,7 @@ func TestIngester_ActiveNativeHistogramSeries(t *testing.T) {
 		require.Greater(t, size, 24, "minimum message size is 24 bytes")
 		tpl := fmt.Sprintf("%%0%dd", size-24)
 		ts := &mimirpb.TimeSeries{
+			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 			Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(labels.MetricName, "test", "lbl", fmt.Sprintf(tpl, index))),
 		}
 		if isHistogram {
@@ -120,6 +123,7 @@ func TestIngester_ActiveNativeHistogramSeries(t *testing.T) {
 
 	// Get active series
 	req, err := client.ToActiveSeriesRequest([]*labels.Matcher{
+		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 		labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "test"),
 	})
 	req.Type = client.NATIVE_HISTOGRAM_SERIES
@@ -161,6 +165,7 @@ func BenchmarkIngester_ActiveSeries(b *testing.B) {
 		writeReq.Timeseries = append(writeReq.Timeseries, mimirpb.PreallocTimeseries{
 			TimeSeries: &mimirpb.TimeSeries{
 				Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(
+					//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 					labels.MetricName, metricName,
 					// Use mod prime to make label values repeat every n series
 					"mod_10", strconv.Itoa(s%(2*5)),

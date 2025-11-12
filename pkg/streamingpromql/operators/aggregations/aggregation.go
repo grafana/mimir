@@ -68,6 +68,7 @@ func NewAggregation(
 	}
 
 	if without {
+		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 		grouping = append(grouping, labels.MetricName)
 	}
 

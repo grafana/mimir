@@ -90,6 +90,7 @@ func (p *mockIndexReader) ShardedPostings(postings index.Postings, shardIndex, s
 			} else {
 				// Fallback: generate labels based on series ID for consistent hashing
 				bufLbls.Reset()
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				bufLbls.Add(labels.MetricName, strconv.Itoa(int(id)))
 				hash = labels.StableHash(bufLbls.Labels())
 			}

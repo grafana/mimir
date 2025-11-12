@@ -20,6 +20,7 @@ func (n *MetricNames) CaptureMetricNames(metadata []types.SeriesMetadata) {
 	n.names = make([]string, len(metadata))
 
 	for i, series := range metadata {
+		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 		n.names[i] = series.Labels.Get(labels.MetricName)
 	}
 }

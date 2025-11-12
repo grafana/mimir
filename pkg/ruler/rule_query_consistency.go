@@ -122,6 +122,7 @@ func isQueryingAlertsForStateMetric(metricName string, matchers ...*labels.Match
 	}
 
 	for _, matcher := range matchers {
+		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 		if matcher.Name == labels.MetricName && matcher.Matches(alertForStateMetricName) {
 			return true
 		}

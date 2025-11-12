@@ -33,6 +33,7 @@ func TestLabelMatchersToString(t *testing.T) {
 			expected: `{foo="bar",who!="boh"}`,
 		}, {
 			input: []*labels.Matcher{
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "metric"),
 				labels.MustNewMatcher(labels.MatchNotEqual, "who", "boh"),
 			},

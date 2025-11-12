@@ -106,6 +106,7 @@ func TestNewPerUserMetadataLimitError(t *testing.T) {
 
 func TestNewPerMetricSeriesLimitError(t *testing.T) {
 	limit := 100
+	//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 	labels := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "testmetric"}, {Name: "foo", Value: "biz"}}
 	err := newPerMetricSeriesLimitReachedError(limit, labels)
 	expectedErrMsg := fmt.Sprintf("%s This is for series %s",
@@ -145,6 +146,7 @@ func TestNewPerMetricMetadataLimitError(t *testing.T) {
 }
 
 func TestNewSampleError(t *testing.T) {
+	//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 	seriesLabels := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "test"}}
 	tests := map[string]struct {
 		err         error
@@ -187,6 +189,7 @@ func TestNewSampleError(t *testing.T) {
 }
 
 func TestNewExemplarError(t *testing.T) {
+	//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 	seriesLabels := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "test"}}
 	exemplarsLabels := []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}}
 	tests := map[string]struct {
@@ -218,6 +221,7 @@ func TestNewExemplarError(t *testing.T) {
 }
 
 func TestNewTSDBIngestExemplarErr(t *testing.T) {
+	//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 	seriesLabels := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "test"}}
 	exemplarsLabels := []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}}
 	anotherErr := errors.New("another error")
@@ -343,6 +347,7 @@ func TestWrapOrAnnotateWithUser(t *testing.T) {
 	require.NotErrorIs(t, annotatedUnsafeErr, annotatingErr)
 	require.Nil(t, errors.Unwrap(annotatedUnsafeErr))
 
+	//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 	metricLabelAdapters := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "test"}}
 	wrappingErr := newSampleTimestampTooOldError(timestamp, metricLabelAdapters)
 	expectedWrappedErrMsg := fmt.Sprintf("user=%s: %s", userID, wrappingErr.Error())
@@ -357,6 +362,7 @@ func TestMapPushErrorToErrorWithStatus(t *testing.T) {
 	const originalMsg = "this is an error"
 	originalErr := errors.New(originalMsg)
 	family := "testmetric"
+	//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 	labelAdapters := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: family}, {Name: "foo", Value: "biz"}}
 	timestamp := model.Time(1)
 

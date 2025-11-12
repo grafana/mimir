@@ -331,6 +331,7 @@ func TestLabelValuesCardinalityHandler_Success(t *testing.T) {
 			scope:      cardinality.InMemoryMethod,
 			labelValuesCardinality: &client.LabelValuesCardinalityResponse{
 				Items: []*client.LabelValueSeriesCount{{
+					//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 					LabelName:        labels.MetricName,
 					LabelValueSeries: map[string]uint64{"test_1": 10},
 				}},
@@ -358,6 +359,7 @@ func TestLabelValuesCardinalityHandler_Success(t *testing.T) {
 			scope:      cardinality.InMemoryMethod,
 			labelValuesCardinality: &client.LabelValuesCardinalityResponse{
 				Items: []*client.LabelValueSeriesCount{{
+					//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 					LabelName:        labels.MetricName,
 					LabelValueSeries: map[string]uint64{"test_1": 10},
 				}},
@@ -468,6 +470,7 @@ func TestLabelValuesCardinalityHandler_Success(t *testing.T) {
 			scope:      cardinality.InMemoryMethod,
 			labelValuesCardinality: &client.LabelValuesCardinalityResponse{
 				Items: []*client.LabelValueSeriesCount{{
+					//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 					LabelName:        labels.MetricName,
 					LabelValueSeries: map[string]uint64{"test_1": 10, "test_2": 20},
 				}},
@@ -495,6 +498,7 @@ func TestLabelValuesCardinalityHandler_Success(t *testing.T) {
 			scope:      cardinality.InMemoryMethod,
 			labelValuesCardinality: &client.LabelValuesCardinalityResponse{
 				Items: []*client.LabelValueSeriesCount{{
+					//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 					LabelName:        labels.MetricName,
 					LabelValueSeries: map[string]uint64{"test_1": 10, "test_2": 10},
 				}},
@@ -523,6 +527,7 @@ func TestLabelValuesCardinalityHandler_Success(t *testing.T) {
 			scope:      cardinality.InMemoryMethod,
 			labelValuesCardinality: &client.LabelValuesCardinalityResponse{
 				Items: []*client.LabelValueSeriesCount{{
+					//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 					LabelName:        labels.MetricName,
 					LabelValueSeries: map[string]uint64{"test_1": 100, "test_2": 20, "test_3": 30},
 				}},
@@ -552,6 +557,7 @@ func TestLabelValuesCardinalityHandler_Success(t *testing.T) {
 			scope:      cardinality.InMemoryMethod,
 			labelValuesCardinality: &client.LabelValuesCardinalityResponse{
 				Items: []*client.LabelValueSeriesCount{{
+					//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 					LabelName:        labels.MetricName,
 					LabelValueSeries: map[string]uint64{"test_1": 100, "test_2": 20, "test_3": 30},
 				}},

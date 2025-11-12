@@ -206,12 +206,14 @@ func TestDistributorQuerier_Select_ClosedBeforeSelectFinishes(t *testing.T) {
 		client.CombinedQueryStreamResponse{
 			StreamingSeries: []client.StreamingSeries{
 				{
+					//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 					Labels: labels.FromStrings(labels.MetricName, "four"),
 					Sources: []client.StreamingSeriesSource{
 						{SeriesIndex: 0, StreamReader: streamReader},
 					},
 				},
 				{
+					//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 					Labels: labels.FromStrings(labels.MetricName, "two"),
 					Sources: []client.StreamingSeriesSource{
 						{SeriesIndex: 1, StreamReader: streamReader},
@@ -229,6 +231,7 @@ func TestDistributorQuerier_Select_ClosedBeforeSelectFinishes(t *testing.T) {
 	// this would likely happen while the Select call is still in progress (eg. because the query was cancelled).
 	require.NoError(t, querier.Close())
 
+	//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 	seriesSet := querier.Select(ctx, true, &storage.SelectHints{Start: mint, End: maxt}, labels.MustNewMatcher(labels.MatchRegexp, labels.MetricName, ".*"))
 	require.EqualError(t, seriesSet.Err(), "querier already closed")
 
@@ -307,6 +310,7 @@ func TestDistributorQuerier_Select_MixedFloatAndIntegerHistograms(t *testing.T) 
 		client.CombinedQueryStreamResponse{
 			StreamingSeries: []client.StreamingSeries{
 				{
+					//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 					Labels: labels.FromStrings(labels.MetricName, "one"),
 					Sources: []client.StreamingSeriesSource{
 						{
@@ -321,6 +325,7 @@ func TestDistributorQuerier_Select_MixedFloatAndIntegerHistograms(t *testing.T) 
 					},
 				},
 				{
+					//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 					Labels: labels.FromStrings(labels.MetricName, "two"),
 					Sources: []client.StreamingSeriesSource{
 						{
@@ -351,13 +356,16 @@ func TestDistributorQuerier_Select_MixedFloatAndIntegerHistograms(t *testing.T) 
 	querier, err := queryable.Querier(mint, maxt)
 	require.NoError(t, err)
 
+	//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 	seriesSet := querier.Select(ctx, true, &storage.SelectHints{Start: mint, End: maxt}, labels.MustNewMatcher(labels.MatchRegexp, labels.MetricName, ".*"))
 	require.NoError(t, seriesSet.Err())
 
 	require.True(t, seriesSet.Next())
+	//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 	verifySeries(t, seriesSet.At(), labels.FromStrings(labels.MetricName, "one"), histogramsToInterface(expectS1))
 
 	require.True(t, seriesSet.Next())
+	//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 	verifySeries(t, seriesSet.At(), labels.FromStrings(labels.MetricName, "two"), expectMergedSamplesS1S2)
 
 	require.False(t, seriesSet.Next())
@@ -426,6 +434,7 @@ func TestDistributorQuerier_Select_MixedHistogramsAndFloatSamples(t *testing.T) 
 		client.CombinedQueryStreamResponse{
 			StreamingSeries: []client.StreamingSeries{
 				{
+					//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 					Labels: labels.FromStrings(labels.MetricName, "one"),
 					Sources: []client.StreamingSeriesSource{
 						{
@@ -440,6 +449,7 @@ func TestDistributorQuerier_Select_MixedHistogramsAndFloatSamples(t *testing.T) 
 					},
 				},
 				{
+					//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 					Labels: labels.FromStrings(labels.MetricName, "two"),
 					Sources: []client.StreamingSeriesSource{
 						{
@@ -470,13 +480,16 @@ func TestDistributorQuerier_Select_MixedHistogramsAndFloatSamples(t *testing.T) 
 	querier, err := queryable.Querier(mint, maxt)
 	require.NoError(t, err)
 
+	//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 	seriesSet := querier.Select(ctx, true, &storage.SelectHints{Start: mint, End: maxt}, labels.MustNewMatcher(labels.MatchRegexp, labels.MetricName, ".*"))
 	require.NoError(t, seriesSet.Err())
 
 	require.True(t, seriesSet.Next())
+	//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 	verifySeries(t, seriesSet.At(), labels.FromStrings(labels.MetricName, "one"), append(samplesToInterface(s1), histogramsToInterface(expectH1)...))
 
 	require.True(t, seriesSet.Next())
+	//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 	verifySeries(t, seriesSet.At(), labels.FromStrings(labels.MetricName, "two"), expectMergedSamples)
 
 	require.False(t, seriesSet.Next())
@@ -556,6 +569,7 @@ func TestDistributorQuerier_Select_CounterResets(t *testing.T) {
 					combinedResponse: client.CombinedQueryStreamResponse{
 						StreamingSeries: []client.StreamingSeries{
 							{
+								//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 								Labels: labels.FromStrings(labels.MetricName, "one"),
 								Sources: []client.StreamingSeriesSource{
 									{SeriesIndex: 0, StreamReader: createTestStreamReader([]client.QueryStreamSeriesChunks{
@@ -583,10 +597,12 @@ func TestDistributorQuerier_Select_CounterResets(t *testing.T) {
 					querier, err := queryable.Querier(tc.queryStart, tc.queryEnd)
 					require.NoError(t, err)
 
+					//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 					seriesSet := querier.Select(ctx, true, &storage.SelectHints{Start: tc.queryStart, End: tc.queryEnd}, labels.MustNewMatcher(labels.MatchRegexp, labels.MetricName, ".*"))
 					require.True(t, seriesSet.Next())
 					require.NoError(t, seriesSet.Err())
 
+					//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 					verifySeries(t, seriesSet.At(), labels.FromStrings(labels.MetricName, "one"), histogramsToInterface(tc.expectedSamples))
 					require.False(t, seriesSet.Next())
 				})

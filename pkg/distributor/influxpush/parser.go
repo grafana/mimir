@@ -120,6 +120,7 @@ func influxPointToTimeseries(pt models.Point, returnTs []mimirpb.PreallocTimeser
 		tags := pt.Tags()
 		lbls := make([]mimirpb.LabelAdapter, 0, len(tags)+2) // An additional one for __name__, and one for internal label
 		lbls = append(lbls, mimirpb.LabelAdapter{
+			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 			Name:  labels.MetricName,
 			Value: yoloString(name),
 		})

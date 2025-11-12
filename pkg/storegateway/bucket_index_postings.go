@@ -404,6 +404,7 @@ func (s worstCaseFetchedDataStrategy) selectPostings(groups []postingGroup) (sel
 	// to the object store. This is because series are first sorted by their __name__ label
 	// (assuming there are no labels starting with uppercase letters).
 	for i, g := range omitted {
+		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 		if len(g.keys) > 0 && g.keys[0].Name == labels.MetricName {
 			// Since the underlying slice for selected and omitted in the same, we need to swap the group so that
 			// we don't overwrite the first group when we append to selected.

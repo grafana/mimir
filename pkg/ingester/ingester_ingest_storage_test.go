@@ -52,10 +52,12 @@ func TestIngester_Start(t *testing.T) {
 			reg                = prometheus.NewRegistry()
 			fetchRequestsCount = atomic.NewInt64(0)
 			series1            = mimirpb.PreallocTimeseries{TimeSeries: &mimirpb.TimeSeries{
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				Labels:  mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(labels.MetricName, "series_1")),
 				Samples: []mimirpb.Sample{{TimestampMs: 1000, Value: 10}},
 			}}
 			series2 = mimirpb.PreallocTimeseries{TimeSeries: &mimirpb.TimeSeries{
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				Labels:  mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(labels.MetricName, "series_2")),
 				Samples: []mimirpb.Sample{{TimestampMs: 1000, Value: 10}},
 			}}
@@ -279,6 +281,7 @@ func TestIngester_QueryStream_IngestStorageReadConsistency(t *testing.T) {
 				ctx     = context.Background()
 				series1 = mimirpb.PreallocTimeseries{
 					TimeSeries: &mimirpb.TimeSeries{
+						//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 						Labels:  mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(labels.MetricName, metricName)),
 						Samples: []mimirpb.Sample{{TimestampMs: 1000, Value: 10}},
 					},
@@ -349,6 +352,7 @@ func TestIngester_QueryStream_IngestStorageReadConsistency(t *testing.T) {
 				}
 
 				close(queryIssued)
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				queryRes, _, err = runTestQuery(queryCtx, t, ingester, labels.MatchEqual, labels.MetricName, metricName)
 				require.NoError(t, err)
 			}()

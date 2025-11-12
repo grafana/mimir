@@ -232,5 +232,6 @@ func remoteReadQueryByMetricName(metricName string, start, end time.Time) *promp
 }
 
 func remoteReadQueryMatchersByMetricName(metricName string) []*prompb.LabelMatcher {
+	//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 	return []*prompb.LabelMatcher{{Type: prompb.LabelMatcher_EQ, Name: labels.MetricName, Value: metricName}}
 }

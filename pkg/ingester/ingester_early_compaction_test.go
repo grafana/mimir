@@ -109,6 +109,7 @@ func TestIngester_compactBlocksToReduceInMemorySeries_ShouldTriggerCompactionOnl
 	// Push 10 series.
 	for seriesID := 0; seriesID < 10; seriesID++ {
 		require.NoError(t, pushSeriesToIngester(ctxWithUser, t, ingester, []util_test.Series{{
+			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 			Labels:  labels.FromStrings(labels.MetricName, fmt.Sprintf("metric_%d", seriesID)),
 			Samples: []util_test.Sample{{TS: sampleTimestamp, Val: 0}},
 		}}))
@@ -129,6 +130,7 @@ func TestIngester_compactBlocksToReduceInMemorySeries_ShouldTriggerCompactionOnl
 	// Push 20 more series.
 	for seriesID := 10; seriesID < 30; seriesID++ {
 		require.NoError(t, pushSeriesToIngester(ctxWithUser, t, ingester, []util_test.Series{{
+			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 			Labels:  labels.FromStrings(labels.MetricName, fmt.Sprintf("metric_%d", seriesID)),
 			Samples: []util_test.Sample{{TS: sampleTimestamp, Val: 0}},
 		}}))
@@ -155,9 +157,10 @@ func TestIngester_compactBlocksToReduceInMemorySeries_ShouldTriggerCompactionOnl
 
 func TestIngester_compactBlocksToReduceInMemorySeries_ShouldCompactHeadUpUntilNowMinusActiveSeriesMetricsIdleTimeout(t *testing.T) {
 	var (
-		ctx          = context.Background()
-		ctxWithUser  = user.InjectOrgID(ctx, userID)
-		metricName   = "metric_1"
+		ctx         = context.Background()
+		ctxWithUser = user.InjectOrgID(ctx, userID)
+		metricName  = "metric_1"
+		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 		metricLabels = labels.FromStrings(labels.MetricName, metricName)
 		metricModel  = map[model.LabelName]model.LabelValue{model.MetricNameLabel: model.LabelValue(metricName)}
 		now          = time.Now()
@@ -317,9 +320,10 @@ func TestIngester_compactBlocksToReduceInMemorySeries_ShouldCompactHeadUpUntilNo
 
 func TestIngester_compactBlocksToReduceInMemorySeries_ShouldCompactBlocksHonoringBlockRangePeriod(t *testing.T) {
 	var (
-		ctx          = context.Background()
-		ctxWithUser  = user.InjectOrgID(ctx, userID)
-		metricName   = "metric_1"
+		ctx         = context.Background()
+		ctxWithUser = user.InjectOrgID(ctx, userID)
+		metricName  = "metric_1"
+		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 		metricLabels = labels.FromStrings(labels.MetricName, metricName)
 		metricModel  = map[model.LabelName]model.LabelValue{model.MetricNameLabel: model.LabelValue(metricName)}
 	)
@@ -406,10 +410,12 @@ func TestIngester_compactBlocksToReduceInMemorySeries_ShouldFailIngestingSamples
 	require.NoError(t, err)
 
 	require.NoError(t, pushSeriesToIngester(ctxWithUser, t, ingester, []util_test.Series{{
+		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 		Labels:  labels.FromStrings(labels.MetricName, "metric_1"),
 		Samples: []util_test.Sample{{TS: startTime.UnixMilli(), Val: 1.0}},
 	}}))
 	require.NoError(t, pushSeriesToIngester(ctxWithUser, t, ingester, []util_test.Series{{
+		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 		Labels:  labels.FromStrings(labels.MetricName, "metric_1"),
 		Samples: []util_test.Sample{{TS: startTime.Add(20 * time.Minute).UnixMilli(), Val: 2.0}},
 	}}))
@@ -431,14 +437,17 @@ func TestIngester_compactBlocksToReduceInMemorySeries_ShouldFailIngestingSamples
 
 	// Should allow to push samples after "now - active series idle timeout", but not before that.
 	assert.ErrorContains(t, pushSeriesToIngester(ctxWithUser, t, ingester, []util_test.Series{{
+		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 		Labels:  labels.FromStrings(labels.MetricName, "metric_2"),
 		Samples: []util_test.Sample{{TS: startTime.UnixMilli(), Val: 1.0}},
 	}}), "the sample has been rejected because its timestamp is too old")
 	assert.NoError(t, pushSeriesToIngester(ctxWithUser, t, ingester, []util_test.Series{{
+		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 		Labels:  labels.FromStrings(labels.MetricName, "metric_2"),
 		Samples: []util_test.Sample{{TS: startTime.Add(20 * time.Minute).UnixMilli(), Val: 2.0}},
 	}}))
 	assert.NoError(t, pushSeriesToIngester(ctxWithUser, t, ingester, []util_test.Series{{
+		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 		Labels:  labels.FromStrings(labels.MetricName, "metric_1"),
 		Samples: []util_test.Sample{{TS: startTime.Add(30 * time.Minute).UnixMilli(), Val: 3.0}},
 	}}))
@@ -514,6 +523,7 @@ func TestIngester_compactBlocksToReduceInMemorySeries_Concurrency(t *testing.T) 
 						seriesToWrite := make([]util_test.Series, 0, toSeriesID-fromSeriesID+1)
 						for seriesIdx := fromSeriesID; seriesIdx <= toSeriesID; seriesIdx++ {
 							seriesToWrite = append(seriesToWrite, util_test.Series{
+								//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 								Labels:  labels.FromStrings(labels.MetricName, fmt.Sprintf("series_%05d", seriesIdx)),
 								Samples: []util_test.Sample{{TS: timestamp, Val: float64(sampleIdx)}},
 							})
@@ -709,6 +719,7 @@ func readMetricSamplesFromBlock(t *testing.T, block *tsdb.Block, metricName stri
 
 	ctx := context.Background()
 
+	//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 	postings, err := indexReader.Postings(ctx, labels.MetricName, metricName)
 	require.NoError(t, err)
 

@@ -644,6 +644,7 @@ func testMetadataQueriesWithBlocksStorage(
 					matches: []string{lastSeriesInStorageName},
 				},
 			},
+			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 			labelNames: []string{labels.MetricName, firstSeriesInIngesterHeadName},
 		},
 		"query metadata entirely inside the ingester range but outside the head range": {
@@ -677,6 +678,7 @@ func testMetadataQueriesWithBlocksStorage(
 					matches: []string{firstSeriesInIngesterHeadName},
 				},
 			},
+			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 			labelNames: []string{labels.MetricName, lastSeriesInIngesterBlocksName},
 		},
 		"query metadata partially inside the ingester range": {
@@ -716,6 +718,7 @@ func testMetadataQueriesWithBlocksStorage(
 					matches: []string{lastSeriesInStorageName, lastSeriesInIngesterBlocksName},
 				},
 			},
+			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 			labelNames: []string{labels.MetricName, lastSeriesInStorageName, lastSeriesInIngesterBlocksName, firstSeriesInIngesterHeadName},
 		},
 		"query metadata entirely outside the ingester range should not return the head data": {
@@ -750,6 +753,7 @@ func testMetadataQueriesWithBlocksStorage(
 					matches: []string{firstSeriesInIngesterHeadName},
 				},
 			},
+			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 			labelNames: []string{labels.MetricName, lastSeriesInStorageName},
 		},
 	}
@@ -768,6 +772,7 @@ func testMetadataQueriesWithBlocksStorage(
 			}
 
 			for _, lvt := range tc.labelValuesTests {
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				labelsRes, err := c.LabelValues(labels.MetricName, tc.from, tc.to, lvt.matches)
 				require.NoError(t, err)
 				exp := model.LabelValues{}
@@ -1011,10 +1016,12 @@ func TestHashCollisionHandling(t *testing.T) {
 	tsMillis := e2e.TimeToMilliseconds(now)
 	metric1 := []prompb.Label{
 		{Name: "A", Value: "K6sjsNNczPl"},
+		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 		{Name: labels.MetricName, Value: "fingerprint_collision"},
 	}
 	metric2 := []prompb.Label{
 		{Name: "A", Value: "cswpLMIZpwt"},
+		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 		{Name: labels.MetricName, Value: "fingerprint_collision"},
 	}
 
@@ -1063,6 +1070,7 @@ func TestHashCollisionHandling(t *testing.T) {
 
 func getMetricName(lbls []prompb.Label) string {
 	for _, lbl := range lbls {
+		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 		if lbl.Name == labels.MetricName {
 			return lbl.Value
 		}

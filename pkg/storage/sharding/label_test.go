@@ -82,17 +82,20 @@ func TestRemoveShardFromMatchers(t *testing.T) {
 		"should return no shard on empty label matchers": {},
 		"should return no shard on no shard label matcher": {
 			input: []*labels.Matcher{
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "test"),
 				labels.MustNewMatcher(labels.MatchRegexp, "foo", "bar.*"),
 			},
 			expectedShard: nil,
 			expectedMatchers: []*labels.Matcher{
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "test"),
 				labels.MustNewMatcher(labels.MatchRegexp, "foo", "bar.*"),
 			},
 		},
 		"should return matching shard and filter out its matcher": {
 			input: []*labels.Matcher{
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "test"),
 				labels.MustNewMatcher(labels.MatchEqual, ShardLabel, ShardSelector{ShardIndex: 1, ShardCount: 8}.LabelValue()),
 				labels.MustNewMatcher(labels.MatchRegexp, "foo", "bar.*"),
@@ -102,6 +105,7 @@ func TestRemoveShardFromMatchers(t *testing.T) {
 				ShardCount: 8,
 			},
 			expectedMatchers: []*labels.Matcher{
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "test"),
 				labels.MustNewMatcher(labels.MatchRegexp, "foo", "bar.*"),
 			},

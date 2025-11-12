@@ -803,6 +803,7 @@ func generateSeriesWithTokensAt(testUser string, startTime time.Time) ([]util_te
 	var seriesTokens []uint32
 	for seriesIdx := 0; seriesIdx < ownedServiceSeriesCount; seriesIdx++ {
 		s := util_test.Series{
+			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 			Labels:  labels.FromStrings(labels.MetricName, "test", fmt.Sprintf("lbl_%05d", seriesIdx), "value"),
 			Samples: []util_test.Sample{{TS: startTime.Add(time.Duration(seriesIdx) * time.Millisecond).UnixMilli(), Val: float64(0)}},
 		}
@@ -818,6 +819,7 @@ func generateSeriesWithTargetInfoAt(testUser string, startTime time.Time, target
 	// Generate target_info series
 	for i := range targetInfoCount {
 		s := util_test.Series{
+			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 			Labels:  labels.FromStrings(labels.MetricName, "target_info", "instance", fmt.Sprintf("instance_%d", i), "job", "test_job"),
 			Samples: []util_test.Sample{{TS: startTime.Add(time.Duration(i) * time.Millisecond).UnixMilli(), Val: float64(1)}},
 		}

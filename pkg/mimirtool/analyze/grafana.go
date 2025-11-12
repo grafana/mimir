@@ -203,6 +203,7 @@ func parseQuery(query string, metrics map[string]struct{}) error {
 				return nil
 			}
 			for _, m := range n.LabelMatchers {
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				if m.Name == labels.MetricName && validMetricName.MatchString(m.Value) {
 					metrics[m.Value] = struct{}{}
 					return nil

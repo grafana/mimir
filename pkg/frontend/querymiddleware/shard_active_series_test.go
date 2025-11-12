@@ -173,15 +173,21 @@ func runTestShardActiveSeriesMiddlewareRoundTrip(t *testing.T, useZeroAllocation
 			request: validReqWithShardHeader(3),
 
 			validResponses: [][]labels.Labels{
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				{labels.FromStrings(labels.MetricName, "metric", "shard", "1")},
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				{labels.FromStrings(labels.MetricName, "metric", "shard", "2")},
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				{labels.FromStrings(labels.MetricName, "metric", "shard", "3")},
 			},
 			checkResponseErr: noError,
 			expect: result{
 				Data: []labels.Labels{
+					//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 					labels.FromStrings(labels.MetricName, "metric", "shard", "1"),
+					//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 					labels.FromStrings(labels.MetricName, "metric", "shard", "2"),
+					//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 					labels.FromStrings(labels.MetricName, "metric", "shard", "3"),
 				},
 			},
@@ -190,17 +196,25 @@ func runTestShardActiveSeriesMiddlewareRoundTrip(t *testing.T, useZeroAllocation
 			name:    "uses tenant's default shard count if none is specified in the request header",
 			request: validReq,
 			validResponses: [][]labels.Labels{
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				{labels.FromStrings(labels.MetricName, "metric", "shard", "1")},
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				{labels.FromStrings(labels.MetricName, "metric", "shard", "2")},
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				{labels.FromStrings(labels.MetricName, "metric", "shard", "3")},
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				{labels.FromStrings(labels.MetricName, "metric", "shard", "4")},
 			},
 			checkResponseErr: noError,
 			expect: result{
 				Data: []labels.Labels{
+					//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 					labels.FromStrings(labels.MetricName, "metric", "shard", "1"),
+					//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 					labels.FromStrings(labels.MetricName, "metric", "shard", "2"),
+					//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 					labels.FromStrings(labels.MetricName, "metric", "shard", "3"),
+					//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 					labels.FromStrings(labels.MetricName, "metric", "shard", "4"),
 				},
 			},
@@ -210,14 +224,17 @@ func runTestShardActiveSeriesMiddlewareRoundTrip(t *testing.T, useZeroAllocation
 			name:    "no sharding, request passed through",
 			request: validReqWithShardHeader(1),
 
+			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 			validResponses:   [][]labels.Labels{{labels.FromStrings(labels.MetricName, "metric")}},
 			checkResponseErr: noError,
-			expect:           result{Data: []labels.Labels{labels.FromStrings(labels.MetricName, "metric")}},
+			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
+			expect: result{Data: []labels.Labels{labels.FromStrings(labels.MetricName, "metric")}},
 		},
 		{
 			name:    "handles empty shards",
 			request: validReqWithShardHeader(6),
 			validResponses: [][]labels.Labels{
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				{labels.FromStrings(labels.MetricName, "metric", "shard", "1")},
 				{},
 				{},
@@ -228,6 +245,7 @@ func runTestShardActiveSeriesMiddlewareRoundTrip(t *testing.T, useZeroAllocation
 			checkResponseErr: noError,
 			expect: result{
 				Data: []labels.Labels{
+					//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 					labels.FromStrings(labels.MetricName, "metric", "shard", "1"),
 				},
 			},
@@ -242,13 +260,17 @@ func runTestShardActiveSeriesMiddlewareRoundTrip(t *testing.T, useZeroAllocation
 				return r
 			},
 			validResponses: [][]labels.Labels{
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				{labels.FromStrings(labels.MetricName, "metric", "shard", "1")},
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				{labels.FromStrings(labels.MetricName, "metric", "shard", "2")},
 			},
 			checkResponseErr: noError,
 			expect: result{
 				Data: []labels.Labels{
+					//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 					labels.FromStrings(labels.MetricName, "metric", "shard", "1"),
+					//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 					labels.FromStrings(labels.MetricName, "metric", "shard", "2"),
 				},
 			},
@@ -265,13 +287,17 @@ func runTestShardActiveSeriesMiddlewareRoundTrip(t *testing.T, useZeroAllocation
 				return req
 			},
 			validResponses: [][]labels.Labels{
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				{labels.FromStrings(labels.MetricName, "metric", "shard", "1")},
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				{labels.FromStrings(labels.MetricName, "metric", "shard", "2")},
 			},
 			checkResponseErr: noError,
 			expect: result{
 				Data: []labels.Labels{
+					//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 					labels.FromStrings(labels.MetricName, "metric", "shard", "1"),
+					//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 					labels.FromStrings(labels.MetricName, "metric", "shard", "2"),
 				},
 			},

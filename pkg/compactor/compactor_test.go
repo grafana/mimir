@@ -1468,6 +1468,7 @@ func TestMultitenantCompactor_ShouldSkipCompactionForJobsWithFirstLevelCompactio
 
 	// Mock two tenants, each with 2 overlapping blocks.
 	spec := []*block.SeriesSpec{{
+		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 		Labels: labels.FromStrings(labels.MetricName, "series_1"),
 		Chunks: []chunks.Meta{must(chunks.ChunkFromSamples([]chunks.Sample{
 			testutil.Sample{TS: 1574776800000, Val: 0},

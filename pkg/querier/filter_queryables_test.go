@@ -38,6 +38,7 @@ func TestFilteringQueryablesViaHttpHeader(t *testing.T) {
 		cfg := Config{}
 		flagext.DefaultValues(&cfg)
 
+		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 		matcher := labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "metric")
 		expectedMatchers := []*labels.Matcher{matcher}
 		querier1 := &mockBlocksStorageQuerier{}

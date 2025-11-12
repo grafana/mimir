@@ -261,6 +261,7 @@ func combineMatchers(matchers, matchersToAdd []*labels.Matcher, labelsSet string
 }
 
 func isMetricNameMatcher(m *labels.Matcher) bool {
+	//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 	return m.Name == labels.MetricName
 }
 

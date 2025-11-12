@@ -41,6 +41,7 @@ func TestQuerierLabelNamesAndValues(t *testing.T) {
 				LabelValuesCountTotal: 1008,
 				LabelNamesCount:       3,
 				Cardinality: []*api.LabelNamesCardinalityItem{
+					//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 					{LabelName: labels.MetricName, LabelValuesCount: 1000},
 					{LabelName: "job", LabelValuesCount: 5},
 					{LabelName: "env", LabelValuesCount: 3},
@@ -53,6 +54,7 @@ func TestQuerierLabelNamesAndValues(t *testing.T) {
 				LabelValuesCountTotal: 204,
 				LabelNamesCount:       3,
 				Cardinality: []*api.LabelNamesCardinalityItem{
+					//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 					{LabelName: labels.MetricName, LabelValuesCount: 200},
 					{LabelName: "env", LabelValuesCount: 3},
 					{LabelName: "job", LabelValuesCount: 1},
@@ -65,6 +67,7 @@ func TestQuerierLabelNamesAndValues(t *testing.T) {
 				LabelValuesCountTotal: 1008,
 				LabelNamesCount:       3,
 				Cardinality: []*api.LabelNamesCardinalityItem{
+					//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 					{LabelName: labels.MetricName, LabelValuesCount: 1000},
 				},
 			},
@@ -76,6 +79,7 @@ func TestQuerierLabelNamesAndValues(t *testing.T) {
 				LabelValuesCountTotal: 204,
 				LabelNamesCount:       3,
 				Cardinality: []*api.LabelNamesCardinalityItem{
+					//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 					{LabelName: labels.MetricName, LabelValuesCount: 200},
 				},
 			},

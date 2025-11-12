@@ -1288,18 +1288,21 @@ func TestSubqueries(t *testing.T) {
 			Result: promql.Result{
 				Value: promql.Vector{
 					{
-						F:      -1,
-						T:      40000,
+						F: -1,
+						T: 40000,
+						//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 						Metric: labels.FromStrings(labels.MetricName, "other_metric", "type", "floats"),
 					},
 					{
-						H:      &histogram.FloatHistogram{Count: 1, CounterResetHint: histogram.UnknownCounterReset},
-						T:      40000,
+						H: &histogram.FloatHistogram{Count: 1, CounterResetHint: histogram.UnknownCounterReset},
+						T: 40000,
+						//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 						Metric: labels.FromStrings(labels.MetricName, "other_metric", "type", "histograms"),
 					},
 					{
-						H:      &histogram.FloatHistogram{Count: 1, CounterResetHint: histogram.UnknownCounterReset},
-						T:      40000,
+						H: &histogram.FloatHistogram{Count: 1, CounterResetHint: histogram.UnknownCounterReset},
+						T: 40000,
+						//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 						Metric: labels.FromStrings(labels.MetricName, "other_metric", "type", "mixed"),
 					},
 				},
@@ -1311,18 +1314,21 @@ func TestSubqueries(t *testing.T) {
 			Result: promql.Result{
 				Value: promql.Vector{
 					{
-						F:      6,
-						T:      30000,
+						F: 6,
+						T: 30000,
+						//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 						Metric: labels.FromStrings(labels.MetricName, "other_metric", "type", "floats"),
 					},
 					{
-						H:      &histogram.FloatHistogram{Count: 6},
-						T:      30000,
+						H: &histogram.FloatHistogram{Count: 6},
+						T: 30000,
+						//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 						Metric: labels.FromStrings(labels.MetricName, "other_metric", "type", "histograms"),
 					},
 					{
-						F:      6,
-						T:      30000,
+						F: 6,
+						T: 30000,
+						//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 						Metric: labels.FromStrings(labels.MetricName, "other_metric", "type", "mixed"),
 					},
 				},
@@ -1551,12 +1557,14 @@ func TestMemoryConsumptionLimit_SingleQueries(t *testing.T) {
 
 			// Each series has five samples, which will be rounded up to eight (the nearest power of two) by the bucketed pool,
 			// and we have five series and each of the series has labels of the same size.
+			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 			rangeQueryExpectedPeak: 5*8*types.FPointSize + 8*types.SeriesMetadataSize + 5*uint64(labels.FromStrings(labels.MetricName, "some_metric", "idx", "i").ByteSize()),
 			rangeQueryLimit:        0,
 
 			// At peak, we'll hold all the output samples plus one series, which has one sample.
 			// The output contains five samples with SeriesMetadata, which will be rounded up to eight (the nearest power of two).
 			// Five out of SeriesMetadata has labels.Labels with each of them having the same ByteSize.
+			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 			instantQueryExpectedPeak: types.FPointSize + 8*(types.VectorSampleSize+types.SeriesMetadataSize) + 5*uint64(labels.FromStrings(labels.MetricName, "some_metric", "idx", "i").ByteSize()),
 			instantQueryLimit:        0,
 		},
@@ -1566,14 +1574,18 @@ func TestMemoryConsumptionLimit_SingleQueries(t *testing.T) {
 
 			// Each series has five samples with SeriesMetadata, which will be rounded up to 8 (the nearest power of two) by the bucketed pool, and we have five series.
 			// Five out of SeriesMetadata has labels.Labels with each of them having the same ByteSize.
+			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 			rangeQueryExpectedPeak: 5*8*types.FPointSize + 8*types.SeriesMetadataSize + 5*uint64(labels.FromStrings(labels.MetricName, "some_metric", "idx", "i").ByteSize()),
-			rangeQueryLimit:        5*8*types.FPointSize + 8*types.SeriesMetadataSize + 5*uint64(labels.FromStrings(labels.MetricName, "some_metric", "idx", "i").ByteSize()),
+			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
+			rangeQueryLimit: 5*8*types.FPointSize + 8*types.SeriesMetadataSize + 5*uint64(labels.FromStrings(labels.MetricName, "some_metric", "idx", "i").ByteSize()),
 
 			// At peak, we'll hold all the output samples plus one series, which has one sample.
 			// The output contains five samples with SeriesMetadata, which will be rounded up to 8 (the nearest power of two).
 			// Five out of SeriesMetadata has labels.Labels with each of them having the same ByteSize.
+			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 			instantQueryExpectedPeak: types.FPointSize + 8*(types.VectorSampleSize+types.SeriesMetadataSize) + 5*uint64(labels.FromStrings(labels.MetricName, "some_metric", "idx", "i").ByteSize()),
-			instantQueryLimit:        types.FPointSize + 8*(types.VectorSampleSize+types.SeriesMetadataSize) + 5*uint64(labels.FromStrings(labels.MetricName, "some_metric", "idx", "i").ByteSize()),
+			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
+			instantQueryLimit: types.FPointSize + 8*(types.VectorSampleSize+types.SeriesMetadataSize) + 5*uint64(labels.FromStrings(labels.MetricName, "some_metric", "idx", "i").ByteSize()),
 		},
 		"limit enabled, and query exceeds limit": {
 			expr:          "some_metric",
@@ -1597,6 +1609,7 @@ func TestMemoryConsumptionLimit_SingleQueries(t *testing.T) {
 				// A)
 				//   - 5 input series labels (8 series metadata because of bucketed pool rounding to a power of 2)
 				//   - 1 output series metadata (no labels)
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				8*types.SeriesMetadataSize+5*uint64(labels.FromStrings(labels.MetricName, "some_metric", "idx", "i").ByteSize())+types.SeriesMetadataSize,
 				// B)
 				//   - the running total for the sum() (two floats (due to kahan) and a bool at each step, with the number of steps rounded to the nearest power of 2),
@@ -1606,6 +1619,7 @@ func TestMemoryConsumptionLimit_SingleQueries(t *testing.T) {
 			),
 			rangeQueryLimit: max(
 				// A)
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				8*types.SeriesMetadataSize+5*uint64(labels.FromStrings(labels.MetricName, "some_metric", "idx", "i").ByteSize())+types.SeriesMetadataSize,
 				// B)
 				8*(2*types.Float64Size+types.BoolSize)+8*types.FPointSize+types.SeriesMetadataSize,
@@ -1613,8 +1627,10 @@ func TestMemoryConsumptionLimit_SingleQueries(t *testing.T) {
 
 			// Each series has one sample, which is already a power of two.
 			// At peak we'll hold in memory 9 SeriesMetadata.
+			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 			instantQueryExpectedPeak: 9*types.SeriesMetadataSize + 5*uint64(labels.FromStrings(labels.MetricName, "some_metric", "idx", "i").ByteSize()),
-			instantQueryLimit:        9*types.SeriesMetadataSize + 5*uint64(labels.FromStrings(labels.MetricName, "some_metric", "idx", "i").ByteSize()),
+			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
+			instantQueryLimit: 9*types.SeriesMetadataSize + 5*uint64(labels.FromStrings(labels.MetricName, "some_metric", "idx", "i").ByteSize()),
 		},
 		"limit enabled, query selects more samples than limit but should not load all of them into memory at once, and peak consumption is over limit": {
 			expr:          "sum(some_metric)",
@@ -1623,11 +1639,15 @@ func TestMemoryConsumptionLimit_SingleQueries(t *testing.T) {
 			// At peak we'll hold in memory
 			//   - 5 input series labels (8 series metadata because of bucketed pool rounding to a power of 2)
 			//   - 1 output series metadata (no labels). This will tip over the limit and we won't allocate it, so the peak calculations don't include it.
+			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 			rangeQueryExpectedPeak: 8*types.SeriesMetadataSize + 5*uint64(labels.FromStrings(labels.MetricName, "some_metric", "idx", "i").ByteSize()),
-			rangeQueryLimit:        9*types.SeriesMetadataSize + 5*uint64(labels.FromStrings(labels.MetricName, "some_metric", "idx", "i").ByteSize()) - 1,
+			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
+			rangeQueryLimit: 9*types.SeriesMetadataSize + 5*uint64(labels.FromStrings(labels.MetricName, "some_metric", "idx", "i").ByteSize()) - 1,
 
+			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 			instantQueryExpectedPeak: 8*types.SeriesMetadataSize + 5*uint64(labels.FromStrings(labels.MetricName, "some_metric", "idx", "i").ByteSize()),
-			instantQueryLimit:        9*types.SeriesMetadataSize + 5*uint64(labels.FromStrings(labels.MetricName, "some_metric", "idx", "i").ByteSize()) - 1,
+			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
+			instantQueryLimit: 9*types.SeriesMetadataSize + 5*uint64(labels.FromStrings(labels.MetricName, "some_metric", "idx", "i").ByteSize()) - 1,
 		},
 		"histogram: limit enabled, but query does not exceed limit": {
 			expr:          "sum(some_histogram)",
@@ -1817,6 +1837,7 @@ func TestMemoryConsumptionLimit_MultipleQueries(t *testing.T) {
 	opts := NewTestEngineOpts()
 	opts.CommonOpts.Reg = reg
 
+	//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 	limit := 32*types.FPointSize + 4*types.SeriesMetadataSize + 3*uint64(labels.FromStrings(labels.MetricName, "some_metric", "idx", "i").ByteSize())
 	planner, err := NewQueryPlanner(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(t, err)

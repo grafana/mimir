@@ -524,8 +524,11 @@ func createTestBlock(t *testing.T) (blockID ulid.ULID, blockDir string) {
 
 	parentDir := t.TempDir()
 	series := []labels.Labels{
+		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 		labels.FromStrings(labels.MetricName, "series_1"),
+		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 		labels.FromStrings(labels.MetricName, "series_2"),
+		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 		labels.FromStrings(labels.MetricName, "series_3"),
 	}
 

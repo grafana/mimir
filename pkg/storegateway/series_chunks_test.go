@@ -62,6 +62,7 @@ func TestSeriesChunksSet(t *testing.T) {
 		for r := 0; r < numRuns; r++ {
 			set := newSeriesChunksSet(numSeries, true)
 
+			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 			lset := labels.FromStrings(labels.MetricName, "metric")
 			// Ensure the series slice is made of all zero values. Then write something inside before releasing it again.
 			// The slice is expected to be picked from the pool, at least in some runs (there's an assertion on it at
@@ -134,10 +135,15 @@ func TestSeriesChunksSet(t *testing.T) {
 func TestSeriesChunksSeriesSet(t *testing.T) {
 	c := generateAggrChunk(6)
 
+	//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 	series1 := labels.FromStrings(labels.MetricName, "metric_1")
+	//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 	series2 := labels.FromStrings(labels.MetricName, "metric_2")
+	//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 	series3 := labels.FromStrings(labels.MetricName, "metric_3")
+	//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 	series4 := labels.FromStrings(labels.MetricName, "metric_4")
+	//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 	series5 := labels.FromStrings(labels.MetricName, "metric_4")
 
 	// Utility function to create sets, so that each test starts from a clean setup (e.g. releaser is not released).

@@ -159,6 +159,7 @@ func optimizeLabelsRequestMatchers(rawMatcherSets []string) (_ []string, optimiz
 
 			// Filter out `__name__!=""` matcher because all series in Mimir have a metric name
 			// so this matcher matches all series but very expensive to run.
+			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 			if matcher.Name == labels.MetricName && matcher.Type == labels.MatchNotEqual && matcher.Value == "" {
 				optimized = true
 				continue

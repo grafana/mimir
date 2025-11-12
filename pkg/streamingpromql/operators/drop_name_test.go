@@ -26,8 +26,11 @@ func TestDropName(t *testing.T) {
 	}{
 		"with dropName set partially": {
 			inputSeries: []labels.Labels{
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				labels.FromStrings(labels.MetricName, "metric", "foo", "1"),
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				labels.FromStrings(labels.MetricName, "metric", "foo", "2"),
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				labels.FromStrings(labels.MetricName, "metric", "foo", "3"),
 			},
 			inputData: []types.InstantVectorSeriesData{
@@ -43,6 +46,7 @@ func TestDropName(t *testing.T) {
 
 			expectedOutputSeries: []labels.Labels{
 				labels.FromStrings("foo", "1"),
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				labels.FromStrings(labels.MetricName, "metric", "foo", "2"),
 				labels.FromStrings("foo", "3"),
 			},

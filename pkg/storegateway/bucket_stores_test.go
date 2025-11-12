@@ -101,6 +101,7 @@ func TestBucketStores_InitialSync(t *testing.T) {
 		require.NoError(t, err)
 		assert.Empty(t, warnings)
 		require.Len(t, seriesSet, 1)
+		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 		assert.Equal(t, []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: metricName}}, seriesSet[0].Labels)
 	}
 
@@ -175,6 +176,7 @@ func TestBucketStores_InitialSyncShouldRetryOnFailure(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, warnings)
 	require.Len(t, seriesSet, 1)
+	//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 	assert.Equal(t, []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "series_1"}}, seriesSet[0].Labels)
 
 	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
@@ -250,6 +252,7 @@ func TestBucketStores_SyncBlocks(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, warnings)
 	assert.Len(t, seriesSet, 1)
+	//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 	assert.Equal(t, []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: metricName}}, seriesSet[0].Labels)
 
 	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
@@ -505,7 +508,9 @@ func TestBucketStore_Series_ShouldQueryBlockWithOutOfOrderChunks(t *testing.T) {
 	require.NoError(t, err)
 	userBkt := bucket.NewUserBucketClient(userID, bkt, nil)
 
+	//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 	seriesWithOutOfOrderChunks := labels.FromStrings("case", "out_of_order", labels.MetricName, metricName)
+	//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 	seriesWithOverlappingChunks := labels.FromStrings("case", "overlapping", labels.MetricName, metricName)
 
 	// Utility function originally used to generate a block with out of order chunks
@@ -658,6 +663,7 @@ func generateStorageBlock(t *testing.T, storageDir, userID string, metricName st
 		require.NoError(t, db.Close())
 	}()
 
+	//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 	series := labels.FromStrings(labels.MetricName, metricName)
 
 	app := db.Appender(context.Background())
@@ -676,7 +682,8 @@ func querySeries(t *testing.T, stores *BucketStores, userID, metricName string, 
 		MinTime: minT,
 		MaxTime: maxT,
 		Matchers: []storepb.LabelMatcher{{
-			Type:  storepb.LabelMatcher_EQ,
+			Type: storepb.LabelMatcher_EQ,
+			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 			Name:  labels.MetricName,
 			Value: metricName,
 		}},

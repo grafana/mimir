@@ -301,12 +301,14 @@ func TestRecordSerializer(t *testing.T) {
 			SkipLabelValidation: true,
 			Timeseries: []mimirpb.PreallocTimeseries{
 				{TimeSeries: &mimirpb.TimeSeries{
+					//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 					Labels:     mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(labels.MetricName, "series_1", "pod", "test-application-123456")),
 					Samples:    []mimirpb.Sample{{TimestampMs: 20}},
 					Exemplars:  []mimirpb.Exemplar{{TimestampMs: 30}},
 					Histograms: []mimirpb.Histogram{{Timestamp: 10}},
 				}},
 				{TimeSeries: &mimirpb.TimeSeries{
+					//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 					Labels:    mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(labels.MetricName, "series_2", "pod", "test-application-123456")),
 					Samples:   []mimirpb.Sample{{TimestampMs: 30}},
 					Exemplars: []mimirpb.Exemplar{},
@@ -338,6 +340,7 @@ func TestRecordSerializer(t *testing.T) {
 		// Metadata not attached to any series in the request must fabricate extra timeseries to house it.
 		expMetadataSeries := []mimirpb.PreallocTimeseries{
 			{TimeSeries: &mimirpb.TimeSeries{
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				Labels:    mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(labels.MetricName, "series_3")),
 				Samples:   []mimirpb.Sample{},
 				Exemplars: []mimirpb.Exemplar{},

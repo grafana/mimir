@@ -1100,10 +1100,15 @@ func TestStoreGateway_Series_QuerySharding(t *testing.T) {
 		ctx    = context.Background()
 		userID = "user-1"
 		series = []labels.Labels{
+			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 			labels.FromStrings(labels.MetricName, "series_1"), // Hash: 12248531033489120077
+			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 			labels.FromStrings(labels.MetricName, "series_2"), // Hash: 4624373102974193462
+			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 			labels.FromStrings(labels.MetricName, "series_3"), // Hash: 11488854180004364397
+			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 			labels.FromStrings(labels.MetricName, "series_4"), // Hash: 7076372709108762848
+			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 			labels.FromStrings(labels.MetricName, "series_5"), // Hash: 2682489904774096023
 		}
 	)
@@ -1114,6 +1119,7 @@ func TestStoreGateway_Series_QuerySharding(t *testing.T) {
 	}{
 		"should touch all series on sharding disabled": {
 			matchers: []storepb.LabelMatcher{
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				{Type: storepb.LabelMatcher_RE, Name: labels.MetricName, Value: ".*"},
 			},
 			expectedMetrics: []string{
@@ -1122,6 +1128,7 @@ func TestStoreGateway_Series_QuerySharding(t *testing.T) {
 		},
 		"should touch only series belonging to the specified shard": {
 			matchers: []storepb.LabelMatcher{
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				{Type: storepb.LabelMatcher_RE, Name: labels.MetricName, Value: ".*"},
 				{Type: storepb.LabelMatcher_EQ, Name: sharding.ShardLabel, Value: sharding.ShardSelector{
 					ShardIndex: 2,
@@ -1185,6 +1192,7 @@ func TestStoreGateway_Series_QuerySharding(t *testing.T) {
 
 					actualMetrics := make([]string, 0, len(seriesSet))
 					for _, s := range seriesSet {
+						//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 						actualMetrics = append(actualMetrics, promLabels(s).Get(labels.MetricName))
 					}
 					assert.ElementsMatch(t, testData.expectedMetrics, actualMetrics)
@@ -1225,6 +1233,7 @@ func TestStoreGateway_Series_QueryShardingShouldGuaranteeSeriesShardingConsisten
 				return false, labels.Labels{}, 0, 0
 			}
 
+			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 			nextSeries := labels.FromStrings(labels.MetricName, "test", "series_id", strconv.Itoa(nextID))
 			nextID++
 
@@ -1306,6 +1315,7 @@ func TestStoreGateway_Series_QueryShardingConcurrency(t *testing.T) {
 				return false, labels.Labels{}, 0, 0
 			}
 
+			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 			series := labels.New(labels.Label{Name: labels.MetricName, Value: fmt.Sprintf("series_%d", nextID)})
 			nextID++
 
@@ -1346,6 +1356,7 @@ func TestStoreGateway_Series_QueryShardingConcurrency(t *testing.T) {
 						MinTime: math.MinInt64,
 						MaxTime: math.MaxInt64,
 						Matchers: []storepb.LabelMatcher{
+							//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 							{Type: storepb.LabelMatcher_RE, Name: labels.MetricName, Value: ".*"},
 							{Type: storepb.LabelMatcher_EQ, Name: sharding.ShardLabel, Value: sharding.ShardSelector{
 								ShardIndex: uint64(shardIndex),

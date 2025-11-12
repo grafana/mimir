@@ -20,12 +20,14 @@ func TestSplitWriteRequestByMaxMarshalSize(t *testing.T) {
 		SkipLabelValidation: true,
 		Timeseries: []PreallocTimeseries{
 			{TimeSeries: &TimeSeries{
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				Labels:     FromLabelsToLabelAdapters(labels.FromStrings(labels.MetricName, "series_1", "pod", "test-application-123456")),
 				Samples:    []Sample{{TimestampMs: 20}},
 				Exemplars:  []Exemplar{{TimestampMs: 30}},
 				Histograms: []Histogram{{Timestamp: 10}},
 			}},
 			{TimeSeries: &TimeSeries{
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				Labels:  FromLabelsToLabelAdapters(labels.FromStrings(labels.MetricName, "series_2", "pod", "test-application-123456")),
 				Samples: []Sample{{TimestampMs: 30}},
 			}},
@@ -95,7 +97,8 @@ func TestSplitWriteRequestByMaxMarshalSize(t *testing.T) {
 			{
 				Source:              RULE,
 				SkipLabelValidation: true,
-				SymbolsRW2:          []string{"", labels.MetricName, "series_1", "pod", "test-application-123456", "This is the first test metric."},
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
+				SymbolsRW2: []string{"", labels.MetricName, "series_1", "pod", "test-application-123456", "This is the first test metric."},
 				TimeseriesRW2: []TimeSeriesRW2{
 					{
 						LabelsRefs: []uint32{1, 2, 3, 4},
@@ -111,7 +114,8 @@ func TestSplitWriteRequestByMaxMarshalSize(t *testing.T) {
 			}, {
 				Source:              RULE,
 				SkipLabelValidation: true,
-				SymbolsRW2:          []string{"", labels.MetricName, "series_2", "pod", "test-application-123456", "This is the second test metric."},
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
+				SymbolsRW2: []string{"", labels.MetricName, "series_2", "pod", "test-application-123456", "This is the second test metric."},
 				TimeseriesRW2: []TimeSeriesRW2{
 					{
 						LabelsRefs: []uint32{1, 2, 3, 4},
@@ -125,7 +129,8 @@ func TestSplitWriteRequestByMaxMarshalSize(t *testing.T) {
 			}, {
 				Source:              RULE,
 				SkipLabelValidation: true,
-				SymbolsRW2:          []string{"", labels.MetricName, "series_3", "This is the third test metric."},
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
+				SymbolsRW2: []string{"", labels.MetricName, "series_3", "This is the third test metric."},
 				TimeseriesRW2: []TimeSeriesRW2{
 					{
 						LabelsRefs: []uint32{1, 2},
@@ -153,7 +158,8 @@ func TestSplitWriteRequestByMaxMarshalSize(t *testing.T) {
 			{
 				Source:              RULE,
 				SkipLabelValidation: true,
-				SymbolsRW2:          []string{"", labels.MetricName, "series_1", "pod", "test-application-123456", "This is the first test metric.", "series_2", "This is the second test metric."},
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
+				SymbolsRW2: []string{"", labels.MetricName, "series_1", "pod", "test-application-123456", "This is the first test metric.", "series_2", "This is the second test metric."},
 				TimeseriesRW2: []TimeSeriesRW2{
 					{
 						LabelsRefs: []uint32{1, 2, 3, 4},
@@ -177,7 +183,8 @@ func TestSplitWriteRequestByMaxMarshalSize(t *testing.T) {
 			}, {
 				Source:              RULE,
 				SkipLabelValidation: true,
-				SymbolsRW2:          []string{"", labels.MetricName, "series_3", "This is the third test metric."},
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
+				SymbolsRW2: []string{"", labels.MetricName, "series_3", "This is the third test metric."},
 				TimeseriesRW2: []TimeSeriesRW2{
 					{
 						LabelsRefs: []uint32{1, 2},
@@ -204,7 +211,8 @@ func TestSplitWriteRequestByMaxMarshalSize(t *testing.T) {
 			{
 				Source:              RULE,
 				SkipLabelValidation: true,
-				SymbolsRW2:          []string{"", labels.MetricName, "series_1", "pod", "test-application-123456", "This is the first test metric."},
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
+				SymbolsRW2: []string{"", labels.MetricName, "series_1", "pod", "test-application-123456", "This is the first test metric."},
 				TimeseriesRW2: []TimeSeriesRW2{
 					{
 						LabelsRefs: []uint32{1, 2, 3, 4},
@@ -220,7 +228,8 @@ func TestSplitWriteRequestByMaxMarshalSize(t *testing.T) {
 			}, {
 				Source:              RULE,
 				SkipLabelValidation: true,
-				SymbolsRW2:          []string{"", labels.MetricName, "series_2", "pod", "test-application-123456", "This is the second test metric."},
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
+				SymbolsRW2: []string{"", labels.MetricName, "series_2", "pod", "test-application-123456", "This is the second test metric."},
 				TimeseriesRW2: []TimeSeriesRW2{
 					{
 						LabelsRefs: []uint32{1, 2, 3, 4},
@@ -234,7 +243,8 @@ func TestSplitWriteRequestByMaxMarshalSize(t *testing.T) {
 			}, {
 				Source:              RULE,
 				SkipLabelValidation: true,
-				SymbolsRW2:          []string{"", labels.MetricName, "series_3", "This is the third test metric."},
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
+				SymbolsRW2: []string{"", labels.MetricName, "series_3", "This is the third test metric."},
 				TimeseriesRW2: []TimeSeriesRW2{
 					{
 						LabelsRefs: []uint32{1, 2},
@@ -294,7 +304,8 @@ func TestSplitWriteRequestByMaxMarshalSize(t *testing.T) {
 			{
 				Source:              RULE,
 				SkipLabelValidation: true,
-				SymbolsRW2:          []string{"", labels.MetricName, "series_1", "pod", "test-application-123456", "This is the first test metric."},
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
+				SymbolsRW2: []string{"", labels.MetricName, "series_1", "pod", "test-application-123456", "This is the first test metric."},
 				TimeseriesRW2: []TimeSeriesRW2{
 					{
 						LabelsRefs: []uint32{1, 2, 3, 4},
@@ -310,7 +321,8 @@ func TestSplitWriteRequestByMaxMarshalSize(t *testing.T) {
 			}, {
 				Source:              RULE,
 				SkipLabelValidation: true,
-				SymbolsRW2:          []string{"", labels.MetricName, "series_2", "pod", "test-application-123456", "This is the second test metric."},
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
+				SymbolsRW2: []string{"", labels.MetricName, "series_2", "pod", "test-application-123456", "This is the second test metric."},
 				TimeseriesRW2: []TimeSeriesRW2{
 					{
 						LabelsRefs: []uint32{1, 2, 3, 4},
@@ -324,7 +336,8 @@ func TestSplitWriteRequestByMaxMarshalSize(t *testing.T) {
 			}, {
 				Source:              RULE,
 				SkipLabelValidation: true,
-				SymbolsRW2:          []string{"", labels.MetricName, "series_3", "This is the third test metric."},
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
+				SymbolsRW2: []string{"", labels.MetricName, "series_3", "This is the third test metric."},
 				TimeseriesRW2: []TimeSeriesRW2{
 					{
 						LabelsRefs: []uint32{1, 2},
@@ -616,6 +629,7 @@ func generateWriteRequest(numSeries, numLabelsPerSeries, numSamplesPerSeries, nu
 
 		// Generate series labels.
 		builder.Reset()
+		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 		builder.Add(labels.MetricName, fmt.Sprintf("series_%d", i))
 		for l := 1; l < numLabelsPerSeries; l++ {
 			builder.Add(fmt.Sprintf("label_%d", l), fmt.Sprintf("this-is-the-value-of-label-%d", l))
@@ -673,7 +687,8 @@ func testReqV2Static(t *testing.T) *WriteRequest {
 	reqv2 := &WriteRequest{
 		Source:              RULE,
 		SkipLabelValidation: true,
-		SymbolsRW2:          []string{"", labels.MetricName, "series_1", "pod", "test-application-123456", "This is the first test metric.", "series_2", "This is the second test metric.", "series_3", "This is the third test metric."},
+		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
+		SymbolsRW2: []string{"", labels.MetricName, "series_1", "pod", "test-application-123456", "This is the first test metric.", "series_2", "This is the second test metric.", "series_3", "This is the third test metric."},
 		TimeseriesRW2: []TimeSeriesRW2{
 			{
 				LabelsRefs: []uint32{1, 2, 3, 4},
@@ -771,6 +786,7 @@ func mergeRW2s(partials []*WriteRequest) *WriteRequest {
 func TestRW2SymbolSplitting(t *testing.T) {
 	t.Run("timeseries size estimation", func(t *testing.T) {
 		t.Run("symbols size matches proto size", func(t *testing.T) {
+			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 			syms := []string{"", labels.MetricName, "series_1", "pod", "test-application-123456", "trace_id", "12345", "Help Text"}
 			ts := TimeSeriesRW2{
 				LabelsRefs: []uint32{1, 2, 3, 4},
@@ -790,6 +806,7 @@ func TestRW2SymbolSplitting(t *testing.T) {
 		})
 
 		t.Run("symbols size only considers referenced symbols", func(t *testing.T) {
+			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 			syms := []string{"", labels.MetricName, "series_1", "series_2", "series_3", "pod", "test-application-123456", "trace_id", "12345", "Help Text", "unrelated text"}
 			ts := TimeSeriesRW2{
 				LabelsRefs: []uint32{1, 4, 5, 6},
@@ -810,6 +827,7 @@ func TestRW2SymbolSplitting(t *testing.T) {
 		})
 
 		t.Run("upper bound grows with possible symbol magnitude", func(t *testing.T) {
+			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 			syms := []string{"", labels.MetricName, "series_1", "pod", "test-application-123456", "trace_id", "12345", "Help Text"}
 			ts := TimeSeriesRW2{
 				LabelsRefs: []uint32{1, 2, 3, 4},
@@ -837,6 +855,7 @@ func TestRW2SymbolSplitting(t *testing.T) {
 		})
 
 		t.Run("common symbol refs only count the ref and not the symbol", func(t *testing.T) {
+			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 			syms := []string{"", labels.MetricName, "series_1", "series_2", "series_3", "pod", "test-application-123456", "trace_id", "12345", "Help Text", "unrelated text"}
 			ts := TimeSeriesRW2{
 				LabelsRefs: []uint32{11, 14, 15, 16, 7, 8}, // References a couple common symbols, outside the range
@@ -864,6 +883,7 @@ func TestRW2SymbolSplitting(t *testing.T) {
 	t.Run("resymbolizeTimeSeriesRW2", func(t *testing.T) {
 		t.Run("no change required", func(t *testing.T) {
 			newTable := NewFastSymbolsTable(0)
+			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 			syms := []string{"", labels.MetricName, "series_1", "pod", "test-application-123456", "trace_id", "12345", "Help Text"}
 			ts := TimeSeriesRW2{
 				LabelsRefs: []uint32{1, 2, 3, 4},
@@ -884,6 +904,7 @@ func TestRW2SymbolSplitting(t *testing.T) {
 
 		t.Run("excludes unrelated strings in original symbols", func(t *testing.T) {
 			newTable := NewFastSymbolsTable(0)
+			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 			syms := []string{"", "unrelated1", "unrelated2", "unrelated3", labels.MetricName, "series_1", "pod", "test-application-123456", "trace_id", "12345", "Help Text"}
 			ts := TimeSeriesRW2{
 				LabelsRefs: []uint32{4, 5, 6, 7},
@@ -898,6 +919,7 @@ func TestRW2SymbolSplitting(t *testing.T) {
 
 			resymbolized := resymbolizeTimeSeriesRW2(&ts, syms, newTable)
 
+			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 			expSymbols := []string{"", labels.MetricName, "series_1", "pod", "test-application-123456", "trace_id", "12345", "Help Text"}
 			require.Equal(t, expSymbols, newTable.Symbols())
 			require.Equal(t, []uint32{1, 2, 3, 4}, resymbolized.LabelsRefs)
@@ -910,9 +932,11 @@ func TestRW2SymbolSplitting(t *testing.T) {
 			newTable := NewFastSymbolsTable(0)
 			newTable.Symbolize("unrelated1")
 			newTable.Symbolize("unrelated2")
+			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 			newTable.Symbolize(labels.MetricName)
 			newTable.Symbolize("series_1")
 			prevSize := newTable.SymbolsSizeProto()
+			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 			syms := []string{"", labels.MetricName, "series_1", "pod", "test-application-123456", "trace_id", "12345", "Help Text"}
 			ts := TimeSeriesRW2{
 				LabelsRefs: []uint32{1, 2, 3, 4},
@@ -927,6 +951,7 @@ func TestRW2SymbolSplitting(t *testing.T) {
 
 			resymbolized := resymbolizeTimeSeriesRW2(&ts, syms, newTable)
 
+			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 			expSyms := []string{"", "unrelated1", "unrelated2", labels.MetricName, "series_1", "pod", "test-application-123456", "trace_id", "12345", "Help Text"}
 			require.Equal(t, expSyms, newTable.Symbols())
 			require.Equal(t, []uint32{3, 4, 5, 6}, resymbolized.LabelsRefs)
@@ -944,6 +969,7 @@ func TestRW2SymbolSplitting(t *testing.T) {
 				newTable.Symbolize(fmt.Sprintf("%d", i))
 			}
 
+			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 			syms := []string{"", labels.MetricName, "series_1", "pod", "test-application-123456", "trace_id", "12345", "Help Text", "unit"}
 			ts := TimeSeriesRW2{
 				LabelsRefs: []uint32{1, 2, 3, 4},

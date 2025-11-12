@@ -225,6 +225,7 @@ func TestRangeVectorOperator_Cloning(t *testing.T) {
 	ctx := context.Background()
 	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
 	inner := &testRangeVectorOperator{
+		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 		series:                   []labels.Labels{labels.FromStrings(labels.MetricName, "test_series")},
 		data:                     []types.InstantVectorSeriesData{series},
 		stepRange:                time.Minute,
@@ -305,6 +306,7 @@ func TestRangeVectorOperator_ClosingAfterFirstReadFails(t *testing.T) {
 	series, err := types.SeriesMetadataSlicePool.Get(1, memoryConsumptionTracker)
 	require.NoError(t, err)
 
+	//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 	series, err = types.AppendSeriesMetadata(memoryConsumptionTracker, series, types.SeriesMetadata{Labels: labels.FromStrings(labels.MetricName, "test_series")})
 	require.NoError(t, err)
 
@@ -335,8 +337,10 @@ func TestRangeVectorOperator_ClosingAfterSubsequentReadFails(t *testing.T) {
 	series, err := types.SeriesMetadataSlicePool.Get(2, memoryConsumptionTracker)
 	require.NoError(t, err)
 
+	//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 	series, err = types.AppendSeriesMetadata(memoryConsumptionTracker, series, types.SeriesMetadata{Labels: labels.FromStrings(labels.MetricName, "test_series_1")})
 	require.NoError(t, err)
+	//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 	series, err = types.AppendSeriesMetadata(memoryConsumptionTracker, series, types.SeriesMetadata{Labels: labels.FromStrings(labels.MetricName, "test_series_2")})
 	require.NoError(t, err)
 

@@ -143,6 +143,7 @@ func FromWriteRequestToRW2Request(rw1 *WriteRequest, commonSymbols *CommonSymbol
 		}
 
 		for i := range ts.Labels {
+			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 			if ts.Labels[i].Name == labels.MetricName {
 				metricName = ts.Labels[i].Value
 			}
@@ -174,6 +175,7 @@ func FromWriteRequestToRW2Request(rw1 *WriteRequest, commonSymbols *CommonSymbol
 			continue
 		}
 
+		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 		labelsRefs := []uint32{symbols.Symbolize(labels.MetricName), symbols.Symbolize(rw1.Metadata[i].MetricFamilyName)}
 		rw2meta := FromMetricMetadataToMetadataRW2(rw1.Metadata[i], symbols)
 		rw2Timeseries = append(rw2Timeseries, TimeSeriesRW2{

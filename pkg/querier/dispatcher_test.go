@@ -502,7 +502,9 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 								SeriesMetadata: &querierpb.EvaluateQueryResponseSeriesMetadata{
 									NodeIndex: 1,
 									Series: []querierpb.SeriesMetadata{
+										//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 										{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(labels.MetricName, "my_series", "idx", "0"))},
+										//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 										{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(labels.MetricName, "my_series", "idx", "1"))},
 									},
 								},
@@ -1076,6 +1078,7 @@ func TestDispatcher_HandleProtobuf_WithDelayedNameRemovalEnabled(t *testing.T) {
 								SeriesMetadata: &querierpb.EvaluateQueryResponseSeriesMetadata{
 									NodeIndex: 1,
 									Series: []querierpb.SeriesMetadata{
+										//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 										{DropName: true, Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(labels.MetricName, "some_total", "idx", "0"))},
 									},
 								},

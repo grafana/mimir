@@ -66,6 +66,7 @@ func (q *spinOffSubqueriesQuerier) Select(ctx context.Context, _ bool, hints *st
 	var name string
 	values := map[string]string{}
 	for _, matcher := range matchers {
+		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 		if matcher.Name == labels.MetricName {
 			name = matcher.Value
 		} else {

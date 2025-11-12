@@ -43,12 +43,14 @@ func vectorMatchingGroupKeyFunc(vectorMatching parser.VectorMatching) func(label
 	if len(vectorMatching.MatchingLabels) == 0 {
 		// Fast path for common case for expressions like "a + b" with no 'on' or 'without' labels.
 		return func(l labels.Labels) []byte {
+			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 			buf = l.BytesWithoutLabels(buf, labels.MetricName)
 			return buf
 		}
 	}
 
 	lbls := make([]string, 0, len(vectorMatching.MatchingLabels)+1)
+	//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 	lbls = append(lbls, labels.MetricName)
 	lbls = append(lbls, vectorMatching.MatchingLabels...)
 	slices.Sort(lbls)
@@ -68,6 +70,7 @@ func groupLabelsFunc(vectorMatching parser.VectorMatching, op parser.ItemType, r
 
 		// We never want to include __name__, even if it's explicitly mentioned in on(...).
 		// See https://github.com/prometheus/prometheus/issues/16631.
+		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 		if i := slices.Index(vectorMatching.MatchingLabels, labels.MetricName); i != -1 {
 			lbls = make([]string, 0, len(vectorMatching.MatchingLabels)-1)
 			lbls = append(lbls, vectorMatching.MatchingLabels[:i]...)
@@ -92,6 +95,7 @@ func groupLabelsFunc(vectorMatching parser.VectorMatching, op parser.ItemType, r
 
 	return func(l labels.Labels) labels.Labels {
 		lb.Reset(l)
+		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 		lb.Del(labels.MetricName)
 		lb.Del(vectorMatching.MatchingLabels...)
 		return lb.Labels()

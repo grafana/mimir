@@ -1454,6 +1454,7 @@ func generateBenchmarkResponse(seriesCount int, pointCount int, batchSize int) [
 
 	series := make([]labels.Labels, 0, seriesCount)
 	for i := range seriesCount {
+		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 		series = append(series, labels.FromStrings(labels.MetricName, "my_metric", "idx", strconv.Itoa(i)))
 	}
 

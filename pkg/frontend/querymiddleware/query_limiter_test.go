@@ -207,6 +207,7 @@ func TestQueryLimiterMiddleware_MultipleUsers_RangeAndInstantQuery(t *testing.T)
 func TestQueryLimiterMiddleware_RemoteRead(t *testing.T) {
 	query := &prompb.Query{
 		Matchers: []*prompb.LabelMatcher{
+			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 			{Type: prompb.LabelMatcher_EQ, Name: labels.MetricName, Value: "metric_counter"},
 			{Type: prompb.LabelMatcher_RE, Name: "pod", Value: "app-.*"},
 		},
@@ -281,6 +282,7 @@ func TestQueryLimiterMiddleware_RemoteRead(t *testing.T) {
 func TestQueryLimiterMiddleware_MultipleUsers_RemoteRead(t *testing.T) {
 	query := &prompb.Query{
 		Matchers: []*prompb.LabelMatcher{
+			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 			{Type: prompb.LabelMatcher_EQ, Name: labels.MetricName, Value: "metric_counter"},
 			{Type: prompb.LabelMatcher_RE, Name: "pod", Value: "app-.*"},
 		},

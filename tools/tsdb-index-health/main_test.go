@@ -20,6 +20,7 @@ func TestGatherIndexHealthStats(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	spec1 := block.SeriesSpec{
+		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 		Labels: labels.FromStrings(labels.MetricName, "asdf"),
 		Chunks: []chunks.Meta{
 			must(chunks.ChunkFromSamples([]chunks.Sample{
@@ -30,6 +31,7 @@ func TestGatherIndexHealthStats(t *testing.T) {
 		},
 	}
 	spec2 := block.SeriesSpec{
+		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 		Labels: labels.FromStrings(labels.MetricName, "zxcv", "foo", "bar"),
 		Chunks: []chunks.Meta{
 			must(chunks.ChunkFromSamples([]chunks.Sample{

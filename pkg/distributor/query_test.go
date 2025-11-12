@@ -37,9 +37,13 @@ func TestDistributor_QueryExemplars(t *testing.T) {
 
 	fixtures := []mimirpb.PreallocTimeseries{
 		// Note: it's important to write at least a sample, otherwise the exemplar timestamp validation doesn't pass.
+		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 		makeTimeseries([]string{labels.MetricName, "series_1", "namespace", "a"}, makeSamples(int64(now), 1), nil, makeExemplars([]string{"trace_id", "A"}, int64(now), 0)),
+		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 		makeTimeseries([]string{labels.MetricName, "series_1", "namespace", "b"}, makeSamples(int64(now), 2), nil, makeExemplars([]string{"trace_id", "B"}, int64(now), 0)),
+		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 		makeTimeseries([]string{labels.MetricName, "series_2", "namespace", "a"}, makeSamples(int64(now), 3), nil, makeExemplars([]string{"trace_id", "C"}, int64(now), 0)),
+		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 		makeTimeseries([]string{labels.MetricName, "series_2", "namespace", "b"}, makeSamples(int64(now), 4), nil, makeExemplars([]string{"trace_id", "D"}, int64(now), 0)),
 	}
 
@@ -455,6 +459,7 @@ func TestDistributor_QueryStream_ShouldSuccessfullyRunOnSlowIngesterWithStreamin
 			}
 
 			// Query back multiple times and ensure each response is consistent.
+			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 			matchers := labels.MustNewMatcher(labels.MatchRegexp, labels.MetricName, "series_.*")
 			queryMetrics := stats.NewQueryMetrics(reg[0])
 

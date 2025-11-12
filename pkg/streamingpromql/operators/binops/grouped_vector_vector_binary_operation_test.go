@@ -68,11 +68,15 @@ func TestGroupedVectorVectorBinaryOperation_OutputSeriesSorting(t *testing.T) {
 
 		"single series on each side matched and both sides' series are in the same order": {
 			leftSeries: []labels.Labels{
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				labels.FromStrings(labels.MetricName, "left", "group", "a"),
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				labels.FromStrings(labels.MetricName, "left", "group", "b"),
 			},
 			rightSeries: []labels.Labels{
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				labels.FromStrings(labels.MetricName, "right", "group", "a"),
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				labels.FromStrings(labels.MetricName, "right", "group", "b"),
 			},
 
@@ -87,11 +91,15 @@ func TestGroupedVectorVectorBinaryOperation_OutputSeriesSorting(t *testing.T) {
 
 		"single series on each side matched and both sides' series are in different order with group_left": {
 			leftSeries: []labels.Labels{
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				labels.FromStrings(labels.MetricName, "left", "group", "a"),
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				labels.FromStrings(labels.MetricName, "left", "group", "b"),
 			},
 			rightSeries: []labels.Labels{
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				labels.FromStrings(labels.MetricName, "right", "group", "b"),
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				labels.FromStrings(labels.MetricName, "right", "group", "a"),
 			},
 
@@ -107,11 +115,15 @@ func TestGroupedVectorVectorBinaryOperation_OutputSeriesSorting(t *testing.T) {
 
 		"single series on each side matched and both sides' series are in different order with group_right": {
 			leftSeries: []labels.Labels{
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				labels.FromStrings(labels.MetricName, "left", "group", "a"),
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				labels.FromStrings(labels.MetricName, "left", "group", "b"),
 			},
 			rightSeries: []labels.Labels{
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				labels.FromStrings(labels.MetricName, "right", "group", "b"),
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				labels.FromStrings(labels.MetricName, "right", "group", "a"),
 			},
 
@@ -127,15 +139,23 @@ func TestGroupedVectorVectorBinaryOperation_OutputSeriesSorting(t *testing.T) {
 
 		"multiple series on left side match to a single series on right side with group_left": {
 			leftSeries: []labels.Labels{
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				labels.FromStrings(labels.MetricName, "left", "group", "a", "idx", "1"),
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				labels.FromStrings(labels.MetricName, "left", "group", "a", "idx", "2"),
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				labels.FromStrings(labels.MetricName, "left", "group", "a", "idx", "3"),
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				labels.FromStrings(labels.MetricName, "left", "group", "b", "idx", "3"),
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				labels.FromStrings(labels.MetricName, "left", "group", "b", "idx", "1"),
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				labels.FromStrings(labels.MetricName, "left", "group", "b", "idx", "2"),
 			},
 			rightSeries: []labels.Labels{
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				labels.FromStrings(labels.MetricName, "right", "group", "b"),
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				labels.FromStrings(labels.MetricName, "right", "group", "a"),
 			},
 
@@ -155,15 +175,23 @@ func TestGroupedVectorVectorBinaryOperation_OutputSeriesSorting(t *testing.T) {
 
 		"multiple series on left side match to a single series on right side with group_right": {
 			leftSeries: []labels.Labels{
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				labels.FromStrings(labels.MetricName, "left", "group", "a", "idx", "1"),
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				labels.FromStrings(labels.MetricName, "left", "group", "a", "idx", "2"),
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				labels.FromStrings(labels.MetricName, "left", "group", "a", "idx", "3"),
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				labels.FromStrings(labels.MetricName, "left", "group", "b", "idx", "3"),
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				labels.FromStrings(labels.MetricName, "left", "group", "b", "idx", "1"),
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				labels.FromStrings(labels.MetricName, "left", "group", "b", "idx", "2"),
 			},
 			rightSeries: []labels.Labels{
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				labels.FromStrings(labels.MetricName, "right", "group", "b"),
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				labels.FromStrings(labels.MetricName, "right", "group", "a"),
 			},
 
@@ -179,15 +207,23 @@ func TestGroupedVectorVectorBinaryOperation_OutputSeriesSorting(t *testing.T) {
 
 		"single series on left side match to multiple series on right side with group_left": {
 			leftSeries: []labels.Labels{
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				labels.FromStrings(labels.MetricName, "left", "group", "a"),
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				labels.FromStrings(labels.MetricName, "left", "group", "b"),
 			},
 			rightSeries: []labels.Labels{
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				labels.FromStrings(labels.MetricName, "right", "group", "b", "idx", "1"),
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				labels.FromStrings(labels.MetricName, "right", "group", "b", "idx", "2"),
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				labels.FromStrings(labels.MetricName, "right", "group", "b", "idx", "3"),
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				labels.FromStrings(labels.MetricName, "right", "group", "a", "idx", "3"),
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				labels.FromStrings(labels.MetricName, "right", "group", "a", "idx", "1"),
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				labels.FromStrings(labels.MetricName, "right", "group", "a", "idx", "2"),
 			},
 
@@ -203,15 +239,23 @@ func TestGroupedVectorVectorBinaryOperation_OutputSeriesSorting(t *testing.T) {
 
 		"single series on left side match to multiple series on right side with group_right": {
 			leftSeries: []labels.Labels{
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				labels.FromStrings(labels.MetricName, "left", "group", "a"),
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				labels.FromStrings(labels.MetricName, "left", "group", "b"),
 			},
 			rightSeries: []labels.Labels{
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				labels.FromStrings(labels.MetricName, "right", "group", "b", "idx", "1"),
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				labels.FromStrings(labels.MetricName, "right", "group", "b", "idx", "2"),
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				labels.FromStrings(labels.MetricName, "right", "group", "b", "idx", "3"),
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				labels.FromStrings(labels.MetricName, "right", "group", "a", "idx", "3"),
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				labels.FromStrings(labels.MetricName, "right", "group", "a", "idx", "1"),
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				labels.FromStrings(labels.MetricName, "right", "group", "a", "idx", "2"),
 			},
 
@@ -231,19 +275,31 @@ func TestGroupedVectorVectorBinaryOperation_OutputSeriesSorting(t *testing.T) {
 
 		"multiple series on left side match to multiple series on right side with group_left": {
 			leftSeries: []labels.Labels{
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				labels.FromStrings(labels.MetricName, "left", "group", "a", "idx_left", "1"),
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				labels.FromStrings(labels.MetricName, "left", "group", "b", "idx_left", "3"),
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				labels.FromStrings(labels.MetricName, "left", "group", "a", "idx_left", "2"),
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				labels.FromStrings(labels.MetricName, "left", "group", "a", "idx_left", "3"),
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				labels.FromStrings(labels.MetricName, "left", "group", "b", "idx_left", "1"),
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				labels.FromStrings(labels.MetricName, "left", "group", "b", "idx_left", "2"),
 			},
 			rightSeries: []labels.Labels{
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				labels.FromStrings(labels.MetricName, "right", "group", "b", "idx_right", "4"),
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				labels.FromStrings(labels.MetricName, "right", "group", "b", "idx_right", "5"),
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				labels.FromStrings(labels.MetricName, "right", "group", "b", "idx_right", "6"),
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				labels.FromStrings(labels.MetricName, "right", "group", "a", "idx_right", "5"),
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				labels.FromStrings(labels.MetricName, "right", "group", "a", "idx_right", "4"),
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				labels.FromStrings(labels.MetricName, "right", "group", "a", "idx_right", "6"),
 			},
 
@@ -263,19 +319,31 @@ func TestGroupedVectorVectorBinaryOperation_OutputSeriesSorting(t *testing.T) {
 
 		"multiple series on left side match to multiple series on right side with group_right": {
 			leftSeries: []labels.Labels{
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				labels.FromStrings(labels.MetricName, "left", "group", "a", "idx_left", "1"),
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				labels.FromStrings(labels.MetricName, "left", "group", "b", "idx_left", "3"),
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				labels.FromStrings(labels.MetricName, "left", "group", "a", "idx_left", "2"),
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				labels.FromStrings(labels.MetricName, "left", "group", "a", "idx_left", "3"),
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				labels.FromStrings(labels.MetricName, "left", "group", "b", "idx_left", "1"),
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				labels.FromStrings(labels.MetricName, "left", "group", "b", "idx_left", "2"),
 			},
 			rightSeries: []labels.Labels{
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				labels.FromStrings(labels.MetricName, "right", "group", "b", "idx_right", "4"),
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				labels.FromStrings(labels.MetricName, "right", "group", "b", "idx_right", "5"),
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				labels.FromStrings(labels.MetricName, "right", "group", "b", "idx_right", "6"),
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				labels.FromStrings(labels.MetricName, "right", "group", "a", "idx_right", "5"),
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				labels.FromStrings(labels.MetricName, "right", "group", "a", "idx_right", "4"),
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				labels.FromStrings(labels.MetricName, "right", "group", "a", "idx_right", "6"),
 			},
 
@@ -544,7 +612,9 @@ func TestGroupedVectorVectorBinaryOperation_ReleasesIntermediateStateIfClosedEar
 	}{
 		"closed after reading no series: multiple series from 'many' side match to a single 'one' series": {
 			leftSeries: []labels.Labels{
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				labels.FromStrings("group", "1", labels.MetricName, "left_1"),
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				labels.FromStrings("group", "1", labels.MetricName, "left_2"),
 			},
 			rightSeries: []labels.Labels{
@@ -553,12 +623,15 @@ func TestGroupedVectorVectorBinaryOperation_ReleasesIntermediateStateIfClosedEar
 			seriesToRead: 0,
 
 			expectedOutputSeries: []labels.Labels{
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				labels.FromStrings("group", "1", labels.MetricName, "left_1", "env", "prod"),
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				labels.FromStrings("group", "1", labels.MetricName, "left_2", "env", "prod"),
 			},
 		},
 		"closed after reading no series: multiple series from 'one' side match to a single 'many' series": {
 			leftSeries: []labels.Labels{
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				labels.FromStrings("group", "1", labels.MetricName, "left_1"),
 			},
 			rightSeries: []labels.Labels{
@@ -568,13 +641,17 @@ func TestGroupedVectorVectorBinaryOperation_ReleasesIntermediateStateIfClosedEar
 			seriesToRead: 0,
 
 			expectedOutputSeries: []labels.Labels{
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				labels.FromStrings("group", "1", labels.MetricName, "left_1", "env", "prod"),
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				labels.FromStrings("group", "1", labels.MetricName, "left_1", "env", "test"),
 			},
 		},
 		"closed after reading first series: multiple series from 'many' side match to a single 'one' series": {
 			leftSeries: []labels.Labels{
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				labels.FromStrings("group", "1", labels.MetricName, "left_1"),
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				labels.FromStrings("group", "1", labels.MetricName, "left_2"),
 			},
 			rightSeries: []labels.Labels{
@@ -583,12 +660,15 @@ func TestGroupedVectorVectorBinaryOperation_ReleasesIntermediateStateIfClosedEar
 			seriesToRead: 1,
 
 			expectedOutputSeries: []labels.Labels{
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				labels.FromStrings("group", "1", labels.MetricName, "left_1", "env", "prod"),
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				labels.FromStrings("group", "1", labels.MetricName, "left_2", "env", "prod"),
 			},
 		},
 		"closed after reading first series: multiple series from 'one' side match to a single 'many' series": {
 			leftSeries: []labels.Labels{
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				labels.FromStrings("group", "1", labels.MetricName, "left_1"),
 			},
 			rightSeries: []labels.Labels{
@@ -598,13 +678,17 @@ func TestGroupedVectorVectorBinaryOperation_ReleasesIntermediateStateIfClosedEar
 			seriesToRead: 1,
 
 			expectedOutputSeries: []labels.Labels{
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				labels.FromStrings("group", "1", labels.MetricName, "left_1", "env", "prod"),
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				labels.FromStrings("group", "1", labels.MetricName, "left_1", "env", "test"),
 			},
 		},
 		"closed after reading all 'one' side input series in a match group, but not all output series for that match group": {
 			leftSeries: []labels.Labels{
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				labels.FromStrings("group", "1", labels.MetricName, "left_1"),
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				labels.FromStrings("group", "1", labels.MetricName, "left_2"),
 			},
 			rightSeries: []labels.Labels{
@@ -615,9 +699,13 @@ func TestGroupedVectorVectorBinaryOperation_ReleasesIntermediateStateIfClosedEar
 			emptyInputSeries: true, // Don't bother populating the input series with data: we run this test as an instant query, so if both 'one' side series have samples, they conflict with each other.
 
 			expectedOutputSeries: []labels.Labels{
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				labels.FromStrings("group", "1", labels.MetricName, "left_1", "env", "prod"),
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				labels.FromStrings("group", "1", labels.MetricName, "left_1", "env", "test"),
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				labels.FromStrings("group", "1", labels.MetricName, "left_2", "env", "prod"),
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				labels.FromStrings("group", "1", labels.MetricName, "left_2", "env", "test"),
 			},
 		},

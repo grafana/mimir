@@ -148,6 +148,7 @@ func CreateLabelsForAbsentFunction(expr parser.Expr) labels.Labels {
 	// Note this gives arguably wrong behaviour for `absent(x{job="a",job="a",foo="bar"})`.
 	has := make(map[string]bool, len(lm))
 	for _, ma := range lm {
+		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 		if ma.Name == labels.MetricName {
 			continue
 		}

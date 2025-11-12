@@ -122,6 +122,7 @@ func TestIngester_LabelValuesCardinality_SentInBatches(t *testing.T) {
 	seriesForLabel := func(label string) mimirpb.PreallocTimeseries {
 		return mimirpb.PreallocTimeseries{TimeSeries: &mimirpb.TimeSeries{
 			Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				labels.MetricName, "metric",
 				label, nextLabelValue())),
 			Samples: samples,
@@ -240,6 +241,7 @@ func TestIngester_LabelValuesCardinality_AllValuesToBeReturnedInSingleMessage(t 
 					count := idx + 1
 					for c := 0; c < count; c++ {
 						_, err := in.Push(ctx, writeRequestSingleSeries(
+							//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 							labels.FromStrings(labels.MetricName, "foo", lblName, lblValue, "counter", strconv.Itoa(c)),
 							samples))
 						require.NoError(t, err)
@@ -348,6 +350,7 @@ func BenchmarkIngester_LabelValuesCardinality(b *testing.B) {
 		writeReq.Timeseries = append(writeReq.Timeseries, mimirpb.PreallocTimeseries{
 			TimeSeries: &mimirpb.TimeSeries{
 				Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(
+					//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 					labels.MetricName, metricName,
 					// Take prime modulus on the labels, to ensure that each one is a new series.
 					"mod_10", strconv.Itoa(s%(2*5)),
@@ -366,7 +369,8 @@ func BenchmarkIngester_LabelValuesCardinality(b *testing.B) {
 		matchers   []*client.LabelMatcher
 	}{
 		{
-			name:       "no matchers, __name__ label with 1 value all series",
+			name: "no matchers, __name__ label with 1 value all series",
+			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 			labelNames: []string{labels.MetricName},
 			matchers:   nil,
 		},
@@ -388,22 +392,27 @@ func BenchmarkIngester_LabelValuesCardinality(b *testing.B) {
 		{
 			name:       "__name__ matcher, mod_10 label, 1M series each",
 			labelNames: []string{"mod_10"},
-			matchers:   []*client.LabelMatcher{{Type: client.EQUAL, Name: labels.MetricName, Value: metricName}},
+			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
+			matchers: []*client.LabelMatcher{{Type: client.EQUAL, Name: labels.MetricName, Value: metricName}},
 		},
 		{
 			name:       "__name__ matcher, mod_77 label, 130K series each",
 			labelNames: []string{"mod_77"},
-			matchers:   []*client.LabelMatcher{{Type: client.EQUAL, Name: labels.MetricName, Value: metricName}},
+			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
+			matchers: []*client.LabelMatcher{{Type: client.EQUAL, Name: labels.MetricName, Value: metricName}},
 		},
 		{
 			name:       "__name__ matcher, mod_4199 label, 2400 series each",
 			labelNames: []string{"mod_77"},
-			matchers:   []*client.LabelMatcher{{Type: client.EQUAL, Name: labels.MetricName, Value: metricName}},
+			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
+			matchers: []*client.LabelMatcher{{Type: client.EQUAL, Name: labels.MetricName, Value: metricName}},
 		},
 		{
-			name:       "__name__ and mod_10 matchers, mod_4199 label, 240 series each",
+			name: "__name__ and mod_10 matchers, mod_4199 label, 240 series each",
+			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 			labelNames: []string{labels.MetricName, "mod_100"},
 			matchers: []*client.LabelMatcher{
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				{Type: client.EQUAL, Name: labels.MetricName, Value: metricName},
 				{Type: client.EQUAL, Name: "mod_10", Value: "0"},
 			},

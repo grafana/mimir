@@ -816,10 +816,15 @@ func TestQuerySharding_NonMonotonicHistogramBuckets(t *testing.T) {
 
 	var series []storage.Series
 	for i := 0; i < 100; i++ {
+		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 		series = append(series, newSeries(labels.FromStrings(labels.MetricName, "metric_histogram_bucket", "app", strconv.Itoa(i), "le", "10"), start.Add(-lookbackDelta), end, step, arithmeticSequence(1)))
+		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 		series = append(series, newSeries(labels.FromStrings(labels.MetricName, "metric_histogram_bucket", "app", strconv.Itoa(i), "le", "20"), start.Add(-lookbackDelta), end, step, arithmeticSequence(3)))
+		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 		series = append(series, newSeries(labels.FromStrings(labels.MetricName, "metric_histogram_bucket", "app", strconv.Itoa(i), "le", "30"), start.Add(-lookbackDelta), end, step, arithmeticSequence(3)))
+		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 		series = append(series, newSeries(labels.FromStrings(labels.MetricName, "metric_histogram_bucket", "app", strconv.Itoa(i), "le", "40"), start.Add(-lookbackDelta), end, step, arithmeticSequence(3)))
+		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 		series = append(series, newSeries(labels.FromStrings(labels.MetricName, "metric_histogram_bucket", "app", strconv.Itoa(i), "le", "+Inf"), start.Add(-lookbackDelta), end, step, arithmeticSequence(3)))
 	}
 
@@ -938,6 +943,7 @@ func TestQueryshardingDeterminism(t *testing.T) {
 		to   = from.Add(step)
 	)
 
+	//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 	labelsForShard := labelsForShardsGenerator([]labels.Label{{Name: labels.MetricName, Value: "metric"}}, shards)
 	storageSeries := []storage.Series{
 		newSeries(labelsForShard(0), from, to, step, constant(evilFloatA)),

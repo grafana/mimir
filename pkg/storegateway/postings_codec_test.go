@@ -173,15 +173,20 @@ func TestDiffVarintMatchersCodec(t *testing.T) {
 		nil,
 		{},
 		{{}},
+		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 		{labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "cpu_seconds")},
+		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 		{labels.MustNewMatcher(labels.MatchNotEqual, labels.MetricName, "cpu_seconds")},
+		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 		{labels.MustNewMatcher(labels.MatchRegexp, labels.MetricName, "^cpu_.*$")},
+		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 		{labels.MustNewMatcher(labels.MatchNotRegexp, labels.MetricName, "^cpu_.*$")},
 		{labels.MustNewMatcher(labels.MatchEqual, "n", "1"+labelLongSuffix)},
 		{labels.MustNewMatcher(labels.MatchEqual, labelLongSuffix, "1"+labelLongSuffix)},
 		{labels.MustNewMatcher(labels.MatchEqual, "n", "")},
 		{labels.MustNewMatcher(labels.MatchEqual, "n", "1"), labels.MustNewMatcher(labels.MatchEqual, "i", "2")},
 		{labels.MustNewMatcher(labels.MatchRegexp, "n", ""), labels.MustNewMatcher(labels.MatchEqual, "i", "1")},
+		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 		{labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "\n")},
 	}
 
@@ -342,7 +347,9 @@ func BenchmarkEncodePostings(b *testing.B) {
 	}
 
 	matchers := []*labels.Matcher{
+		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 		labels.MustNewMatcher(labels.MatchNotEqual, labels.MetricName, "cpu_seconds"),
+		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 		labels.MustNewMatcher(labels.MatchRegexp, labels.MetricName, "^cpu_.*$"),
 		labels.MustNewMatcher(labels.MatchEqual, "n", "1"+labelLongSuffix),
 		labels.MustNewMatcher(labels.MatchEqual, "n", ""),

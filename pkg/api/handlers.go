@@ -220,13 +220,13 @@ func NewQuerierHandler(
 	const (
 		remoteWriteEnabled = false
 		otlpEnabled        = false
-		appendMetadata     = true
+		appendMetadata     = false
 	)
 
 	api := v1.NewAPI(
 		engine,
 		querier.NewErrorTranslateSampleAndChunkQueryable(queryable), // Translate errors to errors expected by API.
-		nil,                                                         // No remote write support.
+		nil, // No remote write support.
 		exemplarQueryable,
 		func(context.Context) v1.ScrapePoolsRetriever { return &querier.DummyTargetRetriever{} },
 		func(context.Context) v1.TargetRetriever { return &querier.DummyTargetRetriever{} },

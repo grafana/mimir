@@ -56,6 +56,7 @@ func generateHistogramSeriesWrapper(generateHistogram generateHistogramFunc, nam
 
 	lbls := append(
 		[]prompb.Label{
+			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 			{Name: labels.MetricName, Value: name},
 		},
 		additionalLabels...,
@@ -74,6 +75,7 @@ func generateHistogramSeriesWrapper(generateHistogram generateHistogramFunc, nam
 
 	// Generate the expected vector and matrix when querying it
 	metric := model.Metric{}
+	//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 	metric[labels.MetricName] = model.LabelValue(name)
 	for _, lbl := range additionalLabels {
 		metric[model.LabelName(lbl.Name)] = model.LabelValue(lbl.Value)
@@ -104,6 +106,7 @@ func GenerateNHistogramSeries(nSeries, nExemplars int, name func() string, ts ti
 	// Generate the series
 	for i := 0; i < nSeries; i++ {
 		lbls := []prompb.Label{
+			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 			{Name: labels.MetricName, Value: name()},
 		}
 		if additionalLabels != nil {

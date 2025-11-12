@@ -103,6 +103,7 @@ func createChunks(b *testing.B, numChunks, numSamplesPerChunk, duplicationFactor
 }
 
 func TestNewChunkMergeIterator_ShouldGuaranteeDeterminismIteratingTwoSamplesWithSameTimestamp(t *testing.T) {
+	//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 	metric := labels.FromStrings(labels.MetricName, "test")
 
 	first := NewChunkMergeIterator(nil, metric, []chunk.Chunk{

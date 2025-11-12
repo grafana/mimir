@@ -82,6 +82,7 @@ func TestExtractLabelMatchers(t *testing.T) {
 			foundMetrics := make(map[string]bool)
 			for _, matchers := range matcherSets {
 				for _, m := range matchers {
+					//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 					if m.Name == labels.MetricName {
 						foundMetrics[m.Value] = true
 					}

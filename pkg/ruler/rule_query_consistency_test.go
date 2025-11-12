@@ -135,6 +135,7 @@ func TestWrapQueryableWithReadConsistency(t *testing.T) {
 
 	t.Run("should inject strong read consistency if querying ALERTS_FOR_STATE", func(t *testing.T) {
 		hasReadConsistency, readConsistencyLevel := runWrappedSelect(
+			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 			labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "ALERTS_FOR_STATE"),
 			labels.MustNewMatcher(labels.MatchEqual, "alertname", "my_test_alert"),
 		)
@@ -158,9 +159,13 @@ func TestIsQueryingAlertsForStateMetric(t *testing.T) {
 	assert.False(t, isQueryingAlertsForStateMetric("ALERTS"))
 	assert.True(t, isQueryingAlertsForStateMetric("ALERTS_FOR_STATE"))
 
+	//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 	assert.False(t, isQueryingAlertsForStateMetric("", labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "test")))
+	//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 	assert.False(t, isQueryingAlertsForStateMetric("", labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "ALERTS")))
+	//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 	assert.True(t, isQueryingAlertsForStateMetric("", labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "ALERTS_FOR_STATE")))
+	//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 	assert.True(t, isQueryingAlertsForStateMetric("", labels.MustNewMatcher(labels.MatchRegexp, labels.MetricName, "ALERTS_.*")))
 }
 

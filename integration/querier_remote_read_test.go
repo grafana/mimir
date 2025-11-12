@@ -287,12 +287,15 @@ func TestQuerierStreamingRemoteRead(t *testing.T) {
 	// Generate the series.
 	seriesToPush := []prompb.TimeSeries{
 		{
+			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 			Labels:  []prompb.Label{{Name: labels.MetricName, Value: floatMetricName}},
 			Samples: floats,
 		}, {
+			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 			Labels:     []prompb.Label{{Name: labels.MetricName, Value: histogramMetricName}},
 			Histograms: histograms,
 		}, {
+			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 			Labels:     []prompb.Label{{Name: labels.MetricName, Value: floatHistogramMetricName}},
 			Histograms: floatHistograms,
 		},

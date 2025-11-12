@@ -193,7 +193,8 @@ func TestInstantVectorSelector_NativeHistogramPointerHandling(t *testing.T) {
 					Queryable: storage,
 					TimeRange: types.NewRangeQueryTimeRange(startTime, endTime, time.Minute),
 					Matchers: []types.Matcher{{
-						Type:  labels.MatchEqual,
+						Type: labels.MatchEqual,
+						//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 						Name:  labels.MetricName,
 						Value: "my_metric",
 					}},
@@ -241,7 +242,8 @@ func TestInstantVectorSelector_SliceSizing(t *testing.T) {
 					Queryable: storage,
 					TimeRange: types.NewRangeQueryTimeRange(startTime, endTime, time.Minute),
 					Matchers: []types.Matcher{{
-						Type:  labels.MatchEqual,
+						Type: labels.MatchEqual,
+						//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 						Name:  labels.MetricName,
 						Value: "metric",
 					}},
@@ -256,7 +258,9 @@ func TestInstantVectorSelector_SliceSizing(t *testing.T) {
 			require.NoError(t, err)
 
 			expectedSeries := []types.SeriesMetadata{
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				{Labels: labels.FromStrings(labels.MetricName, "metric", "type", "float")},
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				{Labels: labels.FromStrings(labels.MetricName, "metric", "type", "histogram")},
 			}
 

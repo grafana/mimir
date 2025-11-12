@@ -354,6 +354,7 @@ func TestIngester_StartReadRequest(t *testing.T) {
 }
 
 func TestIngester_Push(t *testing.T) {
+	//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 	metricLabelAdapters := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "test"}}
 	metricLabelSet := mimirpb.FromLabelAdaptersToMetric(metricLabelAdapters)
 	metricNames := []string{
@@ -4264,7 +4265,8 @@ func TestIngester_Push(t *testing.T) {
 			err = i.QueryStream(&client.QueryRequest{
 				StartTimestampMs: math.MinInt64,
 				EndTimestampMs:   math.MaxInt64,
-				Matchers:         []*client.LabelMatcher{{Type: client.REGEX_MATCH, Name: labels.MetricName, Value: ".*"}},
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
+				Matchers: []*client.LabelMatcher{{Type: client.REGEX_MATCH, Name: labels.MetricName, Value: ".*"}},
 			}, s)
 			require.NoError(t, err)
 
@@ -4280,6 +4282,7 @@ func TestIngester_Push(t *testing.T) {
 				StartTimestampMs: math.MinInt64,
 				EndTimestampMs:   math.MaxInt64,
 				Matchers: []*client.LabelMatchers{
+					//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 					{Matchers: []*client.LabelMatcher{{Type: client.REGEX_MATCH, Name: labels.MetricName, Value: ".*"}}},
 				},
 			})
@@ -4346,7 +4349,9 @@ func TestIngester_Push(t *testing.T) {
 }
 
 func TestIngester_Push_ShouldCorrectlyTrackMetricsInMultiTenantScenario(t *testing.T) {
+	//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 	metricLabelAdapters := [][]mimirpb.LabelAdapter{{{Name: labels.MetricName, Value: "test"}}}
+	//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 	metricLabelAdaptersHist := [][]mimirpb.LabelAdapter{{{Name: labels.MetricName, Value: "test_histogram"}}}
 	metricNames := []string{
 		"cortex_ingester_ingested_samples_total",
@@ -4452,7 +4457,9 @@ func TestIngester_Push_ShouldCorrectlyTrackMetricsInMultiTenantScenario(t *testi
 }
 
 func TestIngester_Push_DecreaseInactiveSeries(t *testing.T) {
+	//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 	metricLabelAdapters := [][]mimirpb.LabelAdapter{{{Name: labels.MetricName, Value: "test"}}}
+	//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 	metricLabelAdaptersHist := [][]mimirpb.LabelAdapter{{{Name: labels.MetricName, Value: "test_histogram"}}}
 	metricNames := []string{
 		"cortex_ingester_memory_series_created_total",
@@ -4589,6 +4596,7 @@ func BenchmarkIngesterPush(b *testing.B) {
 					startAndWaitHealthy(b, ingester, r)
 
 					// Push a single time series to set the TSDB min time.
+					//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 					metricLabelAdapters := [][]mimirpb.LabelAdapter{{{Name: labels.MetricName, Value: "test"}}}
 					startTime := util.TimeToMillis(time.Now())
 
@@ -4679,6 +4687,7 @@ func Benchmark_Ingester_PushOnError(b *testing.B) {
 			beforeBenchmark: func(b *testing.B, ingester *Ingester, _ int) {
 				// Push a single time series to set the TSDB min time.
 				currTimeReq := mimirpb.ToWriteRequest(
+					//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 					[][]mimirpb.LabelAdapter{{{Name: labels.MetricName, Value: metricName}}},
 					[]mimirpb.Sample{{Value: 1, TimestampMs: util.TimeToMillis(time.Now())}},
 					nil,
@@ -4705,6 +4714,7 @@ func Benchmark_Ingester_PushOnError(b *testing.B) {
 				// For each series, push a single sample with a timestamp greater than next pushes.
 				for i := 0; i < numSeriesPerRequest; i++ {
 					currTimeReq := mimirpb.ToWriteRequest(
+						//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 						[][]mimirpb.LabelAdapter{{{Name: labels.MetricName, Value: metricName}, {Name: "cardinality", Value: strconv.Itoa(i)}}},
 						[]mimirpb.Sample{{Value: 1, TimestampMs: sampleTimestamp + 1}},
 						nil,
@@ -4734,6 +4744,7 @@ func Benchmark_Ingester_PushOnError(b *testing.B) {
 			beforeBenchmark: func(b *testing.B, ingester *Ingester, _ int) {
 				// Push a series with a metric name different than the one used during the benchmark.
 				currTimeReq := mimirpb.ToWriteRequest(
+					//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 					[][]mimirpb.LabelAdapter{{{Name: labels.MetricName, Value: "another"}}},
 					[]mimirpb.Sample{{Value: 1, TimestampMs: sampleTimestamp + 1}},
 					nil,
@@ -4759,6 +4770,7 @@ func Benchmark_Ingester_PushOnError(b *testing.B) {
 			beforeBenchmark: func(b *testing.B, ingester *Ingester, _ int) {
 				// Push a series with the same metric name but different labels than the one used during the benchmark.
 				currTimeReq := mimirpb.ToWriteRequest(
+					//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 					[][]mimirpb.LabelAdapter{{{Name: labels.MetricName, Value: metricName}, {Name: "cardinality", Value: "another"}}},
 					[]mimirpb.Sample{{Value: 1, TimestampMs: sampleTimestamp + 1}},
 					nil,
@@ -4786,6 +4798,7 @@ func Benchmark_Ingester_PushOnError(b *testing.B) {
 			},
 			beforeBenchmark: func(b *testing.B, ingester *Ingester, _ int) {
 				// Send a lot of samples
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				_, err := ingester.Push(ctx, generateSamplesForLabel(labels.FromStrings(labels.MetricName, "test"), 1, 10000))
 				require.NoError(b, err)
 
@@ -4810,6 +4823,7 @@ func Benchmark_Ingester_PushOnError(b *testing.B) {
 			beforeBenchmark: func(b *testing.B, ingester *Ingester, _ int) {
 				// Send some samples for one tenant (not the same that is used during the test)
 				ctx := user.InjectOrgID(context.Background(), "different_tenant")
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				_, err := ingester.Push(ctx, generateSamplesForLabel(labels.FromStrings(labels.MetricName, "test"), 1, 10000))
 				require.NoError(b, err)
 			},
@@ -4830,6 +4844,7 @@ func Benchmark_Ingester_PushOnError(b *testing.B) {
 				return true
 			},
 			beforeBenchmark: func(b *testing.B, ingester *Ingester, _ int) {
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				_, err := ingester.Push(ctx, generateSamplesForLabel(labels.FromStrings(labels.MetricName, "test"), 1, 10000))
 				require.NoError(b, err)
 			},
@@ -4896,6 +4911,7 @@ func Benchmark_Ingester_PushOnError(b *testing.B) {
 					metrics := make([][]mimirpb.LabelAdapter, 0, scenario.numSeriesPerRequest)
 					samples := make([]mimirpb.Sample, 0, scenario.numSeriesPerRequest)
 					for i := 0; i < scenario.numSeriesPerRequest; i++ {
+						//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 						metrics = append(metrics, []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: metricName}, {Name: "cardinality", Value: strconv.Itoa(i)}})
 						samples = append(samples, mimirpb.Sample{Value: float64(i), TimestampMs: sampleTimestamp})
 					}
@@ -4932,9 +4948,13 @@ func Test_Ingester_LabelNames(t *testing.T) {
 		value     float64
 		timestamp int64
 	}{
+		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 		{labels.FromStrings(labels.MetricName, "test_1", "status", "200", "route", "get_user"), 1, 100000},
+		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 		{labels.FromStrings(labels.MetricName, "test_1", "status", "500", "route", "get_user"), 1, 110000},
+		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 		{labels.FromStrings(labels.MetricName, "test_2"), 2, 200000},
+		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 		{labels.FromStrings(labels.MetricName, "test_3", "status", "500"), 2, 200000},
 	}
 
@@ -5043,8 +5063,11 @@ func Test_Ingester_LabelValues(t *testing.T) {
 		value     float64
 		timestamp int64
 	}{
+		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 		{labels.FromStrings(labels.MetricName, "test_1", "status", "200", "route", "get_user"), 1, 100000},
+		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 		{labels.FromStrings(labels.MetricName, "test_1", "status", "500", "route", "get_user"), 1, 110000},
+		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 		{labels.FromStrings(labels.MetricName, "test_2"), 2, 200000},
 	}
 
@@ -5111,14 +5134,17 @@ func l2m(lbls labels.Labels) model.Metric {
 func Test_Ingester_Query(t *testing.T) {
 	series := []util_test.Series{
 		{
+			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 			Labels:  labels.FromStrings(labels.MetricName, "test_1", "status", "200", "route", "get_user"),
 			Samples: []util_test.Sample{{TS: 100000, Val: 1}},
 		},
 		{
+			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 			Labels:  labels.FromStrings(labels.MetricName, "test_1", "status", "500", "route", "get_user"),
 			Samples: []util_test.Sample{{TS: 110000, Val: 1}},
 		},
 		{
+			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 			Labels:  labels.FromStrings(labels.MetricName, "test_2", "status", "500", "route", "get_user"),
 			Samples: []util_test.Sample{{TS: 200000, Val: 2}},
 		},
@@ -5241,18 +5267,22 @@ func Test_Ingester_Query(t *testing.T) {
 func TestIngester_LabelNamesAndValues(t *testing.T) {
 	series := []util_test.Series{
 		{
+			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 			Labels:  labels.FromStrings(labels.MetricName, "metric_0", "status", "500"),
 			Samples: []util_test.Sample{{TS: 100000, Val: 1}},
 		},
 		{
+			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 			Labels:  labels.FromStrings(labels.MetricName, "metric_0", "status", "200"),
 			Samples: []util_test.Sample{{TS: 110000, Val: 1}},
 		},
 		{
+			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 			Labels:  labels.FromStrings(labels.MetricName, "metric_1", "env", "prod"),
 			Samples: []util_test.Sample{{TS: 200000, Val: 2}},
 		},
 		{
+			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 			Labels:  labels.FromStrings(labels.MetricName, "metric_1", "env", "prod", "status", "300"),
 			Samples: []util_test.Sample{{TS: 200000, Val: 3}},
 		},
@@ -5266,6 +5296,7 @@ func TestIngester_LabelNamesAndValues(t *testing.T) {
 		{testName: "expected all label with values",
 			matchers: []*client.LabelMatcher{},
 			expected: []*client.LabelValues{
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				{LabelName: labels.MetricName, Values: []string{"metric_0", "metric_1"}},
 				{LabelName: "status", Values: []string{"200", "300", "500"}},
 				{LabelName: "env", Values: []string{"prod"}}},
@@ -5273,6 +5304,7 @@ func TestIngester_LabelNamesAndValues(t *testing.T) {
 		{testName: "expected label values only from `metric_0`",
 			matchers: []*client.LabelMatcher{{Type: client.EQUAL, Name: "__name__", Value: "metric_0"}},
 			expected: []*client.LabelValues{
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				{LabelName: labels.MetricName, Values: []string{"metric_0"}},
 				{LabelName: "status", Values: []string{"200", "500"}},
 			},
@@ -5305,18 +5337,22 @@ func TestIngester_LabelNamesAndValues(t *testing.T) {
 func TestIngester_LabelValuesCardinality(t *testing.T) {
 	series := []util_test.Series{
 		{
+			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 			Labels:  labels.FromStrings(labels.MetricName, "metric_0", "status", "500"),
 			Samples: []util_test.Sample{{TS: 100000, Val: 1.5}},
 		},
 		{
+			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 			Labels:  labels.FromStrings(labels.MetricName, "metric_0", "status", "200"),
 			Samples: []util_test.Sample{{TS: 110030, Val: 1.5}},
 		},
 		{
+			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 			Labels:  labels.FromStrings(labels.MetricName, "metric_1", "env", "prod"),
 			Samples: []util_test.Sample{{TS: 100060, Val: 1.5}},
 		},
 		{
+			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 			Labels:  labels.FromStrings(labels.MetricName, "metric_1", "env", "prod", "status", "300"),
 			Samples: []util_test.Sample{{TS: 100090, Val: 1.5}},
 		},
@@ -5327,6 +5363,7 @@ func TestIngester_LabelValuesCardinality(t *testing.T) {
 		expectedItems []*client.LabelValueSeriesCount
 	}{
 		"expected all label values cardinality": {
+			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 			labelNames: []string{labels.MetricName, "env", "status"},
 			matchers:   []*client.LabelMatcher{},
 			expectedItems: []*client.LabelValueSeriesCount{
@@ -5339,6 +5376,7 @@ func TestIngester_LabelValuesCardinality(t *testing.T) {
 					},
 				},
 				{
+					//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 					LabelName: labels.MetricName,
 					LabelValueSeries: map[string]uint64{
 						"metric_0": 2,
@@ -5356,6 +5394,7 @@ func TestIngester_LabelValuesCardinality(t *testing.T) {
 		"expected status values cardinality applying matchers": {
 			labelNames: []string{"status"},
 			matchers: []*client.LabelMatcher{
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				{Type: client.EQUAL, Name: labels.MetricName, Value: "metric_1"},
 			},
 			expectedItems: []*client.LabelValueSeriesCount{
@@ -5442,6 +5481,7 @@ func TestIngester_QueryStream_QuerySharding(t *testing.T) {
 	// and finally we push the remaining series. This way we can both test querying back series both
 	// from compacted blocks and head.
 	for seriesID := 0; seriesID < numSeries; seriesID++ {
+		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 		lbls := labels.FromStrings(labels.MetricName, "foo", "series_id", strconv.Itoa(seriesID))
 		req := mockWriteRequest(t, lbls, float64(seriesID), int64(seriesID))
 		_, err = i.Push(ctx, req)
@@ -5530,6 +5570,7 @@ func TestIngester_QueryStream_QueryShardingShouldGuaranteeSeriesShardingConsiste
 
 	// Push all series.
 	for seriesID := 0; seriesID < numSeries; seriesID++ {
+		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 		lbls := labels.FromStrings(labels.MetricName, "test", "series_id", strconv.Itoa(seriesID))
 		req := mockWriteRequest(t, lbls, float64(seriesID), int64(seriesID))
 		_, err = i.Push(ctx, req)
@@ -5663,6 +5704,7 @@ func TestIngester_Push_ShouldNotCreateTSDBIngesterServiceIsNotInRunningState(t *
 	// Mock request
 	userID := "test"
 	ctx := user.InjectOrgID(context.Background(), userID)
+	//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 	req := mockWriteRequest(t, labels.FromStrings(labels.MetricName, "test"), 0, 0)
 
 	res, err := pushWithSimulatedGRPCHandler(ctx, i, req)
@@ -5683,11 +5725,16 @@ func Test_Ingester_MetricsForLabelMatchers(t *testing.T) {
 		value     float64
 		timestamp int64
 	}{
+		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 		{labels.FromStrings(labels.MetricName, "test_1", "status", "200"), 1, 100000},
+		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 		{labels.FromStrings(labels.MetricName, "test_1", "status", "500"), 1, 110000},
+		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 		{labels.FromStrings(labels.MetricName, "test_2"), 2, 200000},
 		// The two following series have the same FastFingerprint=e002a3a451262627
+		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 		{labels.FromStrings(labels.MetricName, "collision", "app", "l", "uniq0", "0", "uniq1", "1"), 1, 300000},
+		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 		{labels.FromStrings(labels.MetricName, "collision", "app", "m", "uniq0", "1", "uniq1", "1"), 1, 300000},
 	}
 
@@ -5931,6 +5978,7 @@ func createIngesterWithSeries(t testing.TB, userID string, numSeries, numSamples
 			samples := make([]mimirpb.Sample, 0, batchSize)
 
 			for s := 0; s < batchSize; s++ {
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				metrics = append(metrics, []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: fmt.Sprintf("test_%d", o+s)}})
 				samples = append(samples, mimirpb.Sample{
 					TimestampMs: ts,
@@ -5965,16 +6013,19 @@ func TestIngester_QueryStream(t *testing.T) {
 	const numSeries = 1000
 
 	for seriesID := 0; seriesID < numSeries; seriesID++ {
+		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 		floatLbls := labels.FromStrings(labels.MetricName, "foo", "series_id", strconv.Itoa(seriesID), "type", "float")
 		floatReq := mockWriteRequest(t, floatLbls, float64(seriesID), int64(seriesID))
 		_, err = i.Push(ctx, floatReq)
 		require.NoError(t, err)
 
+		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 		histLbls := labels.FromStrings(labels.MetricName, "foo", "series_id", strconv.Itoa(seriesID), "type", "histogram")
 		histReq := mockHistogramWriteRequest(histLbls, int64(seriesID), seriesID, false)
 		_, err = i.Push(ctx, histReq)
 		require.NoError(t, err)
 
+		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 		fhistLbls := labels.FromStrings(labels.MetricName, "foo", "series_id", strconv.Itoa(seriesID), "type", "floathistogram")
 		fhistReq := mockHistogramWriteRequest(fhistLbls, int64(seriesID), seriesID, true)
 		_, err = i.Push(ctx, fhistReq)
@@ -6181,14 +6232,17 @@ func setupQueryingManySamplesAsChunksTest(ctx context.Context, t *testing.T, cfg
 	samples := generateSamples(sampleCount)
 
 	// 100k samples in chunks use about 154 KiB
+	//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 	_, err = i.Push(ctx, writeRequestSingleSeries(labels.FromStrings(labels.MetricName, "foo", "l", "1"), samples[0:100000]))
 	require.NoError(t, err)
 
 	// 1M samples in chunks use about 1.51 MiB
+	//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 	_, err = i.Push(ctx, writeRequestSingleSeries(labels.FromStrings(labels.MetricName, "foo", "l", "2"), samples))
 	require.NoError(t, err)
 
 	// 500k samples in chunks need 775 KiB
+	//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 	_, err = i.Push(ctx, writeRequestSingleSeries(labels.FromStrings(labels.MetricName, "foo", "l", "3"), samples[0:500000]))
 	require.NoError(t, err)
 
@@ -6251,8 +6305,11 @@ func TestIngester_QueryStream_StreamingWithManySamples(t *testing.T) {
 
 	seriesLabelsMsg := client.QueryStreamResponse{
 		StreamingSeries: []client.QueryStreamSeries{
+			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 			{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(labels.MetricName, "foo", "l", "1")), ChunkCount: 834},
+			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 			{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(labels.MetricName, "foo", "l", "2")), ChunkCount: 8334},
+			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 			{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(labels.MetricName, "foo", "l", "3")), ChunkCount: 4167},
 		},
 		IsEndOfSeriesStream: true,
@@ -6315,6 +6372,7 @@ func TestIngester_QueryStream_StreamingWithManySeries(t *testing.T) {
 			samples = largeSampleSet
 		}
 
+		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 		l := labels.FromStrings(labels.MetricName, "foo", "l", fmt.Sprintf("%3v", idx))
 		expectedSeries = append(expectedSeries, l.Copy())
 
@@ -6462,6 +6520,7 @@ func TestIngester_QueryStream_CounterResets(t *testing.T) {
 	// Push series.
 	ctx := user.InjectOrgID(context.Background(), userID)
 
+	//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 	histLbls := labels.FromStrings(labels.MetricName, "foo", "series_id", strconv.Itoa(0), "type", "histogram")
 	histReq := mockHistogramWriteRequest(histLbls, int64(0), 4, false)
 	_, err = i.Push(ctx, histReq)
@@ -6658,6 +6717,7 @@ func BenchmarkIngester_QueryStream(b *testing.B) {
 	}
 
 	for s := 0; s < numSeries; s++ {
+		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 		_, err = i.Push(ctx, writeRequestSingleSeries(labels.FromStrings(labels.MetricName, "foo", "l", strconv.Itoa(s)), samples))
 		require.NoError(b, err)
 	}
@@ -6674,6 +6734,7 @@ func BenchmarkIngester_QueryStream(b *testing.B) {
 	}
 
 	for s := 0; s < numSeries; s++ {
+		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 		_, err = i.Push(ctx, writeRequestSingleSeries(labels.FromStrings(labels.MetricName, "foo", "l", strconv.Itoa(s)), samples))
 		require.NoError(b, err)
 	}
@@ -7332,6 +7393,7 @@ func TestIngester_invalidSamplesDontChangeLastUpdateTime(t *testing.T) {
 	sampleTimestamp := int64(model.Now())
 
 	{
+		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 		req := mockWriteRequest(t, labels.FromStrings(labels.MetricName, "test"), 0, sampleTimestamp)
 		_, err = i.Push(ctx, req)
 		require.NoError(t, err)
@@ -7347,6 +7409,7 @@ func TestIngester_invalidSamplesDontChangeLastUpdateTime(t *testing.T) {
 
 	// Push another sample to the same metric and timestamp, with different value. We expect to get error.
 	{
+		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 		req := mockWriteRequest(t, labels.FromStrings(labels.MetricName, "test"), 1, sampleTimestamp)
 		_, err = i.Push(ctx, req)
 		require.Error(t, err)
@@ -7753,8 +7816,11 @@ func Test_Ingester_UserStats(t *testing.T) {
 		value     float64
 		timestamp int64
 	}{
+		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 		{labels.FromStrings(labels.MetricName, "test_1", "status", "200", "route", "get_user"), 1, 100000},
+		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 		{labels.FromStrings(labels.MetricName, "test_1", "status", "500", "route", "get_user"), 1, 110000},
+		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 		{labels.FromStrings(labels.MetricName, "test_2"), 2, 200000},
 	}
 
@@ -7803,10 +7869,15 @@ func Test_Ingester_AllUserStats(t *testing.T) {
 		value     float64
 		timestamp int64
 	}{
+		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 		{"user-1", labels.FromStrings(labels.MetricName, "test_1_1", "status", "200", "route", "get_user"), 1, 100000},
+		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 		{"user-1", labels.FromStrings(labels.MetricName, "test_1_1", "status", "500", "route", "get_user"), 1, 110000},
+		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 		{"user-1", labels.FromStrings(labels.MetricName, "test_1_2"), 2, 200000},
+		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 		{"user-2", labels.FromStrings(labels.MetricName, "test_2_1"), 2, 200000},
+		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 		{"user-2", labels.FromStrings(labels.MetricName, "test_2_2"), 2, 200000},
 	}
 
@@ -8047,6 +8118,7 @@ func verifyCompactedHead(t *testing.T, i *Ingester, expected bool) {
 
 func pushSingleSampleWithMetadata(t *testing.T, i *Ingester) {
 	ctx := user.InjectOrgID(context.Background(), userID)
+	//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 	req := mockWriteRequest(t, labels.FromStrings(labels.MetricName, "test"), 0, util.TimeToMillis(time.Now()))
 	req.Metadata = append(req.Metadata, &mimirpb.MetricMetadata{MetricFamilyName: "test", Help: "a help for metric", Unit: "", Type: mimirpb.COUNTER})
 	_, err := i.Push(ctx, req)
@@ -8055,6 +8127,7 @@ func pushSingleSampleWithMetadata(t *testing.T, i *Ingester) {
 
 func pushSingleSampleAtTime(t *testing.T, i *Ingester, ts int64) {
 	ctx := user.InjectOrgID(context.Background(), userID)
+	//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 	req := mockWriteRequest(t, labels.FromStrings(labels.MetricName, "test"), 0, ts)
 	_, err := i.Push(ctx, req)
 	require.NoError(t, err)
@@ -8171,6 +8244,7 @@ func TestIngesterNotDeleteUnshippedBlocks(t *testing.T) {
 	// Push some data to create 3 blocks.
 	ctx := user.InjectOrgID(context.Background(), userID)
 	for j := int64(0); j < 5; j++ {
+		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 		req := mockWriteRequest(t, labels.FromStrings(labels.MetricName, "test"), 0, j*chunkRangeMilliSec)
 		_, err := i.Push(ctx, req)
 		require.NoError(t, err)
@@ -8198,6 +8272,7 @@ func TestIngesterNotDeleteUnshippedBlocks(t *testing.T) {
 
 	// Add more samples that could trigger another compaction and hence reload of blocks.
 	for j := int64(5); j < 6; j++ {
+		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 		req := mockWriteRequest(t, labels.FromStrings(labels.MetricName, "test"), 0, j*chunkRangeMilliSec)
 		_, err := i.Push(ctx, req)
 		require.NoError(t, err)
@@ -8230,6 +8305,7 @@ func TestIngesterNotDeleteUnshippedBlocks(t *testing.T) {
 
 	// Add more samples that could trigger another compaction and hence reload of blocks.
 	for j := int64(6); j < 7; j++ {
+		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 		req := mockWriteRequest(t, labels.FromStrings(labels.MetricName, "test"), 0, j*chunkRangeMilliSec)
 		_, err := i.Push(ctx, req)
 		require.NoError(t, err)
@@ -8275,6 +8351,7 @@ func TestIngesterNotDeleteShippedBlocksUntilRetentionExpires(t *testing.T) {
 	// Push some data to create 3 blocks.
 	ctx := user.InjectOrgID(context.Background(), userID)
 	for j := int64(0); j < 5; j++ {
+		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 		req := mockWriteRequest(t, labels.FromStrings(labels.MetricName, "test"), 0, j*chunkRangeMilliSec)
 		_, err := i.Push(ctx, req)
 		require.NoError(t, err)
@@ -8305,6 +8382,7 @@ func TestIngesterNotDeleteShippedBlocksUntilRetentionExpires(t *testing.T) {
 
 	// Add more samples that could trigger another compaction and hence reload of blocks.
 	for j := int64(5); j < 6; j++ {
+		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 		req := mockWriteRequest(t, labels.FromStrings(labels.MetricName, "test"), 0, j*chunkRangeMilliSec)
 		_, err := i.Push(ctx, req)
 		require.NoError(t, err)
@@ -8347,6 +8425,7 @@ func TestIngesterWithShippingDisabledDeletesBlocksOnlyAfterRetentionExpires(t *t
 	// Push some data to create 3 blocks.
 	ctx := user.InjectOrgID(context.Background(), userID)
 	for j := int64(0); j < 5; j++ {
+		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 		req := mockWriteRequest(t, labels.FromStrings(labels.MetricName, "test"), 0, j*chunkRangeMilliSec)
 		_, err := i.Push(ctx, req)
 		require.NoError(t, err)
@@ -8363,6 +8442,7 @@ func TestIngesterWithShippingDisabledDeletesBlocksOnlyAfterRetentionExpires(t *t
 	time.Sleep(cfg.BlocksStorageConfig.TSDB.Retention)
 
 	// Add more samples that could trigger another compaction and hence reload of blocks.
+	//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 	req := mockWriteRequest(t, labels.FromStrings(labels.MetricName, "test"), 0, 5*chunkRangeMilliSec)
 	_, err = i.Push(ctx, req)
 	require.NoError(t, err)
@@ -8396,6 +8476,7 @@ func TestIngesterPushErrorDuringForcedCompaction(t *testing.T) {
 	require.True(t, ok)
 
 	// Ingestion should fail with a 503.
+	//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 	req := mockWriteRequest(t, labels.FromStrings(labels.MetricName, "test"), 0, util.TimeToMillis(time.Now()))
 	ctx := user.InjectOrgID(context.Background(), userID)
 	_, err = i.Push(ctx, req)
@@ -8470,6 +8551,7 @@ func TestIngester_PushInstanceLimits(t *testing.T) {
 			reqs: map[string][]*mimirpb.WriteRequest{
 				"test": {
 					mimirpb.ToWriteRequest(
+						//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 						[][]mimirpb.LabelAdapter{{{Name: labels.MetricName, Value: "test"}}},
 						[]mimirpb.Sample{{Value: 1, TimestampMs: 9}},
 						nil,
@@ -8489,6 +8571,7 @@ func TestIngester_PushInstanceLimits(t *testing.T) {
 			reqs: map[string][]*mimirpb.WriteRequest{
 				"test": {
 					mimirpb.ToWriteRequest(
+						//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 						[][]mimirpb.LabelAdapter{{{Name: labels.MetricName, Value: "test1"}}},
 						[]mimirpb.Sample{{Value: 1, TimestampMs: 9}},
 						nil,
@@ -8497,6 +8580,7 @@ func TestIngester_PushInstanceLimits(t *testing.T) {
 					),
 
 					mimirpb.ToWriteRequest(
+						//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 						[][]mimirpb.LabelAdapter{{{Name: labels.MetricName, Value: "test2"}}}, // another series
 						[]mimirpb.Sample{{Value: 1, TimestampMs: 10}},
 						nil,
@@ -8516,6 +8600,7 @@ func TestIngester_PushInstanceLimits(t *testing.T) {
 			reqs: map[string][]*mimirpb.WriteRequest{
 				"user1": {
 					mimirpb.ToWriteRequest(
+						//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 						[][]mimirpb.LabelAdapter{{{Name: labels.MetricName, Value: "test1"}}},
 						[]mimirpb.Sample{{Value: 1, TimestampMs: 9}},
 						nil,
@@ -8526,6 +8611,7 @@ func TestIngester_PushInstanceLimits(t *testing.T) {
 
 				"user2": {
 					mimirpb.ToWriteRequest(
+						//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 						[][]mimirpb.LabelAdapter{{{Name: labels.MetricName, Value: "test2"}}}, // another series
 						[]mimirpb.Sample{{Value: 1, TimestampMs: 10}},
 						nil,
@@ -8545,6 +8631,7 @@ func TestIngester_PushInstanceLimits(t *testing.T) {
 			reqs: map[string][]*mimirpb.WriteRequest{
 				"user1": {
 					mimirpb.ToWriteRequest(
+						//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 						[][]mimirpb.LabelAdapter{{{Name: labels.MetricName, Value: "test1"}}},
 						[]mimirpb.Sample{{Value: 1, TimestampMs: 9}},
 						nil,
@@ -8553,6 +8640,7 @@ func TestIngester_PushInstanceLimits(t *testing.T) {
 					),
 
 					mimirpb.ToWriteRequest(
+						//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 						[][]mimirpb.LabelAdapter{{{Name: labels.MetricName, Value: "test1"}}},
 						[]mimirpb.Sample{{Value: 1, TimestampMs: 10}},
 						nil,
@@ -8649,6 +8737,7 @@ func TestIngester_PushGrpcMethod_Disabled(t *testing.T) {
 
 	ctx := user.InjectOrgID(context.Background(), "test")
 	req := writeRequestSingleSeries(
+		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 		labels.FromStrings(labels.MetricName, "foo", "l", "1"),
 		[]mimirpb.Sample{{TimestampMs: 1_000, Value: 1}},
 	)
@@ -8761,6 +8850,7 @@ func testIngesterInflightPushRequests(t *testing.T, i *Ingester, reg prometheus.
 	})
 
 	g.Go(func() error {
+		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 		req := generateSamplesForLabel(labels.FromStrings(labels.MetricName, "testcase"), 1, 1024)
 
 		select {
@@ -8842,6 +8932,7 @@ func TestIngester_inflightPushRequestsBytes(t *testing.T) {
 	})
 
 	g.Go(func() error {
+		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 		req := generateSamplesForLabel(labels.FromStrings(labels.MetricName, "testcase1"), 1, 1024)
 
 		var requestSize int
@@ -8898,6 +8989,7 @@ func prepareRequestForTargetRequestDuration(ctx context.Context, t *testing.T, i
 
 	// Find right series&samples count to make sure that push takes given target duration.
 	for {
+		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 		req := generateSamplesForLabel(labels.FromStrings(labels.MetricName, fmt.Sprintf("test-%d-%d", ser, samples)), ser, samples)
 
 		start := time.Now()
@@ -8920,6 +9012,7 @@ func prepareRequestForTargetRequestDuration(ctx context.Context, t *testing.T, i
 	}
 
 	// Now repeat push with number of samples calibrated to our target request duration.
+	//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 	req := generateSamplesForLabel(labels.FromStrings(labels.MetricName, fmt.Sprintf("real-%d-%d", ser, samples)), ser, samples)
 	return req
 }
@@ -9182,6 +9275,7 @@ func TestIngester_Push_SeriesWithBlankLabel(t *testing.T) {
 	startAndWaitHealthy(t, ing, r)
 
 	defer services.StopAndAwaitTerminated(context.Background(), ing) //nolint:errcheck
+	//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 	lbls := [][]mimirpb.LabelAdapter{{{Name: labels.MetricName, Value: "testmetric"}, {Name: "foo", Value: ""}, {Name: "bar", Value: ""}}}
 
 	ctx := user.InjectOrgID(context.Background(), userID)
@@ -9194,11 +9288,13 @@ func TestIngester_Push_SeriesWithBlankLabel(t *testing.T) {
 	))
 	require.NoError(t, err)
 
+	//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 	res, _, err := runTestQuery(ctx, t, ing, labels.MatchEqual, labels.MetricName, "testmetric")
 
 	require.NoError(t, err)
 	expected := model.Matrix{
 		{
+			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 			Metric: model.Metric{labels.MetricName: "testmetric"},
 			Values: []model.SamplePair{
 				{Timestamp: 1, Value: 0},
@@ -9239,6 +9335,7 @@ func TestIngesterUserLimitExceeded(t *testing.T) {
 
 	userID := "1"
 	// Series
+	//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 	labels1 := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "testmetric"}, {Name: "foo", Value: "bar"}}
 	sample1 := mimirpb.Sample{
 		TimestampMs: 0,
@@ -9248,6 +9345,7 @@ func TestIngesterUserLimitExceeded(t *testing.T) {
 		TimestampMs: 1,
 		Value:       2,
 	}
+	//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 	labels3 := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "testmetric"}, {Name: "foo", Value: "biz"}}
 	sample3 := mimirpb.Sample{
 		TimestampMs: 1,
@@ -9335,6 +9433,7 @@ func TestIngesterMetricLimitExceeded(t *testing.T) {
 	ing := newIngester()
 
 	userID := "1"
+	//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 	labels1 := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "testmetric"}, {Name: "foo", Value: "bar"}}
 	sample1 := mimirpb.Sample{
 		TimestampMs: 0,
@@ -9344,6 +9443,7 @@ func TestIngesterMetricLimitExceeded(t *testing.T) {
 		TimestampMs: 1,
 		Value:       2,
 	}
+	//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 	labels3 := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "testmetric"}, {Name: "foo", Value: "biz"}}
 	sample3 := mimirpb.Sample{
 		TimestampMs: 1,
@@ -9459,21 +9559,33 @@ func (t *TenantLimitsMock) ByUserID(userID string) *validation.Limits {
 
 func TestIngesterActiveSeries(t *testing.T) {
 	labelsToPush := [][]mimirpb.LabelAdapter{
+		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 		{{Name: labels.MetricName, Value: "test_metric"}, {Name: "bool", Value: "false"}, {Name: "team", Value: "a"}},
+		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 		{{Name: labels.MetricName, Value: "test_metric"}, {Name: "bool", Value: "false"}, {Name: "team", Value: "b"}},
+		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 		{{Name: labels.MetricName, Value: "test_metric"}, {Name: "bool", Value: "true"}, {Name: "team", Value: "a"}},
+		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 		{{Name: labels.MetricName, Value: "test_metric"}, {Name: "bool", Value: "true"}, {Name: "team", Value: "b"}},
 	}
 	labelsToPushOTLP := [][]mimirpb.LabelAdapter{
+		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 		{{Name: labels.MetricName, Value: "test_metric_otlp"}, {Name: "bool", Value: "false"}, {Name: "team", Value: "a"}},
+		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 		{{Name: labels.MetricName, Value: "test_metric_otlp"}, {Name: "bool", Value: "false"}, {Name: "team", Value: "b"}},
+		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 		{{Name: labels.MetricName, Value: "test_metric_otlp"}, {Name: "bool", Value: "true"}, {Name: "team", Value: "a"}},
+		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 		{{Name: labels.MetricName, Value: "test_metric_otlp"}, {Name: "bool", Value: "true"}, {Name: "team", Value: "b"}},
 	}
 	labelsToPushHist := [][]mimirpb.LabelAdapter{
+		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 		{{Name: labels.MetricName, Value: "test_histogram_metric"}, {Name: "bool", Value: "false"}, {Name: "team", Value: "a"}},
+		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 		{{Name: labels.MetricName, Value: "test_histogram_metric"}, {Name: "bool", Value: "false"}, {Name: "team", Value: "b"}},
+		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 		{{Name: labels.MetricName, Value: "test_histogram_metric"}, {Name: "bool", Value: "true"}, {Name: "team", Value: "a"}},
+		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 		{{Name: labels.MetricName, Value: "test_histogram_metric"}, {Name: "bool", Value: "true"}, {Name: "team", Value: "b"}},
 	}
 
@@ -9793,6 +9905,7 @@ func TestIngesterActiveSeries(t *testing.T) {
 
 				// Query first shard of test_metric, expect one series.
 				shard1 := []*labels.Matcher{
+					//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 					labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "test_metric"),
 					sharding.ShardSelector{ShardIndex: 0, ShardCount: 2}.Matcher(),
 				}
@@ -9803,6 +9916,7 @@ func TestIngesterActiveSeries(t *testing.T) {
 
 				// Query second shard of test_metric, expect remaining three series.
 				shard2 := []*labels.Matcher{
+					//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 					labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "test_metric"),
 					sharding.ShardSelector{ShardIndex: 1, ShardCount: 2}.Matcher(),
 				}
@@ -9848,15 +9962,23 @@ func TestIngesterActiveSeries(t *testing.T) {
 
 func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 	labelsToPush := [][]mimirpb.LabelAdapter{
+		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 		{{Name: labels.MetricName, Value: "test_metric"}, {Name: "bool", Value: "false"}, {Name: "team", Value: "a"}},
+		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 		{{Name: labels.MetricName, Value: "test_metric"}, {Name: "bool", Value: "false"}, {Name: "team", Value: "b"}},
+		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 		{{Name: labels.MetricName, Value: "test_metric"}, {Name: "bool", Value: "true"}, {Name: "team", Value: "a"}},
+		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 		{{Name: labels.MetricName, Value: "test_metric"}, {Name: "bool", Value: "true"}, {Name: "team", Value: "b"}},
 	}
 	labelsToPushHist := [][]mimirpb.LabelAdapter{
+		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 		{{Name: labels.MetricName, Value: "test_histogram_metric"}, {Name: "bool", Value: "false"}, {Name: "team", Value: "a"}},
+		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 		{{Name: labels.MetricName, Value: "test_histogram_metric"}, {Name: "bool", Value: "false"}, {Name: "team", Value: "b"}},
+		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 		{{Name: labels.MetricName, Value: "test_histogram_metric"}, {Name: "bool", Value: "true"}, {Name: "team", Value: "a"}},
+		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 		{{Name: labels.MetricName, Value: "test_histogram_metric"}, {Name: "bool", Value: "true"}, {Name: "team", Value: "b"}},
 	}
 
@@ -10432,6 +10554,7 @@ func testIngesterOutOfOrder(t *testing.T,
 		start = start * time.Minute.Milliseconds()
 		end = end * time.Minute.Milliseconds()
 
+		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 		s := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "test_1"}, {Name: "status", Value: "200"}}
 		wReq := makeWriteRequest(start, end, s)
 		_, err = i.Push(ctx, wReq)
@@ -10675,6 +10798,7 @@ func testIngesterOutOfOrderCompactHead(t *testing.T,
 		start = start * time.Minute.Milliseconds()
 		end = end * time.Minute.Milliseconds()
 
+		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 		s := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "test_1"}, {Name: "status", Value: "200"}}
 		wReq := makeWriteRequest(start, end, s)
 		_, err = i.Push(ctx, wReq)
@@ -10753,6 +10877,7 @@ func testIngesterOutOfOrderCompactHeadStillActive(t *testing.T,
 	ctx := user.InjectOrgID(context.Background(), userID)
 
 	pushSamples := func(ts int64, series string) {
+		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 		wReq := makeWriteRequest(ts*time.Minute.Milliseconds(), []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "test_1"}, {Name: "series", Value: series}})
 		_, err = i.Push(ctx, wReq)
 		require.NoError(t, err)
@@ -10831,6 +10956,7 @@ func Test_Ingester_ShipperLabelsOutOfOrderBlocksOnUpload(t *testing.T) {
 				start = start * time.Minute.Milliseconds()
 				end = end * time.Minute.Milliseconds()
 
+				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 				s := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "test_1"}, {Name: "status", Value: "200"}}
 				var samples []mimirpb.Sample
 				var lbls [][]mimirpb.LabelAdapter
@@ -10946,6 +11072,7 @@ func testIngesterCanEnableIngestAndQueryNativeHistograms(t *testing.T, sampleHis
 
 	ing := newIngester()
 
+	//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 	labels1 := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "testmetric"}, {Name: "foo", Value: "bar"}}
 	sample1 := mimirpb.Sample{
 		TimestampMs: 0,
@@ -11082,6 +11209,7 @@ func TestIngester_GetOpenTSDBsConcurrencyConfig(t *testing.T) {
 }
 
 func TestIngester_PushWithSampledErrors(t *testing.T) {
+	//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 	metricLabelAdapters := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "test"}}
 	metricNames := []string{
 		"cortex_discarded_samples_total",
@@ -11552,7 +11680,9 @@ func TestIngester_SampledUserLimitExceeded(t *testing.T) {
 
 	userID := "1"
 	timestamp := int64(1575043969)
+	//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 	metricLabelAdapters1 := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "test"}, {Name: "foo", Value: "bar"}}
+	//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 	metricLabelAdapters2 := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "test"}, {Name: "foo", Value: "biz"}}
 	sample1 := mimirpb.Sample{
 		TimestampMs: timestamp + 1,
@@ -11650,7 +11780,9 @@ func TestIngester_SampledMetricLimitExceeded(t *testing.T) {
 
 	userID := "1"
 	timestamp := int64(1575043969)
+	//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 	metricLabelAdapters1 := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "test"}, {Name: "foo", Value: "bar"}}
+	//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 	metricLabelAdapters2 := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "test"}, {Name: "foo", Value: "biz"}}
 	sample1 := mimirpb.Sample{
 		TimestampMs: timestamp + 1,
@@ -12209,6 +12341,7 @@ func TestIngester_NotifyPreCommit(t *testing.T) {
 				{
 					TimeSeries: &mimirpb.TimeSeries{
 						Labels: []mimirpb.LabelAdapter{
+							//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 							{Name: labels.MetricName, Value: "test_metric"},
 						},
 						Samples: []mimirpb.Sample{

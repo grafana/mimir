@@ -110,7 +110,8 @@ func TestAggregation_GroupLabelling(t *testing.T) {
 		overrideExpectedOutputBytes []byte
 	}{
 		"grouping to a single series": {
-			grouping:                    []string{},
+			grouping: []string{},
+			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 			inputSeries:                 labels.FromStrings(labels.MetricName, "my_metric", "env", "prod"),
 			expectedOutputSeries:        labels.EmptyLabels(),
 			overrideExpectedOutputBytes: []byte{}, // Special case for grouping to a single series.
@@ -118,126 +119,149 @@ func TestAggregation_GroupLabelling(t *testing.T) {
 
 		// Grouping with 'by'
 		"grouping with 'by', single grouping label, input has only metric name": {
-			grouping:             []string{"env"},
+			grouping: []string{"env"},
+			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 			inputSeries:          labels.FromStrings(labels.MetricName, "my_metric"),
 			expectedOutputSeries: labels.EmptyLabels(),
 		},
 		"grouping with 'by', single grouping label, input does not have grouping label": {
-			grouping:             []string{"env"},
+			grouping: []string{"env"},
+			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 			inputSeries:          labels.FromStrings(labels.MetricName, "my_metric", "foo", "bar"),
 			expectedOutputSeries: labels.EmptyLabels(),
 		},
 		"grouping with 'by', single grouping label, input does have grouping label": {
-			grouping:             []string{"env"},
+			grouping: []string{"env"},
+			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 			inputSeries:          labels.FromStrings(labels.MetricName, "my_metric", "env", "prod", "foo", "bar"),
 			expectedOutputSeries: labels.FromStrings("env", "prod"),
 		},
 		"grouping with 'by', multiple grouping labels, input has only metric name": {
-			grouping:             []string{"cluster", "env"},
+			grouping: []string{"cluster", "env"},
+			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 			inputSeries:          labels.FromStrings(labels.MetricName, "my_metric"),
 			expectedOutputSeries: labels.EmptyLabels(),
 		},
 		"grouping with 'by', multiple grouping labels, input does not have any grouping labels": {
-			grouping:             []string{"cluster", "env"},
+			grouping: []string{"cluster", "env"},
+			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 			inputSeries:          labels.FromStrings(labels.MetricName, "my_metric", "foo", "bar"),
 			expectedOutputSeries: labels.EmptyLabels(),
 		},
 		"grouping with 'by', multiple grouping labels, input has some grouping labels": {
-			grouping:             []string{"cluster", "env"},
+			grouping: []string{"cluster", "env"},
+			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 			inputSeries:          labels.FromStrings(labels.MetricName, "my_metric", "env", "prod", "foo", "bar"),
 			expectedOutputSeries: labels.FromStrings("env", "prod"),
 		},
 		"grouping with 'by', multiple grouping labels, input has superset of grouping labels": {
-			grouping:             []string{"cluster", "env"},
+			grouping: []string{"cluster", "env"},
+			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 			inputSeries:          labels.FromStrings(labels.MetricName, "my_metric", "env", "prod", "cluster", "cluster-1", "foo", "bar"),
 			expectedOutputSeries: labels.FromStrings("env", "prod", "cluster", "cluster-1"),
 		},
 		"grouping with 'by', multiple grouping labels, input has all grouping labels and no others": {
-			grouping:             []string{"cluster", "env"},
+			grouping: []string{"cluster", "env"},
+			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 			inputSeries:          labels.FromStrings(labels.MetricName, "my_metric", "env", "prod", "cluster", "cluster-1"),
 			expectedOutputSeries: labels.FromStrings("env", "prod", "cluster", "cluster-1"),
 		},
 		"grouping with 'by', unsorted grouping labels": {
-			grouping:             []string{"env", "cluster"},
+			grouping: []string{"env", "cluster"},
+			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 			inputSeries:          labels.FromStrings(labels.MetricName, "my_metric", "env", "prod", "cluster", "cluster-1", "foo", "bar"),
 			expectedOutputSeries: labels.FromStrings("env", "prod", "cluster", "cluster-1"),
 		},
 		"grouping with 'by', grouping labels include __name__": {
-			grouping:             []string{"cluster", "env", "__name__"},
-			inputSeries:          labels.FromStrings(labels.MetricName, "my_metric", "env", "prod", "cluster", "cluster-1", "foo", "bar"),
+			grouping: []string{"cluster", "env", "__name__"},
+			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
+			inputSeries: labels.FromStrings(labels.MetricName, "my_metric", "env", "prod", "cluster", "cluster-1", "foo", "bar"),
+			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 			expectedOutputSeries: labels.FromStrings(labels.MetricName, "my_metric", "env", "prod", "cluster", "cluster-1"),
 		},
 
 		// Grouping with 'without'
 		"grouping with 'without', single grouping label, input has only metric name": {
-			grouping:             []string{"env"},
-			without:              true,
+			grouping: []string{"env"},
+			without:  true,
+			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 			inputSeries:          labels.FromStrings(labels.MetricName, "my_metric"),
 			expectedOutputSeries: labels.EmptyLabels(),
 		},
 		"grouping with 'without', single grouping label, input does not have grouping label": {
-			grouping:             []string{"env"},
-			without:              true,
+			grouping: []string{"env"},
+			without:  true,
+			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 			inputSeries:          labels.FromStrings(labels.MetricName, "my_metric", "a-label", "a-value", "f-label", "f-value"),
 			expectedOutputSeries: labels.FromStrings("a-label", "a-value", "f-label", "f-value"),
 		},
 		"grouping with 'without', single grouping label, input does have grouping label": {
-			grouping:             []string{"env"},
-			without:              true,
+			grouping: []string{"env"},
+			without:  true,
+			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 			inputSeries:          labels.FromStrings(labels.MetricName, "my_metric", "env", "prod", "a-label", "a-value", "f-label", "f-value"),
 			expectedOutputSeries: labels.FromStrings("a-label", "a-value", "f-label", "f-value"),
 		},
 		"grouping with 'without', multiple grouping labels, input has only metric name": {
-			grouping:             []string{"cluster", "env"},
-			without:              true,
+			grouping: []string{"cluster", "env"},
+			without:  true,
+			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 			inputSeries:          labels.FromStrings(labels.MetricName, "my_metric"),
 			expectedOutputSeries: labels.EmptyLabels(),
 		},
 		"grouping with 'without', multiple grouping labels, input does not have any grouping labels": {
-			grouping:             []string{"cluster", "env"},
-			without:              true,
+			grouping: []string{"cluster", "env"},
+			without:  true,
+			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 			inputSeries:          labels.FromStrings(labels.MetricName, "my_metric", "a-label", "a-value", "d-label", "d-value", "f-label", "f-value"),
 			expectedOutputSeries: labels.FromStrings("a-label", "a-value", "d-label", "d-value", "f-label", "f-value"),
 		},
 		"grouping with 'without', multiple grouping labels, input has some grouping labels": {
-			grouping:             []string{"cluster", "env"},
-			without:              true,
+			grouping: []string{"cluster", "env"},
+			without:  true,
+			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 			inputSeries:          labels.FromStrings(labels.MetricName, "my_metric", "env", "prod", "a-label", "a-value", "d-label", "d-value", "f-label", "f-value"),
 			expectedOutputSeries: labels.FromStrings("a-label", "a-value", "d-label", "d-value", "f-label", "f-value"),
 		},
 		"grouping with 'without', multiple grouping labels, input has superset of grouping labels": {
-			grouping:             []string{"cluster", "env"},
-			without:              true,
+			grouping: []string{"cluster", "env"},
+			without:  true,
+			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 			inputSeries:          labels.FromStrings(labels.MetricName, "my_metric", "env", "prod", "cluster", "cluster-1", "a-label", "a-value", "d-label", "d-value", "f-label", "f-value"),
 			expectedOutputSeries: labels.FromStrings("a-label", "a-value", "d-label", "d-value", "f-label", "f-value"),
 		},
 		"grouping with 'without', multiple grouping labels, input has all grouping labels and no others": {
-			grouping:             []string{"cluster", "env"},
-			without:              true,
+			grouping: []string{"cluster", "env"},
+			without:  true,
+			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 			inputSeries:          labels.FromStrings(labels.MetricName, "my_metric", "env", "prod", "cluster", "cluster-1"),
 			expectedOutputSeries: labels.EmptyLabels(),
 		},
 		"grouping with 'without', unsorted grouping labels": {
-			grouping:             []string{"env", "cluster"},
-			without:              true,
+			grouping: []string{"env", "cluster"},
+			without:  true,
+			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 			inputSeries:          labels.FromStrings(labels.MetricName, "my_metric", "env", "prod", "cluster", "cluster-1", "a-label", "a-value", "d-label", "d-value", "f-label", "f-value"),
 			expectedOutputSeries: labels.FromStrings("a-label", "a-value", "d-label", "d-value", "f-label", "f-value"),
 		},
 		"grouping with 'without', grouping labels include __name__": {
-			grouping:             []string{"cluster", "env", "__name__"},
-			without:              true,
+			grouping: []string{"cluster", "env", "__name__"},
+			without:  true,
+			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 			inputSeries:          labels.FromStrings(labels.MetricName, "my_metric", "a-label", "a-value", "d-label", "d-value", "f-label", "f-value"),
 			expectedOutputSeries: labels.FromStrings("a-label", "a-value", "d-label", "d-value", "f-label", "f-value"),
 		},
 		"grouping with 'without', grouping labels include duplicates": {
-			grouping:             []string{"cluster", "env", "cluster"},
-			without:              true,
+			grouping: []string{"cluster", "env", "cluster"},
+			without:  true,
+			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 			inputSeries:          labels.FromStrings(labels.MetricName, "my_metric", "a-label", "a-value", "d-label", "d-value", "f-label", "f-value"),
 			expectedOutputSeries: labels.FromStrings("a-label", "a-value", "d-label", "d-value", "f-label", "f-value"),
 		},
 		"grouping with 'without', grouping labels include label that sorts before __name__": {
-			grouping:             []string{"cluster", "env", "__aaa__"},
-			without:              true,
+			grouping: []string{"cluster", "env", "__aaa__"},
+			without:  true,
+			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
 			inputSeries:          labels.FromStrings(labels.MetricName, "my_metric", "__aaa__", "foo", "a-label", "a-value", "d-label", "d-value", "f-label", "f-value"),
 			expectedOutputSeries: labels.FromStrings("a-label", "a-value", "d-label", "d-value", "f-label", "f-value"),
 		},
