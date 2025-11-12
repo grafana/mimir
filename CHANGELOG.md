@@ -50,13 +50,14 @@
   * `-blocks-storage.gcs.enable-upload-retries`
   * `-common.storage.gcs.enable-upload-retries`
   * `-ruler-storage.gcs.enable-upload-retries`
-* [ENHANCEMENT] Usage-tracker: Improved write path performance by tracking series asynchronously for users that are far from their series limits. Users close to their limits continue to be tracked synchronously to enforce limits strictly. The usage-tracker client now polls for the list of users close to limits every 1 second by default (configurable via `-usage-tracker-client.users-close-to-limit-poll-interval`). The client populates the cache at startup with configurable retries (default: 3) via `-usage-tracker-client.users-close-to-limit-cache-startup-retries`. A new metric `cortex_usage_tracker_client_users_close_to_limit_update_failures_total` tracks failed cache update attempts. A user is considered close to their limit if their series count is above the configured percentage threshold (configurable via `-usage-tracker.user-close-to-limit-percentage-threshold`, default: 85%). Additionally, users with a series limit below a configured threshold can be forced to always track synchronously using `-usage-tracker-client.min-series-limit-for-async-tracking` (default: 0, disabled). #13427
   * `-alertmanager-storage.gcs.max-retries`
   * `-blocks-storage.gcs.max-retries`
   * `-common.storage.gcs.max-retries`
   * `-ruler-storage.gcs.max-retries`
 * [ENHANCEMENT] Usage-tracker: Improve first snapshot loading & rehash speed. #13284
+* [ENHANCEMENT] Usage-tracker, distributor: Make usage-tracker calls asynchronous for users who are far enough from the series limits. #13427
 * [ENHANCEMENT] Ruler: Implemented `OperatorControllableErrorClassifier` for rule evaluation, allowing differentiation between operator-controllable errors (e.g., storage failures, 5xx errors, rate limiting) and user-controllable errors (e.g., bad queries, validation errors, 4xx errors). This change affects the rule evaluation failure metric `prometheus_rule_evaluation_failures_total`, which now includes a `reason` label with values `operator` or `user` to distinguish between them. #13313, #13470
+* [ENHANCEMENT] Ruler: Implemented `OperatorControllableErrorClassifier` for rule evaluation, allowing differentiation between operator-controllable errors (e.g., storage failures, 5xx errors, rate limiting) and user-controllable errors (e.g., bad queries, validation errors, 4xx errors). This change affects the rule evaluation failure metric `prometheus_rule_evaluation_failures_total`, which now includes a `reason` label with values `operator` or `user` to distinguish between them. #13313
 * [BUGFIX] Compactor: Fix potential concurrent map writes. #13053
 * [BUGFIX] Query-frontend: Fix issue where queries sometimes fail with `failed to receive query result stream message: rpc error: code = Canceled desc = context canceled` if remote execution is enabled. #13084
 * [BUGFIX] Query-frontend: Fix issue where query stats, such as series read, did not include the parameters to the `histogram_quantile` and `histogram_fraction` functions if remote execution was enabled. #13084
