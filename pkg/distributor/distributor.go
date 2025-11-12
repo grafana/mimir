@@ -1626,9 +1626,9 @@ func (d *Distributor) parallelUsageTrackerClientTrackSeriesCall(ctx context.Cont
 	}()
 
 	// Add a cleanup function that will wait for the async tracking to complete.
-	cleanup := func() {
+	return func() {
 		defer cancelAsyncTracking(nil)
-		
+
 		tCleanup := time.Now()
 		select {
 		case <-done:
@@ -1645,7 +1645,6 @@ func (d *Distributor) parallelUsageTrackerClientTrackSeriesCall(ctx context.Cont
 			cancelAsyncTracking(errors.New("async tracking call took too long"))
 		}
 	}
-	return cleanup
 }
 
 // filterOutRejectedSeries filters out time series from the WriteRequest based on rejected hashes and returns discarded samples count.
