@@ -74,6 +74,7 @@
 * [BUGFIX] Store-gateway: Fix how out-of-order blocks are tracked in the `cortex_bucket_store_series_blocks_queried` metric. #13261
 * [BUGFIX] Cost attribution: Fix panic when metrics are created with invalid labels. #13273
 * [BUGFIX]: Distributor: Fix in-flight request counter when the reactive limiter is full. #13406
+* [BUGFIX]: Ingester: Panic when push and read reactive limiters are enabled with prioritization. #13482
 
 ### Mixin
 
