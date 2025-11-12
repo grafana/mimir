@@ -37,7 +37,12 @@ The collision of series hashes are ignored as they have negligible impact on the
 
 Distributors interact with usage tracker service through the `UsageTrackerClient` in one of the middlewares of the push chain.
 
-A quick overview of this interaction from the Distributor's perspective:
+At startup, and then periodically, distributors fetch the list of users that are close to their series limit from a random partition of the usage tracker service.
+This works under the assumption that every usage-tracker partition has a similar number of series for each user.
+
+Distributors decide whether to perform a synchronous or asynchronous tracking of series based on whether the user is close to their limit or not, and on the minimum series limit configured.
+
+A quick overview of the synchronous interaction from the Distributor's perspective:
 
 - Series ready to be ingested are hashed into uint64 values, these hashes are what Usage tracker service tracks.
 - The hashes are sharded across a fixed number of partitions.
@@ -46,6 +51,12 @@ A quick overview of this interaction from the Distributor's perspective:
 - Usage tracker tracks the series hashes and returns a list of rejected hashes.
 - Distributor filters the `WriteRequest` to remove rejected series hashes.
 - If series are rejected, the distributor returns an error to the client with a `429 Too Many Requests` status code.
+
+If the user has a series limit high enough and it's far enough from their limits, the distributor will track the series asynchronously:
+
+- A goroutine is spawned to track the series in the background while the series are being ingested.
+- When the series are ingested, the distributor waits a configurable extra time for usage-tracker calls to succeed.
+- After thet time, usage-tracker calls are canceled.
 
 The middleware is positioned last in the chain to enforce limits after all filtering, relabeling, and transformations.
 
@@ -230,117 +241,3 @@ It's based on a swiss-map design, specialized for our use case.
 - Reduced memory overhead per entry
 - In-place updates without retrieving the value from the map
 - Specialized cleanup without key/value pair iteration
-
-## Asynchronous Tracking for Users Far from Limits
-
-### Overview
-
-To improve write path performance, the distributor uses **conditional asynchronous tracking**:
-
-- **Users close to limit**: Tracked synchronously (blocks the write request) for strict enforcement
-- **Users far from limit**: Tracked asynchronously (doesn't block the write request) for better performance
-- **Users with low limits**: Optionally forced to track synchronously regardless of proximity
-
-This approach maintains strict consistency for users at risk of hitting limits while optimizing latency for the majority of users.
-
-### Architecture
-
-```
-┌──────────────────────────────────────────────────────────────────┐
-│                         Distributor                               │
-│                                                                    │
-│  1. Receive Write Request                                         │
-│  2. Check: Can track async?                                       │
-│     ├─ User close to limit? → NO (sync)                          │
-│     ├─ User limit too low?  → NO (sync)                          │
-│     └─ Otherwise           → YES (async)                          │
-│                                                                    │
-│  3a. SYNC: TrackSeries() → Wait for result → Process             │
-│  3b. ASYNC: Spawn goroutine → Send to ingesters immediately      │
-│            └─ Cleanup waits for tracking (with timeout)           │
-└──────────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-                    ┌─────────────────────┐
-                    │  Usage Tracker      │
-                    │  - Track series     │
-                    │  - Return rejections│
-                    └─────────────────────┘
-                              ▲
-                              │
-                    Periodic polling (1s)
-                    GetUsersCloseToLimit()
-```
-
-### User Proximity Detection
-
-Usage tracker maintains a sorted list of users "close to their limit":
-
-- **Threshold**: Users with `series >= (limit * percentage / 100)` are considered close
-- **Default percentage**: 85% (configurable via `-usage-tracker.user-close-to-limit-percentage-threshold`)
-- **Update frequency**: List recalculated during periodic limit updates
-- **List characteristics**: Sorted lexicographically, stored in-memory per partition
-
-### Distributor Client Behavior
-
-The usage tracker client in distributors:
-
-1. **Startup**: Populates cache with retries (default: 3 attempts)
-2. **Runtime**: Polls random partition every 1 second for updated user list
-3. **Zone preference**: Prefers same-zone instances to reduce cross-zone traffic
-4. **Cache replacement**: Completely replaces cache on each successful poll
-
-**Configuration:**
-
-- `-usage-tracker-client.users-close-to-limit-poll-interval` (default: 1s)
-- `-usage-tracker-client.users-close-to-limit-cache-startup-retries` (default: 3)
-
-### Decision Logic for Async vs Sync
-
-A user's series tracking mode is determined by:
-
-1. **Proximity check**: Is user in the "close to limit" cache?
-
-   - If YES → Track synchronously
-
-2. **Minimum limit check**: Is user's limit below minimum threshold?
-
-   - Configurable via `-usage-tracker-client.min-series-limit-for-async-tracking` (default: 0, disabled)
-   - If limit < threshold → Track synchronously
-   - Use case: Force smaller customers to always track synchronously for stricter enforcement
-
-3. **Default**: If both checks pass → Track asynchronously
-
-### Async Tracking Guarantees
-
-For async tracking:
-
-- Tracking request spawned in goroutine immediately
-- Write proceeds to ingesters without waiting
-- Cleanup function waits for tracking completion (with timeout)
-- Timeout configurable via `-usage-tracker-client.max-time-to-wait-for-async-tracking-response-after-ingestion` (default: 250ms)
-- Failed async tracking logged but doesn't fail the write request
-
-This ensures eventual consistency while maintaining request isolation.
-
-### Metrics
-
-- `cortex_usage_tracker_client_users_close_to_limit_count`: Current number of users in "close to limit" cache
-- `cortex_usage_tracker_client_users_close_to_limit_last_update_timestamp_seconds`: Last successful cache update time
-- `cortex_usage_tracker_client_users_close_to_limit_update_failures_total`: Failed cache update attempts
-
-### Trade-offs
-
-**Benefits:**
-
-- Significantly reduces write latency for users far from limits (the common case)
-- Maintains strict enforcement for users at risk
-- Lightweight: only 1 RPC/second per distributor
-- Small memory overhead: cache only stores user IDs close to limits
-
-**Considerations:**
-
-- **Eventual consistency window**: User transitioning from "far" to "close" may experience 1-2 seconds of async tracking
-- **Cache staleness**: Bounded by poll interval (1 second default)
-- **Startup behavior**: If cache fails to populate, all users tracked synchronously until first successful poll
-- **Low-limit users**: May track synchronously despite being far from limit if minimum threshold is configured
