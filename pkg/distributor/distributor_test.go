@@ -5575,15 +5575,16 @@ type prepConfig struct {
 	// If empty, it defaults to the ingestion storage type configured in the test.
 	ingesterIngestionType ingesterIngestionType
 
-	queryDelay         time.Duration
-	pushDelay          time.Duration
-	shuffleShardSize   int
-	limits             *validation.Limits
-	overrides          func(*validation.Limits) *validation.Overrides
-	reg                *prometheus.Registry
-	costAttributionMgr *costattribution.Manager
-	logger             log.Logger
-	numDistributors    int
+	queryDelay                time.Duration
+	pushDelay                 time.Duration
+	shuffleShardSize          int
+	limits                    *validation.Limits
+	overrides                 func(*validation.Limits) *validation.Overrides
+	reg                       *prometheus.Registry
+	costAttributionMgr        *costattribution.Manager
+	logger                    log.Logger
+	numDistributors           int
+	disableDistributorService bool
 
 	replicationFactor                  int
 	enableTracker                      bool
@@ -5979,10 +5980,12 @@ func prepare(t testing.TB, cfg prepConfig) ([]*Distributor, []*mockIngester, []*
 		}
 		d, err := New(distributorCfg, clientConfig, overrides, nil, cfg.costAttributionMgr, ingestersRing, partitionsRing, true, nil, nil, reg, logger)
 		require.NoError(t, err)
-		require.NoError(t, services.StartAndAwaitRunning(ctx, d))
-		t.Cleanup(func() {
-			require.NoError(t, services.StopAndAwaitTerminated(context.Background(), d))
-		})
+		if !cfg.disableDistributorService {
+			require.NoError(t, services.StartAndAwaitRunning(ctx, d))
+			t.Cleanup(func() {
+				require.NoError(t, services.StopAndAwaitTerminated(context.Background(), d))
+			})
+		}
 
 		distributors = append(distributors, d)
 		distributorRegistries = append(distributorRegistries, reg)
@@ -5991,7 +5994,11 @@ func prepare(t testing.TB, cfg prepConfig) ([]*Distributor, []*mockIngester, []*
 	// If the distributors ring is setup, wait until the first distributor
 	// updates to the expected size
 	if distributors[0].distributorsRing != nil {
-		test.Poll(t, time.Second, cfg.numDistributors, func() interface{} {
+		expectedNumDistributors := cfg.numDistributors
+		if cfg.disableDistributorService {
+			expectedNumDistributors = 0
+		}
+		test.Poll(t, time.Second, expectedNumDistributors, func() interface{} {
 			return distributors[0].HealthyInstancesCount()
 		})
 	}
@@ -8225,8 +8232,9 @@ func TestDistributor_StartFinishRequest(t *testing.T) {
 	}
 
 	type testCase struct {
-		externalCheck       bool  // Start request "externally", from outside of distributor.
-		httpgrpcRequestSize int64 // only used for external check.
+		disableDistributorService bool
+		externalCheck             bool  // Start request "externally", from outside of distributor.
+		httpgrpcRequestSize       int64 // only used for external check.
 
 		reactiveLimiterEnabled       bool
 		reactiveLimiterCanAcquire    bool
@@ -8248,6 +8256,18 @@ func TestDistributor_StartFinishRequest(t *testing.T) {
 	)
 
 	testcases := map[string]testCase{
+		"distributor not runnint, internal": {
+			disableDistributorService: true,
+			expectedPushError:         newUnavailableError(services.New),
+		},
+
+		"distributor not runnint, external": {
+			disableDistributorService: true,
+			externalCheck:             true,
+			expectedStartError:        newUnavailableError(services.New),
+			expectedPushError:         newUnavailableError(services.New),
+		},
+
 		"request succeeds, internal": {
 			expectedStartError: nil,
 			expectedPushError:  nil,
@@ -8394,9 +8414,10 @@ func TestDistributor_StartFinishRequest(t *testing.T) {
 
 			// Prepare distributor and wrap the mock push function with its middlewares.
 			ds, _, _, _ := prepare(t, prepConfig{
-				numDistributors: 1,
-				limits:          &limits,
-				enableTracker:   true,
+				numDistributors:           1,
+				disableDistributorService: tc.disableDistributorService,
+				limits:                    &limits,
+				enableTracker:             true,
 				configure: func(config *Config) {
 					config.DefaultLimits.MaxIngestionRate = ingestionRateLimit
 					config.DefaultLimits.MaxInflightPushRequests = inflightLimit
@@ -9077,55 +9098,22 @@ func clonePreallocTimeseries(orig mimirpb.PreallocTimeseries) (mimirpb.PreallocT
 }
 
 func TestCheckStartedMiddleware(t *testing.T) {
-	// Create an in-memory KV store for the ring with 1 ingester registered.
-	kvStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
-	t.Cleanup(func() { require.NoError(t, closer.Close()) })
-
-	err := kvStore.CAS(context.Background(), ingester.IngesterRingKey,
-		func(_ interface{}) (interface{}, bool, error) {
-			d := &ring.Desc{}
-			d.AddIngester("ingester-1", "127.0.0.1", "", ring.NewRandomTokenGenerator().GenerateTokens(128, nil), ring.ACTIVE, time.Now(), false, time.Time{}, nil)
-			return d, true, nil
-		},
-	)
-	require.NoError(t, err)
-
-	ingestersRing, err := ring.New(ring.Config{
-		KVStore:           kv.Config{Mock: kvStore},
-		HeartbeatTimeout:  60 * time.Minute,
-		ReplicationFactor: 1,
-	}, ingester.IngesterRingKey, ingester.IngesterRingKey, log.NewNopLogger(), nil)
-	require.NoError(t, err)
-	require.NoError(t, services.StartAndAwaitRunning(context.Background(), ingestersRing))
-	t.Cleanup(func() {
-		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), ingestersRing))
-	})
-
-	test.Poll(t, time.Second, 1, func() interface{} {
-		return ingestersRing.InstancesCount()
-	})
-
-	var distributorConfig Config
-	var clientConfig client.Config
 	limits := validation.Limits{}
-	flagext.DefaultValues(&distributorConfig, &clientConfig, &limits)
-	distributorConfig.DistributorRing.Common.KVStore.Store = "inmemory"
+	flagext.DefaultValues(&limits)
 
-	limits.IngestionRate = float64(rate.Inf) // Unlimited.
-
-	distributorConfig.IngesterClientFactory = ring_client.PoolInstFunc(func(ring.InstanceDesc) (ring_client.PoolClient, error) {
-		return &noopIngester{}, nil
+	// Prepare distributor and wrap the mock push function with its middlewares.
+	ds, _, _, _ := prepare(t, prepConfig{
+		numDistributors:           1,
+		limits:                    &limits,
+		enableTracker:             true,
+		disableDistributorService: true,
 	})
-
-	overrides := validation.NewOverrides(limits, nil)
-	distributor, err := New(distributorConfig, clientConfig, overrides, nil, nil, ingestersRing, nil, true, nil, nil, nil, log.NewNopLogger())
-	require.NoError(t, err)
 
 	ctx := user.InjectOrgID(context.Background(), "user")
 	ctx, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
 	defer cancel()
 
-	_, err = distributor.Push(ctx, mimirpb.ToWriteRequest(
+	_, err := ds[0].Push(ctx, mimirpb.ToWriteRequest(
 		[][]mimirpb.LabelAdapter{
 			{
 				{
