@@ -291,6 +291,7 @@ The usage tracker client in distributors:
 4. **Cache replacement**: Completely replaces cache on each successful poll
 
 **Configuration:**
+
 - `-usage-tracker-client.users-close-to-limit-poll-interval` (default: 1s)
 - `-usage-tracker-client.users-close-to-limit-cache-startup-retries` (default: 3)
 
@@ -299,9 +300,11 @@ The usage tracker client in distributors:
 A user's series tracking mode is determined by:
 
 1. **Proximity check**: Is user in the "close to limit" cache?
+
    - If YES → Track synchronously
 
 2. **Minimum limit check**: Is user's limit below minimum threshold?
+
    - Configurable via `-usage-tracker-client.min-series-limit-for-async-tracking` (default: 0, disabled)
    - If limit < threshold → Track synchronously
    - Use case: Force smaller customers to always track synchronously for stricter enforcement
@@ -311,6 +314,7 @@ A user's series tracking mode is determined by:
 ### Async Tracking Guarantees
 
 For async tracking:
+
 - Tracking request spawned in goroutine immediately
 - Write proceeds to ingesters without waiting
 - Cleanup function waits for tracking completion (with timeout)
@@ -328,12 +332,14 @@ This ensures eventual consistency while maintaining request isolation.
 ### Trade-offs
 
 **Benefits:**
+
 - Significantly reduces write latency for users far from limits (the common case)
 - Maintains strict enforcement for users at risk
 - Lightweight: only 1 RPC/second per distributor
 - Small memory overhead: cache only stores user IDs close to limits
 
 **Considerations:**
+
 - **Eventual consistency window**: User transitioning from "far" to "close" may experience 1-2 seconds of async tracking
 - **Cache staleness**: Bounded by poll interval (1 second default)
 - **Startup behavior**: If cache fails to populate, all users tracked synchronously until first successful poll
