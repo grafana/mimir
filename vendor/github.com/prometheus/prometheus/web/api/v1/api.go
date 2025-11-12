@@ -293,6 +293,7 @@ func NewAPI(
 	ctZeroIngestionEnabled bool,
 	lookbackDelta time.Duration,
 	enableTypeAndUnitLabels bool,
+	appendMetadata bool,
 	overrideErrorCode OverrideErrorCode,
 ) *API {
 	a := &API{
@@ -338,7 +339,7 @@ func NewAPI(
 	}
 
 	if rwEnabled {
-		a.remoteWriteHandler = remote.NewWriteHandler(logger, registerer, ap, acceptRemoteWriteProtoMsgs, ctZeroIngestionEnabled, enableTypeAndUnitLabels)
+		a.remoteWriteHandler = remote.NewWriteHandler(logger, registerer, ap, acceptRemoteWriteProtoMsgs, ctZeroIngestionEnabled, enableTypeAndUnitLabels, appendMetadata)
 	}
 	if otlpEnabled {
 		a.otlpWriteHandler = remote.NewOTLPWriteHandler(logger, registerer, ap, configFunc, remote.OTLPOptions{
@@ -1539,7 +1540,7 @@ type AlertingRule struct {
 type RecordingRule struct {
 	Name           string           `json:"name"`
 	Query          string           `json:"query"`
-	Labels         labels.Labels    `json:"labels,omitempty"`
+	Labels         labels.Labels    `json:"labels"`
 	Health         rules.RuleHealth `json:"health"`
 	LastError      string           `json:"lastError,omitempty"`
 	EvaluationTime float64          `json:"evaluationTime"`
