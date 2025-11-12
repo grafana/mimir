@@ -144,7 +144,10 @@ type intermediateResultsCache struct {
 
 type IntermediateResultsCache interface {
 	Get(user, function, selector string, start int64, end int64, memoryTracker *limiter.MemoryConsumptionTracker) (IntermediateResultBlock, bool) // start is exclusive, end is inclusive
-	Set(user, function, selector string, start int64, end int64, block IntermediateResultBlock) error                                             // start is exclusive, end is inclusive
+	// Set writes the block into the cache.
+	// The cache MUST NOT reference the block after Set() returned, as the caller may release slices within the block
+	// back to pools to be reused.
+	Set(user, function, selector string, start int64, end int64, block IntermediateResultBlock) error // start is exclusive, end is inclusive
 }
 
 func (ic *intermediateResultsCache) Get(user, function, selector string, start int64, end int64, memoryTracker *limiter.MemoryConsumptionTracker) (IntermediateResultBlock, bool) {

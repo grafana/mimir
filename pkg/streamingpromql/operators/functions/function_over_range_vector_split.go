@@ -453,7 +453,6 @@ func NewCachedSplit(cachedResults *cache.IntermediateResultBlock, parent *Functi
 }
 
 func (c *CachedSplit) SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
-	// Memory is already tracked by cache.Get() during deserialization
 	return c.cachedResults.Series, nil
 }
 
@@ -576,8 +575,6 @@ func (p *UncachedSplit) Finalize(ctx context.Context) error {
 }
 
 func (p *UncachedSplit) Close() {
-	// The cache serializes data (converts to proto), so it doesn't hold references
-	// to p.seriesMetadata. Safe to return to pool.
 	if p.seriesMetadata != nil {
 		types.SeriesMetadataSlicePool.Put(&p.seriesMetadata, p.parent.MemoryConsumptionTracker)
 		p.seriesMetadata = nil
