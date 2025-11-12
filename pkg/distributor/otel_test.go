@@ -1573,7 +1573,7 @@ func TestHandlerOTLPPush(t *testing.T) {
 				var limitsCfg validation.Limits
 				flagext.DefaultValues(&limitsCfg)
 				limitsCfg.MaxLabelValueLength = len("huge value") - 1
-				distributors, _, _, _ := prepare(t, prepConfig{numDistributors: 1, limits: &limitsCfg}, true)
+				distributors, _, _, _ := prepare(t, prepConfig{numDistributors: 1, limits: &limitsCfg})
 				distributor := distributors[0]
 				return distributor.prePushValidationMiddleware(func(context.Context, *Request) error { return nil })(ctx, pushReq)
 			},

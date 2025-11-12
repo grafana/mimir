@@ -510,7 +510,7 @@ func TestDistributor_QueryStream_ShouldSupportIngestStorage(t *testing.T) {
 				},
 			}
 
-			distributors, ingesters, distributorRegistries, _ := prepare(t, cfg, true)
+			distributors, ingesters, distributorRegistries, _ := prepare(t, cfg)
 			require.Len(t, distributors, 1)
 			require.Len(t, distributorRegistries, 1)
 

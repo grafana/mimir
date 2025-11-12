@@ -142,7 +142,7 @@ func TestValidateLabels(t *testing.T) {
 		reg:                reg,
 		costAttributionMgr: manager,
 		logger:             log.NewLogfmtLogger(&logged),
-	}, true)
+	})
 	d := ds[0]
 
 	newRequestBuffers := func() *util.RequestBuffers {
@@ -671,7 +671,7 @@ func TestLabelValueTooLongSummaries(t *testing.T) {
 		reg:                reg,
 		costAttributionMgr: manager,
 		logger:             log.NewLogfmtLogger(&logged),
-	}, true)
+	})
 	d := ds[0]
 
 	newRequestBuffers := func() *util.RequestBuffers {

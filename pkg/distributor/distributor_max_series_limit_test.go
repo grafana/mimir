@@ -91,7 +91,7 @@ func TestDistributor_Push_ShouldEnforceMaxSeriesLimits(t *testing.T) {
 				},
 			}
 
-			distributors, _, regs, kafkaCluster := prepare(t, testConfig, true)
+			distributors, _, regs, kafkaCluster := prepare(t, testConfig)
 			require.Len(t, distributors, 1)
 			require.Len(t, regs, 1)
 
@@ -200,7 +200,7 @@ func BenchmarkDistributor_prePushMaxSeriesLimitMiddleware(b *testing.B) {
 			}
 
 			// Create a distributor.
-			distributors, _, _, _ := prepare(b, testConfig, true)
+			distributors, _, _, _ := prepare(b, testConfig)
 			require.Len(b, distributors, 1)
 
 			// Enable the usage-tracker using a mock.
