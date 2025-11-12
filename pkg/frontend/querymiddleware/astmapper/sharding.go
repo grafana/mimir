@@ -683,6 +683,8 @@ func (summer *shardSummer) shardAndSquashBinOp(ctx context.Context, expr *parser
 			Op:         expr.Op,
 			RHS:        shardedRHS,
 			ReturnBool: expr.ReturnBool,
+			// We don't need to set VectorMatching here: we expect that this method is only called for binary expressions
+			// that are not vector/vector expressions.
 		}
 		children = append(children, NewEmbeddedQuery(binExpr, summer.shardLabeller.GetParams(i)))
 	}
