@@ -672,13 +672,6 @@ func TestQuerySharding_Correctness(t *testing.T) {
 					require.NotEmpty(t, unshardedResult.Value)
 					requireValidSamples(t, unshardedResult.Value)
 
-					// TODO: remove?
-					//if testData.expectedShardedQueries > 0 {
-					//	// Remove position information from annotations, to mirror what we expect from the sharded queries below.
-					//	removeAllAnnotationPositionInformation(expectedPrometheusRes.Infos)
-					//	removeAllAnnotationPositionInformation(expectedPrometheusRes.Warnings)
-					//}
-
 					for _, numShards := range []int{2, 4, 8, 16} {
 						t.Run(fmt.Sprintf("shards=%d", numShards), func(t *testing.T) {
 							shardedEngine, reg := createEngine(t, numShards)

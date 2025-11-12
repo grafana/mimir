@@ -688,18 +688,23 @@ func (summer *shardSummer) shardVectorSelector(selector *parser.VectorSelector) 
 	if shardMatcher == nil {
 		return selector, nil
 	}
-	return &parser.VectorSelector{
-		Name:                 selector.Name,
-		Offset:               selector.Offset,
-		OriginalOffset:       selector.OriginalOffset,
-		Timestamp:            copyTimestamp(selector.Timestamp),
-		SkipHistogramBuckets: selector.SkipHistogramBuckets,
-		StartOrEnd:           selector.StartOrEnd,
-		LabelMatchers: append(
-			[]*labels.Matcher{shardMatcher},
-			selector.LabelMatchers...,
-		),
-	}, nil
+
+	shardedExpr, err := cloneExpr(selector)
+	if err != nil {
+		return nil, err
+	}
+
+	shardedSelector, ok := shardedExpr.(*parser.VectorSelector)
+	if !ok {
+		return nil, fmt.Errorf("expected cloneExpr to return a VectorSelector, got %T, this is a bug", shardedExpr)
+	}
+
+	shardedSelector.LabelMatchers = append(
+		[]*labels.Matcher{shardMatcher},
+		selector.LabelMatchers...,
+	)
+
+	return shardedSelector, nil
 }
 
 // isSubqueryCall returns true if the given function call expression is a subquery,
