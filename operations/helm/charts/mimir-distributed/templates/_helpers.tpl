@@ -226,10 +226,10 @@ Params:
   rolloutZoneName = rollout zone name (optional)
 */}}
 {{- define "mimir.labels" -}}
-{{ with .ctx.Values.global.labels -}}
+{{ with .ctx.Values.global.commonLabels -}}
 {{ toYaml . }}
 {{ end -}}
-{{ with .ctx.Values.global.commonLabels -}}
+{{ with .ctx.Values.global.labels -}}
 {{ toYaml . }}
 {{ end -}}
 helm.sh/chart: {{ include "mimir.chart" .ctx }}
@@ -264,10 +264,10 @@ Params:
   rolloutZoneName = rollout zone name (optional)
 */}}
 {{- define "mimir.podLabels" -}}
-{{ with .ctx.Values.global.podLabels -}}
+{{ with .ctx.Values.global.commonLabels -}}
 {{ toYaml . }}
 {{ end -}}
-{{ with .ctx.Values.global.commonLabels -}}
+{{ with .ctx.Values.global.podLabels -}}
 {{ toYaml . }}
 {{ end -}}
 helm.sh/chart: {{ include "mimir.chart" .ctx }}
