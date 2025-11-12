@@ -10335,6 +10335,28 @@
                 },
                 {
                   "kind": "field",
+                  "name": "parquet_chunks_subrange_size",
+                  "required": false,
+                  "desc": "Size of each subrange that parquet chunk objects are split into for better caching.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 16000,
+                  "fieldFlag": "blocks-storage.bucket-store.chunks-cache.parquet-chunks-subrange-size",
+                  "fieldType": "int",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "parquet_labels_subrange_size",
+                  "required": false,
+                  "desc": "Size of each subrange that parquet labels objects are split into for better caching.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 16000,
+                  "fieldFlag": "blocks-storage.bucket-store.chunks-cache.parquet-labels-subrange-size",
+                  "fieldType": "int",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
                   "name": "cache_parquet_labels_files",
                   "required": false,
                   "desc": "If true, get range calls to parquet labels files will be cached in the chunks cache.",
