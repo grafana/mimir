@@ -18,6 +18,7 @@ import (
 	"github.com/grafana/dskit/user"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/streamingpromql/cache"
+	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
 func TestQuerySplitting_InstantQueryWith1hRange_NotCached(t *testing.T) {
@@ -299,8 +300,6 @@ func setupEngineAndCache(t *testing.T) (*testIntermediateResultsCache, promql.Qu
 	opts.InstantQuerySplitting.Enabled = true
 	opts.InstantQuerySplitting.SplitInterval = 2 * time.Hour
 	opts.IntermediateResultCache = testCache
-	// FIXME: Re-enable pedantic mode once memory tracking is fixed for query splitting.
-	opts.Pedantic = false
 
 	queryPlanner, err := NewQueryPlanner(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(t, err)
@@ -331,7 +330,7 @@ func verifyCacheStats(t *testing.T, cache *testIntermediateResultsCache, expecte
 }
 
 type testIntermediateResultsCache struct {
-	data map[string]cache.IntermediateResultBlock
+	data map[string]cache.CachedSeries // Store proto like real cache
 	gets int
 	hits int
 	sets int
@@ -341,7 +340,7 @@ type testIntermediateResultsCache struct {
 // newTestIntermediateResultsCache creates a new test cache instance.
 func newTestIntermediateResultsCache(t *testing.T) *testIntermediateResultsCache {
 	return &testIntermediateResultsCache{
-		data: make(map[string]cache.IntermediateResultBlock),
+		data: make(map[string]cache.CachedSeries),
 		t:    t,
 	}
 }
@@ -358,20 +357,36 @@ func (c *testIntermediateResultsCache) Stats() (gets, hits, sets int) {
 	return c.gets, c.hits, c.sets
 }
 
-func (c *testIntermediateResultsCache) Get(user, function, selector string, start int64, end int64) (cache.IntermediateResultBlock, bool) {
+func (c *testIntermediateResultsCache) Get(user, function, selector string, start int64, end int64, memoryTracker *limiter.MemoryConsumptionTracker) (cache.IntermediateResultBlock, bool) {
 	key := fmt.Sprintf("%s:%s:%s:%d:%d", user, function, selector, start, end)
 	c.gets++
-	block, ok := c.data[key]
-	if ok {
-		c.hits++
+	cached, ok := c.data[key]
+	if !ok {
+		return cache.IntermediateResultBlock{}, false
 	}
-	return block, ok
+
+	c.hits++
+	// Convert proto back to block with tracking (like real cache does)
+	block, err := cache.CachedSeriesToBlock(cached, memoryTracker)
+	if err != nil {
+		return cache.IntermediateResultBlock{}, false
+	}
+
+	return block, true
 }
 
 func (c *testIntermediateResultsCache) Set(user, function, selector string, start int64, end int64, block cache.IntermediateResultBlock) error {
 	key := fmt.Sprintf("%s:%s:%s:%d:%d", user, function, selector, start, end)
 	c.sets++
-	c.data[key] = block
+
+	// Convert to proto format (like real cache does).
+	// This ensures the cache doesn't hold references to the caller's slices.
+	cached, err := cache.BlockToCachedSeries(key, block)
+	if err != nil {
+		return err
+	}
+
+	c.data[key] = cached
 	return nil
 }
 

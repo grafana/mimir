@@ -22,6 +22,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
+	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
 const (
@@ -142,11 +143,11 @@ type intermediateResultsCache struct {
 }
 
 type IntermediateResultsCache interface {
-	Get(user, function, selector string, start int64, end int64) (IntermediateResultBlock, bool)      // start is exclusive, end is inclusive
-	Set(user, function, selector string, start int64, end int64, block IntermediateResultBlock) error // start is exclusive, end is inclusive
+	Get(user, function, selector string, start int64, end int64, memoryTracker *limiter.MemoryConsumptionTracker) (IntermediateResultBlock, bool) // start is exclusive, end is inclusive
+	Set(user, function, selector string, start int64, end int64, block IntermediateResultBlock) error                                             // start is exclusive, end is inclusive
 }
 
-func (ic *intermediateResultsCache) Get(user, function, selector string, start int64, end int64) (IntermediateResultBlock, bool) {
+func (ic *intermediateResultsCache) Get(user, function, selector string, start int64, end int64, memoryTracker *limiter.MemoryConsumptionTracker) (IntermediateResultBlock, bool) {
 	cacheKey := generateCacheKey(user, function, selector, start, end)
 	hashedKey := cacheHashKey(cacheKey)
 
@@ -166,7 +167,7 @@ func (ic *intermediateResultsCache) Get(user, function, selector string, start i
 		return IntermediateResultBlock{}, false
 	}
 
-	block, err := cachedSeriesToBlock(cached)
+	block, err := CachedSeriesToBlock(cached, memoryTracker)
 	if err != nil {
 		return IntermediateResultBlock{}, false
 	}
@@ -179,7 +180,8 @@ func (ic *intermediateResultsCache) Set(user, function, selector string, start i
 	block.Version = resultsCacheVersion
 
 	cacheKey := generateCacheKey(user, function, selector, start, end)
-	cached, err := blockToCachedSeries(cacheKey, block)
+	// TODO: track proto memory usage?
+	cached, err := BlockToCachedSeries(cacheKey, block)
 	if err != nil {
 		return errors.Wrap(err, "converting block to cached series")
 	}
@@ -207,7 +209,7 @@ func cacheHashKey(key string) string {
 	return hex.EncodeToString(hasher.Sum(nil))
 }
 
-func blockToCachedSeries(cacheKey string, block IntermediateResultBlock) (CachedSeries, error) {
+func BlockToCachedSeries(cacheKey string, block IntermediateResultBlock) (CachedSeries, error) {
 	series := make([]mimirpb.Metric, len(block.Series))
 	for i, sm := range block.Series {
 		series[i] = mimirpb.Metric{
@@ -240,13 +242,25 @@ func blockToCachedSeries(cacheKey string, block IntermediateResultBlock) (Cached
 	}, nil
 }
 
-// cachedSeriesToBlock converts CachedSeries proto back to IntermediateResultBlock.
-func cachedSeriesToBlock(cached CachedSeries) (IntermediateResultBlock, error) {
-	series := make([]types.SeriesMetadata, len(cached.Series))
-	for i, m := range cached.Series {
-		series[i] = types.SeriesMetadata{
-			Labels: mimirpb.FromLabelAdaptersToLabels(m.Labels),
+func CachedSeriesToBlock(cached CachedSeries, memoryTracker *limiter.MemoryConsumptionTracker) (IntermediateResultBlock, error) {
+	var series []types.SeriesMetadata
+	var err error
+
+	series, err = types.SeriesMetadataSlicePool.Get(len(cached.Series), memoryTracker)
+	if err != nil {
+		return IntermediateResultBlock{}, err
+	}
+
+	for _, m := range cached.Series {
+		lbls := mimirpb.FromLabelAdaptersToLabels(m.Labels)
+
+		if err := memoryTracker.IncreaseMemoryConsumptionForLabels(lbls); err != nil {
+			return IntermediateResultBlock{}, err
 		}
+
+		series = append(series, types.SeriesMetadata{
+			Labels: lbls,
+		})
 	}
 
 	results := make([]IntermediateResult, len(cached.Results))
@@ -282,8 +296,8 @@ func NewIntermediateResultTenantCache(user string, c IntermediateResultsCache) *
 	return &IntermediateResultTenantCache{user: user, inner: c}
 }
 
-func (c *IntermediateResultTenantCache) Get(function, selector string, start int64, end int64) (IntermediateResultBlock, bool) {
-	return c.inner.Get(c.user, function, selector, start, end)
+func (c *IntermediateResultTenantCache) Get(function, selector string, start int64, end int64, memoryTracker *limiter.MemoryConsumptionTracker) (IntermediateResultBlock, bool) {
+	return c.inner.Get(c.user, function, selector, start, end, memoryTracker)
 }
 
 func (c *IntermediateResultTenantCache) Set(function, selector string, start int64, end int64, block IntermediateResultBlock) error {
