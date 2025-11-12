@@ -206,6 +206,14 @@ func (a *ActionsPermissions) GetSelectedActionsURL() string {
 	return *a.SelectedActionsURL
 }
 
+// GetSHAPinningRequired returns the SHAPinningRequired field if it's non-nil, zero value otherwise.
+func (a *ActionsPermissions) GetSHAPinningRequired() bool {
+	if a == nil || a.SHAPinningRequired == nil {
+		return false
+	}
+	return *a.SHAPinningRequired
+}
+
 // GetAllowedActions returns the AllowedActions field if it's non-nil, zero value otherwise.
 func (a *ActionsPermissionsEnterprise) GetAllowedActions() string {
 	if a == nil || a.AllowedActions == nil {
@@ -252,6 +260,14 @@ func (a *ActionsPermissionsRepository) GetSelectedActionsURL() string {
 		return ""
 	}
 	return *a.SelectedActionsURL
+}
+
+// GetSHAPinningRequired returns the SHAPinningRequired field if it's non-nil, zero value otherwise.
+func (a *ActionsPermissionsRepository) GetSHAPinningRequired() bool {
+	if a == nil || a.SHAPinningRequired == nil {
+		return false
+	}
+	return *a.SHAPinningRequired
 }
 
 // GetCreatedAt returns the CreatedAt field if it's non-nil, zero value otherwise.
@@ -340,6 +356,14 @@ func (a *ActorLocation) GetCountryCode() string {
 		return ""
 	}
 	return *a.CountryCode
+}
+
+// GetMessage returns the Message field if it's non-nil, zero value otherwise.
+func (a *AddResourcesToCostCenterResponse) GetMessage() string {
+	if a == nil || a.Message == nil {
+		return ""
+	}
+	return *a.Message
 }
 
 // GetFrom returns the From field if it's non-nil, zero value otherwise.
@@ -6060,6 +6084,22 @@ func (c *CopilotSeatDetails) GetUpdatedAt() Timestamp {
 		return Timestamp{}
 	}
 	return *c.UpdatedAt
+}
+
+// GetAzureSubscription returns the AzureSubscription field if it's non-nil, zero value otherwise.
+func (c *CostCenter) GetAzureSubscription() string {
+	if c == nil || c.AzureSubscription == nil {
+		return ""
+	}
+	return *c.AzureSubscription
+}
+
+// GetState returns the State field if it's non-nil, zero value otherwise.
+func (c *CostCenter) GetState() string {
+	if c == nil || c.State == nil {
+		return ""
+	}
+	return *c.State
 }
 
 // GetCompletedAt returns the CompletedAt field if it's non-nil, zero value otherwise.
@@ -13964,6 +14004,14 @@ func (l *ListCodespaces) GetTotalCount() int {
 		return 0
 	}
 	return *l.TotalCount
+}
+
+// GetState returns the State field if it's non-nil, zero value otherwise.
+func (l *ListCostCenterOptions) GetState() string {
+	if l == nil || l.State == nil {
+		return ""
+	}
+	return *l.State
 }
 
 // GetTotalCount returns the TotalCount field if it's non-nil, zero value otherwise.
@@ -21966,6 +22014,30 @@ func (r *Reactions) GetURL() string {
 	return *r.URL
 }
 
+// GetName returns the Name field if it's non-nil, zero value otherwise.
+func (r *ReassignedResource) GetName() string {
+	if r == nil || r.Name == nil {
+		return ""
+	}
+	return *r.Name
+}
+
+// GetPreviousCostCenter returns the PreviousCostCenter field if it's non-nil, zero value otherwise.
+func (r *ReassignedResource) GetPreviousCostCenter() string {
+	if r == nil || r.PreviousCostCenter == nil {
+		return ""
+	}
+	return *r.PreviousCostCenter
+}
+
+// GetResourceType returns the ResourceType field if it's non-nil, zero value otherwise.
+func (r *ReassignedResource) GetResourceType() string {
+	if r == nil || r.ResourceType == nil {
+		return ""
+	}
+	return *r.ResourceType
+}
+
 // GetNodeID returns the NodeID field if it's non-nil, zero value otherwise.
 func (r *Reference) GetNodeID() string {
 	if r == nil || r.NodeID == nil {
@@ -22284,6 +22356,14 @@ func (r *ReleaseVersion) GetVersion() string {
 		return ""
 	}
 	return *r.Version
+}
+
+// GetMessage returns the Message field if it's non-nil, zero value otherwise.
+func (r *RemoveResourcesFromCostCenterResponse) GetMessage() string {
+	if r == nil || r.Message == nil {
+		return ""
+	}
+	return *r.Message
 }
 
 // GetExpiresAt returns the ExpiresAt field if it's non-nil, zero value otherwise.
