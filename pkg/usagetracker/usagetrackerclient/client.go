@@ -22,7 +22,6 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
-	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/usagetracker/usagetrackerpb"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
@@ -100,11 +99,9 @@ type UsageTrackerClient struct {
 	trackSeriesWorkersPool *concurrency.ReusableGoroutinesPool
 
 	// Cache for users close to their limits.
-	usersCloseToLimitsMtx sync.RWMutex
-	usersCloseToLimit     []string
-
-	// Atomic fields for metrics.
-	userCacheLastUpdateTimestamp *atomic.Int64 // Unix timestamp in seconds
+	usersCloseToLimitsMtx   sync.RWMutex
+	usersCloseToLimit       []string
+	usersCloseToLimitLoaded bool
 
 	// Metrics.
 	trackSeriesDuration                *prometheus.HistogramVec
@@ -115,13 +112,12 @@ type UsageTrackerClient struct {
 
 func NewUsageTrackerClient(clientName string, clientCfg Config, partitionRing *ring.MultiPartitionInstanceRing, instanceRing ring.ReadRing, limits limitsProvider, logger log.Logger, registerer prometheus.Registerer) *UsageTrackerClient {
 	c := &UsageTrackerClient{
-		cfg:                          clientCfg,
-		logger:                       logger,
-		limits:                       limits,
-		partitionRing:                partitionRing,
-		clientsPool:                  newUsageTrackerClientPool(client.NewRingServiceDiscovery(instanceRing), clientName, clientCfg, logger, registerer),
-		trackSeriesWorkersPool:       concurrency.NewReusableGoroutinesPool(clientCfg.ReusableWorkers),
-		userCacheLastUpdateTimestamp: atomic.NewInt64(0),
+		cfg:                    clientCfg,
+		logger:                 logger,
+		limits:                 limits,
+		partitionRing:          partitionRing,
+		clientsPool:            newUsageTrackerClientPool(client.NewRingServiceDiscovery(instanceRing), clientName, clientCfg, logger, registerer),
+		trackSeriesWorkersPool: concurrency.NewReusableGoroutinesPool(clientCfg.ReusableWorkers),
 		trackSeriesDuration: promauto.With(registerer).NewHistogramVec(prometheus.HistogramOpts{
 			Name:                            "cortex_usage_tracker_client_track_series_duration_seconds",
 			Help:                            "Time taken to track all series in remote write request, eventually sharding the tracking among multiple usage-tracker instances.",
@@ -164,11 +160,12 @@ func (c *UsageTrackerClient) starting(ctx context.Context) error {
 
 		c.updateUsersCloseToLimitCache(ctx)
 
-		// Check if the cache was successfully populated (non-zero size indicates success).
-		if c.userCacheLastUpdateTimestamp.Load() > 0 {
-			c.usersCloseToLimitsMtx.Lock()
-			count := len(c.usersCloseToLimit)
-			c.usersCloseToLimitsMtx.Unlock()
+		// Check if the cache was successfully populated.
+		c.usersCloseToLimitsMtx.Lock()
+		count := len(c.usersCloseToLimit)
+		loaded := c.usersCloseToLimitLoaded
+		c.usersCloseToLimitsMtx.Unlock()
+		if loaded {
 			level.Info(c.logger).Log("msg", "successfully populated users close to limit cache at startup", "user_count", count, "attempt", attempt+1)
 			return nil
 		}
@@ -416,12 +413,12 @@ func (c *UsageTrackerClient) updateUsersCloseToLimitCache(ctx context.Context) (
 		}
 
 		c.usersCloseToLimitsMtx.Lock()
+		first := !c.usersCloseToLimitLoaded
 		c.usersCloseToLimit = slices.Clone(resp.UserIds)
+		c.usersCloseToLimitLoaded = true
 		c.usersCloseToLimitsMtx.Unlock()
 
 		// Update metrics.
-		first := c.userCacheLastUpdateTimestamp.Load() == 0
-		c.userCacheLastUpdateTimestamp.Store(time.Now().Unix())
 		c.usersCloseToLimitCount.Set(float64(len(resp.UserIds)))
 		c.usersCloseToLimitLastUpdateSeconds.Set(float64(time.Now().Unix()))
 
