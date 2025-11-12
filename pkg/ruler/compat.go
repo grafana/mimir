@@ -444,7 +444,7 @@ func DefaultTenantManagerFactory(
 				return overrides.RulerEvaluationDelay(userID)
 			},
 			RuleConcurrencyController:           concurrencyController.NewTenantConcurrencyControllerFor(userID),
-			OperatorControllableErrorClassifier: NewRulerErrorClassifier(),
+			OperatorControllableErrorClassifier: NewRulerErrorClassifier(remoteQuerier),
 		})
 	}
 }
@@ -469,10 +469,14 @@ func WrapQueryableErrors(err error) error {
 	return QueryableError{err: err}
 }
 
-type rulerErrorClassifier struct{}
+type rulerErrorClassifier struct {
+	remoteQuerier bool
+}
 
-func NewRulerErrorClassifier() *rulerErrorClassifier {
-	return &rulerErrorClassifier{}
+func NewRulerErrorClassifier(remoteQuerier bool) *rulerErrorClassifier {
+	return &rulerErrorClassifier{
+		remoteQuerier: remoteQuerier,
+	}
 }
 
 // IsOperatorControllable classifies rule evaluation errors as operator-controllable or user-controllable.
@@ -481,40 +485,34 @@ func (c *rulerErrorClassifier) IsOperatorControllable(err error) bool {
 		return false
 	}
 
-	var errStorage promql.ErrStorage
-	if errors.As(err, &errStorage) {
-		return true
+	if code := grpcutil.ErrorToStatusCode(err); util.IsHTTPStatusCode(code) {
+		if code >= 400 && code < 500 {
+			return code == http.StatusTooManyRequests
+		}
+		return true // 5xx
 	}
 
-	var (
-		errQueryTimeout   promql.ErrQueryTimeout
-		errQueryCanceled  promql.ErrQueryCanceled
-		errTooManySamples promql.ErrTooManySamples
-	)
-
-	if errors.As(err, &errQueryTimeout) || errors.As(err, &errQueryCanceled) || errors.As(err, &errTooManySamples) {
-		return false
+	if status, ok := grpcutil.ErrorToStatus(err); ok {
+		for _, details := range status.Details() {
+			if errDetails, ok := details.(*mimirpb.ErrorDetails); ok {
+				return !mimirpb.IsClientErrorCause(errDetails.GetCause())
+			}
+		}
 	}
 
 	if validation.IsLimitError(err) || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		return false
 	}
 
-	if s, ok := grpcutil.ErrorToStatus(err); ok {
-		if code := s.Code(); util.IsHTTPStatusCode(code) {
-			if code >= 400 && code < 500 {
-				return code == http.StatusTooManyRequests
-			}
-			return true // 5xx
-		}
-
-		for _, detail := range s.Details() {
-			if errDetails, ok := detail.(*mimirpb.ErrorDetails); ok {
-				return !mimirpb.IsClientErrorCause(errDetails.GetCause())
-			}
-		}
+	// If internal Ruler is used, then we classify only promql.ErrStorage errors as operator-controllable.
+	// Internal Ruler unknown errors are considered user-controllable.
+	if !c.remoteQuerier {
+		var (
+			errStorage promql.ErrStorage
+		)
+		return errors.As(err, &errStorage)
 	}
 
-	// Unknown errors are considered user errors
-	return false
+	// Unknown errors
+	return true
 }

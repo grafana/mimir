@@ -911,81 +911,149 @@ func mustStatusWithDetails(code codes.Code, cause mimirpb.ErrorCause) *status.St
 }
 
 func TestRulerErrorClassifier_IsOperatorControllable(t *testing.T) {
-	classifier := NewRulerErrorClassifier()
-
 	tests := []struct {
-		name     string
-		err      error
-		expected bool
+		name                   string
+		err                    error
+		expectedUserFailed     bool
+		expectedOperatorFailed bool
+		remoteQuerier          bool
 	}{
-		// Nil error
+		// PromQL errors
 		{
-			name:     "nil error",
-			err:      nil,
-			expected: false,
+			name:                   "promql error - timeout (user, local querier)",
+			err:                    promql.ErrQueryTimeout("query timeout"),
+			expectedUserFailed:     true,
+			expectedOperatorFailed: false,
+			remoteQuerier:          false,
+		},
+		{
+			name:                   "promql error - cancelled (user, local querier)",
+			err:                    promql.ErrQueryCanceled("query cancelled"),
+			expectedUserFailed:     true,
+			expectedOperatorFailed: false,
+			remoteQuerier:          false,
+		},
+		{
+			name:                   "promql.ErrStorage (operator, local querier)",
+			err:                    promql.ErrStorage{Err: errors.New("storage unavailable")},
+			expectedUserFailed:     false,
+			expectedOperatorFailed: true,
+			remoteQuerier:          false,
 		},
 
+		// HTTP status codes - same for both remote and local
 		{
-			name:     "promql error - timeout (user)",
-			err:      promql.ErrQueryTimeout("query timeout"),
-			expected: false,
+			name:                   "500 internal server error (operator, local querier)",
+			err:                    httpgrpc.Errorf(http.StatusInternalServerError, "internal error"),
+			expectedUserFailed:     false,
+			expectedOperatorFailed: true,
+			remoteQuerier:          false,
 		},
 		{
-			name:     "promql error - cancelled (user)",
-			err:      promql.ErrQueryCanceled("query cancelled"),
-			expected: false,
-		},
-
-		{
-			name:     "500 internal server error (operator)",
-			err:      httpgrpc.Errorf(http.StatusInternalServerError, "internal error"),
-			expected: true,
+			name:                   "500 internal server error (operator, remote querier)",
+			err:                    httpgrpc.Errorf(http.StatusInternalServerError, "internal error"),
+			expectedUserFailed:     false,
+			expectedOperatorFailed: true,
+			remoteQuerier:          true,
 		},
 		{
-			name:     "503 service unavailable (operator)",
-			err:      httpgrpc.Errorf(http.StatusServiceUnavailable, "service unavailable"),
-			expected: true,
+			name:                   "429 rate limited (operator, local querier)",
+			err:                    httpgrpc.Errorf(http.StatusTooManyRequests, "rate limited"),
+			expectedUserFailed:     false,
+			expectedOperatorFailed: true,
+			remoteQuerier:          false,
 		},
 		{
-			name:     "502 bad gateway (operator)",
-			err:      httpgrpc.Errorf(http.StatusBadGateway, "bad gateway"),
-			expected: true,
-		},
-
-		{
-			name:     "429 rate limited (operator)",
-			err:      httpgrpc.Errorf(http.StatusTooManyRequests, "rate limited"),
-			expected: true,
-		},
-
-		{
-			name:     "400 bad request (user)",
-			err:      httpgrpc.Errorf(http.StatusBadRequest, "bad request"),
-			expected: false,
-		},
-
-		{
-			name:     "context cancelled (user)",
-			err:      context.Canceled,
-			expected: false,
+			name:                   "429 rate limited (operator, remote querier)",
+			err:                    httpgrpc.Errorf(http.StatusTooManyRequests, "rate limited"),
+			expectedUserFailed:     false,
+			expectedOperatorFailed: true,
+			remoteQuerier:          true,
 		},
 		{
-			name:     "context deadline exceeded (user)",
-			err:      context.DeadlineExceeded,
-			expected: false,
+			name:                   "400 bad request (user, local querier)",
+			err:                    httpgrpc.Errorf(http.StatusBadRequest, "bad request"),
+			expectedUserFailed:     true,
+			expectedOperatorFailed: false,
+			remoteQuerier:          false,
+		},
+		{
+			name:                   "400 bad request (user, remote querier)",
+			err:                    httpgrpc.Errorf(http.StatusBadRequest, "bad request"),
+			expectedUserFailed:     true,
+			expectedOperatorFailed: false,
+			remoteQuerier:          true,
 		},
 
+		// Context errors - same for both remote and local
 		{
-			name:     "generic error without status code (operator)",
-			err:      errors.New("some generic error"),
-			expected: false,
+			name:                   "context cancelled (user, local querier)",
+			err:                    context.Canceled,
+			expectedUserFailed:     true,
+			expectedOperatorFailed: false,
+			remoteQuerier:          false,
+		},
+		{
+			name:                   "context cancelled (user, remote querier)",
+			err:                    context.Canceled,
+			expectedUserFailed:     true,
+			expectedOperatorFailed: false,
+			remoteQuerier:          true,
+		},
+
+		// Generic errors - behavior differs based on remoteQuerier
+		{
+			name:                   "generic error without status code (user, local querier)",
+			err:                    errors.New("some generic error"),
+			expectedUserFailed:     true,
+			expectedOperatorFailed: false,
+			remoteQuerier:          false,
+		},
+		{
+			name:                   "generic error without status code (operator, remote querier)",
+			err:                    errors.New("some generic error"),
+			expectedUserFailed:     false,
+			expectedOperatorFailed: true,
+			remoteQuerier:          true,
+		},
+
+		// Push errors with error details - same for both remote and local
+		{
+			name:                   "BAD_DATA push error (user, local querier)",
+			err:                    mustStatusWithDetails(codes.FailedPrecondition, mimirpb.ERROR_CAUSE_BAD_DATA).Err(),
+			expectedUserFailed:     true,
+			expectedOperatorFailed: false,
+			remoteQuerier:          false,
+		},
+		{
+			name:                   "BAD_DATA push error (user, remote querier)",
+			err:                    mustStatusWithDetails(codes.FailedPrecondition, mimirpb.ERROR_CAUSE_BAD_DATA).Err(),
+			expectedUserFailed:     true,
+			expectedOperatorFailed: false,
+			remoteQuerier:          true,
+		},
+		{
+			name:                   "METHOD_NOT_ALLOWED push error (operator, local querier)",
+			err:                    mustStatusWithDetails(codes.Unimplemented, mimirpb.ERROR_CAUSE_METHOD_NOT_ALLOWED).Err(),
+			expectedUserFailed:     false,
+			expectedOperatorFailed: true,
+			remoteQuerier:          false,
+		},
+		{
+			name:                   "METHOD_NOT_ALLOWED push error (operator, remote querier)",
+			err:                    mustStatusWithDetails(codes.Unimplemented, mimirpb.ERROR_CAUSE_METHOD_NOT_ALLOWED).Err(),
+			expectedUserFailed:     false,
+			expectedOperatorFailed: true,
+			remoteQuerier:          true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			classifier := NewRulerErrorClassifier(tt.remoteQuerier)
 			result := classifier.IsOperatorControllable(tt.err)
-			require.Equal(t, tt.expected, result)
+			require.Equal(t, tt.expectedOperatorFailed, result)
+			require.Equal(t, tt.expectedUserFailed, !result)
 		})
 	}
 }
@@ -1111,6 +1179,7 @@ func TestRulerErrorClassifier_ErrorClassificationDuringRuleEvaluation(t *testing
 			// Create manager from factory
 			queryable := &storage.MockQueryable{MockQuerier: querier}
 			queryFunc := rules.EngineQueryFunc(eng, queryable)
+
 			factory := DefaultTenantManagerFactory(cfg, pusher, queryable, queryFunc, fs, &NoopMultiTenantConcurrencyController{}, options.limits, nil)
 			manager := factory(context.Background(), userID, notifierManager, options.logger, prometheusReg)
 
