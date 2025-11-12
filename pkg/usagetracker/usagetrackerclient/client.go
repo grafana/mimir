@@ -440,7 +440,7 @@ func (c *UsageTrackerClient) updateUsersCloseToLimitCache(ctx context.Context) (
 }
 
 func (c *UsageTrackerClient) selectRandomPartition() (int32, ring.ReplicationSet, bool) {
-	partitions := c.partitionRing.PartitionRing().PartitionIDs()
+	partitions := c.partitionRing.PartitionRing().ActivePartitionIDs()
 	if len(partitions) == 0 {
 		level.Error(c.logger).Log("msg", "no partitions available in ring for users close to limit poll")
 		return 0, ring.ReplicationSet{}, false
