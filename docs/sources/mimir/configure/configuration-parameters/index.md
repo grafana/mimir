@@ -5039,6 +5039,16 @@ bucket_store:
     # CLI flag: -blocks-storage.bucket-store.chunks-cache.subrange-ttl
     [subrange_ttl: <duration> | default = 24h]
 
+    # (advanced) Size of each subrange that parquet chunk objects are split into
+    # for better caching.
+    # CLI flag: -blocks-storage.bucket-store.chunks-cache.parquet-chunks-subrange-size
+    [parquet_chunks_subrange_size: <int> | default = 16000]
+
+    # (advanced) Size of each subrange that parquet labels objects are split
+    # into for better caching.
+    # CLI flag: -blocks-storage.bucket-store.chunks-cache.parquet-labels-subrange-size
+    [parquet_labels_subrange_size: <int> | default = 16000]
+
     # (advanced) If true, get range calls to parquet labels files will be cached
     # in the chunks cache.
     # CLI flag: -blocks-storage.bucket-store.chunks-cache.cache-parquet-labels-files
