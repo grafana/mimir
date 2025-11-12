@@ -471,9 +471,13 @@ func (c *UsageTrackerClient) CanTrackAsync(userID string) bool {
 
 	// Check if user is close to their limit.
 	c.usersCloseToLimitsMtx.RLock()
-	_, found := slices.BinarySearch(c.usersCloseToLimit, userID)
-	c.usersCloseToLimitsMtx.RUnlock()
+	defer c.usersCloseToLimitsMtx.RUnlock()
+	if !c.usersCloseToLimitLoaded {
+		// Can't do async if we don't really know.
+		return false
+	}
 
 	// Can track async if it's not in the list of users close to their limit.
+	_, found := slices.BinarySearch(c.usersCloseToLimit, userID)
 	return !found
 }
