@@ -8,6 +8,7 @@ package astmapper
 import (
 	"context"
 	"fmt"
+	"slices"
 
 	"github.com/go-kit/log"
 	"github.com/pkg/errors"
@@ -481,6 +482,7 @@ func (summer *shardSummer) shardGroup(ctx context.Context, expr *parser.Aggregat
 		Param:    expr.Param,
 		Grouping: expr.Grouping,
 		Without:  expr.Without,
+		PosRange: expr.PosRange,
 	}, nil
 }
 
@@ -521,6 +523,7 @@ func (summer *shardSummer) shardSum(ctx context.Context, expr *parser.AggregateE
 		Param:    expr.Param,
 		Grouping: expr.Grouping,
 		Without:  expr.Without,
+		PosRange: expr.PosRange,
 	}, nil
 }
 
@@ -541,6 +544,7 @@ func (summer *shardSummer) shardCount(ctx context.Context, expr *parser.Aggregat
 		Param:    expr.Param,
 		Grouping: expr.Grouping,
 		Without:  expr.Without,
+		PosRange: expr.PosRange,
 	}, nil
 }
 
@@ -566,6 +570,7 @@ func (summer *shardSummer) shardMinMax(ctx context.Context, expr *parser.Aggrega
 		Param:    expr.Param,
 		Grouping: expr.Grouping,
 		Without:  expr.Without,
+		PosRange: expr.PosRange,
 	}, nil
 }
 
@@ -611,8 +616,13 @@ func (summer *shardSummer) shardAndSquashAggregateExpr(ctx context.Context, expr
 		aggExpr := &parser.AggregateExpr{
 			Op:       op,
 			Expr:     sharded,
-			Grouping: expr.Grouping,
 			Without:  expr.Without,
+			PosRange: expr.PosRange,
+
+			// Clone the grouping slice, as MQE's aggregation operator mutates it to sort it and add __name__ if needed.
+			// We don't need to clone this slice for the aggregate expression that wraps this one (created by the caller of shardAndSquashAggregateExpr),
+			// as no other expression nodes will reference that slice, so it's safe for that one to be mutated.
+			Grouping: slices.Clone(expr.Grouping),
 		}
 		children = append(children, NewEmbeddedQuery(aggExpr, summer.shardLabeller.GetParams(i)))
 	}
