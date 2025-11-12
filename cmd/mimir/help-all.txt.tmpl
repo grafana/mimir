@@ -481,6 +481,10 @@ Usage of ./cmd/mimir/mimir:
     	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -blocks-storage.bucket-store.chunks-cache.memcached.tls-server-name string
     	Override the expected name on the server certificate.
+  -blocks-storage.bucket-store.chunks-cache.parquet-chunks-subrange-size int
+    	Size of each subrange that parquet chunk objects are split into for better caching. (default 16000)
+  -blocks-storage.bucket-store.chunks-cache.parquet-labels-subrange-size int
+    	Size of each subrange that parquet labels objects are split into for better caching. (default 16000)
   -blocks-storage.bucket-store.chunks-cache.subrange-ttl duration
     	TTL for caching individual chunks subranges. (default 24h0m0s)
   -blocks-storage.bucket-store.ignore-blocks-within duration
