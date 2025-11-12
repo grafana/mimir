@@ -584,9 +584,10 @@ func (summer *shardSummer) shardAvg(ctx context.Context, expr *parser.AggregateE
 
 	return &parser.ParenExpr{
 		Expr: &parser.BinaryExpr{
-			Op:  parser.DIV,
-			LHS: sumExpr,
-			RHS: countExpr,
+			Op:             parser.DIV,
+			LHS:            sumExpr,
+			RHS:            countExpr,
+			VectorMatching: &parser.VectorMatching{},
 		},
 	}, nil
 }

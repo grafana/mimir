@@ -69,7 +69,12 @@ func TestOptimizationPass(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			reg := prometheus.NewPedanticRegistry()
 			logger := log.NewNopLogger()
-			pass := NewOptimizationPass(&mockLimits{}, seriesPerShard, reg, logger)
+			limits := &mockLimits{
+				totalShards:         4,
+				maxShardedQueries:   6,
+				splitAndMergeShards: 1,
+			}
+			pass := NewOptimizationPass(limits, seriesPerShard, reg, logger)
 
 			expr, err := parser.ParseExpr(testCase.input)
 			require.NoError(t, err)
@@ -83,20 +88,25 @@ func TestOptimizationPass(t *testing.T) {
 	}
 }
 
-type mockLimits struct{}
+type mockLimits struct {
+	totalShards         int
+	regexpSizeBytes     int
+	maxShardedQueries   int
+	splitAndMergeShards int
+}
 
 func (m *mockLimits) QueryShardingTotalShards(userID string) int {
-	return 4
+	return m.totalShards
 }
 
 func (m *mockLimits) QueryShardingMaxRegexpSizeBytes(userID string) int {
-	return 0
+	return m.regexpSizeBytes
 }
 
 func (m *mockLimits) QueryShardingMaxShardedQueries(userID string) int {
-	return 6
+	return m.maxShardedQueries
 }
 
 func (m *mockLimits) CompactorSplitAndMergeShards(userID string) int {
-	return 1
+	return m.splitAndMergeShards
 }

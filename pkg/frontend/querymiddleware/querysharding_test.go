@@ -142,6 +142,7 @@ func compareExpectedAndActual(t *testing.T, expectedTs, actualTs int64, expected
 	}
 }
 
+// Important: if you modify this test, you likely also need to modify the corresponding test in pkg/streamingpromql/optimize/ast/sharding.
 func TestQuerySharding_Correctness(t *testing.T) {
 	var (
 		numSeries                = 1000
