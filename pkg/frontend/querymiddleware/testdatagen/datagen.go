@@ -258,15 +258,15 @@ func (ssi *ThreadSafeStorageSeriesIterator) Err() error {
 
 func StorageSeriesQueryable(series []storage.Series) storage.Queryable {
 	return storage.QueryableFunc(func(int64, int64) (storage.Querier, error) {
-		return &querierMock{series: series}, nil
+		return &QuerierMock{Series: series}, nil
 	})
 }
 
-type querierMock struct {
-	series []storage.Series
+type QuerierMock struct {
+	Series []storage.Series
 }
 
-func (m *querierMock) Select(_ context.Context, sorted bool, _ *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
+func (m *QuerierMock) Select(_ context.Context, sorted bool, _ *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
 	shard, matchers, err := sharding.RemoveShardFromMatchers(matchers)
 	if err != nil {
 		return storage.ErrSeriesSet(err)
@@ -275,7 +275,7 @@ func (m *querierMock) Select(_ context.Context, sorted bool, _ *storage.SelectHi
 	// Filter series by label matchers.
 	var filtered []storage.Series
 
-	for _, series := range m.series {
+	for _, series := range m.Series {
 		if seriesMatches(series, matchers...) {
 			filtered = append(filtered, series)
 		}
@@ -294,15 +294,15 @@ func (m *querierMock) Select(_ context.Context, sorted bool, _ *storage.SelectHi
 	return newSeriesIteratorMock(filtered)
 }
 
-func (m *querierMock) LabelValues(context.Context, string, *storage.LabelHints, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+func (m *QuerierMock) LabelValues(context.Context, string, *storage.LabelHints, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	return nil, nil, nil
 }
 
-func (m *querierMock) LabelNames(context.Context, *storage.LabelHints, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+func (m *QuerierMock) LabelNames(context.Context, *storage.LabelHints, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	return nil, nil, nil
 }
 
-func (m *querierMock) Close() error { return nil }
+func (m *QuerierMock) Close() error { return nil }
 
 func seriesMatches(series storage.Series, matchers ...*labels.Matcher) bool {
 	for _, m := range matchers {

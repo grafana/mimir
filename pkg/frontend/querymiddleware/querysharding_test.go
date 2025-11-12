@@ -25,14 +25,11 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/promslog"
-	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
-	"github.com/prometheus/prometheus/tsdb/chunkenc"
-	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -40,6 +37,7 @@ import (
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware/astmapper"
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware/shardingtest"
+	"github.com/grafana/mimir/pkg/frontend/querymiddleware/testdatagen"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier"
 	"github.com/grafana/mimir/pkg/storage/sharding"
@@ -230,15 +228,15 @@ func TestQuerySharding_NonMonotonicHistogramBuckets(t *testing.T) {
 
 	var series []storage.Series
 	for i := 0; i < 100; i++ {
-		series = append(series, newSeries(labels.FromStrings(labels.MetricName, "metric_histogram_bucket", "app", strconv.Itoa(i), "le", "10"), start.Add(-lookbackDelta), end, step, arithmeticSequence(1)))
-		series = append(series, newSeries(labels.FromStrings(labels.MetricName, "metric_histogram_bucket", "app", strconv.Itoa(i), "le", "20"), start.Add(-lookbackDelta), end, step, arithmeticSequence(3)))
-		series = append(series, newSeries(labels.FromStrings(labels.MetricName, "metric_histogram_bucket", "app", strconv.Itoa(i), "le", "30"), start.Add(-lookbackDelta), end, step, arithmeticSequence(3)))
-		series = append(series, newSeries(labels.FromStrings(labels.MetricName, "metric_histogram_bucket", "app", strconv.Itoa(i), "le", "40"), start.Add(-lookbackDelta), end, step, arithmeticSequence(3)))
-		series = append(series, newSeries(labels.FromStrings(labels.MetricName, "metric_histogram_bucket", "app", strconv.Itoa(i), "le", "+Inf"), start.Add(-lookbackDelta), end, step, arithmeticSequence(3)))
+		series = append(series, testdatagen.NewSeries(labels.FromStrings(labels.MetricName, "metric_histogram_bucket", "app", strconv.Itoa(i), "le", "10"), start.Add(-lookbackDelta), end, step, arithmeticSequence(1)))
+		series = append(series, testdatagen.NewSeries(labels.FromStrings(labels.MetricName, "metric_histogram_bucket", "app", strconv.Itoa(i), "le", "20"), start.Add(-lookbackDelta), end, step, arithmeticSequence(3)))
+		series = append(series, testdatagen.NewSeries(labels.FromStrings(labels.MetricName, "metric_histogram_bucket", "app", strconv.Itoa(i), "le", "30"), start.Add(-lookbackDelta), end, step, arithmeticSequence(3)))
+		series = append(series, testdatagen.NewSeries(labels.FromStrings(labels.MetricName, "metric_histogram_bucket", "app", strconv.Itoa(i), "le", "40"), start.Add(-lookbackDelta), end, step, arithmeticSequence(3)))
+		series = append(series, testdatagen.NewSeries(labels.FromStrings(labels.MetricName, "metric_histogram_bucket", "app", strconv.Itoa(i), "le", "+Inf"), start.Add(-lookbackDelta), end, step, arithmeticSequence(3)))
 	}
 
 	// Create a queryable on the fixtures.
-	queryable := storageSeriesQueryable(series)
+	queryable := testdatagen.StorageSeriesQueryable(series)
 
 	for _, query := range queries {
 		t.Run(query, func(t *testing.T) {
@@ -354,11 +352,11 @@ func TestQueryshardingDeterminism(t *testing.T) {
 
 	labelsForShard := labelsForShardsGenerator([]labels.Label{{Name: labels.MetricName, Value: "metric"}}, shards)
 	storageSeries := []storage.Series{
-		newSeries(labelsForShard(0), from, to, step, constant(evilFloatA)),
-		newSeries(labelsForShard(1), from, to, step, constant(evilFloatA)),
-		newSeries(labelsForShard(2), from, to, step, constant(evilFloatB)),
+		testdatagen.NewSeries(labelsForShard(0), from, to, step, constant(evilFloatA)),
+		testdatagen.NewSeries(labelsForShard(1), from, to, step, constant(evilFloatA)),
+		testdatagen.NewSeries(labelsForShard(2), from, to, step, constant(evilFloatB)),
 	}
-	queryable := storageSeriesQueryable(storageSeries)
+	queryable := testdatagen.StorageSeriesQueryable(storageSeries)
 
 	runForEngines(t, func(t *testing.T, opts promql.EngineOpts, eng promql.QueryEngine) {
 		shardingware := newQueryShardingMiddleware(log.NewNopLogger(), eng, mockLimits{totalShards: shards}, 0, prometheus.NewPedanticRegistry())
@@ -516,26 +514,26 @@ func TestQuerySharding_FunctionCorrectness(t *testing.T) {
 	}
 
 	t.Run("floats", func(t *testing.T) {
-		queryableFloats := storageSeriesQueryable([]storage.Series{
-			newSeries(labels.FromStrings("__name__", "bar1", "baz", "blip", "bar", "blop", "foo", "barr"), start.Add(-lookbackDelta), end, step, factor(5)),
-			newSeries(labels.FromStrings("__name__", "bar1", "baz", "blip", "bar", "blop", "foo", "bazz"), start.Add(-lookbackDelta), end, step, factor(7)),
-			newSeries(labels.FromStrings("__name__", "bar1", "baz", "blip", "bar", "blap", "foo", "buzz"), start.Add(-lookbackDelta), end, step, factor(12)),
-			newSeries(labels.FromStrings("__name__", "bar1", "baz", "blip", "bar", "blap", "foo", "bozz"), start.Add(-lookbackDelta), end, step, factor(11)),
-			newSeries(labels.FromStrings("__name__", "bar1", "baz", "blip", "bar", "blop", "foo", "buzz"), start.Add(-lookbackDelta), end, step, factor(8)),
-			newSeries(labels.FromStrings("__name__", "bar1", "baz", "blip", "bar", "blap", "foo", "bazz"), start.Add(-lookbackDelta), end, step, arithmeticSequence(10)),
+		queryableFloats := testdatagen.StorageSeriesQueryable([]storage.Series{
+			testdatagen.NewSeries(labels.FromStrings("__name__", "bar1", "baz", "blip", "bar", "blop", "foo", "barr"), start.Add(-lookbackDelta), end, step, testdatagen.Factor(5)),
+			testdatagen.NewSeries(labels.FromStrings("__name__", "bar1", "baz", "blip", "bar", "blop", "foo", "bazz"), start.Add(-lookbackDelta), end, step, testdatagen.Factor(7)),
+			testdatagen.NewSeries(labels.FromStrings("__name__", "bar1", "baz", "blip", "bar", "blap", "foo", "buzz"), start.Add(-lookbackDelta), end, step, testdatagen.Factor(12)),
+			testdatagen.NewSeries(labels.FromStrings("__name__", "bar1", "baz", "blip", "bar", "blap", "foo", "bozz"), start.Add(-lookbackDelta), end, step, testdatagen.Factor(11)),
+			testdatagen.NewSeries(labels.FromStrings("__name__", "bar1", "baz", "blip", "bar", "blop", "foo", "buzz"), start.Add(-lookbackDelta), end, step, testdatagen.Factor(8)),
+			testdatagen.NewSeries(labels.FromStrings("__name__", "bar1", "baz", "blip", "bar", "blap", "foo", "bazz"), start.Add(-lookbackDelta), end, step, arithmeticSequence(10)),
 		})
 
 		testQueryShardingFunctionCorrectness(t, queryableFloats, append(testsForBoth, testsForFloatsOnly...), testsForNativeHistogramsOnly)
 	})
 
 	t.Run("native histograms", func(t *testing.T) {
-		queryableNativeHistograms := storageSeriesQueryable([]storage.Series{
-			newNativeHistogramSeries(labels.FromStrings("__name__", "bar1", "baz", "blip", "bar", "blop", "foo", "barr"), start.Add(-lookbackDelta), end, step, factor(5)),
-			newNativeHistogramSeries(labels.FromStrings("__name__", "bar1", "baz", "blip", "bar", "blop", "foo", "bazz"), start.Add(-lookbackDelta), end, step, factor(7)),
-			newNativeHistogramSeries(labels.FromStrings("__name__", "bar1", "baz", "blip", "bar", "blap", "foo", "buzz"), start.Add(-lookbackDelta), end, step, factor(12)),
-			newNativeHistogramSeries(labels.FromStrings("__name__", "bar1", "baz", "blip", "bar", "blap", "foo", "bozz"), start.Add(-lookbackDelta), end, step, factor(11)),
-			newNativeHistogramSeries(labels.FromStrings("__name__", "bar1", "baz", "blip", "bar", "blop", "foo", "buzz"), start.Add(-lookbackDelta), end, step, factor(8)),
-			newNativeHistogramSeries(labels.FromStrings("__name__", "bar1", "baz", "blip", "bar", "blap", "foo", "bazz"), start.Add(-lookbackDelta), end, step, arithmeticSequence(10)),
+		queryableNativeHistograms := testdatagen.StorageSeriesQueryable([]storage.Series{
+			testdatagen.NewNativeHistogramSeries(labels.FromStrings("__name__", "bar1", "baz", "blip", "bar", "blop", "foo", "barr"), start.Add(-lookbackDelta), end, step, testdatagen.Factor(5)),
+			testdatagen.NewNativeHistogramSeries(labels.FromStrings("__name__", "bar1", "baz", "blip", "bar", "blop", "foo", "bazz"), start.Add(-lookbackDelta), end, step, testdatagen.Factor(7)),
+			testdatagen.NewNativeHistogramSeries(labels.FromStrings("__name__", "bar1", "baz", "blip", "bar", "blap", "foo", "buzz"), start.Add(-lookbackDelta), end, step, testdatagen.Factor(12)),
+			testdatagen.NewNativeHistogramSeries(labels.FromStrings("__name__", "bar1", "baz", "blip", "bar", "blap", "foo", "bozz"), start.Add(-lookbackDelta), end, step, testdatagen.Factor(11)),
+			testdatagen.NewNativeHistogramSeries(labels.FromStrings("__name__", "bar1", "baz", "blip", "bar", "blop", "foo", "buzz"), start.Add(-lookbackDelta), end, step, testdatagen.Factor(8)),
+			testdatagen.NewNativeHistogramSeries(labels.FromStrings("__name__", "bar1", "baz", "blip", "bar", "blap", "foo", "bazz"), start.Add(-lookbackDelta), end, step, arithmeticSequence(10)),
 		})
 
 		testQueryShardingFunctionCorrectness(t, queryableNativeHistograms, append(testsForBoth, testsForNativeHistogramsOnly...), testsForFloatsOnly)
@@ -1083,8 +1081,8 @@ func TestQuerySharding_ShouldReturnErrorInCorrectFormat(t *testing.T) {
 		queryablePrometheusExecErr = storage.QueryableFunc(func(int64, int64) (storage.Querier, error) {
 			return nil, apierror.Newf(apierror.TypeExec, "expanding series: %s", querier.NewMaxQueryLengthError(744*time.Hour, 720*time.Hour))
 		})
-		queryable = storageSeriesQueryable([]storage.Series{
-			newSeries(labels.FromStrings("__name__", "bar1"), start.Add(-lookbackDelta), end, step, factor(5)),
+		queryable = testdatagen.StorageSeriesQueryable([]storage.Series{
+			testdatagen.NewSeries(labels.FromStrings("__name__", "bar1"), start.Add(-lookbackDelta), end, step, testdatagen.Factor(5)),
 		})
 		queryableSlow = newMockShardedQueryable(
 			2,
@@ -1201,11 +1199,11 @@ func TestQuerySharding_EngineErrorMapping(t *testing.T) {
 
 	series := make([]storage.Series, 0, numSeries)
 	for i := 0; i < numSeries; i++ {
-		series = append(series, newSeries(newTestCounterLabels(i), start.Add(-lookbackDelta), end, step, factor(float64(i)*0.1)))
+		series = append(series, testdatagen.NewSeries(testdatagen.NewTestCounterLabels(i), start.Add(-lookbackDelta), end, step, testdatagen.Factor(float64(i)*0.1)))
 	}
 
 	queryable := storage.QueryableFunc(func(int64, int64) (storage.Querier, error) {
-		return &querierMock{series: series}, nil
+		return &testdatagen.QuerierMock{Series: series}, nil
 	})
 
 	req := &PrometheusRangeQueryRequest{
@@ -1323,7 +1321,7 @@ func TestQuerySharding_Annotations(t *testing.T) {
 		})
 		storageSeries = append(storageSeries, nss)
 	}
-	queryable := storageSeriesQueryable(storageSeries)
+	queryable := testdatagen.StorageSeriesQueryable(storageSeries)
 
 	const numShards = 8
 	const step = 20 * time.Second
@@ -1953,199 +1951,7 @@ func (h *downstreamHandler) Do(ctx context.Context, r MetricsQueryRequest) (Resp
 	return resp, nil
 }
 
-func storageSeriesQueryable(series []storage.Series) storage.Queryable {
-	return storage.QueryableFunc(func(int64, int64) (storage.Querier, error) {
-		return &querierMock{series: series}, nil
-	})
-}
-
-type querierMock struct {
-	series []storage.Series
-}
-
-func (m *querierMock) Select(_ context.Context, sorted bool, _ *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
-	shard, matchers, err := sharding.RemoveShardFromMatchers(matchers)
-	if err != nil {
-		return storage.ErrSeriesSet(err)
-	}
-
-	// Filter series by label matchers.
-	var filtered []storage.Series
-
-	for _, series := range m.series {
-		if seriesMatches(series, matchers...) {
-			filtered = append(filtered, series)
-		}
-	}
-
-	// Filter series by shard (if any)
-	filtered = filterSeriesByShard(filtered, shard)
-
-	// Honor the sorting.
-	if sorted {
-		slices.SortFunc(filtered, func(a, b storage.Series) int {
-			return labels.Compare(a.Labels(), b.Labels())
-		})
-	}
-
-	return newSeriesIteratorMock(filtered)
-}
-
-func (m *querierMock) LabelValues(context.Context, string, *storage.LabelHints, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
-	return nil, nil, nil
-}
-
-func (m *querierMock) LabelNames(context.Context, *storage.LabelHints, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
-	return nil, nil, nil
-}
-
-func (m *querierMock) Close() error { return nil }
-
-func seriesMatches(series storage.Series, matchers ...*labels.Matcher) bool {
-	for _, m := range matchers {
-		if !m.Matches(series.Labels().Get(m.Name)) {
-			return false
-		}
-	}
-
-	return true
-}
-
-func filterSeriesByShard(series []storage.Series, shard *sharding.ShardSelector) []storage.Series {
-	if shard == nil {
-		return series
-	}
-
-	var filtered []storage.Series
-
-	for _, s := range series {
-		if labels.StableHash(s.Labels())%shard.ShardCount == shard.ShardIndex {
-			filtered = append(filtered, s)
-		}
-	}
-
-	return filtered
-}
-
-func newSeries(metric labels.Labels, from, to time.Time, step time.Duration, gen generator) storage.Series {
-	return newSeriesInner(metric, from, to, step, gen, false)
-}
-
-func newNativeHistogramSeries(metric labels.Labels, from, to time.Time, step time.Duration, gen generator) storage.Series {
-	return newSeriesInner(metric, from, to, step, gen, true)
-}
-
-func newSeriesInner(metric labels.Labels, from, to time.Time, step time.Duration, gen generator, histogram bool) storage.Series {
-	var (
-		floats     []promql.FPoint
-		histograms []promql.HPoint
-		prevValue  *float64
-	)
-
-	for ts := from; ts.Unix() <= to.Unix(); ts = ts.Add(step) {
-		t := ts.Unix() * 1e3
-		v := gen(t)
-
-		// If both the previous and current values are the stale marker, then we omit the
-		// point completely (we just keep the 1st one in a consecutive series of stale markers).
-		shouldSkip := prevValue != nil && value.IsStaleNaN(*prevValue) && value.IsStaleNaN(v)
-		prevValue = &v
-		if shouldSkip {
-			continue
-		}
-
-		if histogram {
-			histograms = append(histograms, promql.HPoint{
-				T: t,
-				H: generateTestHistogram(v),
-			})
-		} else {
-			floats = append(floats, promql.FPoint{
-				T: t,
-				F: v,
-			})
-		}
-	}
-
-	return NewThreadSafeStorageSeries(promql.Series{
-		Metric:     metric,
-		Floats:     floats,
-		Histograms: histograms,
-	})
-}
-
-func generateTestHistogram(v float64) *histogram.FloatHistogram {
-	//based on util_test.GenerateTestFloatHistogram(int(v)) but without converting to int
-	h := &histogram.FloatHistogram{
-		Count:         10 + (v * 8),
-		ZeroCount:     2 + v,
-		ZeroThreshold: 0.001,
-		Sum:           18.4 * (v + 1),
-		Schema:        1,
-		PositiveSpans: []histogram.Span{
-			{Offset: 0, Length: 2},
-			{Offset: 1, Length: 2},
-		},
-		PositiveBuckets: []float64{v + 1, v + 2, v + 1, v + 1},
-		NegativeSpans: []histogram.Span{
-			{Offset: 0, Length: 2},
-			{Offset: 1, Length: 2},
-		},
-		NegativeBuckets: []float64{v + 1, v + 2, v + 1, v + 1},
-	}
-	if value.IsStaleNaN(v) {
-		h.Sum = v
-	}
-	return h
-}
-
-// newTestCounterLabels generates series labels for a counter metric used in tests.
-func newTestCounterLabels(id int) labels.Labels {
-	return labels.FromStrings(
-		"__name__", "metric_counter",
-		"const", "fixed", // A constant label.
-		"unique", strconv.Itoa(id), // A unique label.
-		"group_1", strconv.Itoa(id%10), // A first grouping label.
-		"group_2", strconv.Itoa(id%3), // A second grouping label.
-	)
-}
-
-// newTestConventionalHistogramLabels generates series labels for a conventional histogram metric used in tests.
-func newTestConventionalHistogramLabels(id int, bucketLe float64) labels.Labels {
-	return labels.FromStrings(
-		"__name__", "metric_histogram_bucket",
-		"le", fmt.Sprintf("%f", bucketLe),
-		"const", "fixed", // A constant label.
-		"unique", strconv.Itoa(id), // A unique label.
-		"group_1", strconv.Itoa(id%10), // A first grouping label.
-		"group_2", strconv.Itoa(id%3), // A second grouping label.
-	)
-}
-
-// newTestNativeHistogramLabels generates series labels for a native histogram metric used in tests.
-func newTestNativeHistogramLabels(id int) labels.Labels {
-	return labels.FromStrings(
-		"__name__", "metric_native_histogram",
-		"const", "fixed", // A constant label.
-		"unique", strconv.Itoa(id), // A unique label.
-		"group_1", strconv.Itoa(id%10), // A first grouping label.
-		"group_2", strconv.Itoa(id%3), // A second grouping label.
-	)
-}
-
-// generator defined a function used to generate sample values in tests.
-type generator func(ts int64) float64
-
-func factor(f float64) generator {
-	i := 0.
-	return func(int64) float64 {
-		i++
-		res := i * f
-		return res
-	}
-}
-
-func arithmeticSequence(f float64) generator {
+func arithmeticSequence(f float64) testdatagen.Generator {
 	i := 0.
 	return func(int64) float64 {
 		i++
@@ -2154,126 +1960,11 @@ func arithmeticSequence(f float64) generator {
 	}
 }
 
-// stale wraps the input generator and injects stale marker between from and to.
-func stale(from, to time.Time, wrap generator) generator {
-	return func(ts int64) float64 {
-		// Always get the next value from the wrapped generator.
-		v := wrap(ts)
-
-		// Inject the stale marker if we're at the right time.
-		if ts >= util.TimeToMillis(from) && ts <= util.TimeToMillis(to) {
-			return math.Float64frombits(value.StaleNaN)
-		}
-
-		return v
-	}
-}
-
 // constant returns a generator that generates a constant value
-func constant(value float64) generator {
+func constant(value float64) testdatagen.Generator {
 	return func(int64) float64 {
 		return value
 	}
-}
-
-type seriesIteratorMock struct {
-	idx    int
-	series []storage.Series
-}
-
-func newSeriesIteratorMock(series []storage.Series) *seriesIteratorMock {
-	return &seriesIteratorMock{
-		idx:    -1,
-		series: series,
-	}
-}
-
-func (i *seriesIteratorMock) Next() bool {
-	i.idx++
-	return i.idx < len(i.series)
-}
-
-func (i *seriesIteratorMock) At() storage.Series {
-	if i.idx >= len(i.series) {
-		return nil
-	}
-
-	return i.series[i.idx]
-}
-
-func (i *seriesIteratorMock) Err() error {
-	return nil
-}
-
-func (i *seriesIteratorMock) Warnings() annotations.Annotations {
-	return nil
-}
-
-// Usually series are read by a single engine in a single goroutine but in
-// sharding tests we have multiple engines in multiple goroutines. Thus we
-// need a series iterator that doesn't share pointers between goroutines.
-type ThreadSafeStorageSeries struct {
-	storageSeries *promql.StorageSeries
-}
-
-// NewStorageSeries returns a StorageSeries from a Series.
-func NewThreadSafeStorageSeries(series promql.Series) *ThreadSafeStorageSeries {
-	return &ThreadSafeStorageSeries{
-		storageSeries: promql.NewStorageSeries(series),
-	}
-}
-
-func (ss *ThreadSafeStorageSeries) Labels() labels.Labels {
-	return ss.storageSeries.Labels()
-}
-
-// Iterator returns a new iterator of the data of the series. In case of
-// multiple samples with the same timestamp, it returns the float samples first.
-func (ss *ThreadSafeStorageSeries) Iterator(it chunkenc.Iterator) chunkenc.Iterator {
-	if ssi, ok := it.(*ThreadSafeStorageSeriesIterator); ok {
-		return &ThreadSafeStorageSeriesIterator{underlying: ss.storageSeries.Iterator(ssi.underlying)}
-	}
-	return &ThreadSafeStorageSeriesIterator{underlying: ss.storageSeries.Iterator(nil)}
-}
-
-type ThreadSafeStorageSeriesIterator struct {
-	underlying chunkenc.Iterator
-}
-
-func (ssi *ThreadSafeStorageSeriesIterator) Seek(t int64) chunkenc.ValueType {
-	return ssi.underlying.Seek(t)
-}
-
-func (ssi *ThreadSafeStorageSeriesIterator) At() (t int64, v float64) {
-	return ssi.underlying.At()
-}
-
-func (ssi *ThreadSafeStorageSeriesIterator) AtHistogram(*histogram.Histogram) (int64, *histogram.Histogram) {
-	panic(errors.New("storageSeriesIterator: AtHistogram not supported"))
-}
-
-// AtFloatHistogram returns the timestamp and the float histogram at the current position.
-// This is different from the underlying iterator in that it does a copy so that the user
-// can modify the returned histogram without affecting the underlying series.
-func (ssi *ThreadSafeStorageSeriesIterator) AtFloatHistogram(toFH *histogram.FloatHistogram) (int64, *histogram.FloatHistogram) {
-	t, fh := ssi.underlying.AtFloatHistogram(nil)
-	if toFH == nil {
-		return t, fh.Copy()
-	}
-	fh.CopyTo(toFH)
-	return t, toFH
-}
-
-func (ssi *ThreadSafeStorageSeriesIterator) AtT() int64 {
-	return ssi.underlying.AtT()
-}
-
-func (ssi *ThreadSafeStorageSeriesIterator) Next() chunkenc.ValueType {
-	return ssi.underlying.Next()
-}
-
-func (ssi *ThreadSafeStorageSeriesIterator) Err() error {
-	return nil
 }
 
 func TestRemoveAnnotationPositionInformation(t *testing.T) {
