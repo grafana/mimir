@@ -479,3 +479,4 @@ func (c *UsageTrackerClient) CanTrackAsync(userID string) bool {
 
 	// Can track async if it's not in the list of users close to their limit.
 	return !found
+}
