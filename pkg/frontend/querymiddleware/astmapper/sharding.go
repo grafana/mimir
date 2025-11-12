@@ -729,11 +729,3 @@ func isSubqueryCallVisitFn(expr parser.Expr) bool {
 		return false
 	}
 }
-
-func copyTimestamp(original *int64) *int64 {
-	if original == nil {
-		return nil
-	}
-	ts := *original
-	return &ts
-}
