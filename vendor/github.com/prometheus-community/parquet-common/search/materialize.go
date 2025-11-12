@@ -273,7 +273,7 @@ func (m *Materializer) MaterializeAllLabelNames() []string {
 func (m *Materializer) MaterializeLabelNames(ctx context.Context, rgi int, rr []RowRange) ([]string, error) {
 	labelsRg := m.b.LabelsFile().RowGroups()[rgi]
 	cc := labelsRg.ColumnChunks()[m.colIdx]
-	colsIdxs, err := m.materializeColumnSlice(ctx, m.b.LabelsFile(), rgi, rr, cc, false)
+	colsIdxs, err := m.materializeColumnSlice(ctx, m.b.LabelsFile(), rgi, rr, cc, false, (m.concurrency+1)/2)
 	if err != nil {
 		return nil, errors.Wrap(err, "materializer failed to materialize columns")
 	}
@@ -324,7 +324,7 @@ func (m *Materializer) MaterializeLabelValues(ctx context.Context, name string, 
 		return []string{}, nil
 	}
 	cc := labelsRg.ColumnChunks()[cIdx.ColumnIndex]
-	values, err := m.materializeColumnSlice(ctx, m.b.LabelsFile(), rgi, rr, cc, false)
+	values, err := m.materializeColumnSlice(ctx, m.b.LabelsFile(), rgi, rr, cc, false, 1)
 	if err != nil {
 		return nil, errors.Wrap(err, "materializer failed to materialize columns")
 	}
@@ -497,10 +497,10 @@ func (m *Materializer) MaterializeLabels(ctx context.Context, hints *prom_storag
 	results := make([][]labels.Label, len(columnIndexes))
 	mtx := sync.Mutex{}
 	errGroup := &errgroup.Group{}
-	errGroup.SetLimit(m.concurrency)
+	errGroup.SetLimit((m.concurrency + 1) / 2)
 	labelsRowGroup := m.b.LabelsFile().RowGroups()[rgi]
 
-	span.SetAttributes(attribute.Int("goroutine_pool_limit", m.concurrency))
+	span.SetAttributes(attribute.Int("goroutine_pool_limit", (m.concurrency+1)/2))
 
 	rowRangeToStartIndex := make(map[RowRange]int, len(rr))
 	resultIndex := 0
@@ -544,7 +544,7 @@ func (m *Materializer) MaterializeLabels(ctx context.Context, hints *prom_storag
 				attribute.Int("row_ranges_count", len(rowRanges)),
 			)
 
-			labelValues, err := m.materializeColumnSlice(ctx, m.b.LabelsFile(), rgi, rowRanges, columnChunk, false)
+			labelValues, err := m.materializeColumnSlice(ctx, m.b.LabelsFile(), rgi, rowRanges, columnChunk, false, (m.concurrency+1)/2)
 			if err != nil {
 				return errors.Wrap(err, "failed to materialize label values")
 			}
@@ -581,7 +581,7 @@ func (m *Materializer) MaterializeLabels(ctx context.Context, hints *prom_storag
 			}
 			columnChunk := labelsRowGroup.ColumnChunks()[col.ColumnIndex]
 
-			h, err := m.materializeColumnSlice(ctx, m.b.LabelsFile(), rgi, rr, columnChunk, false)
+			h, err := m.materializeColumnSlice(ctx, m.b.LabelsFile(), rgi, rr, columnChunk, false, (m.concurrency+1)/2)
 			if err != nil {
 				return fmt.Errorf("unable to materialize hash values: %w", err)
 			}
@@ -617,7 +617,7 @@ func (m *Materializer) getColumnIndexes(ctx context.Context, rgi int, rr []RowRa
 	labelsRowGroup := m.b.LabelsFile().RowGroups()[rgi]
 	columnChunk := labelsRowGroup.ColumnChunks()[m.colIdx]
 
-	columnIndexes, err := m.materializeColumnSlice(ctx, m.b.LabelsFile(), rgi, rr, columnChunk, false)
+	columnIndexes, err := m.materializeColumnSlice(ctx, m.b.LabelsFile(), rgi, rr, columnChunk, false, (m.concurrency+1)/2)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to materialize column indexes")
 	}
@@ -751,6 +751,7 @@ func (m *Materializer) materializeColumnSlice(
 	rr []RowRange,
 	cc parquet.ColumnChunk,
 	chunkColumn bool,
+	concurrency int,
 ) ([]parquet.Value, error) {
 	ctx, span := tracer.Start(ctx, "Materializer.materializeColumnSlice")
 	var err error
@@ -767,7 +768,7 @@ func (m *Materializer) materializeColumnSlice(
 		attribute.Int("row_ranges_count", len(rr)),
 		attribute.Int64("total_rows", totalRows(rr)),
 		attribute.Bool("chunk_column", chunkColumn),
-		attribute.Int("concurrency", m.concurrency),
+		attribute.Int("concurrency", concurrency),
 	)
 
 	pageRanges, err := m.GetPageRangesForColummn(cc, file, rgi, rr, chunkColumn)
@@ -783,9 +784,9 @@ func (m *Materializer) materializeColumnSlice(
 
 	dictOff, dictSz := file.DictionaryPageBounds(rgi, cc.Column())
 	errGroup := &errgroup.Group{}
-	errGroup.SetLimit(m.concurrency)
+	errGroup.SetLimit(concurrency)
 
-	span.SetAttributes(attribute.Int("goroutine_pool_limit", m.concurrency))
+	span.SetAttributes(attribute.Int("goroutine_pool_limit", concurrency))
 
 	for i, pageRange := range pageRanges {
 		errGroup.Go(func() error {
