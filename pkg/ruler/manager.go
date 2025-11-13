@@ -309,7 +309,7 @@ func (r *DefaultMultiTenantManager) getOrCreateNotifier(userID string) (*notifie
 				return nil, err
 			}
 
-			ctx, sp := tracer.Start(ctx, "notify", trace.WithAttributes(attribute.String("organization", userID)))
+			ctx, sp := tracer.Start(ctx, "notify", trace.WithAttributes(attribute.String("user", userID)))
 			defer sp.End()
 
 			otel.GetTextMapPropagator().Inject(ctx, propagation.HeaderCarrier(req.Header))
