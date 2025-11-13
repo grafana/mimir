@@ -314,11 +314,6 @@ func (c *UsageTrackerClient) trackSeriesPerPartition(ctx context.Context, userID
 	}
 
 	res, err := ring.DoUntilQuorum[[]uint64](ctx, set, cfg, func(ctx context.Context, instance *ring.InstanceDesc) ([]uint64, error) {
-		if instance == nil {
-			// This should never happen.
-			return nil, errors.New("instance is nil")
-		}
-
 		poolClient, err := c.clientsPool.GetClientForInstance(*instance)
 		if err != nil {
 			return nil, errors.Errorf("usage-tracker instance %s (%s)", instance.Id, instance.Addr)
@@ -396,11 +391,6 @@ func (c *UsageTrackerClient) updateUsersCloseToLimitCache(ctx context.Context) (
 	}
 
 	_, err := ring.DoUntilQuorum[[]string](ctx, set, cfg, func(ctx context.Context, instance *ring.InstanceDesc) ([]string, error) {
-		if instance == nil {
-			// This should never happen.
-			return nil, errors.New("instance is nil")
-		}
-
 		poolClient, err := c.clientsPool.GetClientForInstance(*instance)
 		if err != nil {
 			return nil, errors.Errorf("usage-tracker instance %s (%s)", instance.Id, instance.Addr)
