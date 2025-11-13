@@ -344,40 +344,27 @@ func (m *FunctionOverRangeVectorSplit) materializeOperatorForTimeRange(start int
 }
 
 func (m *FunctionOverRangeVectorSplit) mergeSplitsMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, [][]SplitSeries, error) {
+	if len(m.splits) == 0 {
+		return nil, nil, nil
+	}
 	seriesMap := make(map[string]int)
 	// TODO: track memory usage of seriesToSplits? Could be large if lots of series + lots of splits.
 	var seriesToSplits [][]SplitSeries
 
-	// First get the metadata for each split.
-	// Merging will be done in a separate for loop.
-	// We have two loops because getting a metadata slice from the pool requires providing a max size for the slice -
-	// the memory consumption tracker increments the memory usage by the capacity of the slice when getting from the
-	// pool and decrements by the capacity when returning to the pool. The capacity should not change when using the
-	// slice, otherwise the memory tracking messes up.
-	// We estimate the metadata slice length by adding up the lengths of all the metadata from all the splits.
-	// TODO: this could result in very large slices being requested but a lot of unused capacity if the splits share
-	//  the same series (which can be likely). It also requires us to keep metadata for all the splits in memory at the
-	//  same time.
-	splitsMetadata := make([][]types.SeriesMetadata, 0, len(m.splits))
-	maxPossible := 0
+	var mergedMetadata []types.SeriesMetadata
+	labelBytes := make([]byte, 0, 1024)
 
-	for _, split := range m.splits {
+	for splitIdx, split := range m.splits {
 		splitSeries, err := split.SeriesMetadata(ctx, matchers)
 		if err != nil {
 			return nil, nil, err
 		}
-		splitsMetadata = append(splitsMetadata, splitSeries)
-		maxPossible += len(splitSeries) // Sum for absolute maximum (no deduplication yet)
-	}
-
-	mergedMetadata, err := types.SeriesMetadataSlicePool.Get(maxPossible, m.MemoryConsumptionTracker)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	labelBytes := make([]byte, 0, 1024)
-
-	for splitIdx, splitSeries := range splitsMetadata {
+		if mergedMetadata == nil {
+			mergedMetadata, err = types.SeriesMetadataSlicePool.Get(len(splitSeries), m.MemoryConsumptionTracker)
+			if err != nil {
+				return nil, nil, err
+			}
+		}
 		for splitLocalIdx, serieMetadata := range splitSeries {
 			labelBytes = serieMetadata.Labels.Bytes(labelBytes)
 			key := string(labelBytes)
@@ -398,7 +385,10 @@ func (m *FunctionOverRangeVectorSplit) mergeSplitsMetadata(ctx context.Context, 
 				if err := m.MemoryConsumptionTracker.IncreaseMemoryConsumptionForLabels(clonedMetadata.Labels); err != nil {
 					return nil, nil, err
 				}
-				mergedMetadata = append(mergedMetadata, clonedMetadata) // Safe - no reallocation
+				mergedMetadata, err = types.SeriesMetadataSlicePool.AppendToSlice(mergedMetadata, m.MemoryConsumptionTracker, clonedMetadata)
+				if err != nil {
+					return nil, nil, err
+				}
 				seriesToSplits = append(seriesToSplits, nil)
 			}
 			seriesToSplits[mergedIdx] = append(seriesToSplits[mergedIdx], SplitSeries{

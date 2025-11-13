@@ -247,6 +247,24 @@ func (p *LimitingBucketedPool[S, E]) Put(s *S, tracker *limiter.MemoryConsumptio
 	*s = nil
 }
 
+// AppendToSlice appends items to a slice retrived from the pool and tracks any slice capacity growth.
+// It appends before increasing memory consumption, similar to Get().
+func (p *LimitingBucketedPool[S, E]) AppendToSlice(s S, tracker *limiter.MemoryConsumptionTracker, items ...E) (S, error) {
+	oldCap := cap(s)
+
+	result := append(s, items...)
+	newCap := cap(result)
+
+	if newCap > oldCap {
+		capacityGrowth := uint64(newCap-oldCap) * p.elementSize
+		if err := tracker.IncreaseMemoryConsumption(capacityGrowth, p.source); err != nil {
+			return nil, err
+		}
+	}
+
+	return result, nil
+}
+
 // PutInstantVectorSeriesData is equivalent to calling FPointSlicePool.Put(d.Floats) and HPointSlicePool.Put(d.Histograms).
 func PutInstantVectorSeriesData(d InstantVectorSeriesData, tracker *limiter.MemoryConsumptionTracker) {
 	FPointSlicePool.Put(&d.Floats, tracker)
