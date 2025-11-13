@@ -17,15 +17,13 @@ import (
 	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
-type stepArgument interface {
+type limitArgument interface {
 	close()
-	allZero() bool
 }
 
-// stepArgumentRatio is a utility to assisting in the parsing and management of the ratio parameter used in each step of a limit_ratio aggregation
-type stepArgumentRatio struct {
-	r        []float64 // The ratio value for each step
-	rAllZero bool      // True if all the r values are set to 0
+// limitRatioArgument is a utility to assisting in the parsing and management of the ratio parameter used in each step of a limit_ratio aggregation
+type limitRatioArgument struct {
+	r []float64 // The ratio value for each step
 
 	annotations                     *annotations.Annotations
 	haveEmittedRatioAboveAnnotation bool
@@ -35,30 +33,28 @@ type stepArgumentRatio struct {
 	param                           types.ScalarOperator
 }
 
-func newStepArgumentRatio(ctx context.Context, annotations *annotations.Annotations, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, stepCount int, param types.ScalarOperator) (*stepArgumentRatio, error) {
-	r := &stepArgumentRatio{
+func newLimitRatioArgument(ctx context.Context, annotations *annotations.Annotations, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, stepCount int, param types.ScalarOperator) (*limitRatioArgument, int, error) {
+	r := &limitRatioArgument{
 		annotations:              annotations,
 		memoryConsumptionTracker: memoryConsumptionTracker,
 		stepCount:                stepCount,
 		param:                    param,
 	}
 
-	if err := r.init(ctx); err != nil {
-		return nil, err
+	if zeros, err := r.init(ctx); err != nil {
+		return nil, 0, err
+	} else {
+		return r, zeros, nil
 	}
-
-	return r, nil
 }
 
-func (p *stepArgumentRatio) allZero() bool {
-	return p.rAllZero
-}
-
-func (p *stepArgumentRatio) init(ctx context.Context) error {
+// init will walk the param values - one for each step - and validate that they are in the accepted range.
+// init will return the number of values which are 0
+func (p *limitRatioArgument) init(ctx context.Context) (int, error) {
 	// note that k can change per step. ie count(limit_ratio(scalar(foo), http_requests))
 	paramValues, err := p.param.GetValues(ctx)
 	if err != nil {
-		return err
+		return 0, err
 	}
 
 	defer types.FPointSlicePool.Put(&paramValues.Samples, p.memoryConsumptionTracker)
@@ -66,134 +62,115 @@ func (p *stepArgumentRatio) init(ctx context.Context) error {
 	// these will be values in the range of -1,1
 	p.r, err = types.Float64SlicePool.Get(p.stepCount, p.memoryConsumptionTracker)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	p.r = p.r[:p.stepCount]
-	p.rAllZero = true
+	zeros := 0
 
 	for stepIdx := 0; stepIdx < p.stepCount; stepIdx++ {
 		v := paramValues.Samples[stepIdx].F
 
-		if err := p.validateLimitRatioParam(v); err != nil {
-			return err
+		if math.IsNaN(v) {
+			// Note that this error string needs to match the prometheus engine
+			//nolint:staticcheck
+			return 0, fmt.Errorf("Ratio value is NaN")
 		}
 
-		if v < -1 {
-			v = float64(-1)
-
-		} else if v > 1 {
+		if v > 1.0 {
+			if !p.haveEmittedRatioAboveAnnotation {
+				p.annotations.Add(annotations.NewInvalidRatioWarning(v, 1.0, p.param.ExpressionPosition()))
+				p.haveEmittedRatioAboveAnnotation = true
+			}
 			v = float64(1)
+		} else if v < -1.0 {
+			if !p.haveEmittedRatioBelowAnnotation {
+				p.annotations.Add(annotations.NewInvalidRatioWarning(v, -1.0, p.param.ExpressionPosition()))
+				p.haveEmittedRatioBelowAnnotation = true
+			}
+			v = float64(-1)
 		}
 
-		if v != float64(0) {
-			p.rAllZero = false
+		if v == float64(0) {
+			zeros++
 		}
 
 		p.r[stepIdx] = v
 
 	}
 
-	return nil
+	return zeros, nil
 }
 
-func (p *stepArgumentRatio) close() {
+func (p *limitRatioArgument) close() {
 	types.Float64SlicePool.Put(&p.r, p.memoryConsumptionTracker)
 }
 
-func (p *stepArgumentRatio) validateLimitRatioParam(v float64) error {
-
-	if math.IsNaN(v) {
-		// Note that this error string needs to match the prometheus engine
-		//nolint:staticcheck
-		return fmt.Errorf("Ratio value is NaN")
-	}
-
-	if v > 1.0 {
-		if !p.haveEmittedRatioAboveAnnotation {
-			p.annotations.Add(annotations.NewInvalidRatioWarning(v, 1.0, p.param.ExpressionPosition()))
-			p.haveEmittedRatioAboveAnnotation = true
-		}
-	}
-
-	if v < -1.0 {
-		if !p.haveEmittedRatioBelowAnnotation {
-			p.annotations.Add(annotations.NewInvalidRatioWarning(v, -1.0, p.param.ExpressionPosition()))
-			p.haveEmittedRatioBelowAnnotation = true
-		}
-	}
-
-	return nil
-}
-
-// stepArgumentK is a utility to assisting in the parsing and management of the k parameter used in each step of a limitk aggregation
-type stepArgumentK struct {
-	k        []int64 // The k value for each step - only used when ratio==false
-	kMax     int64   // The max(k) across all steps
-	kAllZero bool    // True if k is zero across all steps
+// limitkArgument is a utility to assisting in the parsing and management of the k parameter used in each step of a limitk aggregation
+type limitkArgument struct {
+	k    []int64 // The k value for each step - only used when ratio==false
+	kMax int64   // The max(k) across all steps
 
 	memoryConsumptionTracker *limiter.MemoryConsumptionTracker
 	stepCount                int
 	param                    types.ScalarOperator
 }
 
-func newStepArgumentK(ctx context.Context, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, stepCount int, param types.ScalarOperator) (*stepArgumentK, error) {
-	r := &stepArgumentK{
+func newLimitkArgument(ctx context.Context, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, stepCount int, param types.ScalarOperator) (*limitkArgument, int, error) {
+	r := &limitkArgument{
 		memoryConsumptionTracker: memoryConsumptionTracker,
 		stepCount:                stepCount,
 		param:                    param,
 	}
 
-	if err := r.init(ctx); err != nil {
-		return nil, err
+	if zeros, err := r.init(ctx); err != nil {
+		return nil, 0, err
+	} else {
+		return r, zeros, nil
 	}
-
-	return r, nil
 }
 
-func (p *stepArgumentK) allZero() bool {
-	return p.kAllZero
-}
-
-func (p *stepArgumentK) init(ctx context.Context) error {
+func (p *limitkArgument) init(ctx context.Context) (int, error) {
 	// note that k can change per step. ie count(limitk(scalar(foo), http_requests))
 	paramValues, err := p.param.GetValues(ctx)
 	if err != nil {
-		return err
+		return 0, err
 	}
 
 	defer types.FPointSlicePool.Put(&paramValues.Samples, p.memoryConsumptionTracker)
 
 	p.k, err = types.Int64SlicePool.Get(p.stepCount, p.memoryConsumptionTracker)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	p.k = p.k[:p.stepCount]
-	p.kAllZero = true
 	p.kMax = int64(0)
+
+	zeros := 0
 
 	for stepIdx := 0; stepIdx < p.stepCount; stepIdx++ {
 		v := paramValues.Samples[stepIdx].F
 
 		if err := p.validateLimitKParam(v); err != nil {
-			return err
+			return 0, err
 		}
 
 		p.k[stepIdx] = max(int64(v), 0) // Ignore any negative values.
 
 		if p.k[stepIdx] > 0 {
 			p.kMax = max(p.kMax, p.k[stepIdx])
-			p.kAllZero = false
+		} else {
+			zeros++
 		}
 	}
 
-	return nil
+	return zeros, nil
 }
 
-func (p *stepArgumentK) close() {
+func (p *limitkArgument) close() {
 	types.Int64SlicePool.Put(&p.k, p.memoryConsumptionTracker)
 }
 
-func (p *stepArgumentK) validateLimitKParam(v float64) error {
+func (p *limitkArgument) validateLimitKParam(v float64) error {
 	// Note that these error strings need to match the prometheus engine.
 	if math.IsNaN(v) {
 		//nolint:staticcheck

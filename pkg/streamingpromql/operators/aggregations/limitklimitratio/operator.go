@@ -10,7 +10,7 @@ import (
 	"math"
 	"slices"
 
-	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/util/annotations"
@@ -21,7 +21,7 @@ import (
 )
 
 type Operator struct {
-	stepArg stepArgument
+	stepArg limitArgument
 
 	Param                    types.ScalarOperator
 	Inner                    types.InstantVectorOperator
@@ -52,7 +52,7 @@ type Operator struct {
 func (o *Operator) initParam(ctx context.Context, annotations *annotations.Annotations, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, stepCount int, param types.ScalarOperator) (ok bool, requiresSeriesInit bool, err error) {
 
 	if o.isRatio {
-		stepArg, err := newStepArgumentRatio(ctx, annotations, memoryConsumptionTracker, stepCount, param)
+		stepArg, zeros, err := newLimitRatioArgument(ctx, annotations, memoryConsumptionTracker, stepCount, param)
 		if err != nil {
 			return false, false, err
 		}
@@ -60,10 +60,10 @@ func (o *Operator) initParam(ctx context.Context, annotations *annotations.Annot
 		o.groupLimiterFactory = func() (groupLimiter, error) {
 			return &groupLimiterRatio{stepArg: stepArg}, nil
 		}
-		return !stepArg.rAllZero, true, nil
+		return zeros < stepCount, true, nil
 	}
 
-	stepArg, err := newStepArgumentK(ctx, memoryConsumptionTracker, stepCount, param)
+	stepArg, zeros, err := newLimitkArgument(ctx, memoryConsumptionTracker, stepCount, param)
 	if err != nil {
 		return false, false, err
 	}
@@ -79,10 +79,11 @@ func (o *Operator) initParam(ctx context.Context, annotations *annotations.Annot
 			memoryConsumptionTracker: memoryConsumptionTracker,
 			stepCounter:              counter,
 			stepArg:                  stepArg,
+			stepsFilled:              zeros,
 		}, nil
 	}
 
-	return !stepArg.kAllZero, false, nil
+	return zeros < stepCount, false, nil
 }
 
 func (o *Operator) SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
@@ -159,7 +160,7 @@ func (o *Operator) accumulateValue(seriesIndex int, value *types.InstantVectorSe
 	}
 
 	// If the group is already filled then these samples can be discarded and an empty series returned
-	if !g.startAccumulatingSeries() {
+	if !g.accumulateSeries() {
 		return false, nil
 	}
 
@@ -174,28 +175,24 @@ func (o *Operator) accumulateValue(seriesIndex int, value *types.InstantVectorSe
 			}
 		}
 
-		if pt != ts || g.discardSampleAtStep(seriesIndex, step) {
-			g.onStepAccumulated(step, false)
+		if pt != ts {
 			step++
 			continue
 		}
 
-		if h != nil {
-			value.Histograms[nextHistogramIndex].T = ts
-			value.Histograms[nextHistogramIndex].H = h
-			nextHistogramIndex++
-		} else {
-			value.Floats[nextFloatIndex].T = ts
-			value.Floats[nextFloatIndex].F = f
-			nextFloatIndex++
+		if g.accumulateSampleAtStep(seriesIndex, step) {
+			if h != nil {
+				value.Histograms[nextHistogramIndex].T = ts
+				value.Histograms[nextHistogramIndex].H = h
+				nextHistogramIndex++
+			} else {
+				value.Floats[nextFloatIndex].T = ts
+				value.Floats[nextFloatIndex].F = f
+				nextFloatIndex++
+			}
 		}
-
-		// track that we have accumulated a point in this group at this step
-		g.onStepAccumulated(step, true)
 		step++
 	}
-
-	g.endAccumulatingSeries()
 
 	// prune off excess samples which have been copied left
 	value.Histograms = value.Histograms[:nextHistogramIndex]
@@ -327,7 +324,7 @@ func NewLimitRatio(
 
 func initGrouping(grouping []string, without bool) []string {
 	if without {
-		grouping = append(grouping, labels.MetricName)
+		grouping = append(grouping, model.MetricNameLabel)
 	}
 
 	slices.Sort(grouping)
@@ -376,23 +373,18 @@ type groupLimiter interface {
 	// releaseSeries informs the groupLimiter that this series has finished being accumulated and any internal resources related to this series can be released
 	releaseSeries(seriesIndex int)
 
-	// startAccumulatingSeries is invoked each time we start accumulating data for a series.
-	// if false is returned then this series should not be accumulated - it can be discarded
-	startAccumulatingSeries() bool
+	// accumulateSeries is invoked each time we start accumulating data for a series.
+	// false is returned when this series should not be accumulated - its data can be discarded
+	accumulateSeries() bool
 
-	// onStepAccumulated is invoked for each step in accumulating the data for a series
-	onStepAccumulated(step int, hasValue bool)
-
-	// endAccumulatingSeries is invoked once we have finished accumulating the series data
-	endAccumulatingSeries()
-
-	// discardSampleAtStep returns true if the sample at this step should be ignored/discarded
-	discardSampleAtStep(seriesIndex int, step int) bool
+	// accumulateSampleAtStep is invoked for each step in accumulating the data for a series
+	// false is returned if the sample at this step is not required - it can be discarded
+	accumulateSampleAtStep(seriesIndex int, step int) bool
 }
 
 type groupLimiterRatio struct {
 	seriesRefCount int // Track how many series are related to this group.
-	stepArg        *stepArgumentRatio
+	stepArg        *limitRatioArgument
 	seriesHashMap  map[int]float64
 }
 
@@ -400,10 +392,19 @@ func (q *groupLimiterRatio) incSeriesRefCount() {
 	q.seriesRefCount++
 }
 
-func (q *groupLimiterRatio) startAccumulatingSeries() bool   { return true }
-func (q *groupLimiterRatio) onStepAccumulated(_ int, _ bool) {}
-func (q *groupLimiterRatio) endAccumulatingSeries()          {}
-func (q *groupLimiterRatio) close()                          {}
+func (q *groupLimiterRatio) accumulateSeries() bool { return true }
+func (q *groupLimiterRatio) accumulateSampleAtStep(seriesIndex int, step int) bool {
+	ratioLimit := q.stepArg.r[step]
+	sampleOffset := q.seriesHashMap[seriesIndex]
+
+	// This logic matches the prometheus implementation of promql.HashRatioSampler in engine.go
+	// Once https://github.com/prometheus/prometheus/pull/17516 is merged and vendored this code can directly reference the promql.HashRatioSampler
+	// Note that the conditional has been kept identical to the promql.HashRatioSampler
+	allow := (ratioLimit >= 0 && sampleOffset < ratioLimit) ||
+		(ratioLimit < 0 && sampleOffset >= (1.0+ratioLimit))
+	return allow
+}
+func (q *groupLimiterRatio) close() {}
 
 func (q *groupLimiterRatio) initSeries(seriesIndex int, series types.SeriesMetadata) {
 
@@ -412,7 +413,7 @@ func (q *groupLimiterRatio) initSeries(seriesIndex int, series types.SeriesMetad
 	}
 
 	// This hash matches the prometheus implementation of promql.HashRatioSampler in engine.go
-	// TODO update promql.HashRatioSampler to expose this hash function and call directly into this rather then calculate the hash here
+	// Once https://github.com/prometheus/prometheus/pull/17516 is merged and vendored this code can directly reference the promql.HashRatioSampler
 	// The reason for extracting this out is that currently the promql.HashRatioSampler does not expose this hash function directly,
 	// which means we need to call both the hash and ratio comparison for every step. This code path allows for the hash to be
 	// calculated once per series and referenced in each step comparison.
@@ -431,28 +432,12 @@ func (q *groupLimiterRatio) releaseSeries(seriesIndex int) {
 	}
 }
 
-// discardSampleAtStep is the function we use in limit_ratio mode to determine if a series should be accumulated for a group at the given step.
-// The ratio value for each step may not be step invariant so each series in the group may be sparse.
-func (q *groupLimiterRatio) discardSampleAtStep(seriesIndex int, step int) bool {
-	ratioLimit := q.stepArg.r[step]
-	sampleOffset := q.seriesHashMap[seriesIndex]
-
-	// This logic matches the prometheus implementation of promql.HashRatioSampler in engine.go
-	// TODO update promql.HashRatioSampler to expose this test passing in the sampleOffset and call directly rather then calculate here
-	// Note that the conditional has been kept identical to the promql.HashRatioSampler
-	allow := (ratioLimit >= 0 && sampleOffset < ratioLimit) ||
-		(ratioLimit < 0 && sampleOffset >= (1.0+ratioLimit))
-	return !allow
-}
-
 type groupLimiterK struct {
 	seriesRefCount           int
 	stepCounter              *limitStepCounter // A utility to track the number of samples at each step which have been accumulated across the observed series
+	stepsFilled              int               // Track the number of steps where we have k samples within the group. When stepsFilled == steps then this group is all filled.
 	memoryConsumptionTracker *limiter.MemoryConsumptionTracker
-	filled                   bool // A flag to track if all the required k samples have been filled for this group.
-	tmpFilled                bool
-	nextExpectedStep         int
-	stepArg                  *stepArgumentK
+	stepArg                  *limitkArgument
 }
 
 func (q *groupLimiterK) incSeriesRefCount() {
@@ -470,40 +455,24 @@ func (q *groupLimiterK) releaseSeries(_ int) {
 	}
 }
 
-func (q *groupLimiterK) startAccumulatingSeries() bool {
-	q.tmpFilled = true
-	q.nextExpectedStep = 0
-	return !q.filled
+func (q *groupLimiterK) accumulateSeries() bool {
+	return q.stepsFilled < q.stepArg.stepCount
 }
 
-func (q *groupLimiterK) onStepAccumulated(step int, hasValue bool) {
-	count := 0
-	if hasValue {
-		count = q.stepCounter.inc(step)
+func (q *groupLimiterK) accumulateSampleAtStep(_ int, step int) bool {
+	if int64(q.stepCounter.count(step)) == q.stepArg.k[step] {
+		return false
 	}
-	if int64(count) < q.stepArg.k[step] || q.nextExpectedStep != step {
-		q.tmpFilled = false
-	}
-	q.nextExpectedStep++
-}
 
-func (q *groupLimiterK) endAccumulatingSeries() {
-	if q.tmpFilled && q.nextExpectedStep == q.stepArg.stepCount {
-		q.filled = true
+	count := q.stepCounter.inc(step)
+
+	if int64(count) == q.stepArg.k[step] {
+		q.stepsFilled++
 	}
+
+	return true
 }
 
 func (q *groupLimiterK) close() {
 	q.stepCounter.close()
-}
-
-// discardSampleAtStep is the function we use in limitk mode to determine when to stop accumulating points for a series in a group.
-// Once the number of series at the given step reaches k no more series in this group are considered.
-// Note that k may not be step invariant, so we accumulate into a collection of sparse series for each group.
-// ie if k is [ 1, 2, 3 ] we would expect to see the series within a group such as;
-// {series1}[v, v, v]
-// {series2}[_, v, v]
-// {series3}[_, _, v]
-func (q *groupLimiterK) discardSampleAtStep(_ int, step int) bool {
-	return int64(q.stepCounter.count(step)) == q.stepArg.k[step]
 }
