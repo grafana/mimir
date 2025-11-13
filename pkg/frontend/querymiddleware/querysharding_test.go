@@ -443,8 +443,8 @@ func TestQuerySharding_FunctionCorrectness(t *testing.T) {
 		{fn: "timestamp"},
 		{fn: "label_replace", args: []string{`"fuzz"`, `"$1"`, `"foo"`, `"b(.*)"`}},
 		{fn: "label_join", args: []string{`"fuzz"`, `","`, `"foo"`, `"bar"`}},
-		{fn: "ts_of_first_over_time", rangeQuery: true, allowedErr: compat.NotSupportedError{}},
-		{fn: "ts_of_last_over_time", rangeQuery: true, allowedErr: compat.NotSupportedError{}},
+		{fn: "ts_of_first_over_time", rangeQuery: true},
+		{fn: "ts_of_last_over_time", rangeQuery: true},
 	}
 	testsForFloatsOnly := []queryShardingFunctionCorrectnessTest{
 		{fn: "abs"},
@@ -494,15 +494,15 @@ func TestQuerySharding_FunctionCorrectness(t *testing.T) {
 		{fn: "sum_over_time", rangeQuery: true},
 		{fn: "quantile_over_time", rangeQuery: true, tpl: `(<fn>(0.5,bar1{}))`},
 		{fn: "quantile_over_time", rangeQuery: true, tpl: `(<fn>(0.99,bar1{}))`},
-		{fn: "mad_over_time", rangeQuery: true, tpl: `(<fn>(bar1{}))`, allowedErr: compat.NotSupportedError{}},
+		{fn: "mad_over_time", rangeQuery: true, tpl: `(<fn>(bar1{}))`},
 		{fn: "sgn"},
 		{fn: "predict_linear", args: []string{"1"}, rangeQuery: true},
 		{fn: "double_exponential_smoothing", args: []string{"0.5", "0.7"}, rangeQuery: true},
 		// holt_winters is a backwards compatible alias for double_exponential_smoothing.
 		{fn: "holt_winters", args: []string{"0.5", "0.7"}, rangeQuery: true},
 		{fn: "year"},
-		{fn: "ts_of_min_over_time", rangeQuery: true, allowedErr: compat.NotSupportedError{}},
-		{fn: "ts_of_max_over_time", rangeQuery: true, allowedErr: compat.NotSupportedError{}},
+		{fn: "ts_of_min_over_time", rangeQuery: true},
+		{fn: "ts_of_max_over_time", rangeQuery: true},
 	}
 	testsForNativeHistogramsOnly := []queryShardingFunctionCorrectnessTest{
 		{fn: "histogram_count"},
