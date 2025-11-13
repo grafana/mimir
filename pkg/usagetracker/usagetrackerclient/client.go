@@ -404,19 +404,19 @@ func (c *UsageTrackerClient) updateUsersCloseToLimitCache(ctx context.Context) (
 
 		c.usersCloseToLimitsMtx.Lock()
 		first := !c.usersCloseToLimitLoaded
-		c.usersCloseToLimit = slices.Clone(resp.UserIds)
+		c.usersCloseToLimit = slices.Clone(resp.SortedUserIds)
 		c.usersCloseToLimitLoaded = true
 		c.usersCloseToLimitsMtx.Unlock()
 
 		// Update metrics.
-		c.usersCloseToLimitCount.Set(float64(len(resp.UserIds)))
+		c.usersCloseToLimitCount.Set(float64(len(resp.SortedUserIds)))
 		c.usersCloseToLimitLastUpdateSeconds.Set(float64(time.Now().Unix()))
 
 		lvl := level.Debug
 		if first {
 			lvl = level.Info
 		}
-		lvl(c.logger).Log("msg", "updated users close to limit cache", "partition", resp.Partition, "user_count", len(resp.UserIds))
+		lvl(c.logger).Log("msg", "updated users close to limit cache", "partition", resp.Partition, "user_count", len(resp.SortedUserIds))
 		return nil, nil
 	}, func([]string) {})
 

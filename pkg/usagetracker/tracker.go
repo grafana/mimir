@@ -689,10 +689,10 @@ func (t *UsageTracker) GetUsersCloseToLimit(_ context.Context, req *usagetracker
 		return nil, fmt.Errorf("partition handler %d not found", partition)
 	}
 
-	userIDs := p.store.getUsersCloseToLimit()
+	userIDs := p.store.getSortedUsersCloseToLimit()
 	return &usagetrackerpb.GetUsersCloseToLimitResponse{
-		UserIds:   userIDs,
-		Partition: partition,
+		SortedUserIds: userIDs,
+		Partition:     partition,
 	}, nil
 }
 

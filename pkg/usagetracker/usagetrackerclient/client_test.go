@@ -630,8 +630,8 @@ func (m *usageTrackerMock) GetUsersCloseToLimit(ctx context.Context, req *usaget
 					return args.Get(0).(*usagetrackerpb.GetUsersCloseToLimitResponse), args.Error(1)
 				}
 				return &usagetrackerpb.GetUsersCloseToLimitResponse{
-					UserIds:   []string{},
-					Partition: req.Partition,
+					SortedUserIds: []string{},
+					Partition:     req.Partition,
 				}, args.Error(1)
 			}
 		}
@@ -639,8 +639,8 @@ func (m *usageTrackerMock) GetUsersCloseToLimit(ctx context.Context, req *usaget
 
 	// Return empty list by default for tests that don't need to check async tracking behavior
 	return &usagetrackerpb.GetUsersCloseToLimitResponse{
-		UserIds:   []string{},
-		Partition: req.Partition,
+		SortedUserIds: []string{},
+		Partition:     req.Partition,
 	}, nil
 }
 
@@ -780,8 +780,8 @@ func newUsageTrackerMockWithUsersCloseToLimit(userIDs []string) *usageTrackerMoc
 	slices.Sort(sortedUserIDs)
 
 	m.On("GetUsersCloseToLimit", mock.Anything, mock.Anything).Return(&usagetrackerpb.GetUsersCloseToLimitResponse{
-		UserIds:   sortedUserIDs,
-		Partition: 1,
+		SortedUserIds: sortedUserIDs,
+		Partition:     1,
 	}, nil)
 	return m
 }

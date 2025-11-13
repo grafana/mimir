@@ -567,7 +567,7 @@ func TestUsageTracker_GetUsersCloseToLimit(t *testing.T) {
 
 	resp, err := tracker.GetUsersCloseToLimit(t.Context(), &usagetrackerpb.GetUsersCloseToLimitRequest{Partition: 0})
 	require.NoError(t, err)
-	require.Equal(t, []string{"a", "c", "e"}, resp.UserIds, "List of users close to the limit should be sorted lexicographically")
+	require.Equal(t, []string{"a", "c", "e"}, resp.SortedUserIds, "List of users close to the limit should be sorted lexicographically")
 }
 
 func callPrepareDownscaleEndpoint(t *testing.T, ut *UsageTracker, method string) {

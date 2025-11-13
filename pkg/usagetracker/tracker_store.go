@@ -33,10 +33,10 @@ type trackerStore struct {
 	sortedTenants []string
 	tenants       map[string]*trackedTenant
 
-	// usersCloseToLimit is an immutable list of user IDs that are close to their limits.
+	// sortedUsersCloseToLimit is an immutable list of user IDs that are close to their limits.
 	// This field is replaced atomically in updateLimits() and read without the lock.
 	// This list is sorted.
-	usersCloseToLimit []string
+	sortedUsersCloseToLimit []string
 
 	// dependencies
 	limiter limiter
@@ -69,7 +69,7 @@ func newTrackerStore(idleTimeout time.Duration, userCloseToLimitPercentageThresh
 		logger:                              logger,
 		idleTimeout:                         idleTimeout,
 		userCloseToLimitPercentageThreshold: userCloseToLimitPercentageThreshold,
-		usersCloseToLimit:                   nil, // will be populated by updateLimits
+		sortedUsersCloseToLimit:             nil, // will be populated by updateLimits
 	}
 	return t
 }
@@ -270,7 +270,7 @@ func (t *trackerStore) updateLimits() {
 	t.mtx.RUnlock()
 
 	zonesCount := t.limiter.zonesCount()
-	var closeToLimit []string
+	var sortedCloseToLimit []string
 
 	for _, tenantID := range sortedTenants {
 		tenant := tenantsClone[tenantID]
@@ -284,24 +284,23 @@ func (t *trackerStore) updateLimits() {
 			percentageThreshold := limit * uint64(t.userCloseToLimitPercentageThreshold) / 100
 
 			if series >= percentageThreshold {
-				closeToLimit = append(closeToLimit, tenantID)
+				sortedCloseToLimit = append(sortedCloseToLimit, tenantID)
 			}
 		}
 	}
 
-	// Replace the users close to limit list atomically.
-	// We build a new slice every time instead of mutating the existing one.
 	t.mtx.Lock()
-	t.usersCloseToLimit = closeToLimit
+	t.sortedUsersCloseToLimit = sortedCloseToLimit
 	t.mtx.Unlock()
 }
 
-// getUsersCloseToLimit returns the list of user IDs that are close to their series limit.
+// getSortedUsersCloseToLimit returns the list of user IDs that are close to their series limit.
 // The returned slice is safe to read concurrently as it's immutable and replaced atomically in updateLimits().
-func (t *trackerStore) getUsersCloseToLimit() []string {
+// The returned slice is sorted.
+func (t *trackerStore) getSortedUsersCloseToLimit() []string {
 	t.mtx.RLock()
 	defer t.mtx.RUnlock()
-	return t.usersCloseToLimit
+	return t.sortedUsersCloseToLimit
 }
 
 // seriesCountsForTests should only be used in tests because it holds the mutex while loading all atomic values.
