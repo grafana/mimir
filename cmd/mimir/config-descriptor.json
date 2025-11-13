@@ -10999,6 +10999,28 @@
               "fieldFlag": "blocks-storage.bucket-store.parquet-max-data-size-bytes",
               "fieldType": "int",
               "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "parquet_disable_label_names",
+              "required": false,
+              "desc": "When enabled, ParquetBucketStore LabelNames method will always fail with HTTP 422 status.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "blocks-storage.bucket-store.parquet-disable-label-names",
+              "fieldType": "boolean",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "parquet_disable_label_values",
+              "required": false,
+              "desc": "When enabled, ParquetBucketStore LabelValues method will always fail with HTTP 422 status.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "blocks-storage.bucket-store.parquet-disable-label-values",
+              "fieldType": "boolean",
+              "fieldCategory": "advanced"
             }
           ],
           "fieldValue": null,
