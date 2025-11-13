@@ -6,8 +6,8 @@ This document provides developer-level notes explaining how aggregation operator
 
 MQE operators include the following lifecycle:
 
-1. **SeriesMetadata()** — Determines which series (label sets) are likely to appear in the query results.
-2. **NextSeries()** — For each series returned by `SeriesMetadata()`, retrieves the actual data points and performs any transformations before returning the result.
+1. **`SeriesMetadata()`** — Determines which series (label sets) are likely to appear in the query results.
+2. **`NextSeries()`** — For each series returned by `SeriesMetadata()`, retrieves the actual data points and performs any transformations before returning the result.
 
 Note that additional label matchers applied during query evaluation may further restrict the set of returned series.
 
