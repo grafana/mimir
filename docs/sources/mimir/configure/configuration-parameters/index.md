@@ -5257,6 +5257,16 @@ bucket_store:
   # CLI flag: -blocks-storage.bucket-store.parquet-max-data-size-bytes
   [parquet_max_data_size_bytes: <int> | default = 0]
 
+  # (advanced) When enabled, ParquetBucketStore LabelNames method will always
+  # fail with HTTP 422 status.
+  # CLI flag: -blocks-storage.bucket-store.parquet-disable-label-names
+  [parquet_disable_label_names: <boolean> | default = false]
+
+  # (advanced) When enabled, ParquetBucketStore LabelValues method will always
+  # fail with HTTP 422 status.
+  # CLI flag: -blocks-storage.bucket-store.parquet-disable-label-values
+  [parquet_disable_label_values: <boolean> | default = false]
+
 tsdb:
   # Directory to store TSDBs (including WAL) in the ingesters. This directory is
   # required to be persisted between restarts.
