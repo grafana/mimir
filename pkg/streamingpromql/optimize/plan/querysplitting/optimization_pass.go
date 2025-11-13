@@ -88,13 +88,8 @@ func (o *OptimizationPass) shouldSplitFunction(functionCall *core.FunctionCall, 
 		return false, "not an instant query"
 	}
 
-	fn := functionCall.GetFunction()
-	if _, exists := functions.RegisteredFunctions[fn]; !exists {
-		return false, "function not registered"
-	}
-
 	// TODO: add more functions
-	switch fn {
+	switch functionCall.GetFunction() {
 	case functions.FUNCTION_SUM_OVER_TIME:
 	default:
 		return false, "function not supported for splitting"
@@ -104,10 +99,6 @@ func (o *OptimizationPass) shouldSplitFunction(functionCall *core.FunctionCall, 
 	children := functionCall.Children()
 	if len(children) == 0 {
 		return false, "function has no children"
-	}
-
-	if children[0].NodeType() != planning.NODE_TYPE_MATRIX_SELECTOR {
-		return false, "first child is not a matrix selector"
 	}
 
 	matrixSelector, ok := children[0].(*core.MatrixSelector)
