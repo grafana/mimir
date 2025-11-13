@@ -25,6 +25,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
+	"github.com/grafana/mimir/pkg/frontend/querymiddleware/astmapper"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -670,7 +671,12 @@ func doRequests(ctx context.Context, downstream MetricsQueryHandler, reqs []Metr
 func splitQueryByInterval(req MetricsQueryRequest, interval time.Duration) ([]MetricsQueryRequest, error) {
 	// Replace @ modifier function to their respective constant values in the query.
 	// This way subqueries will be evaluated at the same time as the parent query.
-	query, err := evaluateAtModifierFunction(req.GetQuery(), req.GetStart(), req.GetEnd())
+	query, err := astmapper.CloneExpr(req.GetParsedQuery())
+	if err != nil {
+		return nil, err
+	}
+	evaluateAtModifierFunction(query, req.GetStart(), req.GetEnd())
+	splitReq, err := req.WithExpr(query)
 	if err != nil {
 		return nil, err
 	}
@@ -687,10 +693,6 @@ func splitQueryByInterval(req MetricsQueryRequest, interval time.Duration) ([]Me
 			end = req.GetEnd()
 		}
 
-		splitReq, err := req.WithQuery(query)
-		if err != nil {
-			return nil, err
-		}
 		splitReq, err = splitReq.WithStartEnd(start, end)
 		if err != nil {
 			return nil, err
@@ -702,14 +704,10 @@ func splitQueryByInterval(req MetricsQueryRequest, interval time.Duration) ([]Me
 	return reqs, nil
 }
 
-// evaluateAtModifierFunction parse the query and evaluates the `start()` and `end()` at modifier functions into actual constant timestamps.
+// evaluateAtModifierFunction evaluates the `start()` and `end()` at modifier functions into actual constant timestamps.
 // For example given the start of the query is 10.00, `http_requests_total[1h] @ start()` query will be replaced with `http_requests_total[1h] @ 10.00`
-// If the modifier is already a constant, it will be returned as is.
-func evaluateAtModifierFunction(query string, start, end int64) (string, error) {
-	expr, err := parser.ParseExpr(query)
-	if err != nil {
-		return "", apierror.New(apierror.TypeBadData, DecorateWithParamName(err, "query").Error())
-	}
+// If the modifier is already a constant, it will be left as is.
+func evaluateAtModifierFunction(expr parser.Expr, start, end int64) {
 	_ = inspect(expr, func(n parser.Node) error {
 		switch exprAt := n.(type) {
 		case *parser.VectorSelector:
@@ -731,7 +729,6 @@ func evaluateAtModifierFunction(query string, start, end int64) (string, error) 
 		}
 		return nil
 	})
-	return expr.String(), nil
 }
 
 // Round up to the step before the next interval boundary.

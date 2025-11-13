@@ -76,6 +76,7 @@
 * [BUGFIX] Store-gateway: Fix how out-of-order blocks are tracked in the `cortex_bucket_store_series_blocks_queried` metric. #13261
 * [BUGFIX] Cost attribution: Fix panic when metrics are created with invalid labels. #13273
 * [BUGFIX]: Distributor: Fix in-flight request counter when the reactive limiter is full. #13406
+* [BUGFIX]: Ingester: Panic when push and read reactive limiters are enabled with prioritization. #13482
 
 ### Mixin
 
@@ -117,6 +118,7 @@
 * [CHANGE] Ruler: Set default memory ballast to 1GiB to reduce GC pressure during startup. #13376
 * [ENHANCEMENT] Ruler querier and query-frontend: Add support for newly-introduced querier ring, which is used when performing query planning in query-frontends and distributing portions of the plan to queriers for execution. #13017
 * [ENHANCEMENT] Ingester: Increase `$._config.ingester_tsdb_head_early_compaction_min_in_memory_series` default when Mimir is running with the ingest storage architecture. #13450
+* [ENHANCEMENT] Update the list of OTel resource attributes used for tracing. #13469
 * [BUGFIX] Ingester: Fix `$._config.ingest_storage_ingester_autoscaling_max_owned_series_threshold` default value, to compute it based on the configured `$._config.ingester_instance_limits.max_series`. #13448
 
 ### Documentation

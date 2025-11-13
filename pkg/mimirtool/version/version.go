@@ -11,7 +11,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/google/go-github/v77/github"
+	"github.com/google/go-github/v78/github"
 	log "github.com/sirupsen/logrus"
 )
 

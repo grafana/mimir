@@ -18,6 +18,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/stretchr/testify/assert"
@@ -524,9 +525,9 @@ func createTestBlock(t *testing.T) (blockID ulid.ULID, blockDir string) {
 
 	parentDir := t.TempDir()
 	series := []labels.Labels{
-		labels.FromStrings(labels.MetricName, "series_1"),
-		labels.FromStrings(labels.MetricName, "series_2"),
-		labels.FromStrings(labels.MetricName, "series_3"),
+		labels.FromStrings(model.MetricNameLabel, "series_1"),
+		labels.FromStrings(model.MetricNameLabel, "series_2"),
+		labels.FromStrings(model.MetricNameLabel, "series_3"),
 	}
 
 	blockID, err = CreateBlock(context.Background(), parentDir, series, 100, 0, 1000, labels.EmptyLabels())

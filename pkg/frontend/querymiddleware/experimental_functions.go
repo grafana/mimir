@@ -12,6 +12,7 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
+	"github.com/grafana/mimir/pkg/frontend/querymiddleware/astmapper"
 )
 
 const (
@@ -72,7 +73,7 @@ func (m *experimentalFunctionsMiddleware) Do(ctx context.Context, req MetricsQue
 		return m.next.Do(ctx, req)
 	}
 
-	expr, err := parser.ParseExpr(req.GetQuery())
+	expr, err := astmapper.CloneExpr(req.GetParsedQuery())
 	if err != nil {
 		return nil, apierror.New(apierror.TypeBadData, DecorateWithParamName(err, "query").Error())
 	}

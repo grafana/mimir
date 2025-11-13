@@ -60,7 +60,7 @@ func TestCloneExpr_ExplicitTestCases(t *testing.T) {
 
 	for i, originalExpression := range testCases {
 		t.Run(fmt.Sprintf("%d: %s", i, originalExpression.String()), func(t *testing.T) {
-			clonedExpression, err := cloneExpr(originalExpression)
+			clonedExpression, err := CloneExpr(originalExpression)
 			require.NoError(t, err)
 			require.Equal(t, originalExpression, clonedExpression)
 			require.NotSame(t, clonedExpression, originalExpression, "cloneExpr should return a new expression")
@@ -151,7 +151,7 @@ func TestCloneExpr(t *testing.T) {
 		t.Run(fmt.Sprintf("%d: %s", i, tc), func(t *testing.T) {
 			originalExpression, err := parser.ParseExpr(tc)
 			require.NoError(t, err)
-			clonedExpression, err := cloneExpr(originalExpression)
+			clonedExpression, err := CloneExpr(originalExpression)
 			require.NoError(t, err)
 			require.Equal(t, originalExpression, clonedExpression)
 			require.Equal(t, originalExpression.String(), clonedExpression.String())
@@ -172,7 +172,7 @@ func TestCloneExpr_EngineTestCases(t *testing.T) {
 			originalExpression, err := parser.ParseExpr(testCase)
 			require.NoError(t, err)
 
-			clonedExpression, err := cloneExpr(originalExpression)
+			clonedExpression, err := CloneExpr(originalExpression)
 			require.NoError(t, err)
 			require.Equal(t, originalExpression, clonedExpression)
 			require.Equal(t, originalExpression.String(), clonedExpression.String())

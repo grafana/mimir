@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -82,7 +82,7 @@ func TestExtractLabelMatchers(t *testing.T) {
 			foundMetrics := make(map[string]bool)
 			for _, matchers := range matcherSets {
 				for _, m := range matchers {
-					if m.Name == labels.MetricName {
+					if m.Name == model.MetricNameLabel {
 						foundMetrics[m.Value] = true
 					}
 				}

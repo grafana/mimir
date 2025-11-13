@@ -14,7 +14,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	promtest "github.com/prometheus/client_golang/prometheus/testutil"
-	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/stretchr/testify/require"
 
@@ -207,7 +207,7 @@ func TestQueryLimiterMiddleware_MultipleUsers_RangeAndInstantQuery(t *testing.T)
 func TestQueryLimiterMiddleware_RemoteRead(t *testing.T) {
 	query := &prompb.Query{
 		Matchers: []*prompb.LabelMatcher{
-			{Type: prompb.LabelMatcher_EQ, Name: labels.MetricName, Value: "metric_counter"},
+			{Type: prompb.LabelMatcher_EQ, Name: model.MetricNameLabel, Value: "metric_counter"},
 			{Type: prompb.LabelMatcher_RE, Name: "pod", Value: "app-.*"},
 		},
 	}
@@ -281,7 +281,7 @@ func TestQueryLimiterMiddleware_RemoteRead(t *testing.T) {
 func TestQueryLimiterMiddleware_MultipleUsers_RemoteRead(t *testing.T) {
 	query := &prompb.Query{
 		Matchers: []*prompb.LabelMatcher{
-			{Type: prompb.LabelMatcher_EQ, Name: labels.MetricName, Value: "metric_counter"},
+			{Type: prompb.LabelMatcher_EQ, Name: model.MetricNameLabel, Value: "metric_counter"},
 			{Type: prompb.LabelMatcher_RE, Name: "pod", Value: "app-.*"},
 		},
 	}
