@@ -15,23 +15,15 @@ import (
 type headTailIterator struct {
 	head, tail []promql.FPoint
 	idx        int // combined iterator position across both
-	lazyLen    int // combined length, lazy initialized in len()
-}
-
-func (i *headTailIterator) len() int {
-	// avoid having to do len(i.head) + len(i.tail) on each call
-	if i.lazyLen == 0 && (len(i.head) > 0 || len(i.tail) > 0) {
-		i.lazyLen = len(i.head) + len(i.tail)
-	}
-	return i.lazyLen
+	len        int // this is seeded on construction - these slices will not be modified
 }
 
 func (i *headTailIterator) hasNext() bool {
-	return i.idx < i.len()
+	return i.idx < i.len
 }
 
 func (i *headTailIterator) next() *promql.FPoint {
-	if i.idx >= i.len() {
+	if i.idx >= i.len {
 		return nil
 	}
 	p := i.at(i.idx)
@@ -47,14 +39,14 @@ func (i *headTailIterator) prev() *promql.FPoint {
 	return i.at(i.idx)
 }
 
-func (i *headTailIterator) inc() {
-	if i.idx < i.len() {
+func (i *headTailIterator) advance() {
+	if i.idx < i.len {
 		i.idx++
 	}
 }
 
 func (i *headTailIterator) peek() *promql.FPoint {
-	if i.idx >= i.len() {
+	if i.idx >= i.len {
 		return nil
 	}
 	return i.at(i.idx)
@@ -77,12 +69,12 @@ func (i *headTailIterator) scanTo(time int64) *promql.FPoint {
 
 		if next.T < time {
 			first = next
-			i.inc()
+			i.advance()
 			continue
 		}
 
 		if next.T == time {
-			i.inc()
+			i.advance()
 			return next
 		}
 
@@ -149,8 +141,7 @@ func extendRangeVectorPoints(floats *types.FPointRingBuffer, rangeStart, rangeEn
 
 	// Do not modify these and no need to return them to the slices pool
 	head, tail := view.UnsafePoints()
-
-	it := headTailIterator{head: head, tail: tail}
+	it := headTailIterator{head: head, tail: tail, len: view.Count()}
 
 	// Find the last point before the rangeStart, or the first point >= rangeStart
 	first := it.scanTo(rangeStart)

@@ -40,6 +40,30 @@ eval instant at 5s increase(metric[1s] smoothed)
 eval instant at 6s increase(metric[1s] smoothed)
   {} 1
 
+# This query will have a nil smoothedHead and smoothed tail
+eval instant at 1s rate(metric[1s] smoothed)
+  {} 0
+
+# This query will have a nil smoothedHead, but a value for the smoothedTail
+eval instant at 5s rate(metric[1s] smoothed)
+  {} 1
+
+# This query will have a value for smoothedHead, but a nil for the smoothedTail
+eval instant at 6s rate(metric[1s] smoothed)
+  {} 1
+
+# This query will have a nil smoothedHead and smoothed tail
+eval instant at 1s delta(metric[1s] smoothed)
+  {} 0
+
+# This query will have a nil smoothedHead, but a value for the smoothedTail
+eval instant at 5s delta(metric[1s] smoothed)
+  {} 1
+
+# This query will have a value for smoothedHead, but a nil for the smoothedTail
+eval instant at 6s delta(metric[1s] smoothed)
+  {} 1
+
 clear
 load 15s
   metric 1+1x4 9+1x4
@@ -69,6 +93,60 @@ eval instant at 110s increase(metric[1m] smoothed)
   {} 7
 
 eval instant at 125s increase(metric[1m] smoothed)
+  {} 6
+
+eval instant at 5s rate(metric[1m] smoothed)
+  {} 0.005555555555555554
+
+eval instant at 20s rate(metric[1m] smoothed)
+  {} 0.022222222222222223
+
+eval instant at 35s rate(metric[1m] smoothed)
+  {} 0.03888888888888889
+
+eval instant at 50s rate(metric[1m] smoothed)
+  {} 0.05555555555555555
+
+eval instant at 65s rate(metric[1m] smoothed)
+  {} 0.08333333333333333
+
+eval instant at 80s rate(metric[1m] smoothed)
+  {} 0.11666666666666667
+
+eval instant at 95s rate(metric[1m] smoothed)
+  {} 0.11666666666666667
+
+eval instant at 110s rate(metric[1m] smoothed)
+  {} 0.11666666666666668
+
+eval instant at 125s rate(metric[1m] smoothed)
+  {} 0.10000000000000002
+
+eval instant at 5s delta(metric[1m] smoothed)
+  {} 0.333333333
+
+eval instant at 20s delta(metric[1m] smoothed)
+  {} 1.333333333
+
+eval instant at 35s delta(metric[1m] smoothed)
+  {} 2.333333333
+
+eval instant at 50s delta(metric[1m] smoothed)
+  {} 3.333333333
+
+eval instant at 65s delta(metric[1m] smoothed)
+  {} 5
+
+eval instant at 80s delta(metric[1m] smoothed)
+  {} 7
+
+eval instant at 95s delta(metric[1m] smoothed)
+  {} 7
+
+eval instant at 110s delta(metric[1m] smoothed)
+  {} 7
+
+eval instant at 125s delta(metric[1m] smoothed)
   {} 6
 
 clear
@@ -102,6 +180,33 @@ eval instant at 110s increase(metric[1m] smoothed)
 eval instant at 125s increase(metric[1m] smoothed)
   {} 4.666666666
 
+eval instant at 5s rate(metric[1m] smoothed)
+  {} 0.005555555555555554
+
+eval instant at 20s rate(metric[1m] smoothed)
+  {} 0.022222222222222223
+
+eval instant at 35s rate(metric[1m] smoothed)
+  {} 0.04444444444444444
+
+eval instant at 50s rate(metric[1m] smoothed)
+  {} 0.07777777777777777
+
+eval instant at 65s rate(metric[1m] smoothed)
+  {} 0.10555555555555557
+
+eval instant at 80s rate(metric[1m] smoothed)
+  {} 0.11666666666666667
+
+eval instant at 95s rate(metric[1m] smoothed)
+  {} 0.11111111111111113
+
+eval instant at 110s rate(metric[1m] smoothed)
+  {} 0.09444444444444447
+
+eval instant at 125s rate(metric[1m] smoothed)
+  {} 0.07777777777777778
+
 # Test that interval is left-open.
 
 clear
@@ -134,6 +239,21 @@ eval instant at 6m increase(metric[5m] smoothed)
   {id="2"} 10
   {id="3"} 15
 
+eval instant at 1m30s rate(metric[1m] smoothed)
+  {id="1"} 0.016666666666666666
+  {id="2"} 0.03333333333333333
+  {id="3"} 0.05
+
+eval instant at 6m15s rate(metric[5m] smoothed)
+  {id="1"} 0.016666666666666666
+  {id="2"} 0.03333333333333333
+  {id="3"} 0.05
+
+eval instant at 6m rate(metric[5m] smoothed)
+  {id="1"} 0.016666666666666666
+  {id="2"} 0.03333333333333333
+  {id="3"} 0.05
+
 clear
 load 1m
   metric{id="1"} 11 -1 100 0
@@ -146,6 +266,14 @@ eval instant at 5m30s delta(metric[5m] smoothed)
 eval instant at 5m45s delta(metric[5m] smoothed)
   {id="1"} -2
   {id="2"} 2
+
+eval instant at 5m30s rate(metric[5m] smoothed)
+  {id="1"} 0.3333333333333333
+  {id="2"} 0.405
+
+eval instant at 5m45s rate(metric[5m] smoothed)
+  {id="1"} 0.3333333333333333
+  {id="2"} 0.4041666666666667
 
 clear
 load 1m

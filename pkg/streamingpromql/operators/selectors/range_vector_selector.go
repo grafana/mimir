@@ -119,6 +119,11 @@ func (m *RangeVectorSelector) NextStepSamples(ctx context.Context) (*types.Range
 	}
 
 	if m.anchored || m.smoothed {
+
+		// Release the temporary ring buffer and initialise it off our given buff.
+		// The ring buffer will release the buff back to the slice pool.
+		m.extendedRangeFloats.Release()
+
 		// Histograms are not supported for these modified range queries
 		if m.histograms.ViewUntilSearchingForwards(rangeEnd, nil).Count() > 0 {
 			return nil, errors.New("smoothed and anchored modifiers do not work with native histograms")
@@ -131,9 +136,6 @@ func (m *RangeVectorSelector) NextStepSamples(ctx context.Context) (*types.Range
 			return nil, err
 		}
 
-		// Release the temporary ring buffer and initialise it off our given buff.
-		// The ring buffer will release the buff back to the slice pool.
-		m.extendedRangeFloats.Release()
 		if buff != nil {
 			err := m.extendedRangeFloats.Use(buff)
 			if err != nil {

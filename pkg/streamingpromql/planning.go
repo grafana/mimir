@@ -6,6 +6,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/go-kit/log"
@@ -508,13 +510,13 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
 			if ok && matrixSelector.Anchored {
 				_, supported := promql.AnchoredSafeFunctions[expr.Func.Name]
 				if !supported {
-					return nil, fmt.Errorf("anchored modifier can only be used with: changes, delta, increase, rate, resets - not with %s", expr.Func.Name)
+					return nil, getAnchoredIncompatibleFunctionError(expr.Func.Name)
 				}
 			}
 			if ok && matrixSelector.Smoothed {
 				_, supported := promql.SmoothedSafeFunctions[expr.Func.Name]
 				if !supported {
-					return nil, fmt.Errorf("smoothed modifier can only be used with: delta, increase, rate - not with %s", expr.Func.Name)
+					return nil, getSmoothedIncompatibleFunctionError(expr.Func.Name)
 				}
 			}
 
@@ -832,4 +834,30 @@ type staticQueryPlanVersionProvider struct {
 
 func (s *staticQueryPlanVersionProvider) GetMaximumSupportedQueryPlanVersion(ctx context.Context) (planning.QueryPlanVersion, error) {
 	return s.version, nil
+}
+
+var smoothedIncompatibleFunctionPrefix string
+var anchoredIncompatibleFunctionPrefix string
+
+func getSmoothedIncompatibleFunctionError(fncName string) error {
+	if len(smoothedIncompatibleFunctionPrefix) == 0 {
+		smoothedIncompatibleFunctionPrefix = fmt.Sprintf("smoothed modifier can only be used with: %s - not with ", sortImplode(promql.SmoothedSafeFunctions))
+	}
+	return fmt.Errorf("%s%s", smoothedIncompatibleFunctionPrefix, fncName)
+}
+
+func getAnchoredIncompatibleFunctionError(fncName string) error {
+	if len(anchoredIncompatibleFunctionPrefix) == 0 {
+		anchoredIncompatibleFunctionPrefix = fmt.Sprintf("anchored modifier can only be used with: %s - not with ", sortImplode(promql.AnchoredSafeFunctions))
+	}
+	return fmt.Errorf("%s%s", anchoredIncompatibleFunctionPrefix, fncName)
+}
+
+func sortImplode(m map[string]struct{}) string {
+	tmp := make([]string, 0, len(m))
+	for k := range m {
+		tmp = append(tmp, k)
+	}
+	sort.Strings(tmp)
+	return strings.Join(tmp, ", ")
 }
