@@ -1983,7 +1983,7 @@ func (d *Distributor) push(ctx context.Context, pushReq *Request) error {
 	}
 
 	span := trace.SpanFromContext(ctx)
-	span.SetAttributes(attribute.String("organization", userID))
+	span.SetAttributes(attribute.String("user", userID))
 
 	if d.cfg.WriteRequestsBufferPoolingEnabled {
 		slabPool := pool.NewFastReleasingSlabPool[byte](&d.writeRequestBytePool, writeRequestSlabPoolSize)
