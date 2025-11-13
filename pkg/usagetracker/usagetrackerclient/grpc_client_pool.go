@@ -3,12 +3,16 @@
 package usagetrackerclient
 
 import (
+	"context"
 	"time"
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/grpcclient"
+	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/ring/client"
+	otgrpc "github.com/opentracing-contrib/go-grpc"
+	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -59,7 +63,7 @@ func newUsageTrackerClientFactory(clientName string, clientCfg grpcclient.Config
 }
 
 func dialUsageTracker(clientCfg grpcclient.Config, instance ring.InstanceDesc, requestDuration *prometheus.HistogramVec, invalidClusterValidation *prometheus.CounterVec, logger log.Logger) (*usageTrackerClient, error) {
-	unary, stream := grpcclient.Instrument(requestDuration)
+	unary, stream := grpcclientInstrument(requestDuration)
 	opts, err := clientCfg.DialOption(unary, stream, util.NewInvalidClusterValidationReporter(clientCfg.ClusterValidation.Label, invalidClusterValidation, logger))
 	if err != nil {
 		return nil, err
@@ -94,4 +98,37 @@ func (c *usageTrackerClient) String() string {
 
 func (c *usageTrackerClient) RemoteAddress() string {
 	return c.conn.Target()
+}
+
+// grpcclientInstrument is a copy of grpcclient.Instrument, but it doesn't add the ClientUserHeaderInterceptor for the method that doesn't need auth.
+func grpcclientInstrument(requestDuration *prometheus.HistogramVec, instrumentationLabelOptions ...middleware.InstrumentationOption) ([]grpc.UnaryClientInterceptor, []grpc.StreamClientInterceptor) {
+	noAuthMethods := map[string]bool{
+		"/usagetrackerpb.UsageTracker/GetUsersCloseToLimit": true,
+	}
+	var (
+		unary  []grpc.UnaryClientInterceptor
+		stream []grpc.StreamClientInterceptor
+	)
+	if opentracing.IsGlobalTracerRegistered() {
+		unary = append(unary, otgrpc.OpenTracingClientInterceptor(opentracing.GlobalTracer()))
+		stream = append(stream, otgrpc.OpenTracingStreamClientInterceptor(opentracing.GlobalTracer()))
+	}
+	return append(unary,
+			func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
+				if noAuthMethods[method] {
+					return invoker(ctx, method, req, reply, cc, opts...)
+				}
+				return middleware.ClientUserHeaderInterceptor(ctx, method, req, reply, cc, invoker, opts...)
+			},
+			middleware.UnaryClientInstrumentInterceptor(requestDuration, instrumentationLabelOptions...),
+		),
+		append(stream,
+			func(ctx context.Context, desc *grpc.StreamDesc, cc *grpc.ClientConn, method string, streamer grpc.Streamer, opts ...grpc.CallOption) (grpc.ClientStream, error) {
+				if noAuthMethods[method] {
+					return streamer(ctx, desc, cc, method, opts...)
+				}
+				return middleware.StreamClientUserHeaderInterceptor(ctx, desc, cc, method, streamer, opts...)
+			},
+			middleware.StreamClientInstrumentInterceptor(requestDuration, instrumentationLabelOptions...),
+		)
 }

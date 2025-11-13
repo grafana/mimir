@@ -935,6 +935,7 @@ func New(cfg Config, reg prometheus.Registerer) (*Mimir, error) {
 			"/schedulerpb.SchedulerForFrontend/FrontendLoop",
 			"/schedulerpb.SchedulerForQuerier/QuerierLoop",
 			"/schedulerpb.SchedulerForQuerier/NotifyQuerierShutdown",
+			"/usagetrackerpb.UsageTracker/GetUsersCloseToLimit",
 		})
 
 	// Do not allow to configure potentially unsafe options until we've properly tested them in Mimir.
