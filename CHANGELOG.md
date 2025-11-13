@@ -86,7 +86,7 @@
 * [FEATURE] MQE: Add support for experimental `ts_of_min_over_time`, `ts_of_max_over_time`, `ts_of_first_over_time` and `ts_of_last_over_time` PromQL functions. #12819
 * [FEATURE] Ingester: Add experimental flags `-ingest-storage.write-logs-fsync-before-kafka-commit-enabled` and `-ingest-storage.write-logs-fsync-before-kafka-commit-concurrency` to fsync write logs before the offset is committed to Kafka. This is enabled by default. #12816
 * [FEATURE] MQE: Add support for experimental `mad_over_time` PromQL function. #12995
-* [FEATURE] MQE: Add support for experimental `limitk` and `limit_ratio` PromQL aggregates. #13100
+* [FEATURE] MQE: Add support for experimental `limitk` and `limit_ratio` PromQL aggregations. #13100
 * [FEATURE] Continuous test: Add experimental `-tests.ingest-storage-record.enabled` flag to verify ingest-storage record correctness by validating the V2 record format against live write requests. #12500
 * [ENHANCEMENT] Query-frontend: CLI flag `-query-frontend.enabled-promql-experimental-functions` and its associated YAML configuration is now stable. #12368
 * [ENHANCEMENT] Query-scheduler/query-frontend: Add native histogram definitions to `cortex_query_{scheduler|frontend}_queue_duration_seconds`. #12288
