@@ -454,12 +454,12 @@ type BucketStoreConfig struct {
 	SeriesFetchPreference float64 `yaml:"series_fetch_preference" category:"advanced"`
 
 	// Options for the parquet store
-	ParquetStreamingEnabled  bool   `yaml:"parquet_streaming_enabled" category:"advanced"`
-	ParquetMaxRowCount       uint64 `yaml:"parquet_max_row_count" category:"advanced"`
-	ParquetMaxChunkSizeBytes uint64 `yaml:"parquet_max_chunk_size_bytes" category:"advanced"`
-	ParquetMaxDataSizeBytes  uint64 `yaml:"parquet_max_data_size_bytes" category:"advanced"`
-	ParquetDisableLabelNames bool   `yaml:"parquet_disable_label_names" category:"advanced"`
-	ParquetDisableLabelValues bool  `yaml:"parquet_disable_label_values" category:"advanced"`
+	ParquetStreamingEnabled   bool   `yaml:"parquet_streaming_enabled" category:"advanced"`
+	ParquetMaxRowCount        uint64 `yaml:"parquet_max_row_count" category:"advanced"`
+	ParquetMaxChunkSizeBytes  uint64 `yaml:"parquet_max_chunk_size_bytes" category:"advanced"`
+	ParquetMaxDataSizeBytes   uint64 `yaml:"parquet_max_data_size_bytes" category:"advanced"`
+	ParquetDisableLabelNames  bool   `yaml:"parquet_disable_label_names" category:"advanced"`
+	ParquetDisableLabelValues bool   `yaml:"parquet_disable_label_values" category:"advanced"`
 }
 
 // RegisterFlags registers the BucketStore flags
