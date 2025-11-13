@@ -73,7 +73,10 @@
 * [BUGFIX] Runtime config: Fix issue when inconsistent map key types (numbers and strings) caused some of the runtime config files silently skipped from loading. #13270
 * [BUGFIX] Store-gateway: Fix how out-of-order blocks are tracked in the `cortex_bucket_store_series_blocks_queried` metric. #13261
 * [BUGFIX] Cost attribution: Fix panic when metrics are created with invalid labels. #13273
-* [BUGFIX]: Distributor: Fix in-flight request counter when the reactive limiter is full. #13406
+* [BUGFIX] Distributor: Fix in-flight request counter when the reactive limiter is full. #13406
+* [BUGFIX] Query-frontend: Fix panic when evaluating a sharded `avg` expression when running sharding inside MQE. #13484
+* [BUGFIX] Query-frontend: Fix incorrect annotation position information when running sharding inside MQE. #13484
+* [BUGFIX] Query-frontend: Fix incorrect query results when evaluating some sharded aggregations with `without` when running sharding inside MQE. #13484
 
 ### Mixin
 
