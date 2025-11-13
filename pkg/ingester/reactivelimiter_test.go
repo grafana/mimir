@@ -10,6 +10,7 @@ import (
 )
 
 func Test_ingesterReactiveLimiter(t *testing.T) {
+	// Asserts that building a reactive limiter with a prioritizer works without panic
 	t.Run("newReactiveLimiter with Prioritizer", func(t *testing.T) {
 		cfg := reactivelimiter.Config{}
 		cfg.Enabled = true
