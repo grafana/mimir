@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/go-kit/log/level"
 	"math"
 	"time"
 
@@ -84,6 +85,20 @@ func NewEngine(opts EngineOpts, limitsProvider QueryLimitsProvider, metrics *sta
 		planning.NODE_TYPE_SPLIT_RANGE_VECTOR:        planning.NodeMaterializerFunc[*querysplitting.SplittableFunctionCall](querysplitting.MaterializeSplitRangeVector),
 	}
 
+	// TODO: consider making the cache an optional part of query splitting. We might want to just do query splitting
+	//  without caching (e.g. possibly if splitting is extended to range queries in the future, or if we add
+	//  parallelisation and just want to use query splitting for that and not cache).
+	var intermediateCache cache.IntermediateResultsCache
+	if opts.InstantQuerySplitting.Enabled {
+		var err error
+		intermediateCache, err = cache.NewResultsCache(opts.InstantQuerySplitting.IntermediateResultsCache, opts.Logger, opts.CommonOpts.Reg)
+		if err != nil {
+			return nil, fmt.Errorf("failed to init query splitting cache, err: %w", err)
+		}
+		level.Info(opts.Logger).Log("msg", "intermediate results cache enabled", "backend", opts.InstantQuerySplitting.IntermediateResultsCache.Backend)
+
+	}
+
 	return &Engine{
 		lookbackDelta:            DetermineLookbackDelta(opts.CommonOpts),
 		timeout:                  opts.CommonOpts.Timeout,
@@ -102,7 +117,7 @@ func NewEngine(opts EngineOpts, limitsProvider QueryLimitsProvider, metrics *sta
 
 		pedantic:                opts.Pedantic,
 		eagerLoadSelectors:      opts.EagerLoadSelectors,
-		intermediateResultCache: opts.IntermediateResultCache,
+		intermediateResultCache: intermediateCache,
 		planner:                 planner,
 		nodeMaterializers:       nodeMaterializers,
 	}, nil

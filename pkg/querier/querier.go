@@ -39,12 +39,10 @@ import (
 	"github.com/grafana/mimir/pkg/storage/lazyquery"
 	"github.com/grafana/mimir/pkg/storage/series"
 	"github.com/grafana/mimir/pkg/streamingpromql"
-	"github.com/grafana/mimir/pkg/streamingpromql/cache"
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/activitytracker"
 	"github.com/grafana/mimir/pkg/util/limiter"
-	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -195,16 +193,6 @@ func New(cfg Config, limits *validation.Overrides, distributor Distributor, quer
 	})
 
 	opts, mqeOpts := engine.NewPromQLEngineOptions(cfg.EngineConfig, tracker, logger, reg)
-
-	if cfg.EngineConfig.MimirQueryEngine.InstantQuerySplitting.Enabled {
-		intermediateCache, err := cache.NewResultsCache(cfg.EngineConfig.MimirQueryEngine.InstantQuerySplitting.IntermediateResultsCache, logger, reg)
-		if err != nil {
-			return nil, nil, nil, nil, fmt.Errorf("failed to init query splitting cache, err: %w", err)
-		} else {
-			mqeOpts.IntermediateResultCache = intermediateCache
-			util_log.Logger.Log("msg", "intermediate results cache enabled", "backend", cfg.EngineConfig.MimirQueryEngine.InstantQuerySplitting.IntermediateResultsCache.Backend)
-		}
-	}
 
 	// Experimental functions are always enabled globally for all engines. Access to them
 	// is controlled by an experimental functions middleware that reads per-tenant settings.

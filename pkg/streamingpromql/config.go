@@ -40,9 +40,6 @@ type EngineOpts struct {
 	EnableEliminateDeduplicateAndMerge                                            bool `yaml:"enable_eliminate_deduplicate_and_merge" category:"experimental"`
 
 	InstantQuerySplitting QuerySplittingConfig `yaml:"instant_query_splitting" category:"experimental"`
-
-	// Intermediate result cache instance (populated from InstantQuerySplitting config)
-	IntermediateResultCache cache.IntermediateResultsCache `yaml:"-"`
 }
 
 // QuerySplittingConfig configures query splitting for range vector queries in instant queries.
