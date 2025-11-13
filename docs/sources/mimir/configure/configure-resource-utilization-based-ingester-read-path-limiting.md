@@ -29,8 +29,8 @@ Alternatively, you may configure the ingester via YAML, as in the following snip
 
 ```yaml
 ingester:
-  # Configure ingester to reject read requests when average CPU utilization is >= 0.8 cores
-  read_path_cpu_utilization_limit: 0.8
+  # Configure ingester to reject read requests when average CPU utilization is >= 3.5 cores
+  read_path_cpu_utilization_limit: 3.5
   # Configure ingester to reject read requests when memory utilization is >= 16 GiB
   read_path_memory_utilization_limit: 17179869184
 ```
