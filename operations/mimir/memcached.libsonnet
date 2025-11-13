@@ -29,6 +29,15 @@ memcached {
     podDisruptionBudget: $.newMimirPdb(self.name),
   },
 
+  // Dummy object to use when caches are disabled.
+  local disabledCache = {
+    statefulSet: null,
+    service: null,
+    podDisruptionBudget: null,
+    memcached_container:: null,
+    memcached_exporter:: null,
+  },
+
   // Creates a memcached instance used to cache query results.
   newMemcachedFrontend(name, nodeAffinityMatchers=[])::
     $.memcached {
@@ -43,10 +52,10 @@ memcached {
         $.newMimirNodeAffinityMatchers(nodeAffinityMatchers),
     },
 
-  memcached_frontend:
+  memcached_frontend::
     if $._config.cache_frontend_enabled then
       $.newMemcachedFrontend('memcached-frontend', $.memcached_frontend_node_affinity_matchers)
-    else {},
+    else disabledCache,
 
   // Creates a memcached instance used to temporarily cache index lookups.
   newMemcachedIndexQueries(name, nodeAffinityMatchers=[])::
@@ -62,10 +71,10 @@ memcached {
         $.newMimirNodeAffinityMatchers(nodeAffinityMatchers),
     },
 
-  memcached_index_queries:
+  memcached_index_queries::
     if $._config.cache_index_queries_enabled then
       $.newMemcachedIndexQueries('memcached-index-queries', $.memcached_index_queries_node_affinity_matchers)
-    else {},
+    else disabledCache,
 
   // Creates a memcached instance used to cache chunks.
   newMemcachedChunks(name, nodeAffinityMatchers=[])::
@@ -84,10 +93,10 @@ memcached {
         $.newMimirNodeAffinityMatchers(nodeAffinityMatchers),
     },
 
-  memcached_chunks:
+  memcached_chunks::
     if $._config.cache_chunks_enabled then
       $.newMemcachedChunks('memcached', $.memcached_chunks_node_affinity_matchers)
-    else {},
+    else disabledCache,
 
   // Creates a memcached instance for caching TSDB blocks metadata (meta.json files, deletion marks, list of users and blocks).
   newMemcachedMetadata(name, nodeAffinityMatchers=[])::
@@ -106,8 +115,33 @@ memcached {
         $.newMimirNodeAffinityMatchers(nodeAffinityMatchers),
     },
 
-  memcached_metadata:
+  memcached_metadata::
     if $._config.cache_metadata_enabled then
       $.newMemcachedMetadata('memcached-metadata', $.memcached_metadata_node_affinity_matchers)
-    else {},
+    else disabledCache,
+
+  // Set top-level objects for consistency with other Mimir workloads
+  memcached_frontend_statefulset: $.memcached_frontend.statefulSet,
+  memcached_frontend_service: $.memcached_frontend.service,
+  memcached_frontend_pod_disruption_budget: $.memcached_frontend.podDisruptionBudget,
+  memcached_frontend_memcached_container:: $.memcached_frontend.memcached_container,
+  memcached_frontend_exporter_container:: $.memcached_frontend.memcached_exporter,
+
+  memcached_index_queries_statefulset: $.memcached_index_queries.statefulSet,
+  memcached_index_queries_service: $.memcached_index_queries.service,
+  memcached_index_queries_pod_disruption_budget: $.memcached_index_queries.podDisruptionBudget,
+  memcached_index_queries_memcached_container:: $.memcached_index_queries.memcached_container,
+  memcached_index_queries_exporter_container:: $.memcached_index_queries.memcached_exporter,
+
+  memcached_chunks_statefulset: $.memcached_chunks.statefulSet,
+  memcached_chunks_service: $.memcached_chunks.service,
+  memcached_chunks_pod_disruption_budget: $.memcached_chunks.podDisruptionBudget,
+  memcached_chunks_memcached_container:: $.memcached_chunks.memcached_container,
+  memcached_chunks_exporter_container:: $.memcached_chunks.memcached_exporter,
+
+  memcached_metadata_statefulset: $.memcached_metadata.statefulSet,
+  memcached_metadata_service: $.memcached_metadata.service,
+  memcached_metadata_pod_disruption_budget: $.memcached_metadata.podDisruptionBudget,
+  memcached_metadata_memcached_container:: $.memcached_metadata.memcached_container,
+  memcached_metadata_exporter_container:: $.memcached_metadata.memcached_exporter,
 }
