@@ -701,7 +701,7 @@ func (summer *shardSummer) shardVectorSelector(selector *parser.VectorSelector) 
 		return selector, nil
 	}
 
-	shardedExpr, err := cloneExpr(selector)
+	shardedExpr, err := CloneExpr(selector)
 	if err != nil {
 		return nil, err
 	}
