@@ -16,6 +16,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/google/go-cmp/cmp"
 	"github.com/oklog/ulid/v2"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunks"
@@ -65,14 +66,10 @@ func TestSeriesChunkRef_Compare(t *testing.T) {
 
 func TestSeriesChunkRefsIterator(t *testing.T) {
 	c := generateSeriesChunksRanges(ulid.MustNew(1, nil), 5)
-	//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-	series1 := labels.FromStrings(labels.MetricName, "metric_1")
-	//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-	series2 := labels.FromStrings(labels.MetricName, "metric_2")
-	//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-	series3 := labels.FromStrings(labels.MetricName, "metric_3")
-	//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-	series4 := labels.FromStrings(labels.MetricName, "metric_4")
+	series1 := labels.FromStrings(model.MetricNameLabel, "metric_1")
+	series2 := labels.FromStrings(model.MetricNameLabel, "metric_2")
+	series3 := labels.FromStrings(model.MetricNameLabel, "metric_3")
+	series4 := labels.FromStrings(model.MetricNameLabel, "metric_4")
 
 	t.Run("should iterate an empty set", func(t *testing.T) {
 		it := newSeriesChunkRefsIterator(seriesChunkRefsSet{
@@ -2434,8 +2431,7 @@ func createSeriesChunkRefsSet(minSeriesID, maxSeriesID int, releasable bool) ser
 
 	for seriesID := minSeriesID; seriesID <= maxSeriesID; seriesID++ {
 		b.Reset()
-		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-		b.Add(labels.MetricName, fmt.Sprintf("metric_%06d", seriesID))
+		b.Add(model.MetricNameLabel, fmt.Sprintf("metric_%06d", seriesID))
 		set.series = append(set.series, seriesChunkRefs{lset: b.Labels()})
 	}
 
@@ -2445,12 +2441,9 @@ func createSeriesChunkRefsSet(minSeriesID, maxSeriesID int, releasable bool) ser
 func TestCreateSeriesChunkRefsSet(t *testing.T) {
 	set := createSeriesChunkRefsSet(5, 7, true)
 	require.Len(t, set.series, 3)
-	//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-	requireEqual(t, seriesChunkRefs{lset: labels.FromStrings(labels.MetricName, "metric_000005")}, set.series[0])
-	//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-	requireEqual(t, seriesChunkRefs{lset: labels.FromStrings(labels.MetricName, "metric_000006")}, set.series[1])
-	//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-	requireEqual(t, seriesChunkRefs{lset: labels.FromStrings(labels.MetricName, "metric_000007")}, set.series[2])
+	requireEqual(t, seriesChunkRefs{lset: labels.FromStrings(model.MetricNameLabel, "metric_000005")}, set.series[0])
+	requireEqual(t, seriesChunkRefs{lset: labels.FromStrings(model.MetricNameLabel, "metric_000006")}, set.series[1])
+	requireEqual(t, seriesChunkRefs{lset: labels.FromStrings(model.MetricNameLabel, "metric_000007")}, set.series[2])
 }
 
 func BenchmarkFetchCachedSeriesForPostings(b *testing.B) {

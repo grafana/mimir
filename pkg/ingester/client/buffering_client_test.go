@@ -14,7 +14,7 @@ import (
 	"github.com/gogo/protobuf/proto"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
-	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -260,8 +260,7 @@ func createRequest(metricName string, seriesPerRequest int) *mimirpb.WriteReques
 	metrics := make([][]mimirpb.LabelAdapter, 0, seriesPerRequest)
 	samples := make([]mimirpb.Sample, 0, seriesPerRequest)
 	for i := 0; i < seriesPerRequest; i++ {
-		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-		metrics = append(metrics, []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: metricName}, {Name: "cardinality", Value: strconv.Itoa(i)}})
+		metrics = append(metrics, []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: metricName}, {Name: "cardinality", Value: strconv.Itoa(i)}})
 		samples = append(samples, mimirpb.Sample{Value: float64(i), TimestampMs: time.Now().UnixMilli()})
 	}
 

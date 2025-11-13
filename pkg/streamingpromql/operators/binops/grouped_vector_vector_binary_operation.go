@@ -12,6 +12,7 @@ import (
 	"slices"
 	"sort"
 
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
@@ -461,8 +462,7 @@ func (g *GroupedVectorVectorBinaryOperation) manySideGroupKeyFunc() func(manySid
 
 	if len(g.VectorMatching.Include) == 0 {
 		return func(manySideLabels labels.Labels) []byte {
-			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-			buf = manySideLabels.BytesWithoutLabels(buf, labels.MetricName)
+			buf = manySideLabels.BytesWithoutLabels(buf, model.MetricNameLabel)
 			return buf
 		}
 	}
@@ -471,8 +471,7 @@ func (g *GroupedVectorVectorBinaryOperation) manySideGroupKeyFunc() func(manySid
 
 	if g.shouldRemoveMetricNameFromManySide() {
 		labelsToRemove = make([]string, 0, len(g.VectorMatching.Include)+1)
-		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-		labelsToRemove = append(labelsToRemove, labels.MetricName)
+		labelsToRemove = append(labelsToRemove, model.MetricNameLabel)
 		labelsToRemove = append(labelsToRemove, g.VectorMatching.Include...)
 		slices.Sort(labelsToRemove)
 	}
@@ -503,8 +502,7 @@ func (g *GroupedVectorVectorBinaryOperation) outputSeriesLabelsFunc() func(oneSi
 	if g.shouldRemoveMetricNameFromManySide() {
 		return func(oneSideLabels labels.Labels, manySideLabels labels.Labels) labels.Labels {
 			lb.Reset(manySideLabels)
-			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-			lb.Del(labels.MetricName)
+			lb.Del(model.MetricNameLabel)
 
 			for _, l := range g.VectorMatching.Include {
 				lb.Set(l, oneSideLabels.Get(l))

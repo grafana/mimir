@@ -195,16 +195,14 @@ func TestRemoteReadHandler_Samples(t *testing.T) {
 					StartTimestampMs: 1,
 					EndTimestampMs:   5,
 					Matchers: []*prompb.LabelMatcher{
-						//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-						{Type: prompb.LabelMatcher_EQ, Name: labels.MetricName, Value: "metric1"},
+						{Type: prompb.LabelMatcher_EQ, Name: model.MetricNameLabel, Value: "metric1"},
 					},
 				},
 				{
 					StartTimestampMs: 6,
 					EndTimestampMs:   10,
 					Matchers: []*prompb.LabelMatcher{
-						//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-						{Type: prompb.LabelMatcher_EQ, Name: labels.MetricName, Value: "metric2"},
+						{Type: prompb.LabelMatcher_EQ, Name: model.MetricNameLabel, Value: "metric2"},
 					},
 				},
 			},
@@ -217,8 +215,7 @@ func TestRemoteReadHandler_Samples(t *testing.T) {
 					timeseries: []*prompb.TimeSeries{
 						{
 							Labels: []prompb.Label{
-								//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-								{Name: labels.MetricName, Value: "metric1"},
+								{Name: model.MetricNameLabel, Value: "metric1"},
 								{Name: "foo", Value: "bar"},
 							},
 							Samples: []prompb.Sample{
@@ -236,8 +233,7 @@ func TestRemoteReadHandler_Samples(t *testing.T) {
 					timeseries: []*prompb.TimeSeries{
 						{
 							Labels: []prompb.Label{
-								//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-								{Name: labels.MetricName, Value: "metric2"},
+								{Name: model.MetricNameLabel, Value: "metric2"},
 								{Name: "foo", Value: "bar"},
 							},
 							Samples: []prompb.Sample{
@@ -277,8 +273,7 @@ func TestRemoteReadHandler_Samples(t *testing.T) {
 							// Return different data based on matchers
 							var metricName string
 							for _, matcher := range matchers {
-								//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-								if matcher.Name == labels.MetricName {
+								if matcher.Name == model.MetricNameLabel {
 									metricName = matcher.Value
 									break
 								}
@@ -697,16 +692,14 @@ func TestRemoteReadHandler_StreamedXORChunks(t *testing.T) {
 					StartTimestampMs: 1,
 					EndTimestampMs:   5,
 					Matchers: []*prompb.LabelMatcher{
-						//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-						{Type: prompb.LabelMatcher_EQ, Name: labels.MetricName, Value: "metric1"},
+						{Type: prompb.LabelMatcher_EQ, Name: model.MetricNameLabel, Value: "metric1"},
 					},
 				},
 				{
 					StartTimestampMs: 6,
 					EndTimestampMs:   10,
 					Matchers: []*prompb.LabelMatcher{
-						//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-						{Type: prompb.LabelMatcher_EQ, Name: labels.MetricName, Value: "metric2"},
+						{Type: prompb.LabelMatcher_EQ, Name: model.MetricNameLabel, Value: "metric2"},
 					},
 				},
 			},
@@ -722,8 +715,7 @@ func TestRemoteReadHandler_StreamedXORChunks(t *testing.T) {
 							ChunkedSeries: []*prompb.ChunkedSeries{
 								{
 									Labels: []prompb.Label{
-										//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-										{Name: labels.MetricName, Value: "metric1"},
+										{Name: model.MetricNameLabel, Value: "metric1"},
 										{Name: "foo", Value: "bar"},
 									},
 									Chunks: []prompb.Chunk{
@@ -750,8 +742,7 @@ func TestRemoteReadHandler_StreamedXORChunks(t *testing.T) {
 							ChunkedSeries: []*prompb.ChunkedSeries{
 								{
 									Labels: []prompb.Label{
-										//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-										{Name: labels.MetricName, Value: "metric2"},
+										{Name: model.MetricNameLabel, Value: "metric2"},
 										{Name: "foo", Value: "bar"},
 									},
 									Chunks: []prompb.Chunk{
@@ -799,8 +790,7 @@ func TestRemoteReadHandler_StreamedXORChunks(t *testing.T) {
 							// Return different data based on matchers for multiple queries
 							var metricName string
 							for _, matcher := range matchers {
-								//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-								if matcher.Name == labels.MetricName {
+								if matcher.Name == model.MetricNameLabel {
 									metricName = matcher.Value
 									break
 								}
@@ -1191,16 +1181,14 @@ func TestQueryFromRemoteReadQuery(t *testing.T) {
 				StartTimestampMs: 1000,
 				EndTimestampMs:   2000,
 				Matchers: []*prompb.LabelMatcher{
-					//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-					{Type: prompb.LabelMatcher_EQ, Name: labels.MetricName, Value: "metric"},
+					{Type: prompb.LabelMatcher_EQ, Name: model.MetricNameLabel, Value: "metric"},
 				},
 			},
-			expectedStart: 1000,
-			expectedEnd:   2000,
-			expectedMinT:  1000,
-			expectedMaxT:  2000,
-			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-			expectedMatchers: []*labels.Matcher{{Type: labels.MatchEqual, Name: labels.MetricName, Value: "metric"}},
+			expectedStart:    1000,
+			expectedEnd:      2000,
+			expectedMinT:     1000,
+			expectedMaxT:     2000,
+			expectedMatchers: []*labels.Matcher{{Type: labels.MatchEqual, Name: model.MetricNameLabel, Value: "metric"}},
 			expectedHints: &storage.SelectHints{
 				Start: 1000,
 				End:   2000,
@@ -1211,20 +1199,18 @@ func TestQueryFromRemoteReadQuery(t *testing.T) {
 				StartTimestampMs: 1000,
 				EndTimestampMs:   2000,
 				Matchers: []*prompb.LabelMatcher{
-					//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-					{Type: prompb.LabelMatcher_EQ, Name: labels.MetricName, Value: "metric"},
+					{Type: prompb.LabelMatcher_EQ, Name: model.MetricNameLabel, Value: "metric"},
 				},
 				Hints: &prompb.ReadHints{
 					StartMs: 500,
 					EndMs:   1500,
 				},
 			},
-			expectedStart: 1000,
-			expectedEnd:   2000,
-			expectedMinT:  500,
-			expectedMaxT:  1500,
-			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-			expectedMatchers: []*labels.Matcher{{Type: labels.MatchEqual, Name: labels.MetricName, Value: "metric"}},
+			expectedStart:    1000,
+			expectedEnd:      2000,
+			expectedMinT:     500,
+			expectedMaxT:     1500,
+			expectedMatchers: []*labels.Matcher{{Type: labels.MatchEqual, Name: model.MetricNameLabel, Value: "metric"}},
 			expectedHints: &storage.SelectHints{
 				Start: 500,
 				End:   1500,
@@ -1235,17 +1221,15 @@ func TestQueryFromRemoteReadQuery(t *testing.T) {
 				StartTimestampMs: 1000,
 				EndTimestampMs:   2000,
 				Matchers: []*prompb.LabelMatcher{
-					//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-					{Type: prompb.LabelMatcher_EQ, Name: labels.MetricName, Value: "metric"},
+					{Type: prompb.LabelMatcher_EQ, Name: model.MetricNameLabel, Value: "metric"},
 				},
 				Hints: &prompb.ReadHints{},
 			},
-			expectedStart: 1000,
-			expectedEnd:   2000,
-			expectedMinT:  1000,
-			expectedMaxT:  2000,
-			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-			expectedMatchers: []*labels.Matcher{{Type: labels.MatchEqual, Name: labels.MetricName, Value: "metric"}},
+			expectedStart:    1000,
+			expectedEnd:      2000,
+			expectedMinT:     1000,
+			expectedMaxT:     2000,
+			expectedMatchers: []*labels.Matcher{{Type: labels.MatchEqual, Name: model.MetricNameLabel, Value: "metric"}},
 			expectedHints: &storage.SelectHints{
 				// Fallback to start/end time range given the read hints are zero values.
 				Start: 1000,
@@ -1334,8 +1318,7 @@ func TestRemoteReadHandler_ConcurrencyLimit(t *testing.T) {
 					StartTimestampMs: 1,
 					EndTimestampMs:   10,
 					Matchers: []*prompb.LabelMatcher{
-						//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-						{Type: prompb.LabelMatcher_EQ, Name: labels.MetricName, Value: "test_metric"},
+						{Type: prompb.LabelMatcher_EQ, Name: model.MetricNameLabel, Value: "test_metric"},
 					},
 				}
 			}

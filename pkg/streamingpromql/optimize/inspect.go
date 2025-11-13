@@ -3,6 +3,7 @@
 package optimize
 
 import (
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware/astmapper"
@@ -57,8 +58,7 @@ func Inspect(node planning.Node) InspectResult {
 
 func isSharded(v *core.VectorSelector) bool {
 	for _, m := range v.Matchers {
-		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-		if m.Name == labels.MetricName && m.Type == labels.MatchEqual && m.Value == astmapper.EmbeddedQueriesMetricName {
+		if m.Name == model.MetricNameLabel && m.Type == labels.MatchEqual && m.Value == astmapper.EmbeddedQueriesMetricName {
 			return true
 		}
 	}
@@ -68,8 +68,7 @@ func isSharded(v *core.VectorSelector) bool {
 
 func isSpunOff(matchers []*core.LabelMatcher) bool {
 	for _, m := range matchers {
-		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-		if m.Name == labels.MetricName && m.Type == labels.MatchEqual && m.Value == astmapper.SubqueryMetricName {
+		if m.Name == model.MetricNameLabel && m.Type == labels.MatchEqual && m.Value == astmapper.SubqueryMetricName {
 			return true
 		}
 	}

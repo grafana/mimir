@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
@@ -78,15 +79,13 @@ func TestSortLabelsAndMatchers_Selectors(t *testing.T) {
 		`metric`: {
 			Name: "metric",
 			LabelMatchers: []*labels.Matcher{
-				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-				labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "metric"),
+				labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "metric"),
 			},
 		},
 		`metric{env="blah"}`: {
 			Name: "metric",
 			LabelMatchers: []*labels.Matcher{
-				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-				labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "metric"),
+				labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "metric"),
 				labels.MustNewMatcher(labels.MatchEqual, "env", "blah"),
 			},
 		},
@@ -94,31 +93,27 @@ func TestSortLabelsAndMatchers_Selectors(t *testing.T) {
 			Name: "metric",
 			LabelMatchers: []*labels.Matcher{
 				labels.MustNewMatcher(labels.MatchEqual, "__env__", "blah"),
-				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-				labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "metric"),
+				labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "metric"),
 			},
 		},
 		`{__name__="metric", __env__="blah"}`: {
 			Name: "",
 			LabelMatchers: []*labels.Matcher{
 				labels.MustNewMatcher(labels.MatchEqual, "__env__", "blah"),
-				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-				labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "metric"),
+				labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "metric"),
 			},
 		},
 		`{__env__="blah", __name__="metric"}`: {
 			Name: "",
 			LabelMatchers: []*labels.Matcher{
 				labels.MustNewMatcher(labels.MatchEqual, "__env__", "blah"),
-				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-				labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "metric"),
+				labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "metric"),
 			},
 		},
 		`metric{env="blah", namespace="foo"}`: {
 			Name: "metric",
 			LabelMatchers: []*labels.Matcher{
-				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-				labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "metric"),
+				labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "metric"),
 				labels.MustNewMatcher(labels.MatchEqual, "env", "blah"),
 				labels.MustNewMatcher(labels.MatchEqual, "namespace", "foo"),
 			},
@@ -126,8 +121,7 @@ func TestSortLabelsAndMatchers_Selectors(t *testing.T) {
 		`metric{namespace="foo", env="blah"}`: {
 			Name: "metric",
 			LabelMatchers: []*labels.Matcher{
-				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-				labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "metric"),
+				labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "metric"),
 				labels.MustNewMatcher(labels.MatchEqual, "env", "blah"),
 				labels.MustNewMatcher(labels.MatchEqual, "namespace", "foo"),
 			},
@@ -137,8 +131,7 @@ func TestSortLabelsAndMatchers_Selectors(t *testing.T) {
 		`metric{namespace="1", namespace!="2", namespace=~"3", namespace!~"5", namespace!~"4", namespace=~"6", namespace!="7", namespace="8"}`: {
 			Name: "metric",
 			LabelMatchers: []*labels.Matcher{
-				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-				labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "metric"),
+				labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "metric"),
 				labels.MustNewMatcher(labels.MatchEqual, "namespace", "1"),
 				labels.MustNewMatcher(labels.MatchEqual, "namespace", "8"),
 				labels.MustNewMatcher(labels.MatchNotEqual, "namespace", "2"),
@@ -154,8 +147,7 @@ func TestSortLabelsAndMatchers_Selectors(t *testing.T) {
 		`metric{namespace="3", namespace="4", namespace="1", namespace="2"}`: {
 			Name: "metric",
 			LabelMatchers: []*labels.Matcher{
-				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-				labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "metric"),
+				labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "metric"),
 				labels.MustNewMatcher(labels.MatchEqual, "namespace", "1"),
 				labels.MustNewMatcher(labels.MatchEqual, "namespace", "2"),
 				labels.MustNewMatcher(labels.MatchEqual, "namespace", "3"),

@@ -11,6 +11,7 @@ import (
 	"github.com/alecthomas/units"
 	"github.com/go-kit/log"
 	"github.com/oklog/ulid/v2"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
@@ -90,8 +91,7 @@ func (p *mockIndexReader) ShardedPostings(postings index.Postings, shardIndex, s
 			} else {
 				// Fallback: generate labels based on series ID for consistent hashing
 				bufLbls.Reset()
-				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-				bufLbls.Add(labels.MetricName, strconv.Itoa(int(id)))
+				bufLbls.Add(model.MetricNameLabel, strconv.Itoa(int(id)))
 				hash = labels.StableHash(bufLbls.Labels())
 			}
 

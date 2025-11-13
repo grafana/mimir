@@ -23,7 +23,6 @@ import (
 	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/model/labels"
 	log "github.com/sirupsen/logrus"
 
 	"github.com/grafana/mimir/pkg/mimirtool/analyze"
@@ -130,8 +129,7 @@ func queryMetricNames(api v1.API, readTimeout time.Duration) (model.LabelValues,
 	var metricNames model.LabelValues
 	err := withBackoff(ctx, func() error {
 		var err error
-		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-		metricNames, _, err = api.LabelValues(ctx, labels.MetricName, nil, time.Now().Add(-10*time.Minute), time.Now())
+		metricNames, _, err = api.LabelValues(ctx, model.MetricNameLabel, nil, time.Now().Add(-10*time.Minute), time.Now())
 		return err
 	})
 	if err != nil {

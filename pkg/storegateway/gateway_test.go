@@ -33,6 +33,7 @@ import (
 	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
@@ -1100,16 +1101,11 @@ func TestStoreGateway_Series_QuerySharding(t *testing.T) {
 		ctx    = context.Background()
 		userID = "user-1"
 		series = []labels.Labels{
-			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-			labels.FromStrings(labels.MetricName, "series_1"), // Hash: 12248531033489120077
-			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-			labels.FromStrings(labels.MetricName, "series_2"), // Hash: 4624373102974193462
-			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-			labels.FromStrings(labels.MetricName, "series_3"), // Hash: 11488854180004364397
-			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-			labels.FromStrings(labels.MetricName, "series_4"), // Hash: 7076372709108762848
-			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-			labels.FromStrings(labels.MetricName, "series_5"), // Hash: 2682489904774096023
+			labels.FromStrings(model.MetricNameLabel, "series_1"), // Hash: 12248531033489120077
+			labels.FromStrings(model.MetricNameLabel, "series_2"), // Hash: 4624373102974193462
+			labels.FromStrings(model.MetricNameLabel, "series_3"), // Hash: 11488854180004364397
+			labels.FromStrings(model.MetricNameLabel, "series_4"), // Hash: 7076372709108762848
+			labels.FromStrings(model.MetricNameLabel, "series_5"), // Hash: 2682489904774096023
 		}
 	)
 
@@ -1119,8 +1115,7 @@ func TestStoreGateway_Series_QuerySharding(t *testing.T) {
 	}{
 		"should touch all series on sharding disabled": {
 			matchers: []storepb.LabelMatcher{
-				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-				{Type: storepb.LabelMatcher_RE, Name: labels.MetricName, Value: ".*"},
+				{Type: storepb.LabelMatcher_RE, Name: model.MetricNameLabel, Value: ".*"},
 			},
 			expectedMetrics: []string{
 				"series_1", "series_2", "series_3", "series_4", "series_5",
@@ -1128,8 +1123,7 @@ func TestStoreGateway_Series_QuerySharding(t *testing.T) {
 		},
 		"should touch only series belonging to the specified shard": {
 			matchers: []storepb.LabelMatcher{
-				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-				{Type: storepb.LabelMatcher_RE, Name: labels.MetricName, Value: ".*"},
+				{Type: storepb.LabelMatcher_RE, Name: model.MetricNameLabel, Value: ".*"},
 				{Type: storepb.LabelMatcher_EQ, Name: sharding.ShardLabel, Value: sharding.ShardSelector{
 					ShardIndex: 2,
 					ShardCount: 3,
@@ -1192,8 +1186,7 @@ func TestStoreGateway_Series_QuerySharding(t *testing.T) {
 
 					actualMetrics := make([]string, 0, len(seriesSet))
 					for _, s := range seriesSet {
-						//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-						actualMetrics = append(actualMetrics, promLabels(s).Get(labels.MetricName))
+						actualMetrics = append(actualMetrics, promLabels(s).Get(model.MetricNameLabel))
 					}
 					assert.ElementsMatch(t, testData.expectedMetrics, actualMetrics)
 				})
@@ -1233,8 +1226,7 @@ func TestStoreGateway_Series_QueryShardingShouldGuaranteeSeriesShardingConsisten
 				return false, labels.Labels{}, 0, 0
 			}
 
-			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-			nextSeries := labels.FromStrings(labels.MetricName, "test", "series_id", strconv.Itoa(nextID))
+			nextSeries := labels.FromStrings(model.MetricNameLabel, "test", "series_id", strconv.Itoa(nextID))
 			nextID++
 
 			return true, nextSeries, util.TimeToMillis(time.Now().Add(-time.Duration(nextID) * time.Second)), float64(nextID)
@@ -1315,8 +1307,7 @@ func TestStoreGateway_Series_QueryShardingConcurrency(t *testing.T) {
 				return false, labels.Labels{}, 0, 0
 			}
 
-			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-			series := labels.New(labels.Label{Name: labels.MetricName, Value: fmt.Sprintf("series_%d", nextID)})
+			series := labels.New(labels.Label{Name: model.MetricNameLabel, Value: fmt.Sprintf("series_%d", nextID)})
 			nextID++
 
 			return true, series, util.TimeToMillis(now), float64(nextID)
@@ -1356,8 +1347,7 @@ func TestStoreGateway_Series_QueryShardingConcurrency(t *testing.T) {
 						MinTime: math.MinInt64,
 						MaxTime: math.MaxInt64,
 						Matchers: []storepb.LabelMatcher{
-							//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-							{Type: storepb.LabelMatcher_RE, Name: labels.MetricName, Value: ".*"},
+							{Type: storepb.LabelMatcher_RE, Name: model.MetricNameLabel, Value: ".*"},
 							{Type: storepb.LabelMatcher_EQ, Name: sharding.ShardLabel, Value: sharding.ShardSelector{
 								ShardIndex: uint64(shardIndex),
 								ShardCount: uint64(shardCount),

@@ -10,6 +10,7 @@ import (
 	"math/rand"
 	"testing"
 
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/index"
@@ -115,16 +116,14 @@ func TestWorstCaseFetchedDataStrategy(t *testing.T) {
 		"two small, one large list, one with __name__": {
 			input: []postingGroup{
 				{totalSize: 64 * 1024 * 1024},
-				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-				{totalSize: 64 * 1024 * 1024, keys: []labels.Label{{Name: labels.MetricName, Value: "foo"}}},
+				{totalSize: 64 * 1024 * 1024, keys: []labels.Label{{Name: model.MetricNameLabel, Value: "foo"}}},
 				{totalSize: 256},
 				{totalSize: 128},
 			},
 			expectedSelected: []postingGroup{
 				// Even though the __name__ group is too large it is still selected
 				// in order to minimize the sparseness of the selected series.
-				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-				{totalSize: 64 * 1024 * 1024, keys: []labels.Label{{Name: labels.MetricName, Value: "foo"}}},
+				{totalSize: 64 * 1024 * 1024, keys: []labels.Label{{Name: model.MetricNameLabel, Value: "foo"}}},
 				{totalSize: 256},
 				{totalSize: 128},
 			},

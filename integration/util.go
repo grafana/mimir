@@ -18,7 +18,6 @@ import (
 	"github.com/grafana/e2e"
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/prompb"
 
 	"github.com/grafana/mimir/integration/e2ehistograms"
@@ -232,6 +231,5 @@ func remoteReadQueryByMetricName(metricName string, start, end time.Time) *promp
 }
 
 func remoteReadQueryMatchersByMetricName(metricName string) []*prompb.LabelMatcher {
-	//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-	return []*prompb.LabelMatcher{{Type: prompb.LabelMatcher_EQ, Name: labels.MetricName, Value: metricName}}
+	return []*prompb.LabelMatcher{{Type: prompb.LabelMatcher_EQ, Name: model.MetricNameLabel, Value: metricName}}
 }

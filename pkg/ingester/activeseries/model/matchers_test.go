@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	amlabels "github.com/prometheus/alertmanager/pkg/labels"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -388,8 +389,7 @@ func makeBenchSeriesForTestDataTrackers(b *testing.B) []labels.Labels {
 				panic("odd number of label values")
 			}
 			lb.Add(lvs[i], lvs[i+1])
-			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-			if lvs[i] == labels.MetricName {
+			if lvs[i] == model.MetricNameLabel {
 				hasMetricName = true
 			}
 		}
@@ -398,8 +398,7 @@ func makeBenchSeriesForTestDataTrackers(b *testing.B) []labels.Labels {
 			lb.Add(someRandomLabelNames[r.Int64N(int64(len(someRandomLabelNames)))], fmt.Sprintf("value_%d", r.Int64N(1000)))
 		}
 		if !hasMetricName {
-			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-			lb.Add(labels.MetricName, someRandomLabelNames[r.Int64N(int64(len(someRandomLabelNames)))])
+			lb.Add(model.MetricNameLabel, someRandomLabelNames[r.Int64N(int64(len(someRandomLabelNames)))])
 		}
 		lb.Sort()
 		return lb.Labels()
@@ -409,8 +408,7 @@ func makeBenchSeriesForTestDataTrackers(b *testing.B) []labels.Labels {
 	series := make([]labels.Labels, 0, 10000)
 	for i := 0; i < 2000; i++ {
 		series = append(series, makeSeries(
-			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-			labels.MetricName, "cloudplatform_something",
+			model.MetricNameLabel, "cloudplatform_something",
 			"planets_env", "internal",
 			"job", "integrations/activemq",
 			"__proxy_source__", "cooldb",
@@ -440,8 +438,7 @@ func makeBenchSeriesForTestDataTrackers(b *testing.B) []labels.Labels {
 		"planets:resource:total",
 	} {
 		for i := 0; i < 20; i++ {
-			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-			series = append(series, makeSeries(labels.MetricName, metricName, "planets_env", fmt.Sprintf("env_%d", i)))
+			series = append(series, makeSeries(model.MetricNameLabel, metricName, "planets_env", fmt.Sprintf("env_%d", i)))
 		}
 	}
 
@@ -572,8 +569,7 @@ func makeBenchSeriesForTestDataTrackers(b *testing.B) []labels.Labels {
 			"cloudprovider_something",
 		} {
 			for i := 0; i < 20; i++ {
-				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-				series = append(series, makeSeries(labels.MetricName, metricName, "job", job, "cloudplatform_project", fmt.Sprintf("project_%d", i)))
+				series = append(series, makeSeries(model.MetricNameLabel, metricName, "job", job, "cloudplatform_project", fmt.Sprintf("project_%d", i)))
 			}
 		}
 	}
@@ -581,15 +577,13 @@ func makeBenchSeriesForTestDataTrackers(b *testing.B) []labels.Labels {
 	// Series for:
 	// "appo11y/beyla-network": "{__name__=\"beyla_network_flow_bytes_total\"}",
 	for i := 0; i < 50; i++ {
-		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-		series = append(series, makeSeries(labels.MetricName, "beyla_network_flow_bytes_total", "src_address", fmt.Sprintf("192.168.1.%d", i), "dst_address", fmt.Sprintf("10.0.0.%d", i)))
+		series = append(series, makeSeries(model.MetricNameLabel, "beyla_network_flow_bytes_total", "src_address", fmt.Sprintf("192.168.1.%d", i), "dst_address", fmt.Sprintf("10.0.0.%d", i)))
 	}
 
 	// Series for:
 	// "appo11y/beyla-prom": "{__name__=\"beyla_build_info\"}",
 	for i := 0; i < 30; i++ {
-		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-		series = append(series, makeSeries(labels.MetricName, "beyla_build_info", "version", fmt.Sprintf("v1.%d.0", i), "commit", fmt.Sprintf("abc%d", i)))
+		series = append(series, makeSeries(model.MetricNameLabel, "beyla_build_info", "version", fmt.Sprintf("v1.%d.0", i), "commit", fmt.Sprintf("abc%d", i)))
 	}
 
 	// Series for telemetry distro name matchers:
@@ -629,153 +623,127 @@ func makeBenchSeriesForTestDataTrackers(b *testing.B) []labels.Labels {
 	// Series for node exporter metrics (infrasku/prototype):
 	// "infrasku/prototype/linux/node_arp_entries": "{__name__=\"node_arp_entries\"}",
 	for i := 0; i < 10; i++ {
-		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-		series = append(series, makeSeries(labels.MetricName, "node_arp_entries", "device", fmt.Sprintf("eth%d", i)))
+		series = append(series, makeSeries(model.MetricNameLabel, "node_arp_entries", "device", fmt.Sprintf("eth%d", i)))
 	}
 
 	// "infrasku/prototype/linux/node_cpu_seconds_total": "{__name__=\"node_cpu_seconds_total\", cpu=\"0\",mode=\"idle\"}",
 	for cpu := 0; cpu < 4; cpu++ {
 		for _, mode := range []string{"idle", "user", "system", "nice", "iowait"} {
-			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-			series = append(series, makeSeries(labels.MetricName, "node_cpu_seconds_total", "cpu", fmt.Sprintf("%d", cpu), "mode", mode))
+			series = append(series, makeSeries(model.MetricNameLabel, "node_cpu_seconds_total", "cpu", fmt.Sprintf("%d", cpu), "mode", mode))
 		}
 	}
 
 	// "infrasku/prototype/linux/node_filesystem_avail_bytes/device": "{__name__=\"node_filesystem_avail_bytes\", device=~\"shm|/dev/(root|vd.*|nvme.*|sd.*|xvd.*)\"}",
 	for _, device := range []string{"shm", "/dev/root", "/dev/vda1", "/dev/nvme0n1p1", "/dev/sda1", "/dev/xvda1"} {
-		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-		series = append(series, makeSeries(labels.MetricName, "node_filesystem_avail_bytes", "device", device, "mountpoint", "/"))
+		series = append(series, makeSeries(model.MetricNameLabel, "node_filesystem_avail_bytes", "device", device, "mountpoint", "/"))
 	}
 
 	// "infrasku/prototype/linux/node_filesystem_avail_bytes/fstype": "{__name__=\"node_filesystem_avail_bytes\", fstype=~\"ext.*|btrfs|xfs|zfs|f2fs|vfat|tmpfs\"}",
 	for _, fstype := range []string{"ext4", "ext3", "btrfs", "xfs", "zfs", "f2fs", "vfat", "tmpfs"} {
-		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-		series = append(series, makeSeries(labels.MetricName, "node_filesystem_avail_bytes", "fstype", fstype, "mountpoint", "/"))
+		series = append(series, makeSeries(model.MetricNameLabel, "node_filesystem_avail_bytes", "fstype", fstype, "mountpoint", "/"))
 	}
 
 	// "infrasku/prototype/linux/node_filesystem_avail_bytes/mountpoint": "{__name__=\"node_filesystem_avail_bytes\", mountpoint=~\"/boot.*|/run/.*\"}",
 	for _, mountpoint := range []string{"/boot", "/boot/efi", "/run/user/1000", "/run/systemd"} {
-		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-		series = append(series, makeSeries(labels.MetricName, "node_filesystem_avail_bytes", "mountpoint", mountpoint, "fstype", "ext4"))
+		series = append(series, makeSeries(model.MetricNameLabel, "node_filesystem_avail_bytes", "mountpoint", mountpoint, "fstype", "ext4"))
 	}
 
 	// "infrasku/prototype/linux/node_network_receive_bytes_total": "{__name__=\"node_network_receive_bytes_total\", device!~\"anpi.*|ap.*|awdl.*\"}",
 	for _, device := range []string{"eth0", "eth1", "lo", "wlan0", "enp0s3"} {
-		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-		series = append(series, makeSeries(labels.MetricName, "node_network_receive_bytes_total", "device", device))
+		series = append(series, makeSeries(model.MetricNameLabel, "node_network_receive_bytes_total", "device", device))
 	}
 
 	// "infrasku/prototype/linux/node_os_info": "{__name__=\"node_os_info\", name!=\"macOS\"}",
 	for _, osName := range []string{"Ubuntu", "CentOS", "Debian", "Red Hat Enterprise Linux"} {
-		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-		series = append(series, makeSeries(labels.MetricName, "node_os_info", "name", osName, "version", "20.04"))
+		series = append(series, makeSeries(model.MetricNameLabel, "node_os_info", "name", osName, "version", "20.04"))
 	}
 
 	// "infrasku/prototype/linux/node_uname_info": "{__name__=\"node_uname_info\", sysname=~\"linux|unix\", release=~\".*-generic\"}",
 	for _, sysname := range []string{"linux", "unix"} {
 		for i := 0; i < 3; i++ {
-			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-			series = append(series, makeSeries(labels.MetricName, "node_uname_info", "sysname", sysname, "release", fmt.Sprintf("5.4.%d-generic", i)))
+			series = append(series, makeSeries(model.MetricNameLabel, "node_uname_info", "sysname", sysname, "release", fmt.Sprintf("5.4.%d-generic", i)))
 		}
 	}
 
 	// macOS variants:
 	// "infrasku/prototype/macos/node_filesystem_avail_bytes/device": "{__name__=\"node_filesystem_avail_bytes\", device=~\"/dev/disk.*\"}",
 	for i := 0; i < 3; i++ {
-		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-		series = append(series, makeSeries(labels.MetricName, "node_filesystem_avail_bytes", "device", fmt.Sprintf("/dev/disk%ds1", i), "fstype", "apfs"))
+		series = append(series, makeSeries(model.MetricNameLabel, "node_filesystem_avail_bytes", "device", fmt.Sprintf("/dev/disk%ds1", i), "fstype", "apfs"))
 	}
 
 	// "infrasku/prototype/macos/node_filesystem_avail_bytes/fstype": "{__name__=\"node_filesystem_avail_bytes\", fstype=\"apfs\"}",
-	//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-	series = append(series, makeSeries(labels.MetricName, "node_filesystem_avail_bytes", "fstype", "apfs", "mountpoint", "/"))
+	series = append(series, makeSeries(model.MetricNameLabel, "node_filesystem_avail_bytes", "fstype", "apfs", "mountpoint", "/"))
 
 	// "infrasku/prototype/macos/node_filesystem_avail_bytes/mountpoint": "{__name__=\"node_filesystem_avail_bytes\", mountpoint=~\"/System/.*\"}",
 	for _, mountpoint := range []string{"/System/Library", "/System/Applications", "/System/Volumes"} {
-		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-		series = append(series, makeSeries(labels.MetricName, "node_filesystem_avail_bytes", "mountpoint", mountpoint, "fstype", "apfs"))
+		series = append(series, makeSeries(model.MetricNameLabel, "node_filesystem_avail_bytes", "mountpoint", mountpoint, "fstype", "apfs"))
 	}
 
 	// "infrasku/prototype/macos/node_network_noproto_total": "{__name__=\"node_network_noproto_total\"}",
-	//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-	series = append(series, makeSeries(labels.MetricName, "node_network_noproto_total"))
+	series = append(series, makeSeries(model.MetricNameLabel, "node_network_noproto_total"))
 
 	// "infrasku/prototype/macos/node_network_receive_bytes_total": "{__name__=\"node_network_receive_bytes_total\", device=~\"anpi.*|ap.*|awdl.*\"}",
 	for _, device := range []string{"anpi0", "ap1", "awdl0"} {
-		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-		series = append(series, makeSeries(labels.MetricName, "node_network_receive_bytes_total", "device", device))
+		series = append(series, makeSeries(model.MetricNameLabel, "node_network_receive_bytes_total", "device", device))
 	}
 
 	// "infrasku/prototype/macos/node_os_info": "{__name__=\"node_os_info\", name=\"macOS\"}",
-	//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-	series = append(series, makeSeries(labels.MetricName, "node_os_info", "name", "macOS", "version", "14.0"))
+	series = append(series, makeSeries(model.MetricNameLabel, "node_os_info", "name", "macOS", "version", "14.0"))
 
 	// "infrasku/prototype/macos/node_uname_info": "{__name__=\"node_uname_info\", sysname=\"Darwin\"}",
-	//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-	series = append(series, makeSeries(labels.MetricName, "node_uname_info", "sysname", "Darwin", "release", "23.0.0"))
+	series = append(series, makeSeries(model.MetricNameLabel, "node_uname_info", "sysname", "Darwin", "release", "23.0.0"))
 
 	// Windows specific metrics:
 	// "infrasku/prototype/windows/windows_cpu_time_toal": "{__name__=\"windows_cpu_time_total\", core=\"0,0\", mode=\"idle\"}",
 	for core := 0; core < 4; core++ {
 		for _, mode := range []string{"idle", "user", "system", "interrupt"} {
-			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-			series = append(series, makeSeries(labels.MetricName, "windows_cpu_time_total", "core", fmt.Sprintf("%d,0", core), "mode", mode))
+			series = append(series, makeSeries(model.MetricNameLabel, "windows_cpu_time_total", "core", fmt.Sprintf("%d,0", core), "mode", mode))
 		}
 	}
 
 	// "infrasku/prototype/windows/windows_cs_logical_processors": "{__name__=\"windows_cs_logical_processors\"}",
-	//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-	series = append(series, makeSeries(labels.MetricName, "windows_cs_logical_processors"))
+	series = append(series, makeSeries(model.MetricNameLabel, "windows_cs_logical_processors"))
 
 	// "infrasku/prototype/windows/windows_diskdrive_info": "{__name__=\"windows_diskdrive_info\", device_id=\"PHYSICALDRIVE0\"}",
 	for i := 0; i < 3; i++ {
-		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-		series = append(series, makeSeries(labels.MetricName, "windows_diskdrive_info", "device_id", fmt.Sprintf("PHYSICALDRIVE%d", i)))
+		series = append(series, makeSeries(model.MetricNameLabel, "windows_diskdrive_info", "device_id", fmt.Sprintf("PHYSICALDRIVE%d", i)))
 	}
 
 	// "infrasku/prototype/windows/windows_logical_disk_info": "{__name__=\"windows_logical_disk_info\", disk=\"0\"}",
 	for i := 0; i < 3; i++ {
-		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-		series = append(series, makeSeries(labels.MetricName, "windows_logical_disk_info", "disk", fmt.Sprintf("%d", i)))
+		series = append(series, makeSeries(model.MetricNameLabel, "windows_logical_disk_info", "disk", fmt.Sprintf("%d", i)))
 	}
 
 	// "infrasku/prototype/windows/windows_logical_disk_size_bytes": "{__name__=\"windows_logical_disk_size_bytes\", volume=\"C:\"}",
 	for _, volume := range []string{"C:", "D:", "E:"} {
-		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-		series = append(series, makeSeries(labels.MetricName, "windows_logical_disk_size_bytes", "volume", volume))
+		series = append(series, makeSeries(model.MetricNameLabel, "windows_logical_disk_size_bytes", "volume", volume))
 	}
 
 	// "infrasku/prototype/windows/windows_os_info": "{__name__=\"windows_os_info\", product!=\"\"}",
 	for _, product := range []string{"Windows Server 2019", "Windows 10", "Windows 11"} {
-		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-		series = append(series, makeSeries(labels.MetricName, "windows_os_info", "product", product, "version", "10.0"))
+		series = append(series, makeSeries(model.MetricNameLabel, "windows_os_info", "product", product, "version", "10.0"))
 	}
 
 	// "infrasku/prototype/windows/windows_os_paging_limit_bytes": "{__name__=\"windows_os_paging_limit_bytes\"}",
-	//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-	series = append(series, makeSeries(labels.MetricName, "windows_os_paging_limit_bytes"))
+	series = append(series, makeSeries(model.MetricNameLabel, "windows_os_paging_limit_bytes"))
 
 	// "infrasku/prototype/windows/windows_service_status": "{__name__=\"windows_service_status\", name=\"winmgmt\"}",
 	for _, serviceName := range []string{"winmgmt", "eventlog", "schedule", "wuauserv"} {
-		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-		series = append(series, makeSeries(labels.MetricName, "windows_service_status", "name", serviceName))
+		series = append(series, makeSeries(model.MetricNameLabel, "windows_service_status", "name", serviceName))
 	}
 
 	// "infrasku/prototype/windows/windows_system_system_up_time": "{__name__=\"windows_system_system_up_time\"}",
-	//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-	series = append(series, makeSeries(labels.MetricName, "windows_system_system_up_time"))
+	series = append(series, makeSeries(model.MetricNameLabel, "windows_system_system_up_time"))
 
 	// "infrasku/prototype/windows/windows_time_computed_time_offset_seconds": "{__name__=\"windows_time_computed_time_offset_seconds\"}",
-	//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-	series = append(series, makeSeries(labels.MetricName, "windows_time_computed_time_offset_seconds"))
+	series = append(series, makeSeries(model.MetricNameLabel, "windows_time_computed_time_offset_seconds"))
 
 	// Additional cloud provider patterns and specific matchers:
 	// "integrations/azure": "{__name__=~\"azure_.+\", job=~\"integration.*\"}",
 	for _, job := range []string{"integrations/azure", "integrations/azure-vm", "integrations/azure-sql"} {
 		for _, metricName := range []string{"azure_vm_cpu_percent", "azure_storage_blob_count", "azure_sql_database_cpu_percent"} {
 			for i := 0; i < 10; i++ {
-				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-				series = append(series, makeSeries(labels.MetricName, metricName, "job", job, "resource_group", fmt.Sprintf("rg_%d", i)))
+				series = append(series, makeSeries(model.MetricNameLabel, metricName, "job", job, "resource_group", fmt.Sprintf("rg_%d", i)))
 			}
 		}
 	}
@@ -784,8 +752,7 @@ func makeBenchSeriesForTestDataTrackers(b *testing.B) []labels.Labels {
 	for _, job := range []string{"integrations/monitoringservice", "integrations/monitoringservice-ec2"} {
 		for _, metricName := range []string{"cloudprovider_ec2_cpu_utilization", "metricscollector_monitoringservice_requests_total", "cloudprovider_rds_database_connections"} {
 			for i := 0; i < 15; i++ {
-				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-				series = append(series, makeSeries(labels.MetricName, metricName, "job", job, "instance_id", fmt.Sprintf("i-%d", i)))
+				series = append(series, makeSeries(model.MetricNameLabel, metricName, "job", job, "instance_id", fmt.Sprintf("i-%d", i)))
 			}
 		}
 	}
@@ -794,8 +761,7 @@ func makeBenchSeriesForTestDataTrackers(b *testing.B) []labels.Labels {
 	for i := 0; i < 5; i++ {
 		jobName := fmt.Sprintf("%d-Glue-job-%d", 1000+i, i)
 		for _, metricName := range []string{"cloudprovider_glue_data_processing_units", "cloudprovider_glue_job_runs_total"} {
-			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-			series = append(series, makeSeries(labels.MetricName, metricName, "job", jobName, "glue_job_name", fmt.Sprintf("etl-job-%d", i)))
+			series = append(series, makeSeries(model.MetricNameLabel, metricName, "job", jobName, "glue_job_name", fmt.Sprintf("etl-job-%d", i)))
 		}
 	}
 
@@ -813,16 +779,14 @@ func makeBenchSeriesForTestDataTrackers(b *testing.B) []labels.Labels {
 	// "asserts/servicegraph/istio": "{__name__=~\"istio_.*\"}",
 	for _, metricName := range []string{"istio_requests_total", "istio_request_duration_milliseconds", "istio_tcp_connections_opened_total"} {
 		for i := 0; i < 25; i++ {
-			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-			series = append(series, makeSeries(labels.MetricName, metricName, "source_service", fmt.Sprintf("service_%d", i), "destination_service", fmt.Sprintf("dst_%d", i)))
+			series = append(series, makeSeries(model.MetricNameLabel, metricName, "source_service", fmt.Sprintf("service_%d", i), "destination_service", fmt.Sprintf("dst_%d", i)))
 		}
 	}
 
 	// "integrations/k6": "{__name__=~\"k6_.+\"}",
 	for _, metricName := range []string{"k6_http_req_duration", "k6_http_reqs", "k6_vus", "k6_iteration_duration"} {
 		for i := 0; i < 10; i++ {
-			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-			series = append(series, makeSeries(labels.MetricName, metricName, "scenario", fmt.Sprintf("load_test_%d", i)))
+			series = append(series, makeSeries(model.MetricNameLabel, metricName, "scenario", fmt.Sprintf("load_test_%d", i)))
 		}
 	}
 
@@ -832,73 +796,62 @@ func makeBenchSeriesForTestDataTrackers(b *testing.B) []labels.Labels {
 		"annotationAutodiscovery", "applicationObservability", "autoInstrumentation", "clusterEvents",
 		"clusterMetrics", "integrations", "nodeLogs", "podLogs", "profiling", "prometheusOperatorObjects",
 	} {
-		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-		series = append(series, makeSeries(labels.MetricName, "grafana_kubernetes_monitoring_feature_info", "feature", feature, "enabled", "true"))
+		series = append(series, makeSeries(model.MetricNameLabel, "grafana_kubernetes_monitoring_feature_info", "feature", feature, "enabled", "true"))
 	}
 
 	// "k8smonhelm/version_2_0": "{__name__=\"grafana_kubernetes_monitoring_build_info\", version=~\"2\\\\.0\\\\..*\"}",
 	// "k8smonhelm/version_2_1": "{__name__=\"grafana_kubernetes_monitoring_build_info\", version=~\"2\\\\.1\\\\..*\"}",
 	for _, version := range []string{"2.0.1", "2.0.5", "2.1.0", "2.1.3"} {
-		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-		series = append(series, makeSeries(labels.MetricName, "grafana_kubernetes_monitoring_build_info", "version", version, "git_commit", "abc123"))
+		series = append(series, makeSeries(model.MetricNameLabel, "grafana_kubernetes_monitoring_build_info", "version", version, "git_commit", "abc123"))
 	}
 
 	// "k8so11y/grafana_kubernetes_monitoring_build_info": "{__name__=\"grafana_kubernetes_monitoring_build_info\"}",
-	//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-	series = append(series, makeSeries(labels.MetricName, "grafana_kubernetes_monitoring_build_info", "version", "latest"))
+	series = append(series, makeSeries(model.MetricNameLabel, "grafana_kubernetes_monitoring_build_info", "version", "latest"))
 
 	// "k8so11y/kepler_node_info": "{__name__=\"kepler_node_info\"}",
 	for i := 0; i < 5; i++ {
-		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-		series = append(series, makeSeries(labels.MetricName, "kepler_node_info", "node", fmt.Sprintf("node-%d", i), "cpu_arch", "amd64"))
+		series = append(series, makeSeries(model.MetricNameLabel, "kepler_node_info", "node", fmt.Sprintf("node-%d", i), "cpu_arch", "amd64"))
 	}
 
 	// Node count by cloud provider:
 	// "k8so11y/node_count_cloudprovider": "{__name__=\"kube_node_info\", provider_id=~\"^cloudprovider://.*\"}",
 	for i := 0; i < 10; i++ {
-		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-		series = append(series, makeSeries(labels.MetricName, "kube_node_info", "provider_id", fmt.Sprintf("cloudprovider://us-west-2a/i-12345%d", i), "node", fmt.Sprintf("node-%d", i)))
+		series = append(series, makeSeries(model.MetricNameLabel, "kube_node_info", "provider_id", fmt.Sprintf("cloudprovider://us-west-2a/i-12345%d", i), "node", fmt.Sprintf("node-%d", i)))
 	}
 
 	// "k8so11y/node_count_azure": "{__name__=\"kube_node_info\", provider_id=~\"^azure://.*\"}",
 	for i := 0; i < 5; i++ {
-		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-		series = append(series, makeSeries(labels.MetricName, "kube_node_info", "provider_id", fmt.Sprintf("azure://subscriptions/123/resourceGroups/rg/providers/Microsoft.Compute/virtualMachines/vm%d", i), "node", fmt.Sprintf("azure-node-%d", i)))
+		series = append(series, makeSeries(model.MetricNameLabel, "kube_node_info", "provider_id", fmt.Sprintf("azure://subscriptions/123/resourceGroups/rg/providers/Microsoft.Compute/virtualMachines/vm%d", i), "node", fmt.Sprintf("azure-node-%d", i)))
 	}
 
 	// "trees/node_count_computeengine": "{__name__=\"kube_node_info\", provider_id=~\"^computeengine://.*\"}",
 	for i := 0; i < 7; i++ {
-		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-		series = append(series, makeSeries(labels.MetricName, "kube_node_info", "provider_id", fmt.Sprintf("computeengine://project-123/zones/us-central1-a/instances/instance-%d", i), "node", fmt.Sprintf("computeengine-node-%d", i)))
+		series = append(series, makeSeries(model.MetricNameLabel, "kube_node_info", "provider_id", fmt.Sprintf("computeengine://project-123/zones/us-central1-a/instances/instance-%d", i), "node", fmt.Sprintf("computeengine-node-%d", i)))
 	}
 
 	// "trees/node_count_other": "{__name__=\"kube_node_info\", provider_id!~\"^(cloudprovider|azure|digitalocean|computeengine|ibm)://.*|^ocid.*\"}",
 	for i := 0; i < 3; i++ {
-		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-		series = append(series, makeSeries(labels.MetricName, "kube_node_info", "provider_id", fmt.Sprintf("custom://cluster-123/node-%d", i), "node", fmt.Sprintf("custom-node-%d", i)))
+		series = append(series, makeSeries(model.MetricNameLabel, "kube_node_info", "provider_id", fmt.Sprintf("custom://cluster-123/node-%d", i), "node", fmt.Sprintf("custom-node-%d", i)))
 	}
 
 	// Additional observability metrics:
 	// "o11y/servicegraphmetrics": "{__name__=~\"traces_service_graph_.*\"}",
 	for _, metricName := range []string{"traces_service_graph_request_total", "traces_service_graph_request_failed_total", "traces_service_graph_request_server_seconds"} {
 		for i := 0; i < 20; i++ {
-			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-			series = append(series, makeSeries(labels.MetricName, metricName, "client", fmt.Sprintf("client-%d", i), "server", fmt.Sprintf("server-%d", i)))
+			series = append(series, makeSeries(model.MetricNameLabel, metricName, "client", fmt.Sprintf("client-%d", i), "server", fmt.Sprintf("server-%d", i)))
 		}
 	}
 
 	// "o11y/spanmetrics": "{__name__=~\"traces_spanmetrics_.*\"}",
 	for _, metricName := range []string{"traces_spanmetrics_latency", "traces_spanmetrics_calls_total", "traces_spanmetrics_size_total"} {
 		for i := 0; i < 15; i++ {
-			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-			series = append(series, makeSeries(labels.MetricName, metricName, "service_name", fmt.Sprintf("service-%d", i), "operation", fmt.Sprintf("op-%d", i)))
+			series = append(series, makeSeries(model.MetricNameLabel, metricName, "service_name", fmt.Sprintf("service-%d", i), "operation", fmt.Sprintf("op-%d", i)))
 		}
 	}
 
 	// "o11y/target_info": "{__name__=\"target_info\"}",
 	for i := 0; i < 10; i++ {
-		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-		series = append(series, makeSeries(labels.MetricName, "target_info", "service_name", fmt.Sprintf("service-%d", i), "service_version", "1.0.0"))
+		series = append(series, makeSeries(model.MetricNameLabel, "target_info", "service_name", fmt.Sprintf("service-%d", i), "service_version", "1.0.0"))
 	}
 	return series
 }

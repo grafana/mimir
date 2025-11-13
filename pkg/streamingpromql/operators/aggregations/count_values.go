@@ -53,8 +53,7 @@ func NewCountValues(
 	expressionPosition posrange.PositionRange,
 ) *CountValues {
 	if without {
-		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-		grouping = append(grouping, labels.MetricName)
+		grouping = append(grouping, model.MetricNameLabel)
 	}
 
 	slices.Sort(grouping)

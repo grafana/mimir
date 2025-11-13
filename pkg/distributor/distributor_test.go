@@ -250,8 +250,7 @@ func TestDistributor_Push(t *testing.T) {
 			expectDedupTraceEvent: true,
 			// Custom request with two different samples with same timestamp.
 			customRequest: makeWriteRequestWith(
-				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-				makeTimeseries([]string{labels.MetricName, "test_metric", "job", "test"},
+				makeTimeseries([]string{model.MetricNameLabel, "test_metric", "job", "test"},
 					append(makeSamples(10000, 1.0), append(makeSamples(20000, 1.0), makeSamples(20000, 2.0)...)...), nil, nil),
 			),
 			expectedMetrics: `
@@ -1590,8 +1589,7 @@ func TestDistributor_Push_CountDroppedNativeHistograms(t *testing.T) {
 }
 
 func TestDistributor_ValidateSeries(t *testing.T) {
-	//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-	labels := []string{labels.MetricName, "series", "job", "job", "service", "service"}
+	labels := []string{model.MetricNameLabel, "series", "job", "job", "service", "service"}
 
 	testCases := map[string]struct {
 		req             *mimirpb.WriteRequest
@@ -1672,8 +1670,7 @@ func BenchmarkDistributor_SampleDuplicateTimestamp(b *testing.B) {
 		testSize                = 80_000
 		numberOfDifferentValues = 40_000
 	)
-	//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-	labels := []string{labels.MetricName, metricName, "job", "job", "service", "service"}
+	labels := []string{model.MetricNameLabel, metricName, "job", "job", "service", "service"}
 
 	now := mtime.Now()
 	timestamp := now.UnixMilli()
@@ -2519,17 +2516,12 @@ func TestDistributor_MetricsForLabelMatchers(t *testing.T) {
 		value     float64
 		timestamp int64
 	}{
-		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-		{labelAdapters(labels.MetricName, "test_1", "status", "200"), 1, 100000},
-		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-		{labelAdapters(labels.MetricName, "test_1", "status", "500"), 1, 110000},
-		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-		{labelAdapters(labels.MetricName, "test_2"), 2, 200000},
+		{labelAdapters(model.MetricNameLabel, "test_1", "status", "200"), 1, 100000},
+		{labelAdapters(model.MetricNameLabel, "test_1", "status", "500"), 1, 110000},
+		{labelAdapters(model.MetricNameLabel, "test_2"), 2, 200000},
 		// The two following series have the same FastFingerprint=e002a3a451262627
-		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-		{labelAdapters(labels.MetricName, "fast_fingerprint_collision", "app", "l", "uniq0", "0", "uniq1", "1"), 1, 300000},
-		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-		{labelAdapters(labels.MetricName, "fast_fingerprint_collision", "app", "m", "uniq0", "1", "uniq1", "1"), 1, 300000},
+		{labelAdapters(model.MetricNameLabel, "fast_fingerprint_collision", "app", "l", "uniq0", "0", "uniq1", "1"), 1, 300000},
+		{labelAdapters(model.MetricNameLabel, "fast_fingerprint_collision", "app", "m", "uniq0", "1", "uniq1", "1"), 1, 300000},
 	}
 
 	tests := map[string]struct {
@@ -2723,12 +2715,9 @@ func TestDistributor_MetricsForLabelMatchers_adjustPushDownLimit(t *testing.T) {
 		value     float64
 		timestamp int64
 	}{
-		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-		{labelAdapters(labels.MetricName, "test_1", "status", "2xx"), 1, 100000},
-		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-		{labelAdapters(labels.MetricName, "test_1", "status", "3xx"), 1, 110000},
-		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-		{labelAdapters(labels.MetricName, "test_1", "status", "5xx"), 1, 120000},
+		{labelAdapters(model.MetricNameLabel, "test_1", "status", "2xx"), 1, 100000},
+		{labelAdapters(model.MetricNameLabel, "test_1", "status", "3xx"), 1, 110000},
+		{labelAdapters(model.MetricNameLabel, "test_1", "status", "5xx"), 1, 120000},
 	}
 
 	tests := map[string]struct {
@@ -2828,16 +2817,12 @@ func TestDistributor_ActiveSeries(t *testing.T) {
 		value     float64
 		timestamp int64
 	}{
-		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-		{labelAdapters(labels.MetricName, "test_1", "team", "a"), 1, 100000},
-		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-		{labelAdapters(labels.MetricName, "test_1", "team", "b"), 1, 110000},
-		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-		{labelAdapters(labels.MetricName, "test_2"), 2, 200000},
+		{labelAdapters(model.MetricNameLabel, "test_1", "team", "a"), 1, 100000},
+		{labelAdapters(model.MetricNameLabel, "test_1", "team", "b"), 1, 110000},
+		{labelAdapters(model.MetricNameLabel, "test_2"), 2, 200000},
 		{collision1, 3, 300000},
 		{collision2, 4, 300000},
-		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-		{labelAdapters(labels.MetricName, "large_metric", "label", strings.Repeat("1", 2*responseSizeLimitBytes)), 5, 400000},
+		{labelAdapters(model.MetricNameLabel, "large_metric", "label", strings.Repeat("1", 2*responseSizeLimitBytes)), 5, 400000},
 	}
 
 	tests := map[string]struct {
@@ -3013,16 +2998,12 @@ func TestDistributor_ActiveNativeHistogramSeries(t *testing.T) {
 		value     float64
 		timestamp int64
 	}{
-		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-		{labelAdapters(labels.MetricName, "test_1", "team", "a"), 1, 100000},
-		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-		{labelAdapters(labels.MetricName, "test_1", "team", "b"), 1, 110000},
-		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-		{labelAdapters(labels.MetricName, "test_2"), 2, 200000},
+		{labelAdapters(model.MetricNameLabel, "test_1", "team", "a"), 1, 100000},
+		{labelAdapters(model.MetricNameLabel, "test_1", "team", "b"), 1, 110000},
+		{labelAdapters(model.MetricNameLabel, "test_2"), 2, 200000},
 		{collision1, 3, 300000},
 		{collision2, 4, 300000},
-		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-		{labelAdapters(labels.MetricName, "large_metric", "label", strings.Repeat("1", 2*responseSizeLimitBytes)), 5, 400000},
+		{labelAdapters(model.MetricNameLabel, "large_metric", "label", strings.Repeat("1", 2*responseSizeLimitBytes)), 5, 400000},
 	}
 
 	tests := map[string]struct {
@@ -3581,12 +3562,9 @@ func TestDistributor_LabelNames(t *testing.T) {
 		value     float64
 		timestamp int64
 	}{
-		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-		{labelAdapters(labels.MetricName, "test_1", "status", "200"), 1, 100000},
-		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-		{labelAdapters(labels.MetricName, "test_1", "status", "500", "reason", "broken"), 1, 110000},
-		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-		{labelAdapters(labels.MetricName, "test_2"), 2, 200000},
+		{labelAdapters(model.MetricNameLabel, "test_1", "status", "200"), 1, 100000},
+		{labelAdapters(model.MetricNameLabel, "test_1", "status", "500", "reason", "broken"), 1, 110000},
+		{labelAdapters(model.MetricNameLabel, "test_2"), 2, 200000},
 	}
 
 	tests := map[string]struct {
@@ -3607,8 +3585,7 @@ func TestDistributor_LabelNames(t *testing.T) {
 			matchers: []*labels.Matcher{
 				mustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "test_1"),
 			},
-			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-			expectedResult:    []string{labels.MetricName, "reason", "status"},
+			expectedResult:    []string{model.MetricNameLabel, "reason", "status"},
 			expectedIngesters: numIngesters,
 		},
 		"should filter metrics by single matcher and apply limit": {
@@ -3616,8 +3593,7 @@ func TestDistributor_LabelNames(t *testing.T) {
 			matchers: []*labels.Matcher{
 				mustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "test_1"),
 			},
-			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-			expectedResult:    []string{labels.MetricName, "reason"},
+			expectedResult:    []string{model.MetricNameLabel, "reason"},
 			expectedIngesters: numIngesters,
 		},
 		"should filter metrics by single matcher and ignore limit when it is zero": {
@@ -3625,8 +3601,7 @@ func TestDistributor_LabelNames(t *testing.T) {
 			matchers: []*labels.Matcher{
 				mustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "test_1"),
 			},
-			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-			expectedResult:    []string{labels.MetricName, "reason", "status"},
+			expectedResult:    []string{model.MetricNameLabel, "reason", "status"},
 			expectedIngesters: numIngesters,
 		},
 		"should filter metrics by single matcher and ignore limit when it is equal than the number of items returned": {
@@ -3634,8 +3609,7 @@ func TestDistributor_LabelNames(t *testing.T) {
 			matchers: []*labels.Matcher{
 				mustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "test_1"),
 			},
-			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-			expectedResult:    []string{labels.MetricName, "reason", "status"},
+			expectedResult:    []string{model.MetricNameLabel, "reason", "status"},
 			expectedIngesters: numIngesters,
 		},
 		"should filter metrics by single matcher and ignore limit when it is greater than the number of items returned": {
@@ -3643,8 +3617,7 @@ func TestDistributor_LabelNames(t *testing.T) {
 			matchers: []*labels.Matcher{
 				mustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "test_1"),
 			},
-			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-			expectedResult:    []string{labels.MetricName, "reason", "status"},
+			expectedResult:    []string{model.MetricNameLabel, "reason", "status"},
 			expectedIngesters: numIngesters,
 		},
 		"should filter metrics by multiple matchers": {
@@ -3652,8 +3625,7 @@ func TestDistributor_LabelNames(t *testing.T) {
 				mustNewMatcher(labels.MatchEqual, "status", "200"),
 				mustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "test_1"),
 			},
-			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-			expectedResult:    []string{labels.MetricName, "status"},
+			expectedResult:    []string{model.MetricNameLabel, "status"},
 			expectedIngesters: numIngesters,
 		},
 		"should filter metrics by multiple matchers and apply limit": {
@@ -3662,8 +3634,7 @@ func TestDistributor_LabelNames(t *testing.T) {
 				mustNewMatcher(labels.MatchEqual, "status", "200"),
 				mustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "test_1"),
 			},
-			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-			expectedResult:    []string{labels.MetricName},
+			expectedResult:    []string{model.MetricNameLabel},
 			expectedIngesters: numIngesters,
 		},
 		"should query only ingesters belonging to tenant's subring if shuffle sharding is enabled": {
@@ -3671,8 +3642,7 @@ func TestDistributor_LabelNames(t *testing.T) {
 			matchers: []*labels.Matcher{
 				mustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "test_1"),
 			},
-			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-			expectedResult:    []string{labels.MetricName, "reason", "status"},
+			expectedResult:    []string{model.MetricNameLabel, "reason", "status"},
 			expectedIngesters: 3,
 		},
 		"should query only ingesters belonging to tenant's subring if shuffle sharding is enabled and apply limit": {
@@ -3681,8 +3651,7 @@ func TestDistributor_LabelNames(t *testing.T) {
 			matchers: []*labels.Matcher{
 				mustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "test_1"),
 			},
-			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-			expectedResult:    []string{labels.MetricName},
+			expectedResult:    []string{model.MetricNameLabel},
 			expectedIngesters: 3,
 		},
 	}
@@ -3840,12 +3809,9 @@ func TestDistributor_LabelNamesAndValuesLimitTest(t *testing.T) {
 		value     float64
 		timestamp int64
 	}{
-		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-		{labelAdapters(labels.MetricName, "label_00"), 1, 100000},
-		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-		{labelAdapters(labels.MetricName, "label_11"), 1, 110000},
-		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-		{labelAdapters(labels.MetricName, "label_11"), 2, 200000},
+		{labelAdapters(model.MetricNameLabel, "label_00"), 1, 100000},
+		{labelAdapters(model.MetricNameLabel, "label_11"), 1, 110000},
+		{labelAdapters(model.MetricNameLabel, "label_11"), 2, 200000},
 	}
 	tests := map[string]struct {
 		sizeLimitBytes int
@@ -3908,12 +3874,9 @@ func TestDistributor_LabelValuesForLabelName(t *testing.T) {
 		value     float64
 		timestamp int64
 	}{
-		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-		{labelAdapters(labels.MetricName, "label_0", "status", "200"), 1, 100_000},
-		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-		{labelAdapters(labels.MetricName, "label_1", "status", "500", "reason", "broken"), 1, 110_000},
-		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-		{labelAdapters(labels.MetricName, "label_1"), 2, 200_000},
+		{labelAdapters(model.MetricNameLabel, "label_0", "status", "200"), 1, 100_000},
+		{labelAdapters(model.MetricNameLabel, "label_1", "status", "500", "reason", "broken"), 1, 110_000},
+		{labelAdapters(model.MetricNameLabel, "label_1"), 2, 200_000},
 	}
 	tests := map[string]struct {
 		from, to            model.Time
@@ -3991,8 +3954,7 @@ func TestDistributor_LabelValuesForLabelName(t *testing.T) {
 						require.NoError(t, err)
 					}
 
-					//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-					response, err := ds[0].LabelValuesForLabelName(ctx, testCase.from, testCase.to, labels.MetricName, testCase.hints, testCase.matchers...)
+					response, err := ds[0].LabelValuesForLabelName(ctx, testCase.from, testCase.to, model.MetricNameLabel, testCase.hints, testCase.matchers...)
 					require.NoError(t, err)
 					assert.ElementsMatch(t, response, testCase.expectedLabelValues)
 				})
@@ -4007,17 +3969,13 @@ func TestDistributor_LabelNamesAndValues(t *testing.T) {
 		value     float64
 		timestamp int64
 	}{
-		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-		{labelAdapters(labels.MetricName, "label_0", "status", "200"), 1, 100000},
-		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-		{labelAdapters(labels.MetricName, "label_1", "status", "500", "reason", "broken"), 1, 110000},
-		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-		{labelAdapters(labels.MetricName, "label_1"), 2, 200000},
+		{labelAdapters(model.MetricNameLabel, "label_0", "status", "200"), 1, 100000},
+		{labelAdapters(model.MetricNameLabel, "label_1", "status", "500", "reason", "broken"), 1, 110000},
+		{labelAdapters(model.MetricNameLabel, "label_1"), 2, 200000},
 	}
 	expectedLabelValues := []*client.LabelValues{
 		{
-			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-			LabelName: labels.MetricName,
+			LabelName: model.MetricNameLabel,
 			Values:    []string{"label_0", "label_1"},
 		},
 		{
@@ -4109,8 +4067,7 @@ func TestDistributor_LabelNamesAndValues(t *testing.T) {
 func TestDistributor_LabelValuesCardinality_ExpectedAllIngestersResponsesToBeCompleted(t *testing.T) {
 	ctx, ds := prepareWithZoneAwarenessAndZoneDelay(t, 10000)
 
-	//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-	names := []model.LabelName{labels.MetricName}
+	names := []model.LabelName{model.MetricNameLabel}
 	response, err := ds[0].labelValuesCardinality(ctx, names, []*labels.Matcher{}, cardinality.InMemoryMethod)
 	require.NoError(t, err)
 	require.Len(t, response.Items, 1)
@@ -4167,8 +4124,7 @@ func prepareWithZoneAwarenessAndZoneDelay(t *testing.T, count int) (context.Cont
 
 	// Push test series.
 	for i := 0; i < count; i++ {
-		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-		req := mockWriteRequest(labelAdapters(labels.MetricName, "metric"+strconv.Itoa(i)), 1, int64(100000+i))
+		req := mockWriteRequest(labelAdapters(model.MetricNameLabel, "metric"+strconv.Itoa(i)), 1, int64(100000+i))
 		_, err := ds[0].Push(ctx, req)
 		require.NoError(t, err)
 	}
@@ -4583,12 +4539,9 @@ func TestDistributor_LabelValuesCardinality(t *testing.T) {
 		value     float64
 		timestamp int64
 	}{
-		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-		{labelAdapters(labels.MetricName, "test_1", "status", "200"), 1, 100000},
-		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-		{labelAdapters(labels.MetricName, "test_1", "status", "500", "reason", "broken"), 1, 110000},
-		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-		{labelAdapters(labels.MetricName, "test_2"), 2, 200000},
+		{labelAdapters(model.MetricNameLabel, "test_1", "status", "200"), 1, 100000},
+		{labelAdapters(model.MetricNameLabel, "test_1", "status", "500", "reason", "broken"), 1, 110000},
+		{labelAdapters(model.MetricNameLabel, "test_2"), 2, 200000},
 	}
 
 	tests := map[string]struct {
@@ -4609,13 +4562,11 @@ func TestDistributor_LabelValuesCardinality(t *testing.T) {
 			expectedSeriesCountTotal: 3,
 		},
 		"should return a map with the label values and series occurrences of a single label name": {
-			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-			labelNames: []model.LabelName{labels.MetricName},
+			labelNames: []model.LabelName{model.MetricNameLabel},
 			matchers:   []*labels.Matcher{},
 			expectedResult: &client.LabelValuesCardinalityResponse{
 				Items: []*client.LabelValueSeriesCount{{
-					//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-					LabelName:        labels.MetricName,
+					LabelName:        model.MetricNameLabel,
 					LabelValueSeries: map[string]uint64{"test_1": 2, "test_2": 1},
 				}},
 			},
@@ -4625,13 +4576,11 @@ func TestDistributor_LabelValuesCardinality(t *testing.T) {
 			ingesterZones:            []string{"ZONE-A", "ZONE-B", "ZONE-C"},
 		},
 		"should return a map with the label values and series occurrences of a single label name, during single zone failure": {
-			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-			labelNames: []model.LabelName{labels.MetricName},
+			labelNames: []model.LabelName{model.MetricNameLabel},
 			matchers:   []*labels.Matcher{},
 			expectedResult: &client.LabelValuesCardinalityResponse{
 				Items: []*client.LabelValueSeriesCount{{
-					//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-					LabelName:        labels.MetricName,
+					LabelName:        model.MetricNameLabel,
 					LabelValueSeries: map[string]uint64{"test_1": 2, "test_2": 1},
 				}},
 			},
@@ -4641,14 +4590,12 @@ func TestDistributor_LabelValuesCardinality(t *testing.T) {
 			ingesterZones:            []string{"ZONE-A", "ZONE-B", "ZONE-C"},
 		},
 		"should return a map with the label values and series occurrences of all the label names": {
-			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-			labelNames: []model.LabelName{labels.MetricName, "status"},
+			labelNames: []model.LabelName{model.MetricNameLabel, "status"},
 			matchers:   []*labels.Matcher{},
 			expectedResult: &client.LabelValuesCardinalityResponse{
 				Items: []*client.LabelValueSeriesCount{
 					{
-						//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-						LabelName:        labels.MetricName,
+						LabelName:        model.MetricNameLabel,
 						LabelValueSeries: map[string]uint64{"test_1": 2, "test_2": 1},
 					},
 					{
@@ -4722,20 +4669,13 @@ func TestDistributor_LabelValuesCardinality(t *testing.T) {
 func TestDistributor_LabelValuesCardinality_AvailabilityAndConsistency(t *testing.T) {
 	var (
 		// Define fixtures used in tests.
-		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-		series1 = makeTimeseries([]string{labels.MetricName, "series_1", "job", "job-a", "service", "service-1"}, makeSamples(0, 0), nil, nil)
-		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-		series2 = makeTimeseries([]string{labels.MetricName, "series_2", "job", "job-b", "service", "service-1"}, makeSamples(0, 0), nil, nil)
-		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-		series3 = makeTimeseries([]string{labels.MetricName, "series_3", "job", "job-c", "service", "service-1"}, makeSamples(0, 0), nil, nil)
-		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-		series4 = makeTimeseries([]string{labels.MetricName, "series_4", "job", "job-a", "service", "service-1"}, makeSamples(0, 0), nil, nil)
-		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-		series5 = makeTimeseries([]string{labels.MetricName, "series_5", "job", "job-a", "service", "service-2"}, makeSamples(0, 0), nil, nil)
-		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-		series6 = makeTimeseries([]string{labels.MetricName, "series_6", "job", "job-b" /* no service label */}, makeSamples(0, 0), nil, nil)
-		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-		other1 = makeTimeseries([]string{labels.MetricName, "other_1", "job", "job-1", "service", "service-1"}, makeSamples(0, 0), nil, nil)
+		series1 = makeTimeseries([]string{model.MetricNameLabel, "series_1", "job", "job-a", "service", "service-1"}, makeSamples(0, 0), nil, nil)
+		series2 = makeTimeseries([]string{model.MetricNameLabel, "series_2", "job", "job-b", "service", "service-1"}, makeSamples(0, 0), nil, nil)
+		series3 = makeTimeseries([]string{model.MetricNameLabel, "series_3", "job", "job-c", "service", "service-1"}, makeSamples(0, 0), nil, nil)
+		series4 = makeTimeseries([]string{model.MetricNameLabel, "series_4", "job", "job-a", "service", "service-1"}, makeSamples(0, 0), nil, nil)
+		series5 = makeTimeseries([]string{model.MetricNameLabel, "series_5", "job", "job-a", "service", "service-2"}, makeSamples(0, 0), nil, nil)
+		series6 = makeTimeseries([]string{model.MetricNameLabel, "series_6", "job", "job-b" /* no service label */}, makeSamples(0, 0), nil, nil)
+		other1  = makeTimeseries([]string{model.MetricNameLabel, "other_1", "job", "job-1", "service", "service-1"}, makeSamples(0, 0), nil, nil)
 
 		// To keep assertions simple, all tests push all series, and then request the cardinality of the same label names,
 		// so we expect the same response from each successful test.
@@ -5026,12 +4966,9 @@ func TestDistributor_LabelValuesCardinality_Limit(t *testing.T) {
 		value     float64
 		timestamp int64
 	}{
-		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-		{labelAdapters(labels.MetricName, "test_1", "status", "200"), 1, 100000},
-		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-		{labelAdapters(labels.MetricName, "test_1", "status", "500", "reason", "broken"), 1, 110000},
-		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-		{labelAdapters(labels.MetricName, "test_2"), 2, 200000},
+		{labelAdapters(model.MetricNameLabel, "test_1", "status", "200"), 1, 100000},
+		{labelAdapters(model.MetricNameLabel, "test_1", "status", "500", "reason", "broken"), 1, 110000},
+		{labelAdapters(model.MetricNameLabel, "test_2"), 2, 200000},
 	}
 
 	tests := map[string]struct {
@@ -5040,8 +4977,7 @@ func TestDistributor_LabelValuesCardinality_Limit(t *testing.T) {
 		expectedHTTPGrpcError   error
 	}{
 		"should return a httpgrpc error if the maximum number of label names per request is reached": {
-			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-			labelNames:              []model.LabelName{labels.MetricName, "status"},
+			labelNames:              []model.LabelName{model.MetricNameLabel, "status"},
 			maxLabelNamesPerRequest: 1,
 			expectedHTTPGrpcError: httpgrpc.ErrorFromHTTPResponse(&httpgrpc.HTTPResponse{
 				Code: int32(400),
@@ -5049,8 +4985,7 @@ func TestDistributor_LabelValuesCardinality_Limit(t *testing.T) {
 			}),
 		},
 		"should succeed if the maximum number of label names per request is not reached": {
-			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-			labelNames:              []model.LabelName{labels.MetricName},
+			labelNames:              []model.LabelName{model.MetricNameLabel},
 			maxLabelNamesPerRequest: 1,
 		},
 	}
@@ -5104,8 +5039,7 @@ func TestDistributor_LabelValuesCardinality_Concurrency(t *testing.T) {
 		// Set the first ingester as unhappy
 		ingesters[0].happy = false
 
-		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-		_, _, err := ds[0].LabelValuesCardinality(ctx, []model.LabelName{labels.MetricName}, []*labels.Matcher{}, cardinality.InMemoryMethod)
+		_, _, err := ds[0].LabelValuesCardinality(ctx, []model.LabelName{model.MetricNameLabel}, []*labels.Matcher{}, cardinality.InMemoryMethod)
 		require.Error(t, err)
 	})
 }
@@ -7337,8 +7271,7 @@ func TestDistributorValidation(t *testing.T) {
 	}{
 		"validation passes": {
 			metadata: []*mimirpb.MetricMetadata{{MetricFamilyName: "testmetric", Help: "a test metric.", Unit: "", Type: mimirpb.COUNTER}},
-			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-			labels: [][]mimirpb.LabelAdapter{{{Name: labels.MetricName, Value: "testmetric"}, {Name: "foo", Value: "bar"}}},
+			labels:   [][]mimirpb.LabelAdapter{{{Name: model.MetricNameLabel, Value: "testmetric"}, {Name: "foo", Value: "bar"}}},
 			samples: []mimirpb.Sample{{
 				TimestampMs: int64(now),
 				Value:       1,
@@ -7354,8 +7287,7 @@ func TestDistributorValidation(t *testing.T) {
 			labels: [][]mimirpb.LabelAdapter{
 				{
 					{Name: "foo", Value: "bar"},
-					//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-					{Name: labels.MetricName, Value: "testmetric"},
+					{Name: model.MetricNameLabel, Value: "testmetric"},
 				}},
 			samples: []mimirpb.Sample{{
 				TimestampMs: int64(now),
@@ -7364,8 +7296,7 @@ func TestDistributorValidation(t *testing.T) {
 		},
 
 		"validation fails for samples from the future": {
-			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-			labels: [][]mimirpb.LabelAdapter{{{Name: labels.MetricName, Value: "testmetric"}, {Name: "foo", Value: "bar"}}},
+			labels: [][]mimirpb.LabelAdapter{{{Name: model.MetricNameLabel, Value: "testmetric"}, {Name: "foo", Value: "bar"}}},
 			samples: []mimirpb.Sample{{
 				TimestampMs: int64(future),
 				Value:       4,
@@ -7374,22 +7305,19 @@ func TestDistributorValidation(t *testing.T) {
 		},
 
 		"validation does not fail for samples from the past without past_grace_period setting": {
-			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-			labels:  [][]mimirpb.LabelAdapter{{{Name: "foo", Value: "bar"}, {Name: labels.MetricName, Value: "testmetric"}}},
+			labels:  [][]mimirpb.LabelAdapter{{{Name: "foo", Value: "bar"}, {Name: model.MetricNameLabel, Value: "testmetric"}}},
 			samples: []mimirpb.Sample{{TimestampMs: int64(past), Value: 1}},
 		},
 
 		"validation fails for samples from the past": {
-			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-			labels:      [][]mimirpb.LabelAdapter{{{Name: labels.MetricName, Value: "testmetric"}, {Name: "foo", Value: "bar"}}},
+			labels:      [][]mimirpb.LabelAdapter{{{Name: model.MetricNameLabel, Value: "testmetric"}, {Name: "foo", Value: "bar"}}},
 			samples:     []mimirpb.Sample{{TimestampMs: int64(past), Value: 4}},
 			limits:      func(limits *validation.Limits) { limits.PastGracePeriod = model.Duration(now.Sub(past) / 2) },
 			expectedErr: status.New(codes.InvalidArgument, fmt.Sprintf(sampleTimestampTooOldMsgFormat, past, "testmetric")),
 		},
 
 		"exceeds maximum labels per series": {
-			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-			labels: [][]mimirpb.LabelAdapter{{{Name: labels.MetricName, Value: "testmetric"}, {Name: "foo", Value: "bar"}, {Name: "foo2", Value: "bar2"}}},
+			labels: [][]mimirpb.LabelAdapter{{{Name: model.MetricNameLabel, Value: "testmetric"}, {Name: "foo", Value: "bar"}, {Name: "foo2", Value: "bar2"}}},
 			samples: []mimirpb.Sample{{
 				TimestampMs: int64(now),
 				Value:       2,
@@ -7398,8 +7326,7 @@ func TestDistributorValidation(t *testing.T) {
 		},
 		"exceeds maximum labels per series with a metric that exceeds 200 characters when formatted": {
 			labels: [][]mimirpb.LabelAdapter{{
-				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-				{Name: labels.MetricName, Value: "testmetric"},
+				{Name: model.MetricNameLabel, Value: "testmetric"},
 				{Name: "foo-with-a-long-long-label", Value: "bar-with-a-long-long-value"},
 				{Name: "foo2-with-a-long-long-label", Value: "bar2-with-a-long-long-value"},
 				{Name: "foo3-with-a-long-long-label", Value: "bar3-with-a-long-long-value"},
@@ -7413,8 +7340,7 @@ func TestDistributorValidation(t *testing.T) {
 		},
 		"exceeds maximum labels per series with a metric that exceeds 200 bytes when formatted": {
 			labels: [][]mimirpb.LabelAdapter{{
-				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-				{Name: labels.MetricName, Value: "testmetric"},
+				{Name: model.MetricNameLabel, Value: "testmetric"},
 				{Name: "foo", Value: "b"},
 				{Name: "families", Value: "👩‍👦👨‍👧👨‍👩‍👧👩‍👧👩‍👩‍👦‍👦👨‍👩‍👧‍👦👨‍👧‍👦👨‍👩‍👦👪👨‍👦👨‍👦‍👦👨‍👨‍👧👨‍👧‍👧"},
 			}},
@@ -7426,10 +7352,8 @@ func TestDistributorValidation(t *testing.T) {
 		},
 		"multiple validation failures should return the first failure": {
 			labels: [][]mimirpb.LabelAdapter{
-				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-				{{Name: labels.MetricName, Value: "testmetric"}, {Name: "foo", Value: "bar"}, {Name: "foo2", Value: "bar2"}},
-				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-				{{Name: labels.MetricName, Value: "testmetric"}, {Name: "foo", Value: "bar"}},
+				{{Name: model.MetricNameLabel, Value: "testmetric"}, {Name: "foo", Value: "bar"}, {Name: "foo2", Value: "bar2"}},
+				{{Name: model.MetricNameLabel, Value: "testmetric"}, {Name: "foo", Value: "bar"}},
 			},
 			samples: []mimirpb.Sample{
 				{TimestampMs: int64(now), Value: 2},
@@ -7439,8 +7363,7 @@ func TestDistributorValidation(t *testing.T) {
 		},
 		"metadata validation failure": {
 			metadata: []*mimirpb.MetricMetadata{{MetricFamilyName: "", Help: "a test metric.", Unit: "", Type: mimirpb.COUNTER}},
-			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-			labels: [][]mimirpb.LabelAdapter{{{Name: labels.MetricName, Value: "testmetric"}, {Name: "foo", Value: "bar"}}},
+			labels:   [][]mimirpb.LabelAdapter{{{Name: model.MetricNameLabel, Value: "testmetric"}, {Name: "foo", Value: "bar"}}},
 			samples: []mimirpb.Sample{{
 				TimestampMs: int64(now),
 				Value:       1,
@@ -7450,8 +7373,7 @@ func TestDistributorValidation(t *testing.T) {
 		// Validation passes for empty exemplar labels, since we just want to skip the exemplars and not fail the time series as a whole.
 		"empty exemplar labels": {
 			metadata: []*mimirpb.MetricMetadata{{MetricFamilyName: "testmetric", Help: "a test metric.", Unit: "", Type: mimirpb.COUNTER}},
-			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-			labels: [][]mimirpb.LabelAdapter{{{Name: labels.MetricName, Value: "testmetric"}, {Name: "foo", Value: "bar"}}},
+			labels:   [][]mimirpb.LabelAdapter{{{Name: model.MetricNameLabel, Value: "testmetric"}, {Name: "foo", Value: "bar"}}},
 			samples: []mimirpb.Sample{{
 				TimestampMs: int64(now),
 				Value:       1,

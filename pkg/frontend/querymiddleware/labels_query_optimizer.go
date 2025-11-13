@@ -12,6 +12,7 @@ import (
 	"github.com/grafana/dskit/tenant"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
 
@@ -159,8 +160,7 @@ func optimizeLabelsRequestMatchers(rawMatcherSets []string) (_ []string, optimiz
 
 			// Filter out `__name__!=""` matcher because all series in Mimir have a metric name
 			// so this matcher matches all series but very expensive to run.
-			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-			if matcher.Name == labels.MetricName && matcher.Type == labels.MatchNotEqual && matcher.Value == "" {
+			if matcher.Name == model.MetricNameLabel && matcher.Type == labels.MatchNotEqual && matcher.Value == "" {
 				optimized = true
 				continue
 			}

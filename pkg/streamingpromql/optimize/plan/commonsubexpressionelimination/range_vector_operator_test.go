@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
@@ -225,8 +226,7 @@ func TestRangeVectorOperator_Cloning(t *testing.T) {
 	ctx := context.Background()
 	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
 	inner := &testRangeVectorOperator{
-		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-		series:                   []labels.Labels{labels.FromStrings(labels.MetricName, "test_series")},
+		series:                   []labels.Labels{labels.FromStrings(model.MetricNameLabel, "test_series")},
 		data:                     []types.InstantVectorSeriesData{series},
 		stepRange:                time.Minute,
 		memoryConsumptionTracker: memoryConsumptionTracker,
@@ -306,8 +306,7 @@ func TestRangeVectorOperator_ClosingAfterFirstReadFails(t *testing.T) {
 	series, err := types.SeriesMetadataSlicePool.Get(1, memoryConsumptionTracker)
 	require.NoError(t, err)
 
-	//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-	series, err = types.AppendSeriesMetadata(memoryConsumptionTracker, series, types.SeriesMetadata{Labels: labels.FromStrings(labels.MetricName, "test_series")})
+	series, err = types.AppendSeriesMetadata(memoryConsumptionTracker, series, types.SeriesMetadata{Labels: labels.FromStrings(model.MetricNameLabel, "test_series")})
 	require.NoError(t, err)
 
 	inner := &failingRangeVectorOperator{series: series, memoryConsumptionTracker: memoryConsumptionTracker}
@@ -337,11 +336,9 @@ func TestRangeVectorOperator_ClosingAfterSubsequentReadFails(t *testing.T) {
 	series, err := types.SeriesMetadataSlicePool.Get(2, memoryConsumptionTracker)
 	require.NoError(t, err)
 
-	//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-	series, err = types.AppendSeriesMetadata(memoryConsumptionTracker, series, types.SeriesMetadata{Labels: labels.FromStrings(labels.MetricName, "test_series_1")})
+	series, err = types.AppendSeriesMetadata(memoryConsumptionTracker, series, types.SeriesMetadata{Labels: labels.FromStrings(model.MetricNameLabel, "test_series_1")})
 	require.NoError(t, err)
-	//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-	series, err = types.AppendSeriesMetadata(memoryConsumptionTracker, series, types.SeriesMetadata{Labels: labels.FromStrings(labels.MetricName, "test_series_2")})
+	series, err = types.AppendSeriesMetadata(memoryConsumptionTracker, series, types.SeriesMetadata{Labels: labels.FromStrings(model.MetricNameLabel, "test_series_2")})
 	require.NoError(t, err)
 
 	inner := &failingRangeVectorOperator{series: series, returnErrorAtSeriesIdx: 1, memoryConsumptionTracker: memoryConsumptionTracker}

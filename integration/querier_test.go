@@ -17,7 +17,6 @@ import (
 	e2edb "github.com/grafana/e2e/db"
 	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -644,8 +643,7 @@ func testMetadataQueriesWithBlocksStorage(
 					matches: []string{lastSeriesInStorageName},
 				},
 			},
-			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-			labelNames: []string{labels.MetricName, firstSeriesInIngesterHeadName},
+			labelNames: []string{model.MetricNameLabel, firstSeriesInIngesterHeadName},
 		},
 		"query metadata entirely inside the ingester range but outside the head range": {
 			from: lastSeriesInIngesterBlocksTs,
@@ -678,8 +676,7 @@ func testMetadataQueriesWithBlocksStorage(
 					matches: []string{firstSeriesInIngesterHeadName},
 				},
 			},
-			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-			labelNames: []string{labels.MetricName, lastSeriesInIngesterBlocksName},
+			labelNames: []string{model.MetricNameLabel, lastSeriesInIngesterBlocksName},
 		},
 		"query metadata partially inside the ingester range": {
 			from: lastSeriesInStorageTs.Add(-blockRangePeriod),
@@ -718,8 +715,7 @@ func testMetadataQueriesWithBlocksStorage(
 					matches: []string{lastSeriesInStorageName, lastSeriesInIngesterBlocksName},
 				},
 			},
-			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-			labelNames: []string{labels.MetricName, lastSeriesInStorageName, lastSeriesInIngesterBlocksName, firstSeriesInIngesterHeadName},
+			labelNames: []string{model.MetricNameLabel, lastSeriesInStorageName, lastSeriesInIngesterBlocksName, firstSeriesInIngesterHeadName},
 		},
 		"query metadata entirely outside the ingester range should not return the head data": {
 			from: lastSeriesInStorageTs.Add(-2 * blockRangePeriod),
@@ -753,8 +749,7 @@ func testMetadataQueriesWithBlocksStorage(
 					matches: []string{firstSeriesInIngesterHeadName},
 				},
 			},
-			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-			labelNames: []string{labels.MetricName, lastSeriesInStorageName},
+			labelNames: []string{model.MetricNameLabel, lastSeriesInStorageName},
 		},
 	}
 
@@ -772,8 +767,7 @@ func testMetadataQueriesWithBlocksStorage(
 			}
 
 			for _, lvt := range tc.labelValuesTests {
-				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-				labelsRes, err := c.LabelValues(labels.MetricName, tc.from, tc.to, lvt.matches)
+				labelsRes, err := c.LabelValues(model.MetricNameLabel, tc.from, tc.to, lvt.matches)
 				require.NoError(t, err)
 				exp := model.LabelValues{}
 				for _, val := range lvt.resp {
@@ -1016,13 +1010,11 @@ func TestHashCollisionHandling(t *testing.T) {
 	tsMillis := e2e.TimeToMilliseconds(now)
 	metric1 := []prompb.Label{
 		{Name: "A", Value: "K6sjsNNczPl"},
-		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-		{Name: labels.MetricName, Value: "fingerprint_collision"},
+		{Name: model.MetricNameLabel, Value: "fingerprint_collision"},
 	}
 	metric2 := []prompb.Label{
 		{Name: "A", Value: "cswpLMIZpwt"},
-		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-		{Name: labels.MetricName, Value: "fingerprint_collision"},
+		{Name: model.MetricNameLabel, Value: "fingerprint_collision"},
 	}
 
 	series = append(series, prompb.TimeSeries{
@@ -1070,8 +1062,7 @@ func TestHashCollisionHandling(t *testing.T) {
 
 func getMetricName(lbls []prompb.Label) string {
 	for _, lbl := range lbls {
-		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-		if lbl.Name == labels.MetricName {
+		if lbl.Name == model.MetricNameLabel {
 			return lbl.Value
 		}
 	}

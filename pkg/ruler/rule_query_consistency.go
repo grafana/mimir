@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/rules"
@@ -122,8 +123,7 @@ func isQueryingAlertsForStateMetric(metricName string, matchers ...*labels.Match
 	}
 
 	for _, matcher := range matchers {
-		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-		if matcher.Name == labels.MetricName && matcher.Matches(alertForStateMetricName) {
+		if matcher.Name == model.MetricNameLabel && matcher.Matches(alertForStateMetricName) {
 			return true
 		}
 	}

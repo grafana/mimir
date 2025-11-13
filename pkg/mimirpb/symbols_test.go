@@ -7,6 +7,7 @@ import (
 	"math/rand"
 	"testing"
 
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	writev2 "github.com/prometheus/prometheus/prompb/io/prometheus/write/v2"
 	"github.com/stretchr/testify/require"
@@ -157,8 +158,7 @@ func desymbolizeLabelsDirect(labelRefs []uint32, symbols []string) ([]LabelAdapt
 	for i := 0; i < len(labelRefs); i += 2 {
 		las[i/2].Name = symbols[labelRefs[i]]
 		las[i/2].Value = symbols[labelRefs[i+1]]
-		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-		if las[i/2].Name == labels.MetricName {
+		if las[i/2].Name == model.MetricNameLabel {
 			name = las[i/2].Value
 		}
 	}

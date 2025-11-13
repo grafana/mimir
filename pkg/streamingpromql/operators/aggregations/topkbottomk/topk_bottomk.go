@@ -9,7 +9,7 @@ import (
 	"math"
 	"slices"
 
-	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/util/annotations"
 
@@ -29,8 +29,7 @@ func New(
 	expressionPosition posrange.PositionRange,
 ) types.InstantVectorOperator {
 	if without {
-		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-		grouping = append(grouping, labels.MetricName)
+		grouping = append(grouping, model.MetricNameLabel)
 	}
 
 	slices.Sort(grouping)

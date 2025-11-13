@@ -12,7 +12,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	promtest "github.com/prometheus/client_golang/prometheus/testutil"
-	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/stretchr/testify/require"
 
@@ -158,8 +158,7 @@ func TestQueryBlockerMiddleware_RemoteRead(t *testing.T) {
 	// All tests run on the same query.
 	query := &prompb.Query{
 		Matchers: []*prompb.LabelMatcher{
-			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-			{Type: prompb.LabelMatcher_EQ, Name: labels.MetricName, Value: "metric_counter"},
+			{Type: prompb.LabelMatcher_EQ, Name: model.MetricNameLabel, Value: "metric_counter"},
 			{Type: prompb.LabelMatcher_RE, Name: "pod", Value: "app-.*"},
 		},
 	}

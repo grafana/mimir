@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
@@ -193,9 +194,8 @@ func TestInstantVectorSelector_NativeHistogramPointerHandling(t *testing.T) {
 					Queryable: storage,
 					TimeRange: types.NewRangeQueryTimeRange(startTime, endTime, time.Minute),
 					Matchers: []types.Matcher{{
-						Type: labels.MatchEqual,
-						//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-						Name:  labels.MetricName,
+						Type:  labels.MatchEqual,
+						Name:  model.MetricNameLabel,
 						Value: "my_metric",
 					}},
 					LookbackDelta:            5 * time.Minute,
@@ -242,9 +242,8 @@ func TestInstantVectorSelector_SliceSizing(t *testing.T) {
 					Queryable: storage,
 					TimeRange: types.NewRangeQueryTimeRange(startTime, endTime, time.Minute),
 					Matchers: []types.Matcher{{
-						Type: labels.MatchEqual,
-						//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-						Name:  labels.MetricName,
+						Type:  labels.MatchEqual,
+						Name:  model.MetricNameLabel,
 						Value: "metric",
 					}},
 					LookbackDelta:            5 * time.Minute,
@@ -258,10 +257,8 @@ func TestInstantVectorSelector_SliceSizing(t *testing.T) {
 			require.NoError(t, err)
 
 			expectedSeries := []types.SeriesMetadata{
-				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-				{Labels: labels.FromStrings(labels.MetricName, "metric", "type", "float")},
-				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-				{Labels: labels.FromStrings(labels.MetricName, "metric", "type", "histogram")},
+				{Labels: labels.FromStrings(model.MetricNameLabel, "metric", "type", "float")},
+				{Labels: labels.FromStrings(model.MetricNameLabel, "metric", "type", "histogram")},
 			}
 
 			require.Equal(t, expectedSeries, series)

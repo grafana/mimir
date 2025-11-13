@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/go-kit/log"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/stretchr/testify/require"
@@ -20,8 +21,7 @@ func TestGatherIndexHealthStats(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	spec1 := block.SeriesSpec{
-		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-		Labels: labels.FromStrings(labels.MetricName, "asdf"),
+		Labels: labels.FromStrings(model.MetricNameLabel, "asdf"),
 		Chunks: []chunks.Meta{
 			must(chunks.ChunkFromSamples([]chunks.Sample{
 				test.Sample{TS: 10, Val: 11},
@@ -31,8 +31,7 @@ func TestGatherIndexHealthStats(t *testing.T) {
 		},
 	}
 	spec2 := block.SeriesSpec{
-		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-		Labels: labels.FromStrings(labels.MetricName, "zxcv", "foo", "bar"),
+		Labels: labels.FromStrings(model.MetricNameLabel, "zxcv", "foo", "bar"),
 		Chunks: []chunks.Meta{
 			must(chunks.ChunkFromSamples([]chunks.Sample{
 				test.Sample{TS: 40, Hist: test.GenerateTestHistogram(1)},

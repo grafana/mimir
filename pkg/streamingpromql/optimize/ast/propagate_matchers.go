@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
 
@@ -261,8 +262,7 @@ func combineMatchers(matchers, matchersToAdd []*labels.Matcher, labelsSet string
 }
 
 func isMetricNameMatcher(m *labels.Matcher) bool {
-	//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-	return m.Name == labels.MetricName
+	return m.Name == model.MetricNameLabel
 }
 
 type stringSet map[string]struct{}

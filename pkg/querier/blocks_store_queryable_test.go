@@ -32,6 +32,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
@@ -71,16 +72,13 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 	)
 
 	var (
-		block1 = ulid.MustNew(1, nil)
-		block2 = ulid.MustNew(2, nil)
-		block3 = ulid.MustNew(3, nil)
-		block4 = ulid.MustNew(4, nil)
-		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-		metricNameLabel = labels.FromStrings(labels.MetricName, metricName)
-		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-		series1Label = labels.FromStrings(labels.MetricName, metricName, "series", "1")
-		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-		series2Label     = labels.FromStrings(labels.MetricName, metricName, "series", "2")
+		block1           = ulid.MustNew(1, nil)
+		block2           = ulid.MustNew(2, nil)
+		block3           = ulid.MustNew(3, nil)
+		block4           = ulid.MustNew(4, nil)
+		metricNameLabel  = labels.FromStrings(model.MetricNameLabel, metricName)
+		series1Label     = labels.FromStrings(model.MetricNameLabel, metricName, "series", "1")
+		series2Label     = labels.FromStrings(model.MetricNameLabel, metricName, "series", "2")
 		noOpQueryLimiter = limiter.NewQueryLimiter(0, 0, 0, 0, nil)
 	)
 
@@ -1701,8 +1699,7 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 			}
 
 			matchers := []*labels.Matcher{
-				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-				labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, metricName),
+				labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, metricName),
 			}
 			if testData.queryShardID != "" {
 				matchers = append(matchers, labels.MustNewMatcher(labels.MatchEqual, sharding.ShardLabel, testData.queryShardID))
@@ -1794,8 +1791,7 @@ func TestBlocksStoreQuerier_Select_ClosedBeforeSelectFinishes(t *testing.T) {
 			&storeGatewayClientMock{
 				remoteAddr: "1.1.1.1",
 				mockedSeriesResponses: newSeriesResponseBuilder().
-					//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-					addValue(labels.FromStrings(labels.MetricName, "some_metric"), minT, 1).
+					addValue(labels.FromStrings(model.MetricNameLabel, "some_metric"), minT, 1).
 					addBlocks(block).
 					build(),
 			}: {block},
@@ -1828,8 +1824,7 @@ func TestBlocksStoreQuerier_Select_ClosedBeforeSelectFinishes(t *testing.T) {
 	// this would likely happen while the Select call is still in progress (eg. because the query was cancelled).
 	require.NoError(t, querier.Close())
 
-	//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-	seriesSet := querier.Select(ctx, true, &storage.SelectHints{Start: minT, End: maxT}, labels.MustNewMatcher(labels.MatchRegexp, labels.MetricName, ".*"))
+	seriesSet := querier.Select(ctx, true, &storage.SelectHints{Start: minT, End: maxT}, labels.MustNewMatcher(labels.MatchRegexp, model.MetricNameLabel, ".*"))
 	require.EqualError(t, seriesSet.Err(), "querier already closed")
 
 	// We also expect that the background goroutine launched by the stream reader is either never started or stopped correctly, and this should be
@@ -1939,8 +1934,7 @@ func TestBlocksStoreQuerier_ShouldReturnContextCanceledIfContextWasCanceledWhile
 		}()
 
 		sp := &storage.SelectHints{Start: minT, End: maxT}
-		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-		set := q.Select(ctx, true, sp, labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, metricName))
+		set := q.Select(ctx, true, sp, labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, metricName))
 
 		// We expect the returned error to be context.Canceled and not a gRPC error.
 		assert.ErrorIs(t, set.Err(), context.Canceled)
@@ -1988,8 +1982,7 @@ func TestBlocksStoreQuerier_ShouldReturnContextCanceledIfContextWasCanceledWhile
 			close(continueExecution)
 		}()
 
-		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-		_, _, err := q.LabelNames(ctx, &storage.LabelHints{}, labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, metricName))
+		_, _, err := q.LabelNames(ctx, &storage.LabelHints{}, labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, metricName))
 
 		// We expect the returned error to be context.Canceled and not a gRPC error.
 		assert.ErrorIs(t, err, context.Canceled)
@@ -2037,8 +2030,7 @@ func TestBlocksStoreQuerier_ShouldReturnContextCanceledIfContextWasCanceledWhile
 			close(continueExecution)
 		}()
 
-		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-		_, _, err := q.LabelValues(ctx, labels.MetricName, &storage.LabelHints{})
+		_, _, err := q.LabelValues(ctx, model.MetricNameLabel, &storage.LabelHints{})
 
 		// We expect the returned error to be context.Canceled and not a gRPC error.
 		assert.ErrorIs(t, err, context.Canceled)
@@ -2119,8 +2111,7 @@ func TestBlocksStoreQuerier_Select_cancelledContext(t *testing.T) {
 			}
 
 			matchers := []*labels.Matcher{
-				//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-				labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, metricName),
+				labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, metricName),
 			}
 
 			sp := &storage.SelectHints{Start: minT, End: maxT}
@@ -2146,14 +2137,12 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 		block3  = ulid.MustNew(3, nil)
 		block4  = ulid.MustNew(4, nil)
 		series1 = labels.FromMap(map[string]string{
-			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-			labels.MetricName: metricName + "_1",
-			"series1":         "1",
+			model.MetricNameLabel: metricName + "_1",
+			"series1":             "1",
 		})
 		series2 = labels.FromMap(map[string]string{
-			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-			labels.MetricName: metricName + "_2",
-			"series2":         "1",
+			model.MetricNameLabel: metricName + "_2",
+			"series2":             "1",
 		})
 	)
 
@@ -2199,17 +2188,15 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 							Hints:    mockNamesHints(block1, block2),
 						},
 						mockedLabelValuesResponse: &storepb.LabelValuesResponse{
-							//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-							Values:   valuesFromSeries(labels.MetricName, series1, series2),
+							Values:   valuesFromSeries(model.MetricNameLabel, series1, series2),
 							Warnings: []string{},
 							Hints:    mockValuesHints(block1, block2),
 						},
 					}: {block1, block2},
 				},
 			},
-			expectedLabelNames: namesFromSeries(series1, series2),
-			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-			expectedLabelValues: valuesFromSeries(labels.MetricName, series1, series2),
+			expectedLabelNames:  namesFromSeries(series1, series2),
+			expectedLabelValues: valuesFromSeries(model.MetricNameLabel, series1, series2),
 		},
 		"multiple store-gateway instances holds the required blocks without overlapping series": {
 			finderResult: bucketindex.Blocks{
@@ -2226,8 +2213,7 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 							Hints:    mockNamesHints(block1),
 						},
 						mockedLabelValuesResponse: &storepb.LabelValuesResponse{
-							//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-							Values:   valuesFromSeries(labels.MetricName, series1),
+							Values:   valuesFromSeries(model.MetricNameLabel, series1),
 							Warnings: []string{},
 							Hints:    mockValuesHints(block1),
 						},
@@ -2240,17 +2226,15 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 							Hints:    mockNamesHints(block2),
 						},
 						mockedLabelValuesResponse: &storepb.LabelValuesResponse{
-							//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-							Values:   valuesFromSeries(labels.MetricName, series2),
+							Values:   valuesFromSeries(model.MetricNameLabel, series2),
 							Warnings: []string{},
 							Hints:    mockValuesHints(block2),
 						},
 					}: {block2},
 				},
 			},
-			expectedLabelNames: namesFromSeries(series1, series2),
-			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-			expectedLabelValues: valuesFromSeries(labels.MetricName, series1, series2),
+			expectedLabelNames:  namesFromSeries(series1, series2),
+			expectedLabelValues: valuesFromSeries(model.MetricNameLabel, series1, series2),
 		},
 		"multiple store-gateway instances holds the required blocks with overlapping series (single returned series)": {
 			finderResult: bucketindex.Blocks{
@@ -2267,8 +2251,7 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 							Hints:    mockNamesHints(block1),
 						},
 						mockedLabelValuesResponse: &storepb.LabelValuesResponse{
-							//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-							Values:   valuesFromSeries(labels.MetricName, series1),
+							Values:   valuesFromSeries(model.MetricNameLabel, series1),
 							Warnings: []string{},
 							Hints:    mockValuesHints(block1),
 						},
@@ -2281,17 +2264,15 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 							Hints:    mockNamesHints(block2),
 						},
 						mockedLabelValuesResponse: &storepb.LabelValuesResponse{
-							//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-							Values:   valuesFromSeries(labels.MetricName, series1),
+							Values:   valuesFromSeries(model.MetricNameLabel, series1),
 							Warnings: []string{},
 							Hints:    mockValuesHints(block2),
 						},
 					}: {block2},
 				},
 			},
-			expectedLabelNames: namesFromSeries(series1),
-			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-			expectedLabelValues: valuesFromSeries(labels.MetricName, series1),
+			expectedLabelNames:  namesFromSeries(series1),
+			expectedLabelValues: valuesFromSeries(model.MetricNameLabel, series1),
 		},
 		"multiple store-gateway instances holds the required blocks with overlapping series (multiple returned series)": {
 			finderResult: bucketindex.Blocks{
@@ -2311,8 +2292,7 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 							Hints:    mockNamesHints(block1),
 						},
 						mockedLabelValuesResponse: &storepb.LabelValuesResponse{
-							//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-							Values:   valuesFromSeries(labels.MetricName, series1, series2),
+							Values:   valuesFromSeries(model.MetricNameLabel, series1, series2),
 							Warnings: []string{},
 							Hints:    mockValuesHints(block1),
 						},
@@ -2325,8 +2305,7 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 							Hints:    mockNamesHints(block2),
 						},
 						mockedLabelValuesResponse: &storepb.LabelValuesResponse{
-							//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-							Values:   valuesFromSeries(labels.MetricName, series1),
+							Values:   valuesFromSeries(model.MetricNameLabel, series1),
 							Warnings: []string{},
 							Hints:    mockValuesHints(block2),
 						},
@@ -2339,17 +2318,15 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 							Hints:    mockNamesHints(block3),
 						},
 						mockedLabelValuesResponse: &storepb.LabelValuesResponse{
-							//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-							Values:   valuesFromSeries(labels.MetricName, series2),
+							Values:   valuesFromSeries(model.MetricNameLabel, series2),
 							Warnings: []string{},
 							Hints:    mockValuesHints(block3),
 						},
 					}: {block3},
 				},
 			},
-			expectedLabelNames: namesFromSeries(series1, series2),
-			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-			expectedLabelValues: valuesFromSeries(labels.MetricName, series1, series2),
+			expectedLabelNames:  namesFromSeries(series1, series2),
+			expectedLabelValues: valuesFromSeries(model.MetricNameLabel, series1, series2),
 			expectedMetrics: `
 				# HELP cortex_querier_storegateway_instances_hit_per_query Number of store-gateway instances hit for a single query.
 				# TYPE cortex_querier_storegateway_instances_hit_per_query histogram
@@ -2394,8 +2371,7 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 							Hints:    mockNamesHints(block1),
 						},
 						mockedLabelValuesResponse: &storepb.LabelValuesResponse{
-							//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-							Values:   valuesFromSeries(labels.MetricName, series1),
+							Values:   valuesFromSeries(model.MetricNameLabel, series1),
 							Warnings: []string{},
 							Hints:    mockValuesHints(block1),
 						},
@@ -2424,8 +2400,7 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 							Hints:    mockNamesHints(block1),
 						},
 						mockedLabelValuesResponse: &storepb.LabelValuesResponse{
-							//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-							Values:   valuesFromSeries(labels.MetricName, series1),
+							Values:   valuesFromSeries(model.MetricNameLabel, series1),
 							Warnings: []string{},
 							Hints:    mockValuesHints(block1),
 						},
@@ -2438,8 +2413,7 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 							Hints:    mockNamesHints(block2),
 						},
 						mockedLabelValuesResponse: &storepb.LabelValuesResponse{
-							//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-							Values:   valuesFromSeries(labels.MetricName, series2),
+							Values:   valuesFromSeries(model.MetricNameLabel, series2),
 							Warnings: []string{},
 							Hints:    mockValuesHints(block2),
 						},
@@ -2472,8 +2446,7 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 							Hints:    mockNamesHints(block1),
 						},
 						mockedLabelValuesResponse: &storepb.LabelValuesResponse{
-							//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-							Values:   valuesFromSeries(labels.MetricName, series1),
+							Values:   valuesFromSeries(model.MetricNameLabel, series1),
 							Warnings: []string{},
 							Hints:    mockValuesHints(block1),
 						},
@@ -2486,8 +2459,7 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 							Hints:    mockNamesHints(block2),
 						},
 						mockedLabelValuesResponse: &storepb.LabelValuesResponse{
-							//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-							Values:   valuesFromSeries(labels.MetricName, series2),
+							Values:   valuesFromSeries(model.MetricNameLabel, series2),
 							Warnings: []string{},
 							Hints:    mockValuesHints(block2),
 						},
@@ -2503,8 +2475,7 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 							Hints:    mockNamesHints(block3),
 						},
 						mockedLabelValuesResponse: &storepb.LabelValuesResponse{
-							//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-							Values:   valuesFromSeries(labels.MetricName, series1, series2),
+							Values:   valuesFromSeries(model.MetricNameLabel, series1, series2),
 							Warnings: []string{},
 							Hints:    mockValuesHints(block3),
 						},
@@ -2527,9 +2498,8 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 					}: {block4},
 				},
 			},
-			expectedLabelNames: namesFromSeries(series1, series2),
-			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-			expectedLabelValues: valuesFromSeries(labels.MetricName, series1, series2),
+			expectedLabelNames:  namesFromSeries(series1, series2),
+			expectedLabelValues: valuesFromSeries(model.MetricNameLabel, series1, series2),
 			expectedMetrics: `
 				# HELP cortex_querier_storegateway_instances_hit_per_query Number of store-gateway instances hit for a single query.
 				# TYPE cortex_querier_storegateway_instances_hit_per_query histogram
@@ -2582,17 +2552,15 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 							Hints:    mockNamesHints(block1),
 						},
 						mockedLabelValuesResponse: &storepb.LabelValuesResponse{
-							//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-							Values:   valuesFromSeries(labels.MetricName, series1),
+							Values:   valuesFromSeries(model.MetricNameLabel, series1),
 							Warnings: []string{},
 							Hints:    mockValuesHints(block1),
 						},
 					}: {block1},
 				},
 			},
-			expectedLabelNames: namesFromSeries(series1),
-			//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-			expectedLabelValues: valuesFromSeries(labels.MetricName, series1),
+			expectedLabelNames:  namesFromSeries(series1),
+			expectedLabelValues: valuesFromSeries(model.MetricNameLabel, series1),
 			expectedMetrics: `
 				# HELP cortex_querier_storegateway_instances_hit_per_query Number of store-gateway instances hit for a single query.
 				# TYPE cortex_querier_storegateway_instances_hit_per_query histogram
@@ -2680,8 +2648,7 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 				}
 
 				if testFunc == "LabelValues" {
-					//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-					values, warnings, err := q.LabelValues(ctx, labels.MetricName, &storage.LabelHints{})
+					values, warnings, err := q.LabelValues(ctx, model.MetricNameLabel, &storage.LabelHints{})
 					if testData.expectedErrRegex != "" {
 						require.Regexp(t, testData.expectedErrRegex, err.Error())
 						continue
@@ -2740,8 +2707,7 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 				case "LabelNames":
 					_, _, err = q.LabelNames(ctx, &storage.LabelHints{})
 				case "LabelValues":
-					//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-					_, _, err = q.LabelValues(ctx, labels.MetricName, &storage.LabelHints{})
+					_, _, err = q.LabelValues(ctx, model.MetricNameLabel, &storage.LabelHints{})
 				}
 
 				require.Error(t, err)

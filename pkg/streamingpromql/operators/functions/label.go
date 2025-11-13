@@ -59,8 +59,7 @@ func LabelJoinFactory(dstLabelOp, separatorOp types.StringOperator, srcLabelOps 
 			}
 		}
 
-		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-		if enableDelayedNameRemoval && dst == labels.MetricName {
+		if enableDelayedNameRemoval && dst == model.MetricNameLabel {
 			for i := range seriesMetadata {
 				seriesMetadata[i].DropName = false
 			}
@@ -102,8 +101,7 @@ func LabelReplaceFactory(dstLabelOp, replacementOp, srcLabelOp, regexOp types.St
 			}
 		}
 
-		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-		if enableDelayedNameRemoval && dst == labels.MetricName {
+		if enableDelayedNameRemoval && dst == model.MetricNameLabel {
 			for i := range seriesMetadata {
 				seriesMetadata[i].DropName = false
 			}

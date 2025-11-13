@@ -14,7 +14,6 @@ import (
 	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/services"
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
 	grpcstatus "google.golang.org/grpc/status"
@@ -106,8 +105,7 @@ func TestNewPerUserMetadataLimitError(t *testing.T) {
 
 func TestNewPerMetricSeriesLimitError(t *testing.T) {
 	limit := 100
-	//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-	labels := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "testmetric"}, {Name: "foo", Value: "biz"}}
+	labels := []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "testmetric"}, {Name: "foo", Value: "biz"}}
 	err := newPerMetricSeriesLimitReachedError(limit, labels)
 	expectedErrMsg := fmt.Sprintf("%s This is for series %s",
 		globalerror.MaxSeriesPerMetric.MessageWithPerTenantLimitConfig(
@@ -146,8 +144,7 @@ func TestNewPerMetricMetadataLimitError(t *testing.T) {
 }
 
 func TestNewSampleError(t *testing.T) {
-	//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-	seriesLabels := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "test"}}
+	seriesLabels := []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "test"}}
 	tests := map[string]struct {
 		err         error
 		expectedMsg string
@@ -189,8 +186,7 @@ func TestNewSampleError(t *testing.T) {
 }
 
 func TestNewExemplarError(t *testing.T) {
-	//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-	seriesLabels := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "test"}}
+	seriesLabels := []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "test"}}
 	exemplarsLabels := []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}}
 	tests := map[string]struct {
 		err         error
@@ -221,8 +217,7 @@ func TestNewExemplarError(t *testing.T) {
 }
 
 func TestNewTSDBIngestExemplarErr(t *testing.T) {
-	//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-	seriesLabels := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "test"}}
+	seriesLabels := []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "test"}}
 	exemplarsLabels := []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}}
 	anotherErr := errors.New("another error")
 	err := newTSDBIngestExemplarErr(anotherErr, timestamp, seriesLabels, exemplarsLabels)
@@ -347,8 +342,7 @@ func TestWrapOrAnnotateWithUser(t *testing.T) {
 	require.NotErrorIs(t, annotatedUnsafeErr, annotatingErr)
 	require.Nil(t, errors.Unwrap(annotatedUnsafeErr))
 
-	//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-	metricLabelAdapters := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "test"}}
+	metricLabelAdapters := []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "test"}}
 	wrappingErr := newSampleTimestampTooOldError(timestamp, metricLabelAdapters)
 	expectedWrappedErrMsg := fmt.Sprintf("user=%s: %s", userID, wrappingErr.Error())
 	wrappedSafeErr := wrapOrAnnotateWithUser(wrappingErr, userID)
@@ -362,8 +356,7 @@ func TestMapPushErrorToErrorWithStatus(t *testing.T) {
 	const originalMsg = "this is an error"
 	originalErr := errors.New(originalMsg)
 	family := "testmetric"
-	//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-	labelAdapters := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: family}, {Name: "foo", Value: "biz"}}
+	labelAdapters := []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: family}, {Name: "foo", Value: "biz"}}
 	timestamp := model.Time(1)
 
 	testCases := map[string]struct {

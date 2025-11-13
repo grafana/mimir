@@ -5,6 +5,7 @@ package plan
 import (
 	"context"
 
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
@@ -160,8 +161,7 @@ func getSelectorType(node planning.Node) SelectorType {
 	}
 
 	for _, matcher := range matchers {
-		//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-		if matcher.Name == labels.MetricName && matcher.Type == labels.MatchEqual {
+		if matcher.Name == model.MetricNameLabel && matcher.Type == labels.MatchEqual {
 			return SelectorWithExactName
 		}
 	}

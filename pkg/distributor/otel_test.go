@@ -635,8 +635,7 @@ func TestOTelMetricsToTimeSeries(t *testing.T) {
 			var targetInfo mimirpb.PreallocTimeseries
 			for i := range mimirTS {
 				for _, lbl := range mimirTS[i].Labels {
-					//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-					if lbl.Name != labels.MetricName {
+					if lbl.Name != model.MetricNameLabel {
 						continue
 					}
 
@@ -710,8 +709,7 @@ func TestConvertOTelHistograms(t *testing.T) {
 			for i := range mimirTS {
 				var metricName string
 				for _, lbl := range mimirTS[i].Labels {
-					//nolint:staticcheck // SA1019: labels.MetricName is deprecated.
-					if lbl.Name == labels.MetricName {
+					if lbl.Name == model.MetricNameLabel {
 						metricName = lbl.Value
 						break
 					}
