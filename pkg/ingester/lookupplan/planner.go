@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/grafana/dskit/tracing"
-	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"go.opentelemetry.io/otel/attribute"
@@ -124,8 +123,17 @@ func (p CostBasedPlanner) PlanIndexLookup(ctx context.Context, inPlan index.Look
 		return inPlan, errTooManyMatchers
 	}
 
-	allPlansUnordered := p.generatePlans(ctx, p.stats, matchers, memPools, shard)
+	allPlansUnordered := p.generatePlansBranchAndBound(ctx, p.stats, matchers, memPools, shard)
 
+	var lookupPlan index.LookupPlan
+	allPlans, lookupPlan = p.chooseBestPlan(memPools, allPlansUnordered, allPlans)
+	if lookupPlan == nil {
+		return nil, fmt.Errorf("no plan with index matchers found out of %d plans", len(allPlans))
+	}
+	return lookupPlan, nil
+}
+
+func (p CostBasedPlanner) chooseBestPlan(memPools *costBasedPlannerPools, allPlansUnordered []plan, allPlans []plan) ([]plan, index.LookupPlan) {
 	// calculate the cost of all plans once, instead of calculating them every time we compare during sort
 	allPlansWithCosts := memPools.plansWithCostPool.Get(len(allPlansUnordered))
 	for i, p := range allPlansUnordered {
@@ -147,26 +155,18 @@ func (p CostBasedPlanner) PlanIndexLookup(ctx context.Context, inPlan index.Look
 	for i, p := range allPlans {
 		if len(p.IndexMatchers()) > 0 {
 			allPlans = allPlans[i:]
-			return p, nil
+			return nil, p
 		}
 	}
-
-	return nil, fmt.Errorf("no plan with index matchers found out of %d plans", len(allPlans))
+	return allPlans, nil
 }
 
 var errTooManyMatchers = errors.New("too many matchers to generate plans")
 
-func (p CostBasedPlanner) generatePlans(ctx context.Context, statistics index.Statistics, matchers []*labels.Matcher, pools *costBasedPlannerPools, shard *sharding.ShardSelector) []plan {
-	noopPlan := newScanOnlyPlan(ctx, statistics, p.config, matchers, pools.indexPredicatesPool, shard)
-	allPlans := pools.plansPool.Get(1 << uint(len(matchers)))[:0]
-
-	return generatePredicateCombinations(allPlans, noopPlan, 0)
-}
-
-// generatePredicateCombinations recursively generates all possible plans with their predicates toggled as index or as scan predicates.
+// generateExhaustivePlans recursively generates all possible plans with their predicates toggled as index or as scan predicates.
 // It generates 2^n plans for n predicates and appends them to the plans slice.
 // It also returns the plans slice with all the generated plans.
-func generatePredicateCombinations(plans []plan, currentPlan plan, decidedPredicates int) []plan {
+func generateExhaustivePlans(plans []plan, currentPlan plan, decidedPredicates int) []plan {
 	if decidedPredicates == len(currentPlan.predicates) {
 		return append(plans, currentPlan)
 	}
@@ -174,10 +174,10 @@ func generatePredicateCombinations(plans []plan, currentPlan plan, decidedPredic
 	// Generate two plans, one with the current predicate applied and one without.
 	// This is done by copying the current plan and applying the predicate to the copy.
 	// The copy is then added to the list of plans to be returned.
-	plans = generatePredicateCombinations(plans, currentPlan, decidedPredicates+1)
+	plans = generateExhaustivePlans(plans, currentPlan, decidedPredicates+1)
 
 	p := currentPlan.UseIndexFor(decidedPredicates)
-	plans = generatePredicateCombinations(plans, p, decidedPredicates+1)
+	plans = generateExhaustivePlans(plans, p, decidedPredicates+1)
 
 	return plans
 }
