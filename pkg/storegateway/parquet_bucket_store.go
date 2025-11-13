@@ -100,6 +100,10 @@ type ParquetBucketStore struct {
 	// querierOpts holds the options for the parquet querier. These opts are passed down to the Materializer which is
 	// the one that has information about the row count, chunk size and data size limits.
 	querierOpts []parquet.QuerierOpts
+
+	// Configuration flags to disable label methods
+	disableLabelNames  bool
+	disableLabelValues bool
 }
 
 // NewParquetBucketStore creates a new bucket backed store that implements the store API against
@@ -146,6 +150,8 @@ func NewParquetBucketStore(
 		chunksLimiterFactory: chunksLimiterFactory,
 		seriesLimiterFactory: seriesLimiterFactory,
 		maxSeriesPerBatch:    bucketStoreConfig.StreamingBatchSize,
+		disableLabelNames:    bucketStoreConfig.ParquetDisableLabelNames,
+		disableLabelValues:   bucketStoreConfig.ParquetDisableLabelValues,
 	}
 
 	var querierOpts []parquet.QuerierOpts
@@ -324,6 +330,10 @@ func (s *ParquetBucketStore) Series(req *storepb.SeriesRequest, srv storegateway
 }
 
 func (s *ParquetBucketStore) LabelNames(ctx context.Context, req *storepb.LabelNamesRequest) (*storepb.LabelNamesResponse, error) {
+	if s.disableLabelNames {
+		return nil, httpgrpc.Error(http.StatusUnprocessableEntity, "LabelNames method is disabled")
+	}
+
 	reqSeriesMatchers, err := storepb.MatchersToPromMatchers(req.Matchers...)
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, errors.Wrap(err, "translate request labels matchers").Error())
@@ -433,6 +443,10 @@ func (s *ParquetBucketStore) LabelNames(ctx context.Context, req *storepb.LabelN
 }
 
 func (s *ParquetBucketStore) LabelValues(ctx context.Context, req *storepb.LabelValuesRequest) (*storepb.LabelValuesResponse, error) {
+	if s.disableLabelValues {
+		return nil, httpgrpc.Error(http.StatusUnprocessableEntity, "LabelValues method is disabled")
+	}
+
 	reqSeriesMatchers, err := storepb.MatchersToPromMatchers(req.Matchers...)
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, errors.Wrap(err, "translate request labels matchers").Error())

@@ -458,6 +458,8 @@ type BucketStoreConfig struct {
 	ParquetMaxRowCount       uint64 `yaml:"parquet_max_row_count" category:"advanced"`
 	ParquetMaxChunkSizeBytes uint64 `yaml:"parquet_max_chunk_size_bytes" category:"advanced"`
 	ParquetMaxDataSizeBytes  uint64 `yaml:"parquet_max_data_size_bytes" category:"advanced"`
+	ParquetDisableLabelNames bool   `yaml:"parquet_disable_label_names" category:"advanced"`
+	ParquetDisableLabelValues bool  `yaml:"parquet_disable_label_values" category:"advanced"`
 }
 
 // RegisterFlags registers the BucketStore flags
@@ -491,6 +493,8 @@ func (cfg *BucketStoreConfig) RegisterFlags(f *flag.FlagSet) {
 	f.Uint64Var(&cfg.ParquetMaxRowCount, "blocks-storage.bucket-store.parquet-max-row-count", 0, "Maximum number of rows in a parquet file. If the number of rows exceeds this value the query will stop with limit error.")
 	f.Uint64Var(&cfg.ParquetMaxChunkSizeBytes, "blocks-storage.bucket-store.parquet-max-chunk-size-bytes", 0, "Maximum size in bytes that can be fetched from the parquet chunks file. If the size exceeds this value the query will stop with limit error.")
 	f.Uint64Var(&cfg.ParquetMaxDataSizeBytes, "blocks-storage.bucket-store.parquet-max-data-size-bytes", 0, "Maximum size in bytes that can be fetched from the parquet labels and chunks data files combined in a single query. If the size exceeds this value the query will stop with limit error.")
+	f.BoolVar(&cfg.ParquetDisableLabelNames, "blocks-storage.bucket-store.parquet-disable-label-names", false, "When enabled, ParquetBucketStore LabelNames method will always fail with HTTP 422 status.")
+	f.BoolVar(&cfg.ParquetDisableLabelValues, "blocks-storage.bucket-store.parquet-disable-label-values", false, "When enabled, ParquetBucketStore LabelValues method will always fail with HTTP 422 status.")
 }
 
 // Validate the config.
