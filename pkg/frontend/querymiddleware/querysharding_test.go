@@ -11,10 +11,8 @@ import (
 	"fmt"
 	"math"
 	"runtime"
-	"slices"
 	"sort"
 	"strconv"
-	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -41,7 +39,6 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier"
 	"github.com/grafana/mimir/pkg/storage/sharding"
-	"github.com/grafana/mimir/pkg/streamingpromql/compat"
 	"github.com/grafana/mimir/pkg/util"
 )
 
@@ -145,16 +142,16 @@ func TestQuerySharding_Correctness(t *testing.T) {
 		reqs := []MetricsQueryRequest{
 			&PrometheusInstantQueryRequest{
 				path:      "/query",
-				time:      util.TimeToMillis(end),
+				time:      util.TimeToMillis(shardingtest.End),
 				queryExpr: parseQuery(t, testData.Query),
 			},
 		}
 		if !testData.NoRangeQuery {
 			reqs = append(reqs, &PrometheusRangeQueryRequest{
 				path:      "/query_range",
-				start:     util.TimeToMillis(start),
-				end:       util.TimeToMillis(end),
-				step:      step.Milliseconds(),
+				start:     util.TimeToMillis(shardingtest.Start),
+				end:       util.TimeToMillis(shardingtest.End),
+				step:      shardingtest.Step.Milliseconds(),
 				queryExpr: parseQuery(t, testData.Query),
 			})
 		}
@@ -228,11 +225,11 @@ func TestQuerySharding_NonMonotonicHistogramBuckets(t *testing.T) {
 
 	var series []storage.Series
 	for i := 0; i < 100; i++ {
-		series = append(series, testdatagen.NewSeries(labels.FromStrings(labels.MetricName, "metric_histogram_bucket", "app", strconv.Itoa(i), "le", "10"), start.Add(-lookbackDelta), end, step, arithmeticSequence(1)))
-		series = append(series, testdatagen.NewSeries(labels.FromStrings(labels.MetricName, "metric_histogram_bucket", "app", strconv.Itoa(i), "le", "20"), start.Add(-lookbackDelta), end, step, arithmeticSequence(3)))
-		series = append(series, testdatagen.NewSeries(labels.FromStrings(labels.MetricName, "metric_histogram_bucket", "app", strconv.Itoa(i), "le", "30"), start.Add(-lookbackDelta), end, step, arithmeticSequence(3)))
-		series = append(series, testdatagen.NewSeries(labels.FromStrings(labels.MetricName, "metric_histogram_bucket", "app", strconv.Itoa(i), "le", "40"), start.Add(-lookbackDelta), end, step, arithmeticSequence(3)))
-		series = append(series, testdatagen.NewSeries(labels.FromStrings(labels.MetricName, "metric_histogram_bucket", "app", strconv.Itoa(i), "le", "+Inf"), start.Add(-lookbackDelta), end, step, arithmeticSequence(3)))
+		series = append(series, testdatagen.NewSeries(labels.FromStrings(labels.MetricName, "metric_histogram_bucket", "app", strconv.Itoa(i), "le", "10"), start.Add(-lookbackDelta), end, step, testdatagen.ArithmeticSequence(1)))
+		series = append(series, testdatagen.NewSeries(labels.FromStrings(labels.MetricName, "metric_histogram_bucket", "app", strconv.Itoa(i), "le", "20"), start.Add(-lookbackDelta), end, step, testdatagen.ArithmeticSequence(3)))
+		series = append(series, testdatagen.NewSeries(labels.FromStrings(labels.MetricName, "metric_histogram_bucket", "app", strconv.Itoa(i), "le", "30"), start.Add(-lookbackDelta), end, step, testdatagen.ArithmeticSequence(3)))
+		series = append(series, testdatagen.NewSeries(labels.FromStrings(labels.MetricName, "metric_histogram_bucket", "app", strconv.Itoa(i), "le", "40"), start.Add(-lookbackDelta), end, step, testdatagen.ArithmeticSequence(3)))
+		series = append(series, testdatagen.NewSeries(labels.FromStrings(labels.MetricName, "metric_histogram_bucket", "app", strconv.Itoa(i), "le", "+Inf"), start.Add(-lookbackDelta), end, step, testdatagen.ArithmeticSequence(3)))
 	}
 
 	// Create a queryable on the fixtures.
@@ -414,240 +411,60 @@ func labelsForShardsGenerator(base []labels.Label, shards uint64) func(shard uin
 	}
 }
 
-type queryShardingFunctionCorrectnessTest struct {
-	fn         string
-	args       []string
-	rangeQuery bool
-	tpl        string
-	allowedErr error
-}
-
 // TestQuerySharding_FunctionCorrectness is the old test that probably at some point inspired the TestQuerySharding_Correctness,
 // we keep it here since it adds more test cases.
 func TestQuerySharding_FunctionCorrectness(t *testing.T) {
-	// We want to test experimental functions too.
-	t.Cleanup(func() { parser.EnableExperimentalFunctions = false })
-	parser.EnableExperimentalFunctions = true
+	shardingtest.RunFunctionCorrectnessTests(t, func(t *testing.T, expr string, numShards int, allowedErr error, queryable storage.Queryable) {
+		runForEngines(t, func(t *testing.T, opts promql.EngineOpts, eng promql.QueryEngine) {
+			req := &PrometheusRangeQueryRequest{
+				path:      "/query_range",
+				start:     util.TimeToMillis(shardingtest.Start),
+				end:       util.TimeToMillis(shardingtest.End),
+				step:      shardingtest.Step.Milliseconds(),
+				queryExpr: parseQuery(t, expr),
+			}
 
-	testsForBoth := []queryShardingFunctionCorrectnessTest{
-		{fn: "count_over_time", rangeQuery: true},
-		{fn: "delta", rangeQuery: true},
-		{fn: "increase", rangeQuery: true},
-		{fn: "rate", rangeQuery: true},
-		{fn: "resets", rangeQuery: true},
-		{fn: "sort_by_label", allowedErr: compat.NotSupportedError{}},
-		{fn: "sort_by_label_desc", allowedErr: compat.NotSupportedError{}},
-		{fn: "first_over_time", rangeQuery: true},
-		{fn: "last_over_time", rangeQuery: true},
-		{fn: "present_over_time", rangeQuery: true},
-		{fn: "timestamp"},
-		{fn: "label_replace", args: []string{`"fuzz"`, `"$1"`, `"foo"`, `"b(.*)"`}},
-		{fn: "label_join", args: []string{`"fuzz"`, `","`, `"foo"`, `"bar"`}},
-		{fn: "ts_of_first_over_time", rangeQuery: true},
-		{fn: "ts_of_last_over_time", rangeQuery: true},
-	}
-	testsForFloatsOnly := []queryShardingFunctionCorrectnessTest{
-		{fn: "abs"},
-		{fn: "avg_over_time", rangeQuery: true},
-		{fn: "ceil"},
-		{fn: "clamp", args: []string{"5", "10"}},
-		{fn: "clamp_max", args: []string{"5"}},
-		{fn: "clamp_min", args: []string{"5"}},
-		{fn: "changes", rangeQuery: true},
-		{fn: "days_in_month"},
-		{fn: "day_of_month"},
-		{fn: "day_of_week"},
-		{fn: "day_of_year"},
-		{fn: "deriv", rangeQuery: true},
-		{fn: "exp"},
-		{fn: "floor"},
-		{fn: "hour"},
-		{fn: "idelta", rangeQuery: true},
-		{fn: "irate", rangeQuery: true},
-		{fn: "ln"},
-		{fn: "log10"},
-		{fn: "log2"},
-		{fn: "max_over_time", rangeQuery: true},
-		{fn: "min_over_time", rangeQuery: true},
-		{fn: "minute"},
-		{fn: "month"},
-		{fn: "round", args: []string{"20"}},
-		{fn: "sort"},
-		{fn: "sort_desc"},
-		{fn: "sqrt"},
-		{fn: "deg"},
-		{fn: "asinh"},
-		{fn: "rad"},
-		{fn: "cosh"},
-		{fn: "atan"},
-		{fn: "atanh"},
-		{fn: "asin"},
-		{fn: "sinh"},
-		{fn: "cos"},
-		{fn: "acosh"},
-		{fn: "sin"},
-		{fn: "tanh"},
-		{fn: "tan"},
-		{fn: "acos"},
-		{fn: "stddev_over_time", rangeQuery: true},
-		{fn: "stdvar_over_time", rangeQuery: true},
-		{fn: "sum_over_time", rangeQuery: true},
-		{fn: "quantile_over_time", rangeQuery: true, tpl: `(<fn>(0.5,bar1{}))`},
-		{fn: "quantile_over_time", rangeQuery: true, tpl: `(<fn>(0.99,bar1{}))`},
-		{fn: "mad_over_time", rangeQuery: true, tpl: `(<fn>(bar1{}))`},
-		{fn: "sgn"},
-		{fn: "predict_linear", args: []string{"1"}, rangeQuery: true},
-		{fn: "double_exponential_smoothing", args: []string{"0.5", "0.7"}, rangeQuery: true},
-		// holt_winters is a backwards compatible alias for double_exponential_smoothing.
-		{fn: "holt_winters", args: []string{"0.5", "0.7"}, rangeQuery: true},
-		{fn: "year"},
-		{fn: "ts_of_min_over_time", rangeQuery: true},
-		{fn: "ts_of_max_over_time", rangeQuery: true},
-	}
-	testsForNativeHistogramsOnly := []queryShardingFunctionCorrectnessTest{
-		{fn: "histogram_count"},
-		{fn: "histogram_sum"},
-		{fn: "histogram_fraction", tpl: `(<fn>(0,0.5,bar1{}))`},
-		{fn: "histogram_quantile", tpl: `(<fn>(0.5,bar1{}))`},
-		{fn: "histogram_stdvar"},
-		{fn: "histogram_stddev"},
-	}
+			reg := prometheus.NewPedanticRegistry()
+			shardingware := newQueryShardingMiddleware(
+				log.NewNopLogger(),
+				eng,
+				mockLimits{totalShards: numShards},
+				0,
+				reg,
+			)
+			downstream := &downstreamHandler{
+				engine:    eng,
+				queryable: queryable,
+			}
 
-	t.Run("floats", func(t *testing.T) {
-		queryableFloats := testdatagen.StorageSeriesQueryable([]storage.Series{
-			testdatagen.NewSeries(labels.FromStrings("__name__", "bar1", "baz", "blip", "bar", "blop", "foo", "barr"), start.Add(-lookbackDelta), end, step, testdatagen.Factor(5)),
-			testdatagen.NewSeries(labels.FromStrings("__name__", "bar1", "baz", "blip", "bar", "blop", "foo", "bazz"), start.Add(-lookbackDelta), end, step, testdatagen.Factor(7)),
-			testdatagen.NewSeries(labels.FromStrings("__name__", "bar1", "baz", "blip", "bar", "blap", "foo", "buzz"), start.Add(-lookbackDelta), end, step, testdatagen.Factor(12)),
-			testdatagen.NewSeries(labels.FromStrings("__name__", "bar1", "baz", "blip", "bar", "blap", "foo", "bozz"), start.Add(-lookbackDelta), end, step, testdatagen.Factor(11)),
-			testdatagen.NewSeries(labels.FromStrings("__name__", "bar1", "baz", "blip", "bar", "blop", "foo", "buzz"), start.Add(-lookbackDelta), end, step, testdatagen.Factor(8)),
-			testdatagen.NewSeries(labels.FromStrings("__name__", "bar1", "baz", "blip", "bar", "blap", "foo", "bazz"), start.Add(-lookbackDelta), end, step, arithmeticSequence(10)),
+			// Run the query without sharding.
+			expectedRes, err := downstream.Do(context.Background(), req)
+			// The Mimir Query Engine doesn't (currently) support experimental functions
+			// so it's expected for it to return an error in some cases. Short-circuit the
+			// rest of this test in that case.
+			if err != nil && allowedErr != nil {
+				require.ErrorAs(t, err, &allowedErr)
+				return
+			}
+
+			require.NoError(t, err)
+			expectedPrometheusRes, ok := expectedRes.GetPrometheusResponse()
+			require.True(t, ok)
+
+			// Ensure the query produces some results.
+			require.NotEmpty(t, expectedPrometheusRes.Data.Result)
+
+			// Run the query with sharding.
+			shardedRes, err := shardingware.Wrap(downstream).Do(user.InjectOrgID(context.Background(), "test"), req)
+			require.Nil(t, err)
+			shardedPrometheusRes, ok := shardedRes.GetPrometheusResponse()
+			require.True(t, ok)
+
+			// Ensure the two results match (float precision can slightly differ, there's no guarantee in PromQL engine too
+			// if you rerun the same query twice).
+			approximatelyEquals(t, expectedPrometheusRes, shardedPrometheusRes)
 		})
-
-		testQueryShardingFunctionCorrectness(t, queryableFloats, append(testsForBoth, testsForFloatsOnly...), testsForNativeHistogramsOnly)
 	})
-
-	t.Run("native histograms", func(t *testing.T) {
-		queryableNativeHistograms := testdatagen.StorageSeriesQueryable([]storage.Series{
-			testdatagen.NewNativeHistogramSeries(labels.FromStrings("__name__", "bar1", "baz", "blip", "bar", "blop", "foo", "barr"), start.Add(-lookbackDelta), end, step, testdatagen.Factor(5)),
-			testdatagen.NewNativeHistogramSeries(labels.FromStrings("__name__", "bar1", "baz", "blip", "bar", "blop", "foo", "bazz"), start.Add(-lookbackDelta), end, step, testdatagen.Factor(7)),
-			testdatagen.NewNativeHistogramSeries(labels.FromStrings("__name__", "bar1", "baz", "blip", "bar", "blap", "foo", "buzz"), start.Add(-lookbackDelta), end, step, testdatagen.Factor(12)),
-			testdatagen.NewNativeHistogramSeries(labels.FromStrings("__name__", "bar1", "baz", "blip", "bar", "blap", "foo", "bozz"), start.Add(-lookbackDelta), end, step, testdatagen.Factor(11)),
-			testdatagen.NewNativeHistogramSeries(labels.FromStrings("__name__", "bar1", "baz", "blip", "bar", "blop", "foo", "buzz"), start.Add(-lookbackDelta), end, step, testdatagen.Factor(8)),
-			testdatagen.NewNativeHistogramSeries(labels.FromStrings("__name__", "bar1", "baz", "blip", "bar", "blap", "foo", "bazz"), start.Add(-lookbackDelta), end, step, arithmeticSequence(10)),
-		})
-
-		testQueryShardingFunctionCorrectness(t, queryableNativeHistograms, append(testsForBoth, testsForNativeHistogramsOnly...), testsForFloatsOnly)
-	})
-}
-
-func testQueryShardingFunctionCorrectness(t *testing.T, queryable storage.Queryable, tests []queryShardingFunctionCorrectnessTest, testsToIgnore []queryShardingFunctionCorrectnessTest) {
-	mkQueries := func(tpl, fn string, testMatrix bool, fArgs []string) []string {
-		if tpl == "" {
-			tpl = `(<fn>(bar1{}<args>))`
-		}
-		result := strings.ReplaceAll(tpl, "<fn>", fn)
-
-		if testMatrix {
-			// turn selectors into ranges
-			result = strings.ReplaceAll(result, "}", "}[1m]")
-		}
-
-		if len(fArgs) > 0 {
-			args := "," + strings.Join(fArgs, ",")
-			result = strings.ReplaceAll(result, "<args>", args)
-		} else {
-			result = strings.ReplaceAll(result, "<args>", "")
-		}
-
-		return []string{
-			result,
-			"sum" + result,
-			"sum by (bar)" + result,
-			"count" + result,
-			"count by (bar)" + result,
-		}
-	}
-	for _, tc := range tests {
-		const numShards = 4
-		for _, query := range mkQueries(tc.tpl, tc.fn, tc.rangeQuery, tc.args) {
-			t.Run(query, func(t *testing.T) {
-				runForEngines(t, func(t *testing.T, opts promql.EngineOpts, eng promql.QueryEngine) {
-					req := &PrometheusRangeQueryRequest{
-						path:      "/query_range",
-						start:     util.TimeToMillis(start),
-						end:       util.TimeToMillis(end),
-						step:      step.Milliseconds(),
-						queryExpr: parseQuery(t, query),
-					}
-
-					reg := prometheus.NewPedanticRegistry()
-					shardingware := newQueryShardingMiddleware(
-						log.NewNopLogger(),
-						eng,
-						mockLimits{totalShards: numShards},
-						0,
-						reg,
-					)
-					downstream := &downstreamHandler{
-						engine:    eng,
-						queryable: queryable,
-					}
-
-					// Run the query without sharding.
-					expectedRes, err := downstream.Do(context.Background(), req)
-					// The Mimir Query Engine doesn't (currently) support experimental functions
-					// so it's expected for it to return an error in some cases. Short-circuit the
-					// rest of this test in that case.
-					if err != nil && tc.allowedErr != nil {
-						require.ErrorAs(t, err, &tc.allowedErr)
-						return
-					}
-
-					require.NoError(t, err)
-					expectedPrometheusRes, ok := expectedRes.GetPrometheusResponse()
-					require.True(t, ok)
-
-					// Ensure the query produces some results.
-					require.NotEmpty(t, expectedPrometheusRes.Data.Result)
-
-					// Run the query with sharding.
-					shardedRes, err := shardingware.Wrap(downstream).Do(user.InjectOrgID(context.Background(), "test"), req)
-					require.Nil(t, err)
-					shardedPrometheusRes, ok := shardedRes.GetPrometheusResponse()
-					require.True(t, ok)
-
-					// Ensure the two results matches (float precision can slightly differ, there's no guarantee in PromQL engine too
-					// if you rerun the same query twice).
-					approximatelyEquals(t, expectedPrometheusRes, shardedPrometheusRes)
-				})
-			})
-		}
-	}
-
-	// Ensure all PromQL functions have been tested.
-	testedFns := make(map[string]struct{}, len(tests))
-	for _, tc := range tests {
-		testedFns[tc.fn] = struct{}{}
-	}
-
-	fnToIgnore := map[string]struct{}{
-		"time":   {},
-		"scalar": {},
-		"vector": {},
-		"pi":     {},
-	}
-	for _, tc := range testsToIgnore {
-		fnToIgnore[tc.fn] = struct{}{}
-	}
-
-	for expectedFn := range promql.FunctionCalls {
-		if _, ok := fnToIgnore[expectedFn]; ok {
-			continue
-		}
-		// It's OK if it's tested. Ignore if it's one of the non parallelizable functions.
-		_, ok := testedFns[expectedFn]
-		assert.Truef(t, ok || slices.Contains(astmapper.NonParallelFuncs, expectedFn), "%s should be tested", expectedFn)
-	}
 }
 
 func TestQuerySharding_ShouldSkipShardingViaOption(t *testing.T) {
@@ -1300,6 +1117,7 @@ func TestQuerySharding_ShouldUseCardinalityEstimate(t *testing.T) {
 	}
 }
 
+// TODO: share this with MQE
 func TestQuerySharding_Annotations(t *testing.T) {
 	numSeries := 10
 	endTime := 100
@@ -1949,15 +1767,6 @@ func (h *downstreamHandler) Do(ctx context.Context, r MetricsQueryRequest) (Resp
 		resp.Infos = infos
 	}
 	return resp, nil
-}
-
-func arithmeticSequence(f float64) testdatagen.Generator {
-	i := 0.
-	return func(int64) float64 {
-		i++
-		res := i + f
-		return res
-	}
 }
 
 // constant returns a generator that generates a constant value

@@ -69,6 +69,15 @@ func Factor(f float64) Generator {
 	}
 }
 
+func ArithmeticSequence(f float64) Generator {
+	i := 0.
+	return func(int64) float64 {
+		i++
+		res := i + f
+		return res
+	}
+}
+
 // Stale wraps the input generator and injects Stale marker between from and to.
 func Stale(from, to time.Time, wrap Generator) Generator {
 	return func(ts int64) float64 {

@@ -9,17 +9,23 @@ package shardingtest
 import (
 	"fmt"
 	"math"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/grafana/mimir/pkg/frontend/querymiddleware/astmapper"
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware/testdatagen"
+	"github.com/grafana/mimir/pkg/streamingpromql/compat"
 )
 
 func init() {
@@ -28,9 +34,9 @@ func init() {
 }
 
 var (
-	start         = time.Now()
-	end           = start.Add(30 * time.Minute)
-	step          = 30 * time.Second
+	Start         = time.Now()
+	End           = Start.Add(30 * time.Minute)
+	Step          = 30 * time.Second
 	lookbackDelta = 5 * time.Minute
 )
 
@@ -531,28 +537,28 @@ func RunCorrectnessTests(t *testing.T, runTestCase func(t *testing.T, testCase C
 		gen := testdatagen.Factor(float64(i) * 0.1)
 		if i >= numSeries-numStaleSeries {
 			// Wrap the generator to inject the staleness marker between minute 10 and 20.
-			gen = testdatagen.Stale(start.Add(10*time.Minute), start.Add(20*time.Minute), gen)
+			gen = testdatagen.Stale(Start.Add(10*time.Minute), Start.Add(20*time.Minute), gen)
 		}
 
-		series = append(series, testdatagen.NewSeries(testdatagen.NewTestCounterLabels(seriesID), start.Add(-lookbackDelta), end, step, gen))
+		series = append(series, testdatagen.NewSeries(testdatagen.NewTestCounterLabels(seriesID), Start.Add(-lookbackDelta), End, Step, gen))
 		seriesID++
 	}
 
 	// Add a special series whose data points end earlier than the end of the queried time range
 	// and has NO stale marker.
 	series = append(series, testdatagen.NewSeries(testdatagen.NewTestCounterLabels(seriesID),
-		start.Add(-lookbackDelta), end.Add(-5*time.Minute), step, testdatagen.Factor(2)))
+		Start.Add(-lookbackDelta), End.Add(-5*time.Minute), Step, testdatagen.Factor(2)))
 	seriesID++
 
 	// Add a special series whose data points end earlier than the end of the queried time range
 	// and HAS a stale marker at the end.
 	series = append(series, testdatagen.NewSeries(testdatagen.NewTestCounterLabels(seriesID),
-		start.Add(-lookbackDelta), end.Add(-5*time.Minute), step, testdatagen.Stale(end.Add(-6*time.Minute), end.Add(-4*time.Minute), testdatagen.Factor(2))))
+		Start.Add(-lookbackDelta), End.Add(-5*time.Minute), Step, testdatagen.Stale(End.Add(-6*time.Minute), End.Add(-4*time.Minute), testdatagen.Factor(2))))
 	seriesID++
 
 	// Add a special series whose data points start later than the start of the queried time range.
 	series = append(series, testdatagen.NewSeries(testdatagen.NewTestCounterLabels(seriesID),
-		start.Add(5*time.Minute), end, step, testdatagen.Factor(2)))
+		Start.Add(5*time.Minute), End, Step, testdatagen.Factor(2)))
 	seriesID++
 
 	// Add conventional histogram series.
@@ -562,11 +568,11 @@ func RunCorrectnessTests(t *testing.T, runTestCase func(t *testing.T, testCase C
 			gen := testdatagen.Factor(float64(i) * float64(bucketIdx) * 0.1)
 			if i >= numConvHistograms-numStaleConvHistograms {
 				// Wrap the generator to inject the staleness marker between minute 10 and 20.
-				gen = testdatagen.Stale(start.Add(10*time.Minute), start.Add(20*time.Minute), gen)
+				gen = testdatagen.Stale(Start.Add(10*time.Minute), Start.Add(20*time.Minute), gen)
 			}
 
 			series = append(series, testdatagen.NewSeries(testdatagen.NewTestConventionalHistogramLabels(seriesID, bucketLe),
-				start.Add(-lookbackDelta), end, step, gen))
+				Start.Add(-lookbackDelta), End, Step, gen))
 		}
 
 		// Increase the series ID after all per-bucket series have been created.
@@ -578,10 +584,10 @@ func RunCorrectnessTests(t *testing.T, runTestCase func(t *testing.T, testCase C
 		gen := testdatagen.Factor(float64(i) * 0.5)
 		if i >= numNativeHistograms-numStaleNativeHistograms {
 			// Wrap the generator to inject the staleness marker between minute 10 and 20.
-			gen = testdatagen.Stale(start.Add(10*time.Minute), start.Add(20*time.Minute), gen)
+			gen = testdatagen.Stale(Start.Add(10*time.Minute), Start.Add(20*time.Minute), gen)
 		}
 
-		series = append(series, testdatagen.NewNativeHistogramSeries(testdatagen.NewTestNativeHistogramLabels(seriesID), start.Add(-lookbackDelta), end, step, gen))
+		series = append(series, testdatagen.NewNativeHistogramSeries(testdatagen.NewTestNativeHistogramLabels(seriesID), Start.Add(-lookbackDelta), End, Step, gen))
 		seriesID++
 	}
 
@@ -632,4 +638,192 @@ type CorrectnessTestCase struct {
 
 	// NoRangeQuery skips the range query (specially made for "string" query as it can't be used for a range query)
 	NoRangeQuery bool
+}
+
+type queryShardingFunctionCorrectnessTest struct {
+	fn         string
+	args       []string
+	rangeQuery bool
+	tpl        string
+	allowedErr error
+}
+
+type functionCorrectnessTestRunner func(t *testing.T, expr string, numShards int, allowedErr error, queryable storage.Queryable)
+
+func RunFunctionCorrectnessTests(t *testing.T, runTestCase functionCorrectnessTestRunner) {
+	// We want to test experimental functions too.
+	t.Cleanup(func() { parser.EnableExperimentalFunctions = false })
+	parser.EnableExperimentalFunctions = true
+
+	testsForBoth := []queryShardingFunctionCorrectnessTest{
+		{fn: "count_over_time", rangeQuery: true},
+		{fn: "delta", rangeQuery: true},
+		{fn: "increase", rangeQuery: true},
+		{fn: "rate", rangeQuery: true},
+		{fn: "resets", rangeQuery: true},
+		{fn: "sort_by_label", allowedErr: compat.NotSupportedError{}},
+		{fn: "sort_by_label_desc", allowedErr: compat.NotSupportedError{}},
+		{fn: "first_over_time", rangeQuery: true},
+		{fn: "last_over_time", rangeQuery: true},
+		{fn: "present_over_time", rangeQuery: true},
+		{fn: "timestamp"},
+		{fn: "label_replace", args: []string{`"fuzz"`, `"$1"`, `"foo"`, `"b(.*)"`}},
+		{fn: "label_join", args: []string{`"fuzz"`, `","`, `"foo"`, `"bar"`}},
+		{fn: "ts_of_first_over_time", rangeQuery: true},
+		{fn: "ts_of_last_over_time", rangeQuery: true},
+	}
+	testsForFloatsOnly := []queryShardingFunctionCorrectnessTest{
+		{fn: "abs"},
+		{fn: "avg_over_time", rangeQuery: true},
+		{fn: "ceil"},
+		{fn: "clamp", args: []string{"5", "10"}},
+		{fn: "clamp_max", args: []string{"5"}},
+		{fn: "clamp_min", args: []string{"5"}},
+		{fn: "changes", rangeQuery: true},
+		{fn: "days_in_month"},
+		{fn: "day_of_month"},
+		{fn: "day_of_week"},
+		{fn: "day_of_year"},
+		{fn: "deriv", rangeQuery: true},
+		{fn: "exp"},
+		{fn: "floor"},
+		{fn: "hour"},
+		{fn: "idelta", rangeQuery: true},
+		{fn: "irate", rangeQuery: true},
+		{fn: "ln"},
+		{fn: "log10"},
+		{fn: "log2"},
+		{fn: "max_over_time", rangeQuery: true},
+		{fn: "min_over_time", rangeQuery: true},
+		{fn: "minute"},
+		{fn: "month"},
+		{fn: "round", args: []string{"20"}},
+		{fn: "sort"},
+		{fn: "sort_desc"},
+		{fn: "sqrt"},
+		{fn: "deg"},
+		{fn: "asinh"},
+		{fn: "rad"},
+		{fn: "cosh"},
+		{fn: "atan"},
+		{fn: "atanh"},
+		{fn: "asin"},
+		{fn: "sinh"},
+		{fn: "cos"},
+		{fn: "acosh"},
+		{fn: "sin"},
+		{fn: "tanh"},
+		{fn: "tan"},
+		{fn: "acos"},
+		{fn: "stddev_over_time", rangeQuery: true},
+		{fn: "stdvar_over_time", rangeQuery: true},
+		{fn: "sum_over_time", rangeQuery: true},
+		{fn: "quantile_over_time", rangeQuery: true, tpl: `(<fn>(0.5,bar1{}))`},
+		{fn: "quantile_over_time", rangeQuery: true, tpl: `(<fn>(0.99,bar1{}))`},
+		{fn: "mad_over_time", rangeQuery: true, tpl: `(<fn>(bar1{}))`},
+		{fn: "sgn"},
+		{fn: "predict_linear", args: []string{"1"}, rangeQuery: true},
+		{fn: "double_exponential_smoothing", args: []string{"0.5", "0.7"}, rangeQuery: true},
+		// holt_winters is a backwards compatible alias for double_exponential_smoothing.
+		{fn: "holt_winters", args: []string{"0.5", "0.7"}, rangeQuery: true},
+		{fn: "year"},
+		{fn: "ts_of_min_over_time", rangeQuery: true},
+		{fn: "ts_of_max_over_time", rangeQuery: true},
+	}
+	testsForNativeHistogramsOnly := []queryShardingFunctionCorrectnessTest{
+		{fn: "histogram_count"},
+		{fn: "histogram_sum"},
+		{fn: "histogram_fraction", tpl: `(<fn>(0,0.5,bar1{}))`},
+		{fn: "histogram_quantile", tpl: `(<fn>(0.5,bar1{}))`},
+		{fn: "histogram_stdvar"},
+		{fn: "histogram_stddev"},
+	}
+
+	t.Run("floats", func(t *testing.T) {
+		queryableFloats := testdatagen.StorageSeriesQueryable([]storage.Series{
+			testdatagen.NewSeries(labels.FromStrings("__name__", "bar1", "baz", "blip", "bar", "blop", "foo", "barr"), Start.Add(-lookbackDelta), End, Step, testdatagen.Factor(5)),
+			testdatagen.NewSeries(labels.FromStrings("__name__", "bar1", "baz", "blip", "bar", "blop", "foo", "bazz"), Start.Add(-lookbackDelta), End, Step, testdatagen.Factor(7)),
+			testdatagen.NewSeries(labels.FromStrings("__name__", "bar1", "baz", "blip", "bar", "blap", "foo", "buzz"), Start.Add(-lookbackDelta), End, Step, testdatagen.Factor(12)),
+			testdatagen.NewSeries(labels.FromStrings("__name__", "bar1", "baz", "blip", "bar", "blap", "foo", "bozz"), Start.Add(-lookbackDelta), End, Step, testdatagen.Factor(11)),
+			testdatagen.NewSeries(labels.FromStrings("__name__", "bar1", "baz", "blip", "bar", "blop", "foo", "buzz"), Start.Add(-lookbackDelta), End, Step, testdatagen.Factor(8)),
+			testdatagen.NewSeries(labels.FromStrings("__name__", "bar1", "baz", "blip", "bar", "blap", "foo", "bazz"), Start.Add(-lookbackDelta), End, Step, testdatagen.ArithmeticSequence(10)),
+		})
+
+		testQueryShardingFunctionCorrectness(t, runTestCase, queryableFloats, append(testsForBoth, testsForFloatsOnly...), testsForNativeHistogramsOnly)
+	})
+
+	t.Run("native histograms", func(t *testing.T) {
+		queryableNativeHistograms := testdatagen.StorageSeriesQueryable([]storage.Series{
+			testdatagen.NewNativeHistogramSeries(labels.FromStrings("__name__", "bar1", "baz", "blip", "bar", "blop", "foo", "barr"), Start.Add(-lookbackDelta), End, Step, testdatagen.Factor(5)),
+			testdatagen.NewNativeHistogramSeries(labels.FromStrings("__name__", "bar1", "baz", "blip", "bar", "blop", "foo", "bazz"), Start.Add(-lookbackDelta), End, Step, testdatagen.Factor(7)),
+			testdatagen.NewNativeHistogramSeries(labels.FromStrings("__name__", "bar1", "baz", "blip", "bar", "blap", "foo", "buzz"), Start.Add(-lookbackDelta), End, Step, testdatagen.Factor(12)),
+			testdatagen.NewNativeHistogramSeries(labels.FromStrings("__name__", "bar1", "baz", "blip", "bar", "blap", "foo", "bozz"), Start.Add(-lookbackDelta), End, Step, testdatagen.Factor(11)),
+			testdatagen.NewNativeHistogramSeries(labels.FromStrings("__name__", "bar1", "baz", "blip", "bar", "blop", "foo", "buzz"), Start.Add(-lookbackDelta), End, Step, testdatagen.Factor(8)),
+			testdatagen.NewNativeHistogramSeries(labels.FromStrings("__name__", "bar1", "baz", "blip", "bar", "blap", "foo", "bazz"), Start.Add(-lookbackDelta), End, Step, testdatagen.ArithmeticSequence(10)),
+		})
+
+		testQueryShardingFunctionCorrectness(t, runTestCase, queryableNativeHistograms, append(testsForBoth, testsForNativeHistogramsOnly...), testsForFloatsOnly)
+	})
+}
+
+func testQueryShardingFunctionCorrectness(t *testing.T, runTestCase functionCorrectnessTestRunner, queryable storage.Queryable, tests []queryShardingFunctionCorrectnessTest, testsToIgnore []queryShardingFunctionCorrectnessTest) {
+	mkQueries := func(tpl, fn string, testMatrix bool, fArgs []string) []string {
+		if tpl == "" {
+			tpl = `(<fn>(bar1{}<args>))`
+		}
+		result := strings.ReplaceAll(tpl, "<fn>", fn)
+
+		if testMatrix {
+			// turn selectors into ranges
+			result = strings.ReplaceAll(result, "}", "}[1m]")
+		}
+
+		if len(fArgs) > 0 {
+			args := "," + strings.Join(fArgs, ",")
+			result = strings.ReplaceAll(result, "<args>", args)
+		} else {
+			result = strings.ReplaceAll(result, "<args>", "")
+		}
+
+		return []string{
+			result,
+			"sum" + result,
+			"sum by (bar)" + result,
+			"count" + result,
+			"count by (bar)" + result,
+		}
+	}
+	for _, tc := range tests {
+		const numShards = 4
+		for _, query := range mkQueries(tc.tpl, tc.fn, tc.rangeQuery, tc.args) {
+			t.Run(query, func(t *testing.T) {
+				runTestCase(t, query, numShards, tc.allowedErr, queryable)
+			})
+		}
+	}
+
+	// Ensure all PromQL functions have been tested.
+	testedFns := make(map[string]struct{}, len(tests))
+	for _, tc := range tests {
+		testedFns[tc.fn] = struct{}{}
+	}
+
+	fnToIgnore := map[string]struct{}{
+		"time":   {},
+		"scalar": {},
+		"vector": {},
+		"pi":     {},
+	}
+	for _, tc := range testsToIgnore {
+		fnToIgnore[tc.fn] = struct{}{}
+	}
+
+	for expectedFn := range promql.FunctionCalls {
+		if _, ok := fnToIgnore[expectedFn]; ok {
+			continue
+		}
+		// It's OK if it's tested. Ignore if it's one of the non parallelizable functions.
+		_, ok := testedFns[expectedFn]
+		assert.Truef(t, ok || slices.Contains(astmapper.NonParallelFuncs, expectedFn), "%s should be tested", expectedFn)
+	}
 }

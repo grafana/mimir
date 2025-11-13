@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"math"
 	"testing"
-	"time"
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/user"
@@ -27,36 +26,29 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/testutils"
 )
 
-var (
-	start         = time.Now()
-	end           = start.Add(30 * time.Minute)
-	step          = 30 * time.Second
-	lookbackDelta = 5 * time.Minute
-)
+func createEngine(t *testing.T, shardCount int) (promql.QueryEngine, *prometheus.Registry) {
+	reg := prometheus.NewPedanticRegistry()
+	opts := streamingpromql.NewTestEngineOpts()
+	opts.CommonOpts.Reg = reg
+	planner, err := streamingpromql.NewQueryPlanner(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
+	require.NoError(t, err)
 
-func TestQuerySharding_Correctness(t *testing.T) {
-	createEngine := func(t *testing.T, shardCount int) (promql.QueryEngine, *prometheus.Registry) {
-		reg := prometheus.NewPedanticRegistry()
-		opts := streamingpromql.NewTestEngineOpts()
-		opts.CommonOpts.Reg = reg
-		planner, err := streamingpromql.NewQueryPlanner(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
-		require.NoError(t, err)
-
-		if shardCount > 0 {
-			limits := &mockLimits{totalShards: shardCount}
-			planner.RegisterASTOptimizationPass(NewOptimizationPass(limits, 0, reg, log.NewNopLogger()))
-		}
-
-		engine, err := streamingpromql.NewEngine(opts, streamingpromql.NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(reg), planner)
-		require.NoError(t, err)
-
-		return engine, reg
+	if shardCount > 0 {
+		limits := &mockLimits{totalShards: shardCount}
+		planner.RegisterASTOptimizationPass(NewOptimizationPass(limits, 0, reg, log.NewNopLogger()))
 	}
 
+	engine, err := streamingpromql.NewEngine(opts, streamingpromql.NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(reg), planner)
+	require.NoError(t, err)
+
+	return engine, reg
+}
+
+func TestQuerySharding_Correctness(t *testing.T) {
 	shardingtest.RunCorrectnessTests(t, func(t *testing.T, testData shardingtest.CorrectnessTestCase, queryable storage.Queryable) {
 		generators := map[string]func(t *testing.T, ctx context.Context, engine promql.QueryEngine) promql.Query{
 			"instant query": func(t *testing.T, ctx context.Context, engine promql.QueryEngine) promql.Query {
-				q, err := engine.NewInstantQuery(ctx, queryable, nil, testData.Query, end)
+				q, err := engine.NewInstantQuery(ctx, queryable, nil, testData.Query, shardingtest.End)
 				require.NoError(t, err)
 				return q
 			},
@@ -64,7 +56,7 @@ func TestQuerySharding_Correctness(t *testing.T) {
 
 		if !testData.NoRangeQuery {
 			generators["range query"] = func(t *testing.T, ctx context.Context, engine promql.QueryEngine) promql.Query {
-				q, err := engine.NewRangeQuery(ctx, queryable, nil, testData.Query, start, end, step)
+				q, err := engine.NewRangeQuery(ctx, queryable, nil, testData.Query, shardingtest.Start, shardingtest.End, shardingtest.Step)
 				require.NoError(t, err)
 				return q
 			}
@@ -103,6 +95,41 @@ func TestQuerySharding_Correctness(t *testing.T) {
 				}
 			})
 		}
+	})
+}
+
+func TestQuerySharding_FunctionCorrectness(t *testing.T) {
+	shardingtest.RunFunctionCorrectnessTests(t, func(t *testing.T, expr string, numShards int, allowedErr error, queryable storage.Queryable) {
+		ctx := user.InjectOrgID(context.Background(), "test-user")
+
+		// Run the query without sharding.
+		unshardedEngine, _ := createEngine(t, 0)
+		unshardedQuery, err := unshardedEngine.NewRangeQuery(ctx, queryable, nil, expr, shardingtest.Start, shardingtest.End, shardingtest.Step)
+		require.NoError(t, err)
+
+		unshardedResult := unshardedQuery.Exec(ctx)
+
+		// MQE currently doesn't support every experimental function, so it's expected for it to return an error in some cases.
+		if err != nil && allowedErr != nil {
+			require.ErrorAs(t, err, &allowedErr)
+			return
+		}
+
+		require.NoError(t, unshardedResult.Err)
+		require.IsTypef(t, promql.Matrix{}, unshardedResult.Value, "expected Matrix result, got %T", unshardedResult.Value)
+		require.NotEmpty(t, unshardedResult.Value)
+
+		shardedEngine, _ := createEngine(t, numShards)
+
+		// Run the query with sharding.
+		shardedQuery, err := shardedEngine.NewRangeQuery(ctx, queryable, nil, expr, shardingtest.Start, shardingtest.End, shardingtest.Step)
+		require.NoError(t, err)
+		shardedResult := shardedQuery.Exec(ctx)
+		require.NoError(t, shardedResult.Err)
+
+		// Ensure the two results match (float precision can slightly differ, there's no guarantee in PromQL engine too
+		// if you rerun the same query twice).
+		testutils.RequireEqualResults(t, expr, unshardedResult, shardedResult, false)
 	})
 }
 
