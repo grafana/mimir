@@ -393,7 +393,7 @@ func (c *UsageTrackerClient) updateUsersCloseToLimitCache(ctx context.Context) (
 	_, err := ring.DoUntilQuorum[[]string](ctx, set, cfg, func(ctx context.Context, instance *ring.InstanceDesc) ([]string, error) {
 		poolClient, err := c.clientsPool.GetClientForInstance(*instance)
 		if err != nil {
-			return nil, errors.Errorf("usage-tracker instance %s (%s)", instance.Id, instance.Addr)
+			return nil, errors.Errorf("getting client for usage-tracker instance %s (%s): %w", instance.Id, instance.Addr, err)
 		}
 
 		trackerClient := poolClient.(usagetrackerpb.UsageTrackerClient)

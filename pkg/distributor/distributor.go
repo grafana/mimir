@@ -1610,7 +1610,7 @@ func (d *Distributor) prePushMaxSeriesLimitMiddleware(next PushFunc) PushFunc {
 
 func (d *Distributor) parallelUsageTrackerClientTrackSeriesCall(ctx context.Context, userID string, seriesHashes []uint64) func() {
 	d.asyncUsageTrackerCalls.WithLabelValues(userID).Inc()
-	done := make(chan error, 1)
+	done := make(chan struct{}, 1)
 	t0 := time.Now()
 	asyncTrackingCtx, cancelAsyncTracking := context.WithCancelCause(ctx)
 	go func() {
@@ -1620,7 +1620,7 @@ func (d *Distributor) parallelUsageTrackerClientTrackSeriesCall(ctx context.Cont
 			level.Error(d.log).Log("msg", "failed to track series asynchronously", "err", err, "user", userID, "series", len(seriesHashes))
 		}
 		if len(rejected) > 0 {
-			level.Warn(d.log).Log("msg", "tracked series asynchronously, but some of them were rejected", "user", userID, "rejected", len(rejected))
+			level.Warn(d.log).Log("msg", "ingested some series that should have been rejected, because they were tracked asynchronously", "user", userID, "rejected", len(rejected))
 			d.asyncUsageTrackerCallsWithRejectedSeries.WithLabelValues(userID).Inc()
 		}
 	}()

@@ -56,7 +56,7 @@ If the user has a series limit high enough and it's far enough from their limits
 
 - A goroutine is spawned to track the series in the background while the series are being ingested.
 - When the series are ingested, the distributor waits a configurable extra time for usage-tracker calls to succeed.
-- After thet time, usage-tracker calls are canceled.
+- After that time, usage-tracker calls are canceled.
 
 The middleware is positioned last in the chain to enforce limits after all filtering, relabeling, and transformations.
 
