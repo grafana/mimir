@@ -76,7 +76,7 @@ func TestPusherAppendable(t *testing.T) {
 			name: "tenant without delay, normal value",
 			series: []test.Series{
 				{
-					Labels:  labels.FromStrings(labels.MetricName, "foo_bar"),
+					Labels:  labels.FromStrings(model.MetricNameLabel, "foo_bar"),
 					Samples: []test.Sample{{TS: 120_000, Val: 1.234}},
 				},
 			},
@@ -87,7 +87,7 @@ func TestPusherAppendable(t *testing.T) {
 			hasNanSample: true,
 			series: []test.Series{
 				{
-					Labels:  labels.FromStrings(labels.MetricName, "foo_bar"),
+					Labels:  labels.FromStrings(model.MetricNameLabel, "foo_bar"),
 					Samples: []test.Sample{{TS: 120_000, Val: math.Float64frombits(value.StaleNaN)}},
 				},
 			},
@@ -96,7 +96,7 @@ func TestPusherAppendable(t *testing.T) {
 			name: "ALERTS, normal value",
 			series: []test.Series{
 				{
-					Labels:  labels.FromStrings(labels.MetricName, "ALERT", labels.AlertName, "boop"),
+					Labels:  labels.FromStrings(model.MetricNameLabel, "ALERT", labels.AlertName, "boop"),
 					Samples: []test.Sample{{TS: 120_000, Val: 1.234}},
 				},
 			},
@@ -106,7 +106,7 @@ func TestPusherAppendable(t *testing.T) {
 			hasNanSample: true,
 			series: []test.Series{
 				{
-					Labels:  labels.FromStrings(labels.MetricName, "ALERT", labels.AlertName, "boop"),
+					Labels:  labels.FromStrings(model.MetricNameLabel, "ALERT", labels.AlertName, "boop"),
 					Samples: []test.Sample{{TS: 120_000, Val: math.Float64frombits(value.StaleNaN)}},
 				},
 			},
@@ -115,7 +115,7 @@ func TestPusherAppendable(t *testing.T) {
 			name: "tenant without delay, histogram value",
 			series: []test.Series{
 				{
-					Labels:  labels.FromStrings(labels.MetricName, "foo_bar"),
+					Labels:  labels.FromStrings(model.MetricNameLabel, "foo_bar"),
 					Samples: []test.Sample{{TS: 200_000, Hist: test.GenerateTestHistogram(10)}},
 				},
 			},
@@ -124,7 +124,7 @@ func TestPusherAppendable(t *testing.T) {
 			name: "tenant without delay, float histogram value",
 			series: []test.Series{
 				{
-					Labels:  labels.FromStrings(labels.MetricName, "foo_bar"),
+					Labels:  labels.FromStrings(model.MetricNameLabel, "foo_bar"),
 					Samples: []test.Sample{{TS: 230_000, FloatHist: test.GenerateTestFloatHistogram(10)}},
 				},
 			},
@@ -133,19 +133,19 @@ func TestPusherAppendable(t *testing.T) {
 			name: "mix of float and float histogram",
 			series: []test.Series{
 				{
-					Labels:  labels.FromStrings(labels.MetricName, "foo_bar1"),
+					Labels:  labels.FromStrings(model.MetricNameLabel, "foo_bar1"),
 					Samples: []test.Sample{{TS: 230_000, Val: 999}},
 				},
 				{
-					Labels:  labels.FromStrings(labels.MetricName, "foo_bar3"),
+					Labels:  labels.FromStrings(model.MetricNameLabel, "foo_bar3"),
 					Samples: []test.Sample{{TS: 230_000, Val: 888}},
 				},
 				{
-					Labels:  labels.FromStrings(labels.MetricName, "foo_bar2"),
+					Labels:  labels.FromStrings(model.MetricNameLabel, "foo_bar2"),
 					Samples: []test.Sample{{TS: 230_000, FloatHist: test.GenerateTestFloatHistogram(10)}},
 				},
 				{
-					Labels:  labels.FromStrings(labels.MetricName, "foo_bar4"),
+					Labels:  labels.FromStrings(model.MetricNameLabel, "foo_bar4"),
 					Samples: []test.Sample{{TS: 230_000, FloatHist: test.GenerateTestFloatHistogram(99)}},
 				},
 			},
@@ -837,7 +837,7 @@ func TestDefaultManagerFactory_ShouldInjectStrongReadConsistencyToContextWhenQue
 		// to fire, so we return a non-empty series set.
 		return series.NewConcreteSeriesSetFromUnsortedSeries([]storage.Series{
 			series.NewConcreteSeries(
-				labels.FromStrings(labels.MetricName, metricName),
+				labels.FromStrings(model.MetricNameLabel, metricName),
 				[]model.SamplePair{{Timestamp: model.Time(hints.End - 1), Value: 1.0}},
 				nil,
 			),

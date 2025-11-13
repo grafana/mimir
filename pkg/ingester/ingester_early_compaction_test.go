@@ -109,7 +109,7 @@ func TestIngester_compactBlocksToReduceInMemorySeries_ShouldTriggerCompactionOnl
 	// Push 10 series.
 	for seriesID := 0; seriesID < 10; seriesID++ {
 		require.NoError(t, pushSeriesToIngester(ctxWithUser, t, ingester, []util_test.Series{{
-			Labels:  labels.FromStrings(labels.MetricName, fmt.Sprintf("metric_%d", seriesID)),
+			Labels:  labels.FromStrings(model.MetricNameLabel, fmt.Sprintf("metric_%d", seriesID)),
 			Samples: []util_test.Sample{{TS: sampleTimestamp, Val: 0}},
 		}}))
 	}
@@ -129,7 +129,7 @@ func TestIngester_compactBlocksToReduceInMemorySeries_ShouldTriggerCompactionOnl
 	// Push 20 more series.
 	for seriesID := 10; seriesID < 30; seriesID++ {
 		require.NoError(t, pushSeriesToIngester(ctxWithUser, t, ingester, []util_test.Series{{
-			Labels:  labels.FromStrings(labels.MetricName, fmt.Sprintf("metric_%d", seriesID)),
+			Labels:  labels.FromStrings(model.MetricNameLabel, fmt.Sprintf("metric_%d", seriesID)),
 			Samples: []util_test.Sample{{TS: sampleTimestamp, Val: 0}},
 		}}))
 	}
@@ -158,7 +158,7 @@ func TestIngester_compactBlocksToReduceInMemorySeries_ShouldCompactHeadUpUntilNo
 		ctx          = context.Background()
 		ctxWithUser  = user.InjectOrgID(ctx, userID)
 		metricName   = "metric_1"
-		metricLabels = labels.FromStrings(labels.MetricName, metricName)
+		metricLabels = labels.FromStrings(model.MetricNameLabel, metricName)
 		metricModel  = map[model.LabelName]model.LabelValue{model.MetricNameLabel: model.LabelValue(metricName)}
 		now          = time.Now()
 		sampleTimes  []time.Time
@@ -320,7 +320,7 @@ func TestIngester_compactBlocksToReduceInMemorySeries_ShouldCompactBlocksHonorin
 		ctx          = context.Background()
 		ctxWithUser  = user.InjectOrgID(ctx, userID)
 		metricName   = "metric_1"
-		metricLabels = labels.FromStrings(labels.MetricName, metricName)
+		metricLabels = labels.FromStrings(model.MetricNameLabel, metricName)
 		metricModel  = map[model.LabelName]model.LabelValue{model.MetricNameLabel: model.LabelValue(metricName)}
 	)
 
@@ -406,11 +406,11 @@ func TestIngester_compactBlocksToReduceInMemorySeries_ShouldFailIngestingSamples
 	require.NoError(t, err)
 
 	require.NoError(t, pushSeriesToIngester(ctxWithUser, t, ingester, []util_test.Series{{
-		Labels:  labels.FromStrings(labels.MetricName, "metric_1"),
+		Labels:  labels.FromStrings(model.MetricNameLabel, "metric_1"),
 		Samples: []util_test.Sample{{TS: startTime.UnixMilli(), Val: 1.0}},
 	}}))
 	require.NoError(t, pushSeriesToIngester(ctxWithUser, t, ingester, []util_test.Series{{
-		Labels:  labels.FromStrings(labels.MetricName, "metric_1"),
+		Labels:  labels.FromStrings(model.MetricNameLabel, "metric_1"),
 		Samples: []util_test.Sample{{TS: startTime.Add(20 * time.Minute).UnixMilli(), Val: 2.0}},
 	}}))
 
@@ -431,15 +431,15 @@ func TestIngester_compactBlocksToReduceInMemorySeries_ShouldFailIngestingSamples
 
 	// Should allow to push samples after "now - active series idle timeout", but not before that.
 	assert.ErrorContains(t, pushSeriesToIngester(ctxWithUser, t, ingester, []util_test.Series{{
-		Labels:  labels.FromStrings(labels.MetricName, "metric_2"),
+		Labels:  labels.FromStrings(model.MetricNameLabel, "metric_2"),
 		Samples: []util_test.Sample{{TS: startTime.UnixMilli(), Val: 1.0}},
 	}}), "the sample has been rejected because its timestamp is too old")
 	assert.NoError(t, pushSeriesToIngester(ctxWithUser, t, ingester, []util_test.Series{{
-		Labels:  labels.FromStrings(labels.MetricName, "metric_2"),
+		Labels:  labels.FromStrings(model.MetricNameLabel, "metric_2"),
 		Samples: []util_test.Sample{{TS: startTime.Add(20 * time.Minute).UnixMilli(), Val: 2.0}},
 	}}))
 	assert.NoError(t, pushSeriesToIngester(ctxWithUser, t, ingester, []util_test.Series{{
-		Labels:  labels.FromStrings(labels.MetricName, "metric_1"),
+		Labels:  labels.FromStrings(model.MetricNameLabel, "metric_1"),
 		Samples: []util_test.Sample{{TS: startTime.Add(30 * time.Minute).UnixMilli(), Val: 3.0}},
 	}}))
 }
@@ -514,7 +514,7 @@ func TestIngester_compactBlocksToReduceInMemorySeries_Concurrency(t *testing.T) 
 						seriesToWrite := make([]util_test.Series, 0, toSeriesID-fromSeriesID+1)
 						for seriesIdx := fromSeriesID; seriesIdx <= toSeriesID; seriesIdx++ {
 							seriesToWrite = append(seriesToWrite, util_test.Series{
-								Labels:  labels.FromStrings(labels.MetricName, fmt.Sprintf("series_%05d", seriesIdx)),
+								Labels:  labels.FromStrings(model.MetricNameLabel, fmt.Sprintf("series_%05d", seriesIdx)),
 								Samples: []util_test.Sample{{TS: timestamp, Val: float64(sampleIdx)}},
 							})
 						}
@@ -709,7 +709,7 @@ func readMetricSamplesFromBlock(t *testing.T, block *tsdb.Block, metricName stri
 
 	ctx := context.Background()
 
-	postings, err := indexReader.Postings(ctx, labels.MetricName, metricName)
+	postings, err := indexReader.Postings(ctx, model.MetricNameLabel, metricName)
 	require.NoError(t, err)
 
 	for postings.Next() {

@@ -11,6 +11,7 @@ import (
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/stretchr/testify/assert"
@@ -38,7 +39,7 @@ func TestFilteringQueryablesViaHttpHeader(t *testing.T) {
 		cfg := Config{}
 		flagext.DefaultValues(&cfg)
 
-		matcher := labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "metric")
+		matcher := labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "metric")
 		expectedMatchers := []*labels.Matcher{matcher}
 		querier1 := &mockBlocksStorageQuerier{}
 		querier1.On("Select", mock.Anything, true, mock.Anything, expectedMatchers).Return(storage.EmptySeriesSet())

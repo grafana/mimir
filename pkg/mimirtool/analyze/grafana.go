@@ -13,7 +13,6 @@ import (
 	"github.com/grafana/regexp"
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
 	log "github.com/sirupsen/logrus"
 
@@ -203,7 +202,7 @@ func parseQuery(query string, metrics map[string]struct{}) error {
 				return nil
 			}
 			for _, m := range n.LabelMatchers {
-				if m.Name == labels.MetricName && validMetricName.MatchString(m.Value) {
+				if m.Name == model.MetricNameLabel && validMetricName.MatchString(m.Value) {
 					metrics[m.Value] = struct{}{}
 					return nil
 				}

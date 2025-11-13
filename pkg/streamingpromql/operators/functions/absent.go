@@ -8,6 +8,7 @@ package functions
 import (
 	"context"
 
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
@@ -148,7 +149,7 @@ func CreateLabelsForAbsentFunction(expr parser.Expr) labels.Labels {
 	// Note this gives arguably wrong behaviour for `absent(x{job="a",job="a",foo="bar"})`.
 	has := make(map[string]bool, len(lm))
 	for _, ma := range lm {
-		if ma.Name == labels.MetricName {
+		if ma.Name == model.MetricNameLabel {
 			continue
 		}
 		if ma.Type == labels.MatchEqual && !has[ma.Name] {
