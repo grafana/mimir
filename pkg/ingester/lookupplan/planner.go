@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/grafana/dskit/tracing"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"go.opentelemetry.io/otel/attribute"
@@ -125,15 +126,22 @@ func (p CostBasedPlanner) PlanIndexLookup(ctx context.Context, inPlan index.Look
 
 	allPlansUnordered := p.generatePlansBranchAndBound(ctx, p.stats, matchers, memPools, shard)
 
-	var lookupPlan index.LookupPlan
+	var lookupPlan *plan
 	allPlans, lookupPlan = p.chooseBestPlan(memPools, allPlansUnordered, allPlans)
 	if lookupPlan == nil {
 		return nil, fmt.Errorf("no plan with index matchers found out of %d plans", len(allPlans))
 	}
+
+	allPlansExhaustive := p.generateExhaustivePlans(ctx, p.stats, matchers, memPools, shard)
+	_, bestPlanOverall := p.chooseBestPlan(memPools, allPlansExhaustive, allPlans)
+
+	if bestPlanOverall != nil && bestPlanOverall.TotalCost() < lookupPlan.TotalCost() {
+		fmt.Printf("Warning: Chosen plan is not the absolute best plan. Chosen plan cost: %f, Best overall plan cost: %f\n", lookupPlan.TotalCost(), bestPlanOverall.TotalCost())
+	}
 	return lookupPlan, nil
 }
 
-func (p CostBasedPlanner) chooseBestPlan(memPools *costBasedPlannerPools, allPlansUnordered []plan, allPlans []plan) ([]plan, index.LookupPlan) {
+func (p CostBasedPlanner) chooseBestPlan(memPools *costBasedPlannerPools, allPlansUnordered []plan, allPlans []plan) ([]plan, *plan) {
 	// calculate the cost of all plans once, instead of calculating them every time we compare during sort
 	allPlansWithCosts := memPools.plansWithCostPool.Get(len(allPlansUnordered))
 	for i, p := range allPlansUnordered {
@@ -155,13 +163,20 @@ func (p CostBasedPlanner) chooseBestPlan(memPools *costBasedPlannerPools, allPla
 	for i, p := range allPlans {
 		if len(p.IndexMatchers()) > 0 {
 			allPlans = allPlans[i:]
-			return nil, p
+			return nil, &allPlans[i]
 		}
 	}
 	return allPlans, nil
 }
 
 var errTooManyMatchers = errors.New("too many matchers to generate plans")
+
+func (p CostBasedPlanner) generateExhaustivePlans(ctx context.Context, statistics index.Statistics, matchers []*labels.Matcher, pools *costBasedPlannerPools, shard *sharding.ShardSelector) []plan {
+	noopPlan := newScanOnlyPlan(ctx, statistics, p.config, matchers, pools.indexPredicatesPool, shard)
+	allPlans := pools.plansPool.Get(1 << uint(len(matchers)))[:0]
+
+	return generateExhaustivePlans(allPlans, noopPlan, 0)
+}
 
 // generateExhaustivePlans recursively generates all possible plans with their predicates toggled as index or as scan predicates.
 // It generates 2^n plans for n predicates and appends them to the plans slice.
