@@ -46,6 +46,22 @@ var tracer = otel.Tracer("pkg/streamingpromql")
 const defaultLookbackDelta = 5 * time.Minute // This should be the same value as github.com/prometheus/prometheus/promql.defaultLookbackDelta.
 
 func NewEngine(opts EngineOpts, limitsProvider QueryLimitsProvider, metrics *stats.QueryMetrics, planner *QueryPlanner) (*Engine, error) {
+	// TODO: consider making the cache an optional part of query splitting. We might want to just do query splitting
+	//  without caching (e.g. possibly if splitting is extended to range queries in the future, or if we add
+	//  parallelisation and just want to use query splitting for that and not cache).
+	var intermediateCache cache.IntermediateResultsCache
+	if opts.InstantQuerySplitting.Enabled {
+		var err error
+		intermediateCache, err = cache.NewResultsCache(opts.InstantQuerySplitting.IntermediateResultsCache, opts.Logger, opts.CommonOpts.Reg)
+		if err != nil {
+			return nil, fmt.Errorf("failed to init query splitting cache, err: %w", err)
+		}
+		level.Info(opts.Logger).Log("msg", "intermediate results cache enabled", "backend", opts.InstantQuerySplitting.IntermediateResultsCache.Backend)
+	}
+	return newEngineWithCache(opts, limitsProvider, metrics, planner, intermediateCache)
+}
+
+func newEngineWithCache(opts EngineOpts, limitsProvider QueryLimitsProvider, metrics *stats.QueryMetrics, planner *QueryPlanner, intermediateCache cache.IntermediateResultsCache) (*Engine, error) {
 	if !opts.CommonOpts.EnableAtModifier {
 		return nil, errors.New("disabling @ modifier not supported by Mimir query engine")
 	}
@@ -83,20 +99,6 @@ func NewEngine(opts EngineOpts, limitsProvider QueryLimitsProvider, metrics *sta
 		planning.NODE_TYPE_DUPLICATE:                 planning.NodeMaterializerFunc[*commonsubexpressionelimination.Duplicate](commonsubexpressionelimination.MaterializeDuplicate),
 		planning.NODE_TYPE_STEP_INVARIANT_EXPRESSION: planning.NodeMaterializerFunc[*core.StepInvariantExpression](core.MaterializeStepInvariantExpression),
 		planning.NODE_TYPE_SPLIT_RANGE_VECTOR:        planning.NodeMaterializerFunc[*querysplitting.SplittableFunctionCall](querysplitting.MaterializeSplitRangeVector),
-	}
-
-	// TODO: consider making the cache an optional part of query splitting. We might want to just do query splitting
-	//  without caching (e.g. possibly if splitting is extended to range queries in the future, or if we add
-	//  parallelisation and just want to use query splitting for that and not cache).
-	var intermediateCache cache.IntermediateResultsCache
-	if opts.InstantQuerySplitting.Enabled {
-		var err error
-		intermediateCache, err = cache.NewResultsCache(opts.InstantQuerySplitting.IntermediateResultsCache, opts.Logger, opts.CommonOpts.Reg)
-		if err != nil {
-			return nil, fmt.Errorf("failed to init query splitting cache, err: %w", err)
-		}
-		level.Info(opts.Logger).Log("msg", "intermediate results cache enabled", "backend", opts.InstantQuerySplitting.IntermediateResultsCache.Backend)
-
 	}
 
 	return &Engine{

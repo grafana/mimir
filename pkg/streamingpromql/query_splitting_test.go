@@ -299,12 +299,11 @@ func setupEngineAndCache(t *testing.T) (*testIntermediateResultsCache, promql.Qu
 	opts := NewTestEngineOpts()
 	opts.InstantQuerySplitting.Enabled = true
 	opts.InstantQuerySplitting.SplitInterval = 2 * time.Hour
-	opts.IntermediateResultCache = testCache
 
 	queryPlanner, err := NewQueryPlanner(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(t, err)
 
-	mimirEngine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), queryPlanner)
+	mimirEngine, err := newEngineWithCache(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), queryPlanner, testCache)
 	require.NoError(t, err)
 
 	t.Cleanup(func() {
