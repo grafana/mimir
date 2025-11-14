@@ -51,7 +51,7 @@ func (o *OptimizationPass) wrapSplittableRangeVectorFunctions(n planning.Node, t
 			if err != nil {
 				return nil, err
 			}
-			matrixSelector := functionCall.Children()[0].(*core.MatrixSelector)
+			matrixSelector := functionCall.Child(0).(*core.MatrixSelector)
 			o.logger.Log("msg", "query splitting applied to function", "function", functionCall.GetFunction().PromQLName(), "range_ms", matrixSelector.Range.Milliseconds(), "split_interval_ms", o.splitInterval.Milliseconds())
 			return wrappedNode, nil
 		}
