@@ -136,7 +136,7 @@ func (m Materializer) Materialize(n planning.Node, materializer *planning.Materi
 		return nil, fmt.Errorf("function %v is not yet supported for split range vector optimization", innerFunctionCall.Function)
 	}
 
-	splitDuration := time.Duration(s.SplittableFunctionCallDetails.SplitDurationMs) * time.Millisecond
+	splitDuration := s.SplittableFunctionCallDetails.SplitDuration
 
 	matrixSelector, ok := s.Inner.Child(0).(*core.MatrixSelector)
 	if !ok {

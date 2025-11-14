@@ -126,11 +126,9 @@ func (o *OptimizationPass) shouldSplitFunction(functionCall *core.FunctionCall, 
 
 func (o *OptimizationPass) wrapInSplitNode(functionCall *core.FunctionCall) (planning.Node, error) {
 	// Split duration is passed to the operator - splits are computed at runtime
-	splitDurationMs := o.splitInterval.Milliseconds()
-
 	n := &SplittableFunctionCall{
 		SplittableFunctionCallDetails: &SplittableFunctionCallDetails{
-			SplitDurationMs: splitDurationMs,
+			SplitDuration: o.splitInterval,
 		},
 	}
 	if err := n.SetChildren([]planning.Node{functionCall}); err != nil {

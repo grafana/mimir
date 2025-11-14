@@ -5,6 +5,7 @@ syntax = "proto3";
 package querysplitting;
 
 import "gogoproto/gogo.proto";
+import "google/protobuf/duration.proto";
 
 option (gogoproto.equal_all) = false;
 option (gogoproto.marshaler_all) = true;
@@ -12,9 +13,9 @@ option (gogoproto.messagename_all) = true;
 option (gogoproto.unmarshaler_all) = true;
 
 message SplittableFunctionCallDetails {
-  // SplitDuration is the duration of each cache split/segment (e.g., 1 minute).
-  // Splits are computed at runtime in SeriesMetadata() after checking cache.
-  // Duration in milliseconds.
-  int64 splitDurationMs = 1;
+  google.protobuf.Duration splitDuration = 1 [
+    (gogoproto.stdduration) = true,
+    (gogoproto.nullable) = false
+  ];
 }
 
