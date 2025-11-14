@@ -408,6 +408,9 @@ func (e *schedulerExecutor) executeCompactionJob(ctx context.Context, c *Multite
 		return compactorschedulerpb.REASSIGN, errors.Wrap(err, "failed to create bucket compactor")
 	}
 
+	// Track that a compaction job has started
+	compactor.metrics.groupCompactionRunsStarted.Inc()
+
 	// Clean up the compaction directory. This approach only works while compactors work on a single job at a
 	// time. With higher concurrency, multiple jobs could conflict and clear one anothers progress.
 	if e.cfg.CompactionDirCleanupInterval > 0 {
@@ -425,17 +428,23 @@ func (e *schedulerExecutor) executeCompactionJob(ctx context.Context, c *Multite
 	level.Info(userLogger).Log("msg", "executing compaction job from scheduler", "tenant", userID, "blocks", len(blockIDs), "split", spec.Job.Split)
 	_, compactedBlockIDs, err := compactor.runCompactionJob(ctx, job)
 	if err == nil {
+		compactor.metrics.groupCompactionRunsCompleted.Inc()
+		if hasNonZeroULIDs(compactedBlockIDs) {
+			compactor.metrics.groupCompactions.Inc()
+		}
 		level.Info(userLogger).Log("msg", "compaction job completed", "tenant", userID, "compacted_blocks", len(compactedBlockIDs))
 		return compactorschedulerpb.COMPLETE, nil
 	}
 
-	// At this point the compaction has failed. Handle recoverable errors.
+	// At this point the compaction has failed. Track the failure.
+	compactor.metrics.groupCompactionRunsFailed.Inc()
 
 	if ok, issue347Err := isIssue347Error(err); ok {
 		level.Warn(userLogger).Log("msg", "detected issue347 error during compaction", "block", issue347Err.id, "err", err)
 		repairErr := repairIssue347(ctx, userLogger, userBucket, syncer.metrics.blocksMarkedForDeletion, issue347Err)
 		if repairErr == nil {
 			level.Info(userLogger).Log("msg", "successfully repaired issue347 block, job can be re-planned", "block", issue347Err.id)
+			compactor.metrics.groupCompactionRunsCompleted.Inc()
 			return compactorschedulerpb.COMPLETE, nil
 		}
 		level.Error(userLogger).Log("msg", "failed to repair issue347 block, abandoning job", "block", issue347Err.id, "err", repairErr)
@@ -457,6 +466,7 @@ func (e *schedulerExecutor) executeCompactionJob(ctx context.Context, c *Multite
 		})
 
 		if markErr == nil {
+			compactor.metrics.groupCompactionRunsCompleted.Inc()
 			level.Info(userLogger).Log("msg", "marked block for no-compact due to out-of-order chunks, job can be re-planned", "block", outOfOrderChunksErr.id)
 			return compactorschedulerpb.COMPLETE, nil
 		}
@@ -478,6 +488,7 @@ func (e *schedulerExecutor) executeCompactionJob(ctx context.Context, c *Multite
 		})
 
 		if markErr == nil {
+			compactor.metrics.groupCompactionRunsCompleted.Inc()
 			level.Info(userLogger).Log("msg", "marked block for no-compact due to critical error, job can be re-planned", "block", criticalErr.id)
 			return compactorschedulerpb.COMPLETE, nil
 		}
