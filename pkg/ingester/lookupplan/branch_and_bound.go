@@ -54,7 +54,7 @@ func (pq *partialPlans) Pop() interface{} {
 // generatePlansBranchAndBound uses branch-and-bound to explore the space of possible plans.
 // It prunes branches that cannot possibly lead to a better plan than the current best.
 func (p CostBasedPlanner) generatePlansBranchAndBound(ctx context.Context, statistics index.Statistics, matchers []*labels.Matcher, pools *costBasedPlannerPools, shard *sharding.ShardSelector) []plan {
-	basePlan := newScanOnlyPlan(ctx, statistics, p.config, matchers, pools.indexPredicatesPool, shard)
+	basePlan := newIndexOnlyPlan(ctx, statistics, p.config, matchers, pools.indexPredicatesPool, shard)
 
 	// Initialize the priority queue with the base plan
 	prospectPlans := &partialPlans{partialPlan{

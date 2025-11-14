@@ -1,0 +1,709 @@
+GOROOT=/usr/local/go #gosetup
+GOPATH=/Users/dimitar/go #gosetup
+/usr/local/go/bin/go test -c -o /Users/dimitar/Library/Caches/JetBrains/GoLand2025.2/tmp/GoLand/___1BenchmarkQueryExecution_in_github_com_grafana_mimir_pkg_ingester_lookupplan_testing.test github.com/grafana/mimir/pkg/ingester/lookupplan/testing #gosetup
+/Users/dimitar/Library/Caches/JetBrains/GoLand2025.2/tmp/GoLand/___1BenchmarkQueryExecution_in_github_com_grafana_mimir_pkg_ingester_lookupplan_testing.test -test.v -test.paniconexit0 -test.bench ^\QBenchmarkQueryExecution\E$ -test.run ^$ -test.benchtime=1x -data-dir=/users/dimitar/proba/2025-10-ops-03-ingester-data/exported-ops-03-data/ -query-file=/users/dimitar/proba/2025-10-ops-03-ingester-data/query-logs.json #gosetup
+goos: darwin
+goarch: arm64
+pkg: github.com/grafana/mimir/pkg/ingester/lookupplan/testing
+cpu: Apple M1 Pro
+BenchmarkQueryExecution
+    benchmarks_test.go:108: Prepared 133412 queries (malformed: 24, sampled: 100.000000% of all queries)
+level=warn msg="-blocks-storage.backend=filesystem is for development and testing only; you should switch to an external object store for production use or use a shared filesystem"
+    benchmarks_test.go:117: Starting benchmark
+BenchmarkQueryExecution/query=838/selector=0
+Warning: Branch-and-bound selected plan with cost 576507.07, but exhaustive search found a better plan with cost 27.83
+Top 3 best plans from exhaustive search:  Plan 1: cost 27.83   Plan 2: cost 41.36   Plan 3: cost 46.97 Naive index-only plan cost: 576507.07
+Warning: 1024-plan exhaustive search selected plan with cost 237449.19, but full exhaustive search found a better plan with cost 27.83
+Top 3 best plans from full exhaustive search:  Plan 1: cost 27.83   Plan 2: cost 41.36   Plan 3: cost 46.97 Naive index-only plan cost: 576507.07
+Warning: Branch-and-bound selected plan with cost 542206.09, but exhaustive search found a better plan with cost 28.19
+Top 3 best plans from exhaustive search:  Plan 1: cost 28.19   Plan 2: cost 40.16   Plan 3: cost 45.99 Naive index-only plan cost: 542206.09
+Warning: 1024-plan exhaustive search selected plan with cost 223326.83, but full exhaustive search found a better plan with cost 28.19
+Top 3 best plans from full exhaustive search:  Plan 1: cost 28.19   Plan 2: cost 40.16   Plan 3: cost 45.99 Naive index-only plan cost: 542206.09
+Warning: Branch-and-bound selected plan with cost 608204.98, but exhaustive search found a better plan with cost 29.14
+Top 3 best plans from exhaustive search:  Plan 1: cost 29.14   Plan 2: cost 42.78   Plan 3: cost 49.56 Naive index-only plan cost: 608204.98
+Warning: 1024-plan exhaustive search selected plan with cost 250507.13, but full exhaustive search found a better plan with cost 29.14
+Top 3 best plans from full exhaustive search:  Plan 1: cost 29.14   Plan 2: cost 42.78   Plan 3: cost 49.56 Naive index-only plan cost: 608204.98
+Warning: Branch-and-bound selected plan with cost 2461.91, but exhaustive search found a better plan with cost 1.00
+Top 3 best plans from exhaustive search:  Plan 1: cost 1.00   Plan 2: cost 11.00   Plan 3: cost 11.00 Naive index-only plan cost: 2461.91
+Warning: 1024-plan exhaustive search selected plan with cost 1421.30, but full exhaustive search found a better plan with cost 1.00
+Top 3 best plans from full exhaustive search:  Plan 1: cost 1.00   Plan 2: cost 11.00   Plan 3: cost 11.00 Naive index-only plan cost: 2461.91
+Warning: Branch-and-bound selected plan with cost 2757.73, but exhaustive search found a better plan with cost 1.00
+Top 3 best plans from exhaustive search:  Plan 1: cost 1.00   Plan 2: cost 11.00   Plan 3: cost 12.00 Naive index-only plan cost: 2757.73
+Warning: 1024-plan exhaustive search selected plan with cost 1595.30, but full exhaustive search found a better plan with cost 1.00
+Top 3 best plans from full exhaustive search:  Plan 1: cost 1.00   Plan 2: cost 11.00   Plan 3: cost 12.00 Naive index-only plan cost: 2757.73
+Warning: Branch-and-bound selected plan with cost 644403.95, but exhaustive search found a better plan with cost 28.89
+Top 3 best plans from exhaustive search:  Plan 1: cost 28.89   Plan 2: cost 42.63   Plan 3: cost 49.14 Naive index-only plan cost: 644403.95
+Warning: 1024-plan exhaustive search selected plan with cost 265412.41, but full exhaustive search found a better plan with cost 28.89
+Top 3 best plans from full exhaustive search:  Plan 1: cost 28.89   Plan 2: cost 42.63   Plan 3: cost 49.14 Naive index-only plan cost: 644403.95
+Warning: Branch-and-bound selected plan with cost 754774.78, but exhaustive search found a better plan with cost 28.98
+Top 3 best plans from exhaustive search:  Plan 1: cost 28.98   Plan 2: cost 45.36   Plan 3: cost 51.94 Naive index-only plan cost: 754774.78
+Warning: 1024-plan exhaustive search selected plan with cost 310861.62, but full exhaustive search found a better plan with cost 28.98
+Top 3 best plans from full exhaustive search:  Plan 1: cost 28.98   Plan 2: cost 45.36   Plan 3: cost 51.94 Naive index-only plan cost: 754774.78
+Warning: Branch-and-bound selected plan with cost 517914.29, but exhaustive search found a better plan with cost 26.69
+Top 3 best plans from exhaustive search:  Plan 1: cost 26.69   Plan 2: cost 38.35   Plan 3: cost 42.76 Naive index-only plan cost: 517914.29
+Warning: 1024-plan exhaustive search selected plan with cost 213318.55, but full exhaustive search found a better plan with cost 26.69
+Top 3 best plans from full exhaustive search:  Plan 1: cost 26.69   Plan 2: cost 38.35   Plan 3: cost 42.76 Naive index-only plan cost: 517914.29
+Warning: Branch-and-bound selected plan with cost 5159.17, but exhaustive search found a better plan with cost 11.00
+Top 3 best plans from exhaustive search:  Plan 1: cost 11.00   Plan 2: cost 22.03   Plan 3: cost 22.05 Naive index-only plan cost: 5159.17
+Warning: 1024-plan exhaustive search selected plan with cost 2158.27, but full exhaustive search found a better plan with cost 11.00
+Top 3 best plans from full exhaustive search:  Plan 1: cost 11.00   Plan 2: cost 22.03   Plan 3: cost 22.05 Naive index-only plan cost: 5159.17
+Warning: Branch-and-bound selected plan with cost 611820.69, but exhaustive search found a better plan with cost 27.50
+Top 3 best plans from exhaustive search:  Plan 1: cost 27.50   Plan 2: cost 41.45   Plan 3: cost 46.67 Naive index-only plan cost: 611820.69
+Warning: 1024-plan exhaustive search selected plan with cost 251989.49, but full exhaustive search found a better plan with cost 27.50
+Top 3 best plans from full exhaustive search:  Plan 1: cost 27.50   Plan 2: cost 41.45   Plan 3: cost 46.67 Naive index-only plan cost: 611820.69
+Warning: Branch-and-bound selected plan with cost 2018.43, but exhaustive search found a better plan with cost 1.00
+Top 3 best plans from exhaustive search:  Plan 1: cost 1.00   Plan 2: cost 12.02   Plan 3: cost 12.03 Naive index-only plan cost: 2018.43
+Warning: 1024-plan exhaustive search selected plan with cost 1160.40, but full exhaustive search found a better plan with cost 1.00
+Top 3 best plans from full exhaustive search:  Plan 1: cost 1.00   Plan 2: cost 12.02   Plan 3: cost 12.03 Naive index-only plan cost: 2018.43
+Warning: Branch-and-bound selected plan with cost 648966.43, but exhaustive search found a better plan with cost 27.12
+Top 3 best plans from exhaustive search:  Plan 1: cost 27.12   Plan 2: cost 42.76   Plan 3: cost 47.62 Naive index-only plan cost: 648966.43
+Warning: 1024-plan exhaustive search selected plan with cost 267284.93, but full exhaustive search found a better plan with cost 27.12
+Top 3 best plans from full exhaustive search:  Plan 1: cost 27.12   Plan 2: cost 42.76   Plan 3: cost 47.62 Naive index-only plan cost: 648966.43
+Warning: Branch-and-bound selected plan with cost 8779.01, but exhaustive search found a better plan with cost 11.00
+Top 3 best plans from exhaustive search:  Plan 1: cost 11.00   Plan 2: cost 22.01   Plan 3: cost 22.26 Naive index-only plan cost: 8779.01
+Warning: 1024-plan exhaustive search selected plan with cost 3648.81, but full exhaustive search found a better plan with cost 11.00
+Top 3 best plans from full exhaustive search:  Plan 1: cost 11.00   Plan 2: cost 22.01   Plan 3: cost 22.26 Naive index-only plan cost: 8779.01
+Warning: Branch-and-bound selected plan with cost 5069.10, but exhaustive search found a better plan with cost 22.04
+Top 3 best plans from exhaustive search:  Plan 1: cost 22.04   Plan 2: cost 22.13   Plan 3: cost 22.15 Naive index-only plan cost: 5069.10
+Warning: 1024-plan exhaustive search selected plan with cost 2121.21, but full exhaustive search found a better plan with cost 22.04
+Top 3 best plans from full exhaustive search:  Plan 1: cost 22.04   Plan 2: cost 22.13   Plan 3: cost 22.15 Naive index-only plan cost: 5069.10
+BenchmarkQueryExecution/query=838/selector=0-10         	       1	21241086292 ns/op	        16.00 chunks	         1.000 series	14465177800 B/op	  285464 allocs/op
+BenchmarkQueryExecution/query=839/selector=0
+Warning: Branch-and-bound selected plan with cost 576507.07, but exhaustive search found a better plan with cost 27.83
+Top 3 best plans from exhaustive search:  Plan 1: cost 27.83   Plan 2: cost 41.36   Plan 3: cost 46.97 Naive index-only plan cost: 576507.07
+Warning: 1024-plan exhaustive search selected plan with cost 237449.19, but full exhaustive search found a better plan with cost 27.83
+Top 3 best plans from full exhaustive search:  Plan 1: cost 27.83   Plan 2: cost 41.36   Plan 3: cost 46.97 Naive index-only plan cost: 576507.07
+Warning: Branch-and-bound selected plan with cost 542206.09, but exhaustive search found a better plan with cost 28.19
+Top 3 best plans from exhaustive search:  Plan 1: cost 28.19   Plan 2: cost 40.16   Plan 3: cost 45.99 Naive index-only plan cost: 542206.09
+Warning: 1024-plan exhaustive search selected plan with cost 223326.83, but full exhaustive search found a better plan with cost 28.19
+Top 3 best plans from full exhaustive search:  Plan 1: cost 28.19   Plan 2: cost 40.16   Plan 3: cost 45.99 Naive index-only plan cost: 542206.09
+Warning: Branch-and-bound selected plan with cost 608204.98, but exhaustive search found a better plan with cost 29.14
+Top 3 best plans from exhaustive search:  Plan 1: cost 29.14   Plan 2: cost 42.78   Plan 3: cost 49.56 Naive index-only plan cost: 608204.98
+Warning: 1024-plan exhaustive search selected plan with cost 250507.13, but full exhaustive search found a better plan with cost 29.14
+Top 3 best plans from full exhaustive search:  Plan 1: cost 29.14   Plan 2: cost 42.78   Plan 3: cost 49.56 Naive index-only plan cost: 608204.98
+Warning: Branch-and-bound selected plan with cost 2461.91, but exhaustive search found a better plan with cost 1.00
+Top 3 best plans from exhaustive search:  Plan 1: cost 1.00   Plan 2: cost 11.00   Plan 3: cost 11.00 Naive index-only plan cost: 2461.91
+Warning: 1024-plan exhaustive search selected plan with cost 1421.30, but full exhaustive search found a better plan with cost 1.00
+Top 3 best plans from full exhaustive search:  Plan 1: cost 1.00   Plan 2: cost 11.00   Plan 3: cost 11.00 Naive index-only plan cost: 2461.91
+Warning: Branch-and-bound selected plan with cost 2757.73, but exhaustive search found a better plan with cost 1.00
+Top 3 best plans from exhaustive search:  Plan 1: cost 1.00   Plan 2: cost 11.00   Plan 3: cost 12.00 Naive index-only plan cost: 2757.73
+Warning: 1024-plan exhaustive search selected plan with cost 1595.30, but full exhaustive search found a better plan with cost 1.00
+Top 3 best plans from full exhaustive search:  Plan 1: cost 1.00   Plan 2: cost 11.00   Plan 3: cost 12.00 Naive index-only plan cost: 2757.73
+Warning: Branch-and-bound selected plan with cost 644403.95, but exhaustive search found a better plan with cost 28.89
+Top 3 best plans from exhaustive search:  Plan 1: cost 28.89   Plan 2: cost 42.63   Plan 3: cost 49.14 Naive index-only plan cost: 644403.95
+Warning: 1024-plan exhaustive search selected plan with cost 265412.41, but full exhaustive search found a better plan with cost 28.89
+Top 3 best plans from full exhaustive search:  Plan 1: cost 28.89   Plan 2: cost 42.63   Plan 3: cost 49.14 Naive index-only plan cost: 644403.95
+Warning: Branch-and-bound selected plan with cost 754774.78, but exhaustive search found a better plan with cost 28.98
+Top 3 best plans from exhaustive search:  Plan 1: cost 28.98   Plan 2: cost 45.36   Plan 3: cost 51.94 Naive index-only plan cost: 754774.78
+Warning: 1024-plan exhaustive search selected plan with cost 310861.62, but full exhaustive search found a better plan with cost 28.98
+Top 3 best plans from full exhaustive search:  Plan 1: cost 28.98   Plan 2: cost 45.36   Plan 3: cost 51.94 Naive index-only plan cost: 754774.78
+Warning: Branch-and-bound selected plan with cost 517914.29, but exhaustive search found a better plan with cost 26.69
+Top 3 best plans from exhaustive search:  Plan 1: cost 26.69   Plan 2: cost 38.35   Plan 3: cost 42.76 Naive index-only plan cost: 517914.29
+Warning: 1024-plan exhaustive search selected plan with cost 213318.55, but full exhaustive search found a better plan with cost 26.69
+Top 3 best plans from full exhaustive search:  Plan 1: cost 26.69   Plan 2: cost 38.35   Plan 3: cost 42.76 Naive index-only plan cost: 517914.29
+Warning: Branch-and-bound selected plan with cost 5159.17, but exhaustive search found a better plan with cost 11.00
+Top 3 best plans from exhaustive search:  Plan 1: cost 11.00   Plan 2: cost 22.03   Plan 3: cost 22.05 Naive index-only plan cost: 5159.17
+Warning: 1024-plan exhaustive search selected plan with cost 2158.27, but full exhaustive search found a better plan with cost 11.00
+Top 3 best plans from full exhaustive search:  Plan 1: cost 11.00   Plan 2: cost 22.03   Plan 3: cost 22.05 Naive index-only plan cost: 5159.17
+Warning: Branch-and-bound selected plan with cost 611820.69, but exhaustive search found a better plan with cost 27.50
+Top 3 best plans from exhaustive search:  Plan 1: cost 27.50   Plan 2: cost 41.45   Plan 3: cost 46.67 Naive index-only plan cost: 611820.69
+Warning: 1024-plan exhaustive search selected plan with cost 251989.49, but full exhaustive search found a better plan with cost 27.50
+Top 3 best plans from full exhaustive search:  Plan 1: cost 27.50   Plan 2: cost 41.45   Plan 3: cost 46.67 Naive index-only plan cost: 611820.69
+Warning: Branch-and-bound selected plan with cost 2018.43, but exhaustive search found a better plan with cost 1.00
+Top 3 best plans from exhaustive search:  Plan 1: cost 1.00   Plan 2: cost 12.02   Plan 3: cost 12.03 Naive index-only plan cost: 2018.43
+Warning: 1024-plan exhaustive search selected plan with cost 1160.40, but full exhaustive search found a better plan with cost 1.00
+Top 3 best plans from full exhaustive search:  Plan 1: cost 1.00   Plan 2: cost 12.02   Plan 3: cost 12.03 Naive index-only plan cost: 2018.43
+Warning: Branch-and-bound selected plan with cost 648966.43, but exhaustive search found a better plan with cost 27.12
+Top 3 best plans from exhaustive search:  Plan 1: cost 27.12   Plan 2: cost 42.76   Plan 3: cost 47.62 Naive index-only plan cost: 648966.43
+Warning: 1024-plan exhaustive search selected plan with cost 267284.93, but full exhaustive search found a better plan with cost 27.12
+Top 3 best plans from full exhaustive search:  Plan 1: cost 27.12   Plan 2: cost 42.76   Plan 3: cost 47.62 Naive index-only plan cost: 648966.43
+Warning: Branch-and-bound selected plan with cost 8779.01, but exhaustive search found a better plan with cost 11.00
+Top 3 best plans from exhaustive search:  Plan 1: cost 11.00   Plan 2: cost 22.01   Plan 3: cost 22.26 Naive index-only plan cost: 8779.01
+Warning: 1024-plan exhaustive search selected plan with cost 3648.81, but full exhaustive search found a better plan with cost 11.00
+Top 3 best plans from full exhaustive search:  Plan 1: cost 11.00   Plan 2: cost 22.01   Plan 3: cost 22.26 Naive index-only plan cost: 8779.01
+Warning: Branch-and-bound selected plan with cost 5069.10, but exhaustive search found a better plan with cost 22.04
+Top 3 best plans from exhaustive search:  Plan 1: cost 22.04   Plan 2: cost 22.13   Plan 3: cost 22.15 Naive index-only plan cost: 5069.10
+Warning: 1024-plan exhaustive search selected plan with cost 2121.21, but full exhaustive search found a better plan with cost 22.04
+Top 3 best plans from full exhaustive search:  Plan 1: cost 22.04   Plan 2: cost 22.13   Plan 3: cost 22.15 Naive index-only plan cost: 5069.10
+BenchmarkQueryExecution/query=839/selector=0-10         	       1	19817716333 ns/op	        16.00 chunks	         1.000 series	14422725176 B/op	   52203 allocs/op
+BenchmarkQueryExecution/query=841/selector=0
+Warning: Branch-and-bound selected plan with cost 576509.00, but exhaustive search found a better plan with cost 29.76
+Top 3 best plans from exhaustive search:  Plan 1: cost 29.76   Plan 2: cost 43.29   Plan 3: cost 46.97 Naive index-only plan cost: 576509.00
+Warning: 1024-plan exhaustive search selected plan with cost 237451.12, but full exhaustive search found a better plan with cost 29.76
+Top 3 best plans from full exhaustive search:  Plan 1: cost 29.76   Plan 2: cost 43.29   Plan 3: cost 46.97 Naive index-only plan cost: 576509.00
+Warning: Branch-and-bound selected plan with cost 542209.35, but exhaustive search found a better plan with cost 31.45
+Top 3 best plans from exhaustive search:  Plan 1: cost 31.45   Plan 2: cost 43.42   Plan 3: cost 45.99 Naive index-only plan cost: 542209.35
+Warning: 1024-plan exhaustive search selected plan with cost 223330.09, but full exhaustive search found a better plan with cost 31.45
+Top 3 best plans from full exhaustive search:  Plan 1: cost 31.45   Plan 2: cost 43.42   Plan 3: cost 45.99 Naive index-only plan cost: 542209.35
+Warning: Branch-and-bound selected plan with cost 608208.62, but exhaustive search found a better plan with cost 32.78
+Top 3 best plans from exhaustive search:  Plan 1: cost 32.78   Plan 2: cost 46.42   Plan 3: cost 49.56 Naive index-only plan cost: 608208.62
+Warning: 1024-plan exhaustive search selected plan with cost 250510.77, but full exhaustive search found a better plan with cost 32.78
+Top 3 best plans from full exhaustive search:  Plan 1: cost 32.78   Plan 2: cost 46.42   Plan 3: cost 49.56 Naive index-only plan cost: 608208.62
+Warning: Branch-and-bound selected plan with cost 2461.91, but exhaustive search found a better plan with cost 1.00
+Top 3 best plans from exhaustive search:  Plan 1: cost 1.00   Plan 2: cost 11.00   Plan 3: cost 11.00 Naive index-only plan cost: 2461.91
+Warning: 1024-plan exhaustive search selected plan with cost 1421.30, but full exhaustive search found a better plan with cost 1.00
+Top 3 best plans from full exhaustive search:  Plan 1: cost 1.00   Plan 2: cost 11.00   Plan 3: cost 11.00 Naive index-only plan cost: 2461.91
+Warning: Branch-and-bound selected plan with cost 2757.73, but exhaustive search found a better plan with cost 1.00
+Top 3 best plans from exhaustive search:  Plan 1: cost 1.00   Plan 2: cost 11.00   Plan 3: cost 12.00 Naive index-only plan cost: 2757.73
+Warning: 1024-plan exhaustive search selected plan with cost 1595.30, but full exhaustive search found a better plan with cost 1.00
+Top 3 best plans from full exhaustive search:  Plan 1: cost 1.00   Plan 2: cost 11.00   Plan 3: cost 12.00 Naive index-only plan cost: 2757.73
+Warning: Branch-and-bound selected plan with cost 644407.51, but exhaustive search found a better plan with cost 32.45
+Top 3 best plans from exhaustive search:  Plan 1: cost 32.45   Plan 2: cost 46.19   Plan 3: cost 49.14 Naive index-only plan cost: 644407.51
+Warning: 1024-plan exhaustive search selected plan with cost 265415.97, but full exhaustive search found a better plan with cost 32.45
+Top 3 best plans from full exhaustive search:  Plan 1: cost 32.45   Plan 2: cost 46.19   Plan 3: cost 49.14 Naive index-only plan cost: 644407.51
+Warning: Branch-and-bound selected plan with cost 754778.33, but exhaustive search found a better plan with cost 32.53
+Top 3 best plans from exhaustive search:  Plan 1: cost 32.53   Plan 2: cost 48.91   Plan 3: cost 51.94 Naive index-only plan cost: 754778.33
+Warning: 1024-plan exhaustive search selected plan with cost 310865.17, but full exhaustive search found a better plan with cost 32.53
+Top 3 best plans from full exhaustive search:  Plan 1: cost 32.53   Plan 2: cost 48.91   Plan 3: cost 51.94 Naive index-only plan cost: 754778.33
+Warning: Branch-and-bound selected plan with cost 517916.48, but exhaustive search found a better plan with cost 28.88
+Top 3 best plans from exhaustive search:  Plan 1: cost 28.88   Plan 2: cost 40.54   Plan 3: cost 42.76 Naive index-only plan cost: 517916.48
+Warning: 1024-plan exhaustive search selected plan with cost 213320.74, but full exhaustive search found a better plan with cost 28.88
+Top 3 best plans from full exhaustive search:  Plan 1: cost 28.88   Plan 2: cost 40.54   Plan 3: cost 42.76 Naive index-only plan cost: 517916.48
+Warning: Branch-and-bound selected plan with cost 5159.19, but exhaustive search found a better plan with cost 22.05
+Top 3 best plans from exhaustive search:  Plan 1: cost 22.05   Plan 2: cost 22.07   Plan 3: cost 22.08 Naive index-only plan cost: 5159.19
+Warning: 1024-plan exhaustive search selected plan with cost 2158.29, but full exhaustive search found a better plan with cost 22.05
+Top 3 best plans from full exhaustive search:  Plan 1: cost 22.05   Plan 2: cost 22.07   Plan 3: cost 22.08 Naive index-only plan cost: 5159.19
+Warning: Branch-and-bound selected plan with cost 611823.02, but exhaustive search found a better plan with cost 29.83
+Top 3 best plans from exhaustive search:  Plan 1: cost 29.83   Plan 2: cost 43.78   Plan 3: cost 46.67 Naive index-only plan cost: 611823.02
+Warning: 1024-plan exhaustive search selected plan with cost 251991.82, but full exhaustive search found a better plan with cost 29.83
+Top 3 best plans from full exhaustive search:  Plan 1: cost 29.83   Plan 2: cost 43.78   Plan 3: cost 46.67 Naive index-only plan cost: 611823.02
+Warning: Branch-and-bound selected plan with cost 2018.41, but exhaustive search found a better plan with cost 1.00
+Top 3 best plans from exhaustive search:  Plan 1: cost 1.00   Plan 2: cost 11.00   Plan 3: cost 12.00 Naive index-only plan cost: 2018.41
+Warning: 1024-plan exhaustive search selected plan with cost 1160.40, but full exhaustive search found a better plan with cost 1.00
+Top 3 best plans from full exhaustive search:  Plan 1: cost 1.00   Plan 2: cost 11.00   Plan 3: cost 12.00 Naive index-only plan cost: 2018.41
+Warning: Branch-and-bound selected plan with cost 648968.55, but exhaustive search found a better plan with cost 29.24
+Top 3 best plans from exhaustive search:  Plan 1: cost 29.24   Plan 2: cost 44.88   Plan 3: cost 47.62 Naive index-only plan cost: 648968.55
+Warning: 1024-plan exhaustive search selected plan with cost 267287.05, but full exhaustive search found a better plan with cost 29.24
+Top 3 best plans from full exhaustive search:  Plan 1: cost 29.24   Plan 2: cost 44.88   Plan 3: cost 47.62 Naive index-only plan cost: 648968.55
+Warning: Branch-and-bound selected plan with cost 8779.03, but exhaustive search found a better plan with cost 22.03
+Top 3 best plans from exhaustive search:  Plan 1: cost 22.03   Plan 2: cost 22.27   Plan 3: cost 22.28 Naive index-only plan cost: 8779.03
+Warning: 1024-plan exhaustive search selected plan with cost 3648.83, but full exhaustive search found a better plan with cost 22.03
+Top 3 best plans from full exhaustive search:  Plan 1: cost 22.03   Plan 2: cost 22.27   Plan 3: cost 22.28 Naive index-only plan cost: 8779.03
+Warning: Branch-and-bound selected plan with cost 5069.09, but exhaustive search found a better plan with cost 11.00
+Top 3 best plans from exhaustive search:  Plan 1: cost 11.00   Plan 2: cost 22.03   Plan 3: cost 22.12 Naive index-only plan cost: 5069.09
+Warning: 1024-plan exhaustive search selected plan with cost 2121.20, but full exhaustive search found a better plan with cost 11.00
+Top 3 best plans from full exhaustive search:  Plan 1: cost 11.00   Plan 2: cost 22.03   Plan 3: cost 22.12 Naive index-only plan cost: 5069.09
+BenchmarkQueryExecution/query=841/selector=0-10         	       1	20257559500 ns/op	       608.0 chunks	       142.0 series	14427279592 B/op	   74626 allocs/op
+BenchmarkQueryExecution/query=843/selector=0
+Warning: Branch-and-bound selected plan with cost 576507.14, but exhaustive search found a better plan with cost 27.90
+Top 3 best plans from exhaustive search:  Plan 1: cost 27.90   Plan 2: cost 41.43   Plan 3: cost 46.97 Naive index-only plan cost: 576507.14
+Warning: 1024-plan exhaustive search selected plan with cost 237449.26, but full exhaustive search found a better plan with cost 27.90
+Top 3 best plans from full exhaustive search:  Plan 1: cost 27.90   Plan 2: cost 41.43   Plan 3: cost 46.97 Naive index-only plan cost: 576507.14
+Warning: Branch-and-bound selected plan with cost 542206.09, but exhaustive search found a better plan with cost 28.19
+Top 3 best plans from exhaustive search:  Plan 1: cost 28.19   Plan 2: cost 40.16   Plan 3: cost 45.99 Naive index-only plan cost: 542206.09
+Warning: 1024-plan exhaustive search selected plan with cost 223326.82, but full exhaustive search found a better plan with cost 28.19
+Top 3 best plans from full exhaustive search:  Plan 1: cost 28.19   Plan 2: cost 40.16   Plan 3: cost 45.99 Naive index-only plan cost: 542206.09
+Warning: Branch-and-bound selected plan with cost 608205.02, but exhaustive search found a better plan with cost 29.18
+Top 3 best plans from exhaustive search:  Plan 1: cost 29.18   Plan 2: cost 42.82   Plan 3: cost 49.56 Naive index-only plan cost: 608205.02
+Warning: 1024-plan exhaustive search selected plan with cost 250507.17, but full exhaustive search found a better plan with cost 29.18
+Top 3 best plans from full exhaustive search:  Plan 1: cost 29.18   Plan 2: cost 42.82   Plan 3: cost 49.56 Naive index-only plan cost: 608205.02
+Warning: Branch-and-bound selected plan with cost 2461.91, but exhaustive search found a better plan with cost 1.00
+Top 3 best plans from exhaustive search:  Plan 1: cost 1.00   Plan 2: cost 11.00   Plan 3: cost 11.00 Naive index-only plan cost: 2461.91
+Warning: 1024-plan exhaustive search selected plan with cost 1421.30, but full exhaustive search found a better plan with cost 1.00
+Top 3 best plans from full exhaustive search:  Plan 1: cost 1.00   Plan 2: cost 11.00   Plan 3: cost 11.00 Naive index-only plan cost: 2461.91
+Warning: Branch-and-bound selected plan with cost 2757.73, but exhaustive search found a better plan with cost 1.00
+Top 3 best plans from exhaustive search:  Plan 1: cost 1.00   Plan 2: cost 11.00   Plan 3: cost 12.00 Naive index-only plan cost: 2757.73
+Warning: 1024-plan exhaustive search selected plan with cost 1595.30, but full exhaustive search found a better plan with cost 1.00
+Top 3 best plans from full exhaustive search:  Plan 1: cost 1.00   Plan 2: cost 11.00   Plan 3: cost 12.00 Naive index-only plan cost: 2757.73
+Warning: Branch-and-bound selected plan with cost 644404.00, but exhaustive search found a better plan with cost 28.94
+Top 3 best plans from exhaustive search:  Plan 1: cost 28.94   Plan 2: cost 42.68   Plan 3: cost 49.14 Naive index-only plan cost: 644404.00
+Warning: 1024-plan exhaustive search selected plan with cost 265412.46, but full exhaustive search found a better plan with cost 28.94
+Top 3 best plans from full exhaustive search:  Plan 1: cost 28.94   Plan 2: cost 42.68   Plan 3: cost 49.14 Naive index-only plan cost: 644404.00
+Warning: Branch-and-bound selected plan with cost 754774.86, but exhaustive search found a better plan with cost 29.06
+Top 3 best plans from exhaustive search:  Plan 1: cost 29.06   Plan 2: cost 45.44   Plan 3: cost 51.94 Naive index-only plan cost: 754774.86
+Warning: 1024-plan exhaustive search selected plan with cost 310861.70, but full exhaustive search found a better plan with cost 29.06
+Top 3 best plans from full exhaustive search:  Plan 1: cost 29.06   Plan 2: cost 45.44   Plan 3: cost 51.94 Naive index-only plan cost: 754774.86
+Warning: Branch-and-bound selected plan with cost 517914.33, but exhaustive search found a better plan with cost 26.73
+Top 3 best plans from exhaustive search:  Plan 1: cost 26.73   Plan 2: cost 38.39   Plan 3: cost 42.76 Naive index-only plan cost: 517914.33
+Warning: 1024-plan exhaustive search selected plan with cost 213318.59, but full exhaustive search found a better plan with cost 26.73
+Top 3 best plans from full exhaustive search:  Plan 1: cost 26.73   Plan 2: cost 38.39   Plan 3: cost 42.76 Naive index-only plan cost: 517914.33
+Warning: Branch-and-bound selected plan with cost 5159.17, but exhaustive search found a better plan with cost 11.00
+Top 3 best plans from exhaustive search:  Plan 1: cost 11.00   Plan 2: cost 22.03   Plan 3: cost 22.05 Naive index-only plan cost: 5159.17
+Warning: 1024-plan exhaustive search selected plan with cost 2158.27, but full exhaustive search found a better plan with cost 11.00
+Top 3 best plans from full exhaustive search:  Plan 1: cost 11.00   Plan 2: cost 22.03   Plan 3: cost 22.05 Naive index-only plan cost: 5159.17
+Warning: Branch-and-bound selected plan with cost 611820.72, but exhaustive search found a better plan with cost 27.53
+Top 3 best plans from exhaustive search:  Plan 1: cost 27.53   Plan 2: cost 41.48   Plan 3: cost 46.67 Naive index-only plan cost: 611820.72
+Warning: 1024-plan exhaustive search selected plan with cost 251989.52, but full exhaustive search found a better plan with cost 27.53
+Top 3 best plans from full exhaustive search:  Plan 1: cost 27.53   Plan 2: cost 41.48   Plan 3: cost 46.67 Naive index-only plan cost: 611820.72
+Warning: Branch-and-bound selected plan with cost 2018.41, but exhaustive search found a better plan with cost 1.00
+Top 3 best plans from exhaustive search:  Plan 1: cost 1.00   Plan 2: cost 11.00   Plan 3: cost 12.00 Naive index-only plan cost: 2018.41
+Warning: 1024-plan exhaustive search selected plan with cost 1160.40, but full exhaustive search found a better plan with cost 1.00
+Top 3 best plans from full exhaustive search:  Plan 1: cost 1.00   Plan 2: cost 11.00   Plan 3: cost 12.00 Naive index-only plan cost: 2018.41
+Warning: Branch-and-bound selected plan with cost 648966.46, but exhaustive search found a better plan with cost 27.15
+Top 3 best plans from exhaustive search:  Plan 1: cost 27.15   Plan 2: cost 42.79   Plan 3: cost 47.62 Naive index-only plan cost: 648966.46
+Warning: 1024-plan exhaustive search selected plan with cost 267284.96, but full exhaustive search found a better plan with cost 27.15
+Top 3 best plans from full exhaustive search:  Plan 1: cost 27.15   Plan 2: cost 42.79   Plan 3: cost 47.62 Naive index-only plan cost: 648966.46
+Warning: Branch-and-bound selected plan with cost 8779.01, but exhaustive search found a better plan with cost 11.00
+Top 3 best plans from exhaustive search:  Plan 1: cost 11.00   Plan 2: cost 22.01   Plan 3: cost 22.26 Naive index-only plan cost: 8779.01
+Warning: 1024-plan exhaustive search selected plan with cost 3648.81, but full exhaustive search found a better plan with cost 11.00
+Top 3 best plans from full exhaustive search:  Plan 1: cost 11.00   Plan 2: cost 22.01   Plan 3: cost 22.26 Naive index-only plan cost: 8779.01
+Warning: Branch-and-bound selected plan with cost 5069.09, but exhaustive search found a better plan with cost 11.00
+Top 3 best plans from exhaustive search:  Plan 1: cost 11.00   Plan 2: cost 22.03   Plan 3: cost 22.12 Naive index-only plan cost: 5069.09
+Warning: 1024-plan exhaustive search selected plan with cost 2121.20, but full exhaustive search found a better plan with cost 11.00
+Top 3 best plans from full exhaustive search:  Plan 1: cost 11.00   Plan 2: cost 22.03   Plan 3: cost 22.12 Naive index-only plan cost: 5069.09
+BenchmarkQueryExecution/query=843/selector=0-10         	       1	19815994875 ns/op	         7.000 chunks	         2.000 series	14426263816 B/op	   50780 allocs/op
+BenchmarkQueryExecution/query=845/selector=0
+Warning: Branch-and-bound selected plan with cost 576507.14, but exhaustive search found a better plan with cost 27.90
+Top 3 best plans from exhaustive search:  Plan 1: cost 27.90   Plan 2: cost 41.43   Plan 3: cost 46.97 Naive index-only plan cost: 576507.14
+Warning: 1024-plan exhaustive search selected plan with cost 237449.26, but full exhaustive search found a better plan with cost 27.90
+Top 3 best plans from full exhaustive search:  Plan 1: cost 27.90   Plan 2: cost 41.43   Plan 3: cost 46.97 Naive index-only plan cost: 576507.14
+Warning: Branch-and-bound selected plan with cost 542206.09, but exhaustive search found a better plan with cost 28.19
+Top 3 best plans from exhaustive search:  Plan 1: cost 28.19   Plan 2: cost 40.16   Plan 3: cost 45.99 Naive index-only plan cost: 542206.09
+Warning: 1024-plan exhaustive search selected plan with cost 223326.82, but full exhaustive search found a better plan with cost 28.19
+Top 3 best plans from full exhaustive search:  Plan 1: cost 28.19   Plan 2: cost 40.16   Plan 3: cost 45.99 Naive index-only plan cost: 542206.09
+Warning: Branch-and-bound selected plan with cost 608205.02, but exhaustive search found a better plan with cost 29.18
+Top 3 best plans from exhaustive search:  Plan 1: cost 29.18   Plan 2: cost 42.82   Plan 3: cost 49.56 Naive index-only plan cost: 608205.02
+Warning: 1024-plan exhaustive search selected plan with cost 250507.17, but full exhaustive search found a better plan with cost 29.18
+Top 3 best plans from full exhaustive search:  Plan 1: cost 29.18   Plan 2: cost 42.82   Plan 3: cost 49.56 Naive index-only plan cost: 608205.02
+Warning: Branch-and-bound selected plan with cost 2461.91, but exhaustive search found a better plan with cost 1.00
+Top 3 best plans from exhaustive search:  Plan 1: cost 1.00   Plan 2: cost 11.00   Plan 3: cost 11.00 Naive index-only plan cost: 2461.91
+Warning: 1024-plan exhaustive search selected plan with cost 1421.30, but full exhaustive search found a better plan with cost 1.00
+Top 3 best plans from full exhaustive search:  Plan 1: cost 1.00   Plan 2: cost 11.00   Plan 3: cost 11.00 Naive index-only plan cost: 2461.91
+Warning: Branch-and-bound selected plan with cost 2757.73, but exhaustive search found a better plan with cost 1.00
+Top 3 best plans from exhaustive search:  Plan 1: cost 1.00   Plan 2: cost 11.00   Plan 3: cost 12.00 Naive index-only plan cost: 2757.73
+Warning: 1024-plan exhaustive search selected plan with cost 1595.30, but full exhaustive search found a better plan with cost 1.00
+Top 3 best plans from full exhaustive search:  Plan 1: cost 1.00   Plan 2: cost 11.00   Plan 3: cost 12.00 Naive index-only plan cost: 2757.73
+Warning: Branch-and-bound selected plan with cost 644404.00, but exhaustive search found a better plan with cost 28.94
+Top 3 best plans from exhaustive search:  Plan 1: cost 28.94   Plan 2: cost 42.68   Plan 3: cost 49.14 Naive index-only plan cost: 644404.00
+Warning: 1024-plan exhaustive search selected plan with cost 265412.46, but full exhaustive search found a better plan with cost 28.94
+Top 3 best plans from full exhaustive search:  Plan 1: cost 28.94   Plan 2: cost 42.68   Plan 3: cost 49.14 Naive index-only plan cost: 644404.00
+Warning: Branch-and-bound selected plan with cost 754774.86, but exhaustive search found a better plan with cost 29.06
+Top 3 best plans from exhaustive search:  Plan 1: cost 29.06   Plan 2: cost 45.44   Plan 3: cost 51.94 Naive index-only plan cost: 754774.86
+Warning: 1024-plan exhaustive search selected plan with cost 310861.70, but full exhaustive search found a better plan with cost 29.06
+Top 3 best plans from full exhaustive search:  Plan 1: cost 29.06   Plan 2: cost 45.44   Plan 3: cost 51.94 Naive index-only plan cost: 754774.86
+Warning: Branch-and-bound selected plan with cost 517914.33, but exhaustive search found a better plan with cost 26.73
+Top 3 best plans from exhaustive search:  Plan 1: cost 26.73   Plan 2: cost 38.39   Plan 3: cost 42.76 Naive index-only plan cost: 517914.33
+Warning: 1024-plan exhaustive search selected plan with cost 213318.59, but full exhaustive search found a better plan with cost 26.73
+Top 3 best plans from full exhaustive search:  Plan 1: cost 26.73   Plan 2: cost 38.39   Plan 3: cost 42.76 Naive index-only plan cost: 517914.33
+Warning: Branch-and-bound selected plan with cost 5159.17, but exhaustive search found a better plan with cost 11.00
+Top 3 best plans from exhaustive search:  Plan 1: cost 11.00   Plan 2: cost 22.03   Plan 3: cost 22.05 Naive index-only plan cost: 5159.17
+Warning: 1024-plan exhaustive search selected plan with cost 2158.27, but full exhaustive search found a better plan with cost 11.00
+Top 3 best plans from full exhaustive search:  Plan 1: cost 11.00   Plan 2: cost 22.03   Plan 3: cost 22.05 Naive index-only plan cost: 5159.17
+Warning: Branch-and-bound selected plan with cost 611820.72, but exhaustive search found a better plan with cost 27.53
+Top 3 best plans from exhaustive search:  Plan 1: cost 27.53   Plan 2: cost 41.48   Plan 3: cost 46.67 Naive index-only plan cost: 611820.72
+Warning: 1024-plan exhaustive search selected plan with cost 251989.52, but full exhaustive search found a better plan with cost 27.53
+Top 3 best plans from full exhaustive search:  Plan 1: cost 27.53   Plan 2: cost 41.48   Plan 3: cost 46.67 Naive index-only plan cost: 611820.72
+Warning: Branch-and-bound selected plan with cost 2018.41, but exhaustive search found a better plan with cost 1.00
+Top 3 best plans from exhaustive search:  Plan 1: cost 1.00   Plan 2: cost 11.00   Plan 3: cost 12.00 Naive index-only plan cost: 2018.41
+Warning: 1024-plan exhaustive search selected plan with cost 1160.40, but full exhaustive search found a better plan with cost 1.00
+Top 3 best plans from full exhaustive search:  Plan 1: cost 1.00   Plan 2: cost 11.00   Plan 3: cost 12.00 Naive index-only plan cost: 2018.41
+Warning: Branch-and-bound selected plan with cost 648966.46, but exhaustive search found a better plan with cost 27.15
+Top 3 best plans from exhaustive search:  Plan 1: cost 27.15   Plan 2: cost 42.79   Plan 3: cost 47.62 Naive index-only plan cost: 648966.46
+Warning: 1024-plan exhaustive search selected plan with cost 267284.96, but full exhaustive search found a better plan with cost 27.15
+Top 3 best plans from full exhaustive search:  Plan 1: cost 27.15   Plan 2: cost 42.79   Plan 3: cost 47.62 Naive index-only plan cost: 648966.46
+Warning: Branch-and-bound selected plan with cost 8779.01, but exhaustive search found a better plan with cost 11.00
+Top 3 best plans from exhaustive search:  Plan 1: cost 11.00   Plan 2: cost 22.01   Plan 3: cost 22.26 Naive index-only plan cost: 8779.01
+Warning: 1024-plan exhaustive search selected plan with cost 3648.81, but full exhaustive search found a better plan with cost 11.00
+Top 3 best plans from full exhaustive search:  Plan 1: cost 11.00   Plan 2: cost 22.01   Plan 3: cost 22.26 Naive index-only plan cost: 8779.01
+Warning: Branch-and-bound selected plan with cost 5069.09, but exhaustive search found a better plan with cost 11.00
+Top 3 best plans from exhaustive search:  Plan 1: cost 11.00   Plan 2: cost 22.03   Plan 3: cost 22.12 Naive index-only plan cost: 5069.09
+Warning: 1024-plan exhaustive search selected plan with cost 2121.20, but full exhaustive search found a better plan with cost 11.00
+Top 3 best plans from full exhaustive search:  Plan 1: cost 11.00   Plan 2: cost 22.03   Plan 3: cost 22.12 Naive index-only plan cost: 5069.09
+BenchmarkQueryExecution/query=845/selector=0-10         	       1	20703485750 ns/op	         7.000 chunks	         2.000 series	14425383736 B/op	   52406 allocs/op
+BenchmarkQueryExecution/query=846/selector=0
+Warning: Branch-and-bound selected plan with cost 576509.00, but exhaustive search found a better plan with cost 29.76
+Top 3 best plans from exhaustive search:  Plan 1: cost 29.76   Plan 2: cost 43.29   Plan 3: cost 46.97 Naive index-only plan cost: 576509.00
+Warning: 1024-plan exhaustive search selected plan with cost 237451.12, but full exhaustive search found a better plan with cost 29.76
+Top 3 best plans from full exhaustive search:  Plan 1: cost 29.76   Plan 2: cost 43.29   Plan 3: cost 46.97 Naive index-only plan cost: 576509.00
+Warning: Branch-and-bound selected plan with cost 542209.35, but exhaustive search found a better plan with cost 31.45
+Top 3 best plans from exhaustive search:  Plan 1: cost 31.45   Plan 2: cost 43.42   Plan 3: cost 45.99 Naive index-only plan cost: 542209.35
+Warning: 1024-plan exhaustive search selected plan with cost 223330.08, but full exhaustive search found a better plan with cost 31.45
+Top 3 best plans from full exhaustive search:  Plan 1: cost 31.45   Plan 2: cost 43.42   Plan 3: cost 45.99 Naive index-only plan cost: 542209.35
+Warning: Branch-and-bound selected plan with cost 608208.62, but exhaustive search found a better plan with cost 32.78
+Top 3 best plans from exhaustive search:  Plan 1: cost 32.78   Plan 2: cost 46.42   Plan 3: cost 49.56 Naive index-only plan cost: 608208.62
+Warning: 1024-plan exhaustive search selected plan with cost 250510.77, but full exhaustive search found a better plan with cost 32.78
+Top 3 best plans from full exhaustive search:  Plan 1: cost 32.78   Plan 2: cost 46.42   Plan 3: cost 49.56 Naive index-only plan cost: 608208.62
+Warning: Branch-and-bound selected plan with cost 2461.91, but exhaustive search found a better plan with cost 1.00
+Top 3 best plans from exhaustive search:  Plan 1: cost 1.00   Plan 2: cost 11.00   Plan 3: cost 11.00 Naive index-only plan cost: 2461.91
+Warning: 1024-plan exhaustive search selected plan with cost 1421.30, but full exhaustive search found a better plan with cost 1.00
+Top 3 best plans from full exhaustive search:  Plan 1: cost 1.00   Plan 2: cost 11.00   Plan 3: cost 11.00 Naive index-only plan cost: 2461.91
+Warning: Branch-and-bound selected plan with cost 2757.73, but exhaustive search found a better plan with cost 1.00
+Top 3 best plans from exhaustive search:  Plan 1: cost 1.00   Plan 2: cost 11.00   Plan 3: cost 12.00 Naive index-only plan cost: 2757.73
+Warning: 1024-plan exhaustive search selected plan with cost 1595.30, but full exhaustive search found a better plan with cost 1.00
+Top 3 best plans from full exhaustive search:  Plan 1: cost 1.00   Plan 2: cost 11.00   Plan 3: cost 12.00 Naive index-only plan cost: 2757.73
+Warning: Branch-and-bound selected plan with cost 644407.51, but exhaustive search found a better plan with cost 32.45
+Top 3 best plans from exhaustive search:  Plan 1: cost 32.45   Plan 2: cost 46.19   Plan 3: cost 49.14 Naive index-only plan cost: 644407.51
+Warning: 1024-plan exhaustive search selected plan with cost 265415.97, but full exhaustive search found a better plan with cost 32.45
+Top 3 best plans from full exhaustive search:  Plan 1: cost 32.45   Plan 2: cost 46.19   Plan 3: cost 49.14 Naive index-only plan cost: 644407.51
+Warning: Branch-and-bound selected plan with cost 754778.33, but exhaustive search found a better plan with cost 32.53
+Top 3 best plans from exhaustive search:  Plan 1: cost 32.53   Plan 2: cost 48.91   Plan 3: cost 51.94 Naive index-only plan cost: 754778.33
+Warning: 1024-plan exhaustive search selected plan with cost 310865.17, but full exhaustive search found a better plan with cost 32.53
+Top 3 best plans from full exhaustive search:  Plan 1: cost 32.53   Plan 2: cost 48.91   Plan 3: cost 51.94 Naive index-only plan cost: 754778.33
+Warning: Branch-and-bound selected plan with cost 517916.48, but exhaustive search found a better plan with cost 28.88
+Top 3 best plans from exhaustive search:  Plan 1: cost 28.88   Plan 2: cost 40.54   Plan 3: cost 42.76 Naive index-only plan cost: 517916.48
+Warning: 1024-plan exhaustive search selected plan with cost 213320.74, but full exhaustive search found a better plan with cost 28.88
+Top 3 best plans from full exhaustive search:  Plan 1: cost 28.88   Plan 2: cost 40.54   Plan 3: cost 42.76 Naive index-only plan cost: 517916.48
+Warning: Branch-and-bound selected plan with cost 5159.19, but exhaustive search found a better plan with cost 22.05
+Top 3 best plans from exhaustive search:  Plan 1: cost 22.05   Plan 2: cost 22.07   Plan 3: cost 22.08 Naive index-only plan cost: 5159.19
+Warning: 1024-plan exhaustive search selected plan with cost 2158.29, but full exhaustive search found a better plan with cost 22.05
+Top 3 best plans from full exhaustive search:  Plan 1: cost 22.05   Plan 2: cost 22.07   Plan 3: cost 22.08 Naive index-only plan cost: 5159.19
+Warning: Branch-and-bound selected plan with cost 611823.02, but exhaustive search found a better plan with cost 29.83
+Top 3 best plans from exhaustive search:  Plan 1: cost 29.83   Plan 2: cost 43.78   Plan 3: cost 46.67 Naive index-only plan cost: 611823.02
+Warning: 1024-plan exhaustive search selected plan with cost 251991.82, but full exhaustive search found a better plan with cost 29.83
+Top 3 best plans from full exhaustive search:  Plan 1: cost 29.83   Plan 2: cost 43.78   Plan 3: cost 46.67 Naive index-only plan cost: 611823.02
+Warning: Branch-and-bound selected plan with cost 2018.41, but exhaustive search found a better plan with cost 1.00
+Top 3 best plans from exhaustive search:  Plan 1: cost 1.00   Plan 2: cost 11.00   Plan 3: cost 12.00 Naive index-only plan cost: 2018.41
+Warning: 1024-plan exhaustive search selected plan with cost 1160.40, but full exhaustive search found a better plan with cost 1.00
+Top 3 best plans from full exhaustive search:  Plan 1: cost 1.00   Plan 2: cost 11.00   Plan 3: cost 12.00 Naive index-only plan cost: 2018.41
+Warning: Branch-and-bound selected plan with cost 648968.55, but exhaustive search found a better plan with cost 29.24
+Top 3 best plans from exhaustive search:  Plan 1: cost 29.24   Plan 2: cost 44.88   Plan 3: cost 47.62 Naive index-only plan cost: 648968.55
+Warning: 1024-plan exhaustive search selected plan with cost 267287.05, but full exhaustive search found a better plan with cost 29.24
+Top 3 best plans from full exhaustive search:  Plan 1: cost 29.24   Plan 2: cost 44.88   Plan 3: cost 47.62 Naive index-only plan cost: 648968.55
+Warning: Branch-and-bound selected plan with cost 8779.03, but exhaustive search found a better plan with cost 22.03
+Top 3 best plans from exhaustive search:  Plan 1: cost 22.03   Plan 2: cost 22.27   Plan 3: cost 22.28 Naive index-only plan cost: 8779.03
+Warning: 1024-plan exhaustive search selected plan with cost 3648.83, but full exhaustive search found a better plan with cost 22.03
+Top 3 best plans from full exhaustive search:  Plan 1: cost 22.03   Plan 2: cost 22.27   Plan 3: cost 22.28 Naive index-only plan cost: 8779.03
+Warning: Branch-and-bound selected plan with cost 5069.09, but exhaustive search found a better plan with cost 11.00
+Top 3 best plans from exhaustive search:  Plan 1: cost 11.00   Plan 2: cost 22.03   Plan 3: cost 22.12 Naive index-only plan cost: 5069.09
+Warning: 1024-plan exhaustive search selected plan with cost 2121.20, but full exhaustive search found a better plan with cost 11.00
+Top 3 best plans from full exhaustive search:  Plan 1: cost 11.00   Plan 2: cost 22.03   Plan 3: cost 22.12 Naive index-only plan cost: 5069.09
+BenchmarkQueryExecution/query=846/selector=0-10         	       1	20984735500 ns/op	       608.0 chunks	       142.0 series	14429476512 B/op	   72406 allocs/op
+BenchmarkQueryExecution/query=847/selector=0
+Warning: Branch-and-bound selected plan with cost 576508.60, but exhaustive search found a better plan with cost 29.36
+Top 3 best plans from exhaustive search:  Plan 1: cost 29.36   Plan 2: cost 42.89   Plan 3: cost 46.97 Naive index-only plan cost: 576508.60
+Warning: 1024-plan exhaustive search selected plan with cost 237450.72, but full exhaustive search found a better plan with cost 29.36
+Top 3 best plans from full exhaustive search:  Plan 1: cost 29.36   Plan 2: cost 42.89   Plan 3: cost 46.97 Naive index-only plan cost: 576508.60
+Warning: Branch-and-bound selected plan with cost 542208.28, but exhaustive search found a better plan with cost 30.38
+Top 3 best plans from exhaustive search:  Plan 1: cost 30.38   Plan 2: cost 42.35   Plan 3: cost 45.99 Naive index-only plan cost: 542208.28
+Warning: 1024-plan exhaustive search selected plan with cost 223329.01, but full exhaustive search found a better plan with cost 30.38
+Top 3 best plans from full exhaustive search:  Plan 1: cost 30.38   Plan 2: cost 42.35   Plan 3: cost 45.99 Naive index-only plan cost: 542208.28
+Warning: Branch-and-bound selected plan with cost 608207.40, but exhaustive search found a better plan with cost 31.56
+Top 3 best plans from exhaustive search:  Plan 1: cost 31.56   Plan 2: cost 45.20   Plan 3: cost 49.56 Naive index-only plan cost: 608207.40
+Warning: 1024-plan exhaustive search selected plan with cost 250509.55, but full exhaustive search found a better plan with cost 31.56
+Top 3 best plans from full exhaustive search:  Plan 1: cost 31.56   Plan 2: cost 45.20   Plan 3: cost 49.56 Naive index-only plan cost: 608207.40
+Warning: Branch-and-bound selected plan with cost 2461.91, but exhaustive search found a better plan with cost 1.00
+Top 3 best plans from exhaustive search:  Plan 1: cost 1.00   Plan 2: cost 11.00   Plan 3: cost 11.00 Naive index-only plan cost: 2461.91
+Warning: 1024-plan exhaustive search selected plan with cost 1421.30, but full exhaustive search found a better plan with cost 1.00
+Top 3 best plans from full exhaustive search:  Plan 1: cost 1.00   Plan 2: cost 11.00   Plan 3: cost 11.00 Naive index-only plan cost: 2461.91
+Warning: Branch-and-bound selected plan with cost 2757.73, but exhaustive search found a better plan with cost 1.00
+Top 3 best plans from exhaustive search:  Plan 1: cost 1.00   Plan 2: cost 11.00   Plan 3: cost 12.00 Naive index-only plan cost: 2757.73
+Warning: 1024-plan exhaustive search selected plan with cost 1595.30, but full exhaustive search found a better plan with cost 1.00
+Top 3 best plans from full exhaustive search:  Plan 1: cost 1.00   Plan 2: cost 11.00   Plan 3: cost 12.00 Naive index-only plan cost: 2757.73
+Warning: Branch-and-bound selected plan with cost 644406.55, but exhaustive search found a better plan with cost 31.49
+Top 3 best plans from exhaustive search:  Plan 1: cost 31.49   Plan 2: cost 45.23   Plan 3: cost 49.14 Naive index-only plan cost: 644406.55
+Warning: 1024-plan exhaustive search selected plan with cost 265415.01, but full exhaustive search found a better plan with cost 31.49
+Top 3 best plans from full exhaustive search:  Plan 1: cost 31.49   Plan 2: cost 45.23   Plan 3: cost 49.14 Naive index-only plan cost: 644406.55
+Warning: Branch-and-bound selected plan with cost 754777.23, but exhaustive search found a better plan with cost 31.43
+Top 3 best plans from exhaustive search:  Plan 1: cost 31.43   Plan 2: cost 47.81   Plan 3: cost 51.94 Naive index-only plan cost: 754777.23
+Warning: 1024-plan exhaustive search selected plan with cost 310864.07, but full exhaustive search found a better plan with cost 31.43
+Top 3 best plans from full exhaustive search:  Plan 1: cost 31.43   Plan 2: cost 47.81   Plan 3: cost 51.94 Naive index-only plan cost: 754777.23
+Warning: Branch-and-bound selected plan with cost 517916.13, but exhaustive search found a better plan with cost 28.53
+Top 3 best plans from exhaustive search:  Plan 1: cost 28.53   Plan 2: cost 40.19   Plan 3: cost 42.76 Naive index-only plan cost: 517916.13
+Warning: 1024-plan exhaustive search selected plan with cost 213320.39, but full exhaustive search found a better plan with cost 28.53
+Top 3 best plans from full exhaustive search:  Plan 1: cost 28.53   Plan 2: cost 40.19   Plan 3: cost 42.76 Naive index-only plan cost: 517916.13
+Warning: Branch-and-bound selected plan with cost 5159.18, but exhaustive search found a better plan with cost 22.04
+Top 3 best plans from exhaustive search:  Plan 1: cost 22.04   Plan 2: cost 22.06   Plan 3: cost 22.08 Naive index-only plan cost: 5159.18
+Warning: 1024-plan exhaustive search selected plan with cost 2158.28, but full exhaustive search found a better plan with cost 22.04
+Top 3 best plans from full exhaustive search:  Plan 1: cost 22.04   Plan 2: cost 22.06   Plan 3: cost 22.08 Naive index-only plan cost: 5159.18
+Warning: Branch-and-bound selected plan with cost 611822.45, but exhaustive search found a better plan with cost 29.26
+Top 3 best plans from exhaustive search:  Plan 1: cost 29.26   Plan 2: cost 43.21   Plan 3: cost 46.67 Naive index-only plan cost: 611822.45
+Warning: 1024-plan exhaustive search selected plan with cost 251991.25, but full exhaustive search found a better plan with cost 29.26
+Top 3 best plans from full exhaustive search:  Plan 1: cost 29.26   Plan 2: cost 43.21   Plan 3: cost 46.67 Naive index-only plan cost: 611822.45
+Warning: Branch-and-bound selected plan with cost 2018.41, but exhaustive search found a better plan with cost 1.00
+Top 3 best plans from exhaustive search:  Plan 1: cost 1.00   Plan 2: cost 11.00   Plan 3: cost 12.00 Naive index-only plan cost: 2018.41
+Warning: 1024-plan exhaustive search selected plan with cost 1160.40, but full exhaustive search found a better plan with cost 1.00
+Top 3 best plans from full exhaustive search:  Plan 1: cost 1.00   Plan 2: cost 11.00   Plan 3: cost 12.00 Naive index-only plan cost: 2018.41
+Warning: Branch-and-bound selected plan with cost 648967.95, but exhaustive search found a better plan with cost 28.64
+Top 3 best plans from exhaustive search:  Plan 1: cost 28.64   Plan 2: cost 44.28   Plan 3: cost 47.62 Naive index-only plan cost: 648967.95
+Warning: 1024-plan exhaustive search selected plan with cost 267286.45, but full exhaustive search found a better plan with cost 28.64
+Top 3 best plans from full exhaustive search:  Plan 1: cost 28.64   Plan 2: cost 44.28   Plan 3: cost 47.62 Naive index-only plan cost: 648967.95
+Warning: Branch-and-bound selected plan with cost 8779.02, but exhaustive search found a better plan with cost 22.02
+Top 3 best plans from exhaustive search:  Plan 1: cost 22.02   Plan 2: cost 22.27   Plan 3: cost 22.27 Naive index-only plan cost: 8779.02
+Warning: 1024-plan exhaustive search selected plan with cost 3648.82, but full exhaustive search found a better plan with cost 22.02
+Top 3 best plans from full exhaustive search:  Plan 1: cost 22.02   Plan 2: cost 22.27   Plan 3: cost 22.27 Naive index-only plan cost: 8779.02
+Warning: Branch-and-bound selected plan with cost 5069.09, but exhaustive search found a better plan with cost 11.00
+Top 3 best plans from exhaustive search:  Plan 1: cost 11.00   Plan 2: cost 22.03   Plan 3: cost 22.12 Naive index-only plan cost: 5069.09
+Warning: 1024-plan exhaustive search selected plan with cost 2121.20, but full exhaustive search found a better plan with cost 11.00
+Top 3 best plans from full exhaustive search:  Plan 1: cost 11.00   Plan 2: cost 22.03   Plan 3: cost 22.12 Naive index-only plan cost: 5069.09
+BenchmarkQueryExecution/query=847/selector=0-10         	       1	19371127750 ns/op	         6.000 chunks	         3.000 series	14425725760 B/op	   50576 allocs/op
+BenchmarkQueryExecution/query=848/selector=0
+Warning: Branch-and-bound selected plan with cost 576508.60, but exhaustive search found a better plan with cost 29.36
+Top 3 best plans from exhaustive search:  Plan 1: cost 29.36   Plan 2: cost 42.89   Plan 3: cost 46.97 Naive index-only plan cost: 576508.60
+Warning: 1024-plan exhaustive search selected plan with cost 237450.72, but full exhaustive search found a better plan with cost 29.36
+Top 3 best plans from full exhaustive search:  Plan 1: cost 29.36   Plan 2: cost 42.89   Plan 3: cost 46.97 Naive index-only plan cost: 576508.60
+Warning: Branch-and-bound selected plan with cost 542208.28, but exhaustive search found a better plan with cost 30.38
+Top 3 best plans from exhaustive search:  Plan 1: cost 30.38   Plan 2: cost 42.35   Plan 3: cost 45.99 Naive index-only plan cost: 542208.28
+Warning: 1024-plan exhaustive search selected plan with cost 223329.01, but full exhaustive search found a better plan with cost 30.38
+Top 3 best plans from full exhaustive search:  Plan 1: cost 30.38   Plan 2: cost 42.35   Plan 3: cost 45.99 Naive index-only plan cost: 542208.28
+Warning: Branch-and-bound selected plan with cost 608207.40, but exhaustive search found a better plan with cost 31.56
+Top 3 best plans from exhaustive search:  Plan 1: cost 31.56   Plan 2: cost 45.20   Plan 3: cost 49.56 Naive index-only plan cost: 608207.40
+Warning: 1024-plan exhaustive search selected plan with cost 250509.55, but full exhaustive search found a better plan with cost 31.56
+Top 3 best plans from full exhaustive search:  Plan 1: cost 31.56   Plan 2: cost 45.20   Plan 3: cost 49.56 Naive index-only plan cost: 608207.40
+Warning: Branch-and-bound selected plan with cost 2461.91, but exhaustive search found a better plan with cost 1.00
+Top 3 best plans from exhaustive search:  Plan 1: cost 1.00   Plan 2: cost 11.00   Plan 3: cost 11.00 Naive index-only plan cost: 2461.91
+Warning: 1024-plan exhaustive search selected plan with cost 1421.30, but full exhaustive search found a better plan with cost 1.00
+Top 3 best plans from full exhaustive search:  Plan 1: cost 1.00   Plan 2: cost 11.00   Plan 3: cost 11.00 Naive index-only plan cost: 2461.91
+Warning: Branch-and-bound selected plan with cost 2757.73, but exhaustive search found a better plan with cost 1.00
+Top 3 best plans from exhaustive search:  Plan 1: cost 1.00   Plan 2: cost 11.00   Plan 3: cost 12.00 Naive index-only plan cost: 2757.73
+Warning: 1024-plan exhaustive search selected plan with cost 1595.30, but full exhaustive search found a better plan with cost 1.00
+Top 3 best plans from full exhaustive search:  Plan 1: cost 1.00   Plan 2: cost 11.00   Plan 3: cost 12.00 Naive index-only plan cost: 2757.73
+Warning: Branch-and-bound selected plan with cost 644406.55, but exhaustive search found a better plan with cost 31.49
+Top 3 best plans from exhaustive search:  Plan 1: cost 31.49   Plan 2: cost 45.23   Plan 3: cost 49.14 Naive index-only plan cost: 644406.55
+Warning: 1024-plan exhaustive search selected plan with cost 265415.01, but full exhaustive search found a better plan with cost 31.49
+Top 3 best plans from full exhaustive search:  Plan 1: cost 31.49   Plan 2: cost 45.23   Plan 3: cost 49.14 Naive index-only plan cost: 644406.55
+Warning: Branch-and-bound selected plan with cost 754777.23, but exhaustive search found a better plan with cost 31.43
+Top 3 best plans from exhaustive search:  Plan 1: cost 31.43   Plan 2: cost 47.81   Plan 3: cost 51.94 Naive index-only plan cost: 754777.23
+Warning: 1024-plan exhaustive search selected plan with cost 310864.07, but full exhaustive search found a better plan with cost 31.43
+Top 3 best plans from full exhaustive search:  Plan 1: cost 31.43   Plan 2: cost 47.81   Plan 3: cost 51.94 Naive index-only plan cost: 754777.23
+Warning: Branch-and-bound selected plan with cost 517916.13, but exhaustive search found a better plan with cost 28.53
+Top 3 best plans from exhaustive search:  Plan 1: cost 28.53   Plan 2: cost 40.19   Plan 3: cost 42.76 Naive index-only plan cost: 517916.13
+Warning: 1024-plan exhaustive search selected plan with cost 213320.39, but full exhaustive search found a better plan with cost 28.53
+Top 3 best plans from full exhaustive search:  Plan 1: cost 28.53   Plan 2: cost 40.19   Plan 3: cost 42.76 Naive index-only plan cost: 517916.13
+Warning: Branch-and-bound selected plan with cost 5159.18, but exhaustive search found a better plan with cost 22.04
+Top 3 best plans from exhaustive search:  Plan 1: cost 22.04   Plan 2: cost 22.06   Plan 3: cost 22.08 Naive index-only plan cost: 5159.18
+Warning: 1024-plan exhaustive search selected plan with cost 2158.28, but full exhaustive search found a better plan with cost 22.04
+Top 3 best plans from full exhaustive search:  Plan 1: cost 22.04   Plan 2: cost 22.06   Plan 3: cost 22.08 Naive index-only plan cost: 5159.18
+Warning: Branch-and-bound selected plan with cost 611822.45, but exhaustive search found a better plan with cost 29.26
+Top 3 best plans from exhaustive search:  Plan 1: cost 29.26   Plan 2: cost 43.21   Plan 3: cost 46.67 Naive index-only plan cost: 611822.45
+Warning: 1024-plan exhaustive search selected plan with cost 251991.25, but full exhaustive search found a better plan with cost 29.26
+Top 3 best plans from full exhaustive search:  Plan 1: cost 29.26   Plan 2: cost 43.21   Plan 3: cost 46.67 Naive index-only plan cost: 611822.45
+Warning: Branch-and-bound selected plan with cost 2018.41, but exhaustive search found a better plan with cost 1.00
+Top 3 best plans from exhaustive search:  Plan 1: cost 1.00   Plan 2: cost 11.00   Plan 3: cost 12.00 Naive index-only plan cost: 2018.41
+Warning: 1024-plan exhaustive search selected plan with cost 1160.40, but full exhaustive search found a better plan with cost 1.00
+Top 3 best plans from full exhaustive search:  Plan 1: cost 1.00   Plan 2: cost 11.00   Plan 3: cost 12.00 Naive index-only plan cost: 2018.41
+Warning: Branch-and-bound selected plan with cost 648967.95, but exhaustive search found a better plan with cost 28.64
+Top 3 best plans from exhaustive search:  Plan 1: cost 28.64   Plan 2: cost 44.28   Plan 3: cost 47.62 Naive index-only plan cost: 648967.95
+Warning: 1024-plan exhaustive search selected plan with cost 267286.45, but full exhaustive search found a better plan with cost 28.64
+Top 3 best plans from full exhaustive search:  Plan 1: cost 28.64   Plan 2: cost 44.28   Plan 3: cost 47.62 Naive index-only plan cost: 648967.95
+Warning: Branch-and-bound selected plan with cost 8779.02, but exhaustive search found a better plan with cost 22.02
+Top 3 best plans from exhaustive search:  Plan 1: cost 22.02   Plan 2: cost 22.27   Plan 3: cost 22.27 Naive index-only plan cost: 8779.02
+Warning: 1024-plan exhaustive search selected plan with cost 3648.82, but full exhaustive search found a better plan with cost 22.02
+Top 3 best plans from full exhaustive search:  Plan 1: cost 22.02   Plan 2: cost 22.27   Plan 3: cost 22.27 Naive index-only plan cost: 8779.02
+Warning: Branch-and-bound selected plan with cost 5069.09, but exhaustive search found a better plan with cost 11.00
+Top 3 best plans from exhaustive search:  Plan 1: cost 11.00   Plan 2: cost 22.03   Plan 3: cost 22.12 Naive index-only plan cost: 5069.09
+Warning: 1024-plan exhaustive search selected plan with cost 2121.20, but full exhaustive search found a better plan with cost 11.00
+Top 3 best plans from full exhaustive search:  Plan 1: cost 11.00   Plan 2: cost 22.03   Plan 3: cost 22.12 Naive index-only plan cost: 5069.09
+BenchmarkQueryExecution/query=848/selector=0-10         	       1	19389906333 ns/op	         6.000 chunks	         3.000 series	14421632472 B/op	   54638 allocs/op
+BenchmarkQueryExecution/query=850/selector=0
+Warning: Branch-and-bound selected plan with cost 576507.55, but exhaustive search found a better plan with cost 28.31
+Top 3 best plans from exhaustive search:  Plan 1: cost 28.31   Plan 2: cost 41.84   Plan 3: cost 46.97 Naive index-only plan cost: 576507.55
+Warning: 1024-plan exhaustive search selected plan with cost 237449.67, but full exhaustive search found a better plan with cost 28.31
+Top 3 best plans from full exhaustive search:  Plan 1: cost 28.31   Plan 2: cost 41.84   Plan 3: cost 46.97 Naive index-only plan cost: 576507.55
+Warning: Branch-and-bound selected plan with cost 542206.64, but exhaustive search found a better plan with cost 28.74
+Top 3 best plans from exhaustive search:  Plan 1: cost 28.74   Plan 2: cost 40.71   Plan 3: cost 45.99 Naive index-only plan cost: 542206.64
+Warning: 1024-plan exhaustive search selected plan with cost 223327.37, but full exhaustive search found a better plan with cost 28.74
+Top 3 best plans from full exhaustive search:  Plan 1: cost 28.74   Plan 2: cost 40.71   Plan 3: cost 45.99 Naive index-only plan cost: 542206.64
+Warning: Branch-and-bound selected plan with cost 608205.68, but exhaustive search found a better plan with cost 29.84
+Top 3 best plans from exhaustive search:  Plan 1: cost 29.84   Plan 2: cost 43.48   Plan 3: cost 49.56 Naive index-only plan cost: 608205.68
+Warning: 1024-plan exhaustive search selected plan with cost 250507.83, but full exhaustive search found a better plan with cost 29.84
+Top 3 best plans from full exhaustive search:  Plan 1: cost 29.84   Plan 2: cost 43.48   Plan 3: cost 49.56 Naive index-only plan cost: 608205.68
+Warning: Branch-and-bound selected plan with cost 2461.92, but exhaustive search found a better plan with cost 1.00
+Top 3 best plans from exhaustive search:  Plan 1: cost 1.00   Plan 2: cost 11.00   Plan 3: cost 11.01 Naive index-only plan cost: 2461.92
+Warning: 1024-plan exhaustive search selected plan with cost 1421.30, but full exhaustive search found a better plan with cost 1.00
+Top 3 best plans from full exhaustive search:  Plan 1: cost 1.00   Plan 2: cost 11.00   Plan 3: cost 11.01 Naive index-only plan cost: 2461.92
+Warning: Branch-and-bound selected plan with cost 2757.73, but exhaustive search found a better plan with cost 1.00
+Top 3 best plans from exhaustive search:  Plan 1: cost 1.00   Plan 2: cost 11.00   Plan 3: cost 12.00 Naive index-only plan cost: 2757.73
+Warning: 1024-plan exhaustive search selected plan with cost 1595.30, but full exhaustive search found a better plan with cost 1.00
+Top 3 best plans from full exhaustive search:  Plan 1: cost 1.00   Plan 2: cost 11.00   Plan 3: cost 12.00 Naive index-only plan cost: 2757.73
+Warning: Branch-and-bound selected plan with cost 644404.53, but exhaustive search found a better plan with cost 29.47
+Top 3 best plans from exhaustive search:  Plan 1: cost 29.47   Plan 2: cost 43.21   Plan 3: cost 49.14 Naive index-only plan cost: 644404.53
+Warning: 1024-plan exhaustive search selected plan with cost 265412.99, but full exhaustive search found a better plan with cost 29.47
+Top 3 best plans from full exhaustive search:  Plan 1: cost 29.47   Plan 2: cost 43.21   Plan 3: cost 49.14 Naive index-only plan cost: 644404.53
+Warning: Branch-and-bound selected plan with cost 754775.39, but exhaustive search found a better plan with cost 29.59
+Top 3 best plans from exhaustive search:  Plan 1: cost 29.59   Plan 2: cost 45.97   Plan 3: cost 51.94 Naive index-only plan cost: 754775.39
+Warning: 1024-plan exhaustive search selected plan with cost 310862.23, but full exhaustive search found a better plan with cost 29.59
+Top 3 best plans from full exhaustive search:  Plan 1: cost 29.59   Plan 2: cost 45.97   Plan 3: cost 51.94 Naive index-only plan cost: 754775.39
+Warning: Branch-and-bound selected plan with cost 517914.67, but exhaustive search found a better plan with cost 27.07
+Top 3 best plans from exhaustive search:  Plan 1: cost 27.07   Plan 2: cost 38.73   Plan 3: cost 42.76 Naive index-only plan cost: 517914.67
+Warning: 1024-plan exhaustive search selected plan with cost 213318.93, but full exhaustive search found a better plan with cost 27.07
+Top 3 best plans from full exhaustive search:  Plan 1: cost 27.07   Plan 2: cost 38.73   Plan 3: cost 42.76 Naive index-only plan cost: 517914.67
+Warning: Branch-and-bound selected plan with cost 5159.18, but exhaustive search found a better plan with cost 22.04
+Top 3 best plans from exhaustive search:  Plan 1: cost 22.04   Plan 2: cost 22.06   Plan 3: cost 22.08 Naive index-only plan cost: 5159.18
+Warning: 1024-plan exhaustive search selected plan with cost 2158.28, but full exhaustive search found a better plan with cost 22.04
+Top 3 best plans from full exhaustive search:  Plan 1: cost 22.04   Plan 2: cost 22.06   Plan 3: cost 22.08 Naive index-only plan cost: 5159.18
+Warning: Branch-and-bound selected plan with cost 611821.09, but exhaustive search found a better plan with cost 27.90
+Top 3 best plans from exhaustive search:  Plan 1: cost 27.90   Plan 2: cost 41.85   Plan 3: cost 46.67 Naive index-only plan cost: 611821.09
+Warning: 1024-plan exhaustive search selected plan with cost 251989.89, but full exhaustive search found a better plan with cost 27.90
+Top 3 best plans from full exhaustive search:  Plan 1: cost 27.90   Plan 2: cost 41.85   Plan 3: cost 46.67 Naive index-only plan cost: 611821.09
+Warning: Branch-and-bound selected plan with cost 2018.41, but exhaustive search found a better plan with cost 1.00
+Top 3 best plans from exhaustive search:  Plan 1: cost 1.00   Plan 2: cost 11.00   Plan 3: cost 12.00 Naive index-only plan cost: 2018.41
+Warning: 1024-plan exhaustive search selected plan with cost 1160.40, but full exhaustive search found a better plan with cost 1.00
+Top 3 best plans from full exhaustive search:  Plan 1: cost 1.00   Plan 2: cost 11.00   Plan 3: cost 12.00 Naive index-only plan cost: 2018.41
+Warning: Branch-and-bound selected plan with cost 648966.81, but exhaustive search found a better plan with cost 27.50
+Top 3 best plans from exhaustive search:  Plan 1: cost 27.50   Plan 2: cost 43.14   Plan 3: cost 47.62 Naive index-only plan cost: 648966.81
+Warning: 1024-plan exhaustive search selected plan with cost 267285.31, but full exhaustive search found a better plan with cost 27.50
+Top 3 best plans from full exhaustive search:  Plan 1: cost 27.50   Plan 2: cost 43.14   Plan 3: cost 47.62 Naive index-only plan cost: 648966.81
+Warning: Branch-and-bound selected plan with cost 8779.01, but exhaustive search found a better plan with cost 11.00
+Top 3 best plans from exhaustive search:  Plan 1: cost 11.00   Plan 2: cost 22.01   Plan 3: cost 22.26 Naive index-only plan cost: 8779.01
+Warning: 1024-plan exhaustive search selected plan with cost 3648.81, but full exhaustive search found a better plan with cost 11.00
+Top 3 best plans from full exhaustive search:  Plan 1: cost 11.00   Plan 2: cost 22.01   Plan 3: cost 22.26 Naive index-only plan cost: 8779.01
+Warning: Branch-and-bound selected plan with cost 5069.10, but exhaustive search found a better plan with cost 22.04
+Top 3 best plans from exhaustive search:  Plan 1: cost 22.04   Plan 2: cost 22.13   Plan 3: cost 22.15 Naive index-only plan cost: 5069.10
+Warning: 1024-plan exhaustive search selected plan with cost 2121.21, but full exhaustive search found a better plan with cost 22.04
+Top 3 best plans from full exhaustive search:  Plan 1: cost 22.04   Plan 2: cost 22.13   Plan 3: cost 22.15 Naive index-only plan cost: 5069.10
+BenchmarkQueryExecution/query=850/selector=0-10         	       1	19296431250 ns/op	        15.00 chunks	         3.000 series	14425384888 B/op	   52540 allocs/op
+BenchmarkQueryExecution/query=851/selector=0
+Warning: Branch-and-bound selected plan with cost 576507.55, but exhaustive search found a better plan with cost 28.31
+Top 3 best plans from exhaustive search:  Plan 1: cost 28.31   Plan 2: cost 41.84   Plan 3: cost 46.97 Naive index-only plan cost: 576507.55
+Warning: 1024-plan exhaustive search selected plan with cost 237449.67, but full exhaustive search found a better plan with cost 28.31
+Top 3 best plans from full exhaustive search:  Plan 1: cost 28.31   Plan 2: cost 41.84   Plan 3: cost 46.97 Naive index-only plan cost: 576507.55
+Warning: Branch-and-bound selected plan with cost 542206.64, but exhaustive search found a better plan with cost 28.74
+Top 3 best plans from exhaustive search:  Plan 1: cost 28.74   Plan 2: cost 40.71   Plan 3: cost 45.99 Naive index-only plan cost: 542206.64
+Warning: 1024-plan exhaustive search selected plan with cost 223327.37, but full exhaustive search found a better plan with cost 28.74
+Top 3 best plans from full exhaustive search:  Plan 1: cost 28.74   Plan 2: cost 40.71   Plan 3: cost 45.99 Naive index-only plan cost: 542206.64
+Warning: Branch-and-bound selected plan with cost 608205.68, but exhaustive search found a better plan with cost 29.84
+Top 3 best plans from exhaustive search:  Plan 1: cost 29.84   Plan 2: cost 43.48   Plan 3: cost 49.56 Naive index-only plan cost: 608205.68
+Warning: 1024-plan exhaustive search selected plan with cost 250507.83, but full exhaustive search found a better plan with cost 29.84
+Top 3 best plans from full exhaustive search:  Plan 1: cost 29.84   Plan 2: cost 43.48   Plan 3: cost 49.56 Naive index-only plan cost: 608205.68
+Warning: Branch-and-bound selected plan with cost 2461.92, but exhaustive search found a better plan with cost 1.00
+Top 3 best plans from exhaustive search:  Plan 1: cost 1.00   Plan 2: cost 11.00   Plan 3: cost 11.01 Naive index-only plan cost: 2461.92
+Warning: 1024-plan exhaustive search selected plan with cost 1421.30, but full exhaustive search found a better plan with cost 1.00
+Top 3 best plans from full exhaustive search:  Plan 1: cost 1.00   Plan 2: cost 11.00   Plan 3: cost 11.01 Naive index-only plan cost: 2461.92
+Warning: Branch-and-bound selected plan with cost 2757.73, but exhaustive search found a better plan with cost 1.00
+Top 3 best plans from exhaustive search:  Plan 1: cost 1.00   Plan 2: cost 11.00   Plan 3: cost 12.00 Naive index-only plan cost: 2757.73
+Warning: 1024-plan exhaustive search selected plan with cost 1595.30, but full exhaustive search found a better plan with cost 1.00
+Top 3 best plans from full exhaustive search:  Plan 1: cost 1.00   Plan 2: cost 11.00   Plan 3: cost 12.00 Naive index-only plan cost: 2757.73
+Warning: Branch-and-bound selected plan with cost 644404.53, but exhaustive search found a better plan with cost 29.47
+Top 3 best plans from exhaustive search:  Plan 1: cost 29.47   Plan 2: cost 43.21   Plan 3: cost 49.14 Naive index-only plan cost: 644404.53
+Warning: 1024-plan exhaustive search selected plan with cost 265412.99, but full exhaustive search found a better plan with cost 29.47
+Top 3 best plans from full exhaustive search:  Plan 1: cost 29.47   Plan 2: cost 43.21   Plan 3: cost 49.14 Naive index-only plan cost: 644404.53
+Warning: Branch-and-bound selected plan with cost 754775.39, but exhaustive search found a better plan with cost 29.59
+Top 3 best plans from exhaustive search:  Plan 1: cost 29.59   Plan 2: cost 45.97   Plan 3: cost 51.94 Naive index-only plan cost: 754775.39
+Warning: 1024-plan exhaustive search selected plan with cost 310862.23, but full exhaustive search found a better plan with cost 29.59
+Top 3 best plans from full exhaustive search:  Plan 1: cost 29.59   Plan 2: cost 45.97   Plan 3: cost 51.94 Naive index-only plan cost: 754775.39
+Warning: Branch-and-bound selected plan with cost 517914.67, but exhaustive search found a better plan with cost 27.07
+Top 3 best plans from exhaustive search:  Plan 1: cost 27.07   Plan 2: cost 38.73   Plan 3: cost 42.76 Naive index-only plan cost: 517914.67
+Warning: 1024-plan exhaustive search selected plan with cost 213318.93, but full exhaustive search found a better plan with cost 27.07
+Top 3 best plans from full exhaustive search:  Plan 1: cost 27.07   Plan 2: cost 38.73   Plan 3: cost 42.76 Naive index-only plan cost: 517914.67
+Warning: Branch-and-bound selected plan with cost 5159.18, but exhaustive search found a better plan with cost 22.04
+Top 3 best plans from exhaustive search:  Plan 1: cost 22.04   Plan 2: cost 22.06   Plan 3: cost 22.08 Naive index-only plan cost: 5159.18
+Warning: 1024-plan exhaustive search selected plan with cost 2158.28, but full exhaustive search found a better plan with cost 22.04
+Top 3 best plans from full exhaustive search:  Plan 1: cost 22.04   Plan 2: cost 22.06   Plan 3: cost 22.08 Naive index-only plan cost: 5159.18
+Warning: Branch-and-bound selected plan with cost 611821.09, but exhaustive search found a better plan with cost 27.90
+Top 3 best plans from exhaustive search:  Plan 1: cost 27.90   Plan 2: cost 41.85   Plan 3: cost 46.67 Naive index-only plan cost: 611821.09
+Warning: 1024-plan exhaustive search selected plan with cost 251989.89, but full exhaustive search found a better plan with cost 27.90
+Top 3 best plans from full exhaustive search:  Plan 1: cost 27.90   Plan 2: cost 41.85   Plan 3: cost 46.67 Naive index-only plan cost: 611821.09
+Warning: Branch-and-bound selected plan with cost 2018.41, but exhaustive search found a better plan with cost 1.00
+Top 3 best plans from exhaustive search:  Plan 1: cost 1.00   Plan 2: cost 11.00   Plan 3: cost 12.00 Naive index-only plan cost: 2018.41
+Warning: 1024-plan exhaustive search selected plan with cost 1160.40, but full exhaustive search found a better plan with cost 1.00
+Top 3 best plans from full exhaustive search:  Plan 1: cost 1.00   Plan 2: cost 11.00   Plan 3: cost 12.00 Naive index-only plan cost: 2018.41
+Warning: Branch-and-bound selected plan with cost 648966.81, but exhaustive search found a better plan with cost 27.50
+Top 3 best plans from exhaustive search:  Plan 1: cost 27.50   Plan 2: cost 43.14   Plan 3: cost 47.62 Naive index-only plan cost: 648966.81
+Warning: 1024-plan exhaustive search selected plan with cost 267285.31, but full exhaustive search found a better plan with cost 27.50
+Top 3 best plans from full exhaustive search:  Plan 1: cost 27.50   Plan 2: cost 43.14   Plan 3: cost 47.62 Naive index-only plan cost: 648966.81
+Warning: Branch-and-bound selected plan with cost 8779.01, but exhaustive search found a better plan with cost 11.00
+Top 3 best plans from exhaustive search:  Plan 1: cost 11.00   Plan 2: cost 22.01   Plan 3: cost 22.26 Naive index-only plan cost: 8779.01
+Warning: 1024-plan exhaustive search selected plan with cost 3648.81, but full exhaustive search found a better plan with cost 11.00
+Top 3 best plans from full exhaustive search:  Plan 1: cost 11.00   Plan 2: cost 22.01   Plan 3: cost 22.26 Naive index-only plan cost: 8779.01
+Warning: Branch-and-bound selected plan with cost 5069.10, but exhaustive search found a better plan with cost 22.04
+Top 3 best plans from exhaustive search:  Plan 1: cost 22.04   Plan 2: cost 22.13   Plan 3: cost 22.15 Naive index-only plan cost: 5069.10
+Warning: 1024-plan exhaustive search selected plan with cost 2121.21, but full exhaustive search found a better plan with cost 22.04
+Top 3 best plans from full exhaustive search:  Plan 1: cost 22.04   Plan 2: cost 22.13   Plan 3: cost 22.15 Naive index-only plan cost: 5069.10
+BenchmarkQueryExecution/query=851/selector=0-10         	       1	19853732041 ns/op	        15.00 chunks	         3.000 series	14425499424 B/op	   50921 allocs/op
+BenchmarkQueryExecution/query=852/selector=0
+Warning: Branch-and-bound selected plan with cost 576507.76, but exhaustive search found a better plan with cost 28.52
+Top 3 best plans from exhaustive search:  Plan 1: cost 28.52   Plan 2: cost 42.05   Plan 3: cost 46.97 Naive index-only plan cost: 576507.76
+Warning: 1024-plan exhaustive search selected plan with cost 237449.88, but full exhaustive search found a better plan with cost 28.52
+Top 3 best plans from full exhaustive search:  Plan 1: cost 28.52   Plan 2: cost 42.05   Plan 3: cost 46.97 Naive index-only plan cost: 576507.76
+Warning: Branch-and-bound selected plan with cost 542206.88, but exhaustive search found a better plan with cost 28.98
+Top 3 best plans from exhaustive search:  Plan 1: cost 28.98   Plan 2: cost 40.95   Plan 3: cost 45.99 Naive index-only plan cost: 542206.88
+Warning: 1024-plan exhaustive search selected plan with cost 223327.61, but full exhaustive search found a better plan with cost 28.98
+Top 3 best plans from full exhaustive search:  Plan 1: cost 28.98   Plan 2: cost 40.95   Plan 3: cost 45.99 Naive index-only plan cost: 542206.88
+Warning: Branch-and-bound selected plan with cost 608205.80, but exhaustive search found a better plan with cost 29.96
+Top 3 best plans from exhaustive search:  Plan 1: cost 29.96   Plan 2: cost 43.60   Plan 3: cost 49.56 Naive index-only plan cost: 608205.80
+Warning: 1024-plan exhaustive search selected plan with cost 250507.95, but full exhaustive search found a better plan with cost 29.96
+Top 3 best plans from full exhaustive search:  Plan 1: cost 29.96   Plan 2: cost 43.60   Plan 3: cost 49.56 Naive index-only plan cost: 608205.80
+Warning: Branch-and-bound selected plan with cost 2461.91, but exhaustive search found a better plan with cost 1.00
+Top 3 best plans from exhaustive search:  Plan 1: cost 1.00   Plan 2: cost 11.00   Plan 3: cost 11.00 Naive index-only plan cost: 2461.91
+Warning: 1024-plan exhaustive search selected plan with cost 1421.30, but full exhaustive search found a better plan with cost 1.00
+Top 3 best plans from full exhaustive search:  Plan 1: cost 1.00   Plan 2: cost 11.00   Plan 3: cost 11.00 Naive index-only plan cost: 2461.91
+Warning: Branch-and-bound selected plan with cost 2757.73, but exhaustive search found a better plan with cost 1.00
+Top 3 best plans from exhaustive search:  Plan 1: cost 1.00   Plan 2: cost 11.00   Plan 3: cost 12.00 Naive index-only plan cost: 2757.73
+Warning: 1024-plan exhaustive search selected plan with cost 1595.30, but full exhaustive search found a better plan with cost 1.00
+Top 3 best plans from full exhaustive search:  Plan 1: cost 1.00   Plan 2: cost 11.00   Plan 3: cost 12.00 Naive index-only plan cost: 2757.73
+Warning: Branch-and-bound selected plan with cost 644404.78, but exhaustive search found a better plan with cost 29.72
+Top 3 best plans from exhaustive search:  Plan 1: cost 29.72   Plan 2: cost 43.46   Plan 3: cost 49.14 Naive index-only plan cost: 644404.78
+Warning: 1024-plan exhaustive search selected plan with cost 265413.24, but full exhaustive search found a better plan with cost 29.72
+Top 3 best plans from full exhaustive search:  Plan 1: cost 29.72   Plan 2: cost 43.46   Plan 3: cost 49.14 Naive index-only plan cost: 644404.78
+Warning: Branch-and-bound selected plan with cost 754775.70, but exhaustive search found a better plan with cost 29.90
+Top 3 best plans from exhaustive search:  Plan 1: cost 29.90   Plan 2: cost 46.28   Plan 3: cost 51.94 Naive index-only plan cost: 754775.70
+Warning: 1024-plan exhaustive search selected plan with cost 310862.54, but full exhaustive search found a better plan with cost 29.90
+Top 3 best plans from full exhaustive search:  Plan 1: cost 29.90   Plan 2: cost 46.28   Plan 3: cost 51.94 Naive index-only plan cost: 754775.70
+Warning: Branch-and-bound selected plan with cost 517914.84, but exhaustive search found a better plan with cost 27.24
+Top 3 best plans from exhaustive search:  Plan 1: cost 27.24   Plan 2: cost 38.90   Plan 3: cost 42.76 Naive index-only plan cost: 517914.84
+Warning: 1024-plan exhaustive search selected plan with cost 213319.10, but full exhaustive search found a better plan with cost 27.24
+Top 3 best plans from full exhaustive search:  Plan 1: cost 27.24   Plan 2: cost 38.90   Plan 3: cost 42.76 Naive index-only plan cost: 517914.84
+Warning: Branch-and-bound selected plan with cost 5159.17, but exhaustive search found a better plan with cost 11.00
+Top 3 best plans from exhaustive search:  Plan 1: cost 11.00   Plan 2: cost 22.03   Plan 3: cost 22.05 Naive index-only plan cost: 5159.17
+Warning: 1024-plan exhaustive search selected plan with cost 2158.27, but full exhaustive search found a better plan with cost 11.00
+Top 3 best plans from full exhaustive search:  Plan 1: cost 11.00   Plan 2: cost 22.03   Plan 3: cost 22.05 Naive index-only plan cost: 5159.17
+Warning: Branch-and-bound selected plan with cost 611821.32, but exhaustive search found a better plan with cost 28.13
+Top 3 best plans from exhaustive search:  Plan 1: cost 28.13   Plan 2: cost 42.08   Plan 3: cost 46.67 Naive index-only plan cost: 611821.32
+Warning: 1024-plan exhaustive search selected plan with cost 251990.12, but full exhaustive search found a better plan with cost 28.13
+Top 3 best plans from full exhaustive search:  Plan 1: cost 28.13   Plan 2: cost 42.08   Plan 3: cost 46.67 Naive index-only plan cost: 611821.32
+Warning: Branch-and-bound selected plan with cost 2018.42, but exhaustive search found a better plan with cost 1.00
+Top 3 best plans from exhaustive search:  Plan 1: cost 1.00   Plan 2: cost 12.01   Plan 3: cost 12.03 Naive index-only plan cost: 2018.42
+Warning: 1024-plan exhaustive search selected plan with cost 1160.40, but full exhaustive search found a better plan with cost 1.00
+Top 3 best plans from full exhaustive search:  Plan 1: cost 1.00   Plan 2: cost 12.01   Plan 3: cost 12.03 Naive index-only plan cost: 2018.42
+Warning: Branch-and-bound selected plan with cost 648967.09, but exhaustive search found a better plan with cost 27.78
+Top 3 best plans from exhaustive search:  Plan 1: cost 27.78   Plan 2: cost 43.42   Plan 3: cost 47.62 Naive index-only plan cost: 648967.09
+Warning: 1024-plan exhaustive search selected plan with cost 267285.59, but full exhaustive search found a better plan with cost 27.78
+Top 3 best plans from full exhaustive search:  Plan 1: cost 27.78   Plan 2: cost 43.42   Plan 3: cost 47.62 Naive index-only plan cost: 648967.09
+Warning: Branch-and-bound selected plan with cost 8779.01, but exhaustive search found a better plan with cost 11.00
+Top 3 best plans from exhaustive search:  Plan 1: cost 11.00   Plan 2: cost 22.01   Plan 3: cost 22.26 Naive index-only plan cost: 8779.01
+Warning: 1024-plan exhaustive search selected plan with cost 3648.81, but full exhaustive search found a better plan with cost 11.00
+Top 3 best plans from full exhaustive search:  Plan 1: cost 11.00   Plan 2: cost 22.01   Plan 3: cost 22.26 Naive index-only plan cost: 8779.01
+Warning: Branch-and-bound selected plan with cost 5069.10, but exhaustive search found a better plan with cost 22.04
+Top 3 best plans from exhaustive search:  Plan 1: cost 22.04   Plan 2: cost 22.13   Plan 3: cost 22.15 Naive index-only plan cost: 5069.10
+Warning: 1024-plan exhaustive search selected plan with cost 2121.21, but full exhaustive search found a better plan with cost 22.04
+Top 3 best plans from full exhaustive search:  Plan 1: cost 22.04   Plan 2: cost 22.13   Plan 3: cost 22.15 Naive index-only plan cost: 5069.10
+BenchmarkQueryExecution/query=852/selector=0-10         	       1	20043059167 ns/op	        13.00 chunks	         2.000 series	14423252760 B/op	   52111 allocs/op
+BenchmarkQueryExecution/query=853/selector=0
+Warning: Branch-and-bound selected plan with cost 576507.76, but exhaustive search found a better plan with cost 28.52
+Top 3 best plans from exhaustive search:  Plan 1: cost 28.52   Plan 2: cost 42.05   Plan 3: cost 46.97 Naive index-only plan cost: 576507.76
+Warning: 1024-plan exhaustive search selected plan with cost 237449.88, but full exhaustive search found a better plan with cost 28.52
+Top 3 best plans from full exhaustive search:  Plan 1: cost 28.52   Plan 2: cost 42.05   Plan 3: cost 46.97 Naive index-only plan cost: 576507.76
+Warning: Branch-and-bound selected plan with cost 542206.88, but exhaustive search found a better plan with cost 28.98
+Top 3 best plans from exhaustive search:  Plan 1: cost 28.98   Plan 2: cost 40.95   Plan 3: cost 45.99 Naive index-only plan cost: 542206.88
+Warning: 1024-plan exhaustive search selected plan with cost 223327.61, but full exhaustive search found a better plan with cost 28.98
+Top 3 best plans from full exhaustive search:  Plan 1: cost 28.98   Plan 2: cost 40.95   Plan 3: cost 45.99 Naive index-only plan cost: 542206.88
+Warning: Branch-and-bound selected plan with cost 608205.80, but exhaustive search found a better plan with cost 29.96
+Top 3 best plans from exhaustive search:  Plan 1: cost 29.96   Plan 2: cost 43.60   Plan 3: cost 49.56 Naive index-only plan cost: 608205.80
+Warning: 1024-plan exhaustive search selected plan with cost 250507.95, but full exhaustive search found a better plan with cost 29.96
+Top 3 best plans from full exhaustive search:  Plan 1: cost 29.96   Plan 2: cost 43.60   Plan 3: cost 49.56 Naive index-only plan cost: 608205.80
+Warning: Branch-and-bound selected plan with cost 2461.91, but exhaustive search found a better plan with cost 1.00
+Top 3 best plans from exhaustive search:  Plan 1: cost 1.00   Plan 2: cost 11.00   Plan 3: cost 11.00 Naive index-only plan cost: 2461.91
+Warning: 1024-plan exhaustive search selected plan with cost 1421.30, but full exhaustive search found a better plan with cost 1.00
+Top 3 best plans from full exhaustive search:  Plan 1: cost 1.00   Plan 2: cost 11.00   Plan 3: cost 11.00 Naive index-only plan cost: 2461.91
+Warning: Branch-and-bound selected plan with cost 2757.73, but exhaustive search found a better plan with cost 1.00
+Top 3 best plans from exhaustive search:  Plan 1: cost 1.00   Plan 2: cost 11.00   Plan 3: cost 12.00 Naive index-only plan cost: 2757.73
+Warning: 1024-plan exhaustive search selected plan with cost 1595.30, but full exhaustive search found a better plan with cost 1.00
+Top 3 best plans from full exhaustive search:  Plan 1: cost 1.00   Plan 2: cost 11.00   Plan 3: cost 12.00 Naive index-only plan cost: 2757.73
+Warning: Branch-and-bound selected plan with cost 644404.78, but exhaustive search found a better plan with cost 29.72
+Top 3 best plans from exhaustive search:  Plan 1: cost 29.72   Plan 2: cost 43.46   Plan 3: cost 49.14 Naive index-only plan cost: 644404.78
+Warning: 1024-plan exhaustive search selected plan with cost 265413.24, but full exhaustive search found a better plan with cost 29.72
+Top 3 best plans from full exhaustive search:  Plan 1: cost 29.72   Plan 2: cost 43.46   Plan 3: cost 49.14 Naive index-only plan cost: 644404.78
+Warning: Branch-and-bound selected plan with cost 754775.70, but exhaustive search found a better plan with cost 29.90
+Top 3 best plans from exhaustive search:  Plan 1: cost 29.90   Plan 2: cost 46.28   Plan 3: cost 51.94 Naive index-only plan cost: 754775.70
+Warning: 1024-plan exhaustive search selected plan with cost 310862.54, but full exhaustive search found a better plan with cost 29.90
+Top 3 best plans from full exhaustive search:  Plan 1: cost 29.90   Plan 2: cost 46.28   Plan 3: cost 51.94 Naive index-only plan cost: 754775.70
+Warning: Branch-and-bound selected plan with cost 517914.84, but exhaustive search found a better plan with cost 27.24
+Top 3 best plans from exhaustive search:  Plan 1: cost 27.24   Plan 2: cost 38.90   Plan 3: cost 42.76 Naive index-only plan cost: 517914.84
+Warning: 1024-plan exhaustive search selected plan with cost 213319.10, but full exhaustive search found a better plan with cost 27.24
+Top 3 best plans from full exhaustive search:  Plan 1: cost 27.24   Plan 2: cost 38.90   Plan 3: cost 42.76 Naive index-only plan cost: 517914.84
+Warning: Branch-and-bound selected plan with cost 5159.17, but exhaustive search found a better plan with cost 11.00
+Top 3 best plans from exhaustive search:  Plan 1: cost 11.00   Plan 2: cost 22.03   Plan 3: cost 22.05 Naive index-only plan cost: 5159.17
+Warning: 1024-plan exhaustive search selected plan with cost 2158.27, but full exhaustive search found a better plan with cost 11.00
+Top 3 best plans from full exhaustive search:  Plan 1: cost 11.00   Plan 2: cost 22.03   Plan 3: cost 22.05 Naive index-only plan cost: 5159.17
+Warning: Branch-and-bound selected plan with cost 611821.32, but exhaustive search found a better plan with cost 28.13
+Top 3 best plans from exhaustive search:  Plan 1: cost 28.13   Plan 2: cost 42.08   Plan 3: cost 46.67 Naive index-only plan cost: 611821.32
+Warning: 1024-plan exhaustive search selected plan with cost 251990.12, but full exhaustive search found a better plan with cost 28.13
+Top 3 best plans from full exhaustive search:  Plan 1: cost 28.13   Plan 2: cost 42.08   Plan 3: cost 46.67 Naive index-only plan cost: 611821.32
+Warning: Branch-and-bound selected plan with cost 2018.42, but exhaustive search found a better plan with cost 1.00
+Top 3 best plans from exhaustive search:  Plan 1: cost 1.00   Plan 2: cost 12.01   Plan 3: cost 12.03 Naive index-only plan cost: 2018.42
+Warning: 1024-plan exhaustive search selected plan with cost 1160.40, but full exhaustive search found a better plan with cost 1.00
+Top 3 best plans from full exhaustive search:  Plan 1: cost 1.00   Plan 2: cost 12.01   Plan 3: cost 12.03 Naive index-only plan cost: 2018.42
+Warning: Branch-and-bound selected plan with cost 648967.09, but exhaustive search found a better plan with cost 27.78
+Top 3 best plans from exhaustive search:  Plan 1: cost 27.78   Plan 2: cost 43.42   Plan 3: cost 47.62 Naive index-only plan cost: 648967.09
+Warning: 1024-plan exhaustive search selected plan with cost 267285.59, but full exhaustive search found a better plan with cost 27.78
+Top 3 best plans from full exhaustive search:  Plan 1: cost 27.78   Plan 2: cost 43.42   Plan 3: cost 47.62 Naive index-only plan cost: 648967.09
+Warning: Branch-and-bound selected plan with cost 8779.01, but exhaustive search found a better plan with cost 11.00
+Top 3 best plans from exhaustive search:  Plan 1: cost 11.00   Plan 2: cost 22.01   Plan 3: cost 22.26 Naive index-only plan cost: 8779.01
+Warning: 1024-plan exhaustive search selected plan with cost 3648.81, but full exhaustive search found a better plan with cost 11.00
+Top 3 best plans from full exhaustive search:  Plan 1: cost 11.00   Plan 2: cost 22.01   Plan 3: cost 22.26 Naive index-only plan cost: 8779.01
+Warning: Branch-and-bound selected plan with cost 5069.10, but exhaustive search found a better plan with cost 22.04
+Top 3 best plans from exhaustive search:  Plan 1: cost 22.04   Plan 2: cost 22.13   Plan 3: cost 22.15 Naive index-only plan cost: 5069.10
+Warning: 1024-plan exhaustive search selected plan with cost 2121.21, but full exhaustive search found a better plan with cost 22.04
+Top 3 best plans from full exhaustive search:  Plan 1: cost 22.04   Plan 2: cost 22.13   Plan 3: cost 22.15 Naive index-only plan cost: 5069.10
+BenchmarkQueryExecution/query=853/selector=0-10         	       1	19886284583 ns/op	        13.00 chunks	         2.000 series	14429735944 B/op	   51376 allocs/op
+BenchmarkQueryExecution/query=854/selector=0
