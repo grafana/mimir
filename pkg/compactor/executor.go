@@ -433,12 +433,6 @@ func (e *schedulerExecutor) executeCompactionJob(ctx context.Context, c *Multite
 		}
 	}
 
-	defer func() {
-		if err := os.RemoveAll(compactor.compactDir); err != nil {
-			level.Error(userLogger).Log("msg", "failed to remove compaction work directory", "path", compactor.compactDir, "err", err)
-		}
-	}()
-
 	level.Info(userLogger).Log("msg", "executing compaction job from scheduler", "tenant", userID, "blocks", len(blockIDs), "split", spec.Job.Split)
 	_, compactedBlockIDs, err := compactor.runCompactionJob(ctx, job)
 	if err == nil {
