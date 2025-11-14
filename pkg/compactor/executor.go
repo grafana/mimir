@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -160,13 +161,25 @@ func (e *schedulerExecutor) stop() error {
 	return nil
 }
 
+// removeCompactionDir removes all contents from the compaction directory without deleting the directory itself.
+// If the directory does not exist, it will be created.
 func removeCompactionDir(logger log.Logger, compactDir string) error {
-	if err := os.RemoveAll(compactDir); err != nil {
-		return errors.Wrap(err, "failed to remove compaction directory")
-	}
-
+	// Ensure directory exists first
 	if err := os.MkdirAll(compactDir, 0750); err != nil {
 		return errors.Wrap(err, "failed to create compaction directory")
+	}
+
+	// Remove all contents using glob
+	pattern := filepath.Join(compactDir, "*")
+	matches, err := filepath.Glob(pattern)
+	if err != nil {
+		return errors.Wrap(err, "failed to glob compaction directory")
+	}
+
+	for _, match := range matches {
+		if err := os.RemoveAll(match); err != nil {
+			return errors.Wrapf(err, "failed to remove %s", match)
+		}
 	}
 	return nil
 }

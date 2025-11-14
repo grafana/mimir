@@ -7,6 +7,8 @@ import (
 	"context"
 	"fmt"
 	"math/rand"
+	"os"
+	"path/filepath"
 	"slices"
 	"sync"
 	"testing"
@@ -792,6 +794,80 @@ func countBlocksInBucket(t *testing.T, bkt objstore.Bucket, userID string) int {
 	})
 	require.NoError(t, err)
 	return count
+}
+
+func TestRemoveCompactionDir(t *testing.T) {
+	tests := map[string]struct {
+		setupDir    func(t *testing.T, dir string)
+		expectError bool
+		expectFiles []string
+	}{
+		"creates_directory_if_not_exists": {
+			setupDir: func(t *testing.T, dir string) {
+				// Don't create the directory
+			},
+			expectError: false,
+			expectFiles: []string{},
+		},
+		"removes_files_and_subdirectories": {
+			setupDir: func(t *testing.T, dir string) {
+				require.NoError(t, os.MkdirAll(dir, 0750))
+				require.NoError(t, os.WriteFile(filepath.Join(dir, "file1.txt"), []byte("content"), 0644))
+				require.NoError(t, os.WriteFile(filepath.Join(dir, "file2.txt"), []byte("content"), 0644))
+				subdir := filepath.Join(dir, "subdir")
+				require.NoError(t, os.MkdirAll(subdir, 0750))
+				require.NoError(t, os.WriteFile(filepath.Join(subdir, "file.txt"), []byte("content"), 0644))
+			},
+			expectError: false,
+			expectFiles: []string{},
+		},
+		"handles_empty_directory": {
+			setupDir: func(t *testing.T, dir string) {
+				require.NoError(t, os.MkdirAll(dir, 0750))
+			},
+			expectError: false,
+			expectFiles: []string{},
+		},
+	}
+
+	for testName, tc := range tests {
+		t.Run(testName, func(t *testing.T) {
+			tmpDir := t.TempDir()
+			compactDir := filepath.Join(tmpDir, "compact")
+
+			tc.setupDir(t, compactDir)
+
+			err := removeCompactionDir(log.NewNopLogger(), compactDir)
+
+			if tc.expectError {
+				require.Error(t, err)
+				return
+			}
+
+			require.NoError(t, err)
+
+			// Verify directory still exists
+			info, err := os.Stat(compactDir)
+			require.NoError(t, err)
+			require.True(t, info.IsDir(), "directory should still exist after cleanup")
+
+			// Verify directory contents
+			entries, err := os.ReadDir(compactDir)
+			require.NoError(t, err)
+			assert.Equal(t, len(tc.expectFiles), len(entries), "directory should contain expected number of files")
+
+			for _, expectedFile := range tc.expectFiles {
+				exists := false
+				for _, entry := range entries {
+					if entry.Name() == expectedFile {
+						exists = true
+						break
+					}
+				}
+				assert.True(t, exists, "expected file %s to exist", expectedFile)
+			}
+		})
+	}
 }
 
 func TestBuildCompactionJobFromMetas(t *testing.T) {
