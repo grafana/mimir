@@ -125,7 +125,8 @@ func main() {
 	numRequestsPerSecond := int(float64(numRequestsPerScrapeInterval) / cfg.SimulatedScrapeInterval.Seconds())
 	numWorkers := (numRequestsPerSecond / 10) + 1
 	replicaSeed := xxhash.Sum64String(cfg.ReplicaName)
-	fmt.Println("ReplicaName:", cfg.ReplicaName, "ReplicaSeed:", replicaSeed, "Num workers:", numWorkers)
+
+	logger.Log("msg", "Starting load generator", "replica-name", cfg.ReplicaName, "replica-seed", replicaSeed, "num-workers", numWorkers)
 
 	wg := sync.WaitGroup{}
 	wg.Add(numWorkers)
@@ -133,18 +134,22 @@ func main() {
 	for w := 0; w < numWorkers; w++ {
 		go func(workerID int) {
 			defer wg.Done()
-			runWorker(ctx, replicaSeed, workerID, numWorkers, cfg, client)
+			runWorker(ctx, replicaSeed, workerID, numWorkers, cfg, client, logger)
 		}(w)
 	}
 
 	wg.Wait()
 }
 
-func runWorker(ctx context.Context, replicaSeed uint64, workerID, numWorkers int, cfg Config, client *usagetrackerclient.UsageTrackerClient) {
+func runWorker(ctx context.Context, replicaSeed uint64, workerID, numWorkers int, cfg Config,
+	client *usagetrackerclient.UsageTrackerClient, logger log.Logger) {
+
 	numSeriesPerRequest := cfg.SimulatedSeriesPerWriteRequest
 	numSeriesPerWorker := cfg.SimulatedTotalSeries / numWorkers
 	numRequestsPerWorker := (numSeriesPerWorker / numSeriesPerRequest) + 1
 	targetTimePerRequest := cfg.SimulatedScrapeInterval / time.Duration(numRequestsPerWorker)
+
+	logger.Log("msg", "Running worker", "worker-id", workerID, "num-series-per-worker", numSeriesPerWorker, "num-requests-per-worker", numRequestsPerWorker, "target-time-per-request", targetTimePerRequest)
 
 	// Inject the user ID in the context, required by the usage-tracker server.
 	ctx = user.InjectOrgID(ctx, cfg.TenantID)
