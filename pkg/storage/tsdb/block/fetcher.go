@@ -562,7 +562,7 @@ func (f *MetaFetcher) FetchRequestedMetas(ctx context.Context, blockIDs []ulid.U
 	}
 
 	if len(partial) > 0 {
-		return nil, errors.Errorf("failed to sync %d requested blocks' metas", len(blockIDs)-len(partial))
+		return nil, errors.Errorf("failed to sync %d requested blocks' metas", len(partial))
 	}
 
 	return metas, nil
