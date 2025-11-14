@@ -34,7 +34,7 @@ func Inspect(node planning.Node) InspectResult {
 func crawlPlanFromNode(node planning.Node, res *InspectResult) {
 	switch e := node.(type) {
 	case *core.FunctionCall:
-		res.CreatesLabels = res.CreatesLabels || isLabelReplace(e)
+		res.CreatesLabels = res.CreatesLabels || isCreateLabelFunction(e)
 	case *core.MatrixSelector:
 		res.HasSelectors = true
 		res.IsRewrittenByMiddleware = res.IsRewrittenByMiddleware || isSpunOff(e.Matchers)
@@ -48,7 +48,7 @@ func crawlPlanFromNode(node planning.Node, res *InspectResult) {
 	}
 }
 
-func isLabelReplace(v *core.FunctionCall) bool {
+func isCreateLabelFunction(v *core.FunctionCall) bool {
 	return v.Function == functions.FUNCTION_LABEL_REPLACE || v.Function == functions.FUNCTION_LABEL_JOIN
 }
 
