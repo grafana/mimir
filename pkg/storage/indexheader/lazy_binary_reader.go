@@ -16,6 +16,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/gate"
+	"github.com/grafana/dskit/runutil"
 	"github.com/oklog/ulid/v2"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -181,11 +182,11 @@ func tryDownloadSparseHeader(ctx context.Context, logger log.Logger, bkt objstor
 		level.Info(logger).Log("msg", "could not download sparse index-header from bucket; will reconstruct when the block is queried", "err", err)
 		return
 	}
+	defer runutil.CloseWithLogOnErr(logger, bucketSparseHeaderReader, "close sparse index-header reader")
 	err = atomicfs.CreateFile(sparseHeaderPath, bucketSparseHeaderReader)
 	if err != nil {
 		level.Info(logger).Log("msg", "could not store sparse index-header on disk; will reconstruct when the block is queried", "err", err)
 	}
-	bucketSparseHeaderReader.Close()
 }
 
 func ensureIndexHeaderOnDisk(ctx context.Context, logger log.Logger, bkt objstore.InstrumentedBucketReader, id ulid.ULID, indexHeaderPath string) error {
