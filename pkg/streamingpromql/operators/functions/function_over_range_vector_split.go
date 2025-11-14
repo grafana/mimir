@@ -192,7 +192,6 @@ func (m *FunctionOverRangeVectorSplit) Prepare(ctx context.Context, params *type
 
 func (m *FunctionOverRangeVectorSplit) Finalize(ctx context.Context) error {
 	for _, split := range m.splits {
-		// TODO: ideally write results to cache earlier than this so we avoid holding all intermediate results in memory when not needed
 		if err := split.Finalize(ctx); err != nil {
 			return err
 		}
@@ -244,7 +243,7 @@ func (m *FunctionOverRangeVectorSplit) createSplits(ctx context.Context) ([]Spli
 	for splitStart := alignedStart; splitStart+splitDurationMs <= endTs; splitStart += splitDurationMs {
 		splitEnd := splitStart + splitDurationMs
 
-		cachedBlock, found, err := m.irCache.Get(ctx, m.Func.Name, m.innerCacheKey, splitStart, splitEnd, m.MemoryConsumptionTracker)
+		cacheEntry, found, err := m.irCache.Get(ctx, m.Func.Name, m.innerCacheKey, splitStart, splitEnd)
 		if err != nil {
 			return nil, err
 		}
@@ -255,17 +254,23 @@ func (m *FunctionOverRangeVectorSplit) createSplits(ctx context.Context) ([]Spli
 				if err != nil {
 					return nil, err
 				}
-
-				splits = append(splits, NewUncachedSplit(
+				split, err := NewUncachedSplit(
+					ctx,
 					currentUncachedRanges,
 					operator,
 					m,
-				))
+				)
+
+				if err != nil {
+					return nil, err
+				}
+
+				splits = append(splits, split)
 				currentUncachedRanges = nil
 			}
 
 			splits = append(splits, NewCachedSplit(
-				&cachedBlock,
+				cacheEntry,
 				m,
 			))
 			currentPos = splitEnd + 1
@@ -299,11 +304,17 @@ func (m *FunctionOverRangeVectorSplit) createSplits(ctx context.Context) ([]Spli
 				return nil, err
 			}
 
-			splits = append(splits, NewUncachedSplit(
+			split, err := NewUncachedSplit(
+				ctx,
 				[]SplitRange{tailRange},
 				operator,
 				m,
-			))
+			)
+			if err != nil {
+				return nil, err
+			}
+
+			splits = append(splits, split)
 		} else {
 			currentUncachedRanges = append(currentUncachedRanges, tailRange)
 		}
@@ -316,11 +327,17 @@ func (m *FunctionOverRangeVectorSplit) createSplits(ctx context.Context) ([]Spli
 			return nil, err
 		}
 
-		splits = append(splits, NewUncachedSplit(
+		split, err := NewUncachedSplit(
+			ctx,
 			currentUncachedRanges,
 			operator,
 			m,
-		))
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		splits = append(splits, split)
 	}
 
 	return splits, nil
@@ -349,25 +366,34 @@ func (m *FunctionOverRangeVectorSplit) mergeSplitsMetadata(ctx context.Context, 
 	if len(m.splits) == 0 {
 		return nil, nil, nil
 	}
+
 	seriesMap := make(map[string]int)
 	// TODO: track memory usage of seriesToSplits? Could be large if lots of series + lots of splits.
 	var seriesToSplits [][]SplitSeries
 
-	var mergedMetadata []types.SeriesMetadata
 	labelBytes := make([]byte, 0, 1024)
 
-	for splitIdx, split := range m.splits {
-		splitSeries, err := split.SeriesMetadata(ctx, matchers)
+	mergedMetadata, err := m.splits[0].SeriesMetadata(ctx, matchers)
+	if err != nil {
+		return nil, nil, err
+	}
+	for splitLocalIdx, serieMetadata := range mergedMetadata {
+		labelBytes = serieMetadata.Labels.Bytes(labelBytes)
+		key := string(labelBytes)
+
+		// TODO: is it possible to have the same series returned twice in series metadata?
+		seriesMap[key] = splitLocalIdx
+		seriesToSplits = append(seriesToSplits, []SplitSeries{{0, splitLocalIdx}})
+	}
+
+	for splitIdx := 1; splitIdx < len(m.splits); splitIdx++ {
+		split := m.splits[splitIdx]
+		splitMetadata, err := split.SeriesMetadata(ctx, matchers)
 		if err != nil {
 			return nil, nil, err
 		}
-		if mergedMetadata == nil {
-			mergedMetadata, err = types.SeriesMetadataSlicePool.Get(len(splitSeries), m.MemoryConsumptionTracker)
-			if err != nil {
-				return nil, nil, err
-			}
-		}
-		for splitLocalIdx, serieMetadata := range splitSeries {
+
+		for splitLocalIdx, serieMetadata := range splitMetadata {
 			labelBytes = serieMetadata.Labels.Bytes(labelBytes)
 			key := string(labelBytes)
 
@@ -375,23 +401,15 @@ func (m *FunctionOverRangeVectorSplit) mergeSplitsMetadata(ctx context.Context, 
 			if !exists {
 				mergedIdx = len(mergedMetadata)
 				seriesMap[key] = mergedIdx
-
-				// Clone labels for mergedMetadata and track them.
-				// This separates the merged metadata from the metadata for each split, making memory tracking easier at
-				// the expense of duplicating data (i.e. increased memory usage).
-				// TODO: stop duplicating metadata when unnecessary
-				clonedMetadata := types.SeriesMetadata{
-					Labels:   serieMetadata.Labels.Copy(),
-					DropName: serieMetadata.DropName,
-				}
-				if err := m.MemoryConsumptionTracker.IncreaseMemoryConsumptionForLabels(clonedMetadata.Labels); err != nil {
-					return nil, nil, err
-				}
-				mergedMetadata, err = types.SeriesMetadataSlicePool.AppendToSlice(mergedMetadata, m.MemoryConsumptionTracker, clonedMetadata)
+				mergedMetadata, err = types.SeriesMetadataSlicePool.AppendToSlice(mergedMetadata, m.MemoryConsumptionTracker, serieMetadata)
 				if err != nil {
+					// TODO: do we need to return the splitMetadata slice back to the pool here if there's an error?
 					return nil, nil, err
 				}
 				seriesToSplits = append(seriesToSplits, nil)
+			} else {
+				// We don't need the metadata value anymore if it's a duplicate series
+				m.MemoryConsumptionTracker.DecreaseMemoryConsumptionForLabels(serieMetadata.Labels)
 			}
 			seriesToSplits[mergedIdx] = append(seriesToSplits[mergedIdx], SplitSeries{
 				SplitIdx:      splitIdx,
@@ -400,6 +418,17 @@ func (m *FunctionOverRangeVectorSplit) mergeSplitsMetadata(ctx context.Context, 
 
 			labelBytes = labelBytes[:0]
 		}
+
+		// Clear elements in metadata before putting back in pool, since element decrease is already accounted for.
+		// TODO: this is not great in the non-streaming case
+		//  in those cases, either metadata is duplicated for each split or we need to hold onto the metadata for longer (as it could be shared by several splits). an issue about delaying metadata slice put is now that labels are shared in the mergedmetadata
+		//  so we would need carefully do the tracking
+		//  Possible change - have a releaseReturnedMetadata() method for splits
+		//  to decide if we need to avoid deduping and just copy labels and not
+		//  return metadata slice to the pool - the uncached case could return
+		//  false and the cached true
+		splitMetadata = splitMetadata[:0]
+		types.SeriesMetadataSlicePool.Put(&splitMetadata, m.MemoryConsumptionTracker)
 	}
 
 	return mergedMetadata, seriesToSplits, nil
@@ -433,11 +462,11 @@ type SplitSeries struct {
 }
 
 type CachedSplit struct {
-	cachedResults *cache.IntermediateResultBlock
+	cachedResults cache.CacheReadEntry
 	parent        *FunctionOverRangeVectorSplit
 }
 
-func NewCachedSplit(cachedResults *cache.IntermediateResultBlock, parent *FunctionOverRangeVectorSplit) *CachedSplit {
+func NewCachedSplit(cachedResults cache.CacheReadEntry, parent *FunctionOverRangeVectorSplit) *CachedSplit {
 	return &CachedSplit{
 		cachedResults: cachedResults,
 		parent:        parent,
@@ -445,14 +474,15 @@ func NewCachedSplit(cachedResults *cache.IntermediateResultBlock, parent *Functi
 }
 
 func (c *CachedSplit) SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
-	return c.cachedResults.Series, nil
+	return c.cachedResults.ReadSeriesMetadata(c.parent.MemoryConsumptionTracker)
 }
 
 func (c *CachedSplit) GetResultsAtIdx(ctx context.Context, splitLocalIdx int) ([]cache.IntermediateResult, error) {
-	if splitLocalIdx >= len(c.cachedResults.Results) {
-		return nil, fmt.Errorf("series index %d out of range (have %d series)", splitLocalIdx, len(c.cachedResults.Results))
+	result, err := c.cachedResults.ReadResultAtIdx(splitLocalIdx)
+	if err != nil {
+		return nil, err
 	}
-	return []cache.IntermediateResult{c.cachedResults.Results[splitLocalIdx]}, nil
+	return []cache.IntermediateResult{result}, nil
 }
 
 func (c *CachedSplit) Finalize(ctx context.Context) error {
@@ -460,10 +490,6 @@ func (c *CachedSplit) Finalize(ctx context.Context) error {
 }
 
 func (c *CachedSplit) Close() {
-	if c.cachedResults != nil && c.cachedResults.Series != nil {
-		types.SeriesMetadataSlicePool.Put(&c.cachedResults.Series, c.parent.MemoryConsumptionTracker)
-		c.cachedResults.Series = nil
-	}
 }
 
 type UncachedSplit struct {
@@ -472,76 +498,131 @@ type UncachedSplit struct {
 
 	parent *FunctionOverRangeVectorSplit
 
-	seriesMetadata []types.SeriesMetadata
-	computedBlocks []cache.IntermediateResultBlock
-	writtenToCache bool
+	cacheWriteEntries []cache.CacheWriteEntry
+	writtenToCache    bool
+
+	seriesCount   int
+	resultBuffer  map[int][]cache.IntermediateResult
+	nextSeriesIdx int
 }
 
 func NewUncachedSplit(
+	ctx context.Context,
 	ranges []SplitRange,
 	operator types.RangeVectorOperator,
 	parent *FunctionOverRangeVectorSplit,
-) *UncachedSplit {
-	return &UncachedSplit{
-		ranges:         ranges,
-		operator:       operator,
-		parent:         parent,
-		writtenToCache: false,
+) (*UncachedSplit, error) {
+	cacheEntries := make([]cache.CacheWriteEntry, len(ranges))
+	var err error
+
+	for i, splitRange := range ranges {
+		if !splitRange.Cacheable {
+			continue
+		}
+
+		cacheEntries[i], err = parent.irCache.NewWriteEntry(ctx, parent.Func.Name, parent.innerCacheKey, splitRange.Start, splitRange.End)
+		if err != nil {
+			return nil, err
+		}
 	}
+	return &UncachedSplit{
+		ranges:   ranges,
+		operator: operator,
+		parent:   parent,
+
+		cacheWriteEntries: cacheEntries,
+		writtenToCache:    false,
+	}, nil
 }
 
 func (p *UncachedSplit) SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
-	var err error
-	p.seriesMetadata, err = p.operator.SeriesMetadata(ctx, matchers)
+	seriesMetadata, err := p.operator.SeriesMetadata(ctx, matchers)
 	if err != nil {
 		return nil, err
 	}
 
-	p.computedBlocks = make([]cache.IntermediateResultBlock, len(p.ranges))
-	for rangeIdx := range p.ranges {
-		p.computedBlocks[rangeIdx].Series = p.seriesMetadata
-		// TODO: should results be tracked by memory tracker?
-		p.computedBlocks[rangeIdx].Results = make([]cache.IntermediateResult, 0, len(p.seriesMetadata))
-	}
-
-	for seriesIdx := 0; seriesIdx < len(p.seriesMetadata); seriesIdx++ {
-		if err := p.operator.NextSeries(ctx); err != nil {
-			return nil, err
+	// TODO: is it good to release series metadata when this returns in the caller (split operator)? if we flush multiple ranges, each would have dupe protos in memory at the same time if we cannot stream to cache
+	// TODO: not all ranges will have the same metadata, if we use a single shared metadata for all ranges in the split then it could inflate cache entry size unnecessarily
+	for rangeIdx, splitRange := range p.ranges {
+		if !splitRange.Cacheable {
+			continue
 		}
 
-		step, err := p.operator.NextStepSamples(ctx)
+		err = p.cacheWriteEntries[rangeIdx].WriteSeriesMetadata(seriesMetadata)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	p.seriesCount = len(seriesMetadata)
+
+	return seriesMetadata, nil
+}
+
+func (p *UncachedSplit) GetResultsAtIdx(ctx context.Context, splitSeriesIdx int) ([]cache.IntermediateResult, error) {
+	if splitSeriesIdx >= p.seriesCount {
+		return nil, fmt.Errorf("series index %d out of range (have %d series)", splitSeriesIdx, p.seriesCount)
+	}
+
+	// if series is buffered
+	if splitSeriesIdx < p.nextSeriesIdx {
+		result, ok := p.resultBuffer[splitSeriesIdx]
+		if !ok {
+			return nil, fmt.Errorf("could not find buffered result for index %d, nextSeriesIdx %d", splitSeriesIdx, p.nextSeriesIdx)
+		}
+		// a series should only be read once
+		delete(p.resultBuffer, splitSeriesIdx)
+		return result, nil
+	}
+
+	// buffer series results before the requested series
+	for ; splitSeriesIdx < p.seriesCount && p.nextSeriesIdx < splitSeriesIdx; {
+		results, err := p.resultsForNextSeries(ctx)
+		if err != nil {
+			return nil, err
+		}
+		p.resultBuffer[p.nextSeriesIdx-1] = results
+	}
+
+	if splitSeriesIdx >= p.seriesCount {
+		// this shouldn't happen
+		return nil, fmt.Errorf("could not get results for requested series at index %d, unexpectedly out of range (have %d series)", splitSeriesIdx, p.seriesCount)
+	}
+
+	return p.resultsForNextSeries(ctx)
+}
+
+// resultsForNextSeries will calculate and cache the result for the next series
+func (p *UncachedSplit) resultsForNextSeries(ctx context.Context) ([]cache.IntermediateResult, error) {
+	if err := p.operator.NextSeries(ctx); err != nil {
+		return nil, err
+	}
+	step, err := p.operator.NextStepSamples(ctx)
+	if err != nil {
+		return nil, err
+	}
+	results := make([]cache.IntermediateResult, len(p.ranges))
+	for rangeIdx, splitRange := range p.ranges {
+		rangeStep, err := step.SubStep(splitRange.Start, splitRange.End)
 		if err != nil {
 			return nil, err
 		}
 
-		for rangeIdx, splitRange := range p.ranges {
-			rangeStep, err := step.SubStep(splitRange.Start, splitRange.End)
+		result, err := p.parent.Func.GenerateFunc(rangeStep, []types.ScalarData{}, p.parent.emitAnnotationFunc, p.parent.MemoryConsumptionTracker)
+		if err != nil {
+			return nil, err
+		}
+		results[rangeIdx] = result
+
+		if splitRange.Cacheable {
+			// TODO: should we return error here or silently fail?
+			err = p.cacheWriteEntries[rangeIdx].WriteNextResult(result)
 			if err != nil {
 				return nil, err
 			}
-
-			result, err := p.parent.Func.GenerateFunc(rangeStep, []types.ScalarData{}, p.parent.emitAnnotationFunc, p.parent.MemoryConsumptionTracker)
-			if err != nil {
-				return nil, err
-			}
-			p.computedBlocks[rangeIdx].Results = append(p.computedBlocks[rangeIdx].Results, result)
 		}
 	}
-
-	return p.seriesMetadata, nil
-}
-
-func (p *UncachedSplit) GetResultsAtIdx(ctx context.Context, splitLocalIdx int) ([]cache.IntermediateResult, error) {
-	if splitLocalIdx >= len(p.seriesMetadata) {
-		return nil, fmt.Errorf("series index %d out of range (have %d series)", splitLocalIdx, len(p.seriesMetadata))
-	}
-
-	results := make([]cache.IntermediateResult, 0, len(p.computedBlocks))
-	for _, block := range p.computedBlocks {
-		if splitLocalIdx < len(block.Results) {
-			results = append(results, block.Results[splitLocalIdx])
-		}
-	}
+	p.nextSeriesIdx++
 	return results, nil
 }
 
@@ -555,11 +636,11 @@ func (p *UncachedSplit) Finalize(ctx context.Context) error {
 			continue
 		}
 
-		block := p.computedBlocks[rangeIdx]
-		block.Version = 1
-		block.StartTimestampMs = int(splitRange.Start)
-		block.EndTimestampMs = int(splitRange.End)
-		_ = p.parent.irCache.Set(ctx, p.parent.Func.Name, p.parent.innerCacheKey, splitRange.Start, splitRange.End, block)
+		// TODO: should we return error here or silently fail?
+		err := p.cacheWriteEntries[rangeIdx].Finalize()
+		if err != nil {
+			return err
+		}
 	}
 
 	p.writtenToCache = true
@@ -567,11 +648,6 @@ func (p *UncachedSplit) Finalize(ctx context.Context) error {
 }
 
 func (p *UncachedSplit) Close() {
-	if p.seriesMetadata != nil {
-		types.SeriesMetadataSlicePool.Put(&p.seriesMetadata, p.parent.MemoryConsumptionTracker)
-		p.seriesMetadata = nil
-	}
-
 	if p.operator != nil {
 		p.operator.Close()
 	}

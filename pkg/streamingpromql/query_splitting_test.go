@@ -16,8 +16,10 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/dskit/user"
+	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/streamingpromql/cache"
+	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
@@ -356,39 +358,121 @@ func (c *testIntermediateResultsCache) Stats() (gets, hits, sets int) {
 	return c.gets, c.hits, c.sets
 }
 
-func (c *testIntermediateResultsCache) Get(ctx context.Context, function, selector string, start int64, end int64, memoryTracker *limiter.MemoryConsumptionTracker) (cache.IntermediateResultBlock, bool, error) {
+func (c *testIntermediateResultsCache) Get(ctx context.Context, function, selector string, start int64, end int64) (cache.CacheReadEntry, bool, error) {
 	key := fmt.Sprintf("%s:%s:%d:%d", function, selector, start, end)
 	c.gets++
 	cached, ok := c.data[key]
 	if !ok {
-		return cache.IntermediateResultBlock{}, false, nil
+		return nil, false, nil
 	}
 
 	c.hits++
-	// Convert proto back to block with tracking (like real cache does)
-	block, err := cache.CachedSeriesToBlock(cached, memoryTracker)
-	if err != nil {
-		return cache.IntermediateResultBlock{}, false, nil
-	}
-
-	return block, true, nil
+	return &testCacheReadEntry{cached: cached}, true, nil
 }
 
-func (c *testIntermediateResultsCache) Set(ctx context.Context, function, selector string, start int64, end int64, block cache.IntermediateResultBlock) error {
+func (c *testIntermediateResultsCache) NewWriteEntry(ctx context.Context, function, selector string, start int64, end int64) (cache.CacheWriteEntry, error) {
 	key := fmt.Sprintf("%s:%s:%d:%d", function, selector, start, end)
-	c.sets++
-
-	// Convert to proto format (like real cache does).
-	// This ensures the cache doesn't hold references to the caller's slices.
-	cached, err := cache.BlockToCachedSeries(key, block)
-	if err != nil {
-		return err
-	}
-
-	c.data[key] = cached
-	return nil
+	return &testCacheWriteEntry{
+		cache: c,
+		key:   key,
+	}, nil
 }
 
 func (c *testIntermediateResultsCache) Close() {
 	c.data = nil
+}
+
+// testCacheReadEntry implements cache.CacheReadEntry for testing.
+type testCacheReadEntry struct {
+	cached       cache.CachedSeries
+	metadataRead bool
+}
+
+func (e *testCacheReadEntry) ReadSeriesMetadata(memoryTracker *limiter.MemoryConsumptionTracker) ([]types.SeriesMetadata, error) {
+	if e.metadataRead {
+		return nil, fmt.Errorf("metadata already read")
+	}
+	e.metadataRead = true
+
+	series, err := types.SeriesMetadataSlicePool.Get(len(e.cached.Series), memoryTracker)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, m := range e.cached.Series {
+		lbls := mimirpb.FromLabelAdaptersToLabels(m.Labels)
+		if err := memoryTracker.IncreaseMemoryConsumptionForLabels(lbls); err != nil {
+			return nil, err
+		}
+		series = append(series, types.SeriesMetadata{Labels: lbls})
+	}
+
+	return series, nil
+}
+
+func (e *testCacheReadEntry) ReadResultAtIdx(idx int) (cache.IntermediateResult, error) {
+	if idx >= len(e.cached.Results) {
+		return cache.IntermediateResult{}, fmt.Errorf("series index %d out of range (have %d series)", idx, len(e.cached.Results))
+	}
+
+	proto := e.cached.Results[idx]
+	result := cache.IntermediateResult{
+		SumOverTime: cache.SumOverTimeIntermediate{
+			SumF:     proto.SumF,
+			HasFloat: proto.HasFloat,
+			SumC:     proto.SumC,
+		},
+	}
+
+	if proto.SumH != nil {
+		result.SumOverTime.SumH = mimirpb.FromHistogramProtoToFloatHistogram(proto.SumH)
+	}
+
+	return result, nil
+}
+
+func (e *testCacheReadEntry) Close() error {
+	return nil
+}
+
+// testCacheWriteEntry implements cache.CacheWriteEntry for testing.
+type testCacheWriteEntry struct {
+	cache     *testIntermediateResultsCache
+	key       string
+	cached    cache.CachedSeries
+	finalized bool
+}
+
+func (e *testCacheWriteEntry) WriteSeriesMetadata(metadata []types.SeriesMetadata) error {
+	e.cached.Series = make([]mimirpb.Metric, len(metadata))
+	for i, sm := range metadata {
+		e.cached.Series[i] = mimirpb.Metric{
+			Labels: mimirpb.FromLabelsToLabelAdapters(sm.Labels),
+		}
+	}
+	return nil
+}
+
+func (e *testCacheWriteEntry) WriteNextResult(result cache.IntermediateResult) error {
+	proto := cache.IntermediateResultProto{
+		SumF:     result.SumOverTime.SumF,
+		HasFloat: result.SumOverTime.HasFloat,
+		SumC:     result.SumOverTime.SumC,
+	}
+	if result.SumOverTime.SumH != nil {
+		histProto := mimirpb.FromFloatHistogramToHistogramProto(0, result.SumOverTime.SumH)
+		proto.SumH = &histProto
+	}
+	e.cached.Results = append(e.cached.Results, proto)
+	return nil
+}
+
+func (e *testCacheWriteEntry) Finalize() error {
+	if e.finalized {
+		return nil
+	}
+	e.cache.sets++
+	e.cache.data[e.key] = e.cached
+	e.finalized = true
+	return nil
 }
