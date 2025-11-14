@@ -120,16 +120,7 @@ func (e *schedulerExecutor) run(ctx context.Context, c *MultitenantCompactor) er
 	workerID := fmt.Sprintf("compactor-%s", c.ringLifecycler.GetInstanceID())
 	level.Info(e.logger).Log("msg", "compactor running in scheduler mode", "scheduler_endpoint", e.cfg.SchedulerAddress, "worker_id", workerID)
 
-	// Clean up any stale compaction directories from previous runs.
-	compactDir := c.compactorCfg.DataDir + "/compact"
-	// Initialize lastCleanupTime regardless of cleanup success to prevent cleanup on every job
-	e.cleanupMu.Lock()
-	e.lastCleanupTime = time.Now()
-	e.cleanupMu.Unlock()
-
-	if err := removeCompactionDir(e.logger, compactDir); err != nil {
-		level.Warn(e.logger).Log("msg", "failed to cleanup compaction directory on startup", "path", compactDir, "err", err)
-	}
+	compactDir := filepath.Join(c.compactorCfg.DataDir, "compact")
 
 	b := backoff.New(ctx, backoff.Config{
 		MinBackoff: e.cfg.SchedulerMinLeasingBackoff,
@@ -137,6 +128,13 @@ func (e *schedulerExecutor) run(ctx context.Context, c *MultitenantCompactor) er
 	})
 
 	for {
+		// Clean up the compaction directory before leasing work if interval is configured.
+		if e.cfg.CompactionDirCleanupInterval > 0 {
+			if err := e.cleanupCompactionDir(e.logger, compactDir); err != nil {
+				level.Warn(e.logger).Log("msg", "failed to cleanup compaction directory", "path", compactDir, "err", err)
+			}
+		}
+
 		work, err := e.leaseAndExecuteJob(ctx, c, workerID)
 		if err != nil {
 			level.Warn(e.logger).Log("msg", "failed to lease or execute job", "err", err)
@@ -162,24 +160,25 @@ func (e *schedulerExecutor) stop() error {
 	return nil
 }
 
-// removeCompactionDir removes all contents from the compaction directory without deleting the directory itself.
+// emptyCompactionDir removes all contents from the compaction directory without deleting the directory itself.
 // If the directory does not exist, it will be created.
-func removeCompactionDir(logger log.Logger, compactDir string) error {
+func emptyCompactionDir(logger log.Logger, compactDir string) error {
 	// Ensure directory exists first
 	if err := os.MkdirAll(compactDir, 0750); err != nil {
 		return errors.Wrap(err, "failed to create compaction directory")
 	}
 
-	// Remove all contents using glob
-	pattern := filepath.Join(compactDir, "*")
-	matches, err := filepath.Glob(pattern)
+	// Read all entries in the directory
+	entries, err := os.ReadDir(compactDir)
 	if err != nil {
-		return errors.Wrap(err, "failed to glob compaction directory")
+		return errors.Wrap(err, "failed to read compaction directory")
 	}
 
-	for _, match := range matches {
-		if err := os.RemoveAll(match); err != nil {
-			return errors.Wrapf(err, "failed to remove %s", match)
+	// Remove each entry
+	for _, entry := range entries {
+		path := filepath.Join(compactDir, entry.Name())
+		if err := os.RemoveAll(path); err != nil {
+			return errors.Wrapf(err, "failed to remove %s", path)
 		}
 	}
 	return nil
@@ -197,7 +196,7 @@ func (e *schedulerExecutor) cleanupCompactionDir(logger log.Logger, compactDir s
 		return nil
 	}
 
-	if err := removeCompactionDir(logger, compactDir); err != nil {
+	if err := emptyCompactionDir(logger, compactDir); err != nil {
 		return err
 	}
 
@@ -425,14 +424,6 @@ func (e *schedulerExecutor) executeCompactionJob(ctx context.Context, c *Multite
 	// Track that a compaction job has started
 	compactor.metrics.groupCompactionRunsStarted.Inc()
 
-	// Clean up the compaction directory. This approach only works while compactors work on a single job at a
-	// time. With higher concurrency, multiple jobs could conflict and clear one anothers progress.
-	if e.cfg.CompactionDirCleanupInterval > 0 {
-		if err := e.cleanupCompactionDir(userLogger, compactor.compactDir); err != nil {
-			level.Warn(userLogger).Log("msg", "failed to cleanup compaction directory, continuing with job anyway", "path", compactor.compactDir, "err", err)
-		}
-	}
-
 	level.Info(userLogger).Log("msg", "executing compaction job from scheduler", "tenant", userID, "blocks", len(blockIDs), "split", spec.Job.Split)
 	_, compactedBlockIDs, err := compactor.runCompactionJob(ctx, job)
 	if err == nil {
@@ -452,7 +443,6 @@ func (e *schedulerExecutor) executeCompactionJob(ctx context.Context, c *Multite
 		repairErr := repairIssue347(ctx, userLogger, userBucket, syncer.metrics.blocksMarkedForDeletion, issue347Err)
 		if repairErr == nil {
 			level.Info(userLogger).Log("msg", "successfully repaired issue347 block, job can be re-planned", "block", issue347Err.id)
-			compactor.metrics.groupCompactionRunsCompleted.Inc()
 			return compactorschedulerpb.COMPLETE, nil
 		}
 		level.Error(userLogger).Log("msg", "failed to repair issue347 block, abandoning job", "block", issue347Err.id, "err", repairErr)
@@ -474,7 +464,6 @@ func (e *schedulerExecutor) executeCompactionJob(ctx context.Context, c *Multite
 		})
 
 		if markErr == nil {
-			compactor.metrics.groupCompactionRunsCompleted.Inc()
 			level.Info(userLogger).Log("msg", "marked block for no-compact due to out-of-order chunks, job can be re-planned", "block", outOfOrderChunksErr.id)
 			return compactorschedulerpb.COMPLETE, nil
 		}
@@ -496,7 +485,6 @@ func (e *schedulerExecutor) executeCompactionJob(ctx context.Context, c *Multite
 		})
 
 		if markErr == nil {
-			compactor.metrics.groupCompactionRunsCompleted.Inc()
 			level.Info(userLogger).Log("msg", "marked block for no-compact due to critical error, job can be re-planned", "block", criticalErr.id)
 			return compactorschedulerpb.COMPLETE, nil
 		}

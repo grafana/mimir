@@ -796,7 +796,7 @@ func countBlocksInBucket(t *testing.T, bkt objstore.Bucket, userID string) int {
 	return count
 }
 
-func TestRemoveCompactionDir(t *testing.T) {
+func TestEmptyCompactionDir(t *testing.T) {
 	tests := map[string]struct {
 		setupDir    func(t *testing.T, dir string)
 		expectError bool
@@ -837,7 +837,7 @@ func TestRemoveCompactionDir(t *testing.T) {
 
 			tc.setupDir(t, compactDir)
 
-			err := removeCompactionDir(log.NewNopLogger(), compactDir)
+			err := emptyCompactionDir(log.NewNopLogger(), compactDir)
 
 			if tc.expectError {
 				require.Error(t, err)
