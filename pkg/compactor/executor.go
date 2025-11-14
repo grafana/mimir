@@ -308,7 +308,7 @@ func (e *schedulerExecutor) leaseAndExecuteJob(ctx context.Context, c *Multitena
 		wg.Wait()
 		if err != nil {
 			level.Warn(e.logger).Log("msg", "failed to execute job", "job_id", jobID, "tenant", jobTenant, "job_type", jobType, "err", err)
-			e.sendFinalJobStatus(ctx, resp.Key, resp.Spec, compactorschedulerpb.REASSIGN)
+			e.sendFinalJobStatus(ctx, resp.Key, resp.Spec, status)
 			return true, err
 		}
 		e.sendFinalJobStatus(ctx, resp.Key, resp.Spec, status)
