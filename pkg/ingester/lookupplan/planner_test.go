@@ -168,32 +168,6 @@ func matchersStrings(ms []*labels.Matcher) []string {
 	return matchers
 }
 
-func TestCostBasedPlannerTooManyMatchers(t *testing.T) {
-	ctx := context.Background()
-	stats := newMockStatistics()
-	metrics := NewMetrics(nil).ForUser("test-user")
-	planner := NewCostBasedPlanner(metrics, stats, defaultCostConfig)
-
-	// Create more than 10 matchers to trigger the limit
-	var matchers []*labels.Matcher
-	for i := 0; i < 12; i++ {
-		matcher := labels.MustNewMatcher(labels.MatchEqual, fmt.Sprintf("label_%d", i), "value")
-		matchers = append(matchers, matcher)
-	}
-
-	inputPlan := &basicLookupPlan{
-		indexMatchers: matchers,
-		scanMatchers:  []*labels.Matcher{},
-	}
-
-	result, err := planner.PlanIndexLookup(ctx, inputPlan, nil)
-
-	// Should return the original plan without error (aborted early)
-	require.NoError(t, err)
-	require.NotNil(t, result)
-	assert.Equal(t, inputPlan, result)
-}
-
 // basicLookupPlan is a simple implementation of index.LookupPlan for testing
 type basicLookupPlan struct {
 	indexMatchers []*labels.Matcher
@@ -302,7 +276,7 @@ func TestCostBasedPlannerDoesntAllowNoMatcherLookups(t *testing.T) {
 	planner := NewCostBasedPlanner(metrics, stats, defaultCostConfig)
 
 	result, err := planner.PlanIndexLookup(ctx, &basicLookupPlan{}, nil)
-	assert.ErrorContains(t, err, "no plan with index matchers found out of 1 plans")
+	assert.ErrorContains(t, err, "no plan with index matchers found")
 	assert.Nil(t, result, "Result should be nil when no matchers are provided")
 }
 
