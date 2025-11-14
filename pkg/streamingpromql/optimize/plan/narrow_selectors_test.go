@@ -202,6 +202,23 @@ func TestNarrowSelectorsOptimizationPass(t *testing.T) {
 							- MatrixSelector: {__name__="some_metric"}[5m0s]
 			`,
 		},
+		// Make sure we don't modify query plans that modify labels
+		"binary expression with label_replace on one side": {
+			expr: `sum by (statefulset) (kube_statefulset_replicas) - sum by (statefulset) (label_replace(not_ready, "statefulset", "$1", "job", ".+/(.+)"))`,
+			expectedPlan: `
+				- BinaryExpression: LHS - RHS
+					- LHS: AggregateExpression: sum by (statefulset)
+						- VectorSelector: {__name__="kube_statefulset_replicas"}
+					- RHS: AggregateExpression: sum by (statefulset)
+						- DeduplicateAndMerge
+							- FunctionCall: label_replace(...)
+								- param 0: VectorSelector: {__name__="not_ready"}
+								- param 1: StringLiteral: "statefulset"
+								- param 2: StringLiteral: "$1"
+								- param 3: StringLiteral: "job"
+								- param 4: StringLiteral: ".+/(.+)"
+			`,
+		},
 	}
 
 	ctx := context.Background()

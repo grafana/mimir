@@ -31,12 +31,14 @@ func (n *NarrowSelectorsOptimizationPass) Name() string {
 	return "narrow selectors"
 }
 
-func (n *NarrowSelectorsOptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan, maximumSupportedQueryPlanVersion planning.QueryPlanVersion) (*planning.QueryPlan, error) {
-	// If this query plan doesn't contain any selectors for us to apply hints for or if the
-	// query has been rewritten to be sharded or spun off, don't attempt to generate any query
-	// hints since there are no selectors that we understand and can add matchers to.
+func (n *NarrowSelectorsOptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan, _ planning.QueryPlanVersion) (*planning.QueryPlan, error) {
+	// If this query plan doesn't contain any selectors for us to apply hints for, if the
+	// query has been rewritten to be sharded or spun off, or uses functions that create
+	// labels, don't attempt to generate any query hints since there are no selectors that
+	// we understand and can add matchers to, or they may potentially be for a label that
+	// doesn't exist on the series.
 	res := optimize.Inspect(plan.Root)
-	if !res.HasSelectors || res.IsRewrittenByMiddleware {
+	if !res.HasSelectors || res.IsRewrittenByMiddleware || res.CreatesLabels {
 		return plan, nil
 	}
 
