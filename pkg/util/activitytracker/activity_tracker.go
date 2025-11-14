@@ -4,7 +4,9 @@ package activitytracker
 
 import (
 	"encoding/binary"
+	"errors"
 	"flag"
+	"fmt"
 	"io"
 	"os"
 	"strings"
@@ -13,7 +15,6 @@ import (
 
 	"github.com/edsrzf/mmap-go"
 	"github.com/grafana/dskit/multierror"
-	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
@@ -174,7 +175,7 @@ func trimEntryToSize(entry string, size int) string {
 func getMappedFile(filename string, filesize int) (*os.File, mmap.MMap, error) {
 	file, err := os.OpenFile(filename, os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0600)
 	if err != nil {
-		return nil, nil, errors.Wrap(err, "failed to create activity file")
+		return nil, nil, fmt.Errorf("failed to create activity file: %w", err)
 	}
 
 	closeOnReturn := true
@@ -186,12 +187,12 @@ func getMappedFile(filename string, filesize int) (*os.File, mmap.MMap, error) {
 
 	err = file.Truncate(int64(filesize))
 	if err != nil {
-		return nil, nil, errors.Wrap(err, "failed to truncate activity file")
+		return nil, nil, fmt.Errorf("failed to truncate activity file: %w", err)
 	}
 
 	fileAsBytes, err := mmap.Map(file, mmap.RDWR, 0)
 	if err != nil {
-		return nil, nil, errors.Wrap(err, "failed to mmap activity file")
+		return nil, nil, fmt.Errorf("failed to mmap activity file: %w", err)
 	}
 
 	closeOnReturn = false

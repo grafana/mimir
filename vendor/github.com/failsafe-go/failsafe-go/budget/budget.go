@@ -12,7 +12,7 @@ var ErrExceeded = errors.New("budget exceeded")
 
 // Budget restricts concurrent executions as a way of preventing system overload.
 //
-// R is the execution result type. This type is concurrency safe.
+// This type is concurrency safe.
 type Budget interface {
 	// RetryRate returns the current rate of retries relative to total executions, from 0 to 1.
 	RetryRate() float64
@@ -23,7 +23,7 @@ type Budget interface {
 
 // Builder builds Budget instances.
 //
-// R is the execution result type. This type is not concurrency safe.
+// This type is not concurrency safe.
 type Builder interface {
 	// WithMaxRate configures the max rate of inflight executions that can be retries and/or hedges.
 	WithMaxRate(maxRate float64) Builder

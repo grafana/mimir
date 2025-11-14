@@ -58,14 +58,10 @@ func (l Label) OutputLabel() string {
 	return l.Output
 }
 
-// ParseCostAttributionLabels parses a slice of strings into a slice of Label structs.
-// Each string is used as both the input and output label. (No override is possible.)
-func ParseCostAttributionLabels(labelStrings []string) []Label {
-	output := make([]Label, 0, len(labelStrings))
-
-	for _, label := range labelStrings {
-		output = append(output, Label{Input: label})
+func FromCostAttributionLabelsToOutputLabels(labels []Label) []string {
+	res := make([]string, 0, len(labels))
+	for _, label := range labels {
+		res = append(res, label.OutputLabel())
 	}
-
-	return output
+	return res
 }

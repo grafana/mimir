@@ -53,7 +53,7 @@ func NewCountValues(
 	expressionPosition posrange.PositionRange,
 ) *CountValues {
 	if without {
-		grouping = append(grouping, labels.MetricName)
+		grouping = append(grouping, model.MetricNameLabel)
 	}
 
 	slices.Sort(grouping)

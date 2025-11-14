@@ -79,22 +79,22 @@ func TestPlanCosts(t *testing.T) {
 			allMatchers = append(allMatchers, tc.indexMatchers...)
 			allMatchers = append(allMatchers, tc.scanMatchers...)
 
-			// Create a scan-only plan with all matchers
-			p := newScanOnlyPlan(ctx, stats, defaultCostConfig, allMatchers, nil)
+			// Create a scan-only plan with all matchers (no sharding)
+			p := newScanOnlyPlan(ctx, stats, defaultCostConfig, allMatchers, nil, nil)
 
 			// Use index for the first N predicates (corresponding to index matchers)
 			for i := 0; i < len(tc.indexMatchers); i++ {
-				p = p.useIndexFor(i)
+				p = p.UseIndexFor(i)
 			}
 
 			const errorMsg = "Expected cost doesn't match actual cost. If you want to keep the new cost, set `writeOutNewCost = true` to persist the new cost in /testdata"
 			const delta = 1e-5
-			assert.Equal(t, int(tc.cardinality), int(p.cardinality()), errorMsg)
+			assert.Equal(t, int(tc.cardinality), int(p.FinalCardinality()), errorMsg)
 			assert.InDelta(t, tc.indexCost, p.indexLookupCost(), delta, errorMsg)
 			assert.InDelta(t, tc.intersectionCost, p.intersectionCost(), delta, errorMsg)
 			assert.InDelta(t, tc.seriesRetrievalCost, p.seriesRetrievalCost(), delta, errorMsg)
 			assert.InDelta(t, tc.filterCost, p.filterCost(), delta, errorMsg)
-			assert.InDelta(t, tc.totalCost, p.totalCost(), delta, errorMsg)
+			assert.InDelta(t, tc.totalCost, p.TotalCost(), delta, errorMsg)
 
 			assert.GreaterOrEqual(t, tc.indexCost, 0.0, "can't have negative costs")
 			assert.GreaterOrEqual(t, tc.intersectionCost, 0.0, "can't have negative costs")
@@ -102,12 +102,12 @@ func TestPlanCosts(t *testing.T) {
 			assert.GreaterOrEqual(t, tc.filterCost, 0.0, "can't have negative costs")
 			assert.GreaterOrEqual(t, tc.totalCost, 0.0, "can't have negative costs")
 
-			testCases[tcIdx].cardinality = p.cardinality()
+			testCases[tcIdx].cardinality = p.FinalCardinality()
 			testCases[tcIdx].indexCost = p.indexLookupCost()
 			testCases[tcIdx].intersectionCost = p.intersectionCost()
 			testCases[tcIdx].seriesRetrievalCost = p.seriesRetrievalCost()
 			testCases[tcIdx].filterCost = p.filterCost()
-			testCases[tcIdx].totalCost = p.totalCost()
+			testCases[tcIdx].totalCost = p.TotalCost()
 		})
 	}
 }

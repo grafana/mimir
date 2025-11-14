@@ -15,6 +15,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/gogo/protobuf/proto"
 	"github.com/grafana/dskit/user"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
@@ -1454,7 +1455,7 @@ func generateBenchmarkResponse(seriesCount int, pointCount int, batchSize int) [
 
 	series := make([]labels.Labels, 0, seriesCount)
 	for i := range seriesCount {
-		series = append(series, labels.FromStrings(labels.MetricName, "my_metric", "idx", strconv.Itoa(i)))
+		series = append(series, labels.FromStrings(model.MetricNameLabel, "my_metric", "idx", strconv.Itoa(i)))
 	}
 
 	msgs = append(msgs, newSeriesMetadata(false, series...))

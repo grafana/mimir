@@ -9,33 +9,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestParseCostAttributionLabels(t *testing.T) {
-	tc := map[string]struct {
-		input    []string
-		expected []Label
-	}{
-		"no labels": {
-			input:    []string{},
-			expected: []Label{},
-		},
-		"single": {
-			input:    []string{"team"},
-			expected: []Label{{Input: "team", Output: ""}},
-		},
-		"regular list": {
-			input:    []string{"team", "service"},
-			expected: []Label{{Input: "team", Output: ""}, {Input: "service", Output: ""}},
-		},
-	}
-
-	for name, tt := range tc {
-		t.Run(name, func(t *testing.T) {
-			result := ParseCostAttributionLabels(tt.input)
-			require.Equal(t, tt.expected, result)
-		})
-	}
-}
-
 func TestLabel_OutputLabel(t *testing.T) {
 	tc := map[string]struct {
 		input    Label
@@ -102,6 +75,35 @@ func TestLabel_Validate(t *testing.T) {
 			} else {
 				require.NoError(t, err)
 			}
+		})
+	}
+}
+
+func TestFromCostAttributionLabelsToOutputLabels(t *testing.T) {
+	tc := map[string]struct {
+		input    []Label
+		expected []string
+	}{
+		"no labels": {
+			input:    []Label{},
+			expected: []string{},
+		},
+		"single": {
+			input:    []Label{{Input: "team", Output: "my_team"}},
+			expected: []string{"my_team"},
+		},
+		"regular list": {
+			input: []Label{
+				{Input: "team", Output: "my_team"},
+				{Input: "service", Output: "my_service"},
+			},
+			expected: []string{"my_team", "my_service"},
+		},
+	}
+	for name, tt := range tc {
+		t.Run(name, func(t *testing.T) {
+			result := FromCostAttributionLabelsToOutputLabels(tt.input)
+			require.Equal(t, tt.expected, result)
 		})
 	}
 }

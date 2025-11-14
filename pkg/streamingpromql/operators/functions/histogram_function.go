@@ -254,6 +254,7 @@ func (h *HistogramFunction) SeriesMetadata(ctx context.Context, matchers types.M
 		if h.enableDelayedNameRemoval {
 			labelsMetadata = types.SeriesMetadata{Labels: g.labels, DropName: true}
 		} else {
+			//nolint:staticcheck // SA1019: DropMetricName is deprecated.
 			labelsMetadata = types.SeriesMetadata{Labels: g.labels.DropMetricName()}
 		}
 		seriesMetadata, err = types.AppendSeriesMetadata(h.memoryConsumptionTracker, seriesMetadata, labelsMetadata)

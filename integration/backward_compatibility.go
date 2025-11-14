@@ -7,15 +7,15 @@ import "github.com/grafana/mimir/integration/e2emimir"
 // DefaultPreviousVersionImages is used by `tools/pre-pull-images` so it needs
 // to be in a non `_test.go` file.
 var DefaultPreviousVersionImages = map[string]e2emimir.FlagMapper{
-	"grafana/mimir:2.15.3": e2emimir.ChainFlagMappers(
-		removePartitionRingFlags,
-		removeQuerierRingFlags,
-	),
 	"grafana/mimir:2.16.2": e2emimir.ChainFlagMappers(
 		removePartitionRingFlags,
 		removeQuerierRingFlags,
 	),
 	"grafana/mimir:2.17.2": e2emimir.ChainFlagMappers(
+		removePartitionRingFlags,
+		removeQuerierRingFlags,
+	),
+	"grafana/mimir:3.0.0": e2emimir.ChainFlagMappers(
 		removePartitionRingFlags,
 		removeQuerierRingFlags,
 	),

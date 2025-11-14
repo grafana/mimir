@@ -3,6 +3,7 @@
 package optimize
 
 import (
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware/astmapper"
@@ -36,7 +37,7 @@ func Inspect(node planning.Node) InspectResult {
 	default:
 		anyChildContainsSelectors := false
 
-		for _, c := range e.Children() {
+		for c := range planning.ChildrenIter(e) {
 			res := Inspect(c)
 			if res.IsRewrittenByMiddleware {
 				return InspectResult{
@@ -57,7 +58,7 @@ func Inspect(node planning.Node) InspectResult {
 
 func isSharded(v *core.VectorSelector) bool {
 	for _, m := range v.Matchers {
-		if m.Name == labels.MetricName && m.Type == labels.MatchEqual && m.Value == astmapper.EmbeddedQueriesMetricName {
+		if m.Name == model.MetricNameLabel && m.Type == labels.MatchEqual && m.Value == astmapper.EmbeddedQueriesMetricName {
 			return true
 		}
 	}
@@ -67,7 +68,7 @@ func isSharded(v *core.VectorSelector) bool {
 
 func isSpunOff(matchers []*core.LabelMatcher) bool {
 	for _, m := range matchers {
-		if m.Name == labels.MetricName && m.Type == labels.MatchEqual && m.Value == astmapper.SubqueryMetricName {
+		if m.Name == model.MetricNameLabel && m.Type == labels.MatchEqual && m.Value == astmapper.SubqueryMetricName {
 			return true
 		}
 	}

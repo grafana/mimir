@@ -28,6 +28,7 @@ func init() {
 // fixed-interval blocks for intermediate result caching.
 type SplittableFunctionCall struct {
 	*SplittableFunctionCallDetails
+	// TODO: should splittable function call replace function call instead of wrapping it?
 	Inner planning.Node
 }
 
@@ -39,10 +40,6 @@ func (s *SplittableFunctionCall) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_SPLIT_RANGE_VECTOR
 }
 
-func (s *SplittableFunctionCall) Children() []planning.Node {
-	return []planning.Node{s.Inner}
-}
-
 func (s *SplittableFunctionCall) SetChildren(children []planning.Node) error {
 	if len(children) != 1 {
 		return fmt.Errorf("node of type SplittableFunctionCall supports 1 child, but got %d", len(children))
@@ -52,9 +49,33 @@ func (s *SplittableFunctionCall) SetChildren(children []planning.Node) error {
 	return nil
 }
 
-func (s *SplittableFunctionCall) EquivalentTo(other planning.Node) bool {
+func (s *SplittableFunctionCall) Child(idx int) planning.Node {
+	if idx > 0 {
+		panic(fmt.Sprintf("SplittableFunctionCall node has 1 child, but attempted to get child at index %d", idx))
+	}
+	return s.Inner
+}
+
+func (s *SplittableFunctionCall) ChildCount() int {
+	return 1
+}
+
+func (s *SplittableFunctionCall) ReplaceChild(idx int, child planning.Node) error {
+	if idx > 0 {
+		fmt.Errorf("SplittableFunctionCall node has 1 child, but attempted to replace child at index %d", idx)
+	}
+	s.Inner = child
+	return nil
+}
+
+func (s *SplittableFunctionCall) MergeHints(other planning.Node) error {
+	// Nothing to do.
+	return nil
+}
+
+func (s *SplittableFunctionCall) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
 	otherSplit, ok := other.(*SplittableFunctionCall)
-	return ok && s.Inner.EquivalentTo(otherSplit.Inner)
+	return ok && s.Inner.EquivalentToIgnoringHintsAndChildren(otherSplit.Inner)
 }
 
 func (s *SplittableFunctionCall) Describe() string {
@@ -117,7 +138,7 @@ func (m Materializer) Materialize(n planning.Node, materializer *planning.Materi
 
 	splitDuration := time.Duration(s.SplittableFunctionCallDetails.SplitDurationMs) * time.Millisecond
 
-	matrixSelector, ok := s.Inner.Children()[0].(*core.MatrixSelector)
+	matrixSelector, ok := s.Inner.Child(0).(*core.MatrixSelector)
 	if !ok {
 		return nil, errors.New("inner.children[0] is expected to be a matrix selector")
 	}

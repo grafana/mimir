@@ -20,6 +20,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/expfmt"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql/promqltest"
@@ -502,8 +503,8 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 								SeriesMetadata: &querierpb.EvaluateQueryResponseSeriesMetadata{
 									NodeIndex: 1,
 									Series: []querierpb.SeriesMetadata{
-										{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(labels.MetricName, "my_series", "idx", "0"))},
-										{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(labels.MetricName, "my_series", "idx", "1"))},
+										{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "my_series", "idx", "0"))},
+										{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "my_series", "idx", "1"))},
 									},
 								},
 							},
@@ -1076,7 +1077,7 @@ func TestDispatcher_HandleProtobuf_WithDelayedNameRemovalEnabled(t *testing.T) {
 								SeriesMetadata: &querierpb.EvaluateQueryResponseSeriesMetadata{
 									NodeIndex: 1,
 									Series: []querierpb.SeriesMetadata{
-										{DropName: true, Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(labels.MetricName, "some_total", "idx", "0"))},
+										{DropName: true, Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "some_total", "idx", "0"))},
 									},
 								},
 							},

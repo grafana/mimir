@@ -127,10 +127,8 @@ func BenchmarkQueryExecution(b *testing.B) {
 					if err != nil {
 						b.Fatalf("Query failed: %v (query: %s)", err, q.Query)
 					}
-					// Report metrics only on first iteration to avoid clutter
-					if i == 0 {
-						b.Logf("series=%d chunks=%d", queryResult.SeriesCount, queryResult.ChunksCount)
-					}
+					b.ReportMetric(float64(queryResult.SeriesCount), "series")
+					b.ReportMetric(float64(queryResult.ChunksCount), "chunks")
 				}
 			})
 		}

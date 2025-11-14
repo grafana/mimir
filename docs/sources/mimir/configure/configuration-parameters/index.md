@@ -236,7 +236,7 @@ activity_tracker:
 # supported by the ingester. This can help debug performance issues for specific
 # tenants.
 # CLI flag: -include-tenant-id-in-profile-labels
-[include_tenant_id_in_profile_labels: <boolean> | default = false]
+[include_tenant_id_in_profile_labels: <boolean> | default = true]
 
 vault:
   # (experimental) Enables fetching of keys and certificates from Vault
@@ -1751,6 +1751,11 @@ mimir_query_engine:
   # CLI flag: -querier.mimir-query-engine.enable-eliminate-deduplicate-and-merge
   [enable_eliminate_deduplicate_and_merge: <boolean> | default = false]
 
+  # (experimental) Enable eliminating duplicate or redundant matchers that are
+  # part of selector expressions.
+  # CLI flag: -querier.mimir-query-engine.enable-reduce-matchers
+  [enable_reduce_matchers: <boolean> | default = true]
+
 ring:
   # The key-value store used to share the hash ring across multiple instances.
   kvstore:
@@ -2820,15 +2825,12 @@ alertmanager_client:
 # CLI flag: -alertmanager.strict-initialization-enabled
 [strict_initialization: <boolean> | default = false]
 
-# (experimental) Enable UTF-8 strict mode. Allows UTF-8 characters in the
-# matchers for routes and inhibition rules, in silences, and in the labels for
-# alerts. It is recommended that all tenants run the `migrate-utf8` command in
-# mimirtool before enabling this mode. Otherwise, some tenant configurations
-# might fail to load. For more information, refer to [Enable
+# (advanced) Enable UTF-8 strict mode. Allows UTF-8 characters in the matchers
+# for routes and inhibition rules, in silences, and in the labels for alerts. It
+# is recommended that all tenants run the `migrate-utf8` command in mimirtool
+# before enabling this mode. Otherwise, some tenant configurations might fail to
+# load. For more information, refer to [Enable
 # UTF-8](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/components/alertmanager/#enable-utf-8).
-# Enabling and then disabling UTF-8 strict mode can break existing Alertmanager
-# configurations if tenants added UTF-8 characters to their Alertmanager
-# configuration while it was enabled.
 # CLI flag: -alertmanager.utf8-strict-mode-enabled
 [utf8_strict_mode: <boolean> | default = false]
 
@@ -4025,9 +4027,6 @@ blocked_requests:
 # request result shard in bytes. 0 to disable.
 # CLI flag: -querier.active-series-results-max-size-bytes
 [active_series_results_max_size_bytes: <int> | default = 419430400]
-
-# (experimental)
-[cost_attribution_labels: <string> | default = ""]
 
 # (experimental)
 cost_attribution_labels_structured:
@@ -5985,6 +5984,17 @@ The gcs_backend block configures the connection to Google Cloud Storage object s
 # 3. On Google Compute Engine it fetches credentials from the metadata server.
 # CLI flag: -<prefix>.gcs.service-account
 [service_account: <string> | default = ""]
+
+# (advanced) Enable automatic retries for GCS uploads using the RetryAlways
+# policy. Uploads will be retried on transient errors. Note: this does not
+# guarantee idempotency.
+# CLI flag: -<prefix>.gcs.enable-upload-retries
+[enable_upload_retries: <boolean> | default = false]
+
+# (advanced) Maximum number of attempts for GCS operations (0 = unlimited, 1 =
+# no retries). Applies to both regular and upload retry modes.
+# CLI flag: -<prefix>.gcs.max-retries
+[max_retries: <int> | default = 20]
 
 http:
   # (advanced) The time an idle connection remains idle before closing.

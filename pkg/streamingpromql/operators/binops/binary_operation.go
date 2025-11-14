@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/grafana/regexp"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
@@ -43,13 +44,13 @@ func vectorMatchingGroupKeyFunc(vectorMatching parser.VectorMatching) func(label
 	if len(vectorMatching.MatchingLabels) == 0 {
 		// Fast path for common case for expressions like "a + b" with no 'on' or 'without' labels.
 		return func(l labels.Labels) []byte {
-			buf = l.BytesWithoutLabels(buf, labels.MetricName)
+			buf = l.BytesWithoutLabels(buf, model.MetricNameLabel)
 			return buf
 		}
 	}
 
 	lbls := make([]string, 0, len(vectorMatching.MatchingLabels)+1)
-	lbls = append(lbls, labels.MetricName)
+	lbls = append(lbls, model.MetricNameLabel)
 	lbls = append(lbls, vectorMatching.MatchingLabels...)
 	slices.Sort(lbls)
 
@@ -68,7 +69,7 @@ func groupLabelsFunc(vectorMatching parser.VectorMatching, op parser.ItemType, r
 
 		// We never want to include __name__, even if it's explicitly mentioned in on(...).
 		// See https://github.com/prometheus/prometheus/issues/16631.
-		if i := slices.Index(vectorMatching.MatchingLabels, labels.MetricName); i != -1 {
+		if i := slices.Index(vectorMatching.MatchingLabels, model.MetricNameLabel); i != -1 {
 			lbls = make([]string, 0, len(vectorMatching.MatchingLabels)-1)
 			lbls = append(lbls, vectorMatching.MatchingLabels[:i]...)
 			lbls = append(lbls, vectorMatching.MatchingLabels[i+1:]...)
@@ -92,7 +93,7 @@ func groupLabelsFunc(vectorMatching parser.VectorMatching, op parser.ItemType, r
 
 	return func(l labels.Labels) labels.Labels {
 		lb.Reset(l)
-		lb.Del(labels.MetricName)
+		lb.Del(model.MetricNameLabel)
 		lb.Del(vectorMatching.MatchingLabels...)
 		return lb.Labels()
 	}

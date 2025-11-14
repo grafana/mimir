@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/pkg/errors"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
@@ -66,7 +67,7 @@ func (q *spinOffSubqueriesQuerier) Select(ctx context.Context, _ bool, hints *st
 	var name string
 	values := map[string]string{}
 	for _, matcher := range matchers {
-		if matcher.Name == labels.MetricName {
+		if matcher.Name == model.MetricNameLabel {
 			name = matcher.Value
 		} else {
 			values[matcher.Name] = matcher.Value

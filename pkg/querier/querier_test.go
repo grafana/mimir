@@ -279,7 +279,7 @@ func TestQuerier_QueryableReturnsChunksOutsideQueriedRange(t *testing.T) {
 		client.CombinedQueryStreamResponse{
 			StreamingSeries: []client.StreamingSeries{
 				{
-					Labels: labels.FromStrings(labels.MetricName, "one"),
+					Labels: labels.FromStrings(model.MetricNameLabel, "one"),
 					Sources: []client.StreamingSeriesSource{
 						{
 							SeriesIndex: 0,
@@ -297,7 +297,7 @@ func TestQuerier_QueryableReturnsChunksOutsideQueriedRange(t *testing.T) {
 				},
 				{
 					// Series with data points before and after queryStart, but before queryEnd.
-					Labels: labels.FromStrings(labels.MetricName, "one"),
+					Labels: labels.FromStrings(model.MetricNameLabel, "one"),
 					Sources: []client.StreamingSeriesSource{
 						{
 							SeriesIndex: 0,
@@ -324,7 +324,7 @@ func TestQuerier_QueryableReturnsChunksOutsideQueriedRange(t *testing.T) {
 				},
 				{
 					// Series with data points after queryEnd.
-					Labels: labels.FromStrings(labels.MetricName, "one"),
+					Labels: labels.FromStrings(model.MetricNameLabel, "one"),
 					Sources: []client.StreamingSeriesSource{
 						{
 							SeriesIndex: 0,
@@ -428,7 +428,7 @@ func TestBatchMergeChunks(t *testing.T) {
 		client.CombinedQueryStreamResponse{
 			StreamingSeries: []client.StreamingSeries{
 				{
-					Labels: labels.FromStrings(labels.MetricName, "one", "instance", "foo"),
+					Labels: labels.FromStrings(model.MetricNameLabel, "one", "instance", "foo"),
 					Sources: []client.StreamingSeriesSource{
 						{
 							SeriesIndex: 0,
@@ -441,7 +441,7 @@ func TestBatchMergeChunks(t *testing.T) {
 					},
 				},
 				{
-					Labels: labels.FromStrings(labels.MetricName, "one", "instance", "bar"),
+					Labels: labels.FromStrings(model.MetricNameLabel, "one", "instance", "bar"),
 					Sources: []client.StreamingSeriesSource{
 						{
 							SeriesIndex: 0,
@@ -922,7 +922,7 @@ func TestQuerier_ValidateQueryTimeRange_MaxQueryLookback(t *testing.T) {
 					End:   util.TimeToMillis(testData.queryEndTime),
 					Func:  "series",
 				}
-				matcher := labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "test")
+				matcher := labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "test")
 
 				set := q.Select(ctx, false, hints, matcher)
 				require.False(t, set.Next()) // Expected to be empty.
@@ -989,7 +989,7 @@ func TestQuerier_ValidateQueryTimeRange_MaxQueryLookback(t *testing.T) {
 				q, err := queryable.Querier(util.TimeToMillis(testData.queryStartTime), util.TimeToMillis(testData.queryEndTime))
 				require.NoError(t, err)
 
-				_, _, err = q.LabelValues(ctx, labels.MetricName, hints)
+				_, _, err = q.LabelValues(ctx, model.MetricNameLabel, hints)
 				require.NoError(t, err)
 
 				if !testData.expectedSkipped {
@@ -1094,7 +1094,7 @@ func TestQuerier_ValidateQueryTimeRange_MaxLabelsQueryRange(t *testing.T) {
 				End:   util.TimeToMillis(testData.queryEndTime),
 				Func:  "series",
 			}
-			matcher := labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "test")
+			matcher := labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "test")
 
 			set := q.Select(ctx, false, hints, matcher)
 			require.False(t, set.Next()) // Expected to be empty.
@@ -1212,7 +1212,7 @@ func TestQuerier_ValidateQuery_MaxSeriesQueryLimit(t *testing.T) {
 				Limit: testData.queryLimit,
 				Func:  "series",
 			}
-			matcher := labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "test")
+			matcher := labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "test")
 
 			set := q.Select(ctx, false, hints, matcher)
 			require.False(t, set.Next()) // Expected to be empty.
@@ -1372,7 +1372,7 @@ func TestQuerier_QueryStoreAfterConfig(t *testing.T) {
 
 			// Mock the blocks storage to return an empty SeriesSet (we just need to check whether
 			// it was hit or not).
-			expectedMatchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "metric")}
+			expectedMatchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "metric")}
 			querier := &mockBlocksStorageQuerier{}
 			querier.On("Select", mock.Anything, true, mock.Anything, expectedMatchers).Return(storage.EmptySeriesSet())
 

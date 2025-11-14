@@ -15,7 +15,6 @@ import (
 	e2edb "github.com/grafana/e2e/db"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/histogram"
-	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/stretchr/testify/require"
@@ -287,13 +286,13 @@ func TestQuerierStreamingRemoteRead(t *testing.T) {
 	// Generate the series.
 	seriesToPush := []prompb.TimeSeries{
 		{
-			Labels:  []prompb.Label{{Name: labels.MetricName, Value: floatMetricName}},
+			Labels:  []prompb.Label{{Name: model.MetricNameLabel, Value: floatMetricName}},
 			Samples: floats,
 		}, {
-			Labels:     []prompb.Label{{Name: labels.MetricName, Value: histogramMetricName}},
+			Labels:     []prompb.Label{{Name: model.MetricNameLabel, Value: histogramMetricName}},
 			Histograms: histograms,
 		}, {
-			Labels:     []prompb.Label{{Name: labels.MetricName, Value: floatHistogramMetricName}},
+			Labels:     []prompb.Label{{Name: model.MetricNameLabel, Value: floatHistogramMetricName}},
 			Histograms: floatHistograms,
 		},
 	}

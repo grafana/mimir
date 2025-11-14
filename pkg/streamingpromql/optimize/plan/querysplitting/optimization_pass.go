@@ -61,24 +61,14 @@ func (o *OptimizationPass) wrapSplittableRangeVectorFunctions(n planning.Node, t
 		}
 	}
 
-	children := n.Children()
-	modified := false
-
-	for i, child := range children {
+	for i := range n.ChildCount() {
+		child := n.Child(i)
 		newChild, err := o.wrapSplittableRangeVectorFunctions(child, timeRange)
 		if err != nil {
 			return nil, err
 		}
-
 		if newChild != child {
-			children[i] = newChild
-			modified = true
-		}
-	}
-
-	if modified {
-		if err := n.SetChildren(children); err != nil {
-			return nil, err
+			n.ReplaceChild(i, newChild)
 		}
 	}
 
@@ -99,12 +89,11 @@ func (o *OptimizationPass) shouldSplitFunction(functionCall *core.FunctionCall, 
 	}
 
 	// TODO: not all splittable functions will have the first child as the range vector operator
-	children := functionCall.Children()
-	if len(children) == 0 {
+	if functionCall.ChildCount() == 0 {
 		return false, "function has no children"
 	}
 
-	matrixSelector, ok := children[0].(*core.MatrixSelector)
+	matrixSelector, ok := functionCall.Child(0).(*core.MatrixSelector)
 	if !ok {
 		return false, "failed to cast first child to matrix selector"
 	}

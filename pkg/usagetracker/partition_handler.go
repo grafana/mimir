@@ -105,6 +105,8 @@ type partitionHandler struct {
 
 	// Testing
 	onConsumeEvent func(eventType string)
+
+	forceUpdateLimitsForTests chan chan struct{}
 }
 
 func newPartitionHandler(
@@ -170,6 +172,8 @@ func newPartitionHandler(
 		}),
 
 		instanceIDBytes: []byte(cfg.InstanceRing.InstanceID),
+
+		forceUpdateLimitsForTests: make(chan chan struct{}),
 	}
 
 	// In the partition ring lifecycler one owner can only have one partition, so we create a sub-owner for this partition, because we (may) own multiple partitions.
@@ -197,7 +201,7 @@ func newPartitionHandler(
 	}
 
 	eventsPublisher := chanEventsPublisher{events: p.pendingCreatedSeriesMarshaledEvents, logger: logger}
-	p.store = newTrackerStore(cfg.IdleTimeout, logger, lim, eventsPublisher)
+	p.store = newTrackerStore(cfg.IdleTimeout, cfg.UserCloseToLimitPercentageThreshold, logger, lim, eventsPublisher)
 	p.Service = services.NewBasicService(p.start, p.run, p.stop)
 	return p, nil
 }
@@ -304,7 +308,7 @@ func (p *partitionHandler) loadAllSnapshotShards(ctx context.Context, files []st
 		for snapshot := range downloaded {
 			snapshotT0 := time.Now()
 			for j, data := range snapshot.data {
-				if err := p.store.loadSnapshot(data, time.Now()); err != nil {
+				if err := p.store.loadSnapshot(data, time.Now(), true); err != nil {
 					errs <- errors.Wrapf(err, "failed to load snapshot data shard %d from file %q", j, snapshot.filename)
 					return
 				}
@@ -503,6 +507,9 @@ func (p *partitionHandler) run(ctx context.Context) error {
 			p.store.cleanup(now)
 		case <-updateLimits.C:
 			p.store.updateLimits()
+		case done := <-p.forceUpdateLimitsForTests:
+			p.store.updateLimits()
+			close(done)
 		case <-ctx.Done():
 			return nil
 		case err := <-p.subservicesWatcher.Chan():
@@ -650,7 +657,7 @@ func (p *partitionHandler) loadSnapshot(ctx context.Context, r *usagetrackerpb.S
 		// We're going to block each one of the requests with snapshot loading anyway,
 		// so let's use this opportunity to load all of them together.
 		ts := time.Now()
-		if err := p.store.loadSnapshot(data, time.Now()); err != nil {
+		if err := p.store.loadSnapshot(data, time.Now(), false); err != nil {
 			p.snapshotEventsTotalErrors.WithLabelValues("load").Inc()
 			level.Error(p.logger).Log("msg", "failed to load snapshot data", "filename", r.Filename, "shard_index", i, "err", err)
 			return

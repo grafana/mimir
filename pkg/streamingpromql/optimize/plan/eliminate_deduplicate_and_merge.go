@@ -5,6 +5,7 @@ package plan
 import (
 	"context"
 
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
@@ -124,8 +125,8 @@ func (e *EliminateDeduplicateAndMergeOptimizationPass) collect(node planning.Nod
 		}
 	}
 
-	for i, child := range node.Children() {
-		e.collect(child, node, i, nodes)
+	for i := range node.ChildCount() {
+		e.collect(node.Child(i), node, i, nodes)
 	}
 }
 
@@ -140,17 +141,11 @@ func (e *EliminateDeduplicateAndMergeOptimizationPass) eliminate(dedupNodes []de
 			newRoot = dedupInfo.node.Inner
 			continue
 		}
-		if err := replaceChildAtIndex(dedupInfo.parent, dedupInfo.childIndex, dedupInfo.node.Inner); err != nil {
+		if err := dedupInfo.parent.ReplaceChild(dedupInfo.childIndex, dedupInfo.node.Inner); err != nil {
 			return nil, err
 		}
 	}
 	return newRoot, nil
-}
-
-func replaceChildAtIndex(parent planning.Node, childIndex int, newChild planning.Node) error {
-	children := parent.Children()
-	children[childIndex] = newChild
-	return parent.SetChildren(children)
 }
 
 // getSelectorType determines if node is a selector and whether it has an exact name matcher.
@@ -166,7 +161,7 @@ func getSelectorType(node planning.Node) SelectorType {
 	}
 
 	for _, matcher := range matchers {
-		if matcher.Name == labels.MetricName && matcher.Type == labels.MatchEqual {
+		if matcher.Name == model.MetricNameLabel && matcher.Type == labels.MatchEqual {
 			return SelectorWithExactName
 		}
 	}

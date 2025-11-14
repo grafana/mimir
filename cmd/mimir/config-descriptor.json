@@ -2528,6 +2528,17 @@
               "fieldFlag": "querier.mimir-query-engine.enable-eliminate-deduplicate-and-merge",
               "fieldType": "boolean",
               "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "enable_reduce_matchers",
+              "required": false,
+              "desc": "Enable eliminating duplicate or redundant matchers that are part of selector expressions.",
+              "fieldValue": null,
+              "fieldDefaultValue": true,
+              "fieldFlag": "querier.mimir-query-engine.enable-reduce-matchers",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
             }
           ],
           "fieldValue": null,
@@ -5829,16 +5840,6 @@
         },
         {
           "kind": "field",
-          "name": "cost_attribution_labels",
-          "required": false,
-          "desc": "",
-          "fieldValue": null,
-          "fieldDefaultValue": "",
-          "fieldType": "string",
-          "fieldCategory": "experimental"
-        },
-        {
-          "kind": "field",
           "name": "cost_attribution_labels_structured",
           "required": false,
           "desc": "",
@@ -9050,6 +9051,28 @@
               "fieldDefaultValue": "",
               "fieldFlag": "blocks-storage.gcs.service-account",
               "fieldType": "string"
+            },
+            {
+              "kind": "field",
+              "name": "enable_upload_retries",
+              "required": false,
+              "desc": "Enable automatic retries for GCS uploads using the RetryAlways policy. Uploads will be retried on transient errors. Note: this does not guarantee idempotency.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "blocks-storage.gcs.enable-upload-retries",
+              "fieldType": "boolean",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "max_retries",
+              "required": false,
+              "desc": "Maximum number of attempts for GCS operations (0 = unlimited, 1 = no retries). Applies to both regular and upload retry modes.",
+              "fieldValue": null,
+              "fieldDefaultValue": 20,
+              "fieldFlag": "blocks-storage.gcs.max-retries",
+              "fieldType": "int",
+              "fieldCategory": "advanced"
             },
             {
               "kind": "block",
@@ -12733,7 +12756,7 @@
       "required": false,
       "desc": "Include tenant ID in pprof labels for profiling. Currently only supported by the ingester. This can help debug performance issues for specific tenants.",
       "fieldValue": null,
-      "fieldDefaultValue": false,
+      "fieldDefaultValue": true,
       "fieldFlag": "include-tenant-id-in-profile-labels",
       "fieldType": "boolean",
       "fieldCategory": "experimental"
@@ -14884,6 +14907,28 @@
               "fieldType": "string"
             },
             {
+              "kind": "field",
+              "name": "enable_upload_retries",
+              "required": false,
+              "desc": "Enable automatic retries for GCS uploads using the RetryAlways policy. Uploads will be retried on transient errors. Note: this does not guarantee idempotency.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "ruler-storage.gcs.enable-upload-retries",
+              "fieldType": "boolean",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "max_retries",
+              "required": false,
+              "desc": "Maximum number of attempts for GCS operations (0 = unlimited, 1 = no retries). Applies to both regular and upload retry modes.",
+              "fieldValue": null,
+              "fieldDefaultValue": 20,
+              "fieldFlag": "ruler-storage.gcs.max-retries",
+              "fieldType": "int",
+              "fieldCategory": "advanced"
+            },
+            {
               "kind": "block",
               "name": "http",
               "required": false,
@@ -16684,12 +16729,12 @@
           "kind": "field",
           "name": "utf8_strict_mode",
           "required": false,
-          "desc": "Enable UTF-8 strict mode. Allows UTF-8 characters in the matchers for routes and inhibition rules, in silences, and in the labels for alerts. It is recommended that all tenants run the `migrate-utf8` command in mimirtool before enabling this mode. Otherwise, some tenant configurations might fail to load. For more information, refer to [Enable UTF-8](https://grafana.com/docs/mimir/\u003cMIMIR_VERSION\u003e/references/architecture/components/alertmanager/#enable-utf-8). Enabling and then disabling UTF-8 strict mode can break existing Alertmanager configurations if tenants added UTF-8 characters to their Alertmanager configuration while it was enabled.",
+          "desc": "Enable UTF-8 strict mode. Allows UTF-8 characters in the matchers for routes and inhibition rules, in silences, and in the labels for alerts. It is recommended that all tenants run the `migrate-utf8` command in mimirtool before enabling this mode. Otherwise, some tenant configurations might fail to load. For more information, refer to [Enable UTF-8](https://grafana.com/docs/mimir/\u003cMIMIR_VERSION\u003e/references/architecture/components/alertmanager/#enable-utf-8).",
           "fieldValue": null,
           "fieldDefaultValue": false,
           "fieldFlag": "alertmanager.utf8-strict-mode-enabled",
           "fieldType": "boolean",
-          "fieldCategory": "experimental"
+          "fieldCategory": "advanced"
         },
         {
           "kind": "field",
@@ -17151,6 +17196,28 @@
               "fieldDefaultValue": "",
               "fieldFlag": "alertmanager-storage.gcs.service-account",
               "fieldType": "string"
+            },
+            {
+              "kind": "field",
+              "name": "enable_upload_retries",
+              "required": false,
+              "desc": "Enable automatic retries for GCS uploads using the RetryAlways policy. Uploads will be retried on transient errors. Note: this does not guarantee idempotency.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "alertmanager-storage.gcs.enable-upload-retries",
+              "fieldType": "boolean",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "max_retries",
+              "required": false,
+              "desc": "Maximum number of attempts for GCS operations (0 = unlimited, 1 = no retries). Applies to both regular and upload retry modes.",
+              "fieldValue": null,
+              "fieldDefaultValue": 20,
+              "fieldFlag": "alertmanager-storage.gcs.max-retries",
+              "fieldType": "int",
+              "fieldCategory": "advanced"
             },
             {
               "kind": "block",
@@ -20021,6 +20088,28 @@
                   "fieldDefaultValue": "",
                   "fieldFlag": "common.storage.gcs.service-account",
                   "fieldType": "string"
+                },
+                {
+                  "kind": "field",
+                  "name": "enable_upload_retries",
+                  "required": false,
+                  "desc": "Enable automatic retries for GCS uploads using the RetryAlways policy. Uploads will be retried on transient errors. Note: this does not guarantee idempotency.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": false,
+                  "fieldFlag": "common.storage.gcs.enable-upload-retries",
+                  "fieldType": "boolean",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "max_retries",
+                  "required": false,
+                  "desc": "Maximum number of attempts for GCS operations (0 = unlimited, 1 = no retries). Applies to both regular and upload retry modes.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 20,
+                  "fieldFlag": "common.storage.gcs.max-retries",
+                  "fieldType": "int",
+                  "fieldCategory": "advanced"
                 },
                 {
                   "kind": "block",

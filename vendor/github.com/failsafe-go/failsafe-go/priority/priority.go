@@ -5,8 +5,6 @@ import (
 	"math"
 	"math/rand"
 	"sync"
-
-	"github.com/influxdata/tdigest"
 )
 
 // Priority is an execution priority.
@@ -19,6 +17,8 @@ const (
 	High
 	VeryHigh
 )
+
+const totalLevels = 500
 
 // RandomLevel returns a random level for the Priority.
 func (p Priority) RandomLevel() int {
@@ -109,33 +109,72 @@ type LevelTracker interface {
 
 	// GetLevel returns the level that falls at the quantile among all recorded levels in the tracker, else returns 0 if no
 	// levels have been recorded.
-	GetLevel(quantile float64) float64
+	GetLevel(quantile float64) int
 }
 
-type levelTracker struct {
-	mu     sync.Mutex
-	digest *tdigest.TDigest
+type windowedLevelTracker struct {
+	mu          sync.Mutex
+	window      []int // records recent levels
+	levelCounts []int // current counts of each level
+	head        int
+	filled      bool
 }
 
-// NewLevelTracker returns a new LevelTracker that uses a TDigest internally to track the distribution of recorded
-// levels.
-func NewLevelTracker() LevelTracker {
-	return &levelTracker{
-		digest: tdigest.NewWithCompression(100),
+// NewLevelTracker creates a LevelTracker that stores the last windowSize recorded levels.
+func NewLevelTracker(windowSize int) LevelTracker {
+	return &windowedLevelTracker{
+		window:      make([]int, windowSize),
+		levelCounts: make([]int, totalLevels),
 	}
 }
 
-func (lt *levelTracker) RecordLevel(level int) {
+func (lt *windowedLevelTracker) RecordLevel(level int) {
 	lt.mu.Lock()
 	defer lt.mu.Unlock()
-	lt.digest.Add(float64(level), 1.0)
+
+	// Remove old value from counts
+	if lt.filled {
+		oldLevel := lt.window[lt.head]
+		lt.levelCounts[oldLevel]--
+	}
+
+	// Add new value to counts
+	lt.window[lt.head] = level
+	lt.levelCounts[level]++
+
+	// Advance head
+	lt.head++
+	if lt.head >= len(lt.window) {
+		lt.head = 0
+		lt.filled = true
+	}
 }
 
-func (lt *levelTracker) GetLevel(quantile float64) float64 {
+func (lt *windowedLevelTracker) GetLevel(quantile float64) int {
 	lt.mu.Lock()
 	defer lt.mu.Unlock()
-	if level := lt.digest.Quantile(quantile); !math.IsNaN(level) {
-		return level
+
+	currentSize := len(lt.window)
+	if !lt.filled {
+		currentSize = lt.head
 	}
+
+	if currentSize > 0 {
+		// Determine how many recorded levels we need to find to match the quantile
+		targetLevels := int(math.Ceil(float64(currentSize) * quantile))
+		if targetLevels < 1 {
+			targetLevels = 1
+		}
+
+		// Count the levels until we hit the desired quantile
+		countedLevels := 0
+		for level := 0; level < totalLevels; level++ {
+			countedLevels += lt.levelCounts[level]
+			if countedLevels >= targetLevels {
+				return level
+			}
+		}
+	}
+
 	return 0
 }

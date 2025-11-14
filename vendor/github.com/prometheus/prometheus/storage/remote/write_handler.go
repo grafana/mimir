@@ -55,6 +55,7 @@ type writeHandler struct {
 
 	ingestCTZeroSample      bool
 	enableTypeAndUnitLabels bool
+	appendMetadata          bool
 }
 
 const maxAheadTime = 10 * time.Minute
@@ -64,7 +65,7 @@ const maxAheadTime = 10 * time.Minute
 //
 // NOTE(bwplotka): When accepting v2 proto and spec, partial writes are possible
 // as per https://prometheus.io/docs/specs/remote_write_spec_2_0/#partial-write.
-func NewWriteHandler(logger *slog.Logger, reg prometheus.Registerer, appendable storage.Appendable, acceptedMsgs remoteapi.MessageTypes, ingestCTZeroSample, enableTypeAndUnitLabels bool) http.Handler {
+func NewWriteHandler(logger *slog.Logger, reg prometheus.Registerer, appendable storage.Appendable, acceptedMsgs remoteapi.MessageTypes, ingestCTZeroSample, enableTypeAndUnitLabels, appendMetadata bool) http.Handler {
 	h := &writeHandler{
 		logger:     logger,
 		appendable: appendable,
@@ -83,28 +84,15 @@ func NewWriteHandler(logger *slog.Logger, reg prometheus.Registerer, appendable 
 
 		ingestCTZeroSample:      ingestCTZeroSample,
 		enableTypeAndUnitLabels: enableTypeAndUnitLabels,
+		appendMetadata:          appendMetadata,
 	}
 	return remoteapi.NewWriteHandler(h, acceptedMsgs, remoteapi.WithWriteHandlerLogger(logger))
 }
 
 // isHistogramValidationError checks if the error is a native histogram validation error.
 func isHistogramValidationError(err error) bool {
-	// TODO: Consider adding single histogram error type instead of individual sentinel errors.
-	return errors.Is(err, histogram.ErrHistogramCountMismatch) ||
-		errors.Is(err, histogram.ErrHistogramCountNotBigEnough) ||
-		errors.Is(err, histogram.ErrHistogramNegativeCount) ||
-		errors.Is(err, histogram.ErrHistogramNegativeBucketCount) ||
-		errors.Is(err, histogram.ErrHistogramSpanNegativeOffset) ||
-		errors.Is(err, histogram.ErrHistogramSpansBucketsMismatch) ||
-		errors.Is(err, histogram.ErrHistogramCustomBucketsMismatch) ||
-		errors.Is(err, histogram.ErrHistogramCustomBucketsInvalid) ||
-		errors.Is(err, histogram.ErrHistogramCustomBucketsInfinite) ||
-		errors.Is(err, histogram.ErrHistogramCustomBucketsNaN) ||
-		errors.Is(err, histogram.ErrHistogramCustomBucketsZeroCount) ||
-		errors.Is(err, histogram.ErrHistogramCustomBucketsZeroThresh) ||
-		errors.Is(err, histogram.ErrHistogramCustomBucketsNegSpans) ||
-		errors.Is(err, histogram.ErrHistogramCustomBucketsNegBuckets) ||
-		errors.Is(err, histogram.ErrHistogramExpSchemaCustomBounds)
+	var e histogram.Error
+	return errors.As(err, &e)
 }
 
 // Store implements remoteapi.writeStorage interface.
@@ -462,11 +450,15 @@ func (h *writeHandler) appendV2(app storage.Appender, req *writev2.Request, rs *
 			h.logger.Error("failed to ingest exemplar, emitting error log, but no error for PRW caller", "err", err.Error(), "series", ls.String(), "exemplar", fmt.Sprintf("%+v", e))
 		}
 
-		if _, err = app.UpdateMetadata(ref, ls, m); err != nil {
-			h.logger.Debug("error while updating metadata from remote write", "err", err)
-			// Metadata is attached to each series, so since Prometheus does not reject sample without metadata information,
-			// we don't report remote write error either. We increment metric instead.
-			samplesWithoutMetadata += rs.AllSamples() - allSamplesSoFar
+		// Only update metadata in WAL if the metadata-wal-records feature is enabled.
+		// Without this feature, metadata is not persisted to WAL.
+		if h.appendMetadata {
+			if _, err = app.UpdateMetadata(ref, ls, m); err != nil {
+				h.logger.Debug("error while updating metadata from remote write", "err", err)
+				// Metadata is attached to each series, so since Prometheus does not reject sample without metadata information,
+				// we don't report remote write error either. We increment metric instead.
+				samplesWithoutMetadata += rs.AllSamples() - allSamplesSoFar
+			}
 		}
 	}
 

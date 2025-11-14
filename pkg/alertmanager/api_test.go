@@ -18,7 +18,6 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/user"
-	"github.com/pkg/errors"
 	"github.com/prometheus/alertmanager/config"
 	"github.com/prometheus/alertmanager/featurecontrol"
 	"github.com/prometheus/client_golang/prometheus"
@@ -255,7 +254,7 @@ alertmanager_config: |
   receivers:
     - name: default-receiver
 `,
-			err: errors.Wrap(errPasswordFileNotAllowed, "error validating Alertmanager config"),
+			err: fmt.Errorf("error validating Alertmanager config: %w", errPasswordFileNotAllowed),
 		},
 		{
 			name: "Should return error if global HTTP bearer_token_file is set",
@@ -270,7 +269,7 @@ alertmanager_config: |
   receivers:
     - name: default-receiver
 `,
-			err: errors.Wrap(errPasswordFileNotAllowed, "error validating Alertmanager config"),
+			err: fmt.Errorf("error validating Alertmanager config: %w", errPasswordFileNotAllowed),
 		},
 		{
 			name: "Should return error if global HTTP credentials_file is set",
@@ -286,7 +285,7 @@ alertmanager_config: |
   receivers:
     - name: default-receiver
 `,
-			err: errors.Wrap(errPasswordFileNotAllowed, "error validating Alertmanager config"),
+			err: fmt.Errorf("error validating Alertmanager config: %w", errPasswordFileNotAllowed),
 		},
 		{
 			name: "Should NOT return error if global HTTP proxy_url is set",
@@ -332,7 +331,7 @@ alertmanager_config: |
   receivers:
     - name: default-receiver
 `,
-			err: errors.Wrap(errOAuth2SecretFileNotAllowed, "error validating Alertmanager config"),
+			err: fmt.Errorf("error validating Alertmanager config: %w", errOAuth2SecretFileNotAllowed),
 		},
 		{
 			name: "Should return error if global OAuth2 proxy_url is set",
@@ -350,7 +349,7 @@ alertmanager_config: |
   receivers:
     - name: default-receiver
 `,
-			err: errors.Wrap(errProxyURLNotAllowed, "error validating Alertmanager config"),
+			err: fmt.Errorf("error validating Alertmanager config: %w", errProxyURLNotAllowed),
 		},
 		{
 			name: "Should return error if global OAuth2 proxy_from_environment is set",
@@ -368,7 +367,7 @@ alertmanager_config: |
   receivers:
     - name: default-receiver
 `,
-			err: errors.Wrap(errProxyFromEnvironmentURLNotAllowed, "error validating Alertmanager config"),
+			err: fmt.Errorf("error validating Alertmanager config: %w", errProxyFromEnvironmentURLNotAllowed),
 		},
 		{
 			name: "Should return error if global OAuth2 TLS is configured through files",
@@ -389,7 +388,7 @@ alertmanager_config: |
   receivers:
     - name: default-receiver
 `,
-			err: errors.Wrap(errTLSConfigNotAllowed, "error validating Alertmanager config"),
+			err: fmt.Errorf("error validating Alertmanager config: %w", errTLSConfigNotAllowed),
 		},
 		{
 			name: "Should return error if global OAuth2 TLS is configured through byte slices",
@@ -410,7 +409,7 @@ alertmanager_config: |
   receivers:
     - name: default-receiver
 `,
-			err: errors.Wrap(errTLSConfigNotAllowed, "error validating Alertmanager config"),
+			err: fmt.Errorf("error validating Alertmanager config: %w", errTLSConfigNotAllowed),
 		},
 		{
 			name: "Should return error if receiver's HTTP password_file is set",
@@ -427,7 +426,7 @@ alertmanager_config: |
   route:
     receiver: 'default-receiver'
 `,
-			err: errors.Wrap(errPasswordFileNotAllowed, "error validating Alertmanager config"),
+			err: fmt.Errorf("error validating Alertmanager config: %w", errPasswordFileNotAllowed),
 		},
 		{
 			name: "Should return error if receiver's HTTP bearer_token_file is set",
@@ -443,7 +442,7 @@ alertmanager_config: |
   route:
     receiver: 'default-receiver'
 `,
-			err: errors.Wrap(errPasswordFileNotAllowed, "error validating Alertmanager config"),
+			err: fmt.Errorf("error validating Alertmanager config: %w", errPasswordFileNotAllowed),
 		},
 		{
 			name: "Should return error if receiver's HTTP credentials_file is set",
@@ -460,7 +459,7 @@ alertmanager_config: |
   route:
     receiver: 'default-receiver'
 `,
-			err: errors.Wrap(errPasswordFileNotAllowed, "error validating Alertmanager config"),
+			err: fmt.Errorf("error validating Alertmanager config: %w", errPasswordFileNotAllowed),
 		},
 		{
 			name: "Should NOT return error if receiver's HTTP proxy_url is set",
@@ -509,7 +508,7 @@ alertmanager_config: |
   route:
     receiver: 'default-receiver'
 `,
-			err: errors.Wrap(errOAuth2SecretFileNotAllowed, "error validating Alertmanager config"),
+			err: fmt.Errorf("error validating Alertmanager config: %w", errOAuth2SecretFileNotAllowed),
 		},
 		{
 			name: "Should return error if receiver's OAuth2 proxy_url is set",
@@ -528,7 +527,7 @@ alertmanager_config: |
   route:
     receiver: 'default-receiver'
 `,
-			err: errors.Wrap(errProxyURLNotAllowed, "error validating Alertmanager config"),
+			err: fmt.Errorf("error validating Alertmanager config: %w", errProxyURLNotAllowed),
 		},
 		{
 			name: "Should return error if receiver's OAuth2 proxy_from_environment is set",
@@ -547,7 +546,7 @@ alertmanager_config: |
   route:
     receiver: 'default-receiver'
 `,
-			err: errors.Wrap(errProxyFromEnvironmentURLNotAllowed, "error validating Alertmanager config"),
+			err: fmt.Errorf("error validating Alertmanager config: %w", errProxyFromEnvironmentURLNotAllowed),
 		},
 		{
 			name: "Should return error if global slack_api_url_file is set",
@@ -564,7 +563,7 @@ alertmanager_config: |
   route:
     receiver: 'default-receiver'
 `,
-			err: errors.Wrap(errSlackAPIURLFileNotAllowed, "error validating Alertmanager config"),
+			err: fmt.Errorf("error validating Alertmanager config: %w", errSlackAPIURLFileNotAllowed),
 		},
 		{
 			name: "Should return error if Slack api_url_file is set",
@@ -578,7 +577,7 @@ alertmanager_config: |
   route:
     receiver: 'default-receiver'
 `,
-			err: errors.Wrap(errSlackAPIURLFileNotAllowed, "error validating Alertmanager config"),
+			err: fmt.Errorf("error validating Alertmanager config: %w", errSlackAPIURLFileNotAllowed),
 		},
 		{
 			name: "Should return error if global opsgenie_api_key_file is set",
@@ -595,7 +594,7 @@ alertmanager_config: |
   route:
     receiver: 'default-receiver'
 `,
-			err: errors.Wrap(errOpsGenieAPIKeyFileFileNotAllowed, "error validating Alertmanager config"),
+			err: fmt.Errorf("error validating Alertmanager config: %w", errOpsGenieAPIKeyFileFileNotAllowed),
 		},
 		{
 			name: "Should return error if OpsGenie api_key_file is set",
@@ -609,7 +608,7 @@ alertmanager_config: |
   route:
     receiver: 'default-receiver'
 `,
-			err: errors.Wrap(errOpsGenieAPIKeyFileFileNotAllowed, "error validating Alertmanager config"),
+			err: fmt.Errorf("error validating Alertmanager config: %w", errOpsGenieAPIKeyFileFileNotAllowed),
 		},
 		{
 			name: "Should return error if global victorops_api_key_file is set",
@@ -625,7 +624,7 @@ alertmanager_config: |
   route:
     receiver: 'default-receiver'
 `,
-			err: errors.Wrap(errVictorOpsAPIKeyFileNotAllowed, "error validating Alertmanager config"),
+			err: fmt.Errorf("error validating Alertmanager config: %w", errVictorOpsAPIKeyFileNotAllowed),
 		},
 		{
 			name: "Should return error if VictorOps api_key_file is set",
@@ -640,7 +639,7 @@ alertmanager_config: |
   route:
     receiver: 'default-receiver'
 `,
-			err: errors.Wrap(errVictorOpsAPIKeyFileNotAllowed, "error validating Alertmanager config"),
+			err: fmt.Errorf("error validating Alertmanager config: %w", errVictorOpsAPIKeyFileNotAllowed),
 		},
 		{
 			name: "Should return error if PagerDuty service_key_file is set",
@@ -655,7 +654,7 @@ alertmanager_config: |
   route:
     receiver: 'default-receiver'
 `,
-			err: errors.Wrap(errPagerDutyServiceKeyFileNotAllowed, "error validating Alertmanager config"),
+			err: fmt.Errorf("error validating Alertmanager config: %w", errPagerDutyServiceKeyFileNotAllowed),
 		},
 		{
 			name: "Should return error if PagerDuty routing_key_file is set",
@@ -669,7 +668,7 @@ alertmanager_config: |
   route:
     receiver: 'default-receiver'
 `,
-			err: errors.Wrap(errPagerDutyRoutingKeyFileNotAllowed, "error validating Alertmanager config"),
+			err: fmt.Errorf("error validating Alertmanager config: %w", errPagerDutyRoutingKeyFileNotAllowed),
 		},
 		{
 			name: "Should return error if Pushover user_key_file is set",
@@ -684,7 +683,7 @@ alertmanager_config: |
   route:
     receiver: 'default-receiver'
 `,
-			err: errors.Wrap(errPushoverUserKeyFileNotAllowed, "error validating Alertmanager config"),
+			err: fmt.Errorf("error validating Alertmanager config: %w", errPushoverUserKeyFileNotAllowed),
 		},
 		{
 			name: "Should return error if Pushover token_file is set",
@@ -699,7 +698,7 @@ alertmanager_config: |
   route:
     receiver: 'default-receiver'
 `,
-			err: errors.Wrap(errPushoverTokenFileNotAllowed, "error validating Alertmanager config"),
+			err: fmt.Errorf("error validating Alertmanager config: %w", errPushoverTokenFileNotAllowed),
 		},
 		{
 			name: "should return error if Telegram bot_token_file is set",
@@ -714,7 +713,7 @@ alertmanager_config: |
   route:
     receiver: 'default-receiver'
 `,
-			err: errors.Wrap(errTelegramBotTokenFileNotAllowed, "error validating Alertmanager config"),
+			err: fmt.Errorf("error validating Alertmanager config: %w", errTelegramBotTokenFileNotAllowed),
 		},
 		{
 			name: "should return error if Webhook url_file is set",
@@ -728,7 +727,7 @@ alertmanager_config: |
   route:
     receiver: 'default-receiver'
 `,
-			err: errors.Wrap(errWebhookURLFileNotAllowed, "error validating Alertmanager config"),
+			err: fmt.Errorf("error validating Alertmanager config: %w", errWebhookURLFileNotAllowed),
 		},
 		{
 			name: "should return error if template is wrong",
@@ -814,7 +813,7 @@ template_files:
   "t5.tmpl": "Some template"
 `,
 			maxTemplates: 3,
-			err:          errors.Wrap(fmt.Errorf(errTooManyTemplates, 5, 3), "error validating Alertmanager config"),
+			err:          fmt.Errorf("error validating Alertmanager config: %s", fmt.Sprintf(errTooManyTemplates, 5, 3)),
 		},
 		{
 			name: "templates limit not reached",
@@ -846,7 +845,7 @@ template_files:
   "t1.tmpl": "Very big template"
 `,
 			maxTemplateSize: 5,
-			err:             errors.Wrap(fmt.Errorf(errTemplateTooBig, "t1.tmpl", 17, 5), "error validating Alertmanager config"),
+			err:             fmt.Errorf("error validating Alertmanager config: %s", fmt.Sprintf(errTemplateTooBig, "t1.tmpl", 17, 5)),
 		},
 		{
 			name: "template size limit ok",

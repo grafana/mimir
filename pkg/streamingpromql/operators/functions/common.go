@@ -25,6 +25,7 @@ var DropSeriesName = SeriesMetadataFunctionDefinition{
 
 		for i := range seriesMetadata {
 			tracker.DecreaseMemoryConsumptionForLabels(seriesMetadata[i].Labels)
+			//nolint:staticcheck // SA1019: DropMetricName is deprecated.
 			seriesMetadata[i].Labels = seriesMetadata[i].Labels.DropMetricName()
 			err := tracker.IncreaseMemoryConsumptionForLabels(seriesMetadata[i].Labels)
 			if err != nil {

@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/util/zeropool"
 )
 
@@ -143,7 +143,7 @@ func FromWriteRequestToRW2Request(rw1 *WriteRequest, commonSymbols *CommonSymbol
 		}
 
 		for i := range ts.Labels {
-			if ts.Labels[i].Name == labels.MetricName {
+			if ts.Labels[i].Name == model.MetricNameLabel {
 				metricName = ts.Labels[i].Value
 			}
 			refs = append(refs, symbols.Symbolize(ts.Labels[i].Name), symbols.Symbolize(ts.Labels[i].Value))
@@ -174,7 +174,7 @@ func FromWriteRequestToRW2Request(rw1 *WriteRequest, commonSymbols *CommonSymbol
 			continue
 		}
 
-		labelsRefs := []uint32{symbols.Symbolize(labels.MetricName), symbols.Symbolize(rw1.Metadata[i].MetricFamilyName)}
+		labelsRefs := []uint32{symbols.Symbolize(model.MetricNameLabel), symbols.Symbolize(rw1.Metadata[i].MetricFamilyName)}
 		rw2meta := FromMetricMetadataToMetadataRW2(rw1.Metadata[i], symbols)
 		rw2Timeseries = append(rw2Timeseries, TimeSeriesRW2{
 			LabelsRefs: labelsRefs,
