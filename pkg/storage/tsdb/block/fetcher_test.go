@@ -711,7 +711,7 @@ func TestMetaFetcher_FetchRequestedBlocks(t *testing.T) {
 			f, err := NewMetaFetcher(logger, 10, objstore.WrapWithMetrics(bkt, reg, "test"), t.TempDir(), reg, nil, 0)
 			require.NoError(t, err)
 
-			metas, err := f.FetchRequestedBlocks(ctx, tc.requestedBlocks)
+			metas, err := f.FetchRequestedMetas(ctx, tc.requestedBlocks)
 
 			if tc.expectError {
 				require.Error(t, err)
