@@ -8,6 +8,7 @@ package functions
 import (
 	"context"
 
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
@@ -42,8 +43,8 @@ func NewAbsent(inner types.InstantVectorOperator, labels labels.Labels, timeRang
 	}
 }
 
-func (a *Absent) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
-	innerMetadata, err := a.Inner.SeriesMetadata(ctx)
+func (a *Absent) SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
+	innerMetadata, err := a.Inner.SeriesMetadata(ctx, matchers)
 	if err != nil {
 		return nil, err
 	}
@@ -62,9 +63,10 @@ func (a *Absent) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, er
 		return nil, err
 	}
 
-	metadata = append(metadata, types.SeriesMetadata{
-		Labels: a.Labels,
-	})
+	metadata, err = types.AppendSeriesMetadata(a.MemoryConsumptionTracker, metadata, types.SeriesMetadata{Labels: a.Labels})
+	if err != nil {
+		return nil, err
+	}
 
 	for range innerMetadata {
 		series, err := a.Inner.NextSeries(ctx)
@@ -116,6 +118,10 @@ func (a *Absent) Prepare(ctx context.Context, params *types.PrepareParams) error
 	return a.Inner.Prepare(ctx, params)
 }
 
+func (a *Absent) Finalize(ctx context.Context) error {
+	return a.Inner.Finalize(ctx)
+}
+
 func (a *Absent) Close() {
 	a.Inner.Close()
 
@@ -143,7 +149,7 @@ func CreateLabelsForAbsentFunction(expr parser.Expr) labels.Labels {
 	// Note this gives arguably wrong behaviour for `absent(x{job="a",job="a",foo="bar"})`.
 	has := make(map[string]bool, len(lm))
 	for _, ma := range lm {
-		if ma.Name == labels.MetricName {
+		if ma.Name == model.MetricNameLabel {
 			continue
 		}
 		if ma.Type == labels.MatchEqual && !has[ma.Name] {

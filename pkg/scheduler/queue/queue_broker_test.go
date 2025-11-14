@@ -230,7 +230,7 @@ func TestQueuesRespectMaxTenantQueueSizeWithSubQueues(t *testing.T) {
 		Ctx:          context.Background(),
 		FrontendAddr: "http://query-frontend:8007",
 		UserID:       "tenant-1",
-		Request:      &httpgrpc.HTTPRequest{},
+		HttpRequest:  &httpgrpc.HTTPRequest{},
 	}
 
 	// build queue evenly with either no additional queue dimension or one of 3 additional dimensions

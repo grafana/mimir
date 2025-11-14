@@ -9,8 +9,6 @@ title: View exemplar data in Grafana Explore
 weight: 40
 ---
 
-<!-- Note: This topic is mounted in the GEM documentation. Ensure that all updates are also applicable to GEM. -->
-
 # View exemplar data in Grafana Explore
 
 Grafana Explore visualizes exemplar traces as highlighted points alongside metrics data.

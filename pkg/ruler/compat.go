@@ -8,13 +8,16 @@ package ruler
 import (
 	"context"
 	"errors"
+	"net/http"
 	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
@@ -24,12 +27,15 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/spf13/afero"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier"
 	querier_stats "github.com/grafana/mimir/pkg/querier/stats"
 	notifierCfg "github.com/grafana/mimir/pkg/ruler/notifier"
+	"github.com/grafana/mimir/pkg/util"
 	util_log "github.com/grafana/mimir/pkg/util/log"
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 const (
@@ -205,7 +211,8 @@ func (t *NoopAppendable) Appender(_ context.Context) storage.Appender {
 
 // RulesLimits defines limits used by Ruler.
 type RulesLimits interface {
-	EvaluationDelay(userID string) time.Duration
+	RulerEvaluationDelay(userID string) time.Duration
+	RulerEvaluationConsistencyMaxDelay(userID string) time.Duration
 	RulerTenantShardSize(userID string) int
 	RulerMaxRuleGroupsPerTenant(userID, namespace string) int
 	RulerMaxRulesPerRuleGroup(userID, namespace string) int
@@ -216,6 +223,8 @@ type RulesLimits interface {
 	RulerMaxIndependentRuleEvaluationConcurrencyPerTenant(userID string) int64
 	RulerAlertmanagerClientConfig(userID string) notifierCfg.AlertmanagerClientConfig
 	RulerMinRuleEvaluationInterval(userID string) time.Duration
+	RulerMaxRuleEvaluationResults(userID string) int
+	NameValidationScheme(userID string) model.ValidationScheme
 }
 
 func MetricsQueryFunc(qf rules.QueryFunc, userID string, queries, failedQueries *prometheus.CounterVec, remoteQuerier bool) rules.QueryFunc {
@@ -226,7 +235,6 @@ func MetricsQueryFunc(qf rules.QueryFunc, userID string, queries, failedQueries 
 		if err == nil {
 			return result, nil
 		}
-
 		failureReason := failureReasonServerError
 		qerr := QueryableError{}
 		if errors.As(err, &qerr) {
@@ -241,7 +249,7 @@ func MetricsQueryFunc(qf rules.QueryFunc, userID string, queries, failedQueries 
 			//
 			// All errors will still be counted towards "evaluation failures" metrics and logged by Prometheus Ruler,
 			// but we only want internal errors here.
-			if _, ok := querier.TranslateToPromqlAPIError(origErr).(promql.ErrStorage); ok {
+			if isStorageError(origErr) {
 				failedQueries.WithLabelValues(userID, failureReason).Inc()
 			}
 
@@ -256,6 +264,12 @@ func MetricsQueryFunc(qf rules.QueryFunc, userID string, queries, failedQueries 
 		}
 		return result, err
 	}
+}
+
+// isStorageError returns true if the error is classified as a storage error (5xx)
+func isStorageError(err error) bool {
+	_, ok := querier.TranslateToPromqlAPIError(err).(promql.ErrStorage)
+	return ok
 }
 
 func RecordAndReportRuleQueryMetrics(qf rules.QueryFunc, queryTime, zeroFetchedSeriesCount prometheus.Counter, remoteQuerier bool, logger log.Logger) rules.QueryFunc {
@@ -346,6 +360,7 @@ func DefaultTenantManagerFactory(
 	pusher Pusher,
 	queryable storage.Queryable,
 	queryFunc rules.QueryFunc,
+	rulesFS afero.Fs,
 	concurrencyController MultiTenantRuleConcurrencyController,
 	overrides RulesLimits,
 	reg prometheus.Registerer,
@@ -386,15 +401,20 @@ func DefaultTenantManagerFactory(
 			queryTime = rulerQuerySeconds.WithLabelValues(userID)
 			zeroFetchedSeriesCount = zeroFetchedSeriesQueries.WithLabelValues(userID)
 		}
-
 		// Wrap the query function with our custom logic.
-		wrappedQueryFunc := WrapQueryFuncWithReadConsistency(queryFunc, logger)
+		wrappedQueryFunc := WrapQueryFuncWithReadConsistency(queryFunc, overrides, userID, logger)
 		remoteQuerier := cfg.QueryFrontend.Address != ""
 		wrappedQueryFunc = MetricsQueryFunc(wrappedQueryFunc, userID, totalQueries, failedQueries, remoteQuerier)
 		wrappedQueryFunc = RecordAndReportRuleQueryMetrics(wrappedQueryFunc, queryTime, zeroFetchedSeriesCount, remoteQuerier, logger)
 
 		// Wrap the queryable with our custom logic.
 		wrappedQueryable := WrapQueryableWithReadConsistency(queryable, logger)
+		// Wrap the queryable to ensure all queries have a memory tracker in the context.
+		// This is needed for ruler operations, specifically alert state restoration that does not use a query engine.
+		// (Operations that use a query engine use QueryFunc, and it's expected that
+		// the QueryFunc either uses MQE, or uses a Prometheus engine instance wrapped
+		// in UnlimitedMemoryTrackerPromQLEngine to provide a memory consumption tracker.)
+		wrappedQueryable = NewUnlimitedMemoryTrackerQueryable(wrappedQueryable)
 
 		var appendeable storage.Appendable
 		if cfg.RuleEvaluationWriteEnabled {
@@ -416,13 +436,15 @@ func DefaultTenantManagerFactory(
 			OutageTolerance:            cfg.OutageTolerance,
 			ForGracePeriod:             cfg.ForGracePeriod,
 			ResendDelay:                cfg.ResendDelay,
+			GroupLoader:                NewFSLoader(rulesFS),
 			RestoreNewRuleGroups:       true,
 			DefaultRuleQueryOffset: func() time.Duration {
 				// Delay the evaluation of all rules by a set interval to give a buffer
 				// to metric that haven't been forwarded to Mimir yet.
-				return overrides.EvaluationDelay(userID)
+				return overrides.RulerEvaluationDelay(userID)
 			},
-			RuleConcurrencyController: concurrencyController.NewTenantConcurrencyControllerFor(userID),
+			RuleConcurrencyController:           concurrencyController.NewTenantConcurrencyControllerFor(userID),
+			OperatorControllableErrorClassifier: NewRulerErrorClassifier(remoteQuerier),
 		})
 	}
 }
@@ -445,4 +467,52 @@ func WrapQueryableErrors(err error) error {
 	}
 
 	return QueryableError{err: err}
+}
+
+type rulerErrorClassifier struct {
+	remoteQuerier bool
+}
+
+func NewRulerErrorClassifier(remoteQuerier bool) *rulerErrorClassifier {
+	return &rulerErrorClassifier{
+		remoteQuerier: remoteQuerier,
+	}
+}
+
+// IsOperatorControllable classifies rule evaluation errors as operator-controllable or user-controllable.
+func (c *rulerErrorClassifier) IsOperatorControllable(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	if code := grpcutil.ErrorToStatusCode(err); util.IsHTTPStatusCode(code) {
+		if code >= 400 && code < 500 {
+			return code == http.StatusTooManyRequests
+		}
+		return true // 5xx
+	}
+
+	if status, ok := grpcutil.ErrorToStatus(err); ok {
+		for _, details := range status.Details() {
+			if errDetails, ok := details.(*mimirpb.ErrorDetails); ok {
+				return !mimirpb.IsClientErrorCause(errDetails.GetCause())
+			}
+		}
+	}
+
+	if validation.IsLimitError(err) || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return false
+	}
+
+	// If internal Ruler is used, then we classify only promql.ErrStorage errors as operator-controllable.
+	// Internal Ruler unknown errors are considered user-controllable.
+	if !c.remoteQuerier {
+		var (
+			errStorage promql.ErrStorage
+		)
+		return errors.As(err, &errStorage)
+	}
+
+	// Unknown errors
+	return true
 }

@@ -331,7 +331,7 @@ func TestLabelValuesCardinalityHandler_Success(t *testing.T) {
 			scope:      cardinality.InMemoryMethod,
 			labelValuesCardinality: &client.LabelValuesCardinalityResponse{
 				Items: []*client.LabelValueSeriesCount{{
-					LabelName:        labels.MetricName,
+					LabelName:        model.MetricNameLabel,
 					LabelValueSeries: map[string]uint64{"test_1": 10},
 				}},
 			},
@@ -358,7 +358,7 @@ func TestLabelValuesCardinalityHandler_Success(t *testing.T) {
 			scope:      cardinality.InMemoryMethod,
 			labelValuesCardinality: &client.LabelValuesCardinalityResponse{
 				Items: []*client.LabelValueSeriesCount{{
-					LabelName:        labels.MetricName,
+					LabelName:        model.MetricNameLabel,
 					LabelValueSeries: map[string]uint64{"test_1": 10},
 				}},
 			},
@@ -468,7 +468,7 @@ func TestLabelValuesCardinalityHandler_Success(t *testing.T) {
 			scope:      cardinality.InMemoryMethod,
 			labelValuesCardinality: &client.LabelValuesCardinalityResponse{
 				Items: []*client.LabelValueSeriesCount{{
-					LabelName:        labels.MetricName,
+					LabelName:        model.MetricNameLabel,
 					LabelValueSeries: map[string]uint64{"test_1": 10, "test_2": 20},
 				}},
 			},
@@ -495,7 +495,7 @@ func TestLabelValuesCardinalityHandler_Success(t *testing.T) {
 			scope:      cardinality.InMemoryMethod,
 			labelValuesCardinality: &client.LabelValuesCardinalityResponse{
 				Items: []*client.LabelValueSeriesCount{{
-					LabelName:        labels.MetricName,
+					LabelName:        model.MetricNameLabel,
 					LabelValueSeries: map[string]uint64{"test_1": 10, "test_2": 10},
 				}},
 			},
@@ -523,7 +523,7 @@ func TestLabelValuesCardinalityHandler_Success(t *testing.T) {
 			scope:      cardinality.InMemoryMethod,
 			labelValuesCardinality: &client.LabelValuesCardinalityResponse{
 				Items: []*client.LabelValueSeriesCount{{
-					LabelName:        labels.MetricName,
+					LabelName:        model.MetricNameLabel,
 					LabelValueSeries: map[string]uint64{"test_1": 100, "test_2": 20, "test_3": 30},
 				}},
 			},
@@ -552,7 +552,7 @@ func TestLabelValuesCardinalityHandler_Success(t *testing.T) {
 			scope:      cardinality.InMemoryMethod,
 			labelValuesCardinality: &client.LabelValuesCardinalityResponse{
 				Items: []*client.LabelValueSeriesCount{{
-					LabelName:        labels.MetricName,
+					LabelName:        model.MetricNameLabel,
 					LabelValueSeries: map[string]uint64{"test_1": 100, "test_2": 20, "test_3": 30},
 				}},
 			},
@@ -706,8 +706,8 @@ func TestLabelValuesCardinalityHandler_ParseError(t *testing.T) {
 				expectedErrorMessage: "'label_names[]' param is required",
 			},
 			"label_names param is invalid": {
-				url:                  "/label_values?label_names[]=olá",
-				expectedErrorMessage: "invalid 'label_names' param 'olá'",
+				url:                  "/label_values?label_names[]=\xff\xfe",
+				expectedErrorMessage: "invalid 'label_names' param '\xff\xfe'",
 			},
 			"multiple selector params are provided": {
 				url:                  "/label_values?label_names[]=hello&selector=foo&selector=bar",

@@ -12,6 +12,7 @@
     $._config.grpcConfig +
     $._config.querySchedulerRingClientConfig +
     $.query_frontend_caching_config +
+    $.queryFrontendUseQuerySchedulerArgs('query-scheduler') +
     {
       target: 'query-frontend',
 
@@ -32,6 +33,30 @@
   // CLI flags that are applied only to query-frontends, and not ruler-query-frontends.
   // Values take precedence over query_frontend_args.
   query_frontend_only_args:: {},
+
+  // Timeout validation for query-frontend
+  local validateQueryFrontendTimeouts() =
+    local qf_timeout = if 'querier.timeout' in $.query_frontend_args then
+      $.util.parseDuration($.query_frontend_args['querier.timeout'])
+    else
+      $.util.getFlagDefaultSeconds('querier.timeout');
+
+    local qf_write_timeout = if 'server.http-write-timeout' in $.query_frontend_args then
+      $.util.parseDuration($.query_frontend_args['server.http-write-timeout'])
+    else
+      $.util.getFlagDefaultSeconds('server.http-write-timeout');
+
+    assert qf_timeout == null || qf_write_timeout == null || qf_timeout <= qf_write_timeout :
+           'query-frontend: querier.timeout (%s) must be less than or equal to server.http-write-timeout (%s)' %
+           [
+      if 'querier.timeout' in $.query_frontend_args then $.query_frontend_args['querier.timeout'] else ('default: %ss' % $.util.getFlagDefaultSeconds('querier.timeout')),
+      if 'server.http-write-timeout' in $.query_frontend_args then $.query_frontend_args['server.http-write-timeout'] else ('default: %ss' % $.util.getFlagDefaultSeconds('server.http-write-timeout')),
+    ];
+
+    true,
+
+  // Execute validation
+  query_frontend_timeout_validation:: validateQueryFrontendTimeouts(),
 
   query_frontend_ports:: $.util.defaultPorts,
 
@@ -66,19 +91,12 @@
     // Leave enough time to finish serving a 5m query after the shutdown delay expired.
     deployment.mixin.spec.template.spec.withTerminationGracePeriodSeconds(shutdown_delay_seconds + 300),
 
-  query_frontend_deployment: if !$._config.is_microservices_deployment_mode then null else
+  query_frontend_deployment:
     self.newQueryFrontendDeployment('query-frontend', $.query_frontend_container, $.query_frontend_node_affinity_matchers),
 
-  query_frontend_service: if !$._config.is_microservices_deployment_mode then null else
+  query_frontend_service:
     $.util.serviceFor($.query_frontend_deployment, $._config.service_ignored_labels),
 
-  query_frontend_discovery_service: if !$._config.is_microservices_deployment_mode || $._config.query_scheduler_enabled then null else
-    // Make sure that query frontend worker, running in the querier, do resolve
-    // each query-frontend pod IP and NOT the service IP. To make it, we do NOT
-    // use the service cluster IP so that when the service DNS is resolved it
-    // returns the set of query-frontend IPs.
-    $.newMimirDiscoveryService('query-frontend-discovery', $.query_frontend_deployment),
-
-  query_frontend_pdb: if !$._config.is_microservices_deployment_mode then null else
+  query_frontend_pdb:
     $.newMimirPdb('query-frontend'),
 }

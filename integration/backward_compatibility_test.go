@@ -263,6 +263,15 @@ func checkQueries(
 
 	for name, c := range cases {
 		t.Run(name, func(t *testing.T) {
+			// Start the query-scheduler.
+			queryScheduler := e2emimir.NewQueryScheduler("query-scheduler", flags)
+			defer func() {
+				require.NoError(t, s.Stop(queryScheduler))
+			}()
+			require.NoError(t, s.StartAndWaitReady(queryScheduler))
+			flags["-query-frontend.scheduler-address"] = queryScheduler.NetworkGRPCEndpoint()
+			flags["-querier.scheduler-address"] = queryScheduler.NetworkGRPCEndpoint()
+
 			// Start query-frontend.
 			queryFrontend := e2emimir.NewQueryFrontend("query-frontend", consul.NetworkHTTPEndpoint(), flags, c.queryFrontendOptions...)
 			require.NoError(t, s.Start(queryFrontend))
@@ -271,9 +280,7 @@ func checkQueries(
 			}()
 
 			// Start querier and store-gateway.
-			querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), e2e.MergeFlagsWithoutRemovingEmpty(flags, map[string]string{
-				"-querier.frontend-address": queryFrontend.NetworkGRPCEndpoint(),
-			}), c.querierOptions...)
+			querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), flags, c.querierOptions...)
 			storeGateway := e2emimir.NewStoreGateway("store-gateway", consul.NetworkHTTPEndpoint(), flags, c.storeGatewayOptions...)
 
 			require.NoError(t, s.Start(querier, storeGateway))

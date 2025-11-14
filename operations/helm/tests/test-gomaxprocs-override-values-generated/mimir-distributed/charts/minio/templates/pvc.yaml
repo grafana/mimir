@@ -1,0 +1,17 @@
+---
+# Source: mimir-distributed/charts/minio/templates/pvc.yaml
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: test-gomaxprocs-override-values-minio
+  labels:
+    app: minio
+    chart: minio-5.4.0
+    release: test-gomaxprocs-override-values
+    heritage: Helm
+spec:
+  accessModes:
+    - "ReadWriteOnce"
+  resources:
+    requests:
+      storage: "5Gi"

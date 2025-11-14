@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/rulefmt"
 
 	"github.com/grafana/mimir/pkg/mimirtool/rules/rwrulefmt"
@@ -123,7 +124,7 @@ func TestParseFiles(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := ParseFiles(tt.backend, tt.files)
+			got, err := ParseFiles(tt.backend, tt.files, model.UTF8Validation)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("ParseFiles() error = %v, wantErr %v", err, tt.wantErr)
 				return

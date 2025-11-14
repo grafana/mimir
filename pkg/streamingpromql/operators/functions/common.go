@@ -10,18 +10,30 @@ import (
 )
 
 // SeriesMetadataFunction is a function to operate on the metadata across series.
-type SeriesMetadataFunction func(seriesMetadata []types.SeriesMetadata, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) ([]types.SeriesMetadata, error)
+type SeriesMetadataFunction func(seriesMetadata []types.SeriesMetadata, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, enableDelayedNameRemoval bool) ([]types.SeriesMetadata, error)
 
 // DropSeriesName is a series metadata function that removes the __name__ label from all series.
 var DropSeriesName = SeriesMetadataFunctionDefinition{
-	Func: func(seriesMetadata []types.SeriesMetadata, _ *limiter.MemoryConsumptionTracker) ([]types.SeriesMetadata, error) {
+	Func: func(seriesMetadata []types.SeriesMetadata, tracker *limiter.MemoryConsumptionTracker, enableDelayedNameRemoval bool) ([]types.SeriesMetadata, error) {
+		if enableDelayedNameRemoval {
+			for i := range seriesMetadata {
+				seriesMetadata[i].DropName = true
+			}
+			return seriesMetadata, nil
+		}
+
 		for i := range seriesMetadata {
+			tracker.DecreaseMemoryConsumptionForLabels(seriesMetadata[i].Labels)
+			//nolint:staticcheck // SA1019: DropMetricName is deprecated.
 			seriesMetadata[i].Labels = seriesMetadata[i].Labels.DropMetricName()
+			err := tracker.IncreaseMemoryConsumptionForLabels(seriesMetadata[i].Labels)
+			if err != nil {
+				return nil, err
+			}
 		}
 
 		return seriesMetadata, nil
 	},
-	NeedsSeriesDeduplication: true,
 }
 
 // InstantVectorSeriesFunction is a function that takes in an instant vector and produces an instant vector.
@@ -75,7 +87,6 @@ func PassthroughData(seriesData types.InstantVectorSeriesData, _ []types.ScalarD
 //   - err error.
 type RangeVectorStepFunction func(
 	step *types.RangeVectorStepData,
-	rangeSeconds float64,
 	scalarArgsData []types.ScalarData,
 	timeRange types.QueryTimeRange,
 	emitAnnotation types.EmitAnnotationFunc,
@@ -132,10 +143,4 @@ type SeriesMetadataFunctionDefinition struct {
 	//
 	// If Func is nil, the input series are used as-is.
 	Func SeriesMetadataFunction
-
-	// NeedsSeriesDeduplication enables deduplication and merging of output series with the same labels.
-	//
-	// This should be set to true if Func modifies the input series labels in such a way that duplicates may be
-	// present in the output series labels (eg. dropping a label).
-	NeedsSeriesDeduplication bool
 }

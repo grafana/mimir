@@ -4,19 +4,24 @@ syntax = "proto3";
 
 package core;
 
-import "github.com/gogo/protobuf/gogoproto/gogo.proto";
+import "github.com/grafana/mimir/pkg/mimirpb/mimir.proto";
+import "github.com/grafana/mimir/pkg/streamingpromql/operators/functions/functions.proto";
+import "gogoproto/gogo.proto";
 import "google/protobuf/duration.proto";
 import "google/protobuf/timestamp.proto";
-import "github.com/grafana/mimir/pkg/mimirpb/mimir.proto";
 
-option (gogoproto.marshaler_all) = true;
-option (gogoproto.unmarshaler_all) = true;
 option (gogoproto.equal_all) = false;
+option (gogoproto.marshaler_all) = true;
 option (gogoproto.messagename_all) = true;
+option (gogoproto.unmarshaler_all) = true;
 
 message PositionRange {
   int64 start = 1 [(gogoproto.casttype) = "github.com/prometheus/prometheus/promql/parser/posrange.Pos"];
   int64 end = 2 [(gogoproto.casttype) = "github.com/prometheus/prometheus/promql/parser/posrange.Pos"];
+}
+
+message BinaryExpressionHints {
+  repeated string include = 1;
 }
 
 message AggregateExpressionDetails {
@@ -52,6 +57,7 @@ message BinaryExpressionDetails {
   VectorMatching vectorMatching = 2;
   bool returnBool = 3;
   PositionRange expressionPosition = 4 [(gogoproto.nullable) = false];
+  BinaryExpressionHints hints = 5;
 }
 
 // Why don't we just use the parser.ItemType values?
@@ -87,10 +93,13 @@ message VectorMatching {
 }
 
 message FunctionCallDetails {
-  string functionName = 1;
+  functions.Function function = 1;
 
   // Labels used by absent() or absent_over_time(). Only populated if this instance is for either of these two functions.
-  repeated cortexpb.LabelPair absentLabels = 2 [(gogoproto.nullable) = false, (gogoproto.customtype) = "github.com/grafana/mimir/pkg/mimirpb.LabelAdapter"];
+  repeated cortexpb.LabelPair absentLabels = 2 [
+    (gogoproto.nullable) = false,
+    (gogoproto.customtype) = "github.com/grafana/mimir/pkg/mimirpb.LabelAdapter"
+  ];
 
   PositionRange expressionPosition = 3 [(gogoproto.nullable) = false];
 }
@@ -123,29 +132,58 @@ enum UnaryOperation {
 message VectorSelectorDetails {
   repeated LabelMatcher matchers = 1;
   google.protobuf.Timestamp timestamp = 2 [(gogoproto.stdtime) = true];
-  google.protobuf.Duration offset = 3 [(gogoproto.stdduration) = true, (gogoproto.nullable) = false];
+  google.protobuf.Duration offset = 3 [
+    (gogoproto.stdduration) = true,
+    (gogoproto.nullable) = false
+  ];
   PositionRange expressionPosition = 4 [(gogoproto.nullable) = false];
   bool returnSampleTimestamps = 5;
+  bool skipHistogramBuckets = 6;
 }
 
 message MatrixSelectorDetails {
   repeated LabelMatcher matchers = 1;
   google.protobuf.Timestamp timestamp = 2 [(gogoproto.stdtime) = true];
-  google.protobuf.Duration offset = 3 [(gogoproto.stdduration) = true, (gogoproto.nullable) = false];
-  google.protobuf.Duration range = 4 [(gogoproto.stdduration) = true, (gogoproto.nullable) = false];
+  google.protobuf.Duration offset = 3 [
+    (gogoproto.stdduration) = true,
+    (gogoproto.nullable) = false
+  ];
+  google.protobuf.Duration range = 4 [
+    (gogoproto.stdduration) = true,
+    (gogoproto.nullable) = false
+  ];
   PositionRange expressionPosition = 5 [(gogoproto.nullable) = false];
+  bool skipHistogramBuckets = 6;
 }
 
 message SubqueryDetails {
   google.protobuf.Timestamp timestamp = 1 [(gogoproto.stdtime) = true];
-  google.protobuf.Duration offset = 2 [(gogoproto.stdduration) = true, (gogoproto.nullable) = false];
-  google.protobuf.Duration range = 3 [(gogoproto.stdduration) = true, (gogoproto.nullable) = false];
-  google.protobuf.Duration step = 4 [(gogoproto.stdduration) = true, (gogoproto.nullable) = false];
+  google.protobuf.Duration offset = 2 [
+    (gogoproto.stdduration) = true,
+    (gogoproto.nullable) = false
+  ];
+  google.protobuf.Duration range = 3 [
+    (gogoproto.stdduration) = true,
+    (gogoproto.nullable) = false
+  ];
+  google.protobuf.Duration step = 4 [
+    (gogoproto.stdduration) = true,
+    (gogoproto.nullable) = false
+  ];
   PositionRange expressionPosition = 5 [(gogoproto.nullable) = false];
 }
+
+message StepInvariantExpressionDetails {}
 
 message LabelMatcher {
   int64 type = 1 [(gogoproto.casttype) = "github.com/prometheus/prometheus/model/labels.MatchType"];
   string name = 2;
   string value = 3;
 }
+
+message DeduplicateAndMergeDetails {
+  reserved 1;
+  reserved "runDelayedNameRemoval";
+}
+
+message DropNameDetails {}

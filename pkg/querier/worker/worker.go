@@ -15,6 +15,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/gogo/protobuf/types"
 	"github.com/grafana/dskit/grpcclient"
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/servicediscovery"
@@ -23,13 +24,14 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/grpc"
 
+	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerdiscovery"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/grpcencoding/s2"
+	"github.com/grafana/mimir/pkg/util/propagation"
 )
 
 type Config struct {
-	FrontendAddress                string            `yaml:"frontend_address"`
 	SchedulerAddress               string            `yaml:"scheduler_address"`
 	DNSLookupPeriod                time.Duration     `yaml:"dns_lookup_duration" category:"advanced"`
 	QuerierID                      string            `yaml:"id" category:"advanced"`
@@ -44,7 +46,6 @@ type Config struct {
 
 func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.StringVar(&cfg.SchedulerAddress, "querier.scheduler-address", "", fmt.Sprintf("Address of the query-scheduler component, in host:port format. The host should resolve to all query-scheduler instances. This option should be set only when query-scheduler component is in use and -%s is set to '%s'.", schedulerdiscovery.ModeFlagName, schedulerdiscovery.ModeDNS))
-	f.StringVar(&cfg.FrontendAddress, "querier.frontend-address", "", "Address of the query-frontend component, in host:port format. If multiple query-frontends are running, the host should be a DNS resolving to all query-frontend instances. This option should be set only when query-scheduler component is not in use.")
 	f.DurationVar(&cfg.DNSLookupPeriod, "querier.dns-lookup-period", 10*time.Second, "How often to query DNS for query-frontend or query-scheduler address.")
 	f.StringVar(&cfg.QuerierID, "querier.id", "", "Querier ID, sent to the query-frontend to identify requests from the same querier. Defaults to hostname.")
 	f.BoolVar(&cfg.ResponseStreamingEnabled, "querier.response-streaming-enabled", false, "Enables streaming of responses from querier to query-frontend for response types that support it (currently only `active_series` responses do).")
@@ -56,11 +57,8 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 }
 
 func (cfg *Config) Validate() error {
-	if cfg.FrontendAddress != "" && cfg.SchedulerAddress != "" {
-		return errors.New("frontend address and scheduler address are mutually exclusive, please use only one")
-	}
-	if cfg.QuerySchedulerDiscovery.Mode == schedulerdiscovery.ModeRing && (cfg.FrontendAddress != "" || cfg.SchedulerAddress != "") {
-		return fmt.Errorf("frontend address and scheduler address cannot be specified when query-scheduler service discovery mode is set to '%s'", cfg.QuerySchedulerDiscovery.Mode)
+	if cfg.QuerySchedulerDiscovery.Mode == schedulerdiscovery.ModeRing && cfg.SchedulerAddress != "" {
+		return fmt.Errorf("scheduler address cannot be specified when query-scheduler service discovery mode is set to '%s'", cfg.QuerySchedulerDiscovery.Mode)
 	}
 
 	if err := cfg.QueryFrontendGRPCClientConfig.Validate(); err != nil {
@@ -74,13 +72,17 @@ func (cfg *Config) Validate() error {
 	return nil
 }
 
-func (cfg *Config) IsFrontendOrSchedulerConfigured() bool {
-	return cfg.FrontendAddress != "" || cfg.SchedulerAddress != "" || cfg.QuerySchedulerDiscovery.Mode == schedulerdiscovery.ModeRing
+func (cfg *Config) IsSchedulerConfigured() bool {
+	return cfg.SchedulerAddress != "" || cfg.QuerySchedulerDiscovery.Mode == schedulerdiscovery.ModeRing
 }
 
 // RequestHandler for HTTP requests wrapped in protobuf messages.
 type RequestHandler interface {
 	Handle(context.Context, *httpgrpc.HTTPRequest) (*httpgrpc.HTTPResponse, error)
+}
+
+type ProtobufRequestHandler interface {
+	HandleProtobuf(context.Context, *types.Any, propagation.Carrier, frontendv2pb.QueryResultStream)
 }
 
 // Single processor handles all streaming operations to query-frontend or query-scheduler to fetch queries
@@ -122,7 +124,7 @@ type querierWorker struct {
 	invalidClusterValidation *prometheus.CounterVec
 }
 
-func NewQuerierWorker(cfg Config, handler RequestHandler, log log.Logger, reg prometheus.Registerer) (services.Service, error) {
+func NewQuerierWorker(cfg Config, httpHandler RequestHandler, protobufHandler ProtobufRequestHandler, log log.Logger, reg prometheus.Registerer) (services.Service, error) {
 	if cfg.QuerierID == "" {
 		hostname, err := os.Hostname()
 		if err != nil {
@@ -131,43 +133,19 @@ func NewQuerierWorker(cfg Config, handler RequestHandler, log log.Logger, reg pr
 		cfg.QuerierID = hostname
 	}
 
-	var (
-		processor    processor
-		grpcCfg      grpcclient.Config
-		workerClient string
-		servs        []services.Service
-		factory      serviceDiscoveryFactory
-	)
-
-	switch {
-	case cfg.SchedulerAddress != "" || cfg.QuerySchedulerDiscovery.Mode == schedulerdiscovery.ModeRing:
-		level.Info(log).Log("msg", "Starting querier worker connected to query-scheduler", "scheduler", cfg.SchedulerAddress)
-
-		factory = func(receiver servicediscovery.Notifications) (services.Service, error) {
-			return schedulerdiscovery.New(cfg.QuerySchedulerDiscovery, cfg.SchedulerAddress, cfg.DNSLookupPeriod, "querier", receiver, log, reg)
-		}
-
-		grpcCfg = cfg.QuerySchedulerGRPCClientConfig
-		workerClient = "query-scheduler-worker"
-		processor, servs = newSchedulerProcessor(cfg, handler, log, reg)
-
-	case cfg.FrontendAddress != "":
-		level.Info(log).Log("msg", "Starting querier worker connected to query-frontend", "frontend", cfg.FrontendAddress)
-
-		factory = func(receiver servicediscovery.Notifications) (services.Service, error) {
-			return servicediscovery.NewDNS(log, cfg.FrontendAddress, cfg.DNSLookupPeriod, receiver)
-		}
-
-		grpcCfg = cfg.QueryFrontendGRPCClientConfig
-		workerClient = "query-frontend-worker"
-		processor = newFrontendProcessor(cfg, handler, log)
-
-	default:
-		return nil, errors.New("no query-scheduler or query-frontend address")
+	if !cfg.IsSchedulerConfigured() {
+		return nil, errors.New("no query-scheduler address")
 	}
 
-	invalidClusterValidation := util.NewRequestInvalidClusterValidationLabelsTotalCounter(reg, workerClient, util.GRPCProtocol)
-	return newQuerierWorkerWithProcessor(grpcCfg, cfg.MaxConcurrentRequests, log, processor, factory, servs, invalidClusterValidation)
+	level.Info(log).Log("msg", "Starting querier worker connected to query-scheduler", "scheduler", cfg.SchedulerAddress)
+
+	factory := func(receiver servicediscovery.Notifications) (services.Service, error) {
+		return schedulerdiscovery.New(cfg.QuerySchedulerDiscovery, cfg.SchedulerAddress, cfg.DNSLookupPeriod, "querier", receiver, log, reg)
+	}
+
+	processor, servs := newSchedulerProcessor(cfg, httpHandler, protobufHandler, log, reg)
+	invalidClusterValidation := util.NewRequestInvalidClusterValidationLabelsTotalCounter(reg, "query-scheduler-worker", util.GRPCProtocol)
+	return newQuerierWorkerWithProcessor(cfg.QuerySchedulerGRPCClientConfig, cfg.MaxConcurrentRequests, log, processor, factory, servs, invalidClusterValidation)
 }
 
 func newQuerierWorkerWithProcessor(grpcCfg grpcclient.Config, maxConcReq int, log log.Logger, processor processor, newServiceDiscovery serviceDiscoveryFactory, servs []services.Service, invalidClusterValidation *prometheus.CounterVec) (*querierWorker, error) {

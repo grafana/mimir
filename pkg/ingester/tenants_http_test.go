@@ -3,7 +3,6 @@
 package ingester
 
 import (
-	"context"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -11,26 +10,16 @@ import (
 	"time"
 
 	"github.com/gorilla/mux"
-	"github.com/grafana/dskit/services"
-	"github.com/grafana/dskit/test"
 	"github.com/stretchr/testify/require"
 )
 
 func TestIngester_TenantsHandlers(t *testing.T) {
-	ctx := context.Background()
 	cfg := defaultIngesterTestConfig(t)
 
 	// Create ingester
-	i, err := prepareIngesterWithBlocksStorage(t, cfg, nil, nil)
+	i, r, err := prepareIngesterWithBlocksStorage(t, cfg, nil, nil)
 	require.NoError(t, err)
-
-	require.NoError(t, services.StartAndAwaitRunning(ctx, i))
-	defer services.StopAndAwaitTerminated(ctx, i) //nolint:errcheck
-
-	// Wait until it's healthy
-	test.Poll(t, 1*time.Second, 1, func() interface{} {
-		return i.lifecycler.HealthyInstancesCount()
-	})
+	startAndWaitHealthy(t, i, r)
 
 	pushSingleSampleAtTime(t, i, time.Now().UnixMilli())
 
@@ -44,6 +33,8 @@ func TestIngester_TenantsHandlers(t *testing.T) {
 		require.Equal(t, http.StatusOK, rec.Code)
 		// Check if link to user's TSDB was generated
 		require.Contains(t, rec.Body.String(), fmt.Sprintf(`<a href="tsdb/%s">%s</a>`, userID, userID))
+		// Check if grace interval is present
+		require.Contains(t, rec.Body.String(), `<td>(-0s, +10m0s)</td>`)
 	})
 
 	t.Run("tenant TSDB for valid tenant", func(t *testing.T) {

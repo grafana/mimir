@@ -8,8 +8,10 @@ package alertmanager
 import (
 	"context"
 	"crypto/md5"
+	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -29,7 +31,6 @@ import (
 	alertingReceivers "github.com/grafana/alerting/receivers"
 	alertingTemplates "github.com/grafana/alerting/templates"
 	"github.com/grafana/dskit/flagext"
-	"github.com/pkg/errors"
 	"github.com/prometheus/alertmanager/api"
 	"github.com/prometheus/alertmanager/cluster"
 	"github.com/prometheus/alertmanager/cluster/clusterpb"
@@ -42,6 +43,7 @@ import (
 	"github.com/prometheus/alertmanager/notify/discord"
 	"github.com/prometheus/alertmanager/notify/email"
 	"github.com/prometheus/alertmanager/notify/msteams"
+	"github.com/prometheus/alertmanager/notify/msteamsv2"
 	"github.com/prometheus/alertmanager/notify/opsgenie"
 	"github.com/prometheus/alertmanager/notify/pagerduty"
 	"github.com/prometheus/alertmanager/notify/pushover"
@@ -97,6 +99,7 @@ type Config struct {
 	ExternalURL                       *url.URL
 	Limits                            Limits
 	Features                          featurecontrol.Flagger
+	StateReadTimeout                  time.Duration
 
 	// Tenant-specific local directory where AM can store its state (notifications, silences, templates). When AM is stopped, entire dir is removed.
 	TenantDataDir string
@@ -153,6 +156,8 @@ type Alertmanager struct {
 	configHashMetric prometheus.Gauge
 
 	rateLimitedNotifications *prometheus.CounterVec
+
+	notifyHooksMetrics *notifyHooksMetrics
 }
 
 var (
@@ -216,8 +221,12 @@ func New(cfg *Config, reg *prometheus.Registry) (*Alertmanager, error) {
 		}, []string{"integration"}), // "integration" is consistent with other alertmanager metrics.
 	}
 
+	if am.cfg.EnableNotifyHooks {
+		am.notifyHooksMetrics = newNotifyHooksMetrics(reg)
+	}
+
 	am.registry = reg
-	am.state = newReplicatedStates(cfg.UserID, cfg.ReplicationFactor, cfg.Replicator, cfg.Store, am.logger, am.registry)
+	am.state = newReplicatedStates(cfg.UserID, cfg.ReplicationFactor, cfg.Replicator, cfg.Store, cfg.StateReadTimeout, am.logger, am.registry)
 	am.persister = newStatePersister(cfg.PersisterConfig, cfg.UserID, am.state, cfg.Store, am.logger, am.registry)
 
 	var err error
@@ -264,11 +273,11 @@ func New(cfg *Config, reg *prometheus.Registry) (*Alertmanager, error) {
 
 	// State replication needs to be started after the state keys are defined.
 	if err := am.state.StartAsync(context.Background()); err != nil {
-		return nil, errors.Wrap(err, "failed to start ring-based replication service")
+		return nil, fmt.Errorf("failed to start ring-based replication service: %w", err)
 	}
 
 	if err := am.persister.StartAsync(context.Background()); err != nil {
-		return nil, errors.Wrap(err, "failed to start state persister service")
+		return nil, fmt.Errorf("failed to start state persister service: %w", err)
 	}
 
 	am.pipelineBuilder = notify.NewPipelineBuilder(am.registry, cfg.Features)
@@ -326,6 +335,7 @@ func New(cfg *Config, reg *prometheus.Registry) (*Alertmanager, error) {
 	// This route is an experimental Mimir extension to the receivers API, so we put
 	// it under an additional prefix to avoid any confusion with upstream Alertmanager.
 	if cfg.GrafanaAlertmanagerCompatibility {
+		am.mux.Handle("/api/v1/grafana/full_state", http.HandlerFunc(am.GetFullStateHandler))
 		am.mux.Handle("/api/v1/grafana/receivers", http.HandlerFunc(am.GetReceiversHandler))
 		am.mux.Handle("/api/v1/grafana/templates/test", http.HandlerFunc(am.TestTemplatesHandler))
 		am.mux.Handle("/api/v1/grafana/receivers/test", http.HandlerFunc(am.TestReceiversHandler))
@@ -335,6 +345,44 @@ func New(cfg *Config, reg *prometheus.Registry) (*Alertmanager, error) {
 
 	// TODO: From this point onward, the alertmanager _might_ receive requests - we need to make sure we've settled and are ready.
 	return am, nil
+}
+
+func (am *Alertmanager) GetFullStateHandler(w http.ResponseWriter, _ *http.Request) {
+	st, err := am.state.GetFullState()
+	if err != nil {
+		level.Error(am.logger).Log("msg", "error getting full state", "err", err)
+		http.Error(w,
+			fmt.Sprintf("error getting full state: %s", err.Error()),
+			http.StatusInternalServerError)
+		return
+	}
+
+	bytes, err := st.Marshal()
+	if err != nil {
+		level.Error(am.logger).Log("msg", "error marshalling full state", "err", err)
+		http.Error(w,
+			fmt.Sprintf("error marshalling full state: %s", err.Error()),
+			http.StatusInternalServerError)
+		return
+	}
+
+	d, err := json.Marshal(successResult{
+		Status: statusSuccess,
+		Data:   &UserGrafanaState{State: base64.StdEncoding.EncodeToString(bytes)},
+	})
+	if err != nil {
+		level.Error(am.logger).Log("msg", "error marshalling success result", "err", err)
+		http.Error(w,
+			fmt.Sprintf("error marshalling success result: %s", err.Error()),
+			http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if _, err := w.Write(d); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 }
 
 func (am *Alertmanager) GetReceiversHandler(w http.ResponseWriter, _ *http.Request) {
@@ -429,7 +477,7 @@ func (am *Alertmanager) TestReceiversHandler(w http.ResponseWriter, r *http.Requ
 
 func (am *Alertmanager) WaitInitialStateSync(ctx context.Context) error {
 	if err := am.state.AwaitRunning(ctx); err != nil {
-		return errors.Wrap(err, "failed to wait for ring-based replication service")
+		return fmt.Errorf("failed to wait for ring-based replication service: %w", err)
 	}
 	return nil
 }
@@ -580,7 +628,7 @@ func (am *Alertmanager) getFullState() (*clusterpb.FullState, error) {
 
 func (am *Alertmanager) wrapNotifier(integrationName string, notifier notify.Notifier) notify.Notifier {
 	if am.cfg.EnableNotifyHooks {
-		n, err := newNotifyHooksNotifier(notifier, am.cfg.Limits, am.cfg.UserID, am.logger)
+		n, err := newNotifyHooksNotifier(notifier, am.cfg.Limits, am.cfg.UserID, am.logger, am.notifyHooksMetrics)
 		if err != nil {
 			// It's rare an error is returned, but in theory it can happen.
 			level.Error(am.logger).Log("msg", "Failed to setup notify hooks", "err", err)
@@ -620,10 +668,9 @@ func (am *Alertmanager) buildIntegrationsMap(emailCfg alertingReceivers.EmailSen
 	var cached *alertingTemplates.CachedFactory
 	integrationsMap := make(map[string][]*nfstatus.Integration, len(nc))
 	for _, rcv := range nc {
-		var integrations []*nfstatus.Integration
+		var grafana, mimir []*nfstatus.Integration
 		var err error
-		switch rcv.Type() {
-		case definition.GrafanaReceiverType:
+		if rcv.HasGrafanaIntegrations() {
 			if cached == nil {
 				factory, err := alertingTemplates.NewFactory(tmpls, am.logger, tmplExternalURL.String(), am.cfg.UserID)
 				if err != nil {
@@ -631,8 +678,12 @@ func (am *Alertmanager) buildIntegrationsMap(emailCfg alertingReceivers.EmailSen
 				}
 				cached = alertingTemplates.NewCachedFactory(factory)
 			}
-			integrations, err = buildGrafanaReceiverIntegrations(emailCfg, alertingNotify.PostableAPIReceiverToAPIReceiver(rcv), cached, am.logger, am.wrapNotifier, grafanaOpts...)
-		case definition.AlertmanagerReceiverType:
+			grafana, err = buildGrafanaReceiverIntegrations(emailCfg, alertingNotify.PostableAPIReceiverToAPIReceiver(rcv), cached, am.logger, am.wrapNotifier, grafanaOpts...)
+			if err != nil {
+				return nil, err
+			}
+		}
+		if rcv.HasMimirIntegrations() {
 			if tmpl == nil {
 				tmpl, err = loadTemplates(tmpls, WithCustomFunctions(am.cfg.UserID))
 				if err != nil {
@@ -640,15 +691,12 @@ func (am *Alertmanager) buildIntegrationsMap(emailCfg alertingReceivers.EmailSen
 				}
 				tmpl.ExternalURL = tmplExternalURL
 			}
-			integrations, err = buildReceiverIntegrations(rcv.Receiver, tmpl, firewallDialer, am.logger, am.wrapNotifier)
-		case definition.EmptyReceiverType:
-			// Empty receiver, no integrations to build.
+			mimir, err = buildReceiverIntegrations(rcv.Receiver, tmpl, firewallDialer, am.logger, am.wrapNotifier)
+			if err != nil {
+				return nil, err
+			}
 		}
-		if err != nil {
-			return nil, err
-		}
-
-		integrationsMap[rcv.Name] = integrations
+		integrationsMap[rcv.Name] = append(grafana, mimir...)
 	}
 
 	// Template validation shouldn't be dependent on whether receivers exist. So, in case we didn't hot-load any
@@ -716,6 +764,7 @@ func buildGrafanaReceiverIntegrations(emailCfg alertingReceivers.EmailSenderConf
 		wrapper,
 		1, // orgID is always 1.
 		version.Version,
+		nil,
 		opts...,
 	)
 	if err != nil {
@@ -732,13 +781,14 @@ func buildReceiverIntegrations(nc config.Receiver, tmpl *template.Template, fire
 		errs         types.MultiError
 		integrations []*nfstatus.Integration
 		add          = func(name string, i int, rs notify.ResolvedSender, f func(l log.Logger) (notify.Notifier, error)) {
-			n, err := f(log.With(logger, "integration", name))
+			integrationLogger := log.With(logger, "integration", name)
+			n, err := f(integrationLogger)
 			if err != nil {
 				errs.Add(err)
 				return
 			}
 			n = wrapper(name, n)
-			integrations = append(integrations, nfstatus.NewIntegration(n, rs, name, i, nc.Name))
+			integrations = append(integrations, nfstatus.NewIntegration(n, rs, name, i, nc.Name, nil, integrationLogger))
 		}
 	)
 
@@ -785,6 +835,9 @@ func buildReceiverIntegrations(nc config.Receiver, tmpl *template.Template, fire
 	}
 	for i, c := range nc.MSTeamsConfigs {
 		add("msteams", i, c, func(l log.Logger) (notify.Notifier, error) { return msteams.New(c, tmpl, l, httpOps...) })
+	}
+	for i, c := range nc.MSTeamsV2Configs {
+		add("msteamsv2", i, c, func(l log.Logger) (notify.Notifier, error) { return msteamsv2.New(c, tmpl, l, httpOps...) })
 	}
 	// If we add support for more integrations, we need to add them to validation as well. See validation.allowedIntegrationNames field.
 	if errs.Len() > 0 {

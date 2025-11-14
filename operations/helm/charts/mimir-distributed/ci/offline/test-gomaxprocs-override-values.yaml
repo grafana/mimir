@@ -1,0 +1,42 @@
+# Test that user-defined GOMAXPROCS takes precedence over calculated values
+kubeVersionOverride: "1.29"
+
+distributor:
+  resources:
+    requests:
+      cpu: 2 # This would normally calculate GOMAXPROCS as max(2*2, 8) = 8
+  env:
+    - name: TEST_ENV
+      valueFrom:
+        secretKeyRef:
+          name: my-secret
+          key: test
+    - name: GOMAXPROCS
+      value: "16" # This should override the calculated value
+
+ingester:
+  resources:
+    requests:
+      cpu: 1 # This would normally calculate GOMAXPROCS as (1 + max(min(1, 6), 3) + 1) = 5
+  env:
+    - name: GOMAXPROCS
+      value: "12" # This should override the calculated value
+
+querier:
+  resources:
+    requests:
+      cpu: 1 # This would normally calculate GOMAXPROCS as max(1*2, 1+4) = 5
+  env:
+    - name: GOMAXPROCS
+      value: "8" # This should override the calculated value
+
+store_gateway:
+  resources:
+    requests:
+      cpu: 1 # This would normally calculate GOMAXPROCS as max(1*2, 1+4) = 5
+      memory: 512Mi # This would normally calculate GOMEMLIMIT
+  env:
+    - name: GOMAXPROCS
+      value: "10" # This should override the calculated value
+    - name: GOMEMLIMIT
+      value: "10000" # This should override the calculated value

@@ -7,20 +7,22 @@ title: Grafana Mimir deployment modes
 weight: 20
 ---
 
-<!-- Note: This topic is mounted in the GEM documentation. Ensure that all updates are also applicable to GEM. -->
-
 # Grafana Mimir deployment modes
 
-You can deploy Grafana Mimir in one of two modes:
+Grafana Mimir offers two deployment modes to accommodate different operational requirements and scale needs. Choose the deployment mode that best fits your use case:
 
-- Monolithic mode
-- Microservices mode
+- Monolithic mode: Run all components in a single process for simple deployments.
+- Microservices mode: Deploy components separately for maximum scalability and flexibility.
 
-The deployment mode is determined by the `-target` parameter, which you can set via CLI flag or YAML configuration.
+Configure the deployment mode using the `-target` parameter, which you can set via CLI flag or YAML configuration.
 
-## Monolithic mode
+## About monolithic mode
 
-The monolithic mode runs all required components in a single process and is the default mode of operation, which you can set by specifying `-target=all`. Monolithic mode is the simplest way to deploy Grafana Mimir and is useful if you want to get started quickly or want to work with Grafana Mimir in a development environment. To see the list of components that run when `-target` is set to `all`, run Grafana Mimir with the `-modules` flag:
+Monolithic mode runs all required components in a single process. This mode is ideal for getting started or running Grafana Mimir in a development environment.
+
+To enable monolithic mode, set `-target=all`.
+
+To see the complete list of components that run in monolithic mode, use the `-modules` flag:
 
 ```bash
 ./mimir -modules
@@ -28,54 +30,42 @@ The monolithic mode runs all required components in a single process and is the 
 
 [//]: # "Diagram source at https://docs.google.com/presentation/d/1LemaTVqa4Lf_tpql060vVoDGXrthp-Pie_SQL7qwHjc/edit#slide=id.g11694eaa76e_0_0"
 
+This diagram shows how Mimir works in monolithic mode:
+
 ![Mimir's monolithic mode](monolithic-mode.svg)
 
-Monolithic mode can be horizontally scaled out by deploying multiple Grafana Mimir binaries with `-target=all`. This approach provides high-availability and increased scale without the configuration complexity of the full [microservices deployment](#microservices-mode).
+### Scale monolithic mode
+
+You can horizontally scale monolithic mode by deploying multiple Mimir binaries with `-target=all`. This approach, shown in the following diagram, provides high availability and increased scale without the configuration complexity of [microservices mode](#about-microservices-mode).
 
 [//]: # "Diagram source at https://docs.google.com/presentation/d/1LemaTVqa4Lf_tpql060vVoDGXrthp-Pie_SQL7qwHjc/edit#slide=id.g11658e7e4c6_1_20"
 
 ![Mimir's horizontally scaled monolithic mode](scaled-monolithic-mode.svg)
 
-## Microservices mode
+{{< admonition type="note" >}}
+Because monolithic mode requires scaling all Grafana Mimir components together, this deployment mode isn't recommended for large-scale deployments.
+{{< /admonition >}}
 
-In microservices mode, components are deployed in distinct processes. Scaling is per component, which allows for greater flexibility in scaling and more granular failure domains. Microservices mode is the preferred method for a production deployment, but it is also the most complex.
+## About microservices mode
 
-In microservices mode, each Grafana Mimir process is invoked with its `-target` parameter set to a specific Grafana Mimir component (for example, `-target=ingester` or `-target=distributor`). To get a working Grafana Mimir instance, you must deploy every required component. For more information about each of the Grafana Mimir components, refer to [Architecture](../).
+Microservices mode deploys each component in separate processes, enabling independent scaling and creating granular failure domains. Microservices mode is recommended for production environments.
 
-If you are interested in deploying Grafana Mimir in microservices mode, we recommend that you use [Kubernetes](https://kubernetes.io/) and the [mimir-distributed Helm chart](https://github.com/grafana/mimir/tree/main/operations/helm/charts/mimir-distributed).
+The following diagrams show how Mimir works in microservices mode using ingest storage and classic architectures. For more information about the two supported architectures in Grafana Mimir, refer to [Grafana Mimir architecture](https://grafana.com/docs/mimir/<MIMIR_VERSION>/get-started/about-grafana-mimir-architecture/).
+
+Ingest storage architecture:
+
+<div align="center">
+
+![Ingest storage architecture diagram](/media/docs/mimir/ingest-storage-overview.png)
+
+</div>
+
+Classic architecture:
 
 [//]: # "Diagram source at https://docs.google.com/presentation/d/1LemaTVqa4Lf_tpql060vVoDGXrthp-Pie_SQL7qwHjc/edit#slide=id.g11658e7e4c6_1_53"
 
 ![Mimir's microservices mode](microservices-mode.svg)
 
-## Read-Write mode
+In microservices mode, each Grafana Mimir process is invoked with its `-target` parameter set to a specific Grafana Mimir component (for example, `-target=ingester` or `-target=distributor`). To get a working Grafana Mimir instance, you must deploy every required component. For more information about each of the Grafana Mimir components, refer to [Grafana Mimir advanced architecture](https://grafana.com/docs/mimir/<GRAFANA_VERSION>/references/architecture/).
 
-{{< admonition type="warning" >}}
-Read-Write deployment mode is experimental.
-{{< /admonition >}}
-
-The read-write mode provides an alternative to monolithic and microservices modes.
-
-In read-write mode, components are grouped into three services to ease the operational overhead whilst still allowing scale to be tuned separately on the read and write paths. The services group the components as follows:
-
-- read
-  - query-frontend
-  - querier
-- backend
-  - store-gateway
-  - compactor
-  - ruler
-  - alertmanager
-  - query-scheduler
-  - overrides-exporter
-- write
-  - distributor
-  - ingester
-
-Similar to the other modes, each Grafana Mimir process is invoked with its `-target` parameter set to the specific service: `-target=read`, `-target=write`, or `-target=backend`.
-
-[//]: # "Diagram source at https://docs.google.com/drawings/d/18Qfl-H9On9zi2IRVX-rLawbpQPRcMcI0xh5uwyUjlak"
-
-![Mimir's read-write deployment mode](read-write-mode.svg)
-
-Read-write mode is only available in [Jsonnet](../../../set-up/jsonnet/deploy/).
+To deploy Grafana Mimir in microservices mode, use [Kubernetes](https://kubernetes.io/) and the [mimir-distributed Helm chart](https://github.com/grafana/mimir/tree/main/operations/helm/charts/mimir-distributed).

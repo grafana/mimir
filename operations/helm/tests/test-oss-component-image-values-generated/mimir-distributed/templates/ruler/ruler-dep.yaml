@@ -52,6 +52,9 @@ spec:
             - "-target=ruler"
             - "-config.expand-env=true"
             - "-config.file=/etc/mimir/mimir.yaml"
+            # Set the memory ballast to help with extensive CPU usage due to GC at ruler's start. This prevents the autoscaler
+            # from adding more replicas around rollouts, and reduces the effect of GC on a restart overall.
+            - "-mem-ballast-size-bytes=1073741824"
             - "-distributor.remote-timeout=10s"
           volumeMounts:
             - name: config
@@ -89,6 +92,8 @@ spec:
               drop:
               - ALL
             readOnlyRootFilesystem: true
+          env:
+            []
       topologySpreadConstraints:
       - maxSkew: 1
         topologyKey: kubernetes.io/hostname

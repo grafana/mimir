@@ -3,15 +3,17 @@
 package compactor
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"math"
-	"sort"
+	"slices"
 	"time"
 
 	"github.com/oklog/ulid/v2"
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/thanos-io/objstore"
 
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
@@ -65,8 +67,8 @@ func (job *Job) AppendMeta(meta *block.Meta) error {
 	}
 
 	job.metasByMinTime = append(job.metasByMinTime, meta)
-	sort.Slice(job.metasByMinTime, func(i, j int) bool {
-		return job.metasByMinTime[i].MinTime < job.metasByMinTime[j].MinTime
+	slices.SortFunc(job.metasByMinTime, func(a, b *block.Meta) int {
+		return cmp.Compare(a.MinTime, b.MinTime)
 	})
 	return nil
 }
@@ -76,8 +78,8 @@ func (job *Job) IDs() (ids []ulid.ULID) {
 	for _, m := range job.metasByMinTime {
 		ids = append(ids, m.ULID)
 	}
-	sort.Slice(ids, func(i, j int) bool {
-		return ids[i].Compare(ids[j]) < 0
+	slices.SortFunc(ids, func(a, b ulid.ULID) int {
+		return a.Compare(b)
 	})
 	return ids
 }
@@ -155,7 +157,7 @@ func (job *Job) String() string {
 // elapsed for the input job. If the wait period has not elapsed, then this function
 // also returns the Meta of the first source block encountered for which the wait
 // period has not elapsed yet.
-func jobWaitPeriodElapsed(ctx context.Context, job *Job, waitPeriod time.Duration, userBucket objstore.Bucket) (bool, *block.Meta, error) {
+func jobWaitPeriodElapsed(ctx context.Context, job *Job, waitPeriod time.Duration, skipFutureMaxTime bool, userBucket objstore.Bucket) (bool, *block.Meta, error) {
 	if waitPeriod <= 0 {
 		return true, nil, nil
 	}
@@ -171,6 +173,10 @@ func jobWaitPeriodElapsed(ctx context.Context, job *Job, waitPeriod time.Duratio
 	for _, meta := range job.Metas() {
 		if meta.OutOfOrder || meta.Compaction.FromOutOfOrder() {
 			continue
+		}
+
+		if skipFutureMaxTime && timestamp.Time(meta.MaxTime).After(threshold) {
+			return false, meta, nil
 		}
 
 		attrs, err := block.GetMetaAttributes(ctx, meta, userBucket)

@@ -11,7 +11,6 @@ local statefulset = k.apps.v1.statefulSet;
     enable_pvc_auto_deletion_for_store_gateways: false,
     enable_pvc_auto_deletion_for_compactors: false,
     enable_pvc_auto_deletion_for_ingesters: false,
-    enable_pvc_auto_deletion_for_read_write_mode_backend: false,
   },
 
   local store_gateway_pvc_auto_deletion = if !$._config.enable_pvc_auto_deletion_for_store_gateways then {} else
@@ -21,9 +20,6 @@ local statefulset = k.apps.v1.statefulSet;
     statefulset.spec.persistentVolumeClaimRetentionPolicy.withWhenScaled('Delete'),
 
   local ingester_pvc_auto_deletion = if !$._config.enable_pvc_auto_deletion_for_ingesters then {} else
-    statefulset.spec.persistentVolumeClaimRetentionPolicy.withWhenScaled('Delete'),
-
-  local backend_pvc_auto_deletion = if !$._config.enable_pvc_auto_deletion_for_read_write_mode_backend then {} else
     statefulset.spec.persistentVolumeClaimRetentionPolicy.withWhenScaled('Delete'),
 
   store_gateway_statefulset: overrideSuperIfExists('store_gateway_statefulset', store_gateway_pvc_auto_deletion),
@@ -37,10 +33,6 @@ local statefulset = k.apps.v1.statefulSet;
   ingester_zone_a_statefulset: overrideSuperIfExists('ingester_zone_a_statefulset', ingester_pvc_auto_deletion),
   ingester_zone_b_statefulset: overrideSuperIfExists('ingester_zone_b_statefulset', ingester_pvc_auto_deletion),
   ingester_zone_c_statefulset: overrideSuperIfExists('ingester_zone_c_statefulset', ingester_pvc_auto_deletion),
-
-  mimir_backend_zone_a_statefulset: overrideSuperIfExists('mimir_backend_zone_a_statefulset', backend_pvc_auto_deletion),
-  mimir_backend_zone_b_statefulset: overrideSuperIfExists('mimir_backend_zone_b_statefulset', backend_pvc_auto_deletion),
-  mimir_backend_zone_c_statefulset: overrideSuperIfExists('mimir_backend_zone_c_statefulset', backend_pvc_auto_deletion),
 
   local overrideSuperIfExists(name, override) = if !( name in super) || super[name] == null || super[name] == {} then null else
     super[name] + override,

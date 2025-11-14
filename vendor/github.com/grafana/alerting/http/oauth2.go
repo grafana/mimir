@@ -34,7 +34,7 @@ type OAuth2Config struct {
 	Scopes         []string             `json:"scopes,omitempty" yaml:"scopes,omitempty"`
 	EndpointParams map[string]string    `json:"endpoint_params,omitempty" yaml:"endpoint_params,omitempty"`
 	TLSConfig      *receivers.TLSConfig `json:"tls_config,omitempty" yaml:"tls_config,omitempty"`
-	ProxyConfig    ProxyConfig          `json:"proxy_config" yaml:"proxy_config"`
+	ProxyConfig    *ProxyConfig         `json:"proxy_config,omitempty" yaml:"proxy_config,omitempty"`
 }
 
 func ValidateOAuth2Config(config *OAuth2Config) error {
@@ -57,8 +57,10 @@ func ValidateOAuth2Config(config *OAuth2Config) error {
 		}
 	}
 
-	if err := ValidateProxyConfig(config.ProxyConfig); err != nil {
-		return fmt.Errorf("%w: %w", ErrInvalidProxyConfig, err)
+	if config.ProxyConfig != nil {
+		if err := ValidateProxyConfig(*config.ProxyConfig); err != nil {
+			return fmt.Errorf("%w: %w", ErrInvalidProxyConfig, err)
+		}
 	}
 
 	return nil
@@ -77,12 +79,7 @@ func NewOAuth2RoundTripper(tokenSource oauth2.TokenSource, next http.RoundTrippe
 	}
 }
 
-func NewOAuth2TokenSource(clientConfig clientConfiguration) (oauth2.TokenSource, error) {
-	config := clientConfig.httpClientConfig.OAuth2
-	if config == nil {
-		// This should never happen, but we add this check defensively.
-		return nil, fmt.Errorf("OAuth2 configuration is required")
-	}
+func NewOAuth2TokenSource(config OAuth2Config, clientConfig clientConfiguration) (oauth2.TokenSource, error) {
 	credconfig := &clientcredentials.Config{
 		ClientID:       config.ClientID,
 		ClientSecret:   config.ClientSecret,

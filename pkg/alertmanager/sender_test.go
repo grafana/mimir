@@ -4,6 +4,7 @@ package alertmanager
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -11,7 +12,6 @@ import (
 	"github.com/go-kit/log"
 	alertingHttp "github.com/grafana/alerting/http"
 	alertingReceivers "github.com/grafana/alerting/receivers"
-	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
 
 	util_net "github.com/grafana/mimir/pkg/util/net"
@@ -28,7 +28,7 @@ func TestSendWebhook(t *testing.T) {
 		got = r
 		w.WriteHeader(http.StatusOK)
 	}))
-	s, err := alertingHttp.NewClient(alertingHttp.WithUserAgent(version.UserAgent()))
+	s, err := alertingHttp.NewClient(nil, alertingHttp.WithUserAgent(version.UserAgent()))
 	require.NoError(t, err)
 
 	// The method should be either POST or PUT.
@@ -103,7 +103,7 @@ func TestSendWebhook(t *testing.T) {
 	cmd = alertingReceivers.SendWebhookSettings{
 		URL: server.URL,
 	}
-	s, err = alertingHttp.NewClient(alertingHttp.WithUserAgent(version.UserAgent()), alertingHttp.WithDialer(*firewallDialer.Dialer()))
+	s, err = alertingHttp.NewClient(nil, alertingHttp.WithUserAgent(version.UserAgent()), alertingHttp.WithDialer(*firewallDialer.Dialer()))
 	require.NoError(t, err)
 	err = s.SendWebhook(context.Background(), log.NewNopLogger(), &cmd)
 	require.Error(t, err)

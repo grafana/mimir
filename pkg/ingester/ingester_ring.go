@@ -111,9 +111,9 @@ func (cfg *RingConfig) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	cfg.KVStore.Store = "memberlist" // Override default value.
 	cfg.KVStore.RegisterFlagsWithPrefix(prefix, "collectors/", f)
 
-	f.DurationVar(&cfg.HeartbeatPeriod, prefix+"heartbeat-period", 15*time.Second, "Period at which to heartbeat to the ring. 0 = disabled.")
-	f.DurationVar(&cfg.HeartbeatTimeout, prefix+"heartbeat-timeout", time.Minute, "The heartbeat timeout after which ingesters are skipped for reads/writes. 0 = never (timeout disabled)."+sharedOptionWithRingClient)
-	f.IntVar(&cfg.ReplicationFactor, prefix+"replication-factor", 3, "Number of ingesters that each time series is replicated to."+sharedOptionWithRingClient)
+	f.DurationVar(&cfg.HeartbeatPeriod, prefix+"heartbeat-period", 15*time.Second, "Period at which to heartbeat to the ring.")
+	f.DurationVar(&cfg.HeartbeatTimeout, prefix+"heartbeat-timeout", time.Minute, "The heartbeat timeout after which ingesters are skipped for reads/writes."+sharedOptionWithRingClient)
+	f.IntVar(&cfg.ReplicationFactor, prefix+"replication-factor", 3, "Number of ingesters that each time series is replicated to. This configuration is not used when ingest storage is enabled."+sharedOptionWithRingClient)
 	f.BoolVar(&cfg.ZoneAwarenessEnabled, prefix+"zone-awareness-enabled", false, "True to enable the zone-awareness and replicate ingested samples across different availability zones."+sharedOptionWithRingClient)
 	f.Var(&cfg.ExcludedZones, prefix+"excluded-zones", "Comma-separated list of zones to exclude from the ring. Instances in excluded zones will be filtered out from the ring."+sharedOptionWithRingClient)
 
@@ -155,7 +155,7 @@ func (cfg *RingConfig) ToRingConfig() ring.Config {
 	rc.ZoneAwarenessEnabled = cfg.ZoneAwarenessEnabled
 	rc.ExcludedZones = cfg.ExcludedZones
 	rc.SubringCacheDisabled = false // Enable subring caching.
-	rc.HideTokensInStatusPage = cfg.HideTokensInStatusPage
+	rc.StatusPageConfig.HideTokensUIElements = cfg.HideTokensInStatusPage
 
 	return rc
 }
@@ -186,7 +186,7 @@ func (cfg *RingConfig) ToLifecyclerConfig() ring.LifecyclerConfig {
 	lc.ListenPort = cfg.ListenPort
 	lc.EnableInet6 = cfg.EnableIPv6
 	lc.RingTokenGenerator = cfg.customTokenGenerator()
-	lc.HideTokensInStatusPage = cfg.HideTokensInStatusPage
+	lc.StatusPageConfig.HideTokensUIElements = cfg.HideTokensInStatusPage
 
 	return lc
 }

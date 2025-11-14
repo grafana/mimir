@@ -139,7 +139,7 @@ var (
 		{
 			Name:       "ingest_storage",
 			StructType: reflect.TypeOf(ingest.Config{}),
-			Desc:       "The ingest_storage block configures the experimental Kafka-based ingest storage.",
+			Desc:       "The ingest_storage block configures the Kafka-based ingest storage.",
 		},
 		{
 			Name:       "blocks_storage",
@@ -160,11 +160,6 @@ var (
 			Name:       "memcached",
 			StructType: reflect.TypeOf(cache.MemcachedClientConfig{}),
 			Desc:       "The memcached block configures the Memcached-based caching backend.",
-		},
-		{
-			Name:       "redis",
-			StructType: reflect.TypeOf(cache.RedisClientConfig{}),
-			Desc:       "The redis block configures the Redis-based caching backend.",
 		},
 		{
 			Name:       "s3_storage_backend",

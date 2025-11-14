@@ -32,6 +32,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunks"
@@ -149,6 +150,7 @@ func TestMultitenantCompactor_ShouldDoNothingOnNoUserBlocks(t *testing.T) {
 
 	// No user blocks stored in the bucket.
 	bucketClient := &bucket.ClientMock{}
+	bucketClient.On("SupportedIterOptions").Return([]objstore.IterOptionType{objstore.Recursive, objstore.UpdatedAt})
 	bucketClient.MockIter("", []string{}, nil)
 	cfg := prepareConfig(t)
 	c, _, _, logs, registry := prepare(t, cfg, bucketClient)
@@ -284,6 +286,7 @@ func TestMultitenantCompactor_ShouldRetryCompactionOnFailureWhileDiscoveringUser
 
 	// Fail to iterate over the bucket while discovering users.
 	bucketClient := &bucket.ClientMock{}
+	bucketClient.On("SupportedIterOptions").Return([]objstore.IterOptionType{objstore.Recursive, objstore.UpdatedAt})
 	bucketClient.MockIter("", nil, errors.New("failed to iterate the bucket"))
 
 	c, _, _, logs, registry := prepare(t, prepareConfig(t), bucketClient)
@@ -425,6 +428,7 @@ func TestMultitenantCompactor_ShouldIncrementCompactionErrorIfFailedToCompactASi
 
 	userID := "test-user"
 	bucketClient := &bucket.ClientMock{}
+	bucketClient.On("SupportedIterOptions").Return([]objstore.IterOptionType{objstore.Recursive, objstore.UpdatedAt})
 	bucketClient.MockIter("", []string{userID}, nil)
 	bucketClient.MockIter(userID+"/", []string{userID + "/01DTVP434PA9VFXSW2JKB3392D", userID + "/01DTW0ZCPDDNV4BV83Q2SV4QAZ"}, nil)
 	bucketClient.MockIter(userID+"/markers/", nil, nil)
@@ -474,6 +478,7 @@ func TestMultitenantCompactor_ShouldIncrementCompactionShutdownIfTheContextIsCan
 
 	userID := "test-user"
 	bucketClient := &bucket.ClientMock{}
+	bucketClient.On("SupportedIterOptions").Return([]objstore.IterOptionType{objstore.Recursive, objstore.UpdatedAt})
 	bucketClient.MockIter("", []string{userID}, nil)
 	bucketClient.MockIter(userID+"/", []string{userID + "/01DTVP434PA9VFXSW2JKB3392D", userID + "/01DTW0ZCPDDNV4BV83Q2SV4QAZ"}, nil)
 	bucketClient.MockIter(userID+"/markers/", nil, nil)
@@ -527,6 +532,7 @@ func TestMultitenantCompactor_ShouldIterateOverUsersAndRunCompaction(t *testing.
 
 	// Mock the bucket to contain two users, each one with two blocks (to make sure that grouper doesn't skip them).
 	bucketClient := &bucket.ClientMock{}
+	bucketClient.On("SupportedIterOptions").Return([]objstore.IterOptionType{objstore.Recursive, objstore.UpdatedAt})
 	bucketClient.MockIter("", []string{"user-1", "user-2"}, nil)
 	bucketClient.MockExists(path.Join("user-1", mimir_tsdb.TenantDeletionMarkPath), false, nil)
 	bucketClient.MockExists(path.Join("user-2", mimir_tsdb.TenantDeletionMarkPath), false, nil)
@@ -671,6 +677,7 @@ func TestMultitenantCompactor_ShouldStopCompactingTenantOnReachingMaxCompactionT
 	// By using blocks with different labels, we get two compaction jobs. Only one of these jobs will be started,
 	// and since its planning will take longer than maxCompactionTime, we stop compactions early.
 	bucketClient := &bucket.ClientMock{}
+	bucketClient.On("SupportedIterOptions").Return([]objstore.IterOptionType{objstore.Recursive, objstore.UpdatedAt})
 	bucketClient.MockIter("", []string{"user-1"}, nil)
 	bucketClient.MockExists(path.Join("user-1", mimir_tsdb.TenantDeletionMarkPath), false, nil)
 	bucketClient.MockIter("user-1/", []string{"user-1/01DTVP434PA9VFXSW2JKB3392D", "user-1/01FN3VCQV5X342W2ZKMQQXAZRX", "user-1/01FS51A7GQ1RQWV35DBVYQM4KF", "user-1/01FRQGQB7RWQ2TS0VWA82QTPXE"}, nil)
@@ -741,6 +748,7 @@ func TestMultitenantCompactor_ShouldNotCompactBlocksMarkedForDeletion(t *testing
 
 	// Mock the bucket to contain two users, each one with one block.
 	bucketClient := &bucket.ClientMock{}
+	bucketClient.On("SupportedIterOptions").Return([]objstore.IterOptionType{objstore.Recursive, objstore.UpdatedAt})
 	bucketClient.MockIter("", []string{"user-1"}, nil)
 	bucketClient.MockIter("user-1/", []string{"user-1/01DTVP434PA9VFXSW2JKB3392D", "user-1/01DTW0ZCPDDNV4BV83Q2SV4QAZ"}, nil)
 	bucketClient.MockExists(path.Join("user-1", mimir_tsdb.TenantDeletionMarkPath), false, nil)
@@ -859,6 +867,7 @@ func TestMultitenantCompactor_ShouldNotCompactBlocksMarkedForNoCompaction(t *tes
 
 	// Mock the bucket to contain one user with a block marked for no-compaction.
 	bucketClient := &bucket.ClientMock{}
+	bucketClient.On("SupportedIterOptions").Return([]objstore.IterOptionType{objstore.Recursive, objstore.UpdatedAt})
 	bucketClient.MockIter("", []string{"user-1"}, nil)
 	bucketClient.MockIter("user-1/", []string{"user-1/01DTVP434PA9VFXSW2JKB3392D"}, nil)
 	bucketClient.MockExists(path.Join("user-1", mimir_tsdb.TenantDeletionMarkPath), false, nil)
@@ -913,6 +922,7 @@ func TestMultitenantCompactor_ShouldNotCompactBlocksForUsersMarkedForDeletion(t 
 
 	// Mock the bucket to contain two users, each one with one block.
 	bucketClient := &bucket.ClientMock{}
+	bucketClient.On("SupportedIterOptions").Return([]objstore.IterOptionType{objstore.Recursive, objstore.UpdatedAt})
 	bucketClient.MockIter("", []string{"user-1"}, nil)
 	bucketClient.MockIter("user-1/", []string{"user-1/01DTVP434PA9VFXSW2JKB3392D"}, nil)
 	bucketClient.MockGet("user-1/bucket-index.json.gz", "", nil)
@@ -1016,6 +1026,7 @@ func TestMultitenantCompactor_ShouldCompactAllUsersOnShardingEnabledButOnlyOneIn
 
 	// Mock the bucket to contain two users, each one with one block.
 	bucketClient := &bucket.ClientMock{}
+	bucketClient.On("SupportedIterOptions").Return([]objstore.IterOptionType{objstore.Recursive, objstore.UpdatedAt})
 	bucketClient.MockIter("", []string{"user-1", "user-2"}, nil)
 	bucketClient.MockExists(path.Join("user-1", mimir_tsdb.TenantDeletionMarkPath), false, nil)
 	bucketClient.MockExists(path.Join("user-2", mimir_tsdb.TenantDeletionMarkPath), false, nil)
@@ -1153,6 +1164,7 @@ func TestMultitenantCompactor_ShouldCompactOnlyUsersOwnedByTheInstanceOnSharding
 
 	// Mock the bucket to contain all users, each one with one block.
 	bucketClient := &bucket.ClientMock{}
+	bucketClient.On("SupportedIterOptions").Return([]objstore.IterOptionType{objstore.Recursive, objstore.UpdatedAt})
 	bucketClient.MockIter("", userIDs, nil)
 	for _, userID := range userIDs {
 		bucketClient.MockIter(userID+"/", []string{userID + "/01DTVP434PA9VFXSW2JKB3392D"}, nil)
@@ -1324,6 +1336,7 @@ func TestMultitenantCompactor_ShouldSkipCompactionForJobsNoMoreOwnedAfterPlannin
 	// Mock the bucket to contain one user with two non-overlapping blocks (we expect two compaction jobs to be scheduled
 	// for the splitting stage).
 	bucketClient := &bucket.ClientMock{}
+	bucketClient.On("SupportedIterOptions").Return([]objstore.IterOptionType{objstore.Recursive, objstore.UpdatedAt})
 	bucketClient.MockIter("", []string{"user-1"}, nil)
 	bucketClient.MockExists(path.Join("user-1", mimir_tsdb.TenantDeletionMarkPath), false, nil)
 	bucketClient.MockIter("user-1/", []string{"user-1/01DTVP434PA9VFXSW2JK000001", "user-1/01DTVP434PA9VFXSW2JK000002"}, nil)
@@ -1456,7 +1469,7 @@ func TestMultitenantCompactor_ShouldSkipCompactionForJobsWithFirstLevelCompactio
 
 	// Mock two tenants, each with 2 overlapping blocks.
 	spec := []*block.SeriesSpec{{
-		Labels: labels.FromStrings(labels.MetricName, "series_1"),
+		Labels: labels.FromStrings(model.MetricNameLabel, "series_1"),
 		Chunks: []chunks.Meta{must(chunks.ChunkFromSamples([]chunks.Sample{
 			testutil.Sample{TS: 1574776800000, Val: 0},
 			testutil.Sample{TS: 1574783999999, Val: 0},
@@ -1757,6 +1770,8 @@ func prepareConfig(t *testing.T) Config {
 	// The new default is 25m, but tests rely on the previous value of 0s
 	compactorCfg.CompactionWaitPeriod = 0
 
+	compactorCfg.SparseIndexHeadersSamplingRate = 32
+
 	return compactorCfg
 }
 
@@ -2015,6 +2030,7 @@ func TestMultitenantCompactor_ShouldFailCompactionOnTimeout(t *testing.T) {
 
 	// Mock the bucket
 	bucketClient := &bucket.ClientMock{}
+	bucketClient.On("SupportedIterOptions").Return([]objstore.IterOptionType{objstore.Recursive, objstore.UpdatedAt})
 	bucketClient.MockIter("", []string{}, nil)
 
 	ringStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
@@ -2235,7 +2251,8 @@ func TestMultitenantCompactor_OutOfOrderCompaction(t *testing.T) {
 		meta, err := block.ReadMetaFromDir(blockDir)
 		require.NoErrorf(t, err, "reading meta from block at &s", blockDir)
 
-		require.NoError(t, block.Upload(ctx, log.NewNopLogger(), userBkt, filepath.Join(fixtureDir, blockID.String()), meta))
+		_, err = block.Upload(ctx, log.NewNopLogger(), userBkt, filepath.Join(fixtureDir, blockID.String()), meta)
+		require.NoError(t, err)
 
 		metas = append(metas, meta)
 	}

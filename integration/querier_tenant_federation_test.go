@@ -8,6 +8,7 @@ package integration
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -25,18 +26,12 @@ import (
 )
 
 type querierTenantFederationConfig struct {
-	querySchedulerEnabled  bool
 	shuffleShardingEnabled bool
+	remoteExecutionEnabled bool
 }
 
 func TestQuerierTenantFederation(t *testing.T) {
 	runQuerierTenantFederationTest(t, querierTenantFederationConfig{})
-}
-
-func TestQuerierTenantFederationWithQueryScheduler(t *testing.T) {
-	runQuerierTenantFederationTest(t, querierTenantFederationConfig{
-		querySchedulerEnabled: true,
-	})
 }
 
 func TestQuerierTenantFederationWithShuffleSharding(t *testing.T) {
@@ -45,10 +40,9 @@ func TestQuerierTenantFederationWithShuffleSharding(t *testing.T) {
 	})
 }
 
-func TestQuerierTenantFederationWithQuerySchedulerAndShuffleSharding(t *testing.T) {
+func TestQuerierTenantFederationWithRemoteExecution(t *testing.T) {
 	runQuerierTenantFederationTest(t, querierTenantFederationConfig{
-		querySchedulerEnabled:  true,
-		shuffleShardingEnabled: true,
+		remoteExecutionEnabled: true,
 	})
 }
 
@@ -67,23 +61,19 @@ func runQuerierTenantFederationTest(t *testing.T, cfg querierTenantFederationCon
 		"-query-frontend.cache-results":                     "true",
 		"-query-frontend.results-cache.backend":             "memcached",
 		"-query-frontend.results-cache.memcached.addresses": "dns+" + memcached.NetworkEndpoint(e2ecache.MemcachedPort),
+		"-query-frontend.enable-remote-execution":           strconv.FormatBool(cfg.remoteExecutionEnabled),
 		"-tenant-federation.enabled":                        "true",
 		"-ingester.max-global-exemplars-per-user":           "10000",
 	})
 
-	// Start the query-scheduler if enabled.
-	var queryScheduler *e2emimir.MimirService
-	if cfg.querySchedulerEnabled {
-		queryScheduler = e2emimir.NewQueryScheduler("query-scheduler", flags)
-		require.NoError(t, s.StartAndWaitReady(queryScheduler))
-		flags["-query-frontend.scheduler-address"] = queryScheduler.NetworkGRPCEndpoint()
-		flags["-querier.scheduler-address"] = queryScheduler.NetworkGRPCEndpoint()
-	}
+	// Start the query-scheduler.
+	queryScheduler := e2emimir.NewQueryScheduler("query-scheduler", flags)
+	require.NoError(t, s.StartAndWaitReady(queryScheduler))
+	flags["-query-frontend.scheduler-address"] = queryScheduler.NetworkGRPCEndpoint()
+	flags["-querier.scheduler-address"] = queryScheduler.NetworkGRPCEndpoint()
 
-	if cfg.shuffleShardingEnabled {
-		// Use only single querier for each user.
-		flags["-query-frontend.max-queriers-per-tenant"] = "1"
-	}
+	// Use only single querier for each user.
+	flags["-query-frontend.max-queriers-per-tenant"] = "1"
 
 	minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
 	require.NoError(t, s.StartAndWaitReady(minio))
@@ -92,18 +82,16 @@ func runQuerierTenantFederationTest(t *testing.T, cfg querierTenantFederationCon
 	queryFrontend := e2emimir.NewQueryFrontend("query-frontend", consul.NetworkHTTPEndpoint(), flags)
 	require.NoError(t, s.Start(queryFrontend))
 
-	if !cfg.querySchedulerEnabled {
-		flags["-querier.frontend-address"] = queryFrontend.NetworkGRPCEndpoint()
-	}
-
 	// Start all other services.
 	ingester := e2emimir.NewIngester("ingester", consul.NetworkHTTPEndpoint(), flags)
 	distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags)
 	querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), flags)
 
+	querierCount := 1
 	var querier2 *e2emimir.MimirService
 	if cfg.shuffleShardingEnabled {
 		querier2 = e2emimir.NewQuerier("querier-2", consul.NetworkHTTPEndpoint(), flags)
+		querierCount = 2
 	}
 
 	require.NoError(t, s.StartAndWaitReady(querier, ingester, distributor))
@@ -116,6 +104,7 @@ func runQuerierTenantFederationTest(t *testing.T, cfg querierTenantFederationCon
 	// The distributor should have 512 tokens for the ingester ring and 1 for the distributor ring
 	require.NoError(t, distributor.WaitSumMetrics(e2e.Equals(512+1), "cortex_ring_tokens_total"))
 	require.NoError(t, querier.WaitSumMetrics(e2e.Equals(512), "cortex_ring_tokens_total"))
+	require.NoError(t, queryFrontend.WaitSumMetrics(e2e.Equals(float64(querierCount)), "cortex_ring_tokens_total"), "query-frontend should have 1 token per querier for the querier ring")
 	if cfg.shuffleShardingEnabled {
 		require.NoError(t, querier2.WaitSumMetrics(e2e.Equals(512), "cortex_ring_tokens_total"))
 	}
@@ -172,14 +161,8 @@ func runQuerierTenantFederationTest(t *testing.T, cfg querierTenantFederationCon
 		labels.MustNewMatcher(labels.MatchEqual, "user", strings.Join(tenantIDs, "|")),
 		labels.MustNewMatcher(labels.MatchEqual, "op", "other"))))
 
-	// check metric label values for query queue length in either query frontend or query scheduler
-	queueComponent := queryFrontend
-	queueMetricName := "cortex_query_frontend_queue_length"
-	if cfg.querySchedulerEnabled {
-		queueComponent = queryScheduler
-		queueMetricName = "cortex_query_scheduler_queue_length"
-	}
-	require.NoError(t, queueComponent.WaitSumMetricsWithOptions(e2e.Equals(0), []string{queueMetricName}, e2e.WithLabelMatchers(
+	// check metric label values for query queue length in the query scheduler
+	require.NoError(t, queryScheduler.WaitSumMetricsWithOptions(e2e.Equals(0), []string{"cortex_query_scheduler_queue_length"}, e2e.WithLabelMatchers(
 		labels.MustNewMatcher(labels.MatchEqual, "user", strings.Join(tenantIDs, "|")))))
 
 	// TODO: check cache invalidation on tombstone cache gen increase

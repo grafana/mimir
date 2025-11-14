@@ -5,7 +5,7 @@
       rules: [
         {
           // Alert if the compactor has not successfully cleaned up blocks in the last 6h.
-          alert: $.alertName('CompactorHasNotSuccessfullyCleanedUpBlocks'),
+          alert: $.alertName('CompactorNotCleaningUpBlocks'),
           'for': '1h',
           expr: |||
             # The "last successful run" metric is updated even if the compactor owns no tenants,
@@ -21,7 +21,7 @@
         },
         {
           // Alert if the compactor has not successfully run compaction in the last 24h.
-          alert: $.alertName('CompactorHasNotSuccessfullyRunCompaction'),
+          alert: $.alertName('CompactorNotRunningCompaction'),
           'for': '1h',
           expr: |||
             # The "last successful run" metric is updated even if the compactor owns no tenants,
@@ -40,7 +40,7 @@
         },
         {
           // Alert if the compactor has not successfully run compaction in the last 24h since startup.
-          alert: $.alertName('CompactorHasNotSuccessfullyRunCompaction'),
+          alert: $.alertName('CompactorNotRunningCompaction'),
           'for': '24h',
           expr: |||
             # The "last successful run" metric is updated even if the compactor owns no tenants,
@@ -57,7 +57,7 @@
         },
         {
           // Alert if compactor failed to run 2 consecutive compactions excluding shutdowns.
-          alert: $.alertName('CompactorHasNotSuccessfullyRunCompaction'),
+          alert: $.alertName('CompactorNotRunningCompaction'),
           expr: |||
             increase(cortex_compactor_runs_failed_total{reason!="shutdown"}[2h]) >= 2
           |||,
@@ -93,8 +93,7 @@
             and
             (max by(%(alert_aggregation_labels)s, %(per_instance_label)s) (thanos_objstore_bucket_last_successful_upload_time{component="compactor"}) > 0)
             and
-            # Only if some compactions have started. We don't want to fire this alert if the compactor has nothing to do
-            # (e.g. there are more replicas than required because running as part of mimir-backend).
+            # Only if some compactions have started. We don't want to fire this alert if the compactor has nothing to do.
             (sum by(%(alert_aggregation_labels)s, %(per_instance_label)s) (rate(cortex_compactor_group_compaction_runs_started_total[24h])) > 0)
           ||| % $._config,
           labels: {
@@ -112,8 +111,7 @@
           expr: |||
             (max by(%(alert_aggregation_labels)s, %(per_instance_label)s) (thanos_objstore_bucket_last_successful_upload_time{component="compactor"}) == 0)
             and
-            # Only if some compactions have started. We don't want to fire this alert if the compactor has nothing to do
-            # (e.g. there are more replicas than required because running as part of mimir-backend).
+            # Only if some compactions have started. We don't want to fire this alert if the compactor has nothing to do.
             (sum by(%(alert_aggregation_labels)s, %(per_instance_label)s) (rate(cortex_compactor_group_compaction_runs_started_total[24h])) > 0)
           ||| % $._config,
           labels: {
@@ -155,7 +153,7 @@
         },
         // Alert if compactor has failed to build sparse-index headers.
         {
-          alert: $.alertName('CompactorFailingToBuildSparseIndexHeaders'),
+          alert: $.alertName('CompactorBuildingSparseIndexFailed'),
           'for': '30m',
           expr: |||
             (sum by(%(alert_aggregation_labels)s, %(per_instance_label)s) (increase(cortex_compactor_build_sparse_headers_failures_total[%(range_interval)s])) > 0)

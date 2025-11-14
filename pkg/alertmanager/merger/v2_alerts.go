@@ -7,10 +7,11 @@ package merger
 
 import (
 	"errors"
-	"sort"
+	"slices"
+	"strings"
 	"time"
 
-	"github.com/go-openapi/swag"
+	"github.com/go-openapi/swag/jsonutils"
 	v2_models "github.com/prometheus/alertmanager/api/v2/models"
 )
 
@@ -23,7 +24,7 @@ func (V2Alerts) MergeResponses(in [][]byte) ([]byte, error) {
 	alerts := make(v2_models.GettableAlerts, 0)
 	for _, body := range in {
 		parsed := make(v2_models.GettableAlerts, 0)
-		if err := swag.ReadJSON(body, &parsed); err != nil {
+		if err := jsonutils.ReadJSON(body, &parsed); err != nil {
 			return nil, err
 		}
 		alerts = append(alerts, parsed...)
@@ -34,7 +35,7 @@ func (V2Alerts) MergeResponses(in [][]byte) ([]byte, error) {
 		return nil, err
 	}
 
-	return swag.WriteJSON(merged)
+	return jsonutils.WriteJSON(merged)
 }
 
 func mergeV2Alerts(in v2_models.GettableAlerts) (v2_models.GettableAlerts, error) {
@@ -64,8 +65,8 @@ func mergeV2Alerts(in v2_models.GettableAlerts) (v2_models.GettableAlerts, error
 	}
 
 	// Mimic Alertmanager which returns alerts ordered by fingerprint (as string).
-	sort.Slice(result, func(i, j int) bool {
-		return *result[i].Fingerprint < *result[j].Fingerprint
+	slices.SortFunc(result, func(a, b *v2_models.GettableAlert) int {
+		return strings.Compare(*a.Fingerprint, *b.Fingerprint)
 	})
 
 	return result, nil

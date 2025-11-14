@@ -7,6 +7,7 @@ package alertmanager
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -17,7 +18,6 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/tenant"
-	"github.com/pkg/errors"
 	"github.com/prometheus/alertmanager/config"
 	"github.com/prometheus/alertmanager/template"
 	commoncfg "github.com/prometheus/common/config"
@@ -296,7 +296,7 @@ func (am *MultitenantAlertmanager) ListAllConfigs(w http.ResponseWriter, r *http
 		if errors.Is(err, alertspb.ErrNotFound) {
 			return nil
 		} else if err != nil {
-			return errors.Wrapf(err, "failed to fetch alertmanager config for user %s", userID)
+			return fmt.Errorf("failed to fetch alertmanager config for user %s: %w", userID, err)
 		}
 		data := map[string]*UserConfig{
 			userID: {
@@ -393,6 +393,11 @@ func validateAlertmanagerConfig(cfg interface{}) error {
 
 	case reflect.TypeOf(config.MSTeamsConfig{}):
 		if err := validateMSTeamsConfig(v.Interface().(config.MSTeamsConfig)); err != nil {
+			return err
+		}
+
+	case reflect.TypeOf(config.MSTeamsV2Config{}):
+		if err := validateMSTeamsV2Config(v.Interface().(config.MSTeamsV2Config)); err != nil {
 			return err
 		}
 
@@ -580,6 +585,15 @@ func validatePushoverConfig(cfg config.PushoverConfig) error {
 // validateMSTeamsConfig validates the Microsoft Teams config and returns an error if it
 // contains settings not allowed by Mimir.
 func validateMSTeamsConfig(cfg config.MSTeamsConfig) error {
+	if cfg.WebhookURLFile != "" {
+		return errWebhookURLFileNotAllowed
+	}
+	return nil
+}
+
+// validateMSTeamsV2Config validates the Microsoft Teams config and returns an error if it
+// contains settings not allowed by Mimir.
+func validateMSTeamsV2Config(cfg config.MSTeamsV2Config) error {
 	if cfg.WebhookURLFile != "" {
 		return errWebhookURLFileNotAllowed
 	}

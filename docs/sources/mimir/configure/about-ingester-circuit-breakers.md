@@ -4,6 +4,7 @@ aliases:
 description: Learn about ingester circuit breakers.
 menuTitle: Ingester circuit breakers
 title: About Grafana Mimir ingester circuit breakers
+weight: 180
 ---
 
 # About Grafana Mimir ingester circuit breakers
@@ -44,6 +45,10 @@ It is possible to configure the maximum allowed duration of both push and read r
 ### Push requests circuit breakers
 
 A push request meets the push requests circuit breaker failure condition if its duration is longer than the configured maximum push request duration.
+
+{{% admonition type="note" %}}
+Push requests circuit breakers aren't available in ingest storage architecture. Refer to [Grafana Mimir architecture](https://grafana.com/docs/mimir/<MIMIR_VERSION>/get-started/about-grafana-mimir-architecture/).
+{{% /admonition %}}
 
 ### Read requests circuit breakers
 

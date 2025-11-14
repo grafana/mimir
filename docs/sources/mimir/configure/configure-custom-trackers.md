@@ -6,7 +6,7 @@ aliases:
 description: Use the custom tracker to count the number of active series on an ingester.
 menuTitle: Custom active series trackers
 title: Configure custom active series trackers
-weight: 100
+weight: 200
 ---
 
 # Configure custom active series trackers

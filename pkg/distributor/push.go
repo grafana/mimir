@@ -86,7 +86,7 @@ func (cfg *RetryConfig) Validate() error {
 // Handler is a http.Handler which accepts WriteRequests.
 func Handler(
 	maxRecvMsgSize int,
-	requestBufferPool util.Pool,
+	newRequestBuffers func() *util.RequestBuffers,
 	sourceIPs *middleware.SourceIPExtractor,
 	allowSkipLabelNameValidation bool,
 	allowSkipLabelCountValidation bool,
@@ -96,10 +96,10 @@ func Handler(
 	pushMetrics *PushMetrics,
 	logger log.Logger,
 ) http.Handler {
-	return handler(maxRecvMsgSize, requestBufferPool, sourceIPs, allowSkipLabelNameValidation, allowSkipLabelCountValidation, limits, retryCfg, push, logger, func(ctx context.Context, r *http.Request, maxRecvMsgSize int, buffers *util.RequestBuffers, req *mimirpb.PreallocWriteRequest, _ log.Logger) error {
+	return handler(maxRecvMsgSize, newRequestBuffers, sourceIPs, allowSkipLabelNameValidation, allowSkipLabelCountValidation, limits, retryCfg, push, logger, func(ctx context.Context, r *http.Request, maxRecvMsgSize int, buffers *util.RequestBuffers, req *mimirpb.PreallocWriteRequest, _ log.Logger) error {
 		protoBodySize, err := util.ParseProtoReader(ctx, r.Body, int(r.ContentLength), maxRecvMsgSize, buffers, req, util.RawSnappy)
-		if errors.Is(err, util.MsgSizeTooLargeErr{}) {
-			err = distributorMaxWriteMessageSizeErr{actual: int(r.ContentLength), limit: maxRecvMsgSize}
+		if e := (util.MsgSizeTooLargeErr{}); errors.As(err, &e) {
+			err = distributorMaxWriteMessageSizeErr{compressed: e.Compressed, actual: e.Actual, limit: e.Limit}
 		}
 		if err != nil {
 			return err
@@ -108,39 +108,43 @@ func Handler(
 		if err != nil {
 			return err
 		}
-		pushMetrics.ObserveUncompressedBodySize(tenantID, float64(protoBodySize))
+		pushMetrics.ObserveUncompressedBodySize(tenantID, "push", float64(protoBodySize))
 
 		return nil
 	})
 }
 
 type distributorMaxWriteMessageSizeErr struct {
-	actual, limit int
+	compressed, actual, limit int
 }
 
 func (e distributorMaxWriteMessageSizeErr) Error() string {
-	msgSizeDesc := fmt.Sprintf(" of %d bytes", e.actual)
-	if e.actual < 0 {
-		msgSizeDesc = ""
+	msgSizeDesc := ""
+	if e.actual > 0 {
+		msgSizeDesc = fmt.Sprintf(" of %d bytes (uncompressed)", e.actual)
+	} else if e.compressed > 0 {
+		msgSizeDesc = fmt.Sprintf(" of %d bytes (compressed)", e.compressed)
 	}
 	return globalerror.DistributorMaxWriteMessageSize.MessageWithPerInstanceLimitConfig(fmt.Sprintf("the incoming push request has been rejected because its message size%s is larger than the allowed limit of %d bytes", msgSizeDesc, e.limit), "distributor.max-recv-msg-size")
 }
 
 type distributorMaxOTLPRequestSizeErr struct {
-	actual, limit int
+	compressed, actual, limit int
 }
 
 func (e distributorMaxOTLPRequestSizeErr) Error() string {
-	msgSizeDesc := fmt.Sprintf(" of %d bytes", e.actual)
-	if e.actual < 0 {
-		msgSizeDesc = ""
+	msgSizeDesc := ""
+	if e.actual > 0 {
+		msgSizeDesc = fmt.Sprintf(" of %d bytes (uncompressed)", e.actual)
+	} else if e.compressed > 0 {
+		msgSizeDesc = fmt.Sprintf(" of %d bytes (compressed)", e.compressed)
 	}
 	return globalerror.DistributorMaxOTLPRequestSize.MessageWithPerInstanceLimitConfig(fmt.Sprintf("the incoming OTLP request has been rejected because its message size%s is larger than the allowed limit of %d bytes", msgSizeDesc, e.limit), maxOTLPRequestSizeFlag)
 }
 
 func handler(
 	maxRecvMsgSize int,
-	requestBufferPool util.Pool,
+	newRequestBuffers func() *util.RequestBuffers,
 	sourceIPs *middleware.SourceIPExtractor,
 	allowSkipLabelNameValidation bool,
 	allowSkipLabelCountValidation bool,
@@ -165,7 +169,12 @@ func handler(
 			http.Error(w, err.Error(), http.StatusBadRequest)
 		}
 		supplier := func() (*mimirpb.WriteRequest, func(), error) {
-			rb := util.NewRequestBuffers(requestBufferPool)
+			var rb *util.RequestBuffers
+			if newRequestBuffers != nil {
+				rb = newRequestBuffers()
+			} else {
+				rb = util.NewRequestBuffers(nil)
+			}
 			var req mimirpb.PreallocWriteRequest
 
 			req.UnmarshalFromRW2 = isRW2
@@ -211,6 +220,7 @@ func handler(
 			return &req.WriteRequest, cleanup, nil
 		}
 		req := newRequest(supplier)
+		req.contentLength = r.ContentLength
 		if isRW2 {
 			ctx = contextWithWriteResponseStats(ctx)
 		}
@@ -238,7 +248,7 @@ func handler(
 				// These errors are created by using the httpgrpc package.
 				code, msg = int(resp.Code), string(resp.Body)
 			} else {
-				code = toHTTPStatus(ctx, err, limits)
+				code = toHTTPStatus(err)
 				msg = err.Error()
 			}
 			if code != 202 {
@@ -355,19 +365,14 @@ func calculateRetryAfter(retryAttemptHeader string, minBackoff, maxBackoff time.
 // toHTTPStatus converts the given error into an appropriate HTTP status corresponding
 // to that error, if the error is one of the errors from this package. Otherwise, an
 // http.StatusInternalServerError is returned.
-func toHTTPStatus(ctx context.Context, pushErr error, limits *validation.Overrides) int {
+func toHTTPStatus(pushErr error) int {
 	if errors.Is(pushErr, context.DeadlineExceeded) {
 		return http.StatusInternalServerError
 	}
 
 	var distributorErr Error
 	if errors.As(pushErr, &distributorErr) {
-		serviceOverloadErrorEnabled := false
-		userID, err := tenant.TenantID(ctx)
-		if err == nil {
-			serviceOverloadErrorEnabled = limits.ServiceOverloadStatusCodeOnRateLimitEnabled(userID)
-		}
-		return errorCauseToHTTPStatusCode(distributorErr.Cause(), serviceOverloadErrorEnabled)
+		return errorCauseToHTTPStatusCode(distributorErr.Cause())
 	}
 
 	return http.StatusInternalServerError

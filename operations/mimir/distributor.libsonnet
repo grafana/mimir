@@ -4,6 +4,10 @@
   local deployment = $.apps.v1.deployment,
   local service = $.core.v1.service,
 
+  _config+: {
+    distributor_gomemlimit_enabled: false,
+  },
+
   // When write requests go through distributors via gRPC, we want gRPC clients to re-resolve the distributors DNS
   // endpoint before the distributor process is terminated, in order to avoid any failures during graceful shutdown.
   // To achieve it, we set a shutdown delay greater than the gRPC max connection age, and we set an even higher
@@ -24,8 +28,8 @@
 
       'distributor.ha-tracker.enable': true,
       'distributor.ha-tracker.enable-for-all-users': true,
-      'distributor.ha-tracker.store': 'etcd',
-      'distributor.ha-tracker.etcd.endpoints': 'etcd-client.%(namespace)s.svc.%(cluster_domain)s:2379' % $._config,
+      // Memberlist is the default and recommended KV store for HA tracker. Etcd and Consul are deprecated for this purpose.
+      'distributor.ha-tracker.store': 'memberlist',
       'distributor.ha-tracker.prefix': 'prom_ha/',
 
       // The memory requests are 2G, and we barely use 100M.
@@ -49,6 +53,10 @@
       // Issue: https://github.com/grafana/mimir-squad/issues/454
       'shutdown-delay': shutdown_delay_seconds + 's',
       'server.grpc.keepalive.max-connection-age': grpc_max_connection_age_seconds + 's',
+
+      // In cases where the latency is high, and a large number of tenants are writing,
+      // the 100 default limit can be hit.
+      'server.grpc-max-concurrent-streams': 1000,
     } + $.mimirRuntimeConfigFile,
 
   distributor_ports:: $.util.defaultPorts,
@@ -59,11 +67,14 @@
       std.ceil(
         std.max(
           8,  // Always run on at least 8 gothreads, so that at least 2 of them (25%) are dedicated to GC.
-          $.util.parseCPU($.distributor_container.resources.requests.cpu) * 2
+          $.util.parseCPU($.distributor_container.resources.requests.cpu) + 2
         ),
       )
     ),
-  },
+  } + if $._config.distributor_gomemlimit_enabled then {
+    // Dynamically set GOMEMLIMIT based on memory request.
+    GOMEMLIMIT: std.toString(std.floor($.util.siToBytes($.distributor_container.resources.requests.memory))),
+  } else {},
 
   distributor_node_affinity_matchers:: [],
 
@@ -90,13 +101,13 @@
     deployment.mixin.spec.strategy.rollingUpdate.withMaxUnavailable(0) +
     deployment.mixin.spec.template.spec.withTerminationGracePeriodSeconds(termination_grace_period_seconds),
 
-  distributor_deployment: if !$._config.is_microservices_deployment_mode then null else
+  distributor_deployment:
     $.newDistributorDeployment('distributor', $.distributor_container, $.distributor_node_affinity_matchers),
 
-  distributor_service: if !$._config.is_microservices_deployment_mode then null else
+  distributor_service:
     $.util.serviceFor($.distributor_deployment, $._config.service_ignored_labels) +
     service.mixin.spec.withClusterIp('None'),
 
-  distributor_pdb: if !$._config.is_microservices_deployment_mode then null else
+  distributor_pdb:
     $.newMimirPdb('distributor'),
 }

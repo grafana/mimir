@@ -31,41 +31,22 @@ func TestConfig_Validate(t *testing.T) {
 		"should pass with default config": {
 			setup: func(*Config) {},
 		},
-		"should pass if frontend address is configured, but not scheduler address": {
-			setup: func(cfg *Config) {
-				cfg.FrontendAddress = "localhost:9095"
-			},
-		},
-		"should pass if scheduler address is configured, but not frontend address": {
+		"should pass if query-scheduler address is configured": {
 			setup: func(cfg *Config) {
 				cfg.SchedulerAddress = "localhost:9095"
 			},
 		},
-		"should fail if both scheduler and frontend address are configured": {
-			setup: func(cfg *Config) {
-				cfg.FrontendAddress = "localhost:9095"
-				cfg.SchedulerAddress = "localhost:9095"
-			},
-			expectedErr: "frontend address and scheduler address are mutually exclusive",
-		},
-		"should pass if query-scheduler service discovery is set to ring, and no frontend and scheduler address is configured": {
+		"should pass if query-scheduler service discovery is set to ring": {
 			setup: func(cfg *Config) {
 				cfg.QuerySchedulerDiscovery.Mode = schedulerdiscovery.ModeRing
 			},
-		},
-		"should fail if query-scheduler service discovery is set to ring, and frontend address is configured": {
-			setup: func(cfg *Config) {
-				cfg.QuerySchedulerDiscovery.Mode = schedulerdiscovery.ModeRing
-				cfg.FrontendAddress = "localhost:9095"
-			},
-			expectedErr: `frontend address and scheduler address cannot be specified when query-scheduler service discovery mode is set to 'ring'`,
 		},
 		"should fail if query-scheduler service discovery is set to ring, and scheduler address is configured": {
 			setup: func(cfg *Config) {
 				cfg.QuerySchedulerDiscovery.Mode = schedulerdiscovery.ModeRing
 				cfg.SchedulerAddress = "localhost:9095"
 			},
-			expectedErr: `frontend address and scheduler address cannot be specified when query-scheduler service discovery mode is set to 'ring'`,
+			expectedErr: `scheduler address cannot be specified when query-scheduler service discovery mode is set to 'ring'`,
 		},
 	}
 
@@ -86,7 +67,7 @@ func TestConfig_Validate(t *testing.T) {
 	}
 }
 
-func TestConfig_IsFrontendOrSchedulerConfigured(t *testing.T) {
+func TestConfig_IsSchedulerConfigured(t *testing.T) {
 	tests := []struct {
 		cfg      Config
 		expected bool
@@ -94,9 +75,6 @@ func TestConfig_IsFrontendOrSchedulerConfigured(t *testing.T) {
 		{
 			cfg:      Config{},
 			expected: false,
-		}, {
-			cfg:      Config{FrontendAddress: "localhost:9095"},
-			expected: true,
 		}, {
 			cfg:      Config{SchedulerAddress: "localhost:9095"},
 			expected: true,
@@ -111,7 +89,7 @@ func TestConfig_IsFrontendOrSchedulerConfigured(t *testing.T) {
 
 	for idx, tc := range tests {
 		t.Run(fmt.Sprintf("Test: %d", idx), func(t *testing.T) {
-			assert.Equal(t, tc.expected, tc.cfg.IsFrontendOrSchedulerConfigured())
+			assert.Equal(t, tc.expected, tc.cfg.IsSchedulerConfigured())
 		})
 	}
 }

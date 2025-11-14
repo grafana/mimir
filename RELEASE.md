@@ -26,7 +26,8 @@ The following table contains past releases and tentative dates for upcoming rele
 | 2.14.0  | 2024-10-07 | Vladimir Varankin  |
 | 2.15.0  | 2025-01-06 | Casie Chen         |
 | 2.16.0  | 2025-03-17 | Nick Pillitteri    |
-| 2.17.0  | 2025-06-09 | _To be announced_  |
+| 2.17.0  | 2025-07-07 | Jeanette Tan       |
+| 3.0.0   | 2025-10-20 | Dimitar Dimitrov   |
 
 ## Release shepherd responsibilities
 
@@ -108,8 +109,6 @@ If something is not clear, you can get back to this document to learn more about
     This prepares a PR into `main` branch. On approval, **use** the `merge-approved-pr-branch-to-main.sh` script, following the [instruction](https://github.com/grafana/mimir/blob/main/RELEASE.md#merging-release-branch-into-main) on how to merge the PR with "Merge commit" (i.e. we DO NOT "Squash and merge" this one).
   - [ ] Publish the Github pre-release draft after getting review from at least one maintainer
   - [ ] Announce the release candidate on social media such as on Mimir community slack using your own Twitter, Mastodon or LinkedIn account
-- [ ] Vendor the release commit of Mimir into Grafana Enterprise Metrics (GEM)
-  - _This is addressed by Grafana Labs_
 - [ ] Publish a `mimir-distributed` Helm chart release candidate. Follow the instructions in [Release process for a release candidate](https://github.com/grafana/mimir/blob/main/operations/helm/charts/mimir-distributed/RELEASE.md#release-process-for-a-release-candidate)
 - [ ] Promote experimental features to stable and remove deprecated features for the **next** release:
   - [ ] Open a PR into `main` branch for every experimental feature we want to promote to stable
@@ -149,11 +148,12 @@ If something is not clear, you can get back to this document to learn more about
   - [ ] Announce the release on socials
   - [ ] Open a PR to add the new version to the backward compatibility integration test (`integration/backward_compatibility.go`)
     - Keep the last 3 minor releases
+  - [ ] Ensure the workflow to sync linux packages (RPM, deb) runs successfully within the next N hours or trigger it manually
   - [ ] Open a PR to update the mixin in ["Self-hosted Grafana Mimir" integration](https://grafana.com/docs/grafana-cloud/monitor-infrastructure/integrations/integration-reference/integration-mimir/)
     - _This is addressed by Grafana Labs_
   - [ ] [Publish dashboards to grafana.com](https://github.com/grafana/mimir/blob/main/RELEASE.md#publish-a-stable-release)
     - _This is addressed by Grafana Labs_
-  - [ ] After publishing a GEM release publish the `mimir-distributed` Helm chart. Follow the instructions in [Release process for a final release](https://github.com/grafana/mimir/blob/main/operations/helm/charts/mimir-distributed/RELEASE.md#release-process-for-a-final-release)
+  - [ ] Publish the `mimir-distributed` Helm chart. Follow the instructions in [Release process for a final release](https://github.com/grafana/mimir/blob/main/operations/helm/charts/mimir-distributed/RELEASE.md#release-process-for-a-final-release)
 ````
 
 ### Branch management and versioning strategy
@@ -296,6 +296,7 @@ To publish a stable release:
 1. Check the `README.md` file for any broken links.
 1. Open a PR to **add** the new version to the backward compatibility integration test (`integration/backward_compatibility_test.go`)
    - Keep the last 3 minor releases
+1. Ensure that the daily workflow to sync linux packages in our internal deployment repository runs successfully later that day or trigger it manually so that the delay does not break renovate automation for our users.
 1. Publish dashboards (done by a Grafana Labs member)
    1. Login to [https://grafana.com](https://grafana.com) with your Grafana Labs account
       1. Make sure your user in the Grafana Labs organization members list has Admin access.

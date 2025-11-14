@@ -124,7 +124,7 @@ func TestHistogramFunction_ReturnsGroupsFinishedFirstEarliest(t *testing.T) {
 				memoryConsumptionTracker: memoryConsumptionTracker,
 			}
 
-			outputSeries, err := hOp.SeriesMetadata(ctx)
+			outputSeries, err := hOp.SeriesMetadata(ctx, nil)
 			require.NoError(t, err)
 
 			require.Equal(t, testutils.LabelsToSeriesMetadata(testCase.expectedOutputSeriesOrder), outputSeries)

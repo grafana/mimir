@@ -7,14 +7,7 @@ import (
 	"net/http"
 
 	"github.com/grafana/dskit/cancellation"
-	"github.com/prometheus/common/model"
 )
-
-func init() {
-	// Mimir doesn't support Prometheus' UTF-8 metric/label name scheme yet.
-	// nolint:staticcheck
-	model.NameValidationScheme = model.LegacyValidation
-}
 
 const requestValidationFailedFmt = "request validation failed for "
 

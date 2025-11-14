@@ -60,13 +60,20 @@ blocks_storage:
     ignore_blocks_within: 2m
 
     index_cache:
-      # Cache is configured via CLI flags. See docker-compose.jsonnet
+      backend: memcached
+      memcached:
+        addresses: dns+memcached:11211
 
     chunks_cache:
-      # Cache is configured via CLI flags. See docker-compose.jsonnet
+      backend: memcached
+      memcached:
+        addresses: dns+memcached:11211
 
     metadata_cache:
-      # Cache is configured via CLI flags. See docker-compose.jsonnet
+      backend: memcached
+      memcached:
+        addresses: dns+memcached:11211
+      bucket_index_content_ttl: 10s
 
   s3:
     endpoint:          minio:9000
@@ -88,7 +95,9 @@ ruler_storage:
   backend: s3
 
   cache:
-    # Cache is configured via CLI flags. See docker-compose.jsonnet
+    backend: memcached
+    memcached:
+      addresses: dns+memcached:11211
 
   s3:
     bucket_name:       mimir-ruler
@@ -139,24 +148,24 @@ frontend:
   query_stats_enabled: true
   parallelize_shardable_queries: true
   cache_results: true
+  cache_errors: true
   shard_active_series_queries: true
   cache_samples_processed_stats: true
 
   # Uncomment when using "dns" service discovery mode for query-scheduler.
-  # scheduler_address: "query-scheduler:9011"
+  # scheduler_address: "query-scheduler:9008"
 
   results_cache:
-    # Cache is configured via CLI flags. See docker-compose.jsonnet
     compression: snappy
+    backend: memcached
+    memcached:
+      addresses: dns+memcached:11211
 
 frontend_worker:
   response_streaming_enabled: true
 
   # Uncomment when using "dns" service discovery mode for query-scheduler.
-  # scheduler_address: "query-scheduler:9011"
-
-  # Uncomment to skip query-scheduler and enqueue queries directly in the query-frontend.
-  # frontend_address: "query-frontend:9007"
+  # scheduler_address: "query-scheduler:9008"
 
 querier:
   # query_store_after must be smaller than blocks_storage.tsdb.retention_period
@@ -169,6 +178,8 @@ query_scheduler:
 limits:
   # Limit max query time range to 31d
   max_partial_query_length: 744h
+  # Limit total query time range to 365d
+  max_total_query_length: 8760h
   max_global_exemplars_per_user: 5000
   query_sharding_total_shards: 16
   query_sharding_max_sharded_queries: 32

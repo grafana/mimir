@@ -12,7 +12,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
-	"sort"
+	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -24,6 +25,7 @@ import (
 	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/prometheus/prometheus/notifier"
 	promRules "github.com/prometheus/prometheus/rules"
+	"github.com/spf13/afero"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
@@ -48,7 +50,7 @@ func TestDefaultMultiTenantManager_SyncFullRuleGroups(t *testing.T) {
 		user2Group1 = createRuleGroup("group-1", user2, createRecordingRule("sum:metric_1", "sum(metric_1)"))
 	)
 
-	m, err := NewDefaultMultiTenantManager(Config{RulePath: t.TempDir()}, managerMockFactory, nil, logger, nil, validation.MockOverrides(nil))
+	m, err := NewDefaultMultiTenantManager(Config{RulePath: t.TempDir()}, managerMockFactory, nil, logger, nil, validation.MockOverrides(nil), afero.NewMemMapFs())
 	require.NoError(t, err)
 
 	// Initialise the manager with some rules and start it.
@@ -134,7 +136,7 @@ func TestDefaultMultiTenantManager_SyncPartialRuleGroups(t *testing.T) {
 		user2Group1 = createRuleGroup("group-1", user2, createRecordingRule("sum:metric_1", "sum(metric_1)"))
 	)
 
-	m, err := NewDefaultMultiTenantManager(Config{RulePath: t.TempDir()}, managerMockFactory, nil, logger, nil, validation.MockOverrides(nil))
+	m, err := NewDefaultMultiTenantManager(Config{RulePath: t.TempDir()}, managerMockFactory, nil, logger, nil, validation.MockOverrides(nil), afero.NewMemMapFs())
 	require.NoError(t, err)
 	t.Cleanup(m.Stop)
 
@@ -324,7 +326,7 @@ func TestDefaultMultiTenantManager_NotifierConfiguration(t *testing.T) {
 	})
 
 	// Start a manager.
-	m, err := NewDefaultMultiTenantManager(cfg, managerMockFactory, nil, logger, nil, overrides)
+	m, err := NewDefaultMultiTenantManager(cfg, managerMockFactory, nil, logger, nil, overrides, afero.NewMemMapFs())
 	require.NoError(t, err)
 	defer m.Stop()
 	m.SyncFullRuleGroups(ctx, map[string]rulespb.RuleGroupList{
@@ -424,7 +426,7 @@ func TestDefaultMultiTenantManager_WaitsToDrainPendingNotificationsOnShutdown(t 
 		defaults.RulerAlertmanagerClientConfig.AlertmanagerURL = server.URL
 	})
 
-	m, err := NewDefaultMultiTenantManager(cfg, managerMockFactory, nil, logger, nil, limits)
+	m, err := NewDefaultMultiTenantManager(cfg, managerMockFactory, nil, logger, nil, limits, afero.NewMemMapFs())
 	require.NoError(t, err)
 
 	m.SyncFullRuleGroups(ctx, map[string]rulespb.RuleGroupList{
@@ -553,8 +555,8 @@ func assertRuleGroupsMappedOnDisk(t *testing.T, m *DefaultMultiTenantManager, us
 	for namespace, expectedFormattedRuleGroups := range expectedRuleGroups.Formatted() {
 		// The mapper sort groups by name in reverse order, so we apply the same sorting
 		// here to expected groups.
-		sort.Slice(expectedFormattedRuleGroups, func(i, j int) bool {
-			return expectedFormattedRuleGroups[i].Name > expectedFormattedRuleGroups[j].Name
+		slices.SortFunc(expectedFormattedRuleGroups, func(a, b rulefmt.RuleGroup) int {
+			return strings.Compare(b.Name, a.Name)
 		})
 
 		expectedYAML, err := yaml.Marshal(rulefmt.RuleGroups{Groups: expectedFormattedRuleGroups})

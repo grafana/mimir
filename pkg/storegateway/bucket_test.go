@@ -10,6 +10,7 @@ package storegateway
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"fmt"
 	"math"
@@ -19,7 +20,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"slices"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -38,6 +38,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	promtest "github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
@@ -1116,7 +1117,8 @@ func uploadTestBlock(t testing.TB, tmpDir string, bkt objstore.Bucket, dataSetup
 		Source: block.TestSource,
 	}, nil)
 	assert.NoError(t, err)
-	assert.NoError(t, block.Upload(context.Background(), logger, bkt, filepath.Join(tmpDir, "tmp", id.String()), nil))
+	_, err = block.Upload(context.Background(), logger, bkt, filepath.Join(tmpDir, "tmp", id.String()), nil)
+	assert.NoError(t, err)
 
 	return id, h.MinTime(), h.MaxTime()
 }
@@ -1154,7 +1156,11 @@ func appendTestSeries(series int) func(testing.TB, func() storage.Appender) {
 
 func createBlockFromHead(t testing.TB, dir string, head *tsdb.Head) ulid.ULID {
 	// Put a 3 MiB limit on segment files so we can test with many segment files without creating too big blocks.
-	compactor, err := tsdb.NewLeveledCompactorWithChunkSize(context.Background(), nil, promslog.NewNopLogger(), []int64{1000000}, nil, 3*1024*1024, nil)
+	opts := tsdb.LeveledCompactorOptions{
+		MaxBlockChunkSegmentSize:    3 * 1024 * 1024,
+		EnableOverlappingCompaction: true,
+	}
+	compactor, err := tsdb.NewLeveledCompactorWithOptions(context.Background(), nil, promslog.NewNopLogger(), []int64{1000000}, nil, opts)
 	assert.NoError(t, err)
 
 	assert.NoError(t, os.MkdirAll(dir, 0777))
@@ -1386,7 +1392,7 @@ func benchBucketSeries(t test.TB, skipChunk bool, samplesPerSeries, totalSeries 
 
 	var (
 		logger                = log.NewNopLogger()
-		series                []*storepb.Series
+		series                []*storeTestSeries
 		expectedQueriesBlocks []hintspb.Block
 		random                = rand.New(rand.NewSource(120))
 	)
@@ -1430,11 +1436,12 @@ func benchBucketSeries(t test.TB, skipChunk bool, samplesPerSeries, totalSeries 
 		assert.NoError(t, err)
 
 		assert.NoError(t, meta.WriteToDir(logger, filepath.Join(blockDir, id.String())))
-		assert.NoError(t, block.Upload(context.Background(), logger, bkt, filepath.Join(blockDir, id.String()), nil))
+		_, err = block.Upload(context.Background(), logger, bkt, filepath.Join(blockDir, id.String()), nil)
+		assert.NoError(t, err)
 	}
 
 	ibkt := objstore.WithNoopInstr(bkt)
-	f, err := block.NewMetaFetcher(logger, 1, ibkt, "", nil, nil, nil, 0)
+	f, err := block.NewMetaFetcher(logger, 1, ibkt, "", nil, nil, 0)
 	assert.NoError(t, err)
 
 	runTestWithStore := func(t test.TB, st *BucketStore, reg prometheus.Gatherer) {
@@ -1478,9 +1485,9 @@ func benchBucketSeries(t test.TB, skipChunk bool, samplesPerSeries, totalSeries 
 			})
 		}
 
-		streamingBatchSizes := []int{0}
+		streamingBatchSizes := []int{5}
 		if !t.IsBenchmark() {
-			streamingBatchSizes = []int{0, 1, 5}
+			streamingBatchSizes = []int{1, 5}
 		}
 		for _, streamingBatchSize := range streamingBatchSizes {
 			t.Run(fmt.Sprintf("streamingBatchSize=%d", streamingBatchSize), func(t test.TB) {
@@ -1552,9 +1559,8 @@ func benchBucketSeries(t test.TB, skipChunk bool, samplesPerSeries, totalSeries 
 				BlockSyncConcurrency:        1,
 				PostingOffsetsInMemSampling: mimir_tsdb.DefaultPostingOffsetInMemorySampling,
 				IndexHeader: indexheader.Config{
-					EagerLoadingStartupEnabled: false,
-					LazyLoadingEnabled:         false,
-					LazyLoadingIdleTimeout:     0,
+					LazyLoadingEnabled:     false,
+					LazyLoadingIdleTimeout: 0,
 				},
 			},
 			selectAllStrategy{},
@@ -1589,7 +1595,7 @@ func TestBucketStore_Series_Concurrency(t *testing.T) {
 	var (
 		ctx              = context.Background()
 		logger           = log.NewNopLogger()
-		expectedSeries   []*storepb.Series
+		expectedSeries   []*storeTestSeries
 		expectedBlockIDs []string
 		random           = rand.New(rand.NewSource(120))
 		tmpDir           = t.TempDir()
@@ -1611,7 +1617,7 @@ func TestBucketStore_Series_Concurrency(t *testing.T) {
 			TSDBDir:          filepath.Join(tmpDir, fmt.Sprintf("%d", b)),
 			SamplesPerSeries: numSamplesPerSeries,
 			Series:           numSeriesPerBlock,
-			PrependLabels:    labels.FromStrings(labels.MetricName, "test_metric", "zzz_block_id", strconv.Itoa(b)),
+			PrependLabels:    labels.FromStrings(model.MetricNameLabel, "test_metric", "zzz_block_id", strconv.Itoa(b)),
 			Random:           random,
 		})
 
@@ -1621,7 +1627,8 @@ func TestBucketStore_Series_Concurrency(t *testing.T) {
 		expectedSeries = append(expectedSeries, blockSeries...)
 		expectedBlockIDs = append(expectedBlockIDs, blockID.String())
 
-		require.NoError(t, block.Upload(ctx, logger, bucket, filepath.Join(blockDir, blockID.String()), nil))
+		_, err = block.Upload(ctx, logger, bucket, filepath.Join(blockDir, blockID.String()), nil)
+		require.NoError(t, err)
 	}
 	t.Log("generated test blocks")
 
@@ -1644,7 +1651,7 @@ func TestBucketStore_Series_Concurrency(t *testing.T) {
 			MinTime: math.MinInt64,
 			MaxTime: math.MaxInt64,
 			Matchers: []storepb.LabelMatcher{
-				{Type: storepb.LabelMatcher_EQ, Name: labels.MetricName, Value: "test_metric"},
+				{Type: storepb.LabelMatcher_EQ, Name: model.MetricNameLabel, Value: "test_metric"},
 			},
 			Hints:                    marshalledHints,
 			StreamingChunksBatchSize: uint64(streamBatchSize),
@@ -1665,12 +1672,12 @@ func TestBucketStore_Series_Concurrency(t *testing.T) {
 	// Run the test with different batch sizes.
 	for _, batchSize := range []int{len(expectedSeries) / 100, len(expectedSeries) * 2} {
 		t.Run(fmt.Sprintf("batch size: %d", batchSize), func(t *testing.T) {
-			for _, streamBatchSize := range []int{0, 10} {
+			for _, streamBatchSize := range []int{1, 10} {
 				t.Run(fmt.Sprintf("streamBatchSize:%d", streamBatchSize), func(t *testing.T) {
 					// Reset the memory pool tracker.
 					seriesChunkRefsSetPool.(*pool.TrackedPool).Reset()
 
-					metaFetcher, err := block.NewMetaFetcher(logger, 1, instrumentedBucket, "", nil, nil, nil, 0)
+					metaFetcher, err := block.NewMetaFetcher(logger, 1, instrumentedBucket, "", nil, nil, 0)
 					assert.NoError(t, err)
 
 					// Create the bucket store.
@@ -1684,9 +1691,8 @@ func TestBucketStore_Series_Concurrency(t *testing.T) {
 							BlockSyncConcurrency:        1,
 							PostingOffsetsInMemSampling: mimir_tsdb.DefaultPostingOffsetInMemorySampling,
 							IndexHeader: indexheader.Config{
-								EagerLoadingStartupEnabled: false,
-								LazyLoadingEnabled:         false,
-								LazyLoadingIdleTimeout:     0,
+								LazyLoadingEnabled:     false,
+								LazyLoadingIdleTimeout: 0,
 							},
 						},
 						selectAllStrategy{},
@@ -1791,7 +1797,8 @@ func TestBucketStore_Series_OneBlock_InMemIndexCacheSegfault(t *testing.T) {
 
 		meta, err := block.InjectThanosMeta(log.NewNopLogger(), filepath.Join(blockDir, id.String()), thanosMeta, nil)
 		assert.NoError(t, err)
-		assert.NoError(t, block.Upload(context.Background(), logger, bkt, filepath.Join(blockDir, id.String()), nil))
+		_, err = block.Upload(context.Background(), logger, bkt, filepath.Join(blockDir, id.String()), nil)
+		assert.NoError(t, err)
 
 		b1 = &bucketBlock{
 			indexCache:   indexCache,
@@ -1829,7 +1836,8 @@ func TestBucketStore_Series_OneBlock_InMemIndexCacheSegfault(t *testing.T) {
 
 		meta, err := block.InjectThanosMeta(log.NewNopLogger(), filepath.Join(blockDir, id.String()), thanosMeta, nil)
 		assert.NoError(t, err)
-		assert.NoError(t, block.Upload(context.Background(), logger, bkt, filepath.Join(blockDir, id.String()), nil))
+		_, err = block.Upload(context.Background(), logger, bkt, filepath.Join(blockDir, id.String()), nil)
+		assert.NoError(t, err)
 
 		b2 = &bucketBlock{
 			indexCache:   indexCache,
@@ -1919,7 +1927,7 @@ func TestBucketStore_Series_OneBlock_InMemIndexCacheSegfault(t *testing.T) {
 }
 
 func TestBucketStore_Series_RequestAndResponseHints(t *testing.T) {
-	newTestCases := func(seriesSet1 []*storepb.Series, seriesSet2 []*storepb.Series, block1 ulid.ULID, block2 ulid.ULID) []*seriesCase {
+	newTestCases := func(seriesSet1 []*storeTestSeries, seriesSet2 []*storeTestSeries, block1 ulid.ULID, block2 ulid.ULID) []*seriesCase {
 		return []*seriesCase{
 			{
 				Name: "querying a range containing 1 block should return 1 block in the response hints",
@@ -1945,7 +1953,7 @@ func TestBucketStore_Series_RequestAndResponseHints(t *testing.T) {
 						{Type: storepb.LabelMatcher_EQ, Name: "foo", Value: "bar"},
 					},
 				},
-				ExpectedSeries: append(append([]*storepb.Series{}, seriesSet1...), seriesSet2...),
+				ExpectedSeries: append(append([]*storeTestSeries{}, seriesSet1...), seriesSet2...),
 				ExpectedHints: hintspb.SeriesResponseHints{
 					QueriedBlocks: []hintspb.Block{
 						{Id: block1.String()},
@@ -1999,7 +2007,7 @@ func TestBucketStore_Series_ErrorUnmarshallingRequestHints(t *testing.T) {
 	)
 
 	// Instance a real bucket store we'll use to query the series.
-	fetcher, err := block.NewMetaFetcher(logger, 10, instrBkt, tmpDir, nil, nil, nil, 0)
+	fetcher, err := block.NewMetaFetcher(logger, 10, instrBkt, tmpDir, nil, nil, 0)
 	assert.NoError(t, err)
 
 	indexCache, err := indexcache.NewInMemoryIndexCacheWithConfig(logger, nil, indexcache.InMemoryIndexCacheConfig{})
@@ -2015,9 +2023,8 @@ func TestBucketStore_Series_ErrorUnmarshallingRequestHints(t *testing.T) {
 			BlockSyncConcurrency:        10,
 			PostingOffsetsInMemSampling: mimir_tsdb.DefaultPostingOffsetInMemorySampling,
 			IndexHeader: indexheader.Config{
-				EagerLoadingStartupEnabled: false,
-				LazyLoadingEnabled:         false,
-				LazyLoadingIdleTimeout:     0,
+				LazyLoadingEnabled:     false,
+				LazyLoadingIdleTimeout: 0,
 			},
 		},
 		selectAllStrategy{},
@@ -2060,7 +2067,7 @@ func TestBucketStore_Series_CanceledRequest(t *testing.T) {
 
 	logger := log.NewNopLogger()
 	instrBkt := objstore.WithNoopInstr(bkt)
-	fetcher, err := block.NewMetaFetcher(logger, 10, instrBkt, tmpDir, nil, nil, nil, 0)
+	fetcher, err := block.NewMetaFetcher(logger, 10, instrBkt, tmpDir, nil, nil, 0)
 	assert.NoError(t, err)
 
 	store, err := NewBucketStore(
@@ -2073,9 +2080,8 @@ func TestBucketStore_Series_CanceledRequest(t *testing.T) {
 			BlockSyncConcurrency:        10,
 			PostingOffsetsInMemSampling: mimir_tsdb.DefaultPostingOffsetInMemorySampling,
 			IndexHeader: indexheader.Config{
-				EagerLoadingStartupEnabled: false,
-				LazyLoadingEnabled:         false,
-				LazyLoadingIdleTimeout:     0,
+				LazyLoadingEnabled:     false,
+				LazyLoadingIdleTimeout: 0,
 			},
 		},
 		selectAllStrategy{},
@@ -2131,7 +2137,7 @@ func TestBucketStore_Series_TimeoutGate(t *testing.T) {
 
 	logger := log.NewNopLogger()
 	instrBkt := objstore.WithNoopInstr(bkt)
-	fetcher, err := block.NewMetaFetcher(logger, 10, instrBkt, tmpDir, nil, nil, nil, 0)
+	fetcher, err := block.NewMetaFetcher(logger, 10, instrBkt, tmpDir, nil, nil, 0)
 	assert.NoError(t, err)
 
 	_, blockMinT, blockMaxT := uploadTestBlock(t, tmpDir, instrBkt, []testBlockDataSetup{appendTestSeries(10000)})
@@ -2199,7 +2205,7 @@ func TestBucketStore_Series_TimeoutGate(t *testing.T) {
 	s, ok := grpcutil.ErrorToStatus(err)
 	assert.True(t, ok, err)
 	assert.Len(t, s.Details(), 1, err)
-	assert.Equal(t, s.Details()[0].(*mimirpb.ErrorDetails).GetCause(), mimirpb.INSTANCE_LIMIT, err)
+	assert.Equal(t, s.Details()[0].(*mimirpb.ErrorDetails).GetCause(), mimirpb.ERROR_CAUSE_INSTANCE_LIMIT, err)
 }
 
 func TestBucketStore_Series_InvalidRequest(t *testing.T) {
@@ -2211,7 +2217,7 @@ func TestBucketStore_Series_InvalidRequest(t *testing.T) {
 
 	logger := log.NewNopLogger()
 	instrBkt := objstore.WithNoopInstr(bkt)
-	fetcher, err := block.NewMetaFetcher(logger, 10, instrBkt, tmpDir, nil, nil, nil, 0)
+	fetcher, err := block.NewMetaFetcher(logger, 10, instrBkt, tmpDir, nil, nil, 0)
 	assert.NoError(t, err)
 
 	store, err := NewBucketStore(
@@ -2224,9 +2230,8 @@ func TestBucketStore_Series_InvalidRequest(t *testing.T) {
 			BlockSyncConcurrency:        10,
 			PostingOffsetsInMemSampling: mimir_tsdb.DefaultPostingOffsetInMemorySampling,
 			IndexHeader: indexheader.Config{
-				EagerLoadingStartupEnabled: false,
-				LazyLoadingEnabled:         false,
-				LazyLoadingIdleTimeout:     0,
+				LazyLoadingEnabled:     false,
+				LazyLoadingIdleTimeout: 0,
 			},
 		},
 		selectAllStrategy{},
@@ -2294,7 +2299,6 @@ func testBucketStoreSeriesBlockWithMultipleChunks(
 	// Create a block with 1 series but a high number of samples,
 	// so that they will span across multiple chunks.
 	headOpts := tsdb.DefaultHeadOptions()
-	headOpts.EnableNativeHistograms.Store(true)
 	headOpts.ChunkDirRoot = filepath.Join(tmpDir, "block")
 	headOpts.ChunkRange = math.MaxInt64
 
@@ -2332,10 +2336,11 @@ func testBucketStoreSeriesBlockWithMultipleChunks(
 
 	instrBkt := objstore.WithNoopInstr(bkt)
 	logger := log.NewNopLogger()
-	assert.NoError(t, block.Upload(context.Background(), logger, bkt, filepath.Join(headOpts.ChunkDirRoot, blk.String()), nil))
+	_, err = block.Upload(context.Background(), logger, bkt, filepath.Join(headOpts.ChunkDirRoot, blk.String()), nil)
+	assert.NoError(t, err)
 
 	// Instance a real bucket store we'll use to query the series.
-	fetcher, err := block.NewMetaFetcher(logger, 10, instrBkt, tmpDir, nil, nil, nil, 0)
+	fetcher, err := block.NewMetaFetcher(logger, 10, instrBkt, tmpDir, nil, nil, 0)
 	assert.NoError(t, err)
 
 	indexCache, err := indexcache.NewInMemoryIndexCacheWithConfig(logger, nil, indexcache.InMemoryIndexCacheConfig{})
@@ -2351,9 +2356,8 @@ func testBucketStoreSeriesBlockWithMultipleChunks(
 			BlockSyncConcurrency:        10,
 			PostingOffsetsInMemSampling: mimir_tsdb.DefaultPostingOffsetInMemorySampling,
 			IndexHeader: indexheader.Config{
-				EagerLoadingStartupEnabled: false,
-				LazyLoadingEnabled:         false,
-				LazyLoadingIdleTimeout:     0,
+				LazyLoadingEnabled:     false,
+				LazyLoadingIdleTimeout: 0,
 			},
 		},
 		selectAllStrategy{},
@@ -2396,7 +2400,7 @@ func testBucketStoreSeriesBlockWithMultipleChunks(
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
-			for _, streamingBatchSize := range []int{0, 1, 5} {
+			for _, streamingBatchSize := range []int{1, 5} {
 				t.Run(fmt.Sprintf("streamingBatchSize=%d", streamingBatchSize), func(t *testing.T) {
 					req := &storepb.SeriesRequest{
 						MinTime: testData.reqMinTime,
@@ -2420,12 +2424,7 @@ func testBucketStoreSeriesBlockWithMultipleChunks(
 						numSamples += decodedChunk.NumSamples()
 					}
 
-					if streamingBatchSize == 0 {
-						require.Zero(t, estimatedChunks)
-					} else {
-						require.InDelta(t, len(seriesSet[0].Chunks), estimatedChunks, 0.1, "number of chunks estimations should be within 10% of the actual number of chunks")
-					}
-
+					require.InDelta(t, len(seriesSet[0].Chunks), estimatedChunks, 0.1, "number of chunks estimations should be within 10% of the actual number of chunks")
 					compareToPromChunks(t, seriesSet[0].Chunks, mimirpb.FromLabelAdaptersToLabels(seriesSet[0].Labels), testData.reqMinTime, testData.reqMaxTime, promBlock)
 				})
 			}
@@ -2451,16 +2450,16 @@ func TestBucketStore_Series_Limits(t *testing.T) {
 	// Samples for the overlapping series are equal between the two blocks
 	// (simulate the case of uncompacted blocks from ingesters).
 	_, err := block.CreateBlock(ctx, bktDir, []labels.Labels{
-		labels.FromStrings(labels.MetricName, "series_1"),
-		labels.FromStrings(labels.MetricName, "series_2"),
-		labels.FromStrings(labels.MetricName, "series_3"),
+		labels.FromStrings(model.MetricNameLabel, "series_1"),
+		labels.FromStrings(model.MetricNameLabel, "series_2"),
+		labels.FromStrings(model.MetricNameLabel, "series_3"),
 	}, numSamplesPerSeries, minTime, maxTime, labels.EmptyLabels())
 	require.NoError(t, err)
 
 	_, err = block.CreateBlock(ctx, bktDir, []labels.Labels{
-		labels.FromStrings(labels.MetricName, "series_1"),
-		labels.FromStrings(labels.MetricName, "series_2"),
-		labels.FromStrings(labels.MetricName, "series_3"),
+		labels.FromStrings(model.MetricNameLabel, "series_1"),
+		labels.FromStrings(model.MetricNameLabel, "series_2"),
+		labels.FromStrings(model.MetricNameLabel, "series_3"),
 	}, numSamplesPerSeries, minTime, maxTime, labels.EmptyLabels())
 	require.NoError(t, err)
 
@@ -2472,7 +2471,7 @@ func TestBucketStore_Series_Limits(t *testing.T) {
 	instrBkt := objstore.WithNoopInstr(bkt)
 
 	// Instance a real bucket store we'll use to query the series.
-	fetcher, err := block.NewMetaFetcher(logger, 10, instrBkt, tmpDir, nil, nil, nil, 0)
+	fetcher, err := block.NewMetaFetcher(logger, 10, instrBkt, tmpDir, nil, nil, 0)
 	assert.NoError(t, err)
 
 	tests := map[string]struct {
@@ -2483,22 +2482,22 @@ func TestBucketStore_Series_Limits(t *testing.T) {
 		expectedSeries int
 	}{
 		"should fail if the number of unique series queried is greater than the configured series limit": {
-			reqMatchers: []storepb.LabelMatcher{{Type: storepb.LabelMatcher_RE, Name: labels.MetricName, Value: "series_[123]"}},
+			reqMatchers: []storepb.LabelMatcher{{Type: storepb.LabelMatcher_RE, Name: model.MetricNameLabel, Value: "series_[123]"}},
 			seriesLimit: 1,
 			expectedErr: "the query exceeded the maximum number of series (limit: 1 series) (err-mimir-max-series-per-query)",
 		},
 		"should pass if the number of unique series queried is equal or less than the configured series limit": {
-			reqMatchers:    []storepb.LabelMatcher{{Type: storepb.LabelMatcher_RE, Name: labels.MetricName, Value: "series_[123]"}},
+			reqMatchers:    []storepb.LabelMatcher{{Type: storepb.LabelMatcher_RE, Name: model.MetricNameLabel, Value: "series_[123]"}},
 			seriesLimit:    3,
 			expectedSeries: 3,
 		},
 		"should fail if the number of chunks queried is greater than the configured chunks limit": {
-			reqMatchers: []storepb.LabelMatcher{{Type: storepb.LabelMatcher_RE, Name: labels.MetricName, Value: "series_[123]"}},
+			reqMatchers: []storepb.LabelMatcher{{Type: storepb.LabelMatcher_RE, Name: model.MetricNameLabel, Value: "series_[123]"}},
 			chunksLimit: 3,
 			expectedErr: "the query exceeded the maximum number of chunks (limit: 3 chunks) (err-mimir-max-chunks-per-query)",
 		},
 		"should pass if the number of chunks queried is equal or less than the configured chunks limit": {
-			reqMatchers:    []storepb.LabelMatcher{{Type: storepb.LabelMatcher_RE, Name: labels.MetricName, Value: "series_[123]"}},
+			reqMatchers:    []storepb.LabelMatcher{{Type: storepb.LabelMatcher_RE, Name: model.MetricNameLabel, Value: "series_[123]"}},
 			chunksLimit:    6,
 			expectedSeries: 3,
 		},
@@ -2518,9 +2517,8 @@ func TestBucketStore_Series_Limits(t *testing.T) {
 							BlockSyncConcurrency:        10,
 							PostingOffsetsInMemSampling: mimir_tsdb.DefaultPostingOffsetInMemorySampling,
 							IndexHeader: indexheader.Config{
-								EagerLoadingStartupEnabled: false,
-								LazyLoadingEnabled:         false,
-								LazyLoadingIdleTimeout:     0,
+								LazyLoadingEnabled:     false,
+								LazyLoadingIdleTimeout: 0,
 							},
 						},
 						selectAllStrategy{},
@@ -2570,7 +2568,7 @@ func mustMarshalAny(pb proto.Message) *types.Any {
 	return out
 }
 
-func setupStoreForHintsTest(t *testing.T, maxSeriesPerBatch int, opts ...BucketStoreOption) (test.TB, *BucketStore, []*storepb.Series, []*storepb.Series, ulid.ULID, ulid.ULID, func()) {
+func setupStoreForHintsTest(t *testing.T, maxSeriesPerBatch int, opts ...BucketStoreOption) (test.TB, *BucketStore, []*storeTestSeries, []*storeTestSeries, ulid.ULID, ulid.ULID, func()) {
 	tb := test.NewTB(t)
 
 	cleanupFuncs := []func(){}
@@ -2621,7 +2619,7 @@ func setupStoreForHintsTest(t *testing.T, maxSeriesPerBatch int, opts ...BucketS
 	}
 
 	// Instance a real bucket store we'll use to query back the series.
-	fetcher, err := block.NewMetaFetcher(logger, 10, instrBkt, tmpDir, nil, nil, nil, 0)
+	fetcher, err := block.NewMetaFetcher(logger, 10, instrBkt, tmpDir, nil, nil, 0)
 	assert.NoError(tb, err)
 
 	indexCache, err := indexcache.NewInMemoryIndexCacheWithConfig(logger, nil, indexcache.InMemoryIndexCacheConfig{})
@@ -2638,9 +2636,8 @@ func setupStoreForHintsTest(t *testing.T, maxSeriesPerBatch int, opts ...BucketS
 			BlockSyncConcurrency:        10,
 			PostingOffsetsInMemSampling: mimir_tsdb.DefaultPostingOffsetInMemorySampling,
 			IndexHeader: indexheader.Config{
-				EagerLoadingStartupEnabled: false,
-				LazyLoadingEnabled:         false,
-				LazyLoadingIdleTimeout:     0,
+				LazyLoadingEnabled:     false,
+				LazyLoadingIdleTimeout: 0,
 			},
 		},
 		selectAllStrategy{},
@@ -2715,7 +2712,7 @@ func TestLabelNamesAndValuesHints(t *testing.T) {
 				End:   3,
 			},
 			expectedNames: labelNamesFromSeriesSet(
-				append(append([]*storepb.Series{}, seriesSet1...), seriesSet2...),
+				append(append([]*storeTestSeries{}, seriesSet1...), seriesSet2...),
 			),
 			expectedNamesHints: hintspb.LabelNamesResponseHints{
 				QueriedBlocks: []hintspb.Block{
@@ -2784,8 +2781,8 @@ func TestLabelNamesAndValuesHints(t *testing.T) {
 			var namesHints hintspb.LabelNamesResponseHints
 			assert.NoError(t, types.UnmarshalAny(namesResp.Hints, &namesHints))
 			// The order is not determinate, so we are sorting them.
-			sort.Slice(namesHints.QueriedBlocks, func(i, j int) bool {
-				return namesHints.QueriedBlocks[i].Id < namesHints.QueriedBlocks[j].Id
+			slices.SortFunc(namesHints.QueriedBlocks, func(a, b hintspb.Block) int {
+				return strings.Compare(a.Id, b.Id)
 			})
 			assert.Equal(t, tc.expectedNamesHints, namesHints)
 
@@ -2796,8 +2793,8 @@ func TestLabelNamesAndValuesHints(t *testing.T) {
 			var valuesHints hintspb.LabelValuesResponseHints
 			assert.NoError(t, types.UnmarshalAny(valuesResp.Hints, &valuesHints))
 			// The order is not determinate, so we are sorting them.
-			sort.Slice(valuesHints.QueriedBlocks, func(i, j int) bool {
-				return valuesHints.QueriedBlocks[i].Id < valuesHints.QueriedBlocks[j].Id
+			slices.SortFunc(valuesHints.QueriedBlocks, func(a, b hintspb.Block) int {
+				return strings.Compare(a.Id, b.Id)
 			})
 			assert.Equal(t, tc.expectedValuesHints, valuesHints)
 		})
@@ -2857,7 +2854,7 @@ func TestLabelValues_Cancelled(t *testing.T) {
 	assert.Equal(t, codes.Canceled, s.Code())
 }
 
-func labelNamesFromSeriesSet(series []*storepb.Series) []string {
+func labelNamesFromSeriesSet(series []*storeTestSeries) []string {
 	labelsMap := map[string]struct{}{}
 
 	for _, s := range series {
@@ -2891,7 +2888,7 @@ type headGenOptions struct {
 // Each series looks as follows:
 // {foo=bar,i=000001aaaaaaaaaabbbbbbbbbbccccccccccdddddddddd} <random value> where number indicate sample number from 0.
 // Returned series are framed in the same way as remote read would frame them.
-func createHeadWithSeries(t testing.TB, j int, opts headGenOptions) (*tsdb.Head, []*storepb.Series) {
+func createHeadWithSeries(t testing.TB, j int, opts headGenOptions) (*tsdb.Head, []*storeTestSeries) {
 	if opts.SamplesPerSeries < 1 || opts.Series < 1 {
 		t.Fatal("samples and series has to be 1 or more")
 	}
@@ -2956,14 +2953,14 @@ func createHeadWithSeries(t testing.TB, j int, opts headGenOptions) (*tsdb.Head,
 
 	var (
 		chunkMetas []chunks.Meta
-		expected   = make([]*storepb.Series, 0, opts.Series)
+		expected   = make([]*storeTestSeries, 0, opts.Series)
 	)
 
 	var builder labels.ScratchBuilder
 	all := allPostings(t, ir)
 	for all.Next() {
 		assert.NoError(t, ir.Series(all.At(), &builder, &chunkMetas))
-		expected = append(expected, &storepb.Series{Labels: mimirpb.FromLabelsToLabelAdapters(builder.Labels())})
+		expected = append(expected, &storeTestSeries{Labels: mimirpb.FromLabelsToLabelAdapters(builder.Labels())})
 
 		if opts.SkipChunks {
 			continue
@@ -3023,7 +3020,7 @@ type seriesCase struct {
 	Req  *storepb.SeriesRequest
 
 	// Exact expectations are checked only for tests. For benchmarks only length is assured.
-	ExpectedSeries   []*storepb.Series
+	ExpectedSeries   []*storeTestSeries
 	ExpectedWarnings []string
 	ExpectedHints    hintspb.SeriesResponseHints
 }
@@ -3048,8 +3045,8 @@ func runTestServerSeries(t test.TB, store *BucketStore, streamingBatchSize int, 
 
 					if len(c.ExpectedSeries) == 1 {
 						// For bucketStoreAPI chunks are not sorted within response. TODO: Investigate: Is this fine?
-						sort.Slice(seriesSet[0].Chunks, func(i, j int) bool {
-							return seriesSet[0].Chunks[i].MinTime < seriesSet[0].Chunks[j].MinTime
+						slices.SortFunc(seriesSet[0].Chunks, func(a, b storepb.AggrChunk) int {
+							return cmp.Compare(a.MinTime, b.MinTime)
 						})
 					}
 

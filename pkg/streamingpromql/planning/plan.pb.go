@@ -4,14 +4,15 @@
 package planning
 
 import (
+	bytes "bytes"
 	fmt "fmt"
 	_ "github.com/gogo/protobuf/gogoproto"
 	proto "github.com/gogo/protobuf/proto"
-	types "github.com/gogo/protobuf/types"
 	io "io"
 	math "math"
 	math_bits "math/bits"
 	reflect "reflect"
+	strconv "strconv"
 	strings "strings"
 )
 
@@ -26,13 +27,80 @@ var _ = math.Inf
 // proto package needs to be updated.
 const _ = proto.GoGoProtoPackageIsVersion3 // please upgrade the proto package
 
+// FIXME: should we just use a generic integer for this? Adding this enum here seems to fly in the face of the
+// decoupling goal of not using a oneof above.
+type NodeType int32
+
+const (
+	NODE_TYPE_UNKNOWN                   NodeType = 0
+	NODE_TYPE_VECTOR_SELECTOR           NodeType = 1
+	NODE_TYPE_MATRIX_SELECTOR           NodeType = 2
+	NODE_TYPE_AGGREGATE_EXPRESSION      NodeType = 3
+	NODE_TYPE_BINARY_EXPRESSION         NodeType = 4
+	NODE_TYPE_FUNCTION_CALL             NodeType = 5
+	NODE_TYPE_NUMBER_LITERAL            NodeType = 6
+	NODE_TYPE_STRING_LITERAL            NodeType = 7
+	NODE_TYPE_UNARY_EXPRESSION          NodeType = 8
+	NODE_TYPE_SUBQUERY                  NodeType = 9
+	NODE_TYPE_DUPLICATE                 NodeType = 10
+	NODE_TYPE_DEDUPLICATE_AND_MERGE     NodeType = 11
+	NODE_TYPE_REMOTE_EXEC               NodeType = 12
+	NODE_TYPE_TEST                      NodeType = 13
+	NODE_TYPE_DROP_NAME                 NodeType = 14
+	NODE_TYPE_STEP_INVARIANT_EXPRESSION NodeType = 15
+)
+
+var NodeType_name = map[int32]string{
+	0:  "NODE_TYPE_UNKNOWN",
+	1:  "NODE_TYPE_VECTOR_SELECTOR",
+	2:  "NODE_TYPE_MATRIX_SELECTOR",
+	3:  "NODE_TYPE_AGGREGATE_EXPRESSION",
+	4:  "NODE_TYPE_BINARY_EXPRESSION",
+	5:  "NODE_TYPE_FUNCTION_CALL",
+	6:  "NODE_TYPE_NUMBER_LITERAL",
+	7:  "NODE_TYPE_STRING_LITERAL",
+	8:  "NODE_TYPE_UNARY_EXPRESSION",
+	9:  "NODE_TYPE_SUBQUERY",
+	10: "NODE_TYPE_DUPLICATE",
+	11: "NODE_TYPE_DEDUPLICATE_AND_MERGE",
+	12: "NODE_TYPE_REMOTE_EXEC",
+	13: "NODE_TYPE_TEST",
+	14: "NODE_TYPE_DROP_NAME",
+	15: "NODE_TYPE_STEP_INVARIANT_EXPRESSION",
+}
+
+var NodeType_value = map[string]int32{
+	"NODE_TYPE_UNKNOWN":                   0,
+	"NODE_TYPE_VECTOR_SELECTOR":           1,
+	"NODE_TYPE_MATRIX_SELECTOR":           2,
+	"NODE_TYPE_AGGREGATE_EXPRESSION":      3,
+	"NODE_TYPE_BINARY_EXPRESSION":         4,
+	"NODE_TYPE_FUNCTION_CALL":             5,
+	"NODE_TYPE_NUMBER_LITERAL":            6,
+	"NODE_TYPE_STRING_LITERAL":            7,
+	"NODE_TYPE_UNARY_EXPRESSION":          8,
+	"NODE_TYPE_SUBQUERY":                  9,
+	"NODE_TYPE_DUPLICATE":                 10,
+	"NODE_TYPE_DEDUPLICATE_AND_MERGE":     11,
+	"NODE_TYPE_REMOTE_EXEC":               12,
+	"NODE_TYPE_TEST":                      13,
+	"NODE_TYPE_DROP_NAME":                 14,
+	"NODE_TYPE_STEP_INVARIANT_EXPRESSION": 15,
+}
+
+func (NodeType) EnumDescriptor() ([]byte, []int) {
+	return fileDescriptor_2d655ab2f7683c23, []int{0}
+}
+
 type EncodedQueryPlan struct {
 	TimeRange EncodedQueryTimeRange `protobuf:"bytes,1,opt,name=timeRange,proto3" json:"timeRange"`
 	Nodes     []*EncodedNode        `protobuf:"bytes,2,rep,name=nodes,proto3" json:"nodes,omitempty"`
 	RootNode  int64                 `protobuf:"varint,3,opt,name=rootNode,proto3" json:"rootNode,omitempty"`
 	// The original PromQL expression for this query.
 	// May not accurately represent the query being executed if this query was built from a query plan representing a subexpression of a query.
-	OriginalExpression string `protobuf:"bytes,4,opt,name=originalExpression,proto3" json:"originalExpression,omitempty"`
+	OriginalExpression       string           `protobuf:"bytes,4,opt,name=originalExpression,proto3" json:"originalExpression,omitempty"`
+	EnableDelayedNameRemoval bool             `protobuf:"varint,5,opt,name=enableDelayedNameRemoval,proto3" json:"enableDelayedNameRemoval,omitempty"`
+	Version                  QueryPlanVersion `protobuf:"varint,6,opt,name=version,proto3,casttype=QueryPlanVersion" json:"version"`
 }
 
 func (m *EncodedQueryPlan) Reset()      { *m = EncodedQueryPlan{} }
@@ -93,6 +161,20 @@ func (m *EncodedQueryPlan) GetOriginalExpression() string {
 		return m.OriginalExpression
 	}
 	return ""
+}
+
+func (m *EncodedQueryPlan) GetEnableDelayedNameRemoval() bool {
+	if m != nil {
+		return m.EnableDelayedNameRemoval
+	}
+	return false
+}
+
+func (m *EncodedQueryPlan) GetVersion() QueryPlanVersion {
+	if m != nil {
+		return m.Version
+	}
+	return 0
 }
 
 type EncodedQueryTimeRange struct {
@@ -163,16 +245,19 @@ func (m *EncodedQueryTimeRange) GetIsInstant() bool {
 }
 
 type EncodedNode struct {
-	// Why use Any rather than a oneof?
+	// Why use this rather than a oneof field?
 	// This allows us to define nodes in multiple packages without creating dependencies between them,
 	// and allows us to define new kinds of nodes in other repositories (eg. the one used for Grafana Cloud Metrics).
-	// TODO: is this the best type to use? Any will encode a string for the type of message, which seems expensive - could we use an integer perhaps?
-	Details  *types.Any `protobuf:"bytes,1,opt,name=details,proto3" json:"details,omitempty"`
-	Children []int64    `protobuf:"varint,2,rep,packed,name=children,proto3" json:"children,omitempty"`
+	// Why use this rather than a Any value?
+	// Any encodes the type name as a string (eg. 'type.googleapis.com/BinaryExpressionDetails'),
+	// which means that the encoded form of an expression can be many times the size of the original PromQL expression.
+	NodeType NodeType `protobuf:"varint,1,opt,name=nodeType,proto3,enum=planning.NodeType" json:"nodeType,omitempty"`
+	Details  []byte   `protobuf:"bytes,2,opt,name=details,proto3" json:"details,omitempty"`
+	Children []int64  `protobuf:"varint,3,rep,packed,name=children,proto3" json:"children,omitempty"`
 	// The following fields will only be populated if this plan was generated with descriptions enabled.
-	Type           string   `protobuf:"bytes,3,opt,name=type,proto3" json:"type,omitempty"`
-	Description    string   `protobuf:"bytes,4,opt,name=description,proto3" json:"description,omitempty"`
-	ChildrenLabels []string `protobuf:"bytes,5,rep,name=childrenLabels,proto3" json:"childrenLabels,omitempty"`
+	Type           string   `protobuf:"bytes,4,opt,name=type,proto3" json:"type,omitempty"`
+	Description    string   `protobuf:"bytes,5,opt,name=description,proto3" json:"description,omitempty"`
+	ChildrenLabels []string `protobuf:"bytes,6,rep,name=childrenLabels,proto3" json:"childrenLabels,omitempty"`
 }
 
 func (m *EncodedNode) Reset()      { *m = EncodedNode{} }
@@ -207,7 +292,14 @@ func (m *EncodedNode) XXX_DiscardUnknown() {
 
 var xxx_messageInfo_EncodedNode proto.InternalMessageInfo
 
-func (m *EncodedNode) GetDetails() *types.Any {
+func (m *EncodedNode) GetNodeType() NodeType {
+	if m != nil {
+		return m.NodeType
+	}
+	return NODE_TYPE_UNKNOWN
+}
+
+func (m *EncodedNode) GetDetails() []byte {
 	if m != nil {
 		return m.Details
 	}
@@ -243,6 +335,7 @@ func (m *EncodedNode) GetChildrenLabels() []string {
 }
 
 func init() {
+	proto.RegisterEnum("planning.NodeType", NodeType_name, NodeType_value)
 	proto.RegisterType((*EncodedQueryPlan)(nil), "planning.EncodedQueryPlan")
 	proto.RegisterType((*EncodedQueryTimeRange)(nil), "planning.EncodedQueryTimeRange")
 	proto.RegisterType((*EncodedNode)(nil), "planning.EncodedNode")
@@ -251,37 +344,63 @@ func init() {
 func init() { proto.RegisterFile("plan.proto", fileDescriptor_2d655ab2f7683c23) }
 
 var fileDescriptor_2d655ab2f7683c23 = []byte{
-	// 442 bytes of a gzipped FileDescriptorProto
-	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x6c, 0x51, 0x41, 0x6e, 0x13, 0x31,
-	0x14, 0x1d, 0x77, 0xd2, 0x92, 0x71, 0x24, 0x84, 0xac, 0x16, 0x0d, 0x11, 0x72, 0x47, 0x59, 0xa0,
-	0x91, 0x10, 0x53, 0x29, 0x70, 0x01, 0x8a, 0xba, 0x40, 0x02, 0x04, 0x56, 0x2e, 0xe0, 0x8c, 0xcd,
-	0xd4, 0x92, 0xfb, 0x3d, 0xb2, 0x1d, 0x44, 0x76, 0x1c, 0x81, 0x0d, 0x77, 0xe0, 0x06, 0x5c, 0xa1,
-	0xcb, 0x2c, 0xbb, 0x42, 0x64, 0xb2, 0x61, 0xd9, 0x23, 0xa0, 0x78, 0x32, 0x4d, 0x44, 0xb3, 0x7b,
-	0xef, 0xfd, 0x67, 0xfb, 0xbf, 0x67, 0x8c, 0x6b, 0xcd, 0xa1, 0xa8, 0xad, 0xf1, 0x86, 0xf4, 0xd7,
-	0x18, 0x14, 0x54, 0xc3, 0x17, 0x95, 0xf2, 0x97, 0xb3, 0x69, 0x51, 0x9a, 0xab, 0xb3, 0xca, 0x54,
-	0xe6, 0x2c, 0x18, 0xa6, 0xb3, 0xcf, 0x81, 0x05, 0x12, 0x50, 0x7b, 0x70, 0xf8, 0xa4, 0x32, 0xa6,
-	0xd2, 0x72, 0xeb, 0xe2, 0x30, 0x6f, 0x47, 0xa3, 0x05, 0xc2, 0x8f, 0x2e, 0xa0, 0x34, 0x42, 0x8a,
-	0x4f, 0x33, 0x69, 0xe7, 0x1f, 0x35, 0x07, 0xf2, 0x06, 0x27, 0x5e, 0x5d, 0x49, 0xc6, 0xa1, 0x92,
-	0x29, 0xca, 0x50, 0x3e, 0x18, 0x9f, 0x16, 0xdd, 0xe3, 0xc5, 0xae, 0x7d, 0xd2, 0xd9, 0xce, 0x7b,
-	0xd7, 0xbf, 0x4f, 0x23, 0xb6, 0x3d, 0x47, 0x9e, 0xe3, 0x43, 0x30, 0x42, 0xba, 0xf4, 0x20, 0x8b,
-	0xf3, 0xc1, 0xf8, 0xe4, 0xde, 0x05, 0x1f, 0x8c, 0x90, 0xac, 0xf5, 0x90, 0x21, 0xee, 0x5b, 0x63,
-	0xfc, 0x5a, 0x4a, 0xe3, 0x0c, 0xe5, 0x31, 0xbb, 0xe3, 0xa4, 0xc0, 0xc4, 0x58, 0x55, 0x29, 0xe0,
-	0xfa, 0xe2, 0x6b, 0x6d, 0xa5, 0x73, 0xca, 0x40, 0xda, 0xcb, 0x50, 0x9e, 0xb0, 0x3d, 0x93, 0xd1,
-	0x0f, 0x84, 0x4f, 0xf6, 0xee, 0x48, 0x1e, 0xe3, 0x23, 0xe7, 0xb9, 0xf5, 0x93, 0x10, 0x2a, 0x66,
-	0x1b, 0x46, 0x08, 0xee, 0x49, 0x10, 0x93, 0xf4, 0x20, 0xa8, 0x01, 0x93, 0x31, 0x3e, 0x56, 0xe0,
-	0xa5, 0xfd, 0xc2, 0xf5, 0x7b, 0xa5, 0xb5, 0x72, 0xb2, 0x34, 0x20, 0xdc, 0x66, 0xbb, 0xbd, 0x33,
-	0xf2, 0x14, 0x27, 0xca, 0xbd, 0x05, 0xe7, 0x39, 0xf8, 0xb0, 0x60, 0x9f, 0x6d, 0x85, 0xd1, 0x2f,
-	0x84, 0x07, 0x3b, 0xd1, 0x49, 0x81, 0x1f, 0x08, 0xe9, 0xb9, 0xd2, 0x6e, 0xd3, 0xf1, 0x71, 0xd1,
-	0xfe, 0x53, 0xd1, 0xfd, 0x53, 0xf1, 0x1a, 0xe6, 0xac, 0x33, 0xad, 0x3b, 0x2a, 0x2f, 0x95, 0x16,
-	0x56, 0x42, 0xe8, 0x34, 0x66, 0x77, 0x7c, 0x9d, 0xc0, 0xcf, 0xeb, 0xb6, 0xbb, 0x84, 0x05, 0x4c,
-	0x32, 0x3c, 0x10, 0xd2, 0x95, 0x56, 0xd5, 0x7e, 0x5b, 0xd8, 0xae, 0x44, 0x9e, 0xe1, 0x87, 0xdd,
-	0x0d, 0xef, 0xf8, 0x54, 0x6a, 0x97, 0x1e, 0x66, 0x71, 0x9e, 0xb0, 0xff, 0xd4, 0xf3, 0x57, 0x8b,
-	0x25, 0x8d, 0x6e, 0x96, 0x34, 0xba, 0x5d, 0x52, 0xf4, 0xad, 0xa1, 0xe8, 0x67, 0x43, 0xd1, 0x75,
-	0x43, 0xd1, 0xa2, 0xa1, 0xe8, 0x4f, 0x43, 0xd1, 0xdf, 0x86, 0x46, 0xb7, 0x0d, 0x45, 0xdf, 0x57,
-	0x34, 0x5a, 0xac, 0x68, 0x74, 0xb3, 0xa2, 0xd1, 0xf4, 0x28, 0xc4, 0x78, 0xf9, 0x2f, 0x00, 0x00,
-	0xff, 0xff, 0x1e, 0x6b, 0xae, 0xc9, 0xc3, 0x02, 0x00, 0x00,
+	// 740 bytes of a gzipped FileDescriptorProto
+	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x74, 0x94, 0x41, 0x6f, 0xe3, 0x44,
+	0x14, 0xc7, 0x3d, 0x75, 0x9a, 0x26, 0x2f, 0x4b, 0x31, 0x8f, 0xed, 0xae, 0xb7, 0xbb, 0x38, 0x56,
+	0x57, 0x82, 0x08, 0xa4, 0x20, 0x15, 0x2e, 0x70, 0x73, 0xd2, 0x21, 0xb2, 0x48, 0x26, 0xd9, 0x89,
+	0x53, 0xb6, 0x27, 0xcb, 0x8d, 0x47, 0xc1, 0x92, 0x3b, 0x8e, 0x6c, 0x53, 0xd1, 0x1b, 0x1f, 0x81,
+	0x0b, 0xdf, 0x81, 0x6f, 0xc2, 0x1e, 0xcb, 0x6d, 0x4f, 0x15, 0x4d, 0x39, 0x20, 0x4e, 0x7b, 0xe6,
+	0x84, 0xec, 0xd4, 0xb1, 0x5b, 0xca, 0xed, 0xcd, 0xff, 0xf7, 0xf7, 0xbc, 0x79, 0xff, 0x27, 0x19,
+	0x60, 0x19, 0x7a, 0xb2, 0xbb, 0x8c, 0xa3, 0x34, 0xc2, 0x46, 0x56, 0xcb, 0x40, 0x2e, 0xf6, 0x1f,
+	0x2f, 0xa2, 0x45, 0x94, 0x8b, 0x9f, 0x67, 0xd5, 0x9a, 0x1f, 0xfc, 0xb6, 0x05, 0x1a, 0x95, 0xf3,
+	0xc8, 0x17, 0xfe, 0xab, 0x1f, 0x44, 0x7c, 0x31, 0x09, 0x3d, 0x89, 0x7d, 0x68, 0xa6, 0xc1, 0x99,
+	0xe0, 0x9e, 0x5c, 0x08, 0x9d, 0x98, 0xa4, 0xd3, 0x3a, 0x6c, 0x77, 0x8b, 0x8b, 0xba, 0x55, 0xbb,
+	0x53, 0xd8, 0x7a, 0xb5, 0x37, 0x57, 0x6d, 0x85, 0x97, 0xdf, 0xe1, 0x67, 0xb0, 0x2d, 0x23, 0x5f,
+	0x24, 0xfa, 0x96, 0xa9, 0x76, 0x5a, 0x87, 0x7b, 0xff, 0xb9, 0x80, 0x45, 0xbe, 0xe0, 0x6b, 0x0f,
+	0xee, 0x43, 0x23, 0x8e, 0xa2, 0x34, 0x93, 0x74, 0xd5, 0x24, 0x1d, 0x95, 0x6f, 0xce, 0xd8, 0x05,
+	0x8c, 0xe2, 0x60, 0x11, 0x48, 0x2f, 0xa4, 0x3f, 0x2e, 0x63, 0x91, 0x24, 0x41, 0x24, 0xf5, 0x9a,
+	0x49, 0x3a, 0x4d, 0xfe, 0x00, 0xc1, 0xaf, 0x41, 0x17, 0xd2, 0x3b, 0x0d, 0xc5, 0x91, 0x08, 0xbd,
+	0x0b, 0xe1, 0x33, 0xef, 0x4c, 0x70, 0x71, 0x16, 0x9d, 0x7b, 0xa1, 0xbe, 0x6d, 0x92, 0x4e, 0x83,
+	0xff, 0x2f, 0xc7, 0xaf, 0x60, 0xe7, 0x5c, 0xc4, 0x79, 0x83, 0xba, 0x49, 0x3a, 0xb5, 0x5e, 0xfb,
+	0xef, 0xab, 0x76, 0x21, 0xfd, 0x73, 0xd5, 0xd6, 0x36, 0x21, 0x1d, 0xaf, 0x35, 0x5e, 0xc0, 0x83,
+	0x5f, 0x08, 0xec, 0x3d, 0x18, 0x0d, 0x3e, 0x81, 0x7a, 0x92, 0x7a, 0x71, 0xea, 0xe4, 0x59, 0xaa,
+	0xfc, 0xf6, 0x84, 0x08, 0x35, 0x21, 0x7d, 0x47, 0xdf, 0xca, 0xd5, 0xbc, 0xc6, 0x43, 0x78, 0x1c,
+	0xc8, 0x54, 0xc4, 0xe7, 0x5e, 0x38, 0x0a, 0xc2, 0x30, 0x48, 0xc4, 0x3c, 0x92, 0x7e, 0x72, 0x1b,
+	0xca, 0x83, 0x0c, 0x5f, 0x40, 0x33, 0x48, 0x6c, 0x99, 0xa4, 0x9e, 0x4c, 0xf3, 0x5c, 0x1a, 0xbc,
+	0x14, 0x0e, 0x7e, 0x27, 0xd0, 0xaa, 0x24, 0x8e, 0x5d, 0x68, 0x64, 0x99, 0x3b, 0x17, 0xcb, 0xf5,
+	0x6e, 0x77, 0x0f, 0xb1, 0x5c, 0x0d, 0xbb, 0x25, 0x7c, 0xe3, 0x41, 0x1d, 0x76, 0x7c, 0x91, 0x7a,
+	0x41, 0x98, 0xe4, 0x0f, 0x7d, 0xc4, 0x8b, 0x63, 0xb6, 0xb4, 0xf9, 0xf7, 0x41, 0xe8, 0xc7, 0x42,
+	0xea, 0xaa, 0xa9, 0x66, 0x4b, 0x2b, 0xce, 0xd9, 0x6c, 0x69, 0xd6, 0x61, 0xbd, 0xa6, 0xbc, 0x46,
+	0x13, 0x5a, 0xbe, 0x48, 0xe6, 0x71, 0xb0, 0x4c, 0xb3, 0x80, 0xb7, 0x73, 0x54, 0x95, 0xf0, 0x63,
+	0xd8, 0x2d, 0x6e, 0x18, 0x7a, 0xa7, 0x22, 0x4c, 0xf4, 0xba, 0xa9, 0x76, 0x9a, 0xfc, 0x9e, 0xfa,
+	0xe9, 0x9f, 0x2a, 0x34, 0x8a, 0xa7, 0xe2, 0x1e, 0x7c, 0xc0, 0xc6, 0x47, 0xd4, 0x75, 0x4e, 0x26,
+	0xd4, 0x9d, 0xb1, 0x6f, 0xd9, 0xf8, 0x3b, 0xa6, 0x29, 0xf8, 0x11, 0x3c, 0x2b, 0xe5, 0x63, 0xda,
+	0x77, 0xc6, 0xdc, 0x9d, 0xd2, 0x61, 0x5e, 0x68, 0xe4, 0x2e, 0x1e, 0x59, 0x0e, 0xb7, 0x5f, 0x97,
+	0x78, 0x0b, 0x0f, 0xc0, 0x28, 0xb1, 0x35, 0x18, 0x70, 0x3a, 0xb0, 0x1c, 0xea, 0xd2, 0xd7, 0x13,
+	0x4e, 0xa7, 0x53, 0x7b, 0xcc, 0x34, 0x15, 0xdb, 0xf0, 0xbc, 0xf4, 0xf4, 0x6c, 0x66, 0xf1, 0x93,
+	0xaa, 0xa1, 0x86, 0xcf, 0xe1, 0x69, 0x69, 0xf8, 0x66, 0xc6, 0xfa, 0x8e, 0x3d, 0x66, 0x6e, 0xdf,
+	0x1a, 0x0e, 0xb5, 0x6d, 0x7c, 0x01, 0x7a, 0x09, 0xd9, 0x6c, 0xd4, 0xa3, 0xdc, 0x1d, 0xda, 0x0e,
+	0xe5, 0xd6, 0x50, 0xab, 0xdf, 0xa5, 0x53, 0x87, 0xdb, 0x6c, 0xb0, 0xa1, 0x3b, 0x68, 0xc0, 0x7e,
+	0x75, 0xe4, 0x7b, 0x8d, 0x1b, 0xf8, 0x04, 0xb0, 0xf2, 0xf5, 0xac, 0xf7, 0x6a, 0x46, 0xf9, 0x89,
+	0xd6, 0xc4, 0xa7, 0xf0, 0x61, 0xa9, 0x1f, 0xcd, 0x26, 0x43, 0xbb, 0x6f, 0x39, 0x54, 0x03, 0x7c,
+	0x09, 0xed, 0x0a, 0xa0, 0x1b, 0xe4, 0x5a, 0xec, 0xc8, 0x1d, 0x51, 0x3e, 0xa0, 0x5a, 0x0b, 0x9f,
+	0xc1, 0x5e, 0x69, 0xe2, 0x74, 0x34, 0xce, 0x03, 0xa1, 0x7d, 0xed, 0x11, 0x22, 0xec, 0x96, 0xc8,
+	0xa1, 0x53, 0x47, 0x7b, 0xef, 0x5e, 0x33, 0x3e, 0x9e, 0xb8, 0xcc, 0x1a, 0x51, 0x6d, 0x17, 0x3f,
+	0x81, 0x97, 0xd5, 0xd9, 0xe8, 0xc4, 0xb5, 0xd9, 0xb1, 0xc5, 0x6d, 0x8b, 0x39, 0xd5, 0x31, 0xde,
+	0xef, 0x7d, 0x79, 0x79, 0x6d, 0x28, 0x6f, 0xaf, 0x0d, 0xe5, 0xdd, 0xb5, 0x41, 0x7e, 0x5a, 0x19,
+	0xe4, 0xd7, 0x95, 0x41, 0xde, 0xac, 0x0c, 0x72, 0xb9, 0x32, 0xc8, 0x1f, 0x2b, 0x83, 0xfc, 0xb5,
+	0x32, 0x94, 0x77, 0x2b, 0x83, 0xfc, 0x7c, 0x63, 0x28, 0x97, 0x37, 0x86, 0xf2, 0xf6, 0xc6, 0x50,
+	0x4e, 0xeb, 0xf9, 0x9f, 0xed, 0x8b, 0x7f, 0x03, 0x00, 0x00, 0xff, 0xff, 0xe1, 0x70, 0x03, 0xf2,
+	0x07, 0x05, 0x00, 0x00,
 }
 
+func (x NodeType) String() string {
+	s, ok := NodeType_name[int32(x)]
+	if ok {
+		return s
+	}
+	return strconv.Itoa(int(x))
+}
 func (this *EncodedQueryPlan) Equal(that interface{}) bool {
 	if that == nil {
 		return this == nil
@@ -316,6 +435,12 @@ func (this *EncodedQueryPlan) Equal(that interface{}) bool {
 		return false
 	}
 	if this.OriginalExpression != that1.OriginalExpression {
+		return false
+	}
+	if this.EnableDelayedNameRemoval != that1.EnableDelayedNameRemoval {
+		return false
+	}
+	if this.Version != that1.Version {
 		return false
 	}
 	return true
@@ -372,7 +497,10 @@ func (this *EncodedNode) Equal(that interface{}) bool {
 	} else if this == nil {
 		return false
 	}
-	if !this.Details.Equal(that1.Details) {
+	if this.NodeType != that1.NodeType {
+		return false
+	}
+	if !bytes.Equal(this.Details, that1.Details) {
 		return false
 	}
 	if len(this.Children) != len(that1.Children) {
@@ -403,7 +531,7 @@ func (this *EncodedQueryPlan) GoString() string {
 	if this == nil {
 		return "nil"
 	}
-	s := make([]string, 0, 8)
+	s := make([]string, 0, 10)
 	s = append(s, "&planning.EncodedQueryPlan{")
 	s = append(s, "TimeRange: "+strings.Replace(this.TimeRange.GoString(), `&`, ``, 1)+",\n")
 	if this.Nodes != nil {
@@ -411,6 +539,8 @@ func (this *EncodedQueryPlan) GoString() string {
 	}
 	s = append(s, "RootNode: "+fmt.Sprintf("%#v", this.RootNode)+",\n")
 	s = append(s, "OriginalExpression: "+fmt.Sprintf("%#v", this.OriginalExpression)+",\n")
+	s = append(s, "EnableDelayedNameRemoval: "+fmt.Sprintf("%#v", this.EnableDelayedNameRemoval)+",\n")
+	s = append(s, "Version: "+fmt.Sprintf("%#v", this.Version)+",\n")
 	s = append(s, "}")
 	return strings.Join(s, "")
 }
@@ -431,11 +561,10 @@ func (this *EncodedNode) GoString() string {
 	if this == nil {
 		return "nil"
 	}
-	s := make([]string, 0, 9)
+	s := make([]string, 0, 10)
 	s = append(s, "&planning.EncodedNode{")
-	if this.Details != nil {
-		s = append(s, "Details: "+fmt.Sprintf("%#v", this.Details)+",\n")
-	}
+	s = append(s, "NodeType: "+fmt.Sprintf("%#v", this.NodeType)+",\n")
+	s = append(s, "Details: "+fmt.Sprintf("%#v", this.Details)+",\n")
 	s = append(s, "Children: "+fmt.Sprintf("%#v", this.Children)+",\n")
 	s = append(s, "Type: "+fmt.Sprintf("%#v", this.Type)+",\n")
 	s = append(s, "Description: "+fmt.Sprintf("%#v", this.Description)+",\n")
@@ -471,6 +600,21 @@ func (m *EncodedQueryPlan) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	_ = i
 	var l int
 	_ = l
+	if m.Version != 0 {
+		i = encodeVarintPlan(dAtA, i, uint64(m.Version))
+		i--
+		dAtA[i] = 0x30
+	}
+	if m.EnableDelayedNameRemoval {
+		i--
+		if m.EnableDelayedNameRemoval {
+			dAtA[i] = 1
+		} else {
+			dAtA[i] = 0
+		}
+		i--
+		dAtA[i] = 0x28
+	}
 	if len(m.OriginalExpression) > 0 {
 		i -= len(m.OriginalExpression)
 		copy(dAtA[i:], m.OriginalExpression)
@@ -584,7 +728,7 @@ func (m *EncodedNode) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			copy(dAtA[i:], m.ChildrenLabels[iNdEx])
 			i = encodeVarintPlan(dAtA, i, uint64(len(m.ChildrenLabels[iNdEx])))
 			i--
-			dAtA[i] = 0x2a
+			dAtA[i] = 0x32
 		}
 	}
 	if len(m.Description) > 0 {
@@ -592,14 +736,14 @@ func (m *EncodedNode) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 		copy(dAtA[i:], m.Description)
 		i = encodeVarintPlan(dAtA, i, uint64(len(m.Description)))
 		i--
-		dAtA[i] = 0x22
+		dAtA[i] = 0x2a
 	}
 	if len(m.Type) > 0 {
 		i -= len(m.Type)
 		copy(dAtA[i:], m.Type)
 		i = encodeVarintPlan(dAtA, i, uint64(len(m.Type)))
 		i--
-		dAtA[i] = 0x1a
+		dAtA[i] = 0x22
 	}
 	if len(m.Children) > 0 {
 		dAtA3 := make([]byte, len(m.Children)*10)
@@ -618,19 +762,19 @@ func (m *EncodedNode) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 		copy(dAtA[i:], dAtA3[:j2])
 		i = encodeVarintPlan(dAtA, i, uint64(j2))
 		i--
+		dAtA[i] = 0x1a
+	}
+	if len(m.Details) > 0 {
+		i -= len(m.Details)
+		copy(dAtA[i:], m.Details)
+		i = encodeVarintPlan(dAtA, i, uint64(len(m.Details)))
+		i--
 		dAtA[i] = 0x12
 	}
-	if m.Details != nil {
-		{
-			size, err := m.Details.MarshalToSizedBuffer(dAtA[:i])
-			if err != nil {
-				return 0, err
-			}
-			i -= size
-			i = encodeVarintPlan(dAtA, i, uint64(size))
-		}
+	if m.NodeType != 0 {
+		i = encodeVarintPlan(dAtA, i, uint64(m.NodeType))
 		i--
-		dAtA[i] = 0xa
+		dAtA[i] = 0x8
 	}
 	return len(dAtA) - i, nil
 }
@@ -667,6 +811,12 @@ func (m *EncodedQueryPlan) Size() (n int) {
 	if l > 0 {
 		n += 1 + l + sovPlan(uint64(l))
 	}
+	if m.EnableDelayedNameRemoval {
+		n += 2
+	}
+	if m.Version != 0 {
+		n += 1 + sovPlan(uint64(m.Version))
+	}
 	return n
 }
 
@@ -697,8 +847,11 @@ func (m *EncodedNode) Size() (n int) {
 	}
 	var l int
 	_ = l
-	if m.Details != nil {
-		l = m.Details.Size()
+	if m.NodeType != 0 {
+		n += 1 + sovPlan(uint64(m.NodeType))
+	}
+	l = len(m.Details)
+	if l > 0 {
 		n += 1 + l + sovPlan(uint64(l))
 	}
 	if len(m.Children) > 0 {
@@ -745,6 +898,8 @@ func (this *EncodedQueryPlan) String() string {
 		`Nodes:` + repeatedStringForNodes + `,`,
 		`RootNode:` + fmt.Sprintf("%v", this.RootNode) + `,`,
 		`OriginalExpression:` + fmt.Sprintf("%v", this.OriginalExpression) + `,`,
+		`EnableDelayedNameRemoval:` + fmt.Sprintf("%v", this.EnableDelayedNameRemoval) + `,`,
+		`Version:` + fmt.Sprintf("%v", this.Version) + `,`,
 		`}`,
 	}, "")
 	return s
@@ -767,7 +922,8 @@ func (this *EncodedNode) String() string {
 		return "nil"
 	}
 	s := strings.Join([]string{`&EncodedNode{`,
-		`Details:` + strings.Replace(fmt.Sprintf("%v", this.Details), "Any", "types.Any", 1) + `,`,
+		`NodeType:` + fmt.Sprintf("%v", this.NodeType) + `,`,
+		`Details:` + fmt.Sprintf("%v", this.Details) + `,`,
 		`Children:` + fmt.Sprintf("%v", this.Children) + `,`,
 		`Type:` + fmt.Sprintf("%v", this.Type) + `,`,
 		`Description:` + fmt.Sprintf("%v", this.Description) + `,`,
@@ -931,6 +1087,45 @@ func (m *EncodedQueryPlan) Unmarshal(dAtA []byte) error {
 			}
 			m.OriginalExpression = string(dAtA[iNdEx:postIndex])
 			iNdEx = postIndex
+		case 5:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field EnableDelayedNameRemoval", wireType)
+			}
+			var v int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowPlan
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				v |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			m.EnableDelayedNameRemoval = bool(v != 0)
+		case 6:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Version", wireType)
+			}
+			m.Version = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowPlan
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.Version |= QueryPlanVersion(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
 		default:
 			iNdEx = preIndex
 			skippy, err := skipPlan(dAtA[iNdEx:])
@@ -1109,10 +1304,10 @@ func (m *EncodedNode) Unmarshal(dAtA []byte) error {
 		}
 		switch fieldNum {
 		case 1:
-			if wireType != 2 {
-				return fmt.Errorf("proto: wrong wireType = %d for field Details", wireType)
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field NodeType", wireType)
 			}
-			var msglen int
+			m.NodeType = 0
 			for shift := uint(0); ; shift += 7 {
 				if shift >= 64 {
 					return ErrIntOverflowPlan
@@ -1122,29 +1317,46 @@ func (m *EncodedNode) Unmarshal(dAtA []byte) error {
 				}
 				b := dAtA[iNdEx]
 				iNdEx++
-				msglen |= int(b&0x7F) << shift
+				m.NodeType |= NodeType(b&0x7F) << shift
 				if b < 0x80 {
 					break
 				}
 			}
-			if msglen < 0 {
+		case 2:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Details", wireType)
+			}
+			var byteLen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowPlan
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				byteLen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if byteLen < 0 {
 				return ErrInvalidLengthPlan
 			}
-			postIndex := iNdEx + msglen
+			postIndex := iNdEx + byteLen
 			if postIndex < 0 {
 				return ErrInvalidLengthPlan
 			}
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
 			}
+			m.Details = append(m.Details[:0], dAtA[iNdEx:postIndex]...)
 			if m.Details == nil {
-				m.Details = &types.Any{}
-			}
-			if err := m.Details.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
-				return err
+				m.Details = []byte{}
 			}
 			iNdEx = postIndex
-		case 2:
+		case 3:
 			if wireType == 0 {
 				var v int64
 				for shift := uint(0); ; shift += 7 {
@@ -1220,7 +1432,7 @@ func (m *EncodedNode) Unmarshal(dAtA []byte) error {
 			} else {
 				return fmt.Errorf("proto: wrong wireType = %d for field Children", wireType)
 			}
-		case 3:
+		case 4:
 			if wireType != 2 {
 				return fmt.Errorf("proto: wrong wireType = %d for field Type", wireType)
 			}
@@ -1252,7 +1464,7 @@ func (m *EncodedNode) Unmarshal(dAtA []byte) error {
 			}
 			m.Type = string(dAtA[iNdEx:postIndex])
 			iNdEx = postIndex
-		case 4:
+		case 5:
 			if wireType != 2 {
 				return fmt.Errorf("proto: wrong wireType = %d for field Description", wireType)
 			}
@@ -1284,7 +1496,7 @@ func (m *EncodedNode) Unmarshal(dAtA []byte) error {
 			}
 			m.Description = string(dAtA[iNdEx:postIndex])
 			iNdEx = postIndex
-		case 5:
+		case 6:
 			if wireType != 2 {
 				return fmt.Errorf("proto: wrong wireType = %d for field ChildrenLabels", wireType)
 			}

@@ -194,6 +194,10 @@ func (u *BucketStores) stopBucketStores(error) error {
 func (u *BucketStores) initialSync(ctx context.Context) error {
 	level.Info(u.logger).Log("msg", "synchronizing TSDB blocks for all users")
 
+	if err := os.MkdirAll(u.cfg.BucketStore.SyncDir, 0750); err != nil {
+		return fmt.Errorf("create sync-dir: %w", err)
+	}
+
 	if err := u.syncUsersBlocksWithRetries(ctx, func(ctx context.Context, store *BucketStore) error {
 		return store.InitialSync(ctx)
 	}); err != nil {
@@ -450,7 +454,7 @@ type timeoutGate struct {
 	timeout  time.Duration
 }
 
-var errGateTimeout = staticError{cause: mimirpb.INSTANCE_LIMIT, msg: "timeout waiting for concurrency gate"}
+var errGateTimeout = staticError{cause: mimirpb.ERROR_CAUSE_INSTANCE_LIMIT, msg: "timeout waiting for concurrency gate"}
 
 func (t timeoutGate) Start(ctx context.Context) error {
 	if t.timeout == 0 {

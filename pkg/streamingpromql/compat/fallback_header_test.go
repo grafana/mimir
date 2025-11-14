@@ -3,14 +3,16 @@
 package compat
 
 import (
+	"context"
 	"net/http"
-	"net/http/httptest"
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/grafana/mimir/pkg/util/propagation"
 )
 
-func TestEngineFallbackInjector(t *testing.T) {
+func TestEngineFallbackExtractor(t *testing.T) {
 	testCases := map[string]struct {
 		headers http.Header
 
@@ -43,32 +45,14 @@ func TestEngineFallbackInjector(t *testing.T) {
 
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
-			injector := EngineFallbackInjector{}
-			handlerCalled := false
-			handler := injector.Wrap(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-				handlerCalled = true
-				require.Equal(t, testCase.expectFallback, isForceFallbackEnabled(req.Context()))
-				w.WriteHeader(http.StatusOK)
-			}))
-
-			req, err := http.NewRequest(http.MethodGet, "/blah", nil)
-			require.NoError(t, err)
-			req.Header = testCase.headers
-
-			resp := httptest.NewRecorder()
-			handler.ServeHTTP(resp, req)
+			extractor := &EngineFallbackExtractor{}
+			ctx, err := extractor.ExtractFromCarrier(context.Background(), propagation.HttpHeaderCarrier(testCase.headers))
 
 			if testCase.expectedError == "" {
-				require.True(t, handlerCalled)
-				require.Equal(t, http.StatusOK, resp.Code)
+				require.NoError(t, err)
+				require.Equal(t, testCase.expectFallback, isForceFallbackEnabled(ctx))
 			} else {
-				require.False(t, handlerCalled)
-				require.Equal(t, http.StatusBadRequest, resp.Code)
-				require.Equal(t, "application/json", resp.Header().Get("Content-Type"))
-
-				body := resp.Body.String()
-				expectedBody := `{"status": "error", "errorType": "bad_data", "error": "` + testCase.expectedError + `"}`
-				require.JSONEq(t, expectedBody, body)
+				require.EqualError(t, err, testCase.expectedError)
 			}
 		})
 	}

@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 
 	"github.com/pkg/errors"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/rulefmt"
 	promRules "github.com/prometheus/prometheus/rules"
 
@@ -171,7 +172,9 @@ func (l *Client) loadAllRulesGroupsForUser(ctx context.Context, userID string) (
 func (l *Client) loadRawRulesGroupsForUserAndNamespace(_ context.Context, userID string, namespace string) (*rulefmt.RuleGroups, error) {
 	filename := filepath.Join(l.cfg.Directory, userID, namespace)
 
-	rulegroups, errs := l.loader.Load(filename, false)
+	// Note that we hard code UTF-8 metric/label name validation mode, since we don't want to prevent
+	// loading rule groups created in UTF-8 mode if validation mode is legacy.
+	rulegroups, errs := l.loader.Load(filename, false, model.UTF8Validation)
 	if len(errs) > 0 {
 		return nil, errors.Wrapf(errs[0], "error parsing %s", filename)
 	}

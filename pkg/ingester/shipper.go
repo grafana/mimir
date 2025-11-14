@@ -6,12 +6,13 @@
 package ingester
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"os"
 	"path"
 	"path/filepath"
-	"sort"
+	"slices"
 	"time"
 
 	"github.com/go-kit/log"
@@ -25,7 +26,6 @@ import (
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"github.com/thanos-io/objstore"
 
-	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
@@ -197,11 +197,12 @@ func (s *shipper) upload(ctx context.Context, logger log.Logger, meta *block.Met
 
 	if meta.Compaction.FromOutOfOrder() && s.cfgProvider.OutOfOrderBlocksExternalLabelEnabled(s.userID) {
 		// At this point the OOO data was already ingested and compacted, so there's no point in checking for the OOO feature flag
-		meta.Thanos.Labels[mimir_tsdb.OutOfOrderExternalLabel] = mimir_tsdb.OutOfOrderExternalLabelValue
+		meta.Thanos.Labels[block.OutOfOrderExternalLabel] = block.OutOfOrderExternalLabelValue
 	}
 
 	// Upload block with custom metadata.
-	return block.Upload(ctx, logger, s.bucket, blockDir, meta)
+	_, err := block.Upload(ctx, logger, s.bucket, blockDir, meta)
+	return err
 }
 
 // blockMetasFromOldest returns the block meta of each block found in dir
@@ -234,8 +235,8 @@ func (s *shipper) blockMetasFromOldest() (metas []*block.Meta, _ error) {
 		}
 		metas = append(metas, m)
 	}
-	sort.Slice(metas, func(i, j int) bool {
-		return metas[i].MinTime < metas[j].MinTime
+	slices.SortFunc(metas, func(a, b *block.Meta) int {
+		return cmp.Compare(a.MinTime, b.MinTime)
 	})
 	return metas, nil
 }

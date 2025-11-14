@@ -104,8 +104,6 @@ func newFastRegexMatcherWithoutCache(v string) (*FastRegexMatcher, error) {
 		if err != nil {
 			return nil, err
 		}
-		// Simplify the syntax tree to run faster.
-		parsed = parsed.Simplify()
 		m.re, err = regexp.Compile("^(?s:" + parsed.String() + ")$")
 		if err != nil {
 			return nil, err
@@ -417,7 +415,7 @@ func optimizeConcatRegex(r *syntax.Regexp) (prefix, suffix string, contains []st
 	}
 
 	if len(sub) == 0 {
-		return
+		return prefix, suffix, contains
 	}
 
 	// Given Prometheus regex matchers are always anchored to the begin/end
@@ -438,7 +436,7 @@ func optimizeConcatRegex(r *syntax.Regexp) (prefix, suffix string, contains []st
 		}
 	}
 
-	return
+	return prefix, suffix, contains
 }
 
 // StringMatcher is a matcher that matches a string in place of a regular expression.
@@ -741,7 +739,7 @@ func (m *literalSuffixStringMatcher) Matches(s string) bool {
 // emptyStringMatcher matches an empty string.
 type emptyStringMatcher struct{}
 
-func (m emptyStringMatcher) Matches(s string) bool {
+func (emptyStringMatcher) Matches(s string) bool {
 	return len(s) == 0
 }
 
@@ -802,7 +800,7 @@ func (m *equalMultiStringSliceMatcher) add(s string) {
 	m.values = append(m.values, s)
 }
 
-func (m *equalMultiStringSliceMatcher) addPrefix(_ string, _ bool, _ StringMatcher) {
+func (*equalMultiStringSliceMatcher) addPrefix(string, bool, StringMatcher) {
 	panic("not implemented")
 }
 
@@ -943,7 +941,7 @@ func toNormalisedLowerSlow(s string, i int, a []byte) string {
 // (including an empty one) as far as it doesn't contain any newline character.
 type anyStringWithoutNewlineMatcher struct{}
 
-func (m anyStringWithoutNewlineMatcher) Matches(s string) bool {
+func (anyStringWithoutNewlineMatcher) Matches(s string) bool {
 	// We need to make sure it doesn't contain a newline. Since the newline is
 	// an ASCII character, we can use strings.IndexByte().
 	return strings.IndexByte(s, '\n') == -1
@@ -993,7 +991,7 @@ func (m *zeroOrOneCharacterStringMatcher) Matches(s string) bool {
 // trueMatcher is a stringMatcher which matches any string (always returns true).
 type trueMatcher struct{}
 
-func (m trueMatcher) Matches(_ string) bool {
+func (trueMatcher) Matches(string) bool {
 	return true
 }
 

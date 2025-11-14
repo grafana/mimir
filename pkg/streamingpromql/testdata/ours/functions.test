@@ -302,6 +302,22 @@ eval range from 0 to 10m step 5m label_join(series, "(export)", "-", "label", "o
   series{"(export)"="b-2", label="b", opt="2", this="there"} 2.9 {{sum:4 count:23 buckets:[1 2 4]}}
   series{"(export)"="c-3", label="c", opt="3"} NaN _
 
+# Empty destination label name
+eval instant at 0m label_join(series, "", "-", "label")
+  expect fail regex:^invalid destination label name in label_join\(\): $
+
+# Empty source label name
+eval instant at 0m label_join(series, "joined", "-", "valid", "")
+  expect fail regex:^invalid source label name in label_join\(\): $
+
+# Invalid UTF-8 in destination label name
+eval instant at 0m label_join(series, "\x80", "-", "label")
+  expect fail regex:^invalid destination label name in label_join\(\): �$
+
+# Invalid UTF-8 in source label name
+eval instant at 0m label_join(series, "joined", "-", "valid", "\x80")
+  expect fail regex:^invalid source label name in label_join\(\): �$
+
 clear
 
 # The following tests pass prometheus' engine when promql-delayed-name-removal is enabled.
@@ -671,9 +687,7 @@ eval range from 0 to 8m step 1m idelta(metric[3m1s])
   expect warn
   {case="2 floats"} _ 4 4 4
   {case="2 floats and nh last sample"} _ 4
-  {case="2 floats and nh middle sample"} _ _ 4 4
   {case="2 floats and nhcb last sample"} _ 4
-  {case="2 floats and nhcb middle sample"} _ _ 4 4
   {case="2 floats with Inf 2 middle samples"} _ Inf NaN -Inf -Inf -Inf
   {case="2 floats with Inf last sample"} _ 4 Inf Inf Inf
   {case="2 floats with Inf middle sample"} _ Inf -Inf -Inf -Inf
@@ -694,9 +708,7 @@ eval range from 0 to 8m step 1m irate(metric[3m1s])
   expect warn
   {case="2 floats"} _ 0.06666666666666667 0.06666666666666667 0.06666666666666667
   {case="2 floats and nh last sample"} _ 0.06666666666666667
-  {case="2 floats and nh middle sample"} _ _ 0.03333333333333333 0.03333333333333333
   {case="2 floats and nhcb last sample"} _ 0.06666666666666667
-  {case="2 floats and nhcb middle sample"} _ _ 0.03333333333333333 0.03333333333333333
   {case="2 floats with Inf 2 middle samples"} _ Inf NaN 0.08333333333333333 0.08333333333333333 0.08333333333333333
   {case="2 floats with Inf last sample"} _ 0.06666666666666667 Inf Inf Inf
   {case="2 floats with Inf middle sample"} _ Inf 0.08333333333333333 0.08333333333333333 0.08333333333333333
@@ -891,14 +903,14 @@ load 1m
 eval range from 0 to 7m step 1m year(some_metric)
   {case="gap1"} _ 2006 2006 2017 2017 2022 2022 2022
   {case="gap2"} 2006 2006 2006 2017 2017 2017 2022 2022
-  {case="histogram-float"} 2006 2006 2017
+  {case="histogram-float"} 2006 _ 2017
   {case="series1"} 1970 2006 2042 2078 2114 2150 2186 2222
   {case="series2"} 1970 2022 2075 2128 2181 2234 2287 2340
 
 eval range from 0 to 7m step 1m month(some_metric)
   {case="gap1"} _ 1 1 2 2 12 12 12
   {case="gap2"} 1 1 1 2 2 2 12 12
-  {case="histogram-float"} 1 1 2
+  {case="histogram-float"} 1 _ 2
   {case="series1"} 1 1 1 1 1 1 1 1
   {case="series2"} 1 12 12 12 12 12 12 12
 
@@ -994,6 +1006,85 @@ eval range from 0 to 4m step 1m sort_desc(test_metric)
   test_metric{case="float with NaN"}      NaN NaN NaN NaN NaN
   test_metric{case="float with +Inf"}     +Inf +Inf +Inf +Inf +Inf
   test_metric{case="float with -Inf"}     -Inf -Inf -Inf -Inf -Inf
+
+clear
+
+# Test sort_by_label / sort_by_label_desc.
+load 1m
+  test_metric{test1="c", test2="x", case="float 1"}             0+10x3
+  test_metric{test1="a", test2="x", case="float 2"}             0+10x3
+  test_metric{test1="a", test2="x", case="float 3"}             0+10x3
+  test_metric{test1="b", test2="y", case="float 4"}             0+10x3
+  test_metric{test1="d", test2="x", case="histogram 1"}         {{count:0 sum:12}} {{count:0 sum:12}} {{count:0 sum:12}}
+  test_metric{test1="d", test2="y", case="histogram 2"}         {{count:20 sum:5}} {{count:20 sum:5}} {{count:20 sum:5}}
+
+# With no labels, we sort by all labels in sorted order (i.e. "case" is compared first)
+eval_ordered instant at 1m sort_by_label(test_metric)
+  test_metric{test1="c", test2="x", case="float 1"}             10
+  test_metric{test1="a", test2="x", case="float 2"}             10
+  test_metric{test1="a", test2="x", case="float 3"}             10
+  test_metric{test1="b", test2="y", case="float 4"}             10
+  test_metric{test1="d", test2="x", case="histogram 1"}         {{count:0 sum:12}}
+  test_metric{test1="d", test2="y", case="histogram 2"}         {{count:20 sum:5}}
+
+eval_ordered instant at 1m sort_by_label(test_metric, "test1")
+  test_metric{test1="a", test2="x", case="float 2"}             10
+  test_metric{test1="a", test2="x", case="float 3"}             10
+  test_metric{test1="b", test2="y", case="float 4"}             10
+  test_metric{test1="c", test2="x", case="float 1"}             10
+  test_metric{test1="d", test2="x", case="histogram 1"}         {{count:0 sum:12}}
+  test_metric{test1="d", test2="y", case="histogram 2"}         {{count:20 sum:5}}
+
+eval_ordered instant at 1m sort_by_label(test_metric, "test2", "test1")
+  test_metric{test1="a", test2="x", case="float 2"}             10
+  test_metric{test1="a", test2="x", case="float 3"}             10
+  test_metric{test1="c", test2="x", case="float 1"}             10
+  test_metric{test1="d", test2="x", case="histogram 1"}         {{count:0 sum:12}}
+  test_metric{test1="b", test2="y", case="float 4"}             10
+  test_metric{test1="d", test2="y", case="histogram 2"}         {{count:20 sum:5}}
+
+# sort_by_label doesn't affect range queries, verify that here.
+eval range from 0 to 3m step 1m sort_by_label(test_metric, "test1")
+  test_metric{test1="c", test2="x", case="float 1"}             0+10x3
+  test_metric{test1="a", test2="x", case="float 2"}             0+10x3
+  test_metric{test1="a", test2="x", case="float 3"}             0+10x3
+  test_metric{test1="b", test2="y", case="float 4"}             0+10x3
+  test_metric{test1="d", test2="x", case="histogram 1"}         {{count:0 sum:12}} {{count:0 sum:12}} {{count:0 sum:12}} {{count:0 sum:12}}
+  test_metric{test1="d", test2="y", case="histogram 2"}         {{count:20 sum:5}} {{count:20 sum:5}} {{count:20 sum:5}} {{count:20 sum:5}}
+
+# With no labels, we sort by all labels in sorted order (i.e. "case" is compared first)
+eval_ordered instant at 1m sort_by_label_desc(test_metric)
+  test_metric{test1="d", test2="y", case="histogram 2"}         {{count:20 sum:5}}
+  test_metric{test1="d", test2="x", case="histogram 1"}         {{count:0 sum:12}}
+  test_metric{test1="b", test2="y", case="float 4"}             10
+  test_metric{test1="a", test2="x", case="float 3"}             10
+  test_metric{test1="a", test2="x", case="float 2"}             10
+  test_metric{test1="c", test2="x", case="float 1"}             10
+
+eval_ordered instant at 1m sort_by_label_desc(test_metric, "test1")
+  test_metric{test1="d", test2="y", case="histogram 2"}         {{count:20 sum:5}}
+  test_metric{test1="d", test2="x", case="histogram 1"}         {{count:0 sum:12}}
+  test_metric{test1="c", test2="x", case="float 1"}             10
+  test_metric{test1="b", test2="y", case="float 4"}             10
+  test_metric{test1="a", test2="x", case="float 3"}             10
+  test_metric{test1="a", test2="x", case="float 2"}             10
+
+eval_ordered instant at 1m sort_by_label_desc(test_metric, "test2", "test1")
+  test_metric{test1="d", test2="y", case="histogram 2"}         {{count:20 sum:5}}
+  test_metric{test1="b", test2="y", case="float 4"}             10
+  test_metric{test1="d", test2="x", case="histogram 1"}         {{count:0 sum:12}}
+  test_metric{test1="c", test2="x", case="float 1"}             10
+  test_metric{test1="a", test2="x", case="float 3"}             10
+  test_metric{test1="a", test2="x", case="float 2"}             10
+
+# sort_by_label_desc doesn't affect range queries, verify that here.
+eval range from 0 to 3m step 1m sort_by_label_desc(test_metric, "test1")
+  test_metric{test1="d", test2="y", case="histogram 2"}         {{count:20 sum:5}} {{count:20 sum:5}} {{count:20 sum:5}} {{count:20 sum:5}}
+  test_metric{test1="d", test2="x", case="histogram 1"}         {{count:0 sum:12}} {{count:0 sum:12}} {{count:0 sum:12}} {{count:0 sum:12}}
+  test_metric{test1="b", test2="y", case="float 4"}             0+10x3
+  test_metric{test1="a", test2="x", case="float 3"}             0+10x3
+  test_metric{test1="a", test2="x", case="float 2"}             0+10x3
+  test_metric{test1="c", test2="x", case="float 1"}             0+10x3
 
 clear
 
@@ -1252,5 +1343,191 @@ eval_fail instant at 0s double_exponential_smoothing(http_requests[5000s], 0, 0.
 
 eval_fail instant at 0s double_exponential_smoothing(http_requests[5000s], 0.01, 0)
   expected_fail_message invalid trend factor. Expected: 0 < tf < 1, got: 0.000000
+
+clear
+
+# Tests for ts_of_min_over_time and ts_of_max_over_time using a mix of floats and histograms
+load 10s
+  metric 1 2 3 4 5 6
+  metric_histogram{type="only_histogram"} {{schema:1 sum:2 count:3}}x6
+  metric_histogram{type="mix"} 5 2 1 {{schema:1 sum:2 count:3}} {{schema:1 sum:2 count:3}} 6
+  metric_histogram{type="mix_end"} 5 2 1 {{schema:1 sum:2 count:3}} {{schema:1 sum:2 count:3}} 1
+  metric_histogram{type="mix_middle"} 10 2 60 {{schema:1 sum:2 count:3}} {{schema:1 sum:2 count:3}} 10
+
+eval instant at 60s ts_of_min_over_time(metric[60s])
+  {} 10
+  expect no_info
+
+eval instant at 60s ts_of_max_over_time(metric[60s])
+  {} 50
+  expect no_info
+
+eval instant at 60s ts_of_min_over_time(metric_histogram{type="mix"}[60s])
+  {type="mix"} 20
+  expect info regex: ignored histograms in a range containing both floats and histograms for metric name
+
+eval instant at 60s ts_of_max_over_time(metric_histogram{type="mix"}[60s])
+  {type="mix"} 50
+  expect info regex: ignored histograms in a range containing both floats and histograms for metric name
+
+eval instant at 60s ts_of_min_over_time(metric_histogram{type="mix_end"}[60s])
+  {type="mix_end"} 50
+  expect info regex: ignored histograms in a range containing both floats and histograms for metric name
+
+eval instant at 60s ts_of_max_over_time(metric_histogram{type="mix_end"}[60s])
+  {type="mix_end"} 10
+  expect info regex: ignored histograms in a range containing both floats and histograms for metric name
+
+eval instant at 60s ts_of_min_over_time(metric_histogram{type="mix_middle"}[60s])
+  {type="mix_middle"} 10
+  expect info regex: ignored histograms in a range containing both floats and histograms for metric name
+
+eval instant at 60s ts_of_max_over_time(metric_histogram{type="mix_middle"}[60s])
+  {type="mix_middle"} 20
+  expect info regex: ignored histograms in a range containing both floats and histograms for metric name
+
+clear
+
+# Tests for ts_of_last_over_time using a mix of floats and histograms
+load 10s
+  metric_histogram{type="mix_last_histogram"} 5 2 1 {{schema:1 sum:2 count:3}} 1 {{schema:1 sum:2 count:3}}
+  metric_histogram{type="mix_last_float"} 5 2 1 {{schema:1 sum:2 count:3}} {{schema:1 sum:2 count:3}} 1
+  metric_histogram{type="mix_last_missing"} 5 2 1 {{schema:1 sum:2 count:3}} {{schema:1 sum:2 count:3}} _
+
+eval instant at 60s ts_of_last_over_time(metric_histogram{type="mix_last_histogram"}[60s])
+  {type="mix_last_histogram"} 50
+
+eval instant at 60s ts_of_last_over_time(metric_histogram{type="mix_last_float"}[60s])
+  {type="mix_last_float"} 50
+
+eval instant at 60s ts_of_last_over_time(metric_histogram{type="mix_last_missing"}[60s])
+  {type="mix_last_missing"} 40
+
+clear
+
+# Tests for ts_of_first_over_time using a mix of floats and histograms
+load 10s
+  metric_histogram{type="mix_first_histogram"} {{schema:1 sum:2 count:3}} 1 {{schema:1 sum:2 count:3}} 5 2 1
+  metric_histogram{type="mix_first_float"} 5 {{schema:1 sum:2 count:3}} {{schema:1 sum:2 count:3}} 1 2 1
+  metric_histogram{type="mix_first_missing"} _ 2 1 {{schema:1 sum:2 count:3}} {{schema:1 sum:2 count:3}} _
+
+eval instant at 60s ts_of_first_over_time(metric_histogram{type="mix_first_histogram"}[80s])
+  {type="mix_first_histogram"} 0
+
+eval instant at 60s ts_of_first_over_time(metric_histogram{type="mix_first_float"}[80s])
+  {type="mix_first_float"} 0
+
+eval instant at 60s ts_of_first_over_time(metric_histogram{type="mix_first_missing"}[80s])
+  {type="mix_first_missing"} 10
+
+clear
+
+# Additional tests specific to step invariant expression handling
+load 10s
+  metric{label="foo"} 28x10
+  metric{label="bar", group="a"} 5 4x9
+  metric{label="bar", group="b"} 3 4x9
+  metric{label="bar", group="c"} 0+1x10
+  metric_mixed{label="mixed"} 3 2 1 {{schema:1 sum:2 count:3}} 1 {{schema:1 sum:2 count:3}} {{schema:1 sum:2 count:3}}
+  metric_mixed{label="missing"} _ _ 1 4 _ _ _
+
+eval range from 0 to 60s step 10s metric{label="bar"} @ start()
+  {__name__="metric", label="bar", group="a"} 5 5 5 5 5 5 5
+  {__name__="metric", label="bar", group="b"} 3 3 3 3 3 3 3
+  {__name__="metric", label="bar", group="c"} 0 0 0 0 0 0 0
+
+eval range from 0 to 60s step 10s metric_mixed @ start()
+  {__name__="metric_mixed", label="mixed"} 3 3 3 3 3 3 3
+
+eval range from 0 to 60s step 10s metric_mixed @ end()
+  {__name__="metric_mixed", label="mixed"} {{schema:1 sum:2 count:3}} {{schema:1 sum:2 count:3}} {{schema:1 sum:2 count:3}} {{schema:1 sum:2 count:3}} {{schema:1 sum:2 count:3}} {{schema:1 sum:2 count:3}} {{schema:1 sum:2 count:3}}
+  {__name__="metric_mixed", label="missing"} 4 4 4 4 4 4 4
+
+eval range from 0 to 60s step 10s metric_mixed @ 30
+  {__name__="metric_mixed", label="mixed"} {{schema:1 sum:2 count:3}} {{schema:1 sum:2 count:3}} {{schema:1 sum:2 count:3}} {{schema:1 sum:2 count:3}} {{schema:1 sum:2 count:3}} {{schema:1 sum:2 count:3}} {{schema:1 sum:2 count:3}}
+  {__name__="metric_mixed", label="missing"} 4 4 4 4 4 4 4
+
+eval range from 0 to 60s step 10s metric{label="bar"} @ end()
+  {__name__="metric", label="bar", group="a"} 4 4 4 4 4 4 4
+  {__name__="metric", label="bar", group="b"} 4 4 4 4 4 4 4
+  {__name__="metric", label="bar", group="c"} 6 6 6 6 6 6 6
+
+eval range from 0 to 60s step 10s sum(metric{label="bar"} @ start())
+  {} 8 8 8 8 8 8 8
+
+eval range from 0 to 60s step 10s metric{label="foo"} / ignoring(label) sum(metric{label="bar"} @ end())
+  {} 2 2 2 2 2 2 2
+
+eval range from 0 to 60s step 10s 55
+  {} 55 55 55 55 55 55 55
+
+eval range from 0 to 60s step 10s timestamp(metric{label="bar"} @ 9)
+  {label="bar", group="a"} 0 0 0 0 0 0 0
+  {label="bar", group="b"} 0 0 0 0 0 0 0
+  {label="bar", group="c"} 0 0 0 0 0 0 0
+
+eval range from 0 to 60s step 10s timestamp(metric{label="bar"} @ 11)
+  {label="bar", group="a"} 10 10 10 10 10 10 10
+  {label="bar", group="b"} 10 10 10 10 10 10 10
+  {label="bar", group="c"} 10 10 10 10 10 10 10
+
+eval range from 0 to 60s step 10s metric_mixed @ 11
+  {__name__="metric_mixed", label="mixed"} 2 2 2 2 2 2 2
+
+eval range from 0 to 60s step 10s abs(metric_mixed @ 11)
+  {label="mixed"} 2 2 2 2 2 2 2
+
+eval range from 0 to 60s step 10s timestamp(metric_mixed @ 11)
+  {label="mixed"} 10 10 10 10 10 10 10
+
+eval range from 0 to 60s step 10s timestamp(abs(metric_mixed @ 11))
+  {label="mixed"} 0 10 20 30 40 50 60
+
+eval range from 0 to 60s step 10s timestamp(metric_mixed @ 30)
+  {label="mixed"} 30 30 30 30 30 30 30
+  {label="missing"} 30 30 30 30 30 30 30
+
+# Additional tests for mad_over_time.
+load 10s
+  metric_missing _ 0.6 1.7 _ 11.8 14 _
+  metric_single _ 5 _ _ _ _ _
+  metric_none _ _ _ _ _ _ _
+  metric_nan NaN NaN NaN NaN NaN NaN NaN
+  metric_zeros 0 0 0 0 0 0 0
+  metric_mix 0 -10 -6.3 7.8 0 -806.34 2
+  metric_mix_nan 0 NaN -6.3 -50 NaN -806.34 2
+  metric_histogram{type="mix"} 1 1 1 {{schema:1 sum:2 count:3}} {{schema:1 sum:2 count:3}}
+
+eval instant at 70s mad_over_time(metric_missing[80s])
+  expect no_info
+  {} 5.6
+
+eval instant at 70s mad_over_time(metric_nan[80s])
+  expect no_info
+  {} NaN
+
+eval instant at 70s mad_over_time(metric_single[80s])
+  expect no_info
+  {} 0
+
+eval instant at 70s mad_over_time(metric_zeros[80s])
+  expect no_info
+  {} 0
+
+eval instant at 70s mad_over_time(metric_mix[80s])
+  expect no_info
+  {} 6.3
+
+eval instant at 70s mad_over_time(metric_mix_nan[80s])
+  expect no_info
+  {} 43.7
+
+eval instant at 70s mad_over_time(metric_none[80s])
+  expect no_info
+  #empty
+
+eval instant at 70s mad_over_time(metric_histogram{type="mix"}[70s])
+  expect info regex: ignored histograms in a range containing both floats and histograms for metric name
+  {type="mix"} 0
 
 clear

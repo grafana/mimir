@@ -15,11 +15,11 @@ import (
 	"github.com/gogo/protobuf/types"
 	"github.com/grafana/dskit/cache"
 	"github.com/grafana/dskit/flagext"
-	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/querier/stats"
 )
 
 func TestResultsCacheConfig_Validate(t *testing.T) {
@@ -133,16 +133,16 @@ func mkExtentWithEvenPerStepSamplesProcessed(start, end int64, step int64, sampl
 	return ext
 }
 
-func mkEvenlyDistributedExtentPerStepStats(start, end int64, step int64, samplesPerStep int64) []StepStat {
+func mkEvenlyDistributedExtentPerStepStats(start, end int64, step int64, samplesPerStep int64) []stats.StepStat {
 	numSteps := int((end-start)/step) + 1
-	stats := make([]StepStat, numSteps)
+	s := make([]stats.StepStat, numSteps)
 	for i := 0; i < numSteps; i++ {
-		stats[i] = StepStat{
+		s[i] = stats.StepStat{
 			Timestamp: start + int64(i)*step,
 			Value:     samplesPerStep,
 		}
 	}
-	return stats
+	return s
 }
 
 func TestIsRequestCachable(t *testing.T) {
@@ -589,7 +589,7 @@ func TestPartitionCacheExtentsSamplesProcessed(t *testing.T) {
 		request                  MetricsQueryRequest
 		cachedExtents            []Extent
 		expectedSamplesProcessed uint64
-		expectedStepStats        []StepStat
+		expectedStepStats        []stats.StepStat
 	}{
 		{
 			name: "Extent equal query range - all samples counted",
@@ -602,7 +602,7 @@ func TestPartitionCacheExtentsSamplesProcessed(t *testing.T) {
 				mkExtentWithEvenPerStepSamplesProcessed(100, 140, 10, 10),
 			},
 			expectedSamplesProcessed: 50,
-			expectedStepStats: []StepStat{
+			expectedStepStats: []stats.StepStat{
 				{Timestamp: 100, Value: 10},
 				{Timestamp: 110, Value: 10},
 				{Timestamp: 120, Value: 10},
@@ -621,7 +621,7 @@ func TestPartitionCacheExtentsSamplesProcessed(t *testing.T) {
 				mkExtentWithEvenPerStepSamplesProcessed(110, 140, 10, 10),
 			},
 			expectedSamplesProcessed: 40,
-			expectedStepStats: []StepStat{
+			expectedStepStats: []stats.StepStat{
 				{Timestamp: 110, Value: 10},
 				{Timestamp: 120, Value: 10},
 				{Timestamp: 130, Value: 10},
@@ -639,7 +639,7 @@ func TestPartitionCacheExtentsSamplesProcessed(t *testing.T) {
 				mkExtentWithEvenPerStepSamplesProcessed(100, 140, 10, 10),
 			},
 			expectedSamplesProcessed: 40,
-			expectedStepStats: []StepStat{
+			expectedStepStats: []stats.StepStat{
 				{Timestamp: 100, Value: 10},
 				{Timestamp: 110, Value: 10},
 				{Timestamp: 120, Value: 10},
@@ -657,7 +657,7 @@ func TestPartitionCacheExtentsSamplesProcessed(t *testing.T) {
 				mkExtentWithEvenPerStepSamplesProcessed(130, 170, 10, 10),
 			},
 			expectedSamplesProcessed: 30,
-			expectedStepStats: []StepStat{
+			expectedStepStats: []stats.StepStat{
 				{Timestamp: 130, Value: 10},
 				{Timestamp: 140, Value: 10},
 				{Timestamp: 150, Value: 10},
@@ -675,7 +675,7 @@ func TestPartitionCacheExtentsSamplesProcessed(t *testing.T) {
 				mkExtentWithEvenPerStepSamplesProcessed(130, 150, 10, 25),
 			},
 			expectedSamplesProcessed: 120,
-			expectedStepStats: []StepStat{
+			expectedStepStats: []stats.StepStat{
 				{Timestamp: 100, Value: 15},
 				{Timestamp: 110, Value: 15},
 				{Timestamp: 120, Value: 15},
@@ -698,7 +698,7 @@ func TestPartitionCacheExtentsSamplesProcessed(t *testing.T) {
 			// only values at timestamp 120 is merged, due to how partitionCacheExtents is implemented, so:
 			// [T:100; V:10] + [T:110; V:10] + [T:120; V:15] + [T:130; V:15] = 50
 			expectedSamplesProcessed: 50,
-			expectedStepStats: []StepStat{
+			expectedStepStats: []stats.StepStat{
 				{Timestamp: 100, Value: 10},
 				{Timestamp: 110, Value: 10},
 				{Timestamp: 120, Value: 15},
@@ -729,7 +729,7 @@ func TestPartitionCacheExtentsSamplesProcessed(t *testing.T) {
 				mkExtentWithEvenPerStepSamplesProcessed(110, 120, 10, 0),
 			},
 			expectedSamplesProcessed: 0,
-			expectedStepStats: []StepStat{
+			expectedStepStats: []stats.StepStat{
 				{Timestamp: 110, Value: 0},
 				{Timestamp: 120, Value: 0},
 			},
@@ -762,8 +762,7 @@ func TestPartitionCacheExtentsSamplesProcessed(t *testing.T) {
 
 func TestDefaultSplitter_QueryRequest(t *testing.T) {
 	t.Parallel()
-	reg := prometheus.NewPedanticRegistry()
-	codec := NewPrometheusCodec(reg, 0*time.Minute, formatJSON, nil)
+	codec := newTestCodec()
 
 	ctx := context.Background()
 
@@ -795,7 +794,7 @@ func TestDefaultSplitter_QueryRequest(t *testing.T) {
 
 func TestMergeCacheExtentsForRequest(t *testing.T) {
 	ctx := context.Background()
-	merger := &prometheusCodec{}
+	merger := &Codec{}
 
 	tests := []struct {
 		name            string
@@ -867,7 +866,7 @@ func TestMergeCacheExtentsForRequest(t *testing.T) {
 				{
 					Start: 100,
 					End:   170,
-					SamplesProcessedPerStep: []StepStat{
+					SamplesProcessedPerStep: []stats.StepStat{
 						{Timestamp: 100, Value: 10},
 						{Timestamp: 110, Value: 10},
 						{Timestamp: 120, Value: 10},

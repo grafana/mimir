@@ -58,28 +58,6 @@ func TestIndexCacheConfig_Validate(t *testing.T) {
 				return cfg
 			}(),
 		},
-		"no redis address should fail": {
-			cfg: func() IndexCacheConfig {
-				cfg := IndexCacheConfig{}
-				flagext.DefaultValues(&cfg)
-
-				cfg.Backend = IndexCacheBackendRedis
-
-				return cfg
-			}(),
-			expected: cache.ErrRedisConfigNoEndpoint,
-		},
-		"one redis address should pass": {
-			cfg: func() IndexCacheConfig {
-				cfg := IndexCacheConfig{}
-				flagext.DefaultValues(&cfg)
-
-				cfg.Backend = IndexCacheBackendRedis
-				cfg.Redis.Endpoint = []string{"localhost:6379"}
-
-				return cfg
-			}(),
-		},
 		"inmemory should pass": {
 			cfg: func() IndexCacheConfig {
 				cfg := IndexCacheConfig{}

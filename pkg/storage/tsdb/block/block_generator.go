@@ -111,16 +111,14 @@ func GenerateBlockFromSpec(storageDir string, specs SeriesSpecs) (_ *Meta, retur
 
 	// Updates the Ref on each chunk.
 	for _, series := range specs {
-		stats.NumSeries++
-
 		// Ensure every chunk meta has chunk data.
 		for _, c := range series.Chunks {
 			if c.Chunk == nil {
 				return nil, errors.Errorf("missing chunk data for series %s", series.Labels.String())
 			}
-			stats.NumChunks++
-			stats.NumSamples += uint64(c.Chunk.NumSamples())
 		}
+
+		updateStats(&stats, 1, series.Chunks)
 
 		if err := chunkw.WriteChunks(series.Chunks...); err != nil {
 			return nil, err
@@ -206,7 +204,6 @@ func CreateBlock(
 	headOpts := tsdb.DefaultHeadOptions()
 	headOpts.ChunkDirRoot = filepath.Join(dir, "chunks")
 	headOpts.ChunkRange = math.MaxInt64
-	headOpts.EnableNativeHistograms.Store(true)
 	h, err := tsdb.NewHead(nil, nil, nil, nil, headOpts, nil)
 	if err != nil {
 		return id, errors.Wrap(err, "create head block")

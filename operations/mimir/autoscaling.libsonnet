@@ -2,6 +2,12 @@
   _config+:: {
     autoscaling_prometheus_url: 'http://prometheus.default:9090/prometheus',
 
+    // If true, compute the scaling metric using irate(), otherwise, use rate()
+    autoscaling_cpu_hpa_use_irate: false,
+
+    // If true, compute the scaling metric as non-null only when container_memory_working_set_bytes is available
+    autoscaling_memory_hpa_require_metrics: false,
+
     autoscaling_querier_enabled: false,
     autoscaling_querier_min_replicas: error 'you must set autoscaling_querier_min_replicas in the _config',
     autoscaling_querier_max_replicas: error 'you must set autoscaling_querier_max_replicas in the _config',
@@ -50,9 +56,6 @@
     autoscaling_alertmanager_memory_target_utilization: 1,
   },
 
-  assert !$._config.autoscaling_querier_enabled || $._config.query_scheduler_enabled
-         : 'you must enable query-scheduler in order to use querier autoscaling',
-
   // KEDA defaults to apiVersion: apps/v1 and kind: Deployment for scaleTargetRef, this function
   // avoids specifying apiVersion and kind if they are at their defaults.
   local scaleTargetRef(apiVersion, kind, name) = if apiVersion != 'apps/v1' || kind != 'Deployment' then {
@@ -63,10 +66,10 @@
     name: name,
   },
 
-  // metricWithWeight will multiply the metric by the weight provided if it's different from 1.
-  local metricWithWeight(metric, weight) =
+  // queryWithWeight will multiply the metric by the weight provided if it's different from 1.
+  local queryWithWeight(metric, weight) =
     if weight == 1 then metric
-    else '%s * %.2f' % [metric, weight],
+    else '(%s) * %.2f' % [metric, weight],
 
 
   // replicaswithWeight will return the portion of replicas that should be applied with the weight provided.
@@ -172,137 +175,175 @@
   // `weight` param can be used to control just a portion of the expected queriers with the generated scaled object.
   // For example, if you run multiple querier deployments on different node types, you can use the weight to control which portion of them runs on which nodes.
   // The weight is a number between 0 and 1, where 1 means 100% of the expected queriers.
-  newQuerierScaledObject(name, query_scheduler_container_name, querier_container_name, querier_max_concurrent, min_replicas, max_replicas, target_utilization, weight=1):: self.newScaledObject(name, $._config.namespace, {
-    min_replica_count: replicasWithWeight(min_replicas, weight),
-    max_replica_count: replicasWithWeight(max_replicas, weight),
+  newQuerierScaledObject(name, query_scheduler_container_name, querier_container_name, querier_max_concurrent, min_replicas, max_replicas, target_utilization, weight=1, extra_matchers='')::
+    local queryParams = {
+      namespace: $._config.namespace,
+      query_scheduler_container_name: query_scheduler_container_name,
+      querier_container_name: querier_container_name,
+      extra_matchers: if extra_matchers == '' then '' else ',%s' % extra_matchers,
+    };
 
-    triggers:
-      [
-        {
-          metric_name: 'cortex_%s_hpa_%s' % [std.strReplace(name, '-', '_'), $._config.namespace],
+    self.newScaledObject(name, $._config.namespace, {
+      min_replica_count: replicasWithWeight(min_replicas, weight),
+      max_replica_count: replicasWithWeight(max_replicas, weight),
 
-          // Each query scheduler tracks *at regular intervals* the number of inflight requests
-          // (both enqueued and processing queries) as a summary. With the following query we target
-          // to have enough querier workers to run the max observed inflight requests 50% of time.
-          //
-          // This metric covers the case queries are piling up in the query-scheduler queue.
-          query: metricWithWeight('sum(max_over_time(cortex_query_scheduler_inflight_requests{container="%s",namespace="%s",quantile="0.5"}[1m]))' % [query_scheduler_container_name, $._config.namespace], weight),
+      triggers:
+        [
+          {
+            metric_name: 'cortex_%s_hpa_%s' % [std.strReplace(name, '-', '_'), $._config.namespace],
 
-          threshold: '%d' % std.floor(querier_max_concurrent * target_utilization),
-        },
-        {
-          metric_name: 'cortex_%s_hpa_%s_requests_duration' % [std.strReplace(name, '-', '_'), $._config.namespace],
+            // Each query scheduler tracks *at regular intervals* the number of inflight requests
+            // (both enqueued and processing queries) as a summary. With the following query we target
+            // to have enough querier workers to run the max observed inflight requests 50% of time.
+            //
+            // This metric covers the case queries are piling up in the query-scheduler queue.
+            query: queryWithWeight('sum(max_over_time(cortex_query_scheduler_inflight_requests{container="%(query_scheduler_container_name)s",namespace="%(namespace)s",quantile="0.5"%(extra_matchers)s}[1m]))' % queryParams, weight),
 
-          // The total requests duration / second is a good approximation of the number of querier workers used.
-          //
-          // This metric covers the case queries are not necessarily piling up in the query-scheduler queue,
-          // but queriers are busy.
-          query: metricWithWeight('sum(rate(cortex_querier_request_duration_seconds_sum{container="%s",namespace="%s"}[1m]))' % [querier_container_name, $._config.namespace], weight),
+            threshold: '%d' % std.floor(querier_max_concurrent * target_utilization),
+          },
+          {
+            metric_name: 'cortex_%s_hpa_%s_requests_duration' % [std.strReplace(name, '-', '_'), $._config.namespace],
 
-          threshold: '%d' % std.floor(querier_max_concurrent * target_utilization),
-        },
-      ]
-      + if !$._config.autoscaling_querier_predictive_scaling_enabled then [] else [
-        {
-          metric_name: 'cortex_%s_hpa_%s_7d_offset' % [std.strReplace(name, '-', '_'), $._config.namespace],
+            // The total requests duration / second is a good approximation of the number of querier workers used.
+            //
+            // This metric covers the case queries are not necessarily piling up in the query-scheduler queue,
+            // but queriers are busy.
+            query: queryWithWeight('sum(rate(cortex_querier_request_duration_seconds_sum{container="%(querier_container_name)s",namespace="%(namespace)s"%(extra_matchers)s}[1m]))' % queryParams, weight),
 
-          // Scale queriers according to how many queriers would have been sufficient to handle the load $period ago.
-          // We use the query scheduler metric which includes active queries and queries in the queue.
-          query: metricWithWeight('sum(max_over_time(cortex_query_scheduler_inflight_requests{container="%(container)s",namespace="%(namespace)s",quantile="0.5"}[%(lookback)s] offset %(period)s))' % {
-            container: query_scheduler_container_name,
-            namespace: $._config.namespace,
-            lookback: $._config.autoscaling_querier_predictive_scaling_lookback,
-            period: $._config.autoscaling_querier_predictive_scaling_period,
-          }, weight),
-          threshold: '%d' % std.floor(querier_max_concurrent * target_utilization),
-        },
-      ],
-  }) + {
-    spec+: {
-      advanced: {
-        horizontalPodAutoscalerConfig: {
-          behavior: {
-            scaleUp: {
-              // When multiple policies are specified the policy which allows the highest amount of change is the
-              // policy which is selected by default.
-              policies: [
-                {
-                  // Allow to scale up at most autoscaling_querier_scaledown_percent_cap percent of pods every 2m. Why 2m?
-                  // Because the metric looks back 1m and we give another 1m to let new queriers to start and process some
-                  // backlog.
-                  //
-                  // This policy covers the case we already have an high number of queriers running and adding +50%
-                  // in the span of 2m means adding a significant number of pods.
+            threshold: '%d' % std.floor(querier_max_concurrent * target_utilization),
+          },
+        ]
+        + if !$._config.autoscaling_querier_predictive_scaling_enabled then [] else [
+          {
+            metric_name: 'cortex_%s_hpa_%s_7d_offset' % [std.strReplace(name, '-', '_'), $._config.namespace],
+
+            // Scale queriers according to how many queriers would have been sufficient to handle the load $period ago.
+            // We use the query scheduler metric which includes active queries and queries in the queue.
+            query: queryWithWeight('sum(max_over_time(cortex_query_scheduler_inflight_requests{container="%(query_scheduler_container_name)s",namespace="%(namespace)s",quantile="0.5"%(extra_matchers)s}[%(lookback)s] offset %(period)s))' % (
+              queryParams {
+                lookback: $._config.autoscaling_querier_predictive_scaling_lookback,
+                period: $._config.autoscaling_querier_predictive_scaling_period,
+              }
+            ), weight),
+            threshold: '%d' % std.floor(querier_max_concurrent * target_utilization),
+          },
+        ],
+    }) + {
+      spec+: {
+        advanced: {
+          horizontalPodAutoscalerConfig: {
+            behavior: {
+              scaleUp: {
+                // When multiple policies are specified the policy which allows the highest amount of change is the
+                // policy which is selected by default.
+                policies: [
+                  {
+                    // Allow to scale up at most autoscaling_querier_scaledown_percent_cap percent of pods every 2m. Why 2m?
+                    // Because the metric looks back 1m and we give another 1m to let new queriers to start and process some
+                    // backlog.
+                    //
+                    // This policy covers the case we already have an high number of queriers running and adding +50%
+                    // in the span of 2m means adding a significant number of pods.
+                    type: 'Percent',
+                    value: $._config.autoscaling_querier_scaleup_percent_cap,
+                    periodSeconds: 120,
+                  },
+                  {
+                    // Allow to scale up at most 15 pods every 2m. Why 2m? Because the metric looks back 1m and we
+                    // give another 1m to let new queriers to start and process some backlog.
+                    //
+                    // This policy covers the case we currently have an small number of queriers (e.g. < 10) and limiting
+                    // the scaling by percentage may be too slow when scaling up.
+                    type: 'Pods',
+                    value: 15,
+                    periodSeconds: 120,
+                  },
+                ],
+                // Scaling metrics query the last 1m, so after a scale up we should wait at least 1m before we re-evaluate
+                // them for a further scale up.
+                stabilizationWindowSeconds: 60,
+              },
+              scaleDown: {
+                policies: [{
+                  // Allow to scale down up to autoscaling_querier_scaledown_percent_cap percent of pods every 2m.
+                  // A higher configured value leads to faster scale down.
                   type: 'Percent',
-                  value: $._config.autoscaling_querier_scaleup_percent_cap,
+                  value: $._config.autoscaling_querier_scaledown_percent_cap,
                   periodSeconds: 120,
-                },
-                {
-                  // Allow to scale up at most 15 pods every 2m. Why 2m? Because the metric looks back 1m and we
-                  // give another 1m to let new queriers to start and process some backlog.
-                  //
-                  // This policy covers the case we currently have an small number of queriers (e.g. < 10) and limiting
-                  // the scaling by percentage may be too slow when scaling up.
-                  type: 'Pods',
-                  value: 15,
-                  periodSeconds: 120,
-                },
-              ],
-              // Scaling metrics query the last 1m, so after a scale up we should wait at least 1m before we re-evaluate
-              // them for a further scale up.
-              stabilizationWindowSeconds: 60,
-            },
-            scaleDown: {
-              policies: [{
-                // Allow to scale down up to autoscaling_querier_scaledown_percent_cap percent of pods every 2m.
-                // A higher configured value leads to faster scale down.
-                type: 'Percent',
-                value: $._config.autoscaling_querier_scaledown_percent_cap,
-                periodSeconds: 120,
-              }],
-              // Reduce the likelihood of flapping replicas. When the metrics indicate that the target should be scaled
-              // down, HPA looks into previously computed desired states, and uses the highest value from the last 10m.
-              stabilizationWindowSeconds: 600,
+                }],
+                // Reduce the likelihood of flapping replicas. When the metrics indicate that the target should be scaled
+                // down, HPA looks into previously computed desired states, and uses the highest value from the last 10m.
+                stabilizationWindowSeconds: 600,
+              },
             },
           },
         },
       },
     },
-  },
 
   local cpuHPAQuery(with_ready_trigger) = (
     if with_ready_trigger then
-      // To scale out relatively quickly, but scale in slower, we look at the average CPU utilization
-      // per replica over 5m (rolling window) and then we pick the 95th percentile value over the last 15m.
-      // We multiply by 1000 to get the result in millicores. This is due to HPA only working with ints.
+      // To scale out relatively quickly, but scale in slower, we look at the CPU utilization over multiple
+      // time windows. When autoscaling_cpu_hpa_use_irate is false, we look at the average CPU utilization
+      // per replica over 5m (rolling window) and then pick the configured percentile value over the last 15m.
+      // When true, we check the instantaneous rate. We multiply by 1000 to get the result in millicores.
+      // This is due to HPA only working with ints.
       //
       // When computing the actual CPU utilization, We only take in account ready pods.
-      |||
-        quantile_over_time(0.95,
-          sum(
-            sum by (pod) (rate(container_cpu_usage_seconds_total{container="%(container)s",namespace="%(namespace)s"%(extra_matchers)s}[5m]))
-            and
-            max by (pod) (min_over_time(kube_pod_status_ready{namespace="%(namespace)s",condition="true"%(extra_matchers)s}[1m])) > 0
-          )[15m:]
-        ) * 1000
-      |||
+      if $._config.autoscaling_cpu_hpa_use_irate then
+        // We use irate() instead of rate() because it is more reliable when scrapes fail. It calculates
+        // the metric from the last two data points in the range, whereas rate() extrapolates missing
+        // values over the full window, which can underestimate CPU utilization and trigger unnecessary
+        // downscaling. To prevent overscaling, we use a lower percentile in irate() compared to rate().
+        |||
+          quantile_over_time(0.65,
+            sum(
+              sum by (pod) (irate(container_cpu_usage_seconds_total{container="%(container)s",namespace="%(namespace)s"%(extra_matchers)s}[5m]))
+              and
+              max by (pod) (min_over_time(kube_pod_status_ready{namespace="%(namespace)s",condition="true"%(extra_matchers)s}[1m])) > 0
+            )[15m:]
+          ) * 1000
+        |||
+      else
+        |||
+          quantile_over_time(0.95,
+            sum(
+              sum by (pod) (rate(container_cpu_usage_seconds_total{container="%(container)s",namespace="%(namespace)s"%(extra_matchers)s}[5m]))
+              and
+              max by (pod) (min_over_time(kube_pod_status_ready{namespace="%(namespace)s",condition="true"%(extra_matchers)s}[1m])) > 0
+            )[15m:]
+          ) * 1000
+        |||
     else
-      // To scale out relatively quickly, but scale in slower, we look at the average CPU utilization
-      // per replica over 5m (rolling window) and then we pick the highest value over the last 15m.
-      // We multiply by 1000 to get the result in millicores. This is due to HPA only working with ints.
+      // To scale out relatively quickly, but scale in slower, we look at the CPU utilization over multiple
+      // time windows. When autoscaling_cpu_hpa_use_irate is false, we look at the average CPU utilization
+      // per replica over 5m (rolling window) and then pick the configured percentile value over the last 15m.
+      // When true, we check the instantaneous rate. We multiply by 1000 to get the result in millicores.
+      // This is due to HPA only working with ints.
       //
-      // The "up" metrics correctly handles the stale marker when the pod is terminated, while it’s not the
+      // The "up" metrics correctly handles the stale marker when the pod is terminated, while it's not the
       // case for the cAdvisor metrics. By intersecting these 2 metrics, we only look the CPU utilization
       // of containers there are running at any given time, without suffering the PromQL lookback period.
-      |||
-        max_over_time(
-          sum(
-            sum by (pod) (rate(container_cpu_usage_seconds_total{container="%(container)s",namespace="%(namespace)s"%(extra_matchers)s}[5m]))
-            and
-            max by (pod) (up{container="%(container)s",namespace="%(namespace)s"%(extra_matchers)s}) > 0
-          )[15m:]
-        ) * 1000
-      |||
+      if $._config.autoscaling_cpu_hpa_use_irate then
+        |||
+          quantile_over_time(0.75,
+            sum(
+              sum by (pod) (irate(container_cpu_usage_seconds_total{container="%(container)s",namespace="%(namespace)s"%(extra_matchers)s}[5m]))
+              and
+              max by (pod) (up{container="%(container)s",namespace="%(namespace)s"%(extra_matchers)s}) > 0
+            )[15m:]
+          ) * 1000
+        |||
+      else
+        |||
+          max_over_time(
+            sum(
+              sum by (pod) (rate(container_cpu_usage_seconds_total{container="%(container)s",namespace="%(namespace)s"%(extra_matchers)s}[5m]))
+              and
+              max by (pod) (up{container="%(container)s",namespace="%(namespace)s"%(extra_matchers)s}) > 0
+            )[15m:]
+          ) * 1000
+        |||
   ),
 
   local memoryHPAQuery(with_ready_trigger) =
@@ -312,37 +353,65 @@
         // all replicas over 15m.
         //
         // When computing the actual memory utilization, We only take in account ready pods.
-        |||
-          quantile_over_time(0.95,
-            sum(
-              (
-                sum by (pod) (container_memory_working_set_bytes{container="%(container)s",namespace="%(namespace)s"%(extra_matchers)s})
-                and
-                max by (pod) (min_over_time(kube_pod_status_ready{namespace="%(namespace)s",condition="true"%(extra_matchers)s}[1m])) > 0
-              ) or vector(0)
-            )[15m:]
-          )
-        |||
+        if $._config.autoscaling_memory_hpa_require_metrics then
+          |||
+            quantile_over_time(0.95,
+              sum(
+                (
+                  sum by (pod) (container_memory_working_set_bytes{container="%(container)s",namespace="%(namespace)s"%(extra_matchers)s})
+                  and
+                  max by (pod) (min_over_time(kube_pod_status_ready{namespace="%(namespace)s",condition="true"%(extra_matchers)s}[1m])) > 0
+                )
+              )[15m:]
+            )
+          |||
+        else
+          |||
+            quantile_over_time(0.95,
+              sum(
+                (
+                  sum by (pod) (container_memory_working_set_bytes{container="%(container)s",namespace="%(namespace)s"%(extra_matchers)s})
+                  and
+                  max by (pod) (min_over_time(kube_pod_status_ready{namespace="%(namespace)s",condition="true"%(extra_matchers)s}[1m])) > 0
+                ) or vector(0)
+              )[15m:]
+            )
+          |||
       else
         // To scale out relatively quickly, but scale in slower, we look at the max memory utilization across
         // all replicas over 15m.
         //
-        // The "up" metrics correctly handles the stale marker when the pod is terminated, while it’s not the
+        // The "up" metrics correctly handles the stale marker when the pod is terminated, while it's not the
         // case for the cAdvisor metrics. By intersecting these 2 metrics, we only look the memory utilization
         // of containers there are running at any given time, without suffering the PromQL lookback period.
-        |||
-          max_over_time(
-            sum(
-              (
-                sum by (pod) (container_memory_working_set_bytes{container="%(container)s",namespace="%(namespace)s"%(extra_matchers)s})
-                and
-                max by (pod) (up{container="%(container)s",namespace="%(namespace)s"%(extra_matchers)s}) > 0
-              ) or vector(0)
-            )[15m:]
-          )
-        |||
+        if $._config.autoscaling_memory_hpa_require_metrics then
+          |||
+            max_over_time(
+              sum(
+                (
+                  sum by (pod) (container_memory_working_set_bytes{container="%(container)s",namespace="%(namespace)s"%(extra_matchers)s})
+                  and
+                  max by (pod) (up{container="%(container)s",namespace="%(namespace)s"%(extra_matchers)s}) > 0
+                )
+              )[15m:]
+            )
+          |||
+        else
+          |||
+            max_over_time(
+              sum(
+                (
+                  sum by (pod) (container_memory_working_set_bytes{container="%(container)s",namespace="%(namespace)s"%(extra_matchers)s})
+                  and
+                  max by (pod) (up{container="%(container)s",namespace="%(namespace)s"%(extra_matchers)s}) > 0
+                ) or vector(0)
+              )[15m:]
+            )
+          |||
     ) + (
-      // Add pods that were terminated due to an OOM in the memory calculation.
+      // Add pods that were terminated due to an OOM in the memory calculation. We use `or vector(0)` here unlike in the main memory
+      // query because we want to ensure this part of the calculation always returns a value even when no OOM killed pods are found.
+      // This prevents the entire memory metric from becoming unavailable.
       |||
         +
         sum(
@@ -366,6 +435,7 @@
     memory_target_utilization,
     with_cortex_prefix=false,
     with_ready_trigger=false,
+    with_memory_trigger=true,
     weight=1,
     scale_down_period=null,
     extra_triggers=[],
@@ -389,7 +459,7 @@
           metric_name: '%s%s_cpu_hpa_%s' %
                        ([if with_cortex_prefix then 'cortex_' else ''] + [std.strReplace(name, '-', '_'), $._config.namespace]),
 
-          query: metricWithWeight(cpuHPAQuery(with_ready_trigger) % queryParameters, weight),
+          query: queryWithWeight(cpuHPAQuery(with_ready_trigger) % queryParameters, weight),
 
           // Threshold is expected to be a string
           threshold: std.toString(std.floor(cpuToMilliCPUInt(cpu_requests) * cpu_target_utilization)),
@@ -397,19 +467,20 @@
           // up or down unexpectedly. See https://keda.sh/docs/2.13/scalers/prometheus/ for more info.
           ignore_null_values: false,
         },
-        {
-          metric_name: '%s%s_memory_hpa_%s' %
-                       ([if with_cortex_prefix then 'cortex_' else ''] + [std.strReplace(name, '-', '_'), $._config.namespace]),
+      ] + (if with_memory_trigger then [
+             {
+               metric_name: '%s%s_memory_hpa_%s' %
+                            ([if with_cortex_prefix then 'cortex_' else ''] + [std.strReplace(name, '-', '_'), $._config.namespace]),
 
-          query: memoryHPAQuery(with_ready_trigger) % queryParameters,
+               query: queryWithWeight(memoryHPAQuery(with_ready_trigger) % queryParameters, weight),
 
-          // Threshold is expected to be a string
-          threshold: std.toString(std.floor($.util.siToBytes(memory_requests) * memory_target_utilization)),
-          // Disable ignoring null values. This allows HPAs to effectively pause when metrics are unavailable rather than scaling
-          // up or down unexpectedly. See https://keda.sh/docs/2.13/scalers/prometheus/ for more info.
-          ignore_null_values: false,
-        },
-      ] + extra_triggers,
+               // Threshold is expected to be a string
+               threshold: std.toString(std.floor($.util.siToBytes(memory_requests) * memory_target_utilization)),
+               // Disable ignoring null values. This allows HPAs to effectively pause when metrics are unavailable rather than scaling
+               // up or down unexpectedly. See https://keda.sh/docs/2.13/scalers/prometheus/ for more info.
+               ignore_null_values: false,
+             },
+           ] else []) + extra_triggers,
     },
   ),
 
@@ -468,16 +539,25 @@
     if !$._config.autoscaling_querier_enabled then {} else $.removeReplicasFromSpec
   ),
 
-  query_frontend_scaled_object: if !$._config.autoscaling_query_frontend_enabled then null else
+  //
+  // Query-frontends
+  //
+
+  newQueryFrontendScaledObject(name, extra_matchers='')::
     $.newResourceScaledObject(
-      name='query-frontend',
+      name=name,
+      container_name='query-frontend',
       cpu_requests=$.query_frontend_container.resources.requests.cpu,
       memory_requests=$.query_frontend_container.resources.requests.memory,
       min_replicas=$._config.autoscaling_query_frontend_min_replicas,
       max_replicas=$._config.autoscaling_query_frontend_max_replicas,
       cpu_target_utilization=$._config.autoscaling_query_frontend_cpu_target_utilization,
       memory_target_utilization=$._config.autoscaling_query_frontend_memory_target_utilization,
+      extra_matchers=extra_matchers,
     ),
+
+  query_frontend_scaled_object: if !$._config.autoscaling_query_frontend_enabled then null else
+    $.newQueryFrontendScaledObject('query-frontend'),
 
   query_frontend_deployment: overrideSuperIfExists(
     'query_frontend_deployment',
@@ -491,19 +571,25 @@
   // Ruler-queriers
   //
 
-  ruler_querier_scaled_object: if !$._config.autoscaling_ruler_querier_enabled || !$._config.ruler_remote_evaluation_enabled then null else
+  newRulerQuerierScaledObject(name, querier_args, extra_matchers='')::
     $.newResourceScaledObject(
-      name='ruler-querier',
+      name=name,
+      container_name='ruler-querier',
       cpu_requests=$.ruler_querier_container.resources.requests.cpu,
       memory_requests=$.ruler_querier_container.resources.requests.memory,
       min_replicas=$._config.autoscaling_ruler_querier_min_replicas,
       max_replicas=$._config.autoscaling_ruler_querier_max_replicas,
       cpu_target_utilization=$._config.autoscaling_ruler_querier_cpu_target_utilization,
       memory_target_utilization=$._config.autoscaling_ruler_querier_memory_target_utilization,
+      extra_matchers=extra_matchers,
       extra_triggers=if $._config.autoscaling_ruler_querier_workers_target_utilization <= 0 then [] else [
         {
           local name = 'ruler-querier-queries',
-          local querier_max_concurrent = $.ruler_querier_args['querier.max-concurrent'],
+          local querier_max_concurrent = querier_args['querier.max-concurrent'],
+          local query_params = {
+            namespace: $._config.namespace,
+            extra_matchers: if extra_matchers == '' then '' else ',%s' % extra_matchers,
+          },
 
           metric_name: '%s_hpa_%s' % [std.strReplace(name, '-', '_'), $._config.namespace],
 
@@ -514,7 +600,7 @@
           // This metric covers the case queries are piling up in the ruler-query-scheduler queue,
           // but ruler-querier replicas are not scaled up by other scaling metrics (e.g. CPU and memory)
           // because resources utilization is not increasing significantly.
-          query: 'sum(max_over_time(cortex_query_scheduler_inflight_requests{container="ruler-query-scheduler",namespace="%s",quantile="0.5"}[1m]))' % [$._config.namespace],
+          query: 'sum(max_over_time(cortex_query_scheduler_inflight_requests{container="ruler-query-scheduler",namespace="%(namespace)s",quantile="0.5"%(extra_matchers)s}[1m]))' % query_params,
 
           threshold: '%d' % std.floor(querier_max_concurrent * $._config.autoscaling_ruler_querier_workers_target_utilization),
 
@@ -525,21 +611,33 @@
       ],
     ),
 
+  ruler_querier_scaled_object: if !$._config.autoscaling_ruler_querier_enabled || !$._config.ruler_remote_evaluation_enabled then null else
+    $.newRulerQuerierScaledObject('ruler-querier', $.ruler_querier_args),
+
   ruler_querier_deployment: overrideSuperIfExists(
     'ruler_querier_deployment',
     if !$._config.autoscaling_ruler_querier_enabled then {} else $.removeReplicasFromSpec
   ),
 
-  ruler_query_frontend_scaled_object: if !$._config.autoscaling_ruler_query_frontend_enabled || !$._config.ruler_remote_evaluation_enabled then null else
+  //
+  // Ruler-query-frontends
+  //
+
+  newRulerQueryFrontendScaledObject(name, extra_matchers='')::
     $.newResourceScaledObject(
-      name='ruler-query-frontend',
+      name=name,
+      container_name='ruler-query-frontend',
       cpu_requests=$.ruler_query_frontend_container.resources.requests.cpu,
       memory_requests=$.ruler_query_frontend_container.resources.requests.memory,
       min_replicas=$._config.autoscaling_ruler_query_frontend_min_replicas,
       max_replicas=$._config.autoscaling_ruler_query_frontend_max_replicas,
       cpu_target_utilization=$._config.autoscaling_ruler_query_frontend_cpu_target_utilization,
       memory_target_utilization=$._config.autoscaling_ruler_query_frontend_memory_target_utilization,
+      extra_matchers=extra_matchers,
     ),
+
+  ruler_query_frontend_scaled_object: if !$._config.autoscaling_ruler_query_frontend_enabled || !$._config.ruler_remote_evaluation_enabled then null else
+    $.newRulerQueryFrontendScaledObject('ruler-query-frontend'),
 
   ruler_query_frontend_deployment: overrideSuperIfExists(
     'ruler_query_frontend_deployment',
@@ -548,6 +646,10 @@
         queryFrontendReplicas($._config.autoscaling_ruler_querier_max_replicas) else
         {}
   ),
+
+  //
+  // Distributors
+  //
 
   newDistributorScaledObject(name, extra_matchers='')::
     $.newResourceScaledObject(
@@ -562,6 +664,7 @@
       with_cortex_prefix=true,
       with_ready_trigger=true,
       extra_matchers=extra_matchers,
+      with_memory_trigger=!$._config.distributor_gomemlimit_enabled,
     ) + (
       {
         spec+: {
@@ -658,18 +761,23 @@
     if !isDistributorAutoscalingZoneCEnabled then {} else $.removeReplicasFromSpec
   ),
 
-  ruler_scaled_object: if !$._config.autoscaling_ruler_enabled then null else $.newResourceScaledObject(
-    name='ruler',
-    cpu_requests=$.ruler_container.resources.requests.cpu,
-    memory_requests=$.ruler_container.resources.requests.memory,
-    min_replicas=$._config.autoscaling_ruler_min_replicas,
-    max_replicas=$._config.autoscaling_ruler_max_replicas,
-    cpu_target_utilization=$._config.autoscaling_ruler_cpu_target_utilization,
-    memory_target_utilization=$._config.autoscaling_ruler_memory_target_utilization,
-    // To guarantee rule evaluation without any omissions, it is imperative to avoid the frequent scaling up and
-    // down of the ruler. As a result, we have made the decision to set the scale down period to 600 seconds.
-    scale_down_period=600,
-  ),
+  newRulerScaledObject(name, extra_matchers='')::
+    $.newResourceScaledObject(
+      name=name,
+      container_name='ruler',
+      cpu_requests=$.ruler_container.resources.requests.cpu,
+      memory_requests=$.ruler_container.resources.requests.memory,
+      min_replicas=$._config.autoscaling_ruler_min_replicas,
+      max_replicas=$._config.autoscaling_ruler_max_replicas,
+      cpu_target_utilization=$._config.autoscaling_ruler_cpu_target_utilization,
+      memory_target_utilization=$._config.autoscaling_ruler_memory_target_utilization,
+      // To guarantee rule evaluation without any omissions, it is imperative to avoid the frequent scaling up and
+      // down of the ruler. As a result, we have made the decision to set the scale down period to 600 seconds.
+      scale_down_period=600,
+      extra_matchers=extra_matchers,
+    ),
+
+  ruler_scaled_object: if !$._config.autoscaling_ruler_enabled then null else $.newRulerScaledObject('ruler'),
 
   ruler_deployment: overrideSuperIfExists(
     'ruler_deployment',

@@ -7,6 +7,7 @@ package mimirpb
 
 import (
 	stdlibjson "encoding/json"
+	"fmt"
 	"math"
 	"strconv"
 	"testing"
@@ -209,11 +210,54 @@ func BenchmarkFromLabelAdaptersToLabelsWithCopy(b *testing.B) {
 	}
 }
 
+func BenchmarkFromLabelAdaptersToLabels(b *testing.B) {
+	testCases := [][]LabelAdapter{
+		{}, // Empty labels.
+		{
+			{Name: "hello", Value: "world"},
+		},
+		{
+			{Name: "hello", Value: "world"},
+			{Name: "some label", Value: "and its value"},
+		},
+		{
+			{Name: "hello", Value: "world"},
+			{Name: "some label", Value: "and its value"},
+			{Name: "another label", Value: "another value"},
+		},
+		{
+			{Name: "hello", Value: "world"},
+			{Name: "some label", Value: "and its value"},
+			{Name: "another label", Value: "another value"},
+			{Name: "label 4", Value: "value 4"},
+			{Name: "label 5", Value: "value 5"},
+			{Name: "label 6", Value: "value 6"},
+			{Name: "label 7", Value: "value 7"},
+			{Name: "label 8", Value: "value 8"},
+		},
+	}
+
+	for _, testCase := range testCases {
+		b.Run(fmt.Sprintf("%v labels", len(testCase)), func(b *testing.B) {
+			for b.Loop() {
+				FromLabelAdaptersToLabels(testCase)
+			}
+		})
+	}
+}
+
 func TestFromFPointsToSamples(t *testing.T) {
 	input := []promql.FPoint{{T: 1, F: 2}, {T: 3, F: 4}}
 	expected := []Sample{{TimestampMs: 1, Value: 2}, {TimestampMs: 3, Value: 4}}
 
 	assert.Equal(t, expected, FromFPointsToSamples(input))
+}
+
+func TestFromSamplesToFPoints(t *testing.T) {
+	input := []Sample{{TimestampMs: 1, Value: 2}, {TimestampMs: 3, Value: 4}}
+	expected := []promql.FPoint{{T: 1, F: 2}, {T: 3, F: 4}}
+
+	assert.Equal(t, expected, FromSamplesToFPoints(input))
 }
 
 // Check that Prometheus FPoint and Mimir Sample types converted
@@ -242,6 +286,16 @@ func TestFromHPointsToHistograms(t *testing.T) {
 	}
 
 	assert.Equal(t, expected, FromHPointsToHistograms(input))
+}
+
+func TestFromHistogramsToHPoints(t *testing.T) {
+	input := []FloatHistogramPair{
+		{TimestampMs: 3, Histogram: FloatHistogramFromPrometheusModel(test.GenerateTestFloatHistogram(0))},
+		{TimestampMs: 5, Histogram: FloatHistogramFromPrometheusModel(test.GenerateTestFloatHistogram(1))},
+	}
+	expected := []promql.HPoint{{T: 3, H: test.GenerateTestFloatHistogram(0)}, {T: 5, H: test.GenerateTestFloatHistogram(1)}}
+
+	assert.Equal(t, expected, FromHistogramsToHPoints(input))
 }
 
 // Check that Prometheus HPoint and Mimir FloatHistogramPair types converted

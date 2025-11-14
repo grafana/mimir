@@ -6,15 +6,18 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"math"
 	"net"
 	"net/http"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/gogo/protobuf/types"
 	"github.com/gogo/status"
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/flagext"
@@ -27,17 +30,21 @@ import (
 	"go.uber.org/atomic"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/metadata"
 
 	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
+	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/querier/querierpb"
 	querier_stats "github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerpb"
+	"github.com/grafana/mimir/pkg/util/propagation"
 	"github.com/grafana/mimir/pkg/util/test"
 )
 
 func TestSchedulerProcessor_processQueriesOnSingleStream(t *testing.T) {
 	t.Run("should immediately return if worker context is canceled and there's no inflight query", func(t *testing.T) {
-		sp, loopClient, requestHandler, _ := prepareSchedulerProcessor(t)
+		sp, loopClient, _, _, _ := prepareSchedulerProcessor(t, true)
 
 		workerCtx, workerCancel := context.WithCancel(context.Background())
 
@@ -50,8 +57,6 @@ func TestSchedulerProcessor_processQueriesOnSingleStream(t *testing.T) {
 			return nil, toRPCErr(loopClient.Context().Err())
 		})
 
-		requestHandler.On("Handle", mock.Anything, mock.Anything).Return(&httpgrpc.HTTPResponse{}, nil)
-
 		sp.processQueriesOnSingleStream(workerCtx, nil, "127.0.0.1")
 
 		// We expect at this point, the execution context has been canceled too.
@@ -62,8 +67,8 @@ func TestSchedulerProcessor_processQueriesOnSingleStream(t *testing.T) {
 		loopClient.AssertCalled(t, "Send", &schedulerpb.QuerierToScheduler{QuerierID: "test-querier-id"})
 	})
 
-	t.Run("should wait until inflight query execution is completed before returning when worker context is canceled", func(t *testing.T) {
-		sp, loopClient, requestHandler, frontend := prepareSchedulerProcessor(t)
+	t.Run("should wait until inflight query execution is completed before returning when worker context is canceled for HTTP payloads", func(t *testing.T) {
+		sp, loopClient, httpRequestHandler, _, frontend := prepareSchedulerProcessor(t, true)
 
 		recvCount := atomic.NewInt64(0)
 
@@ -72,7 +77,7 @@ func TestSchedulerProcessor_processQueriesOnSingleStream(t *testing.T) {
 			case 1:
 				return &schedulerpb.SchedulerToQuerier{
 					QueryID:         1,
-					HttpRequest:     nil,
+					Payload:         &schedulerpb.SchedulerToQuerier_HttpRequest{},
 					FrontendAddress: frontend.addr,
 					UserID:          "user-1",
 				}, nil
@@ -85,7 +90,7 @@ func TestSchedulerProcessor_processQueriesOnSingleStream(t *testing.T) {
 
 		workerCtx, workerCancel := context.WithCancel(context.Background())
 
-		requestHandler.On("Handle", mock.Anything, mock.Anything).Run(func(mock.Arguments) {
+		httpRequestHandler.On("Handle", mock.Anything, mock.Anything).Run(func(mock.Arguments) {
 			// Cancel the worker context while the query execution is in progress.
 			workerCancel()
 
@@ -104,15 +109,67 @@ func TestSchedulerProcessor_processQueriesOnSingleStream(t *testing.T) {
 		require.Error(t, loopClient.Context().Err())
 
 		// We expect Send() to be called twice: first to send the querier ID to scheduler
-		// and then to send the query result.
+		// and then to inform the scheduler that the querier is ready for the next request.
 		loopClient.AssertNumberOfCalls(t, "Send", 2)
 		loopClient.AssertCalled(t, "Send", &schedulerpb.QuerierToScheduler{QuerierID: "test-querier-id"})
 
 		require.Equal(t, 1, int(frontend.queryResultCalls.Load()), "expected frontend to be informed of query result exactly once")
 	})
 
-	t.Run("should abort query if query is cancelled", func(t *testing.T) {
-		sp, loopClient, requestHandler, frontend := prepareSchedulerProcessor(t)
+	t.Run("should wait until inflight query execution is completed before returning when worker context is canceled for Protobuf payloads", func(t *testing.T) {
+		sp, loopClient, _, protobufRequestHandler, frontend := prepareSchedulerProcessor(t, true)
+
+		recvCount := atomic.NewInt64(0)
+
+		loopClient.On("Recv").Return(func() (*schedulerpb.SchedulerToQuerier, error) {
+			switch recvCount.Inc() {
+			case 1:
+				return &schedulerpb.SchedulerToQuerier{
+					QueryID:         1,
+					Payload:         &schedulerpb.SchedulerToQuerier_ProtobufRequest{ProtobufRequest: &schedulerpb.ProtobufRequest{}},
+					FrontendAddress: frontend.addr,
+					UserID:          "user-1",
+				}, nil
+			default:
+				// No more messages to process, so waiting until terminated.
+				<-loopClient.Context().Done()
+				return nil, toRPCErr(loopClient.Context().Err())
+			}
+		})
+
+		workerCtx, workerCancel := context.WithCancel(context.Background())
+
+		protobufRequestHandler.On("HandleProtobuf", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Run(func(mock.Arguments) {
+			// Cancel the worker context while the query execution is in progress.
+			workerCancel()
+
+			// Ensure the execution context hasn't been canceled yet.
+			require.Nil(t, loopClient.Context().Err())
+
+			// Intentionally slow down the query execution, to double check the worker waits until done.
+			time.Sleep(time.Second)
+		})
+
+		startTime := time.Now()
+		sp.processQueriesOnSingleStream(workerCtx, nil, "127.0.0.1")
+		assert.GreaterOrEqual(t, time.Since(startTime), time.Second)
+
+		// We expect at this point, the execution context has been canceled too.
+		require.Error(t, loopClient.Context().Err())
+
+		// We expect Send() to be called twice: first to send the querier ID to scheduler
+		// and then to inform the scheduler that the querier is ready for the next request.
+		loopClient.AssertNumberOfCalls(t, "Send", 2)
+		loopClient.AssertCalled(t, "Send", &schedulerpb.QuerierToScheduler{QuerierID: "test-querier-id"})
+
+		require.Equal(t, 0, int(frontend.queryResultCalls.Load()), "expected no result calls to the frontend")
+	})
+
+	t.Run("should abort query if query is cancelled for HTTP payload", func(t *testing.T) {
+		sp, loopClient, httpRequestHandler, _, frontend := prepareSchedulerProcessor(t, false)
+
+		logs := &concurrency.SyncBuffer{}
+		sp.log = log.NewLogfmtLogger(logs)
 
 		recvCount := atomic.NewInt64(0)
 		queryEvaluationBegun := make(chan struct{})
@@ -122,7 +179,7 @@ func TestSchedulerProcessor_processQueriesOnSingleStream(t *testing.T) {
 			case 1:
 				return &schedulerpb.SchedulerToQuerier{
 					QueryID:         1,
-					HttpRequest:     nil,
+					Payload:         &schedulerpb.SchedulerToQuerier_HttpRequest{},
 					FrontendAddress: frontend.addr,
 					UserID:          "user-1",
 				}, nil
@@ -137,7 +194,20 @@ func TestSchedulerProcessor_processQueriesOnSingleStream(t *testing.T) {
 			}
 		})
 
-		requestHandler.On("Handle", mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
+		sendCount := atomic.NewInt64(0)
+		loopClient.On("Send", mock.Anything).Return(func() error {
+			switch sendCount.Inc() {
+			case 1:
+				// First Send() call is querier connecting to scheduler.
+				return nil
+			default:
+				// Subsequent Send() calls are after the query is completed.
+				// Emulate the behaviour of the gRPC client: if the server broke the connection, then Send returns EOF and the true error is available through Recv().
+				return io.EOF
+			}
+		})
+
+		httpRequestHandler.On("Handle", mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
 			ctx := args.Get(0).(context.Context)
 
 			// Trigger the shutdown of the scheduler.
@@ -166,11 +236,88 @@ func TestSchedulerProcessor_processQueriesOnSingleStream(t *testing.T) {
 			return frontend.queryResultCalls.Load() == 1
 		}, time.Second, 10*time.Millisecond, "expected frontend to be informed of query result exactly once")
 
+		require.Eventuallyf(t, func() bool {
+			return strings.Contains(logs.String(), `level=debug user=user-1 msg="could not notify scheduler about finished query because query execution was cancelled" err="rpc error: code = Canceled desc = context canceled"`)
+		}, time.Second, 10*time.Millisecond, "expected cancellation to be logged, have logs:\n%s", logs)
+
 		workerCancel()
 	})
 
+	t.Run("should abort query if query is cancelled for Protobuf payload", func(t *testing.T) {
+		sp, loopClient, _, protobufRequestHandler, frontend := prepareSchedulerProcessor(t, false)
+
+		logs := &concurrency.SyncBuffer{}
+		sp.log = log.NewLogfmtLogger(logs)
+
+		recvCount := atomic.NewInt64(0)
+		queryEvaluationBegun := make(chan struct{})
+
+		loopClient.On("Recv").Return(func() (*schedulerpb.SchedulerToQuerier, error) {
+			switch recvCount.Inc() {
+			case 1:
+				return &schedulerpb.SchedulerToQuerier{
+					QueryID:         1,
+					Payload:         &schedulerpb.SchedulerToQuerier_ProtobufRequest{ProtobufRequest: &schedulerpb.ProtobufRequest{}},
+					FrontendAddress: frontend.addr,
+					UserID:          "user-1",
+				}, nil
+			default:
+				// Wait until query execution has begun, then simulate the scheduler shutting down.
+				<-queryEvaluationBegun
+
+				// Emulate the behaviour of the gRPC client: if the server returns an error, the context returned from the stream's Context() should be cancelled.
+				loopClient.cancelCtx()
+
+				return nil, toRPCErr(context.Canceled)
+			}
+		})
+
+		sendCount := atomic.NewInt64(0)
+		loopClient.On("Send", mock.Anything).Return(func() error {
+			switch sendCount.Inc() {
+			case 1:
+				// First Send() call is querier connecting to scheduler.
+				return nil
+			default:
+				// Subsequent Send() calls are after the query is completed.
+				// Emulate the behaviour of the gRPC client: if the server broke the connection, then Send returns EOF and the true error is available through Recv().
+				return io.EOF
+			}
+		})
+
+		protobufRequestHandler.On("HandleProtobuf", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
+			ctx := args.Get(0).(context.Context)
+
+			// Trigger the shutdown of the scheduler.
+			close(queryEvaluationBegun)
+
+			// Wait for our context to be cancelled before continuing.
+			select {
+			case <-ctx.Done():
+				// Nothing more to do.
+			case <-time.After(time.Second):
+				require.Fail(t, "expected query execution context to be cancelled when scheduler shut down")
+			}
+		}).Return(&httpgrpc.HTTPResponse{}, nil)
+
+		workerCtx, workerCancel := context.WithCancel(context.Background())
+
+		// processQueriesOnSingleStream() blocks and retries until its context is cancelled, so run it in the background.
+		go func() {
+			sp.processQueriesOnSingleStream(workerCtx, nil, "127.0.0.1")
+		}()
+
+		// Unlike in the HTTP payload case above, it is the responsibility of the request handler to send a message to the frontend
+		// if the request is cancelled, so we don't expect the scheduler worker to do that here.
+		workerCancel()
+
+		require.Eventuallyf(t, func() bool {
+			return strings.Contains(logs.String(), `level=debug user=user-1 msg="could not notify scheduler about finished query because query execution was cancelled" err="rpc error: code = Canceled desc = context canceled"`)
+		}, time.Second, 10*time.Millisecond, "expected cancellation to be logged, have logs:\n%s", logs)
+	})
+
 	t.Run("should not log an error when the query-scheduler is terminated while waiting for the next query to run", func(t *testing.T) {
-		sp, loopClient, requestHandler, _ := prepareSchedulerProcessor(t)
+		sp, loopClient, _, _, _ := prepareSchedulerProcessor(t, true)
 
 		// Override the logger to capture the logs.
 		logs := &concurrency.SyncBuffer{}
@@ -190,8 +337,6 @@ func TestSchedulerProcessor_processQueriesOnSingleStream(t *testing.T) {
 			return nil, status.Error(codes.Unknown, schedulerpb.ErrSchedulerIsNotRunning.Error())
 		})
 
-		requestHandler.On("Handle", mock.Anything, mock.Anything).Return(&httpgrpc.HTTPResponse{}, nil)
-
 		sp.processQueriesOnSingleStream(workerCtx, nil, "127.0.0.1")
 
 		// We expect no error in the log.
@@ -200,7 +345,7 @@ func TestSchedulerProcessor_processQueriesOnSingleStream(t *testing.T) {
 	})
 
 	t.Run("should not cancel query execution if scheduler client returns a non-cancellation error", func(t *testing.T) {
-		sp, loopClient, requestHandler, frontend := prepareSchedulerProcessor(t)
+		sp, loopClient, httpRequestHandler, _, frontend := prepareSchedulerProcessor(t, true)
 
 		recvCount := atomic.NewInt64(0)
 		executionStarted := make(chan struct{})
@@ -210,7 +355,7 @@ func TestSchedulerProcessor_processQueriesOnSingleStream(t *testing.T) {
 			case 1:
 				return &schedulerpb.SchedulerToQuerier{
 					QueryID:         1,
-					HttpRequest:     nil,
+					Payload:         &schedulerpb.SchedulerToQuerier_HttpRequest{},
 					FrontendAddress: frontend.addr,
 					UserID:          "user-1",
 				}, nil
@@ -228,7 +373,7 @@ func TestSchedulerProcessor_processQueriesOnSingleStream(t *testing.T) {
 		workerCtx, workerCancel := context.WithCancel(context.Background())
 		defer workerCancel()
 
-		requestHandler.On("Handle", mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
+		httpRequestHandler.On("Handle", mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
 			// Ensure the execution context hasn't been canceled yet.
 			ctx := args.Get(0).(context.Context)
 			require.NoError(t, ctx.Err())
@@ -263,8 +408,8 @@ func TestSchedulerProcessor_processQueriesOnSingleStream(t *testing.T) {
 }
 
 func TestSchedulerProcessor_QueryTime(t *testing.T) {
-	runTest := func(t *testing.T, statsEnabled bool, statsRace bool) {
-		fp, processClient, requestHandler, frontend := prepareSchedulerProcessor(t)
+	runTest := func(t *testing.T, statsEnabled bool, statsRace bool, useHTTPGRPC bool) {
+		fp, processClient, httpRequestHandler, protobufRequestHandler, frontend := prepareSchedulerProcessor(t, true)
 
 		recvCount := atomic.NewInt64(0)
 		queueTime := 3 * time.Second
@@ -272,14 +417,23 @@ func TestSchedulerProcessor_QueryTime(t *testing.T) {
 		processClient.On("Recv").Return(func() (*schedulerpb.SchedulerToQuerier, error) {
 			switch recvCount.Inc() {
 			case 1:
-				return &schedulerpb.SchedulerToQuerier{
+				msg := &schedulerpb.SchedulerToQuerier{
 					QueryID:         1,
-					HttpRequest:     nil,
 					FrontendAddress: frontend.addr,
 					UserID:          "user-1",
 					StatsEnabled:    statsEnabled,
 					QueueTimeNanos:  queueTime.Nanoseconds(),
-				}, nil
+				}
+
+				if useHTTPGRPC {
+					msg.Payload = &schedulerpb.SchedulerToQuerier_HttpRequest{}
+				} else {
+					msg.Payload = &schedulerpb.SchedulerToQuerier_ProtobufRequest{
+						ProtobufRequest: &schedulerpb.ProtobufRequest{},
+					}
+				}
+
+				return msg, nil
 			default:
 				// No more messages to process, so waiting until terminated.
 				<-processClient.Context().Done()
@@ -289,10 +443,10 @@ func TestSchedulerProcessor_QueryTime(t *testing.T) {
 
 		workerCtx, workerCancel := context.WithCancel(context.Background())
 
-		requestHandler.On("Handle", mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
+		handle := func(ctx context.Context) {
 			workerCancel()
 
-			stat := querier_stats.FromContext(args.Get(0).(context.Context))
+			stat := querier_stats.FromContext(ctx)
 
 			if statsEnabled {
 				require.Equal(t, queueTime, stat.LoadQueueTime())
@@ -304,7 +458,17 @@ func TestSchedulerProcessor_QueryTime(t *testing.T) {
 			} else {
 				require.Equal(t, time.Duration(0), stat.LoadQueueTime())
 			}
+		}
+
+		httpRequestHandler.On("Handle", mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
+			ctx := args.Get(0).(context.Context)
+			handle(ctx)
 		}).Return(&httpgrpc.HTTPResponse{}, nil)
+
+		protobufRequestHandler.On("HandleProtobuf", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
+			ctx := args.Get(0).(context.Context)
+			handle(ctx)
+		})
 
 		fp.processQueriesOnSingleStream(workerCtx, nil, "127.0.0.1")
 
@@ -312,20 +476,28 @@ func TestSchedulerProcessor_QueryTime(t *testing.T) {
 		// and then to send the query result.
 		processClient.AssertNumberOfCalls(t, "Send", 2)
 
-		require.Equal(t, 1, int(frontend.queryResultCalls.Load()), "expected frontend to be informed of query result exactly once")
+		if useHTTPGRPC {
+			require.Equal(t, 1, int(frontend.queryResultCalls.Load()), "expected frontend to be informed of query result exactly once")
+		} else {
+			require.Equal(t, 1, int(frontend.queryResultStreamReturned.Load()), "expected frontend to be informed of query result exactly once")
+		}
 	}
 
-	t.Run("query stats enabled should record queue time", func(t *testing.T) {
-		runTest(t, true, false)
-	})
+	for name, useHTTPGRPC := range map[string]bool{"Protobuf": false, "HTTP-over-gRPC": true} {
+		t.Run(name, func(t *testing.T) {
+			t.Run("query stats enabled should record queue time", func(t *testing.T) {
+				runTest(t, true, false, useHTTPGRPC)
+			})
 
-	t.Run("query stats enabled should not trigger race detector", func(t *testing.T) {
-		runTest(t, true, true)
-	})
+			t.Run("query stats enabled should not trigger race detector", func(t *testing.T) {
+				runTest(t, true, true, useHTTPGRPC)
+			})
 
-	t.Run("query stats disabled will not record queue time", func(t *testing.T) {
-		runTest(t, false, false)
-	})
+			t.Run("query stats disabled will not record queue time", func(t *testing.T) {
+				runTest(t, false, false, useHTTPGRPC)
+			})
+		})
+	}
 }
 
 func TestCreateSchedulerProcessor(t *testing.T) {
@@ -339,7 +511,7 @@ func TestCreateSchedulerProcessor(t *testing.T) {
 		QueryFrontendGRPCClientConfig:  conf,
 		QuerySchedulerGRPCClientConfig: grpcclient.Config{MaxSendMsgSize: 5 * 1024}, // schedulerProcessor should ignore this.
 		MaxConcurrentRequests:          5,
-	}, nil, nil, nil)
+	}, nil, nil, nil, nil)
 
 	assert.Equal(t, 1*1024*1024, sp.maxMessageSize)
 	assert.Equal(t, conf, sp.grpcConfig)
@@ -398,7 +570,7 @@ func TestSchedulerProcessor_ResponseStream(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			reqProcessor, processClient, requestHandler, frontend := prepareSchedulerProcessor(t)
+			reqProcessor, processClient, httpRequestHandler, _, frontend := prepareSchedulerProcessor(t, true)
 			// enable response streaming
 			reqProcessor.streamingEnabled = true
 			// make sure responses don't get rejected as too large
@@ -410,7 +582,7 @@ func TestSchedulerProcessor_ResponseStream(t *testing.T) {
 
 			queryID := uint64(1)
 			requestQueue := []*schedulerpb.SchedulerToQuerier{
-				{QueryID: queryID, HttpRequest: nil, FrontendAddress: frontend.addr, UserID: "test"},
+				{QueryID: queryID, Payload: &schedulerpb.SchedulerToQuerier_HttpRequest{}, FrontendAddress: frontend.addr, UserID: "test"},
 			}
 			responses := []*httpgrpc.HTTPResponse{{
 				Code: http.StatusOK, Body: tc.responseBodyBytes,
@@ -420,7 +592,7 @@ func TestSchedulerProcessor_ResponseStream(t *testing.T) {
 			processClient.On("Recv").Return(receiveRequests(requestQueue, processClient))
 			ctx, cancel := context.WithCancel(context.Background())
 
-			requestHandler.On("Handle", mock.Anything, mock.Anything).Run(
+			httpRequestHandler.On("Handle", mock.Anything, mock.Anything).Run(
 				func(mock.Arguments) { cancel() },
 			).Return(returnResponses(responses)())
 
@@ -438,7 +610,7 @@ func TestSchedulerProcessor_ResponseStream(t *testing.T) {
 	}
 
 	t.Run("should abort streaming if query is cancelled", func(t *testing.T) {
-		sp, loopClient, requestHandler, frontend := prepareSchedulerProcessor(t)
+		sp, loopClient, httpRequestHandler, _, frontend := prepareSchedulerProcessor(t, true)
 		sp.streamingEnabled = true
 		sp.maxMessageSize = 5 * responseStreamingBodyChunkSizeBytes
 
@@ -453,6 +625,7 @@ func TestSchedulerProcessor_ResponseStream(t *testing.T) {
 					QueryID:         queryID,
 					FrontendAddress: frontend.addr,
 					UserID:          "test",
+					Payload:         &schedulerpb.SchedulerToQuerier_HttpRequest{},
 				}, nil
 			default:
 				<-frontend.responseStreamStarted
@@ -462,7 +635,7 @@ func TestSchedulerProcessor_ResponseStream(t *testing.T) {
 		})
 
 		responseBodySize := 4*responseStreamingBodyChunkSizeBytes + 1
-		requestHandler.On("Handle", mock.Anything, mock.Anything).Return(
+		httpRequestHandler.On("Handle", mock.Anything, mock.Anything).Return(
 			&httpgrpc.HTTPResponse{Code: http.StatusOK, Headers: []*httpgrpc.Header{streamingEnabledHeader},
 				Body: bytes.Repeat([]byte("a"), responseBodySize)},
 			nil,
@@ -483,7 +656,7 @@ func TestSchedulerProcessor_ResponseStream(t *testing.T) {
 	})
 
 	t.Run("should finish streaming if worker context is canceled", func(t *testing.T) {
-		sp, loopClient, requestHandler, frontend := prepareSchedulerProcessor(t)
+		sp, loopClient, httpRequestHandler, _, frontend := prepareSchedulerProcessor(t, true)
 		sp.streamingEnabled = true
 		sp.maxMessageSize = 5 * responseStreamingBodyChunkSizeBytes
 
@@ -498,6 +671,7 @@ func TestSchedulerProcessor_ResponseStream(t *testing.T) {
 					QueryID:         queryID,
 					FrontendAddress: frontend.addr,
 					UserID:          "test",
+					Payload:         &schedulerpb.SchedulerToQuerier_HttpRequest{},
 				}, nil
 			default:
 				<-loopClient.Context().Done()
@@ -508,7 +682,7 @@ func TestSchedulerProcessor_ResponseStream(t *testing.T) {
 		workerCtx, workerCancel := context.WithCancel(context.Background())
 		responseBodySize := 4*responseStreamingBodyChunkSizeBytes + 1
 		responseBody := bytes.Repeat([]byte("a"), responseBodySize)
-		requestHandler.On("Handle", mock.Anything, mock.Anything).Run(func(_ mock.Arguments) {
+		httpRequestHandler.On("Handle", mock.Anything, mock.Anything).Run(func(_ mock.Arguments) {
 			// cancel the worker context before response streaming begins
 			workerCancel()
 		}).Return(
@@ -525,7 +699,7 @@ func TestSchedulerProcessor_ResponseStream(t *testing.T) {
 	})
 
 	t.Run("should finish streaming if scheduler client returns a non-cancellation error", func(t *testing.T) {
-		sp, loopClient, requestHandler, frontend := prepareSchedulerProcessor(t)
+		sp, loopClient, httpRequestHandler, _, frontend := prepareSchedulerProcessor(t, true)
 		sp.streamingEnabled = true
 		sp.maxMessageSize = 5 * responseStreamingBodyChunkSizeBytes
 
@@ -540,6 +714,7 @@ func TestSchedulerProcessor_ResponseStream(t *testing.T) {
 					QueryID:         queryID,
 					FrontendAddress: frontend.addr,
 					UserID:          "test",
+					Payload:         &schedulerpb.SchedulerToQuerier_HttpRequest{},
 				}, nil
 			default:
 				<-frontend.responseStreamStarted
@@ -549,7 +724,7 @@ func TestSchedulerProcessor_ResponseStream(t *testing.T) {
 
 		responseBodySize := 4*responseStreamingBodyChunkSizeBytes + 1
 		responseBody := bytes.Repeat([]byte("a"), responseBodySize)
-		requestHandler.On("Handle", mock.Anything, mock.Anything).Return(
+		httpRequestHandler.On("Handle", mock.Anything, mock.Anything).Return(
 			&httpgrpc.HTTPResponse{Code: http.StatusOK, Headers: []*httpgrpc.Header{streamingEnabledHeader},
 				Body: responseBody},
 			nil,
@@ -568,7 +743,7 @@ func TestSchedulerProcessor_ResponseStream(t *testing.T) {
 	})
 
 	t.Run("should retry streamed responses", func(t *testing.T) {
-		reqProcessor, processClient, requestHandler, frontend := prepareSchedulerProcessor(t)
+		reqProcessor, processClient, httpRequestHandler, _, frontend := prepareSchedulerProcessor(t, true)
 		// enable response streaming
 		reqProcessor.streamingEnabled = true
 		// make sure responses don't get rejected as too large
@@ -581,7 +756,7 @@ func TestSchedulerProcessor_ResponseStream(t *testing.T) {
 
 		queryID := uint64(1)
 		requestQueue := []*schedulerpb.SchedulerToQuerier{
-			{QueryID: queryID, HttpRequest: nil, FrontendAddress: frontend.addr, UserID: "test"},
+			{QueryID: queryID, Payload: &schedulerpb.SchedulerToQuerier_HttpRequest{}, FrontendAddress: frontend.addr, UserID: "test"},
 		}
 
 		responseBodyBytes := bytes.Repeat([]byte("a"), 2*responseStreamingBodyChunkSizeBytes+1)
@@ -594,7 +769,7 @@ func TestSchedulerProcessor_ResponseStream(t *testing.T) {
 		processClient.On("Recv").Return(receiveRequests(requestQueue, processClient))
 		ctx, cancel := context.WithCancel(context.Background())
 
-		requestHandler.On("Handle", mock.Anything, mock.Anything).Run(
+		httpRequestHandler.On("Handle", mock.Anything, mock.Anything).Run(
 			func(mock.Arguments) { cancel() },
 		).Return(returnResponses(responses)())
 
@@ -604,12 +779,122 @@ func TestSchedulerProcessor_ResponseStream(t *testing.T) {
 	})
 }
 
-func prepareSchedulerProcessor(t *testing.T) (*schedulerProcessor, *querierLoopClientMock, *requestHandlerMock, *frontendForQuerierMockServer) {
+func TestSchedulerProcessor_responseSize(t *testing.T) {
+	tests := []struct {
+		name             string
+		maxMessageSize   int
+		handlerResponse  *httpgrpc.HTTPResponse
+		handlerError     error
+		expectedResponse *httpgrpc.HTTPResponse
+	}{
+		{
+			name:           "success case",
+			maxMessageSize: 100,
+			handlerResponse: &httpgrpc.HTTPResponse{
+				Code: 200,
+				Body: []byte("success"),
+			},
+			expectedResponse: &httpgrpc.HTTPResponse{
+				Code: 200,
+				Body: []byte("success"),
+			},
+		},
+		{
+			name:           "response too large",
+			maxMessageSize: 100,
+			handlerResponse: &httpgrpc.HTTPResponse{
+				Code: 200,
+				Body: []byte(strings.Repeat("some very large response", 100)),
+			},
+			expectedResponse: &httpgrpc.HTTPResponse{
+				Code: 413,
+				Body: []byte("response larger than the max message size (2406 vs 100)"),
+			},
+		},
+		{
+			name:           "small body but large headers",
+			maxMessageSize: 1000,
+			handlerResponse: &httpgrpc.HTTPResponse{
+				Code: 200,
+				Headers: []*httpgrpc.Header{
+					{Key: "Header1", Values: []string{strings.Repeat("x", 500)}},
+				},
+				Body: []byte(strings.Repeat("x", 500)),
+			},
+			expectedResponse: &httpgrpc.HTTPResponse{
+				Code: 413,
+				Body: []byte("response larger than the max message size (1021 vs 1000)"),
+			},
+		},
+		{
+			name:           "handler error",
+			maxMessageSize: 100,
+			handlerError:   fmt.Errorf("handler error"),
+			expectedResponse: &httpgrpc.HTTPResponse{
+				Code: 500,
+				Body: []byte("handler error"),
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			sp, loopClient, httpRequestHandler, _, frontend := prepareSchedulerProcessor(t, true)
+			if tc.maxMessageSize != 0 {
+				sp.maxMessageSize = tc.maxMessageSize
+			}
+
+			recvCount := atomic.NewInt64(0)
+			queueTime := 3 * time.Second
+
+			loopClient.On("Recv").Return(func() (*schedulerpb.SchedulerToQuerier, error) {
+				switch recvCount.Inc() {
+				case 1:
+					return &schedulerpb.SchedulerToQuerier{
+						QueryID:         1,
+						Payload:         &schedulerpb.SchedulerToQuerier_HttpRequest{},
+						FrontendAddress: frontend.addr,
+						UserID:          "user-1",
+						StatsEnabled:    true,
+						QueueTimeNanos:  queueTime.Nanoseconds(),
+					}, nil
+				default:
+					// No more messages to process, so waiting until terminated.
+					<-loopClient.Context().Done()
+					return nil, toRPCErr(loopClient.Context().Err())
+				}
+			})
+
+			// Cancel the context being used to process messages as soon as we process the first one
+			// so that the worker actually stops.
+			ctx, cancel := context.WithCancel(context.Background())
+			httpRequestHandler.On("Handle", mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
+				cancel()
+			}).Return(
+				tc.handlerResponse,
+				tc.handlerError,
+			)
+
+			sp.processQueriesOnSingleStream(ctx, nil, "127.0.0.1")
+
+			actualCode := frontend.responses[1].metadata.Code
+			actualBody := frontend.responses[1].body
+
+			require.Equal(t, tc.expectedResponse.Code, actualCode)
+			require.Equal(t, tc.expectedResponse.Body, actualBody)
+		})
+	}
+}
+
+func prepareSchedulerProcessor(t *testing.T, schedulerSendSucceeds bool) (*schedulerProcessor, *querierLoopClientMock, *httpRequestHandlerMock, *protobufRequestHandlerMock, *frontendForQuerierMockServer) {
 	loopClient := &querierLoopClientMock{}
-	loopClient.On("Send", mock.Anything).Return(nil)
 	loopClient.On("Context").Return(func() context.Context {
 		return loopClient.ctx
 	})
+
+	if schedulerSendSucceeds {
+		loopClient.On("Send", mock.Anything).Return(nil)
+	}
 
 	schedulerClient := &schedulerForQuerierClientMock{}
 	schedulerClient.On("QuerierLoop", mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
@@ -618,9 +903,10 @@ func prepareSchedulerProcessor(t *testing.T) (*schedulerProcessor, *querierLoopC
 		loopClient.ctx, loopClient.cancelCtx = context.WithCancel(ctx)
 	}).Return(loopClient, nil)
 
-	requestHandler := &requestHandlerMock{}
+	httpRequestHandler := &httpRequestHandlerMock{}
+	protobufRequestHandler := &protobufRequestHandlerMock{}
 
-	sp, _ := newSchedulerProcessor(Config{QuerierID: "test-querier-id"}, requestHandler, log.NewNopLogger(), nil)
+	sp, _ := newSchedulerProcessor(Config{QuerierID: "test-querier-id"}, httpRequestHandler, protobufRequestHandler, log.NewNopLogger(), nil)
 	sp.schedulerClientFactory = func(_ *grpc.ClientConn) schedulerpb.SchedulerForQuerierClient {
 		return schedulerClient
 	}
@@ -646,7 +932,7 @@ func prepareSchedulerProcessor(t *testing.T) (*schedulerProcessor, *querierLoopC
 		<-stopped // Wait for shutdown to complete.
 	})
 
-	return sp, loopClient, requestHandler, frontendForQuerierMock
+	return sp, loopClient, httpRequestHandler, protobufRequestHandler, frontendForQuerierMock
 }
 
 type schedulerForQuerierClientMock struct {
@@ -672,6 +958,11 @@ type querierLoopClientMock struct {
 
 func (m *querierLoopClientMock) Send(msg *schedulerpb.QuerierToScheduler) error {
 	args := m.Called(msg)
+
+	if fn, ok := args.Get(0).(func() error); ok {
+		return fn()
+	}
+
 	return args.Error(0)
 }
 
@@ -722,13 +1013,21 @@ func (m *querierLoopClientMock) RecvMsg(msg interface{}) error {
 	return args.Error(0)
 }
 
-type requestHandlerMock struct {
+type httpRequestHandlerMock struct {
 	mock.Mock
 }
 
-func (m *requestHandlerMock) Handle(ctx context.Context, req *httpgrpc.HTTPRequest) (*httpgrpc.HTTPResponse, error) {
+func (m *httpRequestHandlerMock) Handle(ctx context.Context, req *httpgrpc.HTTPRequest) (*httpgrpc.HTTPResponse, error) {
 	args := m.Called(ctx, req)
 	return args.Get(0).(*httpgrpc.HTTPResponse), args.Error(1)
+}
+
+type protobufRequestHandlerMock struct {
+	mock.Mock
+}
+
+func (m *protobufRequestHandlerMock) HandleProtobuf(ctx context.Context, t *types.Any, metadata propagation.Carrier, stream frontendv2pb.QueryResultStream) {
+	m.Called(ctx, t, metadata, stream)
 }
 
 type frontendForQuerierMockServer struct {
@@ -751,7 +1050,14 @@ type queryResult struct {
 
 func (f *frontendForQuerierMockServer) QueryResult(_ context.Context, r *frontendv2pb.QueryResultRequest) (*frontendv2pb.QueryResultResponse, error) {
 	f.queryResultCalls.Inc()
-	f.responses[r.QueryID] = &queryResult{body: r.HttpResponse.Body}
+	f.responses[r.QueryID] = &queryResult{
+		metadata: &frontendv2pb.QueryResultMetadata{
+			Code:    r.HttpResponse.Code,
+			Headers: r.HttpResponse.Headers,
+			Stats:   r.Stats,
+		},
+		body: r.HttpResponse.Body,
+	}
 
 	return &frontendv2pb.QueryResultResponse{}, nil
 }
@@ -789,8 +1095,10 @@ func (f *frontendForQuerierMockServer) QueryResultStream(s frontendv2pb.Frontend
 				return errors.New("expected metadata to be sent before body")
 			}
 			f.responses[resp.QueryID].body = append(f.responses[resp.QueryID].body, data.Body.Chunk...)
+		case *frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse, *frontendv2pb.QueryResultStreamRequest_Error:
+			// Nothing to do.
 		default:
-			return errors.New("unexpected request type")
+			return fmt.Errorf("unexpected request type %T", data)
 		}
 	}
 
@@ -811,4 +1119,340 @@ func (m *mockFrontendResponseStreamer) streamResponseToFrontend(
 		return errors.New("sorry, we've an error")
 	}
 	return nil
+}
+
+func TestGrpcStreamWriter_HappyPath(t *testing.T) {
+	const queryID = uint64(1234)
+	const frontendAddress = "the-query-frontend:1234"
+
+	pool := &mockFrontendClientPool{}
+	writer := newGrpcStreamWriter(queryID, frontendAddress, pool, log.NewNopLogger())
+	ctx := context.Background()
+
+	msg1 := createTestStreamingMessage("first message")
+	require.NoError(t, writer.Write(ctx, msg1))
+	msg2 := createTestStreamingMessage("second message")
+	require.NoError(t, writer.Write(ctx, msg2))
+	msg3 := createTestStreamingMessage("third message")
+	require.NoError(t, writer.Write(ctx, msg3))
+	writer.Close(ctx)
+
+	require.Equal(t, []*frontendv2pb.QueryResultStreamRequest{msg1, msg2, msg3}, pool.sentMessages, "should have sent all messages")
+	require.Equal(t, queryID, msg1.QueryID, "should set query ID on sent message")
+	require.Equal(t, queryID, msg2.QueryID, "should set query ID on sent message")
+	require.Equal(t, queryID, msg3.QueryID, "should set query ID on sent message")
+
+	require.Equal(t, 1, pool.retrievedClientCount, "should retrieve client from pool once and use for all messages")
+	require.True(t, pool.streamClosed, "stream should have been closed")
+}
+
+func TestGrpcStreamWriter_InitialSendSucceedsAfterRetry(t *testing.T) {
+	const queryID = uint64(1234)
+	const frontendAddress = "the-query-frontend:1234"
+
+	testCases := map[string]*mockFrontendClientPool{
+		"initial GetClientFor call fails": {
+			nextGetClientForCallsShouldFail: 1,
+		},
+		"initial QueryResultStream call fails": {
+			nextQueryResultStreamCallsShouldFail: 1,
+		},
+		"initial Send call fails": {
+			nextSendCallsShouldFail: 1,
+		},
+		"all but the last GetClientFor call fails": {
+			nextGetClientForCallsShouldFail: maxNotifyFrontendRetries - 1,
+		},
+		"all but the last QueryResultStream call fails": {
+			nextQueryResultStreamCallsShouldFail: maxNotifyFrontendRetries - 1,
+		},
+		"all but the last Send call fails": {
+			nextSendCallsShouldFail: maxNotifyFrontendRetries - 1,
+		},
+		"one of each calls fails": {
+			// This test won't work if maxNotifyFrontendRetries is changed to not allow at least 4 attempts.
+			nextGetClientForCallsShouldFail:      1,
+			nextQueryResultStreamCallsShouldFail: 1,
+			nextSendCallsShouldFail:              1,
+		},
+	}
+
+	for name, pool := range testCases {
+		t.Run(name, func(t *testing.T) {
+			expectedRetrievedClientCount := pool.nextGetClientForCallsShouldFail +
+				pool.nextQueryResultStreamCallsShouldFail +
+				pool.nextSendCallsShouldFail +
+				1 // Successful attempt
+
+			writer := newGrpcStreamWriter(queryID, frontendAddress, pool, log.NewNopLogger())
+			ctx := context.Background()
+
+			msg1 := createTestStreamingMessage("first message")
+			require.NoError(t, writer.Write(ctx, msg1))
+			require.Equal(t, []*frontendv2pb.QueryResultStreamRequest{msg1}, pool.sentMessages, "should have sent message")
+			require.Equal(t, queryID, msg1.QueryID, "should set query ID on sent message")
+
+			require.Equal(t, expectedRetrievedClientCount, pool.retrievedClientCount, "should retrieve client from pool for each attempt")
+
+			msg2 := createTestStreamingMessage("second message")
+			require.NoError(t, writer.Write(ctx, msg2))
+			msg3 := createTestStreamingMessage("third message")
+			require.NoError(t, writer.Write(ctx, msg3))
+			writer.Close(ctx)
+
+			require.Equal(t, []*frontendv2pb.QueryResultStreamRequest{msg1, msg2, msg3}, pool.sentMessages, "should have sent all messages")
+			require.Equal(t, queryID, msg2.QueryID, "should set query ID on sent message")
+			require.Equal(t, queryID, msg3.QueryID, "should set query ID on sent message")
+
+			require.Equal(t, expectedRetrievedClientCount, pool.retrievedClientCount, "should not retrieve client again for subsequent messages")
+			require.True(t, pool.streamClosed, "stream should have been closed")
+		})
+	}
+}
+
+func TestGrpcStreamWriter_InitialSendFails(t *testing.T) {
+	const queryID = uint64(1234)
+	const frontendAddress = "the-query-frontend:1234"
+
+	testCases := map[string]*mockFrontendClientPool{
+		"all GetClientFor calls fail": {
+			nextGetClientForCallsShouldFail: maxNotifyFrontendRetries,
+		},
+		"all QueryResultStream calls fail": {
+			nextQueryResultStreamCallsShouldFail: maxNotifyFrontendRetries,
+		},
+		"all Send calls fail": {
+			nextSendCallsShouldFail: maxNotifyFrontendRetries,
+		},
+		"some of each calls fail": {
+			// This test won't work if maxNotifyFrontendRetries is changed to not allow at least 4 attempts.
+			nextGetClientForCallsShouldFail:      1,
+			nextQueryResultStreamCallsShouldFail: 1,
+			nextSendCallsShouldFail:              maxNotifyFrontendRetries - 2,
+		},
+	}
+
+	for name, pool := range testCases {
+		t.Run(name, func(t *testing.T) {
+			expectedRetrievedClientCount := pool.nextGetClientForCallsShouldFail +
+				pool.nextQueryResultStreamCallsShouldFail +
+				pool.nextSendCallsShouldFail
+
+			writer := newGrpcStreamWriter(queryID, frontendAddress, pool, log.NewNopLogger())
+			ctx := context.Background()
+
+			msg1 := createTestStreamingMessage("first message")
+			require.Error(t, writer.Write(ctx, msg1))
+			require.Empty(t, pool.sentMessages, "should not have sent message")
+
+			require.Equal(t, expectedRetrievedClientCount, pool.retrievedClientCount, "should retrieve client from pool for each attempt")
+
+			msg2 := createTestStreamingMessage("second message")
+			require.EqualError(t, writer.Write(ctx, msg2), "the query-frontend stream has already failed")
+			require.Equal(t, expectedRetrievedClientCount, pool.retrievedClientCount, "should not retrieve client again for subsequent messages")
+
+			writer.Close(ctx)
+			require.Empty(t, pool.sentMessages, "should not have sent any messages")
+		})
+	}
+}
+
+// Sending subsequent message fails
+// - does not retry
+// - removes client from pool
+// - subsequent Write calls fail without trying to send any messages
+// - calling Close does nothing except closing stream
+func TestGrpcStreamWriter_SubsequentSendFails(t *testing.T) {
+	const queryID = uint64(1234)
+	const frontendAddress = "the-query-frontend:1234"
+
+	pool := &mockFrontendClientPool{}
+	writer := newGrpcStreamWriter(queryID, frontendAddress, pool, log.NewNopLogger())
+	ctx := context.Background()
+
+	msg1 := createTestStreamingMessage("first message")
+	require.NoError(t, writer.Write(ctx, msg1))
+
+	require.Equal(t, []*frontendv2pb.QueryResultStreamRequest{msg1}, pool.sentMessages, "should have sent message")
+	require.Equal(t, queryID, msg1.QueryID, "should set query ID on sent message")
+
+	pool.nextSendCallsShouldFail++
+	msg2 := createTestStreamingMessage("second message")
+	require.EqualError(t, writer.Write(ctx, msg2), "calling Send failed")
+
+	require.Equal(t, 1, pool.retrievedClientCount, "should not attempt to retrieve another client")
+
+	writer.Close(ctx)
+	require.True(t, pool.streamClosed, "stream should have been closed")
+}
+
+func TestGrpcStreamWriter_ClosedWithNoMessagesSent_HappyPath(t *testing.T) {
+	const queryID = uint64(1234)
+	const frontendAddress = "the-query-frontend:1234"
+
+	pool := &mockFrontendClientPool{}
+	writer := newGrpcStreamWriter(queryID, frontendAddress, pool, log.NewNopLogger())
+	ctx := context.Background()
+
+	writer.Close(ctx)
+
+	expectedMessage := &frontendv2pb.QueryResultStreamRequest{
+		QueryID: queryID,
+		Data: &frontendv2pb.QueryResultStreamRequest_Error{
+			Error: &querierpb.Error{
+				Message: "query execution completed without sending any messages (this is a bug)",
+				Type:    mimirpb.QUERY_ERROR_TYPE_INTERNAL,
+			},
+		},
+	}
+
+	require.Equal(t, []*frontendv2pb.QueryResultStreamRequest{expectedMessage}, pool.sentMessages, "should have sent message to frontend")
+	require.Equal(t, 1, pool.retrievedClientCount, "should retrieve client from pool once")
+	require.True(t, pool.streamClosed, "stream should have been closed")
+}
+
+func TestGrpcStreamWriter_ClosedWithNoMessageSent_SendingMessageFails(t *testing.T) {
+	const queryID = uint64(1234)
+	const frontendAddress = "the-query-frontend:1234"
+
+	testCases := map[string]*mockFrontendClientPool{
+		"all GetClientFor calls fail": {
+			nextGetClientForCallsShouldFail: maxNotifyFrontendRetries,
+		},
+		"all QueryResultStream calls fail": {
+			nextQueryResultStreamCallsShouldFail: maxNotifyFrontendRetries,
+		},
+		"all Send calls fail": {
+			nextSendCallsShouldFail: maxNotifyFrontendRetries,
+		},
+		"some of each calls fail": {
+			// This test won't work if maxNotifyFrontendRetries is changed to not allow at least 4 attempts.
+			nextGetClientForCallsShouldFail:      1,
+			nextQueryResultStreamCallsShouldFail: 1,
+			nextSendCallsShouldFail:              maxNotifyFrontendRetries - 2,
+		},
+	}
+
+	for name, pool := range testCases {
+		t.Run(name, func(t *testing.T) {
+			expectedRetrievedClientCount := pool.nextGetClientForCallsShouldFail +
+				pool.nextQueryResultStreamCallsShouldFail +
+				pool.nextSendCallsShouldFail
+
+			writer := newGrpcStreamWriter(queryID, frontendAddress, pool, log.NewNopLogger())
+			ctx := context.Background()
+
+			writer.Close(ctx)
+			require.Equal(t, expectedRetrievedClientCount, pool.retrievedClientCount, "should retrieve client from pool for each attempt")
+			require.Empty(t, pool.sentMessages, "should not have sent any messages")
+		})
+	}
+}
+
+func TestGrpcStreamWriter_CancelledRequestContext(t *testing.T) {
+	const queryID = uint64(1234)
+	const frontendAddress = "the-query-frontend:1234"
+
+	pool := &mockFrontendClientPool{}
+	writer := newGrpcStreamWriter(queryID, frontendAddress, pool, log.NewNopLogger())
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	msg1 := createTestStreamingMessage("first message")
+	require.NoError(t, writer.Write(ctx, msg1))
+	msg2 := createTestStreamingMessage("second message")
+	require.NoError(t, writer.Write(ctx, msg2))
+	msg3 := createTestStreamingMessage("third message")
+	require.NoError(t, writer.Write(ctx, msg3))
+	writer.Close(ctx)
+
+	require.Equal(t, []*frontendv2pb.QueryResultStreamRequest{msg1, msg2, msg3}, pool.sentMessages, "should have sent all messages")
+	require.False(t, pool.sendCalledWithClosedContext, "should not use a cancelled context for sending messages")
+	require.Equal(t, 1, pool.retrievedClientCount, "should retrieve client from pool once and use for all messages")
+	require.True(t, pool.streamClosed, "stream should have been closed")
+}
+
+func createTestStreamingMessage(msg string) *frontendv2pb.QueryResultStreamRequest {
+	// In the real use, sending an error is a terminal message, and so sending multiple errors is unexpected,
+	// but the code under test here doesn't care.
+	return &frontendv2pb.QueryResultStreamRequest{
+		Data: &frontendv2pb.QueryResultStreamRequest_Error{
+			Error: &querierpb.Error{
+				Type:    mimirpb.QUERY_ERROR_TYPE_NOT_ACCEPTABLE,
+				Message: msg,
+			},
+		},
+	}
+}
+
+type mockFrontendClientPool struct {
+	nextGetClientForCallsShouldFail      int // The remaining number of GetClientFor calls that should fail
+	nextQueryResultStreamCallsShouldFail int // The remaining number of QueryResultStream calls that should fail
+	nextSendCallsShouldFail              int // The remaining number of Send calls that should fail
+
+	retrievedClientCount int
+
+	sentMessages                []*frontendv2pb.QueryResultStreamRequest
+	sendCalledWithClosedContext bool
+	streamClosed                bool
+}
+
+func (m *mockFrontendClientPool) GetClientFor(addr string) (client.PoolClient, error) {
+	m.retrievedClientCount++
+
+	if m.nextGetClientForCallsShouldFail > 0 {
+		m.nextGetClientForCallsShouldFail--
+		return nil, errors.New("calling GetClientFor failed")
+	}
+
+	return &mockFrontendClient{pool: m}, nil
+}
+
+type mockFrontendClient struct {
+	// These are needed because the PoolClient interface requires them, but they're never used in our tests.
+	grpc_health_v1.HealthClient
+	io.Closer
+
+	pool *mockFrontendClientPool
+}
+
+var _ frontendv2pb.FrontendForQuerierClient = &mockFrontendClient{}
+
+func (m *mockFrontendClient) QueryResult(ctx context.Context, in *frontendv2pb.QueryResultRequest, opts ...grpc.CallOption) (*frontendv2pb.QueryResultResponse, error) {
+	panic("unexpected non-streaming QueryResult call on mock")
+}
+
+func (m *mockFrontendClient) QueryResultStream(ctx context.Context, opts ...grpc.CallOption) (frontendv2pb.FrontendForQuerier_QueryResultStreamClient, error) {
+	if m.pool.nextQueryResultStreamCallsShouldFail > 0 {
+		m.pool.nextQueryResultStreamCallsShouldFail--
+		return nil, errors.New("calling QueryResultStream failed")
+	}
+
+	return &mockQueryResultStreamClient{ctx: ctx, pool: m.pool}, nil
+}
+
+type mockQueryResultStreamClient struct {
+	grpc.ClientStream // This is needed because the PoolClient interface requires them, but they're never used in our tests.
+
+	ctx  context.Context
+	pool *mockFrontendClientPool
+}
+
+func (m *mockQueryResultStreamClient) Send(request *frontendv2pb.QueryResultStreamRequest) error {
+	if m.ctx.Err() != nil {
+		m.pool.sendCalledWithClosedContext = true
+	}
+
+	if m.pool.nextSendCallsShouldFail > 0 {
+		m.pool.nextSendCallsShouldFail--
+		return errors.New("calling Send failed")
+	}
+
+	m.pool.sentMessages = append(m.pool.sentMessages, request)
+	return nil
+}
+
+func (m *mockQueryResultStreamClient) CloseAndRecv() (*frontendv2pb.QueryResultResponse, error) {
+	m.pool.streamClosed = true
+	return nil, nil
 }

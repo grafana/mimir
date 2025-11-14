@@ -16,12 +16,13 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/gogo/protobuf/types"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/test"
 	"github.com/prometheus/client_golang/prometheus"
-	promtest "github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
 	jaegerpropagator "go.opentelemetry.io/contrib/propagators/jaeger"
 	"go.opentelemetry.io/otel"
@@ -38,6 +39,7 @@ import (
 	"github.com/grafana/mimir/pkg/scheduler/schedulerpb"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/httpgrpcutil"
+	"github.com/grafana/mimir/pkg/util/promtest"
 	util_test "github.com/grafana/mimir/pkg/util/test"
 )
 
@@ -108,7 +110,7 @@ func setupScheduler(t *testing.T, reg prometheus.Registerer) (*Scheduler, schedu
 	return s, schedulerpb.NewSchedulerForFrontendClient(c), schedulerpb.NewSchedulerForQuerierClient(c)
 }
 
-func TestSchedulerBasicEnqueue(t *testing.T) {
+func TestSchedulerBasicEnqueue_HTTPPayload(t *testing.T) {
 	scheduler, frontendClient, querierClient := setupScheduler(t, nil)
 
 	frontendLoop := initFrontendLoop(t, frontendClient, "frontend-12345")
@@ -116,7 +118,7 @@ func TestSchedulerBasicEnqueue(t *testing.T) {
 		Type:         schedulerpb.ENQUEUE,
 		QueryID:      1,
 		UserID:       "test",
-		HttpRequest:  &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"},
+		Payload:      &schedulerpb.FrontendToScheduler_HttpRequest{HttpRequest: &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"}},
 		StatsEnabled: true,
 	})
 
@@ -125,14 +127,48 @@ func TestSchedulerBasicEnqueue(t *testing.T) {
 		require.NoError(t, err)
 		require.NoError(t, querierLoop.Send(&schedulerpb.QuerierToScheduler{QuerierID: "querier-1"}))
 
-		msg2, err := querierLoop.Recv()
+		msg, err := querierLoop.Recv()
 		require.NoError(t, err)
-		require.Equal(t, uint64(1), msg2.QueryID)
-		require.Equal(t, "frontend-12345", msg2.FrontendAddress)
-		require.Equal(t, "GET", msg2.HttpRequest.Method)
-		require.Equal(t, "/hello", msg2.HttpRequest.Url)
-		require.True(t, msg2.StatsEnabled)
-		require.Greater(t, msg2.QueueTimeNanos, int64(0))
+		require.Equal(t, uint64(1), msg.QueryID)
+		require.Equal(t, "frontend-12345", msg.FrontendAddress)
+		require.Equal(t, "GET", msg.GetHttpRequest().Method)
+		require.Equal(t, "/hello", msg.GetHttpRequest().Url)
+		require.Nil(t, msg.GetProtobufRequest())
+		require.True(t, msg.StatsEnabled)
+		require.Greater(t, msg.QueueTimeNanos, int64(0))
+		require.NoError(t, querierLoop.Send(&schedulerpb.QuerierToScheduler{}))
+	}
+
+	verifyNoPendingRequestsLeft(t, scheduler)
+	verifyQueryComponentUtilizationLeft(t, scheduler)
+}
+
+func TestSchedulerBasicEnqueue_GRPCPayload(t *testing.T) {
+	scheduler, frontendClient, querierClient := setupScheduler(t, nil)
+
+	frontendLoop := initFrontendLoop(t, frontendClient, "frontend-12345")
+	request := &schedulerpb.ProtobufRequest{Payload: &types.Any{TypeUrl: "http://my.types/some_request", Value: []byte("hello world")}}
+	frontendToScheduler(t, frontendLoop, &schedulerpb.FrontendToScheduler{
+		Type:         schedulerpb.ENQUEUE,
+		QueryID:      1,
+		UserID:       "test",
+		Payload:      &schedulerpb.FrontendToScheduler_ProtobufRequest{ProtobufRequest: request},
+		StatsEnabled: true,
+	})
+
+	{
+		querierLoop, err := querierClient.QuerierLoop(context.Background())
+		require.NoError(t, err)
+		require.NoError(t, querierLoop.Send(&schedulerpb.QuerierToScheduler{QuerierID: "querier-1"}))
+
+		msg, err := querierLoop.Recv()
+		require.NoError(t, err)
+		require.Equal(t, uint64(1), msg.QueryID)
+		require.Equal(t, "frontend-12345", msg.FrontendAddress)
+		require.Equal(t, request, msg.GetProtobufRequest())
+		require.Nil(t, msg.GetHttpRequest())
+		require.True(t, msg.StatsEnabled)
+		require.Greater(t, msg.QueueTimeNanos, int64(0))
 		require.NoError(t, querierLoop.Send(&schedulerpb.QuerierToScheduler{}))
 	}
 
@@ -145,10 +181,10 @@ func TestSchedulerEnqueueWithCancel(t *testing.T) {
 
 	frontendLoop := initFrontendLoop(t, frontendClient, "frontend-12345")
 	frontendToScheduler(t, frontendLoop, &schedulerpb.FrontendToScheduler{
-		Type:        schedulerpb.ENQUEUE,
-		QueryID:     1,
-		UserID:      "test",
-		HttpRequest: &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"},
+		Type:    schedulerpb.ENQUEUE,
+		QueryID: 1,
+		UserID:  "test",
+		Payload: &schedulerpb.FrontendToScheduler_HttpRequest{HttpRequest: &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"}},
 	})
 
 	frontendToScheduler(t, frontendLoop, &schedulerpb.FrontendToScheduler{
@@ -170,17 +206,17 @@ func TestSchedulerEnqueueByMultipleFrontendsWithCancel(t *testing.T) {
 	frontendLoop2 := initFrontendLoop(t, frontendClient, "frontend-2")
 
 	frontendToScheduler(t, frontendLoop1, &schedulerpb.FrontendToScheduler{
-		Type:        schedulerpb.ENQUEUE,
-		QueryID:     1,
-		UserID:      "test",
-		HttpRequest: &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello1"},
+		Type:    schedulerpb.ENQUEUE,
+		QueryID: 1,
+		UserID:  "test",
+		Payload: &schedulerpb.FrontendToScheduler_HttpRequest{HttpRequest: &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello1"}},
 	})
 
 	frontendToScheduler(t, frontendLoop2, &schedulerpb.FrontendToScheduler{
-		Type:        schedulerpb.ENQUEUE,
-		QueryID:     1,
-		UserID:      "test",
-		HttpRequest: &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello2"},
+		Type:    schedulerpb.ENQUEUE,
+		QueryID: 1,
+		UserID:  "test",
+		Payload: &schedulerpb.FrontendToScheduler_HttpRequest{HttpRequest: &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello2"}},
 	})
 
 	// Cancel first query by first frontend.
@@ -210,15 +246,15 @@ func TestSchedulerEnqueueWithFrontendDisconnect(t *testing.T) {
 
 	frontendLoop := initFrontendLoop(t, frontendClient, "frontend-12345")
 	frontendToScheduler(t, frontendLoop, &schedulerpb.FrontendToScheduler{
-		Type:        schedulerpb.ENQUEUE,
-		QueryID:     1,
-		UserID:      "test",
-		HttpRequest: &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"},
+		Type:    schedulerpb.ENQUEUE,
+		QueryID: 1,
+		UserID:  "test",
+		Payload: &schedulerpb.FrontendToScheduler_HttpRequest{HttpRequest: &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"}},
 	})
 
 	// Wait until the frontend has connected to the scheduler.
 	test.Poll(t, time.Second, float64(1), func() interface{} {
-		return promtest.ToFloat64(scheduler.connectedFrontendClients)
+		return testutil.ToFloat64(scheduler.connectedFrontendClients)
 	})
 
 	// Disconnect frontend.
@@ -226,7 +262,7 @@ func TestSchedulerEnqueueWithFrontendDisconnect(t *testing.T) {
 
 	// Wait until the frontend has disconnected.
 	test.Poll(t, time.Second, float64(0), func() interface{} {
-		return promtest.ToFloat64(scheduler.connectedFrontendClients)
+		return testutil.ToFloat64(scheduler.connectedFrontendClients)
 	})
 
 	querierLoop := initQuerierLoop(t, querierClient, "querier-1")
@@ -241,10 +277,10 @@ func TestCancelRequestInProgress_QuerierFinishesBeforeObservingCancellation(t *t
 
 	frontendLoop := initFrontendLoop(t, frontendClient, "frontend-12345")
 	frontendToScheduler(t, frontendLoop, &schedulerpb.FrontendToScheduler{
-		Type:        schedulerpb.ENQUEUE,
-		QueryID:     1,
-		UserID:      "test",
-		HttpRequest: &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"},
+		Type:    schedulerpb.ENQUEUE,
+		QueryID: 1,
+		UserID:  "test",
+		Payload: &schedulerpb.FrontendToScheduler_HttpRequest{HttpRequest: &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"}},
 	})
 
 	querierLoop, err := querierClient.QuerierLoop(context.Background())
@@ -275,10 +311,10 @@ func TestCancelRequestInProgress_QuerierObservesCancellation(t *testing.T) {
 
 	frontendLoop := initFrontendLoop(t, frontendClient, "frontend-12345")
 	frontendToScheduler(t, frontendLoop, &schedulerpb.FrontendToScheduler{
-		Type:        schedulerpb.ENQUEUE,
-		QueryID:     1,
-		UserID:      "test",
-		HttpRequest: &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"},
+		Type:    schedulerpb.ENQUEUE,
+		QueryID: 1,
+		UserID:  "test",
+		Payload: &schedulerpb.FrontendToScheduler_HttpRequest{HttpRequest: &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"}},
 	})
 
 	querierLoop, err := querierClient.QuerierLoop(context.Background())
@@ -312,13 +348,13 @@ func TestTracingContext(t *testing.T) {
 		Type:            schedulerpb.ENQUEUE,
 		QueryID:         1,
 		UserID:          "test",
-		HttpRequest:     &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"},
+		Payload:         &schedulerpb.FrontendToScheduler_HttpRequest{HttpRequest: &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"}},
 		FrontendAddress: "frontend-12345",
 	}
 
 	ctx, sp := tracer.Start(context.Background(), "client")
 	defer sp.End()
-	otel.GetTextMapPropagator().Inject(ctx, (*httpgrpcutil.HttpgrpcHeadersCarrier)(req.HttpRequest))
+	otel.GetTextMapPropagator().Inject(ctx, (*httpgrpcutil.HttpgrpcHeadersCarrier)(req.GetHttpRequest()))
 
 	frontendToScheduler(t, frontendLoop, req)
 
@@ -343,10 +379,10 @@ func TestSchedulerShutdown_FrontendLoop(t *testing.T) {
 
 	// We can still send request to scheduler, but we get shutdown error back.
 	require.NoError(t, frontendLoop.Send(&schedulerpb.FrontendToScheduler{
-		Type:        schedulerpb.ENQUEUE,
-		QueryID:     1,
-		UserID:      "test",
-		HttpRequest: &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"},
+		Type:    schedulerpb.ENQUEUE,
+		QueryID: 1,
+		UserID:  "test",
+		Payload: &schedulerpb.FrontendToScheduler_HttpRequest{HttpRequest: &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"}},
 	}))
 
 	msg, err := frontendLoop.Recv()
@@ -360,10 +396,10 @@ func TestSchedulerShutdown_QuerierLoop(t *testing.T) {
 
 	frontendLoop := initFrontendLoop(t, frontendClient, "frontend-12345")
 	frontendToScheduler(t, frontendLoop, &schedulerpb.FrontendToScheduler{
-		Type:        schedulerpb.ENQUEUE,
-		QueryID:     1,
-		UserID:      "test",
-		HttpRequest: &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"},
+		Type:    schedulerpb.ENQUEUE,
+		QueryID: 1,
+		UserID:  "test",
+		Payload: &schedulerpb.FrontendToScheduler_HttpRequest{HttpRequest: &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"}},
 	})
 
 	// Scheduler now has 1 query. Let's connect querier and fetch it.
@@ -394,10 +430,10 @@ func TestSchedulerMaxOutstandingRequests(t *testing.T) {
 		// coming from different frontends
 		fl := initFrontendLoop(t, frontendClient, fmt.Sprintf("frontend-%d", i))
 		require.NoError(t, fl.Send(&schedulerpb.FrontendToScheduler{
-			Type:        schedulerpb.ENQUEUE,
-			QueryID:     uint64(i),
-			UserID:      "test", // for same user.
-			HttpRequest: &httpgrpc.HTTPRequest{},
+			Type:    schedulerpb.ENQUEUE,
+			QueryID: uint64(i),
+			UserID:  "test", // for same user.
+			Payload: &schedulerpb.FrontendToScheduler_HttpRequest{HttpRequest: &httpgrpc.HTTPRequest{}},
 		}))
 
 		msg, err := fl.Recv()
@@ -409,17 +445,17 @@ func TestSchedulerMaxOutstandingRequests(t *testing.T) {
 	fl := initFrontendLoop(t, frontendClient, "extra-frontend")
 
 	req := schedulerpb.FrontendToScheduler{
-		Type:        schedulerpb.ENQUEUE,
-		QueryID:     0,
-		UserID:      "test",
-		HttpRequest: &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"},
+		Type:    schedulerpb.ENQUEUE,
+		QueryID: 0,
+		UserID:  "test",
+		Payload: &schedulerpb.FrontendToScheduler_HttpRequest{HttpRequest: &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"}},
 	}
 
 	// Inject span context to the request so we can check handling of max outstanding requests.
 	spanExporter.Reset()
 	ctx, sp := tracer.Start(context.Background(), "client")
 	defer sp.End()
-	otel.GetTextMapPropagator().Inject(ctx, (*httpgrpcutil.HttpgrpcHeadersCarrier)(req.HttpRequest))
+	otel.GetTextMapPropagator().Inject(ctx, (*httpgrpcutil.HttpgrpcHeadersCarrier)(req.GetHttpRequest()))
 
 	require.NoError(t, fl.Send(&req))
 
@@ -459,10 +495,10 @@ func TestSchedulerForwardsErrorToFrontend(t *testing.T) {
 	// After preparations, start frontend and querier.
 	frontendLoop := initFrontendLoop(t, frontendClient, frontendAddress)
 	frontendToScheduler(t, frontendLoop, &schedulerpb.FrontendToScheduler{
-		Type:        schedulerpb.ENQUEUE,
-		QueryID:     100,
-		UserID:      "test",
-		HttpRequest: &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"},
+		Type:    schedulerpb.ENQUEUE,
+		QueryID: 100,
+		UserID:  "test",
+		Payload: &schedulerpb.FrontendToScheduler_HttpRequest{HttpRequest: &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"}},
 	})
 
 	// Scheduler now has 1 query. We now connect querier, fetch the request, and then close the connection.
@@ -499,19 +535,19 @@ func TestSchedulerQueueMetrics(t *testing.T) {
 
 	frontendLoop := initFrontendLoop(t, frontendClient, "frontend-12345")
 	frontendToScheduler(t, frontendLoop, &schedulerpb.FrontendToScheduler{
-		Type:        schedulerpb.ENQUEUE,
-		QueryID:     1,
-		UserID:      "test",
-		HttpRequest: &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"},
+		Type:    schedulerpb.ENQUEUE,
+		QueryID: 1,
+		UserID:  "test",
+		Payload: &schedulerpb.FrontendToScheduler_HttpRequest{HttpRequest: &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"}},
 	})
 	frontendToScheduler(t, frontendLoop, &schedulerpb.FrontendToScheduler{
-		Type:        schedulerpb.ENQUEUE,
-		QueryID:     1,
-		UserID:      "another",
-		HttpRequest: &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"},
+		Type:    schedulerpb.ENQUEUE,
+		QueryID: 1,
+		UserID:  "another",
+		Payload: &schedulerpb.FrontendToScheduler_HttpRequest{HttpRequest: &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"}},
 	})
 
-	require.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(`
+	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 		# HELP cortex_query_scheduler_queue_length Number of queries in the queue.
 		# TYPE cortex_query_scheduler_queue_length gauge
 		cortex_query_scheduler_queue_length{user="another"} 1
@@ -520,7 +556,7 @@ func TestSchedulerQueueMetrics(t *testing.T) {
 
 	scheduler.cleanupMetricsForInactiveUser("test")
 
-	require.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(`
+	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 		# HELP cortex_query_scheduler_queue_length Number of queries in the queue.
 		# TYPE cortex_query_scheduler_queue_length gauge
 		cortex_query_scheduler_queue_length{user="another"} 1
@@ -529,7 +565,16 @@ func TestSchedulerQueueMetrics(t *testing.T) {
 
 func TestSchedulerQuerierMetrics(t *testing.T) {
 	reg := prometheus.NewPedanticRegistry()
-	_, _, querierClient := setupScheduler(t, reg)
+	_, frontendClient, querierClient := setupScheduler(t, reg)
+
+	frontendLoop := initFrontendLoop(t, frontendClient, "frontend-12345")
+	frontendToScheduler(t, frontendLoop, &schedulerpb.FrontendToScheduler{
+		Type:         schedulerpb.ENQUEUE,
+		QueryID:      1,
+		UserID:       "test",
+		Payload:      &schedulerpb.FrontendToScheduler_HttpRequest{HttpRequest: &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"}},
+		StatsEnabled: true,
+	})
 
 	ctx, cancel := context.WithCancel(context.Background())
 	querierLoop, err := querierClient.QuerierLoop(ctx)
@@ -537,7 +582,7 @@ func TestSchedulerQuerierMetrics(t *testing.T) {
 	require.NoError(t, querierLoop.Send(&schedulerpb.QuerierToScheduler{QuerierID: "querier-1"}))
 
 	require.Eventually(t, func() bool {
-		err := promtest.GatherAndCompare(reg, strings.NewReader(`
+		err := testutil.GatherAndCompare(reg, strings.NewReader(`
 			# HELP cortex_query_scheduler_connected_querier_clients Number of querier worker clients currently connected to the query-scheduler.
 			# TYPE cortex_query_scheduler_connected_querier_clients gauge
 			cortex_query_scheduler_connected_querier_clients 1
@@ -550,7 +595,7 @@ func TestSchedulerQuerierMetrics(t *testing.T) {
 	require.NoError(t, util.CloseAndExhaust[*schedulerpb.SchedulerToQuerier](querierLoop))
 
 	require.Eventually(t, func() bool {
-		err := promtest.GatherAndCompare(reg, strings.NewReader(`
+		err := testutil.GatherAndCompare(reg, strings.NewReader(`
 			# HELP cortex_query_scheduler_connected_querier_clients Number of querier worker clients currently connected to the query-scheduler.
 			# TYPE cortex_query_scheduler_connected_querier_clients gauge
 			cortex_query_scheduler_connected_querier_clients 0
@@ -558,6 +603,9 @@ func TestSchedulerQuerierMetrics(t *testing.T) {
 
 		return err == nil
 	}, time.Second, 10*time.Millisecond, "expected cortex_query_scheduler_connected_querier_clients metric to be decremented after querier disconnected")
+
+	require.NoError(t, promtest.HasNativeHistogram(reg, "cortex_query_scheduler_queue_duration_seconds"))
+	require.NoError(t, promtest.HasSampleCount(reg, "cortex_query_scheduler_queue_duration_seconds", 1))
 }
 
 func initFrontendLoop(t *testing.T, client schedulerpb.SchedulerForFrontendClient, frontendAddr string) schedulerpb.SchedulerForFrontend_FrontendLoopClient {

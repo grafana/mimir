@@ -6,77 +6,121 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"math"
-	"net/http"
-	"strconv"
 	"time"
 
-	jsoniter "github.com/json-iterator/go"
+	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
-	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
-	"github.com/prometheus/prometheus/storage"
 
+	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/ast"
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/commonsubexpressionelimination"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
+	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
-// Replaced during testing to ensure timing produces consistent results.
-var timeSince = time.Since
-
 type QueryPlanner struct {
-	activeQueryTracker       promql.QueryTracker
+	activeQueryTracker       QueryTracker
 	noStepSubqueryIntervalFn func(rangeMillis int64) int64
+	enableDelayedNameRemoval bool
 	astOptimizationPasses    []optimize.ASTOptimizationPass
 	planOptimizationPasses   []optimize.QueryPlanOptimizationPass
 	planStageLatency         *prometheus.HistogramVec
+	generatedPlans           *prometheus.CounterVec
+	versionProvider          QueryPlanVersionProvider
+
+	logger log.Logger
+
+	// Replaced during testing to ensure timing produces consistent results.
+	TimeSince func(time.Time) time.Duration
 }
 
-func NewQueryPlanner(opts EngineOpts) *QueryPlanner {
-	planner := NewQueryPlannerWithoutOptimizationPasses(opts)
+func NewQueryPlanner(opts EngineOpts, versionProvider QueryPlanVersionProvider) (*QueryPlanner, error) {
+	planner, err := NewQueryPlannerWithoutOptimizationPasses(opts, versionProvider)
+	if err != nil {
+		return nil, err
+	}
 
 	// FIXME: it makes sense to register these common optimization passes here, but we'll likely need to rework this once
 	// we introduce query-frontend-specific optimization passes like sharding and splitting for two reasons:
 	//  1. We want to avoid a circular dependency between this package and the query-frontend package where most of the logic for these optimization passes lives.
 	//  2. We don't want to register these optimization passes in queriers.
+	planner.RegisterASTOptimizationPass(&ast.CollapseConstants{}) // We expect this to be the first to simplify the logic for the rest of the optimization passes.
+	if opts.EnablePruneToggles {
+		planner.RegisterASTOptimizationPass(ast.NewPruneToggles(opts.CommonOpts.Reg)) // Do this next to ensure that toggled off expressions are removed before the other optimization passes are applied.
+	}
+	// NOTE: This optimization pass MUST run before SortLabelsAndMatchers since it does not preserve the order of matchers.
+	if opts.EnableReduceMatchers {
+		planner.RegisterASTOptimizationPass(ast.NewReduceMatchers(opts.CommonOpts.Reg, opts.Logger))
+	}
 	planner.RegisterASTOptimizationPass(&ast.SortLabelsAndMatchers{}) // This is a prerequisite for other optimization passes such as common subexpression elimination.
-	planner.RegisterASTOptimizationPass(&ast.CollapseConstants{})
+	// After query sharding is moved here, we want to move propagate matchers and reorder histogram aggregation here as well before query sharding.
 
-	if opts.EnableCommonSubexpressionElimination {
-		planner.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(opts.CommonOpts.Reg))
+	// This optimization pass is registered before CSE to keep the query plan as a simple tree structure.
+	// After CSE, the query plan may no longer be a tree due to multiple paths culminating in the same Duplicate node,
+	// which would make the elimination logic more complex.
+	if opts.EnableEliminateDeduplicateAndMerge {
+		planner.RegisterQueryPlanOptimizationPass(plan.NewEliminateDeduplicateAndMergeOptimizationPass(opts.CommonOpts.EnableDelayedNameRemoval))
 	}
 
-	return planner
+	if opts.EnableSkippingHistogramDecoding {
+		// This optimization pass must be registered before common subexpression elimination, if that is enabled.
+		planner.RegisterQueryPlanOptimizationPass(plan.NewSkipHistogramDecodingOptimizationPass())
+	}
+
+	if opts.EnableCommonSubexpressionElimination {
+		planner.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(opts.EnableCommonSubexpressionEliminationForRangeVectorExpressionsInInstantQueries, opts.CommonOpts.Reg, opts.Logger))
+	}
+
+	if opts.EnableNarrowBinarySelectors {
+		planner.RegisterQueryPlanOptimizationPass(plan.NewNarrowSelectorsOptimizationPass(opts.Logger))
+	}
+
+	return planner, nil
 }
 
 // NewQueryPlannerWithoutOptimizationPasses creates a new query planner without any optimization passes registered.
 //
 // This is intended for use in tests only.
-func NewQueryPlannerWithoutOptimizationPasses(opts EngineOpts) *QueryPlanner {
-	activeQueryTracker := opts.CommonOpts.ActiveQueryTracker
+func NewQueryPlannerWithoutOptimizationPasses(opts EngineOpts, versionProvider QueryPlanVersionProvider) (*QueryPlanner, error) {
+	activeQueryTracker := opts.ActiveQueryTracker
 	if activeQueryTracker == nil {
+		if opts.CommonOpts.ActiveQueryTracker != nil {
+			return nil, errors.New("no MQE-style active query tracker provided, but one conforming to Prometheus' interface was provided, this is likely a bug")
+		}
+
 		activeQueryTracker = &NoopQueryTracker{}
 	}
 
 	return &QueryPlanner{
 		activeQueryTracker:       activeQueryTracker,
 		noStepSubqueryIntervalFn: opts.CommonOpts.NoStepSubqueryIntervalFn,
+		enableDelayedNameRemoval: opts.CommonOpts.EnableDelayedNameRemoval,
 		planStageLatency: promauto.With(opts.CommonOpts.Reg).NewHistogramVec(prometheus.HistogramOpts{
 			Name:                        "cortex_mimir_query_engine_plan_stage_latency_seconds",
 			Help:                        "Latency of each stage of the query planning process.",
 			NativeHistogramBucketFactor: 1.1,
 		}, []string{"stage_type", "stage"}),
-	}
+		generatedPlans: promauto.With(opts.CommonOpts.Reg).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_mimir_query_engine_plans_generated_total",
+			Help: "Total number of query plans generated.",
+		}, []string{"version"}),
+
+		versionProvider: versionProvider,
+
+		logger:    opts.Logger,
+		TimeSince: time.Since,
+	}, nil
 }
 
 // RegisterASTOptimizationPass registers an AST optimization pass used with this engine.
@@ -100,14 +144,10 @@ type PlanningObserver interface {
 	OnAllPlanningStagesComplete(finalPlan *planning.QueryPlan) error
 }
 
-func (p *QueryPlanner) NewQueryPlan(ctx context.Context, qs string, timeRange types.QueryTimeRange, observer PlanningObserver) (*planning.QueryPlan, error) {
-	queryID, err := p.activeQueryTracker.Insert(ctx, qs+" # (planning)")
-	if err != nil {
-		return nil, err
-	}
-
-	defer p.activeQueryTracker.Delete(queryID)
-
+// ParseAndApplyASTOptimizationPasses runs the AST optimization passes on the input string and outputs
+// an expression and any error encountered. This is separated into its own method to allow testing of
+// AST optimization passes.
+func (p *QueryPlanner) ParseAndApplyASTOptimizationPasses(ctx context.Context, qs string, timeRange types.QueryTimeRange, observer PlanningObserver) (parser.Expr, error) {
 	expr, err := p.runASTStage("Parsing", observer, func() (parser.Expr, error) { return parser.ParseExpr(qs) })
 	if err != nil {
 		return nil, err
@@ -115,12 +155,19 @@ func (p *QueryPlanner) NewQueryPlan(ctx context.Context, qs string, timeRange ty
 
 	if !timeRange.IsInstant {
 		if expr.Type() != parser.ValueTypeVector && expr.Type() != parser.ValueTypeScalar {
-			return nil, fmt.Errorf("query expression produces a %s, but expression for range queries must produce an instant vector or scalar", parser.DocumentedType(expr.Type()))
+			return nil, apierror.Newf(apierror.TypeBadData, "query expression produces a %s, but expression for range queries must produce an instant vector or scalar", parser.DocumentedType(expr.Type()))
 		}
 	}
 
 	expr, err = p.runASTStage("Pre-processing", observer, func() (parser.Expr, error) {
-		return promql.PreprocessExpr(expr, timestamp.Time(timeRange.StartT), timestamp.Time(timeRange.EndT))
+		step := time.Duration(timeRange.IntervalMilliseconds) * time.Millisecond
+
+		if timeRange.IsInstant {
+			// timeRange.IntervalMilliseconds is 1 for instant queries, but we need to pass 0 for instant queries to PreprocessExpr.
+			step = 0
+		}
+
+		return promql.PreprocessExpr(expr, timestamp.Time(timeRange.StartT), timestamp.Time(timeRange.EndT), step)
 	})
 
 	if err != nil {
@@ -139,17 +186,55 @@ func (p *QueryPlanner) NewQueryPlan(ctx context.Context, qs string, timeRange ty
 		return nil, err
 	}
 
+	return expr, nil
+}
+
+func (p *QueryPlanner) NewQueryPlan(ctx context.Context, qs string, timeRange types.QueryTimeRange, observer PlanningObserver) (*planning.QueryPlan, error) {
+	spanLogger, ctx := spanlogger.New(ctx, p.logger, tracer, "QueryPlanner.NewQueryPlan")
+	defer spanLogger.Finish()
+	spanLogger.SetTag("query", qs)
+
+	queryID, err := p.activeQueryTracker.InsertWithDetails(ctx, qs, "planning", timeRange)
+	if err != nil {
+		return nil, err
+	}
+
+	defer p.activeQueryTracker.Delete(queryID)
+
+	maximumSupportedQueryPlanVersion, err := p.versionProvider.GetMaximumSupportedQueryPlanVersion(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("could not determine maximum supported query plan version: %w", err)
+	}
+
+	spanLogger.DebugLog("msg", "starting planning", "expression", qs, "maximum_supported_query_plan_version", maximumSupportedQueryPlanVersion)
+
+	expr, err := p.ParseAndApplyASTOptimizationPasses(ctx, qs, timeRange, observer)
+	if err != nil {
+		return nil, err
+	}
+
+	spanLogger.DebugLog("msg", "AST optimisation passes completed", "expression", expr)
+
 	plan, err := p.runPlanningStage("Original plan", observer, func() (*planning.QueryPlan, error) {
 		root, err := p.nodeFromExpr(expr)
 		if err != nil {
 			return nil, err
 		}
 
+		if p.enableDelayedNameRemoval {
+			var err error
+			root, err = p.insertDropNameOperator(root)
+			if err != nil {
+				return nil, err
+			}
+		}
+
 		plan := &planning.QueryPlan{
 			TimeRange: timeRange,
 			Root:      root,
 
-			OriginalExpression: qs,
+			OriginalExpression:       qs,
+			EnableDelayedNameRemoval: p.enableDelayedNameRemoval,
 		}
 
 		return plan, nil
@@ -159,19 +244,94 @@ func (p *QueryPlanner) NewQueryPlan(ctx context.Context, qs string, timeRange ty
 		return nil, err
 	}
 
+	spanLogger.DebugLog("msg", "original plan completed", "plan", plan)
+
 	for _, o := range p.planOptimizationPasses {
-		plan, err = p.runPlanningStage(o.Name(), observer, func() (*planning.QueryPlan, error) { return o.Apply(ctx, plan) })
+		plan, err = p.runPlanningStage(o.Name(), observer, func() (*planning.QueryPlan, error) { return o.Apply(ctx, plan, maximumSupportedQueryPlanVersion) })
 
 		if err != nil {
 			return nil, err
 		}
 	}
 
+	if err := plan.DeterminePlanVersion(); err != nil {
+		return nil, err
+	}
+
+	if plan.Version > maximumSupportedQueryPlanVersion {
+		return nil, fmt.Errorf("maximum supported query plan version is %d, but generated plan version is %d - this is a bug", maximumSupportedQueryPlanVersion, plan.Version)
+	}
+
+	p.generatedPlans.WithLabelValues(plan.Version.String()).Inc()
+
 	if err := observer.OnAllPlanningStagesComplete(plan); err != nil {
 		return nil, err
 	}
 
+	spanLogger.DebugLog("msg", "planning completed", "plan", plan, "version", plan.Version)
+
 	return plan, err
+}
+
+func (p *QueryPlanner) insertDropNameOperator(root planning.Node) (planning.Node, error) {
+	if dedupAndMerge, ok := root.(*core.DeduplicateAndMerge); ok {
+		// If root is already DeduplicateAndMerge, insert DropName between it and its inner node
+		return &core.DeduplicateAndMerge{
+			Inner: &core.DropName{
+				Inner:           dedupAndMerge.Inner,
+				DropNameDetails: &core.DropNameDetails{},
+			},
+			DeduplicateAndMergeDetails: dedupAndMerge.DeduplicateAndMergeDetails,
+		}, nil
+	}
+
+	// Don't run delayed name removal or deduplicate and merge where there are no
+	// vector selectors.
+	shouldWrap, err := shouldWrapInDedupAndMerge(root)
+	if err != nil {
+		return nil, err
+	}
+	if shouldWrap {
+		return &core.DeduplicateAndMerge{
+			Inner: &core.DropName{
+				Inner:           root,
+				DropNameDetails: &core.DropNameDetails{},
+			},
+			DeduplicateAndMergeDetails: &core.DeduplicateAndMergeDetails{},
+		}, nil
+	}
+
+	return root, nil
+}
+
+func shouldWrapInDedupAndMerge(root planning.Node) (bool, error) {
+	switch node := root.(type) {
+	case *core.NumberLiteral, *core.StringLiteral, *core.MatrixSelector:
+		return false, nil
+	case *core.BinaryExpression:
+		resL, err := node.LHS.ResultType()
+		if err != nil {
+			return false, err
+		}
+		if resL != parser.ValueTypeScalar {
+			break
+		}
+		resR, err := node.RHS.ResultType()
+		if err != nil {
+			return false, err
+		}
+		if resR == parser.ValueTypeScalar {
+			return false, nil
+		}
+	case *core.FunctionCall:
+		res, err := root.ResultType()
+		if err == nil && res == parser.ValueTypeScalar {
+			return false, nil
+		}
+	case *core.StepInvariantExpression:
+		return shouldWrapInDedupAndMerge(node.Inner)
+	}
+	return true, nil
 }
 
 func (p *QueryPlanner) runASTStage(stageName string, observer PlanningObserver, stage func() (parser.Expr, error)) (parser.Expr, error) {
@@ -181,7 +341,7 @@ func (p *QueryPlanner) runASTStage(stageName string, observer PlanningObserver, 
 		return nil, err
 	}
 
-	duration := timeSince(start)
+	duration := p.TimeSince(start)
 	p.planStageLatency.WithLabelValues("AST", stageName).Observe(duration.Seconds())
 
 	if err := observer.OnASTStageComplete(stageName, expr, duration); err != nil {
@@ -198,7 +358,7 @@ func (p *QueryPlanner) runPlanningStage(stageName string, observer PlanningObser
 		return nil, err
 	}
 
-	duration := timeSince(start)
+	duration := p.TimeSince(start)
 	p.planStageLatency.WithLabelValues("Plan", stageName).Observe(duration.Seconds())
 
 	if err := observer.OnPlanningStageComplete(stageName, plan, duration); err != nil {
@@ -213,10 +373,14 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
 	case *parser.VectorSelector:
 		return &core.VectorSelector{
 			VectorSelectorDetails: &core.VectorSelectorDetails{
-				Matchers:           core.LabelMatchersFrom(expr.LabelMatchers),
+				Matchers:           core.LabelMatchersFromPrometheusType(expr.LabelMatchers),
 				Timestamp:          core.TimeFromTimestamp(expr.Timestamp),
 				Offset:             expr.OriginalOffset,
 				ExpressionPosition: core.PositionRangeFrom(expr.PositionRange()),
+				// Note that we deliberately do not propagate SkipHistogramBuckets from the expression here.
+				// This is done in the skip histogram buckets optimization pass, after common subexpression elimination is applied,
+				// to simplify the logic in the common subexpression elimination optimization pass. Otherwise it would have to deal
+				// with merging selectors that can and can't skip histogram buckets.
 			},
 		}, nil
 
@@ -228,11 +392,12 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
 
 		return &core.MatrixSelector{
 			MatrixSelectorDetails: &core.MatrixSelectorDetails{
-				Matchers:           core.LabelMatchersFrom(vs.LabelMatchers),
+				Matchers:           core.LabelMatchersFromPrometheusType(vs.LabelMatchers),
 				Timestamp:          core.TimeFromTimestamp(vs.Timestamp),
 				Offset:             vs.OriginalOffset,
 				Range:              expr.Range,
 				ExpressionPosition: core.PositionRangeFrom(expr.PositionRange()),
+				// Note that we deliberately do not propagate SkipHistogramBuckets from the expression here. See the explanation above.
 			},
 		}, nil
 
@@ -283,7 +448,7 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
 			return nil, err
 		}
 
-		return &core.BinaryExpression{
+		binExpr := &core.BinaryExpression{
 			LHS: lhs,
 			RHS: rhs,
 			BinaryExpressionDetails: &core.BinaryExpressionDetails{
@@ -292,10 +457,40 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
 				ReturnBool:         expr.ReturnBool,
 				ExpressionPosition: core.PositionRangeFrom(expr.PositionRange()),
 			},
-		}, nil
+		}
+		// Only 'or' and scalar/vector expressions need deduplication.
+		// All other variations either can't produce duplicate series (e.g., 'and' and 'unless')
+		// or deduplication is handled by the operator (e.g., vector/vector expressions).
+		if expr.Op == parser.LOR {
+			return &core.DeduplicateAndMerge{
+				Inner:                      binExpr,
+				DeduplicateAndMergeDetails: &core.DeduplicateAndMergeDetails{},
+			}, nil
+		}
+
+		lhsType := expr.LHS.Type()
+		rhsType := expr.RHS.Type()
+		isVectorScalar := (lhsType == parser.ValueTypeVector && rhsType == parser.ValueTypeScalar) ||
+			(lhsType == parser.ValueTypeScalar && rhsType == parser.ValueTypeVector)
+
+		if isVectorScalar {
+			// Comparison vector-scalar operations without bool modifier don't drop the __name__ label.
+			// So don't need to wrap in DeduplicateAndMerge.
+			if expr.Op.IsComparisonOperator() && !expr.ReturnBool {
+				return binExpr, nil
+			}
+
+			return &core.DeduplicateAndMerge{
+				Inner:                      binExpr,
+				DeduplicateAndMergeDetails: &core.DeduplicateAndMergeDetails{},
+			}, nil
+		}
+
+		return binExpr, nil
 
 	case *parser.Call:
-		if !isKnownFunction(expr.Func.Name) {
+		fnc, ok := findFunction(expr.Func.Name)
+		if !ok {
 			return nil, compat.NewNotSupportedError(fmt.Sprintf("'%s' function", expr.Func.Name))
 		}
 
@@ -313,19 +508,46 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
 		f := &core.FunctionCall{
 			Args: args,
 			FunctionCallDetails: &core.FunctionCallDetails{
-				FunctionName:       expr.Func.Name,
+				Function:           fnc,
 				ExpressionPosition: core.PositionRangeFrom(expr.PositionRange()),
 			},
 		}
 
-		switch expr.Func.Name {
-		case "absent", "absent_over_time":
+		switch fnc {
+		case functions.FUNCTION_ABSENT, functions.FUNCTION_ABSENT_OVER_TIME:
 			f.AbsentLabels = mimirpb.FromLabelsToLabelAdapters(functions.CreateLabelsForAbsentFunction(expr.Args[0]))
-		case "timestamp":
-			vs, isVectorSelector := args[0].(*core.VectorSelector)
-			if isVectorSelector {
-				vs.VectorSelectorDetails.ReturnSampleTimestamps = true
+		case functions.FUNCTION_TIMESTAMP:
+
+			// A special case to re-order when we have a timestamp(StepInvariantExpression(VectorSelector)).
+			// The StepInvariantExpression is moved up to encase the entire function call.
+			// Note that the DeduplicateAndMerge still wraps the function call as the timestamp function returns true under functionNeedsDeduplication().
+			// This can be removed once https://github.com/prometheus/prometheus/pull/17313 is vendored into mimir
+			stepInvariantExpression, ok := args[0].(*core.StepInvariantExpression)
+			if ok {
+				vectorSelector, ok := stepInvariantExpression.Inner.(*core.VectorSelector)
+				if ok {
+					vectorSelector.ReturnSampleTimestamps = true
+					f.Args[0] = stepInvariantExpression.Inner
+					return &core.StepInvariantExpression{
+						Inner: &core.DeduplicateAndMerge{
+							Inner:                      f,
+							DeduplicateAndMergeDetails: &core.DeduplicateAndMergeDetails{}},
+						StepInvariantExpressionDetails: &core.StepInvariantExpressionDetails{},
+					}, nil
+				}
 			}
+
+			vectorSelector, ok := args[0].(*core.VectorSelector)
+			if ok {
+				vectorSelector.ReturnSampleTimestamps = true
+			}
+		}
+
+		if functionNeedsDeduplication(fnc) {
+			return &core.DeduplicateAndMerge{
+				Inner:                      f,
+				DeduplicateAndMergeDetails: &core.DeduplicateAndMergeDetails{},
+			}, nil
 		}
 
 		return f, nil
@@ -369,13 +591,23 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
 			return nil, err
 		}
 
-		return &core.UnaryExpression{
+		unaryExpr := &core.UnaryExpression{
 			Inner: inner,
 			UnaryExpressionDetails: &core.UnaryExpressionDetails{
 				Op:                 op,
 				ExpressionPosition: core.PositionRangeFrom(expr.PositionRange()),
 			},
-		}, nil
+		}
+
+		// Unary negation of vectors drops the __name__ label, so wrap in DeduplicateAndMerge.
+		if expr.Op == parser.SUB && expr.Expr.Type() == parser.ValueTypeVector {
+			return &core.DeduplicateAndMerge{
+				Inner:                      unaryExpr,
+				DeduplicateAndMergeDetails: &core.DeduplicateAndMergeDetails{},
+			}, nil
+		}
+
+		return unaryExpr, nil
 
 	case *parser.NumberLiteral:
 		return &core.NumberLiteral{
@@ -397,106 +629,145 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
 		return p.nodeFromExpr(expr.Expr)
 
 	case *parser.StepInvariantExpr:
-		// FIXME: make use of the fact the expression is step invariant
-		return p.nodeFromExpr(expr.Expr)
+		inner, err := p.nodeFromExpr(expr.Expr)
+		if err != nil {
+			return nil, err
+		}
+
+		return &core.StepInvariantExpression{
+			Inner:                          inner,
+			StepInvariantExpressionDetails: &core.StepInvariantExpressionDetails{},
+		}, nil
 
 	default:
 		return nil, fmt.Errorf("unknown expression type: %T", expr)
 	}
 }
 
-func isKnownFunction(name string) bool {
-	if _, ok := functions.InstantVectorFunctionOperatorFactories[name]; ok {
+func findFunction(name string) (functions.Function, bool) {
+	f, ok := functions.FromPromQLName(name)
+	if !ok {
+		return functions.FUNCTION_UNKNOWN, false
+	}
+
+	if _, ok := functions.RegisteredFunctions[f]; ok {
+		return f, true
+	}
+
+	return functions.FUNCTION_UNKNOWN, false
+}
+
+// functionNeedsDeduplication checks if a function needs deduplication and merge operator.
+// This is determined by whether the function drops the __name__ label or otherwise manipulates it.
+func functionNeedsDeduplication(fnc functions.Function) bool {
+	switch fnc {
+	// Functions that need deduplication (manipulate labels)
+	case
+		// Time transformation functions
+		functions.FUNCTION_DAY_OF_MONTH,
+		functions.FUNCTION_DAY_OF_WEEK,
+		functions.FUNCTION_DAY_OF_YEAR,
+		functions.FUNCTION_DAYS_IN_MONTH,
+		functions.FUNCTION_HOUR,
+		functions.FUNCTION_MINUTE,
+		functions.FUNCTION_MONTH,
+		functions.FUNCTION_YEAR,
+		// Range vector functions
+		functions.FUNCTION_AVG_OVER_TIME,
+		functions.FUNCTION_CHANGES,
+		functions.FUNCTION_COUNT_OVER_TIME,
+		functions.FUNCTION_DELTA,
+		functions.FUNCTION_DERIV,
+		functions.FUNCTION_IDELTA,
+		functions.FUNCTION_INCREASE,
+		functions.FUNCTION_IRATE,
+		functions.FUNCTION_MAD_OVER_TIME,
+		functions.FUNCTION_MAX_OVER_TIME,
+		functions.FUNCTION_MIN_OVER_TIME,
+		functions.FUNCTION_PRESENT_OVER_TIME,
+		functions.FUNCTION_QUANTILE_OVER_TIME,
+		functions.FUNCTION_RATE,
+		functions.FUNCTION_RESETS,
+		functions.FUNCTION_STDDEV_OVER_TIME,
+		functions.FUNCTION_STDVAR_OVER_TIME,
+		functions.FUNCTION_SUM_OVER_TIME,
+		functions.FUNCTION_TS_OF_FIRST_OVER_TIME,
+		functions.FUNCTION_TS_OF_LAST_OVER_TIME,
+		functions.FUNCTION_TS_OF_MAX_OVER_TIME,
+		functions.FUNCTION_TS_OF_MIN_OVER_TIME,
+		// Instant vector transformations
+		functions.FUNCTION_ABS,
+		functions.FUNCTION_ACOS,
+		functions.FUNCTION_ACOSH,
+		functions.FUNCTION_ASIN,
+		functions.FUNCTION_ASINH,
+		functions.FUNCTION_ATAN,
+		functions.FUNCTION_ATANH,
+		functions.FUNCTION_CEIL,
+		functions.FUNCTION_COS,
+		functions.FUNCTION_COSH,
+		functions.FUNCTION_DEG,
+		functions.FUNCTION_EXP,
+		functions.FUNCTION_FLOOR,
+		functions.FUNCTION_LN,
+		functions.FUNCTION_LOG10,
+		functions.FUNCTION_LOG2,
+		functions.FUNCTION_RAD,
+		functions.FUNCTION_SGN,
+		functions.FUNCTION_SIN,
+		functions.FUNCTION_SINH,
+		functions.FUNCTION_SQRT,
+		functions.FUNCTION_TAN,
+		functions.FUNCTION_TANH,
+		functions.FUNCTION_CLAMP,
+		functions.FUNCTION_CLAMP_MAX,
+		functions.FUNCTION_CLAMP_MIN,
+		functions.FUNCTION_ROUND,
+		functions.FUNCTION_PREDICT_LINEAR,
+		functions.FUNCTION_TIMESTAMP,
+		functions.FUNCTION_DOUBLE_EXPONENTIAL_SMOOTHING,
+		// Histogram functions
+		functions.FUNCTION_HISTOGRAM_AVG,
+		functions.FUNCTION_HISTOGRAM_COUNT,
+		functions.FUNCTION_HISTOGRAM_FRACTION,
+		functions.FUNCTION_HISTOGRAM_QUANTILE,
+		functions.FUNCTION_HISTOGRAM_STDDEV,
+		functions.FUNCTION_HISTOGRAM_STDVAR,
+		functions.FUNCTION_HISTOGRAM_SUM,
+		// Label manipulation functions
+		functions.FUNCTION_LABEL_JOIN,
+		functions.FUNCTION_LABEL_REPLACE,
+		// Adaptive metrics reserved functions
+		functions.FUNCTION_ADAPTIVE_METRICS_RESERVED_1,
+		functions.FUNCTION_ADAPTIVE_METRICS_RESERVED_2:
 		return true
+
+	// Functions that do NOT need deduplication (don't manipulate labels or are guaranteed to return only one series)
+	case
+		functions.FUNCTION_ABSENT,
+		functions.FUNCTION_ABSENT_OVER_TIME,
+		functions.FUNCTION_FIRST_OVER_TIME,
+		functions.FUNCTION_INFO,
+		functions.FUNCTION_LAST_OVER_TIME,
+		functions.FUNCTION_LIMITK,
+		functions.FUNCTION_LIMIT_RATIO,
+		functions.FUNCTION_PI,
+		functions.FUNCTION_SCALAR,
+		functions.FUNCTION_SHARDING_CONCAT, // Might return duplicate series, but this is OK and desired, and aggregation operators will handle this correctly.
+		functions.FUNCTION_SORT,
+		functions.FUNCTION_SORT_BY_LABEL,
+		functions.FUNCTION_SORT_BY_LABEL_DESC,
+		functions.FUNCTION_SORT_DESC,
+		functions.FUNCTION_TIME,
+		functions.FUNCTION_VECTOR:
+		return false
+
+	case functions.FUNCTION_UNKNOWN:
+		return false
+
+	default:
+		panic(fmt.Sprintf("functionNeedsDeduplication: unexpected function %v", fnc))
 	}
-
-	if _, ok := functions.ScalarFunctionOperatorFactories[name]; ok {
-		return true
-	}
-
-	return name == "absent" || name == "absent_over_time"
-}
-
-// Materialize converts a query plan into an executable query.
-func (e *Engine) Materialize(ctx context.Context, plan *planning.QueryPlan, queryable storage.Queryable, opts promql.QueryOpts) (promql.Query, error) {
-	if opts == nil {
-		opts = promql.NewPrometheusQueryOpts(false, 0)
-	}
-
-	queryID, err := e.activeQueryTracker.Insert(ctx, plan.OriginalExpression+" # (materialization)")
-	if err != nil {
-		return nil, err
-	}
-
-	defer e.activeQueryTracker.Delete(queryID)
-
-	// HACK: we need an expression to use in the active query tracker, but there's no guarantee the plan we're working with
-	// is for the original expression (the plan may represent a subexpression of the original plan, for example).
-	// So we pass plan.OriginalExpression, which is good enough for now, but something to revisit later - perhaps
-	// we can use some kind of request ID?
-	q, err := e.newQuery(ctx, queryable, opts, plan.TimeRange, plan.OriginalExpression)
-	if err != nil {
-		return nil, err
-	}
-
-	q.operatorFactories = make(map[planning.Node]planning.OperatorFactory)
-	q.operatorParams = &planning.OperatorParameters{
-		Queryable:                q.queryable,
-		MemoryConsumptionTracker: q.memoryConsumptionTracker,
-		Annotations:              q.annotations,
-		LookbackDelta:            q.lookbackDelta,
-		EagerLoadSelectors:       q.engine.eagerLoadSelectors,
-	}
-
-	q.statement = &parser.EvalStmt{
-		Expr:          nil, // Nothing seems to use this, and we don't have a good expression to use here anyway, so don't bother setting this.
-		Start:         timestamp.Time(plan.TimeRange.StartT),
-		End:           timestamp.Time(plan.TimeRange.EndT),
-		Interval:      time.Duration(plan.TimeRange.IntervalMilliseconds) * time.Millisecond,
-		LookbackDelta: q.lookbackDelta,
-	}
-
-	if plan.TimeRange.IsInstant {
-		q.statement.Interval = 0
-	}
-
-	q.root, err = q.convertNodeToOperator(plan.Root, plan.TimeRange)
-	if err != nil {
-		return nil, err
-	}
-
-	return q, nil
-}
-
-type AnalysisResult struct {
-	OriginalExpression string               `json:"originalExpression"`
-	TimeRange          types.QueryTimeRange `json:"timeRange"`
-
-	ASTStages      []ASTStage      `json:"astStages"`
-	PlanningStages []PlanningStage `json:"planningStages"`
-}
-
-type ASTStage struct {
-	Name             string         `json:"name"`
-	Duration         *time.Duration `json:"duration"` // nil if this stage has no associated duration (eg. represents final AST)
-	OutputExpression string         `json:"outputExpression"`
-}
-
-type PlanningStage struct {
-	Name       string              `json:"name"`
-	Duration   *time.Duration      `json:"duration"`   // nil if this stage has no associated duration (eg. represents final plan)
-	OutputPlan jsoniter.RawMessage `json:"outputPlan"` // Store the encoded JSON so we don't have to deal with cloning the entire query plan each time.
-}
-
-// Analyze performs query planning and produces a report on the query planning process.
-func (p *QueryPlanner) Analyze(ctx context.Context, qs string, timeRange types.QueryTimeRange) (*AnalysisResult, error) {
-	observer := NewAnalysisPlanningObserver(qs, timeRange)
-	_, err := p.NewQueryPlan(ctx, qs, timeRange, observer)
-	if err != nil {
-		return nil, err
-	}
-
-	return observer.Result, nil
 }
 
 type NoopPlanningObserver struct{}
@@ -521,192 +792,28 @@ func (n NoopPlanningObserver) OnAllPlanningStagesComplete(*planning.QueryPlan) e
 	return nil
 }
 
-type AnalysisPlanningObserver struct {
-	Result *AnalysisResult
+type QueryPlanVersionProvider interface {
+	GetMaximumSupportedQueryPlanVersion(ctx context.Context) (planning.QueryPlanVersion, error)
 }
 
-func NewAnalysisPlanningObserver(expr string, timeRange types.QueryTimeRange) *AnalysisPlanningObserver {
-	return &AnalysisPlanningObserver{
-		Result: &AnalysisResult{
-			OriginalExpression: expr,
-			TimeRange:          timeRange,
-		},
+// NewStaticQueryPlanVersionProvider returns a QueryPlanVersionProvider that always returns the given version.
+// This is intended to be used only in tests.
+func NewStaticQueryPlanVersionProvider(version planning.QueryPlanVersion) QueryPlanVersionProvider {
+	return &staticQueryPlanVersionProvider{
+		version: version,
 	}
 }
 
-func (o *AnalysisPlanningObserver) OnASTStageComplete(stageName string, updatedExpr parser.Expr, duration time.Duration) error {
-	o.Result.ASTStages = append(o.Result.ASTStages, ASTStage{
-		Name:             stageName,
-		Duration:         &duration,
-		OutputExpression: updatedExpr.Pretty(0),
-	})
-
-	return nil
+// NewMaximumSupportedVersionQueryPlanVersionProvider returns a QueryPlanVersionProvider that always returns the maximum supported query plan version.
+// This is intended to be used only in tests.
+func NewMaximumSupportedVersionQueryPlanVersionProvider() QueryPlanVersionProvider {
+	return NewStaticQueryPlanVersionProvider(planning.MaximumSupportedQueryPlanVersion)
 }
 
-func (o *AnalysisPlanningObserver) OnAllASTStagesComplete(finalExpr parser.Expr) error {
-	o.Result.ASTStages = append(o.Result.ASTStages, ASTStage{
-		Name:             "Final expression",
-		OutputExpression: finalExpr.Pretty(0),
-	})
-
-	return nil
+type staticQueryPlanVersionProvider struct {
+	version planning.QueryPlanVersion
 }
 
-func (o *AnalysisPlanningObserver) OnPlanningStageComplete(stageName string, updatedPlan *planning.QueryPlan, duration time.Duration) error {
-	plan, err := updatedPlan.ToEncodedPlan(true, false)
-	if err != nil {
-		return err
-	}
-
-	planBytes, err := jsoniter.Marshal(plan)
-	if err != nil {
-		return err
-	}
-
-	o.Result.PlanningStages = append(o.Result.PlanningStages, PlanningStage{
-		Name:       stageName,
-		Duration:   &duration,
-		OutputPlan: planBytes,
-	})
-
-	return nil
-}
-
-func (o *AnalysisPlanningObserver) OnAllPlanningStagesComplete(finalPlan *planning.QueryPlan) error {
-	plan, err := finalPlan.ToEncodedPlan(true, false)
-	if err != nil {
-		return err
-	}
-
-	planBytes, err := jsoniter.Marshal(plan)
-	if err != nil {
-		return err
-	}
-
-	o.Result.PlanningStages = append(o.Result.PlanningStages, PlanningStage{
-		Name:       "Final plan",
-		OutputPlan: planBytes,
-	})
-
-	return nil
-}
-
-func AnalysisHandler(planner *QueryPlanner) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		body, status, err := handleAnalysis(w, r, planner)
-
-		if err != nil {
-			body = []byte(err.Error())
-			w.Header().Set("Content-Type", "text/plain")
-		}
-
-		w.Header().Set("Content-Length", strconv.Itoa(len(body)))
-		w.WriteHeader(status)
-		_, _ = w.Write(body)
-	})
-}
-
-func handleAnalysis(w http.ResponseWriter, r *http.Request, planner *QueryPlanner) ([]byte, int, error) {
-	if planner == nil {
-		// Handle the case where query planning is disabled.
-		return nil, http.StatusNotFound, errors.New("query planning is disabled, analysis is not available")
-	}
-
-	if err := r.ParseForm(); err != nil {
-		return nil, http.StatusBadRequest, fmt.Errorf("could not parse request: %w", err)
-	}
-
-	qs := r.Form.Get("query")
-	if qs == "" {
-		return nil, http.StatusBadRequest, errors.New("missing 'query' parameter")
-	}
-
-	var timeRange types.QueryTimeRange
-
-	if r.Form.Has("time") && (r.Form.Has("start") || r.Form.Has("end") || r.Form.Has("step")) {
-		return nil, http.StatusBadRequest, errors.New("cannot provide a mixture of parameters for instant query ('time') and range query ('start', 'end' and 'step')")
-	}
-
-	if r.Form.Has("time") {
-		t, err := parseTime(r.Form.Get("time"))
-		if err != nil {
-			return nil, http.StatusBadRequest, fmt.Errorf("could not parse 'time' parameter: %w", err)
-		}
-
-		timeRange = types.NewInstantQueryTimeRange(t)
-	} else if r.Form.Has("start") && r.Form.Has("end") && r.Form.Has("step") {
-		start, err := parseTime(r.Form.Get("start"))
-		if err != nil {
-			return nil, http.StatusBadRequest, fmt.Errorf("could not parse 'start' parameter: %w", err)
-		}
-
-		end, err := parseTime(r.Form.Get("end"))
-		if err != nil {
-			return nil, http.StatusBadRequest, fmt.Errorf("could not parse 'end' parameter: %w", err)
-		}
-
-		step, err := parseDuration(r.Form.Get("step"))
-		if err != nil {
-			return nil, http.StatusBadRequest, fmt.Errorf("could not parse 'step' parameter: %w", err)
-		}
-
-		if end.Before(start) {
-			return nil, http.StatusBadRequest, errors.New("end time must be not be before start time")
-		}
-
-		if step <= 0 {
-			return nil, http.StatusBadRequest, errors.New("step must be greater than 0")
-		}
-
-		timeRange = types.NewRangeQueryTimeRange(start, end, step)
-	} else {
-		return nil, http.StatusBadRequest, errors.New("missing 'time' parameter for instant query or 'start', 'end' and 'step' parameters for range query")
-	}
-
-	result, err := planner.Analyze(r.Context(), qs, timeRange)
-	if err != nil {
-		var perr parser.ParseErrors
-		if errors.As(err, &perr) {
-			return nil, http.StatusBadRequest, fmt.Errorf("parsing expression failed: %w", perr)
-		}
-
-		return nil, http.StatusInternalServerError, fmt.Errorf("analysis failed: %w", err)
-	}
-
-	b, err := jsoniter.Marshal(result)
-	if err != nil {
-		return nil, http.StatusInternalServerError, fmt.Errorf("could not marshal response: %w", err)
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	return b, http.StatusOK, nil
-}
-
-// Based on Prometheus' web/api/v1/api.go
-func parseTime(s string) (time.Time, error) {
-	if t, err := strconv.ParseFloat(s, 64); err == nil {
-		s, ns := math.Modf(t)
-		ns = math.Round(ns*1000) / 1000
-		return time.Unix(int64(s), int64(ns*float64(time.Second))).UTC(), nil
-	}
-	if t, err := time.Parse(time.RFC3339Nano, s); err == nil {
-		return t, nil
-	}
-
-	return time.Time{}, fmt.Errorf("cannot parse %q to a valid timestamp", s)
-}
-
-func parseDuration(s string) (time.Duration, error) {
-	if d, err := strconv.ParseFloat(s, 64); err == nil {
-		ts := d * float64(time.Second)
-		if ts > float64(math.MaxInt64) || ts < float64(math.MinInt64) {
-			return 0, fmt.Errorf("cannot parse %q to a valid duration. It overflows int64", s)
-		}
-		return time.Duration(ts), nil
-	}
-	if d, err := model.ParseDuration(s); err == nil {
-		return time.Duration(d), nil
-	}
-	return 0, fmt.Errorf("cannot parse %q to a valid duration", s)
+func (s *staticQueryPlanVersionProvider) GetMaximumSupportedQueryPlanVersion(ctx context.Context) (planning.QueryPlanVersion, error) {
+	return s.version, nil
 }

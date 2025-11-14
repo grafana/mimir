@@ -47,7 +47,7 @@ const ensureOrderBatchSize = 1024
 
 // ensureOrderBatchPool is a pool used to recycle batches passed to workers in MemPostings.EnsureOrder().
 var ensureOrderBatchPool = sync.Pool{
-	New: func() interface{} {
+	New: func() any {
 		x := make([][]storage.SeriesRef, 0, ensureOrderBatchSize)
 		return &x // Return pointer type as preferred by Pool.
 	},
@@ -564,10 +564,10 @@ type errPostings struct {
 	err error
 }
 
-func (e errPostings) Next() bool                  { return false }
-func (e errPostings) Seek(storage.SeriesRef) bool { return false }
-func (e errPostings) At() storage.SeriesRef       { return 0 }
-func (e errPostings) Err() error                  { return e.err }
+func (errPostings) Next() bool                  { return false }
+func (errPostings) Seek(storage.SeriesRef) bool { return false }
+func (errPostings) At() storage.SeriesRef       { return 0 }
+func (e errPostings) Err() error                { return e.err }
 
 var emptyPostings = errPostings{}
 
@@ -607,53 +607,54 @@ func Intersect(its ...Postings) Postings {
 }
 
 type intersectPostings struct {
-	arr []Postings
-	cur storage.SeriesRef
+	postings []Postings        // These are the postings we will be intersecting.
+	current  storage.SeriesRef // The current intersection, if Seek() or Next() has returned true.
 }
 
 func newIntersectPostings(its ...Postings) *intersectPostings {
-	return &intersectPostings{arr: its}
+	return &intersectPostings{postings: its}
 }
 
 func (it *intersectPostings) At() storage.SeriesRef {
-	return it.cur
+	return it.current
 }
 
-func (it *intersectPostings) doNext() bool {
-Loop:
+func (it *intersectPostings) Seek(target storage.SeriesRef) bool {
 	for {
-		for _, p := range it.arr {
-			if !p.Seek(it.cur) {
+		allEqual := true
+		for _, p := range it.postings {
+			if !p.Seek(target) {
 				return false
 			}
-			if p.At() > it.cur {
-				it.cur = p.At()
-				continue Loop
+			if p.At() > target {
+				target = p.At()
+				allEqual = false
 			}
 		}
-		return true
+
+		// if all p.At() are all equal, we found an intersection.
+		if allEqual {
+			it.current = target
+			return true
+		}
 	}
 }
 
 func (it *intersectPostings) Next() bool {
-	for _, p := range it.arr {
+	target := it.current
+	for _, p := range it.postings {
 		if !p.Next() {
 			return false
 		}
-		if p.At() > it.cur {
-			it.cur = p.At()
+		if p.At() > target {
+			target = p.At()
 		}
 	}
-	return it.doNext()
-}
-
-func (it *intersectPostings) Seek(id storage.SeriesRef) bool {
-	it.cur = id
-	return it.doNext()
+	return it.Seek(target)
 }
 
 func (it *intersectPostings) Err() error {
-	for _, p := range it.arr {
+	for _, p := range it.postings {
 		if p.Err() != nil {
 			return p.Err()
 		}
@@ -861,7 +862,7 @@ func (it *ListPostings) Seek(x storage.SeriesRef) bool {
 	return false
 }
 
-func (it *ListPostings) Err() error {
+func (*ListPostings) Err() error {
 	return nil
 }
 
@@ -914,30 +915,8 @@ func (it *bigEndianPostings) Seek(x storage.SeriesRef) bool {
 	return false
 }
 
-func (it *bigEndianPostings) Err() error {
+func (*bigEndianPostings) Err() error {
 	return nil
-}
-
-// PostingsCloner takes an existing Postings and allows independently clone them.
-type PostingsCloner struct {
-	ids []storage.SeriesRef
-	err error
-}
-
-// NewPostingsCloner takes an existing Postings and allows independently clone them.
-// The instance provided shouldn't have been used before (no Next() calls should have been done)
-// and it shouldn't be used once provided to the PostingsCloner.
-func NewPostingsCloner(p Postings) *PostingsCloner {
-	ids, err := ExpandPostings(p)
-	return &PostingsCloner{ids: ids, err: err}
-}
-
-// Clone returns another independent Postings instance.
-func (c *PostingsCloner) Clone() Postings {
-	if c.err != nil {
-		return ErrPostings(c.err)
-	}
-	return newListPostings(c.ids...)
 }
 
 // FindIntersectingPostings checks the intersection of p and candidates[i] for each i in candidates,
@@ -963,42 +942,6 @@ func FindIntersectingPostings(p Postings, candidates []Postings) (indexes []int,
 			return indexes, p.Err()
 		}
 		if p.At() == h.at() {
-			indexes = append(indexes, h.popIndex())
-		} else if err := h.next(); err != nil {
-			return nil, err
-		}
-	}
-
-	return indexes, nil
-}
-
-// findNonContainedPostings checks whether candidates[i] for each i in candidates is contained in p.
-// If not contained, i is added to the indexes returned.
-// The idea is the need to find postings iterators not fully contained in a set you wish to exclude.
-// Returned indexes are not sorted.
-func findNonContainedPostings(p Postings, candidates []Postings) (indexes []int, err error) {
-	h := make(postingsWithIndexHeap, 0, len(candidates))
-	for idx, it := range candidates {
-		switch {
-		case it.Next():
-			h = append(h, postingsWithIndex{index: idx, p: it})
-		case it.Err() != nil:
-			return nil, it.Err()
-		}
-	}
-	if h.empty() {
-		return nil, nil
-	}
-	heap.Init(&h)
-
-	for !h.empty() {
-		// Find the first posting >= h.at()
-		if !p.Seek(h.at()) && p.Err() != nil {
-			return nil, p.Err()
-		}
-
-		// If p.At() != h.at(), we can keep h.at(), otherwise we skip past it
-		if p.At() != h.at() {
 			indexes = append(indexes, h.popIndex())
 		} else if err := h.next(); err != nil {
 			return nil, err
@@ -1080,14 +1023,14 @@ func (h postingsWithIndexHeap) Less(i, j int) bool {
 func (h *postingsWithIndexHeap) Swap(i, j int) { (*h)[i], (*h)[j] = (*h)[j], (*h)[i] }
 
 // Push implements heap.Interface.
-func (h *postingsWithIndexHeap) Push(x interface{}) {
+func (h *postingsWithIndexHeap) Push(x any) {
 	*h = append(*h, x.(postingsWithIndex))
 }
 
 // Pop implements heap.Interface and pops the last element, which is NOT the min element,
 // so this doesn't return the same heap.Pop()
 // Although this method is implemented for correctness, we don't expect it to be used, see popIndex() method for details.
-func (h *postingsWithIndexHeap) Pop() interface{} {
+func (h *postingsWithIndexHeap) Pop() any {
 	old := *h
 	n := len(old)
 	x := old[n-1]

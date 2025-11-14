@@ -105,7 +105,7 @@ local filename = 'mimir-rollout-progress.json';
         $.showAllTooltip +
         {
           id: 1,
-          gridPos: { h: 13, w: 10, x: 0, y: 0 },
+          gridPos: { h: 20, w: 10, x: 0, y: 0 },
           fieldConfig+: {
             overrides: [
               {
@@ -306,7 +306,7 @@ local filename = 'mimir-rollout-progress.json';
             textMode: 'value_and_name',
           },
           id: 10,
-          gridPos: { h: 3, w: 10, x: 0, y: 13 },
+          gridPos: { h: 4, w: 8, x: 16, y: 16 },
         },
 
         //
@@ -362,7 +362,7 @@ local filename = 'mimir-rollout-progress.json';
           ],
 
           id: 11,
-          gridPos: { h: 8, w: 6, x: 10, y: 8 },
+          gridPos: { h: 12, w: 6, x: 10, y: 8 },
         },
 
         //

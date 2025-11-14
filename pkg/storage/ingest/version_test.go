@@ -4,8 +4,11 @@ package ingest
 
 import (
 	"fmt"
+	"math/rand"
 	"testing"
 
+	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/require"
 	"github.com/twmb/franz-go/pkg/kgo"
 
@@ -15,7 +18,13 @@ import (
 
 func TestV2SymbolsCompat(t *testing.T) {
 	t.Run("v2 symbols cannot be larger than v2 offset", func(t *testing.T) {
-		require.LessOrEqual(t, len(V2CommonSymbols), V2RecordSymbolOffset)
+		require.LessOrEqual(t, len(V2CommonSymbols.GetSlice()), V2RecordSymbolOffset)
+		require.LessOrEqual(t, len(V2CommonSymbols.GetMap()), V2RecordSymbolOffset)
+	})
+
+	t.Run("the zeroth symbol in v2 symbols must be empty string", func(t *testing.T) {
+		require.Empty(t, V2CommonSymbols.GetSlice()[0])
+		require.Equal(t, uint32(0), V2CommonSymbols.GetMap()[""])
 	})
 }
 
@@ -119,7 +128,7 @@ func TestDeserializeRecordContent(t *testing.T) {
 	})
 
 	t.Run("v2", func(t *testing.T) {
-		syms := test.NewSymbolTableBuilderWithCommon(nil, V2RecordSymbolOffset, V2CommonSymbols)
+		syms := test.NewSymbolTableBuilderWithCommon(nil, V2RecordSymbolOffset, V2CommonSymbols.GetSlice())
 		reqv2 := &mimirpb.WriteRequestRW2{
 			Timeseries: []mimirpb.TimeSeriesRW2{{
 				LabelsRefs: []uint32{syms.GetSymbol("__name__"), syms.GetSymbol("test_metric_total"), syms.GetSymbol("job"), syms.GetSymbol("test_job")},
@@ -158,7 +167,7 @@ func TestDeserializeRecordContent(t *testing.T) {
 		}
 		reqv2.Symbols = syms.GetSymbols()
 		// Symbols should not contain common labels "__name__" and "job"
-		require.Equal(t, []string{"test_metric_total", "test_job", "traceID", "1234567890abcdef", "Help for test_metric_total", "seconds"}, reqv2.Symbols)
+		require.Equal(t, []string{"", "test_metric_total", "test_job", "traceID", "1234567890abcdef", "Help for test_metric_total", "seconds"}, reqv2.Symbols)
 		v2bytes, err := reqv2.Marshal()
 		require.NoError(t, err)
 
@@ -199,6 +208,149 @@ func TestDeserializeRecordContent(t *testing.T) {
 		}}
 		require.Equal(t, expMetadata, wr.Metadata)
 	})
+
+	t.Run("v2 skips metadata normalization", func(t *testing.T) {
+		syms := test.NewSymbolTableBuilderWithCommon(nil, V2RecordSymbolOffset, V2CommonSymbols.GetSlice())
+		reqv2 := &mimirpb.WriteRequestRW2{
+			Timeseries: []mimirpb.TimeSeriesRW2{{
+				LabelsRefs: []uint32{syms.GetSymbol("__name__"), syms.GetSymbol("test_histogram_seconds_bucket")},
+				Metadata: mimirpb.MetadataRW2{
+					Type:    mimirpb.METRIC_TYPE_HISTOGRAM,
+					HelpRef: syms.GetSymbol("Help for test_histogram_seconds_bucket"),
+					UnitRef: syms.GetSymbol("seconds"),
+				},
+			}},
+		}
+		reqv2.Symbols = syms.GetSymbols()
+		// Symbols should not contain common labels "__name__" and "job"
+		require.Equal(t, []string{"", "test_histogram_seconds_bucket", "Help for test_histogram_seconds_bucket", "seconds"}, reqv2.Symbols)
+		v2bytes, err := reqv2.Marshal()
+		require.NoError(t, err)
+
+		wr := mimirpb.PreallocWriteRequest{}
+		err = DeserializeRecordContent(v2bytes, &wr, 2)
+		require.NoError(t, err)
+		require.Len(t, wr.Timeseries, 1)
+		expLabels := []mimirpb.LabelAdapter{{Name: "__name__", Value: "test_histogram_seconds_bucket"}}
+		require.Equal(t, expLabels, wr.Timeseries[0].Labels)
+		require.Empty(t, wr.Timeseries[0].Samples)
+		require.Empty(t, wr.Timeseries[0].Exemplars)
+		require.Empty(t, wr.Timeseries[0].Histograms)
+		expMetadata := []*mimirpb.MetricMetadata{{
+			Type:             mimirpb.HISTOGRAM,
+			MetricFamilyName: "test_histogram_seconds_bucket",
+			Help:             "Help for test_histogram_seconds_bucket",
+			Unit:             "seconds",
+		}}
+		require.Equal(t, expMetadata, wr.Metadata)
+	})
+
+	t.Run("v2 preserves conflicting metadata", func(t *testing.T) {
+		syms := test.NewSymbolTableBuilderWithCommon(nil, V2RecordSymbolOffset, V2CommonSymbols.GetSlice())
+		reqv2 := &mimirpb.WriteRequestRW2{
+			Timeseries: []mimirpb.TimeSeriesRW2{
+				{
+					LabelsRefs: []uint32{syms.GetSymbol("__name__"), syms.GetSymbol("test_histogram_seconds_bucket")},
+					Metadata: mimirpb.MetadataRW2{
+						Type:    mimirpb.METRIC_TYPE_HISTOGRAM,
+						HelpRef: syms.GetSymbol("Help for test_histogram_seconds_bucket"),
+						UnitRef: syms.GetSymbol("seconds"),
+					},
+				},
+				{
+					LabelsRefs: []uint32{syms.GetSymbol("__name__"), syms.GetSymbol("test_histogram_seconds_bucket")},
+					Metadata: mimirpb.MetadataRW2{
+						Type:    mimirpb.METRIC_TYPE_GAUGE,
+						HelpRef: syms.GetSymbol("Help for test_histogram_seconds_bucket, but different"),
+						UnitRef: syms.GetSymbol("seconds"),
+					},
+				},
+			},
+		}
+		reqv2.Symbols = syms.GetSymbols()
+		// Symbols should not contain common labels "__name__" and "job"
+		require.Equal(t, []string{"", "test_histogram_seconds_bucket", "Help for test_histogram_seconds_bucket", "seconds", "Help for test_histogram_seconds_bucket, but different"}, reqv2.Symbols)
+		v2bytes, err := reqv2.Marshal()
+		require.NoError(t, err)
+
+		wr := mimirpb.PreallocWriteRequest{}
+		err = DeserializeRecordContent(v2bytes, &wr, 2)
+		require.NoError(t, err)
+		require.Len(t, wr.Timeseries, 2)
+		expMetadata := []*mimirpb.MetricMetadata{
+			{
+				Type:             mimirpb.HISTOGRAM,
+				MetricFamilyName: "test_histogram_seconds_bucket",
+				Help:             "Help for test_histogram_seconds_bucket",
+				Unit:             "seconds",
+			},
+			{
+				Type:             mimirpb.GAUGE,
+				MetricFamilyName: "test_histogram_seconds_bucket",
+				Help:             "Help for test_histogram_seconds_bucket, but different",
+				Unit:             "seconds",
+			},
+		}
+		require.Equal(t, expMetadata, wr.Metadata)
+	})
+}
+
+func TestRecordSerializer(t *testing.T) {
+	t.Run("v2", func(t *testing.T) {
+		req := &mimirpb.WriteRequest{
+			Source:              mimirpb.RULE,
+			SkipLabelValidation: true,
+			Timeseries: []mimirpb.PreallocTimeseries{
+				{TimeSeries: &mimirpb.TimeSeries{
+					Labels:     mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "series_1", "pod", "test-application-123456")),
+					Samples:    []mimirpb.Sample{{TimestampMs: 20}},
+					Exemplars:  []mimirpb.Exemplar{{TimestampMs: 30}},
+					Histograms: []mimirpb.Histogram{{Timestamp: 10}},
+				}},
+				{TimeSeries: &mimirpb.TimeSeries{
+					Labels:    mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "series_2", "pod", "test-application-123456")),
+					Samples:   []mimirpb.Sample{{TimestampMs: 30}},
+					Exemplars: []mimirpb.Exemplar{},
+				}},
+			},
+			Metadata: []*mimirpb.MetricMetadata{
+				{Type: mimirpb.COUNTER, MetricFamilyName: "series_1", Help: "This is the first test metric."},
+				{Type: mimirpb.COUNTER, MetricFamilyName: "series_2", Help: "This is the second test metric."},
+				{Type: mimirpb.COUNTER, MetricFamilyName: "series_3", Help: "This is the third test metric."},
+			},
+		}
+
+		serializer := versionTwoRecordSerializer{}
+		records, err := serializer.ToRecords(1234, "user-1", req, 100000)
+		require.NoError(t, err)
+		require.Len(t, records, 1)
+		record := records[0]
+
+		require.Equal(t, 2, ParseRecordVersion(record))
+
+		resultReq := &mimirpb.PreallocWriteRequest{}
+		err = DeserializeRecordContent(record.Value, resultReq, 2)
+		require.NoError(t, err)
+
+		require.Len(t, resultReq.Timeseries, 3)
+		require.Equal(t, req.Timeseries, resultReq.Timeseries[0:2])
+
+		// The only way to carry a metadata in RW2.0 is attached to a timeseries.
+		// Metadata not attached to any series in the request must fabricate extra timeseries to house it.
+		expMetadataSeries := []mimirpb.PreallocTimeseries{
+			{TimeSeries: &mimirpb.TimeSeries{
+				Labels:    mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "series_3")),
+				Samples:   []mimirpb.Sample{},
+				Exemplars: []mimirpb.Exemplar{},
+			}},
+		}
+		require.Equal(t, expMetadataSeries, resultReq.Timeseries[2:])
+
+		require.Nil(t, resultReq.SymbolsRW2)
+		require.Nil(t, resultReq.TimeseriesRW2)
+		// Metadata order is currently not preserved by the RW2 deser layer.
+		require.ElementsMatch(t, req.Metadata, resultReq.Metadata)
+	})
 }
 
 func BenchmarkDeserializeRecordContent(b *testing.B) {
@@ -233,6 +385,8 @@ func BenchmarkDeserializeRecordContent(b *testing.B) {
 	v2bytes, err := reqv2.Marshal()
 	require.NoError(b, err)
 
+	b.ResetTimer()
+
 	b.Run("deserialize v1", func(b *testing.B) {
 		for range b.N {
 			wr := &mimirpb.PreallocWriteRequest{}
@@ -252,6 +406,54 @@ func BenchmarkDeserializeRecordContent(b *testing.B) {
 				b.Fatal(err)
 			}
 			mimirpb.ReuseSlice(wr.Timeseries)
+		}
+	})
+}
+
+func BenchmarkRecordSerializer(b *testing.B) {
+	numSeries := 2000
+	numLabels := 30
+	gen := rand.New(rand.NewSource(789456123))
+	// Generate a WriteRequest.
+	req := &mimirpb.WriteRequest{Timeseries: make([]mimirpb.PreallocTimeseries, numSeries)}
+	for i := 0; i < len(req.Timeseries); i++ {
+		req.Timeseries[i] = mockPreallocTimeseries(fmt.Sprintf("series_%d", i))
+		for j := 0; j < numLabels; j++ {
+			mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(fmt.Sprintf("label_%d", j), fmt.Sprintf("%d", gen.Uint64())))
+		}
+	}
+
+	v2s := versionTwoRecordSerializer{}
+	v1s := versionOneRecordSerializer{}
+
+	b.Run("v2 serialize (full flow)", func(b *testing.B) {
+		for n := 0; n < b.N; n++ {
+			_, err := v2s.ToRecords(123, "user-1", req, 16000000)
+			if err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
+
+	b.Run("v1 serialize (full flow)", func(b *testing.B) {
+		for n := 0; n < b.N; n++ {
+			_, err := v1s.ToRecords(123, "user-1", req, 16000000)
+			if err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
+
+	b.Run("v1 -> v2 convert", func(b *testing.B) {
+		for n := 0; n < b.N; n++ {
+			rwv2, err := mimirpb.FromWriteRequestToRW2Request(req, V2CommonSymbols, V2RecordSymbolOffset)
+			if err != nil {
+				b.Fatal("error %w", err)
+			}
+			if len(rwv2.TimeseriesRW2) == 0 {
+				b.Fatal("unexpectedly empty")
+			}
+			mimirpb.ReuseRW2(rwv2)
 		}
 	})
 }

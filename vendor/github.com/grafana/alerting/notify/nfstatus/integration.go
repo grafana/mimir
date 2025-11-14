@@ -5,10 +5,26 @@ import (
 	"sync"
 	"time"
 
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/prometheus/alertmanager/notify"
 	"github.com/prometheus/alertmanager/types"
 	"github.com/prometheus/common/model"
 )
+
+type NotificationHistoryEntry struct {
+	Alerts          []*types.Alert
+	Retry           bool
+	NotificationErr error
+	Duration        time.Duration
+	ReceiverName    string
+	GroupLabels     model.LabelSet
+	PipelineTime    time.Time
+}
+
+type NotificationHistorian interface {
+	Record(ctx context.Context, nhe NotificationHistoryEntry)
+}
 
 // Integration wraps an upstream notify.Integration, adding the ability to
 // capture notification status.
@@ -18,9 +34,9 @@ type Integration struct {
 }
 
 // NewIntegration returns a new integration.
-func NewIntegration(notifier notify.Notifier, rs notify.ResolvedSender, name string, idx int, receiverName string) *Integration {
+func NewIntegration(notifier notify.Notifier, rs notify.ResolvedSender, name string, idx int, receiverName string, notificationHistorian NotificationHistorian, logger log.Logger) *Integration {
 	// Wrap the provided Notifier with our own, which will capture notification attempt errors.
-	status := &statusCaptureNotifier{upstream: notifier}
+	status := &statusCaptureNotifier{upstream: notifier, notificationHistorian: notificationHistorian, logger: logger}
 
 	integration := notify.NewIntegration(status, rs, name, idx, receiverName)
 
@@ -79,7 +95,9 @@ func GetIntegrations(integrations []*Integration) []*notify.Integration {
 
 // statusCaptureNotifier is used to wrap a notify.Notifer and capture information about attempts.
 type statusCaptureNotifier struct {
-	upstream notify.Notifier
+	upstream              notify.Notifier
+	notificationHistorian NotificationHistorian
+	logger                log.Logger
 
 	mtx                       sync.RWMutex
 	lastNotifyAttempt         time.Time
@@ -93,6 +111,8 @@ func (n *statusCaptureNotifier) Notify(ctx context.Context, alerts ...*types.Ale
 	retry, err := n.upstream.Notify(ctx, alerts...)
 	duration := time.Since(start)
 
+	go n.recordNotificationHistory(ctx, alerts, retry, err, duration)
+
 	n.mtx.Lock()
 	defer n.mtx.Unlock()
 
@@ -101,6 +121,37 @@ func (n *statusCaptureNotifier) Notify(ctx context.Context, alerts ...*types.Ale
 	n.lastNotifyAttemptError = err
 
 	return retry, err
+}
+
+func (n *statusCaptureNotifier) recordNotificationHistory(ctx context.Context, alerts []*types.Alert, retry bool, err error, duration time.Duration) {
+	if n.notificationHistorian == nil {
+		return
+	}
+	receiverName, ok := notify.ReceiverName(ctx)
+	if !ok {
+		level.Warn(n.logger).Log("msg", "failed to get receiver name from context, skipping notification history write")
+		return
+	}
+	groupLabels, ok := notify.GroupLabels(ctx)
+	if !ok {
+		level.Warn(n.logger).Log("msg", "failed to get group labels from context, skipping notification history write")
+		return
+	}
+	pipelineTime, ok := notify.Now(ctx)
+	if !ok {
+		level.Warn(n.logger).Log("msg", "failed to get pipeline time from context, skipping notification history write")
+		return
+	}
+
+	n.notificationHistorian.Record(ctx, NotificationHistoryEntry{
+		Alerts:          alerts,
+		Retry:           retry,
+		NotificationErr: err,
+		Duration:        duration,
+		ReceiverName:    receiverName,
+		GroupLabels:     groupLabels,
+		PipelineTime:    pipelineTime,
+	})
 }
 
 // GetReport returns information about the last notification attempt.

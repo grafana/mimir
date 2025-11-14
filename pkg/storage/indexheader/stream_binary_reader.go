@@ -75,8 +75,17 @@ func NewStreamBinaryReader(ctx context.Context, logger log.Logger, bkt objstore.
 	spanLog, ctx := spanlogger.New(ctx, logger, tracer, "indexheader.NewStreamBinaryReader")
 	defer spanLog.Finish()
 
-	binPath := filepath.Join(dir, id.String(), block.IndexHeaderFilename)
-	sparseHeadersPath := filepath.Join(dir, id.String(), block.SparseIndexHeaderFilename)
+	dir = filepath.Join(dir, id.String())
+	if df, err := os.Open(dir); err != nil && os.IsNotExist(err) {
+		if err := os.MkdirAll(dir, os.ModePerm); err != nil {
+			return nil, fmt.Errorf("cannot create index-header dir: %w", err)
+		}
+	} else {
+		_ = df.Close()
+	}
+
+	binPath := filepath.Join(dir, block.IndexHeaderFilename)
+	sparseHeadersPath := filepath.Join(dir, block.SparseIndexHeaderFilename)
 
 	// First, try to initialize from the binary header file
 	br, err := newFileStreamBinaryReader(ctx, binPath, id, sparseHeadersPath, postingOffsetsInMemSampling, spanLog, bkt, metrics, cfg)

@@ -52,6 +52,8 @@ spec:
             - "-config.expand-env=true"
             - "-config.file=/etc/mimir/mimir.yaml"
             - "-querier.scheduler-address=keda-autoscaling-values-mimir-ruler-query-scheduler-headless.citestns.svc:9095"
+            - "-querier.ring.prefix=ruler-querier/"
+            - "-querier.store-gateway-client.grpc-max-recv-msg-size=209715200"
           volumeMounts:
             - name: config
               mountPath: /etc/mimir
@@ -90,9 +92,8 @@ spec:
               - ALL
             readOnlyRootFilesystem: true
           env:
-            - name: "GOMAXPROCS"
+            - name: GOMAXPROCS
               value: "5"
-          envFrom:
       topologySpreadConstraints:
       - maxSkew: 1
         topologyKey: kubernetes.io/hostname

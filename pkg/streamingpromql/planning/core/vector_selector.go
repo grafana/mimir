@@ -5,9 +5,12 @@ package core
 import (
 	"fmt"
 	"slices"
+	"time"
 
 	"github.com/gogo/protobuf/proto"
+	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/prometheus/prometheus/promql/parser/posrange"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/selectors"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
@@ -19,10 +22,10 @@ type VectorSelector struct {
 }
 
 func (v *VectorSelector) Describe() string {
-	d := describeSelector(v.Matchers, v.Timestamp, v.Offset, nil)
+	d := describeSelector(v.Matchers, v.Timestamp, v.Offset, nil, v.SkipHistogramBuckets)
 
 	if v.ReturnSampleTimestamps {
-		return d + " (return sample timestamps)"
+		return d + ", return sample timestamps"
 	}
 
 	return d
@@ -36,8 +39,16 @@ func (v *VectorSelector) Details() proto.Message {
 	return v.VectorSelectorDetails
 }
 
-func (v *VectorSelector) Children() []planning.Node {
-	return nil
+func (v *VectorSelector) NodeType() planning.NodeType {
+	return planning.NODE_TYPE_VECTOR_SELECTOR
+}
+
+func (v *VectorSelector) Child(idx int) planning.Node {
+	panic(fmt.Sprintf("node of type VectorSelector has no children, but attempted to get child at index %d", idx))
+}
+
+func (v *VectorSelector) ChildCount() int {
+	return 0
 }
 
 func (v *VectorSelector) SetChildren(children []planning.Node) error {
@@ -48,7 +59,11 @@ func (v *VectorSelector) SetChildren(children []planning.Node) error {
 	return nil
 }
 
-func (v *VectorSelector) EquivalentTo(other planning.Node) bool {
+func (v *VectorSelector) ReplaceChild(idx int, node planning.Node) error {
+	return fmt.Errorf("node of type VectorSelector supports no children, but attempted to replace child at index %d", idx)
+}
+
+func (v *VectorSelector) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
 	otherVectorSelector, ok := other.(*VectorSelector)
 
 	return ok &&
@@ -58,24 +73,31 @@ func (v *VectorSelector) EquivalentTo(other planning.Node) bool {
 		v.ReturnSampleTimestamps == otherVectorSelector.ReturnSampleTimestamps
 }
 
+func (v *VectorSelector) MergeHints(other planning.Node) error {
+	otherVectorSelector, ok := other.(*VectorSelector)
+	if !ok {
+		return fmt.Errorf("cannot merge hints from %T into %T", other, v)
+	}
+
+	v.SkipHistogramBuckets = v.SkipHistogramBuckets && otherVectorSelector.SkipHistogramBuckets
+	return nil
+}
+
 func (v *VectorSelector) ChildrenLabels() []string {
 	return nil
 }
 
-func (v *VectorSelector) OperatorFactory(_ []types.Operator, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
-	matchers, err := LabelMatchersToPrometheusType(v.Matchers)
-	if err != nil {
-		return nil, err
-	}
+func MaterializeVectorSelector(v *VectorSelector, _ *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
 	selector := &selectors.Selector{
 		Queryable:                params.Queryable,
 		TimeRange:                timeRange,
 		Timestamp:                TimestampFromTime(v.Timestamp),
 		Offset:                   v.Offset.Milliseconds(),
 		LookbackDelta:            params.LookbackDelta,
-		Matchers:                 matchers,
+		Matchers:                 LabelMatchersToOperatorType(v.Matchers),
 		EagerLoad:                params.EagerLoadSelectors,
-		ExpressionPosition:       v.ExpressionPosition.ToPrometheusType(),
+		SkipHistogramBuckets:     v.SkipHistogramBuckets,
+		ExpressionPosition:       v.ExpressionPosition(),
 		MemoryConsumptionTracker: params.MemoryConsumptionTracker,
 	}
 
@@ -84,4 +106,18 @@ func (v *VectorSelector) OperatorFactory(_ []types.Operator, timeRange types.Que
 
 func (v *VectorSelector) ResultType() (parser.ValueType, error) {
 	return parser.ValueTypeVector, nil
+}
+
+func (v *VectorSelector) QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) planning.QueriedTimeRange {
+	minT, maxT := selectors.ComputeQueriedTimeRange(queryTimeRange, TimestampFromTime(v.Timestamp), 0, v.Offset.Milliseconds(), lookbackDelta)
+
+	return planning.NewQueriedTimeRange(timestamp.Time(minT), timestamp.Time(maxT))
+}
+
+func (v *VectorSelector) ExpressionPosition() posrange.PositionRange {
+	return v.GetExpressionPosition().ToPrometheusType()
+}
+
+func (v *VectorSelector) MinimumRequiredPlanVersion() planning.QueryPlanVersion {
+	return planning.QueryPlanVersionZero
 }

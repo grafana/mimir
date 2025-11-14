@@ -6,13 +6,14 @@
 package ingester
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"io"
 	"os"
 	"path"
 	"path/filepath"
-	"sort"
+	"slices"
 	"testing"
 	"time"
 
@@ -25,7 +26,6 @@ import (
 	"github.com/thanos-io/objstore"
 
 	"github.com/grafana/mimir/pkg/storage/bucket/filesystem"
-	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -259,9 +259,9 @@ func TestIterBlockMetas(t *testing.T) {
 	shipper := newShipper(nil, overrides, "", newShipperMetrics(nil), dir, nil, block.TestSource)
 	metas, err := shipper.blockMetasFromOldest()
 	require.NoError(t, err)
-	require.Equal(t, sort.SliceIsSorted(metas, func(i, j int) bool {
-		return metas[i].MinTime < metas[j].MinTime
-	}), true)
+	require.True(t, slices.IsSortedFunc(metas, func(a, b *block.Meta) int {
+		return cmp.Compare(a.MinTime, b.MinTime)
+	}))
 }
 
 func TestShipperAddsSegmentFiles(t *testing.T) {
@@ -376,7 +376,7 @@ func TestShipper_AddOOOLabel(t *testing.T) {
 				},
 			}),
 			oooCompactionHintExpected: true,
-			expectedLabels:            map[string]string{mimir_tsdb.OutOfOrderExternalLabel: mimir_tsdb.OutOfOrderExternalLabelValue},
+			expectedLabels:            map[string]string{block.OutOfOrderExternalLabel: block.OutOfOrderExternalLabelValue},
 		},
 		{
 			name:        "OOO block, addOOOLabel = true, additional labels",
@@ -394,7 +394,7 @@ func TestShipper_AddOOOLabel(t *testing.T) {
 				Thanos: block.ThanosMeta{Labels: map[string]string{"a": "b"}},
 			}),
 			oooCompactionHintExpected: true,
-			expectedLabels:            map[string]string{"a": "b", mimir_tsdb.OutOfOrderExternalLabel: mimir_tsdb.OutOfOrderExternalLabelValue},
+			expectedLabels:            map[string]string{"a": "b", block.OutOfOrderExternalLabel: block.OutOfOrderExternalLabelValue},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

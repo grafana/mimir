@@ -8,7 +8,6 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 
-	"github.com/grafana/mimir/pkg/streamingpromql/operators"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/limiter"
 )
@@ -48,7 +47,7 @@ func NewOrBinaryOperation(
 	timeRange types.QueryTimeRange,
 	expressionPosition posrange.PositionRange,
 ) types.InstantVectorOperator {
-	o := &OrBinaryOperation{
+	return &OrBinaryOperation{
 		Left:                     left,
 		Right:                    right,
 		VectorMatching:           vectorMatching,
@@ -56,17 +55,15 @@ func NewOrBinaryOperation(
 		timeRange:                timeRange,
 		expressionPosition:       expressionPosition,
 	}
-
-	return operators.NewDeduplicateAndMerge(o, memoryConsumptionTracker)
 }
 
-func (o *OrBinaryOperation) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
-	leftMetadata, err := o.Left.SeriesMetadata(ctx)
+func (o *OrBinaryOperation) SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
+	leftMetadata, err := o.Left.SeriesMetadata(ctx, matchers)
 	if err != nil {
 		return nil, err
 	}
 
-	rightMetadata, err := o.Right.SeriesMetadata(ctx)
+	rightMetadata, err := o.Right.SeriesMetadata(ctx, matchers)
 	if err != nil {
 		return nil, err
 	}
@@ -76,7 +73,16 @@ func (o *OrBinaryOperation) SeriesMetadata(ctx context.Context) ([]types.SeriesM
 		types.SeriesMetadataSlicePool.Put(&leftMetadata, o.MemoryConsumptionTracker)
 		types.SeriesMetadataSlicePool.Put(&rightMetadata, o.MemoryConsumptionTracker)
 
+		if err := o.Left.Finalize(ctx); err != nil {
+			return nil, err
+		}
+
 		o.Left.Close()
+
+		if err := o.Right.Finalize(ctx); err != nil {
+			return nil, err
+		}
+
 		o.Right.Close()
 
 		return nil, nil
@@ -88,6 +94,10 @@ func (o *OrBinaryOperation) SeriesMetadata(ctx context.Context) ([]types.SeriesM
 		o.rightSeriesCount = []int{len(rightMetadata)}
 		types.SeriesMetadataSlicePool.Put(&leftMetadata, o.MemoryConsumptionTracker)
 
+		if err := o.Left.Finalize(ctx); err != nil {
+			return nil, err
+		}
+
 		o.Left.Close()
 
 		return rightMetadata, nil
@@ -98,6 +108,10 @@ func (o *OrBinaryOperation) SeriesMetadata(ctx context.Context) ([]types.SeriesM
 		o.nextSeriesIsFromLeft = true
 		o.leftSeriesCount = []int{len(leftMetadata)}
 		types.SeriesMetadataSlicePool.Put(&rightMetadata, o.MemoryConsumptionTracker)
+
+		if err := o.Right.Finalize(ctx); err != nil {
+			return nil, err
+		}
 
 		o.Right.Close()
 
@@ -187,7 +201,12 @@ func (o *OrBinaryOperation) computeSeriesOutputOrder(leftMetadata []types.Series
 			seriesCount := rightGroup.lastLeftSeriesIndex - nextLeftSeriesToRead + 1
 
 			o.leftSeriesCount = append(o.leftSeriesCount, seriesCount)
-			series = append(series, leftMetadata[nextLeftSeriesToRead:rightGroup.lastLeftSeriesIndex+1]...)
+			seriesToAppend := leftMetadata[nextLeftSeriesToRead : rightGroup.lastLeftSeriesIndex+1]
+			series, err = types.AppendSeriesMetadata(o.MemoryConsumptionTracker, series, seriesToAppend...)
+			if err != nil {
+				return nil, err
+			}
+
 			nextLeftSeriesToRead += seriesCount
 
 			if nextRightSeriesToRead == 0 {
@@ -207,13 +226,19 @@ func (o *OrBinaryOperation) computeSeriesOutputOrder(leftMetadata []types.Series
 			o.rightSeriesCount[len(o.rightSeriesCount)-1]++
 		}
 
-		series = append(series, rightMetadata[nextRightSeriesToRead])
+		series, err = types.AppendSeriesMetadata(o.MemoryConsumptionTracker, series, rightMetadata[nextRightSeriesToRead])
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	// Check if there are any remaining series on the left side.
 	if nextLeftSeriesToRead < len(leftMetadata) {
 		seriesCount := len(leftMetadata) - nextLeftSeriesToRead
-		series = append(series, leftMetadata[nextLeftSeriesToRead:]...)
+		series, err = types.AppendSeriesMetadata(o.MemoryConsumptionTracker, series, leftMetadata[nextLeftSeriesToRead:]...)
+		if err != nil {
+			return nil, err
+		}
 
 		o.leftSeriesCount = append(o.leftSeriesCount, seriesCount)
 	}
@@ -227,37 +252,38 @@ func (o *OrBinaryOperation) NextSeries(ctx context.Context) (types.InstantVector
 	}
 
 	if o.nextSeriesIsFromLeft {
-		o.leftSeriesCount[0]--
-
-		if o.leftSeriesCount[0] == 0 {
-			o.nextSeriesIsFromLeft = false
-			o.leftSeriesCount = o.leftSeriesCount[1:]
-
-			if len(o.leftSeriesCount) == 0 {
-				// No more series from left side remaining, close it after we read this next series.
-				defer o.Left.Close()
-			}
-		}
-
 		return o.nextLeftSeries(ctx)
-	}
-
-	o.rightSeriesCount[0]--
-
-	if o.rightSeriesCount[0] == 0 {
-		o.nextSeriesIsFromLeft = true
-		o.rightSeriesCount = o.rightSeriesCount[1:]
-
-		if len(o.rightSeriesCount) == 0 {
-			// No more series from right side remaining, close it after we read this next series.
-			defer o.Right.Close()
-		}
 	}
 
 	return o.nextRightSeries(ctx)
 }
 
 func (o *OrBinaryOperation) nextLeftSeries(ctx context.Context) (types.InstantVectorSeriesData, error) {
+	o.leftSeriesCount[0]--
+
+	if o.leftSeriesCount[0] == 0 {
+		o.nextSeriesIsFromLeft = false
+		o.leftSeriesCount = o.leftSeriesCount[1:]
+	}
+
+	d, err := o.readNextLeftSeries(ctx)
+	if err != nil {
+		return types.InstantVectorSeriesData{}, err
+	}
+
+	if len(o.leftSeriesCount) == 0 {
+		// No more series from left side remaining, close it.
+		if err := o.Left.Finalize(ctx); err != nil {
+			return types.InstantVectorSeriesData{}, err
+		}
+
+		o.Left.Close()
+	}
+
+	return d, nil
+}
+
+func (o *OrBinaryOperation) readNextLeftSeries(ctx context.Context) (types.InstantVectorSeriesData, error) {
 	data, err := o.Left.NextSeries(ctx)
 	if err != nil {
 		return types.InstantVectorSeriesData{}, err
@@ -281,6 +307,32 @@ func (o *OrBinaryOperation) nextLeftSeries(ctx context.Context) (types.InstantVe
 }
 
 func (o *OrBinaryOperation) nextRightSeries(ctx context.Context) (types.InstantVectorSeriesData, error) {
+	o.rightSeriesCount[0]--
+
+	if o.rightSeriesCount[0] == 0 {
+		o.nextSeriesIsFromLeft = true
+		o.rightSeriesCount = o.rightSeriesCount[1:]
+	}
+
+	d, err := o.readNextRightSeries(ctx)
+
+	if err != nil {
+		return types.InstantVectorSeriesData{}, err
+	}
+
+	if len(o.rightSeriesCount) == 0 {
+		// No more series from right side remaining, close it after we read this next series.
+		if err := o.Right.Finalize(ctx); err != nil {
+			return types.InstantVectorSeriesData{}, err
+		}
+
+		o.Right.Close()
+	}
+
+	return d, nil
+}
+
+func (o *OrBinaryOperation) readNextRightSeries(ctx context.Context) (types.InstantVectorSeriesData, error) {
 	data, err := o.Right.NextSeries(ctx) // We don't need to return this series to the pool: FilterRightSeries will handle that for us if needed.
 	if err != nil {
 		return types.InstantVectorSeriesData{}, err
@@ -318,12 +370,19 @@ func (o *OrBinaryOperation) ExpressionPosition() posrange.PositionRange {
 }
 
 func (o *OrBinaryOperation) Prepare(ctx context.Context, params *types.PrepareParams) error {
-	err := o.Left.Prepare(ctx, params)
-	if err != nil {
+	if err := o.Left.Prepare(ctx, params); err != nil {
 		return err
 	}
 
 	return o.Right.Prepare(ctx, params)
+}
+
+func (o *OrBinaryOperation) Finalize(ctx context.Context) error {
+	if err := o.Left.Finalize(ctx); err != nil {
+		return err
+	}
+
+	return o.Right.Finalize(ctx)
 }
 
 func (o *OrBinaryOperation) Close() {

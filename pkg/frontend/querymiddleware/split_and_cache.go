@@ -25,6 +25,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
+	"github.com/grafana/mimir/pkg/frontend/querymiddleware/astmapper"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -165,7 +166,7 @@ func (s *splitAndCacheMiddleware) Do(ctx context.Context, req MetricsQueryReques
 	if err != nil {
 		return nil, err
 	}
-	perStepStats := make([][]StepStat, 0, splitReqs.countDownstreamRequests()+splitReqs.countCachedResponses())
+	perStepStats := make([][]stats.StepStat, 0, splitReqs.countDownstreamRequests()+splitReqs.countCachedResponses())
 	// Lookup the results cache.
 	if isCacheEnabled {
 		s.metrics.queryResultCacheAttemptedCount.Add(float64(len(splitReqs)))
@@ -312,8 +313,7 @@ func (s *splitAndCacheMiddleware) Do(ctx context.Context, req MetricsQueryReques
 			s.storeCacheExtents(splitReq.cacheKey, tenantIDs, filteredExtents)
 		}
 	}
-
-	reportSamplesProcessed(ctx, queryStats.LoadSamplesProcessedPerStep(), perStepStats)
+	reportSamplesProcessed(ctx, append(perStepStats, queryStats.LoadSamplesProcessedPerStep()))
 
 	// We can finally build the response, which is the merge of all downstream responses and the responses
 	// we've got from the cache (if any).
@@ -671,7 +671,12 @@ func doRequests(ctx context.Context, downstream MetricsQueryHandler, reqs []Metr
 func splitQueryByInterval(req MetricsQueryRequest, interval time.Duration) ([]MetricsQueryRequest, error) {
 	// Replace @ modifier function to their respective constant values in the query.
 	// This way subqueries will be evaluated at the same time as the parent query.
-	query, err := evaluateAtModifierFunction(req.GetQuery(), req.GetStart(), req.GetEnd())
+	query, err := astmapper.CloneExpr(req.GetParsedQuery())
+	if err != nil {
+		return nil, err
+	}
+	evaluateAtModifierFunction(query, req.GetStart(), req.GetEnd())
+	splitReq, err := req.WithExpr(query)
 	if err != nil {
 		return nil, err
 	}
@@ -688,10 +693,6 @@ func splitQueryByInterval(req MetricsQueryRequest, interval time.Duration) ([]Me
 			end = req.GetEnd()
 		}
 
-		splitReq, err := req.WithQuery(query)
-		if err != nil {
-			return nil, err
-		}
 		splitReq, err = splitReq.WithStartEnd(start, end)
 		if err != nil {
 			return nil, err
@@ -703,15 +704,11 @@ func splitQueryByInterval(req MetricsQueryRequest, interval time.Duration) ([]Me
 	return reqs, nil
 }
 
-// evaluateAtModifierFunction parse the query and evaluates the `start()` and `end()` at modifier functions into actual constant timestamps.
+// evaluateAtModifierFunction evaluates the `start()` and `end()` at modifier functions into actual constant timestamps.
 // For example given the start of the query is 10.00, `http_requests_total[1h] @ start()` query will be replaced with `http_requests_total[1h] @ 10.00`
-// If the modifier is already a constant, it will be returned as is.
-func evaluateAtModifierFunction(query string, start, end int64) (string, error) {
-	expr, err := parser.ParseExpr(query)
-	if err != nil {
-		return "", apierror.New(apierror.TypeBadData, DecorateWithParamName(err, "query").Error())
-	}
-	parser.Inspect(expr, func(n parser.Node, _ []parser.Node) error {
+// If the modifier is already a constant, it will be left as is.
+func evaluateAtModifierFunction(expr parser.Expr, start, end int64) {
+	_ = inspect(expr, func(n parser.Node) error {
 		switch exprAt := n.(type) {
 		case *parser.VectorSelector:
 			switch exprAt.StartOrEnd {
@@ -732,7 +729,6 @@ func evaluateAtModifierFunction(query string, start, end int64) (string, error) 
 		}
 		return nil
 	})
-	return expr.String(), nil
 }
 
 // Round up to the step before the next interval boundary.
@@ -747,13 +743,9 @@ func nextIntervalBoundary(t, step int64, interval time.Duration) int64 {
 	return target
 }
 
-func reportSamplesProcessed(ctx context.Context, processed []stats.StepStat, perStepStats [][]StepStat) {
-	if convertedStats := convertStatsStepStat(processed); len(convertedStats) > 0 {
-		perStepStats = append(perStepStats, convertedStats)
-	}
-
+func reportSamplesProcessed(ctx context.Context, s [][]stats.StepStat) {
 	if details := QueryDetailsFromContext(ctx); details != nil {
-		totalSamplesProcessed := sumSamplesProcessedPerStep(perStepStats...)
+		totalSamplesProcessed := sumSamplesProcessedPerStep(s...)
 		details.SamplesProcessedCacheAdjusted += uint64(totalSamplesProcessed)
 	}
 }

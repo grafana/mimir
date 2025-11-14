@@ -1,4 +1,4 @@
-{{- if and .Values.alertmanager.enabled (not .Values.federation_frontend.disableOtherComponents) -}}
+{{- if .Values.alertmanager.enabled -}}
 {{- if .Values.alertmanager.statefulSet.enabled -}}
 {{- $args := dict "ctx" . "component" "alertmanager" "memberlist" true -}}
 {{- $zonesMap := include "mimir.zoneAwareReplicationMap" $args | fromYaml -}}
@@ -11,8 +11,18 @@ metadata:
   name: {{ include "mimir.resourceName" $args }}
   labels:
     {{- include "mimir.labels" $args | nindent 4 }}
+    {{- if (eq $rolloutZone.noDownscale true )}}
+    grafana.com/no-downscale: {{ $rolloutZone.noDownscale | quote }}
+    {{- else }}
+    {{- if (eq $rolloutZone.prepareDownscale true )}}
+    grafana.com/prepare-downscale: {{ $rolloutZone.prepareDownscale | quote }}
+    {{- end }}
+    {{- end }}
   annotations:
     {{- include "mimir.componentAnnotations" $args | nindent 4 }}
+    {{- if $rolloutZone.downscaleLeader }}
+    grafana.com/rollout-downscale-leader: {{ $rolloutZone.downscaleLeader }}
+    {{- end }}
   namespace: {{ .Release.Namespace | quote }}
 spec:
   replicas: {{ $rolloutZone.replicas }}
@@ -102,14 +112,13 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       terminationGracePeriodSeconds: {{ .Values.alertmanager.terminationGracePeriodSeconds }}
+      {{- with .Values.alertmanager.dnsConfig }}
+      dnsConfig:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       volumes:
         - name: config
           {{- include "mimir.configVolume" . | nindent 10 }}
-        {{- if .Values.enterprise.enabled }}
-        - name: license
-          secret:
-            secretName: {{ tpl .Values.license.secretName . }}
-        {{- end }}
         - name: runtime-config
           configMap:
             name: {{ template "mimir.fullname" . }}-runtime
@@ -166,10 +175,6 @@ spec:
             {{- end }}
             - name: config
               mountPath: /etc/mimir
-            {{- if .Values.enterprise.enabled }}
-            - name: license
-              mountPath: /license
-            {{- end }}
             - name: runtime-config
               mountPath: /var/{{ include "mimir.name" . }}
             - name: storage
@@ -203,24 +208,7 @@ spec:
             {{- toYaml .Values.alertmanager.resources | nindent 12 }}
           securityContext:
             {{- toYaml .Values.alertmanager.containerSecurityContext | nindent 12 }}
-          {{- if or .Values.global.extraEnv .Values.alertmanager.env }}
-          env:
-            {{- with .Values.global.extraEnv }}
-              {{- toYaml . | nindent 12 }}
-            {{- end }}
-            {{- with .Values.alertmanager.env }}
-              {{- toYaml . | nindent 12 }}
-            {{- end }}
-          {{- end }}
-          {{- if or .Values.global.extraEnvFrom .Values.alertmanager.extraEnvFrom }}
-          envFrom:
-            {{- with .Values.global.extraEnvFrom }}
-              {{- toYaml . | nindent 12 }}
-            {{- end }}
-            {{- with .Values.alertmanager.extraEnvFrom }}
-              {{- toYaml . | nindent 12 }}
-            {{- end }}
-          {{- end }}
+          {{- include "mimir.lib.containerEnv" (dict "ctx" . "component" "alertmanager") | nindent 10 }}
 
 ---
 {{ end }}

@@ -73,7 +73,7 @@
                   "span": 4,
                   "targets": [
                      {
-                        "expr": "sum by(instance) (rate(node_cpu_seconds_total{mode=\"user\",cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(distributor|ingester|mimir-write).*\"}[$__rate_interval]))",
+                        "expr": "sum by(instance) (rate(node_cpu_seconds_total{mode=\"user\",cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(distributor|ingester).*\"}[$__rate_interval]))",
                         "format": "time_series",
                         "legendFormat": "{{instance}}",
                         "legendLink": null
@@ -121,7 +121,7 @@
                   "span": 4,
                   "targets": [
                      {
-                        "expr": "node_memory_MemTotal_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(distributor|ingester|mimir-write).*\"}\n- node_memory_MemFree_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(distributor|ingester|mimir-write).*\"}\n- node_memory_Buffers_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(distributor|ingester|mimir-write).*\"}\n- node_memory_Cached_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(distributor|ingester|mimir-write).*\"}\n- node_memory_Slab_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(distributor|ingester|mimir-write).*\"}\n- node_memory_PageTables_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(distributor|ingester|mimir-write).*\"}\n- node_memory_SwapCached_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(distributor|ingester|mimir-write).*\"}\n",
+                        "expr": "node_memory_MemTotal_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(distributor|ingester).*\"}\n- node_memory_MemFree_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(distributor|ingester).*\"}\n- node_memory_Buffers_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(distributor|ingester).*\"}\n- node_memory_Cached_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(distributor|ingester).*\"}\n- node_memory_Slab_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(distributor|ingester).*\"}\n- node_memory_PageTables_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(distributor|ingester).*\"}\n- node_memory_SwapCached_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(distributor|ingester).*\"}\n",
                         "format": "time_series",
                         "legendFormat": "{{instance}}",
                         "legendLink": null
@@ -169,7 +169,7 @@
                   "span": 4,
                   "targets": [
                      {
-                        "expr": "sum by(instance) (go_memstats_heap_inuse_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(distributor|ingester|mimir-write).*\"})",
+                        "expr": "sum by(instance) (go_memstats_heap_inuse_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(distributor|ingester).*\"})",
                         "format": "time_series",
                         "legendFormat": "{{instance}}",
                         "legendLink": null
@@ -362,6 +362,33 @@
                                  }
                               }
                            ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byRegexp",
+                              "options": "/.+ - ommkilled/"
+                           },
+                           "properties": [
+                              {
+                                 "id": "color",
+                                 "value": {
+                                    "fixedColor": "#E24D42",
+                                    "mode": "fixed"
+                                 }
+                              },
+                              {
+                                 "id": "custom.axisPlacement",
+                                 "value": "hidden"
+                              },
+                              {
+                                 "id": "custom.drawStyle",
+                                 "value": "points"
+                              },
+                              {
+                                 "id": "unit",
+                                 "value": "none"
+                              }
+                           ]
                         }
                      ]
                   },
@@ -471,7 +498,33 @@
                         },
                         "unit": "short"
                      },
-                     "overrides": [ ]
+                     "overrides": [
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "limit"
+                           },
+                           "properties": [
+                              {
+                                 "id": "color",
+                                 "value": {
+                                    "fixedColor": "#E02F44",
+                                    "mode": "fixed"
+                                 }
+                              },
+                              {
+                                 "id": "custom.fillOpacity",
+                                 "value": 0
+                              },
+                              {
+                                 "id": "custom.lineStyle",
+                                 "value": {
+                                    "fill": "dash"
+                                 }
+                              }
+                           ]
+                        }
+                     ]
                   },
                   "id": 7,
                   "links": [ ],
@@ -487,9 +540,15 @@
                   "span": 6,
                   "targets": [
                      {
-                        "expr": "sum by(instance) (cortex_ingester_memory_series{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"})",
+                        "expr": "sum by(instance) (cortex_ingester_memory_series{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"})",
                         "format": "time_series",
                         "legendFormat": "{{instance}}",
+                        "legendLink": null
+                     },
+                     {
+                        "expr": "min by(namespace) (cortex_ingester_instance_limits{namespace=\"$namespace\", limit=\"max_series\"} > 0)",
+                        "format": "time_series",
+                        "legendFormat": "limit",
                         "legendLink": null
                      }
                   ],
@@ -777,6 +836,33 @@
                                  "value": {
                                     "fill": "dash"
                                  }
+                              }
+                           ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byRegexp",
+                              "options": "/.+ - ommkilled/"
+                           },
+                           "properties": [
+                              {
+                                 "id": "color",
+                                 "value": {
+                                    "fixedColor": "#E24D42",
+                                    "mode": "fixed"
+                                 }
+                              },
+                              {
+                                 "id": "custom.axisPlacement",
+                                 "value": "hidden"
+                              },
+                              {
+                                 "id": "custom.drawStyle",
+                                 "value": "points"
+                              },
+                              {
+                                 "id": "unit",
+                                 "value": "none"
                               }
                            ]
                         }

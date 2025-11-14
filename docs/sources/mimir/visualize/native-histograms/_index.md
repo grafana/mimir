@@ -13,8 +13,6 @@ title: Visualize native histograms
 weight: 100
 ---
 
-<!-- Note: This topic is mounted in the GEM documentation. Ensure that all updates are also applicable to GEM. -->
-
 # Visualize native histograms
 
 Prometheus native histograms are a data type in the Prometheus ecosystem that allow you to produce, store, and query a high-resolution [histogram](https://prometheus.io/docs/concepts/metric_types/#histogram) of observations.
@@ -34,6 +32,8 @@ For more information about PromQL, refer to [Querying Prometheus](https://promet
 The following examples show common ways to derive floating point data type from native histograms data for visualizations and also how to convert existing queries using classic histograms into queries using native histograms.
 
 Note that the native histogram queries do not include the `_bucket`, `_sum` and `_count` suffixes of classic histograms.
+
+For more information on native histogram flavors and how to query them using PromQL, refer to the [Prometheus Native Histograms specification](https://prometheus.io/docs/specs/native_histograms/).
 
 ### Query your histogram’s count or sum
 

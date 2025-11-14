@@ -11,6 +11,9 @@ receivers:
   # Data sources: metrics
   prometheus: # Scrape self
     config:
+      global:
+        scrape_protocols: [PrometheusProto,OpenMetricsText1.0.0,OpenMetricsText0.0.1,PrometheusText0.0.4 ]
+        always_scrape_classic_histograms: true
       scrape_configs:
         - job_name: otel-collector-remote-write
           scrape_interval: 5s

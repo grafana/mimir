@@ -5,6 +5,7 @@ package alertmanager
 import (
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -16,7 +17,6 @@ import (
 	alertingReceivers "github.com/grafana/alerting/receivers"
 	alertingTemplates "github.com/grafana/alerting/templates"
 	"github.com/grafana/dskit/tenant"
-	"github.com/pkg/errors"
 	"github.com/prometheus/alertmanager/cluster/clusterpb"
 	"github.com/prometheus/alertmanager/notify"
 
@@ -28,18 +28,19 @@ import (
 )
 
 const (
-	errMalformedGrafanaConfigInStore = "error unmarshalling Grafana configuration from storage"
-	errMarshallingState              = "error marshalling Grafana Alertmanager state"
-	errMarshallingStateJSON          = "error marshalling JSON Grafana Alertmanager state"
-	errMarshallingGrafanaConfigJSON  = "error marshalling JSON Grafana Alertmanager config"
-	errReadingState                  = "unable to read the Grafana Alertmanager state"
-	errDeletingState                 = "unable to delete the Grafana Alertmanager State"
-	errStoringState                  = "unable to store the Grafana Alertmanager state"
-	errReadingGrafanaConfig          = "unable to read the Grafana Alertmanager config"
-	errDeletingGrafanaConfig         = "unable to delete the Grafana Alertmanager config"
-	errStoringGrafanaConfig          = "unable to store the Grafana Alertmanager config"
-	errBase64DecodeState             = "unable to base64 decode Grafana Alertmanager state"
-	errUnmarshalProtoState           = "unable to unmarshal protobuf for Grafana Alertmanager state"
+	errMalformedGrafanaConfigInStore  = "error unmarshalling Grafana configuration from storage"
+	errMarshallingState               = "error marshalling Grafana Alertmanager state"
+	errMarshallingStateJSON           = "error marshalling JSON Grafana Alertmanager state"
+	errMarshallingGrafanaConfigJSON   = "error marshalling JSON Grafana Alertmanager config"
+	errUnmarshallingGrafanaConfigJSON = "error unmarshalling JSON Grafana Alertmanager config"
+	errReadingState                   = "unable to read the Grafana Alertmanager state"
+	errDeletingState                  = "unable to delete the Grafana Alertmanager State"
+	errStoringState                   = "unable to store the Grafana Alertmanager state"
+	errReadingGrafanaConfig           = "unable to read the Grafana Alertmanager config"
+	errDeletingGrafanaConfig          = "unable to delete the Grafana Alertmanager config"
+	errStoringGrafanaConfig           = "unable to store the Grafana Alertmanager config"
+	errBase64DecodeState              = "unable to base64 decode Grafana Alertmanager state"
+	errUnmarshalProtoState            = "unable to unmarshal protobuf for Grafana Alertmanager state"
 
 	statusSuccess = "success"
 	statusError   = "error"
@@ -57,8 +58,11 @@ var (
 )
 
 type GrafanaAlertmanagerConfig struct {
-	Templates          map[string]string                    `json:"template_files"`
+	TemplateFiles      map[string]string                    `json:"template_files"`
 	AlertmanagerConfig definition.PostableApiAlertingConfig `json:"alertmanager_config"`
+	Templates          []definition.PostableApiTemplate     `json:"templates,omitempty"`
+	// original is the string from which the config was parsed
+	original string
 }
 
 type SmtpConfig struct {
@@ -81,6 +85,16 @@ type UserGrafanaConfig struct {
 	Promoted                  bool                      `json:"promoted"`
 	ExternalURL               string                    `json:"external_url"`
 	SmtpConfig                *SmtpConfig               `json:"smtp_config,omitempty"`
+
+	// TODO: Remove once everythins is sent in SmtpConfig.
+	SmtpFrom      string            `json:"smtp_from"`
+	StaticHeaders map[string]string `json:"static_headers"`
+}
+
+type UserGrafanaConfigStatus struct {
+	Hash      string `json:"configuration_hash"`
+	CreatedAt int64  `json:"created"`
+	Promoted  bool   `json:"promoted"`
 }
 
 func (gc *UserGrafanaConfig) Validate() error {
@@ -96,6 +110,13 @@ func (gc *UserGrafanaConfig) Validate() error {
 		return err
 	}
 	return nil
+}
+
+func (gac *GrafanaAlertmanagerConfig) UnmarshalJSON(data []byte) error {
+	gac.original = string(data)
+
+	type plain GrafanaAlertmanagerConfig
+	return json.Unmarshal(data, (*plain)(gac))
 }
 
 func (gc *UserGrafanaConfig) UnmarshalJSON(data []byte) error {
@@ -118,6 +139,8 @@ type UserGrafanaState struct {
 
 type PostableUserGrafanaState struct {
 	UserGrafanaState
+
+	// Deprecated: This field is not used.
 	Promoted bool `json:"promoted"`
 }
 
@@ -359,6 +382,10 @@ func (am *MultitenantAlertmanager) GetUserGrafanaConfig(w http.ResponseWriter, r
 			Promoted:                  cfg.Promoted,
 			ExternalURL:               cfg.ExternalUrl,
 			SmtpConfig:                smtpConfig,
+
+			// TODO: Remove once everything is sent in SmtpConfig.
+			SmtpFrom:      cfg.SmtpFrom,
+			StaticHeaders: cfg.StaticHeaders,
 		},
 	})
 }
@@ -400,20 +427,13 @@ func (am *MultitenantAlertmanager) SetUserGrafanaConfig(w http.ResponseWriter, r
 		return
 	}
 
+	// Unmarshal the config to validate it.
 	cfg := &UserGrafanaConfig{}
 	err = json.Unmarshal(payload, cfg)
 	if err != nil {
 		level.Error(logger).Log("msg", errMarshallingGrafanaConfigJSON, "err", err.Error())
 		w.WriteHeader(http.StatusBadRequest)
-		util.WriteJSONResponse(w, errorResult{Status: statusError, Error: fmt.Sprintf("%s: %s", errMarshallingGrafanaConfigJSON, err.Error())})
-		return
-	}
-
-	rawCfg, err := json.Marshal(cfg.GrafanaAlertmanagerConfig)
-	if err != nil {
-		level.Error(logger).Log("msg", errMarshallingGrafanaConfigJSON, "err", err.Error())
-		w.WriteHeader(http.StatusInternalServerError)
-		util.WriteJSONResponse(w, errorResult{Status: statusError, Error: fmt.Sprintf("%s: %s", errStoringGrafanaConfig, err.Error())})
+		util.WriteJSONResponse(w, errorResult{Status: statusError, Error: fmt.Sprintf("%s: %s", errUnmarshallingGrafanaConfigJSON, err.Error())})
 		return
 	}
 
@@ -432,8 +452,8 @@ func (am *MultitenantAlertmanager) SetUserGrafanaConfig(w http.ResponseWriter, r
 		}
 	}
 
-	cfgDesc := alertspb.ToGrafanaProto(string(rawCfg), userID, cfg.Hash, cfg.CreatedAt, cfg.Default, cfg.Promoted, cfg.ExternalURL, smtpConfig)
-	if err := validateUserGrafanaConfig(logger, cfgDesc, am.limits, userID); err != nil {
+	cfgDesc := alertspb.ToGrafanaProto(cfg.GrafanaAlertmanagerConfig.original, userID, cfg.Hash, cfg.CreatedAt, cfg.Default, cfg.Promoted, cfg.ExternalURL, cfg.SmtpFrom, cfg.StaticHeaders, smtpConfig)
+	if err := am.validateUserGrafanaConfig(logger, cfgDesc, am.limits, userID); err != nil {
 		level.Error(logger).Log("msg", errValidatingConfig, "err", err.Error())
 		w.WriteHeader(http.StatusBadRequest)
 		util.WriteJSONResponse(w, errorResult{Status: statusError, Error: fmt.Sprintf("%s: %s", errValidatingConfig, err.Error())})
@@ -473,8 +493,41 @@ func (am *MultitenantAlertmanager) DeleteUserGrafanaConfig(w http.ResponseWriter
 	util.WriteJSONResponse(w, successResult{Status: statusSuccess})
 }
 
+func (am *MultitenantAlertmanager) GetGrafanaConfigStatus(w http.ResponseWriter, r *http.Request) {
+	logger := util_log.WithContext(r.Context(), am.logger)
+
+	userID, err := tenant.TenantID(r.Context())
+	if err != nil {
+		level.Error(logger).Log("msg", errNoOrgID, "err", err.Error())
+		w.WriteHeader(http.StatusUnauthorized)
+		util.WriteJSONResponse(w, errorResult{Status: statusError, Error: fmt.Sprintf("%s: %s", errNoOrgID, err.Error())})
+		return
+	}
+
+	cfg, err := am.store.GetGrafanaAlertConfig(r.Context(), userID)
+	if err != nil {
+		if errors.Is(err, alertspb.ErrNotFound) {
+			w.WriteHeader(http.StatusNotFound)
+			util.WriteJSONResponse(w, errorResult{Status: statusError, Error: err.Error()})
+		} else {
+			w.WriteHeader(http.StatusInternalServerError)
+			util.WriteJSONResponse(w, errorResult{Status: statusError, Error: err.Error()})
+		}
+		return
+	}
+
+	util.WriteJSONResponse(w, successResult{
+		Status: statusSuccess,
+		Data: &UserGrafanaConfigStatus{
+			Hash:      cfg.Hash,
+			CreatedAt: cfg.CreatedAtTimestamp,
+			Promoted:  cfg.Promoted,
+		},
+	})
+}
+
 // ValidateUserGrafanaConfig validates the Grafana Alertmanager configuration.
-func validateUserGrafanaConfig(logger log.Logger, cfg alertspb.GrafanaAlertConfigDesc, limits Limits, user string) error {
+func (am *MultitenantAlertmanager) validateUserGrafanaConfig(logger log.Logger, cfg alertspb.GrafanaAlertConfigDesc, limits Limits, user string) error {
 	// We don't have a valid use case for empty configurations. If a tenant does not have a
 	// configuration set and issue a request to the Alertmanager, we'll a) upload an empty
 	// config and b) start an Alertmanager instance for them if a fallback
@@ -484,7 +537,7 @@ func validateUserGrafanaConfig(logger log.Logger, cfg alertspb.GrafanaAlertConfi
 	}
 
 	// Perform a similar flow of transformations that would happen in the Alertmanager on Sync & Apply.
-	grafanaConfig, err := createUsableGrafanaConfig(logger, cfg, "")
+	grafanaConfig, err := am.amConfigFromGrafanaConfig(cfg)
 	if err != nil {
 		return err
 	}
@@ -500,22 +553,19 @@ func validateUserGrafanaConfig(logger log.Logger, cfg alertspb.GrafanaAlertConfi
 
 	if maxSize := limits.AlertmanagerMaxTemplateSize(user); maxSize > 0 {
 		for _, tmpl := range grafanaConfig.Templates {
-			if size := len(tmpl.Body); size > maxSize {
-				return fmt.Errorf(errTemplateTooBig, tmpl.GetFilename(), size, maxSize)
+			if size := len(tmpl.Content); size > maxSize {
+				return fmt.Errorf(errTemplateTooBig, tmpl.Name, size, maxSize)
 			}
 		}
 	}
 
 	// Validate template files.
-	tmpls := make([]alertingTemplates.TemplateDefinition, 0, len(grafanaConfig.Templates))
-	for _, tmpl := range grafanaConfig.Templates {
-		tmpls = append(tmpls, alertingTemplates.TemplateDefinition{
-			Name:     tmpl.Filename,
-			Template: tmpl.Body,
-			Kind:     alertingTemplates.GrafanaKind,
-		})
-	}
-	factory, err := alertingTemplates.NewFactory(tmpls, logger, "http://localhost", user) // use fake URL to avoid errors.
+	factory, err := alertingTemplates.NewFactory(
+		alertingNotify.PostableAPITemplatesToTemplateDefinitions(grafanaConfig.Templates),
+		logger,
+		"http://localhost", // Use a fake URL to avoid errors.
+		user,
+	)
 	if err != nil {
 		return err
 	}

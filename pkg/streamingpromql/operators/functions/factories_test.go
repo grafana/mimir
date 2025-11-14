@@ -5,46 +5,37 @@ package functions
 import (
 	"testing"
 
+	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/stretchr/testify/require"
 )
 
-func TestRegisterInstantVectorFunctionOperatorFactory(t *testing.T) {
-	// Register an already existing function
-	err := RegisterInstantVectorFunctionOperatorFactory("acos", InstantVectorLabelManipulationFunctionOperatorFactory("acos", DropSeriesName))
-	require.Error(t, err)
-	require.Equal(t, "function 'acos' has already been registered", err.Error())
+func TestRegisterFunction(t *testing.T) {
+	// Try to re-register an existing function
+	err := RegisterFunction(FUNCTION_ACOS, "acos", parser.ValueTypeVector, InstantVectorLabelManipulationFunctionOperatorFactory("acos", DropSeriesName))
+	require.EqualError(t, err, "function with ID 4 has already been registered")
 
-	// Register a new function
 	newFunc := InstantVectorLabelManipulationFunctionOperatorFactory("new_function", DropSeriesName)
-	err = RegisterInstantVectorFunctionOperatorFactory("new_function", newFunc)
-	require.NoError(t, err)
-	require.Contains(t, InstantVectorFunctionOperatorFactories, "new_function")
-
-	// Register existing function we registered previously
-	err = RegisterInstantVectorFunctionOperatorFactory("new_function", newFunc)
-	require.Error(t, err)
-	require.Equal(t, "function 'new_function' has already been registered", err.Error())
-
-	// Cleanup changes to instantVectorFunctionOperatorFactories
-	delete(InstantVectorFunctionOperatorFactories, "new_function")
-}
-
-func TestRegisterScalarFunctionOperatorFactory(t *testing.T) {
-	// Register an already existing function
-	err := RegisterScalarFunctionOperatorFactory("pi", piOperatorFactory)
-	require.Error(t, err)
-	require.Equal(t, "function 'pi' has already been registered", err.Error())
+	f := Function(1234)
 
 	// Register a new function
-	err = RegisterScalarFunctionOperatorFactory("new_function", piOperatorFactory)
+	err = RegisterFunction(f, "new_function", parser.ValueTypeVector, newFunc)
 	require.NoError(t, err)
-	require.Contains(t, ScalarFunctionOperatorFactories, "new_function")
+	require.Contains(t, RegisteredFunctions, f)
+	require.Equal(t, f.PromQLName(), "new_function")
 
-	// Register existing function we registered previously
-	err = RegisterScalarFunctionOperatorFactory("new_function", piOperatorFactory)
-	require.Error(t, err)
-	require.Equal(t, "function 'new_function' has already been registered", err.Error())
+	// Try to re-register function we registered previously
+	err = RegisterFunction(f, "new_function", parser.ValueTypeVector, newFunc)
+	require.EqualError(t, err, "function with ID 1234 has already been registered")
+
+	// Try to re-register function we registered previously with different name
+	err = RegisterFunction(f, "another_new_function", parser.ValueTypeVector, newFunc)
+	require.EqualError(t, err, "function with ID 1234 has already been registered")
+
+	// Try to re-register function with different ID but same name
+	err = RegisterFunction(Function(5678), "new_function", parser.ValueTypeVector, newFunc)
+	require.EqualError(t, err, "function with name 'new_function' has already been registered with a different ID: 1234")
 
 	// Cleanup changes to instantVectorFunctionOperatorFactories
-	delete(ScalarFunctionOperatorFactories, "new_function")
+	delete(RegisteredFunctions, f)
+	delete(promQLNamesToFunctions, "new_function")
 }

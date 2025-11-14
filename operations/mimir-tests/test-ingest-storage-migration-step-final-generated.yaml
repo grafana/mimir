@@ -46,19 +46,6 @@ apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
   labels:
-    name: ingester-rollout
-  name: ingester-rollout
-  namespace: default
-spec:
-  maxUnavailable: 1
-  selector:
-    matchLabels:
-      rollout-group: ingester
----
-apiVersion: policy/v1
-kind: PodDisruptionBudget
-metadata:
-  labels:
     name: memcached
   name: memcached
   namespace: default
@@ -211,19 +198,6 @@ spec:
     matchLabels:
       name: ruler-query-scheduler
 ---
-apiVersion: policy/v1
-kind: PodDisruptionBudget
-metadata:
-  labels:
-    name: store-gateway-rollout
-  name: store-gateway-rollout
-  namespace: default
-spec:
-  maxUnavailable: 1
-  selector:
-    matchLabels:
-      rollout-group: store-gateway
----
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -290,6 +264,103 @@ spec:
         statusReplicasPath: .status.replicas
       status: {}
 ---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: zoneawarepoddisruptionbudgets.rollout-operator.grafana.com
+spec:
+  group: rollout-operator.grafana.com
+  names:
+    kind: ZoneAwarePodDisruptionBudget
+    plural: zoneawarepoddisruptionbudgets
+    shortNames:
+    - zpdb
+    singular: zoneawarepoddisruptionbudget
+  scope: Namespaced
+  versions:
+  - name: v1
+    schema:
+      openAPIV3Schema:
+        properties:
+          spec:
+            properties:
+              maxUnavailable:
+                description: The number of pods that can be unavailable within a zone
+                  or partition.
+                minimum: 0
+                type: integer
+              maxUnavailablePercentage:
+                description: Calculate the maxUnavailable value as a percentage of
+                  the StatefulSet's spec.Replica count. This option is not supported
+                  when using podNamePartitionRegex.
+                maximum: 100
+                minimum: 0
+                type: integer
+              podNamePartitionRegex:
+                description: A regular expression for returning a partition name given
+                  a pod name. This field is optional and should only be used when
+                  the ZoneAwarePodDisruptionBudget is to be scoped to a partition,
+                  such as a multi-zone ingester deployment with ingest_storage_enabled.
+                  Enabling this changes the ZPDB functionality such that minAvailability
+                  is applied across ALL zones for a given partition. When not enabled,
+                  the minAvailability is applied to pods within the eviction zone
+                  assuming there are no disruptions in the other zones.
+                type: string
+              podNameRegexGroup:
+                description: The regular expression capture group number that contains
+                  the partition name. This field is only required when the podNamePartitionRegex
+                  field is set and has more then one grouping. The default value is
+                  1 and 1-based indexing is used.
+                minimum: 1
+                type: integer
+              selector:
+                description: A selector for finding pods and statefulsets that this
+                  ZoneAwarePodDisruptionBudget applies to.
+                properties:
+                  matchLabels:
+                    additionalProperties:
+                      type: string
+                    type: object
+                required:
+                - matchLabels
+                type: object
+            required:
+            - selector
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: rollout-operator-default-webhook-cert-update-role
+rules:
+- apiGroups:
+  - admissionregistration.k8s.io
+  resources:
+  - validatingwebhookconfigurations
+  - mutatingwebhookconfigurations
+  verbs:
+  - list
+  - patch
+  - watch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: rollout-operator-default-webhook-cert-secret-rolebinding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: rollout-operator-default-webhook-cert-update-role
+subjects:
+- kind: ServiceAccount
+  name: rollout-operator
+  namespace: default
+---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
@@ -336,6 +407,36 @@ rules:
   verbs:
   - get
   - patch
+- apiGroups:
+  - rollout-operator.grafana.com
+  resources:
+  - zoneawarepoddisruptionbudgets
+  verbs:
+  - get
+  - list
+  - watch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: rollout-operator-webhook-cert-secret-role
+  namespace: default
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - secrets
+  verbs:
+  - create
+- apiGroups:
+  - ""
+  resourceNames:
+  - rollout-operator-self-signed-certificate
+  resources:
+  - secrets
+  verbs:
+  - update
+  - get
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
@@ -346,6 +447,20 @@ roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
   name: rollout-operator-role
+subjects:
+- kind: ServiceAccount
+  name: rollout-operator
+  namespace: default
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: rollout-operator-webhook-cert-secret-rolebinding
+  namespace: default
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: rollout-operator-webhook-cert-secret-role
 subjects:
 - kind: ServiceAccount
   name: rollout-operator
@@ -658,6 +773,20 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
+  name: rollout-operator
+  namespace: default
+spec:
+  ports:
+  - name: https
+    port: 443
+    protocol: TCP
+    targetPort: 8443
+  selector:
+    name: rollout-operator
+---
+apiVersion: v1
+kind: Service
+metadata:
   labels:
     name: ruler
   name: ruler
@@ -862,9 +991,8 @@ spec:
       - args:
         - -distributor.ha-tracker.enable=true
         - -distributor.ha-tracker.enable-for-all-users=true
-        - -distributor.ha-tracker.etcd.endpoints=etcd-client.default.svc.cluster.local.:2379
         - -distributor.ha-tracker.prefix=prom_ha/
-        - -distributor.ha-tracker.store=etcd
+        - -distributor.ha-tracker.store=memberlist
         - -distributor.health-check-ingesters=true
         - -distributor.ingestion-burst-size=200000
         - -distributor.ingestion-rate-limit=10000
@@ -878,6 +1006,7 @@ spec:
         - -ingest-storage.ingestion-partition-tenant-shard-size=1
         - -ingest-storage.kafka.address=kafka.default.svc.cluster.local.:9092
         - -ingest-storage.kafka.auto-create-topic-default-partitions=1000
+        - -ingest-storage.kafka.producer-record-version=1
         - -ingest-storage.kafka.topic=ingest
         - -ingester.partition-ring.prefix=
         - -ingester.ring.heartbeat-timeout=10m
@@ -889,6 +1018,7 @@ spec:
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
         - -runtime-config.file=/etc/mimir/overrides.yaml
+        - -server.grpc-max-concurrent-streams=1000
         - -server.grpc.keepalive.max-connection-age=60s
         - -server.grpc.keepalive.max-connection-age-grace=5m
         - -server.grpc.keepalive.max-connection-idle=1m
@@ -901,7 +1031,7 @@ spec:
         env:
         - name: GOMAXPROCS
           value: "8"
-        image: grafana/mimir:2.16.1
+        image: grafana/mimir:3.0.0
         imagePullPolicy: IfNotPresent
         name: distributor
         ports:
@@ -991,6 +1121,7 @@ spec:
         - -querier.max-concurrent=8
         - -querier.max-partial-query-length=768h
         - -querier.scheduler-address=query-scheduler-discovery.default.svc.cluster.local.:9095
+        - -querier.store-gateway-client.grpc-max-recv-msg-size=209715200
         - -runtime-config.file=/etc/mimir/overrides.yaml
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
@@ -1006,7 +1137,7 @@ spec:
         env:
         - name: GOMAXPROCS
           value: "5"
-        image: grafana/mimir:2.16.1
+        image: grafana/mimir:3.0.0
         imagePullPolicy: IfNotPresent
         name: querier
         ports:
@@ -1091,7 +1222,7 @@ spec:
         - -shutdown-delay=90s
         - -target=query-frontend
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.16.1
+        image: grafana/mimir:3.0.0
         imagePullPolicy: IfNotPresent
         name: query-frontend
         ports:
@@ -1168,7 +1299,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=query-scheduler
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.16.1
+        image: grafana/mimir:3.0.0
         imagePullPolicy: IfNotPresent
         name: query-scheduler
         ports:
@@ -1221,14 +1352,17 @@ spec:
       containers:
       - args:
         - -kubernetes.namespace=default
+        - -server-tls.enabled=true
         - -use-zone-tracker=true
         - -zone-tracker.config-map-name=rollout-operator-zone-tracker
-        image: grafana/rollout-operator:v0.28.0
+        image: grafana/rollout-operator:v0.32.0
         imagePullPolicy: IfNotPresent
         name: rollout-operator
         ports:
         - containerPort: 8001
           name: http-metrics
+        - containerPort: 8443
+          name: https
         readinessProbe:
           httpGet:
             path: /ready
@@ -1283,6 +1417,7 @@ spec:
         - -ingest-storage.kafka.address=kafka.default.svc.cluster.local.:9092
         - -ingest-storage.kafka.auto-create-topic-default-partitions=1000
         - -ingest-storage.kafka.producer-max-buffered-bytes=1073741824
+        - -ingest-storage.kafka.producer-record-version=1
         - -ingest-storage.kafka.topic=ingest
         - -ingester.partition-ring.prefix=
         - -ingester.ring.heartbeat-timeout=10m
@@ -1290,6 +1425,7 @@ spec:
         - -ingester.ring.replication-factor=3
         - -ingester.ring.store=memberlist
         - -ingester.ring.zone-awareness-enabled=true
+        - -mem-ballast-size-bytes=1073741824
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
         - -querier.max-partial-query-length=768h
@@ -1319,7 +1455,7 @@ spec:
         - -store-gateway.tenant-shard-size=3
         - -target=ruler
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.16.1
+        image: grafana/mimir:3.0.0
         imagePullPolicy: IfNotPresent
         name: ruler
         ports:
@@ -1407,7 +1543,9 @@ spec:
         - -querier.frontend-client.grpc-max-send-msg-size=104857600
         - -querier.max-concurrent=8
         - -querier.max-partial-query-length=768h
+        - -querier.ring.prefix=ruler-querier/
         - -querier.scheduler-address=ruler-query-scheduler-discovery.default.svc.cluster.local.:9095
+        - -querier.store-gateway-client.grpc-max-recv-msg-size=209715200
         - -runtime-config.file=/etc/mimir/overrides.yaml
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
@@ -1421,7 +1559,7 @@ spec:
         - -target=querier
         - -usage-stats.installation-mode=jsonnet
         env: []
-        image: grafana/mimir:2.16.1
+        image: grafana/mimir:3.0.0
         imagePullPolicy: IfNotPresent
         name: ruler-querier
         ports:
@@ -1488,6 +1626,7 @@ spec:
         - -ingest-storage.kafka.last-produced-offset-poll-interval=500ms
         - -ingest-storage.kafka.topic=ingest
         - -ingester.partition-ring.prefix=
+        - -querier.ring.prefix=ruler-querier/
         - -query-frontend.cache-results=false
         - -query-frontend.max-cache-freshness=10m
         - -query-frontend.max-queriers-per-tenant=10
@@ -1499,6 +1638,7 @@ spec:
         - -query-frontend.results-cache.memcached.timeout=500ms
         - -query-frontend.scheduler-address=ruler-query-scheduler-discovery.default.svc.cluster.local.:9095
         - -runtime-config.file=/etc/mimir/overrides.yaml
+        - -server.grpc-max-concurrent-streams=300
         - -server.grpc-max-recv-msg-size-bytes=104857600
         - -server.grpc-max-send-msg-size-bytes=104857600
         - -server.grpc.keepalive.max-connection-age=30s
@@ -1510,7 +1650,7 @@ spec:
         - -shutdown-delay=90s
         - -target=query-frontend
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.16.1
+        image: grafana/mimir:3.0.0
         imagePullPolicy: IfNotPresent
         name: ruler-query-frontend
         ports:
@@ -1587,7 +1727,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=query-scheduler
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.16.1
+        image: grafana/mimir:3.0.0
         imagePullPolicy: IfNotPresent
         name: ruler-query-scheduler
         ports:
@@ -1661,7 +1801,7 @@ spec:
           valueFrom:
             fieldRef:
               fieldPath: status.podIP
-        image: grafana/mimir:2.16.1
+        image: grafana/mimir:3.0.0
         imagePullPolicy: IfNotPresent
         name: alertmanager
         ports:
@@ -1764,7 +1904,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=compactor
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.16.1
+        image: grafana/mimir:3.0.0
         imagePullPolicy: IfNotPresent
         name: compactor
         ports:
@@ -1892,6 +2032,7 @@ spec:
         - -ingester.ring.tokens-file-path=/data/tokens
         - -ingester.ring.unregister-on-shutdown=true
         - -ingester.ring.zone-awareness-enabled=true
+        - -memberlist.abort-if-fast-join-fails=true
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
         - -runtime-config.file=/etc/mimir/overrides.yaml
@@ -1912,7 +2053,7 @@ spec:
           value: 1Gi
         - name: Z
           value: "123"
-        image: grafana/mimir:2.16.1
+        image: grafana/mimir:3.0.0
         imagePullPolicy: IfNotPresent
         name: ingester
         ports:
@@ -2036,6 +2177,7 @@ spec:
         - -ingester.ring.tokens-file-path=/data/tokens
         - -ingester.ring.unregister-on-shutdown=true
         - -ingester.ring.zone-awareness-enabled=true
+        - -memberlist.abort-if-fast-join-fails=true
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
         - -runtime-config.file=/etc/mimir/overrides.yaml
@@ -2050,7 +2192,7 @@ spec:
           value: all-ingesters
         - name: GOMAXPROCS
           value: "9"
-        image: grafana/mimir:2.16.1
+        image: grafana/mimir:3.0.0
         imagePullPolicy: IfNotPresent
         name: ingester
         ports:
@@ -2147,7 +2289,7 @@ spec:
         - -blocks-storage.tsdb.block-ranges-period=2h
         - -blocks-storage.tsdb.dir=/data/tsdb
         - -blocks-storage.tsdb.head-compaction-interval=15m
-        - -blocks-storage.tsdb.ship-interval=1m
+        - -blocks-storage.tsdb.ship-interval=0
         - -blocks-storage.tsdb.wal-replay-concurrency=3
         - -common.storage.backend=gcs
         - -distributor.health-check-ingesters=true
@@ -2174,6 +2316,7 @@ spec:
         - -ingester.ring.tokens-file-path=/data/tokens
         - -ingester.ring.unregister-on-shutdown=true
         - -ingester.ring.zone-awareness-enabled=true
+        - -memberlist.abort-if-fast-join-fails=true
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
         - -runtime-config.file=/etc/mimir/overrides.yaml
@@ -2188,7 +2331,7 @@ spec:
           value: all-ingesters
         - name: GOMAXPROCS
           value: "9"
-        image: grafana/mimir:2.16.1
+        image: grafana/mimir:3.0.0
         imagePullPolicy: IfNotPresent
         name: ingester
         ports:
@@ -2243,6 +2386,7 @@ metadata:
   name: memcached
   namespace: default
 spec:
+  minReadySeconds: 60
   replicas: 3
   selector:
     matchLabels:
@@ -2287,6 +2431,12 @@ spec:
         ports:
         - containerPort: 9150
           name: http-metrics
+        resources:
+          limits:
+            memory: 250Mi
+          requests:
+            cpu: "0.05"
+            memory: 50Mi
   updateStrategy:
     type: RollingUpdate
 ---
@@ -2296,6 +2446,7 @@ metadata:
   name: memcached-frontend
   namespace: default
 spec:
+  minReadySeconds: 60
   replicas: 3
   selector:
     matchLabels:
@@ -2340,6 +2491,12 @@ spec:
         ports:
         - containerPort: 9150
           name: http-metrics
+        resources:
+          limits:
+            memory: 250Mi
+          requests:
+            cpu: "0.05"
+            memory: 50Mi
   updateStrategy:
     type: RollingUpdate
 ---
@@ -2349,6 +2506,7 @@ metadata:
   name: memcached-index-queries
   namespace: default
 spec:
+  minReadySeconds: 60
   replicas: 3
   selector:
     matchLabels:
@@ -2393,6 +2551,12 @@ spec:
         ports:
         - containerPort: 9150
           name: http-metrics
+        resources:
+          limits:
+            memory: 250Mi
+          requests:
+            cpu: "0.05"
+            memory: 50Mi
   updateStrategy:
     type: RollingUpdate
 ---
@@ -2402,6 +2566,7 @@ metadata:
   name: memcached-metadata
   namespace: default
 spec:
+  minReadySeconds: 60
   replicas: 3
   selector:
     matchLabels:
@@ -2446,6 +2611,12 @@ spec:
         ports:
         - containerPort: 9150
           name: http-metrics
+        resources:
+          limits:
+            memory: 250Mi
+          requests:
+            cpu: "0.05"
+            memory: 50Mi
   updateStrategy:
     type: RollingUpdate
 ---
@@ -2520,6 +2691,7 @@ spec:
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
         - -runtime-config.file=/etc/mimir/overrides.yaml
+        - -server.grpc-max-send-msg-size-bytes=209715200
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
@@ -2543,7 +2715,7 @@ spec:
           value: "5"
         - name: GOMEMLIMIT
           value: "12884901888"
-        image: grafana/mimir:2.16.1
+        image: grafana/mimir:3.0.0
         imagePullPolicy: IfNotPresent
         name: store-gateway
         ports:
@@ -2663,6 +2835,7 @@ spec:
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
         - -runtime-config.file=/etc/mimir/overrides.yaml
+        - -server.grpc-max-send-msg-size-bytes=209715200
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
@@ -2688,7 +2861,7 @@ spec:
           value: "5"
         - name: GOMEMLIMIT
           value: "12884901888"
-        image: grafana/mimir:2.16.1
+        image: grafana/mimir:3.0.0
         imagePullPolicy: IfNotPresent
         name: store-gateway
         ports:
@@ -2808,6 +2981,7 @@ spec:
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
         - -runtime-config.file=/etc/mimir/overrides.yaml
+        - -server.grpc-max-send-msg-size-bytes=209715200
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
@@ -2831,7 +3005,7 @@ spec:
           value: "5"
         - name: GOMEMLIMIT
           value: "12884901888"
-        image: grafana/mimir:2.16.1
+        image: grafana/mimir:3.0.0
         imagePullPolicy: IfNotPresent
         name: store-gateway
         ports:
@@ -2880,38 +3054,41 @@ spec:
           storage: 50Gi
       storageClassName: standard
 ---
-apiVersion: etcd.database.coreos.com/v1beta2
-kind: EtcdCluster
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingWebhookConfiguration
 metadata:
-  annotations:
-    etcd.database.coreos.com/scope: clusterwide
-  name: etcd
-  namespace: default
-spec:
-  pod:
-    affinity:
-      podAntiAffinity:
-        requiredDuringSchedulingIgnoredDuringExecution:
-        - labelSelector:
-            matchLabels:
-              etcd_cluster: etcd
-          topologyKey: kubernetes.io/hostname
-    annotations:
-      prometheus.io/port: "2379"
-      prometheus.io/scrape: "true"
-    etcdEnv:
-    - name: ETCD_AUTO_COMPACTION_RETENTION
-      value: 1h
-    labels:
-      name: etcd
+  labels:
+    grafana.com/inject-rollout-operator-ca: "true"
+    grafana.com/namespace: default
+  name: prepare-downscale-default
+webhooks:
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: rollout-operator
+      namespace: default
+      path: /admission/prepare-downscale
+      port: 443
+  failurePolicy: Fail
+  matchPolicy: Equivalent
+  name: prepare-downscale-default.grafana.com
+  namespaceSelector:
+    matchLabels:
+      kubernetes.io/metadata.name: default
+  rules:
+  - apiGroups:
+    - apps
+    apiVersions:
+    - v1
+    operations:
+    - UPDATE
     resources:
-      limits:
-        memory: 512Mi
-      requests:
-        cpu: 500m
-        memory: 512Mi
-  size: 3
-  version: 3.3.13
+    - statefulsets
+    - statefulsets/scale
+    scope: Namespaced
+  sideEffects: NoneOnDryRun
+  timeoutSeconds: 10
 ---
 apiVersion: rollout-operator.grafana.com/v1
 kind: ReplicaTemplate
@@ -2934,7 +3111,7 @@ spec:
           policies:
           - periodSeconds: 1800
             type: Percent
-            value: 10
+            value: 15
           selectPolicy: Max
           stabilizationWindowSeconds: 3600
         scaleUp:
@@ -2956,24 +3133,149 @@ spec:
       ignoreNullValues: "false"
       metricName: cortex_ingester_zone_a_replicas_hpa_default
       query: |-
-        (sum(
-            sum by (pod) (cortex_ingester_owned_series{cluster="test-cluster", job="default/ingester-zone-a", container="ingester"})
-            and
-            sum by (pod) (kube_pod_status_ready{cluster="test-cluster",namespace="default", pod=~"ingester-zone-a.*", condition="true"}) > 0
+        max_over_time(min_over_time((
+            max(
+                sum by (pod) (cortex_ingester_owned_series{cluster="test-cluster", namespace="default", job="default/ingester-zone-a", container="ingester"})
+                and
+                sum by (pod) (kube_pod_status_ready{cluster="test-cluster", namespace="default", pod=~"ingester-zone-a.*", condition="true"}) > 0
+            )
+            *
+            max(cortex_partition_ring_partitions{cluster="test-cluster", namespace="default", state="Active", container="distributor", name="ingester-partitions"})
         )
-         / (
-            sum(kube_pod_status_ready{cluster="test-cluster", namespace="default", pod=~"ingester-zone-a.*", condition="true"})
-            /
-            scalar(kube_statefulset_status_replicas{cluster="test-cluster", namespace="default", statefulset="ingester-zone-a"})
-        )
-        )  and ((
-            sum(kube_pod_status_ready{cluster="test-cluster", namespace="default", pod=~"ingester-zone-a.*", condition="true"})
-            /
-            scalar(kube_statefulset_status_replicas{cluster="test-cluster", namespace="default", statefulset="ingester-zone-a"})
-        )
-         > 0.7)
+        [5m:])[2h:5m])
       serverAddress: http://prometheus.default:9090/prometheus
-      threshold: "1500000"
+      threshold: "1800000"
     metricType: AverageValue
     name: cortex_ingester_zone_a_replicas_hpa_default
     type: prometheus
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata:
+  labels:
+    grafana.com/inject-rollout-operator-ca: "true"
+    grafana.com/namespace: default
+  name: no-downscale-default
+webhooks:
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: rollout-operator
+      namespace: default
+      path: /admission/no-downscale
+      port: 443
+  failurePolicy: Fail
+  matchPolicy: Equivalent
+  name: no-downscale-default.grafana.com
+  namespaceSelector:
+    matchLabels:
+      kubernetes.io/metadata.name: default
+  rules:
+  - apiGroups:
+    - apps
+    apiVersions:
+    - v1
+    operations:
+    - UPDATE
+    resources:
+    - statefulsets
+    - statefulsets/scale
+    scope: Namespaced
+  sideEffects: None
+  timeoutSeconds: 10
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata:
+  labels:
+    grafana.com/inject-rollout-operator-ca: "true"
+    grafana.com/namespace: default
+  name: pod-eviction-default
+webhooks:
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: rollout-operator
+      namespace: default
+      path: /admission/pod-eviction
+      port: 443
+  failurePolicy: Fail
+  name: pod-eviction-default.grafana.com
+  namespaceSelector:
+    matchLabels:
+      kubernetes.io/metadata.name: default
+  rules:
+  - apiGroups:
+    - ""
+    apiVersions:
+    - v1
+    operations:
+    - CREATE
+    resources:
+    - pods/eviction
+    scope: Namespaced
+  sideEffects: None
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata:
+  labels:
+    grafana.com/inject-rollout-operator-ca: "true"
+    grafana.com/namespace: default
+  name: zpdb-validation-default
+webhooks:
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: rollout-operator
+      namespace: default
+      path: /admission/zpdb-validation
+      port: 443
+  failurePolicy: Fail
+  name: zpdb-validation-default.grafana.com
+  namespaceSelector:
+    matchLabels:
+      kubernetes.io/metadata.name: default
+  rules:
+  - apiGroups:
+    - rollout-operator.grafana.com
+    apiVersions:
+    - v1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - zoneawarepoddisruptionbudgets
+    scope: Namespaced
+  sideEffects: None
+---
+apiVersion: rollout-operator.grafana.com/v1
+kind: ZoneAwarePodDisruptionBudget
+metadata:
+  labels:
+    name: ingester-rollout
+  name: ingester-rollout
+  namespace: default
+spec:
+  maxUnavailable: 1
+  podNamePartitionRegex: '[a-z\-]+-zone-[a-z]-([0-9]+)'
+  podNameRegexGroup: 1
+  selector:
+    matchLabels:
+      rollout-group: ingester
+---
+apiVersion: rollout-operator.grafana.com/v1
+kind: ZoneAwarePodDisruptionBudget
+metadata:
+  labels:
+    name: store-gateway-rollout
+  name: store-gateway-rollout
+  namespace: default
+spec:
+  maxUnavailable: 50
+  selector:
+    matchLabels:
+      rollout-group: store-gateway

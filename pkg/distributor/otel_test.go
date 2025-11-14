@@ -18,12 +18,15 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/concurrency"
+	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/user"
+	"github.com/klauspost/compress/zstd"
 	"github.com/pierrec/lz4/v4"
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/otlptranslator"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/stretchr/testify/assert"
@@ -31,11 +34,15 @@ import (
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
 	"go.opentelemetry.io/collector/pdata/pmetric/pmetricotlp"
+	colmetricpb "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
 	"google.golang.org/genproto/googleapis/rpc/status"
 	"google.golang.org/grpc/codes"
+	grpcstatus "google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 
+	"github.com/grafana/mimir/pkg/distributor/otlpappender"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/mimirpb/testutil"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -62,10 +69,14 @@ func TestOTelMetricsToTimeSeries(t *testing.T) {
 		appendCustomMetric                func(pmetric.MetricSlice)
 		expectedLabels                    []mimirpb.LabelAdapter
 		expectedInfoLabels                []mimirpb.LabelAdapter
+		underscoreSanitization            bool
+		preserveMultipleUnderscores       bool
 	}{
 		{
-			name:                      "Successful conversion without resource attribute promotion",
-			promoteResourceAttributes: nil,
+			name:                        "Successful conversion without resource attribute promotion",
+			promoteResourceAttributes:   nil,
+			underscoreSanitization:      true,
+			preserveMultipleUnderscores: true,
 			expectedLabels: []mimirpb.LabelAdapter{
 				{
 					Name:  "__name__",
@@ -111,6 +122,8 @@ func TestOTelMetricsToTimeSeries(t *testing.T) {
 			name:                              "Successful conversion without resource attribute promotion, and keep identifying resource attributes",
 			promoteResourceAttributes:         nil,
 			keepIdentifyingResourceAttributes: true,
+			underscoreSanitization:            true,
+			preserveMultipleUnderscores:       true,
 			expectedLabels: []mimirpb.LabelAdapter{
 				{
 					Name:  "__name__",
@@ -165,8 +178,10 @@ func TestOTelMetricsToTimeSeries(t *testing.T) {
 			},
 		},
 		{
-			name:                      "Successful conversion with resource attribute promotion",
-			promoteResourceAttributes: []string{"non-existent-attr", "existent-attr"},
+			name:                        "Successful conversion with resource attribute promotion",
+			promoteResourceAttributes:   []string{"non-existent-attr", "existent-attr"},
+			underscoreSanitization:      true,
+			preserveMultipleUnderscores: true,
 			expectedLabels: []mimirpb.LabelAdapter{
 				{
 					Name:  "__name__",
@@ -213,8 +228,10 @@ func TestOTelMetricsToTimeSeries(t *testing.T) {
 			},
 		},
 		{
-			name:                      "Successful conversion with resource attribute promotion, conflicting resource attributes are ignored",
-			promoteResourceAttributes: []string{"non-existent-attr", "existent-attr", "metric-attr", "job", "instance"},
+			name:                        "Successful conversion with resource attribute promotion, conflicting resource attributes are ignored",
+			promoteResourceAttributes:   []string{"non-existent-attr", "existent-attr", "metric-attr", "job", "instance"},
+			underscoreSanitization:      true,
+			preserveMultipleUnderscores: true,
 			expectedLabels: []mimirpb.LabelAdapter{
 				{
 					Name:  "__name__",
@@ -261,8 +278,10 @@ func TestOTelMetricsToTimeSeries(t *testing.T) {
 			},
 		},
 		{
-			name:                      "Successful conversion of cumulative non-monotonic sum",
-			promoteResourceAttributes: nil,
+			name:                        "Successful conversion of cumulative non-monotonic sum",
+			promoteResourceAttributes:   nil,
+			underscoreSanitization:      true,
+			preserveMultipleUnderscores: true,
 			appendCustomMetric: func(metricSlice pmetric.MetricSlice) {
 				m := metricSlice.AppendEmpty()
 				m.SetName("test_metric")
@@ -316,8 +335,10 @@ func TestOTelMetricsToTimeSeries(t *testing.T) {
 			},
 		},
 		{
-			name:                      "Successful conversion of cumulative monotonic sum",
-			promoteResourceAttributes: nil,
+			name:                        "Successful conversion of cumulative monotonic sum",
+			promoteResourceAttributes:   nil,
+			underscoreSanitization:      true,
+			preserveMultipleUnderscores: true,
 			appendCustomMetric: func(metricSlice pmetric.MetricSlice) {
 				m := metricSlice.AppendEmpty()
 				m.SetName("test_metric")
@@ -370,6 +391,207 @@ func TestOTelMetricsToTimeSeries(t *testing.T) {
 				},
 			},
 		},
+		{
+			name:                        "Underscore sanitization",
+			promoteResourceAttributes:   nil,
+			underscoreSanitization:      true,
+			preserveMultipleUnderscores: true,
+			appendCustomMetric: func(metricSlice pmetric.MetricSlice) {
+				m := metricSlice.AppendEmpty()
+				m.SetName("test_metric")
+				sum := m.SetEmptySum()
+				sum.SetIsMonotonic(false)
+				sum.SetAggregationTemporality(pmetric.AggregationTemporalityCumulative)
+				dp := sum.DataPoints().AppendEmpty()
+				dp.SetIntValue(123)
+				dp.SetTimestamp(pcommon.NewTimestampFromTime(time.Now()))
+				dp.Attributes().PutStr("_foo", "bar")
+				dp.Attributes().PutStr("_1", "bar")
+				dp.Attributes().PutStr("some__thing", "bar")
+			},
+			expectedLabels: []mimirpb.LabelAdapter{
+				{
+					Name:  "__name__",
+					Value: "test_metric",
+				},
+				{
+					Name:  "key_foo",
+					Value: "bar",
+				},
+				{
+					Name:  "key_1",
+					Value: "bar",
+				},
+				{
+					Name:  "some__thing",
+					Value: "bar",
+				},
+				{
+					Name:  "instance",
+					Value: "service ID",
+				},
+				{
+					Name:  "job",
+					Value: "service namespace/service name",
+				},
+			},
+			expectedInfoLabels: []mimirpb.LabelAdapter{
+				{
+					Name:  "__name__",
+					Value: "target_info",
+				},
+				{
+					Name:  "existent_attr",
+					Value: "resource value",
+				},
+				{
+					Name:  "metric_attr",
+					Value: "resource value",
+				},
+				{
+					Name:  "job",
+					Value: "service namespace/service name",
+				},
+				{
+					Name:  "instance",
+					Value: "service ID",
+				},
+			},
+		},
+		{
+			name:                        "Disable underscore sanitization",
+			promoteResourceAttributes:   nil,
+			underscoreSanitization:      false,
+			preserveMultipleUnderscores: true,
+			appendCustomMetric: func(metricSlice pmetric.MetricSlice) {
+				m := metricSlice.AppendEmpty()
+				m.SetName("test_metric")
+				sum := m.SetEmptySum()
+				sum.SetIsMonotonic(false)
+				sum.SetAggregationTemporality(pmetric.AggregationTemporalityCumulative)
+				dp := sum.DataPoints().AppendEmpty()
+				dp.SetIntValue(123)
+				dp.SetTimestamp(pcommon.NewTimestampFromTime(time.Now()))
+				dp.Attributes().PutStr("_foo", "bar")
+				dp.Attributes().PutStr("_1", "bar")
+				dp.Attributes().PutStr("some__thing", "bar")
+			},
+			expectedLabels: []mimirpb.LabelAdapter{
+				{
+					Name:  "__name__",
+					Value: "test_metric",
+				},
+				{
+					Name:  "_foo",
+					Value: "bar",
+				},
+				{
+					Name:  "_1",
+					Value: "bar",
+				},
+				{
+					Name:  "some__thing",
+					Value: "bar",
+				},
+				{
+					Name:  "instance",
+					Value: "service ID",
+				},
+				{
+					Name:  "job",
+					Value: "service namespace/service name",
+				},
+			},
+			expectedInfoLabels: []mimirpb.LabelAdapter{
+				{
+					Name:  "__name__",
+					Value: "target_info",
+				},
+				{
+					Name:  "existent_attr",
+					Value: "resource value",
+				},
+				{
+					Name:  "metric_attr",
+					Value: "resource value",
+				},
+				{
+					Name:  "job",
+					Value: "service namespace/service name",
+				},
+				{
+					Name:  "instance",
+					Value: "service ID",
+				},
+			},
+		},
+		{
+			name:                        "Disable multiple underscore preservation",
+			promoteResourceAttributes:   nil,
+			underscoreSanitization:      false,
+			preserveMultipleUnderscores: false,
+			appendCustomMetric: func(metricSlice pmetric.MetricSlice) {
+				m := metricSlice.AppendEmpty()
+				m.SetName("test_metric")
+				sum := m.SetEmptySum()
+				sum.SetIsMonotonic(false)
+				sum.SetAggregationTemporality(pmetric.AggregationTemporalityCumulative)
+				dp := sum.DataPoints().AppendEmpty()
+				dp.SetIntValue(123)
+				dp.SetTimestamp(pcommon.NewTimestampFromTime(time.Now()))
+				dp.Attributes().PutStr("_foo", "bar")
+				dp.Attributes().PutStr("_1", "bar")
+				dp.Attributes().PutStr("some__thing", "bar")
+			},
+			expectedLabels: []mimirpb.LabelAdapter{
+				{
+					Name:  "__name__",
+					Value: "test_metric",
+				},
+				{
+					Name:  "_foo",
+					Value: "bar",
+				},
+				{
+					Name:  "_1",
+					Value: "bar",
+				},
+				{
+					Name:  "some_thing",
+					Value: "bar",
+				},
+				{
+					Name:  "instance",
+					Value: "service ID",
+				},
+				{
+					Name:  "job",
+					Value: "service namespace/service name",
+				},
+			},
+			expectedInfoLabels: []mimirpb.LabelAdapter{
+				{
+					Name:  "__name__",
+					Value: "target_info",
+				},
+				{
+					Name:  "existent_attr",
+					Value: "resource value",
+				},
+				{
+					Name:  "metric_attr",
+					Value: "resource value",
+				},
+				{
+					Name:  "job",
+					Value: "service namespace/service name",
+				},
+				{
+					Name:  "instance",
+					Value: "service ID",
+				},
+			},
+		},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -392,9 +614,8 @@ func TestOTelMetricsToTimeSeries(t *testing.T) {
 					tc.appendCustomMetric(metrics)
 				}
 			}
-
-			converter := newOTLPMimirConverter()
-			mimirTS, dropped, err := otelMetricsToTimeseries(
+			converter := newOTLPMimirConverter(otlpappender.NewCombinedAppender())
+			mimirTS, _, dropped, err := otelMetricsToSeriesAndMetadata(
 				context.Background(),
 				converter,
 				md,
@@ -402,6 +623,8 @@ func TestOTelMetricsToTimeSeries(t *testing.T) {
 					addSuffixes:                       true,
 					keepIdentifyingResourceAttributes: tc.keepIdentifyingResourceAttributes,
 					promoteResourceAttributes:         tc.promoteResourceAttributes,
+					underscoreSanitization:            tc.underscoreSanitization,
+					preserveMultipleUnderscores:       tc.preserveMultipleUnderscores,
 				},
 				log.NewNopLogger(),
 			)
@@ -412,7 +635,7 @@ func TestOTelMetricsToTimeSeries(t *testing.T) {
 			var targetInfo mimirpb.PreallocTimeseries
 			for i := range mimirTS {
 				for _, lbl := range mimirTS[i].Labels {
-					if lbl.Name != labels.MetricName {
+					if lbl.Name != model.MetricNameLabel {
 						continue
 					}
 
@@ -467,8 +690,8 @@ func TestConvertOTelHistograms(t *testing.T) {
 	}
 
 	for _, convertHistogramsToNHCB := range []bool{false, true} {
-		converter := newOTLPMimirConverter()
-		mimirTS, dropped, err := otelMetricsToTimeseries(
+		converter := newOTLPMimirConverter(otlpappender.NewCombinedAppender())
+		mimirTS, _, dropped, err := otelMetricsToSeriesAndMetadata(
 			context.Background(),
 			converter,
 			md,
@@ -486,7 +709,7 @@ func TestConvertOTelHistograms(t *testing.T) {
 			for i := range mimirTS {
 				var metricName string
 				for _, lbl := range mimirTS[i].Labels {
-					if lbl.Name == labels.MetricName {
+					if lbl.Name == model.MetricNameLabel {
 						metricName = lbl.Value
 						break
 					}
@@ -507,33 +730,375 @@ func TestConvertOTelHistograms(t *testing.T) {
 	}
 }
 
+func TestOTelDeltaIngestion(t *testing.T) {
+	ts := time.Unix(100, 0)
+
+	testCases := []struct {
+		name        string
+		allowDelta  bool
+		input       pmetric.Metrics
+		expected    mimirpb.TimeSeries
+		expectedErr string
+	}{
+		{
+			name:       "delta counter not allowed",
+			allowDelta: false,
+			input: func() pmetric.Metrics {
+				md := pmetric.NewMetrics()
+				rm := md.ResourceMetrics().AppendEmpty()
+				il := rm.ScopeMetrics().AppendEmpty()
+				m := il.Metrics().AppendEmpty()
+				m.SetName("test_metric")
+				sum := m.SetEmptySum()
+				sum.SetAggregationTemporality(pmetric.AggregationTemporalityDelta)
+				dp := sum.DataPoints().AppendEmpty()
+				dp.SetTimestamp(pcommon.NewTimestampFromTime(time.Now()))
+				dp.Attributes().PutStr("metric-attr", "metric value")
+				return md
+			}(),
+			expectedErr: `otlp parse error: invalid temporality and type combination for metric "test_metric"`,
+		},
+		{
+			name:       "delta counter allowed",
+			allowDelta: true,
+			input: func() pmetric.Metrics {
+				md := pmetric.NewMetrics()
+				rm := md.ResourceMetrics().AppendEmpty()
+				il := rm.ScopeMetrics().AppendEmpty()
+				m := il.Metrics().AppendEmpty()
+				m.SetName("test_metric")
+				sum := m.SetEmptySum()
+				sum.SetAggregationTemporality(pmetric.AggregationTemporalityDelta)
+				dp := sum.DataPoints().AppendEmpty()
+				dp.SetTimestamp(pcommon.NewTimestampFromTime(ts))
+				dp.SetIntValue(5)
+				dp.Attributes().PutStr("metric-attr", "metric value")
+				return md
+			}(),
+			expected: mimirpb.TimeSeries{
+				Labels:  []mimirpb.LabelAdapter{{Name: "__name__", Value: "test_metric"}, {Name: "metric_attr", Value: "metric value"}},
+				Samples: []mimirpb.Sample{{TimestampMs: ts.UnixMilli(), Value: 5}},
+			},
+		},
+		{
+			name:       "delta exponential histogram not allowed",
+			allowDelta: false,
+			input: func() pmetric.Metrics {
+				md := pmetric.NewMetrics()
+				rm := md.ResourceMetrics().AppendEmpty()
+				il := rm.ScopeMetrics().AppendEmpty()
+				m := il.Metrics().AppendEmpty()
+				m.SetName("test_metric")
+				sum := m.SetEmptyExponentialHistogram()
+				sum.SetAggregationTemporality(pmetric.AggregationTemporalityDelta)
+				dp := sum.DataPoints().AppendEmpty()
+				dp.SetCount(1)
+				dp.SetSum(5)
+				dp.SetTimestamp(pcommon.NewTimestampFromTime(time.Now()))
+				dp.Attributes().PutStr("metric-attr", "metric value")
+				return md
+			}(),
+			expectedErr: `otlp parse error: invalid temporality and type combination for metric "test_metric"`,
+		},
+		{
+			name:       "delta exponential histogram allowed",
+			allowDelta: true,
+			input: func() pmetric.Metrics {
+				md := pmetric.NewMetrics()
+				rm := md.ResourceMetrics().AppendEmpty()
+				il := rm.ScopeMetrics().AppendEmpty()
+				m := il.Metrics().AppendEmpty()
+				m.SetName("test_metric")
+				sum := m.SetEmptyExponentialHistogram()
+				sum.SetAggregationTemporality(pmetric.AggregationTemporalityDelta)
+				dp := sum.DataPoints().AppendEmpty()
+				dp.SetCount(1)
+				dp.SetSum(5)
+				dp.SetTimestamp(pcommon.NewTimestampFromTime(ts))
+				dp.Attributes().PutStr("metric-attr", "metric value")
+				return md
+			}(),
+			expected: mimirpb.TimeSeries{
+				Labels: []mimirpb.LabelAdapter{{Name: "__name__", Value: "test_metric"}, {Name: "metric_attr", Value: "metric value"}},
+				Histograms: []mimirpb.Histogram{
+					{
+						Count:         &mimirpb.Histogram_CountInt{CountInt: 1},
+						Sum:           5,
+						Schema:        0,
+						ZeroThreshold: 1e-128,
+						ZeroCount:     &mimirpb.Histogram_ZeroCountInt{ZeroCountInt: 0},
+						Timestamp:     ts.UnixMilli(),
+						ResetHint:     mimirpb.Histogram_GAUGE,
+					},
+				},
+			},
+		},
+		{
+			name:       "delta histogram as nhcb not allowed",
+			allowDelta: false,
+			input: func() pmetric.Metrics {
+				md := pmetric.NewMetrics()
+				rm := md.ResourceMetrics().AppendEmpty()
+				il := rm.ScopeMetrics().AppendEmpty()
+				m := il.Metrics().AppendEmpty()
+				m.SetName("test_metric")
+				sum := m.SetEmptyHistogram()
+				sum.SetAggregationTemporality(pmetric.AggregationTemporalityDelta)
+				dp := sum.DataPoints().AppendEmpty()
+				dp.SetCount(20)
+				dp.SetSum(30)
+				dp.BucketCounts().FromRaw([]uint64{10, 10, 0})
+				dp.ExplicitBounds().FromRaw([]float64{1, 2})
+				dp.SetTimestamp(pcommon.NewTimestampFromTime(time.Now()))
+				dp.Attributes().PutStr("metric-attr", "metric value")
+				return md
+			}(),
+			expectedErr: `otlp parse error: invalid temporality and type combination for metric "test_metric"`,
+		},
+		{
+			name:       "delta histogram as nhcb allowed",
+			allowDelta: true,
+			input: func() pmetric.Metrics {
+				md := pmetric.NewMetrics()
+				rm := md.ResourceMetrics().AppendEmpty()
+				il := rm.ScopeMetrics().AppendEmpty()
+				m := il.Metrics().AppendEmpty()
+				m.SetName("test_metric")
+				sum := m.SetEmptyHistogram()
+				sum.SetAggregationTemporality(pmetric.AggregationTemporalityDelta)
+				dp := sum.DataPoints().AppendEmpty()
+				dp.SetCount(20)
+				dp.SetSum(30)
+				dp.BucketCounts().FromRaw([]uint64{10, 10, 0})
+				dp.ExplicitBounds().FromRaw([]float64{1, 2})
+				dp.SetTimestamp(pcommon.NewTimestampFromTime(ts))
+				dp.Attributes().PutStr("metric-attr", "metric value")
+				return md
+			}(),
+			expected: mimirpb.TimeSeries{
+				Labels: []mimirpb.LabelAdapter{{Name: "__name__", Value: "test_metric"}, {Name: "metric_attr", Value: "metric value"}},
+				Histograms: []mimirpb.Histogram{
+					{
+						Count:         &mimirpb.Histogram_CountInt{CountInt: 20},
+						Sum:           30,
+						Schema:        -53,
+						ZeroThreshold: 0,
+						ZeroCount:     &mimirpb.Histogram_ZeroCountInt{ZeroCountInt: 0},
+						PositiveSpans: []mimirpb.BucketSpan{
+							{
+								Length: 3,
+							},
+						},
+						PositiveDeltas: []int64{10, 0, -10},
+						CustomValues:   []float64{1, 2},
+						Timestamp:      ts.UnixMilli(),
+						ResetHint:      mimirpb.Histogram_GAUGE,
+					},
+				},
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			converter := newOTLPMimirConverter(otlpappender.NewCombinedAppender())
+			mimirTS, _, dropped, err := otelMetricsToSeriesAndMetadata(
+				context.Background(),
+				converter,
+				tc.input,
+				conversionOptions{
+					convertHistogramsToNHCB: true,
+					allowDeltaTemporality:   tc.allowDelta,
+				},
+				log.NewNopLogger(),
+			)
+			if tc.expectedErr != "" {
+				require.EqualError(t, err, tc.expectedErr)
+				require.Len(t, mimirTS, 0)
+				require.Equal(t, 1, dropped)
+			} else {
+				require.NoError(t, err)
+				mimirTS = testutil.RemoveEmptyObjectFromSeries(mimirTS)
+				require.Len(t, mimirTS, 1)
+				require.Equal(t, 0, dropped)
+				require.Equal(t, tc.expected, *mimirTS[0].TimeSeries)
+			}
+		})
+	}
+}
+
+// TestOTelCTZeroIngestion checks that when conversionOptions.enableCTZeroIngestion is true,
+// the otel start time is turned into the created timestamp of the resulting time series.
+// Also check what happens if the option is off.
+func TestOTelCTZeroIngestion(t *testing.T) {
+	ts := time.Unix(100, 0)
+
+	testCases := []struct {
+		name         string
+		enableCTZero bool
+		input        pmetric.Metrics
+		expected     mimirpb.TimeSeries
+	}{
+		{
+			name:         "enable CT zero ingestion",
+			enableCTZero: true,
+			input: func() pmetric.Metrics {
+				md := pmetric.NewMetrics()
+				rm := md.ResourceMetrics().AppendEmpty()
+				il := rm.ScopeMetrics().AppendEmpty()
+				m := il.Metrics().AppendEmpty()
+				m.SetName("test_metric")
+				sum := m.SetEmptySum()
+				sum.SetAggregationTemporality(pmetric.AggregationTemporalityCumulative)
+				dp := sum.DataPoints().AppendEmpty()
+				dp.SetTimestamp(pcommon.NewTimestampFromTime(ts))
+				dp.SetStartTimestamp(pcommon.NewTimestampFromTime(ts.Add(-time.Minute)))
+				dp.SetIntValue(5)
+				dp.Attributes().PutStr("metric-attr", "metric value")
+				return md
+			}(),
+			expected: mimirpb.TimeSeries{
+				Labels:           []mimirpb.LabelAdapter{{Name: "__name__", Value: "test_metric"}, {Name: "metric_attr", Value: "metric value"}},
+				Samples:          []mimirpb.Sample{{TimestampMs: ts.UnixMilli(), Value: 5}},
+				CreatedTimestamp: ts.Add(-time.Minute).UnixMilli(),
+			},
+		},
+		{
+			name:         "disable CT zero ingestion",
+			enableCTZero: false,
+			input: func() pmetric.Metrics {
+				md := pmetric.NewMetrics()
+				rm := md.ResourceMetrics().AppendEmpty()
+				il := rm.ScopeMetrics().AppendEmpty()
+				m := il.Metrics().AppendEmpty()
+				m.SetName("test_metric")
+				sum := m.SetEmptySum()
+				sum.SetAggregationTemporality(pmetric.AggregationTemporalityCumulative)
+				dp := sum.DataPoints().AppendEmpty()
+				dp.SetTimestamp(pcommon.NewTimestampFromTime(ts))
+				dp.SetStartTimestamp(pcommon.NewTimestampFromTime(ts.Add(-time.Minute)))
+				dp.SetIntValue(5)
+				dp.Attributes().PutStr("metric-attr", "metric value")
+				return md
+			}(),
+			expected: mimirpb.TimeSeries{
+				Labels:           []mimirpb.LabelAdapter{{Name: "__name__", Value: "test_metric"}, {Name: "metric_attr", Value: "metric value"}},
+				Samples:          []mimirpb.Sample{{TimestampMs: ts.UnixMilli(), Value: 5}},
+				CreatedTimestamp: 0,
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			converter := newOTLPMimirConverter(otlpappender.NewCombinedAppender())
+			mimirTS, _, dropped, err := otelMetricsToSeriesAndMetadata(
+				context.Background(),
+				converter,
+				tc.input,
+				conversionOptions{
+					addSuffixes:             true,
+					enableCTZeroIngestion:   tc.enableCTZero,
+					convertHistogramsToNHCB: true,
+				},
+				log.NewNopLogger(),
+			)
+			require.NoError(t, err)
+			mimirTS = testutil.RemoveEmptyObjectFromSeries(mimirTS)
+			require.Len(t, mimirTS, 1)
+			require.Equal(t, 0, dropped)
+			require.Equal(t, tc.expected, *mimirTS[0].TimeSeries)
+		})
+	}
+}
+
+// Extra labels to make a more realistic workload - taken from Kubernetes' embedded cAdvisor metrics.
+var extraLabels = []labels.Label{
+	{Name: "kubernetes_io_arch", Value: "amd64"},
+	{Name: "kubernetes_io_instance_type", Value: "c3.somesize"},
+	{Name: "kubernetes_io_os", Value: "linux"},
+	{Name: "container_name", Value: "some-name"},
+	{Name: "failure_domain_kubernetes_io_region", Value: "somewhere-1"},
+	{Name: "failure_domain_kubernetes_io_zone", Value: "somewhere-1b"},
+	{Name: "id", Value: "/kubepods/burstable/pod6e91c467-e4c5-11e7-ace3-0a97ed59c75e/a3c8498918bd6866349fed5a6f8c643b77c91836427fb6327913276ebc6bde28"},
+	{Name: "image", Value: "registry/organisation/name@sha256:dca3d877a80008b45d71d7edc4fd2e44c0c8c8e7102ba5cbabec63a374d1d506"},
+	{Name: "instance", Value: "ip-111-11-1-11.ec2.internal"},
+	{Name: "job", Value: "kubernetes-cadvisor"},
+	{Name: "kubernetes_io_hostname", Value: "ip-111-11-1-11"},
+	{Name: "monitor", Value: "prod"},
+	{Name: "name", Value: "k8s_some-name_some-other-name-5j8s8_kube-system_6e91c467-e4c5-11e7-ace3-0a97ed59c75e_0"},
+	{Name: "namespace", Value: "kube-system"},
+	{Name: "pod_name", Value: "some-other-name-5j8s8"},
+}
+
 func BenchmarkOTLPHandler(b *testing.B) {
+	const numSeries = 2000
+	const numSamplesPerSeries = 1
 	var samples []prompb.Sample
-	for i := 0; i < 1000; i++ {
+	var histograms []prompb.Histogram
+	var exemplars []prompb.Exemplar
+	var histogramExemplars []prompb.Exemplar
+	for i := 0; i < numSamplesPerSeries; i++ {
 		ts := time.Date(2020, 4, 1, 0, 0, 0, 0, time.UTC).Add(time.Duration(i) * time.Second)
 		samples = append(samples, prompb.Sample{
 			Value:     1,
 			Timestamp: ts.UnixNano(),
 		})
+		histograms = append(histograms, prompb.FromIntHistogram(1337, test.GenerateTestHistogram(1)))
 	}
-	sampleSeries := []prompb.TimeSeries{
-		{
-			Labels: []prompb.Label{
-				{Name: "__name__", Value: "foo"},
-			},
-			Samples: samples,
-			Histograms: []prompb.Histogram{
-				prompb.FromIntHistogram(1337, test.GenerateTestHistogram(1)),
-			},
-		},
+	{
+		ts := time.Date(2020, 4, 1, 0, 0, 0, 0, time.UTC)
+		ex := prompb.Exemplar{
+			Value:     1,
+			Timestamp: ts.UnixNano(),
+			Labels:    make([]prompb.Label, 0, len(extraLabels)),
+		}
+		for _, lbl := range extraLabels {
+			ex.Labels = append(ex.Labels, prompb.Label{Name: lbl.Name, Value: lbl.Value})
+		}
+		exemplars = append(exemplars, ex)
+		for i := 0; i < 10; i++ {
+			histogramExemplars = append(histogramExemplars, prompb.Exemplar{
+				Value:     float64(i),
+				Timestamp: ts.UnixNano(),
+				Labels:    make([]prompb.Label, 0, len(extraLabels)),
+			})
+			for _, lbl := range extraLabels {
+				lastExemplar := &histogramExemplars[len(histogramExemplars)-1]
+				lastExemplar.Labels = append(lastExemplar.Labels, prompb.Label{Name: lbl.Name, Value: lbl.Value})
+			}
+		}
 	}
-	// Sample metadata needs to correspond to every series in the sampleSeries
-	sampleMetadata := []mimirpb.MetricMetadata{
-		{
-			Help: "metric_help",
-			Unit: "metric_unit",
-		},
+
+	sampleSeries := make([]prompb.TimeSeries, 0, numSeries)
+	sampleMetadata := make([]mimirpb.MetricMetadata, 0, numSeries)
+	for i := 0; i < numSeries; i++ {
+		// Create a series with a unique name and some extra labels.
+		lbls := make([]prompb.Label, 0, 1+len(extraLabels))
+		lbls = append(lbls, prompb.Label{Name: "__name__", Value: "foo" + strconv.Itoa(i)})
+		for _, lbl := range extraLabels {
+			lbls = append(lbls, prompb.Label{Name: lbl.Name, Value: lbl.Value})
+		}
+		if i%10 == 0 {
+			// Add 10% exponential histograms.
+			sampleSeries = append(sampleSeries, prompb.TimeSeries{
+				Labels:     lbls,
+				Histograms: histograms,
+				Exemplars:  histogramExemplars,
+			})
+		} else {
+			sampleSeries = append(sampleSeries, prompb.TimeSeries{
+				Labels:    lbls,
+				Samples:   samples,
+				Exemplars: exemplars,
+			})
+		}
+		sampleMetadata = append(sampleMetadata, mimirpb.MetricMetadata{
+			Help: "metric_help_" + strconv.Itoa(i),
+			Unit: "metric_unit_" + strconv.Itoa(i),
+		})
 	}
+
 	exportReq := TimeseriesToOTLPRequest(sampleSeries, sampleMetadata)
 
 	pushFunc := func(_ context.Context, pushReq *Request) error {
@@ -545,7 +1110,10 @@ func BenchmarkOTLPHandler(b *testing.B) {
 		return nil
 	}
 	limits := validation.MockDefaultOverrides()
-	handler := OTLPHandler(100000, nil, nil, limits, nil, RetryConfig{}, false, pushFunc, nil, nil, log.NewNopLogger())
+	handler := OTLPHandler(
+		10000000, nil, nil, limits, nil, nil,
+		RetryConfig{}, nil, pushFunc, nil, nil, log.NewNopLogger(),
+	)
 
 	b.Run("protobuf", func(b *testing.B) {
 		req := createOTLPProtoRequest(b, exportReq, "")
@@ -593,22 +1161,22 @@ func createOTLPJSONRequest(tb testing.TB, metricRequest pmetricotlp.ExportReques
 func createOTLPRequest(tb testing.TB, body []byte, compression, contentType string) *http.Request {
 	tb.Helper()
 
+	var b bytes.Buffer
+	var compressor io.WriteCloser
 	switch compression {
 	case "gzip":
-		var b bytes.Buffer
-		gz := gzip.NewWriter(&b)
-		_, err := gz.Write(body)
-		require.NoError(tb, err)
-		require.NoError(tb, gz.Close())
-
-		body = b.Bytes()
+		compressor = gzip.NewWriter(&b)
 	case "lz4":
-		var b bytes.Buffer
-		lz4Writer := lz4.NewWriter(&b)
-		_, err := lz4Writer.Write(body)
+		compressor = lz4.NewWriter(&b)
+	case "zstd":
+		var err error
+		compressor, err = zstd.NewWriter(&b)
 		require.NoError(tb, err)
-		require.NoError(tb, lz4Writer.Close())
-
+	}
+	if compressor != nil {
+		_, err := compressor.Write(body)
+		require.NoError(tb, err)
+		require.NoError(tb, compressor.Close())
 		body = b.Bytes()
 	}
 
@@ -678,29 +1246,32 @@ func TestHandlerOTLPPush(t *testing.T) {
 	)
 
 	type testCase struct {
-		name                             string
-		series                           []prompb.TimeSeries
-		metadata                         []mimirpb.MetricMetadata
-		compression                      string
-		maxMsgSize                       int
-		verifyFunc                       func(*testing.T, *Request, testCase) error
-		requestContentType               string
-		responseCode                     int
-		responseContentType              string
-		responseContentLength            int
-		errMessage                       string
-		expectedLogs                     []string
-		expectedRetryHeader              bool
-		promoteResourceAttributes        []string
-		expectedAttributePromotions      map[string]string
-		resourceAttributePromotionConfig OTelResourceAttributePromotionConfig
+		name                                        string
+		series                                      []prompb.TimeSeries
+		metadata                                    []mimirpb.MetricMetadata
+		compression                                 string
+		maxMsgSize                                  int
+		verifyFunc                                  func(*testing.T, context.Context, *Request, testCase) error
+		requestContentType                          string
+		responseCode                                int
+		responseContentType                         string
+		responseContentLength                       int
+		errMessage                                  string
+		expectedLogs                                []string
+		expectedRetryHeader                         bool
+		expectedPartialSuccess                      *colmetricpb.ExportMetricsPartialSuccess
+		promoteResourceAttributes                   []string
+		expectedAttributePromotions                 map[string]string
+		resourceAttributePromotionConfig            OTelResourceAttributePromotionConfig
+		keepIdentifyingOTelResourceAttributesConfig KeepIdentifyingOTelResourceAttributesConfig
 	}
 
-	samplesVerifierFunc := func(t *testing.T, pushReq *Request, tc testCase) error {
+	samplesVerifierFunc := func(t *testing.T, _ context.Context, pushReq *Request, tc testCase) error {
 		t.Helper()
 
 		request, err := pushReq.WriteRequest()
 		require.NoError(t, err)
+		require.Equal(t, mimirpb.OTLP, request.Source)
 
 		series := request.Timeseries
 		require.Len(t, series, 1)
@@ -794,19 +1365,29 @@ func TestHandlerOTLPPush(t *testing.T) {
 			responseContentType: pbContentType,
 		},
 		{
+			name:                "Write samples. With zstd compression",
+			compression:         "zstd",
+			maxMsgSize:          100000,
+			verifyFunc:          samplesVerifierFunc,
+			series:              sampleSeries,
+			metadata:            sampleMetadata,
+			responseCode:        http.StatusOK,
+			responseContentType: pbContentType,
+		},
+		{
 			name:       "Write samples. No compression, request too big",
 			maxMsgSize: 30,
 			series:     sampleSeries,
 			metadata:   sampleMetadata,
-			verifyFunc: func(_ *testing.T, pushReq *Request, _ testCase) error {
+			verifyFunc: func(_ *testing.T, _ context.Context, pushReq *Request, _ testCase) error {
 				_, err := pushReq.WriteRequest()
 				return err
 			},
 			responseCode:          http.StatusRequestEntityTooLarge,
 			responseContentType:   pbContentType,
-			responseContentLength: 292,
-			errMessage:            "the incoming OTLP request has been rejected because its message size of 89 bytes is larger",
-			expectedLogs:          []string{`level=error user=test msg="detected an error while ingesting OTLP metrics request (the request may have been partially ingested)" httpCode=413 err="rpc error: code = Code(413) desc = the incoming OTLP request has been rejected because its message size of 89 bytes is larger than the allowed limit of 30 bytes (err-mimir-distributor-max-otlp-request-size). To adjust the related limit, configure -distributor.max-otlp-request-size, or contact your service administrator." insight=true`},
+			responseContentLength: 307,
+			errMessage:            "the incoming OTLP request has been rejected because its message size of 89 bytes (uncompressed) is larger",
+			expectedLogs:          []string{`level=warn user=test msg="detected an error while ingesting OTLP metrics request (the request may have been partially ingested)" httpCode=413 err="rpc error: code = Code(413) desc = the incoming OTLP request has been rejected because its message size of 89 bytes (uncompressed) is larger than the allowed limit of 30 bytes (err-mimir-distributor-max-otlp-request-size). To adjust the related limit, configure -distributor.max-otlp-request-size, or contact your service administrator." insight=true`},
 		},
 		{
 			name:        "Write samples. Unsupported compression",
@@ -814,15 +1395,15 @@ func TestHandlerOTLPPush(t *testing.T) {
 			maxMsgSize:  100000,
 			series:      sampleSeries,
 			metadata:    sampleMetadata,
-			verifyFunc: func(_ *testing.T, pushReq *Request, _ testCase) error {
+			verifyFunc: func(_ *testing.T, _ context.Context, pushReq *Request, _ testCase) error {
 				_, err := pushReq.WriteRequest()
 				return err
 			},
 			responseCode:          http.StatusUnsupportedMediaType,
-			responseContentLength: 85,
+			responseContentLength: 93,
 			responseContentType:   pbContentType,
-			errMessage:            "Only \"gzip\", \"lz4\", or no compression supported",
-			expectedLogs:          []string{`level=error user=test msg="detected an error while ingesting OTLP metrics request (the request may have been partially ingested)" httpCode=415 err="rpc error: code = Code(415) desc = unsupported compression: snappy. Only \"gzip\", \"lz4\", or no compression supported" insight=true`},
+			errMessage:            "Only \"gzip\", \"lz4\", \"zstd\", or no compression supported",
+			expectedLogs:          []string{`level=warn user=test msg="detected an error while ingesting OTLP metrics request (the request may have been partially ingested)" httpCode=415 err="rpc error: code = Code(415) desc = unsupported compression: snappy. Only \"gzip\", \"lz4\", \"zstd\", or no compression supported" insight=true`},
 		},
 		{
 			name:        "Write samples. Unsupported compression. JSON format",
@@ -830,16 +1411,16 @@ func TestHandlerOTLPPush(t *testing.T) {
 			maxMsgSize:  100000,
 			series:      sampleSeries,
 			metadata:    sampleMetadata,
-			verifyFunc: func(_ *testing.T, pushReq *Request, _ testCase) error {
+			verifyFunc: func(_ *testing.T, _ context.Context, pushReq *Request, _ testCase) error {
 				_, err := pushReq.WriteRequest()
 				return err
 			},
 			requestContentType:    jsonContentType,
 			responseCode:          http.StatusUnsupportedMediaType,
-			responseContentLength: 109,
+			responseContentLength: 119,
 			responseContentType:   jsonContentType,
-			errMessage:            "Only \"gzip\", \"lz4\", or no compression supported",
-			expectedLogs:          []string{`level=error user=test msg="detected an error while ingesting OTLP metrics request (the request may have been partially ingested)" httpCode=415 err="rpc error: code = Code(415) desc = unsupported compression: snappy. Only \"gzip\", \"lz4\", or no compression supported" insight=true`},
+			errMessage:            "Only \"gzip\", \"lz4\", \"zstd\", or no compression supported",
+			expectedLogs:          []string{`level=warn user=test msg="detected an error while ingesting OTLP metrics request (the request may have been partially ingested)" httpCode=415 err="rpc error: code = Code(415) desc = unsupported compression: snappy. Only \"gzip\", \"lz4\", \"zstd\", or no compression supported" insight=true`},
 		},
 		{
 			name:        "Write samples. With gzip compression, request too big",
@@ -847,15 +1428,15 @@ func TestHandlerOTLPPush(t *testing.T) {
 			maxMsgSize:  30,
 			series:      sampleSeries,
 			metadata:    sampleMetadata,
-			verifyFunc: func(_ *testing.T, pushReq *Request, _ testCase) error {
+			verifyFunc: func(_ *testing.T, _ context.Context, pushReq *Request, _ testCase) error {
 				_, err := pushReq.WriteRequest()
 				return err
 			},
 			responseCode:          http.StatusRequestEntityTooLarge,
 			responseContentType:   pbContentType,
-			responseContentLength: 293,
-			errMessage:            "the incoming OTLP request has been rejected because its message size of 104 bytes is larger",
-			expectedLogs:          []string{`level=error user=test msg="detected an error while ingesting OTLP metrics request (the request may have been partially ingested)" httpCode=413 err="rpc error: code = Code(413) desc = the incoming OTLP request has been rejected because its message size of 104 bytes is larger than the allowed limit of 30 bytes (err-mimir-distributor-max-otlp-request-size). To adjust the related limit, configure -distributor.max-otlp-request-size, or contact your service administrator." insight=true`},
+			responseContentLength: 308,
+			errMessage:            "the incoming OTLP request has been rejected because its message size of 104 bytes (uncompressed) is larger",
+			expectedLogs:          []string{`level=warn user=test msg="detected an error while ingesting OTLP metrics request (the request may have been partially ingested)" httpCode=413 err="rpc error: code = Code(413) desc = the incoming OTLP request has been rejected because its message size of 104 bytes (uncompressed) is larger than the allowed limit of 30 bytes (err-mimir-distributor-max-otlp-request-size). To adjust the related limit, configure -distributor.max-otlp-request-size, or contact your service administrator." insight=true`},
 		},
 		{
 			name:        "Write samples. With lz4 compression, request too big",
@@ -863,29 +1444,29 @@ func TestHandlerOTLPPush(t *testing.T) {
 			maxMsgSize:  30,
 			series:      sampleSeries,
 			metadata:    sampleMetadata,
-			verifyFunc: func(_ *testing.T, pushReq *Request, _ testCase) error {
+			verifyFunc: func(_ *testing.T, _ context.Context, pushReq *Request, _ testCase) error {
 				_, err := pushReq.WriteRequest()
 				return err
 			},
 			responseCode:          http.StatusRequestEntityTooLarge,
 			responseContentType:   pbContentType,
-			responseContentLength: 293,
-			errMessage:            "the incoming OTLP request has been rejected because its message size of 106 bytes is larger",
-			expectedLogs:          []string{`level=error user=test msg="detected an error while ingesting OTLP metrics request (the request may have been partially ingested)" httpCode=413 err="rpc error: code = Code(413) desc = the incoming OTLP request has been rejected because its message size of 106 bytes is larger than the allowed limit of 30 bytes (err-mimir-distributor-max-otlp-request-size). To adjust the related limit, configure -distributor.max-otlp-request-size, or contact your service administrator." insight=true`},
+			responseContentLength: 308,
+			errMessage:            "the incoming OTLP request has been rejected because its message size of 106 bytes (uncompressed) is larger",
+			expectedLogs:          []string{`level=warn user=test msg="detected an error while ingesting OTLP metrics request (the request may have been partially ingested)" httpCode=413 err="rpc error: code = Code(413) desc = the incoming OTLP request has been rejected because its message size of 106 bytes (uncompressed) is larger than the allowed limit of 30 bytes (err-mimir-distributor-max-otlp-request-size). To adjust the related limit, configure -distributor.max-otlp-request-size, or contact your service administrator." insight=true`},
 		},
 		{
 			name:       "Rate limited request",
 			maxMsgSize: 100000,
 			series:     sampleSeries,
 			metadata:   sampleMetadata,
-			verifyFunc: func(*testing.T, *Request, testCase) error {
+			verifyFunc: func(*testing.T, context.Context, *Request, testCase) error {
 				return httpgrpc.Errorf(http.StatusTooManyRequests, "go slower")
 			},
 			responseCode:          http.StatusTooManyRequests,
 			responseContentType:   pbContentType,
 			responseContentLength: 14,
 			errMessage:            "go slower",
-			expectedLogs:          []string{`level=error user=test msg="detected an error while ingesting OTLP metrics request (the request may have been partially ingested)" httpCode=429 err="rpc error: code = Code(429) desc = go slower" insight=true`},
+			expectedLogs:          []string{`level=warn user=test msg="detected an error while ingesting OTLP metrics request (the request may have been partially ingested)" httpCode=429 err="rpc error: code = Code(429) desc = go slower" insight=true`},
 			expectedRetryHeader:   true,
 		},
 		{
@@ -907,7 +1488,7 @@ func TestHandlerOTLPPush(t *testing.T) {
 					Unit: "metric_unit",
 				},
 			},
-			verifyFunc: func(t *testing.T, pushReq *Request, _ testCase) error {
+			verifyFunc: func(t *testing.T, _ context.Context, pushReq *Request, _ testCase) error {
 				request, err := pushReq.WriteRequest()
 				require.NoError(t, err)
 
@@ -950,7 +1531,7 @@ func TestHandlerOTLPPush(t *testing.T) {
 					Unit: "metric_unit",
 				},
 			},
-			verifyFunc: func(t *testing.T, pushReq *Request, _ testCase) error {
+			verifyFunc: func(t *testing.T, _ context.Context, pushReq *Request, _ testCase) error {
 				request, err := pushReq.WriteRequest()
 				require.NoError(t, err)
 
@@ -973,6 +1554,83 @@ func TestHandlerOTLPPush(t *testing.T) {
 			responseCode:        http.StatusOK,
 			responseContentType: pbContentType,
 		},
+		{
+			name:       "Attribute value too long",
+			maxMsgSize: 100000,
+			series: []prompb.TimeSeries{
+				{
+					Labels: []prompb.Label{
+						{Name: "__name__", Value: "foo"},
+						{Name: "too_long", Value: "huge value"},
+					},
+					Samples: []prompb.Sample{
+						{Value: 1, Timestamp: time.Date(2020, 4, 1, 0, 0, 0, 0, time.UTC).UnixNano()},
+					},
+				},
+			},
+			metadata: sampleMetadata,
+			verifyFunc: func(_ *testing.T, ctx context.Context, pushReq *Request, _ testCase) error {
+				var limitsCfg validation.Limits
+				flagext.DefaultValues(&limitsCfg)
+				limitsCfg.MaxLabelValueLength = len("huge value") - 1
+				distributors, _, _, _ := prepare(t, prepConfig{numDistributors: 1, limits: &limitsCfg})
+				distributor := distributors[0]
+				return distributor.prePushValidationMiddleware(func(context.Context, *Request) error { return nil })(ctx, pushReq)
+			},
+			responseCode:          http.StatusBadRequest,
+			responseContentType:   pbContentType,
+			responseContentLength: 286,
+			errMessage:            "received a metric whose attribute value length of 10 exceeds the limit of 9, attribute: 'too_long', value: 'huge value' (truncated) metric: 'foo{too_long=\"huge value\"}'. See: https://grafana.com/docs/grafana-cloud/send-data/otlp/otlp-format-considerations/#metrics-ingestion-limits",
+			expectedLogs:          []string{`level=warn user=test msg="detected an error while ingesting OTLP metrics request (the request may have been partially ingested)" httpCode=400 err="received a metric whose attribute value length of 10 exceeds the limit of 9, attribute: 'too_long', value: 'huge value' (truncated) metric: 'foo{too_long=\"huge value\"}'. See: https://grafana.com/docs/grafana-cloud/send-data/otlp/otlp-format-considerations/#metrics-ingestion-limits" insight=true`},
+			expectedRetryHeader:   false,
+		},
+		{
+			name:       "Unexpected gRPC status error",
+			maxMsgSize: 100000,
+			series:     sampleSeries,
+			metadata:   sampleMetadata,
+			verifyFunc: func(*testing.T, context.Context, *Request, testCase) error {
+				return grpcstatus.New(codes.Unknown, "unexpected error calling some dependency").Err()
+			},
+			responseCode:          http.StatusServiceUnavailable,
+			responseContentType:   pbContentType,
+			responseContentLength: 44,
+			errMessage:            "unexpected error calling some dependency",
+			expectedLogs:          []string{`level=error user=test msg="detected an error while ingesting OTLP metrics request (the request may have been partially ingested)" httpCode=503 err="rpc error: code = Unknown desc = unexpected error calling some dependency"`},
+			expectedRetryHeader:   true,
+		},
+		{
+			name:       "Unexpected ingesterPushError",
+			maxMsgSize: 100000,
+			series:     sampleSeries,
+			metadata:   sampleMetadata,
+			verifyFunc: func(*testing.T, context.Context, *Request, testCase) error {
+				return ingesterPushError{message: "unexpected ingester error", cause: mimirpb.ERROR_CAUSE_BAD_DATA, soft: false}
+			},
+			responseCode:          http.StatusBadRequest,
+			responseContentType:   pbContentType,
+			responseContentLength: 29,
+			errMessage:            "unexpected ingester error",
+			expectedLogs:          []string{`level=warn user=test msg="detected an error while ingesting OTLP metrics request (the request may have been partially ingested)" httpCode=400 err="unexpected ingester error" insight=true`},
+			expectedRetryHeader:   false,
+		},
+		{
+			name:       "Unexpected soft ingesterPushError",
+			maxMsgSize: 100000,
+			series:     sampleSeries,
+			metadata:   sampleMetadata,
+			verifyFunc: func(*testing.T, context.Context, *Request, testCase) error {
+				return ingesterPushError{message: "unexpected ingester error", cause: mimirpb.ERROR_CAUSE_BAD_DATA, soft: true}
+			},
+			responseCode:          http.StatusOK,
+			responseContentType:   pbContentType,
+			responseContentLength: 29,
+			expectedRetryHeader:   false,
+			expectedPartialSuccess: &colmetricpb.ExportMetricsPartialSuccess{
+				RejectedDataPoints: 0,
+				ErrorMessage:       "unexpected ingester error",
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -986,6 +1644,8 @@ func TestHandlerOTLPPush(t *testing.T) {
 
 			testLimits := &validation.Limits{
 				PromoteOTelResourceAttributes: tt.promoteResourceAttributes,
+				NameValidationScheme:          model.LegacyValidation,
+				OTelMetricSuffixesEnabled:     false,
 			}
 			limits := validation.NewOverrides(
 				validation.Limits{},
@@ -993,15 +1653,21 @@ func TestHandlerOTLPPush(t *testing.T) {
 					"test": testLimits,
 				}),
 			)
-			pusher := func(_ context.Context, pushReq *Request) error {
+
+			pusher := func(ctx context.Context, pushReq *Request) error {
 				t.Helper()
 				t.Cleanup(pushReq.CleanUp)
-				return tt.verifyFunc(t, pushReq, tt)
+				return tt.verifyFunc(t, ctx, pushReq, tt)
 			}
 
 			logs := &concurrency.SyncBuffer{}
 			retryConfig := RetryConfig{Enabled: true, MinBackoff: 5 * time.Second, MaxBackoff: 5 * time.Second}
-			handler := OTLPHandler(tt.maxMsgSize, nil, nil, limits, tt.resourceAttributePromotionConfig, retryConfig, false, pusher, nil, nil, util_log.MakeLeveledLogger(logs, "info"))
+			handler := OTLPHandler(
+				tt.maxMsgSize, nil, nil, limits,
+				tt.resourceAttributePromotionConfig, tt.keepIdentifyingOTelResourceAttributesConfig,
+				retryConfig, nil, pusher, nil, nil,
+				util_log.MakeLeveledLogger(logs, "info"),
+			)
 
 			resp := httptest.NewRecorder()
 			handler.ServeHTTP(resp, req)
@@ -1009,9 +1675,18 @@ func TestHandlerOTLPPush(t *testing.T) {
 			assert.Equal(t, tt.responseCode, resp.Code)
 			assert.Equal(t, tt.responseContentType, resp.Header().Get("Content-Type"))
 			assert.Equal(t, strconv.Itoa(tt.responseContentLength), resp.Header().Get("Content-Length"))
-			if tt.errMessage != "" {
-				body, err := io.ReadAll(resp.Body)
+			body, err := io.ReadAll(resp.Body)
+			require.NoError(t, err)
+			if tt.responseCode/100 == 2 {
+				var exportResp colmetricpb.ExportMetricsServiceResponse
+				if tt.responseContentType == jsonContentType {
+					err = json.Unmarshal(body, &exportResp)
+				} else {
+					err = proto.Unmarshal(body, &exportResp)
+				}
 				require.NoError(t, err)
+				assert.Equal(t, tt.expectedPartialSuccess, exportResp.PartialSuccess)
+			} else {
 				respStatus := &status.Status{}
 				if tt.responseContentType == jsonContentType {
 					err = json.Unmarshal(body, respStatus)
@@ -1073,20 +1748,26 @@ func TestHandler_otlpDroppedMetricsPanic(t *testing.T) {
 	metric2.SetEmptyGauge()
 
 	limits := validation.NewOverrides(
-		validation.Limits{},
+		validation.Limits{
+			NameValidationScheme:    model.LegacyValidation,
+			OTelTranslationStrategy: validation.OTelTranslationStrategyValue(otlptranslator.UnderscoreEscapingWithoutSuffixes),
+		},
 		validation.NewMockTenantLimits(map[string]*validation.Limits{}),
 	)
 
 	req := createOTLPProtoRequest(t, pmetricotlp.NewExportRequestFromMetrics(md), "")
 	resp := httptest.NewRecorder()
-	handler := OTLPHandler(100000, nil, nil, limits, nil, RetryConfig{}, false, func(_ context.Context, pushReq *Request) error {
-		request, err := pushReq.WriteRequest()
-		assert.NoError(t, err)
-		assert.Len(t, request.Timeseries, 3)
-		assert.False(t, request.SkipLabelValidation)
-		pushReq.CleanUp()
-		return nil
-	}, nil, nil, log.NewNopLogger())
+	handler := OTLPHandler(
+		100000, nil, nil, limits, nil, nil,
+		RetryConfig{}, nil, func(_ context.Context, pushReq *Request) error {
+			request, err := pushReq.WriteRequest()
+			assert.NoError(t, err)
+			assert.Len(t, request.Timeseries, 3)
+			assert.False(t, request.SkipLabelValidation)
+			pushReq.CleanUp()
+			return nil
+		}, nil, nil, log.NewNopLogger(),
+	)
 	handler.ServeHTTP(resp, req)
 	assert.Equal(t, http.StatusBadRequest, resp.Code)
 }
@@ -1121,14 +1802,17 @@ func TestHandler_otlpDroppedMetricsPanic2(t *testing.T) {
 
 	req := createOTLPProtoRequest(t, pmetricotlp.NewExportRequestFromMetrics(md), "")
 	resp := httptest.NewRecorder()
-	handler := OTLPHandler(100000, nil, nil, limits, nil, RetryConfig{}, false, func(_ context.Context, pushReq *Request) error {
-		request, err := pushReq.WriteRequest()
-		t.Cleanup(pushReq.CleanUp)
-		require.NoError(t, err)
-		assert.Len(t, request.Timeseries, 1)
-		assert.False(t, request.SkipLabelValidation)
-		return nil
-	}, nil, nil, log.NewNopLogger())
+	handler := OTLPHandler(
+		100000, nil, nil, limits, nil, nil,
+		RetryConfig{}, nil, func(_ context.Context, pushReq *Request) error {
+			request, err := pushReq.WriteRequest()
+			t.Cleanup(pushReq.CleanUp)
+			require.NoError(t, err)
+			assert.Len(t, request.Timeseries, 1)
+			assert.False(t, request.SkipLabelValidation)
+			return nil
+		}, nil, nil, log.NewNopLogger(),
+	)
 	handler.ServeHTTP(resp, req)
 	assert.Equal(t, http.StatusBadRequest, resp.Code)
 
@@ -1147,14 +1831,17 @@ func TestHandler_otlpDroppedMetricsPanic2(t *testing.T) {
 
 	req = createOTLPProtoRequest(t, pmetricotlp.NewExportRequestFromMetrics(md), "")
 	resp = httptest.NewRecorder()
-	handler = OTLPHandler(100000, nil, nil, limits, nil, RetryConfig{}, false, func(_ context.Context, pushReq *Request) error {
-		request, err := pushReq.WriteRequest()
-		t.Cleanup(pushReq.CleanUp)
-		require.NoError(t, err)
-		assert.Len(t, request.Timeseries, 9) // 6 buckets (including +Inf) + 2 sum/count + 2 from the first case
-		assert.False(t, request.SkipLabelValidation)
-		return nil
-	}, nil, nil, log.NewNopLogger())
+	handler = OTLPHandler(
+		100000, nil, nil, limits, nil, nil,
+		RetryConfig{}, nil, func(_ context.Context, pushReq *Request) error {
+			request, err := pushReq.WriteRequest()
+			t.Cleanup(pushReq.CleanUp)
+			require.NoError(t, err)
+			assert.Len(t, request.Timeseries, 9) // 6 buckets (including +Inf) + 2 sum/count + 2 from the first case
+			assert.False(t, request.SkipLabelValidation)
+			return nil
+		}, nil, nil, log.NewNopLogger(),
+	)
 	handler.ServeHTTP(resp, req)
 	assert.Equal(t, http.StatusBadRequest, resp.Code)
 }
@@ -1175,7 +1862,10 @@ func TestHandler_otlpWriteRequestTooBigWithCompression(t *testing.T) {
 
 	resp := httptest.NewRecorder()
 
-	handler := OTLPHandler(140, nil, nil, nil, nil, RetryConfig{}, false, readBodyPushFunc(t), nil, nil, log.NewNopLogger())
+	handler := OTLPHandler(
+		140, nil, nil, nil, nil, nil,
+		RetryConfig{}, nil, readBodyPushFunc(t), nil, nil, log.NewNopLogger(),
+	)
 	handler.ServeHTTP(resp, req)
 	assert.Equal(t, http.StatusRequestEntityTooLarge, resp.Code)
 	body, err := io.ReadAll(resp.Body)
@@ -1200,154 +1890,196 @@ func TestHandler_toOtlpGRPCHTTPStatus(t *testing.T) {
 		err                error
 		expectedHTTPStatus int
 		expectedGRPCStatus codes.Code
+		expectedSoft       bool
 	}
 	testCases := map[string]testStruct{
 		"a generic error gets translated into gRPC code.Internal and HTTP 503 statuses": {
 			err:                originalErr,
 			expectedHTTPStatus: http.StatusServiceUnavailable,
 			expectedGRPCStatus: codes.Internal,
+			expectedSoft:       false,
 		},
 		"a DoNotLog of a generic error gets translated into gRPC codes.Internal and HTTP 503 statuses": {
 			err:                middleware.DoNotLogError{Err: originalErr},
 			expectedHTTPStatus: http.StatusServiceUnavailable,
 			expectedGRPCStatus: codes.Internal,
+			expectedSoft:       false,
 		},
 		"a context.DeadlineExceeded gets translated into gRPC codes.Internal and HTTP 503 statuses": {
 			err:                context.DeadlineExceeded,
 			expectedHTTPStatus: http.StatusServiceUnavailable,
 			expectedGRPCStatus: codes.Internal,
+			expectedSoft:       false,
 		},
 		"a replicasDidNotMatchError gets translated into gRPC codes.AlreadyExists and HTTP 202 statuses": {
 			err:                replicasNotMatchErr,
 			expectedHTTPStatus: http.StatusAccepted,
 			expectedGRPCStatus: codes.AlreadyExists,
+			expectedSoft:       false,
 		},
 		"a DoNotLogError of a replicasDidNotMatchError gets translated into gRPC codes.AlreadyExists and HTTP 202 statuses": {
 			err:                middleware.DoNotLogError{Err: replicasNotMatchErr},
 			expectedHTTPStatus: http.StatusAccepted,
 			expectedGRPCStatus: codes.AlreadyExists,
+			expectedSoft:       false,
 		},
 		"a tooManyClustersError gets translated into gRPC codes.FailedPrecondition and HTTP 400 statuses": {
 			err:                tooManyClustersErr,
 			expectedHTTPStatus: http.StatusBadRequest,
 			expectedGRPCStatus: codes.FailedPrecondition,
+			expectedSoft:       false,
 		},
 		"a DoNotLogError of a tooManyClustersError gets translated into gRPC codes.FailedPrecondition and HTTP 400 statuses": {
 			err:                middleware.DoNotLogError{Err: tooManyClustersErr},
 			expectedHTTPStatus: http.StatusBadRequest,
 			expectedGRPCStatus: codes.FailedPrecondition,
+			expectedSoft:       false,
 		},
 		"a validationError gets translated into gRPC codes.InvalidArgument and HTTP 400 statuses": {
 			err:                newValidationError(originalErr),
 			expectedHTTPStatus: http.StatusBadRequest,
 			expectedGRPCStatus: codes.InvalidArgument,
+			expectedSoft:       false,
 		},
 		"a DoNotLogError of a validationError gets translated into gRPC codes.InvalidArgument and HTTP 400 statuses": {
 			err:                middleware.DoNotLogError{Err: newValidationError(originalErr)},
 			expectedHTTPStatus: http.StatusBadRequest,
 			expectedGRPCStatus: codes.InvalidArgument,
+			expectedSoft:       false,
 		},
 		"an ingestionRateLimitedError gets translated into gRPC codes.ResourceExhausted and HTTP 429 statuses": {
 			err:                ingestionRateLimitedErr,
 			expectedHTTPStatus: http.StatusTooManyRequests,
 			expectedGRPCStatus: codes.ResourceExhausted,
+			expectedSoft:       false,
 		},
 		"a DoNotLogError of an ingestionRateLimitedError gets translated into gRPC codes.ResourceExhausted and HTTP 429 statuses": {
 			err:                middleware.DoNotLogError{Err: ingestionRateLimitedErr},
 			expectedHTTPStatus: http.StatusTooManyRequests,
 			expectedGRPCStatus: codes.ResourceExhausted,
+			expectedSoft:       false,
 		},
 		"an ingesterPushError with BAD_DATA cause gets translated into gRPC codes.InvalidArgument and HTTP 400 statuses": {
-			err:                newIngesterPushError(createStatusWithDetails(t, codes.InvalidArgument, originalMsg, mimirpb.BAD_DATA), ingesterID),
+			err:                newIngesterPushError(createStatusWithDetails(t, codes.InvalidArgument, originalMsg, mimirpb.ERROR_CAUSE_BAD_DATA), ingesterID),
 			expectedHTTPStatus: http.StatusBadRequest,
 			expectedGRPCStatus: codes.InvalidArgument,
+			expectedSoft:       false,
 		},
 		"a DoNotLogError of an ingesterPushError with BAD_DATA cause gets translated into gRPC codes.InvalidArgument and HTTP 400 statuses": {
-			err:                middleware.DoNotLogError{Err: newIngesterPushError(createStatusWithDetails(t, codes.InvalidArgument, originalMsg, mimirpb.BAD_DATA), ingesterID)},
+			err:                middleware.DoNotLogError{Err: newIngesterPushError(createStatusWithDetails(t, codes.InvalidArgument, originalMsg, mimirpb.ERROR_CAUSE_BAD_DATA), ingesterID)},
 			expectedHTTPStatus: http.StatusBadRequest,
 			expectedGRPCStatus: codes.InvalidArgument,
+			expectedSoft:       false,
 		},
 		"an ingesterPushError with TENANT_LIMIT cause gets translated into gRPC codes.FailedPrecondition and HTTP 400 statuses": {
-			err:                newIngesterPushError(createStatusWithDetails(t, codes.FailedPrecondition, originalMsg, mimirpb.TENANT_LIMIT), ingesterID),
+			err:                newIngesterPushError(createStatusWithDetails(t, codes.FailedPrecondition, originalMsg, mimirpb.ERROR_CAUSE_TENANT_LIMIT), ingesterID),
 			expectedHTTPStatus: http.StatusBadRequest,
 			expectedGRPCStatus: codes.FailedPrecondition,
+			expectedSoft:       false,
 		},
 		"a DoNotLogError of an ingesterPushError with TENANT_LIMIT cause gets translated into gRPC codes.FailedPrecondition and HTTP 400 statuses": {
-			err:                middleware.DoNotLogError{Err: newIngesterPushError(createStatusWithDetails(t, codes.FailedPrecondition, originalMsg, mimirpb.TENANT_LIMIT), ingesterID)},
+			err:                middleware.DoNotLogError{Err: newIngesterPushError(createStatusWithDetails(t, codes.FailedPrecondition, originalMsg, mimirpb.ERROR_CAUSE_TENANT_LIMIT), ingesterID)},
 			expectedHTTPStatus: http.StatusBadRequest,
 			expectedGRPCStatus: codes.FailedPrecondition,
+			expectedSoft:       false,
 		},
 		"an ingesterPushError with METHOD_NOT_ALLOWED cause gets translated into gRPC codes.Unimplemented and HTTP 503 statuses": {
-			err:                newIngesterPushError(createStatusWithDetails(t, codes.Unimplemented, originalMsg, mimirpb.METHOD_NOT_ALLOWED), ingesterID),
+			err:                newIngesterPushError(createStatusWithDetails(t, codes.Unimplemented, originalMsg, mimirpb.ERROR_CAUSE_METHOD_NOT_ALLOWED), ingesterID),
 			expectedHTTPStatus: http.StatusServiceUnavailable,
 			expectedGRPCStatus: codes.Unimplemented,
+			expectedSoft:       false,
 		},
 		"a DoNotLogError of an ingesterPushError with METHOD_NOT_ALLOWED cause gets translated into gRPC codes.Unimplemented and HTTP 503 statuses": {
-			err:                middleware.DoNotLogError{Err: newIngesterPushError(createStatusWithDetails(t, codes.Unimplemented, originalMsg, mimirpb.METHOD_NOT_ALLOWED), ingesterID)},
+			err:                middleware.DoNotLogError{Err: newIngesterPushError(createStatusWithDetails(t, codes.Unimplemented, originalMsg, mimirpb.ERROR_CAUSE_METHOD_NOT_ALLOWED), ingesterID)},
 			expectedHTTPStatus: http.StatusServiceUnavailable,
 			expectedGRPCStatus: codes.Unimplemented,
+			expectedSoft:       false,
 		},
 		"an ingesterPushError with TSDB_UNAVAILABLE cause gets translated into gRPC codes.Internal and HTTP 503 statuses": {
-			err:                newIngesterPushError(createStatusWithDetails(t, codes.Internal, originalMsg, mimirpb.TSDB_UNAVAILABLE), ingesterID),
+			err:                newIngesterPushError(createStatusWithDetails(t, codes.Internal, originalMsg, mimirpb.ERROR_CAUSE_TSDB_UNAVAILABLE), ingesterID),
 			expectedHTTPStatus: http.StatusServiceUnavailable,
 			expectedGRPCStatus: codes.Internal,
+			expectedSoft:       false,
 		},
 		"a DoNotLogError of an ingesterPushError with TSDB_UNAVAILABLE cause gets translated into gRPC codes.Internal and HTTP 503 statuses": {
-			err:                middleware.DoNotLogError{Err: newIngesterPushError(createStatusWithDetails(t, codes.Internal, originalMsg, mimirpb.TSDB_UNAVAILABLE), ingesterID)},
+			err:                middleware.DoNotLogError{Err: newIngesterPushError(createStatusWithDetails(t, codes.Internal, originalMsg, mimirpb.ERROR_CAUSE_TSDB_UNAVAILABLE), ingesterID)},
 			expectedHTTPStatus: http.StatusServiceUnavailable,
 			expectedGRPCStatus: codes.Internal,
+			expectedSoft:       false,
 		},
 		"an ingesterPushError with SERVICE_UNAVAILABLE cause gets translated into gRPC codes.Internal and HTTP 503 statuses": {
-			err:                newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, originalMsg, mimirpb.SERVICE_UNAVAILABLE), ingesterID),
+			err:                newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, originalMsg, mimirpb.ERROR_CAUSE_SERVICE_UNAVAILABLE), ingesterID),
 			expectedHTTPStatus: http.StatusServiceUnavailable,
 			expectedGRPCStatus: codes.Internal,
+			expectedSoft:       false,
 		},
 		"a DoNotLogError of an ingesterPushError with SERVICE_UNAVAILABLE cause gets translated gRPC codes.Internal and HTTP 503 statuses": {
-			err:                middleware.DoNotLogError{Err: newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, originalMsg, mimirpb.SERVICE_UNAVAILABLE), ingesterID)},
+			err:                middleware.DoNotLogError{Err: newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, originalMsg, mimirpb.ERROR_CAUSE_SERVICE_UNAVAILABLE), ingesterID)},
 			expectedHTTPStatus: http.StatusServiceUnavailable,
 			expectedGRPCStatus: codes.Internal,
+			expectedSoft:       false,
 		},
-		"an ingesterPushError with INSTANCE_LIMIT cause gets translated into gRPC codes.Internal and HTTP 503 statuses": {
-			err:                newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, originalMsg, mimirpb.INSTANCE_LIMIT), ingesterID),
+		"an ingesterPushError with INSTANCE_LIMIT cause gets translated into gRPC codes.Unavailable and HTTP 503 statuses": {
+			err:                newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, originalMsg, mimirpb.ERROR_CAUSE_INSTANCE_LIMIT), ingesterID),
 			expectedHTTPStatus: http.StatusServiceUnavailable,
-			expectedGRPCStatus: codes.Internal,
+			expectedGRPCStatus: codes.Unavailable,
+			expectedSoft:       false,
 		},
-		"a DoNotLogError of an ingesterPushError with INSTANCE_LIMIT cause gets translated into gRPC codes.Internal and HTTP 503 statuses": {
-			err:                middleware.DoNotLogError{Err: newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, originalMsg, mimirpb.INSTANCE_LIMIT), ingesterID)},
+		"a DoNotLogError of an ingesterPushError with INSTANCE_LIMIT cause gets translated into gRPC codes.Unavailable and HTTP 503 statuses": {
+			err:                middleware.DoNotLogError{Err: newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, originalMsg, mimirpb.ERROR_CAUSE_INSTANCE_LIMIT), ingesterID)},
 			expectedHTTPStatus: http.StatusServiceUnavailable,
-			expectedGRPCStatus: codes.Internal,
+			expectedGRPCStatus: codes.Unavailable,
+			expectedSoft:       false,
 		},
 		"an ingesterPushError with UNKNOWN_CAUSE cause gets translated into gRPC codes.Internal and HTTP 503 statuses": {
-			err:                newIngesterPushError(createStatusWithDetails(t, codes.Internal, originalMsg, mimirpb.UNKNOWN_CAUSE), ingesterID),
+			err:                newIngesterPushError(createStatusWithDetails(t, codes.Internal, originalMsg, mimirpb.ERROR_CAUSE_UNKNOWN), ingesterID),
 			expectedHTTPStatus: http.StatusServiceUnavailable,
 			expectedGRPCStatus: codes.Internal,
+			expectedSoft:       false,
 		},
 		"a DoNotLogError of an ingesterPushError with UNKNOWN_CAUSE cause gets translated into gRPC codes.Internal and HTTP 503 statuses": {
-			err:                middleware.DoNotLogError{Err: newIngesterPushError(createStatusWithDetails(t, codes.Internal, originalMsg, mimirpb.UNKNOWN_CAUSE), ingesterID)},
+			err:                middleware.DoNotLogError{Err: newIngesterPushError(createStatusWithDetails(t, codes.Internal, originalMsg, mimirpb.ERROR_CAUSE_UNKNOWN), ingesterID)},
 			expectedHTTPStatus: http.StatusServiceUnavailable,
 			expectedGRPCStatus: codes.Internal,
+			expectedSoft:       false,
 		},
 		"an ingesterPushError obtained from a DeadlineExceeded coming from the ingester gets translated into gRPC codes.Internal and HTTP 503 statuses": {
-			err:                newIngesterPushError(createStatusWithDetails(t, codes.Internal, context.DeadlineExceeded.Error(), mimirpb.UNKNOWN_CAUSE), ingesterID),
+			err:                newIngesterPushError(createStatusWithDetails(t, codes.Internal, context.DeadlineExceeded.Error(), mimirpb.ERROR_CAUSE_UNKNOWN), ingesterID),
 			expectedHTTPStatus: http.StatusServiceUnavailable,
 			expectedGRPCStatus: codes.Internal,
+			expectedSoft:       false,
 		},
 		"an ingesterPushError with CIRCUIT_BREAKER_OPEN cause gets translated into an Unavailable error with CIRCUIT_BREAKER_OPEN cause": {
-			err:                newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, originalMsg, mimirpb.CIRCUIT_BREAKER_OPEN), ingesterID),
+			err:                newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, originalMsg, mimirpb.ERROR_CAUSE_CIRCUIT_BREAKER_OPEN), ingesterID),
 			expectedHTTPStatus: http.StatusServiceUnavailable,
 			expectedGRPCStatus: codes.Unavailable,
+			expectedSoft:       false,
 		},
 		"a wrapped ingesterPushError with CIRCUIT_BREAKER_OPEN cause gets translated into an Unavailable error with CIRCUIT_BREAKER_OPEN cause": {
-			err:                errors.Wrap(newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, originalMsg, mimirpb.CIRCUIT_BREAKER_OPEN), ingesterID), "wrapped"),
+			err:                errors.Wrap(newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, originalMsg, mimirpb.ERROR_CAUSE_CIRCUIT_BREAKER_OPEN), ingesterID), "wrapped"),
 			expectedHTTPStatus: http.StatusServiceUnavailable,
 			expectedGRPCStatus: codes.Unavailable,
+			expectedSoft:       false,
+		},
+		"a soft ingesterPushError with BAD_DATA cause gets translated into gRPC codes.InvalidArgument and HTTP 200 statuses": {
+			err:                newIngesterPushError(createSoftStatusWithDetails(t, codes.InvalidArgument, originalMsg, mimirpb.ERROR_CAUSE_BAD_DATA), ingesterID),
+			expectedHTTPStatus: http.StatusBadRequest,
+			expectedGRPCStatus: codes.InvalidArgument,
+			expectedSoft:       true,
+		},
+		"a wrapped soft ingesterPushError with BAD_DATA cause gets translated into gRPC codes.InvalidArgument and HTTP 200 statuses": {
+			err:                errors.Wrap(newIngesterPushError(createSoftStatusWithDetails(t, codes.InvalidArgument, originalMsg, mimirpb.ERROR_CAUSE_BAD_DATA), ingesterID), "wrapped"),
+			expectedHTTPStatus: http.StatusBadRequest,
+			expectedGRPCStatus: codes.InvalidArgument,
+			expectedSoft:       true,
 		},
 	}
 	for name, tc := range testCases {
 		t.Run(name, func(t *testing.T) {
-			gStatus, status := toOtlpGRPCHTTPStatus(tc.err)
+			gStatus, status, soft := toOtlpGRPCHTTPStatus(tc.err)
 			assert.Equal(t, tc.expectedHTTPStatus, status)
 			assert.Equal(t, tc.expectedGRPCStatus, gStatus)
+			assert.Equal(t, tc.expectedSoft, soft)
 		})
 	}
 }
@@ -1407,5 +2139,5 @@ type fakeResourceAttributePromotionConfig struct {
 }
 
 func (c fakeResourceAttributePromotionConfig) PromoteOTelResourceAttributes(string) []string {
-	return []string{"resource.attr"}
+	return c.promote
 }

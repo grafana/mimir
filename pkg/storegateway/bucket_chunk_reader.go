@@ -7,12 +7,13 @@ package storegateway
 
 import (
 	"bufio"
+	"cmp"
 	"context"
 	"encoding/binary"
 	"fmt"
 	"hash/crc32"
 	"io"
-	"sort"
+	"slices"
 	"sync"
 
 	"github.com/dennwc/varint"
@@ -21,6 +22,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
+	"go.uber.org/atomic"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/grafana/mimir/pkg/storage/tsdb"
@@ -28,18 +30,30 @@ import (
 	"github.com/grafana/mimir/pkg/util/pool"
 )
 
+// maxChunkDataLen is a safeguard to protect the chunk data parsing from over allocating in case of a broken chunk.
+// Refer to https://github.com/grafana/mimir/issues/12691 for the background.
+// 512MB would be a ridiculously large chunk. But, to keep things relaxed, we use a much larger value than tsdb.EstimatedMaxChunkSize.
+const maxChunkDataLen = 512 * 1024 * 1024
+
+var castagnoliTable = crc32.MakeTable(crc32.Castagnoli)
+
 type bucketChunkReader struct {
 	ctx   context.Context
 	block *bucketBlock
 
 	toLoad [][]loadIdx
+
+	// chunkCounter tracks chunks read across all partitions in this block for CRC32 sampling.
+	// Every 128th chunk gets its CRC32 verified.
+	chunkCounter *atomic.Int64
 }
 
 func newBucketChunkReader(ctx context.Context, block *bucketBlock) *bucketChunkReader {
 	return &bucketChunkReader{
-		ctx:    ctx,
-		block:  block,
-		toLoad: make([][]loadIdx, len(block.chunkObjs)),
+		ctx:          ctx,
+		block:        block,
+		toLoad:       make([][]loadIdx, len(block.chunkObjs)),
+		chunkCounter: atomic.NewInt64(-1), // Start at -1 so the first chunk is 0 and gets verified.
 	}
 }
 
@@ -86,8 +100,8 @@ func (r *bucketChunkReader) load(res []seriesChunks, chunksPool *pool.SafeSlabPo
 	g, ctx := errgroup.WithContext(r.ctx)
 
 	for seq, pIdxs := range r.toLoad {
-		sort.Slice(pIdxs, func(i, j int) bool {
-			return pIdxs[i].offset < pIdxs[j].offset
+		slices.SortFunc(pIdxs, func(a, b loadIdx) int {
+			return cmp.Compare(a.offset, b.offset)
 		})
 		parts := r.block.partitioners.chunks.Partition(len(pIdxs), func(i int) (start, end uint64) {
 			return uint64(pIdxs[i].offset), uint64(pIdxs[i].offset) + uint64(pIdxs[i].length)
@@ -144,9 +158,18 @@ func (r *bucketChunkReader) loadChunks(ctx context.Context, res []seriesChunks, 
 		if err != nil {
 			return errors.Wrap(err, "parsing chunk length")
 		}
-		// We ignore the crc32 after the chunk data.
+
+		// Validate chunk data length to prevent unreasonably large memory allocations or panics from a corrupted data.
+		// Note, that on a 64-bit system Go should allow to allocate up to ~140TB; a larger len causes "makeslice: len out of range".
+		// Such a large chunk data len is unrealistic.
+		if chunkDataLen > uint64(maxChunkDataLen) {
+			return fmt.Errorf("chunk seq %d: parsed data length %d exceeds expected maximum chunk size %d", seq, chunkDataLen, maxChunkDataLen)
+		}
+
+		// Always read the full chunk including checksum: encoding (1 byte) + data + crc32 (4 bytes)
 		chunkEncDataLen := chunks.ChunkEncodingSize + int(chunkDataLen)
-		cb := chunksPool.Get(chunkEncDataLen)
+		fullChunkLen := chunkEncDataLen + crc32.Size
+		cb := chunksPool.Get(fullChunkLen)
 
 		fullyRead, err := io.ReadFull(reader, cb)
 		// We get io.EOF when there are 0 bytes read and io.UnexpectedEOF when there are some but not all read.
@@ -156,16 +179,21 @@ func (r *bucketChunkReader) loadChunks(ctx context.Context, res []seriesChunks, 
 				// Any other errors are definitely unexpected.
 				return fmt.Errorf("underread with %d more remaining chunks in seq %d start %d end %d", chunksLeft, seq, part.Start, part.End)
 			}
-			if err = r.fetchChunkRemainder(ctx, seq, int64(reader.offset), int64(chunkEncDataLen-fullyRead), cb[fullyRead:], localStats); err != nil {
+			if err = r.fetchChunkRemainder(ctx, seq, int64(reader.offset), int64(fullChunkLen-fullyRead), cb[fullyRead:], localStats); err != nil {
 				return errors.Wrapf(err, "refetching chunk seq %d offset %x length %d", seq, pIdx.offset, pIdx.length)
 			}
 		} else if err != nil {
 			return errors.Wrap(err, "read chunk")
 		}
 
-		err = populateChunk(&(res[pIdx.seriesEntry].chks[pIdx.chunkEntry]), cb)
+		// Populate the chunk, optionally verifying CRC32 if we should and didn't have to refetch
+		if shouldVerify := (r.chunkCounter.Inc() % 128) == 0; shouldVerify {
+			err = populateChecksummedChunk(&(res[pIdx.seriesEntry].chks[pIdx.chunkEntry]), cb)
+		} else {
+			err = populateChunk(&(res[pIdx.seriesEntry].chks[pIdx.chunkEntry]), cb[:chunkEncDataLen])
+		}
 		if err != nil {
-			return errors.Wrap(err, "populate chunk")
+			return errors.Wrapf(err, "populate chunk with offset %d in segment file %d in block %s", pIdx.offset, seq, r.block.meta.ULID)
 		}
 		localStats.chunksTouched++
 		// Also account for the crc32 at the end. We ignore the bytes, but include the size of crc32 and the length varint size encoding.
@@ -209,6 +237,29 @@ func populateChunk(out *storepb.AggrChunk, in rawChunk) error {
 	}
 
 	out.Raw = storepb.Chunk{Type: enc, Data: in.Bytes()}
+	return nil
+}
+
+// populateChecksummedChunk extracts the CRC32 from the last 4 bytes of the buffer,
+// calls populateChunk with the chunk data (excluding checksum), and verifies the CRC32.
+func populateChecksummedChunk(out *storepb.AggrChunk, buf []byte) error {
+	if len(buf) < crc32.Size {
+		return fmt.Errorf("buffer too small to contain checksum: %d bytes", len(buf))
+	}
+
+	encodingAndData := buf[:len(buf)-crc32.Size]
+	if err := populateChunk(out, encodingAndData); err != nil {
+		return err
+	}
+
+	storedCRC := binary.BigEndian.Uint32(buf[len(buf)-crc32.Size:])
+	actualCRC := crc32.Checksum(encodingAndData, castagnoliTable)
+	if actualCRC != storedCRC {
+		// Move storedCRC and actualCRC to new variables so they only escape to the heap in case of an error.
+		storedCRC, actualCRC := storedCRC, actualCRC
+		return fmt.Errorf("chunk crc32 mismatch expected %x, got %x", storedCRC, actualCRC)
+	}
+
 	return nil
 }
 

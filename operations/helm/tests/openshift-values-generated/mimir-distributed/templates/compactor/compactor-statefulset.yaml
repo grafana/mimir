@@ -68,9 +68,6 @@ spec:
             items:
               - key: "mimir.yaml"
                 path: "mimir.yaml"
-        - name: license
-          secret:
-            secretName: openshift-values-mimir-license
         - name: runtime-config
           configMap:
             name: openshift-values-mimir-runtime
@@ -86,8 +83,6 @@ spec:
           volumeMounts:
             - name: config
               mountPath: /etc/mimir
-            - name: license
-              mountPath: /license
             - name: runtime-config
               mountPath: /var/mimir
             - name: storage
@@ -121,3 +116,5 @@ spec:
               drop:
               - ALL
             readOnlyRootFilesystem: true
+          env:
+            []

@@ -21,6 +21,10 @@
     'ruler.query-frontend.grpc-client-config.grpc-max-recv-msg-size': $._config.ruler_remote_evaluation_max_query_response_size_bytes,
   },
 
+  local rulerQuerierRingArgs = {
+    'querier.ring.prefix': 'ruler-querier/',
+  },
+
   local container = $.core.v1.container,
   local deployment = $.apps.v1.deployment,
   local service = $.core.v1.service,
@@ -33,10 +37,12 @@
     $.querier_args +
     $.querierUseQuerySchedulerArgs(rulerQuerySchedulerName) + {
       'querier.max-concurrent': $._config.ruler_querier_max_concurrency,
-    } + if !useRulerQueryFrontend then {} else {
-      // The ruler-querier sends a query response back to the ruler-query-frontend
-      'querier.frontend-client.grpc-max-send-msg-size': $._config.ruler_remote_evaluation_max_query_response_size_bytes,
-    },
+    } +
+    (if !useRulerQueryFrontend then {} else {
+       // The ruler-querier sends a query response back to the ruler-query-frontend
+       'querier.frontend-client.grpc-max-send-msg-size': $._config.ruler_remote_evaluation_max_query_response_size_bytes,
+     }) +
+    rulerQuerierRingArgs,
 
   ruler_querier_env_map:: $.querier_env_map {
     // Do not dynamically set GOMAXPROCS for ruler-querier. We don't expect ruler-querier resources
@@ -75,7 +81,11 @@
       'server.grpc-max-recv-msg-size-bytes': $._config.ruler_remote_evaluation_max_query_response_size_bytes,
       // The ruler-query-frontend sends the query response back to the ruler.
       'server.grpc-max-send-msg-size-bytes': $._config.ruler_remote_evaluation_max_query_response_size_bytes,
-    },
+
+      // The 100 default limit can be too low for large query frontends evaluating many rules.
+      'server.grpc-max-concurrent-streams': 300,
+    } +
+    rulerQuerierRingArgs,
 
   ruler_query_frontend_env_map:: $.query_frontend_env_map,
 

@@ -1,0 +1,30 @@
+load 1m
+    some_metric{env="1"} 0+1x4
+    some_metric{env="2"} 0+2x50 _ _ 500+5x20 stale stale
+    some_metric_with_gaps 0 1 _ 3
+    some_metric_all_stale stale stale stale stale stale
+    some_metric_often_stale _ stale _ stale _
+    some_metric_with_stale_marker 0 1 stale 3
+    some_metric_all_gaps _ _ _ _ _
+    incr_histogram{env="1"}	{{schema:0 sum:4 count:4 buckets:[1 2 1]}}+{{sum:2 count:1 buckets:[1] offset:1}}x4
+    incr_histogram{env="2"}	{{schema:0 sum:4 count:4 buckets:[1 2 1]}}+{{sum:4 count:2 buckets:[1 2] offset:1}}x4
+    histogram_with_gaps	{{sum:1 count:1 buckets:[1]}} {{sum:2 count:2 buckets:[1 1]}} _ {{sum:3 count:3 buckets:[1 1 1]}}
+    histogram_with_stale_marker	{{sum:1 count:1 buckets:[1]}} {{sum:2 count:2 buckets:[1 1]}} stale {{sum:4 count:4 buckets:[1 1 1 1]}}
+    mixed_metric {{schema:0 sum:4 count:4 buckets:[1 2 1]}} 1 2 {{schema:0 sum:3 count:3 buckets:[1 2 1]}}
+    mixed_metric_histogram_first {{schema:0 sum:4 count:4 buckets:[1 2 1]}} 1
+    mixed_metric_float_first 1 {{schema:0 sum:4 count:4 buckets:[1 2 1]}}
+
+load 10s
+    metric{type="floats"} 1 2
+    metric{type="histograms"} {{count:1}} {{count:2}}
+    metric{env="1"} 0+1x50
+    metric{env="2"} 0+2x50 _ _ 500+5x20 stale stale
+    metric{env="3"} 1 2 _ _ stale stale _ _ 3 4 5+1x50
+    metric{env="4"} 5 2+3x2 _ stale {{schema:1 sum:3 count:22 buckets:[5 10 7]}} {{schema:1 sum:4 count:24 buckets:[5 10 7 2]}}
+    http_requests{job="api-server", instance="0", group="production"} 0+10x1000 100+30x1000
+    http_requests{job="api-server", instance="1", group="production"} 0+20x1000 200+30x1000
+    http_requests{job="api-server", instance="0", group="canary"}     0+30x1000 300+80x1000
+    http_requests{job="api-server", instance="1", group="canary"}     0+40x2000
+    other_metric{type="floats"} 0 4 3 6 -1 10
+    other_metric{type="histograms"} {{count:0}} {{count:4}} {{count:3}} {{count:6}} {{count:1}} {{count:10}}
+    other_metric{type="mixed"} 0 4 3 6 {{count:1}} {{count:10}}

@@ -1,0 +1,10 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+
+# Test for __name__ label drop.
+load 1m
+  up{foo="bar"}	{{schema:0 sum:4 count:4 buckets:[1 2 1]}}+{{sum:2 count:1 buckets:[1] offset:1}}x10
+  down{foo="bar"}	{{schema:0 sum:4 count:4 buckets:[1 2 1]}}+{{sum:4 count:2 buckets:[1 2] offset:1}}x10
+
+eval instant at 10m label_replace(histogram_fraction(0, 4, {foo="bar"}), "__name__", "frac_$1", "__name__", "(.+)")
+  frac_up{foo="bar"} 1
+  frac_down{foo="bar"} 1

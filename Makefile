@@ -10,7 +10,7 @@ help:
 # WARNING: do not commit to a repository!
 -include Makefile.local
 
-.PHONY: all test test-with-race integration-tests cover clean images protos exes dist doc clean-doc check-doc push-multiarch-build-image license check-license format check-mixin check-mixin-jb check-mixin-mixtool check-mixin-runbooks check-mixin-mimirtool-rules build-mixin format-mixin check-jsonnet-manifests format-jsonnet-manifests push-multiarch-mimir list-image-targets check-jsonnet-getting-started mixin-screenshots
+.PHONY: all test test-with-race integration-tests cover clean images protos exes dist doc clean-doc check-doc check-reference-help push-multiarch-build-image license check-license format check-mixin check-mixin-jb check-mixin-mixtool check-mixin-runbooks check-mixin-mimirtool-rules build-mixin format-mixin check-jsonnet-manifests format-jsonnet-manifests push-multiarch-mimir list-image-targets check-jsonnet-getting-started mixin-screenshots
 .DEFAULT_GOAL := all
 
 # Version number
@@ -68,8 +68,7 @@ DOC_SOURCES_PATH := docs/sources/mimir
 DOC_TEMPLATES := $(DOC_SOURCES_PATH)/configure/configuration-parameters/index.template
 
 # Documents to run through embedding
-DOC_EMBED := $(DOC_SOURCES_PATH)/configure/configure-the-query-frontend-work-with-prometheus.md \
-	$(DOC_SOURCES_PATH)/configure/mirror-requests-to-a-second-cluster/index.md \
+DOC_EMBED := $(DOC_SOURCES_PATH)/configure/mirror-requests-to-a-second-cluster/index.md \
 	$(DOC_SOURCES_PATH)/references/architecture/components/overrides-exporter.md \
 	$(DOC_SOURCES_PATH)/get-started/_index.md \
 	$(DOC_SOURCES_PATH)/set-up/jsonnet/deploy.md
@@ -97,12 +96,6 @@ SED ?= $(shell which gsed 2>/dev/null || which sed)
 # in that case.
 %/$(UPTODATE): GOOS=linux
 %/$(UPTODATE): %/Dockerfile
-	if [ -f $(@D)/Dockerfile.continuous-test ]; then \
-		$(SUDO) docker build -f $(@D)/Dockerfile.continuous-test \
-			--build-arg=revision=$(GIT_REVISION) \
-			--build-arg=goproxyValue=$(GOPROXY_VALUE) \
-			-t $(IMAGE_PREFIX)$(shell basename $(@D))-continuous-test:$(IMAGE_TAG) $(@D)/; \
-	fi;
 	@echo
 	$(SUDO) docker build --build-arg=revision=$(GIT_REVISION) --build-arg=goproxyValue=$(GOPROXY_VALUE) -t $(IMAGE_PREFIX)$(shell basename $(@D)) -t $(IMAGE_PREFIX)$(shell basename $(@D)):$(IMAGE_TAG) $(@D)/
 	@echo
@@ -110,7 +103,6 @@ SED ?= $(shell which gsed 2>/dev/null || which sed)
 	@echo
 	@echo Image name: $(IMAGE_PREFIX)$(shell basename $(@D))
 	@echo Image name: $(IMAGE_PREFIX)$(shell basename $(@D)):$(IMAGE_TAG)
-	@echo Image name: $(IMAGE_PREFIX)$(shell basename $(@D))-continuous-test:$(IMAGE_TAG)
 	@echo
 	@echo Please use '"make push-multiarch-build-image"' to build and push build image.
 	@echo Please use '"make push-multiarch-mimir"' to build and push Mimir image.
@@ -125,7 +117,7 @@ SED ?= $(shell which gsed 2>/dev/null || which sed)
 		--build-arg=goproxyValue=$(GOPROXY_VALUE) \
 		--build-arg=USE_BINARY_SUFFIX=true \
 		--build-arg=BINARY_SUFFIX=_race \
-		--build-arg=BASEIMG="gcr.io/distroless/base-nossl-debian12" \
+		--build-arg=BASEIMG="gcr.io/distroless/base-nossl-debian12@sha256:a7923659fdb38764d9c7f45e3b54cdadec32dbd46c375bf09918707317181af1" \
 		-t $(IMAGE_PREFIX)$(shell basename $(@D)):$(IMAGE_TAG_RACE) $(@D)/
 	@echo
 	@echo Go binaries were built using GOOS=$(GOOS) and GOARCH=$(GOARCH)
@@ -157,17 +149,6 @@ push-multiarch-%/$(UPTODATE):
 		--build-arg=goproxyValue=$(GOPROXY_VALUE) \
 		--build-arg=USE_BINARY_SUFFIX=true \
 		-t $(IMAGE_PREFIX)$(shell basename $(DIR)):$(IMAGE_TAG) $(DIR)/
-
-	# Build Dockerfile.continuous-test
-	if [ -f $(DIR)/Dockerfile.continuous-test ]; then \
-		$(SUDO) docker buildx build -f $(DIR)/Dockerfile.continuous-test \
-			-o $(PUSH_MULTIARCH_TARGET_CONTINUOUS_TEST) \
-			--platform linux/amd64,linux/arm64 \
-			--build-arg=revision=$(GIT_REVISION) \
-			--build-arg=goproxyValue=$(GOPROXY_VALUE) \
-			--build-arg=USE_BINARY_SUFFIX=true \
-			-t $(IMAGE_PREFIX)$(shell basename $(DIR))-continuous-test:$(IMAGE_TAG) $(DIR)/; \
-	fi;
 
 push-multiarch-mimir: ## Push mimir docker image.
 push-multiarch-mimir: push-multiarch-cmd/mimir/.uptodate
@@ -215,9 +196,6 @@ PROTO_GOS := $(patsubst %.proto,%.pb.go,$(PROTO_DEFS))
 
 PROMQL_TESTS := $(shell find pkg/streamingpromql/testdata/ours pkg/streamingpromql/testdata/ours-only $(DONT_FIND) -type f -path '*.test' -print)
 
-# Generating OTLP translation code is automated.
-OTLP_GOS := $(shell find ./pkg/distributor/otlp/ -type f -name '*_generated.go' -print)
-
 # Building binaries is now automated. The convention is to build a binary
 # for every directory with main.go in it.
 MAIN_GO := $(shell find . $(DONT_FIND) -type f -name 'main.go' -print)
@@ -241,13 +219,13 @@ all: $(UPTODATE_FILES)
 test: protos
 test-with-race: protos
 mod-check: protos
-lint: lint-gh-action lint-packaging-scripts protos check-promql-tests
+lint: lint-gh-action lint-packaging-scripts protos check-promql-tests check-protobuf-format
 mimir-build-image/$(UPTODATE): mimir-build-image/*
 
 # All the boiler plate for building golang follows:
 SUDO := $(shell docker info >/dev/null 2>&1 || echo "sudo -E")
 BUILD_IN_CONTAINER ?= true
-LATEST_BUILD_IMAGE_TAG ?= pr11747-73ebde0521
+LATEST_BUILD_IMAGE_TAG ?= pr13212-11695d54ad
 
 # TTY is parameterized to allow CI and scripts to run builds,
 # as it currently disallows TTY devices.
@@ -265,14 +243,18 @@ GO_FLAGS := -ldflags "\
 
 ifeq ($(BUILD_IN_CONTAINER),true)
 
+# Git worktree support: Generate volume mounts for worktree git metadata
+GITVOLUMES := $(shell ./tools/git-worktree-volumes.sh 2>/dev/null | sed 's/$$/:$(CONTAINER_MOUNT_OPTIONS)/' || true)
+
 GOVOLUMES=	-v mimir-go-cache:/go/cache \
 			-v mimir-go-pkg:/go/pkg \
-			-v $(shell pwd):/go/src/github.com/grafana/mimir:$(CONTAINER_MOUNT_OPTIONS)
+			-v $(shell pwd):/go/src/github.com/grafana/mimir:$(CONTAINER_MOUNT_OPTIONS) \
+			$(GITVOLUMES)
 
 # Mount local ssh credentials to be able to clone private repos when doing `mod-check`
 SSHVOLUME=  -v ~/.ssh/:/root/.ssh:$(CONTAINER_MOUNT_OPTIONS)
 
-exes $(EXES) $(EXES_RACE) protos $(PROTO_GOS) lint lint-gh-action lint-packaging-scripts test test-with-race cover shell mod-check check-protos doc format dist build-mixin format-mixin check-mixin-tests license check-license conftest-fmt check-conftest-fmt helm-conftest-test helm-conftest-quick-test conftest-verify check-helm-tests build-helm-tests print-go-version format-promql-tests check-promql-tests generate-otlp: fetch-build-image
+exes $(EXES) $(EXES_RACE) protos $(PROTO_GOS) lint lint-gh-action lint-packaging-scripts test test-with-race cover shell mod-check check-protos doc format dist build-mixin format-mixin check-mixin-tests license check-license conftest-fmt check-conftest-fmt helm-conftest-test helm-conftest-quick-test conftest-verify check-helm-tests build-helm-tests print-go-version format-promql-tests check-promql-tests format-protobuf check-protobuf-format: fetch-build-image
 	@echo ">>>> Entering build container: $@"
 	$(SUDO) time docker run --rm $(TTY) -i $(SSHVOLUME) $(GOVOLUMES) $(BUILD_IMAGE) GOOS=$(GOOS) GOARCH=$(GOARCH) BINARY_SUFFIX=$(BINARY_SUFFIX) $@;
 
@@ -309,7 +291,7 @@ lint-gh-action: operations/mimir-rules-action/entrypoint.sh
 	shellcheck $?
 
 lint: ## Run lints to check for style issues.
-lint: check-makefiles
+lint: check-makefiles check-merge-conflicts
 	misspell -error $(DOC_SOURCES_PATH)
 
 	./tools/find-unpooled-slice-creation.sh
@@ -344,8 +326,18 @@ lint: check-makefiles
 	faillint -paths "github.com/grafana/mimir/pkg/..." ./pkg/querier/api/...
 	faillint -paths "github.com/grafana/mimir/pkg/..." ./pkg/util/math/...
 
-	# Ensure all errors are report as APIError
+	# Ensure all errors are reported as APIError
 	faillint -paths "github.com/weaveworks/common/httpgrpc.{Errorf}=github.com/grafana/mimir/pkg/api/error.Newf" ./pkg/frontend/querymiddleware/...
+
+	# Gradually removing use of the github.com/pkg/errors package entirely. It's unmaintained and all functionality
+	# now exists in the standard library errors package. Prevent it from being used in packages that have already
+	# completely migrated.
+	faillint -paths "github.com/pkg/errors=errors" \
+		./pkg/alertmanager/... \
+		./pkg/api/... \
+		./pkg/util/... \
+		./cmd/... \
+		./integration/...
 
 	# errors.Cause() only work on errors wrapped by github.com/pkg/errors, while it doesn't work
 	# on errors wrapped by golang standard errors package. In Mimir we currently use github.com/pkg/errors
@@ -411,11 +403,9 @@ lint: check-makefiles
 		github.com/prometheus/client_golang/prometheus.{NewCounter,NewCounterVec,NewCounterFunc,NewGauge,NewGaugeVec,NewGaugeFunc,NewSummary,NewSummaryVec,NewHistogram,NewHistogramVec}=github.com/prometheus/client_golang/prometheus/promauto.With" \
 		./pkg/...
 
-	# Use the faster slices.Sort where we can.
-	# Note that we don't automatically suggest replacing sort.Float64s() with slices.Sort() as the documentation for slices.Sort()
-	# at the time of writing warns that slices.Sort() may not correctly handle NaN values.
+	# Use the faster slices.IsSortedFunc where we can.
 	faillint -paths \
-		"sort.{Strings,Ints}=slices.Sort" \
+		"sort.{SliceIsSorted}=slices.IsSortedFunc" \
 		./pkg/... ./cmd/... ./tools/... ./integration/...
 
 	# Don't use generic ring.Read operation.
@@ -469,6 +459,9 @@ lint: check-makefiles
 		-path ./integration \
 		-include '*.go'
 
+	# Ensure gRPC buffers aren't released too early
+	go run ./tools/lint-buffer-holder
+
 format: ## Run gofmt and goimports.
 	find . $(DONT_FIND) -name '*.pb.go' -prune -o -type f -name '*.go' -exec gofmt -w -s {} \;
 	find . $(DONT_FIND) -name '*.pb.go' -prune -o -type f -name '*.go' -exec goimports -w -local github.com/grafana/mimir {} \;
@@ -509,6 +502,14 @@ format-promql-tests:
 check-promql-tests: format-promql-tests
 	@./tools/find-diff-or-untracked.sh $(PROMQL_TESTS) || (echo "Please format PromQL test files by running 'format-promql-tests'" && false)
 
+.PHONY: format-protobuf
+format-protobuf:
+	buf format --write $(addprefix --path=,$(PROTO_DEFS))
+
+.PHONY: check-protobuf-format
+check-protobuf-format:
+	buf format --diff --exit-code $(addprefix --path=,$(PROTO_DEFS)) || (echo "Please format Protobuf files by running 'make format-protobuf'" && false)
+
 %.md : %.template
 	go run ./tools/doc-generator $< > $@
 
@@ -529,6 +530,10 @@ license: ## Add license header to files.
 check-license: ## Check license header of files.
 check-license: license
 	@git diff --exit-code || (echo "Please add the license header running 'make BUILD_IN_CONTAINER=false license'" && false)
+
+.PHONY: check-merge-conflicts
+check-merge-conflicts: ## Check for git merge conflict markers in source files.
+	@./tools/check-merge-conflicts.sh
 
 dist: ## Generates binaries for a Mimir release.
 	echo "Cleaning up dist/"
@@ -557,9 +562,6 @@ dist: ## Generates binaries for a Mimir release.
 			echo "Building metaconvert for $$os/$$arch"; \
 			GOOS=$$os GOARCH=$$arch CGO_ENABLED=0 go build $(GO_FLAGS) -o ./dist/metaconvert-$$os-$$arch$$suffix ./cmd/metaconvert; \
 			sha256sum ./dist/metaconvert-$$os-$$arch$$suffix | cut -d ' ' -f 1 > ./dist/metaconvert-$$os-$$arch$$suffix-sha-256; \
-			echo "Building mimir-continuous-test for $$os/$$arch"; \
-			GOOS=$$os GOARCH=$$arch CGO_ENABLED=0 go build $(GO_FLAGS) -o ./dist/mimir-continuous-test-$$os-$$arch$$suffix ./cmd/mimir-continuous-test; \
-			sha256sum ./dist/mimir-continuous-test-$$os-$$arch$$suffix | cut -d ' ' -f 1 > ./dist/mimir-continuous-test-$$os-$$arch$$suffix-sha-256; \
 			echo "Building mark-blocks for $$os/$$arch"; \
 			GOOS=$$os GOARCH=$$arch CGO_ENABLED=0 go build $(GO_FLAGS) -o ./dist/mark-blocks-$$os-$$arch$$suffix ./tools/mark-blocks; \
 			sha256sum ./dist/mark-blocks-$$os-$$arch$$suffix | cut -d ' ' -f 1 > ./dist/mark-blocks-$$os-$$arch$$suffix-sha-256; \
@@ -595,13 +597,13 @@ HELM_RAW_MANIFESTS_PATH=operations/helm/manifests-intermediate
 HELM_REFERENCE_MANIFESTS=operations/helm/tests
 
 conftest-fmt:
-	@conftest fmt $(REGO_POLICIES_PATH)
+	@conftest --rego-version=v0 fmt $(REGO_POLICIES_PATH)
 
 check-conftest-fmt: conftest-fmt
 	@./tools/find-diff-or-untracked.sh $(REGO_POLICIES_PATH) || (echo "Format the rego policies by running 'make conftest-fmt' and commit the changes" && false)
 
 conftest-verify:
-	@conftest verify -p $(REGO_POLICIES_PATH) --report notes
+	@conftest --rego-version=v0 verify -p $(REGO_POLICIES_PATH) --report notes
 
 update-helm-dependencies:
 	@./$(HELM_SCRIPTS_PATH)/update-helm-dependencies.sh operations/helm/charts/mimir-distributed
@@ -619,14 +621,6 @@ helm-conftest-test: build-helm-tests helm-conftest-quick-test
 check-helm-tests: ## Check the helm golden records.
 check-helm-tests: build-helm-tests helm-conftest-test
 	@./tools/find-diff-or-untracked.sh $(HELM_REFERENCE_MANIFESTS) || (echo "Rebuild the Helm tests output by running 'make build-helm-tests' and commit the changes" && false)
-
-.PHONY: generate-otlp
-generate-otlp:
-	cd pkg/distributor/otlp && rm -f *_generated.go && go generate
-
-.PHONY: check-generated-otlp-code
-check-generated-otlp-code: generate-otlp
-	@./tools/find-diff-or-untracked.sh $(OTLP_GOS) || (echo "Please rebuild OTLP code by running 'make generate-otlp'" && false)
 
 endif
 
@@ -663,6 +657,15 @@ check-doc: doc
 	@find . -name "*.md" | xargs git diff --exit-code -- \
 	|| (echo "Please update generated documentation by running 'make doc' and committing the changes" && false)
 
+check-reference-help: ## Check the reference help documentation is up to date.
+check-reference-help: reference-help
+	@git diff --exit-code -- \
+		cmd/mimir/help.txt.tmpl \
+		cmd/mimir/help-all.txt.tmpl \
+		cmd/mimir/config-descriptor.json \
+		operations/mimir/mimir-flags-defaults.json \
+	|| (echo "Please update generated reference documentation by running 'make reference-help' and committing the changes" && false)
+
 # Tool is developed in the grafana/technical-documentation repository:
 # https://github.com/grafana/technical-documentation/tree/main/tools/doc-validator
 check-doc-validator: ## Check documentation using doc-validator tool
@@ -675,6 +678,7 @@ reference-help: cmd/mimir/mimir tools/config-inspector/config-inspector
 	@(./cmd/mimir/mimir -h || true) > cmd/mimir/help.txt.tmpl
 	@(./cmd/mimir/mimir -help-all || true) > cmd/mimir/help-all.txt.tmpl
 	@(./tools/config-inspector/config-inspector || true) > cmd/mimir/config-descriptor.json
+	@jq -f ./tools/config-descriptor-extract-flag-defaults.jq cmd/mimir/config-descriptor.json > operations/mimir/mimir-flags-defaults.json
 
 clean-white-noise: ## Clean the white noise in the markdown files.
 	@find . -path ./.pkg -prune -o -path ./.cache -prune -o -path "*/vendor/*" -prune -or -type f -name "*.md" -print | \
@@ -759,9 +763,6 @@ check-jsonnet-tests: build-jsonnet-tests jsonnet-conftest-test
 
 check-mimir-microservices-mode-docker-compose-yaml: ## Check the jsonnet and docker-compose diff for development/mimir-microservices-mode.
 	cd development/mimir-microservices-mode && make check
-
-check-mimir-read-write-mode-docker-compose-yaml: ## Check the jsonnet and docker-compose diff for development/mimir-read-write-mode.
-	cd development/mimir-read-write-mode && make check
 
 integration-tests: ## Run all integration tests.
 integration-tests: cmd/mimir/$(UPTODATE)

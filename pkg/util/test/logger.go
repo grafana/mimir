@@ -3,11 +3,14 @@
 package test
 
 import (
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/go-logfmt/logfmt"
+	"github.com/stretchr/testify/require"
 )
 
 type TestingLogger struct {
@@ -31,11 +34,11 @@ func (l *TestingLogger) WithT(t testing.TB) log.Logger {
 }
 
 func (l *TestingLogger) Log(keyvals ...interface{}) error {
-	// Prepend log with timestamp.
-	keyvals = append([]interface{}{time.Now().String()}, keyvals...)
+	var line strings.Builder
+	require.NoError(l.t, logfmt.NewEncoder(&line).EncodeKeyvals(keyvals...))
 
 	l.mtx.Lock()
-	l.t.Log(keyvals...)
+	l.t.Log(time.Now().Format(time.RFC3339Nano), line.String())
 	l.mtx.Unlock()
 
 	return nil

@@ -10,6 +10,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/go-kit/log"
@@ -25,7 +26,6 @@ import (
 	"github.com/grafana/mimir/pkg/storage/bucket/gcs"
 	"github.com/grafana/mimir/pkg/storage/bucket/s3"
 	"github.com/grafana/mimir/pkg/storage/bucket/swift"
-	"github.com/grafana/mimir/pkg/util"
 )
 
 var tracer = otel.Tracer("storage/bucket")
@@ -110,7 +110,7 @@ func (cfg *StorageBackendConfig) RegisteredFlags() flagext.RegisteredFlags {
 }
 
 func (cfg *StorageBackendConfig) Validate() error {
-	if !util.StringsContain(cfg.supportedBackends(), cfg.Backend) {
+	if !slices.Contains(cfg.supportedBackends(), cfg.Backend) {
 		return ErrUnsupportedStorageBackend
 	}
 

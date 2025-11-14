@@ -4,7 +4,9 @@ Grafana Mimir adopts some design patterns and code conventions that we ask you t
 
 ## Go coding style
 
-Grafana Mimir follows the [Go Code Review Comments](https://github.com/golang/go/wiki/CodeReviewComments) styleguide and the [Formatting and style](https://peter.bourgon.org/go-in-production/#formatting-and-style) section of Peter Bourgon's [Go: Best Practices for Production Environments](https://peter.bourgon.org/go-in-production/).
+Grafana Mimir follows the [Go Code Review Comments](https://go.dev/wiki/CodeReviewComments) styleguide and the [Formatting and style](https://peter.bourgon.org/go-in-production/#formatting-and-style) section of Peter Bourgon's [Go: Best Practices for Production Environments](https://peter.bourgon.org/go-in-production/).
+
+Comment sentences should begin with the name of the thing being described and end in a period.
 
 ## No global variables
 

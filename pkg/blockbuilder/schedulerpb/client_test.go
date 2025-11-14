@@ -91,6 +91,27 @@ func (s *schedulerClient) completeJobWithForgetTime(k JobKey, forgetTime time.Ti
 	return nil
 }
 
+func TestFailJob(t *testing.T) {
+	sched := &mockSchedulerClient{}
+	sched.jobs = []mockJob{
+		{key: JobKey{Id: "foo/983/585", Epoch: 4523}, spec: JobSpec{Topic: "foo", Partition: 983, StartOffset: 585}},
+	}
+
+	clii, cliErr := NewSchedulerClient("worker1", sched, test.NewTestingLogger(t), 5*time.Minute, 100*time.Hour)
+	require.NoError(t, cliErr)
+	cli := clii.(*schedulerClient)
+	ctx := context.Background()
+	k, _, err := cli.GetJob(ctx)
+	require.NoError(t, err)
+	require.Empty(t, sched.updates)
+
+	require.NoError(t, cli.FailJob(k))
+
+	cli.sendUpdates(ctx)
+	require.Empty(t, sched.updates, "failed job should not be present in updates")
+	require.Empty(t, cli.jobs, "failed job should be expunged from client memory")
+}
+
 func TestForget(t *testing.T) {
 	sched := &mockSchedulerClient{}
 	sched.jobs = []mockJob{

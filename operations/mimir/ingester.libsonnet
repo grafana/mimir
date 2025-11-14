@@ -105,7 +105,7 @@
     $.util.podPriority('high') +
     (if withAntiAffinity then $.util.antiAffinity else {}),
 
-  ingester_statefulset: if !$._config.is_microservices_deployment_mode then null else
+  ingester_statefulset:
     self.newIngesterStatefulSet(
       'ingester',
       $.ingester_container + (if std.length($.ingester_env_map) > 0 then container.withEnvMap(std.prune($.ingester_env_map)) else {}),
@@ -113,12 +113,12 @@
       $.ingester_node_affinity_matchers,
     ),
 
-  ingester_service: if !$._config.is_microservices_deployment_mode then null else
+  ingester_service:
     $.util.serviceFor($.ingester_statefulset, $._config.service_ignored_labels),
 
   newIngesterPdb(ingesterName)::
     $.newMimirPdb(ingesterName),
 
-  ingester_pdb: if !$._config.is_microservices_deployment_mode then null else
+  ingester_pdb:
     self.newIngesterPdb(name),
 }

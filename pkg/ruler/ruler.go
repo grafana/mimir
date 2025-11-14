@@ -39,6 +39,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/rulefmt"
+	promnotifier "github.com/prometheus/prometheus/notifier"
 	promRules "github.com/prometheus/prometheus/rules"
 	"go.opentelemetry.io/otel"
 	"golang.org/x/sync/errgroup"
@@ -120,6 +121,8 @@ type Config struct {
 	AlertmanagerRefreshInterval time.Duration `yaml:"alertmanager_refresh_interval" category:"advanced"`
 	// Capacity of the queue for notifications to be sent to the Alertmanager.
 	NotificationQueueCapacity int `yaml:"notification_queue_capacity" category:"advanced"`
+	// Maximum number of notifications to send to Alertmanager in one request.
+	MaxNotificationBatchSize int `yaml:"max_notification_batch_size" category:"advanced"`
 	// HTTP timeout duration when sending notifications to the Alertmanager.
 	NotificationTimeout time.Duration `yaml:"notification_timeout" category:"advanced"`
 	// Client configs for interacting with the Alertmanager
@@ -196,6 +199,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	cfg.DeprecatedAlertmanagerURL = ""
 	f.DurationVar(&cfg.AlertmanagerRefreshInterval, "ruler.alertmanager-refresh-interval", 1*time.Minute, "How long to wait between refreshing DNS resolutions of Alertmanager hosts.")
 	f.IntVar(&cfg.NotificationQueueCapacity, "ruler.notification-queue-capacity", 10000, "Capacity of the queue for notifications to be sent to the Alertmanager.")
+	f.IntVar(&cfg.MaxNotificationBatchSize, "ruler.max-notification-batch-size", promnotifier.DefaultMaxBatchSize, "Maximum number of notifications to send to Alertmanager in one request.")
 	f.DurationVar(&cfg.NotificationTimeout, "ruler.notification-timeout", 10*time.Second, "HTTP timeout duration when sending notifications to the Alertmanager.")
 
 	f.StringVar(&cfg.RulePath, "ruler.rule-path", "./data-ruler/", "Directory to store temporary rule files loaded by the Prometheus rule managers. This directory is not required to be persisted between restarts.")
@@ -253,9 +257,12 @@ func newRulerMetrics(reg prometheus.Registerer) *rulerMetrics {
 			Help: "Total number of times the ruler sync operation triggered.",
 		}, []string{"reason"}),
 		rulerSyncDuration: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
-			Name:    "cortex_ruler_sync_rules_duration_seconds",
-			Help:    "Time spent syncing all rule groups owned by this ruler instance. This metric tracks the timing of both full and partial sync, and includes the time spent loading rule groups from the storage.",
-			Buckets: []float64{1, 5, 10, 30, 60, 300, 600, 1800, 3600},
+			Name:                            "cortex_ruler_sync_rules_duration_seconds",
+			Help:                            "Time spent syncing all rule groups owned by this ruler instance. This metric tracks the timing of both full and partial sync, and includes the time spent loading rule groups from the storage.",
+			Buckets:                         []float64{1, 5, 10, 30, 60, 300, 600, 1800, 3600},
+			NativeHistogramBucketFactor:     1.1,
+			NativeHistogramMinResetDuration: 1 * time.Hour,
+			NativeHistogramMaxBucketNumber:  100,
 		}),
 	}
 
@@ -291,7 +298,7 @@ type MultiTenantManager interface {
 	Stop()
 
 	// ValidateRuleGroup validates a rulegroup
-	ValidateRuleGroup(rulefmt.RuleGroup, rulefmt.RuleGroupNode) []error
+	ValidateRuleGroup(userID string, ruleGroup rulefmt.RuleGroup, ruleGroupNode rulefmt.RuleGroupNode) []error
 
 	// Start evaluating rules.
 	Start()
@@ -421,7 +428,9 @@ func enableSharding(r *Ruler, ringStore kv.Client) error {
 	// chained via "next delegate").
 	delegate := ring.BasicLifecyclerDelegate(ring.NewInstanceRegisterDelegate(ring.JOINING, r.cfg.Ring.NumTokens))
 	delegate = ring.NewLeaveOnStoppingDelegate(delegate, r.logger)
-	delegate = ring.NewAutoForgetDelegate(r.cfg.Ring.Common.HeartbeatTimeout*ringAutoForgetUnhealthyPeriods, delegate, r.logger)
+	if r.cfg.Ring.AutoForgetUnhealthyPeriods > 0 {
+		delegate = ring.NewAutoForgetDelegate(time.Duration(r.cfg.Ring.AutoForgetUnhealthyPeriods)*r.cfg.Ring.Common.HeartbeatTimeout, delegate, r.logger)
+	}
 
 	rulerRingName := "ruler"
 	r.lifecycler, err = ring.NewBasicLifecycler(lifecyclerCfg, rulerRingName, RulerRingKey, ringStore, delegate, r.logger, prometheus.WrapRegistererWithPrefix("cortex_", r.registry))
@@ -1003,33 +1012,52 @@ func applyRuleGroupLimits(configs map[string]rulespb.RuleGroupList, limits Rules
 		adjusted[userID] = groups
 
 		tenantMinInterval := limits.RulerMinRuleEvaluationInterval(userID)
-		if tenantMinInterval <= 0 {
+		tenantMaxRuleEvaluationResults := limits.RulerMaxRuleEvaluationResults(userID)
+
+		if tenantMinInterval <= 0 && tenantMaxRuleEvaluationResults <= 0 {
+			// Fast-path when no rule group limits were set for the tenant.
 			continue
-		}
-		if tenantMinInterval > rulerCfg.EvaluationInterval {
-			level.Warn(logger).Log(
-				"msg", "tenant min evaluation interval is higher than ruler default evaluation interval, this is a misconfiguration. the min evaluation interval will take precedence",
-				"user", userID,
-				"min_interval", tenantMinInterval,
-				"default_interval", rulerCfg.EvaluationInterval,
-			)
 		}
 
 		for _, group := range adjusted[userID] {
-			// 0 indicates to fall back to the default "ruler.evaluation-interval"
-			// If that's smaller than the min interval, we respect the min interval over everything and stop allowing blank intervals through.
-			if group.Interval == 0 && (tenantMinInterval <= rulerCfg.EvaluationInterval) {
-				continue
+			// Apply minimum evaluation interval limit
+			if tenantMinInterval > 0 {
+				if tenantMinInterval > rulerCfg.EvaluationInterval {
+					level.Warn(logger).Log(
+						"msg", "tenant min evaluation interval is higher than ruler default evaluation interval, this is a misconfiguration. the min evaluation interval will take precedence",
+						"user", userID,
+						"min_interval", tenantMinInterval,
+						"default_interval", rulerCfg.EvaluationInterval,
+					)
+				}
+
+				// 0 indicates to fall back to the default "ruler.evaluation-interval"
+				// If that's smaller than the min interval, we respect the min interval over everything and stop allowing blank intervals through.
+				if group.Interval != 0 || tenantMinInterval > rulerCfg.EvaluationInterval {
+					if group.Interval < tenantMinInterval {
+						level.Info(logger).Log(
+							"msg", "adjusting rule group interval because it's below the tenant's evaluation interval",
+							"user", userID,
+							"rule_group", group.Name,
+							"interval", group.Interval,
+							"min_interval", tenantMinInterval,
+						)
+						group.Interval = tenantMinInterval
+					}
+				}
 			}
-			if group.Interval < tenantMinInterval {
-				level.Info(logger).Log(
-					"msg", "adjusting rule group interval because it's below the tenant's evaluation interval",
-					"user", userID,
-					"rule_group", group.Name,
-					"interval", group.Interval,
-					"min_interval", tenantMinInterval,
-				)
-				group.Interval = tenantMinInterval
+
+			// Apply rule evaluation results limit.
+			if tenantMaxRuleEvaluationResults > 0 {
+				if group.Limit == 0 || int32(tenantMaxRuleEvaluationResults) < group.Limit {
+					level.Info(logger).Log(
+						"msg", "applying rule evaluation results limit to rule group",
+						"user", userID,
+						"rule_group", group.Name,
+						"limit", tenantMaxRuleEvaluationResults,
+					)
+					group.Limit = int32(tenantMaxRuleEvaluationResults)
+				}
 			}
 		}
 	}
@@ -1349,6 +1377,11 @@ func tokenGreaterThanOrEqual(tokenA string, tokenB string) bool {
 // number of rule groups for the tenant and namespace.
 func (r *Ruler) IsMaxRuleGroupsLimited(userID, namespace string) bool {
 	return r.limits.RulerMaxRuleGroupsPerTenant(userID, namespace) > 0
+}
+
+// NameValidationScheme returns the validation scheme to use for a particular tenant.
+func (r *Ruler) NameValidationScheme(userID string) model.ValidationScheme {
+	return r.limits.NameValidationScheme(userID)
 }
 
 // AssertMaxRuleGroups limit has not been reached compared to the current

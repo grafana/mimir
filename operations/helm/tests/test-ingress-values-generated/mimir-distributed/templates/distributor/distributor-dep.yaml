@@ -96,7 +96,7 @@ spec:
               - ALL
             readOnlyRootFilesystem: true
           env:
-            - name: "GOMAXPROCS"
+            - name: GOMAXPROCS
               value: "8"
       topologySpreadConstraints:
       - maxSkew: 1
@@ -108,6 +108,10 @@ spec:
             app.kubernetes.io/instance: test-ingress-values
             app.kubernetes.io/component: distributor
       terminationGracePeriodSeconds: 100
+      dnsConfig:
+        options:
+        - name: ndots
+          value: "3"
       volumes:
         - name: config
           configMap:

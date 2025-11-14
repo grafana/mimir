@@ -7,9 +7,11 @@ import (
 	"time"
 
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
+	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
 func TestVectorSelector_Describe(t *testing.T) {
@@ -77,7 +79,16 @@ func TestVectorSelector_Describe(t *testing.T) {
 					ReturnSampleTimestamps: true,
 				},
 			},
-			expected: `{__name__="foo"} (return sample timestamps)`,
+			expected: `{__name__="foo"}, return sample timestamps`,
+		},
+		"one matcher, skip histogram buckets enabled": {
+			node: &VectorSelector{
+				VectorSelectorDetails: &VectorSelectorDetails{
+					Matchers:             singleMatcher,
+					SkipHistogramBuckets: true,
+				},
+			},
+			expected: `{__name__="foo"}, skip histogram buckets`,
 		},
 	}
 
@@ -284,19 +295,128 @@ func TestVectorSelector_Equivalence(t *testing.T) {
 			},
 			expectEquivalent: false,
 		},
+
+		"one with skipping histogram buckets enabled, one without": {
+			a: &VectorSelector{
+				VectorSelectorDetails: &VectorSelectorDetails{
+					Matchers: []*LabelMatcher{
+						{Name: "__name__", Type: labels.MatchEqual, Value: "foo"},
+					},
+					ExpressionPosition: PositionRange{Start: 1, End: 2},
+				},
+			},
+			b: &VectorSelector{
+				VectorSelectorDetails: &VectorSelectorDetails{
+					Matchers: []*LabelMatcher{
+						{Name: "__name__", Type: labels.MatchEqual, Value: "foo"},
+					},
+					SkipHistogramBuckets: true,
+					ExpressionPosition:   PositionRange{Start: 1, End: 2},
+				},
+			},
+			expectEquivalent: true,
+		},
 	}
 
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
-			require.Equal(t, testCase.expectEquivalent, testCase.a.EquivalentTo(testCase.b))
-			require.Equal(t, testCase.expectEquivalent, testCase.b.EquivalentTo(testCase.a))
+			require.Equal(t, testCase.expectEquivalent, testCase.a.EquivalentToIgnoringHintsAndChildren(testCase.b), "a.EquivalentToIgnoringHintsAndChildren(b) did not return expected value")
+			require.Equal(t, testCase.expectEquivalent, testCase.b.EquivalentToIgnoringHintsAndChildren(testCase.a), "b.EquivalentToIgnoringHintsAndChildren(a) did not return expected value")
 
-			require.True(t, testCase.a.EquivalentTo(testCase.a))
-			require.True(t, testCase.b.EquivalentTo(testCase.b))
+			require.True(t, testCase.a.EquivalentToIgnoringHintsAndChildren(testCase.a), "a should be equivalent to itself")
+			require.True(t, testCase.b.EquivalentToIgnoringHintsAndChildren(testCase.b), "b should be equivalent to itself")
 		})
 	}
 }
 
+func TestVectorSelector_MergeHints(t *testing.T) {
+	runTest := func(t *testing.T, skipFirst, skipSecond bool, expectSkip bool) {
+		first := &VectorSelector{
+			VectorSelectorDetails: &VectorSelectorDetails{
+				SkipHistogramBuckets: skipFirst,
+			},
+		}
+		second := &VectorSelector{
+			VectorSelectorDetails: &VectorSelectorDetails{
+				SkipHistogramBuckets: skipSecond,
+			},
+		}
+
+		err := first.MergeHints(second)
+		require.NoError(t, err)
+		require.Equal(t, expectSkip, first.SkipHistogramBuckets)
+	}
+
+	t.Run("neither has skip histogram buckets enabled", func(t *testing.T) {
+		runTest(t, false, false, false)
+	})
+
+	t.Run("first has skip histogram buckets enabled, other does not", func(t *testing.T) {
+		runTest(t, true, false, false)
+	})
+
+	t.Run("first has skip histogram buckets disabled, other does not", func(t *testing.T) {
+		runTest(t, false, true, false)
+	})
+
+	t.Run("both have skip histogram buckets enabled", func(t *testing.T) {
+		runTest(t, true, true, true)
+	})
+}
+
 func timestampOf(ts int64) *time.Time {
 	return TimeFromTimestamp(&ts)
+}
+
+func TestVectorSelector_QueriedTimeRange(t *testing.T) {
+	startT := timestamp.Time(0).Add(time.Hour)
+	endT := startT.Add(time.Hour)
+	queryTimeRange := types.NewRangeQueryTimeRange(startT, endT, time.Minute)
+	lookbackDelta := 7 * time.Minute
+	offset := 3 * time.Minute
+	ts := timestamp.Time(0).Add(5 * time.Hour)
+	excludeLowerBoundary := time.Millisecond // See selector.ComputeQueriedTimeRange for an explanation of this.
+
+	testCases := map[string]struct {
+		selector *VectorSelector
+		expected planning.QueriedTimeRange
+	}{
+		"no timestamp or offset": {
+			selector: &VectorSelector{
+				VectorSelectorDetails: &VectorSelectorDetails{},
+			},
+			expected: planning.NewQueriedTimeRange(startT.Add(-lookbackDelta).Add(excludeLowerBoundary), endT),
+		},
+		"timestamp set, no offset": {
+			selector: &VectorSelector{
+				VectorSelectorDetails: &VectorSelectorDetails{
+					Timestamp: &ts,
+				},
+			},
+			expected: planning.NewQueriedTimeRange(ts.Add(-lookbackDelta).Add(excludeLowerBoundary), ts),
+		},
+		"offset set, no timestamp": {
+			selector: &VectorSelector{
+				VectorSelectorDetails: &VectorSelectorDetails{
+					Offset: offset,
+				},
+			},
+			expected: planning.NewQueriedTimeRange(startT.Add(-lookbackDelta).Add(-offset).Add(excludeLowerBoundary), endT.Add(-offset)),
+		},
+		"both timestamp and offset set": {
+			selector: &VectorSelector{
+				VectorSelectorDetails: &VectorSelectorDetails{
+					Offset:    offset,
+					Timestamp: &ts,
+				},
+			},
+			expected: planning.NewQueriedTimeRange(ts.Add(-lookbackDelta).Add(-offset).Add(excludeLowerBoundary), ts.Add(-offset)),
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			require.Equal(t, testCase.expected, testCase.selector.QueriedTimeRange(queryTimeRange, lookbackDelta))
+		})
+	}
 }

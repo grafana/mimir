@@ -20,7 +20,6 @@ type Subquery struct {
 
 	SubqueryTimestamp *int64 // Milliseconds since Unix epoch, only set if selector uses @ modifier (eg. metric{...} @ 123)
 	SubqueryOffset    int64  // In milliseconds
-	SubqueryRange     time.Duration
 
 	expressionPosition posrange.PositionRange
 
@@ -47,25 +46,37 @@ func NewSubquery(
 	subqueryRange time.Duration,
 	expressionPosition posrange.PositionRange,
 	memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
-) *Subquery {
+) (*Subquery, error) {
+	// Final aggregation into parent stats happens in samplesProcessedInSubquery().
+	// Child samples always counted per step to count parent stats correctly.
+	childStats, err := types.NewQueryStats(subqueryTimeRange, true, memoryConsumptionTracker)
+	if err != nil {
+		return nil, err
+	}
 	return &Subquery{
 		Inner:                    inner,
 		ParentQueryTimeRange:     parentQueryTimeRange,
 		SubqueryTimeRange:        subqueryTimeRange,
 		SubqueryTimestamp:        subqueryTimestamp,
 		SubqueryOffset:           subqueryOffset.Milliseconds(),
-		SubqueryRange:            subqueryRange,
 		expressionPosition:       expressionPosition,
 		rangeMilliseconds:        subqueryRange.Milliseconds(),
 		floats:                   types.NewFPointRingBuffer(memoryConsumptionTracker),
 		histograms:               types.NewHPointRingBuffer(memoryConsumptionTracker),
 		stepData:                 &types.RangeVectorStepData{},
 		memoryConsumptionTracker: memoryConsumptionTracker,
-	}
+		subqueryStats:            childStats,
+	}, nil
 }
 
-func (s *Subquery) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
-	return s.Inner.SeriesMetadata(ctx)
+func (s *Subquery) SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
+	if s.SubqueryTimeRange.StepCount == 0 {
+		// There are no steps in the subquery time range.
+		// This can happen with queries like "metric[7m:1h]" if the 7m range doesn't overlap with the beginning of an hour.
+		return nil, nil
+	}
+
+	return s.Inner.SeriesMetadata(ctx, matchers)
 }
 
 func (s *Subquery) NextSeries(ctx context.Context) error {
@@ -101,7 +112,7 @@ func (s *Subquery) NextSeries(ctx context.Context) error {
 	return nil
 }
 
-func (s *Subquery) NextStepSamples() (*types.RangeVectorStepData, error) {
+func (s *Subquery) NextStepSamples(ctx context.Context) (*types.RangeVectorStepData, error) {
 	if s.nextStepT > s.ParentQueryTimeRange.EndT {
 		return nil, types.EOS
 	}
@@ -154,31 +165,20 @@ func (s *Subquery) samplesProcessedInSubqueryPerParentStep(step *types.RangeVect
 	return sum
 }
 
-func (s *Subquery) StepCount() int {
-	return s.ParentQueryTimeRange.StepCount
-}
-
-func (s *Subquery) Range() time.Duration {
-	return s.SubqueryRange
-}
-
 func (s *Subquery) ExpressionPosition() posrange.PositionRange {
 	return s.expressionPosition
 }
 
 func (s *Subquery) Prepare(ctx context.Context, params *types.PrepareParams) error {
 	s.parentQueryStats = params.QueryStats
-	// Final aggregation into parent stats happens in samplesProcessedInSubquery().
-	// Child samples always counted per step to count parent stats correctly.
-	childStats, err := types.NewQueryStats(s.SubqueryTimeRange, true, s.memoryConsumptionTracker)
-	if err != nil {
-		return err
-	}
-	s.subqueryStats = childStats
 	childParams := types.PrepareParams{
-		QueryStats: childStats,
+		QueryStats: s.subqueryStats,
 	}
 	return s.Inner.Prepare(ctx, &childParams)
+}
+
+func (s *Subquery) Finalize(ctx context.Context) error {
+	return s.Inner.Finalize(ctx)
 }
 
 func (s *Subquery) Close() {

@@ -35,8 +35,8 @@ var (
 	}.Froze()
 )
 
-// newEmptyPrometheusResponse returns an empty successful Prometheus query range response.
-func newEmptyPrometheusResponse() *PrometheusResponse {
+// NewEmptyPrometheusResponse returns an empty successful Prometheus query range response.
+func NewEmptyPrometheusResponse() *PrometheusResponse {
 	return &PrometheusResponse{
 		Status: statusSuccess,
 		Data: &PrometheusData{
@@ -136,6 +136,10 @@ func (r *PrometheusRangeQueryRequest) GetQuery() string {
 		return r.queryExpr.String()
 	}
 	return ""
+}
+
+func (r *PrometheusRangeQueryRequest) GetParsedQuery() parser.Expr {
+	return r.queryExpr
 }
 
 // GetMinT returns the minimum timestamp in milliseconds of data to be queried,
@@ -337,6 +341,10 @@ func (r *PrometheusInstantQueryRequest) GetQuery() string {
 		return r.queryExpr.String()
 	}
 	return ""
+}
+
+func (r *PrometheusInstantQueryRequest) GetParsedQuery() parser.Expr {
+	return r.queryExpr
 }
 
 func (r *PrometheusInstantQueryRequest) GetStart() int64 {
@@ -1071,23 +1079,6 @@ func (s *SampleStream) MarshalJSON() ([]byte, error) {
 	}
 
 	return json.Marshal(stream)
-}
-
-type byFirstTime []*PrometheusResponse
-
-func (a byFirstTime) Len() int           { return len(a) }
-func (a byFirstTime) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
-func (a byFirstTime) Less(i, j int) bool { return a[i].minTime() < a[j].minTime() }
-
-func (resp *PrometheusResponse) minTime() int64 {
-	result := resp.Data.Result
-	if len(result) == 0 {
-		return -1
-	}
-	if len(result[0].Samples) == 0 {
-		return -1
-	}
-	return result[0].Samples[0].TimestampMs
 }
 
 func (resp *PrometheusResponse) Close() {

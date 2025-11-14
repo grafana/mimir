@@ -2,14 +2,18 @@
 aliases:
   - ../operators-guide/configure/configure-spread-minimizing-tokens/
 description: Learn how to migrate ingesters to spread-minimizing tokens.
-weight: 115
+weight: 150
 menuTitle: Spread-minimizing tokens
 title: Migrate ingesters to spread-minimizing tokens
 ---
 
 # Migrate ingesters to spread-minimizing tokens
 
-Using this guide, you can configure Mimir's ingesters to use the _spread-minimizing token generation strategy_.
+You can configure Mimir's ingesters to use spread-minimizing token generation.
+
+{{< admonition type="note" >}}
+You only need to configure spread-minimizing token generation if you're running Grafana Mimir with classic architecture. With ingest storage architecture, this process is automatic and doesn't require configuration. Refer to [Grafana Mimir architecture](https://grafana.com/docs/mimir/<MIMIR_VERSION>/get-started/about-grafana-mimir-architecture/).
+{{< /admonition >}}
 
 ## Before you begin
 

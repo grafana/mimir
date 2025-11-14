@@ -29,6 +29,12 @@ func NewKafkaWriterClient(kafkaCfg KafkaConfig, maxInflightProduceRequests int, 
 		kprom.Registerer(reg),
 		kprom.FetchAndProduceDetail(kprom.Batches, kprom.Records, kprom.CompressedBytes, kprom.UncompressedBytes))
 
+	// Allow to disable linger in tests.
+	linger := 50 * time.Millisecond
+	if kafkaCfg.disableLinger {
+		linger = 0
+	}
+
 	opts := append(
 		commonKafkaClientOptions(kafkaCfg, metrics, logger),
 
@@ -56,7 +62,7 @@ func NewKafkaWriterClient(kafkaCfg KafkaConfig, maxInflightProduceRequests int, 
 		// doesn't take longer than 1s to process them (if it takes longer, the client will buffer data and stop
 		// issuing new Produce requests until some previous ones complete).
 		kgo.DisableIdempotentWrite(),
-		kgo.ProducerLinger(50*time.Millisecond),
+		kgo.ProducerLinger(linger),
 		kgo.MaxProduceRequestsInflightPerBroker(maxInflightProduceRequests),
 
 		// Unlimited number of Produce retries but a deadline on the max time a record can take to be delivered.
@@ -123,8 +129,11 @@ func NewKafkaProducer(client *kgo.Client, maxBufferedBytes int64, reg prometheus
 
 		// Metrics.
 		bufferedProduceBytes: promauto.With(reg).NewSummary(
+			// The franz-go library exposes "buffered_produce_bytes" metric which is a gauge. Gauges export a snapshot
+			// of the buffer at the time of scraping, but for our use case (alert on 100th percentile) we need to have
+			// higher accuracy, so we also track this metric that gets updated with a high frequency.
 			prometheus.SummaryOpts{
-				Name:       "buffered_produce_bytes",
+				Name:       "buffered_produce_bytes_distribution",
 				Help:       "The buffered produce records in bytes. Quantile buckets keep track of buffered records size over the last 60s.",
 				Objectives: map[float64]float64{0.5: 0.05, 0.99: 0.001, 1: 0.001},
 				MaxAge:     time.Minute,
@@ -208,7 +217,7 @@ func (c *KafkaProducer) ProduceSync(ctx context.Context, records []*kgo.Record) 
 	// Keep track of the remaining deadline before producing records.
 	// This could be useful for troubleshooting.
 	if deadline, ok := ctx.Deadline(); ok {
-		c.produceRemainingDeadline.Observe(max(0, deadline.Sub(time.Now()).Seconds()))
+		c.produceRemainingDeadline.Observe(max(0, time.Until(deadline).Seconds()))
 	}
 
 	// As a safety mechanism, we want to make sure that the context is not already canceled or its deadline exceeded.

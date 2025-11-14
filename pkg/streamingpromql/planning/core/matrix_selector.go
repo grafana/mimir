@@ -5,9 +5,12 @@ package core
 import (
 	"fmt"
 	"slices"
+	"time"
 
 	"github.com/gogo/protobuf/proto"
+	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/prometheus/prometheus/promql/parser/posrange"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/selectors"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
@@ -19,7 +22,7 @@ type MatrixSelector struct {
 }
 
 func (m *MatrixSelector) Describe() string {
-	return describeSelector(m.Matchers, m.Timestamp, m.Offset, &m.Range)
+	return describeSelector(m.Matchers, m.Timestamp, m.Offset, &m.Range, m.SkipHistogramBuckets)
 }
 
 func (m *MatrixSelector) ChildrenTimeRange(timeRange types.QueryTimeRange) types.QueryTimeRange {
@@ -30,8 +33,16 @@ func (m *MatrixSelector) Details() proto.Message {
 	return m.MatrixSelectorDetails
 }
 
-func (m *MatrixSelector) Children() []planning.Node {
-	return nil
+func (m *MatrixSelector) NodeType() planning.NodeType {
+	return planning.NODE_TYPE_MATRIX_SELECTOR
+}
+
+func (m *MatrixSelector) Child(idx int) planning.Node {
+	panic(fmt.Sprintf("node of type MatrixSelector has no children, but attempted to get child at index %d", idx))
+}
+
+func (m *MatrixSelector) ChildCount() int {
+	return 0
 }
 
 func (m *MatrixSelector) SetChildren(children []planning.Node) error {
@@ -42,7 +53,11 @@ func (m *MatrixSelector) SetChildren(children []planning.Node) error {
 	return nil
 }
 
-func (m *MatrixSelector) EquivalentTo(other planning.Node) bool {
+func (m *MatrixSelector) ReplaceChild(idx int, node planning.Node) error {
+	return fmt.Errorf("node of type MatrixSelector supports no children, but attempted to replace child at index %d", idx)
+}
+
+func (m *MatrixSelector) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
 	otherMatrixSelector, ok := other.(*MatrixSelector)
 
 	return ok &&
@@ -52,25 +67,31 @@ func (m *MatrixSelector) EquivalentTo(other planning.Node) bool {
 		m.Range == otherMatrixSelector.Range
 }
 
+func (m *MatrixSelector) MergeHints(other planning.Node) error {
+	otherMatrixSelector, ok := other.(*MatrixSelector)
+	if !ok {
+		return fmt.Errorf("cannot merge hints from %T into %T", other, m)
+	}
+
+	m.SkipHistogramBuckets = m.SkipHistogramBuckets && otherMatrixSelector.SkipHistogramBuckets
+	return nil
+}
+
 func (m *MatrixSelector) ChildrenLabels() []string {
 	return nil
 }
 
-func (m *MatrixSelector) OperatorFactory(_ []types.Operator, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
-	matchers, err := LabelMatchersToPrometheusType(m.Matchers)
-	if err != nil {
-		return nil, err
-	}
-
+func MaterializeMatrixSelector(m *MatrixSelector, _ *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
 	selector := &selectors.Selector{
 		Queryable:                params.Queryable,
 		TimeRange:                timeRange,
 		Timestamp:                TimestampFromTime(m.Timestamp),
 		Offset:                   m.Offset.Milliseconds(),
 		Range:                    m.Range,
-		Matchers:                 matchers,
+		Matchers:                 LabelMatchersToOperatorType(m.Matchers),
 		EagerLoad:                params.EagerLoadSelectors,
-		ExpressionPosition:       m.ExpressionPosition.ToPrometheusType(),
+		SkipHistogramBuckets:     m.SkipHistogramBuckets,
+		ExpressionPosition:       m.ExpressionPosition(),
 		MemoryConsumptionTracker: params.MemoryConsumptionTracker,
 	}
 
@@ -81,4 +102,19 @@ func (m *MatrixSelector) OperatorFactory(_ []types.Operator, timeRange types.Que
 
 func (m *MatrixSelector) ResultType() (parser.ValueType, error) {
 	return parser.ValueTypeMatrix, nil
+}
+
+func (m *MatrixSelector) QueriedTimeRange(queryTimeRange types.QueryTimeRange, _ time.Duration) planning.QueriedTimeRange {
+	// Matrix selectors do not use the lookback delta, so we don't pass it below.
+	minT, maxT := selectors.ComputeQueriedTimeRange(queryTimeRange, TimestampFromTime(m.Timestamp), m.Range, m.Offset.Milliseconds(), 0)
+
+	return planning.NewQueriedTimeRange(timestamp.Time(minT), timestamp.Time(maxT))
+}
+
+func (m *MatrixSelector) ExpressionPosition() posrange.PositionRange {
+	return m.GetExpressionPosition().ToPrometheusType()
+}
+
+func (m *MatrixSelector) MinimumRequiredPlanVersion() planning.QueryPlanVersion {
+	return planning.QueryPlanVersionZero
 }

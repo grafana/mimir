@@ -23,17 +23,14 @@ import (
 
 func TestActiveSeriesWithQuerySharding(t *testing.T) {
 	for _, tc := range []struct {
-		querySchedulerEnabled bool
-		shardingEnabled       bool
+		shardingEnabled bool
 	}{
-		{true, false},
-		{true, true},
-		{false, true},
+		{false},
+		{true},
 	} {
 		config := queryFrontendTestConfig{
 			queryStatsEnabled:           true,
 			shardActiveSeriesQueries:    tc.shardingEnabled,
-			querySchedulerEnabled:       tc.querySchedulerEnabled,
 			querySchedulerDiscoveryMode: "ring",
 			setup: func(t *testing.T, s *e2e.Scenario) (string, map[string]string) {
 				flags := mergeFlags(BlocksStorageFlags(), BlocksStorageS3Flags(),
@@ -48,8 +45,8 @@ func TestActiveSeriesWithQuerySharding(t *testing.T) {
 			},
 		}
 
-		testName := fmt.Sprintf("query scheduler=%v/query sharding=%v",
-			tc.querySchedulerEnabled, tc.shardingEnabled,
+		testName := fmt.Sprintf("query query_sharding=%v",
+			tc.shardingEnabled,
 		)
 		t.Run("active series/"+testName, func(t *testing.T) {
 			runTestActiveSeriesWithQueryShardingHTTPTest(t, config)
@@ -152,20 +149,20 @@ func setupComponentsForActiveSeriesTest(t *testing.T, cfg queryFrontendTestConfi
 		"-querier.max-concurrent":                            "128",
 	})
 
-	// Start the query-scheduler if enabled.
+	// Start the query-scheduler.
 	var queryScheduler *e2emimir.MimirService
-	if cfg.querySchedulerEnabled && cfg.querySchedulerDiscoveryMode == "dns" {
-		queryScheduler = e2emimir.NewQueryScheduler("query-scheduler", flags)
-		require.NoError(t, s.StartAndWaitReady(queryScheduler))
-		flags["-query-frontend.scheduler-address"] = queryScheduler.NetworkGRPCEndpoint()
-		flags["-querier.scheduler-address"] = queryScheduler.NetworkGRPCEndpoint()
-	} else if cfg.querySchedulerEnabled && cfg.querySchedulerDiscoveryMode == "ring" {
+	if cfg.querySchedulerDiscoveryMode == "ring" {
 		flags["-query-scheduler.service-discovery-mode"] = "ring"
 		flags["-query-scheduler.ring.store"] = "consul"
 		flags["-query-scheduler.ring.consul.hostname"] = consul.NetworkHTTPEndpoint()
 
 		queryScheduler = e2emimir.NewQueryScheduler("query-scheduler", flags)
 		require.NoError(t, s.StartAndWaitReady(queryScheduler))
+	} else {
+		queryScheduler = e2emimir.NewQueryScheduler("query-scheduler", flags)
+		require.NoError(t, s.StartAndWaitReady(queryScheduler))
+		flags["-query-frontend.scheduler-address"] = queryScheduler.NetworkGRPCEndpoint()
+		flags["-querier.scheduler-address"] = queryScheduler.NetworkGRPCEndpoint()
 	}
 
 	if cfg.shardActiveSeriesQueries {
@@ -175,10 +172,6 @@ func setupComponentsForActiveSeriesTest(t *testing.T, cfg queryFrontendTestConfi
 	// Start the query-frontend.
 	queryFrontend := e2emimir.NewQueryFrontend("query-frontend", consul.NetworkHTTPEndpoint(), flags, e2emimir.WithConfigFile(configFile))
 	require.NoError(t, s.Start(queryFrontend))
-
-	if !cfg.querySchedulerEnabled {
-		flags["-querier.frontend-address"] = queryFrontend.NetworkGRPCEndpoint()
-	}
 
 	// Start all other services.
 	ingester := e2emimir.NewIngester("ingester", consul.NetworkHTTPEndpoint(), flags, e2emimir.WithConfigFile(configFile))

@@ -483,6 +483,55 @@ func (w *hPointRingBufferWrapper) GetTimestamp(point promql.HPoint) int64 {
 	return point.T
 }
 
+func TestRingBuffer_FPointView_Cloning(t *testing.T) {
+	originalBuffer := NewFPointRingBuffer(limiter.NewMemoryConsumptionTracker(context.Background(), 0, nil, ""))
+	require.NoError(t, originalBuffer.Append(promql.FPoint{T: 0, F: 10}))
+	require.NoError(t, originalBuffer.Append(promql.FPoint{T: 1, F: 11}))
+
+	originalView := originalBuffer.ViewUntilSearchingBackwards(2, nil)
+	clonedView, clonedBuffer, err := originalView.Clone()
+	require.NoError(t, err)
+	require.NotSame(t, originalView, clonedView)
+	require.NotSame(t, originalBuffer, clonedBuffer)
+	require.NotSame(t, &originalBuffer.points[0], &clonedBuffer.points[0], "cloned buffer should not share the same underlying slice")
+	require.Equal(t, originalView.Count(), clonedView.Count())
+
+	originalPoints, err := originalView.CopyPoints()
+	require.NoError(t, err)
+	clonedPoints, err := clonedView.CopyPoints()
+	require.NoError(t, err)
+
+	require.Equal(t, originalPoints, clonedPoints, "cloned views should contain same samples")
+}
+
+func TestRingBuffer_HPointView_Cloning(t *testing.T) {
+	originalBuffer := NewHPointRingBuffer(limiter.NewMemoryConsumptionTracker(context.Background(), 0, nil, ""))
+	h1 := &histogram.FloatHistogram{Count: 100}
+	h2 := &histogram.FloatHistogram{Count: 200}
+	require.NoError(t, originalBuffer.Append(promql.HPoint{T: 0, H: h1}))
+	require.NoError(t, originalBuffer.Append(promql.HPoint{T: 1, H: h2}))
+
+	originalView := originalBuffer.ViewUntilSearchingBackwards(2, nil)
+	clonedView, clonedBuffer, err := originalView.Clone()
+	require.NoError(t, err)
+	require.NotSame(t, originalView, clonedView)
+	require.NotSame(t, originalBuffer, clonedBuffer)
+	require.NotSame(t, &originalBuffer.points[0], &clonedBuffer.points[0], "cloned buffer should not share the same underlying slice")
+	require.Equal(t, originalView.Count(), clonedView.Count())
+
+	// We can't use CopyPoints below as that will create copies of the histograms as well, and we want to check that the two buffers don't share histogram instances.
+	originalHead, originalTail := originalView.UnsafePoints()
+	clonedHead, clonedTail := clonedView.UnsafePoints()
+
+	originalPoints := append(originalHead, originalTail...)
+	clonedPoints := append(clonedHead, clonedTail...)
+
+	require.Equal(t, originalPoints, clonedPoints, "cloned views should contain same samples")
+	require.Len(t, clonedPoints, 2)
+	require.NotSame(t, originalPoints[0].H, clonedPoints[0].H, "cloned points should not share the same histogram instances")
+	require.NotSame(t, originalPoints[1].H, clonedPoints[1].H, "cloned points should not share the same histogram instances")
+}
+
 // setupRingBufferTestingPools sets up dummy pool implementations for testing ring buffers.
 //
 // This helps ensure that the tests behave as expected: the default global pool does not guarantee that

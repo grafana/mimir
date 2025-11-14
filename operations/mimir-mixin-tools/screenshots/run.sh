@@ -27,10 +27,10 @@ source "${SCRIPT_DIR}/.config"
 function cleanup() {
   echo "Cleaning up Docker setup"
   if [[ ! -z "${GRAFANA_PID}" ]]; then
-    kill "${GRAFANA_PID}"
+    kill "${GRAFANA_PID}" 2>/dev/null || echo "Grafana process already stopped"
   fi
-  docker rm --force "${DOCKER_APP_NAME}" || true
-  docker network rm "${DOCKET_NETWORK}" || true
+  docker rm --force "${DOCKER_APP_NAME}" 2>/dev/null || echo "Container ${DOCKER_APP_NAME} not found or already removed"
+  docker network rm "${DOCKET_NETWORK}" 2>/dev/null || echo "Network ${DOCKET_NETWORK} not found or has active endpoints"
   echo "Cleaned up Docker setup"
 }
 
@@ -42,9 +42,9 @@ trap cleanup EXIT
 echo "Building Docker image ${DOCKER_APP_IMAGE}"
 docker build -t "${DOCKER_APP_IMAGE}" "${SCRIPT_DIR}"
 
-# Create Docker network.
+# Create Docker network (ignore if already exists).
 echo "Creating Docker network ${DOCKET_NETWORK}"
-docker network create "$DOCKET_NETWORK"
+docker network create "$DOCKET_NETWORK" 2>/dev/null || echo "Network $DOCKET_NETWORK already exists, continuing..."
 
 # Before starting Grafana, let's make sure the Docker image pulling time
 # is not taken in account when we'll wait below.
@@ -70,7 +70,4 @@ docker run \
   --env "MIMIR_USER=${MIMIR_USER}" \
   -v "${SCRIPT_DIR}/../../mimir-mixin-compiled/dashboards:/input" \
   -v "${SCRIPT_DIR}/../../../docs/sources/mimir/manage/monitor-grafana-mimir/dashboards:/output" \
-  -v "${SCRIPT_DIR}:/sources" \
-  --entrypoint "" \
-  "${DOCKER_APP_IMAGE}" \
-  /bin/bash -c 'cp /sources/app.js /app/app.js && node /app/app.js'
+  "${DOCKER_APP_IMAGE}"

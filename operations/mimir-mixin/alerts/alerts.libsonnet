@@ -6,19 +6,27 @@ local utils = import 'mixin-utils/utils.libsonnet';
     assert std.isArray(strings) : 'simpleRegexpOpt requires that `strings` is an array of strings`';
     '(' + std.join('|', strings) + ')',
 
-  local groupDeploymentByRolloutGroup(metricName) =
-    'sum without(deployment) (label_replace(%s, "rollout_group", "$1", "deployment", "(.*?)(?:-zone-[a-z])?"))' % metricName,
+  local excludeWorkloads(labelName, values) =
+    if std.length(values) == 0 then '' else '{%s!~"%s"}' % [labelName, std.join('|', values)],
 
-  local groupStatefulSetByRolloutGroup(metricName) =
-    'sum by (%s, rollout_group) (label_replace(%s, "rollout_group", "$1", "statefulset", "(.*?)(?:-zone-[a-z])?"))' % [
-      $._config.alert_aggregation_labels,
+  local groupDeploymentByRolloutGroup(metricName, ignore) =
+    'sum without(deployment) (label_replace(%s%s, "rollout_group", "$1", "deployment", "(.*?)(?:-zone-[a-z])?"))' % [
       metricName,
+      excludeWorkloads('deployment', ignore),
     ],
 
-  local groupStatefulSetByRolloutGroupAndRevision(metricName) =
-    'sum by (%s, rollout_group, revision) (label_replace(%s, "rollout_group", "$1", "statefulset", "(.*?)(?:-zone-[a-z])?"))' % [
+  local groupStatefulSetByRolloutGroup(metricName, ignore) =
+    'sum by (%s, rollout_group) (label_replace(%s%s, "rollout_group", "$1", "statefulset", "(.*?)(?:-zone-[a-z])?"))' % [
       $._config.alert_aggregation_labels,
       metricName,
+      excludeWorkloads('statefulset', ignore),
+    ],
+
+  local groupStatefulSetByRolloutGroupAndRevision(metricName, ignore) =
+    'sum by (%s, rollout_group, revision) (label_replace(%s%s, "rollout_group", "$1", "statefulset", "(.*?)(?:-zone-[a-z])?"))' % [
+      $._config.alert_aggregation_labels,
+      metricName,
+      excludeWorkloads('statefulset', ignore),
     ],
 
   local request_metric = 'cortex_request_duration_seconds',
@@ -172,25 +180,6 @@ local utils = import 'mixin-utils/utils.libsonnet';
           },
         },
         {
-          alert: $.alertName('FrontendQueriesStuck'),
-          expr: |||
-            sum by (%(group_by)s, %(job_label)s) (min_over_time(cortex_query_frontend_queue_length[%(range_interval)s])) > 0
-          ||| % {
-            group_by: $._config.alert_aggregation_labels,
-            job_label: $._config.per_job_label,
-            range_interval: $.alertRangeInterval(1),
-          },
-          'for': '5m',  // We don't want to block for longer.
-          labels: {
-            severity: 'critical',
-          },
-          annotations: {
-            message: |||
-              There are {{ $value }} queued up queries in %(alert_aggregation_variables)s {{ $labels.%(per_job_label)s }}.
-            ||| % $._config,
-          },
-        },
-        {
           alert: $.alertName('SchedulerQueriesStuck'),
           expr: |||
             sum by (%(group_by)s, %(job_label)s) (min_over_time(cortex_query_scheduler_queue_length[%(range_interval)s])) > 0
@@ -244,7 +233,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
           expr: |||
             (
               sum by(%(alert_aggregation_labels)s, %(per_instance_label)s) (
-                increase(kube_pod_container_status_restarts_total{container=~"(%(ingester)s|%(mimir_write)s)"}[30m])
+                increase(kube_pod_container_status_restarts_total{container=~"(%(ingester)s)"}[30m])
               )
               >= 2
             )
@@ -254,7 +243,6 @@ local utils = import 'mixin-utils/utils.libsonnet';
             )
           ||| % $._config {
             ingester: $._config.container_names.ingester,
-            mimir_write: $._config.container_names.mimir_write,
           },
           labels: {
             // This alert is on a cause not symptom. A couple of ingesters restarts may be suspicious but
@@ -404,7 +392,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         },
         {
           // Alert if servers are receiving requests with invalid cluster validation labels (i.e. meant for other clusters).
-          alert: $.alertName('ServerInvalidClusterValidationLabelRequests'),
+          alert: $.alertName('ServerInvalidClusterLabelRequests'),
           expr: |||
             (sum by (%(alert_aggregation_labels)s, protocol) (rate(cortex_server_invalid_cluster_validation_label_requests_total{}[%(range_interval)s]))) > 0
             # Alert only for namespaces with Mimir clusters.
@@ -421,7 +409,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         },
         {
           // Alert if clients' requests are rejected due to invalid cluster validation labels (i.e. there's a mismatch between clients' and servers' cluster validation labels).
-          alert: $.alertName('ClientInvalidClusterValidationLabelRequests'),
+          alert: $.alertName('ClientInvalidClusterLabelRequests'),
           expr: |||
             (sum by (%(alert_aggregation_labels)s, protocol) (rate(cortex_client_invalid_cluster_validation_label_requests_total{}[%(range_interval)s]))) > 0
             # Alert only for namespaces with Mimir clusters.
@@ -436,7 +424,6 @@ local utils = import 'mixin-utils/utils.libsonnet';
             message: '%(product)s clients in %(alert_aggregation_variables)s are having requests rejected due to invalid cluster validation labels.' % $._config,
           },
         },
-      ] + [
         {
           alert: $.alertName('RingMembersMismatch'),
           expr: |||
@@ -467,6 +454,112 @@ local utils = import 'mixin-utils/utils.libsonnet';
             message: |||
               Number of members in %(product)s ingester hash ring does not match the expected number in %(alert_aggregation_variables)s.
             ||| % { alert_aggregation_variables: $._config.alert_aggregation_variables, product: $._config.product },
+          },
+        },
+
+        {
+          alert: $.alertName('HighGRPCStreamsPerConnection'),
+          expr: |||
+            max(avg_over_time(grpc_concurrent_streams_by_conn_max[10m])) by (%(alert_aggregation_labels)s, container)
+            /
+            min(cortex_grpc_concurrent_streams_limit) by (%(alert_aggregation_labels)s, container) > 0.9
+          ||| % {
+            alert_aggregation_labels: $._config.alert_aggregation_labels,
+          },
+          labels: {
+            severity: 'warning',
+          },
+          annotations: {
+            message: |||
+              Container {{ $labels.container }} in %(alert_aggregation_variables)s is experiencing high GRPC concurrent streams per connection.
+            ||| % $._config,
+          },
+        },
+
+        {
+          alert: $.alertName('MixedQuerierQueryPlanVersionSupport'),
+          expr: |||
+            min by (%(alert_aggregation_labels)s, %(per_query_path_label)s) (cortex_querier_maximum_supported_query_plan_version)
+            !=
+            max by (%(alert_aggregation_labels)s, %(per_query_path_label)s) (cortex_querier_maximum_supported_query_plan_version)
+          ||| % $._config,
+          'for': '15m',
+          labels: {
+            severity: 'warning',
+          },
+          annotations: {
+            message: |||
+              Queriers in the same %(product)s cluster and query path are reporting different maximum supported query plan versions.
+            |||,
+          },
+        },
+
+        {
+          alert: $.alertName('MixedQueryFrontendQueryPlanVersionSupport'),
+          expr: |||
+            min by (%(alert_aggregation_labels)s, %(per_query_path_label)s) (cortex_query_frontend_querier_ring_calculated_maximum_supported_query_plan_version)
+            !=
+            max by (%(alert_aggregation_labels)s, %(per_query_path_label)s) (cortex_query_frontend_querier_ring_calculated_maximum_supported_query_plan_version)
+          ||| % $._config,
+          'for': '15m',
+          labels: {
+            severity: 'warning',
+          },
+          annotations: {
+            message: |||
+              Query-frontends in the same %(product)s cluster and query path have calculated different maximum supported query plan versions.
+            ||| % $._config,
+          },
+        },
+
+        {
+          alert: $.alertName('QueryFrontendsAndQueriersDisagreeOnSupportedQueryPlanVersion'),
+          expr: |||
+            # The label_replace calls below are so that we can match queriers with container labels like "ruler-querier" to
+            # query-frontends with container labels like "ruler-query-frontend".
+            # We support having the querier/query-frontend part as both a prefix and a suffix to support situations where the
+            # query path name appears at the beginning (eg. "ruler-querier") or at the end (eg. "querier-mqe-test").
+
+            min by (%(alert_aggregation_labels)s, query_path) (
+              label_replace(
+                cortex_querier_maximum_supported_query_plan_version,
+                "query_path", "$2", "%(per_query_path_label)s", "(querier)?-?(.*)-?(querier)?"
+              )
+            )
+            !=
+            min by (%(alert_aggregation_labels)s, query_path) (
+              label_replace(
+                # Exclude the case where query-frontends failed to compute a maximum supported query plan version altogether (reporting -1), as
+                # that is covered by the QueryFrontendNotComputingSupportedQueryPlanVersion alert.
+                cortex_query_frontend_querier_ring_calculated_maximum_supported_query_plan_version != -1,
+                "query_path", "$2", "%(per_query_path_label)s", "(query-frontend)?-?(.*)-?(query-frontend)?"
+              )
+            )
+          ||| % $._config,
+          'for': '15m',
+          labels: {
+            severity: 'warning',
+          },
+          annotations: {
+            message: |||
+              Query-frontends and queriers are reporting different maximum supported query plan versions.
+            ||| % $._config,
+          },
+        },
+
+        {
+          alert: $.alertName('QueryFrontendNotComputingSupportedQueryPlanVersion'),
+          expr: |||
+            count by (%(alert_aggregation_labels)s, %(per_query_path_label)s) (cortex_query_frontend_querier_ring_calculated_maximum_supported_query_plan_version == -1) > 0
+          ||| % $._config,
+          'for': '5m',
+          labels: {
+            severity: 'warning',
+          },
+          annotations: {
+            message: |||
+              Query-frontends are failing to compute a maximum supported query plan version.
+            ||| % $._config,
           },
         },
       ],
@@ -567,7 +660,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
           },
         },
         {
-          alert: $.alertName('DistributorReachingInflightPushRequestLimit'),
+          alert: $.alertName('DistributorInflightRequestsHigh'),
           expr: |||
             (
                 (cortex_distributor_inflight_push_requests / ignoring(limit) cortex_distributor_instance_limits{limit="max_inflight_push_requests"})
@@ -616,11 +709,11 @@ local utils = import 'mixin-utils/utils.libsonnet';
         ||| % {
           aggregation_labels: $._config.alert_aggregation_labels,
           // Indicates the revision of the StatefulSet used to generate current replicas.
-          kube_statefulset_status_current_revision: groupStatefulSetByRolloutGroupAndRevision('kube_statefulset_status_current_revision'),
+          kube_statefulset_status_current_revision: groupStatefulSetByRolloutGroupAndRevision('kube_statefulset_status_current_revision', $._config.rollout_stuck_alert_ignore_statefulsets),
           // Indicates the revision of the StatefulSet used to generate replicas being updated.
-          kube_statefulset_status_update_revision: groupStatefulSetByRolloutGroupAndRevision('kube_statefulset_status_update_revision'),
-          kube_statefulset_replicas: groupStatefulSetByRolloutGroup('kube_statefulset_replicas'),
-          kube_statefulset_status_replicas_updated: groupStatefulSetByRolloutGroup('kube_statefulset_status_replicas_updated'),
+          kube_statefulset_status_update_revision: groupStatefulSetByRolloutGroupAndRevision('kube_statefulset_status_update_revision', $._config.rollout_stuck_alert_ignore_statefulsets),
+          kube_statefulset_replicas: groupStatefulSetByRolloutGroup('kube_statefulset_replicas', $._config.rollout_stuck_alert_ignore_statefulsets),
+          kube_statefulset_status_replicas_updated: groupStatefulSetByRolloutGroup('kube_statefulset_status_replicas_updated', $._config.rollout_stuck_alert_ignore_statefulsets),
           range_interval: '15m:' + $.alertRangeInterval(1),
         },
         'for': for_duration,
@@ -650,8 +743,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
           * on(%(aggregation_labels)s) group_left max by(%(aggregation_labels)s) (cortex_build_info)
         ||| % {
           aggregation_labels: $._config.alert_aggregation_labels,
-          kube_deployment_spec_replicas: groupDeploymentByRolloutGroup('kube_deployment_spec_replicas'),
-          kube_deployment_status_replicas_updated: groupDeploymentByRolloutGroup('kube_deployment_status_replicas_updated'),
+          kube_deployment_spec_replicas: groupDeploymentByRolloutGroup('kube_deployment_spec_replicas', $._config.rollout_stuck_alert_ignore_deployments),
+          kube_deployment_status_replicas_updated: groupDeploymentByRolloutGroup('kube_deployment_status_replicas_updated', $._config.rollout_stuck_alert_ignore_deployments),
           range_interval: '15m:' + $.alertRangeInterval(1),
         },
         'for': for_duration,
@@ -699,8 +792,6 @@ local utils = import 'mixin-utils/utils.libsonnet';
           expr: $._config.ingester_alerts[$._config.deployment_type].memory_allocation % $._config {
             threshold: '0.65',
             ingester: $._config.container_names.ingester,
-            mimir_write: $._config.container_names.mimir_write,
-            mimir_backend: $._config.container_names.mimir_backend,
           },
           'for': '15m',
           labels: {
@@ -717,8 +808,6 @@ local utils = import 'mixin-utils/utils.libsonnet';
           expr: $._config.ingester_alerts[$._config.deployment_type].memory_allocation % $._config {
             threshold: '0.8',
             ingester: $._config.container_names.ingester,
-            mimir_write: $._config.container_names.mimir_write,
-            mimir_backend: $._config.container_names.mimir_backend,
           },
           'for': '15m',
           labels: {
@@ -930,49 +1019,6 @@ local utils = import 'mixin-utils/utils.libsonnet';
       ],
     },
     {
-      name: 'etcd_alerts',
-      rules: [
-        {
-          alert: 'EtcdAllocatingTooMuchMemory',
-          expr: |||
-            (
-              container_memory_rss{container="etcd"}
-                /
-              ( container_spec_memory_limit_bytes{container="etcd"} > 0 )
-            ) > 0.65
-          |||,
-          'for': '15m',
-          labels: {
-            severity: 'warning',
-          },
-          annotations: {
-            message: |||
-              Too much memory being used by {{ $labels.namespace }}/%(alert_instance_variable)s - bump memory limit.
-            ||| % $._config,
-          },
-        },
-        {
-          alert: 'EtcdAllocatingTooMuchMemory',
-          expr: |||
-            (
-              container_memory_rss{container="etcd"}
-                /
-              ( container_spec_memory_limit_bytes{container="etcd"} > 0 )
-            ) > 0.8
-          |||,
-          'for': '15m',
-          labels: {
-            severity: 'critical',
-          },
-          annotations: {
-            message: |||
-              Too much memory being used by {{ $labels.namespace }}/%(alert_instance_variable)s - bump memory limit.
-            ||| % $._config,
-          },
-        },
-      ],
-    },
-    {
       name: 'golang_alerts',
       rules: (
         [
@@ -980,7 +1026,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
             alert: $.alertName('GoThreadsTooHigh'),
             expr: |||
               # We filter by the namespace because go_threads can be very high cardinality in a large organization.
-              max by(%(alert_aggregation_labels)s, %(per_instance_label)s) (go_threads{namespace=~".*(cortex|mimir).*"} > %(threshold)s)
+              max by(%(alert_aggregation_labels)s, %(per_instance_label)s) (go_threads{job=~".*(cortex|mimir).*"} > %(threshold)s)
 
               # Further filter on namespaces actually running Mimir.
               and on (%(alert_aggregation_labels)s) (count by (%(alert_aggregation_labels)s) (cortex_build_info))

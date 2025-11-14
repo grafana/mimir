@@ -6,7 +6,8 @@ package integration
 import (
 	"fmt"
 	"net/http"
-	"sort"
+	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -14,6 +15,7 @@ import (
 	"github.com/grafana/e2e"
 	e2ecache "github.com/grafana/e2e/cache"
 	e2edb "github.com/grafana/e2e/db"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/stretchr/testify/require"
@@ -40,7 +42,7 @@ func TestQuerierLabelNamesAndValues(t *testing.T) {
 				LabelValuesCountTotal: 1008,
 				LabelNamesCount:       3,
 				Cardinality: []*api.LabelNamesCardinalityItem{
-					{LabelName: labels.MetricName, LabelValuesCount: 1000},
+					{LabelName: model.MetricNameLabel, LabelValuesCount: 1000},
 					{LabelName: "job", LabelValuesCount: 5},
 					{LabelName: "env", LabelValuesCount: 3},
 				},
@@ -52,7 +54,7 @@ func TestQuerierLabelNamesAndValues(t *testing.T) {
 				LabelValuesCountTotal: 204,
 				LabelNamesCount:       3,
 				Cardinality: []*api.LabelNamesCardinalityItem{
-					{LabelName: labels.MetricName, LabelValuesCount: 200},
+					{LabelName: model.MetricNameLabel, LabelValuesCount: 200},
 					{LabelName: "env", LabelValuesCount: 3},
 					{LabelName: "job", LabelValuesCount: 1},
 				},
@@ -64,7 +66,7 @@ func TestQuerierLabelNamesAndValues(t *testing.T) {
 				LabelValuesCountTotal: 1008,
 				LabelNamesCount:       3,
 				Cardinality: []*api.LabelNamesCardinalityItem{
-					{LabelName: labels.MetricName, LabelValuesCount: 1000},
+					{LabelName: model.MetricNameLabel, LabelValuesCount: 1000},
 				},
 			},
 		},
@@ -75,7 +77,7 @@ func TestQuerierLabelNamesAndValues(t *testing.T) {
 				LabelValuesCountTotal: 204,
 				LabelNamesCount:       3,
 				Cardinality: []*api.LabelNamesCardinalityItem{
-					{LabelName: labels.MetricName, LabelValuesCount: 200},
+					{LabelName: model.MetricNameLabel, LabelValuesCount: 200},
 				},
 			},
 		},
@@ -109,10 +111,15 @@ func TestQuerierLabelNamesAndValues(t *testing.T) {
 			minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
 			require.NoError(t, s.StartAndWaitReady(minio))
 
+			// Start the query-scheduler.
+			queryScheduler := e2emimir.NewQueryScheduler("query-scheduler", flags)
+			require.NoError(t, s.StartAndWaitReady(queryScheduler))
+			flags["-query-frontend.scheduler-address"] = queryScheduler.NetworkGRPCEndpoint()
+			flags["-querier.scheduler-address"] = queryScheduler.NetworkGRPCEndpoint()
+
 			// Start the query-frontend.
 			queryFrontend := e2emimir.NewQueryFrontend("query-frontend", consul.NetworkHTTPEndpoint(), flags)
 			require.NoError(t, s.Start(queryFrontend))
-			flags["-querier.frontend-address"] = queryFrontend.NetworkGRPCEndpoint()
 
 			// Start all other Mimir services.
 			distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags)
@@ -307,10 +314,15 @@ func TestQuerierLabelValuesCardinality(t *testing.T) {
 			minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
 			require.NoError(t, s.StartAndWaitReady(consul, minio))
 
+			// Start the query-scheduler.
+			queryScheduler := e2emimir.NewQueryScheduler("query-scheduler", flags)
+			require.NoError(t, s.StartAndWaitReady(queryScheduler))
+			flags["-query-frontend.scheduler-address"] = queryScheduler.NetworkGRPCEndpoint()
+			flags["-querier.scheduler-address"] = queryScheduler.NetworkGRPCEndpoint()
+
 			// Start the query-frontend.
 			queryFrontend := e2emimir.NewQueryFrontend("query-frontend", consul.NetworkHTTPEndpoint(), flags)
 			require.NoError(t, s.Start(queryFrontend))
-			flags["-querier.frontend-address"] = queryFrontend.NetworkGRPCEndpoint()
 
 			// Start all other Mimir services.
 			distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags)
@@ -381,8 +393,8 @@ func TestQuerierLabelValuesCardinality(t *testing.T) {
 			}
 
 			// Make sure the resultant label names are sorted
-			sort.Slice(lbValuesCardinalityResp.Labels, func(l, r int) bool {
-				return lbValuesCardinalityResp.Labels[l].LabelName < lbValuesCardinalityResp.Labels[r].LabelName
+			slices.SortFunc(lbValuesCardinalityResp.Labels, func(l, r api.LabelNamesCardinality) int {
+				return strings.Compare(l.LabelName, r.LabelName)
 			})
 			require.Equal(t, tc.expectedResult, *lbValuesCardinalityResp)
 		})

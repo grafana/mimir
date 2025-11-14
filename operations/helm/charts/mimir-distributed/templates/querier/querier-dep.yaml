@@ -1,4 +1,4 @@
-{{- if and .Values.querier.enabled (not .Values.federation_frontend.disableOtherComponents) }}
+{{- if .Values.querier.enabled }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -14,6 +14,9 @@ spec:
   {{- if or (or (kindIs "int64" .Values.querier.replicas) (kindIs "float64" .Values.querier.replicas)) (.Values.querier.replicas) }}
   replicas: {{ .Values.querier.replicas }}
   {{- end }}
+  {{- end }}
+  {{- with .Values.querier.revisionHistoryLimit }}
+  revisionHistoryLimit: {{ . }}
   {{- end }}
   selector:
     matchLabels:
@@ -62,6 +65,7 @@ spec:
             - "-store-gateway.sharding-ring.zone-awareness-enabled=false"
             {{- end }}
           {{- end }}
+            - "-querier.store-gateway-client.grpc-max-recv-msg-size={{ .Values.store_gateway.grpcMaxQueryResponseSizeBytes }}"
           {{- range $key, $value := .Values.querier.extraArgs }}
             - -{{ $key }}={{ $value }}
           {{- end }}
@@ -74,10 +78,6 @@ spec:
             {{- end }}
             - name: config
               mountPath: /etc/mimir
-            {{- if .Values.enterprise.enabled }}
-            - name: license
-              mountPath: /license
-            {{- end }}
             - name: runtime-config
               mountPath: /var/{{ include "mimir.name" . }}
             - name: storage
@@ -105,31 +105,14 @@ spec:
             {{- toYaml .Values.querier.resources | nindent 12 }}
           securityContext:
             {{- toYaml .Values.querier.containerSecurityContext | nindent 12 }}
+          {{- $defaultEnv := list }}
           {{- $cpu_request := dig "requests" "cpu" nil .Values.querier.resources }}
-          {{- if or .Values.global.extraEnv .Values.querier.env $cpu_request }}
-          env:
-            {{- with .Values.global.extraEnv }}
-              {{- toYaml . | nindent 12 }}
-            {{- end }}
-            {{- with .Values.querier.env }}
-              {{- toYaml . | nindent 12 }}
-            {{- end }}
-            {{- if $cpu_request }}
-              {{- $cpu_request_doubled := include "mimir.parseCPU" (dict "value" $cpu_request) | float64 | mulf 2 | ceil }}
-              {{- $cpu_request_plus_four := include "mimir.parseCPU" (dict "value" $cpu_request) | float64 | addf 4 | ceil }}
-            - name: "GOMAXPROCS"
-              value: {{ max $cpu_request_doubled $cpu_request_plus_four | toString | toYaml }}
-            {{- end }}
+          {{- if $cpu_request }}
+            {{- $cpu_request_doubled := include "mimir.parseCPU" (dict "value" $cpu_request) | float64 | mulf 2 | ceil }}
+            {{- $cpu_request_plus_four := include "mimir.parseCPU" (dict "value" $cpu_request) | float64 | addf 4 | ceil }}
+            {{- $defaultEnv = mustAppend $defaultEnv (dict "name" "GOMAXPROCS" "value" (max $cpu_request_doubled $cpu_request_plus_four | toString)) }}
           {{- end }}
-          {{- if or .Values.global.extraEnvFrom .Values.querier.extraEnvFrom }}
-          envFrom:
-            {{- with .Values.global.extraEnvFrom }}
-              {{- toYaml . | nindent 12 }}
-            {{- end }}
-            {{- with .Values.querier.extraEnvFrom }}
-              {{- toYaml . | nindent 12 }}
-            {{- end }}
-          {{- end }}
+          {{- include "mimir.lib.containerEnv" (dict "ctx" . "component" "querier" "env" $defaultEnv) | nindent 10 }}
 {{- if .Values.querier.extraContainers }}
 {{ toYaml .Values.querier.extraContainers | indent 8}}
 {{- end }}
@@ -147,14 +130,13 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       terminationGracePeriodSeconds: {{ .Values.querier.terminationGracePeriodSeconds }}
+      {{- with .Values.querier.dnsConfig }}
+      dnsConfig:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       volumes:
         - name: config
           {{- include "mimir.configVolume" . | nindent 10 }}
-        {{- if .Values.enterprise.enabled }}
-        - name: license
-          secret:
-            secretName: {{ tpl .Values.license.secretName . }}
-        {{- end }}
         - name: runtime-config
           configMap:
             name: {{ template "mimir.fullname" . }}-runtime

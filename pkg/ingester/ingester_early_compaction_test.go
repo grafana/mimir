@@ -13,9 +13,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/grafana/dskit/ring"
-	"github.com/grafana/dskit/services"
-	"github.com/grafana/dskit/test"
 	"github.com/grafana/dskit/user"
 	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/common/model"
@@ -103,24 +100,16 @@ func TestIngester_compactBlocksToReduceInMemorySeries_ShouldTriggerCompactionOnl
 	cfg.BlocksStorageConfig.TSDB.EarlyHeadCompactionMinInMemorySeries = 1
 	cfg.BlocksStorageConfig.TSDB.EarlyHeadCompactionMinEstimatedSeriesReductionPercentage = 50
 
-	ingester, err := prepareIngesterWithBlocksStorage(t, cfg, nil, nil)
+	ingester, r, err := prepareIngesterWithBlocksStorage(t, cfg, nil, nil)
 	require.NoError(t, err)
-	require.NoError(t, services.StartAndAwaitRunning(ctx, ingester))
-	t.Cleanup(func() {
-		require.NoError(t, services.StopAndAwaitTerminated(ctx, ingester))
-	})
-
-	// Wait until it's ACTIVE.
-	test.Poll(t, time.Second, ring.ACTIVE, func() interface{} {
-		return ingester.lifecycler.GetState()
-	})
+	startAndWaitHealthy(t, ingester, r)
 
 	userBlocksDir := filepath.Join(ingester.cfg.BlocksStorageConfig.TSDB.Dir, userID)
 
 	// Push 10 series.
 	for seriesID := 0; seriesID < 10; seriesID++ {
 		require.NoError(t, pushSeriesToIngester(ctxWithUser, t, ingester, []util_test.Series{{
-			Labels:  labels.FromStrings(labels.MetricName, fmt.Sprintf("metric_%d", seriesID)),
+			Labels:  labels.FromStrings(model.MetricNameLabel, fmt.Sprintf("metric_%d", seriesID)),
 			Samples: []util_test.Sample{{TS: sampleTimestamp, Val: 0}},
 		}}))
 	}
@@ -134,13 +123,13 @@ func TestIngester_compactBlocksToReduceInMemorySeries_ShouldTriggerCompactionOnl
 
 	// Pre-condition check.
 	require.Equal(t, uint64(10), ingester.getTSDB(userID).Head().NumSeries())
-	totalActiveSeries, _, _ := ingester.getTSDB(userID).activeSeries.Active()
+	totalActiveSeries, _, _, _ := ingester.getTSDB(userID).activeSeries.Active()
 	require.Equal(t, 0, totalActiveSeries)
 
 	// Push 20 more series.
 	for seriesID := 10; seriesID < 30; seriesID++ {
 		require.NoError(t, pushSeriesToIngester(ctxWithUser, t, ingester, []util_test.Series{{
-			Labels:  labels.FromStrings(labels.MetricName, fmt.Sprintf("metric_%d", seriesID)),
+			Labels:  labels.FromStrings(model.MetricNameLabel, fmt.Sprintf("metric_%d", seriesID)),
 			Samples: []util_test.Sample{{TS: sampleTimestamp, Val: 0}},
 		}}))
 	}
@@ -150,7 +139,7 @@ func TestIngester_compactBlocksToReduceInMemorySeries_ShouldTriggerCompactionOnl
 	require.Len(t, listBlocksInDir(t, userBlocksDir), 0)
 
 	require.Equal(t, uint64(30), ingester.getTSDB(userID).Head().NumSeries())
-	totalActiveSeries, _, _ = ingester.getTSDB(userID).activeSeries.Active()
+	totalActiveSeries, _, _, _ = ingester.getTSDB(userID).activeSeries.Active()
 	require.Equal(t, 20, totalActiveSeries)
 
 	// Advance time until the last series are inactive too. Now we expect the early compaction to trigger.
@@ -160,7 +149,7 @@ func TestIngester_compactBlocksToReduceInMemorySeries_ShouldTriggerCompactionOnl
 	require.Len(t, listBlocksInDir(t, userBlocksDir), 1)
 
 	require.Equal(t, uint64(0), ingester.getTSDB(userID).Head().NumSeries())
-	totalActiveSeries, _, _ = ingester.getTSDB(userID).activeSeries.Active()
+	totalActiveSeries, _, _, _ = ingester.getTSDB(userID).activeSeries.Active()
 	require.Equal(t, 0, totalActiveSeries)
 }
 
@@ -169,7 +158,7 @@ func TestIngester_compactBlocksToReduceInMemorySeries_ShouldCompactHeadUpUntilNo
 		ctx          = context.Background()
 		ctxWithUser  = user.InjectOrgID(ctx, userID)
 		metricName   = "metric_1"
-		metricLabels = labels.FromStrings(labels.MetricName, metricName)
+		metricLabels = labels.FromStrings(model.MetricNameLabel, metricName)
 		metricModel  = map[model.LabelName]model.LabelValue{model.MetricNameLabel: model.LabelValue(metricName)}
 		now          = time.Now()
 		sampleTimes  []time.Time
@@ -185,17 +174,9 @@ func TestIngester_compactBlocksToReduceInMemorySeries_ShouldCompactHeadUpUntilNo
 	limitsCfg := defaultLimitsTestConfig()
 	limitsCfg.CreationGracePeriod = model.Duration(24 * time.Hour) // This test writes samples in the future.
 
-	ingester, err := prepareIngesterWithBlocksStorageAndLimits(t, ingesterCfg, limitsCfg, nil, "", nil)
+	ingester, r, err := prepareIngesterWithBlocksStorageAndLimits(t, ingesterCfg, limitsCfg, nil, "", nil)
 	require.NoError(t, err)
-	require.NoError(t, services.StartAndAwaitRunning(ctx, ingester))
-	t.Cleanup(func() {
-		require.NoError(t, services.StopAndAwaitTerminated(ctx, ingester))
-	})
-
-	// Wait until it's ACTIVE.
-	test.Poll(t, time.Second, ring.ACTIVE, func() interface{} {
-		return ingester.lifecycler.GetState()
-	})
+	startAndWaitHealthy(t, ingester, r)
 
 	userBlocksDir := filepath.Join(ingester.cfg.BlocksStorageConfig.TSDB.Dir, userID)
 
@@ -339,7 +320,7 @@ func TestIngester_compactBlocksToReduceInMemorySeries_ShouldCompactBlocksHonorin
 		ctx          = context.Background()
 		ctxWithUser  = user.InjectOrgID(ctx, userID)
 		metricName   = "metric_1"
-		metricLabels = labels.FromStrings(labels.MetricName, metricName)
+		metricLabels = labels.FromStrings(model.MetricNameLabel, metricName)
 		metricModel  = map[model.LabelName]model.LabelValue{model.MetricNameLabel: model.LabelValue(metricName)}
 	)
 
@@ -350,17 +331,9 @@ func TestIngester_compactBlocksToReduceInMemorySeries_ShouldCompactBlocksHonorin
 	cfg.BlocksStorageConfig.TSDB.EarlyHeadCompactionMinInMemorySeries = 1
 	cfg.BlocksStorageConfig.TSDB.EarlyHeadCompactionMinEstimatedSeriesReductionPercentage = 0
 
-	ingester, err := prepareIngesterWithBlocksStorage(t, cfg, nil, nil)
+	ingester, r, err := prepareIngesterWithBlocksStorage(t, cfg, nil, nil)
 	require.NoError(t, err)
-	require.NoError(t, services.StartAndAwaitRunning(ctx, ingester))
-	t.Cleanup(func() {
-		require.NoError(t, services.StopAndAwaitTerminated(ctx, ingester))
-	})
-
-	// Wait until it's ACTIVE.
-	test.Poll(t, time.Second, ring.ACTIVE, func() interface{} {
-		return ingester.lifecycler.GetState()
-	})
+	startAndWaitHealthy(t, ingester, r)
 
 	// Push samples spanning across multiple block ranges.
 	startTime, err := time.Parse(time.RFC3339, "2023-06-24T00:00:00Z")
@@ -424,28 +397,20 @@ func TestIngester_compactBlocksToReduceInMemorySeries_ShouldFailIngestingSamples
 	cfg.BlocksStorageConfig.TSDB.EarlyHeadCompactionMinInMemorySeries = 1
 	cfg.BlocksStorageConfig.TSDB.EarlyHeadCompactionMinEstimatedSeriesReductionPercentage = 0
 
-	ingester, err := prepareIngesterWithBlocksStorage(t, cfg, nil, nil)
+	ingester, r, err := prepareIngesterWithBlocksStorage(t, cfg, nil, nil)
 	require.NoError(t, err)
-	require.NoError(t, services.StartAndAwaitRunning(ctx, ingester))
-	t.Cleanup(func() {
-		require.NoError(t, services.StopAndAwaitTerminated(ctx, ingester))
-	})
-
-	// Wait until it's ACTIVE.
-	test.Poll(t, time.Second, ring.ACTIVE, func() interface{} {
-		return ingester.lifecycler.GetState()
-	})
+	startAndWaitHealthy(t, ingester, r)
 
 	// Push some samples.
 	startTime, err := time.Parse(time.RFC3339, "2023-06-24T00:00:00Z")
 	require.NoError(t, err)
 
 	require.NoError(t, pushSeriesToIngester(ctxWithUser, t, ingester, []util_test.Series{{
-		Labels:  labels.FromStrings(labels.MetricName, "metric_1"),
+		Labels:  labels.FromStrings(model.MetricNameLabel, "metric_1"),
 		Samples: []util_test.Sample{{TS: startTime.UnixMilli(), Val: 1.0}},
 	}}))
 	require.NoError(t, pushSeriesToIngester(ctxWithUser, t, ingester, []util_test.Series{{
-		Labels:  labels.FromStrings(labels.MetricName, "metric_1"),
+		Labels:  labels.FromStrings(model.MetricNameLabel, "metric_1"),
 		Samples: []util_test.Sample{{TS: startTime.Add(20 * time.Minute).UnixMilli(), Val: 2.0}},
 	}}))
 
@@ -466,15 +431,15 @@ func TestIngester_compactBlocksToReduceInMemorySeries_ShouldFailIngestingSamples
 
 	// Should allow to push samples after "now - active series idle timeout", but not before that.
 	assert.ErrorContains(t, pushSeriesToIngester(ctxWithUser, t, ingester, []util_test.Series{{
-		Labels:  labels.FromStrings(labels.MetricName, "metric_2"),
+		Labels:  labels.FromStrings(model.MetricNameLabel, "metric_2"),
 		Samples: []util_test.Sample{{TS: startTime.UnixMilli(), Val: 1.0}},
 	}}), "the sample has been rejected because its timestamp is too old")
 	assert.NoError(t, pushSeriesToIngester(ctxWithUser, t, ingester, []util_test.Series{{
-		Labels:  labels.FromStrings(labels.MetricName, "metric_2"),
+		Labels:  labels.FromStrings(model.MetricNameLabel, "metric_2"),
 		Samples: []util_test.Sample{{TS: startTime.Add(20 * time.Minute).UnixMilli(), Val: 2.0}},
 	}}))
 	assert.NoError(t, pushSeriesToIngester(ctxWithUser, t, ingester, []util_test.Series{{
-		Labels:  labels.FromStrings(labels.MetricName, "metric_1"),
+		Labels:  labels.FromStrings(model.MetricNameLabel, "metric_1"),
 		Samples: []util_test.Sample{{TS: startTime.Add(30 * time.Minute).UnixMilli(), Val: 3.0}},
 	}}))
 }
@@ -490,19 +455,25 @@ func TestIngester_compactBlocksToReduceInMemorySeries_Concurrency(t *testing.T) 
 		numReaders          = 5
 	)
 
+	// Requests may be modified by the ingester so we need to create a new one for
+	// every call to QueryStream()
+	newReaderReq := func() *client.QueryRequest {
+		return &client.QueryRequest{
+			StartTimestampMs: math.MinInt64,
+			EndTimestampMs:   math.MaxInt64,
+			Matchers: []*client.LabelMatcher{
+				{Type: client.REGEX_MATCH, Name: model.MetricNameLabel, Value: "series_.*"},
+			},
+			StreamingChunksBatchSize: 64,
+		}
+	}
+
 	for r := 0; r < numRuns; r++ {
 		t.Run(fmt.Sprintf("Run %d", r), func(t *testing.T) {
 			var (
 				ctx         = context.Background()
 				ctxWithUser = user.InjectOrgID(ctx, userID)
 				startTime   = time.Now()
-				readerReq   = &client.QueryRequest{
-					StartTimestampMs: math.MinInt64,
-					EndTimestampMs:   math.MaxInt64,
-					Matchers: []*client.LabelMatcher{
-						{Type: client.REGEX_MATCH, Name: model.MetricNameLabel, Value: "series_.*"},
-					},
-				}
 
 				startEarlyCompaction          = make(chan struct{})
 				stopReadersAndEarlyCompaction = make(chan struct{})
@@ -515,17 +486,9 @@ func TestIngester_compactBlocksToReduceInMemorySeries_Concurrency(t *testing.T) 
 			cfg.BlocksStorageConfig.TSDB.EarlyHeadCompactionMinInMemorySeries = 1
 			cfg.BlocksStorageConfig.TSDB.EarlyHeadCompactionMinEstimatedSeriesReductionPercentage = 0
 
-			ingester, err := prepareIngesterWithBlocksStorage(t, cfg, nil, nil)
+			ingester, ring, err := prepareIngesterWithBlocksStorage(t, cfg, nil, nil)
 			require.NoError(t, err)
-			require.NoError(t, services.StartAndAwaitRunning(ctx, ingester))
-			t.Cleanup(func() {
-				require.NoError(t, services.StopAndAwaitTerminated(ctx, ingester))
-			})
-
-			// Wait until it's ACTIVE.
-			test.Poll(t, time.Second, ring.ACTIVE, func() interface{} {
-				return ingester.lifecycler.GetState()
-			})
+			startAndWaitHealthy(t, ingester, ring)
 
 			// Keep track of the last timestamp written by each writer.
 			writerTimesMx := sync.Mutex{}
@@ -551,7 +514,7 @@ func TestIngester_compactBlocksToReduceInMemorySeries_Concurrency(t *testing.T) 
 						seriesToWrite := make([]util_test.Series, 0, toSeriesID-fromSeriesID+1)
 						for seriesIdx := fromSeriesID; seriesIdx <= toSeriesID; seriesIdx++ {
 							seriesToWrite = append(seriesToWrite, util_test.Series{
-								Labels:  labels.FromStrings(labels.MetricName, fmt.Sprintf("series_%05d", seriesIdx)),
+								Labels:  labels.FromStrings(model.MetricNameLabel, fmt.Sprintf("series_%05d", seriesIdx)),
 								Samples: []util_test.Sample{{TS: timestamp, Val: float64(sampleIdx)}},
 							})
 						}
@@ -588,7 +551,7 @@ func TestIngester_compactBlocksToReduceInMemorySeries_Concurrency(t *testing.T) 
 							return
 						case <-time.After(100 * time.Millisecond):
 							s := stream{ctx: ctxWithUser}
-							err := ingester.QueryStream(readerReq, &s)
+							err := ingester.QueryStream(newReaderReq(), &s)
 							require.NoError(t, err)
 
 							res, err := client.StreamsToMatrix(model.Earliest, model.Latest, s.responses)
@@ -661,7 +624,7 @@ func TestIngester_compactBlocksToReduceInMemorySeries_Concurrency(t *testing.T) 
 
 			// Query again all series. We expect to read back all written series and samples.
 			s := stream{ctx: ctxWithUser}
-			err = ingester.QueryStream(readerReq, &s)
+			err = ingester.QueryStream(newReaderReq(), &s)
 			require.NoError(t, err)
 
 			res, err := client.StreamsToMatrix(model.Earliest, model.Latest, s.responses)
@@ -746,7 +709,7 @@ func readMetricSamplesFromBlock(t *testing.T, block *tsdb.Block, metricName stri
 
 	ctx := context.Background()
 
-	postings, err := indexReader.Postings(ctx, labels.MetricName, metricName)
+	postings, err := indexReader.Postings(ctx, model.MetricNameLabel, metricName)
 	require.NoError(t, err)
 
 	for postings.Next() {

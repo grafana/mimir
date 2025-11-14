@@ -8,9 +8,9 @@
 
     <title>Grafana Mimir</title>
 
-    <link rel="stylesheet" href="{{ AddPathPrefix "/static/bootstrap-5.1.3.min.css" }}">
-    <link rel="stylesheet" href="{{ AddPathPrefix "/static/mimir-styles.css" }}">
-    <script src="{{ AddPathPrefix "/static/bootstrap-5.1.3.bundle.min.js" }}"></script>
+    <link rel="stylesheet" href="{{ "static/bootstrap-5.1.3.min.css" }}">
+    <link rel="stylesheet" href="{{ "static/mimir-styles.css" }}">
+    <script src="{{ "static/bootstrap-5.1.3.bundle.min.js" }}"></script>
 </head>
 <body>
 <div class="d-flex flex-column container py-3">
@@ -19,7 +19,7 @@
             <h1>Grafana Mimir Admin</h1>
         </div>
         <div class="col-12 col-sm-3 text-center text-sm-end mb-3 mb-sm-0">
-            <img alt="Mimir logo" class="mimir-brand" src="{{ AddPathPrefix "/static/mimir-icon.png" }}">
+            <img alt="Mimir logo" class="mimir-brand" src="{{ "static/mimir-icon.png" }}">
         </div>
     </div>
     {{ range $i, $ := .LinkGroups }}
@@ -28,7 +28,7 @@
             <div class="col-sm-9">
                 <ul class="my-0 list-unstyled">
                     {{ range $.Links }}
-                        <li><a href="{{ AddPathPrefix .Path }}">{{ .Desc }}</a>
+                        <li><a href="{{ .Path }}">{{ .Desc }}</a>
                             {{ if .Dangerous }}<span
                                     class="badge bg-danger rounded-pill align-middle">Dangerous</span>{{ end }}</li>
                     {{ end }}

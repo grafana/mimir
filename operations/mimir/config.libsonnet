@@ -10,14 +10,6 @@
 
     aws_region: error 'must specify AWS region',
 
-    // The deployment mode to use. Supported values are:
-    // `microservices`: Provides only the k8s objects for each component as microservices.
-    // `read-write`: Provides only mimir-read, mimir-write, and mimir-backend k8s objects.
-    // `migration`: Provides both the microservices and read-write services.
-    deployment_mode: 'microservices',
-    is_microservices_deployment_mode: $._config.deployment_mode == 'microservices' || $._config.deployment_mode == 'migration',
-    is_read_write_deployment_mode: $._config.deployment_mode == 'read-write' || $._config.deployment_mode == 'migration',
-
     // If false, ingesters are not unregistered on shutdown and left in the ring with
     // the LEAVING state. Setting to false prevents series resharding during ingesters rollouts,
     // but requires to:
@@ -113,6 +105,9 @@
     // Enabling lazy loading results in faster startup times at the cost of some latency during query time.
     store_gateway_lazy_loading_enabled: true,
 
+    // Control the maximum size of a response from the store-gateway. Used by store-gateways and queriers to set send and receive limits, respectively.
+    store_gateway_grpc_max_query_response_size_bytes: 200 * 1024 * 1024,
+
     // Number of memcached replicas for each memcached statefulset
     memcached_frontend_replicas: 3,
     memcached_index_queries_replicas: 3,
@@ -122,46 +117,22 @@
     cache_frontend_enabled: true,
     cache_frontend_max_item_size_mb: 5,
     cache_frontend_connection_limit: 16384,
-    memcached_frontend_mtls_enabled: false,
+    cache_frontend_min_ready_seconds: 60,
 
     cache_index_queries_enabled: true,
     cache_index_queries_max_item_size_mb: 5,
     cache_index_queries_connection_limit: 16384,
-    memcached_index_queries_mtls_enabled: false,
+    cache_index_queries_min_ready_seconds: 60,
 
     cache_chunks_enabled: true,
     cache_chunks_max_item_size_mb: 1,
     cache_chunks_connection_limit: 16384,
-    memcached_chunks_mtls_enabled: false,
+    cache_chunks_min_ready_seconds: 60,
 
     cache_metadata_enabled: true,
     cache_metadata_max_item_size_mb: 1,
     cache_metadata_connection_limit: 16384,
-    memcached_metadata_mtls_enabled: false,
-
-    // mTLS can be used for connections to each cache cluster. If enabled for each type of
-    // cache, the same CA, server, and client credentials are used. That is, you cannot use
-    // different credentials for the frontend, chunks, index, and metadata caches.
-    // NOTE: The certificates in the secrets must be under a key named "$SECRET.pem" where
-    // $SECRET is the name of the secret itself. For example, if the CA cert secret is
-    // named "memcached-ca", the cert must be under the key "memcached-ca.pem".
-    memcached_mtls_server_name: null,
-    memcached_mtls_ca_cert_secret: error 'CA cert secret must be set',
-    memcached_mtls_server_cert_secret: error 'server cert secret must be set',
-    memcached_mtls_server_key_secret: error 'server key secret must be set',
-    memcached_mtls_client_cert_secret: error 'client cert secret must be set',
-    memcached_mtls_client_key_secret: error 'client key secret must be set',
-
-    // Paths within containers that secrets are mounted at. It shouldn't be necessary to
-    // change these settings.
-    memcached_ca_cert_path: '/var/secrets/memcached-ca-cert/',
-    memcached_client_key_path: '/var/secrets/memcached-client-key/',
-    memcached_client_cert_path: '/var/secrets/memcached-client-cert/',
-    memcached_server_key_path: '/var/secrets/memcached-server-key/',
-    memcached_server_cert_path: '/var/secrets/memcached-server-cert/',
-
-    // Number of etcd replicas.
-    etcd_replicas: 3,
+    cache_metadata_min_ready_seconds: 60,
 
     // The query-tee is an optional service which can be used to send
     // the same input query to multiple backends and make them compete
@@ -531,9 +502,8 @@
 
     enable_pod_priorities: true,
 
-    // Enables query-scheduler component, and reconfigures querier and query-frontend to use it.
-    query_scheduler_enabled: true,
-    query_scheduler_service_discovery_mode: 'dns',  // Supported values: 'dns', 'ring'.
+    // How query-schedulers are discovered by other components. Supported values: 'dns', 'ring'.
+    query_scheduler_service_discovery_mode: 'dns',
 
     // Migrating a Mimir cluster from DNS to ring-based service discovery is a two steps process:
     // 1. Set `query_scheduler_service_discovery_mode: 'ring' and `query_scheduler_service_discovery_ring_read_path_enabled: false`,
@@ -563,25 +533,33 @@
     ingester_tsdb_head_early_compaction_enabled: false,
     ingester_tsdb_head_early_compaction_reduction_percentage: 15,
 
-    // The default threshold to triger the TSDB Head early compaction is once the ingester in-memory
-    // series reach the 66% of the configured hard limit on max in-memory series. If the limit is not
-    // configured, then we just use a constant default value.
+    // The default threshold to triger the TSDB Head early compaction.
     ingester_tsdb_head_early_compaction_min_in_memory_series:
-      if $._config.ingester_instance_limits != null && std.objectHas($._config.ingester_instance_limits, 'max_series') then
-        std.ceil($._config.ingester_instance_limits.max_series / 1.5)
+      local max_series_per_ingester =
+        if $._config.ingester_instance_limits != null && std.objectHas($._config.ingester_instance_limits, 'max_series') then
+          $._config.ingester_instance_limits.max_series
+        else
+          3e6;
+
+      if $._config.ingest_storage_ingester_autoscaling_enabled then
+        // In the ingest storage architecture, if we hit the max series per ingester it causes a read path outage but
+        // not a write path outage, so it's a bit less severe than the classic architecture. For this reason, we intentionally
+        // set an higher in-memory series threshold before TSDB head early compaction triggers, as a last resort to push
+        // in-memory series down before the hard limit is hit.
+        std.max(
+          std.ceil(1.2 * $._config.ingest_storage_ingester_autoscaling_max_owned_series_threshold),
+          std.ceil(max_series_per_ingester * 0.8)
+        )
       else
-        2000000,
+        // In the classic architecture, if we hit the max series per ingester it causes both a read and write path outage.
+        // In this case we prefer to be more conservative and trigger the TSDB head early compaction whe nthe ingester
+        // in-memory series reach the 66% of the configured hard limit on max in-memory series.
+        std.ceil(max_series_per_ingester / 1.5),
 
     gossip_member_label: 'gossip_ring_member',
     // Labels that service selectors should not use
     service_ignored_labels:: [self.gossip_member_label],
   },
-
-  // Check configured deployment mode to ensure configuration is correct and consistent.
-  assert std.member(['microservices', 'read-write', 'migration'], $._config.deployment_mode)
-         : 'unsupported deployment mode "%s"' % $._config.deployment_mode,
-  assert $._config.deployment_mode == 'migration' || ($._config.is_microservices_deployment_mode != $._config.is_read_write_deployment_mode)
-         : 'do not explicitly set is_microservices_deployment_mode or is_read_write_deployment_mode, but use deployment_mode config option instead',
 
   local configMap = $.core.v1.configMap,
 
@@ -626,16 +604,7 @@
       'query-frontend.results-cache.memcached.addresses': 'dnssrvnoa+memcached-frontend.%(namespace)s.svc.%(cluster_domain)s:11211' % $._config,
       'query-frontend.results-cache.memcached.max-item-size': $._config.cache_frontend_max_item_size_mb * 1024 * 1024,
       'query-frontend.results-cache.memcached.timeout': '500ms',
-    } + if $._config.memcached_frontend_mtls_enabled then {
-      'query-frontend.results-cache.memcached.addresses': 'dnssrvnoa+memcached-frontend.%(namespace)s.svc.%(cluster_domain)s:11212' % $._config,
-      'query-frontend.results-cache.memcached.connect-timeout': '1s',
-      'query-frontend.results-cache.memcached.tls-enabled': true,
-      'query-frontend.results-cache.memcached.tls-ca-path': $._config.memcached_ca_cert_path + $._config.memcached_mtls_ca_cert_secret + '.pem',
-      'query-frontend.results-cache.memcached.tls-key-path': $._config.memcached_client_key_path + $._config.memcached_mtls_client_key_secret + '.pem',
-      'query-frontend.results-cache.memcached.tls-cert-path': $._config.memcached_client_cert_path + $._config.memcached_mtls_client_cert_secret + '.pem',
-      'query-frontend.results-cache.memcached.tls-server-name': if $._config.memcached_mtls_server_name != null then $._config.memcached_mtls_server_name else null,
     } else {}
-    else {}
   ),
 
   blocks_chunks_concurrency_connection_config::
@@ -679,16 +648,7 @@
         'blocks-storage.bucket-store.index-cache.memcached.max-item-size': $._config.cache_index_queries_max_item_size_mb * 1024 * 1024,
         'blocks-storage.bucket-store.index-cache.memcached.max-async-concurrency': 50,
         'blocks-storage.bucket-store.index-cache.memcached.timeout': '750ms',
-      } + if $._config.memcached_index_queries_mtls_enabled then {
-        'blocks-storage.bucket-store.index-cache.memcached.addresses': 'dnssrvnoa+memcached-index-queries.%(namespace)s.svc.%(cluster_domain)s:11212' % $._config,
-        'blocks-storage.bucket-store.index-cache.memcached.connect-timeout': '1s',
-        'blocks-storage.bucket-store.index-cache.memcached.tls-enabled': true,
-        'blocks-storage.bucket-store.index-cache.memcached.tls-ca-path': $._config.memcached_ca_cert_path + $._config.memcached_mtls_ca_cert_secret + '.pem',
-        'blocks-storage.bucket-store.index-cache.memcached.tls-key-path': $._config.memcached_client_key_path + $._config.memcached_mtls_client_key_secret + '.pem',
-        'blocks-storage.bucket-store.index-cache.memcached.tls-cert-path': $._config.memcached_client_cert_path + $._config.memcached_mtls_client_cert_secret + '.pem',
-        'blocks-storage.bucket-store.index-cache.memcached.tls-server-name': if $._config.memcached_mtls_server_name != null then $._config.memcached_mtls_server_name else null,
       } else {}
-      else {}
     ) + (
       if $._config.cache_chunks_enabled then {
         'blocks-storage.bucket-store.chunks-cache.backend': 'memcached',
@@ -696,16 +656,7 @@
         'blocks-storage.bucket-store.chunks-cache.memcached.max-item-size': $._config.cache_chunks_max_item_size_mb * 1024 * 1024,
         'blocks-storage.bucket-store.chunks-cache.memcached.max-async-concurrency': 50,
         'blocks-storage.bucket-store.chunks-cache.memcached.timeout': '750ms',
-      } + if $._config.memcached_chunks_mtls_enabled then {
-        'blocks-storage.bucket-store.chunks-cache.memcached.addresses': 'dnssrvnoa+memcached.%(namespace)s.svc.%(cluster_domain)s:11212' % $._config,
-        'blocks-storage.bucket-store.chunks-cache.memcached.connect-timeout': '1s',
-        'blocks-storage.bucket-store.chunks-cache.memcached.tls-enabled': true,
-        'blocks-storage.bucket-store.chunks-cache.memcached.tls-ca-path': $._config.memcached_ca_cert_path + $._config.memcached_mtls_ca_cert_secret + '.pem',
-        'blocks-storage.bucket-store.chunks-cache.memcached.tls-key-path': $._config.memcached_client_key_path + $._config.memcached_mtls_client_key_secret + '.pem',
-        'blocks-storage.bucket-store.chunks-cache.memcached.tls-cert-path': $._config.memcached_client_cert_path + $._config.memcached_mtls_client_cert_secret + '.pem',
-        'blocks-storage.bucket-store.chunks-cache.memcached.tls-server-name': if $._config.memcached_mtls_server_name != null then $._config.memcached_mtls_server_name else null,
       } else {}
-      else {}
     ),
 
   blocks_metadata_caching_config::
@@ -715,16 +666,7 @@
         'blocks-storage.bucket-store.metadata-cache.memcached.addresses': 'dnssrvnoa+memcached-metadata.%(namespace)s.svc.%(cluster_domain)s:11211' % $._config,
         'blocks-storage.bucket-store.metadata-cache.memcached.max-item-size': $._config.cache_metadata_max_item_size_mb * 1024 * 1024,
         'blocks-storage.bucket-store.metadata-cache.memcached.max-async-concurrency': 50,
-      } + if $._config.memcached_metadata_mtls_enabled then {
-        'blocks-storage.bucket-store.metadata-cache.memcached.addresses': 'dnssrvnoa+memcached-metadata.%(namespace)s.svc.%(cluster_domain)s:11212' % $._config,
-        'blocks-storage.bucket-store.metadata-cache.memcached.connect-timeout': '1s',
-        'blocks-storage.bucket-store.metadata-cache.memcached.tls-enabled': true,
-        'blocks-storage.bucket-store.metadata-cache.memcached.tls-ca-path': $._config.memcached_ca_cert_path + $._config.memcached_mtls_ca_cert_secret + '.pem',
-        'blocks-storage.bucket-store.metadata-cache.memcached.tls-key-path': $._config.memcached_client_key_path + $._config.memcached_mtls_client_key_secret + '.pem',
-        'blocks-storage.bucket-store.metadata-cache.memcached.tls-cert-path': $._config.memcached_client_cert_path + $._config.memcached_mtls_client_cert_secret + '.pem',
-        'blocks-storage.bucket-store.metadata-cache.memcached.tls-server-name': if $._config.memcached_mtls_server_name != null then $._config.memcached_mtls_server_name else null,
       } else {}
-      else {}
     ),
 
   ruler_storage_caching_config::
@@ -735,16 +677,7 @@
         'ruler-storage.cache.memcached.max-item-size': $._config.cache_metadata_max_item_size_mb * 1024 * 1024,
         'ruler-storage.cache.memcached.max-async-concurrency': 50,
         'ruler-storage.cache.memcached.timeout': '500ms',
-      } + if $._config.memcached_metadata_mtls_enabled then {
-        'ruler-storage.cache.memcached.addresses': 'dnssrvnoa+memcached-metadata.%(namespace)s.svc.%(cluster_domain)s:11212' % $._config,
-        'ruler-storage.cache.memcached.connect-timeout': '1s',
-        'ruler-storage.cache.memcached.tls-enabled': true,
-        'ruler-storage.cache.memcached.tls-ca-path': $._config.memcached_ca_cert_path + $._config.memcached_mtls_ca_cert_secret + '.pem',
-        'ruler-storage.cache.memcached.tls-key-path': $._config.memcached_client_key_path + $._config.memcached_mtls_client_key_secret + '.pem',
-        'ruler-storage.cache.memcached.tls-cert-path': $._config.memcached_client_cert_path + $._config.memcached_mtls_client_cert_secret + '.pem',
-        'ruler-storage.cache.memcached.tls-server-name': if $._config.memcached_mtls_server_name != null then $._config.memcached_mtls_server_name else null,
       } else {}
-      else {}
     ),
 
   bucket_index_config:: if $._config.bucket_index_enabled then {

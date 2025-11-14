@@ -69,9 +69,12 @@ func NewLoader(cfg LoaderConfig, bucketClient objstore.Bucket, cfgProvider bucke
 			Help: "Total number of bucket index loading failures.",
 		}),
 		loadDuration: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
-			Name:    "cortex_bucket_index_load_duration_seconds",
-			Help:    "Duration of the a single bucket index loading operation in seconds.",
-			Buckets: []float64{0.01, 0.02, 0.05, 0.1, 0.2, 0.3, 1, 10},
+			Name:                            "cortex_bucket_index_load_duration_seconds",
+			Help:                            "Duration of the a single bucket index loading operation in seconds.",
+			Buckets:                         []float64{0.01, 0.02, 0.05, 0.1, 0.2, 0.3, 1, 10},
+			NativeHistogramBucketFactor:     1.1,
+			NativeHistogramMaxBucketNumber:  100,
+			NativeHistogramMinResetDuration: 1 * time.Hour,
 		}),
 	}
 

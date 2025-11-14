@@ -53,8 +53,6 @@ spec:
           volumeMounts:
             - name: runtime-config
               mountPath: /var/mimir
-            - name: license
-              mountPath: /license
             - name: config
               mountPath: /etc/mimir
             - name: storage
@@ -85,6 +83,8 @@ spec:
               drop:
               - ALL
             readOnlyRootFilesystem: true
+          env:
+            []
       topologySpreadConstraints:
       - maxSkew: 1
         topologyKey: kubernetes.io/hostname
@@ -102,9 +102,6 @@ spec:
             items:
               - key: "mimir.yaml"
                 path: "mimir.yaml"
-        - name: license
-          secret:
-            secretName: openshift-values-mimir-license
         - name: runtime-config
           configMap:
             name: openshift-values-mimir-runtime

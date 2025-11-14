@@ -8,7 +8,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"sort"
+	"slices"
+	"strings"
 	"sync"
 
 	"github.com/go-kit/log"
@@ -146,8 +147,8 @@ func (s *shardActiveNativeHistogramMetricsMiddleware) mergeResponses(ctx context
 		merged.Error = fmt.Sprintf("error merging partial responses: %s", err.Error())
 	} else {
 		resp.StatusCode = http.StatusOK
-		sort.Slice(metricBucketCount, func(i, j int) bool {
-			return metricBucketCount[i].Metric < metricBucketCount[j].Metric
+		slices.SortFunc(metricBucketCount, func(a, b *cardinality.ActiveMetricWithBucketCount) int {
+			return strings.Compare(a.Metric, b.Metric)
 		})
 
 		for _, item := range metricBucketCount {

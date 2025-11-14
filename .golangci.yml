@@ -75,8 +75,14 @@ linters:
         - name: redefines-builtin-id
           disabled: true
     staticcheck:
+      # Replicate the default, except to not disable ST1016.
       checks:
-        - ST1016
+        - all
+        - -ST1000
+        - -ST1003
+        - -ST1020
+        - -ST1021
+        - -ST1022
   exclusions:
     presets:
       - comments

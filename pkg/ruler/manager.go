@@ -23,6 +23,7 @@ import (
 	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/prometheus/prometheus/notifier"
 	promRules "github.com/prometheus/prometheus/rules"
+	"github.com/spf13/afero"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/propagation"
@@ -63,7 +64,7 @@ type DefaultMultiTenantManager struct {
 	rulerIsRunning atomic.Bool
 }
 
-func NewDefaultMultiTenantManager(cfg Config, managerFactory ManagerFactory, reg prometheus.Registerer, logger log.Logger, dnsResolver AddressProvider, limits RulesLimits) (*DefaultMultiTenantManager, error) {
+func NewDefaultMultiTenantManager(cfg Config, managerFactory ManagerFactory, reg prometheus.Registerer, logger log.Logger, dnsResolver AddressProvider, limits RulesLimits, rulesFS afero.Fs) (*DefaultMultiTenantManager, error) {
 	refreshMetrics := discovery.NewRefreshMetrics(reg)
 
 	userManagerMetrics := NewManagerMetrics(logger)
@@ -78,7 +79,7 @@ func NewDefaultMultiTenantManager(cfg Config, managerFactory ManagerFactory, reg
 		dnsResolver:        dnsResolver,
 		refreshMetrics:     refreshMetrics,
 		notifiers:          map[string]*rulerNotifier{},
-		mapper:             newMapper(cfg.RulePath, logger),
+		mapper:             newMapper(cfg.RulePath, rulesFS, logger),
 		userManagers:       map[string]RulesManager{},
 		userManagerMetrics: userManagerMetrics,
 		managersTotal: promauto.With(reg).NewGauge(prometheus.GaugeOpts{
@@ -294,8 +295,9 @@ func (r *DefaultMultiTenantManager) getOrCreateNotifier(userID string) (*notifie
 	reg := prometheus.WrapRegistererWith(prometheus.Labels{"user": userID}, r.registry)
 	reg = prometheus.WrapRegistererWithPrefix("cortex_", reg)
 	var err error
-	if n, err = newRulerNotifier(&notifier.Options{
+	if n, err = newRulerNotifier(r.limits.NameValidationScheme(userID), &notifier.Options{
 		QueueCapacity:   r.cfg.NotificationQueueCapacity,
+		MaxBatchSize:    r.cfg.MaxNotificationBatchSize,
 		DrainOnShutdown: true,
 		Registerer:      reg,
 		Do: func(ctx context.Context, client *http.Client, req *http.Request) (*http.Response, error) {
@@ -307,7 +309,7 @@ func (r *DefaultMultiTenantManager) getOrCreateNotifier(userID string) (*notifie
 				return nil, err
 			}
 
-			ctx, sp := tracer.Start(ctx, "notify", trace.WithAttributes(attribute.String("organization", userID)))
+			ctx, sp := tracer.Start(ctx, "notify", trace.WithAttributes(attribute.String("user", userID)))
 			defer sp.End()
 
 			otel.GetTextMapPropagator().Inject(ctx, propagation.HeaderCarrier(req.Header))
@@ -416,7 +418,7 @@ func (r *DefaultMultiTenantManager) Stop() {
 	r.mapper.cleanup()
 }
 
-func (r *DefaultMultiTenantManager) ValidateRuleGroup(g rulefmt.RuleGroup, node rulefmt.RuleGroupNode) []error {
+func (r *DefaultMultiTenantManager) ValidateRuleGroup(userID string, g rulefmt.RuleGroup, node rulefmt.RuleGroupNode) []error {
 	var errs []error
 
 	if g.Name == "" {
@@ -439,8 +441,9 @@ func (r *DefaultMultiTenantManager) ValidateRuleGroup(g rulefmt.RuleGroup, node 
 		errs = append(errs, fmt.Errorf("invalid rules configuration: rule group '%s' has both query_offset and (deprecated) evaluation_delay set, but to different values; please remove the deprecated evaluation_delay and use query_offset instead", g.Name))
 	}
 
+	validationScheme := r.limits.NameValidationScheme(userID)
 	for i, r := range g.Rules {
-		for _, err := range r.Validate(node.Rules[i]) {
+		for _, err := range r.Validate(node.Rules[i], validationScheme) {
 			var ruleName string
 			if r.Alert != "" {
 				ruleName = r.Alert

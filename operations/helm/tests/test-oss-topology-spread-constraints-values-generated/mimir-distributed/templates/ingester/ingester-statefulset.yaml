@@ -13,8 +13,12 @@ metadata:
     name: "ingester-zone-a"
     rollout-group: ingester
     zone: zone-a
+    grafana.com/prepare-downscale: "true"
+    grafana.com/min-time-between-zones-downscale: 12h
   annotations:
     rollout-max-unavailable: "50"
+    grafana.com/prepare-downscale-http-path: ingester/prepare-shutdown
+    grafana.com/prepare-downscale-http-port: "8080"
   namespace: "citestns"
 spec:
   podManagementPolicy: Parallel
@@ -43,6 +47,7 @@ spec:
   template:
     metadata:
       labels:
+        foo: bar
         app.kubernetes.io/name: mimir
         app.kubernetes.io/instance: test-oss-topology-spread-constraints-values
         app.kubernetes.io/managed-by: Helm
@@ -52,6 +57,7 @@ spec:
         rollout-group: ingester
         zone: zone-a
       annotations:
+        baz: qux
       namespace: "citestns"
     spec:
       serviceAccountName: test-oss-topology-spread-constraints-values-mimir
@@ -95,9 +101,6 @@ spec:
             items:
               - key: "mimir.yaml"
                 path: "mimir.yaml"
-        - name: license
-          secret:
-            secretName: test-oss-topology-spread-constraints-values-mimir-license
         - name: runtime-config
           configMap:
             name: test-oss-topology-spread-constraints-values-mimir-runtime
@@ -111,6 +114,7 @@ spec:
             - "-config.expand-env=true"
             - "-config.file=/etc/mimir/mimir.yaml"
             - "-ingester.ring.instance-availability-zone=zone-a"
+            - "-memberlist.abort-if-fast-join-fails=true"
           volumeMounts:
             - name: config
               mountPath: /etc/mimir
@@ -118,8 +122,6 @@ spec:
               mountPath: /var/mimir
             - name: storage
               mountPath: "/data"
-            - name: license
-              mountPath: /license
             - name: active-queries
               mountPath: /active-query-tracker
           ports:
@@ -150,7 +152,7 @@ spec:
               - ALL
             readOnlyRootFilesystem: true
           env:
-            - name: "GOMAXPROCS"
+            - name: GOMAXPROCS
               value: "4"
 ---
 # Source: mimir-distributed/templates/ingester/ingester-statefulset.yaml
@@ -167,8 +169,13 @@ metadata:
     name: "ingester-zone-b"
     rollout-group: ingester
     zone: zone-b
+    grafana.com/prepare-downscale: "true"
+    grafana.com/min-time-between-zones-downscale: 12h
   annotations:
     rollout-max-unavailable: "50"
+    grafana.com/prepare-downscale-http-path: ingester/prepare-shutdown
+    grafana.com/prepare-downscale-http-port: "8080"
+    grafana.com/rollout-downscale-leader: test-oss-topology-spread-constraints-values-mimir-ingester-zone-a
   namespace: "citestns"
 spec:
   podManagementPolicy: Parallel
@@ -197,6 +204,7 @@ spec:
   template:
     metadata:
       labels:
+        foo: bar
         app.kubernetes.io/name: mimir
         app.kubernetes.io/instance: test-oss-topology-spread-constraints-values
         app.kubernetes.io/managed-by: Helm
@@ -206,6 +214,7 @@ spec:
         rollout-group: ingester
         zone: zone-b
       annotations:
+        baz: qux
       namespace: "citestns"
     spec:
       serviceAccountName: test-oss-topology-spread-constraints-values-mimir
@@ -249,9 +258,6 @@ spec:
             items:
               - key: "mimir.yaml"
                 path: "mimir.yaml"
-        - name: license
-          secret:
-            secretName: test-oss-topology-spread-constraints-values-mimir-license
         - name: runtime-config
           configMap:
             name: test-oss-topology-spread-constraints-values-mimir-runtime
@@ -265,6 +271,7 @@ spec:
             - "-config.expand-env=true"
             - "-config.file=/etc/mimir/mimir.yaml"
             - "-ingester.ring.instance-availability-zone=zone-b"
+            - "-memberlist.abort-if-fast-join-fails=true"
           volumeMounts:
             - name: config
               mountPath: /etc/mimir
@@ -272,8 +279,6 @@ spec:
               mountPath: /var/mimir
             - name: storage
               mountPath: "/data"
-            - name: license
-              mountPath: /license
             - name: active-queries
               mountPath: /active-query-tracker
           ports:
@@ -304,7 +309,7 @@ spec:
               - ALL
             readOnlyRootFilesystem: true
           env:
-            - name: "GOMAXPROCS"
+            - name: GOMAXPROCS
               value: "4"
 ---
 # Source: mimir-distributed/templates/ingester/ingester-statefulset.yaml
@@ -321,8 +326,13 @@ metadata:
     name: "ingester-zone-c"
     rollout-group: ingester
     zone: zone-c
+    grafana.com/prepare-downscale: "true"
+    grafana.com/min-time-between-zones-downscale: 12h
   annotations:
     rollout-max-unavailable: "50"
+    grafana.com/prepare-downscale-http-path: ingester/prepare-shutdown
+    grafana.com/prepare-downscale-http-port: "8080"
+    grafana.com/rollout-downscale-leader: test-oss-topology-spread-constraints-values-mimir-ingester-zone-b
   namespace: "citestns"
 spec:
   podManagementPolicy: Parallel
@@ -351,6 +361,7 @@ spec:
   template:
     metadata:
       labels:
+        foo: bar
         app.kubernetes.io/name: mimir
         app.kubernetes.io/instance: test-oss-topology-spread-constraints-values
         app.kubernetes.io/managed-by: Helm
@@ -360,6 +371,7 @@ spec:
         rollout-group: ingester
         zone: zone-c
       annotations:
+        baz: qux
       namespace: "citestns"
     spec:
       serviceAccountName: test-oss-topology-spread-constraints-values-mimir
@@ -403,9 +415,6 @@ spec:
             items:
               - key: "mimir.yaml"
                 path: "mimir.yaml"
-        - name: license
-          secret:
-            secretName: test-oss-topology-spread-constraints-values-mimir-license
         - name: runtime-config
           configMap:
             name: test-oss-topology-spread-constraints-values-mimir-runtime
@@ -419,6 +428,7 @@ spec:
             - "-config.expand-env=true"
             - "-config.file=/etc/mimir/mimir.yaml"
             - "-ingester.ring.instance-availability-zone=zone-c"
+            - "-memberlist.abort-if-fast-join-fails=true"
           volumeMounts:
             - name: config
               mountPath: /etc/mimir
@@ -426,8 +436,6 @@ spec:
               mountPath: /var/mimir
             - name: storage
               mountPath: "/data"
-            - name: license
-              mountPath: /license
             - name: active-queries
               mountPath: /active-query-tracker
           ports:
@@ -458,5 +466,5 @@ spec:
               - ALL
             readOnlyRootFilesystem: true
           env:
-            - name: "GOMAXPROCS"
+            - name: GOMAXPROCS
               value: "4"

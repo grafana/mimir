@@ -17,7 +17,6 @@ import (
 	e2edb "github.com/grafana/e2e/db"
 	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -159,13 +158,17 @@ func testQuerierWithBlocksStorageRunningInMicroservicesMode(t *testing.T, series
 			t.Cleanup(func() { require.NoError(t, s.Stop(storeGateway1, storeGateway2)) })
 			require.NoError(t, s.StartAndWaitReady(storeGateway1, storeGateway2))
 
+			// Start the query-scheduler.
+			queryScheduler := e2emimir.NewQueryScheduler("query-scheduler", flags)
+			t.Cleanup(func() { require.NoError(t, s.Stop(queryScheduler)) })
+			require.NoError(t, s.StartAndWaitReady(queryScheduler))
+			flags["-query-frontend.scheduler-address"] = queryScheduler.NetworkGRPCEndpoint()
+			flags["-querier.scheduler-address"] = queryScheduler.NetworkGRPCEndpoint()
+
 			// Start the query-frontend but do not check for readiness yet.
 			queryFrontend := e2emimir.NewQueryFrontend("query-frontend", consul.NetworkHTTPEndpoint(), flags)
 			t.Cleanup(func() { require.NoError(t, s.Stop(queryFrontend)) })
 			require.NoError(t, s.Start(queryFrontend))
-
-			// Configure the querier to connect to the query-frontend.
-			flags["-querier.frontend-address"] = queryFrontend.NetworkGRPCEndpoint()
 
 			// Start the querier with configuring store-gateway addresses if sharding is disabled.
 			querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), flags)
@@ -370,6 +373,9 @@ func TestQuerierWithBlocksStorageRunningInSingleBinaryMode(t *testing.T) {
 				// Ruler.
 				"-ruler.ring.store":           "consul",
 				"-ruler.ring.consul.hostname": consul.NetworkHTTPEndpoint(),
+				// Querier.
+				"-querier.ring.store":           "consul",
+				"-querier.ring.consul.hostname": consul.NetworkHTTPEndpoint(),
 				// Query-frontend.
 				"-query-frontend.parallelize-shardable-queries": strconv.FormatBool(testCfg.queryShardingEnabled),
 			})
@@ -387,6 +393,7 @@ func TestQuerierWithBlocksStorageRunningInSingleBinaryMode(t *testing.T) {
 				numTokensPerInstance += 512     // Compactor ring.
 				numTokensPerInstance += 512 * 2 // Store-gateway ring (read both by the querier and store-gateway).
 				numTokensPerInstance += 128     // Ruler ring.
+				numTokensPerInstance++          // Querier ring
 
 				require.NoError(t, replica.WaitSumMetrics(e2e.Equals(float64(numTokensPerInstance*cluster.NumInstances())), "cortex_ring_tokens_total"))
 			}
@@ -636,7 +643,7 @@ func testMetadataQueriesWithBlocksStorage(
 					matches: []string{lastSeriesInStorageName},
 				},
 			},
-			labelNames: []string{labels.MetricName, firstSeriesInIngesterHeadName},
+			labelNames: []string{model.MetricNameLabel, firstSeriesInIngesterHeadName},
 		},
 		"query metadata entirely inside the ingester range but outside the head range": {
 			from: lastSeriesInIngesterBlocksTs,
@@ -669,7 +676,7 @@ func testMetadataQueriesWithBlocksStorage(
 					matches: []string{firstSeriesInIngesterHeadName},
 				},
 			},
-			labelNames: []string{labels.MetricName, lastSeriesInIngesterBlocksName},
+			labelNames: []string{model.MetricNameLabel, lastSeriesInIngesterBlocksName},
 		},
 		"query metadata partially inside the ingester range": {
 			from: lastSeriesInStorageTs.Add(-blockRangePeriod),
@@ -708,7 +715,7 @@ func testMetadataQueriesWithBlocksStorage(
 					matches: []string{lastSeriesInStorageName, lastSeriesInIngesterBlocksName},
 				},
 			},
-			labelNames: []string{labels.MetricName, lastSeriesInStorageName, lastSeriesInIngesterBlocksName, firstSeriesInIngesterHeadName},
+			labelNames: []string{model.MetricNameLabel, lastSeriesInStorageName, lastSeriesInIngesterBlocksName, firstSeriesInIngesterHeadName},
 		},
 		"query metadata entirely outside the ingester range should not return the head data": {
 			from: lastSeriesInStorageTs.Add(-2 * blockRangePeriod),
@@ -742,7 +749,7 @@ func testMetadataQueriesWithBlocksStorage(
 					matches: []string{firstSeriesInIngesterHeadName},
 				},
 			},
-			labelNames: []string{labels.MetricName, lastSeriesInStorageName},
+			labelNames: []string{model.MetricNameLabel, lastSeriesInStorageName},
 		},
 	}
 
@@ -760,7 +767,7 @@ func testMetadataQueriesWithBlocksStorage(
 			}
 
 			for _, lvt := range tc.labelValuesTests {
-				labelsRes, err := c.LabelValues(labels.MetricName, tc.from, tc.to, lvt.matches)
+				labelsRes, err := c.LabelValues(model.MetricNameLabel, tc.from, tc.to, lvt.matches)
 				require.NoError(t, err)
 				exp := model.LabelValues{}
 				for _, val := range lvt.resp {
@@ -1003,11 +1010,11 @@ func TestHashCollisionHandling(t *testing.T) {
 	tsMillis := e2e.TimeToMilliseconds(now)
 	metric1 := []prompb.Label{
 		{Name: "A", Value: "K6sjsNNczPl"},
-		{Name: labels.MetricName, Value: "fingerprint_collision"},
+		{Name: model.MetricNameLabel, Value: "fingerprint_collision"},
 	}
 	metric2 := []prompb.Label{
 		{Name: "A", Value: "cswpLMIZpwt"},
-		{Name: labels.MetricName, Value: "fingerprint_collision"},
+		{Name: model.MetricNameLabel, Value: "fingerprint_collision"},
 	}
 
 	series = append(series, prompb.TimeSeries{
@@ -1055,7 +1062,7 @@ func TestHashCollisionHandling(t *testing.T) {
 
 func getMetricName(lbls []prompb.Label) string {
 	for _, lbl := range lbls {
-		if lbl.Name == labels.MetricName {
+		if lbl.Name == model.MetricNameLabel {
 			return lbl.Value
 		}
 	}

@@ -4,7 +4,7 @@ aliases:
 description: Learn how to configure Grafana Mimir to use different object storage backend implementations.
 menuTitle: Object storage
 title: Configure Grafana Mimir object storage backend
-weight: 65
+weight: 70
 ---
 
 # Configure Grafana Mimir object storage backend
@@ -146,6 +146,44 @@ ruler_storage:
   azure:
     container_name: mimir-ruler
 ```
+
+#### Azure Workload Identity
+
+Here is an example configuration for using Azure Workload Identity.
+
+```yaml
+---
+common:
+  storage:
+    backend: azure
+    azure:
+      account_name: mimirprod
+      endpoint_suffix: "blob.core.windows.net"
+blocks_storage:
+  azure:
+    container_name: mimir-blocks
+alertmanager_storage:
+  azure:
+    container_name: mimir-alertmanager
+ruler_storage:
+  azure:
+    container_name: mimir-ruler
+serviceAccount:
+  create: true
+  name: mimir-storage
+  annotation:
+    "azure.workload.identity/use: "true"
+    "azure.workload.identity/client-id": "${USER_ASSIGNED_IDENTITY_CLIENT_ID}"
+  labels:
+    "azure.workload.identity/use: "true"
+global:
+  podlabels:
+    "azure.workload.identity/use: "true"
+```
+
+{{< admonition type="note" >}}
+Unlike with Tempo, federated tokens are not supported with Mimir.
+{{< /admonition >}}
 
 ### OpenStack SWIFT
 

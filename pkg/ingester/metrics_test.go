@@ -304,6 +304,28 @@ func TestTSDBMetrics(t *testing.T) {
 			cortex_ingester_tsdb_wbl_replay_unknown_refs_total{type="exemplars", user="user1"} 12345
 			cortex_ingester_tsdb_wbl_replay_unknown_refs_total{type="exemplars", user="user2"} 85787
 			cortex_ingester_tsdb_wbl_replay_unknown_refs_total{type="exemplars", user="user3"} 999
+
+			# HELP cortex_ingester_tsdb_block_postings_for_matchers_cache_bytes_total Total number of bytes in the PostingsForMatchers cache.
+			# TYPE cortex_ingester_tsdb_block_postings_for_matchers_cache_bytes_total gauge
+			cortex_ingester_tsdb_block_postings_for_matchers_cache_bytes_total 0
+			# HELP cortex_ingester_tsdb_block_postings_for_matchers_cache_entries_total Total number of entries in the PostingsForMatchers cache.
+			# TYPE cortex_ingester_tsdb_block_postings_for_matchers_cache_entries_total gauge
+			cortex_ingester_tsdb_block_postings_for_matchers_cache_entries_total 0
+
+			# HELP cortex_ingester_tsdb_head_postings_for_matchers_cache_invalidations_total Total number of cache entries that were invalidated.
+			# TYPE cortex_ingester_tsdb_head_postings_for_matchers_cache_invalidations_total counter
+			cortex_ingester_tsdb_head_postings_for_matchers_cache_invalidations_total 0
+
+			# HELP cortex_ingester_tsdb_head_postings_for_matchers_cache_bytes_total Total number of bytes in the PostingsForMatchers cache.
+			# TYPE cortex_ingester_tsdb_head_postings_for_matchers_cache_bytes_total gauge
+			cortex_ingester_tsdb_head_postings_for_matchers_cache_bytes_total 0
+			# HELP cortex_ingester_tsdb_head_postings_for_matchers_cache_entries_total Total number of entries in the PostingsForMatchers cache.
+			# TYPE cortex_ingester_tsdb_head_postings_for_matchers_cache_entries_total gauge
+			cortex_ingester_tsdb_head_postings_for_matchers_cache_entries_total 0
+
+			# HELP cortex_ingester_tsdb_block_postings_for_matchers_cache_invalidations_total Total number of cache entries that were invalidated.
+			# TYPE cortex_ingester_tsdb_block_postings_for_matchers_cache_invalidations_total counter
+			cortex_ingester_tsdb_block_postings_for_matchers_cache_invalidations_total 0
 	`))
 	require.NoError(t, err)
 }
@@ -584,6 +606,28 @@ func TestTSDBMetricsWithRemoval(t *testing.T) {
 			# TYPE cortex_ingester_tsdb_wbl_replay_unknown_refs_total counter
 			cortex_ingester_tsdb_wbl_replay_unknown_refs_total{type="exemplars", user="user1"} 12345
 			cortex_ingester_tsdb_wbl_replay_unknown_refs_total{type="exemplars", user="user2"} 85787
+
+			# HELP cortex_ingester_tsdb_block_postings_for_matchers_cache_bytes_total Total number of bytes in the PostingsForMatchers cache.
+			# TYPE cortex_ingester_tsdb_block_postings_for_matchers_cache_bytes_total gauge
+			cortex_ingester_tsdb_block_postings_for_matchers_cache_bytes_total 0
+			# HELP cortex_ingester_tsdb_block_postings_for_matchers_cache_entries_total Total number of entries in the PostingsForMatchers cache.
+			# TYPE cortex_ingester_tsdb_block_postings_for_matchers_cache_entries_total gauge
+			cortex_ingester_tsdb_block_postings_for_matchers_cache_entries_total 0
+
+			# HELP cortex_ingester_tsdb_head_postings_for_matchers_cache_invalidations_total Total number of cache entries that were invalidated.
+			# TYPE cortex_ingester_tsdb_head_postings_for_matchers_cache_invalidations_total counter
+			cortex_ingester_tsdb_head_postings_for_matchers_cache_invalidations_total 0
+
+			# HELP cortex_ingester_tsdb_head_postings_for_matchers_cache_bytes_total Total number of bytes in the PostingsForMatchers cache.
+			# TYPE cortex_ingester_tsdb_head_postings_for_matchers_cache_bytes_total gauge
+			cortex_ingester_tsdb_head_postings_for_matchers_cache_bytes_total 0
+			# HELP cortex_ingester_tsdb_head_postings_for_matchers_cache_entries_total Total number of entries in the PostingsForMatchers cache.
+			# TYPE cortex_ingester_tsdb_head_postings_for_matchers_cache_entries_total gauge
+			cortex_ingester_tsdb_head_postings_for_matchers_cache_entries_total 0
+
+			# HELP cortex_ingester_tsdb_block_postings_for_matchers_cache_invalidations_total Total number of cache entries that were invalidated.
+			# TYPE cortex_ingester_tsdb_block_postings_for_matchers_cache_invalidations_total counter
+			cortex_ingester_tsdb_block_postings_for_matchers_cache_invalidations_total 0
 	`))
 	require.NoError(t, err)
 }

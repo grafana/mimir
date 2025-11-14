@@ -263,22 +263,13 @@ custom_client_cluster_validation:
 	require.Equal(t, "client-cluster", cfg.CustomClientClusterValidation.Label)
 }
 
-func TestMigrateHATrackerTimeouts(t *testing.T) {
+func TestRemovedGlobalHATrackerTimeouts(t *testing.T) {
 	t.Parallel()
 
 	for _, testCase := range []struct {
 		name       string
 		yamlConfig string
 	}{{
-		name: "migrates deprecated parameters to limit",
-		yamlConfig: `
-distributor:
-  ha_tracker:
-    ha_tracker_update_timeout: 13s
-    ha_tracker_update_timeout_jitter_max: 3s
-    ha_tracker_failover_timeout: 26s
-  `,
-	}, {
 		name: "keeps values in limit",
 		yamlConfig: `
 limits:
@@ -287,18 +278,18 @@ limits:
   ha_tracker_failover_timeout: 26s
   `,
 	}, {
-		name: "prefers values in distributor.ha_tracker",
+		name: "ignores values in removed distributor.ha_tracker",
 		yamlConfig: `
 limits:
-  ha_tracker_update_timeout: 1s
-  ha_tracker_update_timeout_jitter_max: 1s
-  ha_tracker_failover_timeout: 3s
+  ha_tracker_update_timeout: 13s
+  ha_tracker_update_timeout_jitter_max: 3s
+  ha_tracker_failover_timeout: 26s
 
 distributor:
   ha_tracker:
-    ha_tracker_update_timeout: 13s
-    ha_tracker_update_timeout_jitter_max: 3s
-    ha_tracker_failover_timeout: 26s
+    ha_tracker_update_timeout: 1s
+    ha_tracker_update_timeout_jitter_max: 1s
+    ha_tracker_failover_timeout: 3s
   `,
 	}} {
 		t.Run(testCase.name, func(t *testing.T) {

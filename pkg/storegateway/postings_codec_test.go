@@ -19,6 +19,7 @@ import (
 
 	"github.com/golang/snappy"
 	"github.com/pkg/errors"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
@@ -173,16 +174,16 @@ func TestDiffVarintMatchersCodec(t *testing.T) {
 		nil,
 		{},
 		{{}},
-		{labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "cpu_seconds")},
-		{labels.MustNewMatcher(labels.MatchNotEqual, labels.MetricName, "cpu_seconds")},
-		{labels.MustNewMatcher(labels.MatchRegexp, labels.MetricName, "^cpu_.*$")},
-		{labels.MustNewMatcher(labels.MatchNotRegexp, labels.MetricName, "^cpu_.*$")},
+		{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "cpu_seconds")},
+		{labels.MustNewMatcher(labels.MatchNotEqual, model.MetricNameLabel, "cpu_seconds")},
+		{labels.MustNewMatcher(labels.MatchRegexp, model.MetricNameLabel, "^cpu_.*$")},
+		{labels.MustNewMatcher(labels.MatchNotRegexp, model.MetricNameLabel, "^cpu_.*$")},
 		{labels.MustNewMatcher(labels.MatchEqual, "n", "1"+labelLongSuffix)},
 		{labels.MustNewMatcher(labels.MatchEqual, labelLongSuffix, "1"+labelLongSuffix)},
 		{labels.MustNewMatcher(labels.MatchEqual, "n", "")},
 		{labels.MustNewMatcher(labels.MatchEqual, "n", "1"), labels.MustNewMatcher(labels.MatchEqual, "i", "2")},
 		{labels.MustNewMatcher(labels.MatchRegexp, "n", ""), labels.MustNewMatcher(labels.MatchEqual, "i", "1")},
-		{labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "\n")},
+		{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "\n")},
 	}
 
 	for postingsName, postings := range postingsMap {
@@ -342,8 +343,8 @@ func BenchmarkEncodePostings(b *testing.B) {
 	}
 
 	matchers := []*labels.Matcher{
-		labels.MustNewMatcher(labels.MatchNotEqual, labels.MetricName, "cpu_seconds"),
-		labels.MustNewMatcher(labels.MatchRegexp, labels.MetricName, "^cpu_.*$"),
+		labels.MustNewMatcher(labels.MatchNotEqual, model.MetricNameLabel, "cpu_seconds"),
+		labels.MustNewMatcher(labels.MatchRegexp, model.MetricNameLabel, "^cpu_.*$"),
 		labels.MustNewMatcher(labels.MatchEqual, "n", "1"+labelLongSuffix),
 		labels.MustNewMatcher(labels.MatchEqual, "n", ""),
 	}

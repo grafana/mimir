@@ -1,4 +1,4 @@
-{{- if and .Values.query_frontend.enabled (not .Values.federation_frontend.disableOtherComponents) }}
+{{- if .Values.query_frontend.enabled }}
 apiVersion: v1
 kind: Service
 metadata:
@@ -15,6 +15,9 @@ spec:
   type: {{ .Values.query_frontend.service.type }}
   {{- if semverCompare ">= 1.22-0" (include "mimir.kubeVersion" .) }}
   internalTrafficPolicy: {{ .Values.query_frontend.service.internalTrafficPolicy }}
+  {{- end }}
+  {{- if .Values.query_frontend.service.trafficDistribution }}
+  trafficDistribution: {{ .Values.query_frontend.service.trafficDistribution }}
   {{- end }}
   ports:
     - port: {{ include "mimir.serverHttpListenPort" .}}

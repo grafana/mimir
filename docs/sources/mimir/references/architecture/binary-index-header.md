@@ -7,8 +7,6 @@ title: Grafana Mimir binary index-header
 weight: 40
 ---
 
-<!-- Note: This topic is mounted in the GEM documentation. Ensure that all updates are also applicable to GEM. -->
-
 # Grafana Mimir binary index-header
 
 To query series inside blocks from object storage, the [store-gateway](../components/store-gateway/) must obtain information about each block index.

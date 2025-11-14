@@ -171,11 +171,11 @@ func (s *jobQueue[T]) renewLease(key jobKey, workerID string) error {
 	if !ok {
 		return errJobNotFound
 	}
-	if j.assignee != workerID {
-		return errJobNotAssigned
-	}
 	if j.key.epoch != key.epoch {
 		return errBadEpoch
+	}
+	if j.assignee != workerID {
+		return errJobNotAssigned
 	}
 
 	j.leaseExpiry = time.Now().Add(s.leaseExpiry)
@@ -201,11 +201,11 @@ func (s *jobQueue[T]) completeJob(key jobKey, workerID string) error {
 	if !ok {
 		return errJobNotFound
 	}
-	if j.assignee != workerID {
-		return errJobNotAssigned
-	}
 	if j.key.epoch != key.epoch {
 		return errBadEpoch
+	}
+	if j.assignee != workerID {
+		return errJobNotAssigned
 	}
 
 	delete(s.jobs, key.id)
@@ -288,6 +288,12 @@ func (s *jobQueue[T]) assigned() int {
 		}
 	}
 	return count
+}
+
+func (s *jobQueue[T]) setEpoch(epoch int64) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.epoch = epoch
 }
 
 type job[T any] struct {

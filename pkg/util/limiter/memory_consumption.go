@@ -4,11 +4,15 @@ package limiter
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"strconv"
+	"strings"
 	"sync"
 
 	"github.com/grafana/dskit/tracing"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/prometheus/model/labels"
 )
 
 type contextKey int
@@ -17,16 +21,17 @@ const (
 	memoryConsumptionTracker contextKey = 0
 )
 
-// MemoryTrackerFromContextWithFallback returns a MemoryConsumptionTracker that has been added to this
-// context. If there is no MemoryConsumptionTracker in this context, a new no-op tracker that
-// does not enforce any limits is returned.
-func MemoryTrackerFromContextWithFallback(ctx context.Context) *MemoryConsumptionTracker {
+var errNoMemoryConsumptionTrackerInContext = errors.New("no memory consumption tracker in context")
+
+// MemoryConsumptionTrackerFromContext returns a MemoryConsumptionTracker that has been added to this
+// context. If there is no MemoryConsumptionTracker in this context, return errNoMemoryConsumptionTrackerInContext.
+func MemoryConsumptionTrackerFromContext(ctx context.Context) (*MemoryConsumptionTracker, error) {
 	tracker, ok := ctx.Value(memoryConsumptionTracker).(*MemoryConsumptionTracker)
 	if !ok {
-		return NewMemoryConsumptionTracker(ctx, 0, nil, "")
+		return nil, errNoMemoryConsumptionTrackerInContext
 	}
 
-	return tracker
+	return tracker, nil
 }
 
 // AddMemoryTrackerToContext adds a MemoryConsumptionTracker to this context. This is used to propagate
@@ -34,6 +39,13 @@ func MemoryTrackerFromContextWithFallback(ctx context.Context) *MemoryConsumptio
 // to accept extra parameters.
 func AddMemoryTrackerToContext(ctx context.Context, tracker *MemoryConsumptionTracker) context.Context {
 	return context.WithValue(ctx, interface{}(memoryConsumptionTracker), tracker)
+}
+
+// ContextWithNewUnlimitedMemoryConsumptionTracker creates an unlimited MemoryConsumptionTracker and add it to the context and return
+// the context. This can be used in places where we don't want to limit memory consumption, although tracking will still happen.
+func ContextWithNewUnlimitedMemoryConsumptionTracker(ctx context.Context) context.Context {
+	memoryTracker := NewUnlimitedMemoryConsumptionTracker(ctx)
+	return AddMemoryTrackerToContext(ctx, memoryTracker)
 }
 
 type MemoryConsumptionSource int
@@ -56,8 +68,9 @@ const (
 	QuantileGroupSlices
 	TopKBottomKInstantQuerySeriesSlices
 	TopKBottomKRangeQuerySeriesSlices
+	Labels
 
-	memoryConsumptionSourceCount = TopKBottomKRangeQuerySeriesSlices + 1
+	memoryConsumptionSourceCount = Labels + 1
 )
 
 const (
@@ -100,6 +113,8 @@ func (s MemoryConsumptionSource) String() string {
 		return "[]topkbottom.instantQuerySeries"
 	case TopKBottomKRangeQuerySeriesSlices:
 		return "[]topkbottom.rangeQuerySeries"
+	case Labels:
+		return "labels.Labels"
 	default:
 		return unknownMemorySource
 	}
@@ -125,6 +140,12 @@ type MemoryConsumptionTracker struct {
 	// rather than atomics because we only want to adjust the memory used after checking
 	// that it would not exceed the limit.
 	mtx sync.Mutex
+}
+
+// NewUnlimitedMemoryConsumptionTracker creates a new MemoryConsumptionTracker that track memory consumption but
+// will not enforce memory limit.
+func NewUnlimitedMemoryConsumptionTracker(ctx context.Context) *MemoryConsumptionTracker {
+	return NewMemoryConsumptionTracker(ctx, 0, nil, "")
 }
 
 func NewMemoryConsumptionTracker(ctx context.Context, maxEstimatedMemoryConsumptionBytes uint64, rejectionCount prometheus.Counter, queryDescription string) *MemoryConsumptionTracker {
@@ -194,4 +215,33 @@ func (l *MemoryConsumptionTracker) CurrentEstimatedMemoryConsumptionBytes() uint
 	defer l.mtx.Unlock()
 
 	return l.currentEstimatedMemoryConsumptionBytes
+}
+
+// IncreaseMemoryConsumptionForLabels attempts to increase the current memory consumption based on labels.
+func (l *MemoryConsumptionTracker) IncreaseMemoryConsumptionForLabels(lbls labels.Labels) error {
+	if err := l.IncreaseMemoryConsumption(uint64(lbls.ByteSize()), Labels); err != nil {
+		return err
+	}
+	return nil
+}
+
+// DecreaseMemoryConsumptionForLabels decreases the current memory consumption based on labels.
+func (l *MemoryConsumptionTracker) DecreaseMemoryConsumptionForLabels(lbls labels.Labels) {
+	l.DecreaseMemoryConsumption(uint64(lbls.ByteSize()), Labels)
+}
+
+func (l *MemoryConsumptionTracker) DescribeCurrentMemoryConsumption() string {
+	l.mtx.Lock()
+	defer l.mtx.Unlock()
+
+	b := &strings.Builder{}
+
+	for source, value := range l.currentEstimatedMemoryConsumptionBySource {
+		b.WriteString(MemoryConsumptionSource(source).String())
+		b.WriteString(": ")
+		b.WriteString(strconv.FormatUint(value, 10))
+		b.WriteString(" B \n")
+	}
+
+	return b.String()
 }

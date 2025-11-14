@@ -1,5 +1,7 @@
 package http
 
+import "net/url"
+
 const TestCACert = `-----BEGIN CERTIFICATE-----
 MIGrMF+gAwIBAgIBATAFBgMrZXAwADAeFw0yNDExMTYxMDI4MzNaFw0yNTExMTYx
 MDI4MzNaMAAwKjAFBgMrZXADIQCf30GvRnHbs9gukA3DLXDK6W5JVgYw6mERU/60
@@ -22,3 +24,11 @@ MHcCAQEEIIrYSSNQFaA2Hwf1duRSxKtLYX5CB04fSeQ6tF1aY/PuoAoGCCqGSM49
 AwEHoUQDQgAEPR3tU2Fta9ktY+6P9G0cWO+0kETA6SFs38GecTyudlHz6xvCdz8q
 EKTcWGekdmdDPsHloRNtsiCa697B2O9IFA==
 -----END EC PRIVATE KEY-----`
+
+func MustURL(u string) URL {
+	res, err := url.Parse(u)
+	if err != nil {
+		panic(err)
+	}
+	return URL{URL: res}
+}

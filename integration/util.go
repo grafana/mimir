@@ -18,7 +18,6 @@ import (
 	"github.com/grafana/e2e"
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/prompb"
 
 	"github.com/grafana/mimir/integration/e2ehistograms"
@@ -39,6 +38,11 @@ var (
 
 // generateSeriesFunc defines what kind of series (and expected vectors/matrices) to generate - float samples or native histograms
 type generateSeriesFunc func(name string, ts time.Time, additionalLabels ...prompb.Label) (series []prompb.TimeSeries, vector model.Vector, matrix model.Matrix)
+
+func generateFloatSeriesModel(name string, ts time.Time, additionalLabels ...prompb.Label) prompb.TimeSeries {
+	series, _, _ := generateFloatSeries(name, ts, additionalLabels...)
+	return series[0]
+}
 
 // Generates different typed series based on an index in i.
 // Use with a large enough number of series, e.g. i>100
@@ -227,5 +231,5 @@ func remoteReadQueryByMetricName(metricName string, start, end time.Time) *promp
 }
 
 func remoteReadQueryMatchersByMetricName(metricName string) []*prompb.LabelMatcher {
-	return []*prompb.LabelMatcher{{Type: prompb.LabelMatcher_EQ, Name: labels.MetricName, Value: metricName}}
+	return []*prompb.LabelMatcher{{Type: prompb.LabelMatcher_EQ, Name: model.MetricNameLabel, Value: metricName}}
 }

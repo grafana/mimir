@@ -14,25 +14,50 @@
     $._config.queryBlocksStorageConfig +
     $._config.querySchedulerRingClientConfig +
     $.blocks_metadata_caching_config +
-    $.bucket_index_config
+    $.bucket_index_config +
+    $.querierUseQuerySchedulerArgs('query-scheduler') +
     {
       target: 'querier',
 
       'server.http-listen-port': $._config.server_http_port,
       'querier.max-concurrent': $._config.querier_max_concurrency,
 
-      'querier.frontend-address': if !$._config.is_microservices_deployment_mode || $._config.query_scheduler_enabled then null else
-        'query-frontend-discovery.%(namespace)s.svc.%(cluster_domain)s:9095' % $._config,
       'querier.frontend-client.grpc-max-send-msg-size': 100 << 20,
 
       // We request high memory but the Go heap is typically very low (< 100MB) and this causes
       // the GC to trigger continuously. Setting a ballast of 256MB reduces GC.
       'mem-ballast-size-bytes': 1 << 28,  // 256M
+
+      'querier.store-gateway-client.grpc-max-recv-msg-size': $._config.store_gateway_grpc_max_query_response_size_bytes,
     },
 
   // CLI flags that are applied only to queriers, and not ruler-queriers.
   // Values take precedence over querier_args.
   querier_only_args:: {},
+
+  // Timeout validation for querier
+  local validateQuerierTimeouts() =
+    local q_timeout = if 'querier.timeout' in $.querier_args then
+      $.util.parseDuration($.querier_args['querier.timeout'])
+    else
+      $.util.getFlagDefaultSeconds('querier.timeout');
+
+    local q_write_timeout = if 'server.http-write-timeout' in $.querier_args then
+      $.util.parseDuration($.querier_args['server.http-write-timeout'])
+    else
+      $.util.getFlagDefaultSeconds('server.http-write-timeout');
+
+    assert q_timeout == null || q_write_timeout == null || q_timeout <= q_write_timeout :
+           'querier: querier.timeout (%s) must be less than or equal to server.http-write-timeout (%s)' %
+           [
+      if 'querier.timeout' in $.querier_args then $.querier_args['querier.timeout'] else ('default: %ss' % $.util.getFlagDefaultSeconds('querier.timeout')),
+      if 'server.http-write-timeout' in $.querier_args then $.querier_args['server.http-write-timeout'] else ('default: %ss' % $.util.getFlagDefaultSeconds('server.http-write-timeout')),
+    ];
+
+    true,
+
+  // Execute validation
+  querier_timeout_validation:: validateQuerierTimeouts(),
 
   querier_ports:: $.util.defaultPorts,
 
@@ -76,12 +101,12 @@
     // Set a termination grace period greater than query timeout.
     deployment.mixin.spec.template.spec.withTerminationGracePeriodSeconds(180),
 
-  querier_deployment: if !$._config.is_microservices_deployment_mode then null else
+  querier_deployment:
     self.newQuerierDeployment('querier', $.querier_container, $.querier_node_affinity_matchers),
 
-  querier_service: if !$._config.is_microservices_deployment_mode then null else
+  querier_service:
     $.util.serviceFor($.querier_deployment, $._config.service_ignored_labels),
 
-  querier_pdb: if !$._config.is_microservices_deployment_mode then null else
+  querier_pdb:
     $.newMimirPdb('querier'),
 }

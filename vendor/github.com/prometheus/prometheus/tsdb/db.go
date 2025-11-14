@@ -76,37 +76,39 @@ var ErrNotReady = errors.New("TSDB not ready")
 // millisecond precision timestamps.
 func DefaultOptions() *Options {
 	return &Options{
-		WALSegmentSize:              wlog.DefaultSegmentSize,
-		MaxBlockChunkSegmentSize:    chunks.DefaultChunkSegmentSize,
-		RetentionDuration:           int64(15 * 24 * time.Hour / time.Millisecond),
-		MinBlockDuration:            DefaultBlockDuration,
-		MaxBlockDuration:            DefaultBlockDuration,
-		NoLockfile:                  false,
-		SamplesPerChunk:             DefaultSamplesPerChunk,
-		WALCompression:              compression.None,
-		StripeSize:                  DefaultStripeSize,
-		HeadChunksWriteBufferSize:   chunks.DefaultWriteBufferSize,
-		IsolationDisabled:           defaultIsolationDisabled,
-		HeadChunksWriteQueueSize:    chunks.DefaultWriteQueueSize,
-		OutOfOrderCapMax:            DefaultOutOfOrderCapMax,
-		EnableOverlappingCompaction: true,
-		EnableSharding:              false,
-		EnableDelayedCompaction:     false,
-		CompactionDelayMaxPercent:   DefaultCompactionDelayMaxPercent,
-		CompactionDelay:             time.Duration(0),
-		PostingsDecoderFactory:      DefaultPostingsDecoderFactory,
-
-		HeadChunksEndTimeVariance:             0,
-		HeadPostingsForMatchersCacheTTL:       DefaultPostingsForMatchersCacheTTL,
-		HeadPostingsForMatchersCacheMaxItems:  DefaultPostingsForMatchersCacheMaxItems,
-		HeadPostingsForMatchersCacheMaxBytes:  DefaultPostingsForMatchersCacheMaxBytes,
-		HeadPostingsForMatchersCacheForce:     DefaultPostingsForMatchersCacheForce,
-		HeadPostingsForMatchersCacheMetrics:   NewPostingsForMatchersCacheMetrics(nil),
-		BlockPostingsForMatchersCacheTTL:      DefaultPostingsForMatchersCacheTTL,
-		BlockPostingsForMatchersCacheMaxItems: DefaultPostingsForMatchersCacheMaxItems,
-		BlockPostingsForMatchersCacheMaxBytes: DefaultPostingsForMatchersCacheMaxBytes,
-		BlockPostingsForMatchersCacheForce:    DefaultPostingsForMatchersCacheForce,
-		BlockPostingsForMatchersCacheMetrics:  NewPostingsForMatchersCacheMetrics(nil),
+		WALSegmentSize:                           wlog.DefaultSegmentSize,
+		MaxBlockChunkSegmentSize:                 chunks.DefaultChunkSegmentSize,
+		RetentionDuration:                        int64(15 * 24 * time.Hour / time.Millisecond),
+		MinBlockDuration:                         DefaultBlockDuration,
+		MaxBlockDuration:                         DefaultBlockDuration,
+		NoLockfile:                               false,
+		SamplesPerChunk:                          DefaultSamplesPerChunk,
+		WALCompression:                           compression.None,
+		StripeSize:                               DefaultStripeSize,
+		HeadChunksWriteBufferSize:                chunks.DefaultWriteBufferSize,
+		IsolationDisabled:                        defaultIsolationDisabled,
+		HeadChunksWriteQueueSize:                 chunks.DefaultWriteQueueSize,
+		OutOfOrderCapMax:                         DefaultOutOfOrderCapMax,
+		EnableOverlappingCompaction:              true,
+		EnableSharding:                           false,
+		EnableDelayedCompaction:                  false,
+		CompactionDelayMaxPercent:                DefaultCompactionDelayMaxPercent,
+		CompactionDelay:                          time.Duration(0),
+		PostingsDecoderFactory:                   DefaultPostingsDecoderFactory,
+		IndexLookupPlannerFunc:                   DefaultIndexLookupPlannerFunc,
+		HeadChunksEndTimeVariance:                0,
+		HeadPostingsForMatchersCacheInvalidation: DefaultPostingsForMatchersCacheInvalidation,
+		HeadPostingsForMatchersCacheVersions:     DefaultPostingsForMatchersCacheVersions,
+		HeadPostingsForMatchersCacheTTL:          DefaultPostingsForMatchersCacheTTL,
+		HeadPostingsForMatchersCacheMaxItems:     DefaultPostingsForMatchersCacheMaxItems,
+		HeadPostingsForMatchersCacheMaxBytes:     DefaultPostingsForMatchersCacheMaxBytes,
+		HeadPostingsForMatchersCacheForce:        DefaultPostingsForMatchersCacheForce,
+		HeadPostingsForMatchersCacheMetrics:      NewPostingsForMatchersCacheMetrics(nil),
+		BlockPostingsForMatchersCacheTTL:         DefaultPostingsForMatchersCacheTTL,
+		BlockPostingsForMatchersCacheMaxItems:    DefaultPostingsForMatchersCacheMaxItems,
+		BlockPostingsForMatchersCacheMaxBytes:    DefaultPostingsForMatchersCacheMaxBytes,
+		BlockPostingsForMatchersCacheForce:       DefaultPostingsForMatchersCacheForce,
+		BlockPostingsForMatchersCacheMetrics:     NewPostingsForMatchersCacheMetrics(nil),
 	}
 }
 
@@ -198,9 +200,6 @@ type Options struct {
 	// If nil, the cache won't be used.
 	SeriesHashCache *hashcache.SeriesHashCache
 
-	// EnableNativeHistograms enables the ingestion of native histograms.
-	EnableNativeHistograms bool
-
 	// EnableBiggerOOOBlockForOldSamples enables building 24h blocks for the OOO samples
 	// that belong to the previous day. This is in-line with Mimir maintaining 24h blocks
 	// for the previous days.
@@ -241,6 +240,25 @@ type Options struct {
 	// without requiring 1.5x the chunk range worth of data in the head.
 	TimelyCompaction bool
 
+	// SharedPostingsForMatchersCache indicates whether the PostingsForMatchersCache should be shared across blocks, as
+	// opposed to instantiated per block. With a shared cache, one cache is created for head blocks, and one for non-head blocks.
+	SharedPostingsForMatchersCache bool
+
+	// PostingsForMatchersCacheKeyFunc allows additional cache key information to be provided for shared caches.
+	PostingsForMatchersCacheKeyFunc CacheKeyFunc
+
+	// HeadPostingsForMatchersCacheFactory returns a factory for creating PostingsForMatchersCache instances for head
+	// blocks. If this is provided, it will be used to provide head cache instances, otherwise a factory will be constructed
+	// with the head cache settings below.
+	HeadPostingsForMatchersCacheFactory PostingsForMatchersCacheFactory
+
+	// HeadPostingsForMatchersCacheInvalidation indicates whether postings should be tracked and invalidated when they
+	// change. This setting is only valid when SharedPostingsForMatchersCache is also true.
+	HeadPostingsForMatchersCacheInvalidation bool
+
+	// HeadPostingsForMatchersCacheVersions is the number of metricVersions to store in the cache
+	HeadPostingsForMatchersCacheVersions int
+
 	// HeadPostingsForMatchersCacheTTL is the TTL of the postings for matchers cache in the Head.
 	// If it's 0, the cache will only deduplicate in-flight requests, deleting the results once the first request has finished.
 	HeadPostingsForMatchersCacheTTL time.Duration
@@ -258,6 +276,11 @@ type Options struct {
 
 	// HeadPostingsForMatchersCacheMetrics holds the metrics tracked by PostingsForMatchers cache when querying the Head.
 	HeadPostingsForMatchersCacheMetrics *PostingsForMatchersCacheMetrics
+
+	// BlockPostingsForMatchersCacheFactory returns a factory for creating PostingsForMatchersCache instances for compacted
+	// blocks. If this is provided, it will be used to provide block cache instances, otherwise a factory will be constructed
+	// with the block cache settings below.
+	BlockPostingsForMatchersCacheFactory PostingsForMatchersCacheFactory
 
 	// BlockPostingsForMatchersCacheTTL is the TTL of the postings for matchers cache of each compacted block.
 	// If it's 0, the cache will only deduplicate in-flight requests, deleting the results once the first request has finished.
@@ -294,6 +317,14 @@ type Options struct {
 
 	// UseUncachedIO allows bypassing the page cache when appropriate.
 	UseUncachedIO bool
+
+	// IndexLookupPlannerFunc is a function to return index.LookupPlanner from a BlockReader.
+	// Similar to BlockChunkQuerierFunc, this allows per-block planner creation.
+	// For on-disk blocks, IndexLookupPlannerFunc is invoked once when they are opened.
+	// For in-memory blocks IndexLookupPlannerFunc is invoked on every query.
+	IndexLookupPlannerFunc IndexLookupPlannerFunc
+
+	PostingsClonerFactory PostingsClonerFactory
 }
 
 type NewCompactorFunc func(ctx context.Context, r prometheus.Registerer, l *slog.Logger, ranges []int64, pool chunkenc.Pool, opts *Options) (Compactor, error)
@@ -303,6 +334,10 @@ type BlocksToDeleteFunc func(blocks []*Block) map[ulid.ULID]struct{}
 type BlockQuerierFunc func(b BlockReader, mint, maxt int64) (storage.Querier, error)
 
 type BlockChunkQuerierFunc func(b BlockReader, mint, maxt int64) (storage.ChunkQuerier, error)
+
+type IndexLookupPlannerFunc func(meta BlockMeta, reader IndexReader) index.LookupPlanner
+
+var DefaultIndexLookupPlannerFunc IndexLookupPlannerFunc = func(BlockMeta, IndexReader) index.LookupPlanner { return &index.ScanEmptyMatchersLookupPlanner{} }
 
 // DB handles reads and writes of time series falling into
 // a hashed partition of a seriedb.
@@ -339,6 +374,10 @@ type DB struct {
 	autoCompactMtx sync.Mutex
 	autoCompact    bool
 
+	// retentionMtx protects access to retention configuration values that can
+	// be updated at runtime through config file changes.
+	retentionMtx sync.RWMutex
+
 	// Cancel a running compaction when a shutdown is initiated.
 	compactCancel context.CancelFunc
 
@@ -357,6 +396,9 @@ type DB struct {
 	blockQuerierFunc BlockQuerierFunc
 
 	blockChunkQuerierFunc BlockChunkQuerierFunc
+
+	// blockPostingsForMatchersCacheFactory returns a factory for creating PostingsForMatchersCache instances for compacted blocks.
+	blockPostingsForMatchersCacheFactory PostingsForMatchersCacheFactory
 }
 
 type dbMetrics struct {
@@ -708,7 +750,7 @@ func (db *DBReadOnly) Blocks() ([]BlockReader, error) {
 		return nil, ErrClosed
 	default:
 	}
-	loadable, corrupted, err := openBlocks(db.logger, db.dir, nil, nil, DefaultPostingsDecoderFactory, nil, DefaultPostingsForMatchersCacheTTL, DefaultPostingsForMatchersCacheMaxItems, DefaultPostingsForMatchersCacheMaxBytes, DefaultPostingsForMatchersCacheForce, NewPostingsForMatchersCacheMetrics(nil))
+	loadable, corrupted, err := openBlocks(db.logger, db.dir, nil, nil, DefaultPostingsDecoderFactory, DefaultIndexLookupPlannerFunc, nil, DefaultPostingsForMatchersCacheFactory)
 	if err != nil {
 		return nil, err
 	}
@@ -887,6 +929,15 @@ func validateOpts(opts *Options, rngs []int64) (*Options, []int64) {
 	if opts.OutOfOrderTimeWindow < 0 {
 		opts.OutOfOrderTimeWindow = 0
 	}
+	if opts.IndexLookupPlannerFunc == nil {
+		opts.IndexLookupPlannerFunc = DefaultIndexLookupPlannerFunc
+	}
+	if opts.PostingsForMatchersCacheKeyFunc == nil {
+		opts.PostingsForMatchersCacheKeyFunc = DefaultPostingsForMatchersCacheKeyFunc
+	}
+	if opts.HeadPostingsForMatchersCacheVersions == 0 {
+		opts.HeadPostingsForMatchersCacheVersions = DefaultPostingsForMatchersCacheVersions
+	}
 
 	if len(rngs) == 0 {
 		// Start with smallest block duration and create exponential buckets until the exceed the
@@ -1002,6 +1053,24 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 		db.blockChunkQuerierFunc = opts.BlockChunkQuerierFunc
 	}
 
+	if opts.BlockPostingsForMatchersCacheFactory != nil {
+		db.blockPostingsForMatchersCacheFactory = opts.BlockPostingsForMatchersCacheFactory
+	} else {
+		config := PostingsForMatchersCacheConfig{
+			Shared:                opts.SharedPostingsForMatchersCache,
+			KeyFunc:               opts.PostingsForMatchersCacheKeyFunc,
+			Invalidation:          false,
+			CacheVersions:         0,
+			TTL:                   opts.BlockPostingsForMatchersCacheTTL,
+			MaxItems:              opts.BlockPostingsForMatchersCacheMaxItems,
+			MaxBytes:              opts.BlockPostingsForMatchersCacheMaxBytes,
+			Force:                 opts.BlockPostingsForMatchersCacheForce,
+			Metrics:               opts.BlockPostingsForMatchersCacheMetrics,
+			PostingsClonerFactory: opts.PostingsClonerFactory,
+		}
+		db.blockPostingsForMatchersCacheFactory = NewPostingsForMatchersCacheFactory(config)
+	}
+
 	var wal, wbl *wlog.WL
 	segmentSize := wlog.DefaultSegmentSize
 	// Wal is enabled.
@@ -1040,17 +1109,31 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 	headOpts.EnableExemplarStorage = opts.EnableExemplarStorage
 	headOpts.MaxExemplars.Store(opts.MaxExemplars)
 	headOpts.EnableMemorySnapshotOnShutdown = opts.EnableMemorySnapshotOnShutdown
-	headOpts.EnableNativeHistograms.Store(opts.EnableNativeHistograms)
 	headOpts.OutOfOrderTimeWindow.Store(opts.OutOfOrderTimeWindow)
 	headOpts.OutOfOrderCapMax.Store(opts.OutOfOrderCapMax)
 	headOpts.EnableSharding = opts.EnableSharding
 	headOpts.TimelyCompaction = opts.TimelyCompaction
-	headOpts.PostingsForMatchersCacheTTL = opts.HeadPostingsForMatchersCacheTTL
-	headOpts.PostingsForMatchersCacheMaxItems = opts.HeadPostingsForMatchersCacheMaxItems
-	headOpts.PostingsForMatchersCacheMaxBytes = opts.HeadPostingsForMatchersCacheMaxBytes
-	headOpts.PostingsForMatchersCacheForce = opts.HeadPostingsForMatchersCacheForce
-	headOpts.PostingsForMatchersCacheMetrics = opts.HeadPostingsForMatchersCacheMetrics
+	if opts.HeadPostingsForMatchersCacheFactory != nil {
+		headOpts.PostingsForMatchersCacheFactory = opts.HeadPostingsForMatchersCacheFactory
+	} else {
+		config := PostingsForMatchersCacheConfig{
+			Shared:                opts.SharedPostingsForMatchersCache,
+			KeyFunc:               opts.PostingsForMatchersCacheKeyFunc,
+			Invalidation:          opts.HeadPostingsForMatchersCacheInvalidation,
+			CacheVersions:         opts.HeadPostingsForMatchersCacheVersions,
+			TTL:                   opts.HeadPostingsForMatchersCacheTTL,
+			MaxItems:              opts.HeadPostingsForMatchersCacheMaxItems,
+			MaxBytes:              opts.HeadPostingsForMatchersCacheMaxBytes,
+			Force:                 opts.HeadPostingsForMatchersCacheForce,
+			Metrics:               opts.HeadPostingsForMatchersCacheMetrics,
+			PostingsClonerFactory: opts.PostingsClonerFactory,
+		}
+		headOpts.PostingsForMatchersCacheFactory = NewPostingsForMatchersCacheFactory(config)
+	}
 	headOpts.SecondaryHashFunction = opts.SecondaryHashFunction
+	if opts.IndexLookupPlannerFunc != nil {
+		headOpts.IndexLookupPlannerFunc = opts.IndexLookupPlannerFunc
+	}
 	if opts.WALReplayConcurrency > 0 {
 		headOpts.WALReplayConcurrency = opts.WALReplayConcurrency
 	}
@@ -1157,6 +1240,16 @@ func (db *DB) Dir() string {
 	return db.dir
 }
 
+// BlockMetas returns the list of metadata for all blocks.
+func (db *DB) BlockMetas() []BlockMeta {
+	blocks := db.Blocks()
+	metas := make([]BlockMeta, 0, len(blocks))
+	for _, b := range blocks {
+		metas = append(metas, b.Meta())
+	}
+	return metas
+}
+
 func (db *DB) run(ctx context.Context) {
 	defer close(db.donec)
 
@@ -1198,6 +1291,7 @@ func (db *DB) run(ctx context.Context) {
 				db.metrics.compactionsSkipped.Inc()
 			}
 			db.autoCompactMtx.Unlock()
+
 		case <-db.stopc:
 			return
 		}
@@ -1230,6 +1324,20 @@ func (db *DB) ApplyConfig(conf *config.Config) error {
 	oooTimeWindow := int64(0)
 	if conf.StorageConfig.TSDBConfig != nil {
 		oooTimeWindow = conf.StorageConfig.TSDBConfig.OutOfOrderTimeWindow
+
+		// Update retention configuration if provided.
+		if conf.StorageConfig.TSDBConfig.Retention != nil {
+			db.retentionMtx.Lock()
+			if conf.StorageConfig.TSDBConfig.Retention.Time > 0 {
+				db.opts.RetentionDuration = int64(conf.StorageConfig.TSDBConfig.Retention.Time)
+				db.metrics.retentionDuration.Set((time.Duration(db.opts.RetentionDuration) * time.Millisecond).Seconds())
+			}
+			if conf.StorageConfig.TSDBConfig.Retention.Size > 0 {
+				db.opts.MaxBytes = int64(conf.StorageConfig.TSDBConfig.Retention.Size)
+				db.metrics.maxBytes.Set(float64(db.opts.MaxBytes))
+			}
+			db.retentionMtx.Unlock()
+		}
 	}
 	if oooTimeWindow < 0 {
 		oooTimeWindow = 0
@@ -1264,14 +1372,18 @@ func (db *DB) ApplyConfig(conf *config.Config) error {
 	return nil
 }
 
-// EnableNativeHistograms enables the native histogram feature.
-func (db *DB) EnableNativeHistograms() {
-	db.head.EnableNativeHistograms()
+// getRetentionDuration returns the current retention duration in a thread-safe manner.
+func (db *DB) getRetentionDuration() int64 {
+	db.retentionMtx.RLock()
+	defer db.retentionMtx.RUnlock()
+	return db.opts.RetentionDuration
 }
 
-// DisableNativeHistograms disables the native histogram feature.
-func (db *DB) DisableNativeHistograms() {
-	db.head.DisableNativeHistograms()
+// getMaxBytes returns the current max bytes setting in a thread-safe manner.
+func (db *DB) getMaxBytes() int64 {
+	db.retentionMtx.RLock()
+	defer db.retentionMtx.RUnlock()
+	return db.opts.MaxBytes
 }
 
 // dbAppender wraps the DB's head appender and triggers compactions on commit
@@ -1505,6 +1617,7 @@ func (db *DB) compactOOOHead(ctx context.Context) error {
 // Each ULID in the result corresponds to a block in a unique time range.
 // The db.cmtx mutex should be held before calling this method.
 func (db *DB) compactOOO(dest string, oooHead *OOOCompactionHead) (_ []ulid.ULID, err error) {
+	db.logger.Info("out-of-order compaction started")
 	start := time.Now()
 
 	blockSize := oooHead.ChunkRange()
@@ -1683,7 +1796,7 @@ func (db *DB) reloadBlocks() (err error) {
 	}()
 
 	db.mtx.RLock()
-	loadable, corrupted, err := openBlocks(db.logger, db.dir, db.blocks, db.chunkPool, db.opts.PostingsDecoderFactory, db.opts.SeriesHashCache, db.opts.BlockPostingsForMatchersCacheTTL, db.opts.BlockPostingsForMatchersCacheMaxItems, db.opts.BlockPostingsForMatchersCacheMaxBytes, db.opts.BlockPostingsForMatchersCacheForce, db.opts.BlockPostingsForMatchersCacheMetrics)
+	loadable, corrupted, err := openBlocks(db.logger, db.dir, db.blocks, db.chunkPool, db.opts.PostingsDecoderFactory, db.opts.IndexLookupPlannerFunc, db.opts.SeriesHashCache, db.blockPostingsForMatchersCacheFactory)
 	db.mtx.RUnlock()
 	if err != nil {
 		return err
@@ -1783,7 +1896,7 @@ func (db *DB) reloadBlocks() (err error) {
 	return nil
 }
 
-func openBlocks(l *slog.Logger, dir string, loaded []*Block, chunkPool chunkenc.Pool, postingsDecoderFactory PostingsDecoderFactory, cache *hashcache.SeriesHashCache, postingsCacheTTL time.Duration, postingsCacheMaxItems int, postingsCacheMaxBytes int64, postingsCacheForce bool, postingsCacheMetrics *PostingsForMatchersCacheMetrics) (blocks []*Block, corrupted map[ulid.ULID]error, err error) {
+func openBlocks(l *slog.Logger, dir string, loaded []*Block, chunkPool chunkenc.Pool, postingsDecoderFactory PostingsDecoderFactory, plannerFunc IndexLookupPlannerFunc, cache *hashcache.SeriesHashCache, postingsCacheFactory PostingsForMatchersCacheFactory) (blocks []*Block, corrupted map[ulid.ULID]error, err error) {
 	bDirs, err := blockDirs(dir)
 	if err != nil {
 		return nil, nil, fmt.Errorf("find blocks: %w", err)
@@ -1805,7 +1918,7 @@ func openBlocks(l *slog.Logger, dir string, loaded []*Block, chunkPool chunkenc.
 				cacheProvider = cache.GetBlockCacheProvider(meta.ULID.String())
 			}
 
-			block, err = OpenBlockWithOptions(l, bDir, chunkPool, postingsDecoderFactory, cacheProvider, postingsCacheTTL, postingsCacheMaxItems, postingsCacheMaxBytes, postingsCacheForce, postingsCacheMetrics)
+			block, err = OpenBlockWithOptions(l, bDir, chunkPool, postingsDecoderFactory, plannerFunc, cacheProvider, postingsCacheFactory)
 			if err != nil {
 				corrupted[meta.ULID] = err
 				continue
@@ -1862,15 +1975,16 @@ func deletableBlocks(db *DB, blocks []*Block) map[ulid.ULID]struct{} {
 // set in the db options.
 func BeyondTimeRetention(db *DB, blocks []*Block) (deletable map[ulid.ULID]struct{}) {
 	// Time retention is disabled or no blocks to work with.
-	if len(blocks) == 0 || db.opts.RetentionDuration == 0 {
-		return
+	retentionDuration := db.getRetentionDuration()
+	if len(blocks) == 0 || retentionDuration == 0 {
+		return deletable
 	}
 
 	deletable = make(map[ulid.ULID]struct{})
 	for i, block := range blocks {
 		// The difference between the first block and this block is greater than or equal to
 		// the retention period so any blocks after that are added as deletable.
-		if i > 0 && blocks[0].Meta().MaxTime-block.Meta().MaxTime >= db.opts.RetentionDuration {
+		if i > 0 && blocks[0].Meta().MaxTime-block.Meta().MaxTime >= retentionDuration {
 			for _, b := range blocks[i:] {
 				deletable[b.meta.ULID] = struct{}{}
 			}
@@ -1885,8 +1999,9 @@ func BeyondTimeRetention(db *DB, blocks []*Block) (deletable map[ulid.ULID]struc
 // set in the db options.
 func BeyondSizeRetention(db *DB, blocks []*Block) (deletable map[ulid.ULID]struct{}) {
 	// Size retention is disabled or no blocks to work with.
-	if len(blocks) == 0 || db.opts.MaxBytes <= 0 {
-		return
+	maxBytes := db.getMaxBytes()
+	if len(blocks) == 0 || maxBytes <= 0 {
+		return deletable
 	}
 
 	deletable = make(map[ulid.ULID]struct{})
@@ -1896,7 +2011,7 @@ func BeyondSizeRetention(db *DB, blocks []*Block) (deletable map[ulid.ULID]struc
 	blocksSize := db.Head().Size()
 	for i, block := range blocks {
 		blocksSize += block.Size()
-		if blocksSize > db.opts.MaxBytes {
+		if blocksSize > maxBytes {
 			// Add this and all following blocks for deletion.
 			for _, b := range blocks[i:] {
 				deletable[b.meta.ULID] = struct{}{}
@@ -2041,7 +2156,7 @@ func OverlappingBlocks(bm []BlockMeta) Overlaps {
 	return overlapGroups
 }
 
-func (db *DB) String() string {
+func (*DB) String() string {
 	return "HEAD"
 }
 

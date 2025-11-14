@@ -85,8 +85,14 @@ spec:
               drop:
               - ALL
             readOnlyRootFilesystem: true
+          env:
+            []
       
       terminationGracePeriodSeconds: 30
+      dnsConfig:
+        options:
+        - name: ndots
+          value: "3"
       volumes:
         - name: config
           configMap:

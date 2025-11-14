@@ -23,8 +23,8 @@ import (
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
 	"github.com/grafana/dskit/flagext"
+	"github.com/klauspost/compress/zstd"
 	"github.com/pierrec/lz4/v4"
-	"github.com/pkg/errors"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc/codes"
@@ -144,6 +144,7 @@ const (
 	RawSnappy
 	Gzip
 	Lz4
+	Zstd
 )
 
 // ParseProtoReader parses a compressed proto from an io.Reader.
@@ -177,11 +178,29 @@ func ParseProtoReader(ctx context.Context, reader io.Reader, expectedSize, maxSi
 }
 
 type MsgSizeTooLargeErr struct {
-	Actual, Limit int
+	Compressed, Actual, Limit int
+}
+
+func NewMsgCompressedSizeTooLargeErr(size, limit int) MsgSizeTooLargeErr {
+	return MsgSizeTooLargeErr{Compressed: size, Limit: limit}
+}
+
+func NewMsgUncompressedSizeTooLargeErr(size, limit int) MsgSizeTooLargeErr {
+	return MsgSizeTooLargeErr{Actual: size, Limit: limit}
+}
+
+func NewMsgUnknownSizeTooLargeErr(limit int) MsgSizeTooLargeErr {
+	return MsgSizeTooLargeErr{Limit: limit}
 }
 
 func (e MsgSizeTooLargeErr) Error() string {
-	return fmt.Sprintf("the request has been rejected because its size of %d bytes exceeds the limit of %d bytes", e.Actual, e.Limit)
+	msgSizeDesc := ""
+	if e.Actual > 0 {
+		msgSizeDesc = fmt.Sprintf(" of %d bytes (uncompressed)", e.Actual)
+	} else if e.Compressed > 0 {
+		msgSizeDesc = fmt.Sprintf(" of %d bytes (compressed)", e.Compressed)
+	}
+	return fmt.Sprintf("the request has been rejected because its size%s exceeds the limit of %d bytes", msgSizeDesc, e.Limit)
 }
 
 // Needed for errors.Is to work properly.
@@ -193,7 +212,10 @@ func (e MsgSizeTooLargeErr) Is(err error) bool {
 
 func decompressRequest(buffers *RequestBuffers, reader io.Reader, expectedSize, maxSize int, compression CompressionType, sp trace.Span) ([]byte, error) {
 	if expectedSize > maxSize {
-		return nil, MsgSizeTooLargeErr{Actual: expectedSize, Limit: maxSize}
+		if compression == NoCompression {
+			return nil, NewMsgUncompressedSizeTooLargeErr(expectedSize, maxSize)
+		}
+		return nil, NewMsgCompressedSizeTooLargeErr(expectedSize, maxSize)
 	}
 
 	switch compression {
@@ -212,7 +234,7 @@ func decompressRequest(buffers *RequestBuffers, reader io.Reader, expectedSize, 
 	case Gzip:
 		gzReader, err := gzip.NewReader(reader)
 		if err != nil {
-			return nil, errors.Wrap(err, "create gzip reader")
+			return nil, fmt.Errorf("create gzip reader: %w", err)
 		}
 
 		defer func() {
@@ -221,6 +243,12 @@ func decompressRequest(buffers *RequestBuffers, reader io.Reader, expectedSize, 
 		reader = gzReader
 	case Lz4:
 		reader = lz4.NewReader(reader)
+	case Zstd:
+		var err error
+		reader, err = zstd.NewReader(reader)
+		if err != nil {
+			return nil, fmt.Errorf("unable to create zstd reader: %w", err)
+		}
 	default:
 		return nil, fmt.Errorf("unrecognized compression type %v", compression)
 	}
@@ -240,12 +268,15 @@ func decompressRequest(buffers *RequestBuffers, reader io.Reader, expectedSize, 
 
 	if _, err := buf.ReadFrom(reader); err != nil {
 		if compression == Gzip {
-			return nil, errors.Wrap(err, "decompress gzip")
+			return nil, fmt.Errorf("decompress gzip: %w", err)
 		}
 		if compression == Lz4 {
-			return nil, errors.Wrap(err, "decompress lz4")
+			return nil, fmt.Errorf("decompress lz4: %w", err)
 		}
-		return nil, errors.Wrap(err, "read body")
+		if compression == Zstd {
+			return nil, fmt.Errorf("decompress zstd: %w", err)
+		}
+		return nil, fmt.Errorf("read body: %w", err)
 	}
 	sp.AddEvent("util.ParseProtoReader[finished_reading]")
 
@@ -254,7 +285,7 @@ func decompressRequest(buffers *RequestBuffers, reader io.Reader, expectedSize, 
 	}
 
 	if buf.Len() > maxSize {
-		return nil, MsgSizeTooLargeErr{Actual: -1, Limit: maxSize}
+		return nil, NewMsgUnknownSizeTooLargeErr(maxSize)
 	}
 	return buf.Bytes(), nil
 }
@@ -264,7 +295,7 @@ func decompressSnappyFromBuffer(buffers *RequestBuffers, buffer *bytes.Buffer, m
 
 	size, err := snappy.DecodedLen(buffer.Bytes())
 	if err != nil {
-		return nil, errors.Wrap(err, "getting snappy decoded length")
+		return nil, fmt.Errorf("getting snappy decoded length: %w", err)
 	}
 	if size > maxSize {
 		return nil, MsgSizeTooLargeErr{Actual: size, Limit: maxSize}
@@ -276,7 +307,7 @@ func decompressSnappyFromBuffer(buffers *RequestBuffers, buffer *bytes.Buffer, m
 
 	decoded, err := snappy.Decode(decBufBytes, buffer.Bytes())
 	if err != nil {
-		return nil, errors.Wrap(err, "decompress snappy")
+		return nil, fmt.Errorf("decompress snappy: %w", err)
 	}
 
 	return decoded, nil
@@ -308,7 +339,7 @@ func SerializeProtoResponse(w http.ResponseWriter, resp proto.Message, compressi
 	case RawSnappy:
 		data, err = snappyEncoding(nil, data)
 		if err != nil {
-			err = errors.Wrap(err, "snappy encoding")
+			err = fmt.Errorf("snappy encoding: %w", err)
 			break
 		}
 	case Gzip:
@@ -316,11 +347,11 @@ func SerializeProtoResponse(w http.ResponseWriter, resp proto.Message, compressi
 		buf.Grow(len(data))
 		wr := gzip.NewWriter(&buf)
 		if _, err = wr.Write(data); err != nil {
-			err = errors.Wrap(err, "write gzip")
+			err = fmt.Errorf("write gzip: %w", err)
 			break
 		}
 		if err = wr.Close(); err != nil {
-			err = errors.Wrap(err, "close gzip writer")
+			err = fmt.Errorf("close gzip writer: %w", err)
 			break
 		}
 		data = buf.Bytes()

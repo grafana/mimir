@@ -20,6 +20,9 @@ type aggregatedSyncerMetrics struct {
 	metaSyncFailures          prometheus.Counter
 	metaSyncDuration          *dskit_metrics.HistogramDataCollector // was prometheus.Histogram before
 	metaBlocksSynced          *prometheus.GaugeVec
+	metaLoads                 prometheus.Counter
+	metaCachedLoads           prometheus.Counter
+	metaDiskLoads             prometheus.Counter
 	garbageCollections        prometheus.Counter
 	garbageCollectionFailures prometheus.Counter
 	garbageCollectionDuration *dskit_metrics.HistogramDataCollector // was prometheus.Histogram before
@@ -47,6 +50,19 @@ func newAggregatedSyncerMetrics(reg prometheus.Registerer) *aggregatedSyncerMetr
 		Name: "cortex_compactor_meta_blocks_synced",
 		Help: "Number of block metadata synced",
 	}, []string{"state"})
+
+	m.metaLoads = promauto.With(reg).NewCounter(prometheus.CounterOpts{
+		Name: "cortex_compactor_meta_loads_total",
+		Help: "Total number of block metadata load attempts",
+	})
+	m.metaCachedLoads = promauto.With(reg).NewCounter(prometheus.CounterOpts{
+		Name: "cortex_compactor_meta_cached_loads",
+		Help: "Block metadata loads served from in-memory cache",
+	})
+	m.metaDiskLoads = promauto.With(reg).NewCounter(prometheus.CounterOpts{
+		Name: "cortex_compactor_meta_disk_loads",
+		Help: "Block metadata loads served from local disk",
+	})
 
 	m.garbageCollections = promauto.With(reg).NewCounter(prometheus.CounterOpts{
 		Name: "cortex_compactor_garbage_collection_total",
@@ -97,6 +113,10 @@ func (m *aggregatedSyncerMetrics) gatherThanosSyncerMetrics(reg *prometheus.Regi
 		}
 		m.metaBlocksSynced.WithLabelValues(ls...).Add(v)
 	}
+
+	m.metaLoads.Add(mfm.SumCounters("blocks_meta_loads_total"))
+	m.metaCachedLoads.Add(mfm.SumCounters("blocks_meta_cached_loads"))
+	m.metaDiskLoads.Add(mfm.SumCounters("blocks_meta_disk_loads"))
 
 	m.garbageCollections.Add(mfm.SumCounters("thanos_compact_garbage_collection_total"))
 	m.garbageCollectionFailures.Add(mfm.SumCounters("thanos_compact_garbage_collection_failures_total"))

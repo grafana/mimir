@@ -35,6 +35,8 @@
 
       // Relax pressure on KV store when running at scale.
       'store-gateway.sharding-ring.heartbeat-period': '1m',
+
+      'server.grpc-max-send-msg-size-bytes': $._config.store_gateway_grpc_max_query_response_size_bytes,
     } +
     (if !$._config.store_gateway_lazy_loading_enabled then {
        'blocks-storage.bucket-store.index-header.lazy-loading-enabled': false,
@@ -80,7 +82,7 @@
     $.mimirVolumeMounts +
     (if withAntiAffinity then $.util.antiAffinity else {}),
 
-  store_gateway_statefulset: if !$._config.is_microservices_deployment_mode then null else
+  store_gateway_statefulset:
     self.newStoreGatewayStatefulSet(
       'store-gateway',
       $.store_gateway_container + (if std.length($.store_gateway_env_map) > 0 then container.withEnvMap(std.prune($.store_gateway_env_map)) else {}),
@@ -88,10 +90,10 @@
       $.store_gateway_node_affinity_matchers,
     ),
 
-  store_gateway_service: if !$._config.is_microservices_deployment_mode then null else
+  store_gateway_service:
     $.util.serviceFor($.store_gateway_statefulset, $._config.service_ignored_labels),
 
-  store_gateway_pdb: if !$._config.is_microservices_deployment_mode then null else
+  store_gateway_pdb:
     // To avoid any disruption in the read path we need at least 1 replica of each
     // block available, so the disruption budget depends on the blocks replication factor.
     local maxUnavailable = if $._config.store_gateway_replication_factor > 1 then $._config.store_gateway_replication_factor - 1 else 1;

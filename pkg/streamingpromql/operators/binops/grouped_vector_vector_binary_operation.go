@@ -12,6 +12,7 @@ import (
 	"slices"
 	"sort"
 
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
@@ -199,10 +200,14 @@ func NewGroupedVectorVectorBinaryOperation(
 // (The alternative would be to compute the entire result here in SeriesMetadata and only return the series that
 // contain points, but that would mean we'd need to hold the entire result in memory at once, which we want to
 // avoid.)
-func (g *GroupedVectorVectorBinaryOperation) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
-	if canProduceAnySeries, err := g.loadSeriesMetadata(ctx); err != nil {
+func (g *GroupedVectorVectorBinaryOperation) SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
+	if canProduceAnySeries, err := g.loadSeriesMetadata(ctx, matchers); err != nil {
 		return nil, err
 	} else if !canProduceAnySeries {
+		if err := g.Finalize(ctx); err != nil {
+			return nil, err
+		}
+
 		g.Close()
 		return nil, nil
 	}
@@ -216,6 +221,11 @@ func (g *GroupedVectorVectorBinaryOperation) SeriesMetadata(ctx context.Context)
 		types.SeriesMetadataSlicePool.Put(&allMetadata, g.MemoryConsumptionTracker)
 		types.BoolSlicePool.Put(&oneSideSeriesUsed, g.MemoryConsumptionTracker)
 		types.BoolSlicePool.Put(&manySideSeriesUsed, g.MemoryConsumptionTracker)
+
+		if err := g.Finalize(ctx); err != nil {
+			return nil, err
+		}
+
 		g.Close()
 		return nil, nil
 	}
@@ -232,12 +242,12 @@ func (g *GroupedVectorVectorBinaryOperation) SeriesMetadata(ctx context.Context)
 // loadSeriesMetadata loads series metadata from both sides of this operation.
 // It returns false if one side returned no series and that means there is no way for this operation to return any series.
 // (eg. if doing A + B and either A or B have no series, then there is no way for this operation to produce any series)
-func (g *GroupedVectorVectorBinaryOperation) loadSeriesMetadata(ctx context.Context) (bool, error) {
+func (g *GroupedVectorVectorBinaryOperation) loadSeriesMetadata(ctx context.Context, matchers types.Matchers) (bool, error) {
 	// We retain the series labels for later so we can use them to generate error messages.
 	// We'll return them to the pool in Close().
 
 	var err error
-	g.oneSideMetadata, err = g.oneSide.SeriesMetadata(ctx)
+	g.oneSideMetadata, err = g.oneSide.SeriesMetadata(ctx, matchers)
 	if err != nil {
 		return false, err
 	}
@@ -247,7 +257,7 @@ func (g *GroupedVectorVectorBinaryOperation) loadSeriesMetadata(ctx context.Cont
 		return false, nil
 	}
 
-	g.manySideMetadata, err = g.manySide.SeriesMetadata(ctx)
+	g.manySideMetadata, err = g.manySide.SeriesMetadata(ctx, matchers)
 	if err != nil {
 		return false, err
 	}
@@ -410,7 +420,11 @@ func (g *GroupedVectorVectorBinaryOperation) computeOutputSeries() ([]types.Seri
 	outputSeries := make([]*groupedBinaryOperationOutputSeries, 0, len(outputSeriesMap))
 
 	for _, o := range outputSeriesMap {
-		outputMetadata = append(outputMetadata, types.SeriesMetadata{Labels: o.labels})
+		outputMetadata, err = types.AppendSeriesMetadata(g.MemoryConsumptionTracker, outputMetadata, types.SeriesMetadata{Labels: o.labels})
+		if err != nil {
+			return nil, nil, nil, -1, nil, -1, err
+		}
+
 		outputSeries = append(outputSeries, o.outputSeries)
 	}
 
@@ -448,7 +462,7 @@ func (g *GroupedVectorVectorBinaryOperation) manySideGroupKeyFunc() func(manySid
 
 	if len(g.VectorMatching.Include) == 0 {
 		return func(manySideLabels labels.Labels) []byte {
-			buf = manySideLabels.BytesWithoutLabels(buf, labels.MetricName)
+			buf = manySideLabels.BytesWithoutLabels(buf, model.MetricNameLabel)
 			return buf
 		}
 	}
@@ -457,7 +471,7 @@ func (g *GroupedVectorVectorBinaryOperation) manySideGroupKeyFunc() func(manySid
 
 	if g.shouldRemoveMetricNameFromManySide() {
 		labelsToRemove = make([]string, 0, len(g.VectorMatching.Include)+1)
-		labelsToRemove = append(labelsToRemove, labels.MetricName)
+		labelsToRemove = append(labelsToRemove, model.MetricNameLabel)
 		labelsToRemove = append(labelsToRemove, g.VectorMatching.Include...)
 		slices.Sort(labelsToRemove)
 	}
@@ -473,6 +487,7 @@ func (g *GroupedVectorVectorBinaryOperation) outputSeriesLabelsFunc() func(oneSi
 	if len(g.VectorMatching.Include) == 0 {
 		if g.shouldRemoveMetricNameFromManySide() {
 			return func(_ labels.Labels, manySideLabels labels.Labels) labels.Labels {
+				//nolint:staticcheck // SA1019: DropMetricName is deprecated.
 				return manySideLabels.DropMetricName()
 			}
 		}
@@ -487,7 +502,7 @@ func (g *GroupedVectorVectorBinaryOperation) outputSeriesLabelsFunc() func(oneSi
 	if g.shouldRemoveMetricNameFromManySide() {
 		return func(oneSideLabels labels.Labels, manySideLabels labels.Labels) labels.Labels {
 			lb.Reset(manySideLabels)
-			lb.Del(labels.MetricName)
+			lb.Del(model.MetricNameLabel)
 
 			for _, l := range g.VectorMatching.Include {
 				lb.Set(l, oneSideLabels.Get(l))
@@ -755,11 +770,19 @@ func (g *GroupedVectorVectorBinaryOperation) ExpressionPosition() posrange.Posit
 }
 
 func (g *GroupedVectorVectorBinaryOperation) Prepare(ctx context.Context, params *types.PrepareParams) error {
-	err := g.Left.Prepare(ctx, params)
-	if err != nil {
+	if err := g.Left.Prepare(ctx, params); err != nil {
 		return err
 	}
+
 	return g.Right.Prepare(ctx, params)
+}
+
+func (g *GroupedVectorVectorBinaryOperation) Finalize(ctx context.Context) error {
+	if err := g.Left.Finalize(ctx); err != nil {
+		return err
+	}
+
+	return g.Right.Finalize(ctx)
 }
 
 func (g *GroupedVectorVectorBinaryOperation) Close() {

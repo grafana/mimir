@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
@@ -192,9 +193,11 @@ func TestInstantVectorSelector_NativeHistogramPointerHandling(t *testing.T) {
 				Selector: &Selector{
 					Queryable: storage,
 					TimeRange: types.NewRangeQueryTimeRange(startTime, endTime, time.Minute),
-					Matchers: []*labels.Matcher{
-						labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "my_metric"),
-					},
+					Matchers: []types.Matcher{{
+						Type:  labels.MatchEqual,
+						Name:  model.MetricNameLabel,
+						Value: "my_metric",
+					}},
 					LookbackDelta:            5 * time.Minute,
 					MemoryConsumptionTracker: memoryConsumptionTracker,
 				},
@@ -202,7 +205,7 @@ func TestInstantVectorSelector_NativeHistogramPointerHandling(t *testing.T) {
 				Stats:                    &types.QueryStats{},
 			}
 
-			_, err := selector.SeriesMetadata(ctx)
+			_, err := selector.SeriesMetadata(ctx, nil)
 			require.NoError(t, err)
 
 			series, err := selector.NextSeries(ctx)
@@ -238,9 +241,11 @@ func TestInstantVectorSelector_SliceSizing(t *testing.T) {
 				Selector: &Selector{
 					Queryable: storage,
 					TimeRange: types.NewRangeQueryTimeRange(startTime, endTime, time.Minute),
-					Matchers: []*labels.Matcher{
-						labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "metric"),
-					},
+					Matchers: []types.Matcher{{
+						Type:  labels.MatchEqual,
+						Name:  model.MetricNameLabel,
+						Value: "metric",
+					}},
 					LookbackDelta:            5 * time.Minute,
 					MemoryConsumptionTracker: memoryConsumptionTracker,
 				},
@@ -248,12 +253,12 @@ func TestInstantVectorSelector_SliceSizing(t *testing.T) {
 				Stats:                    &types.QueryStats{},
 			}
 
-			series, err := selector.SeriesMetadata(ctx)
+			series, err := selector.SeriesMetadata(ctx, nil)
 			require.NoError(t, err)
 
 			expectedSeries := []types.SeriesMetadata{
-				{Labels: labels.FromStrings(labels.MetricName, "metric", "type", "float")},
-				{Labels: labels.FromStrings(labels.MetricName, "metric", "type", "histogram")},
+				{Labels: labels.FromStrings(model.MetricNameLabel, "metric", "type", "float")},
+				{Labels: labels.FromStrings(model.MetricNameLabel, "metric", "type", "histogram")},
 			}
 
 			require.Equal(t, expectedSeries, series)

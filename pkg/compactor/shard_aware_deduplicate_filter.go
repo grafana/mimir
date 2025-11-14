@@ -7,13 +7,12 @@ package compactor
 
 import (
 	"context"
-	"sort"
+	"slices"
 
 	"github.com/cespare/xxhash/v2"
 	"github.com/oklog/ulid/v2"
 
 	"github.com/grafana/mimir/pkg/storage/sharding"
-	"github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 )
 
@@ -118,15 +117,15 @@ func (f *ShardAwareDeduplicateFilter) findDuplicates(ctx context.Context, input 
 	// 2) iterating through each input block, and adding it to the correct place in the tree of blocks with successors.
 
 	// Sort blocks with fewer sources first.
-	sort.Slice(input, func(i, j int) bool {
-		ilen := len(input[i].Compaction.Sources)
-		jlen := len(input[j].Compaction.Sources)
+	slices.SortFunc(input, func(a, b *block.Meta) int {
+		alen := len(a.Compaction.Sources)
+		blen := len(b.Compaction.Sources)
 
-		if ilen == jlen {
-			return input[i].ULID.Compare(input[j].ULID) < 0
+		if alen == blen {
+			return a.ULID.Compare(b.ULID)
 		}
 
-		return ilen < jlen
+		return alen - blen
 	})
 
 	root := newBlockWithSuccessors(nil)
@@ -174,7 +173,7 @@ type blockWithSuccessors struct {
 func newBlockWithSuccessors(m *block.Meta) *blockWithSuccessors {
 	b := &blockWithSuccessors{meta: m}
 	if m != nil {
-		b.shardID = m.Thanos.Labels[tsdb.CompactorShardIDExternalLabel]
+		b.shardID = m.Thanos.Labels[block.CompactorShardIDExternalLabel]
 		b.sources = make(map[ulid.ULID]struct{}, len(m.Compaction.Sources))
 
 		for _, bid := range m.Compaction.Sources {

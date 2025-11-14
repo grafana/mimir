@@ -81,10 +81,12 @@ func TestTripperware_RangeQuery(t *testing.T) {
 		Config{},
 		log.NewNopLogger(),
 		mockLimits{},
-		newTestPrometheusCodec(),
+		newTestCodec(),
 		nil,
 		engine,
 		engineOpts,
+		nil,
+		false,
 		nil,
 		nil,
 	)
@@ -121,7 +123,7 @@ func TestTripperware_InstantQuery(t *testing.T) {
 	const totalShards = 8
 
 	ctx := user.InjectOrgID(context.Background(), "user-1")
-	codec := newTestPrometheusCodec()
+	codec := newTestCodec()
 
 	engineOpts, engine := newEngineForTesting(t, querier.PrometheusEngine)
 	tw, err := NewTripperware(
@@ -134,6 +136,8 @@ func TestTripperware_InstantQuery(t *testing.T) {
 		nil,
 		engine,
 		engineOpts,
+		nil,
+		false,
 		nil,
 		nil,
 	)
@@ -456,10 +460,12 @@ func TestTripperware_Metrics(t *testing.T) {
 				Config{},
 				log.NewNopLogger(),
 				mockLimits{alignQueriesWithStep: testData.stepAlignEnabled},
-				newTestPrometheusCodec(),
+				newTestCodec(),
 				nil,
 				engine,
 				engineOpts,
+				nil,
+				false,
 				nil,
 				reg,
 			)
@@ -507,7 +513,7 @@ func TestTripperware_BlockedRequests(t *testing.T) {
 		multiTenantMockLimits{
 			byTenant: map[string]mockLimits{
 				"user-1": {
-					blockedRequests: []*validation.BlockedRequest{
+					blockedRequests: []validation.BlockedRequest{
 						{
 							Path: "/api/v1/series",
 							QueryParams: map[string]validation.BlockedRequestQueryParam{
@@ -518,10 +524,12 @@ func TestTripperware_BlockedRequests(t *testing.T) {
 				},
 			},
 		},
-		newTestPrometheusCodec(),
+		newTestCodec(),
 		nil,
 		engine,
 		engineOpts,
+		nil,
+		false,
 		nil,
 		nil,
 	)
@@ -573,12 +581,14 @@ func TestMiddlewaresConsistency(t *testing.T) {
 	cfg := makeTestConfig()
 	cfg.CacheResults = true
 	cfg.ShardedQueries = true
-	cfg.PrunedQueries = true
+	cfg.RewriteQueriesHistogram = true
+	cfg.RewriteQueriesPropagateMatchers = true
 
 	// Ensure all features are enabled, so that we assert on all middlewares.
 	require.NotZero(t, cfg.CacheResults)
 	require.NotZero(t, cfg.ShardedQueries)
-	require.NotZero(t, cfg.PrunedQueries)
+	require.NotZero(t, cfg.RewriteQueriesHistogram)
+	require.NotZero(t, cfg.RewriteQueriesPropagateMatchers)
 	require.NotZero(t, cfg.SplitQueriesByInterval)
 	require.NotZero(t, cfg.MaxRetries)
 
@@ -587,7 +597,7 @@ func TestMiddlewaresConsistency(t *testing.T) {
 		cfg,
 		log.NewNopLogger(),
 		mockLimits{alignQueriesWithStep: true},
-		newTestPrometheusCodec(),
+		newTestCodec(),
 		nil,
 		nil,
 		nil,
@@ -608,22 +618,22 @@ func TestMiddlewaresConsistency(t *testing.T) {
 		"range query": {
 			instances: queryRangeMiddlewares,
 			exceptions: []string{
-				"splitInstantQueryByIntervalMiddleware",
 				"spinOffSubqueriesMiddleware", // This middleware is only for instant queries.
 			},
 		},
 		"remote read": {
 			instances: remoteReadMiddlewares,
 			exceptions: []string{
-				"querySharding",                         // No query sharding support.
-				"splitAndCacheMiddleware",               // No time splitting and results cache support.
-				"splitInstantQueryByIntervalMiddleware", // Not applicable because specific to instant queries.
-				"stepAlignMiddleware",                   // Not applicable because remote read requests don't take step in account when running in Mimir.
-				"pruneMiddleware",                       // No query pruning support.
-				"experimentalFunctionsMiddleware",       // No blocking for PromQL experimental functions as it is executed remotely.
-				"prom2RangeCompatHandler",               // No rewriting Prometheus 2 subqueries to Prometheus 3
-				"spinOffSubqueriesMiddleware",           // This middleware is only for instant queries.
-				"queryLimiterMiddleware",                // This middleware is only for instant queries.
+				"querySharding",                    // No query sharding support.
+				"splitAndCacheMiddleware",          // No time splitting and results cache support.
+				"stepAlignMiddleware",              // Not applicable because remote read requests don't take step in account when running in Mimir.
+				"rewriteMiddleware",                // No query rewriting support.
+				"experimentalFunctionsMiddleware",  // No blocking for PromQL experimental functions as it is executed remotely.
+				"durationsMiddleware",              // No duration expressions support.
+				"prom2RangeCompatHandler",          // No rewriting Prometheus 2 subqueries to Prometheus 3
+				"spinOffSubqueriesMiddleware",      // This middleware is only for instant queries.
+				"queryLimiterMiddleware",           // This middleware is only for instant queries.
+				"blockInternalFunctionsMiddleware", // Not relevant for remote read requests.
 			},
 		},
 	}
@@ -806,10 +816,12 @@ func TestTripperware_RemoteRead(t *testing.T) {
 				makeTestConfig(),
 				log.NewNopLogger(),
 				tc.limits,
-				newTestPrometheusCodec(),
+				newTestCodec(),
 				nil,
 				engine,
 				engineOpts,
+				nil,
+				false,
 				nil,
 				reg,
 			)
@@ -938,11 +950,13 @@ func TestTripperware_ShouldSupportReadConsistencyOffsetsInjection(t *testing.T) 
 		}),
 		log.NewNopLogger(),
 		mockLimits{},
-		NewPrometheusCodec(nil, 0, formatJSON, nil),
+		newTestCodec(),
 		nil,
 		promEngine,
 		promOpts,
 		map[string]*ingest.TopicOffsetsReader{querierapi.ReadConsistencyOffsetsHeader: offsetsReader},
+		false,
+		nil,
 		nil,
 	)
 	require.NoError(t, err)

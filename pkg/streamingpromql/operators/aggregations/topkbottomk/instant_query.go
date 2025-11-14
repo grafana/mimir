@@ -47,7 +47,7 @@ type InstantQuery struct {
 
 var _ types.InstantVectorOperator = &InstantQuery{}
 
-func (t *InstantQuery) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
+func (t *InstantQuery) SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
 	if err := t.getK(ctx); err != nil {
 		return nil, err
 	}
@@ -57,7 +57,7 @@ func (t *InstantQuery) SeriesMetadata(ctx context.Context) ([]types.SeriesMetada
 		return nil, nil
 	}
 
-	innerSeries, err := t.Inner.SeriesMetadata(ctx)
+	innerSeries, err := t.Inner.SeriesMetadata(ctx, matchers)
 	if err != nil {
 		return nil, err
 	}
@@ -141,6 +141,10 @@ func (t *InstantQuery) SeriesMetadata(ctx context.Context) ([]types.SeriesMetada
 		// should always be last, regardless of the sort order.
 		for len(g.series) > 0 {
 			next := heap.Pop(t.heap).(instantQuerySeries)
+			err := t.MemoryConsumptionTracker.IncreaseMemoryConsumptionForLabels(next.metadata.Labels)
+			if err != nil {
+				return nil, err
+			}
 
 			if math.IsNaN(next.value) {
 				idx := lastOutputSeriesIndexForGroup - g.nanCount + 1
@@ -169,6 +173,10 @@ func (t *InstantQuery) getK(ctx context.Context) error {
 	defer types.FPointSlicePool.Put(&paramValues.Samples, t.MemoryConsumptionTracker)
 
 	v := paramValues.Samples[0].F // There will always be exactly one value for an instant query: scalars always produce values at every step.
+
+	if math.IsNaN(v) {
+		return fmt.Errorf("parameter value is NaN for %v", t.functionName())
+	}
 
 	if !convertibleToInt64(v) {
 		return fmt.Errorf("scalar parameter %v for %v overflows int64", v, t.functionName())
@@ -293,6 +301,14 @@ func (t *InstantQuery) Prepare(ctx context.Context, params *types.PrepareParams)
 	return t.Param.Prepare(ctx, params)
 }
 
+func (t *InstantQuery) Finalize(ctx context.Context) error {
+	if err := t.Inner.Finalize(ctx); err != nil {
+		return err
+	}
+
+	return t.Param.Finalize(ctx)
+}
+
 func (t *InstantQuery) Close() {
 	t.Inner.Close()
 	t.Param.Close()
@@ -319,6 +335,7 @@ var instantQuerySeriesSlicePool = types.NewLimitingBucketedPool(
 	limiter.TopKBottomKInstantQuerySeriesSlices,
 	uint64(unsafe.Sizeof(instantQuerySeries{})),
 	true,
+	nil,
 	nil,
 )
 

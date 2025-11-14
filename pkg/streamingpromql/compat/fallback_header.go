@@ -4,9 +4,9 @@ package compat
 
 import (
 	"context"
-	"net/http"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
+	"github.com/grafana/mimir/pkg/util/propagation"
 )
 
 type engineFallbackContextKey int
@@ -14,29 +14,18 @@ type engineFallbackContextKey int
 const forceFallbackEnabledContextKey = engineFallbackContextKey(0)
 const ForceFallbackHeaderName = "X-Mimir-Force-Prometheus-Engine"
 
-type EngineFallbackInjector struct{}
+type EngineFallbackExtractor struct{}
 
-func (i EngineFallbackInjector) Wrap(handler http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if value := r.Header.Get(ForceFallbackHeaderName); value != "" {
-			if value != "true" {
-				// Send a Prometheus API-style JSON error response.
-				w.Header().Set("Content-Type", "application/json")
-				w.WriteHeader(http.StatusBadRequest)
-				e := apierror.Newf(apierror.TypeBadData, "invalid value '%s' for '%s' header, must be exactly 'true' or not set", value, ForceFallbackHeaderName)
-
-				if body, err := e.EncodeJSON(); err == nil {
-					_, _ = w.Write(body)
-				}
-
-				return
-			}
-
-			r = r.WithContext(withForceFallbackEnabled(r.Context()))
+func (e *EngineFallbackExtractor) ExtractFromCarrier(ctx context.Context, carrier propagation.Carrier) (context.Context, error) {
+	if value := carrier.Get(ForceFallbackHeaderName); value != "" {
+		if value != "true" {
+			return nil, apierror.Newf(apierror.TypeBadData, "invalid value '%s' for '%s' header, must be exactly 'true' or not set", value, ForceFallbackHeaderName)
 		}
 
-		handler.ServeHTTP(w, r)
-	})
+		ctx = withForceFallbackEnabled(ctx)
+	}
+
+	return ctx, nil
 }
 
 func withForceFallbackEnabled(ctx context.Context) context.Context {

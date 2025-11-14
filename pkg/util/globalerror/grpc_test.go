@@ -4,6 +4,8 @@ package globalerror
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"io"
 	"net"
 	"testing"
@@ -16,7 +18,6 @@ import (
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/middleware"
 	dskitserver "github.com/grafana/dskit/server"
-	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
@@ -52,14 +53,14 @@ func TestWrapContextError(t *testing.T) {
 			"wrapped gogo Canceled error": {
 				ctxCanceled:         true,
 				ctxDeadlineExceeded: false,
-				origErr:             errors.Wrap(status.Error(codes.Canceled, context.Canceled.Error()), "custom message"),
+				origErr:             fmt.Errorf("custom message: %w", status.Error(codes.Canceled, context.Canceled.Error())),
 				expectedGrpcCode:    codes.Canceled,
 				expectedContextErr:  context.Canceled,
 			},
 			"wrapped gRPC Canceled error": {
 				ctxCanceled:         true,
 				ctxDeadlineExceeded: false,
-				origErr:             errors.Wrap(grpcstatus.Error(codes.Canceled, context.Canceled.Error()), "custom message"),
+				origErr:             fmt.Errorf("custom message: %w", grpcstatus.Error(codes.Canceled, context.Canceled.Error())),
 				expectedGrpcCode:    codes.Canceled,
 				expectedContextErr:  context.Canceled,
 			},
@@ -80,14 +81,14 @@ func TestWrapContextError(t *testing.T) {
 			"wrapped gogo DeadlineExceeded error": {
 				ctxCanceled:         false,
 				ctxDeadlineExceeded: true,
-				origErr:             errors.Wrap(status.Error(codes.DeadlineExceeded, context.DeadlineExceeded.Error()), "custom message"),
+				origErr:             fmt.Errorf("custom message: %w", status.Error(codes.DeadlineExceeded, context.DeadlineExceeded.Error())),
 				expectedGrpcCode:    codes.DeadlineExceeded,
 				expectedContextErr:  context.DeadlineExceeded,
 			},
 			"wrapped gRPC DeadlineExceeded error": {
 				ctxCanceled:         false,
 				ctxDeadlineExceeded: true,
-				origErr:             errors.Wrap(grpcstatus.Error(codes.DeadlineExceeded, context.DeadlineExceeded.Error()), "custom message"),
+				origErr:             fmt.Errorf("custom message: %w", grpcstatus.Error(codes.DeadlineExceeded, context.DeadlineExceeded.Error())),
 				expectedGrpcCode:    codes.DeadlineExceeded,
 				expectedContextErr:  context.DeadlineExceeded,
 			},
@@ -198,16 +199,16 @@ func TestWrapErrorWithGRPCStatus(t *testing.T) {
 	}{
 		"new ErrorWithStatus backed by a genericErr contains ErrorDetails": {
 			originErr:            genericErr,
-			details:              &mimirpb.ErrorDetails{Cause: mimirpb.BAD_DATA},
+			details:              &mimirpb.ErrorDetails{Cause: mimirpb.ERROR_CAUSE_BAD_DATA},
 			expectedErrorMessage: genericErrMsg,
-			expectedErrorDetails: &mimirpb.ErrorDetails{Cause: mimirpb.BAD_DATA},
+			expectedErrorDetails: &mimirpb.ErrorDetails{Cause: mimirpb.ERROR_CAUSE_BAD_DATA},
 		},
 		"new ErrorWithStatus backed by a DoNotLog error of genericErr contains ErrorDetails": {
 			originErr:            middleware.DoNotLogError{Err: genericErr},
-			details:              &mimirpb.ErrorDetails{Cause: mimirpb.BAD_DATA},
+			details:              &mimirpb.ErrorDetails{Cause: mimirpb.ERROR_CAUSE_BAD_DATA},
 			doNotLog:             true,
 			expectedErrorMessage: genericErrMsg,
-			expectedErrorDetails: &mimirpb.ErrorDetails{Cause: mimirpb.BAD_DATA},
+			expectedErrorDetails: &mimirpb.ErrorDetails{Cause: mimirpb.ERROR_CAUSE_BAD_DATA},
 		},
 		"new ErrorWithStatus without ErrorDetails backed by a DoNotLog error of genericErr contains ErrorDetails": {
 			originErr:            middleware.DoNotLogError{Err: genericErr},
@@ -279,15 +280,15 @@ func TestErrorWithStatus_Err(t *testing.T) {
 	}{
 		"Err() of an ErrorWithStatus backed by a genericErr contains ErrorDetails": {
 			originErr:            genericErr,
-			details:              &mimirpb.ErrorDetails{Cause: mimirpb.BAD_DATA},
+			details:              &mimirpb.ErrorDetails{Cause: mimirpb.ERROR_CAUSE_BAD_DATA},
 			expectedErrorMessage: genericErrMsg,
-			expectedErrorDetails: &mimirpb.ErrorDetails{Cause: mimirpb.BAD_DATA},
+			expectedErrorDetails: &mimirpb.ErrorDetails{Cause: mimirpb.ERROR_CAUSE_BAD_DATA},
 		},
 		"Err() of an ErrorWithStatus backed by a DoNotLog error of genericErr contains ErrorDetails": {
 			originErr:            middleware.DoNotLogError{Err: genericErr},
-			details:              &mimirpb.ErrorDetails{Cause: mimirpb.BAD_DATA},
+			details:              &mimirpb.ErrorDetails{Cause: mimirpb.ERROR_CAUSE_BAD_DATA},
 			expectedErrorMessage: genericErrMsg,
-			expectedErrorDetails: &mimirpb.ErrorDetails{Cause: mimirpb.BAD_DATA},
+			expectedErrorDetails: &mimirpb.ErrorDetails{Cause: mimirpb.ERROR_CAUSE_BAD_DATA},
 		},
 		"Err() of an ErrorWithStatus without ErrorDetails backed by a DoNotLog error of genericErr contains ErrorDetails": {
 			originErr:            middleware.DoNotLogError{Err: genericErr},

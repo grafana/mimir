@@ -1,8 +1,11 @@
 # Pin kube version so results are the same for running in CI and locally where the installed kube version may be different.
-kubeVersionOverride: "1.20"
+kubeVersionOverride: "1.29"
 
-enterprise:
-  enabled: true
+global:
+  podLabels:
+    foo: bar
+  podAnnotations:
+    baz: qux
 
 alertmanager:
   podLabels:
@@ -199,34 +202,6 @@ metadata-cache:
       matchLabelKeys:
         - pod-template-hash
 gateway:
-  topologySpreadConstraints:
-    - maxSkew: 1
-      topologyKey: kubernetes.io/hostname
-      whenUnsatisfiable: DoNotSchedule
-      minDomains: 1
-      nodeAffinityPolicy: Honor
-      nodeTaintsPolicy: Honor
-      matchLabelKeys:
-        - pod-template-hash
-admin_api:
-  topologySpreadConstraints:
-    - maxSkew: 1
-      topologyKey: kubernetes.io/hostname
-      whenUnsatisfiable: DoNotSchedule
-      minDomains: 1
-      nodeAffinityPolicy: Honor
-      nodeTaintsPolicy: Honor
-      matchLabelKeys:
-        - pod-template-hash
-    - maxSkew: 1
-      topologyKey: kubernetes.io/hostname
-      whenUnsatisfiable: DoNotSchedule
-      minDomains: 1
-      nodeAffinityPolicy: Honor
-      nodeTaintsPolicy: Honor
-      matchLabelKeys:
-        - pod-template-hash
-admin-cache:
   topologySpreadConstraints:
     - maxSkew: 1
       topologyKey: kubernetes.io/hostname

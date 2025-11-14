@@ -4,6 +4,7 @@ package exporter
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"net"
@@ -15,7 +16,6 @@ import (
 	"github.com/grafana/dskit/kv"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
-	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/grafana/mimir/pkg/util"
@@ -30,10 +30,6 @@ const (
 	// only one token is needed.
 	ringNumTokens = 1
 
-	// ringAutoForgetUnhealthyPeriods is how many consecutive timeout periods an
-	// unhealthy instance in the ring will be automatically removed after.
-	ringAutoForgetUnhealthyPeriods = 4
-
 	// leaderToken is the special token that makes the owner the ring leader.
 	leaderToken = 0
 )
@@ -41,7 +37,7 @@ const (
 // ringOp is used as an instance state filter when obtaining instances from the
 // ring. Instances in the LEAVING state are included to help minimise the number
 // of leader changes during rollout and scaling operations. These instances will
-// be forgotten after ringAutoForgetUnhealthyPeriods (see
+// be forgotten after AutoForgetUnhealthyPeriods (see
 // `KeepInstanceInTheRingOnShutdown`).
 var ringOp = ring.NewOp([]ring.InstanceState{ring.ACTIVE, ring.LEAVING}, nil)
 
@@ -56,6 +52,8 @@ type RingConfig struct {
 	// Ring stability (used to decrease token reshuffling on scale-up).
 	WaitStabilityMinDuration time.Duration `yaml:"wait_stability_min_duration" category:"advanced"`
 	WaitStabilityMaxDuration time.Duration `yaml:"wait_stability_max_duration" category:"advanced"`
+
+	AutoForgetUnhealthyPeriods int `yaml:"auto_forget_unhealthy_periods" category:"advanced"`
 }
 
 // RegisterFlags configures this RingConfig to the given flag set and sets defaults.
@@ -71,6 +69,9 @@ func (c *RingConfig) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	// Ring stability flags.
 	f.DurationVar(&c.WaitStabilityMinDuration, flagNamePrefix+"wait-stability-min-duration", 0, "Minimum time to wait for ring stability at startup, if set to positive value. Set to 0 to disable.")
 	f.DurationVar(&c.WaitStabilityMaxDuration, flagNamePrefix+"wait-stability-max-duration", 5*time.Minute, "Maximum time to wait for ring stability at startup. If the overrides-exporter ring keeps changing after this period of time, it will start anyway.")
+
+	// Auto-forget
+	f.IntVar(&c.AutoForgetUnhealthyPeriods, flagNamePrefix+"auto-forget-unhealthy-periods", 4, "Number of consecutive timeout periods after which Mimir automatically removes an unhealthy instance in the ring. Set to 0 to disable auto-forget.")
 }
 
 // toBasicLifecyclerConfig transforms a RingConfig into configuration that can be used to create a BasicLifecycler.
@@ -138,12 +139,14 @@ func newRing(config RingConfig, logger log.Logger, reg prometheus.Registerer) (*
 		logger,
 	)
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to initialize overrides-exporter's KV store")
+		return nil, fmt.Errorf("failed to initialize overrides-exporter's KV store: %w", err)
 	}
 
 	delegate := ring.BasicLifecyclerDelegate(ring.NewInstanceRegisterDelegate(ring.ACTIVE, ringNumTokens))
 	delegate = ring.NewLeaveOnStoppingDelegate(delegate, logger)
-	delegate = ring.NewAutoForgetDelegate(ringAutoForgetUnhealthyPeriods*config.Common.HeartbeatTimeout, delegate, logger)
+	if config.AutoForgetUnhealthyPeriods > 0 {
+		delegate = ring.NewAutoForgetDelegate(time.Duration(config.AutoForgetUnhealthyPeriods)*config.Common.HeartbeatTimeout, delegate, logger)
+	}
 
 	lifecyclerConfig, err := config.toBasicLifecyclerConfig(logger)
 	if err != nil {
@@ -153,17 +156,17 @@ func newRing(config RingConfig, logger log.Logger, reg prometheus.Registerer) (*
 	const ringName = "overrides-exporter"
 	lifecycler, err := ring.NewBasicLifecycler(lifecyclerConfig, ringName, ringKey, kvStore, delegate, logger, reg)
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to initialize overrides-exporter's lifecycler")
+		return nil, fmt.Errorf("failed to initialize overrides-exporter's lifecycler: %w", err)
 	}
 
 	ringClient, err := ring.New(config.toRingConfig(), ringName, ringKey, logger, reg)
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to create a overrides-exporter ring client")
+		return nil, fmt.Errorf("failed to create a overrides-exporter ring client: %w", err)
 	}
 
 	manager, err := services.NewManager(lifecycler, ringClient)
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to create service manager")
+		return nil, fmt.Errorf("failed to create service manager: %w", err)
 	}
 
 	r := &overridesExporterRing{
@@ -193,7 +196,7 @@ func (r *overridesExporterRing) isLeader() (bool, error) {
 func ringLeader(r ring.ReadRing) (*ring.InstanceDesc, error) {
 	rs, err := r.Get(leaderToken, ringOp, nil, nil, nil)
 	if err != nil {
-		return nil, errors.Wrapf(err, "failed to get a healthy instance for token %d", leaderToken)
+		return nil, fmt.Errorf("failed to get a healthy instance for token %d: %w", leaderToken, err)
 	}
 	if len(rs.Instances) != 1 {
 		return nil, fmt.Errorf("got %d instances for token %d (but expected 1)", len(rs.Instances), leaderToken)
@@ -205,12 +208,12 @@ func ringLeader(r ring.ReadRing) (*ring.InstanceDesc, error) {
 func (r *overridesExporterRing) starting(ctx context.Context) error {
 	r.subserviceWatcher.WatchManager(r.subserviceManager)
 	if err := services.StartManagerAndAwaitHealthy(ctx, r.subserviceManager); err != nil {
-		return errors.Wrap(err, "unable to start overrides-exporter ring subservice manager")
+		return fmt.Errorf("unable to start overrides-exporter ring subservice manager: %w", err)
 	}
 
 	level.Info(r.logger).Log("msg", "waiting until overrides-exporter is ACTIVE in the ring")
 	if err := ring.WaitInstanceState(ctx, r.client, r.lifecycler.GetInstanceID(), ring.ACTIVE); err != nil {
-		return errors.Wrap(err, "overrides-exporter failed to become ACTIVE in the ring")
+		return fmt.Errorf("overrides-exporter failed to become ACTIVE in the ring: %w", err)
 	}
 	level.Info(r.logger).Log("msg", "overrides-exporter is ACTIVE in the ring")
 
@@ -237,13 +240,14 @@ func (r *overridesExporterRing) running(ctx context.Context) error {
 	case <-ctx.Done():
 		return nil
 	case err := <-r.subserviceWatcher.Chan():
-		return errors.Wrap(err, "a subservice of overrides-exporter ring has failed")
+		return fmt.Errorf("a subservice of overrides-exporter ring has failed: %w", err)
 	}
 }
 
 func (r *overridesExporterRing) stopping(_ error) error {
-	return errors.Wrap(
-		services.StopManagerAndAwaitStopped(context.Background(), r.subserviceManager),
-		"failed to stop overrides-exporter's ring subservice manager",
-	)
+	if err := services.StopManagerAndAwaitStopped(context.Background(), r.subserviceManager); err != nil {
+		return fmt.Errorf("failed to stop overrides-exporter's ring subservice manager: %w", err)
+	}
+
+	return nil
 }

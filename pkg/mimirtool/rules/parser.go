@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/rulefmt"
 	log "github.com/sirupsen/logrus"
 	yaml "gopkg.in/yaml.v3"
@@ -29,9 +30,9 @@ var (
 )
 
 // ParseFiles returns a formatted set of prometheus rule groups
-func ParseFiles(backend string, files []string) (map[string]RuleNamespace, error) {
+func ParseFiles(backend string, files []string, scheme model.ValidationScheme) (map[string]RuleNamespace, error) {
 	ruleSet := map[string]RuleNamespace{}
-	var parseFn func(f string) ([]RuleNamespace, []error)
+	var parseFn func(f string, scheme model.ValidationScheme) ([]RuleNamespace, []error)
 	switch backend {
 	case MimirBackend:
 		parseFn = Parse
@@ -40,7 +41,7 @@ func ParseFiles(backend string, files []string) (map[string]RuleNamespace, error
 	}
 
 	for _, f := range files {
-		nss, errs := parseFn(f)
+		nss, errs := parseFn(f, scheme)
 		for _, err := range errs {
 			log.WithError(err).WithField("file", f).Errorln("unable to parse rules file")
 			return nil, errFileReadError
@@ -72,17 +73,17 @@ func ParseFiles(backend string, files []string) (map[string]RuleNamespace, error
 }
 
 // Parse parses and validates a set of rules.
-func Parse(f string) ([]RuleNamespace, []error) {
+func Parse(f string, scheme model.ValidationScheme) ([]RuleNamespace, []error) {
 	content, err := loadFile(f)
 	if err != nil {
 		log.WithError(err).WithField("file", f).Errorln("unable to load rules file")
 		return nil, []error{errFileReadError}
 	}
 
-	return ParseBytes(content)
+	return ParseBytes(content, scheme)
 }
 
-func ParseBytes(content []byte) ([]RuleNamespace, []error) {
+func ParseBytes(content []byte, scheme model.ValidationScheme) ([]RuleNamespace, []error) {
 	decoder := yaml.NewDecoder(bytes.NewReader(content))
 	decoder.KnownFields(true)
 
@@ -117,7 +118,7 @@ func ParseBytes(content []byte) ([]RuleNamespace, []error) {
 			return nil, []error{err}
 		}
 
-		if errs := ns.Validate(node.GroupNodes); len(errs) > 0 {
+		if errs := ns.Validate(node.GroupNodes, scheme); len(errs) > 0 {
 			return nil, errs
 		}
 	}

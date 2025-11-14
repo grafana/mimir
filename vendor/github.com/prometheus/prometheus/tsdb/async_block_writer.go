@@ -1,3 +1,16 @@
+// Copyright 2021 Grafana Labs
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package tsdb
 
 import (
@@ -78,7 +91,14 @@ func (bw *asyncBlockWriter) loop() (res asyncBlockWriterResult) {
 		stats.NumChunks += uint64(len(sw.chks))
 		stats.NumSeries++
 		for _, chk := range sw.chks {
-			stats.NumSamples += uint64(chk.Chunk.NumSamples())
+			samples := uint64(chk.Chunk.NumSamples())
+			stats.NumSamples += samples
+			switch chk.Chunk.Encoding() {
+			case chunkenc.EncHistogram, chunkenc.EncFloatHistogram:
+				stats.NumHistogramSamples += samples
+			case chunkenc.EncXOR:
+				stats.NumFloatSamples += samples
+			}
 		}
 
 		for _, chk := range sw.chks {

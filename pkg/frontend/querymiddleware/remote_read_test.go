@@ -243,7 +243,7 @@ func TestRemoteReadRoundTripper_ShouldAllowMiddlewaresToReturnEmptyResponse(t *t
 	// Create a middleware that return an empty response.
 	middleware := MetricsQueryMiddlewareFunc(func(_ MetricsQueryHandler) MetricsQueryHandler {
 		return HandlerFunc(func(_ context.Context, _ MetricsQueryRequest) (Response, error) {
-			return newEmptyPrometheusResponse(), nil
+			return NewEmptyPrometheusResponse(), nil
 		})
 	})
 

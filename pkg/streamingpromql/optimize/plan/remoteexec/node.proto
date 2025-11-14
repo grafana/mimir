@@ -1,0 +1,23 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
+syntax = "proto3";
+
+package remoteexec;
+
+import "gogoproto/gogo.proto";
+
+option (gogoproto.equal_all) = false;
+option (gogoproto.marshaler_all) = true;
+option (gogoproto.messagename_all) = true;
+option (gogoproto.unmarshaler_all) = true;
+
+message RemoteExecutionDetails {
+  // If the query has been sharded, we need to eagerly load and buffer the response from queriers in query-frontends
+  // to avoid a possible deadlock: we need the series metadata for each sharded leg before we can start streaming series
+  // data back to the caller. If we don't eagerly load responses from queriers, then in a query with (for example) 8
+  // sharded legs, we might end up deadlocked waiting for some or all of the last legs because these requests can't
+  // start either due to the query-frontend's per-query max parallelism limit or the number of available querier
+  // workers. If we eagerly load responses, then exhausting the responses that have started will eventually make space
+  // for the outstanding requests to complete.
+  bool eagerLoad = 1;
+}

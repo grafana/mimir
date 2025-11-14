@@ -86,9 +86,8 @@ func TestReaderPool_ShouldCloseIdleLazyReaders(t *testing.T) {
 	// Note that we are creating a ReaderPool that doesn't run a background cleanup task for idle
 	// Reader instances. We'll manually invoke the cleanup task when we need it as part of this test.
 	pool := newReaderPool(log.NewNopLogger(), Config{
-		LazyLoadingEnabled:         true,
-		LazyLoadingIdleTimeout:     idleTimeout,
-		EagerLoadingStartupEnabled: false,
+		LazyLoadingEnabled:     true,
+		LazyLoadingIdleTimeout: idleTimeout,
 	}, gate.NewNoop(), metrics)
 
 	r, err := pool.NewBinaryReader(ctx, log.NewNopLogger(), bkt, tmpDir, blockID, 3, Config{})
@@ -163,7 +162,8 @@ func prepareReaderPool(t *testing.T) (context.Context, string, objstore.Instrume
 		labels.FromStrings("a", "3"),
 	}, 100, 0, 1000, labels.FromStrings("ext1", "1"))
 	require.NoError(t, err)
-	require.NoError(t, block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(tmpDir, blockID.String()), nil))
+	_, err = block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(tmpDir, blockID.String()), nil)
+	require.NoError(t, err)
 
 	metrics := NewReaderPoolMetrics(nil)
 	return ctx, tmpDir, bkt, blockID, metrics

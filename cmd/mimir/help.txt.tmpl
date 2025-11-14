@@ -104,7 +104,7 @@ Usage of ./cmd/mimir/mimir:
   -alertmanager.notification-rate-limit float
     	Per-tenant rate limit for sending notifications from Alertmanager in notifications/sec. 0 = rate limit disabled. Negative value = no notifications are allowed.
   -alertmanager.notification-rate-limit-per-integration value
-    	Per-integration notification rate limits. Value is a map, where each key is integration name and value is a rate-limit (float). On command line, this map is given in JSON format. Rate limit has the same meaning as -alertmanager.notification-rate-limit, but only applies for specific integration. Allowed integration names: webhook, email, pagerduty, opsgenie, wechat, slack, victorops, pushover, sns, webex, telegram, discord, msteams. (default {})
+    	Per-integration notification rate limits. Value is a map, where each key is integration name and value is a rate-limit (float). On command line, this map is given in JSON format. Rate limit has the same meaning as -alertmanager.notification-rate-limit, but only applies for specific integration. Allowed integration names: webhook, email, pagerduty, opsgenie, wechat, slack, victorops, pushover, sns, webex, telegram, discord, msteams, msteamsv2. (default {})
   -alertmanager.notify-hook-receivers comma-separated-list-of-strings
     	List of receivers to enable notify hooks for. empty = all receivers.
   -alertmanager.notify-hook-timeout duration
@@ -146,7 +146,7 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.backend string
     	Backend storage to use. Supported backends are: s3, gcs, azure, swift, filesystem. (default "filesystem")
   -blocks-storage.bucket-store.chunks-cache.backend string
-    	Backend for chunks cache, if not empty. Supported values: memcached, redis.
+    	Backend for chunks cache, if not empty. Supported values: memcached.
   -blocks-storage.bucket-store.chunks-cache.memcached.addresses comma-separated-list-of-strings
     	Comma-separated list of memcached addresses. Each address can be an IP address, hostname, or an entry specified in the DNS Service Discovery format.
   -blocks-storage.bucket-store.chunks-cache.memcached.connect-timeout duration
@@ -154,7 +154,7 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.bucket-store.chunks-cache.memcached.timeout duration
     	The socket read/write timeout. (default 200ms)
   -blocks-storage.bucket-store.index-cache.backend string
-    	The index cache backend type. Supported values: inmemory, memcached, redis. (default "inmemory")
+    	The index cache backend type. Supported values: inmemory, memcached. (default "inmemory")
   -blocks-storage.bucket-store.index-cache.inmemory.max-size-bytes uint
     	Maximum size in bytes of in-memory index cache used to speed up blocks index lookups (shared between all tenants). (default 1073741824)
   -blocks-storage.bucket-store.index-cache.memcached.addresses comma-separated-list-of-strings
@@ -164,7 +164,7 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.bucket-store.index-cache.memcached.timeout duration
     	The socket read/write timeout. (default 200ms)
   -blocks-storage.bucket-store.metadata-cache.backend string
-    	Backend for metadata cache, if not empty. Supported values: memcached, redis.
+    	Backend for metadata cache, if not empty. Supported values: memcached.
   -blocks-storage.bucket-store.metadata-cache.memcached.addresses comma-separated-list-of-strings
     	Comma-separated list of memcached addresses. Each address can be an IP address, hostname, or an entry specified in the DNS Service Discovery format.
   -blocks-storage.bucket-store.metadata-cache.memcached.connect-timeout duration
@@ -372,7 +372,7 @@ Usage of ./cmd/mimir/mimir:
   -distributor.ha-tracker.replica string
     	Prometheus label to look for in samples to identify a Prometheus HA replica. (default "__replica__")
   -distributor.ha-tracker.store string
-    	Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi. (default "consul")
+    	Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi. (default "memberlist")
   -distributor.ingestion-burst-size int
     	Per-tenant allowed ingestion burst size (in number of samples). (default 200000)
   -distributor.ingestion-rate-limit float
@@ -406,9 +406,9 @@ Usage of ./cmd/mimir/mimir:
   -ingest-storage.kafka.address string
     	The Kafka backend address.
   -ingest-storage.kafka.auto-create-topic-default-partitions int
-    	When auto-creation of Kafka topic is enabled and this value is positive, Mimir will create the topic with this number of partitions. When the value is -1 the Kafka broker will use the default number of partitions (num.partitions configuration). (default -1)
+    	When auto-creation of Kafka topic is enabled and this value is positive, Mimir creates the topic with this number of partitions. When the value is -1 the Kafka broker uses the default number of partitions (num.partitions configuration). (default -1)
   -ingest-storage.kafka.auto-create-topic-enabled
-    	Enable auto-creation of Kafka topic on startup if it doesn't exist. If creating the topic fails and the topic doesn't already exist, Mimir will fail to start. (default true)
+    	Enable auto-creation of Kafka topic on startup if it doesn't exist. If creating the topic fails and the topic doesn't already exist, Mimir fails to start. (default true)
   -ingest-storage.kafka.client-id string
     	The Kafka client ID.
   -ingest-storage.kafka.consume-from-position-at-startup string
@@ -422,7 +422,7 @@ Usage of ./cmd/mimir/mimir:
   -ingest-storage.kafka.dial-timeout duration
     	The maximum time allowed to open a connection to a Kafka broker. (default 2s)
   -ingest-storage.kafka.fetch-concurrency-max int
-    	The maximum number of concurrent fetch requests that the ingester makes when reading data from Kafka during startup. Concurrent fetch requests are issued only when there is sufficient backlog of records to consume. 0 to disable.
+    	The maximum number of concurrent fetch requests that the ingester makes when reading data from Kafka during startup. Concurrent fetch requests are issued only when there is sufficient backlog of records to consume. Set to 0 to disable.
   -ingest-storage.kafka.fetch-max-wait duration
     	The maximum amount of time a Kafka broker waits for some records before a Fetch response is returned. (default 5s)
   -ingest-storage.kafka.ingestion-concurrency-batch-size int
@@ -477,6 +477,8 @@ Usage of ./cmd/mimir/mimir:
     	The maximum number of in-memory series per metric name, across the cluster before replication. 0 to disable.
   -ingester.max-global-series-per-user int
     	The maximum number of in-memory series per tenant, across the cluster before replication. 0 to disable. (default 150000)
+  -ingester.out-of-order-time-window duration
+    	Non-zero value enables out-of-order support for most recent samples that are within the time window in relation to the TSDB's maximum time, i.e., within [db.maxTime-timeWindow, db.maxTime]). The ingester will need more memory as a factor of rate of out-of-order samples being ingested and the number of series that are getting out-of-order samples. If query falls into this window, cached results will use value from -query-frontend.results-cache-ttl-for-out-of-order-time-window option to specify TTL for resulting cache entry.
   -ingester.partition-ring.consul.hostname string
     	Hostname and port of Consul. (default "localhost:8500")
   -ingester.partition-ring.delete-inactive-partition-after duration
@@ -502,7 +504,7 @@ Usage of ./cmd/mimir/mimir:
   -ingester.ring.etcd.username string
     	Etcd username.
   -ingester.ring.replication-factor int
-    	Number of ingesters that each time series is replicated to. This option needs be set on ingesters, distributors, queriers, and rulers when running in microservices mode. (default 3)
+    	Number of ingesters that each time series is replicated to. This configuration is not used when ingest storage is enabled. This option needs be set on ingesters, distributors, queriers, and rulers when running in microservices mode. (default 3)
   -ingester.ring.store string
     	Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi. (default "memberlist")
   -ingester.ring.tokens-file-path string
@@ -513,6 +515,12 @@ Usage of ./cmd/mimir/mimir:
     	Output log messages in the given format. Valid formats: [logfmt, json] (default "logfmt")
   -log.level value
     	Only log messages with the given severity or above. Valid levels: [debug, info, warn, error] (default info)
+  -log.rate-limit-enabled
+    	Use rate limited logger to reduce the number of logged messages per second.
+  -log.rate-limit-logs-burst-size int
+    	Burst size, i.e., maximum number of messages that can be logged at once, temporarily exceeding the configured maximum logs per second. (default 1000)
+  -log.rate-limit-logs-per-second float
+    	Maximum number of messages per second to be logged. (default 10000)
   -memberlist.abort-if-join-fails
     	Abort if this node fails to join memberlist cluster at startup. When enabled, it's not guaranteed that other services are started only after the cluster state has been successfully updated; use 'abort-if-fast-join-fails' instead.
   -memberlist.advertise-addr string
@@ -528,7 +536,7 @@ Usage of ./cmd/mimir/mimir:
   -modules
     	List available values that can be used as target.
   -overrides-exporter.enabled-metrics comma-separated-list-of-strings
-    	Comma-separated list of metrics to include in the exporter. Allowed metric names: ingestion_rate, ingestion_burst_size, ingestion_artificial_delay, max_global_series_per_user, max_global_series_per_metric, max_global_exemplars_per_user, max_fetched_chunks_per_query, max_fetched_series_per_query, max_fetched_chunk_bytes_per_query, ruler_max_rules_per_rule_group, ruler_max_rule_groups_per_tenant, max_global_metadata_per_user, max_global_metadata_per_metric, request_rate, request_burst_size, alertmanager_notification_rate_limit, alertmanager_max_dispatcher_aggregation_groups, alertmanager_max_alerts_count, alertmanager_max_alerts_size_bytes. (default ingestion_rate,ingestion_burst_size,max_global_series_per_user,max_global_series_per_metric,max_global_exemplars_per_user,max_fetched_chunks_per_query,max_fetched_series_per_query,max_fetched_chunk_bytes_per_query,ruler_max_rules_per_rule_group,ruler_max_rule_groups_per_tenant)
+    	Comma-separated list of metrics to include in the exporter. Metric names must match yaml tags from the limits section of the configuration. (default ingestion_rate,ingestion_burst_size,max_global_series_per_user,max_global_series_per_metric,max_global_exemplars_per_user,max_fetched_chunks_per_query,max_fetched_series_per_query,max_fetched_chunk_bytes_per_query,ruler_max_rules_per_rule_group,ruler_max_rule_groups_per_tenant)
   -overrides-exporter.ring.consul.hostname string
     	Hostname and port of Consul. (default "localhost:8500")
   -overrides-exporter.ring.enabled
@@ -547,8 +555,6 @@ Usage of ./cmd/mimir/mimir:
     	Print the config and exit.
   -querier.cardinality-analysis-enabled
     	Enables endpoints used for cardinality analysis.
-  -querier.frontend-address string
-    	Address of the query-frontend component, in host:port format. If multiple query-frontends are running, the host should be a DNS resolving to all query-frontend instances. This option should be set only when query-scheduler component is not in use.
   -querier.label-names-and-values-results-max-size-bytes int
     	Maximum size in bytes of distinct label names and values. When querier receives response from ingester, it merges the response with responses from other ingesters. This maximum size limit is applied to the merged(distinct) results. If the limit is reached, an error is returned. (default 419430400)
   -querier.label-values-max-cardinality-label-names-per-request int
@@ -571,6 +577,18 @@ Usage of ./cmd/mimir/mimir:
     	Maximum number of samples a single query can load into memory. This config option should be set on query-frontend too when query sharding is enabled. (default 50000000)
   -querier.max-series-query-limit int
     	Maximum number of series, the series endpoint queries. This limit is enforced in the querier. If the requested limit is outside of the allowed value, the request doesn't fail, but is manipulated to only query data up to the allowed limit. Set to 0 to disable.
+  -querier.ring.consul.hostname string
+    	Hostname and port of Consul. (default "localhost:8500")
+  -querier.ring.etcd.endpoints string
+    	The etcd endpoints to connect to.
+  -querier.ring.etcd.password string
+    	Etcd password.
+  -querier.ring.etcd.username string
+    	Etcd username.
+  -querier.ring.instance-interface-names string
+    	List of network interface names to look up when finding the instance IP address. (default [<private network interfaces>])
+  -querier.ring.store string
+    	Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi. (default "memberlist")
   -querier.scheduler-address string
     	Address of the query-scheduler component, in host:port format. The host should resolve to all query-scheduler instances. This option should be set only when query-scheduler component is in use and -query-scheduler.service-discovery-mode is set to 'dns'.
   -querier.timeout duration
@@ -583,6 +601,8 @@ Usage of ./cmd/mimir/mimir:
     	Cache query results.
   -query-frontend.cache-samples-processed-stats
     	Cache statistics of processed samples on results cache.
+  -query-frontend.enabled-promql-experimental-functions comma-separated-list-of-strings
+    	Enable certain experimental PromQL functions, which are subject to being changed or removed at any time, on a per-tenant basis. Defaults to empty which means all experimental functions are disabled. Set to 'all' to enable all experimental functions.
   -query-frontend.log-queries-longer-than duration
     	Log queries that are slower than the specified duration. Set to 0 to disable. Set to < 0 to enable on all queries.
   -query-frontend.max-queriers-per-tenant int
@@ -612,7 +632,7 @@ Usage of ./cmd/mimir/mimir:
   -query-frontend.results-cache-ttl-for-out-of-order-time-window duration
     	Time to live duration for cached query results if query falls into out-of-order time window. This is lower than -query-frontend.results-cache-ttl so that incoming out-of-order samples are returned in the query results sooner. (default 10m)
   -query-frontend.results-cache.backend string
-    	Backend for query-frontend results cache, if not empty. Supported values: memcached, redis.
+    	Backend for query-frontend results cache, if not empty. Supported values: memcached.
   -query-frontend.results-cache.compression string
     	Enable cache compression, if not empty. Supported values are: snappy.
   -query-frontend.results-cache.memcached.addresses comma-separated-list-of-strings
@@ -652,7 +672,7 @@ Usage of ./cmd/mimir/mimir:
   -ruler-storage.backend string
     	Backend storage to use. Supported backends are: s3, gcs, azure, swift, filesystem, local. (default "filesystem")
   -ruler-storage.cache.backend string
-    	Backend for ruler storage cache, if not empty. The cache is supported for any storage backend except "local". Supported values: memcached, redis.
+    	Backend for ruler storage cache, if not empty. The cache is supported for any storage backend except "local". Supported values: memcached.
   -ruler-storage.cache.memcached.addresses comma-separated-list-of-strings
     	Comma-separated list of memcached addresses. Each address can be an IP address, hostname, or an entry specified in the DNS Service Discovery format.
   -ruler-storage.cache.memcached.connect-timeout duration
@@ -758,7 +778,7 @@ Usage of ./cmd/mimir/mimir:
   -ruler.max-rules-per-rule-group-by-namespace value
     	Maximum number of rules per rule group by namespace. Value is a map, where each key is the namespace and value is the number of rules allowed in the namespace (int). On the command line, this map is given in a JSON format. The number of rules specified has the same meaning as -ruler.max-rules-per-rule-group, but only applies for the specific namespace. If specified, it supersedes -ruler.max-rules-per-rule-group. (default {})
   -ruler.query-frontend.address string
-    	GRPC listen address of the query-frontend(s). Must be a DNS address (prefixed with dns:///) to enable client side load balancing.
+    	Can be either the GRPC listen address of the query-frontend(s) or the HTTP/HTTPS address of a Prometheus-compatible server. Must be a DNS address (prefixed with dns:///) to enable GRPC client side load balancing.
   -ruler.query-frontend.max-retries-rate float
     	Maximum number of retries for failed queries per second. (default 170)
   -ruler.query-frontend.query-result-response-format string
@@ -818,9 +838,7 @@ Usage of ./cmd/mimir/mimir:
   -server.trace-request-headers
     	Optionally add request headers to tracing spans.
   -server.trace-request-headers-exclude-list string
-    	Comma separated list of headers to exclude from tracing spans. Only used if server.trace-request-headers is true. The following headers are always excluded: Authorization, Cookie, X-Csrf-Token.
-  -store-gateway.sharding-ring.auto-forget-enabled
-    	When enabled, a store-gateway is automatically removed from the ring after failing to heartbeat the ring for a period longer than 10 times the configured -store-gateway.sharding-ring.heartbeat-timeout. (default true)
+    	Comma separated list of headers to exclude from tracing spans. Only used if server.trace-request-headers is true. The following headers are always excluded: Authorization, Cookie, X-Access-Token, X-Csrf-Token, X-Grafana-Id.
   -store-gateway.sharding-ring.consul.hostname string
     	Hostname and port of Consul. (default "localhost:8500")
   -store-gateway.sharding-ring.etcd.endpoints string
@@ -861,6 +879,16 @@ Usage of ./cmd/mimir/mimir:
     	Optionally define the cluster validation label.
   -tests.client.user-agent string
     	The value the Mimir client should send in the User-Agent header. (default "mimir-continuous-test")
+  -tests.ingest-storage-record.consumer-group string
+    	The Kafka consumer group used for getting/setting commmitted offsets. (default "ingest-storage-record")
+  -tests.ingest-storage-record.enabled
+    	Whether the test for ingest-storage record correctness is enabled.
+  -tests.ingest-storage-record.max-jump-size int
+    	If a partition increases by this many offsets in a run, we skip processing it, to protect against downloading unexpectedly huge batches. (default 500000000)
+  -tests.ingest-storage-record.max-records-per-run int
+    	Limit on the number of total records to be processed in a run, to keep memory bounded in large cells. This limit is approximate, we might go over by a partial fetch. (default 200000)
+  -tests.ingest-storage-record.records-processed-percent int
+    	The approximate percent of records to actually fetch and compare. (default 5)
   -tests.read-endpoint string
     	The base endpoint on the read path. The URL should have no trailing slash. The specific API path is appended by the tool to the URL, for example /api/v1/query_range for range query API, so the configured URL must not include it.
   -tests.read-timeout duration

@@ -73,7 +73,7 @@
                   "span": 4,
                   "targets": [
                      {
-                        "expr": "sum by(instance) (rate(node_cpu_seconds_total{mode=\"user\",cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(distributor|ingester|mimir-write).*\"}[$__rate_interval]))",
+                        "expr": "sum by(instance) (rate(node_cpu_seconds_total{mode=\"user\",cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(distributor|ingester).*\"}[$__rate_interval]))",
                         "format": "time_series",
                         "legendFormat": "{{instance}}",
                         "legendLink": null
@@ -121,7 +121,7 @@
                   "span": 4,
                   "targets": [
                      {
-                        "expr": "node_memory_MemTotal_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(distributor|ingester|mimir-write).*\"}\n- node_memory_MemFree_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(distributor|ingester|mimir-write).*\"}\n- node_memory_Buffers_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(distributor|ingester|mimir-write).*\"}\n- node_memory_Cached_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(distributor|ingester|mimir-write).*\"}\n- node_memory_Slab_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(distributor|ingester|mimir-write).*\"}\n- node_memory_PageTables_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(distributor|ingester|mimir-write).*\"}\n- node_memory_SwapCached_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(distributor|ingester|mimir-write).*\"}\n",
+                        "expr": "node_memory_MemTotal_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(distributor|ingester).*\"}\n- node_memory_MemFree_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(distributor|ingester).*\"}\n- node_memory_Buffers_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(distributor|ingester).*\"}\n- node_memory_Cached_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(distributor|ingester).*\"}\n- node_memory_Slab_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(distributor|ingester).*\"}\n- node_memory_PageTables_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(distributor|ingester).*\"}\n- node_memory_SwapCached_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(distributor|ingester).*\"}\n",
                         "format": "time_series",
                         "legendFormat": "{{instance}}",
                         "legendLink": null
@@ -169,7 +169,7 @@
                   "span": 4,
                   "targets": [
                      {
-                        "expr": "sum by(instance) (go_memstats_heap_inuse_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(distributor|ingester|mimir-write).*\"})",
+                        "expr": "sum by(instance) (go_memstats_heap_inuse_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(distributor|ingester).*\"})",
                         "format": "time_series",
                         "legendFormat": "{{instance}}",
                         "legendLink": null
@@ -229,7 +229,7 @@
                   "span": 4,
                   "targets": [
                      {
-                        "expr": "sum by(instance, instance, device) (\n  rate(\n    node_disk_written_bytes_total{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(distributor|ingester|mimir-write).*\"}[$__rate_interval]\n  )\n)\n",
+                        "expr": "sum by(instance, instance, device) (\n  rate(\n    node_disk_written_bytes_total{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(distributor|ingester).*\"}[$__rate_interval]\n  )\n)\n",
                         "format": "time_series",
                         "legendFormat": "{{instance}} - {{device}}",
                         "legendLink": null
@@ -277,7 +277,7 @@
                   "span": 4,
                   "targets": [
                      {
-                        "expr": "sum by(instance, instance, device) (\n  rate(\n    node_disk_read_bytes_total{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(distributor|ingester|mimir-write).*\"}[$__rate_interval]\n  )\n)\n",
+                        "expr": "sum by(instance, instance, device) (\n  rate(\n    node_disk_read_bytes_total{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(distributor|ingester).*\"}[$__rate_interval]\n  )\n)\n",
                         "format": "time_series",
                         "legendFormat": "{{instance}} - {{device}}",
                         "legendLink": null
@@ -328,7 +328,7 @@
                   "span": 4,
                   "targets": [
                      {
-                        "expr": "1 - ((node_filesystem_avail_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(distributor|ingester|mimir-write).*\", mountpoint=\"/\"})\n    / node_filesystem_size_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(distributor|ingester|mimir-write).*\", mountpoint=\"/\"})\n",
+                        "expr": "1 - ((node_filesystem_avail_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(distributor|ingester).*\", mountpoint=\"/\"})\n    / node_filesystem_size_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(distributor|ingester).*\", mountpoint=\"/\"})\n",
                         "format": "time_series",
                         "legendFormat": "{{instance}}",
                         "legendLink": null
@@ -388,7 +388,7 @@
                   "span": 4,
                   "targets": [
                      {
-                        "expr": "sum by(instance) (rate(node_cpu_seconds_total{mode=\"user\",cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(query-frontend|querier|ruler-query-frontend|ruler-querier|mimir-read).*\"}[$__rate_interval]))",
+                        "expr": "sum by(instance) (rate(node_cpu_seconds_total{mode=\"user\",cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(query-frontend|querier|ruler-query-frontend|ruler-querier).*\"}[$__rate_interval]))",
                         "format": "time_series",
                         "legendFormat": "{{instance}}",
                         "legendLink": null
@@ -436,7 +436,7 @@
                   "span": 4,
                   "targets": [
                      {
-                        "expr": "node_memory_MemTotal_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(query-frontend|querier|ruler-query-frontend|ruler-querier|mimir-read).*\"}\n- node_memory_MemFree_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(query-frontend|querier|ruler-query-frontend|ruler-querier|mimir-read).*\"}\n- node_memory_Buffers_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(query-frontend|querier|ruler-query-frontend|ruler-querier|mimir-read).*\"}\n- node_memory_Cached_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(query-frontend|querier|ruler-query-frontend|ruler-querier|mimir-read).*\"}\n- node_memory_Slab_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(query-frontend|querier|ruler-query-frontend|ruler-querier|mimir-read).*\"}\n- node_memory_PageTables_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(query-frontend|querier|ruler-query-frontend|ruler-querier|mimir-read).*\"}\n- node_memory_SwapCached_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(query-frontend|querier|ruler-query-frontend|ruler-querier|mimir-read).*\"}\n",
+                        "expr": "node_memory_MemTotal_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(query-frontend|querier|ruler-query-frontend|ruler-querier).*\"}\n- node_memory_MemFree_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(query-frontend|querier|ruler-query-frontend|ruler-querier).*\"}\n- node_memory_Buffers_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(query-frontend|querier|ruler-query-frontend|ruler-querier).*\"}\n- node_memory_Cached_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(query-frontend|querier|ruler-query-frontend|ruler-querier).*\"}\n- node_memory_Slab_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(query-frontend|querier|ruler-query-frontend|ruler-querier).*\"}\n- node_memory_PageTables_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(query-frontend|querier|ruler-query-frontend|ruler-querier).*\"}\n- node_memory_SwapCached_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(query-frontend|querier|ruler-query-frontend|ruler-querier).*\"}\n",
                         "format": "time_series",
                         "legendFormat": "{{instance}}",
                         "legendLink": null
@@ -484,7 +484,7 @@
                   "span": 4,
                   "targets": [
                      {
-                        "expr": "sum by(instance) (go_memstats_heap_inuse_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(query-frontend|querier|ruler-query-frontend|ruler-querier|mimir-read).*\"})",
+                        "expr": "sum by(instance) (go_memstats_heap_inuse_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(query-frontend|querier|ruler-query-frontend|ruler-querier).*\"})",
                         "format": "time_series",
                         "legendFormat": "{{instance}}",
                         "legendLink": null
@@ -544,7 +544,7 @@
                   "span": 4,
                   "targets": [
                      {
-                        "expr": "sum by(instance) (rate(node_cpu_seconds_total{mode=\"user\",cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(query-scheduler|ruler-query-scheduler|ruler|store-gateway|compactor|alertmanager|overrides-exporter|mimir-backend).*\"}[$__rate_interval]))",
+                        "expr": "sum by(instance) (rate(node_cpu_seconds_total{mode=\"user\",cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(query-scheduler|ruler-query-scheduler|ruler|store-gateway|compactor|alertmanager|overrides-exporter).*\"}[$__rate_interval]))",
                         "format": "time_series",
                         "legendFormat": "{{instance}}",
                         "legendLink": null
@@ -592,7 +592,7 @@
                   "span": 4,
                   "targets": [
                      {
-                        "expr": "node_memory_MemTotal_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(query-scheduler|ruler-query-scheduler|ruler|store-gateway|compactor|alertmanager|overrides-exporter|mimir-backend).*\"}\n- node_memory_MemFree_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(query-scheduler|ruler-query-scheduler|ruler|store-gateway|compactor|alertmanager|overrides-exporter|mimir-backend).*\"}\n- node_memory_Buffers_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(query-scheduler|ruler-query-scheduler|ruler|store-gateway|compactor|alertmanager|overrides-exporter|mimir-backend).*\"}\n- node_memory_Cached_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(query-scheduler|ruler-query-scheduler|ruler|store-gateway|compactor|alertmanager|overrides-exporter|mimir-backend).*\"}\n- node_memory_Slab_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(query-scheduler|ruler-query-scheduler|ruler|store-gateway|compactor|alertmanager|overrides-exporter|mimir-backend).*\"}\n- node_memory_PageTables_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(query-scheduler|ruler-query-scheduler|ruler|store-gateway|compactor|alertmanager|overrides-exporter|mimir-backend).*\"}\n- node_memory_SwapCached_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(query-scheduler|ruler-query-scheduler|ruler|store-gateway|compactor|alertmanager|overrides-exporter|mimir-backend).*\"}\n",
+                        "expr": "node_memory_MemTotal_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(query-scheduler|ruler-query-scheduler|ruler|store-gateway|compactor|alertmanager|overrides-exporter).*\"}\n- node_memory_MemFree_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(query-scheduler|ruler-query-scheduler|ruler|store-gateway|compactor|alertmanager|overrides-exporter).*\"}\n- node_memory_Buffers_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(query-scheduler|ruler-query-scheduler|ruler|store-gateway|compactor|alertmanager|overrides-exporter).*\"}\n- node_memory_Cached_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(query-scheduler|ruler-query-scheduler|ruler|store-gateway|compactor|alertmanager|overrides-exporter).*\"}\n- node_memory_Slab_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(query-scheduler|ruler-query-scheduler|ruler|store-gateway|compactor|alertmanager|overrides-exporter).*\"}\n- node_memory_PageTables_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(query-scheduler|ruler-query-scheduler|ruler|store-gateway|compactor|alertmanager|overrides-exporter).*\"}\n- node_memory_SwapCached_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(query-scheduler|ruler-query-scheduler|ruler|store-gateway|compactor|alertmanager|overrides-exporter).*\"}\n",
                         "format": "time_series",
                         "legendFormat": "{{instance}}",
                         "legendLink": null
@@ -640,7 +640,7 @@
                   "span": 4,
                   "targets": [
                      {
-                        "expr": "sum by(instance) (go_memstats_heap_inuse_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(query-scheduler|ruler-query-scheduler|ruler|store-gateway|compactor|alertmanager|overrides-exporter|mimir-backend).*\"})",
+                        "expr": "sum by(instance) (go_memstats_heap_inuse_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(query-scheduler|ruler-query-scheduler|ruler|store-gateway|compactor|alertmanager|overrides-exporter).*\"})",
                         "format": "time_series",
                         "legendFormat": "{{instance}}",
                         "legendLink": null
@@ -700,7 +700,7 @@
                   "span": 4,
                   "targets": [
                      {
-                        "expr": "sum by(instance, instance, device) (\n  rate(\n    node_disk_written_bytes_total{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(query-scheduler|ruler-query-scheduler|ruler|store-gateway|compactor|alertmanager|overrides-exporter|mimir-backend).*\"}[$__rate_interval]\n  )\n)\n",
+                        "expr": "sum by(instance, instance, device) (\n  rate(\n    node_disk_written_bytes_total{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(query-scheduler|ruler-query-scheduler|ruler|store-gateway|compactor|alertmanager|overrides-exporter).*\"}[$__rate_interval]\n  )\n)\n",
                         "format": "time_series",
                         "legendFormat": "{{instance}} - {{device}}",
                         "legendLink": null
@@ -748,7 +748,7 @@
                   "span": 4,
                   "targets": [
                      {
-                        "expr": "sum by(instance, instance, device) (\n  rate(\n    node_disk_read_bytes_total{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(query-scheduler|ruler-query-scheduler|ruler|store-gateway|compactor|alertmanager|overrides-exporter|mimir-backend).*\"}[$__rate_interval]\n  )\n)\n",
+                        "expr": "sum by(instance, instance, device) (\n  rate(\n    node_disk_read_bytes_total{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(query-scheduler|ruler-query-scheduler|ruler|store-gateway|compactor|alertmanager|overrides-exporter).*\"}[$__rate_interval]\n  )\n)\n",
                         "format": "time_series",
                         "legendFormat": "{{instance}} - {{device}}",
                         "legendLink": null
@@ -799,7 +799,7 @@
                   "span": 4,
                   "targets": [
                      {
-                        "expr": "1 - ((node_filesystem_avail_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(query-scheduler|ruler-query-scheduler|ruler|store-gateway|compactor|alertmanager|overrides-exporter|mimir-backend).*\", mountpoint=\"/\"})\n    / node_filesystem_size_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(query-scheduler|ruler-query-scheduler|ruler|store-gateway|compactor|alertmanager|overrides-exporter|mimir-backend).*\", mountpoint=\"/\"})\n",
+                        "expr": "1 - ((node_filesystem_avail_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(query-scheduler|ruler-query-scheduler|ruler|store-gateway|compactor|alertmanager|overrides-exporter).*\", mountpoint=\"/\"})\n    / node_filesystem_size_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(query-scheduler|ruler-query-scheduler|ruler|store-gateway|compactor|alertmanager|overrides-exporter).*\", mountpoint=\"/\"})\n",
                         "format": "time_series",
                         "legendFormat": "{{instance}}",
                         "legendLink": null

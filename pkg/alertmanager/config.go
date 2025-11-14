@@ -11,7 +11,6 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/alerting/definition"
 	alertingReceivers "github.com/grafana/alerting/receivers"
@@ -21,10 +20,10 @@ import (
 	"github.com/grafana/mimir/pkg/util/version"
 )
 
-// createUsableGrafanaConfig creates an amConfig from a GrafanaAlertConfigDesc.
-// If provided, it assigns the global section from the Mimir config to the Grafana config.
-// The amConfig.emailConfig field can be used to create Grafana email integrations.
-func createUsableGrafanaConfig(logger log.Logger, gCfg alertspb.GrafanaAlertConfigDesc, rawMimirConfig string) (amConfig, error) {
+// amConfigFromGrafanaConfig creates an amConfig from a GrafanaAlertConfigDesc.
+// It uses the 'global' section from the Alertmanager's fallback config (if any) in the final config.
+// The amConfig.EmailConfig field can be used to create Grafana email integrations.
+func (am *MultitenantAlertmanager) amConfigFromGrafanaConfig(gCfg alertspb.GrafanaAlertConfigDesc) (amConfig, error) {
 	externalURL, err := url.Parse(gCfg.ExternalUrl)
 	if err != nil {
 		return amConfig{}, err
@@ -35,13 +34,23 @@ func createUsableGrafanaConfig(logger log.Logger, gCfg alertspb.GrafanaAlertConf
 		return amConfig{}, fmt.Errorf("failed to unmarshal Grafana Alertmanager configuration: %w", err)
 	}
 
-	if rawMimirConfig != "" {
-		cfg, err := definition.LoadCompat([]byte(rawMimirConfig))
+	if am.fallbackConfig != "" {
+		cfg, err := definition.LoadCompat([]byte(am.fallbackConfig))
 		if err != nil {
 			return amConfig{}, fmt.Errorf("failed to unmarshal Mimir Alertmanager configuration: %w", err)
 		}
 
 		amCfg.AlertmanagerConfig.Global = cfg.Global
+	}
+
+	// If configured, use the SMTP From address sent by Grafana.
+	// TODO: Remove once it's sent in the SmtpConfig field.
+	if gCfg.SmtpFrom != "" {
+		if amCfg.AlertmanagerConfig.Global == nil {
+			defaultGlobals := config.DefaultGlobalConfig()
+			amCfg.AlertmanagerConfig.Global = &defaultGlobals
+		}
+		amCfg.AlertmanagerConfig.Global.SMTPFrom = gCfg.SmtpFrom
 	}
 
 	// We want to:
@@ -58,14 +67,14 @@ func createUsableGrafanaConfig(logger log.Logger, gCfg alertspb.GrafanaAlertConf
 			for _, integration := range rcv.GrafanaManagedReceivers {
 				itypes = append(itypes, integration.Type)
 			}
-			level.Debug(logger).Log("msg", "receiver with same name is defined multiple times. Only the last one will be used", "receiver_name", rcv.Name, "overwritten_integrations", strings.Join(itypes, ","))
+			level.Debug(am.logger).Log("msg", "receiver with same name is defined multiple times. Only the last one will be used", "receiver_name", rcv.Name, "overwritten_integrations", strings.Join(itypes, ","))
 			continue
 		}
 		rcvs = append(rcvs, rcv)
 	}
 	amCfg.AlertmanagerConfig.Receivers = rcvs
 
-	rawCfg, err := json.Marshal(amCfg.AlertmanagerConfig)
+	rawCfg, err := definition.MarshalJSONWithSecrets(amCfg.AlertmanagerConfig)
 	if err != nil {
 		return amConfig{}, fmt.Errorf("failed to marshal Grafana Alertmanager configuration %w", err)
 	}
@@ -90,6 +99,9 @@ func createUsableGrafanaConfig(logger log.Logger, gCfg alertspb.GrafanaAlertConf
 		KeyFile:      g.HTTPConfig.TLSConfig.KeyFile,
 		SkipVerify:   !g.SMTPRequireTLS,
 		SentBy:       fmt.Sprintf("Mimir v%s", version.Version),
+
+		// TODO: Remove once it's sent in SmtpConfig.
+		StaticHeaders: gCfg.StaticHeaders,
 	}
 
 	// Patch the base config with the custom SMTP config sent by Grafana.
@@ -121,10 +133,38 @@ func createUsableGrafanaConfig(logger log.Logger, gCfg alertspb.GrafanaAlertConf
 		}
 	}
 
+	// The map can only contain templates of the Grafana kind.
+	// Do not care about possible duplicates because Grafana will provide Grafana kind templates in either Templates or TemplateFiles.
+	tmpl := append(amCfg.Templates, definition.TemplatesMapToPostableAPITemplates(amCfg.TemplateFiles, definition.GrafanaTemplateKind)...)
+
 	return amConfig{
-		AlertConfigDesc:    alertspb.ToProto(string(rawCfg), amCfg.Templates, gCfg.User),
-		tmplExternalURL:    externalURL,
-		usingGrafanaConfig: true,
-		emailConfig:        emailCfg,
+		User:               gCfg.User,
+		RawConfig:          string(rawCfg),
+		Templates:          tmpl,
+		TmplExternalURL:    externalURL,
+		UsingGrafanaConfig: true,
+		EmailConfig:        emailCfg,
 	}, nil
+}
+
+func amConfigFromMimirConfig(dec alertspb.AlertConfigDesc, url *url.URL) amConfig {
+	return amConfig{
+		User:               dec.User,
+		RawConfig:          dec.RawConfig,
+		Templates:          templateDescToPostableApiTemplate(dec.Templates, definition.MimirTemplateKind),
+		TmplExternalURL:    url,
+		UsingGrafanaConfig: false,
+	}
+}
+
+func templateDescToPostableApiTemplate(t []*alertspb.TemplateDesc, kind definition.TemplateKind) []definition.PostableApiTemplate {
+	result := make([]definition.PostableApiTemplate, 0, len(t))
+	for _, desc := range t {
+		result = append(result, definition.PostableApiTemplate{
+			Name:    desc.Filename,
+			Content: desc.Body,
+			Kind:    kind,
+		})
+	}
+	return result
 }

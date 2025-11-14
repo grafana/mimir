@@ -6,6 +6,7 @@
 package querymiddleware
 
 import (
+	"cmp"
 	"context"
 	"encoding/hex"
 	"flag"
@@ -13,7 +14,6 @@ import (
 	"hash/fnv"
 	"net/http"
 	"slices"
-	"sort"
 	"strings"
 	"time"
 
@@ -32,7 +32,6 @@ import (
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/stats"
-	"github.com/grafana/mimir/pkg/util"
 )
 
 const (
@@ -47,7 +46,7 @@ const (
 )
 
 var (
-	supportedResultsCacheBackends = []string{cache.BackendMemcached, cache.BackendRedis}
+	supportedResultsCacheBackends = []string{cache.BackendMemcached}
 
 	errUnsupportedBackend = errors.New("unsupported cache backend")
 )
@@ -62,12 +61,11 @@ type ResultsCacheConfig struct {
 func (cfg *ResultsCacheConfig) RegisterFlags(f *flag.FlagSet) {
 	f.StringVar(&cfg.Backend, "query-frontend.results-cache.backend", "", fmt.Sprintf("Backend for query-frontend results cache, if not empty. Supported values: %s.", strings.Join(supportedResultsCacheBackends, ", ")))
 	cfg.Memcached.RegisterFlagsWithPrefix("query-frontend.results-cache.memcached.", f)
-	cfg.Redis.RegisterFlagsWithPrefix("query-frontend.results-cache.redis.", f)
 	cfg.Compression.RegisterFlagsWithPrefix(f, "query-frontend.results-cache.")
 }
 
 func (cfg *ResultsCacheConfig) Validate() error {
-	if cfg.Backend != "" && !util.StringsContain(supportedResultsCacheBackends, cfg.Backend) {
+	if cfg.Backend != "" && !slices.Contains(supportedResultsCacheBackends, cfg.Backend) {
 		return errUnsupportedResultsCacheBackend(cfg.Backend)
 	}
 
@@ -76,11 +74,6 @@ func (cfg *ResultsCacheConfig) Validate() error {
 		if err := cfg.Memcached.Validate(); err != nil {
 			return errors.Wrap(err, "query-frontend results cache")
 		}
-	case cache.BackendRedis:
-		if err := cfg.Redis.Validate(); err != nil {
-			return errors.Wrap(err, "query-frontend results cache")
-		}
-
 	}
 
 	if err := cfg.Compression.Validate(); err != nil {
@@ -331,7 +324,7 @@ func areEvaluationTimeModifiersCachable(r MetricsQueryRequest, maxCacheTime int6
 	}
 
 	// This resolves the start() and end() used with the @ modifier.
-	expr, err = promql.PreprocessExpr(expr, timestamp.Time(r.GetStart()), timestamp.Time(r.GetEnd()))
+	expr, err = promql.PreprocessExpr(expr, timestamp.Time(r.GetStart()), timestamp.Time(r.GetEnd()), time.Duration(r.GetStep())*time.Millisecond)
 	if err != nil {
 		// We are being pessimistic in such cases.
 		return false, notCachableReasonModifiersNotCachableFailedPreprocess
@@ -351,7 +344,7 @@ func areEvaluationTimeModifiersCachable(r MetricsQueryRequest, maxCacheTime int6
 		return nil
 	}
 
-	parser.Inspect(expr, func(n parser.Node, _ []parser.Node) error {
+	_ = inspect(expr, func(n parser.Node) error {
 		switch e := n.(type) {
 		case *parser.VectorSelector:
 			return check(e.Timestamp, e.OriginalOffset)
@@ -375,15 +368,14 @@ func mergeCacheExtentsForRequest(ctx context.Context, r MetricsQueryRequest, mer
 		return extents, nil
 	}
 
-	sort.Slice(extents, func(i, j int) bool {
-		if extents[i].Start == extents[j].Start {
+	slices.SortFunc(extents, func(a, b Extent) int {
+		if a.Start == b.Start {
 			// as an optimization, for two extents starts at the same time, we
-			// put bigger extent at the front of the slice, which helps
+			// put the bigger extent at the front of the slice, which helps
 			// to reduce the amount of merge we have to do later.
-			return extents[i].End > extents[j].End
+			return cmp.Compare(b.End, a.End)
 		}
-
-		return extents[i].Start < extents[j].Start
+		return cmp.Compare(a.Start, b.Start)
 	})
 
 	// Merge any extents - potentially overlapping
@@ -479,28 +471,23 @@ func toExtent(ctx context.Context, req MetricsQueryRequest, res Response, queryT
 		return Extent{}, err
 	}
 
-	extentPerStepStats := make([]StepStat, len(perStepStats))
-	for i, stat := range perStepStats {
-		extentPerStepStats[i] = StepStat(stat)
-	}
-
 	return Extent{
 		Start:                   req.GetStart(),
 		End:                     req.GetEnd(),
 		Response:                marshalled,
 		TraceId:                 otelTraceID(ctx),
 		QueryTimestampMs:        queryTime.UnixMilli(),
-		SamplesProcessedPerStep: extentPerStepStats,
+		SamplesProcessedPerStep: perStepStats,
 	}, nil
 }
 
 // partitionCacheExtents calculates the required requests to satisfy req given the cached data.
 // extents must be in order by start time.
-func partitionCacheExtents(req MetricsQueryRequest, extents []Extent, minCacheExtent int64, extractor Extractor) ([]MetricsQueryRequest, []Response, []StepStat, error) {
+func partitionCacheExtents(req MetricsQueryRequest, extents []Extent, minCacheExtent int64, extractor Extractor) ([]MetricsQueryRequest, []Response, []stats.StepStat, error) {
 	var requests []MetricsQueryRequest
 	var cachedResponses []Response
 	start := req.GetStart()
-	var cachedPerStepStat []StepStat
+	var cachedPerStepStat []stats.StepStat
 
 	for _, extent := range extents {
 		// If there is no overlap, ignore this extent.
@@ -686,13 +673,13 @@ func cacheHashKey(key string) string {
 }
 
 // extractSamplesProcessedPerStep extracts the per step samples count for the subrange within the extent.
-func extractSamplesProcessedPerStep(extent Extent, start int64, end int64) []StepStat {
+func extractSamplesProcessedPerStep(extent Extent, start int64, end int64) []stats.StepStat {
 	// Validate the subrange is valid and within the extent.
 	if end < start || start < extent.Start || end > extent.End {
 		return nil
 	}
 
-	var result []StepStat
+	var result []stats.StepStat
 	for _, step := range extent.SamplesProcessedPerStep {
 		if start <= step.Timestamp && step.Timestamp <= end {
 			result = append(result, step)
@@ -702,7 +689,7 @@ func extractSamplesProcessedPerStep(extent Extent, start int64, end int64) []Ste
 	return result
 }
 
-func mergeSamplesProcessedPerStep(a, b []StepStat) []StepStat {
+func mergeSamplesProcessedPerStep(a, b []stats.StepStat) []stats.StepStat {
 	if len(a) == 0 {
 		return b
 	}
@@ -710,7 +697,7 @@ func mergeSamplesProcessedPerStep(a, b []StepStat) []StepStat {
 		return a
 	}
 
-	merged := make([]StepStat, 0, len(a)+len(b))
+	merged := make([]stats.StepStat, 0, len(a)+len(b))
 	i, j := 0, 0
 
 	for i < len(a) && j < len(b) {
@@ -740,8 +727,8 @@ func mergeSamplesProcessedPerStep(a, b []StepStat) []StepStat {
 }
 
 // sumSamplesProcessedPerStep sums values from multiple arrays of StepStat.
-// For duplicate timestamps, later arrays win (last array wins behavior), then values are summed.
-func sumSamplesProcessedPerStep(stats ...[]StepStat) int64 {
+// For duplicate timestamps, later arrays win.
+func sumSamplesProcessedPerStep(stats ...[]stats.StepStat) int64 {
 	if len(stats) == 0 {
 		return 0
 	}
@@ -769,18 +756,4 @@ func sumSamplesProcessedPerStep(stats ...[]StepStat) int64 {
 	}
 
 	return total
-}
-
-// convertStatsStepStat converts []stats.StepStat to []StepStat using type casting.
-// TODO: reuse stats.StepStat proto in Extent, instead of defining duplicate
-func convertStatsStepStat(processed []stats.StepStat) []StepStat {
-	if len(processed) == 0 {
-		return nil
-	}
-
-	converted := make([]StepStat, len(processed))
-	for i, stat := range processed {
-		converted[i] = StepStat(stat)
-	}
-	return converted
 }

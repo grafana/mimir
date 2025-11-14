@@ -1,8 +1,12 @@
 package templates
 
 import (
+	"fmt"
 	"net/url"
+	"slices"
+	"strings"
 	"testing"
+	tmpltext "text/template"
 
 	"github.com/stretchr/testify/require"
 )
@@ -206,4 +210,57 @@ func ForTests(t *testing.T) *Template {
 	require.NoError(t, err)
 	tmpl.ExternalURL = externalURL
 	return tmpl
+}
+
+var DefaultTemplateName = "__default__"
+
+var DefaultTemplatesToOmit = []string{
+	"email.default.html",
+	"email.default.subject",
+}
+
+// DefaultTemplate returns a new Template with all default templates parsed.
+func DefaultTemplate(omitTemplates []string) (TemplateDefinition, error) {
+	// We cannot simply append the text of each default file together as there can be (and are) duplicate template
+	// names. Duplicate templates should override when parsed from separate files but will fail to parse if both are in
+	// the same file.
+	// So, instead we allow tmpltext to combine the templates and then convert it to a string afterwards.
+	// The underlying template is not accessible, so we capture it via template.Option.
+
+	// Call fromContent without any user-provided templates to get the combined default template.
+	tmpl, err := fromContent(defaultTemplatesPerKind(GrafanaKind), defaultOptionsPerKind(GrafanaKind, "grafana")...)
+	if err != nil {
+		return TemplateDefinition{}, err
+	}
+
+	var combinedTemplate strings.Builder
+	txt, err := tmpl.Text()
+	if err != nil {
+		return TemplateDefinition{}, err
+	}
+	tmpls := txt.Templates()
+	// Sort for a consistent order.
+	slices.SortFunc(tmpls, func(a, b *tmpltext.Template) int {
+		return strings.Compare(a.Name(), b.Name())
+	})
+
+	// Recreate the "define" blocks for all templates. Would be nice to have a more direct way to do this.
+	for _, tmpl := range tmpls {
+		name := tmpl.Name()
+		if name == "" || slices.Contains(omitTemplates, name) {
+			continue
+		}
+		def := tmpl.Root.String()
+		if tmpl.Name() == "__text_values_list" {
+			// Temporary fix for https://github.com/golang/go/commit/6fea4094242fe4e7be8bd7ec0b55df9f6df3f025.
+			// TODO: Can remove with GO v1.24.
+			def = strings.Replace(def, "$first := false", "$first = false", 1)
+		}
+		combinedTemplate.WriteString(fmt.Sprintf("{{ define \"%s\" }}%s{{ end }}\n\n", tmpl.Name(), def))
+	}
+	return TemplateDefinition{
+		Name:     DefaultTemplateName,
+		Template: combinedTemplate.String(),
+		Kind:     GrafanaKind,
+	}, nil
 }

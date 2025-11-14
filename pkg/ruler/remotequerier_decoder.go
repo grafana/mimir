@@ -109,7 +109,7 @@ func (d protobufDecoder) Decode(body []byte) (promql.Vector, error) {
 		return promql.Vector{}, err
 	}
 
-	if resp.Status == mimirpb.QueryResponse_ERROR {
+	if resp.Status == mimirpb.QUERY_STATUS_ERROR {
 		return promql.Vector{}, fmt.Errorf("query execution failed with error: %s", resp.Error)
 	}
 

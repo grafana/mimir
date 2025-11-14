@@ -20,10 +20,14 @@ load 5m
 	bar 0 1 0 -1 0 1 0 -1 0 1 0
 
 eval instant at 50m count(limitk by (group) (0, http_requests))
-# empty
+    expect no_info
+    expect no_warn
+    # empty
 
 eval instant at 50m count(limitk by (group) (-1, http_requests))
-# empty
+    expect no_info
+    expect no_warn
+    # empty
 
 # Exercise k==1 special case (as sample is added before the main series loop).
 eval instant at 50m count(limitk by (group) (1, http_requests) and http_requests)
@@ -93,7 +97,7 @@ eval range from 0 to 50m step 5m count(limitk(2, http_requests) and http_request
 # NB: below 0.5 ratio will depend on some hashing "luck" (also there's no guarantee that
 # an integer comes from: total number of series * ratio), as it depends on:
 #
-# * ratioLimit = [0.0, 1.0]:
+# * ratioLimit = [0.0, 1.0]:	
 #     float64(sample.Metric.Hash()) / float64MaxUint64 < Ratio ?
 # * ratioLimit = [-1.0, 1.0):
 #     float64(sample.Metric.Hash()) / float64MaxUint64 >= (1.0 + Ratio) ?

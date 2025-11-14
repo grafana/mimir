@@ -18,15 +18,26 @@ import (
 	"github.com/grafana/dskit/tenant"
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/prometheus/prometheus/promql/promqltest"
+	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/remote"
+	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
 
+	apierror "github.com/grafana/mimir/pkg/api/error"
+	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/querier/api"
+	"github.com/grafana/mimir/pkg/querier/stats"
+	"github.com/grafana/mimir/pkg/streamingpromql"
+	"github.com/grafana/mimir/pkg/streamingpromql/compat"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/chunkinfologger"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
@@ -155,7 +166,7 @@ func TestLimitsMiddleware_MaxQueryLookback_RangeQueryAndRemoteRead(t *testing.T)
 					limits := mockLimits{maxQueryLookback: testData.maxQueryLookback, compactorBlocksRetentionPeriod: testData.blocksRetentionPeriod}
 					middleware := newLimitsMiddleware(limits, log.NewNopLogger())
 
-					innerRes := newEmptyPrometheusResponse()
+					innerRes := NewEmptyPrometheusResponse()
 					inner := &mockHandler{}
 					inner.On("Do", mock.Anything, mock.Anything).Return(innerRes, nil)
 
@@ -254,7 +265,7 @@ func TestLimitsMiddleware_MaxQueryLookback_InstantQuery(t *testing.T) {
 			limits := mockLimits{maxQueryLookback: testData.maxQueryLookback, compactorBlocksRetentionPeriod: testData.blocksRetentionPeriod}
 			middleware := newLimitsMiddleware(limits, log.NewNopLogger())
 
-			innerRes := newEmptyPrometheusResponse()
+			innerRes := NewEmptyPrometheusResponse()
 			inner := &mockHandler{}
 			inner.On("Do", mock.Anything, mock.Anything).Return(innerRes, nil)
 
@@ -351,7 +362,7 @@ func TestLimitsMiddleware_MaxQueryLookback_TenantFederation(t *testing.T) {
 
 			middleware := newLimitsMiddleware(limits, log.NewNopLogger())
 
-			innerRes := newEmptyPrometheusResponse()
+			innerRes := NewEmptyPrometheusResponse()
 			inner := &mockHandler{}
 			inner.On("Do", mock.Anything, mock.Anything).Return(innerRes, nil)
 
@@ -458,7 +469,7 @@ func TestLimitsMiddleware_MaxQueryExpressionSizeBytes(t *testing.T) {
 					}
 					middleware := newLimitsMiddleware(limits, log.NewNopLogger())
 
-					innerRes := newEmptyPrometheusResponse()
+					innerRes := NewEmptyPrometheusResponse()
 					inner := &mockHandler{}
 					inner.On("Do", mock.Anything, mock.Anything).Return(innerRes, nil)
 
@@ -555,7 +566,7 @@ func TestLimitsMiddleware_MaxQueryLength(t *testing.T) {
 					limits := mockLimits{maxQueryLength: testData.maxQueryLength, maxTotalQueryLength: testData.maxTotalQueryLength}
 					middleware := newLimitsMiddleware(limits, log.NewNopLogger())
 
-					innerRes := newEmptyPrometheusResponse()
+					innerRes := NewEmptyPrometheusResponse()
 					inner := &mockHandler{}
 					inner.On("Do", mock.Anything, mock.Anything).Return(innerRes, nil)
 
@@ -624,10 +635,6 @@ func (m multiTenantMockLimits) QueryShardingMaxRegexpSizeBytes(userID string) in
 	return m.byTenant[userID].maxRegexpSizeBytes
 }
 
-func (m multiTenantMockLimits) SplitInstantQueriesByInterval(userID string) time.Duration {
-	return m.byTenant[userID].splitInstantQueriesInterval
-}
-
 func (m multiTenantMockLimits) CompactorSplitAndMergeShards(userID string) int {
 	return m.byTenant[userID].compactorShards
 }
@@ -672,11 +679,11 @@ func (m multiTenantMockLimits) Prom2RangeCompat(userID string) bool {
 	return m.byTenant[userID].prom2RangeCompat
 }
 
-func (m multiTenantMockLimits) BlockedQueries(userID string) []*validation.BlockedQuery {
+func (m multiTenantMockLimits) BlockedQueries(userID string) []validation.BlockedQuery {
 	return m.byTenant[userID].blockedQueries
 }
 
-func (m multiTenantMockLimits) LimitedQueries(userID string) []*validation.LimitedQuery {
+func (m multiTenantMockLimits) LimitedQueries(userID string) []validation.LimitedQuery {
 	return m.byTenant[userID].limitedQueries
 }
 
@@ -700,12 +707,16 @@ func (m multiTenantMockLimits) IngestStorageReadConsistency(userID string) strin
 	return m.byTenant[userID].ingestStorageReadConsistency
 }
 
-func (m multiTenantMockLimits) BlockedRequests(userID string) []*validation.BlockedRequest {
+func (m multiTenantMockLimits) BlockedRequests(userID string) []validation.BlockedRequest {
 	return m.byTenant[userID].blockedRequests
 }
 
 func (m multiTenantMockLimits) SubquerySpinOffEnabled(userID string) bool {
 	return m.byTenant[userID].subquerySpinOffEnabled
+}
+
+func (m multiTenantMockLimits) LabelsQueryOptimizerEnabled(userID string) bool {
+	return m.byTenant[userID].labelsQueryOptimizerEnabled
 }
 
 type mockLimits struct {
@@ -717,7 +728,6 @@ type mockLimits struct {
 	maxQueryParallelism                  int
 	maxShardedQueries                    int
 	maxRegexpSizeBytes                   int
-	splitInstantQueriesInterval          time.Duration
 	totalShards                          int
 	compactorShards                      int
 	compactorBlocksRetentionPeriod       time.Duration
@@ -732,13 +742,14 @@ type mockLimits struct {
 	resultsCacheForUnalignedQueryEnabled bool
 	enabledPromQLExperimentalFunctions   []string
 	prom2RangeCompat                     bool
-	blockedQueries                       []*validation.BlockedQuery
-	limitedQueries                       []*validation.LimitedQuery
-	blockedRequests                      []*validation.BlockedRequest
+	blockedQueries                       []validation.BlockedQuery
+	limitedQueries                       []validation.LimitedQuery
+	blockedRequests                      []validation.BlockedRequest
 	alignQueriesWithStep                 bool
 	queryIngestersWithin                 time.Duration
 	ingestStorageReadConsistency         string
 	subquerySpinOffEnabled               bool
+	labelsQueryOptimizerEnabled          bool
 }
 
 func (m mockLimits) MaxQueryLookback(string) time.Duration {
@@ -779,10 +790,6 @@ func (m mockLimits) QueryShardingMaxRegexpSizeBytes(string) int {
 	return m.maxRegexpSizeBytes
 }
 
-func (m mockLimits) SplitInstantQueriesByInterval(string) time.Duration {
-	return m.splitInstantQueriesInterval
-}
-
 func (m mockLimits) CompactorSplitAndMergeShards(string) int {
 	return m.compactorShards
 }
@@ -811,11 +818,11 @@ func (m mockLimits) ResultsCacheTTLForCardinalityQuery(string) time.Duration {
 	return m.resultsCacheTTLForCardinalityQuery
 }
 
-func (m mockLimits) BlockedQueries(string) []*validation.BlockedQuery {
+func (m mockLimits) BlockedQueries(string) []validation.BlockedQuery {
 	return m.blockedQueries
 }
 
-func (m mockLimits) LimitedQueries(userID string) []*validation.LimitedQuery {
+func (m mockLimits) LimitedQueries(userID string) []validation.LimitedQuery {
 	return m.limitedQueries
 }
 
@@ -855,12 +862,16 @@ func (m mockLimits) IngestStorageReadConsistency(string) string {
 	return m.ingestStorageReadConsistency
 }
 
-func (m mockLimits) BlockedRequests(string) []*validation.BlockedRequest {
+func (m mockLimits) BlockedRequests(string) []validation.BlockedRequest {
 	return m.blockedRequests
 }
 
 func (m mockLimits) SubquerySpinOffEnabled(string) bool {
 	return m.subquerySpinOffEnabled
+}
+
+func (m mockLimits) LabelsQueryOptimizerEnabled(string) bool {
+	return m.labelsQueryOptimizerEnabled
 }
 
 type mockHandler struct {
@@ -873,6 +884,9 @@ func (m *mockHandler) Do(ctx context.Context, req MetricsQueryRequest) (Response
 }
 
 func TestLimitedRoundTripper_MaxQueryParallelism(t *testing.T) {
+	// This test only applies to requests sent to queriers over HTTPGRPC.
+	// For the equivalent test for remote execution, see TestMaxQueryParallelismWithRemoteExecution in pkg/frontend/v2/remoteexec_test.go
+
 	var (
 		maxQueryParallelism = 2
 		count               atomic.Int32
@@ -892,17 +906,18 @@ func TestLimitedRoundTripper_MaxQueryParallelism(t *testing.T) {
 		ctx = user.InjectOrgID(context.Background(), "foo")
 	)
 
-	codec := newTestPrometheusCodec()
+	codec := newTestCodec()
 	r, err := codec.EncodeMetricsQueryRequest(ctx, &PrometheusRangeQueryRequest{
 		path:      "/api/v1/query_range",
-		start:     time.Now().Add(time.Hour).Unix(),
-		end:       util.TimeToMillis(time.Now()),
+		start:     time.Now().Add(-time.Hour).Unix(),
+		end:       time.Now().Unix(),
 		step:      int64(1 * time.Second * time.Millisecond),
 		queryExpr: parseQuery(t, `foo`),
 	})
-	require.Nil(t, err)
+	require.NoError(t, err)
 
-	_, err = NewLimitedParallelismRoundTripper(downstream, codec, mockLimits{maxQueryParallelism: maxQueryParallelism},
+	handler := NewHTTPQueryRequestRoundTripperHandler(downstream, codec, log.NewNopLogger())
+	_, err = NewLimitedParallelismRoundTripper(handler, codec, mockLimits{maxQueryParallelism: maxQueryParallelism}, false,
 		MetricsQueryMiddlewareFunc(func(next MetricsQueryHandler) MetricsQueryHandler {
 			return HandlerFunc(func(c context.Context, _ MetricsQueryRequest) (Response, error) {
 				var wg sync.WaitGroup
@@ -914,7 +929,7 @@ func TestLimitedRoundTripper_MaxQueryParallelism(t *testing.T) {
 					}()
 				}
 				wg.Wait()
-				return newEmptyPrometheusResponse(), nil
+				return NewEmptyPrometheusResponse(), nil
 			})
 		}),
 	).RoundTrip(r)
@@ -936,7 +951,7 @@ func TestLimitedRoundTripper_MaxQueryParallelismLateScheduling(t *testing.T) {
 		ctx = user.InjectOrgID(context.Background(), "foo")
 	)
 
-	codec := newTestPrometheusCodec()
+	codec := newTestCodec()
 	r, err := codec.EncodeMetricsQueryRequest(ctx, &PrometheusRangeQueryRequest{
 		path:      "/api/v1/query_range",
 		start:     time.Now().Add(time.Hour).Unix(),
@@ -946,7 +961,8 @@ func TestLimitedRoundTripper_MaxQueryParallelismLateScheduling(t *testing.T) {
 	})
 	require.Nil(t, err)
 
-	_, err = NewLimitedParallelismRoundTripper(downstream, codec, mockLimits{maxQueryParallelism: maxQueryParallelism},
+	handler := NewHTTPQueryRequestRoundTripperHandler(downstream, codec, log.NewNopLogger())
+	_, err = NewLimitedParallelismRoundTripper(handler, codec, mockLimits{maxQueryParallelism: maxQueryParallelism}, false,
 		MetricsQueryMiddlewareFunc(func(next MetricsQueryHandler) MetricsQueryHandler {
 			return HandlerFunc(func(c context.Context, _ MetricsQueryRequest) (Response, error) {
 				// fire up work and we don't wait.
@@ -955,7 +971,7 @@ func TestLimitedRoundTripper_MaxQueryParallelismLateScheduling(t *testing.T) {
 						_, _ = next.Do(c, &PrometheusRangeQueryRequest{})
 					}()
 				}
-				return newEmptyPrometheusResponse(), nil
+				return NewEmptyPrometheusResponse(), nil
 			})
 		}),
 	).RoundTrip(r)
@@ -977,7 +993,7 @@ func TestLimitedRoundTripper_OriginalRequestContextCancellation(t *testing.T) {
 		reqCtx, reqCancel = context.WithCancel(user.InjectOrgID(context.Background(), "foo"))
 	)
 
-	codec := newTestPrometheusCodec()
+	codec := newTestCodec()
 	r, err := codec.EncodeMetricsQueryRequest(reqCtx, &PrometheusRangeQueryRequest{
 		path:      "/api/v1/query_range",
 		start:     time.Now().Add(time.Hour).Unix(),
@@ -987,7 +1003,8 @@ func TestLimitedRoundTripper_OriginalRequestContextCancellation(t *testing.T) {
 	})
 	require.Nil(t, err)
 
-	_, err = NewLimitedParallelismRoundTripper(downstream, codec, mockLimits{maxQueryParallelism: maxQueryParallelism},
+	handler := NewHTTPQueryRequestRoundTripperHandler(downstream, codec, log.NewNopLogger())
+	_, err = NewLimitedParallelismRoundTripper(handler, codec, mockLimits{maxQueryParallelism: maxQueryParallelism}, false,
 		MetricsQueryMiddlewareFunc(func(next MetricsQueryHandler) MetricsQueryHandler {
 			return HandlerFunc(func(c context.Context, _ MetricsQueryRequest) (Response, error) {
 				var wg sync.WaitGroup
@@ -1014,7 +1031,7 @@ func TestLimitedRoundTripper_OriginalRequestContextCancellation(t *testing.T) {
 				wg.Wait()
 				assert.Less(t, time.Since(waitStart).Milliseconds(), int64(100))
 
-				return newEmptyPrometheusResponse(), nil
+				return NewEmptyPrometheusResponse(), nil
 			})
 		}),
 	).RoundTrip(r)
@@ -1034,7 +1051,7 @@ func BenchmarkLimitedParallelismRoundTripper(b *testing.B) {
 		}, nil
 	})
 
-	codec := newTestPrometheusCodec()
+	codec := newTestCodec()
 	r, err := codec.EncodeMetricsQueryRequest(ctx, &PrometheusRangeQueryRequest{
 		path:      "/api/v1/query_range",
 		start:     time.Now().Add(time.Hour).Unix(),
@@ -1046,7 +1063,8 @@ func BenchmarkLimitedParallelismRoundTripper(b *testing.B) {
 
 	for _, concurrentRequestCount := range []int{1, 10, 100} {
 		for _, subRequestCount := range []int{1, 2, 5, 10, 20, 50, 100} {
-			tripper := NewLimitedParallelismRoundTripper(downstream, codec, mockLimits{maxQueryParallelism: maxParallelism},
+			handler := NewHTTPQueryRequestRoundTripperHandler(downstream, codec, log.NewNopLogger())
+			tripper := NewLimitedParallelismRoundTripper(handler, codec, mockLimits{maxQueryParallelism: maxParallelism}, false,
 				MetricsQueryMiddlewareFunc(func(next MetricsQueryHandler) MetricsQueryHandler {
 					return HandlerFunc(func(c context.Context, _ MetricsQueryRequest) (Response, error) {
 						wg := sync.WaitGroup{}
@@ -1058,7 +1076,7 @@ func BenchmarkLimitedParallelismRoundTripper(b *testing.B) {
 							}()
 						}
 						wg.Wait()
-						return newEmptyPrometheusResponse(), nil
+						return NewEmptyPrometheusResponse(), nil
 					})
 				}),
 			)
@@ -1107,4 +1125,313 @@ func (v *findVectorSelectorsVisitor) Visit(node parser.Node, _ []parser.Node) (p
 
 	v.selectors = append(v.selectors, selector)
 	return v, nil
+}
+
+func TestEngineQueryRequestRoundTripperHandler(t *testing.T) {
+	opts := streamingpromql.NewTestEngineOpts()
+	opts.CommonOpts.EnablePerStepStats = true
+	planner, err := streamingpromql.NewQueryPlanner(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
+	require.NoError(t, err)
+	logger := log.NewNopLogger()
+	engine, err := streamingpromql.NewEngine(opts, streamingpromql.NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), planner)
+	require.NoError(t, err)
+	codec := newTestCodec()
+	handler := NewEngineQueryRequestRoundTripperHandler(engine, codec, logger)
+
+	storage := promqltest.LoadedStorage(t, `
+		load 1s
+			some_metric{foo="bar"} 0+1x50
+			some_other_metric{foo="bar", idx="0"} 0+1x50
+			some_other_metric{foo="bar", idx="1"} 0+1x50
+	`)
+	t.Cleanup(func() { storage.Close() })
+
+	lookbackDelta := 5 * time.Minute
+
+	mustParseExpr := func(s string) parser.Expr {
+		expr, err := parser.ParseExpr(s)
+		require.NoError(t, err)
+		return expr
+	}
+
+	encodedOffsets := string(api.EncodeOffsets(map[int32]int64{0: 1, 1: 2}))
+
+	requestHeaders := []*PrometheusHeader{
+		{Name: compat.ForceFallbackHeaderName, Values: []string{"true"}},
+		{Name: chunkinfologger.ChunkInfoLoggingHeader, Values: []string{"chunk-info-logging-enabled"}},
+		{Name: api.ReadConsistencyOffsetsHeader, Values: []string{encodedOffsets}},
+		{Name: "Some-Other-Ignored-Header", Values: []string{"some-value"}},
+	}
+
+	expectedHeaders := map[string][]string{
+		// From request headers:
+		compat.ForceFallbackHeaderName:         {"true"},
+		chunkinfologger.ChunkInfoLoggingHeader: {"chunk-info-logging-enabled"},
+		api.ReadConsistencyOffsetsHeader:       {encodedOffsets},
+
+		// From read consistency settings in context:
+		api.ReadConsistencyHeader:         {api.ReadConsistencyStrong},
+		api.ReadConsistencyMaxDelayHeader: {time.Minute.String()},
+	}
+
+	requestOptions := Options{
+		TotalShards: 123,
+	}
+
+	requestHints := &Hints{
+		TotalQueries: 456,
+		CardinalityEstimate: &EstimatedSeriesCount{
+			EstimatedSeriesCount: 789,
+		},
+	}
+
+	testCases := map[string]struct {
+		req                             MetricsQueryRequest
+		expectedResponse                Response
+		expectedErr                     error
+		expectedSamplesProcessed        uint64
+		expectedSamplesProcessedPerStep []stats.StepStat
+	}{
+		"range query": {
+			req:                      NewPrometheusRangeQueryRequest("/", requestHeaders, 1000, 7000, 2000, lookbackDelta, mustParseExpr(`5*some_metric`), requestOptions, requestHints, ""),
+			expectedSamplesProcessed: 4,
+			expectedResponse: &PrometheusResponse{
+				Status: statusSuccess,
+				Data: &PrometheusData{
+					ResultType: model.ValMatrix.String(),
+					Result: []SampleStream{
+						{
+							Labels: []mimirpb.LabelAdapter{
+								{Name: "foo", Value: "bar"},
+							},
+							Samples: []mimirpb.Sample{
+								{TimestampMs: 1000, Value: 5},
+								{TimestampMs: 3000, Value: 15},
+								{TimestampMs: 5000, Value: 25},
+								{TimestampMs: 7000, Value: 35},
+							},
+						},
+					},
+				},
+				Warnings: []string{},
+				Infos:    []string{},
+			},
+		},
+
+		"instant query": {
+			req:                      NewPrometheusInstantQueryRequest("/", requestHeaders, 3000, lookbackDelta, mustParseExpr(`5*some_metric`), requestOptions, requestHints, ""),
+			expectedSamplesProcessed: 1,
+			expectedResponse: &PrometheusResponse{
+				Status: statusSuccess,
+				Data: &PrometheusData{
+					ResultType: model.ValVector.String(),
+					Result: []SampleStream{
+						{
+							Labels: []mimirpb.LabelAdapter{
+								{Name: "foo", Value: "bar"},
+							},
+							Samples: []mimirpb.Sample{
+								{TimestampMs: 3000, Value: 15},
+							},
+						},
+					},
+				},
+				Warnings: []string{},
+				Infos:    []string{},
+			},
+		},
+
+		"scalar result": {
+			req: NewPrometheusInstantQueryRequest("/", requestHeaders, 3000, lookbackDelta, mustParseExpr(`scalar(some_metric)`), requestOptions, requestHints, ""),
+			expectedResponse: &PrometheusResponse{
+				Status: statusSuccess,
+				Data: &PrometheusData{
+					ResultType: model.ValScalar.String(),
+					Result: []SampleStream{
+						{
+							Samples: []mimirpb.Sample{
+								{TimestampMs: 3000, Value: 3},
+							},
+						},
+					},
+				},
+				Warnings: []string{},
+				Infos:    []string{},
+			},
+			expectedSamplesProcessed: 1,
+		},
+
+		"string result": {
+			req: NewPrometheusInstantQueryRequest("/", requestHeaders, 3000, lookbackDelta, mustParseExpr(`"foo"`), requestOptions, requestHints, ""),
+			expectedResponse: &PrometheusResponse{
+				Status: statusSuccess,
+				Data: &PrometheusData{
+					ResultType: model.ValString.String(),
+					Result: []SampleStream{
+						{
+							Labels: []mimirpb.LabelAdapter{
+								{Name: "value", Value: "foo"},
+							},
+							Samples: []mimirpb.Sample{
+								{TimestampMs: 3000, Value: 0},
+							},
+						},
+					},
+				},
+				Warnings: []string{},
+				Infos:    []string{},
+			},
+		},
+
+		"execution error": {
+			req:         NewPrometheusInstantQueryRequest("/", requestHeaders, 3000, lookbackDelta, mustParseExpr(`some_metric * on(foo) some_other_metric`), requestOptions, requestHints, ""),
+			expectedErr: apierror.New(apierror.TypeExec, `found duplicate series for the match group {foo="bar"} on the right side of the operation at timestamp 1970-01-01T00:00:03Z: {__name__="some_other_metric", foo="bar", idx="0"} and {__name__="some_other_metric", foo="bar", idx="1"}`),
+		},
+
+		"annotations": {
+			req:                      NewPrometheusInstantQueryRequest("/", requestHeaders, 3000, lookbackDelta, mustParseExpr(`histogram_quantile(0.1, rate(some_metric[2s]))`), requestOptions, requestHints, ""),
+			expectedSamplesProcessed: 2,
+			expectedResponse: &PrometheusResponse{
+				Status: statusSuccess,
+				Data: &PrometheusData{
+					ResultType: model.ValVector.String(),
+					Result:     []SampleStream{},
+				},
+				Warnings: []string{
+					`PromQL warning: bucket label "le" is missing or has a malformed value of "" (1:25)`,
+				},
+				Infos: []string{
+					`PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: "some_metric" (1:30)`,
+				},
+			},
+		},
+
+		"query with per-step stats enabled": {
+			req:                      NewPrometheusRangeQueryRequest("/", requestHeaders, 1000, 7000, 2000, lookbackDelta, mustParseExpr(`5*some_metric`), requestOptions, requestHints, "all"),
+			expectedSamplesProcessed: 4,
+			expectedSamplesProcessedPerStep: []stats.StepStat{
+				{Timestamp: 1000, Value: 1},
+				{Timestamp: 3000, Value: 1},
+				{Timestamp: 5000, Value: 1},
+				{Timestamp: 7000, Value: 1},
+			},
+			expectedResponse: &PrometheusResponse{
+				Status: statusSuccess,
+				Data: &PrometheusData{
+					ResultType: model.ValMatrix.String(),
+					Result: []SampleStream{
+						{
+							Labels: []mimirpb.LabelAdapter{
+								{Name: "foo", Value: "bar"},
+							},
+							Samples: []mimirpb.Sample{
+								{TimestampMs: 1000, Value: 5},
+								{TimestampMs: 3000, Value: 15},
+								{TimestampMs: 5000, Value: 25},
+								{TimestampMs: 7000, Value: 35},
+							},
+						},
+					},
+				},
+				Warnings: []string{},
+				Infos:    []string{},
+			},
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			// Replace the handler's storage with our test storage so we can test specific scenarios that depend on data,
+			// and check that the expected headers have been captured for propagation to queriers, including the read consistency level.
+			contextCapturingStorage := &contextCapturingStorage{inner: storage}
+			handler.(*engineQueryRequestRoundTripperHandler).storage = contextCapturingStorage
+
+			ctx := api.ContextWithReadConsistencyLevel(context.Background(), api.ReadConsistencyStrong)
+			ctx = api.ContextWithReadConsistencyMaxDelay(ctx, time.Minute)
+			stats, ctx := stats.ContextWithEmptyStats(ctx)
+			response, err := handler.Do(ctx, testCase.req)
+			require.Equal(t, testCase.expectedErr, err)
+
+			if testCase.expectedErr != nil {
+				require.Nil(t, response)
+				return
+			}
+
+			responseWithFinalizer, ok := response.(*PrometheusResponseWithFinalizer)
+			require.True(t, ok)
+			require.Equal(t, testCase.expectedResponse, responseWithFinalizer.PrometheusResponse)
+			require.NotNil(t, responseWithFinalizer.finalizer, "expected response to have a finalizer")
+
+			responseWithFinalizer.Close()
+
+			require.Equal(t, testCase.expectedSamplesProcessed, stats.SamplesProcessed)
+			require.Equal(t, testCase.expectedSamplesProcessedPerStep, stats.SamplesProcessedPerStep)
+
+			if responseWithFinalizer.Data.ResultType == model.ValString.String() {
+				// We can't perform the assertions below for string results because it doesn't select any data,
+				// so we have no way to capture the context used to evaluate the query.
+				return
+			}
+
+			propagatedHeaders := HeadersToPropagateFromContext(contextCapturingStorage.ctx)
+			require.Equal(t, expectedHeaders, propagatedHeaders)
+
+			hints := RequestHintsFromContext(contextCapturingStorage.ctx)
+			require.Equal(t, testCase.req.GetHints(), hints)
+
+			options := RequestOptionsFromContext(contextCapturingStorage.ctx)
+			require.Equal(t, testCase.req.GetOptions(), options)
+		})
+	}
+}
+
+type contextCapturingStorage struct {
+	inner storage.Storage
+	ctx   context.Context
+}
+
+func (s *contextCapturingStorage) Querier(mint, maxt int64) (storage.Querier, error) {
+	q, err := s.inner.Querier(mint, maxt)
+	if err != nil {
+		return nil, err
+	}
+	return &contextCapturingQuerier{q, s}, nil
+}
+
+func (s *contextCapturingStorage) ChunkQuerier(mint, maxt int64) (storage.ChunkQuerier, error) {
+	panic("not supported")
+}
+
+func (s *contextCapturingStorage) Appender(ctx context.Context) storage.Appender {
+	panic("not supported")
+}
+
+func (s *contextCapturingStorage) StartTime() (int64, error) {
+	panic("not supported")
+}
+
+func (s *contextCapturingStorage) Close() error {
+	return s.inner.Close()
+}
+
+type contextCapturingQuerier struct {
+	inner   storage.Querier
+	storage *contextCapturingStorage
+}
+
+func (c *contextCapturingQuerier) Select(ctx context.Context, sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
+	c.storage.ctx = ctx
+	return c.inner.Select(ctx, sortSeries, hints, matchers...)
+}
+
+func (c *contextCapturingQuerier) Close() error {
+	return c.inner.Close()
+}
+
+func (c *contextCapturingQuerier) LabelValues(ctx context.Context, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	panic("not supported")
+}
+
+func (c *contextCapturingQuerier) LabelNames(ctx context.Context, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	panic("not supported")
 }

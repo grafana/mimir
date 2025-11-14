@@ -4,6 +4,7 @@ package costattribution
 
 import (
 	"bytes"
+	"fmt"
 	"slices"
 	"strings"
 	"sync"
@@ -13,6 +14,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"go.uber.org/atomic"
 
+	"github.com/grafana/mimir/pkg/costattribution/costattributionmodel"
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
@@ -28,11 +30,11 @@ type observation struct {
 
 type SampleTracker struct {
 	userID                     string
-	receivedSamplesAttribution *prometheus.Desc
-	discardedSampleAttribution *prometheus.Desc
+	receivedSamplesAttribution *descriptor
+	discardedSampleAttribution *descriptor
 	logger                     log.Logger
 
-	labels         []string
+	labels         []costattributionmodel.Label
 	overflowLabels []string
 
 	maxCardinality   int
@@ -45,7 +47,7 @@ type SampleTracker struct {
 	overflowCounter observation
 }
 
-func newSampleTracker(userID string, trackedLabels []string, limit int, cooldown time.Duration, logger log.Logger) *SampleTracker {
+func newSampleTracker(userID string, trackedLabels []costattributionmodel.Label, limit int, cooldown time.Duration, logger log.Logger) (*SampleTracker, error) {
 	// Create a map for overflow labels to export when overflow happens
 	overflowLabels := make([]string, len(trackedLabels)+2)
 	for i := range trackedLabels {
@@ -66,21 +68,38 @@ func newSampleTracker(userID string, trackedLabels []string, limit int, cooldown
 		overflowCounter:  observation{},
 	}
 
-	variableLabels := slices.Clone(trackedLabels)
-	variableLabels = append(variableLabels, tenantLabel, "reason")
-	tracker.discardedSampleAttribution = prometheus.NewDesc("cortex_discarded_attributed_samples_total",
-		"The total number of samples that were discarded per attribution.",
-		variableLabels,
-		prometheus.Labels{trackerLabel: defaultTrackerName})
+	if err := tracker.createAndValidateDescriptors(trackedLabels); err != nil {
+		return nil, fmt.Errorf("failed to create a sample tracker for tenant %s: %w", userID, err)
+	}
 
-	tracker.receivedSamplesAttribution = prometheus.NewDesc("cortex_distributor_received_attributed_samples_total",
-		"The total number of samples that were received per attribution.",
-		variableLabels[:len(variableLabels)-1],
-		prometheus.Labels{trackerLabel: defaultTrackerName})
-	return tracker
+	return tracker, nil
 }
 
-func (st *SampleTracker) hasSameLabels(labels []string) bool {
+func (st *SampleTracker) createAndValidateDescriptors(trackedLabels []costattributionmodel.Label) error {
+	variableLabels := make([]string, 0, len(trackedLabels)+2)
+	for _, label := range trackedLabels {
+		variableLabels = append(variableLabels, label.OutputLabel())
+	}
+	variableLabels = append(variableLabels, tenantLabel, reasonLabel)
+
+	var err error
+	if st.receivedSamplesAttribution, err = newDescriptor("cortex_distributor_received_attributed_samples_total",
+		"The total number of samples that were received per attribution.",
+		variableLabels[:len(variableLabels)-1],
+		prometheus.Labels{trackerLabel: defaultTrackerName}); err != nil {
+		return err
+	}
+
+	if st.discardedSampleAttribution, err = newDescriptor("cortex_discarded_attributed_samples_total",
+		"The total number of samples that were discarded per attribution.",
+		variableLabels,
+		prometheus.Labels{trackerLabel: defaultTrackerName}); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (st *SampleTracker) hasSameLabels(labels []costattributionmodel.Label) bool {
 	return slices.Equal(st.labels, labels)
 }
 
@@ -97,8 +116,8 @@ func (st *SampleTracker) collectCostAttribution(out chan<- prometheus.Metric) {
 
 	if !st.overflowSince.IsZero() {
 		st.observedMtx.RUnlock()
-		out <- prometheus.MustNewConstMetric(st.receivedSamplesAttribution, prometheus.CounterValue, st.overflowCounter.receivedSample.Load(), st.overflowLabels[:len(st.overflowLabels)-1]...)
-		out <- prometheus.MustNewConstMetric(st.discardedSampleAttribution, prometheus.CounterValue, st.overflowCounter.totalDiscarded.Load(), st.overflowLabels...)
+		out <- st.receivedSamplesAttribution.counter(st.overflowCounter.receivedSample.Load(), st.overflowLabels[:len(st.overflowLabels)-1]...)
+		out <- st.discardedSampleAttribution.counter(st.overflowCounter.totalDiscarded.Load(), st.overflowLabels...)
 		return
 	}
 
@@ -106,11 +125,11 @@ func (st *SampleTracker) collectCostAttribution(out chan<- prometheus.Metric) {
 		keys := strings.Split(key, string(sep))
 		keys = append(keys, st.userID)
 		if o.receivedSample.Load() > 0 {
-			prometheusMetrics = append(prometheusMetrics, prometheus.MustNewConstMetric(st.receivedSamplesAttribution, prometheus.CounterValue, o.receivedSample.Load(), keys...))
+			prometheusMetrics = append(prometheusMetrics, st.receivedSamplesAttribution.counter(o.receivedSample.Load(), keys...))
 		}
 		o.discardedSampleMtx.RLock()
 		for reason, discarded := range o.discardedSample {
-			prometheusMetrics = append(prometheusMetrics, prometheus.MustNewConstMetric(st.discardedSampleAttribution, prometheus.CounterValue, discarded.Load(), append(keys, reason)...))
+			prometheusMetrics = append(prometheusMetrics, st.discardedSampleAttribution.counter(discarded.Load(), append(keys, reason)...))
 		}
 		o.discardedSampleMtx.RUnlock()
 	}
@@ -167,7 +186,7 @@ func (st *SampleTracker) fillKeyFromLabelAdapters(lbls []mimirpb.LabelAdapter, b
 		}
 		exists = false
 		for _, l := range lbls {
-			if l.Name == cal {
+			if l.Name == cal.Input {
 				exists = true
 				buf.WriteString(l.Value)
 				break

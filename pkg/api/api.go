@@ -28,10 +28,9 @@ import (
 	"github.com/grafana/mimir/pkg/compactor"
 	"github.com/grafana/mimir/pkg/distributor"
 	"github.com/grafana/mimir/pkg/distributor/distributorpb"
-	frontendv1 "github.com/grafana/mimir/pkg/frontend/v1"
-	"github.com/grafana/mimir/pkg/frontend/v1/frontendv1pb"
 	frontendv2 "github.com/grafana/mimir/pkg/frontend/v2"
 	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
+	"github.com/grafana/mimir/pkg/ingester"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/querier"
 	querierapi "github.com/grafana/mimir/pkg/querier/api"
@@ -41,8 +40,12 @@ import (
 	"github.com/grafana/mimir/pkg/scheduler/schedulerpb"
 	"github.com/grafana/mimir/pkg/storegateway"
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
+	"github.com/grafana/mimir/pkg/usagetracker"
+	"github.com/grafana/mimir/pkg/usagetracker/usagetrackerpb"
+	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/gziphandler"
 	util_log "github.com/grafana/mimir/pkg/util/log"
+	"github.com/grafana/mimir/pkg/util/propagation"
 	"github.com/grafana/mimir/pkg/util/validation"
 	"github.com/grafana/mimir/pkg/util/validation/exporter"
 )
@@ -160,7 +163,7 @@ func (a *API) RegisterRoutesWithPrefix(prefix string, handler http.Handler, auth
 func (a *API) newRoute(path string, handler http.Handler, isPrefix, auth, gzip bool, methods ...string) (route *mux.Route) {
 	// Propagate the consistency level on all HTTP routes.
 	// They are not used everywhere, but for consistency and less surprise it's added everywhere.
-	handler = querierapi.ConsistencyMiddleware().Wrap(handler)
+	handler = propagation.Middleware(&querierapi.ConsistencyExtractor{}).Wrap(handler)
 
 	if auth {
 		handler = a.AuthMiddleware.Wrap(handler)
@@ -215,12 +218,14 @@ func (a *API) RegisterAlertmanager(am *alertmanager.MultitenantAlertmanager, api
 			a.RegisterRoute("/api/v1/grafana/config", http.HandlerFunc(am.GetUserGrafanaConfig), true, true, http.MethodGet)
 			a.RegisterRoute("/api/v1/grafana/config", http.HandlerFunc(am.SetUserGrafanaConfig), true, true, http.MethodPost)
 			a.RegisterRoute("/api/v1/grafana/config", http.HandlerFunc(am.DeleteUserGrafanaConfig), true, true, http.MethodDelete)
+			a.RegisterRoute("/api/v1/grafana/config/status", http.HandlerFunc(am.GetGrafanaConfigStatus), true, true, http.MethodGet)
 
 			a.RegisterRoute("/api/v1/grafana/state", http.HandlerFunc(am.GetUserGrafanaState), true, true, http.MethodGet)
 			a.RegisterRoute("/api/v1/grafana/state", http.HandlerFunc(am.SetUserGrafanaState), true, true, http.MethodPost)
 			a.RegisterRoute("/api/v1/grafana/state", http.HandlerFunc(am.DeleteUserGrafanaState), true, true, http.MethodDelete)
 
 			// These APIs are handled by the per-tenant Alertmanager, so they are handled by the distributor.
+			a.RegisterRoute("/api/v1/grafana/full_state", am, true, true, http.MethodGet)
 			a.RegisterRoute("/api/v1/grafana/receivers", am, true, true, http.MethodGet)
 			a.RegisterRoute("/api/v1/grafana/receivers/test", am, true, true, http.MethodPost)
 			a.RegisterRoute("/api/v1/grafana/templates/test", am, true, true, http.MethodPost)
@@ -229,15 +234,15 @@ func (a *API) RegisterAlertmanager(am *alertmanager.MultitenantAlertmanager, api
 }
 
 // RegisterAPI registers the standard endpoints associated with a running Mimir.
-func (a *API) RegisterAPI(httpPathPrefix string, actualCfg interface{}, defaultCfg interface{}, buildInfoHandler http.Handler) {
+func (a *API) RegisterAPI(actualCfg interface{}, defaultCfg interface{}, buildInfoHandler http.Handler) {
 	a.indexPage.AddLinks(configWeight, "Current config", []IndexPageLink{
 		{Desc: "Including the default values", Path: "/config"},
 		{Desc: "Only values that differ from the defaults", Path: "/config?mode=diff"},
 	})
 
 	a.RegisterRoute("/config", a.cfg.configHandler(actualCfg, defaultCfg), false, true, "GET")
-	a.RegisterRoute("/", indexHandler(httpPathPrefix, a.indexPage), false, true, "GET")
-	a.RegisterRoutesWithPrefix("/static/", http.StripPrefix(httpPathPrefix, http.FileServer(http.FS(staticFiles))), false, true, "GET")
+	a.RegisterRoute("/", indexHandler(a.indexPage), false, true, "GET")
+	a.RegisterRoutesWithPrefix("/static/", http.FileServer(http.FS(staticFiles)), false, true, "GET")
 	a.RegisterRoute("/debug/fgprof", fgprof.Handler(), false, true, "GET")
 	a.RegisterRoute("/api/v1/status/buildinfo", buildInfoHandler, false, true, "GET")
 	a.RegisterRoute("/api/v1/status/config", a.cfg.statusConfigHandler(), false, true, "GET")
@@ -263,8 +268,11 @@ const InfluxPushEndpoint = "/api/v1/push/influx/write"
 func (a *API) RegisterDistributor(d *distributor.Distributor, pushConfig distributor.Config, reg prometheus.Registerer, limits *validation.Overrides) {
 	distributorpb.RegisterDistributorServer(a.server.GRPC, d)
 
+	newRequestBuffers := func() *util.RequestBuffers {
+		return util.NewRequestBuffers(d.RequestBufferPool)
+	}
 	a.RegisterRoute(PrometheusPushEndpoint, distributor.Handler(
-		pushConfig.MaxRecvMsgSize, d.RequestBufferPool, a.sourceIPs, a.cfg.SkipLabelNameValidationHeader,
+		pushConfig.MaxRecvMsgSize, newRequestBuffers, a.sourceIPs, a.cfg.SkipLabelNameValidationHeader,
 		a.cfg.SkipLabelCountValidationHeader, limits, pushConfig.RetryConfig, d.PushWithMiddlewares, d.PushMetrics, a.logger,
 	), true, false, "POST")
 
@@ -276,8 +284,11 @@ func (a *API) RegisterDistributor(d *distributor.Distributor, pushConfig distrib
 	}
 
 	a.RegisterRoute(OTLPPushEndpoint, distributor.OTLPHandler(
-		pushConfig.MaxOTLPRequestSize, d.RequestBufferPool, a.sourceIPs, limits, pushConfig.OTelResourceAttributePromotionConfig,
-		pushConfig.RetryConfig, pushConfig.EnableStartTimeQuietZero, d.PushWithMiddlewares, d.PushMetrics, reg, a.logger,
+		pushConfig.MaxOTLPRequestSize, d.RequestBufferPool, a.sourceIPs, limits,
+		pushConfig.OTelResourceAttributePromotionConfig,
+		pushConfig.KeepIdentifyingOTelResourceAttributesConfig,
+		pushConfig.RetryConfig, pushConfig.OTLPPushMiddlewares,
+		d.PushWithMiddlewares, d.PushMetrics, reg, a.logger,
 	), true, false, "POST")
 
 	a.indexPage.AddLinks(defaultWeight, "Distributor", []IndexPageLink{
@@ -296,23 +307,8 @@ func (a *API) RegisterCostAttribution(customRegistryPath string, reg *prometheus
 	a.RegisterRoute(customRegistryPath, promhttp.HandlerFor(reg, promhttp.HandlerOpts{}), false, false, "GET")
 }
 
-// Ingester is defined as an interface to allow for alternative implementations
-// of ingesters to be passed into the API.RegisterIngester() method.
-type Ingester interface {
-	client.IngesterServer
-	FlushHandler(http.ResponseWriter, *http.Request)
-	ShutdownHandler(http.ResponseWriter, *http.Request)
-	PrepareShutdownHandler(http.ResponseWriter, *http.Request)
-	PreparePartitionDownscaleHandler(http.ResponseWriter, *http.Request)
-	PrepareUnregisterHandler(w http.ResponseWriter, r *http.Request)
-	UserRegistryHandler(http.ResponseWriter, *http.Request)
-	TenantsHandler(http.ResponseWriter, *http.Request)
-	TenantTSDBHandler(http.ResponseWriter, *http.Request)
-	PrepareInstanceRingDownscaleHandler(http.ResponseWriter, *http.Request)
-}
-
 // RegisterIngester registers the ingester HTTP and gRPC services.
-func (a *API) RegisterIngester(i Ingester) {
+func (a *API) RegisterIngester(i ingester.API) {
 	client.RegisterIngesterServer(a.server.GRPC, i)
 
 	a.indexPage.AddLinks(dangerousWeight, "Dangerous", []IndexPageLink{
@@ -380,7 +376,7 @@ func (a *API) RegisterRulerAPI(r *ruler.API, configAPIEnabled bool, buildInfoHan
 // RegisterIngesterRing registers the ring UI page associated with the ingesters ring.
 func (a *API) RegisterIngesterRing(r http.Handler) {
 	a.indexPage.AddLinks(defaultWeight, "Ingester", []IndexPageLink{
-		{Desc: "Ring status", Path: "/ingester/ring"},
+		{Desc: "Ring status", Path: "ingester/ring"},
 	})
 	a.RegisterRoute("/ingester/ring", r, false, true, "GET", "POST")
 }
@@ -388,7 +384,7 @@ func (a *API) RegisterIngesterRing(r http.Handler) {
 // RegisterIngesterPartitionRing registers the ring UI page associated with the ingester partitions ring.
 func (a *API) RegisterIngesterPartitionRing(r http.Handler) {
 	a.indexPage.AddLinks(defaultWeight, "Ingester", []IndexPageLink{
-		{Desc: "Partition ring status", Path: "/ingester/partition-ring"},
+		{Desc: "Partition ring status", Path: "ingester/partition-ring"},
 	})
 	a.RegisterRoute("/ingester/partition-ring", r, false, true, "GET", "POST")
 }
@@ -398,8 +394,8 @@ func (a *API) RegisterStoreGateway(s *storegateway.StoreGateway) {
 	storegatewaypb.RegisterStoreGatewayServer(a.server.GRPC, s)
 
 	a.indexPage.AddLinks(defaultWeight, "Store-gateway", []IndexPageLink{
-		{Desc: "Ring status", Path: "/store-gateway/ring"},
-		{Desc: "Tenants & Blocks", Path: "/store-gateway/tenants"},
+		{Desc: "Ring status", Path: "store-gateway/ring"},
+		{Desc: "Tenants & Blocks", Path: "store-gateway/tenants"},
 	})
 	a.RegisterRoute("/store-gateway/ring", http.HandlerFunc(s.RingHandler), false, true, "GET", "POST")
 	a.RegisterRoute("/store-gateway/tenants", http.HandlerFunc(s.TenantsHandler), false, true, "GET")
@@ -410,8 +406,8 @@ func (a *API) RegisterStoreGateway(s *storegateway.StoreGateway) {
 // RegisterCompactor registers routes associated with the compactor.
 func (a *API) RegisterCompactor(c *compactor.MultitenantCompactor) {
 	a.indexPage.AddLinks(defaultWeight, "Compactor", []IndexPageLink{
-		{Desc: "Ring status", Path: "/compactor/ring"},
-		{Desc: "Tenants & compaction jobs", Path: "/compactor/tenants"},
+		{Desc: "Ring status", Path: "compactor/ring"},
+		{Desc: "Tenants & compaction jobs", Path: "compactor/tenants"},
 	})
 	a.RegisterRoute("/compactor/ring", http.HandlerFunc(c.RingHandler), false, true, "GET", "POST")
 	a.RegisterRoute("/api/v1/upload/block/{block}/start", http.HandlerFunc(c.StartBlockUpload), true, false, http.MethodPost)
@@ -445,6 +441,13 @@ func (a *API) DisableServerHTTPTimeouts(next http.Handler) http.Handler {
 type Distributor interface {
 	querier.Distributor
 	UserStatsHandler(w http.ResponseWriter, r *http.Request)
+}
+
+func (a *API) RegisterQuerierRing(handler http.Handler) {
+	a.indexPage.AddLinks(defaultWeight, "Querier", []IndexPageLink{
+		{Desc: "Ring status", Path: "/querier/ring"},
+	})
+	a.RegisterRoute("/querier/ring", handler, false, true, "GET", "POST")
 }
 
 // RegisterQueryable registers the default routes associated with the querier
@@ -483,17 +486,13 @@ func (a *API) RegisterQueryFrontendHandler(h http.Handler, buildInfoHandler http
 	a.RegisterQueryAPI(h, buildInfoHandler)
 }
 
-func (a *API) RegisterQueryFrontend1(f *frontendv1.Frontend) {
-	frontendv1pb.RegisterFrontendServer(a.server.GRPC, f)
-}
-
 func (a *API) RegisterQueryFrontend2(f *frontendv2.Frontend) {
 	frontendv2pb.RegisterFrontendForQuerierServer(a.server.GRPC, f)
 }
 
 func (a *API) RegisterQueryScheduler(f *scheduler.Scheduler) {
 	a.indexPage.AddLinks(defaultWeight, "Query-scheduler", []IndexPageLink{
-		{Desc: "Ring status", Path: "/query-scheduler/ring"},
+		{Desc: "Ring status", Path: "query-scheduler/ring"},
 	})
 	a.RegisterRoute("/query-scheduler/ring", http.HandlerFunc(f.RingHandler), false, true, "GET", "POST")
 
@@ -503,9 +502,30 @@ func (a *API) RegisterQueryScheduler(f *scheduler.Scheduler) {
 
 func (a *API) RegisterOverridesExporter(oe *exporter.OverridesExporter) {
 	a.indexPage.AddLinks(defaultWeight, "Overrides-exporter", []IndexPageLink{
-		{Desc: "Ring status", Path: "/overrides-exporter/ring"},
+		{Desc: "Ring status", Path: "overrides-exporter/ring"},
 	})
 	a.RegisterRoute("/overrides-exporter/ring", http.HandlerFunc(oe.RingHandler), false, true, "GET", "POST")
+}
+
+func (a *API) RegisterUsageTracker(t *usagetracker.UsageTracker) {
+	usagetrackerpb.RegisterUsageTrackerServer(a.server.GRPC, t)
+	a.RegisterRoute("/usage-tracker/prepare-instance-ring-downscale", http.HandlerFunc(t.PrepareInstanceRingDownscaleHandler), false, true, "GET", "POST", "DELETE")
+}
+
+func (a *API) RegisterUsageTrackerInstanceRing(instanceRingHandler http.Handler) {
+	a.indexPage.AddLinks(defaultWeight, "Usage-tracker", []IndexPageLink{
+		{Desc: "Instance ring status", Path: "usage-tracker/instance-ring"},
+	})
+
+	a.RegisterRoute("/usage-tracker/instance-ring", instanceRingHandler, false, true, "GET", "POST")
+}
+
+func (a *API) RegisterUsageTrackerPartitionRing(partitionRingHandler http.Handler) {
+	a.indexPage.AddLinks(defaultWeight, "Usage-tracker", []IndexPageLink{
+		{Desc: "Partition ring status", Path: "usage-tracker/partition-ring"},
+	})
+
+	a.RegisterRoute("/usage-tracker/partition-ring", partitionRingHandler, false, true, "GET", "POST")
 }
 
 // RegisterServiceMapHandler registers the Mimir structs service handler
@@ -513,16 +533,16 @@ func (a *API) RegisterOverridesExporter(oe *exporter.OverridesExporter) {
 // or a future module manager #2291
 func (a *API) RegisterServiceMapHandler(handler http.Handler) {
 	a.indexPage.AddLinks(serviceStatusWeight, "Overview", []IndexPageLink{
-		{Desc: "Services' status", Path: "/services"},
+		{Desc: "Services' status", Path: "services"},
 	})
 	a.RegisterRoute("/services", handler, false, true, "GET")
 }
 
-func (a *API) RegisterMemberlistKV(pathPrefix string, kvs *memberlist.KVInitService) {
+func (a *API) RegisterMemberlistKV(kvs *memberlist.KVInitService) {
 	a.indexPage.AddLinks(memberlistWeight, "Memberlist", []IndexPageLink{
-		{Desc: "Status", Path: "/memberlist"},
+		{Desc: "Status", Path: "memberlist"},
 	})
-	a.RegisterRoute("/memberlist", memberlistStatusHandler(pathPrefix, kvs), false, true, "GET")
+	a.RegisterRoute("/memberlist", memberlistStatusHandler(kvs), false, true, "GET")
 }
 
 func (a *API) RegisterBlockBuilderScheduler(s bbschedulerpb.BlockBuilderSchedulerServer) {

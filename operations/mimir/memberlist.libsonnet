@@ -73,10 +73,17 @@
     ),
   },
 
-  alertmanager_args+: if !$._config.memberlist_ring_enabled then {} else (setupGossipRing('alertmanager.sharding-ring.store', 'alertmanager.sharding-ring.consul.hostname', 'alertmanager.sharding-ring.multi') + $._config.memberlistConfig),
-  distributor_args+: if !$._config.memberlist_ring_enabled then {} else (setupGossipRing('distributor.ring.store', 'distributor.ring.consul.hostname', 'distributor.ring.multi') + $._config.memberlistConfig),
-  ruler_args+: if !$._config.memberlist_ring_enabled then {} else (setupGossipRing('ruler.ring.store', 'ruler.ring.consul.hostname', 'ruler.ring.multi') + $._config.memberlistConfig),
-  compactor_args+: if !$._config.memberlist_ring_enabled then {} else (setupGossipRing('compactor.ring.store', 'compactor.ring.consul.hostname', 'compactor.ring.multi') + $._config.memberlistConfig),
+  alertmanager_args+:: if !$._config.memberlist_ring_enabled then {} else (setupGossipRing('alertmanager.sharding-ring.store', 'alertmanager.sharding-ring.consul.hostname', 'alertmanager.sharding-ring.multi') + $._config.memberlistConfig),
+  distributor_args+:: if !$._config.memberlist_ring_enabled then {} else (setupGossipRing('distributor.ring.store', 'distributor.ring.consul.hostname', 'distributor.ring.multi') + $._config.memberlistConfig),
+  ruler_args+:: if !$._config.memberlist_ring_enabled then {} else (setupGossipRing('ruler.ring.store', 'ruler.ring.consul.hostname', 'ruler.ring.multi') + $._config.memberlistConfig),
+  compactor_args+:: if !$._config.memberlist_ring_enabled then {} else (setupGossipRing('compactor.ring.store', 'compactor.ring.consul.hostname', 'compactor.ring.multi') + $._config.memberlistConfig),
+  ingester_args+:: if !$._config.memberlist_ring_enabled then {} else {
+    // Ingesters *must* have the ring state initialised when they start, otherwise the local limits
+    // are badly computed because ingesters will see an empty ring at startup. The ring state may not be
+    // initialised if the memberlist fast join fails and the "abort on fail" is disabled. For this reason,
+    // we enable the "abort on fast join failure" for ingesters.
+    'memberlist.abort-if-fast-join-fails': true,
+  },
 
   local gossipRingPort = 7946,
 

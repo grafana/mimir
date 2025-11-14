@@ -18,7 +18,7 @@ import (
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
-	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -61,7 +61,7 @@ func TestCircuitBreaker_TryRecordFailure(t *testing.T) {
 
 	t.Run("gRPC unavailable with SERVICE_UNAVAILABLE details is not a failure", func(t *testing.T) {
 		stat := status.New(codes.Unavailable, "broken!")
-		stat, err := stat.WithDetails(&mimirpb.ErrorDetails{Cause: mimirpb.SERVICE_UNAVAILABLE})
+		stat, err := stat.WithDetails(&mimirpb.ErrorDetails{Cause: mimirpb.ERROR_CAUSE_SERVICE_UNAVAILABLE})
 		require.NoError(t, err)
 		err = stat.Err()
 		require.False(t, cb.tryRecordFailure(err))
@@ -583,7 +583,7 @@ func TestIngester_IngestStorage_PushToStorageAndReleaseRequest_CircuitBreaker(t 
 	for initialDelayEnabled, initialDelayStatus := range map[bool]string{false: "disabled", true: "enabled"} {
 		for testName, testCase := range tests {
 			t.Run(fmt.Sprintf("%s with initial delay %s", testName, initialDelayStatus), func(t *testing.T) {
-				metricLabelAdapters := [][]mimirpb.LabelAdapter{{{Name: labels.MetricName, Value: "test"}}}
+				metricLabelAdapters := [][]mimirpb.LabelAdapter{{{Name: model.MetricNameLabel, Value: "test"}}}
 				metricNames := []string{
 					"cortex_ingester_circuit_breaker_results_total",
 					"cortex_ingester_circuit_breaker_transitions_total",
@@ -716,15 +716,9 @@ func TestIngester_StartPushRequest_CircuitBreakerOpen(t *testing.T) {
 	cfg := defaultIngesterTestConfig(t)
 	cfg.PushCircuitBreaker = CircuitBreakerConfig{Enabled: true, CooldownPeriod: 10 * time.Second}
 
-	i, err := prepareIngesterWithBlocksStorage(t, cfg, nil, reg)
+	i, r, err := prepareIngesterWithBlocksStorage(t, cfg, nil, reg)
 	require.NoError(t, err)
-	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
-	defer services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
-
-	// Wait until the ingester is healthy
-	test.Poll(t, 100*time.Millisecond, 1, func() interface{} {
-		return i.lifecycler.HealthyInstancesCount()
-	})
+	startAndWaitHealthy(t, i, r)
 
 	ctx := user.InjectOrgID(context.Background(), "test")
 
@@ -890,16 +884,9 @@ func TestIngester_FinishPushRequest(t *testing.T) {
 				RequestTimeout: 2 * time.Second,
 			}
 
-			i, err := prepareIngesterWithBlocksStorage(t, cfg, nil, reg)
+			i, r, err := prepareIngesterWithBlocksStorage(t, cfg, nil, reg)
 			require.NoError(t, err)
-
-			require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
-			defer services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
-
-			// Wait until the ingester is healthy
-			test.Poll(t, 100*time.Millisecond, 1, func() interface{} {
-				return i.lifecycler.HealthyInstancesCount()
-			})
+			startAndWaitHealthy(t, i, r)
 
 			ctx := user.InjectOrgID(context.Background(), "test")
 
@@ -924,7 +911,7 @@ func TestIngester_Push_CircuitBreaker_DeadlineExceeded(t *testing.T) {
 	pushTimeout := 1 * time.Second
 	for initialDelayEnabled, initialDelayStatus := range map[bool]string{false: "disabled", true: "enabled"} {
 		t.Run(fmt.Sprintf("test slow push with initial delay %s", initialDelayStatus), func(t *testing.T) {
-			metricLabelAdapters := [][]mimirpb.LabelAdapter{{{Name: labels.MetricName, Value: "test"}}}
+			metricLabelAdapters := [][]mimirpb.LabelAdapter{{{Name: model.MetricNameLabel, Value: "test"}}}
 			metricNames := []string{
 				"cortex_ingester_circuit_breaker_results_total",
 				"cortex_ingester_circuit_breaker_transitions_total",
@@ -951,16 +938,9 @@ func TestIngester_Push_CircuitBreaker_DeadlineExceeded(t *testing.T) {
 				testModeEnabled:            true,
 			}
 
-			i, err := prepareIngesterWithBlocksStorage(t, cfg, nil, registry)
+			i, r, err := prepareIngesterWithBlocksStorage(t, cfg, nil, registry)
 			require.NoError(t, err)
-
-			require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
-			defer services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
-
-			// Wait until the ingester is healthy
-			test.Poll(t, 100*time.Millisecond, 1, func() interface{} {
-				return i.lifecycler.HealthyInstancesCount()
-			})
+			startAndWaitHealthy(t, i, r)
 
 			// the first request is successful
 			ctx := user.InjectOrgID(context.Background(), "test-0")

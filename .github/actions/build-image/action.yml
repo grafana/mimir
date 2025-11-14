@@ -1,0 +1,52 @@
+name: Build image
+description: Builds an image and exports it as a workflow artifact
+inputs:
+  artifact_name:
+    description: workflow artifact name
+    required: true
+  target:
+    description: make target to run
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Run Git Config
+      shell: bash
+      run: git config --global --add safe.directory '*'
+    - name: Install Docker Client
+      shell: bash
+      run: ./.github/workflows/scripts/install-docker.sh
+    - name: Set up QEMU
+      uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3.7.0
+    - name: Set up Docker Buildx
+      id: buildx
+      uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
+    - name: Symlink Expected Path to Workspace
+      shell: bash
+      run: |
+        mkdir -p /go/src/github.com/grafana/mimir
+        ln -s $GITHUB_WORKSPACE/* /go/src/github.com/grafana/mimir
+    - name: Build Docker Image
+      shell: bash
+      run: |
+        OUTPUT_DIR=/tmp/images
+        mkdir "$OUTPUT_DIR"
+        
+        DIRNAME="$(dirname "$TARGET")"
+        NAME="$(basename "$DIRNAME")"
+        make \
+          BUILD_IN_CONTAINER=false \
+          PUSH_MULTIARCH_TARGET="type=oci,dest=$OUTPUT_DIR/$NAME.oci" \
+          PUSH_MULTIARCH_TARGET_CONTINUOUS_TEST="type=oci,dest=$OUTPUT_DIR/$NAME\-continuous\-test.oci" \
+          push-multiarch-$TARGET
+      env:
+        TARGET: ${{ inputs.target }}
+    - name: Create Archive With Docker Images
+      shell: bash
+      run: |
+        tar cvf images.tar -C /tmp/images .
+    - name: Upload Archive with Docker Images
+      uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
+      with:
+        name: ${{ inputs.artifact_name }}
+        path: ./images.tar

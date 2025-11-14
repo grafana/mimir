@@ -31,15 +31,16 @@ func NewScalarToInstantVector(scalar types.ScalarOperator, expressionPosition po
 	}
 }
 
-func (s *ScalarToInstantVector) SeriesMetadata(_ context.Context) ([]types.SeriesMetadata, error) {
+func (s *ScalarToInstantVector) SeriesMetadata(_ context.Context, _ types.Matchers) ([]types.SeriesMetadata, error) {
 	metadata, err := types.SeriesMetadataSlicePool.Get(1, s.MemoryConsumptionTracker)
 	if err != nil {
 		return nil, err
 	}
 
-	metadata = append(metadata, types.SeriesMetadata{
-		Labels: labels.EmptyLabels(),
-	})
+	metadata, err = types.AppendSeriesMetadata(s.MemoryConsumptionTracker, metadata, types.SeriesMetadata{Labels: labels.EmptyLabels()})
+	if err != nil {
+		return nil, err
+	}
 
 	return metadata, nil
 }
@@ -67,6 +68,10 @@ func (s *ScalarToInstantVector) ExpressionPosition() posrange.PositionRange {
 
 func (s *ScalarToInstantVector) Prepare(ctx context.Context, params *types.PrepareParams) error {
 	return s.Scalar.Prepare(ctx, params)
+}
+
+func (s *ScalarToInstantVector) Finalize(ctx context.Context) error {
+	return s.Scalar.Finalize(ctx)
 }
 
 func (s *ScalarToInstantVector) Close() {

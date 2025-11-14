@@ -9,7 +9,7 @@ package integration
 import (
 	"context"
 	"errors"
-	"sort"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -40,7 +40,7 @@ func TestKVList(t *testing.T) {
 		// Get list of keys and sort them
 		keys, err := client.List(context.Background(), "")
 		require.NoError(t, err, "could not list keys")
-		sort.Strings(keys)
+		slices.Sort(keys)
 		require.Equal(t, keysToCreate, keys, "returned key paths did not match created paths")
 
 		verifyClientMetricsHistogram(t, reg, "cortex_kv_request_duration_seconds", map[string]uint64{

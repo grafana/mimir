@@ -16,13 +16,17 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/cancellation"
 	"github.com/grafana/dskit/tenant"
-	"github.com/grafana/dskit/user"
 	"github.com/prometheus/prometheus/model/timestamp"
+	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/storage"
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sync/semaphore"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
+	"github.com/grafana/mimir/pkg/querier/stats"
+	"github.com/grafana/mimir/pkg/streamingpromql"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/propagation"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -61,9 +65,6 @@ type Limits interface {
 	// for a regexp matcher in a shardable query. If a query contains a regexp matcher longer
 	// than this limit, the query will not be sharded. 0 to disable limit.
 	QueryShardingMaxRegexpSizeBytes(userID string) int
-
-	// SplitInstantQueriesByInterval returns the time interval to split instant queries for a given tenant.
-	SplitInstantQueriesByInterval(userID string) time.Duration
 
 	// CompactorSplitAndMergeShards returns the number of shards to use when splitting blocks
 	// This method is copied from compactor.ConfigProvider.
@@ -104,13 +105,13 @@ type Limits interface {
 	Prom2RangeCompat(userID string) bool
 
 	// BlockedQueries returns the blocked queries.
-	BlockedQueries(userID string) []*validation.BlockedQuery
+	BlockedQueries(userID string) []validation.BlockedQuery
 
 	// BlockedRequests returns the blocked http requests.
-	BlockedRequests(userID string) []*validation.BlockedRequest
+	BlockedRequests(userID string) []validation.BlockedRequest
 
 	// LimitedQueries returns the limited queries.
-	LimitedQueries(userID string) []*validation.LimitedQuery
+	LimitedQueries(userID string) []validation.LimitedQuery
 
 	// AlignQueriesWithStep returns if queries should be adjusted to be step-aligned
 	AlignQueriesWithStep(userID string) bool
@@ -123,6 +124,9 @@ type Limits interface {
 
 	// SubquerySpinOffEnabled returns if the feature of spinning off subqueries from instant queries as range queries is enabled.
 	SubquerySpinOffEnabled(userID string) bool
+
+	// LabelsQueryOptimizerEnabled returns whether labels query optimizations are enabled.
+	LabelsQueryOptimizerEnabled(userID string) bool
 }
 
 type limitsMiddleware struct {
@@ -168,7 +172,7 @@ func (l limitsMiddleware) Do(ctx context.Context, r MetricsQueryRequest) (Respon
 				"maxQueryLookback", maxQueryLookback,
 				"blocksRetentionPeriod", blocksRetentionPeriod)
 
-			return newEmptyPrometheusResponse(), nil
+			return NewEmptyPrometheusResponse(), nil
 		}
 
 		if r.GetStart() < minStartTime {
@@ -206,23 +210,26 @@ func (l limitsMiddleware) Do(ctx context.Context, r MetricsQueryRequest) (Respon
 }
 
 type limitedParallelismRoundTripper struct {
-	downstream MetricsQueryHandler
-	limits     Limits
+	downstream             MetricsQueryHandler
+	limits                 LimitedParallelismLimits
+	remoteExecutionEnabled bool
 
 	codec      Codec
 	middleware MetricsQueryMiddleware
 }
 
+type LimitedParallelismLimits interface {
+	MaxQueryParallelism(userID string) int
+}
+
 // NewLimitedParallelismRoundTripper creates a new roundtripper that enforces MaxQueryParallelism to the `next` roundtripper across `middlewares`.
-func NewLimitedParallelismRoundTripper(next http.RoundTripper, codec Codec, limits Limits, middlewares ...MetricsQueryMiddleware) http.RoundTripper {
+func NewLimitedParallelismRoundTripper(next MetricsQueryHandler, codec Codec, limits LimitedParallelismLimits, remoteExecutionEnabled bool, middlewares ...MetricsQueryMiddleware) http.RoundTripper {
 	return limitedParallelismRoundTripper{
-		downstream: roundTripperHandler{
-			next:  next,
-			codec: codec,
-		},
-		codec:      codec,
-		limits:     limits,
-		middleware: MergeMetricsQueryMiddlewares(middlewares...),
+		downstream:             next,
+		codec:                  codec,
+		limits:                 limits,
+		remoteExecutionEnabled: remoteExecutionEnabled,
+		middleware:             MergeMetricsQueryMiddlewares(middlewares...),
 	}
 }
 
@@ -241,25 +248,26 @@ func (rt limitedParallelismRoundTripper) RoundTrip(r *http.Request) (*http.Respo
 		return nil, apierror.New(apierror.TypeBadData, err.Error())
 	}
 
-	// Limit the amount of parallel sub-requests according to the MaxQueryParallelism tenant setting.
-	parallelism := validation.SmallestPositiveIntPerTenant(tenantIDs, rt.limits.MaxQueryParallelism)
-	sem := semaphore.NewWeighted(int64(parallelism))
+	// Limit the number of parallel sub-requests according to the MaxQueryParallelism tenant setting.
+	maxParallelism := validation.SmallestPositiveIntPerTenant(tenantIDs, rt.limits.MaxQueryParallelism)
+	limiter := NewParallelismLimiter(maxParallelism)
+	ctx = ContextWithParallelismLimiter(ctx, limiter)
 
 	// Wraps middlewares with a final handler, which will receive sub-requests in
 	// parallel from upstream handlers and ensure that no more than MaxQueryParallelism
 	// sub-requests run in parallel.
 	response, err := rt.middleware.Wrap(
 		HandlerFunc(func(ctx context.Context, r MetricsQueryRequest) (Response, error) {
-			if err := sem.Acquire(ctx, 1); err != nil {
-				// Without this change, using WithTimeoutCause has no effect when calling Do on
-				// limitedParallelismRoundTripper, since that would need to return the cause as error,
-				// which is the normal behaviour except that semaphore does not do that.
-				if errors.Is(err, ctx.Err()) {
-					err = context.Cause(ctx)
+			// If remote execution is disabled, apply the parallelism limit here.
+			// If remote execution is enabled, we'll enforce the limit in Frontend.DoProtobufRequest instead.
+			// We need to enforce the limit in DoProtobufRequest because the requests we see here are before sharding is applied if sharding inside MQE is enabled.
+			// If we were to enforce the limit here with remote execution enabled, then we'll count requests twice: once here, and again in Frontend.DoProtobufRequest.
+			if !rt.remoteExecutionEnabled {
+				if err := limiter.BeginRequest(ctx); err != nil {
+					return nil, err
 				}
-				return nil, fmt.Errorf("could not acquire work: %w", err)
+				defer limiter.RequestFinished()
 			}
-			defer sem.Release(1)
 
 			return rt.downstream.Do(ctx, r)
 		})).Do(ctx, request)
@@ -271,26 +279,62 @@ func (rt limitedParallelismRoundTripper) RoundTrip(r *http.Request) (*http.Respo
 	return rt.codec.EncodeMetricsQueryResponse(ctx, r, response)
 }
 
-// roundTripperHandler is an adapter that implements the MetricsQueryHandler interface using a http.RoundTripper to perform
+type ParallelismLimiter struct {
+	sem *semaphore.Weighted
+}
+
+func NewParallelismLimiter(maxParallelism int) *ParallelismLimiter {
+	return &ParallelismLimiter{
+		sem: semaphore.NewWeighted(int64(maxParallelism)),
+	}
+}
+
+func (l *ParallelismLimiter) BeginRequest(ctx context.Context) error {
+	if err := l.sem.Acquire(ctx, 1); err != nil {
+		// Acquire returns ctx.Err(), rather than context.Cause(ctx).
+		// We want to return the cause if there is one.
+		if errors.Is(err, ctx.Err()) {
+			err = context.Cause(ctx)
+		}
+		return fmt.Errorf("could not acquire work: %w", err)
+	}
+
+	return nil
+}
+
+func (l *ParallelismLimiter) RequestFinished() {
+	l.sem.Release(1)
+}
+
+func NewHTTPQueryRequestRoundTripperHandler(next http.RoundTripper, codec Codec, logger log.Logger) MetricsQueryHandler {
+	return httpQueryRequestRoundTripperHandler{
+		next:   next,
+		codec:  codec,
+		logger: logger,
+	}
+}
+
+// httpQueryRequestRoundTripperHandler is an adapter that implements the MetricsQueryHandler interface using a http.RoundTripper to perform
 // the requests and a Codec to translate between http Request/Response model and this package's Request/Response model.
 // It basically encodes a MetricsQueryRequest from MetricsQueryHandler.Do and decodes response from next roundtripper.
-type roundTripperHandler struct {
+type httpQueryRequestRoundTripperHandler struct {
 	logger log.Logger
 	next   http.RoundTripper
 	codec  Codec
 }
 
-func (rth roundTripperHandler) Do(ctx context.Context, r MetricsQueryRequest) (Response, error) {
-	spanLogger, ctx := spanlogger.New(ctx, rth.logger, tracer, "roundTripperHandler.Do")
-	defer spanLogger.Finish()
+func (rth httpQueryRequestRoundTripperHandler) Do(ctx context.Context, r MetricsQueryRequest) (resp Response, err error) {
+	spanLogger, ctx := spanlogger.New(ctx, rth.logger, tracer, "httpQueryRequestRoundTripperHandler.Do")
+	defer func() {
+		if err != nil {
+			spanLogger.Error(err)
+		}
+		spanLogger.Finish()
+	}()
 
 	request, err := rth.codec.EncodeMetricsQueryRequest(ctx, r)
 	if err != nil {
 		return nil, err
-	}
-
-	if err := user.InjectOrgIDIntoHTTPRequest(ctx, request); err != nil {
-		return nil, apierror.New(apierror.TypeBadData, err.Error())
 	}
 
 	response, err := rth.next.RoundTrip(request)
@@ -300,6 +344,124 @@ func (rth roundTripperHandler) Do(ctx context.Context, r MetricsQueryRequest) (R
 	defer func() { _ = response.Body.Close() }()
 
 	return rth.codec.DecodeMetricsQueryResponse(ctx, response, r, rth.logger)
+}
+
+type engineQueryRequestRoundTripperHandler struct {
+	engine  *streamingpromql.Engine
+	storage storage.Queryable
+	codec   Codec
+	logger  log.Logger
+}
+
+func NewEngineQueryRequestRoundTripperHandler(engine *streamingpromql.Engine, codec Codec, logger log.Logger) MetricsQueryHandler {
+	return &engineQueryRequestRoundTripperHandler{
+		engine:  engine,
+		storage: unqueryableQueryable{},
+		codec:   codec,
+		logger:  logger,
+	}
+}
+
+func (rth *engineQueryRequestRoundTripperHandler) Do(ctx context.Context, r MetricsQueryRequest) (resp Response, err error) {
+	spanLogger, ctx := spanlogger.New(ctx, rth.logger, tracer, "engineQueryRequestRoundTripperHandler.Do")
+	defer func() {
+		if err != nil {
+			// TypeForError handles both apierror.APIError instances as well as context.Canceled instances, so we don't need to check for both below.
+			if apierror.TypeForError(err, apierror.TypeNone) == apierror.TypeCanceled {
+				spanLogger.DebugLog("msg", "request returned cancellation error", "err", err)
+			} else {
+				spanLogger.Error(err)
+			}
+		}
+		spanLogger.Finish()
+	}()
+
+	headers := map[string][]string{}
+	if err := rth.codec.AddHeadersForMetricQueryRequest(ctx, r, propagation.MapCarrier(headers)); err != nil {
+		return nil, err
+	}
+
+	ctx = ContextWithHeadersToPropagate(ctx, headers)
+	ctx = ContextWithRequestHintsAndOptions(ctx, r.GetHints(), r.GetOptions())
+	opts := promql.NewPrometheusQueryOpts(r.GetStats() == "all", 0)
+
+	var q promql.Query
+
+	switch r := r.(type) {
+	case *PrometheusRangeQueryRequest:
+		q, err = rth.engine.NewRangeQuery(ctx, rth.storage, opts, r.GetQuery(), timestamp.Time(r.GetStart()), timestamp.Time(r.GetEnd()), time.Duration(r.GetStep())*time.Millisecond)
+	case *PrometheusInstantQueryRequest:
+		q, err = rth.engine.NewInstantQuery(ctx, rth.storage, opts, r.GetQuery(), timestamp.Time(r.GetTime()))
+	default:
+		return nil, fmt.Errorf("unknown metrics query request type: %T", r)
+	}
+
+	if err != nil {
+		err = convertToAPIError(err, apierror.TypeInternal)
+		return nil, err
+	}
+
+	res := q.Exec(ctx)
+	if res.Err != nil {
+		err := convertToAPIError(res.Err, apierror.TypeExec)
+		return nil, err
+	}
+
+	data, err := promqlResultToSamples(res)
+	if err != nil {
+		err = convertToAPIError(err, apierror.TypeInternal)
+		return nil, err
+	}
+
+	warnings, infos := res.Warnings.AsStrings(r.GetQuery(), 0, 0)
+
+	if localStats := stats.FromContext(ctx); localStats != nil {
+		engineStats := q.Stats()
+		localStats.AddSamplesProcessed(uint64(engineStats.Samples.TotalSamples))
+
+		stepStats := make([]stats.StepStat, 0, len(engineStats.Samples.TotalSamplesPerStep))
+		for i, count := range engineStats.Samples.TotalSamplesPerStep {
+			stepStats = append(stepStats, stats.StepStat{
+				Timestamp: r.GetStart() + int64(i)*r.GetStep(),
+				Value:     count,
+			})
+		}
+
+		localStats.AddSamplesProcessedPerStep(stepStats)
+	}
+
+	resp = &PrometheusResponseWithFinalizer{
+		PrometheusResponse: &PrometheusResponse{
+			Status: statusSuccess,
+			Data: &PrometheusData{
+				ResultType: string(res.Value.Type()),
+				Result:     data,
+			},
+			Warnings: warnings,
+			Infos:    infos,
+		},
+		finalizer: q.Close,
+	}
+
+	return resp, nil
+}
+
+func convertToAPIError(err error, fallbackErrorType apierror.Type) error {
+	var apiError *apierror.APIError
+	if errors.As(err, &apiError) {
+		return apiError
+	}
+
+	t := apierror.TypeForError(err, fallbackErrorType)
+	return apierror.New(t, err.Error())
+}
+
+type unqueryableQueryable struct{}
+
+var errShouldNeverBeQueried = errors.New("this Queryable should never be queried as all selectors should be evaluated remotely: if you are seeing this, this is a bug")
+
+func (u unqueryableQueryable) Querier(mint, maxt int64) (storage.Querier, error) {
+	return nil, errShouldNeverBeQueried
 }
 
 // smallestPositiveNonZeroDuration returns the smallest positive and non-zero value
@@ -316,4 +478,46 @@ func smallestPositiveNonZeroDuration(values ...time.Duration) time.Duration {
 
 	return smallest
 
+}
+
+type requestContextKeyType int
+
+const (
+	requestHintsKey requestContextKeyType = iota
+	requestOptionsKey
+	parallelismLimiterKey
+)
+
+func ContextWithRequestHintsAndOptions(ctx context.Context, hints *Hints, options Options) context.Context {
+	ctx = context.WithValue(ctx, requestHintsKey, hints)
+	ctx = context.WithValue(ctx, requestOptionsKey, options)
+	return ctx
+}
+
+func RequestHintsFromContext(ctx context.Context) *Hints {
+	if v := ctx.Value(requestHintsKey); v != nil {
+		return v.(*Hints)
+	}
+
+	return nil
+}
+
+func RequestOptionsFromContext(ctx context.Context) Options {
+	if v := ctx.Value(requestOptionsKey); v != nil {
+		return v.(Options)
+	}
+
+	return Options{}
+}
+
+func ContextWithParallelismLimiter(ctx context.Context, limiter *ParallelismLimiter) context.Context {
+	return context.WithValue(ctx, parallelismLimiterKey, limiter)
+}
+
+func ParallelismLimiterFromContext(ctx context.Context) *ParallelismLimiter {
+	if v := ctx.Value(parallelismLimiterKey); v != nil {
+		return v.(*ParallelismLimiter)
+	}
+
+	return nil
 }

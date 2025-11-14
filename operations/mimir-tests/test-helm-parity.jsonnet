@@ -31,7 +31,6 @@ mimir {
 
   // These are properties that are set differently on different components in jsonnet.
   // We unset them all here so the default values are used like in Helm.
-  // TODO: Once the read-write deployment is stable, we can revisit these settings.
   // At that point there will likely be less deviation between components.
   // See the tracking issue: https://github.com/grafana/mimir/issues/2749
   querier_args+:: {

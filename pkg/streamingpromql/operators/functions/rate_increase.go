@@ -10,6 +10,7 @@ import (
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/util/annotations"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
@@ -38,7 +39,7 @@ var Delta = FunctionOverRangeVectorDefinition{
 
 // isRate is true for `rate` function, or false for `instant` function
 func rate(isRate bool) RangeVectorStepFunction {
-	return func(step *types.RangeVectorStepData, rangeSeconds float64, _ []types.ScalarData, _ types.QueryTimeRange, emitAnnotation types.EmitAnnotationFunc, _ *limiter.MemoryConsumptionTracker) (float64, bool, *histogram.FloatHistogram, error) {
+	return func(step *types.RangeVectorStepData, _ []types.ScalarData, _ types.QueryTimeRange, emitAnnotation types.EmitAnnotationFunc, _ *limiter.MemoryConsumptionTracker) (float64, bool, *histogram.FloatHistogram, error) {
 		fHead, fTail := step.Floats.UnsafePoints()
 		fCount := len(fHead) + len(fTail)
 
@@ -51,6 +52,8 @@ func rate(isRate bool) RangeVectorStepFunction {
 			emitAnnotation(annotations.NewMixedFloatsHistogramsWarning)
 			return 0, false, nil, nil
 		}
+
+		rangeSeconds := float64(step.RangeEnd-step.RangeStart) / 1000
 
 		if fCount >= 2 {
 			// TODO: just pass step here? (and below)
@@ -86,6 +89,10 @@ func histogramRate(isRate bool, hCount int, hHead []promql.HPoint, hTail []promq
 		secondPoint = hTail[0]
 	}
 
+	// Store the original first point count before potential reset.
+	// It's needed to calculate the rate correctly later.
+	fpHistCount := firstPoint.H.Count
+
 	// Ignore the first point if there is a counter reset between the first and second point.
 	// This means we'll ignore any incompatibility between the layout of the first and second point,
 	// which doesn't matter because we're not going to use the first point any way.
@@ -119,9 +126,12 @@ func histogramRate(isRate bool, hCount int, hHead []promql.HPoint, hTail []promq
 	}
 
 	delta := lastPoint.H.CopyToSchema(desiredSchema)
-	_, err := delta.Sub(firstPoint.H)
+	_, _, nhcbBoundsReconciled, err := delta.Sub(firstPoint.H)
 	if err != nil {
 		return nil, err
+	}
+	if nhcbBoundsReconciled {
+		emitAnnotation(newSubMismatchedCustomBucketsHistogramInfo)
 	}
 	previousValue := firstPoint.H
 
@@ -129,8 +139,12 @@ func histogramRate(isRate bool, hCount int, hHead []promql.HPoint, hTail []promq
 		for _, p := range points {
 			if p.H.DetectReset(previousValue) {
 				// Counter reset.
-				if _, err := delta.Add(previousValue); err != nil {
+				_, _, nhcbBoundsReconciled, err := delta.Add(previousValue)
+				if err != nil {
 					return err
+				}
+				if nhcbBoundsReconciled {
+					emitAnnotation(newAddMismatchedCustomBucketsHistogramInfo)
 				}
 			}
 
@@ -166,7 +180,7 @@ func histogramRate(isRate bool, hCount int, hHead []promql.HPoint, hTail []promq
 		delta = delta.CopyToSchema(desiredSchema)
 	}
 
-	val := calculateHistogramRate(isRate, rangeStart, rangeEnd, rangeSeconds, firstPoint, lastPoint, delta, hCount)
+	val := calculateHistogramRate(true, isRate, rangeStart, rangeEnd, rangeSeconds, firstPoint, lastPoint, delta, hCount, fpHistCount)
 	return val, err
 }
 
@@ -204,7 +218,7 @@ func floatRate(isRate bool, fCount int, fHead []promql.FPoint, fTail []promql.FP
 
 // This is based on extrapolatedRate from promql/functions.go.
 // https://github.com/prometheus/prometheus/pull/13725 has a good explanation of the intended behaviour here.
-func calculateHistogramRate(isRate bool, rangeStart, rangeEnd int64, rangeSeconds float64, firstPoint, lastPoint promql.HPoint, delta *histogram.FloatHistogram, count int) *histogram.FloatHistogram {
+func calculateHistogramRate(isCounter, isRate bool, rangeStart, rangeEnd int64, rangeSeconds float64, firstPoint, lastPoint promql.HPoint, delta *histogram.FloatHistogram, count int, fpHistCountBeforeReset float64) *histogram.FloatHistogram {
 	durationToStart := float64(firstPoint.T-rangeStart) / 1000
 	durationToEnd := float64(rangeEnd-lastPoint.T) / 1000
 
@@ -212,21 +226,30 @@ func calculateHistogramRate(isRate bool, rangeStart, rangeEnd int64, rangeSecond
 	averageDurationBetweenSamples := sampledInterval / float64(count-1)
 
 	extrapolationThreshold := averageDurationBetweenSamples * 1.1
-	extrapolateToInterval := sampledInterval
 
 	if durationToStart >= extrapolationThreshold {
 		durationToStart = averageDurationBetweenSamples / 2
 	}
 
-	extrapolateToInterval += durationToStart
+	if isCounter && delta.Count > 0 && fpHistCountBeforeReset >= 0 {
+		// Counters cannot be negative. If we have any slope at all
+		// (i.e. delta went up), we can extrapolate the zero point
+		// of the counter. If the duration to the zero point is shorter
+		// than the durationToStart, we take the zero point as the start
+		// of the series, thereby avoiding extrapolation to negative
+		// counter values.
+		// Use the original count before any reset handling.
+		durationToZero := sampledInterval * (fpHistCountBeforeReset / delta.Count)
+		if durationToZero < durationToStart {
+			durationToStart = durationToZero
+		}
+	}
 
 	if durationToEnd >= extrapolationThreshold {
 		durationToEnd = averageDurationBetweenSamples / 2
 	}
 
-	extrapolateToInterval += durationToEnd
-
-	factor := extrapolateToInterval / sampledInterval
+	factor := (sampledInterval + durationToStart + durationToEnd) / sampledInterval
 	if isRate {
 		factor /= rangeSeconds
 	}
@@ -245,7 +268,6 @@ func calculateFloatRate(isCounter, isRate bool, rangeStart, rangeEnd int64, rang
 	averageDurationBetweenSamples := sampledInterval / float64(count-1)
 
 	extrapolationThreshold := averageDurationBetweenSamples * 1.1
-	extrapolateToInterval := sampledInterval
 
 	if durationToStart >= extrapolationThreshold {
 		durationToStart = averageDurationBetweenSamples / 2
@@ -264,16 +286,11 @@ func calculateFloatRate(isCounter, isRate bool, rangeStart, rangeEnd int64, rang
 		}
 	}
 
-	extrapolateToInterval += durationToStart
-
 	if durationToEnd >= extrapolationThreshold {
 		durationToEnd = averageDurationBetweenSamples / 2
 	}
 
-	extrapolateToInterval += durationToEnd
-
-	factor := extrapolateToInterval / sampledInterval
-
+	factor := (sampledInterval + durationToStart + durationToEnd) / sampledInterval
 	if isRate {
 		factor /= rangeSeconds
 	}
@@ -302,7 +319,7 @@ func rateSeriesValidator() RangeVectorSeriesValidationFunction {
 	}
 }
 
-func delta(step *types.RangeVectorStepData, rangeSeconds float64, _ []types.ScalarData, _ types.QueryTimeRange, emitAnnotation types.EmitAnnotationFunc, _ *limiter.MemoryConsumptionTracker) (float64, bool, *histogram.FloatHistogram, error) {
+func delta(step *types.RangeVectorStepData, _ []types.ScalarData, _ types.QueryTimeRange, emitAnnotation types.EmitAnnotationFunc, _ *limiter.MemoryConsumptionTracker) (float64, bool, *histogram.FloatHistogram, error) {
 	fHead, fTail := step.Floats.UnsafePoints()
 	fCount := len(fHead) + len(fTail)
 
@@ -315,6 +332,8 @@ func delta(step *types.RangeVectorStepData, rangeSeconds float64, _ []types.Scal
 		emitAnnotation(annotations.NewMixedFloatsHistogramsWarning)
 		return 0, false, nil, nil
 	}
+
+	rangeSeconds := float64(step.RangeEnd-step.RangeStart) / 1000
 
 	if fCount >= 2 {
 		val := floatDelta(fCount, fHead, fTail, step.RangeStart, step.RangeEnd, rangeSeconds)
@@ -361,14 +380,25 @@ func histogramDelta(hCount int, hHead []promql.HPoint, hTail []promql.HPoint, ra
 		return nil, histogram.ErrHistogramsIncompatibleSchema
 	}
 
-	delta, err := lastPoint.H.Copy().Sub(firstPoint.H)
+	delta, _, nhcbBoundsReconciled, err := lastPoint.H.Copy().Sub(firstPoint.H)
 	if err != nil {
 		return nil, err
 	}
 	if firstPoint.H.CounterResetHint != histogram.GaugeType || lastPoint.H.CounterResetHint != histogram.GaugeType {
 		emitAnnotation(annotations.NewNativeHistogramNotGaugeWarning)
 	}
+	if nhcbBoundsReconciled {
+		emitAnnotation(newSubMismatchedCustomBucketsHistogramInfo)
+	}
 
-	val := calculateHistogramRate(false, rangeStart, rangeEnd, rangeSeconds, firstPoint, lastPoint, delta, hCount)
+	val := calculateHistogramRate(false, false, rangeStart, rangeEnd, rangeSeconds, firstPoint, lastPoint, delta, hCount, firstPoint.H.Count)
 	return val, nil
+}
+
+func newAddMismatchedCustomBucketsHistogramInfo(_ string, expressionPosition posrange.PositionRange) error {
+	return annotations.NewMismatchedCustomBucketsHistogramsInfo(expressionPosition, annotations.HistogramAdd)
+}
+
+func newSubMismatchedCustomBucketsHistogramInfo(_ string, expressionPosition posrange.PositionRange) error {
+	return annotations.NewMismatchedCustomBucketsHistogramsInfo(expressionPosition, annotations.HistogramSub)
 }

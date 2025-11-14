@@ -34,8 +34,8 @@ func NewDeduplicateAndMerge(inner types.InstantVectorOperator, memoryConsumption
 	return &DeduplicateAndMerge{Inner: inner, MemoryConsumptionTracker: memoryConsumptionTracker}
 }
 
-func (d *DeduplicateAndMerge) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
-	innerMetadata, err := d.Inner.SeriesMetadata(ctx)
+func (d *DeduplicateAndMerge) SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
+	innerMetadata, err := d.Inner.SeriesMetadata(ctx, matchers)
 
 	if err != nil {
 		return nil, err
@@ -100,7 +100,10 @@ func (d *DeduplicateAndMerge) computeOutputSeriesGroups(innerMetadata []types.Se
 	}
 
 	for _, group := range outputGroups {
-		outputMetadata = append(outputMetadata, innerMetadata[group[0]])
+		outputMetadata, err = types.AppendSeriesMetadata(d.MemoryConsumptionTracker, outputMetadata, innerMetadata[group[0]])
+		if err != nil {
+			return nil, nil, err
+		}
 	}
 
 	return outputGroups, outputMetadata, nil
@@ -142,6 +145,10 @@ func (d *DeduplicateAndMerge) ExpressionPosition() posrange.PositionRange {
 
 func (d *DeduplicateAndMerge) Prepare(ctx context.Context, params *types.PrepareParams) error {
 	return d.Inner.Prepare(ctx, params)
+}
+
+func (d *DeduplicateAndMerge) Finalize(ctx context.Context) error {
+	return d.Inner.Finalize(ctx)
 }
 
 func (d *DeduplicateAndMerge) Close() {

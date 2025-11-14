@@ -130,7 +130,6 @@ func TestBlockBuilder(t *testing.T) {
 					labels.MustNewMatcher(labels.MatchRegexp, "foo", ".*"),
 				)
 			}
-
 		})
 	}
 }
@@ -167,7 +166,11 @@ func produceSamples(ctx context.Context, t *testing.T, kafkaClient *kgo.Client, 
 	for _, st := range sampleTs {
 		samples = append(samples, floatSample(st.UnixMilli(), 1)...)
 	}
-	val := createWriteRequest(t, tenantID, samples, nil)
+
+	req := createWriteRequest(tenantID, samples, nil)
+	val, err := req.Marshal()
+	require.NoError(t, err)
+
 	produceRecords(ctx, t, kafkaClient, ts, tenantID, testTopic, partition, val)
 	return samples
 }
@@ -254,6 +257,10 @@ func (m *mockSchedulerClient) CompleteJob(key schedulerpb.JobKey) error {
 	m.completeJobCalls = append(m.completeJobCalls, key)
 
 	// Do nothing.
+	return nil
+}
+
+func (m *mockSchedulerClient) FailJob(key schedulerpb.JobKey) error {
 	return nil
 }
 

@@ -68,9 +68,9 @@ overrides:
 		cmpopts.IgnoreFields(validation.Limits{}, "activeSeriesMergedCustomTrackersConfig"),
 	}
 
-	require.True(t, cmp.Equal(expected, *loadedLimits["1234"], compareOptions...))
-	require.True(t, cmp.Equal(expected, *loadedLimits["1235"], compareOptions...))
-	require.True(t, cmp.Equal(expected, *loadedLimits["1236"], compareOptions...))
+	require.Empty(t, cmp.Diff(expected, *loadedLimits["1234"], compareOptions...))
+	require.Empty(t, cmp.Diff(expected, *loadedLimits["1235"], compareOptions...))
+	require.Empty(t, cmp.Diff(expected, *loadedLimits["1236"], compareOptions...))
 }
 
 func TestRuntimeConfigLoader_ShouldLoadEmptyFile(t *testing.T) {
@@ -141,12 +141,12 @@ overrides:
 func TestRuntimeConfigLoader_RunsValidation(t *testing.T) {
 	for _, tc := range []struct {
 		name     string
-		validate func(limits validation.Limits) error
+		validate func(limits *validation.Limits) error
 		hasError bool
 	}{
 		{
 			name: "successful validate doesn't return error",
-			validate: func(validation.Limits) error {
+			validate: func(*validation.Limits) error {
 				return nil
 			},
 		},
@@ -155,7 +155,7 @@ func TestRuntimeConfigLoader_RunsValidation(t *testing.T) {
 		},
 		{
 			name: "unsuccessful validate returns error",
-			validate: func(validation.Limits) error {
+			validate: func(*validation.Limits) error {
 				return errors.New("validation failed")
 			},
 			hasError: true,

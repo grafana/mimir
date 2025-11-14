@@ -34,6 +34,15 @@ func init() {
 	planning.RegisterNodeFactory(func() planning.Node {
 		return &Subquery{SubqueryDetails: &SubqueryDetails{}}
 	})
+	planning.RegisterNodeFactory(func() planning.Node {
+		return &DeduplicateAndMerge{DeduplicateAndMergeDetails: &DeduplicateAndMergeDetails{}}
+	})
+	planning.RegisterNodeFactory(func() planning.Node {
+		return &StepInvariantExpression{StepInvariantExpressionDetails: &StepInvariantExpressionDetails{}}
+	})
+	planning.RegisterNodeFactory(func() planning.Node {
+		return &DropName{DropNameDetails: &DropNameDetails{}}
+	})
 }
 
 // Why do we have this slightly odd structure with some fields declared directly on the node type and some in the Protobuf message types?

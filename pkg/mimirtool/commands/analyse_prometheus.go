@@ -11,7 +11,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
-	"sort"
+	"slices"
 	"sync"
 	"time"
 
@@ -23,7 +23,6 @@ import (
 	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/model/labels"
 	log "github.com/sirupsen/logrus"
 
 	"github.com/grafana/mimir/pkg/mimirtool/analyze"
@@ -130,7 +129,7 @@ func queryMetricNames(api v1.API, readTimeout time.Duration) (model.LabelValues,
 	var metricNames model.LabelValues
 	err := withBackoff(ctx, func() error {
 		var err error
-		metricNames, _, err = api.LabelValues(ctx, labels.MetricName, nil, time.Now().Add(-10*time.Minute), time.Now())
+		metricNames, _, err = api.LabelValues(ctx, model.MetricNameLabel, nil, time.Now().Add(-10*time.Minute), time.Now())
 		return err
 	})
 	if err != nil {
@@ -284,15 +283,15 @@ func (a AnalyzeResult) metricsCounts() []analyze.MetricCount {
 				Count: count,
 			})
 		}
-		sort.Slice(jobCounts, func(i, j int) bool {
-			return jobCounts[i].Count > jobCounts[j].Count
+		slices.SortFunc(jobCounts, func(a, b analyze.JobCount) int {
+			return b.Count - a.Count
 		})
 
 		metricCount = append(metricCount, analyze.MetricCount{Metric: string(metric), Count: counts.totalCount, JobCounts: jobCounts})
 	}
 
-	sort.Slice(metricCount, func(i, j int) bool {
-		return metricCount[i].Count > metricCount[j].Count
+	slices.SortFunc(metricCount, func(a, b analyze.MetricCount) int {
+		return b.Count - a.Count
 	})
 
 	return metricCount
@@ -316,13 +315,17 @@ func withBackoff(ctx context.Context, fn func() error) error {
 	backoff := backoff.New(ctx, backoff.Config{
 		MaxRetries: 10,
 	})
-
+	var err error
 	for backoff.Ongoing() {
-		if err := fn(); err == nil {
+		if err = fn(); err == nil {
 			return nil
 		}
 
 		backoff.Wait()
+	}
+
+	if err != nil {
+		return err
 	}
 
 	return backoff.Err()

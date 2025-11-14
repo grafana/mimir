@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"io"
 	"path"
+	"sync"
 	"time"
 
 	"github.com/go-kit/log"
@@ -37,12 +38,14 @@ type Updater struct {
 	bkt                           objstore.InstrumentedBucket
 	logger                        log.Logger
 	getDeletionMarkersConcurrency int
+	updateBlocksConcurrency       int
 }
 
-func NewUpdater(bkt objstore.Bucket, userID string, cfgProvider bucket.TenantConfigProvider, getDeletionMarkersConcurrency int, logger log.Logger) *Updater {
+func NewUpdater(bkt objstore.Bucket, userID string, cfgProvider bucket.TenantConfigProvider, getDeletionMarkersConcurrency int, updateBlocksConcurrency int, logger log.Logger) *Updater {
 	return &Updater{
 		bkt:                           bucket.NewUserBucketClient(userID, bkt, cfgProvider),
 		getDeletionMarkersConcurrency: getDeletionMarkersConcurrency,
+		updateBlocksConcurrency:       updateBlocksConcurrency,
 		logger:                        logger,
 	}
 }
@@ -103,6 +106,7 @@ func (w *Updater) UpdateIndex(ctx context.Context, old *Index) (*Index, map[ulid
 func (w *Updater) updateBlocks(ctx context.Context, old []*Block) (blocks []*Block, partials map[ulid.ULID]error, _ error) {
 	discovered := map[ulid.ULID]struct{}{}
 	partials = map[ulid.ULID]error{}
+	var partialsMx sync.Mutex
 
 	// Find all blocks in the storage.
 	err := w.bkt.Iter(ctx, "", func(name string) error {
@@ -128,25 +132,37 @@ func (w *Updater) updateBlocks(ctx context.Context, old []*Block) (blocks []*Blo
 	// Remaining blocks are new ones and we have to fetch the meta.json for each of them, in order
 	// to find out if their upload has been completed (meta.json is uploaded last) and get the block
 	// information to store in the bucket index.
+	discoveredSlice := make([]ulid.ULID, 0, len(discovered))
 	for id := range discovered {
+		discoveredSlice = append(discoveredSlice, id)
+	}
+
+	updatedBlocks, err := concurrency.ForEachJobMergeResults(ctx, discoveredSlice, w.updateBlocksConcurrency, func(ctx context.Context, id ulid.ULID) ([]*Block, error) {
 		b, err := w.updateBlockIndexEntry(ctx, id)
 		if err == nil {
-			blocks = append(blocks, b)
-			continue
+			return []*Block{b}, nil
 		}
 
 		if errors.Is(err, ErrBlockMetaNotFound) {
+			partialsMx.Lock()
 			partials[id] = err
+			partialsMx.Unlock()
 			level.Warn(w.logger).Log("msg", "skipped partial block when updating bucket index", "block", id.String())
-			continue
+			return nil, nil
 		}
 		if errors.Is(err, ErrBlockMetaCorrupted) {
+			partialsMx.Lock()
 			partials[id] = err
+			partialsMx.Unlock()
 			level.Error(w.logger).Log("msg", "skipped block with corrupted meta.json when updating bucket index", "block", id.String(), "err", err)
-			continue
+			return nil, nil
 		}
+		return nil, err
+	})
+	if err != nil {
 		return nil, nil, err
 	}
+	blocks = append(blocks, updatedBlocks...)
 	level.Info(w.logger).Log("msg", "fetched blocks metas for newly discovered blocks", "total_blocks", len(blocks), "partial_errors", len(partials))
 
 	return blocks, partials, nil
@@ -204,6 +220,7 @@ func (w *Updater) updateBlockIndexEntry(ctx context.Context, id ulid.ULID) (*Blo
 func (w *Updater) updateBlockDeletionMarks(ctx context.Context, old []*BlockDeletionMark) ([]*BlockDeletionMark, map[ulid.ULID]error, error) {
 	out := make([]*BlockDeletionMark, 0, len(old))
 	partials := map[ulid.ULID]error{}
+	var partialsMx sync.Mutex
 
 	// Find all markers in the storage.
 	discovered, err := block.ListBlockDeletionMarks(ctx, w.bkt)
@@ -240,7 +257,9 @@ func (w *Updater) updateBlockDeletionMarks(ctx context.Context, old []*BlockDele
 			}
 			// If the block's deletion mark is not found and the block's directory contains some files, then it has not yet been
 			// permanently deleted. Record any partially deleted blocks so that we can check if deletion should be retried.
+			partialsMx.Lock()
 			partials[id] = err
+			partialsMx.Unlock()
 			return nil, nil
 		}
 		if errors.Is(err, ErrBlockDeletionMarkCorrupted) {

@@ -88,15 +88,25 @@ func TestDurationWithNegativeJitter(t *testing.T) {
 	}
 }
 
-func TestDurationWithJitterFamily_ZeroOutputs(t *testing.T) {
-	// Make sure all of these functions return zero when the computed variance is <= 0.
+func TestDurationWithJitterFamily_ZeroVariance(t *testing.T) {
+	// Make sure all jitter functions return the input when variance is 0.
 
-	type durFunc func(time.Duration, float64) time.Duration
-	for _, f := range []durFunc{DurationWithJitter, DurationWithNegativeJitter, DurationWithPositiveJitter} {
-		assert.Equal(t, time.Duration(0), f(time.Duration(0), 0.5))
-		assert.Equal(t, time.Duration(0), f(time.Duration(7), 0.1))
-		assert.Equal(t, time.Duration(0), f(time.Duration(7), -0.1))
-		assert.Equal(t, time.Duration(0), f(10*time.Minute, -0.1))
+	tests := []struct {
+		input    time.Duration
+		variance float64
+	}{
+		{time.Duration(0), 0.5},
+		{time.Duration(7), 0.1},
+		{time.Duration(7), -0.1},
+		{10 * time.Minute, -0.1},
+		{time.Second, 0.0},
+	}
+
+	for _, test := range tests {
+		// All jitter functions should return input when variance <= 0
+		assert.Equal(t, test.input, DurationWithJitter(test.input, test.variance))
+		assert.Equal(t, test.input, DurationWithNegativeJitter(test.input, test.variance))
+		assert.Equal(t, test.input, DurationWithPositiveJitter(test.input, test.variance))
 	}
 }
 

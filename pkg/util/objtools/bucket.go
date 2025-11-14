@@ -10,8 +10,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/pkg/errors"
-
 	"github.com/grafana/mimir/pkg/storage/bucket"
 )
 
@@ -75,14 +73,14 @@ func (result *ListResult) ToNamesWithoutPrefix(prefix string) ([]string, error) 
 	for _, attr := range result.Objects {
 		name, hasPrefix := strings.CutPrefix(attr.Name, prefix)
 		if !hasPrefix {
-			return nil, errors.Errorf("ToNames: object result has an invalid prefix: %v, expected prefix: %v", attr.Name, prefix)
+			return nil, fmt.Errorf("ToNames: object result has an invalid prefix: %v, expected prefix: %v", attr.Name, prefix)
 		}
 		names = append(names, name)
 	}
 	for _, p := range result.Prefixes {
 		name, hasPrefix := strings.CutPrefix(p, prefix)
 		if !hasPrefix {
-			return nil, errors.Errorf("ToNames: prefix result has an invalid prefix: %v, expected prefix: %v", p, prefix)
+			return nil, fmt.Errorf("ToNames: prefix result has an invalid prefix: %v, expected prefix: %v", p, prefix)
 		}
 		names = append(names, strings.TrimSuffix(name, Delim))
 	}

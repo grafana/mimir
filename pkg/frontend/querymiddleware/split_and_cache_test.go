@@ -33,7 +33,6 @@ import (
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/atomic"
 
-	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier"
 	"github.com/grafana/mimir/pkg/querier/stats"
@@ -131,7 +130,7 @@ func TestSplitAndCacheMiddleware_SplitByInterval(t *testing.T) {
 			},
 		))
 
-		codec = newTestPrometheusCodec()
+		codec = newTestCodec()
 	)
 
 	var actualCount atomic.Int32
@@ -245,7 +244,7 @@ func TestSplitAndCacheMiddleware_ResultsCache(t *testing.T) {
 		false,
 		24*time.Hour,
 		mockLimits{maxCacheFreshness: 10 * time.Minute, resultsCacheTTL: resultsCacheTTL, resultsCacheOutOfOrderWindowTTL: resultsCacheLowerTTL},
-		newTestPrometheusCodec(),
+		newTestCodec(),
 		cacheBackend,
 		DefaultCacheKeyGenerator{interval: day},
 		PrometheusResponseExtractor{},
@@ -387,7 +386,7 @@ func TestSplitAndCacheMiddleware_ResultsCacheNoStore(t *testing.T) {
 		false,
 		24*time.Hour,
 		mockLimits{maxCacheFreshness: 10 * time.Minute, resultsCacheTTL: resultsCacheTTL, resultsCacheOutOfOrderWindowTTL: resultsCacheLowerTTL},
-		newTestPrometheusCodec(),
+		newTestCodec(),
 		cacheBackend,
 		DefaultCacheKeyGenerator{interval: day},
 		PrometheusResponseExtractor{},
@@ -519,7 +518,7 @@ func TestSplitAndCacheMiddleware_ResultsCache_ShouldNotLookupCacheIfStepIsNotAli
 		false,
 		24*time.Hour,
 		mockLimits{maxCacheFreshness: 10 * time.Minute},
-		newTestPrometheusCodec(),
+		newTestCodec(),
 		cacheBackend,
 		DefaultCacheKeyGenerator{interval: day},
 		PrometheusResponseExtractor{},
@@ -638,7 +637,7 @@ func TestSplitAndCacheMiddleware_ResultsCache_EnabledCachingOfStepUnalignedReque
 		false,
 		24*time.Hour,
 		limits,
-		newTestPrometheusCodec(),
+		newTestCodec(),
 		cacheBackend,
 		DefaultCacheKeyGenerator{interval: day},
 		PrometheusResponseExtractor{},
@@ -807,7 +806,7 @@ func TestSplitAndCacheMiddleware_ResultsCache_ShouldNotCacheRequestEarlierThanMa
 				false,
 				24*time.Hour,
 				mockLimits{maxCacheFreshness: maxCacheFreshness, resultsCacheTTL: resultsCacheTTL, resultsCacheOutOfOrderWindowTTL: resultsCacheLowerTTL},
-				newTestPrometheusCodec(),
+				newTestCodec(),
 				cacheBackend,
 				keyGenerator,
 				PrometheusResponseExtractor{},
@@ -1020,7 +1019,7 @@ func TestSplitAndCacheMiddleware_ResultsCacheFuzzy(t *testing.T) {
 						maxCacheFreshness:   testData.maxCacheFreshness,
 						maxQueryParallelism: testData.maxQueryParallelism,
 					},
-					newTestPrometheusCodec(),
+					newTestCodec(),
 					cache.NewMockCache(),
 					DefaultCacheKeyGenerator{interval: day},
 					PrometheusResponseExtractor{},
@@ -1323,7 +1322,7 @@ func TestSplitAndCacheMiddleware_ResultsCache_ExtentsEdgeCases(t *testing.T) {
 				true,
 				24*time.Hour,
 				mockLimits{resultsCacheTTL: resultsCacheTTL, resultsCacheOutOfOrderWindowTTL: resultsCacheLowerTTL},
-				newTestPrometheusCodec(),
+				newTestCodec(),
 				cacheBackend,
 				keyGenerator,
 				PrometheusResponseExtractor{},
@@ -1387,7 +1386,7 @@ func TestSplitAndCacheMiddleware_StoreAndFetchCacheExtents(t *testing.T) {
 			resultsCacheOutOfOrderWindowTTL: 10 * time.Minute,
 			outOfOrderTimeWindow:            30 * time.Minute,
 		},
-		newTestPrometheusCodec(),
+		newTestCodec(),
 		cacheBackend,
 		DefaultCacheKeyGenerator{interval: day},
 		PrometheusResponseExtractor{},
@@ -1469,7 +1468,7 @@ func TestSplitAndCacheMiddleware_WrapMultipleTimes(t *testing.T) {
 		false,
 		24*time.Hour,
 		mockLimits{},
-		newTestPrometheusCodec(),
+		newTestCodec(),
 		cache.NewMockCache(),
 		DefaultCacheKeyGenerator{interval: day},
 		PrometheusResponseExtractor{},
@@ -1698,7 +1697,7 @@ func mockQueryRangeURL(startTime, endTime time.Time, query string) string {
 
 func mockProtobufResponseWithSamplesAndHistograms(labels []mimirpb.LabelAdapter, samples []mimirpb.Sample, histograms []mimirpb.FloatHistogramPair) *mimirpb.QueryResponse {
 	return &mimirpb.QueryResponse{
-		Status: mimirpb.QueryResponse_SUCCESS,
+		Status: mimirpb.QUERY_STATUS_SUCCESS,
 		Data: &mimirpb.QueryResponse_Matrix{
 			Matrix: &mimirpb.MatrixData{
 				Series: []mimirpb.MatrixSeries{
@@ -1755,7 +1754,7 @@ type roundTripper struct {
 // using the codec to translate requests and responses.
 func newRoundTripper(next http.RoundTripper, codec Codec, logger log.Logger, middlewares ...MetricsQueryMiddleware) http.RoundTripper {
 	return roundTripper{
-		handler: MergeMetricsQueryMiddlewares(middlewares...).Wrap(roundTripperHandler{
+		handler: MergeMetricsQueryMiddlewares(middlewares...).Wrap(httpQueryRequestRoundTripperHandler{
 			logger: logger,
 			next:   next,
 			codec:  codec,
@@ -1827,11 +1826,11 @@ func TestSplitQueryByInterval(t *testing.T) {
 	queryFooExpr, _ := parser.ParseExpr(queryFoo)
 	queryFooAtStart := "foo @ start()"
 	queryFooAtStartExpr, _ := parser.ParseExpr(queryFooAtStart)
-	queryFooAtZero := "foo @ 0.000"
+	queryFooAtZero := "foo @ 0.00000"
 	queryFooAtZeroExpr, _ := parser.ParseExpr(queryFooAtZero)
 	queryFooSubqueryAtStart := "sum_over_time(foo[1d:] @ start())"
 	queryFooSubqueryAtStartExpr, _ := parser.ParseExpr(queryFooSubqueryAtStart)
-	queryFooSubqueryAtZero := "sum_over_time(foo[1d:] @ 0.000)"
+	queryFooSubqueryAtZero := "sum_over_time(foo[1d:] @ 0.00000)"
 	queryFooSubqueryAtZeroExpr, _ := parser.ParseExpr(queryFooSubqueryAtZero)
 	lookbackDelta := 5 * time.Minute
 
@@ -2014,13 +2013,12 @@ func Test_evaluateAtModifier(t *testing.T) {
 	)
 	for _, tt := range []struct {
 		in, expected string
-		err          error
 	}{
-		{"topk(5, rate(http_requests_total[1h] @ start()))", "topk(5, rate(http_requests_total[1h] @ 1546300.800))", nil},
-		{"topk(5, rate(http_requests_total[1h] @ 0))", "topk(5, rate(http_requests_total[1h] @ 0.000))", nil},
-		{"http_requests_total[1h] @ 10.001", "http_requests_total[1h] @ 10.001", nil},
-		{"sum_over_time(http_requests_total[1h:] @ start())", "sum_over_time(http_requests_total[1h:] @ 1546300.800)", nil},
-		{"sum_over_time((http_requests_total @ end())[1h:] @ start())", "sum_over_time((http_requests_total @ 1646300.800)[1h:] @ 1546300.800)", nil},
+		{"topk(5, rate(http_requests_total[1h] @ start()))", "topk(5, rate(http_requests_total[1h] @ 1546300.800))"},
+		{"topk(5, rate(http_requests_total[1h] @ 0))", "topk(5, rate(http_requests_total[1h] @ 0.000))"},
+		{"http_requests_total[1h] @ 10.001", "http_requests_total[1h] @ 10.001"},
+		{"sum_over_time(http_requests_total[1h:] @ start())", "sum_over_time(http_requests_total[1h:] @ 1546300.800)"},
+		{"sum_over_time((http_requests_total @ end())[1h:] @ start())", "sum_over_time((http_requests_total @ 1646300.800)[1h:] @ 1546300.800)"},
 		{
 			`min_over_time(
 				sum by(cluster) (
@@ -2047,21 +2045,17 @@ func Test_evaluateAtModifier(t *testing.T) {
 						rate(http_requests_total[10m] @ 1546300.800)
 					[5m:1m])
 				[2m:])
-			[10m:])`, nil,
+			[10m:])`,
 		},
-		{"sum by (foo) (bar[buzz])", "foo{}", apierror.New(apierror.TypeBadData, `invalid parameter "query": 1:19: parse error: unexpected character in duration expression: 'b'`)},
 	} {
 		t.Run(tt.in, func(t *testing.T) {
 			t.Parallel()
+			expr, err := parser.ParseExpr(tt.in)
+			require.NoError(t, err)
 			expectedExpr, err := parser.ParseExpr(tt.expected)
 			require.NoError(t, err)
-			out, err := evaluateAtModifierFunction(tt.in, start, end)
-			if tt.err != nil {
-				require.Equal(t, tt.err, err)
-				return
-			}
-			require.NoError(t, err)
-			require.Equal(t, expectedExpr.String(), out)
+			evaluateAtModifierFunction(expr, start, end)
+			require.Equal(t, expectedExpr.String(), expr.String()) // Character positions are not identical between exprs.
 		})
 	}
 }
@@ -2198,7 +2192,7 @@ func TestSplitAndCacheMiddleware_SamplesProcessedCacheAdjustedAccumulation(t *te
 		false,
 		24*time.Hour,
 		mockLimits{},
-		newTestPrometheusCodec(),
+		newTestCodec(),
 		cacheBackend,
 		keyGen,
 		PrometheusResponseExtractor{},
@@ -2273,7 +2267,7 @@ func TestSplitAndCacheMiddleware_CacheSamplesProcessedStats(t *testing.T) {
 				testData.cacheSamplesProcessedStats,
 				24*time.Hour,
 				mockLimits{},
-				newTestPrometheusCodec(),
+				newTestCodec(),
 				cache.NewMockCache(),
 				DefaultCacheKeyGenerator{interval: day},
 				PrometheusResponseExtractor{},

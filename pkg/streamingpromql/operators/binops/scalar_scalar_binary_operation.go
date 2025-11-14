@@ -8,6 +8,7 @@ import (
 
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
+	"github.com/prometheus/prometheus/util/annotations"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
@@ -21,7 +22,9 @@ type ScalarScalarBinaryOperation struct {
 	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
 
 	opFunc             binaryOperationFunc
+	emitAnnotation     types.EmitAnnotationFunc
 	expressionPosition posrange.PositionRange
+	annotations        *annotations.Annotations
 }
 
 var _ types.ScalarOperator = &ScalarScalarBinaryOperation{}
@@ -30,6 +33,7 @@ func NewScalarScalarBinaryOperation(
 	left, right types.ScalarOperator,
 	op parser.ItemType,
 	memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
+	annotations *annotations.Annotations,
 	expressionPosition posrange.PositionRange,
 ) (*ScalarScalarBinaryOperation, error) {
 	s := &ScalarScalarBinaryOperation{
@@ -37,6 +41,7 @@ func NewScalarScalarBinaryOperation(
 		Right:                    right,
 		Op:                       op,
 		MemoryConsumptionTracker: memoryConsumptionTracker,
+		annotations:              annotations,
 		expressionPosition:       expressionPosition,
 	}
 
@@ -48,6 +53,10 @@ func NewScalarScalarBinaryOperation(
 
 	if s.opFunc == nil {
 		return nil, compat.NewNotSupportedError(fmt.Sprintf("binary expression with '%s'", op))
+	}
+
+	s.emitAnnotation = func(generator types.AnnotationGenerator) {
+		s.annotations.Add(generator("", s.expressionPosition))
 	}
 
 	return s, nil
@@ -75,7 +84,7 @@ func (s *ScalarScalarBinaryOperation) GetValues(ctx context.Context) (types.Scal
 	for i, left := range leftValues.Samples {
 		right := rightValues.Samples[i]
 
-		f, h, ok, valid, err := s.opFunc(left.F, right.F, nil, nil, true, true)
+		f, h, ok, valid, err := s.opFunc(left.F, right.F, nil, nil, true, true, s.emitAnnotation)
 
 		if err != nil {
 			return types.ScalarData{}, err
@@ -106,11 +115,19 @@ func (s *ScalarScalarBinaryOperation) ExpressionPosition() posrange.PositionRang
 }
 
 func (s *ScalarScalarBinaryOperation) Prepare(ctx context.Context, params *types.PrepareParams) error {
-	err := s.Left.Prepare(ctx, params)
-	if err != nil {
+	if err := s.Left.Prepare(ctx, params); err != nil {
 		return err
 	}
+
 	return s.Right.Prepare(ctx, params)
+}
+
+func (s *ScalarScalarBinaryOperation) Finalize(ctx context.Context) error {
+	if err := s.Left.Finalize(ctx); err != nil {
+		return err
+	}
+
+	return s.Right.Finalize(ctx)
 }
 
 func (s *ScalarScalarBinaryOperation) Close() {

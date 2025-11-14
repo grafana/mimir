@@ -73,7 +73,7 @@
                   "span": 4,
                   "targets": [
                      {
-                        "expr": "sum by(pod) (rate(container_cpu_usage_seconds_total{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"distributor|ingester|mimir-write\"}[$__rate_interval]))",
+                        "expr": "sum by(pod) (rate(container_cpu_usage_seconds_total{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"distributor|ingester\"}[$__rate_interval]))",
                         "format": "time_series",
                         "legendFormat": "{{pod}}",
                         "legendLink": null
@@ -121,7 +121,7 @@
                   "span": 4,
                   "targets": [
                      {
-                        "expr": "max by(pod) (container_memory_working_set_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"distributor|ingester|mimir-write\"})",
+                        "expr": "max by(pod) (container_memory_working_set_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"distributor|ingester\"})",
                         "format": "time_series",
                         "legendFormat": "{{pod}}",
                         "legendLink": null
@@ -169,7 +169,7 @@
                   "span": 4,
                   "targets": [
                      {
-                        "expr": "sum by(pod) (go_memstats_heap_inuse_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"distributor|ingester|mimir-write\"})",
+                        "expr": "sum by(pod) (go_memstats_heap_inuse_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"distributor|ingester\"})",
                         "format": "time_series",
                         "legendFormat": "{{pod}}",
                         "legendLink": null
@@ -374,6 +374,33 @@
                                  }
                               }
                            ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byRegexp",
+                              "options": "/.+ - ommkilled/"
+                           },
+                           "properties": [
+                              {
+                                 "id": "color",
+                                 "value": {
+                                    "fixedColor": "#E24D42",
+                                    "mode": "fixed"
+                                 }
+                              },
+                              {
+                                 "id": "custom.axisPlacement",
+                                 "value": "hidden"
+                              },
+                              {
+                                 "id": "custom.drawStyle",
+                                 "value": "points"
+                              },
+                              {
+                                 "id": "unit",
+                                 "value": "none"
+                              }
+                           ]
                         }
                      ]
                   },
@@ -406,6 +433,12 @@
                         "expr": "min(kube_pod_container_resource_requests{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"distributor\",resource=\"memory\"})",
                         "format": "time_series",
                         "legendFormat": "request",
+                        "legendLink": null
+                     },
+                     {
+                        "expr": "group by (pod, reason) (\n  kube_pod_container_status_last_terminated_reason{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"distributor\",reason=\"OOMKilled\"}\n  unless\n  # Note, this leg offsets by the \"$__interval\" to find the first occurrence of OOMKilled in the gauge.\n  (kube_pod_container_status_last_terminated_reason{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"distributor\",reason=\"OOMKilled\"} offset $__interval == bool 0)\n) != 0\n",
+                        "format": "time_series",
+                        "legendFormat": "{{pod}} - ommkilled",
                         "legendLink": null
                      }
                   ],
@@ -495,7 +528,33 @@
                         },
                         "unit": "short"
                      },
-                     "overrides": [ ]
+                     "overrides": [
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "limit"
+                           },
+                           "properties": [
+                              {
+                                 "id": "color",
+                                 "value": {
+                                    "fixedColor": "#E02F44",
+                                    "mode": "fixed"
+                                 }
+                              },
+                              {
+                                 "id": "custom.fillOpacity",
+                                 "value": 0
+                              },
+                              {
+                                 "id": "custom.lineStyle",
+                                 "value": {
+                                    "fill": "dash"
+                                 }
+                              }
+                           ]
+                        }
+                     ]
                   },
                   "id": 7,
                   "links": [ ],
@@ -511,9 +570,15 @@
                   "span": 6,
                   "targets": [
                      {
-                        "expr": "sum by(pod) (cortex_ingester_memory_series{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"})",
+                        "expr": "sum by(pod) (cortex_ingester_memory_series{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"})",
                         "format": "time_series",
                         "legendFormat": "{{pod}}",
+                        "legendLink": null
+                     },
+                     {
+                        "expr": "min by(namespace) (cortex_ingester_instance_limits{namespace=\"$namespace\", limit=\"max_series\"} > 0)",
+                        "format": "time_series",
+                        "legendFormat": "limit",
                         "legendLink": null
                      }
                   ],
@@ -827,6 +892,33 @@
                                  }
                               }
                            ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byRegexp",
+                              "options": "/.+ - ommkilled/"
+                           },
+                           "properties": [
+                              {
+                                 "id": "color",
+                                 "value": {
+                                    "fixedColor": "#E24D42",
+                                    "mode": "fixed"
+                                 }
+                              },
+                              {
+                                 "id": "custom.axisPlacement",
+                                 "value": "hidden"
+                              },
+                              {
+                                 "id": "custom.drawStyle",
+                                 "value": "points"
+                              },
+                              {
+                                 "id": "unit",
+                                 "value": "none"
+                              }
+                           ]
                         }
                      ]
                   },
@@ -859,6 +951,12 @@
                         "expr": "min(kube_pod_container_resource_requests{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"ingester\",resource=\"memory\"})",
                         "format": "time_series",
                         "legendFormat": "request",
+                        "legendLink": null
+                     },
+                     {
+                        "expr": "group by (pod, reason) (\n  kube_pod_container_status_last_terminated_reason{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"ingester\",reason=\"OOMKilled\"}\n  unless\n  # Note, this leg offsets by the \"$__interval\" to find the first occurrence of OOMKilled in the gauge.\n  (kube_pod_container_status_last_terminated_reason{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"ingester\",reason=\"OOMKilled\"} offset $__interval == bool 0)\n) != 0\n",
+                        "format": "time_series",
+                        "legendFormat": "{{pod}} - ommkilled",
                         "legendLink": null
                      }
                   ],

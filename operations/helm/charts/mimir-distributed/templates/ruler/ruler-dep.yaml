@@ -1,4 +1,4 @@
-{{- if and .Values.ruler.enabled (not .Values.federation_frontend.disableOtherComponents) -}}
+{{- if .Values.ruler.enabled -}}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -11,6 +11,9 @@ metadata:
 spec:
   {{- if or (not .Values.ruler.kedaAutoscaling.enabled) (.Values.ruler.kedaAutoscaling.preserveReplicas) }}
   replicas: {{ .Values.ruler.replicas }}
+  {{- end }}
+  {{- with .Values.ruler.revisionHistoryLimit }}
+  revisionHistoryLimit: {{ . }}
   {{- end }}
   selector:
     matchLabels:
@@ -49,6 +52,9 @@ spec:
             - "-target=ruler"
             - "-config.expand-env=true"
             - "-config.file=/etc/mimir/mimir.yaml"
+            # Set the memory ballast to help with extensive CPU usage due to GC at ruler's start. This prevents the autoscaler
+            # from adding more replicas around rollouts, and reduces the effect of GC on a restart overall.
+            - "-mem-ballast-size-bytes=1073741824"
             - "-distributor.remote-timeout=10s"
           {{- if .Values.ingester.zoneAwareReplication.migration.enabled }}
             {{- if not .Values.ingester.zoneAwareReplication.migration.writePath }}
@@ -76,10 +82,6 @@ spec:
             {{- end }}
             - name: config
               mountPath: /etc/mimir
-            {{- if .Values.enterprise.enabled }}
-            - name: license
-              mountPath: /license
-            {{- end }}
             - name: runtime-config
               mountPath: /var/{{ include "mimir.name" . }}
             - name: storage
@@ -107,24 +109,7 @@ spec:
             {{- toYaml .Values.ruler.resources | nindent 12 }}
           securityContext:
             {{- toYaml .Values.ruler.containerSecurityContext | nindent 12 }}
-          {{- if or .Values.global.extraEnv .Values.ruler.env }}
-          env:
-            {{- with .Values.global.extraEnv }}
-              {{- toYaml . | nindent 12 }}
-            {{- end }}
-            {{- with .Values.ruler.env }}
-              {{- toYaml . | nindent 12 }}
-            {{- end }}
-          {{- end }}
-          {{- if or .Values.global.extraEnvFrom .Values.ruler.extraEnvFrom }}
-          envFrom:
-            {{- with .Values.global.extraEnvFrom }}
-              {{- toYaml . | nindent 12 }}
-            {{- end }}
-            {{- with .Values.ruler.extraEnvFrom }}
-              {{- toYaml . | nindent 12 }}
-            {{- end }}
-          {{- end }}
+          {{- include "mimir.lib.containerEnv" (dict "ctx" . "component" "ruler") | nindent 10 }}
 {{- if .Values.ruler.extraContainers }}
 {{ toYaml .Values.ruler.extraContainers | indent 8}}
 {{- end }}
@@ -142,14 +127,13 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       terminationGracePeriodSeconds: {{ .Values.ruler.terminationGracePeriodSeconds }}
+      {{- with .Values.ruler.dnsConfig }}
+      dnsConfig:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       volumes:
         - name: config
           {{- include "mimir.configVolume" . | nindent 10 }}
-        {{- if .Values.enterprise.enabled }}
-        - name: license
-          secret:
-            secretName: {{ tpl .Values.license.secretName . }}
-        {{- end }}
         - name: runtime-config
           configMap:
             name: {{ template "mimir.fullname" . }}-runtime

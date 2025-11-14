@@ -139,7 +139,7 @@ func (ag *ActiveGroups) ActiveGroupLimitExceeded(userID, group string) bool {
 
 func (s *ActiveGroupsCleanupService) UpdateActiveGroupTimestamp(user, group string, now time.Time) string {
 	// Does not track empty label
-	if group == "" {
+	if s == nil || s.activeGroups == nil || group == "" {
 		return group
 	}
 

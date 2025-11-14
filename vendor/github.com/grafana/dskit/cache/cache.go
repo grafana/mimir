@@ -13,6 +13,10 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 )
 
+const (
+	BackendMemcached = "memcached"
+)
+
 var (
 	ErrNotStored  = errors.New("item not stored")
 	ErrInvalidTTL = errors.New("invalid TTL")
@@ -41,9 +45,7 @@ type Cache interface {
 	// be returned.
 	Add(ctx context.Context, key string, value []byte, ttl time.Duration) error
 
-	// Delete deletes a key from a cache. This is a synchronous operation. If an asynchronous
-	// set operation for key is still pending to be processed, it will wait for it to complete
-	// before performing deletion.
+	// Delete deletes a key from a cache.
 	Delete(ctx context.Context, key string) error
 
 	// Stop client and release underlying resources.
@@ -85,28 +87,20 @@ type Allocator interface {
 	Put(b *[]byte)
 }
 
-const (
-	BackendMemcached = "memcached"
-	BackendRedis     = "redis"
-)
-
 type BackendConfig struct {
 	Backend   string                `yaml:"backend"`
 	Memcached MemcachedClientConfig `yaml:"memcached"`
-	Redis     RedisClientConfig     `yaml:"redis"`
 }
 
 // Validate the config.
 func (cfg *BackendConfig) Validate() error {
-	if cfg.Backend != "" && cfg.Backend != BackendMemcached && cfg.Backend != BackendRedis {
+	if cfg.Backend != "" && cfg.Backend != BackendMemcached {
 		return fmt.Errorf("unsupported cache backend: %s", cfg.Backend)
 	}
 
 	switch cfg.Backend {
 	case BackendMemcached:
 		return cfg.Memcached.Validate()
-	case BackendRedis:
-		return cfg.Redis.Validate()
 	}
 	return nil
 }
@@ -118,8 +112,6 @@ func CreateClient(cacheName string, cfg BackendConfig, logger log.Logger, reg pr
 		return nil, nil
 	case BackendMemcached:
 		return NewMemcachedClientWithConfig(logger, cacheName, cfg.Memcached, reg)
-	case BackendRedis:
-		return NewRedisClient(logger, cacheName, cfg.Redis, reg)
 	default:
 		return nil, errors.Errorf("unsupported cache type for cache %s: %s", cacheName, cfg.Backend)
 	}

@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -17,6 +18,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+
 	"github.com/prometheus/common/model"
 )
 
@@ -72,7 +74,7 @@ func (cfg *TLSConfig) ToCryptoTLSConfig() (*tls.Config, error) {
 		tlsCfg.RootCAs = x509.NewCertPool()
 		ok := tlsCfg.RootCAs.AppendCertsFromPEM([]byte(cfg.CACertificate))
 		if !ok {
-			return nil, errors.New("Unable to use the provided CA certificate")
+			return nil, errors.New("unable to use the provided CA certificate")
 		}
 	}
 
@@ -211,4 +213,15 @@ func TruncateInBytes(s string, n int) (string, bool) {
 	}
 
 	return string(truncatedRunes) + truncationMarker, true
+}
+
+type extraDataKey int
+
+const (
+	ExtraDataKey extraDataKey = iota
+)
+
+func GetExtraDataFromContext(ctx context.Context) ([]json.RawMessage, bool) {
+	v, ok := ctx.Value(ExtraDataKey).([]json.RawMessage)
+	return v, ok
 }

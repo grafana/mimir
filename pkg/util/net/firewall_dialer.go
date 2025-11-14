@@ -7,11 +7,11 @@ package net
 
 import (
 	"context"
+	"errors"
 	"net"
 	"syscall"
 
 	"github.com/grafana/dskit/flagext"
-	"github.com/pkg/errors"
 )
 
 var errBlockedAddress = errors.New("blocked address")

@@ -7,8 +7,17 @@ memcached {
   local mount = $.core.v1.volumeMount,
   local volume = $.core.v1.volume,
 
+  memcached_frontend_node_affinity_matchers:: [],
+  memcached_index_queries_node_affinity_matchers:: [],
+  memcached_chunks_node_affinity_matchers:: [],
+  memcached_metadata_node_affinity_matchers:: [],
+
   memcached+:: {
     cpu_limits:: null,
+    exporter_cpu_requests:: '0.05',
+    exporter_cpu_limits:: null,
+    exporter_memory_requests:: '50Mi',
+    exporter_memory_limits:: '250Mi',
     deployment: {},
     statefulSet+:
       (if !std.isObject($._config.node_selector) then {} else statefulSet.mixin.spec.template.spec.withNodeSelectorMixin($._config.node_selector)),
@@ -20,90 +29,85 @@ memcached {
     podDisruptionBudget: $.newMimirPdb(self.name),
   },
 
-  // Optionally configure Memcached to use mTLS for authenticating clients
-  memcached_mtls:: {
-    // CA and server credentials
-    statefulSet+: statefulSet.mixin.spec.template.spec.withVolumesMixin([
-      volume.fromSecret($._config.memcached_mtls_ca_cert_secret, $._config.memcached_mtls_ca_cert_secret),
-      volume.fromSecret($._config.memcached_mtls_server_cert_secret, $._config.memcached_mtls_server_cert_secret),
-      volume.fromSecret($._config.memcached_mtls_server_key_secret, $._config.memcached_mtls_server_key_secret),
-    ]),
+  // Creates a memcached instance used to cache query results.
+  newMemcachedFrontend(name, nodeAffinityMatchers=[])::
+    $.memcached {
+      name: name,
+      max_item_size: '%dm' % [$._config.cache_frontend_max_item_size_mb],
+      overprovision_factor: 1.05,
+      connection_limit: std.toString($._config.cache_frontend_connection_limit),
+      min_ready_seconds: $._config.cache_frontend_min_ready_seconds,
 
-    // Increase requested CPU, mount the credentials, and adjust server config
-    memcached_container+: $.util.resourcesRequestsMixin('1', null) + container.withVolumeMountsMixin([
-      mount.new($._config.memcached_mtls_ca_cert_secret, $._config.memcached_ca_cert_path, true),
-      mount.new($._config.memcached_mtls_server_cert_secret, $._config.memcached_server_cert_path, true),
-      mount.new($._config.memcached_mtls_server_key_secret, $._config.memcached_server_key_path, true),
-    ]) + container.withArgsMixin([
-      '--listen=notls:127.0.0.1:11211,0.0.0.0:11212',  // No TLS on the local interface for the exporter and debugging
-      '--enable-ssl',
-      '--extended=' +
-      'ssl_ca_cert=' + $._config.memcached_ca_cert_path + $._config.memcached_mtls_ca_cert_secret + '.pem,' +
-      'ssl_chain_cert=' + $._config.memcached_server_cert_path + $._config.memcached_mtls_server_cert_secret + '.pem,' +
-      'ssl_key=' + $._config.memcached_server_key_path + $._config.memcached_mtls_server_key_secret + '.pem,' +
-      'ssl_kernel_tls,ssl_verify_mode=2',  // "2" means "require client cert"
-    ]),
-  },
+      statefulSet+:
+        statefulSet.mixin.spec.withReplicas($._config.memcached_frontend_replicas) +
+        $.newMimirNodeAffinityMatchers(nodeAffinityMatchers),
+    },
 
-  // Dedicated memcached instance used to cache query results.
   memcached_frontend:
     if $._config.cache_frontend_enabled then
-      $.memcached {
-        name: 'memcached-frontend',
-        max_item_size: '%dm' % [$._config.cache_frontend_max_item_size_mb],
-        overprovision_factor: 1.05,
-        connection_limit: std.toString($._config.cache_frontend_connection_limit),
-
-        statefulSet+:
-          statefulSet.mixin.spec.withReplicas($._config.memcached_frontend_replicas),
-      } + if $._config.memcached_frontend_mtls_enabled then $.memcached_mtls else {}
+      $.newMemcachedFrontend('memcached-frontend', $.memcached_frontend_node_affinity_matchers)
     else {},
 
-  // Dedicated memcached instance used to temporarily cache index lookups.
+  // Creates a memcached instance used to temporarily cache index lookups.
+  newMemcachedIndexQueries(name, nodeAffinityMatchers=[])::
+    $.memcached {
+      name: name,
+      max_item_size: '%dm' % [$._config.cache_index_queries_max_item_size_mb],
+      overprovision_factor: 1.05,
+      connection_limit: std.toString($._config.cache_index_queries_connection_limit),
+      min_ready_seconds: $._config.cache_index_queries_min_ready_seconds,
+
+      statefulSet+:
+        statefulSet.mixin.spec.withReplicas($._config.memcached_index_queries_replicas) +
+        $.newMimirNodeAffinityMatchers(nodeAffinityMatchers),
+    },
+
   memcached_index_queries:
     if $._config.cache_index_queries_enabled then
-      $.memcached {
-        name: 'memcached-index-queries',
-        max_item_size: '%dm' % [$._config.cache_index_queries_max_item_size_mb],
-        overprovision_factor: 1.05,
-        connection_limit: std.toString($._config.cache_index_queries_connection_limit),
-
-        statefulSet+:
-          statefulSet.mixin.spec.withReplicas($._config.memcached_index_queries_replicas),
-      } + if $._config.memcached_index_queries_mtls_enabled then $.memcached_mtls else {}
+      $.newMemcachedIndexQueries('memcached-index-queries', $.memcached_index_queries_node_affinity_matchers)
     else {},
 
-  // Memcached instance used to cache chunks.
+  // Creates a memcached instance used to cache chunks.
+  newMemcachedChunks(name, nodeAffinityMatchers=[])::
+    $.memcached {
+      name: name,
+      max_item_size: '%dm' % [$._config.cache_chunks_max_item_size_mb],
+
+      // Save memory by more tightly provisioning memcached chunks.
+      memory_limit_mb: 6 * 1024,
+      overprovision_factor: 1.05,
+      connection_limit: std.toString($._config.cache_chunks_connection_limit),
+      min_ready_seconds: $._config.cache_chunks_min_ready_seconds,
+
+      statefulSet+:
+        statefulSet.mixin.spec.withReplicas($._config.memcached_chunks_replicas) +
+        $.newMimirNodeAffinityMatchers(nodeAffinityMatchers),
+    },
+
   memcached_chunks:
     if $._config.cache_chunks_enabled then
-      $.memcached {
-        name: 'memcached',
-        max_item_size: '%dm' % [$._config.cache_chunks_max_item_size_mb],
-
-        // Save memory by more tightly provisioning memcached chunks.
-        memory_limit_mb: 6 * 1024,
-        overprovision_factor: 1.05,
-        connection_limit: std.toString($._config.cache_chunks_connection_limit),
-
-        statefulSet+:
-          statefulSet.mixin.spec.withReplicas($._config.memcached_chunks_replicas),
-      } + if $._config.memcached_chunks_mtls_enabled then $.memcached_mtls else {}
+      $.newMemcachedChunks('memcached', $.memcached_chunks_node_affinity_matchers)
     else {},
 
-  // Memcached instance for caching TSDB blocks metadata (meta.json files, deletion marks, list of users and blocks).
+  // Creates a memcached instance for caching TSDB blocks metadata (meta.json files, deletion marks, list of users and blocks).
+  newMemcachedMetadata(name, nodeAffinityMatchers=[])::
+    $.memcached {
+      name: name,
+      max_item_size: '%dm' % [$._config.cache_metadata_max_item_size_mb],
+      connection_limit: std.toString($._config.cache_metadata_connection_limit),
+      min_ready_seconds: $._config.cache_metadata_min_ready_seconds,
+
+      // Metadata cache doesn't need much memory.
+      memory_limit_mb: 512,
+      overprovision_factor: 1.05,
+
+      statefulSet+:
+        statefulSet.mixin.spec.withReplicas($._config.memcached_metadata_replicas) +
+        $.newMimirNodeAffinityMatchers(nodeAffinityMatchers),
+    },
+
   memcached_metadata:
     if $._config.cache_metadata_enabled then
-      $.memcached {
-        name: 'memcached-metadata',
-        max_item_size: '%dm' % [$._config.cache_metadata_max_item_size_mb],
-        connection_limit: std.toString($._config.cache_metadata_connection_limit),
-
-        // Metadata cache doesn't need much memory.
-        memory_limit_mb: 512,
-        overprovision_factor: 1.05,
-
-        statefulSet+:
-          statefulSet.mixin.spec.withReplicas($._config.memcached_metadata_replicas),
-      } + if $._config.memcached_metadata_mtls_enabled then $.memcached_mtls else {}
+      $.newMemcachedMetadata('memcached-metadata', $.memcached_metadata_node_affinity_matchers)
     else {},
 }

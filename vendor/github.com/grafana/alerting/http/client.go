@@ -25,10 +25,9 @@ import (
 var ErrInvalidMethod = errors.New("webhook only supports HTTP methods PUT or POST")
 
 type clientConfiguration struct {
-	userAgent        string
-	dialer           net.Dialer // We use Dialer here instead of DialContext as our mqtt client doesn't support DialContext.
-	customDialer     bool
-	httpClientConfig HTTPClientConfig
+	userAgent    string
+	dialer       net.Dialer // We use Dialer here instead of DialContext as our mqtt client doesn't support DialContext.
+	customDialer bool
 }
 
 // defaultDialTimeout is the default timeout for the dialer, 30 seconds to match http.DefaultTransport.
@@ -39,7 +38,7 @@ type Client struct {
 	oauth2TokenSource oauth2.TokenSource
 }
 
-func NewClient(opts ...ClientOption) (*Client, error) {
+func NewClient(httpClientConfig *HTTPClientConfig, opts ...ClientOption) (*Client, error) {
 	cfg := clientConfiguration{
 		userAgent: "Grafana",
 		dialer:    net.Dialer{},
@@ -58,13 +57,13 @@ func NewClient(opts ...ClientOption) (*Client, error) {
 		cfg: cfg,
 	}
 
-	if cfg.httpClientConfig.OAuth2 != nil {
-		if err := ValidateOAuth2Config(cfg.httpClientConfig.OAuth2); err != nil {
+	if httpClientConfig != nil && httpClientConfig.OAuth2 != nil {
+		if err := ValidateOAuth2Config(httpClientConfig.OAuth2); err != nil {
 			return nil, fmt.Errorf("invalid OAuth2 configuration: %w", err)
 		}
 		// If the user has provided an OAuth2 config, we need to prepare the OAuth2 token source. This needs to
 		// be stored outside of the request so that the token expiration/re-use will work as expected.
-		tokenSource, err := NewOAuth2TokenSource(cfg)
+		tokenSource, err := NewOAuth2TokenSource(*httpClientConfig.OAuth2, cfg)
 		if err != nil {
 			return nil, err
 		}
@@ -86,14 +85,6 @@ func WithDialer(dialer net.Dialer) ClientOption {
 	return func(c *clientConfiguration) {
 		c.dialer = dialer
 		c.customDialer = true
-	}
-}
-
-func WithHTTPClientConfig(config *HTTPClientConfig) ClientOption {
-	return func(c *clientConfiguration) {
-		if config != nil {
-			c.httpClientConfig = *config
-		}
 	}
 }
 

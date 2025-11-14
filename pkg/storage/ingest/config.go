@@ -21,10 +21,6 @@ const (
 	consumeFromStart      = "start"
 	consumeFromEnd        = "end"
 	consumeFromTimestamp  = "timestamp"
-
-	kafkaConfigFlagPrefix          = "ingest-storage.kafka."
-	targetConsumerLagAtStartupFlag = kafkaConfigFlagPrefix + "target-consumer-lag-at-startup"
-	maxConsumerLagAtStartupFlag    = kafkaConfigFlagPrefix + "max-consumer-lag-at-startup"
 )
 
 var (
@@ -55,12 +51,17 @@ type Config struct {
 	Enabled     bool            `yaml:"enabled"`
 	KafkaConfig KafkaConfig     `yaml:"kafka"`
 	Migration   MigrationConfig `yaml:"migration"`
+
+	WriteLogsFsyncBeforeKafkaCommit            bool `yaml:"write_logs_fsync_before_kafka_commit_enabled" category:"experimental"`
+	WriteLogsFsyncBeforeKafkaCommitConcurrency int  `yaml:"write_logs_fsync_before_kafka_commit_concurrency" category:"experimental"`
 }
 
 func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.Enabled, "ingest-storage.enabled", false, "True to enable the ingestion via object storage.")
+	f.BoolVar(&cfg.WriteLogsFsyncBeforeKafkaCommit, "ingest-storage.write-logs-fsync-before-kafka-commit-enabled", true, "Enable fsyncing of WAL and WBL before Kafka offsets are committed.")
+	f.IntVar(&cfg.WriteLogsFsyncBeforeKafkaCommitConcurrency, "ingest-storage.write-logs-fsync-before-kafka-commit-concurrency", 1, "Number of tenants to concurrently fsync WAL and WBL before Kafka offsets are committed. Ignored if -ingest-storage.write-logs-fsync-before-kafka-commit-enabled=false")
 
-	cfg.KafkaConfig.RegisterFlagsWithPrefix(kafkaConfigFlagPrefix, f)
+	cfg.KafkaConfig.RegisterFlagsWithPrefix("ingest-storage.kafka.", f)
 	cfg.Migration.RegisterFlagsWithPrefix("ingest-storage.migration.", f)
 }
 
@@ -141,6 +142,9 @@ type KafkaConfig struct {
 	// The fetch backoff config to use in the concurrent fetchers (when enabled). This setting
 	// is just used to change the default backoff in tests.
 	concurrentFetchersFetchBackoffConfig backoff.Config `yaml:"-"`
+
+	// Disable producer linger. This setting is just used in tests.
+	disableLinger bool `yaml:"-"`
 }
 
 func (cfg *KafkaConfig) RegisterFlags(f *flag.FlagSet) {
@@ -169,12 +173,14 @@ func (cfg *KafkaConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) 
 	f.StringVar(&cfg.ConsumeFromPositionAtStartup, prefix+"consume-from-position-at-startup", consumeFromLastOffset, fmt.Sprintf("From which position to start consuming the partition at startup. Supported options: %s.", strings.Join(consumeFromPositionOptions, ", ")))
 	f.Int64Var(&cfg.ConsumeFromTimestampAtStartup, prefix+"consume-from-timestamp-at-startup", 0, fmt.Sprintf("Milliseconds timestamp after which the consumption of the partition starts at startup. Only applies when consume-from-position-at-startup is %s", consumeFromTimestamp))
 
+	targetConsumerLagAtStartupFlag := prefix + "target-consumer-lag-at-startup"
+	maxConsumerLagAtStartupFlag := prefix + "max-consumer-lag-at-startup"
 	howToDisableConsumerLagAtStartup := fmt.Sprintf("Set both -%s and -%s to 0 to disable waiting for maximum consumer lag being honored at startup.", targetConsumerLagAtStartupFlag, maxConsumerLagAtStartupFlag)
 	f.DurationVar(&cfg.TargetConsumerLagAtStartup, targetConsumerLagAtStartupFlag, 2*time.Second, "The best-effort maximum lag a consumer tries to achieve at startup. "+howToDisableConsumerLagAtStartup)
 	f.DurationVar(&cfg.MaxConsumerLagAtStartup, maxConsumerLagAtStartupFlag, 15*time.Second, "The guaranteed maximum lag before a consumer is considered to have caught up reading from a partition at startup, becomes ACTIVE in the hash ring and passes the readiness check. "+howToDisableConsumerLagAtStartup)
 
-	f.BoolVar(&cfg.AutoCreateTopicEnabled, prefix+"auto-create-topic-enabled", true, "Enable auto-creation of Kafka topic on startup if it doesn't exist. If creating the topic fails and the topic doesn't already exist, Mimir will fail to start.")
-	f.IntVar(&cfg.AutoCreateTopicDefaultPartitions, prefix+"auto-create-topic-default-partitions", -1, "When auto-creation of Kafka topic is enabled and this value is positive, Mimir will create the topic with this number of partitions. When the value is -1 the Kafka broker will use the default number of partitions (num.partitions configuration).")
+	f.BoolVar(&cfg.AutoCreateTopicEnabled, prefix+"auto-create-topic-enabled", true, "Enable auto-creation of Kafka topic on startup if it doesn't exist. If creating the topic fails and the topic doesn't already exist, Mimir fails to start.")
+	f.IntVar(&cfg.AutoCreateTopicDefaultPartitions, prefix+"auto-create-topic-default-partitions", -1, "When auto-creation of Kafka topic is enabled and this value is positive, Mimir creates the topic with this number of partitions. When the value is -1 the Kafka broker uses the default number of partitions (num.partitions configuration).")
 
 	f.IntVar(&cfg.ProducerMaxRecordSizeBytes, prefix+"producer-max-record-size-bytes", maxProducerRecordDataBytesLimit, "The maximum size of a Kafka record data that should be generated by the producer. An incoming write request larger than this size is split into multiple Kafka records. We strongly recommend to not change this setting unless for testing purposes.")
 	f.Int64Var(&cfg.ProducerMaxBufferedBytes, prefix+"producer-max-buffered-bytes", 1024*1024*1024, "The maximum size of (uncompressed) buffered and unacknowledged produced records sent to Kafka. The produce request fails once this limit is reached. This limit is per Kafka client. 0 to disable the limit.")
@@ -184,7 +190,7 @@ func (cfg *KafkaConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) 
 	f.IntVar(&cfg.ProducerRecordVersion, prefix+"producer-record-version", 0, "The record version that this producer sends.")
 
 	f.DurationVar(&cfg.FetchMaxWait, prefix+"fetch-max-wait", 5*time.Second, "The maximum amount of time a Kafka broker waits for some records before a Fetch response is returned.")
-	f.IntVar(&cfg.FetchConcurrencyMax, prefix+"fetch-concurrency-max", 0, "The maximum number of concurrent fetch requests that the ingester makes when reading data from Kafka during startup. Concurrent fetch requests are issued only when there is sufficient backlog of records to consume. 0 to disable.")
+	f.IntVar(&cfg.FetchConcurrencyMax, prefix+"fetch-concurrency-max", 0, "The maximum number of concurrent fetch requests that the ingester makes when reading data from Kafka during startup. Concurrent fetch requests are issued only when there is sufficient backlog of records to consume. Set to 0 to disable.")
 	f.BoolVar(&cfg.UseCompressedBytesAsFetchMaxBytes, prefix+"use-compressed-bytes-as-fetch-max-bytes", true, "When enabled, the fetch request MaxBytes field is computed using the compressed size of previous records. When disabled, MaxBytes is computed using uncompressed bytes. Different Kafka implementations interpret MaxBytes differently.")
 	f.IntVar(&cfg.MaxBufferedBytes, prefix+"max-buffered-bytes", 100_000_000, "The maximum number of buffered records ready to be processed. This limit applies to the sum of all inflight requests. Set to 0 to disable the limit.")
 

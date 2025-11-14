@@ -8,13 +8,15 @@ import (
 	"fmt"
 	"math"
 	"math/rand"
-	"sort"
+	"slices"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/go-kit/log"
 	"github.com/google/go-cmp/cmp"
 	"github.com/oklog/ulid/v2"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunks"
@@ -55,8 +57,8 @@ func TestSeriesChunkRef_Compare(t *testing.T) {
 		{blockID: ulid.MustNew(3, nil), minTime: 4, maxTime: 7},
 	}
 
-	sort.Slice(input, func(i, j int) bool {
-		return input[i].Compare(input[j]) > 0
+	slices.SortFunc(input, func(a, b seriesChunkRef) int {
+		return b.Compare(a)
 	})
 
 	assert.Equal(t, expected, input)
@@ -64,10 +66,10 @@ func TestSeriesChunkRef_Compare(t *testing.T) {
 
 func TestSeriesChunkRefsIterator(t *testing.T) {
 	c := generateSeriesChunksRanges(ulid.MustNew(1, nil), 5)
-	series1 := labels.FromStrings(labels.MetricName, "metric_1")
-	series2 := labels.FromStrings(labels.MetricName, "metric_2")
-	series3 := labels.FromStrings(labels.MetricName, "metric_3")
-	series4 := labels.FromStrings(labels.MetricName, "metric_4")
+	series1 := labels.FromStrings(model.MetricNameLabel, "metric_1")
+	series2 := labels.FromStrings(model.MetricNameLabel, "metric_2")
+	series3 := labels.FromStrings(model.MetricNameLabel, "metric_3")
+	series4 := labels.FromStrings(model.MetricNameLabel, "metric_4")
 
 	t.Run("should iterate an empty set", func(t *testing.T) {
 		it := newSeriesChunkRefsIterator(seriesChunkRefsSet{
@@ -1258,8 +1260,8 @@ func TestLoadingSeriesChunkRefsSetIterator(t *testing.T) {
 					set.series = append(set.series, seriesChunkRefs{lset: oneLabel("l1", fmt.Sprintf("v%d", i))})
 				}
 				// The order of series in the block is by their labels, so we need to sort what we generated.
-				sort.Slice(set.series, func(i, j int) bool {
-					return labels.Compare(set.series[i].lset, set.series[j].lset) < 0
+				slices.SortFunc(set.series, func(a, b seriesChunkRefs) int {
+					return labels.Compare(a.lset, b.lset)
 				})
 				return []seriesChunkRefsSet{set}
 			}(),
@@ -1276,8 +1278,8 @@ func TestLoadingSeriesChunkRefsSetIterator(t *testing.T) {
 					series = append(series, seriesChunkRefs{lset: oneLabel("l1", fmt.Sprintf("v%d", i))})
 				}
 				// The order of series in the block is by their labels, so we need to sort what we generated.
-				sort.Slice(series, func(i, j int) bool {
-					return labels.Compare(series[i].lset, series[j].lset) < 0
+				slices.SortFunc(series, func(a, b seriesChunkRefs) int {
+					return labels.Compare(a.lset, b.lset)
 				})
 
 				const numBatches = largerTestBlockSeriesCount / 5000
@@ -1388,8 +1390,11 @@ func TestLoadingSeriesChunkRefsSetIterator(t *testing.T) {
 			tc   testCase
 		}{name, tc})
 	}
-	sort.Slice(sortedTestCases, func(i, j int) bool {
-		return sortedTestCases[i].name < sortedTestCases[j].name
+	slices.SortFunc(sortedTestCases, func(a, b struct {
+		name string
+		tc   testCase
+	}) int {
+		return strings.Compare(a.name, b.name)
 	})
 
 	for _, testCase := range sortedTestCases {
@@ -2426,7 +2431,7 @@ func createSeriesChunkRefsSet(minSeriesID, maxSeriesID int, releasable bool) ser
 
 	for seriesID := minSeriesID; seriesID <= maxSeriesID; seriesID++ {
 		b.Reset()
-		b.Add(labels.MetricName, fmt.Sprintf("metric_%06d", seriesID))
+		b.Add(model.MetricNameLabel, fmt.Sprintf("metric_%06d", seriesID))
 		set.series = append(set.series, seriesChunkRefs{lset: b.Labels()})
 	}
 
@@ -2436,9 +2441,9 @@ func createSeriesChunkRefsSet(minSeriesID, maxSeriesID int, releasable bool) ser
 func TestCreateSeriesChunkRefsSet(t *testing.T) {
 	set := createSeriesChunkRefsSet(5, 7, true)
 	require.Len(t, set.series, 3)
-	requireEqual(t, seriesChunkRefs{lset: labels.FromStrings(labels.MetricName, "metric_000005")}, set.series[0])
-	requireEqual(t, seriesChunkRefs{lset: labels.FromStrings(labels.MetricName, "metric_000006")}, set.series[1])
-	requireEqual(t, seriesChunkRefs{lset: labels.FromStrings(labels.MetricName, "metric_000007")}, set.series[2])
+	requireEqual(t, seriesChunkRefs{lset: labels.FromStrings(model.MetricNameLabel, "metric_000005")}, set.series[0])
+	requireEqual(t, seriesChunkRefs{lset: labels.FromStrings(model.MetricNameLabel, "metric_000006")}, set.series[1])
+	requireEqual(t, seriesChunkRefs{lset: labels.FromStrings(model.MetricNameLabel, "metric_000007")}, set.series[2])
 }
 
 func BenchmarkFetchCachedSeriesForPostings(b *testing.B) {

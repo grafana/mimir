@@ -79,6 +79,8 @@ const (
 	StoreConsistencyCheckFailed ID = "store-consistency-check-failed"
 	BucketIndexTooOld           ID = "bucket-index-too-old"
 
+	MaxActiveSeries ID = "max-active-series"
+
 	DistributorMaxWriteMessageSize         ID = "distributor-max-write-message-size"
 	DistributorMaxOTLPRequestSize          ID = "distributor-max-otlp-request-size"
 	DistributorMaxWriteRequestDataItemSize ID = "distributor-max-write-request-data-item-size"

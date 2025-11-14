@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"fmt"
 
+	"github.com/pkg/errors"
 	"github.com/twmb/franz-go/pkg/kgo"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -22,7 +23,10 @@ var (
 	// The index corresponds to the symbol value.
 	// The first `V2RecordSymbolOffset` symbols are reserved for this table.
 	// Note: V2 is not yet stabilized.
-	V2CommonSymbols = []string{
+	V2CommonSymbols = mimirpb.NewCommonSymbols([]string{
+		// RW2.0 Spec: The first element of the symbols table MUST be an empty string.
+		// This ensures that empty/missing refs still map to empty string.
+		"",
 		// Prometheus/Mimir symbols
 		"__name__",
 		"__aggregation__",
@@ -64,7 +68,7 @@ var (
 		"kube-system/node-local-dns",
 		"kube-state-metrics/kube-state-metrics",
 		"default/kubernetes",
-	}
+	})
 )
 
 func ValidateRecordVersion(version int) error {
@@ -72,6 +76,8 @@ func ValidateRecordVersion(version int) error {
 	case 0:
 		return nil
 	case 1:
+		return nil
+	case 2:
 		return nil
 	default:
 		return fmt.Errorf("unknown record version %d", version)
@@ -97,11 +103,17 @@ func ParseRecordVersion(rec *kgo.Record) int {
 }
 
 func recordSerializerFromCfg(cfg KafkaConfig) recordSerializer {
-	switch cfg.ProducerRecordVersion {
+	return RecordSerializerFromVersion(cfg.ProducerRecordVersion)
+}
+
+func RecordSerializerFromVersion(version int) recordSerializer {
+	switch version {
 	case 0:
 		return versionZeroRecordSerializer{}
 	case 1:
 		return versionOneRecordSerializer{}
+	case 2:
+		return versionTwoRecordSerializer{}
 	default:
 		return versionZeroRecordSerializer{}
 	}
@@ -117,7 +129,7 @@ type recordSerializer interface {
 type versionZeroRecordSerializer struct{}
 
 func (v versionZeroRecordSerializer) ToRecords(partitionID int32, tenantID string, req *mimirpb.WriteRequest, maxSize int) ([]*kgo.Record, error) {
-	return marshalWriteRequestToRecords(partitionID, tenantID, req, maxSize)
+	return marshalWriteRequestToRecords(partitionID, tenantID, req, maxSize, mimirpb.SplitWriteRequestByMaxMarshalSize)
 }
 
 // versionOneRecordSerializer produces records of version 1.
@@ -126,12 +138,31 @@ func (v versionZeroRecordSerializer) ToRecords(partitionID int32, tenantID strin
 type versionOneRecordSerializer struct{}
 
 func (v versionOneRecordSerializer) ToRecords(partitionID int32, tenantID string, req *mimirpb.WriteRequest, maxSize int) ([]*kgo.Record, error) {
-	records, err := marshalWriteRequestToRecords(partitionID, tenantID, req, maxSize)
+	records, err := marshalWriteRequestToRecords(partitionID, tenantID, req, maxSize, mimirpb.SplitWriteRequestByMaxMarshalSize)
 	if err != nil {
 		return nil, err
 	}
 	for _, r := range records {
 		r.Headers = append(r.Headers, RecordVersionHeader(1))
+	}
+	return records, nil
+}
+
+type versionTwoRecordSerializer struct{}
+
+func (v versionTwoRecordSerializer) ToRecords(partitionID int32, tenantID string, req *mimirpb.WriteRequest, maxSize int) ([]*kgo.Record, error) {
+	reqv2, err := mimirpb.FromWriteRequestToRW2Request(req, V2CommonSymbols, V2RecordSymbolOffset)
+	defer mimirpb.ReuseRW2(reqv2)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to convert RW1 request to RW2")
+	}
+
+	records, err := marshalWriteRequestToRecords(partitionID, tenantID, reqv2, maxSize, splitRequestVersionTwo)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to serialise write request")
+	}
+	for _, r := range records {
+		r.Headers = append(r.Headers, RecordVersionHeader(2))
 	}
 	return records, nil
 }
@@ -157,6 +188,13 @@ func deserializeRecordContentV1(content []byte, wr *mimirpb.PreallocWriteRequest
 func deserializeRecordContentV2(content []byte, wr *mimirpb.PreallocWriteRequest) error {
 	wr.UnmarshalFromRW2 = true
 	wr.RW2SymbolOffset = V2RecordSymbolOffset
-	wr.RW2CommonSymbols = V2CommonSymbols
+	wr.RW2CommonSymbols = V2CommonSymbols.GetSlice()
+	wr.SkipNormalizeMetadataMetricName = true
+	wr.SkipDeduplicateMetadata = true
 	return wr.Unmarshal(content)
+}
+
+// splitRequestVersionTwo adapts mimirpb.SplitWriteRequestByMaxMarshalSizeRW2 to requestSplitter
+func splitRequestVersionTwo(wr *mimirpb.WriteRequest, reqSize, maxSize int) []*mimirpb.WriteRequest {
+	return mimirpb.SplitWriteRequestByMaxMarshalSizeRW2(wr, reqSize, maxSize, V2RecordSymbolOffset, V2CommonSymbols)
 }

@@ -126,7 +126,7 @@ func (cfg *Config) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 
 // Validate config and returns error on failure
 func (cfg *Config) Validate() error {
-	if !util.StringsContain(supportedSignatureVersions, cfg.SignatureVersion) {
+	if !slices.Contains(supportedSignatureVersions, cfg.SignatureVersion) {
 		return errUnsupportedSignatureVersion
 	}
 	if cfg.Endpoint != "" {
@@ -138,7 +138,7 @@ func (cfg *Config) Validate() error {
 	if cfg.STSEndpoint != "" && !util.IsValidURL(cfg.STSEndpoint) {
 		return errInvalidSTSEndpoint
 	}
-	if !util.StringsContain(supportedStorageClasses, cfg.StorageClass) && cfg.StorageClass != "" {
+	if !slices.Contains(supportedStorageClasses, cfg.StorageClass) && cfg.StorageClass != "" {
 		return errUnsupportedStorageClass
 	}
 
@@ -165,7 +165,7 @@ func (cfg *SSEConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 }
 
 func (cfg *SSEConfig) Validate() error {
-	if cfg.Type != "" && !util.StringsContain(supportedSSETypes, cfg.Type) {
+	if cfg.Type != "" && !slices.Contains(supportedSSETypes, cfg.Type) {
 		return errUnsupportedSSEType
 	}
 

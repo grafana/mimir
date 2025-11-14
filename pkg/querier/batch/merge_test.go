@@ -144,17 +144,17 @@ func TestMergeHistogramCheckHints(t *testing.T) {
 						mkGenericChunk(t, 3000, 7, enc),
 					},
 					expectedSamples: []checkHintTestSample{
-						{t: 0, v: 0, hint: histogram.UnknownCounterReset},   // 1 sample from c0
-						{t: 1000, v: 1000, hint: histogram.NotCounterReset}, // 1 sample from c0, previous iterator was also c0, so keep the NCR hint
-						{t: 2000, v: 2000, hint: histogram.NotCounterReset}, // 2 samples from c0, previous iterator was also c0, so keep the NCR hint
-						{t: 3000, v: 3000, hint: histogram.NotCounterReset},
-						{t: 4000, v: 4000, hint: histogram.UnknownCounterReset}, // 4 samples from c1
+						{t: 0, v: 0, hint: histogram.UnknownCounterReset},       // 1 sample from c0
+						{t: 1000, v: 1000, hint: histogram.NotCounterReset},     // 1 sample from c0, previous iterator was also c0, so keep the NCR hint
+						{t: 2000, v: 2000, hint: histogram.NotCounterReset},     // 1 sample from c0, previous iterator was also c0, so keep the NCR hint
+						{t: 3000, v: 3000, hint: histogram.UnknownCounterReset}, // 1 sample from c1
+						{t: 4000, v: 4000, hint: histogram.UnknownCounterReset}, // 4 samples from c0
 						{t: 5000, v: 5000, hint: histogram.NotCounterReset},
 						{t: 6000, v: 6000, hint: histogram.NotCounterReset},
 						{t: 7000, v: 7000, hint: histogram.NotCounterReset},
-						{t: 8000, v: 8000, hint: histogram.UnknownCounterReset}, // 3 samples from c1
+						{t: 8000, v: 8000, hint: histogram.UnknownCounterReset}, // 2 samples from c1
 						{t: 9000, v: 9000, hint: histogram.NotCounterReset},
-						{t: 10000, v: 10000, hint: histogram.NotCounterReset},
+						{t: 10000, v: 10000, hint: histogram.UnknownCounterReset}, // 1 samples from c0
 					},
 				},
 				{
@@ -180,9 +180,9 @@ func TestMergeHistogramCheckHints(t *testing.T) {
 						}
 					}(),
 					expectedSamples: []checkHintTestSample{
-						{t: 0, v: 0, hint: histogram.UnknownCounterReset}, // 1 sample from c1
-						{t: 1, v: 8, hint: histogram.UnknownCounterReset}, // 1 sample from c2
-						{t: 2, v: 9, hint: histogram.NotCounterReset},     // 2 samples from c2, previous iterator was also c2, so keep the NCR hint
+						{t: 0, v: 7, hint: histogram.UnknownCounterReset}, // 2 samples from c2 (higher count wins: 7 > 2)
+						{t: 1, v: 8, hint: histogram.NotCounterReset},
+						{t: 2, v: 9, hint: histogram.NotCounterReset}, // 2 samples from c2, previous iterator was also c2, so keep the NCR hint
 						{t: 3, v: 10, hint: histogram.NotCounterReset},
 						{t: 4, v: 11, hint: histogram.NotCounterReset},    // 1 sample from c2, previous iterator was also c2, so keep the NCR hint, also end of iterator
 						{t: 5, v: 3, hint: histogram.UnknownCounterReset}, // 2 samples from c1
@@ -221,11 +221,11 @@ func TestMergeHistogramCheckHints(t *testing.T) {
 						{t: 4, v: 2, hint: histogram.NotCounterReset},     // c1
 						{t: 5, v: 8, hint: histogram.UnknownCounterReset}, // c2
 						// Next sample is from c2. This is consecutive, but this ends up as the first sample in a merged
-						// batch, and the c1 sample at ts 7 and 8 is added to the batch stream before this c2 sample, so
+						// batch, and the c1 sample at ts 8 is added to the batch stream before this c2 sample, so
 						// the prevIteratorID is set to c1 rather than c2 when we append this sample.
 						{t: 6, v: 9, hint: histogram.UnknownCounterReset},
-						{t: 7, v: 4, hint: histogram.UnknownCounterReset},  // c1
-						{t: 8, v: 5, hint: histogram.NotCounterReset},      // c1
+						{t: 7, v: 10, hint: histogram.NotCounterReset},     // c2 (higher count wins)
+						{t: 8, v: 5, hint: histogram.UnknownCounterReset},  // c1
 						{t: 9, v: 11, hint: histogram.UnknownCounterReset}, // c2
 					},
 				},
@@ -257,16 +257,16 @@ func TestMergeHistogramCheckHints(t *testing.T) {
 						}
 					}(),
 					expectedSamples: []checkHintTestSample{
-						{t: 0, v: 0, hint: histogram.UnknownCounterReset},  // c1
-						{t: 1, v: 1, hint: histogram.UnknownCounterReset},  // c2
-						{t: 2, v: 7, hint: histogram.NotCounterReset},      // c2
-						{t: 3, v: 1, hint: histogram.UnknownCounterReset},  // c1
-						{t: 4, v: 2, isFloat: true},                        // c3
-						{t: 5, v: 2, hint: histogram.UnknownCounterReset},  // c1
-						{t: 6, v: 8, hint: histogram.UnknownCounterReset},  // c2
-						{t: 7, v: 4, hint: histogram.UnknownCounterReset},  // c1
-						{t: 8, v: 10, hint: histogram.UnknownCounterReset}, // c2
-						{t: 9, v: 11, hint: histogram.NotCounterReset},     // c2
+						{t: 0, v: 0, hint: histogram.UnknownCounterReset}, // c1
+						{t: 1, v: 1, hint: histogram.UnknownCounterReset}, // c2
+						{t: 2, v: 7, hint: histogram.NotCounterReset},     // c2
+						{t: 3, v: 1, hint: histogram.UnknownCounterReset}, // c1
+						{t: 4, v: 2, isFloat: true},                       // c3
+						{t: 5, v: 2, hint: histogram.UnknownCounterReset}, // c1
+						{t: 6, v: 8, hint: histogram.UnknownCounterReset}, // c2
+						{t: 7, v: 9, hint: histogram.NotCounterReset},     // c2 (higher sum value wins)
+						{t: 8, v: 10, hint: histogram.NotCounterReset},    // c2
+						{t: 9, v: 11, hint: histogram.NotCounterReset},    // c2
 					},
 				},
 			} {
@@ -286,7 +286,7 @@ func TestMergeHistogramCheckHints(t *testing.T) {
 							expH := test.GenerateTestHistogram(s.v)
 							expH.CounterResetHint = s.hint
 							_, actH := iter.AtHistogram(nil)
-							test.RequireHistogramEqual(t, expH, actH, "expected sample %d does not match", i)
+							test.RequireHistogramEqual(t, expH, actH, "expected sample with idx %d does not match", i)
 						case chunkenc.ValFloatHistogram:
 							expH := test.GenerateTestFloatHistogram(s.v)
 							expH.CounterResetHint = s.hint

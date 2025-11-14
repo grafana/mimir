@@ -7,13 +7,13 @@ package alertmanager
 
 import (
 	"flag"
+	"fmt"
 	"time"
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/grpcclient"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/ring/client"
-	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
@@ -117,7 +117,7 @@ func dialAlertmanagerClient(cfg grpcclient.Config, inst ring.InstanceDesc, reque
 	// nolint:staticcheck // grpc.Dial() has been deprecated; we'll address it before upgrading to gRPC 2.
 	conn, err := grpc.Dial(inst.Addr, opts...)
 	if err != nil {
-		return nil, errors.Wrapf(err, "failed to dial alertmanager %s %s", inst.Id, inst.Addr)
+		return nil, fmt.Errorf("failed to dial alertmanager %s %s: %w", inst.Id, inst.Addr, err)
 	}
 
 	return &alertmanagerClient{

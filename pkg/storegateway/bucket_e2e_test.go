@@ -102,8 +102,10 @@ func prepareTestBlocks(t testing.TB, now time.Time, count int, dir string, bkt o
 		meta.Thanos.Labels = map[string]string{"ext2": "value2"}
 		assert.NoError(t, meta.WriteToDir(logger, dir2))
 
-		assert.NoError(t, block.Upload(ctx, logger, bkt, dir1, nil))
-		assert.NoError(t, block.Upload(ctx, logger, bkt, dir2, nil))
+		_, err = block.Upload(ctx, logger, bkt, dir1, nil)
+		assert.NoError(t, err)
+		_, err = block.Upload(ctx, logger, bkt, dir2, nil)
+		assert.NoError(t, err)
 
 		assert.NoError(t, os.RemoveAll(dir1))
 		assert.NoError(t, os.RemoveAll(dir2))
@@ -152,7 +154,6 @@ func defaultPrepareStoreConfig(t testing.TB) *prepareStoreConfig {
 			BlockSyncConcurrency:        20,
 			PostingOffsetsInMemSampling: mimir_tsdb.DefaultPostingOffsetInMemorySampling,
 			IndexHeader: indexheader.Config{
-				EagerLoadingStartupEnabled:  true,
 				EagerLoadingPersistInterval: time.Minute,
 				LazyLoadingEnabled:          true,
 				LazyLoadingIdleTimeout:      time.Minute,
@@ -195,7 +196,7 @@ func prepareStoreWithTestBlocks(t testing.TB, bkt objstore.Bucket, cfg *prepareS
 		maxTime:         maxTime,
 	}
 
-	metaFetcher, err := block.NewMetaFetcher(s.logger, 20, objstore.WithNoopInstr(bkt), cfg.tempDir, nil, []block.MetadataFilter{}, nil, 0)
+	metaFetcher, err := block.NewMetaFetcher(s.logger, 20, objstore.WithNoopInstr(bkt), cfg.tempDir, nil, []block.MetadataFilter{}, 0)
 	assert.NoError(t, err)
 
 	// Have our options in the beginning so tests can override logger and index cache if they need to
@@ -436,8 +437,8 @@ func testBucketStore_e2e(t *testing.T, ctx context.Context, s *storeSuite, addit
 		},
 	}
 	for i, tcase := range append(testCases, additionalCases...) {
-		for _, streamingBatchSize := range []int{0, 1, 5, 256} {
-			if ok := t.Run(fmt.Sprintf("%d,streamingBatchSize=%d", i, streamingBatchSize), func(t *testing.T) {
+		for _, streamingBatchSize := range []int{1, 5, 256} {
+			t.Run(fmt.Sprintf("%d,streamingBatchSize=%d", i, streamingBatchSize), func(t *testing.T) {
 				tcase.req.StreamingChunksBatchSize = uint64(streamingBatchSize)
 				seriesSet, _, _, _, err := srv.Series(context.Background(), tcase.req)
 				require.NoError(t, err)
@@ -449,9 +450,7 @@ func testBucketStore_e2e(t *testing.T, ctx context.Context, s *storeSuite, addit
 					assert.Equal(t, tcase.expectedChunkLen, len(s.Chunks))
 				}
 				assertQueryStatsMetricsRecorded(t, len(tcase.expected), tcase.expectedChunkLen, s.metricsRegistry)
-			}); !ok {
-				return
-			}
+			})
 		}
 	}
 }
@@ -683,36 +682,29 @@ func TestBucketStore_Series_ChunksLimiter_e2e(t *testing.T) {
 	}
 }
 
-func TestBucketStore_EagerLoading(t *testing.T) {
+func TestBucketStore_LazyLoadingAlwaysEagerLoading(t *testing.T) {
 	testCases := map[string]struct {
-		eagerLoadReaderEnabled       bool
+		lazyLoadingEnabled           bool
 		expectedEagerLoadedBlocks    int
 		createLoadedBlocksSnapshotFn func([]ulid.ULID) []ulid.ULID
 	}{
-		"block is present in pre-shutdown loaded blocks and eager-loading is disabled": {
-			eagerLoadReaderEnabled:    false,
-			expectedEagerLoadedBlocks: 0,
+		"block is present in pre-shutdown loaded blocks and lazy-loading is disabled": {
+			lazyLoadingEnabled:        false,
+			expectedEagerLoadedBlocks: 0, // When lazy loading is disabled, no block is eagerly loaded at startup, so the snapshot is not used
 			createLoadedBlocksSnapshotFn: func(blockIDs []ulid.ULID) []ulid.ULID {
 				return blockIDs
 			},
 		},
-		"block is present in pre-shutdown loaded blocks and eager-loading is enabled, loading index header during initial sync": {
-			eagerLoadReaderEnabled:    true,
+		"block is present in pre-shutdown loaded blocks and lazy-loading is enabled, loading index header during initial sync": {
+			lazyLoadingEnabled:        true,
 			expectedEagerLoadedBlocks: 6,
 			createLoadedBlocksSnapshotFn: func(blockIDs []ulid.ULID) []ulid.ULID {
 				return blockIDs
 			},
 		},
-		"block is present in pre-shutdown loaded blocks and eager-loading is enabled, loading index header after initial sync": {
-			eagerLoadReaderEnabled:    true,
-			expectedEagerLoadedBlocks: 6,
-			createLoadedBlocksSnapshotFn: func(blockIDs []ulid.ULID) []ulid.ULID {
-				return blockIDs
-			},
-		},
-		"block is not present in pre-shutdown loaded blocks snapshot and eager-loading is enabled": {
-			eagerLoadReaderEnabled:    true,
-			expectedEagerLoadedBlocks: 0, // although eager loading is enabled, this test will not do eager loading because the block ID is not in the lazy loaded file.
+		"block is not present in pre-shutdown loaded blocks snapshot and lazy-loading is enabled": {
+			lazyLoadingEnabled:        true,
+			expectedEagerLoadedBlocks: 0, // although lazy loading is enabled, this test will not do eager loading in startup because the block ID is not in the lazy loaded file.
 			createLoadedBlocksSnapshotFn: func(_ []ulid.ULID) []ulid.ULID {
 				// let's create a random fake blockID to be stored in lazy loaded headers file
 				fakeBlockID := ulid.MustNew(ulid.Now(), nil)
@@ -720,8 +712,8 @@ func TestBucketStore_EagerLoading(t *testing.T) {
 				return []ulid.ULID{fakeBlockID}
 			},
 		},
-		"pre-shutdown loaded blocks snapshot doesn't exist and eager-loading is enabled": {
-			eagerLoadReaderEnabled:    true,
+		"pre-shutdown loaded blocks snapshot doesn't exist and lazy-loading is enabled": {
+			lazyLoadingEnabled:        true,
 			expectedEagerLoadedBlocks: 0,
 		},
 	}
@@ -742,7 +734,8 @@ func TestBucketStore_EagerLoading(t *testing.T) {
 			bkt := objstore.NewInMemBucket()
 			cfg := defaultPrepareStoreConfig(t)
 			cfg.logger = test.NewTestingLogger(t)
-			cfg.bucketStoreConfig.IndexHeader.EagerLoadingStartupEnabled = testData.eagerLoadReaderEnabled
+			// Override lazy loading from test scenario
+			cfg.bucketStoreConfig.IndexHeader.LazyLoadingEnabled = testData.lazyLoadingEnabled
 			ctx := context.Background()
 
 			// Start the store so we generate some blocks and can use them in the mock snapshot.
@@ -780,7 +773,6 @@ func TestBucketStore_PersistsLazyLoadedBlocks(t *testing.T) {
 	cfg := defaultPrepareStoreConfig(t)
 	cfg.logger = test.NewTestingLogger(t)
 	cfg.bucketStoreConfig.IndexHeader.EagerLoadingPersistInterval = persistInterval
-	cfg.bucketStoreConfig.IndexHeader.EagerLoadingStartupEnabled = true
 	cfg.bucketStoreConfig.IndexHeader.LazyLoadingIdleTimeout = persistInterval * 3
 	ctx := context.Background()
 	readBlocksInSnapshot := func() map[ulid.ULID]struct{} {

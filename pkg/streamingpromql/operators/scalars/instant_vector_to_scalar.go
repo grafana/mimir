@@ -91,7 +91,7 @@ func (i *InstantVectorToScalar) GetValues(ctx context.Context) (types.ScalarData
 }
 
 func (i *InstantVectorToScalar) getInnerSeriesCount(ctx context.Context) (int, error) {
-	metadata, err := i.Inner.SeriesMetadata(ctx)
+	metadata, err := i.Inner.SeriesMetadata(ctx, nil)
 	if err != nil {
 		return 0, err
 	}
@@ -109,6 +109,10 @@ func (i *InstantVectorToScalar) ExpressionPosition() posrange.PositionRange {
 
 func (i *InstantVectorToScalar) Prepare(ctx context.Context, params *types.PrepareParams) error {
 	return i.Inner.Prepare(ctx, params)
+}
+
+func (i *InstantVectorToScalar) Finalize(ctx context.Context) error {
+	return i.Inner.Finalize(ctx)
 }
 
 func (i *InstantVectorToScalar) Close() {

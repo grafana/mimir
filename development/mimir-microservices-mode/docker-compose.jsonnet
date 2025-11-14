@@ -1,17 +1,11 @@
 std.manifestYamlDoc({
   _config:: {
-    // Cache backend to use for results, chunks, index, and metadata caches. Options are 'memcached' or 'redis'.
-    cache_backend: 'memcached',
-
     // If true, Mimir services are run under Delve debugger, that can be attached to via remote-debugging session.
     // Note that Delve doesn't forward signals to the Mimir process, so Mimir components don't shutdown cleanly.
     debug: false,
 
     // How long should Mimir docker containers sleep before Mimir is started.
     sleep_seconds: 3,
-
-    // Whether query-frontend and querier should use query-scheduler. If set to true, query-scheduler is started as well.
-    use_query_scheduler: true,
 
     // Whether ruler should use the query-frontend and queriers to execute queries, rather than executing them in-process
     ruler_use_remote_execution: false,
@@ -44,7 +38,7 @@ std.manifestYamlDoc({
   services:
     self.distributor +
     self.ingesters +
-    self.read_components +  // Querier, Frontend and query-scheduler, if enabled.
+    self.read_components +  // querier, query-frontend, and query-scheduler.
     self.store_gateways(3) +
     self.compactor +
     self.rulers(2) +
@@ -58,7 +52,7 @@ std.manifestYamlDoc({
     (if $._config.enable_otel_collector then self.otel_collector else {}) +
     self.jaeger +
     self.consul +
-    (if $._config.cache_backend == 'redis' then self.redis else self.memcached + self.memcached_exporter) +
+    self.memcached +
     (if $._config.enable_load_generator then self.load_generator else {}) +
     (if $._config.enable_query_tee then self.query_tee else {}) +
     {},
@@ -105,37 +99,26 @@ std.manifestYamlDoc({
     }),
   },
 
-  read_components::
-    {
-      querier: mimirService({
-        name: 'querier',
-        target: 'querier',
-        httpPort: 8005,
-        extraArguments:
-          // Use of scheduler is activated by `-querier.scheduler-address` option and setting -querier.frontend-address option to nothing.
-          if $._config.use_query_scheduler then '-querier.scheduler-address=query-scheduler:9008 -querier.frontend-address=' else '',
-      }),
+  read_components:: {
+    querier: mimirService({
+      name: 'querier',
+      target: 'querier',
+      httpPort: 8005,
+    }),
 
-      'query-frontend': mimirService({
-        name: 'query-frontend',
-        target: 'query-frontend',
-        httpPort: 8007,
-        jaegerApp: 'query-frontend',
-        extraArguments:
-          '-query-frontend.max-total-query-length=8760h' +
-          // Use of scheduler is activated by `-query-frontend.scheduler-address` option.
-          (if $._config.use_query_scheduler then ' -query-frontend.scheduler-address=query-scheduler:9008' else ''),
-      }),
-    } + (
-      if $._config.use_query_scheduler then {
-        'query-scheduler': mimirService({
-          name: 'query-scheduler',
-          target: 'query-scheduler',
-          httpPort: 8008,
-          extraArguments: '-query-frontend.max-total-query-length=8760h',
-        }),
-      } else {}
-    ),
+    'query-frontend': mimirService({
+      name: 'query-frontend',
+      target: 'query-frontend',
+      httpPort: 8007,
+      jaegerApp: 'query-frontend',
+    }),
+
+    'query-scheduler': mimirService({
+      name: 'query-scheduler',
+      target: 'query-scheduler',
+      httpPort: 8008,
+    }),
+  },
 
   compactor:: {
     compactor: mimirService({
@@ -248,7 +231,6 @@ std.manifestYamlDoc({
         (if $._config.ring == 'memberlist' || $._config.ring == 'multi' then '-memberlist.nodename=%(memberlistNodeName)s -memberlist.bind-port=%(memberlistBindPort)d' % options else null),
         (if $._config.ring == 'memberlist' then std.join(' ', [x + '.store=memberlist' for x in all_rings]) else null),
         (if $._config.ring == 'multi' then std.join(' ', [x + '.store=multi' for x in all_rings] + [x + '.multi.primary=consul' for x in all_rings] + [x + '.multi.secondary=memberlist' for x in all_rings]) else null),
-        std.join(' ', if $._config.cache_backend == 'redis' then [x + '.backend=redis' for x in all_caches] + [x + '.redis.endpoint=redis:6379' for x in all_caches] else [x + '.backend=memcached' for x in all_caches] + [x + '.memcached.addresses=dns+memcached:11211' for x in all_caches]),
       ]),
     ],
     environment: formatEnv(options.env),
@@ -277,13 +259,21 @@ std.manifestYamlDoc({
     nginx: {
       hostname: 'nginx',
       image: 'nginxinc/nginx-unprivileged:1.22-alpine',
+      depends_on: [
+        'distributor-1',
+        'alertmanager-1',
+        'ruler-1',
+        'query-frontend',
+        'compactor',
+        'grafana',
+      ],
       environment: [
         'NGINX_ENVSUBST_OUTPUT_DIR=/etc/nginx',
         'DISTRIBUTOR_HOST=distributor-1:8000',
         'ALERT_MANAGER_HOST=alertmanager-1:8031',
         'RULER_HOST=ruler-1:8022',
         'QUERY_FRONTEND_HOST=query-frontend:8007',
-        'COMPACTOR_HOST=compactor:8007',
+        'COMPACTOR_HOST=compactor:8006',
       ],
       ports: ['8080:8080'],
       volumes: ['../common/config:/etc/nginx/templates'],
@@ -305,7 +295,7 @@ std.manifestYamlDoc({
 
   memcached:: {
     memcached: {
-      image: 'memcached:1.6.28-alpine',
+      image: 'memcached:1.6.34-alpine',
       ports: [
         '11211:11211',
       ],
@@ -314,27 +304,14 @@ std.manifestYamlDoc({
 
   memcached_exporter:: {
     'memcached-exporter': {
-      image: 'prom/memcached-exporter:v0.15.0',
+      image: 'prom/memcached-exporter:v0.15.3',
       command: ['--memcached.address=memcached:11211', '--web.listen-address=0.0.0.0:9150'],
-    },
-  },
-
-  redis:: {
-    redis: {
-      image: 'redis:7.0.7',
-      command: [
-        'redis-server',
-        '--maxmemory 64mb',
-        '--maxmemory-policy allkeys-lru',
-        "--save ''",
-        '--appendonly no',
-      ],
     },
   },
 
   prometheus:: {
     prometheus: {
-      image: 'prom/prometheus:v3.1.0',
+      image: 'prom/prometheus:v3.5.0',
       command: [
         '--config.file=/etc/prometheus/prometheus.yaml',
         '--enable-feature=exemplar-storage',
@@ -351,7 +328,7 @@ std.manifestYamlDoc({
 
   prompair1:: {
     prompair1: {
-      image: 'prom/prometheus:v3.1.0',
+      image: 'prom/prometheus:v3.5.0',
       hostname: 'prom-ha-pair-1',
       command: [
         '--config.file=/etc/prometheus/prom-ha-pair-1.yaml',
@@ -367,7 +344,7 @@ std.manifestYamlDoc({
 
   prompair2:: {
     prompair2: {
-      image: 'prom/prometheus:v3.1.0',
+      image: 'prom/prometheus:v3.5.0',
       hostname: 'prom-ha-pair-2',
       command: [
         '--config.file=/etc/prometheus/prom-ha-pair-2.yaml',
@@ -384,7 +361,7 @@ std.manifestYamlDoc({
 
   grafana:: {
     grafana: {
-      image: 'grafana/grafana:10.4.3',
+      image: 'grafana/grafana:12.1.1',
       environment: [
         'GF_AUTH_ANONYMOUS_ENABLED=true',
         'GF_AUTH_ANONYMOUS_ORG_ROLE=Admin',

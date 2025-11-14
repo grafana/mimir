@@ -36,11 +36,14 @@ type Report struct {
 	// Os is the operating system where Mimir is running.
 	Os string `json:"os"`
 
-	// Arch is the architecture where Mimir is running.
+	// Arch is the CPU architecture where Mimir is running.
 	Arch string `json:"arch"`
 
 	// Edition is the Mimir edition ("oss" or "enterprise").
 	Edition string `json:"edition"`
+
+	// Mode is the Mimir architecture mode ("classic" or "ingest_storage").
+	Mode string `json:"mode"`
 
 	// Metrics holds custom metrics tracked by Mimir. Can contain nested objects.
 	Metrics map[string]interface{} `json:"metrics"`
@@ -51,6 +54,7 @@ func buildReport(seed ClusterSeed, reportAt time.Time, reportInterval time.Durat
 	var (
 		targetName  string
 		editionName string
+		modeName    string
 	)
 	if target := expvar.Get(statsPrefix + targetKey); target != nil {
 		if target, ok := target.(*expvar.String); ok {
@@ -60,6 +64,11 @@ func buildReport(seed ClusterSeed, reportAt time.Time, reportInterval time.Durat
 	if edition := expvar.Get(statsPrefix + editionKey); edition != nil {
 		if edition, ok := edition.(*expvar.String); ok {
 			editionName = edition.Value()
+		}
+	}
+	if val := expvar.Get(statsPrefix + modeKey); val != nil {
+		if name, ok := val.(*expvar.String); ok {
+			modeName = name.Value()
 		}
 	}
 
@@ -73,6 +82,7 @@ func buildReport(seed ClusterSeed, reportAt time.Time, reportInterval time.Durat
 		Arch:           runtime.GOARCH,
 		Target:         targetName,
 		Edition:        editionName,
+		Mode:           modeName,
 		Metrics:        buildMetrics(),
 	}
 }
@@ -86,11 +96,21 @@ func buildMetrics() map[string]interface{} {
 	defer cpuUsage.Set(0)
 
 	expvar.Do(func(kv expvar.KeyValue) {
-		if !strings.HasPrefix(kv.Key, statsPrefix) || kv.Key == statsPrefix+targetKey || kv.Key == statsPrefix+editionKey {
+		if !strings.HasPrefix(kv.Key, statsPrefix) {
 			return
 		}
 
-		var value interface{}
+		key := strings.TrimPrefix(kv.Key, statsPrefix)
+
+		// Exclude reserved keys; they are reported on the root level of the Report.
+		switch key {
+		case targetKey,
+			editionKey,
+			modeKey:
+			return
+		}
+
+		var value any
 		switch v := kv.Value.(type) {
 		case *expvar.Int:
 			value = v.Value()
@@ -107,7 +127,7 @@ func buildMetrics() map[string]interface{} {
 			return
 		}
 
-		result[strings.TrimPrefix(kv.Key, statsPrefix)] = value
+		result[key] = value
 	})
 
 	return result

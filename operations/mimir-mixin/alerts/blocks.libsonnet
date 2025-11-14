@@ -6,7 +6,7 @@
         {
           // Alert if the ingester has not shipped any block in the last 4h. It also checks cortex_ingester_ingested_samples_total
           // to avoid false positives on ingesters not receiving any traffic yet (eg. a newly created cluster).
-          alert: $.alertName('IngesterHasNotShippedBlocks'),
+          alert: $.alertName('IngesterNotShippingBlocks'),
           'for': '15m',
           expr: |||
             (min by(%(alert_aggregation_labels)s, %(per_instance_label)s) (time() - cortex_ingester_shipper_last_successful_upload_timestamp_seconds) > 60 * 60 * 4)
@@ -21,6 +21,9 @@
             # receiving samples again. Without this check, the alert would fire as soon as it gets back receiving
             # samples, while the a block shipping is expected within the next 4h.
             (max by(%(alert_aggregation_labels)s, %(per_instance_label)s) (max_over_time(%(alert_aggregation_rule_prefix)s_%(per_instance_label)s:cortex_ingester_ingested_samples_total:rate%(recording_rules_range_interval)s[1h] offset 4h)) > 0)
+            # And only if blocks aren't shipped by the block-builder.
+            unless on (%(alert_aggregation_labels)s)
+            (max by (%(alert_aggregation_labels)s) (max_over_time(cortex_blockbuilder_tsdb_last_successful_compact_and_upload_timestamp_seconds[30m])) > 0)
           ||| % {
             alert_aggregation_labels: $._config.alert_aggregation_labels,
             per_instance_label: $._config.per_instance_label,
@@ -37,12 +40,15 @@
         {
           // Alert if the ingester has not shipped any block since start. It also checks cortex_ingester_ingested_samples_total
           // to avoid false positives on ingesters not receiving any traffic yet (eg. a newly created cluster).
-          alert: $.alertName('IngesterHasNotShippedBlocksSinceStart'),
+          alert: $.alertName('IngesterNotShippingBlocksSinceStart'),
           'for': '4h',
           expr: |||
             (max by(%(alert_aggregation_labels)s, %(per_instance_label)s) (cortex_ingester_shipper_last_successful_upload_timestamp_seconds) == 0)
             and
             (max by(%(alert_aggregation_labels)s, %(per_instance_label)s) (max_over_time(%(alert_aggregation_rule_prefix)s_%(per_instance_label)s:cortex_ingester_ingested_samples_total:rate%(recording_rules_range_interval)s[4h])) > 0)
+            # Only if blocks aren't shipped by the block-builder.
+            unless on (%(alert_aggregation_labels)s)
+            (max by (%(alert_aggregation_labels)s) (max_over_time(cortex_blockbuilder_tsdb_last_successful_compact_and_upload_timestamp_seconds[30m])) > 0)
           ||| % {
             alert_aggregation_labels: $._config.alert_aggregation_labels,
             per_instance_label: $._config.per_instance_label,
@@ -66,7 +72,12 @@
             (time() - cortex_ingester_oldest_unshipped_block_timestamp_seconds > 3600)
             and
             (cortex_ingester_oldest_unshipped_block_timestamp_seconds > 0)
-          |||,
+            # Only if blocks aren't shipped by the block-builder.
+            unless on (%(alert_aggregation_labels)s)
+            (max by (%(alert_aggregation_labels)s) (max_over_time(cortex_blockbuilder_tsdb_last_successful_compact_and_upload_timestamp_seconds[30m])) > 0)
+          ||| % {
+            alert_aggregation_labels: $._config.alert_aggregation_labels,
+          },
           labels: {
             severity: 'critical',
           },
@@ -103,7 +114,7 @@
           },
         },
         {
-          alert: $.alertName('IngesterTSDBCheckpointCreationFailed'),
+          alert: $.alertName('IngesterTSDBCheckpointCreateFailed'),
           expr: |||
             rate(cortex_ingester_tsdb_checkpoint_creations_failed_total[%s]) > 0
           ||| % $.alertRangeInterval(5),
@@ -115,7 +126,7 @@
           },
         },
         {
-          alert: $.alertName('IngesterTSDBCheckpointDeletionFailed'),
+          alert: $.alertName('IngesterTSDBCheckpointDeleteFailed'),
           expr: |||
             rate(cortex_ingester_tsdb_checkpoint_deletions_failed_total[%s]) > 0
           ||| % $.alertRangeInterval(5),
@@ -241,8 +252,15 @@
           alert: $.alertName('HighVolumeLevel1BlocksQueried'),
           'for': '6h',
           expr: |||
-            sum by(%s) (rate(cortex_bucket_store_series_blocks_queried_sum{component="store-gateway",level="1",out_of_order="false",%s}[%s])) > 0
-          ||| % [$._config.alert_aggregation_labels, $.jobMatcher($._config.job_names.store_gateway), $.alertRangeInterval(5)],
+            (
+            sum by(%(alert_aggregation_labels)s) (rate(cortex_bucket_store_series_blocks_queried_sum{component="store-gateway",level="1",out_of_order="false",%(job)s}[%(range_interval)s]))
+            /
+            sum by(%(alert_aggregation_labels)s) (rate(cortex_bucket_store_series_blocks_queried_sum{component="store-gateway",out_of_order="false",%(job)s}[%(range_interval)s]))
+            ) > 0.05
+          ||| % $._config {
+            job: $.jobMatcher($._config.job_names.store_gateway),
+            range_interval: $.alertRangeInterval(10),
+          },
           labels: {
             severity: 'warning',
           },

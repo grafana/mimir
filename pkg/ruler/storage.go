@@ -94,8 +94,6 @@ func maxItemSize(cfg cache.BackendConfig) int {
 	switch cfg.Backend {
 	case cache.BackendMemcached:
 		return cfg.Memcached.MaxItemSize
-	case cache.BackendRedis:
-		return cfg.Redis.MaxItemSize
 	default:
 		return 0
 	}
