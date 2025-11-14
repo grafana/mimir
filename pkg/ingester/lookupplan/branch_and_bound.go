@@ -3,6 +3,7 @@
 package lookupplan
 
 import (
+	"cmp"
 	"container/heap"
 	"context"
 	"iter"
@@ -94,6 +95,7 @@ func (p CostBasedPlanner) generatePlansBranchAndBound(ctx context.Context, stati
 	decidedPlans := &partialPlans{}
 	allDecided := slices.Repeat([]bool{true}, len(basePlan.predicates))
 
+	var candidates []partialPlan
 	for i := 0; i < maxPlansForPlanning && prospectPlans.Len() > 0; i++ {
 		current := heap.Pop(prospectPlans).(partialPlan)
 
@@ -105,6 +107,7 @@ func (p CostBasedPlanner) generatePlansBranchAndBound(ctx context.Context, stati
 
 		// Branch: try both scan (false) and index (true) for the next predicate
 		alreadyDecidedOneFalse := false
+		candidates = candidates[:0]
 		for firstUndecidedPredicate, decided := range current.decidedPredicates {
 			if decided {
 				continue
@@ -122,7 +125,7 @@ func (p CostBasedPlanner) generatePlansBranchAndBound(ctx context.Context, stati
 					childPlan = childPlan.UseIndexFor(firstUndecidedPredicate)
 				}
 				// Calculate lower bound for the child plan
-				heap.Push(prospectPlans, partialPlan{
+				candidates = append(candidates, partialPlan{
 					planWithCost: planWithCost{
 						plan:      childPlan,
 						totalCost: childPlan.TotalCost(),
@@ -130,6 +133,13 @@ func (p CostBasedPlanner) generatePlansBranchAndBound(ctx context.Context, stati
 					decidedPredicates: decidedPredicates,
 				})
 			}
+		}
+		slices.SortFunc(candidates, func(a, b partialPlan) int {
+			return cmp.Compare(a.totalCost, b.totalCost)
+		})
+		// push only the top half of candidates to limit the branching factor
+		for _, candidate := range candidates[:max(1, len(candidates)/2)] {
+			heap.Push(prospectPlans, candidate)
 		}
 	}
 	var (
