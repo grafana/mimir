@@ -5,6 +5,7 @@ package lookupplan
 import (
 	"container/heap"
 	"context"
+	"iter"
 	"slices"
 
 	"github.com/prometheus/prometheus/model/labels"
@@ -21,14 +22,6 @@ type partialPlan struct {
 
 // partialPlans implements heap.Interface for a min-heap of partial plans ordered by lower bound.
 type partialPlans []partialPlan
-
-func (pq partialPlans) AsPlans() []plan {
-	plans := make([]plan, len(pq))
-	for i, pp := range pq {
-		plans[i] = pp.plan.withoutMemoryPool()
-	}
-	return plans
-}
 
 func (pq partialPlans) Len() int { return len(pq) }
 
@@ -52,9 +45,33 @@ func (pq *partialPlans) Pop() interface{} {
 	return item
 }
 
+// Iterator returns an iterator that yields plans from the heap in order of cost (lowest first).
+func (pq *partialPlans) Iterator() iter.Seq[plan] {
+	return func(yield func(plan) bool) {
+		for pq.Len() > 0 {
+			partial := heap.Pop(pq).(partialPlan)
+			if !yield(partial.plan) {
+				return
+			}
+		}
+	}
+}
+
+// PartialIterator returns an iterator that yields partial plans from the heap in order of cost (lowest first).
+func (pq *partialPlans) PartialIterator() iter.Seq[partialPlan] {
+	return func(yield func(plans partialPlan) bool) {
+		for pq.Len() > 0 {
+			partial := heap.Pop(pq).(partialPlan)
+			if !yield(partial) {
+				return
+			}
+		}
+	}
+}
+
 // generatePlansBranchAndBound uses branch-and-bound to explore the space of possible plans.
 // It prunes branches that cannot possibly lead to a better plan than the current best.
-func (p CostBasedPlanner) generatePlansBranchAndBound(ctx context.Context, statistics index.Statistics, matchers []*labels.Matcher, pools *costBasedPlannerPools, shard *sharding.ShardSelector) []plan {
+func (p CostBasedPlanner) generatePlansBranchAndBound(ctx context.Context, statistics index.Statistics, matchers []*labels.Matcher, pools *costBasedPlannerPools, shard *sharding.ShardSelector) iter.Seq[plan] {
 	basePlan := newScanOnlyPlan(ctx, statistics, p.config, matchers, pools.indexPredicatesPool, shard)
 
 	// Initialize the priority queue with the base plan
@@ -109,16 +126,22 @@ func (p CostBasedPlanner) generatePlansBranchAndBound(ctx context.Context, stati
 			}
 		}
 	}
-
-	const maxReturnedPlans = 3
-	// If we don't have enough decided plans, fill from prospect plans, they're the best we have.
-	for decidedPlans.Len() < maxReturnedPlans && prospectPlans.Len() > 0 {
-		heap.Push(decidedPlans, heap.Pop(prospectPlans).(partialPlan))
+	var (
+		fewerPlans *partialPlans
+		morePlans  *partialPlans
+	)
+	if decidedPlans.Len() > prospectPlans.Len() {
+		fewerPlans, morePlans = prospectPlans, decidedPlans
+	} else {
+		fewerPlans, morePlans = decidedPlans, prospectPlans
 	}
-	// Return only the top maxReturnedPlans plans
-	for decidedPlans.Len() > maxReturnedPlans {
-		heap.Remove(decidedPlans, decidedPlans.Len()-1)
+	// Push all plans from the smaller heap into the larger one until we reach maxReturnedPlans
+	// We need this because we will need to find a plan with at least one index matcher later,
+	// and we might not find that in either of the heaps alone.
+	// We also don't just concatenate the two heaps because nothing guarantees that the decided plans are cheaper than the prospective ones.
+	for p := range fewerPlans.PartialIterator() {
+		heap.Push(morePlans, p)
 	}
 
-	return decidedPlans.AsPlans()
+	return morePlans.Iterator()
 }
