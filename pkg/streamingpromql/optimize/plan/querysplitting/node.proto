@@ -18,4 +18,3 @@ message SplittableFunctionCallDetails {
     (gogoproto.nullable) = false
   ];
 }
-
