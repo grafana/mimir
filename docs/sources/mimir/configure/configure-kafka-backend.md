@@ -1,12 +1,3 @@
----
-aliases:
-  - ../operators-guide/configure/configure-kafka-backend/
-description: Learn how to configure Grafana Mimir to use Kafka for ingest storage.
-menuTitle: Kafka
-title: Configure the Grafana Mimir Kafka backend
-weight: 130
----
-
 # Configure the Grafana Mimir Kafka backend
 
 Grafana Mimir supports using Kafka as the first layer of ingestion in the ingest storage architecture. This configuration allows for scalable, decoupled ingestion that separates write and read paths to improve performance and resilience.
@@ -50,6 +41,35 @@ Use the default options with Apache Kafka. No additional configuration is needed
 ### Confluent Kafka
 
 Use the default options with Confluent Kafka. No additional configuration is needed.
+
+### Redpanda
+
+[Redpanda](https://redpanda.com/) is a Kafka-compatible streaming platform that implements the Kafka wire protocol and can be used as a drop-in replacement for Apache Kafka. Redpanda offers simplified operations (no JVM, no Zookeeper dependency) and often delivers better performance than Apache Kafka.
+
+Use the default options with Redpanda. No additional configuration is needed beyond the standard Kafka settings.
+
+Redpanda has been verified to work correctly with Mimir's ingest storage architecture, supporting all required Kafka features including:
+
+- Automatic topic creation
+- Consumer groups with partition assignment
+- Message batching and compression
+- Offset management
+
+**Example configuration:**
+
+```yaml
+ingest_storage:
+  enabled: true
+  kafka:
+    address: "redpanda:9092"
+    topic: "mimir-ingest"
+    auto_create_topic_enabled: true
+    auto_create_topic_default_partitions: 3
+```
+
+For production deployments, run Redpanda in a multi-node cluster with replication. [Redpanda Console](https://docs.redpanda.com/current/reference/console/) provides a web UI for monitoring topics, messages, and consumer groups.
+
+For a complete working example with Docker Compose, automated tests, and Redpanda Console integration, see the community-maintained [mimir-redpanda-demo](https://github.com/meticulo3366/redpanda-mimir-integration) repository.
 
 ### Warpstream
 
