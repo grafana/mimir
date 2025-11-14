@@ -253,7 +253,7 @@ func (r *StreamBinaryReader) loadFromSparseIndexHeader(ctx context.Context, logg
 	}()
 
 	level.Debug(logger).Log("msg", "loading sparse index-header from disk")
-	sparseHeaders, err := decodeSparseData(ctx, logger, sparseData)
+	sparseHeaders, err := decodeSparseData(ctx, sparseData)
 	if err != nil {
 		return err
 	}
@@ -271,11 +271,11 @@ func (r *StreamBinaryReader) loadFromSparseIndexHeader(ctx context.Context, logg
 	return nil
 }
 
-func decodeSparseData(ctx context.Context, _ log.Logger, sparseData io.Reader) (*indexheaderpb.Sparse, error) {
+func decodeSparseData(ctx context.Context, sparseData io.Reader) (*indexheaderpb.Sparse, error) {
 	sparseHeaders := indexheaderpb.Sparse{}
 	// ParseProtoReader requires a max size; we supply a very broad estimate.
 	// We could read the size from last 4 bytes of the file (per gzip spec), but it's probably not worth it.
-	const maxSize = 1 << 31 // 2GB
+	const maxSize = 1 << 31 // 2GiB
 	_, err := util.ParseProtoReader(ctx, sparseData, 0, maxSize, nil, &sparseHeaders, util.Gzip)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read sparse index-header: %w", err)
