@@ -120,6 +120,9 @@ func BenchmarkQueryExecution(b *testing.B) {
 	for _, q := range queries {
 		for selectorIdx := range q.VectorSelectors {
 			queryID := fmt.Sprintf("query=%d/selector=%d", q.QueryID, selectorIdx)
+			if len(q.VectorSelectors[selectorIdx]) <= 10 {
+				continue
+			}
 			b.Run(queryID, func(b *testing.B) {
 				b.ReportAllocs()
 				for i := 0; i < b.N; i++ {

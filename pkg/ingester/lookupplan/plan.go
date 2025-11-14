@@ -51,6 +51,14 @@ func newScanOnlyPlan(ctx context.Context, stats index.Statistics, config CostCon
 	return p
 }
 
+func newIndexOnlyPlan(ctx context.Context, stats index.Statistics, config CostConfig, matchers []*labels.Matcher, predicatesPool *pool.SlabPool[bool], shard *sharding.ShardSelector) plan {
+	p := newScanOnlyPlan(ctx, stats, config, matchers, predicatesPool, shard)
+	for i := range p.indexPredicate {
+		p.indexPredicate[i] = true
+	}
+	return p
+}
+
 func (p plan) IndexMatchers() []*labels.Matcher {
 	var matchers []*labels.Matcher
 	for i, pred := range p.predicates {

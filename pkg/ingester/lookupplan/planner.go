@@ -131,6 +131,11 @@ func (p CostBasedPlanner) PlanIndexLookup(ctx context.Context, inPlan index.Look
 	allPlansExhaustive := p.generateExhaustivePlans(ctx, p.stats, matchers, memPools, shard)
 	allPlansExhaustive, bestPlanOverall := p.chooseBestPlan(memPools, allPlansExhaustive, allPlans)
 
+	first1024PlansExhaustive := p.generate1024ExhaustivePlans(ctx, p.stats, matchers, memPools, shard)
+	first1024PlansExhaustive, bestPlanOverall1024 := p.chooseBestPlan(memPools, first1024PlansExhaustive, allPlans)
+
+	indexOnlyPlan := newIndexOnlyPlan(ctx, p.stats, p.config, matchers, memPools.indexPredicatesPool, shard)
+
 	if bestPlanOverall != nil && bestPlanOverall.TotalCost() < lookupPlan.TotalCost() {
 		// print best plan overall cost; top 3 best plans cost and the lookupPlan cost
 		fmt.Printf("Warning: Branch-and-bound selected plan with cost %.2f, but exhaustive search found a better plan with cost %.2f\n", lookupPlan.TotalCost(), bestPlanOverall.TotalCost())
@@ -138,8 +143,19 @@ func (p CostBasedPlanner) PlanIndexLookup(ctx context.Context, inPlan index.Look
 		for i, p := range allPlansExhaustive[:min(3, len(allPlansExhaustive))] {
 			fmt.Printf("  Plan %d: cost %.2f ", i+1, p.TotalCost())
 		}
-		fmt.Println()
+		// print naive index-only plan cost
+		fmt.Printf("Naive index-only plan cost: %.2f\n", indexOnlyPlan.TotalCost())
+	}
 
+	if bestPlanOverall1024 != nil && bestPlanOverall != nil && bestPlanOverall.TotalCost() < bestPlanOverall1024.TotalCost() {
+		// print best plan overall cost; top 3 best plans cost and the lookupPlan cost
+		fmt.Printf("Warning: 1024-plan exhaustive search selected plan with cost %.2f, but full exhaustive search found a better plan with cost %.2f\n", bestPlanOverall1024.TotalCost(), bestPlanOverall.TotalCost())
+		fmt.Printf("Top 3 best plans from full exhaustive search:")
+		for i, p := range allPlansExhaustive[:min(3, len(allPlansExhaustive))] {
+			fmt.Printf("  Plan %d: cost %.2f ", i+1, p.TotalCost())
+		}
+		// print naive index-only plan cost
+		fmt.Printf("Naive index-only plan cost: %.2f\n", indexOnlyPlan.TotalCost())
 	}
 	return lookupPlan, nil
 }
@@ -181,6 +197,13 @@ func (p CostBasedPlanner) generateExhaustivePlans(ctx context.Context, statistic
 	return generateExhaustivePlans(allPlans, noopPlan, 0)
 }
 
+func (p CostBasedPlanner) generate1024ExhaustivePlans(ctx context.Context, statistics index.Statistics, matchers []*labels.Matcher, pools *costBasedPlannerPools, shard *sharding.ShardSelector) []plan {
+	noopPlan := newScanOnlyPlan(ctx, statistics, p.config, matchers, pools.indexPredicatesPool, shard)
+	allPlans := pools.plansPool.Get(1 << uint(len(matchers)))[:0]
+
+	return generate1024ExhaustivePlans(allPlans, noopPlan, 0)
+}
+
 // generateExhaustivePlans recursively generates all possible plans with their predicates toggled as index or as scan predicates.
 // It generates 2^n plans for n predicates and appends them to the plans slice.
 // It also returns the plans slice with all the generated plans.
@@ -196,6 +219,33 @@ func generateExhaustivePlans(plans []plan, currentPlan plan, decidedPredicates i
 
 	p := currentPlan.UseIndexFor(decidedPredicates)
 	plans = generateExhaustivePlans(plans, p, decidedPredicates+1)
+
+	return plans
+}
+
+// generate1024ExhaustivePlans recursively generates all possible plans with their predicates toggled as index or as scan predicates.
+// It generates 2^n plans for n predicates and appends them to the plans slice.
+// It also returns the plans slice with all the generated plans.
+func generate1024ExhaustivePlans(plans []plan, currentPlan plan, decidedPredicates int) []plan {
+	if decidedPredicates == len(currentPlan.predicates) || decidedPredicates >= 10 {
+		// make the rest of the predicates index predicates to avoid generating too many plans
+		for i := decidedPredicates; i < len(currentPlan.predicates); i++ {
+			currentPlan = currentPlan.UseIndexFor(i)
+		}
+		return append(plans, currentPlan)
+	}
+
+	if decidedPredicates == len(currentPlan.predicates) {
+		return append(plans, currentPlan)
+	}
+
+	// Generate two plans, one with the current predicate applied and one without.
+	// This is done by copying the current plan and applying the predicate to the copy.
+	// The copy is then added to the list of plans to be returned.
+	plans = generate1024ExhaustivePlans(plans, currentPlan, decidedPredicates+1)
+
+	p := currentPlan.UseIndexFor(decidedPredicates)
+	plans = generate1024ExhaustivePlans(plans, p, decidedPredicates+1)
 
 	return plans
 }
