@@ -113,7 +113,7 @@ func (cfg *MetadataCacheConfig) Validate() error {
 	return cfg.BackendConfig.Validate()
 }
 
-func CreateCachingBucket(chunksCache cache.Cache, chunksConfig ChunksCacheConfig, metadataConfig MetadataCacheConfig, bkt objstore.Bucket, logger log.Logger, reg prometheus.Registerer) (objstore.Bucket, error) {
+func CreateCachingBucket(chunksCache cache.Cache, labelsCache cache.Cache, chunksConfig ChunksCacheConfig, metadataConfig MetadataCacheConfig, bkt objstore.Bucket, logger log.Logger, reg prometheus.Registerer) (objstore.Bucket, error) {
 	cfg := bucketcache.NewCachingBucketConfig()
 	cachingConfigured := false
 
@@ -159,9 +159,10 @@ func CreateCachingBucket(chunksCache cache.Cache, chunksConfig ChunksCacheConfig
 		}
 		cfg.CacheGetRange("chunks", chunksCache, isTSDBChunkFile, subrangeSize, attributesCache, chunksConfig.AttributesTTL, chunksConfig.SubrangeTTL, chunksConfig.MaxGetRangeRequests)
 		cfg.CacheGetRange("parquet-chunks", chunksCache, isParquetChunksFile, chunksConfig.ParquetChunksSubrangeSize, attributesCache, chunksConfig.AttributesTTL, chunksConfig.SubrangeTTL, chunksConfig.MaxGetRangeRequests)
-		if chunksConfig.CacheParquetLabelsFiles {
-			// TODO Note that the parquet labels should go into a different cache than the chunks. We reuse the same cache to avoid changes across the codebase but if we're going with this implementation we should move it.
-			cfg.CacheGetRange("parquet-labels", chunksCache, IsParquetLabelsFile, chunksConfig.ParquetLabelsSubrangeSize, attributesCache, chunksConfig.AttributesTTL, chunksConfig.SubrangeTTL, chunksConfig.MaxGetRangeRequests)
+		
+		// Cache parquet labels in the labels cache (which uses index cache configuration)
+		if chunksConfig.CacheParquetLabelsFiles && labelsCache != nil {
+			cfg.CacheGetRange("parquet-labels", labelsCache, IsParquetLabelsFile, chunksConfig.ParquetLabelsSubrangeSize, attributesCache, chunksConfig.AttributesTTL, chunksConfig.SubrangeTTL, chunksConfig.MaxGetRangeRequests)
 		}
 	}
 

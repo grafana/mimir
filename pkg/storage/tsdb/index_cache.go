@@ -120,3 +120,19 @@ func newMemcachedIndexCache(cfg cache.MemcachedClientConfig, logger log.Logger, 
 
 	return indexcache.NewTracingIndexCache(c, logger), nil
 }
+
+// NewLabelsCacheFromIndexConfig creates a generic cache.Cache using the same 
+// configuration as the index cache, suitable for use in CreateCachingBucket
+func NewLabelsCacheFromIndexConfig(cfg IndexCacheConfig, logger log.Logger, registerer prometheus.Registerer) (cache.Cache, error) {
+	switch cfg.Backend {
+	case IndexCacheBackendInMemory:
+		// For in-memory, we create a separate memcached-like interface but in-memory
+		// For now, return nil to disable labels caching when using in-memory index cache
+		return nil, nil
+	case IndexCacheBackendMemcached:
+		// Create the same memcached client that the index cache uses, but with labels-cache prefix
+		return cache.NewMemcachedClientWithConfig(logger, "labels-cache", cfg.Memcached, prometheus.WrapRegistererWithPrefix("thanos_", registerer))
+	default:
+		return nil, errUnsupportedIndexCacheBackend
+	}
+}

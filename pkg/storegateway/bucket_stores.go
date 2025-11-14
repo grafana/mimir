@@ -95,7 +95,13 @@ func NewBucketStores(cfg tsdb.BlocksStorageConfig, shardingStrategy ShardingStra
 		return nil, errors.Wrapf(err, "chunks-cache")
 	}
 
-	cachingBucket, err := tsdb.CreateCachingBucket(chunksCacheClient, cfg.BucketStore.ChunksCache, cfg.BucketStore.MetadataCache, bucketClient, logger, reg)
+	// Create labels cache using index cache config
+	labelsCacheClient, err := tsdb.NewLabelsCacheFromIndexConfig(cfg.BucketStore.IndexCache, logger, prometheus.WrapRegistererWithPrefix("thanos_", reg))
+	if err != nil {
+		return nil, errors.Wrapf(err, "labels-cache")
+	}
+
+	cachingBucket, err := tsdb.CreateCachingBucket(chunksCacheClient, labelsCacheClient, cfg.BucketStore.ChunksCache, cfg.BucketStore.MetadataCache, bucketClient, logger, reg)
 	if err != nil {
 		return nil, errors.Wrapf(err, "create caching bucket")
 	}

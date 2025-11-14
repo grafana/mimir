@@ -88,7 +88,13 @@ func NewParquetBucketStores(
 		return nil, errors.Wrapf(err, "parquet-chunks-cache")
 	}
 
-	cachingBucket, err := tsdb.CreateCachingBucket(chunksCacheClient, cfg.BucketStore.ChunksCache, cfg.BucketStore.MetadataCache, bkt, logger, reg)
+	// Create labels cache using index cache config
+	labelsCacheClient, err := tsdb.NewLabelsCacheFromIndexConfig(cfg.BucketStore.IndexCache, logger, prometheus.WrapRegistererWithPrefix("thanos_", reg))
+	if err != nil {
+		return nil, errors.Wrapf(err, "parquet-labels-cache")
+	}
+
+	cachingBucket, err := tsdb.CreateCachingBucket(chunksCacheClient, labelsCacheClient, cfg.BucketStore.ChunksCache, cfg.BucketStore.MetadataCache, bkt, logger, reg)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to create caching bucket for parquet bucket stores")
 	}
