@@ -120,10 +120,6 @@ func (p CostBasedPlanner) PlanIndexLookup(ctx context.Context, inPlan index.Look
 	// Repartition the matchers. We don't trust other planners.
 	// Allocate a new slice so that we don't mess up the slice of the caller.
 	matchers := slices.Concat(inPlan.IndexMatchers(), inPlan.ScanMatchers())
-	if len(matchers) > maxMatchersForPlanning {
-		return inPlan, errTooManyMatchers
-	}
-
 	allPlansUnordered := p.generatePlansBranchAndBound(ctx, p.stats, matchers, memPools, shard)
 
 	var lookupPlan *plan
@@ -133,10 +129,17 @@ func (p CostBasedPlanner) PlanIndexLookup(ctx context.Context, inPlan index.Look
 	}
 
 	allPlansExhaustive := p.generateExhaustivePlans(ctx, p.stats, matchers, memPools, shard)
-	_, bestPlanOverall := p.chooseBestPlan(memPools, allPlansExhaustive, allPlans)
+	allPlansExhaustive, bestPlanOverall := p.chooseBestPlan(memPools, allPlansExhaustive, allPlans)
 
 	if bestPlanOverall != nil && bestPlanOverall.TotalCost() < lookupPlan.TotalCost() {
-		fmt.Printf("Warning: Chosen plan is not the absolute best plan. Chosen plan cost: %f, Best overall plan cost: %f\n", lookupPlan.TotalCost(), bestPlanOverall.TotalCost())
+		// print best plan overall cost; top 3 best plans cost and the lookupPlan cost
+		fmt.Printf("Warning: Branch-and-bound selected plan with cost %.2f, but exhaustive search found a better plan with cost %.2f\n", lookupPlan.TotalCost(), bestPlanOverall.TotalCost())
+		fmt.Printf("Top 3 best plans from exhaustive search:")
+		for i, p := range allPlansExhaustive[:min(3, len(allPlansExhaustive))] {
+			fmt.Printf("  Plan %d: cost %.2f ", i+1, p.TotalCost())
+		}
+		fmt.Println()
+
 	}
 	return lookupPlan, nil
 }
@@ -163,7 +166,7 @@ func (p CostBasedPlanner) chooseBestPlan(memPools *costBasedPlannerPools, allPla
 	for i, p := range allPlans {
 		if len(p.IndexMatchers()) > 0 {
 			allPlans = allPlans[i:]
-			return nil, &allPlans[i]
+			return allPlans, &allPlans[i]
 		}
 	}
 	return allPlans, nil
