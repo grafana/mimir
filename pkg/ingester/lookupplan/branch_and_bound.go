@@ -73,7 +73,7 @@ func (p CostBasedPlanner) generatePlansBranchAndBound(ctx context.Context, stati
 
 	decidedPlans := &partialPlans{}
 
-	for i := 0; i < 2*maxPlansForPlanning && prospectPlans.Len() > 0; i++ {
+	for i := 0; i < maxPlansForPlanning && prospectPlans.Len() > 0; i++ {
 		current := heap.Pop(prospectPlans).(partialPlan)
 
 		if current.decidedPredicates == len(current.plan.predicates) {
