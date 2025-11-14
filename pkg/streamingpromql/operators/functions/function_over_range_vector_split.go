@@ -103,12 +103,6 @@ func (m *FunctionOverRangeVectorSplit) ExpressionPosition() posrange.PositionRan
 
 func (m *FunctionOverRangeVectorSplit) SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
 	var err error
-
-	m.splits, err = m.createSplits(ctx)
-	if err != nil {
-		return nil, err
-	}
-
 	var metadata []types.SeriesMetadata
 	metadata, m.seriesToSplits, err = m.mergeSplitsMetadata(ctx, matchers)
 	if err != nil {
@@ -187,6 +181,17 @@ func (m *FunctionOverRangeVectorSplit) emitAnnotation(generator types.Annotation
 }
 
 func (m *FunctionOverRangeVectorSplit) Prepare(ctx context.Context, params *types.PrepareParams) error {
+	var err error
+	m.splits, err = m.createSplits(ctx)
+	if err != nil {
+		return err
+	}
+	for _, split := range m.splits {
+		err = split.Prepare(ctx, params)
+		if err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -450,7 +455,9 @@ type SplitRange struct {
 }
 
 type Split interface {
+	Prepare(ctx context.Context, params *types.PrepareParams) error
 	SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error)
+	// TODO: just return merged result instead of slices of results?
 	GetResultsAtIdx(ctx context.Context, splitLocalIdx int) ([]cache.IntermediateResult, error)
 	Finalize(ctx context.Context) error
 	Close()
@@ -471,6 +478,10 @@ func NewCachedSplit(cachedResults cache.CacheReadEntry, parent *FunctionOverRang
 		cachedResults: cachedResults,
 		parent:        parent,
 	}
+}
+
+func (p *CachedSplit) Prepare(ctx context.Context, params *types.PrepareParams) error {
+	return nil
 }
 
 func (c *CachedSplit) SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
@@ -533,6 +544,10 @@ func NewUncachedSplit(
 		cacheWriteEntries: cacheEntries,
 		writtenToCache:    false,
 	}, nil
+}
+
+func (p *UncachedSplit) Prepare(ctx context.Context, params *types.PrepareParams) error {
+	return p.operator.Prepare(ctx, params)
 }
 
 func (p *UncachedSplit) SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
