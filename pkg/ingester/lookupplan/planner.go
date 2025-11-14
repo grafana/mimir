@@ -199,6 +199,13 @@ func (p CostBasedPlanner) generateExhaustivePlans(ctx context.Context, statistic
 
 func (p CostBasedPlanner) generate1024ExhaustivePlans(ctx context.Context, statistics index.Statistics, matchers []*labels.Matcher, pools *costBasedPlannerPools, shard *sharding.ShardSelector) []plan {
 	noopPlan := newScanOnlyPlan(ctx, statistics, p.config, matchers, pools.indexPredicatesPool, shard)
+	// Sort predicates so that we exclude the lower cost predicates first. The cheaper ones will likely be on either in index or scan, so we don't plan them.
+	slices.SortFunc(noopPlan.predicates, func(a, b planPredicate) int {
+		aCost := a.indexLookupCost() + float64(noopPlan.FinalCardinality()/10)*a.singleMatchCost
+		bCost := b.indexLookupCost() + float64(noopPlan.FinalCardinality()/10)*b.singleMatchCost
+		// higher cost predicates first
+		return cmp.Compare(bCost, aCost)
+	})
 	allPlans := pools.plansPool.Get(1 << uint(len(matchers)))[:0]
 
 	return generate1024ExhaustivePlans(allPlans, noopPlan, 0)
