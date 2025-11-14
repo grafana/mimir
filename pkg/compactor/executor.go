@@ -122,12 +122,13 @@ func (e *schedulerExecutor) run(ctx context.Context, c *MultitenantCompactor) er
 
 	// Clean up any stale compaction directories from previous runs.
 	compactDir := c.compactorCfg.DataDir + "/compact"
+	// Initialize lastCleanupTime regardless of cleanup success to prevent cleanup on every job
+	e.cleanupMu.Lock()
+	e.lastCleanupTime = time.Now()
+	e.cleanupMu.Unlock()
+
 	if err := removeCompactionDir(e.logger, compactDir); err != nil {
 		level.Warn(e.logger).Log("msg", "failed to cleanup compaction directory on startup", "path", compactDir, "err", err)
-	} else {
-		e.cleanupMu.Lock()
-		e.lastCleanupTime = time.Now()
-		e.cleanupMu.Unlock()
 	}
 
 	b := backoff.New(ctx, backoff.Config{
