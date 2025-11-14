@@ -549,9 +549,9 @@ func (f *MetaFetcher) countCached() int {
 	return len(f.cached)
 }
 
-// FetchRequestedBlocks fetches metadata for specific block IDs without iterating through the bucket
-// Assumes metas exist and returns an error if any blocks fail to download.
-func (f *MetaFetcher) FetchRequestedBlocks(ctx context.Context, blockIDs []ulid.ULID) (map[ulid.ULID]*Meta, error) {
+// FetchRequestedMetas fetches metadata for specific block IDs without iterating through the bucket.
+// Returns an error if any of the requested block metadata fail to load.
+func (f *MetaFetcher) FetchRequestedMetas(ctx context.Context, blockIDs []ulid.ULID) (map[ulid.ULID]*Meta, error) {
 	if len(blockIDs) == 0 {
 		return nil, errNoBlocksProvided
 	}

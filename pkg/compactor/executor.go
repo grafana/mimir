@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"os"
 	"sync"
 	"time"
 
@@ -75,6 +76,8 @@ type schedulerExecutor struct {
 	schedulerConn            *grpc.ClientConn
 	invalidClusterValidation *prometheus.CounterVec
 	retryable                failsafe.Executor[any]
+	lastCleanupTime          time.Time
+	cleanupMu                sync.Mutex
 }
 
 func newSchedulerExecutor(cfg Config, logger log.Logger, invalidClusterValidation *prometheus.CounterVec) (*schedulerExecutor, error) {
@@ -116,6 +119,16 @@ func (e *schedulerExecutor) run(ctx context.Context, c *MultitenantCompactor) er
 	workerID := fmt.Sprintf("compactor-%s", c.ringLifecycler.GetInstanceID())
 	level.Info(e.logger).Log("msg", "compactor running in scheduler mode", "scheduler_endpoint", e.cfg.SchedulerAddress, "worker_id", workerID)
 
+	// Clean up any stale compaction directories from previous runs.
+	compactDir := c.compactorCfg.DataDir + "/compact"
+	if err := removeCompactionDir(e.logger, compactDir); err != nil {
+		level.Warn(e.logger).Log("msg", "failed to cleanup compaction directory on startup", "path", compactDir, "err", err)
+	} else {
+		e.cleanupMu.Lock()
+		e.lastCleanupTime = time.Now()
+		e.cleanupMu.Unlock()
+	}
+
 	b := backoff.New(ctx, backoff.Config{
 		MinBackoff: e.cfg.SchedulerMinLeasingBackoff,
 		MaxBackoff: e.cfg.SchedulerMaxLeasingBackoff,
@@ -144,6 +157,37 @@ func (e *schedulerExecutor) stop() error {
 	if e.schedulerConn != nil {
 		return e.schedulerConn.Close()
 	}
+	return nil
+}
+
+func removeCompactionDir(logger log.Logger, compactDir string) error {
+	if err := os.RemoveAll(compactDir); err != nil {
+		return errors.Wrap(err, "failed to remove compaction directory")
+	}
+
+	if err := os.MkdirAll(compactDir, 0750); err != nil {
+		return errors.Wrap(err, "failed to create compaction directory")
+	}
+	return nil
+}
+
+// cleanupCompactionDir cleans up the compaction directory if the configured
+// cleanup interval has elapsed since the last cleanup.
+func (e *schedulerExecutor) cleanupCompactionDir(logger log.Logger, compactDir string) error {
+	e.cleanupMu.Lock()
+	defer e.cleanupMu.Unlock()
+	elapsed := time.Since(e.lastCleanupTime)
+	shouldCleanup := elapsed >= e.cfg.CompactionDirCleanupInterval
+
+	if !shouldCleanup {
+		return nil
+	}
+
+	if err := removeCompactionDir(logger, compactDir); err != nil {
+		return err
+	}
+
+	e.lastCleanupTime = time.Now()
 	return nil
 }
 
@@ -343,9 +387,10 @@ func (e *schedulerExecutor) executeCompactionJob(ctx context.Context, c *Multite
 		return compactorschedulerpb.REASSIGN, errors.Wrap(err, "failed to sync metas")
 	}
 
-	jobMetas, err := getJobMetasFromSyncer(syncer, blockIDs)
+	jobMetas, err := getJobMetas(syncer, blockIDs)
 	if err != nil {
-		return compactorschedulerpb.REASSIGN, err
+		level.Error(userLogger).Log("msg", "blocks not found after sync, abandoning job", "err", err)
+		return compactorschedulerpb.ABANDON, err
 	}
 
 	var splitNumShards uint32
@@ -363,14 +408,84 @@ func (e *schedulerExecutor) executeCompactionJob(ctx context.Context, c *Multite
 		return compactorschedulerpb.REASSIGN, errors.Wrap(err, "failed to create bucket compactor")
 	}
 
-	level.Info(userLogger).Log("msg", "executing compaction job from scheduler", "tenant", userID, "blocks", len(blockIDs), "split", spec.Job.Split)
-	_, compactedBlockIDs, err := compactor.runCompactionJob(ctx, job)
-	if err != nil {
-		return compactorschedulerpb.REASSIGN, err
+	// Clean up the compaction directory. This approach only works while compactors work on a single job at a
+	// time. With higher concurrency, multiple jobs could conflict and clear one anothers progress.
+	if e.cfg.CompactionDirCleanupInterval > 0 {
+		if err := e.cleanupCompactionDir(userLogger, compactor.compactDir); err != nil {
+			level.Warn(userLogger).Log("msg", "failed to cleanup compaction directory, continuing with job anyway", "path", compactor.compactDir, "err", err)
+		}
 	}
 
-	level.Info(userLogger).Log("msg", "compaction job completed", "tenant", userID, "compacted_blocks", len(compactedBlockIDs))
-	return compactorschedulerpb.COMPLETE, nil
+	defer func() {
+		if err := os.RemoveAll(compactor.compactDir); err != nil {
+			level.Error(userLogger).Log("msg", "failed to remove compaction work directory", "path", compactor.compactDir, "err", err)
+		}
+	}()
+
+	level.Info(userLogger).Log("msg", "executing compaction job from scheduler", "tenant", userID, "blocks", len(blockIDs), "split", spec.Job.Split)
+	_, compactedBlockIDs, err := compactor.runCompactionJob(ctx, job)
+	if err == nil {
+		level.Info(userLogger).Log("msg", "compaction job completed", "tenant", userID, "compacted_blocks", len(compactedBlockIDs))
+		return compactorschedulerpb.COMPLETE, nil
+	}
+
+	// At this point the compaction has failed. Handle recoverable errors.
+
+	if ok, issue347Err := isIssue347Error(err); ok {
+		level.Warn(userLogger).Log("msg", "detected issue347 error during compaction", "block", issue347Err.id, "err", err)
+		repairErr := repairIssue347(ctx, userLogger, userBucket, syncer.metrics.blocksMarkedForDeletion, issue347Err)
+		if repairErr == nil {
+			level.Info(userLogger).Log("msg", "successfully repaired issue347 block, job can be re-planned", "block", issue347Err.id)
+			return compactorschedulerpb.COMPLETE, nil
+		}
+		level.Error(userLogger).Log("msg", "failed to repair issue347 block, abandoning job", "block", issue347Err.id, "err", repairErr)
+		return compactorschedulerpb.ABANDON, errors.Wrap(repairErr, "failed to repair issue347 block")
+	}
+
+	if ok, outOfOrderChunksErr := IsOutOfOrderChunkError(err); ok && compactor.skipUnhealthyBlocks {
+		level.Warn(userLogger).Log("msg", "detected out-of-order chunks error during compaction", "block", outOfOrderChunksErr.id, "err", err)
+		markErr := e.retryable.WithContext(ctx).Run(func() error {
+			return block.MarkForNoCompact(
+				ctx,
+				userLogger,
+				userBucket,
+				outOfOrderChunksErr.id,
+				block.OutOfOrderChunksNoCompactReason,
+				"OutofOrderChunk: marking block with out-of-order series/chunks as no compact to unblock compaction",
+				compactor.metrics.blocksMarkedForNoCompact.WithLabelValues(block.OutOfOrderChunksNoCompactReason),
+			)
+		})
+
+		if markErr == nil {
+			level.Info(userLogger).Log("msg", "marked block for no-compact due to out-of-order chunks, job can be re-planned", "block", outOfOrderChunksErr.id)
+			return compactorschedulerpb.COMPLETE, nil
+		}
+		level.Warn(userLogger).Log("msg", "failed to mark block for no-compact after retries", "block", outOfOrderChunksErr.id, "err", markErr)
+	}
+
+	if ok, criticalErr := IsCriticalError(err); ok && compactor.skipUnhealthyBlocks {
+		level.Warn(userLogger).Log("msg", "detected critical error during compaction", "block", criticalErr.id, "err", err)
+		markErr := e.retryable.WithContext(ctx).Run(func() error {
+			return block.MarkForNoCompact(
+				ctx,
+				userLogger,
+				userBucket,
+				criticalErr.id,
+				block.CriticalNoCompactReason,
+				"UnhealthyBlock: marking unhealthy block as no compact to unblock compaction",
+				compactor.metrics.blocksMarkedForNoCompact.WithLabelValues(block.CriticalNoCompactReason),
+			)
+		})
+
+		if markErr == nil {
+			level.Info(userLogger).Log("msg", "marked block for no-compact due to critical error, job can be re-planned", "block", criticalErr.id)
+			return compactorschedulerpb.COMPLETE, nil
+		}
+		level.Warn(userLogger).Log("msg", "failed to mark block for no-compact after retries", "block", criticalErr.id, "err", markErr)
+	}
+
+	level.Warn(userLogger).Log("msg", "compaction job failed with unhandled error, reassigning", "err", err)
+	return compactorschedulerpb.REASSIGN, err
 }
 
 func (e *schedulerExecutor) executePlanningJob(ctx context.Context, c *MultitenantCompactor, tenant string) ([]*compactorschedulerpb.PlannedCompactionJob, error) {
@@ -467,7 +582,7 @@ func (e *schedulerExecutor) sendPlannedJobs(ctx context.Context, key *compactors
 	})
 }
 
-func getJobMetasFromSyncer(syncer *metaSyncer, blockIDs []ulid.ULID) ([]*block.Meta, error) {
+func getJobMetas(syncer *metaSyncer, blockIDs []ulid.ULID) ([]*block.Meta, error) {
 	allMetas := syncer.Metas()
 	jobMetas := make([]*block.Meta, 0, len(blockIDs))
 	for _, blockID := range blockIDs {

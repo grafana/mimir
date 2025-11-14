@@ -124,7 +124,7 @@ func (s *metaSyncer) SyncMetas(ctx context.Context) error {
 func (s *metaSyncer) SyncRequestedMetas(ctx context.Context, blockIDs []ulid.ULID) error {
 	s.mtx.Lock()
 	defer s.mtx.Unlock()
-	metas, err := s.fetcher.FetchRequestedBlocks(ctx, blockIDs)
+	metas, err := s.fetcher.FetchRequestedMetas(ctx, blockIDs)
 	if err != nil {
 		return err
 	}
@@ -324,7 +324,7 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 	// Once we have a plan we need to download the actual data.
 	downloadBegin := time.Now()
 
-	ignored := objstore.WithDownloadIgnoredPaths([]string{block.MetaFilename}...)
+	ignored := objstore.WithDownloadIgnoredPaths(block.MetaFilename)
 	err = concurrency.ForEachJob(ctx, len(toCompact), c.blockSyncConcurrency, func(ctx context.Context, idx int) error {
 		meta := toCompact[idx]
 
