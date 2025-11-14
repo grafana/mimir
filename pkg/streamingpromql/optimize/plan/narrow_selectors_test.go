@@ -219,6 +219,21 @@ func TestNarrowSelectorsOptimizationPass(t *testing.T) {
 								- param 4: StringLiteral: ".+/(.+)"
 			`,
 		},
+		"binary expression with label_join on one side": {
+			expr: `sum by (statefulset) (kube_statefulset_replicas) - sum by (statefulset) (label_join(not_ready, "statefulset", "job", "workload"))`,
+			expectedPlan: `
+				- BinaryExpression: LHS - RHS
+					- LHS: AggregateExpression: sum by (statefulset)
+						- VectorSelector: {__name__="kube_statefulset_replicas"}
+					- RHS: AggregateExpression: sum by (statefulset)
+						- DeduplicateAndMerge
+							- FunctionCall: label_join(...)
+								- param 0: VectorSelector: {__name__="not_ready"}
+								- param 1: StringLiteral: "statefulset"
+								- param 2: StringLiteral: "job"
+								- param 3: StringLiteral: "workload"
+			`,
+		},
 	}
 
 	ctx := context.Background()

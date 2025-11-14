@@ -49,7 +49,7 @@ func crawlPlanFromNode(node planning.Node, res *InspectResult) {
 }
 
 func isLabelReplace(v *core.FunctionCall) bool {
-	return v.Function == functions.FUNCTION_LABEL_REPLACE
+	return v.Function == functions.FUNCTION_LABEL_REPLACE || v.Function == functions.FUNCTION_LABEL_JOIN
 }
 
 func isSharded(v *core.VectorSelector) bool {
