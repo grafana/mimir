@@ -332,6 +332,144 @@ func TestMatrixSelector_Equivalence(t *testing.T) {
 			},
 			expectEquivalent: true,
 		},
+		"one with smoothed and one without": {
+			a: &MatrixSelector{
+				MatrixSelectorDetails: &MatrixSelectorDetails{
+					Matchers: []*LabelMatcher{
+						{Name: "__name__", Type: labels.MatchNotEqual, Value: "foo"},
+					},
+					Range:              time.Minute,
+					ExpressionPosition: PositionRange{Start: 1, End: 2},
+					Smoothed:           true,
+				},
+			},
+			b: &MatrixSelector{
+				MatrixSelectorDetails: &MatrixSelectorDetails{
+					Matchers: []*LabelMatcher{
+						{Name: "__name__", Type: labels.MatchNotEqual, Value: "foo"},
+					},
+					Range:              time.Minute,
+					ExpressionPosition: PositionRange{Start: 1, End: 2},
+					Smoothed:           false,
+				},
+			},
+			expectEquivalent: false,
+		},
+		"both smoothed": {
+			a: &MatrixSelector{
+				MatrixSelectorDetails: &MatrixSelectorDetails{
+					Matchers: []*LabelMatcher{
+						{Name: "__name__", Type: labels.MatchNotEqual, Value: "foo"},
+					},
+					Range:              time.Minute,
+					ExpressionPosition: PositionRange{Start: 1, End: 2},
+					Smoothed:           true,
+				},
+			},
+			b: &MatrixSelector{
+				MatrixSelectorDetails: &MatrixSelectorDetails{
+					Matchers: []*LabelMatcher{
+						{Name: "__name__", Type: labels.MatchNotEqual, Value: "foo"},
+					},
+					Range:              time.Minute,
+					ExpressionPosition: PositionRange{Start: 1, End: 2},
+					Smoothed:           true,
+				},
+			},
+			expectEquivalent: true,
+		},
+		"neither smoothed": {
+			a: &MatrixSelector{
+				MatrixSelectorDetails: &MatrixSelectorDetails{
+					Matchers: []*LabelMatcher{
+						{Name: "__name__", Type: labels.MatchNotEqual, Value: "foo"},
+					},
+					Range:              time.Minute,
+					ExpressionPosition: PositionRange{Start: 1, End: 2},
+					Smoothed:           false,
+				},
+			},
+			b: &MatrixSelector{
+				MatrixSelectorDetails: &MatrixSelectorDetails{
+					Matchers: []*LabelMatcher{
+						{Name: "__name__", Type: labels.MatchNotEqual, Value: "foo"},
+					},
+					Range:              time.Minute,
+					ExpressionPosition: PositionRange{Start: 1, End: 2},
+					Smoothed:           false,
+				},
+			},
+			expectEquivalent: true,
+		},
+		"one with anchored and one without": {
+			a: &MatrixSelector{
+				MatrixSelectorDetails: &MatrixSelectorDetails{
+					Matchers: []*LabelMatcher{
+						{Name: "__name__", Type: labels.MatchNotEqual, Value: "foo"},
+					},
+					Range:              time.Minute,
+					ExpressionPosition: PositionRange{Start: 1, End: 2},
+					Anchored:           true,
+				},
+			},
+			b: &MatrixSelector{
+				MatrixSelectorDetails: &MatrixSelectorDetails{
+					Matchers: []*LabelMatcher{
+						{Name: "__name__", Type: labels.MatchNotEqual, Value: "foo"},
+					},
+					Range:              time.Minute,
+					ExpressionPosition: PositionRange{Start: 1, End: 2},
+					Anchored:           false,
+				},
+			},
+			expectEquivalent: false,
+		},
+		"both anchored": {
+			a: &MatrixSelector{
+				MatrixSelectorDetails: &MatrixSelectorDetails{
+					Matchers: []*LabelMatcher{
+						{Name: "__name__", Type: labels.MatchNotEqual, Value: "foo"},
+					},
+					Range:              time.Minute,
+					ExpressionPosition: PositionRange{Start: 1, End: 2},
+					Anchored:           true,
+				},
+			},
+			b: &MatrixSelector{
+				MatrixSelectorDetails: &MatrixSelectorDetails{
+					Matchers: []*LabelMatcher{
+						{Name: "__name__", Type: labels.MatchNotEqual, Value: "foo"},
+					},
+					Range:              time.Minute,
+					ExpressionPosition: PositionRange{Start: 1, End: 2},
+					Anchored:           true,
+				},
+			},
+			expectEquivalent: true,
+		},
+		"neither anchored": {
+			a: &MatrixSelector{
+				MatrixSelectorDetails: &MatrixSelectorDetails{
+					Matchers: []*LabelMatcher{
+						{Name: "__name__", Type: labels.MatchNotEqual, Value: "foo"},
+					},
+					Range:              time.Minute,
+					ExpressionPosition: PositionRange{Start: 1, End: 2},
+					Anchored:           false,
+				},
+			},
+			b: &MatrixSelector{
+				MatrixSelectorDetails: &MatrixSelectorDetails{
+					Matchers: []*LabelMatcher{
+						{Name: "__name__", Type: labels.MatchNotEqual, Value: "foo"},
+					},
+					Range:              time.Minute,
+					ExpressionPosition: PositionRange{Start: 1, End: 2},
+					Anchored:           false,
+				},
+			},
+			expectEquivalent: true,
+		},
 	}
 
 	for name, testCase := range testCases {

@@ -6,69 +6,79 @@
 package selectors
 
 import (
+	"fmt"
+
 	"github.com/prometheus/prometheus/promql"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
-type headTailIterator struct {
-	head, tail []promql.FPoint
-	idx        int // combined iterator position across both
-	len        int // this is seeded on construction - these slices will not be modified
+type fPointRingBufferViewIterator struct {
+	idx  int
+	view *types.FPointRingBufferView
 }
 
-func (i *headTailIterator) hasNext() bool {
-	return i.idx < i.len
+func (i *fPointRingBufferViewIterator) hasNext() bool {
+	return i.idx < i.view.Count()
 }
 
-func (i *headTailIterator) next() *promql.FPoint {
-	if i.idx >= i.len {
-		return nil
+// next moves the iterator forward, returning the next point.
+// This function will panic if moving the iterator would result in an index out of bounds.
+func (i *fPointRingBufferViewIterator) next() promql.FPoint {
+	if i.idx >= i.view.Count() {
+		panic(fmt.Sprintf("next(): out of range, requested index %v but have length %v", i.idx, i.view.Count()))
 	}
-	p := i.at(i.idx)
+	p := i.view.PointAt(i.idx)
 	i.idx++
 	return p
 }
 
-func (i *headTailIterator) prev() *promql.FPoint {
-	if i.idx <= 0 {
-		return nil
-	}
-	i.idx--
-	return i.at(i.idx)
+func (i *fPointRingBufferViewIterator) at() promql.FPoint {
+	return i.view.PointAt(i.idx)
 }
 
-func (i *headTailIterator) advance() {
-	if i.idx < i.len {
+// next moves the iterator backwards, returning the previous point.
+// This function will panic if moving the iterator would result in an index out of bounds.
+func (i *fPointRingBufferViewIterator) prev() promql.FPoint {
+	if i.idx <= 0 {
+		panic(fmt.Sprintf("prev(): out of range, requested index %v", i.idx-1))
+	}
+	i.idx--
+	return i.view.PointAt(i.idx)
+}
+
+func (i *fPointRingBufferViewIterator) advance() {
+	if i.idx < i.view.Count() {
 		i.idx++
 	}
 }
 
-func (i *headTailIterator) peek() *promql.FPoint {
-	if i.idx >= i.len {
-		return nil
+func (i *fPointRingBufferViewIterator) reverse() {
+	if i.idx > 0 {
+		i.idx--
 	}
-	return i.at(i.idx)
 }
 
-func (i *headTailIterator) at(pos int) *promql.FPoint {
-	if pos < len(i.head) {
-		return &i.head[pos]
+// peek returns the next point, but does not move the iterator forward.
+// This function will panic if this look ahead would result in an index out of bounds.
+func (i *fPointRingBufferViewIterator) peek() promql.FPoint {
+	if i.idx >= i.view.Count() {
+		panic(fmt.Sprintf("peek(): out of range, requested index %v but have length %v", i.idx, i.view.Count()))
 	}
-	return &i.tail[pos-len(i.head)]
+	return i.view.PointAt(i.idx)
 }
 
-// scanTo will return the point which is closest to being <= time, or the first point after this time.
+// seek will return the point which is closest to being <= time, or the first point after this time.
 // The iterator will be positioned to the first point > time.
-func (i *headTailIterator) scanTo(time int64) *promql.FPoint {
+func (i *fPointRingBufferViewIterator) seek(time int64) promql.FPoint {
 	var first *promql.FPoint
 
 	for i.hasNext() {
 		next := i.peek()
 
 		if next.T < time {
-			first = next
+			first = &next
 			i.advance()
 			continue
 		}
@@ -79,26 +89,29 @@ func (i *headTailIterator) scanTo(time int64) *promql.FPoint {
 		}
 
 		if first != nil {
-			return first
+			return *first
 		}
 
 		return next
 	}
 
-	return first
+	return *first
 }
 
-// accumulateTo will accumulate all points <= time into the given buff.
-// The first point which is >= time is returned, and if not found the last point < time is returned.
-func (i *headTailIterator) accumulateTo(time int64, buff []promql.FPoint) ([]promql.FPoint, *promql.FPoint) {
+// copyRemainingPointsTo will accumulate all points <= time into the given buff.
+// The iterator will be positioned at the first point which is >= time.
+// If there is no point >= time, then the iterator is positioned at the last point < time.
+func (i *fPointRingBufferViewIterator) copyRemainingPointsTo(time int64, buff []promql.FPoint) []promql.FPoint {
 	for i.hasNext() {
 		next := i.next()
 
 		if next.T <= time {
-			buff = append(buff, *next)
+			buff = append(buff, next)
 
 			if next.T == time {
-				return buff, next
+				// move the iterator back so that the the at() call will return this 'next' point
+				i.reverse()
+				return buff
 			}
 
 		} else {
@@ -107,16 +120,15 @@ func (i *headTailIterator) accumulateTo(time int64, buff []promql.FPoint) ([]pro
 		}
 	}
 
-	return buff, i.prev()
+	// move the iterator back so that the the at() call will return this last point which caused our loop to exit
+	i.reverse()
+	return buff
 }
 
 // extendRangeVectorPoints will return a slice of points which has been adjusted to have anchored/smoothed points on the bounds of the given range.
 // This is used with the anchored/smoothed range query modifiers.
 // This implementation is based on extendFloats() found in promql/engine.go
-func extendRangeVectorPoints(floats *types.FPointRingBuffer, rangeStart, rangeEnd, rangeExtEnd int64, smoothed bool, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) ([]promql.FPoint, *promql.FPoint, *promql.FPoint, error) {
-
-	// Note the extended range end is used since smoothed will have extended this
-	view := floats.ViewUntilSearchingForwards(rangeExtEnd, nil)
+func extendRangeVectorPoints(view *types.FPointRingBufferView, rangeStart, rangeEnd int64, smoothed bool, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) ([]promql.FPoint, *promql.FPoint, *promql.FPoint, error) {
 
 	// no points to consider!
 	if !view.Any() {
@@ -139,19 +151,18 @@ func extendRangeVectorPoints(floats *types.FPointRingBuffer, rangeStart, rangeEn
 		return nil, nil, nil, err
 	}
 
-	// Do not modify these and no need to return them to the slices pool
-	head, tail := view.UnsafePoints()
-	it := headTailIterator{head: head, tail: tail, len: view.Count()}
+	it := fPointRingBufferViewIterator{view: view}
 
 	// Find the last point before the rangeStart, or the first point >= rangeStart
-	first := it.scanTo(rangeStart)
+	first := it.seek(rangeStart)
 
 	// Use this first value as the range boundary value
 	buff = append(buff, promql.FPoint{T: rangeStart, F: first.F})
 
 	// Accumulate the points <= rangeEnd into the buffer.
 	// Note - if the first.T > rangeStart, it will also be accumulated into buff as the 2nd point in the buffer.
-	buff, last := it.accumulateTo(rangeEnd, buff)
+	buff = it.copyRemainingPointsTo(rangeEnd, buff)
+	last := it.at()
 
 	if last.T != rangeEnd {
 		// Use the last point >= rangeEnd, or the point immediately preceding as the value for the end boundary
@@ -166,13 +177,13 @@ func extendRangeVectorPoints(floats *types.FPointRingBuffer, rangeStart, rangeEn
 	var smoothedTail *promql.FPoint
 	if smoothed && len(buff) > 1 {
 		if first.T < rangeStart {
-			buff[0].F = interpolate(first, &buff[1], rangeStart, false, true)
-			smoothedHead = &promql.FPoint{T: rangeStart, F: interpolate(first, &buff[1], rangeStart, true, true)}
+			buff[0].F = interpolate(first, buff[1], rangeStart, false, true)
+			smoothedHead = &promql.FPoint{T: rangeStart, F: interpolate(first, buff[1], rangeStart, true, true)}
 		}
 
 		if last.T > rangeEnd {
-			buff[len(buff)-1].F = interpolate(&buff[len(buff)-2], last, rangeEnd, false, false)
-			smoothedTail = &promql.FPoint{T: rangeEnd, F: interpolate(&buff[len(buff)-2], last, rangeEnd, true, false)}
+			buff[len(buff)-1].F = interpolate(buff[len(buff)-2], last, rangeEnd, false, false)
+			smoothedTail = &promql.FPoint{T: rangeEnd, F: interpolate(buff[len(buff)-2], last, rangeEnd, true, false)}
 		}
 	}
 
@@ -185,7 +196,7 @@ func extendRangeVectorPoints(floats *types.FPointRingBuffer, rangeStart, rangeEn
 // - on the right edge, it adds the left value to the right value.
 // It then calculates the interpolated value at the given timestamp.
 // This has been adapted from interpolate() in promql/functions.go
-func interpolate(p1, p2 *promql.FPoint, t int64, isCounter, leftEdge bool) float64 {
+func interpolate(p1, p2 promql.FPoint, t int64, isCounter, leftEdge bool) float64 {
 	y1 := p1.F
 	y2 := p2.F
 

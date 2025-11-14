@@ -30,6 +30,7 @@ type RangeVectorSelector struct {
 	extendedRangeFloats *types.FPointRingBuffer // A buffer we use to create views for smoothed/anchored extended ranges which have added/modified points from the original floats buffer
 	histograms          *types.HPointRingBuffer
 	stepData            *types.RangeVectorStepData // Retain the last step data instance we used to avoid allocating it for every step.
+	reusableView        *types.FPointRingBufferView
 
 	memoryConsumptionTracker *limiter.MemoryConsumptionTracker
 	anchored                 bool // The anchored modifier has been used for this range query
@@ -96,8 +97,8 @@ func (m *RangeVectorSelector) NextStepSamples(ctx context.Context) (*types.Range
 	rangeStart := rangeEnd - m.rangeMilliseconds
 
 	// Take a copy of the original range - the smoothed/anchored modifiers will change these
-	rangeStartOrig := rangeStart
-	rangeEndOrig := rangeEnd
+	originalRangeStart := rangeStart
+	originalRangeEnd := rangeEnd
 
 	// When the smoothed/anchored modifiers are used, the selector (fillBuffer) will return a wider range of points.
 	// The range boundaries are modified accordingly so that we do not discard these extended points.
@@ -129,9 +130,12 @@ func (m *RangeVectorSelector) NextStepSamples(ctx context.Context) (*types.Range
 			return nil, errors.New("smoothed and anchored modifiers do not work with native histograms")
 		}
 
+		// Note the extended range end is used since smoothed will have extended this
+		m.reusableView = m.floats.ViewUntilSearchingForwards(rangeEnd, m.reusableView)
+
 		// buff is a new slice of points which includes points for the range boundaries
 		// smoothedHead/Tail are special cases of the boundary points which will be used by any rate/increase function which consumes this vector.
-		buff, smoothedHead, smoothedTail, err := extendRangeVectorPoints(m.floats, rangeStartOrig, rangeEndOrig, rangeEnd, m.smoothed, m.memoryConsumptionTracker)
+		buff, smoothedHead, smoothedTail, err := extendRangeVectorPoints(m.reusableView, originalRangeStart, originalRangeEnd, m.smoothed, m.memoryConsumptionTracker)
 		if err != nil {
 			return nil, err
 		}
@@ -153,8 +157,8 @@ func (m *RangeVectorSelector) NextStepSamples(ctx context.Context) (*types.Range
 	}
 
 	m.stepData.Histograms = m.histograms.ViewUntilSearchingBackwards(rangeEnd, m.stepData.Histograms)
-	m.stepData.RangeStart = rangeStartOrig // important to return the original range start so that functions like rate() can determine the range seconds
-	m.stepData.RangeEnd = rangeEndOrig
+	m.stepData.RangeStart = originalRangeStart // important to return the original range start so that functions like rate() can determine the range duration regardless of smoothed / anchored
+	m.stepData.RangeEnd = originalRangeEnd
 
 	m.Stats.IncrementSamplesAtTimestamp(m.stepData.StepT, int64(m.stepData.Floats.Count())+m.stepData.Histograms.EquivalentFloatSampleCount())
 

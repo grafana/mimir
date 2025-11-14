@@ -486,7 +486,7 @@ func newQueryMiddlewares(
 
 	// Does not apply to remote read as those are executed remotely and the enabling of PromQL experimental
 	// functions for those are not controlled here.
-	experimentalFunctionsMiddleware := newExperimentalFunctionsMiddleware(limits, log)
+	experimentalFunctionsMiddleware := newExperimentalOperatorsMiddleware(limits, log)
 	queryRangeMiddleware = append(
 		queryRangeMiddleware,
 		newInstrumentMiddleware("experimental_functions", metrics),
