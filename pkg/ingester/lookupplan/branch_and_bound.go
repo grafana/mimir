@@ -104,6 +104,7 @@ func (p CostBasedPlanner) generatePlansBranchAndBound(ctx context.Context, stati
 		}
 
 		// Branch: try both scan (false) and index (true) for the next predicate
+		alreadyDecidedOneFalse := false
 		for firstUndecidedPredicate, decided := range current.decidedPredicates {
 			if decided {
 				continue
@@ -111,6 +112,11 @@ func (p CostBasedPlanner) generatePlansBranchAndBound(ctx context.Context, stati
 			decidedPredicates := slices.Clone(current.decidedPredicates)
 			decidedPredicates[firstUndecidedPredicate] = true
 			for _, useIndex := range []bool{false, true} {
+				if !useIndex && alreadyDecidedOneFalse {
+					// We already added a plan where this predicate uses scan, skip adding another one
+					continue
+				}
+				alreadyDecidedOneFalse = true
 				childPlan := current.plan
 				if useIndex {
 					childPlan = childPlan.UseIndexFor(firstUndecidedPredicate)
