@@ -5,6 +5,7 @@ package lookupplan
 import (
 	"container/heap"
 	"context"
+	"slices"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/index"
@@ -15,7 +16,7 @@ import (
 // partialPlan represents a plan where only some predicates have been decided.
 type partialPlan struct {
 	planWithCost
-	decidedPredicates int
+	decidedPredicates []bool
 }
 
 // partialPlans implements heap.Interface for a min-heap of partial plans ordered by lower bound.
@@ -59,44 +60,53 @@ func (p CostBasedPlanner) generatePlansBranchAndBound(ctx context.Context, stati
 	// Initialize the priority queue with the base plan
 	prospectPlans := &partialPlans{partialPlan{
 		planWithCost:      planWithCost{plan: basePlan, totalCost: basePlan.TotalCost()},
-		decidedPredicates: 0,
+		decidedPredicates: make([]bool, len(basePlan.predicates)),
 	}}
 	heap.Init(prospectPlans)
 	// add one plan where each predicate uses the index and the rest use scan
 	for i := 0; i < len(basePlan.predicates); i++ {
 		indexOnlyPlan := basePlan.UseIndexFor(i)
+		decidedPredicates := make([]bool, len(basePlan.predicates))
+		decidedPredicates[i] = true
 		heap.Push(prospectPlans, partialPlan{
 			planWithCost:      planWithCost{plan: indexOnlyPlan, totalCost: indexOnlyPlan.TotalCost()},
-			decidedPredicates: 0,
+			decidedPredicates: decidedPredicates,
 		})
 	}
 
 	decidedPlans := &partialPlans{}
+	allDecided := slices.Repeat([]bool{true}, len(basePlan.predicates))
 
 	for i := 0; i < maxPlansForPlanning && prospectPlans.Len() > 0; i++ {
 		current := heap.Pop(prospectPlans).(partialPlan)
 
-		if current.decidedPredicates == len(current.plan.predicates) {
+		if slices.Equal(current.decidedPredicates, allDecided) {
 			// All predicates have been decided, add to decided plans
 			heap.Push(decidedPlans, current)
 			continue
 		}
 
 		// Branch: try both scan (false) and index (true) for the next predicate
-		for _, useIndex := range []bool{false, true} {
-			childPlan := current.plan
-			if useIndex {
-				childPlan = childPlan.UseIndexFor(current.decidedPredicates)
+		for firstUndecidedPredicate, decided := range current.decidedPredicates {
+			if decided {
+				continue
 			}
-
-			// Calculate lower bound for the child plan
-			heap.Push(prospectPlans, partialPlan{
-				planWithCost: planWithCost{
-					plan:      childPlan,
-					totalCost: childPlan.TotalCost(),
-				},
-				decidedPredicates: current.decidedPredicates + 1,
-			})
+			decidedPredicates := slices.Clone(current.decidedPredicates)
+			decidedPredicates[firstUndecidedPredicate] = true
+			for _, useIndex := range []bool{false, true} {
+				childPlan := current.plan
+				if useIndex {
+					childPlan = childPlan.UseIndexFor(firstUndecidedPredicate)
+				}
+				// Calculate lower bound for the child plan
+				heap.Push(prospectPlans, partialPlan{
+					planWithCost: planWithCost{
+						plan:      childPlan,
+						totalCost: childPlan.TotalCost(),
+					},
+					decidedPredicates: decidedPredicates,
+				})
+			}
 		}
 	}
 
