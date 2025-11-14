@@ -5,6 +5,7 @@ package querysplitting
 import (
 	"errors"
 	"fmt"
+	"github.com/grafana/mimir/pkg/streamingpromql/cache"
 	"time"
 
 	"github.com/gogo/protobuf/proto"
@@ -84,7 +85,23 @@ func (s *SplittableFunctionCall) MinimumRequiredPlanVersion() planning.QueryPlan
 	return s.Inner.MinimumRequiredPlanVersion()
 }
 
-func MaterializeSplitRangeVector(s *SplittableFunctionCall, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
+type Materializer struct {
+	cache cache.IntermediateResultsCache
+}
+
+var _ planning.NodeMaterializer = &Materializer{}
+
+func NewMaterializer(cache cache.IntermediateResultsCache) *Materializer {
+	return &Materializer{
+		cache: cache,
+	}
+}
+
+func (m Materializer) Materialize(n planning.Node, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
+	s, ok := n.(*SplittableFunctionCall)
+	if !ok {
+		return nil, fmt.Errorf("unexpected type passed to materializer: expected SplittableFunctionCall, got %T", n)
+	}
 	innerFunctionCall, ok := s.Inner.(*core.FunctionCall)
 	if !ok {
 		return nil, fmt.Errorf("SplittableFunctionCall node should only wrap FunctionCall nodes, got %T", s.Inner)
@@ -106,11 +123,11 @@ func MaterializeSplitRangeVector(s *SplittableFunctionCall, materializer *planni
 	}
 
 	splitOp, err := functions.NewFunctionOverRangeVectorSplit(
-		matrixSelector, // Pass Node, not operator
+		matrixSelector,
 		materializer,
 		timeRange,
 		splitDuration,
-		params.IntermediateResultCache,
+		m.cache,
 		funcDef,
 		innerFunctionCall.ExpressionPosition(),
 		params.Annotations,

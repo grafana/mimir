@@ -54,6 +54,9 @@ type QuerySplittingConfig struct {
 	SplitInterval time.Duration `yaml:"split_interval" category:"experimental"`
 
 	// IntermediateResultsCache configures caching of intermediate results from split queries.
+	// TODO: consider making the cache an optional part of query splitting. We might want to just do query splitting
+	//  without caching (e.g. possibly if splitting is extended to range queries in the future, or if we add
+	//  parallelisation and just want to use query splitting for that and not cache).
 	IntermediateResultsCache cache.ResultsCacheConfig `yaml:"intermediate_results_cache" category:"experimental"`
 }
 

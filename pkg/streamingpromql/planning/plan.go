@@ -19,7 +19,6 @@ import (
 	"github.com/prometheus/prometheus/util/annotations"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
-	"github.com/grafana/mimir/pkg/streamingpromql/cache"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/limiter"
 )
@@ -179,12 +178,6 @@ type OperatorParameters struct {
 	Plan                     *QueryPlan
 	EnableDelayedNameRemoval bool
 	Logger                   log.Logger
-
-	// hacky way to get the planning nodes to the operator
-	PlanningNodes []Node
-
-	// Intermediate result cache for function operators
-	IntermediateResultCache *cache.IntermediateResultTenantCache
 }
 
 // CacheKey generates a unique cache key for a planning node for use with intermediate result caching.

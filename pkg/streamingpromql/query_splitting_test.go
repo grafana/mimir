@@ -356,26 +356,26 @@ func (c *testIntermediateResultsCache) Stats() (gets, hits, sets int) {
 	return c.gets, c.hits, c.sets
 }
 
-func (c *testIntermediateResultsCache) Get(user, function, selector string, start int64, end int64, memoryTracker *limiter.MemoryConsumptionTracker) (cache.IntermediateResultBlock, bool) {
-	key := fmt.Sprintf("%s:%s:%s:%d:%d", user, function, selector, start, end)
+func (c *testIntermediateResultsCache) Get(ctx context.Context, function, selector string, start int64, end int64, memoryTracker *limiter.MemoryConsumptionTracker) (cache.IntermediateResultBlock, bool, error) {
+	key := fmt.Sprintf("%s:%s:%d:%d", function, selector, start, end)
 	c.gets++
 	cached, ok := c.data[key]
 	if !ok {
-		return cache.IntermediateResultBlock{}, false
+		return cache.IntermediateResultBlock{}, false, nil
 	}
 
 	c.hits++
 	// Convert proto back to block with tracking (like real cache does)
 	block, err := cache.CachedSeriesToBlock(cached, memoryTracker)
 	if err != nil {
-		return cache.IntermediateResultBlock{}, false
+		return cache.IntermediateResultBlock{}, false, nil
 	}
 
-	return block, true
+	return block, true, nil
 }
 
-func (c *testIntermediateResultsCache) Set(user, function, selector string, start int64, end int64, block cache.IntermediateResultBlock) error {
-	key := fmt.Sprintf("%s:%s:%s:%d:%d", user, function, selector, start, end)
+func (c *testIntermediateResultsCache) Set(ctx context.Context, function, selector string, start int64, end int64, block cache.IntermediateResultBlock) error {
+	key := fmt.Sprintf("%s:%s:%d:%d", function, selector, start, end)
 	c.sets++
 
 	// Convert to proto format (like real cache does).

@@ -45,6 +45,7 @@ func (o *OptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan, 
 func (o *OptimizationPass) wrapSplittableRangeVectorFunctions(n planning.Node, timeRange types.QueryTimeRange) (planning.Node, error) {
 	if functionCall, isFunctionCall := n.(*core.FunctionCall); isFunctionCall {
 		shouldSplit, reason := o.shouldSplitFunction(functionCall, timeRange)
+
 		if shouldSplit {
 			wrappedNode, err := o.wrapInSplitNode(functionCall)
 			if err != nil {
@@ -53,7 +54,9 @@ func (o *OptimizationPass) wrapSplittableRangeVectorFunctions(n planning.Node, t
 			matrixSelector := functionCall.Children()[0].(*core.MatrixSelector)
 			o.logger.Log("msg", "query splitting applied to function", "function", functionCall.GetFunction().PromQLName(), "range_ms", matrixSelector.Range.Milliseconds(), "split_interval_ms", o.splitInterval.Milliseconds())
 			return wrappedNode, nil
-		} else if reason != "" {
+		}
+
+		if reason != "" {
 			o.logger.Log("msg", "query splitting not applied to function", "function", functionCall.GetFunction().PromQLName(), "reason", reason)
 		}
 	}

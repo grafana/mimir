@@ -26,6 +26,7 @@ func NewMaterializer(params *OperatorParameters, nodeMaterializers map[NodeType]
 }
 
 func (m *Materializer) ConvertNodeToOperator(node Node, timeRange types.QueryTimeRange) (types.Operator, error) {
+	// FIXME: we should check that we're not trying to get the same operator but with a different time range
 	if f, ok := m.operatorFactories[node]; ok {
 		return f.Produce()
 	}

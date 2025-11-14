@@ -35,7 +35,7 @@ type FunctionOverRangeVectorSplit struct {
 	emitAnnotationFunc       types.EmitAnnotationFunc
 	seriesValidationFunc     RangeVectorSeriesValidationFunction
 
-	irCache *cache.IntermediateResultTenantCache
+	irCache cache.IntermediateResultsCache
 
 	innerNode      RangeVectorNode
 	materializer   *planning.Materializer
@@ -56,7 +56,7 @@ func NewFunctionOverRangeVectorSplit(
 	materializer *planning.Materializer,
 	timeRange types.QueryTimeRange,
 	splitDuration time.Duration,
-	irCache *cache.IntermediateResultTenantCache,
+	irCache cache.IntermediateResultsCache,
 	funcDef FunctionOverRangeVectorDefinition,
 	expressionPosition posrange.PositionRange,
 	annotations *annotations.Annotations,
@@ -104,7 +104,7 @@ func (m *FunctionOverRangeVectorSplit) ExpressionPosition() posrange.PositionRan
 func (m *FunctionOverRangeVectorSplit) SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
 	var err error
 
-	m.splits, err = m.createSplits()
+	m.splits, err = m.createSplits(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -213,7 +213,7 @@ func (m *FunctionOverRangeVectorSplit) Close() {
 // Currently calculates split boundaries based on the query time range (m.timeRange.StartT - innerRange to m.timeRange.StartT).
 // TODO: Should instead account for timestamp and offset to align with how samples are divided into blocks in storage.
 // Possibly can use some logic in QueriedTimeRange to decide on best way to create splits
-func (m *FunctionOverRangeVectorSplit) createSplits() ([]Split, error) {
+func (m *FunctionOverRangeVectorSplit) createSplits(ctx context.Context) ([]Split, error) {
 	var splits []Split
 	splitDurationMs := m.splitDuration.Milliseconds()
 
@@ -244,8 +244,10 @@ func (m *FunctionOverRangeVectorSplit) createSplits() ([]Split, error) {
 	for splitStart := alignedStart; splitStart+splitDurationMs <= endTs; splitStart += splitDurationMs {
 		splitEnd := splitStart + splitDurationMs
 
-		cachedBlock, found := m.irCache.Get(m.Func.Name, m.innerCacheKey, splitStart, splitEnd, m.MemoryConsumptionTracker)
-
+		cachedBlock, found, err := m.irCache.Get(ctx, m.Func.Name, m.innerCacheKey, splitStart, splitEnd, m.MemoryConsumptionTracker)
+		if err != nil {
+			return nil, err
+		}
 		if found {
 			if currentUncachedRanges != nil {
 				lastRange := currentUncachedRanges[len(currentUncachedRanges)-1]
@@ -557,7 +559,7 @@ func (p *UncachedSplit) Finalize(ctx context.Context) error {
 		block.Version = 1
 		block.StartTimestampMs = int(splitRange.Start)
 		block.EndTimestampMs = int(splitRange.End)
-		_ = p.parent.irCache.Set(p.parent.Func.Name, p.parent.innerCacheKey, splitRange.Start, splitRange.End, block)
+		_ = p.parent.irCache.Set(ctx, p.parent.Func.Name, p.parent.innerCacheKey, splitRange.Start, splitRange.End, block)
 	}
 
 	p.writtenToCache = true

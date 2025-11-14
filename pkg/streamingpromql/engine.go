@@ -15,7 +15,6 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/tracing"
-	"github.com/grafana/dskit/user"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/model/timestamp"
@@ -46,9 +45,6 @@ var tracer = otel.Tracer("pkg/streamingpromql")
 const defaultLookbackDelta = 5 * time.Minute // This should be the same value as github.com/prometheus/prometheus/promql.defaultLookbackDelta.
 
 func NewEngine(opts EngineOpts, limitsProvider QueryLimitsProvider, metrics *stats.QueryMetrics, planner *QueryPlanner) (*Engine, error) {
-	// TODO: consider making the cache an optional part of query splitting. We might want to just do query splitting
-	//  without caching (e.g. possibly if splitting is extended to range queries in the future, or if we add
-	//  parallelisation and just want to use query splitting for that and not cache).
 	var intermediateCache cache.IntermediateResultsCache
 	if opts.InstantQuerySplitting.Enabled {
 		var err error
@@ -98,7 +94,10 @@ func newEngineWithCache(opts EngineOpts, limitsProvider QueryLimitsProvider, met
 
 		planning.NODE_TYPE_DUPLICATE:                 planning.NodeMaterializerFunc[*commonsubexpressionelimination.Duplicate](commonsubexpressionelimination.MaterializeDuplicate),
 		planning.NODE_TYPE_STEP_INVARIANT_EXPRESSION: planning.NodeMaterializerFunc[*core.StepInvariantExpression](core.MaterializeStepInvariantExpression),
-		planning.NODE_TYPE_SPLIT_RANGE_VECTOR:        planning.NodeMaterializerFunc[*querysplitting.SplittableFunctionCall](querysplitting.MaterializeSplitRangeVector),
+	}
+
+	if intermediateCache != nil {
+		nodeMaterializers[planning.NODE_TYPE_SPLIT_RANGE_VECTOR] = querysplitting.NewMaterializer(intermediateCache)
 	}
 
 	return &Engine{
@@ -117,11 +116,10 @@ func newEngineWithCache(opts EngineOpts, limitsProvider QueryLimitsProvider, met
 		}),
 		queriesRejectedDueToPeakMemoryConsumption: metrics.QueriesRejectedTotal.WithLabelValues(stats.RejectReasonMaxEstimatedQueryMemoryConsumption),
 
-		pedantic:                opts.Pedantic,
-		eagerLoadSelectors:      opts.EagerLoadSelectors,
-		intermediateResultCache: intermediateCache,
-		planner:                 planner,
-		nodeMaterializers:       nodeMaterializers,
+		pedantic:           opts.Pedantic,
+		eagerLoadSelectors: opts.EagerLoadSelectors,
+		planner:            planner,
+		nodeMaterializers:  nodeMaterializers,
 	}, nil
 }
 
@@ -162,8 +160,6 @@ type Engine struct {
 	pedantic bool
 
 	eagerLoadSelectors bool
-
-	intermediateResultCache cache.IntermediateResultsCache
 
 	planner           *QueryPlanner
 	nodeMaterializers map[planning.NodeType]planning.NodeMaterializer
@@ -267,17 +263,6 @@ func (e *Engine) materializeAndCreateEvaluator(ctx context.Context, queryable st
 
 	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, maxEstimatedMemoryConsumptionPerQuery, e.queriesRejectedDueToPeakMemoryConsumption, plan.OriginalExpression)
 
-	// Create tenant-specific cache if configured
-	var tenantCache *cache.IntermediateResultTenantCache
-	if e.intermediateResultCache != nil {
-		tenantID, err := user.ExtractOrgID(ctx)
-		if err != nil {
-			return nil, err
-		} else {
-			tenantCache = cache.NewIntermediateResultTenantCache(tenantID, e.intermediateResultCache)
-		}
-	}
-
 	operatorParams := &planning.OperatorParameters{
 		Queryable:                queryable,
 		MemoryConsumptionTracker: memoryConsumptionTracker,
@@ -287,7 +272,6 @@ func (e *Engine) materializeAndCreateEvaluator(ctx context.Context, queryable st
 		Plan:                     plan,
 		EnableDelayedNameRemoval: plan.EnableDelayedNameRemoval,
 		Logger:                   e.logger,
-		IntermediateResultCache:  tenantCache,
 	}
 
 	materializer := planning.NewMaterializer(operatorParams, e.nodeMaterializers)

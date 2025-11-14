@@ -15,6 +15,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/cache"
 	"github.com/grafana/dskit/tenant"
+	"github.com/grafana/dskit/user"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -143,46 +144,55 @@ type intermediateResultsCache struct {
 }
 
 type IntermediateResultsCache interface {
-	Get(user, function, selector string, start int64, end int64, memoryTracker *limiter.MemoryConsumptionTracker) (IntermediateResultBlock, bool) // start is exclusive, end is inclusive
+	Get(ctx context.Context, function, selector string, start int64, end int64, memoryTracker *limiter.MemoryConsumptionTracker) (IntermediateResultBlock, bool, error) // start is exclusive, end is inclusive
 	// Set writes the block into the cache.
 	// The cache MUST NOT reference the block after Set() returned, as the caller may release slices within the block
 	// back to pools to be reused.
-	Set(user, function, selector string, start int64, end int64, block IntermediateResultBlock) error // start is exclusive, end is inclusive
+	Set(ctx context.Context, function, selector string, start int64, end int64, block IntermediateResultBlock) error // start is exclusive, end is inclusive
 }
 
-func (ic *intermediateResultsCache) Get(user, function, selector string, start int64, end int64, memoryTracker *limiter.MemoryConsumptionTracker) (IntermediateResultBlock, bool) {
-	cacheKey := generateCacheKey(user, function, selector, start, end)
+func (ic *intermediateResultsCache) Get(ctx context.Context, function, selector string, start int64, end int64, memoryTracker *limiter.MemoryConsumptionTracker) (IntermediateResultBlock, bool, error) {
+	tenant, err := user.ExtractOrgID(ctx)
+	if err != nil {
+		return IntermediateResultBlock{}, false, err
+	}
+
+	cacheKey := generateCacheKey(tenant, function, selector, start, end)
 	hashedKey := cacheHashKey(cacheKey)
 
-	ctx := context.Background()
 	found := ic.c.GetMulti(ctx, []string{hashedKey})
 	data, ok := found[hashedKey]
 	if !ok || len(data) == 0 {
-		return IntermediateResultBlock{}, false
+		return IntermediateResultBlock{}, false, nil
 	}
 
 	var cached CachedSeries
 	if err := cached.Unmarshal(data); err != nil {
-		return IntermediateResultBlock{}, false
+		return IntermediateResultBlock{}, false, nil
 	}
 
 	if cached.CacheKey != cacheKey {
-		return IntermediateResultBlock{}, false
+		return IntermediateResultBlock{}, false, nil
 	}
 
 	block, err := CachedSeriesToBlock(cached, memoryTracker)
 	if err != nil {
-		return IntermediateResultBlock{}, false
+		return IntermediateResultBlock{}, false, nil
 	}
 
-	ic.logger.Log("msg", "intermediate results cache hit", "user", user, "function", function, "selector", selector, "start", start, "end", end)
-	return block, true
+	ic.logger.Log("msg", "intermediate results cache hit", "tenant", tenant, "function", function, "selector", selector, "start", start, "end", end)
+	return block, true, nil
 }
 
-func (ic *intermediateResultsCache) Set(user, function, selector string, start int64, end int64, block IntermediateResultBlock) error {
+func (ic *intermediateResultsCache) Set(ctx context.Context, function, selector string, start int64, end int64, block IntermediateResultBlock) error {
 	block.Version = resultsCacheVersion
 
-	cacheKey := generateCacheKey(user, function, selector, start, end)
+	tenant, err := user.ExtractOrgID(ctx)
+	if err != nil {
+		return err
+	}
+
+	cacheKey := generateCacheKey(tenant, function, selector, start, end)
 	// TODO: track proto memory usage?
 	cached, err := BlockToCachedSeries(cacheKey, block)
 	if err != nil {
@@ -196,13 +206,13 @@ func (ic *intermediateResultsCache) Set(user, function, selector string, start i
 
 	hashedKey := cacheHashKey(cacheKey)
 	ic.c.SetMultiAsync(map[string][]byte{hashedKey: data}, defaultIntermediateResultsCacheTTL)
-	ic.logger.Log("msg", "intermediate results cache set", "user", user, "function", function, "selector", selector, "start", start, "end", end, "series_count", len(block.Series))
+	ic.logger.Log("msg", "intermediate results cache set", "tenant", tenant, "function", function, "selector", selector, "start", start, "end", end, "series_count", len(block.Series))
 	return nil
 }
 
 // generateCacheKey generates a cache key from the given parameters.
-func generateCacheKey(user, function, selector string, start, end int64) string {
-	return fmt.Sprintf("%s:%s:%s:%d:%d", user, function, selector, start, end)
+func generateCacheKey(tenant, function, selector string, start, end int64) string {
+	return fmt.Sprintf("%s:%s:%s:%d:%d", tenant, function, selector, start, end)
 }
 
 // cacheHashKey is needed due to memcached key limit
@@ -288,21 +298,4 @@ func CachedSeriesToBlock(cached CachedSeries, memoryTracker *limiter.MemoryConsu
 		Series:           series,
 		Results:          results,
 	}, nil
-}
-
-type IntermediateResultTenantCache struct {
-	user  string
-	inner IntermediateResultsCache
-}
-
-func NewIntermediateResultTenantCache(user string, c IntermediateResultsCache) *IntermediateResultTenantCache {
-	return &IntermediateResultTenantCache{user: user, inner: c}
-}
-
-func (c *IntermediateResultTenantCache) Get(function, selector string, start int64, end int64, memoryTracker *limiter.MemoryConsumptionTracker) (IntermediateResultBlock, bool) {
-	return c.inner.Get(c.user, function, selector, start, end, memoryTracker)
-}
-
-func (c *IntermediateResultTenantCache) Set(function, selector string, start int64, end int64, block IntermediateResultBlock) error {
-	return c.inner.Set(c.user, function, selector, start, end, block)
 }
