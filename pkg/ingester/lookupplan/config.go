@@ -9,7 +9,7 @@ import (
 
 const (
 	DefaultRetrievedPostingCost              = 0.01
-	DefaultRetrievedSeriesCost               = 10.0
+	DefaultRetrievedSeriesCost               = 15.0
 	DefaultRetrievedPostingListCost          = 10.0
 	DefaultMinSeriesPerBlockForQueryPlanning = 10_000
 	DefaultLabelCardinalityForLargerSketch   = 1e6
