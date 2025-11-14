@@ -18,6 +18,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/index"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
+	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/util/pool"
@@ -88,6 +89,12 @@ func NewCostBasedPlanner(metrics Metrics, statistics index.Statistics, config Co
 	}
 }
 
+var (
+	BnBTotalCosts        = atomic.NewFloat64(0)
+	ExhaustiveTotalCosts = atomic.NewFloat64(0)
+	ThirdBestTotalCosts  = atomic.NewFloat64(0)
+)
+
 func (p CostBasedPlanner) PlanIndexLookup(ctx context.Context, inPlan index.LookupPlan, hints *storage.SelectHints) (retPlan index.LookupPlan, retErr error) {
 	if planningDisabled(ctx) {
 		return inPlan, nil
@@ -131,32 +138,10 @@ func (p CostBasedPlanner) PlanIndexLookup(ctx context.Context, inPlan index.Look
 	allPlansExhaustive := p.generateExhaustivePlans(ctx, p.stats, matchers, memPools, shard)
 	allPlansExhaustive, bestPlanOverall := p.chooseBestPlan(memPools, allPlansExhaustive, allPlans)
 
-	first1024PlansExhaustive := p.generate1024ExhaustivePlans(ctx, p.stats, matchers, memPools, shard)
-	first1024PlansExhaustive, bestPlanOverall1024 := p.chooseBestPlan(memPools, first1024PlansExhaustive, allPlans)
+	BnBTotalCosts.Add(lookupPlan.TotalCost())
+	ExhaustiveTotalCosts.Add(bestPlanOverall.TotalCost())
+	ThirdBestTotalCosts.Add(allPlansExhaustive[min(2, len(allPlansExhaustive)-1)].TotalCost())
 
-	indexOnlyPlan := newIndexOnlyPlan(ctx, p.stats, p.config, matchers, memPools.indexPredicatesPool, shard)
-
-	if bestPlanOverall != nil && bestPlanOverall.TotalCost() < lookupPlan.TotalCost() {
-		// print best plan overall cost; top 3 best plans cost and the lookupPlan cost
-		fmt.Printf("Warning: Branch-and-bound selected plan with cost %.2f, but exhaustive search found a better plan with cost %.2f\n", lookupPlan.TotalCost(), bestPlanOverall.TotalCost())
-		fmt.Printf("Top 3 best plans from exhaustive search:")
-		for i, p := range allPlansExhaustive[:min(3, len(allPlansExhaustive))] {
-			fmt.Printf("  Plan %d: cost %.2f ", i+1, p.TotalCost())
-		}
-		// print naive index-only plan cost
-		fmt.Printf("Naive index-only plan cost: %.2f\n", indexOnlyPlan.TotalCost())
-	}
-
-	if bestPlanOverall1024 != nil && bestPlanOverall != nil && bestPlanOverall.TotalCost() < bestPlanOverall1024.TotalCost() {
-		// print best plan overall cost; top 3 best plans cost and the lookupPlan cost
-		fmt.Printf("Warning: 1024-plan exhaustive search selected plan with cost %.2f, but full exhaustive search found a better plan with cost %.2f\n", bestPlanOverall1024.TotalCost(), bestPlanOverall.TotalCost())
-		fmt.Printf("Top 3 best plans from full exhaustive search:")
-		for i, p := range allPlansExhaustive[:min(3, len(allPlansExhaustive))] {
-			fmt.Printf("  Plan %d: cost %.2f ", i+1, p.TotalCost())
-		}
-		// print naive index-only plan cost
-		fmt.Printf("Naive index-only plan cost: %.2f\n", indexOnlyPlan.TotalCost())
-	}
 	return lookupPlan, nil
 }
 

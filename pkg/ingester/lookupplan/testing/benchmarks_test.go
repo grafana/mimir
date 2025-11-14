@@ -132,6 +132,15 @@ func BenchmarkQueryExecution(b *testing.B) {
 					}
 					b.ReportMetric(float64(queryResult.SeriesCount), "series")
 					b.ReportMetric(float64(queryResult.ChunksCount), "chunks")
+					bnbTotalCosts := lookupplan.BnBTotalCosts.Swap(0)
+					exhaustiveTotalCosts := lookupplan.ExhaustiveTotalCosts.Swap(0)
+					thirdBestTotalCosts := lookupplan.ThirdBestTotalCosts.Swap(0)
+
+					b.ReportMetric(bnbTotalCosts, "bnb_total_costs")
+					b.ReportMetric(exhaustiveTotalCosts, "exhaustive_total_costs")
+					b.ReportMetric(thirdBestTotalCosts, "third_best_total_costs")
+					b.ReportMetric(bnbTotalCosts/exhaustiveTotalCosts, "bnb_vs_exhaustive_ratio")
+					b.ReportMetric(bnbTotalCosts/thirdBestTotalCosts, "bnb_vs_third_best_ratio")
 				}
 			})
 		}

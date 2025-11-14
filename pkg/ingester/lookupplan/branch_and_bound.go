@@ -54,7 +54,7 @@ func (pq *partialPlans) Pop() interface{} {
 // generatePlansBranchAndBound uses branch-and-bound to explore the space of possible plans.
 // It prunes branches that cannot possibly lead to a better plan than the current best.
 func (p CostBasedPlanner) generatePlansBranchAndBound(ctx context.Context, statistics index.Statistics, matchers []*labels.Matcher, pools *costBasedPlannerPools, shard *sharding.ShardSelector) []plan {
-	basePlan := newIndexOnlyPlan(ctx, statistics, p.config, matchers, pools.indexPredicatesPool, shard)
+	basePlan := newScanOnlyPlan(ctx, statistics, p.config, matchers, pools.indexPredicatesPool, shard)
 
 	// Initialize the priority queue with the base plan
 	prospectPlans := &partialPlans{partialPlan{
@@ -62,10 +62,18 @@ func (p CostBasedPlanner) generatePlansBranchAndBound(ctx context.Context, stati
 		decidedPredicates: 0,
 	}}
 	heap.Init(prospectPlans)
+	// add one plan where each predicate uses the index and the rest use scan
+	for i := 0; i < len(basePlan.predicates); i++ {
+		indexOnlyPlan := basePlan.UseIndexFor(i)
+		heap.Push(prospectPlans, partialPlan{
+			planWithCost:      planWithCost{plan: indexOnlyPlan, totalCost: indexOnlyPlan.TotalCost()},
+			decidedPredicates: 0,
+		})
+	}
 
 	decidedPlans := &partialPlans{}
 
-	for i := 0; i < maxPlansForPlanning && prospectPlans.Len() > 0; i++ {
+	for i := 0; i < 2*maxPlansForPlanning && prospectPlans.Len() > 0; i++ {
 		current := heap.Pop(prospectPlans).(partialPlan)
 
 		if current.decidedPredicates == len(current.plan.predicates) {
